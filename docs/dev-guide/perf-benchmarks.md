@@ -33,7 +33,7 @@ GPU 렌더 파이프라인(단일 render pass batching + multi-page atlas — [g
 | `perf-cjk-atlas.sh` | 4 | CJK(한자/히라가나/한글) 대량 unique 코드포인트 | `atlas_evictions` delta + `atlas_pages` |
 | `wasm-vs-process.sh` | — | WASM SDK vs 프로세스 plugin 비교 | plugin 런타임 오버헤드 |
 
-- env: `PERF_DURATION_SECS`(기본 60), `PERF_PROFILE`(`release` 기본 / `dist` = full LTO, ~3.5× 빌드). 회귀 측정은 동일 프로필 안에서.
+- env: `PERF_DURATION_SECS`(기본 60), `PERF_PROFILE`(`release` 기본 / `dist` = full LTO, ~3.5× 빌드), `PERF_LOG_DIR`(perf 로그 위치, 기본 OS 임시 디렉토리 아래 `tasty-bench/` = `${TMPDIR:-/tmp}/tasty-bench`). `wasm-vs-process.sh` 의 csv 위치는 `BENCH_OUT_DIR`(같은 기본값). 회귀 측정은 동일 프로필 안에서.
 - 스크립트는 `cargo run` 기동 → `tasty list info` 폴링으로 ready 대기 → `tasty split` 으로 surface 늘림 → 입력 주입 → perf 로그 마지막 샘플 추출. 출력 로그 경로는 각 스크립트 상단 `LOG_DIR` 참조.
 - CJK 시나리오는 측정 전 fallback 폰트 부재를 `tasty::font=warn` 로그로 사전 점검해 abort(visual check 비의존).
 

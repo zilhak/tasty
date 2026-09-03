@@ -17,12 +17,14 @@
 //! - `SOAK_DURATION_SECS`  soak 시간 (기본 600)
 //! - `SOAK_CYCLES`         사이클 수 상한 (기본 무제한 — 시간으로만 종료)
 //! - `SOAK_CHECKPOINT_EVERY` 체크포인트 간격(사이클, 기본 10)
-//! - `SOAK_OUT_DIR`        JSONL 출력 디렉토리 (기본 .claude-workspace/temp/soak)
+//! - `SOAK_OUT_DIR`        JSONL 출력 디렉토리 (기본 OS 임시 디렉토리 아래 `tasty-soak/`
+//!                         — `std::env::temp_dir()`; 실제 파일 경로는 시작 시 stdout 에 찍힌다)
 
 mod common;
 
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use common::TastyInstance;
@@ -323,11 +325,15 @@ fn soak() {
     let duration = Duration::from_secs(env_u64("SOAK_DURATION_SECS", 600));
     let max_cycles = env_u64("SOAK_CYCLES", u64::MAX);
     let checkpoint_every = env_u64("SOAK_CHECKPOINT_EVERY", 10).max(1);
-    let out_dir =
-        std::env::var("SOAK_OUT_DIR").unwrap_or_else(|_| ".claude-workspace/temp/soak".into());
+    let out_dir = std::env::var_os("SOAK_OUT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("tasty-soak"));
 
     std::fs::create_dir_all(&out_dir).expect("failed to create SOAK_OUT_DIR");
-    let out_path = format!("{}/soak-{}-{}.jsonl", out_dir, scenario, now_epoch() as u64);
+    let out_path = out_dir
+        .join(format!("soak-{}-{}.jsonl", scenario, now_epoch() as u64))
+        .display()
+        .to_string();
     let mut out = std::fs::File::create(&out_path).expect("failed to create output file");
 
     let inst = TastyInstance::spawn();

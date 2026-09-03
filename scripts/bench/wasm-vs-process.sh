@@ -5,14 +5,14 @@
 # 측정은 별 작업 — `tasty` 의 full plugin lifecycle 을 거치므로 통합 환경 필요.
 # POC 단계는 wasm 측정값만 수집.
 #
-# 결과: .claude-workspace/temp/bench-wasm-poc.csv
+# 결과: ${BENCH_OUT_DIR:-${TMPDIR:-/tmp}/tasty-bench}/bench-wasm-poc.csv
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-OUT_DIR=".claude-workspace/temp"
+OUT_DIR="${BENCH_OUT_DIR:-${TMPDIR:-/tmp}/tasty-bench}"
 mkdir -p "$OUT_DIR"
 OUT="$OUT_DIR/bench-wasm-poc.csv"
 

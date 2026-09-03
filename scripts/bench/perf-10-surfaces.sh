@@ -2,7 +2,7 @@
 #
 # 10-surface 시나리오 기반 perf 측정.
 # 사전: tasty release 빌드 + `tasty` CLI 가 PATH 에 있어야 함.
-# 출력: .claude-workspace/temp/perf-{platform}.log 의 마지막 12 `perf` 라인.
+# 출력: ${PERF_LOG_DIR:-${TMPDIR:-/tmp}/tasty-bench}/perf-{platform}-{profile}.log 의 마지막 12 `perf` 라인.
 #
 # 측정 segment 정의 / window 크기 등은 docs/architecture/performance-benchmarks.md 참조.
 
@@ -15,7 +15,7 @@ case "$PROFILE" in
     dist)    CARGO_FLAGS=(--profile dist) ;;
     *) echo "error: PERF_PROFILE must be release|dist (got '$PROFILE')" >&2; exit 2 ;;
 esac
-LOG_DIR=".claude-workspace/temp"
+LOG_DIR="${PERF_LOG_DIR:-${TMPDIR:-/tmp}/tasty-bench}"
 LOG="${LOG_DIR}/perf-${PLATFORM}-${PROFILE}.log"
 DURATION="${PERF_DURATION_SECS:-60}"
 

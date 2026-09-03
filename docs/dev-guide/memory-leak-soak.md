@@ -44,7 +44,9 @@ env 제어:
 | `SOAK_DURATION_SECS` | 실행 시간 | 600 |
 | `SOAK_CYCLES` | 사이클 수 상한 | 무제한 |
 | `SOAK_CHECKPOINT_EVERY` | 체크포인트 간격(사이클) | 10 |
-| `SOAK_OUT_DIR` | JSONL 출력 위치 | `.claude-workspace/temp/soak` |
+| `SOAK_OUT_DIR` | JSONL 출력 위치 | OS 임시 디렉토리 아래 `tasty-soak/` (`std::env::temp_dir()` — `$TMPDIR`/`/tmp` 또는 `%TEMP%`) |
+
+하네스는 시작 시 `soak: … out=<경로>` 로 실제 출력 파일 경로를 stdout 에 찍는다.
 
 ### 시나리오 (직교 분해)
 
@@ -71,7 +73,7 @@ env 제어:
 ## 2단계 — 판정
 
 ```bash
-python scripts/soak/analyze.py .claude-workspace/temp/soak/soak-s9-<ts>.jsonl [--plot out.png]
+python scripts/soak/analyze.py "${TMPDIR:-/tmp}/tasty-soak/soak-s9-<ts>.jsonl" [--plot out.png]
 ```
 
 warmup(기본 앞 10% 체크포인트)을 제외하고:

@@ -4,7 +4,7 @@
 # 목적: atlas eviction 빈도 (atlas_evictions delta) + 페이지 사용량 평균 측정.
 #
 # 사전: tasty 빌드 + `tasty` CLI 가 PATH, jq + python3.
-# 출력: .claude-workspace/temp/perf-cjk-{platform}-{profile}.log 의 마지막 12 `perf` 라인.
+# 출력: ${PERF_LOG_DIR:-${TMPDIR:-/tmp}/tasty-bench}/perf-cjk-{platform}-{profile}.log 의 마지막 12 `perf` 라인.
 #
 # CJK 폰트 fallback 부재 시 자동 abort (visual check 의존 X). 측정 segment / 임계값은
 # docs/architecture/performance-benchmarks.md 참조.
@@ -18,7 +18,7 @@ case "$PROFILE" in
     dist)    CARGO_FLAGS=(--profile dist) ;;
     *) echo "error: PERF_PROFILE must be release|dist (got '$PROFILE')" >&2; exit 2 ;;
 esac
-LOG_DIR=".claude-workspace/temp"
+LOG_DIR="${PERF_LOG_DIR:-${TMPDIR:-/tmp}/tasty-bench}"
 LOG="${LOG_DIR}/perf-cjk-${PLATFORM}-${PROFILE}.log"
 DURATION="${PERF_DURATION_SECS:-60}"
 
