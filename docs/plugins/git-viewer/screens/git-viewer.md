@@ -55,6 +55,35 @@
   라인 최장)과 분리된 값이다. 밴드까지 할당 폭으로 칠하면 짧은 행의 밴드가 가로 스크롤 콘텐츠 끝까지
   늘어난다.
 
+## git 조회 (repo 핸들과 무효화)
+
+로컬 모드는 **활성 worktree 의 `Repository` 핸들 하나만** 들고 재사용한다 — 조작마다 다시 열지
+않는다(근거·대안:
+[ADR-0099](../../../adr/0099-git-viewer-repo-handle-cache-and-canonical-dedup.md)). 그 결과 파일을
+연달아 클릭할 때 repo open 이 일어나지 않는다. popup 최초 로드와 Refresh 는 **plugin 자체
+`discover` 기준 1 회**다 — 단 활성 worktree 가 popup cwd 의 worktree(`current`)일 때이고, 활성이
+다른 worktree 면 목록 수집용 1 회 + 대상 재바인딩용 1 회로 2 회다. 여기에 더해 **worktree 목록
+수집이 항목마다 HEAD 를 읽느라 여는 open 은 별도로 남는다**(main + linked 각 1 회) — 이 캐시가
+줄이는 대상이 아니다.
+
+무효화 조건은 셋이고 전부 명시적이다.
+
+| 조건 | 동작 |
+|---|---|
+| worktree 전환 | 이전 worktree 의 핸들을 버리고 대상 worktree 를 새로 연다 |
+| Refresh | 핸들을 먼저 버린 뒤 다시 연다 — 외부 파일 편집 · 외부 `git worktree add/remove` · 외부 커밋이 항상 반영된다 |
+| repo 소실 | 재열기 실패 → 캐시는 빈 상태로 남고 "repo lost" 를 표시한다 |
+
+핸들 접근은 "꺼내 쓰고 돌려놓는" 한 쌍으로만 한다. 꺼내는 쪽이 항상 캐시를 비우므로, 에러로 중간에
+빠져나가면 캐시가 빈 채 남아 다음 조작이 무조건 다시 연다 — 낡은 핸들이 살아남는 경로가 없다.
+
+worktree 목록은 Refresh 마다 다시 수집한다(외부 add/remove 를 반영하는 유일한 경로). 커밋 목록의
+ref pill 도 조회마다 다시 읽는다 — ref 는 커밋/브랜치 조작 한 번으로 바뀌고, 조회 시점이 곧 최신
+상태를 요구하는 순간이라 캐시하지 않는다.
+
+원격(attach) 모드는 로컬 repo 를 열지 않는다 — 조회는 host 가 요청마다 수행하고 plugin 은 wire JSON
+만 받으므로 이 캐시가 관여하지 않는다.
+
 ## 상태별 시각
 
 - repo / 비-repo(중앙 안내) / detached(branch 자리에 `detached`).

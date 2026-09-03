@@ -174,17 +174,25 @@ fn main_workdir_via_path(git_dir: &Path) -> Option<PathBuf> {
 pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Vec<WorktreeEntry>> {
     let current_canon = canon(current_workdir);
     let mut out: Vec<WorktreeEntry> = Vec::new();
+    // 이미 담은 항목의 **정규화 경로**. 중복 검사(아래 비표준 레이아웃 방어)가 목록을
+    // 훑을 때마다 `canonicalize` 를 다시 부르면 항목 수의 제곱에 비례하는 syscall 이
+    // 난다 — 항목마다 어차피 한 번 재는 값을 여기 모아 그대로 비교한다.
+    let mut seen_canon: Vec<PathBuf> = Vec::new();
 
     // 1) main working tree 합성 (libgit2 worktrees() 가 안 줌).
-    if let Some(entry) = main_worktree_entry(repo, &current_canon) {
+    if let Some((entry, entry_canon)) = main_worktree_entry(repo, &current_canon) {
         out.push(entry);
+        seen_canon.push(entry_canon);
     }
 
     // 2) linked worktrees.
     if let Ok(names) = repo.worktrees() {
         for name in names.iter().flatten() {
-            if let Some(entry) = linked_worktree_entry(repo, name, &current_canon, &out) {
+            if let Some((entry, entry_canon)) =
+                linked_worktree_entry(repo, name, &current_canon, &seen_canon)
+            {
                 out.push(entry);
+                seen_canon.push(entry_canon);
             }
         }
     }
@@ -193,33 +201,41 @@ pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Ve
 }
 
 /// main working tree 항목 합성. `derive_main_workdir` 이 못 찾으면(비표준 레이아웃 등) None.
-fn main_worktree_entry(repo: &Repository, current_canon: &Path) -> Option<WorktreeEntry> {
+/// 반환값의 두 번째 원소는 이 항목의 정규화 경로 — 호출자가 중복 검사에 재사용한다.
+fn main_worktree_entry(
+    repo: &Repository,
+    current_canon: &Path,
+) -> Option<(WorktreeEntry, PathBuf)> {
     let main_wd = derive_main_workdir(repo)?;
     let is_valid = main_wd.is_dir();
+    let main_canon = canon(&main_wd);
     let (branch, oid) = Repository::open(&main_wd)
         .ok()
         .map(|r| head_info(&r))
         .unwrap_or((None, None));
-    Some(WorktreeEntry {
+    let entry = WorktreeEntry {
         name: dir_name(&main_wd, "main"),
         branch,
         oid,
         is_main: true,
-        is_current: canon(&main_wd) == current_canon,
+        is_current: main_canon == current_canon,
         locked: false,
         lock_reason: None,
         is_valid,
         path: display_path(&main_wd),
-    })
+    };
+    Some((entry, main_canon))
 }
 
 /// 단일 linked worktree 항목 조회. 중복(main 합성분과 경로 중복) · lookup 실패 시 `None`.
+/// `seen_canon` 은 이미 목록에 담긴 항목들의 정규화 경로이며, 반환값의 두 번째 원소는
+/// 이 항목의 정규화 경로다(호출자가 `seen_canon` 에 누적한다).
 fn linked_worktree_entry(
     repo: &Repository,
     name: &str,
     current_canon: &Path,
-    existing: &[WorktreeEntry],
-) -> Option<WorktreeEntry> {
+    seen_canon: &[PathBuf],
+) -> Option<(WorktreeEntry, PathBuf)> {
     let wt = match repo.find_worktree(name) {
         Ok(w) => w,
         Err(e) => {
@@ -229,8 +245,9 @@ fn linked_worktree_entry(
     };
     let wt_path = wt.path().to_path_buf();
     let wt_canon = canon(&wt_path);
-    // main 합성분과 경로 중복 방지 (비표준 레이아웃 방어).
-    if existing.iter().any(|e| canon(&e.path) == wt_canon) {
+    // main 합성분과 경로 중복 방지 (비표준 레이아웃 방어). 비교 대상은 이미 재 둔
+    // 정규화 경로라 여기서 canonicalize 를 다시 부르지 않는다.
+    if seen_canon.contains(&wt_canon) {
         return None;
     }
     let is_valid = wt.validate().is_ok();
@@ -251,7 +268,7 @@ fn linked_worktree_entry(
     } else {
         (None, None)
     };
-    Some(WorktreeEntry {
+    let entry = WorktreeEntry {
         name: name.to_string(),
         branch,
         oid,
@@ -261,7 +278,8 @@ fn linked_worktree_entry(
         lock_reason,
         is_valid,
         path: display_path(&wt_path),
-    })
+    };
+    Some((entry, wt_canon))
 }
 
 pub fn discover_repo(start: &Path) -> Option<Repository> {
@@ -313,6 +331,20 @@ pub fn collect_status(repo: &Repository) -> Result<Vec<StatusEntry>> {
 }
 
 pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
+    let mut walker = repo.revwalk().context("revwalk failed")?;
+    // 정렬 설정 실패는 치명적이지 않다 — libgit2 기본 순서로 그대로 진행한다.
+    walker
+        .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
+        .ok();
+    if walker.push_head().is_err() {
+        // unborn HEAD — 걸을 커밋이 없으니 아래 ref 스캔도 부질없다.
+        return Ok(Vec::new());
+    }
+
+    // oid → ref 이름 맵. **호출마다 새로 만든다** — ref 는 커밋/브랜치 조작 한 번으로
+    // 바뀌고, 이 함수가 불리는 시점이 곧 "최신 상태를 보여달라"(popup open / Refresh /
+    // worktree 전환)는 순간이라 캐시는 낡은 pill 을 띄울 위험만 만든다. 비용도
+    // ref 개수에 선형이라 아래 revwalk 대비 미미하다.
     let mut ref_map: std::collections::HashMap<git2::Oid, Vec<String>> =
         std::collections::HashMap::new();
     if let Ok(refs) = repo.references() {
@@ -328,14 +360,6 @@ pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
                 ref_map.entry(target).or_default().push(name);
             }
         }
-    }
-
-    let mut walker = repo.revwalk().context("revwalk failed")?;
-    walker
-        .set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)
-        .ok();
-    if walker.push_head().is_err() {
-        return Ok(Vec::new());
     }
 
     let mut out = Vec::with_capacity(limit);
@@ -514,5 +538,73 @@ mod tests {
                 .any(|e| e.name == "linked-wt" && e.is_current && !e.is_main),
             "linked worktree 가 is_current 여야 함: {list2:?}"
         );
+    }
+
+    /// 결과 고정 — worktree 여러 개에서 목록의 불변식이 유지되는지 본다.
+    ///
+    /// 중복 검사는 항목마다 `canonicalize` 를 다시 부르지 않고 미리 잰 정규화 경로를
+    /// 비교한다(항목 수에 선형). 그 비교의 결과 — 중복 없음 · main 정확히 1개 ·
+    /// current 정확히 1개 · main 이 선두 — 를 고정한다.
+    #[test]
+    fn collect_worktrees_result_invariants_with_multiple_linked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let main_dir = tmp.path().join("main");
+        std::fs::create_dir_all(&main_dir).unwrap();
+
+        let repo = Repository::init(&main_dir).unwrap();
+        {
+            let mut cfg = repo.config().unwrap();
+            cfg.set_str("user.name", "test").unwrap();
+            cfg.set_str("user.email", "test@example.com").unwrap();
+        }
+        std::fs::write(main_dir.join("a.txt"), "hello").unwrap();
+        let sig = git2::Signature::now("test", "test@example.com").unwrap();
+        let tree_oid = {
+            let mut idx = repo.index().unwrap();
+            idx.add_path(Path::new("a.txt")).unwrap();
+            idx.write().unwrap();
+            idx.write_tree().unwrap()
+        };
+        let tree = repo.find_tree(tree_oid).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
+
+        let names = ["wt-a", "wt-b", "wt-c"];
+        for name in names {
+            repo.worktree(name, &tmp.path().join(name), None).unwrap();
+        }
+
+        let main_wd = repo.workdir().unwrap().to_path_buf();
+        let list = collect_worktrees(&repo, &main_wd).unwrap();
+
+        assert_eq!(list.len(), 1 + names.len(), "main + linked 전부: {list:?}");
+        assert!(list[0].is_main, "main 항목이 선두여야 함: {list:?}");
+        assert_eq!(
+            list.iter().filter(|e| e.is_main).count(),
+            1,
+            "is_main 은 정확히 1개: {list:?}"
+        );
+        assert_eq!(
+            list.iter().filter(|e| e.is_current).count(),
+            1,
+            "is_current 는 정확히 1개: {list:?}"
+        );
+
+        // 경로 중복이 없어야 한다 (비표준 레이아웃 방어의 본래 목적).
+        let mut canons: Vec<PathBuf> = list.iter().map(|e| canon(&e.path)).collect();
+        canons.sort();
+        let before = canons.len();
+        canons.dedup();
+        assert_eq!(before, canons.len(), "정규화 경로 중복 없음: {list:?}");
+
+        // linked 이름이 전부 살아 있고 각각 유효해야 한다.
+        for name in names {
+            let e = list
+                .iter()
+                .find(|e| e.name == name)
+                .unwrap_or_else(|| panic!("{name} 항목이 있어야 함: {list:?}"));
+            assert!(!e.is_main, "{name} 은 linked: {e:?}");
+            assert!(e.is_valid, "{name} 은 유효해야 함: {e:?}");
+        }
     }
 }

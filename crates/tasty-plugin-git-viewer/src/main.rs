@@ -65,6 +65,22 @@ pub(crate) struct ViewerState {
     remote: Option<RemoteCtx>,
     /// 최초 스냅샷/refresh/worktree 전환 응답이 아직 안 왔다 — render 가 "loading" 을 낸다.
     loading: bool,
+    /// 활성 worktree 의 열린 `Repository` 핸들 캐시 — 조작마다 다시 열지 않는다.
+    /// 접근은 [`ViewerState::take_repo`] / [`ViewerState::put_repo`] 한 쌍으로만 한다.
+    /// 원격(attach) 모드는 로컬 repo 를 열지 않으므로 항상 `None` 이다.
+    repo: Option<CachedRepo>,
+}
+
+/// 캐시된 `Repository` 핸들과 그 핸들이 바인딩된 workdir.
+///
+/// `git2::Repository` 는 `Send` 지만 `Sync` 는 아니다(`git2` 의
+/// `unsafe impl Send for Repository`). plugin 은 SDK 의 단일 `plugin-worker`
+/// 스레드에서 `&mut self` 로만 dispatch 되므로(`tasty-plugin-sdk` 의 `worker_loop`)
+/// 이 핸들을 상태에 보관해도 공유가 발생하지 않는다.
+struct CachedRepo {
+    /// 이 핸들이 가리키는 working dir. 요청 경로와 다르면 캐시 미스로 본다.
+    workdir: PathBuf,
+    handle: git2::Repository,
 }
 
 /// mirror 모드 전용 상태 — host handle + 진행 중인 왕복 요청 추적.
@@ -287,10 +303,20 @@ impl ViewerState {
         s.worktrees = git::collect_worktrees(&repo, &current_wd).unwrap_or_default();
         s.active_worktree = s.worktrees.iter().position(|w| w.is_current).unwrap_or(0);
 
-        if s.worktrees.is_empty() {
-            // worktree 도출 실패 등 — 기존 단일 repo 흐름으로 폴백.
-            s.repo_path = Some(current_wd);
+        // 활성 worktree 가 popup cwd 의 worktree(= 방금 연 `repo`)면 그 핸들을 그대로
+        // 쓴다 — 같은 repo 를 다시 열 이유가 없다. `is_current` 가 아닌 경우(cwd 의
+        // worktree 를 목록에서 못 찾아 0번으로 폴백)만 `bind_active` 가 대상 worktree 를
+        // 새로 연다.
+        let active_is_current = s
+            .worktrees
+            .get(s.active_worktree)
+            .is_some_and(|w| w.is_current);
+        if s.worktrees.is_empty() || active_is_current {
+            // worktree 도출 실패(빈 목록)면 단일 repo 흐름으로 폴백하고, 활성이 곧
+            // 이 repo 면 그대로 바인딩한다 — 양쪽 다 `repo` 를 그대로 쓴다.
+            s.repo_path = Some(current_wd.clone());
             s.refresh_collections(&repo);
+            s.put_repo(current_wd, repo);
         } else {
             s.bind_active();
         }
@@ -307,12 +333,18 @@ impl ViewerState {
         else {
             return;
         };
-        let Some(repo) = git::discover_repo(&path) else {
+        // worktree 가 바뀌면 `path` 가 캐시 키와 달라 자동으로 미스가 나고, 이전
+        // worktree 의 핸들은 그 자리에서 버려진다.
+        let Some(repo) = self.take_repo(&path) else {
             self.error = Some(format!("repo lost at {}", path.display()));
             return;
         };
-        self.repo_path = repo.workdir().map(|p| p.to_path_buf()).or(Some(path));
+        self.repo_path = repo
+            .workdir()
+            .map(|p| p.to_path_buf())
+            .or(Some(path.clone()));
         self.refresh_collections(&repo);
+        self.put_repo(self.repo_path.clone().unwrap_or(path), repo);
     }
 
     /// worktree 선택 — 활성 worktree 를 바꾸고 status/log/diff 를 재바인딩(읽기 전용).
@@ -329,6 +361,10 @@ impl ViewerState {
         self.selected_file = None;
         self.set_diff(None);
         self.error = None;
+        // 다른 worktree 로 간다 — 이전 worktree 의 핸들은 여기서 버린다(로컬 경로의
+        // `bind_active` 도 키 불일치로 미스가 나지만, 원격 경로는 아래에서 바로
+        // 돌아가므로 명시적으로 비워 낡은 핸들이 남지 않게 한다).
+        self.repo = None;
         if self.remote.is_some() {
             self.active_worktree = idx;
             self.request_remote_snapshot(Some(path));
@@ -347,29 +383,41 @@ impl ViewerState {
             self.request_remote_snapshot(worktree_path);
             return;
         }
+        // Refresh 는 "지금 상태를 다시 읽어달라" 는 명시적 요청이다. 캐시된 핸들을
+        // 여기서 **먼저 버려** 재조회가 항상 새로 연 repo 에서 이뤄지게 한다 —
+        // 최신성이 캐시 적중률보다 우선이므로, 외부 변경 반영 여부가 핸들 수명에
+        // 좌우되지 않는다.
+        self.repo = None;
+
         // worktree 목록 재수집(외부 add/remove 반영) — current_workdir 기준.
         if let Some(current_wd) = self.current_workdir.clone() {
             let prev_active = self
                 .worktrees
                 .get(self.active_worktree)
                 .map(|e| e.path.clone());
-            if let Some(repo) = git::discover_repo(&current_wd)
-                && let Ok(v) = git::collect_worktrees(&repo, &current_wd)
-                && !v.is_empty()
-            {
-                self.worktrees = v;
-                // 목록이 바뀌었을 수 있으니 이전 활성 경로로 인덱스 보정.
-                self.active_worktree = prev_active
-                    .and_then(|p| self.worktrees.iter().position(|e| e.path == p))
-                    .or_else(|| self.worktrees.iter().position(|w| w.is_current))
-                    .unwrap_or(0);
+            if let Some(repo) = git::discover_repo(&current_wd) {
+                if let Ok(v) = git::collect_worktrees(&repo, &current_wd)
+                    && !v.is_empty()
+                {
+                    self.worktrees = v;
+                    // 목록이 바뀌었을 수 있으니 이전 활성 경로로 인덱스 보정.
+                    self.active_worktree = prev_active
+                        .and_then(|p| self.worktrees.iter().position(|e| e.path == p))
+                        .or_else(|| self.worktrees.iter().position(|w| w.is_current))
+                        .unwrap_or(0);
+                }
+                // 활성 worktree 가 방금 연 그 repo 라면 핸들을 넘겨 아래 재바인딩에서
+                // 재사용한다 — 한 번의 Refresh 안에서 같은 repo 를 두 번 열지 않는다.
+                if self.repo_path.as_deref() == Some(current_wd.as_path()) {
+                    self.put_repo(current_wd, repo);
+                }
             }
         }
 
         let Some(path) = self.repo_path.clone() else {
             return;
         };
-        let Some(repo) = git::discover_repo(&path) else {
+        let Some(repo) = self.take_repo(&path) else {
             self.error = Some(format!("repo lost at {}", path.display()));
             return;
         };
@@ -383,6 +431,7 @@ impl ViewerState {
                 self.set_diff(None);
             }
         }
+        self.put_repo(path, repo);
     }
 
     fn refresh_collections(&mut self, repo: &git2::Repository) {
@@ -414,11 +463,12 @@ impl ViewerState {
         let Some(path) = self.repo_path.clone() else {
             return;
         };
-        let Some(repo) = git::discover_repo(&path) else {
+        let Some(repo) = self.take_repo(&path) else {
             return;
         };
         self.selected_file = Some(idx);
         self.load_diff_for(&repo, &entry.path);
+        self.put_repo(path, repo);
     }
 
     fn load_diff_for(&mut self, repo: &git2::Repository, path: &str) {
@@ -442,6 +492,26 @@ impl ViewerState {
     fn set_diff(&mut self, diff: Option<git::DiffData>) {
         self.diff_content = diff;
         self.diff_width = None;
+    }
+
+    /// `workdir` 에 해당하는 `Repository` 를 꺼낸다 — 캐시가 같은 workdir 이면 그
+    /// 핸들을, 아니면 새로 열어 돌려준다(다른 worktree 의 캐시는 여기서 버려진다).
+    ///
+    /// **캐시는 항상 여기서 비워진다.** 호출자가 다 쓴 뒤 [`Self::put_repo`] 로
+    /// 돌려놓아야 다음 호출이 재사용하고, 에러로 중간에 빠져나가면 캐시가 빈 채로
+    /// 남아 다음 조작이 무조건 다시 연다 — 낡은 핸들이 살아남는 경로가 없다.
+    fn take_repo(&mut self, workdir: &std::path::Path) -> Option<git2::Repository> {
+        if let Some(cached) = self.repo.take()
+            && cached.workdir == workdir
+        {
+            return Some(cached.handle);
+        }
+        git::discover_repo(workdir)
+    }
+
+    /// [`Self::take_repo`] 로 꺼낸 핸들을 캐시에 돌려놓는다.
+    fn put_repo(&mut self, workdir: PathBuf, handle: git2::Repository) {
+        self.repo = Some(CachedRepo { workdir, handle });
     }
 }
 
