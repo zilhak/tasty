@@ -863,6 +863,205 @@ fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState)
     state.active_workspace = index;
 }
 
+// ---- mirror surface: 로컬 attention 발동 억제 ----
+
+/// mirror 플래그가 선 워크스페이스를 하나 추가하고 그 첫 surface id 를 돌려준다.
+/// 실제 attach 세션 없이 `Workspace.mirror` 만 세우면 `is_mirror_surface` 판정에는
+/// 충분하다 — 그 판정이 보는 것이 워크스페이스 플래그뿐이기 때문.
+fn add_mirror_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
+    add_test_workspace(state, engine);
+    let idx = state.active_workspace;
+    let ws = engine
+        .workspaces
+        .get_mut(idx)
+        .expect("방금 만든 workspace 가 있어야 한다");
+    ws.mirror = true;
+    *ws.all_surface_ids()
+        .first()
+        .expect("새 workspace 에 surface 하나")
+}
+
+/// 로컬 producer 축(`raise_attention`)은 mirror surface 에 레코드를 만들지 않는다.
+/// 같은 호출이 mirror 아닌 surface 에는 그대로 발동한다(대조군) — 억제가 전역
+/// 무력화가 아니라 mirror 한정임을 함께 고정한다.
+#[test]
+fn local_attention_raise_is_suppressed_on_mirror_surface() {
+    use crate::core::AttentionKind;
+
+    let (mut state, mut engine) = test_state();
+    let local_sid = *engine
+        .workspaces
+        .get(state.active_workspace)
+        .unwrap()
+        .all_surface_ids()
+        .first()
+        .expect("기본 workspace 에 surface 하나");
+    let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
+
+    engine.raise_attention(mirror_sid, AttentionKind::Completion);
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        None,
+        "mirror surface 는 로컬 발동 대상이 아니다 — 서버 push 가 유일 소스"
+    );
+
+    engine.raise_attention(local_sid, AttentionKind::Completion);
+    assert_eq!(
+        engine.attention_kind(local_sid),
+        Some(AttentionKind::Completion),
+        "mirror 아닌 surface 는 그대로 발동해야 한다(억제는 mirror 한정)"
+    );
+}
+
+/// mirror 터미널도 서버가 흘려준 바이트를 그대로 파싱하므로 OSC 133 D 사건 자체는
+/// 미러에서도 발화한다 — 그게 이 버그의 전제다. 그 사건에 붙은 producer(
+/// `cascade_terminal_command_completed` 의 자동 경로 = `raise_attention(Completion)`)
+/// 만 mirror 에서 억제되고, mirror 아닌 surface 에서는 그대로 발동한다.
+#[test]
+fn osc133_command_completed_raises_attention_only_off_mirror() {
+    use crate::core::AttentionKind;
+    use tasty_terminal::TerminalEventKind;
+
+    /// OSC 133 D(명령 완료, exit 0). `handle_prompt_boundary` 가 phase 'D' 에서
+    /// `TerminalCommandCompleted` 를 만든다.
+    const OSC133_D: &[u8] = b"\x1b]133;D;0\x07";
+
+    let (mut state, mut engine) = test_state();
+    let local_sid = *engine
+        .workspaces
+        .get(state.active_workspace)
+        .unwrap()
+        .all_surface_ids()
+        .first()
+        .expect("기본 workspace 에 surface 하나");
+    let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
+
+    for sid in [local_sid, mirror_sid] {
+        engine
+            .find_terminal_by_id_mut(sid)
+            .expect("terminal surface")
+            .feed_bytes(OSC133_D);
+    }
+
+    let boundaries: Vec<u32> = engine
+        .collect_events()
+        .into_iter()
+        .filter(
+            |e| matches!(&e.kind, TerminalEventKind::PromptBoundary { phase, .. } if *phase == 'D'),
+        )
+        .map(|e| e.surface_id)
+        .collect();
+    assert!(
+        boundaries.contains(&mirror_sid),
+        "mirror 터미널도 OSC 133 D 를 파싱한다(억제 지점은 파서가 아니라 producer): {boundaries:?}"
+    );
+    assert!(
+        boundaries.contains(&local_sid),
+        "로컬 터미널의 OSC 133 D 파싱은 그대로여야 한다: {boundaries:?}"
+    );
+
+    // cascade 의 자동 경로가 하는 일 그대로 — 두 surface 에 동일 호출.
+    for sid in [local_sid, mirror_sid] {
+        engine.raise_attention(sid, AttentionKind::Completion);
+    }
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        None,
+        "mirror surface 에 도착한 OSC 133 D 는 attention 을 만들지 않는다"
+    );
+    assert_eq!(
+        engine.attention_kind(local_sid),
+        Some(AttentionKind::Completion),
+        "같은 사건이 mirror 아닌 surface 에서는 그대로 attention 을 만든다"
+    );
+}
+
+/// 억제 대상은 attention 레코드 **한 줄뿐**이다 — Bell / OSC 9·777 cascade 가 같이
+/// 만드는 알림 패널 아이템은 mirror 에서도 그대로 생겨야 한다. 이게 무너지면 원격
+/// 작업 중 벨 알림이 통째로 사라지는 별개 회귀다.
+#[test]
+fn mirror_surface_notification_item_survives_the_attention_gate() {
+    use crate::core::AttentionKind;
+
+    let (mut state, mut engine) = test_state();
+    let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
+    let mirror_ws_id = engine
+        .workspaces
+        .get(state.active_workspace)
+        .expect("mirror workspace")
+        .id;
+
+    // 알림 생성 cascade(`NotificationPushRequested`)가 하는 순서 그대로.
+    let created = engine.notifications.add(
+        mirror_ws_id,
+        mirror_sid,
+        "bell".to_string(),
+        "ring".to_string(),
+    );
+    assert!(
+        created.is_some(),
+        "mirror surface 의 벨/알림도 패널 아이템은 그대로 만들어야 한다"
+    );
+    engine.raise_attention(mirror_sid, AttentionKind::Completion);
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        None,
+        "알림은 남기되 attention 레코드만 억제한다"
+    );
+}
+
+/// `surface.completion` IPC/CLI 가 mirror 의 **로컬** surface id 를 대상으로 불려도
+/// (미러 인스턴스에서 도는 에이전트/플러그인이 그럴 수 있다) 레코드를 만들지 않는다.
+/// 정책은 "억제" — 서버로 forward 하지 않는다(`docs/adr/0098-...`).
+#[test]
+fn surface_completion_on_mirror_surface_is_suppressed() {
+    use crate::core::AttentionKind;
+
+    let (mut state, mut engine) = test_state();
+    let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
+
+    // `cascade_surface_completion` 이 하는 일 그대로 — kind 는 호출자가 정한다.
+    engine.raise_attention(mirror_sid, AttentionKind::NeedsInput);
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        None,
+        "mirror 대상 surface.completion 은 억제된다(kind 무관)"
+    );
+}
+
+/// 억제 게이트가 **서버 push 적용 경로를 막지 않는다.** 적용은 로컬 producer 축이
+/// 아니라 원격 전용 진입점(`set_mirror_surface_attention`)이라, 같은 mirror surface
+/// 에 대해서도 값이 그대로 남아야 한다 — 이게 막히면 미러 배지가 전부 사라진다.
+#[test]
+fn server_push_apply_is_not_blocked_by_the_mirror_gate() {
+    use crate::core::AttentionKind;
+
+    let (mut state, mut engine) = test_state();
+    let mirror_sid = add_mirror_test_workspace(&mut state, &mut engine);
+
+    engine.set_mirror_surface_attention(mirror_sid, Some(AttentionKind::NeedsInput));
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        Some(AttentionKind::NeedsInput),
+        "서버 push 는 억제 대상이 아니다 — 미러의 유일한 attention 소스"
+    );
+
+    // 그 뒤에 로컬 producer 가 끼어들어도 서버 값을 덮어쓰지 못한다.
+    engine.raise_attention(mirror_sid, AttentionKind::Completion);
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        Some(AttentionKind::NeedsInput),
+        "로컬 발동이 서버 push 값을 덮어쓰면 안 된다"
+    );
+
+    engine.set_mirror_surface_attention(mirror_sid, None);
+    assert_eq!(
+        engine.attention_kind(mirror_sid),
+        None,
+        "서버가 내려준 해제도 그대로 적용된다"
+    );
+}
+
 // ---- occupancy > completion 우선순위, NeedsInput > occupancy (ADR-0040, ADR-0062) ----
 
 /// 점유(soft) 중 surface 는 Completion 하이라이트가 억제된다: `regions_from_state` 의

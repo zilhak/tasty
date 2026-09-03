@@ -3,8 +3,9 @@
 - **Status**: Implemented
 - **주체**: AI Agent · 로컬 사용자
 - **ADR**: [ADR-0039](../../adr/0039-surface-highlight-shared-primitive.md) ·
-  [ADR-0062](../../adr/0062-attention-store-kind-aware-primitive.md)(kind 확장)
-- **코드**: `src/core/state/attention.rs` (상태·헬퍼·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
+  [ADR-0062](../../adr/0062-attention-store-kind-aware-primitive.md)(kind 확장) ·
+  [ADR-0098](../../adr/0098-mirror-local-attention-raise-suppressed.md)(mirror 로컬 발동 억제)
+- **코드**: `src/core/state/attention.rs` (상태·헬퍼·mirror 로컬 발동 억제 게이트·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
   `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) ·
   `src/adapters/ipc/handler/surface/completion.rs` (completion producer) ·
   `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) ·
@@ -29,6 +30,9 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
   아니다(아래 "kind → 효과" 참고).
 - **발동(raise)**: `raise_attention(surface_id, kind)` — `surface_id == 0`(미지정)은 무시.
   같은 surface 에 다시 raise 하면 최신 kind 로 완전히 대체된다(레코드는 surface 당 1개).
+  **mirror(원격 attach) surface 는 이 로컬 축의 대상이 아니다** — `raise_attention` 이
+  `is_mirror_surface` 로 걸러 no-op 으로 끝낸다(아래 "Producer" 의 mirror 항목). 미러의
+  값은 서버 push 전용 진입점(`set_mirror_surface_attention`)으로만 들어온다.
 - **해제(clear)**: `clear_attention(surface_id)`. 두 경로에서 호출된다:
   1. 매 렌더 프레임 **실제 렌더 시점 포커스** surface 에 대해 자동 호출(`gpu.rs`) —
      에이전트가 주입한 포커스가 아니라 실 사용자 포커스라 불가침 원칙 1 에 안전. kind 와
@@ -71,12 +75,15 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
 `AttentionStore` 는 **인스턴스 로컬**이다 — 인스턴스 간 자동 동기화가 없다. 그래서 원격
 attach 로 워크스페이스를 mirror 하는 쪽은 서버(surface 를 소유한 인스턴스)에서 발동한
 attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 플러그인 훅이 PTY 가
-있는 인스턴스에서만 발화하므로, push 가 없으면 미러 사용자에게 "응답 필요" 가 도달할 경로가
-**원천적으로 없다**.
+있는 인스턴스에서만 발화하고 그 훅 신호는 미러에 도달하지 않으므로, push 가 없으면 미러
+사용자에게 "응답 필요" 가 도달할 경로가 **원천적으로 없다**.
 
-- **진실 원천은 surface 를 소유한 인스턴스다.** producer 4 종(완료 IPC/CLI, Claude 훅,
-  OSC 133 명령 완료, toast)이 전부 그쪽에서 돌고, 미러는 서버가 push 한 값을 **반영만**
-  한다. busy(`StreamControl::Activity`)와 같은 방향·같은 이유의 단방향 채널이다.
+- **진실 원천은 surface 를 소유한 인스턴스다.** 미러는 서버가 push 한 값을 **반영만** 하고
+  자기 판단으로 레코드를 만들지 않는다(아래 Producer 의 mirror 항목).
+  busy(`StreamControl::Activity`)와 같은 방향·같은 이유의 단방향 채널이다.
+  단, "미러가 그 사건을 볼 수 없다" 는 **`NeedsInput` 에만 해당한다** — Claude 훅은 PTY 가
+  있는 쪽에서만 발화한다. `Completion` 쪽 producer 중 OSC 133 명령 완료·Bell·OSC 9/777 은
+  서버 바이트를 파싱하는 미러에서도 **실제로 발화하며**, 그래서 정책적으로 억제한다.
 - **서버측**: 1Hz `Tick::Busy` 에 편승해 `CoreState::forward_attention`
   (`core/attach_runtime.rs`)이 `attention_forwards`(`core/state/attention.rs`)가 계산한
   **점유 중 surface 의 변화분**만 `StreamControl::Attention{surface_id, kind}` 로 holder
@@ -91,9 +98,10 @@ attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 
   점 — attention 에는 `refresh_busy_surfaces` 같은 wholesale 교체가 없어 분리할 이유가 없다).
 - **적용 API 는 로컬 producer 와 분리한다.** 미러가 push 를 반영할 때
   `raise_attention`/`clear_attention` 을 타지 않고 `set_mirror_surface_attention` 전용
-  진입점을 쓴다 — 그 두 API 는 로컬 producer 축이고, mirror surface 를 대상으로 한 로컬
-  raise 억제나 해제 forward(mirror→server)가 붙는 자리다. 같은 함수를 타면 서버 push 가
-  자기 억제 게이트에 막히거나 서버가 내려준 해제가 서버로 되돌아가는 에코가 된다.
+  진입점을 쓴다 — 그 두 API 는 로컬 producer 축이다. `raise_attention` 에는 mirror
+  surface 로컬 발동 억제 게이트가 **이미 있고**(아래 Producer 의 mirror 항목),
+  `clear_attention` 은 해제 forward(mirror→server)가 붙을 자리다. 같은 함수를 타면 서버
+  push 가 그 억제 게이트에 막히고, 서버가 내려준 해제가 서버로 되돌아가는 에코가 된다.
 - **현재 보장 범위 / 남은 구멍 / 닫는 후속 작업.** push 가 보장하는 수렴은 **wire 축의
   유실뿐**이다 — 프레임이 드롭·지연돼도 서버 값이 그대로면 다음 tick 에 같은 값이 다시
   나간다. **미러가 자기 store 를 로컬로 바꾼 경우는 보장 밖**이다: 서버는 자기 값이
@@ -102,11 +110,12 @@ attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 
   매 프레임 포커스 해제)가 mirror surface 도 지우기 때문에, ① 서버 raise → push → 미러
   표시 → ② 미러 사용자가 포커스해 **로컬만** 해제 → ③ 서버가 **같은 kind** 로 재발동
   → 서버 값 불변이라 forward 대상 아님 → ④ 미러 표시가 돌아오지 않는다. 로컬 전용
-  환경에서는 ③ 에서 다시 뜨므로 **미러와 로컬의 관측 가능한 동작이 갈린다.** 닫는 것은
-  이 push 채널이 아니라 해제 축의 후속 작업 3 건이다 — (a) mirror surface 에 대한 로컬
-  raise·변이 억제, (b) 하드 점유 중 해제 권한을 홀더로 제한, (c) 미러의 해제를 서버로
-  forward(서버 값이 실제로 내려가야 같은 kind 재발동이 다시 push 된다). 바로 위 "적용
-  API 는 로컬 producer 와 분리한다" 가 비워 둔 자리가 그 셋이 붙을 곳이다.
+  환경에서는 ③ 에서 다시 뜨므로 **미러와 로컬의 관측 가능한 동작이 갈린다.** 발동 축은
+  이미 닫혔다 — 미러는 자기 판단으로 레코드를 만들지 않으므로(위 Producer 의 mirror
+  항목) 남은 divergence 는 **해제 축 하나뿐**이다. 그 축을 닫는 것은 이 push 채널이 아니라
+  (a) 하드 점유 중 해제 권한을 홀더로 제한하는 것과 (b) 미러의 해제를 서버로
+  forward 하는 것(서버 값이 실제로 내려가야 같은 kind 재발동이 다시 push 된다)이다.
+  바로 위 "적용 API 는 로컬 producer 와 분리한다" 가 비워 둔 자리가 그 둘이 붙을 곳이다.
 - **teardown**: mirror surface 가 사라지면(`cleanup_mirror_workspace` 의 세션 정리,
   `apply_mirror_structural_delta` 의 removed 처리) `forget_mirror_surface_attention` 으로
   레코드도 함께 버린다 — 로컬 id 가 재사용될 때 stale attention 이 새 surface 에 잘못
@@ -153,11 +162,23 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   Claude producer 와의 차이 — 셸이 OSC 133 통합을 로드해야만 동작(미설치 시
   "셸 통합 미설치" 안내 배너만 뜨고 attention 은 발동하지 않음). `NotificationStore::add()`
   를 호출하지 않으므로 알림 패널에는 아이템이 쌓이지 않는다.
-- **원격 attach 서버 push (mirror 한정)** — mirror(원격 attach client) surface 의
-  attention 은 로컬 producer 가 아니라 **서버가 push 한 값**이 만든다
-  (`StreamControl::Attention` → `CoreState::set_mirror_surface_attention`, 위 "원격 attach
-  mirror 로의 전파" 절). 위 4 종 producer 는 전부 surface 를 소유한 인스턴스에서 돌므로,
-  미러 쪽에는 그 producer 들이 애초에 존재하지 않는다.
+- **원격 attach 서버 push (mirror 한정) — mirror surface 는 로컬 producer 대상에서
+  제외되고, 서버 push 가 유일한 소스다.** mirror(원격 attach client) surface 의 attention
+  은 `StreamControl::Attention` → `CoreState::set_mirror_surface_attention` 으로만 들어온다
+  (위 "원격 attach mirror 로의 전파" 절).
+  - **로컬 producer 가 미러에서도 발화한다는 점에 주의.** 미러 터미널은 로컬 PTY 가 없지만
+    서버가 흘려준 바이트를 그대로 파싱하므로 OSC 133 D·Bell·OSC 9/777 이 미러에서도
+    나오고, `surface.completion` IPC/CLI 는 미러 인스턴스에서 도는 에이전트·플러그인이
+    **로컬 mirror surface id** 로 직접 부를 수 있다. 그대로 두면 같은 사건에 서버·미러가
+    각각 별개 레코드를 갖는 이중 상태가 되고, 미러에서 지운 값은 서버에 닿지 않는다.
+  - **억제는 `raise_attention` 단일 진입점에서 집행한다** (`src/core/state/attention.rs`) —
+    producer cascade 마다 게이트를 흩뿌리지 않으므로 위 producer 전부와 앞으로 추가될
+    producer 까지 함께 덮인다. 서버 push 적용 경로는 이 함수를 타지 않아 막히지 않는다.
+  - **억제 대상은 attention 레코드 하나뿐**이다. 같은 cascade 가 만드는 알림 패널 아이템·
+    토스트·훅(`HookEvent`) 발화는 게이트 밖이라 미러에서도 그대로 동작한다 — 원격 작업
+    중의 벨/알림은 여전히 유효한 로컬 UX 다.
+  - `surface.completion` 이 미러를 대상으로 불린 경우도 **서버로 forward 하지 않고 억제**
+    한다. 근거·대안은 [ADR-0098](../../adr/0098-mirror-local-attention-raise-suppressed.md).
 - **후속(미구현)** — 그 외 plugin(non-Claude AI 코딩 에이전트 등)이 자체 완료/확인대기
   신호를 이 attention API 에 연결하는 것. attention API 는 이들이 호출 가능하게 계속
   열려 있다.
@@ -188,6 +209,11 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 > e2e 로는 raise 축만 실행 가능하다. 미러가 받은 값을 실제 픽셀로 그리는 부분은
 > 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를 읽는다는 사실로 대체한다
 > (`docs/features/native-file-picker/index.md` 의 "검증 한계" 와 동종의 한계).
+>
+> **미러 측 로컬 발동 억제**도 같은 이유로 loopback e2e 가 아니라 `src/state/tests.rs` 의
+> 단위 테스트 5 종이 고정한다 — loopback client 는 raw `TcpStream` 이라 미러 `AttentionStore`
+> 자체가 없어 억제 경로를 실행조차 하지 않고, "미러 포커스 → 양쪽 해제" 는 해제
+> forward(mirror→server)가 들어오기 전에는 정의상 성립하지 않는 후속 범위다.
 
 ## 비-목표 (Out of scope)
 
@@ -236,6 +262,19 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
       `NeedsInput` 이 raise Then 1 tick(≤1s) 안에 미러의 `AttentionStore` 에 반영되어 사이드바
       needs-input 배지가 1 증가.
 - [ ] Given 위와 같이 반영된 상태 When 서버에서 해제 Then 미러에서도 사라진다(`kind: null` push).
+- [ ] Given mirror 워크스페이스의 surface M When 서버가 흘려준 출력에 OSC 133 D 가 섞여
+      도착 Then M 에는 attention 이 발동하지 않는다(로컬 발동 억제) — 같은 사건이 mirror
+      아닌 surface 에서는 그대로 발동한다. (단위 테스트로 고정됨:
+      `osc133_command_completed_raises_attention_only_off_mirror`)
+- [ ] Given mirror 워크스페이스의 surface M When M 에서 Bell / OSC 9·777 알림이 도착 Then
+      알림 패널 아이템·토스트는 그대로 생기되 attention 레코드만 생기지 않는다. (단위
+      테스트로 고정됨: `mirror_surface_notification_item_survives_the_attention_gate`)
+- [ ] Given mirror 워크스페이스의 surface M When 미러 인스턴스에서 `tasty surface completion
+      --surface M` 을 실행 Then attention 이 발동하지 않고 서버로도 forward 되지 않는다
+      (ADR-0098). 현재 IPC 응답은 `ok: true` 이며 억제는 `tracing::trace!` 로만 관측된다.
+- [ ] Given mirror 워크스페이스의 surface M When 서버가 `Attention` 프레임을 push Then 위
+      억제 게이트에 막히지 않고 그대로 반영된다(적용은 별도 진입점). (단위 테스트로 고정됨:
+      `server_push_apply_is_not_blocked_by_the_mirror_gate`)
 - [ ] Given 서버 attention 값이 바뀌지 않는 tick Then 프레임이 나가지 않는다(스팸 없음).
 - [ ] Given mirror surface 가 사라짐(세션 정리 / 구조 delta 제거) Then 그 로컬 id 의 attention
       레코드도 함께 정리된다 — 단, kind 변환(terminal → 다른 kind) 경로는 정리하지 않는다

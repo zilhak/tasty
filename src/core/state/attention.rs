@@ -4,6 +4,10 @@
 //! (`gpu.rs`) `clear_attention` 으로 해제된다. 세 소비처(테두리·탭 제목·워크스페이스
 //! 개수 배지)가 이 상태를 읽는다. `state/busy.rs` 의 조회 헬퍼 형태를 1:1 미러한다.
 //!
+//! 단, **mirror(원격 attach) surface 는 로컬 producer 의 대상이 아니다** — 그 값은
+//! 서버 push 만을 소스로 갖고 `set_mirror_surface_attention` 으로만 들어온다.
+//! `raise_attention` 이 그 게이트를 집행한다.
+//!
 //! `AttentionStore` 는 `NotificationStore` 와 별개다 — attention 레코드가 곧 패널
 //! 아이템은 아니다. 패널 노출 여부는 kind 별 정책(`effects_of` 의 `panel_item`)이
 //! 결정하며, 실제 패널 아이템 생성은 지금처럼 producer 가 `notifications.add()` 를
@@ -164,11 +168,31 @@ impl CoreState {
     /// Mark a surface as needing attention. Called by any producer (toast,
     /// completion, OSC 133, …). `surface_id == 0`(=미지정) 은 무시한다.
     ///
-    /// `effects_of(kind)` 정책을 여기 한 곳에서 조회한다 — 이 TODO 범위(kind=Completion)
-    /// 는 `panel_item`/`os_notify`/`sound` 가 전부 false 라 로그 외 추가 집행이 없지만,
-    /// `attention-needs-input-visuals` 가 kind 를 늘리면 이 자리에서 분기가 생긴다.
-    /// (`level` 은 아직 소비처가 없다 — 향후 테두리/배지 색 우선순위가 읽는다.)
+    /// `effects_of(kind)` 정책을 여기 한 곳에서 조회한다 — `panel_item`/`os_notify`/
+    /// `sound` 를 kind 별로 분기할 자리다.
+    ///
+    /// **mirror surface 는 대상에서 제외된다.** attention 의 진실 원천은 surface 를
+    /// 소유한 인스턴스이고 미러는 서버 push 를 반영만 하므로
+    /// ([`set_mirror_surface_attention`](Self::set_mirror_surface_attention)),
+    /// 로컬 producer 가 미러에 자기 레코드를 만들면 같은 사건에 서버·미러가 각각
+    /// 별개 레코드를 갖는 이중 상태가 된다. 미러 터미널도 서버가 흘려준 바이트를
+    /// 그대로 파싱하므로 OSC 133 D·Bell·OSC 9/777 이 미러에서도 발화하는데, 그
+    /// 사건은 서버에서도 똑같이 발화해 push 로 내려오므로 억제해도 정보가 사라지지
+    /// 않는다. 게이트를 producer cascade 가 아니라 **이 단일 진입점**에 두어 네
+    /// producer(OSC 133 자동 경로 · 알림 생성 cascade · `surface.completion` IPC/CLI ·
+    /// Windows resume 헬스 패스)와 앞으로 추가될 producer 까지 한 번에 덮는다.
+    /// 억제 대상은 attention 레코드 하나뿐이다 — 같은 cascade 의 알림 패널 아이템·
+    /// 토스트·훅 발화는 이 게이트 밖이라 미러에서도 그대로 동작한다.
+    /// 상세: `docs/features/surface-highlight/index.md` "Producer".
     pub(crate) fn raise_attention(&mut self, surface_id: u32, kind: AttentionKind) {
+        if self.is_mirror_surface(surface_id) {
+            tracing::trace!(
+                surface_id,
+                kind = ?kind,
+                "attention raise suppressed — mirror surface (server push is the only source)"
+            );
+            return;
+        }
         let effects = effects_of(kind);
         tracing::trace!(
             surface_id,
@@ -192,10 +216,11 @@ impl CoreState {
     /// `kind == None` 은 해제.
     ///
     /// 로컬 producer 의 `raise_attention`/`clear_attention` 을 **일부러 타지 않는다.**
-    /// 그 두 API 는 로컬 producer 축에 속하고, 앞으로 mirror surface 를 대상으로 한
-    /// 로컬 raise 억제 게이트와 해제 forward(mirror→server) 큐가 붙는 자리다 —
-    /// 서버가 내려준 값을 적용하면서 같은 함수를 타면 억제 게이트에 자기 push 가
-    /// 막히거나, 서버가 내려준 해제가 곧바로 서버로 되돌아가는 에코가 된다.
+    /// 그 두 API 는 로컬 producer 축이다 — [`raise_attention`](Self::raise_attention)
+    /// 에는 mirror surface 를 대상으로 한 **로컬 raise 억제 게이트가 이미 있고**,
+    /// `clear_attention` 은 해제 forward(mirror→server)가 붙을 자리다. 서버가 내려준
+    /// 값을 적용하면서 같은 함수를 타면 그 억제 게이트에 자기 push 가 막히고, 서버가
+    /// 내려준 해제는 곧바로 서버로 되돌아가는 에코가 된다.
     ///
     /// 저장 위치는 busy 와 다르다 — busy 는 `refresh_busy_surfaces` 가 매 tick
     /// `busy_surfaces` 를 통째로 교체하므로 mirror 값을 `mirror_busy_surfaces` 별도
