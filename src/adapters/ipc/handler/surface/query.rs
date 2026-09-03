@@ -5,8 +5,9 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 
-/// `surface.screen_text` — optional `lines`(하단 N 줄), `show_dim`(기본 false: dim/
-/// ghost-suggestion 셀 제외 — 실제 입력된 텍스트만 반환).
+/// `surface.screen_text` — optional `lines`(**마지막 N 줄** — 하단 공백 행은 건너뛰고
+/// 모자라면 스크롤백에서 채운다), `show_dim`(기본 false: dim/ghost-suggestion 셀
+/// 제외 — 실제 입력된 텍스트만 반환).
 pub(crate) fn handle_screen_text(
     _state: &AppState,
     engine: &crate::core::CoreState,

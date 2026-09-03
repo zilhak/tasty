@@ -44,7 +44,8 @@ pub enum ReadCommands {
         /// Surface ID (default: focused)
         #[arg(long)]
         surface: Option<u32>,
-        /// Number of lines to read from the bottom (dips into scrollback if needed)
+        /// Number of lines to read from the bottom (dips into scrollback if needed).
+        /// Counted from the end of the content: trailing blank rows are skipped.
         #[arg(long)]
         lines: Option<usize>,
         /// Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells.

@@ -33,7 +33,9 @@ pub enum PtyCommands {
         /// Target pty id.
         #[arg(long)]
         id: u32,
-        /// Only the bottom N lines (default: full visible screen).
+        /// Last N lines of content (default: full visible screen). Trailing blank
+        /// rows are skipped and the shortfall is filled from scrollback, so N means
+        /// "the last N lines actually printed", not "the bottom N grid rows".
         #[arg(long)]
         lines: Option<usize>,
         /// Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells.

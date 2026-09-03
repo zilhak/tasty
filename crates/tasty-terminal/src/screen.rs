@@ -47,60 +47,83 @@ impl TerminalState {
         result
     }
 
-    /// Get the last N lines of terminal output (screen + scrollback from the bottom).
-    /// If N is larger than available lines, returns everything available.
+    /// Get the last N lines of terminal output, counted from the **end of the
+    /// content** rather than the bottom edge of the grid.
+    ///
+    /// The screen grid is almost always taller than what the shell has printed, so
+    /// the rows below the cursor are blank. Slicing the bottom N grid rows therefore
+    /// returns nothing but blank lines whenever the content sits near the top — the
+    /// exact situation after a fresh shell prompt or a couple of commands. Instead we
+    /// find the last row that still has content, take up to N rows ending there, and
+    /// top the result up from scrollback when the screen alone cannot supply N lines.
+    /// That makes `n` mean the same thing at every magnitude and matches what the CLI
+    /// documents (`--lines`: "from the bottom, dips into scrollback if needed").
+    ///
+    /// Only the **run of blank rows at the bottom of the screen grid** is skipped.
+    /// Blank lines *inside* the content are real output, so they are kept and counted
+    /// toward `n`, and lines pulled from scrollback are counted as they come — a blank
+    /// line at the tail of the scrollback stays in the result. If the screen and the
+    /// scrollback together hold fewer than `n` lines, everything available is returned.
+    ///
+    /// The scrollback top-up applies on the alternate screen too: an alt screen has no
+    /// scrollback of its own, so a TUI that leaves its lower rows blank is filled out
+    /// of the primary scrollback. That matches what the previous implementation already
+    /// did whenever `n` exceeded the screen height.
+    ///
+    /// Emptiness is judged with the same `include_dim` the caller asked for, so
+    /// `--show-dim` never changes how many lines come back for the same buffer: with
+    /// `include_dim=false` a row holding only a dim ghost-suggestion counts as blank,
+    /// which is consistent with those cells being excluded from the output anyway.
     pub fn screen_text_lines(&self, n: usize, include_dim: bool) -> String {
         let surface = self.surface();
         let screen_lines = surface.screen_lines();
-        let screen_count = screen_lines.len();
         let scrollback_total = self.scrollback_len();
 
-        if n <= screen_count {
-            // Only need lines from the current screen (bottom N rows)
-            let start = screen_count - n;
-            let mut result = String::new();
-            for line in &screen_lines[start..] {
-                result.push_str(line_text(line, include_dim).trim_end());
-                result.push('\n');
-            }
-            while result.ends_with("\n\n") {
-                result.pop();
-            }
-            result
-        } else {
-            // Need scrollback lines + full screen
-            let scrollback_needed = (n - screen_count).min(scrollback_total);
-            let scrollback_start = scrollback_total - scrollback_needed;
+        // Render each screen row once and reuse it for both the emptiness test and
+        // the output — `line_text` walks every cell, so computing it twice per row
+        // would double the work for no gain.
+        let rendered: Vec<String> = screen_lines
+            .iter()
+            .map(|line| line_text(line, include_dim).trim_end().to_string())
+            .collect();
 
-            let mut result = String::new();
+        // One past the last row that has content. A `trim_end`-ed row is empty
+        // exactly when the raw row was all whitespace, so `is_empty()` here is the
+        // same test as `line_text(..).trim().is_empty()`.
+        let content_end = rendered
+            .iter()
+            .rposition(|text| !text.is_empty())
+            .map_or(0, |i| i + 1);
 
-            // Append scrollback lines (from scrollback_start to end)
-            for i in scrollback_start..scrollback_total {
-                let line_text = self
-                    .scrollback_line_owned(i)
-                    .map(|cells| {
-                        cells
-                            .iter()
-                            .filter(|(_, attrs)| include_dim || !is_dim(attrs))
-                            .map(|(s, _)| s.as_str())
-                            .collect::<String>()
-                    })
-                    .unwrap_or_default();
-                result.push_str(line_text.trim_end());
-                result.push('\n');
-            }
+        let take_from_screen = n.min(content_end);
+        let screen_start = content_end - take_from_screen;
+        let scrollback_needed = (n - take_from_screen).min(scrollback_total);
+        let scrollback_start = scrollback_total - scrollback_needed;
 
-            // Append all screen lines
-            for line in screen_lines {
-                result.push_str(line_text(&line, include_dim).trim_end());
-                result.push('\n');
-            }
+        let mut result = String::new();
 
-            while result.ends_with("\n\n") {
-                result.pop();
-            }
-            result
+        // Oldest first: the scrollback fill comes before the screen slice.
+        for i in scrollback_start..scrollback_total {
+            let text = self
+                .scrollback_line_owned(i)
+                .map(|cells| {
+                    cells
+                        .iter()
+                        .filter(|(_, attrs)| include_dim || !is_dim(attrs))
+                        .map(|(s, _)| s.as_str())
+                        .collect::<String>()
+                })
+                .unwrap_or_default();
+            result.push_str(text.trim_end());
+            result.push('\n');
         }
+
+        for text in &rendered[screen_start..content_end] {
+            result.push_str(text);
+            result.push('\n');
+        }
+
+        result
     }
 
     /// Get the text of a specific row (0-indexed), trimmed.
@@ -290,6 +313,170 @@ mod tests {
 
         assert_eq!(t.screen_text_lines(1, false).trim_end(), "real");
         assert!(t.screen_text_lines(1, true).contains("ghost"));
+    }
+
+    // ── screen_text_lines: content-based "last N lines" ──
+    //
+    // 이 블록의 시나리오는 전부 `new_detached`(PTY·스레드 없음)로 구성한다 —
+    // 플랫폼 의존 없음.
+
+    /// 화면 높이보다 짧은 내용 + 작은 `n`. 예전 구현은 grid 하단 N 행을 그대로 잘라
+    /// 공백만 담긴 `"\n"` 을 돌려줬다 — 실사용에서 살아 있는 터미널을 죽은 것으로
+    /// 오판하게 만든 결함이다.
+    #[test]
+    fn screen_text_lines_skips_trailing_blank_rows() {
+        let mut t = Terminal::new_detached(20, 24);
+        t.feed_bytes(b"one\r\ntwo\r\nthree");
+
+        assert_eq!(t.screen_text_lines(6, false), "one\ntwo\nthree\n");
+    }
+
+    /// 내용이 `n` 보다 많으면 정확히 마지막 `n` 줄만 나온다.
+    #[test]
+    fn screen_text_lines_returns_exactly_last_n_of_content() {
+        let mut t = Terminal::new_detached(20, 24);
+        let payload: Vec<u8> = (0..10)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\r\n")
+            .into_bytes();
+        t.feed_bytes(&payload);
+
+        assert_eq!(t.screen_text_lines(3, false), "line7\nline8\nline9\n");
+    }
+
+    /// 화면 내용이 `n` 에 모자라면 스크롤백에서 채운다 — 순서는 [스크롤백] → [화면].
+    #[test]
+    fn screen_text_lines_fills_shortfall_from_scrollback() {
+        // 4 행짜리 화면에 8 줄을 흘리면 앞 4 줄이 스크롤백으로 밀리고 뒤 4 줄이 남는다.
+        let mut t = Terminal::new_detached(20, 4);
+        t.feed_bytes(b"s0\r\ns1\r\ns2\r\ns3\r\ns4\r\nv0\r\nv1\r\nv2");
+        assert_eq!(t.scrollback_len(), 4, "앞 4 줄이 스크롤백으로 밀려야 한다");
+
+        // 화면이 줄 수 있는 건 4 줄뿐 → 부족한 2 줄을 스크롤백 *끝* 에서 가져온다.
+        assert_eq!(t.screen_text_lines(6, false), "s2\ns3\ns4\nv0\nv1\nv2\n");
+    }
+
+    /// 하단 공백 스킵 + 스크롤백 채움이 **동시에** 걸리는 경우. 화면 내용이 `n` 보다
+    /// 적으면서 그 아래가 공백인 상태 — 결함이 실제로 관측된 형태다.
+    #[test]
+    fn screen_text_lines_fills_from_scrollback_when_screen_has_trailing_blanks() {
+        let mut t = Terminal::new_detached(20, 6);
+        // 6 행 화면에 8 줄 → 앞 2 줄이 스크롤백, 화면엔 6 줄.
+        t.feed_bytes(b"p0\r\np1\r\np2\r\np3\r\np4\r\np5\r\np6\r\np7");
+        assert_eq!(t.scrollback_len(), 2);
+        // 화면을 지우고 위쪽 2 줄만 다시 그려 하단 4 행을 공백으로 만든다.
+        t.feed_bytes(b"\x1b[2J\x1b[H");
+        t.feed_bytes(b"q0\r\nq1");
+
+        // 화면 내용 2 줄 + 스크롤백에서 2 줄. 예전 구현은 하단 3 행(전부 공백)을 잘라
+        // 빈 결과를 냈다.
+        assert_eq!(t.screen_text_lines(4, false), "p0\np1\nq0\nq1\n");
+    }
+
+    /// 요청 `n` 이 화면 높이보다 큰 경우에도 스크롤백까지 내려간다.
+    #[test]
+    fn screen_text_lines_larger_than_screen_height_dips_into_scrollback() {
+        let mut t = Terminal::new_detached(20, 4);
+        let payload: Vec<u8> = (0..30)
+            .map(|i| format!("n{i}"))
+            .collect::<Vec<_>>()
+            .join("\r\n")
+            .into_bytes();
+        t.feed_bytes(&payload);
+
+        let out = t.screen_text_lines(10, false);
+        let lines: Vec<&str> = out.trim_end_matches('\n').split('\n').collect();
+        assert_eq!(lines.len(), 10, "화면 높이(4)를 넘어 10 줄을 채워야 한다");
+        assert_eq!(lines.first(), Some(&"n20"));
+        assert_eq!(lines.last(), Some(&"n29"));
+    }
+
+    /// 스크롤백까지 합쳐도 `n` 에 모자라면 있는 만큼 — 패닉 없음(`min` 방어).
+    #[test]
+    fn screen_text_lines_returns_all_available_when_short() {
+        let mut t = Terminal::new_detached(20, 24);
+        t.feed_bytes(b"a\r\nb\r\nc\r\nd");
+
+        assert_eq!(t.screen_text_lines(10, false), "a\nb\nc\nd\n");
+    }
+
+    /// 내용 *중간* 의 빈 줄은 실제 출력이므로 보존하고 줄 수에도 포함한다.
+    #[test]
+    fn screen_text_lines_preserves_interior_blank_lines() {
+        let mut t = Terminal::new_detached(20, 24);
+        t.feed_bytes(b"a\r\n\r\nb");
+
+        assert_eq!(t.screen_text_lines(3, false), "a\n\nb\n");
+    }
+
+    /// 화면이 통째로 비었으면 전부 스크롤백에서 채운다.
+    #[test]
+    fn screen_text_lines_all_blank_screen_falls_back_to_scrollback() {
+        let mut t = Terminal::new_detached(20, 4);
+        t.feed_bytes(b"k0\r\nk1\r\nk2\r\nk3\r\nk4\r\n");
+        // 마지막 개행으로 커서가 빈 하단 행에 있고, 화면 위쪽만 내용이 있다.
+        // 화면을 통째로 지워 content_end == 0 을 만든다(ED2 + 커서 홈).
+        t.feed_bytes(b"\x1b[2J\x1b[H");
+
+        let out = t.screen_text_lines(2, false);
+        assert!(
+            !out.is_empty(),
+            "화면이 비어도 스크롤백에서 채워야 한다 (got {out:?})"
+        );
+        let lines: Vec<&str> = out.trim_end_matches('\n').split('\n').collect();
+        assert_eq!(lines.len(), 2);
+    }
+
+    /// 화면도 스크롤백도 비어 있으면 패닉 없이 빈 결과.
+    #[test]
+    fn screen_text_lines_empty_everywhere_is_empty() {
+        let t = Terminal::new_detached(20, 24);
+
+        assert_eq!(t.scrollback_len(), 0);
+        assert_eq!(t.screen_text_lines(5, false), "");
+    }
+
+    /// `include_dim` 값이 빈 행 판정과 출력 양쪽에 같은 값으로 쓰여야 한다 —
+    /// ghost 만 있는 행이 `false` 에서는 빈 행, `true` 에서는 내용 행이 된다.
+    #[test]
+    fn screen_text_lines_blankness_follows_include_dim() {
+        let mut t = Terminal::new_detached(20, 24);
+        t.feed_bytes(b"real\r\n");
+        t.feed_bytes(SGR_FAINT);
+        t.feed_bytes(b"ghost");
+        t.feed_bytes(SGR_RESET);
+
+        // include_dim=false: ghost 행은 빈 행 → 내용의 끝은 "real".
+        assert_eq!(t.screen_text_lines(1, false), "real\n");
+        // include_dim=true: ghost 행이 내용의 끝.
+        assert_eq!(t.screen_text_lines(1, true), "ghost\n");
+    }
+
+    /// 경계값: `n = 0` / `1` / 화면 높이 / 화면 높이 + 1 에서 off-by-one 없음.
+    #[test]
+    fn screen_text_lines_boundary_values() {
+        let mut t = Terminal::new_detached(20, 4);
+        // 화면 4 행을 내용으로 가득 채운다(스크롤백 없음).
+        t.feed_bytes(b"b0\r\nb1\r\nb2\r\nb3");
+        assert_eq!(t.scrollback_len(), 0);
+
+        assert_eq!(t.screen_text_lines(0, false), "");
+        assert_eq!(t.screen_text_lines(1, false), "b3\n");
+        assert_eq!(t.screen_text_lines(4, false), "b0\nb1\nb2\nb3\n");
+        // 스크롤백이 없으므로 화면 높이 + 1 은 화면 전체와 같다.
+        assert_eq!(t.screen_text_lines(5, false), "b0\nb1\nb2\nb3\n");
+    }
+
+    /// 화면이 하단까지 내용으로 차 있는 TUI(alternate screen) 형태에서는
+    /// content_end == 화면 높이라 결과가 기존 동작과 동일하다 — 회귀 없음.
+    #[test]
+    fn screen_text_lines_full_screen_is_plain_bottom_slice() {
+        let mut t = Terminal::new_detached(20, 4);
+        t.feed_bytes(b"\x1b[?1049h"); // alternate screen 진입
+        t.feed_bytes(b"t0\r\nt1\r\nt2\r\nt3");
+
+        assert_eq!(t.screen_text_lines(3, false), "t1\nt2\nt3\n");
     }
 
     #[test]

@@ -29,7 +29,7 @@
 |-----|-----------|------|------|
 | `tasty pty spawn [--cwd <dir>] [-- <cmd>...]` | `pty.spawn` | `TerminalSpawn` | headless PTY 를 띄우고 pty id 반환. command(trailing var-arg) 생략 시 bare shell, 지정 시 즉시 실행(initial stdin 주입). 상한 초과 시 에러. |
 | `tasty pty write --id <n> "<text>"` | `pty.write` | `TerminalWrite` | 실행 중 PTY 에 stdin 을 as-is 전송(자동 제출 없음 — 개행은 호출자 포함). idle 리셋. |
-| `tasty pty read --id <n> [--lines <k>] [--show-dim]` | `pty.read` | `TerminalRead` | 현재 화면 텍스트 읽기(옵션 `lines`=하단 N줄). `surface.screen_text` 와 동일 추출. idle 리셋. dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀은 기본 제외 — `--show-dim`/`show_dim:true` 로 포함. |
+| `tasty pty read --id <n> [--lines <k>] [--show-dim]` | `pty.read` | `TerminalRead` | 현재 화면 텍스트 읽기(옵션 `lines`=내용 기준 마지막 N줄 — 하단 공백 행 건너뜀, 모자라면 스크롤백에서 채움). `surface.screen_text` 와 동일 추출. idle 리셋. dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀은 기본 제외 — `--show-dim`/`show_dim:true` 로 포함. |
 | `tasty pty wait --id <n>` | `pty.wait` | `TerminalRead` | 즉시 반환 폴링(blocking 아님). exit cell 조회 → `{exited, exit_code, success}`. idle 리셋. |
 | `tasty pty kill --id <n>` | `pty.kill` | `TerminalWrite` | 프로세스 종료 + 두 store 회수(Surface 를 닫는 게 아님 — headless 라 없음). |
 | `tasty pty list` | `pty.list` | `TerminalRead` | 살아있는 headless PTY 전체 목록(`id`/`owner_agent_id`/`cwd`/`command`/`has_exited`/`exit_code`). 접근 시 idle sweep(주기 타이머와 별개로 항상 돈다). |

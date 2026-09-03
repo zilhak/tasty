@@ -33,6 +33,7 @@ pkill -f "target/debug/tasty\$"                          # 종료
 ### 자주 쓰는 시나리오
 
 - **PTY 입출력**: `send text` → `read screen` 으로 echo/명령 결과 확인. `read screen`(`surface.screen_text`/`pty.read`)은 dim(ghost-suggestion, 예: Claude Code CLI 가 그리는 미제출 자동완성 제안) 셀을 기본 제외한다 — 제안 텍스트가 실제 입력된 것처럼 오독되는 걸 막기 위함. 제안까지 보고 싶으면 `--show-dim`.
+  - `--lines N` 은 **내용 기준 마지막 N 줄**이다 — grid 하단 N 행이 아니다. 내용 아래의 공백 행은 건너뛰고, 화면 내용이 N 에 모자라면 스크롤백에서 채운다. 따라서 N 의 크기와 무관하게 의미가 같고, **살아 있는 터미널이 `--lines` 때문에 빈 결과를 내는 일은 없다.** 빈 결과가 나왔다면 실제로 출력이 없는 것이므로 "surface 가 죽었다" 로 넘어가기 전에 `--lines` 없는 전체 화면과 대조한다.
 - **레이아웃 저장/복원**: dirty 트리거 발생 → 슬롯 파일 확인(debug 검증이면 `~/.tasty-debug/layouts/NN.json`) → kill → 재시작 → `read screen` 으로 복원 확인.
 - **Surface meta**: `surface-meta set/get/list` 로 키-값 확인.
 - **Hook/플러그인**: `tasty list hooks` · `tasty plugin list` 로 등록 상태, 호출 결과는 plugin 로그(`~/.tasty/plugins-logs/`).

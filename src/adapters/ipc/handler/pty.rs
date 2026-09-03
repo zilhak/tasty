@@ -201,7 +201,8 @@ pub(crate) fn handle_write(engine: &mut CoreState, id: Value, params: &Value) ->
     JsonRpcResponse::success(id, json!({ "id": pty_id, "written": text.len() }))
 }
 
-/// `pty.read` — PTY 의 현재 화면 텍스트를 읽는다(optional `lines`=하단 N 줄).
+/// `pty.read` — PTY 의 현재 화면 텍스트를 읽는다(optional `lines`=**마지막 N 줄** —
+/// 하단 공백 행은 건너뛰고 모자라면 스크롤백에서 채운다).
 /// `surface.screen_text` 와 동일 추출 경로. idle 타이머 리셋.
 /// `show_dim`(기본 false): dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀을
 /// 결과에 포함할지 — 기본은 제외해 실제 입력된 텍스트만 반환한다.
