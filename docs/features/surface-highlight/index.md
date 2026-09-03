@@ -4,13 +4,15 @@
 - **주체**: AI Agent · 로컬 사용자
 - **ADR**: [ADR-0039](../../adr/0039-surface-highlight-shared-primitive.md) ·
   [ADR-0062](../../adr/0062-attention-store-kind-aware-primitive.md)(kind 확장) ·
-  [ADR-0098](../../adr/0098-mirror-local-attention-raise-suppressed.md)(mirror 로컬 발동 억제)
+  [ADR-0098](../../adr/0098-mirror-local-attention-raise-suppressed.md)(mirror 로컬 발동 억제) ·
+  [ADR-0104](../../adr/0104-mirror-attention-clear-forwarded-to-owner.md)(mirror 해제 edge 전달)
 - **코드**: `src/core/state/attention.rs` (상태·헬퍼·mirror 로컬 발동 억제 게이트·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
   `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) ·
   `src/adapters/ipc/handler/surface/completion.rs` (completion producer) ·
   `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) ·
   `src/app/dispatch_domain.rs::cascade_terminal_command_completed` (OSC 133 명령 완료 producer) ·
-  `src/core/attach_runtime.rs::forward_attention` + `src/app/attach_client.rs` (원격 attach mirror 전파)
+  `src/core/attach_runtime.rs::forward_attention`/`apply_attached_attention_clear` +
+  `src/app/attach_client.rs` (원격 attach mirror 전파 — server→client push, client→server 해제 edge)
 - **화면**: 없음 — 세 소비처(테두리·탭·사이드바)에 투영되는 상태 (전용 화면 없음)
 
 ## 목적
@@ -33,17 +35,25 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
   **mirror(원격 attach) surface 는 이 로컬 축의 대상이 아니다** — `raise_attention` 이
   `is_mirror_surface` 로 걸러 no-op 으로 끝낸다(아래 "Producer" 의 mirror 항목). 미러의
   값은 서버 push 전용 진입점(`set_mirror_surface_attention`)으로만 들어온다.
-- **해제(clear)**: `clear_attention(surface_id)`. 두 경로에서 호출된다:
+- **해제(clear)**: `clear_attention(surface_id) -> bool` — 반환값은 **실제로 레코드를
+  제거했는지**(= 해제 edge)다. 레코드가 없는 상태의 호출은 no-op(`false`)이라, 매 프레임
+  도는 호출부에서도 상태가 바뀐 순간에만 신호가 나간다. 두 경로에서 호출된다:
   1. 매 렌더 프레임 **실제 렌더 시점 포커스** surface 에 대해 자동 호출(`gpu.rs`) —
      에이전트가 주입한 포커스가 아니라 실 사용자 포커스라 불가침 원칙 1 에 안전. kind 와
-     무관하게 단일 규칙(`Completion`/`NeedsInput` 모두 이 경로로 해제). **mirror surface 도
-     예외가 아니다** — 그 결과 서버가 push 한 값을 미러가 로컬로만 지우게 되는데, 아래
-     "원격 attach mirror 로의 전파" 의 "현재 보장 범위 / 남은 구멍" 항목 참조.
+     무관하게 단일 규칙(`Completion`/`NeedsInput` 모두 이 경로로 해제).
   2. 그 surface 를 source 로 하는 알림을 읽음 처리(개별/전체)했을 때, `CoreState::
      mark_notification_read`/`mark_all_notifications_read`(`state/attention.rs`)가
      그 surface 에 남은 안읽음 알림이 없는 경우에만 호출 — 같은 surface 의 다른 알림이
      아직 안읽음이면 지우지 않는다(무조건 clear 시 다른 안읽음 알림의 주의 환기를
      오해제하는 엣지 케이스가 있어 조건부로만 지운다).
+
+  **해제 판정은 surface 를 소유한 인스턴스 밖에서도 일어난다.** 원격 attach 로 mirror
+  중이면 위 두 경로가 **미러 인스턴스**에서 발동한다(미러 사용자의 실-포커스, 미러 로컬
+  알림의 읽음 처리). 미러 사용자의 어떤 행동도 서버의 이 두 경로를 발동시킬 수 없고
+  서버 사용자는 하드 점유된 surface 를 굳이 포커스할 이유가 없으므로, 그 판정을 옮기지
+  않으면 서버 쪽 해제 주체가 아예 없다. 그래서 mirror surface 에서 발생한 **제거 edge 만**
+  `StreamControl::ClientAttentionClear` 로 소유 인스턴스에 1 회 전달한다 — 규칙 자체는
+  그대로이고 판정 결과만 옮긴다(아래 "원격 attach mirror 로의 전파" 의 해제 항목).
 - **조회**: `attention_kind(id) -> Option<AttentionKind>`,
   `attention_count_of_kind(kind, &[id]) -> usize`,
   `attention_dominant_kind(&[id]) -> Option<AttentionKind>`(목록 중 최고 우선순위 kind —
@@ -99,23 +109,25 @@ attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 
 - **적용 API 는 로컬 producer 와 분리한다.** 미러가 push 를 반영할 때
   `raise_attention`/`clear_attention` 을 타지 않고 `set_mirror_surface_attention` 전용
   진입점을 쓴다 — 그 두 API 는 로컬 producer 축이다. `raise_attention` 에는 mirror
-  surface 로컬 발동 억제 게이트가 **이미 있고**(아래 Producer 의 mirror 항목),
-  `clear_attention` 은 해제 forward(mirror→server)가 붙을 자리다. 같은 함수를 타면 서버
-  push 가 그 억제 게이트에 막히고, 서버가 내려준 해제가 서버로 되돌아가는 에코가 된다.
-- **현재 보장 범위 / 남은 구멍 / 닫는 후속 작업.** push 가 보장하는 수렴은 **wire 축의
-  유실뿐**이다 — 프레임이 드롭·지연돼도 서버 값이 그대로면 다음 tick 에 같은 값이 다시
-  나간다. **미러가 자기 store 를 로컬로 바꾼 경우는 보장 밖**이다: 서버는 자기 값이
-  바뀌지 않는 한 다시 push 하지 않으므로, 미러가 로컬에서 지운 값은 서버 값이 실제로
-  달라지기 전까지 되돌아오지 않는다. 구체적으로 위 "해제(clear)" 1번 경로(`gpu.rs` 의
-  매 프레임 포커스 해제)가 mirror surface 도 지우기 때문에, ① 서버 raise → push → 미러
-  표시 → ② 미러 사용자가 포커스해 **로컬만** 해제 → ③ 서버가 **같은 kind** 로 재발동
-  → 서버 값 불변이라 forward 대상 아님 → ④ 미러 표시가 돌아오지 않는다. 로컬 전용
-  환경에서는 ③ 에서 다시 뜨므로 **미러와 로컬의 관측 가능한 동작이 갈린다.** 발동 축은
-  이미 닫혔다 — 미러는 자기 판단으로 레코드를 만들지 않으므로(위 Producer 의 mirror
-  항목) 남은 divergence 는 **해제 축 하나뿐**이다. 그 축을 닫는 것은 이 push 채널이 아니라
-  (a) 하드 점유 중 해제 권한을 홀더로 제한하는 것과 (b) 미러의 해제를 서버로
-  forward 하는 것(서버 값이 실제로 내려가야 같은 kind 재발동이 다시 push 된다)이다.
-  바로 위 "적용 API 는 로컬 producer 와 분리한다" 가 비워 둔 자리가 그 둘이 붙을 곳이다.
+  surface 로컬 발동 억제 게이트가 있고, `clear_attention` 에는 mirror 해제 edge 의
+  forward 큐 push 가 있다. 같은 함수를 타면 서버 push 가 그 억제 게이트에 막히고, 서버가
+  내려준 해제가 곧바로 서버로 되돌아가는 에코가 된다.
+- **해제 edge 를 소유 인스턴스로 되돌린다 (client→server).** 미러에서 그 surface 를
+  확인해 레코드가 **실제로 제거되면**, 그 사실 1 회를 `StreamControl::ClientAttentionClear`
+  로 서버에 보내 서버 레코드도 지운다(`CoreState::apply_attached_attention_clear`, holder
+  검증 포함). 큐 push 는 호출부가 아니라 `clear_attention` 안에서 하므로 포커스 해제와
+  미러 로컬 알림 읽음이 **균일하게** 덮인다. 전송은 **제거 edge 에서만** 일어나 포커스를
+  유지해도 프레임이 반복되지 않는다 — 주기 전송도, 별도 last-sent 추적도 없다.
+  에코 루프는 없다: 서버가 지우면 다음 diff 가 `kind: null` 을 미러로 push 하는데 미러엔
+  이미 레코드가 없어 edge 가 생기지 않는다(idempotent 수렴).
+- **수렴 보장 범위.** push 가 보장하는 수렴은 **wire 축의 유실**이다 — 프레임이 드롭·지연
+  돼도 서버 값이 그대로면 다음 tick 에 같은 값이 다시 나간다. 미러가 자기 store 를 로컬로
+  바꾸는 축(발동·해제)은 자동 수렴이 아니라 위 두 장치로 맞춘다: 발동은 애초에 미러에서
+  일어나지 않게 막고(Producer 의 mirror 항목), 해제는 edge 를 서버로 되돌린다.
+- **알려진 엣지(의도된 동작)**: 미러가 그 surface 를 **이미 포커스한 상태**에서 서버가 새
+  raise 를 push 하면, 미러는 레코드를 심자마자 다음 렌더 프레임에서 지우고 해제 edge 를
+  보내 배지가 사실상 뜨지 않는다. 단일 인스턴스 로컬 동작과 같은 규칙이다(포커스된
+  surface 에 raise 하면 지금도 다음 프레임에 지워진다) — 규칙이 일관되므로 그대로 둔다.
 - **teardown**: mirror surface 가 사라지면(`cleanup_mirror_workspace` 의 세션 정리,
   `apply_mirror_structural_delta` 의 removed 처리) `forget_mirror_surface_attention` 으로
   레코드도 함께 버린다 — 로컬 id 가 재사용될 때 stale attention 이 새 surface 에 잘못
@@ -194,6 +206,10 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   push. `surface_id` 는 **원격 id**(client 가 자기 매핑으로 로컬 mirror id 를 찾는다),
   `kind` 는 `"completion"`/`"needs_input"`(`AttentionKindWire`)이고 `null` 이 해제.
   직렬화 문자열은 위 `surface.completion` IPC 의 `kind` 파라미터와 같은 어휘다.
+- **원격 attach 스트림(해제)**: `StreamControl::ClientAttentionClear { surface_id }`
+  (client→server, `crates/tasty-ipc/src/stream.rs`) — 미러에서 그 surface 를 확인해
+  레코드가 제거된 **edge 1 회**. `surface_id` 는 **원격 id**. 인가는 기존 attach 하드
+  점유 모델 그대로(요청 client 가 그 워크스페이스의 holder 여야 적용).
 - **사용자 트리거**: 직접 트리거 없음. 효과는 세 소비처로 표시되고, surface 에 포커스하거나
   그 surface 발 알림을 알림 패널에서 읽음 처리하면 해제(잔여 안읽음이 없을 때, kind 무관).
 
@@ -210,10 +226,11 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 > 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를 읽는다는 사실로 대체한다
 > (`docs/features/native-file-picker/index.md` 의 "검증 한계" 와 동종의 한계).
 >
-> **미러 측 로컬 발동 억제**도 같은 이유로 loopback e2e 가 아니라 `src/state/tests.rs` 의
-> 단위 테스트 5 종이 고정한다 — loopback client 는 raw `TcpStream` 이라 미러 `AttentionStore`
-> 자체가 없어 억제 경로를 실행조차 하지 않고, "미러 포커스 → 양쪽 해제" 는 해제
-> forward(mirror→server)가 들어오기 전에는 정의상 성립하지 않는 후속 범위다.
+> **미러 측 로컬 발동 억제**와 **미러 측 해제 edge 큐 적재**도 같은 이유로 loopback e2e 가
+> 아니라 단위 테스트가 고정한다(`src/state/tests.rs` 5 종 · `src/core/state/attention.rs` 6 종)
+> — loopback client 는 raw `TcpStream` 이라 미러 `AttentionStore` 자체가 없어 그 경로를
+> 실행조차 하지 않는다. loopback e2e 가 실제로 실행하는 것은 그 프레임을 받은 **서버 측**
+> 절반(역직렬화 → holder 검증 → 레코드 제거)이다.
 
 ## 비-목표 (Out of scope)
 
@@ -275,6 +292,19 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 - [ ] Given mirror 워크스페이스의 surface M When 서버가 `Attention` 프레임을 push Then 위
       억제 게이트에 막히지 않고 그대로 반영된다(적용은 별도 진입점). (단위 테스트로 고정됨:
       `server_push_apply_is_not_blocked_by_the_mirror_gate`)
+- [ ] Given 서버 push 로 M 에 attention 이 표시된 상태 When 미러 사용자가 M 을 포커스
+      Then 해제 edge 가 forward 큐에 1 건 쌓인다. (단위 테스트로 고정됨:
+      `mirror_clear_queues_exactly_one_forward_edge` — 큐까지만. 큐 → 소켓 전송 구간은
+      고정되지 않는다)
+- [ ] Given holder 연결이 해제 프레임을 보냄 Then 서버가 holder 검증 후 자기 레코드를
+      지운다. (loopback e2e 로 고정됨: `mirror_clear_frame_drops_the_server_attention_record`
+      — raw `TcpStream` 이 프레임을 직접 보내는 **서버 절반**의 검증이다)
+- [ ] Given 위 해제가 끝난 상태 When 미러가 포커스를 유지한 채 여러 프레임이 렌더된다
+      Then 추가 해제 프레임이 나가지 않는다. (단위 테스트 `mirror_clear_queues_exactly_one_forward_edge`
+      + loopback e2e `repeated_clear_frames_do_not_respam_the_stream` 로 고정됨)
+- [ ] Given mirror 워크스페이스의 surface M 발 미러 로컬 알림 When 미러 알림 패널에서
+      읽음 처리 Then 포커스 경로와 동일하게 해제 프레임이 서버로 간다. (단위 테스트로
+      고정됨: `mirror_notification_read_queues_the_clear_forward`)
 - [ ] Given 서버 attention 값이 바뀌지 않는 tick Then 프레임이 나가지 않는다(스팸 없음).
 - [ ] Given mirror surface 가 사라짐(세션 정리 / 구조 delta 제거) Then 그 로컬 id 의 attention
       레코드도 함께 정리된다 — 단, kind 변환(terminal → 다른 kind) 경로는 정리하지 않는다

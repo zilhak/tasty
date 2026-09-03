@@ -428,6 +428,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 감지해 쌓은 큐를 drain 해 원격에 full 재전송을 요청한다(상세
         // `docs/dev-guide/egui-mesh-channel.md` "텍스처 상태 수명 + delta 체인").
         self.dispatch_pending_mesh_full_resend_forwards();
+        // mirror surface 의 attention 해제 edge — 이번 프레임의 실-포커스 해제(또는
+        // 미러 알림 패널 읽음)가 실제로 레코드를 지웠으면 그 사실 1 회를 surface 를
+        // 소유한 원격 인스턴스로 forward 한다(상세 `docs/dev-guide/attach-behavior.md`
+        // "주의 환기(attention) 전파").
+        self.dispatch_pending_attention_clear_forwards();
 
         // attach mesh mirror pane 의 geometry/theme/focus 변경 + 누적 입력을 drain 해
         // 원격에 forward한다(구독 유지 + 인터랙티브 입력, 상세
@@ -1473,6 +1478,7 @@ impl App {
         // 담당하며, 변화가 있으면 기존 resize tap 이 server→client `Resize` echo 를
         // 자동 fan-out 한다(여기서 추가 push 없음).
         self.apply_resize_requests_batch(outcome.resize_requests);
+        self.apply_attention_clear_requests_batch(outcome.attention_clear_requests);
         self.apply_mesh_context_requests_batch(outcome.mesh_context_requests, &hub);
         self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
         self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
@@ -1574,6 +1580,44 @@ impl App {
     ) {
         for (client_id, remote_surface_id, cols, rows) in requests {
             self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
+        }
+    }
+
+    /// `apply_stream_outcome` 지원 — `attention_clear_requests` 배치 적용. 미러
+    /// 사용자가 그 surface 를 확인했다는 판정을 소유 engine 에 반영한다.
+    fn apply_attention_clear_requests_batch(
+        &mut self,
+        requests: impl IntoIterator<Item = (u32, u32)>,
+    ) {
+        for (client_id, remote_surface_id) in requests {
+            self.apply_forwarded_attention_clear(client_id, remote_surface_id);
+        }
+    }
+
+    /// 해제 edge 하나를 그 surface 를 소유한 engine(main window → parked)에 적용한다.
+    /// holder 검증은 `apply_attached_attention_clear` 가 담당하므로 첫 성공에서 멈춘다
+    /// — `apply_forwarded_resize` 와 동형.
+    ///
+    /// `mark_layout_dirty` 는 부르지 않는다: attention 은 layout.json 영속 대상이 아니라
+    /// (`core/layout_persistence.rs` 에 attention 필드가 없다) 그 호출은 의미 없는
+    /// 디바운스 저장만 유발한다 — `TerminalTitleChanged` cascade 가 같은 이유로
+    /// 호출하지 않는 것과 같다. 화면 갱신은 창 리페인트 플래그(`mark_dirty`) 소관이고,
+    /// 창이 없는 parked engine 에는 갱신할 화면 자체가 없다.
+    fn apply_forwarded_attention_clear(&mut self, client_id: u32, remote_surface_id: u32) {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main
+                    .core_state
+                    .apply_attached_attention_clear(client_id, remote_surface_id)
+            {
+                w.mark_dirty();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.apply_attached_attention_clear(client_id, remote_surface_id) {
+                return;
+            }
         }
     }
 

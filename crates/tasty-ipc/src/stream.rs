@@ -252,6 +252,32 @@ pub enum StreamControl {
         cols: usize,
         rows: usize,
     },
+    /// The client (mirror side) reports that the user **checked** a mirrored
+    /// surface, so the remote should drop its attention record for it. The clear
+    /// rule itself is unchanged and instance-local ("real render-time focus =
+    /// checked", plus marking that surface's notifications read); this frame only
+    /// carries the verdict to the instance that *owns* the surface, because a
+    /// mirror user's focus can never reach the remote's own clear paths.
+    ///
+    /// Sent on the **removal edge only** — the client emits it when a clear
+    /// actually removed a record, never periodically. Holding focus therefore
+    /// produces exactly one frame, and a clear on a surface with no record emits
+    /// nothing. Anchored on the **remote surface id** (mapped from the local
+    /// mirror id before send). The occupying stream connection is the workspace's
+    /// attach holder, so the connection itself proves the authority (ADR-0040
+    /// hard occupancy) — the same model as [`StreamControl::ClientResize`].
+    ///
+    /// No echo loop: the remote's clear makes its next attention diff push a
+    /// `kind: null` [`StreamControl::Attention`], which the mirror applies to an
+    /// already-empty record — no removal edge, no further frame.
+    ///
+    /// Direction: **client→server**. No reply.
+    ClientAttentionClear {
+        /// Remote surface id whose attention record should be dropped. The server
+        /// resolves the enclosing workspace and verifies the requesting client is
+        /// its attach holder before applying.
+        surface_id: u32,
+    },
     /// A structural change (split / new-tab / close / move) performed in a
     /// **mirror** workspace, forwarded to the remote (authoritative) instance so
     /// it runs there and spawns real PTYs — instead of leaking a local shell into

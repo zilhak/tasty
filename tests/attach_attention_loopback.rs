@@ -65,6 +65,30 @@ fn wait_for_raised_attention(stream: &mut TcpStream) -> Value {
     }
 }
 
+/// 다음 `attention` Control 프레임 하나를 kind 와 무관하게 돌려준다. 무관한 control
+/// 프레임(터미널 스냅샷·`activity` 등)은 건너뛴다.
+fn wait_for_attention_frame(stream: &mut TcpStream) -> Value {
+    loop {
+        let (tag, payload) = attach_common::read_frame(stream);
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        if v.get("event").and_then(|e| e.as_str()) == Some("attention") {
+            return v;
+        }
+    }
+}
+
+/// 미러가 그 surface 를 확인했을 때 보내는 해제 edge 프레임.
+/// `StreamControl::ClientAttentionClear`(client→server)의 wire 형태.
+fn send_attention_clear(stream: &mut TcpStream, remote_surface_id: u64) {
+    attach_common::write_control_frame(
+        stream,
+        &json!({ "event": "client_attention_clear", "surface_id": remote_surface_id }),
+    );
+}
+
 /// 서버에서 `needs_input` attention 이 raise 되면 점유 client 에게 `attention`
 /// Control 프레임이 원격 surface id 와 함께 push 된다. `NeedsInput` 은 서버(PTY 를
 /// 가진 인스턴스)에서만 나오는 kind 라, 이 경로가 없으면 미러 사용자에게 "응답 필요"
@@ -147,5 +171,88 @@ fn unchanged_attention_does_not_respam_the_stream() {
     assert!(
         extra.is_empty(),
         "값이 그대로면 1Hz tick 이 여러 번 지나도 attention 프레임이 나가면 안 된다: {extra:?}"
+    );
+}
+
+/// 미러의 해제 edge 가 **서버 레코드를 실제로 지운다.** 서버 attention 을 직접
+/// 조회하는 IPC 가 없으므로 diff push 의 성질로 관측한다 — ① 해제 프레임을 보내면
+/// 서버가 값이 바뀌었다고 판단해 `kind: null` 을 되돌려 push 하고(레코드가 안 지워졌
+/// 다면 값이 그대로라 이 프레임 자체가 없다), ② 같은 kind 로 다시 raise 했을 때
+/// 프레임이 **다시** 도착한다(그 사이 서버 값이 실제로 비었다는 뜻 — 값이 남아
+/// 있었다면 dedup 이 재전송을 막는다).
+#[test]
+fn mirror_clear_frame_drops_the_server_attention_record() {
+    let server = common::shared();
+    let ws = server.create_workspace("attention-clear-forward");
+
+    let mut stream = open_workspace_attach(server.port(), ws.id);
+    server.call(
+        "surface.completion",
+        json!({ "surface_id": ws.surface_id, "kind": "needs_input" }),
+    );
+    let raised = wait_for_raised_attention(&mut stream);
+    assert_eq!(raised["kind"], "needs_input", "{raised:?}");
+
+    // 미러 사용자가 그 surface 를 확인 → 해제 edge 1 회 전송.
+    send_attention_clear(&mut stream, ws.surface_id);
+
+    let cleared = wait_for_attention_frame(&mut stream);
+    assert!(
+        cleared["kind"].is_null(),
+        "해제가 적용됐다면 서버 diff 가 `kind: null` 을 되돌려 push 한다: {cleared:?}"
+    );
+    assert_eq!(cleared["surface_id"], ws.surface_id, "{cleared:?}");
+
+    // 같은 kind 로 재발동 — 서버 레코드가 실제로 비었어야 다시 push 된다.
+    server.call(
+        "surface.completion",
+        json!({ "surface_id": ws.surface_id, "kind": "needs_input" }),
+    );
+    let reraised = wait_for_raised_attention(&mut stream);
+    assert_eq!(
+        reraised["kind"], "needs_input",
+        "해제 후 재발동이 다시 push 되지 않으면 서버 레코드가 남아 있었다는 뜻이다: {reraised:?}"
+    );
+}
+
+/// 해제는 **edge 신호**다 — 레코드가 없는 상태로 해제 프레임이 더 와도 서버 값은
+/// 그대로라 되돌아오는 프레임이 없다. client 측에서 포커스를 유지해도 프레임이 한
+/// 번만 나가는 성질(`CoreState::clear_attention` 의 제거 edge)의 서버측 대응 확인.
+#[test]
+fn repeated_clear_frames_do_not_respam_the_stream() {
+    let server = common::shared();
+    let ws = server.create_workspace("attention-clear-repeat");
+
+    let mut stream = open_workspace_attach(server.port(), ws.id);
+    server.call(
+        "surface.completion",
+        json!({ "surface_id": ws.surface_id, "kind": "needs_input" }),
+    );
+    wait_for_raised_attention(&mut stream);
+
+    send_attention_clear(&mut stream, ws.surface_id);
+    let cleared = wait_for_attention_frame(&mut stream);
+    assert!(cleared["kind"].is_null(), "{cleared:?}");
+
+    // 이미 비어 있는 레코드에 해제를 두 번 더 — 서버 값이 안 바뀌므로 프레임 없음.
+    send_attention_clear(&mut stream, ws.surface_id);
+    send_attention_clear(&mut stream, ws.surface_id);
+
+    stream
+        .set_read_timeout(Some(QUIET_WINDOW))
+        .expect("set quiet-window read timeout");
+    let mut extra: Vec<Value> = Vec::new();
+    while let Some((tag, payload)) = try_read_frame(&mut stream) {
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        if v.get("event").and_then(|e| e.as_str()) == Some("attention") {
+            extra.push(v);
+        }
+    }
+    assert!(
+        extra.is_empty(),
+        "레코드가 없는 상태의 해제는 no-op 이라 프레임이 나가면 안 된다: {extra:?}"
     );
 }

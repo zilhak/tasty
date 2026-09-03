@@ -82,6 +82,13 @@ pub struct PumpOutcome {
     /// then resizes the real remote PTY (`Terminal::resize`) — the existing resize
     /// tap echoes the settled grid back as a `Resize` (no extra push here).
     pub resize_requests: Vec<(StreamClientId, u32, usize, usize)>,
+    /// `(client_id, remote surface_id)` attention 해제 edge 요청
+    /// ([`StreamControl::ClientAttentionClear`](crate::ipc::stream::StreamControl)).
+    /// 미러 사용자가 그 surface 를 확인(실-포커스 / 알림 읽음)했다는 판정을 소유
+    /// 인스턴스로 옮긴 것이다. 메인 루프가 anchor surface 워크스페이스의 holder 임을
+    /// 검증한 뒤 서버 레코드를 지운다 — 결과는 기존 attention diff push 가
+    /// `kind: null` 로 미러에 되돌려 확정한다(추가 push 없음).
+    pub attention_clear_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused)`
     /// mesh-mirror subscribe/geometry-update requests from an attach client
     /// ([`StreamControl::MeshContext`](crate::ipc::stream::StreamControl)). The
@@ -457,6 +464,11 @@ impl StreamHub {
                                 }) => {
                                     out.resize_requests
                                         .push((client_id, surface_id, cols, rows));
+                                }
+                                Ok(crate::ipc::stream::StreamControl::ClientAttentionClear {
+                                    surface_id,
+                                }) => {
+                                    out.attention_clear_requests.push((client_id, surface_id));
                                 }
                                 Ok(crate::ipc::stream::StreamControl::BulkBegin {
                                     transfer_id,

@@ -137,8 +137,11 @@ impl AttentionStore {
         }
     }
 
-    fn clear(&mut self, surface_id: u32) {
-        self.records.remove(&surface_id);
+    /// 레코드를 제거하고 **실제로 제거했는지**를 돌려준다. 이 `true` 가 곧 해제
+    /// edge 다 — 레코드가 없는 상태의 호출은 no-op(`false`)이라, 매 프레임 도는
+    /// 호출부에서도 상태가 바뀐 순간에만 신호가 나간다.
+    fn clear(&mut self, surface_id: u32) -> bool {
+        self.records.remove(&surface_id).is_some()
     }
 
     fn kind_of(&self, surface_id: u32) -> Option<AttentionKind> {
@@ -207,8 +210,33 @@ impl CoreState {
     }
 
     /// Clear the attention record for a surface (e.g. when it gains focus).
-    pub fn clear_attention(&mut self, surface_id: u32) {
-        self.attention.clear(surface_id);
+    /// **실제로 레코드를 제거했으면 `true`** — 이 값이 해제 edge 다.
+    ///
+    /// mirror surface 에서 edge 가 발생하면 그 사실을
+    /// [`pending_attention_clear_forward`](crate::core::CoreState::pending_attention_clear_forward)
+    /// 에 넣어 서버(surface 소유 인스턴스)로 전달되게 한다. 큐 push 를 호출부가
+    /// 아니라 **이 함수 안에서** 하는 이유는 해제 producer 가 여럿이기 때문이다 —
+    /// 실-포커스 해제(`gpu.rs`)뿐 아니라 미러 로컬 알림 패널의 읽음 처리
+    /// (`mark_notification_read`/`mark_all_notifications_read`)도 미러에서 일어날 수
+    /// 있고, 포커스 경로에만 큐잉하면 알림으로 확인한 경우가 서버에 전달되지 않아
+    /// 다음 push 에서 배지가 되살아난다. 여기 두면 세 경로가 균일하게 덮이고 해제
+    /// producer 가 늘어도 누락이 생기지 않는다.
+    ///
+    /// 해제 규칙 자체는 바뀌지 않는다 — 판정은 여전히 인스턴스 로컬 사용자 행동
+    /// (실 렌더 포커스 / 알림 읽음)이고, 이 큐는 그 결과만 소유 인스턴스로 옮긴다.
+    /// 서버 push 를 적용하는 [`set_mirror_surface_attention`](Self::set_mirror_surface_attention)
+    /// 과 teardown 용 [`forget_mirror_surface_attention`](Self::forget_mirror_surface_attention)
+    /// 은 이 함수를 타지 않으므로 에코가 생기지 않는다.
+    pub fn clear_attention(&mut self, surface_id: u32) -> bool {
+        let removed = self.attention.clear(surface_id);
+        if removed && self.is_mirror_surface(surface_id) {
+            tracing::trace!(
+                surface_id,
+                "mirror attention cleared — queueing clear forward to the owning instance"
+            );
+            self.pending_attention_clear_forward.insert(surface_id);
+        }
+        removed
     }
 
     /// **원격(서버) push 반영 전용 진입점** — attach mirror 가 받은
@@ -234,7 +262,11 @@ impl CoreState {
     ) {
         match kind {
             Some(k) => self.attention.raise(surface_id, k),
-            None => self.attention.clear(surface_id),
+            None => {
+                // 반환값(제거 edge)은 여기서 의미가 없다 — 서버가 내려준 해제를
+                // 그대로 적용하는 것이라 서버로 되돌려 보낼 edge 가 아니다.
+                self.attention.clear(surface_id);
+            }
         }
     }
 
@@ -247,6 +279,8 @@ impl CoreState {
     /// teardown 은 로컬 사용자의 해제가 아니라 surface 소멸이므로 해제 forward 축을
     /// 타면 안 된다.
     pub(crate) fn forget_mirror_surface_attention(&mut self, surface_id: u32) {
+        // 제거 edge 를 무시한다 — surface 소멸이지 사용자의 "확인" 이 아니라
+        // 해제 forward 축(`clear_attention`)을 타면 안 된다.
         self.attention.clear(surface_id);
     }
 
@@ -258,8 +292,10 @@ impl CoreState {
     /// (스팸 억제). 캐시가 아니라 항상 live store 에서 재-diff 하므로, 프레임이
     /// 유실되거나 지연돼도 다음 tick 에 자동 수렴한다(client ack 에 의존하지 않는다).
     /// 이 수렴은 **wire 유실 축에만** 유효하다 — client 가 자기 store 를 로컬로 바꾸면
-    /// 서버 값은 그대로라 재-push 가 없고 갈라진 채 남는다. 현재 열려 있는 사례와 닫는
-    /// 후속 작업은 `docs/dev-guide/attach-behavior.md` "주의 환기(attention) 전파" 참조.
+    /// 서버 값은 그대로라 재-push 가 없다. 그 축은 이 diff 가 아니라 전용 장치 둘이
+    /// 맞춘다: 미러의 **발동**은 [`raise_attention`](Self::raise_attention) 게이트가 막고,
+    /// **해제**는 [`clear_attention`](Self::clear_attention) 의 제거 edge 가 서버로
+    /// forward 된다. 상세는 `docs/dev-guide/attach-behavior.md` "주의 환기(attention) 전파".
     /// 점유가 풀린 surface 의 엔트리는 매 호출 정리해, 나중에 재attach(다른 client 일
     /// 수 있음) 하면 값이 이전과 같아도 baseline push 를 다시 받는다.
     ///
@@ -708,5 +744,142 @@ mod tests {
         assert_eq!(s.attention_kind(1), Some(AttentionKind::NeedsInput));
         s.raise_attention(1, AttentionKind::Completion);
         assert_eq!(s.attention_kind(1), Some(AttentionKind::Completion));
+    }
+
+    // ---- 해제 edge → mirror clear forward (client→server) ----
+
+    /// 기본 워크스페이스에 mirror 플래그를 세우고 그 첫 surface id 를 돌려준다.
+    /// `is_mirror_surface` 는 워크스페이스 플래그만 보므로 실제 attach 세션 없이도
+    /// 판정에 충분하다.
+    fn mirror_state() -> (CoreState, u32) {
+        let mut s = state();
+        s.workspaces[0].mirror = true;
+        let sid = s.workspaces[0].all_surface_ids()[0];
+        (s, sid)
+    }
+
+    /// `clear_attention` 은 **실제로 레코드를 제거했을 때만** true 다. 이 값이 곧
+    /// 해제 edge 이므로, 레코드가 없는 상태의 반복 호출(매 프레임 도는 실-포커스
+    /// 해제)은 전부 false 로 끝나 신호가 나가지 않는다.
+    #[test]
+    fn clear_attention_reports_the_removal_edge_only_once() {
+        let mut s = state();
+        assert!(!s.clear_attention(7), "레코드가 없으면 제거 edge 가 아니다");
+
+        s.raise_attention(7, AttentionKind::Completion);
+        assert!(s.clear_attention(7), "레코드를 실제로 지운 호출이 edge 다");
+        assert!(
+            !s.clear_attention(7),
+            "연속 호출은 no-op — 포커스를 유지해도 edge 가 반복되지 않는다"
+        );
+    }
+
+    /// mirror surface 의 제거 edge 는 forward 큐에 1건 쌓인다. 포커스를 유지한 채
+    /// 다시 호출해도 추가로 쌓이지 않는다(프레임 스팸 없음).
+    #[test]
+    fn mirror_clear_queues_exactly_one_forward_edge() {
+        let (mut s, sid) = mirror_state();
+        // 미러의 레코드는 서버 push 로만 들어온다(로컬 raise 는 억제됨).
+        s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
+        assert!(s.pending_attention_clear_forward.is_empty());
+
+        assert!(s.clear_attention(sid));
+        assert_eq!(
+            s.pending_attention_clear_forward
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![sid],
+            "mirror 해제 edge 는 소유 인스턴스로 보낼 큐에 쌓여야 한다"
+        );
+
+        s.pending_attention_clear_forward.clear(); // App 이 drain 한 상태를 모사
+        assert!(!s.clear_attention(sid));
+        assert!(
+            s.pending_attention_clear_forward.is_empty(),
+            "레코드가 없으면 프레임이 다시 나가지 않는다"
+        );
+    }
+
+    /// mirror 아닌 surface 의 해제는 로컬에서 끝난다 — forward 큐에 쌓이지 않는다.
+    #[test]
+    fn non_mirror_clear_does_not_queue_a_forward() {
+        let mut s = state();
+        let sid = s.workspaces[0].all_surface_ids()[0];
+        s.raise_attention(sid, AttentionKind::Completion);
+
+        assert!(s.clear_attention(sid));
+        assert!(
+            s.pending_attention_clear_forward.is_empty(),
+            "소유 인스턴스의 해제는 전달할 곳이 없다"
+        );
+    }
+
+    /// 회귀 방지 — 큐 push 를 포커스 호출부가 아니라 `clear_attention` 안에서 하는
+    /// 이유. 미러 로컬 알림(미러 바이트의 Bell/OSC 9)을 알림 패널에서 읽음 처리해도
+    /// 같은 큐에 쌓여야 한다. 포커스 경로만 커버하면 이 경우가 서버에 전달되지 않아
+    /// 다음 push 에서 배지가 되살아난다.
+    #[test]
+    fn mirror_notification_read_queues_the_clear_forward() {
+        let (mut s, sid) = mirror_state();
+        let ws_id = s.workspaces[0].id;
+        let nid = s
+            .notifications
+            .add(ws_id, sid, "t".into(), "b".into())
+            .expect("알림 생성");
+        s.set_mirror_surface_attention(sid, Some(AttentionKind::Completion));
+
+        s.mark_notification_read(nid);
+
+        assert_eq!(s.attention_kind(sid), None);
+        assert_eq!(
+            s.pending_attention_clear_forward
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![sid],
+            "알림 읽음으로 확인한 경우도 서버로 전달돼야 한다"
+        );
+    }
+
+    /// "모두 읽음" 경로도 같은 큐를 탄다.
+    #[test]
+    fn mirror_mark_all_read_queues_the_clear_forward() {
+        let (mut s, sid) = mirror_state();
+        let ws_id = s.workspaces[0].id;
+        s.notifications.add(ws_id, sid, "t".into(), "b".into());
+        s.set_mirror_surface_attention(sid, Some(AttentionKind::Completion));
+
+        s.mark_all_notifications_read();
+
+        assert_eq!(
+            s.pending_attention_clear_forward
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![sid]
+        );
+    }
+
+    /// 에코 루프 방지 — 서버가 내려준 해제(`kind: null` push)와 teardown 은
+    /// `clear_attention` 을 타지 않으므로 forward 큐에 쌓이지 않는다.
+    #[test]
+    fn server_push_clear_and_teardown_do_not_queue_a_forward() {
+        let (mut s, sid) = mirror_state();
+
+        s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
+        s.set_mirror_surface_attention(sid, None); // 서버가 내려준 해제
+        assert_eq!(s.attention_kind(sid), None);
+        assert!(
+            s.pending_attention_clear_forward.is_empty(),
+            "서버가 내려준 해제를 서버로 되돌리면 에코가 된다"
+        );
+
+        s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
+        s.forget_mirror_surface_attention(sid); // surface 소멸 teardown
+        assert!(
+            s.pending_attention_clear_forward.is_empty(),
+            "teardown 은 사용자의 확인이 아니다"
+        );
     }
 }

@@ -484,6 +484,34 @@ impl CoreState {
         }
     }
 
+    /// mirror client 가 보낸 attention **해제 edge**(`StreamControl::ClientAttentionClear`)를
+    /// 적용한다 — `apply_attached_workspace_resize` 와 같은 holder 검증 형태다.
+    ///
+    /// 해제 판정 자체는 미러 인스턴스의 사용자 행동(실 렌더 포커스 / 알림 읽음)이고,
+    /// 이 함수는 그 판정을 surface 를 소유한 쪽에 적용할 뿐이다. 인가는 기존 모델
+    /// 그대로 "attach 하드 점유 = 그 워크스페이스의 주체"(ADR-0040) — 요청한 client
+    /// 가 anchor surface 워크스페이스의 holder 가 아니면 무시한다.
+    ///
+    /// 반환: 실제로 적용했는지(호출자가 소유 engine 을 찾을 때 쓴다).
+    pub fn apply_attached_attention_clear(
+        &mut self,
+        client_id: AttachClientId,
+        remote_surface_id: u32,
+    ) -> bool {
+        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
+            return false;
+        };
+        if self.attach.workspace_holder(ws) != Some(client_id) {
+            return false;
+        }
+        // 서버의 surface 는 mirror 가 아니므로 `clear_attention` 이 다시 forward
+        // 큐에 넣지 않는다(에코 없음). 반환값(제거 여부)은 여기서 소비하지 않는다 —
+        // 레코드가 이미 없었어도 "이 engine 이 그 surface 의 주인" 이라는 사실은
+        // 변하지 않으므로 호출자에게는 적용 성공으로 알린다.
+        self.clear_attention(remote_surface_id);
+        true
+    }
+
     /// 1Hz busy-poll tick 마다 호출 — `busy_activity_forwards`(순수 diff, hub 비의존)가
     /// 계산한 변화분을 실제로 attach client 에 push 한다. gui(`app/busy.rs`, 매 window/
     /// parked engine)와 headless(`boot.rs`, 유일한 engine) 양쪽이 같은 1Hz 캐던스로 호출

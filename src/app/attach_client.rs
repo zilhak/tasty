@@ -1208,6 +1208,45 @@ impl App {
         }
     }
 
+    /// `about_to_wait` 에서 호출 — mirror surface 의 attention **해제 edge** 큐
+    /// (`CoreState::pending_attention_clear_forward`)를 drain 해 원격에
+    /// `ClientAttentionClear` 를 forward 한다. 큐에 들어가는 것은 실제로 레코드를
+    /// 제거한 순간뿐이라(`CoreState::clear_attention`) 포커스를 유지해도 프레임이
+    /// 반복되지 않는다. `dispatch_pending_mesh_full_resend_forwards` 와 동형.
+    pub(crate) fn dispatch_pending_attention_clear_forwards(&mut self) {
+        let mut pending: Vec<u32> = Vec::new();
+        for main in self.main_windows_iter_mut() {
+            pending.extend(main.core_state.pending_attention_clear_forward.drain());
+        }
+        if let Some(e) = self.core_state.as_mut() {
+            pending.extend(e.pending_attention_clear_forward.drain());
+        }
+        for local_sid in pending {
+            self.forward_one_attention_clear(local_sid);
+        }
+    }
+
+    /// 해제 edge 하나를 담당 mirror 세션으로 전송한다.
+    /// `forward_one_mesh_full_resend_request` 와 동형 — 세션/원격 id 를 못 찾으면
+    /// warn 후 drop. 전송 실패도 drop 이다: 해제는 edge 신호라 재시도 큐를 두지
+    /// 않는다(세션이 끊기는 중이면 서버측 점유도 곧 풀린다).
+    fn forward_one_attention_clear(&mut self, local_sid: u32) {
+        let Some((sess, remote_sid)) = find_mirror_session_and_remote_id(
+            &mut self.attach_client_sessions,
+            local_sid,
+            "attention clear",
+        ) else {
+            return;
+        };
+        let payload = serde_json::to_vec(&StreamControl::ClientAttentionClear {
+            surface_id: remote_sid,
+        })
+        .unwrap_or_default();
+        if let Err(e) = sess.send_frame(StreamTag::Control, payload) {
+            tracing::warn!("attention clear forward: write 큐 send 실패(세션 종료 중) — drop: {e}");
+        }
+    }
+
     /// full 재전송 요청 큐의 항목 하나를 담당 mirror 세션으로 전송한다.
     /// `forward_one_resize` 와 동형 — 세션/원격 id 를 못 찾으면 warn 후 drop.
     fn forward_one_mesh_full_resend_request(&mut self, local_sid: u32) {
@@ -1234,8 +1273,9 @@ impl App {
 /// 없거나(로컬 surface 를 가진 세션이 없음) 원격 id 매핑이 없으면(예상 밖) `label`
 /// 을 포함한 warn 로그를 남기고 `None` 을 반환한다 — `forward_one_structural_op`/
 /// `forward_one_resize`/`forward_one_mesh_context`/`forward_one_mesh_input`/
-/// `forward_one_mesh_full_resend_request` 5형제가 공유하는 "세션 lookup + local→
-/// remote 치환" 전처리(개별 분해 대신 공용 헬퍼로 묶어 로직 drift 위험을 없앤다).
+/// `forward_one_mesh_full_resend_request`/`forward_one_attention_clear` 6형제가
+/// 공유하는 "세션 lookup + local→remote 치환" 전처리(개별 분해 대신 공용 헬퍼로
+/// 묶어 로직 drift 위험을 없앤다).
 fn find_mirror_session_and_remote_id<'a>(
     sessions: &'a mut [AttachClientSession],
     local_sid: u32,

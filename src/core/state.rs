@@ -462,6 +462,18 @@ pub struct CoreState {
     /// mirror client 는 항상 GUI 라 headless 에서는 채워지지 않는다.
     pub(crate) pending_resize_forward: std::collections::HashMap<u32, (usize, usize)>,
 
+    /// mirror surface 의 attention **해제 edge** forward 큐. `clear_attention` 이
+    /// mirror surface 에서 레코드를 **실제로 제거했을 때만** 여기에 로컬 mirror
+    /// surface id 를 넣는다 — 해제 규칙(실-포커스 = 확인, 알림 읽음) 자체는 그대로
+    /// 인스턴스 로컬이고, 그 판정 결과만 surface 를 소유한 인스턴스로 전달한다.
+    /// 레코드가 없는 상태의 clear 는 전부 no-op 이라 edge 가 없고, 포커스를 유지해도
+    /// 프레임이 반복되지 않는다(별도 last-sent 추적·주기 전송 불필요). App 이
+    /// `about_to_wait`(`dispatch_pending_attention_clear_forwards`, gui)에서 drain 해
+    /// 세션 매핑으로 원격 id 치환 후 `StreamControl::ClientAttentionClear` 로
+    /// forward 한다. `pending_mesh_full_resend_forward` 와 동형(mirror client 는 항상
+    /// GUI 라 headless 에서는 채워지지 않는다).
+    pub(crate) pending_attention_clear_forward: std::collections::HashSet<u32>,
+
     /// (04) 파일 피커 원격 디렉토리 목록 forward 큐. popup wrapper
     /// (`adapters::ui::popup::file_picker::draw_file_picker`)가 mirror 워크스페이스에서
     /// 디렉토리 조회가 필요할 때 여기 push 하고, App 이 `about_to_wait`
@@ -714,6 +726,7 @@ impl CoreState {
             pending_list_dir_forward: Vec::new(),
             pending_git_query_forward: Vec::new(),
             pending_mesh_full_resend_forward: std::collections::HashSet::new(),
+            pending_attention_clear_forward: std::collections::HashSet::new(),
             pending_mesh_context_forward: std::collections::HashMap::new(),
             pending_mesh_input_forward: std::collections::HashMap::new(),
             pending_gui_attach_user: Vec::new(),

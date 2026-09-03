@@ -620,6 +620,14 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                         }
                     }
                 }
+                for (client_id, remote_surface_id) in outcome.attention_clear_requests {
+                    // 미러 사용자가 그 surface 를 확인(실-포커스 / 알림 읽음)했다는
+                    // 판정을 소유 인스턴스에 적용한다. holder 검증은 헬퍼가 담당하고,
+                    // 지워진 값은 다음 attention diff tick 이 `kind: null` push 로
+                    // 미러에 되돌려 확정한다(추가 push 없음). headless 서버가 주
+                    // 시나리오다.
+                    engine.apply_attached_attention_clear(client_id, remote_surface_id);
+                }
                 for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {
                     // client-driven mirror geometry(ADR-0045): mirror client 가
                     // 요청한 크기로 원격 PTY 를 resize. holder 검증은 헬퍼가 담당,
