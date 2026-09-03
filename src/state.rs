@@ -658,7 +658,7 @@ pub enum PendingNativeMenu {
         x: f32,
         y: f32,
     },
-    /// 확장 사이드바 빈 배경 우클릭 (토글 on): 새 카테고리.
+    /// 확장 사이드바 빈 배경 우클릭 (카테고리 토글 on/off 공통): 새 카테고리 · 원격 워크스페이스 추가.
     SidebarBackground { x: f32, y: f32 },
     /// 탭 "+" 버튼 우클릭: 프리셋으로 탭/페인 생성
     NewTabButton { pane_id: u32, x: f32, y: f32 },

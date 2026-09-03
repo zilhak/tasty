@@ -146,7 +146,7 @@ pub enum SidebarFullAction {
         x: f32,
         y: f32,
     },
-    /// 사이드바 빈 배경 우클릭 — 새 카테고리.
+    /// 사이드바 빈 배경 우클릭 — 새 카테고리 · 원격 워크스페이스 추가.
     BackgroundContextMenu {
         x: f32,
         y: f32,
@@ -645,8 +645,9 @@ pub fn draw_full_sidebar_view(
             }
 
             vspace(ui, th.spacing_xs);
-            // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 — 생성은 배경 우클릭 /
-            // 카테고리 메뉴 Add workspace 로 이동했기 때문.
+            // 카테고리 기능 ON 이면 + 버튼을 그리지 않는다 — 생성은 카테고리 헤더 메뉴 /
+            // 레일 `---` 팝업의 Add workspace 로 이동했기 때문. 배경 우클릭 메뉴는 새 카테고리 ·
+            // 원격 워크스페이스 추가뿐이다(`handle_sidebar_background_native_menu` 참고).
             if props.categories.is_none() {
                 let new_ws_resp =
                     draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
