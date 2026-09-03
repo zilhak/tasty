@@ -1,4 +1,4 @@
-<!-- source-hash: 229ec6d25ebd -->
+<!-- source-hash: 2e8cb481e680 -->
 # Features
 
 Each feature is one folder — `features/<f>/index.md` (behaviour, internal operation · 1st priority) + `screens/<s>.md` (screen, projection · 0..N). The model and writing rules are in [documentation-model.md](../documentation-model.md); read [identity.md](../identity.md) before writing.
@@ -16,7 +16,7 @@ Templates: [`_feature.template.md`](_feature.template.md) (behaviour) · [`_scre
 | [terminal-search](terminal-search/index.md) — Terminal search (scrollback + screen) | Local user | Search-bar popup |
 | [terminal-link](terminal-link/index.md) — Link hover/click (modifier key) · "Open path" on right-click of a drag selection | Local user | Hover highlight |
 | [workspace-tabs](workspace-tabs/index.md) — Tab strip (per-Pane tab bar) | Local user | [Screen](workspace-tabs/screens/workspace-tabs.md) |
-| [workspace-category](workspace-category/index.md) — Workspace categories (sidebar folders) | AI agent · Local user | None (sidebar UI not implemented) |
+| [workspace-category](workspace-category/index.md) — Workspace categories (sidebar folders) | AI agent · Local user | [Sidebar](sidebar/screens/sidebar.md) category sections (grouped render when the toggle is on) · rail `---` popup · create/rename/delete dialogs |
 | [window-chrome](window-chrome/index.md) — Window chrome (CSD title bar) | Local user | [Screen](window-chrome/screens/window-chrome.md) |
 | [workspace-status-bar](workspace-status-bar/index.md) — Status bar (bottom of the work area) | Local user | [Screen](workspace-status-bar/screens/workspace-status-bar.md) |
 | [sidebar](sidebar/index.md) — Sidebar (MainView's left panel) | Local user | [Screen](sidebar/screens/sidebar.md) |
