@@ -120,3 +120,4 @@
 | 0107 | [attention 해제를 IPC/CLI 로 노출하고, 상태 변경은 IPC 핸들러가 직접 적용한다](0107-attention-clear-ipc-symmetry.md) | Accepted | 2026-09-03 | attention, surface-highlight, ipc, cli, headless, cascade, intent, attach, mirror, api-symmetry |
 | 0108 | [스크롤은 한 pass 에 전량 전달한다 — egui-mesh 는 휠 델타를 쪼개 넣고, 스크롤 애니메이션은 끈다](0108-egui-mesh-scroll-delivered-in-one-pass.md) | Accepted | 2026-09-03 | egui-mesh, plugin-sdk, scroll, self-repaint, performance, theme, animation |
 | 0109 | [하드 점유 중인 surface 의 attention 은 홀더만 해제한다 — 서버 로컬 포커스·알림 읽음은 게이트된다](0109-hard-occupancy-attention-clear-holder-only.md) | Accepted | 2026-09-03 | attention, surface-highlight, occupancy, hard-occupy, remote-attach, readonly, adr-0040, adr-0049 |
+| 0112 | [agent-stream 의 턴 correlation 은 요청자 제공 `request_id` 로 하고, 턴 경계는 transcript 의 turn_end 를 그대로 쓴다](0112-agent-stream-turn-correlation.md) | Accepted | 2026-09-04 | agent-stream, plugin, webhook, correlation, turn, sse, inbound, adr-0046, adr-0093, adr-0100 |

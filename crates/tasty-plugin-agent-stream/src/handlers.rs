@@ -10,11 +10,15 @@
 //!   호출자의 의도를 넘는다. 여러 대상이 필요하면 surface 마다 명시적으로 등록한다.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
-use crate::registry::{StreamRegistry, new_watch};
+use crate::registry::{
+    DEFAULT_TURN_TIMEOUT_SECS, MAX_TURN_TIMEOUT_SECS, MIN_TURN_TIMEOUT_SECS, StreamRegistry,
+    TurnError, new_watch,
+};
 use crate::resolve::{self, CLAUDE_SESSION_META_KEY, HostCall, ResolveError};
 use crate::sse::server::{self, SseServer};
 use crate::sse::{ConfigError, ServeConfig};
@@ -22,6 +26,11 @@ use crate::sse::{ConfigError, ServeConfig};
 /// `poll` 의 기본/최대 반환 개수.
 const POLL_DEFAULT_LIMIT: u64 = 100;
 const POLL_MAX_LIMIT: u64 = 1000;
+
+/// `request_id` 의 바이트 상한. 웹훅 `${body.request_id}` 는 외부 입력이라 상한이 없으면
+/// 거대한 값이 TurnState 에 저장돼 그 턴의 모든 이벤트(SSE·poll)에 복제되는 증폭이 된다.
+/// FE correlation 토큰(UUID·nanoid·복합키)에 넉넉한 512 바이트에서 자르지 않고 거부한다.
+const MAX_REQUEST_ID_LEN: usize = 512;
 
 type Shared = Arc<Mutex<StreamRegistry>>;
 
@@ -114,6 +123,88 @@ pub fn handle_watch<H: HostCall>(
         "status": if transcript.is_some() { "tailing" } else { "awaiting_transcript" },
         "replaced": replaced,
     }))
+}
+
+/// 웹훅 값 슬롯으로 넘어오는 `request_id` 를 읽는다. `${body.request_id}` 는 전체
+/// 플레이스홀더면 JSON 타입을 보존하므로(문자열이면 문자열, 숫자면 숫자) 둘 다 받아
+/// 문자열로 정규화한다. 없거나 빈 값이면 거부한다 — correlation id 는 요청자만 알 수 있는
+/// 값이라(웹훅 응답은 고정 ACK) 매칭의 유일한 성립 경로다. 자체 생성하면 FE 가 그 값을
+/// 알 방법이 없다.
+fn require_request_id(params: &Value, tr: &Translator) -> Result<String, IpcMethodError> {
+    let raw = match params.get("request_id") {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(IpcMethodError::invalid_params(
+            tr.t("agent_stream.error.missing_request_id"),
+        ));
+    }
+    if trimmed.len() > MAX_REQUEST_ID_LEN {
+        return Err(IpcMethodError::invalid_params(&tr.t_replace(
+            "agent_stream.error.request_id_too_long",
+            "{max}",
+            &MAX_REQUEST_ID_LEN.to_string(),
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// `agent_stream.turn_start` — surface 에 correlation 턴을 연다.
+///
+/// 웹훅 IpcSequence 의 **첫 스텝**으로 쓴다(두 번째가 `claude.tell`). 이 호출이 먼저
+/// 끝나야 그 사이 도착하는 transcript 이벤트가 누락 없이 `request_id` 로 태깅된다 —
+/// `execute_sequence` 가 스텝을 **순차** 실행하므로 순서가 보장된다(`src/hook_handler/exec.rs`).
+///
+/// 턴은 그 surface 의 다음 `turn_end`(정상 종료·취소·오류·해제·세션 소멸) 가 닫는다.
+/// claude-idle 훅을 구독하지 않는 이유: transcript 가 이미 그 신호를 만들고(ADR-0093),
+/// 훅 구독은 claude plugin 이 활성일 때만 성립하는 의존을 새로 만들기 때문이다.
+pub fn handle_turn_start(
+    registry: &Shared,
+    tr: &Translator,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
+    let surface_id = require_surface(&params, tr)?;
+    let request_id = require_request_id(&params, tr)?;
+    let timeout_secs = params
+        .get("timeout_secs")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_TURN_TIMEOUT_SECS)
+        .clamp(MIN_TURN_TIMEOUT_SECS, MAX_TURN_TIMEOUT_SECS);
+
+    let mut reg = lock(registry, tr)?;
+    reg.start_turn(
+        surface_id,
+        request_id.clone(),
+        Duration::from_secs(timeout_secs),
+    )
+    .map_err(|e| turn_error_message(tr, surface_id, &e))?;
+    Ok(json!({
+        "surface_id": surface_id,
+        "request_id": request_id,
+        "timeout_secs": timeout_secs,
+        "turn_open": true,
+    }))
+}
+
+fn turn_error_message(tr: &Translator, surface_id: u32, err: &TurnError) -> IpcMethodError {
+    match err {
+        TurnError::NotWatched => IpcMethodError::new(tr.t_replace(
+            "agent_stream.error.turn_not_watched",
+            "{surface}",
+            &surface_id.to_string(),
+        )),
+        TurnError::AlreadyOpen { request_id } => IpcMethodError::new(
+            tr.t_replace(
+                "agent_stream.error.turn_already_open",
+                "{surface}",
+                &surface_id.to_string(),
+            )
+            .replace("{request}", request_id),
+        ),
+    }
 }
 
 /// `agent_stream.unwatch` — tail 을 멈추고 종료 이벤트를 남긴다.
@@ -635,5 +726,132 @@ mod tests {
     fn list_is_empty_before_anything_is_watched() {
         let list = handle_list(&shared(), &Translator::default()).expect("list");
         assert!(list["watches"].as_array().expect("array").is_empty());
+    }
+
+    fn watched_shared(surface_id: u32) -> Shared {
+        let registry = shared();
+        registry.lock().expect("lock").insert(new_watch(
+            surface_id,
+            "s".into(),
+            std::path::PathBuf::new(),
+            false,
+        ));
+        registry
+    }
+
+    #[test]
+    fn turn_start_opens_a_turn_on_a_watched_surface() {
+        let registry = watched_shared(3);
+        let out = handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": "abc" }),
+        )
+        .expect("opens");
+        assert_eq!(out["surface_id"], 3);
+        assert_eq!(out["request_id"], "abc");
+        assert_eq!(out["timeout_secs"], DEFAULT_TURN_TIMEOUT_SECS);
+        assert!(registry.lock().expect("lock").has_open_turn(3));
+    }
+
+    #[test]
+    fn turn_start_accepts_a_numeric_request_id_as_a_string() {
+        // `${body.request_id}` 는 전체 플레이스홀더면 타입을 보존한다 — 숫자로 와도 받는다.
+        let registry = watched_shared(3);
+        let out = handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": 42 }),
+        )
+        .expect("opens");
+        assert_eq!(out["request_id"], "42");
+    }
+
+    #[test]
+    fn turn_start_without_a_request_id_is_rejected() {
+        let registry = watched_shared(3);
+        let err = handle_turn_start(&registry, &Translator::default(), json!({ "surface": 3 }))
+            .expect_err("must reject");
+        assert_eq!(err.code, -32602);
+        assert!(
+            err.message.contains("missing_request_id"),
+            "{}",
+            err.message
+        );
+        assert!(!registry.lock().expect("lock").has_open_turn(3));
+    }
+
+    #[test]
+    fn turn_start_rejects_an_oversized_request_id() {
+        let registry = watched_shared(3);
+        let huge = "x".repeat(MAX_REQUEST_ID_LEN + 1);
+        let err = handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": huge }),
+        )
+        .expect_err("must reject an oversized request_id");
+        assert_eq!(err.code, -32602);
+        assert!(
+            err.message.contains("request_id_too_long"),
+            "{}",
+            err.message
+        );
+        // 거부된 요청은 어떤 턴도 열지 않는다 — 증폭 벡터가 저장 단계에 닿지 않는다.
+        assert!(!registry.lock().expect("lock").has_open_turn(3));
+    }
+
+    #[test]
+    fn turn_start_accepts_a_request_id_at_the_cap() {
+        let registry = watched_shared(3);
+        let at_cap = "x".repeat(MAX_REQUEST_ID_LEN);
+        handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": at_cap }),
+        )
+        .expect("a request_id exactly at the cap is accepted");
+        assert!(registry.lock().expect("lock").has_open_turn(3));
+    }
+
+    #[test]
+    fn turn_start_on_an_unwatched_surface_is_rejected_loudly() {
+        let err = handle_turn_start(
+            &shared(),
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": "abc" }),
+        )
+        .expect_err("must reject");
+        assert!(err.message.contains("turn_not_watched"), "{}", err.message);
+    }
+
+    #[test]
+    fn turn_start_rejects_an_overlapping_turn() {
+        let registry = watched_shared(3);
+        handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": "first" }),
+        )
+        .expect("first opens");
+        let err = handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": "second" }),
+        )
+        .expect_err("overlap rejected");
+        assert!(err.message.contains("turn_already_open"), "{}", err.message);
+    }
+
+    #[test]
+    fn turn_start_clamps_the_timeout_into_range() {
+        let registry = watched_shared(3);
+        let out = handle_turn_start(
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3, "request_id": "abc", "timeout_secs": 1 }),
+        )
+        .expect("opens");
+        assert_eq!(out["timeout_secs"], MIN_TURN_TIMEOUT_SECS);
     }
 }

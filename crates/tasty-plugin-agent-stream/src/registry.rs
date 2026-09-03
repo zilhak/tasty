@@ -17,13 +17,16 @@
 //! 응답은 복구할 수 없기 때문이다. 프로세스가 살아 있는 동안의 중복(파일 재동기화 등)은
 //! 아래 [`DedupeCache`] 가 흡수하고, 재시작을 건너뛴 중복만 소비자에게 노출된다.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::record::{REASON_REWATCHED, REASON_SESSION_ENDED, StreamEvent};
+use crate::record::{
+    EventKind, REASON_REWATCHED, REASON_SESSION_ENDED, REASON_TURN_TIMEOUT, StreamEvent,
+};
 use crate::sse::ServeConfig;
 use crate::sse::hub::{Published, SseHub, SubOptions};
 use crate::tail::TailState;
@@ -37,6 +40,38 @@ const DEDUPE_CAP: usize = 4096;
 
 /// 영속 스냅샷 포맷 버전. 형식이 바뀌면 올려서 옛 파일을 무시한다.
 const SNAPSHOT_VERSION: u64 = 1;
+
+/// correlation 턴의 기본 비활동 타임아웃(초). `turn_start` 가 `timeout_secs` 로
+/// 덮어쓸 수 있다.
+pub(crate) const DEFAULT_TURN_TIMEOUT_SECS: u64 = 600;
+/// `timeout_secs` 로 받을 수 있는 범위. 너무 짧으면 정상 턴을 끊고, 너무 길면 막힌 턴이
+/// 오래 남아 후속 요청을 막는다.
+pub(crate) const MIN_TURN_TIMEOUT_SECS: u64 = 10;
+pub(crate) const MAX_TURN_TIMEOUT_SECS: u64 = 86_400;
+
+/// `turn_start` 로 연, 아직 닫히지 않은 correlation 턴 하나.
+///
+/// 이 surface 에서 나오는 이벤트는 열려 있는 동안 이 `request_id` 로 태깅된다. transcript
+/// 의 `turn_end`(정상 종료·취소·오류)나 등록 교체/해제/세션 소멸이 닫는다. 어느 것도 오지
+/// 않는 경우(막힌 턴)의 안전망이 `last_activity` 기준 비활동 타임아웃이다.
+#[derive(Debug)]
+struct TurnState {
+    request_id: String,
+    /// 이 턴에서 이벤트가 마지막으로 나온 시각. 타임아웃 sweep 의 기준.
+    last_activity: Instant,
+    /// 이 턴의 비활동 타임아웃. `turn_start` 인자 또는 기본값.
+    timeout: Duration,
+}
+
+/// `turn_start` 가 거부되는 이유.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TurnError {
+    /// 대상 surface 가 watch 중이 아니다 — 태깅할 이벤트가 애초에 나오지 않는다.
+    NotWatched,
+    /// 그 surface 에 이미 열린 턴이 있다. claude 는 한 번에 한 턴만 처리하므로 겹침을
+    /// 거부한다 — 소비자는 앞 턴의 `turn_end` 를 받은 뒤 다음 요청을 보낸다.
+    AlreadyOpen { request_id: String },
+}
 
 /// 최근 본 레코드 uuid 를 유한 개수만 기억하는 FIFO 집합.
 #[derive(Debug, Default)]
@@ -140,23 +175,45 @@ struct BufferedEvent {
     seq: u64,
     surface_id: u32,
     session_id: String,
+    /// 이 이벤트가 나올 때 그 surface 에 열려 있던 correlation 턴의 `request_id`.
+    /// 턴 밖에서 나온 이벤트는 `None`.
+    request_id: Option<String>,
     event: StreamEvent,
 }
 
 impl BufferedEvent {
     fn to_json(&self) -> Value {
-        event_json(self.seq, self.surface_id, &self.session_id, &self.event)
+        event_json(
+            self.seq,
+            self.surface_id,
+            &self.session_id,
+            self.request_id.as_deref(),
+            &self.event,
+        )
     }
 }
 
 /// 소비자에게 나가는 이벤트 JSON. `poll` 응답과 SSE `data` 가 **같은 함수**를 쓴다 —
 /// 두 경로의 스키마가 갈라지면 소비자가 채널마다 다른 파서를 들어야 한다.
-pub fn event_json(seq: u64, surface_id: u32, session_id: &str, event: &StreamEvent) -> Value {
+///
+/// `request_id` 는 correlation 값이다 — 웹훅 요청자가 준 식별자로, 그 요청이 만든
+/// 이벤트에 실린다. 턴 밖 이벤트는 `None` 이라 필드 자체가 빠진다(소비자는 존재 여부로
+/// "요청에서 비롯된 것인가" 를 가른다).
+pub fn event_json(
+    seq: u64,
+    surface_id: u32,
+    session_id: &str,
+    request_id: Option<&str>,
+    event: &StreamEvent,
+) -> Value {
     let mut value = event.to_json();
     let map = value.as_object_mut().expect("StreamEvent::to_json object");
     map.insert("seq".into(), Value::from(seq));
     map.insert("surface_id".into(), Value::from(surface_id));
     map.insert("session_id".into(), Value::from(session_id.to_string()));
+    if let Some(id) = request_id {
+        map.insert("request_id".into(), Value::from(id.to_string()));
+    }
     value
 }
 
@@ -175,6 +232,10 @@ pub struct StreamRegistry {
     /// [`Watch::generation`] 발급기. 재사용되지 않아야 꺼내간 tail 의 되돌리기 판정이
     /// 정확하다(0 은 "아직 발급 안 됨" 이므로 실제 발급은 1 부터).
     next_generation: u64,
+    /// surface 별로 열려 있는 correlation 턴. `turn_start` 가 넣고, 그 surface 의
+    /// `turn_end` 이벤트(어느 경로에서 왔든)가 뺀다. 재시작으로 사라지는 **휘발 상태**라
+    /// 스냅샷에 남기지 않는다 — 재시작 시점의 in-flight 턴은 복구 대상이 아니다.
+    turns: HashMap<u32, TurnState>,
     /// SSE 구독자 fan-out. 구독자가 없으면 비용이 0 이다.
     hub: Arc<SseHub>,
     /// SSE 서버 기동 설정. 스냅샷에 함께 남겨 강제 재시작 후 자동으로 다시 연다 —
@@ -334,22 +395,103 @@ impl StreamRegistry {
     }
 
     /// 수집 이벤트를 버퍼에 넣는다. 상한을 넘으면 가장 오래된 것부터 버린다.
+    ///
+    /// 이 surface 에 열린 correlation 턴이 있으면 그 `request_id` 로 이벤트를 태깅하고
+    /// 턴의 활동 시각을 갱신한다. 이벤트가 `turn_end` 면(정상 종료·취소·오류·등록 교체·
+    /// 해제·세션 소멸·타임아웃 어느 경로든) **그 턴을 닫는다** — 모든 종료 경로가 이
+    /// 한 곳을 지나므로 correlation 이 닫히는 규칙이 흩어지지 않는다.
     pub fn push_event(&mut self, surface_id: u32, session_id: &str, event: StreamEvent) {
         self.next_seq += 1;
         // seq 가 전진했으므로 스냅샷이 낡았다 — 재시작 후에도 커서가 단조 증가해야
         // 소비자의 `after_seq` 가 의미를 유지한다(아래 `restore` 참고).
         self.dirty = true;
-        self.publish_to_subscribers(self.next_seq, surface_id, session_id, &event);
+        let request_id = self.turns.get(&surface_id).map(|t| t.request_id.clone());
+        if let Some(turn) = self.turns.get_mut(&surface_id) {
+            turn.last_activity = Instant::now();
+        }
+        let closes_turn = event.kind == EventKind::TurnEnd;
+        self.publish_to_subscribers(
+            self.next_seq,
+            surface_id,
+            session_id,
+            request_id.as_deref(),
+            &event,
+        );
         self.events.push_back(BufferedEvent {
             seq: self.next_seq,
             surface_id,
             session_id: session_id.to_string(),
+            request_id,
             event,
         });
         while self.events.len() > EVENT_BUFFER_CAP {
             self.events.pop_front();
             self.dropped += 1;
         }
+        if closes_turn {
+            self.turns.remove(&surface_id);
+        }
+    }
+
+    /// correlation 턴을 연다. 이 surface 에서 나오는 이벤트가 `request_id` 로 태깅된다.
+    ///
+    /// 겹침은 거부한다(`AlreadyOpen`) — claude 는 한 번에 한 턴만 처리하므로, 앞 턴이
+    /// 닫히기 전에 새 턴을 열면 앞 턴의 이벤트가 새 `request_id` 로 잘못 태깅될 수 있다.
+    /// watch 중이 아니면 거부한다(`NotWatched`) — 태깅할 이벤트가 애초에 나오지 않는다.
+    pub fn start_turn(
+        &mut self,
+        surface_id: u32,
+        request_id: String,
+        timeout: Duration,
+    ) -> Result<(), TurnError> {
+        if !self.watches.iter().any(|w| w.surface_id == surface_id) {
+            return Err(TurnError::NotWatched);
+        }
+        if let Some(existing) = self.turns.get(&surface_id) {
+            return Err(TurnError::AlreadyOpen {
+                request_id: existing.request_id.clone(),
+            });
+        }
+        self.turns.insert(
+            surface_id,
+            TurnState {
+                request_id,
+                last_activity: Instant::now(),
+                timeout,
+            },
+        );
+        Ok(())
+    }
+
+    /// 활동 없이 자기 타임아웃을 넘긴 턴을 닫는다 — `turn_start` 뒤 `claude.tell` 이 실패해
+    /// 그 턴을 닫을 transcript 이벤트가 영영 오지 않는 경우의 안전망. tail 루프가 매 tick
+    /// 부른다. 닫힘은 `turn_end{reason=stream:turn_timeout}` 로 방출되며, `push_event` 가
+    /// 그 이벤트를 열린 `request_id` 로 태깅하고 턴을 뺀다.
+    pub fn sweep_stale_turns(&mut self, now: Instant) {
+        let stale: Vec<u32> = self
+            .turns
+            .iter()
+            .filter(|(_, t)| now.saturating_duration_since(t.last_activity) >= t.timeout)
+            .map(|(surface_id, _)| *surface_id)
+            .collect();
+        for surface_id in stale {
+            let session_id = self
+                .watches
+                .iter()
+                .find(|w| w.surface_id == surface_id)
+                .map(|w| w.session_id.clone())
+                .unwrap_or_default();
+            self.push_event(
+                surface_id,
+                &session_id,
+                StreamEvent::turn_end(REASON_TURN_TIMEOUT),
+            );
+        }
+    }
+
+    #[cfg(test)]
+    pub fn has_open_turn(&self, surface_id: u32) -> bool {
+        self.turns.contains_key(&surface_id)
     }
 
     pub fn mark_dirty(&mut self) {
@@ -380,12 +522,13 @@ impl StreamRegistry {
         seq: u64,
         surface_id: u32,
         session_id: &str,
+        request_id: Option<&str>,
         event: &StreamEvent,
     ) {
         if self.hub.is_idle() {
             return;
         }
-        let payload = event_json(seq, surface_id, session_id, event);
+        let payload = event_json(seq, surface_id, session_id, request_id, event);
         self.hub.publish(Arc::new(Published::new(
             seq, surface_id, event.kind, &payload,
         )));
@@ -409,7 +552,7 @@ impl StreamRegistry {
             .events
             .iter()
             .filter(|e| e.seq > after_seq)
-            .filter(|e| opts.include_thinking || e.event.kind != crate::record::EventKind::Thinking)
+            .filter(|e| opts.include_thinking || e.event.kind != EventKind::Thinking)
             .filter(|e| opts.filter_surface.is_none_or(|s| s == e.surface_id))
             .map(|e| {
                 Arc::new(Published::new(
@@ -1015,5 +1158,161 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+    }
+
+    // ── correlation (turn_start / 태깅 / 종료) ──────────────────────────
+
+    fn watched(surface_id: u32) -> StreamRegistry {
+        let mut reg = StreamRegistry::new(None);
+        reg.insert(new_watch(
+            surface_id,
+            "s".into(),
+            PathBuf::from("/nope"),
+            false,
+        ));
+        reg
+    }
+
+    fn events_of(reg: &StreamRegistry) -> Vec<Value> {
+        reg.poll_json(None, 0, 1000)["events"]
+            .as_array()
+            .expect("array")
+            .clone()
+    }
+
+    #[test]
+    fn a_turn_tags_its_events_and_the_turn_end_closes_it() {
+        let mut reg = watched(1);
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("turn opens on a watched surface");
+        reg.push_event(1, "s", text_event("hi", "u1"));
+        reg.push_event(1, "s", StreamEvent::turn_end("stop:end_turn"));
+        // 턴이 닫힌 뒤에 나온 이벤트(사용자가 직접 입력한 경우 등)는 태그가 없다.
+        reg.push_event(1, "s", text_event("after", "u2"));
+
+        let ev = events_of(&reg);
+        assert_eq!(ev[0]["request_id"], "req-1", "in-turn text is tagged");
+        assert_eq!(ev[1]["request_id"], "req-1", "the turn_end is tagged too");
+        assert_eq!(ev[1]["kind"], "turn_end");
+        assert!(
+            ev[2].get("request_id").is_none(),
+            "an event after the turn closed is untagged: {}",
+            ev[2]
+        );
+        assert!(!reg.has_open_turn(1));
+    }
+
+    #[test]
+    fn out_of_turn_events_carry_no_request_id() {
+        let mut reg = watched(1);
+        reg.push_event(1, "s", text_event("solo", "u1"));
+        assert!(events_of(&reg)[0].get("request_id").is_none());
+    }
+
+    #[test]
+    fn a_second_turn_start_while_one_is_open_is_rejected() {
+        let mut reg = watched(1);
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("first opens");
+        let err = reg
+            .start_turn(1, "req-2".into(), Duration::from_secs(600))
+            .expect_err("overlap is rejected");
+        assert_eq!(
+            err,
+            TurnError::AlreadyOpen {
+                request_id: "req-1".into()
+            }
+        );
+        // 첫 턴은 그대로 열려 있다.
+        assert!(reg.has_open_turn(1));
+    }
+
+    #[test]
+    fn turn_start_on_an_unwatched_surface_is_rejected() {
+        let mut reg = StreamRegistry::new(None);
+        let err = reg
+            .start_turn(9, "req".into(), Duration::from_secs(600))
+            .expect_err("no watch, nothing to tag");
+        assert_eq!(err, TurnError::NotWatched);
+    }
+
+    #[test]
+    fn the_same_request_id_can_open_a_new_turn_after_the_previous_one_closed() {
+        let mut reg = watched(1);
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("opens");
+        reg.push_event(1, "s", StreamEvent::turn_end("stop:end_turn"));
+        assert!(!reg.has_open_turn(1));
+        // 앞 턴이 닫혔으므로 같은 id 로 새 턴을 열 수 있다(겹침이 아니다).
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("reuse after close is allowed");
+        assert!(reg.has_open_turn(1));
+    }
+
+    #[test]
+    fn unwatching_a_surface_closes_its_open_turn_tagged() {
+        let mut reg = watched(1);
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("opens");
+        assert!(reg.remove(1, REASON_UNWATCHED));
+        let ev = events_of(&reg);
+        let last = ev.last().expect("a terminal event");
+        assert_eq!(last["kind"], "turn_end");
+        assert_eq!(last["reason"], REASON_UNWATCHED);
+        assert_eq!(
+            last["request_id"], "req-1",
+            "the terminal event that closes an open turn is correlated"
+        );
+        assert!(!reg.has_open_turn(1));
+    }
+
+    #[test]
+    fn rewatching_a_surface_closes_the_previous_open_turn_tagged() {
+        let mut reg = watched(1);
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("opens");
+        // 같은 surface 재-watch → 이전 등록의 턴을 rewatched 로 닫는다.
+        reg.insert(new_watch(1, "s2".into(), PathBuf::from("/other"), false));
+        let ev = events_of(&reg);
+        let rewatch = ev
+            .iter()
+            .find(|e| e["reason"] == "stream:rewatched")
+            .expect("a rewatched turn_end");
+        assert_eq!(rewatch["request_id"], "req-1");
+        assert!(!reg.has_open_turn(1));
+    }
+
+    #[test]
+    fn a_stale_turn_is_swept_with_a_timeout_turn_end() {
+        let mut reg = watched(1);
+        // 타임아웃 0 — start 직후의 어떤 now 로도 즉시 만료된다(막힌 턴: 이벤트가 없다).
+        reg.start_turn(1, "req-1".into(), Duration::ZERO)
+            .expect("opens");
+        reg.sweep_stale_turns(Instant::now());
+        let ev = events_of(&reg);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0]["kind"], "turn_end");
+        assert_eq!(ev[0]["reason"], REASON_TURN_TIMEOUT);
+        assert_eq!(ev[0]["request_id"], "req-1");
+        assert!(!reg.has_open_turn(1), "the swept turn is closed");
+    }
+
+    #[test]
+    fn a_turn_with_recent_activity_is_not_swept() {
+        let mut reg = watched(1);
+        reg.start_turn(1, "req-1".into(), Duration::from_secs(600))
+            .expect("opens");
+        reg.push_event(1, "s", text_event("working", "u1"));
+        reg.sweep_stale_turns(Instant::now());
+        assert!(reg.has_open_turn(1), "a fresh turn survives the sweep");
+    }
+
+    #[test]
+    fn the_request_id_rides_the_sse_payload_too() {
+        // poll 과 SSE 는 같은 event_json 을 쓰므로, poll 에 실리면 SSE data 에도 실린다.
+        let payload = event_json(5, 1, "s", Some("req-9"), &text_event("x", "u1"));
+        assert_eq!(payload["request_id"], "req-9");
+        let untagged = event_json(6, 1, "s", None, &text_event("y", "u2"));
+        assert!(untagged.get("request_id").is_none());
     }
 }

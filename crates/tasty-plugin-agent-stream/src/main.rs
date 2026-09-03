@@ -128,6 +128,9 @@ impl Plugin for AgentStreamPlugin {
             "agent_stream.watch" => {
                 handlers::handle_watch(&host, &self.registry, &self.translator, params)
             }
+            "agent_stream.turn_start" => {
+                handlers::handle_turn_start(&self.registry, &self.translator, params)
+            }
             "agent_stream.unwatch" => {
                 handlers::handle_unwatch(&self.registry, &self.translator, params)
             }

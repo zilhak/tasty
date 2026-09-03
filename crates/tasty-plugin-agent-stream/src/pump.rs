@@ -47,7 +47,12 @@ pub fn tail_loop(registry: Shared, host: HostHandle) {
         }
         pump_all(&registry, root.as_deref());
         match registry.lock() {
-            Ok(mut reg) => reg.save_if_dirty(),
+            Ok(mut reg) => {
+                // 활동 없이 오래 열린 correlation 턴을 닫는다(막힌 턴 안전망). pump 직후에
+                // 돌려 방금 들어온 이벤트가 활동 시각을 이미 갱신한 뒤 판정하게 한다.
+                reg.sweep_stale_turns(std::time::Instant::now());
+                reg.save_if_dirty();
+            }
             Err(e) => {
                 tracing::error!("agent-stream registry mutex poisoned: {e}");
                 return;
