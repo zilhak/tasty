@@ -16,6 +16,8 @@ use tasty_plugin_sdk::{IpcMethodError, i18n::Translator};
 
 use crate::registry::{StreamRegistry, new_watch};
 use crate::resolve::{self, CLAUDE_SESSION_META_KEY, HostCall, ResolveError};
+use crate::sse::server::{self, SseServer};
+use crate::sse::{ConfigError, ServeConfig};
 
 /// `poll` 의 기본/최대 반환 개수.
 const POLL_DEFAULT_LIMIT: u64 = 100;
@@ -161,6 +163,153 @@ pub fn handle_poll(
     Ok(lock(registry, tr)?.poll_json(filter_surface, after_seq, limit))
 }
 
+/// `agent_stream.serve` — SSE 엔드포인트를 연다.
+///
+/// 이미 떠 있으면 **끄고 새 설정으로 다시 연다**(`replaced: true`). 포트/토큰을 바꾸려고
+/// 별도 명령을 쓰게 만들 이유가 없고, "요청한 설정으로 열려 있다" 는 결과가 호출 횟수와
+/// 무관하게 같아진다.
+pub fn handle_serve(
+    registry: &Shared,
+    server: &mut Option<SseServer>,
+    tr: &Translator,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
+    let config = serve_config_from(&params, tr)?;
+    let replaced = server.is_some();
+    // 옛 리스너를 내리기 **전에** 레지스트리 락을 한 번 잡아 둔다. 순서를 뒤집으면
+    // 락이 poisoned 인 경우 옛 엔드포인트만 닫힌 채 `?` 로 빠져나가, 스냅샷에는 옛 설정이
+    // 남는다 — 다음 재시작이 사용자가 닫혔다고 믿는 엔드포인트를 다시 연다.
+    let hub = lock(registry, tr)?.hub();
+    // 새로 bind 하기 전에 옛 리스너를 반드시 내린다 — 같은 포트로 재기동하는 흔한 경우에
+    // 남겨두면 "주소가 이미 사용 중" 으로 실패한다.
+    if let Some(mut old) = server.take() {
+        old.shutdown();
+    }
+    let started = match server::start(config.clone(), hub, registry.clone()) {
+        Ok(started) => started,
+        Err(e) => {
+            // 옛 리스너는 이미 내려갔고 새 bind 는 실패했다 — 런타임 상태는 "닫힘" 이다.
+            // 스냅샷에 옛 설정을 남겨두면 다음 강제 재시작/`enable` 때
+            // `restore_endpoint` 가 사용자가 닫혔다고 믿는 엔드포인트를 조용히 다시 연다.
+            // 대화 전문이 나가는 채널에서 "닫힌 줄 알았는데 열림" 은 ADR-0100 결정 1
+            // (명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
+            clear_persisted_serve(registry, tr);
+            return Err(bind_failed_message(tr, &config, &e));
+        }
+    };
+    let info = started.to_json();
+    *server = Some(started);
+    let mut reg = lock(registry, tr)?;
+    reg.set_serve_config(Some(config));
+    reg.save_if_dirty();
+    let mut info = info;
+    if let Some(map) = info.as_object_mut() {
+        map.insert("replaced".into(), Value::from(replaced));
+    }
+    Ok(info)
+}
+
+fn bind_failed_message(tr: &Translator, config: &ServeConfig, detail: &str) -> IpcMethodError {
+    IpcMethodError::new(
+        tr.t_replace(
+            "agent_stream.error.serve_bind_failed",
+            "{addr}",
+            &format!("{}:{}", config.bind, config.port),
+        )
+        .replace("{detail}", detail),
+    )
+}
+
+/// 영속된 serve 설정을 지운다. 여기서 실패해도 호출자는 이미 bind 실패를 보고하는
+/// 중이므로 에러를 겹쳐 올리지 않고 경고만 남긴다.
+fn clear_persisted_serve(registry: &Shared, tr: &Translator) {
+    match lock(registry, tr) {
+        Ok(mut reg) => {
+            reg.set_serve_config(None);
+            reg.save_if_dirty();
+        }
+        Err(e) => tracing::warn!(
+            "agent-stream: cannot clear the persisted SSE endpoint after a failed rebind: {} — a restart may reopen the old endpoint",
+            e.message
+        ),
+    }
+}
+
+/// `agent_stream.serve_stop` — 엔드포인트를 닫고 열린 구독을 정리한다.
+pub fn handle_serve_stop(
+    registry: &Shared,
+    server: &mut Option<SseServer>,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let Some(mut running) = server.take() else {
+        return Err(IpcMethodError::new(
+            tr.t("agent_stream.error.serve_not_running"),
+        ));
+    };
+    running.shutdown();
+    let mut reg = lock(registry, tr)?;
+    reg.set_serve_config(None);
+    reg.save_if_dirty();
+    Ok(json!({ "running": false, "stopped": true }))
+}
+
+/// `agent_stream.serve_info` — 엔드포인트 상태와 구독자 통계. 토큰은 싣지 않는다.
+pub fn handle_serve_info(server: &Option<SseServer>) -> Result<Value, IpcMethodError> {
+    match server {
+        Some(running) => Ok(running.to_json()),
+        None => Ok(json!({ "running": false })),
+    }
+}
+
+fn serve_config_from(params: &Value, tr: &Translator) -> Result<ServeConfig, IpcMethodError> {
+    // 포트 범위를 벗어난 값은 "지정하지 않음" 으로 접지 않는다 — 그러면 `--port 70000`
+    // 이 "포트가 지정되지 않았다" 로 안내되어 원인과 다른 메시지가 나간다.
+    let port = match params.get("port").and_then(Value::as_u64) {
+        Some(raw) => u16::try_from(raw).map_err(|_| {
+            IpcMethodError::invalid_params(&tr.t_replace(
+                "agent_stream.error.serve_port_out_of_range",
+                "{port}",
+                &raw.to_string(),
+            ))
+        })?,
+        // 미지정 — 아래 `validate()` 가 `PortRequired` 로 거른다.
+        None => 0,
+    };
+    let bind = params
+        .get("bind")
+        .and_then(Value::as_str)
+        .unwrap_or(ServeConfig::DEFAULT_BIND)
+        .to_string();
+    let token = params
+        .get("token")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    let config = ServeConfig { bind, port, token };
+    config
+        .validate()
+        .map_err(|e| config_error_message(tr, &config, e))?;
+    Ok(config)
+}
+
+fn config_error_message(tr: &Translator, config: &ServeConfig, err: ConfigError) -> IpcMethodError {
+    match err {
+        ConfigError::PortRequired => {
+            IpcMethodError::invalid_params(tr.t("agent_stream.error.serve_port_required"))
+        }
+        ConfigError::InvalidBind => IpcMethodError::invalid_params(&tr.t_replace(
+            "agent_stream.error.serve_invalid_bind",
+            "{bind}",
+            &config.bind,
+        )),
+        ConfigError::RemoteBindNeedsToken => IpcMethodError::invalid_params(&tr.t_replace(
+            "agent_stream.error.serve_remote_bind_needs_token",
+            "{bind}",
+            &config.bind,
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,6 +331,75 @@ mod tests {
 
     fn shared() -> Shared {
         Arc::new(Mutex::new(StreamRegistry::new(None)))
+    }
+
+    /// 지금 비어 있는 루프백 포트 하나. 바인드해 번호를 읽고 바로 놓는다.
+    fn free_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        listener.local_addr().expect("addr").port()
+    }
+
+    #[test]
+    fn a_failed_rebind_clears_the_persisted_endpoint_so_a_restart_does_not_reopen_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let registry: Shared = Arc::new(Mutex::new(StreamRegistry::new(Some(dir.path()))));
+        let tr = Translator::default();
+        let mut server = None;
+
+        handle_serve(
+            &registry,
+            &mut server,
+            &tr,
+            json!({"port": free_port(), "bind": "127.0.0.1"}),
+        )
+        .expect("the first bind succeeds");
+        assert!(registry.lock().expect("lock").serve_config().is_some());
+
+        // 이 주소는 이 호스트의 것이 아니다(TEST-NET-3) — bind 가 반드시 실패한다.
+        let err = handle_serve(
+            &registry,
+            &mut server,
+            &tr,
+            json!({"port": free_port(), "bind": "192.0.2.1", "token": "t"}),
+        )
+        .expect_err("binding a foreign address must fail");
+        assert!(
+            err.message.contains("serve_bind_failed") || err.message.contains("192.0.2.1"),
+            "{}",
+            err.message
+        );
+
+        // 런타임도 스냅샷도 "닫힘" 이어야 한다 — 다음 재시작이 옛 설정을 되살리면
+        // 사용자가 닫혔다고 믿는 채널로 대화 전문이 다시 나간다.
+        assert!(server.is_none(), "the runtime endpoint is closed");
+        assert!(registry.lock().expect("lock").serve_config().is_none());
+        let snapshot: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("watches.json")).expect("snapshot"),
+        )
+        .expect("json");
+        assert_eq!(snapshot["serve"], Value::Null, "{snapshot}");
+    }
+
+    #[test]
+    fn a_port_outside_the_u16_range_reports_its_real_cause() {
+        let err = handle_serve(
+            &shared(),
+            &mut None,
+            &Translator::default(),
+            json!({"port": 70000}),
+        )
+        .expect_err("must reject");
+        assert_eq!(err.code, -32602);
+        assert!(
+            err.message.contains("serve_port_out_of_range") || err.message.contains("70000"),
+            "{}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("serve_port_required"),
+            "포트 미지정 안내로 접히면 원인이 가려진다: {}",
+            err.message
+        );
     }
 
     #[test]

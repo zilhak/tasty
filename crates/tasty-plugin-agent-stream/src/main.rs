@@ -11,11 +11,14 @@
 //! (`tasty read screen`, `output-match` 훅)과 달리 ANSI·박스 문자·줄바꿈이 섞이지 않고,
 //! 사고 블록과 응답 텍스트가 소스에서부터 분리돼 있다.
 //!
-//! `tasty agent-stream watch|unwatch|list|poll` CLI + 같은 이름의 `agent_stream.*` IPC
-//! 로 노출된다. 이름이 claude 전용이 아닌 이유는 codex 등 다른 에이전트도 transcript 만
+//! `tasty agent-stream watch|unwatch|list|poll|serve|serve-stop|serve-info` CLI + 같은
+//! 이름의 `agent_stream.*` IPC(`serve` 계열은 `serve` / `serve_stop` / `serve_info`)로
+//! 노출된다. 이름이 claude 전용이 아닌 이유는 codex 등 다른 에이전트도 transcript 만
 //! 다르고 tail·정규화·전송은 같기 때문이다 — 현재 해석되는 소스는 Claude Code 하나다.
 //!
-//! **이 crate 는 수집까지만 한다.** 외부 방출(SSE)과 인바운드 웹훅 배선은 별개다.
+//! **이 crate 는 수집과 SSE 방출까지 한다**(`sse` 모듈, `GET /events`). 외부 요청으로
+//! 에이전트를 실행시키는 **인바운드 웹훅 배선은 별개**다 — 그 방향은 호스트 리스너가
+//! 담당한다. SSE 노출 정책의 근거는 `docs/adr/0100-agent-stream-sse-endpoint-exposure.md`.
 //!
 //! 호스트 코드에 의존하지 않으며 `tasty-plugin-sdk` 만 사용한다. surface → 세션 id 매핑도
 //! claude plugin 이 남긴 surface meta 를 host IPC 로 읽어 얻으므로 plugin 간 코드 의존이
@@ -26,6 +29,7 @@ mod pump;
 mod record;
 mod registry;
 mod resolve;
+mod sse;
 mod tail;
 
 use std::path::PathBuf;
@@ -33,6 +37,7 @@ use std::sync::{Arc, Mutex};
 
 use registry::StreamRegistry;
 use serde_json::Value;
+use sse::server::SseServer;
 use tasty_plugin_sdk::{
     BusHandle, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx,
     SurfaceResult, i18n::Translator,
@@ -46,6 +51,8 @@ struct AgentStreamPlugin {
     registry: Arc<Mutex<StreamRegistry>>,
     /// 사람이 읽는 IPC 에러 문자열 번역용. `main()` 에서 1 회 로드해 재사용한다.
     translator: Translator,
+    /// 떠 있는 SSE 엔드포인트. dispatch 스레드에서만 만지므로 별도 락이 필요 없다.
+    server: Option<SseServer>,
 }
 
 impl AgentStreamPlugin {
@@ -57,6 +64,40 @@ impl AgentStreamPlugin {
         Self {
             registry: Arc::new(Mutex::new(registry)),
             translator,
+            server: None,
+        }
+    }
+}
+
+impl AgentStreamPlugin {
+    /// 스냅샷에 남아 있던 SSE 설정으로 엔드포인트를 다시 연다.
+    ///
+    /// 호스트는 healthcheck 무응답 시 plugin 을 **강제 재시작**한다. 그때 엔드포인트가
+    /// 되살아나지 않으면 watch 는 복구됐는데 소비자가 붙을 곳이 없어, 재구독으로 복구
+    /// 한다는 이 설계의 전제가 무너진다. bind 실패는 경고만 남기고 plugin 은 계속 뜬다 —
+    /// 수집은 엔드포인트 없이도 유효하다(`poll` 로 읽을 수 있다).
+    fn restore_endpoint(&mut self) {
+        let reg = match self.registry.lock() {
+            Ok(reg) => reg,
+            Err(e) => {
+                tracing::warn!(
+                    "agent-stream: registry lock poisoned at start — the SSE endpoint is not reopened: {e}"
+                );
+                return;
+            }
+        };
+        let Some(config) = reg.serve_config() else {
+            return;
+        };
+        let hub = reg.hub();
+        drop(reg);
+        match sse::server::start(config.clone(), hub, self.registry.clone()) {
+            Ok(server) => self.server = Some(server),
+            Err(e) => tracing::warn!(
+                "agent-stream: cannot reopen the SSE endpoint on {}:{} after restart: {e} — collection continues, subscribe again after `tasty agent-stream serve`",
+                config.bind,
+                config.port
+            ),
         }
     }
 }
@@ -92,11 +133,19 @@ impl Plugin for AgentStreamPlugin {
             }
             "agent_stream.list" => handlers::handle_list(&self.registry, &self.translator),
             "agent_stream.poll" => handlers::handle_poll(&self.registry, &self.translator, params),
+            "agent_stream.serve" => {
+                handlers::handle_serve(&self.registry, &mut self.server, &self.translator, params)
+            }
+            "agent_stream.serve_stop" => {
+                handlers::handle_serve_stop(&self.registry, &mut self.server, &self.translator)
+            }
+            "agent_stream.serve_info" => handlers::handle_serve_info(&self.server),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
 
     fn on_start(&mut self, host: HostHandle, _bus: BusHandle) {
+        self.restore_endpoint();
         let registry = self.registry.clone();
         std::thread::Builder::new()
             .name("agent-stream-tail".into())
@@ -120,4 +169,58 @@ fn main() -> anyhow::Result<()> {
         .map(Translator::from_plugin_env)
         .unwrap_or_default();
     tasty_plugin_sdk::run(AgentStreamPlugin::new(data_dir, translator))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn free_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        listener.local_addr().expect("addr").port()
+    }
+
+    #[test]
+    fn a_persisted_endpoint_is_reopened_on_the_same_address_after_a_restart() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let port = free_port();
+
+        // 1 회차: 설정을 영속한다.
+        {
+            let mut reg = StreamRegistry::new(Some(dir.path()));
+            reg.set_serve_config(Some(sse::ServeConfig {
+                bind: "127.0.0.1".into(),
+                port,
+                token: Some("t".into()),
+            }));
+            reg.save_if_dirty();
+        }
+
+        // 2 회차: 재시작 상당. `new()` 가 스냅샷을 읽고 `restore_endpoint` 가 다시 연다.
+        let mut plugin =
+            AgentStreamPlugin::new(Some(dir.path().to_path_buf()), Translator::default());
+        plugin.restore_endpoint();
+        let info = plugin
+            .server
+            .as_ref()
+            .expect("the endpoint is reopened")
+            .to_json();
+        assert_eq!(
+            info["url"],
+            Value::from(format!("http://127.0.0.1:{port}/events")),
+            "주소가 바뀌면 붙어 있던 소비자가 조용히 떨어진다"
+        );
+        // 토큰은 공개 뷰에 실리지 않는다.
+        assert!(!info.to_string().contains("\"t\""), "{info}");
+        plugin.server.take().expect("server").shutdown();
+    }
+
+    #[test]
+    fn no_persisted_endpoint_means_nothing_is_opened() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut plugin =
+            AgentStreamPlugin::new(Some(dir.path().to_path_buf()), Translator::default());
+        plugin.restore_endpoint();
+        assert!(plugin.server.is_none());
+    }
 }

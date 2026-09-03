@@ -1,10 +1,16 @@
 [agent_stream.cli]
-desc = "AI エージェントのセッション transcript を tail し、構造化ストリームイベントとして読む"
+desc = "AI エージェントのセッション transcript を tail し、構造化ストリームイベントとして読みます"
 
 [agent_stream.error]
-missing_surface = "対象 surface がない: --surface <id> を渡すか、(TASTY_SURFACE_ID が設定される) tasty ターミナル内で実行する"
-no_session_meta = "surface {surface} に '{key}' meta がない — エージェントのセッション id が不明なため transcript のパスを決定できない。その surface でエージェントを(再)起動し、session-start フックに id を記録させる。"
-transcript_root_missing = "エージェント transcript のルートディレクトリが見つからない (~/.claude/projects、または $CLAUDE_CONFIG_DIR 設定時は $CLAUDE_CONFIG_DIR/projects)"
-transcript_not_found = "transcript ルート配下にセッション {session} の transcript ファイルが見つからない — まだディスクに書き出されていない可能性がある"
-not_watched = "surface {surface} は watch 対象ではない"
-registry_poisoned = "agent-stream レジストリのロックが poisoned 状態だ (tail スレッドがパニックした): {detail}"
+missing_surface = "対象 surface がありません: --surface <id> を渡すか、(TASTY_SURFACE_ID が設定される) tasty ターミナル内で実行してください"
+no_session_meta = "surface {surface} に '{key}' meta がありません — エージェントのセッション id が不明なため transcript のパスを決定できません。その surface でエージェントを(再)起動し、session-start フックに id を記録させてください。"
+transcript_root_missing = "エージェント transcript のルートディレクトリが見つかりません (~/.claude/projects、または $CLAUDE_CONFIG_DIR 設定時は $CLAUDE_CONFIG_DIR/projects)"
+transcript_not_found = "transcript ルート配下にセッション {session} の transcript ファイルが見つかりません — まだディスクに書き出されていない可能性があります"
+not_watched = "surface {surface} は watch 対象ではありません"
+registry_poisoned = "agent-stream レジストリのロックが poisoned 状態です (tail スレッドがパニックしました): {detail}"
+serve_port_required = "ポートが指定されていません: --port <n> を渡してください。SSE エンドポイントはポートを自分で選びません — ポートが勝手に変わると購読側が接続する固定アドレスが失われます。"
+serve_port_out_of_range = "ポート {port} はポート番号の範囲(1-65535)を超えています — 範囲内の値を --port で渡してください"
+serve_invalid_bind = "bind アドレス {bind} を IP として解釈できません — 127.0.0.1(既定)、::1、またはインターフェースの明示的なアドレスを渡してください"
+serve_remote_bind_needs_token = "{bind} にトークンなしで開くことを拒否します: このエンドポイントは会話全文を流すため、loopback より広いアドレスには --token が必要です"
+serve_bind_failed = "SSE エンドポイントを {addr} に bind できません: {detail} — ポートを空けるか別のポートを指定してください(自動フォールバックなし)"
+serve_not_running = "SSE エンドポイントは起動していません"

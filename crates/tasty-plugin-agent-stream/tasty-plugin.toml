@@ -1,13 +1,17 @@
 manifest_version = 1
 id = "com.tasty.agent-stream"
 name = "Agent Stream"
-version = "0.1.0"
+version = "0.1.1"
 description = "Tails AI agent session transcripts and normalizes them into structured stream events"
 api_version = "1"
-# 배포 패키징(DMG / AppImage / MSIX / deb)에서는 아직 제외한다 — 수집 파이프라인만
-# 있고 외부 방출(SSE)·인바운드 웹훅 배선이 아직 없어 최종 사용자에게 노출할 기능이
-# 되지 못한다. 워크스페이스 빌드의 dev 번들 sync(`ensure_dev_bundle`)는 이 플래그와
-# 무관하게 그대로 동작하므로 개발/검증에는 영향이 없다(mesh-demo 와 같은 취급).
+# 배포 패키징(DMG / AppImage / MSIX / deb)에서는 아직 제외한다. 이유 둘:
+#  1. 외부 요청으로 에이전트를 실행시키는 인바운드 웹훅 배선이 아직 없어, 최종 사용자가
+#     쓸 수 있는 완결된 기능이 되지 못한다(수집 + SSE 방출까지만 있다).
+#  2. 배포 대상이 되는 것은 ADR-0100 의 재검토 트리거다 — "tasty 를 설치하면 딸려오는
+#     것이 대화 전문을 네트워크로 내보낼 수 있다" 는 의미가 되므로, 기본 비활성만으로
+#     충분한지 다시 판단한 뒤에 켠다.
+# 워크스페이스 빌드의 dev 번들 sync(`ensure_dev_bundle`)는 이 플래그와 무관하게 그대로
+# 동작하므로 개발/검증에는 영향이 없다(mesh-demo 와 같은 취급).
 bundle = false
 permissions = [
     # surface.meta.get(claude-session-id 조회) · surface.locate(대상 생존 확인).
@@ -20,6 +24,9 @@ permissions = [
     # 것으로, 쓰는 대상은 이 plugin 의 data_dir 하나뿐이다. fs.read 와 같은 이유로
     # 매니페스트에 정직하게 선언한다.
     "fs.write",
+    # SSE 엔드포인트가 TCP 포트를 연다(`agent_stream.serve`). 기본 bind 는 loopback 이고,
+    # 그보다 넓은 주소는 토큰 없이는 거부한다 — ADR-0100.
+    "network",
 ]
 lang_dir = "lang"
 
@@ -39,6 +46,9 @@ subcommands = [
     { name = "unwatch", ipc_method = "agent_stream.unwatch", args = "unwatch_args", description = "Stop tailing a surface. Emits a final turn_end{reason=unwatched} event." },
     { name = "list",    ipc_method = "agent_stream.list",    args = "no_args",      description = "List every surface currently being tailed with its session id, transcript path, byte offset and status" },
     { name = "poll",    ipc_method = "agent_stream.poll",    args = "poll_args",    description = "Read collected stream events by sequence cursor (non-destructive). Events are text / thinking / tool_use / turn_end." },
+    { name = "serve",      ipc_method = "agent_stream.serve",      args = "serve_args", description = "Open the SSE endpoint (GET /events) so an external consumer can subscribe. The port is required — there is no automatic fallback. Calling it again rebinds with the new settings." },
+    { name = "serve-stop", ipc_method = "agent_stream.serve_stop", args = "no_args",    description = "Close the SSE endpoint and end every open subscription" },
+    { name = "serve-info", ipc_method = "agent_stream.serve_info", args = "no_args",    description = "Report the SSE endpoint state and per-subscriber counters. Never reports the token." },
 ]
 
 [contributes.cli.arg_groups.watch_args]
@@ -61,6 +71,13 @@ flags = [
     { name = "filter_surface", type = "u32", flag = "--surface", required = false, help = "Only return events collected for this surface (no default — omitting it returns every watched surface)" },
     { name = "after_seq", type = "i64", flag = "--after-seq", required = false, help = "Return events with seq strictly greater than this cursor (default: 0 = from the oldest buffered event)" },
     { name = "limit",     type = "u32", flag = "--limit",     required = false, help = "Maximum number of events to return (default 100, max 1000)" },
+]
+
+[contributes.cli.arg_groups.serve_args]
+flags = [
+    { name = "port",  type = "u32",    flag = "--port",  required = true,  help = "TCP port to listen on. Required — the endpoint never picks a port by itself, so the address stays the same across restarts." },
+    { name = "bind",  type = "string", flag = "--bind",  required = false, help = "Bind address (default 127.0.0.1). A non-loopback address is rejected unless --token is given." },
+    { name = "token", type = "string", flag = "--token", required = false, help = "Shared subscription token. Subscribers present it as 'Authorization: Bearer <token>' or '?token=<token>'. Omit for no authentication (loopback only)." },
 ]
 
 [contributes.cli.arg_groups.no_args]
