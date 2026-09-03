@@ -724,13 +724,24 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   border: var(--border);
   border-radius: 999px;
   padding: var(--sp-1) var(--sp-3);
-  margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-5);
 }
 .hero__eyebrow .dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
 }
+
+.hero__tagline {
+  font-family: var(--font-mono);
+  font-size: clamp(18px, 2vw, 22px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--subtext1);
+  margin: 0 0 var(--sp-3);
+}
+.hero__tagline .wordmark { color: var(--text); }
+.hero__tagline .wordmark b { color: var(--melon-flesh, #f25d6b); font-weight: inherit; }
 
 .hero h1 {
   font-size: clamp(34px, 4.6vw, 54px);

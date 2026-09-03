@@ -5,6 +5,9 @@ use crate::shell::{self, ICON_GITHUB, REPO, Shell, Strings};
 
 struct Copy {
     badge: &'static str,
+    /// The catchphrase under the eyebrow: the wordmark, then the pun that
+    /// only lands in English (`Tasty. Tasty terminal.`).
+    tagline: &'static str,
     title_lead: &'static str,
     title_accent: &'static str,
     title_tail: &'static str,
@@ -43,6 +46,7 @@ struct Copy {
 
 const KO_COPY: Copy = Copy {
     badge: "Windows · macOS · Linux",
+    tagline: "맛있는 터미널.",
     title_lead: "AI 에이전트가",
     title_accent: "직접 조작하는",
     title_tail: "터미널",
@@ -175,6 +179,7 @@ const KO_COPY: Copy = Copy {
 
 const EN_COPY: Copy = Copy {
     badge: "Windows · macOS · Linux",
+    tagline: "Tasty terminal.",
     title_lead: "A terminal",
     title_accent: "an AI agent",
     title_tail: "can drive itself",
@@ -359,6 +364,7 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         r##"<section class="hero">
   <div>
     <span class="hero__eyebrow"><span class="dot"></span>{badge} · v{version}</span>
+    <p class="hero__tagline"><span class="wordmark">Tasty<b>.</b></span> {tagline}</p>
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
     <p class="hero__lede">{lede}</p>
     <div class="cta-row">
@@ -375,6 +381,7 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
   {mock}
 </section>"##,
         badge = html_escape(copy.badge),
+        tagline = html_escape(copy.tagline),
         version = crate::version(),
         lead = html_escape(copy.title_lead),
         accent = html_escape(copy.title_accent),
