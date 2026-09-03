@@ -1,6 +1,6 @@
 use clap::Subcommand;
 
-/// `tasty memory secret ...` 서브커맨드.
+/// `tasty memory secret ...` subcommands.
 #[derive(Subcommand)]
 pub enum MemorySecretCommands {
     /// Store a secret value at scope/key.

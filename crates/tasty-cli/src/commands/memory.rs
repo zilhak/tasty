@@ -7,7 +7,7 @@ use clap::Subcommand;
 
 /// Agent memory CLI. Scope formats:
 /// `global`, `account:<userid>`, `window:<id>`, `workspace:<id>`, `surface:<id>`.
-/// `--surface <id>` 같은 alias가 대응 scope로 정규화된다.
+/// Aliases such as `--surface <id>` are normalized to the matching scope.
 #[derive(Subcommand)]
 pub enum MemoryCommands {
     /// Store a value at scope/key. Default content type inferred from value
@@ -237,22 +237,22 @@ pub enum MemoryCommands {
         #[command(subcommand)]
         command: MemorySecretCommands,
     },
-    /// Blackboard — workspace 단위 키-값 컬렉션 (`tasty.bb.<name>.*`).
+    /// Blackboard — per-workspace key-value collections (`tasty.bb.<name>.*`).
     Bb {
         #[command(subcommand)]
         command: MemoryBbCommands,
     },
-    /// Plan — workspace 단위 선언적 work breakdown (`tasty.plan.<plan_id>`).
+    /// Plan — per-workspace declarative work breakdown (`tasty.plan.<plan_id>`).
     Plan {
         #[command(subcommand)]
         command: MemoryPlanCommands,
     },
-    /// Cache — workspace 단위 TTL 캐시 (`tasty.cache.<key>`).
+    /// Cache — per-workspace TTL cache (`tasty.cache.<key>`).
     Cache {
         #[command(subcommand)]
         command: MemoryCacheCommands,
     },
-    /// Goal — surface 단위 단일 목표 문장 (`tasty.goal`).
+    /// Goal — a single goal sentence per surface (`tasty.goal`).
     Goal {
         #[command(subcommand)]
         command: MemoryGoalCommands,

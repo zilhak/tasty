@@ -1,6 +1,6 @@
 use clap::Subcommand;
 
-/// `tasty memory cache ...` 서브커맨드.
+/// `tasty memory cache ...` subcommands.
 #[derive(Subcommand)]
 pub enum MemoryCacheCommands {
     /// Store a value with required TTL (seconds).

@@ -1,6 +1,6 @@
 use clap::Subcommand;
 
-/// `tasty memory bb ...` 서브커맨드.
+/// `tasty memory bb ...` subcommands.
 #[derive(Subcommand)]
 pub enum MemoryBbCommands {
     /// Create a new blackboard with optional schema (JSON).

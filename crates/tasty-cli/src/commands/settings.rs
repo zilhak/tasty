@@ -8,14 +8,16 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum SettingsCommands {
-    /// 원격 전송(bulk 파일 채널) 수신측 저장 폴더 + 용량 상한 조회.
+    /// Show the receive-side storage folder and size cap for remote transfers
+    /// (bulk file channel).
     GetRemoteTransfer,
-    /// 원격 전송 저장 폴더/용량 상한 설정. 하나 이상 지정해야 한다.
+    /// Set the remote-transfer storage folder and/or size cap. At least one
+    /// must be given.
     SetRemoteTransfer {
-        /// 저장 폴더 경로(빈 문자열 = 기본 `~/.tasty/transfers/`).
+        /// Storage folder path (empty string = default `~/.tasty/transfers/`).
         #[arg(long)]
         dir: Option<String>,
-        /// 폴더 최대 용량(MiB).
+        /// Maximum folder size in MiB.
         #[arg(long)]
         max_mb: Option<u64>,
     },

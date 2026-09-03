@@ -4,9 +4,9 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum ClipboardCommands {
-    /// 로컬 클립보드에 텍스트를 쓴다.
+    /// Write text to the local clipboard.
     SetText {
-        /// 클립보드에 쓸 텍스트.
+        /// Text to write to the clipboard.
         text: String,
     },
 }

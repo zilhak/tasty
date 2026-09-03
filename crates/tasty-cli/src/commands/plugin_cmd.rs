@@ -219,49 +219,55 @@ pub enum ExtensionCommands {
 // reason: clap 파싱 1회용 enum — Box 화는 derive(Subcommand) 와 충돌하고 런타임 이득 없음.
 #[allow(clippy::large_enum_variant)]
 pub enum ToolCommands {
-    /// 저장된 ssh 프로필로 대화형 ssh 접속을 띄운다(identity/port 자동 주입). 로컬 (no IPC).
+    /// Open an interactive ssh session using a saved ssh profile (identity and
+    /// port are injected automatically). Local, no IPC.
     Ssh {
-        /// 접속할 ssh 프로필 name.
+        /// Name of the ssh profile to connect with.
         profile: String,
-        /// 원격에서 1회 실행할 명령(비우면 대화형 셸). 예: `tasty tool ssh gb10 --command hostname`.
+        /// Command to run once on the remote host (interactive shell if omitted),
+        /// e.g. `tasty tool ssh gb10 --command hostname`.
         #[arg(long = "command", num_args = 1.., allow_hyphen_values = true)]
         command: Vec<String>,
     },
-    /// 원격 접속 프로필 통합 CRUD (ssh + tasty-attach kind). 로컬 파일 (no IPC).
+    /// Manage remote connection profiles (ssh and tasty-attach kinds). Local
+    /// file, no IPC.
     RemoteProfile {
         #[command(subcommand)]
         command: RemoteProfileCommands,
     },
-    /// tasty-attach 프로필로 원격 surface/workspace 에 attach 한다. `--list` = 목록만. 로컬.
+    /// Attach to a remote surface/workspace using a tasty-attach profile.
+    /// `--list` only lists the profiles. Local.
     Attach {
-        /// attach 대상 tasty-attach 프로필 name(생략+`--list` 면 목록만).
+        /// Name of the tasty-attach profile to attach with (omit it together
+        /// with `--list` to only list profiles).
         name: Option<String>,
-        /// attach 할 원격 surface id.
+        /// Remote surface id to attach to.
         surface: Option<u32>,
-        /// attach 할 원격 workspace id(surface 와 배타).
+        /// Remote workspace id to attach to (mutually exclusive with surface).
         #[arg(long)]
         workspace: Option<u32>,
-        /// attach 직후 1회 비대화형 입력(escape 디코딩).
+        /// Input to send once right after attaching, non-interactively (escapes
+        /// decoded).
         #[arg(long)]
         send: Option<String>,
-        /// workspace 모드에서 --send 를 보낼 대상 surface id.
+        /// Surface id that receives --send in workspace mode.
         #[arg(long)]
         send_to: Option<u32>,
-        /// mirror-dump 수집 시간(ms). 생략 시 기본.
+        /// Mirror-dump collection time in ms (built-in default if omitted).
         #[arg(long)]
         dump_after: Option<u64>,
-        /// raw stdin↔stdout 브리지(surface 전용).
+        /// Raw stdin/stdout bridge (surface only).
         #[arg(long)]
         raw: bool,
-        /// 연결 끊김 시 자동 재연결 비활성.
+        /// Disable automatic reconnection when the connection drops.
         #[arg(long)]
         no_reconnect: bool,
-        /// tasty-attach kind 프로필 목록만 출력하고 종료(attach 안 함).
+        /// Only list tasty-attach profiles and exit (no attach).
         #[arg(long)]
         list: bool,
     },
-    /// Passkeys (`~/.tasty/passkeys.toml`) — 프로필이 이름으로 참조하는 자격증명 저장소.
-    /// list/show 는 값을 노출하지 않는다. 로컬 파일 (no IPC).
+    /// Passkeys (`~/.tasty/passkeys.toml`): the credential store that profiles
+    /// reference by name. list/show never reveal values. Local file, no IPC.
     Passkey {
         #[command(subcommand)]
         command: PasskeyCommands,

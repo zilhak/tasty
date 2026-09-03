@@ -1,6 +1,6 @@
 use clap::Subcommand;
 
-/// `tasty memory plan ...` 서브커맨드.
+/// `tasty memory plan ...` subcommands.
 #[derive(Subcommand)]
 pub enum MemoryPlanCommands {
     /// Create a new plan. `--steps` accepts a JSON array of step objects.

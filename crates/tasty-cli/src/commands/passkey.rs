@@ -6,34 +6,39 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum PasskeyCommands {
-    /// Passkey 추가/교체. `--path <file>`(파일 참조) 또는 `--inline`(비밀 입력) 중 하나.
+    /// Add or replace a passkey. Use either `--path <file>` (reference a file)
+    /// or `--inline` (enter a secret).
     Add {
-        /// 고유 식별자(프로필이 참조). 영숫자/-/_ 만 허용.
+        /// Unique identifier that profiles reference. Only alphanumerics, '-'
+        /// and '_' are allowed.
         #[arg(long)]
         name: String,
-        /// path kind — 사용자 소유 기존 키 파일 경로(`-i`). `--inline` 과 배타.
+        /// path kind: path to an existing key file owned by the user (`-i`).
+        /// Mutually exclusive with `--inline`.
         #[arg(long)]
         path: Option<String>,
-        /// inline kind — 비밀을 0600 파일로 materialize. 값은 `--value` 또는 stdin.
+        /// inline kind: materialize the secret as a 0600 file. The value comes
+        /// from `--value` or stdin.
         #[arg(long)]
         inline: bool,
-        /// inline 값(미지정 시 stdin 에서 읽음). `--inline` 과 함께 쓴다.
+        /// Inline value (read from stdin if omitted). Used together with
+        /// `--inline`.
         #[arg(long)]
         value: Option<String>,
     },
-    /// 저장된 Passkey 목록(name + kind 만 — 값 비노출).
+    /// List saved passkeys (name and kind only; values are never shown).
     List {
         #[arg(long)]
         json: bool,
     },
-    /// 한 Passkey 의 name + kind 출력(값 비노출).
+    /// Show one passkey's name and kind (the value is never shown).
     Show {
         #[arg(long)]
         name: String,
         #[arg(long)]
         json: bool,
     },
-    /// Passkey 제거(inline 이면 관리 파일도 삭제).
+    /// Remove a passkey (for the inline kind, the managed file is deleted too).
     Remove {
         #[arg(long)]
         name: String,

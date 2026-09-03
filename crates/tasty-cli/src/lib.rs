@@ -19,13 +19,13 @@ pub mod run;
 
 use clap::{Parser, Subcommand};
 
-/// 원격 인스턴스 조회/생성 코어는 `tasty-remote` 크레이트로 분리됐다. 내부
-/// `crate::remote_browse::` / `crate::remote_create::` 경로를 유지하기 위한 재수출.
+// 원격 인스턴스 조회/생성 코어는 `tasty-remote` 크레이트로 분리됐다. 내부
+// `crate::remote_browse::` / `crate::remote_create::` 경로를 유지하기 위한 재수출.
 pub use tasty_remote::browse as remote_browse;
 pub use tasty_remote::create as remote_create;
 
-/// SSH 위임 계층은 `tasty-ssh` 크레이트로 분리됐다. 내부 `crate::ssh::` 경로를
-/// 유지하기 위한 재수출 (`docs/dev-guide/build.md` §크레이트 분리 가이드).
+// SSH 위임 계층은 `tasty-ssh` 크레이트로 분리됐다. 내부 `crate::ssh::` 경로를
+// 유지하기 위한 재수출 (`docs/dev-guide/build.md` §크레이트 분리 가이드).
 pub use tasty_ssh as ssh;
 
 pub use commands::*;
@@ -51,7 +51,8 @@ pub struct Cli {
     pub launch: bool,
 
     /// Run as headless terminal emulator (no GUI, IPC + PTY + plugin only).
-    /// Default-features 빌드에서는 GUI 부팅을 skip. no-default-features 빌드는 항상 headless.
+    /// With default features this skips the GUI boot; a no-default-features
+    /// build is always headless.
     #[arg(long, default_value_t = false)]
     pub headless: bool,
 
@@ -211,7 +212,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: MemoryCommands,
     },
-    /// Global settings — remote-transfer 저장 폴더/용량 상한 get/set (07).
+    /// Global settings — get/set the remote-transfer storage folder and size cap
     Settings {
         #[command(subcommand)]
         command: SettingsCommands,
@@ -236,12 +237,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: AgentCommands,
     },
-    /// File handler — 사용자 설정 (`~/.tasty/file-handlers.toml`) 재로드.
+    /// File handler — reload the user configuration (`~/.tasty/file-handlers.toml`)
     FileHandler {
         #[command(subcommand)]
         command: FileHandlerCommands,
     },
-    /// Clipboard — 로컬 클립보드 조작.
+    /// Clipboard — operate on the local clipboard
     Clipboard {
         #[command(subcommand)]
         command: ClipboardCommands,
@@ -299,7 +300,7 @@ mod attach_surface_tests {
     use super::*;
     use clap::Parser;
 
-    /// 원격 attach 는 `tasty remote attach` 네임스페이스로 파싱된다.
+    // 원격 attach 는 `tasty remote attach` 네임스페이스로 파싱된다.
     #[test]
     fn remote_attach_parses() {
         let cli =
@@ -314,7 +315,7 @@ mod attach_surface_tests {
         assert_eq!(ssh.as_deref(), Some("user@host"));
     }
 
-    /// `--profile` / `--into-gui` 등 원격 부분집합 플래그가 remote 네임스페이스에 있다.
+    // `--profile` / `--into-gui` 등 원격 부분집합 플래그가 remote 네임스페이스에 있다.
     #[test]
     fn remote_attach_into_gui_parses() {
         let cli = Cli::try_parse_from([
@@ -349,8 +350,8 @@ mod attach_surface_tests {
         assert_eq!(target_port, Some(45123));
     }
 
-    /// `remote new-workspace` — 원격 mutate 1건(생성). 출력 id 를 `remote attach
-    /// --workspace <id>` 로 넘기는 CLI 복합 경로의 앞단.
+    // `remote new-workspace` — 원격 mutate 1건(생성). 출력 id 를 `remote attach
+    // --workspace <id>` 로 넘기는 CLI 복합 경로의 앞단.
     #[test]
     fn remote_new_workspace_parses() {
         let cli = Cli::try_parse_from([
@@ -391,7 +392,7 @@ mod attach_surface_tests {
         assert_eq!(remote_port_mode, "auto");
     }
 
-    /// loopback e2e 형태(`--ssh 127.0.0.1:<port>`)와 생성 옵션 전부 생략도 파싱된다.
+    // loopback e2e 형태(`--ssh 127.0.0.1:<port>`)와 생성 옵션 전부 생략도 파싱된다.
     #[test]
     fn remote_new_workspace_loopback_minimal_parses() {
         let cli = Cli::try_parse_from([
@@ -423,13 +424,13 @@ mod attach_surface_tests {
         assert!(!json);
     }
 
-    /// top-level `tasty attach` 는 release 표면에서 완전히 제거되었다.
+    // top-level `tasty attach` 는 release 표면에서 완전히 제거되었다.
     #[test]
     fn top_level_attach_removed() {
         assert!(Cli::try_parse_from(["tasty", "attach", "5"]).is_err());
     }
 
-    /// remote attach 는 `--force-detach`(원격 클라이언트 attach 락 강제해제)를 갖는다.
+    // remote attach 는 `--force-detach`(원격 클라이언트 attach 락 강제해제)를 갖는다.
     #[test]
     fn remote_attach_force_detach_parses() {
         let cli =
@@ -443,7 +444,7 @@ mod attach_surface_tests {
         assert!(force_detach);
     }
 
-    /// remote attach 의 런타임 가드: `--ssh` 와 `--force-detach` 는 상호배타.
+    // remote attach 의 런타임 가드: `--ssh` 와 `--force-detach` 는 상호배타.
     #[test]
     fn remote_attach_ssh_force_detach_rejected() {
         let cli = Cli::try_parse_from([
@@ -463,7 +464,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// `tasty remote check --ssh user@host` 가 Check 변형으로 파싱된다(기본값 포함).
+    // `tasty remote check --ssh user@host` 가 Check 변형으로 파싱된다(기본값 포함).
     #[test]
     fn remote_check_parses() {
         let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "user@host"]).unwrap();
@@ -486,7 +487,7 @@ mod attach_surface_tests {
         assert_eq!(remote_port_mode, "auto");
     }
 
-    /// `remote check --profile <name>` + 발견 모드 오버라이드가 파싱된다.
+    // `remote check --profile <name>` + 발견 모드 오버라이드가 파싱된다.
     #[test]
     fn remote_check_profile_parses() {
         let cli = Cli::try_parse_from([
@@ -514,7 +515,7 @@ mod attach_surface_tests {
         assert_eq!(remote_port_mode, "file-unix");
     }
 
-    /// 런타임 가드: `remote check` 의 `--ssh` 와 `--profile` 는 상호배타.
+    // 런타임 가드: `remote check` 의 `--ssh` 와 `--profile` 는 상호배타.
     #[test]
     fn remote_check_ssh_profile_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "h", "--profile", "p"])
@@ -526,7 +527,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote check` → 명확한 거부.
+    // 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote check` → 명확한 거부.
     #[test]
     fn remote_check_no_target_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "check"]).unwrap();
@@ -537,7 +538,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// `tasty remote workspaces --ssh user@host` 가 Workspaces 변형으로 파싱된다.
+    // `tasty remote workspaces --ssh user@host` 가 Workspaces 변형으로 파싱된다.
     #[test]
     fn remote_workspaces_parses() {
         let cli = Cli::try_parse_from([
@@ -569,7 +570,7 @@ mod attach_surface_tests {
         assert!(json);
     }
 
-    /// 런타임 가드: `remote workspaces` 의 `--ssh` 와 `--profile` 는 상호배타.
+    // 런타임 가드: `remote workspaces` 의 `--ssh` 와 `--profile` 는 상호배타.
     #[test]
     fn remote_workspaces_ssh_profile_rejected() {
         let cli = Cli::try_parse_from([
@@ -589,7 +590,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote workspaces` → 명확한 거부.
+    // 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote workspaces` → 명확한 거부.
     #[test]
     fn remote_workspaces_no_target_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "workspaces"]).unwrap();
@@ -600,12 +601,12 @@ mod attach_surface_tests {
         );
     }
 
-    /// 존재하지 않는 프로필 `remote check --profile nope` → 프로필 미발견 거부.
-    ///
-    /// 이 메시지는 i18n 키를 거치므로 원문 리터럴로 매칭할 수 없다. 렌더 결과를
-    /// **같은 키로 만들어** 비교한다 — 이러면 i18n 초기화 여부와 무관하게(미초기화
-    /// 프로세스에서는 `t_fmt` 가 키를 그대로 돌려준다) 성립하고, 다른 키를 쓰도록
-    /// 바뀌면 실패한다.
+    // 존재하지 않는 프로필 `remote check --profile nope` → 프로필 미발견 거부.
+    //
+    // 이 메시지는 i18n 키를 거치므로 원문 리터럴로 매칭할 수 없다. 렌더 결과를
+    // **같은 키로 만들어** 비교한다 — 이러면 i18n 초기화 여부와 무관하게(미초기화
+    // 프로세스에서는 `t_fmt` 가 키를 그대로 돌려준다) 성립하고, 다른 키를 쓰도록
+    // 바뀌면 실패한다.
     #[test]
     fn remote_check_unknown_profile_rejected() {
         let cli =
@@ -618,7 +619,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// 로컬 loopback attach 는 debug 빌드 `tasty debug attach` 로만 파싱된다.
+    // 로컬 loopback attach 는 debug 빌드 `tasty debug attach` 로만 파싱된다.
     #[cfg(debug_assertions)]
     #[test]
     fn debug_attach_parses() {
@@ -633,15 +634,15 @@ mod attach_surface_tests {
         assert!(raw);
     }
 
-    /// debug 로컬 attach 에는 ssh/profile 같은 원격 플래그가 없다.
+    // debug 로컬 attach 에는 ssh/profile 같은 원격 플래그가 없다.
     #[cfg(debug_assertions)]
     #[test]
     fn debug_attach_has_no_ssh() {
         assert!(Cli::try_parse_from(["tasty", "debug", "attach", "5", "--ssh", "h"]).is_err());
     }
 
-    /// remote attach 의 런타임 가드: 원격 대상(--ssh/--profile) 없이는 거부된다
-    /// (로컬 attach 로 폴백하지 않는다 — 로컬은 debug 빌드 전용).
+    // remote attach 의 런타임 가드: 원격 대상(--ssh/--profile) 없이는 거부된다
+    // (로컬 attach 로 폴백하지 않는다 — 로컬은 debug 빌드 전용).
     #[test]
     fn remote_attach_without_target_rejected() {
         let cli = Cli::try_parse_from(["tasty", "remote", "attach", "5"]).unwrap();
@@ -652,7 +653,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// remote attach 의 런타임 가드: surface 와 --workspace 는 상호배타.
+    // remote attach 의 런타임 가드: surface 와 --workspace 는 상호배타.
     #[test]
     fn remote_attach_surface_workspace_exclusive() {
         let cli = Cli::try_parse_from([
@@ -673,7 +674,7 @@ mod attach_surface_tests {
         );
     }
 
-    /// remote attach 의 런타임 가드: --ssh 와 --profile 은 상호배타.
+    // remote attach 의 런타임 가드: --ssh 와 --profile 은 상호배타.
     #[test]
     fn remote_attach_ssh_profile_exclusive() {
         let cli = Cli::try_parse_from([

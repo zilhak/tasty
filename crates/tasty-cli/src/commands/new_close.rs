@@ -26,18 +26,19 @@ pub enum NewCommands {
         /// URL (for html type)
         #[arg(long)]
         url: Option<String>,
-        /// 단계 7 — 이 워크스페이스를 저장된 SSH 프로필(원격 컴퓨터)에 매핑한다.
-        /// 활성화 시 호스트가 자동 attach(SSH 터널 + workspace mirror) 한다.
+        /// Map this workspace to a saved SSH profile (a remote machine). When the
+        /// workspace is activated, the host attaches automatically (SSH tunnel +
+        /// workspace mirror).
         #[arg(long)]
         ssh_profile: Option<String>,
-        /// 단계 7 — 저장 프로필 없이 1회성 인라인 SSH 대상에 매핑. 예: --ssh user@host.
-        /// `--ssh-profile` 과 상호배타.
+        /// Map to a one-off inline SSH target without a saved profile, e.g.
+        /// --ssh user@host. Mutually exclusive with `--ssh-profile`.
         #[arg(long)]
         ssh: Option<String>,
-        /// 단계 7 — 매핑된 원격 tasty 의 attach 대상 workspace_id (원칙 3 — ID 명시).
+        /// Workspace id on the mapped remote tasty to attach to.
         #[arg(long)]
         remote_workspace: Option<u32>,
-        /// S-WSCAT — 소속 카테고리(이름 또는 id). 미지정이면 normal.
+        /// Category to place the workspace in (name or id). Defaults to normal.
         #[arg(long)]
         category: Option<String>,
     },

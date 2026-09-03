@@ -11,34 +11,39 @@ pub enum DebugCommands {
     /// isolated from the release surface per the agent/user action separation
     /// policy). Remote attach is `tasty remote attach` (release).
     Attach {
-        /// 대상 surface_id (포커스 비의존 — ID 직접 지정). `--workspace` 와 상호배타.
+        /// Target surface id (given explicitly, never inferred from focus).
+        /// Mutually exclusive with `--workspace`.
         surface: Option<u32>,
-        /// 대상 workspace_id — 그 안 모든 터미널을 트리째 mirror.
-        /// `surface` positional 과 상호배타. 비-터미널은 placeholder 로 숨김.
+        /// Target workspace id; mirrors every terminal in it as a tree.
+        /// Mutually exclusive with the `surface` positional. Non-terminal
+        /// surfaces are shown as placeholders.
         #[arg(long)]
         workspace: Option<u32>,
-        /// mirror-dump: attach 후 N ms 동안 출력 수집 → mirror 화면을 stdout 출력 후 종료.
+        /// Mirror-dump mode: collect output for N ms after attaching, print the
+        /// mirrored screen to stdout, then exit.
         #[arg(long)]
         dump_after: Option<u64>,
-        /// attach 직후 1 회 전송할 입력 (escape 디코딩: \n \r \t \xNN). 비대화형 검증용.
+        /// Input to send once right after attaching (escapes decoded: \n \r \t
+        /// \xNN). For non-interactive verification.
         #[arg(long)]
         send: Option<String>,
-        /// workspace 모드에서 `--send` 입력을 보낼 대상 remote surface_id.
+        /// Remote surface id that receives the `--send` input in workspace mode.
         #[arg(long)]
         send_to: Option<u32>,
-        /// raw 브리지 모드: stdin/stdout passthrough (detach = Ctrl+\).
+        /// Raw bridge mode: stdin/stdout passthrough (detach with Ctrl+\).
         #[arg(long)]
         raw: bool,
-        /// 점유된 surface/workspace 를 강제로 끊는다 (서버 권한, attach 하지 않음).
+        /// Forcibly detach an occupied surface/workspace (server-side; does not
+        /// attach).
         #[arg(long)]
         force_detach: bool,
     },
     /// Show debug info from the running tasty instance
     Info,
-    /// 다음 프레임의 GPU present 를 인위적으로 블로킹해 이벤트 루프 stall 을 재현한다
-    /// (stall 워치독 검증용 — debug 빌드 전용).
+    /// Artificially block the next frame's GPU present to reproduce an event
+    /// loop stall (for verifying the stall watchdog; debug builds only).
     GpuStall {
-        /// 블로킹할 시간 (밀리초)
+        /// How long to block, in milliseconds
         #[arg(long, default_value_t = 8000)]
         ms: u64,
     },
@@ -48,7 +53,7 @@ pub enum DebugCommands {
     ImeDisable,
     /// Send IME preedit (composition) text
     ImePreedit {
-        /// Composition text (e.g. "ㅎ", "하", "한")
+        /// Composition text (e.g. an in-progress Hangul syllable such as U+D558)
         #[arg()]
         text: String,
         /// Cursor position within composition
@@ -57,7 +62,7 @@ pub enum DebugCommands {
     },
     /// Commit IME composition text (finalize and send to terminal)
     ImeCommit {
-        /// Finalized text to commit (e.g. "한")
+        /// Finalized text to commit (e.g. the completed Hangul syllable U+D55C)
         #[arg()]
         text: String,
     },

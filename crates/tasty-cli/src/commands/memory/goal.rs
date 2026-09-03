@@ -1,9 +1,10 @@
 use clap::Subcommand;
 
-/// `tasty memory goal ...` 서브커맨드.
+/// `tasty memory goal ...` subcommands.
 ///
-/// `--surface` 는 optional — 생략 시 caller 의 `TASTY_SURFACE_ID` env 로 해석한다
-/// (에이전트가 자기 자신에 대해 호출하는 것이 주 용례). 둘 다 없으면 에러.
+/// `--surface` is optional: when omitted it is resolved from the caller's
+/// `TASTY_SURFACE_ID` environment variable (the main use case is an agent
+/// calling this about itself). It is an error if neither is available.
 #[derive(Subcommand)]
 pub enum MemoryGoalCommands {
     /// Set the surface's goal (overwrites any existing one). Blank goals are rejected.

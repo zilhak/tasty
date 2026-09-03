@@ -71,8 +71,8 @@ pub enum AgentCommands {
         #[arg(long)]
         workspace_id: u32,
         /// Filter by state (comma-separated: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown).
-        /// 여러 state 를 주면 그중 하나라도 맞는 task 를 모두 반환한다
-        /// (`--state waiting,ready,running` = "아직 안 끝난 task").
+        /// With several states, every task matching any of them is returned
+        /// (`--state waiting,ready,running` = tasks that have not finished yet).
         #[arg(long = "state", value_delimiter = ',')]
         state: Vec<String>,
     },
@@ -146,17 +146,19 @@ pub enum AgentCommands {
         format: String,
     },
     /// Start/stop/inspect the agent task runner for a workspace.
-    /// runner 는 Ready task 를 자동 dispatch + Running task 의 완료를 감지하는
-    /// host 측 thread. 같은 workspace 에 두 번 start 호출은 idempotent.
+    /// The runner is a host-side thread that dispatches Ready tasks and detects
+    /// completion of Running tasks. Calling start twice on the same workspace
+    /// is idempotent.
     TaskRun {
         #[arg(long)]
         workspace_id: u32,
-        /// start | stop | status. 기본: status.
+        /// start | stop | status. Default: status.
         #[arg(long, value_enum, default_value_t = TaskRunAction::Status)]
         action: TaskRunAction,
     },
     /// Manually report a task's terminal result (succeeded | failed).
-    /// runner thread 가 dispatch 한 task 외 *외부/수동* task 의 완료 신호용.
+    /// For signalling completion of external/manual tasks that the runner
+    /// thread did not dispatch.
     TaskSetResult {
         #[arg(long)]
         workspace_id: u32,
@@ -209,7 +211,7 @@ pub enum AgentCommands {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
-    /// Create a barrier (N개 신호가 모일 때까지 대기).
+    /// Create a barrier (waits until N signals have arrived).
     BarrierCreate {
         #[arg(long)]
         workspace_id: u32,

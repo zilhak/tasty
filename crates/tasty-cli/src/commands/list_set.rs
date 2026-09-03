@@ -72,7 +72,7 @@ pub enum SetCommands {
         #[arg(long)]
         surface: Option<u32>,
     },
-    /// Update workspace name, subtitle, description, or SSH attach mapping (단계 7)
+    /// Update workspace name, subtitle, description, or SSH attach mapping
     Workspace {
         /// Workspace ID (required)
         #[arg(long)]
@@ -86,19 +86,19 @@ pub enum SetCommands {
         /// New description
         #[arg(long)]
         description: Option<String>,
-        /// 단계 7 — 이 워크스페이스를 저장된 SSH 프로필(원격 컴퓨터)에 매핑.
+        /// Map this workspace to a saved SSH profile (a remote machine).
         #[arg(long)]
         ssh_profile: Option<String>,
-        /// 단계 7 — 1회성 인라인 SSH 대상에 매핑. 예: --ssh user@host.
+        /// Map to a one-off inline SSH target, e.g. --ssh user@host.
         #[arg(long)]
         ssh: Option<String>,
-        /// 단계 7 — 매핑된 원격 tasty 의 attach 대상 workspace_id.
+        /// Workspace id on the mapped remote tasty to attach to.
         #[arg(long)]
         remote_workspace: Option<u32>,
-        /// 단계 7 — 기존 SSH attach 매핑을 해제한다.
+        /// Clear the existing SSH attach mapping.
         #[arg(long)]
         clear_mapping: bool,
-        /// S-WSCAT — 이 워크스페이스를 다른 카테고리(이름 또는 id)로 옮긴다.
+        /// Move this workspace to another category (name or id).
         #[arg(long)]
         category: Option<String>,
     },

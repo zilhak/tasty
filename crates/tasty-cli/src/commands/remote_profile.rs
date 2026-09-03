@@ -11,85 +11,94 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum RemoteProfileCommands {
-    /// 저장된 프로필 목록 출력(ssh + tasty-attach).
+    /// List saved profiles (ssh and tasty-attach).
     List {
         #[arg(long)]
         json: bool,
-        /// kind 필터: ssh | tasty-attach.
+        /// Filter by kind: ssh | tasty-attach.
         #[arg(long)]
         kind: Option<String>,
     },
-    /// 한 프로필 상세 출력.
+    /// Show the details of one profile.
     Show {
         #[arg(long)]
         name: String,
         #[arg(long)]
         json: bool,
     },
-    /// ssh 연결 프로필 추가(순수 연결 정보 — attach 스펙 없음).
+    /// Add an ssh connection profile (connection details only, no attach spec).
     AddSsh {
-        /// 프로필 고유 식별자.
+        /// Unique profile identifier.
         #[arg(long)]
         name: String,
         /// ssh destination: host | user@host | ssh config alias.
         #[arg(long)]
         host: String,
-        /// ssh 유저(host 에 user@ 가 없을 때).
+        /// ssh user (when host has no user@ prefix).
         #[arg(long)]
         user: Option<String>,
-        /// ssh 포트(기본: ssh config / 22).
+        /// ssh port (default: from ssh config, else 22).
         #[arg(long)]
         port: Option<u16>,
-        /// identity 파일 경로(-i). path kind passkey `<name>-key` 로 분리 저장된다.
+        /// Identity file path (-i). Stored separately as the path-kind passkey
+        /// `<name>-key`.
         #[arg(long)]
         identity: Option<String>,
-        /// 추가 ssh -o 옵션(반복 가능). 예: --option ServerAliveInterval=30
+        /// Extra ssh -o option (repeatable), e.g. --option ServerAliveInterval=30.
         #[arg(long = "option")]
         options: Vec<String>,
-        /// 원격 셸: powershell | cmd | bash | zsh | auto(기본).
+        /// Remote shell: powershell | cmd | bash | zsh | auto (default).
         #[arg(long, default_value = "auto")]
         shell: String,
-        /// UI 표시용 라벨(옵션).
+        /// Optional label shown in the UI.
         #[arg(long)]
         label: Option<String>,
     },
-    /// tasty-attach 프로필 추가. 연결은 `--ssh-ref <name>` 참조 또는 인라인 필드(host/…).
+    /// Add a tasty-attach profile. The connection is either a reference
+    /// (`--ssh-ref <name>`) or inline fields (host, ...).
     AddAttach {
-        /// 프로필 고유 식별자.
+        /// Unique profile identifier.
         #[arg(long)]
         name: String,
-        /// 참조할 ssh 프로필 name(라이브 팔로우). 지정 시 인라인 연결 필드는 무시된다.
+        /// Name of the ssh profile to reference (followed live). When set, the
+        /// inline connection fields are ignored.
         #[arg(long = "ssh-ref")]
         ssh_ref: Option<String>,
-        /// 인라인 연결: ssh destination(host | user@host | alias). `--ssh-ref` 없을 때.
+        /// Inline connection: ssh destination (host | user@host | alias). Used
+        /// when `--ssh-ref` is absent.
         #[arg(long)]
         host: Option<String>,
-        /// 인라인 연결: ssh 유저.
+        /// Inline connection: ssh user.
         #[arg(long)]
         user: Option<String>,
-        /// 인라인 연결: ssh 포트.
+        /// Inline connection: ssh port.
         #[arg(long)]
         port: Option<u16>,
-        /// 인라인 연결: identity 파일 경로(-i). path kind passkey 로 분리 저장.
+        /// Inline connection: identity file path (-i). Stored separately as a
+        /// path-kind passkey.
         #[arg(long)]
         identity: Option<String>,
-        /// 인라인 연결: 추가 ssh -o 옵션(반복 가능).
+        /// Inline connection: extra ssh -o option (repeatable).
         #[arg(long = "option")]
         options: Vec<String>,
-        /// 원격 tasty 바이너리 경로(포트 발견용). 기본 "tasty".
+        /// Path to the tasty binary on the remote host (for port discovery).
+        /// Defaults to "tasty".
         #[arg(long, default_value = "tasty")]
         remote_tasty: String,
-        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
+        /// Remote port discovery mode: auto (default) | subcommand | file-unix |
+        /// file-windows.
         #[arg(long, default_value = "auto")]
         port_mode: String,
-        /// 원격 port 파일의 명시 경로(비표준 위치). 지정 시 관례 경로보다 최우선.
+        /// Explicit path of the remote port file (non-standard location). Takes
+        /// precedence over the conventional path when set.
         #[arg(long)]
         port_file: Option<String>,
-        /// UI 표시용 라벨(옵션).
+        /// Optional label shown in the UI.
         #[arg(long)]
         label: Option<String>,
     },
-    /// 기존 프로필의 일부 필드 갱신(지정한 필드만 덮어쓴다). kind 는 유지된다.
+    /// Update fields of an existing profile (only the given fields are
+    /// overwritten). The kind is kept.
     Edit {
         #[arg(long)]
         name: String,
@@ -103,48 +112,51 @@ pub enum RemoteProfileCommands {
         identity: Option<String>,
         #[arg(long = "option")]
         options: Vec<String>,
-        /// tasty-attach: 참조 ssh 프로필 name 갱신.
+        /// tasty-attach: ssh profile to reference instead (by name).
         #[arg(long = "ssh-ref")]
         ssh_ref: Option<String>,
-        /// tasty-attach: 원격 tasty 바이너리 경로.
+        /// tasty-attach: path to the tasty binary on the remote host.
         #[arg(long)]
         remote_tasty: Option<String>,
-        /// tasty-attach: 원격 포트 발견 모드.
+        /// tasty-attach: remote port discovery mode.
         #[arg(long)]
         port_mode: Option<String>,
-        /// tasty-attach: 원격 port 파일 경로.
+        /// tasty-attach: remote port file path.
         #[arg(long)]
         port_file: Option<String>,
-        /// ssh: 원격 셸(powershell | cmd | bash | zsh | auto).
+        /// ssh: remote shell (powershell | cmd | bash | zsh | auto).
         #[arg(long)]
         shell: Option<String>,
         #[arg(long)]
         label: Option<String>,
     },
-    /// 프로필 제거(참조 passkey 는 공유 가능성 때문에 보존).
+    /// Remove a profile (referenced passkeys are kept, since they may be shared).
     Remove {
         #[arg(long)]
         name: String,
     },
-    /// 프로필을 재감지한다(ssh: 셸 감지 프로브 / tasty-attach: 원격 포트 검증). SSH 접속 발생.
+    /// Re-detect a profile (ssh: probe the remote shell / tasty-attach: verify
+    /// the remote port). Connects over SSH.
     Detect {
         #[arg(long)]
         name: String,
     },
-    /// 로컬 ssh config(`~/.ssh/config` + Include)의 Host alias 목록. 접속하지 않는다.
+    /// List Host aliases from the local ssh config (`~/.ssh/config` plus
+    /// Include files). Does not connect.
     ListLocal {
         #[arg(long)]
         json: bool,
     },
-    /// 로컬 ssh config alias 를 ssh 프로필로 가져온다(alias 만 저장 — 값 해석은 ssh 몫).
+    /// Import a local ssh config alias as an ssh profile (only the alias is
+    /// stored; ssh resolves the actual values).
     Import {
-        /// 가져올 ssh config alias (`list-local` 의 ALIAS 열).
+        /// ssh config alias to import (the ALIAS column of `list-local`).
         #[arg(long)]
         from: String,
-        /// 새로 만들 프로필 고유 식별자.
+        /// Unique identifier of the new profile.
         #[arg(long)]
         name: String,
-        /// UI 표시용 라벨(옵션).
+        /// Optional label shown in the UI.
         #[arg(long)]
         label: Option<String>,
     },
