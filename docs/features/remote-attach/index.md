@@ -170,6 +170,8 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 - **사용자가 mirror 워크스페이스를 직접 닫으면** 어느 engine 에도 그 워크스페이스가 없으므로 고아로 판정되어 기존대로 정리된다 — `Detach` 통지 → 원격 점유 해제 + anchor 게이트 해제 + 터널 kill. 두 상황(창이 없어졌을 뿐 vs 워크스페이스가 없어짐)은 이 판정으로 구분된다.
 - **정리는 parked engine 에도 동일하게 적용된다.** mirror 워크스페이스 행뿐 아니라 mirror 터미널·mirror busy 엔트리·mesh 프레임 캐시를 함께 걷어내고 `active_workspace` 인덱스를 클램프한다. 판정과 정리의 순회 범위는 **같아야** 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면, 그 engine 이 나중에 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
 - parked engine 에는 창이 없으므로 정리 시 toast 를 쌓지 않는다(토스트 수명이 wall-clock 기준이라 창 복원 시점엔 이미 만료된다).
+- **도착하는 mirror 이벤트도 parked engine 에 즉시 적용된다**([ADR-0110](../../adr/0110-mirror-events-apply-to-parked-engines.md)). `apply_attach_client_output` 은 적용 대상을 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`), 대상을 찾은 **뒤에야** reader 버퍼를 drain 한다. 창이 없는 동안 도착한 `Data`/`Resize`/`StructuralDelta`/`Activity`/`Attention`/`Mesh` 는 그 engine 의 mirror 터미널·매핑·트리에 도착 순서대로 반영되므로, 창 복원 시 mirror 는 이미 최신이고 `remote_to_local` 매핑도 desync 되지 않는다 — 로컬 PTY 출력이 parked engine 에서도 파싱되는 것과 같은 대칭이다. 판정·정리·적용 세 순회의 범위는 **같다**. 어느 engine 에도 워크스페이스가 없으면(고아) drain 하지 않고 두며, 같은 프레임의 고아 정리가 세션째 걷어낸다.
+- parked engine 에 적용될 때는 창 표면이 필요한 부수효과만 생략한다 — toast 는 로그로 대체(위와 같은 이유), repaint 요청은 없음(복원 시 새 창이 그 engine 을 그대로 그린다). 상태 변경(터미널 grid·트리·매핑)은 창 유무와 무관하게 항상 적용된다.
 
 ## 인터페이스
 

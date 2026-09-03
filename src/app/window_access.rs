@@ -141,8 +141,10 @@ impl App {
     /// 조용히 풀린다. 여기서 묻는 것은 "창이 있는가"가 아니라 "그 워크스페이스를
     /// 들고 있는 engine 이 살아 있는가"다.
     ///
-    /// 순회 범위는 `attach_client::cleanup_mirror_workspace` 와 **같아야** 한다 —
-    /// 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생긴다.
+    /// 순회 범위는 `attach_client::cleanup_mirror_workspace`(정리)·
+    /// `attach_client::mirror_output_host`(mirror 이벤트 적용 대상 탐색)와 **같아야**
+    /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생기고, 적용이
+    /// 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
     ///
     /// **`App.core_state` 는 의도적으로 제외한다.** 바로 위 `occupied_layout_slots`
     /// 는 `views`/`parked_states` 에 더해 그 자리(첫 MainView 등록 전 engine 이 임시로

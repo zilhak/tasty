@@ -12,6 +12,8 @@
 //! - `apply_attach_client_output`: reader thread 가 `AttachClientData` 로 깨울 때마다
 //!   누적된 원격 출력을 mirror 에 적용하고 화면을 repaint. 끊긴(force-detach/EOF) 세션의
 //!   mirror 를 정리. (`Tick::AttachView` 3초 tick 도 backstop 으로 같은 함수를 호출한다.)
+//!   적용 대상은 창 있는 engine 뿐 아니라 **창 없는 parked engine** 도 포함한다 — 창을
+//!   최소화한 동안 도착한 출력도 유실되지 않는다(ADR-0110).
 //!
 //! client mirror 는 내가 직접 다루는 대상이라 로컬 워크스페이스처럼 **데이터가 오는 즉시**
 //! 갱신한다(로컬 PTY 의 TerminalOutput wake 와 동형). 서버측 readonly 뷰(`attach_poll` ①)만
@@ -645,6 +647,17 @@ impl App {
     /// `AttachClientData`(reader wake)마다 — 누적 원격 출력을 mirror Terminal 에
     /// 적용(repaint) + 끊긴 세션 정리. client mirror 는 데이터가 오는 즉시 갱신한다
     /// (로컬 워크스페이스와 동일한 반응성). `Tick::AttachView` 3초 tick 도 backstop 으로 호출.
+    ///
+    /// 적용 대상은 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`),
+    /// 대상을 찾은 **뒤에야** 버퍼를 drain 한다. 창이 없는 parked 상태에서도 mirror
+    /// 터미널·매핑은 그 engine 안에 그대로 살아 있으므로 로컬 PTY 출력
+    /// (`handle_terminal_output` 의 parked 순회)과 똑같이 즉시 적용한다 — 창 복원 시
+    /// 새 창이 그 engine 을 그대로 그리므로 최소화 동안의 출력이 남아 있다. 어느
+    /// engine 에도 없으면(= 고아, 같은 프레임의 `detach_orphaned_mirror_sessions` 가
+    /// 세션째 정리) drain 하지 않고 버퍼를 그대로 둔다 — drain 을 먼저 하면 적용
+    /// 대상이 없을 때 되돌릴 수 없다. 순회 범위는 고아 판정
+    /// (`mirror_workspace_engine_alive`)·정리(`cleanup_mirror_workspace`)와 같아야 한다
+    /// (ADR-0110).
     pub(crate) fn apply_attach_client_output(&mut self) {
         if self.attach_client_sessions.is_empty() {
             return;
@@ -652,14 +665,9 @@ impl App {
         let mut dead: Vec<usize> = Vec::new();
         let mut reconnecting: Vec<usize> = Vec::new();
         for idx in 0..self.attach_client_sessions.len() {
-            let (drained, local_ws, disconnected, state, anchor_ws_id) = {
+            let (local_ws, disconnected, state, anchor_ws_id) = {
                 let sess = &self.attach_client_sessions[idx];
-                let drained: Vec<MirrorEvent> = match sess.output.lock() {
-                    Ok(mut b) => std::mem::take(&mut *b),
-                    Err(_) => Vec::new(),
-                };
                 (
-                    drained,
                     sess.local_workspace,
                     sess.disconnected.load(Ordering::SeqCst),
                     sess.state,
@@ -667,19 +675,44 @@ impl App {
                 )
             };
 
-            if !drained.is_empty()
-                && let Some(wid) = self.find_main_with_workspace(local_ws)
-            {
-                // 세션(remote→local 매핑)과 그 mirror 를 호스팅하는 창 engine 을 **분리
-                // 대여**(self 의 서로 다른 필드 → disjoint borrow). delta 가 매핑을
-                // 갱신하므로 clone 이 아닌 **라이브 매핑**을 써야 같은 drain 안의 이후
-                // Data 가 새 surface 로 라우팅된다. 이벤트를 **도착 순서대로** 적용한다.
-                let sess = &mut self.attach_client_sessions[idx];
-                if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) {
-                    for ev in drained {
-                        apply_one_mirror_event(sess, main, &mut self.plugin_manager, ev);
+            // 적용 대상 탐색이 drain 보다 **앞** — 대상이 없으면 버퍼를 건드리지 않는다.
+            let host = mirror_output_host(
+                self.find_main_with_workspace(local_ws),
+                &self.parked_states,
+                local_ws,
+            );
+            if let Some(host) = host {
+                let drained = drain_mirror_output(&self.attach_client_sessions[idx].output);
+                if !drained.is_empty() {
+                    // 세션(remote→local 매핑)과 그 mirror 를 호스팅하는 engine 을 **분리
+                    // 대여**(self 의 서로 다른 필드 → disjoint borrow). delta 가 매핑을
+                    // 갱신하므로 clone 이 아닌 **라이브 매핑**을 써야 같은 drain 안의 이후
+                    // Data 가 새 surface 로 라우팅된다. 이벤트를 **도착 순서대로** 적용한다.
+                    let sess = &mut self.attach_client_sessions[idx];
+                    match host {
+                        MirrorOutputHost::Window(wid) => {
+                            if let Some(main) =
+                                self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
+                            {
+                                let mut host =
+                                    MirrorHost::windowed(&mut main.state, &mut main.core_state);
+                                apply_mirror_events(
+                                    sess,
+                                    &mut host,
+                                    &mut self.plugin_manager,
+                                    drained,
+                                );
+                                main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
+                            }
+                        }
+                        MirrorOutputHost::Parked(pidx) => {
+                            // 창이 없으니 repaint 대상도 없다 — 복원 시 새 창이 이 engine 의
+                            // 터미널 grid 를 그대로 그린다.
+                            let (state, engine) = &mut self.parked_states[pidx];
+                            let mut host = MirrorHost::parked(state, engine);
+                            apply_mirror_events(sess, &mut host, &mut self.plugin_manager, drained);
+                        }
                     }
-                    main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
                 }
             }
             // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면
@@ -760,8 +793,10 @@ impl App {
         // 로 옮겨가도 mirror 워크스페이스와 그 터미널·busy·mesh 엔트리는 그 engine 안에
         // 그대로 살아 있다. main 만 훑으면 정리가 통째로 스킵돼 나중에 그 engine 이
         // 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
-        // 이 순회 범위는 `mirror_workspace_engine_alive`(고아 판정)과 **같아야** 한다 —
-        // 판정이 "살아 있다"고 본 곳을 정리가 못 찾으면 잔류가 생긴다.
+        // 이 순회 범위는 `mirror_workspace_engine_alive`(고아 판정)·`mirror_output_host`
+        // (mirror 이벤트 적용 대상 탐색)와 **같아야** 한다 — 판정이 "살아 있다"고 본 곳을
+        // 정리가 못 찾으면 잔류가 생기고, 적용이 못 찾으면 그 구간의 출력이 유실된다
+        // (ADR-0110).
         let mut removed = false;
         for main in self.main_windows_iter_mut() {
             if remove_mirror_workspace_from_engine(
@@ -1418,6 +1453,117 @@ fn remove_mirror_workspace_from_parked(
     false
 }
 
+/// `apply_attach_client_output` 이 mirror 이벤트를 적용할 engine 의 위치 — 창 있는
+/// engine(`MainView` 의 `WindowId`) 또는 창 없는 parked engine(`App.parked_states`
+/// 인덱스). 어느 쪽이든 적용되는 상태는 같은 `(AppState, CoreState)` 쌍이다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MirrorOutputHost {
+    Window(winit::window::WindowId),
+    Parked(usize),
+}
+
+/// mirror 이벤트의 적용 대상을 고른다 — **창 있는 engine 이 우선**, 없으면 parked
+/// engine. 순회 범위는 고아 판정(`mirror_workspace_engine_alive`)·정리
+/// (`cleanup_mirror_workspace`)와 **같다**: 판정이 살아 있다고 본 engine 에 적용이 닿지
+/// 않으면 그 구간의 출력이 유실된다. `None` 은 어느 engine 에도 없다는 뜻(= 고아) —
+/// 호출부는 이때 버퍼를 drain 하지 않는다. `App`(GUI 의존) 없이 순수 함수로 두어
+/// 단위 테스트가 순서(창 → parked)와 부재(None)를 직접 검증한다.
+fn mirror_output_host(
+    windowed: Option<winit::window::WindowId>,
+    parked: &[(crate::state::AppState, crate::core::CoreState)],
+    local_workspace: u32,
+) -> Option<MirrorOutputHost> {
+    windowed.map(MirrorOutputHost::Window).or_else(|| {
+        find_parked_with_workspace(parked, local_workspace).map(MirrorOutputHost::Parked)
+    })
+}
+
+/// `apply_attach_client_output` 의 **parked 순회** — 그 mirror 워크스페이스를 들고 있는
+/// 첫 parked engine 의 인덱스. 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫
+/// 항목만 보면 안 된다(`remove_mirror_workspace_from_parked` 와 동형).
+fn find_parked_with_workspace(
+    parked: &[(crate::state::AppState, crate::core::CoreState)],
+    local_workspace: u32,
+) -> Option<usize> {
+    parked
+        .iter()
+        .position(|(_, engine)| engine.has_workspace(local_workspace))
+}
+
+/// reader thread 가 쌓아둔 mirror 이벤트를 **도착 순서대로** 통째로 꺼낸다. 적용 대상
+/// (`mirror_output_host`)을 찾은 뒤에만 부른다 — 대상이 없는데 꺼내면 되돌릴 수 없다.
+/// mutex 오염(reader thread panic)은 lock 을 무효화할 이유가 없어 안쪽 값을 그대로
+/// 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지 않는다.
+fn drain_mirror_output(output: &RemoteOutputBuffer) -> Vec<MirrorEvent> {
+    match output.lock() {
+        Ok(mut b) => std::mem::take(&mut *b),
+        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+    }
+}
+
+/// mirror 이벤트를 적용할 대상 engine — 창이 있든(`MainView` 의 `state`/`core_state`)
+/// 없든(parked 튜플) 같은 `(AppState, CoreState)` 쌍이다. 창 유무는 상태 적용에는
+/// 영향이 없고, toast 처럼 **창 표면이 있어야 의미 있는 부수효과**만 게이트한다.
+struct MirrorHost<'a> {
+    state: &'a mut crate::state::AppState,
+    engine: &'a mut crate::core::CoreState,
+    /// 이 engine 을 그리는 창이 지금 있는가(`MainView` 경유면 true, parked 면 false).
+    windowed: bool,
+}
+
+impl<'a> MirrorHost<'a> {
+    fn windowed(
+        state: &'a mut crate::state::AppState,
+        engine: &'a mut crate::core::CoreState,
+    ) -> Self {
+        Self {
+            state,
+            engine,
+            windowed: true,
+        }
+    }
+
+    fn parked(
+        state: &'a mut crate::state::AppState,
+        engine: &'a mut crate::core::CoreState,
+    ) -> Self {
+        Self {
+            state,
+            engine,
+            windowed: false,
+        }
+    }
+
+    /// 창이 있으면 window-scope toast, 없으면(parked) 로그만 남긴다 — parked engine
+    /// 에는 toast 를 띄울 표면이 없고 토스트 수명이 wall-clock 기준이라 창 복원
+    /// 시점엔 이미 만료돼 보이지도 않으므로 쌓지 않는다(`cleanup_mirror_workspace`
+    /// 의 parked 분기와 같은 이유). 상태 변경(터미널·매핑·트리)은 이 게이트와 무관하게
+    /// 항상 적용된다.
+    fn toast(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
+        if self.windowed {
+            self.state
+                .toasts
+                .push(message, kind, crate::adapters::ui::ToastScope::Window);
+        } else {
+            tracing::info!("attach mirror: parked engine 이라 toast 생략 — {message}");
+        }
+    }
+}
+
+/// drain 한 mirror 이벤트들을 **도착 순서대로** 한 engine 에 적용한다. 창 있는 engine 과
+/// parked engine 이 같은 본문을 쓴다 — 두 경로의 적용 규칙이 갈라지지 않게 하는 단일
+/// 지점이며, `App` 없이 호출 가능해 parked 적용이 단위 테스트로 덮인다.
+fn apply_mirror_events(
+    sess: &mut AttachClientSession,
+    host: &mut MirrorHost<'_>,
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    events: Vec<MirrorEvent>,
+) {
+    for ev in events {
+        apply_one_mirror_event(sess, host, plugin_manager, ev);
+    }
+}
+
 /// `cleanup_mirror_workspace` 진입 시 세션 식별 정보를 로깅한다 — anchor 없는
 /// 세션(수동/IPC attach)의 disconnect 정리는 `enter_reconnecting` 의 info 로그로
 /// 이어지지 않는 유일한 경로라 여기가 유일한 관측 지점이다. `from_disconnect`
@@ -1892,19 +2038,18 @@ fn merge_survivor_mapping(
     )
 }
 
-/// 드레인된 `MirrorEvent` 한 건을 mirror 세션/윈도우 상태에 적용한다.
-/// `apply_attach_client_output` 의 drain 루프 바디를 그대로 옮긴 것 — 이벤트별
-/// 분기 로직 자체는 변경 없음.
+/// 드레인된 `MirrorEvent` 한 건을 mirror 세션/engine 상태에 적용한다. 대상은
+/// `MirrorHost` — 창 있는 engine 이든 parked engine 이든 같은 분기 로직을 탄다.
 fn apply_one_mirror_event(
     sess: &mut AttachClientSession,
-    main: &mut crate::view::main::MainView,
+    host: &mut MirrorHost<'_>,
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     ev: MirrorEvent,
 ) {
     match ev {
         MirrorEvent::Data(remote_id, bytes) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id)
-                && let Some(t) = main.core_state.terminals.get_mut(local)
+                && let Some(t) = host.engine.terminals.get_mut(local)
             {
                 t.feed_bytes(&bytes);
             }
@@ -1914,21 +2059,21 @@ fn apply_one_mirror_event(
             // 스윕은 detached mirror 를 건너뛰므로, 이 경로가
             // mirror 를 리사이즈하는 유일한 지점이다.
             if let Some(&local) = sess.remote_to_local.get(&remote_id)
-                && let Some(t) = main.core_state.terminals.get_mut(local)
+                && let Some(t) = host.engine.terminals.get_mut(local)
             {
                 t.resize(cols, rows);
             }
         }
         MirrorEvent::Activity(remote_id, busy) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id) {
-                main.core_state.set_mirror_surface_busy(local, busy);
+                host.engine.set_mirror_surface_busy(local, busy);
             }
         }
         MirrorEvent::Attention(remote_id, kind) => {
             // 원격 적용 전용 진입점 — 로컬 producer 의 `raise_attention`/
             // `clear_attention` 을 타지 않는다(억제 게이트·해제 forward 우회).
             if let Some(&local) = sess.remote_to_local.get(&remote_id) {
-                main.core_state.set_mirror_surface_attention(
+                host.engine.set_mirror_surface_attention(
                     local,
                     kind.map(crate::core::AttentionKind::from_wire),
                 );
@@ -1944,11 +2089,7 @@ fn apply_one_mirror_event(
             } else {
                 format!("{base} ({reason})")
             };
-            main.state.toasts.push(
-                msg,
-                crate::adapters::ui::ToastKind::Warning,
-                crate::adapters::ui::ToastScope::Window,
-            );
+            host.toast(msg, crate::adapters::ui::ToastKind::Warning);
         }
         MirrorEvent::StructuralSucceeded(op_id) => {
             // 08/09 — 이 op 이 focus 보정 대상(user_triggered)으로
@@ -1969,7 +2110,7 @@ fn apply_one_mirror_event(
             let pending_focus = sess.next_delta_focus.take();
             apply_mirror_structural_delta(
                 sess,
-                main,
+                host.engine,
                 workspace_id,
                 &tree,
                 &surfaces,
@@ -1996,9 +2137,7 @@ fn apply_one_mirror_event(
             } else {
                 crate::adapters::ui::ToastKind::Warning
             };
-            main.state
-                .toasts
-                .push(msg, kind, crate::adapters::ui::ToastScope::Window);
+            host.toast(msg, kind);
         }
         MirrorEvent::ListDirResult {
             request_id,
@@ -2009,7 +2148,7 @@ fn apply_one_mirror_event(
             reason,
         } => {
             apply_list_dir_result_event(
-                sess, main, request_id, ok, dir, entries, truncated, reason,
+                sess, host, request_id, ok, dir, entries, truncated, reason,
             );
         }
         MirrorEvent::GitQueryResult {
@@ -2022,7 +2161,7 @@ fn apply_one_mirror_event(
         } => {
             apply_git_query_result_event(
                 plugin_manager,
-                main,
+                host.state,
                 request_id,
                 ok,
                 kind,
@@ -2035,7 +2174,7 @@ fn apply_one_mirror_event(
             // attach mesh mirror: GPU 렌더은 다음 프레임
             // `AttachMeshFrameStore` 를 읽는다 — 여기선 저장만.
             if let Some(&local) = sess.remote_to_local.get(&remote_id) {
-                main.core_state
+                host.engine
                     .attach_mesh_frames
                     .update(local, bytes, generation, frame_seq, full);
             }
@@ -2049,7 +2188,7 @@ fn apply_one_mirror_event(
 /// 지워졌거나 stale) 조용히 무시한다.
 fn apply_list_dir_result_event(
     sess: &mut AttachClientSession,
-    main: &mut crate::view::main::MainView,
+    host: &mut MirrorHost<'_>,
     request_id: u64,
     ok: bool,
     dir: Option<String>,
@@ -2067,20 +2206,19 @@ fn apply_list_dir_result_event(
         } else {
             Err(reason.unwrap_or_default())
         };
-        if let Some(panel) = main
-            .core_state
+        if let Some(panel) = host
+            .engine
             .find_surface_by_id(surface_id)
             .and_then(|s| s.as_any().downcast_ref::<crate::model::ExplorerPanel>())
         {
             let is_err = result.is_err();
-            main.state
+            host.state
                 .explorer_views
                 .apply_remote_list_dir_result(surface_id, request_id, panel, result);
             if !is_err && truncated {
-                main.state.toasts.push(
+                host.toast(
                     crate::i18n::t("explorer.state.remote_listing_truncated").to_string(),
                     crate::adapters::ui::ToastKind::Warning,
-                    crate::adapters::ui::ToastScope::Window,
                 );
             }
         }
@@ -2089,7 +2227,7 @@ fn apply_list_dir_result_event(
     // (04) 원격이 이 세션의 list_dir_request 를 처리한 결과 — popup 이 열려 있고 그
     // 요청을 아직 기다리는 중일 때만 반영(다른 요청/이미 닫힌 popup 응답은 조용히
     // 무시 — stale reply).
-    let Some(picker) = main.state.dialogs.file_picker.as_mut() else {
+    let Some(picker) = host.state.dialogs.file_picker.as_mut() else {
         return;
     };
     let is_pending = matches!(
@@ -2116,10 +2254,9 @@ fn apply_list_dir_result_event(
             picker.remote_host = Some(sess.remote_label.clone());
         }
         if truncated {
-            main.state.toasts.push(
+            host.toast(
                 crate::i18n::t("filepicker.remote_listing_truncated").to_string(),
                 crate::adapters::ui::ToastKind::Warning,
-                crate::adapters::ui::ToastScope::Window,
             );
         }
     } else {
@@ -2138,7 +2275,7 @@ fn apply_list_dir_result_event(
 /// 단계(dispatch_pending_git_query_forwards)에서 처리됐으므로 여기선 무조건 forward.
 fn apply_git_query_result_event(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
-    main: &mut crate::view::main::MainView,
+    state: &mut crate::state::AppState,
     request_id: u64,
     ok: bool,
     kind: String,
@@ -2169,7 +2306,7 @@ fn apply_git_query_result_event(
     // 보통 최대 1개).
     for (iid, inst) in mgr.popup_instances() {
         if inst.plugin_id == GIT_VIEWER_PLUGIN_ID {
-            main.state.plugin_mesh_popup_pending_repaint.insert(iid);
+            state.plugin_mesh_popup_pending_repaint.insert(iid);
         }
     }
 }
@@ -2194,13 +2331,12 @@ fn apply_git_query_result_event(
 /// 그 surface 를 찾아 focus 를 복원한다(서버 상태는 건드리지 않음 — client-only 보정).
 fn apply_mirror_structural_delta(
     sess: &mut AttachClientSession,
-    main: &mut crate::view::main::MainView,
+    engine: &mut crate::core::CoreState,
     workspace_id: u32,
     tree: &Value,
     surfaces: &[Value],
     pending_focus: Option<PendingOpFocus>,
 ) {
-    let engine = &mut main.core_state;
     let ids = engine.next_ids.clone();
 
     // focus 캡처(교체 전) — 로컬에서 실제로 focus 돼 있던 surface 를, 재구성마다 바뀌는
@@ -4139,5 +4275,189 @@ mod tests {
             engine.terminals.get(local_20).is_some(),
             "mesh → terminal convert 는 새 Terminal 을 만들어야 한다(안 그러면 입력이 안 감)"
         );
+    }
+
+    /// 테스트용 mirror 세션 — transport 없이 매핑·이벤트 버퍼만 있다. write 큐의
+    /// 수신측을 바로 drop 하므로 delta 가 만드는 mirror 터미널의 입력 forwarder 는
+    /// 전송에 실패해도 조용히 계속된다(production 의 disconnect 구간과 동일).
+    fn test_session(
+        local_workspace: u32,
+        remote_to_local: HashMap<u32, u32>,
+    ) -> AttachClientSession {
+        let (tx, _rx) = std::sync::mpsc::channel::<OutFrame>();
+        AttachClientSession {
+            local_workspace,
+            remote_to_local,
+            output: Arc::new(Mutex::new(Vec::new())),
+            disconnected: Arc::new(AtomicBool::new(false)),
+            frame_tx: Arc::new(Mutex::new(tx)),
+            state: SessionState::Connected,
+            client_id: 1,
+            remote_workspace: 7,
+            bulk_port: 0,
+            tunnel: None,
+            anchor_ws_id: None,
+            op_seq: 0,
+            pending_op_focus: HashMap::new(),
+            next_delta_focus: None,
+            last_forwarded_resize: HashMap::new(),
+            remote_label: "127.0.0.1:0".to_string(),
+            pending_list_dir_consumers: HashMap::new(),
+        }
+    }
+
+    /// parked engine 두 개 — mirror 워크스페이스(터미널 `local_surface` 하나)는 **두
+    /// 번째**에만 심는다. 창을 여럿 닫으면 parked engine 이 여럿 쌓이므로 첫 항목만
+    /// 보는 순회는 여기서 걸린다.
+    fn parked_with_mirror(
+        ws_id: u32,
+        local_surface: u32,
+    ) -> Vec<(crate::state::AppState, crate::core::CoreState)> {
+        let mut parked: Vec<(crate::state::AppState, crate::core::CoreState)> =
+            (0..2).map(|_| crate::state::tests::test_state()).collect();
+        let mut mirror_ws = Workspace::new_with_terminal_marker(
+            ws_id,
+            "mirror".to_string(),
+            9_001,
+            9_002,
+            local_surface,
+        );
+        mirror_ws.mirror = true;
+        let engine = &mut parked[1].1;
+        engine.workspaces.push(mirror_ws);
+        engine
+            .terminals
+            .insert(local_surface, Terminal::new_detached(80, 24));
+        parked
+    }
+
+    /// 적용 대상 선택 순서 — 창 있는 engine 이 우선, 없으면 parked engine(첫 항목이
+    /// 아니어도), 어디에도 없으면 `None`(호출부가 drain 을 건너뛰는 신호).
+    #[test]
+    fn mirror_output_host_prefers_window_then_parked_then_none() {
+        let ws_id = 9_000u32;
+        let parked = parked_with_mirror(ws_id, 9_003);
+        let wid = winit::window::WindowId::from(7u64);
+        assert_eq!(
+            mirror_output_host(Some(wid), &parked, ws_id),
+            Some(MirrorOutputHost::Window(wid)),
+            "창 있는 engine 이 있으면 그쪽"
+        );
+        assert_eq!(
+            mirror_output_host(None, &parked, ws_id),
+            Some(MirrorOutputHost::Parked(1)),
+            "창이 없으면 mirror 를 든 parked engine(두 번째)"
+        );
+        assert_eq!(
+            mirror_output_host(None, &parked, 424_242),
+            None,
+            "어느 engine 에도 없으면 None — drain 하지 않는다"
+        );
+    }
+
+    /// 창이 없는 parked engine 에 mirror 이벤트가 그대로 적용된다 — `Data` 는 mirror
+    /// 터미널 grid 에, `StructuralDelta` 는 매핑·트리에, 그 delta 로 생긴 새 surface 의
+    /// 후속 `Data` 는 갱신된 매핑으로 라우팅된다. 이 경로가 없으면 창을 최소화한 동안
+    /// 도착한 출력이 통째로 유실되고 `remote_to_local` 이 desync 된다(ADR-0110).
+    #[test]
+    fn parked_engine_receives_mirror_data_and_structural_delta() {
+        let ws_id = 9_000u32;
+        let (survivor_remote, survivor_local, new_remote) = (42u32, 9_003u32, 43u32);
+        let mut parked = parked_with_mirror(ws_id, survivor_local);
+        let untouched_ws_count = parked[0].1.workspaces.len();
+        let mut sess = test_session(ws_id, HashMap::from([(survivor_remote, survivor_local)]));
+
+        let tree = serde_json::json!({
+            "id": 7, "name": "mirror", "focused_pane": 70,
+            "panes": [ {
+                "id": 70,
+                "tabs": [ {
+                    "id": 30, "name": "Shell", "active": true, "focused_surface": survivor_remote,
+                    "layout": {
+                        "type": "Split", "direction": "vertical", "ratio": 0.5,
+                        "focus_second": false,
+                        "first": { "type": "Leaf", "id": survivor_remote, "kind": "terminal" },
+                        "second": { "type": "Leaf", "id": new_remote, "kind": "terminal" }
+                    }
+                } ]
+            } ]
+        });
+        let surfaces = vec![
+            serde_json::json!({ "remote_id": survivor_remote, "role": "terminal", "cols": 80, "rows": 24 }),
+            serde_json::json!({ "remote_id": new_remote, "role": "terminal", "cols": 80, "rows": 24 }),
+        ];
+        let events = vec![
+            MirrorEvent::Data(survivor_remote, b"hello-parked".to_vec()),
+            MirrorEvent::StructuralDelta {
+                workspace_id: 7,
+                tree,
+                surfaces,
+            },
+            MirrorEvent::Data(new_remote, b"world-new".to_vec()),
+        ];
+
+        let pidx = find_parked_with_workspace(&parked, ws_id).expect("mirror 를 든 parked engine");
+        {
+            let (state, engine) = &mut parked[pidx];
+            let mut host = MirrorHost::parked(state, engine);
+            let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+            apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, events);
+        }
+
+        let engine = &parked[pidx].1;
+        let survivor = engine
+            .terminals
+            .get(survivor_local)
+            .expect("survivor mirror 터미널은 delta 뒤에도 같은 local id 로 남는다");
+        assert!(
+            survivor.screen_text(false).contains("hello-parked"),
+            "parked 동안 도착한 Data 가 mirror grid 에 남아야 한다: {:?}",
+            survivor.screen_text(false)
+        );
+        let new_local = *sess
+            .remote_to_local
+            .get(&new_remote)
+            .expect("delta 가 새 remote surface 를 매핑에 넣어야 한다(desync 방지)");
+        let fresh = engine
+            .terminals
+            .get(new_local)
+            .expect("delta 가 새 mirror 터미널을 만들어야 한다");
+        assert!(
+            fresh.screen_text(false).contains("world-new"),
+            "delta 이후의 Data 가 갱신된 매핑으로 새 터미널에 라우팅돼야 한다: {:?}",
+            fresh.screen_text(false)
+        );
+        let ws = engine
+            .workspaces
+            .iter()
+            .find(|w| w.id == ws_id)
+            .expect("mirror 워크스페이스는 같은 local id 로 교체된다");
+        let sids = ws.all_surface_ids();
+        assert!(
+            sids.contains(&survivor_local) && sids.contains(&new_local),
+            "{sids:?}"
+        );
+        assert_eq!(
+            parked[0].1.workspaces.len(),
+            untouched_ws_count,
+            "무관한 parked engine 은 건드리지 않는다"
+        );
+    }
+
+    /// 버퍼는 도착 순서대로 통째로 꺼내지고 비워진다 — resize 앞뒤 출력이 올바른
+    /// grid 에서 재생되려면 순서가 보존돼야 한다.
+    #[test]
+    fn drain_mirror_output_takes_everything_in_arrival_order() {
+        let buf: RemoteOutputBuffer = Arc::new(Mutex::new(vec![
+            MirrorEvent::Data(1, b"a".to_vec()),
+            MirrorEvent::Resize(1, 10, 5),
+            MirrorEvent::Data(1, b"b".to_vec()),
+        ]));
+        let drained = drain_mirror_output(&buf);
+        assert!(matches!(drained[0], MirrorEvent::Data(1, ref b) if b == b"a"));
+        assert!(matches!(drained[1], MirrorEvent::Resize(1, 10, 5)));
+        assert!(matches!(drained[2], MirrorEvent::Data(1, ref b) if b == b"b"));
+        assert_eq!(drained.len(), 3);
+        assert!(buf.lock().unwrap().is_empty(), "drain 뒤 버퍼는 비어 있다");
     }
 }
