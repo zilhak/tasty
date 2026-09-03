@@ -465,14 +465,19 @@ impl MainView {
                                 } else {
                                     0.0
                                 };
-                                let bounds = crate::webview::WebViewBounds {
-                                    x: (leaf_rect.x.value() as f64 + left) / scale_factor,
-                                    y: leaf_rect.y.value() as f64 / scale_factor,
-                                    width: (leaf_rect.width.value() as f64 - left - right).max(1.0)
-                                        / scale_factor,
-                                    height: (leaf_rect.height.value() as f64 - bottom).max(1.0)
-                                        / scale_factor,
+                                // 인셋을 먹인 **물리** 사각형을 먼저 만들고, 논리로
+                                // 내리는 나눗셈은 변환 API 한 곳에 맡긴다 — 소비자
+                                // (플랫폼 창 API)의 곱셈과 짝이 맞아야 창이 제자리에 온다.
+                                let physical = crate::webview::PhysicalWebViewBounds {
+                                    x: leaf_rect.x.value() as f64 + left,
+                                    y: leaf_rect.y.value() as f64,
+                                    width: (leaf_rect.width.value() as f64 - left - right).max(1.0),
+                                    height: (leaf_rect.height.value() as f64 - bottom).max(1.0),
                                 };
+                                let bounds = crate::webview::WebViewBounds::from_physical(
+                                    physical,
+                                    scale_factor,
+                                );
                                 active_html.insert(sid, bounds);
                             }
                         }

@@ -633,8 +633,9 @@ impl MainView {
             self.state.dialogs.pending_native_menu =
                 Some(crate::state::PendingNativeMenu::TerminalSurface {
                     surface_id,
-                    x: x / sf,
-                    y: y / sf,
+                    // 네이티브 메뉴 좌표는 logical — 물리 마우스 좌표를 변환 API 로 내린다.
+                    x: PhysicalPx(x).to_logical(sf).value(),
+                    y: PhysicalPx(y).to_logical(sf).value(),
                 });
             self.mark_dirty();
         }

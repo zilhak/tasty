@@ -13,7 +13,7 @@
 
 use egui::emath::GuiRounding as _;
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::PhysicalPx;
+use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
 
 use crate::adapters::ui::icons;
@@ -182,8 +182,9 @@ impl TabBarAction {
 #[derive(Default)]
 pub struct PaneTabBarsOutput {
     pub actions: Vec<TabBarAction>,
-    /// 첫 pane 의 탭 바 logical 높이 × scale_factor (physical px). 측정 못 했으면 None.
-    pub measured_height_physical: Option<f32>,
+    /// 첫 pane 의 탭 바 높이. 측정 못 했으면 None. 좌표계는 주석이 아니라 **타입**이
+    /// 보증한다 — egui 가 준 logical 높이를 `to_physical(scale_factor)` 로 변환해 담는다.
+    pub measured_height_physical: Option<PhysicalPx>,
 }
 
 /// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
@@ -217,9 +218,9 @@ pub fn draw_pane_tab_bars_view(
     let arrow_font_size = th.tab_bar_arrow_font_size.value();
 
     for info in props.panes {
-        let logical_x = (info.rect.x.value() / scale_factor).round_ui();
-        let logical_y = (info.rect.y.value() / scale_factor).round_ui();
-        let logical_w = (info.rect.width.value() / scale_factor).round_ui();
+        let logical_x = info.rect.x.to_logical(scale_factor).value().round_ui();
+        let logical_y = info.rect.y.to_logical(scale_factor).value().round_ui();
+        let logical_w = info.rect.width.to_logical(scale_factor).value().round_ui();
         let n = info.tab_names.len();
         let content_w =
             n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
@@ -758,8 +759,8 @@ pub fn draw_pane_tab_bars_view(
             });
 
         if output.measured_height_physical.is_none() {
-            let logical_h = area_response.response.rect.height();
-            output.measured_height_physical = Some(logical_h * scale_factor);
+            let logical_h = LogicalPx(area_response.response.rect.height());
+            output.measured_height_physical = Some(logical_h.to_physical(scale_factor));
         }
     }
 
@@ -767,9 +768,10 @@ pub fn draw_pane_tab_bars_view(
     if let Some(ref drag) = props.drag
         && let Some(pane_info) = props.panes.iter().find(|i| i.pane_id == drag.pane_id)
     {
-        let pane_logical_x = (pane_info.rect.x.value() / scale_factor).round_ui();
-        let pane_logical_y = (pane_info.rect.y.value() / scale_factor).round_ui();
-        let pane_logical_w = (pane_info.rect.width.value() / scale_factor).round_ui();
+        let pane_rect = pane_info.rect;
+        let pane_logical_x = pane_rect.x.to_logical(scale_factor).value().round_ui();
+        let pane_logical_y = pane_rect.y.to_logical(scale_factor).value().round_ui();
+        let pane_logical_w = pane_rect.width.to_logical(scale_factor).value().round_ui();
         let n = pane_info.tab_names.len();
         let content_w =
             n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
@@ -950,7 +952,7 @@ pub fn draw_pane_tab_bars(
     let output = draw_pane_tab_bars_view(ctx, &props);
 
     if let Some(h_phys) = output.measured_height_physical {
-        state.tab_bar_height = PhysicalPx(h_phys);
+        state.tab_bar_height = h_phys;
     }
 
     apply_tab_bar_actions(state, engine, output.actions, &panes, tab_w, scale_factor);
@@ -1162,8 +1164,9 @@ fn apply_drag_end(
         && drag.pane_id == pane_id
         && let Some(pane_info) = panes.iter().find(|i| i.pane_id == pane_id)
     {
-        let pane_logical_x = (pane_info.rect.x.value() / scale_factor).round_ui();
-        let pane_logical_w = (pane_info.rect.width.value() / scale_factor).round_ui();
+        let pane_rect = pane_info.rect;
+        let pane_logical_x = pane_rect.x.to_logical(scale_factor).value().round_ui();
+        let pane_logical_w = pane_rect.width.to_logical(scale_factor).value().round_ui();
         let target = compute_drop_index(
             drag.current_x,
             pane_logical_x,
@@ -1483,7 +1486,7 @@ mod tests {
             mk_pane(2, &["X", "Y"], 0, false),
         ];
         let out = run_view(panes, None);
-        assert!(out.measured_height_physical.unwrap_or(0.0) > 0.0);
+        assert!(out.measured_height_physical.unwrap_or_default().value() > 0.0);
     }
 
     #[test]

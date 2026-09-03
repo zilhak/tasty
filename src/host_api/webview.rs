@@ -36,12 +36,116 @@ pub use crate::plugin_bridge::remote_surface::NavState;
 pub use keys::{HostShortcutPolicy, WebViewKeyBridge, WebViewKeyEvent};
 
 /// Logical bounds for a webview (in logical pixels, origin at top-left).
-#[derive(Debug, Clone, Copy)]
+///
+/// 이 타입과 [`PhysicalWebViewBounds`] 는 한 쌍이다 — 좌표계가 필드 주석이 아니라
+/// **타입 이름**에 남고, 둘 사이는 [`WebViewBounds::to_physical`] /
+/// [`WebViewBounds::from_physical`] 로만 오간다. 생산자(레이아웃)와 소비자(플랫폼 창
+/// API)는 서로 다른 파일에 있고 그 둘의 나눗셈·곱셈이 정확히 상쇄해야 창이 제자리에
+/// 온다 — 각자 `/ scale_factor` · `* scale_factor` 를 손으로 적으면 한쪽만 고쳤을 때
+/// 조용히 어긋나므로, 변환은 이 두 함수 밖에 두지 않는다.
+///
+/// `f32`([`tasty_type_geometry::length::LogicalPx`])가 아니라 `f64` 인 이유는 두
+/// 가지다. ① 플랫폼 창 API(GTK/Win32/Cocoa)와 winit `scale_factor` 가 `f64` 다.
+/// ② 소비자가 `as i32` 로 **절단**하므로, 정밀도를 바꾸면 정수 경계에 걸친 값의
+/// 절단 방향이 뒤집혀 창이 1px 움직일 수 있다.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WebViewBounds {
     pub x: f64,
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+/// 플랫폼 창 API 에 그대로 넘길 **물리(device) 픽셀** 사각형 — [`WebViewBounds`] 의 짝.
+///
+/// 최종 정수 캐스팅(`as i32` / `as u32`)은 플랫폼 API 가 요구하는 형이 달라 호출부에
+/// 남긴다. 이 타입이 보장하는 것은 "여기 담긴 값은 이미 물리 픽셀" 이라는 사실이다.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhysicalWebViewBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl WebViewBounds {
+    /// 물리 사각형을 논리 좌표로 내린다. 산술은 종전 호출부가 하던 것과 같다.
+    pub fn from_physical(physical: PhysicalWebViewBounds, scale_factor: f64) -> Self {
+        Self {
+            x: physical.x / scale_factor,
+            y: physical.y / scale_factor,
+            width: physical.width / scale_factor,
+            height: physical.height / scale_factor,
+        }
+    }
+
+    /// 논리 좌표를 플랫폼 창 API 용 물리 사각형으로 올린다.
+    ///
+    /// macOS 는 Cocoa 가 논리 좌표(point)를 그대로 받으므로 이 변환을 쓰지 않는다 —
+    /// 물리로 올리는 쪽은 X11(GTK)·Win32 다.
+    pub fn to_physical(self, scale_factor: f64) -> PhysicalWebViewBounds {
+        PhysicalWebViewBounds {
+            x: self.x * scale_factor,
+            y: self.y * scale_factor,
+            width: self.width * scale_factor,
+            height: self.height * scale_factor,
+        }
+    }
+}
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::{PhysicalWebViewBounds, WebViewBounds};
+
+    /// 생산자(`from_physical`)와 소비자(`to_physical`)가 서로를 상쇄하는지 고정한다.
+    /// 둘은 서로 다른 파일에서 불리므로, 한쪽만 바뀌면 웹뷰가 조용히 어긋난다.
+    #[test]
+    fn the_physical_round_trip_returns_the_original_rect() {
+        let physical = PhysicalWebViewBounds {
+            x: 1920.0,
+            y: 48.0,
+            width: 1280.0,
+            height: 720.0,
+        };
+        for sf in [1.0_f64, 1.25, 1.5, 1.75, 2.0, 2.4] {
+            let logical = WebViewBounds::from_physical(physical, sf);
+            let back = logical.to_physical(sf);
+            for (got, want) in [
+                (back.x, physical.x),
+                (back.y, physical.y),
+                (back.width, physical.width),
+                (back.height, physical.height),
+            ] {
+                assert!(
+                    (got - want).abs() < 1e-9,
+                    "sf={sf}: {got} != {want} — 왕복이 상쇄되지 않으면 창이 어긋난다"
+                );
+            }
+        }
+    }
+
+    /// `from_physical` 이 실제로 논리 좌표(=물리 ÷ scale_factor)를 만든다.
+    #[test]
+    fn from_physical_divides_by_the_scale_factor() {
+        let logical = WebViewBounds::from_physical(
+            PhysicalWebViewBounds {
+                x: 200.0,
+                y: 100.0,
+                width: 800.0,
+                height: 600.0,
+            },
+            2.0,
+        );
+        assert_eq!(
+            logical,
+            WebViewBounds {
+                x: 100.0,
+                y: 50.0,
+                width: 400.0,
+                height: 300.0,
+            }
+        );
+    }
 }
 
 /// `prefers-color-scheme` override applied to an HTML webview (host-driven from

@@ -77,10 +77,11 @@ impl PlatformWebView {
 
         let xlib = x11_dl::xlib::Xlib::open().map_err(|e| format!("Failed to open Xlib: {e}"))?;
 
-        let x = (bounds.x * scale_factor) as i32;
-        let y = (bounds.y * scale_factor) as i32;
-        let w = (bounds.width * scale_factor) as u32;
-        let h = (bounds.height * scale_factor) as u32;
+        let physical = bounds.to_physical(scale_factor);
+        let x = physical.x as i32;
+        let y = physical.y as i32;
+        let w = physical.width as u32;
+        let h = physical.height as u32;
 
         // Get X11 display
         let display = if x11_display_ptr.is_null() {
@@ -282,10 +283,11 @@ impl PlatformWebView {
 
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
         self.assert_origin_thread();
-        let x = (bounds.x * scale_factor) as i32;
-        let y = (bounds.y * scale_factor) as i32;
-        let w = (bounds.width * scale_factor) as i32;
-        let h = (bounds.height * scale_factor) as i32;
+        let physical = bounds.to_physical(scale_factor);
+        let x = physical.x as i32;
+        let y = physical.y as i32;
+        let w = physical.width as i32;
+        let h = physical.height as i32;
 
         // SAFETY: self가 살아있으면 x11_display/x11_window 모두 valid (Drop이 정리).
         // 호출은 main thread (winit event loop) 흐름에서만 일어남 — 위

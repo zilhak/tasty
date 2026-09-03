@@ -83,10 +83,11 @@ impl PlatformWebView {
             };
             RegisterClassExW(&wc);
 
-            let x = (bounds.x * scale_factor) as i32;
-            let y = (bounds.y * scale_factor) as i32;
-            let w = (bounds.width * scale_factor) as i32;
-            let h = (bounds.height * scale_factor) as i32;
+            let physical = bounds.to_physical(scale_factor);
+            let x = physical.x as i32;
+            let y = physical.y as i32;
+            let w = physical.width as i32;
+            let h = physical.height as i32;
 
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
@@ -378,10 +379,11 @@ impl PlatformWebView {
     }
 
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
-        let x = (bounds.x * scale_factor) as i32;
-        let y = (bounds.y * scale_factor) as i32;
-        let w = (bounds.width * scale_factor) as i32;
-        let h = (bounds.height * scale_factor) as i32;
+        let physical = bounds.to_physical(scale_factor);
+        let x = physical.x as i32;
+        let y = physical.y as i32;
+        let w = physical.width as i32;
+        let h = physical.height as i32;
 
         // SAFETY: SetBounds/SetWindowPos는 self가 살아있는 동안 hwnd/controller가 valid
         // 함을 Drop 시점에 정리. 호출은 main thread에서 일어남.
