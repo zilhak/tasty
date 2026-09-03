@@ -170,6 +170,8 @@ tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등
 
 ## 소스 주석의 TODO 파일 및 디자인 changelog 인용 금지 (필수)
 
+**상위 규칙**: git 이 추적하는 파일에는 git 에 존재하지 않는 경로를 적지 않는다 — `.gitignore` 로 제외된 레포 로컬 작업 폴더는 경로도, 폴더 이름 단독 언급도 대상이다. 그 위치는 커밋되지 않는 로컬 전용 지침이 정하고, 추적 문서는 규칙의 내용만 쓴다. 범위 밖(적어도 되는 것)은 빌드가 만들어내는 산출물 경로, 사용자 홈의 런타임 경로, 경로가 아닌 식별자, `.gitignore` 자신이다. 근거·대안·재검토 조건은 [`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`](docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md). 아래는 그 규칙이 가장 자주 깨지는 두 형태를 구체화한 것이다.
+
 `.gitignore` 대상인 로컬 작업 폴더의 TODO 티켓 파일(conductor 티켓 포함)은 git에 커밋되지 않고, 완료된 항목은 관례상 파일 자체가 삭제된다 — **로컬 세션에서만 유효한 휘발성 식별자**다. 소스 코드 주석·문자열(UI에 노출되는 텍스트 포함)에서 그 파일 번호를 "TODO 40", "(TODO18)" 같은 형태로 인용하지 않는다. 저장소를 새로 clone한 사람에게는 그 번호가 가리키는 문서가 존재한 적이 없으므로, 인용 자체가 추적 불가능한 죽은 참조가 된다.
 
 Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 금지 대상이다 — changelog는 `.gitignore` 대상 로컬 디렉토리보다 한층 더 휘발적이다: 원격 Claude Design 프로젝트 **내부에만** 존재하며 로컬 파일시스템에는 애초에 흔적조차 남지 않는다. "2026-07-03-spacing-offgrid" 같은 changelog 판정 slug를 소스 주석·문자열에서 인용하지 않는다 — TODO 파일 번호와 완전히 같은 이유(추적 불가능한 죽은 참조)다.
@@ -179,7 +181,7 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 - **설계 결정이 크면**: 커밋되는 [`docs/adr/`](docs/adr/) ADR을 작성하고 그 경로를 인용한다.
 - **기능 동작을 설명해야 하면**: 커밋되는 [`docs/`](docs/) 문서(예: `docs/dev-guide/`, `docs/features/`, `docs/plugins/`)를 참조하거나 신설해 그 경로를 인용한다.
 
-이 금지는 `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다 — 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4) 네 형태를 모두 잡는다. 금지 형태를 담는 것이 본질인 파일(규칙 본문·테스트 픽스처 등)은 그 테스트의 `ALLOWLIST_FILES` 에 등록한다.
+위 두 형태(TODO 파일 번호·디자인 changelog slug)의 금지는 `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다 — 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4) 네 형태를 모두 잡는다. 금지 형태를 담는 것이 본질인 파일(규칙 본문·테스트 픽스처 등)은 그 테스트의 `ALLOWLIST_FILES` 에 등록한다.
 
 로컬 작업을 추적할 목적 자체는 유효하다 — 로컬 작업 폴더에 번호 붙은 TODO 파일을 쓰는 관례는 그대로 유지한다(폴더 위치는 위 "임시 파일·계획 위치" 와 같이 로컬 전용 지침이 정한다). 다만 그 번호는 **작업 티켓**일 뿐 **영구 코드 근거 좌표**가 아니므로, 소스에 스며들게 하지 않는다.
 
