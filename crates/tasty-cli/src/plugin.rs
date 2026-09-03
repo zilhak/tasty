@@ -8,7 +8,6 @@ use anyhow::Result;
 use serde_json::{Map, Value, json};
 
 use tasty_ipc::client::IpcConnection;
-use tasty_ipc::port_file;
 use tasty_plugin_manifest::Manifest;
 
 use crate::out::{out, outln};
@@ -30,7 +29,7 @@ pub fn run_audit_follow(
     interval_ms: u64,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = port_file::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "{}",

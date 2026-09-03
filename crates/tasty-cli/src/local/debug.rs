@@ -20,12 +20,11 @@ use crate::out::outln;
 pub fn run_stream_echo(payload: &str, count: u32, port_file: Option<&str>) -> anyhow::Result<()> {
     use std::net::TcpStream;
 
-    use tasty_ipc::port_file as pf;
     use tasty_ipc::stream::{STREAM_PROTO, StreamTag};
 
     use tasty_ipc::client::StreamConnection;
 
-    let port = pf::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     let sock = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "{}",

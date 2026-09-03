@@ -1320,6 +1320,13 @@ desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/
 spawn_no_parent = "エラー: 親サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 tell_no_target = "エラー: 対象サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 
+# ポートファイル参照の失敗。`tasty-ipc` は条件を型で伝えるだけで文言を持たず、ユーザーが
+# 実際に読む文章はこれらの値である(docs/dev-guide/i18n.md「呼び出し側による注入」)。
+[cli.port_file]
+no_instance = "実行中の tasty インスタンスが見つかりません(ポートファイルが {} にありません)"
+home_unresolved = "設定ディレクトリを特定できません"
+invalid_contents = "ポートファイルの内容が不正です"
+
 # `tasty` CLI — クライアント側の引数検証エラーと stderr のステータス行。
 # 2 種類が混在し、値そのもので見分けられる: CLI が直接出力するメッセージは "エラー:" /
 # "警告:" の接頭辞を値に含め(言語ごとに表現が異なる)、それ以外は呼び出し側または最上位の

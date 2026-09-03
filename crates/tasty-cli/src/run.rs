@@ -5,8 +5,6 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-use tasty_ipc::port_file;
-
 use super::Commands;
 use super::dispatch::{ClientCtx, Dispatch};
 use super::dynamic;
@@ -97,7 +95,7 @@ fn run_dynamic_client(
     request: tasty_ipc::protocol::JsonRpcRequest,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = match port_file::read_port_file_from(port_file) {
+    let port = match crate::port_file::read_port(port_file) {
         Ok(p) => p,
         Err(e) => {
             hook_failure::record(&request.method, &request.params, &e.to_string());
@@ -186,7 +184,7 @@ fn run_dynamic_client_with_auto_wait(
     aw: super::dynamic::AutoWaitPlan,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = port_file::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
 
     // ── 1) 1 차 IPC (spawn / tell) 호출 + 응답 출력.
     let first_value = {
@@ -280,7 +278,7 @@ fn run_dynamic_client_polling(
 ) -> Result<()> {
     use std::time::{Duration, Instant};
 
-    let port = port_file::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     let interval = Duration::from_millis(polling.interval_ms);
     // timeout_field 가 manifest 에 선언되어 있으면 request.params 에서 그 값 (초)
     // 을 deadline 으로 사용. 없으면 무한 대기.
@@ -352,7 +350,7 @@ fn run_client_inner(command: Commands, port_file: Option<&str>) -> Result<()> {
         return cmd.run(&ClientCtx { port_file });
     }
 
-    let port = port_file::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     let stream = connect_ipc(port)?;
 
     let mut conn = IpcConnection::new(stream)?;

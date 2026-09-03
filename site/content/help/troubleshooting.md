@@ -64,7 +64,7 @@ TASTY_LOG=debug tasty 2> tasty.log
 
 ## `tasty` 명령이 연결되지 않는다
 
-- **`No running tasty instance found (port file not found at …)`** — Tasty 창이 떠 있지 않다. 메시지에 적힌 경로가 `~/.tasty/tasty.port` 가 아니면 다른 홈 디렉토리(`TASTY_HOME`)를 보고 있는 것이다.
+- **`No running tasty instance found (port file not found at …)`** — Tasty 창이 떠 있지 않다. 메시지에 적힌 경로가 `~/.tasty/tasty.port` 가 아니면 다른 홈 디렉토리(`TASTY_HOME`)를 보고 있는 것이다. 이 메시지는 설정 언어(`general.language`, 기본값 영어)를 따르므로 한국어로 설정했다면 "실행 중인 tasty 인스턴스를 찾을 수 없습니다" 로 나온다.
 - **포트 파일은 있는데 연결이 안 된다** — 이전 Tasty 가 비정상 종료돼 포트 파일만 남았다. Tasty 가 실행 중이 아닌지 확인한 뒤 파일을 지우고 다시 띄운다.
 
   ```sh

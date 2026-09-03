@@ -1341,6 +1341,16 @@ desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."
 spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 tell_no_target = "Error: no target surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 
+# Port file lookup failures. `tasty-ipc` reports the condition as a typed error and owns no
+# wording; these values are what the user actually reads (see docs/dev-guide/i18n.md — a leaf
+# crate takes its wording from the caller).
+# The English values must stay byte-identical to `PortFileError`'s own rendering — a test in
+# `tasty-cli` asserts that, because the same failure must not read two ways in English.
+[cli.port_file]
+no_instance = "No running tasty instance found (port file not found at {})"
+home_unresolved = "Could not determine config directory"
+invalid_contents = "Invalid port file contents"
+
 # `tasty` CLI — client-side argument validation and status lines written to stderr.
 # Two shapes live here, told apart by the value itself: messages the CLI prints directly
 # carry their own "Error:" / "warning:" prefix so each language can phrase it, while the

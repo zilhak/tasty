@@ -12,7 +12,6 @@
 #![cfg(debug_assertions)]
 
 use anyhow::Result;
-use tasty_ipc::port_file as pf;
 
 use crate::local::attach::{run_attach_on_port, run_attach_workspace_on_port};
 
@@ -24,7 +23,7 @@ pub fn run_attach(
     raw: bool,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = pf::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     run_attach_on_port(port, surface, dump_after, send, raw)?;
     Ok(())
 }
@@ -37,7 +36,7 @@ pub fn run_attach_workspace(
     send_to: Option<u32>,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = pf::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     run_attach_workspace_on_port(port, workspace, dump_after, send, send_to)?;
     Ok(())
 }
