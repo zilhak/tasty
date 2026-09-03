@@ -194,6 +194,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         fs::remove_dir_all(&out_dir)?;
     }
     fs::create_dir_all(&out_dir)?;
+    let mut static_src = fs::read_to_string(site_dir.join("static/style.css"))?;
+    static_src.push_str(&fs::read_to_string(site_dir.join("static/site.js"))?);
+    if ASSET_TAG.set(content_hash(&static_src)).is_err() {
+        eprintln!("warning: asset tag was already set");
+    }
 
     let pages = collect_pages(&docs_root)?;
     println!("collected {} docs pages", pages.len());
@@ -447,6 +452,16 @@ fn read_stamp(source: &str) -> Option<String> {
 }
 
 /// Short, stable content hash — what translations are stamped with.
+/// Short hash of the static assets, appended as `?v=` to their URLs so a
+/// redeploy is never served with a browser-cached stylesheet (GitHub Pages
+/// caches assets for ten minutes; a page fetched with an old `style.css`
+/// renders the new markup unstyled).
+static ASSET_TAG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub fn asset_tag() -> &'static str {
+    ASSET_TAG.get().map(String::as_str).unwrap_or("dev")
+}
+
 pub fn content_hash(source: &str) -> String {
     // Normalise line endings so a CRLF checkout does not invalidate every stamp.
     let normalised = source.replace("\r\n", "\n");

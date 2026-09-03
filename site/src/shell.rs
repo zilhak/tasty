@@ -154,7 +154,7 @@ pub fn document(shell: &Shell<'_>) -> String {
 <meta property="og:description" content="{desc}">
 <meta property="og:type" content="website">
 <link rel="icon" href="{root}assets/tasty-melon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="{root}assets/style.css">
+<link rel="stylesheet" href="{root}assets/style.css?v={asset_tag}">
 <script>
 /* Applied before first paint so the theme never flashes. */
 (function () {{
@@ -176,13 +176,14 @@ pub fn document(shell: &Shell<'_>) -> String {
 {header}
 {body}
 {footer}
-<script src="{root}assets/site.js" defer></script>
+<script src="{root}assets/site.js?v={asset_tag}" defer></script>
 </body>
 </html>
 "##,
         lang = s.lang,
         title = html_escape(&full_title),
         desc = html_escape(&shell.description),
+        asset_tag = crate::asset_tag(),
         root = root,
         skip = html_escape(s.skip_to_content),
         header = header(shell),
@@ -228,7 +229,7 @@ fn header(shell: &Shell<'_>) -> String {
       <label class="visually-hidden" for="site-search">{search_ph}</label>
       <input id="site-search" type="search" autocomplete="off" spellcheck="false"
              placeholder="{search_ph}"
-             data-index="{root}{search_index}"
+             data-index="{root}{search_index}?v={asset_tag}"
              data-base="{root}"
              data-empty-label="{search_empty}">
       <div class="search__results" role="listbox"></div>
@@ -250,6 +251,7 @@ fn header(shell: &Shell<'_>) -> String {
         root = root,
         docs = shell.docs_prefix,
         search_index = shell.search_index,
+        asset_tag = crate::asset_tag(),
         version = crate::version(),
         nav_docs = html_escape(s.nav_docs),
         nav_features = html_escape(s.nav_features),
