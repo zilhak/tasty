@@ -1,14 +1,13 @@
 name: Pages
 
-# docs/ 와 site/ 로 GitHub Pages 정적 사이트를 만들어 배포한다.
-# 생성기는 site/ 의 별도 crate (workspace exclude) — 본체 빌드와 무관하다.
+# site/ (생성기 + 사용자 가이드 site/content/) 로 GitHub Pages 정적 사이트를 만들어 배포한다.
+# 생성기는 site/ 의 별도 crate (workspace exclude) — 본체 빌드와 무관하다. docs/ 는 발행하지 않는다.
 # 절차·구조: docs/dev-guide/site.md
 
 on:
   push:
     branches: [main]
     paths:
-      - "docs/**"
       - "site/**"
       - "assets/icons/tasty-melon.svg"
       - "Cargo.toml"
@@ -51,7 +50,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release view --repo "$GITHUB_REPOSITORY" --json tagName,assets > site/release.json
 
-      # --strict 는 docs 안의 깨진 상대 링크를 배포 실패로 승격한다.
+      # --strict 는 가이드 안의 깨진 상대 링크와 ORDER 에 없는 페이지를 배포 실패로 승격한다.
       - name: Generate site
         run: cargo run --release --manifest-path site/Cargo.toml -- --strict
 

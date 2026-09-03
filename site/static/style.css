@@ -392,13 +392,6 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   flex: 0 0 auto;
 }
 .nav-section[open] > summary::before { transform: rotate(90deg); }
-.nav-section__count {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--overlay0);
-}
-
 .nav-list {
   list-style: none;
   margin: var(--sp-1) 0 var(--sp-3);

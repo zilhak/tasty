@@ -46,9 +46,7 @@ struct Copy {
     cta_title: &'static str,
     cta_body: &'static str,
     cta_docs: &'static str,
-    cta_source: &'static str,
-
-    docs_language_note: &'static str,
+    cta_download: &'static str,
 }
 
 const KO_COPY: Copy = Copy {
@@ -57,134 +55,127 @@ const KO_COPY: Copy = Copy {
     title_lead: "AI 에이전트가",
     title_accent: "직접 조작하는",
     title_tail: "터미널",
-    lede: "GPU 가속 네이티브 터미널에 좌표 하나를 더했다. \
-           모든 표면이 키보드·마우스와 IPC·CLI 양쪽에 똑같이 열려 있어서, \
-           사람과 에이전트가 같은 터미널을 동시에 쓴다.",
+    lede: "GPU 로 그리는 네이티브 터미널이다. 내가 쓰는 키보드·마우스와 에이전트가 쓰는 \
+           tasty 명령이 같은 화면을 함께 다룬다. 에이전트가 탭을 열고, 명령을 보내고, \
+           결과를 읽고, 끝나면 알려준다.",
     cta_primary: "다운로드",
-    cta_secondary: "문서 보기",
-    install_note: "OS 별 산출물 표와 설치 절차, 소스 빌드는",
-    install_note_link: "설치 문서 →",
+    cta_secondary: "가이드 보기",
+    install_note: "OS 별 설치 절차와 첫 실행은",
+    install_note_link: "설치 가이드 →",
     dl_for: "{os} 용 다운로드",
     dl_all: "모든 플랫폼",
 
-    why_kicker: "설계 원칙",
-    why_title: "사용자의 조작과 에이전트의 조작을 섞지 않는다",
-    why_body: "에이전트가 무언가를 해도 사용자의 포커스·선택·스크롤·히스토리는 움직이지 않는다. \
-               사용자 입력을 재현하는 기능은 release 빌드에 아예 존재하지 않는다.",
+    why_kicker: "왜 Tasty 인가",
+    why_title: "에이전트가 일해도 내 자리는 그대로다",
+    why_body: "에이전트가 탭을 만들고 명령을 보내도 내가 보고 있던 화면, 선택한 텍스트, \
+               스크롤 위치는 움직이지 않는다. 사용자 입력을 흉내 내는 기능은 제품에 없다.",
     why_points: &[
         (
             "01",
-            "행동 분리",
-            "IPC · CLI 의 부수효과가 사용자 상태에 닿지 않는다. 키 주입이나 강제 포커스 전환 같은 \
-             입력 재현 API 는 debug 빌드로 격리되어 있다.",
+            "내 조작과 분리",
+            "에이전트의 동작이 포커스 · 선택 · 스크롤 · 닫은 탭 히스토리에 닿지 않는다. \
+             내가 다른 탭을 보고 있어도 에이전트는 자기 터미널에서만 일한다.",
         ),
         (
             "02",
-            "포커스 독립",
-            "모든 명령이 대상을 ID 로 직접 지정한다. 조회는 전 워크스페이스를 순회하고, \
-             무엇이 활성 상태인지에 따라 동작이 달라지지 않는다.",
+            "ID 로 지정",
+            "에이전트는 어느 터미널을 조작할지 ID 로 지정한다. 지금 무엇이 활성인지에 따라 \
+             엉뚱한 곳에 입력이 들어가는 일이 없다.",
         ),
         (
             "03",
-            "양면 노출",
-            "에이전트가 쓸 수 있는 기능은 IPC 와 CLI 양쪽으로 모두 제공한다. \
-             GUI 에서만 가능한 에이전트 기능은 두지 않는다.",
+            "명령 하나로 전부",
+            "분할 · 명령 전송 · 출력 읽기 · 알림 · 훅까지 tasty 명령 하나로 한다. \
+             에이전트에게 알려줄 것은 명령어 목록뿐이다.",
         ),
         (
             "04",
-            "헤드리스",
-            "창 없이도 표면을 만들고 입출력을 주고받는다. CI 나 서버에 그대로 들어간다.",
+            "창 없이도",
+            "서버나 CI 에서 창 없이 실행해도 같은 명령으로 터미널을 만들고 입출력을 주고받는다.",
         ),
     ],
 
     features_kicker: "기능",
     features_title: "터미널이 해야 할 일과, 에이전트가 필요로 하는 일",
-    features_body: "45 개 기능이 각각 기획 문서와 화면 문서로 정리되어 있다. \
-                    아래는 그중 자주 쓰이는 것들이다.",
+    features_body: "자주 쓰는 것만 골랐다. 전체는 가이드에 순서대로 정리되어 있다.",
     cards: &[
         (
             "grid",
             "GPU 렌더링",
-            "셀 단위 셰이더로 그린다. 표면을 10 개 이상 띄워도 prepare/draw 가 안정적이다.",
-            "features/terminal/index.html",
+            "셀 단위로 GPU 가 그린다. 분할을 열 개 넘게 띄워도 매끄럽다.",
+            "using/panes-tabs-splits.html",
         ),
         (
             "agents",
-            "다중 에이전트 협업",
-            "task DAG 와 barrier · semaphore · lease · reduce · rate-limit 프리미티브로 \
-             병렬 작업을 조율한다.",
-            "features/agent-collaboration/index.html",
+            "여러 에이전트를 한 번에",
+            "Claude · Codex 자식을 띄우고, 각각이 끝나는 대로 알림을 받는다.",
+            "agents/claude-codex.html",
         ),
         (
             "terminal",
-            "헤드리스 PTY",
-            "표면 없이 PTY 만 띄우고 exit code 를 받는다. 필요할 때 화면으로 승격한다.",
-            "features/headless-pty/index.html",
+            "CLI 로 조작",
+            "분할 · 명령 전송 · 출력 읽기 · 알림을 tasty 명령 하나로. 에이전트가 자기 터미널을 직접 다룬다.",
+            "agents/cli.html",
         ),
         (
             "keyboard",
             "vi 복사 모드",
-            "hjkl 이동, visual 선택, 검색까지 키보드만으로. 커서는 GPU 로 그린다.",
-            "features/clipboard/index.html",
+            "hjkl 이동, visual 선택, 검색까지 키보드만으로.",
+            "using/terminal.html",
         ),
         (
             "plug",
-            "플러그인 SDK",
-            "매니페스트 스키마와 권한 시스템을 갖춘 SDK. 번들 플러그인 8 종이 같은 규약으로 동작한다.",
-            "features/plugin-system/index.html",
+            "플러그인",
+            "탐색기 · 마크다운 · 이미지 · git 보기가 번들로 들어 있다. 권한을 보고 켜고 끈다.",
+            "plugins/index.html",
         ),
         (
             "link",
             "원격 attach",
-            "이미 떠 있는 원격 tasty 의 워크스페이스를 로컬로 mirror 한다. \
-             신뢰 경계는 SSH 에 위임한다.",
-            "features/remote-attach/index.html",
+            "다른 머신에서 돌고 있는 tasty 의 워크스페이스를 SSH 로 그대로 가져와 본다.",
+            "remote/attach.html",
         ),
         (
             "parse",
-            "출력 구조화",
-            "셸 프롬프트 경계를 인식해 \"이 명령의 출력\" 만 정확히 떼어낸다.",
-            "features/terminal-output/index.html",
+            "명령 단위 출력",
+            "셸 프롬프트 경계를 인식해 방금 실행한 명령의 출력만 정확히 읽는다.",
+            "agents/cli.html",
         ),
         (
             "gauge",
-            "토큰 비용 상한",
-            "사용량을 집계하고 상한을 넘으면 자동으로 차단한다.",
-            "features/telemetry/index.html",
+            "훅과 알림",
+            "프로세스 종료 · 출력 패턴 · 유휴 시간에 훅을 걸고 알림을 받는다.",
+            "agents/hooks-notifications.html",
         ),
         (
             "palette",
             "테마",
-            "TOML 로 직접 만든다. 4px 그리드와 14px 폰트 상한 위에 올린 토큰 시스템.",
-            "features/themes/index.html",
+            "Mocha · Latte 같은 번들 테마를 고르거나 TOML 로 직접 만든다.",
+            "customize/themes.html",
         ),
     ],
 
     agents_kicker: "다중 에이전트",
     agents_title: "여러 에이전트를 띄우고, 끝나는 대로 통지받는다",
-    agents_body: "자식 인스턴스를 spawn 하면 명령은 즉시 반환하고 완료 훅이 자동으로 등록된다. \
-                  각 자식이 idle · 입력 대기 · 종료 상태가 되면 호출한 표면으로 통지가 온다. \
-                  Blackboard · Plan · Cache 로 같은 작업 맥락을 공유한다.",
-    agents_caption: "CLI 로 하는 모든 일은 IPC 로도 똑같이 할 수 있다.",
+    agents_body: "자식 에이전트를 띄우면 명령은 즉시 돌아오고 완료 알림이 자동으로 걸린다. \
+                  각 자식이 쉬거나, 입력을 기다리거나, 종료되면 띄운 쪽 터미널로 통지가 온다.",
+    agents_caption: "사람이 GUI 에서 하는 일은 에이전트가 CLI 로 똑같이 할 수 있다.",
 
     platform_kicker: "플랫폼",
     platform_title: "세 OS 모두 1 급",
-    platform_body: "플랫폼 분기는 조건부 컴파일로 처리하고, 한 OS 전용 기능이 있어도 \
-                    다른 OS 의 빌드를 깨뜨리지 않는다. 육각형 아키텍처로 \
-                    모델 · 포트 · 어댑터 · 뷰를 분리했다.",
+    platform_body: "Windows · macOS · Linux 에서 같은 기능, 같은 단축키 체계, 같은 CLI. \
+                    dmg · msi · deb · rpm · AppImage 로 설치한다.",
     stats: &[
-        ("48", "워크스페이스 크레이트"),
-        ("45", "문서화된 기능"),
-        ("3", "빌드 프로필"),
+        ("3", "운영체제"),
+        ("7", "번들 플러그인"),
+        ("3", "UI 언어"),
         ("MIT", "라이선스"),
     ],
 
-    cta_title: "문서부터 읽어도 되고, 바로 빌드해도 된다",
-    cta_body: "설계 원칙 · 기능 명세 · CLI 레퍼런스 · ADR 까지 전부 공개되어 있다.",
-    cta_docs: "문서 인덱스",
-    cta_source: "소스 보기",
-
-    docs_language_note: "",
+    cta_title: "가이드부터 읽어도 되고, 바로 설치해도 된다",
+    cta_body: "설치부터 에이전트 연동, 원격 attach 까지 가이드에 순서대로 정리했다.",
+    cta_docs: "가이드 읽기",
+    cta_download: "다운로드",
 };
 
 const EN_COPY: Copy = Copy {
@@ -193,138 +184,133 @@ const EN_COPY: Copy = Copy {
     title_lead: "A terminal",
     title_accent: "an AI agent",
     title_tail: "can drive itself",
-    lede: "Tasty adds one more coordinate on top of a GPU-accelerated native terminal: \
-           every surface is equally open to keyboard and mouse *and* to IPC and CLI, \
-           so a person and an agent can work the same terminal at once.",
+    lede: "A native terminal drawn on the GPU. Your keyboard and mouse and an agent's \
+           tasty commands work the same screen together: the agent opens tabs, sends \
+           commands, reads the results, and tells you when it is done.",
     cta_primary: "Download",
-    cta_secondary: "Read the docs",
-    install_note: "Per-OS packages, install steps and building from source:",
+    cta_secondary: "Read the guide",
+    install_note: "Per-OS install steps and the first launch:",
     install_note_link: "Installation guide →",
     dl_for: "Download for {os}",
     dl_all: "All platforms",
 
-    why_kicker: "Design principles",
-    why_title: "User actions and agent actions never bleed into each other",
-    why_body: "Nothing an agent does moves your focus, selection, scroll position, or history. \
-               Anything that would replay user input simply is not in the release build.",
+    why_kicker: "Why Tasty",
+    why_title: "The agent works, and your seat stays yours",
+    why_body: "An agent can open tabs and send commands, and the screen you were looking at, \
+               the text you selected, and your scroll position do not move. \
+               Nothing in the product imitates user input.",
     why_points: &[
         (
             "01",
-            "Separated actions",
-            "Side effects of IPC and CLI calls never touch user state. Input-replay APIs \
-             — key injection, forced focus changes — exist only under debug isolation.",
+            "Separate from your hands",
+            "What an agent does never touches focus, selection, scrolling, or the closed-tab \
+             history. You can look at another tab while it works in its own.",
         ),
         (
             "02",
-            "Focus independence",
-            "Every command addresses its target by ID. Listings walk all workspaces, and \
-             nothing behaves differently based on what happens to be active.",
+            "Addressed by ID",
+            "An agent names the terminal it wants to drive by ID. Whatever happens to be active \
+             right now never receives input meant for somewhere else.",
         ),
         (
             "03",
-            "Both surfaces, always",
-            "Anything an agent can do is exposed over IPC and over the CLI. \
-             There are no GUI-only agent features.",
+            "One command for everything",
+            "Splits, sending commands, reading output, notifications, hooks — all through the \
+             single tasty command. The only thing an agent needs to learn is the command list.",
         ),
         (
             "04",
-            "Headless",
-            "Create surfaces and drive their I/O with no window at all — it drops straight \
-             into CI and server environments.",
+            "Windowless too",
+            "On a server or in CI, run it with no window and drive terminals with the same \
+             commands.",
         ),
     ],
 
     features_kicker: "Features",
     features_title: "What a terminal owes you, and what an agent needs from one",
-    features_body: "45 features, each with its own behavior and screen documentation. \
-                    Here are the ones people reach for most.",
+    features_body: "The ones people reach for most. The guide walks through all of them in order.",
     cards: &[
         (
             "grid",
             "GPU rendering",
-            "Cell-based shaders. Prepare and draw stay stable past ten concurrent surfaces.",
-            "features/terminal/index.html",
+            "Every cell is drawn on the GPU. Stays smooth well past ten splits.",
+            "using/panes-tabs-splits.html",
         ),
         (
             "agents",
-            "Multi-agent collaboration",
-            "A task DAG plus barrier, semaphore, lease, reduce, and rate-limit primitives \
-             coordinate parallel work.",
-            "features/agent-collaboration/index.html",
+            "Several agents at once",
+            "Spawn Claude and Codex children and hear back as each one finishes.",
+            "agents/claude-codex.html",
         ),
         (
             "terminal",
-            "Headless PTY",
-            "Run a PTY with no surface and collect its exit code — promote it to a visible \
-             surface when you need one.",
-            "features/headless-pty/index.html",
+            "Driven from the CLI",
+            "Splits, sending commands, reading output, notifications — one tasty command. \
+             An agent drives its own terminal directly.",
+            "agents/cli.html",
         ),
         (
             "keyboard",
             "vi copy mode",
-            "hjkl movement, visual selection, and search from the keyboard alone, with a \
-             GPU-drawn cursor.",
-            "features/clipboard/index.html",
+            "hjkl movement, visual selection, and search from the keyboard alone.",
+            "using/terminal.html",
         ),
         (
             "plug",
-            "Plugin SDK",
-            "A manifest schema and a permission system. The eight bundled plugins run on the \
-             same contract yours would.",
-            "features/plugin-system/index.html",
+            "Plugins",
+            "Explorer, Markdown, image, and git views come bundled. See each one's permissions \
+             and switch it on or off.",
+            "plugins/index.html",
         ),
         (
             "link",
             "Remote attach",
-            "Mirror a workspace from a tasty instance already running elsewhere. \
-             The trust boundary is SSH.",
-            "features/remote-attach/index.html",
+            "Bring a workspace from a tasty running on another machine over SSH and see it as is.",
+            "remote/attach.html",
         ),
         (
             "parse",
-            "Structured output",
-            "Recognises shell prompt boundaries, so you can capture exactly one command's output.",
-            "features/terminal-output/index.html",
+            "Per-command output",
+            "Recognises shell prompt boundaries, so an agent reads exactly the output of the \
+             command it just ran.",
+            "agents/cli.html",
         ),
         (
             "gauge",
-            "Token cost caps",
-            "Aggregates agent usage and blocks automatically once a cost cap is exceeded.",
-            "features/telemetry/index.html",
+            "Hooks and notifications",
+            "Hook process exit, output patterns, and idle time, and get notified.",
+            "agents/hooks-notifications.html",
         ),
         (
             "palette",
             "Themes",
-            "Written as TOML, on a token system built over a 4px grid and a 14px type ceiling.",
-            "features/themes/index.html",
+            "Pick a bundled theme such as Mocha or Latte, or write your own in TOML.",
+            "customize/themes.html",
         ),
     ],
 
     agents_kicker: "Multi-agent",
     agents_title: "Spawn several agents, hear back as each one lands",
-    agents_body: "Spawning a child returns immediately and registers its completion hook for you. \
-                  When a child goes idle, needs input, or exits, the calling surface is notified. \
-                  Blackboard, Plan, and Cache let them share one working context.",
-    agents_caption: "Everything the CLI does is available over IPC too.",
+    agents_body: "Spawning a child agent returns immediately and arms its completion notice for \
+                  you. When a child goes idle, waits for input, or exits, the terminal that \
+                  spawned it is notified.",
+    agents_caption: "Whatever a person does in the GUI, an agent can do from the CLI.",
 
     platform_kicker: "Platforms",
     platform_title: "All three, first class",
-    platform_body: "Platform differences live behind conditional compilation, and an OS-specific \
-                    feature never breaks the build on the others. A hexagonal architecture keeps \
-                    model, ports, adapters, and view apart.",
+    platform_body: "The same features, the same shortcut scheme, and the same CLI on Windows, \
+                    macOS, and Linux. Installs as dmg, msi, deb, rpm, or AppImage.",
     stats: &[
-        ("48", "workspace crates"),
-        ("45", "documented features"),
-        ("3", "build profiles"),
+        ("3", "operating systems"),
+        ("7", "bundled plugins"),
+        ("3", "UI languages"),
         ("MIT", "license"),
     ],
 
-    cta_title: "Start with the docs, or just build it",
-    cta_body: "Design principles, feature specs, the CLI reference, and every ADR are public.",
-    cta_docs: "Documentation index",
-    cta_source: "Browse the source",
-
-    docs_language_note: "The reference docs are being translated from Korean; untranslated pages show the original with a notice.",
+    cta_title: "Start with the guide, or just install it",
+    cta_body: "From installation to agent integration and remote attach, the guide covers it in order.",
+    cta_docs: "Read the guide",
+    cta_download: "Download",
 };
 
 pub fn render(strings: &Strings, root: &str, docs: &str) -> String {
@@ -389,7 +375,7 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
       <div class="dl__head"><span>{dl_all}</span><a href="{releases}">{release_tag} ↗</a></div>
       <div class="dl__cards">{cards}</div>
     </div>
-    <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}installation.html">{note_link}</a></p>
+    <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
   </div>
   {mock}
 </section>"##,
@@ -776,32 +762,22 @@ fn platform(copy: &Copy) -> String {
 }
 
 fn cta_band(copy: &Copy, root: &str, docs: &str) -> String {
-    let note = if copy.docs_language_note.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<p style=\"font-size:13px;color:var(--overlay1);margin-top:20px\">{}</p>",
-            html_escape(copy.docs_language_note)
-        )
-    };
     format!(
         r##"<section class="cta-band">
   <h2>{title}</h2>
   <p>{body}</p>
   <div class="cta-row">
     <a class="btn btn--primary" href="{root}{docs}index.html">{docs_label}</a>
-    <a class="btn btn--ghost" href="{repo}">{source}</a>
+    <a class="btn btn--ghost" href="{releases}">{download}</a>
   </div>
-  {note}
 </section>"##,
         title = html_escape(copy.cta_title),
         body = html_escape(copy.cta_body),
         root = root,
         docs = docs,
         docs_label = html_escape(copy.cta_docs),
-        repo = REPO,
-        source = html_escape(copy.cta_source),
-        note = note,
+        releases = releases_url(),
+        download = html_escape(copy.cta_download),
     )
 }
 

@@ -1,23 +1,26 @@
 //! Static site generator for the Tasty GitHub Pages site.
 //!
-//! Input : the repo's `docs/` tree (Korean, canonical), its `docs/en/` translations,
-//!         and landing copy in `src/landing.rs`.
+//! Input : the user guide in `site/content/` (Korean, canonical), its
+//!         `site/content/en/` translations, and landing copy in `src/landing.rs`.
+//!         The engineering docs in `docs/` are *not* published — they are for
+//!         contributors and agents working on the code, and live on GitHub.
 //! Output: a fully static `_site/` — no runtime dependency, every link relative
 //!         so it works under a project-pages base path (`/tasty/`) or a custom domain.
 //!
 //!   cargo run --manifest-path site/Cargo.toml -- [--out DIR] [--strict]
 //!
-//! Translation model (docs/dev-guide/site.md): `docs/en/<rel>` mirrors `docs/<rel>`
-//! path for path. A page with no translation is still published under `/en/docs/`
-//! with the Korean body and a banner, so the English tree is always complete.
-//! Each translation carries a `<!-- source-hash: … -->` stamp of the Korean source
-//! it was made from; when the source moves on, the page shows a stale banner.
+//! Translation model (docs/dev-guide/site.md): `site/content/en/<rel>` mirrors
+//! `site/content/<rel>` path for path. English is the default tree (`/guide/`),
+//! Korean sits under `/ko/guide/`. A page with no translation is still published
+//! under `/guide/` with the Korean body and a banner, so the English tree is
+//! always complete. Each translation carries a `<!-- source-hash: … -->` stamp of
+//! the Korean source it was made from; when the source moves on, the page shows
+//! a stale banner.
 
 mod landing;
 mod md;
 mod shell;
 
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,22 +31,45 @@ use sha2::{Digest, Sha256};
 use shell::{EN, KO, REPO, Shell, Strings};
 use walkdir::WalkDir;
 
-/// Sidebar sections, in order: (directory, Korean label, English label).
-/// The empty key collects the loose `docs/*.md` pages.
-const CATEGORIES: &[(&str, &str, &str)] = &[
-    ("", "시작하기", "Getting started"),
-    ("concepts", "개념", "Concepts"),
-    ("features", "기능", "Features"),
-    ("plugins", "번들 플러그인", "Bundled plugins"),
-    ("design", "설계", "Design"),
-    ("reference", "레퍼런스", "Reference"),
-    ("dev-guide", "개발 가이드", "Developer guide"),
-    ("architecture", "아키텍처", "Architecture"),
-    ("ai-verification", "AI 자체 검증", "AI self-verification"),
-    ("adr", "근거 (ADR)", "Decisions (ADR)"),
+/// Guide source tree, relative to the repo root.
+const CONTENT_DIR: &str = "site/content";
+
+/// Sidebar sections, in reading order: (directory, Korean label, English label).
+/// The empty key is the guide home (`index.md`).
+const SECTIONS: &[(&str, &str, &str)] = &[
+    ("", "가이드", "Guide"),
+    ("getting-started", "시작하기", "Getting started"),
+    ("using", "사용하기", "Using Tasty"),
+    ("customize", "맞춤 설정", "Customize"),
+    ("agents", "AI 에이전트", "AI agents"),
+    ("remote", "원격", "Remote"),
+    ("plugins", "플러그인", "Plugins"),
+    ("help", "도움말", "Help"),
 ];
 
-/// Directory under `docs/` that holds translations rather than canonical pages.
+/// Reading order of the guide. The sidebar and prev/next links follow this list,
+/// not the file names; a content file missing from it is a build error so a new
+/// page is always placed deliberately.
+const ORDER: &[&str] = &[
+    "index.md",
+    "getting-started/install.md",
+    "getting-started/first-look.md",
+    "using/workspaces.md",
+    "using/panes-tabs-splits.md",
+    "using/terminal.md",
+    "using/files.md",
+    "customize/keybindings.md",
+    "customize/settings.md",
+    "customize/themes.md",
+    "agents/cli.md",
+    "agents/claude-codex.md",
+    "agents/hooks-notifications.md",
+    "remote/attach.md",
+    "plugins/index.md",
+    "help/troubleshooting.md",
+];
+
+/// Directory under `site/content/` that holds translations rather than canonical pages.
 const TRANSLATION_DIR: &str = "en";
 const STAMP_PREFIX: &str = "<!-- source-hash:";
 
@@ -75,27 +101,27 @@ pub fn repo_root() -> &'static Path {
     })
 }
 
-/// One site language: where its docs live on disk and where they land in the output.
+/// One site language: where its pages live on disk and where they land in the output.
 struct Lang {
     strings: &'static Strings,
-    /// Source directory relative to the repo root (`docs` or `docs/en`).
+    /// Source directory relative to the repo root (`site/content` or `site/content/en`).
     src_dir: &'static str,
-    /// Output prefix relative to the site root (`docs/` or `en/docs/`).
+    /// Output prefix relative to the site root (`guide/` or `ko/guide/`).
     out_prefix: &'static str,
     search_index: &'static str,
 }
 
 const LANG_KO: Lang = Lang {
     strings: &KO,
-    src_dir: "docs",
-    out_prefix: "docs/",
-    search_index: "assets/search-index.json",
+    src_dir: "site/content",
+    out_prefix: "ko/guide/",
+    search_index: "assets/search-index.ko.json",
 };
 const LANG_EN: Lang = Lang {
     strings: &EN,
-    src_dir: "docs/en",
-    out_prefix: "en/docs/",
-    search_index: "assets/search-index.en.json",
+    src_dir: "site/content/en",
+    out_prefix: "guide/",
+    search_index: "assets/search-index.json",
 };
 
 struct Translation {
@@ -106,13 +132,11 @@ struct Translation {
 }
 
 struct Page {
-    /// Path relative to `docs/`, e.g. `features/terminal/index.md`.
+    /// Path relative to `site/content/`, e.g. `using/terminal.md`.
     rel: PathBuf,
     title: String,
     nav_label: String,
-    category: usize,
-    /// Sidebar indent level inside its category.
-    indent: usize,
+    section: usize,
     /// Short content hash of the Korean source; translations are stamped with it.
     source_hash: String,
     translation: Option<Translation>,
@@ -144,13 +168,6 @@ impl Page {
             _ => &self.nav_label,
         }
     }
-
-    fn is_template(&self) -> bool {
-        self.rel
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with('_'))
-    }
 }
 
 #[derive(Default)]
@@ -171,7 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "--out" | "-o" => {
                 out_dir = PathBuf::from(args.next().ok_or("--out needs a directory")?);
             }
-            // Turn broken relative links in docs/ into a build failure (used by CI).
+            // Turn broken relative links and unordered pages into a build failure (CI).
             "--strict" => strict = true,
             // Stamp a translation with the hash of its current Korean source.
             "--stamp" => stamp.push(PathBuf::from(args.next().ok_or("--stamp needs a file")?)),
@@ -185,9 +202,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let docs_root = repo_root().join("docs");
-    if !docs_root.is_dir() {
-        return Err(format!("docs/ not found at {}", docs_root.display()).into());
+    let content_root = repo_root().join(CONTENT_DIR);
+    if !content_root.is_dir() {
+        return Err(format!("{CONTENT_DIR}/ not found at {}", content_root.display()).into());
     }
 
     if out_dir.exists() {
@@ -211,8 +228,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("warning: release was already set");
     }
 
-    let pages = collect_pages(&docs_root)?;
-    println!("collected {} docs pages", pages.len());
+    let (pages, unordered) = collect_pages(&content_root)?;
+    println!("collected {} guide pages", pages.len());
+    if strict && unordered > 0 {
+        return Err(format!("{unordered} pages missing from ORDER (--strict)").into());
+    }
 
     let highlighter = Highlighter::new();
     let mut report = Report::default();
@@ -250,12 +270,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ------------------------------------------------------------- landings
     fs::write(
         out_dir.join("index.html"),
-        landing::render(LANG_EN.strings, "", "en/docs/"),
+        landing::render(LANG_EN.strings, "", LANG_EN.out_prefix),
     )?;
     fs::create_dir_all(out_dir.join("ko"))?;
     fs::write(
         out_dir.join("ko/index.html"),
-        landing::render(LANG_KO.strings, "../", "docs/"),
+        landing::render(LANG_KO.strings, "../", LANG_KO.out_prefix),
     )?;
     written += 2;
 
@@ -287,7 +307,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         report.untranslated.len()
     );
     for rel in &report.stale {
-        println!("  stale: docs/en/{rel}");
+        println!("  stale: {CONTENT_DIR}/{TRANSLATION_DIR}/{rel}");
+    }
+    for rel in &report.untranslated {
+        println!("  untranslated: {CONTENT_DIR}/{rel}");
     }
 
     if strict && report.broken_links > 0 {
@@ -305,9 +328,14 @@ fn stamp_translation(path: &Path) -> Result<(), Box<dyn Error>> {
         repo_root().join(path)
     };
     let rel = abs
-        .strip_prefix(repo_root().join("docs").join(TRANSLATION_DIR))
-        .map_err(|_| format!("{} is not under docs/{TRANSLATION_DIR}/", abs.display()))?;
-    let source_path = repo_root().join("docs").join(rel);
+        .strip_prefix(repo_root().join(CONTENT_DIR).join(TRANSLATION_DIR))
+        .map_err(|_| {
+            format!(
+                "{} is not under {CONTENT_DIR}/{TRANSLATION_DIR}/",
+                abs.display()
+            )
+        })?;
+    let source_path = repo_root().join(CONTENT_DIR).join(rel);
     let source = fs::read_to_string(&source_path)
         .map_err(|e| format!("no Korean source at {}: {e}", source_path.display()))?;
     let hash = content_hash(&source);
@@ -336,8 +364,7 @@ fn stamp_translation(path: &Path) -> Result<(), Box<dyn Error>> {
     };
     fs::write(&abs, body)?;
     println!(
-        "stamped docs/{}/{} -> {hash}",
-        TRANSLATION_DIR,
+        "stamped {CONTENT_DIR}/{TRANSLATION_DIR}/{} -> {hash}",
         rel.display()
     );
     Ok(())
@@ -345,11 +372,14 @@ fn stamp_translation(path: &Path) -> Result<(), Box<dyn Error>> {
 
 // ------------------------------------------------------------------- pages
 
-fn collect_pages(docs_root: &Path) -> Result<Vec<Page>, Box<dyn Error>> {
-    let mut by_category: BTreeMap<usize, Vec<(Vec<String>, Page)>> = BTreeMap::new();
-    let translation_root = docs_root.join(TRANSLATION_DIR);
+/// Walks the guide tree and returns its pages in `ORDER`, plus how many files were
+/// not listed there (they are appended at the end so nothing silently vanishes).
+fn collect_pages(content_root: &Path) -> Result<(Vec<Page>, usize), Box<dyn Error>> {
+    let translation_root = content_root.join(TRANSLATION_DIR);
+    let mut keyed: Vec<(usize, Page)> = Vec::new();
+    let mut unordered = 0usize;
 
-    for entry in WalkDir::new(docs_root).sort_by_file_name() {
+    for entry in WalkDir::new(content_root).sort_by_file_name() {
         let entry = entry?;
         if !entry.file_type().is_file() {
             continue;
@@ -361,53 +391,48 @@ fn collect_pages(docs_root: &Path) -> Result<Vec<Page>, Box<dyn Error>> {
         if path.starts_with(&translation_root) {
             continue;
         }
-        let rel = path.strip_prefix(docs_root)?.to_path_buf();
+        let rel = path.strip_prefix(content_root)?.to_path_buf();
         let rel_str = rel.to_string_lossy().replace('\\', "/");
 
-        let comps: Vec<String> = rel_str.split('/').map(|s| s.to_string()).collect();
-        let top = if comps.len() > 1 {
-            comps[0].as_str()
-        } else {
-            ""
+        let top = match rel_str.split_once('/') {
+            Some((dir, _)) => dir,
+            None => "",
         };
-        let Some(category) = CATEGORIES.iter().position(|(k, _, _)| *k == top) else {
-            eprintln!("  skipping uncategorised docs/{rel_str}");
+        let Some(section) = SECTIONS.iter().position(|(k, _, _)| *k == top) else {
+            eprintln!("  skipping {CONTENT_DIR}/{rel_str}: directory is not a sidebar section");
             continue;
+        };
+        let order = match ORDER.iter().position(|o| *o == rel_str) {
+            Some(i) => i,
+            None => {
+                eprintln!("  {CONTENT_DIR}/{rel_str} is not listed in ORDER — appended last");
+                unordered += 1;
+                ORDER.len() + keyed.len()
+            }
         };
 
         let source = fs::read_to_string(path)?;
         let title =
             first_heading(&source).unwrap_or_else(|| rel_str.trim_end_matches(".md").to_string());
-
-        let after_category = if top.is_empty() {
-            &comps[..]
-        } else {
-            &comps[1..]
-        };
-        let is_index = after_category
-            .last()
-            .map(|s| s == "index.md")
-            .unwrap_or(false);
-        let indent = after_category.len().saturating_sub(1);
-
-        // Sort key: `index.md` collapses to "" so a directory sorts before its children.
-        let mut key: Vec<String> = after_category.to_vec();
-        if let (Some(last), true) = (key.last_mut(), is_index) {
-            *last = String::new();
-        }
-
         let translation = load_translation(&translation_root.join(&rel), &rel_str);
 
-        let page = Page {
-            nav_label: nav_label(&title, &rel_str),
-            source_hash: content_hash(&source),
-            rel,
-            title,
-            category,
-            indent,
-            translation,
-        };
-        by_category.entry(category).or_default().push((key, page));
+        keyed.push((
+            order,
+            Page {
+                nav_label: nav_label(&title, &rel_str),
+                source_hash: content_hash(&source),
+                rel,
+                title,
+                section,
+                translation,
+            },
+        ));
+    }
+
+    for listed in ORDER {
+        if !content_root.join(listed).is_file() {
+            eprintln!("  ORDER lists {CONTENT_DIR}/{listed} but the file does not exist");
+        }
     }
 
     // Translations with no Korean counterpart are orphans — say so, loudly.
@@ -421,9 +446,9 @@ fn collect_pages(docs_root: &Path) -> Result<Vec<Page>, Box<dyn Error>> {
                 continue;
             }
             let rel = path.strip_prefix(&translation_root)?;
-            if !docs_root.join(rel).exists() {
+            if !content_root.join(rel).exists() {
                 eprintln!(
-                    "  orphan translation docs/en/{} (no docs/{} to mirror)",
+                    "  orphan translation {CONTENT_DIR}/{TRANSLATION_DIR}/{} (no {CONTENT_DIR}/{} to mirror)",
                     rel.display(),
                     rel.display()
                 );
@@ -431,12 +456,8 @@ fn collect_pages(docs_root: &Path) -> Result<Vec<Page>, Box<dyn Error>> {
         }
     }
 
-    let mut pages = Vec::new();
-    for (_, mut group) in by_category {
-        group.sort_by(|a, b| a.0.cmp(&b.0));
-        pages.extend(group.into_iter().map(|(_, p)| p));
-    }
-    Ok(pages)
+    keyed.sort_by_key(|(order, _)| *order);
+    Ok((keyed.into_iter().map(|(_, p)| p).collect(), unordered))
 }
 
 fn load_translation(path: &Path, rel_str: &str) -> Option<Translation> {
@@ -522,11 +543,10 @@ pub fn content_hash(source: &str) -> String {
 
 /// Docs titles are mostly `한국어 (English)` or `ADR-0042: …`; the sidebar only
 /// has room for the leading part.
+/// Sidebar label: the page title without a trailing parenthetical or dash clause.
 fn nav_label(title: &str, rel: &str) -> String {
     let mut label = title.to_string();
-    if let Some(rest) = label.strip_prefix("ADR-") {
-        label = rest.replacen(':', " ·", 1);
-    } else if let Some(idx) = label.find(" (") {
+    if let Some(idx) = label.find(" (") {
         // Keep it only if what precedes the paren is substantial on its own.
         if idx >= 2 {
             label.truncate(idx);
@@ -617,27 +637,20 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn header_slot(page: &Page) -> &'static str {
-    let rel = page.rel_str();
-    if rel == "installation.md" {
+    if page.rel_str() == "getting-started/install.md" {
         "install"
-    } else if rel.starts_with("features/") {
-        "features"
     } else {
-        "docs"
+        "guide"
     }
 }
 
-fn category_label(index: usize, lang: &Lang) -> &'static str {
-    let (_, ko, en) = CATEGORIES[index];
+fn section_label(index: usize, lang: &Lang) -> &'static str {
+    let (_, ko, en) = SECTIONS[index];
     if lang.strings.lang == "en" { en } else { ko }
 }
 
 fn crumb(page: &Page, lang: &Lang) -> String {
-    format!(
-        "{} · {}",
-        category_label(page.category, lang),
-        page.rel_str()
-    )
+    format!("{} · {}", section_label(page.section, lang), page.rel_str())
 }
 
 // -------------------------------------------------------------- docs page
@@ -659,17 +672,18 @@ fn render_page(
     let src_path = if translated {
         repo_root().join(lang.src_dir).join(&page.rel)
     } else {
-        repo_root().join("docs").join(&page.rel)
+        repo_root().join(CONTENT_DIR).join(&page.rel)
     };
     let source = fs::read_to_string(&src_path)?;
 
-    // Links are always resolved as if the page sat at its Korean path. Inside docs/
-    // the two trees mirror each other so relative links stay valid on output, and
-    // links that leave docs/ (`../../CLAUDE.md`) keep pointing at the right file
-    // even though docs/en/ is one level deeper. Translators copy links verbatim.
-    let doc_dir = PathBuf::from("docs").join(page.rel.parent().unwrap_or(Path::new("")));
+    // Links are always resolved as if the page sat at its Korean path. Inside the
+    // content tree the two languages mirror each other so relative links stay valid
+    // on output, and links that leave it (`../../../docs/...`) keep pointing at the
+    // right file even though `en/` is one level deeper. Translators copy links verbatim.
+    let page_dir = PathBuf::from(CONTENT_DIR).join(page.rel.parent().unwrap_or(Path::new("")));
     let ctx = LinkCtx {
-        dir: doc_dir,
+        dir: page_dir,
+        content_root: Path::new(CONTENT_DIR),
         repo_root: repo_root(),
         blob_base: &format!("{REPO}/blob/main"),
         copy_label: s.copy,
@@ -677,13 +691,15 @@ fn render_page(
     };
     let rendered = md::render(&source, &ctx, highlighter);
 
-    // Templates are written against the path they get copied *to*
-    // (`features/<f>/index.md`), so their relative links never resolve in place.
-    if !rendered.broken_links.is_empty() && !page.is_template() {
+    if !rendered.broken_links.is_empty() {
         report.broken_links += rendered.broken_links.len();
         eprintln!(
             "  broken links in {}/{}: {}",
-            if translated { lang.src_dir } else { "docs" },
+            if translated {
+                lang.src_dir
+            } else {
+                CONTENT_DIR
+            },
             page.rel_str(),
             rendered.broken_links.join(", ")
         );
@@ -733,9 +749,10 @@ fn render_page(
 fn translation_banner(kind: &str, text: &str, cta: &str, page: &Page) -> String {
     format!(
         "<div class=\"note note--{kind}\" role=\"note\">{text} \
-         <a href=\"{repo}/blob/main/docs/{rel}\">{cta}</a></div>",
+         <a href=\"{repo}/blob/main/{content}/{rel}\">{cta}</a></div>",
         text = html_escape(text),
         repo = REPO,
+        content = CONTENT_DIR,
         rel = page.rel_str(),
         cta = html_escape(cta),
     )
@@ -797,7 +814,7 @@ fn docs_body(
     {banner}
     <article class="prose">{article}</article>
     {page_nav}
-    <a class="edit-link" href="{repo}/blob/main/docs/{source_rel}">{edit}</a>
+    <a class="edit-link" href="{repo}/blob/main/{content}/{source_rel}">{edit}</a>
   </main>
   <nav class="toc" aria-label="{toc_title}">{toc}</nav>
 </div>
@@ -806,11 +823,12 @@ fn docs_body(
         sidebar = sidebar,
         root = root,
         prefix = lang.out_prefix,
-        category = html_escape(category_label(page.category, lang)),
+        category = html_escape(section_label(page.section, lang)),
         banner = banner,
         article = rendered.html,
         page_nav = page_nav,
         repo = REPO,
+        content = CONTENT_DIR,
         source_rel = source_rel,
         edit = html_escape(s.edit_page),
         toc_title = html_escape(s.toc_title),
@@ -819,24 +837,28 @@ fn docs_body(
 }
 
 fn sidebar(lang: &Lang, pages: &[Page], current: usize, root: &str) -> String {
-    let current_category = pages[current].category;
+    let current_section = pages[current].section;
     let mut html = String::new();
 
-    for ci in 0..CATEGORIES.len() {
+    for si in 0..SECTIONS.len() {
         let items: Vec<(usize, &Page)> = pages
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.category == ci)
+            .filter(|(_, p)| p.section == si)
             .collect();
         if items.is_empty() {
             continue;
         }
-        let open = if ci == current_category { " open" } else { "" };
+        // The guide is short enough to show whole: every section stays open, the
+        // current one is only marked so the stylesheet can emphasise it.
+        let current_attr = if si == current_section {
+            " data-current"
+        } else {
+            ""
+        };
         html.push_str(&format!(
-            "<details class=\"nav-section\"{open}><summary>{label}\
-             <span class=\"nav-section__count\">{count}</span></summary><ul class=\"nav-list\">",
-            label = html_escape(category_label(ci, lang)),
-            count = items.len(),
+            "<details class=\"nav-section\" open{current_attr}><summary>{label}</summary><ul class=\"nav-list\">",
+            label = html_escape(section_label(si, lang)),
         ));
         for (pi, page) in items {
             let aria = if pi == current {
@@ -845,9 +867,8 @@ fn sidebar(lang: &Lang, pages: &[Page], current: usize, root: &str) -> String {
                 ""
             };
             html.push_str(&format!(
-                "<li><a href=\"{root}{url}\"{aria} style=\"--indent:{indent}\">{label}</a></li>",
+                "<li><a href=\"{root}{url}\"{aria} style=\"--indent:0\">{label}</a></li>",
                 url = page.url(lang),
-                indent = page.indent,
                 label = html_escape(page.nav_label_in(lang)),
             ));
         }

@@ -71,11 +71,14 @@ pub struct Rendered {
 
 /// Where the document being rendered lives, so relative links can be resolved.
 pub struct LinkCtx<'a> {
-    /// Directory of the document, relative to the repo root (e.g. `docs/features/terminal`).
+    /// Directory of the document, relative to the repo root (e.g. `site/content/using`).
     pub dir: PathBuf,
+    /// Published content tree, relative to the repo root (`site/content`). Markdown
+    /// links that stay inside it become page links; everything else goes to GitHub.
+    pub content_root: &'a Path,
     /// Repo root on disk, used to check link targets actually exist.
     pub repo_root: &'a Path,
-    /// `https://github.com/<owner>/<repo>/blob/<ref>` — for links that leave `docs/`.
+    /// `https://github.com/<owner>/<repo>/blob/<ref>` — for links that leave the content tree.
     pub blob_base: &'a str,
     pub copy_label: &'a str,
     pub copied_label: &'a str,
@@ -296,7 +299,7 @@ fn rewrite_one<'e>(event: Event<'e>, ctx: &LinkCtx<'_>, broken: &mut Vec<String>
 /// Rewrite one link destination.
 ///
 /// * external / anchor-only / mailto -> untouched
-/// * `*.md` inside `docs/` -> same relative path with an `.html` extension
+/// * `*.md` inside the content tree -> same relative path with an `.html` extension
 /// * anything else that resolves inside the repo -> GitHub blob URL
 fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> String {
     if dest.is_empty()
@@ -321,10 +324,10 @@ fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Stri
     let escapes_repo = resolved.components().next() == Some(Component::ParentDir);
     let exists = ctx.repo_root.join(&resolved).exists();
 
-    let inside_docs = !escapes_repo && resolved.starts_with("docs");
+    let inside_content = !escapes_repo && resolved.starts_with(ctx.content_root);
     let is_markdown = path_part.ends_with(".md");
 
-    if inside_docs && is_markdown {
+    if inside_content && is_markdown {
         if !exists {
             broken.push(dest.to_string());
         }
@@ -337,7 +340,7 @@ fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Stri
         return rewritten;
     }
 
-    // Leaves the docs tree (source files, CLAUDE.md, LICENSES/, ...) -> point at GitHub.
+    // Leaves the content tree (docs/, CHANGELOG.md, LICENSES/, ...) -> point at GitHub.
     if !escapes_repo && !exists {
         broken.push(dest.to_string());
     }

@@ -1,10 +1,16 @@
 # 공개 사이트 (GitHub Pages)
 
-`docs/` 트리와 랜딩 페이지를 정적 HTML 로 발행하는 경로. 산출물은 GitHub Pages 로 배포된다.
+랜딩 페이지와 **사용자 가이드**를 정적 HTML 로 발행하는 경로. 산출물은 GitHub Pages 로 배포된다.
 
-- 생성기: `site/` (Rust, **workspace exclude**)
+- 생성기: `site/src/` (Rust, **workspace exclude**)
+- 콘텐츠: `site/content/` (한국어 정본) · `site/content/en/` (영어 번역)
 - 산출물: `_site/` (gitignore)
-- 배포: `.github/workflows/pages.yml` (main 푸시 시 자동)
+- 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동)
+
+**`docs/` 는 발행하지 않는다.** `docs/` 는 코드를 고치는 사람과 에이전트를 위한 명세·설계·ADR 이고,
+사이트는 Tasty 를 받아서 쓰는 사람을 위한 것이라 독자가 다르다. 사이트가 실을 내용은 전부
+`site/content/` 에 사용자 시점으로 따로 쓴다. 명세가 바뀌면 가이드도 같은 커밋에서 손본다
+([`CLAUDE.md`](../../CLAUDE.md) "문서 갱신").
 
 ## 왜 workspace 밖인가
 
@@ -16,12 +22,6 @@ workspace member 로 두면 그 의존성이 `cargo build` / `cargo test --works
 따라서 `cargo build --workspace` · `cargo clippy --workspace` · `cargo test --workspace`
 는 `site/` 를 **보지 않는다.** 생성기를 만질 때는 `--manifest-path` 를 명시한다.
 
-루트 `cargo fmt --check` 도 마찬가지다. 포맷 검사는
-`cargo fmt --check --manifest-path site/Cargo.toml` 로 따로 돌리며, pre-commit 훅(A.2)이
-`site/` 의 `.rs` 가 staged 됐을 때 이 명령을 자동 실행해 위반이 조용히 쌓이지 않게 한다.
-CI 워크플로에는 본체를 포함해 rustfmt 게이트가 없으므로 `site/` 만 CI 에서 검사하지
-않는다 — 본체에 fmt 게이트가 생기면 이 manifest 도 같은 스텝에 넣는다.
-
 ## 빌드
 
 ```bash
@@ -31,15 +31,11 @@ cargo run --manifest-path site/Cargo.toml
 # 출력 위치 지정
 cargo run --manifest-path site/Cargo.toml -- --out /tmp/preview
 
-# 깨진 상대 링크를 실패로 승격 (CI 가 쓰는 형태). stale 번역은 실패 사유가 아니다.
+# 깨진 상대 링크·ORDER 에 없는 페이지를 실패로 승격 (CI 가 쓰는 형태). stale 번역은 실패 사유가 아니다.
 cargo run --manifest-path site/Cargo.toml -- --strict
 
 # 번역 파일에 원본 해시 스탬프 (아래 "번역 모델")
-cargo run --manifest-path site/Cargo.toml -- --stamp docs/en/index.md
-
-# 포맷·컴파일 검사 (루트 cargo fmt / cargo check 는 site/ 를 보지 않는다)
-cargo fmt --check --manifest-path site/Cargo.toml
-cargo check --manifest-path site/Cargo.toml
+cargo run --manifest-path site/Cargo.toml -- --stamp site/content/en/index.md
 
 # 로컬 확인
 python3 -m http.server 8899 --directory _site
@@ -51,53 +47,80 @@ python3 -m http.server 8899 --directory _site
 |------|------|
 | `/` | 영어 랜딩 |
 | `/ko/` | 한국어 랜딩 |
-| `/docs/**` | `docs/**.md` 를 1:1 로 전사한 문서 (한국어, canonical) |
-| `/en/docs/**` | 영어 문서 트리. `docs/en/**.md` 가 있으면 번역, 없으면 한국어 본문 + 배너 |
-| `/assets/` | `style.css` · `site.js` · 로고 · `search-index.json` · `search-index.en.json` |
+| `/guide/**` | 영어 가이드. `site/content/en/**.md` 가 있으면 번역, 없으면 한국어 본문 + 배너 |
+| `/ko/guide/**` | 한국어 가이드 (`site/content/**.md`, canonical) |
+| `/assets/` | `style.css` · `site.js` · 로고 · `search-index.json` (en) · `search-index.ko.json` |
+
+영어가 기본 URL 인 이유는 공개 사이트의 첫 방문자 대부분이 영어권이고 랜딩도 `/` 가 영어라서다.
+정본이 한국어인 것과는 별개다 — 작성은 한국어로, 노출 기본은 영어로.
+
+## 콘텐츠 구조
+
+`site/content/` 의 디렉토리가 사이드바 섹션이고, 페이지 순서는 `site/src/main.rs` 의 `ORDER` 가
+정한다. 파일 이름 순이 아니다 — 읽는 순서가 의도이므로 배열로 박는다.
+
+```
+site/content/
+  index.md                      가이드 홈
+  getting-started/  install · first-look
+  using/            workspaces · panes-tabs-splits · terminal · files
+  customize/        keybindings · settings · themes
+  agents/           cli · claude-codex · hooks-notifications
+  remote/           attach
+  plugins/          index
+  help/             troubleshooting
+  en/               위 트리의 1:1 미러 (번역)
+```
+
+- 새 페이지를 추가하면 `ORDER` 에도 넣는다. 빠뜨리면 경고와 함께 맨 뒤에 붙고 `--strict` 는 실패한다.
+- 새 디렉토리(섹션)를 만들면 `SECTIONS` 에 (디렉토리, 한국어 라벨, 영어 라벨) 을 추가한다.
+  등록되지 않은 디렉토리의 파일은 `skipping …` 경고와 함께 발행되지 않는다.
+- 페이지 첫 줄 `# 제목` 이 사이드바 라벨이다 (괄호 · 대시 이후는 잘린다).
+
+### 집필 규칙
+
+독자는 **설치해서 쓰는 사람**이다. 다음은 가이드에 넣지 않는다: 소스 경로 · ADR · IPC 메서드
+이름(CLI 명령으로 대신) · 내부 타입명 · Status/주체 같은 명세 머리 항목 · 수용 기준 · 구현 히스토리 ·
+`docs/` 로의 링크. 메뉴 · 버튼 · 설정 항목은 `lang/ko.toml` 의 실제 라벨을 쓰고, 처음 등장할 때 영어
+라벨을 HTML 주석으로 붙인다(`**설정** <!-- en: Settings -->`) — 번역이 그대로 쓴다.
+확인 못 한 사실은 쓰지 말고 `<!-- TODO verify: … -->` 로 남긴다.
 
 ## 번역 모델
 
-한국어(`docs/`)가 canonical 이고 영어(`docs/en/`)가 번역이다. 다른 다국어 문서
-프로젝트(Kubernetes · Vue · React 문서)와 같은 골격 — 방향만 반대다.
+한국어(`site/content/`)가 canonical 이고 영어(`site/content/en/`)가 번역이다.
 
-- **경로 1:1** — `docs/en/<rel>` 이 `docs/<rel>` 을 그대로 미러한다.
-  `docs/features/terminal/index.md` 의 번역은 `docs/en/features/terminal/index.md`.
-- **폴백** — 번역이 없는 문서도 `/en/docs/` 에 발행된다. 한국어 본문 위에
-  "아직 번역되지 않았다" 배너가 붙는다. 따라서 영어 트리는 **항상 완전**하고,
-  번역이 채워지는 만큼 배너가 사라진다. 100% 를 기다릴 필요가 없다.
+- **경로 1:1** — `site/content/en/<rel>` 이 `site/content/<rel>` 을 그대로 미러한다.
+- **폴백** — 번역이 없는 페이지도 `/guide/` 에 발행된다. 한국어 본문 위에
+  "아직 번역되지 않았다" 배너가 붙는다. 영어 트리는 **항상 완전**하다.
 - **스탬프** — 번역 파일 첫 줄에 원본의 내용 해시를 박는다:
 
   ```
   <!-- source-hash: 90acc4edaa45 -->
-  # Tasty Documentation
+  # Tasty guide
   ```
 
   원본이 바뀌어 해시가 달라지면 그 페이지에 "원문보다 오래됐다" 배너가 뜨고,
-  생성기가 `stale: docs/en/…` 목록을 출력한다. 스탬프가 없는 번역은 stale 로 본다.
+  생성기가 `stale:` 목록을 출력한다. 스탬프가 없는 번역은 stale 로 본다.
 - **링크는 원본과 동일하게 쓴다.** 영어 페이지의 상대 링크는 *한국어 위치 기준*으로
-  해석된다. `docs/en/dev-guide/x.md` 에서 `../../CLAUDE.md` 라고 쓰면
-  (`docs/en/` 이 한 단계 깊은데도) 저장소 루트의 `CLAUDE.md` 로 간다. 번역자는
-  원본의 링크를 손대지 않고 그대로 둔다.
-- **고아 번역** — 대응하는 한국어 원본이 없는 `docs/en/` 파일은 경고를 내고
-  발행되지 않는다. 원본을 옮기거나 지웠으면 번역도 함께 옮기거나 지운다.
+  해석된다. 번역자는 원본의 링크를 손대지 않고 그대로 둔다.
+- **고아 번역** — 대응하는 한국어 원본이 없는 `en/` 파일은 경고를 내고 발행되지 않는다.
 
 ### 번역 절차
 
 ```bash
 # 1. 원본을 같은 상대경로에 번역해 쓴다 (링크는 그대로)
-$EDITOR docs/en/features/terminal/index.md
+$EDITOR site/content/en/using/terminal.md
 
 # 2. 스탬프를 찍는다 (첫 줄에 삽입하거나, 이미 있으면 갱신)
-cargo run --manifest-path site/Cargo.toml -- --stamp docs/en/features/terminal/index.md
+cargo run --manifest-path site/Cargo.toml -- --stamp site/content/en/using/terminal.md
 
 # 3. 생성해서 stale/untranslated 집계를 확인한다
 cargo run --manifest-path site/Cargo.toml
-#   translations: 12/276 pages, 0 stale, 264 untranslated
+#   translations: 16/16 pages, 0 stale, 0 untranslated
 ```
 
-원본을 고친 뒤에는 번역도 갱신하고 다시 `--stamp` 한다. 갱신 없이 스탬프만
-찍으면 stale 표시만 사라지고 내용은 어긋난 채 남으므로, `--stamp` 는 **번역을
-실제로 손본 직후에만** 실행한다.
+`--stamp` 는 **번역을 실제로 손본 직후에만** 실행한다. 갱신 없이 스탬프만 찍으면 stale 표시만
+사라지고 내용은 어긋난 채 남는다.
 
 **모든 내부 링크는 상대경로다.** 프로젝트 페이지의 base path(`/tasty/`) 든
 커스텀 도메인이든 그대로 동작하며, `_site/` 를 로컬 파일로 열어도 깨지지 않는다.
@@ -108,17 +131,12 @@ cargo run --manifest-path site/Cargo.toml
 
 | 원본 | 산출 |
 |------|------|
-| `docs/` 안의 `*.md` 링크 | 같은 상대경로 + `.html` |
-| `docs/` 를 벗어나는 링크 (`../CLAUDE.md`, `crates/…`) | GitHub blob URL |
+| `site/content/` 안의 `*.md` 링크 | 같은 상대경로 + `.html` |
+| 콘텐츠 트리를 벗어나는 링크 (`../../../CHANGELOG.md`) | GitHub blob URL |
 | 존재하지 않는 대상 | 경고 출력, `--strict` 면 실패 |
 | `##` · `###` | 우측 목차 + 앵커. slug 는 GitHub 규칙(한글 보존) |
 | 표 | 가로 스크롤 컨테이너로 감싼다 |
 | 코드 펜스 | syntect 로 스코프 클래스(`hl-*`) 부여 — 색은 CSS 가 정한다 |
-
-사이드바 카테고리와 순서, 언어별 라벨은 `site/src/main.rs` 의 `CATEGORIES` 에
-있다. `docs/` 최상위에 새 디렉토리를 만들면 이 배열에도 추가해야 하며, 빠뜨리면
-생성 중 `skipping uncategorised docs/…` 경고가 뜬다. `docs/en/` 은 번역 트리라
-카테고리가 아니다.
 
 ## 테마
 
@@ -131,6 +149,9 @@ cargo run --manifest-path site/Cargo.toml
 값을 1:1 로 옮긴 것이다. **테마 TOML 을 고치면 이 블록도 함께 갱신한다.**
 코드 하이라이팅 색도 같은 토큰(`--mauve` · `--green` · `--peach` …)을 참조하므로
 테마 토글에 함께 반응한다.
+
+선택은 `localStorage` 에 남고, 저장값이 없으면 `prefers-color-scheme` 을 따른다.
+첫 페인트 전에 인라인 스크립트가 적용해 깜빡임이 없다.
 
 ## 랜딩의 제품 창
 
@@ -146,9 +167,6 @@ cargo run --manifest-path site/Cargo.toml
   …)을 사이트 팔레트 변수에 별칭으로 매핑한다. 아이콘은 `icons/*.svg` 의 canonical 글리프를 인라인.
 - 킷을 바꾸면 이 창도 같이 갱신한다 — 다른 방향으로는 흐르지 않는다(사이트가 디자인의 정본이
   아니다).
-
-선택은 `localStorage` 에 남고, 저장값이 없으면 `prefers-color-scheme` 을 따른다.
-첫 페인트 전에 인라인 스크립트가 적용해 깜빡임이 없다.
 
 ## 다운로드
 
@@ -170,8 +188,8 @@ cargo run --manifest-path site/Cargo.toml
 
 ## 배포
 
-`main` 에 `docs/**` · `site/**` · 루트 `Cargo.toml` 변경이 푸시되면 워크플로가 돈다
+`main` 에 `site/**` · 루트 `Cargo.toml` · 로고 변경이 푸시되면 워크플로가 돈다
 (수동 실행도 가능). GitHub 저장소 설정에서 **Pages > Source 를 GitHub Actions** 로
 두어야 동작한다.
 
-배포 자체는 `--strict` 로 생성하므로, 깨진 문서 링크가 있으면 배포되지 않는다.
+배포 자체는 `--strict` 로 생성하므로, 깨진 가이드 링크나 `ORDER` 누락이 있으면 배포되지 않는다.

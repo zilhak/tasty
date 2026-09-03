@@ -34,7 +34,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [release](release.md) | 릴리스 워크플로(버전 bump → 태그 → CI) |
 | [release-runners](release-runners.md) | self-hosted runner 인벤토리·운영 |
 | [dep-issues](dep-issues.md) | 의존성 future-incompat 모니터링 |
-| [site](site.md) | 공개 사이트(GitHub Pages) 생성·배포 — `site/` 생성기, 테마 전사, URL 구조, 영어 번역 모델(`docs/en/` + 폴백 + 스탬프) |
+| [site](site.md) | 공개 사이트(GitHub Pages) 생성·배포 — `site/` 생성기, 사용자 가이드 `site/content/`(docs/ 는 발행 안 함), 집필 규칙, URL 구조, 영어 번역 모델(`site/content/en/` + 폴백 + 스탬프) |
 
 ## 구현 패턴
 

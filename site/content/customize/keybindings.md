@@ -1,0 +1,169 @@
+# 단축키
+
+이 페이지에서는 Tasty 의 기본 단축키 전체 표를 확인하고, 프리셋을 바꾸거나 원하는 키로 하나씩 고치는 방법을 익힌다. 단축키는 전부 **설정** <!-- en: Settings --> > **단축키** <!-- en: Keybindings --> 에서 바꿀 수 있고, 코드에 고정된 것은 없다.
+
+## 표기 규칙
+
+Tasty 는 단축키를 **키의 물리적 위치** 기준으로 저장한다. 그래서 같은 설정이 세 OS 에서 다르게 눌린다.
+
+| 설정에 적히는 이름 | Windows · Linux | macOS |
+|-------------------|-----------------|-------|
+| `ctrl` | Ctrl | Control (⌃) |
+| `alt` | Alt | **Command (⌘)** |
+| `shift` | Shift | Shift (⇧) |
+| `option` | (없음) | Option (⌥) |
+
+macOS 의 ⌘ 는 Windows · Linux 의 Alt 와 같은 자리에 있어서, 설정값 `alt+t` 는 Windows 에서 `Alt+T`, macOS 에서 `Cmd+T` 로 눌린다. 아래 표는 이 규칙으로 두 열을 적었다.
+
+macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면 **설정** > **일반** <!-- en: General --> > **표시** <!-- en: Display --> 의 **Alt 키 표시** <!-- en: Alt key display --> · **Option 키 표시** <!-- en: Option key display --> · **Shift 키 표시** <!-- en: Shift key display --> 를 바꾼다. 저장되는 값은 그대로다.
+
+## 기본 단축키 (Tasty 프리셋)
+
+처음 설치하면 **Tasty** 프리셋이 적용돼 있다. 한 동작에 여러 조합이 있으면 전부 동작한다.
+
+### 워크스페이스 · 카테고리
+
+| 하는 일 | Windows · Linux | macOS |
+|---------|-----------------|-------|
+| 새 워크스페이스 | `Alt+N` | `Cmd+N` |
+| 워크스페이스 닫기 | `Alt+Shift+W` | `Cmd+Shift+W` |
+| 워크스페이스 이름 변경 · 부제목 변경 | `F3` · `F4` | `F3` · `F4` |
+| n 번 워크스페이스로 | `Alt+1` ~ `Alt+9` | `Cmd+1` ~ `Cmd+9` |
+| 다음 · 이전 워크스페이스 | `Alt+J` · `Alt+K` | `Cmd+J` · `Cmd+K` |
+| n 번 카테고리로 | `Ctrl+Shift+1` ~ `Ctrl+Shift+0` | `Ctrl+Shift+1` ~ `Ctrl+Shift+0` |
+| 다음 · 이전 카테고리 | `Ctrl+Shift+J` · `Ctrl+Shift+K` | `Ctrl+Shift+J` · `Ctrl+Shift+K` |
+
+카테고리 단축키는 **설정** > **일반** > **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> 를 켰을 때만 동작한다.
+
+### 패인 · 탭 · 서피스
+
+| 하는 일 | Windows · Linux | macOS |
+|---------|-----------------|-------|
+| 패인 분할 (좌우 / 상하) | `Alt+E` / `Alt+Shift+E` | `Cmd+E` / `Cmd+Shift+E` |
+| 다음 · 이전 패인 | `Ctrl+]` · `Ctrl+[` | `Ctrl+]` · `Ctrl+[` |
+| 패인 닫기 | `Ctrl+Shift+W` | `Ctrl+Shift+W` |
+| 새 탭 | `Alt+T` | `Cmd+T` |
+| n 번 탭으로 | `Ctrl+1` ~ `Ctrl+0` | `Ctrl+1` ~ `Ctrl+0` |
+| 다음 · 이전 탭 | `Ctrl+L` · `Ctrl+H` | `Ctrl+L` · `Ctrl+H` |
+| 탭 이름 변경 | `F2` | `F2` |
+| 활성 항목 닫기 (탭 → 패인 → 워크스페이스 순) | `Ctrl+W` | `Ctrl+W` |
+| 닫은 항목 복원 | `Ctrl+Shift+T` | `Ctrl+Shift+T` |
+| 서피스 분할 (좌우 / 상하) | `Alt+D` / `Alt+Shift+D` | `Cmd+D` / `Cmd+Shift+D` |
+| 다음 · 이전 서피스 | `Alt+]` · `Alt+[` | `Cmd+]` · `Cmd+[` |
+| 서피스 닫기 | `Alt+W` | `Cmd+W` |
+| 서피스 종류 전환 (터미널 ↔ 마크다운 등) | `Alt+'` | `Cmd+'` |
+| 전체화면 무대 종료 | `Esc` | `Esc` |
+
+### 터미널 · 클립보드 · 탐색기
+
+| 하는 일 | Windows · Linux | macOS |
+|---------|-----------------|-------|
+| 복사 | `Ctrl+C` · `Alt+C` · `Ctrl+Shift+C` | `Ctrl+C` · `Cmd+C` · `Ctrl+Shift+C` |
+| 붙여넣기 | `Ctrl+V` · `Alt+V` · `Ctrl+Shift+V` | `Ctrl+V` · `Cmd+V` · `Ctrl+Shift+V` |
+| 검색 | `Ctrl+F` · `Alt+F` | `Ctrl+F` · `Cmd+F` |
+| vi 복사 모드 | `Ctrl+Shift+Space` | `Ctrl+Shift+Space` |
+| 스크린샷을 클립보드로 | `Ctrl+Alt+S` | `Ctrl+Cmd+S` |
+| 경로 복사 (탐색기) | `Alt+Shift+C` | `Cmd+Shift+C` |
+| 잘라내기 (탐색기) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
+| 전체 선택 (탐색기) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
+| 새로고침 · 상위 폴더로 (탐색기) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
+| 확대 · 축소 · 줌 초기화 | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` 도 됨) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` 도 됨) |
+| 실행 취소 · 다시 실행 (이미지) | `Ctrl+Z` · `Ctrl+Shift+Z` (`Alt` 도 됨) | `Ctrl+Z` · `Ctrl+Shift+Z` (`Cmd` 도 됨) |
+
+`Ctrl+C` 는 선택한 텍스트가 있으면 복사하고, 없으면 평소처럼 실행 중인 프로그램을 중단한다.
+
+### 창 · 도구
+
+| 하는 일 | Windows · Linux | macOS |
+|---------|-----------------|-------|
+| 새 창 | `Alt+Shift+N` | `Cmd+Shift+N` |
+| 설정 열기/닫기 | `Ctrl+,` | `Ctrl+,` |
+| 알림 열기/닫기 | `Ctrl+Shift+I` | `Ctrl+Shift+I` |
+| DAG 목록 열기/닫기 | `Ctrl+Shift+G` | `Ctrl+Shift+G` |
+| 사이드바 숨기기 / 접기 | `Ctrl+Shift+B` / `Ctrl+B` | `Ctrl+Shift+B` / `Ctrl+B` |
+| 명령 팔레트 | `Ctrl+Shift+P` · `Alt+Shift+P` | `Ctrl+Shift+P` · `Cmd+Shift+P` |
+| 클립보드 뷰어 (플러그인) | `Ctrl+Shift+H` | `Ctrl+Shift+H` |
+
+### 기본값이 비어 있는 동작
+
+다음은 실수 방지를 위해, 또는 OS 단축키와 겹쳐서 기본 조합이 없다. 필요하면 직접 지정한다.
+
+- **종료** <!-- en: Quit --> · **즉시 종료** <!-- en: Immediate quit --> · **백그라운드로 최소화** <!-- en: Minimize to background --> (Mac 프리셋은 `Cmd+Q` · `Cmd+M`, Linux 프리셋은 `Ctrl+Q` 가 들어 있다)
+- **다음 탭** · **이전 탭** 의 자유 조합 (`Ctrl+Tab` 이 OS 와 겹쳐 비워 둠 — 번호 전환의 `Ctrl+L` · `Ctrl+H` 는 동작한다)
+- **마크다운 열기** · **탐색기 열기** · **마크다운으로 전환** · **탐색기로 전환**
+- **워크스페이스 · 탭 · 패인 프리셋 적용**, **카테고리 전체 접기/펴기**
+- **윈도우 최소화** · **윈도우 최대화/확대** · **윈도우 닫기**
+- Git 뷰어 열기 (플러그인)
+
+## 프리셋
+
+**설정** > **단축키** > **프리셋** <!-- en: Preset --> 에 네 가지가 있다. 프리셋은 권장 세트일 뿐 OS 에 강제되지 않는다 — Windows 에서 Mac 프리셋을 써도 된다.
+
+| 프리셋 | 기준 | Tasty 프리셋과 다른 점 |
+|--------|------|------------------------|
+| **Tasty** (기본) | 자체 | 위 표. 복사 · 붙여넣기 · 줌은 세 OS 관례를 모두 묶어 둔다 |
+| **Mac** | iTerm2 · Terminal.app | `Cmd` 중심. 설정 `Cmd+,` · 알림 `Cmd+Shift+I` · 사이드바 `Cmd+Shift+B` / `Cmd+B` · 명령 팔레트 `Cmd+Shift+P` · 복사/붙여넣기 `Cmd+C` / `Cmd+V` 만 · 종료 `Cmd+Q` · 백그라운드 `Cmd+M`. **활성 항목 닫기** 와 **워크스페이스 닫기** 는 비어 있고 패인 닫기는 `Cmd+Shift+W` |
+| **Windows** | Windows Terminal | 패인 분할 `Alt+Shift+E` / `Alt+Shift+D`, 서피스 분할 `Alt+D` / `Alt+E` · 새 창 `Ctrl+Shift+N` · 복사/붙여넣기 `Ctrl+C` / `Ctrl+V` 만 |
+| **Linux** | GNOME Terminal | Windows 프리셋과 같되 복사/붙여넣기/잘라내기 `Ctrl+Shift+C` / `Ctrl+Shift+V` / `Ctrl+Shift+X` · 종료 `Ctrl+Q` |
+
+적용 절차:
+
+1. **설정** > **단축키** > **프리셋** 목록에서 프리셋 행을 클릭한다. 지금 쓰는 프리셋에는 **Active** 표시가 붙어 있다.
+2. 상세 화면의 **기능** <!-- en: Action --> / **현재** <!-- en: Current --> / 프리셋 열 3단 표에서 바뀌는 행을 확인한다.
+3. 오른쪽 위 **적용** <!-- en: Apply --> 을 누른다. 아직 파일에는 저장되지 않는다.
+4. 창 아래 **저장** <!-- en: Save --> 을 누른다.
+
+프리셋을 적용하면 직접 고쳐 둔 단축키는 모두 프리셋 값으로 돌아간다.
+
+## 단축키 하나 바꾸기
+
+1. **설정**(`Ctrl+,`) > **단축키** 를 연다. 왼쪽 서브탭은 동작의 대상별로 나뉜다 — **일반** · **워크스페이스** · **페인** <!-- en: Pane --> · **탭** · **서피스** · **클립보드** · **줌** · **이미지** · **탐색기** · **스크립트 실행** <!-- en: Run Scripts --> · **프리셋** · **플러그인**.
+2. 바꿀 동작의 키 버튼을 클릭하면 **키 조합을 누르세요...** <!-- en: Press key combination... --> 로 바뀐다. 원하는 조합을 누른다.
+3. 같은 동작에 조합을 하나 더 두려면 **바인딩 추가** <!-- en: Add binding --> 를 누른다.
+4. 녹화 중 `Esc` 를 누르면 그 슬롯이 비워진다.
+5. 이미 다른 동작이 쓰는 조합이면 **단축키가 이미 사용 중** <!-- en: Shortcut already in use --> 팝업이 뜬다. **덮어쓰기** <!-- en: Overwrite --> 를 고르면 기존 동작의 조합이 지워지고 이 동작으로 옮겨진다.
+6. **저장** 을 누른다. **취소** <!-- en: Cancel --> 하면 전부 버려진다.
+
+녹화 규칙:
+
+- 글자 · 숫자 · 스페이스 같은 타이핑 키는 수식키(Ctrl/Alt/Shift) 하나 이상과 함께 눌러야 등록된다. `W` 단독은 무시된다.
+- `F1`~`F12` · `Tab` · `Enter` 같은 키는 수식키 없이도 등록된다.
+- `Esc` 는 "슬롯 비우기" 로 예약돼 있어 단축키로 녹화할 수 없다. `Esc` 가 기본값인 **전체화면 무대 종료** 를 되돌리려면 프리셋을 다시 적용한다.
+- 플러그인 단축키(**플러그인** 서브탭)가 본체 단축키와 겹치면 **플러그인 쪽이 먼저** 동작한다.
+
+## 번호 전환 규칙 바꾸기
+
+탭 · 워크스페이스 · 카테고리의 "n 번으로" · "다음/이전" 은 **수식키 하나 + 키 하나** 규칙으로 묶여 있다. **탭** 서브탭 아래쪽과 **워크스페이스** 서브탭 아래쪽에서 바꾼다.
+
+- **탭 전환 수식키** <!-- en: Tab switch modifier --> · **워크스페이스 전환 수식키** · **카테고리 전환 수식키** 드롭다운 — 기본 `Ctrl` · `Alt` · `Ctrl+Shift`. 바꾸면 그 축의 슬롯 열 개가 한꺼번에 바뀐다.
+- **1번 탭:** ~ **10번 탭:** 등 슬롯 버튼 — 수식키 없이 키 하나만 누른다(**키 하나만 누르세요 (수식키 없이)...** <!-- en: Press a key (no modifier)... -->). 예를 들어 1번 슬롯을 `Q` 로 바꾸면 `Ctrl+Q` 가 1번 탭이 되고, 수식키를 누르고 있을 때 탭에 뜨는 번호 표시도 `Q` 로 바뀐다.
+- **다음 탭:** · **이전 탭:** 등 — 마찬가지로 키 하나. 기본은 vi 식 `L`/`H`(탭), `J`/`K`(워크스페이스 · 카테고리).
+- 드롭다운에서 **개별 지정** <!-- en: Custom --> 을 고르면 규칙을 버리고 슬롯마다 완전히 다른 조합(`Ctrl+Alt+1` 같은)을 녹화한다. 이때는 번호 표시가 뜨지 않는다. 다시 규칙 방식으로 돌아가면 그 축은 기본값으로 초기화된다.
+
+## 단축키를 외우지 않아도 되는 두 가지
+
+- **수정자 키 힌트** — `Ctrl` · `Alt` · `Shift` 등을 0.5초 이상 누르고 있으면(Shift 단독은 1.2초) 사이드바 아래에 그 조합으로 시작하는 단축키 목록이 뜬다. 손을 떼면 사라진다. **설정** > **일반** > **접근성** <!-- en: Accessibility --> > **수정자 키 힌트 표시** <!-- en: Show modifier key hints --> 로 끌 수 있고, 패널은 드래그로 옮기거나 크기를 바꿀 수 있다.
+- **명령 팔레트** — `Ctrl+Shift+P` 또는 상태바의 **팔레트** <!-- en: palette --> 칩. 동작 이름을 타이핑해 `Enter` 로 실행한다. 단축키 탭에 있는 모든 동작과 활성 플러그인의 전역 명령이 검색된다.
+
+## 설정 파일에서 직접 고치기
+
+`~/.tasty/config.toml` 의 `[keybindings]` 절에 저장된다. 값은 OS 와 무관한 이름이라 파일을 다른 OS 로 옮겨도 그대로 쓸 수 있다.
+
+```toml
+[keybindings]
+new_tab = ["alt+t"]
+copy = ["ctrl+c", "alt+c", "ctrl+shift+c"]
+quit = []                      # 비우면 단축키 없음
+tab_switch_modifier = "ctrl"   # "ctrl+shift" 처럼 조합도 됨
+tab_switch_slot_keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+tab_switch_next_key = "l"
+tab_switch_prev_key = "h"
+```
+
+`+` 키 자체는 `ctrl++` 또는 `ctrl+plus`, `-` 는 `ctrl+-` 또는 `ctrl+minus`, `=` 는 `ctrl+=` 또는 `ctrl+equals` 로 적는다. 파일 편집 전반은 [설정](settings.md).
+
+## 다음 읽을 것
+
+- [설정](settings.md) — 설정 창 구조와 `config.toml`.
+- [패인 · 탭 · 분할](../using/panes-tabs-splits.md) — 위 표의 분할 · 이동 동작이 실제로 무엇을 하는지.
+- [터미널 다루기](../using/terminal.md) — 복사 모드 · 검색 · 마우스 캡처.

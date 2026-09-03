@@ -1,0 +1,182 @@
+# 설정
+
+이 페이지를 읽으면 설정 창의 구조와 각 탭에 무엇이 있는지, 그리고 같은 내용이 `~/.tasty/config.toml` 에 어떻게 저장되는지 알게 된다. 단축키와 테마는 각각 [단축키](keybindings.md) · [테마](themes.md) 에서 따로 다룬다.
+
+## 설정 창 열기
+
+사이드바 맨 아래 **설정** <!-- en: Settings --> 버튼을 누르거나 `Ctrl+,` 를 누른다.
+
+```
+┌───────────────────────────────────────────────────────────┐
+│ [일반] [터미널] [외관] [단축키] [핸들러] [기타] [플러그인]      │  상단 탭
+├──────────────┬────────────────────────────────────────────┤
+│ 섹션 검색…    │                                            │
+│ ▸ 일반        │   선택한 섹션의 설정 항목                     │
+│   알림        │                                            │
+│   접근성      │                                            │
+├──────────────┴────────────────────────────────────────────┤
+│                                        [ 취소 ]  [ 저장 ]   │
+└───────────────────────────────────────────────────────────┘
+```
+
+- 상단 탭 7개: **일반** <!-- en: General --> · **터미널** <!-- en: Terminal --> · **외관** <!-- en: Appearance --> · **단축키** <!-- en: Keybindings --> · **핸들러** <!-- en: Handler --> · **기타** <!-- en: Misc --> · **플러그인** <!-- en: Plugins -->.
+- 왼쪽 목록은 그 탭의 섹션이다. 위의 **섹션 검색…** <!-- en: Filter sections… --> 에 글자를 넣으면 목록이 걸러진다. 탭을 바꾸면 검색어는 지워진다.
+- 바꾼 내용은 **저장** <!-- en: Save --> 을 눌러야 파일에 쓰이고 화면에 반영된다. **취소** <!-- en: Cancel --> 하면 모두 버려진다. 헤더에 닫기 버튼은 없다.
+- **언어** <!-- en: Language --> 변경만은 저장 후 Tasty 를 다시 시작해야 적용된다.
+
+## 탭별 항목
+
+### 일반
+
+| 섹션 | 항목 |
+|------|------|
+| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **언어** (English / 한국어 / 日本語) |
+| **알림** <!-- en: Notifications --> | **알림 활성화** <!-- en: Notifications enabled --> · **소리** <!-- en: Sound --> · **알림 병합 간격 (ms)** <!-- en: Coalesce interval (ms) --> |
+| **접근성** <!-- en: Accessibility --> | **모션 줄이기** <!-- en: Reduced motion --> (토스트 페이드 생략) · **수정자 키 힌트 표시** <!-- en: Show modifier key hints --> |
+| **오버레이** <!-- en: Overlay --> | **토스트 표시 시간** <!-- en: Toast duration --> (1~10초) |
+| **원격 전송** <!-- en: Remote transfer --> | **저장 폴더** <!-- en: Save folder --> (기본 `~/.tasty/transfers/`) · **최대 용량** <!-- en: Maximum size --> (MiB) — 원격 워크스페이스에서 받은 파일이 저장되는 곳 |
+| **표시** <!-- en: Display --> (macOS 만) | **Alt 키 표시** · **Option 키 표시** · **Shift 키 표시** — 단축키 표기를 텍스트 / 심볼 중에서 고른다 |
+| **권한** <!-- en: Permissions --> (macOS 만) | **전체 디스크 접근 권한** <!-- en: Full Disk Access --> · **화면 기록** <!-- en: Screen recording --> · **손쉬운 사용 (키 주입)** <!-- en: Accessibility (key injection) --> 상태와 시스템 설정 열기 |
+
+### 터미널
+
+| 섹션 | 항목 |
+|------|------|
+| **일반** | **셸** <!-- en: Shell --> · **시작 명령어** <!-- en: Startup command --> · **스크롤백 줄 수** <!-- en: Scrollback lines --> (기본 10000) · **실행 중 프로세스 닫기 확인** <!-- en: Confirm close running process --> · **작업 디렉토리 상속** <!-- en: Inherit working directory --> · **화면 반전 플래시 (DECSCNM)** <!-- en: Reverse-screen flash (DECSCNM) --> · **벨 알림 표시** <!-- en: Show bell notification --> · **링크 클릭 수식키** <!-- en: Link click modifier --> (Ctrl / Alt / 없음) · macOS: **Option 을 Meta 로 사용** <!-- en: Use Option as Meta --> · Windows: **셸 모드** <!-- en: Shell mode --> |
+| **마우스 캡처** <!-- en: Mouse Capture --> | **마우스 캡처 안내 표시** <!-- en: Show mouse-capture hint --> · **다음 프로그램에서 마우스 캡처 비활성화** <!-- en: Disable mouse capture for these programs --> · **다음 프로그램에서 캡처 안내 배너만 억제** <!-- en: Suppress the capture hint banner for these programs --> — 프로세스 이름 또는 `ht*` 같은 패턴 |
+| **TUI** | **클립보드 읽기 허용 (OSC 52)** <!-- en: Allow clipboard read (OSC 52) --> — 기본 꺼짐. 켜면 터미널 안 프로그램이 클립보드를 읽을 수 있다 |
+| **성능** <!-- en: Performance --> | **선택적 PTY 폴링** <!-- en: Targeted PTY polling --> · **스크롤백 디스크 스왑** <!-- en: Scrollback disk swap --> — 둘 다 재시작 후 적용 |
+
+**링크 클릭 수식키** 를 **없음** 으로 두면 일반 클릭으로 링크가 열려 텍스트 선택과 구분되지 않는다. 마우스 캡처 항목의 의미는 [터미널 다루기](../using/terminal.md).
+
+### 외관
+
+| 섹션 | 항목 |
+|------|------|
+| **테마** <!-- en: Theme --> | 테마 카드 목록 — [테마](themes.md) |
+| **색상** <!-- en: Colors --> | 현재 테마의 색을 항목별로 덮어쓰기 — [테마](themes.md) |
+| **일반** | **기본 폰트 설정** <!-- en: Default Font Settings -->: **폰트** <!-- en: Font family --> · **커스텀 폰트 파일** <!-- en: Custom font file --> · **글자 크기** <!-- en: Font size --> (기본 14) · **줄 높이** <!-- en: Line height --> · **폰트 DPI 스케일링** <!-- en: Font DPI scaling --> (자동 / 고정). 그리고 **합자(Ligatures)** <!-- en: Ligatures --> · **배경 투명도** <!-- en: Background opacity --> |
+| **디스플레이** <!-- en: Display --> | **UI 배율** <!-- en: UI Scale --> — 작게 / 보통 / 크게 |
+| **Tasty** | 앱 크롬 색 — **액센트** <!-- en: Accent --> · **사이드바 배경** <!-- en: Sidebar background --> · **활성 탭 인디케이터** <!-- en: Active tab indicator --> (밑줄 / 채움 / 점) |
+| **터미널** | 터미널 서피스의 **포커스 배경** <!-- en: Focused background --> · **비포커스 배경** <!-- en: Unfocused background --> 과 폰트 override |
+| **탐색기** <!-- en: Explorer --> | 탐색기 전용 폰트 override |
+| **Markdown** · **HTML** | 플러그인이 추가한 페이지 — 마크다운 폰트 override, HTML 뷰어의 **기본 확대** <!-- en: Default zoom --> · **색 구성표** <!-- en: Color scheme --> · **원격 콘텐츠 허용** <!-- en: Allow remote content --> · **스크립트 샌드박스** <!-- en: Sandbox scripts --> |
+
+폰트 설정은 **일반** 의 기본값이 터미널 · 마크다운 · 탐색기에 일괄 적용되고, 각 섹션에서 **기본값 사용** <!-- en: Use default --> 을 끄면 그 종류만 다른 값을 쓴다. **폰트 DPI 스케일링** 이 **자동** 이면 모니터가 달라도 글자의 물리 크기가 같고, **고정** 이면 픽셀 크기가 같아 고해상도 모니터에서 글자가 작아진다.
+
+### 단축키
+
+[단축키](keybindings.md) 에서 다룬다.
+
+### 핸들러
+
+파일을 열 때 "어떤 파일인지 식별" 하는 규칙과 "무엇으로 열지" 를 정하는 표다. 기본값으로도 마크다운 · 이미지 · HTML 은 알아서 열리므로 보통 손댈 일이 없다.
+
+- **파일 확장자 매핑** <!-- en: File Extension Mapping --> — 같은 확장자를 여러 디텍터가 가져갈 때 우선순위.
+- **파일 디텍터** <!-- en: File Detectors --> — 확장자 · 경로 패턴으로 파일 종류를 식별하는 규칙. 사용자 규칙 추가 가능.
+- **파일 핸들러** <!-- en: File Handlers --> — 식별된 종류를 어떤 서피스로 열지, 또는 OS 기본 앱으로 넘길지.
+- **훅 핸들러** <!-- en: Hook Handlers --> — 훅 · 웹훅 이벤트가 왔을 때 실행할 셸 명령. [훅 · 알림 · 웹훅](../agents/hooks-notifications.md).
+
+이 표는 `config.toml` 이 아니라 `~/.tasty/file-handlers.toml` 과 `~/.tasty/hook-handlers.toml` 에 저장된다.
+
+### 기타
+
+- **스크립트** <!-- en: Scripts --> — 단축키로 실행할 Lua 스크립트를 등록한다. 파일 경로(예: `~/.tasty/scripts/my-script.lua`)와 표시 이름을 넣고, 단축키는 **단축키** > **스크립트 실행** 에서 붙인다. 등록 뒤 파일이 바뀌면 **변경됨** <!-- en: changed --> 표시가 붙고 다음 실행 때 확인을 묻는다.
+- Windows 에서는 **Tastyrc** 섹션이 추가된다. 다른 OS 에서는 이 탭에 스크립트만 있다.
+
+### 플러그인
+
+플러그인이 추가한 설정 페이지가 모인다. 기본 설치 상태에서는 **Claude Code** 와 **Codex** 페이지가 있다 — [플러그인](../plugins/index.md).
+
+## 설정 파일 `~/.tasty/config.toml`
+
+설정 창의 내용은 전부 이 파일 하나에 저장된다. 없는 키는 기본값으로 읽히므로 필요한 것만 적어도 된다.
+
+```toml
+[general]
+language = "ko"                  # "en" | "ko" | "ja"
+close_behavior = "ask"           # "ask" | "minimize" | "quit"
+restore_layout = true
+restore_surface_content = true
+scrollback_lines = 10000
+inherit_cwd = true
+confirm_close_running = true
+link_click_modifier = "ctrl"     # "ctrl" | "alt" | "none"
+allow_clipboard_read = false
+bell_notification = true
+workspace_categories_enabled = false
+mouse_capture_blacklist = ["htop"]
+shell = ""                       # 비우면 자동 감지
+startup_command = ""
+
+[appearance]
+theme = "mocha"                  # ~/.tasty/themes/<id>.toml
+ui_scale = "medium"              # "small" | "medium" | "large"
+ligatures = true
+background_opacity = 1.0
+active_tab_indicator = "underline"   # "underline" | "fill" | "dot"
+
+[appearance.default_font]
+font_family = ""
+font_size = 14.0
+line_height = 1.0
+font_scale_mode = "auto"         # "auto" | "fixed"
+
+[appearance.terminal_font]       # 비워 두면 default_font 를 따른다
+font_size = 15.0
+
+[notification]
+enabled = true
+sound = false
+coalesce_ms = 500
+
+[accessibility]
+reduced_motion = false
+
+[modifier_hint]
+enabled = true
+
+[overlay]
+toast_duration_ms = 2000
+
+[performance]
+targeted_pty_polling = true
+scrollback_disk_swap = false
+
+[remote_transfer]
+dir = ""                         # 비우면 ~/.tasty/transfers/
+max_mb = 500
+
+[keybindings]
+new_tab = ["alt+t"]              # 나머지는 keybindings.md
+```
+
+- `[appearance]` 아래에는 이 밖에도 테마 색 전체(`theme_base`)와 색상 탭에서 덮어쓴 값(`theme_overrides`)이 저장된다. 손으로 고치기보다 설정 창을 쓰는 편이 안전하다.
+- `[plugin_settings."com.tasty.html"]` 처럼 플러그인 설정 페이지의 값은 플러그인 id 를 키로 한 절에 들어간다.
+- Tasty 는 실행 중에 이 파일을 감시하지 않는다. 손으로 고친 값은 다음 시작 때 읽히고, 그 전에 설정 창에서 저장하면 파일 전체가 다시 쓰여 손편집이 사라진다. 파일을 직접 편집할 때는 Tasty 를 종료한 뒤 한다.
+
+원격 전송 항목만은 CLI 로도 읽고 쓸 수 있다.
+
+```sh
+tasty settings get-remote-transfer
+tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
+```
+
+## `~/.tasty` 폴더에 있는 것
+
+| 경로 | 내용 |
+|------|------|
+| `config.toml` | 위 설정 |
+| `themes/` | 테마 파일 — [테마](themes.md) |
+| `plugins/` · `plugins-logs/` | 설치된 플러그인과 로그 — [플러그인](../plugins/index.md) |
+| `file-handlers.toml` · `hook-handlers.toml` | 핸들러 탭의 사용자 항목 |
+| `remote-profiles.toml` | 원격 연결 프로필 — [원격 attach](../remote/attach.md) |
+| `scripts/` | Lua 스크립트를 두는 관례 위치 |
+| `transfers/` | 원격에서 받은 파일 기본 저장 폴더 |
+| `tasty.port` · `debug.log` | 실행 중 인스턴스의 포트, 경고 이상 로그 — [문제 해결](../help/troubleshooting.md) |
+
+## 다음 읽을 것
+
+- [단축키](keybindings.md) — 기본 표 · 프리셋 · 녹화.
+- [테마](themes.md) — 테마 전환 · 색 덮어쓰기 · 직접 만들기.
+- [플러그인](../plugins/index.md) — 플러그인 설정 페이지와 관리 창.

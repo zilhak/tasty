@@ -9,9 +9,9 @@ pub const REPO: &str = "https://github.com/zilhak/tasty";
 pub struct Strings {
     pub lang: &'static str,
     pub dir_docs: &'static str,
-    pub nav_docs: &'static str,
-    pub nav_features: &'static str,
+    pub nav_guide: &'static str,
     pub nav_install: &'static str,
+    pub nav_download: &'static str,
     pub nav_changelog: &'static str,
     pub search_placeholder: &'static str,
     pub search_empty: &'static str,
@@ -32,9 +32,9 @@ pub struct Strings {
     pub footer_issues: &'static str,
     pub footer_license: &'static str,
     pub footer_third_party: &'static str,
-    pub footer_architecture: &'static str,
+    pub footer_keybindings: &'static str,
     pub footer_plugins: &'static str,
-    pub footer_cli: &'static str,
+    pub footer_dev_docs: &'static str,
     pub footer_note: &'static str,
     /// Translation-state banners (shown on the English docs tree only).
     pub untranslated: &'static str,
@@ -44,12 +44,12 @@ pub struct Strings {
 
 pub const KO: Strings = Strings {
     lang: "ko",
-    dir_docs: "문서",
-    nav_docs: "문서",
-    nav_features: "기능",
+    dir_docs: "가이드",
+    nav_guide: "가이드",
     nav_install: "설치",
+    nav_download: "다운로드",
     nav_changelog: "변경 이력",
-    search_placeholder: "문서 검색  /",
+    search_placeholder: "가이드 검색  /",
     search_empty: "검색 결과가 없다",
     copy: "복사",
     copied: "복사됨",
@@ -61,16 +61,16 @@ pub const KO: Strings = Strings {
     toggle_theme: "테마 전환",
     toggle_nav: "탐색 열기",
     footer_blurb: "AI 코딩 에이전트를 위해 만든 크로스 플랫폼 GPU 가속 터미널.",
-    footer_docs: "문서",
+    footer_docs: "가이드",
     footer_project: "프로젝트",
     footer_resources: "자료",
     footer_releases: "릴리스",
     footer_issues: "이슈",
     footer_license: "라이선스",
     footer_third_party: "서드파티 라이선스",
-    footer_architecture: "아키텍처",
+    footer_keybindings: "단축키",
     footer_plugins: "플러그인",
-    footer_cli: "CLI · IPC 레퍼런스",
+    footer_dev_docs: "개발 문서 (GitHub)",
     footer_note: "MIT 라이선스",
     untranslated: "이 문서는 아직 번역되지 않았다. 한국어 원문을 표시한다.",
     stale: "이 번역은 한국어 원문보다 오래됐다. 내용이 다를 수 있다.",
@@ -79,12 +79,12 @@ pub const KO: Strings = Strings {
 
 pub const EN: Strings = Strings {
     lang: "en",
-    dir_docs: "Docs",
-    nav_docs: "Docs",
-    nav_features: "Features",
+    dir_docs: "Guide",
+    nav_guide: "Guide",
     nav_install: "Install",
+    nav_download: "Download",
     nav_changelog: "Changelog",
-    search_placeholder: "Search docs  /",
+    search_placeholder: "Search the guide  /",
     search_empty: "No results",
     copy: "copy",
     copied: "copied",
@@ -96,16 +96,16 @@ pub const EN: Strings = Strings {
     toggle_theme: "Toggle theme",
     toggle_nav: "Open navigation",
     footer_blurb: "A cross-platform, GPU-accelerated terminal built for AI coding agents.",
-    footer_docs: "Docs",
+    footer_docs: "Guide",
     footer_project: "Project",
     footer_resources: "Resources",
     footer_releases: "Releases",
     footer_issues: "Issues",
     footer_license: "License",
     footer_third_party: "Third-party licenses",
-    footer_architecture: "Architecture",
+    footer_keybindings: "Keyboard shortcuts",
     footer_plugins: "Plugins",
-    footer_cli: "CLI · IPC reference",
+    footer_dev_docs: "Developer docs (GitHub)",
     footer_note: "MIT licensed",
     untranslated: "This page has not been translated yet — showing the Korean original.",
     stale: "This translation is older than the Korean source and may be out of date.",
@@ -121,12 +121,12 @@ pub struct Shell<'a> {
     pub root: String,
     /// Rendered `<body>` inner HTML.
     pub body: String,
-    /// Header nav item to mark as current: `"docs"`, `"features"`, `"install"`, or `""`.
+    /// Header nav item to mark as current: `"guide"`, `"install"`, or `""`.
     pub active: &'a str,
     /// Where the KO / EN switch should point, relative to the site root.
     pub ko_href: String,
     pub en_href: String,
-    /// Docs tree this page belongs to, relative to the site root (`docs/` or `en/docs/`).
+    /// Guide tree this page belongs to, relative to the site root (`guide/` or `ko/guide/`).
     pub docs_prefix: &'a str,
     /// Search index for that tree, relative to the site root.
     pub search_index: &'a str,
@@ -218,10 +218,10 @@ fn header(shell: &Shell<'_>) -> String {
     <span>Tasty</span>
     <span class="brand__version">v{version}</span>
   </a>
-  <nav class="site-nav" aria-label="{nav_docs}">
-    <a href="{root}{docs}index.html"{a_docs}>{nav_docs}</a>
-    <a href="{root}{docs}features/index.html"{a_feat}>{nav_features}</a>
-    <a href="{root}{docs}installation.html"{a_inst}>{nav_install}</a>
+  <nav class="site-nav" aria-label="{nav_guide}">
+    <a href="{root}{docs}index.html"{a_guide}>{nav_guide}</a>
+    <a href="{root}{docs}getting-started/install.html"{a_inst}>{nav_install}</a>
+    <a href="{repo}/releases/latest">{nav_download}</a>
     <a href="{repo}/blob/main/CHANGELOG.md">{nav_changelog}</a>
   </nav>
   <div class="header-tools">
@@ -253,12 +253,11 @@ fn header(shell: &Shell<'_>) -> String {
         search_index = shell.search_index,
         asset_tag = crate::asset_tag(),
         version = crate::version(),
-        nav_docs = html_escape(s.nav_docs),
-        nav_features = html_escape(s.nav_features),
+        nav_guide = html_escape(s.nav_guide),
         nav_install = html_escape(s.nav_install),
+        nav_download = html_escape(s.nav_download),
         nav_changelog = html_escape(s.nav_changelog),
-        a_docs = mark("docs"),
-        a_feat = mark("features"),
+        a_guide = mark("guide"),
         a_inst = mark("install"),
         repo = REPO,
         search_ph = html_escape(s.search_placeholder),
@@ -298,10 +297,10 @@ fn footer(shell: &Shell<'_>) -> String {
     <div>
       <h4>{h_docs}</h4>
       <ul>
-        <li><a href="{root}{docs}index.html">{nav_docs}</a></li>
-        <li><a href="{root}{docs}installation.html">{nav_install}</a></li>
-        <li><a href="{root}{docs}features/index.html">{nav_features}</a></li>
-        <li><a href="{root}{docs}reference/index.html">{cli}</a></li>
+        <li><a href="{root}{docs}index.html">{nav_guide}</a></li>
+        <li><a href="{root}{docs}getting-started/install.html">{nav_install}</a></li>
+        <li><a href="{root}{docs}customize/keybindings.html">{keybindings}</a></li>
+        <li><a href="{root}{docs}plugins/index.html">{plugins}</a></li>
       </ul>
     </div>
     <div>
@@ -316,8 +315,7 @@ fn footer(shell: &Shell<'_>) -> String {
     <div>
       <h4>{h_res}</h4>
       <ul>
-        <li><a href="{root}{docs}architecture/index.html">{arch}</a></li>
-        <li><a href="{root}{docs}plugins/index.html">{plugins}</a></li>
+        <li><a href="{repo}/blob/main/docs/index.md">{dev_docs}</a></li>
         <li><a href="{repo}/blob/main/LICENSES">{license}</a></li>
         <li><a href="{repo}/blob/main/THIRD_PARTY_LICENSES.md">{third}</a></li>
       </ul>
@@ -333,18 +331,17 @@ fn footer(shell: &Shell<'_>) -> String {
         docs = shell.docs_prefix,
         blurb = html_escape(s.footer_blurb),
         h_docs = html_escape(s.footer_docs),
-        nav_docs = html_escape(s.nav_docs),
+        nav_guide = html_escape(s.nav_guide),
         nav_install = html_escape(s.nav_install),
-        nav_features = html_escape(s.nav_features),
-        cli = html_escape(s.footer_cli),
+        keybindings = html_escape(s.footer_keybindings),
+        plugins = html_escape(s.footer_plugins),
         h_project = html_escape(s.footer_project),
         repo = REPO,
         releases = html_escape(s.footer_releases),
         issues = html_escape(s.footer_issues),
         changelog = html_escape(s.nav_changelog),
         h_res = html_escape(s.footer_resources),
-        arch = html_escape(s.footer_architecture),
-        plugins = html_escape(s.footer_plugins),
+        dev_docs = html_escape(s.footer_dev_docs),
         license = html_escape(s.footer_license),
         third = html_escape(s.footer_third_party),
         note = html_escape(s.footer_note),
