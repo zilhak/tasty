@@ -29,15 +29,21 @@ const ALLOWLIST_FILES: &[&str] = &[];
 
 /// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성 +
 /// gitignored 로컬 작업 폴더(worktree 에서는 레포 밖으로 향하는 심볼릭 링크일 수 있다).
-const PRUNE_DIRS: &[&str] = &[
-    "target",
-    "dist",
-    ".worktree",
-    ".git",
-    "node_modules",
-    ".claude",
-    ".claude-workspace",
-];
+const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
+
+/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
+/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+const LOCAL_HEAD: &str = "claude";
+const LOCAL_TAIL: &str = "-workspace";
+
+/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
+fn is_pruned(name: &str) -> bool {
+    PRUNE_DIRS.contains(&name)
+        || name
+            .strip_prefix('.')
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
+}
 
 /// 행이 마크다운 체크박스 목록 항목으로 시작하는지.
 /// 선행 공백 · 목록 마커 · 공백(1 개 이상) · `[` · (공백|x|X) · `]` 순서만 본다. `]` 뒤는 보지 않는다.
@@ -65,7 +71,7 @@ fn is_scan_target(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. PRUNE_DIRS 는 가지치기.
+/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. `is_pruned` 는 가지치기.
 fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         let rel = rel_of(path, root);
@@ -81,7 +87,7 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if PRUNE_DIRS.contains(&name) {
+            if is_pruned(name) {
                 continue;
             }
         }

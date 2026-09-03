@@ -2,9 +2,9 @@
 //! 로컬 작업 문서를 인용하면 fail 한다.
 //!
 //! 배경: `CLAUDE.md` "소스 주석의 TODO 파일 및 디자인 changelog 인용 금지" 와
-//! `docs/adr/template.md` "외부(비-git) 위치 문서 참조 금지" 가 이미 규정한 것을
-//! 실제로 강제한다. 로컬 작업 폴더는 `.gitignore` 대상이라 커밋되지 않고 완료된
-//! 항목은 관례상 파일 자체가 삭제되므로, 그 번호·경로는 **로컬 세션에서만 유효한
+//! `docs/adr/template.md` "비-git 경로 참조 금지" 가 이미 규정한 것을 실제로
+//! 강제한다. 로컬 작업 폴더는 `.gitignore` 대상이라 커밋되지 않고 완료된 항목은
+//! 관례상 파일 자체가 삭제되므로, 그 번호·경로는 **로컬 세션에서만 유효한
 //! 휘발성 식별자**다. 저장소를 새로 clone 한 사람에게 그 좌표는 존재한 적이 없다.
 //!
 //! 실제로 번호 재사용이 일어나 인용이 *무관한 문서* 로 해석되는 사례까지 나왔다 —
@@ -17,80 +17,196 @@
 //! 2. 설계 결정이 크면 — `docs/adr/` 에 ADR 을 쓰고 그 경로를 인용
 //! 3. 기능 동작 설명이면 — `docs/`(dev-guide / features / plugins) 문서를 참조
 //!
-//! **탐지 패턴 5 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
-//! - P1 번호 인용 — 대문자 `TODO` + 선택적 공백/하이픈 + 숫자
-//! - P2 conductor 번호 인용 — `todo-conductor`(대소문자 무시) + 선택적 구분자 + 숫자
+//! **탐지 패턴 6 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
+//! - P1 번호 인용 — 대문자 `TODO` + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자
+//! - P2 conductor 번호 인용 — `todo-conductor`(대소문자 무시) + 구분자 런 + 숫자
 //! - P3 경로 인용 — 로컬 작업 폴더 + `todo` / `todo-conductor` / `plans` / `conductor`
-//! - P4 디자인 changelog slug — `YYYY-MM-DD-<소문자-slug>`. 원격 Claude Design
-//!   프로젝트 내부에만 존재해 로컬 파일시스템에 흔적조차 없으므로 더 휘발적이다.
-//! - P5 앵커 슬러그 변형 — 마크다운 앵커(`#...`) 안에 소문자로 굳은 번호
-//!   (`-todo-<숫자>`). 제목에 번호를 달면 그 번호가 앵커의 일부가 되어 링크·주석
-//!   으로 퍼지고, 나중에 제목에서 번호를 떼는 순간 그 참조가 **전부 깨진다**
-//!   (실제로 한 번 발생했다 — 제목 하나를 고치자 링크 1곳과 주석 15줄이 죽은
-//!   좌표가 됐다). 대문자 `TODO` 가 아니라 P1 이 못 잡는 별도 형태다.
+//! - P4 디자인 changelog slug — `YYYY-MM-DD-<slug>`. 원격 Claude Design 프로젝트
+//!   내부에만 존재해 로컬 파일시스템에 흔적조차 없으므로 더 휘발적이다.
+//! - P5 앵커 슬러그 변형 — 마크다운 앵커(`#...`) 안에 굳은 번호(`-todo-<숫자>`).
+//!   제목에 번호를 달면 그 번호가 앵커의 일부가 되어 링크·주석으로 퍼지고, 나중에
+//!   제목에서 번호를 떼는 순간 그 참조가 **전부 깨진다** (실제로 한 번 발생했다 —
+//!   제목 하나를 고치자 링크 1곳과 주석 15줄이 죽은 좌표가 됐다). 대문자 `TODO`
+//!   가 아니라 P1 이 못 잡는 별도 형태다.
+//! - P6 로컬 폴더 언급 — 하위 경로가 무엇이든, 아예 없든 잡는다. 폴더 이름 단독
+//!   언급도 금지 대상이라는
+//!   [ADR-0105](../docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md) 의
+//!   결정을 강제한다. P3 가 네 개 하위 디렉토리로 좁혀 놓았던 것을 넓힌 형태다.
 //!
-//! **오탐 회피**: 금지 대상은 로컬 작업 폴더 뒤에 위 4 개 하위 디렉토리가 오는
-//! 경우로 **한정**한다. 임시 파일 위치(`temp/` 하위)와 폴더 자체를 언급하는 것은
-//! `CLAUDE.md` 가 오히려 규정한 정당한 사용이므로 잡지 않는다. P4 는 도입 시점에
-//! 레포 전체를 스캔해 규칙 본문(`CLAUDE.md`) 외 오탐 0 건을 확인하고 채택했다.
+//! **매칭은 구분자 개수·대소문자로 회피되지 않아야 한다.** 구분자를 한 개만 소비하는
+//! 매처는 공백 두 개만 넣어도 통과하고, 원문 그대로 비교하는 매처는 대문자 표기로
+//! 통과한다. 그래서 P2~P6 은 구분자를 런으로 소비하고 소문자로 비교한다. P1 만
+//! 예외적으로 공백 런까지만 넓힌다 — 임의 문장부호(`:` · `#` · `.`)를 구분자로
+//! 허용하면 "TODO. 40" 같은 평범한 문장이 걸린다. 티켓 인용은 공백이나 하이픈으로
+//! 쓰이지 문장부호로 쓰이지 않는다.
+//!
+//! **스캔 대상 정의 — denylist 전수 순회.** ADR-0105 의 규칙 범위가 "git 이 추적하는
+//! 모든 파일" 이므로, 확장자·디렉토리 화이트리스트로 "볼 파일" 을 열거하지 않는다.
+//! 순회가 닿는 모든 파일을 대상으로 삼고 바이너리 확장자만 뺀다. 화이트리스트 방식은
+//! 스크립트·CI 설정·루트 문서·`site/` 를 통째로 놓치는 사각지대를 만들었고, 항목을
+//! 추가해도 다음 사각지대가 또 생긴다. `git ls-files` 로 추적 집합을 직접 묻는 방법도
+//! 있으나, 테스트가 git 바이너리와 저장소 메타데이터의 존재에 의존하게 되어 tarball
+//! 빌드에서 깨지고
+//! [ADR-0096](../docs/adr/0096-unit-tests-isolated-from-user-environment.md)
+//! 의 "테스트는 환경을 읽지 않는다" 와도 어긋난다. gitignored 산출물은 `PRUNE_DIRS`
+//! 가지치기로 덮이고, 남는 것(서명 파일 등)은 애초에 인용을 담지 않는다.
+//!
+//! **오탐 회피 — 홈 경로는 그 자리 직전 문맥으로 가른다.** 로컬 지침 폴더는 사용자
+//! 홈에도 같은 이름이 있고, 홈 쪽은 ADR-0105 가 범위 밖으로 확정한 항목이다. 판정을
+//! *줄 전체* 에서 홈 표기를 찾는 식으로 하면, 정당한 홈 경로가 한 번 나오는 줄에
+//! 섞인 진짜 레포 로컬 참조까지 통과한다 — 그래서 **occurrence 직전** 만 본다
+//! ([`home_context_before`]). 로컬 작업 폴더 쪽은 홈에 존재할 수 없어 예외가 없다.
+//! reverse-DNS plugin id 는 이름 앞 글자가 식별자 문자라 경로 시작이 아니므로 애초에
+//! 걸리지 않는다.
+//!
+//! 이 판정은 **휴리스틱**이다 — 직전 창에서 홈 표기를 낱말로 찾는 방식이라,
+//! `let home = ...; home.join(".claude")` 처럼 변수 이름이 `home` 인 관용구에 기대고
+//! 있다. 같은 뜻의 다른 이름(`user_root` · `profile_dir` 등)으로 쓰면 정당한 홈 경로가
+//! 위반으로 잡힌다. 그때는 [`HOME_NEARBY`] 에 그 이름을 추가하거나, 소스를 `~` 표기로
+//! 바꿔 접두 판정(①)에 걸리게 한다. 창을 넓히거나 부분문자열 매칭으로 되돌리는 것은
+//! 답이 아니다 — 그러면 이 절이 막으려는 "줄 전체 면제" 로 되돌아간다.
 //!
 //! 선례: `tests/no_emoji_in_source.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
 
 use std::path::{Path, PathBuf};
 
-/// 스캔에서 제외할 파일(repo-relative) — 금지 형태를 **담는 것이 본질** 인 곳.
-/// - `docs/adr/template.md`: "외부(비-git) 위치 문서 참조 금지" 규칙 본문의 거처.
+/// 예외 목록 — (repo-relative 경로, 그 파일에서만 허용하는 패턴 id).
+///
+/// **파일 통째가 아니라 패턴 단위**로 면제한다. 파일 전체를 빼면 그 파일이 *다른*
+/// 형태의 위반을 새로 들여도 영영 잡히지 않는다 — 규칙 본문을 담은 파일일수록
+/// 그렇게 되기 쉽다. 등록 기준은
+/// [ADR-0105](../docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md) 가 정한
+/// 그대로다: *그 파일의 본질이 그 형태를 담는 것인가*. "고치기 번거롭다" 는 사유가
+/// 아니다.
+/// - `CLAUDE.md`: 규칙 본문이 번호 인용(P1)과 changelog slug(P4)를 **예시로** 든다.
+///   예시를 지우면 규칙이 무엇을 금지하는지 알 수 없게 된다. 경로 인용(P3/P6)은
+///   면제하지 않는다 — 규칙을 설명하는 데 실제 경로가 필요하지 않다.
+/// - `.gitignore`: 제외 항목을 적는 것이 그 파일의 정의다(ADR-0105 범위 밖 4항).
 /// - `docs/adr/0027-...`: 휘발 경로 누수를 *문제로 서술* 하는 예시(참조가 아니다).
 ///   게다가 Accepted ADR 의 Context 본문이라 template 규칙상 수정 대상도 아니다.
-/// - `tests/no_emoji_in_source.rs`: 가지치기 목록에 로컬 작업 폴더명을 보유.
-/// - 이 파일: 위 패턴을 설명·구현한다.
 ///
-/// `CLAUDE.md`(규칙 본문이 금지 형태를 예시 인용) 와 `.gitignore`(제외 항목 그
-/// 자체) 는 애초에 스캔 대상이 아니라 별도 항목이 필요 없다.
-const ALLOWLIST_FILES: &[&str] = &[
-    "docs/adr/template.md",
-    "docs/adr/0027-figma-planning-sot-naming-derived-index.md",
-    "tests/no_emoji_in_source.rs",
-    "tests/no_todo_file_citation.rs",
+/// **이 파일 자신은 면제가 없다.** 순회 입력으로 폴더 이름이 필요한 곳은 조각으로
+/// 조립하고([`ws_dir`]), 패턴 픽스처는 `fx!` 로 판정 지점을 끊어 쓴다. 가드가 자기
+/// 자신에게만 통째 면제를 두면, 위에 적은 "파일 통째 면제 금지" 원칙의 유일한 예외가
+/// 가드 본인이 되어 앞뒤가 맞지 않는다.
+const ALLOWLIST: &[(&str, &[&str])] = &[
+    ("CLAUDE.md", &["P1", "P4"]),
+    (".gitignore", &["P6"]),
+    (
+        "docs/adr/0027-figma-planning-sot-naming-derived-index.md",
+        &["P3", "P6"],
+    ),
+];
+
+/// 탐지 패턴 표 — (id, 설명, 판정 함수). 한 줄에 대해 **전부** 돌린다.
+type Finder = fn(&str) -> Option<String>;
+const PATTERNS: &[(&str, &str, Finder)] = &[
+    ("P1", "번호 인용", find_p1),
+    ("P2", "conductor 번호 인용", find_p2),
+    ("P3", "경로 인용", find_p3),
+    ("P4", "디자인 changelog slug", find_p4),
+    ("P5", "앵커 슬러그 번호", find_p5),
+    ("P6", "로컬 폴더 언급", find_p6),
 ];
 
 /// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성 +
-/// gitignored 로컬 작업 폴더(그 안의 문서는 커밋 대상이 아니라 스캔 의미가 없다).
+/// vendored 서드파티 번들.
 ///
-/// 로컬 작업 폴더는 worktree 에 **심볼릭 링크**로 걸려 있을 수 있다. `is_dir()` 은
-/// 링크를 따라가므로, 가지치기하지 않으면 순회가 레포 밖 실제 경로까지 새어나간다.
+/// `assets` — 서드파티 라이브러리 번들(수 MB 짜리 minified JS)과 폰트 바이너리만
+/// 들어 있다. 산문 패턴으로 훑는 것이 순수 비용이고, 라이브러리를 갱신했을 때 그
+/// 안의 문자열이 우연히 P4 형태를 띠면 **무관한 이유로 CI 가 빨개진다**. 이 디렉토리에
+/// 우리가 쓴 콘텐츠를 넣게 되면 이 가지치기를 좁혀야 한다.
 const PRUNE_DIRS: &[&str] = &[
     "target",
     "dist",
+    "_site",
     ".worktree",
     ".git",
+    ".idea",
     "node_modules",
-    ".claude",
-    ".claude-workspace",
+    "assets",
 ];
 
-/// 로컬 작업 폴더명. 이 파일 자신이 P3 에 걸리지 않도록 조각으로 두고 조립한다.
-const WORKSPACE_DIR: &str = "claude-workspace/";
+/// gitignored 로컬 폴더 이름의 조각. 이 파일 자신이 P6 에 걸리지 않도록 나눠 둔다.
+const LOCAL_HEAD: &str = "claude";
+const LOCAL_TAIL: &str = "-workspace";
 
-/// 금지되는 하위 디렉토리 — 이 넷 뒤에 오는 경로만 잡는다(`temp/` 등은 정당).
+/// 로컬 작업 폴더 이름(선행 `.` 없음).
+fn ws_dir() -> String {
+    format!("{LOCAL_HEAD}{LOCAL_TAIL}")
+}
+
+/// P6 가 잡는 로컬 폴더 — (이름, 선행 `.` 이 필요한가 = 홈에도 같은 이름이 있는가).
+///
+/// **긴 이름을 먼저 본다** — 짧은 쪽이 접두라, 순서를 바꾸면 로컬 작업 폴더를 보고도
+/// 지침 폴더 이름으로 보고한다.
+///
+/// 로컬 작업 폴더는 홈에 존재할 수 없으므로 선행 `.` 유무와 무관하게 잡는다 — 점을
+/// 뺀 표기(`<폴더>/temp`)로 쓰는 것이 가장 흔한 회피 형태다. 지침 폴더는 사용자 홈에도
+/// 같은 이름이 있어 선행 `.` 과 직전 문맥으로 가른다.
+fn local_dirs() -> Vec<(String, bool)> {
+    vec![(ws_dir(), false), (LOCAL_HEAD.to_string(), true)]
+}
+
+/// 순회 가지치기 대상인지 — `PRUNE_DIRS` + gitignored 로컬 폴더(선행 `.`).
+///
+/// 로컬 폴더는 worktree 에 **심볼릭 링크**로 걸려 있을 수 있다. `is_dir()` 은 링크를
+/// 따라가므로, 가지치기하지 않으면 순회가 레포 밖 실제 경로까지 새어나간다.
+fn is_pruned(name: &str) -> bool {
+    PRUNE_DIRS.contains(&name)
+        || name
+            .strip_prefix('.')
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == ws_dir())
+}
+
+/// 금지되는 하위 디렉토리 — 이 넷 뒤에 오는 경로만 P3 가 잡는다.
 const FORBIDDEN_SUBDIRS: &[&str] = &["todo-conductor", "todo", "plans", "conductor"];
 
-/// P1 — 대문자 `TODO` + 선택적 공백/하이픈 + 숫자. 번호 없는 평범한 `TODO:` 주석은
-/// 대상이 아니다(금지 대상은 *파일 번호 인용* 이지 할 일 표시가 아니다).
+/// 이름 **바로 앞** 에 붙는 홈 경로 접두. 경로 구분자 한 겹은 벗기고 본다.
+const HOME_PREFIXES: &[&str] = &["~", "$home", "%userprofile%"];
+
+/// 이름 직전 짧은 창 안에 **단어로** 있으면 홈 문맥으로 보는 표기(코드/산문).
+///
+/// 단어 경계를 요구하는 이유: 부분문자열로 보면 `Homebrew` 나 `renderHome()` 같은
+/// 무관한 낱말이 그 줄의 진짜 위반을 면제시킨다. 영숫자가 앞뒤에 붙으면 다른 낱말로
+/// 본다(`home_dir` 는 `_` 가 경계라 `home` 으로 잡힌다).
+const HOME_NEARBY: &[&str] = &["home", "claude_config_dir", "홈의"];
+
+/// 직전 문맥을 보는 창 크기(문자 수).
+const HOME_WINDOW: usize = 32;
+
+/// 구분자 런을 소비한다 — 개수를 제한하면 공백 하나만 더 넣어도 회피된다.
+fn skip_run(bytes: &[u8], mut i: usize, allowed: &[u8]) -> usize {
+    while i < bytes.len() && allowed.contains(&bytes[i]) {
+        i += 1;
+    }
+    i
+}
+
+/// `bytes[i..]` 가 숫자로 시작하면 그 숫자열의 끝 인덱스.
+fn digits_end(bytes: &[u8], i: usize) -> Option<usize> {
+    if i >= bytes.len() || !bytes[i].is_ascii_digit() {
+        return None;
+    }
+    let mut end = i;
+    while end < bytes.len() && bytes[end].is_ascii_digit() {
+        end += 1;
+    }
+    Some(end)
+}
+
+/// P1 — 대문자 `TODO` + 공백 런 + 선택적 하이픈 + 숫자. 번호 없는 평범한 `TODO:`
+/// 주석은 대상이 아니다(금지 대상은 *파일 번호 인용* 이지 할 일 표시가 아니다).
 fn find_p1(line: &str) -> Option<String> {
     let bytes = line.as_bytes();
     let mut from = 0;
     while let Some(pos) = line[from..].find("TODO") {
         let start = from + pos;
-        let mut i = start + 4;
-        if i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'-') {
+        let mut i = skip_run(bytes, start + 4, b" \t");
+        if i < bytes.len() && bytes[i] == b'-' {
             i += 1;
         }
-        if i < bytes.len() && bytes[i].is_ascii_digit() {
-            let mut end = i;
-            while end < bytes.len() && bytes[end].is_ascii_digit() {
-                end += 1;
-            }
+        if let Some(end) = digits_end(bytes, i) {
             return Some(line[start..end].to_string());
         }
         from = start + 4;
@@ -98,7 +214,7 @@ fn find_p1(line: &str) -> Option<String> {
     None
 }
 
-/// P2 — `todo-conductor`(대소문자 무시) + 선택적 구분자 + 숫자.
+/// P2 — `todo-conductor`(대소문자 무시) + 구분자 런 + 숫자.
 fn find_p2(line: &str) -> Option<String> {
     let lower = line.to_ascii_lowercase();
     let bytes = lower.as_bytes();
@@ -106,15 +222,8 @@ fn find_p2(line: &str) -> Option<String> {
     let mut from = 0;
     while let Some(pos) = lower[from..].find(needle) {
         let start = from + pos;
-        let mut i = start + needle.len();
-        if i < bytes.len() && matches!(bytes[i], b' ' | b'/' | b'_' | b'-') {
-            i += 1;
-        }
-        if i < bytes.len() && bytes[i].is_ascii_digit() {
-            let mut end = i;
-            while end < bytes.len() && bytes[end].is_ascii_digit() {
-                end += 1;
-            }
+        let i = skip_run(bytes, start + needle.len(), b" \t/_-");
+        if let Some(end) = digits_end(bytes, i) {
             return Some(line[start..end].to_string());
         }
         from = start + needle.len();
@@ -122,21 +231,30 @@ fn find_p2(line: &str) -> Option<String> {
     None
 }
 
-/// P3 — 로컬 작업 폴더 + 금지 하위 디렉토리. `temp/` 하위나 폴더 단독 언급은 통과.
+/// P3 — 로컬 작업 폴더 + 금지 하위 디렉토리. 대소문자·슬래시 개수로 회피되지 않는다.
 fn find_p3(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let dir = ws_dir();
     let mut from = 0;
-    while let Some(pos) = line[from..].find(WORKSPACE_DIR) {
+    while let Some(pos) = lower[from..].find(&dir) {
         let start = from + pos;
-        let after = &line[start + WORKSPACE_DIR.len()..];
-        if let Some(sub) = FORBIDDEN_SUBDIRS.iter().find(|s| after.starts_with(**s)) {
-            return Some(format!("{WORKSPACE_DIR}{sub}"));
+        from = start + dir.len();
+        let after = skip_run(bytes, from, b"/\\");
+        if after == from {
+            continue; // 폴더 이름 뒤에 경로 구분자가 없다 — 하위 인용이 아니다.
         }
-        from = start + WORKSPACE_DIR.len();
+        if let Some(sub) = FORBIDDEN_SUBDIRS
+            .iter()
+            .find(|s| lower[after..].starts_with(**s))
+        {
+            return Some(format!("{dir}/{sub}"));
+        }
     }
     None
 }
 
-/// P4 — 디자인 changelog 판정 slug(`YYYY-MM-DD-<소문자-slug>`).
+/// P4 — 디자인 changelog 판정 slug(`YYYY-MM-DD-<slug>`). 대소문자를 가리지 않는다.
 fn find_p4(line: &str) -> Option<String> {
     let bytes = line.as_bytes();
     let is_d = |i: usize| i < bytes.len() && bytes[i].is_ascii_digit();
@@ -159,10 +277,10 @@ fn find_p4(line: &str) -> Option<String> {
             continue;
         }
         let mut end = start + 11;
-        if !(end < bytes.len() && bytes[end].is_ascii_lowercase()) {
+        if !(end < bytes.len() && bytes[end].is_ascii_alphabetic()) {
             continue;
         }
-        while end < bytes.len() && (bytes[end].is_ascii_lowercase() || bytes[end] == b'-') {
+        while end < bytes.len() && (bytes[end].is_ascii_alphabetic() || bytes[end] == b'-') {
             end += 1;
         }
         return Some(line[start..end].to_string());
@@ -170,29 +288,30 @@ fn find_p4(line: &str) -> Option<String> {
     None
 }
 
-/// 앵커 슬러그 안의 소문자 번호(`todo-<숫자>`)를 찾는다. 슬러그 시작이거나 `-`
-/// 뒤에 와야 한다 — `todo-conductor` 는 뒤가 숫자가 아니라 걸리지 않는다.
+/// 앵커 슬러그 안의 번호(`todo-<숫자>`)를 찾는다. 슬러그 시작이거나 `-` 뒤에 와야
+/// 한다 — `todo-conductor` 는 뒤가 숫자가 아니라 걸리지 않는다. 호출부가 소문자로
+/// 낮춘 슬러그를 넘긴다.
 fn slug_todo_number(slug: &str) -> Option<String> {
     let bytes = slug.as_bytes();
+    let needle = "todo-";
     let mut from = 0;
-    while let Some(pos) = slug[from..].find("todo-") {
+    while let Some(pos) = slug[from..].find(needle) {
         let start = from + pos;
         // `start - 1` 이 멀티바이트 연속 바이트여도 `-`(ASCII) 와는 절대 같지 않다.
         let at_boundary = start == 0 || bytes[start - 1] == b'-';
-        let digits_start = start + "todo-".len();
-        let mut end = digits_start;
-        while end < bytes.len() && bytes[end].is_ascii_digit() {
-            end += 1;
+        let digits_start = skip_run(bytes, start + needle.len(), b"-");
+        from = start + needle.len();
+        if !at_boundary {
+            continue;
         }
-        if at_boundary && end > digits_start {
+        if let Some(end) = digits_end(bytes, digits_start) {
             return Some(slug[start..end].to_string());
         }
-        from = start + "todo-".len();
     }
     None
 }
 
-/// P5 — 마크다운 앵커(`#<슬러그>`) 안에 소문자로 굳은 번호.
+/// P5 — 마크다운 앵커(`#<슬러그>`) 안에 굳은 번호.
 fn find_p5(line: &str) -> Option<String> {
     let mut from = 0;
     while let Some(pos) = line[from..].find('#') {
@@ -203,7 +322,7 @@ fn find_p5(line: &str) -> Option<String> {
             .map(|i| start + 1 + i)
             .unwrap_or(line.len());
         let slug = &line[start + 1..end];
-        if let Some(hit) = slug_todo_number(slug) {
+        if let Some(hit) = slug_todo_number(&slug.to_ascii_lowercase()) {
             return Some(format!("#{slug} ({hit})"));
         }
         from = start + 1;
@@ -211,45 +330,122 @@ fn find_p5(line: &str) -> Option<String> {
     None
 }
 
-/// 스캔 대상 파일인지 — repo-relative 경로 기준.
-/// `.rs`(`src/` · `tests/` · `crates/*/src/` · `crates/*/tests/`) +
-/// `.toml`(루트 `Cargo.toml`/`deny.toml` · `crates/*/Cargo.toml` · `tasty-plugin.toml` ·
-/// `src/**/*.toml`) + `docs/**/*.md` + 어디에 있든 `CHANGELOG.md`.
-fn is_scan_target(rel: &str) -> bool {
-    let name = rel.rsplit('/').next().unwrap_or("");
-    if name == "CHANGELOG.md" || name == "tasty-plugin.toml" {
+/// 이름 직전 문맥이 사용자 홈을 가리키는가.
+///
+/// **줄 전체가 아니라 그 자리 직전만** 본다. 줄 전체를 훑으면 정당한 홈 경로가 한 번
+/// 나오는 줄에 섞인 진짜 레포 로컬 참조까지 통과한다. `at` 은 선행 `.` 의 인덱스다.
+fn home_context_before(lower: &str, at: usize) -> bool {
+    let head = &lower[..at];
+    // ① 경로 접두가 바로 앞에 붙은 형태 — 구분자는 **런으로** 벗긴다(소스에서
+    //    이스케이프된 `\\` 나 중복 `/` 로 회피되지 않게).
+    let trimmed = head.trim_end_matches(['/', '\\']);
+    if HOME_PREFIXES.iter().any(|p| trimmed.ends_with(p)) {
         return true;
     }
-    if rel.starts_with("docs/") && rel.ends_with(".md") {
-        return true;
-    }
-    if rel == "Cargo.toml" || rel == "deny.toml" {
-        return true;
-    }
-    let crate_sub = |suffix: &str| -> bool {
-        rel.strip_prefix("crates/")
-            .and_then(|rest| rest.split_once('/'))
-            .is_some_and(|(_name, after)| {
-                if suffix == "Cargo.toml" {
-                    after == suffix
-                } else {
-                    after.starts_with(suffix)
-                }
-            })
-    };
-    if rel.ends_with(".rs") {
-        return rel.starts_with("src/")
-            || rel.starts_with("tests/")
-            || crate_sub("src/")
-            || crate_sub("tests/");
-    }
-    if rel.ends_with(".toml") {
-        return rel.starts_with("src/") || crate_sub("Cargo.toml");
+    // ② 코드/산문 문맥이 직전 짧은 창 안에 낱말로 있는 형태.
+    let window = head
+        .char_indices()
+        .rev()
+        .take(HOME_WINDOW)
+        .last()
+        .map_or(head, |(i, _)| &head[i..]);
+    HOME_NEARBY.iter().any(|a| contains_word(window, a))
+}
+
+/// `hay` 안에 `word` 가 **낱말로** 있는가 — 앞뒤가 영숫자면 다른 낱말의 일부다.
+fn contains_word(hay: &str, word: &str) -> bool {
+    let bytes = hay.as_bytes();
+    let mut from = 0;
+    while let Some(pos) = hay[from..].find(word) {
+        let start = from + pos;
+        from = start + word.len();
+        let before_ok = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+        let after_ok = bytes.get(from).is_none_or(|c| !c.is_ascii_alphanumeric());
+        if before_ok && after_ok {
+            return true;
+        }
     }
     false
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. PRUNE_DIRS 는 가지치기.
+/// P6 — 레포 로컬 폴더 언급. 하위 경로가 무엇이든, 아예 없든 잡는다.
+///
+/// P3 는 네 개 하위 디렉토리가 뒤따를 때만 잡았다. ADR-0105 가 폴더 이름 단독 언급
+/// 까지 금지로 확정했으므로 그 범위를 여기서 강제한다.
+fn find_p6(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    for (name, needs_dot) in local_dirs() {
+        let mut from = 0;
+        while let Some(pos) = lower[from..].find(&name) {
+            let start = from + pos;
+            from = start + name.len();
+            let dotted = start > 0 && bytes[start - 1] == b'.';
+            if needs_dot && !dotted {
+                continue; // 홈에도 있는 이름은 경로 표기일 때만 대상이다.
+            }
+            // 이름(또는 선행 `.`) 앞이 식별자 문자면 더 긴 이름의 일부다
+            // (reverse-DNS plugin id, `tasty-plugin-<이름>` 등). 경로 시작이 아니다.
+            let prev = if dotted {
+                start.checked_sub(2)
+            } else {
+                start.checked_sub(1)
+            };
+            if let Some(p) = prev {
+                let c = bytes[p];
+                if c.is_ascii_alphanumeric() || c == b'_' || c == b'-' {
+                    continue;
+                }
+            }
+            // 뒤가 식별자 문자면 다른 이름이다. 긴 이름을 먼저 보므로 로컬 작업
+            // 폴더는 이 검사에 걸리기 전에 잡힌다.
+            if let Some(&c) = bytes.get(from)
+                && (c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+            {
+                continue;
+            }
+            if needs_dot && home_context_before(&lower, start - 1) {
+                continue;
+            }
+            return Some(if dotted {
+                format!(".{name}")
+            } else {
+                name.clone()
+            });
+        }
+    }
+    None
+}
+
+/// 스캔에서 뺄 확장자 — 바이너리라 인용을 담을 수 없는 것. `read_to_string` 이
+/// 비-UTF8 을 걸러 주지만, 여기서 먼저 쳐내 순회 비용을 줄인다.
+const SKIP_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "icns", "pdf", "ttf", "otf", "woff", "woff2", "zip",
+    "gz", "xz", "tar", "wasm", "bin", "so", "dylib", "dll", "exe", "sig",
+];
+
+/// 스캔 대상 파일인지 — repo-relative 경로 기준.
+///
+/// **denylist 전수 방식**: 순회가 닿은 파일은 기본적으로 전부 대상이고 바이너리
+/// 확장자만 뺀다. 확장자가 없는 파일(`Justfile` · 훅 스크립트)도 대상이다.
+/// 근거는 모듈 주석 "스캔 대상 정의" 참조.
+fn is_scan_target(rel: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or("");
+    // 선행 `.` 은 확장자 구분자가 아니다 — dotfile 은 확장자 없음으로 본다.
+    let ext = name
+        .trim_start_matches('.')
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase());
+    match ext {
+        Some(e) => !SKIP_EXTS.contains(&e.as_str()),
+        None => true,
+    }
+}
+
+/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. `is_pruned` 는 가지치기.
+///
+/// 디렉토리를 읽지 못하면 **panic 한다.** 조용히 건너뛰면 가드가 도는 줄 알면서
+/// 실제로는 그 하위를 통째로 안 보는 상태가 되고, 그건 위양성보다 나쁘다.
 fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         let rel = rel_of(path, root);
@@ -258,14 +454,15 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         }
         return;
     }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(path)
+        .unwrap_or_else(|e| panic!("스캔 대상 디렉토리를 읽지 못했다: {} — {e}", path.display()));
+    for entry in entries {
+        let entry = entry
+            .unwrap_or_else(|e| panic!("디렉토리 항목을 읽지 못했다: {} — {e}", path.display()));
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if PRUNE_DIRS.contains(&name) {
+            if is_pruned(name) {
                 continue;
             }
         }
@@ -290,36 +487,280 @@ fn no_todo_file_citation() {
     let mut violations = Vec::new();
     for file in files {
         let rel = rel_of(&file, root);
-        if ALLOWLIST_FILES.contains(&rel.as_str()) {
-            continue;
-        }
+        let allowed: &[&str] = ALLOWLIST
+            .iter()
+            .find(|(f, _)| *f == rel)
+            .map_or(&[], |(_, pats)| *pats);
         let Ok(contents) = std::fs::read_to_string(&file) else {
             continue; // 비-UTF8 은 인용을 담을 수 없다.
         };
         for (i, line) in contents.lines().enumerate() {
-            let hit = find_p1(line)
-                .map(|m| ("P1 번호 인용", m))
-                .or_else(|| find_p2(line).map(|m| ("P2 conductor 번호 인용", m)))
-                .or_else(|| find_p3(line).map(|m| ("P3 경로 인용", m)))
-                .or_else(|| find_p4(line).map(|m| ("P4 디자인 changelog slug", m)))
-                .or_else(|| find_p5(line).map(|m| ("P5 앵커 슬러그 번호", m)));
-            if let Some((kind, matched)) = hit {
-                violations.push(format!("  {}:{} — {kind}: `{matched}`", rel, i + 1));
+            for (id, kind, find) in PATTERNS {
+                if allowed.contains(id) {
+                    continue;
+                }
+                if let Some(matched) = find(line) {
+                    violations.push(format!("  {}:{} — {id} {kind}: `{matched}`", rel, i + 1));
+                }
             }
         }
     }
 
     assert!(
         violations.is_empty(),
-        "커밋되는 파일이 git 에 올라가지 않는 로컬 작업 문서(로컬 작업 폴더의 todo / \
-         todo-conductor / plans / conductor)나 디자인 changelog slug 를 인용했다 — 그 좌표는 \
-         clone 한 사람에게 존재한 적이 없고, 번호는 재사용되어 무관한 문서로 해석된다.\n\
+        "커밋되는 파일이 git 에 올라가지 않는 경로(로컬 작업 폴더 · 로컬 지침 폴더)나 \
+         그 안의 문서·디자인 changelog slug 를 인용했다 — 그 좌표는 clone 한 사람에게 \
+         존재한 적이 없고, 번호는 재사용되어 무관한 문서로 해석된다. 규칙 전문과 범위 밖 \
+         4 종은 `docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`.\n\
          대체 수단 3 가지 중 하나를 쓸 것: (1) 이유가 자명하면 번호 대신 이유를 직접 서술 \
          (2) 설계 결정이 크면 `docs/adr/` 에 ADR 을 쓰고 그 경로를 인용 \
          (3) 기능 동작 설명이면 `docs/`(dev-guide / features / plugins) 문서를 참조.\n\
          앵커(P5)면 제목에서 번호를 떼고 그 제목을 가리키던 참조도 함께 고칠 것 — \
          제목의 번호는 앵커로 굳어 링크·주석으로 퍼진다.\n\
-         금지 형태를 담는 것이 본질인 파일이면 ALLOWLIST_FILES 에 추가:\n{}",
+         P6 면 위치를 적지 말고 \"커밋되지 않는 로컬 전용 지침이 정한다\" 로 위임할 것.\n\
+         그 형태를 담는 것이 본질인 파일이면 ALLOWLIST 에 (경로, 허용 패턴) 으로 추가:\n{}",
         violations.join("\n")
     );
+}
+
+// ── 패턴 함수 단위 테스트 ────────────────────────────────────────────────
+//
+// 메인 스캔은 "지금 레포가 깨끗한가" 만 말해 준다. 패턴이 *무엇을 잡고 무엇을
+// 통과시키는지* 는 레포 상태와 무관하게 고정돼야 한다 — 특히 오탐 회피 쪽은
+// 레포에 그 형태가 남아 있지 않으면 메인 스캔이 영영 검증하지 못한다.
+
+/// 픽스처 조립 — 이 파일은 ALLOWLIST 면제가 없으므로, 금지 형태를 그대로 적으면
+/// 자기 스캔에 걸린다. 조각을 끊는 지점은 각 패턴의 **판정 지점**이라(구분자 앞,
+/// 폴더 이름 중간) 조립 결과는 리터럴과 같고 소스에는 그 형태가 남지 않는다.
+/// `concat!` 이라 런타임 비용도 없다.
+macro_rules! fx {
+    ($($p:literal),+ $(,)?) => { concat!($($p),+) };
+}
+
+#[test]
+fn p1_catches_numbered_todo_citation_only() {
+    assert_eq!(
+        find_p1(fx!("see TODO", " 40")),
+        Some(fx!("TODO", " 40").into())
+    );
+    assert_eq!(find_p1(fx!("(TODO", "18)")), Some(fx!("TODO", "18").into()));
+    assert_eq!(
+        find_p1(fx!("TODO", "-7 은 이미 닫혔다")),
+        Some(fx!("TODO", "-7").into())
+    );
+    // 공백 런 — 하나만 소비하면 공백 두 개로 회피된다.
+    assert_eq!(
+        find_p1(fx!("see TODO", "  40")),
+        Some(fx!("TODO", "  40").into())
+    );
+    assert_eq!(
+        find_p1(fx!("see TODO", " \t 40")),
+        Some(fx!("TODO", " \t 40").into())
+    );
+    assert_eq!(
+        find_p1(fx!("see TODO", " -40")),
+        Some(fx!("TODO", " -40").into())
+    );
+    // 번호 없는 평범한 할 일 표시는 대상이 아니다.
+    assert_eq!(find_p1("// TODO: refactor this later"), None);
+    assert_eq!(find_p1("TODOS 는 소문자 아님"), None);
+    // 임의 문장부호는 구분자로 보지 않는다 — 평범한 문장의 오탐을 막는다.
+    assert_eq!(find_p1("TODO: 40"), None);
+    assert_eq!(find_p1("TODO. 40"), None);
+    assert_eq!(find_p1("TODO #40"), None);
+    assert_eq!(find_p1("TODO_40"), None);
+    assert_eq!(find_p1("see todo 40"), None);
+}
+
+#[test]
+fn p2_catches_conductor_ticket_numbers() {
+    assert_eq!(
+        find_p2(fx!("todo-conductor", "/12 참조")),
+        Some(fx!("todo-conductor", "/12").into())
+    );
+    assert_eq!(
+        find_p2(fx!("TODO-CONDUCTOR", " 3")),
+        Some(fx!("TODO-CONDUCTOR", " 3").into())
+    );
+    // 구분자 런 — 개수로 회피되지 않는다.
+    assert_eq!(
+        find_p2(fx!("todo-conductor", "//12")),
+        Some(fx!("todo-conductor", "//12").into())
+    );
+    assert_eq!(
+        find_p2(fx!("todo-conductor", "  12")),
+        Some(fx!("todo-conductor", "  12").into())
+    );
+    // 번호가 없으면 P2 는 잡지 않는다(폴더 이름 단독 언급은 P6 소관).
+    assert_eq!(find_p2("todo-conductor 디렉토리"), None);
+    assert_eq!(find_p2("todo-conductor#12"), None);
+}
+
+#[test]
+fn p3_catches_workspace_subdir_paths() {
+    assert_eq!(
+        find_p3(fx!("claude", "-workspace/todo/3.md")),
+        Some(fx!("claude", "-workspace/todo").into())
+    );
+    // 대소문자·슬래시 개수로 회피되지 않는다.
+    assert_eq!(
+        find_p3(fx!("claude", "-workspace/Todo/3.md")),
+        Some(fx!("claude", "-workspace/todo").into())
+    );
+    assert_eq!(
+        find_p3(fx!("claude", "-workspace//todo/3.md")),
+        Some(fx!("claude", "-workspace/todo").into())
+    );
+    // 금지 하위가 아니면 P3 는 잡지 않는다(폴더 언급 자체는 P6 소관).
+    assert_eq!(find_p3(fx!("claude", "-workspace/temp/x.png")), None);
+}
+
+#[test]
+fn p4_catches_design_changelog_slug() {
+    assert_eq!(
+        find_p4(fx!("판정 slug 는 2026-07-03", "-spacing-offgrid 였다")),
+        Some(fx!("2026-07-03", "-spacing-offgrid").into())
+    );
+    // 대문자 표기로 회피되지 않는다.
+    assert_eq!(
+        find_p4(fx!("2026-07-03", "-Spacing-Offgrid")),
+        Some(fx!("2026-07-03", "-Spacing-Offgrid").into())
+    );
+    // 날짜만으로는 changelog slug 가 아니다.
+    assert_eq!(find_p4("Date: 2026-09-04"), None);
+    // 더 긴 숫자열의 중간은 연도가 아니다.
+    assert_eq!(find_p4("id 120260-07-03-x"), None);
+}
+
+#[test]
+fn p5_catches_anchor_slug_number() {
+    assert!(find_p5(fx!("[링크](x.md#a-todo", "-12-b)")).is_some());
+    // 대문자 앵커·하이픈 런으로 회피되지 않는다.
+    assert!(find_p5(fx!("[링크](x.md#a-TODO", "-12-b)")).is_some());
+    assert!(find_p5(fx!("[링크](x.md#a-todo", "--12)")).is_some());
+    // `todo-conductor` 는 뒤가 숫자가 아니라 앵커 번호가 아니다.
+    assert_eq!(find_p5("[링크](x.md#todo-conductor-notes)"), None);
+    assert_eq!(find_p5("[링크](x.md#todo12)"), None);
+    assert_eq!(find_p5("# 평범한 마크다운 제목"), None);
+}
+
+#[test]
+fn p6_catches_local_workspace_mentions() {
+    // 폴더 단독 언급 — P3 가 놓치던 형태.
+    assert_eq!(
+        find_p6(fx!("산출물은 .", "claude", "-workspace 아래")),
+        Some(fx!(".", "claude", "-workspace").into())
+    );
+    assert_eq!(
+        find_p6(fx!("스크린샷은 .", "claude", "-workspace/temp/ 에")),
+        Some(fx!(".", "claude", "-workspace").into())
+    );
+    // 선행 `.` 을 뺀 표기 — 로컬 작업 폴더는 홈에 없으므로 그래도 위반이다.
+    assert_eq!(
+        find_p6(fx!("claude", "-workspace/temp 에 둔다")),
+        Some(fx!("claude", "-workspace").into())
+    );
+    // 대문자 표기로 회피되지 않는다.
+    assert_eq!(
+        find_p6(fx!(".", "CLAUDE", "-WORKSPACE/temp")),
+        Some(fx!(".", "claude", "-workspace").into())
+    );
+    // 레포 로컬 지침 폴더 — 상대 표기 변형 포함.
+    assert_eq!(
+        find_p6(fx!("설정은 .", "claude", "/CLAUDE.md 가 정한다")),
+        Some(fx!(".", "claude").into())
+    );
+    assert_eq!(
+        find_p6(fx!("./.", "claude", "/x 를 읽는다")),
+        Some(fx!(".", "claude").into())
+    );
+    assert_eq!(
+        find_p6(fx!(r".\.", "claude", r"\x 를 읽는다")),
+        Some(fx!(".", "claude").into())
+    );
+    assert_eq!(
+        find_p6(fx!("폴더는 .", "claude", " 하나뿐")),
+        Some(fx!(".", "claude").into())
+    );
+}
+
+#[test]
+fn p6_home_exemption_is_adjacent_not_line_wide() {
+    // 사용자 홈의 런타임 경로 — ADR-0105 가 범위 밖으로 확정한 항목.
+    assert_eq!(find_p6("~/.claude/settings.json 을 머지한다"), None);
+    assert_eq!(find_p6("$HOME/.claude/projects 아래를 훑는다"), None);
+    assert_eq!(find_p6("%USERPROFILE%\\.claude\\settings.json"), None);
+    assert_eq!(find_p6("Ok(base.home_dir().join(\".claude\"))"), None);
+    assert_eq!(find_p6("아니면 홈의 `.claude/projects`."), None);
+    assert_eq!(
+        find_p6("$CLAUDE_CONFIG_DIR 미설정 시 .claude/projects"),
+        None
+    );
+    // **같은 줄 어딘가의 홈 표기로는 면제되지 않는다.** 줄 전체를 보면 정당한 홈
+    // 경로가 하나 있는 줄의 진짜 위반까지 통과한다.
+    assert_eq!(
+        find_p6(fx!("~/.tasty 와 .", "claude", "/CLAUDE.md 를 비교")),
+        Some(fx!(".", "claude").into())
+    );
+    assert_eq!(
+        find_p6(fx!("Homebrew 설치 후 .", "claude", "/CLAUDE.md 수정")),
+        Some(fx!(".", "claude").into())
+    );
+    assert_eq!(
+        find_p6(fx!(
+            "renderHome() 은 .",
+            "claude",
+            "/settings.json 을 읽는다"
+        )),
+        Some(fx!(".", "claude").into())
+    );
+    assert_eq!(
+        find_p6(fx!("홈 화면 설정은 .", "claude", "/CLAUDE.md 가 정한다")),
+        Some(fx!(".", "claude").into())
+    );
+}
+
+#[test]
+fn p6_allows_identifiers_and_build_outputs() {
+    // reverse-DNS plugin id — 경로가 아니다.
+    assert_eq!(find_p6("id = \"com.tasty.claude\""), None);
+    assert_eq!(find_p6("com.tasty.claude-design 은 제거됐다"), None);
+    // 빌드 산출물·생성물 경로 — 범위 밖.
+    assert_eq!(
+        find_p6("crates/tasty-plugin-claude/tasty-plugin.toml.sig"),
+        None
+    );
+    assert_eq!(find_p6("site/release.json 을 읽는다"), None);
+    assert_eq!(find_p6("target/release/tasty-plugin-claude"), None);
+}
+
+#[test]
+fn scan_target_covers_scripts_ci_and_root_docs() {
+    // 예전 화이트리스트가 통째로 놓치던 사각지대.
+    assert!(is_scan_target("scripts/bench/perf-10-surfaces.sh"));
+    assert!(is_scan_target("CLAUDE.md"));
+    assert!(is_scan_target("crates/tasty-design-tokens/README.md"));
+    assert!(is_scan_target(".github/workflows/test.yml"));
+    assert!(is_scan_target(".githooks/pre-commit"));
+    assert!(is_scan_target("Justfile"));
+    assert!(is_scan_target("site/content/help/troubleshooting.md"));
+    // 바이너리는 제외.
+    assert!(!is_scan_target("assets/icon.png"));
+    assert!(!is_scan_target(
+        "crates/tasty-plugin-claude/tasty-plugin.toml.sig"
+    ));
+}
+
+#[test]
+fn prunes_build_outputs_local_dirs_and_vendored_assets() {
+    assert!(is_pruned("target"));
+    assert!(is_pruned("node_modules"));
+    // vendored 서드파티 번들 — 산문 패턴으로 훑을 대상이 아니다.
+    assert!(is_pruned("assets"));
+    // gitignored 로컬 폴더(선행 `.`).
+    assert!(is_pruned(fx!(".", "claude")));
+    assert!(is_pruned(fx!(".", "claude", "-workspace")));
+    // 점 없는 같은 이름은 일반 디렉토리다.
+    assert!(!is_pruned(fx!("claude")));
+    assert!(!is_pruned("src"));
 }

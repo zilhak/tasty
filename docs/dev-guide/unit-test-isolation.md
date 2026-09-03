@@ -103,11 +103,10 @@ let result = longest_existing_selection_path("notes/에", Some(tmp.path()), fals
 assert_eq!(result, Some(tmp.path().join("notes")));
 ```
 
-이 규칙은 `tests/no_todo_file_citation.rs` 와도 맞물린다 — 로컬 작업 폴더 경로가 그 테스트가
-잡는 형태(폴더명 뒤에 `todo` · `todo-conductor` · `plans` · `conductor` 가 오는 경로 인용, P3)로
-소스에 남아 있으면 그 테스트가 잡으므로, 픽스처 때문에 allowlist 에 예외를 두지 않는다. 같은
-폴더라도 `temp/` 하위처럼 그 넷이 아닌 경로는 가드가 잡지 않는다 — 잡히지 않는다고 해서
-로컬 실존에 기대도 된다는 뜻이 아니며, 이 절의 규칙은 그런 경로에도 그대로 적용된다.
+이 규칙은 `tests/no_todo_file_citation.rs` 와도 맞물린다 — 로컬 작업 폴더를 언급하면 하위
+경로가 무엇이든, 아예 없든 그 테스트가 잡으므로(P6) 픽스처 때문에 allowlist 에 예외를 두지
+않는다. 금지 범위와 범위 밖 항목은
+[ADR-0105](../adr/0105-no-nongit-path-refs-in-tracked-sources.md) 가 정본이다.
 
 ## 5. 확인 방법
 

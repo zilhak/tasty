@@ -182,7 +182,7 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 - **설계 결정이 크면**: 커밋되는 [`docs/adr/`](docs/adr/) ADR을 작성하고 그 경로를 인용한다.
 - **기능 동작을 설명해야 하면**: 커밋되는 [`docs/`](docs/) 문서(예: `docs/dev-guide/`, `docs/features/`, `docs/plugins/`)를 참조하거나 신설해 그 경로를 인용한다.
 
-위 두 형태(TODO 파일 번호·디자인 changelog slug)의 금지는 `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다 — 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4) 네 형태를 모두 잡는다. 금지 형태를 담는 것이 본질인 파일(규칙 본문·테스트 픽스처 등)은 그 테스트의 `ALLOWLIST_FILES` 에 등록한다.
+상위 규칙과 위 두 형태를 함께 `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다 — 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4)·앵커 슬러그 번호(P5)·로컬 작업 폴더 언급(P6) 여섯 형태를 모두 잡는다. 스캔 대상은 레포 전체 파일이다(스크립트·CI 설정·루트 문서 포함) — 바이너리 확장자, 빌드 산출물, gitignored 로컬 폴더, vendored `assets/` 만 뺀다. 금지 형태를 담는 것이 본질인 파일(규칙 본문 등)은 그 테스트의 `ALLOWLIST` 에 **(경로, 허용 패턴)** 으로 등록한다 — 파일 통째가 아니라 패턴 단위로 면제해, 그 파일이 다른 형태의 위반을 새로 들이면 그건 잡히게 한다.
 
 로컬 작업을 추적할 목적 자체는 유효하다 — 로컬 작업 폴더에 번호 붙은 TODO 파일을 쓰는 관례는 그대로 유지한다(폴더 위치는 위 "임시 파일·계획 위치" 와 같이 로컬 전용 지침이 정한다). 다만 그 번호는 **작업 티켓**일 뿐 **영구 코드 근거 좌표**가 아니므로, 소스에 스며들게 하지 않는다.
 

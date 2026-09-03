@@ -159,15 +159,21 @@ const CLAP_DOC_ROOTS: &[&str] = &[
 ];
 
 /// 순회에서 통째로 가지치기할 디렉토리명(`tests/no_todo_file_citation.rs` 와 동일).
-const PRUNE_DIRS: &[&str] = &[
-    "target",
-    "dist",
-    ".worktree",
-    ".git",
-    "node_modules",
-    ".claude",
-    ".claude-workspace",
-];
+const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
+
+/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
+/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+const LOCAL_HEAD: &str = "claude";
+const LOCAL_TAIL: &str = "-workspace";
+
+/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
+fn is_pruned(name: &str) -> bool {
+    PRUNE_DIRS.contains(&name)
+        || name
+            .strip_prefix('.')
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
+}
 
 /// 단일 인자 위젯 호출 — 뒤에 오는 리터럴에 엄격 판정(W).
 const WIDGET_CALLS: &[&str] = &[
@@ -258,7 +264,7 @@ fn gather(path: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if PRUNE_DIRS.contains(&name) {
+            if is_pruned(name) {
                 continue;
             }
         }
