@@ -25,8 +25,11 @@ cargo run --manifest-path site/Cargo.toml
 # 출력 위치 지정
 cargo run --manifest-path site/Cargo.toml -- --out /tmp/preview
 
-# 깨진 상대 링크를 실패로 승격 (CI 가 쓰는 형태)
+# 깨진 상대 링크를 실패로 승격 (CI 가 쓰는 형태). stale 번역은 실패 사유가 아니다.
 cargo run --manifest-path site/Cargo.toml -- --strict
+
+# 번역 파일에 원본 해시 스탬프 (아래 "번역 모델")
+cargo run --manifest-path site/Cargo.toml -- --stamp docs/en/index.md
 
 # 로컬 확인
 python3 -m http.server 8899 --directory _site
@@ -38,12 +41,53 @@ python3 -m http.server 8899 --directory _site
 |------|------|
 | `/` | 영어 랜딩 |
 | `/ko/` | 한국어 랜딩 |
-| `/docs/**` | `docs/**.md` 를 1:1 로 전사한 문서 (한국어) |
-| `/assets/` | `style.css` · `site.js` · 로고 · `search-index.json` |
+| `/docs/**` | `docs/**.md` 를 1:1 로 전사한 문서 (한국어, canonical) |
+| `/en/docs/**` | 영어 문서 트리. `docs/en/**.md` 가 있으면 번역, 없으면 한국어 본문 + 배너 |
+| `/assets/` | `style.css` · `site.js` · 로고 · `search-index.json` · `search-index.en.json` |
 
-레퍼런스 문서는 한국어로만 존재한다. 랜딩만 두 언어로 작성하고, 문서 트리는
-한 벌만 발행한다 — 같은 내용을 두 경로로 중복 노출하지 않기 위해서다.
-영어 랜딩은 문서가 한국어라는 사실을 명시한다.
+## 번역 모델
+
+한국어(`docs/`)가 canonical 이고 영어(`docs/en/`)가 번역이다. 다른 다국어 문서
+프로젝트(Kubernetes · Vue · React 문서)와 같은 골격 — 방향만 반대다.
+
+- **경로 1:1** — `docs/en/<rel>` 이 `docs/<rel>` 을 그대로 미러한다.
+  `docs/features/terminal/index.md` 의 번역은 `docs/en/features/terminal/index.md`.
+- **폴백** — 번역이 없는 문서도 `/en/docs/` 에 발행된다. 한국어 본문 위에
+  "아직 번역되지 않았다" 배너가 붙는다. 따라서 영어 트리는 **항상 완전**하고,
+  번역이 채워지는 만큼 배너가 사라진다. 100% 를 기다릴 필요가 없다.
+- **스탬프** — 번역 파일 첫 줄에 원본의 내용 해시를 박는다:
+
+  ```
+  <!-- source-hash: 90acc4edaa45 -->
+  # Tasty Documentation
+  ```
+
+  원본이 바뀌어 해시가 달라지면 그 페이지에 "원문보다 오래됐다" 배너가 뜨고,
+  생성기가 `stale: docs/en/…` 목록을 출력한다. 스탬프가 없는 번역은 stale 로 본다.
+- **링크는 원본과 동일하게 쓴다.** 영어 페이지의 상대 링크는 *한국어 위치 기준*으로
+  해석된다. `docs/en/dev-guide/x.md` 에서 `../../CLAUDE.md` 라고 쓰면
+  (`docs/en/` 이 한 단계 깊은데도) 저장소 루트의 `CLAUDE.md` 로 간다. 번역자는
+  원본의 링크를 손대지 않고 그대로 둔다.
+- **고아 번역** — 대응하는 한국어 원본이 없는 `docs/en/` 파일은 경고를 내고
+  발행되지 않는다. 원본을 옮기거나 지웠으면 번역도 함께 옮기거나 지운다.
+
+### 번역 절차
+
+```bash
+# 1. 원본을 같은 상대경로에 번역해 쓴다 (링크는 그대로)
+$EDITOR docs/en/features/terminal/index.md
+
+# 2. 스탬프를 찍는다 (첫 줄에 삽입하거나, 이미 있으면 갱신)
+cargo run --manifest-path site/Cargo.toml -- --stamp docs/en/features/terminal/index.md
+
+# 3. 생성해서 stale/untranslated 집계를 확인한다
+cargo run --manifest-path site/Cargo.toml
+#   translations: 12/276 pages, 0 stale, 264 untranslated
+```
+
+원본을 고친 뒤에는 번역도 갱신하고 다시 `--stamp` 한다. 갱신 없이 스탬프만
+찍으면 stale 표시만 사라지고 내용은 어긋난 채 남으므로, `--stamp` 는 **번역을
+실제로 손본 직후에만** 실행한다.
 
 **모든 내부 링크는 상대경로다.** 프로젝트 페이지의 base path(`/tasty/`) 든
 커스텀 도메인이든 그대로 동작하며, `_site/` 를 로컬 파일로 열어도 깨지지 않는다.
@@ -61,9 +105,10 @@ python3 -m http.server 8899 --directory _site
 | 표 | 가로 스크롤 컨테이너로 감싼다 |
 | 코드 펜스 | syntect 로 스코프 클래스(`hl-*`) 부여 — 색은 CSS 가 정한다 |
 
-사이드바 카테고리와 순서는 `site/src/main.rs` 의 `CATEGORIES` 에 있다.
-`docs/` 최상위에 새 디렉토리를 만들면 이 배열에도 추가해야 하며, 빠뜨리면
-생성 중 `skipping uncategorised docs/…` 경고가 뜬다.
+사이드바 카테고리와 순서, 언어별 라벨은 `site/src/main.rs` 의 `CATEGORIES` 에
+있다. `docs/` 최상위에 새 디렉토리를 만들면 이 배열에도 추가해야 하며, 빠뜨리면
+생성 중 `skipping uncategorised docs/…` 경고가 뜬다. `docs/en/` 은 번역 트리라
+카테고리가 아니다.
 
 ## 테마
 

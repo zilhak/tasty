@@ -318,14 +318,14 @@ fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Stri
     }
 
     let resolved = normalize(&ctx.dir.join(path_part));
-    let on_disk = ctx.repo_root.join(&resolved);
     let escapes_repo = resolved.components().next() == Some(Component::ParentDir);
+    let exists = ctx.repo_root.join(&resolved).exists();
 
     let inside_docs = !escapes_repo && resolved.starts_with("docs");
     let is_markdown = path_part.ends_with(".md");
 
     if inside_docs && is_markdown {
-        if !on_disk.exists() {
+        if !exists {
             broken.push(dest.to_string());
         }
         let mut rewritten = path_part.trim_end_matches(".md").to_string();
@@ -338,7 +338,7 @@ fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Stri
     }
 
     // Leaves the docs tree (source files, CLAUDE.md, LICENSES/, ...) -> point at GitHub.
-    if !escapes_repo && !on_disk.exists() {
+    if !escapes_repo && !exists {
         broken.push(dest.to_string());
     }
     let mut url = format!(

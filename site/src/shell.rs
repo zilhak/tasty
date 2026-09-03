@@ -36,6 +36,10 @@ pub struct Strings {
     pub footer_plugins: &'static str,
     pub footer_cli: &'static str,
     pub footer_note: &'static str,
+    /// Translation-state banners (shown on the English docs tree only).
+    pub untranslated: &'static str,
+    pub stale: &'static str,
+    pub translate_cta: &'static str,
 }
 
 pub const KO: Strings = Strings {
@@ -68,6 +72,9 @@ pub const KO: Strings = Strings {
     footer_plugins: "플러그인",
     footer_cli: "CLI · IPC 레퍼런스",
     footer_note: "MIT 라이선스",
+    untranslated: "이 문서는 아직 번역되지 않았다. 한국어 원문을 표시한다.",
+    stale: "이 번역은 한국어 원문보다 오래됐다. 내용이 다를 수 있다.",
+    translate_cta: "원문 보기",
 };
 
 pub const EN: Strings = Strings {
@@ -100,6 +107,9 @@ pub const EN: Strings = Strings {
     footer_plugins: "Plugins",
     footer_cli: "CLI · IPC reference",
     footer_note: "MIT licensed",
+    untranslated: "This page has not been translated yet — showing the Korean original.",
+    stale: "This translation is older than the Korean source and may be out of date.",
+    translate_cta: "View the source",
 };
 
 pub struct Shell<'a> {
@@ -116,6 +126,10 @@ pub struct Shell<'a> {
     /// Where the KO / EN switch should point, relative to the site root.
     pub ko_href: String,
     pub en_href: String,
+    /// Docs tree this page belongs to, relative to the site root (`docs/` or `en/docs/`).
+    pub docs_prefix: &'a str,
+    /// Search index for that tree, relative to the site root.
+    pub search_index: &'a str,
 }
 
 pub fn document(shell: &Shell<'_>) -> String {
@@ -204,9 +218,9 @@ fn header(shell: &Shell<'_>) -> String {
     <span class="brand__version">v{version}</span>
   </a>
   <nav class="site-nav" aria-label="{nav_docs}">
-    <a href="{root}docs/index.html"{a_docs}>{nav_docs}</a>
-    <a href="{root}docs/features/index.html"{a_feat}>{nav_features}</a>
-    <a href="{root}docs/installation.html"{a_inst}>{nav_install}</a>
+    <a href="{root}{docs}index.html"{a_docs}>{nav_docs}</a>
+    <a href="{root}{docs}features/index.html"{a_feat}>{nav_features}</a>
+    <a href="{root}{docs}installation.html"{a_inst}>{nav_install}</a>
     <a href="{repo}/blob/main/CHANGELOG.md">{nav_changelog}</a>
   </nav>
   <div class="header-tools">
@@ -214,7 +228,7 @@ fn header(shell: &Shell<'_>) -> String {
       <label class="visually-hidden" for="site-search">{search_ph}</label>
       <input id="site-search" type="search" autocomplete="off" spellcheck="false"
              placeholder="{search_ph}"
-             data-index="{root}assets/search-index.json"
+             data-index="{root}{search_index}"
              data-base="{root}"
              data-empty-label="{search_empty}">
       <div class="search__results" role="listbox"></div>
@@ -234,6 +248,8 @@ fn header(shell: &Shell<'_>) -> String {
         icon_menu = ICON_MENU,
         landing = landing_href,
         root = root,
+        docs = shell.docs_prefix,
+        search_index = shell.search_index,
         version = crate::version(),
         nav_docs = html_escape(s.nav_docs),
         nav_features = html_escape(s.nav_features),
@@ -280,10 +296,10 @@ fn footer(shell: &Shell<'_>) -> String {
     <div>
       <h4>{h_docs}</h4>
       <ul>
-        <li><a href="{root}docs/index.html">{nav_docs}</a></li>
-        <li><a href="{root}docs/installation.html">{nav_install}</a></li>
-        <li><a href="{root}docs/features/index.html">{nav_features}</a></li>
-        <li><a href="{root}docs/reference/index.html">{cli}</a></li>
+        <li><a href="{root}{docs}index.html">{nav_docs}</a></li>
+        <li><a href="{root}{docs}installation.html">{nav_install}</a></li>
+        <li><a href="{root}{docs}features/index.html">{nav_features}</a></li>
+        <li><a href="{root}{docs}reference/index.html">{cli}</a></li>
       </ul>
     </div>
     <div>
@@ -298,8 +314,8 @@ fn footer(shell: &Shell<'_>) -> String {
     <div>
       <h4>{h_res}</h4>
       <ul>
-        <li><a href="{root}docs/architecture/index.html">{arch}</a></li>
-        <li><a href="{root}docs/plugins/index.html">{plugins}</a></li>
+        <li><a href="{root}{docs}architecture/index.html">{arch}</a></li>
+        <li><a href="{root}{docs}plugins/index.html">{plugins}</a></li>
         <li><a href="{repo}/blob/main/LICENSES">{license}</a></li>
         <li><a href="{repo}/blob/main/THIRD_PARTY_LICENSES.md">{third}</a></li>
       </ul>
@@ -312,6 +328,7 @@ fn footer(shell: &Shell<'_>) -> String {
 </footer>
 "##,
         root = root,
+        docs = shell.docs_prefix,
         blurb = html_escape(s.footer_blurb),
         h_docs = html_escape(s.footer_docs),
         nav_docs = html_escape(s.nav_docs),

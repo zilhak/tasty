@@ -631,6 +631,15 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   font-size: 14px;
 }
 .note strong:first-child { color: var(--yellow); }
+.note a { font-weight: 600; margin-left: var(--sp-1); }
+.note--untranslated {
+  border-left-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 7%, transparent);
+}
+.note--stale {
+  border-left-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 7%, transparent);
+}
 
 /* page footer nav */
 .page-nav {

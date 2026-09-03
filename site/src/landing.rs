@@ -92,57 +92,57 @@ const KO_COPY: Copy = Copy {
             "grid",
             "GPU 렌더링",
             "셀 단위 셰이더로 그린다. 표면을 10 개 이상 띄워도 prepare/draw 가 안정적이다.",
-            "docs/features/terminal/index.html",
+            "features/terminal/index.html",
         ),
         (
             "agents",
             "다중 에이전트 협업",
             "task DAG 와 barrier · semaphore · lease · reduce · rate-limit 프리미티브로 \
              병렬 작업을 조율한다.",
-            "docs/features/agent-collaboration/index.html",
+            "features/agent-collaboration/index.html",
         ),
         (
             "terminal",
             "헤드리스 PTY",
             "표면 없이 PTY 만 띄우고 exit code 를 받는다. 필요할 때 화면으로 승격한다.",
-            "docs/features/headless-pty/index.html",
+            "features/headless-pty/index.html",
         ),
         (
             "keyboard",
             "vi 복사 모드",
             "hjkl 이동, visual 선택, 검색까지 키보드만으로. 커서는 GPU 로 그린다.",
-            "docs/features/clipboard/index.html",
+            "features/clipboard/index.html",
         ),
         (
             "plug",
             "플러그인 SDK",
             "매니페스트 스키마와 권한 시스템을 갖춘 SDK. 번들 플러그인 8 종이 같은 규약으로 동작한다.",
-            "docs/features/plugin-system/index.html",
+            "features/plugin-system/index.html",
         ),
         (
             "link",
             "원격 attach",
             "이미 떠 있는 원격 tasty 의 워크스페이스를 로컬로 mirror 한다. \
              신뢰 경계는 SSH 에 위임한다.",
-            "docs/features/remote-attach/index.html",
+            "features/remote-attach/index.html",
         ),
         (
             "parse",
             "출력 구조화",
             "셸 프롬프트 경계를 인식해 \"이 명령의 출력\" 만 정확히 떼어낸다.",
-            "docs/features/terminal-output/index.html",
+            "features/terminal-output/index.html",
         ),
         (
             "gauge",
             "토큰 비용 상한",
             "사용량을 집계하고 상한을 넘으면 자동으로 차단한다.",
-            "docs/features/telemetry/index.html",
+            "features/telemetry/index.html",
         ),
         (
             "palette",
             "테마",
             "TOML 로 직접 만든다. 4px 그리드와 14px 폰트 상한 위에 올린 토큰 시스템.",
-            "docs/features/themes/index.html",
+            "features/themes/index.html",
         ),
     ],
 
@@ -225,60 +225,60 @@ const EN_COPY: Copy = Copy {
             "grid",
             "GPU rendering",
             "Cell-based shaders. Prepare and draw stay stable past ten concurrent surfaces.",
-            "docs/features/terminal/index.html",
+            "features/terminal/index.html",
         ),
         (
             "agents",
             "Multi-agent collaboration",
             "A task DAG plus barrier, semaphore, lease, reduce, and rate-limit primitives \
              coordinate parallel work.",
-            "docs/features/agent-collaboration/index.html",
+            "features/agent-collaboration/index.html",
         ),
         (
             "terminal",
             "Headless PTY",
             "Run a PTY with no surface and collect its exit code — promote it to a visible \
              surface when you need one.",
-            "docs/features/headless-pty/index.html",
+            "features/headless-pty/index.html",
         ),
         (
             "keyboard",
             "vi copy mode",
             "hjkl movement, visual selection, and search from the keyboard alone, with a \
              GPU-drawn cursor.",
-            "docs/features/clipboard/index.html",
+            "features/clipboard/index.html",
         ),
         (
             "plug",
             "Plugin SDK",
             "A manifest schema and a permission system. The eight bundled plugins run on the \
              same contract yours would.",
-            "docs/features/plugin-system/index.html",
+            "features/plugin-system/index.html",
         ),
         (
             "link",
             "Remote attach",
             "Mirror a workspace from a tasty instance already running elsewhere. \
              The trust boundary is SSH.",
-            "docs/features/remote-attach/index.html",
+            "features/remote-attach/index.html",
         ),
         (
             "parse",
             "Structured output",
             "Recognises shell prompt boundaries, so you can capture exactly one command's output.",
-            "docs/features/terminal-output/index.html",
+            "features/terminal-output/index.html",
         ),
         (
             "gauge",
             "Token cost caps",
             "Aggregates agent usage and blocks automatically once a cost cap is exceeded.",
-            "docs/features/telemetry/index.html",
+            "features/telemetry/index.html",
         ),
         (
             "palette",
             "Themes",
             "Written as TOML, on a token system built over a 4px grid and a 14px type ceiling.",
-            "docs/features/themes/index.html",
+            "features/themes/index.html",
         ),
     ],
 
@@ -306,10 +306,10 @@ const EN_COPY: Copy = Copy {
     cta_docs: "Documentation index",
     cta_source: "Browse the source",
 
-    docs_language_note: "The reference documentation is written in Korean.",
+    docs_language_note: "The reference docs are being translated from Korean; untranslated pages show the original with a notice.",
 };
 
-pub fn render(strings: &Strings, root: &str) -> String {
+pub fn render(strings: &Strings, root: &str, docs: &str) -> String {
     let copy = if strings.lang == "ko" {
         &KO_COPY
     } else {
@@ -324,12 +324,12 @@ pub fn render(strings: &Strings, root: &str) -> String {
 {platform}
 {cta}
 </main>"##,
-        hero = hero(copy, strings, root),
+        hero = hero(copy, strings, root, docs),
         why = why(copy),
-        features = features(copy, root),
+        features = features(copy, root, docs),
         agents = agents(copy, strings),
         platform = platform(copy),
-        cta = cta_band(copy, root),
+        cta = cta_band(copy, root, docs),
     );
 
     shell::document(&Shell {
@@ -341,6 +341,12 @@ pub fn render(strings: &Strings, root: &str) -> String {
         active: "",
         ko_href: "ko/index.html".to_string(),
         en_href: "index.html".to_string(),
+        docs_prefix: docs,
+        search_index: if strings.lang == "en" {
+            "assets/search-index.en.json"
+        } else {
+            "assets/search-index.json"
+        },
     })
 }
 
@@ -348,7 +354,7 @@ fn strip_emphasis(s: &str) -> String {
     s.replace('*', "")
 }
 
-fn hero(copy: &Copy, strings: &Strings, root: &str) -> String {
+fn hero(copy: &Copy, strings: &Strings, root: &str, docs: &str) -> String {
     format!(
         r##"<section class="hero">
   <div>
@@ -356,8 +362,8 @@ fn hero(copy: &Copy, strings: &Strings, root: &str) -> String {
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
     <p class="hero__lede">{lede}</p>
     <div class="cta-row">
-      <a class="btn btn--primary" href="{root}docs/installation.html">{primary}</a>
-      <a class="btn btn--ghost" href="{root}docs/index.html">{secondary}</a>
+      <a class="btn btn--primary" href="{root}{docs}installation.html">{primary}</a>
+      <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
     <div class="install-line">
@@ -375,6 +381,7 @@ fn hero(copy: &Copy, strings: &Strings, root: &str) -> String {
         tail = html_escape(copy.title_tail),
         lede = html_escape(&strip_emphasis(copy.lede)),
         root = root,
+        docs = docs,
         primary = html_escape(copy.cta_primary),
         secondary = html_escape(copy.cta_secondary),
         repo = REPO,
@@ -468,19 +475,20 @@ fn why(copy: &Copy) -> String {
     )
 }
 
-fn features(copy: &Copy, root: &str) -> String {
+fn features(copy: &Copy, root: &str, docs: &str) -> String {
     let cards = copy
         .cards
         .iter()
         .map(|(icon, title, body, href)| {
             format!(
-                r##"<a class="card" href="{root}{href}">
+                r##"<a class="card" href="{root}{docs}{href}">
   <span class="card__icon">{icon}</span>
   <h3>{title}</h3>
   <p>{body}</p>
   <span class="card__more">→</span>
 </a>"##,
                 root = root,
+                docs = docs,
                 href = href,
                 icon = icon_svg(icon),
                 title = html_escape(title),
@@ -586,7 +594,7 @@ fn platform(copy: &Copy) -> String {
     )
 }
 
-fn cta_band(copy: &Copy, root: &str) -> String {
+fn cta_band(copy: &Copy, root: &str, docs: &str) -> String {
     let note = if copy.docs_language_note.is_empty() {
         String::new()
     } else {
@@ -600,7 +608,7 @@ fn cta_band(copy: &Copy, root: &str) -> String {
   <h2>{title}</h2>
   <p>{body}</p>
   <div class="cta-row">
-    <a class="btn btn--primary" href="{root}docs/index.html">{docs}</a>
+    <a class="btn btn--primary" href="{root}{docs}index.html">{docs_label}</a>
     <a class="btn btn--ghost" href="{repo}">{source}</a>
   </div>
   {note}
@@ -608,7 +616,8 @@ fn cta_band(copy: &Copy, root: &str) -> String {
         title = html_escape(copy.cta_title),
         body = html_escape(copy.cta_body),
         root = root,
-        docs = html_escape(copy.cta_docs),
+        docs = docs,
+        docs_label = html_escape(copy.cta_docs),
         repo = REPO,
         source = html_escape(copy.cta_source),
         note = note,
