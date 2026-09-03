@@ -203,7 +203,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let release = load_release(site_dir);
     match &release {
         Some(r) => println!("release: {} ({} assets)", r.tag, r.assets.len()),
-        None => println!("release: none (site/release.json missing) — downloads link to the releases page"),
+        None => println!(
+            "release: none (site/release.json missing) — downloads link to the releases page"
+        ),
     }
     if RELEASE.set(release).is_err() {
         eprintln!("warning: release was already set");

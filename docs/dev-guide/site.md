@@ -16,6 +16,12 @@ workspace member 로 두면 그 의존성이 `cargo build` / `cargo test --works
 따라서 `cargo build --workspace` · `cargo clippy --workspace` · `cargo test --workspace`
 는 `site/` 를 **보지 않는다.** 생성기를 만질 때는 `--manifest-path` 를 명시한다.
 
+루트 `cargo fmt --check` 도 마찬가지다. 포맷 검사는
+`cargo fmt --check --manifest-path site/Cargo.toml` 로 따로 돌리며, pre-commit 훅(A.2)이
+`site/` 의 `.rs` 가 staged 됐을 때 이 명령을 자동 실행해 위반이 조용히 쌓이지 않게 한다.
+CI 워크플로에는 본체를 포함해 rustfmt 게이트가 없으므로 `site/` 만 CI 에서 검사하지
+않는다 — 본체에 fmt 게이트가 생기면 이 manifest 도 같은 스텝에 넣는다.
+
 ## 빌드
 
 ```bash
@@ -30,6 +36,10 @@ cargo run --manifest-path site/Cargo.toml -- --strict
 
 # 번역 파일에 원본 해시 스탬프 (아래 "번역 모델")
 cargo run --manifest-path site/Cargo.toml -- --stamp docs/en/index.md
+
+# 포맷·컴파일 검사 (루트 cargo fmt / cargo check 는 site/ 를 보지 않는다)
+cargo fmt --check --manifest-path site/Cargo.toml
+cargo check --manifest-path site/Cargo.toml
 
 # 로컬 확인
 python3 -m http.server 8899 --directory _site

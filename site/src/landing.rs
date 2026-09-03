@@ -411,7 +411,11 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         releases = releases_url(),
         dl_for = html_escape(copy.dl_for),
         dl_all = html_escape(copy.dl_all),
-        release_tag = html_escape(crate::release().map(|r| r.tag.as_str()).unwrap_or("Releases")),
+        release_tag = html_escape(
+            crate::release()
+                .map(|r| r.tag.as_str())
+                .unwrap_or("Releases")
+        ),
         primary_data = primary_data_attrs(),
         cards = download_cards(),
         mock = mock(root),
@@ -499,7 +503,9 @@ fn mock(root: &str) -> String {
         settings = glyph(
             r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>"#
         ),
-        terminal = glyph(r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#),
+        terminal = glyph(
+            r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#
+        ),
         markdown = glyph(
             r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9l2.5 3L12 9v6M16 9v4m0 0 2-2m-2 2-2-2"/>"#
         ),
