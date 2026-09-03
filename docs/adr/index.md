@@ -103,3 +103,4 @@
 | 0090 | [e2e 테스트 격리 단위는 프로세스가 아니라 workspace 다](0090-test-isolation-by-workspace-not-process.md) | Accepted | 2026-08-30 | testing, e2e, harness, isolation, workspace, attach, ci |
 | 0091 | [GPU 호출 행(hang)은 관측 워치독으로만 다룬다 — 렌더 스레드 분리는 채택하지 않는다](0091-render-stall-watchdog-observation-only.md) | Accepted | 2026-08-30 | gpu, wgpu, winit, event-loop, hang, watchdog, diagnostics, crash-report, render-thread |
 | 0092 | [공유 로그 파일은 host 프로세스만 연다 — CLI 클라이언트는 stderr 전용](0092-file-log-host-process-only.md) | Accepted | 2026-08-30 | logging, tracing, diagnostics, cli, boot, crash-report |
+| 0093 | [에이전트 응답 중계는 화면이 아니라 transcript JSONL 을 읽고, at-least-once 로 전달한다](0093-agent-response-relay-reads-transcript-jsonl.md) | Accepted | 2026-09-02 | agent-stream, plugin, transcript, tail, relay, at-least-once, claude-plugin, focus-independence |

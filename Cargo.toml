@@ -486,6 +486,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tasty-output]
 opt-level = 3
+[profile.dev.package.tasty-plugin-agent-stream]
+opt-level = 3
 [profile.dev.package.tasty-plugin-claude]
 opt-level = 3
 [profile.dev.package.tasty-plugin-clipboard-viewer]

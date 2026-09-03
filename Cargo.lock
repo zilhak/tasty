@@ -5958,6 +5958,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-plugin-agent-stream"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "directories",
+ "serde_json",
+ "tasty-plugin-sdk",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "tasty-plugin-claude"
 version = "0.1.50"
 dependencies = [

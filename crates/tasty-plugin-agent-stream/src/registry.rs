@@ -1,0 +1,758 @@
+//! watch 레지스트리 + 수집 이벤트 버퍼 + 재시작 복구용 영속화.
+//!
+//! ## 전달 보장: at-least-once (누락보다 중복)
+//!
+//! SDK 는 healthcheck 무응답 시 plugin 프로세스를 **강제 재시작**한다. 재시작하면
+//! 메모리 상태가 통째로 사라지므로, watch 대상과 tail offset 을 디스크에 남겨 두었다가
+//! 복구한다(`TASTY_PLUGIN_DATA_DIR/watches.json`).
+//!
+//! 복구 시 두 갈래가 있다:
+//!
+//! - **누락을 택하면** 재시작 시점의 파일 끝에서 다시 시작한다 → 죽어 있던 동안 쓰인
+//!   응답이 영원히 사라진다. 중계 파이프라인에서 이건 조용한 데이터 손실이다.
+//! - **중복을 택하면** 마지막으로 영속화한 offset 에서 재개한다 → 마지막 flush 이후
+//!   이미 방출했던 레코드를 다시 읽을 수 있다.
+//!
+//! **중복을 택한다.** 소비자는 이벤트의 `record_uuid` 로 중복을 접을 수 있지만 잃어버린
+//! 응답은 복구할 수 없기 때문이다. 프로세스가 살아 있는 동안의 중복(파일 재동기화 등)은
+//! 아래 [`DedupeCache`] 가 흡수하고, 재시작을 건너뛴 중복만 소비자에게 노출된다.
+
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+
+use serde_json::{Value, json};
+
+use crate::record::{REASON_REWATCHED, REASON_SESSION_ENDED, StreamEvent};
+use crate::tail::TailState;
+
+/// 이벤트 버퍼 상한. 넘치면 가장 오래된 것부터 버리고 `dropped` 로 알린다.
+const EVENT_BUFFER_CAP: usize = 4096;
+
+/// 한 watch 가 기억하는 최근 레코드 uuid 개수. 파일 재동기화가 되돌아가 읽는 범위를
+/// 넉넉히 덮을 만큼만 있으면 된다.
+const DEDUPE_CAP: usize = 4096;
+
+/// 영속 스냅샷 포맷 버전. 형식이 바뀌면 올려서 옛 파일을 무시한다.
+const SNAPSHOT_VERSION: u64 = 1;
+
+/// 최근 본 레코드 uuid 를 유한 개수만 기억하는 FIFO 집합.
+#[derive(Debug, Default)]
+struct DedupeCache {
+    seen: HashSet<String>,
+    order: VecDeque<String>,
+}
+
+impl DedupeCache {
+    /// 처음 보는 uuid 면 기록하고 `true`. 이미 본 uuid 면 `false`.
+    fn insert(&mut self, uuid: &str) -> bool {
+        if !self.seen.insert(uuid.to_string()) {
+            return false;
+        }
+        self.order.push_back(uuid.to_string());
+        if self.order.len() > DEDUPE_CAP
+            && let Some(evicted) = self.order.pop_front()
+        {
+            self.seen.remove(&evicted);
+        }
+        true
+    }
+}
+
+/// tail 중인 대상 하나.
+#[derive(Debug)]
+pub struct Watch {
+    pub surface_id: u32,
+    pub session_id: String,
+    pub transcript: PathBuf,
+    /// tail 진행 상태. pump 가 파일 I/O 동안 레지스트리 락 **밖으로 꺼내가면** 잠시
+    /// `None` 이다([`StreamRegistry::check_out`]).
+    tail: Option<TailState>,
+    /// 마지막으로 관측된 읽기 위치. `tail` 이 꺼내져 있는 동안에도 `list`/스냅샷이
+    /// 참조해야 하므로 별도로 들고 있는다.
+    offset: u64,
+    /// 대상(세션/경로/tail)이 바뀔 때마다 레지스트리가 새로 발급하는 전역 유일 번호.
+    /// 꺼내간 tail 을 되돌릴 때 "그 사이 대상이 바뀌지 않았는가" 를 판정한다.
+    generation: u64,
+    dedupe: DedupeCache,
+}
+
+impl Watch {
+    /// 레코드 uuid 기준 중복 판정. uuid 가 없는 레코드는 중복 제거 대상이 아니다
+    /// (식별자가 없어 같음을 주장할 수 없다 — 통과시킨다).
+    pub fn accept_record(&mut self, uuid: Option<&str>) -> bool {
+        match uuid {
+            Some(u) => self.dedupe.insert(u),
+            None => true,
+        }
+    }
+
+    /// 마지막으로 관측된 읽기 위치.
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    fn to_json(&self, status: &str) -> Value {
+        json!({
+            "surface_id": self.surface_id,
+            "session_id": self.session_id,
+            "transcript": self.transcript.to_string_lossy(),
+            "offset": self.offset,
+            "status": status,
+        })
+    }
+}
+
+/// 레지스트리 락 **밖으로** 꺼낸 tail 작업 단위.
+///
+/// 파일 I/O(최대 4 MiB read)를 락 안에서 하면 IPC 핸들러가 그 락을 기다리게 되고,
+/// SDK 가 ping 을 worker(dispatch) 스레드에서 응답하므로 healthcheck 응답까지 함께
+/// 밀린다 — `crate::pump` 모듈 주석이 "dispatch 에서 파일 I/O 금지" 로 세운 불변식이
+/// 락을 통해 되살아나는 셈이다. 그래서 I/O 동안에는 tail 상태만 들고 나간다.
+#[derive(Debug)]
+pub struct TailCheckout {
+    pub surface_id: u32,
+    pub session_id: String,
+    pub transcript: PathBuf,
+    pub tail: TailState,
+    generation: u64,
+}
+
+/// 버퍼에 쌓인 이벤트 하나 — 전역 단조 증가 `seq` 로 커서를 만든다.
+#[derive(Debug)]
+struct BufferedEvent {
+    seq: u64,
+    surface_id: u32,
+    session_id: String,
+    event: StreamEvent,
+}
+
+impl BufferedEvent {
+    fn to_json(&self) -> Value {
+        let mut value = self.event.to_json();
+        let map = value.as_object_mut().expect("StreamEvent::to_json object");
+        map.insert("seq".into(), Value::from(self.seq));
+        map.insert("surface_id".into(), Value::from(self.surface_id));
+        map.insert("session_id".into(), Value::from(self.session_id.clone()));
+        value
+    }
+}
+
+/// plugin 전체의 스트림 상태. IPC 핸들러(worker 스레드)와 tail 루프가 공유한다.
+#[derive(Debug, Default)]
+pub struct StreamRegistry {
+    watches: Vec<Watch>,
+    events: VecDeque<BufferedEvent>,
+    next_seq: u64,
+    dropped: u64,
+    /// 스냅샷 저장 위치. `TASTY_PLUGIN_DATA_DIR` 미주입 시 `None` — 영속화를 건너뛴다
+    /// (조용히 다른 경로에 쓰지 않는다).
+    snapshot_path: Option<PathBuf>,
+    /// 마지막 저장 이후 offset/대상이 바뀌었는가.
+    dirty: bool,
+    /// [`Watch::generation`] 발급기. 재사용되지 않아야 꺼내간 tail 의 되돌리기 판정이
+    /// 정확하다(0 은 "아직 발급 안 됨" 이므로 실제 발급은 1 부터).
+    next_generation: u64,
+}
+
+impl StreamRegistry {
+    pub fn new(data_dir: Option<&Path>) -> Self {
+        Self {
+            snapshot_path: data_dir.map(|d| d.join("watches.json")),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub fn is_watched(&self, surface_id: u32) -> bool {
+        self.watches.iter().any(|w| w.surface_id == surface_id)
+    }
+
+    /// 대상을 등록한다. 이미 있으면 교체하고 `true` 를 돌려준다.
+    ///
+    /// 교체 시 **이전 등록의 턴을 닫는다**(`stream:rewatched`). unwatch·세션 교체·surface
+    /// 소멸이 전부 턴을 닫는데 이 경로만 조용히 갈아치우면, 이전 등록을 보고 있던 소비자가
+    /// 끝나지 않는 턴을 영원히 기다린다.
+    pub fn insert(&mut self, mut watch: Watch) -> bool {
+        self.next_generation += 1;
+        watch.generation = self.next_generation;
+        let replaced = match self
+            .watches
+            .iter()
+            .position(|w| w.surface_id == watch.surface_id)
+        {
+            Some(pos) => {
+                let previous = self.watches.remove(pos);
+                self.push_event(
+                    previous.surface_id,
+                    &previous.session_id,
+                    StreamEvent::turn_end(REASON_REWATCHED),
+                );
+                true
+            }
+            None => false,
+        };
+        self.watches.push(watch);
+        self.watches.sort_by_key(|w| w.surface_id);
+        self.dirty = true;
+        replaced
+    }
+
+    /// tail 상태를 락 밖으로 꺼낸다 — 파일 I/O 를 레지스트리 락 안에서 하지 않기 위한 것.
+    /// 대상이 없거나 이미 꺼내져 있으면 `None`.
+    pub fn check_out(&mut self, surface_id: u32) -> Option<TailCheckout> {
+        let watch = self
+            .watches
+            .iter_mut()
+            .find(|w| w.surface_id == surface_id)?;
+        let tail = watch.tail.take()?;
+        Some(TailCheckout {
+            surface_id,
+            session_id: watch.session_id.clone(),
+            transcript: watch.transcript.clone(),
+            generation: watch.generation,
+            tail,
+        })
+    }
+
+    /// 꺼내간 tail 을 되돌린다. 그 사이 대상이 바뀌었으면(unwatch · 세션 교체 · 재-watch)
+    /// 되돌리지 않고 버린다 — 그 tail 은 더 이상 존재하지 않는 대상의 진행 상태다.
+    /// 되돌리는 데 성공하면 `true`.
+    pub fn check_in(&mut self, checkout: TailCheckout) -> bool {
+        let Some(watch) = self
+            .watches
+            .iter_mut()
+            .find(|w| w.surface_id == checkout.surface_id)
+        else {
+            return false;
+        };
+        if watch.generation != checkout.generation {
+            return false;
+        }
+        watch.offset = checkout.tail.offset();
+        watch.tail = Some(checkout.tail);
+        true
+    }
+
+    /// 미해결이던 transcript 경로를 확정한다. `expect_session` 이 지금 대상의 세션과
+    /// 다르면(그 사이 세션이 바뀌었으면) 아무 것도 하지 않는다. 반영했으면 `true`.
+    pub fn set_transcript(
+        &mut self,
+        surface_id: u32,
+        expect_session: &str,
+        transcript: PathBuf,
+    ) -> bool {
+        self.next_generation += 1;
+        let generation = self.next_generation;
+        let Some(watch) = self.watches.iter_mut().find(|w| w.surface_id == surface_id) else {
+            return false;
+        };
+        if watch.session_id != expect_session || watch.transcript == transcript {
+            return false;
+        }
+        watch.transcript = transcript;
+        // 새로 찾은 파일은 처음부터 읽는다 — 이 세션의 내용 전부가 대상이다.
+        watch.tail = Some(TailState::resume_at(&watch.transcript, 0));
+        watch.offset = 0;
+        watch.generation = generation;
+        self.dirty = true;
+        true
+    }
+
+    /// 대상을 해제하고 종료 이벤트를 남긴다. 등록돼 있지 않았으면 `false`.
+    pub fn remove(&mut self, surface_id: u32, reason: &str) -> bool {
+        let Some(pos) = self.watches.iter().position(|w| w.surface_id == surface_id) else {
+            return false;
+        };
+        let watch = self.watches.remove(pos);
+        self.push_event(surface_id, &watch.session_id, StreamEvent::turn_end(reason));
+        self.dirty = true;
+        true
+    }
+
+    /// tail 루프가 순회할 대상 목록 (surface_id, session_id, 경로).
+    pub fn targets(&self) -> Vec<(u32, String, PathBuf)> {
+        self.watches
+            .iter()
+            .map(|w| (w.surface_id, w.session_id.clone(), w.transcript.clone()))
+            .collect()
+    }
+
+    pub fn watch_mut(&mut self, surface_id: u32) -> Option<&mut Watch> {
+        self.watches.iter_mut().find(|w| w.surface_id == surface_id)
+    }
+
+    /// 세션이 바뀌었을 때 tail 대상을 교체한다. 옛 세션의 턴은 여기서 닫는다 —
+    /// 그러지 않으면 소비자가 이전 세션의 응답을 영원히 기다린다.
+    pub fn switch_session(&mut self, surface_id: u32, session_id: String, transcript: PathBuf) {
+        self.next_generation += 1;
+        let generation = self.next_generation;
+        let Some(watch) = self.watch_mut(surface_id) else {
+            return;
+        };
+        let previous = std::mem::replace(&mut watch.session_id, session_id);
+        watch.transcript = transcript;
+        // 새 세션 파일은 처음부터 읽는다 — 백로그가 곧 그 세션의 전부다.
+        watch.tail = Some(TailState::resume_at(&watch.transcript, 0));
+        watch.offset = 0;
+        watch.generation = generation;
+        watch.dedupe = DedupeCache::default();
+        self.push_event(
+            surface_id,
+            &previous,
+            StreamEvent::turn_end(REASON_SESSION_ENDED),
+        );
+        self.dirty = true;
+    }
+
+    /// 수집 이벤트를 버퍼에 넣는다. 상한을 넘으면 가장 오래된 것부터 버린다.
+    pub fn push_event(&mut self, surface_id: u32, session_id: &str, event: StreamEvent) {
+        self.next_seq += 1;
+        // seq 가 전진했으므로 스냅샷이 낡았다 — 재시작 후에도 커서가 단조 증가해야
+        // 소비자의 `after_seq` 가 의미를 유지한다(아래 `restore` 참고).
+        self.dirty = true;
+        self.events.push_back(BufferedEvent {
+            seq: self.next_seq,
+            surface_id,
+            session_id: session_id.to_string(),
+            event,
+        });
+        while self.events.len() > EVENT_BUFFER_CAP {
+            self.events.pop_front();
+            self.dropped += 1;
+        }
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// `agent_stream.list` 응답. 파일 존재 여부를 status 로 함께 노출한다.
+    pub fn list_json(&self) -> Value {
+        let watches: Vec<Value> = self
+            .watches
+            .iter()
+            .map(|w| {
+                let status = if w.transcript.is_file() {
+                    "tailing"
+                } else {
+                    "awaiting_transcript"
+                };
+                w.to_json(status)
+            })
+            .collect();
+        json!({ "watches": watches })
+    }
+
+    /// `agent_stream.poll` 응답. seq 커서 기반의 **비파괴** 읽기 — 여러 소비자가 각자
+    /// 커서를 들고 같은 버퍼를 읽을 수 있다.
+    pub fn poll_json(&self, filter_surface: Option<u32>, after_seq: u64, limit: usize) -> Value {
+        let selected: Vec<&BufferedEvent> = self
+            .events
+            .iter()
+            .filter(|e| e.seq > after_seq)
+            .filter(|e| filter_surface.is_none_or(|s| e.surface_id == s))
+            .take(limit)
+            .collect();
+        let next_seq = selected
+            .last()
+            .map(|e| e.seq)
+            .unwrap_or_else(|| after_seq.max(self.oldest_seq().saturating_sub(1)));
+        json!({
+            "events": selected.iter().map(|e| e.to_json()).collect::<Vec<_>>(),
+            "next_seq": next_seq,
+            "latest_seq": self.next_seq,
+            "dropped": self.dropped,
+        })
+    }
+
+    fn oldest_seq(&self) -> u64 {
+        self.events.front().map(|e| e.seq).unwrap_or(self.next_seq)
+    }
+
+    /// 변경이 있을 때만 스냅샷을 저장한다. 실패는 로그만 남기고 삼킨다 — 영속화
+    /// 실패가 살아 있는 스트림을 끊을 이유는 없다(다음 재시작에서 복구가 덜 될 뿐).
+    pub fn save_if_dirty(&mut self) {
+        if !self.dirty {
+            return;
+        }
+        let Some(path) = self.snapshot_path.clone() else {
+            self.dirty = false;
+            return;
+        };
+        match write_snapshot(&path, &self.snapshot_payload()) {
+            Ok(()) => self.dirty = false,
+            Err(e) => tracing::warn!("agent-stream: cannot persist watches to {path:?}: {e}"),
+        }
+    }
+
+    fn snapshot_payload(&self) -> Value {
+        json!({
+            "version": SNAPSHOT_VERSION,
+            "next_seq": self.next_seq,
+            "watches": self.watches.iter().map(|w| json!({
+                "surface_id": w.surface_id,
+                "session_id": w.session_id,
+                "transcript": w.transcript.to_string_lossy(),
+                "offset": w.offset,
+            })).collect::<Vec<_>>(),
+        })
+    }
+
+    /// 재시작 복구. 저장된 대상들을 **저장된 offset 그대로** 되살린다(위 at-least-once
+    /// 결정). transcript 가 사라졌으면 경로만 들고 대기 상태로 되살아나며, tail 루프가
+    /// 다음 tick 에 세션 id 를 재확인해 경로를 다시 잡는다.
+    ///
+    /// `seq` 커서도 함께 복구한다. 재시작마다 1 부터 다시 세면 `after_seq=100` 을 들고
+    /// 있던 소비자가 재시작 후 처음 100 개 이벤트를 **조용히 못 받는다** — 중복은
+    /// 허용해도 침묵하는 누락은 허용하지 않는다는 이 파이프라인의 기준에 어긋난다.
+    /// 버퍼 내용 자체는 메모리에만 있으므로 재시작으로 사라진다(커서 의미만 보존된다).
+    pub fn restore(&mut self) {
+        let Some(path) = self.snapshot_path.clone() else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&text) else {
+            tracing::warn!("agent-stream: watch snapshot at {path:?} is not valid JSON — ignored");
+            return;
+        };
+        if value.get("version").and_then(Value::as_u64) != Some(SNAPSHOT_VERSION) {
+            tracing::warn!("agent-stream: watch snapshot version mismatch — ignored");
+            return;
+        }
+        self.next_seq = value
+            .get("next_seq")
+            .and_then(Value::as_u64)
+            .unwrap_or(self.next_seq);
+        let Some(entries) = value.get("watches").and_then(Value::as_array) else {
+            return;
+        };
+        for entry in entries {
+            if let Some(mut watch) = restore_one(entry) {
+                self.next_generation += 1;
+                watch.generation = self.next_generation;
+                self.watches.push(watch);
+            }
+        }
+        self.watches.sort_by_key(|w| w.surface_id);
+    }
+}
+
+/// 스냅샷을 디스크에 쓴다. 로그는 남기지 않는다 — 호출자가 한 곳에서 처리한다.
+///
+/// **temp 파일에 다 쓴 뒤 rename 으로 갈아끼운다.** 목적지에 직접 쓰면 그 도중 프로세스가
+/// 죽었을 때 잘린 JSON 이 남고, 다음 [`StreamRegistry::restore`] 가 그것을 파싱 실패로
+/// 버려 **등록 전체가 조용히 사라진다** — 소비자는 스트림이 붙어 있다고 믿은 채 아무것도
+/// 받지 못한다. 이 crate 가 배격하는 바로 그 실패 모양이라, 같은 디렉토리 안의 rename
+/// (POSIX·Windows 모두 원자적 교체)으로 "옛 스냅샷 아니면 새 스냅샷" 둘 중 하나만 남게 한다.
+fn write_snapshot(path: &Path, payload: &Value) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let bytes = serde_json::to_vec_pretty(payload)?;
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, bytes)?;
+    match std::fs::rename(&temp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // rename 이 실패하면 temp 가 남아 다음 저장의 쓰레기가 된다 — 정리하고
+            // 원래 오류를 그대로 올린다(정리 실패는 원 오류를 가리지 않는다).
+            if let Err(cleanup) = std::fs::remove_file(&temp) {
+                tracing::warn!(
+                    "agent-stream: cannot remove stale snapshot temp {temp:?}: {cleanup}"
+                );
+            }
+            Err(e)
+        }
+    }
+}
+
+fn restore_one(entry: &Value) -> Option<Watch> {
+    let surface_id = u32::try_from(entry.get("surface_id")?.as_u64()?).ok()?;
+    let session_id = entry.get("session_id")?.as_str()?.to_string();
+    let transcript = PathBuf::from(entry.get("transcript")?.as_str()?);
+    let offset = entry.get("offset").and_then(Value::as_u64).unwrap_or(0);
+    Some(Watch {
+        surface_id,
+        session_id,
+        tail: Some(TailState::resume_at(&transcript, offset)),
+        transcript,
+        offset,
+        // 실제 번호는 `restore` 가 레지스트리 발급기로 덮어쓴다.
+        generation: 0,
+        dedupe: DedupeCache::default(),
+    })
+}
+
+/// 새 watch 를 만든다. `from_start` 면 파일 처음부터, 아니면 현재 파일 끝부터.
+pub fn new_watch(
+    surface_id: u32,
+    session_id: String,
+    transcript: PathBuf,
+    from_start: bool,
+) -> Watch {
+    let tail = if from_start {
+        TailState::resume_at(&transcript, 0)
+    } else {
+        TailState::at_end(&transcript)
+    };
+    Watch {
+        surface_id,
+        session_id,
+        transcript,
+        offset: tail.offset(),
+        tail: Some(tail),
+        // 실제 번호는 `StreamRegistry::insert` 가 발급기로 덮어쓴다.
+        generation: 0,
+        dedupe: DedupeCache::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::record::{EventKind, REASON_UNWATCHED};
+
+    fn text_event(body: &str, uuid: &str) -> StreamEvent {
+        let mut ev = StreamEvent::turn_end("placeholder");
+        ev.kind = EventKind::Text;
+        ev.reason = None;
+        ev.text = Some(body.to_string());
+        ev.record_uuid = Some(uuid.to_string());
+        ev
+    }
+
+    #[test]
+    fn dedupe_accepts_a_uuid_once_and_always_accepts_uuidless_records() {
+        let mut watch = new_watch(1, "s".into(), PathBuf::from("/nope"), false);
+        assert!(watch.accept_record(Some("u1")));
+        assert!(!watch.accept_record(Some("u1")));
+        assert!(watch.accept_record(Some("u2")));
+        assert!(watch.accept_record(None));
+        assert!(watch.accept_record(None));
+    }
+
+    #[test]
+    fn poll_is_non_destructive_and_cursor_driven() {
+        let mut reg = StreamRegistry::new(None);
+        reg.push_event(7, "s", text_event("a", "u1"));
+        reg.push_event(7, "s", text_event("b", "u2"));
+
+        let first = reg.poll_json(None, 0, 10);
+        assert_eq!(first["events"].as_array().expect("array").len(), 2);
+        assert_eq!(first["next_seq"], 2);
+        // 같은 커서로 다시 읽으면 같은 결과 — 소비되지 않는다.
+        assert_eq!(reg.poll_json(None, 0, 10), first);
+        // 커서를 옮기면 그 뒤만.
+        let second = reg.poll_json(None, 2, 10);
+        assert!(second["events"].as_array().expect("array").is_empty());
+        assert_eq!(second["next_seq"], 2);
+    }
+
+    #[test]
+    fn poll_can_filter_by_surface() {
+        let mut reg = StreamRegistry::new(None);
+        reg.push_event(1, "s1", text_event("a", "u1"));
+        reg.push_event(2, "s2", text_event("b", "u2"));
+        let only_two = reg.poll_json(Some(2), 0, 10);
+        let events = only_two["events"].as_array().expect("array");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["surface_id"], 2);
+        assert_eq!(events[0]["session_id"], "s2");
+    }
+
+    #[test]
+    fn poll_honours_the_limit() {
+        let mut reg = StreamRegistry::new(None);
+        for i in 0..5 {
+            reg.push_event(1, "s", text_event("x", &format!("u{i}")));
+        }
+        let page = reg.poll_json(None, 0, 2);
+        assert_eq!(page["events"].as_array().expect("array").len(), 2);
+        assert_eq!(page["next_seq"], 2);
+        assert_eq!(page["latest_seq"], 5);
+    }
+
+    #[test]
+    fn buffer_overflow_drops_the_oldest_and_reports_it() {
+        let mut reg = StreamRegistry::new(None);
+        for i in 0..(EVENT_BUFFER_CAP + 3) {
+            reg.push_event(1, "s", text_event("x", &format!("u{i}")));
+        }
+        let page = reg.poll_json(None, 0, EVENT_BUFFER_CAP + 10);
+        assert_eq!(page["dropped"], 3);
+        assert_eq!(
+            page["events"].as_array().expect("array").len(),
+            EVENT_BUFFER_CAP
+        );
+    }
+
+    #[test]
+    fn unwatch_emits_a_terminal_event_so_consumers_stop_waiting() {
+        let mut reg = StreamRegistry::new(None);
+        reg.insert(new_watch(9, "s".into(), PathBuf::from("/nope"), false));
+        assert!(reg.remove(9, REASON_UNWATCHED));
+        assert!(!reg.remove(9, REASON_UNWATCHED), "second remove is a no-op");
+
+        let page = reg.poll_json(None, 0, 10);
+        let events = page["events"].as_array().expect("array");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["kind"], "turn_end");
+        assert_eq!(events[0]["reason"], REASON_UNWATCHED);
+    }
+
+    #[test]
+    fn session_switch_closes_the_old_turn_and_rebinds_the_target() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let old = dir.path().join("old.jsonl");
+        let new = dir.path().join("new.jsonl");
+        std::fs::write(&old, b"{}\n").expect("write");
+        std::fs::write(&new, b"{}\n").expect("write");
+
+        let mut reg = StreamRegistry::new(None);
+        reg.insert(new_watch(3, "old-session".into(), old, false));
+        reg.switch_session(3, "new-session".into(), new.clone());
+
+        let watch = reg.watch_mut(3).expect("watch");
+        assert_eq!(watch.session_id, "new-session");
+        assert_eq!(watch.transcript, new);
+        assert_eq!(watch.offset(), 0, "new session is read from the start");
+
+        let events = reg.poll_json(None, 0, 10);
+        let events = events["events"].as_array().expect("array");
+        assert_eq!(events[0]["kind"], "turn_end");
+        assert_eq!(events[0]["reason"], REASON_SESSION_ENDED);
+        assert_eq!(events[0]["session_id"], "old-session");
+    }
+
+    #[test]
+    fn rewatching_the_same_surface_closes_the_previous_turn() {
+        let mut reg = StreamRegistry::new(None);
+        assert!(!reg.insert(new_watch(4, "s1".into(), PathBuf::from("/a"), false)));
+        assert!(reg.insert(new_watch(4, "s2".into(), PathBuf::from("/b"), false)));
+
+        let events = reg.poll_json(None, 0, 10);
+        let events = events["events"].as_array().expect("array");
+        assert_eq!(events.len(), 1, "the replaced registration must be closed");
+        assert_eq!(events[0]["reason"], REASON_REWATCHED);
+        assert_eq!(events[0]["session_id"], "s1");
+    }
+
+    #[test]
+    fn a_tail_checked_out_across_a_retarget_is_discarded_not_written_back() {
+        let mut reg = StreamRegistry::new(None);
+        reg.insert(new_watch(9, "s1".into(), PathBuf::from("/a"), false));
+        let checkout = reg.check_out(9).expect("checked out");
+        assert!(
+            reg.check_out(9).is_none(),
+            "a tail is checked out only once"
+        );
+
+        // 꺼내간 사이 세션이 바뀌면 그 tail 은 옛 대상의 진행 상태다.
+        reg.switch_session(9, "s2".into(), PathBuf::from("/b"));
+        assert!(!reg.check_in(checkout), "a stale tail must be rejected");
+        assert_eq!(reg.watch_mut(9).expect("watch").session_id, "s2");
+        assert!(
+            reg.check_out(9).is_some(),
+            "the new target keeps its own tail"
+        );
+    }
+
+    #[test]
+    fn snapshot_round_trip_resumes_from_the_persisted_offset() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let transcript = dir.path().join("t.jsonl");
+        std::fs::write(&transcript, b"{\"a\":1}\n{\"b\":2}\n").expect("write");
+
+        let mut reg = StreamRegistry::new(Some(dir.path()));
+        reg.insert(new_watch(5, "sess".into(), transcript.clone(), false));
+        reg.save_if_dirty();
+
+        let mut restored = StreamRegistry::new(Some(dir.path()));
+        restored.restore();
+        let watch = restored.watch_mut(5).expect("restored watch");
+        assert_eq!(watch.session_id, "sess");
+        assert_eq!(watch.transcript, transcript);
+        // at-least-once: 저장된 offset(= 파일 끝)에서 재개한다.
+        assert_eq!(watch.offset(), 16);
+    }
+
+    #[test]
+    fn the_seq_cursor_keeps_increasing_across_a_restart() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut reg = StreamRegistry::new(Some(dir.path()));
+        for _ in 0..3 {
+            reg.push_event(1, "s", StreamEvent::turn_end("end_turn"));
+        }
+        reg.save_if_dirty();
+        assert_eq!(reg.poll_json(None, 0, 10)["latest_seq"], 3);
+
+        let mut restarted = StreamRegistry::new(Some(dir.path()));
+        restarted.restore();
+        restarted.push_event(1, "s", StreamEvent::turn_end("end_turn"));
+        let page = restarted.poll_json(None, 3, 10);
+        let events = page["events"].as_array().expect("array");
+        assert_eq!(
+            events.len(),
+            1,
+            "a consumer at after_seq=3 still sees new events"
+        );
+        assert_eq!(
+            events[0]["seq"], 4,
+            "seq must not restart at 1 — that would silently swallow events for an existing cursor"
+        );
+    }
+
+    #[test]
+    fn a_corrupt_snapshot_is_ignored_rather_than_fatal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("watches.json"), b"{not json").expect("write");
+        let mut reg = StreamRegistry::new(Some(dir.path()));
+        reg.restore();
+        assert!(reg.targets().is_empty());
+    }
+
+    #[test]
+    fn a_snapshot_from_another_format_version_is_ignored() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("watches.json"),
+            br#"{"version":999,"watches":[{"surface_id":1,"session_id":"s","transcript":"/x","offset":0}]}"#,
+        )
+        .expect("write");
+        let mut reg = StreamRegistry::new(Some(dir.path()));
+        reg.restore();
+        assert!(reg.targets().is_empty());
+    }
+
+    #[test]
+    fn without_a_data_dir_persistence_is_skipped_not_redirected() {
+        let mut reg = StreamRegistry::new(None);
+        reg.insert(new_watch(1, "s".into(), PathBuf::from("/nope"), false));
+        reg.save_if_dirty();
+        reg.restore();
+        assert_eq!(reg.targets().len(), 1);
+    }
+
+    #[test]
+    fn list_reports_whether_the_transcript_exists_yet() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let present = dir.path().join("here.jsonl");
+        std::fs::write(&present, b"{}\n").expect("write");
+
+        let mut reg = StreamRegistry::new(None);
+        reg.insert(new_watch(1, "a".into(), present, false));
+        reg.insert(new_watch(
+            2,
+            "b".into(),
+            dir.path().join("absent.jsonl"),
+            false,
+        ));
+
+        let list = reg.list_json();
+        let watches = list["watches"].as_array().expect("array");
+        assert_eq!(watches[0]["status"], "tailing");
+        assert_eq!(watches[1]["status"], "awaiting_transcript");
+    }
+}

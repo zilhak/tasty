@@ -1,0 +1,10 @@
+[agent_stream.cli]
+desc = "AI エージェントのセッション transcript を tail し、構造化ストリームイベントとして読む"
+
+[agent_stream.error]
+missing_surface = "対象 surface がない: --surface <id> を渡すか、(TASTY_SURFACE_ID が設定される) tasty ターミナル内で実行する"
+no_session_meta = "surface {surface} に '{key}' meta がない — エージェントのセッション id が不明なため transcript のパスを決定できない。その surface でエージェントを(再)起動し、session-start フックに id を記録させる。"
+transcript_root_missing = "エージェント transcript のルートディレクトリが見つからない (~/.claude/projects、または $CLAUDE_CONFIG_DIR 設定時は $CLAUDE_CONFIG_DIR/projects)"
+transcript_not_found = "transcript ルート配下にセッション {session} の transcript ファイルが見つからない — まだディスクに書き出されていない可能性がある"
+not_watched = "surface {surface} は watch 対象ではない"
+registry_poisoned = "agent-stream レジストリのロックが poisoned 状態だ (tail スレッドがパニックした): {detail}"

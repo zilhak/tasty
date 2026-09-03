@@ -58,7 +58,7 @@ type-\* + 다른 도메인-IO 만 의존 가능.
 이 계층은 도메인-IO 에 **직접 의존하지 않는다**(sandbox 경계) — protocol/sdk 만 통과.
 
 ### 번들 plugin (모두 `tasty-plugin-sdk` 의존)
-`tasty-plugin-claude` · `-codex` · `-git-viewer` · `-clipboard-viewer` · `-image` · `-html` · `-markdown` · `-mesh-demo`(+ manifest). — [concepts/plugins](../concepts/plugins.md)
+`tasty-plugin-claude` · `-codex` · `-git-viewer` · `-clipboard-viewer` · `-image` · `-html` · `-markdown` · `-agent-stream` · `-mesh-demo`(+ manifest). 뒤의 둘은 `bundle = false` 라 배포 패키징에서는 빠지고 dev 번들 sync 로만 붙는다. — [concepts/plugins](../concepts/plugins.md)
 
 ### CLI client
 `tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/remote-profiles)

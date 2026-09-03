@@ -1,0 +1,66 @@
+manifest_version = 1
+id = "com.tasty.agent-stream"
+name = "Agent Stream"
+version = "0.1.0"
+description = "Tails AI agent session transcripts and normalizes them into structured stream events"
+api_version = "1"
+# 배포 패키징(DMG / AppImage / MSIX / deb)에서는 아직 제외한다 — 수집 파이프라인만
+# 있고 외부 방출(SSE)·인바운드 웹훅 배선이 아직 없어 최종 사용자에게 노출할 기능이
+# 되지 못한다. 워크스페이스 빌드의 dev 번들 sync(`ensure_dev_bundle`)는 이 플래그와
+# 무관하게 그대로 동작하므로 개발/검증에는 영향이 없다(mesh-demo 와 같은 취급).
+bundle = false
+permissions = [
+    # surface.meta.get(claude-session-id 조회) · surface.locate(대상 생존 확인).
+    "surface.read",
+    # transcript JSONL 읽기. 플러그인 프로세스의 직접 std::fs 는 호스트 권한 게이트가
+    # 강제하지 않지만(plugin-development §10), 실제로 하는 일을 매니페스트에 정직하게
+    # 선언해 사용자가 grant 시점에 알 수 있게 한다.
+    "fs.read",
+    # data_dir 의 watch 스냅샷(`watches.json`) 쓰기. 강제 재시작 후 등록을 되살리기 위한
+    # 것으로, 쓰는 대상은 이 plugin 의 data_dir 하나뿐이다. fs.read 와 같은 이유로
+    # 매니페스트에 정직하게 선언한다.
+    "fs.write",
+]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-agent-stream"
+
+[[contributes.ipc_namespace]]
+prefix = "agent_stream"
+
+[[contributes.cli]]
+name = "agent-stream"
+description = "Tail an AI agent session transcript and read normalized stream events"
+description_i18n_key = "agent_stream.cli.desc"
+subcommands = [
+    { name = "watch",   ipc_method = "agent_stream.watch",   args = "watch_args",   description = "Start tailing the transcript of the agent session running in a surface. Resolves the session id from surface meta; fails loudly when it is absent." },
+    { name = "unwatch", ipc_method = "agent_stream.unwatch", args = "unwatch_args", description = "Stop tailing a surface. Emits a final turn_end{reason=unwatched} event." },
+    { name = "list",    ipc_method = "agent_stream.list",    args = "no_args",      description = "List every surface currently being tailed with its session id, transcript path, byte offset and status" },
+    { name = "poll",    ipc_method = "agent_stream.poll",    args = "poll_args",    description = "Read collected stream events by sequence cursor (non-destructive). Events are text / thinking / tool_use / turn_end." },
+]
+
+[contributes.cli.arg_groups.watch_args]
+flags = [
+    { name = "surface",    type = "u32",  flag = "--surface",    required = false, help = "Surface ID running the agent (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "from_start", type = "bool", flag = "--from-start", required = false, help = "Replay the transcript from byte 0 instead of starting at the current end of file" },
+]
+
+[contributes.cli.arg_groups.unwatch_args]
+flags = [
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Surface ID to stop tailing (defaults to caller's TASTY_SURFACE_ID)" },
+]
+
+[contributes.cli.arg_groups.poll_args]
+flags = [
+    # 이름이 `surface` 면 CLI 계층이 TASTY_SURFACE_ID 로 자동 채운다
+    # (crates/tasty-cli/src/dynamic.rs) — poll 의 surface 는 "대상 지정"이 아니라
+    # "선택적 필터"라, 자동 채움이 붙으면 사용자가 지정하지 않았는데도 호출자 자신의
+    # surface 로 조용히 좁혀진다. 그래서 파라미터 이름을 `filter_surface` 로 둔다.
+    { name = "filter_surface", type = "u32", flag = "--surface", required = false, help = "Only return events collected for this surface (no default — omitting it returns every watched surface)" },
+    { name = "after_seq", type = "i64", flag = "--after-seq", required = false, help = "Return events with seq strictly greater than this cursor (default: 0 = from the oldest buffered event)" },
+    { name = "limit",     type = "u32", flag = "--limit",     required = false, help = "Maximum number of events to return (default 100, max 1000)" },
+]
+
+[contributes.cli.arg_groups.no_args]

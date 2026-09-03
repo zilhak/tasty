@@ -77,6 +77,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-mesh-demo",
         bin_name: "tasty-plugin-mesh-demo.exe",
     },
+    BuiltinSpec {
+        id: "com.tasty.agent-stream",
+        crate_dir: "tasty-plugin-agent-stream",
+        bin_name: "tasty-plugin-agent-stream.exe",
+    },
 ];
 
 #[cfg(not(windows))]
@@ -120,6 +125,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.mesh-demo",
         crate_dir: "tasty-plugin-mesh-demo",
         bin_name: "tasty-plugin-mesh-demo",
+    },
+    BuiltinSpec {
+        id: "com.tasty.agent-stream",
+        crate_dir: "tasty-plugin-agent-stream",
+        bin_name: "tasty-plugin-agent-stream",
     },
 ];
 
