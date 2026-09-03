@@ -41,7 +41,7 @@ zoom 은 텍스트 버튼:
 
 `crates/tasty-gallery/src/catalog/components/image_viewer.rs` — Layouts › `Content viewers` ›
 `Image surface / canvas`. viewer(그림 fit) / no-image(fallback glyph) 두 상태를 토큰으로 전사.
-3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
+3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ## 시각 소스
 
