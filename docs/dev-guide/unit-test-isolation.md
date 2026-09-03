@@ -88,7 +88,28 @@ assert!(path.starts_with(home.path().join("screenshots")));
 (`tasty-host-plugin` 의 `HomeEnvGuard::derived_from_home()` 이 그렇게 한다. 반대로 임시 루트를
 직접 지정하면 되는 경우는 `HomeEnvGuard::tasty_home()`).
 
-## 4. 확인 방법
+## 4. 파일시스템 픽스처는 테스트가 직접 만든다
+
+경로 해석처럼 `exists()` 로 실존을 검사하는 함수의 테스트는 **git 에 있는 경로**(`Cargo.toml`,
+`src/adapters/ui` 등 `CARGO_MANIFEST_DIR` 기준)나 **테스트가 임시 디렉토리에 스스로 만든 경로**만
+입력으로 쓴다. gitignored 로컬 작업 폴더나 사용자 홈처럼 *이 머신에만 있는* 경로의 실존에
+기대면 clone 직후·CI 러너에서 결과가 달라진다 — 로컬 상태 의존이라는 점에서 설정·env 와 같은
+축이다. 워크스페이스 dev-dependency 인 `tempfile` 로 만들고 `TempDir` 의 Drop 에 정리를 맡긴다.
+
+```rust
+let tmp = tempfile::tempdir().expect("tempdir");
+std::fs::create_dir(tmp.path().join("notes")).expect("fixture dir");
+let result = longest_existing_selection_path("notes/에", Some(tmp.path()), false);
+assert_eq!(result, Some(tmp.path().join("notes")));
+```
+
+이 규칙은 `tests/no_todo_file_citation.rs` 와도 맞물린다 — 로컬 작업 폴더 경로가 그 테스트가
+잡는 형태(폴더명 뒤에 `todo` · `todo-conductor` · `plans` · `conductor` 가 오는 경로 인용, P3)로
+소스에 남아 있으면 그 테스트가 잡으므로, 픽스처 때문에 allowlist 에 예외를 두지 않는다. 같은
+폴더라도 `temp/` 하위처럼 그 넷이 아닌 경로는 가드가 잡지 않는다 — 잡히지 않는다고 해서
+로컬 실존에 기대도 된다는 뜻이 아니며, 이 절의 규칙은 그런 경로에도 그대로 적용된다.
+
+## 5. 확인 방법
 
 격리가 실제로 됐는지는 **같은 명령을 서로 다른 환경에서 돌려 결과가 같은지**로 본다.
 

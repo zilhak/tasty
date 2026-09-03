@@ -39,8 +39,6 @@
 use std::path::{Path, PathBuf};
 
 /// 스캔에서 제외할 파일(repo-relative) — 금지 형태를 **담는 것이 본질** 인 곳.
-/// - `src/adapters/ui/terminal_link.rs`: 경로 해석 테스트의 픽스처 문자열. 인용이
-///   아니라 입력 데이터라, 지우면 테스트가 검증하려던 것이 사라진다.
 /// - `docs/adr/template.md`: "외부(비-git) 위치 문서 참조 금지" 규칙 본문의 거처.
 /// - `docs/adr/0027-...`: 휘발 경로 누수를 *문제로 서술* 하는 예시(참조가 아니다).
 ///   게다가 Accepted ADR 의 Context 본문이라 template 규칙상 수정 대상도 아니다.
@@ -50,7 +48,6 @@ use std::path::{Path, PathBuf};
 /// `CLAUDE.md`(규칙 본문이 금지 형태를 예시 인용) 와 `.gitignore`(제외 항목 그
 /// 자체) 는 애초에 스캔 대상이 아니라 별도 항목이 필요 없다.
 const ALLOWLIST_FILES: &[&str] = &[
-    "src/adapters/ui/terminal_link.rs",
     "docs/adr/template.md",
     "docs/adr/0027-figma-planning-sot-naming-derived-index.md",
     "tests/no_emoji_in_source.rs",

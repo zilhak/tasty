@@ -818,11 +818,15 @@ mod tests {
 
     #[test]
     fn selection_path_trims_back_to_last_slash_when_full_candidate_missing() {
-        // ".claude-workspace/todo" 는 실재하지만 뒤에 실재하지 않는 문자가 슬래시
-        // 없이 붙은 경우(예: 한글 조사).
-        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let result = longest_existing_selection_path(".claude-workspace/todo/에", Some(cwd), false);
-        assert_eq!(result, Some(cwd.join(".claude-workspace/todo")));
+        // 실재하는 디렉토리 뒤에 `/` 와 실재하지 않는 비-ASCII 세그먼트(예: 한글 조사)가
+        // 붙은 경우 — 마지막 `/` 앞까지 잘라 실재 접두사를 돌려준다. 픽스처는 테스트가
+        // 임시 디렉토리에 직접 만든다: 레포 밖·gitignored 경로의 실존에 기대면 clone
+        // 직후나 CI 러너에서 결과가 달라진다(`docs/dev-guide/unit-test-isolation.md`).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(tmp.path().join("notes")).expect("fixture dir");
+        let cwd = tmp.path();
+        let result = longest_existing_selection_path("notes/에", Some(cwd), false);
+        assert_eq!(result, Some(cwd.join("notes")));
     }
 
     #[test]
