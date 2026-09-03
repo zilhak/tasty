@@ -9,7 +9,7 @@
 
 갤러리 실행: `cargo run -p tasty-gallery` (상단 toolbar 에서 theme·UI scale 토글, 좌측
 카탈로그 선택). 등록: `crates/tasty-gallery/src/catalog/{components,widgets}/<name>.rs` 의
-`draw(ui, theme)` + `catalog.rs::all()` 에 `CatalogItem` 한 줄.
+`draw(ui, theme)` + `catalog.rs::pages()` 의 해당 페이지에 `section(...)`/`spec(...)` 한 줄.
 
 ## remote_tool (Overlays)
 
@@ -47,7 +47,7 @@ active 를 `surface-active` 로 그리는 반면 본체(ui_kits jsx)는 `accent-
 
 **갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
 CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::
-load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(ui, &Theme)` 뿐이라
+load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Theme)` 뿐이라
 직접 호출 불가. view-only props 분리(model-view-split) 가 선행돼야 등록 가능. → **후속 과제.**
 그 전까지 검증은 본체 `debug.host_popup.open remote_tool` + `ui.screenshot` 로 한다.
 

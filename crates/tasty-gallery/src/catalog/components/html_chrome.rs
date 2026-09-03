@@ -1,7 +1,7 @@
 //! `html_chrome` specimen — HTML(webview) surface 의 host chrome (Layouts).
 //!
 //! HTML surface 는 `rendering = "webview"` kind 로, host 가 OS-level **native WebView
-//! overlay** 를 surface 위에 붙인다(`src/engine/surface_registry/webview_kind.rs`,
+//! overlay** 를 surface 위에 붙인다(`src/core/surface_registry/webview_kind.rs`,
 //! `src/host_api/webview/*`). 실제 페이지 픽셀은 OS WebView 가 그리므로 **콘텐츠는
 //! 토큰 무관** — tasty 가 토큰으로 책임지는 것은 overlay 가 붙기 전/실패 시의 *chrome*
 //! 뿐이다. 따라서 이 specimen 은 얇게 chrome 상태만 전사한다:

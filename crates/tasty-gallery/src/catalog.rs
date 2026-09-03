@@ -19,7 +19,6 @@ pub mod icons;
 pub mod popup_frame;
 pub mod spacing;
 pub mod spec;
-pub mod specimen;
 pub mod theme;
 pub mod toast_card;
 pub mod typography;
@@ -577,6 +576,16 @@ pub fn pages() -> Vec<Page> {
                             "tree active highlight · section separator · filled star · empty state",
                         ),
                         components::explorer_sidebar::draw,
+                    )],
+                ),
+                section(
+                    "layout-shell",
+                    "Layout shell widgets",
+                    vec![spec(
+                        "layout-shell",
+                        "two-depth panel · overflow tab bar · content frame",
+                        Some("tasty-ui-widgets 공용 함수를 직접 호출한다 (복제 아님 — demo=main)"),
+                        components::prim_layout_shell::draw,
                     )],
                 ),
             ],
@@ -1187,6 +1196,66 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                section(
+                    "notifications",
+                    "Notification panel",
+                    vec![spec(
+                        "notifications",
+                        "Unread header · entry list · empty state",
+                        Some("350×400 · 전체화면 무대를 선언한 유일한 popup (fit + X)"),
+                        components::notification_panel::draw,
+                    )],
+                ),
+                section(
+                    "info-modal",
+                    "Info modal",
+                    vec![spec(
+                        "info-modal",
+                        "Boot notice queue — one message at a time",
+                        Some("440px · height 140..360 · [OK] 가장 오른쪽 + 추가 액션 버튼"),
+                        components::info_modal::draw,
+                    )],
+                ),
+                section(
+                    "script-confirm",
+                    "Script changed confirm",
+                    vec![spec(
+                        "script-confirm",
+                        "TOFU gate — run the changed script?",
+                        Some("360px · mono 경로 truncate · changed 태그 · Run anyway / Cancel"),
+                        components::script_confirm::draw,
+                    )],
+                ),
+                section(
+                    "quit-modal",
+                    "Quit confirmation",
+                    vec![spec(
+                        "quit-modal",
+                        "Quit or minimize to background",
+                        Some("400×200 독립 창 · close_behavior = \"ask\" 경로"),
+                        components::quit_modal::draw,
+                    )],
+                ),
+                section(
+                    "plugins-window",
+                    "Plugins manager window",
+                    vec![spec(
+                        "plugins-window",
+                        "Installed / Attention / Add plugin",
+                        Some("헤더 48 + 목록 240 + 상세 · builtin 점 · health danger dot"),
+                        components::plugins_window::draw,
+                    )],
+                ),
+                section(
+                    "drop-overlay",
+                    "Drag & drop overlay",
+                    vec![spec(
+                        "drop-overlay",
+                        "Drop to open — hover feedback on the terminal",
+                        Some("accent-primary 12% fill + 60% 1px 보더 + 중앙 라벨"),
+                        components::drop_overlay::draw,
+                    )],
+                ),
             ],
         },
         // ── Layouts ──────────────────────────────────────────────────
@@ -1384,6 +1453,26 @@ pub fn pages() -> Vec<Page> {
                             components::dag::window::draw,
                         ),
                     ],
+                ),
+                section(
+                    "titlebar",
+                    "Window titlebar (CSD)",
+                    vec![spec(
+                        "titlebar",
+                        "Active · inactive · close hover",
+                        Some("titlebar-height(36) · window-button-size(24) · 하단 1px"),
+                        components::titlebar::draw,
+                    )],
+                ),
+                section(
+                    "empty-surface",
+                    "Empty surface",
+                    vec![spec(
+                        "empty-surface",
+                        "One button, nothing else",
+                        Some("bg-app 전면 · 세로 중앙 · convert popup 을 연다"),
+                        components::empty_surface::draw,
+                    )],
                 ),
             ],
         },

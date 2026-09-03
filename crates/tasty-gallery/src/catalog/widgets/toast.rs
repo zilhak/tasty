@@ -2,8 +2,9 @@
 //!
 //! 본체 `src/adapters/ui/toast.rs::ToastManager::draw` 의 *카드 시각* 만 재현
 //! (coalesce / fade / lifetime 등 시간 의존 상태는 본 데모 범위 밖). 색·치수는
-//! 모두 `Theme` 토큰. `ToastKind` 는 본체 `tasty-model` 과 같은 분류를 toast_card
-//! 모듈에 로컬 정의(갤러리 binary 비의존).
+//! 모두 `Theme` 토큰. `ToastKind` 는 본체 정본(`crates/tasty-model`)과 **kind-for-kind
+//! 동일**한 분류를 `toast_card` 모듈에 로컬 정의한다 — 정본 크레이트가 터미널 모델까지
+//! 끌고 오기 때문이고, 종류를 갤러리가 임의로 늘리지는 않는다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -62,8 +63,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             message: "Path copied to clipboard",
         },
         ToastCardProps {
-            kind: ToastKind::Agent,
-            message: "Agent opened 3 surfaces in background",
+            kind: ToastKind::Info,
+            message: "This action isn't supported in a mirrored remote explorer yet.",
         },
         ToastCardProps {
             kind: ToastKind::Warning,
@@ -117,8 +118,8 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
     let stack = [
         (
             ToastCardProps {
-                kind: ToastKind::Agent,
-                message: "Agent opened 3 surfaces in background",
+                kind: ToastKind::Info,
+                message: "This action isn't supported in a mirrored remote explorer yet.",
             },
             1.0,
         ),

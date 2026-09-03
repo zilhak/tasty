@@ -148,3 +148,40 @@ fn dag_레이아웃은_task_상태에_영향받지_않는다() {
         "task 상태가 DAG 레이아웃 좌표를 바꿨다"
     );
 }
+
+// ── 신규 specimen (modal / popup / chrome) ──────────────────────────
+
+#[test]
+fn 신규_오버레이_specimen_은_헤드리스로_렌더된다() {
+    use tasty_gallery::catalog::components::{
+        drop_overlay, info_modal, notification_panel, quit_modal, script_confirm,
+    };
+    let theme = tasty_themes::mocha_fallback();
+    run_frames(|ui| {
+        notification_panel::draw(ui, &theme);
+        info_modal::draw(ui, &theme);
+        script_confirm::draw(ui, &theme);
+        quit_modal::draw(ui, &theme);
+        drop_overlay::draw(ui, &theme);
+    });
+}
+
+#[test]
+fn 신규_크롬_specimen_은_헤드리스로_렌더된다() {
+    use tasty_gallery::catalog::components::{empty_surface, plugins_window, titlebar};
+    let theme = tasty_themes::mocha_fallback();
+    run_frames(|ui| {
+        titlebar::draw(ui, &theme);
+        empty_surface::draw(ui, &theme);
+        plugins_window::draw(ui, &theme);
+    });
+}
+
+#[test]
+fn layout_shell_specimen_은_헤드리스로_렌더된다() {
+    // 공용 위젯(two_depth_layout 계열)을 직접 호출하는 경로 — thread_local 상태가
+    // 프레임을 넘어 유지되므로 run_frames 의 다중 프레임이 이중 borrow 를 잡는다.
+    use tasty_gallery::catalog::components::prim_layout_shell;
+    let theme = tasty_themes::mocha_fallback();
+    run_frames(|ui| prim_layout_shell::draw(ui, &theme));
+}

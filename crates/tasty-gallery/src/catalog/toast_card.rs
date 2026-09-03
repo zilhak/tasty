@@ -16,13 +16,17 @@ pub const PADDING_X: f32 = 12.0;
 pub const PADDING_Y: f32 = 8.0;
 pub const ACCENT_BAR_WIDTH: f32 = 4.0;
 
+/// 본체 정본 `crates/tasty-model/src/toast_kind.rs::ToastKind` 와 **kind-for-kind
+/// 동일**해야 한다 — 본체가 만들 수 없는 종류를 갤러리가 전시하면 demo=main 등가성이
+/// 한 방향으로 깨진다(`docs/design/policies/gallery-completeness.md`). 정본을 그대로
+/// import 하지 않는 이유는 그 크레이트가 termwiz/터미널 모델까지 끌고 오기 때문이고,
+/// 본체 binary 의존 때문이 아니다.
 #[derive(Clone, Copy, Debug)]
 pub enum ToastKind {
     Info,
     Success,
     Warning,
     Error,
-    Agent,
 }
 
 /// kind → accent 색. 본체 `toast.rs` 와 동일한 accent 매핑.
@@ -32,7 +36,6 @@ pub fn accent_color(kind: ToastKind, theme: &Theme) -> egui::Color32 {
         ToastKind::Success => theme.accent_success().into(),
         ToastKind::Warning => theme.accent_warning().into(),
         ToastKind::Error => theme.accent_danger().into(),
-        ToastKind::Agent => theme.accent_agent().into(),
     }
 }
 

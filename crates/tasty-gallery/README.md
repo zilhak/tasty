@@ -28,7 +28,7 @@ Tier 1 — `Theme` 만 의존하는 항목:
 
 1. `src/catalog/<group>.rs` 또는 `src/catalog/widgets/<name>.rs` 에
    `pub fn draw(ui: &mut egui::Ui, theme: &Theme)` 를 작성.
-2. `src/catalog.rs::all()` 의 `Vec<CatalogItem>` 에 한 줄 추가.
+2. `src/catalog.rs::pages()` 의 해당 페이지에 `section(...)` / `spec(...)` 한 줄 추가.
 
 ## Phase 2/3 (후속)
 
