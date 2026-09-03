@@ -338,11 +338,22 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 조각 수 상한(64)을 넘는 극단적 델타만 쪼개지 않고 그대로 넘긴다. 같은 이유로 모든 egui-mesh
 Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_animation`)을 꺼 둔다.
 
-**와이어 `Scroll` 이 담는 단위는 경로마다 다르다.** surface 는 `mouse.rs` 가 winit 델타를 논리
-포인트로 환산해 넣지만(`LineDelta` × 50, `PixelDelta` ÷ ppp), popup·banner 는 host egui 의
-`Event::MouseWheel` 을 `unit` 없이 그대로 넘긴다(`popup_render.rs`·`banner_render.rs`). 따라서
-popup·banner 에서 물리 마우스 휠은 notch 당 1pt 만 도착한다(winit 이 `LineDelta(0, ±1)` 로 주고
-환산이 없으므로) — 분할이 관여하는 것은 트랙패드처럼 포인트 델타가 큰 입력과 surface 경로다.
+**와이어 `Scroll` 은 언제나 논리 포인트다.** SDK 가 받은 값을 `MouseWheelUnit::Point` 인
+`MouseWheel` 로 egui 에 넣으므로, host 의 수집 지점이 자기 입력 소스의 단위를 포인트로 맞춰
+보낸다. 배율의 단일 출처는 `src/plugin_bridge/wire_scroll.rs` 의 `LINE_SCROLL`(휠 1 notch =
+50pt)이고 세 수집 지점이 모두 그것을 읽는다 — 값이 갈리면 같은 휠 한 칸이 표면 종류에 따라
+다른 거리를 스크롤한다.
+
+| 수집 지점 | 입력 소스 | 환산 |
+|-----------|-----------|------|
+| egui-mesh surface (`view/main/mouse.rs`) | winit `MouseScrollDelta` | `LineDelta` × `LINE_SCROLL` · `PixelDelta` ÷ ppp |
+| popup (`plugin_bridge/popup_render.rs`) | host egui `Event::MouseWheel` | `wire_scroll::wheel_delta_to_points` — `Line` × `LINE_SCROLL` · `Point` 그대로 · `Page` × 화면 높이 |
+| banner (`plugin_bridge/banner_render.rs`) | host egui `Event::MouseWheel` | 위와 동일 |
+
+두 소스는 같은 물리 입력의 다른 표현이다 — egui-winit 이 winit `LineDelta` 를 `Line`(줄 수
+보존), `PixelDelta` 를 `Point`(÷ pixels_per_point) 로 옮긴다. 그래서 세 경로 모두 마우스 휠
+1 notch 가 50pt, 트랙패드는 포인트 델타 그대로다. 물리 휠도 판정선(8pt)을 넘으므로 위 분할이
+세 경로 모두에 관여한다.
 
 `MainView.mesh_pointer_hover`(`Option<MeshHoverTarget>`, `Local(surface_id)`/`Attach(surface_id)`)가
 마지막으로 `PointerMoved` 를 받은 mesh surface 1개를 추적한다. `handle_cursor_moved`

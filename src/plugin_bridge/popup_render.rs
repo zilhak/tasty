@@ -23,9 +23,10 @@ use tasty_plugin_protocol::{
 
 use crate::adapters::ui::popup;
 use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
-use crate::model::{PhysicalPx, PhysicalRect};
+use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
+use crate::plugin_bridge::wire_scroll;
 use crate::state::AppState;
 
 const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
@@ -414,10 +415,18 @@ fn collect_mesh_popup_input(
                         });
                     }
                 }
-                Event::MouseWheel { delta, .. } if pointer_inside => {
+                // 와이어 `Scroll` 은 논리 포인트 단위다 — 물리 마우스 휠이 싣고 오는
+                // `Line` 단위를 여기서 환산하지 않으면 notch 당 1pt 만 도착해 egui-mesh
+                // surface 와 이동량이 갈린다(`wire_scroll` 모듈 문서).
+                Event::MouseWheel { unit, delta, .. } if pointer_inside => {
+                    let (dx, dy) = wire_scroll::wheel_delta_to_points(
+                        *unit,
+                        *delta,
+                        LogicalPx(i.screen_rect().height()),
+                    );
                     events.push(RawInputEventWire::Scroll {
-                        x: delta.x,
-                        y: delta.y,
+                        x: dx.value(),
+                        y: dy.value(),
                     });
                 }
                 Event::Key {
@@ -553,5 +562,78 @@ fn anchor_pos(
         // ActiveSurfaceCenter는 현재 미구현 — 호스트 layout context 통합 필요.
         // 그동안은 ScreenCenter로 fallback.
         PopupAnchor::ActiveSurfaceCenter => centered,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// popup 콘텐츠 위에서 휠 이벤트 하나를 받았을 때 와이어에 실리는 `Scroll` 값을
+    /// **실제 수집 함수**로 재서 돌려준다(논리 포인트). 스크롤 이벤트가 없으면 `None`.
+    fn collected_scroll(unit: egui::MouseWheelUnit, delta: Vec2) -> Option<(f32, f32)> {
+        let ctx = Context::default();
+        let content_rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(300.0, 200.0));
+        let pointer = Pos2::new(150.0, 150.0);
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1280.0, PAGE_HEIGHT),
+            )),
+            events: vec![Event::MouseWheel {
+                unit,
+                delta,
+                modifiers: egui::Modifiers::default(),
+            }],
+            ..Default::default()
+        };
+        let mut wire = None;
+        // 한 pass 를 실제로 돌려 `InputState` 를 채운다. 렌더 산출물(`FullOutput`)은
+        // 이 측정에 쓰지 않는다 — 필요한 것은 수집 함수가 만든 와이어 입력뿐이다.
+        let _full_output = ctx.run(input, |ctx| {
+            wire = Some(collect_mesh_popup_input(
+                ctx,
+                content_rect,
+                Some(pointer),
+                false,
+                true,
+            ));
+        });
+        wire?.events.iter().find_map(|e| match e {
+            RawInputEventWire::Scroll { x, y } => Some((*x, *y)),
+            _ => None,
+        })
+    }
+
+    /// 위 `collected_scroll` 이 쓰는 화면 높이 — `Page` 단위 기대값 계산에 쓴다.
+    const PAGE_HEIGHT: f32 = 800.0;
+
+    /// 물리 마우스 휠 1 notch(egui-winit 이 `Line` 단위로 싣는다)가 egui-mesh surface
+    /// 경로와 **같은 거리**로 와이어에 실린다.
+    #[test]
+    fn a_wheel_notch_reaches_the_wire_as_the_shared_line_scroll_distance() {
+        let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Line, Vec2::new(0.0, -1.0))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(dx, 0.0);
+        assert_eq!(dy, (wire_scroll::LINE_SCROLL * -1.0).value());
+        // 환산 전에는 델타(-1.0)가 그대로 실렸다 — 그 값과 다르다는 것이 이 수정의 요지다.
+        assert_ne!(dy, -1.0);
+    }
+
+    /// 트랙패드 델타는 이미 논리 포인트(`Point`)라 그대로 실린다 — 환산이 이 경로의
+    /// 값을 바꾸지 않는다(회귀 방지).
+    #[test]
+    fn a_trackpad_delta_reaches_the_wire_unchanged() {
+        let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Point, Vec2::new(2.0, -17.5))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!((dx, dy), (2.0, -17.5));
+    }
+
+    /// `Page` 는 화면 높이로 환산된다(egui 자신과 같은 규칙).
+    #[test]
+    fn a_page_delta_reaches_the_wire_scaled_by_the_screen_height() {
+        let (_, dy) = collected_scroll(egui::MouseWheelUnit::Page, Vec2::new(0.0, -1.0))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(dy, -PAGE_HEIGHT);
     }
 }

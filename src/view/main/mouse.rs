@@ -3,6 +3,7 @@ use winit::window::CursorIcon;
 
 use super::{DividerDrag, DividerDragKind, HoveredLink, MainView, MeshHoverTarget};
 use crate::core::intent::{DomainIntent, SendPayload};
+use crate::plugin_bridge::wire_scroll::LINE_SCROLL;
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
 use crate::theme;
@@ -1142,7 +1143,9 @@ impl MainView {
                 let (x, y) = (pos.x as f32, pos.y as f32);
                 if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
-                        MouseScrollDelta::LineDelta(lx, ly) => (lx * 50.0, ly * 50.0),
+                        MouseScrollDelta::LineDelta(lx, ly) => {
+                            ((LINE_SCROLL * lx).value(), (LINE_SCROLL * ly).value())
+                        }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
                             (p.x as f32 / ppp, p.y as f32 / ppp)
@@ -1156,7 +1159,9 @@ impl MainView {
                 // 목적지가 원격.
                 if let Some((sid, _rect)) = self.attach_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
-                        MouseScrollDelta::LineDelta(lx, ly) => (lx * 50.0, ly * 50.0),
+                        MouseScrollDelta::LineDelta(lx, ly) => {
+                            ((LINE_SCROLL * lx).value(), (LINE_SCROLL * ly).value())
+                        }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
                             (p.x as f32 / ppp, p.y as f32 / ppp)
