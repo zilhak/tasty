@@ -457,6 +457,7 @@ impl App {
         };
         let mut state = self.assemble_app_state(bootstrapped.or(restored_idx));
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
+        Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);
 
         let mut core_state = self
@@ -506,6 +507,23 @@ impl App {
         for ev in pending_events {
             use winit::application::ApplicationHandler;
             self.user_event(event_loop, ev);
+        }
+    }
+
+    /// 부팅 로케일 판정이 영어로 폴백했으면(요청 언어의 팩 부재 · 형상 위반 —
+    /// `docs/dev-guide/i18n.md` "언어팩") 경고 토스트 1회. 치명적이지 않으니 웹훅 bind
+    /// 실패 경고와 같은 구조(`ToastKind::Warning`, 창 스코프)로 알리고, 설정값은 건드리지
+    /// 않는다. headless/CLI 경로는 `tasty_i18n` 이 load 시점에 남긴 `tracing::warn!` 한
+    /// 줄이 전부다 — 여기서 로그를 중복 남기지 않는다.
+    fn report_locale_fallback(state: &mut crate::state::AppState) {
+        if let Some(msg) =
+            crate::i18n::load_report().and_then(crate::i18n::LoadReport::user_warning)
+        {
+            state.toasts.push(
+                msg,
+                crate::adapters::ui::ToastKind::Warning,
+                crate::adapters::ui::ToastScope::Window,
+            );
         }
     }
 

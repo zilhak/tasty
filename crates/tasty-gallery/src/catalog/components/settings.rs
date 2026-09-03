@@ -16,6 +16,9 @@
 //! (스와치 그리드)을 1차로 보이고, 그 아래 구분선 뒤에 Appearance 의 나머지
 //! 컨트롤 어휘(General 의 switch 행 + Colors 의 checkbox 행)를 **카탈로그**로 함께
 //! 노출한다 — 본체 설정창이 쓰는 컨트롤을 cut 하지 않는다(ADR 0020 갤러리 완전성).
+//! General(L1) › General 의 **언어 콤보**(`language_select`)도 같은 카탈로그에 있다 —
+//! 내장 3 + 사용자 언어팩 N, `[meta] name` 이 없는 팩의 코드 폴백, 설정값이 목록에
+//! 없을 때의 `<code> (not found)` 행(값을 덮어쓰지 않는다)까지 세 케이스를 한 번에 보인다.
 //!
 //! 본체 트랙과 **같은 위젯·같은 토큰**: `tasty_ui_widgets::{switch,checkbox,select,Input}`
 //! (셸/밴드/사이드바/푸터 토큰은 `widgets::dialog` 키트 공유). 스와치 strip 색은
@@ -24,7 +27,10 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, Input, checkbox, select, switch};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, Input, LanguageOption, LanguageSelectLabels, checkbox, language_select,
+    select, switch,
+};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -65,6 +71,34 @@ const L2_SELECTED: usize = 0;
 
 const FONT_FAMILIES: &[&str] = &["D2Coding", "JetBrains Mono", "Cascadia Code"];
 
+/// 언어 콤보 행 — 내장 3 + 사용자 언어팩 N. `fr` 은 `[meta] name` 을 가진 팩, `xx` 는
+/// `[meta] name` 이 없어 코드가 그대로 라벨이 되는 폴백 케이스.
+const LANGUAGES: &[LanguageOption<'static>] = &[
+    LanguageOption {
+        code: "en",
+        label: "English",
+    },
+    LanguageOption {
+        code: "ko",
+        label: "한국어",
+    },
+    LanguageOption {
+        code: "ja",
+        label: "日本語",
+    },
+    LanguageOption {
+        code: "fr",
+        label: "Français",
+    },
+    LanguageOption {
+        code: "xx",
+        label: "xx",
+    },
+];
+const LANGUAGE_LABELS: LanguageSelectLabels<'static> = LanguageSelectLabels {
+    missing_suffix: "(not found)",
+};
+
 struct State {
     filter: String,
     font_family: usize,
@@ -73,6 +107,10 @@ struct State {
     opacity: f32,
     /// Colors override 행: checked = "Default"(프리셋 추종), unchecked = 개별 override.
     color_default: bool,
+    /// 언어 콤보 — 목록에 있는 코드(팩 `fr`).
+    language: String,
+    /// 언어 콤보 — 목록에 **없는** 코드(팩이 지워진 `zz`): `zz (not found)` 행으로 유지.
+    language_missing: String,
 }
 
 thread_local! {
@@ -83,6 +121,8 @@ thread_local! {
         ligatures: true,
         opacity: 1.0,
         color_default: false,
+        language: String::from("fr"),
+        language_missing: String::from("zz"),
     });
 }
 
@@ -120,6 +160,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("L2", "sidebar 200 · search filter · plugin dot"),
             ("content", "padding 16 · row label 150 · gap 16"),
             ("boolean", "switch() — Colors Default = checkbox()"),
+            (
+                "language",
+                "language_select() — built-in 3 + packs · code fallback · missing row",
+            ),
             ("footer", "Cancel (ghost) · Save (primary)"),
         ],
         &[
@@ -233,36 +277,40 @@ fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
             ui.set_width(L2_WIDTH);
             ui.set_min_height(mid_h);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // 검색 필터 (search 아이콘 + placeholder) — 자체 padding + border-bottom.
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    STATE.with(|s| {
-                        let st = &mut *s.borrow_mut();
-                        Input::new()
-                            .placeholder("Filter sections…")
-                            .icon(&|ui, rect, c| {
-                                icons::SEARCH.image(rect.height(), c).paint_at(ui, rect)
-                            })
-                            .show(ui, theme, &mut st.filter);
-                    });
-                },
-            );
-            kit::hsep(ui, theme);
-            // 섹션 리스트.
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                    for (i, (label, plugin)) in L2_SECTIONS.iter().enumerate() {
-                        l2_item(ui, theme, label, *plugin, i == L2_SELECTED);
-                    }
-                },
-            );
+            // 부모(`draw` 의 `horizontal_top`)가 가로 레이아웃이라 Frame 의 child Ui 도 가로로
+            // 흐른다 — 사이드바 내부(필터 → 구분선 → 섹션 리스트)는 세로 적층으로 명시한다.
+            ui.vertical(|ui| {
+                // 검색 필터 (search 아이콘 + placeholder) — 자체 padding + border-bottom.
+                kit::region_sym(
+                    ui,
+                    theme.spacing_sm.value(),
+                    theme.spacing_sm.value(),
+                    |ui| {
+                        STATE.with(|s| {
+                            let st = &mut *s.borrow_mut();
+                            Input::new()
+                                .placeholder("Filter sections…")
+                                .icon(&|ui, rect, c| {
+                                    icons::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                                })
+                                .show(ui, theme, &mut st.filter);
+                        });
+                    },
+                );
+                kit::hsep(ui, theme);
+                // 섹션 리스트.
+                kit::region_sym(
+                    ui,
+                    theme.spacing_sm.value(),
+                    theme.spacing_sm.value(),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                        for (i, (label, plugin)) in L2_SECTIONS.iter().enumerate() {
+                            l2_item(ui, theme, label, *plugin, i == L2_SELECTED);
+                        }
+                    },
+                );
+            });
         });
 }
 
@@ -323,88 +371,126 @@ fn content(ui: &mut egui::Ui, theme: &Theme, content_w: f32, mid_h: f32) {
             ui.set_min_height(mid_h);
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
             let inner = content_w - theme.spacing_lg.value() * 2.0;
-
-            // ── Theme preset (선택된 L2 = Theme) ──
-            mono(ui, theme, "Theme preset");
-            let cw = ((inner - theme.spacing_sm.value()) * 0.5).max(theme.field_width_md.value());
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                // strip 색은 theme 팔레트 토큰 (literal preset hex 대신 구조 전사).
-                theme_swatch(
-                    ui,
-                    theme,
-                    cw,
-                    "Catppuccin Mocha",
-                    true,
-                    &[
-                        theme.crust,
-                        theme.base,
-                        theme.blue,
-                        theme.mauve,
-                        theme.green,
-                    ],
-                );
-                theme_swatch(
-                    ui,
-                    theme,
-                    cw,
-                    "Catppuccin Latte",
-                    false,
-                    &[
-                        theme.surface2,
-                        theme.subtext0,
-                        theme.sky,
-                        theme.lavender,
-                        theme.teal,
-                    ],
-                );
-            });
-            note(
-                ui,
-                theme,
-                "Selecting a preset resets all custom colors. Fine-tune individual colors \
-                 in the Colors section — switching presets clears those overrides.",
-            );
-
-            // ── 컨트롤 어휘 카탈로그 (정적 specimen 은 L2 탐색 불가 → 나머지 섹션 동봉) ──
-            ui.add_space(theme.spacing_sm.value());
-            kit::hsep(ui, theme);
-            ui.add_space(theme.spacing_sm.value());
-            note(ui, theme, "Control vocabulary — other Appearance sections");
-
-            STATE.with(|s| {
-                let st = &mut *s.borrow_mut();
-
-                // General — boolean = Switch.
-                mono(ui, theme, "General");
-                row(ui, theme, "Font family:", |ui| {
-                    select(
+            // 위 사이드바와 같은 이유 — content 의 섹션/행은 세로 적층.
+            ui.vertical(|ui| {
+                // ── Theme preset (선택된 L2 = Theme) ──
+                mono(ui, theme, "Theme preset");
+                let cw =
+                    ((inner - theme.spacing_sm.value()) * 0.5).max(theme.field_width_md.value());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    // strip 색은 theme 팔레트 토큰 (literal preset hex 대신 구조 전사).
+                    theme_swatch(
                         ui,
                         theme,
-                        "settings_font_family",
-                        &mut st.font_family,
-                        FONT_FAMILIES,
-                        theme.field_width_lg.value(),
+                        cw,
+                        "Catppuccin Mocha",
                         true,
+                        &[
+                            theme.crust,
+                            theme.base,
+                            theme.blue,
+                            theme.mauve,
+                            theme.green,
+                        ],
+                    );
+                    theme_swatch(
+                        ui,
+                        theme,
+                        cw,
+                        "Catppuccin Latte",
+                        false,
+                        &[
+                            theme.surface2,
+                            theme.subtext0,
+                            theme.sky,
+                            theme.lavender,
+                            theme.teal,
+                        ],
                     );
                 });
-                row(ui, theme, "Font size:", |ui| {
-                    Input::new()
-                        .mono(true)
-                        .addon("px")
-                        .width(theme.field_width_xs.value())
-                        .show(ui, theme, &mut st.font_size);
-                });
-                row(ui, theme, "Ligatures:", |ui| {
-                    switch(ui, theme, &mut st.ligatures, None, true);
-                });
-                row(ui, theme, "Background opacity:", |ui| {
-                    range_track(ui, theme, theme.field_width_lg.value(), st.opacity);
-                });
+                note(
+                    ui,
+                    theme,
+                    "Selecting a preset resets all custom colors. Fine-tune individual colors \
+                 in the Colors section — switching presets clears those overrides.",
+                );
 
-                // Colors — 유일한 checkbox 예외 ("Default" override 행).
-                mono(ui, theme, "Colors");
-                override_row(ui, theme, "blue", "#74c7ec", &mut st.color_default);
+                // ── 컨트롤 어휘 카탈로그 (정적 specimen 은 L2 탐색 불가 → 나머지 섹션 동봉) ──
+                ui.add_space(theme.spacing_sm.value());
+                kit::hsep(ui, theme);
+                ui.add_space(theme.spacing_sm.value());
+                note(ui, theme, "Control vocabulary — other Appearance sections");
+
+                STATE.with(|s| {
+                    let st = &mut *s.borrow_mut();
+
+                    // General — boolean = Switch.
+                    mono(ui, theme, "General");
+                    row(ui, theme, "Font family:", |ui| {
+                        select(
+                            ui,
+                            theme,
+                            "settings_font_family",
+                            &mut st.font_family,
+                            FONT_FAMILIES,
+                            theme.field_width_lg.value(),
+                            true,
+                        );
+                    });
+                    row(ui, theme, "Font size:", |ui| {
+                        Input::new()
+                            .mono(true)
+                            .addon("px")
+                            .width(theme.field_width_xs.value())
+                            .show(ui, theme, &mut st.font_size);
+                    });
+                    row(ui, theme, "Ligatures:", |ui| {
+                        switch(ui, theme, &mut st.ligatures, None, true);
+                    });
+                    row(ui, theme, "Background opacity:", |ui| {
+                        range_track(ui, theme, theme.field_width_lg.value(), st.opacity);
+                    });
+
+                    // Colors — 유일한 checkbox 예외 ("Default" override 행).
+                    mono(ui, theme, "Colors");
+                    override_row(ui, theme, "blue", "#74c7ec", &mut st.color_default);
+
+                    // General(L1) › General — 언어 콤보. 내장 3 + 언어팩 N(`fr` 표시 이름 · `xx` 코드
+                    // 폴백) + 설정값이 목록에 없을 때의 `zz (not found)` 행(값 보존).
+                    mono(ui, theme, "General › Language");
+                    row(ui, theme, "Language:", |ui| {
+                        language_select(
+                            ui,
+                            theme,
+                            "settings_language",
+                            &mut st.language,
+                            LANGUAGES,
+                            &LANGUAGE_LABELS,
+                            theme.field_width_lg.value(),
+                            true,
+                        );
+                    });
+                    row(ui, theme, "Language (pack removed):", |ui| {
+                        language_select(
+                            ui,
+                            theme,
+                            "settings_language_missing",
+                            &mut st.language_missing,
+                            LANGUAGES,
+                            &LANGUAGE_LABELS,
+                            theme.field_width_lg.value(),
+                            true,
+                        );
+                    });
+                    note(
+                        ui,
+                        theme,
+                        "Built-in en/ko/ja plus every ~/.tasty/lang/<code>/pack.toml. A pack without a \
+                         [meta] name shows its code (xx); a configured code with no pack stays \
+                         selected as 'zz (not found)' instead of being overwritten.",
+                    );
+                });
             });
         });
 }

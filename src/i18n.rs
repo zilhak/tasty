@@ -15,7 +15,8 @@ use std::path::Path;
 // 다운스트림이 없어 미사용 `pub use` 가 unused_imports 로 잡히므로 명시적 allow.
 #[allow(unused_imports)]
 pub use tasty_i18n::{
-    current_language, init, register_namespace, t, t_args, t_fmt, t_fmt2, unregister_namespace,
+    LanguageEntry, LoadOutcome, LoadReport, available_languages, current_language, init,
+    load_report, register_namespace, t, t_args, t_fmt, t_fmt2, unregister_namespace,
 };
 
 /// Plugin manager 가 의존하는 trait 의 본 바이너리 impl. boot wiring 에서

@@ -175,8 +175,10 @@ impl Settings {
     /// Returns a report so the caller can decide whether to save() and whether to
     /// surface a popup (theme only). Non-theme fields are fixed silently with a warn log.
     ///
-    /// `general.language` is intentionally NOT normalized — users may install custom
-    /// translation files at `~/.tasty/lang/{code}.toml`, so any code is potentially valid.
+    /// `general.language` is intentionally NOT normalized — users may install a
+    /// language pack at `~/.tasty/lang/{code}/pack.toml` (a single `{code}.toml` only
+    /// overrides a built-in language), so any code is potentially valid. Shape and
+    /// discovery rules: `docs/features/language-packs/index.md`.
     pub fn normalize(&mut self) -> NormalizeReport {
         let mut report = NormalizeReport::default();
 

@@ -171,6 +171,9 @@ pub struct SettingsUiState {
     active_tab: SettingsTab,
     /// Working copy of settings being edited.
     draft: Option<Settings>,
+    /// 언어 콤보 목록(내장 3 + 발견된 언어팩). 첫 draw 에서 1회 스캔(`None` → lazy) —
+    /// `~/.tasty/lang/` 의 변화는 설정 창을 다시 열 때 반영된다.
+    languages: Option<Vec<crate::i18n::LanguageEntry>>,
     /// Which keybinding field+slot is currently recording input (None = not recording).
     recording_field: Option<RecordingSlot>,
     /// Active sub-tab within keybindings.
@@ -399,6 +402,7 @@ impl SettingsUiState {
         Self {
             active_tab: SettingsTab::General,
             draft: None,
+            languages: None,
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
@@ -545,6 +549,12 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     if ui_state.font_families.is_none() {
         let font_config = crate::font::FontConfig::new(14.0, "");
         ui_state.font_families = Some(font_config.list_families());
+    }
+
+    // 언어 콤보 목록도 첫 접근 시 1회 스캔 — `~/.tasty/lang/` 디렉토리 I/O 를 매 프레임
+    // 반복하지 않는다.
+    if ui_state.languages.is_none() {
+        ui_state.languages = Some(crate::i18n::available_languages());
     }
 
     // Lazily load ~/.tasty/bashrc.user on first settings open.
@@ -1535,7 +1545,9 @@ fn draw_active_content(
 ) {
     match ui_state.active_tab {
         SettingsTab::General => match ui_state.general_sub_tab {
-            GeneralSubTab::General => draw_general_tab(ui, draft),
+            GeneralSubTab::General => {
+                draw_general_tab(ui, draft, ui_state.languages.as_deref().unwrap_or(&[]))
+            }
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
             GeneralSubTab::Overlay => draw_overlay_tab(ui, draft),

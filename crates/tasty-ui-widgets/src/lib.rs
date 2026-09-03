@@ -19,6 +19,7 @@ mod help_hint;
 mod horizontal_tab_bar;
 mod icon_button;
 mod input;
+mod language_select;
 mod listctrl;
 mod menu_item;
 mod multi_select;
@@ -50,6 +51,7 @@ pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
 pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
 pub use input::Input;
+pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use menu_item::{MenuItemVariant, menu_item, menu_separator};
 pub use multi_select::{

@@ -1,4 +1,4 @@
-<!-- source-hash: 7306b58ad9bd -->
+<!-- source-hash: 728ff9ae34ed -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -31,7 +31,7 @@ Press the **Settings** button at the very bottom of the sidebar, or press `Ctrl+
 
 | Section | Entries |
 |------|------|
-| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Close behavior** (Ask / Minimize to background / Quit) · **Language** (English / 한국어 / 日本語) |
+| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Close behavior** (Ask / Minimize to background / Quit) · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) |
 | **Notifications** | **Notifications enabled** · **Sound** · **Coalesce interval (ms)** |
 | **Accessibility** | **Reduced motion** (skips the toast fade) · **Show modifier key hints** |
 | **Overlay** | **Toast duration** (1~10 seconds) |
@@ -88,6 +88,67 @@ These tables are stored not in `config.toml` but in `~/.tasty/file-handlers.toml
 ### Plugins
 
 Settings pages added by plugins are collected here. In a default install there are **Claude Code** and **Codex** pages — [Plugins](../plugins/index.md).
+
+## Adding a language (language packs)
+
+Tasty ships with three languages: English, 한국어 and 日本語. Any other language comes
+from a **language pack** you place yourself; it then appears in the language list
+alongside the built-in ones.
+
+### Writing a pack
+
+Create a folder named after the language code under `~/.tasty/lang/`, and put a
+`pack.toml` inside it. For French that is `~/.tasty/lang/fr/pack.toml`.
+
+```toml
+[meta]
+name = "Français"          # name shown in the language list (without it, the folder name is shown)
+
+[font]                     # required — use exactly one of the four below
+builtin = true             # the built-in font already covers the characters you use
+# file = "fonts/x.ttf"     # a font file shipped inside the pack folder
+# family = "Noto Sans"     # a font family installed on the machine
+# candidates = ["fonts/x.ttf", "Noto Sans"]   # tried in order, first hit wins
+
+[button]                   # from here on, the text you are translating
+ok = "OK"
+cancel = "Annuler"
+```
+
+- **`[font]` cannot be left out.** Text without a font promise can render as □, so
+  the person writing the pack has to say which font it expects.
+- **You do not have to translate everything.** Anything you leave out shows in
+  English. Leaving a value empty (`""`) also counts as "not translated" and shows
+  in English — you never end up with a blank label.
+- Entry names (`[button] ok` and so on) follow the same layout as the language
+  files that ship with Tasty. Copying one of those is the quickest start.
+- Text containing `{}` has a value filled in at runtime. **Keep the same number of
+  them** — drop one and that value disappears, add one and a literal `{}` shows up
+  on screen.
+
+### Selecting it
+
+The pack appears in Settings › **General** › **Language**. Select it, press
+**Save**, then restart Tasty.
+
+### Changing only some text of a built-in language
+
+Place a **single file** instead of a folder — `~/.tasty/lang/ko.toml`, for example.
+It overrides just the entries you write, and needs no `[font]`. This works for
+English, 한국어 and 日本語 only; a new language placed this way does not show up in
+the list.
+
+### When it does not work
+
+- **It does not appear in the list** — check that the folder is named after the
+  language code, that the file inside is called exactly `pack.toml`, and that
+  `[font]` is present. Close and reopen the settings window (the list is read once
+  when the window opens).
+- **English shows up with a warning** — the pack for the selected language was not
+  found, or the file is invalid. The warning names the path that was looked for.
+  **Your setting is kept**, so fixing the pack and restarting brings that language
+  back.
+- The full reason is written as one line to `~/.tasty/debug.log`.
 
 ## The settings file `~/.tasty/config.toml`
 
@@ -169,6 +230,7 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 |------|------|
 | `config.toml` | The settings above |
 | `themes/` | Theme files — [Themes](themes.md) |
+| `lang/` | Language packs and language overrides — [Adding a language](#adding-a-language-language-packs) |
 | `plugins/` · `plugins-logs/` | Installed plugins and their logs — [Plugins](../plugins/index.md) |
 | `file-handlers.toml` · `hook-handlers.toml` | User entries from the Handler tab |
 | `remote-profiles.toml` | Remote connection profiles — [Remote attach](../remote/attach.md) |

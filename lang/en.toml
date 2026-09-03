@@ -1,5 +1,8 @@
 # Tasty Terminal Emulator - English (en)
 
+[meta]
+name = "English"
+
 [app]
 name = "Tasty"
 
@@ -259,6 +262,7 @@ close_behavior_minimize = "Minimize to background"
 close_behavior_quit = "Quit"
 language_label = "Language:"
 language_restart_notice = "Language change will take effect after restart."
+language_missing_suffix = "(not found)"
 alt_display_style_label = "Alt key display:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -826,6 +830,10 @@ vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion 
 [webhook.warn]
 port_not_configured = "Webhook port not set — the inbound listener did not start. Set one with `tasty webhook config --port <N>`."
 bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and check your firewall; the listener did not start."
+
+[i18n.warn]
+pack_missing = "Language '{}' is not installed — showing English. Put a language pack at {}, then restart."
+pack_invalid = "Language pack '{}' could not be loaded — showing English. Fix {} and restart ({})."
 
 [banner.mouse_capture]
 title = "Mouse input captured"

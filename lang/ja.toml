@@ -1,5 +1,8 @@
 # Tasty ターミナルエミュレータ - 日本語 (ja)
 
+[meta]
+name = "日本語"
+
 [app]
 name = "Tasty"
 
@@ -259,6 +262,7 @@ close_behavior_minimize = "バックグラウンドに最小化"
 close_behavior_quit = "終了"
 language_label = "言語:"
 language_restart_notice = "言語の変更は再起動後に適用されます。"
+language_missing_suffix = "(見つかりません)"
 alt_display_style_label = "Alt キー表示:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -813,6 +817,10 @@ vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレ�
 [webhook.warn]
 port_not_configured = "Webhook ポートが未設定のため、インバウンドリスナーを起動できませんでした。`tasty webhook config --port <番号>` で指定してください。"
 bind_failed = "Webhook ポート {} をバインドできませんでした（{}）。空きポートを指定しファイアウォールを確認してください。リスナーは起動していません。"
+
+[i18n.warn]
+pack_missing = "言語 '{}' は未インストールのため英語で表示します。{} に言語パックを置いて再起動してください。"
+pack_invalid = "言語パック '{}' を読み込めないため英語で表示します。{} を修正して再起動してください（{}）。"
 
 [banner.mouse_capture]
 title = "マウス入力をキャプチャ中"

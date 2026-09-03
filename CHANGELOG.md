@@ -18,11 +18,19 @@
 
 ### Added
 
+- 사용자 언어팩 발견·선택 — `~/.tasty/lang/<code>/pack.toml`(디렉토리 + 매니페스트)이 하나의 언어팩이다. `[meta] name`(콤보 표시 이름, 없으면 코드)과 **필수** `[font]`(`builtin = true` / `file` / `family` / `candidates` 중 하나)를 갖고, 나머지 문자열 키는 영어 베이스 위에 overlay 된다(빈 문자열 값은 번역 없음으로 보고 영어로 폴백). Settings › General 의 언어 콤보가 내장 `en`/`ko`/`ja` + 발견된 팩 전부를 노출한다(`tasty_i18n::available_languages`). 내장 `lang/{en,ko,ja}.toml` 에도 `[meta] name` 이 생겼다.
 - `surface.attention.clear`(CLI `tasty surface attention clear --surface <id> [--kind completion|needs_input]`) — attention(주의 환기) 해제. 지금까지 attention 은 `surface.completion` 으로 발동만 가능하고 해제 수단이 IPC/CLI 에 없었다(해제 producer 두 개가 전부 GUI 로컬 사건 — 실 렌더 포커스, 알림 패널 읽음). `--kind` 를 주면 현재 기록된 kind 가 그 값일 때만 지운다(생략 = kind 무관, 알 수 없는 값은 거절). attention 이 없던 surface 도 성공하며(idempotent) 응답 `cleared`/`previous_kind` 가 실제 결과를 알린다. 존재하지 않는 surface · **하드 점유(원격 attach) 중인 surface** · **mirror surface** 는 명시적 에러 — 뒤의 둘은 그 attention 의 소유자가 다른 인스턴스다(각각 ADR-0040 · ADR-0098/0104). 미러 사용자가 그 화면을 실제로 보고 확인한 해제는 종전대로 소유 인스턴스로 전달된다. 권한 `Notification`.
 - `surface.attention.get`(CLI `tasty surface attention get --surface <id>`) — 그 surface 에 기록된 attention kind(`"completion"`/`"needs_input"`/`null`) 조회. 읽기 전용이라 mirror·점유 중에도 허용. 권한 `Notification`.
 
+### Changed
+
+- `~/.tasty/lang/<code>.toml` 단일 파일은 이제 **내장 코드(`en`/`ko`/`ja`)의 오버라이드 전용**이다 — 내장이 아닌 코드의 단일 파일은 팩으로 인정하지 않고 `tracing::warn!` 후 무시한다(`<code>/pack.toml` 로 옮겨야 한다).
+- `general.language` 가 팩 없는/무효한 코드를 가리키면 영어로 폴백하고 부팅 후 경고 토스트 1회(요청 코드 + 기대 경로)를 띄운다 — headless/CLI 는 `tracing::warn!` 한 줄. 설정값은 덮어쓰지 않으며, `current_language()` 와 plugin 에 전달되는 `TASTY_LOCALE` 은 실제 적용 언어(`en`)를 싣는다. `tasty_i18n::init` 이 `LoadReport` 를 돌려준다(이전에는 반환값 없음).
+- 설정 콤보에서 현재 설정값이 목록에 없으면(팩 삭제 등) `<code> (not found)` 행으로 유지한다 — 콤보를 열고 닫아도 값이 바뀌지 않는다.
+
 ### Fixed
 
+- 진단 로그(`tracing`)가 **stdout** 으로 나가 CLI 출력을 오염시키던 문제. `tasty list tree | jq .` 처럼 stdout 을 기계가 파싱하는 경로에서, 경고가 한 줄이라도 나면 JSON 앞에 섞여 파싱이 깨졌다 — 로그 레이어의 writer 가 stderr 가 아니라 기본값(stdout)이었다. 이제 stderr 로 나간다(파일 로그 레이어는 종전과 동일).
 - headless 인스턴스(`--headless`)에서 `surface.completion` 이 아무 효과가 없던 문제. Intent 큐를 drain 하는 지점이 gui 빌드 전용이고 headless IPC 펌프는 그 큐를 읽지 않아, 핸들러가 enqueue 한 발동 요청을 처리할 주체가 없었다 — 이제 IPC 핸들러가 대상 engine 에 직접 적용한다(응답 계약은 불변). 같은 이유로 새 `surface.attention.{get,clear}` 도 headless 에서 동작한다.
 - headless 인스턴스(`--headless` / `--no-default-features` 빌드)에서 `surface.set_mark` · `notification.create` · `settings.set_remote_transfer` 가 `ok` 를 회신하고도 아무 상태도 바꾸지 않던 문제. 위 attention 축과 같은 원인이지만 이쪽은 핸들러 직접 적용 대상이 아니어서 남아 있었다 — 예로 `set mark` 직후의 `read since-mark` 가 mark 를 무시하고 스크롤백 전체를 돌려줬다. 이제 headless 도 요청 응답 전에 Intent 큐를 비워 적용하며, 큐 길이는 요청 수와 무관하게 유계다. 근거 ADR-0111.
 - host 가 plugin 프로세스에 `TASTY_LOCALE` 을 실제로 채워 보낸다 — 이전에는 host 어디서도 이 env 를 set 하지 않아 `general.language = "ko"`/`"ja"` 여도 plugin UI(클립보드 뷰어 · git 뷰어 등)가 항상 영어였다(셸에서 직접 `export TASTY_LOCALE=…` 한 경우에만 우연히 동작). 이제 부팅 시 `general.language` 를 host 프로세스 env 에 set 해 모든 plugin 이 상속하며, 셸의 export 값은 설정에 덮인다. 값은 spawn 시점 고정 — 언어 변경은 재시작 후 반영.

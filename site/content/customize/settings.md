@@ -30,7 +30,7 @@
 
 | 섹션 | 항목 |
 |------|------|
-| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **언어** (English / 한국어 / 日本語) |
+| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **언어** (English / 한국어 / 日本語 + 설치한 [언어팩](#언어-추가하기-언어팩)) |
 | **알림** <!-- en: Notifications --> | **알림 활성화** <!-- en: Notifications enabled --> · **소리** <!-- en: Sound --> · **알림 병합 간격 (ms)** <!-- en: Coalesce interval (ms) --> |
 | **접근성** <!-- en: Accessibility --> | **모션 줄이기** <!-- en: Reduced motion --> (토스트 페이드 생략) · **수정자 키 힌트 표시** <!-- en: Show modifier key hints --> |
 | **오버레이** <!-- en: Overlay --> | **토스트 표시 시간** <!-- en: Toast duration --> (1~10초) |
@@ -87,6 +87,62 @@
 ### 플러그인
 
 플러그인이 추가한 설정 페이지가 모인다. 기본 설치 상태에서는 **Claude Code** 와 **Codex** 페이지가 있다 — [플러그인](../plugins/index.md).
+
+## 언어 추가하기 (언어팩)
+
+Tasty 에 들어 있는 언어는 English · 한국어 · 日本語 셋이다. 그 밖의 언어는 **언어팩**을
+직접 두면 언어 목록에 함께 나타난다.
+
+### 언어팩 만들기
+
+`~/.tasty/lang/` 아래에 **언어 코드 이름의 폴더**를 만들고 그 안에 `pack.toml` 을 둔다.
+예를 들어 프랑스어라면 `~/.tasty/lang/fr/pack.toml` 이다.
+
+```toml
+[meta]
+name = "Français"          # 언어 목록에 보일 이름 (생략하면 폴더 이름이 그대로 보인다)
+
+[font]                     # 반드시 있어야 한다. 아래 넷 중 하나만 쓴다
+builtin = true             # Tasty 기본 글꼴로 충분한 문자만 쓴다
+# file = "fonts/x.ttf"     # 팩 폴더 안에 함께 둔 글꼴 파일
+# family = "Noto Sans"     # 컴퓨터에 설치된 글꼴 이름
+# candidates = ["fonts/x.ttf", "Noto Sans"]   # 위에서부터 차례로 시도
+
+[button]                   # 여기서부터는 번역할 문구
+ok = "OK"
+cancel = "Annuler"
+```
+
+- **`[font]` 은 생략할 수 없다.** 문구만 있고 글꼴 약속이 없으면 화면에 글자가 □ 로
+  깨질 수 있어서, 팩을 만든 사람이 어느 글꼴로 볼지 밝히도록 했다.
+- **전부 번역하지 않아도 된다.** 적지 않은 문구는 영어로 나온다. 값을 빈 문자열
+  (`""`)로 두는 것도 "번역하지 않음" 으로 보고 영어로 나온다 — 화면에 빈 칸이
+  생기지 않는다.
+- 문구의 이름(`[button] ok` 같은 것)은 Tasty 에 들어 있는 언어 파일과 같은 짜임새다.
+  기존 언어 파일을 복사해서 시작하는 편이 빠르다.
+- `{}` 가 들어 있는 문구는 실행할 때 값이 채워지는 자리다. **개수를 그대로 두어야
+  한다** — 지우면 그 값이 사라지고, 더 넣으면 `{}` 가 화면에 그대로 보인다.
+
+### 고르기
+
+설정 창 › **일반** › **언어** 목록에 팩이 함께 나온다. 고르고 **저장** 한 다음 Tasty 를
+다시 시작하면 적용된다.
+
+### 이미 들어 있는 언어의 문구만 바꾸고 싶다면
+
+폴더가 아니라 **파일 하나**를 둔다 — `~/.tasty/lang/ko.toml` 처럼. 적은 문구만 기본값을
+덮어쓰며 `[font]` 도 필요 없다. 이 방식은 English · 한국어 · 日本語 세 언어에만 쓴다.
+새 언어를 이 방식으로 두면 목록에 나타나지 않는다.
+
+### 잘 안 될 때
+
+- **목록에 안 보인다** — 폴더 이름이 언어 코드인지, 그 안의 파일 이름이 정확히
+  `pack.toml` 인지, `[font]` 이 있는지 확인한다. 설정 창을 닫았다가 다시 연다
+  (목록은 창을 열 때 한 번 읽는다).
+- **영어로 뜨고 경고가 나온다** — 고른 언어의 팩을 찾지 못했거나 파일이 잘못됐다는
+  뜻이다. 경고에 어느 경로를 찾았는지 나온다. **설정은 그대로 남으므로**, 팩을 고쳐
+  두고 다시 시작하면 그 언어로 돌아온다.
+- 자세한 사유는 `~/.tasty/debug.log` 에 한 줄로 남는다.
 
 ## 설정 파일 `~/.tasty/config.toml`
 
@@ -168,6 +224,7 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 |------|------|
 | `config.toml` | 위 설정 |
 | `themes/` | 테마 파일 — [테마](themes.md) |
+| `lang/` | 언어팩과 언어 덮어쓰기 파일 — [언어 추가하기](#언어-추가하기-언어팩) |
 | `plugins/` · `plugins-logs/` | 설치된 플러그인과 로그 — [플러그인](../plugins/index.md) |
 | `file-handlers.toml` · `hook-handlers.toml` | 핸들러 탭의 사용자 항목 |
 | `remote-profiles.toml` | 원격 연결 프로필 — [원격 attach](../remote/attach.md) |

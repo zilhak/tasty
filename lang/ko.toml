@@ -1,5 +1,8 @@
 # Tasty 터미널 에뮬레이터 - 한국어 (ko)
 
+[meta]
+name = "한국어"
+
 [app]
 name = "Tasty"
 
@@ -259,6 +262,7 @@ close_behavior_minimize = "백그라운드로 최소화"
 close_behavior_quit = "종료"
 language_label = "언어:"
 language_restart_notice = "언어 변경은 재시작 후 적용됩니다."
+language_missing_suffix = "(없음)"
 alt_display_style_label = "Alt 키 표시:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -813,6 +817,10 @@ vi_copy_macro_replay_failed = "매크로 재생 실패 (빈 register 또는 재�
 [webhook.warn]
 port_not_configured = "웹훅 포트가 설정되지 않아 인바운드 리스너를 시작하지 못했습니다. `tasty webhook config --port <번호>` 로 지정하세요."
 bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포트를 지정하고 방화벽을 확인하세요. 리스너가 시작되지 않았습니다."
+
+[i18n.warn]
+pack_missing = "언어 '{}' 가 설치되어 있지 않아 영어로 표시합니다. {} 에 언어팩을 두고 재시작하세요."
+pack_invalid = "언어팩 '{}' 을 불러오지 못해 영어로 표시합니다. {} 를 고치고 재시작하세요 ({})."
 
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
