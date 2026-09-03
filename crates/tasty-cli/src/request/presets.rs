@@ -60,12 +60,13 @@ pub(super) fn read_json_file_or_stdin(path: &str) -> Result<serde_json::Value, S
         let mut buf = String::new();
         std::io::stdin()
             .read_to_string(&mut buf)
-            .map_err(|e| format!("stdin read failed: {e}"))?;
+            .map_err(|e| tasty_i18n::t_fmt("cli.preset.stdin_read_failed", &e.to_string()))?;
         buf
     } else {
-        std::fs::read_to_string(path).map_err(|e| format!("file read failed: {e}"))?
+        std::fs::read_to_string(path)
+            .map_err(|e| tasty_i18n::t_fmt("cli.preset.file_read_failed", &e.to_string()))?
     };
-    serde_json::from_str(&raw).map_err(|e| format!("invalid JSON: {e}"))
+    serde_json::from_str(&raw).map_err(|e| tasty_i18n::t_fmt("cli.preset.not_json", &e.to_string()))
 }
 
 pub(super) fn preset_command_to_method_params(
@@ -86,7 +87,7 @@ pub(super) fn preset_command_to_method_params(
             let data = match read_json_file_or_stdin(file) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("Error: {e}");
+                    eprintln!("{}", tasty_i18n::t_fmt("cli.preset.save_read_failed", &e));
                     std::process::exit(1);
                 }
             };

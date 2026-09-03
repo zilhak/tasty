@@ -1333,6 +1333,85 @@ desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."
 spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 tell_no_target = "Error: no target surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 
+# `tasty` CLI — client-side argument validation and status lines written to stderr.
+# Messages the CLI prints directly carry their own "Error:" / "warning:" prefix so each
+# language can phrase it. `cli.dispatch.*`, `cli.plugin_cli.*` (except manifest_skipped)
+# and `cli.preset.*_read_failed` / `not_json` are error bodies that the caller prefixes.
+[cli.request]
+cwd_invalid = "Error: --cwd: {}"
+close_self_no_surface = "Error: TASTY_SURFACE_ID not set. 'close self' can only be used inside a tasty terminal."
+
+[cli.memory]
+value_file_read_failed = "Error: failed to read value file: {}"
+put_requires_value = "Error: '{}' requires --value or --value-b64"
+option_not_json = "Error: {} is not valid JSON: {}"
+import_read_failed = "Error: failed to read {}: {}"
+import_not_json = "Error: {}: not valid JSON: {}"
+import_bad_shape = "Error: {}: expected JSON array or object with 'entries'"
+scope_required = "Error: must specify a scope. Use --scope <token> or one of --global / --surface <id> / --workspace <id> / --window <id> / --account <userid>."
+goal_surface_required = "Error: must specify a surface. Use --surface <id>, or run inside a tasty terminal (TASTY_SURFACE_ID)."
+
+[cli.agent]
+inputs_empty = "Error: --inputs must contain at least one task id"
+flag_file_read_failed = "Error: reading {} for {}: {}"
+flag_not_json = "Error: parsing {} as JSON: {}"
+purge_filter_required = "Error: --states or --older-than-ms is required (refusing to purge the whole workspace)"
+metadata_not_object = "Error: --metadata must be a JSON object to combine with --concurrency-limit"
+metadata_semaphore_conflict = "Error: --metadata already sets 'semaphore' — remove it or drop --concurrency-limit"
+
+[cli.telemetry]
+tags_not_object = "Error: --tags must be valid JSON object: {}"
+cap_reset_target_required = "Error: telemetry cap reset requires --id or --agent"
+
+[cli.approval]
+metadata_not_json = "Error: --metadata must be valid JSON: {}"
+content_file_read_failed = "Error: failed to read --content file '{}': {}"
+
+[cli.preset]
+stdin_read_failed = "stdin read failed: {}"
+file_read_failed = "file read failed: {}"
+save_read_failed = "Error: {}"
+not_json = "invalid JSON: {}"
+
+[cli.debug]
+file_read_failed = "Error: --file {}: {}"
+settings_apply_source_required = "Error: settings apply requires --json or --file"
+settings_patch_not_json = "Error: invalid JSON in settings patch: {}"
+lua_eval_file_failed = "Error: lua eval-file {}: {}"
+
+[cli.plugin_cli]
+manifest_skipped = "warning: plugin manifest at {} skipped: {}"
+no_subcommand = "no subcommand supplied"
+not_plugin_command = "'{}' is not a plugin-contributed cli command"
+subcommand_required = "'{}' requires a subcommand"
+unknown_subcommand = "unknown subcommand '{} {}'"
+flag_repeated = "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)"
+auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
+auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
+
+[cli.dispatch]
+ssh_profile_not_found = "ssh profile '{}' not found (tasty tool remote-profile list)."
+ssh_profile_not_ssh_kind = "'{}' is not an ssh profile (kind='{}'); tool ssh accepts ssh profiles only."
+tool_attach_target_required = "attach target required: `tasty tool attach <profile> <surface|--workspace id>` or `tasty tool attach --list` (list tasty-attach profiles)."
+attach_profile_not_found = "tasty-attach profile '{}' not found (tasty tool attach --list)."
+surface_workspace_exclusive = "surface and --workspace cannot be used together."
+raw_workspace_exclusive = "--raw cannot be used with workspace attach (multiplexed stream)."
+attach_target_required = "attach target required: <surface_id> or --workspace <id>."
+ssh_profile_exclusive = "--ssh and --profile cannot be used together."
+ssh_force_detach_exclusive = "--ssh and --force-detach cannot be used together (remote force-detach is not supported)."
+remote_attach_target_required = "remote attach target required (--ssh or --profile). Local attach is `tasty debug attach` (debug builds)."
+remote_check_target_required = "remote check target required (--ssh or --profile)."
+
+[cli.attach]
+attached_surface = "attached surface {} (client_id={}, {}x{})"
+attached_workspace = "attached workspace {} (client_id={}, {} terminals, {} placeholders)"
+port_discovery_failed_retry = "remote port discovery failed: {} — retrying with backoff"
+tunnel_failed_retry = "ssh tunnel setup failed: {} — retrying with backoff"
+tunnel_established = "ssh tunnel established: 127.0.0.1:{} -> {}:{}"
+disconnected_reconnect = "disconnected — reconnecting with backoff (the session stays on the server)"
+send_requires_send_to = "--send in workspace mode requires --send-to <surface_id> (ignored)."
+force_detached = "force-detached by server"
+
 [command_index.cap.soft]
 title = "Command history is large"
 body = "This surface has recorded {} commands. Old entries are cleared when the surface closes."

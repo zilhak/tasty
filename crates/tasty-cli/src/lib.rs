@@ -462,7 +462,8 @@ mod attach_surface_tests {
         .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("--ssh 와 --force-detach"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.ssh_force_detach_exclusive")),
             "unexpected error: {err}"
         );
     }
@@ -525,7 +526,8 @@ mod attach_surface_tests {
             .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("--ssh 와 --profile"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.ssh_profile_exclusive")),
             "unexpected error: {err}"
         );
     }
@@ -536,7 +538,8 @@ mod attach_surface_tests {
         let cli = Cli::try_parse_from(["tasty", "remote", "check"]).unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("원격 check 대상이 필요합니다"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.remote_check_target_required")),
             "unexpected error: {err}"
         );
     }
@@ -588,7 +591,8 @@ mod attach_surface_tests {
         .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("--ssh 와 --profile"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.ssh_profile_exclusive")),
             "unexpected error: {err}"
         );
     }
@@ -651,7 +655,8 @@ mod attach_surface_tests {
         let cli = Cli::try_parse_from(["tasty", "remote", "attach", "5"]).unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("원격 attach 대상이 필요"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.remote_attach_target_required")),
             "unexpected error: {err}"
         );
     }
@@ -672,7 +677,8 @@ mod attach_surface_tests {
         .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("함께 쓸 수 없습니다"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.surface_workspace_exclusive")),
             "unexpected error: {err}"
         );
     }
@@ -693,7 +699,8 @@ mod attach_surface_tests {
         .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
-            err.to_string().contains("--ssh 와 --profile"),
+            err.to_string()
+                .contains(tasty_i18n::t("cli.dispatch.ssh_profile_exclusive")),
             "unexpected error: {err}"
         );
     }

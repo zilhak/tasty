@@ -26,7 +26,10 @@ pub(super) fn memory_cache_command_to_method_params(
                 let raw = match read_value_arg(v) {
                     Ok(s) => s,
                     Err(e) => {
-                        eprintln!("Error: failed to read value file: {e}");
+                        eprintln!(
+                            "{}",
+                            tasty_i18n::t_fmt("cli.memory.value_file_read_failed", &e.to_string())
+                        );
                         std::process::exit(1);
                     }
                 };
@@ -36,7 +39,10 @@ pub(super) fn memory_cache_command_to_method_params(
                     p["value"] = serde_json::Value::String(raw);
                 }
             } else {
-                eprintln!("Error: 'memory cache put' requires --value or --value-b64");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.memory.put_requires_value", "memory cache put")
+                );
                 std::process::exit(1);
             }
             if let Some(ct) = content_type.as_deref() {

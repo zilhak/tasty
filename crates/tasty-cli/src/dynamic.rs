@@ -61,9 +61,12 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
             }
             Err(e) => {
                 eprintln!(
-                    "warning: plugin manifest at {} skipped: {}",
-                    dir.display(),
-                    e
+                    "{}",
+                    tasty_i18n::t_fmt2(
+                        "cli.plugin_cli.manifest_skipped",
+                        &dir.display().to_string(),
+                        &e.to_string()
+                    )
                 );
             }
         }
@@ -162,20 +165,33 @@ pub fn matches_to_request(
 ) -> Result<(JsonRpcRequest, Option<PollingDecl>, Option<AutoWaitPlan>)> {
     let (top_name, top_sub) = matches
         .subcommand()
-        .ok_or_else(|| anyhow!("no subcommand supplied"))?;
+        .ok_or_else(|| anyhow!("{}", tasty_i18n::t("cli.plugin_cli.no_subcommand")))?;
     let entry = entries
         .iter()
         .find(|e| e.cli.name == top_name)
-        .ok_or_else(|| anyhow!("'{}' is not a plugin-contributed cli command", top_name))?;
-    let (sub_name, sub_args) = top_sub
-        .subcommand()
-        .ok_or_else(|| anyhow!("'{}' requires a subcommand", top_name))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "{}",
+                tasty_i18n::t_fmt("cli.plugin_cli.not_plugin_command", top_name)
+            )
+        })?;
+    let (sub_name, sub_args) = top_sub.subcommand().ok_or_else(|| {
+        anyhow!(
+            "{}",
+            tasty_i18n::t_fmt("cli.plugin_cli.subcommand_required", top_name)
+        )
+    })?;
     let sub_decl = entry
         .cli
         .subcommands
         .iter()
         .find(|s| s.name == sub_name)
-        .ok_or_else(|| anyhow!("unknown subcommand '{} {}'", top_name, sub_name))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "{}",
+                tasty_i18n::t_fmt2("cli.plugin_cli.unknown_subcommand", top_name, sub_name)
+            )
+        })?;
     let group = entry.cli.arg_groups.get(&sub_decl.args);
 
     let mut params = Map::new();
@@ -298,8 +314,8 @@ fn resolve_auto_wait_polling(
     }
     let strategy = aw.strategy.as_ref().ok_or_else(|| {
         anyhow!(
-            "auto_wait '{}' declares neither 'polling' nor 'strategy'",
-            aw.method
+            "{}",
+            tasty_i18n::t_fmt("cli.plugin_cli.auto_wait_no_mode", &aw.method)
         )
     })?;
     available_strategies
@@ -307,9 +323,12 @@ fn resolve_auto_wait_polling(
         .map(CompletionStrategyDecl::to_polling_decl)
         .ok_or_else(|| {
             anyhow!(
-                "auto_wait '{}' references unknown strategy '{}'",
-                aw.method,
-                strategy
+                "{}",
+                tasty_i18n::t_fmt2(
+                    "cli.plugin_cli.auto_wait_unknown_strategy",
+                    &aw.method,
+                    strategy
+                )
             )
         })
 }
@@ -432,12 +451,15 @@ fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Result<Option<Value>> {
             .unwrap_or_default();
         if values.len() > 1 {
             return Err(anyhow!(
-                "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)",
-                arg.flag
-                    .as_deref()
-                    .unwrap_or(&arg.name)
-                    .trim_start_matches('-'),
-                values.len()
+                "{}",
+                tasty_i18n::t_fmt2(
+                    "cli.plugin_cli.flag_repeated",
+                    arg.flag
+                        .as_deref()
+                        .unwrap_or(&arg.name)
+                        .trim_start_matches('-'),
+                    &values.len().to_string()
+                )
             ));
         }
         return Ok(match arg.ty {
@@ -868,6 +890,8 @@ mod tests {
 
     #[test]
     fn resolve_auto_wait_polling_errors_on_unknown_strategy() {
+        // 에러 본문은 i18n 키를 거친다 — en 테이블을 올려 실제 문구(= 키 존재)로 검사한다.
+        tasty_i18n::init("en");
         let aw = sample_auto_wait_decl_with_strategy("com.example.x/wait-ready");
         let err = build_auto_wait_plan(&aw, &Map::new(), &empty_strategies())
             .unwrap_err()

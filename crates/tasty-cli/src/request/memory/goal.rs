@@ -6,10 +6,7 @@ fn require_surface(explicit: Option<u32>) -> u32 {
     match resolve_surface_id(explicit) {
         Some(id) => id,
         None => {
-            eprintln!(
-                "Error: must specify a surface. Use --surface <id>, or run inside a tasty \
-                 terminal (TASTY_SURFACE_ID)."
-            );
+            eprintln!("{}", tasty_i18n::t("cli.memory.goal_surface_required"));
             std::process::exit(1);
         }
     }

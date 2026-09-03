@@ -1,7 +1,7 @@
 //! `fn main` 진입 직후의 CLI 라우팅 결정.
 //!
 //! `-a/--all` / clap parse / plugin CLI fallback / subcommand / augmented help
-//! 5가지 분기를 `Routed` enum 으로 압축. i18n 은 호출자가 mode helper 안에서 한다.
+//! 5가지 분기를 `Routed` enum 으로 압축. i18n 은 `parse_or_route` 진입부에서 1회 올린다.
 
 use crate::cli;
 
@@ -9,6 +9,7 @@ use crate::cli;
 pub(crate) enum Routed {
     /// `cli_routing` 안에서 이미 출력/실행됨. 호출자는 즉시 Ok(()) 반환.
     /// - `-a/--all` → `cli::print_command_tree` (i18n 무관, clap get_about 출력)
+    /// - `-a/--all` → `cli::print_command_tree` (clap get_about println; plugin 매니페스트 경고만 i18n)
     /// - clap parse 에러 → `cli::format_parse_error` 내부 std::process::exit (unreachable)
     /// - plugin CLI 매칭 → `cli::try_run_plugin_cli` 실행 완료 (에러는 Result 채널로 propagate)
     AlreadyHandled,
@@ -24,6 +25,11 @@ pub(crate) enum Routed {
 /// 모든 라우팅 결정을 한 곳에 모은다. plugin CLI 실행 에러는 Result 로 전파.
 pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     use clap::{CommandFactory, FromArgMatches};
+
+    // i18n 은 라우팅 판정보다 먼저 올린다 — 아래의 plugin CLI 매칭(`try_run_plugin_cli`:
+    // 매니페스트 경고·인자 오류)과 root `-h` 의 augmented help 가 번역 테이블을 읽는다.
+    // 뒤의 `run_subcommand` 등이 다시 부르는 `locale::init()` 은 `Once` 가드라 no-op.
+    super::locale::init();
 
     // -a/--all + -h/--help 는 clap parse 우회 — clap 의 built-in `--help` 가 plugin
     // contributes.cli 를 모르는 정적 `Cli::command()` 위에서 발화해 plugin 명령

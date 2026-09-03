@@ -120,7 +120,8 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
                 },
         } => {
             anyhow::bail!(
-                "--ssh 와 --force-detach 는 함께 쓸 수 없습니다 (원격 force-detach 는 미지원)."
+                "{}",
+                tasty_i18n::t("cli.dispatch.ssh_force_detach_exclusive")
             );
         }
         // `tasty remote attach` (non-force, non-into_gui) — SSH 터널(포트발견 + ssh -L) +

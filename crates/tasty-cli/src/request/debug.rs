@@ -249,17 +249,26 @@ pub(super) fn settings_debug_command_to_method_params(
         SettingsDebugCommands::Apply { json, file } => {
             let raw = match (file, json) {
                 (Some(path), _) => std::fs::read_to_string(path).unwrap_or_else(|e| {
-                    eprintln!("Error: --file {path}: {e}");
+                    eprintln!(
+                        "{}",
+                        tasty_i18n::t_fmt2("cli.debug.file_read_failed", path, &e.to_string())
+                    );
                     std::process::exit(1);
                 }),
                 (None, Some(s)) => s.clone(),
                 (None, None) => {
-                    eprintln!("Error: settings apply requires --json or --file");
+                    eprintln!(
+                        "{}",
+                        tasty_i18n::t("cli.debug.settings_apply_source_required")
+                    );
                     std::process::exit(1);
                 }
             };
             let patch: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|e| {
-                eprintln!("Error: invalid JSON in settings patch: {e}");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.debug.settings_patch_not_json", &e.to_string())
+                );
                 std::process::exit(1);
             });
             (
@@ -283,7 +292,10 @@ pub(super) fn lua_debug_command_to_method_params(
         // 반환하지 못하므로 읽기 실패는 eprintln + exit(1) 로 처리한다.
         LuaDebugCommands::EvalFile { path } => {
             let source = std::fs::read_to_string(path).unwrap_or_else(|e| {
-                eprintln!("Error: lua eval-file {path}: {e}");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt2("cli.debug.lua_eval_file_failed", path, &e.to_string())
+                );
                 std::process::exit(1);
             });
             ("debug.lua.eval", serde_json::json!({ "source": source }))

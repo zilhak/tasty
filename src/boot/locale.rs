@@ -57,6 +57,14 @@ impl ResolvedLocale {
     }
 }
 
+use std::sync::Once;
+
+static INIT: Once = Once::new();
+
+/// settings 를 읽어 i18n 테이블을 올린다. `cli_routing::parse_or_route` 진입부와 각
+/// mode helper 가 모두 부르므로 `Once` 로 1회만 실행한다 — 두 번째 호출부터는 settings
+/// 파일을 다시 읽지 않아 config 파싱 경고가 중복으로 찍히지 않는다(`tasty_i18n::init`
+/// 자체도 `OnceLock` 이라 재호출은 무해하지만, 그 앞의 `Settings::load` 는 아니다).
 pub(crate) fn init() {
     let lang_settings = crate::settings::Settings::load();
     let locale = ResolvedLocale::from_setting(&lang_settings.general.language);
@@ -137,4 +145,8 @@ mod tests {
         assert_eq!(k, "TASTY_LOCALE_FONT");
         assert_eq!(v, Some(font.into_os_string()));
     }
+    INIT.call_once(|| {
+        let lang_settings = crate::settings::Settings::load();
+        crate::i18n::init(&lang_settings.general.language);
+    });
 }

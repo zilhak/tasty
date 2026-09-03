@@ -48,15 +48,18 @@ impl ClientCommand for ToolSsh<'_> {
         let passkeys = tasty_remote_profiles::Passkeys::load();
         let Some(p) = profiles.get(self.profile) else {
             anyhow::bail!(
-                "ssh 프로필 '{}' 을 찾을 수 없습니다 (tasty tool remote-profile list).",
-                self.profile
+                "{}",
+                tasty_i18n::t_fmt("cli.dispatch.ssh_profile_not_found", self.profile)
             );
         };
         if p.as_ssh().is_none() {
             anyhow::bail!(
-                "'{}' 은 ssh kind 가 아닙니다 (kind='{}'). tool ssh 는 ssh 프로필 전용.",
-                self.profile,
-                p.kind
+                "{}",
+                tasty_i18n::t_fmt2(
+                    "cli.dispatch.ssh_profile_not_ssh_kind",
+                    self.profile,
+                    &p.kind
+                )
             );
         }
         let target = crate::ssh::SshTarget::from_remote_profile(p, &passkeys)?;
@@ -109,24 +112,28 @@ impl ClientCommand for ToolAttach<'_> {
         }
         let Some(name) = self.name.as_deref() else {
             anyhow::bail!(
-                "attach 대상이 필요합니다: `tasty tool attach <profile> <surface|--workspace id>` \
-                 또는 `tasty tool attach --list` (tasty-attach 목록)."
+                "{}",
+                tasty_i18n::t("cli.dispatch.tool_attach_target_required")
             );
         };
         if self.surface.is_some() && self.workspace.is_some() {
-            anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
+            anyhow::bail!(
+                "{}",
+                tasty_i18n::t("cli.dispatch.surface_workspace_exclusive")
+            );
         }
         let profiles = tasty_remote_profiles::RemoteProfiles::load();
         let passkeys = tasty_remote_profiles::Passkeys::load();
         let Some(p) = profiles.get(name) else {
             anyhow::bail!(
-                "tasty-attach 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool attach --list)."
+                "{}",
+                tasty_i18n::t_fmt("cli.dispatch.attach_profile_not_found", name)
             );
         };
         let (target, rt, pm, pf) = crate::ssh::resolve_attach_target(p, &profiles, &passkeys)?;
         if let Some(ws) = self.workspace {
             if self.raw {
-                anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
+                anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.raw_workspace_exclusive"));
             }
             return crate::local::attach::run_attach_workspace_ssh(
                 target,
@@ -141,7 +148,7 @@ impl ClientCommand for ToolAttach<'_> {
             );
         }
         let Some(surface) = self.surface else {
-            anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.attach_target_required"));
         };
         crate::local::attach::run_attach_ssh(
             target,
@@ -174,23 +181,25 @@ pub struct RemoteAttach<'a> {
 impl ClientCommand for RemoteAttach<'_> {
     fn run(self: Box<Self>, _ctx: &ClientCtx<'_>) -> Result<()> {
         if self.surface.is_some() && self.workspace.is_some() {
-            anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
+            anyhow::bail!(
+                "{}",
+                tasty_i18n::t("cli.dispatch.surface_workspace_exclusive")
+            );
         }
         if self.ssh.is_some() && self.profile.is_some() {
-            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.ssh_profile_exclusive"));
         }
         let (target, rt, pm, pf) = resolve_attach_spec(
             self.profile.as_deref(),
             self.ssh.as_deref(),
             self.remote_tasty,
             self.remote_port_mode,
-            "원격 attach 대상이 필요합니다 (--ssh 또는 --profile). \
-                 로컬 attach 는 `tasty debug attach` (debug 빌드).",
+            tasty_i18n::t("cli.dispatch.remote_attach_target_required"),
         )?;
         // workspace 단위 attach (단계 6): 트리 N-터미널 다중화 mirror.
         if let Some(ws) = self.workspace {
             if self.raw {
-                anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
+                anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.raw_workspace_exclusive"));
             }
             return crate::local::attach::run_attach_workspace_ssh(
                 target,
@@ -206,7 +215,7 @@ impl ClientCommand for RemoteAttach<'_> {
         }
         // surface 단위 attach (단계 4/5).
         let Some(surface) = self.surface else {
-            anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.attach_target_required"));
         };
         crate::local::attach::run_attach_ssh(
             target,
@@ -234,14 +243,14 @@ pub struct RemoteCheck<'a> {
 impl ClientCommand for RemoteCheck<'_> {
     fn run(self: Box<Self>, _ctx: &ClientCtx<'_>) -> Result<()> {
         if self.ssh.is_some() && self.profile.is_some() {
-            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.ssh_profile_exclusive"));
         }
         let (target, rt, pm, pf) = resolve_attach_spec(
             self.profile.as_deref(),
             self.ssh.as_deref(),
             self.remote_tasty,
             self.remote_port_mode,
-            "원격 check 대상이 필요합니다 (--ssh 또는 --profile).",
+            tasty_i18n::t("cli.dispatch.remote_check_target_required"),
         )?;
         crate::local::remote_check::run_remote_check(target, &rt, &pm, pf.as_deref())
     }
@@ -259,7 +268,7 @@ pub struct RemoteWorkspaces<'a> {
 impl ClientCommand for RemoteWorkspaces<'_> {
     fn run(self: Box<Self>, _ctx: &ClientCtx<'_>) -> Result<()> {
         if self.ssh.is_some() && self.profile.is_some() {
-            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.ssh_profile_exclusive"));
         }
         // 접속 스펙 resolve(profile/ssh) — CLI 와 호스트 IPC 워커가 공유하는 helper.
         let (target, rt, pm, pf) = crate::remote_browse::resolve_connection_spec(
@@ -292,7 +301,7 @@ pub struct RemoteNewWorkspace<'a> {
 impl ClientCommand for RemoteNewWorkspace<'_> {
     fn run(self: Box<Self>, _ctx: &ClientCtx<'_>) -> Result<()> {
         if self.ssh.is_some() && self.profile.is_some() {
-            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.ssh_profile_exclusive"));
         }
         let (target, rt, pm, pf) = crate::remote_browse::resolve_connection_spec(
             self.profile.as_deref(),
@@ -398,11 +407,14 @@ pub struct DebugAttach<'a> {
 impl ClientCommand for DebugAttach<'_> {
     fn run(self: Box<Self>, ctx: &ClientCtx<'_>) -> Result<()> {
         if self.surface.is_some() && self.workspace.is_some() {
-            anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
+            anyhow::bail!(
+                "{}",
+                tasty_i18n::t("cli.dispatch.surface_workspace_exclusive")
+            );
         }
         if let Some(ws) = self.workspace {
             if self.raw {
-                anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
+                anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.raw_workspace_exclusive"));
             }
             return crate::local::debug::attach::run_attach_workspace(
                 ws,
@@ -413,7 +425,7 @@ impl ClientCommand for DebugAttach<'_> {
             );
         }
         let Some(surface) = self.surface else {
-            anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
+            anyhow::bail!("{}", tasty_i18n::t("cli.dispatch.attach_target_required"));
         };
         crate::local::debug::attach::run_attach(
             surface,

@@ -1310,6 +1310,85 @@ desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/children/kill/…
 spawn_no_parent = "오류: parent surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
 tell_no_target = "오류: 대상 surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
 
+# `tasty` CLI — 클라이언트 측 인자 검증 오류와 stderr 상태 줄.
+# CLI 가 직접 출력하는 메시지는 "오류:" / "경고:" 접두를 값 안에 포함한다(언어별로 표현이
+# 다르다). `cli.dispatch.*`, `cli.plugin_cli.*`(manifest_skipped 제외), `cli.preset.*_read_failed`
+# / `not_json` 은 호출자가 접두를 붙이는 에러 본문이다.
+[cli.request]
+cwd_invalid = "오류: --cwd: {}"
+close_self_no_surface = "오류: TASTY_SURFACE_ID 가 설정되지 않았습니다. 'close self' 는 tasty 터미널 안에서만 쓸 수 있습니다."
+
+[cli.memory]
+value_file_read_failed = "오류: 값 파일을 읽지 못했습니다: {}"
+put_requires_value = "오류: '{}' 에는 --value 또는 --value-b64 가 필요합니다"
+option_not_json = "오류: {} 이(가) 올바른 JSON 이 아닙니다: {}"
+import_read_failed = "오류: {} 을(를) 읽지 못했습니다: {}"
+import_not_json = "오류: {}: 올바른 JSON 이 아닙니다: {}"
+import_bad_shape = "오류: {}: JSON 배열이거나 'entries' 를 가진 객체여야 합니다"
+scope_required = "오류: scope 를 지정해야 합니다. --scope <token> 또는 --global / --surface <id> / --workspace <id> / --window <id> / --account <userid> 중 하나를 사용하세요."
+goal_surface_required = "오류: surface 를 지정해야 합니다. --surface <id> 를 쓰거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
+
+[cli.agent]
+inputs_empty = "오류: --inputs 에는 task id 가 하나 이상 있어야 합니다"
+flag_file_read_failed = "오류: {} 을(를) 읽지 못했습니다 ({} 용): {}"
+flag_not_json = "오류: {} 을(를) JSON 으로 파싱하지 못했습니다: {}"
+purge_filter_required = "오류: --states 또는 --older-than-ms 가 필요합니다 (워크스페이스 전체 purge 는 거부합니다)"
+metadata_not_object = "오류: --concurrency-limit 과 함께 쓰려면 --metadata 는 JSON 객체여야 합니다"
+metadata_semaphore_conflict = "오류: --metadata 에 이미 'semaphore' 가 있습니다 — 제거하거나 --concurrency-limit 을 빼세요"
+
+[cli.telemetry]
+tags_not_object = "오류: --tags 는 올바른 JSON 객체여야 합니다: {}"
+cap_reset_target_required = "오류: telemetry cap reset 에는 --id 또는 --agent 가 필요합니다"
+
+[cli.approval]
+metadata_not_json = "오류: --metadata 는 올바른 JSON 이어야 합니다: {}"
+content_file_read_failed = "오류: --content 파일 '{}' 을(를) 읽지 못했습니다: {}"
+
+[cli.preset]
+stdin_read_failed = "stdin 읽기 실패: {}"
+file_read_failed = "파일 읽기 실패: {}"
+save_read_failed = "오류: {}"
+not_json = "올바른 JSON 이 아닙니다: {}"
+
+[cli.debug]
+file_read_failed = "오류: --file {}: {}"
+settings_apply_source_required = "오류: settings apply 에는 --json 또는 --file 이 필요합니다"
+settings_patch_not_json = "오류: settings patch 의 JSON 이 올바르지 않습니다: {}"
+lua_eval_file_failed = "오류: lua eval-file {}: {}"
+
+[cli.plugin_cli]
+manifest_skipped = "경고: {} 의 plugin 매니페스트를 건너뜁니다: {}"
+no_subcommand = "서브커맨드가 없습니다"
+not_plugin_command = "'{}' 은(는) plugin 이 제공하는 cli 명령이 아닙니다"
+subcommand_required = "'{}' 에는 서브커맨드가 필요합니다"
+unknown_subcommand = "알 수 없는 서브커맨드 '{} {}'"
+flag_repeated = "--{} 이(가) {}번 지정되었습니다 — 값은 하나만 받습니다 (앞의 값이 조용히 버려지는 것을 막기 위해 거부합니다)"
+auto_wait_no_mode = "auto_wait '{}' 에 'polling' 과 'strategy' 가 모두 없습니다"
+auto_wait_unknown_strategy = "auto_wait '{}' 이(가) 알 수 없는 strategy '{}' 를 참조합니다"
+
+[cli.dispatch]
+ssh_profile_not_found = "ssh 프로필 '{}' 을(를) 찾을 수 없습니다 (tasty tool remote-profile list)."
+ssh_profile_not_ssh_kind = "'{}' 은(는) ssh 프로필이 아닙니다 (kind='{}'). tool ssh 는 ssh 프로필만 받습니다."
+tool_attach_target_required = "attach 대상이 필요합니다: `tasty tool attach <profile> <surface|--workspace id>` 또는 `tasty tool attach --list` (tasty-attach 목록)."
+attach_profile_not_found = "tasty-attach 프로필 '{}' 을(를) 찾을 수 없습니다 (tasty tool attach --list)."
+surface_workspace_exclusive = "surface 와 --workspace 는 함께 쓸 수 없습니다."
+raw_workspace_exclusive = "--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림)."
+attach_target_required = "attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>."
+ssh_profile_exclusive = "--ssh 와 --profile 은 함께 쓸 수 없습니다."
+ssh_force_detach_exclusive = "--ssh 와 --force-detach 는 함께 쓸 수 없습니다 (원격 force-detach 는 지원하지 않습니다)."
+remote_attach_target_required = "원격 attach 대상이 필요합니다 (--ssh 또는 --profile). 로컬 attach 는 `tasty debug attach` (debug 빌드) 를 사용하세요."
+remote_check_target_required = "원격 check 대상이 필요합니다 (--ssh 또는 --profile)."
+
+[cli.attach]
+attached_surface = "surface {} 에 attach 했습니다 (client_id={}, {}x{})"
+attached_workspace = "workspace {} 에 attach 했습니다 (client_id={}, 터미널 {}개, placeholder {}개)"
+port_discovery_failed_retry = "원격 포트 발견 실패: {} — 백오프 후 재시도합니다"
+tunnel_failed_retry = "ssh 터널 수립 실패: {} — 백오프 후 재시도합니다"
+tunnel_established = "ssh 터널 수립: 127.0.0.1:{} -> {}:{}"
+disconnected_reconnect = "연결이 끊겼습니다 — 백오프 후 재연결합니다 (세션은 서버에 남아 있습니다)"
+send_requires_send_to = "workspace 모드의 --send 는 --send-to <surface_id> 와 함께 써야 합니다 (무시합니다)."
+force_detached = "서버가 강제로 detach 했습니다"
+
 [command_index.cap.soft]
 title = "명령 이력이 많습니다"
 body = "이 서피스에 명령 {}개가 기록되었습니다. 오래된 항목은 서피스를 닫을 때 정리됩니다."

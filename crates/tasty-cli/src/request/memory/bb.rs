@@ -17,7 +17,14 @@ pub(super) fn memory_bb_command_to_method_params(
                 let v: serde_json::Value = match serde_json::from_str(raw) {
                     Ok(v) => v,
                     Err(e) => {
-                        eprintln!("Error: --schema is not valid JSON: {e}");
+                        eprintln!(
+                            "{}",
+                            tasty_i18n::t_fmt2(
+                                "cli.memory.option_not_json",
+                                "--schema",
+                                &e.to_string()
+                            )
+                        );
                         std::process::exit(1);
                     }
                 };
@@ -45,7 +52,10 @@ pub(super) fn memory_bb_command_to_method_params(
                 let raw = match read_value_arg(v) {
                     Ok(s) => s,
                     Err(e) => {
-                        eprintln!("Error: failed to read value file: {e}");
+                        eprintln!(
+                            "{}",
+                            tasty_i18n::t_fmt("cli.memory.value_file_read_failed", &e.to_string())
+                        );
                         std::process::exit(1);
                     }
                 };
@@ -55,7 +65,10 @@ pub(super) fn memory_bb_command_to_method_params(
                     p["value"] = serde_json::Value::String(raw);
                 }
             } else {
-                eprintln!("Error: 'memory bb put' requires --value or --value-b64");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.memory.put_requires_value", "memory bb put")
+                );
                 std::process::exit(1);
             }
             if let Some(ct) = content_type.as_deref() {

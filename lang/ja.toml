@@ -1312,6 +1312,85 @@ desc = "AIエージェント用の子ターミナル管理 (spawn/tell/children/
 spawn_no_parent = "エラー: 親サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 tell_no_target = "エラー: 対象サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 
+# `tasty` CLI — クライアント側の引数検証エラーと stderr のステータス行。
+# CLI が直接出力するメッセージは "エラー:" / "警告:" の接頭辞を値に含める(言語ごとに表現が
+# 異なる)。`cli.dispatch.*`、`cli.plugin_cli.*`(manifest_skipped を除く)、`cli.preset.*_read_failed`
+# / `not_json` は呼び出し側が接頭辞を付けるエラー本文である。
+[cli.request]
+cwd_invalid = "エラー: --cwd: {}"
+close_self_no_surface = "エラー: TASTY_SURFACE_ID が設定されていません。'close self' は tasty ターミナル内でのみ使用できます。"
+
+[cli.memory]
+value_file_read_failed = "エラー: 値ファイルを読み込めませんでした: {}"
+put_requires_value = "エラー: '{}' には --value または --value-b64 が必要です"
+option_not_json = "エラー: {} は有効な JSON ではありません: {}"
+import_read_failed = "エラー: {} を読み込めませんでした: {}"
+import_not_json = "エラー: {}: 有効な JSON ではありません: {}"
+import_bad_shape = "エラー: {}: JSON 配列か 'entries' を持つオブジェクトである必要があります"
+scope_required = "エラー: scope を指定してください。--scope <token> か、--global / --surface <id> / --workspace <id> / --window <id> / --account <userid> のいずれかを使用してください。"
+goal_surface_required = "エラー: surface を指定してください。--surface <id> を使うか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)。"
+
+[cli.agent]
+inputs_empty = "エラー: --inputs には task id を 1 つ以上含めてください"
+flag_file_read_failed = "エラー: {} を読み込めませんでした ({} 用): {}"
+flag_not_json = "エラー: {} を JSON として解析できませんでした: {}"
+purge_filter_required = "エラー: --states または --older-than-ms が必要です (ワークスペース全体の purge は拒否します)"
+metadata_not_object = "エラー: --concurrency-limit と併用するには --metadata は JSON オブジェクトである必要があります"
+metadata_semaphore_conflict = "エラー: --metadata に既に 'semaphore' が設定されています — 削除するか --concurrency-limit を外してください"
+
+[cli.telemetry]
+tags_not_object = "エラー: --tags は有効な JSON オブジェクトである必要があります: {}"
+cap_reset_target_required = "エラー: telemetry cap reset には --id または --agent が必要です"
+
+[cli.approval]
+metadata_not_json = "エラー: --metadata は有効な JSON である必要があります: {}"
+content_file_read_failed = "エラー: --content ファイル '{}' を読み込めませんでした: {}"
+
+[cli.preset]
+stdin_read_failed = "stdin の読み込みに失敗しました: {}"
+file_read_failed = "ファイルの読み込みに失敗しました: {}"
+save_read_failed = "エラー: {}"
+not_json = "有効な JSON ではありません: {}"
+
+[cli.debug]
+file_read_failed = "エラー: --file {}: {}"
+settings_apply_source_required = "エラー: settings apply には --json または --file が必要です"
+settings_patch_not_json = "エラー: settings patch の JSON が無効です: {}"
+lua_eval_file_failed = "エラー: lua eval-file {}: {}"
+
+[cli.plugin_cli]
+manifest_skipped = "警告: {} の plugin マニフェストをスキップしました: {}"
+no_subcommand = "サブコマンドが指定されていません"
+not_plugin_command = "'{}' は plugin が提供する cli コマンドではありません"
+subcommand_required = "'{}' にはサブコマンドが必要です"
+unknown_subcommand = "不明なサブコマンド '{} {}'"
+flag_repeated = "--{} が {} 回指定されました — 値は 1 つだけ受け付けます (先の値が黙って破棄されるのを防ぐため拒否します)"
+auto_wait_no_mode = "auto_wait '{}' に 'polling' も 'strategy' もありません"
+auto_wait_unknown_strategy = "auto_wait '{}' が不明な strategy '{}' を参照しています"
+
+[cli.dispatch]
+ssh_profile_not_found = "ssh プロファイル '{}' が見つかりません (tasty tool remote-profile list)。"
+ssh_profile_not_ssh_kind = "'{}' は ssh プロファイルではありません (kind='{}')。tool ssh は ssh プロファイルのみ受け付けます。"
+tool_attach_target_required = "attach 対象が必要です: `tasty tool attach <profile> <surface|--workspace id>` または `tasty tool attach --list` (tasty-attach 一覧)。"
+attach_profile_not_found = "tasty-attach プロファイル '{}' が見つかりません (tasty tool attach --list)。"
+surface_workspace_exclusive = "surface と --workspace は同時に使用できません。"
+raw_workspace_exclusive = "--raw は workspace attach と同時に使用できません (多重化ストリーム)。"
+attach_target_required = "attach 対象が必要です: <surface_id> または --workspace <id>。"
+ssh_profile_exclusive = "--ssh と --profile は同時に使用できません。"
+ssh_force_detach_exclusive = "--ssh と --force-detach は同時に使用できません (リモート force-detach は未対応です)。"
+remote_attach_target_required = "リモート attach 対象が必要です (--ssh または --profile)。ローカル attach は `tasty debug attach` (debug ビルド) を使用してください。"
+remote_check_target_required = "リモート check 対象が必要です (--ssh または --profile)。"
+
+[cli.attach]
+attached_surface = "surface {} に attach しました (client_id={}, {}x{})"
+attached_workspace = "workspace {} に attach しました (client_id={}, ターミナル {} 個, placeholder {} 個)"
+port_discovery_failed_retry = "リモートポートの検出に失敗しました: {} — バックオフ後に再試行します"
+tunnel_failed_retry = "ssh トンネルの確立に失敗しました: {} — バックオフ後に再試行します"
+tunnel_established = "ssh トンネルを確立しました: 127.0.0.1:{} -> {}:{}"
+disconnected_reconnect = "接続が切断されました — バックオフ後に再接続します (セッションはサーバーに残ります)"
+send_requires_send_to = "workspace モードの --send は --send-to <surface_id> と併用してください (無視します)。"
+force_detached = "サーバーによって強制 detach されました"
+
 [command_index.cap.soft]
 title = "コマンド履歴が大量です"
 body = "このサーフェスにコマンドが {} 件記録されています。古い項目はサーフェスを閉じると整理されます。"

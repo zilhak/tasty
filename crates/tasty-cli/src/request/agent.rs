@@ -164,9 +164,7 @@ pub(super) fn agent_command_to_method_params(
             dry_run,
         } => {
             if states.is_empty() && older_than_ms.is_none() {
-                eprintln!(
-                    "Error: --states or --older-than-ms is required (refusing to purge the whole workspace)"
-                );
+                eprintln!("{}", tasty_i18n::t("cli.agent.purge_filter_required"));
                 std::process::exit(1);
             }
             let mut p = serde_json::json!({
@@ -307,7 +305,7 @@ pub(super) fn agent_command_to_method_params(
             extract_path,
         } => {
             if inputs.is_empty() {
-                eprintln!("Error: --inputs must contain at least one task id");
+                eprintln!("{}", tasty_i18n::t("cli.agent.inputs_empty"));
                 std::process::exit(1);
             }
             let strategy_val = parse_reducer_strategy(strategy);
@@ -456,7 +454,13 @@ fn parse_inline_or_file_json(s: &str, flag: &str) -> serde_json::Value {
         match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("Error: reading {path} for {flag}: {e}");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_args(
+                        "cli.agent.flag_file_read_failed",
+                        &[path, flag, &e.to_string()]
+                    )
+                );
                 std::process::exit(1);
             }
         }
@@ -466,7 +470,10 @@ fn parse_inline_or_file_json(s: &str, flag: &str) -> serde_json::Value {
     match serde_json::from_str(&json_text) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Error: parsing {flag} as JSON: {e}");
+            eprintln!(
+                "{}",
+                tasty_i18n::t_fmt2("cli.agent.flag_not_json", flag, &e.to_string())
+            );
             std::process::exit(1);
         }
     }
@@ -488,16 +495,12 @@ fn apply_concurrency_limit(
         serde_json::Value::Null => serde_json::Map::new(),
         serde_json::Value::Object(map) => map,
         _ => {
-            eprintln!(
-                "Error: --metadata must be a JSON object to combine with --concurrency-limit"
-            );
+            eprintln!("{}", tasty_i18n::t("cli.agent.metadata_not_object"));
             std::process::exit(1);
         }
     };
     if obj.contains_key("semaphore") {
-        eprintln!(
-            "Error: --metadata already sets 'semaphore' — remove it or drop --concurrency-limit"
-        );
+        eprintln!("{}", tasty_i18n::t("cli.agent.metadata_semaphore_conflict"));
         std::process::exit(1);
     }
     obj.insert("semaphore".to_string(), serde_json::json!({ "name": name }));

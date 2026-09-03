@@ -79,7 +79,10 @@ pub(super) fn memory_command_to_method_params(
                 let raw = match read_value_arg(v) {
                     Ok(s) => s,
                     Err(e) => {
-                        eprintln!("Error: failed to read value file: {e}");
+                        eprintln!(
+                            "{}",
+                            tasty_i18n::t_fmt("cli.memory.value_file_read_failed", &e.to_string())
+                        );
                         std::process::exit(1);
                     }
                 };
@@ -90,7 +93,10 @@ pub(super) fn memory_command_to_method_params(
                     params["value"] = serde_json::Value::String(raw);
                 }
             } else {
-                eprintln!("Error: 'memory put' requires --value or --value-b64");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.memory.put_requires_value", "memory put")
+                );
                 std::process::exit(1);
             }
             if let Some(ct) = content_type.as_deref() {
@@ -288,14 +294,20 @@ pub(super) fn memory_command_to_method_params(
             let raw = match std::fs::read_to_string(file) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("Error: failed to read {file}: {e}");
+                    eprintln!(
+                        "{}",
+                        tasty_i18n::t_fmt2("cli.memory.import_read_failed", file, &e.to_string())
+                    );
                     std::process::exit(1);
                 }
             };
             let parsed: serde_json::Value = match serde_json::from_str(&raw) {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("Error: {file}: not valid JSON: {e}");
+                    eprintln!(
+                        "{}",
+                        tasty_i18n::t_fmt2("cli.memory.import_not_json", file, &e.to_string())
+                    );
                     std::process::exit(1);
                 }
             };
@@ -305,7 +317,7 @@ pub(super) fn memory_command_to_method_params(
             } else if let Some(arr) = parsed.get("entries") {
                 arr.clone()
             } else {
-                eprintln!("Error: {file}: expected JSON array or object with 'entries'");
+                eprintln!("{}", tasty_i18n::t_fmt("cli.memory.import_bad_shape", file));
                 std::process::exit(1);
             };
             (
@@ -387,10 +399,7 @@ pub(super) fn require_scope(
     match resolve_scope(scope, surface, workspace, window, account, global) {
         Some(s) => s,
         None => {
-            eprintln!(
-                "Error: must specify a scope. Use --scope <token> or one of \
-                 --global / --surface <id> / --workspace <id> / --window <id> / --account <userid>."
-            );
+            eprintln!("{}", tasty_i18n::t("cli.memory.scope_required"));
             std::process::exit(1);
         }
     }

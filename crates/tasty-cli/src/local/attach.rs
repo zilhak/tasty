@@ -73,7 +73,18 @@ pub(crate) fn run_attach_on_port(
     }
     let cols = ctrl.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
     let rows = ctrl.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
-    eprintln!("attached surface {surface} (client_id={client_id}, {cols}x{rows})");
+    eprintln!(
+        "{}",
+        tasty_i18n::t_args(
+            "cli.attach.attached_surface",
+            &[
+                &surface.to_string(),
+                &client_id.to_string(),
+                &cols.to_string(),
+                &rows.to_string()
+            ]
+        )
+    );
 
     if raw {
         run_raw_bridge(conn, send)
@@ -120,7 +131,10 @@ pub fn run_attach_ssh(
         ) {
             Ok(p) => p,
             Err(e) if reconnect => {
-                eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.attach.port_discovery_failed_retry", &e.to_string())
+                );
                 backoff.sleep();
                 continue;
             }
@@ -131,15 +145,25 @@ pub fn run_attach_ssh(
         let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
             Ok(t) => t,
             Err(e) if reconnect => {
-                eprintln!("ssh 터널 수립 실패: {e} — 백오프 재시도");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.attach.tunnel_failed_retry", &e.to_string())
+                );
                 backoff.sleep();
                 continue;
             }
             Err(e) => return Err(e),
         };
         eprintln!(
-            "ssh 터널 수립: 127.0.0.1:{} → {dest}:{remote_port}",
-            tunnel.local_port
+            "{}",
+            tasty_i18n::t_args(
+                "cli.attach.tunnel_established",
+                &[
+                    &tunnel.local_port.to_string(),
+                    &dest,
+                    &remote_port.to_string()
+                ]
+            )
         );
         backoff.reset();
 
@@ -147,7 +171,7 @@ pub fn run_attach_ssh(
         match run_attach_on_port(tunnel.local_port, surface, dump_after, send, raw)? {
             AttachExit::Completed => return Ok(()),
             AttachExit::Disconnected if reconnect => {
-                eprintln!("연결 끊김 — 백오프 재연결(세션은 서버 상주)");
+                eprintln!("{}", tasty_i18n::t("cli.attach.disconnected_reconnect"));
                 drop(tunnel); // 자식 ssh kill 후 재수립.
                 backoff.sleep();
                 continue;
@@ -218,9 +242,16 @@ pub(crate) fn run_attach_workspace_on_port(
         }
     }
     eprintln!(
-        "attached workspace {workspace} (client_id={client_id}, {} terminals, {} placeholders)",
-        mirrors.len(),
-        placeholders.len()
+        "{}",
+        tasty_i18n::t_args(
+            "cli.attach.attached_workspace",
+            &[
+                &workspace.to_string(),
+                &client_id.to_string(),
+                &mirrors.len().to_string(),
+                &placeholders.len().to_string()
+            ]
+        )
     );
 
     run_workspace_mirror_dump(conn, mirrors, placeholders, dump_after, send, send_to)
@@ -259,7 +290,10 @@ pub fn run_attach_workspace_ssh(
         ) {
             Ok(p) => p,
             Err(e) if reconnect => {
-                eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.attach.port_discovery_failed_retry", &e.to_string())
+                );
                 backoff.sleep();
                 continue;
             }
@@ -269,15 +303,25 @@ pub fn run_attach_workspace_ssh(
         let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
             Ok(t) => t,
             Err(e) if reconnect => {
-                eprintln!("ssh 터널 수립 실패: {e} — 백오프 재시도");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.attach.tunnel_failed_retry", &e.to_string())
+                );
                 backoff.sleep();
                 continue;
             }
             Err(e) => return Err(e),
         };
         eprintln!(
-            "ssh 터널 수립: 127.0.0.1:{} → {dest}:{remote_port}",
-            tunnel.local_port
+            "{}",
+            tasty_i18n::t_args(
+                "cli.attach.tunnel_established",
+                &[
+                    &tunnel.local_port.to_string(),
+                    &dest,
+                    &remote_port.to_string()
+                ]
+            )
         );
         backoff.reset();
 
@@ -285,7 +329,7 @@ pub fn run_attach_workspace_ssh(
         {
             AttachExit::Completed => return Ok(()),
             AttachExit::Disconnected if reconnect => {
-                eprintln!("연결 끊김 — 백오프 재연결(세션은 서버 상주)");
+                eprintln!("{}", tasty_i18n::t("cli.attach.disconnected_reconnect"));
                 drop(tunnel);
                 backoff.sleep();
                 continue;
@@ -315,9 +359,7 @@ fn run_workspace_mirror_dump(
                 &stream::encode_mux(sid, &decode_escapes(s)),
             )?,
             None => {
-                eprintln!(
-                    "workspace 모드의 --send 는 --send-to <surface_id> 와 함께 써야 합니다 (무시)."
-                )
+                eprintln!("{}", tasty_i18n::t("cli.attach.send_requires_send_to"))
             }
         }
     }
@@ -391,7 +433,7 @@ fn run_workspace_mirror_dump(
     if !forced && !disconnected {
         let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
     } else if forced {
-        eprintln!("force-detached by server");
+        eprintln!("{}", tasty_i18n::t("cli.attach.force_detached"));
     }
     let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
     Ok(if disconnected {
@@ -479,7 +521,7 @@ fn run_mirror_dump(
     if !forced && !disconnected {
         let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
     } else if forced {
-        eprintln!("force-detached by server");
+        eprintln!("{}", tasty_i18n::t("cli.attach.force_detached"));
     }
     let _ = reader.join(); // reader 스레드 join 실패(패닉) 무시 — 종료 경로
     Ok(if disconnected {
@@ -740,7 +782,7 @@ fn raw_bridge_main_loop(
                 StreamTag::Detach => return Ok(AttachExit::Completed),
                 StreamTag::Control => {
                     if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
-                        eprintln!("\r\nforce-detached by server");
+                        eprintln!("\r\n{}", tasty_i18n::t("cli.attach.force_detached"));
                         return Ok(AttachExit::Completed);
                     }
                 }

@@ -31,7 +31,10 @@ pub(super) fn telemetry_command_to_method_params(
                 match serde_json::from_str::<serde_json::Value>(t) {
                     Ok(v) => p["tags"] = v,
                     Err(e) => {
-                        eprintln!("Error: --tags must be valid JSON object: {e}");
+                        eprintln!(
+                            "{}",
+                            tasty_i18n::t_fmt("cli.telemetry.tags_not_object", &e.to_string())
+                        );
                         std::process::exit(2);
                     }
                 }
@@ -214,7 +217,10 @@ pub(super) fn telemetry_cap_command_to_method_params(
         }
         Reset { id, agent } => {
             if id.is_none() && agent.is_none() {
-                eprintln!("Error: telemetry cap reset requires --id or --agent");
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t("cli.telemetry.cap_reset_target_required")
+                );
                 std::process::exit(2);
             }
             let mut p = serde_json::json!({});
