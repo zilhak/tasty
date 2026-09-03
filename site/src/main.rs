@@ -194,6 +194,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         fs::remove_dir_all(&out_dir)?;
     }
     fs::create_dir_all(&out_dir)?;
+    let site_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut static_src = fs::read_to_string(site_dir.join("static/style.css"))?;
     static_src.push_str(&fs::read_to_string(site_dir.join("static/site.js"))?);
     if ASSET_TAG.set(content_hash(&static_src)).is_err() {
