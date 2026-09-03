@@ -1,6 +1,8 @@
 //! Cross-platform system tray / status item integration (best-effort).
 //!
-//! Creates a tray icon with menu items: Show Window, New Window, Quit.
+//! Creates a tray icon with menu items: Show Window, New Window, Quit. Menu
+//! labels and the tooltip are user-facing strings and come from `t("tray.*")`
+//! (`docs/dev-guide/i18n.md`) — the tray is a user surface on all three OSes.
 //! Backed by the `tray-icon` crate:
 //! - Windows: notification area (`Shell_NotifyIcon`)
 //! - macOS: menu bar status item (`NSStatusItem`)
@@ -28,6 +30,8 @@
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
+use crate::i18n::t;
+
 /// Menu item IDs for tray context menu.
 pub struct TrayMenuIds {
     pub show_window: String,
@@ -51,7 +55,8 @@ pub fn create_tray_icon() -> Option<(TrayIcon, TrayMenuIds)> {
 }
 
 /// Append `item` to `menu`, logging (not propagating) any failure — a single
-/// failed menu item shouldn't abort the whole tray creation.
+/// failed menu item shouldn't abort the whole tray creation. `label` is the
+/// diagnostic name for the log line only (not a user-facing string).
 fn append_or_warn(menu: &Menu, item: &MenuItem, label: &str) {
     if let Err(e) = menu.append(item) {
         tracing::warn!("Failed to append {label} menu item: {e}");
@@ -61,9 +66,9 @@ fn append_or_warn(menu: &Menu, item: &MenuItem, label: &str) {
 /// Builds the tray context menu (Show Window / New Window / Quit) and the
 /// item-id table the caller needs for event dispatch.
 fn build_tray_menu() -> (Menu, TrayMenuIds) {
-    let show_item = MenuItem::new("Show Window", true, None);
-    let new_window_item = MenuItem::new("New Window", true, None);
-    let quit_item = MenuItem::new("Quit", true, None);
+    let show_item = MenuItem::new(t("tray.show_window"), true, None);
+    let new_window_item = MenuItem::new(t("tray.new_window"), true, None);
+    let quit_item = MenuItem::new(t("tray.quit"), true, None);
 
     let ids = TrayMenuIds {
         show_window: show_item.id().0.clone(),
@@ -97,7 +102,7 @@ fn create_tray_icon_inner() -> Result<(TrayIcon, TrayMenuIds), Box<dyn std::erro
     // menu bar tint the icon for light/dark mode instead of showing raw colors.
     let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_tooltip("Tasty Terminal")
+        .with_tooltip(t("tray.tooltip"))
         .with_icon(icon)
         .with_icon_as_template(true)
         .build()?;

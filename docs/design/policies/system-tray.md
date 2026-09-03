@@ -8,7 +8,7 @@ tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에�
 
 - **한 번만 생성하고 앱 생존 동안 유지**한다(`tray_icon.is_none()` 가드). macOS 는 백그라운드 시 윈도우를 파기·재생성하므로, 트레이를 매번 다시 만들지 않도록 이 가드가 필요하다.
 - 생성 실패(미가용 환경)면 `create_tray_icon()` 이 **`None` 을 반환**하고 경고 로그만 남긴다 — 앱을 중단시키지 않는다. 이후 동선은 태스크바/도크 최소화 폴백.
-- 메뉴 항목: **Show Window · New Window · Quit**.
+- 메뉴 항목: **Show Window · New Window · Quit**. 항목 라벨과 아이콘 툴팁은 `t("tray.*")`(`show_window` / `new_window` / `quit` / `tooltip`)에서 가져와 `general.language` 를 따른다 — 트레이는 세 OS 공통의 사용자 표면이라 [i18n](../../dev-guide/i18n.md) 예외가 아니다.
 - 아이콘은 임베드 PNG(`app_icon::tray_icon()`), macOS 는 `with_icon_as_template(true)` 로 메뉴 바 라이트/다크 틴팅에 맡긴다(타 OS 는 no-op).
 
 ## 백그라운드 진입 / 복귀 (OS별)

@@ -594,6 +594,29 @@ minimize = "Minimize"
 maximize = "Maximize"
 close = "Close"
 
+[menu.macos]
+about = "About {}"
+hide = "Hide {}"
+hide_others = "Hide Others"
+show_all = "Show All"
+quit = "Quit {}"
+file = "File"
+new_window = "New Window"
+window = "Window"
+minimize = "Minimize"
+zoom = "Zoom"
+close_window = "Close Window"
+
+[tray]
+show_window = "Show Window"
+new_window = "New Window"
+quit = "Quit"
+tooltip = "Tasty Terminal"
+
+[jump_list]
+new_window = "New Window"
+new_window_desc = "Open a new Tasty window"
+
 [status_bar]
 palette = "palette"
 palette_tooltip = "Open command palette"

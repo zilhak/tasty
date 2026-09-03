@@ -594,6 +594,29 @@ minimize = "최소화"
 maximize = "최대화"
 close = "닫기"
 
+[menu.macos]
+about = "{} 정보"
+hide = "{} 가리기"
+hide_others = "기타 가리기"
+show_all = "모두 보기"
+quit = "{} 종료"
+file = "파일"
+new_window = "새로운 윈도우"
+window = "윈도우"
+minimize = "최소화"
+zoom = "확대/축소"
+close_window = "윈도우 닫기"
+
+[tray]
+show_window = "윈도우 표시"
+new_window = "새 윈도우"
+quit = "종료"
+tooltip = "Tasty 터미널"
+
+[jump_list]
+new_window = "새 윈도우"
+new_window_desc = "새 Tasty 윈도우 열기"
+
 [status_bar]
 palette = "팔레트"
 palette_tooltip = "커맨드 팔레트 열기"

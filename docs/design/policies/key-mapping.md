@@ -83,6 +83,8 @@ tasty 가 직접 소유하는 OS 메뉴(macOS NSMenu / Windows AcceleratorTable 
 
 **예외**: OS 자체가 박아 tasty 가 무력화/덮어쓰기/가로채기 모두 불가능한 단축키(macOS Spotlight `Cmd+Space`, OS 전역 윈도우 전환 등)는 정책 범위 밖 — tasty 가 등록할 수도 끌 수도 없다.
 
+**라벨은 `t()` 다** — key equivalent 와 독립으로, OS 메뉴 항목의 **제목**은 `lang/*.toml` 번역 키에서 온다: macOS NSMenu `menu.macos.*`(앱 이름을 결합하는 About / Hide / Quit 은 `{}` placeholder + `t_fmt` 로 언어별 어순 대응), 시스템 트레이 메뉴·툴팁 `tray.*`, Windows Jump List `jump_list.*`. OS 네이티브 표면도 [i18n](../../dev-guide/i18n.md) 예외가 아니다. macOS 메뉴는 `KeybindingSettings` 변경 시 통째로 rebuild 되면서 라벨도 다시 조회하므로 키바인딩 변경 후에도 현재 언어가 유지된다.
+
 ## Plugin 커맨드 단축키 우선순위
 
 Plugin 이 `[[contributes.commands]]` 로 선언한 단축키(`CommandDecl`)는 호스트

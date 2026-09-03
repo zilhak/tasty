@@ -14,6 +14,7 @@ use objc2_foundation::{MainThreadMarker, NSString};
 use winit::event_loop::EventLoopProxy;
 
 use crate::AppEvent;
+use crate::i18n::{t, t_fmt};
 
 /// Global proxy stored so ObjC callbacks can access it.
 static PROXY: OnceLock<EventLoopProxy<AppEvent>> = OnceLock::new();
@@ -50,7 +51,7 @@ unsafe extern "C-unwind" fn dock_menu(
 
     let menu = NSMenu::new(mtm);
     let item = NSMenuItem::new(mtm);
-    item.setTitle(&NSString::from_str("New Window"));
+    item.setTitle(&NSString::from_str(t("menu.macos.new_window")));
     // SAFETY: 본 함수는 unsafe extern "C-unwind" — main thread NSApplicationDelegate
     // 콜백으로 ObjC 런타임이 호출. setAction은 AppKit main-thread-only이며 invariant 충족.
     // sel! 매크로 내부 + setAction 호출이 한 묶음.
@@ -226,6 +227,12 @@ pub fn rebuild_main_menu(keybindings: &crate::settings::KeybindingSettings) {
 /// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다. 부팅 시 1 회 +
 /// Settings 의 KeybindingSettings 변경 시 [`rebuild_main_menu`] 가 본 함수를
 /// 재호출하여 전체 갱신.
+///
+/// 항목 라벨은 key equivalent 와 독립으로 `t("menu.macos.*")` 에서 가져온다
+/// (`docs/dev-guide/i18n.md` — OS 네이티브 메뉴도 사용자 표면이라 예외가 아니다).
+/// 앱 이름을 결합하는 About / Hide / Quit 은 `{}` placeholder 를 `t_fmt` 로 채워
+/// 언어별 어순(예: "Tasty 가리기" / "Tastyを非表示")에 대응한다. 매 호출마다 다시
+/// 조회하므로 [`rebuild_main_menu`] 경로에서도 현재 언어가 유지된다.
 fn setup_main_menu(
     app: &NSApplication,
     mtm: MainThreadMarker,
@@ -236,37 +243,37 @@ fn setup_main_menu(
     use objc2_foundation::NSProcessInfo;
 
     let main_menu = NSMenu::new(mtm);
-    let process_name = NSProcessInfo::processInfo().processName();
+    let process_name = NSProcessInfo::processInfo().processName().to_string();
 
     // ── Application Menu ──────────────────────────────────────────
     let app_menu_item = NSMenuItem::new(mtm);
     let app_menu = NSMenu::new(mtm);
 
-    let about_title = NSString::from_str("About ").stringByAppendingString(&process_name);
+    let about_title = t_fmt("menu.macos.about", &process_name);
     app_menu.addItem(&make_std_item(
         mtm,
         &about_title,
         sel!(orderFrontStandardAboutPanel:),
     ));
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
-    let hide_title = NSString::from_str("Hide ").stringByAppendingString(&process_name);
+    let hide_title = t_fmt("menu.macos.hide", &process_name);
     app_menu.addItem(&make_std_item(mtm, &hide_title, sel!(hide:)));
     app_menu.addItem(&make_std_item(
         mtm,
-        &NSString::from_str("Hide Others"),
+        t("menu.macos.hide_others"),
         sel!(hideOtherApplications:),
     ));
     app_menu.addItem(&make_std_item(
         mtm,
-        &NSString::from_str("Show All"),
+        t("menu.macos.show_all"),
         sel!(unhideAllApplications:),
     ));
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
 
     // Quit — tasty 라이프사이클로 라우팅. key equivalent 는 KeybindingSettings.quit 에서.
-    let quit_title = NSString::from_str("Quit ").stringByAppendingString(&process_name);
+    let quit_title = t_fmt("menu.macos.quit", &process_name);
     let quit_item = NSMenuItem::new(mtm);
-    quit_item.setTitle(&quit_title);
+    quit_item.setTitle(&NSString::from_str(&quit_title));
     let (quit_key, quit_mods) = keybindings
         .quit
         .first()
@@ -289,11 +296,11 @@ fn setup_main_menu(
     // ── File Menu ──────────────────────────────────────────────────
     let file_menu_item = NSMenuItem::new(mtm);
     let file_menu = NSMenu::new(mtm);
-    file_menu.setTitle(&NSString::from_str("File"));
+    file_menu.setTitle(&NSString::from_str(t("menu.macos.file")));
 
     // New Window — key equivalent 는 KeybindingSettings.new_window 에서.
     let new_window_item = NSMenuItem::new(mtm);
-    new_window_item.setTitle(&NSString::from_str("New Window"));
+    new_window_item.setTitle(&NSString::from_str(t("menu.macos.new_window")));
     let (nw_key, nw_mods) = keybindings
         .new_window
         .first()
@@ -317,24 +324,24 @@ fn setup_main_menu(
     // KeybindingSettings 에서 (없으면 빈 값).
     let window_menu_item = NSMenuItem::new(mtm);
     let window_menu = NSMenu::new(mtm);
-    window_menu.setTitle(&NSString::from_str("Window"));
+    window_menu.setTitle(&NSString::from_str(t("menu.macos.window")));
 
     window_menu.addItem(&make_keybound_std_item(
         mtm,
-        &NSString::from_str("Minimize"),
+        t("menu.macos.minimize"),
         sel!(performMiniaturize:),
         keybindings.minimize_window.first().map(|s| s.as_str()),
     ));
     window_menu.addItem(&make_keybound_std_item(
         mtm,
-        &NSString::from_str("Zoom"),
+        t("menu.macos.zoom"),
         sel!(performZoom:),
         keybindings.maximize_window.first().map(|s| s.as_str()),
     ));
     window_menu.addItem(&NSMenuItem::separatorItem(mtm));
     window_menu.addItem(&make_keybound_std_item(
         mtm,
-        &NSString::from_str("Close Window"),
+        t("menu.macos.close_window"),
         sel!(performClose:),
         keybindings.close_window.first().map(|s| s.as_str()),
     ));
@@ -386,13 +393,16 @@ fn binding_to_nsmenu_key(
 
 /// 표준 NSResponder selector 용 NSMenuItem 생성 (target = nil → first responder chain).
 ///
+/// `title` 은 호출부가 `t()` / `t_fmt` 로 만든 번역 문자열 — 여기서 `NSString` 으로
+/// 변환한다.
+///
 /// 단축키 (key equivalent / modifier mask) 인자를 의도적으로 받지 않는다 — tasty 의
 /// 단축키 정책상 NSMenu 항목의 key equivalent 는 [`KeybindingSettings`] 의 binding 에서
 /// 가져오거나 비어 있어야 한다. 본 헬퍼는 후자(빈 값) 경로 전용이므로 호출부에서
 /// 단축키를 박을 수 없게 시그니처에서 차단한다.
-fn make_std_item(mtm: MainThreadMarker, title: &NSString, selector: Sel) -> Retained<NSMenuItem> {
+fn make_std_item(mtm: MainThreadMarker, title: &str, selector: Sel) -> Retained<NSMenuItem> {
     let item = NSMenuItem::new(mtm);
-    item.setTitle(title);
+    item.setTitle(&NSString::from_str(title));
     // key equivalent 는 명시적으로 빈 문자열 — 정책상 NSMenu 항목 단축키는 KeybindingSettings
     // 연동 경로(별도 NSMenuItem 직접 구성)에서만 설정된다.
     item.setKeyEquivalent(&NSString::from_str(""));
@@ -415,13 +425,13 @@ fn make_std_item(mtm: MainThreadMarker, title: &NSString, selector: Sel) -> Reta
 /// 또는 빈 값만 허용한다([`make_std_item`] 과 달리 binding 을 명시적으로 받는다).
 fn make_keybound_std_item(
     mtm: MainThreadMarker,
-    title: &NSString,
+    title: &str,
     selector: Sel,
     binding: Option<&str>,
 ) -> Retained<NSMenuItem> {
     use objc2_app_kit::NSEventModifierFlags;
     let item = NSMenuItem::new(mtm);
-    item.setTitle(title);
+    item.setTitle(&NSString::from_str(title));
     let (key, mods) = binding
         .map(binding_to_nsmenu_key)
         .unwrap_or_else(|| (NSString::from_str(""), NSEventModifierFlags::empty()));
