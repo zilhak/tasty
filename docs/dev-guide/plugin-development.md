@@ -210,7 +210,8 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 | `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1회용) |
 | `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 |
 | `TASTY_PLUGIN_HANDLE_ENDPOINT` | handle 채널 엔드포인트(있을 때) |
-| `TASTY_LOCALE` | 활성 로케일(i18n Translator) |
+| `TASTY_LOCALE` | 활성 로케일(`general.language`) — host 본 바이너리가 부팅 시 자기 프로세스 env 에 set 하고(`src/boot/locale.rs`) spawn 시 그대로 propagate 한다(host-plugin 은 `tasty-i18n` 비의존). SDK `Translator` 가 소비. spawn 시점 고정 — 언어 변경은 재시작 후 반영([ADR-0103](../adr/0103-plugin-locale-via-host-process-env.md)) |
+| `TASTY_LOCALE_FONT` | 언어팩이 제공하는 폰트 파일의 절대경로 — **언어팩 폰트가 resolve 됐을 때만** 주입(내장 폰트 · 미제공이면 미설정, 셸에서 상속된 값도 자식에서 제거). 출처와 고정 시점은 `TASTY_LOCALE` 과 같다 |
 | `TASTY_HOST_PID` | 호스트 프로세스 PID (**macOS 만** — SDK watchdog 가 부모 사망 감지에 사용) |
 
 ### 생명주기 (healthcheck / 자동 재시작·비활성화)
@@ -251,7 +252,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 ## 8. 규약
 
 - **이름**: crate `tasty-plugin-<name>` = binary 이름, id `com.x.<name>`(다어절 hyphen), IPC prefix = id 마지막 segment 의 `_` 변환, i18n key root = prefix.
-- **i18n**: 매니페스트 `*_i18n_key` 는 host 가 lookup. 플러그인이 직접 그리는 텍스트는 `tasty_plugin_sdk::i18n::Translator`(`TASTY_LOCALE` 주입). 키는 자기 prefix 안에만(`surface.kind.<own>` 만 예외).
+- **i18n**: 매니페스트 `*_i18n_key` 는 host 가 lookup. 플러그인이 직접 그리는 텍스트는 `tasty_plugin_sdk::i18n::Translator`(`TASTY_LOCALE` 주입 — host 가 부팅 시 `general.language` 에서 set, §7 표). 키는 자기 prefix 안에만(`surface.kind.<own>` 만 예외).
 - **권한 표기**: 실제 필요한 것만. 자기 namespace `ipc.invoke:<self>` 금지(self-loop 차단으로 무용).
 - **모듈 분리**: main.rs 가 ~300줄 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리(claude/codex 가 reference). 단순 플러그인(image 61줄)은 단일 main.rs.
 - **Cargo**: `tasty-plugin-protocol` 직접 의존 금지 — SDK 가 re-export. `[lints] workspace = true`.

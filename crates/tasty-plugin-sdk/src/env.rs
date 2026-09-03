@@ -1,6 +1,7 @@
 //! Plugin이 호스트로부터 받는 환경변수를 안전하게 읽는 헬퍼.
 //!
-//! 호스트는 spawn 시 다음 환경변수를 주입한다 (`docs/agent-guide/plugins.md` 참조):
+//! 호스트는 spawn 시 다음 환경변수를 주입한다 (`docs/dev-guide/plugin-development.md`
+//! §7 "spawn 시 주입 환경변수" 참조):
 //! - `TASTY_PLUGIN_ID`
 //! - `TASTY_PLUGIN_DIR`
 //! - `TASTY_PLUGIN_DATA_DIR`
@@ -10,6 +11,13 @@
 //! - `TASTY_PLUGIN_TOKEN`
 //! - `TASTY_HOST_API_VERSION`
 //! - `TASTY_LOCALE` (선택) — 활성 언어 코드 (예: `en`, `ko`, `ja`). 미주입 시 `en` fallback.
+//!   출처는 host 설정 `general.language` — host 본 바이너리가 부팅 시 자기 프로세스 env 에
+//!   set 하고(`src/boot/locale.rs`) host-plugin 이 spawn 시 그대로 propagate 한다
+//!   (`crates/tasty-host-plugin/src/process.rs`). spawn 시점 고정이라 언어 변경은 host
+//!   재시작 후 반영된다.
+//! - `TASTY_LOCALE_FONT` (선택) — 언어팩이 제공하는 폰트 파일의 절대경로. 언어팩 폰트가
+//!   resolve 됐을 때만 주입되며, 없으면 변수 자체가 없다(빈 값 없음). 출처는 `TASTY_LOCALE`
+//!   과 같다.
 //! - `TASTY_PLUGIN_HANDLE_ENDPOINT` (선택) — Unix는 socket path, Windows는 Named Pipe 이름.
 //!   호스트가 보조 핸들 채널을 활성화한 경우에만 주입된다. plugin은 이 값이 있으면
 //!   메인 채널 인증 후 보조 채널에도 connect를 시도한다.
@@ -28,9 +36,13 @@ pub struct PluginEnv {
     pub data_dir: Option<PathBuf>,
     pub config_path: Option<PathBuf>,
     pub log_path: Option<PathBuf>,
-    /// 활성 언어 코드 (예: `en`, `ko`, `ja`). 호스트가 `TASTY_LOCALE`로 주입.
-    /// 미주입 시 `"en"`. plugin이 자체 lang 파일을 로드할 때 사용.
+    /// 활성 언어 코드 (예: `en`, `ko`, `ja`). 호스트가 부팅 시 `general.language` 에서
+    /// 확정해 `TASTY_LOCALE` 로 주입(모듈 doc 참조). 미주입 시 `"en"`. plugin 이 자체
+    /// lang 파일을 로드할 때 사용.
     pub locale: String,
+    /// 언어팩이 제공하는 폰트 파일의 절대경로. 호스트가 언어팩 폰트를 resolve 했을 때만
+    /// `TASTY_LOCALE_FONT` 로 주입 — 없으면 `None`(내장 폰트 · 언어팩 미사용).
+    pub locale_font: Option<PathBuf>,
     /// 보조 핸들 채널 endpoint. 호스트가 활성화한 경우에만 `Some`.
     /// Unix는 socket path (`/tmp/.../tasty-handle.sock`), Windows는 Named Pipe 이름
     /// (`\\.\pipe\tasty-handle-<random>`).
@@ -62,6 +74,9 @@ impl PluginEnv {
             config_path: std::env::var_os("TASTY_PLUGIN_CONFIG_PATH").map(PathBuf::from),
             log_path: std::env::var_os("TASTY_PLUGIN_LOG_PATH").map(PathBuf::from),
             locale: std::env::var("TASTY_LOCALE").unwrap_or_else(|_| "en".to_string()),
+            locale_font: std::env::var_os("TASTY_LOCALE_FONT")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
             handle_endpoint: std::env::var("TASTY_PLUGIN_HANDLE_ENDPOINT")
                 .ok()
                 .filter(|s| !s.is_empty()),

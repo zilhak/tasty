@@ -623,6 +623,7 @@ mod tests {
             config_path: None,
             log_path: None,
             locale: "en".into(),
+            locale_font: None,
             handle_endpoint: Some(endpoint.to_string()),
         }
     }

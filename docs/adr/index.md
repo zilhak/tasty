@@ -110,4 +110,5 @@
 | 0097 | [plugin self-repaint 지연 알림은 프로세스 상주 타이머 스레드 1 개로 처리한다](0097-plugin-self-repaint-resident-timer.md) | Accepted | 2026-09-02 | plugin-sdk, egui-mesh, threading, self-repaint |
 | 0098 | [mirror surface 의 attention 은 서버 push 만을 소스로 갖는다 — 로컬 발동은 억제하고 forward 하지 않는다](0098-mirror-local-attention-raise-suppressed.md) | Accepted | 2026-09-03 | attention, surface-highlight, remote-attach, mirror, source-of-truth, osc133, notification, ipc |
 | 0099 | [git-viewer 는 활성 worktree 의 repo 핸들을 하나만 들고, worktree 중복 검사는 미리 잰 정규화 경로로 한다](0099-git-viewer-repo-handle-cache-and-canonical-dedup.md) | Accepted | 2026-09-03 | plugin, git-viewer, git2, cache, invalidation, performance, worktree |
+| 0103 | [활성 로케일은 host 프로세스 env 로 plugin 에 전달한다 — 부팅 단일 스레드 구간에서 한 번 set 한다](0103-plugin-locale-via-host-process-env.md) | Accepted | 2026-09-03 | i18n, locale, plugin, boot, env, unsafe, language-pack |
 | 0106 | [위젯 밖 사용자 문자열(알림 제목 · IPC 기본값 · 폴백 라벨)도 `t()` 를 거치고, 기계 식별은 제목이 아니라 식별 필드로 한다](0106-non-widget-user-strings-go-through-i18n.md) | Accepted | 2026-09-03 | i18n, notifications, hooks, ipc, remote-attach, git-viewer, plugin, wire-format |

@@ -9,6 +9,7 @@
 //! plugin이 응답할 때마다 `last_pong`이 갱신된다. 헬스체크는 `since_last_pong()` 비교.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -566,19 +567,13 @@ fn build_plugin_command(
     // 플러그인 수명을 호스트에 결박: spawn *전* 준비(Linux PDEATHSIG pre_exec /
     // macOS TASTY_HOST_PID env 주입). Windows assign 은 spawn *후*(adopt).
     reaper.prepare(&mut cmd);
+    inject_locale_env(&mut cmd);
     cmd.args(package.entry_args())
         .env("TASTY_PLUGIN_ID", &package.manifest.id)
         .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)
         .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
         .env("TASTY_PLUGIN_TOKEN", token)
         .env("TASTY_PLUGIN_DIR", &package.dir)
-        // F.B.11-4: i18n 호스트 함수 결합 회피 — 환경변수를 그대로 전달.
-        // 호스트 본 바이너리는 부팅 시 TASTY_LOCALE 을 자신의 env 에 set 하므로
-        // 그 값을 그대로 자식 plugin process 에 propagate 한다.
-        .env(
-            "TASTY_LOCALE",
-            std::env::var("TASTY_LOCALE").unwrap_or_else(|_| "en".to_string()),
-        )
         .current_dir(&package.dir)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
@@ -591,6 +586,41 @@ fn build_plugin_command(
         None
     };
     (cmd, handle_stream_rx)
+}
+
+/// 활성 로케일 env 주입. 이 크레이트는 `tasty-i18n` 에 의존하지 않는다 — 활성 언어는
+/// host 본 바이너리가 부팅 시(`src/boot/locale.rs`, 스레드 생성 전 단일 스레드 구간)
+/// 자기 프로세스 env 에 set 한 `TASTY_LOCALE` / `TASTY_LOCALE_FONT` 를 그대로 자식에
+/// propagate 한다. `Command` 는 host env 를 상속하므로 두 값은 명시하지 않아도
+/// 흘러가지만, 계약을 코드에 드러내고(host 본 바이너리 밖 — 테스트 · 다른 호스트 — 에서
+/// 쓰일 때의 `en` 폴백) 빈 폰트 값이 자식에 남지 않게 여기서 확정한다. 값은 spawn 시점에
+/// 고정된다 — 근거 `docs/adr/0103-plugin-locale-via-host-process-env.md`.
+fn inject_locale_env(cmd: &mut Command) {
+    let (locale, font) = locale_env_for_child(
+        std::env::var_os("TASTY_LOCALE"),
+        std::env::var_os("TASTY_LOCALE_FONT"),
+    );
+    cmd.env("TASTY_LOCALE", locale);
+    match font {
+        Some(font) => {
+            cmd.env("TASTY_LOCALE_FONT", font);
+        }
+        None => {
+            cmd.env_remove("TASTY_LOCALE_FONT");
+        }
+    }
+}
+
+/// host env 의 로케일 값을 자식에 넘길 형태로 정리한다 — `TASTY_LOCALE` 은 항상
+/// (미설정 · 빈 값이면 `en`), `TASTY_LOCALE_FONT` 는 비어 있지 않을 때만.
+fn locale_env_for_child(
+    locale: Option<OsString>,
+    font: Option<OsString>,
+) -> (OsString, Option<OsString>) {
+    let locale = locale
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| OsString::from("en"));
+    (locale, font.filter(|v| !v.is_empty()))
 }
 
 /// plugin별 격리 디렉터리 env 주입. 디렉터리 생성은 호스트가 미리 보장한다 —
@@ -873,6 +903,32 @@ mod tests {
         let t = generate_token();
         assert_eq!(t.len(), 32);
         assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn locale_env_falls_back_to_en_and_drops_empty_font() {
+        assert_eq!(
+            locale_env_for_child(None, None),
+            (OsString::from("en"), None)
+        );
+        assert_eq!(
+            locale_env_for_child(Some(OsString::new()), Some(OsString::new())),
+            (OsString::from("en"), None)
+        );
+    }
+
+    #[test]
+    fn locale_env_propagates_host_values() {
+        assert_eq!(
+            locale_env_for_child(
+                Some(OsString::from("ko")),
+                Some(OsString::from("/x/lang/ko/fonts/a.ttf"))
+            ),
+            (
+                OsString::from("ko"),
+                Some(OsString::from("/x/lang/ko/fonts/a.ttf"))
+            )
+        );
     }
 
     #[test]
