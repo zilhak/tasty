@@ -108,5 +108,5 @@
 | 0095 | [plugin 리스트는 `show_rows` 로 virtualize 하고, 가로 폭은 한 번 재서 고정한다](0095-plugin-list-virtualization-and-fixed-content-width.md) | Accepted | 2026-09-02 | plugin, egui-mesh, git-viewer, scroll, virtualization, performance, layout |
 | 0096 | [유닛 테스트는 사용자 환경을 읽지 않는다 — 설정은 주입, env 는 RAII 복원](0096-unit-tests-isolated-from-user-environment.md) | Accepted | 2026-09-02 | testing, isolation, settings, env, harness, ci, regression-detection |
 | 0097 | [plugin self-repaint 지연 알림은 프로세스 상주 타이머 스레드 1 개로 처리한다](0097-plugin-self-repaint-resident-timer.md) | Accepted | 2026-09-02 | plugin-sdk, egui-mesh, threading, self-repaint |
-| 0099 | [git-viewer 는 활성 worktree 의 repo 핸들을 하나만 들고, worktree 중복 검사는 미리 잰 정규화 경로로 한다](0099-git-viewer-repo-handle-cache-and-canonical-dedup.md) | Accepted | 2026-09-03 | plugin, git-viewer, git2, cache, invalidation, performance, worktree |
 | 0098 | [mirror surface 의 attention 은 서버 push 만을 소스로 갖는다 — 로컬 발동은 억제하고 forward 하지 않는다](0098-mirror-local-attention-raise-suppressed.md) | Accepted | 2026-09-03 | attention, surface-highlight, remote-attach, mirror, source-of-truth, osc133, notification, ipc |
+| 0099 | [git-viewer 는 활성 worktree 의 repo 핸들을 하나만 들고, worktree 중복 검사는 미리 잰 정규화 경로로 한다](0099-git-viewer-repo-handle-cache-and-canonical-dedup.md) | Accepted | 2026-09-03 | plugin, git-viewer, git2, cache, invalidation, performance, worktree |
