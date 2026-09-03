@@ -7,6 +7,7 @@ description = "Static site generator for the Tasty GitHub Pages site (landing + 
 
 [dependencies]
 pulldown-cmark = "0.13.4"
+serde_json = "1.0"
 sha2 = "0.11.0"
 syntect = { version = "5.3.0", default-features = false, features = ["default-fancy"] }
 walkdir = "2.5.0"

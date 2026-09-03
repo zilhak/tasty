@@ -18,3 +18,4 @@ crates/tasty-plugin-*/tasty-plugin.toml.sig
 # GitHub Pages 산출물 (site/ 생성기가 만든다)
 /_site
 /site/target
+/site/release.json

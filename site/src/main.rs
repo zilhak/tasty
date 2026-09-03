@@ -200,6 +200,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     if ASSET_TAG.set(content_hash(&static_src)).is_err() {
         eprintln!("warning: asset tag was already set");
     }
+    let release = load_release(site_dir);
+    match &release {
+        Some(r) => println!("release: {} ({} assets)", r.tag, r.assets.len()),
+        None => println!("release: none (site/release.json missing) — downloads link to the releases page"),
+    }
+    if RELEASE.set(release).is_err() {
+        eprintln!("warning: release was already set");
+    }
 
     let pages = collect_pages(&docs_root)?;
     println!("collected {} docs pages", pages.len());
@@ -458,6 +466,46 @@ fn read_stamp(source: &str) -> Option<String> {
 /// caches assets for ten minutes; a page fetched with an old `style.css`
 /// renders the new markup unstyled).
 static ASSET_TAG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The latest GitHub release, resolved by the Pages workflow into
+/// `site/release.json` (`gh release view --json tagName,assets`) before the
+/// generator runs. Absent in a plain local build — the landing then links the
+/// downloads to the releases page instead of to the assets.
+pub struct Release {
+    pub tag: String,
+    /// (asset file name, browser download URL)
+    pub assets: Vec<(String, String)>,
+}
+
+static RELEASE: std::sync::OnceLock<Option<Release>> = std::sync::OnceLock::new();
+
+pub fn release() -> Option<&'static Release> {
+    RELEASE.get().and_then(Option::as_ref)
+}
+
+fn load_release(site_dir: &Path) -> Option<Release> {
+    let raw = fs::read_to_string(site_dir.join("release.json")).ok()?;
+    let json: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("warning: site/release.json is not valid JSON: {e}");
+            return None;
+        }
+    };
+    let tag = json.get("tagName")?.as_str()?.to_string();
+    let assets = json
+        .get("assets")?
+        .as_array()?
+        .iter()
+        .filter_map(|a| {
+            Some((
+                a.get("name")?.as_str()?.to_string(),
+                a.get("url")?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    Some(Release { tag, assets })
+}
 
 pub fn asset_tag() -> &'static str {
     ASSET_TAG.get().map(String::as_str).unwrap_or("dev")

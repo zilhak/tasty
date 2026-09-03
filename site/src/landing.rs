@@ -17,8 +17,11 @@ struct Copy {
     /// Sentence before the installation-guide link, and the link label.
     install_note: &'static str,
     install_note_link: &'static str,
-    /// Download chips: (OS, formats).
-    downloads: [(&'static str, &'static str); 3],
+    /// Primary button label once the visitor's OS is detected; `{os}` is
+    /// replaced by the OS name.
+    dl_for: &'static str,
+    /// Small heading above the per-platform cards.
+    dl_all: &'static str,
 
     why_kicker: &'static str,
     why_title: &'static str,
@@ -61,11 +64,8 @@ const KO_COPY: Copy = Copy {
     cta_secondary: "문서 보기",
     install_note: "OS 별 산출물 표와 설치 절차, 소스 빌드는",
     install_note_link: "설치 문서 →",
-    downloads: [
-        ("macOS", ".dmg · Apple Silicon"),
-        ("Windows", ".msi · .zip"),
-        ("Linux", ".deb · .rpm · .AppImage · .tar.gz"),
-    ],
+    dl_for: "{os} 용 다운로드",
+    dl_all: "모든 플랫폼",
 
     why_kicker: "설계 원칙",
     why_title: "사용자의 조작과 에이전트의 조작을 섞지 않는다",
@@ -200,11 +200,8 @@ const EN_COPY: Copy = Copy {
     cta_secondary: "Read the docs",
     install_note: "Per-OS packages, install steps and building from source:",
     install_note_link: "Installation guide →",
-    downloads: [
-        ("macOS", ".dmg · Apple Silicon"),
-        ("Windows", ".msi · .zip"),
-        ("Linux", ".deb · .rpm · .AppImage · .tar.gz"),
-    ],
+    dl_for: "Download for {os}",
+    dl_all: "All platforms",
 
     why_kicker: "Design principles",
     why_title: "User actions and agent actions never bleed into each other",
@@ -384,11 +381,14 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
     <p class="hero__lede">{lede}</p>
     <div class="cta-row">
-      <a class="btn btn--primary" href="{repo}/releases/latest">{primary}</a>
+      <a class="btn btn--primary" id="dl-primary" href="{releases}" data-label="{dl_for}"{primary_data}>{primary}</a>
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
-    <div class="dl-row">{downloads}</div>
+    <div class="dl">
+      <div class="dl__head"><span>{dl_all}</span><a href="{releases}">{release_tag} ↗</a></div>
+      <div class="dl__cards">{cards}</div>
+    </div>
     <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}installation.html">{note_link}</a></p>
   </div>
   {mock}
@@ -408,17 +408,12 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         github = ICON_GITHUB,
         note = html_escape(copy.install_note),
         note_link = html_escape(copy.install_note_link),
-        downloads = copy
-            .downloads
-            .iter()
-            .map(|(os, formats)| {
-                format!(
-                    "<a class=\"dl\" href=\"{REPO}/releases/latest\"><b>{}</b><span>{}</span></a>",
-                    html_escape(os),
-                    html_escape(formats),
-                )
-            })
-            .collect::<String>(),
+        releases = releases_url(),
+        dl_for = html_escape(copy.dl_for),
+        dl_all = html_escape(copy.dl_all),
+        release_tag = html_escape(crate::release().map(|r| r.tag.as_str()).unwrap_or("Releases")),
+        primary_data = primary_data_attrs(),
+        cards = download_cards(),
         mock = mock(root),
     )
 }
@@ -520,6 +515,106 @@ fn glyph(paths: &str) -> String {
     format!(
         r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{paths}</svg>"#
     )
+}
+
+/// Download cards: one per (OS, arch), each listing the package formats and
+/// the release-asset file-name suffix that identifies them. The suffixes
+/// follow the release workflow's naming (`docs/installation.md`).
+struct Platform {
+    id: &'static str,
+    os: &'static str,
+    arch: &'static str,
+    formats: &'static [(&'static str, &'static str)],
+}
+
+const PLATFORMS: &[Platform] = &[
+    Platform {
+        id: "macos",
+        os: "macOS",
+        arch: "Apple Silicon",
+        formats: &[(".dmg", "-macos-arm64.dmg")],
+    },
+    Platform {
+        id: "windows",
+        os: "Windows",
+        arch: "x64",
+        formats: &[(".msi", "-windows-x64.msi"), (".zip", "-windows-x64.zip")],
+    },
+    Platform {
+        id: "linux-x64",
+        os: "Linux",
+        arch: "x86_64",
+        formats: &[
+            (".deb", "_amd64.deb"),
+            (".rpm", ".x86_64.rpm"),
+            (".AppImage", "-x86_64.AppImage"),
+            (".tar.gz", "-linux-x64.tar.gz"),
+        ],
+    },
+    Platform {
+        id: "linux-arm64",
+        os: "Linux",
+        arch: "arm64",
+        formats: &[
+            (".deb", "_arm64.deb"),
+            (".rpm", ".aarch64.rpm"),
+            (".AppImage", "-aarch64.AppImage"),
+            (".tar.gz", "-linux-arm64.tar.gz"),
+        ],
+    },
+];
+
+/// The format the OS-detected primary button offers: the installer on
+/// macOS/Windows, and the distro-agnostic AppImage (x86_64) on Linux.
+const PRIMARY_FORMATS: &[(&str, &str)] = &[
+    ("macos", "-macos-arm64.dmg"),
+    ("windows", "-windows-x64.msi"),
+    ("linux", "-x86_64.AppImage"),
+];
+
+fn releases_url() -> String {
+    format!("{REPO}/releases/latest")
+}
+
+/// Browser download URL of the release asset whose file name ends with
+/// `suffix`, if the release manifest is present and has it.
+fn asset_url(suffix: &str) -> Option<&'static str> {
+    crate::release()?
+        .assets
+        .iter()
+        .find(|(name, _)| name.ends_with(suffix))
+        .map(|(_, url)| url.as_str())
+}
+
+/// `data-<os>` attributes on the primary button; `site.js` swaps the
+/// button to the visitor's OS when the matching asset exists.
+fn primary_data_attrs() -> String {
+    PRIMARY_FORMATS
+        .iter()
+        .filter_map(|(os, suffix)| asset_url(suffix).map(|url| format!(" data-{os}=\"{url}\"")))
+        .collect()
+}
+
+fn download_cards() -> String {
+    PLATFORMS
+        .iter()
+        .map(|p| {
+            let links = p
+                .formats
+                .iter()
+                .map(|(label, suffix)| match asset_url(suffix) {
+                    Some(url) => format!("<a href=\"{url}\">{label}</a>"),
+                    None => format!("<a href=\"{}\">{label}</a>", releases_url()),
+                })
+                .collect::<String>();
+            format!(
+                "<div class=\"dl__card\" data-platform=\"{id}\"><div class=\"dl__os\"><b>{os}</b><span>{arch}</span></div><div class=\"dl__links\">{links}</div></div>",
+                id = p.id,
+                os = p.os,
+                arch = p.arch,
+            )
+        })
+        .collect()
 }
 
 fn why(copy: &Copy) -> String {

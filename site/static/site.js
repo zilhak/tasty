@@ -224,6 +224,26 @@
     });
   }
 
+  /* -------------------------------------------- downloads: visitor's OS */
+
+  var primary = document.getElementById("dl-primary");
+  if (primary) {
+    var ua = navigator.userAgent || "";
+    var plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    var os = null, card = null;
+    if (/Mac/i.test(plat) && !/iPhone|iPad/i.test(ua)) { os = "macos"; card = "macos"; }
+    else if (/Win/i.test(plat)) { os = "windows"; card = "windows"; }
+    else if (/Linux/i.test(plat) && !/Android/i.test(ua)) { os = "linux"; card = /aarch64|arm64/i.test(ua) ? "linux-arm64" : "linux-x64"; }
+    var url = os && primary.getAttribute("data-" + os);
+    if (url) {
+      var names = { macos: "macOS", windows: "Windows", linux: "Linux" };
+      primary.href = url;
+      primary.textContent = primary.getAttribute("data-label").replace("{os}", names[os]);
+      var el = document.querySelector('.dl__card[data-platform="' + card + '"]');
+      if (el) el.setAttribute("data-current", "");
+    }
+  }
+
   /* -------------------------------------------- keep active nav in view */
 
   var current = document.querySelector('.nav-list a[aria-current="page"]');

@@ -789,27 +789,34 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .btn--ghost { background: transparent; }
 .btn--ghost:hover { background: var(--surface0); border-color: var(--surface1); }
 
-.dl-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3);
-  margin-top: var(--sp-6);
+/* downloads: OS cards, each format linking straight to the release asset */
+.dl { display: inline-flex; flex-direction: column; max-width: 100%; margin-top: var(--sp-6); }
+.dl__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--subtext0); margin-bottom: var(--sp-2);
 }
-.dl {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--sp-2) var(--sp-4);
+.dl__head a { color: var(--subtext0); text-transform: none; letter-spacing: 0; }
+.dl__cards { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.dl__card {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--crust);
   border: var(--border);
   border-radius: var(--radius);
-  text-decoration: none;
-  color: var(--text);
-  transition: border-color 120ms ease, background 120ms ease;
 }
-.dl:hover { text-decoration: none; border-color: var(--overlay0); background: var(--mantle); }
-.dl b { font-size: 14px; font-weight: 600; }
-.dl span { font-family: var(--font-mono); font-size: 11.5px; color: var(--subtext0); white-space: nowrap; }
+.dl__card[data-current] { border-color: var(--brand); }
+.dl__os { display: flex; align-items: baseline; gap: var(--sp-2); }
+.dl__os b { font-size: 14px; font-weight: 600; }
+.dl__os span { font-family: var(--font-mono); font-size: 11px; color: var(--subtext0); }
+.dl__links { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.dl__links a {
+  font-family: var(--font-mono); font-size: 12px; text-decoration: none;
+  padding: 2px var(--sp-2); border-radius: var(--radius-sm);
+  background: var(--surface0); color: var(--text);
+  border: 1px solid transparent;
+}
+.dl__links a:hover { border-color: var(--overlay0); text-decoration: none; }
 
 /* product window — a structural transcription of the design system's
    ui_kits/terminal kit (app.jsx: TitleBar → Sidebar | TabStrip → split
