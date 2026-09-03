@@ -727,6 +727,17 @@ mod tests {
         ModifiersState::empty()
     }
 
+    /// 바인딩 문자열의 `alt` 토큰이 실제로 요구하는 winit modifier.
+    ///
+    /// modifier 매핑은 물리 위치 기반이라 macOS 에서 바인딩 `alt` 는 Command(winit
+    /// `SUPER`) 에, 그 외 플랫폼에서는 Alt 에 대응한다(`matches_binding` 의 플랫폼
+    /// 분기, `docs/design/policies/key-mapping.md`). 여기에 `ModifiersState::ALT` 를
+    /// 직접 쓰면 macOS 에서는 Option 이 눌린 것이라 `alt` 바인딩과 매칭되지 않는다.
+    #[cfg(target_os = "macos")]
+    const BINDING_ALT: ModifiersState = ModifiersState::SUPER;
+    #[cfg(not(target_os = "macos"))]
+    const BINDING_ALT: ModifiersState = ModifiersState::ALT;
+
     /// 게이트가 실제로 조회하는 값과 같은 출처를 쓴다 — 기본 프리셋의
     /// `fullscreen_stage_exit`. 여기에 리터럴 `["escape"]` 를 쓰면 프리셋이 바뀌어도
     /// 테스트가 통과해 버린다.
@@ -796,11 +807,12 @@ mod tests {
     }
 
     /// 사용자가 바인딩을 바꾸면 그 키로 닫히고 ESC 로는 안 닫힌다 — 값이 정말
-    /// 설정에서 오는지(하드코딩이 남아 있지 않은지)를 가르는 단정이다.
+    /// 설정에서 오는지(하드코딩이 남아 있지 않은지)를 가르는 단정이다. 모디파이어는
+    /// 플랫폼 규칙(`BINDING_ALT`)으로 만들어 세 플랫폼 모두에서 같은 검증을 유지한다.
     #[test]
     fn stage_exit_follows_the_configured_binding() {
         let rebound = vec!["ctrl+alt+q".to_string()];
-        let ctrl_alt = ModifiersState::CONTROL | ModifiersState::ALT;
+        let ctrl_alt = ModifiersState::CONTROL | BINDING_ALT;
         assert_eq!(
             stage_key_decision(true, &rebound, &Key::Character("q".into()), ctrl_alt),
             StageKeyDecision::ExitStage
