@@ -22,6 +22,8 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | C.12 | `dbg!` | release leak 방지 |
 
 > 색상 하드코딩(옛 C.8)은 pre-commit 에서 빠지고 **clippy `disallowed-methods`** 로 이관됐다 — `#[allow]` 와 path 예외를 정확히 인식한다([color-policy](color-policy.md), [clippy-policy](clippy-policy.md)).
+>
+> i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. CI `cargo test --workspace` 의 `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하고, 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
 
 ## pre-push (수십초)
 

@@ -23,7 +23,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [complexity-gate](complexity-gate.md) | 복잡도 게이트(cognitive deny + 파일 SLOC), 예외 컨벤션 |
 | [unsafe-checklist](unsafe-checklist.md) | `// SAFETY:` 작성 + 자가검토 5문 |
 | [color-policy](color-policy.md) | 색 생성 newtype + clippy 강제 |
-| [i18n](i18n.md) | `t()` / lang 파일 |
+| [i18n](i18n.md) | `t()` / lang 파일, 하드코딩 허용 예외, 강제 테스트 |
 
 ## 빌드 / 릴리스
 
