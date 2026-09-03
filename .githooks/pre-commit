@@ -205,6 +205,9 @@ check_egui_window() {
 #   - crates/tasty-cli/*              : CLI 응답 출력 (tree, JSON, 에러 메시지 등
 #                                       — caller 가 stdout/stderr 로 수신)
 #   - crates/tasty-tui-simulator/*    : 테스트용 TUI simulator
+#   - site/*                          : GitHub Pages 정적 사이트 생성기 (workspace
+#                                       exclude 된 CLI 빌드 도구 — 생성 로그·경고를
+#                                       stdout/stderr 로 내는 것이 정확한 동작)
 #   - **/build.rs                     : cargo build script — `cargo:warning=` /
 #                                       `cargo:rerun-if-changed=` 같은 directive 가
 #                                       println 으로만 가능 (build.rs 에선 tracing
@@ -219,6 +222,7 @@ check_println() {
             src/boot/cli_routing.rs) continue ;;
             crates/tasty-cli/*) continue ;;
             crates/tasty-tui-simulator/*) continue ;;
+            site/*) continue ;;
             build.rs) continue ;;
             */build.rs) continue ;;
         esac

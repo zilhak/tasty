@@ -1,0 +1,65 @@
+name: Pages
+
+# docs/ 와 site/ 로 GitHub Pages 정적 사이트를 만들어 배포한다.
+# 생성기는 site/ 의 별도 crate (workspace exclude) — 본체 빌드와 무관하다.
+# 절차·구조: docs/dev-guide/site.md
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "site/**"
+      - "assets/icons/tasty-melon.svg"
+      - "Cargo.toml"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 항상 최신 커밋 하나만 살린다.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache site generator build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            site/target
+          key: pages-cargo-${{ runner.os }}-${{ hashFiles('site/Cargo.lock') }}
+          restore-keys: pages-cargo-${{ runner.os }}-
+
+      # --strict 는 docs 안의 깨진 상대 링크를 배포 실패로 승격한다.
+      - name: Generate site
+        run: cargo run --release --manifest-path site/Cargo.toml -- --strict
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,11 @@
+[package]
+name = "tasty-site"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Static site generator for the Tasty GitHub Pages site (landing + docs)."
+
+[dependencies]
+pulldown-cmark = "0.13.4"
+syntect = { version = "5.3.0", default-features = false, features = ["default-fancy"] }
+walkdir = "2.5.0"
