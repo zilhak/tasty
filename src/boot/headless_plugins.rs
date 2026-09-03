@@ -235,6 +235,10 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
             &request,
             &caller,
         );
+        // plugin 호출도 같은 IPC 핸들러를 타므로(예: Claude 플러그인 훅의
+        // `surface.completion`) 결과 회신 전에 Intent 큐를 적용한다 —
+        // `docs/adr/0111-headless-drains-the-intent-queue.md`.
+        crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
         let (result, error) = match response.error {
             Some(err) => (None, Some(err.message)),
             None => (response.result, None),

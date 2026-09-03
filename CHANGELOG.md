@@ -24,6 +24,7 @@
 ### Fixed
 
 - headless 인스턴스(`--headless`)에서 `surface.completion` 이 아무 효과가 없던 문제. Intent 큐를 drain 하는 지점이 gui 빌드 전용이고 headless IPC 펌프는 그 큐를 읽지 않아, 핸들러가 enqueue 한 발동 요청을 처리할 주체가 없었다 — 이제 IPC 핸들러가 대상 engine 에 직접 적용한다(응답 계약은 불변). 같은 이유로 새 `surface.attention.{get,clear}` 도 headless 에서 동작한다.
+- headless 인스턴스(`--headless` / `--no-default-features` 빌드)에서 `surface.set_mark` · `notification.create` · `settings.set_remote_transfer` 가 `ok` 를 회신하고도 아무 상태도 바꾸지 않던 문제. 위 attention 축과 같은 원인이지만 이쪽은 핸들러 직접 적용 대상이 아니어서 남아 있었다 — 예로 `set mark` 직후의 `read since-mark` 가 mark 를 무시하고 스크롤백 전체를 돌려줬다. 이제 headless 도 요청 응답 전에 Intent 큐를 비워 적용하며, 큐 길이는 요청 수와 무관하게 유계다. 근거 ADR-0111.
 - host 가 plugin 프로세스에 `TASTY_LOCALE` 을 실제로 채워 보낸다 — 이전에는 host 어디서도 이 env 를 set 하지 않아 `general.language = "ko"`/`"ja"` 여도 plugin UI(클립보드 뷰어 · git 뷰어 등)가 항상 영어였다(셸에서 직접 `export TASTY_LOCALE=…` 한 경우에만 우연히 동작). 이제 부팅 시 `general.language` 를 host 프로세스 env 에 set 해 모든 plugin 이 상속하며, 셸의 export 값은 설정에 덮인다. 값은 spawn 시점 고정 — 언어 변경은 재시작 후 반영.
 - CLI 클라이언트가 stdout 파이프 조기 종료(EPIPE — `tasty list tree | head -1`, `| true` 등 읽는 쪽이 먼저 닫힘)를 만나면 `failed printing to stdout` 으로 panic 해 종료 코드 101 을 내고 `~/.tasty/crash-reports/` 에 가짜 crash report 를 남기던 문제. 이제 세 OS 모두 조용히 **종료 코드 0** 으로 끝나며 crash report 를 만들지 않는다(그 외 stdout 오류는 종전대로 에러). 루트 `--help` 가 같은 상황에서 `Error: Broken pipe`(종료 코드 1)를 내던 것도 같은 규칙으로 정리됐다. 근거 ADR-0101.
 

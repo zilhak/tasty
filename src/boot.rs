@@ -413,6 +413,11 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     // 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
     // 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
     loop {
+        // 블로킹 대기에 들어가기 전에 Intent 큐를 비운다. 정상 경로에서는 발화 지점
+        // (IPC / plugin 호출)이 이미 응답 전에 drain 하므로 여기서는 비어 있지만,
+        // 앞으로 다른 발화점이 생겨도 큐가 프로세스 수명 동안 쌓이지 않게 하는
+        // 최종 방어선이다 — `docs/adr/0111-headless-drains-the-intent-queue.md`.
+        crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
         // plugin manager 는 자기 허브를 따로 소유한다 — 대기 계산은 min 으로 합성.
         let deadline = crate::app::timers::min_deadline(
             app.timers.next_deadline(),
