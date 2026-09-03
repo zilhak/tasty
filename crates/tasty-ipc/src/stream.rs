@@ -399,6 +399,37 @@ pub enum StreamControl {
     /// `full_textures = true` (carried in the chunk header,
     /// `mesh_stream::MeshChunkMeta`) is the confirmation.
     MeshFullResendRequest { surface_id: u32 },
+    /// A remote surface's **attention** state (the "needs your attention" signal
+    /// the remote's own producers raise — completion IPC/CLI, Claude plugin hooks,
+    /// OSC 133 command completion, toast notifications) changed. The mirror side
+    /// applies it to its own `AttentionStore` so the sidebar count badges, surface
+    /// border and tab title color reflect the remote state.
+    ///
+    /// Attention's source of truth is the instance that **owns the surface**: every
+    /// producer runs where the PTY is, and `AttentionKind::NeedsInput` in particular
+    /// is only ever raised by a hook on that instance — a mirror can never derive it
+    /// locally. Like [`StreamControl::Activity`], this push is therefore the *only*
+    /// source of attention for a mirror surface, and the mirror only reflects it.
+    ///
+    /// `kind: None` means **cleared** (no attention record) — clearing is not a
+    /// separate variant, it is the absence of a kind. The frame is idempotent state,
+    /// not a delta: pushed once per 1Hz tick per occupied surface whose value actually
+    /// changed since the last push, so a dropped/lagged frame self-heals on the next
+    /// tick (the server always re-diffs from its live store, never from a client ack).
+    ///
+    /// That self-healing covers **transport loss only**. If the client mutates its
+    /// own store, the server's value is unchanged and nothing is re-pushed, so the
+    /// two stay diverged. See the attention section of
+    /// `docs/dev-guide/attach-behavior.md` for the hole that is currently open on
+    /// the clear axis and which follow-up work closes it.
+    ///
+    /// Direction: **server→client**.
+    Attention {
+        /// Remote surface id, resolved the same way as [`StreamControl::Resize`].
+        surface_id: u32,
+        /// The attention kind now recorded on the remote, or `None` if cleared.
+        kind: Option<AttentionKindWire>,
+    },
     /// The requested `surface_id` in a [`StreamControl::MeshContext`] is not a
     /// mesh-mirrorable surface on the remote (not found, not a bundled
     /// egui-mesh-whitelisted kind, or the surface's plugin isn't running) — a
@@ -539,6 +570,23 @@ impl StructuralOp {
         }
         cloned
     }
+}
+
+/// Attention kind carried over the wire ([`StreamControl::Attention`]).
+///
+/// The host's own `AttentionKind` (`src/core/state/attention.rs`) is crate-private
+/// and `tasty-ipc` has no dependency on the host crate, so the wire gets its own
+/// representation and both sides convert at the boundary. The serialized strings
+/// are deliberately the **same** as the `surface.completion` IPC `kind` parameter
+/// (`"completion"` / `"needs_input"`), so one vocabulary covers the producer IPC and
+/// the attach channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttentionKindWire {
+    /// Work finished — completion IPC/CLI, OSC 133 command completion, toast.
+    Completion,
+    /// Waiting on the user — Claude plugin `notification`/`pre-tool-use` hooks.
+    NeedsInput,
 }
 
 /// Split direction carried over the wire. Maps to the host `SplitDirection` /

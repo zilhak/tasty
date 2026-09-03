@@ -40,7 +40,9 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 - 원격 grid 가 실제로 바뀌면 서버가 기존 **`Control` 프레임(`StreamControl::Resize`, server→client)** 으로 확정 cols/rows 를 통지하고, client 가 그 echo 로만 mirror 를 리사이즈한다. → 로컬을 낙관적으로 먼저 바꾸지 않아(원격 reflow 전 잘못된 grid 재생 방지) desync 가 없다.
 - 렌더러는 mirror 의 실제 grid 크기로 셀을 pane 좌상단에 배치한다. mirror 가 pane 크기로 reflow 되므로 pane 을 채운다(과거의 80×24 좌상단 소영역 + 배경 레터박스는 사라진다). 초기 attach 순간(원격 기본 80×24 → 첫 forward reflow)에는 약 1 RTT 의 짧은 깜빡임이 있을 수 있다.
 
-`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다.
+`StreamControl` 은 `event` 태그 기반 확장 enum 이라, 새 이벤트도 새 `StreamTag` 없이 variant 로 추가된다. 구버전 서버는 `ClientResize` 를 무시하므로(전방호환) 기존 remote-authoritative 동작으로 graceful degrade 한다. 같은 이유로 구버전 client 는 `Attention` 프레임을 파싱하지 못해 조용히 무시하고, 구버전 서버는 그 프레임을 애초에 보내지 않는다 — 어느 쪽도 세션을 깨지 않고 attention 표시만 빠진다.
+
+Control 채널을 흐르는 server→client 상태 push 는 현재 세 종류다 — `Resize`(확정 grid), `Activity`(busy/idle), `Attention`(주의 환기). 셋 다 델타가 아니라 **멱등 상태**이고, 서버가 매번 자기 live 상태에서 재-diff 하므로 **프레임이 유실돼도** 다음 tick 에 자동 수렴한다(client ack 없음). 수렴이 보장되는 축은 이 wire 유실 하나뿐이다 — client 가 자기 로컬 상태를 직접 바꾸면 서버 값은 그대로라 재-push 가 없고, 그렇게 갈라진 값은 자동으로 메워지지 않는다. attention 에는 그 형태의 구멍이 실제로 하나 열려 있다(미러 로컬 포커스 해제 → 같은 kind 재발동) — 현재 보장 범위와 닫는 후속 작업은 [attach-behavior "주의 환기(attention) 전파"](../../dev-guide/attach-behavior.md#주의-환기attention-전파).
 
 ### 모드
 
@@ -51,6 +53,8 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 ### GUI mirror
 
 `tasty remote attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 이 명령을 받은 **로컬 GUI 인스턴스**가 client 가 되어 원격 워크스페이스를 mirror 로 재구성한다(`attach.into_gui`). mirror Workspace 는 일반 워크스페이스로 사이드바에 노출되되 **이름과 subtitle 사이 별도 줄의 하늘색 "REMOTE" pill**(`>_→` glyph 포함; collapsed 레일은 아바타 우하단 하늘색 corner chip)로 로컬과 구분(`Workspace.mirror`). status dot 은 실행상태(running/idle) 전용이며 mirror 색을 싣지 않는다 — 원격 origin 은 별도 시각 축(디자인 `workspace-mirror-fg`, notif=우상단 / attached=둘레 ring 과 채널 분리). mirror 콘텐츠(grid) 갱신은 원격 출력이 올 때 즉시, 3초 tick 은 backstop. 실행상태(status dot 의 초록/회색)는 별도 채널로, 원격이 1Hz 로 자신의 busy 상태를 계산해 attach 스트림으로 forward 하고(mirror 터미널은 로컬 PTY 가 없어 스스로 계산할 방법이 없다 — 이 forward 가 유일한 소스) client 가 그 값을 반영한다. 메커니즘 상세는 [dev-guide/attach-behavior "활동(busy) 상태 전파"](../../dev-guide/attach-behavior.md#활동busy-상태-전파).
+
+**주의 환기(attention)도 같은 방향의 별도 채널이다** — 원격이 자기 surface 의 attention(작업 완료 / 응답 필요)을 같은 1Hz tick 에 `StreamControl::Attention{surface_id, kind}` 로 forward 하고 client 가 자기 `AttentionStore` 에 반영한다. attention 의 진실 원천은 **surface 를 소유한 인스턴스**다: producer(완료 IPC/CLI, Claude 플러그인 훅, OSC 133 명령 완료, toast)가 전부 PTY 가 있는 쪽에서 돌고, 특히 `needs_input` 은 서버 훅에서만 나와 미러가 스스로 만들 수 없다. 반영된 값은 로컬 attention 과 **같은 store** 에 들어가므로 미러 워크스페이스에서도 사이드바 개수 배지·surface 테두리·탭 제목 색이 그대로 동작한다. 메커니즘 상세는 [dev-guide/attach-behavior "주의 환기(attention) 전파"](../../dev-guide/attach-behavior.md#주의-환기attention-전파), 기능 문서는 [features/surface-highlight](../surface-highlight/index.md#원격-attach-mirror-로의-전파-serverclient).
 
 ### mirror 워크스페이스 내 구조 변경
 

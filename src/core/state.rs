@@ -258,6 +258,16 @@ pub struct CoreState {
     /// initial push regardless of the surface's last-seen value.
     pub(crate) last_forwarded_busy: std::collections::HashMap<u32, bool>,
 
+    /// Server-side dedup cache for `attention_forwards`: last attention kind
+    /// pushed to an attach client per occupied surface (`None` = cleared), so a
+    /// tick only forwards a `StreamControl::Attention` frame when the value
+    /// actually changed. Same lifecycle rule as `last_forwarded_busy` — entries
+    /// for surfaces no longer hard-occupied are dropped each call, so a later
+    /// re-attach always gets a fresh baseline push regardless of the surface's
+    /// last-seen value.
+    pub(crate) last_forwarded_attention:
+        std::collections::HashMap<u32, Option<attention::AttentionKind>>,
+
     // ── Surface attention state. Producer-neutral shared primitive: any producer
     // (toast notification, completion IPC/CLI, OSC 133 command completion, …) may
     // raise it, and it is cleared when the surface gains real render-time focus
@@ -638,6 +648,7 @@ impl CoreState {
             busy_surfaces: std::collections::HashSet::new(),
             mirror_busy_surfaces: std::collections::HashSet::new(),
             last_forwarded_busy: std::collections::HashMap::new(),
+            last_forwarded_attention: std::collections::HashMap::new(),
             attention: attention::AttentionStore::default(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             mouse_capture_banner_suppressed_surfaces: std::collections::HashSet::new(),

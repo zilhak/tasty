@@ -4,11 +4,12 @@
 - **주체**: AI Agent · 로컬 사용자
 - **ADR**: [ADR-0039](../../adr/0039-surface-highlight-shared-primitive.md) ·
   [ADR-0062](../../adr/0062-attention-store-kind-aware-primitive.md)(kind 확장)
-- **코드**: `src/core/state/attention.rs` (상태·헬퍼) · `src/gfx/gpu.rs` (focus 해제) ·
+- **코드**: `src/core/state/attention.rs` (상태·헬퍼·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
   `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) ·
   `src/adapters/ipc/handler/surface/completion.rs` (completion producer) ·
   `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) ·
-  `src/app/dispatch_domain.rs::cascade_terminal_command_completed` (OSC 133 명령 완료 producer)
+  `src/app/dispatch_domain.rs::cascade_terminal_command_completed` (OSC 133 명령 완료 producer) ·
+  `src/core/attach_runtime.rs::forward_attention` + `src/app/attach_client.rs` (원격 attach mirror 전파)
 - **화면**: 없음 — 세 소비처(테두리·탭·사이드바)에 투영되는 상태 (전용 화면 없음)
 
 ## 목적
@@ -31,7 +32,9 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
 - **해제(clear)**: `clear_attention(surface_id)`. 두 경로에서 호출된다:
   1. 매 렌더 프레임 **실제 렌더 시점 포커스** surface 에 대해 자동 호출(`gpu.rs`) —
      에이전트가 주입한 포커스가 아니라 실 사용자 포커스라 불가침 원칙 1 에 안전. kind 와
-     무관하게 단일 규칙(`Completion`/`NeedsInput` 모두 이 경로로 해제).
+     무관하게 단일 규칙(`Completion`/`NeedsInput` 모두 이 경로로 해제). **mirror surface 도
+     예외가 아니다** — 그 결과 서버가 push 한 값을 미러가 로컬로만 지우게 되는데, 아래
+     "원격 attach mirror 로의 전파" 의 "현재 보장 범위 / 남은 구멍" 항목 참조.
   2. 그 surface 를 source 로 하는 알림을 읽음 처리(개별/전체)했을 때, `CoreState::
      mark_notification_read`/`mark_all_notifications_read`(`state/attention.rs`)가
      그 surface 에 남은 안읽음 알림이 없는 경우에만 호출 — 같은 surface 의 다른 알림이
@@ -62,6 +65,54 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
      숫자 배지 2종(트레일링 슬롯은 kind 무관 유지 — 1개면 단독 그 자리, 2개면 `NeedsInput`
      이 좌측·`Completion`이 우측, 간격 `badge-group-gap`=`spacing_xs`), collapsed 은 dot
      1개(kind 우선순위로 대표색 선택: `NeedsInput` > `Completion` > running) (`sidebar/view.rs`).
+
+### 원격 attach mirror 로의 전파 (server→client)
+
+`AttentionStore` 는 **인스턴스 로컬**이다 — 인스턴스 간 자동 동기화가 없다. 그래서 원격
+attach 로 워크스페이스를 mirror 하는 쪽은 서버(surface 를 소유한 인스턴스)에서 발동한
+attention 을 자기 store 로 받아야 한다. 특히 `NeedsInput` 은 Claude 플러그인 훅이 PTY 가
+있는 인스턴스에서만 발화하므로, push 가 없으면 미러 사용자에게 "응답 필요" 가 도달할 경로가
+**원천적으로 없다**.
+
+- **진실 원천은 surface 를 소유한 인스턴스다.** producer 4 종(완료 IPC/CLI, Claude 훅,
+  OSC 133 명령 완료, toast)이 전부 그쪽에서 돌고, 미러는 서버가 push 한 값을 **반영만**
+  한다. busy(`StreamControl::Activity`)와 같은 방향·같은 이유의 단방향 채널이다.
+- **서버측**: 1Hz `Tick::Busy` 에 편승해 `CoreState::forward_attention`
+  (`core/attach_runtime.rs`)이 `attention_forwards`(`core/state/attention.rs`)가 계산한
+  **점유 중 surface 의 변화분**만 `StreamControl::Attention{surface_id, kind}` 로 holder
+  client 에 push 한다. `kind: null` 이 해제 — 별도 변형이 아니라 kind 의 부재다.
+  `last_forwarded_attention` 캐시로 값이 실제로 바뀐 tick 에만 프레임이 나가고(스팸 없음),
+  점유가 풀렸다 재점유되면 캐시를 버려 새 holder 가 baseline 을 다시 받는다.
+- **client 측**: reader 스레드가 `MirrorEvent::Attention` 으로 버퍼링하고, 세션의
+  `remote_to_local` 매핑으로 로컬 mirror surface id 를 찾아
+  `CoreState::set_mirror_surface_attention` 으로 적용한다. 값은 **기존 `AttentionStore` 에
+  그대로** 들어가므로 세 소비처(테두리·탭 제목·워크스페이스 배지)가 코드 변경 없이 미러
+  워크스페이스에서도 동작한다(busy 가 `mirror_busy_surfaces` 별도 집합을 쓰는 것과 다른
+  점 — attention 에는 `refresh_busy_surfaces` 같은 wholesale 교체가 없어 분리할 이유가 없다).
+- **적용 API 는 로컬 producer 와 분리한다.** 미러가 push 를 반영할 때
+  `raise_attention`/`clear_attention` 을 타지 않고 `set_mirror_surface_attention` 전용
+  진입점을 쓴다 — 그 두 API 는 로컬 producer 축이고, mirror surface 를 대상으로 한 로컬
+  raise 억제나 해제 forward(mirror→server)가 붙는 자리다. 같은 함수를 타면 서버 push 가
+  자기 억제 게이트에 막히거나 서버가 내려준 해제가 서버로 되돌아가는 에코가 된다.
+- **현재 보장 범위 / 남은 구멍 / 닫는 후속 작업.** push 가 보장하는 수렴은 **wire 축의
+  유실뿐**이다 — 프레임이 드롭·지연돼도 서버 값이 그대로면 다음 tick 에 같은 값이 다시
+  나간다. **미러가 자기 store 를 로컬로 바꾼 경우는 보장 밖**이다: 서버는 자기 값이
+  바뀌지 않는 한 다시 push 하지 않으므로, 미러가 로컬에서 지운 값은 서버 값이 실제로
+  달라지기 전까지 되돌아오지 않는다. 구체적으로 위 "해제(clear)" 1번 경로(`gpu.rs` 의
+  매 프레임 포커스 해제)가 mirror surface 도 지우기 때문에, ① 서버 raise → push → 미러
+  표시 → ② 미러 사용자가 포커스해 **로컬만** 해제 → ③ 서버가 **같은 kind** 로 재발동
+  → 서버 값 불변이라 forward 대상 아님 → ④ 미러 표시가 돌아오지 않는다. 로컬 전용
+  환경에서는 ③ 에서 다시 뜨므로 **미러와 로컬의 관측 가능한 동작이 갈린다.** 닫는 것은
+  이 push 채널이 아니라 해제 축의 후속 작업 3 건이다 — (a) mirror surface 에 대한 로컬
+  raise·변이 억제, (b) 하드 점유 중 해제 권한을 홀더로 제한, (c) 미러의 해제를 서버로
+  forward(서버 값이 실제로 내려가야 같은 kind 재발동이 다시 push 된다). 바로 위 "적용
+  API 는 로컬 producer 와 분리한다" 가 비워 둔 자리가 그 셋이 붙을 곳이다.
+- **teardown**: mirror surface 가 사라지면(`cleanup_mirror_workspace` 의 세션 정리,
+  `apply_mirror_structural_delta` 의 removed 처리) `forget_mirror_surface_attention` 으로
+  레코드도 함께 버린다 — 로컬 id 가 재사용될 때 stale attention 이 새 surface 에 잘못
+  붙는 것을 막는다. **kind 변환**(terminal → 다른 kind) 경로는 대상이 아니다: 거기서는
+  surface 가 계속 존재하고 서버도 여전히 레코드를 들고 있어, 미러만 지우면 diff 기반
+  push 가 다시 보내주지 않아 세션이 끝날 때까지 divergence 가 남는다.
 
 ## Producer
 
@@ -102,6 +153,11 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   Claude producer 와의 차이 — 셸이 OSC 133 통합을 로드해야만 동작(미설치 시
   "셸 통합 미설치" 안내 배너만 뜨고 attention 은 발동하지 않음). `NotificationStore::add()`
   를 호출하지 않으므로 알림 패널에는 아이템이 쌓이지 않는다.
+- **원격 attach 서버 push (mirror 한정)** — mirror(원격 attach client) surface 의
+  attention 은 로컬 producer 가 아니라 **서버가 push 한 값**이 만든다
+  (`StreamControl::Attention` → `CoreState::set_mirror_surface_attention`, 위 "원격 attach
+  mirror 로의 전파" 절). 위 4 종 producer 는 전부 surface 를 소유한 인스턴스에서 돌므로,
+  미러 쪽에는 그 producer 들이 애초에 존재하지 않는다.
 - **후속(미구현)** — 그 외 plugin(non-Claude AI 코딩 에이전트 등)이 자체 완료/확인대기
   신호를 이 attention API 에 연결하는 것. attention API 는 이들이 호출 가능하게 계속
   열려 있다.
@@ -112,8 +168,26 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   IPC `surface.completion { surface_id, kind? }` — 대상 surface 를 attention 발동.
   `surface_id` **필수**(포커스 독립, 불가침 원칙 1). `kind` 생략(또는 `completion` 외 값)은
   `Completion`. 권한 `Notification`.
+- **원격 attach 스트림**: `StreamControl::Attention { surface_id, kind }`(server→client,
+  `crates/tasty-ipc/src/stream.rs`) — 점유 중 surface 의 attention 변화분을 holder client 로
+  push. `surface_id` 는 **원격 id**(client 가 자기 매핑으로 로컬 mirror id 를 찾는다),
+  `kind` 는 `"completion"`/`"needs_input"`(`AttentionKindWire`)이고 `null` 이 해제.
+  직렬화 문자열은 위 `surface.completion` IPC 의 `kind` 파라미터와 같은 어휘다.
 - **사용자 트리거**: 직접 트리거 없음. 효과는 세 소비처로 표시되고, surface 에 포커스하거나
   그 surface 발 알림을 알림 패널에서 읽음 처리하면 해제(잔여 안읽음이 없을 때, kind 무관).
+
+> **검증 한계(문서화 — 원격 attach 전파 한정)**: GUI 두 인스턴스를 실제로 attach 해 미러
+> 사이드바의 배지·테두리·탭 제목 색을 눈으로 확인하는 것은 이 headless 작업 환경(GPU
+> 디스플레이 없음)에서 실행할 수 없다. 대신 `tests/attach_attention_loopback.rs` 가 실제로
+> 기동한 `tasty` 서버 인스턴스에 raw `TcpStream` 으로 attach 점유를 획득한 뒤,
+> `surface.completion` IPC 로 서버에서 attention 을 raise 시켜 `attention` Control 프레임이
+> 원격 surface id·kind 와 함께 도착하는지(그리고 값이 그대로면 다시 나가지 않는지)를
+> 프로토콜 레벨에서 검증한다. 해제(`kind: null`) 전파와 dedup·재점유 baseline 은
+> `src/core/state/attention.rs` 의 단위 테스트가 덮는다 — 해제는 실 렌더 포커스(`gpu.rs`)
+> 또는 알림 읽음으로만 일어나고 그 둘을 헤드리스에서 원격 구동할 IPC 가 없어, 프로토콜
+> e2e 로는 raise 축만 실행 가능하다. 미러가 받은 값을 실제 픽셀로 그리는 부분은
+> 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를 읽는다는 사실로 대체한다
+> (`docs/features/native-file-picker/index.md` 의 "검증 한계" 와 동종의 한계).
 
 ## 비-목표 (Out of scope)
 
@@ -158,6 +232,14 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
       attention/memory/hook 세 소비처로 fan-out).
 - [ ] Given surface S 에서 OSC 133 명령이 완료 Then attention 은 발동하지만 알림 패널에는
       아이템이 생기지 않는다(`AttentionStore` 와 `NotificationStore` 가 별개 저장소).
+- [ ] Given 원격 워크스페이스를 attach 로 mirror 중 When 서버에서 그 워크스페이스의 surface 에
+      `NeedsInput` 이 raise Then 1 tick(≤1s) 안에 미러의 `AttentionStore` 에 반영되어 사이드바
+      needs-input 배지가 1 증가.
+- [ ] Given 위와 같이 반영된 상태 When 서버에서 해제 Then 미러에서도 사라진다(`kind: null` push).
+- [ ] Given 서버 attention 값이 바뀌지 않는 tick Then 프레임이 나가지 않는다(스팸 없음).
+- [ ] Given mirror surface 가 사라짐(세션 정리 / 구조 delta 제거) Then 그 로컬 id 의 attention
+      레코드도 함께 정리된다 — 단, kind 변환(terminal → 다른 kind) 경로는 정리하지 않는다
+      (surface 가 계속 존재하므로 지우면 서버와 divergence).
 
 ## 구현
 
@@ -177,6 +259,15 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   → `App::cascade_terminal_command_completed` (`src/app/dispatch_domain.rs`)가
   `engine.raise_attention(surface_id, AttentionKind::Completion)` 직접 호출(자동 경로) +
   `HookEvent::CommandCompleted` 훅 발화(커스터마이즈 경로) 동시 처리.
+- 원격 attach 전파(server→client): wire 는 `StreamControl::Attention` +
+  `AttentionKindWire`(`crates/tasty-ipc/src/stream.rs`), host↔wire 변환은
+  `AttentionKind::to_wire`/`from_wire`(`src/core/state/attention.rs`). 서버측 diff 는
+  `CoreState::attention_forwards`(캐시 `CoreState.last_forwarded_attention`) → push 는
+  `CoreState::forward_attention`(`src/core/attach_runtime.rs`), 호출 캐던스는 1Hz
+  `Tick::Busy` 3 지점(`src/app/busy.rs` 의 main window · parked engine, `src/boot.rs` 의
+  headless). client 측은 `MirrorEvent::Attention` 파싱 → `apply_one_mirror_event` 가
+  `CoreState::set_mirror_surface_attention` 호출, teardown 은
+  `CoreState::forget_mirror_surface_attention`(`src/app/attach_client.rs`).
 - 알림 읽음 clear: `CoreState::mark_notification_read`/`mark_all_notifications_read`
   (`src/core/state/attention.rs`) — `NotificationStore::has_unread_for_surface`
   (`src/store/notification.rs`)로 잔여 안읽음을 확인 후 clear. 호출부는

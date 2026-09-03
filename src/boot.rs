@@ -446,6 +446,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     // 읽히지도 않을 `.git/HEAD` 를 초당 한 번 여는 것이 된다.
                     engine.refresh_busy_surfaces();
                     engine.forward_busy_activity(&app.stream_hub);
+                    // attention forward 도 같은 tick(gui `app/busy.rs` 와 동형).
+                    // headless 가 원격 attach 의 주 시나리오라 이 배선이 없으면
+                    // mirror 는 서버 attention 을 영원히 못 받는다.
+                    engine.forward_attention(&app.stream_hub);
                     // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
                     // 동형(엔진 1 개라 순회 불필요).
                     engine.poll_global_hooks();

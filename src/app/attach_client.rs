@@ -60,6 +60,12 @@ pub(crate) enum MirrorEvent {
     /// `None`), 이 push 가 mirror 워크스페이스 사이드바 status dot 의 유일한 데이터
     /// 소스다(`CoreState::set_mirror_surface_busy`).
     Activity(u32, bool),
+    /// 원격 surface 의 attention 상태 `(remote_surface_id, kind)` — `None` 은 해제.
+    /// attention 의 진실 원천은 surface 를 소유한 서버이고 producer(완료 IPC/CLI,
+    /// Claude 훅, OSC 133, toast)가 전부 그쪽에서 돌므로, 특히 `NeedsInput` 은 mirror
+    /// 가 스스로 만들 수 없다 — 이 push 가 mirror attention 의 유일한 소스다
+    /// (`CoreState::set_mirror_surface_attention`).
+    Attention(u32, Option<tasty_ipc::stream::AttentionKindWire>),
     /// forward 한 구조 op 가 원격에서 실패했다(2단계). `reason`(예: 미등록 kind)을 담아
     /// 메인루프가 실패 toast 를 띄운다.
     StructuralFailed(String),
@@ -1338,6 +1344,7 @@ fn remove_mirror_workspace_from_engine(
     for &local in remote_to_local.values() {
         engine.terminals.remove(local);
         engine.forget_mirror_surface_busy(local);
+        engine.forget_mirror_surface_attention(local);
         engine.attach_mesh_frames.remove(local);
     }
     engine.workspaces.remove(pos);
@@ -1425,7 +1432,7 @@ fn spawn_attach_write_thread(
 }
 
 /// 원격 출력을 읽어 `output` 버퍼에 쌓고 메인 루프를 깨우는 reader 스레드를
-/// 띄운다. Data/Resize/Activity/StructuralFailed/StructuralSucceeded/
+/// 띄운다. Data/Resize/Activity/Attention/StructuralFailed/StructuralSucceeded/
 /// StructuralDelta/Mesh 이벤트를 `MirrorEvent` 로 변환, Detach/force_detached/
 /// recv 실패는 세션 disconnect 로 승격. `start_gui_attach`/`reconnect_session`
 /// 이 공유(스레드 본문이 두 곳에서 100% 동일) — `log_suffix` 로 로그 문구 차이만
@@ -1475,6 +1482,9 @@ fn spawn_attach_reader_thread(
                                 }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
                                 Ok(StreamControl::Activity { surface_id, busy }) => {
                                     Some(MirrorEvent::Activity(surface_id, busy))
+                                }
+                                Ok(StreamControl::Attention { surface_id, kind }) => {
+                                    Some(MirrorEvent::Attention(surface_id, kind))
                                 }
                                 // 2단계: forward 실패 회신 → 실패 toast.
                                 Ok(StreamControl::StructuralResult {
@@ -1828,6 +1838,7 @@ fn merge_survivor_mapping(
         if !new_map.contains_key(&remote_id) {
             engine.terminals.remove(local_id);
             engine.forget_mirror_surface_busy(local_id);
+            engine.forget_mirror_surface_attention(local_id);
             engine.attach_mesh_frames.remove(local_id);
         }
     }
@@ -1871,6 +1882,16 @@ fn apply_one_mirror_event(
         MirrorEvent::Activity(remote_id, busy) => {
             if let Some(&local) = sess.remote_to_local.get(&remote_id) {
                 main.core_state.set_mirror_surface_busy(local, busy);
+            }
+        }
+        MirrorEvent::Attention(remote_id, kind) => {
+            // 원격 적용 전용 진입점 — 로컬 producer 의 `raise_attention`/
+            // `clear_attention` 을 타지 않는다(억제 게이트·해제 forward 우회).
+            if let Some(&local) = sess.remote_to_local.get(&remote_id) {
+                main.core_state.set_mirror_surface_attention(
+                    local,
+                    kind.map(crate::core::AttentionKind::from_wire),
+                );
             }
         }
         MirrorEvent::StructuralFailed(reason) => {

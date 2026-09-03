@@ -11,7 +11,9 @@ impl App {
     /// this instance's surfaces (`StreamControl::Activity`) — the same 1Hz tick
     /// that refreshes the local busy cache doubles as the cadence for that
     /// push, so a remote mirror's status dot never lags local by more than one
-    /// tick. `stream_hub` is cloned once up front (cheap — internal `Arc`) so
+    /// tick. Attention pushes (`StreamControl::Attention`) ride the same tick
+    /// for the same reason — the mirror's count badges / border / tab title
+    /// color track the owning instance within one tick. `stream_hub` is cloned once up front (cheap — internal `Arc`) so
     /// the per-engine forward calls don't need to borrow all of `self` while
     /// `self.view.views.values_mut()` already holds a mutable borrow.
     pub(crate) fn poll_busy_states(&mut self) {
@@ -30,6 +32,9 @@ impl App {
                     // 후 다음 리페인트 유발 이벤트가 올 때까지 옛 브랜치가 남는다.
                     changed |= main.core_state.refresh_status_bar_branch(focused);
                     main.core_state.forward_busy_activity(&hub);
+                    // attention 도 같은 tick 에 편승한다 — 서버가 소유한 surface 의
+                    // attention 변화분을 점유 client(mirror)로 push(server→client).
+                    main.core_state.forward_attention(&hub);
                     close_stale_mouse_capture_banners(&mut main.state, &main.core_state);
                     changed
                 }
@@ -44,6 +49,7 @@ impl App {
             // 그려지지 않으므로 브랜치 캐시는 갱신하지 않는다(읽는 쪽이 없다).
             crate::core::Core::update_busy_surfaces(engine);
             engine.forward_busy_activity(&hub);
+            engine.forward_attention(&hub);
         }
     }
 }

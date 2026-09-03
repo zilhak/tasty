@@ -30,6 +30,25 @@ pub(crate) enum AttentionKind {
     NeedsInput,
 }
 
+impl AttentionKind {
+    /// attach 스트림 wire 표현으로 변환(server→client push). `tasty-ipc` 는 host
+    /// crate 를 의존하지 않고 이 enum 은 `pub(crate)` 라, 경계에서 서로 변환한다.
+    pub(crate) fn to_wire(self) -> tasty_ipc::stream::AttentionKindWire {
+        match self {
+            AttentionKind::Completion => tasty_ipc::stream::AttentionKindWire::Completion,
+            AttentionKind::NeedsInput => tasty_ipc::stream::AttentionKindWire::NeedsInput,
+        }
+    }
+
+    /// wire 표현에서 복원(client 적용). `to_wire` 의 역.
+    pub(crate) fn from_wire(wire: tasty_ipc::stream::AttentionKindWire) -> Self {
+        match wire {
+            tasty_ipc::stream::AttentionKindWire::Completion => AttentionKind::Completion,
+            tasty_ipc::stream::AttentionKindWire::NeedsInput => AttentionKind::NeedsInput,
+        }
+    }
+}
+
 /// surface 하나가 가진 attention 레코드. `raised_at` 은 지금은 소비처가 없지만
 /// 향후 kind 별 만료/정렬 정책을 위해 확장 여지로 둔다.
 #[derive(Debug, Clone, Copy)]
@@ -166,6 +185,82 @@ impl CoreState {
     /// Clear the attention record for a surface (e.g. when it gains focus).
     pub fn clear_attention(&mut self, surface_id: u32) {
         self.attention.clear(surface_id);
+    }
+
+    /// **원격(서버) push 반영 전용 진입점** — attach mirror 가 받은
+    /// `StreamControl::Attention` 을 자기 `AttentionStore` 에 그대로 쓴다.
+    /// `kind == None` 은 해제.
+    ///
+    /// 로컬 producer 의 `raise_attention`/`clear_attention` 을 **일부러 타지 않는다.**
+    /// 그 두 API 는 로컬 producer 축에 속하고, 앞으로 mirror surface 를 대상으로 한
+    /// 로컬 raise 억제 게이트와 해제 forward(mirror→server) 큐가 붙는 자리다 —
+    /// 서버가 내려준 값을 적용하면서 같은 함수를 타면 억제 게이트에 자기 push 가
+    /// 막히거나, 서버가 내려준 해제가 곧바로 서버로 되돌아가는 에코가 된다.
+    ///
+    /// 저장 위치는 busy 와 다르다 — busy 는 `refresh_busy_surfaces` 가 매 tick
+    /// `busy_surfaces` 를 통째로 교체하므로 mirror 값을 `mirror_busy_surfaces` 별도
+    /// 집합에 둬야 했지만, attention 에는 그런 wholesale 교체가 없다. 그래서 push 된
+    /// 값을 **기존 `AttentionStore` 에 그대로** 넣는다 — 사이드바 배지·테두리·탭
+    /// 제목 소비처가 코드 변경 없이 그대로 읽는다.
+    pub(crate) fn set_mirror_surface_attention(
+        &mut self,
+        surface_id: u32,
+        kind: Option<AttentionKind>,
+    ) {
+        match kind {
+            Some(k) => self.attention.raise(surface_id, k),
+            None => self.attention.clear(surface_id),
+        }
+    }
+
+    /// mirror surface 가 사라질 때 그 attention 레코드를 버린다(세션 정리 / 구조
+    /// delta 에서 제거된 surface). `forget_mirror_surface_busy` 동형 — 로컬 id 가
+    /// 재사용될 때 stale attention 이 새 surface 에 잘못 붙는 것을 막는다.
+    ///
+    /// `clear_attention` 이 아니라 별도 진입점인 이유는
+    /// [`set_mirror_surface_attention`](Self::set_mirror_surface_attention) 과 같다 —
+    /// teardown 은 로컬 사용자의 해제가 아니라 surface 소멸이므로 해제 forward 축을
+    /// 타면 안 된다.
+    pub(crate) fn forget_mirror_surface_attention(&mut self, surface_id: u32) {
+        self.attention.clear(surface_id);
+    }
+
+    /// 점유(hard attach) 중인 surface 의 attention 변화분 — `(holder client,
+    /// surface, kind)` 튜플. `kind == None` 은 해제. `busy_activity_forwards`
+    /// (`state/busy.rs`) 와 동형이며 같은 1Hz tick 에 편승한다.
+    ///
+    /// `last_forwarded_attention` 캐시와 비교해 **값이 실제로 바뀐 것만** 내보낸다
+    /// (스팸 억제). 캐시가 아니라 항상 live store 에서 재-diff 하므로, 프레임이
+    /// 유실되거나 지연돼도 다음 tick 에 자동 수렴한다(client ack 에 의존하지 않는다).
+    /// 이 수렴은 **wire 유실 축에만** 유효하다 — client 가 자기 store 를 로컬로 바꾸면
+    /// 서버 값은 그대로라 재-push 가 없고 갈라진 채 남는다. 현재 열려 있는 사례와 닫는
+    /// 후속 작업은 `docs/dev-guide/attach-behavior.md` "주의 환기(attention) 전파" 참조.
+    /// 점유가 풀린 surface 의 엔트리는 매 호출 정리해, 나중에 재attach(다른 client 일
+    /// 수 있음) 하면 값이 이전과 같아도 baseline push 를 다시 받는다.
+    ///
+    /// 첫 호출은 attention 이 없는 surface 에 대해서도 `None` baseline 을 1회
+    /// 내보낸다 — busy 가 초기 `false` 를 내보내는 것과 같은 성질이고, mirror 쪽
+    /// 초기 상태를 서버 기준으로 확정시킨다(client 에는 무해한 no-op 해제).
+    pub(crate) fn attention_forwards(
+        &mut self,
+    ) -> Vec<(
+        crate::core::attach::AttachClientId,
+        u32,
+        Option<AttentionKind>,
+    )> {
+        let locks = self.attach.locks_snapshot();
+        let occupied: std::collections::HashSet<u32> = locks.iter().map(|&(sid, _)| sid).collect();
+        self.last_forwarded_attention
+            .retain(|sid, _| occupied.contains(sid));
+        let mut out = Vec::new();
+        for (sid, lock) in locks {
+            let kind = self.attention.kind_of(sid);
+            if self.last_forwarded_attention.get(&sid) != Some(&kind) {
+                self.last_forwarded_attention.insert(sid, kind);
+                out.push((lock.holder, sid, kind));
+            }
+        }
+        out
     }
 
     /// The attention kind currently recorded for a surface, if any.
@@ -383,6 +478,143 @@ mod tests {
             "100 은 안읽음 알림이 없었으므로 clear 대상이 아니다 — 무관 producer 의 attention 보존"
         );
         assert!(!s.attention_dominant_kind(&[200]).is_some());
+    }
+
+    /// `attention_forwards` 는 값이 실제로 바뀔 때만 forward 한다(중복 억제) —
+    /// `busy_activity_forwards_only_on_change` 미러. 첫 호출은 attention 이 없어도
+    /// `None` baseline 을 1회 내보내 mirror 초기 상태를 서버 기준으로 확정한다.
+    #[test]
+    fn attention_forwards_only_on_change() {
+        let mut e = state();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.attach.acquire(sid, 7).expect("lock 획득");
+
+        // 최초 호출: attention 없음 → 최초 diff(캐시 없음 → None)라 baseline 1건.
+        assert_eq!(e.attention_forwards(), vec![(7, sid, None)]);
+
+        // 같은 상태 재호출 — 변화 없으니 forward 없음.
+        assert!(e.attention_forwards().is_empty());
+
+        // raise → 1건 forward.
+        e.raise_attention(sid, AttentionKind::NeedsInput);
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(7, sid, Some(AttentionKind::NeedsInput))]
+        );
+        assert!(e.attention_forwards().is_empty());
+
+        // 같은 surface 의 kind 만 바뀌어도 forward — 미러의 배지 색이 갈린다.
+        e.raise_attention(sid, AttentionKind::Completion);
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(7, sid, Some(AttentionKind::Completion))]
+        );
+        assert!(e.attention_forwards().is_empty());
+
+        // 해제 → "kind 없음"으로 1건 forward(별도 변형이 아니라 None).
+        e.clear_attention(sid);
+        assert_eq!(e.attention_forwards(), vec![(7, sid, None)]);
+        assert!(e.attention_forwards().is_empty());
+    }
+
+    /// 점유되지 않은 surface 는 attention 이 있어도 forward 대상이 아니다 —
+    /// attach client 가 없는 surface 의 상태를 흘리지 않는다.
+    #[test]
+    fn attention_forwards_ignores_unoccupied_surfaces() {
+        let mut e = state();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.raise_attention(sid, AttentionKind::NeedsInput);
+        assert!(e.attention_forwards().is_empty());
+    }
+
+    /// lock 해제 후 재획득(다른 client)하면, 값이 이전과 같아도 항상 fresh 하게 1건
+    /// forward 해야 한다 — stale 캐시로 신규 holder 가 baseline 을 못 받는 회귀를
+    /// 막는다(`busy_activity_forwards_resets_on_reacquire` 미러).
+    #[test]
+    fn attention_forwards_resets_on_reacquire() {
+        let mut e = state();
+        let sid = e.workspaces[0].all_surface_ids()[0];
+        e.attach.acquire(sid, 7).expect("lock 획득");
+        e.raise_attention(sid, AttentionKind::NeedsInput);
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(7, sid, Some(AttentionKind::NeedsInput))]
+        );
+        assert!(e.attention_forwards().is_empty());
+
+        e.attach.release(sid, 7).expect("release");
+        // 점유 해제 — 다음 diff 호출에서 캐시가 정리된다(occupied 집합에서 빠짐).
+        assert!(e.attention_forwards().is_empty());
+
+        e.attach.acquire(sid, 9).expect("다른 client 재획득");
+        assert_eq!(
+            e.attention_forwards(),
+            vec![(9, sid, Some(AttentionKind::NeedsInput))],
+            "재획득 후에는 값이 이전과 같아도 새 holder 에게 다시 push"
+        );
+    }
+
+    /// 원격 push 반영 진입점은 로컬 producer API 와 분리되어 있지만, 결과는 같은
+    /// `AttentionStore` 에 들어가야 한다 — 사이드바 배지·테두리·탭 제목 소비처가
+    /// 코드 변경 없이 그대로 읽는 것이 이 설계의 요점이다.
+    #[test]
+    fn mirror_attention_lands_in_the_same_store_consumers_read() {
+        let mut s = state();
+        s.set_mirror_surface_attention(11, Some(AttentionKind::NeedsInput));
+        assert_eq!(s.attention_kind(11), Some(AttentionKind::NeedsInput));
+        assert_eq!(
+            s.attention_count_of_kind(AttentionKind::NeedsInput, &[11]),
+            1
+        );
+        assert_eq!(
+            s.attention_dominant_kind(&[11]),
+            Some(AttentionKind::NeedsInput)
+        );
+
+        // kind 없음 = 해제.
+        s.set_mirror_surface_attention(11, None);
+        assert_eq!(s.attention_kind(11), None);
+    }
+
+    /// mirror surface teardown 은 attention 레코드도 함께 버린다 — 로컬 id 가
+    /// 재사용될 때 stale attention 이 새 surface 에 잘못 붙지 않아야 한다.
+    #[test]
+    fn forget_mirror_surface_attention_drops_the_record() {
+        let mut s = state();
+        s.set_mirror_surface_attention(12, Some(AttentionKind::Completion));
+        s.forget_mirror_surface_attention(12);
+        assert_eq!(s.attention_kind(12), None);
+    }
+
+    /// 미러가 서버 push 를 반영해도 **서버측 forward 캐시**는 건드리지 않는다 —
+    /// 적용 경로가 로컬 producer 축과 분리돼 있음을 값으로 확인한다(같은 engine 이
+    /// 서버이자 client 일 수는 없지만, 두 축이 공유 상태를 통해 얽히지 않는다는
+    /// 불변식은 유지돼야 한다).
+    #[test]
+    fn mirror_apply_does_not_touch_forward_cache() {
+        let mut s = state();
+        s.set_mirror_surface_attention(13, Some(AttentionKind::NeedsInput));
+        assert!(s.last_forwarded_attention.is_empty());
+        s.forget_mirror_surface_attention(13);
+        assert!(s.last_forwarded_attention.is_empty());
+    }
+
+    /// wire 변환은 왕복해도 값이 보존된다(server→client 경계).
+    #[test]
+    fn attention_kind_wire_roundtrips() {
+        for k in [AttentionKind::Completion, AttentionKind::NeedsInput] {
+            assert_eq!(AttentionKind::from_wire(k.to_wire()), k);
+        }
+        // 직렬화 문자열은 `surface.completion` IPC 의 `kind` 파라미터와 같은 어휘여야
+        // 한다 — 한 vocabulary 로 producer IPC 와 attach 채널을 모두 덮는다.
+        assert_eq!(
+            serde_json::to_value(AttentionKind::NeedsInput.to_wire()).unwrap(),
+            serde_json::Value::String("needs_input".into())
+        );
+        assert_eq!(
+            serde_json::to_value(AttentionKind::Completion.to_wire()).unwrap(),
+            serde_json::Value::String("completion".into())
+        );
     }
 
     /// `effects_of` 는 host/cascade 없이 순수하게 kind → 효과를 매핑한다. OSC 133

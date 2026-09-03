@@ -501,6 +501,27 @@ impl CoreState {
         }
     }
 
+    /// 점유 surface 의 attention 변화분을 attach client 에 push 한다
+    /// (`forward_busy_activity` 동형 — 같은 1Hz tick 에서 나란히 호출된다).
+    ///
+    /// attention 의 진실 원천은 **surface 를 소유한 인스턴스**다: producer 4 종(완료
+    /// IPC/CLI, Claude 플러그인 훅, OSC 133 명령 완료, toast)이 전부 PTY 가 있는 쪽에서
+    /// 돌고, 특히 `NeedsInput` 은 서버 훅에서만 나오므로 mirror 가 스스로 계산할
+    /// 방법이 없다. 이 push 가 mirror attention 의 유일한 소스다.
+    pub fn forward_attention(&mut self, hub: &StreamHub) {
+        for (client_id, surface_id, kind) in self.attention_forwards() {
+            let msg = StreamControl::Attention {
+                surface_id,
+                kind: kind.map(|k| k.to_wire()),
+            };
+            let frame = StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&msg).unwrap_or_default(),
+            );
+            let _ = hub.push(client_id, frame); // best-effort attention 통지 — client 끊김 시 무해, 다음 tick 이 재수렴.
+        }
+    }
+
     /// workspace attach 디스크립터: 트리(분할 비율 포함) + per-surface role/cols/rows/kind.
     fn build_workspace_descriptor(
         &self,

@@ -76,6 +76,7 @@ const ALLOWLIST_FILES: &[(&str, usize)] = &[
 /// binary 가 늘면 총량은 다시 증가하므로(각 binary 가 1 개씩만 띄워도 마찬가지) 목록 자체를
 /// 고정한다. 새 e2e binary 가 정말 필요하면 여기 추가하면서 그 필요를 한 번 되짚게 된다.
 const EXPECTED_INSTANCE_TESTS: &[&str] = &[
+    "tests/attach_attention_loopback.rs",
     "tests/attach_convert_cwd_loopback.rs",
     "tests/attach_git_query_loopback.rs",
     "tests/attach_list_dir_loopback.rs",
