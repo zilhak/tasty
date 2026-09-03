@@ -35,6 +35,26 @@
 - 전부 **읽기 전용**(액션 버튼 없음). 상호작용 = Refresh · worktree 선택(rebind) · 파일 선택(→diff) ·
   diff Back. 입력은 host 가 forward 한 실제 사용자 입력으로 plugin egui 안에서 처리된다.
 
+## 스크롤 (virtualization)
+
+리스트 4개(worktree rail · Changes · Commits · Diff)는 모두 **보이는 행만 레이아웃한다** —
+`ScrollArea::show_rows` 로 뷰포트에 걸치는 행 범위만 그린다(근거·대안:
+[ADR-0095](../../../adr/0095-plugin-list-virtualization-and-fixed-content-width.md)). 커밋 목록은
+조회 상한 200 행, diff 는 파일 전체 라인이라 목록 길이와 무관하게 프레임당 비용이 뷰포트 높이에
+비례한다.
+
+- 행 높이는 리스트마다 하나의 값이다(Changes 26 · Commits 28 고정, worktree rail 과 diff 는 theme
+  파생이지만 행마다 동일). 행 함수와 높이 헬퍼(`wt_row_h` / `diff_row_h`)가 짝을 이루므로 한쪽만
+  고치면 행이 겹치거나 벌어진다.
+- 선택 핸들러는 **전체 목록 기준 인덱스**를 받는다 — 부분 범위를 순회해도 worktree 선택과 파일→diff
+  전환 대상이 바뀌지 않는다.
+- diff 의 가로 스크롤 폭은 전 라인(hunk 헤더 포함)의 최장 폭을 **한 번 재서 캐시**하고 모든 행이 그
+  폭을 할당한다. 보이는 라인만 재면 스크롤 위치마다 폭이 출렁이기 때문이다. 캐시는 폰트 크기를 키로
+  갖고, diff 가 바뀌면 비워진다.
+- diff 의 ±-라인 tint 와 hunk header 밴드는 **그 행 자신의 텍스트 폭**까지만 칠한다 — 위 할당 폭(전
+  라인 최장)과 분리된 값이다. 밴드까지 할당 폭으로 칠하면 짧은 행의 밴드가 가로 스크롤 콘텐츠 끝까지
+  늘어난다.
+
 ## 상태별 시각
 
 - repo / 비-repo(중앙 안내) / detached(branch 자리에 `detached`).

@@ -54,6 +54,11 @@ pub(crate) struct ViewerState {
     log_entries: Vec<git::LogEntry>,
     selected_file: Option<usize>,
     diff_content: Option<git::DiffData>,
+    /// diff pane 의 가로 스크롤 콘텐츠 폭 캐시 — `(폭을 잰 mono 폰트 크기, 콘텐츠 폭)`.
+    /// diff 리스트는 보이는 라인만 그리므로(virtualization), 전 라인의 최장 폭을 한 번
+    /// 재 담아두지 않으면 스크롤 위치마다 가로 폭이 출렁인다. render 가 캐시 미스일 때
+    /// 채우고, [`ViewerState::set_diff`] 가 diff 를 바꿀 때 비운다.
+    diff_width: Option<(f32, f32)>,
     /// (ADR-0056) mirror(attach) surface 에서 열렸으면 Some — 로컬 `git2::Repository`
     /// discover 대신 host 왕복(`git_viewer.query` IPC → `git_viewer.query_result`
     /// event)으로 조회한다. None 이면 기존 로컬 경로(변경 없음).
@@ -251,7 +256,7 @@ impl ViewerState {
         // 선택된 파일이 새 목록에 없을 수도 있으므로 단순하게 닫는다(로컬처럼 같은
         // 인덱스를 이어서 재요청하지 않음 — 흔치 않은 edge case 라 단순함을 우선).
         self.selected_file = None;
-        self.diff_content = None;
+        self.set_diff(None);
     }
 
     fn apply_remote_diff(&mut self, idx: usize, data: Value) {
@@ -260,7 +265,7 @@ impl ViewerState {
             return;
         }
         match serde_json::from_value::<git::DiffData>(data) {
-            Ok(diff) => self.diff_content = Some(diff),
+            Ok(diff) => self.set_diff(Some(diff)),
             Err(e) => self.error = Some(format!("malformed diff reply: {e}")),
         }
     }
@@ -319,11 +324,12 @@ impl ViewerState {
         if !entry.is_valid || idx == self.active_worktree {
             return;
         }
+        // `entry` 대여를 여기서 끝낸다 — 아래 `set_diff` 가 `&mut self` 를 잡는다.
+        let path = entry.path.to_string_lossy().into_owned();
         self.selected_file = None;
-        self.diff_content = None;
+        self.set_diff(None);
         self.error = None;
         if self.remote.is_some() {
-            let path = entry.path.to_string_lossy().into_owned();
             self.active_worktree = idx;
             self.request_remote_snapshot(Some(path));
             return;
@@ -374,7 +380,7 @@ impl ViewerState {
                 self.load_diff_for(&repo, &entry.path);
             } else {
                 self.selected_file = None;
-                self.diff_content = None;
+                self.set_diff(None);
             }
         }
     }
@@ -417,18 +423,25 @@ impl ViewerState {
 
     fn load_diff_for(&mut self, repo: &git2::Repository, path: &str) {
         match git::collect_diff(repo, path) {
-            Ok(d) => self.diff_content = Some(d),
+            Ok(d) => self.set_diff(Some(d)),
             Err(e) => {
                 tracing::warn!("collect_diff failed: {e}");
                 self.error = Some(e.to_string());
-                self.diff_content = None;
+                self.set_diff(None);
             }
         }
     }
 
     fn close_diff(&mut self) {
         self.selected_file = None;
-        self.diff_content = None;
+        self.set_diff(None);
+    }
+
+    /// `diff_content` 는 반드시 이 헬퍼로만 바꾼다 — 같이 무효화해야 하는
+    /// [`ViewerState::diff_width`] 캐시가 딸려 있다.
+    fn set_diff(&mut self, diff: Option<git::DiffData>) {
+        self.diff_content = diff;
+        self.diff_width = None;
     }
 }
 

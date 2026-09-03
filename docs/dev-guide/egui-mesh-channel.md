@@ -512,6 +512,60 @@ SDK 를 `features = ["egui-mesh"]` 로 받아 `EguiMeshSurface::paint(&ctx.host,
 > [popup-implementation.md](popup-implementation.md) 의 "콘텐츠 레이어 — `egui::Area`
 > 등록" 절.
 
+## plugin 리스트의 virtualization 규약 (surface·popup·banner 공통)
+
+**행 리스트를 `ScrollArea` 에 담을 때는 `show_rows` 로 보이는 행만 그린다.** `show()` 는 자식
+클로저를 **전부** 실행한다 — 화면 밖 행을 건너뛰는 것은 호출자 책임이다. tessellator 가 clip 밖
+glyph 의 vertex 생성을 건너뛰므로 mesh 바이트는 보이는 만큼이지만, 그 앞단의 galley 조회 ·
+Shape 생성 · Vec 할당 · 레이아웃 계산은 전 행에서 발생한다.
+
+plugin 콘텐츠는 **`set_context` 를 받을 때마다 egui pass 를 통째로 다시 돈다.** 스크롤 중에는 휠
+이벤트마다, 그리고 egui 스크롤 스무딩의 self-repaint 마다 set_context 가 오므로 이 비용이 "한 번
+무거운" 것이 아니라 스크롤이 진행되는 동안 매 프레임 반복된다. 목록이 길수록 스크롤이 버벅인다.
+
+```rust
+egui::ScrollArea::vertical()
+    .id_salt("my_list")
+    .auto_shrink([false, false])
+    .show_rows(&mut pane, ROW_H, items.len(), |ui, row_range| {
+        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+        for idx in row_range {
+            let Some(item) = items.get(idx) else { continue };
+            ui.push_id(idx, |ui| row(ui, theme, item));
+        }
+    });
+```
+
+지켜야 하는 것 네 가지 — 근거·대안은
+[ADR-0095](../adr/0095-plugin-list-virtualization-and-fixed-content-width.md).
+
+- **행 높이가 균일해야 한다.** `show_rows` 는 `row_height × total_rows` 로 위치를 계산한다. 상수든
+  theme 파생이든 **한 프레임 안에서 모든 행이 같은 값**이면 된다. 행 함수와 높이 값이 어긋나면 행이
+  겹치거나 벌어지므로, 높이 식은 헬퍼 하나로 뽑아 양쪽이 같은 것을 쓰게 한다. 높이가 행마다 다르면
+  `show_rows` 가 아니라 `show_viewport` 로 직접 계산해야 한다.
+- **`item_spacing.y` 는 `show_rows` **호출 전에** 0 으로 맞춘다.** `show_rows` 는 **바깥** `ui` 의
+  `item_spacing` 을 읽어 `row_height + spacing.y` 로 행 간격을 잡는다 — 클로저 안에서 세팅하는
+  것으로는 늦다.
+- **`row_range` 는 전체 목록 기준 인덱스다.** 선택 핸들러에 그대로 넘기면 된다. 다만 `enumerate()`
+  로 얻던 인덱스를 `row_range` 기준으로 옮기지 않으면 **엉뚱한 항목이 선택되는** 회귀가 난다 —
+  virtualization 도입에서 가장 깨지기 쉬운 지점이라 스크롤해야 보이는 아래쪽 행으로 실측한다.
+- **행마다 `ui.push_id(row_index, …)` 로 id 를 고정한다.** `show_rows` 의
+  `skip_ahead_auto_ids(min_row)` 는 "행 하나가 auto id 하나를 쓴다" 를 가정한다. 행이 소비하는 id
+  수가 행마다 다르면(예: 개수가 변하는 pill) 스크롤 위치에 따라 같은 행의 id 가 바뀌어, egui 가
+  id 로 유지하는 hover/press 상태가 엉뚱한 행에 붙는다.
+
+**가로로도 스크롤하는 리스트(`ScrollArea::both`)는 콘텐츠 폭을 따로 확정해야 한다.** 콘텐츠 폭은
+그 프레임에 실제로 할당된 폭의 최댓값이라, 보이는 행만 그리면 스크롤 위치마다 폭이 출렁이고 가로
+스크롤이 최장 행 끝에 도달하지 못한다. 전 행의 최대 폭을 **한 번 재서 캐시**하고 모든 행이 그 폭을
+할당한다(캐시 키에 폰트 크기를 넣고, 데이터가 바뀌는 단일 지점에서 무효화한다).
+
+- 할당 폭과 **칠하는 폭은 분리한다.** 행 배경(선택/hover/tint 밴드)까지 최장 폭으로 칠하면 짧은
+  행의 밴드가 콘텐츠 끝까지 늘어나 시각이 달라진다. 배경은 그 행 자신의 폭으로 칠한다 — 이 측정은
+  보이는 행에서만 일어나므로 virtualization 이 줄인 비용을 되돌리지 않는다.
+
+> 갤러리 specimen 은 보통 `ScrollArea` 없이 고정 목록을 그려 이 결함을 재현하지 못한다 —
+> virtualization 회귀는 clip 회귀와 마찬가지로 본체 popup 에서 스크롤시켜 확인한다.
+
 ## egui-mesh popup 채널 (A2)
 
 surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**할 수 있다. surface

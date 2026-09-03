@@ -16,7 +16,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag, tag_width};
 
 use crate::ViewerState;
-use tasty_git_core::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
+use tasty_git_core::{
+    DiffData, DiffLine, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry,
+};
 
 // ── 디자인 고정 px (git_viewer.jsx 의 화면 전용 치수 — Theme 토큰에 대응 없음) ──
 /// worktree rail 고정 폭(jsx `width: 232`). 2줄 행이 어떤 프레임 폭에서도 안 넘치게 고정.
@@ -305,21 +307,45 @@ fn draw_rail(
         return;
     }
     let mut clicked: Option<usize> = None;
+    // virtualization — 보이는 행만 레이아웃한다. `row_range` 는 **전체 목록 기준**
+    // 인덱스라 `select_worktree(idx)` 에 그대로 넘길 수 있다.
     egui::ScrollArea::vertical()
         .id_salt("gv_rail")
         .auto_shrink([false, false])
-        .show(&mut pane, |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            for (idx, wt) in state.worktrees.iter().enumerate() {
-                if wt_row(ui, theme, tr, wt, idx == state.active_worktree) {
-                    clicked = Some(idx);
+        .show_rows(
+            &mut pane,
+            wt_row_h(theme),
+            state.worktrees.len(),
+            |ui, row_range| {
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                for idx in row_range {
+                    let Some(wt) = state.worktrees.get(idx) else {
+                        continue;
+                    };
+                    let selected = idx == state.active_worktree;
+                    if ui
+                        .push_id(idx, |ui| wt_row(ui, theme, tr, wt, selected))
+                        .inner
+                    {
+                        clicked = Some(idx);
+                    }
                 }
-            }
-        });
+            },
+        );
     // 클릭 → worktree 재바인딩. right column 은 이 뒤에 그려져 같은 프레임에 반영된다.
     if let Some(idx) = clicked {
         state.select_worktree(idx);
     }
+}
+
+/// worktree 행 높이 — 2줄 + 상하 padding. theme 파생이지만 한 프레임 안에서 모든 행이
+/// 같은 값이라 `ScrollArea::show_rows` 의 균일 높이 전제를 만족한다.
+fn wt_row_h(theme: &Theme) -> f32 {
+    let pad_y = theme.spacing_sm.value();
+    let line_gap = theme.spacing_xs.value();
+    let l1_h = theme.font_size_term_sm.value() + 4.0;
+    let l2_h = theme.font_size_caption.value() + 4.0;
+    pad_y * 2.0 + l1_h + line_gap + l2_h
 }
 
 /// 2줄 worktree 행: line1 = name + type pill, line2 = short oid + state pill.
@@ -336,7 +362,7 @@ fn wt_row(
     let line_gap = theme.spacing_xs.value();
     let l1_h = theme.font_size_term_sm.value() + 4.0;
     let l2_h = theme.font_size_caption.value() + 4.0;
-    let h = pad_y * 2.0 + l1_h + line_gap + l2_h;
+    let h = wt_row_h(theme);
     let (rect, resp) = ui.allocate_exact_size(vec2(full_w, h), Sense::click());
 
     if selected {
@@ -484,17 +510,31 @@ fn draw_changes(
         return;
     }
     let mut clicked: Option<usize> = None;
+    // virtualization — `row_range` 는 **전체 목록 기준** 인덱스라 `load_diff(idx)` 가
+    // 받는 값의 의미가 바뀌지 않는다.
     egui::ScrollArea::vertical()
         .id_salt("gv_changes")
         .auto_shrink([false, false])
-        .show(&mut pane, |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            for (idx, entry) in state.status_entries.iter().enumerate() {
-                if ch_row(ui, theme, entry, state.selected_file == Some(idx)) {
-                    clicked = Some(idx);
+        .show_rows(
+            &mut pane,
+            CH_ROW_H,
+            state.status_entries.len(),
+            |ui, row_range| {
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                for idx in row_range {
+                    let Some(entry) = state.status_entries.get(idx) else {
+                        continue;
+                    };
+                    let selected = state.selected_file == Some(idx);
+                    if ui
+                        .push_id(idx, |ui| ch_row(ui, theme, entry, selected))
+                        .inner
+                    {
+                        clicked = Some(idx);
+                    }
                 }
-            }
-        });
+            },
+        );
     if let Some(idx) = clicked {
         state.load_diff(idx);
     }
@@ -592,8 +632,10 @@ fn draw_bottom(
         }
     }
     let content = Rect::from_min_max(egui::pos2(area.left(), area.top() + toolbar_h), area.max);
-    if state.selected_file.is_some() && state.diff_content.is_some() {
-        draw_diff(ui, theme, tr, state.diff_content.as_ref().unwrap(), content);
+    if state.selected_file.is_some()
+        && let Some(diff) = state.diff_content.as_ref()
+    {
+        draw_diff(ui, theme, tr, diff, &mut state.diff_width, content);
     } else {
         draw_commits(ui, theme, tr, &state.log_entries, content);
     }
@@ -648,13 +690,18 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
         empty_line(&mut pane, theme, &tr.t("git_viewer.no_commits"));
         return;
     }
+    // virtualization — `LOG_LIMIT` 만큼 쌓여도 보이는 행만 레이아웃한다. 커밋 행은
+    // 클릭 대상이 아니라 인덱스 매핑 부담이 없다.
     egui::ScrollArea::vertical()
         .id_salt("gv_commits")
         .auto_shrink([false, false])
-        .show(&mut pane, |ui| {
+        .show_rows(&mut pane, CM_ROW_H, log.len(), |ui, row_range| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            for entry in log {
-                cm_row(ui, theme, entry);
+            for idx in row_range {
+                let Some(entry) = log.get(idx) else {
+                    continue;
+                };
+                ui.push_id(idx, |ui| cm_row(ui, theme, entry));
             }
         });
 }
@@ -785,7 +832,14 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
     );
 }
 
-fn draw_diff(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, diff: &DiffData, area: Rect) {
+fn draw_diff(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    tr: &Translator,
+    diff: &DiffData,
+    width_cache: &mut Option<(f32, f32)>,
+    area: Rect,
+) {
     // recessed bg-app well.
     ui.painter()
         .rect_filled(area, 0.0, theme.bg_app().to_egui());
@@ -799,56 +853,132 @@ fn draw_diff(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, diff: &DiffData,
         empty_line(&mut pane, theme, &tr.t("git_viewer.no_changes"));
         return;
     }
+    // (hunk 헤더 + 라인) 평탄화 — `starts[i]` = i 번째 hunk 헤더의 flat 행 인덱스.
+    // hunk 수만큼만 도는 prefix sum 이라 라인 수와 무관하게 싸다.
+    let mut starts: Vec<usize> = Vec::with_capacity(diff.hunks.len());
+    let mut total_rows = 0usize;
+    for hunk in &diff.hunks {
+        starts.push(total_rows);
+        total_rows += 1 + hunk.lines.len();
+    }
+
+    // 가로 폭은 전 라인의 최장 폭으로 **한 번만** 재서 캐시한다. 보이는 라인만 재면
+    // 스크롤할 때마다 콘텐츠 폭이 바뀌어 가로 스크롤이 출렁인다. 캐시 키는 폰트 크기
+    // (theme 변경 시 자동 재측정), 무효화는 `ViewerState::set_diff` 가 맡는다.
+    let sz = theme.font_size_caption.value();
+    let row_w = match *width_cache {
+        Some((cached_sz, w)) if cached_sz == sz => w,
+        _ => {
+            let w = diff_content_w(&pane, theme, diff, sz);
+            *width_cache = Some((sz, w));
+            w
+        }
+    };
+
     egui::ScrollArea::both()
         .id_salt("gv_diff")
         .auto_shrink([false, false])
-        .show(&mut pane, |ui| {
+        .show_rows(&mut pane, diff_row_h(theme), total_rows, |ui, row_range| {
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            for hunk in &diff.hunks {
-                diff_line(
-                    ui,
-                    theme,
-                    DiffLineKind::Context,
-                    true,
-                    None,
-                    None,
-                    &hunk.header,
-                );
-                for line in &hunk.lines {
-                    diff_line(
-                        ui,
-                        theme,
-                        line.kind,
-                        false,
-                        line.old_lineno,
-                        line.new_lineno,
-                        &line.content,
-                    );
-                }
+            for row in row_range {
+                // flat 행 → (hunk, 헤더 | 라인). `starts` 는 오름차순이라 이분 탐색.
+                let h = starts
+                    .partition_point(|&start| start <= row)
+                    .wrapping_sub(1);
+                let (Some(hunk), Some(start)) = (diff.hunks.get(h), starts.get(h)) else {
+                    continue;
+                };
+                let off = row - start;
+                ui.push_id(row, |ui| {
+                    if off == 0 {
+                        diff_line(ui, theme, DiffRow::hunk(&hunk.header), row_w);
+                    } else if let Some(line) = hunk.lines.get(off - 1) {
+                        diff_line(ui, theme, DiffRow::line(line), row_w);
+                    }
+                });
             }
         });
 }
 
-/// diff 한 줄: gutter(old/new) + sign + text. hunk 헤더 밴드 / ± 라인 tint.
-fn diff_line(
-    ui: &mut egui::Ui,
-    theme: &Theme,
+/// diff 한 줄의 높이 — hunk 헤더와 일반 라인이 같은 값이라 `show_rows` 의 균일 높이
+/// 전제를 만족한다.
+fn diff_row_h(theme: &Theme) -> f32 {
+    (theme.font_size_caption.value() * 1.65).round()
+}
+
+/// diff 콘텐츠의 가로 폭 — 전 라인(hunk 헤더 포함) 중 최장 텍스트 기준. 캐시 미스일
+/// 때만 부르는 O(라인 수) 경로다.
+fn diff_content_w(ui: &egui::Ui, theme: &Theme, diff: &DiffData, sz: f32) -> f32 {
+    let p = ui.painter();
+    let mut w = 0.0f32;
+    for hunk in &diff.hunks {
+        w = w.max(diff_min_w(p, theme, &hunk.header, sz));
+        for line in &hunk.lines {
+            w = w.max(diff_min_w(p, theme, &line.content, sz));
+        }
+    }
+    w
+}
+
+/// diff 한 줄이 자기 텍스트를 다 담는 데 필요한 최소 폭 — 거터 2칸 + 부호 컬럼 +
+/// 텍스트 + 우측 여백. 콘텐츠 폭(전 라인 최댓값)과 행별 tint 밴드 폭이 같은 식을
+/// 쓰도록 한 곳에 둔다.
+fn diff_min_w(p: &egui::Painter, theme: &Theme, text: &str, sz: f32) -> f32 {
+    DIFF_GUTTER_W * 2.0
+        + DIFF_SIGN_W
+        + p.layout_no_wrap(text.to_owned(), mono(sz), Color32::PLACEHOLDER)
+            .rect
+            .width()
+        + theme.spacing_md.value()
+}
+
+/// diff 한 줄의 렌더 입력 — hunk 헤더와 일반 라인을 한 모양으로 다룬다.
+struct DiffRow<'a> {
     kind: DiffLineKind,
     is_hunk: bool,
     old_no: Option<u32>,
     new_no: Option<u32>,
-    text: &str,
-) {
+    text: &'a str,
+}
+
+impl<'a> DiffRow<'a> {
+    fn hunk(header: &'a str) -> Self {
+        Self {
+            kind: DiffLineKind::Context,
+            is_hunk: true,
+            old_no: None,
+            new_no: None,
+            text: header,
+        }
+    }
+
+    fn line(line: &'a DiffLine) -> Self {
+        Self {
+            kind: line.kind,
+            is_hunk: false,
+            old_no: line.old_lineno,
+            new_no: line.new_lineno,
+            text: &line.content,
+        }
+    }
+}
+
+/// diff 한 줄: gutter(old/new) + sign + text. hunk 헤더 밴드 / ± 라인 tint.
+fn diff_line(ui: &mut egui::Ui, theme: &Theme, row: DiffRow<'_>, row_w: f32) {
+    let DiffRow {
+        kind,
+        is_hunk,
+        old_no,
+        new_no,
+        text,
+    } = row;
     let sz = theme.font_size_caption.value();
-    let h = (sz * 1.65).round();
-    let min_w = DIFF_GUTTER_W * 2.0
-        + DIFF_SIGN_W
-        + ui.painter()
-            .layout_no_wrap(text.to_owned(), mono(sz), Color32::PLACEHOLDER)
-            .rect
-            .width()
-        + theme.spacing_md.value();
-    let full_w = ui.available_width().max(min_w);
+    let h = diff_row_h(theme);
+    // **할당** 폭은 호출자가 준 캐시값(전 라인 최장) — 모든 행이 같은 폭을 할당해야
+    // 보이는 라인만 그려도 콘텐츠 폭(=가로 스크롤 범위)이 스크롤 위치에 따라 출렁이지
+    // 않는다. 반면 아래 tint 밴드는 **행 자신의 폭**까지만 칠한다(할당 폭과 분리).
+    let avail = ui.available_width();
+    let full_w = avail.max(row_w);
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
 
     let (fg, bg) = match (is_hunk, kind) {
@@ -867,7 +997,12 @@ fn diff_line(
         (false, DiffLineKind::Context) => (theme.text_primary().to_egui(), Color32::TRANSPARENT),
     };
     if bg != Color32::TRANSPARENT {
-        ui.painter().rect_filled(rect, 0.0, bg);
+        // 밴드 폭은 행 자신의 텍스트 기준 — 할당 폭(전 라인 최장)으로 칠하면 짧은
+        // ±/hunk 행의 밴드가 콘텐츠 끝까지 늘어나 기존 시각과 달라진다. 이 측정은
+        // 보이는 행에서만 일어나므로 virtualization 이 줄인 비용을 되돌리지 않는다.
+        let band_w = avail.max(diff_min_w(ui.painter(), theme, text, sz));
+        ui.painter()
+            .rect_filled(Rect::from_min_size(rect.min, vec2(band_w, h)), 0.0, bg);
     }
     let p = ui.painter();
     let cy = rect.center().y;
