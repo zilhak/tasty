@@ -600,6 +600,12 @@ fn route_engine_handler(
         "surface.wake" => surface::handle_surface_wake(state, engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, engine, id, &request.params),
         "surface.completion" => surface::handle_completion(state, engine, id, &request.params),
+        "surface.attention.get" => {
+            surface::handle_attention_get(state, engine, id, &request.params)
+        }
+        "surface.attention.clear" => {
+            surface::handle_attention_clear(state, engine, id, &request.params)
+        }
         "surface.read_since_mark" => {
             surface::handle_read_since_mark(state, engine, id, &request.params)
         }

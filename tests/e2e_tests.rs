@@ -168,6 +168,95 @@ fn all_e2e_tests() {
     assert_eq!(completion["ok"], true);
     assert_eq!(completion["surface_id"].as_u64().unwrap(), sid);
 
+    // ========== surface.attention.{get,clear} (해제 표면 왕복) ==========
+    // raise 는 되지만 해제가 없던 비대칭의 회귀 가드. 해제 producer 두 개(실 렌더
+    // 포커스·알림 읽음)는 전부 GUI 로컬 사건이라 IPC 로 관측/구동할 수 없어, 이
+    // 왕복이 해제 축을 프로토콜 레벨에서 실행하는 유일한 경로다.
+    //
+    // 대상은 `sid`(첫 워크스페이스의 포커스 surface)가 아니라 **IPC 로 새로 만든
+    // 워크스페이스의 surface** 다 — `gpu.rs` 가 매 렌더 프레임 실-포커스 surface 의
+    // attention 을 지우므로 포커스 surface 위에서는 raise 가 프레임 하나를 못 넘긴다.
+    // IPC 로 만든 워크스페이스는 active 를 전환하지 않아(원칙 1·3) 그 surface 는
+    // 렌더 포커스를 얻지 않는다.
+    let att_ws = tasty.create_workspace("attention-clear-e2e");
+    let att_sid = att_ws.surface_id;
+    let raise_kind = |kind: &str| {
+        let r = tasty.call(
+            "surface.completion",
+            json!({ "surface_id": att_sid, "kind": kind }),
+        );
+        assert_eq!(r["ok"], true);
+    };
+    let attention_kind =
+        || tasty.call("surface.attention.get", json!({ "surface_id": att_sid }))["kind"].clone();
+
+    // (1) raise → 조회로 kind 가 보인다.
+    raise_kind("needs_input");
+    assert_eq!(attention_kind(), "needs_input");
+
+    // (2) kind 필터 불일치는 지우지 않는다 — 그 사이 더 급한 kind 로 재발동한 신호를
+    //     늦게 도착한 해제가 덮지 않게 하는 계약.
+    let mismatched = tasty.call(
+        "surface.attention.clear",
+        json!({ "surface_id": att_sid, "kind": "completion" }),
+    );
+    assert_eq!(mismatched["ok"], true);
+    assert_eq!(mismatched["cleared"], false);
+    assert_eq!(mismatched["previous_kind"], "needs_input");
+    assert_eq!(attention_kind(), "needs_input");
+
+    // (3) kind 생략 = kind 무관 해제.
+    let cleared = tasty.call("surface.attention.clear", json!({ "surface_id": att_sid }));
+    assert_eq!(cleared["cleared"], true);
+    assert_eq!(cleared["previous_kind"], "needs_input");
+    assert!(attention_kind().is_null());
+
+    // (4) 이미 없는 상태의 재호출도 성공(idempotent).
+    let again = tasty.call("surface.attention.clear", json!({ "surface_id": att_sid }));
+    assert_eq!(again["ok"], true);
+    assert_eq!(again["cleared"], false);
+    assert!(again["previous_kind"].is_null());
+
+    // (5) 해제 후 재발동이 정상 동작하고, 일치하는 kind 필터는 실제로 지운다.
+    raise_kind("completion");
+    assert_eq!(attention_kind(), "completion");
+    let matched = tasty.call(
+        "surface.attention.clear",
+        json!({ "surface_id": att_sid, "kind": "completion" }),
+    );
+    assert_eq!(matched["cleared"], true);
+    assert!(attention_kind().is_null());
+
+    // (6) 존재하지 않는 surface / 알 수 없는 kind 는 명시적 에러.
+    assert!(
+        tasty
+            .call_raw("surface.attention.clear", json!({ "surface_id": 999_999 }))
+            .get("error")
+            .is_some()
+    );
+    assert!(
+        tasty
+            .call_raw("surface.attention.get", json!({ "surface_id": 999_999 }))
+            .get("error")
+            .is_some()
+    );
+    assert!(
+        tasty
+            .call_raw(
+                "surface.attention.clear",
+                json!({ "surface_id": att_sid, "kind": "bogus" })
+            )
+            .get("error")
+            .is_some()
+    );
+    // surface_id 필수 (포커스 독립, 불가침 원칙 1).
+    assert!(
+        tasty
+            .call_raw("surface.attention.clear", json!({}))
+            .get("error")
+            .is_some()
+    );
+
     // ========== Dim (SGR 2) renderer regression ==========
     // printf is a posix builtin; shell on Windows is cmd.exe by default which does not
     // interpret \033 escapes the same way, so we restrict to Unix.

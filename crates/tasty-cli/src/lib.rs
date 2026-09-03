@@ -809,6 +809,39 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn surface_attention_get_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "attention", "get", "--surface", "42"]);
+        assert_eq!(r.method, "surface.attention.get");
+        assert_eq!(r.params["surface_id"], 42);
+    }
+
+    #[test]
+    fn surface_attention_clear_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "attention", "clear", "--surface", "42"]);
+        assert_eq!(r.method, "surface.attention.clear");
+        assert_eq!(r.params["surface_id"], 42);
+        // kind 미지정 = kind 무관 해제. 호스트가 "필터 없음" 으로 읽어야 하므로
+        // 문자열 기본값을 실어 보내지 않는다.
+        assert!(r.params["kind"].is_null());
+    }
+
+    #[test]
+    fn surface_attention_clear_carries_kind_filter() {
+        let r = req(&[
+            "tasty",
+            "surface",
+            "attention",
+            "clear",
+            "--surface",
+            "42",
+            "--kind",
+            "needs_input",
+        ]);
+        assert_eq!(r.method, "surface.attention.clear");
+        assert_eq!(r.params["kind"], "needs_input");
+    }
+
+    #[test]
     fn task_create_concurrency_limit_sets_semaphore_metadata() {
         let r = req(&[
             "tasty",

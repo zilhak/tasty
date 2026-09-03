@@ -1,5 +1,6 @@
 //! `surface.*` IPC 핸들러 도메인 sub-module 모음.
 
+mod attention;
 mod close;
 mod commands;
 mod completion;
@@ -9,6 +10,7 @@ mod mark;
 mod query;
 mod send;
 
+pub(crate) use attention::{handle_attention_clear, handle_attention_get};
 pub(crate) use close::{handle_surface_close, handle_surface_close_self};
 pub(crate) use commands::{handle_command_at, handle_commands, handle_last_command};
 pub(crate) use completion::handle_completion;

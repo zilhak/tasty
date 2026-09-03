@@ -319,3 +319,41 @@ fn hard_occupied_attention_survives_the_servers_local_focus() {
         "점유 중 서버 로컬 포커스는 홀더의 신호를 지우지 못한다 — 해제 push 가 오면 게이트가 없는 것이다: {frames:?}"
     );
 }
+
+/// 하드 점유(원격 attach) 중인 surface 는 로컬 IPC 해제를 **거절**한다. 점유 중에는
+/// 그 surface 의 상태를 holder 세션이 소유하므로, 로컬에서 지우면 서버 값만 내려가
+/// holder 미러와 갈라진다(미러는 서버 값이 실제로 바뀌기 전까지 재-push 를 못 받는다).
+/// 거절은 조용한 no-op 이 아니라 명시적 에러여야 한다 — 에이전트가 "지웠다" 고
+/// 오인하면 안 된다.
+#[test]
+fn attention_clear_is_rejected_while_hard_occupied() {
+    let server = common::shared();
+    let ws = server.create_workspace("attention-clear-occupied");
+
+    let mut stream = open_workspace_attach(server.port(), ws.id);
+    server.call(
+        "surface.completion",
+        json!({ "surface_id": ws.surface_id, "kind": "needs_input" }),
+    );
+    let raised = wait_for_raised_attention(&mut stream);
+    assert_eq!(raised["kind"], "needs_input");
+
+    let denied = server.call_raw(
+        "surface.attention.clear",
+        json!({ "surface_id": ws.surface_id }),
+    );
+    let message = denied["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("하드 점유 중 해제는 에러여야 한다: {denied:?}"));
+    assert!(
+        message.contains("hard-occupied"),
+        "거절 사유가 점유임을 밝혀야 한다: {message}"
+    );
+
+    // 거절이므로 상태는 그대로다 — 조회 표면으로 직접 확인한다(점유 중에도 read 는 허용).
+    let after = server.call(
+        "surface.attention.get",
+        json!({ "surface_id": ws.surface_id }),
+    );
+    assert_eq!(after["kind"], "needs_input", "{after:?}");
+}

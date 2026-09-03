@@ -112,6 +112,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // completion 은 read 가 아니라 attention(주의 환기) 발동 — PushNotification
         // 계열이므로 notification.* 와 동일한 Notification 권한.
         ("surface.completion", plugin(&[Notification])),
+        // attention 조회/해제 — completion 의 역방향(해제)과 그 관측 표면.
+        // raise 와 같은 상태를 읽고 되돌리는 것이라 같은 `Notification` 버킷에 둔다:
+        // 발동 권한만 주고 해제 권한을 빼면 자기가 켠 신호를 못 끄는 비대칭이 된다.
+        ("surface.attention.get", plugin(&[Notification])),
+        ("surface.attention.clear", plugin(&[Notification])),
         ("surface.read_since_mark", plugin(&[TerminalRead])),
         ("surface.parse_since_mark", plugin(&[TerminalRead])),
         ("surface.commands", plugin(&[TerminalRead])),

@@ -26,8 +26,8 @@ use telemetry::telemetry_command_to_method_params;
 
 use super::{
     CloseCommands, Commands, ListCommands, MoveCommands, NewCommands, ReadCommands, RemoteCommands,
-    SendCommands, SetCommands, SurfaceCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
-    WorkspaceCategoryCommands,
+    SendCommands, SetCommands, SurfaceAttentionCommands, SurfaceCommands, SurfaceMetaCommands,
+    ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -238,6 +238,16 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "surface.completion",
                 serde_json::json!({ "surface_id": surface, "kind": kind }),
             ),
+            SurfaceCommands::Attention { command } => match command {
+                SurfaceAttentionCommands::Get { surface } => (
+                    "surface.attention.get",
+                    serde_json::json!({ "surface_id": surface }),
+                ),
+                SurfaceAttentionCommands::Clear { surface, kind } => (
+                    "surface.attention.clear",
+                    serde_json::json!({ "surface_id": surface, "kind": kind }),
+                ),
+            },
         },
         Commands::IsTyping { surface } => (
             "surface.is_typing",

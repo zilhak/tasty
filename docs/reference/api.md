@@ -32,6 +32,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
   - `lines:N`(CLI `--lines N`) 생략 시 보이는 화면 전체. 지정하면 **내용 기준 마지막 N 줄** — 내용 아래의 공백 행은 건너뛰고, 화면 내용이 N 에 모자라면 스크롤백에서 채운다(합쳐도 모자라면 있는 만큼). 내용 *중간* 의 빈 줄은 출력의 일부이므로 보존하고 줄 수에도 포함한다. 빈 행 판정은 `show_dim` 과 같은 값으로 하므로 `--show-dim` 유무가 반환 줄 수를 바꾸지 않는다. alternate screen(TUI)이 떠 있을 때도 부족분은 primary 스크롤백으로 채운다 — alt screen 은 자체 스크롤백이 없기 때문이다.
 - 명령(OSC 133): `surface.{commands,last_command,command_at}`
 - 메타: `surface.meta.{set,get,unset,list}` · `surface.set_cwd`
+- 주의 환기(attention): `surface.completion`(발동) · `surface.attention.{get,clear}`(조회·해제). 해제는 `kind` 선택 필터를 받고, 하드 점유 중인 surface 와 mirror surface 는 거절한다(그 상태의 소유자가 다른 인스턴스다) — [surface-highlight](../features/surface-highlight/index.md)
 - 출력 옵저버: `output.observe_{start,stop,list,info}`
 - 동작·파서는 [terminal-output](../features/terminal-output/index.md), 파서 카탈로그 [output-parsers](output-parsers.md). (IME `surface.ime_*` 는 local-only.)
 

@@ -18,6 +18,14 @@
 
 ### Fixed
 
+### Added
+
+- `surface.attention.clear`(CLI `tasty surface attention clear --surface <id> [--kind completion|needs_input]`) — attention(주의 환기) 해제. 지금까지 attention 은 `surface.completion` 으로 발동만 가능하고 해제 수단이 IPC/CLI 에 없었다(해제 producer 두 개가 전부 GUI 로컬 사건 — 실 렌더 포커스, 알림 패널 읽음). `--kind` 를 주면 현재 기록된 kind 가 그 값일 때만 지운다(생략 = kind 무관, 알 수 없는 값은 거절). attention 이 없던 surface 도 성공하며(idempotent) 응답 `cleared`/`previous_kind` 가 실제 결과를 알린다. 존재하지 않는 surface · **하드 점유(원격 attach) 중인 surface** · **mirror surface** 는 명시적 에러 — 뒤의 둘은 그 attention 의 소유자가 다른 인스턴스다(각각 ADR-0040 · ADR-0098/0104). 미러 사용자가 그 화면을 실제로 보고 확인한 해제는 종전대로 소유 인스턴스로 전달된다. 권한 `Notification`.
+- `surface.attention.get`(CLI `tasty surface attention get --surface <id>`) — 그 surface 에 기록된 attention kind(`"completion"`/`"needs_input"`/`null`) 조회. 읽기 전용이라 mirror·점유 중에도 허용. 권한 `Notification`.
+
+### Fixed
+
+- headless 인스턴스(`--headless`)에서 `surface.completion` 이 아무 효과가 없던 문제. Intent 큐를 drain 하는 지점이 gui 빌드 전용이고 headless IPC 펌프는 그 큐를 읽지 않아, 핸들러가 enqueue 한 발동 요청을 처리할 주체가 없었다 — 이제 IPC 핸들러가 대상 engine 에 직접 적용한다(응답 계약은 불변). 같은 이유로 새 `surface.attention.{get,clear}` 도 headless 에서 동작한다.
 - host 가 plugin 프로세스에 `TASTY_LOCALE` 을 실제로 채워 보낸다 — 이전에는 host 어디서도 이 env 를 set 하지 않아 `general.language = "ko"`/`"ja"` 여도 plugin UI(클립보드 뷰어 · git 뷰어 등)가 항상 영어였다(셸에서 직접 `export TASTY_LOCALE=…` 한 경우에만 우연히 동작). 이제 부팅 시 `general.language` 를 host 프로세스 env 에 set 해 모든 plugin 이 상속하며, 셸의 export 값은 설정에 덮인다. 값은 spawn 시점 고정 — 언어 변경은 재시작 후 반영.
 - CLI 클라이언트가 stdout 파이프 조기 종료(EPIPE — `tasty list tree | head -1`, `| true` 등 읽는 쪽이 먼저 닫힘)를 만나면 `failed printing to stdout` 으로 panic 해 종료 코드 101 을 내고 `~/.tasty/crash-reports/` 에 가짜 crash report 를 남기던 문제. 이제 세 OS 모두 조용히 **종료 코드 0** 으로 끝나며 crash report 를 만들지 않는다(그 외 stdout 오류는 종전대로 에러). 루트 `--help` 가 같은 상황에서 `Error: Broken pipe`(종료 코드 1)를 내던 것도 같은 규칙으로 정리됐다. 근거 ADR-0101.
 

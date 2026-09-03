@@ -54,7 +54,7 @@ pub use read_unset::{ReadCommands, UnsetCommands};
 pub use remote::RemoteCommands;
 pub use remote_profile::RemoteProfileCommands;
 pub use settings::SettingsCommands;
-pub use surface::SurfaceCommands;
+pub use surface::{SurfaceAttentionCommands, SurfaceCommands};
 pub use surface_meta::SurfaceMetaCommands;
 pub use telemetry::{TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands};
 pub use terminal::TerminalCommands;

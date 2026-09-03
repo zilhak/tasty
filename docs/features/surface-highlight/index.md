@@ -6,10 +6,12 @@
   [ADR-0062](../../adr/0062-attention-store-kind-aware-primitive.md)(kind 확장) ·
   [ADR-0098](../../adr/0098-mirror-local-attention-raise-suppressed.md)(mirror 로컬 발동 억제) ·
   [ADR-0104](../../adr/0104-mirror-attention-clear-forwarded-to-owner.md)(mirror 해제 edge 전달) ·
+  [ADR-0107](../../adr/0107-attention-clear-ipc-symmetry.md)(IPC/CLI 해제·조회) ·
   [ADR-0109](../../adr/0109-hard-occupancy-attention-clear-holder-only.md)(하드 점유 중 해제는 홀더만)
 - **코드**: `src/core/state/attention.rs` (상태·헬퍼·mirror 로컬 발동 억제 게이트·하드 점유 해제 게이트·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
   `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) ·
   `src/adapters/ipc/handler/surface/completion.rs` (completion producer) ·
+  `src/adapters/ipc/handler/surface/attention.rs` (IPC 조회·해제) ·
   `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) ·
   `src/app/dispatch_domain.rs::cascade_terminal_command_completed` (OSC 133 명령 완료 producer) ·
   `src/core/attach_runtime.rs::forward_attention`/`apply_attached_attention_clear` +
@@ -38,7 +40,7 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
   값은 서버 push 전용 진입점(`set_mirror_surface_attention`)으로만 들어온다.
 - **해제(clear)**: `clear_attention(surface_id) -> bool` — 반환값은 **실제로 레코드를
   제거했는지**(= 해제 edge)다. 레코드가 없는 상태의 호출은 no-op(`false`)이라, 매 프레임
-  도는 호출부에서도 상태가 바뀐 순간에만 신호가 나간다. 두 경로에서 호출된다:
+  도는 호출부에서도 상태가 바뀐 순간에만 신호가 나간다. 세 경로에서 호출된다:
   1. 매 렌더 프레임 **실제 렌더 시점 포커스** surface 에 대해 자동 호출(`gpu.rs`) —
      에이전트가 주입한 포커스가 아니라 실 사용자 포커스라 불가침 원칙 1 에 안전. kind 와
      무관하게 단일 규칙(`Completion`/`NeedsInput` 모두 이 경로로 해제).
@@ -47,9 +49,14 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
      그 surface 에 남은 안읽음 알림이 없는 경우에만 호출 — 같은 surface 의 다른 알림이
      아직 안읽음이면 지우지 않는다(무조건 clear 시 다른 안읽음 알림의 주의 환기를
      오해제하는 엣지 케이스가 있어 조건부로만 지운다).
+  3. `surface.attention.clear` IPC / `tasty surface attention clear` CLI(아래 "인터페이스").
+     앞의 두 경로가 전부 GUI 로컬 사건이라, **headless 인스턴스에서는 이것이 유일한 해제
+     수단**이다. `kind` 를 주면 현재 기록된 kind 가 일치할 때만 지운다. 대상이 **mirror
+     surface** 이거나 **하드 점유(원격 attach) 중**이면 거절한다 — 두 경우 모두 그 상태의
+     소유자가 다른 인스턴스라, 여기서 지우면 소유자와 갈라진다(아래 "인터페이스").
 
   **해제 권한 — 하드 점유 중에는 홀더만 해제한다**([ADR-0109](../../adr/0109-hard-occupancy-attention-clear-holder-only.md)).
-  위 두 경로는 그 인스턴스의 **로컬 사용자 사건**이라 로컬 축 진입점
+  위 1·2 경로는 그 인스턴스의 **로컬 사용자 사건**이라 로컬 축 진입점
   `clear_attention_local(surface_id) -> bool` 을 지나고, 그 안에서 게이트 술어
   `local_attention_clear_allowed(surface_id)`(= `!is_hard_occupied`)가 한 번 평가된다.
   하드 점유(attach)된 surface 의 주체는 홀더이고 로컬 사용자는 readonly 이므로
@@ -60,6 +67,11 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
     적용하는 서버측 경로(`apply_attached_attention_clear`)는 primitive 를 직접 부르므로
     게이트를 지나지 않는다 — 게이트가 primitive 안에 있으면 그 경로까지 막혀 점유 중
     해제 주체가 0 이 된다.
+  - **경로 3(IPC 해제)은 `clear_attention_local` 을 지나지 않는다.** 같은 술어
+    (`is_hard_occupied`)를 API 경계에서 먼저 평가해 **명시적 에러로 거절**하고, 통과한
+    경우에만 primitive 를 부른다. 게이트를 우회하는 것이 아니라 같은 정책을 더 앞에서
+    집행하는 것이다 — 래퍼를 태우면 점유 중 호출이 조용한 no-op 으로 끝나 호출자가
+    "지웠다" 와 구분할 수 없다(ADR-0107).
   - **알림 읽음 자체는 점유와 무관하게 처리된다.** 게이트가 걸리는 것은 attention 해제
     한 가지뿐 — 읽음은 이 인스턴스 사용자의 알림 패널 상태이고 attention 은 홀더와
     공유하는 상태다. "모두 읽음" 도 알림 전부를 읽음 처리하되 점유 중 surface 의
@@ -75,16 +87,19 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
     복귀해 stale 레코드를 회수한다.
 
   **해제 판정은 surface 를 소유한 인스턴스 밖에서도 일어난다.** 원격 attach 로 mirror
-  중이면 위 두 경로가 **미러 인스턴스**에서 발동한다(미러 사용자의 실-포커스, 미러 로컬
+  중이면 위 1·2 경로가 **미러 인스턴스**에서 발동한다(미러 사용자의 실-포커스, 미러 로컬
   알림의 읽음 처리). 미러 사용자의 어떤 행동도 서버의 이 두 경로를 발동시킬 수 없고,
   서버 사용자가 하드 점유된 surface 를 포커스하더라도 **아래 해제 권한 게이트에 막힌다.**
   그래서 그 판정을 옮기지 않으면 서버 쪽 해제 주체가 아예 없다 — mirror surface 에서 발생한
   **제거 edge 만** `StreamControl::ClientAttentionClear` 로 소유 인스턴스에 1 회 전달한다.
   규칙 자체는 그대로이고 판정 결과만 옮긴다(아래 "원격 attach mirror 로의 전파" 의 해제 항목).
-- **조회**: `attention_kind(id) -> Option<AttentionKind>`,
+- **조회**: 프로세스 내부는 `attention_kind(id) -> Option<AttentionKind>`,
   `attention_count_of_kind(kind, &[id]) -> usize`,
   `attention_dominant_kind(&[id]) -> Option<AttentionKind>`(목록 중 최고 우선순위 kind —
   탭 제목·collapsed rail dot 처럼 여러 surface 를 하나의 색으로 압축해야 하는 소비처 전용).
+  프로세스 밖에서는 `surface.attention.get` IPC / `tasty surface attention get` 이 단일
+  surface 의 kind 를 돌려준다(`"completion"` / `"needs_input"` / `null`). mirror surface 도
+  조회는 허용된다 — 서버가 push 해 준 로컬 레코드를 읽는 것이라 소유권 문제가 없다.
 - **kind → 효과**: `effects_of(kind) -> AttentionEffects { level, panel_item, os_notify, sound }`
   가 host/cascade 비의존 순수 함수로 정책을 표현한다(`crates/tasty-plugin-claude/src/hook.rs`
   의 `apply_hook` 과 동형 패턴). `level` 은 디자인 rank 토큰(`--tasty-attention-rank-*`)을
@@ -175,7 +190,9 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   `surface.completion` IPC / `tasty surface completion --surface <id>` CLI. `kind` 는
   선택 파라미터(`"needs_input"` 이면 `NeedsInput`, 생략 포함 그 외는 `Completion` — 하위
   호환: CLI/OSC 133/toast/windows-resume producer 는 kind 를 모른 채 이 IPC 를 호출한다).
-  cascade 가 `raise_attention(surface_id, kind)` + redraw. 패널 아이템은 만들지 않는다.
+  핸들러가 대상 engine 에 `raise_attention(surface_id, kind)` 를 적용하고 cascade 가 redraw 를
+  얹는다(headless 에는 cascade 가 없어 핸들러가 적용 주체다 — 아래 "구현").
+  패널 아이템은 만들지 않는다.
 - **Claude hook (plugin)** — `crates/tasty-plugin-claude/src/hook.rs` 의 `apply_hook`이
   이벤트별로 `HostCall::SurfaceCompletion { surface_id, kind }`를 산출하고, `deliver()`가
   이를 위 `surface.completion` IPC(`{ "surface_id": surface_id, "kind": kind }`)로 매핑해
@@ -228,6 +245,22 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   IPC `surface.completion { surface_id, kind? }` — 대상 surface 를 attention 발동.
   `surface_id` **필수**(포커스 독립, 불가침 원칙 1). `kind` 생략(또는 `completion` 외 값)은
   `Completion`. 권한 `Notification`.
+- **AI Agent (IPC/CLI) — 해제**: `tasty surface attention clear --surface <id> [--kind <k>]` /
+  IPC `surface.attention.clear { surface_id, kind? }`. `surface_id` **필수**. `kind` 를 주면
+  현재 기록된 kind 가 그 값일 때만 지운다(생략 = kind 무관 해제, 알 수 없는 값은 거절).
+  attention 이 없던 surface 도 성공한다(idempotent) — 응답 `{ ok, surface_id, cleared,
+  previous_kind }` 의 `cleared` 가 실제로 지웠는지를 알린다. 권한 `Notification`.
+  **거절되는 대상 3 종**(전부 명시적 `invalid_params`, 조용한 no-op 아님):
+  존재하지 않는 surface · **mirror surface** · **하드 점유 중인 surface**. 뒤의 둘은 그
+  attention 의 소유자가 다른 인스턴스라 여기서 지우면 소유자와 갈라진다 —
+  mirror 거절은 발동 축의 억제(ADR-0098)와 대칭이고 ADR-0104 가 이 IPC 를 도입하는 트랙에
+  맡긴 집행이다. 미러 사용자가 그 surface 를 **실제로 보고** 확인한 경우는 위 해제 경로
+  1·2 로 잡혀 `ClientAttentionClear` 로 소유 인스턴스에 전달된다 — 즉 미러에서 지우는
+  정당한 길은 막히지 않고, 에이전트가 보지 않은 채 대신 지우는 길만 막힌다.
+- **AI Agent (IPC/CLI) — 조회**: `tasty surface attention get --surface <id>` /
+  IPC `surface.attention.get { surface_id }` → `{ surface_id, kind }`. `kind` 는
+  `"completion"` / `"needs_input"` / `null`. mirror·점유 중에도 허용(읽기 전용).
+  권한 `Notification`.
 - **원격 attach 스트림**: `StreamControl::Attention { surface_id, kind }`(server→client,
   `crates/tasty-ipc/src/stream.rs`) — 점유 중 surface 의 attention 변화분을 holder client 로
   push. `surface_id` 는 **원격 id**(client 가 자기 매핑으로 로컬 mirror id 를 찾는다),
@@ -247,14 +280,18 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 > `surface.completion` IPC 로 서버에서 attention 을 raise 시켜 `attention` Control 프레임이
 > 원격 surface id·kind 와 함께 도착하는지(그리고 값이 그대로면 다시 나가지 않는지)를
 > 프로토콜 레벨에서 검증한다. 해제(`kind: null`) 전파와 dedup·재점유 baseline 은
-> `src/core/state/attention.rs` 의 단위 테스트가 덮는다 — 해제 producer 는 실 렌더
-> 포커스(`gpu.rs`)와 알림 읽음뿐이고, 후자를 원격에서 구동할 IPC 는 없다(알림 읽음은
-> release IPC 표면에 없다). 전자는 **debug IPC 로 구동할 수 있다** — 서버가 GUI
-> 인스턴스이므로 `debug.switch_workspace` 로 그 워크스페이스를 활성화하면 그 surface 가
-> 실 렌더 포커스를 얻어 `gpu.rs` 의 매 프레임 해제 경로가 실제로 실행된다.
-> 하드 점유 중 해제 게이트(ADR-0109)의 e2e 가 이 수단을 쓴다. 미러가 받은 값을 실제
-> 픽셀로 그리는 부분은 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를
-> 읽는다는 사실로 대체한다
+> `src/core/state/attention.rs` 의 단위 테스트가 덮는다 — 서버가 자기 값을 내리는 시점을
+> 프로토콜 e2e 로 구동할 수단이 제한적이기 때문이다. 알림 읽음은 release IPC 표면에 없고,
+> 실 렌더 포커스는 서버가 GUI 인스턴스일 때 **debug IPC 로 구동할 수 있다** —
+> `debug.switch_workspace` 로 그 워크스페이스를 활성화하면 그 surface 가 실 렌더 포커스를
+> 얻어 `gpu.rs` 의 매 프레임 해제 경로가 실제로 실행된다. 하드 점유 중 해제 게이트
+> (ADR-0109)의 e2e 가 이 수단을 쓴다. `surface.attention.clear` 도 이 자리를 대신하지
+> 못한다: 그 시나리오의 서버 surface 는 하드 점유 중이라 아래 거절 3 종에 걸린다. 해제 축
+> 자체(로컬·headless)는 `tests/e2e_tests.rs` 의 attention 왕복(raise → kind 필터 불일치 →
+> 해제 → idempotent → 재발동)과 `tests/attach_attention_loopback.rs` 의 하드 점유 거절,
+> `src/adapters/ipc/handler/surface/attention.rs` 의 mirror 거절 단위 테스트가 실행한다.
+> 미러가 받은 값을 실제 픽셀로 그리는 부분은
+> 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를 읽는다는 사실로 대체한다
 > (`docs/features/native-file-picker/index.md` 의 "검증 한계" 와 동종의 한계).
 >
 > **미러 측 로컬 발동 억제**와 **미러 측 해제 edge 큐 적재**도 같은 이유로 loopback e2e 가
@@ -266,6 +303,11 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 ## 비-목표 (Out of scope)
 
 - 에이전트가 포커스를 주입해 attention 을 해제하는 경로(사용자 입력 재현 → debug 격리 대상).
+  `surface.attention.clear` 는 포커스를 건드리지 않고 상태만 지우므로 이 금지에 걸리지 않는다.
+- 워크스페이스/탭 일괄 해제. 대상은 항상 surface id 로 명시한다(포커스 독립) — 일괄 해제는
+  요구가 생길 때 별도로 판단한다.
+- 해제와 알림 읽음 처리의 합성. `AttentionStore` 와 `NotificationStore` 는 별개 저장소라,
+  `surface.attention.clear` 는 attention 만 지우고 알림 읽음 상태는 건드리지 않는다.
 - `Completion`/`NeedsInput` 외 다른 kind(예: `error` rank 40, `approval` rank 20 — 디자인
   토큰은 예약돼 있으나 이번 구현 범위 밖).
 - toast 알림 시스템 자체 리팩터링(발행/coalesce/store 는 불변, attention insert 위치만 이전됨).
@@ -285,6 +327,20 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 - Given surface S 가 점유(soft/hard, ADR-0040) 중 When `NeedsInput` attention 이 발동
       Then 테두리가 억제되지 않고 노랑으로 그려진다(점유는 `Completion` 만 억제).
 - Given toast 알림 신규 발화 Then 그 source surface 가 attention 발동(producer 공존 회귀 없음).
+- Given attention 발동된 S When `tasty surface attention clear --surface S` Then
+  `attention_kind(S) == None` 이고 응답 `cleared == true`, `previous_kind` 가 직전 kind.
+- Given `NeedsInput` 이 발동된 S When `--kind completion` 으로 해제 Then 지워지지 않고
+  응답 `cleared == false`(필터 불일치) — 같은 kind 로 호출하면 지워진다.
+- Given attention 이 없는 S When 해제 Then 성공하고 `cleared == false`(idempotent, panic 없음).
+- Given 존재하지 않는 surface id 또는 알 수 없는 `kind` When 해제 Then 명시적 에러.
+- Given S 가 하드 점유(원격 attach) 중 When 해제 Then 점유를 사유로 명시한 에러로 거절되고
+  attention 은 그대로 남는다 — 조회(`surface.attention.get`)는 점유 중에도 성공한다.
+- Given S 가 mirror(원격 attach client) 워크스페이스의 surface When 해제 Then mirror 를
+  사유로 명시한 에러로 거절되고 로컬 레코드도 그대로 남는다(해제 forward 도 타지 않는다)
+  — 조회는 mirror 에서도 성공한다.
+- Given GUI 없이 기동한 headless 인스턴스 When `tasty surface completion` 으로 발동하고
+  `tasty surface attention get`/`clear` 로 조회·해제 Then 전부 동작한다(해제 producer 0 개
+  상태 해소).
 - Given surface S 발 안읽음 알림 1건 When 그 알림을 읽음 처리 Then S 의 attention 해제.
 - Given surface S 발 안읽음 알림 2건 When 그중 1건만 읽음 처리 Then S 의 attention 유지(엣지
       케이스) — 나머지도 읽음 처리하면 그제서야 해제.
@@ -373,7 +429,21 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
   `SurfaceCompletionRequested { surface_id, kind }` (`src/core/{intent.rs,mod.rs}`) →
   `cascade_surface_completion(surface_id, kind)` (`src/app/dispatch_domain.rs`).
   `src/adapters/ipc/handler/surface/completion.rs::handle_completion` 가 IPC 파라미터의
-  `kind` 문자열(`"needs_input"` 외 전부 `Completion`)을 파싱.
+  `kind` 문자열(`"needs_input"` 외 전부 `Completion`)을 파싱하고, 대상이 이 engine 소속이면
+  `raise_attention` 을 직접 호출한다(아래 IPC 해제 항목과 같은 이유 — headless 에는 cascade
+  가 없다). 응답 계약은 그대로다: 존재하지 않는 surface 도 `ok` 로 응답하되 레코드는 만들지
+  않는다.
+- IPC 조회·해제: `src/adapters/ipc/handler/surface/attention.rs` 의 `handle_attention_get` /
+  `handle_attention_clear`. 해제는 intent `SurfaceAttentionClear { surface_id, kind }` → event
+  `SurfaceAttentionClearRequested` → `cascade_surface_attention_clear`
+  (`src/app/dispatch_domain.rs`)로 이어지지만, **상태 변경 자체는 핸들러가 라우팅된 owner
+  engine 에 직접 적용**한다 — Intent 큐 drain(`App::dispatch_pending_intents`)과
+  `dispatch_domain` 모듈이 gui 빌드 전용이라 headless 에서는 cascade 가 돌지 않기 때문이다.
+  cascade 는 gui 소비처 redraw 를 얹고, IPC 를 타지 않는 도메인 내부 호출자를 위해 자기
+  완결적으로 남는다. mirror 판정은 `CoreState::is_mirror_surface`, 점유 판정은
+  `OccupancyRegistry::is_hard_occupied`. 근거는 ADR-0107.
+  CLI 는 `crates/tasty-cli/src/commands/surface.rs` 의 `SurfaceAttentionCommands`,
+  매핑은 `crates/tasty-cli/src/request.rs`.
 - Claude hook producer: `apply_hook` (`crates/tasty-plugin-claude/src/hook.rs`) → `HostCall::
   SurfaceCompletion { surface_id, kind }` → `deliver()` 가 `surface.completion` IPC 호출로
   매핑(`{ "surface_id", "kind" }`) → 위 producer 경로 그대로 재사용.

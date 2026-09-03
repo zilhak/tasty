@@ -301,6 +301,12 @@ impl Core {
                     kind,
                 }])
             }
+            DomainIntent::SurfaceAttentionClear { surface_id, kind } => {
+                Ok(vec![CoreEvent::SurfaceAttentionClearRequested {
+                    surface_id,
+                    kind,
+                }])
+            }
             DomainIntent::CreateWorkspace {
                 cwd,
                 kind,

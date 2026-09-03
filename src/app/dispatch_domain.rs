@@ -138,6 +138,9 @@ impl App {
             CoreEvent::SurfaceCompletionRequested { surface_id, kind } => {
                 self.cascade_surface_completion(surface_id, kind);
             }
+            CoreEvent::SurfaceAttentionClearRequested { surface_id, kind } => {
+                self.cascade_surface_attention_clear(surface_id, kind);
+            }
             CoreEvent::WorkspaceCreated {
                 id,
                 index,
@@ -1332,6 +1335,49 @@ impl App {
         for (_, engine) in self.parked_states.iter_mut() {
             if engine.has_surface(surface_id) {
                 engine.raise_attention(surface_id, kind);
+                engine.mark_layout_dirty();
+                return;
+            }
+        }
+    }
+
+    /// Surface attention 해제 cascade — `cascade_surface_completion` 의 역방향.
+    /// surface 를 보유한 engine 의 `clear_attention(surface_id)` 로 attention 을
+    /// 지우고, main window 면 redraw 를 요청해 소비처(테두리·탭·개수 배지)가 즉시
+    /// 갱신되게 한다.
+    ///
+    /// `kind_filter` 가 `Some(k)` 면 **현재 기록된 kind 가 `k` 일 때만** 지운다 —
+    /// 해제 요청을 만든 시점과 적용 시점 사이에 다른 producer 가 더 급한 kind 로
+    /// 다시 발동했을 수 있고, 그것까지 지워버리면 "지금 답하지 않으면 멈추는" 신호가
+    /// 조용히 사라진다. 필터가 걸려 아무것도 지우지 않은 경우에도 engine 탐색은
+    /// 여기서 끝난다(surface 는 한 engine 에만 있다).
+    ///
+    /// redraw 요청(`mark_layout_dirty`/`mark_dirty`)은 필터 결과와 무관하게 건다 —
+    /// IPC 경로는 핸들러(`ipc/handler/surface/attention.rs`)가 owner engine 에 해제를
+    /// 이미 적용한 뒤 이 cascade 를 태우므로(headless 에는 cascade 자체가 없어 핸들러가
+    /// 적용 주체다), 여기서 "지울 게 남아 있는지" 로 redraw 를 게이트하면 정작 방금
+    /// 바뀐 화면이 갱신되지 않는다. 프레임 한 번의 비용이라 무조건 거는 쪽이 안전하다.
+    fn cascade_surface_attention_clear(
+        &mut self,
+        surface_id: u32,
+        kind_filter: Option<AttentionKind>,
+    ) {
+        for main in self.main_windows_iter_mut() {
+            if main.core_state.has_surface(surface_id) {
+                if kind_filter.is_none_or(|k| main.core_state.attention_kind(surface_id) == Some(k))
+                {
+                    main.core_state.clear_attention(surface_id);
+                }
+                main.core_state.mark_layout_dirty();
+                main.mark_dirty();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.has_surface(surface_id) {
+                if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
+                    engine.clear_attention(surface_id);
+                }
                 engine.mark_layout_dirty();
                 return;
             }

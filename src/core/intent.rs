@@ -218,6 +218,22 @@ pub(crate) enum DomainIntent {
         kind: super::AttentionKind,
     },
 
+    // ─── Surface attention 해제 (clear producer) ───
+    /// "이 surface 의 attention 을 지운다" 신호. `SurfaceCompletion` 의 역방향으로,
+    /// 실 렌더 포커스(`gpu.rs`)·알림 읽음에 이은 세 번째 clear producer 다 — 그 둘은
+    /// 모두 GUI 로컬 사건이라 headless 인스턴스에는 clear producer 가 하나도 없었다.
+    /// cascade 가 surface 보유 engine 의 `clear_attention(surface_id)` + redraw.
+    /// surface_id 필수(포커스 독립 — 불가침 원칙 1).
+    ///
+    /// `kind` 는 **선택적 필터**다. `None` 이면 현재 kind 와 무관하게 지우고,
+    /// `Some(k)` 면 현재 기록된 kind 가 `k` 일 때만 지운다 — 지운 뒤 다른 producer 가
+    /// 더 급한 kind(`NeedsInput`)로 다시 발동한 것을 뒤늦게 도착한 해제가 덮어쓰는
+    /// 것을 호출자가 막을 수 있게 한다.
+    SurfaceAttentionClear {
+        surface_id: u32,
+        kind: Option<super::AttentionKind>,
+    },
+
     // ─── Closed items (D.3.C.D.5) ───
     /// closed_items stack top 을 pop 해 복원. `target_pane_id` 는 *호출자가
     /// 결정한* attach 대상 (focused pane). Workspace 복원 시에는 사용 안 함.
@@ -437,6 +453,15 @@ pub(crate) enum CoreEvent {
     SurfaceCompletionRequested {
         surface_id: u32,
         kind: super::AttentionKind,
+    },
+
+    // ─── Surface attention 해제 (clear producer) ───
+    /// Surface attention 해제 요청. cascade 가 surface 보유 engine 의
+    /// `clear_attention(surface_id)` + redraw. `kind` 가 `Some` 이면 현재 기록된
+    /// kind 가 일치할 때만 지운다(선택적 필터).
+    SurfaceAttentionClearRequested {
+        surface_id: u32,
+        kind: Option<super::AttentionKind>,
     },
 
     // ─── Closed items (D.3.C.D.5) ───
