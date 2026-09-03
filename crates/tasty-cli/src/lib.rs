@@ -146,9 +146,11 @@ pub enum Commands {
     Notify {
         /// Notification body
         body: String,
-        /// Optional notification title
-        #[arg(long, default_value = "Notification")]
-        title: String,
+        /// Optional notification title. When omitted the host fills its
+        /// localized default (`notification.default_title`) — the CLI does not
+        /// carry an English default of its own.
+        #[arg(long)]
+        title: Option<String>,
     },
     /// Remove resources (hook, global-hook)
     Unset {

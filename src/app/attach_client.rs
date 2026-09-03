@@ -2358,7 +2358,7 @@ fn build_pane_from_json(
         let tab_name = t
             .get("name")
             .and_then(|v| v.as_str())
-            .unwrap_or("Shell")
+            .unwrap_or(crate::i18n::t("attach.tab_title_fallback"))
             .to_string();
         if t.get("active").and_then(|v| v.as_bool()).unwrap_or(false) {
             active_tab = i;
@@ -2377,7 +2377,7 @@ fn build_pane_from_json(
         let sid = ids.next_surface();
         tabs.push(Tab {
             id: ids.next_tab(),
-            name: "Shell".to_string(),
+            name: crate::i18n::t("attach.tab_title_fallback").to_string(),
             explicit_name: None,
             osc_title: None,
             layout_opt: Some(SurfaceLayout::Leaf(Box::new(EmptySurface::new(sid)))),
@@ -2523,7 +2523,7 @@ fn build_mirror_workspace(
         let pane = Pane::new_with_surface(
             ids.next_pane(),
             ids.next_tab(),
-            "Shell".to_string(),
+            crate::i18n::t("attach.tab_title_fallback").to_string(),
             Box::new(EmptySurface::new(sid)),
         );
         let fp = pane.id;

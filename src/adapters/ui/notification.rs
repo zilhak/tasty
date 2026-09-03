@@ -73,7 +73,7 @@ pub(crate) fn draw_notification_content_inner(
                         .iter()
                         .find(|ws| ws.id == n.source_workspace)
                         .map(|ws| ws.name.as_str())
-                        .unwrap_or("Unknown");
+                        .unwrap_or(t("notification_panel.unknown_workspace"));
 
                     (
                         n.id,

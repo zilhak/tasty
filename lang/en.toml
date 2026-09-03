@@ -622,10 +622,27 @@ palette = "palette"
 palette_tooltip = "Open command palette"
 theme_tooltip = "Toggle theme"
 
+# Host-generated notification titles. These are not egui widget arguments —
+# they reach the notification panel, the sidebar badge, `notification.list`
+# and the `notification.created` plugin event as data, so they still go
+# through t() (CLAUDE.md i18n rule).
+[notification]
+# Title of the notification raised when a terminal receives BEL (\a).
+# Display only — hooks identify the bell by `HookEvent::Bell` / event kind
+# `bell`, plugins by the event `source` field; nothing matches on this text.
+bell_title = "Bell"
+# Title used by `notification.create` when the caller omits `title`
+# (e.g. `tasty notify "body only"`). The IPC parameter stays optional; the
+# phrase shown for "absent" is a UI string, not a protocol token.
+default_title = "Notification"
+
 [notification_panel]
 window_title = "Notifications"
 unread_count = "{} unread"
 empty_message = "No notifications"
+# Source column when the workspace that raised the notification no longer
+# exists (closed after the notification was created).
+unknown_workspace = "Unknown"
 
 [explorer]
 select_file = "Select a file"
@@ -1157,6 +1174,9 @@ occupied_surface = "Held by another client (readonly). Force detach to take over
 occupied_workspace = "Attached by a client"
 mirror_workspace = "Mirror of a remote workspace"
 mirror_pill_label = "Remote"
+# Title of a mirror tab when the remote snapshot carries no tab name, or of
+# the placeholder tab/pane built for an empty remote tree.
+tab_title_fallback = "Shell"
 
 [attach.toast]
 # Shown when a structural change (split / new tab / close / reorder) is attempted

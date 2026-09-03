@@ -949,7 +949,7 @@ mod tests {
     fn surface_id_env_scenarios() {
         let cmd = Commands::Notify {
             body: "msg".to_string(),
-            title: "T".to_string(),
+            title: Some("T".to_string()),
         };
 
         // 가드가 스코프 종료 시(패닉 포함) 실행 환경의 원래 값을 되돌린다.

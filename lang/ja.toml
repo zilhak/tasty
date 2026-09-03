@@ -622,10 +622,15 @@ palette = "パレット"
 palette_tooltip = "コマンドパレットを開く"
 theme_tooltip = "テーマを切り替え"
 
+[notification]
+bell_title = "ベル"
+default_title = "通知"
+
 [notification_panel]
 window_title = "通知"
 unread_count = "{}件の未読"
 empty_message = "通知はありません"
+unknown_workspace = "不明"
 
 [explorer]
 select_file = "ファイルを選択してください"
@@ -1155,6 +1160,7 @@ occupied_surface = "別のクライアントが占有中(読み取り専用)。�
 occupied_workspace = "クライアントが接続中"
 mirror_workspace = "リモートワークスペースのミラー"
 mirror_pill_label = "リモート"
+tab_title_fallback = "シェル"
 
 [attach.toast]
 # ミラーワークスペース内で構造変更(分割 / 新規タブ / 閉じる / 並べ替え)を試みた時に

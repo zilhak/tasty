@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 원격 접속 사용자(점유 후 조작) · AI Agent(원격 mirror 를 정당한 행동으로 attach) · 로컬 사용자(force-detach 권한)
-- **ADR**: [ADR-0007](../../adr/0007-attach-targets-remote.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [ADR-0004](../../adr/0004-ipc-transport-tcp.md) (loopback trust boundary)
+- **ADR**: [ADR-0007](../../adr/0007-attach-targets-remote.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [ADR-0004](../../adr/0004-ipc-transport-tcp.md) (loopback trust boundary). mirror 탭 제목 폴백의 i18n 은 [ADR-0106](../../adr/0106-non-widget-user-strings-go-through-i18n.md)
 - **코드**: `src/core/attach.rs`(`OccupancyRegistry`), `src/core/attach_runtime.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, `src/app/ipc/app_methods.rs`(`remote.workspaces`/`remote.attach`), `crates/tasty-remote/src/browse.rs`(브라우징 코어), CLI `crates/tasty-cli/src/commands/remote.rs`(clap 선언) · `crates/tasty-cli/src/local/{attach,remote_check,remote_workspaces}.rs`(실행)
 - **화면**: [screens/remote-attach.md](screens/remote-attach.md)
 
@@ -32,6 +32,8 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 ### 화면 동기화
 
 attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push 하고, 이후 변화는 delta 로 흐른다. client 는 PTY 없는 mirror 터미널에 바이트를 먹여 같은 grid 를 재구성한다. 프로토콜·mux 상세는 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
+
+workspace mirror 의 **탭 제목**은 스냅샷 pane JSON 의 tab `name`(원격 `Pane::to_attach_json` 이 `Tab::display_name()` 으로 항상 채운다)을 그대로 쓴다. `name` 이 빠진 비정상 스냅샷이거나 트리가 비어 placeholder tab/pane 을 합성할 때만 로컬 번역값 `attach.tab_title_fallback` 을 제목으로 쓴다 — 방어 폴백이지만 사용자 표면이라 하드코딩하지 않는다([ADR-0106](../../adr/0106-non-widget-user-strings-go-through-i18n.md)).
 
 **그리드 크기는 client 가 구동(client-driven)** — mirror 의 cols×rows 는 그것을 띄운 **로컬 pane 크기**를 따르고, 원격 PTY 를 그 크기로 reflow 시킨다(ADR-0045). "remote authoritative" 는 메커니즘으로만 남는다: 원격 PTY 가 실제 크기의 단일 진실원이라 콘텐츠 래핑(reflow)을 담당하고, 그 확정 크기를 client 에 되돌린다. client 는 **의도를 밀고(요청)** 원격은 **결과를 확정(echo)** 한다. 구현:
 

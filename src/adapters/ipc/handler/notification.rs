@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::i18n::t;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -36,7 +37,7 @@ pub fn handle_notification_create(
     let title = params
         .get("title")
         .and_then(|v| v.as_str())
-        .unwrap_or("Notification")
+        .unwrap_or(t("notification.default_title"))
         .to_string();
     let body = params
         .get("body")

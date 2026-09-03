@@ -465,7 +465,7 @@ pub(crate) enum CoreEvent {
     },
 
     /// Bell (\\a) 수신. cascade 가 settings.notification gate 적용 +
-    /// `DomainIntent::PushNotification { title: "Bell" }` 발행 + hook 발화.
+    /// `DomainIntent::PushNotification { title: t("notification.bell_title") }` 발행 + hook 발화.
     TerminalBellRing { surface_id: u32 },
 
     /// PTY 출력이 완성된 한 라인을 이뤘다. cascade 가 등록된

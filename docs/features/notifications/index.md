@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (에이전트도 `notification.create` 로 발행 가능)
-- **ADR**: 없음
+- **ADR**: [ADR-0106](../../adr/0106-non-widget-user-strings-go-through-i18n.md) (제목은 표시 전용 · `notification.create` 기본 제목은 UI 문구)
 - **코드**: `NotificationStore` (notification 모델); IPC `notification.{list,create}`
 - **화면**: 알림 패널 popup (Window 스코프) · 사이드바 배지
 
@@ -16,7 +16,11 @@
 
 termwiz Parser 의 OSC 액션을 인터셉트해 알림 이벤트 생성 — OSC 9(iTerm2/ConEmu), OSC 99(Kitty), OSC 777(rxvt), BEL. (OSC 7=cwd 변경, OSC 0/2=타이틀 변경은 알림이 아닌 별도 처리.)
 
-**벨(BEL) 토글**: BEL 의 "Bell" 토스트는 전역 `notification.enabled` 위에 벨 전용 `general.bell_notification`(기본 on)을 한 겹 더 얹어 게이트한다. off 면 토스트를 억제하되, 사용자가 등록한 `bell` 훅은 그대로 발화한다(훅=명시적 자동화 → 수동 반응인 토스트와 분리). `cascade_terminal_bell_ring` 참조.
+**벨(BEL) 토글**: BEL 알림(제목은 `notification.bell_title` 번역값)은 전역 `notification.enabled` 위에 벨 전용 `general.bell_notification`(기본 on)을 한 겹 더 얹어 게이트한다. off 면 토스트를 억제하되, 사용자가 등록한 `bell` 훅은 그대로 발화한다(훅=명시적 자동화 → 수동 반응인 토스트와 분리). `cascade_terminal_bell_ring` 참조.
+
+### 제목은 표시 전용 — 식별은 별도 필드로
+
+호스트가 스스로 만드는 알림 제목은 전부 `t()` 번역값이라 `general.language` 에 따라 달라진다 — 벨은 `notification.bell_title`, `notification.create` 가 `title` 없이 호출되면(`tasty notify "본문"`) `notification.default_title`. 따라서 제목 문자열은 **기계적 식별자가 아니다**. 알림의 출처를 구분해야 하는 소비자는 식별 필드를 본다 — 훅은 `HookEvent::Bell`(셸 env `TASTY_HOOK_EVENT=bell`, payload 에 제목 없음 — [hooks](../hooks/index.md)), plugin 은 `notification.created` 이벤트의 `source`. 제목 비교(`title == "Bell"`)로 분기하는 코드는 언어를 바꾸는 순간 깨지므로 두지 않는다. 근거·대안: [ADR-0106](../../adr/0106-non-widget-user-strings-go-through-i18n.md).
 
 ### NotificationStore
 
@@ -34,12 +38,12 @@ VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 
 - **사이드바 배지**: attention surface 가 있는 워크스페이스 행 우측에 `attention_count` 개수 pill
   배지(`paint_workspace_count_badge`, 99 초과 시 "99+" — 확장 사이드바는 이름 우측 숫자 배지, 축소
   사이드바는 dot). 모두 방문하거나 읽음 처리하면 소멸.
-- **알림 패널** (Popup, Window 스코프): 최신순 목록, 워크스페이스·제목·본문·경과시간 + "Jump" 버튼. 열 때 전체 읽음, "Mark all read". Popup 이라 터미널 입력을 차단하지 않고 워크스페이스 전환과 무관하게 보임([popup](../../design/systems/popup.md)).
+- **알림 패널** (Popup, Window 스코프): 최신순 목록, 워크스페이스·제목·본문·경과시간 + "Jump" 버튼. 열 때 전체 읽음, "Mark all read". 출처 워크스페이스가 이미 닫힌 알림은 워크스페이스명 자리에 `notification_panel.unknown_workspace` 번역값을 표시한다. Popup 이라 터미널 입력을 차단하지 않고 워크스페이스 전환과 무관하게 보임([popup](../../design/systems/popup.md)).
 
 ## 인터페이스
 
 - **사용자**: 단축키로 알림 패널 토글, Jump/Mark all read.
-- **AI Agent / CLI**: `notification.list` / `notification.create`(workspace_id/surface_id 라우팅, 포커스 비의존).
+- **AI Agent / CLI**: `notification.list` / `notification.create`(workspace_id/surface_id 라우팅, 포커스 비의존). `notification.create` 의 `title` 은 선택 — 생략하면 호스트가 `notification.default_title` 번역값을 채운다(`tasty notify <body> [--title ..]`). 기본 제목은 프로토콜 토큰이 아니라 UI 문구이므로 언어에 따라 달라진다.
 
 ## 비-목표
 

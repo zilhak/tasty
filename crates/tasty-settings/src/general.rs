@@ -174,7 +174,8 @@ pub struct GeneralSettings {
     pub reverse_screen_enabled: bool,
     /// Show a notification (and play the notification sound, subject to the
     /// global notification gates) when the terminal receives a BEL (`\a`). When
-    /// off, BEL no longer raises the "Bell" toast — but user-registered `bell`
+    /// off, BEL no longer raises the bell toast (title `t("notification.bell_title")`)
+    /// — but user-registered `bell`
     /// hooks STILL fire, since a hook is explicit automation the user opted into,
     /// not a passive reaction. On by default. Gated in `cascade_terminal_bell_ring`
     /// on top of the global `notification.enabled`.
