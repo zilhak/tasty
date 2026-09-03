@@ -198,18 +198,18 @@ SSE 의 `id` 는 수집 파이프라인의 전역 단조 증가 `seq` 이고, �
 
 ## Acceptance Criteria
 
-- [ ] Given 에이전트가 도는 surface Then `agent-stream watch` 가 세션 id 를 해석하고 transcript 경로를 돌려준다.
-- [ ] Given watch 중인 surface 에서 에이전트가 응답 Then 수 초 내에 그 텍스트가 `text` 이벤트로 `poll` 에 나타난다.
-- [ ] Given 사고 블록이 있는 응답 Then `thinking` 과 `text` 가 서로 다른 kind 로 나온다.
-- [ ] Given `claude-session-id` meta 가 없는 surface Then `watch` 가 명확한 에러로 거부된다(조용한 무동작 없음).
-- [ ] Given 턴이 오류/취소/세션 종료로 끝남 Then 그에 맞는 `reason` 의 `turn_end` 가 나온다.
-- [ ] Given plugin `disable && enable` Then 저장된 offset 에서 tail 이 재개된다(중복 허용).
-- [ ] Given `serve` 로 연 엔드포인트 Then `curl -N` 이 연결을 유지한 채 응답 이벤트를 순차 출력한다.
-- [ ] Given 토큰을 설정한 엔드포인트 Then 토큰 없는/틀린 구독이 401 로 거부되고 바디가 비어 있다.
-- [ ] Given `?thinking=1` 유무 Then 사고 블록이 구독별로 포함/제외된다.
-- [ ] Given 수집 버퍼 밖으로 밀려난 재개 커서 Then 재전송보다 **먼저** `gap` 이벤트가 나오고 그 `from`/`to` 가 잃어버린 구간을 가리킨다.
-- [ ] Given 느린 구독자 Then tail 파이프라인이 멈추지 않고 `serve-info` 의 `dropped` 만 오른다.
-- [ ] Given 구독 중 plugin `disable && enable` Then 연결이 끊기고 엔드포인트가 자동으로 다시 열려 재구독이 성공한다.
+- Given 에이전트가 도는 surface Then `agent-stream watch` 가 세션 id 를 해석하고 transcript 경로를 돌려준다.
+- Given watch 중인 surface 에서 에이전트가 응답 Then 수 초 내에 그 텍스트가 `text` 이벤트로 `poll` 에 나타난다.
+- Given 사고 블록이 있는 응답 Then `thinking` 과 `text` 가 서로 다른 kind 로 나온다.
+- Given `claude-session-id` meta 가 없는 surface Then `watch` 가 명확한 에러로 거부된다(조용한 무동작 없음).
+- Given 턴이 오류/취소/세션 종료로 끝남 Then 그에 맞는 `reason` 의 `turn_end` 가 나온다.
+- Given plugin `disable && enable` Then 저장된 offset 에서 tail 이 재개된다(중복 허용).
+- Given `serve` 로 연 엔드포인트 Then `curl -N` 이 연결을 유지한 채 응답 이벤트를 순차 출력한다.
+- Given 토큰을 설정한 엔드포인트 Then 토큰 없는/틀린 구독이 401 로 거부되고 바디가 비어 있다.
+- Given `?thinking=1` 유무 Then 사고 블록이 구독별로 포함/제외된다.
+- Given 수집 버퍼 밖으로 밀려난 재개 커서 Then 재전송보다 **먼저** `gap` 이벤트가 나오고 그 `from`/`to` 가 잃어버린 구간을 가리킨다.
+- Given 느린 구독자 Then tail 파이프라인이 멈추지 않고 `serve-info` 의 `dropped` 만 오른다.
+- Given 구독 중 plugin `disable && enable` Then 연결이 끊기고 엔드포인트가 자동으로 다시 열려 재구독이 성공한다.
 
 ## 관련
 

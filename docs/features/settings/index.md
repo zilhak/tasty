@@ -64,11 +64,11 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 ## Acceptance Criteria
 
-- [ ] 사이드바 설정 버튼 클릭 시 설정 모달이 열린다 (L1 7탭).
-- [ ] L1 탭 전환 시 좌측 L2 섹션 목록이 그 탭의 것으로 바뀌고 필터가 클리어된다.
-- [ ] 편집 후 Save 시 영속 Settings 에 반영되고, Cancel 시 폐기된다.
-- [ ] Keybindings 에서 키 조합 녹화 시 충돌이 있으면 확인 팝업이 뜬다.
-- [ ] 플러그인이 설정 페이지를 contribute 하면 Plugins 탭/Appearance sub-tab 에 나타난다.
+- 사이드바 설정 버튼 클릭 시 설정 모달이 열린다 (L1 7탭).
+- L1 탭 전환 시 좌측 L2 섹션 목록이 그 탭의 것으로 바뀌고 필터가 클리어된다.
+- 편집 후 Save 시 영속 Settings 에 반영되고, Cancel 시 폐기된다.
+- Keybindings 에서 키 조합 녹화 시 충돌이 있으면 확인 팝업이 뜬다.
+- 플러그인이 설정 페이지를 contribute 하면 Plugins 탭/Appearance sub-tab 에 나타난다.
 
 > 모달 창이라 시각 검증은 스크린샷, draft/save·plugin page 등록은 시나리오로 검증.
 

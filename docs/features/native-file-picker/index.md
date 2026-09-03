@@ -160,37 +160,37 @@ doc.
 
 ## Acceptance Criteria
 
-- [x] Given 로컬(비-mirror) workspace 가 활성 When Tools 메뉴에서 파일 피커를 열면 Then 로컬 홈
+- Given 로컬(비-mirror) workspace 가 활성 When Tools 메뉴에서 파일 피커를 열면 Then 로컬 홈
   디렉토리 엔트리가 즉시(동기) 로드되어 표시된다.
-- [x] Given mirror workspace 가 활성 When Tools 메뉴에서 파일 피커를 열면 Then `Loading` 상태를
+- Given mirror workspace 가 활성 When Tools 메뉴에서 파일 피커를 열면 Then `Loading` 상태를
   거쳐 attach 채널로 받은 원격 홈 디렉토리 엔트리가 표시되고 헤더에 host 배지가 뜬다.
-- [x] Given 원격 요청 전송 후 8 초 안에 응답이 없음 Then `ErrorConn` 상태로 전이한다.
-- [x] Given mirror workspace 가 도중에 사라짐(disconnect) Then popup 이 즉시 `ErrorConn` 으로
+- Given 원격 요청 전송 후 8 초 안에 응답이 없음 Then `ErrorConn` 상태로 전이한다.
+- Given mirror workspace 가 도중에 사라짐(disconnect) Then popup 이 즉시 `ErrorConn` 으로
   전이한다(soft timeout 만료를 기다리지 않음).
-- [x] Given 원격 디렉토리 읽기가 권한 거부로 실패 Then `ErrorPerm` 상태로 전이한다.
-- [x] Given attach 점유가 없는 client 가 `list_dir_request` 를 보냄 Then 서버가 거부 회신한다
+- Given 원격 디렉토리 읽기가 권한 거부로 실패 Then `ErrorPerm` 상태로 전이한다.
+- Given attach 점유가 없는 client 가 `list_dir_request` 를 보냄 Then 서버가 거부 회신한다
   (`ok: false`).
-- [x] Given 로컬 파일을 확정 Then `DomainIntent::DispatchFile` 이 발화되어 기존 오픈 경로로
+- Given 로컬 파일을 확정 Then `DomainIntent::DispatchFile` 이 발화되어 기존 오픈 경로로
   이어진다.
-- [x] Given 원격 파일을 확정 Then 선택 경로가 로컬 클립보드에 복사되고 toast 가 뜬다(원격 콘텐츠
+- Given 원격 파일을 확정 Then 선택 경로가 로컬 클립보드에 복사되고 toast 가 뜬다(원격 콘텐츠
   fetch 는 일어나지 않는다).
-- [x] Given X 버튼/ESC/외부 클릭으로 popup 이 닫힘 Then 결과가 `Cancelled` 로 명시되어 dialog
+- Given X 버튼/ESC/외부 클릭으로 popup 이 닫힘 Then 결과가 `Cancelled` 로 명시되어 dialog
   상태가 정리된다(다음 오픈에 이전 상태가 새지 않음).
-- [x] Given 디렉토리 엔트리가 선택됨(더블클릭 아님) Then [열기] 버튼이 비활성화되고, 우회
+- Given 디렉토리 엔트리가 선택됨(더블클릭 아님) Then [열기] 버튼이 비활성화되고, 우회
   호출로 Confirm 이 와도 wrapper 가 다시 거부한다(디렉토리는 파일로 확정되지 않는다).
-- [x] Given entries 직렬화가 바이트 예산(700KiB)을 넘는 대형 원격 디렉토리 Then 서버가
+- Given entries 직렬화가 바이트 예산(700KiB)을 넘는 대형 원격 디렉토리 Then 서버가
   entries 를 잘라 `truncated: true` 로 회신하고, client 는 경고 toast 를 띄운다(attach 세션
   자체는 끊기지 않는다).
-- [x] Given 원격 host 의 경로가 Windows 스타일(`C:\Users\alice`) Then 브레드크럼/내비게이션이
+- Given 원격 host 의 경로가 Windows 스타일(`C:\Users\alice`) Then 브레드크럼/내비게이션이
   `\` 구분자와 드라이브 루트를 올바르게 다룬다(POSIX 원격도 계속 정상 동작).
-- [x] Given plugin 이 `file_picker.trigger` 를 호출 When popup 이 아직 열려있지 않음 Then
+- Given plugin 이 `file_picker.trigger` 를 호출 When popup 이 아직 열려있지 않음 Then
   즉시 `{ request_id }` 로 회신하고 popup 이 열린다(확정을 기다리지 않음).
-- [x] Given `file_picker` popup 이 이미 열려 있음 When 두 번째 `file_picker.trigger` 가 옴
+- Given `file_picker` popup 이 이미 열려 있음 When 두 번째 `file_picker.trigger` 가 옴
   Then 거부(`-32000` 에러) — 첫 요청의 `requester` 는 대체되지 않고 그대로 유지된다.
-- [x] Given `filters: ["md"]` 로 트리거됨 Then 렌더된 엔트리 목록에서 `.md` 가 아닌 파일은
+- Given `filters: ["md"]` 로 트리거됨 Then 렌더된 엔트리 목록에서 `.md` 가 아닌 파일은
   제외되고(디렉토리는 필터와 무관하게 항상 표시), 확정/취소 시 `"file_picker.result"` 가
   그 요청을 낸 plugin 에만(unicast) push 된다.
-- [x] Given Tools 메뉴로 연 기존 흐름(`requester: None`) Then `file_picker.trigger` 도입 후에도
+- Given Tools 메뉴로 연 기존 흐름(`requester: None`) Then `file_picker.trigger` 도입 후에도
   동일하게 동작하고 결과 이벤트가 발화되지 않는다(회귀 없음).
 
 > **검증 한계(문서화)**: 원격 attach loopback e2e(`--ssh 127.0.0.1:<port>`)로 실제 GUI 두

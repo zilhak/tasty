@@ -60,11 +60,11 @@
 
 ## Acceptance Criteria
 
-- [ ] Given 각 OS When 윈도우 생성 Then macOS=신호등 유지+콘텐츠 확장, Linux/Windows=OS 데코 제거 + tasty 캡션 버튼.
-- [ ] Given 타이틀바 빈 영역 When 드래그 Then 윈도우가 이동한다.
-- [ ] Given 타이틀바 When 더블클릭 Then maximize 토글된다.
-- [ ] Given 캡션 close 버튼 When 클릭 Then 네이티브 닫기와 동일 경로로 윈도우가 닫힌다.
-- [ ] Given 창 가장자리 When 드래그 Then 해당 방향으로 리사이즈된다.
+- Given 각 OS When 윈도우 생성 Then macOS=신호등 유지+콘텐츠 확장, Linux/Windows=OS 데코 제거 + tasty 캡션 버튼.
+- Given 타이틀바 빈 영역 When 드래그 Then 윈도우가 이동한다.
+- Given 타이틀바 When 더블클릭 Then maximize 토글된다.
+- Given 캡션 close 버튼 When 클릭 Then 네이티브 닫기와 동일 경로로 윈도우가 닫힌다.
+- Given 창 가장자리 When 드래그 Then 해당 방향으로 리사이즈된다.
 
 > OS별 시각·동작이라 각 플랫폼 스크린샷 + 수동 윈도우 조작으로 검증. `resize_direction_at` 은 단위 테스트(OS 무관).
 

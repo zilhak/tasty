@@ -272,90 +272,90 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 
 ## Acceptance Criteria
 
-- [ ] Given surface S When `tasty surface completion --surface S` Then S 가 attention 발동되어
+- Given surface S When `tasty surface completion --surface S` Then S 가 attention 발동되어
       `attention_kind(S) == Some(Completion)`.
-- [ ] Given surface S When `tasty surface completion --surface S --kind needs_input` Then
+- Given surface S When `tasty surface completion --surface S --kind needs_input` Then
       `attention_kind(S) == Some(NeedsInput)`.
-- [ ] Given attention 발동된 S When S 가 실제 포커스를 얻음 Then attention 자동 해제(kind 무관).
-- [ ] Given 워크스페이스 W 에 `Completion` surface M개·`NeedsInput` surface N개 Then full
+- Given attention 발동된 S When S 가 실제 포커스를 얻음 Then attention 자동 해제(kind 무관).
+- Given 워크스페이스 W 에 `Completion` surface M개·`NeedsInput` surface N개 Then full
       사이드바에 파란 배지 M·노란 배지 N 이 공존(각각 >99 시 "99+"), N==0 이면 파란 배지만
       단독으로 우측(기존 자리)에 표시.
-- [ ] Given 대상(탭/워크스페이스)에 `Completion`·`NeedsInput` surface 가 섞여 있음 Then
+- Given 대상(탭/워크스페이스)에 `Completion`·`NeedsInput` surface 가 섞여 있음 Then
       탭 제목 색과 collapsed rail dot 색은 `NeedsInput` 이 이긴다(우선순위 30 > 10).
-- [ ] Given surface S 가 점유(soft/hard, ADR-0040) 중 When `NeedsInput` attention 이 발동
+- Given surface S 가 점유(soft/hard, ADR-0040) 중 When `NeedsInput` attention 이 발동
       Then 테두리가 억제되지 않고 노랑으로 그려진다(점유는 `Completion` 만 억제).
-- [ ] Given toast 알림 신규 발화 Then 그 source surface 가 attention 발동(producer 공존 회귀 없음).
-- [ ] Given surface S 발 안읽음 알림 1건 When 그 알림을 읽음 처리 Then S 의 attention 해제.
-- [ ] Given surface S 발 안읽음 알림 2건 When 그중 1건만 읽음 처리 Then S 의 attention 유지(엣지
+- Given toast 알림 신규 발화 Then 그 source surface 가 attention 발동(producer 공존 회귀 없음).
+- Given surface S 발 안읽음 알림 1건 When 그 알림을 읽음 처리 Then S 의 attention 해제.
+- Given surface S 발 안읽음 알림 2건 When 그중 1건만 읽음 처리 Then S 의 attention 유지(엣지
       케이스) — 나머지도 읽음 처리하면 그제서야 해제.
-- [ ] Given surface S 에서 Claude 세션 실행 중 When Claude 가 한 턴 응답을 마쳐 Stop hook
+- Given surface S 에서 Claude 세션 실행 중 When Claude 가 한 턴 응답을 마쳐 Stop hook
       (`claude.hook stop`)이 발동 Then S 가 `Completion` kind 로 attention 발동.
-- [ ] Given surface S 에서 Claude 가 승인/plan 허락 등 확인이 필요해 `notification`(비-
+- Given surface S 에서 Claude 가 승인/plan 허락 등 확인이 필요해 `notification`(비-
       `idle_prompt`) 또는 `pre-tool-use`(`AskUserQuestion`) hook 이 발동 Then S 가
       `NeedsInput` kind 로 attention 발동 — `Completion` 과 다른 색(노랑)으로 구분된다.
-- [ ] Given surface S 에서 Claude 세션이 끝나(`session-end` hook) 자식 상태가 정리될 때 Then
+- Given surface S 에서 Claude 세션이 끝나(`session-end` hook) 자식 상태가 정리될 때 Then
       S 가 동일하게 attention 발동.
-- [ ] Given surface S 에서 Claude 가 `prompt-submit`/`session-start`/`active`(작업 시작) 신호를
+- Given surface S 에서 Claude 가 `prompt-submit`/`session-start`/`active`(작업 시작) 신호를
       보낼 때 Then attention 은 발동하지 않는다(완료/확인대기와 구분, 회귀 방지).
-- [ ] Given surface S 에서 OSC 133 셸 통합이 설치된 셸이 명령을 성공으로 종료(exit code 0)
+- Given surface S 에서 OSC 133 셸 통합이 설치된 셸이 명령을 성공으로 종료(exit code 0)
       When D phase 가 도착 Then S 가 `Completion` kind 로 attention 발동.
-- [ ] Given 위와 동일 상황이지만 명령이 실패로 종료(exit code != 0) Then 동일하게 S 가
+- Given 위와 동일 상황이지만 명령이 실패로 종료(exit code != 0) Then 동일하게 S 가
       attention 발동(성공/실패 무관, exit code 로 필터링하지 않음).
-- [ ] Given 위 두 케이스 모두 Then exit code 정보가 `command_index` memory 기록과
+- Given 위 두 케이스 모두 Then exit code 정보가 `command_index` memory 기록과
       `HookEvent::CommandCompleted` 훅 payload 양쪽에서 유실되지 않는다(하나의 이벤트가
       attention/memory/hook 세 소비처로 fan-out).
-- [ ] Given surface S 에서 OSC 133 명령이 완료 Then attention 은 발동하지만 알림 패널에는
+- Given surface S 에서 OSC 133 명령이 완료 Then attention 은 발동하지만 알림 패널에는
       아이템이 생기지 않는다(`AttentionStore` 와 `NotificationStore` 가 별개 저장소).
-- [ ] Given 원격 워크스페이스를 attach 로 mirror 중 When 서버에서 그 워크스페이스의 surface 에
+- Given 원격 워크스페이스를 attach 로 mirror 중 When 서버에서 그 워크스페이스의 surface 에
       `NeedsInput` 이 raise Then 1 tick(≤1s) 안에 미러의 `AttentionStore` 에 반영되어 사이드바
       needs-input 배지가 1 증가.
-- [ ] Given 위와 같이 반영된 상태 When 서버에서 해제 Then 미러에서도 사라진다(`kind: null` push).
-- [ ] Given mirror 워크스페이스의 surface M When 서버가 흘려준 출력에 OSC 133 D 가 섞여
+- Given 위와 같이 반영된 상태 When 서버에서 해제 Then 미러에서도 사라진다(`kind: null` push).
+- Given mirror 워크스페이스의 surface M When 서버가 흘려준 출력에 OSC 133 D 가 섞여
       도착 Then M 에는 attention 이 발동하지 않는다(로컬 발동 억제) — 같은 사건이 mirror
       아닌 surface 에서는 그대로 발동한다. (단위 테스트로 고정됨:
       `osc133_command_completed_raises_attention_only_off_mirror`)
-- [ ] Given mirror 워크스페이스의 surface M When M 에서 Bell / OSC 9·777 알림이 도착 Then
+- Given mirror 워크스페이스의 surface M When M 에서 Bell / OSC 9·777 알림이 도착 Then
       알림 패널 아이템·토스트는 그대로 생기되 attention 레코드만 생기지 않는다. (단위
       테스트로 고정됨: `mirror_surface_notification_item_survives_the_attention_gate`)
-- [ ] Given mirror 워크스페이스의 surface M When 미러 인스턴스에서 `tasty surface completion
+- Given mirror 워크스페이스의 surface M When 미러 인스턴스에서 `tasty surface completion
       --surface M` 을 실행 Then attention 이 발동하지 않고 서버로도 forward 되지 않는다
       (ADR-0098). 현재 IPC 응답은 `ok: true` 이며 억제는 `tracing::trace!` 로만 관측된다.
-- [ ] Given mirror 워크스페이스의 surface M When 서버가 `Attention` 프레임을 push Then 위
+- Given mirror 워크스페이스의 surface M When 서버가 `Attention` 프레임을 push Then 위
       억제 게이트에 막히지 않고 그대로 반영된다(적용은 별도 진입점). (단위 테스트로 고정됨:
       `server_push_apply_is_not_blocked_by_the_mirror_gate`)
-- [ ] Given 서버 push 로 M 에 attention 이 표시된 상태 When 미러 사용자가 M 을 포커스
+- Given 서버 push 로 M 에 attention 이 표시된 상태 When 미러 사용자가 M 을 포커스
       Then 해제 edge 가 forward 큐에 1 건 쌓인다. (단위 테스트로 고정됨:
       `mirror_clear_queues_exactly_one_forward_edge` — 큐까지만. 큐 → 소켓 전송 구간은
       고정되지 않는다)
-- [ ] Given holder 연결이 해제 프레임을 보냄 Then 서버가 holder 검증 후 자기 레코드를
+- Given holder 연결이 해제 프레임을 보냄 Then 서버가 holder 검증 후 자기 레코드를
       지운다. (loopback e2e 로 고정됨: `mirror_clear_frame_drops_the_server_attention_record`
       — raw `TcpStream` 이 프레임을 직접 보내는 **서버 절반**의 검증이다)
-- [ ] Given 위 해제가 끝난 상태 When 미러가 포커스를 유지한 채 여러 프레임이 렌더된다
+- Given 위 해제가 끝난 상태 When 미러가 포커스를 유지한 채 여러 프레임이 렌더된다
       Then 추가 해제 프레임이 나가지 않는다. (단위 테스트 `mirror_clear_queues_exactly_one_forward_edge`
       + loopback e2e `repeated_clear_frames_do_not_respam_the_stream` 로 고정됨)
-- [ ] Given mirror 워크스페이스의 surface M 발 미러 로컬 알림 When 미러 알림 패널에서
+- Given mirror 워크스페이스의 surface M 발 미러 로컬 알림 When 미러 알림 패널에서
       읽음 처리 Then 포커스 경로와 동일하게 해제 프레임이 서버로 간다. (단위 테스트로
       고정됨: `mirror_notification_read_queues_the_clear_forward`)
-- [ ] Given 하드 점유(attach)된 surface S 에 attention 이 발동된 상태 When 서버 GUI 에서
+- Given 하드 점유(attach)된 surface S 에 attention 이 발동된 상태 When 서버 GUI 에서
       S 가 실 렌더 포커스를 얻음 Then attention 이 유지된다 — 홀더만 해제할 수 있다.
       (단위 테스트 `hard_occupied_surface_survives_the_local_focus_clear`
       + loopback e2e `hard_occupied_attention_survives_the_servers_local_focus` 로 고정됨 —
       후자는 GUI 서버의 활성 워크스페이스를 점유 워크스페이스로 전환해 `gpu.rs` 경로를
       실제로 태우고 `kind: null` push 의 부재로 관측한다)
-- [ ] Given 위 상태 When 서버 알림 패널에서 그 surface 발 알림을 읽음 처리(개별/모두)
+- Given 위 상태 When 서버 알림 패널에서 그 surface 발 알림을 읽음 처리(개별/모두)
       Then attention 은 유지되고 알림의 `read` 플래그는 그대로 세워진다. (단위 테스트로
       고정됨: `marking_a_notification_read_keeps_attention_while_hard_occupied` ·
       `mark_all_read_skips_hard_occupied_surfaces_only`)
-- [ ] Given 위 상태 When 점유가 풀림(detach / force-detach / 연결 끊김) Then 서버 로컬
+- Given 위 상태 When 점유가 풀림(detach / force-detach / 연결 끊김) Then 서버 로컬
       포커스가 다시 해제 주체가 되어 stale 레코드를 지운다. (단위 테스트로 고정됨:
       `local_clear_is_disallowed_exactly_while_hard_occupied`)
-- [ ] Given soft 점유(child-terminal)된 surface Then 이 게이트는 걸리지 않는다 — 로컬
+- Given soft 점유(child-terminal)된 surface Then 이 게이트는 걸리지 않는다 — 로컬
       해제가 그대로 동작한다. (단위 테스트로 고정됨: `soft_occupancy_does_not_gate_the_local_clear`)
-- [ ] Given 하드 점유된 surface 에 대해 holder 가 해제 프레임을 보냄 Then 게이트와 무관하게
+- Given 하드 점유된 surface 에 대해 holder 가 해제 프레임을 보냄 Then 게이트와 무관하게
       적용된다 — 게이트가 primitive 안에 있으면 해제 주체가 0 이 된다. (단위 테스트로
       고정됨: `the_holders_clear_is_not_blocked_by_the_gate`)
-- [ ] Given 서버 attention 값이 바뀌지 않는 tick Then 프레임이 나가지 않는다(스팸 없음).
-- [ ] Given mirror surface 가 사라짐(세션 정리 / 구조 delta 제거) Then 그 로컬 id 의 attention
+- Given 서버 attention 값이 바뀌지 않는 tick Then 프레임이 나가지 않는다(스팸 없음).
+- Given mirror surface 가 사라짐(세션 정리 / 구조 delta 제거) Then 그 로컬 id 의 attention
       레코드도 함께 정리된다 — 단, kind 변환(terminal → 다른 kind) 경로는 정리하지 않는다
       (surface 가 계속 존재하므로 지우면 서버와 divergence).
 

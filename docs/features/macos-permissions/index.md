@@ -115,18 +115,18 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록·손쉬운 사용의 �
 
 ## Acceptance Criteria
 
-- [ ] Given `~/Documents` 가 없는 홈 When pre-warm 목록을 결정 Then 그 경로가 목록에서 빠진다
-- [ ] Given `/Volumes` 에 마운트 2 개 When 목록을 결정 Then 홈 폴더 뒤에, 경로 정렬 순으로 붙는다
-- [ ] Given 마운트가 하나도 없음 When 목록을 결정 Then 볼륨 항목이 하나도 없다
-- [ ] Given macOS 에서 TCC 승인을 초기화 When Tasty 실행 Then 부팅 직후 프롬프트가 순차로 뜨고, 떠 있는 동안에도 창이 그려지고 클릭·스크롤이 반응한다
-- [ ] Given 프롬프트를 모두 허용 When 터미널에서 `ls ~/Downloads; ls ~/Documents; ls ~/Desktop` Then 추가 프롬프트가 뜨지 않는다
-- [ ] Given 화면 기록 권한 미결정 When Tasty 실행 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
-- [ ] Given 화면 기록 권한을 거부한 뒤 재실행 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)
-- [ ] Given 이미 안내함(`macos_fda_notice_shown` = true) When 부팅 Then FDA 안내를 띄우지 않는다
-- [ ] Given 아직 안내 안 함 + FDA 가 있어 보임 When 부팅 Then FDA 안내를 띄우지 않는다
-- [ ] Given 아직 안내 안 함 + FDA 가 없어 보임 When 부팅 Then FDA 안내를 1 회 띄우고 표시 기록을 남긴다
-- [ ] Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다
-- [ ] Given 손쉬운 사용 권한 미결정 When Tasty 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
-- [ ] Given 손쉬운 사용 권한이 이미 승인됨 When Tasty 실행 Then 프롬프트가 뜨지 않는다
-- [ ] Given 손쉬운 사용 권한 미승인 When `surface.raw_key` 호출 Then 성공이 아니라 `permission_denied` 에러가 돌아온다
-- [ ] Given 손쉬운 사용 권한 승인 후 재시작 When `surface.raw_key` 호출 Then 대상에 키가 실제로 입력된다
+- Given `~/Documents` 가 없는 홈 When pre-warm 목록을 결정 Then 그 경로가 목록에서 빠진다
+- Given `/Volumes` 에 마운트 2 개 When 목록을 결정 Then 홈 폴더 뒤에, 경로 정렬 순으로 붙는다
+- Given 마운트가 하나도 없음 When 목록을 결정 Then 볼륨 항목이 하나도 없다
+- Given macOS 에서 TCC 승인을 초기화 When Tasty 실행 Then 부팅 직후 프롬프트가 순차로 뜨고, 떠 있는 동안에도 창이 그려지고 클릭·스크롤이 반응한다
+- Given 프롬프트를 모두 허용 When 터미널에서 `ls ~/Downloads; ls ~/Documents; ls ~/Desktop` Then 추가 프롬프트가 뜨지 않는다
+- Given 화면 기록 권한 미결정 When Tasty 실행 Then 파일 프롬프트들 **뒤에** 화면 기록 프롬프트가 뜬다
+- Given 화면 기록 권한을 거부한 뒤 재실행 Then 프롬프트가 다시 뜨지 않는다(무한 재요청 없음)
+- Given 이미 안내함(`macos_fda_notice_shown` = true) When 부팅 Then FDA 안내를 띄우지 않는다
+- Given 아직 안내 안 함 + FDA 가 있어 보임 When 부팅 Then FDA 안내를 띄우지 않는다
+- Given 아직 안내 안 함 + FDA 가 없어 보임 When 부팅 Then FDA 안내를 1 회 띄우고 표시 기록을 남긴다
+- Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다
+- Given 손쉬운 사용 권한 미결정 When Tasty 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
+- Given 손쉬운 사용 권한이 이미 승인됨 When Tasty 실행 Then 프롬프트가 뜨지 않는다
+- Given 손쉬운 사용 권한 미승인 When `surface.raw_key` 호출 Then 성공이 아니라 `permission_denied` 에러가 돌아온다
+- Given 손쉬운 사용 권한 승인 후 재시작 When `surface.raw_key` 호출 Then 대상에 키가 실제로 입력된다

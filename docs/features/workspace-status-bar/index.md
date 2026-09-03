@@ -44,11 +44,11 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
 
 ## Acceptance Criteria
 
-- [ ] Given focus surface 가 git repo 안 터미널 Then 브랜치 점+이름 / surfaceId / 셸·cols×rows 가 표시된다.
-- [ ] Given repo 아님 Then 브랜치 클러스터가 숨는다.
-- [ ] Given 팔레트 칩 클릭 Then 명령 팔레트가 토글된다.
-- [ ] Given 테마 토글 클릭 Then latte ↔ mocha 가 전환되고 점 색이 바뀐다.
-- [ ] Given 팔레트 단축키 설정 변경 Then 칩의 단축키 표시가 따라간다.
+- Given focus surface 가 git repo 안 터미널 Then 브랜치 점+이름 / surfaceId / 셸·cols×rows 가 표시된다.
+- Given repo 아님 Then 브랜치 클러스터가 숨는다.
+- Given 팔레트 칩 클릭 Then 명령 팔레트가 토글된다.
+- Given 테마 토글 클릭 Then latte ↔ mocha 가 전환되고 점 색이 바뀐다.
+- Given 팔레트 단축키 설정 변경 Then 칩의 단축키 표시가 따라간다.
 
 > GUI 위젯이라 시각은 스크린샷. 표시 값은 `tasty list surfaces` 등 도메인 조회와 대조, 액션 결과(팔레트/테마)는 해당 기능으로 확인.
 

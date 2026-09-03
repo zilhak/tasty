@@ -53,13 +53,13 @@
 
 ## Acceptance Criteria
 
-- [ ] Given Pane 에 탭 여럿 When 탭 클릭 Then 그 탭으로 전환되고 하위 레이아웃이 바뀐다.
-- [ ] Given 활성 탭 When close 버튼 클릭 Then 탭이 닫힌다(마지막 탭이면 안 닫힘).
-- [ ] Given 탭이 스트립 폭을 넘침 When 스크롤 화살표 Then 가로 스크롤된다.
-- [ ] Given 탭 드래그 Then drop 위치(`compute_drop_index`)대로 순서가 바뀐다.
-- [ ] Given busy/알림 상태 Then 녹색 점 / 노란 라벨이 표시된다.
-- [ ] Given 비-focused Pane When 그 Pane 의 탭/빈 영역/스크롤 화살표를 클릭 Then 그 Pane 으로 focus 가 이동한다(빈 영역 클릭은 `active_tab` 불변).
-- [ ] Given 비-focused Pane When 그 Pane 의 탭/빈 영역 우클릭 Then focus 는 이동하지 않는다(컨텍스트 메뉴만 열림).
+- Given Pane 에 탭 여럿 When 탭 클릭 Then 그 탭으로 전환되고 하위 레이아웃이 바뀐다.
+- Given 활성 탭 When close 버튼 클릭 Then 탭이 닫힌다(마지막 탭이면 안 닫힘).
+- Given 탭이 스트립 폭을 넘침 When 스크롤 화살표 Then 가로 스크롤된다.
+- Given 탭 드래그 Then drop 위치(`compute_drop_index`)대로 순서가 바뀐다.
+- Given busy/알림 상태 Then 녹색 점 / 노란 라벨이 표시된다.
+- Given 비-focused Pane When 그 Pane 의 탭/빈 영역/스크롤 화살표를 클릭 Then 그 Pane 으로 focus 가 이동한다(빈 영역 클릭은 `active_tab` 불변).
+- Given 비-focused Pane When 그 Pane 의 탭/빈 영역 우클릭 Then focus 는 이동하지 않는다(컨텍스트 메뉴만 열림).
 
 > GUI 위젯이라 시각은 스크린샷, 결과(탭 전환/닫기/순서)는 work-area `tasty list tabs` 로 교차 확인.
 

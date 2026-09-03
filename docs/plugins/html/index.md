@@ -31,9 +31,9 @@ HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rende
 
 ## Acceptance Criteria
 
-- [ ] Given html 플러그인 활성 When `tasty new tab --type html --url <u>` Then WebView surface 가 그 URL 을 띄운다.
-- [ ] Given HTML 파일 열기 Then html surface 로 뜬다.
-- [ ] Given 플러그인 disable Then `html` 확장자 detector 는 host 가 유지한다.
+- Given html 플러그인 활성 When `tasty new tab --type html --url <u>` Then WebView surface 가 그 URL 을 띄운다.
+- Given HTML 파일 열기 Then html surface 로 뜬다.
+- Given 플러그인 disable Then `html` 확장자 detector 는 host 가 유지한다.
 
 ## 화면
 

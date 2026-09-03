@@ -45,10 +45,10 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 ## Acceptance Criteria
 
-- [ ] 앱 시작 시 MainView 가 기본 Workspace + 터미널 Surface 1개로 열린다.
-- [ ] 사이드바에서 Workspace 를 전환하면 작업 영역이 해당 Workspace 로 바뀐다.
-- [ ] 새 윈도우(단축키) 시 독립 `CoreState` 를 가진 MainView 가 추가로 열린다.
-- [ ] AI Agent 가 IPC/CLI 로 특정 MainView 의 surface/tab/workspace 를 ID 로 조작할 수 있다.
+- 앱 시작 시 MainView 가 기본 Workspace + 터미널 Surface 1개로 열린다.
+- 사이드바에서 Workspace 를 전환하면 작업 영역이 해당 Workspace 로 바뀐다.
+- 새 윈도우(단축키) 시 독립 `CoreState` 를 가진 MainView 가 추가로 열린다.
+- AI Agent 가 IPC/CLI 로 특정 MainView 의 surface/tab/workspace 를 ID 로 조작할 수 있다.
 
 > 윈도우 셸이라 시각 검증은 스크린샷, 멀티 윈도우/도메인 동작은 IPC/CLI 시나리오로 검증.
 

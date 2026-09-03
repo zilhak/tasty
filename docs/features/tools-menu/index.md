@@ -53,10 +53,10 @@
 
 ## Acceptance Criteria
 
-- [ ] 사이드바 도구 버튼 클릭 시 빌트인 7개(Command palette / Listening ports / Remote connections / Presets / Tutorial / Task DAGs / Open File)가 표시된다.
-- [ ] `ui.tool_item` 권한을 가진 활성 플러그인의 기여 항목이 빌트인 아래 구분선과 함께 추가된다.
-- [ ] 항목 클릭 시 해당 popup(빌트인) 또는 plugin action(플러그인)이 실행된다.
-- [ ] 등록 항목 수에 따라 메뉴 높이가 달라진다.
+- 사이드바 도구 버튼 클릭 시 빌트인 7개(Command palette / Listening ports / Remote connections / Presets / Tutorial / Task DAGs / Open File)가 표시된다.
+- `ui.tool_item` 권한을 가진 활성 플러그인의 기여 항목이 빌트인 아래 구분선과 함께 추가된다.
+- 항목 클릭 시 해당 popup(빌트인) 또는 plugin action(플러그인)이 실행된다.
+- 등록 항목 수에 따라 메뉴 높이가 달라진다.
 
 > GUI 메뉴라 시각 검증은 스크린샷, 항목 등록/실행은 `debug.tool.list`/`debug.tool.invoke`(debug IPC)로 검증 가능.
 

@@ -7,6 +7,7 @@
 - 내부 *동작*(WHAT)이 본체. 내부 *구현*(crate·모듈·핵심 함수 포인터)은 "## 구현" 에 보강으로 적어도 된다 (agent-guide 와 달리 기획문서엔 허용). 단 과도한 콜사이트 나열은 rot 하니 핵심 포인터만.
 - 시각 수치/토큰은 design-system 을 링크. docs 에 재서술 금지.
 - 빌드/로드맵 상태(Phase·구현 예정·이관)는 적지 않는다 — 현재 상태만.
+- 마크다운 체크박스(task list)를 쓰지 않는다 — Acceptance Criteria 는 평문 Given/When/Then 불릿 (documentation-model.md §6).
 - 화면이 없으면(headless 전용) "## 화면" 섹션을 지운다. 구현 포인터가 불필요하면 "## 구현" 도 지운다.
 이 주석 블록은 실제 문서에서 삭제한다.
 -->
@@ -39,7 +40,7 @@
 
 ## Acceptance Criteria
 
-- [ ] Given <조건> When <행동> Then <결과>  <!-- headless(IPC/CLI)로 검증 가능한 형태 -->
+- Given <조건> When <행동> Then <결과>  <!-- headless(IPC/CLI)로 검증 가능한 형태 -->
 
 ## 화면
 

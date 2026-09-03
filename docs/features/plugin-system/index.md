@@ -49,11 +49,11 @@
 
 ## Acceptance Criteria
 
-- [ ] 사이드바 플러그인 버튼 클릭 시 관리 창이 열린다 (Installed / Install 탭).
-- [ ] Installed 에서 enable/disable 토글이 동작하고, 오류 플러그인에 health 인디케이터가 뜬다.
-- [ ] Install 탭에서 디렉터리 설치 시 매니페스트·권한 미리보기와 신뢰 검증을 거친다.
-- [ ] `tasty plugin list/install/remove/enable` CLI 가 동일 동작을 수행한다.
-- [ ] 플러그인 설정은 설정 창 Plugins 탭에 나타난다 (이 창 아님).
+- 사이드바 플러그인 버튼 클릭 시 관리 창이 열린다 (Installed / Install 탭).
+- Installed 에서 enable/disable 토글이 동작하고, 오류 플러그인에 health 인디케이터가 뜬다.
+- Install 탭에서 디렉터리 설치 시 매니페스트·권한 미리보기와 신뢰 검증을 거친다.
+- `tasty plugin list/install/remove/enable` CLI 가 동일 동작을 수행한다.
+- 플러그인 설정은 설정 창 Plugins 탭에 나타난다 (이 창 아님).
 
 > GUI 는 스크린샷, 설치/관리 동작은 `tasty plugin` CLI 시나리오로 검증.
 

@@ -23,20 +23,20 @@ call("surface.ime_disable")
 
 ## 검증 체크리스트
 
-- [ ] `ime_enable` → `ime_status` 가 `active: true`
-- [ ] `ime_preedit "한"` → `preedit_text: "한"`, `ime_preedit ""` → 클리어
-- [ ] `ime_commit "한"` → PTY 전송(`read since-mark`)
-- [ ] `ime_disable` → `active: false` + preedit 클리어
-- [ ] 연속 preedit→commit 시 텍스트 누적
-- [ ] 스크린샷에서 preedit 오버레이 위치·파란 배경 정렬
+1. `ime_enable` → `ime_status` 가 `active: true`
+2. `ime_preedit "한"` → `preedit_text: "한"`, `ime_preedit ""` → 클리어
+3. `ime_commit "한"` → PTY 전송(`read since-mark`)
+4. `ime_disable` → `active: false` + preedit 클리어
+5. 연속 preedit→commit 시 텍스트 누적
+6. 스크린샷에서 preedit 오버레이 위치·파란 배경 정렬
 
 ### 리팩터 후 flush/clear 회귀 확인 (handle_keyboard_input 상환 시)
 
-- [ ] 한글 조합 중(예: "한" 입력 중) **split/close 등 팝업 없는 단축키** → 조합 문자가 PTY 로 확정 전송(flush). 유실·중복 없음.
-- [ ] 한글 조합 중 **command palette·notifications(intent 팝업)** → 현재 동작상 **flush**(dispatch 지연으로 체크 시 미포커스). 상환 후에도 동일한지.
-- [ ] 열림·비포커스 search_bar 상태에서 조합 중 `find` 재입력 → 조합 문자 **폐기**(clear), PTY 미전송.
-- [ ] 조합 중 **Ctrl+letter**(예: 'ㅊ' 조합 중 Ctrl+C) → physical 폴백으로 control char(0x03) 전송, 조합문자 아님.
-- [ ] 위 3케이스에서 `ime_status.has_preedit` 가 처리 후 `false`.
+1. 한글 조합 중(예: "한" 입력 중) **split/close 등 팝업 없는 단축키** → 조합 문자가 PTY 로 확정 전송(flush). 유실·중복 없음.
+2. 한글 조합 중 **command palette·notifications(intent 팝업)** → 현재 동작상 **flush**(dispatch 지연으로 체크 시 미포커스). 상환 후에도 동일한지.
+3. 열림·비포커스 search_bar 상태에서 조합 중 `find` 재입력 → 조합 문자 **폐기**(clear), PTY 미전송.
+4. 조합 중 **Ctrl+letter**(예: 'ㅊ' 조합 중 Ctrl+C) → physical 폴백으로 control char(0x03) 전송, 조합문자 아님.
+5. 위 3케이스에서 `ime_status.has_preedit` 가 처리 후 `false`.
 
 ## 제한
 
