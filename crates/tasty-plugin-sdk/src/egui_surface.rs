@@ -379,37 +379,293 @@ impl EguiMeshCore {
     }
 }
 
-/// [`EguiMeshCore::pending_self_repaint`] 가 있으면(egui 가 다음 pass 를 요청), 그
-/// 지연 뒤 `notify` 를 1회 실행하는 타이머 스레드를 스폰한다. `armed`(이 코어 인스턴스가
-/// 소유한 가드)가 이미 세팅돼 있으면 아무것도 하지 않는다 — 타이머가 fire 하면 다시
-/// 풀리고, 그 다음 `render()` 가 여전히 지연이 필요하면 재-arm 한다(자연 수렴, idle
-/// 상태에서 스레드가 폭주하지 않는다). Surface/Popup 공용 — 각자 자기 id 를 실은
-/// `*Invalidated` 이벤트를 `notify` 클로저로 만든다.
+/// self-repaint 타이머에 등록된 요청 1건 — 마감시각 + 발화 시 풀 가드 + 실제 알림.
+///
+/// `fire` 는 `HostHandle` 을 이미 캡처한 클로저다(타이머 자체는 host 를 모른다 —
+/// 순수 스케줄러라 테스트에서 host 없이 구동할 수 있다).
 #[cfg(any(unix, windows))]
-fn spawn_self_repaint_timer(
+struct SelfRepaintRequest {
+    deadline: std::time::Instant,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    fire: Box<dyn FnOnce() + Send>,
+}
+
+/// self-repaint 알림을 지연 발사하는 **상주 타이머 스레드**. 프로세스당 하나
+/// ([`SelfRepaintTimer::global`]) 를 첫 요청 때 lazily 띄우고 이후 계속 재사용한다 —
+/// plugin 프로세스에는 타임아웃 기반 이벤트 루프가 없어(메인 루프가 blocking
+/// `read_line`) 지연 알림에는 별도 스레드가 필요하지만, 요청마다 새로 만들 이유는
+/// 없다. 스크롤 스무딩처럼 `repaint_delay` 가 0 인 애니메이션은 프레임마다 요청을
+/// 내므로, 요청당 스레드를 만들면 매 프레임 생성·소멸이 반복된다.
+///
+/// 대기 중인 요청은 surface/popup 인스턴스당 최대 1건(arm 가드)이라 `Vec` 선형
+/// 탐색으로 충분하다. 스레드는 가장 이른 마감시각까지 [`std::sync::Condvar`] 로
+/// 자며, 새 요청이 들어오면 깨어나 마감시각을 다시 계산한다.
+///
+/// ## 상주화가 만드는 단일 실패점 방어
+/// 스레드가 하나뿐이라 그것이 죽으면 프로세스 전체의 self-repaint 가 **영구 무음
+/// 정지**한다(`schedule_self_repaint` 주석의 과거 회귀가 그대로 재발한다). 사용자가
+/// 원인을 알 수 없는 실패 모양이므로 세 겹으로 막는다.
+///
+/// - 발사 클로저 panic 은 [`Self::run`] 이 요청 단위로 삼킨다 — 루프는 유지된다.
+/// - 그 밖의 이유로 루프가 풀리면 대기 요청의 가드를 전부 풀고 `running` 을 되돌려
+///   **다음 요청이 스레드를 재기동**한다([`Self::ensure_running`]).
+/// - 스레드 자체를 못 띄우면 그 요청만 1회용 스레드로 폴백해 알림을 살린다
+///   ([`Self::fire_on_one_shot_thread`]) — 상주화 이전 동작과 같은 경로다.
+#[cfg(any(unix, windows))]
+struct SelfRepaintTimer {
+    pending: std::sync::Mutex<Vec<SelfRepaintRequest>>,
+    wake: std::sync::Condvar,
+    /// 상주 스레드가 살아 있는지. spawn 에 **성공했을 때만** true 로 남으므로,
+    /// 실패나 비정상 종료는 다음 [`Self::arm`] 이 자연히 재시도한다.
+    running: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(any(unix, windows))]
+impl SelfRepaintTimer {
+    fn new() -> Self {
+        Self {
+            pending: std::sync::Mutex::new(Vec::new()),
+            wake: std::sync::Condvar::new(),
+            running: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// 프로세스 공용 인스턴스. 요청이 한 번도 없는 plugin 은 스레드를 갖지 않는다
+    /// (상주 스레드 기동은 [`Self::arm`] 이 필요할 때만 한다). surface/popup 여러 개가
+    /// 같은 스레드를 공유한다.
+    fn global() -> &'static SelfRepaintTimer {
+        static TIMER: std::sync::OnceLock<SelfRepaintTimer> = std::sync::OnceLock::new();
+        // static 이라 `get_or_init` 이 `&'static` 을 돌려준다 — 그대로 스레드로 넘긴다.
+        TIMER.get_or_init(SelfRepaintTimer::new)
+    }
+
+    /// 상주 스레드가 없으면 띄운다. 이미 살아 있으면 no-op. 반환값은 **큐를 드레인할
+    /// 스레드가 존재하는가** — false 면 호출자가 폴백해야 한다(그러지 않으면 요청이
+    /// 큐에 쌓인 채 영원히 발사되지 않는다).
+    ///
+    /// `Once` 가 아니라 `running` 플래그를 쓰는 이유: `Once` 는 spawn 이 실패해도
+    /// "완료" 로 확정돼 재시도 경로가 사라진다. 여기서는 성공했을 때만 플래그가 남고,
+    /// 스레드가 어떤 이유로든 풀리면 되돌아가 다음 요청이 재기동한다.
+    fn ensure_running(&'static self) -> bool {
+        if self
+            .running
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return true; // 이미 살아 있다.
+        }
+        let spawned = std::thread::Builder::new()
+            .name("plugin-self-repaint-timer".into())
+            .spawn(move || {
+                // 요청별 panic 은 `run` 이 삼키므로 여기까지 오는 것은 스케줄러 자체의
+                // 이상이다. 조용히 사라지면 self-repaint 가 영구 정지하므로 error 로
+                // 남기고, 대기 요청의 가드를 풀어 다음 프레임이 재-arm 할 수 있게 한다.
+                let panicked =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run())).is_err();
+                self.release_pending_on_exit(panicked);
+                self.running
+                    .store(false, std::sync::atomic::Ordering::Release);
+            });
+        if let Err(e) = spawned {
+            self.running
+                .store(false, std::sync::atomic::Ordering::Release);
+            tracing::warn!(
+                "egui-mesh self-repaint timer thread spawn failed: {e} — falling back to a one-shot timer for this request"
+            );
+            return false;
+        }
+        true
+    }
+
+    /// 요청 등록. `armed` 가 이미 세팅돼 있으면 **아무것도 하지 않는다**(중복 알림
+    /// 방지) — 등록에 성공한 요청만 큐에 들어가고, 발화 시 가드가 풀린다.
+    ///
+    /// `delay` 가 단조 시계의 표현 범위를 넘기면(plugin 이 "사실상 영원히" 를 뜻하는
+    /// 관용구로 거의 `Duration::MAX` 에 가까운 값을 요청한 경우 — `render` 의 필터는
+    /// `Duration::MAX` 자신만 걸러낸다) 요청을 버린다. `Instant + Duration` 은 넘칠 때
+    /// panic 하므로 여기서 `checked_add` 로 먼저 막는다 — CAS **전에** 판정해 가드가
+    /// armed 로 고착되지 않게 한다.
+    fn arm(
+        &'static self,
+        armed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+        delay: Duration,
+        fire: impl FnOnce() + Send + 'static,
+    ) {
+        let Some(deadline) = std::time::Instant::now().checked_add(delay) else {
+            tracing::warn!(
+                "egui-mesh self-repaint delay {delay:?} overflows the monotonic clock — request dropped"
+            );
+            return;
+        };
+        if armed
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return;
+        }
+        if !self.ensure_running() {
+            // 상주 스레드를 못 띄웠다 — 큐에 넣으면 드레인할 주체가 없어 영구 유실이
+            // 된다. 이 요청만 상주화 이전과 같은 1회용 스레드로 발사한다.
+            self.fire_on_one_shot_thread(armed, delay, fire);
+            return;
+        }
+        let request = SelfRepaintRequest {
+            deadline,
+            armed: std::sync::Arc::clone(armed),
+            fire: Box::new(fire),
+        };
+        // 락 poisoning 은 대기열(Vec)의 정합을 깨지 않는다 — 알림 발사는 락 밖에서
+        // 하므로 사용자 코드 panic 이 이 락을 물고 죽을 수 없다. 유실이 곧 회귀
+        // (`schedule_self_repaint` 주석의 "유휴 상태 방치")이므로 복구해 계속 쓴다.
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        pending.push(request);
+        drop(pending);
+        self.wake.notify_one();
+    }
+
+    /// 상주 스레드를 못 띄웠을 때의 폴백 — 상주화 이전과 동일한 1회용 스레드.
+    /// 이것마저 실패하면 알림은 포기하되 **가드는 풀어** 다음 프레임이 재시도할 수
+    /// 있게 한다(가드를 armed 로 두면 그 인스턴스는 영구히 재-arm 하지 못한다).
+    fn fire_on_one_shot_thread(
+        &self,
+        armed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+        delay: Duration,
+        fire: impl FnOnce() + Send + 'static,
+    ) {
+        let armed = std::sync::Arc::clone(armed);
+        let spawned = std::thread::Builder::new()
+            .name("plugin-self-repaint-once".into())
+            .spawn({
+                let armed = std::sync::Arc::clone(&armed);
+                move || {
+                    if !delay.is_zero() {
+                        std::thread::sleep(delay);
+                    }
+                    armed.store(false, std::sync::atomic::Ordering::Release);
+                    fire();
+                }
+            });
+        if let Err(e) = spawned {
+            armed.store(false, std::sync::atomic::Ordering::Release);
+            tracing::error!(
+                "egui-mesh self-repaint fallback thread spawn failed: {e} — this repaint request is dropped"
+            );
+        }
+    }
+
+    /// 상주 루프 — 마감이 지난 요청을 모아 락 밖에서 발사하고, 다음 마감까지 잔다.
+    fn run(&self) {
+        loop {
+            let due = self.take_due();
+            for request in due {
+                // 가드를 먼저 풀어야 이 알림에 이어지는 다음 `render()` 가 재-arm 할 수
+                // 있다(발사 순서는 가드 해제 → 알림 — 기존 동작과 동일).
+                request
+                    .armed
+                    .store(false, std::sync::atomic::Ordering::Release);
+                // 알림 하나의 panic 이 상주 스레드를 죽이면 프로세스 전체의 self-repaint
+                // 가 영구 정지한다 — 그 요청만 버리고 루프는 유지한다.
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(request.fire)).is_err() {
+                    tracing::error!(
+                        "egui-mesh self-repaint notify panicked — request dropped, timer thread kept alive"
+                    );
+                }
+            }
+        }
+    }
+
+    /// 상주 루프가 풀렸을 때의 뒷정리 — 대기 요청을 비우고 가드를 전부 푼다.
+    /// 가드가 armed 로 남으면 그 인스턴스는 스레드가 재기동돼도 재-arm 하지 못한다.
+    fn release_pending_on_exit(&self, panicked: bool) {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let stranded: Vec<SelfRepaintRequest> = pending.drain(..).collect();
+        drop(pending);
+        for request in &stranded {
+            request
+                .armed
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
+        tracing::error!(
+            "egui-mesh self-repaint timer thread exited (panicked={panicked}) — {} pending request(s) released; the next repaint request restarts it",
+            stranded.len()
+        );
+    }
+
+    /// 마감이 지난 요청이 생길 때까지 자고, 생기면 그것들을 큐에서 빼 반환한다.
+    ///
+    /// 락 획득 3곳은 [`Self::arm`] 과 같은 이유로 poisoning 을 복구해 계속 쓴다 —
+    /// 대기열은 락 안에서만 다뤄지는 `Vec` 이라 정합이 깨질 수 없고, 여기서 포기하면
+    /// 대기 중인 알림이 통째로 유실된다.
+    fn take_due(&self) -> Vec<SelfRepaintRequest> {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            let now = std::time::Instant::now();
+            let mut due = Vec::new();
+            let mut i = 0;
+            while i < pending.len() {
+                if pending[i].deadline <= now {
+                    due.push(pending.swap_remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+            if !due.is_empty() {
+                return due;
+            }
+            let next = pending.iter().map(|r| r.deadline).min();
+            pending = match next {
+                // 가장 이른 마감까지만 잔다 — 더 이른 요청이 들어오면 `notify_one` 이 깨운다.
+                Some(deadline) => {
+                    let wait = deadline.saturating_duration_since(std::time::Instant::now());
+                    self.wake
+                        .wait_timeout(pending, wait)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .0
+                }
+                None => self
+                    .wake
+                    .wait(pending)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            };
+        }
+    }
+}
+
+/// [`EguiMeshCore::pending_self_repaint`] 가 있으면(egui 가 다음 pass 를 요청), 그
+/// 지연 뒤 `notify` 를 1회 실행하도록 **상주 타이머 스레드**
+/// ([`SelfRepaintTimer::global`]) 에 요청을 건다 — 요청마다 스레드를 만들지 않는다.
+/// `armed`(이 코어 인스턴스가 소유한 가드)가 이미 세팅돼 있으면 아무것도 하지 않는다
+/// — 타이머가 fire 하면 다시 풀리고, 그 다음 `render()` 가 여전히 지연이 필요하면
+/// 재-arm 한다(자연 수렴, idle 상태에서 요청이 쌓이지 않는다). Surface/Popup 공용 —
+/// 각자 자기 id 를 실은 `*Invalidated` 이벤트를 `notify` 클로저로 만든다.
+#[cfg(any(unix, windows))]
+fn arm_self_repaint_timer(
     delay: Duration,
     armed: &std::sync::Arc<std::sync::atomic::AtomicBool>,
     host: &HostHandle,
     notify: impl FnOnce(&HostHandle) -> Result<(), PluginError> + Send + 'static,
 ) {
-    if armed
-        .compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::AcqRel,
-            std::sync::atomic::Ordering::Acquire,
-        )
-        .is_err()
-    {
-        return;
-    }
     let host = host.clone();
-    let armed = std::sync::Arc::clone(armed);
-    std::thread::spawn(move || {
-        if !delay.is_zero() {
-            std::thread::sleep(delay);
-        }
-        armed.store(false, std::sync::atomic::Ordering::Release);
+    SelfRepaintTimer::global().arm(armed, delay, move || {
         if let Err(e) = notify(&host) {
             tracing::warn!("egui-mesh self-repaint notify failed: {e}");
         }
@@ -421,9 +677,10 @@ fn spawn_self_repaint_timer(
 pub struct EguiMeshSurface {
     surface_id: u32,
     core: EguiMeshCore,
-    /// `schedule_self_repaint` 가 중복 타이머 스레드를 만들지 않도록 거는 가드.
-    /// 타이머가 fire 하면 다시 풀리고(`False`), 그 다음 `render()` 가 여전히 지연이
-    /// 필요하면 재-arm 한다 — 스레드가 폭주하지 않고 자연 수렴한다.
+    /// `schedule_self_repaint` 가 상주 타이머([`SelfRepaintTimer`])에 중복 요청을
+    /// 걸지 않도록 하는 가드. 타이머가 fire 하면 다시 풀리고(`False`), 그 다음
+    /// `render()` 가 여전히 지연이 필요하면 재-arm 한다 — 대기 요청은 인스턴스당
+    /// 최대 1건이라 중복 알림 없이 자연 수렴한다.
     #[cfg(any(unix, windows))]
     self_repaint_armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -537,7 +794,7 @@ impl EguiMeshSurface {
             return;
         };
         let surface_id = self.surface_id;
-        spawn_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
+        arm_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
             host.notify(&PluginEvent::SurfaceInvalidated { surface_id })
         });
     }
@@ -577,8 +834,8 @@ impl EguiMeshSurface {
 pub struct EguiMeshPopup {
     instance_id: u64,
     core: EguiMeshCore,
-    /// [`EguiMeshSurface::self_repaint_armed`] 와 동형 — `schedule_self_repaint` 중복
-    /// 타이머 방지 가드.
+    /// [`EguiMeshSurface::self_repaint_armed`] 와 동형 — `schedule_self_repaint` 의
+    /// 중복 타이머 요청 방지 가드.
     #[cfg(any(unix, windows))]
     self_repaint_armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -695,7 +952,7 @@ impl EguiMeshPopup {
             return;
         };
         let instance_id = self.instance_id;
-        spawn_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
+        arm_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
             host.notify(&PluginEvent::PopupInvalidated { instance_id })
         });
     }
@@ -946,6 +1203,132 @@ mod tests {
     use egui::epaint::Primitive;
     use tasty_plugin_protocol::RawInputWire;
     use tasty_plugin_protocol::mesh_wire::decode_paint;
+
+    /// 상주 타이머가 등록된 요청을 **각각 정확히 한 번** 발사하고(유실 0 · 중복 0),
+    /// 발사 시 arm 가드를 풀어 다음 프레임이 재-arm 할 수 있게 하는지.
+    /// 지연 0(스크롤 스무딩의 상시 경로)과 지연 있는 요청을 함께 건다.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn self_repaint_timer_fires_each_request_exactly_once() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let timer = SelfRepaintTimer::global();
+        let delays = [
+            Duration::ZERO,
+            Duration::from_millis(5),
+            Duration::from_millis(15),
+        ];
+        let guards: Vec<Arc<AtomicBool>> = delays
+            .iter()
+            .map(|_| Arc::new(AtomicBool::new(false)))
+            .collect();
+        let counters: Vec<Arc<AtomicUsize>> = delays
+            .iter()
+            .map(|_| Arc::new(AtomicUsize::new(0)))
+            .collect();
+        for ((delay, guard), counter) in delays.iter().zip(&guards).zip(&counters) {
+            let counter = Arc::clone(counter);
+            timer.arm(guard, *delay, move || {
+                counter.fetch_add(1, Ordering::Release);
+            });
+        }
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline
+            && counters.iter().any(|c| c.load(Ordering::Acquire) == 0)
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        for (i, counter) in counters.iter().enumerate() {
+            assert_eq!(counter.load(Ordering::Acquire), 1, "request {i} fired once");
+        }
+        // 발사 뒤에는 가드가 풀려 있어야 다음 render() 가 재-arm 할 수 있다.
+        for (i, guard) in guards.iter().enumerate() {
+            assert!(!guard.load(Ordering::Acquire), "guard {i} released on fire");
+        }
+    }
+
+    /// 단조 시계 표현 범위를 넘기는 지연은 **panic 없이** 버려지고, arm 가드도
+    /// armed 로 고착되지 않는다 — `Instant + Duration` 은 넘칠 때 panic 하므로
+    /// `checked_add` 로 막는다(`render` 의 필터는 `Duration::MAX` 자신만 걸러낸다).
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn self_repaint_overflowing_delay_is_dropped_without_panic() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let timer = SelfRepaintTimer::global();
+        let guard = Arc::new(AtomicBool::new(false));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let fired = Arc::clone(&counter);
+        timer.arm(&guard, Duration::MAX, move || {
+            fired.fetch_add(1, Ordering::Release);
+        });
+        assert_eq!(counter.load(Ordering::Acquire), 0, "request dropped");
+        assert!(!guard.load(Ordering::Acquire), "guard not left armed");
+
+        // 가드가 깨끗하므로 정상 지연 요청은 그대로 받아들여진다.
+        let fired = Arc::clone(&counter);
+        timer.arm(&guard, Duration::ZERO, move || {
+            fired.fetch_add(1, Ordering::Release);
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && counter.load(Ordering::Acquire) == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            1,
+            "normal request still fires"
+        );
+    }
+
+    /// arm 가드는 대기 중인 요청이 있는 동안의 재-arm 을 삼킨다 — 매 프레임 불려도
+    /// 알림은 한 번만 나간다(중복 set_context 왕복 방지). 발사 뒤에는 다시 arm 된다.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn self_repaint_arm_guard_collapses_requests_while_pending() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let timer = SelfRepaintTimer::global();
+        let guard = Arc::new(AtomicBool::new(false));
+        let counter = Arc::new(AtomicUsize::new(0));
+        // 첫 요청이 대기하는 동안 같은 가드로 여러 번 재-arm 해도 큐에는 1건만 남는다.
+        for _ in 0..8 {
+            let counter = Arc::clone(&counter);
+            timer.arm(&guard, Duration::from_millis(20), move || {
+                counter.fetch_add(1, Ordering::Release);
+            });
+        }
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && counter.load(Ordering::Acquire) == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            1,
+            "collapsed to one notify"
+        );
+        assert!(!guard.load(Ordering::Acquire), "guard released on fire");
+
+        // 가드가 풀렸으므로 다음 요청은 다시 받아들여진다(유실 없음).
+        let counter2 = Arc::clone(&counter);
+        timer.arm(&guard, Duration::ZERO, move || {
+            counter2.fetch_add(1, Ordering::Release);
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && counter.load(Ordering::Acquire) < 2 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            2,
+            "re-arm after fire works"
+        );
+    }
 
     fn ctx_params(width_px: u32, height_px: u32, ppp: f32) -> SurfaceSetContextParams {
         SurfaceSetContextParams {

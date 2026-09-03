@@ -193,13 +193,19 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
    `pending_self_repaint`(`Duration::MAX` = 요청 없음 → `None`)로 캐시한다.
    `EguiMeshSurface`/`EguiMeshPopup` 의 `paint`/`repaint_last` 는 매 호출 뒤(frame 이
    `None` 이어도) 이 값을 확인해 `Some(delay)` 면 `delay` 뒤 위 "idle invalidate" 채널
-   (`SurfaceInvalidated`/`PopupInvalidated`)로 host 에 재-forward 를 요청하는 타이머
-   스레드를 스폰한다 — `self_repaint_armed`(`AtomicBool`) 로 중복 스레드를 막고, 타이머가
-   fire 하면 풀려 다음 `render()` 가 여전히 필요하면 재-arm 한다(자연 수렴, idle 상태에서
-   스레드가 폭주하지 않음). 이 채널은 host-side 코드 변경 없이(surface) 또는 이미 있던
-   popup pending-repaint 필드에 편승해(popup) 동작한다 — `EguiMeshCore` 를 공유하는
-   surface/popup 전체에 적용된다(banner 는 실 소비자가 아직 없어 미적용, 위 "popup 대응"
-   참조).
+   (`SurfaceInvalidated`/`PopupInvalidated`)로 host 에 재-forward 를 요청한다. 이 지연
+   알림은 **plugin 프로세스당 상주 타이머 스레드 1 개**(`SelfRepaintTimer`, 첫 요청 때
+   lazily 기동 후 재사용)가 발사한다 — 요청마다 스레드를 만들지 않는다([ADR-0097](../adr/0097-plugin-self-repaint-resident-timer.md)).
+   `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(스크롤 스무딩이
+   대표적) 요청당 스레드 방식은 애니메이션 중 프레임마다 생성·소멸을 반복한다.
+   `self_repaint_armed`(`AtomicBool`) 로 대기 요청을 인스턴스당 최대 1 건으로 묶고, 타이머가
+   fire 하면(가드 해제 → 알림 순) 풀려 다음 `render()` 가 여전히 필요하면 재-arm 한다
+   (자연 수렴, idle 상태에서 요청이 쌓이지 않음). 스레드가 하나라 그것이 죽으면 self-repaint
+   가 영구 정지하므로, 알림 panic 은 요청 단위로 삼키고 루프가 풀리면 대기 가드를 모두 푼 뒤
+   다음 요청이 재기동하며 spawn 실패 시엔 그 요청만 1 회용 스레드로 폴백한다. 이 채널은 host-side 코드 변경 없이
+   (surface) 또는 이미 있던 popup pending-repaint 필드에 편승해(popup) 동작한다 —
+   `EguiMeshCore` 를 공유하는 surface/popup 전체에 적용된다(banner 는 실 소비자가 아직 없어
+   미적용, 위 "popup 대응" 참조).
 2. **raw_input.time 보정** (`src/view/main/egui_mesh.rs`) — `forward_egui_mesh_context`
    가 surface 로 보내는 `set_context.raw_input.time` 이 과거엔 항상 `None` 이었다. egui는
    `time` 이 없으면 `predicted_dt`(1/60초 고정)로만 dt 를 추정하므로, 1번의 idle-invalidate
