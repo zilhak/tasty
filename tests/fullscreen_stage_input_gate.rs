@@ -380,6 +380,7 @@ fn every_overlay_open_composite_is_stage_aware() {
         seen,
         vec![
             "src/app/plugin_glue/shortcut.rs".to_string(),
+            "src/app/webview_keys.rs".to_string(),
             "src/view/main.rs".to_string(),
             "src/view/main/ime.rs".to_string(),
             "src/view/main/keyboard.rs".to_string(),

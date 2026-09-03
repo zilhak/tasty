@@ -247,6 +247,12 @@ impl MainView {
             // "터미널 포커스 + find"만 서술한다. 따라서 focused surface가 Terminal일 때만
             // 이 popup을 연다; 그 외 kind는 자기 자신의 find-in-page(있다면, 예: markdown
             // plugin의 트러스트 JS 문서-내 검색)로 넘긴다 — 여기서 소비하지 않고 false 반환.
+            //
+            // webview 키 포워딩(`docs/adr/0102-webview-key-forwarding.md`)이 생긴 뒤에도
+            // 이 분기는 유지한다. 포워딩은 `find` 를 **페이지 예약 액션**으로 두어 애초에
+            // 가져가지 않으므로 webview 포커스 시에는 여기까지 오지도 않지만, webview 가
+            // 아닌 비-터미널 kind(explorer 등)가 포커스일 때의 빈 0/0 오버레이는 여전히
+            // 이 게이트만 막는다 — 두 장치는 대상이 겹치지 않는다.
             if !matches!(
                 state.focused_surface_type(engine),
                 crate::state::FocusedSurfaceType::Terminal

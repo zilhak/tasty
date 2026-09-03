@@ -119,4 +119,43 @@ impl AppState {
         }
         false
     }
+
+    /// surface id 로 직접 포커스를 옮긴다(활성 workspace 안에서). 좌표 기반
+    /// `focus_pane_at_position`/`focus_surface_at_position` 의 id 기반 대응 —
+    /// native webview 클릭처럼 **좌표가 host 에 도달하지 않는** 입력이 모델 포커스를
+    /// 맞출 때 쓴다(`app/webview_keys.rs`). 포커스가 실제로 바뀌었으면 `true`.
+    ///
+    /// 활성 workspace 의 각 pane 의 **active tab** 만 본다 — 화면에 보이지 않는 탭의
+    /// surface 로 포커스가 튀지 않게 한다.
+    pub fn focus_surface_by_id(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
+        let ws = self.active_workspace(engine);
+        let mut target_pane = None;
+        for pane_id in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                && let Some(tab) = pane.tabs.get(pane.active_tab)
+                && let Some(layout) = tab.layout_if_initialized()
+                && layout.find_surface(surface_id).is_some()
+            {
+                target_pane = Some(pane_id);
+                break;
+            }
+        }
+        let Some(pane_id) = target_pane else {
+            return false;
+        };
+        let ws = self.active_workspace_mut(engine);
+        let mut changed = false;
+        if ws.focused_pane != pane_id {
+            ws.focused_pane = pane_id;
+            changed = true;
+        }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+            && tab.focused_surface != surface_id
+        {
+            tab.focused_surface = surface_id;
+            changed = true;
+        }
+        changed
+    }
 }

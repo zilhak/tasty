@@ -133,6 +133,19 @@ pub(super) fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
     })
 }
 
+/// 바인딩 문자열이 `ctrl`/`alt`/`option` 중 하나 이상을 요구하는지 판정한다.
+/// `shift` 단독과 수식 없는 키는 `false`.
+///
+/// webview 키 포워딩 정책(`host_api/webview/keys.rs`)이 "페이지에 남길 키" 와
+/// "host 가 가져갈 키" 를 가르는 기준으로 쓴다 — 파싱 규칙을 그쪽에 복제하지
+/// 않도록 여기서 한 번만 판정한다.
+pub(crate) fn binding_has_modifier(binding: &str) -> bool {
+    match parse_binding(binding) {
+        Some(p) => p.ctrl || p.alt || p.option,
+        None => false,
+    }
+}
+
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
 /// the given key + modifiers. Returns false for empty bindings.
 pub(super) fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {

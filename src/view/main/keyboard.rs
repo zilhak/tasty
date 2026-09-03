@@ -222,28 +222,36 @@ impl MainView {
     fn try_consume_shortcut_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         let shortcut_key = self.shortcut_lookup_key(event);
         if self.handle_shortcut(&shortcut_key, self.base.modifiers) {
-            self.reset_modifier_hint_reveal_timer();
-            if self.ime_preedit.is_some() {
-                // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
-                // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
-                // plugin popup 은 이 시점에 아직 캐시에 반영되지 않았다(open 은
-                // `pending_popup_opens` 를 거쳐 다음 tick 에 실행된다) — 그래서 큐가
-                // 비어 있지 않은지로 "방금 이 단축키가 popup 을 요청했는가" 를 본다.
-                if self.state.popups.has_focused()
-                    || self.state.plugin_popup_open
-                    || !self.state.pending_popup_opens.is_empty()
-                {
-                    self.clear_ime_preedit();
-                } else {
-                    self.flush_ime_preedit();
-                }
-            }
-            // enter_copy_mode 같은 단축키가 신호한 deferred 작업 처리.
-            self.try_enter_vi_copy_mode();
-            self.mark_dirty();
+            self.after_shortcut_consumed();
             return true;
         }
         false
+    }
+
+    /// `handle_shortcut` 이 키를 소비한 직후의 후처리(★불가침 — 조건·순서 불변).
+    /// winit 키 경로(`try_consume_shortcut_key`)와 native webview 포워딩 경로
+    /// (`app::webview_keys`)가 **같은 후처리를 쓰도록** 여기 한 곳에 모은다 — 한쪽만
+    /// 빠뜨리면 `enter_copy_mode` 같은 deferred 단축키가 webview 위에서만 죽는다.
+    pub(crate) fn after_shortcut_consumed(&mut self) {
+        self.reset_modifier_hint_reveal_timer();
+        if self.ime_preedit.is_some() {
+            // 단축키로 팝업/오버레이가 열렸으면 조합 중 문자를 PTY로 보내지 않고 버린다.
+            // 그 외 단축키(split, close 등)는 조합 문자를 확정 전송한다.
+            // plugin popup 은 이 시점에 아직 캐시에 반영되지 않았다(open 은
+            // `pending_popup_opens` 를 거쳐 다음 tick 에 실행된다) — 그래서 큐가
+            // 비어 있지 않은지로 "방금 이 단축키가 popup 을 요청했는가" 를 본다.
+            if self.state.popups.has_focused()
+                || self.state.plugin_popup_open
+                || !self.state.pending_popup_opens.is_empty()
+            {
+                self.clear_ime_preedit();
+            } else {
+                self.flush_ime_preedit();
+            }
+        }
+        // enter_copy_mode 같은 단축키가 신호한 deferred 작업 처리.
+        self.try_enter_vi_copy_mode();
+        self.mark_dirty();
     }
 
     /// 7단계: vi copy-mode 활성 시 키 가로채기. Ctrl-only 폴백이라(6·9단계와 조건이

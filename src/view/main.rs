@@ -103,6 +103,22 @@ pub struct MainView {
     /// surface 별 마지막으로 webview 에 로드한 URL — `surface.webview_url()` 최신값과 달라지면
     /// (예: `webview.set_url` IPC) 기존 webview 인스턴스에 재로드를 트리거한다(파괴·재생성 없음).
     pub(crate) webview_loaded_urls: std::collections::HashMap<u32, String>,
+    /// 이 창의 모든 native webview 가 공유하는 키/포커스 브리지. webview 는 OS
+    /// 자식 창이라 자기가 키보드 포커스를 잡으면 winit `KeyboardInput` 이 끊긴다 —
+    /// 백엔드가 이 브리지에 키를 올리고 host 가 매 프레임 비운다
+    /// (`docs/adr/0102-webview-key-forwarding.md`).
+    pub(crate) webview_key_bridge: std::rc::Rc<crate::webview::WebViewKeyBridge>,
+    /// overlay 가 열려 webview 키보드 포커스를 이미 host 로 회수했는지(edge 판정).
+    /// overlay 가 닫히면 false 로 돌아가 다음 개폐에 다시 1 회만 회수한다.
+    pub(crate) webview_overlay_focus_released: bool,
+    /// 마지막 `sync_webviews` 기준으로 화면에 실제로 드러난 native webview 가 하나라도
+    /// 있는지. Linux 키 폴링 tick 을 이 값으로 건다 — 숨겨진(또는 없는) webview 는
+    /// 키를 받을 수 없어 폴링이 순수 낭비다.
+    pub(crate) webview_any_visible: bool,
+    /// `webview_key_bridge` 에 마지막으로 넣은 정책의 원본 keybindings. 스냅샷 생성이
+    /// 바인딩 필드 전체를 String 으로 모으는 작업이라 매 프레임 다시 만들지 않고,
+    /// 이 값과 달라진 프레임에만 갱신한다.
+    pub(crate) webview_policy_src: Option<crate::settings::KeybindingSettings>,
     /// 현재 마우스 hover 중이고 수식키 조건을 만족한 링크. 렌더 및 클릭에 사용.
     pub(crate) hovered_link: Option<HoveredLink>,
     /// 가장 최근에 터미널에 paste한 시각. Ctrl+V 직후 사용자가 옆 키 Ctrl+C를 잘못 눌러
@@ -213,6 +229,10 @@ impl MainView {
             webviews: std::collections::HashMap::new(),
             webview_applied_settings: std::collections::HashMap::new(),
             webview_loaded_urls: std::collections::HashMap::new(),
+            webview_key_bridge: std::rc::Rc::new(crate::webview::WebViewKeyBridge::new()),
+            webview_overlay_focus_released: false,
+            webview_any_visible: false,
+            webview_policy_src: None,
             hovered_link: None,
             last_terminal_paste_at: None,
             egui_mesh: std::collections::HashMap::new(),

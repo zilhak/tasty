@@ -521,6 +521,16 @@ kind 를 가리지 않고 `search_bar` egui popup 을 열었었다 — 그 popup
 변경으로 markdown 문서가 focus 인 상태에서 `Ctrl+F` 는 항상 이 절의 문서-내 검색으로
 가고, 터미널 전용 오버레이가 뜨지 않는다.
 
+**host 키 포워딩과의 관계**: webview 자식 창이 키보드 입력을 받는 동안에도 tasty 전역
+단축키는 동작한다 — 세 백엔드가 native 키를 가로채 host 로 올린다
+([ADR-0102](../../../adr/0102-webview-key-forwarding.md),
+[features/keybindings](../../../features/keybindings/index.md)). 그 포워딩은 **`find` 를
+포함한 페이지 예약 액션(`find`·`copy`·`cut`·`paste`·`select_all`)을 애초에 가져가지
+않으므로**, `Ctrl+F` 는 위 kind 게이트 이전에 이미 페이지로 간다 — 이 절의 문서-내 검색과
+포워딩 경로는 서로를 가로채지 않는다. 검색 바 입력창에 커서가 있을 때의 타이핑도
+안전하다: 포워딩 대상은 `ctrl`/`alt`/`option` 을 가진 콤보뿐이라 문자키·`shift+문자`·
+`Esc`/`Enter`/`Shift+Enter` 는 전부 페이지가 그대로 받는다.
+
 ## 디자인 토큰 매핑
 
 `crates/tasty-plugin-markdown/src/render.rs::render_document` 가 완전한 HTML5 문서 하나를 만든다

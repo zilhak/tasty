@@ -8,7 +8,9 @@ use block2::{DynBlock, RcBlock};
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSView};
+use objc2_app_kit::{
+    NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSEvent, NSResponder, NSView,
+};
 use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{
     WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationAction,
@@ -17,6 +19,7 @@ use objc2_web_kit::{
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+use super::keys::WebViewKeyBridge;
 use super::{NavState, WebViewBounds};
 
 /// `NavDelegate` 의 ivar — host 와 공유하는 navigation 상태 셀.
@@ -132,12 +135,135 @@ impl NavDelegate {
     }
 }
 
+/// `KeyWebView` 의 ivar — 어느 surface 의 webview 인지 + host 키 브리지.
+struct KeyWebViewIvars {
+    surface_id: u32,
+    key_bridge: Rc<WebViewKeyBridge>,
+}
+
+define_class!(
+    // SAFETY:
+    // - WKWebView 는 서브클래싱을 허용한다(wry 등 임베딩 구현의 표준 방식). 지정
+    //   초기화자 `initWithFrame:configuration:` 를 아래 `KeyWebView::new` 가 super 로
+    //   호출해 올바르게 초기화한다.
+    // - `MainThreadOnly` 가 맞다: WKWebView/NSResponder 는 main thread 전용이고 아래
+    //   오버라이드는 전부 AppKit 이 main thread 에서 발화한다.
+    // - `Drop` 을 구현하지 않는다.
+    #[unsafe(super(WKWebView))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "TastyKeyWebView"]
+    #[ivars = KeyWebViewIvars]
+    struct KeyWebView;
+
+    unsafe impl NSObjectProtocol for KeyWebView {}
+
+    impl KeyWebView {
+        /// Command 조합(= 바인딩 토큰 `alt`)은 AppKit 이 responder chain 을 타고
+        /// key equivalent 로 먼저 묻는다. host 가 가져가면 `true` 를 돌려 페이지가
+        /// 그 키를 보지 못하게 한다.
+        ///
+        /// `performKeyEquivalent:` 는 first responder 와 무관하게 창 전체 뷰 트리로
+        /// 내려오므로, **이 webview 가 실제로 키보드를 쥐고 있을 때만** 가로챈다.
+        /// 그렇지 않으면 터미널 입력 중의 Command 조합까지 이 경로가 먼저 집어가
+        /// winit 경로와 이중으로 디스패치된다. 쥐고 있지 않을 때는 키가 winit 뷰로
+        /// 정상 도달하므로 포워딩이 필요하지도 않다.
+        #[unsafe(method(performKeyEquivalent:))]
+        fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
+            if view_holds_first_responder(self) && self.forward_key_to_host(event) {
+                return true;
+            }
+            // SAFETY: main thread AppKit responder chain. super 구현에 위임.
+            unsafe { msg_send![super(self), performKeyEquivalent: event] }
+        }
+
+        /// Control/Option 조합은 key equivalent 가 아니라 일반 keyDown 으로 온다.
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            if self.forward_key_to_host(event) {
+                return;
+            }
+            // SAFETY: main thread AppKit responder chain. super 구현에 위임.
+            unsafe { msg_send![super(self), keyDown: event] }
+        }
+
+        /// 클릭은 winit 에 도달하지 않아 `try_click_to_activate` 가 돌지 않는다 —
+        /// 모델 포커스를 여기서 대신 알려준다. 이벤트 자체는 super 로 그대로 넘긴다.
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            let ivars = self.ivars();
+            ivars.key_bridge.note_focus(ivars.surface_id);
+            // SAFETY: main thread AppKit. super 구현에 위임.
+            unsafe { msg_send![super(self), mouseDown: event] }
+        }
+
+        /// WKWebView 는 클릭 시 내부 content view 를 first responder 로 만들 수 있어
+        /// `mouseDown:` 가 이 클래스까지 오지 않을 수 있다. 두 경로 모두에서 알리고,
+        /// 연속 중복은 브리지가 접는다.
+        #[unsafe(method(becomeFirstResponder))]
+        fn become_first_responder(&self) -> bool {
+            let ivars = self.ivars();
+            ivars.key_bridge.note_focus(ivars.surface_id);
+            // SAFETY: main thread AppKit. super 구현에 위임.
+            unsafe { msg_send![super(self), becomeFirstResponder] }
+        }
+    }
+);
+
+impl KeyWebView {
+    /// main thread 에서 ivar 를 담아 WKWebView 지정 초기화자로 인스턴스를 만든다.
+    fn new(
+        mtm: MainThreadMarker,
+        frame: NSRect,
+        config: &WKWebViewConfiguration,
+        surface_id: u32,
+        key_bridge: Rc<WebViewKeyBridge>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(KeyWebViewIvars {
+            surface_id,
+            key_bridge,
+        });
+        // SAFETY: WKWebView 의 지정 초기화자를 super 로 호출.
+        unsafe { msg_send![super(this), initWithFrame: frame, configuration: config] }
+    }
+
+    /// 이 키를 host 가 가져갔으면 `true`. press·비repeat 만 올린다.
+    fn forward_key_to_host(&self, event: &NSEvent) -> bool {
+        if event.isARepeat() {
+            return false;
+        }
+        let mods = nsevent_mods_to_winit(event.modifierFlags());
+        let chars = event.charactersIgnoringModifiers();
+        let Some(key) = chars.and_then(|c| ns_chars_to_winit_key(&c.to_string())) else {
+            return false;
+        };
+        let ivars = self.ivars();
+        ivars.key_bridge.capture_key(ivars.surface_id, key, mods)
+    }
+}
+
+/// `view` 자신 또는 그 하위 뷰가 창의 first responder 인지. webview 가 키보드를 실제로
+/// 쥐고 있는지 판정하는 단일 기준 — 키 가로채기 게이트와 포커스 회수 게이트가 같은
+/// 조건을 쓴다.
+fn view_holds_first_responder(view: &NSView) -> bool {
+    let Some(window) = view.window() else {
+        return false;
+    };
+    let Some(responder) = window.firstResponder() else {
+        return false;
+    };
+    // WKWebView 는 클릭 시 내부 content view 를 first responder 로 만들므로 자신뿐
+    // 아니라 하위 뷰도 "쥐고 있다" 로 본다(`isDescendantOf:` 는 자기 자신도 true).
+    responder
+        .downcast_ref::<NSView>()
+        .is_some_and(|v| v.isDescendantOf(view))
+}
+
 /// 원격(http/https) 서브리소스 전체를 차단하는 WKContentRuleList JSON. 로컬 file:// 는 통과.
 const REMOTE_BLOCK_RULE_JSON: &str =
     r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
 
 pub struct PlatformWebView {
-    webview: Retained<WKWebView>,
+    webview: Retained<KeyWebView>,
     /// 비동기 컴파일된 원격-차단 룰 캐시(완료 전 None). handler 와 공유.
     content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>>,
     /// 현재 원하는 차단 상태(true=원격 차단, allow_remote=false 대응. 기본 true).
@@ -158,6 +284,8 @@ impl PlatformWebView {
         window: &impl HasWindowHandle,
         bounds: WebViewBounds,
         scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<WebViewKeyBridge>,
     ) -> Result<Self, String> {
         let mtm =
             MainThreadMarker::new().ok_or_else(|| "Must be called from main thread".to_string())?;
@@ -185,8 +313,8 @@ impl PlatformWebView {
 
             let frame = logical_to_nsrect(ns_view, bounds, scale_factor);
 
-            let webview =
-                WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &config);
+            // 키 포워딩·포커스 통지를 위해 WKWebView 서브클래스를 쓴다(위 `KeyWebView`).
+            let webview = KeyWebView::new(mtm, frame, &config, surface_id, key_bridge);
 
             ns_view.addSubview(&webview);
 
@@ -262,6 +390,33 @@ impl PlatformWebView {
                 let frame = logical_to_nsrect(&parent, bounds, scale_factor);
                 self.webview.setFrame(frame);
             }
+        }
+    }
+
+    /// 키보드 포커스를 host(winit 뷰)로 되돌린다(overlay 개시 시). 숨기는 것과
+    /// first responder 를 놓는 것은 AppKit 에서도 별개라, 회수하지 않으면 방금 연
+    /// popup 이 키를 못 받는다.
+    ///
+    /// **현재 first responder 가 이 webview(또는 그 하위 뷰)일 때만** 회수하고, 대상은
+    /// `nil` 이 아니라 창의 contentView(= winit 뷰)다. `nil` 을 넘기면 창 자신이 first
+    /// responder 가 되어 winit 뷰가 응답자 체인에서 빠지고 키보드가 통째로 죽는다.
+    /// 조건 게이트가 없으면 다른 뷰가 쥔 포커스까지 빼앗는다 — Linux/Windows 백엔드와
+    /// 같은 규칙이다.
+    pub fn release_keyboard_focus(&self) {
+        let Some(window) = self.webview.window() else {
+            return;
+        };
+        if !view_holds_first_responder(&self.webview) {
+            return;
+        }
+        let Some(content) = window.contentView() else {
+            return;
+        };
+        // `Option<&Retained<NSView>>` 은 `Option<&NSResponder>` 로 자동 강제되지 않는다
+        // (Option 안쪽은 coercion site 가 아니다) — 먼저 참조로 풀어 타입을 맞춘다.
+        let content_responder: &NSResponder = &content;
+        if !window.makeFirstResponder(Some(content_responder)) {
+            tracing::warn!("webview: winit content view 로 first responder 복구 실패");
         }
     }
 
@@ -434,5 +589,102 @@ unsafe fn logical_to_nsrect(parent: &NSView, bounds: WebViewBounds, _scale_facto
     NSRect {
         origin: NSPoint::new(bounds.x, origin_y),
         size: NSSize::new(bounds.width, bounds.height),
+    }
+}
+
+/// NSEvent modifier flags → winit `ModifiersState`.
+///
+/// macOS 는 Command 를 winit `SUPER`, Option 을 winit `ALT` 로 싣는다 — 바인딩 토큰
+/// 매핑(`alt`→Command, `option`→Option)은 `binding.rs` 가 그 위에서 처리한다
+/// (`docs/design/policies/key-mapping.md` 의 위치 기반 추상화).
+fn nsevent_mods_to_winit(
+    flags: objc2_app_kit::NSEventModifierFlags,
+) -> winit::keyboard::ModifiersState {
+    use objc2_app_kit::NSEventModifierFlags;
+    use winit::keyboard::ModifiersState;
+    let mut mods = ModifiersState::empty();
+    mods.set(
+        ModifiersState::CONTROL,
+        flags.contains(NSEventModifierFlags::Control),
+    );
+    mods.set(
+        ModifiersState::SHIFT,
+        flags.contains(NSEventModifierFlags::Shift),
+    );
+    mods.set(
+        ModifiersState::ALT,
+        flags.contains(NSEventModifierFlags::Option),
+    );
+    mods.set(
+        ModifiersState::SUPER,
+        flags.contains(NSEventModifierFlags::Command),
+    );
+    mods
+}
+
+/// `charactersIgnoringModifiers` 문자열 → winit `Key`.
+///
+/// AppKit 은 화살표·기능키를 유니코드 private-use 영역(`NSUpArrowFunctionKey` 등)으로
+/// 싣는다. `binding.rs` 가 이름으로 아는 named key 집합만 매핑하고 나머지 문자는
+/// `Key::Character` 로 올린다. 매핑 불가면 `None`(페이지가 그대로 갖는다).
+fn ns_chars_to_winit_key(chars: &str) -> Option<winit::keyboard::Key> {
+    use winit::keyboard::{Key, NamedKey};
+    let c = chars.chars().next()?;
+    let named = match c as u32 {
+        0xF700 => NamedKey::ArrowUp,
+        0xF701 => NamedKey::ArrowDown,
+        0xF702 => NamedKey::ArrowLeft,
+        0xF703 => NamedKey::ArrowRight,
+        0xF704 => NamedKey::F1,
+        0xF705 => NamedKey::F2,
+        0xF706 => NamedKey::F3,
+        0xF707 => NamedKey::F4,
+        0xF708 => NamedKey::F5,
+        0xF709 => NamedKey::F6,
+        0xF70A => NamedKey::F7,
+        0xF70B => NamedKey::F8,
+        0xF70C => NamedKey::F9,
+        0xF70D => NamedKey::F10,
+        0xF70E => NamedKey::F11,
+        0xF70F => NamedKey::F12,
+        0xF727 => NamedKey::Insert,
+        0xF728 => NamedKey::Delete,
+        0xF729 => NamedKey::Home,
+        0xF72B => NamedKey::End,
+        0xF72C => NamedKey::PageUp,
+        0xF72D => NamedKey::PageDown,
+        0x0D | 0x03 => NamedKey::Enter,
+        0x09 => NamedKey::Tab,
+        0x7F | 0x08 => NamedKey::Backspace,
+        0x1B => NamedKey::Escape,
+        0x20 => NamedKey::Space,
+        _ => {
+            if c.is_control() {
+                return None;
+            }
+            return Some(Key::Character(c.to_string().into()));
+        }
+    };
+    Some(Key::Named(named))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::{Key, NamedKey};
+
+    #[test]
+    fn ns_chars_map_to_character_and_named() {
+        assert_eq!(ns_chars_to_winit_key("d"), Some(Key::Character("d".into())));
+        assert_eq!(ns_chars_to_winit_key("="), Some(Key::Character("=".into())));
+        assert_eq!(
+            ns_chars_to_winit_key("\u{F708}"),
+            Some(Key::Named(NamedKey::F5))
+        );
+        assert_eq!(
+            ns_chars_to_winit_key("\u{1B}"),
+            Some(Key::Named(NamedKey::Escape))
+        );
+        assert_eq!(ns_chars_to_winit_key(""), None);
     }
 }

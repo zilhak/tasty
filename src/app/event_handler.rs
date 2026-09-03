@@ -383,6 +383,9 @@ impl ApplicationHandler<AppEvent> for App {
                 // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
                 // `poll_pending_native_menus` 가 매 프레임 수행한다.
                 Tick::NativeMenu => {}
+                // 깨어나는 것 자체가 목적 — 실제 소비는 아래
+                // `pump_webview_key_events` 가 매 프레임 수행한다(Linux 에서만 걸린다).
+                Tick::WebviewKeyPoll => {}
                 // TTL 정리 3종(`app/sweeps.rs`) — 접근 시점 lazy 경로의 보완.
                 Tick::PtySweep => self.poll_pty_sweep(),
                 Tick::CaptureSweep => self.poll_capture_sweep(),
@@ -506,6 +509,21 @@ impl ApplicationHandler<AppEvent> for App {
         self.process_pending_open_preset_window(event_loop);
 
         self.poll_tray_menu_events();
+
+        // native webview 가 올린 키/포커스 이벤트 소비 — webview 는 winit 창과 별개의
+        // OS 자식 창이라 그 안에서 눌린 키가 `WindowEvent::KeyboardInput` 으로 오지
+        // 않는다(`docs/adr/0102-webview-key-forwarding.md`).
+        let needs_key_poll = self.pump_webview_key_events();
+        // 폴링 tick 재예약/취소. tick 이 실제로 걸리는 것은 **Linux 뿐**이고 그 판정은
+        // 함수 안에 있다 — macOS/Windows 는 native 키 콜백이 winit 과 같은 OS 이벤트
+        // 루프에서 발화해 폴링이 필요 없고, 거기까지 상시 16ms wakeup 을 두면 유휴
+        // 인스턴스가 초당 60 번 깬다. Linux 의 GDK 만 자기 X 연결로 이벤트를 받아
+        // winit 루프를 깨우지 못한다.
+        crate::app::timers::reschedule_webview_key_poll(
+            &mut self.timers,
+            needs_key_poll,
+            std::time::Instant::now(),
+        );
 
         // 열려 있는 네이티브 컨텍스트 메뉴를 펌프한다(비블로킹). redraw 경로와
         // 이중이지만, 메뉴가 떠 있는 동안은 아래 WaitUntil 이 이 경로를 8ms 주기로

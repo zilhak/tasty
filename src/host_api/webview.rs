@@ -1,8 +1,16 @@
 //! Cross-platform WebView wrapper.
 //!
 //! Provides a minimal native webview that can be embedded as a child view
-//! inside a winit/wgpu window. Only 6 operations are needed:
+//! inside a winit/wgpu window. Lifecycle/geometry surface is 6 operations:
 //! create, set_bounds, set_visible, load_url, load_html, drop.
+//!
+//! 거기에 **키보드 계약**이 하나 더 붙는다([`keys`]). native webview 는 winit 창과
+//! 별개의 OS 자식 창/뷰라 자기가 키보드 포커스를 잡으면 host 단축키가 통째로
+//! 도달하지 못한다 — 세 백엔드는 자기 native 키 이벤트를 [`WebViewKeyEvent`] 로
+//! 정규화해 [`WebViewKeyBridge`] 에 올리고, 우선순위 판정은 그 한 곳에서만 한다.
+//! 배경·대안은 `docs/adr/0102-webview-key-forwarding.md`.
+
+pub mod keys;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -24,6 +32,8 @@ pub use self::windows::PlatformWebView;
 /// 참조할 수 있도록 그곳에 둔다). backend 들은 `super::NavState`, host gui 코드는
 /// `crate::webview::NavState` 로 참조.
 pub use crate::plugin_bridge::remote_surface::NavState;
+
+pub use keys::{HostShortcutPolicy, WebViewKeyBridge, WebViewKeyEvent};
 
 /// Logical bounds for a webview (in logical pixels, origin at top-left).
 #[derive(Debug, Clone, Copy)]

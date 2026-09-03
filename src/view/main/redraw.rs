@@ -511,6 +511,8 @@ impl MainView {
                             height: 1.0,
                         }),
                     scale_factor,
+                    sid,
+                    self.webview_key_bridge.clone(),
                 ) {
                     Ok(wv) => {
                         if let Some(url) = &url {
@@ -584,10 +586,45 @@ impl MainView {
         // Native views are always above the wgpu render surface in OS z-order.
         let overlay_open = self.state.has_egui_overlay_open();
 
+        // 단축키 정책 스냅샷 갱신 — 백엔드 콜백은 이 값만 보고 "host 가 가져갈 키"
+        // 를 동기 판정한다. 스냅샷 생성은 바인딩 필드 전체를 String 으로 모으는 작업이라
+        // 매 프레임 하지 않고, keybindings 가 실제로 바뀐 프레임에만 다시 만든다.
+        if self.webview_policy_src.as_ref() != Some(&self.core_state.settings.keybindings) {
+            self.webview_key_bridge.set_policy(
+                crate::webview::HostShortcutPolicy::from_keybindings(
+                    &self.core_state.settings.keybindings,
+                ),
+            );
+            self.webview_policy_src = Some(self.core_state.settings.keybindings.clone());
+        }
+
+        // overlay 가 열리는 순간 webview 가 쥐고 있던 **키보드 포커스를 host 창으로
+        // 회수**한다. 숨기는 것(`set_visible(false)`)과 포커스를 놓는 것은 OS 레벨에서
+        // 별개라, 회수하지 않으면 방금 연 popup/dialog 가 키를 못 받는다. 닫힐 때
+        // 자동 복원은 하지 않는다 — host 가 native 자식으로 키보드 포커스를 밀어넣는
+        // 것은 사용자 포커스 조작의 재현이고(`docs/design/policies/focus.md`), 키
+        // 포워딩이 있는 지금은 문서를 다시 클릭하지 않아도 단축키가 그대로 동작한다.
+        //
+        // 회수는 **이 창이 OS 포커스를 쥐고 있을 때만** 시도한다. 백엔드도 "포커스가
+        // 실제로 자기 자식 창 안에 있는가" 를 각자 확인하지만, 창 단위 조건을 여기서
+        // 한 번 더 걸어 IPC 로 popup 이 열렸을 뿐인 상황에서 다른 앱의 OS 키보드
+        // 포커스에 손대지 않게 한다(불가침 원칙 1, `docs/identity.md`).
+        if overlay_open {
+            if !self.webview_overlay_focus_released && self.base.focused {
+                for wv in self.webviews.values() {
+                    wv.release_keyboard_focus();
+                }
+                self.webview_overlay_focus_released = true;
+            }
+        } else {
+            self.webview_overlay_focus_released = false;
+        }
+
         // Update bounds/visibility for existing webviews.
         // reveal(=native 페이지 노출)은 navigation 이 성공 완료(Done)일 때만 — Loading/Failed/
         // Idle 이면 native overlay 를 숨겨 그 자리에 egui chrome(spinner/error/placeholder)이
         // 보이게 한다(S-W3 가 지적한 "loading 중 overlay 가 spinner 를 덮는" 문제 해소).
+        let mut any_visible = false;
         for (sid, wv) in &self.webviews {
             // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
             if let Some(bounds) = active_html.get(sid) {
@@ -597,7 +634,11 @@ impl MainView {
                 && active_html.contains_key(sid)
                 && wv.nav_state() == crate::webview::NavState::Done;
             wv.set_visible(reveal);
+            any_visible |= reveal;
         }
+        // 키 폴링 tick 의 게이트(`app::webview_keys`) — 드러난 webview 가 없으면
+        // 키가 그리로 갈 수 없으므로 폴링을 세우지 않는다.
+        self.webview_any_visible = any_visible;
 
         // Remove webviews for closed Html surfaces
         self.webviews.retain(|sid, _| all_html_ids.contains(sid));

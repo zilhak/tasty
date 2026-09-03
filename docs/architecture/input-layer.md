@@ -156,8 +156,8 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 
 `has_egui_overlay_open` 에 무대가 들어가 있어도 나머지 둘은 각자의 식을 본다 — 그 함수의
 프로덕션 소비처는 WebView 표시 하나뿐이다. 게다가 `keyboard_overlay_open()` 은 **정의가
-하나인데 소비 지점이 넷**이고, 그 넷이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
-무대는 지점마다 명시적으로 배선한다 — 아래 여섯 곳이 전부다.
+하나인데 소비 지점이 다섯**이고, 그 다섯이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
+무대는 지점마다 명시적으로 배선한다 — 아래 일곱 곳이 전부다.
 
 | # | 지점 | 무대 항 | 근거 |
 |---|------|--------|------|
@@ -165,10 +165,11 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 | 2 | `src/view/main/keyboard.rs` 터미널 포워딩 게이트 | **없음** | 같은 함수 **앞**의 0단계 게이트(`try_consume_fullscreen_stage_key`)가 무대 키를 전부 소비하고 return 하므로 여기까지 오지 않는다. 그 게이트가 사라지면 이 식도 무대 항이 필요해진다 |
 | 3 | `src/view/main/ime.rs` | `\|\| fullscreen_stage_active()` | 필수. 무대만 떠 있으면 `keyboard_overlay_open()` 의 네 항이 전부 false 라 아무도 안 막고, 조합 중이던 IME 의 Commit 이 뒤 터미널 PTY 로 샌다 |
 | 4 | `src/app/plugin_glue/shortcut.rs` plugin 단축키 | `\|\| fullscreen_stage_active()` | 필수. 이 경로는 `dispatch_window_event_to_view` **이전에** 호출되므로(`src/app/event_handler.rs`) 2 의 0단계 게이트가 아예 도달하지 못한다 |
-| 5 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
-| 6 | `has_egui_overlay_open()` 정의 | 정의에 포함 | WebView 가 무대 위로 뚫고 나오지 못하게 |
+| 5 | `src/app/webview_keys.rs` native webview 포워딩 키 | `\|\| fullscreen_stage_active()` | 필수. webview 자식 창에서 올라온 키는 winit `KeyboardInput` 경로를 타지 않아 2 의 0단계 게이트를 거치지 않는다([ADR-0102](../adr/0102-webview-key-forwarding.md)) |
+| 6 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
+| 7 | `has_egui_overlay_open()` 정의 | 정의에 포함 | WebView 가 무대 위로 뚫고 나오지 못하게 |
 
-1·3·4 가 같은 항을 각자 OR 하는 모양이라 "`keyboard_overlay_open()` 정의 안으로 넣으면
+1·3·4·5 가 같은 항을 각자 OR 하는 모양이라 "`keyboard_overlay_open()` 정의 안으로 넣으면
 되지 않나" 가 자연스러운 질문이다. 넣지 않은 이유는 2 다 — 그 지점은 무대에 대해 다른
 답(0단계 게이트가 이미 처리)을 쓰고 있고, 정의를 바꾸면 이 술어의 의미가 "키보드 오버레이"
 에서 "키보드 오버레이 또는 무대" 로 넓어져 앞으로의 호출자에게도 그 결정이 따라붙는다.

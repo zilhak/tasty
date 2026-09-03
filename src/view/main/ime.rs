@@ -79,7 +79,7 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
         return;
     }
 
-    // 포커스가 egui-mesh surface(markdown/image 등)면 IME 를 plugin 으로 forward 해
+    // 포커스가 egui-mesh surface(`image` 등)면 IME 를 plugin 으로 forward 해
     // 라이브 preedit 을 그 surface 의 egui TextEdit 이 인라인 표시하게 한다(터미널
     // overlay 경로 대신). commit-only 가 아니라 조합 중 preedit 문자열도 나른다.
     if let Some(sid) = w.focused_egui_mesh_surface_id() {

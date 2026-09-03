@@ -18,6 +18,7 @@ use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
+use super::keys::WebViewKeyBridge;
 use super::{NavState, WebViewBounds};
 
 pub struct PlatformWebView {
@@ -43,6 +44,9 @@ pub struct PlatformWebView {
     /// 로 비우고 plugin 에 `webview.navigation_attempt` 로 forward — "원격 http(s)
     /// 차단" 판정과 독립적으로 차단 여부와 무관하게 쌓인다.
     pending_navigations: Rc<RefCell<Vec<String>>>,
+    /// 부모 winit X11 창. `release_keyboard_focus` 가 키보드 포커스를 여기로
+    /// 되돌린다(overlay 가 열려 webview 를 숨길 때).
+    parent_x11_window: std::os::raw::c_ulong,
 }
 
 impl PlatformWebView {
@@ -50,6 +54,8 @@ impl PlatformWebView {
         window: &(impl HasWindowHandle + HasDisplayHandle),
         bounds: WebViewBounds,
         scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<WebViewKeyBridge>,
     ) -> Result<Self, String> {
         let parent_xid = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
             RawWindowHandle::Xlib(w) => w.window,
@@ -209,6 +215,40 @@ impl PlatformWebView {
             });
         }
 
+        // 키 포워딩 + 모델 포커스 동기화. 두 시그널 모두 WebView 위젯에 `after` 없이
+        // 연결하므로 WebKitGTK 의 클래스 핸들러보다 **먼저** 실행된다 — 키는 여기서
+        // 소비 여부가 그 자리에서 정해지고(`Propagation::Stop` 이면 페이지가 못 본다),
+        // 클릭은 항상 `Proceed` 로 흘려 페이지 동작을 건드리지 않는다.
+        {
+            let bridge = key_bridge.clone();
+            webview.connect_key_press_event(move |_wv, ev| {
+                // press 만 온다(release 는 별도 시그널). GDK 는 auto-repeat 도 같은
+                // 시그널로 보내지만 press 이벤트에 repeat 플래그가 없다 — host 단축키는
+                // 모두 edge 동작이라 반복 발화해도 사용자가 키를 누르고 있는 동안의
+                // 의도와 일치한다(터미널 winit 경로도 repeat 를 걸러내지 않는다).
+                if ev.is_modifier() {
+                    return gtk::glib::Propagation::Proceed;
+                }
+                let Some(key) = gdk_keyval_to_winit_key(ev.keyval()) else {
+                    return gtk::glib::Propagation::Proceed;
+                };
+                if bridge.capture_key(surface_id, key, gdk_state_to_winit_mods(ev.state())) {
+                    gtk::glib::Propagation::Stop
+                } else {
+                    gtk::glib::Propagation::Proceed
+                }
+            });
+        }
+        {
+            let bridge = key_bridge.clone();
+            webview.connect_button_press_event(move |_wv, _ev| {
+                // 클릭은 winit 에 도달하지 않으므로(`try_click_to_activate` 미실행)
+                // host 모델 포커스를 여기서 대신 알려준다. 페이지 동작은 그대로.
+                bridge.note_focus(surface_id);
+                gtk::glib::Propagation::Proceed
+            });
+        }
+
         gtk_window.show_all();
 
         Ok(Self {
@@ -221,6 +261,7 @@ impl PlatformWebView {
             block_remote,
             nav_state,
             pending_navigations,
+            parent_x11_window: parent_xid as _,
         })
     }
 
@@ -281,6 +322,95 @@ impl PlatformWebView {
             }
             self.gtk_window.hide();
         }
+    }
+
+    /// 키보드 포커스를 부모 winit 창으로 되돌린다. host 가 egui overlay 를 열어
+    /// webview 를 숨길 때 호출한다 — 숨기는 것(`XUnmapWindow`)과 키보드 포커스를
+    /// 놓는 것은 X11 에서 별개라, 회수하지 않으면 방금 연 popup 이 키를 못 받는다.
+    ///
+    /// **X 입력 포커스가 실제로 이 webview 창 안에 있을 때만** 회수한다. 무조건
+    /// `XSetInputFocus` 를 부르면 IPC 로 popup 을 여는 것만으로 다른 앱이 쥐고 있던
+    /// OS 키보드 포커스를 tasty 가 뺏는다 — 에이전트 행동이 사용자 포커스에 닿는
+    /// 것이라 불가침 원칙 1 위반이다(`docs/identity.md`). 창 자체가 활성인지는
+    /// 호출부(`sync_webviews`)가 `base.focused` 로 한 번 더 건다.
+    pub fn release_keyboard_focus(&self) {
+        self.assert_origin_thread();
+        if !self.x11_focus_is_inside() {
+            return;
+        }
+        // SAFETY: self 가 살아있으면 x11_display 는 valid 하고 parent_x11_window 는
+        // 이 webview 를 만든 winit 창(부모)이다. 호출은 origin thread(위 assert).
+        unsafe {
+            (self.xlib.XSetInputFocus)(
+                self.x11_display as _,
+                self.parent_x11_window,
+                x11_dl::xlib::RevertToParent,
+                x11_dl::xlib::CurrentTime,
+            );
+        }
+        // SAFETY: 위와 동일(valid display, origin thread). 요청을 즉시 밀어낸다.
+        unsafe {
+            (self.xlib.XFlush)(self.x11_display as _);
+        }
+    }
+
+    /// 현재 X 입력 포커스가 이 webview 창 자신이거나 그 하위 창인지.
+    fn x11_focus_is_inside(&self) -> bool {
+        let mut focus: std::os::raw::c_ulong = 0;
+        let mut revert: std::os::raw::c_int = 0;
+        // SAFETY: display 는 valid(위 호출부가 origin thread 를 이미 확인). 두 out
+        // 파라미터는 살아있는 스택 변수의 주소다.
+        unsafe {
+            (self.xlib.XGetInputFocus)(self.x11_display as _, &mut focus, &mut revert);
+        }
+        // None(0)/PointerRoot(1) 은 특정 창이 아니다 — 회수할 대상이 없다.
+        if focus <= 1 {
+            return false;
+        }
+        let mut w = focus;
+        // 부모 체인을 거슬러 올라가며 이 창을 만나는지 본다. WebKit 이 만드는 내부
+        // 창까지 쳐도 깊이는 얕아 상한 32 로 충분하고, 상한이 있어야 서버 상태가
+        // 깨져도 무한 루프가 되지 않는다.
+        for _ in 0..32 {
+            if w == self.x11_window {
+                return true;
+            }
+            let Some(parent) = self.x11_parent_of(w) else {
+                return false;
+            };
+            if parent == 0 || parent == w {
+                return false;
+            }
+            w = parent;
+        }
+        false
+    }
+
+    /// `XQueryTree` 로 창의 부모 xid 를 얻는다(실패 시 `None`).
+    fn x11_parent_of(&self, window: std::os::raw::c_ulong) -> Option<std::os::raw::c_ulong> {
+        let mut root: std::os::raw::c_ulong = 0;
+        let mut parent: std::os::raw::c_ulong = 0;
+        let mut children: *mut std::os::raw::c_ulong = std::ptr::null_mut();
+        let mut nchildren: std::os::raw::c_uint = 0;
+        // SAFETY: display 는 valid(origin thread 확인 완료), out 파라미터는 전부 살아있는
+        // 스택 변수 주소다. children 은 Xlib 이 할당하며 바로 아래에서 해제한다.
+        let ok = unsafe {
+            (self.xlib.XQueryTree)(
+                self.x11_display as _,
+                window,
+                &mut root,
+                &mut parent,
+                &mut children,
+                &mut nchildren,
+            )
+        };
+        if !children.is_null() {
+            // SAFETY: 바로 위 XQueryTree 가 할당해 돌려준 배열이며 여기서만 해제한다.
+            unsafe {
+                (self.xlib.XFree)(children.cast());
+            }
+        }
+        (ok != 0).then_some(parent)
     }
 
     /// 현재 navigation 생명주기 상태(load-changed/load-failed 시그널이 갱신).
@@ -352,5 +482,117 @@ impl Drop for PlatformWebView {
             (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
         }
         self.gtk_window.close();
+    }
+}
+
+/// GDK modifier 상태 → winit `ModifiersState`.
+///
+/// `matches_binding` 이 winit 규칙으로 판정하므로 여기서 표현을 맞춘다. Linux 에서
+/// 바인딩 토큰 `alt` 는 winit `ALT`(GDK `MOD1_MASK`)에 대응하고 `option` 은 쓰이지
+/// 않는다(`docs/design/policies/key-mapping.md` 의 위치 기반 추상화 — macOS 에서만
+/// Command/Option 로 갈라진다).
+fn gdk_state_to_winit_mods(state: gtk::gdk::ModifierType) -> winit::keyboard::ModifiersState {
+    use gtk::gdk::ModifierType;
+    use winit::keyboard::ModifiersState;
+    let mut mods = ModifiersState::empty();
+    mods.set(
+        ModifiersState::CONTROL,
+        state.contains(ModifierType::CONTROL_MASK),
+    );
+    mods.set(
+        ModifiersState::SHIFT,
+        state.contains(ModifierType::SHIFT_MASK),
+    );
+    mods.set(ModifiersState::ALT, state.contains(ModifierType::MOD1_MASK));
+    mods.set(
+        ModifiersState::SUPER,
+        state.contains(ModifierType::SUPER_MASK),
+    );
+    mods
+}
+
+/// GDK keyval → winit `Key`. 바인딩 매칭에 쓰이는 표현만 만들면 되므로 named key 는
+/// `binding.rs` 가 이름으로 아는 집합(기능키·편집키·화살표)만 다루고, 나머지는
+/// keyval 의 유니코드 표현을 `Key::Character` 로 올린다. 매핑되지 않는 keyval 은
+/// `None` — 백엔드는 그런 키를 그대로 페이지에 흘린다.
+fn gdk_keyval_to_winit_key(keyval: gtk::gdk::keys::Key) -> Option<winit::keyboard::Key> {
+    use gtk::gdk::keys::constants as k;
+    use winit::keyboard::{Key, NamedKey};
+
+    let named = match keyval {
+        k::Tab | k::ISO_Left_Tab => NamedKey::Tab,
+        k::Return | k::KP_Enter => NamedKey::Enter,
+        k::BackSpace => NamedKey::Backspace,
+        k::Delete | k::KP_Delete => NamedKey::Delete,
+        k::Insert | k::KP_Insert => NamedKey::Insert,
+        k::Home | k::KP_Home => NamedKey::Home,
+        k::End | k::KP_End => NamedKey::End,
+        k::Page_Up | k::KP_Page_Up => NamedKey::PageUp,
+        k::Page_Down | k::KP_Page_Down => NamedKey::PageDown,
+        k::Up | k::KP_Up => NamedKey::ArrowUp,
+        k::Down | k::KP_Down => NamedKey::ArrowDown,
+        k::Left | k::KP_Left => NamedKey::ArrowLeft,
+        k::Right | k::KP_Right => NamedKey::ArrowRight,
+        k::Escape => NamedKey::Escape,
+        k::space | k::KP_Space => NamedKey::Space,
+        k::F1 => NamedKey::F1,
+        k::F2 => NamedKey::F2,
+        k::F3 => NamedKey::F3,
+        k::F4 => NamedKey::F4,
+        k::F5 => NamedKey::F5,
+        k::F6 => NamedKey::F6,
+        k::F7 => NamedKey::F7,
+        k::F8 => NamedKey::F8,
+        k::F9 => NamedKey::F9,
+        k::F10 => NamedKey::F10,
+        k::F11 => NamedKey::F11,
+        k::F12 => NamedKey::F12,
+        _ => {
+            let c = keyval.to_unicode()?;
+            if c.is_control() {
+                return None;
+            }
+            return Some(Key::Character(c.to_string().into()));
+        }
+    };
+    Some(Key::Named(named))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::{Key, ModifiersState, NamedKey};
+
+    #[test]
+    fn keyval_maps_to_character_and_named() {
+        use gtk::gdk::keys::constants as k;
+        assert_eq!(
+            gdk_keyval_to_winit_key(k::d),
+            Some(Key::Character("d".into()))
+        );
+        assert_eq!(
+            gdk_keyval_to_winit_key(k::equal),
+            Some(Key::Character("=".into()))
+        );
+        assert_eq!(
+            gdk_keyval_to_winit_key(k::Escape),
+            Some(Key::Named(NamedKey::Escape))
+        );
+        // modifier 자체는 유니코드가 없어 매핑되지 않는다(백엔드는 `is_modifier`
+        // 로 먼저 거르지만, 변환 단계도 독립적으로 안전하다).
+        assert_eq!(gdk_keyval_to_winit_key(k::Control_L), None);
+    }
+
+    #[test]
+    fn modifier_state_maps_to_winit() {
+        use gtk::gdk::ModifierType;
+        let mods = gdk_state_to_winit_mods(ModifierType::CONTROL_MASK | ModifierType::MOD1_MASK);
+        assert!(mods.control_key());
+        assert!(mods.alt_key());
+        assert!(!mods.shift_key());
+        assert_eq!(
+            gdk_state_to_winit_mods(ModifierType::empty()),
+            ModifiersState::empty()
+        );
     }
 }

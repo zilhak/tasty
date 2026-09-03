@@ -50,6 +50,8 @@ pub(crate) mod sweeps;
 pub(crate) mod timer_report;
 pub(crate) mod timers;
 #[cfg(feature = "gui")]
+pub(crate) mod webview_keys;
+#[cfg(feature = "gui")]
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
 pub(crate) mod window_lifecycle;

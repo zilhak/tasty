@@ -370,6 +370,9 @@ windows = { version = "0.61", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Variant",
+    # webview 키 포워딩이 GetKeyState/SetFocus 로 modifier 상태·포커스를 다룬다
+    # (`src/host_api/webview/windows.rs`).
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",

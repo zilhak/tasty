@@ -69,6 +69,58 @@ modifier 드롭다운에서 **"개별 지정"**(sentinel `KeybindingSettings::IN
 
 modifier 홀드 중 탭바(`tab_bar.rs`)·사이드바(`sidebar/view.rs`)에 뜨는 숫자 키캡은 고정 상수가 아니라 **설정된 슬롯 키**를 그린다(`switch_overlay::tab_digit(kb, index)`/`workspace_digit(kb, local_idx)`). 슬롯을 `"q"` 로 바꾸면 키캡도 `Q` 로 뜬다(눌러서 가는 곳 = 표시). 워크스페이스 사이드바는 카테고리 토글 on 시 **active 카테고리 내 로컬 인덱스**로 키캡을 매기고 **비활성 카테고리 행에는 키캡을 표시하지 않는다** — 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(전역 인덱스로 표시하던 과거 불일치를 제거). 오버레이 modifier 상태는 egui raw_input(실제 사용자 키)만 반영하므로 IPC/에이전트로는 강제 표시할 수 없다. **개별 지정 축은 오버레이 대상에서 자동 제외**된다(위 "개별 지정 모드" 참조).
 
+### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
+
+`rendering = "webview"` kind(`markdown`·`html`)는 host 의 wgpu 표면이 아니라 **OS 자식 창/뷰**
+위에 그려진다(X11 child window + WebKitGTK / WKWebView subview / child HWND + WebView2).
+그 자식이 키보드 입력을 받으면 winit 최상위 창은 `WindowEvent::KeyboardInput` 을 아예 받지
+못하므로, 아무 조치가 없으면 그 상태에서 사용자가 설정한 단축키가 통째로 죽는다. 그래서 세
+백엔드가 native 키를 가로채 host 로 올린다([ADR-0102](../../adr/0102-webview-key-forwarding.md)).
+
+- **계약은 한 곳**: 백엔드는 자기 native 키 표현(GDK keyval / NSEvent
+  `charactersIgnoringModifiers` / Win32 VK)을 winit `Key`+`ModifiersState` 로 정규화해
+  `WebViewKeyEvent` 로 만들고 창마다 하나뿐인 `WebViewKeyBridge` 에 올린다
+  (`src/host_api/webview/keys.rs`). "host 가 가져가는가" 판정은 그 브리지에서만 하고,
+  판정 자체는 콜백 안에서 **동기**라 백엔드가 페이지 전파를 그 자리에서 막는다. 실제 액션은
+  host 가 다음 프레임에 큐를 비우며 실행하므로 페이지와 host 가 같은 키를 이중 처리하지 않는다.
+- **가져갈 콤보는 `KeybindingSettings` 에서 전량 도출**한다 — 고정 액션 필드 +
+  quick-switch 3 축 합성 콤보 + 스크립트 바인딩. 포워딩 계층에 키 리터럴은 없다.
+- **페이지에 남기는 것** 두 가지: ① `ctrl`/`alt`/`option` 중 하나도 없는 콤보(무수식·shift
+  전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함.
+  ② 페이지 예약 액션 `find`·`copy`·`cut`·`paste`·`select_all` — 페이지가 자체로 같은 의미를
+  구현한다(markdown 의 문서 내 검색 등).
+- **key-up 은 어느 백엔드도 올리지 않는다**(press 만). host 는 실려온 modifier 값만
+  읽고 자기 `base.modifiers` 를 갱신하지 않으므로 modifier stuck 이 생기지 않는다.
+- **auto-repeat 필터는 플랫폼이 갈린다** — macOS(`isARepeat`)·Windows(`WasKeyDown`)는 걸러
+  내고, **Linux/GDK 는 걸러내지 않는다**(GTK `key-press-event` 에 repeat 플래그가 없고,
+  press/release 를 직접 세는 대체 판정은 X 서버의 detectable auto-repeat 설정에 따라 정상
+  press 를 삼킬 수 있다). host 단축키는 전부 edge 동작이라 반복 발화가 무해하고, winit
+  터미널 경로도 repeat 를 걸러내지 않아 tasty 내 다른 경로와 일관된다.
+- **모델 포커스는 클릭에만 따라간다** — 백엔드가 native 클릭/포커스 획득을 통지하면 host 가
+  `focused_pane`/`focused_surface` 를 맞춘다. 키 도착은 근거로 쓰지 않는다(X11 은 포인터가
+  자식 창 위이기만 해도 키를 넣으므로, 키를 근거로 삼으면 focus-follows-mouse 가 된다).
+- **overlay 개폐**: egui overlay 가 열려 webview 를 숨길 때 키보드 포커스를 host 창으로
+  회수한다(숨김과 포커스 해제는 세 OS 모두 별개). 닫힐 때 자동 복원은 하지 않는다.
+  회수는 **창이 활성(`base.focused`)이고, 포커스가 실제로 그 webview 자식 안에 있을 때만**
+  한다 — overlay 는 IPC 로도 열리므로 무조건 회수하면 tasty 가 다른 앱의 OS 키보드
+  포커스를 빼앗는다(불가침 원칙 1).
+- **폴링 tick 은 Linux 에서만 세워진다.** GDK 는 winit 과 다른 X 연결로 이벤트를 받아
+  루프를 깨우지 못해, 드러난 webview 가 있고 창이 활성인 동안만 16ms tick 으로 GTK 를
+  펌프한다. macOS/Windows 는 native 키 콜백이 winit 과 같은 이벤트 루프에서 발화해 폴링이
+  필요 없다. **이 한정은 조건부 컴파일이 아니라 런타임 arm 분기다** — `Tick::WebviewKeyPoll`
+  과 `WEBVIEW_KEY_POLL_INTERVAL`(`src/app/timers.rs`)은 `#[cfg(feature = "gui")]` 로만 게이트돼
+  세 OS 모두 컴파일되고, `reschedule_webview_key_poll` 의
+  `let arm = needs_poll && cfg!(target_os = "linux")` 가 Linux 에서만 tick 을 세운다(non-Linux 는
+  `hub.cancel` 만 탄다). `cfg!` 은 컴파일타임 상수라 접히므로 다른 두 OS 의 폴링 비용은
+  실질 0 이다. `#[cfg(target_os = "linux")]` 가 실제로 걸린 곳은 GTK 펌프 호출
+  (`src/app/webview_keys.rs` 의 `pump_gtk_events()`) 하나뿐이다.
+- **plugin 명령 단축키는 아직 포함되지 않는다** — 정책은 `KeybindingSettings` 에서만
+  도출하므로, plugin 이 `command.register` 로 등록한 콤보는 webview 에 포커스가 있는 동안
+  발화하지 않는다.
+- 실행 검증은 Linux/X11 만 됐다. Windows 는 `cargo check --target x86_64-pc-windows-gnu`
+  타입 검증까지, macOS 는 로컬 크로스 툴체인이 없어 컴파일 검증도 하지 못했다 — 둘 다
+  실기 미검증이다.
+
 ### 편집 — 녹화 + 충돌
 
 Settings Keybindings 탭에서 키 조합을 직접 **녹화**해 할당한다. 충돌(같은 조합이 다른 액션에 이미) 시 확인 팝업으로 수락/거부. 편집은 draft 에 쌓이고 Save 시 커밋(`crud.rs`). quick-switch 슬롯의 bare-key 녹화·충돌 흐름은 위 [quick-switch 섹션 UI](#quick-switch-섹션-ui-tabworkspace-서브탭) 참조.
@@ -116,5 +168,6 @@ General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Im
 
 ## 관련
 
+- [ADR-0102](../../adr/0102-webview-key-forwarding.md) — webview 자식 창의 키를 host 로 포워딩하는 결정
 - [design/policies/key-mapping](../../design/policies/key-mapping.md) — modifier 매핑·OS 메뉴 key equivalent 정책
 - [settings](../settings/index.md) — 편집 표면

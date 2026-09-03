@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
+use super::keys::WebViewKeyBridge;
 use super::{NavState, WebViewBounds};
 
 pub struct PlatformWebView {
@@ -36,6 +37,9 @@ pub struct PlatformWebView {
     /// 비우고 plugin 에 forward — "원격 http(s) 차단"(WebResourceRequested, 이 큐와 무관하게
     /// 독립 동작)과는 별개로 차단 여부와 무관하게 모든 navigation 시도마다 쌓인다.
     pending_navigations: Rc<RefCell<Vec<String>>>,
+    /// 부모 winit HWND. `release_keyboard_focus` 가 키보드 포커스를 여기로 되돌린다
+    /// (overlay 가 열려 webview 를 숨길 때).
+    parent_hwnd: HWND,
 }
 
 impl PlatformWebView {
@@ -43,6 +47,8 @@ impl PlatformWebView {
         window: &impl HasWindowHandle,
         bounds: WebViewBounds,
         scale_factor: f64,
+        surface_id: u32,
+        key_bridge: Rc<WebViewKeyBridge>,
     ) -> std::result::Result<Self, String> {
         let parent = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
             RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut std::ffi::c_void),
@@ -268,6 +274,57 @@ impl PlatformWebView {
                 .add_NavigationCompleted(&h_done, &mut tok_done)
                 .map_err(|e| format!("add_NavigationCompleted failed: {e}"))?;
 
+            // 키 포워딩 — `AcceleratorKeyPressed` 는 정확히 이 목적을 위한 API 다
+            // (WebView2 가 페이지에 키를 넘기기 **전에** host 에게 먼저 묻는다).
+            // `SetHandled(true)` 면 페이지가 그 키를 보지 못한다.
+            let key_bridge_cb = key_bridge.clone();
+            let mut tok_key: i64 = 0;
+            let h_key = AcceleratorKeyPressedEventHandler::create(Box::new(
+                move |_sender, args| -> windows::core::Result<()> {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
+                    args.KeyEventKind(&mut kind)?;
+                    // press 만 포워딩한다(up 은 무시). Alt 조합은 SYSTEM_KEY_DOWN 으로 온다.
+                    if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                        && kind != COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN
+                    {
+                        return Ok(());
+                    }
+                    let mut status = COREWEBVIEW2_PHYSICAL_KEY_STATUS::default();
+                    args.PhysicalKeyStatus(&mut status)?;
+                    // auto-repeat 제외 — 직전에 이미 눌려 있던 키는 반복 이벤트다.
+                    if status.WasKeyDown.as_bool() {
+                        return Ok(());
+                    }
+                    let mut vk: u32 = 0;
+                    args.VirtualKey(&mut vk)?;
+                    let Some(key) = vk_to_winit_key(vk) else {
+                        return Ok(());
+                    };
+                    if key_bridge_cb.capture_key(surface_id, key, current_winit_mods()) {
+                        args.SetHandled(true)?;
+                    }
+                    Ok(())
+                },
+            ));
+            controller
+                .add_AcceleratorKeyPressed(&h_key, &mut tok_key)
+                .map_err(|e| format!("add_AcceleratorKeyPressed failed: {e}"))?;
+
+            // 클릭 등으로 webview 가 포커스를 가져가면 host 모델 포커스를 맞춘다 —
+            // 그 클릭은 winit 에 도달하지 않아 `try_click_to_activate` 가 안 돈다.
+            let key_bridge_focus = key_bridge.clone();
+            let mut tok_focus: i64 = 0;
+            let h_focus = FocusChangedEventHandler::create(Box::new(
+                move |_sender, _args| -> windows::core::Result<()> {
+                    key_bridge_focus.note_focus(surface_id);
+                    Ok(())
+                },
+            ));
+            controller
+                .add_GotFocus(&h_focus, &mut tok_focus)
+                .map_err(|e| format!("add_GotFocus failed: {e}"))?;
+
             Ok(Self {
                 hwnd,
                 controller,
@@ -276,8 +333,48 @@ impl PlatformWebView {
                 allow_remote,
                 nav_state,
                 pending_navigations,
+                parent_hwnd: parent,
             })
         }
+    }
+
+    /// 키보드 포커스를 부모 winit 창으로 되돌린다(overlay 개시 시). 숨기는 것과
+    /// 포커스를 놓는 것은 Win32 에서도 별개라, 회수하지 않으면 방금 연 popup 이
+    /// 키를 못 받는다.
+    ///
+    /// **키보드 포커스가 실제로 이 webview 자식 창 안에 있을 때만** 회수한다 —
+    /// Linux/macOS 백엔드와 같은 규칙이다. 포그라운드 잠금이 알아서 막아주리라 기대하지
+    /// 않고 명시적으로 건다: 그렇지 않으면 IPC 로 popup 을 여는 것만으로 tasty 가
+    /// 사용자 포커스에 손대는 셈이 된다(불가침 원칙 1, `docs/identity.md`).
+    pub fn release_keyboard_focus(&self) {
+        if !self.focus_is_inside() {
+            return;
+        }
+        // SAFETY: parent_hwnd 는 이 webview 를 만든 winit 창이고 self 가 살아있는
+        // 동안 valid. 호출은 main thread(winit event loop).
+        unsafe {
+            let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(self.parent_hwnd));
+            // reason: 포커스 이동 실패는 창이 이미 사라지는 중이라는 뜻이라 되돌릴
+            // 것이 없다. 직전 포커스 HWND 를 돌려주는 API 라 에러가 아니라 None 이
+            // 정상 경로에도 나오므로 로그도 남기지 않는다.
+        }
+    }
+
+    /// 현재 키보드 포커스가 이 webview 창 자신이거나 그 하위 창인지.
+    fn focus_is_inside(&self) -> bool {
+        // SAFETY: 호출은 main thread(winit event loop). GetFocus 는 인자가 없고, 이
+        // 스레드 메시지 큐가 활성이 아니면 널 HWND 를 돌려준다 — 다른 앱이 포커스를
+        // 쥔 상황이 여기서 걸러진다.
+        let focus = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetFocus() };
+        if focus.is_invalid() {
+            return false;
+        }
+        if focus == self.hwnd {
+            return true;
+        }
+        // SAFETY: self.hwnd 는 self 수명 동안 valid 하고 focus 는 바로 위에서 널이 아님을
+        // 확인했다.
+        unsafe { windows::Win32::UI::WindowsAndMessaging::IsChild(self.hwnd, focus).as_bool() }
     }
 
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
@@ -416,5 +513,103 @@ impl Drop for PlatformWebView {
                 tracing::trace!("DestroyWindow failed: {e}");
             }
         }
+    }
+}
+
+/// 현재 modifier 키 상태 → winit `ModifiersState`.
+///
+/// `AcceleratorKeyPressed` args 는 modifier 상태를 싣지 않으므로 키보드 상태를
+/// 직접 읽는다. Windows 에서 바인딩 토큰 `alt` 는 winit `ALT` 에 대응하고 `option`
+/// 은 쓰이지 않는다(`docs/design/policies/key-mapping.md`).
+fn current_winit_mods() -> winit::keyboard::ModifiersState {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    };
+    use winit::keyboard::ModifiersState;
+    // SAFETY: GetKeyState 는 호출 스레드의 키보드 상태만 읽는 순수 조회 API 다.
+    let down = |vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| -> bool {
+        (unsafe { GetKeyState(vk.0 as i32) } as u16 & 0x8000) != 0
+    };
+    let mut mods = ModifiersState::empty();
+    mods.set(ModifiersState::CONTROL, down(VK_CONTROL));
+    mods.set(ModifiersState::SHIFT, down(VK_SHIFT));
+    mods.set(ModifiersState::ALT, down(VK_MENU));
+    mods.set(ModifiersState::SUPER, down(VK_LWIN) || down(VK_RWIN));
+    mods
+}
+
+/// Win32 virtual-key → winit `Key`. 바인딩 매칭에 쓰이는 표현만 만들면 되므로
+/// `binding.rs` 가 이름으로 아는 named key 집합과 문자/숫자/기호만 다루고, 나머지는
+/// `None`(백엔드는 그대로 페이지에 흘린다).
+fn vk_to_winit_key(vk: u32) -> Option<winit::keyboard::Key> {
+    use winit::keyboard::{Key, NamedKey};
+    let named = match vk as u16 {
+        0x09 => NamedKey::Tab,
+        0x0D => NamedKey::Enter,
+        0x08 => NamedKey::Backspace,
+        0x2E => NamedKey::Delete,
+        0x2D => NamedKey::Insert,
+        0x24 => NamedKey::Home,
+        0x23 => NamedKey::End,
+        0x21 => NamedKey::PageUp,
+        0x22 => NamedKey::PageDown,
+        0x26 => NamedKey::ArrowUp,
+        0x28 => NamedKey::ArrowDown,
+        0x25 => NamedKey::ArrowLeft,
+        0x27 => NamedKey::ArrowRight,
+        0x1B => NamedKey::Escape,
+        0x20 => NamedKey::Space,
+        0x70 => NamedKey::F1,
+        0x71 => NamedKey::F2,
+        0x72 => NamedKey::F3,
+        0x73 => NamedKey::F4,
+        0x74 => NamedKey::F5,
+        0x75 => NamedKey::F6,
+        0x76 => NamedKey::F7,
+        0x77 => NamedKey::F8,
+        0x78 => NamedKey::F9,
+        0x79 => NamedKey::F10,
+        0x7A => NamedKey::F11,
+        0x7B => NamedKey::F12,
+        // 문자·숫자는 소문자/숫자 문자로 올린다(`matches_binding` 이 대소문자 무시).
+        c @ 0x41..=0x5A => {
+            return Some(Key::Character(((c as u8 + 32) as char).to_string().into()));
+        }
+        c @ 0x30..=0x39 => return Some(Key::Character(((c as u8) as char).to_string().into())),
+        c @ 0x60..=0x69 => {
+            // 넘패드 0~9.
+            return Some(Key::Character(
+                ((c as u8 - 0x60 + b'0') as char).to_string().into(),
+            ));
+        }
+        0xBB | 0x6B => return Some(Key::Character("=".into())), // OEM_PLUS / numpad ADD
+        0xBD | 0x6D => return Some(Key::Character("-".into())), // OEM_MINUS / numpad SUBTRACT
+        0xBC => return Some(Key::Character(",".into())),
+        0xBE => return Some(Key::Character(".".into())),
+        0xBF => return Some(Key::Character("/".into())),
+        0xC0 => return Some(Key::Character("`".into())),
+        0xDB => return Some(Key::Character("[".into())),
+        0xDC => return Some(Key::Character("\\".into())),
+        0xDD => return Some(Key::Character("]".into())),
+        0xDE => return Some(Key::Character("'".into())),
+        0xBA => return Some(Key::Character(";".into())),
+        _ => return None,
+    };
+    Some(Key::Named(named))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::{Key, NamedKey};
+
+    #[test]
+    fn vk_maps_to_character_and_named() {
+        assert_eq!(vk_to_winit_key(0x44), Some(Key::Character("d".into()))); // VK_D
+        assert_eq!(vk_to_winit_key(0x32), Some(Key::Character("2".into()))); // VK_2
+        assert_eq!(vk_to_winit_key(0xBB), Some(Key::Character("=".into()))); // VK_OEM_PLUS
+        assert_eq!(vk_to_winit_key(0x1B), Some(Key::Named(NamedKey::Escape)));
+        // modifier 자체는 매핑하지 않는다(단독으로는 어떤 단축키도 매칭되지 않는다).
+        assert_eq!(vk_to_winit_key(0x11), None); // VK_CONTROL
     }
 }
