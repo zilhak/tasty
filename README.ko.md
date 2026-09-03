@@ -9,7 +9,7 @@ English: [README.md](README.md)
 [![Version](https://img.shields.io/badge/version-0.10.2-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#라이선스)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](docs/installation.md)
-[![Workspace](https://img.shields.io/badge/workspace-43%20crates-orange)](crates/)
+[![Workspace](https://img.shields.io/badge/workspace-48%20crates-orange)](crates/)
 
 WezTerm / Alacritty 같은 GPU 가속 터미널이 사람의 타이핑 경험 자체에 집중한다면, Tasty 는 그 위에 "AI 에이전트가 직접 조작할 수 있는 터미널"이라는 좌표를 더한다 — 모든 동작 표면이 사람의 키보드/마우스뿐 아니라 IPC/CLI 로도 동일하게 열려 있다.
 
@@ -21,7 +21,7 @@ Tasty 의 모든 API 는 **사용자 행동**(키보드/마우스/OS 네이티�
 
 - **크로스 플랫폼** — Windows / macOS / Linux 모두 네이티브 (winit + wgpu).
 - **GPU 가속 렌더** — 셀 기반 셰이더, 10+ surface 환경에서도 prepare/draw 안정.
-- **Hexagonal 아키텍처** — model + ports + adapters + view + host_api 분리, 43-crate workspace.
+- **Hexagonal 아키텍처** — model + ports + adapters + view + host_api 분리, 48-crate workspace.
 - **AI 에이전트 first-class** — IPC 와 CLI 의 모든 동작 표면이 focus-independent ID 기반. 사용자 행동과 에이전트 행동이 완전히 분리됨 (debug 격리).
 
 ## 설치
@@ -62,7 +62,7 @@ cargo build --release
 
 ## 아키텍처
 
-Hexagonal 아키텍처(model + ports + adapters + view + host_api 분리)의 43-crate workspace. 자세한 구조: [`docs/architecture/`](docs/architecture/).
+Hexagonal 아키텍처(model + ports + adapters + view + host_api 분리)의 48-crate workspace. 자세한 구조: [`docs/architecture/`](docs/architecture/).
 
 ## 라이선스
 

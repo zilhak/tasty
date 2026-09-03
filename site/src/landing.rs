@@ -173,7 +173,7 @@ const KO_COPY: Copy = Copy {
                     다른 OS 의 빌드를 깨뜨리지 않는다. 육각형 아키텍처로 \
                     모델 · 포트 · 어댑터 · 뷰를 분리했다.",
     stats: &[
-        ("46", "워크스페이스 크레이트"),
+        ("48", "워크스페이스 크레이트"),
         ("45", "문서화된 기능"),
         ("3", "빌드 프로필"),
         ("MIT", "라이선스"),
@@ -316,7 +316,7 @@ const EN_COPY: Copy = Copy {
                     feature never breaks the build on the others. A hexagonal architecture keeps \
                     model, ports, adapters, and view apart.",
     stats: &[
-        ("46", "workspace crates"),
+        ("48", "workspace crates"),
         ("45", "documented features"),
         ("3", "build profiles"),
         ("MIT", "license"),

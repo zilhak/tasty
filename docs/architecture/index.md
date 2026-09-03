@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 43 개 라이브러리 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
+tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 48 개 라이브러리 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
 
 ## 기술 스택
 
@@ -32,7 +32,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 > 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. `src/engine/` 모듈명은 일부 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)의 전환기 컨테이너로 잠시 남아 있다.
 
-## 워크스페이스 크레이트 (43)
+## 워크스페이스 크레이트 (48)
 
 의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음.
 

@@ -9,7 +9,7 @@
 [![Version](https://img.shields.io/badge/version-0.10.2-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](docs/installation.md)
-[![Workspace](https://img.shields.io/badge/workspace-43%20crates-orange)](crates/)
+[![Workspace](https://img.shields.io/badge/workspace-48%20crates-orange)](crates/)
 
 Where GPU-accelerated terminals like WezTerm and Alacritty focus on the human typing experience, Tasty adds another coordinate on top: a terminal an AI agent can operate directly — every surface is equally open to keyboard/mouse *and* IPC/CLI.
 
@@ -21,7 +21,7 @@ Every Tasty API strictly separates **user actions** (keyboard/mouse/native OS in
 
 - **Cross-platform** — Windows / macOS / Linux, all native (winit + wgpu).
 - **GPU-accelerated rendering** — cell-based shaders, stable prepare/draw even with 10+ surfaces.
-- **Hexagonal architecture** — model + ports + adapters + view + host_api separation, 43-crate workspace.
+- **Hexagonal architecture** — model + ports + adapters + view + host_api separation, 48-crate workspace.
 - **AI agents as first-class citizens** — every IPC/CLI surface is focus-independent and ID-based. User actions and agent actions are fully separated (debug isolation).
 
 ## Installation
@@ -62,7 +62,7 @@ cargo build --release
 
 ## Architecture
 
-A hexagonal architecture (model + ports + adapters + view + host_api separation) across a 43-crate workspace. Full structure: [`docs/architecture/`](docs/architecture/).
+A hexagonal architecture (model + ports + adapters + view + host_api separation) across a 48-crate workspace. Full structure: [`docs/architecture/`](docs/architecture/).
 
 ## License
 
