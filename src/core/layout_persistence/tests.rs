@@ -371,22 +371,38 @@ mod slots {
     /// 그대로다. 원자성의 관측 가능한 흔적이 이 차이 하나다 — "덮어쓴 뒤 `.tmp` 가
     /// 없더라"만으로는 비원자적 write 와 구분되지 않는다.
     fn file_identity(path: &Path) -> Option<u64> {
-        let meta = std::fs::metadata(path).ok()?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            Some(meta.ino())
+            Some(std::fs::metadata(path).ok()?.ino())
         }
         #[cfg(windows)]
         {
-            use std::os::windows::fs::MetadataExt;
-            meta.file_index()
+            // Windows 의 file index 는 `Metadata` 가 아니라 **열린 핸들**에서만 나온다.
+            // std 의 `MetadataExt::file_index()` 는 unstable feature `windows_by_handle`
+            // 이라 stable 툴체인에서 컴파일되지 않으므로 Win32
+            // `GetFileInformationByHandle` 을 직접 호출한다(agent-stream plugin 의 tail
+            // 과 같은 방식). 실패(핸들 열기·API)는 `None` — 호출자가 vacuous 판정으로
+            // 처리한다.
+            use std::os::windows::io::AsRawHandle;
+
+            use windows::Win32::Foundation::HANDLE;
+            use windows::Win32::Storage::FileSystem::{
+                BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+            };
+
+            let file = std::fs::File::open(path).ok()?;
+            let mut info = BY_HANDLE_FILE_INFORMATION::default();
+            // SAFETY: `file` 이 살아 있는 동안 그 raw handle 을 넘기고, 출력 버퍼는 위에서
+            // 초기화한 유효한 `BY_HANDLE_FILE_INFORMATION` 하나다 — Win32 계약을 만족한다.
+            unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }.ok()?;
+            Some((u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow))
         }
         #[cfg(not(any(unix, windows)))]
         {
-            // 이 플랫폼은 파일 실체 id 를 노출하지 않는다 — metadata 는 쓰지 않고
-            // 버린다(호출자가 `None` 을 받아 단정을 어떻게 다룰지 정한다).
-            let _ = meta;
+            // 이 플랫폼은 파일 실체 id 를 노출하지 않는다 — 경로는 쓰지 않고 버린다
+            // (호출자가 `None` 을 받아 단정을 어떻게 다룰지 정한다).
+            let _ = path;
             None
         }
     }

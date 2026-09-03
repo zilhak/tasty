@@ -1593,7 +1593,10 @@ mod tests {
     }
 
     /// 테스트 전용 Run task 빌더 — 필드 대부분이 테스트마다 동일해 중복 축소.
-    #[cfg(unix)]
+    ///
+    /// 빌더 자체는 플랫폼 중립이다 — `Task` 값을 만들 뿐 프로세스를 띄우지 않는다.
+    /// `sh`/`true` 를 실제로 실행하는 테스트만 `#[cfg(unix)]` 로 게이팅하고, 실행 전에
+    /// 실패해야 하는 테스트(task output 치환 실패 등)는 모든 플랫폼에서 이 빌더를 쓴다.
     fn mk_run_task(id: &str, command: Vec<&str>) -> Task {
         use tasty_agent::OnFailure;
         Task {
