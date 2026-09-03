@@ -1,4 +1,4 @@
-<!-- source-hash: 14143442496c -->
+<!-- source-hash: 057f7ca08cc2 -->
 # Git Viewer (`com.tasty.git-viewer`)
 
 - **Status**: Implemented (bundled plugin)
@@ -30,6 +30,10 @@ status/log/diff to that worktree (read-only).
   The worktree containing the cwd the popup received gets a `current` marker; `locked`/`invalid` status badges are shown.
 - **Worktree switching** — selecting a rail row reopens at that worktree's workdir and rebinds status/log/diff.
   **No actual checkout/working dir/HEAD change** (only the plugin popup's internal state changes).
+- **Repo handle** — local mode holds one `Repository` handle for the active worktree and reuses it rather
+  than reopening per operation. Invalidation happens on exactly three conditions — worktree switch · Refresh · repo
+  loss — and Refresh always drops the cache (external edits, worktree add/remove and external commits are always
+  reflected). [ADR-0099](../../adr/0099-git-viewer-repo-handle-cache-and-canonical-dedup.md).
 - **fs access** — git2 reads files directly (bypassing the host fs port), so worktrees outside the cwd are readable too.
   The permission declaration stays `fs.read`.
 - **attach mirror workspaces** — when opened on a mirror surface that has no real PTY/filesystem in the local process

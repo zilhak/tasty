@@ -1,4 +1,4 @@
-<!-- source-hash: 2683f02261ca -->
+<!-- source-hash: 395d79fe10e4 -->
 # Git Viewer popup screen
 
 - **Parent plan**: [../index.md](../index.md)
@@ -55,6 +55,35 @@ regardless of list length.
 - The diff's ±-line tint and hunk header band are painted only up to **that row's own text width** — a value separate
   from the allocated width above (widest of all lines). Painting the band to the allocated width would stretch a short
   row's band to the end of the horizontally scrolled content.
+
+## git queries (the repo handle and invalidation)
+
+Local mode holds **only one `Repository` handle for the active worktree** and reuses it — it does not reopen per
+operation (rationale and alternatives:
+[ADR-0099](../../../adr/0099-git-viewer-repo-handle-cache-and-canonical-dedup.md)). As a result, clicking files in
+succession causes no repo open. The popup's initial load and Refresh are **one open by the plugin's own `discover`** —
+when the active worktree is the popup cwd's worktree (`current`); if the active one is a different worktree it is two,
+one for collecting the list + one for rebinding the target. On top of that, **the opens the worktree list collection
+performs to read each entry's HEAD remain separate** (one each for main + linked) — not what this cache reduces.
+
+There are three invalidation conditions, all explicit.
+
+| Condition | Behaviour |
+|---|---|
+| worktree switch | drops the previous worktree's handle and opens the target worktree afresh |
+| Refresh | drops the handle first, then reopens — external file edits · external `git worktree add/remove` · external commits are always reflected |
+| repo loss | reopen fails → the cache stays empty and "repo lost" is shown |
+
+Handle access is done only as a "take out and put back" pair. The taking side always empties the cache, so if an error
+bails out midway the cache stays empty and the next operation unconditionally reopens — there is no path by which a stale
+handle survives.
+
+The worktree list is re-collected on every Refresh (the only path that reflects external add/remove). The ref pills of
+the commit list are also re-read on every query — refs change with a single commit/branch operation, and the moment of
+the query is exactly the moment that demands the latest state, so they are not cached.
+
+Remote (attach) mode opens no local repo — the host performs the query per request and the plugin receives only wire
+JSON, so this cache is not involved.
 
 ## Visuals per state
 

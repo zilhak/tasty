@@ -1,4 +1,4 @@
-<!-- source-hash: c39a9c768f21 -->
+<!-- source-hash: f5980ea6f8f6 -->
 # IPC / CLI API reference
 
 The whole IPC/CLI surface for operating tasty, listed by namespace. **The truth for methods and permissions is the code** — `crates/tasty-ipc/src/method_meta.rs` (`METHOD_TABLE` / `DEBUG_METHODS`) and the `src/adapters/ipc/handler.rs` router. This document is a map for humans; the *behaviour* of each method is delegated to its feature document.
@@ -30,6 +30,7 @@ Plugin callers need a per-method permission token (`method_meta`). Local callers
 ### Surface interaction
 - Input: `surface.{send,send_key,send_combo,send_to,send_wait_idle,wake,respawn_terminal}`
 - Read / mark: `surface.{set_mark,read_since_mark,parse_since_mark,screen_text,cursor_position,foreground_process,is_typing,locate}`. `screen_text` (and `pty.read`) exclude dim (ghost-suggestion, e.g. Claude Code autocomplete) cells by default — include them with `show_dim:true` (CLI `--show-dim`).
+  - `lines:N` (CLI `--lines N`): omitted, the whole visible screen. When given, **the last N lines by content** — blank rows below the content are skipped, and if the screen content falls short of N the rest is filled from scrollback (as much as exists if still short). Blank lines *in the middle* of content are part of the output, so they are preserved and counted. Blank-row detection uses the same value as `show_dim`, so `--show-dim` does not change the number of lines returned. Even while an alternate screen (TUI) is up, the shortfall is filled from the primary scrollback — the alt screen has no scrollback of its own.
 - Commands (OSC 133): `surface.{commands,last_command,command_at}`
 - Meta: `surface.meta.{set,get,unset,list}` · `surface.set_cwd`
 - Output observers: `output.observe_{start,stop,list,info}`
