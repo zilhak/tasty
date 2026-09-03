@@ -14,12 +14,13 @@
 
 ### 두 상태 — full / collapsed
 
-접기 버튼으로 full ↔ collapsed 토글. collapsed 는 아이콘만 남긴 좁은 형태.
+접기 버튼으로 full ↔ collapsed 토글. collapsed 는 아이콘만 남긴 좁은 형태 (카테고리 토글 on 이면 레일에 카테고리 경계 `---` 버튼도 놓인다 — 아래 영역 구성).
 
 ### 영역 구성
 
 - **헤더**: 워드마크 `tasty.` + 수박 로고 + 접기 버튼.
 - **워크스페이스 영역** (남는 높이 전부): "Workspaces" heading + 워크스페이스 카드 목록 + New workspace 버튼.
+  - **카테고리 토글 on** (설정 → 일반 → "워크스페이스 카테고리", `workspace_categories_enabled`): 같은 영역이 **카테고리 섹션으로 그룹 렌더**된다 — full 은 카테고리 헤더 + 소속 카드, collapsed 레일은 카테고리 경계 `---` 버튼 + 소속 아바타 — 그리고 New workspace 버튼은 full/collapsed 양쪽에서 숨는다. 섹션·헤더·레일 팝업의 동작과 시각은 [`features/workspace-category/`](../workspace-category/index.md) 가 정의한다 (여기엔 복제하지 않음 — 연결 개념).
 - **하단**: 도구 / 플러그인 / 설정 버튼.
 
 ### 워크스페이스 조작
@@ -31,14 +32,15 @@
   프레임에만 최소 이동으로 보정하므로(egui `scroll_to_rect`, align 없음) 사용자가 수동으로
   스크롤해 둔 상태를 매 프레임 덮어쓰지 않는다. collapsed 사이드바는 `ScrollArea` 자체가
   없어 해당 없음.
-- **재정렬**: 카드 drag-and-drop.
-- **생성**: New workspace 버튼(좌클릭) / 우클릭 → 프리셋으로 생성.
+- **재정렬**: 카드 drag-and-drop (full). 카테고리 토글 on 이면 다른 카테고리 섹션에 드롭해 소속을 옮기는 경로가 추가된다 → [`features/workspace-category/`](../workspace-category/index.md).
+- **생성**: New workspace 버튼(좌클릭) / 우클릭 → 프리셋으로 생성 — 카테고리 토글 off 일 때. on 이면 버튼이 숨고 카테고리 헤더 메뉴·레일 `---` 팝업의 Add workspace 로 생성한다 (경로 전체는 → [`features/workspace-category/`](../workspace-category/index.md)).
 - **attach 인디케이터**: 다른 client(원격 사용자)가 그 Workspace 를 점유 중이면 빨간 인디케이터 ([점유 모델](../../concepts/actors.md)).
 - **mirror 인디케이터**: 그 Workspace 가 원격 인스턴스의 로컬 mirror([remote-attach](../remote-attach/index.md))이면 — full 은 이름과 subtitle 사이 별도 줄에 하늘색 fill+border "REMOTE" pill(`>_→` glyph 포함), collapsed 레일은 아바타 우하단 하늘색 corner chip(변경 없음). 좌측 status dot 은 실행상태(running/idle) 전용이라 mirror 색을 싣지 않으며, notif(우상단)·attached(둘레 ring)와 시각 채널이 분리된다.
 
 ## 인터페이스
 
 - **사용자**: 클릭(전환/버튼), 드래그(재정렬), 접기 토글.
+- **워크스페이스 영역의 카테고리 조작은 다른 기능으로 위임** (토글 on 시 헤더 클릭/우클릭·레일 `---` 클릭·섹션 간 드래그): → [`features/workspace-category/`](../workspace-category/index.md)
 - **하단 버튼은 다른 기능으로 위임** (연결 개념 — 사이드바는 진입점만, 내용은 각 문서):
   - 도구 버튼 → [`features/tools-menu/`](../tools-menu/index.md)
   - 플러그인 버튼 → [`features/plugin-system/`](../plugin-system/index.md)
@@ -48,12 +50,14 @@
 
 - 워크스페이스/Pane/Tab/Surface 자체의 동작 정의 — 사이드바는 *전환·목록* 만. 도메인은 [구조 계층](../../concepts/hierarchy.md) 및 해당 feature.
 - 도구/플러그인/설정 *창의 내용* — 버튼은 진입점일 뿐, 내용은 각 feature.
+- 카테고리 자체의 동작(CRUD·전환·접힘 영속·키캡) — 사이드바는 그룹 렌더의 *자리* 만 제공, 동작은 [`features/workspace-category/`](../workspace-category/index.md).
 
 ## Acceptance Criteria
 
 - [ ] 접기 버튼 클릭 시 full ↔ collapsed 가 토글된다.
 - [ ] 워크스페이스 카드 클릭 시 해당 Workspace 로 전환된다.
-- [ ] New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
+- [ ] 카테고리 토글 off: New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
+- [ ] 카테고리 토글 on: New workspace 버튼이 full/collapsed 모두에서 숨고, 워크스페이스 영역이 카테고리 섹션으로 그룹 렌더된다 (섹션·생성 경로의 세부 AC 는 [`features/workspace-category/`](../workspace-category/index.md)).
 - [ ] 다른 client 가 점유 중인 Workspace 카드에 점유 인디케이터가 표시된다.
 - [ ] 도구/플러그인/설정 버튼이 각각 도구 메뉴 / 플러그인 창 / 설정 창을 연다.
 
@@ -61,9 +65,9 @@
 
 ## 구현
 
-- `src/adapters/ui/sidebar/full.rs` (full), `collapsed.rs` (collapsed), `view.rs` (공통 레이아웃 — 헤더/하단/목록), `tools.rs` (도구 버튼 → 도구 메뉴).
+- `src/adapters/ui/sidebar/full.rs` (full), `collapsed.rs` (collapsed), `view.rs` (공통 레이아웃 — 헤더/하단/목록, 카테고리 on 시 섹션 헤더·레일 `---` 버튼 포함), `tools.rs` (도구 버튼 → 도구 메뉴).
 - 헤더 로고: `assets/icons/icon_256.png`. 하단 버튼 아이콘: `icons::{TOOLS, PLUG, SETTINGS}`.
 
 ## 화면
 
-- [screens/sidebar.md](screens/sidebar.md) — full/collapsed 레이아웃과 하단 버튼의 연결.
+- [screens/sidebar.md](screens/sidebar.md) — full/collapsed 레이아웃(카테고리 토글 on 변형 포함)과 하단 버튼의 연결.
