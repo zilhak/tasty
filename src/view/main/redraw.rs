@@ -390,7 +390,6 @@ impl MainView {
         Vec<u32>,
     ) {
         let terminal_rect = self.compute_terminal_rect();
-        let tab_bar_h = self.state.tab_bar_height.value() as f64;
 
         // Collect all Html surface IDs and their visibility/bounds
         let active_ws = self.state.active_workspace;
@@ -402,27 +401,76 @@ impl MainView {
             let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
+                    // tab bar 아래 콘텐츠 영역 — 탭 내부 분할(SurfaceGroup)의 leaf rect
+                    // 는 이 영역을 기준으로 계산한다(`impl_pty` / `focus` 와 동일 유도).
+                    let content_rect = crate::model::PhysicalRect {
+                        x: pane_rect.x,
+                        y: pane_rect.y + self.state.tab_bar_height,
+                        width: pane_rect.width,
+                        height: (pane_rect.height - self.state.tab_bar_height)
+                            .max(crate::model::PhysicalPx(1.0)),
+                    };
                     for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                        let surface = tab.surface();
-                        if surface.webview_url().is_some() {
-                            let Some(sid) = surface.surface_id() else {
+                        let Some(layout) = tab.layout_if_initialized() else {
+                            continue;
+                        };
+                        // Only visible if: active workspace AND active tab
+                        let is_visible = ws_idx == active_ws && tab_idx == pane.active_tab;
+                        // 탭당 1 개(`Tab::surface()` = 포커스 leaf)가 아니라 레이아웃
+                        // 트리의 모든 leaf 를 본다 — 비포커스 leaf 의 webview 도
+                        // native overlay 를 가져야 한다.
+                        for (sid, leaf_rect) in layout.compute_rects(content_rect) {
+                            let Some(surface) = layout.find_surface(sid) else {
                                 continue;
                             };
+                            if surface.webview_url().is_none() {
+                                continue;
+                            }
                             all_html_ids.push(sid);
-                            // Only visible if: active workspace AND active tab
-                            let is_active_tab = tab_idx == pane.active_tab;
-                            if ws_idx == active_ws && is_active_tab {
+                            if is_visible {
                                 // Inset bounds by divider drag threshold so that
                                 // the native WebView does not cover the divider
                                 // hit-test area, allowing pane resize via drag.
+                                //
+                                // inset 은 leaf 의 변이 **pane 콘텐츠 영역의 외곽**에
+                                // 닿을 때만 적용한다. 탭 내부 분할(SurfaceGroup)의 leaf
+                                // 사이 경계에는 divider gap(`SURFACE_BORDER_WIDTH`)만
+                                // 두고 여백을 주지 않는다 — 터미널끼리의 분할과 같은
+                                // 간격으로 보이게 하고 화면 공간을 낭비하지 않기 위함.
+                                // 위쪽 변은 tab bar 가 있어 원래부터 inset 이 없다.
+                                // 단독 leaf 이면 네 변이 모두 외곽이라 기존 동작 그대로다.
                                 let inset = 4.0_f64;
+                                let on_edge =
+                                    |a: crate::model::PhysicalPx, b: crate::model::PhysicalPx| {
+                                        (a - b).abs() < crate::model::PhysicalPx(0.5)
+                                    };
+                                let left = if on_edge(leaf_rect.x, content_rect.x) {
+                                    inset
+                                } else {
+                                    0.0
+                                };
+                                let right = if on_edge(
+                                    leaf_rect.x + leaf_rect.width,
+                                    content_rect.x + content_rect.width,
+                                ) {
+                                    inset
+                                } else {
+                                    0.0
+                                };
+                                let bottom = if on_edge(
+                                    leaf_rect.y + leaf_rect.height,
+                                    content_rect.y + content_rect.height,
+                                ) {
+                                    inset
+                                } else {
+                                    0.0
+                                };
                                 let bounds = crate::webview::WebViewBounds {
-                                    x: (pane_rect.x.value() as f64 + inset) / scale_factor,
-                                    y: (pane_rect.y.value() as f64 + tab_bar_h) / scale_factor,
-                                    width: (pane_rect.width.value() as f64 - inset * 2.0).max(1.0)
+                                    x: (leaf_rect.x.value() as f64 + left) / scale_factor,
+                                    y: leaf_rect.y.value() as f64 / scale_factor,
+                                    width: (leaf_rect.width.value() as f64 - left - right).max(1.0)
                                         / scale_factor,
-                                    height: (pane_rect.height.value() as f64 - tab_bar_h - inset)
-                                        .max(1.0)
+                                    height: (leaf_rect.height.value() as f64 - bottom).max(1.0)
                                         / scale_factor,
                                 };
                                 active_html.insert(sid, bounds);
@@ -612,22 +660,18 @@ impl MainView {
         }
     }
 
-    /// surface_id 로 RemoteSurface 를 찾아 반환. `find_webview_url` 과 같은 순회 +
-    /// RemoteSurface 다운캐스트. nav_state mirror 기록에 쓴다.
-    fn find_remote_surface(
-        &self,
-        surface_id: u32,
-    ) -> Option<&crate::plugin_bridge::remote_surface::RemoteSurface> {
+    /// surface_id 로 surface 를 전 workspace 에서 찾는다. 탭당 1 개만 보는
+    /// `Tab::surface()`(포커스 leaf) 가 아니라 각 탭의 `SurfaceLayout` 트리 전체를
+    /// 훑으므로, 탭 내부 분할(SurfaceGroup)의 비포커스 leaf 도 도달한다.
+    fn find_surface_anywhere(&self, surface_id: u32) -> Option<&dyn crate::model::Surface> {
         for ws in &self.core_state.workspaces {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        let surface = tab.surface();
-                        if surface.surface_id() == Some(surface_id) {
-                            return surface
-                                .as_any()
-                                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
-                                );
+                        if let Some(layout) = tab.layout_if_initialized()
+                            && let Some(surface) = layout.find_surface(surface_id)
+                        {
+                            return Some(surface);
                         }
                     }
                 }
@@ -636,21 +680,19 @@ impl MainView {
         None
     }
 
-    /// webview surface 의 kind. `find_webview_url` 과 같은 순회.
+    /// surface_id 로 RemoteSurface 를 찾아 반환. nav_state mirror 기록에 쓴다.
+    fn find_remote_surface(
+        &self,
+        surface_id: u32,
+    ) -> Option<&crate::plugin_bridge::remote_surface::RemoteSurface> {
+        self.find_surface_anywhere(surface_id)?
+            .as_any()
+            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+    }
+
+    /// webview surface 의 kind.
     fn webview_surface_kind(&self, surface_id: u32) -> Option<&'static str> {
-        for ws in &self.core_state.workspaces {
-            for &pid in &ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                    for tab in &pane.tabs {
-                        let surface = tab.surface();
-                        if surface.surface_id() == Some(surface_id) {
-                            return Some(surface.kind());
-                        }
-                    }
-                }
-            }
-        }
-        None
+        self.find_surface_anywhere(surface_id).map(|s| s.kind())
     }
 
     /// surface 의 plugin 설정을 해석해 webview 에 적용할 값으로 만든다. html webview(`com.tasty.html`)
@@ -705,22 +747,9 @@ impl MainView {
 
     /// Find the URL for an Html panel by surface ID.
     fn find_webview_url(&self, surface_id: u32) -> Option<String> {
-        let engine = &self.core_state;
-        for ws in &engine.workspaces {
-            for &pid in &ws.pane_layout().all_pane_ids() {
-                if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                    for tab in &pane.tabs {
-                        let surface = tab.surface();
-                        if surface.surface_id() == Some(surface_id)
-                            && let Some(url) = surface.webview_url()
-                        {
-                            return Some(url.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        None
+        self.find_surface_anywhere(surface_id)?
+            .webview_url()
+            .map(|u| u.to_string())
     }
 
     /// 네이티브 컨텍스트 메뉴를 띄우고 결과 처리를 `cont` 로 예약한다.

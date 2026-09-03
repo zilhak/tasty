@@ -31,14 +31,18 @@ pub fn handle_set_url(
     };
 
     // surface_id 와 일치하는 RemoteSurface 찾기 + set_webview_url 호출.
+    // 탭당 1 개(`Tab::surface()` = 포커스 leaf)가 아니라 레이아웃 트리 전체를
+    // 조회한다 — surface 레벨 split(SurfaceGroup)의 비포커스 leaf 도 대상이다.
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    let surface = tab.surface();
-                    if surface.surface_id() != Some(sid) {
+                    let Some(layout) = tab.layout_if_initialized() else {
                         continue;
-                    }
+                    };
+                    let Some(surface) = layout.find_surface(sid) else {
+                        continue;
+                    };
                     if let Some(rs) = surface
                         .as_any()
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
@@ -94,14 +98,17 @@ pub fn notify_navigation_attempt(
     surface_id: u32,
     url: &str,
 ) {
+    // `handle_set_url` 과 동일하게 레이아웃 트리 전체를 조회한다(split 비포커스 leaf 포함).
     for ws in &engine.workspaces {
         for &pid in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pid) {
                 for tab in &pane.tabs {
-                    let surface = tab.surface();
-                    if surface.surface_id() != Some(surface_id) {
+                    let Some(layout) = tab.layout_if_initialized() else {
                         continue;
-                    }
+                    };
+                    let Some(surface) = layout.find_surface(surface_id) else {
+                        continue;
+                    };
                     if let Some(rs) = surface
                         .as_any()
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
@@ -118,5 +125,159 @@ pub fn notify_navigation_attempt(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::SplitDirection;
+    use serde_json::json;
+
+    /// 탭의 focused leaf 를 유지한 채 `kind` surface 를 형제 leaf 로 추가하고
+    /// 새 surface id 를 돌려준다. `Core::apply_split_surface`(`DomainIntent::SplitSurface`)
+    /// 의 모델 효과만 재현한다 — 새 leaf 는 비포커스다.
+    fn split_in_kind_surface(
+        state: &crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        target_surface_id: u32,
+        kind: &str,
+        params: &Value,
+    ) -> u32 {
+        let new_sid = engine.next_ids.next_surface();
+        let surface = engine
+            .create_surface_via_registry(kind, new_sid, None, params)
+            .expect("create surface via registry");
+        let ws = &mut engine.workspaces[state.active_workspace];
+        let pane_id = ws.focused_pane;
+        ws.pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("focused pane")
+            .split_surface_by_id_with_surface(target_surface_id, SplitDirection::Vertical, surface)
+            .expect("split surface");
+        new_sid
+    }
+
+    fn focused_surface_id(state: &crate::state::AppState, engine: &crate::core::CoreState) -> u32 {
+        let ws = &engine.workspaces[state.active_workspace];
+        let pane = ws
+            .pane_layout()
+            .find_pane(ws.focused_pane)
+            .expect("focused pane");
+        pane.tabs[pane.active_tab].focused_surface
+    }
+
+    fn set_url(
+        state: &crate::state::AppState,
+        engine: &crate::core::CoreState,
+        sid: u32,
+    ) -> JsonRpcResponse {
+        handle_set_url(
+            state,
+            engine,
+            json!(1),
+            &json!({ "surface_id": sid, "url": "file:///tmp/doc.html" }),
+        )
+    }
+
+    /// split 탭의 **비포커스** leaf 도 `webview.set_url` 로 도달해야 한다.
+    /// 수정 전에는 `Tab::surface()`(포커스 leaf 1 개)만 봐서 `surface_id not found` 였다.
+    #[test]
+    fn set_url_reaches_non_focused_split_leaf() {
+        let (state, mut engine) = crate::state::tests::test_state();
+        let terminal_sid = focused_surface_id(&state, &engine);
+        let md_sid = split_in_kind_surface(
+            &state,
+            &mut engine,
+            terminal_sid,
+            "markdown",
+            &json!({ "file": "/workspace/proj/readme.md" }),
+        );
+
+        // 포커스는 원래 터미널 leaf 에 남아 있어야 한다(= md_sid 는 비포커스 leaf).
+        assert_eq!(focused_surface_id(&state, &engine), terminal_sid);
+
+        let resp = set_url(&state, &engine, md_sid);
+        assert!(
+            resp.error.is_none(),
+            "non-focused split leaf should be reachable: {:?}",
+            resp.error
+        );
+        assert_eq!(resp.result, Some(json!({ "ok": true })));
+    }
+
+    /// 3 leaf 중첩 split(`Split { first: Split{..}, second: Leaf }`)의 모든 leaf 가 조회된다.
+    #[test]
+    fn set_url_reaches_all_leaves_of_nested_split() {
+        let (state, mut engine) = crate::state::tests::test_state();
+        let terminal_sid = focused_surface_id(&state, &engine);
+        // 1차: terminal | markdown_a → 2차: (terminal | markdown_b) | markdown_a
+        let md_a = split_in_kind_surface(
+            &state,
+            &mut engine,
+            terminal_sid,
+            "markdown",
+            &json!({ "file": "/workspace/proj/a.md" }),
+        );
+        let md_b = split_in_kind_surface(
+            &state,
+            &mut engine,
+            terminal_sid,
+            "markdown",
+            &json!({ "file": "/workspace/proj/b.md" }),
+        );
+
+        for sid in [md_a, md_b] {
+            let resp = set_url(&state, &engine, sid);
+            assert!(
+                resp.error.is_none(),
+                "leaf {sid} should be reachable: {:?}",
+                resp.error
+            );
+        }
+    }
+
+    /// 단독 leaf 탭(회귀 없음)과 존재하지 않는 id(기존 에러 보존).
+    #[test]
+    fn set_url_sole_leaf_ok_and_unknown_id_errors() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        state
+            .test_add_markdown_tab(&mut engine, "/workspace/proj/readme.md".to_string())
+            .unwrap();
+        let md_sid = focused_surface_id(&state, &engine);
+        let resp = set_url(&state, &engine, md_sid);
+        assert!(
+            resp.error.is_none(),
+            "sole leaf regression: {:?}",
+            resp.error
+        );
+
+        let resp = set_url(&state, &engine, 999_999);
+        assert_eq!(
+            resp.error.map(|e| e.message),
+            Some("surface_id not found".to_string())
+        );
+    }
+
+    /// webview 가 아닌 surface 는 기존대로 명시적 에러를 낸다(비포커스 leaf 라도).
+    #[test]
+    fn set_url_on_terminal_leaf_reports_not_webview() {
+        let (state, mut engine) = crate::state::tests::test_state();
+        let terminal_sid = focused_surface_id(&state, &engine);
+        // 탭을 split 로 만들기 위해 markdown leaf 를 붙인다. 이 테스트가 검사하는
+        // 대상은 터미널 leaf 쪽 응답이라 새 surface id 는 쓰지 않는다(반환값은
+        // `u32` — 삼켜지는 `Result` 가 아니다. 실패는 헬퍼 안에서 panic 한다).
+        split_in_kind_surface(
+            &state,
+            &mut engine,
+            terminal_sid,
+            "markdown",
+            &json!({ "file": "/workspace/proj/readme.md" }),
+        );
+        let resp = set_url(&state, &engine, terminal_sid);
+        assert_eq!(
+            resp.error.map(|e| e.message),
+            Some("surface is not a webview-enabled RemoteSurface".to_string())
+        );
     }
 }
