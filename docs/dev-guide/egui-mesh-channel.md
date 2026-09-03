@@ -196,8 +196,10 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
    (`SurfaceInvalidated`/`PopupInvalidated`)로 host 에 재-forward 를 요청한다. 이 지연
    알림은 **plugin 프로세스당 상주 타이머 스레드 1 개**(`SelfRepaintTimer`, 첫 요청 때
    lazily 기동 후 재사용)가 발사한다 — 요청마다 스레드를 만들지 않는다([ADR-0097](../adr/0097-plugin-self-repaint-resident-timer.md)).
-   `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(스크롤 스무딩이
-   대표적) 요청당 스레드 방식은 애니메이션 중 프레임마다 생성·소멸을 반복한다.
+   `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(`Context::request_repaint`
+   를 부르는 위젯 애니메이션이 대표적) 요청당 스레드 방식은 애니메이션 중 프레임마다 생성·소멸을
+   반복한다. 휠 스크롤은 아래 "스크롤은 한 pass 에 전량 전달된다" 대로 도착 프레임에서 소진되므로
+   이 경로를 타지 않는다 — 조각 수 상한(64)을 넘겨 분할을 포기한 극단적 델타만 예외다.
    `self_repaint_armed`(`AtomicBool`) 로 대기 요청을 인스턴스당 최대 1 건으로 묶고, 타이머가
    fire 하면(가드 해제 → 알림 순) 풀려 다음 `render()` 가 여전히 필요하면 재-arm 한다
    (자연 수렴, idle 상태에서 요청이 쌓이지 않음). 스레드가 하나라 그것이 죽으면 self-repaint
@@ -325,6 +327,22 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
 | IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
 | 복사 단축키(`egui_copy` capability 를 가진 kind 한정) | `Copy` | `egui_mesh_push_copy` ← `copy_paste.rs` `handle_copy_shortcut` |
+
+**스크롤은 한 pass 에 전량 전달된다.** SDK 의 와이어→egui 매핑(`egui_surface.rs` 의
+`push_scroll_events`)이 `Scroll` 한 건을 egui 의 "이미 부드러운 입력" 판정선(8pt) 아래
+조각들로 쪼개 **같은 프레임의 이벤트 목록**에 넣는다. 쪼개지 않으면 egui 가 델타를
+`unprocessed_scroll_delta` 에 적립해 여러 프레임에 걸쳐 소진하고, egui-mesh 에서는 그
+프레임 하나하나가 `*Invalidated` → `set_context` → 전체 egui pass 라는 프로세스 간 왕복이
+된다([ADR-0108](../adr/0108-egui-mesh-scroll-delivered-in-one-pass.md)). 조각 합은 원본
+델타와 같아 이동량이 보존되고, 잔여 델타가 남지 않아 위 "유휴 상태 방치" 경로도 타지 않는다.
+조각 수 상한(64)을 넘는 극단적 델타만 쪼개지 않고 그대로 넘긴다. 같은 이유로 모든 egui-mesh
+Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_animation`)을 꺼 둔다.
+
+**와이어 `Scroll` 이 담는 단위는 경로마다 다르다.** surface 는 `mouse.rs` 가 winit 델타를 논리
+포인트로 환산해 넣지만(`LineDelta` × 50, `PixelDelta` ÷ ppp), popup·banner 는 host egui 의
+`Event::MouseWheel` 을 `unit` 없이 그대로 넘긴다(`popup_render.rs`·`banner_render.rs`). 따라서
+popup·banner 에서 물리 마우스 휠은 notch 당 1pt 만 도착한다(winit 이 `LineDelta(0, ±1)` 로 주고
+환산이 없으므로) — 분할이 관여하는 것은 트랙패드처럼 포인트 델타가 큰 입력과 surface 경로다.
 
 `MainView.mesh_pointer_hover`(`Option<MeshHoverTarget>`, `Local(surface_id)`/`Attach(surface_id)`)가
 마지막으로 `PointerMoved` 를 받은 mesh surface 1개를 추적한다. `handle_cursor_moved`
@@ -526,8 +544,9 @@ glyph 의 vertex 생성을 건너뛰므로 mesh 바이트는 보이는 만큼이
 Shape 생성 · Vec 할당 · 레이아웃 계산은 전 행에서 발생한다.
 
 plugin 콘텐츠는 **`set_context` 를 받을 때마다 egui pass 를 통째로 다시 돈다.** 스크롤 중에는 휠
-이벤트마다, 그리고 egui 스크롤 스무딩의 self-repaint 마다 set_context 가 오므로 이 비용이 "한 번
-무거운" 것이 아니라 스크롤이 진행되는 동안 매 프레임 반복된다. 목록이 길수록 스크롤이 버벅인다.
+이벤트마다 set_context 가 오므로, 이 비용은 "한 번 무거운" 것이 아니라 휠을 굴리는 동안 입력마다
+반복된다. 목록이 길수록 스크롤이 버벅인다. (휠 델타 하나가 여러 프레임의 스무딩으로 증폭되는
+경로는 위 "스크롤은 한 pass 에 전량 전달된다" 로 닫혀 있다 — 조각 수 상한을 넘긴 델타만 예외.)
 
 ```rust
 egui::ScrollArea::vertical()

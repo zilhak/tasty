@@ -114,3 +114,4 @@
 | 0103 | [활성 로케일은 host 프로세스 env 로 plugin 에 전달한다 — 부팅 단일 스레드 구간에서 한 번 set 한다](0103-plugin-locale-via-host-process-env.md) | Accepted | 2026-09-03 | i18n, locale, plugin, boot, env, unsafe, language-pack |
 | 0104 | [attention 은 소유자만 발동하고, 확인(해제)은 실제로 본 주체가 한다 — 미러의 해제 edge 를 소유 인스턴스로 전달한다](0104-mirror-attention-clear-forwarded-to-owner.md) | Accepted | 2026-09-03 | attention, surface-highlight, remote-attach, mirror, clear, edge-trigger, occupancy, stream-control |
 | 0106 | [위젯 밖 사용자 문자열(알림 제목 · IPC 기본값 · 폴백 라벨)도 `t()` 를 거치고, 기계 식별은 제목이 아니라 식별 필드로 한다](0106-non-widget-user-strings-go-through-i18n.md) | Accepted | 2026-09-03 | i18n, notifications, hooks, ipc, remote-attach, git-viewer, plugin, wire-format |
+| 0108 | [스크롤은 한 pass 에 전량 전달한다 — egui-mesh 는 휠 델타를 쪼개 넣고, 스크롤 애니메이션은 끈다](0108-egui-mesh-scroll-delivered-in-one-pass.md) | Accepted | 2026-09-03 | egui-mesh, plugin-sdk, scroll, self-repaint, performance, theme, animation |

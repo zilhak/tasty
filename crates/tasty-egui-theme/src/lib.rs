@@ -136,6 +136,11 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
         theme.spacing_sm.value().round_ui(),
         theme.spacing_xs.value().round_ui(),
     );
+    // 프로그램적 스크롤(`scroll_to_cursor`/`scroll_to_rect`/`scroll_with_delta`)의
+    // 애니메이션을 끈다. egui 기본값은 최대 300ms 로 `docs/design/systems/theme.md`
+    // "UI 디자인 규칙" 의 애니메이션 상한(150ms)을 넘고, 스크롤은 입력 직후 피드백이
+    // 아니라 콘텐츠 이송이라 같은 표의 "스크롤엔 transition 금지" 쪽에 선다(ADR-0108).
+    style.scroll_animation = egui::style::ScrollAnimation::none();
     ctx.set_style(style);
 }
 

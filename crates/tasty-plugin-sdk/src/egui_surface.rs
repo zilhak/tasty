@@ -38,7 +38,7 @@ use egui::epaint::textures::{TextureOptions, TexturesDelta};
 use egui::epaint::{ImageData, ImageDelta, TextureId};
 use egui::{
     Context, Event, ImeEvent, Key, Modifiers, MouseWheelUnit, OutputCommand, PointerButton, Pos2,
-    RawInput, Rect, vec2,
+    RawInput, Rect, Vec2, vec2,
 };
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
@@ -130,6 +130,12 @@ impl EguiMeshCore {
         ctx.options_mut(|opts| {
             opts.zoom_with_keyboard = false;
         });
+        // 프로그램적 스크롤(`scroll_to_cursor`/`scroll_to_rect`/`scroll_with_delta`)의
+        // 애니메이션을 끈다. egui 기본값은 최대 300ms 인데(`ScrollAnimation::default`),
+        // `docs/design/systems/theme.md` "UI 디자인 규칙" 의 애니메이션 상한은 150ms 이고,
+        // egui-mesh 는 애니메이션 프레임 하나가 곧 프로세스 간 왕복 한 번이다(ADR-0108).
+        // dark/light 두 style 에 모두 박아 테마가 바뀌어도 유지된다.
+        ctx.all_styles_mut(|s| s.scroll_animation = egui::style::ScrollAnimation::none());
         Self {
             ctx,
             last_hash: None,
@@ -1129,8 +1135,72 @@ fn build_raw_input(width_px: u32, height_px: u32, ppp: f32, input: &RawInputWire
     raw.time = input.time;
     raw.focused = input.focused;
     raw.modifiers = map_modifiers(&input.modifiers);
-    raw.events = input.events.iter().filter_map(map_event).collect();
+    raw.events = expand_events(&input.events);
     raw
+}
+
+/// egui 0.31 이 휠 델타를 "이미 부드럽다" 고 판정하는 상한(포인트). `Point` 단위
+/// `MouseWheel` 의 델타 길이가 이 값 **미만**이면 egui 는 그 프레임에서 델타를 전부
+/// `smooth_scroll_delta` 에 반영하고, 이상이면 `unprocessed_scroll_delta` 에 적립해
+/// 여러 프레임에 걸쳐 지수완화로 소진한다(egui-0.31.1 `src/input_state/mod.rs` 의
+/// `is_smooth` 판정과 그 아래 drain 루프). 소진이 끝날 때까지 egui 는 매 pass
+/// `wants_repaint_after() == ZERO` 를 돌려준다.
+const EGUI_SMOOTH_WHEEL_LIMIT: f32 = 8.0;
+
+/// 쪼갠 조각 하나의 목표 길이. 판정선 바로 아래가 아니라 여유를 둬서, 나눗셈의
+/// 부동소수 오차로 한 조각이 판정선에 걸리는 일이 없게 한다.
+const SCROLL_SPLIT_STEP: f32 = EGUI_SMOOTH_WHEEL_LIMIT * 0.9;
+
+/// 한 스크롤 이벤트를 쪼갤 조각 수 상한. 이 이상이 필요한 극단적 델타
+/// (> 460pt, 한 프레임에 몰린 플링)은 쪼개지 않고 그대로 넘긴다 — 이벤트 폭증을
+/// 막기 위해서이며, 그 경우에만 egui 기본 스무딩으로 되돌아간다(변경 전과 동일 동작).
+const SCROLL_SPLIT_MAX_PARTS: usize = 64;
+
+/// 와이어 이벤트 목록을 egui 이벤트 목록으로 펼친다. 스크롤만 1:N 이고
+/// ([`push_scroll_events`]) 나머지는 [`map_event`] 의 1:1 매핑이다.
+fn expand_events(events: &[RawInputEventWire]) -> Vec<Event> {
+    let mut out = Vec::with_capacity(events.len());
+    for e in events {
+        match e {
+            RawInputEventWire::Scroll { x, y } => push_scroll_events(&mut out, vec2(*x, *y)),
+            other => out.extend(map_event(other)),
+        }
+    }
+    out
+}
+
+/// 스크롤 델타를 [`EGUI_SMOOTH_WHEEL_LIMIT`] 아래 조각들로 쪼개 **같은 프레임**에 넣는다.
+///
+/// 쪼개지 않으면 host 가 보낸 휠 한 번(예: 50pt)이 egui 의 다중 프레임 스무딩을 타고,
+/// egui-mesh 는 그 프레임 하나하나가 self-repaint 알림 → `set_context` → 전체 egui pass
+/// 라는 **프로세스 간 왕복**이 된다(ADR-0108). 조각의 합은 원본과 같으므로 스크롤 이동량은
+/// 보존되고, 잔여 델타가 남지 않으므로 "입력이 멈춘 뒤 델타가 남아 뒤늦게 반영되는"
+/// 회귀([`EguiMeshSurface::schedule_self_repaint`] 가 막는 상황)도 생기지 않는다.
+fn push_scroll_events(out: &mut Vec<Event>, delta: Vec2) {
+    let len = delta.length();
+    let parts = if len.is_finite() && len > 0.0 {
+        (len / SCROLL_SPLIT_STEP).ceil() as usize
+    } else {
+        1
+    };
+    if parts <= 1 || parts > SCROLL_SPLIT_MAX_PARTS {
+        out.push(wheel_event(delta));
+        return;
+    }
+    let step = delta / parts as f32;
+    for _ in 0..parts - 1 {
+        out.push(wheel_event(step));
+    }
+    // 마지막 조각은 뺄셈으로 만든다 — 조각 합이 원본 델타에서 멀어지지 않게 한다.
+    out.push(wheel_event(delta - step * (parts - 1) as f32));
+}
+
+fn wheel_event(delta: Vec2) -> Event {
+    Event::MouseWheel {
+        unit: MouseWheelUnit::Point,
+        delta,
+        modifiers: Modifiers::default(),
+    }
 }
 
 fn map_modifiers(m: &ModifiersWire) -> Modifiers {
@@ -1169,11 +1239,9 @@ fn map_event(e: &RawInputEventWire) -> Option<Event> {
             modifiers: map_modifiers(modifiers),
         },
         RawInputEventWire::PointerGone => Event::PointerGone,
-        RawInputEventWire::Scroll { x, y } => Event::MouseWheel {
-            unit: MouseWheelUnit::Point,
-            delta: vec2(*x, *y),
-            modifiers: Modifiers::default(),
-        },
+        // 단독 호출 시의 1:1 매핑. 실제 입력 경로는 [`expand_events`] 가 가로채
+        // [`push_scroll_events`] 로 쪼갠다.
+        RawInputEventWire::Scroll { x, y } => wheel_event(vec2(*x, *y)),
         RawInputEventWire::Key {
             key,
             pressed,
@@ -1699,7 +1767,9 @@ mod tests {
                     pressed: true,
                     modifiers: ModifiersWire::default(),
                 },
-                RawInputEventWire::Scroll { x: 0.0, y: -8.0 },
+                // 분할 임계(`SCROLL_SPLIT_STEP`) 아래라 1:1 로 남는다 — 1:N 분할은
+                // `scroll_delta_is_split_below_egui_smooth_limit` 가 따로 고정한다.
+                RawInputEventWire::Scroll { x: 0.0, y: -4.0 },
                 RawInputEventWire::Key {
                     key: "Enter".into(),
                     pressed: true,
@@ -1845,40 +1915,149 @@ mod tests {
         );
     }
 
-    /// 실제 버그 재현 경로: `Point` 단위 8pt 이상 스크롤 델타(예: 물리 마우스 휠
-    /// notch 가 `mouse.rs` 에서 `*50.0` 스케일된 값)는 egui 내부에서
-    /// `is_smooth=false` 로 판정돼 `unprocessed_scroll_delta` 에 적립되고, 여러
-    /// pass 에 걸쳐 지수완화로 drain 된다(egui 0.31 `input_state/mod.rs:340-394`).
-    /// drain 이 끝나기 전까지 `wants_repaint_after()` 는 `Duration::ZERO`(즉시
-    /// repaint)를 반환하므로, 이 pass 뒤 `pending_self_repaint()` 도 채워져야 한다.
-    #[test]
-    fn large_scroll_delta_leaves_a_pending_self_repaint_request() {
-        let mut surface = EguiMeshSurface::new(1);
-
-        // bootstrap — 폰트 atlas 업로드 등 첫 frame 특유의 잡음을 먼저 안정화한다.
-        surface.run_frame(&ctx_params(320, 200, 1.0), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.label("scrollable content");
-            });
-        });
-
-        let mut params = ctx_params(320, 200, 1.0);
-        params.raw_input.events = vec![RawInputEventWire::Scroll { x: 0.0, y: -50.0 }];
-        surface.run_frame(&params, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.label("scrollable content");
-            });
-        });
-
-        let delay = surface
-            .core
-            .pending_self_repaint()
-            .expect("large scroll delta must leave egui wanting another pass");
-        assert_eq!(
-            delay,
-            Duration::ZERO,
-            "unprocessed scroll delta requests an immediate repaint"
+    /// 한 스크롤 pass 뒤 화면이 멎을 때까지 필요한 **추가 pass 수**. egui-mesh 에서는
+    /// 추가 pass 하나가 곧 self-repaint 알림 → `set_context` → 전체 egui pass 라는
+    /// 프로세스 간 왕복 한 번이다.
+    fn passes_until_settled(events: Vec<Event>) -> usize {
+        let mut core = EguiMeshCore::new();
+        // bootstrap — 폰트 atlas 업로드 등 첫 frame 특유의 요청을 먼저 소진시킨다.
+        for _ in 0..16 {
+            core.render(raw_with(Vec::new()), false, draw_scroll_area);
+            if core.pending_self_repaint().is_none() {
+                break;
+            }
+        }
+        assert!(
+            core.pending_self_repaint().is_none(),
+            "bootstrap must settle before measuring"
         );
+        core.render(raw_with(events), false, draw_scroll_area);
+        let mut extra = 0;
+        while core.pending_self_repaint().is_some() && extra < 64 {
+            core.render(raw_with(Vec::new()), false, draw_scroll_area);
+            extra += 1;
+        }
+        extra
+    }
+
+    fn raw_with(events: Vec<Event>) -> RawInput {
+        let mut raw = build_raw_input(320, 200, 1.0, &RawInputWire::default());
+        raw.events = events;
+        raw
+    }
+
+    /// 스크롤 가능한 데모 UI — 내용이 넘쳐야 `ScrollArea` 가 델타를 소비한다.
+    fn draw_scroll_area(ctx: &Context) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for i in 0..80 {
+                    ui.label(format!("scrollable line {i}"));
+                }
+            });
+        });
+    }
+
+    /// 이 작업의 본체 계약(ADR-0108): 큰 휠 델타(물리 notch 가 `mouse.rs` 에서 `*50.0`
+    /// 스케일된 값)를 쪼개 넣으면, 쪼개지 않고 한 건으로 넣을 때보다 **뒤따르는 왕복 수가
+    /// 뚜렷하게 줄어든다.**
+    ///
+    /// 쪼개지 않으면 egui 가 `is_smooth=false` 로 판정해 `unprocessed_scroll_delta` 에
+    /// 적립하고 여러 pass 에 걸쳐 지수완화로 소진하며, 그 동안 매 pass
+    /// `wants_repaint_after() == ZERO` 를 돌려준다. 쪼개면 판정선 아래라 입력 pass 에서
+    /// 전량 소비된다.
+    #[test]
+    fn splitting_a_wheel_delta_cuts_the_follow_up_repaint_passes() {
+        let delta = vec2(0.0, -50.0);
+        let unsplit = passes_until_settled(vec![wheel_event(delta)]);
+        let mut split_events = Vec::new();
+        push_scroll_events(&mut split_events, delta);
+        let split = passes_until_settled(split_events);
+
+        assert!(
+            unsplit >= 4,
+            "baseline sanity: an unsplit {delta:?} must ride egui's multi-pass smoothing, got {unsplit}"
+        );
+        assert!(
+            split < unsplit,
+            "splitting must cut follow-up passes: split={split} unsplit={unsplit}"
+        );
+        assert!(
+            split <= 2,
+            "a split delta must settle within a pass or two, got {split}"
+        );
+    }
+
+    /// 분할 계약: 조각 하나하나가 egui 의 smooth 판정선 **미만**이고, 조각 합이 원본
+    /// 델타와 (부동소수 오차 범위에서) 같다 — 이동량 보존 = 델타 유실 없음.
+    #[test]
+    fn scroll_delta_is_split_below_egui_smooth_limit() {
+        for delta in [
+            vec2(0.0, -50.0),
+            vec2(0.0, 120.0),
+            vec2(-30.0, 40.0),
+            vec2(0.0, -7.9),
+        ] {
+            let mut out = Vec::new();
+            push_scroll_events(&mut out, delta);
+            let mut sum = Vec2::ZERO;
+            for e in &out {
+                let Event::MouseWheel { unit, delta: d, .. } = e else {
+                    panic!("push_scroll_events must only emit MouseWheel, got {e:?}");
+                };
+                assert_eq!(*unit, MouseWheelUnit::Point);
+                assert!(
+                    d.length() < EGUI_SMOOTH_WHEEL_LIMIT,
+                    "part {d:?} (len {}) must stay under egui's smooth limit",
+                    d.length()
+                );
+                sum += *d;
+            }
+            assert!(
+                (sum - delta).length() < 1e-3,
+                "split parts must sum back to {delta:?}, got {sum:?}"
+            );
+        }
+    }
+
+    /// 임계 아래 델타는 쪼개지 않는다(이벤트 1건 그대로), 0 델타도 그대로 통과한다.
+    #[test]
+    fn small_scroll_delta_is_not_split() {
+        for delta in [vec2(0.0, -4.0), vec2(0.0, 0.0), vec2(1.0, 1.0)] {
+            let mut out = Vec::new();
+            push_scroll_events(&mut out, delta);
+            assert_eq!(out.len(), 1, "{delta:?} must stay a single event");
+        }
+    }
+
+    /// 상한을 넘는 극단적 델타는 쪼개지 않고 그대로 넘긴다(이벤트 폭증 방지).
+    /// 이 경우에만 egui 기본 스무딩으로 되돌아간다.
+    #[test]
+    fn oversized_scroll_delta_falls_back_to_a_single_event() {
+        let mut out = Vec::new();
+        let huge = vec2(
+            0.0,
+            -(SCROLL_SPLIT_STEP * SCROLL_SPLIT_MAX_PARTS as f32) - 1.0,
+        );
+        push_scroll_events(&mut out, huge);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(out[0], Event::MouseWheel { delta, .. } if delta == huge));
+    }
+
+    /// `EguiMeshCore` 는 생성 시점에 프로그램적 스크롤 애니메이션을 꺼 둔다 — dark/light
+    /// 양쪽 style 모두(테마 전환에도 유지). egui-mesh 는 애니메이션 프레임 하나가 곧
+    /// 프로세스 간 왕복 한 번이다(ADR-0108).
+    #[test]
+    fn mesh_context_disables_scroll_animation() {
+        let core = EguiMeshCore::new();
+        let none = egui::style::ScrollAnimation::none();
+        let (dark, light) = core.ctx.options(|o| {
+            (
+                o.dark_style.scroll_animation,
+                o.light_style.scroll_animation,
+            )
+        });
+        assert_eq!(dark, none, "dark style must disable scroll animation");
+        assert_eq!(light, none, "light style must disable scroll animation");
     }
 
     /// [`EguiMeshPopup`] 도 [`EguiMeshCore::pending_self_repaint`] 를 공유한다 — 위

@@ -140,8 +140,9 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 텍스트 대비 | 최소 **4.5:1**. 위반 시 [`ai-verification/visual-verification`](../../ai-verification/visual-verification.md) 체크리스트 |
 | 터미널 콘텐츠 애니메이션 | **0ms** — 셀/스크롤엔 어떤 transition 도 금지(입력 응답성 우선) |
 | UI 위젯 애니메이션 | 짧게(보통 100–150ms), 입력 직후 피드백 한정 |
+| 스크롤 애니메이션 | **0ms** — 스크롤은 입력 직후 피드백이 아니라 콘텐츠 이송이라 위 "터미널 콘텐츠" 쪽 규칙을 따른다. **프로그램적 스크롤**(`scroll_to_*` / `scroll_to_me`)은 host egui 와 모든 egui-mesh Context 양쪽에서 `ScrollAnimation::none()` 으로 즉시 점프한다. **휠 델타를 도착 프레임에서 전량 반영하는 것은 egui-mesh(plugin SDK) 경로에 한한다** — plugin 은 별도 프로세스라 애니메이션 프레임 하나가 곧 프로세스 간 왕복이기 때문이다. host egui 의 휠은 egui-winit 이 `MouseWheelUnit::Line` 으로 넣고 egui 가 이를 항상 다중 프레임으로 소진하므로, 설정창·팔레트·host popup·갤러리의 `ScrollArea` 는 egui 기본 스무딩을 그대로 쓴다([ADR-0108](../../adr/0108-egui-mesh-scroll-delivered-in-one-pass.md)) |
 
-코드에 하드코딩이 보이면 `Theme` 필드로 옮긴다. 새 시각 규칙은 이 표에 추가 후 `Theme` 에 필드 신설.
+코드에 하드코딩이 보이면 `Theme` 필드로 옮긴다. 새 시각 규칙은 이 표에 추가 후 `Theme` 에 필드 신설 — 단 **on/off 정책은 제외한다.** 조절 가능한 수치가 아니라 "끈다"는 결정은 테마마다 달라지지 않는 정책 상수이므로 `Theme`/`ThemeWire` 를 넓히지 않고 이 표와 ADR 을 단일 출처로 둔다(위 애니메이션 3행이 그 예 — `crates/tasty-type-appearance` 에 대응 필드가 없다).
 
 표·드롭다운·버튼처럼 이름이 곧 정체성인 보편 컴포넌트는 인라인으로 그리지 말고 공용 위젯으로 추출한다 — [공용 위젯 제작 정책](../policies/shared-widgets.md).
 
