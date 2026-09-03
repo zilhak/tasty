@@ -42,6 +42,10 @@ pub struct PluginsConfig {
     /// 항목이 없으면 매니페스트의 `default_keybinding` + `binding_mode`가 그대로 적용.
     #[serde(default)]
     pub keybindings: BTreeMap<String, BTreeMap<String, ShortcutOverride>>,
+    /// `keybindings` 가 마지막으로 바뀐 시점의 전역 epoch(직렬화 대상 아님).
+    /// 파생 스냅샷 캐시의 무효화 키 — `shortcut_revision()` 참조.
+    #[serde(skip)]
+    shortcut_revision: u64,
 }
 
 /// 사용자가 plugin 단축키를 어떻게 덮어쓰는지 표현.
@@ -205,6 +209,15 @@ impl PluginsConfig {
             .and_then(|m| m.get(command_id))
     }
 
+    /// 사용자 override 가 마지막으로 바뀐 시점의 전역 epoch. 값이 그대로면 override
+    /// 내용도 그대로다 — plugin 단축키에서 파생된 스냅샷의 캐시 무효화 키로 쓴다
+    /// (webview 키 포워딩 정책, `docs/adr/0102-webview-key-forwarding.md`).
+    /// 디스크에서 갓 읽어온 config 는 0 이며, 소비자는 "이전 값과 다른가" 만 보므로
+    /// 첫 조회에서 자연히 한 번 계산된다.
+    pub fn shortcut_revision(&self) -> u64 {
+        self.shortcut_revision
+    }
+
     /// override를 설정. 같은 키가 있으면 덮어씀.
     pub fn set_shortcut_override(
         &mut self,
@@ -216,6 +229,7 @@ impl PluginsConfig {
             .entry(plugin_id.to_string())
             .or_default()
             .insert(command_id.to_string(), ov);
+        self.shortcut_revision = crate::command_registry::next_shortcut_epoch();
     }
 
     /// override를 제거 (매니페스트 기본값으로 되돌림). 실제 제거됐는지 반환.
@@ -226,6 +240,9 @@ impl PluginsConfig {
         let removed = map.remove(command_id).is_some();
         if map.is_empty() {
             self.keybindings.remove(plugin_id);
+        }
+        if removed {
+            self.shortcut_revision = crate::command_registry::next_shortcut_epoch();
         }
         removed
     }

@@ -592,15 +592,28 @@ impl MainView {
         let overlay_open = self.state.has_egui_overlay_open();
 
         // 단축키 정책 스냅샷 갱신 — 백엔드 콜백은 이 값만 보고 "host 가 가져갈 키"
-        // 를 동기 판정한다. 스냅샷 생성은 바인딩 필드 전체를 String 으로 모으는 작업이라
-        // 매 프레임 하지 않고, keybindings 가 실제로 바뀐 프레임에만 다시 만든다.
-        if self.webview_policy_src.as_ref() != Some(&self.core_state.settings.keybindings) {
-            self.webview_key_bridge.set_policy(
-                crate::webview::HostShortcutPolicy::from_keybindings(
-                    &self.core_state.settings.keybindings,
-                ),
-            );
-            self.webview_policy_src = Some(self.core_state.settings.keybindings.clone());
+        // 를 동기 판정한다. 출처는 둘이다: host `KeybindingSettings` 와 plugin 명령
+        // 레지스트리(매니페스트 default + 사용자 override). 스냅샷 생성은 바인딩을 전부
+        // String 으로 모으는 작업이라 매 프레임 하지 않고, **둘 중 하나가 실제로 바뀐
+        // 프레임에만** 다시 만든다 — plugin 쪽은 등록/해제와 override 변경마다 올라가는
+        // 전역 epoch 두 개로 판정한다(`PluginCommandRegistry::revision` /
+        // `PluginsConfig::shortcut_revision`).
+        let plugin_epoch =
+            plugin_manager.map(|m| (m.command_registry.revision(), m.config.shortcut_revision()));
+        if self.webview_policy_src.as_ref() != Some(&self.core_state.settings.keybindings)
+            || self.webview_policy_plugin_epoch != plugin_epoch
+        {
+            let kb = &self.core_state.settings.keybindings;
+            let plugin_combos = plugin_manager
+                .map(|m| crate::plugin_bridge::key_dispatch::all_command_bindings(m, kb))
+                .unwrap_or_default();
+            self.webview_key_bridge
+                .set_policy(crate::webview::HostShortcutPolicy::from_sources(
+                    kb,
+                    plugin_combos,
+                ));
+            self.webview_policy_src = Some(kb.clone());
+            self.webview_policy_plugin_epoch = plugin_epoch;
         }
 
         // overlay 가 열리는 순간 webview 가 쥐고 있던 **키보드 포커스를 host 창으로

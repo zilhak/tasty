@@ -233,7 +233,12 @@ impl PlatformWebView {
                 let Some(key) = gdk_keyval_to_winit_key(ev.keyval()) else {
                     return gtk::glib::Propagation::Proceed;
                 };
-                if bridge.capture_key(surface_id, key, gdk_state_to_winit_mods(ev.state())) {
+                if bridge.capture_key(
+                    surface_id,
+                    key,
+                    x11_keycode_to_physical(ev.hardware_keycode()),
+                    gdk_state_to_winit_mods(ev.state()),
+                ) {
                     gtk::glib::Propagation::Stop
                 } else {
                     gtk::glib::Propagation::Proceed
@@ -485,6 +490,23 @@ impl Drop for PlatformWebView {
         }
         self.gtk_window.close();
     }
+}
+
+/// X11 hardware keycode → winit `PhysicalKey`.
+///
+/// X11/Wayland 는 linux evdev scancode 에 `+8` 한 값을 keycode 로 쓴다 — winit 의
+/// `PhysicalKeyExtScancode::from_scancode` 가 요구하는 것은 그 offset 을 뺀 evdev 값이다
+/// (winit 문서: "A 32-bit linux scancode, which is X11/Wayland keycode subtracted by 8").
+/// 그래서 이 백엔드는 winit X11 경로와 **같은 표**를 타고, 같은 물리 키에 대해 같은
+/// `KeyCode` 를 낸다 — 비라틴 레이아웃 폴백이 두 경로에서 갈라지지 않는 근거다.
+fn x11_keycode_to_physical(hardware_keycode: u16) -> winit::keyboard::PhysicalKey {
+    use winit::platform::scancode::PhysicalKeyExtScancode;
+    let Some(evdev) = (hardware_keycode as u32).checked_sub(8) else {
+        return winit::keyboard::PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Xkb(
+            hardware_keycode as u32,
+        ));
+    };
+    winit::keyboard::PhysicalKey::from_scancode(evdev)
 }
 
 /// GDK modifier 상태 → winit `ModifiersState`.

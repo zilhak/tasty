@@ -10,7 +10,9 @@ mod numeric;
 mod tests;
 mod zoom;
 
-pub(crate) use binding::{any_binding_pressed_egui, binding_has_modifier, matches_any_binding};
+pub(crate) use binding::{
+    any_binding_pressed_egui, binding_has_modifier, bindings_equivalent, matches_any_binding,
+};
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::{Key, KeyCode, PhysicalKey};
 

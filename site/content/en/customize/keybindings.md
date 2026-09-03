@@ -1,4 +1,4 @@
-<!-- source-hash: c5e6a97ed970 -->
+<!-- source-hash: e4d232bb7c47 -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
@@ -15,6 +15,8 @@ Tasty stores keybindings by the **physical position of the key**. That is why th
 | `option` | (none) | Option (⌥) |
 
 ⌘ on macOS sits in the same place as Alt on Windows · Linux, so the setting value `alt+t` is pressed as `Alt+T` on Windows and `Cmd+T` on macOS. The tables below fill in both columns by this rule.
+
+**Non-Latin keyboards are matched by position too.** Even on a non-Latin layout such as Russian or Greek, keybindings are recognized by the Latin position on the keycap — on a Russian layout, pressing the `H` position (the key that types `Р` in Russian) together with modifiers still triggers the `Ctrl+Shift+H` shortcut. You do not need to re-record shortcuts after switching layouts. The same holds over Markdown and web preview surfaces.
 
 To show the settings screen's notation as the `⌘` `⌥` `⇧` symbols on macOS, change **Alt key display** · **Option key display** · **Shift key display** under **Settings** > **General** > **Display**. The stored values stay the same.
 

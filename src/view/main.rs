@@ -119,6 +119,11 @@ pub struct MainView {
     /// 바인딩 필드 전체를 String 으로 모으는 작업이라 매 프레임 다시 만들지 않고,
     /// 이 값과 달라진 프레임에만 갱신한다.
     pub(crate) webview_policy_src: Option<crate::settings::KeybindingSettings>,
+    /// 같은 스냅샷을 만들 때 본 plugin 쪽 epoch 쌍
+    /// (`PluginCommandRegistry::revision`, `PluginsConfig::shortcut_revision`).
+    /// plugin manager 가 아직 없으면 `None`. 두 값 모두 프로세스 전역 단조 증가라
+    /// registry 가 통째로 재생성돼도 이전 값과 겹치지 않는다.
+    pub(crate) webview_policy_plugin_epoch: Option<(u64, u64)>,
     /// 현재 마우스 hover 중이고 수식키 조건을 만족한 링크. 렌더 및 클릭에 사용.
     pub(crate) hovered_link: Option<HoveredLink>,
     /// 가장 최근에 터미널에 paste한 시각. Ctrl+V 직후 사용자가 옆 키 Ctrl+C를 잘못 눌러
@@ -233,6 +238,7 @@ impl MainView {
             webview_overlay_focus_released: false,
             webview_any_visible: false,
             webview_policy_src: None,
+            webview_policy_plugin_epoch: None,
             hovered_link: None,
             last_terminal_paste_at: None,
             egui_mesh: std::collections::HashMap::new(),

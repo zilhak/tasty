@@ -236,9 +236,23 @@ impl KeyWebView {
         let Some(key) = chars.and_then(|c| ns_chars_to_winit_key(&c.to_string())) else {
             return false;
         };
+        let physical = macos_keycode_to_physical(event.keyCode());
         let ivars = self.ivars();
-        ivars.key_bridge.capture_key(ivars.surface_id, key, mods)
+        ivars
+            .key_bridge
+            .capture_key(ivars.surface_id, key, physical, mods)
     }
+}
+
+/// macOS virtual key code → winit `PhysicalKey`.
+///
+/// `NSEvent.keyCode` 는 레이아웃과 무관한 하드웨어 위치 코드(`kVK_ANSI_*`)이고, winit 의
+/// macOS 경로가 `PhysicalKeyExtScancode::from_scancode` 에 그대로 넣는 값과 같다 —
+/// 그래서 이 백엔드는 winit 키 경로와 같은 `KeyCode` 를 얻는다. 비라틴 레이아웃에서
+/// `charactersIgnoringModifiers` 가 키캡과 다른 문자를 낼 때의 폴백 근거다.
+fn macos_keycode_to_physical(key_code: u16) -> winit::keyboard::PhysicalKey {
+    use winit::platform::scancode::PhysicalKeyExtScancode;
+    winit::keyboard::PhysicalKey::from_scancode(key_code as u32)
 }
 
 /// `view` 자신 또는 그 하위 뷰가 창의 first responder 인지. webview 가 키보드를 실제로

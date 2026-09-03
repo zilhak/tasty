@@ -83,8 +83,29 @@ modifier 홀드 중 탭바(`tab_bar.rs`)·사이드바(`sidebar/view.rs`)에 뜨
   (`src/host_api/webview/keys.rs`). "host 가 가져가는가" 판정은 그 브리지에서만 하고,
   판정 자체는 콜백 안에서 **동기**라 백엔드가 페이지 전파를 그 자리에서 막는다. 실제 액션은
   host 가 다음 프레임에 큐를 비우며 실행하므로 페이지와 host 가 같은 키를 이중 처리하지 않는다.
-- **가져갈 콤보는 `KeybindingSettings` 에서 전량 도출**한다 — 고정 액션 필드 +
-  quick-switch 3 축 합성 콤보 + 스크립트 바인딩. 포워딩 계층에 키 리터럴은 없다.
+- **가져갈 콤보는 `KeybindingSettings` + plugin 명령 레지스트리에서 전량 도출**한다 —
+  고정 액션 필드 + quick-switch 3 축 합성 콤보 + 스크립트 바인딩 + **활성** plugin
+  명령의 effective binding(매니페스트 `default_keybinding` / 사용자 override / host 액션
+  상속). 포워딩 계층에 키 리터럴은 없다.
+- **plugin 바인딩은 scope 로 미리 거르지 않되, 비활성 plugin 은 제외한다** — 스냅샷은
+  활성 plugin 의 모든 명령을 담는 상위집합이다(키가 host 에 도착하는 시점의 모델 포커스를
+  브리지가 claim 시점에는 알 수 없다). 비활성 plugin 명령은 발화 자체가 불가능하므로 claim
+  하면 키가 페이지에도 host 에도 안 가고 사라진다 — `is_disabled` 로 거른다. 도달 이후의
+  우선순위 판정은 winit 경로와 같은 `dispatch_plugin_shortcut_key` 가 그대로 한다 — 모델
+  포커스가 어떤 plugin surface 에 있으면 그 plugin 의 명령만 후보다([key-mapping.md](../../design/policies/key-mapping.md)).
+- **페이지 예약 콤보 대조는 콤보 동등성으로 한다** — plugin 매니페스트는 raw 문자열
+  (`"Ctrl+F"`)이라 사용자 설정(`"ctrl+f"`)과 대소문자·modifier 순서가 다를 수 있어, 실제
+  매칭과 같은 파싱 경로(`shortcuts::bindings_equivalent`)로 정규화해 비교한다. 원시 문자열
+  비교면 표기만 다른 예약 콤보가 필터를 뚫어 페이지의 find/copy 가 죽는다.
+- **스냅샷은 매 프레임 만들지 않는다** — `sync_webviews` 가 `KeybindingSettings` 값과 두
+  epoch(`PluginCommandRegistry::revision()` / `PluginsConfig::shortcut_revision()`)를 직전
+  스냅샷과 비교해 달라진 프레임에만 재생성한다. epoch 는 프로세스 전역 단조 증가
+  `AtomicU64` 라, plugin 재적재로 레지스트리가 통째로 교체돼도 값이 되돌아가지 않는다.
+- **비라틴 레이아웃은 physical key 폴백으로 맞춘다** — 백엔드가 하드웨어 키코드를 함께
+  올리고(X11 `hardware_keycode − 8` / Win32 확장 스캔코드 / macOS `kVK_*`, 셋 다 winit
+  `PhysicalKeyExtScancode::from_scancode` 표현), 브리지가 winit 경로와 **같은 함수**
+  (`shortcuts::physical_key_to_logical`)로 치환한다. 치환은 `ctrl`/`super`/`alt` 중 하나
+  이상이 눌린 경우에만 — 수식 없는 키는 페이지 타이핑·IME 조합 그대로다.
 - **페이지에 남기는 것** 두 가지: ① `ctrl`/`alt`/`option` 중 하나도 없는 콤보(무수식·shift
   전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함.
   ② 페이지 예약 액션 `find`·`copy`·`cut`·`paste`·`select_all` — 페이지가 자체로 같은 의미를
@@ -114,12 +135,14 @@ modifier 홀드 중 탭바(`tab_bar.rs`)·사이드바(`sidebar/view.rs`)에 뜨
   `hub.cancel` 만 탄다). `cfg!` 은 컴파일타임 상수라 접히므로 다른 두 OS 의 폴링 비용은
   실질 0 이다. `#[cfg(target_os = "linux")]` 가 실제로 걸린 곳은 GTK 펌프 호출
   (`src/app/webview_keys.rs` 의 `pump_gtk_events()`) 하나뿐이다.
-- **plugin 명령 단축키는 아직 포함되지 않는다** — 정책은 `KeybindingSettings` 에서만
-  도출하므로, plugin 이 `command.register` 로 등록한 콤보는 webview 에 포커스가 있는 동안
-  발화하지 않는다.
+- **claim 되고도 소실되는 콤보가 있다** — host 가 가져간 뒤 그 프레임의 게이트(모달/무대/
+  kind, plugin 명령이면 포커스된 plugin 게이트)가 거절하면 키는 페이지에도 가지 않는다.
+  포워딩이 만든 손실이 아니라 기존 우선순위 규칙이 드러난 것이다(같은 상황을 wgpu 경로에서
+  재현해도 결과가 같다).
 - 실행 검증은 Linux/X11 만 됐다. Windows 는 `cargo check --target x86_64-pc-windows-gnu`
   타입 검증까지, macOS 는 로컬 크로스 툴체인이 없어 컴파일 검증도 하지 못했다 — 둘 다
-  실기 미검증이다.
+  실기 미검증이다. 스캔코드 → `PhysicalKey` 변환도 같은 경계다(Linux 만 실측, 나머지 둘은
+  winit 구현 대조까지). 비라틴 레이아웃 실기 전환 확인도 Linux/X11 에서만 했다.
 
 ### 편집 — 녹화 + 충돌
 

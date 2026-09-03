@@ -10,6 +10,7 @@
 //! - effective binding 계산 (단계 D): 매니페스트 기본값 + 사용자 override 합성
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tasty_settings::KeybindingSettings;
 
@@ -61,6 +62,17 @@ impl PluginCommandEntry {
     }
 }
 
+/// plugin 단축키에 영향을 주는 변경마다 새로 뽑는 **프로세스 전역 단조 증가** 값.
+///
+/// 소비자는 "지난번에 본 값과 같은가" 만 보고 자기 파생 스냅샷의 재계산 여부를 정한다
+/// (webview 키 포워딩 정책 스냅샷 — `docs/adr/0102-webview-key-forwarding.md`). 전역
+/// 단조라서 registry 를 통째로 새로 만들어도(`PluginCommandRegistry::new`) 값이 겹치지
+/// 않는다 — 인스턴스 지역 카운터였다면 재생성 시 0 으로 되돌아가 stale 스냅샷이 남는다.
+pub(crate) fn next_shortcut_epoch() -> u64 {
+    static EPOCH: AtomicU64 = AtomicU64::new(0);
+    EPOCH.fetch_add(1, Ordering::Relaxed) + 1
+}
+
 /// Plugin command 일람. PluginManager가 보관하며, plugin enable/disable에 따라
 /// `register_plugin` / `unregister_plugin`으로 갱신된다.
 #[derive(Debug, Default, Clone)]
@@ -68,11 +80,22 @@ pub struct PluginCommandRegistry {
     /// (plugin_id, command_id) 기준 유일. plugin_id가 같은 entry는 vec에 모아서
     /// 설정 UI 그룹핑이 단순해지도록 한다.
     by_plugin: HashMap<String, Vec<PluginCommandEntry>>,
+    /// 마지막 변경 시점의 [`next_shortcut_epoch`] 값.
+    revision: u64,
 }
 
 impl PluginCommandRegistry {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            by_plugin: HashMap::new(),
+            revision: next_shortcut_epoch(),
+        }
+    }
+
+    /// 등록 내용이 마지막으로 바뀐 시점의 전역 epoch. 값이 그대로면 command 목록도
+    /// 그대로다 — 파생 스냅샷 캐시의 무효화 키로 쓴다.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// plugin의 모든 command를 (재)등록. 기존 항목은 모두 교체된다.
@@ -89,11 +112,13 @@ impl PluginCommandRegistry {
         } else {
             self.by_plugin.insert(manifest.id.clone(), entries);
         }
+        self.revision = next_shortcut_epoch();
     }
 
     /// plugin의 command를 모두 제거.
     pub fn unregister_plugin(&mut self, plugin_id: &str) {
         self.by_plugin.remove(plugin_id);
+        self.revision = next_shortcut_epoch();
     }
 
     /// 특정 plugin의 command 목록.

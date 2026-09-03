@@ -302,7 +302,11 @@ impl PlatformWebView {
                     let Some(key) = vk_to_winit_key(vk) else {
                         return Ok(());
                     };
-                    if key_bridge_cb.capture_key(surface_id, key, current_winit_mods()) {
+                    // 비라틴 레이아웃 폴백용 물리 위치 — VK 는 레이아웃이 낸 값이라
+                    // 러시아어 등에서 키캡과 어긋난다(ADR-0102).
+                    let physical =
+                        win32_scancode_to_physical(status.ScanCode, status.IsExtendedKey.as_bool());
+                    if key_bridge_cb.capture_key(surface_id, key, physical, current_winit_mods()) {
                         args.SetHandled(true)?;
                     }
                     Ok(())
@@ -516,6 +520,18 @@ impl Drop for PlatformWebView {
             }
         }
     }
+}
+
+/// Win32 scancode(+extended 플래그) → winit `PhysicalKey`.
+///
+/// winit 의 Windows 경로는 확장 키를 `0xE000 | scancode` 로 접은 16bit "extended
+/// scancode" 로 표현한다(`PhysicalKeyExtScancode` 문서: "A 16bit extended scancode").
+/// `COREWEBVIEW2_PHYSICAL_KEY_STATUS` 가 그 두 조각을 그대로 주므로 같은 규칙으로 합쳐
+/// winit 표를 태운다 — winit 키 경로와 같은 `KeyCode` 가 나온다.
+fn win32_scancode_to_physical(scancode: u32, extended: bool) -> winit::keyboard::PhysicalKey {
+    use winit::platform::scancode::PhysicalKeyExtScancode;
+    let ex = (scancode & 0xff) | if extended { 0xe000 } else { 0 };
+    winit::keyboard::PhysicalKey::from_scancode(ex)
 }
 
 /// 현재 modifier 키 상태 → winit `ModifiersState`.

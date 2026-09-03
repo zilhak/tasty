@@ -1,4 +1,4 @@
-# ADR-0102: webview 자식 창이 잡은 키는 host 로 포워딩한다 — 페이지 소유 범위는 `KeybindingSettings` 에서 도출한다
+# ADR-0102: webview 자식 창이 잡은 키는 host 로 포워딩한다 — 페이지 소유 범위는 `KeybindingSettings` + plugin 명령 레지스트리에서 도출한다
 
 - **Status**: Accepted
 - **Date**: 2026-09-03
@@ -44,10 +44,12 @@ ModifiersState }` 로 정규화해 창마다 하나뿐인 `WebViewKeyBridge` 에
 막을지 정하고, 실제 액션 실행만 host 가 다음 프레임에 큐를 비우며 수행한다 — 페이지와
 host 가 같은 키를 이중 처리하는 경로가 없다.
 
-**host 가 가져갈 콤보 집합은 `KeybindingSettings` 에서 전량 도출한다.** 고정 액션 필드
-(`GENERAL_BINDING_FIELDS`) + quick-switch 3 축(축 modifier 와 슬롯/다음/이전 raw 키의
-합성, `INDIVIDUAL_SWITCH_MODIFIER` sentinel 축은 완성 콤보 그대로) + 사용자 스크립트
-바인딩. 포워딩 계층에 키 콤보 리터럴은 하나도 없다. 그 집합을 두 축으로 거른다.
+**host 가 가져갈 콤보 집합은 `KeybindingSettings` 와 plugin 명령 레지스트리에서 전량
+도출한다.** 고정 액션 필드(`GENERAL_BINDING_FIELDS`) + quick-switch 3 축(축 modifier 와
+슬롯/다음/이전 raw 키의 합성, `INDIVIDUAL_SWITCH_MODIFIER` sentinel 축은 완성 콤보 그대로)
++ 사용자 스크립트 바인딩 + **활성** plugin 명령의 effective binding(매니페스트
+`default_keybinding` / 사용자 override / host 액션 상속). 포워딩 계층에 키 콤보 리터럴은
+하나도 없다. 그 집합을 두 축으로 거른다.
 
 1. **modifier 를 가진 콤보만** 가져간다(`ctrl` / `alt` / `option` 중 하나 이상). 수식
    없는 키와 `shift` 만 붙은 키는 페이지 소유로 남는다 — 문서 안 텍스트 입력(주소창
@@ -56,7 +58,39 @@ host 가 같은 키를 이중 처리하는 경로가 없다.
 2. **페이지 예약 액션은 제외**한다 — `find` / `copy` / `cut` / `paste` / `select_all`.
    페이지가 자체로 같은 의미를 구현하는 액션은 브라우저와 동일하게 페이지가 갖는다.
    제외 목록은 콤보가 아니라 **액션 field id** 라, 사용자가 그 액션의 콤보를 바꿔도
-   규칙이 따라간다.
+   규칙이 따라간다. plugin 이 같은 콤보를 바인딩해도 그 콤보는 페이지가 갖는다 — 예약은
+   콤보의 출처가 아니라 **콤보 자체**에 걸린다. 이 대조는 **콤보 동등성**으로 한다:
+   plugin 매니페스트는 raw 문자열(`"Ctrl+F"`)이라 사용자 설정(`"ctrl+f"`)과 대소문자·
+   modifier 순서가 다를 수 있으므로, 실제 매칭(`matches_binding`)과 **같은 파싱 경로**
+   (`shortcuts::bindings_equivalent` → `parse_binding`)로 정규화해 비교한다 — 원시 문자열
+   비교였다면 `"Ctrl+F"` 가 필터를 통과해 페이지의 find-in-page 를 죽였을 것이다.
+
+**plugin 바인딩은 scope 로 미리 거르지 않되, 비활성 plugin 은 제외한다.** 스냅샷은 **활성**
+plugin 의 모든 명령을 담는 **상위집합**이다(scope 무관). 포워딩된 키가 host 에 도착하는
+시점의 모델 포커스가 그 webview 자신일 수도(→ 그 plugin 의 Surface scope 명령이 후보) 다른
+surface 일 수도(→ 모든 plugin 의 Global scope 명령이 후보) 있어, 브리지가 claim 하는 시점에는
+어느 쪽인지 확정할 수 없다 — 그래서 **scope 는** 미리 거르지 않는다. 반면 **비활성 plugin 의
+명령은 발화 자체가 불가능**하므로 claim 하면 그 키가 페이지에도 host 에도 가지 않고 사라진다
+— registry 가 비활성 plugin 명령까지 담는 것은 설정 UI **표시**의 요구지(사용자가 미리 키를
+잡아둘 수 있게) claim 의 근거가 아니라, `all_command_bindings` 쪽만 `is_disabled` 로 거른다.
+최종 우선순위 판정은 기존 host 소비 경로(`dispatch_plugin_shortcut_key`,
+[`key-mapping.md`](../design/policies/key-mapping.md))가 winit 경로와 동일하게 한다 —
+포워딩은 키를 **도달시키기만** 하고 우선순위 규칙을 따로 갖지 않는다.
+
+**정책 스냅샷은 매 프레임 재생성하지 않는다.** `sync_webviews` 는 `KeybindingSettings` 값과
+**두 개의 epoch**(`PluginCommandRegistry::revision()` / `PluginsConfig::shortcut_revision()`)를
+직전 스냅샷과 비교해, 달라진 프레임에만 다시 만든다. epoch 는 **프로세스 전역 단조 증가**
+(`AtomicU64`)다 — plugin 재적재 시 `PluginCommandRegistry` 가 통째로 교체되므로 인스턴스
+지역 카운터였다면 0 으로 되돌아가 stale 스냅샷이 갱신되지 않은 채 남는다.
+
+**비라틴 레이아웃은 physical key 폴백으로 맞춘다.** 백엔드는 정규화한 논리 키와 함께
+**하드웨어 키코드**를 `PhysicalKey` 로 실어 올린다(Linux/X11 은 `hardware_keycode − 8` =
+evdev, Windows 는 확장 비트를 합친 16 비트 스캔코드, macOS 는 `kVK_*` virtual keycode —
+셋 다 winit 의 `PhysicalKeyExtScancode::from_scancode` 가 받는 표현이다). 브리지는 winit
+경로(`MainView::shortcut_lookup_key`)와 **같은 규칙**을 적용한다: `ctrl`/`super`/`alt` 중
+하나라도 눌렸으면 US 배열 기준 문자로 치환하고, 아니면 레이아웃이 낸 논리 키를 그대로
+쓴다. 수식 없는 키에는 적용하지 않으므로 페이지의 텍스트 입력·IME 조합은 영향을 받지
+않는다.
 
 **key-up 은 어느 백엔드도 올리지 않는다.** host 는 modifier 상태를 이벤트에 실려온
 값으로만 읽고 자기 `base.modifiers` 를 갱신하지 않으므로, "modifier down 은 webview /
@@ -107,17 +141,18 @@ macOS 의 회수 대상은 `nil` 이 아니라 **창의 `contentView`(= winit �
 - **잃은 것**: 페이지가 자기 것으로 쓰던 modifier 콤보 중 host 바인딩과 겹치는 것은
   이제 페이지에 도달하지 않는다(예약 5 종 제외). host 가 콤보를 claim 했는데 그 프레임의
   게이트(모달/무대/kind 게이트)가 거절하면 그 키는 페이지에도 가지 않고 소실된다.
-- **범위에서 빠진 것 1 — plugin 명령 단축키**: 정책 스냅샷은 `KeybindingSettings` 에서만
-  도출한다. plugin 이 `command.register` 로 등록한 단축키는 그 스냅샷에 없어 백엔드가
-  claim 하지 않고, 따라서 webview 에 포커스가 있는 동안에는 발화하지 않는다(host 소비
-  경로 `dispatch_plugin_shortcut_key` 는 이미 연결돼 있어, 정책이 그 콤보를 올리기만
-  하면 동작한다). 이번 결정의 범위 밖으로 남긴다 — 정책 스냅샷이 plugin 등록/해제마다
-  무효화되어야 해서 갱신 트리거가 하나 더 필요하다.
-- **범위에서 빠진 것 2 — 비라틴 레이아웃**: 키 정규화는 세 백엔드 모두 "레이아웃이 낸
-  문자"(GDK keyval / `charactersIgnoringModifiers` / VK)를 쓴다. winit 경로가 가진
-  physical key 폴백(`shortcut_lookup_key`)에 해당하는 보정이 없어, 키캡과 다른 문자를
-  내는 레이아웃(러시아어 등)에서는 콤보가 매칭되지 않을 수 있다. Korean/Japanese IME 는
-  modifier 를 누르면 라틴 문자를 내므로 영향이 없다.
+- **plugin 명령 단축키도 같은 경로를 탄다**: 매니페스트 `default_keybinding` 과 사용자
+  override 가 정책 스냅샷에 합류하므로 webview 에 포커스가 있어도 도달한다. 다만 도달
+  이후의 우선순위는 winit 경로와 **같다** — 모델 포커스가 어떤 plugin surface 에 있으면
+  그 plugin 의 명령만 후보라, 다른 plugin 의 Global 명령 콤보는 스냅샷이 claim 하지만
+  발화하지 않고 소실된다. 이는 포워딩이 새로 만든 손실이 아니라
+  [`key-mapping.md`](../design/policies/key-mapping.md) 의 기존 우선순위 규칙이 그대로
+  드러난 것이다(같은 상황을 wgpu 경로에서 재현해도 결과가 같다).
+- **비라틴 레이아웃은 physical key 폴백으로 커버된다**: 세 백엔드 모두 하드웨어 키코드를
+  함께 올리고 브리지가 winit 경로와 같은 폴백을 적용한다. 폴백 테이블은 winit 경로가 쓰는
+  것과 **같은 함수**(`shortcuts::physical_key_to_logical`)라 두 경로가 갈라지지 않는다.
+  US 배열 기준 문자 테이블에 없는 키(테이블 밖 `KeyCode`)는 폴백이 `None` 을 내고 논리
+  키로 되돌아가므로, 그 범위에서는 여전히 레이아웃 의존이다.
 - **운영 비용 / 유지 부담**: **Linux 에서만**, 그리고 **드러난 webview 가 있고 창이
   활성일 때만** 16ms 주기 폴링 tick 이 하나 걸린다(GDK 가 winit 과 다른 X 연결로
   이벤트를 받아 winit 루프를 깨우지 못하므로 GTK 를 그 tick 에서 non-blocking 펌프한다).
@@ -139,6 +174,13 @@ macOS 의 회수 대상은 `nil` 이 아니라 **창의 `contentView`(= winit �
 실기 미검증이다 — Windows 는 `cargo check --target x86_64-pc-windows-gnu` 로 타입
 검증만, macOS 는 로컬에 크로스 툴체인이 없어 컴파일 검증도 하지 못했다. "코드가 같으니
 동작할 것" 으로 검증 완료 처리하지 않는다.
+
+physical key 폴백도 같은 경계를 따른다. **스캔코드 → `PhysicalKey` 변환의 실측은 Linux
+뿐**이고, Windows(확장 비트 합성)·macOS(`kVK_*` 직접 전달)는 winit 의
+`PhysicalKeyExtScancode` 구현을 읽어 표현이 일치함을 확인한 텍스트 검토 수준이다.
+Linux/X11 에서는 `setxkbmap ru` 로 실제 레이아웃을 바꾼 뒤 webview 위에서 host 바인딩과
+plugin 바인딩이 모두 매칭되는 것을 확인했다(키캡 위치는 같고 keysym 만 Cyrillic 인 상태).
+같은 확인을 macOS/Windows 에서는 하지 못했다.
 
 macOS 실기 검증 시 확인 순서는 다음과 같다.
 
@@ -185,12 +227,16 @@ macOS 실기 검증 시 확인 순서는 다음과 같다.
   요구가 나온다 — 그때는 "페이지 입력 요소가 포커스인가" 를 백엔드가 알 수 있어야
   하므로, 페이지 상태 질의 경로(document-start 주입 bridge 등)를 다시 검토해야 한다.
 - 페이지 예약 5 종 외에 페이지가 소유해야 할 액션이 생긴다(예: 페이지 자체 실행취소).
-- webview surface 에서 plugin 명령 단축키가 동작하지 않는다는 요구가 나온다 — 그때는
-  정책 스냅샷을 `KeybindingSettings` + plugin 명령 레지스트리의 합집합으로 넓히고,
-  plugin 등록/해제를 스냅샷 무효화 트리거에 추가한다.
-- 비라틴 레이아웃 사용자에게서 webview 위 단축키 미매칭이 보고된다 — 그때는 백엔드가
-  physical key(하드웨어 keycode)를 함께 실어 올리고 브리지가 winit 경로와 같은 폴백을
-  적용하도록 계약(`WebViewKeyEvent`)을 넓힌다.
+- plugin 명령을 **scope 별로** 미리 걸러야 할 이유가 생긴다 — 지금은 상위집합을 claim
+  하므로, 포커스된 plugin 게이트에 걸려 소실되는 콤보가 페이지에도 가지 않는다. 이것이
+  실사용에서 문제로 보고되면 브리지가 claim 시점에 모델 포커스를 참조하도록(계약에
+  포커스 상태를 주입) 바꾼다.
+- `physical_key_to_logical` 의 US 배열 테이블 밖 키에서 비라틴 레이아웃 미매칭이 보고된다
+  — 그때는 테이블을 넓히거나, OS 레이아웃 질의(xkb / `UCKeyTranslate` / `ToUnicodeEx`)로
+  런타임 매핑하는 방식을 검토한다. 이는 winit 경로와 공유하는 함수이므로 두 경로에 동시에
+  적용된다.
+- plugin 이 매우 많아 스냅샷 재생성 비용이 관측된다 — 지금은 두 epoch 가 바뀐 프레임에만
+  전체를 다시 만든다. 그때는 증분 갱신(plugin 단위 delta)을 검토한다.
 - macOS/Windows 실기 검증에서 NSMenu 이중 발화나 `AcceleratorKeyPressed` 미발화 등
   플랫폼 고유 어긋남이 확인된다.
 - Linux 의 webview 폴링 tick(16ms)이 조건 게이트에도 불구하고 idle 전력/CPU 에서 문제로
