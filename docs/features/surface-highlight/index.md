@@ -5,8 +5,9 @@
 - **ADR**: [ADR-0039](../../adr/0039-surface-highlight-shared-primitive.md) ·
   [ADR-0062](../../adr/0062-attention-store-kind-aware-primitive.md)(kind 확장) ·
   [ADR-0098](../../adr/0098-mirror-local-attention-raise-suppressed.md)(mirror 로컬 발동 억제) ·
-  [ADR-0104](../../adr/0104-mirror-attention-clear-forwarded-to-owner.md)(mirror 해제 edge 전달)
-- **코드**: `src/core/state/attention.rs` (상태·헬퍼·mirror 로컬 발동 억제 게이트·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
+  [ADR-0104](../../adr/0104-mirror-attention-clear-forwarded-to-owner.md)(mirror 해제 edge 전달) ·
+  [ADR-0109](../../adr/0109-hard-occupancy-attention-clear-holder-only.md)(하드 점유 중 해제는 홀더만)
+- **코드**: `src/core/state/attention.rs` (상태·헬퍼·mirror 로컬 발동 억제 게이트·하드 점유 해제 게이트·attach forward diff) · `src/gfx/gpu.rs` (focus 해제) ·
   `src/adapters/ui/{divider,tab_bar,sidebar}` (소비처) ·
   `src/adapters/ipc/handler/surface/completion.rs` (completion producer) ·
   `crates/tasty-plugin-claude/src/hook.rs` (Claude Stop/session-end/notification hook producer) ·
@@ -47,13 +48,39 @@ completion 등)의 소유물이 아니다. 이렇게 두면 후속 producer(hook
      아직 안읽음이면 지우지 않는다(무조건 clear 시 다른 안읽음 알림의 주의 환기를
      오해제하는 엣지 케이스가 있어 조건부로만 지운다).
 
+  **해제 권한 — 하드 점유 중에는 홀더만 해제한다**([ADR-0109](../../adr/0109-hard-occupancy-attention-clear-holder-only.md)).
+  위 두 경로는 그 인스턴스의 **로컬 사용자 사건**이라 로컬 축 진입점
+  `clear_attention_local(surface_id) -> bool` 을 지나고, 그 안에서 게이트 술어
+  `local_attention_clear_allowed(surface_id)`(= `!is_hard_occupied`)가 한 번 평가된다.
+  하드 점유(attach)된 surface 의 주체는 홀더이고 로컬 사용자는 readonly 이므로
+  (ADR-0040) "확인했다" 는 판정도 홀더의 것이다 — 점유 중 서버 GUI 에서 그 surface 를
+  포커스하거나 알림 패널에서 읽음 처리해도 attention 은 남는다. 세부:
+
+  - **게이트는 `clear_attention` 이 아니라 `clear_attention_local` 에 있다.** 홀더의 해제를
+    적용하는 서버측 경로(`apply_attached_attention_clear`)는 primitive 를 직접 부르므로
+    게이트를 지나지 않는다 — 게이트가 primitive 안에 있으면 그 경로까지 막혀 점유 중
+    해제 주체가 0 이 된다.
+  - **알림 읽음 자체는 점유와 무관하게 처리된다.** 게이트가 걸리는 것은 attention 해제
+    한 가지뿐 — 읽음은 이 인스턴스 사용자의 알림 패널 상태이고 attention 은 홀더와
+    공유하는 상태다. "모두 읽음" 도 알림 전부를 읽음 처리하되 점유 중 surface 의
+    attention 만 남긴다.
+  - **soft 점유(child-terminal)에는 걸리지 않는다** — ADR-0040 의 약한 점유는 로컬
+    사용자를 배제하지 않는다. 같은 실-포커스 블록의 soft 점유 지연 청소
+    (`reconcile_soft_occupancy_on_focus`)도 이 게이트와 무관하게 그대로 돈다.
+  - **미러 인스턴스에서는 걸리지 않는다** — 점유는 surface 를 소유한 인스턴스가 기록하므로
+    미러의 `OccupancyRegistry` 에는 그 lock 이 없다. 미러 사용자의 확인은 그대로 제거
+    edge 가 되어 서버로 forward 된다(아래 해제 항목).
+  - **데드락 없음**: 게이트는 상태를 저장하지 않고 매 호출 점유를 다시 묻는다. 점유가
+    풀리면(detach / force-detach / 연결 끊김) 서버 로컬 포커스가 자동으로 해제 주체로
+    복귀해 stale 레코드를 회수한다.
+
   **해제 판정은 surface 를 소유한 인스턴스 밖에서도 일어난다.** 원격 attach 로 mirror
   중이면 위 두 경로가 **미러 인스턴스**에서 발동한다(미러 사용자의 실-포커스, 미러 로컬
-  알림의 읽음 처리). 미러 사용자의 어떤 행동도 서버의 이 두 경로를 발동시킬 수 없고
-  서버 사용자는 하드 점유된 surface 를 굳이 포커스할 이유가 없으므로, 그 판정을 옮기지
-  않으면 서버 쪽 해제 주체가 아예 없다. 그래서 mirror surface 에서 발생한 **제거 edge 만**
-  `StreamControl::ClientAttentionClear` 로 소유 인스턴스에 1 회 전달한다 — 규칙 자체는
-  그대로이고 판정 결과만 옮긴다(아래 "원격 attach mirror 로의 전파" 의 해제 항목).
+  알림의 읽음 처리). 미러 사용자의 어떤 행동도 서버의 이 두 경로를 발동시킬 수 없고,
+  서버 사용자가 하드 점유된 surface 를 포커스하더라도 **아래 해제 권한 게이트에 막힌다.**
+  그래서 그 판정을 옮기지 않으면 서버 쪽 해제 주체가 아예 없다 — mirror surface 에서 발생한
+  **제거 edge 만** `StreamControl::ClientAttentionClear` 로 소유 인스턴스에 1 회 전달한다.
+  규칙 자체는 그대로이고 판정 결과만 옮긴다(아래 "원격 attach mirror 로의 전파" 의 해제 항목).
 - **조회**: `attention_kind(id) -> Option<AttentionKind>`,
   `attention_count_of_kind(kind, &[id]) -> usize`,
   `attention_dominant_kind(&[id]) -> Option<AttentionKind>`(목록 중 최고 우선순위 kind —
@@ -220,10 +247,14 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 > `surface.completion` IPC 로 서버에서 attention 을 raise 시켜 `attention` Control 프레임이
 > 원격 surface id·kind 와 함께 도착하는지(그리고 값이 그대로면 다시 나가지 않는지)를
 > 프로토콜 레벨에서 검증한다. 해제(`kind: null`) 전파와 dedup·재점유 baseline 은
-> `src/core/state/attention.rs` 의 단위 테스트가 덮는다 — 해제는 실 렌더 포커스(`gpu.rs`)
-> 또는 알림 읽음으로만 일어나고 그 둘을 헤드리스에서 원격 구동할 IPC 가 없어, 프로토콜
-> e2e 로는 raise 축만 실행 가능하다. 미러가 받은 값을 실제 픽셀로 그리는 부분은
-> 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를 읽는다는 사실로 대체한다
+> `src/core/state/attention.rs` 의 단위 테스트가 덮는다 — 해제 producer 는 실 렌더
+> 포커스(`gpu.rs`)와 알림 읽음뿐이고, 후자를 원격에서 구동할 IPC 는 없다(알림 읽음은
+> release IPC 표면에 없다). 전자는 **debug IPC 로 구동할 수 있다** — 서버가 GUI
+> 인스턴스이므로 `debug.switch_workspace` 로 그 워크스페이스를 활성화하면 그 surface 가
+> 실 렌더 포커스를 얻어 `gpu.rs` 의 매 프레임 해제 경로가 실제로 실행된다.
+> 하드 점유 중 해제 게이트(ADR-0109)의 e2e 가 이 수단을 쓴다. 미러가 받은 값을 실제
+> 픽셀로 그리는 부분은 세 소비처가 로컬 attention 과 **같은 `AttentionStore`** 를
+> 읽는다는 사실로 대체한다
 > (`docs/features/native-file-picker/index.md` 의 "검증 한계" 와 동종의 한계).
 >
 > **미러 측 로컬 발동 억제**와 **미러 측 해제 edge 큐 적재**도 같은 이유로 loopback e2e 가
@@ -305,6 +336,24 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 - [ ] Given mirror 워크스페이스의 surface M 발 미러 로컬 알림 When 미러 알림 패널에서
       읽음 처리 Then 포커스 경로와 동일하게 해제 프레임이 서버로 간다. (단위 테스트로
       고정됨: `mirror_notification_read_queues_the_clear_forward`)
+- [ ] Given 하드 점유(attach)된 surface S 에 attention 이 발동된 상태 When 서버 GUI 에서
+      S 가 실 렌더 포커스를 얻음 Then attention 이 유지된다 — 홀더만 해제할 수 있다.
+      (단위 테스트 `hard_occupied_surface_survives_the_local_focus_clear`
+      + loopback e2e `hard_occupied_attention_survives_the_servers_local_focus` 로 고정됨 —
+      후자는 GUI 서버의 활성 워크스페이스를 점유 워크스페이스로 전환해 `gpu.rs` 경로를
+      실제로 태우고 `kind: null` push 의 부재로 관측한다)
+- [ ] Given 위 상태 When 서버 알림 패널에서 그 surface 발 알림을 읽음 처리(개별/모두)
+      Then attention 은 유지되고 알림의 `read` 플래그는 그대로 세워진다. (단위 테스트로
+      고정됨: `marking_a_notification_read_keeps_attention_while_hard_occupied` ·
+      `mark_all_read_skips_hard_occupied_surfaces_only`)
+- [ ] Given 위 상태 When 점유가 풀림(detach / force-detach / 연결 끊김) Then 서버 로컬
+      포커스가 다시 해제 주체가 되어 stale 레코드를 지운다. (단위 테스트로 고정됨:
+      `local_clear_is_disallowed_exactly_while_hard_occupied`)
+- [ ] Given soft 점유(child-terminal)된 surface Then 이 게이트는 걸리지 않는다 — 로컬
+      해제가 그대로 동작한다. (단위 테스트로 고정됨: `soft_occupancy_does_not_gate_the_local_clear`)
+- [ ] Given 하드 점유된 surface 에 대해 holder 가 해제 프레임을 보냄 Then 게이트와 무관하게
+      적용된다 — 게이트가 primitive 안에 있으면 해제 주체가 0 이 된다. (단위 테스트로
+      고정됨: `the_holders_clear_is_not_blocked_by_the_gate`)
 - [ ] Given 서버 attention 값이 바뀌지 않는 tick Then 프레임이 나가지 않는다(스팸 없음).
 - [ ] Given mirror surface 가 사라짐(세션 정리 / 구조 delta 제거) Then 그 로컬 id 의 attention
       레코드도 함께 정리된다 — 단, kind 변환(terminal → 다른 kind) 경로는 정리하지 않는다
@@ -315,6 +364,11 @@ Claude hook 은 이벤트별로 `Completion` 또는 `NeedsInput` 으로 발동�
 - 상태·헬퍼: `src/core/state/attention.rs` (`AttentionStore`, `AttentionKind`, `AttentionLevel`,
   `effects_of`, `raise_attention`/`clear_attention`/`attention_kind`/
   `attention_count_of_kind`/`attention_dominant_kind`).
+- 하드 점유 해제 게이트: `local_attention_clear_allowed`(술어) + `clear_attention_local`
+  (로컬 축 진입점, `src/core/state/attention.rs`). 로컬 해제 호출부 셋이 이 진입점을
+  지난다 — 실-포커스(`src/gfx/gpu.rs`) · `mark_notification_read` ·
+  `mark_all_notifications_read`. primitive `clear_attention` 은 게이트 없이 남아
+  홀더 경로(`apply_attached_attention_clear`)가 직접 부른다.
 - completion/needs-input producer: intent `SurfaceCompletion { surface_id, kind }` → event
   `SurfaceCompletionRequested { surface_id, kind }` (`src/core/{intent.rs,mod.rs}`) →
   `cascade_surface_completion(surface_id, kind)` (`src/app/dispatch_domain.rs`).

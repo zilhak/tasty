@@ -239,6 +239,49 @@ impl CoreState {
         removed
     }
 
+    /// 로컬 사용자 사건이 이 surface 의 attention 을 해제할 수 있는가 — 하드 점유
+    /// 게이트의 술어. **하드 점유(attach) 중이면 그 surface 의 주체는 홀더이고 로컬
+    /// 사용자는 readonly 이므로**(ADR-0040), "확인했다" 는 판정도 홀더의 것이다.
+    /// 홀더의 확인은 `ClientAttentionClear` 로 들어와
+    /// [`apply_attached_attention_clear`](crate::core::CoreState::apply_attached_attention_clear)
+    /// 가 적용한다(ADR-0104).
+    ///
+    /// **soft 점유는 대상이 아니다** — soft 는 로컬 사용자를 배제하지 않으므로
+    /// (ADR-0040 "write 제한 없음") 술어가 `is_hard_occupied` 하나뿐이다.
+    ///
+    /// 렌더 경로(`gpu.rs`)는 GPU 없이 실행할 수 없어, 게이트 판정만 이렇게 떼어
+    /// 단위 테스트가 직접 검증한다(`effects_of` 와 같은 형태).
+    pub(crate) fn local_attention_clear_allowed(&self, surface_id: u32) -> bool {
+        !self.attach.is_hard_occupied(surface_id)
+    }
+
+    /// 이 인스턴스의 **로컬 사용자 사건**(실 렌더 포커스 · 알림 읽음)에 의한 해제
+    /// 진입점. 해제 호출부 셋 전부가 이 함수를 타고, 하드 점유 게이트
+    /// ([`local_attention_clear_allowed`](Self::local_attention_clear_allowed))가
+    /// 여기서 한 번만 걸린다.
+    ///
+    /// 게이트를 [`clear_attention`](Self::clear_attention) **안이 아니라 이 래퍼에**
+    /// 두는 것이 핵심이다 — 홀더의 해제를 적용하는 서버측 경로
+    /// (`apply_attached_attention_clear` → `clear_attention`)까지 막히면 점유 중
+    /// 해제 주체가 다시 0 이 된다(그 요청자는 이미 holder 로 검증된 뒤다).
+    /// 그래서 `clear_attention` 은 게이트 없는 primitive 로 남고, 로컬 축만 이
+    /// 래퍼를 지난다. 근거: `docs/adr/0109-hard-occupancy-attention-clear-holder-only.md`.
+    ///
+    /// 미러 인스턴스에서는 이 게이트가 걸리지 않는다 — 미러 surface 는 그 인스턴스의
+    /// `OccupancyRegistry` 에 lock 이 없다(점유는 surface 를 **소유한** 인스턴스가
+    /// 기록한다). 미러 사용자의 확인은 그대로 `clear_attention` 의 제거 edge 를 만들어
+    /// 서버로 forward 된다(ADR-0104).
+    pub(crate) fn clear_attention_local(&mut self, surface_id: u32) -> bool {
+        if !self.local_attention_clear_allowed(surface_id) {
+            tracing::trace!(
+                surface_id,
+                "attention clear skipped — hard-occupied surface (only the holder may clear)"
+            );
+            return false;
+        }
+        self.clear_attention(surface_id)
+    }
+
     /// **원격(서버) push 반영 전용 진입점** — attach mirror 가 받은
     /// `StreamControl::Attention` 을 자기 `AttentionStore` 에 그대로 쓴다.
     /// `kind == None` 은 해제.
@@ -353,6 +396,12 @@ impl CoreState {
     /// 그 알림의 source surface 를 source 로 하는 다른 안읽음 알림이 남아있지 않은
     /// 경우에만 attention 을 지운다. 같은 surface 의 다른 알림이 아직 안읽음이면
     /// clear 하지 않는다(엣지 케이스 — 무조건 clear 시 오해제 발생).
+    ///
+    /// **알림의 읽음 플래그와 attention 해제는 분리된다.** 해제는 로컬 축이라
+    /// [`clear_attention_local`](Self::clear_attention_local) 의 하드 점유 게이트를
+    /// 지나므로, 점유 중 surface 의 알림을 읽어도 attention 은 유지된다 — 알림 자체는
+    /// 점유와 무관하게 읽음 처리된다(읽음은 이 인스턴스 사용자의 알림 패널 상태이고,
+    /// attention 은 홀더와 공유하는 상태다).
     pub(crate) fn mark_notification_read(&mut self, id: u64) {
         let source_surface = self
             .notifications
@@ -362,7 +411,7 @@ impl CoreState {
         self.notifications.mark_read(id);
         if let Some(surface_id) = source_surface {
             if !self.notifications.has_unread_for_surface(surface_id) {
-                self.clear_attention(surface_id);
+                self.clear_attention_local(surface_id);
             }
         }
     }
@@ -370,6 +419,13 @@ impl CoreState {
     /// 모든 알림 읽음 처리(ADR-0039 Reconsideration Triggers 참고). 전부 읽음
     /// 처리되므로 엣지 케이스 없이, 읽음
     /// 처리 전 안읽음이었던 모든 알림의 source surface attention 을 지운다.
+    ///
+    /// 해제 대상에서 **하드 점유 중인 surface 는 빠진다** —
+    /// [`clear_attention_local`](Self::clear_attention_local) 게이트가 걸러낸다.
+    /// 게이트를 여기서 따로 필터링하지 않고 그 진입점에 맡기는 이유는 해제 producer
+    /// 셋이 같은 규칙을 공유해야 하기 때문이다(`mark_notification_read` 와 실-포커스
+    /// 해제도 같은 함수를 지난다). "모두 읽음" 한 번으로 점유 중 배지가 전부
+    /// 사라지는 구멍이 이 게이트로 막힌다.
     pub(crate) fn mark_all_notifications_read(&mut self) {
         let unread_surfaces: std::collections::HashSet<u32> = self
             .notifications
@@ -379,7 +435,7 @@ impl CoreState {
             .collect();
         self.notifications.mark_all_read();
         for surface_id in unread_surfaces {
-            self.clear_attention(surface_id);
+            self.clear_attention_local(surface_id);
         }
     }
 }
@@ -880,6 +936,219 @@ mod tests {
         assert!(
             s.pending_attention_clear_forward.is_empty(),
             "teardown 은 사용자의 확인이 아니다"
+        );
+    }
+
+    // ───── 하드 점유 중 해제는 홀더만 (ADR-0109) ─────
+
+    /// 게이트 술어 자체 — 렌더 경로(`gpu.rs`)는 GPU 없이 실행할 수 없으므로 그
+    /// 호출부가 묻는 판정만 떼어 직접 검증한다. hard lock 이 걸린 동안 로컬 해제가
+    /// 금지되고, 풀리면 즉시 허용으로 복귀한다(데드락 없음).
+    #[test]
+    fn local_clear_is_disallowed_exactly_while_hard_occupied() {
+        let mut s = state();
+        assert!(
+            s.local_attention_clear_allowed(42),
+            "점유 없는 surface 는 로컬 해제 대상이다"
+        );
+
+        s.attach.acquire(42, 1).expect("hard lock");
+        assert!(
+            !s.local_attention_clear_allowed(42),
+            "하드 점유 중에는 로컬 사용자가 주체가 아니다"
+        );
+        assert!(
+            s.local_attention_clear_allowed(43),
+            "게이트는 점유된 surface 에만 걸린다"
+        );
+
+        s.attach.release(42, 1).expect("release");
+        assert!(
+            s.local_attention_clear_allowed(42),
+            "점유가 풀리면 로컬 포커스가 해제 주체로 복귀한다"
+        );
+    }
+
+    /// soft 점유(child-terminal)는 로컬 사용자를 배제하지 않으므로(ADR-0040
+    /// "write 제한 없음") 이 게이트의 대상이 아니다.
+    #[test]
+    fn soft_occupancy_does_not_gate_the_local_clear() {
+        let mut s = state();
+        s.attach
+            .acquire_soft(42, 7, Some("child".into()))
+            .expect("soft lock");
+        assert!(
+            s.local_attention_clear_allowed(42),
+            "soft 점유는 hard 술어를 세우지 않는다 — 로컬 해제 그대로"
+        );
+
+        s.raise_attention(42, AttentionKind::Completion);
+        assert!(s.clear_attention_local(42), "soft 점유 중 로컬 해제는 성립");
+        assert_eq!(s.attention_kind(42), None);
+    }
+
+    /// 실-포커스 경로의 대역 — `gpu.rs` 가 부르는 것과 같은 함수로, 점유 중에는
+    /// 레코드가 살아남고 점유가 풀린 뒤의 같은 호출이 지운다.
+    #[test]
+    fn hard_occupied_surface_survives_the_local_focus_clear() {
+        let mut s = state();
+        s.raise_attention(42, AttentionKind::NeedsInput);
+        s.attach.acquire(42, 1).expect("hard lock");
+
+        assert!(
+            !s.clear_attention_local(42),
+            "게이트에 막히면 제거 edge 자체가 없다"
+        );
+        assert_eq!(
+            s.attention_kind(42),
+            Some(AttentionKind::NeedsInput),
+            "점유 중 서버 로컬 포커스는 홀더의 신호를 지우지 못한다"
+        );
+
+        s.attach.release(42, 1).expect("release");
+        assert!(s.clear_attention_local(42), "점유 해제 후에는 지워진다");
+        assert_eq!(s.attention_kind(42), None);
+    }
+
+    /// 홀더의 해제(서버측 적용 경로)는 게이트를 타지 않는다 — ADR-0104 가 이 작업에
+    /// 걸어둔 제약의 회귀 테스트다. 게이트가 `clear_attention` 안에 들어갔다면
+    /// 점유된 surface 의 해제 주체가 0 이 되어 이 assert 가 깨진다.
+    #[test]
+    fn the_holders_clear_is_not_blocked_by_the_gate() {
+        let mut s = state();
+        let sid = s.workspaces[0].all_surface_ids()[0];
+        let ws = s.workspaces[0].id;
+        s.attach
+            .acquire_workspace(ws, &[sid], &[sid], 1)
+            .expect("workspace hard lock");
+        s.raise_attention(sid, AttentionKind::NeedsInput);
+
+        assert!(
+            !s.clear_attention_local(sid),
+            "로컬 축은 막혀 있어야 한다(전제 확인)"
+        );
+        assert!(
+            s.apply_attached_attention_clear(1, sid),
+            "holder 검증을 통과한 요청은 적용된다"
+        );
+        assert_eq!(
+            s.attention_kind(sid),
+            None,
+            "홀더의 확인은 게이트와 무관하게 레코드를 지운다"
+        );
+    }
+
+    /// 개별 읽음 처리 — 점유 중에는 attention 이 유지되고, 알림의 `read` 플래그는
+    /// 점유 여부와 무관하게 세워진다(두 상태의 분리).
+    #[test]
+    fn marking_a_notification_read_keeps_attention_while_hard_occupied() {
+        let mut s = state_no_coalesce();
+        let occupied_read = s
+            .notifications
+            .add(1, 100, "t1".into(), "b1".into())
+            .unwrap();
+        s.raise_attention(100, AttentionKind::Completion);
+        s.attach.acquire(100, 1).expect("hard lock");
+
+        s.mark_notification_read(occupied_read);
+
+        assert_eq!(
+            s.attention_kind(100),
+            Some(AttentionKind::Completion),
+            "점유 중 알림 읽음은 홀더의 신호를 지우지 못한다"
+        );
+        assert!(
+            s.notifications
+                .all()
+                .find(|n| n.id == occupied_read)
+                .unwrap()
+                .read,
+            "알림 읽음 자체는 점유와 무관하게 처리된다(회귀 방지)"
+        );
+
+        // 점유 해제 후 **같은 호출**이 지운다 — 앞선 알림은 이미 읽음이라 새 안읽음
+        // 알림 하나로 그 경로를 다시 태운다(해제 조건 = 남은 안읽음 0).
+        s.attach.release(100, 1).expect("release");
+        let after_release = s
+            .notifications
+            .add(1, 100, "t2".into(), "b2".into())
+            .unwrap();
+        s.mark_notification_read(after_release);
+        assert_eq!(
+            s.attention_kind(100),
+            None,
+            "점유가 풀리면 알림 읽음이 다시 해제 주체가 된다"
+        );
+    }
+
+    /// "모두 읽음" — 점유 중 surface 는 clear 대상에서 빠지고, 점유되지 않은
+    /// surface 는 그대로 지워진다. 이 조합이 "모두 읽음 한 번으로 점유 중 배지가
+    /// 전부 사라지는" 구멍을 막는다.
+    #[test]
+    fn mark_all_read_skips_hard_occupied_surfaces_only() {
+        let mut s = state_no_coalesce();
+        let occupied = s
+            .notifications
+            .add(1, 100, "t1".into(), "b1".into())
+            .unwrap();
+        let free = s
+            .notifications
+            .add(1, 200, "t2".into(), "b2".into())
+            .unwrap();
+        s.raise_attention(100, AttentionKind::NeedsInput);
+        s.raise_attention(200, AttentionKind::Completion);
+        s.attach.acquire(100, 1).expect("hard lock");
+
+        s.mark_all_notifications_read();
+
+        assert_eq!(
+            s.attention_kind(100),
+            Some(AttentionKind::NeedsInput),
+            "점유 중 surface 는 clear 대상에서 제외된다"
+        );
+        assert_eq!(
+            s.attention_kind(200),
+            None,
+            "점유되지 않은 surface 는 기존 동작 그대로 지워진다"
+        );
+        for id in [occupied, free] {
+            assert!(
+                s.notifications.all().find(|n| n.id == id).unwrap().read,
+                "모든 알림의 read 플래그는 점유 여부와 무관하게 세워진다(회귀 방지)"
+            );
+        }
+
+        // 점유 해제 후 **같은 호출**이 지운다. 앞선 알림은 전부 읽음이라 안읽음 집합이
+        // 비어 있으므로, 새 안읽음 알림 하나로 그 경로를 다시 태운다.
+        s.attach.release(100, 1).expect("release");
+        s.notifications.add(1, 100, "t3".into(), "b3".into());
+        s.mark_all_notifications_read();
+        assert_eq!(
+            s.attention_kind(100),
+            None,
+            "점유가 풀리면 \"모두 읽음\" 이 다시 해제 주체가 된다(stale 레코드 회수)"
+        );
+    }
+
+    /// 미러 인스턴스에는 이 게이트가 걸리지 않는다 — 점유는 surface 를 **소유한**
+    /// 인스턴스가 기록하므로 미러의 `OccupancyRegistry` 는 비어 있다. 그래서 미러
+    /// 사용자의 확인은 그대로 제거 edge 를 만들어 서버로 forward 된다(ADR-0104).
+    #[test]
+    fn the_gate_does_not_block_the_mirror_users_clear() {
+        let (mut s, sid) = mirror_state();
+        s.set_mirror_surface_attention(sid, Some(AttentionKind::NeedsInput));
+
+        assert!(
+            s.local_attention_clear_allowed(sid),
+            "미러 surface 는 이 인스턴스에서 점유돼 있지 않다"
+        );
+        assert!(
+            s.clear_attention_local(sid),
+            "미러 사용자의 확인은 성립한다"
+        );
+        assert!(
+            s.pending_attention_clear_forward.contains(&sid),
+            "그 edge 는 소유 인스턴스로 forward 되어야 한다(ADR-0104)"
         );
     }
 }

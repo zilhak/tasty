@@ -256,3 +256,66 @@ fn repeated_clear_frames_do_not_respam_the_stream() {
         "레코드가 없는 상태의 해제는 no-op 이라 프레임이 나가면 안 된다: {extra:?}"
     );
 }
+
+/// 하드 점유 중에는 **서버 로컬 포커스가 서버의 attention 을 지우지 못한다**(ADR-0109).
+///
+/// 이 인스턴스는 실제 GUI 라 `src/gfx/gpu.rs` 의 매 프레임 실-포커스 해제가 살아 있다 —
+/// 활성 워크스페이스의 포커스 surface 를 매 프레임 해제 대상으로 삼는다. 점유한
+/// 워크스페이스를 활성화시켜(`debug.switch_workspace`) 그 경로를 **실제로 밟게 한 뒤**,
+/// 해제가 일어났다면 반드시 따라오는 `kind: null` diff push 가 오지 않는지 본다
+/// (서버 레코드를 직접 조회하는 IPC 가 없으므로 push 의 부재로 관측한다 — 게이트가
+/// 없으면 첫 프레임에 지워지고 다음 tick 에 `kind: null` 이 도착한다).
+///
+/// 워크스페이스 전환은 사용자 행동 재현이라 release 표면에 없고 debug IPC 로만
+/// 가능하다(`docs/dev-guide/debug-ipc.md`).
+#[test]
+fn hard_occupied_attention_survives_the_servers_local_focus() {
+    let server = common::shared();
+    let ws = server.create_workspace("attention-holder-only-gate");
+
+    let mut stream = open_workspace_attach(server.port(), ws.id);
+    server.call(
+        "surface.completion",
+        json!({ "surface_id": ws.surface_id, "kind": "needs_input" }),
+    );
+    let raised = wait_for_raised_attention(&mut stream);
+    assert_eq!(raised["kind"], "needs_input", "{raised:?}");
+
+    // 점유된 그 surface 가 서버 GUI 의 실 렌더 포커스를 얻게 한다. 활성 워크스페이스는
+    // 공유 인스턴스의 전역 상태라, 원래 값을 기억해 뒀다가 끝에 되돌린다 — 이 바이너리의
+    // 다른 테스트가 "포커스 없는 surface 의 attention 이 유지된다" 를 전제하게 되더라도
+    // 실행 순서에 의존하지 않도록.
+    let previous_active = server.call("ui.state", json!({}))["active_workspace"]
+        .as_u64()
+        .expect("ui.state 는 active_workspace 인덱스를 돌려준다");
+    let switched = server.call("debug.switch_workspace", json!({ "index": ws.index }));
+    assert_eq!(
+        switched["switched"], true,
+        "게이트가 밟히는 전제(활성 워크스페이스 전환)가 성립해야 한다: {switched:?}"
+    );
+
+    // 수백 프레임 + 여러 1Hz tick 이 지나도 해제 push 가 없어야 한다.
+    stream
+        .set_read_timeout(Some(QUIET_WINDOW))
+        .expect("set quiet-window read timeout");
+    let mut frames: Vec<Value> = Vec::new();
+    while let Some((tag, payload)) = try_read_frame(&mut stream) {
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        if v.get("event").and_then(|e| e.as_str()) == Some("attention") {
+            frames.push(v);
+        }
+    }
+    // 활성 워크스페이스 원복 — assert 보다 먼저 해서 실패해도 전역 상태를 남기지 않는다.
+    server.call(
+        "debug.switch_workspace",
+        json!({ "index": previous_active }),
+    );
+
+    assert!(
+        frames.is_empty(),
+        "점유 중 서버 로컬 포커스는 홀더의 신호를 지우지 못한다 — 해제 push 가 오면 게이트가 없는 것이다: {frames:?}"
+    );
+}

@@ -454,10 +454,13 @@ impl GpuState {
         // Clear surface attention on the currently focused surface. `focused_surface_id`
         // 는 실제 렌더 시점 포커스(에이전트 주입 아님)라 불가침 원칙 1 에 안전하다.
         if let Some(sid) = focused_surface_id {
-            engine.clear_attention(sid);
+            // `clear_attention` 이 아니라 로컬 축 진입점을 쓴다 — 하드 점유(attach) 중인
+            // surface 는 홀더만 해제할 수 있으므로 이 로컬 포커스는 건너뛴다(ADR-0109).
+            engine.clear_attention_local(sid);
             // soft 점유 지연 청소(ADR-0040 §수명): 실-포커스 surface 의 soft 주체(parent)가
             // 사라졌으면 이 시점에 점유 해제. attention clear 와 같은 실-포커스 블록이라
-            // 원칙1 안전.
+            // 원칙1 안전. **위 게이트와 무관하다** — soft 점유 청소는 attention 해제 권한과
+            // 별개 동작이고, hard 점유 surface 는 이 함수가 자체적으로 조기 반환한다.
             engine.reconcile_soft_occupancy_on_focus(sid);
         }
 

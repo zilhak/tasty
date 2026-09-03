@@ -34,7 +34,11 @@ VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 
 
 - **surface 하이라이트**: 알림 발생 surface 에 파란 테두리, 포커스 시 자동 해제 — 또는 그
   surface 발 알림을 읽음 처리(개별/모두 읽음)했을 때 그 surface 에 남은 안읽음 알림이 없으면
-  해제(같은 surface 의 다른 알림이 아직 안읽음이면 유지). 상세 [`surface-highlight`](../surface-highlight/index.md).
+  해제(같은 surface 의 다른 알림이 아직 안읽음이면 유지). 단 그 surface 가 **하드 점유
+  (attach)** 중이면 해제되지 않는다 — 점유 중 attention 의 해제 주체는 홀더다
+  ([ADR-0109](../../adr/0109-hard-occupancy-attention-clear-holder-only.md)). **알림 자체의
+  읽음 처리는 점유와 무관하게 그대로 동작한다** — 게이트가 걸리는 것은 attention 해제
+  하나뿐이다. 상세 [`surface-highlight`](../surface-highlight/index.md).
 - **사이드바 배지**: attention surface 가 있는 워크스페이스 행 우측에 `attention_count` 개수 pill
   배지(`paint_workspace_count_badge`, 99 초과 시 "99+" — 확장 사이드바는 이름 우측 숫자 배지, 축소
   사이드바는 dot). 모두 방문하거나 읽음 처리하면 소멸.
