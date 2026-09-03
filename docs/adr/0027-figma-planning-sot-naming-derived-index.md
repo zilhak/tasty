@@ -30,7 +30,7 @@ Figma 기획 파일의 유지를 **"사실 1개당 SoT 1곳, 나머지는 생성
 | 상태 (plan/design/built…) | **노드 이름의 상태 접두 토큰** | 생성된 `_index` PLAN STATUS 표 |
 | 의도 (durable 스펙) | **노드당 annotation / scroll 의 의도 블록 1개** | — |
 | 근거/역사 (왜 옮겼나·대안) | **ADR + Figma version history** | — |
-| 기계 (재현 스크립트·폰트 함정) | **repo (`.claude-workspace/` · dev-guide)** | — |
+| 기계 (재현 스크립트·폰트 함정) | **repo (`scripts/` · `docs/dev-guide/`)** | — |
 
 ### 2. 네이밍 규약 (린치핀)
 
@@ -71,7 +71,7 @@ sigma `find_node` 의 **배열 path**(`["icon/arrow/left"]`, 원소 = 리터럴 
 
 ### 4. 파생 인덱스 = 생성물 (Cover / `_index`)
 
-- **Cover page-map 과 `_index` 의 구조·STATUS 표는 생성기(`.claude-workspace/temp/gen-index.js` 류)가 전 페이지를 walk → 이름 토큰 파싱 → 덮어쓴다.** 사람은 절대 손편집하지 않는다.
+- **Cover page-map 과 `_index` 의 구조·STATUS 표는 생성기 스크립트가 전 페이지를 walk → 이름 토큰 파싱 → 덮어쓴다.** 사람은 절대 손편집하지 않는다.
 - Cover 와 `_index` 는 **진실이 아니라 진실을 비추는 view** 다 — 내비게이션 역할만 한다. (좋은 디자인 시스템 파일이 첫 페이지에 Cover/README 를 두되 그것을 SoT 로 삼지 않는 것과 같다.)
 
 ### 5. 유지 불변식 (6개)

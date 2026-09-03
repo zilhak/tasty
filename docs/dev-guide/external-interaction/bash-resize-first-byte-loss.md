@@ -6,7 +6,7 @@
 
 **원인 (셸 측 — tasty 무죄).** bash 는 SIGWINCH 핸들러를 `SA_RESTART` 로 설치하고, readline 은 플래그만 세워뒀다가 **다음 입력이 read 를 깨울 때** 보류된 WINCH 를 처리한다(bash 5 동작, [fff#48](https://github.com/dylanaraps/fff/issues/48)). MSYS/Cygwin 의 시그널 에뮬레이션이 ConPTY 위에서 이 "read 를 깨운 바이트"를 소모한다.
 
-**상태: 알려진 상류(msys2-runtime) 버그로 기록만 한다 — 상류 제보는 하지 않기로 결정(2026-07-12).** 상류 이슈 트래커에 기존 리포트 없음(당시 검색 기준). tasty 는 아래 처방으로 방어하고, 향후 마음이 바뀌면 재현기·분석 자료(`.claude-workspace/analysis/msys2-first-byte-loss-*`)로 즉시 제보 가능하다.
+**상태: 알려진 상류(msys2-runtime) 버그로 기록만 한다 — 상류 제보는 하지 않기로 결정(2026-07-12).** 상류 이슈 트래커에 기존 리포트 없음(당시 검색 기준). tasty 는 아래 처방으로 방어하고, 향후 마음이 바뀌면 아래 실측 표·원인 분석을 근거로 제보할 수 있다.
 
 **임계·근거 (2026-07-12 실측, 격리 debug 인스턴스).**
 

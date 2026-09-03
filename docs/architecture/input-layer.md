@@ -94,7 +94,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 
 결과적으로 Banner(5) < {상태바·탭바}(4) < Modifier-hint(2b) < Popup(2) 이 재현된다. Modal(1)은 별도 OS 창이라 범위 밖, Divider/Terminal(6/7)은 다른 `Order` tier 라 범위 밖이다.
 
-**실측 확인**(`.claude-workspace/` 임시 debug 인스턴스 + `tasty screenshot` CLI):
+**실측 확인**(임시 debug 인스턴스 + `tasty screenshot` CLI):
 - Popup(`debug.host_popup.open`)과 Modifier-hint(`debug.modifier_hint.hold`)를 창 크기를 줄여 강제로 겹치게 배치 → Popup 이 Modifier-hint 위에 그려짐(가려진 keycap 만 가장자리에 남음).
 - Banner(`debug.banner.show --scope view`)는 View 스코프 플레이스홀더가 탭 행과 겹쳐 뜬다 — 탭 칩(`zilhak@...`)이 배너 카드 위에 온전히 그려짐(A/B 비교: `enforce_foreground_z_order` 호출을 임시로 빼면 탭 칩이 배너에 완전히 가려짐 — 재삽입하면 복구). 상태바도 탭바와 동일한 `set_sublayer(banner_layer, ...)` 관계라 같은 메커니즘이 적용된다. Banner 와 상태바가 **기하적으로 직접 겹치는** 배치는 만들 수 없었다 — Banner 의 zone 은 항상 탭바 하단에서 시작해 화면 끝까지 뻗지만 카드 자체는 zone 상단에 고정 높이로만 그려지고 `set_clip_rect(zone)` 로 그 밖으로 넘치지 않아, 카드가 화면 하단(상태바 행)까지 물리적으로 닿을 방법이 없다(정상 동작 — 버그 아님).
 - Popup 단독 / Banner 단독 / Modifier-hint 단독 회귀 확인 — 셋 다 기존과 동일하게 정상 렌더.

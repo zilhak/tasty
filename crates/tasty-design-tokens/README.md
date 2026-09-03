@@ -8,7 +8,7 @@ crate 문서 주석 참조.
 
 디자인 산출물은 원격 Claude Design 프로젝트가 SoT 다. 로컬로 내려받은 폴더를
 찾을 필요는 없다 — **DesignSync MCP(A경로 직접 접근)로 원격 파일을 바로 회수한다**
-(projectId·인증은 `.claude/CLAUDE.md` 참조).
+(projectId·인증은 커밋되지 않는 로컬 전용 지침 참조).
 
 1. **원격에서 직접 회수한다.** `DesignSync.get_file` 로 `tokens/tasty.tokens.json`
    을 읽어 `dtcg/tasty.tokens.json` 을 교체한다. (사용자에게 폴더 위치를 묻거나

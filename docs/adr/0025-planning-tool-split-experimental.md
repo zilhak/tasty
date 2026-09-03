@@ -50,7 +50,7 @@ Figma(기획·저충실) ──▶ Claude design(시안·고충실) ──▶ cl
   - **HTML→egui 전사 갭** — Claude design 은 flexbox, 구현은 egui. [`design-parity-notes.md`](../design/systems/design-parity-notes.md) 의 구조 전사 원칙이 그대로 적용된다 (다만 둘 다 코드라 Figma 시안보다 오히려 가까운 경우가 많다).
 - **운영 비용 / 유지 부담**:
   - **토큰 SoT 는 끝까지 코드(`Theme`)** — Claude design 시안도 색·치수는 Catppuccin Mocha 토큰 안에서만 골라야 한다. 시안 작성 시 토큰 팔레트를 입력으로 먼저 준다.
-  - **Claude design 산출물은 휘발성** — Artifact 는 세션 종료 시 사라진다. 확정 시안은 HTML 을 `docs/design/` 또는 `.claude-workspace/` 에 저장하거나, 스크린샷을 Figma Screens 페이지에 "확정 시안 아카이브"로 박아 보존한다.
+  - **Claude design 산출물은 휘발성** — Artifact 는 세션 종료 시 사라진다. 확정 시안은 HTML 을 `docs/design/` 에 저장하거나, 스크린샷을 Figma Screens 페이지에 "확정 시안 아카이브"로 박아 보존한다.
 
 ## Alternatives Considered
 

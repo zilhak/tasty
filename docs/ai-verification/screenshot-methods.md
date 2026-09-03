@@ -78,7 +78,7 @@ TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서�
 - 갤러리는 캡처 후 스스로 종료하므로 `timeout` 불필요(macOS 엔 `timeout` 명령도 없다).
 
 ```bash
-B="$PWD/.claude-workspace/temp"
+B="$PWD/<임시 파일 폴더>"   # 위치는 로컬 전용 지침(CLAUDE.md "임시 파일·계획 위치")이 정한다
 # 여러 specimen 한 방에 (init 1회): idx 3=Button, 6=Badge·Tag·Kbd, 9=MenuItem·TreeRow
 TASTY_GALLERY_SHOT="3:$B/button.png,6:$B/chips.png,9:$B/nav.png" ./target/debug/tasty-gallery
 
