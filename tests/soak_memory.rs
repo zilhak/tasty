@@ -17,8 +17,8 @@
 //! - `SOAK_DURATION_SECS`  soak 시간 (기본 600)
 //! - `SOAK_CYCLES`         사이클 수 상한 (기본 무제한 — 시간으로만 종료)
 //! - `SOAK_CHECKPOINT_EVERY` 체크포인트 간격(사이클, 기본 10)
-//! - `SOAK_OUT_DIR`        JSONL 출력 디렉토리 (기본 OS 임시 디렉토리 아래 `tasty-soak/`
-//!                         — `std::env::temp_dir()`; 실제 파일 경로는 시작 시 stdout 에 찍힌다)
+//! - `SOAK_OUT_DIR`        JSONL 출력 디렉토리 (기본 OS 임시 디렉토리 아래 `tasty-soak/` —
+//!   `std::env::temp_dir()`; 실제 파일 경로는 시작 시 stdout 에 찍힌다)
 
 mod common;
 
