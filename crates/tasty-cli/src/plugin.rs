@@ -118,7 +118,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     let manifest = Manifest::load(&plugin_dir)
         .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
 
-    outln!("Plugin: {}", manifest.id)?;
+    outln!(
+        "{}",
+        tasty_i18n::t_fmt("cli.plugin.doctor_header", &manifest.id)
+    )?;
     outln!("  name:             {}", manifest.name)?;
     outln!("  version:          {}", manifest.version)?;
     outln!("  manifest_version: {}", manifest.manifest_version)?;
@@ -129,7 +132,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     // bin glue 에서 수행하므로 여기 도달했다는 것은 schema 가 valid 함을 의미.
     let detectors = &manifest.contributes.detector;
     outln!()?;
-    outln!("Detectors contributed: {}", detectors.len())?;
+    outln!(
+        "{}",
+        tasty_i18n::t_fmt("cli.plugin.doctor_detectors", &detectors.len().to_string())
+    )?;
     let mut total_unsupported = 0_usize;
     for v in detectors {
         let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
@@ -157,23 +163,27 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
         let ok = total - unsupported.len();
         total_unsupported += unsupported.len();
         outln!(
-            "  - {} (rules: {} OK, {} unsupported)",
-            id,
-            ok,
-            unsupported.len()
+            "{}",
+            tasty_i18n::t_args(
+                "cli.plugin.doctor_detector_row",
+                &[id, &ok.to_string(), &unsupported.len().to_string()]
+            )
         )?;
         for rule in &unsupported {
             let kind_name = rule.get("kind").and_then(|k| k.as_str()).unwrap_or("?");
             outln!(
-                "      ! rule kind \"{}\" unsupported in this host version",
-                kind_name
+                "{}",
+                tasty_i18n::t_fmt("cli.plugin.doctor_rule_unsupported", kind_name)
             )?;
         }
     }
 
     let handlers = &manifest.contributes.handler;
     outln!()?;
-    outln!("Handlers contributed: {}", handlers.len())?;
+    outln!(
+        "{}",
+        tasty_i18n::t_fmt("cli.plugin.doctor_handlers", &handlers.len().to_string())
+    )?;
     for v in handlers {
         let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
         let detector_id = v.get("detector").and_then(|x| x.as_str()).unwrap_or("?");
@@ -193,10 +203,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
                         "ipc \"{}\"",
                         obj.get("method").and_then(|x| x.as_str()).unwrap_or("?")
                     )),
-                    other => Some(format!("(unknown: {other})")),
+                    other => Some(tasty_i18n::t_fmt("cli.plugin.doctor_action_unknown", other)),
                 }
             })
-            .unwrap_or_else(|| "(no action)".into());
+            .unwrap_or_else(|| tasty_i18n::t("cli.plugin.doctor_action_none").to_string());
         outln!(
             "  - {} → detector \"{}\" → {}",
             id,
@@ -208,8 +218,11 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     if total_unsupported > 0 {
         outln!()?;
         outln!(
-            "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml.",
-            total_unsupported
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.plugin.doctor_unsupported_summary",
+                &total_unsupported.to_string()
+            )
         )?;
     }
     Ok(())

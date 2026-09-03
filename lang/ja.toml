@@ -1368,6 +1368,18 @@ flag_repeated = "--{} が {} 回指定されました — 値は 1 つだけ受�
 auto_wait_no_mode = "auto_wait '{}' に 'polling' も 'strategy' もありません"
 auto_wait_unknown_strategy = "auto_wait '{}' が不明な strategy '{}' を参照しています"
 
+# `tasty plugin doctor` レポート(stdout)。マニフェストのフィールド名(`name:` … `api_version:`)・
+# action kind(`surface "…"` / `ipc "…"`)・handler 行の `detector` はマニフェストのキー/値と 1:1 なのでそのまま。
+[cli.plugin]
+doctor_header = "プラグイン: {}"
+doctor_detectors = "提供 detector 数: {}"
+doctor_detector_row = "  - {} (rule: {} OK, {} 未対応)"
+doctor_rule_unsupported = "      ! rule kind \"{}\" はこの host バージョンでは未対応です"
+doctor_handlers = "提供 handler 数: {}"
+doctor_action_unknown = "(不明: {})"
+doctor_action_none = "(action なし)"
+doctor_unsupported_summary = "未対応の rule が {} 件あります — 無視されます。host の api_version は Cargo.toml を確認してください。"
+
 [cli.dispatch]
 ssh_profile_not_found = "ssh プロファイル '{}' が見つかりません (tasty tool remote-profile list)。"
 ssh_profile_not_ssh_kind = "'{}' は ssh プロファイルではありません (kind='{}')。tool ssh は ssh プロファイルのみ受け付けます。"

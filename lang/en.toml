@@ -1389,6 +1389,19 @@ flag_repeated = "--{} was specified {} times — it accepts only one value (earl
 auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
 auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
 
+# `tasty plugin doctor` report (stdout). Manifest field names (`name:` … `api_version:`),
+# action kinds (`surface "…"` / `ipc "…"`) and the handler row's `detector` stay literal —
+# they mirror manifest keys/values one-to-one (see docs/dev-guide/i18n.md exceptions).
+[cli.plugin]
+doctor_header = "Plugin: {}"
+doctor_detectors = "Detectors contributed: {}"
+doctor_detector_row = "  - {} (rules: {} OK, {} unsupported)"
+doctor_rule_unsupported = "      ! rule kind \"{}\" unsupported in this host version"
+doctor_handlers = "Handlers contributed: {}"
+doctor_action_unknown = "(unknown: {})"
+doctor_action_none = "(no action)"
+doctor_unsupported_summary = "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml."
+
 [cli.dispatch]
 ssh_profile_not_found = "ssh profile '{}' not found (tasty tool remote-profile list)."
 ssh_profile_not_ssh_kind = "'{}' is not an ssh profile (kind='{}'); tool ssh accepts ssh profiles only."
