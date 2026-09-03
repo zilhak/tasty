@@ -789,22 +789,27 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .btn--ghost { background: transparent; }
 .btn--ghost:hover { background: var(--surface0); border-color: var(--surface1); }
 
-.install-line {
+.dl-row {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   margin-top: var(--sp-6);
-  padding: var(--sp-3) var(--sp-4);
+}
+.dl {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-4);
   background: var(--crust);
   border: var(--border);
   border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--subtext1);
-  max-width: 480px;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 120ms ease, background 120ms ease;
 }
-.install-line .prompt { color: var(--green); user-select: none; }
-.install-line code { flex: 1; overflow-x: auto; white-space: nowrap; }
+.dl:hover { text-decoration: none; border-color: var(--overlay0); background: var(--mantle); }
+.dl b { font-size: 14px; font-weight: 600; }
+.dl span { font-family: var(--font-mono); font-size: 11.5px; color: var(--subtext0); white-space: nowrap; }
 
 /* product window — a structural transcription of the design system's
    ui_kits/terminal kit (app.jsx: TitleBar → Sidebar | TabStrip → split
@@ -1291,7 +1296,6 @@ a.card:hover { text-decoration: none; }
   .mock { --u: min(1px, calc(100cqw / 560)); }
   .mock__sidebar, .mock__term:not([data-focused]) { display: none; }
   .hero__lede { font-size: 16px; }
-  .install-line { font-size: 12px; }
   .section { padding: var(--sp-12) 0; }
   .page-nav { flex-direction: column; }
 }

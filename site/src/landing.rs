@@ -14,7 +14,11 @@ struct Copy {
     lede: &'static str,
     cta_primary: &'static str,
     cta_secondary: &'static str,
+    /// Sentence before the installation-guide link, and the link label.
     install_note: &'static str,
+    install_note_link: &'static str,
+    /// Download chips: (OS, formats).
+    downloads: [(&'static str, &'static str); 3],
 
     why_kicker: &'static str,
     why_title: &'static str,
@@ -53,9 +57,15 @@ const KO_COPY: Copy = Copy {
     lede: "GPU 가속 네이티브 터미널에 좌표 하나를 더했다. \
            모든 표면이 키보드·마우스와 IPC·CLI 양쪽에 똑같이 열려 있어서, \
            사람과 에이전트가 같은 터미널을 동시에 쓴다.",
-    cta_primary: "설치하기",
+    cta_primary: "다운로드",
     cta_secondary: "문서 보기",
-    install_note: "소스에서 빌드하거나 릴리스에서 DMG · MSI · AppImage 를 받는다.",
+    install_note: "OS 별 산출물 표와 설치 절차, 소스 빌드는",
+    install_note_link: "설치 문서 →",
+    downloads: [
+        ("macOS", ".dmg · Apple Silicon"),
+        ("Windows", ".msi · .zip"),
+        ("Linux", ".deb · .rpm · .AppImage · .tar.gz"),
+    ],
 
     why_kicker: "설계 원칙",
     why_title: "사용자의 조작과 에이전트의 조작을 섞지 않는다",
@@ -186,9 +196,15 @@ const EN_COPY: Copy = Copy {
     lede: "Tasty adds one more coordinate on top of a GPU-accelerated native terminal: \
            every surface is equally open to keyboard and mouse *and* to IPC and CLI, \
            so a person and an agent can work the same terminal at once.",
-    cta_primary: "Install",
+    cta_primary: "Download",
     cta_secondary: "Read the docs",
-    install_note: "Build from source, or grab a DMG · MSI · AppImage from Releases.",
+    install_note: "Per-OS packages, install steps and building from source:",
+    install_note_link: "Installation guide →",
+    downloads: [
+        ("macOS", ".dmg · Apple Silicon"),
+        ("Windows", ".msi · .zip"),
+        ("Linux", ".deb · .rpm · .AppImage · .tar.gz"),
+    ],
 
     why_kicker: "Design principles",
     why_title: "User actions and agent actions never bleed into each other",
@@ -368,15 +384,12 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
     <p class="hero__lede">{lede}</p>
     <div class="cta-row">
-      <a class="btn btn--primary" href="{root}{docs}installation.html">{primary}</a>
+      <a class="btn btn--primary" href="{repo}/releases/latest">{primary}</a>
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
-    <div class="install-line">
-      <span class="prompt">$</span>
-      <code>cargo build --release &amp;&amp; ./target/release/tasty</code>
-    </div>
-    <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note}</p>
+    <div class="dl-row">{downloads}</div>
+    <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}installation.html">{note_link}</a></p>
   </div>
   {mock}
 </section>"##,
@@ -394,6 +407,18 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         repo = REPO,
         github = ICON_GITHUB,
         note = html_escape(copy.install_note),
+        note_link = html_escape(copy.install_note_link),
+        downloads = copy
+            .downloads
+            .iter()
+            .map(|(os, formats)| {
+                format!(
+                    "<a class=\"dl\" href=\"{REPO}/releases/latest\"><b>{}</b><span>{}</span></a>",
+                    html_escape(os),
+                    html_escape(formats),
+                )
+            })
+            .collect::<String>(),
         mock = mock(root),
     )
 }
