@@ -4,7 +4,7 @@
 //! event stream before handing it to the HTML renderer: heading slugs + anchors,
 //! `.md` link rewriting, table wrappers, and syntect-classed code blocks.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -67,6 +67,24 @@ pub struct Rendered {
     pub headings: String,
     /// Links that pointed at a file which does not exist on disk.
     pub broken_links: Vec<String>,
+    /// Every heading id on the page — what `#fragment` links can legally target.
+    pub anchors: HashSet<String>,
+    /// Fragment links into the content tree, checked across pages by the caller
+    /// (a translated page's headings get new slugs, so a copied `#anchor` can go stale).
+    pub fragments: Vec<Fragment>,
+}
+
+/// A `#fragment` link found while rendering.
+pub struct Fragment {
+    /// Target markdown file relative to the repo root; `None` means the same page.
+    pub target: Option<PathBuf>,
+    pub anchor: String,
+}
+
+#[derive(Default)]
+struct LinkLog {
+    broken: Vec<String>,
+    fragments: Vec<Fragment>,
 }
 
 /// Where the document being rendered lives, so relative links can be resolved.
@@ -97,8 +115,9 @@ pub fn render(src: &str, ctx: &LinkCtx<'_>, hl: &Highlighter) -> Rendered {
     let mut out: Vec<Event> = Vec::with_capacity(events.len() + 64);
     let mut toc: Vec<TocItem> = Vec::new();
     let mut headings = String::new();
-    let mut broken_links: Vec<String> = Vec::new();
+    let mut links = LinkLog::default();
     let mut slugs: HashMap<String, usize> = HashMap::new();
+    let mut anchors: HashSet<String> = HashSet::new();
 
     let mut i = 0usize;
     while i < events.len() {
@@ -116,6 +135,7 @@ pub fn render(src: &str, ctx: &LinkCtx<'_>, hl: &Highlighter) -> Rendered {
                 });
                 let text = plain_text(inner);
                 let id = unique_slug(&text, &mut slugs);
+                anchors.insert(id.clone());
 
                 if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) {
                     toc.push(TocItem {
@@ -137,7 +157,7 @@ pub fn render(src: &str, ctx: &LinkCtx<'_>, hl: &Highlighter) -> Rendered {
                     classes: classes.clone(),
                     attrs: attrs.clone(),
                 }));
-                out.extend(rewrite_inline(inner, ctx, &mut broken_links));
+                out.extend(rewrite_inline(inner, ctx, &mut links));
                 if level != HeadingLevel::H1 {
                     out.push(Event::Html(CowStr::from(format!(
                         "<a class=\"heading-anchor\" href=\"#{id}\" aria-hidden=\"true\">#</a>"
@@ -196,7 +216,7 @@ pub fn render(src: &str, ctx: &LinkCtx<'_>, hl: &Highlighter) -> Rendered {
 
             // -------------------------------------------------------- links
             event => {
-                out.push(rewrite_one(event.clone(), ctx, &mut broken_links));
+                out.push(rewrite_one(event.clone(), ctx, &mut links));
                 i += 1;
             }
         }
@@ -209,7 +229,9 @@ pub fn render(src: &str, ctx: &LinkCtx<'_>, hl: &Highlighter) -> Rendered {
         html,
         toc,
         headings,
-        broken_links,
+        broken_links: links.broken,
+        anchors,
+        fragments: links.fragments,
     }
 }
 
@@ -254,15 +276,15 @@ fn plain_text(events: &[Event<'_>]) -> String {
 fn rewrite_inline<'e>(
     events: &[Event<'e>],
     ctx: &LinkCtx<'_>,
-    broken: &mut Vec<String>,
+    log: &mut LinkLog,
 ) -> Vec<Event<'e>> {
     events
         .iter()
-        .map(|e| rewrite_one(e.clone(), ctx, broken))
+        .map(|e| rewrite_one(e.clone(), ctx, log))
         .collect()
 }
 
-fn rewrite_one<'e>(event: Event<'e>, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Event<'e> {
+fn rewrite_one<'e>(event: Event<'e>, ctx: &LinkCtx<'_>, log: &mut LinkLog) -> Event<'e> {
     match event {
         Event::Start(Tag::Link {
             link_type,
@@ -270,7 +292,7 @@ fn rewrite_one<'e>(event: Event<'e>, ctx: &LinkCtx<'_>, broken: &mut Vec<String>
             title,
             id,
         }) => {
-            let dest = rewrite_link(&dest_url, ctx, broken);
+            let dest = rewrite_link(&dest_url, ctx, log);
             Event::Start(Tag::Link {
                 link_type,
                 dest_url: CowStr::from(dest),
@@ -284,7 +306,7 @@ fn rewrite_one<'e>(event: Event<'e>, ctx: &LinkCtx<'_>, broken: &mut Vec<String>
             title,
             id,
         }) => {
-            let dest = rewrite_link(&dest_url, ctx, broken);
+            let dest = rewrite_link(&dest_url, ctx, log);
             Event::Start(Tag::Image {
                 link_type,
                 dest_url: CowStr::from(dest),
@@ -301,9 +323,15 @@ fn rewrite_one<'e>(event: Event<'e>, ctx: &LinkCtx<'_>, broken: &mut Vec<String>
 /// * external / anchor-only / mailto -> untouched
 /// * `*.md` inside the content tree -> same relative path with an `.html` extension
 /// * anything else that resolves inside the repo -> GitHub blob URL
-fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> String {
+fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, log: &mut LinkLog) -> String {
+    if let Some(anchor) = dest.strip_prefix('#') {
+        log.fragments.push(Fragment {
+            target: None,
+            anchor: anchor.to_string(),
+        });
+        return dest.to_string();
+    }
     if dest.is_empty()
-        || dest.starts_with('#')
         || dest.contains("://")
         || dest.starts_with("mailto:")
         || dest.starts_with("data:")
@@ -329,11 +357,15 @@ fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Stri
 
     if inside_content && is_markdown {
         if !exists {
-            broken.push(dest.to_string());
+            log.broken.push(dest.to_string());
         }
         let mut rewritten = path_part.trim_end_matches(".md").to_string();
         rewritten.push_str(".html");
         if let Some(a) = anchor {
+            log.fragments.push(Fragment {
+                target: Some(resolved.clone()),
+                anchor: a.to_string(),
+            });
             rewritten.push('#');
             rewritten.push_str(a);
         }
@@ -342,7 +374,7 @@ fn rewrite_link(dest: &str, ctx: &LinkCtx<'_>, broken: &mut Vec<String>) -> Stri
 
     // Leaves the content tree (docs/, CHANGELOG.md, LICENSES/, ...) -> point at GitHub.
     if !escapes_repo && !exists {
-        broken.push(dest.to_string());
+        log.broken.push(dest.to_string());
     }
     let mut url = format!(
         "{}/{}",

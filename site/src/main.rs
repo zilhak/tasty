@@ -21,6 +21,7 @@ mod landing;
 mod md;
 mod shell;
 
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -240,9 +241,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for lang in [&LANG_KO, &LANG_EN] {
         let mut index_entries: Vec<String> = Vec::with_capacity(pages.len());
+        // Fragment links are checked once the whole tree is rendered: a `#anchor`
+        // copied into a translation only exists if the translated heading slugs match.
+        let mut anchors_by_page: HashMap<PathBuf, HashSet<String>> = HashMap::new();
+        let mut fragments: Vec<(PathBuf, md::Fragment)> = Vec::new();
 
         for (i, page) in pages.iter().enumerate() {
-            let (html, headings) = render_page(lang, page, &pages, i, &highlighter, &mut report)?;
+            let (html, rendered) = render_page(lang, page, &pages, i, &highlighter, &mut report)?;
+            let headings = rendered.headings;
+            let key = PathBuf::from(CONTENT_DIR).join(&page.rel);
+            fragments.extend(rendered.fragments.into_iter().map(|f| (key.clone(), f)));
+            anchors_by_page.insert(key, rendered.anchors);
 
             let out_path = out_dir.join(page.url(lang));
             if let Some(parent) = out_path.parent() {
@@ -258,6 +267,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 c = json_escape(&crumb(page, lang)),
                 h = json_escape(&truncate(&headings, 600)),
             ));
+        }
+
+        for (from, fragment) in fragments {
+            let target = fragment.target.as_ref().unwrap_or(&from);
+            let found = anchors_by_page
+                .get(target)
+                .is_some_and(|anchors| anchors.contains(&fragment.anchor));
+            if !found {
+                report.broken_links += 1;
+                eprintln!(
+                    "  broken anchor in {}/{}: {}#{}",
+                    lang.src_dir,
+                    from.strip_prefix(CONTENT_DIR).unwrap_or(&from).display(),
+                    target.strip_prefix(CONTENT_DIR).unwrap_or(target).display(),
+                    fragment.anchor
+                );
+            }
         }
 
         let index_path = out_dir.join(lang.search_index);
@@ -655,8 +681,8 @@ fn crumb(page: &Page, lang: &Lang) -> String {
 
 // -------------------------------------------------------------- docs page
 
-/// Renders one page in one language. Returns the full HTML and the heading text
-/// (for the search index).
+/// Renders one page in one language. Returns the full HTML and the rendered body
+/// (heading text for the search index, anchors and fragment links for checking).
 fn render_page(
     lang: &Lang,
     page: &Page,
@@ -664,7 +690,7 @@ fn render_page(
     idx: usize,
     highlighter: &Highlighter,
     report: &mut Report,
-) -> Result<(String, String), Box<dyn Error>> {
+) -> Result<(String, md::Rendered), Box<dyn Error>> {
     let s = lang.strings;
     let translated = lang.strings.lang == "en" && page.translation.is_some();
 
@@ -743,7 +769,7 @@ fn render_page(
         search_index: lang.search_index,
     });
 
-    Ok((html, rendered.headings))
+    Ok((html, rendered))
 }
 
 fn translation_banner(kind: &str, text: &str, cta: &str, page: &Page) -> String {
