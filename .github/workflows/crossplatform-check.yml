@@ -1,7 +1,7 @@
 name: Cross-platform Check
 
 # 불가침 원칙 #4(크로스플랫폼: 한 OS 전용 코드가 다른 OS 컴파일을 깨뜨리지 않게)를
-# 매 PR 단위로 자동 강제하는 가벼운 가드.
+# main 에 들어온 변경마다 자동 강제하는 가벼운 가드.
 #
 # build-check.yml / release.yml 의 build-* 잡은 dist 빌드 스크립트(무거움) + 수동
 # 트리거라 매-커밋 가드 역할을 못 한다. 본 워크플로는 dist 산출물 없이
@@ -24,9 +24,28 @@ name: Cross-platform Check
 # 누락(gui 전용 심볼을 cfg 게이팅 없이 사용)이 CI 를 통과해 유입됐다(headless-build-01).
 # gui feature 가 켜진 빌드에선 그 실수가 드러나지 않으므로, headless 회귀는 오직
 # `--no-default-features` 컴파일로만 잡힌다. Linux x64 는 gui 네이티브 의존 없이 순수
-# 컴파일만 필요해 가볍게 돌릴 수 있어 아래 check-headless 잡으로 매 PR 가드한다.
+# 컴파일만 필요해 가볍게 돌릴 수 있어 아래 check-headless 잡으로 함께 가드한다.
 
+# 트리거 근거: 이 저장소는 PR 을 열지 않고 main 에 직접 커밋·push 하는 흐름이라
+# `pull_request` 만으로는 이 가드가 발사되지 않는다. 그래서 main push 를 1차 트리거로
+# 둔다. 발사 단위는 커밋이 아니라 push 라 빈도가 낮고(최근 30 일 26 회, 하루 최대 4 회),
+# 세 잡이 서로 다른 러너에서 병렬로 돌며, 아래 concurrency 가 연속 push 의 앞선 실행을
+# 취소한다 — self-hosted 러너 점유는 하루 수 분 규모다.
+# 기각한 대안: (a) 주기 실행(cron) — 변경이 없어도 러너를 깨우고 회귀 검출이 최대 하루
+# 늦다. (b) PR 전용 유지 — 이 저장소의 흐름에서 가드가 영영 돌지 않는다.
+# `pull_request` 는 PR 흐름을 쓰게 될 때를 위해 남겨 둔다.
 on:
+  push:
+    branches: [main]
+    # 아래 세 경로는 컴파일 입력이 아니다 — docs/ 와 site/ 는 워크스페이스 밖이고,
+    # 마크다운을 include_str! 하는 크레이트도 없다. 문서만 담은 push 가 mac/win 러너를
+    # 깨우지 않게 하는 안전판이다(실측상 대부분의 push 는 소스를 함께 담아 실제로
+    # 걸러지는 경우는 드물다). 제외 목록 방식이라 여기 없는 경로가 하나라도 바뀌면
+    # 실행된다 — 새 소스 디렉토리가 생겨도 가드가 자동으로 따라붙는다.
+    paths-ignore:
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.md'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -74,8 +93,9 @@ jobs:
         run: cargo test --workspace --lib --bins --locked
 
   # headless(`--no-default-features`) 컴파일 가드. gui feature 를 끈 상태로만 드러나는
-  # gui-gating 누락(headless-build-01 회귀)을 매 PR 자동 검출한다. gui 네이티브 의존이
-  # 빠져 순수 컴파일만 필요하므로 Linux x64 러너에서 가볍게 돈다.
+  # gui-gating 누락(headless-build-01 회귀)을 `main` push 마다 자동 검출한다(문서만
+  # 바뀐 push 는 제외 — 위 `paths-ignore`). gui 네이티브 의존이 빠져 순수 컴파일만
+  # 필요하므로 Linux x64 러너에서 가볍게 돈다.
   check-headless:
     runs-on: [self-hosted, Linux, X64]
     steps:
