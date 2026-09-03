@@ -1,0 +1,147 @@
+//! `Permission` enum 의 모든 토큰이 권한 문서 두 곳에 등장하는지 검증한다.
+//!
+//! 매니페스트 작성자가 읽는 정본은 문서이고 강제되는 실체는 enum 이라, 문서에 없는
+//! 토큰은 **선언할 수 있는데 아무도 모르는 권한**이 된다. 토큰은 두 문서에 나뉘어
+//! 실리는데(개방 범위 표 · 개념 나열) 한쪽만 갱신해도 컴파일은 통과하므로, 수동
+//! 대조로는 반복해서 놓친다.
+//!
+//! 토큰의 단일 출처는 `Permission::as_token` 이다. exhaustive match 라 variant 를
+//! 늘리면 팔이 강제로 추가되고, 그 팔의 문자열 리터럴이 곧 전체 토큰 집합이다.
+//! 여기서는 그 함수 본문을 소스에서 읽어 토큰을 뽑는다 — enum 을 런타임에 열거할
+//! 방법(`strum` 류)이 없고, 있더라도 scoped variant 는 대표값을 지어내야 한다.
+//!
+//! 역방향(문서에만 있고 enum 에 없는 토큰)은 검사하지 않는다. 문서의 백틱 코드에는
+//! `surface.read` 같은 토큰과 `surface.list` 같은 IPC 메서드명이 섞여 있어, 구조적으로
+//! 구분할 방법이 없으면 오탐만 늘어난다.
+//!
+//! 선례: `tests/architecture_crate_list_complete.rs` · `tests/plugin_manifest_version_parity.rs`.
+
+use std::path::Path;
+
+/// 토큰 문자열의 단일 출처.
+const SOURCE: &str = "crates/tasty-plugin-manifest/src/types.rs";
+
+/// 토큰이 전부 등장해야 하는 문서. 앞은 토큰별 개방 범위 표, 뒤는 개념 나열.
+const DOCS: &[&str] = &[
+    "docs/dev-guide/plugin-permissions.md",
+    "docs/concepts/plugins.md",
+];
+
+fn root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn read(rel: &str) -> String {
+    let path = root().join(rel);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+/// `as_token` 본문의 match 팔에서 토큰을 뽑는다.
+///
+/// - `Self::SurfaceRead => "surface.read".into(),` → `surface.read` (그대로 검색)
+/// - `Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),` → `ipc.invoke:`
+///   (scope 값은 매니페스트가 정하므로 문서에는 `ipc.invoke:<prefix>` 처럼 적힌다 —
+///   `:` 까지만 대조한다)
+fn tokens_from_source(src: &str) -> Vec<String> {
+    let body = src
+        .split_once("pub fn as_token(&self) -> String {")
+        .unwrap_or_else(|| panic!("{SOURCE}: as_token not found"))
+        .1;
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let t = line.trim();
+        // 함수 밖으로 나가면 중단 — 다음 아이템 선언이 나오는 지점.
+        if t.starts_with("pub fn ") || t.starts_with("fn ") {
+            break;
+        }
+        let Some(arm) = t.strip_prefix("Self::") else {
+            continue;
+        };
+        let Some((_, rhs)) = arm.split_once("=>") else {
+            continue;
+        };
+        let rhs = rhs.trim();
+        if let Some(rest) = rhs.strip_prefix("format!(\"") {
+            // scoped: `pfx:{value}"` 형태에서 `{` 앞까지가 고정 prefix.
+            let (prefix, _) = rest
+                .split_once('{')
+                .unwrap_or_else(|| panic!("{SOURCE}: unparsed scoped arm: {t}"));
+            assert!(
+                prefix.ends_with(':'),
+                "{SOURCE}: scoped token prefix should end with ':': {prefix}"
+            );
+            out.push(prefix.to_string());
+        } else if let Some(rest) = rhs.strip_prefix('"') {
+            let (tok, _) = rest
+                .split_once('"')
+                .unwrap_or_else(|| panic!("{SOURCE}: unparsed arm: {t}"));
+            out.push(tok.to_string());
+        }
+    }
+    out
+}
+
+#[test]
+fn as_token_arms_are_parsed() {
+    let tokens = tokens_from_source(&read(SOURCE));
+    // 파서가 조용히 빈 목록을 돌려주면 이 테스트 전체가 무력해진다.
+    assert!(
+        tokens.len() >= 20,
+        "as_token parsing looks broken — got {} tokens: {tokens:?}",
+        tokens.len()
+    );
+    assert!(
+        tokens.iter().any(|t| t == "network"),
+        "expected the `network` token among {tokens:?}"
+    );
+    assert!(
+        tokens.iter().any(|t| t == "ipc.invoke:"),
+        "expected the scoped `ipc.invoke:` prefix among {tokens:?}"
+    );
+}
+
+/// 문서가 이 토큰을 **그 토큰으로서** 적었는가.
+///
+/// scope 없는 토큰은 `` `surface.read` `` 처럼 닫는 백틱까지 정확히 일치해야 한다.
+/// 여는 백틱 + prefix 만 보면 `` `surface.read_since_mark` `` 같은 **IPC 메서드명**이
+/// 토큰 행을 대신 만족시켜, 토큰을 통째로 지워도 통과하는 무력한 가드가 된다.
+///
+/// scoped 토큰(`ipc.invoke:` 처럼 `:` 로 끝남)만 예외다 — scope 값은 매니페스트가
+/// 정하므로 문서에는 `ipc.invoke:<prefix>` 같은 자리표시자와 함께 적힌다.
+fn doc_mentions(text: &str, token: &str) -> bool {
+    if token.ends_with(':') {
+        text.contains(&format!("`{token}"))
+    } else {
+        text.contains(&format!("`{token}`"))
+    }
+}
+
+#[test]
+fn a_method_name_sharing_the_prefix_does_not_satisfy_a_token() {
+    // `notification` 토큰 행을 지우고 `notification.create` 만 남긴 문서는 통과하면 안 된다.
+    assert!(!doc_mentions(
+        "호출: `notification.create` · `notification.list`",
+        "notification"
+    ));
+    assert!(doc_mentions("| `notification` | ... |", "notification"));
+    // scoped 는 자리표시자가 뒤따라도 인정한다.
+    assert!(doc_mentions(
+        "`ipc.invoke:<prefix>`(다른 플러그인 namespace 호출)",
+        "ipc.invoke:"
+    ));
+}
+
+#[test]
+fn every_permission_token_appears_in_the_docs() {
+    let tokens = tokens_from_source(&read(SOURCE));
+    for doc in DOCS {
+        let text = read(doc);
+        let missing: Vec<&String> = tokens.iter().filter(|t| !doc_mentions(&text, t)).collect();
+        assert!(
+            missing.is_empty(),
+            "{doc}: permission tokens missing from the doc: {missing:?}\n\
+             `Permission::as_token` in {SOURCE} is the source of truth — add each token \
+             (in backticks) to the doc, or the permission stays undiscoverable to plugin authors."
+        );
+    }
+}
