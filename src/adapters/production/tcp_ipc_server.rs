@@ -24,6 +24,9 @@ use crate::ports::ipc_server::IpcServerPort;
 
 /// 스트리밍 핸드셰이크 params 에서 추출한 attach 대상(surface/workspace 중 하나).
 struct StreamHandshake {
+    /// client 가 선언한 스트림 프로토콜 버전. `STREAM_PROTO` 와 다르면 attach 를
+    /// **dispatch 하지 않는다** — 상세는 `validate_stream_proto`.
+    proto: u32,
     attach_target: Option<u32>,
     attach_workspace: Option<u32>,
 }
@@ -281,6 +284,11 @@ impl TcpIpcServer {
 
         let handshake = Self::parse_stream_handshake(&ctx, client_id, req);
         let write_handle = Self::spawn_stream_write_thread(writer, sink_rx);
+        if !Self::validate_stream_proto(&ctx, client_id, &handshake, peer) {
+            // 점유를 잡지 않은 채 연결만 정리한다 — attach dispatch 로 가지 않는다.
+            Self::finish_stream_connection(&ctx, client_id, write_handle, peer);
+            return;
+        }
         Self::push_stream_ack(&ctx, client_id);
         Self::dispatch_stream_attach(&ctx, client_id, &handshake);
         Self::run_stream_read_loop(&ctx, client_id, &mut reader);
@@ -298,6 +306,52 @@ impl TcpIpcServer {
         {
             tracing::warn!("stream client: failed to set read timeout: {e}");
         }
+    }
+
+    /// 핸드셰이크의 프로토콜 버전을 검증한다. 맞으면 `true`(정상 진행), 다르면
+    /// **거절 ack**(`ok:false`)을 밀어 넣고 `false` 를 돌려준다.
+    ///
+    /// **이 검증이 attach dispatch 앞에 있어야 하는 이유**: attach 점유는 핸드셰이크
+    /// params 만 보고 잡힌다(`dispatch_stream_attach` → `attach_workspace_for_stream`).
+    /// 프로토콜이 안 맞는 client 는 그 점유를 **쓸 수 없는데도** 잡게 되고, 서버는
+    /// 그 client 가 연결을 닫아 주기 전까지(구버전/hung peer 면 heartbeat TTL 만료
+    /// 20 초) 그 workspace 를 붙잡아 정상 attach 를 `already_attached` 로 거절한다.
+    /// 버전 불일치는 원격 attach 의 흔한 실패 경로라, 실패가 확정된 시점에 점유를
+    /// 아예 잡지 않는 것이 유일하게 확실한 처리다. 근거:
+    /// `docs/adr/0110-attach-handshake-validated-before-occupancy.md`.
+    ///
+    /// 거절은 프로토콜에 이미 있는 모양을 쓴다 — `StreamAck{ok:false, error}` 는
+    /// client(`StreamConnection::open_with`)가 이미 검사해 그 `error` 문구로
+    /// bail 하므로, 새 wire 형식 없이 실패 사유가 사용자에게 그대로 전달된다.
+    fn validate_stream_proto(
+        ctx: &StreamContext,
+        client_id: StreamClientId,
+        handshake: &StreamHandshake,
+        peer: Option<std::net::SocketAddr>,
+    ) -> bool {
+        if handshake.proto == stream::STREAM_PROTO {
+            return true;
+        }
+        tracing::warn!(
+            "stream client {client_id} from {peer:?}: proto {} != server {} — attach 를 dispatch 하지 않고 거절합니다(점유 미획득).",
+            handshake.proto,
+            stream::STREAM_PROTO,
+        );
+        let ack = StreamAck {
+            ok: false,
+            client_id: Some(client_id),
+            proto: stream::STREAM_PROTO,
+            error: Some(format!(
+                "unsupported stream proto {} (server speaks {})",
+                handshake.proto,
+                stream::STREAM_PROTO
+            )),
+        };
+        let ack_bytes = serde_json::to_vec(&ack).unwrap_or_default();
+        let _ = ctx // best-effort 거절 ack — client 가 이미 끊겼으면 무해(연결은 바로 정리된다).
+            .hub
+            .push(client_id, StreamFrame::new(StreamTag::Control, ack_bytes));
+        false
     }
 
     /// Handshake ack — pushed through the sink so the single write thread owns
@@ -357,6 +411,7 @@ impl TcpIpcServer {
             ctx.hub.register_bulk(client_id, ws);
         }
         StreamHandshake {
+            proto: open_params.as_ref().map(|p| p.proto).unwrap_or_default(),
             attach_target,
             attach_workspace,
         }
@@ -674,5 +729,99 @@ impl Drop for TcpIpcServer {
             ms = t_drop.elapsed().as_secs_f64() * 1000.0,
             "S5d ipc_server_drop (accept stop + port file 제거)"
         );
+    }
+}
+
+#[cfg(test)]
+mod handshake_tests {
+    use std::sync::Arc;
+    use std::sync::mpsc;
+
+    use super::*;
+    use crate::adapters::production::stream_hub::StreamHub;
+
+    fn ctx() -> (StreamContext, mpsc::Receiver<StreamInbound>) {
+        let (inbound_tx, inbound_rx) = mpsc::channel();
+        let ctx = StreamContext {
+            hub: StreamHub::new(),
+            inbound_tx,
+            waker: Arc::new(|| {}),
+        };
+        (ctx, inbound_rx)
+    }
+
+    /// 서버와 같은 proto 는 그대로 통과하고, 거절 ack 를 밀어 넣지 않는다.
+    #[test]
+    fn matching_proto_passes_without_pushing_a_rejection() {
+        let (ctx, _rx) = ctx();
+        let client_id = ctx.hub.alloc_id();
+        let sink = ctx.hub.register(client_id);
+        let hs = StreamHandshake {
+            proto: stream::STREAM_PROTO,
+            attach_target: None,
+            attach_workspace: Some(7),
+        };
+
+        assert!(TcpIpcServer::validate_stream_proto(
+            &ctx, client_id, &hs, None
+        ));
+        assert!(
+            sink.try_recv().is_err(),
+            "정상 proto 에는 거절 ack 가 나가면 안 된다"
+        );
+    }
+
+    /// proto 가 다르면 거절 ack(`ok:false` + 사유)를 밀고 `false` — 호출부가 attach
+    /// dispatch 를 건너뛰므로 점유가 잡히지 않는다.
+    #[test]
+    fn mismatched_proto_is_rejected_with_an_error_ack() {
+        let (ctx, _rx) = ctx();
+        let client_id = ctx.hub.alloc_id();
+        let sink = ctx.hub.register(client_id);
+        let hs = StreamHandshake {
+            proto: stream::STREAM_PROTO + 41,
+            attach_target: None,
+            attach_workspace: Some(7),
+        };
+
+        assert!(!TcpIpcServer::validate_stream_proto(
+            &ctx, client_id, &hs, None
+        ));
+
+        let frame = sink.try_recv().expect("거절 ack 가 sink 에 실려야 한다");
+        assert_eq!(frame.tag, StreamTag::Control);
+        let ack: StreamAck = serde_json::from_slice(&frame.payload).expect("ack 역직렬화");
+        assert!(!ack.ok, "거절은 ok:false 로 표현된다: {ack:?}");
+        assert_eq!(
+            ack.proto,
+            stream::STREAM_PROTO,
+            "client 가 서버 버전을 알 수 있어야 한다"
+        );
+        let err = ack.error.expect("거절 사유가 실려야 한다");
+        assert!(
+            err.contains(&(stream::STREAM_PROTO + 41).to_string()),
+            "사유에 client 가 보낸 값이 있어야 한다: {err}"
+        );
+    }
+
+    /// proto 필드가 아예 없는 핸드셰이크(구형/오작성 client)는 serde default 로 0 이
+    /// 되어 거절된다 — "모르는 버전은 통과" 로 새는 구멍이 없는지 고정한다.
+    #[test]
+    fn missing_proto_field_defaults_to_zero_and_is_rejected() {
+        let params = serde_json::json!({ "target_workspace": 7 });
+        let parsed: stream::StreamOpenParams = serde_json::from_value(params).expect("parse");
+        assert_eq!(parsed.proto, 0, "생략된 proto 는 0 이다");
+
+        let (ctx, _rx) = ctx();
+        let client_id = ctx.hub.alloc_id();
+        let _sink = ctx.hub.register(client_id);
+        let hs = StreamHandshake {
+            proto: parsed.proto,
+            attach_target: None,
+            attach_workspace: parsed.target_workspace,
+        };
+        assert!(!TcpIpcServer::validate_stream_proto(
+            &ctx, client_id, &hs, None
+        ));
     }
 }

@@ -149,3 +149,73 @@ pub fn wait_for_control_event(stream: &mut TcpStream, event: &str) -> Value {
         }
     }
 }
+
+/// `stream.open{target_workspace}` 요청만 보내고 **아무 프레임도 읽지 않은** 연결.
+/// 핸드셰이크 실패(프로토콜 불일치·즉시 끊김) 재현용.
+pub fn raw_open_workspace_no_read(port: u16, workspace_id: u64) -> TcpStream {
+    open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}))
+}
+
+/// 임의 `proto` 값으로 workspace attach 핸드셰이크만 보낸 연결(읽지 않음).
+pub fn raw_open_workspace_proto(port: u16, workspace_id: u64, proto: u32) -> TcpStream {
+    open_stream(
+        port,
+        json!({"proto": proto, "target_workspace": workspace_id}),
+    )
+}
+
+/// workspace attach 를 시도하고 결과 이벤트 이름을 돌려준다(panic 하지 않는다).
+/// 성공은 `"attached_workspace"`, 거절은 `"attach_error:<reason>"`.
+///
+/// **연결을 반환하지 않는다** — 호출 직후 소켓이 drop 되므로, 성공했다면 그 점유는
+/// 곧 EOF 로 회수된다. "이 시점에 attach 가 되는가" 만 묻는 프로브용이다.
+pub fn try_open_workspace_attach(port: u16, workspace_id: u64) -> String {
+    try_open_workspace_attach_inner(open_stream(
+        port,
+        json!({"proto": 1, "target_workspace": workspace_id}),
+    ))
+}
+
+/// `try_open_workspace_attach` 에 `session_token` 을 실은 판. 스트림 채널이 토큰을
+/// 보지 않는다는 사실(인증 부재 = 토큰 기반 거절 경로 없음)을 고정하는 데 쓴다.
+pub fn try_open_workspace_attach_with_token(port: u16, workspace_id: u64, token: &str) -> String {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect to server");
+    stream
+        .set_read_timeout(Some(FRAME_READ_TIMEOUT))
+        .expect("set read timeout");
+    let req = json!({
+        "jsonrpc": "2.0",
+        "method": "stream.open",
+        "params": {"proto": 1, "target_workspace": workspace_id},
+        "session_token": token,
+        "id": 1,
+    });
+    let mut msg = serde_json::to_string(&req).unwrap();
+    msg.push('\n');
+    stream.write_all(msg.as_bytes()).expect("send handshake");
+    try_open_workspace_attach_inner(stream)
+}
+
+fn try_open_workspace_attach_inner(stream: TcpStream) -> String {
+    let mut stream = stream;
+    loop {
+        let (tag, payload) = read_frame(&mut stream);
+        if tag != TAG_CONTROL {
+            continue;
+        }
+        let v: Value = serde_json::from_slice(&payload).unwrap();
+        if v.get("ok").is_some() {
+            continue;
+        }
+        match v.get("event").and_then(|e| e.as_str()) {
+            Some("attached_workspace") => return "attached_workspace".into(),
+            Some("attach_error") => {
+                return format!(
+                    "attach_error:{}",
+                    v.get("reason").and_then(|r| r.as_str()).unwrap_or("?")
+                );
+            }
+            _ => continue,
+        }
+    }
+}

@@ -303,22 +303,43 @@ impl App {
         }
     }
 
+    /// GUI mirror attach 의 self(loopback) 게이트 — `port` 가 **이 인스턴스 자신의 IPC
+    /// 포트**면 거부하고 `true`. 원격 GUI mirror 는 `ssh -L` 터널의 local_port(자기 IPC
+    /// 포트와 다름)라 그대로 통과한다.
+    ///
+    /// **debug/release 양쪽에서 거부한다.** 근거가 둘이다:
+    ///
+    /// 1. **구조적으로 성립할 수 없다.** 이 경로의 핸드셰이크(`attach_handshake`)는 GUI
+    ///    **메인 스레드에서 동기 블로킹**으로 돈다. 그런데 그 응답(`attached_workspace`
+    ///    디스크립터)을 만드는 것도 같은 메인 스레드다(accept 스레드는 요청을 큐에 넣을
+    ///    뿐, 점유·디스크립터는 메인 루프가 적용한다). 자기 자신을 대상으로 하면 메인
+    ///    스레드가 자기가 만들어야 할 응답을 기다리며 막혀 **반드시 실패**한다 —
+    ///    heartbeat Ping 을 먼저 받거나 read timeout 이 터진다.
+    /// 2. 실패하는 동안 **서버 쪽 점유만 잡힌다.** 그 workspace 는 실패가 정리될 때까지
+    ///    정상 attach 를 `already_attached` 로 거절한다.
+    ///
+    /// 즉 debug 에서 열어 두어도 얻는 기능이 없고 점유 사고만 남는다. 로컬 self-mirror
+    /// 검증 수단은 그대로 남는다 — `tasty debug attach` 는 **별도 프로세스**의 raw attach
+    /// client(`crates/tasty-cli/src/local/debug/attach.rs`)라 이 메인 스레드 교착과 무관하다.
+    /// 원칙 1 ②(사용자 입력 재현은 debug 격리) 판단은 그대로 유지되며, 이 게이트는 거기에
+    /// "성립 불가 + 점유 사고" 라는 별개 근거를 더해 무조건 거부로 올린 것이다.
+    /// 상세: `docs/adr/0110-attach-handshake-validated-before-occupancy.md`.
+    fn reject_self_attach(&self, port: u16, label: &str) -> bool {
+        if self.hub.ipc_server.as_ref().map(|s| s.port()) != Some(port) {
+            return false;
+        }
+        tracing::warn!(
+            "self(loopback) {label} (port={port}) 는 차단됩니다 — 자기 자신을 mirror 하는 \
+             attach 는 메인 스레드가 자기 응답을 기다리며 교착돼 성립할 수 없고, 실패하는 \
+             동안 그 workspace 점유만 잡습니다. 로컬 self-mirror 는 `tasty debug attach`."
+        );
+        true
+    }
+
     /// IPC(`attach.into_gui`) 경로 한 건을 처리한다.
     fn try_dispatch_one_gui_attach_ipc(&mut self, port: u16, workspace: u32) {
-        // self(loopback) GUI mirror 차단(원칙 1 ②): target port 가 이 인스턴스 자신의
-        // IPC 포트면 사용자 입력 재현(자기 화면 mirror) 성격이라 release 에서 거부한다.
-        // 원격 GUI mirror 는 ssh -L 터널의 local_port(자기 IPC 포트와 다름)라 통과한다.
-        // 로컬 self-mirror 검증은 debug 빌드 `tasty debug attach` 로 한다.
-        #[cfg(not(debug_assertions))]
-        {
-            let self_port = self.hub.ipc_server.as_ref().map(|s| s.port());
-            if self_port == Some(port) {
-                tracing::warn!(
-                    "self(loopback) attach.into_gui (port={port}) 는 release 빌드에서 \
-                     차단됩니다 — 로컬 self-attach 는 debug 빌드 전용."
-                );
-                return;
-            }
+        if self.reject_self_attach(port, "attach.into_gui") {
+            return;
         }
         if let Err(e) = self.start_gui_attach(port, workspace, None, None) {
             tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
@@ -328,17 +349,8 @@ impl App {
     /// 사용자 경로(remote_attach 팝업 Connect) 한 건을 처리한다 — 성공 시 새 mirror
     /// workspace 로 focus 이동.
     fn try_dispatch_one_gui_attach_user(&mut self, req: crate::core::GuiAttachUserReq) {
-        // self(loopback) attach 는 release 에서 차단(원칙 1②) — IPC 경로와 동일 게이트.
-        #[cfg(not(debug_assertions))]
-        {
-            let self_port = self.hub.ipc_server.as_ref().map(|s| s.port());
-            if self_port == Some(req.port) {
-                tracing::warn!(
-                    "self(loopback) remote-attach (port={}) 는 release 빌드에서 차단됩니다.",
-                    req.port
-                );
-                return;
-            }
+        if self.reject_self_attach(req.port, "remote-attach") {
+            return;
         }
         match self.start_gui_attach(req.port, req.workspace, req.tunnel, None) {
             Ok(ws_id) => self.focus_mirror_workspace(ws_id),
