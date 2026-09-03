@@ -8,6 +8,8 @@
 
 pub mod attach;
 
+use crate::out::outln;
+
 /// Run the `debug stream-echo` verification: connect, upgrade to a streaming
 /// channel, send `count` data frames, and confirm each is echoed back by the
 /// host's main loop. Returns an error on connect/handshake failure or mismatch.
@@ -33,7 +35,7 @@ pub fn run_stream_echo(payload: &str, count: u32, port_file: Option<&str>) -> an
     })?;
 
     let (mut conn, client_id) = StreamConnection::open(sock, STREAM_PROTO)?;
-    println!("stream opened (client_id={client_id}, proto={STREAM_PROTO})");
+    outln!("stream opened (client_id={client_id}, proto={STREAM_PROTO})")?;
 
     for i in 0..count {
         let msg = format!("{payload}#{i}");
@@ -49,15 +51,15 @@ pub fn run_stream_echo(payload: &str, count: u32, port_file: Option<&str>) -> an
                 String::from_utf8_lossy(&frame.payload)
             );
         }
-        println!(
+        outln!(
             "echo {}/{} ok: {}",
             i + 1,
             count,
             String::from_utf8_lossy(&frame.payload)
-        );
+        )?;
     }
 
     conn.detach()?;
-    println!("all {count} frame(s) echoed back; detached");
+    outln!("all {count} frame(s) echoed back; detached")?;
     Ok(())
 }

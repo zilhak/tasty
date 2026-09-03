@@ -58,6 +58,17 @@ clap 이 첫 문단을 짧은 help(`-h`), 전체를 긴 help(`--help`)로 그대
 `run_client` 는 갈래를 묻고 `ClientDriven` 이면 넘긴 뒤, 나머지 단발 RPC 경로
 (포트 파일 읽기 → 연결 → 요청 → 출력, `auto_wait` 폴링 포함)만 직접 수행한다.
 
+## stdout 출력 (`out.rs`)
+
+세 갈래 모두 stdout 에는 `crate::out` 의 `outln!` / `out!` 로만 쓴다 — `println!` /
+`print!` 금지. 쓰기는 `anyhow::Result<()>` 를 돌려주므로 출력 함수는 `-> Result<()>`
+이고 호출부는 `?` 로 올린다. 읽는 쪽이 파이프를 먼저 닫아 생기는 `BrokenPipe` 는
+`StdoutClosed` 로 올라와 진입점(`run.rs` 의 `run_client` / `try_run_plugin_cli`,
+`help.rs` 의 `print_augmented_help` / `print_command_tree`)에서 `quiet_if_stdout_closed`
+가 **종료 코드 0** 으로 접는다. 정책·근거는 [error-handling](error-handling.md) "stdout
+쓰기" 와 [ADR-0101](../adr/0101-cli-stdout-broken-pipe-exit-zero.md), 강제는
+`tests/cli_stdout_broken_pipe.rs`.
+
 ## `debug` 갈래
 
 `commands/debug.rs`(선언)와 `local/debug.rs`(실행) 둘 다 모듈째

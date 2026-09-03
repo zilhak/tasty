@@ -12,10 +12,12 @@
 use anyhow::Result;
 use tasty_ipc::port_file as pf;
 
+use crate::out::outln;
+
 /// 포트 파일(`~/.tasty/tasty.port`, debug 는 `tasty-debug.port`)의 포트를 stdout 출력.
 /// `--port-file` 로 경로를 격리할 수 있어 검증 시 격리 데몬 포트도 동일 경로로 조회된다.
 pub fn run_port(port_file: Option<&str>) -> Result<()> {
     let port = pf::read_port_file_from(port_file)?;
-    println!("{port}");
+    outln!("{port}")?;
     Ok(())
 }

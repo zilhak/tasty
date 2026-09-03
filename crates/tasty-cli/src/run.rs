@@ -13,6 +13,7 @@ use super::dynamic;
 use super::format::format_output;
 use super::hook_failure;
 use super::request::command_to_request;
+use crate::out::outln;
 use tasty_ipc::client::IpcConnection;
 
 /// IPC connect 상한. 목적지가 항상 `127.0.0.1` 이라 미리스닝 포트는 즉시 RST 로
@@ -70,11 +71,16 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
         Ok(r) => r,
         Err(e) => return Some(Err(e)),
     };
-    Some(match (polling, auto_wait) {
-        (Some(p), _) => run_dynamic_client_polling(request, p, port_file.as_deref()),
-        (None, Some(aw)) => run_dynamic_client_with_auto_wait(request, aw, port_file.as_deref()),
-        (None, None) => run_dynamic_client(request, port_file.as_deref()),
-    })
+    // stdout 파이프 조기 종료(EPIPE)는 조용한 종료 코드 0 — ADR-0101.
+    Some(crate::out::quiet_if_stdout_closed(
+        match (polling, auto_wait) {
+            (Some(p), _) => run_dynamic_client_polling(request, p, port_file.as_deref()),
+            (None, Some(aw)) => {
+                run_dynamic_client_with_auto_wait(request, aw, port_file.as_deref())
+            }
+            (None, None) => run_dynamic_client(request, port_file.as_deref()),
+        },
+    ))
 }
 
 /// plugin CLI 단발 요청. **agent hook 이 타는 유일한 경로**다(auto-wait/polling 은
@@ -105,10 +111,10 @@ fn run_dynamic_client(
     let mut conn = IpcConnection::new(stream)?;
     match conn.send(&request) {
         Ok(value) => {
-            println!(
+            outln!(
                 "{}",
                 serde_json::to_string_pretty(&value).unwrap_or_default()
-            );
+            )?;
             Ok(())
         }
         Err(e) => {
@@ -196,7 +202,7 @@ fn run_dynamic_client_with_auto_wait(
             }
         }
     };
-    println!("{}", line_json(&first_value));
+    outln!("{}", line_json(&first_value))?;
 
     // ── 2) --no-wait 이면 여기서 종료.
     if aw.skipped {
@@ -298,7 +304,7 @@ fn run_dynamic_client_polling(
                     .map(|s| polling.terminal_states.iter().any(|t| t == s))
                     .unwrap_or(false);
                 if reached {
-                    println!("{}", line_json(&value));
+                    outln!("{}", line_json(&value))?;
                     return Ok(());
                 }
                 last_response = Some(value);
@@ -319,7 +325,7 @@ fn run_dynamic_client_polling(
         {
             // timeout — 마지막 응답을 그대로 출력. terminal 아님을 caller 가 판단.
             if let Some(v) = last_response {
-                println!("{}", line_json(&v));
+                outln!("{}", line_json(&v))?;
             }
             return Ok(());
         }
@@ -328,7 +334,14 @@ fn run_dynamic_client_polling(
 }
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
+///
+/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
+/// 출력 경로 전체가 [`crate::out`] 을 거치므로 `StdoutClosed` 가 여기까지 `?` 로 올라온다.
 pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
+    crate::out::quiet_if_stdout_closed(run_client_inner(command, port_file))
+}
+
+fn run_client_inner(command: Commands, port_file: Option<&str>) -> Result<()> {
     // 갈래는 `dispatch` 가 정한다 — 클라이언트 주도 실행이면 그쪽으로 넘기고,
     // 아니면 아래 단발 JSON-RPC 경로를 탄다. 새 로컬 명령을 추가할 때 이 함수를
     // 고칠 필요는 없다(`dispatch::classify` 만 손댄다).
@@ -348,7 +361,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     match result {
         Ok(mut value) => {
             merge_cli_warnings(&mut value, cli_warnings);
-            format_output(&command, &value)
+            format_output(&command, &value)?;
         }
         Err(e) => {
             let msg = e.to_string();

@@ -13,6 +13,7 @@ pub mod format;
 pub mod help;
 pub mod hook_failure;
 pub mod local;
+pub mod out;
 pub mod plugin;
 pub mod request;
 pub mod run;

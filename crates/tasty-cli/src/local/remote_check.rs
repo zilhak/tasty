@@ -18,6 +18,8 @@ use anyhow::{Context, Result, bail};
 use tasty_i18n::{t, t_args};
 use tasty_ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 
+use crate::out::outln;
+
 use crate::ssh::{self, PortMode, SshTarget, SshTunnel};
 
 /// 터널 너머 IPC 1 회 프로브의 읽기/쓰기 타임아웃. 살아있는 서버는 `system.info` 에
@@ -71,24 +73,24 @@ pub fn run_remote_check(
     let ws_count = info.get("workspace_count").and_then(|v| v.as_u64());
     let port_str = remote_port.to_string();
     match (version, ws_count) {
-        (Some(v), Some(n)) => println!(
+        (Some(v), Some(n)) => outln!(
             "{}",
             t_args(
                 "cli.remote_check.alive_full",
                 &[dest.as_str(), &port_str, v, &n.to_string()],
             )
-        ),
-        (Some(v), None) => println!(
+        )?,
+        (Some(v), None) => outln!(
             "{}",
             t_args(
                 "cli.remote_check.alive_version",
                 &[dest.as_str(), &port_str, v],
             )
-        ),
-        _ => println!(
+        )?,
+        _ => outln!(
             "{}",
             t_args("cli.remote_check.alive_basic", &[dest.as_str(), &port_str])
-        ),
+        )?,
     }
     Ok(())
 }

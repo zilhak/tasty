@@ -13,6 +13,7 @@
 use anyhow::{Context, Result};
 use tasty_i18n::{t, t_args};
 
+use crate::out::outln;
 use crate::remote_browse;
 use crate::ssh::SshTarget;
 
@@ -36,42 +37,42 @@ pub fn run_remote_workspaces(
         // 구조화 데이터라 i18n 대상 아님 — 02 팝업/에이전트가 파싱할 원본.
         let json = serde_json::to_string_pretty(&list)
             .context(t("cli.remote_workspaces.serialize_failed"))?;
-        println!("{json}");
+        outln!("{json}")?;
         return Ok(());
     }
 
     if list.is_empty() {
-        println!("{}", t_args("cli.remote_workspaces.none", &[dest.as_str()]));
+        outln!("{}", t_args("cli.remote_workspaces.none", &[dest.as_str()]))?;
         return Ok(());
     }
 
-    println!(
+    outln!(
         "{}",
         t_args(
             "cli.remote_workspaces.header",
             &[dest.as_str(), &list.len().to_string()],
         )
-    );
+    )?;
     for ws in &list {
         let id_str = ws.id.to_string();
         let pane_str = ws.pane_count.to_string();
         let busy_str = ws.busy_count.to_string();
         if let Some(holder) = ws.holder {
-            println!(
+            outln!(
                 "{}",
                 t_args(
                     "cli.remote_workspaces.row_attached",
                     &[&id_str, &ws.name, &pane_str, &busy_str, &holder.to_string()],
                 )
-            );
+            )?;
         } else {
-            println!(
+            outln!(
                 "{}",
                 t_args(
                     "cli.remote_workspaces.row_free",
                     &[&id_str, &ws.name, &pane_str, &busy_str],
                 )
-            );
+            )?;
         }
     }
     Ok(())

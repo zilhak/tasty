@@ -11,6 +11,8 @@ use tasty_ipc::client::IpcConnection;
 use tasty_ipc::port_file;
 use tasty_plugin_manifest::Manifest;
 
+use crate::out::{out, outln};
+
 fn log_dir() -> Result<PathBuf> {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("plugins-logs"))
@@ -82,10 +84,15 @@ pub fn run_audit_follow(
         }
         if let Some(records) = resp.get("records").and_then(|v| v.as_array()) {
             for rec in records {
-                println!("{}", serde_json::to_string(rec).unwrap_or_default());
+                outln!("{}", serde_json::to_string(rec).unwrap_or_default())?;
             }
-            use std::io::Write;
-            let _ = std::io::stdout().flush(); // best-effort flush — 무시
+            // 배치 경계 flush(종전 best-effort flush 자리). 파이프 생존 프로브가 아니다 —
+            // 레코드는 `outln!` 로 개행과 함께 이미 write 됐으므로 여기서 버퍼는 비어 있고,
+            // 빈 버퍼 flush 는 write(2) 를 내지 않아 EPIPE 를 감지하지 못한다. 읽는 쪽이
+            // 닫혔을 때 이 무한 루프를 실제로 빠져나가는 지점은 **다음 레코드의 `outln!`**
+            // (`StdoutClosed` → 종료 코드 0, ADR-0101)이고, 레코드가 더 없으면
+            // `tail -f | head -1` 처럼 계속 대기한다(종전과 같다).
+            crate::out::flush()?;
         }
         std::thread::sleep(std::time::Duration::from_millis(interval_ms));
     }
@@ -111,18 +118,18 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     let manifest = Manifest::load(&plugin_dir)
         .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
 
-    println!("Plugin: {}", manifest.id);
-    println!("  name:             {}", manifest.name);
-    println!("  version:          {}", manifest.version);
-    println!("  manifest_version: {}", manifest.manifest_version);
-    println!("  api_version:      {}", manifest.api_version);
+    outln!("Plugin: {}", manifest.id)?;
+    outln!("  name:             {}", manifest.name)?;
+    outln!("  version:          {}", manifest.version)?;
+    outln!("  manifest_version: {}", manifest.manifest_version)?;
+    outln!("  api_version:      {}", manifest.api_version)?;
 
     // F.B.2: contributes.detector/handler 가 opaque Value 로 전환되어 본 CLI 표시는
     // Value 의 필드를 직접 읽어 요약한다. concrete schema 검증은 manifest::load 내
     // bin glue 에서 수행하므로 여기 도달했다는 것은 schema 가 valid 함을 의미.
     let detectors = &manifest.contributes.detector;
-    println!();
-    println!("Detectors contributed: {}", detectors.len());
+    outln!()?;
+    outln!("Detectors contributed: {}", detectors.len())?;
     let mut total_unsupported = 0_usize;
     for v in detectors {
         let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
@@ -149,24 +156,24 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
             .collect();
         let ok = total - unsupported.len();
         total_unsupported += unsupported.len();
-        println!(
+        outln!(
             "  - {} (rules: {} OK, {} unsupported)",
             id,
             ok,
             unsupported.len()
-        );
+        )?;
         for rule in &unsupported {
             let kind_name = rule.get("kind").and_then(|k| k.as_str()).unwrap_or("?");
-            println!(
+            outln!(
                 "      ! rule kind \"{}\" unsupported in this host version",
                 kind_name
-            );
+            )?;
         }
     }
 
     let handlers = &manifest.contributes.handler;
-    println!();
-    println!("Handlers contributed: {}", handlers.len());
+    outln!()?;
+    outln!("Handlers contributed: {}", handlers.len())?;
     for v in handlers {
         let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
         let detector_id = v.get("detector").and_then(|x| x.as_str()).unwrap_or("?");
@@ -190,18 +197,20 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
                 }
             })
             .unwrap_or_else(|| "(no action)".into());
-        println!(
+        outln!(
             "  - {} → detector \"{}\" → {}",
-            id, detector_id, action_summary
-        );
+            id,
+            detector_id,
+            action_summary
+        )?;
     }
 
     if total_unsupported > 0 {
-        println!();
-        println!(
+        outln!()?;
+        outln!(
             "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml.",
             total_unsupported
-        );
+        )?;
     }
     Ok(())
 }
@@ -217,13 +226,13 @@ pub fn run_plugin_logs(plugin_id: &str, follow: bool) -> Result<()> {
     }
     if !follow {
         let s = std::fs::read_to_string(&path)?;
-        print!("{s}");
+        out!("{s}")?;
         return Ok(());
     }
     let mut file = std::fs::File::open(&path)?;
     let mut buf = String::new();
     file.read_to_string(&mut buf)?;
-    print!("{buf}");
+    out!("{buf}")?;
     let mut pos = file.metadata()?.len();
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -231,7 +240,7 @@ pub fn run_plugin_logs(plugin_id: &str, follow: bool) -> Result<()> {
         let mut chunk = String::new();
         let n = file.read_to_string(&mut chunk)? as u64;
         if n > 0 {
-            print!("{chunk}");
+            out!("{chunk}")?;
             pos += n;
         }
     }

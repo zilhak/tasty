@@ -19,6 +19,7 @@
 ### Fixed
 
 - host 가 plugin 프로세스에 `TASTY_LOCALE` 을 실제로 채워 보낸다 — 이전에는 host 어디서도 이 env 를 set 하지 않아 `general.language = "ko"`/`"ja"` 여도 plugin UI(클립보드 뷰어 · git 뷰어 등)가 항상 영어였다(셸에서 직접 `export TASTY_LOCALE=…` 한 경우에만 우연히 동작). 이제 부팅 시 `general.language` 를 host 프로세스 env 에 set 해 모든 plugin 이 상속하며, 셸의 export 값은 설정에 덮인다. 값은 spawn 시점 고정 — 언어 변경은 재시작 후 반영.
+- CLI 클라이언트가 stdout 파이프 조기 종료(EPIPE — `tasty list tree | head -1`, `| true` 등 읽는 쪽이 먼저 닫힘)를 만나면 `failed printing to stdout` 으로 panic 해 종료 코드 101 을 내고 `~/.tasty/crash-reports/` 에 가짜 crash report 를 남기던 문제. 이제 세 OS 모두 조용히 **종료 코드 0** 으로 끝나며 crash report 를 만들지 않는다(그 외 stdout 오류는 종전대로 에러). 루트 `--help` 가 같은 상황에서 `Error: Broken pipe`(종료 코드 1)를 내던 것도 같은 규칙으로 정리됐다. 근거 ADR-0101.
 
 ## [0.10.2] - 2026-08-29
 

@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use super::Cli;
 use super::dynamic;
+use crate::out::outln;
 
 struct ArgInfo {
     name: String,
@@ -120,7 +121,13 @@ fn resolve_command_path() -> (clap::Command, String) {
 /// `version` 은 호출자(루트 바이너리)가 주입한다 — tasty-cli 는 라이브러리 crate 라
 /// 자체 CARGO_PKG_VERSION 이 루트 바이너리 버전과 어긋나기 때문 (cli_routing 의
 /// `--version` override 와 같은 이유).
-pub fn print_command_tree(version: &str) {
+///
+/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
+pub fn print_command_tree(version: &str) -> Result<()> {
+    crate::out::quiet_if_stdout_closed(print_command_tree_inner(version))
+}
+
+fn print_command_tree_inner(version: &str) -> Result<()> {
     use clap::CommandFactory;
 
     let entries = match tasty_host_plugin::plugin_root() {
@@ -132,22 +139,22 @@ pub fn print_command_tree(version: &str) {
     } else {
         dynamic::build_augmented_cli(&entries)
     };
-    println!("{} {}", cmd.get_name(), version);
-    println!(
+    outln!("{} {}", cmd.get_name(), version)?;
+    outln!(
         "{}",
         cmd.get_about().map(|s| s.to_string()).unwrap_or_default()
-    );
-    println!();
+    )?;
+    outln!()?;
 
     // `_connector`는 leaf print_node에서는 쓰지 않지만, 시그니처를 재귀 호출 측과
     // 동일하게 유지하기 위해 받기만 한다 (caller가 자식 노드 prefix 조립에 사용).
-    fn print_node(cmd: &clap::Command, prefix: &str, _connector: &str) {
+    fn print_node(cmd: &clap::Command, prefix: &str, _connector: &str) -> Result<()> {
         let about = cmd.get_about().map(|s| s.to_string()).unwrap_or_default();
         let args = format_args(cmd);
         if args.is_empty() {
-            println!("{}{} — {}", prefix, cmd.get_name(), about);
+            outln!("{}{} — {}", prefix, cmd.get_name(), about)
         } else {
-            println!("{}{} {} — {}", prefix, cmd.get_name(), args, about);
+            outln!("{}{} {} — {}", prefix, cmd.get_name(), args, about)
         }
     }
 
@@ -160,10 +167,10 @@ pub fn print_command_tree(version: &str) {
 
         let children = visible_subcommands(sub);
         if children.is_empty() {
-            print_node(sub, prefix, connector);
+            print_node(sub, prefix, connector)?;
         } else {
             let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
-            println!("{}{} — {}", prefix, sub.get_name(), about);
+            outln!("{}{} — {}", prefix, sub.get_name(), about)?;
             let child_count = children.len();
             for (j, child) in children.iter().enumerate() {
                 let child_is_last = j == child_count - 1;
@@ -172,10 +179,11 @@ pub fn print_command_tree(version: &str) {
                 } else {
                     "├── "
                 };
-                print_node(child, &format!("{}{}", connector, child_prefix), connector);
+                print_node(child, &format!("{}{}", connector, child_prefix), connector)?;
             }
         }
     }
+    Ok(())
 }
 
 /// Format a contextual error message for a failed parse.
@@ -233,7 +241,15 @@ pub fn format_parse_error(err: clap::Error) {
 
 /// plugin contributes.cli가 합쳐진 도움말 출력. plugin 디스커버리에 실패해도
 /// 정적 CLI 도움말은 항상 보장한다.
+///
+/// stdout 이 파이프 조기 종료(EPIPE)로 닫히면 조용히 `Ok(())` — 종료 코드 0(ADR-0101).
+/// clap `print_help` 는 `io::Result` 를 돌려주므로 [`crate::out::from_io`] 로 같은
+/// 규칙에 태운다.
 pub fn print_augmented_help() -> Result<()> {
+    crate::out::quiet_if_stdout_closed(print_augmented_help_inner())
+}
+
+fn print_augmented_help_inner() -> Result<()> {
     use clap::CommandFactory;
     let entries = match tasty_host_plugin::plugin_root() {
         Some(root) => dynamic::discover_plugin_clis(&root),
@@ -244,7 +260,7 @@ pub fn print_augmented_help() -> Result<()> {
     } else {
         dynamic::build_augmented_cli(&entries)
     };
-    cmd.print_help()?;
-    println!();
+    crate::out::from_io(cmd.print_help())?;
+    outln!()?;
     Ok(())
 }

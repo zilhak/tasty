@@ -16,6 +16,7 @@ use tasty_remote_profiles::{
 };
 
 use crate::commands::remote_profile::RemoteProfileCommands;
+use crate::out::outln;
 
 /// `--identity <path>` 를 path kind passkey `<name>-key` 로 분리 저장하고 그 이름을
 /// 반환한다(프로필 `passkey_ref` 로 연결). 같은 path 면 그대로 갱신(upsert).
@@ -71,8 +72,8 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             } else {
                 "cli.remote_profile.ssh_added"
             };
-            println!("{}", t_fmt2(key, name, host));
-            report_detect(name, &detect);
+            outln!("{}", t_fmt2(key, name, host))?;
+            report_detect(name, &detect)?;
             Ok(())
         }
         RemoteProfileCommands::AddAttach {
@@ -135,7 +136,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             } else {
                 "cli.remote_profile.attach_added"
             };
-            println!("{}", t_fmt(key, name));
+            outln!("{}", t_fmt(key, name))?;
             Ok(())
         }
         RemoteProfileCommands::List { json, kind } => {
@@ -148,7 +149,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                     .filter(|p| matches_kind(p))
                     .map(profile_json)
                     .collect();
-                println!("{}", serde_json::to_string_pretty(&arr)?);
+                outln!("{}", serde_json::to_string_pretty(&arr)?)?;
             } else {
                 let rows: Vec<&RemoteProfile> = profiles
                     .profiles
@@ -156,21 +157,21 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                     .filter(|p| matches_kind(p))
                     .collect();
                 if rows.is_empty() {
-                    println!("{}", t("cli.remote_profile.list_empty"));
+                    outln!("{}", t("cli.remote_profile.list_empty"))?;
                 } else {
                     // 헤더는 컬럼 폭을 언어별로 맞춰야 해서(CJK 는 표시 폭이 2배)
                     // 패딩까지 포함한 한 줄 전체를 번역 값으로 둔다.
-                    println!("{}", t("cli.remote_profile.list_header"));
+                    outln!("{}", t("cli.remote_profile.list_header"))?;
                     for p in rows {
                         let (dest, detail) = summarize(p);
-                        println!(
+                        outln!(
                             "{:<16} {:<13} {:<24} {:<16} {}",
                             p.name,
                             p.kind,
                             dest,
                             detail,
                             status_of(p),
-                        );
+                        )?;
                     }
                 }
             }
@@ -183,7 +184,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
             };
             if *json {
-                println!("{}", serde_json::to_string_pretty(p)?);
+                outln!("{}", serde_json::to_string_pretty(p)?)?;
                 return Ok(());
             }
             // 왼쪽 라벨 열은 산문이 아니라 **필드 식별자 열**이라 번역하지 않는다.
@@ -195,10 +196,10 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             // (`--json` 키와 1:1 대응해서가 아니다 — `type`↔`kind`,
             // `passkey`↔`passkey_ref` 로 이름이 다르고 `destination` / `status` 는
             // 합성값이라 대응 키가 아예 없다. 라벨 옆의 자연어만 번역 대상이다.)
-            println!("name          : {}", p.name);
-            println!("type          : {}", p.kind);
+            outln!("name          : {}", p.name)?;
+            outln!("type          : {}", p.kind)?;
             if let Some(l) = &p.label {
-                println!("label         : {l}");
+                outln!("label         : {l}")?;
             }
             if let Some(pk) = &p.passkey_ref {
                 let status = if passkeys.get(pk).is_some() {
@@ -206,49 +207,47 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 } else {
                     t("cli.remote_profile.show_passkey_missing")
                 };
-                println!("passkey       : {pk}{status}");
+                outln!("passkey       : {pk}{status}")?;
             }
             if let Some(v) = p.as_ssh() {
-                println!("destination   : {}", v.ssh_destination());
+                outln!("destination   : {}", v.ssh_destination())?;
                 if let Some(port) = v.port() {
-                    println!("port          : {port}");
+                    outln!("port          : {port}")?;
                 }
                 if !v.extra_options().is_empty() {
-                    println!("extra_options : {}", v.extra_options().join(", "));
+                    outln!("extra_options : {}", v.extra_options().join(", "))?;
                 }
-                println!("shell         : {}", v.shell());
+                outln!("shell         : {}", v.shell())?;
                 if v.is_disabled() {
-                    println!(
+                    outln!(
                         "status        : {}",
                         t_fmt("cli.remote_profile.show_status_disabled", name)
-                    );
+                    )?;
                 }
             } else if let Some(a) = p.as_attach() {
                 match a.ssh_ref() {
-                    Some(r) => {
-                        println!(
-                            "ssh_ref       : {r} {}",
-                            t("cli.remote_profile.show_ref_note")
-                        )
-                    }
+                    Some(r) => outln!(
+                        "ssh_ref       : {r} {}",
+                        t("cli.remote_profile.show_ref_note")
+                    )?,
                     None => {
-                        println!("destination   : {}", a.ssh_destination());
+                        outln!("destination   : {}", a.ssh_destination())?;
                         if let Some(port) = a.port() {
-                            println!("port          : {port}");
+                            outln!("port          : {port}")?;
                         }
                         if !a.extra_options().is_empty() {
-                            println!("extra_options : {}", a.extra_options().join(", "));
+                            outln!("extra_options : {}", a.extra_options().join(", "))?;
                         }
                     }
                 }
-                println!("remote_tasty  : {}", a.remote_tasty());
-                println!("port_mode     : {}", a.port_mode());
+                outln!("remote_tasty  : {}", a.remote_tasty())?;
+                outln!("port_mode     : {}", a.port_mode())?;
                 if let Some(pf) = a.port_file() {
-                    println!("port_file     : {pf}");
+                    outln!("port_file     : {pf}")?;
                 }
             } else {
                 for (k, val) in &p.fields {
-                    println!("{k:<14}: {val:?}");
+                    outln!("{k:<14}: {val:?}")?;
                 }
             }
             Ok(())
@@ -321,8 +320,8 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             profiles.upsert(p);
             passkeys.save()?;
             profiles.save()?;
-            println!("{}", t_fmt("cli.remote_profile.updated", name));
-            report_detect(name, &detect);
+            outln!("{}", t_fmt("cli.remote_profile.updated", name))?;
+            report_detect(name, &detect)?;
             Ok(())
         }
         RemoteProfileCommands::Detect { name } => {
@@ -335,17 +334,17 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             }
             // ssh kind(또는 기타): 셸 감지 프로브.
             match crate::ssh::detect_and_persist(name) {
-                Ok(mode) => println!(
+                Ok(mode) => outln!(
                     "{}",
                     t_fmt2("cli.remote_profile.detect_ok", name, mode.as_str())
-                ),
-                Err(e) => println!(
+                )?,
+                Err(e) => outln!(
                     "{}",
                     t_args(
                         "cli.remote_profile.detect_failed",
                         &[&e.to_string(), name, name]
                     )
-                ),
+                )?,
             }
             Ok(())
         }
@@ -353,7 +352,7 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
             let mut profiles = RemoteProfiles::load();
             if profiles.remove(name) {
                 profiles.save()?;
-                println!("{}", t_fmt("cli.remote_profile.removed", name));
+                outln!("{}", t_fmt("cli.remote_profile.removed", name))?;
             } else {
                 anyhow::bail!("{}", t_fmt("cli.remote_profile.not_found", name));
             }
@@ -366,10 +365,10 @@ pub fn run(command: &RemoteProfileCommands) -> Result<()> {
                 .map_err(import_error_message)?;
             profiles.upsert(p);
             profiles.save()?;
-            println!("{}", t_fmt2("cli.remote_profile.import_added", name, from));
+            outln!("{}", t_fmt2("cli.remote_profile.import_added", name, from))?;
             // 셸 감지는 SSH 접속을 발생시키므로 가져오기에 묶지 않는다 — 여러 건을
             // 가져올 때 접속이 연쇄로 일어난다. 필요할 때 사용자가 직접 돌린다.
-            println!("{}", t_fmt("cli.remote_profile.import_detect_hint", name));
+            outln!("{}", t_fmt("cli.remote_profile.import_detect_hint", name))?;
             Ok(())
         }
     }
@@ -410,7 +409,7 @@ fn list_local(json: bool) -> Result<()> {
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&arr)?);
+        outln!("{}", serde_json::to_string_pretty(&arr)?)?;
         return Ok(());
     }
     if hosts.is_empty() {
@@ -430,19 +429,19 @@ fn list_local(json: bool) -> Result<()> {
         } else {
             "cli.remote_profile.list_local_no_alias"
         };
-        println!("{}", t_fmt(key, &shown));
+        outln!("{}", t_fmt(key, &shown))?;
         return Ok(());
     }
     // 헤더는 `list` 와 같은 이유로 패딩 포함 한 줄 전체를 번역 값으로 둔다.
-    println!("{}", t("cli.remote_profile.list_local_header"));
+    outln!("{}", t("cli.remote_profile.list_local_header"))?;
     for h in &hosts {
-        println!(
+        outln!(
             "{:<20} {:<28} {:<20} {}",
             elide(&h.alias, 20),
             elide(&tasty_utils::path::tilde_abbreviate(&h.source), 28),
             elide(&target_hint(h), 20),
             imported_as(&profiles, &h.alias).unwrap_or("-"),
-        );
+        )?;
     }
     Ok(())
 }
@@ -487,21 +486,21 @@ fn detect_attach(profiles: &RemoteProfiles, p: &RemoteProfile) -> Result<()> {
         port_file.as_deref(),
     ) {
         Ok(port) => {
-            println!(
+            outln!(
                 "{}",
                 t_fmt2(
                     "cli.remote_profile.attach_detect_ok",
                     &p.name,
                     &port.to_string()
                 )
-            );
+            )?;
             Ok(())
         }
         Err(e) => {
-            println!(
+            outln!(
                 "{}",
                 t_fmt("cli.remote_profile.attach_detect_failed", &e.to_string())
-            );
+            )?;
             Ok(())
         }
     }
@@ -564,19 +563,20 @@ fn status_of(p: &RemoteProfile) -> &'static str {
 }
 
 /// `apply_shell_to_profile` 결과를 사용자에게 출력한다. 명시 셸(None)은 조용히 넘어간다.
-fn report_detect(name: &str, detect: &Option<Result<crate::ssh::PortMode>>) {
+fn report_detect(name: &str, detect: &Option<Result<crate::ssh::PortMode>>) -> Result<()> {
     match detect {
-        Some(Ok(mode)) => println!(
+        Some(Ok(mode)) => outln!(
             "{}",
             t_fmt("cli.remote_profile.auto_detect_ok", mode.as_str())
-        ),
-        Some(Err(e)) => println!(
+        )?,
+        Some(Err(e)) => outln!(
             "{}",
             t_args(
                 "cli.remote_profile.auto_detect_failed",
                 &[&e.to_string(), name, name]
             )
-        ),
+        )?,
         None => {}
     }
+    Ok(())
 }

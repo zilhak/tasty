@@ -13,6 +13,7 @@
 use anyhow::{Context, Result};
 use tasty_i18n::{t, t_args};
 
+use crate::out::outln;
 use crate::remote_create;
 use crate::ssh::SshTarget;
 
@@ -37,11 +38,11 @@ pub fn run_remote_new_workspace(
         // 구조화 데이터라 i18n 대상 아님 — 에이전트가 id 를 파싱해 attach 로 넘긴다.
         let json = serde_json::to_string_pretty(&created)
             .context(t("cli.remote_new_workspace.serialize_failed"))?;
-        println!("{json}");
+        outln!("{json}")?;
         return Ok(());
     }
 
-    println!(
+    outln!(
         "{}",
         t_args(
             "cli.remote_new_workspace.created",
@@ -52,6 +53,6 @@ pub fn run_remote_new_workspace(
                 &created.index.to_string(),
             ],
         )
-    );
+    )?;
     Ok(())
 }

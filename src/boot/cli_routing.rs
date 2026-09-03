@@ -8,7 +8,7 @@ use crate::cli;
 /// CLI 라우팅 결과. `parse_or_route` 가 반환한다.
 pub(crate) enum Routed {
     /// `cli_routing` 안에서 이미 출력/실행됨. 호출자는 즉시 Ok(()) 반환.
-    /// - `-a/--all` → `cli::print_command_tree` (i18n 무관, clap get_about println)
+    /// - `-a/--all` → `cli::print_command_tree` (i18n 무관, clap get_about 출력)
     /// - clap parse 에러 → `cli::format_parse_error` 내부 std::process::exit (unreachable)
     /// - plugin CLI 매칭 → `cli::try_run_plugin_cli` 실행 완료 (에러는 Result 채널로 propagate)
     AlreadyHandled,
@@ -31,7 +31,7 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     {
         let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|a| a == "-a" || a == "--all") {
-            cli::print_command_tree(env!("CARGO_PKG_VERSION"));
+            cli::print_command_tree(env!("CARGO_PKG_VERSION"))?;
             return Ok(Routed::AlreadyHandled);
         }
         // root-level `--help` / `-h` 만 가로챈다 — `args[1]` 위치 체크로 좁혀

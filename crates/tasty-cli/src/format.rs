@@ -1,12 +1,15 @@
-use super::{AgentCommands, Commands, ListCommands};
+use anyhow::Result;
 
-pub fn format_output(command: &Commands, result: &serde_json::Value) {
+use super::{AgentCommands, Commands, ListCommands};
+use crate::out::outln;
+
+pub fn format_output(command: &Commands, result: &serde_json::Value) -> Result<()> {
     match command {
         Commands::List { command } => format_list_output(command, result),
         Commands::Agent { command } => format_agent_output(command, result),
         _ => {
             // Pretty print JSON
-            println!("{}", serde_json::to_string_pretty(result).unwrap());
+            outln!("{}", serde_json::to_string_pretty(result).unwrap())
         }
     }
 }
@@ -16,12 +19,12 @@ pub fn format_output(command: &Commands, result: &serde_json::Value) {
 /// 신호를 기다린다" 를 raw JSON 을 눈으로 파싱하지 않고 바로 알아볼 수 있어야
 /// 한다. 그 외 커맨드(barrier/semaphore/lease/rate_limit/task-graph 등)는 구조적
 /// 데이터라 pretty JSON 그대로가 적절 — GUI 는 만들지 않는다(결정 5).
-fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) {
+fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> Result<()> {
     match command {
         AgentCommands::TaskList { .. } => format_task_list(result),
         AgentCommands::TaskGet { .. } => format_task_get(result),
         AgentCommands::TaskRun { .. } => format_task_run(result),
-        _ => println!("{}", serde_json::to_string_pretty(result).unwrap()),
+        _ => outln!("{}", serde_json::to_string_pretty(result).unwrap()),
     }
 }
 
@@ -67,25 +70,26 @@ fn task_state_kind(task: &serde_json::Value) -> &str {
         .unwrap_or("?")
 }
 
-fn format_task_list(result: &serde_json::Value) {
+fn format_task_list(result: &serde_json::Value) -> Result<()> {
     let tasks = result.get("tasks").and_then(|v| v.as_array());
     let Some(tasks) = tasks else {
-        println!("{}", serde_json::to_string_pretty(result).unwrap());
-        return;
+        outln!("{}", serde_json::to_string_pretty(result).unwrap())?;
+        return Ok(());
     };
     if tasks.is_empty() {
-        println!("No tasks");
+        outln!("No tasks")?;
     } else {
         for t in tasks {
             let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
             let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             let state = task_state_kind(t);
-            println!("{state:<10} {id}  {name}");
+            outln!("{state:<10} {id}  {name}")?;
         }
     }
     if let Some(runner) = result.get("runner") {
-        println!("{}", format_runner_summary(runner));
+        outln!("{}", format_runner_summary(runner))?;
     }
+    Ok(())
 }
 
 /// `command`(internally-tagged, `{"kind": "...", ...}`) 한 줄 요약. audit 시나리오
@@ -158,20 +162,20 @@ fn format_on_failure_summary(on_failure: &serde_json::Value) -> String {
     }
 }
 
-fn format_task_get(result: &serde_json::Value) {
+fn format_task_get(result: &serde_json::Value) -> Result<()> {
     let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("?");
     let name = result.get("name").and_then(|v| v.as_str()).unwrap_or("?");
     let state = task_state_kind(result);
-    println!("id: {id}");
-    println!("name: {name}");
+    outln!("id: {id}")?;
+    outln!("name: {name}")?;
     if let Some(error) = result
         .get("state")
         .and_then(|s| s.get("error"))
         .and_then(|v| v.as_str())
     {
-        println!("state: {state} ({error})");
+        outln!("state: {state} ({error})")?;
     } else {
-        println!("state: {state}");
+        outln!("state: {state}")?;
     }
     // 결정 5: AwaitExternal 로 외부 신호를 기다리는 task 는 "그냥 running" 과
     // 텍스트로도 구분되게 wait_key/deadline 을 함께 보여준다.
@@ -181,10 +185,10 @@ fn format_task_get(result: &serde_json::Value) {
             .get("deadline_ms")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        println!("awaiting external signal — wait_key={wait_key}, deadline_ms={deadline_ms}");
+        outln!("awaiting external signal — wait_key={wait_key}, deadline_ms={deadline_ms}")?;
     }
     if let Some(command) = result.get("command") {
-        println!("command: {}", format_command_summary(command));
+        outln!("command: {}", format_command_summary(command))?;
     }
     if let Some(deps) = result.get("depends_on").and_then(|v| v.as_array())
         && !deps.is_empty()
@@ -194,43 +198,42 @@ fn format_task_get(result: &serde_json::Value) {
             .filter_map(|v| v.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        println!("depends_on: {list}");
+        outln!("depends_on: {list}")?;
     }
     if let Some(on_failure) = result.get("on_failure") {
-        println!("on_failure: {}", format_on_failure_summary(on_failure));
+        outln!("on_failure: {}", format_on_failure_summary(on_failure))?;
     }
     if let Some(metadata) = result.get("metadata")
         && !metadata.is_null()
     {
-        println!(
+        outln!(
             "metadata: {}",
             serde_json::to_string_pretty(metadata).unwrap()
-        );
+        )?;
     }
     if let Some(result_val) = result.get("result")
         && !result_val.is_null()
     {
-        println!(
+        outln!(
             "result: {}",
             serde_json::to_string_pretty(result_val).unwrap()
-        );
+        )?;
     }
+    Ok(())
 }
 
-fn format_task_run(result: &serde_json::Value) {
-    println!("{}", format_runner_summary(result));
+fn format_task_run(result: &serde_json::Value) -> Result<()> {
+    outln!("{}", format_runner_summary(result))
 }
 
-fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
+fn format_list_output(command: &ListCommands, result: &serde_json::Value) -> Result<()> {
     match command {
         ListCommands::Tree => format_tree(result),
         ListCommands::Workspaces => format_workspace_list(result),
         ListCommands::Panes => format_pane_list(result),
         ListCommands::Notifications => format_notification_list(result),
         ListCommands::Timers => format_timer_list(result),
-        _ => {
-            println!("{}", serde_json::to_string_pretty(result).unwrap());
-        }
+        _ => outln!("{}", serde_json::to_string_pretty(result).unwrap()),
     }
 }
 
@@ -240,43 +243,45 @@ fn format_list_output(command: &ListCommands, result: &serde_json::Value) {
 /// [`format_tab_ids`]) so each level stays within the cognitive-complexity
 /// gate. The emitted text is byte-for-byte identical to the previous
 /// monolithic form.
-fn format_tree(result: &serde_json::Value) {
+fn format_tree(result: &serde_json::Value) -> Result<()> {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {
             let ws_id = ws.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let name = ws.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             let active = ws.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
             let marker = if active { " *" } else { "" };
-            println!("Workspace: {} (id:{}){}", name, ws_id, marker);
+            outln!("Workspace: {} (id:{}){}", name, ws_id, marker)?;
 
             if let Some(panes) = ws.get("panes").and_then(|v| v.as_array()) {
                 for pane in panes {
-                    format_pane(pane);
+                    format_pane(pane)?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Render a single pane line and its tabs.
-fn format_pane(pane: &serde_json::Value) {
+fn format_pane(pane: &serde_json::Value) -> Result<()> {
     let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
     let focused = pane
         .get("focused")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let pfx = if focused { ">" } else { " " };
-    println!("  {} Pane {} (id:{})", pfx, pid, pid);
+    outln!("  {} Pane {} (id:{})", pfx, pid, pid)?;
 
     if let Some(tabs) = pane.get("tabs").and_then(|v| v.as_array()) {
         for tab in tabs {
-            format_tab(tab);
+            format_tab(tab)?;
         }
     }
+    Ok(())
 }
 
 /// Render a single tab line and, for split tabs, its nested layout tree.
-fn format_tab(tab: &serde_json::Value) {
+fn format_tab(tab: &serde_json::Value) -> Result<()> {
     let tid = tab.get("id").and_then(|v| v.as_u64());
     let tname = tab.get("name").and_then(|v| v.as_str()).unwrap_or("?");
     let tactive = tab.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -300,26 +305,25 @@ fn format_tab(tab: &serde_json::Value) {
             .and_then(|s| s.get("focused_surface"))
             .and_then(|v| v.as_u64());
         match tid {
-            Some(t) => {
-                println!("      {} {} (tab:{})", tpfx, tname, t)
-            }
-            None => println!("      {} {}", tpfx, tname),
+            Some(t) => outln!("      {} {} (tab:{})", tpfx, tname, t)?,
+            None => outln!("      {} {}", tpfx, tname)?,
         }
         let mut lines = Vec::new();
         render_layout(layout, "        ", true, focused, &mut lines);
         for l in lines {
-            println!("{}", l);
+            outln!("{}", l)?;
         }
-        return;
+        return Ok(());
     }
 
     let ids = format_tab_ids(tid, sid, surfaces_arr, stype);
 
     if ids.is_empty() {
-        println!("      {} {}", tpfx, tname);
+        outln!("      {} {}", tpfx, tname)?;
     } else {
-        println!("      {} {} [{}]", tpfx, tname, ids);
+        outln!("      {} {} [{}]", tpfx, tname, ids)?;
     }
+    Ok(())
 }
 
 /// Build the bracketed `[tab:.., surface:.., <type>]` id list for a tab.
@@ -444,15 +448,16 @@ fn format_workspace_row(ws: &serde_json::Value) -> String {
     format!("{name} (id:{id}){active_marker}{mirror_marker} ({pane_count} panes)")
 }
 
-fn format_workspace_list(result: &serde_json::Value) {
+fn format_workspace_list(result: &serde_json::Value) -> Result<()> {
     if let Some(workspaces) = result.as_array() {
         for ws in workspaces {
-            println!("{}", format_workspace_row(ws));
+            outln!("{}", format_workspace_row(ws))?;
         }
     }
+    Ok(())
 }
 
-fn format_pane_list(result: &serde_json::Value) {
+fn format_pane_list(result: &serde_json::Value) -> Result<()> {
     if let Some(panes) = result.as_array() {
         for pane in panes {
             let pid = pane.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -470,12 +475,17 @@ fn format_pane_list(result: &serde_json::Value) {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let marker = if focused { " *" } else { "" };
-            println!(
+            outln!(
                 "Pane {}{} ({} tabs) [ws:{} {}]",
-                pid, marker, tab_count, ws_id, ws_name
-            );
+                pid,
+                marker,
+                tab_count,
+                ws_id,
+                ws_name
+            )?;
         }
     }
+    Ok(())
 }
 
 /// `timer.list` 응답을 표로 렌더한다.
@@ -483,7 +493,7 @@ fn format_pane_list(result: &serde_json::Value) {
 /// 마지막 줄의 hard deadline 요약이 이 출력의 요점이다 — "지금 무엇이 이 인스턴스를
 /// 깨우고 있는가" 에 직접 답한다. Lax 타이머는 slack 을 넘기기 전까지 이 줄에
 /// 오르지 않으므로, Lax 가 여기 지목되면 그 자체가 회귀 신호다.
-fn format_timer_list(result: &serde_json::Value) {
+fn format_timer_list(result: &serde_json::Value) -> Result<()> {
     const HEADER: [&str; 5] = ["key", "interval", "next_due", "precision", "last_fired"];
     let empty = Vec::new();
     let timers = result
@@ -500,11 +510,11 @@ fn format_timer_list(result: &serde_json::Value) {
     }
 
     let header_cells = HEADER.map(str::to_string);
-    println!("{}", timer_row_line(&header_cells, &widths, ""));
+    outln!("{}", timer_row_line(&header_cells, &widths, ""))?;
     for row in &rows {
-        println!("{}", timer_row_line(&row.cells, &widths, row.marker));
+        outln!("{}", timer_row_line(&row.cells, &widths, row.marker))?;
     }
-    println!("{}", timer_hard_deadline_line(result));
+    outln!("{}", timer_hard_deadline_line(result))
 }
 
 /// 한 타이머의 표시용 셀 + 소속 허브 표시.
@@ -605,11 +615,11 @@ fn fmt_ago_ms(ms: i64) -> String {
     }
 }
 
-fn format_notification_list(result: &serde_json::Value) {
+fn format_notification_list(result: &serde_json::Value) -> Result<()> {
     if let Some(notifs) = result.as_array() {
         if notifs.is_empty() {
-            println!("No notifications");
-            return;
+            outln!("No notifications")?;
+            return Ok(());
         }
         for n in notifs {
             let title = n.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -617,12 +627,13 @@ fn format_notification_list(result: &serde_json::Value) {
             let read = n.get("read").and_then(|v| v.as_bool()).unwrap_or(false);
             let marker = if read { " " } else { "*" };
             if body.is_empty() {
-                println!("{} {}", marker, title);
+                outln!("{} {}", marker, title)?;
             } else {
-                println!("{} {}: {}", marker, title, body);
+                outln!("{} {}: {}", marker, title, body)?;
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
