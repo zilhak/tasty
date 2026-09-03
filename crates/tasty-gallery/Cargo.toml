@@ -22,6 +22,9 @@ tasty-dag-layout = { path = "../tasty-dag-layout" }
 tasty-design-tokens = { path = "../tasty-design-tokens" }
 tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-icons = { path = "../tasty-icons", features = ["egui"] }
+# quick-switch specimen 라벨을 기본 keybinding 에서 파생시키기 위해서만 쓴다
+# (설정 파일은 읽지 않고 `*Settings::default()` 만 사용).
+tasty-settings = { path = "../tasty-settings" }
 tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }

@@ -25,7 +25,66 @@ pub mod toast_card;
 pub mod typography;
 pub mod widgets;
 
+use std::sync::OnceLock;
+
+use tasty_settings::{GeneralSettings, KeybindingSettings};
 use tasty_type_appearance::theme::Theme;
+
+/// quick-switch 축의 modifier 를 **설정 기본값**에서 표시 문자열로 뽑는다
+/// (`"ctrl+shift"` → `"Ctrl+Shift"`). 표기 규칙은 본체 설정 UI 와 같은
+/// `KeybindingSettings::format_display` 를 그대로 쓴다.
+///
+/// 조합을 specimen 라벨에 문자열로 박으면 기본값이 바뀔 때 라벨만 조용히 남는다 —
+/// 실제로 카테고리 축의 기본값이 바뀐 뒤 컴포넌트 캡션만 갱신되고 이 카탈로그의
+/// 제목·부제는 옛 조합을 가리킨 채로 있었다. 여기서 파생시키면 그 드리프트가 구조적으로
+/// 불가능해진다(단축키를 코드에 하드코딩하지 않는다는 정책과 같은 취지).
+fn modifier_label(combo: &str) -> String {
+    KeybindingSettings::format_display(combo, &GeneralSettings::default())
+}
+
+/// 탭 축 quick-switch specimen 부제 — modifier 는 기본값에서 파생.
+fn tab_switch_caption() -> &'static str {
+    static CAPTION: OnceLock<String> = OnceLock::new();
+    CAPTION
+        .get_or_init(|| {
+            format!(
+                "{} held · number keycap replaces each tab icon, in place",
+                modifier_label(&KeybindingSettings::default().tab_switch_modifier)
+            )
+        })
+        .as_str()
+}
+
+/// 워크스페이스 축 quick-switch specimen 부제 — modifier 는 기본값에서 파생.
+fn workspace_switch_caption() -> &'static str {
+    static CAPTION: OnceLock<String> = OnceLock::new();
+    CAPTION
+        .get_or_init(|| {
+            format!(
+                "{} held · keycap replaces status dot / letter avatar",
+                modifier_label(&KeybindingSettings::default().workspace_switch_modifier)
+            )
+        })
+        .as_str()
+}
+
+/// 카테고리 축 quick-switch specimen 부제 — modifier 는 기본값에서 파생.
+///
+/// 끝의 배타성 문구는 특정 조합이 아니라 **축**을 가리킨다 — 워크스페이스 축과
+/// 카테고리 축은 서로 다른 조합이라 두 오버레이가 동시에 그려지지 않는다는 뜻이며,
+/// 어느 쪽 기본값이 바뀌어도 그대로 참이다.
+fn category_switch_caption() -> &'static str {
+    static CAPTION: OnceLock<String> = OnceLock::new();
+    CAPTION
+        .get_or_init(|| {
+            format!(
+                "{} held · keycap right-aligned on headers / centered on rail --- \
+                 (mutually exclusive with the workspace axis)",
+                modifier_label(&KeybindingSettings::default().category_switch_modifier)
+            )
+        })
+        .as_str()
+}
 
 /// 카탈로그 1차 분류 = 문서 페이지 하나. 상단 crumb + 좌측 nav Catalog 그룹에 사용.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -887,21 +946,19 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "switch-tab",
                             "Tab switch — modifier held",
-                            Some("Ctrl held · number keycap replaces each tab icon, in place"),
+                            Some(tab_switch_caption()),
                             components::switch_overlay::draw_tab,
                         ),
                         spec(
                             "switch-ws",
                             "Workspace switch — modifier held",
-                            Some("Alt held · keycap replaces status dot / letter avatar"),
+                            Some(workspace_switch_caption()),
                             components::switch_overlay::draw_workspace,
                         ),
                         spec(
                             "switch-cat",
-                            "Category switch — Alt+Shift held",
-                            Some(
-                                "Alt+Shift held · keycap right-aligned on headers / centered on rail --- (modifier-exclusive with Alt)",
-                            ),
+                            "Category switch — modifier held",
+                            Some(category_switch_caption()),
                             components::switch_overlay::draw_category,
                         ),
                     ],

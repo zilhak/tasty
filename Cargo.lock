@@ -5805,6 +5805,7 @@ dependencies = [
  "tasty-design-tokens",
  "tasty-egui-theme",
  "tasty-icons",
+ "tasty-settings",
  "tasty-themes",
  "tasty-type-appearance",
  "tasty-type-geometry",
