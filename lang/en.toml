@@ -1334,12 +1334,26 @@ spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tast
 tell_no_target = "Error: no target surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 
 # `tasty` CLI — client-side argument validation and status lines written to stderr.
-# Messages the CLI prints directly carry their own "Error:" / "warning:" prefix so each
-# language can phrase it. `cli.dispatch.*`, `cli.plugin_cli.*` (except manifest_skipped)
-# and `cli.preset.*_read_failed` / `not_json` are error bodies that the caller prefixes.
+# Two shapes live here, told apart by the value itself: messages the CLI prints directly
+# carry their own "Error:" / "warning:" prefix so each language can phrase it, while the
+# rest are error bodies whose prefix the caller (or the `Error: {}` top level) adds.
 [cli.request]
 cwd_invalid = "Error: --cwd: {}"
 close_self_no_surface = "Error: TASTY_SURFACE_ID not set. 'close self' can only be used inside a tasty terminal."
+connect_failed = "Could not connect to tasty instance on port {}: {}. Is tasty running?"
+
+# path-argument normalization (`--cwd` / plugin `path_kind` args). Bodies only — the caller
+# prefixes them (`cli.request.cwd_invalid` / `cli.plugin_cli.arg_invalid`).
+[cli.cwd_resolve]
+current_dir_failed = "failed to read current_dir()"
+cwd_not_accessible = "cwd '{}' does not exist or is not accessible"
+file_not_accessible = "file '{}' does not exist or is not accessible"
+cwd_empty = "cwd is empty"
+cwd_metadata_failed = "cwd '{}' metadata read failed"
+cwd_not_directory = "cwd '{}' is not a directory"
+path_empty = "path is empty"
+file_metadata_failed = "file '{}' metadata read failed"
+file_not_regular = "file '{}' is not a regular file"
 
 [cli.memory]
 value_file_read_failed = "Error: failed to read value file: {}"
@@ -1353,6 +1367,7 @@ goal_surface_required = "Error: must specify a surface. Use --surface <id>, or r
 
 [cli.agent]
 inputs_empty = "Error: --inputs must contain at least one task id"
+command_workspace_id_overridden = "--command JSON's workspace_id({}) differs from the --workspace-id flag ({}); overridden with {}"
 flag_file_read_failed = "Error: reading {} for {}: {}"
 flag_not_json = "Error: parsing {} as JSON: {}"
 purge_filter_required = "Error: --states or --older-than-ms is required (refusing to purge the whole workspace)"
@@ -1378,6 +1393,8 @@ file_read_failed = "Error: --file {}: {}"
 settings_apply_source_required = "Error: settings apply requires --json or --file"
 settings_patch_not_json = "Error: invalid JSON in settings patch: {}"
 lua_eval_file_failed = "Error: lua eval-file {}: {}"
+frame_tag_mismatch = "frame {}: expected Data tag, got {}"
+frame_echo_mismatch = "frame {}: echo mismatch — sent {}, got {}"
 
 [cli.plugin_cli]
 manifest_skipped = "warning: plugin manifest at {} skipped: {}"
@@ -1388,10 +1405,12 @@ unknown_subcommand = "unknown subcommand '{} {}'"
 flag_repeated = "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)"
 auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
 auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
+arg_invalid = "--{}: {}"
 
-# `tasty plugin doctor` report (stdout). Manifest field names (`name:` … `api_version:`),
-# action kinds (`surface "…"` / `ipc "…"`) and the handler row's `detector` stay literal —
-# they mirror manifest keys/values one-to-one (see docs/dev-guide/i18n.md exceptions).
+# `tasty plugin` — the `doctor` report (stdout) plus the command group's error bodies.
+# In the report, manifest field names (`name:` … `api_version:`), action kinds
+# (`surface "…"` / `ipc "…"`) and the handler row's `detector` stay literal — they mirror
+# manifest keys/values one-to-one (see docs/dev-guide/i18n.md exceptions).
 [cli.plugin]
 doctor_header = "Plugin: {}"
 doctor_detectors = "Detectors contributed: {}"
@@ -1401,6 +1420,15 @@ doctor_handlers = "Handlers contributed: {}"
 doctor_action_unknown = "(unknown: {})"
 doctor_action_none = "(no action)"
 doctor_unsupported_summary = "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml."
+home_unresolved = "could not determine tasty home directory"
+root_unresolved = "could not determine plugin root directory"
+not_installed = "plugin '{}' not installed (no manifest at {})"
+manifest_load_failed = "failed to load manifest for '{}': {}"
+no_log_file = "no log file for plugin '{}' at {}"
+
+# stdout write failures other than a closed pipe (EIO / ENOSPC …) — `Error: …` + exit 1.
+[cli.out]
+write_failed = "failed writing to stdout"
 
 [cli.dispatch]
 ssh_profile_not_found = "ssh profile '{}' not found (tasty tool remote-profile list)."
@@ -1424,6 +1452,10 @@ tunnel_established = "ssh tunnel established: 127.0.0.1:{} -> {}:{}"
 disconnected_reconnect = "disconnected — reconnecting with backoff (the session stays on the server)"
 send_requires_send_to = "--send in workspace mode requires --send-to <surface_id> (ignored)."
 force_detached = "force-detached by server"
+unexpected_first_frame = "expected attach Control frame, got {}"
+rejected = "attach rejected: {}"
+workspace_rejected = "workspace attach rejected: {}"
+unexpected_control_event = "unexpected attach control event: {}"
 
 [command_index.cap.soft]
 title = "Command history is large"

@@ -24,15 +24,18 @@ use tasty_ipc::client::IpcConnection;
 /// `remote_browse.rs` 의 `PROBE_TIMEOUT`.
 const IPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// loopback IPC 포트에 상한을 걸고 연결한다. 실패 메시지는 기존 문구를 그대로
-/// 유지한다(사용자·테스트가 보는 표면 불변).
+/// loopback IPC 포트에 상한을 걸고 연결한다. 실패 메시지는 `cli.request.connect_failed`
+/// 한 키를 모든 연결 지점(plugin audit-follow / debug stream-echo / attach)과 공유한다.
 fn connect_ipc(port: u16) -> Result<TcpStream> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     TcpStream::connect_timeout(&addr, IPC_CONNECT_TIMEOUT).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port,
-            e
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })
 }

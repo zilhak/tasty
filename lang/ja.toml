@@ -1313,12 +1313,26 @@ spawn_no_parent = "エラー: 親サーフェスがありません。--surface �
 tell_no_target = "エラー: 対象サーフェスがありません。--surface を指定するか、tasty ターミナル内で実行してください (TASTY_SURFACE_ID)."
 
 # `tasty` CLI — クライアント側の引数検証エラーと stderr のステータス行。
-# CLI が直接出力するメッセージは "エラー:" / "警告:" の接頭辞を値に含める(言語ごとに表現が
-# 異なる)。`cli.dispatch.*`、`cli.plugin_cli.*`(manifest_skipped を除く)、`cli.preset.*_read_failed`
-# / `not_json` は呼び出し側が接頭辞を付けるエラー本文である。
+# 2 種類が混在し、値そのもので見分けられる: CLI が直接出力するメッセージは "エラー:" /
+# "警告:" の接頭辞を値に含め(言語ごとに表現が異なる)、それ以外は呼び出し側または最上位の
+# `エラー: {}` が接頭辞を付けるエラー本文である。
 [cli.request]
 cwd_invalid = "エラー: --cwd: {}"
 close_self_no_surface = "エラー: TASTY_SURFACE_ID が設定されていません。'close self' は tasty ターミナル内でのみ使用できます。"
+connect_failed = "ポート {} の tasty インスタンスに接続できません: {}。tasty は起動していますか?"
+
+# パス引数の正規化(`--cwd` / plugin の `path_kind` 引数)。本文のみ — 接頭辞は呼び出し側が付ける
+# (`cli.request.cwd_invalid` / `cli.plugin_cli.arg_invalid`)。
+[cli.cwd_resolve]
+current_dir_failed = "current_dir() を読み取れませんでした"
+cwd_not_accessible = "cwd '{}' は存在しないか、アクセスできません"
+file_not_accessible = "ファイル '{}' は存在しないか、アクセスできません"
+cwd_empty = "cwd が空です"
+cwd_metadata_failed = "cwd '{}' のメタデータを読み取れませんでした"
+cwd_not_directory = "cwd '{}' はディレクトリではありません"
+path_empty = "パスが空です"
+file_metadata_failed = "ファイル '{}' のメタデータを読み取れませんでした"
+file_not_regular = "ファイル '{}' は通常のファイルではありません"
 
 [cli.memory]
 value_file_read_failed = "エラー: 値ファイルを読み込めませんでした: {}"
@@ -1332,6 +1346,7 @@ goal_surface_required = "エラー: surface を指定してください。--surf
 
 [cli.agent]
 inputs_empty = "エラー: --inputs には task id を 1 つ以上含めてください"
+command_workspace_id_overridden = "--command JSON の workspace_id({}) が --workspace-id フラグの値({}) と異なるため {} で上書きしました"
 flag_file_read_failed = "エラー: {} を読み込めませんでした ({} 用): {}"
 flag_not_json = "エラー: {} を JSON として解析できませんでした: {}"
 purge_filter_required = "エラー: --states または --older-than-ms が必要です (ワークスペース全体の purge は拒否します)"
@@ -1357,6 +1372,8 @@ file_read_failed = "エラー: --file {}: {}"
 settings_apply_source_required = "エラー: settings apply には --json または --file が必要です"
 settings_patch_not_json = "エラー: settings patch の JSON が無効です: {}"
 lua_eval_file_failed = "エラー: lua eval-file {}: {}"
+frame_tag_mismatch = "frame {}: Data タグを期待しましたが {} を受信しました"
+frame_echo_mismatch = "frame {}: echo 不一致 — 送信 {}、受信 {}"
 
 [cli.plugin_cli]
 manifest_skipped = "警告: {} の plugin マニフェストをスキップしました: {}"
@@ -1367,9 +1384,11 @@ unknown_subcommand = "不明なサブコマンド '{} {}'"
 flag_repeated = "--{} が {} 回指定されました — 値は 1 つだけ受け付けます (先の値が黙って破棄されるのを防ぐため拒否します)"
 auto_wait_no_mode = "auto_wait '{}' に 'polling' も 'strategy' もありません"
 auto_wait_unknown_strategy = "auto_wait '{}' が不明な strategy '{}' を参照しています"
+arg_invalid = "--{}: {}"
 
-# `tasty plugin doctor` レポート(stdout)。マニフェストのフィールド名(`name:` … `api_version:`)・
-# action kind(`surface "…"` / `ipc "…"`)・handler 行の `detector` はマニフェストのキー/値と 1:1 なのでそのまま。
+# `tasty plugin` — `doctor` レポート(stdout)とこのコマンド群のエラー本文。レポート内の
+# マニフェストのフィールド名(`name:` … `api_version:`)・action kind(`surface "…"` / `ipc "…"`)・
+# handler 行の `detector` はマニフェストのキー/値と 1:1 なのでそのまま。
 [cli.plugin]
 doctor_header = "プラグイン: {}"
 doctor_detectors = "提供 detector 数: {}"
@@ -1379,6 +1398,15 @@ doctor_handlers = "提供 handler 数: {}"
 doctor_action_unknown = "(不明: {})"
 doctor_action_none = "(action なし)"
 doctor_unsupported_summary = "未対応の rule が {} 件あります — 無視されます。host の api_version は Cargo.toml を確認してください。"
+home_unresolved = "tasty のホームディレクトリを特定できません"
+root_unresolved = "plugin のルートディレクトリを特定できません"
+not_installed = "plugin '{}' はインストールされていません ({} にマニフェストがありません)"
+manifest_load_failed = "'{}' のマニフェストを読み込めませんでした: {}"
+no_log_file = "plugin '{}' のログファイルが {} にありません"
+
+# 閉じられたパイプ以外の stdout 書き込み失敗(EIO / ENOSPC …) — `エラー: …` + exit 1。
+[cli.out]
+write_failed = "stdout への書き込みに失敗しました"
 
 [cli.dispatch]
 ssh_profile_not_found = "ssh プロファイル '{}' が見つかりません (tasty tool remote-profile list)。"
@@ -1402,6 +1430,10 @@ tunnel_established = "ssh トンネルを確立しました: 127.0.0.1:{} -> {}:
 disconnected_reconnect = "接続が切断されました — バックオフ後に再接続します (セッションはサーバーに残ります)"
 send_requires_send_to = "workspace モードの --send は --send-to <surface_id> と併用してください (無視します)。"
 force_detached = "サーバーによって強制 detach されました"
+unexpected_first_frame = "attach Control フレームを期待しましたが {} を受信しました"
+rejected = "attach が拒否されました: {}"
+workspace_rejected = "workspace attach が拒否されました: {}"
+unexpected_control_event = "予期しない attach control イベントです: {}"
 
 [command_index.cap.soft]
 title = "コマンド履歴が大量です"

@@ -15,17 +15,20 @@ use anyhow::{Context, Result, bail};
 /// raw 값을 호출자 cwd 기준 absolute path 로 정규화(symlink 해석 포함). 존재 여부·
 /// 종류(dir/file) 검증은 호출자가 이어서 한다 — `normalize_cwd_arg`/`normalize_file_arg`
 /// 공통 1 단계.
-fn canonicalize_from_cwd(raw: &str, label: &str) -> Result<PathBuf> {
+///
+/// `not_accessible_key` 는 실패 문구의 번역 키다 — 대상 종류(cwd/파일)를 부르는 말이
+/// 언어마다 달라, 영어 라벨을 인자로 끼워 넣으면 번역문 안에 영어가 남는다.
+fn canonicalize_from_cwd(raw: &str, not_accessible_key: &str) -> Result<PathBuf> {
     let p = Path::new(raw);
     let base: PathBuf = if p.is_absolute() {
         p.to_path_buf()
     } else {
         std::env::current_dir()
-            .with_context(|| "failed to read current_dir()")?
+            .with_context(|| tasty_i18n::t("cli.cwd_resolve.current_dir_failed").to_string())?
             .join(p)
     };
     base.canonicalize()
-        .with_context(|| format!("{label} '{raw}' does not exist or is not accessible"))
+        .with_context(|| tasty_i18n::t_fmt(not_accessible_key, raw))
 }
 
 /// canonicalize 는 Windows 에서 `\\?\` verbatim 경로를 돌려준다. 정규화된 경로는
@@ -43,14 +46,23 @@ fn strip_verbatim(p: &Path) -> String {
 /// - 비존재 / file / 권한 부족 → `Err`.
 pub fn normalize_cwd_arg(raw: &str) -> Result<String> {
     if raw.is_empty() {
-        bail!("cwd is empty");
+        bail!("{}", tasty_i18n::t("cli.cwd_resolve.cwd_empty"));
     }
-    let canon = canonicalize_from_cwd(raw, "cwd")?;
-    let meta = canon
-        .metadata()
-        .with_context(|| format!("cwd '{}' metadata read failed", canon.display()))?;
+    let canon = canonicalize_from_cwd(raw, "cli.cwd_resolve.cwd_not_accessible")?;
+    let meta = canon.metadata().with_context(|| {
+        tasty_i18n::t_fmt(
+            "cli.cwd_resolve.cwd_metadata_failed",
+            &canon.display().to_string(),
+        )
+    })?;
     if !meta.is_dir() {
-        bail!("cwd '{}' is not a directory", canon.display());
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.cwd_resolve.cwd_not_directory",
+                &canon.display().to_string()
+            )
+        );
     }
     Ok(strip_verbatim(&canon))
 }
@@ -61,14 +73,23 @@ pub fn normalize_cwd_arg(raw: &str) -> Result<String> {
 /// 몫이다(예: claude 세션 프로필의 JSON 유효성은 `tasty-plugin-claude` 가 검증).
 pub fn normalize_file_arg(raw: &str) -> Result<String> {
     if raw.is_empty() {
-        bail!("path is empty");
+        bail!("{}", tasty_i18n::t("cli.cwd_resolve.path_empty"));
     }
-    let canon = canonicalize_from_cwd(raw, "file")?;
-    let meta = canon
-        .metadata()
-        .with_context(|| format!("file '{}' metadata read failed", canon.display()))?;
+    let canon = canonicalize_from_cwd(raw, "cli.cwd_resolve.file_not_accessible")?;
+    let meta = canon.metadata().with_context(|| {
+        tasty_i18n::t_fmt(
+            "cli.cwd_resolve.file_metadata_failed",
+            &canon.display().to_string(),
+        )
+    })?;
     if !meta.is_file() {
-        bail!("file '{}' is not a regular file", canon.display());
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.cwd_resolve.file_not_regular",
+                &canon.display().to_string()
+            )
+        );
     }
     Ok(strip_verbatim(&canon))
 }

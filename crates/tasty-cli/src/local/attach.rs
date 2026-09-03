@@ -49,7 +49,12 @@ pub(crate) fn run_attach_on_port(
 ) -> Result<AttachExit> {
     let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {port}: {e}. Is tasty running?"
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
     let (mut conn, client_id) = StreamConnection::open_attach(sock, STREAM_PROTO, surface)?;
@@ -57,7 +62,13 @@ pub(crate) fn run_attach_on_port(
     // 핸드셰이크 ack 다음의 attach 결과 Control 프레임.
     let first = conn.recv()?;
     if first.tag != StreamTag::Control {
-        bail!("expected attach Control frame, got {:?}", first.tag);
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.attach.unexpected_first_frame",
+                &format!("{:?}", first.tag)
+            )
+        );
     }
     let ctrl: serde_json::Value = serde_json::from_slice(&first.payload)?;
     match ctrl.get("event").and_then(|v| v.as_str()) {
@@ -67,9 +78,12 @@ pub(crate) fn run_attach_on_port(
                 .get("reason")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            bail!("attach rejected: {reason}");
+            bail!("{}", tasty_i18n::t_fmt("cli.attach.rejected", reason));
         }
-        other => bail!("unexpected attach control event: {other:?}"),
+        other => bail!(
+            "{}",
+            tasty_i18n::t_fmt("cli.attach.unexpected_control_event", &format!("{other:?}"))
+        ),
     }
     let cols = ctrl.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
     let rows = ctrl.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
@@ -192,7 +206,12 @@ pub(crate) fn run_attach_workspace_on_port(
 ) -> Result<AttachExit> {
     let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {port}: {e}. Is tasty running?"
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
     let (mut conn, client_id) =
@@ -200,7 +219,13 @@ pub(crate) fn run_attach_workspace_on_port(
 
     let first = conn.recv()?;
     if first.tag != StreamTag::Control {
-        bail!("expected attach Control frame, got {:?}", first.tag);
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.attach.unexpected_first_frame",
+                &format!("{:?}", first.tag)
+            )
+        );
     }
     let ctrl: serde_json::Value = serde_json::from_slice(&first.payload)?;
     match ctrl.get("event").and_then(|v| v.as_str()) {
@@ -210,9 +235,15 @@ pub(crate) fn run_attach_workspace_on_port(
                 .get("reason")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            bail!("workspace attach rejected: {reason}");
+            bail!(
+                "{}",
+                tasty_i18n::t_fmt("cli.attach.workspace_rejected", reason)
+            );
         }
-        other => bail!("unexpected attach control event: {other:?}"),
+        other => bail!(
+            "{}",
+            tasty_i18n::t_fmt("cli.attach.unexpected_control_event", &format!("{other:?}"))
+        ),
     }
 
     // surfaces 디스크립터 → 터미널 mirror + 비-터미널 placeholder. 트리 순서 보존.

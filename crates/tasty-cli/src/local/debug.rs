@@ -28,9 +28,12 @@ pub fn run_stream_echo(payload: &str, count: u32, port_file: Option<&str>) -> an
     let port = pf::read_port_file_from(port_file)?;
     let sock = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port,
-            e
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
 
@@ -42,13 +45,26 @@ pub fn run_stream_echo(payload: &str, count: u32, port_file: Option<&str>) -> an
         conn.send(StreamTag::Data, msg.as_bytes())?;
         let frame = conn.recv()?;
         if frame.tag != StreamTag::Data {
-            anyhow::bail!("frame {i}: expected Data tag, got {:?}", frame.tag);
+            anyhow::bail!(
+                "{}",
+                tasty_i18n::t_fmt2(
+                    "cli.debug.frame_tag_mismatch",
+                    &i.to_string(),
+                    &format!("{:?}", frame.tag)
+                )
+            );
         }
         if frame.payload != msg.as_bytes() {
             anyhow::bail!(
-                "frame {i}: echo mismatch — sent {:?}, got {:?}",
-                msg,
-                String::from_utf8_lossy(&frame.payload)
+                "{}",
+                tasty_i18n::t_args(
+                    "cli.debug.frame_echo_mismatch",
+                    &[
+                        &i.to_string(),
+                        &format!("{msg:?}"),
+                        &format!("{:?}", String::from_utf8_lossy(&frame.payload)),
+                    ]
+                )
             );
         }
         outln!(

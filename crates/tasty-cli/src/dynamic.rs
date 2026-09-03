@@ -206,12 +206,28 @@ pub fn matches_to_request(
                 {
                     match arg.path_kind.as_deref() {
                         Some("directory") => Value::String(
-                            super::cwd_resolve::normalize_cwd_arg(raw)
-                                .map_err(|e| anyhow!("--{}: {e}", arg.name))?,
+                            super::cwd_resolve::normalize_cwd_arg(raw).map_err(|e| {
+                                anyhow!(
+                                    "{}",
+                                    tasty_i18n::t_fmt2(
+                                        "cli.plugin_cli.arg_invalid",
+                                        &arg.name,
+                                        &e.to_string()
+                                    )
+                                )
+                            })?,
                         ),
                         Some("file") => Value::String(
-                            super::cwd_resolve::normalize_file_arg(raw)
-                                .map_err(|e| anyhow!("--{}: {e}", arg.name))?,
+                            super::cwd_resolve::normalize_file_arg(raw).map_err(|e| {
+                                anyhow!(
+                                    "{}",
+                                    tasty_i18n::t_fmt2(
+                                        "cli.plugin_cli.arg_invalid",
+                                        &arg.name,
+                                        &e.to_string()
+                                    )
+                                )
+                            })?,
                         ),
                         _ => v,
                     }

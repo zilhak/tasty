@@ -436,8 +436,13 @@ fn inject_command_workspace_id(
         }
         Some(v) if v.as_u64() == Some(flag_workspace_id as u64) => {}
         Some(v) => {
-            warnings.push(format!(
-                "--command JSON의 workspace_id({v})가 --workspace-id 플래그 값({flag_workspace_id})과 달라 {flag_workspace_id}로 덮어썼습니다"
+            warnings.push(tasty_i18n::t_args(
+                "cli.agent.command_workspace_id_overridden",
+                &[
+                    &v.to_string(),
+                    &flag_workspace_id.to_string(),
+                    &flag_workspace_id.to_string(),
+                ],
             ));
             obj.insert(
                 "workspace_id".to_string(),

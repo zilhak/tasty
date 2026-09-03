@@ -35,7 +35,7 @@ fn classify(err: io::Error) -> anyhow::Error {
     if err.kind() == io::ErrorKind::BrokenPipe {
         StdoutClosed.into()
     } else {
-        anyhow::Error::new(err).context("failed writing to stdout")
+        anyhow::Error::new(err).context(tasty_i18n::t("cli.out.write_failed").to_string())
     }
 }
 

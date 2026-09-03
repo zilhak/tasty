@@ -16,7 +16,7 @@ use crate::out::{out, outln};
 fn log_dir() -> Result<PathBuf> {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("plugins-logs"))
-        .ok_or_else(|| anyhow::anyhow!("could not determine tasty home directory"))
+        .ok_or_else(|| anyhow::anyhow!("{}", tasty_i18n::t("cli.plugin.home_unresolved")))
 }
 
 /// Polls `plugin.audit_follow` every `interval_ms` and prints new records as
@@ -33,9 +33,12 @@ pub fn run_audit_follow(
     let port = port_file::read_port_file_from(port_file)?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port,
-            e
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
     let mut conn = IpcConnection::new(stream)?;
@@ -103,20 +106,27 @@ pub fn run_audit_follow(
 /// 표시한다. 호스트가 실행 중이지 않아도 작동하는 local-only 명령.
 pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     let root = tasty_host_plugin::plugin_root()
-        .ok_or_else(|| anyhow::anyhow!("could not determine plugin root directory"))?;
+        .ok_or_else(|| anyhow::anyhow!("{}", tasty_i18n::t("cli.plugin.root_unresolved")))?;
     let plugin_dir = root.join(plugin_id);
     if !plugin_dir.join("tasty-plugin.toml").exists() {
         anyhow::bail!(
-            "plugin '{}' not installed (no manifest at {})",
-            plugin_id,
-            plugin_dir.join("tasty-plugin.toml").display()
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.plugin.not_installed",
+                plugin_id,
+                &plugin_dir.join("tasty-plugin.toml").display().to_string()
+            )
         );
     }
     // F.B.13-3: host file 도메인 검증 (validate_bin_extras) 은 본 바이너리 잔존.
     // CLI tasty-cli 단독 빌드 가능을 위해 schema 검증 (Manifest::load 내장) 까지만
     // 수행. install/remove 경로의 daemon IPC handler 가 bin extras 를 추가 검증.
-    let manifest = Manifest::load(&plugin_dir)
-        .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
+    let manifest = Manifest::load(&plugin_dir).map_err(|e| {
+        anyhow::anyhow!(
+            "{}",
+            tasty_i18n::t_fmt2("cli.plugin.manifest_load_failed", plugin_id, &e.to_string())
+        )
+    })?;
 
     outln!(
         "{}",
@@ -232,9 +242,12 @@ pub fn run_plugin_logs(plugin_id: &str, follow: bool) -> Result<()> {
     let path = log_dir()?.join(format!("{plugin_id}.log"));
     if !path.exists() {
         anyhow::bail!(
-            "no log file for plugin '{}' at {}",
-            plugin_id,
-            path.display()
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.plugin.no_log_file",
+                plugin_id,
+                &path.display().to_string()
+            )
         );
     }
     if !follow {
