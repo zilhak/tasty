@@ -6,7 +6,7 @@
 
 > **Tasty** is a cross-platform, GPU-accelerated terminal emulator purpose-built for AI coding agents. It provides multi-agent orchestration, headless operation, and a focus-independent IPC/CLI surface across Windows, macOS, and Linux. (Detailed docs are in Korean — start at [`docs/index.md`](docs/index.md).)
 
-[![Version](https://img.shields.io/badge/version-0.9.11-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.2-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](docs/installation.md)
 [![Workspace](https://img.shields.io/badge/workspace-43%20crates-orange)](crates/)

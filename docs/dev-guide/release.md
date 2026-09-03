@@ -26,7 +26,12 @@ CLAUDE.md 정책의 운영 형태:
    ### Fixed
    - `fix(...)`: ...
    ```
-3. schema 변경이 있었다면 `crates/tasty-plugin-protocol/CHANGELOG.md` 도 동일 처리. break/deprecation 분류는 [api-conventions](api-conventions.md) "안정성 정책".
+3. `README.md`·`README.ko.md` 의 Version 배지(`img.shields.io/badge/version-X.Y.Z-blue`, `CHANGELOG.md` 로 링크)를 `Cargo.toml` 과 같은 값으로 갱신한다. shields.io static badge 라 URL 에 값이 박혀 있고 빌드 스크립트·테스트 어느 쪽도 검사하지 않으므로, 이 단계가 빠지면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. 배지 변경은 §3 의 bump 커밋에 함께 넣는다. 확인:
+   ```bash
+   V=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+   grep -c "badge/version-$V-" README.md README.ko.md   # 각 1
+   ```
+4. schema 변경이 있었다면 `crates/tasty-plugin-protocol/CHANGELOG.md` 도 동일 처리. break/deprecation 분류는 [api-conventions](api-conventions.md) "안정성 정책".
 
 ### 2. Plugin 매니페스트 서명
 
