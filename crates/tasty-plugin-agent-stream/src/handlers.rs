@@ -168,6 +168,22 @@ pub fn handle_poll(
 /// 이미 떠 있으면 **끄고 새 설정으로 다시 연다**(`replaced: true`). 포트/토큰을 바꾸려고
 /// 별도 명령을 쓰게 만들 이유가 없고, "요청한 설정으로 열려 있다" 는 결과가 호출 횟수와
 /// 무관하게 같아진다.
+///
+/// # 불변: 실행 중인 엔드포인트 ↔ 영속 스냅샷은 어긋나지 않는다
+///
+/// 이 함수(와 [`handle_serve_stop`])가 반환한 뒤, 스냅샷의 `serve` 절은 **이 프로세스에서
+/// 실제로 떠 있는(혹은 떠 있지 않은) 엔드포인트를 그대로** 기술한다. 어긋나면 다음 강제
+/// 재시작 때 plugin 기동 시의 `restore_endpoint` 가 사용자가 닫혔다고 믿는
+/// 주소를 열거나, 열려 있다고 믿는 주소를 열지 않는다 — 대화 전문이 나가는 채널에서
+/// 그것은 ADR-0100 결정 1(명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
+///
+/// 불변을 지키는 규칙은 둘이다.
+///
+/// 1. **아직 아무것도 바꾸지 않았으면 실패를 그대로 올린다.** 첫 레지스트리 락이
+///    poisoned 면 옛 리스너도 스냅샷도 손대기 전이라, 에러로 빠지는 것이 곧 정합이다.
+/// 2. **이미 바꿨으면 기록은 실패하지 않는다.** 리스너를 내렸거나 새로 띄운 뒤의
+///    스냅샷 기록은 [`persist_serve_config`] 로 하며, 그 함수는 poisoned 락을
+///    복구해서라도 쓴다. 여기서 `?` 로 빠지면 "실행 주소 ≠ 스냅샷" 이 그대로 남는다.
 pub fn handle_serve(
     registry: &Shared,
     server: &mut Option<SseServer>,
@@ -193,15 +209,15 @@ pub fn handle_serve(
             // `restore_endpoint` 가 사용자가 닫혔다고 믿는 엔드포인트를 조용히 다시 연다.
             // 대화 전문이 나가는 채널에서 "닫힌 줄 알았는데 열림" 은 ADR-0100 결정 1
             // (명시적으로 켤 때만 뜬다)과 정면으로 어긋난다.
-            clear_persisted_serve(registry, tr);
+            persist_serve_config(registry, None);
             return Err(bind_failed_message(tr, &config, &e));
         }
     };
     let info = started.to_json();
     *server = Some(started);
-    let mut reg = lock(registry, tr)?;
-    reg.set_serve_config(Some(config));
-    reg.save_if_dirty();
+    // 여기서부터는 실패로 빠질 수 없다 — 새 엔드포인트가 이미 떠 있으므로 스냅샷도
+    // 반드시 그 주소를 가리켜야 한다(위 불변 규칙 2).
+    persist_serve_config(registry, Some(config));
     let mut info = info;
     if let Some(map) = info.as_object_mut() {
         map.insert("replaced".into(), Value::from(replaced));
@@ -220,22 +236,38 @@ fn bind_failed_message(tr: &Translator, config: &ServeConfig, detail: &str) -> I
     )
 }
 
-/// 영속된 serve 설정을 지운다. 여기서 실패해도 호출자는 이미 bind 실패를 보고하는
-/// 중이므로 에러를 겹쳐 올리지 않고 경고만 남긴다.
-fn clear_persisted_serve(registry: &Shared, tr: &Translator) {
-    match lock(registry, tr) {
-        Ok(mut reg) => {
-            reg.set_serve_config(None);
-            reg.save_if_dirty();
+/// 스냅샷의 `serve` 절을 지금의 런타임 상태로 맞춘다 — **실패하지 않는다.**
+///
+/// 호출 시점에는 리스너를 이미 내렸거나 새로 띄운 뒤다. 그 상태를 기록하지 못하고
+/// 빠져나가면 "실행 주소 ≠ 스냅샷" 이 남아, 다음 재시작이 엉뚱한 주소를 연다
+/// (`handle_serve` 의 불변 참고). 그래서 락이 poisoned 여도 `PoisonError::into_inner`
+/// 로 복구해 기록한다.
+///
+/// 오염된 데이터를 쓰게 되지 않는가 — 여기서 바꾸는 `serve` 절은 **요청 파라미터에서
+/// 검증을 마치고 온 값**이라 패닉한 스레드가 만지던 것과 무관하다. 함께 직렬화되는
+/// 나머지(watch 목록·offset·`next_seq`)는 패닉으로 찢어지지 않는 Rust 값이고, 최악이라야
+/// 한 tick 낡은 offset 이나 앞선 `seq` 인데 둘 다 tail 의 at-least-once 재개(ADR-0093)가
+/// 이미 감당하는 범위다. 반면 기록을 건너뛰면 손실이 확정적이다.
+fn persist_serve_config(registry: &Shared, config: Option<ServeConfig>) {
+    let mut reg = match registry.lock() {
+        Ok(reg) => reg,
+        Err(poisoned) => {
+            tracing::warn!(
+                "agent-stream: the registry lock is poisoned (the tail thread panicked) — \
+                 recovering it to record the SSE endpoint state, otherwise a restart would \
+                 reopen an address that is no longer the live one"
+            );
+            poisoned.into_inner()
         }
-        Err(e) => tracing::warn!(
-            "agent-stream: cannot clear the persisted SSE endpoint after a failed rebind: {} — a restart may reopen the old endpoint",
-            e.message
-        ),
-    }
+    };
+    reg.set_serve_config(config);
+    reg.save_if_dirty();
 }
 
 /// `agent_stream.serve_stop` — 엔드포인트를 닫고 열린 구독을 정리한다.
+///
+/// [`handle_serve`] 와 같은 불변을 지킨다: 리스너를 내린 **뒤**의 스냅샷 기록은 실패로
+/// 빠질 수 없다. 빠지면 사용자가 닫은 엔드포인트가 스냅샷에 남아 다음 재시작에 되살아난다.
 pub fn handle_serve_stop(
     registry: &Shared,
     server: &mut Option<SseServer>,
@@ -247,9 +279,7 @@ pub fn handle_serve_stop(
         ));
     };
     running.shutdown();
-    let mut reg = lock(registry, tr)?;
-    reg.set_serve_config(None);
-    reg.save_if_dirty();
+    persist_serve_config(registry, None);
     Ok(json!({ "running": false, "stopped": true }))
 }
 
@@ -337,6 +367,116 @@ mod tests {
     fn free_port() -> u16 {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         listener.local_addr().expect("addr").port()
+    }
+
+    /// 레지스트리 락을 실제로 poisoned 로 만든다 — 락을 쥔 스레드를 패닉시키는 것이
+    /// 유일한 방법이라(std 에 강제 poison API 가 없다) 그대로 재현한다. 이 테스트가
+    /// 일부러 낸 패닉이라는 것을 출력에서 알아볼 수 있게 메시지를 남긴다.
+    fn poison_registry(registry: &Shared) {
+        let target = registry.clone();
+        let joined = std::thread::spawn(move || {
+            let _guard = target.lock().expect("lock");
+            panic!("intentional: poisoning the registry lock for a regression test");
+        })
+        .join();
+        assert!(joined.is_err(), "패닉이 나야 락이 poisoned 가 된다");
+        assert!(registry.lock().is_err(), "락이 poisoned 여야 한다");
+    }
+
+    fn snapshot_serve(dir: &std::path::Path) -> Value {
+        let text = std::fs::read_to_string(dir.join("watches.json")).expect("snapshot");
+        serde_json::from_str::<Value>(&text).expect("json")["serve"].clone()
+    }
+
+    #[test]
+    fn the_snapshot_records_the_closed_endpoint_even_when_the_lock_is_poisoned() {
+        // `serve_stop` 은 리스너를 먼저 내리고 나서 스냅샷을 쓴다 — 그 사이에 락이
+        // poisoned 면 예전 코드는 `?` 로 빠져 "닫았는데 스냅샷엔 남아 있음" 이 됐다.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let registry: Shared = Arc::new(Mutex::new(StreamRegistry::new(Some(dir.path()))));
+        let tr = Translator::default();
+        let mut server = None;
+
+        handle_serve(
+            &registry,
+            &mut server,
+            &tr,
+            json!({"port": free_port(), "bind": "127.0.0.1"}),
+        )
+        .expect("the first bind succeeds");
+        assert_ne!(snapshot_serve(dir.path()), Value::Null);
+
+        poison_registry(&registry);
+
+        handle_serve_stop(&registry, &mut server, &tr).expect("stopping must not fail");
+        assert!(server.is_none(), "런타임은 닫혔다");
+        assert_eq!(
+            snapshot_serve(dir.path()),
+            Value::Null,
+            "스냅샷도 닫힘이어야 한다 — 남으면 다음 재시작이 되살린다"
+        );
+    }
+
+    #[test]
+    fn persisting_the_serve_clause_survives_a_poisoned_lock_in_both_directions() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let registry: Shared = Arc::new(Mutex::new(StreamRegistry::new(Some(dir.path()))));
+        poison_registry(&registry);
+
+        let config = ServeConfig {
+            bind: "127.0.0.1".into(),
+            port: 8787,
+            token: Some("t".into()),
+        };
+        persist_serve_config(&registry, Some(config));
+        assert_eq!(snapshot_serve(dir.path())["port"], json!(8787));
+
+        persist_serve_config(&registry, None);
+        assert_eq!(snapshot_serve(dir.path()), Value::Null);
+    }
+
+    #[test]
+    fn a_poisoned_lock_before_anything_changes_is_reported_without_touching_the_endpoint() {
+        // 아직 아무것도 안 바꾼 시점의 실패는 그대로 올린다 — 그때는 에러를 내는 쪽이
+        // 정합이다(옛 엔드포인트도 스냅샷도 손대지 않았다).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let registry: Shared = Arc::new(Mutex::new(StreamRegistry::new(Some(dir.path()))));
+        let tr = Translator::default();
+        let mut server = None;
+
+        let first_port = free_port();
+        handle_serve(
+            &registry,
+            &mut server,
+            &tr,
+            json!({"port": first_port, "bind": "127.0.0.1"}),
+        )
+        .expect("the first bind succeeds");
+
+        poison_registry(&registry);
+
+        let err = handle_serve(
+            &registry,
+            &mut server,
+            &tr,
+            json!({"port": free_port(), "bind": "127.0.0.1"}),
+        )
+        .expect_err("a poisoned registry must be reported, not swallowed");
+        assert!(
+            err.message.contains("registry_poisoned") || err.message.contains("poisoned"),
+            "{}",
+            err.message
+        );
+
+        // 옛 엔드포인트는 그대로 떠 있고 스냅샷도 그 주소를 가리킨다.
+        let info = server
+            .as_ref()
+            .expect("the old endpoint stays up")
+            .to_json();
+        assert_eq!(info["port"], json!(first_port), "{info}");
+        assert_eq!(snapshot_serve(dir.path())["port"], json!(first_port));
+
+        server.take().expect("server").shutdown();
     }
 
     #[test]
