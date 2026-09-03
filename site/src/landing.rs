@@ -324,7 +324,7 @@ pub fn render(strings: &Strings, root: &str, docs: &str) -> String {
 {platform}
 {cta}
 </main>"##,
-        hero = hero(copy, strings, root, docs),
+        hero = hero(copy, root, docs),
         why = why(copy),
         features = features(copy, root, docs),
         agents = agents(copy, strings),
@@ -354,7 +354,7 @@ fn strip_emphasis(s: &str) -> String {
     s.replace('*', "")
 }
 
-fn hero(copy: &Copy, strings: &Strings, root: &str, docs: &str) -> String {
+fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     format!(
         r##"<section class="hero">
   <div>
@@ -387,58 +387,106 @@ fn hero(copy: &Copy, strings: &Strings, root: &str, docs: &str) -> String {
         repo = REPO,
         github = ICON_GITHUB,
         note = html_escape(copy.install_note),
-        mock = mock(strings),
+        mock = mock(root),
     )
 }
 
-/// A CSS-drawn terminal window. It picks up the Mocha/Latte tokens, so it
-/// re-themes live with the toggle instead of being a baked screenshot.
-fn mock(strings: &Strings) -> String {
-    let (tab_a, tab_b, tab_c) = if strings.lang == "ko" {
-        ("빌드", "에이전트 3", "로그")
-    } else {
-        ("build", "agents 3", "logs")
-    };
+/// The product window, transcribed structurally from the design system's
+/// `ui_kits/terminal` kit (`app.jsx` composition: TitleBar → Sidebar | TabStrip
+/// → split surfaces → StatusBar). Every dimension is a design pixel (`--u`) and
+/// every colour maps to the semantic token the app itself renders, so the
+/// window re-themes live with the toggle instead of being a baked screenshot.
+fn mock(root: &str) -> String {
+    let version = crate::version();
     format!(
-        r##"<div class="mock" aria-hidden="true">
-  <div class="mock__chrome">
-    <span class="mock__tab" data-active>{tab_a}</span>
-    <span class="mock__tab"><span class="badge"></span>{tab_b}</span>
-    <span class="mock__tab">{tab_c}</span>
+        r##"<div class="mock-wrap"><div class="mock" aria-hidden="true">
+  <div class="mock__titlebar">
+    <span class="mock__traffic"><i></i><i></i><i></i></span>
+    <span class="mock__title"><img src="{root}assets/tasty-melon.svg" alt="" width="16" height="16"><span>agents-prod</span><span class="mock__title-app">— tasty</span></span>
+    <span class="mock__titlebar-spacer"></span>
   </div>
   <div class="mock__body">
-    <div class="mock__pane">
-      <div class="l"><span class="g">$</span> tasty claude spawn \</div>
-      <div class="l">    <span class="b">--workspace</span> review \</div>
-      <div class="l">    <span class="b">--role</span> <span class="y">verifier</span></div>
-      <div class="l dim">→ surface 41 · notify armed</div>
-      <div class="l">&nbsp;</div>
-      <div class="l"><span class="g">$</span> tasty agent task add \</div>
-      <div class="l">    <span class="b">--after</span> build <span class="y">test</span></div>
-      <div class="l dim">→ dag <span class="m">ci-7</span> · 4 ready</div>
-      <div class="l">&nbsp;</div>
-      <div class="l"><span class="g">$</span> <span class="cursor"></span></div>
+    <div class="mock__sidebar">
+      <div class="mock__sb-head"><img src="{root}assets/tasty-melon.svg" alt="" width="22" height="22"><span class="mock__wordmark">tasty<b>.</b></span><span class="mock__iconbtn">{chevrons}</span></div>
+      <div class="mock__heading">Workspaces</div>
+      <div class="mock__ws-list">
+        <div class="mock__ws" data-active><span class="mock__dot-slot"><span class="mock__dot mock__dot--running mock__dot--pulse"></span></span><span class="mock__ws-text"><span class="mock__ws-name">agents-prod</span></span></div>
+        <div class="mock__ws"><span class="mock__dot-slot"><span class="mock__dot"></span></span><span class="mock__ws-text"><span class="mock__ws-name">infra</span><span class="mock__mirror">{mirror}remote</span><span class="mock__ws-sub">mirror → prod-web</span></span></div>
+        <div class="mock__ws"><span class="mock__dot-slot"><span class="mock__dot mock__dot--agent mock__dot--pulse mock__dot--attached"></span></span><span class="mock__ws-text"><span class="mock__ws-name">api-gateway</span><span class="mock__ws-desc">deploy to staging on every push to main</span></span><span class="mock__dot-slot"><span class="mock__badge">2</span></span></div>
+        <div class="mock__ws"><span class="mock__dot-slot"><span class="mock__dot"></span></span><span class="mock__ws-text"><span class="mock__ws-name">scratch</span></span></div>
+      </div>
+      <div class="mock__sb-new"><span class="mock__ghost">{plus}New Workspace</span></div>
+      <div class="mock__sb-foot">
+        <span class="mock__ghost">{tools}Tools</span>
+        <span class="mock__ghost">{plug}Plugins</span>
+        <span class="mock__ghost">{settings}Settings</span>
+      </div>
     </div>
-    <div class="mock__pane">
-      <div class="l"><span class="m">dag</span> ci-7</div>
-      <div class="l">&nbsp;</div>
-      <div class="l"><span class="g">●</span> fmt        <span class="dim">0.4s</span></div>
-      <div class="l"><span class="g">●</span> clippy     <span class="dim">12.1s</span></div>
-      <div class="l"><span class="y">◐</span> build      <span class="dim">running</span></div>
-      <div class="l"><span class="dim">○ test       queued</span></div>
-      <div class="l"><span class="dim">○ verify     queued</span></div>
-      <div class="l">&nbsp;</div>
-      <div class="l"><span class="t">lease</span> <span class="dim">target/ held 1/1</span></div>
-      <div class="l"><span class="pk">notify</span> <span class="dim">surface 41 idle</span></div>
+    <div class="mock__work">
+      <div class="mock__tabs">
+        <span class="mock__tab" data-active><span class="mock__tab-icon">{terminal}</span><span class="mock__tab-label">build · cargo</span><span class="mock__dot mock__dot--running"></span><span class="mock__tab-close">{close}</span></span>
+        <span class="mock__tab" data-notif><span class="mock__tab-icon">{markdown}</span><span class="mock__tab-label">README.md</span></span>
+        <span class="mock__tab"><span class="mock__tab-icon">{terminal}</span><span class="mock__tab-label">scratch</span></span>
+        <span class="mock__tabs-add"><span class="mock__iconbtn">{plus}</span></span>
+        <span class="mock__tabs-right"><span class="mock__iconbtn">{split}</span><span class="mock__iconbtn">{search}</span></span>
+      </div>
+      <div class="mock__panes">
+        <div class="mock__term">
+          <div class="l"><span class="m">❯</span> cargo build --release</div>
+          <div class="l dim">   Compiling tasty-themes v{version}</div>
+          <div class="l dim">   Compiling tasty-plugin-claude v{version}</div>
+          <div class="l dim">   Compiling tasty v{version}</div>
+          <div class="l"><span class="g">    Finished</span> <span class="y">release</span> [optimized] in 42.18s</div>
+          <div class="l"><span class="m">❯</span> tasty notify "build ok" --title cargo</div>
+          <div class="l"><span class="b">notification</span> <span class="g">sent</span> id=n_0142</div>
+        </div>
+        <div class="mock__term" data-focused>
+          <div class="l"><span class="g">~/tasty</span> <span class="b">main</span> <span class="dim">via</span> <span class="p">🦀 v1.84</span></div>
+          <div class="l"><span class="m">❯</span> tasty claude spawn --workspace review --role verifier</div>
+          <div class="l"><span class="b">child</span> <span class="g">spawned</span> surface=41 notify=armed</div>
+          <div class="l"><span class="m">❯</span> tasty read since-mark --surface 41 --strip-ansi</div>
+          <div class="l dim">verifier: clippy clean · 212 tests passed</div>
+          <div class="l"><span class="g">~/tasty</span> <span class="b">main</span> <span class="dim">via</span> <span class="p">🦀 v1.84</span></div>
+          <div class="l"><span class="m">❯</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="mock__status">
+        <span class="mock__cell mock__cell--branch"><i></i>main</span>
+        <span class="mock__cell">s_02JK</span>
+        <span class="mock__cell">zsh · 120×34</span>
+        <span class="mock__cell mock__cell--right"><kbd>Ctrl+K</kbd> palette</span>
+        <span class="mock__cell"><i class="mock__theme-dot"></i><span class="mock__theme-name" data-dark>Mocha</span><span class="mock__theme-name" data-light>Latte</span></span>
+      </div>
     </div>
   </div>
-  <div class="mock__status">
-    <span>mocha</span>
-    <span>utf-8</span>
-    <span>2 panes</span>
-    <span class="sep">120×34</span>
-  </div>
-</div>"##
+</div></div>"##,
+        root = root,
+        version = version,
+        chevrons = glyph(r#"<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>"#),
+        mirror = glyph(r#"<path d="M4 17l6-6-6-6M12 19h8"/>"#),
+        plus = glyph(r#"<path d="M12 5v14M5 12h14"/>"#),
+        tools = glyph(
+            r#"<path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z"/>"#
+        ),
+        plug = glyph(r#"<path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0V8zM12 16v6"/>"#),
+        settings = glyph(
+            r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>"#
+        ),
+        terminal = glyph(r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#),
+        markdown = glyph(
+            r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9l2.5 3L12 9v6M16 9v4m0 0 2-2m-2 2-2-2"/>"#
+        ),
+        close = glyph(r#"<path d="M18 6 6 18M6 6l12 12"/>"#),
+        split = glyph(r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>"#),
+        search = glyph(r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#),
+    )
+}
+
+/// One glyph from the design system's canonical icon set (`icons/*.svg`):
+/// a 24-unit box, 2px stroke, round caps. The size comes from CSS.
+fn glyph(paths: &str) -> String {
+    format!(
+        r#"<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{paths}</svg>"#
     )
 }
 

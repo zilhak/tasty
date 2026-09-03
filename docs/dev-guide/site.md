@@ -122,6 +122,21 @@ cargo run --manifest-path site/Cargo.toml
 코드 하이라이팅 색도 같은 토큰(`--mauve` · `--green` · `--peach` …)을 참조하므로
 테마 토글에 함께 반응한다.
 
+## 랜딩의 제품 창
+
+랜딩 hero 아래의 창은 스크린샷이 아니라 Claude Design 프로젝트(`Tasty Design System`)의
+`ui_kits/terminal` 킷을 **구조 전사**한 정적 HTML 이다 — `app.jsx` 의 합성 순서(타이틀바 →
+사이드바 | 탭 스트립 → 분할 서피스 → 상태바)와 `chrome.jsx` · `work.jsx` · `components/`
+(`Tab` · `StatusDot` · `Badge` · `Kbd`) 의 구조를 그대로 옮겼다. 렌더는 `site/src/landing.rs` 의
+`mock()`, 스타일은 `style.css` 의 `.mock*` 블록.
+
+- 치수는 전부 디자인 픽셀 단위 `--u`(컨테이너 폭 ÷ 1040, 상한 1px) 로 적어 창이 컨테이너에
+  맞춰 축소된다. 560px 이하에서는 사이드바와 에이전트 서피스를 감춰 포커스된 터미널만 남긴다.
+- 색은 `tokens/semantic.css` 의 역할 토큰(`bg-sidebar` · `surface-active` · `text-muted` · `separator`
+  …)을 사이트 팔레트 변수에 별칭으로 매핑한다. 아이콘은 `icons/*.svg` 의 canonical 글리프를 인라인.
+- 킷을 바꾸면 이 창도 같이 갱신한다 — 다른 방향으로는 흐르지 않는다(사이트가 디자인의 정본이
+  아니다).
+
 선택은 `localStorage` 에 남고, 저장값이 없으면 `prefers-color-scheme` 을 따른다.
 첫 페인트 전에 인라인 스크립트가 적용해 깜빡임이 없다.
 
