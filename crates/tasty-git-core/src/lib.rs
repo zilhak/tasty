@@ -33,10 +33,18 @@ pub struct StatusEntry {
     pub path: String,
 }
 
+/// 커밋 한 줄. `summary` / `author` 가 **빈 문자열이면 git 에 값이 없다는 뜻**이다
+/// (메시지 없는 커밋, 이름 없는 작성자). 이 crate 는 `tasty-i18n` 을 의존하지 않는
+/// 데이터 crate 라 그 자리에 보여줄 자연어를 만들지 않는다 — 표시 문구는 소비자가
+/// 고른다(git-viewer plugin 은 자기 `Translator`, host 는 `t()`). 원격 attach 조회도
+/// 같은 wire(`attach_runtime::log_entry_wire`)를 타므로 빈 값은 빈 값 그대로 건너간다.
+/// 근거: `docs/adr/0106-non-widget-user-strings-go-through-i18n.md` 결정 4.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogEntry {
     pub oid_short: String,
+    /// 첫 문단 요약. 없으면 빈 문자열.
     pub summary: String,
+    /// 작성자 이름. 없으면 빈 문자열.
     pub author: String,
     pub time: String,
     pub refs: Vec<String>,
@@ -375,9 +383,11 @@ pub fn collect_log(repo: &Repository, limit: usize) -> Result<Vec<LogEntry>> {
             Ok(c) => c,
             Err(_) => continue,
         };
-        let summary = commit.summary().unwrap_or("(no message)").to_string();
+        // 없음은 빈 문자열로 — 자연어 폴백은 소비자(plugin Translator / host t()) 몫이다.
+        // `LogEntry` doc 참조.
+        let summary = commit.summary().unwrap_or_default().to_string();
         let author = commit.author();
-        let author_name = author.name().unwrap_or("(unknown)").to_string();
+        let author_name = author.name().unwrap_or_default().to_string();
         let time = format_time(commit.time());
         let refs = ref_map.get(&oid).cloned().unwrap_or_default();
         out.push(LogEntry {
@@ -479,6 +489,48 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 메시지 없는 커밋·이름 없는 작성자는 **빈 문자열**로 전달된다 — 이 crate 는 자연어
+    /// 폴백을 만들지 않는다(표시 문구는 소비자 몫, ADR-0106 결정 4).
+    #[test]
+    fn collect_log_leaves_missing_summary_and_author_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = Repository::init(tmp.path()).unwrap();
+        let sig = git2::Signature::now("test", "test@example.com").unwrap();
+        let tree_oid = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+
+        // 1) 빈 메시지 커밋 — libgit2 는 만들어 주고 `summary()` 는 `Some("")` 을 돌려준다
+        //    (`git_commit_summary` 가 빈 요약을 "" 로 strdup). `None` 은 메시지가 UTF-8 이
+        //    아닐 때뿐이다 — 어느 쪽이든 `LogEntry.summary` 는 빈 문자열로 전달돼야 한다.
+        let c1 = repo
+            .commit(Some("HEAD"), &sig, &sig, "", &tree, &[])
+            .unwrap();
+
+        // 2) 이름 없는 작성자 — `Signature::new` 는 빈 이름을 거부하므로 raw commit
+        //    object 를 직접 써서 만든다(파서는 관대해 읽기는 된다).
+        let raw = format!(
+            "tree {tree_oid}\nparent {c1}\nauthor  <nobody@example.com> 0 +0000\n\
+             committer test <test@example.com> 0 +0000\n\nhas message\n"
+        );
+        let c2 = repo
+            .odb()
+            .unwrap()
+            .write(git2::ObjectType::Commit, raw.as_bytes())
+            .unwrap();
+        repo.set_head_detached(c2).unwrap();
+
+        let log = collect_log(&repo, 10).unwrap();
+        assert_eq!(log.len(), 2, "{log:?}");
+        assert_eq!(log[0].summary, "has message");
+        assert_eq!(
+            log[0].author, "",
+            "이름 없는 작성자는 빈 문자열: {:?}",
+            log[0]
+        );
+        assert_eq!(log[1].summary, "", "빈 메시지는 빈 문자열: {:?}", log[1]);
+        assert_eq!(log[1].author, "test");
+    }
 
     /// 임시 repo + linked worktree 를 만들어 종합 목록 수집을 검증한다.
     /// (런타임 확인 사항: `worktrees()` 형제 나열 + main 합성 + is_current 판정.)

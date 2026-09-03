@@ -701,13 +701,33 @@ fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEnt
                 let Some(entry) = log.get(idx) else {
                     continue;
                 };
-                ui.push_id(idx, |ui| cm_row(ui, theme, entry));
+                ui.push_id(idx, |ui| cm_row(ui, theme, tr, entry));
             }
         });
 }
 
+/// 커밋 summary 표시 문자열. `tasty-git-core` 는 값이 없으면 빈 문자열을 주고 자연어를
+/// 만들지 않는다(호출자 주입, ADR-0106 결정 4) — 빈 값의 문구는 여기서 plugin 자기
+/// lang 으로 고른다. 원격 mirror 조회도 같은 wire 라 로컬 언어로 표시된다.
+fn summary_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
+    if entry.summary.is_empty() {
+        tr.t("git_viewer.no_message")
+    } else {
+        &entry.summary
+    }
+}
+
+/// 커밋 author 표시 문자열 — `summary_text` 와 같은 규약.
+fn author_text<'a>(tr: &'a Translator, entry: &'a LogEntry) -> &'a str {
+    if entry.author.is_empty() {
+        tr.t("git_viewer.unknown_author")
+    } else {
+        &entry.author
+    }
+}
+
 /// Commits 행: oid(info) + refs pills(info) + summary(flex) + author + time.
-fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
+fn cm_row(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entry: &LogEntry) {
     let full_w = ui.available_width();
     let pad_x = theme.spacing_md.value();
     let (rect, resp) = ui.allocate_exact_size(vec2(full_w, CM_ROW_H), Sense::hover());
@@ -760,7 +780,7 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
             .color(theme.text_muted().to_egui()),
     );
     right.label(
-        egui::RichText::new(&entry.author)
+        egui::RichText::new(author_text(tr, entry))
             .size(theme.font_size_term_sm.value())
             .color(theme.text_muted().to_egui()),
     );
@@ -826,7 +846,7 @@ fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
     ui.painter().with_clip_rect(clip).text(
         egui::pos2(sx, rect.center().y),
         Align2::LEFT_CENTER,
-        &entry.summary,
+        summary_text(tr, entry),
         prop(theme.font_size_body.value()),
         theme.text_primary().to_egui(),
     );
@@ -1108,5 +1128,52 @@ fn status_pill(s: FileStatus) -> (&'static str, TagVariant) {
         FileStatus::Renamed => ("R", TagVariant::Accent),
         FileStatus::Untracked => ("?", TagVariant::Default),
         FileStatus::Conflicted => ("U", TagVariant::Danger),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(summary: &str, author: &str) -> LogEntry {
+        LogEntry {
+            oid_short: "0123abc".to_string(),
+            summary: summary.to_string(),
+            author: author.to_string(),
+            time: String::new(),
+            refs: Vec::new(),
+        }
+    }
+
+    fn translator(locale: &str) -> Translator {
+        let lang_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, locale)
+    }
+
+    /// git-core 가 준 빈 값은 plugin 의 lang 키로 대체되고, 값이 있으면 그대로 쓴다.
+    #[test]
+    fn empty_summary_and_author_fall_back_to_lang_keys() {
+        let tr = translator("en");
+        let e = entry("", "");
+        assert_eq!(summary_text(&tr, &e), "(no message)");
+        assert_eq!(author_text(&tr, &e), "(unknown)");
+        let e = entry("feat: x", "alice");
+        assert_eq!(summary_text(&tr, &e), "feat: x");
+        assert_eq!(author_text(&tr, &e), "alice");
+    }
+
+    /// 폴백 문구는 plugin 로케일을 따른다 — host 언어가 아니라 plugin 이 받은 `TASTY_LOCALE`.
+    #[test]
+    fn fallback_follows_plugin_locale() {
+        let e = entry("", "");
+        for locale in ["ko", "ja"] {
+            let tr = translator(locale);
+            let summary = summary_text(&tr, &e);
+            let author = author_text(&tr, &e);
+            assert_ne!(summary, "(no message)", "{locale}: summary 가 번역돼야 함");
+            assert_ne!(author, "(unknown)", "{locale}: author 가 번역돼야 함");
+            assert_ne!(summary, "git_viewer.no_message", "{locale}: 키 누락");
+            assert_ne!(author, "git_viewer.unknown_author", "{locale}: 키 누락");
+        }
     }
 }

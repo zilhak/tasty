@@ -21,6 +21,11 @@ wt_main = "main"
 wt_linked = "linked"
 wt_current = "current"
 wt_locked = "locked"
+# Commits rows — `tasty-git-core` hands over an empty summary/author when git has
+# none (no natural-language fallback in the data crate); the plugin picks the
+# phrase here so remote (mirror) results render in the local language too.
+no_message = "(no message)"
+unknown_author = "(unknown)"
 wt_invalid = "invalid"
 
 [git_viewer.command]

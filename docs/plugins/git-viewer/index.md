@@ -33,6 +33,10 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
   다시 열지 않는다. 무효화는 worktree 전환 · Refresh · repo 소실 셋뿐이며 Refresh 는 캐시를
   무조건 버린다(외부 편집·worktree add/remove·외부 커밋이 항상 반영된다).
   [ADR-0099](../../adr/0099-git-viewer-repo-handle-cache-and-canonical-dedup.md).
+- **빈 summary/author** — `tasty-git-core` 는 git 에 값이 없으면 `LogEntry.summary`/`author` 를 **빈 문자열**로
+  주고 자연어 폴백을 만들지 않는다(호출자 주입, [ADR-0106](../../adr/0106-non-widget-user-strings-go-through-i18n.md)
+  결정 4). plugin 이 빈 값을 자기 lang 의 `git_viewer.no_message` / `git_viewer.unknown_author` 로 그리므로
+  로컬·원격(mirror) 조회 모두 plugin 로케일(`TASTY_LOCALE`)을 따른다.
 - **fs 접근** — git2 가 파일을 직접 읽어(host fs 포트 우회) worktree 가 cwd 밖에 있어도 읽는다.
   권한 선언은 `fs.read` 유지.
 - **attach mirror 워크스페이스** — 로컬 프로세스에 실제 PTY/파일시스템이 없는 mirror surface

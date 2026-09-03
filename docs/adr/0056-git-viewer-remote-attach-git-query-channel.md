@@ -32,6 +32,9 @@ need_full` 일 때만 host → plugin 으로 나가므로(`src/plugin_bridge/pop
    `DiffHunk`/`DiffLine`/`FileStatus`/`DiffLineKind`)에 `serde::Deserialize` 를 추가해 원격
    wire 응답을 이 타입으로 직접 역직렬화한다 — plugin 쪽에 별도 wire DTO 를 중복 정의하지
    않는다(필드명이 host 가 조립하는 JSON 과 1:1 이므로 그대로 재사용 가능).
+   `LogEntry.summary` / `author` 는 git 에 값이 없으면 **빈 문자열**로 wire 를 탄다 — host 는
+   자연어 폴백을 채우지 않고, 문구는 받아서 그리는 plugin 이 자기 lang 으로 고른다
+   ([ADR-0106](0106-non-widget-user-strings-go-through-i18n.md) 결정 4 로 확정된 보강).
 2. **`git_query_request`/`git_query_result` 커스텀 이벤트 쌍**(ADR-0053 `list_dir_request`/
    `list_dir_result` 와 동일 패턴 — `StreamControl` enum 밖의 raw JSON `event` 태그, 같은
    `StreamTag::Control` 채널). `kind: "snapshot" | "diff"` + 선택적 `worktree_path`(이전 응답의

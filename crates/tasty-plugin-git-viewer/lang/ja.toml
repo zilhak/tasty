@@ -21,6 +21,8 @@ wt_main = "メイン"
 wt_linked = "リンク"
 wt_current = "現在"
 wt_locked = "ロック"
+no_message = "(メッセージなし)"
+unknown_author = "(作成者不明)"
 wt_invalid = "無効"
 
 [git_viewer.command]

@@ -29,14 +29,14 @@
 1. BEL 알림 제목은 `notification.bell_title` 번역값이다. 벨의 기계 식별은 `HookEvent::Bell` / `event_kind: "bell"` / plugin 이벤트 `source` 가 담당하며 변경하지 않는다. 제목 비교로 분기하는 소비자는 만들지 않는다.
 2. `notification.create` 의 `title` 은 **선택 파라미터로 유지**하고, 생략 시 호스트가 `notification.default_title` 번역값을 채운다. 프로토콜 레벨의 기본값은 "없음(absent)" 이고 그 자리에 보여줄 문구는 UI 의 몫이다. **CLI `tasty notify` 의 자체 기본값은 제거해 `--title` 을 안 주면 `title` 을 생략(`null`)으로 보낸다 — 기본 문구의 소유자는 host 하나다.** CLI 와 host 는 같은 바이너리라 버전 skew 는 없다.
 3. 알림 패널의 사라진 워크스페이스명은 `notification_panel.unknown_workspace`, mirror 탭 제목 폴백은 `attach.tab_title_fallback` 이다. 후자는 원격 스냅샷 규약(`Pane::to_attach_json` 이 항상 `name` 을 실음)상 정상 경로에서는 도달하지 않지만, 방어 폴백도 사용자 표면이므로 예외로 두지 않는다.
-4. `tasty-i18n` 을 의존하지 않는 leaf 크레이트는 **문구를 소유하지 않는다**(`tasty-ui-widgets` 의 호출자 주입 원칙을 `tasty-git-core` 같은 데이터 크레이트로 일반화). 데이터 크레이트는 "값 없음" 을 빈 문자열/`Option` 으로 돌려주고, 표시 문구는 소비자(plugin `Translator` / host `t()`)가 고른다. `tasty-git-core` 의 `"(no message)"` / `"(unknown)"` 은 이 결정에 따라 git-viewer plugin 측 번역으로 옮긴다 — 하드코딩 허용 예외 목록에 등록하지 않는다.
+4. `tasty-i18n` 을 의존하지 않는 leaf 크레이트는 **문구를 소유하지 않는다**(`tasty-ui-widgets` 의 호출자 주입 원칙을 `tasty-git-core` 같은 데이터 크레이트로 일반화). 데이터 크레이트는 "값 없음" 을 빈 문자열/`Option` 으로 돌려주고, 표시 문구는 소비자(plugin `Translator` / host `t()`)가 고른다. `tasty-git-core` 는 이에 따라 `LogEntry.summary` / `author` 가 없으면 **빈 문자열**을 돌려주고, git-viewer plugin 이 빈 값을 자기 lang 의 `git_viewer.no_message` / `git_viewer.unknown_author` 로 그린다 — 하드코딩 허용 예외 목록에 등록하지 않는다. *(구현 확정 보강 2026-09-03: 코드 이전 완료 — `LogEntry` doc · plugin `render.rs` `summary_text`/`author_text`)*
 
 ## Consequences
 
 - **얻은 것**: `general.language = "ko"` 에서 벨·기본 알림·패널 폴백·mirror 탭 제목이 모두 한국어로 보인다. "제목은 표시 전용, 식별은 필드" 가 명문화되어 이후 알림 제목을 자유롭게 번역·수정할 수 있다. `notification.create` 의 호출 **방식**은 그대로다 — `tasty notify <body>` · IpcSequence · plugin 호출은 그대로 동작하고, 바뀐 것은 CLI 코드의 영어 기본값 제거(`"title": "Notification"` → `null`) 뿐이다.
 - **잃은 것**: `notification.list` 응답과 `notification.created` 이벤트의 `title` 값이 언어 설정에 따라 달라진다 — 제목을 파싱하던 외부 스크립트가 있었다면 `source` / 훅 이벤트로 옮겨야 한다(번들 코드에는 해당 없음).
 - **운영 비용 / 유지 부담**: 새 호스트 알림 제목·IPC 기본값·폴백 라벨을 추가할 때마다 세 lang 파일에 키를 추가해야 한다. 위젯 호출 기준 스캔 정규식으로는 이 형태가 잡히지 않으므로 리뷰 시 `title:` 필드 초기화와 `unwrap_or("…")` 도 함께 본다.
-- `tasty-git-core` 항목은 결정만 이 ADR 에 담고 코드 이전(plugin `Translator` 키 추가 + plugin 버전 bump)은 별도 변경으로 수행한다 — 이전 전까지 원격 attach 로 받은 `"(no message)"` 는 데이터로 그대로 표시된다.
+- *(구현 확정 보강 2026-09-03)* `tasty-git-core` 의 wire 의미가 좁아진다: `summary` / `author` 의 빈 문자열 = "git 에 없음". 원격 attach 조회에서 이 결정 이전 버전 host 가 보낸 `"(no message)"` / `"(unknown)"` 는 데이터로 취급돼 원격 언어 그대로 표시되고, 현행 host 는 빈 값을 보내므로 plugin 로케일로 그려진다.
 
 ## Alternatives Considered
 
