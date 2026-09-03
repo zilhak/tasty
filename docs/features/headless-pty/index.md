@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent
-- **ADR**: [ADR-0050](../../adr/0050-headless-pty-primitive.md) (신규 `pty.*` 네임스페이스 결정)
+- **ADR**: [ADR-0050](../../adr/0050-headless-pty-primitive.md) (신규 `pty.*` 네임스페이스 결정) · [ADR-0094](../../adr/0094-surface-id-space-bounded-below-pty-base.md) (surface/PTY id 공간 disjoint 집행)
 - **코드**: `src/core/pty_registry.rs` (registry+exit-code) · `src/adapters/ipc/handler/pty.rs` (IPC) · `src/core/impl_attach.rs` `apply_adopt_terminal` (승격) · `crates/tasty-cli` `pty` 서브커맨드 (CLI)
 - **화면**: 없음 — headless 전용. 렌더되지 않고 포커스/닫은-항목 히스토리/선택에 닿지 않는다(identity.md 원칙 1). 승격(`pty.attach_surface`) 후에만 일반 terminal surface 로 렌더.
 
@@ -12,7 +12,9 @@
 
 ## 내부 동작 (headless-valid)
 
-- **두 store 정합**: 메타데이터·exit-code cell 은 `engine.pty_registry`(`PtyRegistry`), 실제 headless `Terminal` 은 `engine.terminals`(`TerminalStore`)에 **같은 pty id** 로 보관한다. pty id 는 `PTY_ID_BASE`(`0x8000_0000`) 이상 disjoint 범위에서 발급해 Surface id(1부터 증가)와 절대 충돌하지 않는다. 어느 한 쪽만 지우면 누수/좀비가 되므로 kill/sweep 은 **항상 두 store 를 함께** 정리한다.
+- **두 store 정합**: 메타데이터·exit-code cell 은 `engine.pty_registry`(`PtyRegistry`), 실제 headless `Terminal` 은 `engine.terminals`(`TerminalStore`)에 **같은 pty id** 로 보관한다. pty id 는 `PTY_ID_BASE`(`0x8000_0000`) 이상에서, Surface id 는 그 미만(1부터 증가)에서 발급해 두 공간이 겹치지 않는다. 어느 한 쪽만 지우면 누수/좀비가 되므로 kill/sweep 은 **항상 두 store 를 함께** 정리한다.
+- **disjoint 집행 (ADR-0094)**: 이 disjoint 는 "surface id 가 2^31 까지 자라지 않는다" 는 가정이 아니라 세 방어의 결과다. ① OSC 133 명령 인덱싱(`command_index`)은 `TerminalStore` 키를 그대로 받으므로 headless PTY id 로 들어온 boundary 를 인덱싱하지 않는다 — 하면 `Scope::Surface(pty id)` 가 memory.db 에 심긴다. ② surface id 를 받는 IPC 경계(`surface_id` 파라미터, `memory.*` 의 `scope=surface:<id>`)가 `PTY_ID_BASE` 이상을 `invalid_params` 로 거부한다. ③ 부팅 시 surface 카운터 floor 시딩이 PTY 공간을 침범한 `Scope::Surface` 를 floor 산정에서 제외하고 `tracing::error!` 기록 후 purge 한다 — 이미 그런 scope 가 남아 있는 인스턴스도 부팅 한 번으로 정상 범위로 복귀한다. 판정 술어는 `pty_registry::is_surface_id_space` 하나를 공유하므로, surface id 를 받는 새 진입점은 이 술어를 통과시켜야 한다.
+- **명령 인덱스 없음**: 위 ①의 결과로 headless PTY 안에서 끝난 명령은 `tasty.commands.*` 에 남지 않는다. 종료코드는 `pty.wait` 가 registry 의 exit cell 로 직접 제공하므로 회수 경로가 따로 있다.
 - **좀비 방지 (동시 개수 상한 + idle TTL)**: GUI 안전망(닫기 버튼)이 없으므로 호스트가 스스로 회수한다. 동시 개수 기본 상한 8 — 초과 시 spawn 을 실패시킨다(panic 하지 않음). idle(무 IO 활동) TTL 기본 5분 — 만료 항목을 두 store 에서 함께 회수한다(`Terminal` drop → PTY master close → 자식 SIGHUP). read/write/wait 은 idle 타이머를 리셋하므로 활발히 폴링 중인 PTY 는 회수되지 않는다. 상한/TTL 은 기본값을 코드에 박되 override 가능(`rate_limit.rs` 철학).
 - **회수 시점 (두 경로)**: ① `pty.spawn`/`pty.list` **접근 시점 lazy sweep** — `spawn` 직전에 돌아 동시 개수 상한 판정을 정확하게 유지한다(죽은 항목을 먼저 치우고 상한을 본다). ② **주기 타이머** 30초(`Precision::Lax`, slack 60초) — 에이전트가 조용해져 아무도 `pty.*` 를 부르지 않는 사각을 메운다. lazy 만 있으면 "조용해진 순간이 곧 정리가 멈추는 순간" 이 되는데, 그때가 정확히 좀비가 가장 오래 남는 순간이다. 둘은 대체가 아니라 보완 관계이고 같은 함수(`CoreState::sweep_idle_ptys`)를 부르므로 후처리가 동일하다. **회수 지연 상한은 `TTL + 30s + 60s` = 최대 6.5분.**
 - **진짜 exit-code 캡처**: spawn 시 `Terminal` 에서 넘겨받은 `portable_pty::Child` 를 close-over 한 detached watcher 스레드가 `child.wait()` 로 실제 종료코드를 뽑아 entry 의 exit cell 에 채운다(`runner_host.rs` 패턴 이식). `pty.wait` 는 Surface 라이브 여부가 아니라 이 cell 로 판정한다.

@@ -108,6 +108,14 @@ impl CommandIndex {
     /// OSC 133 phase 도착 시 호출. `payload` 는 phase 문자 뒤의 `;`-분리 토큰들.
     /// D phase 가 도착하면 memory 에 record 저장 후 per-surface 상태 reset.
     /// cap 임계 도달 시 `Some(CommandCapEvent)` 반환(호출자가 사용자 알림으로 변환).
+    ///
+    /// **headless PTY 는 인덱싱하지 않는다.** 호출자는 `TerminalStore` 키를 그대로
+    /// 넘기는데, headless PTY 의 `Terminal` 은 그 store 에 **pty id**(`>= PTY_ID_BASE`)
+    /// 로 등록돼 있다. 걸러내지 않으면 `Scope::Surface(pty id)` 가 memory.db 에 심겨
+    /// surface id 공간이 오염되고, 그 scope 가 다음 부팅의 surface 카운터 floor 를
+    /// PTY 공간으로 밀어 올린다(`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
+    /// 애초에 Surface 가 없는 1 회성 PTY 라 명령 인덱스의 소비자(surface 스코프 조회)도
+    /// 없다.
     pub fn on_boundary(
         &mut self,
         memory: &MemArc,
@@ -115,6 +123,9 @@ impl CommandIndex {
         phase: char,
         payload: &str,
     ) -> Option<CommandCapEvent> {
+        if !crate::core::pty_registry::is_surface_id_space(surface_id) {
+            return None;
+        }
         let now = unix_ms_now();
         let entry = self.surfaces.entry(surface_id).or_default();
         match phase {
@@ -266,6 +277,35 @@ mod tests {
         assert_eq!(extract_exit_code("127;aid=x"), Some(127));
         assert_eq!(extract_exit_code(""), None);
         assert_eq!(extract_exit_code("not-a-num"), None);
+    }
+
+    /// headless PTY id 로 들어온 boundary 는 인덱싱하지 않는다 — `Scope::Surface(pty id)`
+    /// 가 memory.db 에 심기면 surface id 공간이 오염된다(ADR-0094).
+    #[test]
+    fn headless_pty_ids_are_not_indexed() {
+        use crate::core::pty_registry::PTY_ID_BASE;
+        use std::sync::{Arc, Mutex};
+        use tasty_memory::MemoryStore;
+
+        let mem: MemArc = Arc::new(Mutex::new(MemoryStore::open_in_memory().unwrap()));
+        let mut idx = CommandIndex::new();
+        let pty_id = PTY_ID_BASE + 499;
+
+        for phase in ['A', 'B', 'C', 'D'] {
+            assert!(idx.on_boundary(&mem, pty_id, phase, "0").is_none());
+        }
+
+        let g = mem.lock().unwrap();
+        assert_eq!(
+            g.count(&Scope::Surface(pty_id), Some("tasty.commands."))
+                .unwrap(),
+            0,
+            "headless PTY id 로 surface scope 가 생성되면 안 된다"
+        );
+        assert!(
+            g.scopes().unwrap().is_empty(),
+            "어떤 scope 도 만들어지지 않아야 한다"
+        );
     }
 
     /// 명령 cap: soft 도달 시 1회 경고, hard 도달 시 기록 차단 + 1회 알림.

@@ -1,6 +1,7 @@
 //! `Core` — workspace 생성/이동/메타 + layout 저장/복원 + tab/pane 복구. `src/core/mod.rs` 의 `impl Core` 분할.
 
 use super::*;
+use crate::core::pty_registry::PTY_ID_BASE;
 
 impl Core {
     /// `DomainIntent::RestoreClosedItem` 본문. closed_items stack pop → kind 별
@@ -332,17 +333,16 @@ impl Core {
             };
         };
 
-        // Fix C: 복원이 surface_id 를 발급하기 *전에* 카운터 floor 를 memory.db 의
-        // 최대 stale Scope::Surface id 위로 올린다. surface_meta 는 영속되지만
-        // surface_id 는 매 실행 재발급되므로, 이래야 복원 surface 자체가 재사용 id
-        // (=stale 메타 보유)와 겹치지 않아 capture 가 남의 restore.command 를 읽지 않는다.
+        // 복원이 surface_id 를 발급하기 *전에* 카운터 floor 를 memory.db 의 최대 stale
+        // Scope::Surface id 위로 올린다. surface_meta 는 영속되지만 surface_id 는 매 실행
+        // 재발급되므로, 이래야 복원 surface 자체가 재사용 id(=stale 메타 보유)와 겹치지
+        // 않아 capture 가 남의 restore.command 를 읽지 않는다.
         {
             let mut guard = match engine.memory.lock() {
                 Ok(g) => g,
                 Err(p) => p.into_inner(),
             };
-            let mem_max = crate::surface_meta::SurfaceMetaStore::max_surface_id(&mut *guard);
-            engine.next_ids.bump_surface_floor(mem_max + 1);
+            seed_surface_id_floor(&mut *guard, &engine.next_ids);
         }
 
         if !saved.restore(engine) {
@@ -352,9 +352,10 @@ impl Core {
             };
         }
 
-        // Fix A: 복원으로 확정된 live id 외 모든 Surface scope 를 정리한다. Fix C 가
-        // 충돌은 막지만 죽은 scope 를 지우지는 않으므로, 강제 종료 등으로 graceful
-        // close 가 호출되지 못해 남은 stale 메타가 무한 누적되는 것을 끊는다.
+        // 복원으로 확정된 live id 외 모든 Surface scope 를 정리한다. 위 floor 시딩
+        // (`seed_surface_id_floor`)은 새 surface 가 stale 메타와 겹치는 것만 막고 죽은
+        // scope 자체를 지우지는 않으므로, 강제 종료 등으로 graceful close 가 호출되지
+        // 못해 남은 stale 메타가 무한 누적되는 것을 여기서 끊는다.
         {
             let live: std::collections::HashSet<u32> = engine
                 .workspaces
@@ -544,4 +545,86 @@ fn push_tab_to_pane(
         }
     }
     false
+}
+
+/// 복원 직전 surface 카운터 floor 시딩 — memory.db 의 stale `Scope::Surface` 최대 id 위로
+/// 올려 재사용을 원천 차단한다.
+///
+/// **PTY id 공간(`>= PTY_ID_BASE`)을 침범한 scope 는 floor 산정에서 제외하고 그 자리에서
+/// purge 한다.** 포함하면 오염된 scope 하나가 카운터를 PTY 공간으로 밀어 올리고, 그 실행이
+/// 발급한 surface 들이 다시 memory.db 에 기록되어 다음 부팅의 floor 를 유지하는 **비가역
+/// 래칫**이 된다(`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`). 제외 + purge
+/// 이므로 이미 래칫이 걸린 인스턴스도 부팅 한 번으로 정상 범위로 복귀한다.
+///
+/// purge 되는 scope 는 정의상 이전 실행의 잔재다(부팅 시점에 live surface 는 아직 없다) —
+/// 곧이어 도는 `purge_dead_surfaces` 가 어차피 지울 대상이므로 추가 손실이 없다.
+pub(crate) fn seed_surface_id_floor(
+    mem: &mut dyn tasty_memory::MemoryStorage,
+    ids: &crate::core::state::IdGenerator,
+) {
+    let purged = crate::surface_meta::SurfaceMetaStore::purge_out_of_range_surfaces(mem);
+    if purged > 0 {
+        tracing::error!(
+            "surface_meta: {purged} scope(s) had a surface id inside the PTY id space \
+             (>= {PTY_ID_BASE:#x}); purged and excluded from the id floor"
+        );
+    }
+    let mem_max = crate::surface_meta::SurfaceMetaStore::max_surface_id(mem);
+    // `max_surface_id` 의 상한은 `PTY_ID_BASE - 1` 이므로 `mem_max + 1` 은 overflow 하지
+    // 않는다. floor 는 정상 경로에서 PTY 공간 아래에 머문다 — 단 `mem_max` 가 상한
+    // (`0x7FFF_FFFF`)일 때만 `mem_max + 1 == PTY_ID_BASE` 가 되어 경계에 닿는다. 한 실행이
+    // 20 억 개 가까운 surface 를 발급해야 도달하므로 여기서 clamp 하지 않는다.
+    ids.bump_surface_floor(mem_max + 1);
+}
+
+#[cfg(test)]
+mod surface_id_floor_tests {
+    use super::seed_surface_id_floor;
+    use crate::core::pty_registry::PTY_ID_BASE;
+    use crate::core::state::IdGenerator;
+    use crate::surface_meta::SurfaceMetaStore;
+    use tasty_memory::testing::InMemoryStorage;
+
+    #[test]
+    fn floor_rises_above_stale_surface_scopes() {
+        let mut mem = InMemoryStorage::new();
+        SurfaceMetaStore::set(&mut mem, 17, "restore.command", "claude -r a").unwrap();
+        let ids = IdGenerator::new();
+
+        seed_surface_id_floor(&mut mem, &ids);
+
+        assert_eq!(
+            ids.next_surface(),
+            18,
+            "stale 최대 id(17) 위로 floor 가 올라가야 한다"
+        );
+    }
+
+    #[test]
+    fn pty_space_scopes_do_not_ratchet_the_floor() {
+        // memory.db 가 PTY id 공간을 침범한 scope 로 오염된 상태(실사용 관측값 재현).
+        let mut mem = InMemoryStorage::new();
+        SurfaceMetaStore::set(&mut mem, PTY_ID_BASE + 499, "restore.command", "polluted").unwrap();
+        SurfaceMetaStore::set(&mut mem, 3, "restore.command", "legit").unwrap();
+        let ids = IdGenerator::new();
+
+        seed_surface_id_floor(&mut mem, &ids);
+
+        let first = ids.next_surface();
+        assert!(
+            crate::core::pty_registry::is_surface_id_space(first),
+            "오염 scope 가 있어도 surface 카운터는 PTY 공간에 진입하지 않아야 한다 (got {first})"
+        );
+        assert_eq!(first, 4, "정상 범위 stale 최대 id(3) 기준으로만 floor 상승");
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, PTY_ID_BASE + 499, "restore.command"),
+            None,
+            "오염 scope 는 그 자리에서 purge 돼야 한다"
+        );
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, 3, "restore.command").as_deref(),
+            Some("legit"),
+            "정상 범위 scope 는 보존"
+        );
+    }
 }

@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 use std::io;
 
+use crate::core::pty_registry::is_surface_id_space;
 use tasty_memory::{HOST_OWNER, MemoryError, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 fn memory_err_to_io(e: MemoryError) -> io::Error {
@@ -117,9 +118,17 @@ impl SurfaceMetaStore {
         out
     }
 
-    /// memory.db 에 존재하는 모든 `Scope::Surface(id)` 중 최대 id (없으면 0).
+    /// memory.db 에 존재하는 `Scope::Surface(id)` 중 **surface id 공간에 속하는**
+    /// (`id < PTY_ID_BASE`) 최대 id (없으면 0).
+    ///
     /// 재시작 시 surface 카운터 seed 용 — id 재사용으로 인한 stale 메타 유입을
     /// 막기 위해 복원 직전 카운터 floor 를 `max_surface_id + 1` 로 올린다.
+    ///
+    /// **PTY id 공간(`>= PTY_ID_BASE`)을 침범한 scope 는 최대값 산정에서 제외한다.**
+    /// 포함하면 오염된 scope 하나가 카운터 floor 를 PTY 공간 위로 올리고, 그 실행이
+    /// 발급한 surface 들이 다시 memory.db 에 기록되어 floor 가 영구 유지되는 비가역
+    /// 래칫이 된다(`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
+    /// 오염 scope 자체의 제거는 [`purge_out_of_range_surfaces`](Self::purge_out_of_range_surfaces).
     pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
         let scopes = match mem.scopes() {
             Ok(s) => s,
@@ -131,11 +140,44 @@ impl SurfaceMetaStore {
         scopes
             .iter()
             .filter_map(|tok| match Scope::parse(tok) {
-                Ok(Scope::Surface(id)) => Some(id),
+                Ok(Scope::Surface(id)) if is_surface_id_space(id) => Some(id),
                 _ => None,
             })
             .max()
             .unwrap_or(0)
+    }
+
+    /// PTY id 공간(`>= PTY_ID_BASE`)을 침범한 `Scope::Surface` 를 전부 purge.
+    /// 반환: 지운 스코프 수.
+    ///
+    /// 그런 id 를 가진 surface 는 존재할 수 없으므로(surface 카운터는 PTY 공간에
+    /// 진입하지 않는다) 여기 남은 것은 방어가 없던 시절의 잔재이거나 검증을 우회한
+    /// 쓰기의 산물이다. 부팅 시 한 번 정리해 이미 걸린 래칫을 해소한다.
+    pub fn purge_out_of_range_surfaces(mem: &mut dyn MemoryStorage) -> usize {
+        let scopes = match mem.scopes() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("surface_meta purge_out_of_range_surfaces: scopes() failed: {e}");
+                return 0;
+            }
+        };
+        let polluted: Vec<u32> = scopes
+            .iter()
+            .filter_map(|tok| match Scope::parse(tok) {
+                Ok(Scope::Surface(id)) if !is_surface_id_space(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        let mut purged = 0;
+        for id in polluted {
+            match mem.purge_scope(&Scope::Surface(id)) {
+                Ok(_) => purged += 1,
+                Err(e) => {
+                    tracing::warn!("surface_meta: purge out-of-range surface:{id} failed: {e}");
+                }
+            }
+        }
+        purged
     }
 
     /// `live` 에 없는 모든 `Scope::Surface(id)` 스코프를 purge. 반환: 지운 스코프 수.
@@ -191,6 +233,7 @@ impl SurfaceMetaStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::pty_registry::PTY_ID_BASE;
     use std::collections::HashSet;
     use tasty_memory::testing::InMemoryStorage;
 
@@ -220,6 +263,44 @@ mod tests {
     fn max_surface_id_empty_is_zero() {
         let mut mem = InMemoryStorage::new();
         assert_eq!(SurfaceMetaStore::max_surface_id(&mut mem), 0);
+    }
+
+    #[test]
+    fn max_surface_id_ignores_pty_space_scopes() {
+        let mut mem = InMemoryStorage::new();
+        seed(&mut mem, 3, "restore.command", "claude -r a");
+        // PTY id 공간을 침범한 오염 scope — floor 산정에 포함되면 비가역 래칫이 된다.
+        seed(&mut mem, PTY_ID_BASE, "restore.command", "polluted");
+        seed(&mut mem, PTY_ID_BASE + 499, "claude-session-id", "polluted");
+        assert_eq!(
+            SurfaceMetaStore::max_surface_id(&mut mem),
+            3,
+            "PTY 공간 id 는 최대값 산정에서 제외돼야 한다"
+        );
+    }
+
+    #[test]
+    fn purge_out_of_range_removes_only_pty_space_scopes() {
+        let mut mem = InMemoryStorage::new();
+        seed(&mut mem, 3, "restore.command", "keep");
+        seed(&mut mem, PTY_ID_BASE, "restore.command", "drop");
+        seed(&mut mem, PTY_ID_BASE + 499, "claude-session-id", "drop");
+
+        let purged = SurfaceMetaStore::purge_out_of_range_surfaces(&mut mem);
+
+        assert_eq!(purged, 2);
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, 3, "restore.command").as_deref(),
+            Some("keep")
+        );
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, PTY_ID_BASE, "restore.command"),
+            None
+        );
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, PTY_ID_BASE + 499, "claude-session-id"),
+            None
+        );
     }
 
     #[test]

@@ -31,11 +31,15 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
 
 /// surface 스코프 오버레이용 명시 인자. 활성 surface 로 폴백하지 않는다 —
 /// 포커스 독립성(`docs/design/policies/focus.md`).
+///
+/// `>= PTY_ID_BASE` 는 headless PTY id 공간이라 실재 surface 가 가질 수 없다 — 거부한다
+/// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
 pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
     params
         .get("surface_id")
         .and_then(|v| v.as_u64())
         .and_then(|n| u32::try_from(n).ok())
+        .filter(|n| crate::core::pty_registry::is_surface_id_space(*n))
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(id.clone(), "Missing or invalid 'surface_id'")
         })
@@ -67,8 +71,26 @@ fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
         .get("scope")
         .and_then(|v| v.as_str())
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing 'scope' parameter"))?;
-    Scope::parse(raw)
-        .map_err(|s| JsonRpcResponse::invalid_params(id.clone(), format!("invalid scope: {s}")))
+    let scope = Scope::parse(raw)
+        .map_err(|s| JsonRpcResponse::invalid_params(id.clone(), format!("invalid scope: {s}")))?;
+    reject_pty_space_surface_scope(&scope, id)?;
+    Ok(scope)
+}
+
+/// `surface:<id>` scope 의 id 가 headless PTY id 공간이면 거부한다. `memory.*` 는 임의
+/// scope 토큰을 받으므로 `surface_id` 파라미터 검증만으로는 오염을 막지 못한다 — 여기서
+/// 같은 경계를 적용해야 `Scope::Surface(pty id)` 가 memory.db 에 심기지 않는다
+/// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
+fn reject_pty_space_surface_scope(scope: &Scope, id: &Value) -> Result<(), JsonRpcResponse> {
+    match scope {
+        Scope::Surface(sid) if !crate::core::pty_registry::is_surface_id_space(*sid) => {
+            Err(JsonRpcResponse::invalid_params(
+                id.clone(),
+                format!("invalid scope: surface id {sid} is inside the headless PTY id space"),
+            ))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn require_key<'a>(params: &'a Value, id: &Value) -> Result<&'a str, JsonRpcResponse> {
@@ -81,9 +103,13 @@ fn require_key<'a>(params: &'a Value, id: &Value) -> Result<&'a str, JsonRpcResp
 fn optional_scope(params: &Value, id: &Value) -> Result<Option<Scope>, JsonRpcResponse> {
     match params.get("scope").and_then(|v| v.as_str()) {
         None => Ok(None),
-        Some(raw) => Scope::parse(raw).map(Some).map_err(|s| {
-            JsonRpcResponse::invalid_params(id.clone(), format!("invalid scope: {s}"))
-        }),
+        Some(raw) => {
+            let scope = Scope::parse(raw).map_err(|s| {
+                JsonRpcResponse::invalid_params(id.clone(), format!("invalid scope: {s}"))
+            })?;
+            reject_pty_space_surface_scope(&scope, id)?;
+            Ok(Some(scope))
+        }
     }
 }
 

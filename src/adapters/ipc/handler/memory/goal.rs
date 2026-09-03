@@ -101,4 +101,32 @@ mod tests {
             require_surface_id(&json!({ "surface_id": u64::from(u32::MAX) + 1 }), &id).is_err()
         );
     }
+
+    #[test]
+    fn require_surface_id_rejects_pty_id_space() {
+        use crate::core::pty_registry::PTY_ID_BASE;
+        let id = json!(1);
+        assert!(require_surface_id(&json!({ "surface_id": PTY_ID_BASE }), &id).is_err());
+        assert!(require_surface_id(&json!({ "surface_id": 2147484147u64 }), &id).is_err());
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": PTY_ID_BASE - 1 }), &id).unwrap(),
+            PTY_ID_BASE - 1
+        );
+    }
+
+    #[test]
+    fn scope_param_rejects_pty_id_space_surface() {
+        use super::super::{optional_scope, require_scope};
+        use crate::core::pty_registry::PTY_ID_BASE;
+        let id = json!(1);
+        let polluted = json!({ "scope": format!("surface:{}", PTY_ID_BASE) });
+        assert!(require_scope(&polluted, &id).is_err());
+        assert!(optional_scope(&polluted, &id).is_err());
+
+        let ok = json!({ "scope": "surface:7" });
+        assert!(require_scope(&ok, &id).is_ok());
+        assert!(optional_scope(&ok, &id).unwrap().is_some());
+        // scope 미지정은 여전히 None.
+        assert!(optional_scope(&json!({}), &id).unwrap().is_none());
+    }
 }

@@ -1166,18 +1166,32 @@ fn route_debug_handler(
     })
 }
 
-/// Extract a required surface_id from params. Returns Err(JsonRpcResponse) if missing.
+/// Extract a required surface_id from params. Returns Err(JsonRpcResponse) if missing,
+/// out of u32 range, or outside the surface id space.
+///
+/// `>= PTY_ID_BASE` 는 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이다.
+/// 통과시키면 `surface.meta.*` 등이 `Scope::Surface(pty id)` 를 memory.db 에 심고, 그
+/// scope 가 다음 부팅의 surface 카운터 floor 를 PTY 공간으로 밀어 올린다
+/// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`). `as u32` 캐스팅도
+/// `u32::try_from` 으로 바꿔 2^32 이상 값이 조용히 wrap 되지 않게 한다.
 pub(super) fn require_surface_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    params
+    let raw = params
         .get("surface_id")
         .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+        .and_then(|v| u32::try_from(v).ok())
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(id.clone(), "Missing required 'surface_id' parameter")
-        })
+        })?;
+    if !crate::core::pty_registry::is_surface_id_space(raw) {
+        return Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            format!("'surface_id' {raw} is inside the headless PTY id space"),
+        ));
+    }
+    Ok(raw)
 }
 
 /// Extract a required pane_id from params. Returns Err(JsonRpcResponse) if missing.
@@ -1578,5 +1592,46 @@ mod structural_apply_error_tests {
         let resp = structural_apply_error(serde_json::json!(1), &err);
         assert!(resp.result.is_none());
         assert_eq!(resp.error.expect("internal_error").code, -32603);
+    }
+}
+
+#[cfg(test)]
+mod require_surface_id_tests {
+    use super::require_surface_id;
+    use crate::core::pty_registry::PTY_ID_BASE;
+    use serde_json::json;
+
+    #[test]
+    fn accepts_surface_space_ids() {
+        let id = json!(1);
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": 7 }), &id).unwrap(),
+            7
+        );
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": PTY_ID_BASE - 1 }), &id).unwrap(),
+            PTY_ID_BASE - 1
+        );
+    }
+
+    #[test]
+    fn rejects_missing_wrong_type_and_out_of_u32_range() {
+        let id = json!(1);
+        assert!(require_surface_id(&json!({}), &id).is_err());
+        assert!(require_surface_id(&json!({ "surface_id": "3" }), &id).is_err());
+        assert!(require_surface_id(&json!({ "surface_id": -1 }), &id).is_err());
+        // 과거 `as u32` 캐스팅은 이 값을 조용히 0 으로 wrap 시켰다.
+        assert!(
+            require_surface_id(&json!({ "surface_id": u64::from(u32::MAX) + 1 }), &id).is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_pty_id_space() {
+        let id = json!(1);
+        assert!(require_surface_id(&json!({ "surface_id": PTY_ID_BASE }), &id).is_err());
+        // 실사용에서 관측된 오염 id.
+        assert!(require_surface_id(&json!({ "surface_id": 2147484147u64 }), &id).is_err());
+        assert!(require_surface_id(&json!({ "surface_id": u32::MAX }), &id).is_err());
     }
 }

@@ -21,6 +21,8 @@
 
 둘 다 같은 `Scope`(`global`/`account:<u>`/`window:<id>`/`workspace:<id>`/`surface:<id>`)와 키 규칙(1..=256자 `[a-z0-9._-]+`)을 공유한다. 차이는 **`owner` 차원** 하나다.
 
+`surface:<id>` 의 `<id>` 는 **surface id 공간**(`< 0x8000_0000`)이어야 한다 — 그 이상은 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이고, IPC 가 `invalid_params` 로 거부한다([ADR-0094](../../adr/0094-surface-id-space-bounded-below-pty-base.md)).
+
 ## owner — 숨겨진 host 전용 차원
 
 `owner` 는 모든 entry 에 붙지만 **plugin 에게는 보이지 않는다** — IPC schema 에 `owner` 인자가 없다. host 가 caller 에서 자동 도출한다:

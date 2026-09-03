@@ -104,3 +104,4 @@
 | 0091 | [GPU 호출 행(hang)은 관측 워치독으로만 다룬다 — 렌더 스레드 분리는 채택하지 않는다](0091-render-stall-watchdog-observation-only.md) | Accepted | 2026-08-30 | gpu, wgpu, winit, event-loop, hang, watchdog, diagnostics, crash-report, render-thread |
 | 0092 | [공유 로그 파일은 host 프로세스만 연다 — CLI 클라이언트는 stderr 전용](0092-file-log-host-process-only.md) | Accepted | 2026-08-30 | logging, tracing, diagnostics, cli, boot, crash-report |
 | 0093 | [에이전트 응답 중계는 화면이 아니라 transcript JSONL 을 읽고, at-least-once 로 전달한다](0093-agent-response-relay-reads-transcript-jsonl.md) | Accepted | 2026-09-02 | agent-stream, plugin, transcript, tail, relay, at-least-once, claude-plugin, focus-independence |
+| 0094 | [surface id 공간은 `PTY_ID_BASE` 미만으로 강제한다 — 경계에서 거부하고 부팅 시 침범분을 정리한다](0094-surface-id-space-bounded-below-pty-base.md) | Accepted | 2026-09-02 | surface-id, headless-pty, id-space, memory-db, boot, ipc, validation, invariant |

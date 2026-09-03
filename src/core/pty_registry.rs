@@ -37,11 +37,36 @@ pub const DEFAULT_MAX_CONCURRENT: usize = 8;
 /// 정리 대상으로 반환한다. 기본 5 분 (사용자 확정, 2026-07-14).
 pub const DEFAULT_IDLE_TTL: Duration = Duration::from_secs(300);
 
-/// PTY id 시작값. Surface id 카운터(1 부터 증가)와 **완전히 겹치지 않는 disjoint 고범위**
-/// 에서 발급한다. task 결정("별도 카운터, 충돌 위험 없음")을 구체화한 것 — 18-b 가
-/// headless `Terminal` 을 surface id 와 같은 u32 공간의 `TerminalStore` 에 재사용 등록해도
-/// 실 surface id 와 절대 충돌하지 않는다(surface id 가 2^31 까지 자랄 일은 없다).
+/// PTY id 시작값. u32 키스페이스를 둘로 가르는 경계다 — `[1, PTY_ID_BASE)` 는 surface id
+/// 공간, `[PTY_ID_BASE, u32::MAX]` 는 PTY id 공간. headless `Terminal` 이 surface id 와 같은
+/// `TerminalStore` 에 재사용 등록돼도 실 surface id 와 겹치지 않게 하는 근거다.
+///
+/// **이 disjoint 는 상수 하나로 저절로 성립하지 않는다 — 세 방어가 강제한다**
+/// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`):
+///
+/// 1. **호스트 내부 쓰기 방어** — OSC 133 명령 인덱싱
+///    ([`CommandIndex::on_boundary`](crate::core::command_index::CommandIndex::on_boundary))은
+///    `TerminalStore` 키를 그대로 surface id 로 받는데, headless PTY 의 `Terminal` 은 그
+///    store 에 pty id 로 등록돼 있다. 이 값 이상으로 들어온 boundary 는 인덱싱하지 않는다 —
+///    하면 `Scope::Surface(pty id)` 가 memory.db 에 심긴다.
+/// 2. **floor 시딩 방어** — 복원 직전 surface 카운터 floor 를 memory.db 에서 시딩할 때
+///    ([`seed_surface_id_floor`](crate::core::impl_workspace::seed_surface_id_floor)) PTY
+///    공간을 침범한 `Scope::Surface` 는 floor 산정에서 제외하고 그 자리에서 purge 한다.
+///    이것이 없으면 오염된 scope 하나가 카운터를 영구히 PTY 공간으로 밀어 올린다(비가역
+///    래칫).
+/// 3. **입력 방어** — IPC 가 `surface_id` 파라미터 / `scope=surface:<id>` 로 이 값 이상을
+///    받으면 거부한다([`is_surface_id_space`]).
+///
+/// 방어가 없던 시절 실사용 인스턴스의 surface id 가 실제로 2^31 을 넘긴 사례가 있으므로,
+/// "surface id 가 2^31 까지 자랄 일은 없다" 는 가정이 아니라 위 세 방어의 **결과** 다.
 pub const PTY_ID_BASE: u32 = 0x8000_0000;
+
+/// `id` 가 surface id 공간(`< PTY_ID_BASE`)에 속하는가. surface id 를 받는 모든 경계
+/// (IPC 파라미터 검증, memory scope 검증, 카운터 floor 시딩)가 이 술어 하나를 공유해
+/// 경계값 해석이 갈리지 않게 한다.
+pub const fn is_surface_id_space(id: u32) -> bool {
+    id < PTY_ID_BASE
+}
 
 /// headless PTY 자식의 실제 종료 결과. `runner_host.rs` 의
 /// `shell_outcome_from_status(pid, code, success)` 와 동형(pid 는 registry 가 이미 id 로
@@ -341,13 +366,33 @@ mod tests {
 
     #[test]
     fn ids_are_disjoint_from_surface_space() {
-        // Surface id 는 1 부터 증가한다 — pty id 는 그 공간과 절대 겹치지 않아야 한다.
+        // 발급된 pty id 는 전부 PTY 공간에 있어야 한다. 카운터의 *시작값* 만 보면
+        // "갓 만든 registry" 가정에 기대게 되므로, 연속 발급분 전체를 경계 술어
+        // (`is_surface_id_space`)로 판정한다 — surface 쪽 경계 방어와 같은 술어다.
         let mut reg = PtyRegistry::new();
         let now = Instant::now();
         let a = reg.register(spec(&["a"]), now).unwrap();
         let b = reg.register(spec(&["b"]), now).unwrap();
         assert_eq!(a, PTY_ID_BASE);
         assert_eq!(b, PTY_ID_BASE + 1);
+        for id in [a, b] {
+            assert!(
+                !is_surface_id_space(id),
+                "pty id {id} 가 surface id 공간을 침범했다"
+            );
+        }
+        // 경계값 자체의 소속: PTY_ID_BASE 는 PTY 공간, 그 직전은 surface 공간.
+        assert!(!is_surface_id_space(PTY_ID_BASE));
+        assert!(is_surface_id_space(PTY_ID_BASE - 1));
+    }
+
+    /// surface 카운터 쪽 반대 방향 보장(오염된 memory.db 로도 PTY 공간에 진입하지
+    /// 않는다)은 `impl_workspace.rs` 의 `surface_id_floor_tests` 가 담당한다 —
+    /// 이 disjoint 는 두 테스트가 함께 지킨다.
+    #[test]
+    fn surface_counter_starts_inside_surface_space() {
+        let ids = crate::core::state::IdGenerator::new();
+        assert!(is_surface_id_space(ids.next_surface()));
     }
 
     #[test]
