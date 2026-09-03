@@ -66,10 +66,12 @@ static INIT: Once = Once::new();
 /// 파일을 다시 읽지 않아 config 파싱 경고가 중복으로 찍히지 않는다(`tasty_i18n::init`
 /// 자체도 `OnceLock` 이라 재호출은 무해하지만, 그 앞의 `Settings::load` 는 아니다).
 pub(crate) fn init() {
-    let lang_settings = crate::settings::Settings::load();
-    let locale = ResolvedLocale::from_setting(&lang_settings.general.language);
-    crate::i18n::init(&locale.code);
-    export_to_process_env(&locale);
+    INIT.call_once(|| {
+        let lang_settings = crate::settings::Settings::load();
+        let locale = ResolvedLocale::from_setting(&lang_settings.general.language);
+        crate::i18n::init(&locale.code);
+        export_to_process_env(&locale);
+    });
 }
 
 /// 확정된 로케일을 본 프로세스 env 에 반영한다 — 이후 spawn 되는 모든 자식(plugin
@@ -145,8 +147,4 @@ mod tests {
         assert_eq!(k, "TASTY_LOCALE_FONT");
         assert_eq!(v, Some(font.into_os_string()));
     }
-    INIT.call_once(|| {
-        let lang_settings = crate::settings::Settings::load();
-        crate::i18n::init(&lang_settings.general.language);
-    });
 }
