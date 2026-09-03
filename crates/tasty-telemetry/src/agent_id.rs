@@ -122,6 +122,39 @@ mod tests {
     /// `from_env` 검증을 하나의 직렬 테스트로 묶고 mutex 로 보호한다.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// `TASTY_AGENT_ID` 를 테스트 동안만 바꿔두고 **원값으로 되돌리는** 가드.
+    ///
+    /// 이 키는 tasty 자식 터미널 환경에서 실제로 설정돼 있다. 테스트가 마지막에
+    /// `remove_var` 로 "정리" 하면 그 실값을 잃고, 단언이 패닉하면 정리 자체가
+    /// 건너뛰어져 — 어느 쪽이든 같은 프로세스의 뒤따르는 테스트가 오염된 env 를
+    /// 물려받는다.
+    struct AgentIdEnvGuard(Option<std::ffi::OsString>);
+
+    impl AgentIdEnvGuard {
+        fn new() -> Self {
+            Self(std::env::var_os(AgentId::ENV_KEY))
+        }
+        fn set(&self, v: &str) {
+            // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정.
+            unsafe { std::env::set_var(AgentId::ENV_KEY, v) };
+        }
+        fn unset(&self) {
+            // SAFETY: 상동.
+            unsafe { std::env::remove_var(AgentId::ENV_KEY) };
+        }
+    }
+
+    impl Drop for AgentIdEnvGuard {
+        fn drop(&mut self) {
+            match &self.0 {
+                // SAFETY: 상동.
+                Some(v) => unsafe { std::env::set_var(AgentId::ENV_KEY, v) },
+                // SAFETY: 상동.
+                None => unsafe { std::env::remove_var(AgentId::ENV_KEY) },
+            }
+        }
+    }
+
     #[test]
     fn new_empty_falls_back_to_host() {
         assert!(AgentId::new("").is_host());
@@ -177,31 +210,26 @@ mod tests {
 
     #[test]
     fn from_env_all_cases() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        // SAFETY: mutex 로 다른 env-touching 테스트와 직렬화. 프로세스 다른 곳에서
-        // TASTY_AGENT_ID 를 동시에 만지지 않는다는 가정 (단위 테스트 한정).
+        // mutex 로 다른 env-touching 테스트와 직렬화하고, 가드가 스코프 종료 시
+        // (패닉 포함) 실행 환경의 원래 TASTY_AGENT_ID 를 되돌린다.
+        let _serial = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let env = AgentIdEnvGuard::new();
 
         // 1) unset → host
-        unsafe { std::env::remove_var(AgentId::ENV_KEY) };
+        env.unset();
         assert!(AgentId::from_env().is_host(), "unset should be host");
 
         // 2) empty → host
-        // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정. 본 모듈 위 SAFETY 주석 참조.
-        unsafe { std::env::set_var(AgentId::ENV_KEY, "") };
+        env.set("");
         assert!(
             AgentId::from_env().is_host(),
             "empty string should be treated as host"
         );
 
         // 3) value → that value
-        // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정. 본 모듈 위 SAFETY 주석 참조.
-        unsafe { std::env::set_var(AgentId::ENV_KEY, "child_xyz") };
+        env.set("child_xyz");
         let a = AgentId::from_env();
         assert_eq!(a.as_str(), "child_xyz");
         assert!(!a.is_host());
-
-        // cleanup
-        // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정. 본 모듈 위 SAFETY 주석 참조.
-        unsafe { std::env::remove_var(AgentId::ENV_KEY) };
     }
 }

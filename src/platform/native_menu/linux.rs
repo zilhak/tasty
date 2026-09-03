@@ -416,12 +416,12 @@ mod tests {
     #[test]
     #[ignore]
     fn forced_grab_failure_resolves_via_watchdog_without_blocking() {
-        // SAFETY: `#[ignore]` + `--test-threads=1` 로만 도는 테스트라 env 변경이
-        // 다른 테스트와 경합하지 않는다.
-        unsafe {
-            std::env::set_var("TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL", "1");
-            std::env::set_var("TASTY_DEBUG_NATIVE_MENU_TIMEOUT_MS", "250");
-        }
+        // 가드가 원값 복원까지 맡는다 — 아래 단언 중 하나가 패닉해도 env 오염이
+        // 남지 않는다. 동시 경합은 `#[ignore]` + `--test-threads=1` 실행 조건이 막는다.
+        let _force_fail =
+            crate::test_support::EnvVarGuard::set("TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL", "1");
+        let _timeout =
+            crate::test_support::EnvVarGuard::set("TASTY_DEBUG_NATIVE_MENU_TIMEOUT_MS", "250");
         assert!(ensure_gtk(), "이 테스트는 X11 디스플레이가 있어야 한다");
 
         let win = gtk::Window::new(gtk::WindowType::Toplevel);
@@ -477,11 +477,5 @@ mod tests {
         );
 
         win.close();
-        // SAFETY: 위 set_var 와 같은 이유 — `#[ignore]` + `--test-threads=1` 로만
-        // 도는 테스트라 env 를 동시에 읽는 다른 스레드가 없다.
-        unsafe {
-            std::env::remove_var("TASTY_DEBUG_NATIVE_MENU_FORCE_GRAB_FAIL");
-            std::env::remove_var("TASTY_DEBUG_NATIVE_MENU_TIMEOUT_MS");
-        }
     }
 }

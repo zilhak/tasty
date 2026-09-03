@@ -447,44 +447,12 @@ mod integration_tests {
     use super::*;
     use crate::known_plugins::KnownPluginEntry;
     use ed25519_dalek::{Signer, SigningKey};
-    use std::sync::Mutex;
     use tempfile::TempDir;
 
-    /// HOME override race 방지용 글로벌 mutex — cargo test 의 병렬 실행에서
-    /// 두 테스트가 동시에 HOME 을 바꾸면 한 쪽이 다른 쪽의 디렉토리를 보게 된다.
-    static HOME_LOCK: Mutex<()> = Mutex::new(());
-
-    struct HomeOverride {
-        original: Option<std::ffi::OsString>,
-        // MutexGuard 이 살아있는 동안 다른 테스트가 HOME 을 못 만짐.
-        _guard: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl HomeOverride {
-        fn new(home: &Path) -> Self {
-            let guard = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let original = std::env::var_os("HOME");
-            // SAFETY: 단일 스레드만이 HOME_LOCK 을 보유 — 다른 테스트의 동시 access 차단.
-            unsafe {
-                std::env::set_var("HOME", home);
-            }
-            Self {
-                original,
-                _guard: guard,
-            }
-        }
-    }
-
-    impl Drop for HomeOverride {
-        fn drop(&mut self) {
-            match &self.original {
-                // SAFETY: lock 해제 이전, 단일 스레드.
-                Some(v) => unsafe { std::env::set_var("HOME", v) },
-                // SAFETY: lock 해제 이전, 단일 스레드.
-                None => unsafe { std::env::remove_var("HOME") },
-            }
-        }
-    }
+    /// 임시 홈으로 `known-plugins.toml` 을 격리한다. 직렬화 락·복원은 crate 공용 가드가
+    /// 맡는다 — 이 모듈만의 락을 따로 두면 `manager::pump` 쪽 테스트와 서로의 임시 홈을
+    /// 지운다(`crate::test_support` 참조).
+    use crate::test_support::HomeEnvGuard;
 
     /// 매니페스트 작성 + ed25519 signing — 매니페스트 digest 에 sk 서명.
     fn make_bundle(
@@ -530,8 +498,7 @@ mod integration_tests {
     /// 일치 → `Trusted` 반환.
     #[test]
     fn known_plugins_trust_grants_trusted() {
-        let home_tmp = TempDir::new().unwrap();
-        let _g = HomeOverride::new(home_tmp.path());
+        let home_tmp = HomeEnvGuard::derived_from_home();
 
         let bundle_tmp = TempDir::new().unwrap();
         let sk = SigningKey::from_bytes(&[99u8; 32]);
@@ -551,8 +518,7 @@ mod integration_tests {
     /// 감지로 `Untrusted { PermissionsChanged }`.
     #[test]
     fn known_plugins_permission_change_yields_untrusted() {
-        let home_tmp = TempDir::new().unwrap();
-        let _g = HomeOverride::new(home_tmp.path());
+        let home_tmp = HomeEnvGuard::derived_from_home();
 
         let bundle_tmp = TempDir::new().unwrap();
         let sk = SigningKey::from_bytes(&[88u8; 32]);
@@ -590,8 +556,7 @@ mod integration_tests {
     /// 검증한다.
     #[test]
     fn placeholder_embed_with_empty_db_never_trusts() {
-        let home_tmp = TempDir::new().unwrap();
-        let _g = HomeOverride::new(home_tmp.path());
+        let _home = HomeEnvGuard::derived_from_home();
 
         let bundle_tmp = TempDir::new().unwrap();
         let sk = SigningKey::from_bytes(&[17u8; 32]);

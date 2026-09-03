@@ -704,33 +704,10 @@ mod tests {
         assert!(out.to_register.is_empty());
     }
 
-    /// TASTY_HOME env 변경은 프로세스 전역이라 이 모듈 테스트는 직렬화한다
-    /// (`disable()` 이 `config.save()` 로 실 파일을 건드리므로 격리도 필요).
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct HomeGuard {
-        _dir: tempfile::TempDir,
-        prev: Option<String>,
-    }
-    impl HomeGuard {
-        fn new() -> Self {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let prev = std::env::var("TASTY_HOME").ok();
-            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
-            unsafe { std::env::set_var("TASTY_HOME", dir.path()) };
-            Self { _dir: dir, prev }
-        }
-    }
-    impl Drop for HomeGuard {
-        fn drop(&mut self) {
-            match &self.prev {
-                // SAFETY: new() 와 동일 — 테스트 프로세스 단독, SERIAL 락으로 병렬 간섭 차단.
-                Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
-                // SAFETY: 상동.
-                None => unsafe { std::env::remove_var("TASTY_HOME") },
-            }
-        }
-    }
+    /// `disable()` 이 `config.save()` 로 실 파일을 건드리므로 홈을 격리한다. 직렬화 락은
+    /// crate 공용 가드가 잡는다 — 이 모듈만의 락을 따로 두면 `bundle_sig` 쪽 테스트와
+    /// 서로의 임시 홈을 지운다(`crate::test_support` 참조).
+    use crate::test_support::HomeEnvGuard;
 
     /// 회귀 재현: hello 로 한 번 등록된 plugin 이 disable 을 거친 뒤 재기동
     /// (새 프로세스의 새 hello) 하면, gate 가 풀려 다시 `to_register` 에 잡혀야
@@ -739,8 +716,7 @@ mod tests {
     /// hello 가 여기서 조용히 무시됐다 (crates/tasty-host-plugin/src/manager.rs:263).
     #[test]
     fn disable_clears_registered_plugins_so_restart_hello_reregisters() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
-        let _home = HomeGuard::new();
+        let _home = HomeEnvGuard::tasty_home();
 
         let mut mgr = mgr();
         let plugin_id = "com.example.test";

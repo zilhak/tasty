@@ -76,6 +76,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | 문서 | 내용 |
 |------|------|
 | [e2e-tests](e2e-tests.md) | E2E 인스턴스 공유 원칙(binary 당 1개 · workspace 격리) + 환경 격리/timeout 정책 |
+| [unit-test-isolation](unit-test-isolation.md) | 유닛 테스트를 사용자 환경(홈 `config.toml` · env)으로부터 격리하는 규칙 — 설정 주입 지점 + env RAII 가드 |
 | [tui-testing](tui-testing.md) | tui-simulator + debug 셀 검증 |
 
 ## Plugin

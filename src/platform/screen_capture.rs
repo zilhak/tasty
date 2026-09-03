@@ -228,34 +228,15 @@ mod tests {
 
     #[test]
     fn capture_interactive_dir_is_under_tasty_home() {
-        // TASTY_HOME 은 프로세스 전역 상태라 이 crate 안에서 이를 건드리는 모든
-        // 테스트(webhook::config 포함)와 공유 락으로 직렬화한다 — 없으면 병렬
-        // 테스트 실행 시 데이터 레이스가 된다.
-        let _env_guard = crate::test_support::TASTY_HOME_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        // TASTY_HOME override 로 임시 디렉터리를 격리. `next_screenshot_path` 만
-        // 호출한다 — `capture_interactive`/`capture_to_path` 는 실제 OS 캡처 도구를
-        // 실행하므로(headless 환경에 설치돼 있으면 디스플레이 없이 인터랙티브 선택을
-        // 무한 대기할 수 있음), 단위테스트에서는 절대 실행하지 않는다.
-        let tmp =
-            std::env::temp_dir().join(format!("tasty-screenshot-test-{}", std::process::id()));
-        // SAFETY: 위 TASTY_HOME_ENV_LOCK 으로 이 crate 내 TASTY_HOME 변경 테스트와
-        // 직렬화되므로 동시 접근에 의한 데이터 레이스가 없다.
-        unsafe {
-            std::env::set_var("TASTY_HOME", &tmp);
-        }
+        // 가드가 공유 락 획득 + TASTY_HOME 임시 격리 + 스코프 종료 시 원값 복원을
+        // 한꺼번에 맡는다(패닉 경로 포함). `next_screenshot_path` 만 호출한다 —
+        // `capture_interactive`/`capture_to_path` 는 실제 OS 캡처 도구를 실행하므로
+        // (headless 환경에 설치돼 있으면 디스플레이 없이 인터랙티브 선택을 무한
+        // 대기할 수 있음), 단위테스트에서는 절대 실행하지 않는다.
+        let home = crate::test_support::TastyHomeGuard::new();
         let path = next_screenshot_path().expect("dir creation must succeed");
-        assert!(path.starts_with(tmp.join("screenshots")));
-        assert!(tmp.join("screenshots").is_dir());
-        // SAFETY: 위 set_var와 동일 — TASTY_HOME_ENV_LOCK 으로 직렬화되어 안전하다.
-        unsafe {
-            std::env::remove_var("TASTY_HOME");
-        }
-        // 의도적 무시: 테스트 격리용 임시 디렉터리 정리(best-effort) — 실패해도
-        // (동시 실행 등으로 이미 지워졌거나 권한 문제) 이 테스트의 검증 결과에는
-        // 영향이 없고, OS 임시 디렉터리는 어차피 주기적으로 정리된다.
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(path.starts_with(home.path().join("screenshots")));
+        assert!(home.path().join("screenshots").is_dir());
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]

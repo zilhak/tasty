@@ -106,3 +106,4 @@
 | 0093 | [에이전트 응답 중계는 화면이 아니라 transcript JSONL 을 읽고, at-least-once 로 전달한다](0093-agent-response-relay-reads-transcript-jsonl.md) | Accepted | 2026-09-02 | agent-stream, plugin, transcript, tail, relay, at-least-once, claude-plugin, focus-independence |
 | 0094 | [surface id 공간은 `PTY_ID_BASE` 미만으로 강제한다 — 경계에서 거부하고 부팅 시 침범분을 정리한다](0094-surface-id-space-bounded-below-pty-base.md) | Accepted | 2026-09-02 | surface-id, headless-pty, id-space, memory-db, boot, ipc, validation, invariant |
 | 0095 | [plugin 리스트는 `show_rows` 로 virtualize 하고, 가로 폭은 한 번 재서 고정한다](0095-plugin-list-virtualization-and-fixed-content-width.md) | Accepted | 2026-09-02 | plugin, egui-mesh, git-viewer, scroll, virtualization, performance, layout |
+| 0096 | [유닛 테스트는 사용자 환경을 읽지 않는다 — 설정은 주입, env 는 RAII 복원](0096-unit-tests-isolated-from-user-environment.md) | Accepted | 2026-09-02 | testing, isolation, settings, env, harness, ci, regression-detection |

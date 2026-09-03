@@ -593,6 +593,13 @@ impl CoreState {
     ///
     /// 테스트 / non-host 진입점용 변형. 내부에서 in-memory `MemoryStore` 를
     /// 생성해 주입한다. host 부팅 경로는 `new_with_ids` 를 사용한다.
+    ///
+    /// **사용자 홈의 `config.toml` 을 읽지 않는다** — `Settings::default()` 를 주입한다.
+    /// 이 생성자를 쓰는 테스트가 실행하는 사람의 로컬 설정에 좌우되면 회귀 감지력이
+    /// 사라진다(설정 하나로 무관한 테스트가 깨지고, CI 와 개발자 머신 결과가 갈린다).
+    /// 파일 로드 자체의 검증은 `Settings` 쪽 테스트가 담당한다. 규칙·가드 사용법은
+    /// `docs/dev-guide/unit-test-isolation.md`, 근거는
+    /// `docs/adr/0096-unit-tests-isolated-from-user-environment.md`.
     // 이유: 현재 실제 호출처가 전부 #[cfg(test)] — 과거 engine.rs → core/ 재배치로
     // core 가 pub(crate) 로 캡슐화되며 드러남.
     #[allow(dead_code)]
@@ -601,7 +608,7 @@ impl CoreState {
             std::sync::Arc::new(std::sync::Mutex::new(
                 tasty_memory::MemoryStore::open_in_memory()?,
             ));
-        Self::new_with_ids(cols, rows, waker, None, None, memory)
+        Self::new_with_ids_and_settings(cols, rows, waker, None, None, memory, Settings::default())
     }
 
     /// 새 CoreState 를 만들 때 기존 ID 공간(Arc<AtomicU32> 들)을 공유받는 변형.
@@ -619,7 +626,31 @@ impl CoreState {
         layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
         memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> anyhow::Result<Self> {
-        let settings = Settings::load();
+        Self::new_with_ids_and_settings(
+            cols,
+            rows,
+            waker,
+            shared_ids,
+            layout_slot,
+            memory,
+            Settings::load(),
+        )
+    }
+
+    /// `new_with_ids` 의 설정 주입 변형 — 설정을 **어디서 얻을지** 를 호출자가 정한다.
+    ///
+    /// 부팅 경로는 `new_with_ids` 로 `Settings::load()`(사용자 `config.toml`)를 넣고,
+    /// 테스트 생성자 `new` 는 `Settings::default()` 를 넣는다. 이 분리가 없으면
+    /// 테스트가 사용자 홈 설정을 읽어 로컬 환경에 따라 결과가 달라진다.
+    fn new_with_ids_and_settings(
+        cols: usize,
+        rows: usize,
+        waker: Waker,
+        shared_ids: Option<IdGenerator>,
+        layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
+        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+        settings: Settings,
+    ) -> anyhow::Result<Self> {
         let restore_layout = settings.general.restore_layout;
 
         // Create engine with empty workspaces first; we'll fill them below.

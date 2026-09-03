@@ -904,6 +904,42 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
 mod tests {
     use super::*;
 
+    /// `TASTY_SURFACE_ID` 를 테스트 동안만 바꿔두고 **원값으로 되돌리는** 가드.
+    ///
+    /// 이 키는 tasty 터미널 안에서 실제로 설정돼 있다. 테스트가 마지막에
+    /// `remove_var` 로 "정리" 하면 그 실값을 잃고, 중간 단언이 패닉하면 정리 자체가
+    /// 건너뛰어져 — 어느 쪽이든 같은 프로세스의 뒤따르는 테스트가 오염된 env 를
+    /// 물려받는다.
+    struct SurfaceIdEnvGuard(Option<std::ffi::OsString>);
+
+    impl SurfaceIdEnvGuard {
+        const KEY: &'static str = "TASTY_SURFACE_ID";
+
+        fn new() -> Self {
+            Self(std::env::var_os(Self::KEY))
+        }
+        fn set(&self, v: &str) {
+            // SAFETY: 이 키를 만지는 시나리오를 단일 #[test] 안에 모아 두었으므로
+            // 같은 프로세스에서 동시에 쓰는 다른 테스트가 없다.
+            unsafe { std::env::set_var(Self::KEY, v) };
+        }
+        fn unset(&self) {
+            // SAFETY: 상동.
+            unsafe { std::env::remove_var(Self::KEY) };
+        }
+    }
+
+    impl Drop for SurfaceIdEnvGuard {
+        fn drop(&mut self) {
+            match &self.0 {
+                // SAFETY: 상동.
+                Some(v) => unsafe { std::env::set_var(Self::KEY, v) },
+                // SAFETY: 상동.
+                None => unsafe { std::env::remove_var(Self::KEY) },
+            }
+        }
+    }
+
     // env 는 process-global 이라 cargo test 의 병렬 실행에서 race 가 난다.
     // TASTY_SURFACE_ID 를 조작하는 모든 시나리오를 이 한 #[test] 안에 순차
     // 수행해 격리한다 (TODO §2 권고 A). 별도 #[test] 로 분리하면 set/remove 가
@@ -916,11 +952,11 @@ mod tests {
             title: "T".to_string(),
         };
 
+        // 가드가 스코프 종료 시(패닉 포함) 실행 환경의 원래 값을 되돌린다.
+        let env = SurfaceIdEnvGuard::new();
+
         // case 1: env set → request 에 동일한 surface_id 포함
-        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
-        unsafe {
-            std::env::set_var("TASTY_SURFACE_ID", "42");
-        }
+        env.set("42");
         let req = command_to_request(&cmd);
         assert_eq!(req.method, "notification.create");
         assert_eq!(req.params.get("title").and_then(|v| v.as_str()), Some("T"));
@@ -954,10 +990,7 @@ mod tests {
         );
 
         // case 2: env unset → surface_id 가 null (호스트가 fallback 처리)
-        // SAFETY: 이 통합 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
-        unsafe {
-            std::env::remove_var("TASTY_SURFACE_ID");
-        }
+        env.unset();
         let req = command_to_request(&cmd);
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
 
@@ -969,16 +1002,9 @@ mod tests {
         assert!(req.params.get("surface").is_none());
 
         // case 3: env 가 invalid → surface_id null (resolve_surface_id 안전 폴백)
-        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
-        unsafe {
-            std::env::set_var("TASTY_SURFACE_ID", "not-a-number");
-        }
+        env.set("not-a-number");
         let req = command_to_request(&cmd);
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
-        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
-        unsafe {
-            std::env::remove_var("TASTY_SURFACE_ID");
-        }
     }
 
     /// `agent task-list --state` 는 콤마 다중값을 받는다(`task-purge --states` 와
