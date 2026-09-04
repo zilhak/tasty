@@ -2460,3 +2460,75 @@ mod close_refuses_hard_occupied {
         assert!(!alive(&engine, sid));
     }
 }
+
+/// 파괴된 surface 의 점유 흔적은 남지 않는다 — 그러나 **형제의 점유는 살아남는다.**
+///
+/// `cleanup_surface` 가 점유를 안 지우면 레지스트리가 없는 surface 를 점유 중이라고
+/// 계속 말한다(`attach.list` · `surface_held_by`). 반대로 너무 많이 지우면 닫지도 않은
+/// 형제 surface 의 점유가 함께 풀려 holder 가 워크스페이스에서 쫓겨난다 — 로컬 강제
+/// 끊기용 `release_occupancy` 를 그대로 쓰면 실제로 그렇게 된다. 두 방향을 짝으로 박는다.
+#[cfg(test)]
+mod cleanup_forgets_only_the_closed_surface {
+    use super::*;
+
+    const HOLDER: u32 = 7;
+
+    #[test]
+    fn the_closed_surfaces_own_lock_is_gone() {
+        let (mut state, mut engine) = test_state();
+        crate::core::apply_create_workspace_inner(
+            &mut engine,
+            crate::core::WorkspaceCreationParams::terminal(),
+        )
+        .expect("워크스페이스 생성");
+        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
+        engine.attach.acquire(sid, HOLDER).expect("하드 점유");
+
+        // 사후 정리 경로 — 요청 경로가 아니라 여기로만 점유 surface 가 도달한다.
+        assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid, false));
+
+        assert!(
+            !engine.attach.is_hard_occupied(sid),
+            "사라진 surface 를 점유 중이라고 말하면 안 된다"
+        );
+        assert!(
+            engine
+                .attach
+                .locks_snapshot()
+                .iter()
+                .all(|(s, _)| *s != sid),
+            "attach.list 스냅샷에도 남으면 안 된다"
+        );
+    }
+
+    /// 반대 방향 — 워크스페이스 점유의 멤버 하나가 닫혀도 나머지와 워크스페이스 락은
+    /// 그대로다. 이 자리가 깨지면 holder 가 통째로 쫓겨난다.
+    #[test]
+    fn a_workspace_holders_other_surfaces_keep_their_occupancy() {
+        let mut reg = crate::core::attach::OccupancyRegistry::new();
+        let members = vec![10, 11, 12];
+        reg.acquire_workspace(100, &members, &members, HOLDER)
+            .expect("워크스페이스 점유");
+
+        assert!(reg.forget_closed_surface(10), "닫힌 자리는 지워진다");
+
+        assert!(!reg.is_hard_occupied(10), "닫힌 surface 는 풀린다");
+        assert!(reg.is_hard_occupied(11), "형제는 그대로여야 한다");
+        assert!(reg.is_hard_occupied(12), "형제는 그대로여야 한다");
+        assert_eq!(
+            reg.workspace_holder(100),
+            Some(HOLDER),
+            "워크스페이스 락 자체는 유지된다"
+        );
+    }
+
+    /// 점유가 없던 surface 를 닫는 것은 아무것도 바꾸지 않는다.
+    #[test]
+    fn closing_an_unoccupied_surface_touches_no_lock() {
+        let mut reg = crate::core::attach::OccupancyRegistry::new();
+        reg.acquire(10, HOLDER).expect("점유");
+
+        assert!(!reg.forget_closed_surface(99), "없던 자리는 지울 것이 없다");
+        assert!(reg.is_hard_occupied(10), "무관한 점유는 그대로");
+    }
+}

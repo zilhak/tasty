@@ -1445,6 +1445,10 @@ impl AppState {
         let t = Instant::now();
         self.purge_surface_memory_scope(surface_id);
         sums.memory_purge += t.elapsed();
+        // surface 가 사라졌으니 그 자리의 점유 흔적도 지운다. 안 지우면 레지스트리가
+        // 없는 surface 를 점유 중이라고 계속 말한다(`attach.list` · `surface_held_by`).
+        // 워크스페이스 락은 건드리지 않는다 — 형제 surface 는 아직 살아 있다.
+        engine.attach.forget_closed_surface(surface_id);
     }
 
     fn delete_scrollback_persist(persist_id: Option<String>) {

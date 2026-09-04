@@ -352,6 +352,33 @@ impl OccupancyRegistry {
         released
     }
 
+    /// **surface 가 사라졌다** — 그 surface 에 딸린 점유 흔적만 지운다.
+    ///
+    /// 닫기 정리(`AppState::cleanup_surface`)가 부른다. 이것이 없으면 레지스트리가
+    /// **존재하지 않는 surface 를 점유 중이라고 계속 말한다**(실측으로 그랬다).
+    ///
+    /// # 왜 `release_occupancy` 를 쓰지 않는가
+    ///
+    /// 그쪽은 **로컬 사용자의 강제 끊기**용이라 workspace 티어 멤버를 만나면
+    /// `force_detach_workspace` 로 **워크스페이스 락을 통째로** 무너뜨린다. 닫힌 것이
+    /// 멤버 하나뿐인데 그것을 부르면 **닫지도 않은 형제 surface 의 점유까지 풀린다**
+    /// (실측: 멤버 셋 중 하나를 그렇게 풀면 셋 다 풀렸다) — holder 가 워크스페이스에서
+    /// 통째로 쫓겨난다. 여기서 필요한 것은 "이 한 자리를 잊어라" 뿐이다.
+    ///
+    /// # 통지하지 않는다
+    ///
+    /// surface 자체가 사라졌으므로 holder 는 구조 delta 로 그 사실을 받는다. 여기서
+    /// `notify_detached` 를 쏘면 holder 는 "강제로 끊겼다" 로 읽는데, workspace 티어에서는
+    /// **여전히 워크스페이스를 들고 있으므로 그것이 거짓**이다.
+    ///
+    /// 반환: 실제로 지운 것이 있었는지.
+    pub fn forget_closed_surface(&mut self, surface_id: SurfaceId) -> bool {
+        let had_lock = self.surface_locks.remove(&surface_id).is_some();
+        let had_member = self.surface_to_workspace.remove(&surface_id).is_some();
+        let had_soft = self.clear_soft(surface_id);
+        had_lock || had_member || had_soft
+    }
+
     /// 현재 점유 목록 스냅샷(`attach.list` 용).
     pub fn locks_snapshot(&self) -> Vec<(SurfaceId, AttachLock)> {
         self.surface_locks.iter().map(|(&s, &l)| (s, l)).collect()
