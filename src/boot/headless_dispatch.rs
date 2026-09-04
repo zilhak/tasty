@@ -82,6 +82,61 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
                 continue;
             }
         }
+        // 2d) app 층 표면 중 **창이 없어도 답이 정의되는 것**을 여기서 답한다.
+        //     gui 의 `app_methods` step 과 **같은 함수**를 부른다
+        //     (`crate::core::app_surface`) — 두 벌로 두면 한쪽만 고쳐지는 순간 갈라진다.
+        //
+        //     여기 없는 app 층 메서드(`window.*` · `view.*` · `ui.screenshot` ·
+        //     `remote.attach` · `system.gpu_stats`)는 읽는 것이 `App.view` 라서
+        //     헤드리스에 대응물이 없다. 그 판정은 메서드별로
+        //     `docs/dev-guide/headless-ipc-surface.md` 에 적혀 있다.
+        {
+            let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            match cmd.request.method.as_str() {
+                "clipboard.set_text" => {
+                    let resp = crate::core::app_surface::clipboard_set_text(
+                        &app.core,
+                        rpc_id,
+                        &cmd.request.params,
+                    );
+                    send_response(&cmd.response_tx, resp);
+                    continue;
+                }
+                "remote.workspaces" => {
+                    crate::core::app_surface::spawn_remote_workspaces(
+                        rpc_id,
+                        &cmd.request.params,
+                        &cmd.response_tx,
+                    );
+                    continue;
+                }
+                // 대기 대상 store 는 **이 engine** 것이다. gui 처럼 창·parked 를 훑을
+                // 일이 없다 — 헤드리스는 engine 이 하나뿐이고 `app.core_state` 는
+                // 부팅이 채우지 않는다(`boot::bootstrap_engine` 이 새로 만들어 돌려준다).
+                "agent.task_await" => {
+                    crate::core::app_surface::spawn_task_await(
+                        engine.task_waker_hub.clone(),
+                        app.core.memory_arc(),
+                        engine.agent_seq.clone(),
+                        rpc_id,
+                        cmd.request.params.clone(),
+                        &cmd.response_tx,
+                    );
+                    continue;
+                }
+                "approval.await" => {
+                    crate::core::app_surface::spawn_approval_await(
+                        engine.approval_store.clone(),
+                        app.core.memory_arc(),
+                        rpc_id,
+                        cmd.request.params.clone(),
+                        &cmd.response_tx,
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+        }
         // 2c) 지목한 대상을 이 engine 이 안 가졌으면 거절한다 — gui 와 같은 판정
         //     (`app/ipc/routing.rs`). 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만,
         //     **판정은 있어야 한다**: 없으면 대상을 잘못 적은 요청이 그대로 실행된다.

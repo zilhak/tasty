@@ -1220,3 +1220,48 @@ fn a_request_naming_an_unowned_target_is_rejected() {
         "대상을 지목하지 않은 생성 요청은 계속 동작해야 한다: {ok}"
     );
 }
+
+/// app 층 표면 중 **창이 없어도 답이 정의되는 것**은 두 조합에서 같이 답한다.
+///
+/// 양방향으로 본다 — 연 것이 실제로 라우팅되는 것과, 안 연 것이 여전히 `-32601` 인
+/// 것을 같은 회차에서. 한쪽만 보면 "전부 열었다" 와 "아무것도 안 열었다" 가 둘 다
+/// 통과하는 판정이 된다.
+///
+/// 판정 기준은 성공이 아니라 **`-32601` 이 아님**이다. 인자 없이 부르므로 라우팅된
+/// 메서드는 `-32602`(인자 오류)로 답하고, 그것이 "핸들러에 닿았다" 는 증거다. 성공을
+/// 요구하면 클립보드·SSH 같은 환경 의존이 판정에 섞인다.
+#[test]
+fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    for method in [
+        "clipboard.set_text",
+        "remote.workspaces",
+        "agent.task_await",
+        "approval.await",
+    ] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+        assert_ne!(
+            code,
+            Some(-32601),
+            "`{method}` 는 창이 없어도 답이 정의된다 — 두 조합에서 라우팅돼야 한다: {resp}"
+        );
+    }
+
+    // 반대편. `window.list` 가 읽는 것은 `App.view` 라 헤드리스에 대응물이 없다.
+    // gui 에서는 답하고 헤드리스에서는 `-32601` 인 것이 **의도된 상태**이며, 그것을
+    // 여기서 못 박아 둔다 — 안 그러면 위 루프만 남아 "전부 열어도 통과" 가 된다.
+    let resp = tasty.call_raw("window.list", json!({}));
+    let code = resp["error"]["code"].as_i64();
+    #[cfg(feature = "gui")]
+    assert_ne!(code, Some(-32601), "gui 는 window.list 에 답한다: {resp}");
+    #[cfg(not(feature = "gui"))]
+    assert_eq!(
+        code,
+        Some(-32601),
+        "헤드리스에 창이 없으므로 `window.list` 는 없는 것이 정답이다. 여기가 빨개졌다면 \
+         `App.view` 없이 답하는 길이 생겼다는 뜻이니 판정을 다시 세워라: {resp}"
+    );
+}
