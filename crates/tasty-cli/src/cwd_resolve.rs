@@ -202,4 +202,121 @@ mod tests {
         assert!(!out.starts_with(r"\\?\"), "verbatim prefix leaked: {out}");
         assert!(Path::new(&out).is_dir());
     }
+
+    // ── 재진입 가드: set_current_dir 는 직렬화된 테스트에만 ──────────────────
+    //
+    // set_current_dir 는 프로세스 전역 cwd 를 바꾼다. 직렬화 없이 부르는 테스트가 새로
+    // 생기면 cwd 를 읽는 다른 테스트와 병렬 경합해 flake 가 난다(unit-test-isolation.md
+    // §7 형태 A). 이 레포에서 그것을 만지는 소스는 아래 EXPECTED 집합뿐이어야 하고, 그
+    // 파일은 CWD_LOCK 으로 직렬화돼 있다.
+
+    /// 코드 줄(주석 제외)에서 `set_current_dir(` **호출** 횟수. 주석·문자열 속 언급은
+    /// 여는 괄호가 없으면 세지 않는다 — 이 가드 자신의 설명 문자열이 자기를 잡지 않게.
+    fn cwd_mutation_call_lines(text: &str) -> usize {
+        text.lines()
+            .filter(|l| {
+                let code = l.split("//").next().unwrap_or("");
+                code.contains("set_current_dir(")
+            })
+            .count()
+    }
+
+    /// 레포 소스 트리를 훑어 `set_current_dir(` 호출이 있는 `.rs` 파일의 상대경로를
+    /// 모은다. 텍스트 스캔(런타임 `read_dir`/`read_to_string` + `CARGO_MANIFEST_DIR`)이라
+    /// cfg 로 컴파일에서 빠지는 파일도 디스크에서 그대로 읽는다 — 두 CI 채널에서 같은
+    /// 것을 본다.
+    fn scan_cwd_mutations(dir: &Path, base: &Path, out: &mut std::collections::BTreeSet<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // 빌드 산출물·VCS 는 소스가 아니다. 커밋되지 않는 로컬 작업 폴더는
+                // clone·CI 에 없어 스캔에 잡히지 않으므로 이름으로 제외할 필요가 없다
+                // (그 이름을 여기 적으면 no_todo_file_citation P6 에 걸린다).
+                let skip = path
+                    .file_name()
+                    .is_some_and(|n| matches!(n.to_str(), Some("target" | ".git")));
+                if !skip {
+                    scan_cwd_mutations(&path, base, out);
+                }
+                continue;
+            }
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if cwd_mutation_call_lines(&text) > 0 {
+                let rel = path.strip_prefix(base).unwrap_or(&path);
+                out.insert(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+
+    fn repo_root() -> std::path::PathBuf {
+        // CARGO_MANIFEST_DIR = <repo>/crates/tasty-cli → 레포 루트는 그 조부모.
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("repo root (crates/tasty-cli/../..)")
+            .to_path_buf()
+    }
+
+    /// 재진입 가드 — 스캔 모집단을 **집합 동등**으로 못박아, 새 미직렬화 호출(추가)과
+    /// 고쳐서 사라진 항목의 잔존(삭제)을 양방향으로 잡는다(하한/건수는 부분 누락을
+    /// 놓친다). 새 항목이 뜨면 직렬화 처방(unit-test-isolation.md §7)을 적용한 뒤 이
+    /// 집합에 등재하라.
+    #[test]
+    fn set_current_dir_is_confined_to_serialized_tests() {
+        let root = repo_root();
+        let mut found = std::collections::BTreeSet::new();
+        scan_cwd_mutations(&root, &root, &mut found);
+
+        let expected: std::collections::BTreeSet<String> =
+            ["crates/tasty-cli/src/cwd_resolve.rs".to_string()]
+                .into_iter()
+                .collect();
+
+        assert_eq!(
+            found, expected,
+            "set_current_dir 를 만지는 소스 집합이 바뀌었다. 새로 생긴 것은 CWD_LOCK \
+             같은 직렬화 처방을 적용한 뒤 이 집합에 등재하고, 사라진 것은 지워라 \
+             (unit-test-isolation.md §7)."
+        );
+    }
+
+    #[test]
+    fn cwd_guard_detector_counts_calls_not_mentions() {
+        // 의도된 false negative — 주석·문자열의 언급(괄호 없음)은 세지 않는다.
+        assert_eq!(cwd_mutation_call_lines("// set_current_dir 를 조심"), 0);
+        assert_eq!(
+            cwd_mutation_call_lines("let s = \"set_current_dir call\";"),
+            0
+        );
+        assert_eq!(
+            cwd_mutation_call_lines("let x = 1; // set_current_dir(p)"),
+            0
+        );
+        // 변이 — 실제 호출은 센다.
+        assert_eq!(
+            cwd_mutation_call_lines("    std::env::set_current_dir(p).unwrap();"),
+            1
+        );
+    }
+
+    #[test]
+    fn cwd_guard_scan_root_is_intact() {
+        // 스캔 루트가 통째로 깨지면(경로 오류 등) 집합이 비어 위 가드가 거짓 통과할 수
+        // 있다 — 최소한 이 파일(실제 호출 보유)을 잡는지로 스캔이 살아있음을 고정한다.
+        let root = repo_root();
+        let mut found = std::collections::BTreeSet::new();
+        scan_cwd_mutations(&root, &root, &mut found);
+        assert!(
+            found.contains("crates/tasty-cli/src/cwd_resolve.rs"),
+            "스캔이 자기 파일도 못 찾았다 — 스캔 루트가 깨졌다"
+        );
+    }
 }
