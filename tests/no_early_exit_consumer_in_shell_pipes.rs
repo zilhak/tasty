@@ -60,6 +60,15 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 /// 경로가 어긋나 0 을 내는 것을 막는 하한이다.
 const MIN_SHELL_SCRIPTS: usize = 15;
 
+/// 수집 결과가 **믿을 만한가** — 판정을 순수 함수로 뽑아 합성 입력으로 찌를 수 있게 한다.
+///
+/// 하한 검사를 본 테스트 안에 인라인으로 두면 그 검사 자체는 아무 변이로도 고정되지
+/// 않는다. 특히 0 을 넣었을 때 거짓이 되는지가 이 가드의 핵심인데, 그것을 확인하는 유일한
+/// 길이 실제로 수집을 깨뜨려 보는 것이 되어 버린다.
+fn scan_is_credible(found: usize) -> bool {
+    found >= MIN_SHELL_SCRIPTS
+}
+
 /// 따옴표 밖의 `#` 부터 줄 끝까지 잘라낸다.
 ///
 /// 주석을 코드로 읽으면 **기전을 설명해 둔 주석 자체가 위반으로 잡힌다** — 이 레포에는
@@ -73,11 +82,9 @@ fn strip_comment(line: &str) -> &str {
             b'\\' if !single => i += 1,
             b'\'' if !double => single = !single,
             b'"' if !single => double = !double,
-            b'#' if !single && !double => {
-                // 낱말 중간의 `#` 은 주석이 아니다(`${x#y}` · `a#b`).
-                if i == 0 || bytes[i - 1].is_ascii_whitespace() {
-                    return &line[..i];
-                }
+            // 낱말 중간의 `#` 은 주석이 아니다(`${x#y}` · `a#b`).
+            b'#' if !single && !double && (i == 0 || bytes[i - 1].is_ascii_whitespace()) => {
+                return &line[..i];
             }
             _ => {}
         }
@@ -221,7 +228,7 @@ fn no_shell_script_pipes_into_an_early_exit_consumer() {
     let mut files = Vec::new();
     collect_shell_scripts(&root, &mut files);
     assert!(
-        files.len() >= MIN_SHELL_SCRIPTS,
+        scan_is_credible(files.len()),
         "셸 스크립트를 {}개밖에 못 찾았다(하한 {MIN_SHELL_SCRIPTS}) — 수집이 깨졌다. \
          위반 0 이 '깨끗하다' 가 아니라 '아무것도 안 봤다' 일 수 있다",
         files.len()
@@ -346,6 +353,9 @@ fn the_scan_refuses_to_report_zero_from_an_empty_input() {
     // R31 의 형태 — 입력이 없을 때 판정기가 무엇을 하는지 먼저 본다.
     assert!(violations("").is_empty());
     assert!(logical_lines("").is_empty());
-    // 그리고 그 "위반 0" 이 초록으로 새지 않도록 하는 것이 위 본 테스트의 하한이다.
-    assert!(MIN_SHELL_SCRIPTS > 0);
+    // 그리고 그 "위반 0" 이 초록으로 새지 않도록 막는 것이 하한이다 — **0 이 안 통과하는
+    // 것**이 요점이고, 그것을 여기서 직접 잰다. 하한을 0 으로 낮추면 이 단언이 죽는다.
+    assert!(!scan_is_credible(0));
+    assert!(!scan_is_credible(MIN_SHELL_SCRIPTS - 1));
+    assert!(scan_is_credible(MIN_SHELL_SCRIPTS));
 }
