@@ -624,10 +624,13 @@ mod workspace_pointer_tests {
     /// 완충(`switch_to_category` 의 소속 재검증)이 "다른 카테고리로 튀는" 형태는
     /// 막지만, 밀린 인덱스가 **같은 카테고리의 다른 워크스페이스**를 가리키면
     /// 재검증을 통과해 그대로 착지한다 — 그게 남은 오작동이다.
+    ///
+    /// 배치는 **정답이 그 카테고리의 first 가 아니도록** 잡는다. first 와 겹치면
+    /// 착지점이 완전히 망가져 폴백을 타도 우연히 정답이 나와 테스트가 통과한다.
     #[test]
     fn reordering_keeps_the_category_landing_on_the_same_workspace() {
         let (mut state, mut engine) = crate::state::tests::test_state();
-        while engine.workspaces.len() < 3 {
+        while engine.workspaces.len() < 4 {
             crate::core::apply_create_workspace_inner(
                 &mut engine,
                 crate::core::WorkspaceCreationParams::terminal(),
@@ -637,27 +640,29 @@ mod workspace_pointer_tests {
         let cat_a = engine.create_category("A").unwrap();
         let cat_b = engine.create_category("B").unwrap();
         let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
-        engine.set_workspace_category(ids[0], cat_a).unwrap();
-        engine.set_workspace_category(ids[1], cat_b).unwrap();
-        engine.set_workspace_category(ids[2], cat_a).unwrap();
+        for (i, cat) in [cat_a, cat_b, cat_a, cat_a].into_iter().enumerate() {
+            engine.set_workspace_category(ids[i], cat).unwrap();
+        }
         // categories(): [normal, A, B] → A 의 섹션 인덱스는 1.
         assert_eq!(engine.categories()[1].id, cat_a);
 
-        // 사용자가 A 안에서 마지막으로 본 것은 ids[2], 그 다음 B 로 이동해 있다.
-        state.switch_workspace(&mut engine, 2);
+        // 사용자가 A 안에서 마지막으로 본 것은 ids[3], 그 다음 B 로 이동해 있다.
+        state.switch_workspace(&mut engine, 3);
         state.switch_workspace(&mut engine, 1);
 
-        // ids[0] 을 맨 뒤로 옮긴다 → [ids[1], ids[2], ids[0]].
-        assert!(state.move_workspace(&mut engine, 0, 2));
+        // ids[0] 을 맨 뒤로 옮긴다 → [ids[1], ids[2], ids[3], ids[0]].
+        assert!(state.move_workspace(&mut engine, 0, 3));
         assert_eq!(
             engine.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
-            vec![ids[1], ids[2], ids[0]]
+            vec![ids[1], ids[2], ids[3], ids[0]]
         );
+        // 정답(ids[3])은 A 의 first(ids[2]) 가 아니다 — 폴백으로는 도달할 수 없다.
+        assert_eq!(engine.workspaces_in_category(cat_a)[0].1.id, ids[2]);
 
-        // A 로 quick-switch → 마지막으로 본 ids[2] 로 돌아가야 한다.
+        // A 로 quick-switch → 마지막으로 본 ids[3] 으로 돌아가야 한다.
         state.switch_to_category(&mut engine, 1);
         assert_eq!(
-            engine.workspaces[state.active_workspace].id, ids[2],
+            engine.workspaces[state.active_workspace].id, ids[3],
             "재정렬 뒤에도 그 카테고리에서 마지막으로 본 워크스페이스로 착지해야 한다"
         );
     }
