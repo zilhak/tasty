@@ -20,8 +20,8 @@ struct Copy {
     /// Primary button label once the visitor's OS is detected; `{os}` is
     /// replaced by the OS name.
     dl_for: &'static str,
-    /// Small heading above the per-platform cards.
-    dl_all: &'static str,
+    /// Ghost button next to the primary one, pointing at the release page.
+    cta_other: &'static str,
 
     why_kicker: &'static str,
     why_title: &'static str,
@@ -55,116 +55,133 @@ const KO_COPY: Copy = Copy {
     title_lead: "AI 에이전트가",
     title_accent: "직접 조작하는",
     title_tail: "터미널",
-    lede: "GPU 로 그리는 네이티브 터미널이다. 내가 쓰는 키보드·마우스와 에이전트가 쓰는 \
-           tasty 명령이 같은 화면을 함께 다룬다. 에이전트가 탭을 열고, 명령을 보내고, \
-           결과를 읽고, 끝나면 알려준다.",
+    lede: "에이전트에게 일을 맡겨두고, 나는 옆 탭에서 하던 일을 계속합니다. \
+           포커스도 스크롤도 그대로입니다.",
     cta_primary: "다운로드",
     cta_secondary: "가이드 보기",
     install_note: "OS 별 설치 절차와 첫 실행은",
     install_note_link: "설치 가이드 →",
     dl_for: "{os} 용 다운로드",
-    dl_all: "모든 플랫폼",
+    cta_other: "다른 플랫폼",
 
     why_kicker: "왜 Tasty 인가",
-    why_title: "에이전트가 일해도 내 자리는 그대로다",
-    why_body: "에이전트가 탭을 만들고 명령을 보내도 내가 보고 있던 화면, 선택한 텍스트, \
-               스크롤 위치는 움직이지 않는다. 사용자 입력을 흉내 내는 기능은 제품에 없다.",
+    why_title: "에이전트가 일해도 내 자리는 그대로입니다",
+    why_body: "에이전트가 탭을 만들든 명령을 보내든, 내가 보던 화면은 움직이지 않습니다. \
+               잡아둔 선택도, 스크롤 위치도 그대로입니다. 사용자 입력을 흉내 내는 기능은 아예 없습니다.",
     why_points: &[
         (
             "01",
             "내 조작과 분리",
-            "에이전트의 동작이 포커스 · 선택 · 스크롤 · 닫은 탭 히스토리에 닿지 않는다. \
-             내가 다른 탭을 보고 있어도 에이전트는 자기 터미널에서만 일한다.",
+            "에이전트가 무슨 일을 하든 포커스와 선택, 스크롤, 닫은 탭 기록에는 손대지 않습니다. \
+             내가 다른 탭을 보고 있어도 자기 터미널 안에서만 움직입니다.",
         ),
         (
             "02",
             "ID 로 지정",
-            "에이전트는 어느 터미널을 조작할지 ID 로 지정한다. 지금 무엇이 활성인지에 따라 \
-             엉뚱한 곳에 입력이 들어가는 일이 없다.",
+            "에이전트는 조작할 터미널을 ID 로 찍어서 부릅니다. 지금 무엇이 활성이냐에 따라 \
+             엉뚱한 곳에 입력이 들어가는 일이 없습니다.",
         ),
         (
             "03",
             "명령 하나로 전부",
-            "분할 · 명령 전송 · 출력 읽기 · 알림 · 훅까지 tasty 명령 하나로 한다. \
-             에이전트에게 알려줄 것은 명령어 목록뿐이다.",
+            "분할부터 훅까지 전부 tasty 명령 하나로 합니다. \
+             에이전트에게 알려줄 것은 명령어 목록뿐입니다.",
         ),
         (
             "04",
             "창 없이도",
-            "서버나 CI 에서 창 없이 실행해도 같은 명령으로 터미널을 만들고 입출력을 주고받는다.",
+            "서버나 CI 에서 창 없이 띄워도 같은 명령이 그대로 돕니다.",
         ),
     ],
 
     features_kicker: "기능",
     features_title: "터미널이 해야 할 일과, 에이전트가 필요로 하는 일",
-    features_body: "자주 쓰는 것만 골랐다. 전체는 가이드에 순서대로 정리되어 있다.",
+    features_body: "자주 손이 가는 것만 골랐습니다. 나머지는 가이드가 순서대로 다룹니다.",
     cards: &[
         (
             "grid",
             "GPU 렌더링",
-            "셀 단위로 GPU 가 그린다. 분할을 열 개 넘게 띄워도 매끄럽다.",
+            "셀 하나하나를 GPU 가 그립니다. 분할을 열 개 넘게 띄워도 버벅이지 않습니다.",
             "using/panes-tabs-splits.html",
+        ),
+        (
+            "stack",
+            "워크스페이스와 프리셋",
+            "일감마다 워크스페이스를 따로 둡니다. 자주 쓰는 배치는 프리셋으로 저장해 두고 꺼내 씁니다.",
+            "using/workspaces.html",
+        ),
+        (
+            "files",
+            "터미널만 있는 게 아닙니다",
+            "탐색기와 마크다운, 이미지, 웹 화면을 터미널 옆에 나란히 띄웁니다.",
+            "using/files.html",
         ),
         (
             "agents",
             "여러 에이전트를 한 번에",
-            "Claude · Codex 자식을 띄우고, 각각이 끝나는 대로 알림을 받는다.",
+            "Claude 와 Codex 자식을 띄워두면 끝나는 대로 알려줍니다.",
             "agents/claude-codex.html",
+        ),
+        (
+            "graph",
+            "작업 DAG",
+            "할 일을 의존 관계로 묶어 두면 순서대로 돕니다. 어디까지 갔는지는 그래프로 봅니다.",
+            "agents/tasks.html",
         ),
         (
             "terminal",
             "CLI 로 조작",
-            "분할 · 명령 전송 · 출력 읽기 · 알림을 tasty 명령 하나로. 에이전트가 자기 터미널을 직접 다룬다.",
+            "분할도 명령 전송도 출력 읽기도 tasty 명령 하나입니다. 에이전트가 자기 터미널을 직접 다룹니다.",
             "agents/cli.html",
-        ),
-        (
-            "keyboard",
-            "vi 복사 모드",
-            "hjkl 이동, visual 선택, 검색까지 키보드만으로.",
-            "using/terminal.html",
-        ),
-        (
-            "plug",
-            "플러그인",
-            "탐색기 · 마크다운 · 이미지 · git 보기가 번들로 들어 있다. 권한을 보고 켜고 끈다.",
-            "plugins/index.html",
-        ),
-        (
-            "link",
-            "원격 attach",
-            "다른 머신에서 돌고 있는 tasty 의 워크스페이스를 SSH 로 그대로 가져와 본다.",
-            "remote/attach.html",
         ),
         (
             "parse",
             "명령 단위 출력",
-            "셸 프롬프트 경계를 인식해 방금 실행한 명령의 출력만 정확히 읽는다.",
-            "agents/cli.html",
+            "셸 프롬프트 경계를 알아채서, 방금 돌린 명령의 출력만 딱 읽습니다.",
+            "using/terminal.html",
         ),
         (
             "gauge",
             "훅과 알림",
-            "프로세스 종료 · 출력 패턴 · 유휴 시간에 훅을 걸고 알림을 받는다.",
+            "프로세스 종료나 특정 출력, 유휴 시간에 훅을 걸어두고 알림을 받습니다.",
             "agents/hooks-notifications.html",
+        ),
+        (
+            "script",
+            "Lua 스크립트",
+            "단축키나 창 · 탭 이벤트에 스크립트를 걸어두면 손 갈 일이 줄어듭니다.",
+            "customize/scripts.html",
+        ),
+        (
+            "link",
+            "원격 attach",
+            "다른 머신에서 돌고 있는 워크스페이스를 SSH 로 그대로 가져와 봅니다.",
+            "remote/attach.html",
+        ),
+        (
+            "plug",
+            "플러그인",
+            "탐색기와 마크다운, 이미지, git 보기가 기본으로 들어 있습니다. 권한을 확인하고 켜거나 끕니다.",
+            "plugins/index.html",
         ),
         (
             "palette",
             "테마",
-            "Mocha · Latte 같은 번들 테마를 고르거나 TOML 로 직접 만든다.",
+            "Mocha 나 Latte 를 고르거나, TOML 로 직접 만듭니다.",
             "customize/themes.html",
         ),
     ],
 
     agents_kicker: "다중 에이전트",
-    agents_title: "여러 에이전트를 띄우고, 끝나는 대로 통지받는다",
-    agents_body: "자식 에이전트를 띄우면 명령은 즉시 돌아오고 완료 알림이 자동으로 걸린다. \
-                  각 자식이 쉬거나, 입력을 기다리거나, 종료되면 띄운 쪽 터미널로 통지가 온다.",
-    agents_caption: "사람이 GUI 에서 하는 일은 에이전트가 CLI 로 똑같이 할 수 있다.",
+    agents_title: "여러 에이전트를 띄워두고, 끝나는 대로 확인합니다",
+    agents_body: "자식을 띄우는 명령은 기다리지 않고 바로 끝납니다. 완료 훅은 알아서 걸립니다. \
+                  자식이 멈추거나 입력을 기다리면 띄운 쪽 터미널이 먼저 압니다.",
+    agents_caption: "사람이 GUI 에서 하는 일은 에이전트도 CLI 로 똑같이 합니다.",
 
     platform_kicker: "플랫폼",
     platform_title: "세 OS 모두 1 급",
-    platform_body: "Windows · macOS · Linux 에서 같은 기능, 같은 단축키 체계, 같은 CLI. \
-                    dmg · msi · deb · rpm · AppImage 로 설치한다.",
+    platform_body: "세 OS 에서 기능도 단축키도 CLI 도 똑같습니다. \
+                    설치 파일은 dmg, msi, deb, rpm, AppImage 로 냅니다.",
     stats: &[
         ("3", "운영체제"),
         ("7", "번들 플러그인"),
@@ -172,8 +189,8 @@ const KO_COPY: Copy = Copy {
         ("MIT", "라이선스"),
     ],
 
-    cta_title: "가이드부터 읽어도 되고, 바로 설치해도 된다",
-    cta_body: "설치부터 에이전트 연동, 원격 attach 까지 가이드에 순서대로 정리했다.",
+    cta_title: "가이드부터 읽어도 되고, 바로 설치해도 됩니다",
+    cta_body: "설치부터 에이전트 연동, 원격 attach 까지 가이드가 순서대로 짚어 줍니다.",
     cta_docs: "가이드 읽기",
     cta_download: "다운로드",
 };
@@ -184,15 +201,15 @@ const EN_COPY: Copy = Copy {
     title_lead: "A terminal",
     title_accent: "an AI agent",
     title_tail: "can drive itself",
-    lede: "A native terminal drawn on the GPU. Your keyboard and mouse and an agent's \
-           tasty commands work the same screen together: the agent opens tabs, sends \
-           commands, reads the results, and tells you when it is done.",
+    lede: "Hand a terminal to an agent and your own screen holds still. The agent works in \
+           its own tab through tasty commands and tells you when it lands. Drawn on the GPU, \
+           so a wall of splits still feels immediate.",
     cta_primary: "Download",
     cta_secondary: "Read the guide",
     install_note: "Per-OS install steps and the first launch:",
     install_note_link: "Installation guide →",
     dl_for: "Download for {os}",
-    dl_all: "All platforms",
+    cta_other: "Other platforms",
 
     why_kicker: "Why Tasty",
     why_title: "The agent works, and your seat stays yours",
@@ -228,7 +245,7 @@ const EN_COPY: Copy = Copy {
 
     features_kicker: "Features",
     features_title: "What a terminal owes you, and what an agent needs from one",
-    features_body: "The ones people reach for most. The guide walks through all of them in order.",
+    features_body: "The ones people reach for most. The guide takes the rest in order.",
     cards: &[
         (
             "grid",
@@ -237,30 +254,52 @@ const EN_COPY: Copy = Copy {
             "using/panes-tabs-splits.html",
         ),
         (
+            "stack",
+            "Workspaces and presets",
+            "One workspace per job, and a layout you keep coming back to saved as a preset.",
+            "using/workspaces.html",
+        ),
+        (
+            "files",
+            "More than terminals",
+            "A file explorer, Markdown, images and web pages sit in the same splits as your shells.",
+            "using/files.html",
+        ),
+        (
             "agents",
             "Several agents at once",
             "Spawn Claude and Codex children and hear back as each one finishes.",
             "agents/claude-codex.html",
         ),
         (
+            "graph",
+            "Task DAG",
+            "Tie work together by dependency and it runs in order. Watch how far it got as a graph.",
+            "agents/tasks.html",
+        ),
+        (
             "terminal",
             "Driven from the CLI",
-            "Splits, sending commands, reading output, notifications — one tasty command. \
-             An agent drives its own terminal directly.",
+            "Splits, sending commands, reading output, notifications — one tasty command. An agent drives its own terminal directly.",
             "agents/cli.html",
         ),
         (
-            "keyboard",
-            "vi copy mode",
-            "hjkl movement, visual selection, and search from the keyboard alone.",
+            "parse",
+            "Per-command output",
+            "Recognises shell prompt boundaries, so an agent reads exactly the output of the command it just ran.",
             "using/terminal.html",
         ),
         (
-            "plug",
-            "Plugins",
-            "Explorer, Markdown, image, and git views come bundled. See each one's permissions \
-             and switch it on or off.",
-            "plugins/index.html",
+            "gauge",
+            "Hooks and notifications",
+            "Hook process exit, output patterns, and idle time, and get notified.",
+            "agents/hooks-notifications.html",
+        ),
+        (
+            "script",
+            "Lua scripts",
+            "Bind a script to a shortcut or to window and tab events and let it do the repetitive part.",
+            "customize/scripts.html",
         ),
         (
             "link",
@@ -269,17 +308,10 @@ const EN_COPY: Copy = Copy {
             "remote/attach.html",
         ),
         (
-            "parse",
-            "Per-command output",
-            "Recognises shell prompt boundaries, so an agent reads exactly the output of the \
-             command it just ran.",
-            "agents/cli.html",
-        ),
-        (
-            "gauge",
-            "Hooks and notifications",
-            "Hook process exit, output patterns, and idle time, and get notified.",
-            "agents/hooks-notifications.html",
+            "plug",
+            "Plugins",
+            "Explorer, Markdown, image, and git views come bundled. See each one's permissions and switch it on or off.",
+            "plugins/index.html",
         ),
         (
             "palette",
@@ -291,15 +323,15 @@ const EN_COPY: Copy = Copy {
 
     agents_kicker: "Multi-agent",
     agents_title: "Spawn several agents, hear back as each one lands",
-    agents_body: "Spawning a child agent returns immediately and arms its completion notice for \
-                  you. When a child goes idle, waits for input, or exits, the terminal that \
-                  spawned it is notified.",
+    agents_body: "The command that spawns a child does not wait around — it returns at once, and \
+                  the completion hook arms itself. When a child stalls or wants input, the \
+                  terminal that spawned it hears about it first.",
     agents_caption: "Whatever a person does in the GUI, an agent can do from the CLI.",
 
     platform_kicker: "Platforms",
     platform_title: "All three, first class",
-    platform_body: "The same features, the same shortcut scheme, and the same CLI on Windows, \
-                    macOS, and Linux. Installs as dmg, msi, deb, rpm, or AppImage.",
+    platform_body: "Nothing differs across the three: not the features, not the shortcuts, not \
+                    the CLI. Ships as dmg, msi, deb, rpm, or AppImage.",
     stats: &[
         ("3", "operating systems"),
         ("7", "bundled plugins"),
@@ -308,7 +340,7 @@ const EN_COPY: Copy = Copy {
     ],
 
     cta_title: "Start with the guide, or just install it",
-    cta_body: "From installation to agent integration and remote attach, the guide covers it in order.",
+    cta_body: "From installing it to wiring up an agent to attaching a remote, the guide walks it in order.",
     cta_docs: "Read the guide",
     cta_download: "Download",
 };
@@ -361,21 +393,18 @@ fn strip_emphasis(s: &str) -> String {
 fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     format!(
         r##"<section class="hero">
-  <div>
+  <div class="hero__intro">
     <span class="hero__eyebrow"><span class="dot"></span>{badge} · v{version}</span>
     <p class="hero__tagline"><span class="wordmark">Tasty<b>.</b></span> {tagline}</p>
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
     <p class="hero__lede">{lede}</p>
     <div class="cta-row">
       <a class="btn btn--primary" id="dl-primary" href="{releases}" data-label="{dl_for}"{primary_data}>{primary}</a>
+      <a class="btn btn--ghost" href="{releases}">{other}</a>
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
-    <div class="dl">
-      <div class="dl__head"><span>{dl_all}</span><a href="{releases}">{release_tag} ↗</a></div>
-      <div class="dl__cards">{cards}</div>
-    </div>
-    <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
+    <p class="hero__lede" style="font-size:14px;margin:12px auto 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
   </div>
   {mock}
 </section>"##,
@@ -396,14 +425,8 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         note_link = html_escape(copy.install_note_link),
         releases = releases_url(),
         dl_for = html_escape(copy.dl_for),
-        dl_all = html_escape(copy.dl_all),
-        release_tag = html_escape(
-            crate::release()
-                .map(|r| r.tag.as_str())
-                .unwrap_or("Releases")
-        ),
+        other = html_escape(copy.cta_other),
         primary_data = primary_data_attrs(),
-        cards = download_cards(),
         mock = mock(root),
     )
 }
@@ -509,53 +532,6 @@ fn glyph(paths: &str) -> String {
     )
 }
 
-/// Download cards: one per (OS, arch), each listing the package formats and
-/// the release-asset file-name suffix that identifies them. The suffixes
-/// follow the release workflow's naming (`docs/installation.md`).
-struct Platform {
-    id: &'static str,
-    os: &'static str,
-    arch: &'static str,
-    formats: &'static [(&'static str, &'static str)],
-}
-
-const PLATFORMS: &[Platform] = &[
-    Platform {
-        id: "macos",
-        os: "macOS",
-        arch: "Apple Silicon",
-        formats: &[(".dmg", "-macos-arm64.dmg")],
-    },
-    Platform {
-        id: "windows",
-        os: "Windows",
-        arch: "x64",
-        formats: &[(".msi", "-windows-x64.msi"), (".zip", "-windows-x64.zip")],
-    },
-    Platform {
-        id: "linux-x64",
-        os: "Linux",
-        arch: "x86_64",
-        formats: &[
-            (".deb", "_amd64.deb"),
-            (".rpm", ".x86_64.rpm"),
-            (".AppImage", "-x86_64.AppImage"),
-            (".tar.gz", "-linux-x64.tar.gz"),
-        ],
-    },
-    Platform {
-        id: "linux-arm64",
-        os: "Linux",
-        arch: "arm64",
-        formats: &[
-            (".deb", "_arm64.deb"),
-            (".rpm", ".aarch64.rpm"),
-            (".AppImage", "-aarch64.AppImage"),
-            (".tar.gz", "-linux-arm64.tar.gz"),
-        ],
-    },
-];
-
 /// The format the OS-detected primary button offers: the installer on
 /// macOS/Windows, and the distro-agnostic AppImage (x86_64) on Linux.
 const PRIMARY_FORMATS: &[(&str, &str)] = &[
@@ -584,28 +560,6 @@ fn primary_data_attrs() -> String {
     PRIMARY_FORMATS
         .iter()
         .filter_map(|(os, suffix)| asset_url(suffix).map(|url| format!(" data-{os}=\"{url}\"")))
-        .collect()
-}
-
-fn download_cards() -> String {
-    PLATFORMS
-        .iter()
-        .map(|p| {
-            let links = p
-                .formats
-                .iter()
-                .map(|(label, suffix)| match asset_url(suffix) {
-                    Some(url) => format!("<a href=\"{url}\">{label}</a>"),
-                    None => format!("<a href=\"{}\">{label}</a>", releases_url()),
-                })
-                .collect::<String>();
-            format!(
-                "<div class=\"dl__card\" data-platform=\"{id}\"><div class=\"dl__os\"><b>{os}</b><span>{arch}</span></div><div class=\"dl__links\">{links}</div></div>",
-                id = p.id,
-                os = p.os,
-                arch = p.arch,
-            )
-        })
         .collect()
 }
 
@@ -819,6 +773,18 @@ fn icon_svg(name: &str) -> &'static str {
         ),
         "palette" => icon!(
             r#"<path d="M12 3a9 9 0 1 0 0 18 2 2 0 0 0 1.6-3.2 2 2 0 0 1 1.6-3.2H18a3 3 0 0 0 3-3 9 9 0 0 0-9-8.6z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>"#
+        ),
+        "stack" => icon!(
+            r#"<path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 16.5 9 4.5 9-4.5"/>"#
+        ),
+        "files" => icon!(
+            r#"<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>"#
+        ),
+        "graph" => icon!(
+            r#"<rect x="2.5" y="4" width="6" height="5" rx="1"/><rect x="2.5" y="15" width="6" height="5" rx="1"/><rect x="15.5" y="9.5" width="6" height="5" rx="1"/><path d="M8.5 6.5h3.5v5.5h3.5M8.5 17.5h3.5V12"/>"#
+        ),
+        "script" => icon!(
+            r#"<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="m10 12.5-1.5 1.5L10 15.5M13.5 12.5 15 14l-1.5 1.5"/>"#
         ),
         "windows" => icon!(
             r#"<path d="M3 6.5 10 5.4v6.1H3zM11.5 5.2 21 4v7.5h-9.5zM3 12.5h7v6.1L3 17.5zM11.5 12.5H21V20l-9.5-1.2z"/>"#
