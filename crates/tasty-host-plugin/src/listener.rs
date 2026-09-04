@@ -241,12 +241,14 @@ mod tests {
         let token = "poisoned-token".to_string();
 
         let held = Arc::clone(&listener.pending);
-        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
-        let _ = std::thread::spawn(move || {
+        // join 결과를 버리지 않고 Err 를 단언한다 — 이 스레드가 언젠가 패닉을 멈추면
+        // 아무것도 poison 되지 않은 채 아래 단언이 전부 공허하게 통과한다.
+        std::thread::spawn(move || {
             let _guard = held.lock().expect("fresh lock");
             panic!("poison the pending map on purpose");
         })
-        .join();
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
         assert!(listener.pending.is_poisoned(), "전제: 락이 poison 이다");
 
         std::thread::scope(|s| {
