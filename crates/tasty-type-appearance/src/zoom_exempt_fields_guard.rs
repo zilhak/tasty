@@ -39,6 +39,20 @@ fn theme_source() -> String {
 }
 
 /// 면제 사유의 갈래. 새 면제를 더할 때 **어느 갈래인지 말할 수 없으면 면제가 아니다.**
+///
+/// # 이 갈래는 성질이 아니라 결정이다
+///
+/// 갈래를 값이나 소비 자리 같은 **강제 가능한 성질**로 유도하려 했으나 두 반례가 섰다:
+///
+/// - `tab_indicator_width`(2.0)는 면제이고 `focus_ring_width`(2.0)는 zoom 을 탄다 —
+///   **같은 값, 반대 판정.** 굵기로는 두 필드를 못 가른다(감싸는 링이냐 한쪽 변에
+///   붙는 띠냐는 기하 역할이고 값에 안 담긴다).
+/// - `tab_bar_height` 는 탭바 밖(`banner` · `egui_panels` · `overlay`)에서도 정당하게
+///   소비된다 — 탭바 아래 오프셋용이다. 소비 자리 국한도 성립하지 않는다.
+///
+/// 그래서 이 갈래는 **디자인 결정을 적은 것**이고, 가드가 강제하는 것은 그 결정이
+/// 두 곳(이 목록과 필드 doc)에 **같게** 적혀 있다는 것뿐이다. 주장의 참을 검사하지는
+/// 못한다 — 못 하는 것을 못 한다고 여기 고정해 둔다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Reason {
     /// UI 크롬이 아니라 렌더 콘텐츠 — UI 배율 축 밖이다.
@@ -54,6 +68,19 @@ enum Reason {
 }
 
 /// **정본 목록.** `zoomed()` 를 타지 않는 `Theme` 의 `LogicalPx` 필드 전부와 그 사유.
+impl Reason {
+    /// 이 갈래의 필드 doc 에 반드시 들어 있어야 하는 표지.
+    fn marker(self) -> &'static str {
+        match self {
+            Reason::Content => "콘텐츠",
+            Reason::Hairline => "hairline",
+            Reason::TabBar => "탭바 크롬",
+            Reason::StatusBar => "상태바 크롬",
+            Reason::Titlebar => "CSD 타이틀바 크롬",
+        }
+    }
+}
+
 const EXEMPT: &[(&str, Reason)] = &[
     ("font_size_prose_h1", Reason::Content),
     ("font_size_term_sm", Reason::Content),
@@ -126,6 +153,44 @@ fn scan_fields(text: &str) -> Vec<Field> {
                 out.push((name, zoomed));
             }
         }
+    }
+    out
+}
+
+/// `Theme` 필드의 doc 주석 블록을 이름과 짝지어 읽는다.
+fn scan_field_docs(text: &str) -> Vec<(String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let struct_head = concat!("pub struct ", "Theme {");
+    let Some(s) = lines.iter().position(|l| l.starts_with(struct_head)) else {
+        return Vec::new();
+    };
+    let Some(e) = lines
+        .iter()
+        .skip(s + 1)
+        .position(|l| *l == "}")
+        .map(|i| i + s + 1)
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for i in (s + 1)..e {
+        let t = lines[i].trim();
+        let Some(rest) = t.strip_prefix("pub ") else {
+            continue;
+        };
+        let Some(name) = rest.strip_suffix(": LogicalPx,") else {
+            continue;
+        };
+        if name.contains(' ') {
+            continue;
+        }
+        let mut doc = String::new();
+        let mut j = i;
+        while j > s + 1 && lines[j - 1].trim_start().starts_with("///") {
+            j -= 1;
+            doc.insert_str(0, lines[j].trim_start().trim_start_matches("///"));
+        }
+        out.push((name.to_string(), doc));
     }
     out
 }
@@ -319,6 +384,72 @@ mod tests {
 
     // 앵커 두 개를 `concat!` 로 쪼갠다 — 안 쪼개면 이 fixture 자체가 자기 바늘을
     // 통짜로 담게 되고, 스캔이 넓어지는 날 가드가 자기를 센다(R80 이 실제로 잡았다).
+    /// R98 자기적용 — 갈래가 장식이 되지 않게, 각 면제 필드의 doc 이 자기 갈래의
+    /// 표지를 담고 있는지 본다. 이것은 **주장의 참을 검사하지 않는다**(성질이 없다는
+    /// 근거는 `Reason` 의 doc 에 반례 둘로 적었다). 검사하는 것은 같은 결정이 두 곳에
+    /// 같게 적혀 있다는 것뿐이고, 그 덕에 한쪽만 조용히 바뀌는 일이 없어진다.
+    #[test]
+    fn every_exemption_repeats_its_category_in_the_field_doc() {
+        let docs = scan_field_docs(&theme_source());
+        assert!(
+            docs.len() >= FIELD_FLOOR,
+            "필드 doc 을 {} 개만 읽었다 — 하한 {}. 스캔이 죽었다.",
+            docs.len(),
+            FIELD_FLOOR
+        );
+        let mut bad = Vec::new();
+        for (name, reason) in EXEMPT {
+            let Some((_, doc)) = docs.iter().find(|(n, _)| n == name) else {
+                bad.push(format!("{name}: 필드를 못 찾았다"));
+                continue;
+            };
+            if !doc.contains(reason.marker()) {
+                bad.push(format!("{name}: doc 에 '{}' 가 없다", reason.marker()));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "면제 갈래와 필드 doc 이 어긋난다:\n  {}",
+            bad.join("\n  ")
+        );
+    }
+
+    /// 표지가 실제로 변별력이 있는지 — 아무 doc 에나 걸리면 위 테스트는 무의미하다.
+    #[test]
+    fn the_category_markers_do_not_match_every_field() {
+        let docs = scan_field_docs(&theme_source());
+        let exempt: std::collections::BTreeSet<&str> = EXEMPT.iter().map(|(n, _)| *n).collect();
+        let markers = [
+            Reason::Content,
+            Reason::Hairline,
+            Reason::TabBar,
+            Reason::StatusBar,
+            Reason::Titlebar,
+        ];
+        let stray: Vec<&String> = docs
+            .iter()
+            .filter(|(n, _)| !exempt.contains(n.as_str()))
+            .filter(|(_, d)| markers.iter().any(|m| d.contains(m.marker())))
+            .map(|(n, _)| n)
+            .collect();
+        assert!(
+            stray.is_empty(),
+            "면제가 아닌 필드가 갈래 표지를 담고 있다 — 표지가 변별력을 잃었다: {stray:?}"
+        );
+        // 비영 대조 — 면제 쪽에서는 실제로 걸린다.
+        let hit = docs
+            .iter()
+            .filter(|(n, _)| exempt.contains(n.as_str()))
+            .filter(|(_, d)| markers.iter().any(|m| d.contains(m.marker())))
+            .count();
+        assert_eq!(
+            hit,
+            EXEMPT.len(),
+            "면제 {} 중 {hit} 만 표지를 담았다",
+            EXEMPT.len()
+        );
+    }
+
     const FIXTURE: &str = concat!(
         "pub struct ",
         "Theme {\n",
