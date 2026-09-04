@@ -1304,7 +1304,18 @@ fn alive_check_throttled_within_window() {
 
 #[test]
 fn process_exited_eventually_emitted() {
-    let waker = noop_waker();
+    // 폴링(고정 sleep 간격) 대신 waker 신호로 대기한다 — parser 스레드가 새 데이터/EOF 마다
+    // 이 콜백을 부르므로, 러너 부하로 스케줄이 밀려도 고정 간격을 낭비하지 않고 wake 즉시
+    // process 한다. 옛 형태(5s deadline + 50ms sleep)는 벽시계 예산이라 부하 아래서 확률적으로
+    // 마감을 넘겼다(형태 C). 이제 대기는 이벤트 기반이고, deadline 은 wake 가 영영 오지 않을
+    // 때만 걸리는 안전망이라 넉넉히 둔다(정상 경로에선 수십 ms 안에 끝난다).
+    // SyncSender + try_send: waker 콜백이 절대 블록되지 않아야 parser 스레드가 멈추지 않는다.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
+    let waker: Waker = Arc::new(move || {
+        // 버퍼(1)가 이미 차 있으면 깨우기 신호가 대기 중이라는 뜻이라, 이번 send 실패는 무시해도
+        // 대기 측을 깨우기에 충분하다. 콜백은 절대 블록되면 안 되므로 send(블로킹)가 아니라 try_send.
+        let _ = tx.try_send(());
+    });
     let mut t = Terminal::new(
         TerminalConfig {
             cols: 80,
@@ -1320,10 +1331,7 @@ fn process_exited_eventually_emitted() {
     )
     .expect("terminal creation");
 
-    // The shell exits on its own; the reader thread's final EOF wake plus the
-    // Disconnected fast path must surface ProcessExited well within the
-    // deadline regardless of the throttle window.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut seen = false;
     while std::time::Instant::now() < deadline {
         t.process();
@@ -1335,7 +1343,12 @@ fn process_exited_eventually_emitted() {
             seen = true;
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // 다음 wake 까지 블록한다(폴링 아님). 상한은 남은 deadline 을 넘지 않게 자른다 —
+        // wake 가 오면 즉시, 안 오면 상한 후 루프 조건이 종료를 판정한다.
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        // wake 로 깼는지 상한으로 깼는지 구분할 필요가 없다 — 루프 상단의 process()+이벤트 검사와
+        // deadline 조건이 다음 반복에서 판정한다. 그래서 recv 결과는 무시한다.
+        let _ = rx.recv_timeout(remaining);
     }
     assert!(seen, "ProcessExited not emitted before deadline");
 }
