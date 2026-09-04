@@ -21,6 +21,24 @@
 //! 만든 뒤 그 위에서만 판정한다. 줄 구조는 그대로 두므로 줄 번호가 보존된다.
 //! 들여쓰기나 rustfmt 스타일에 의존하지 않는다. CRLF 는 읽는 즉시 LF 로 정규화하고,
 //! 경로는 `Path::join` 으로만 만들어 Windows 에서도 같은 결과를 낸다.
+//!
+//! **이 파일도 스캔 대상에 포함된다.** 금지 형태를 상수·합성 스니펫으로 들고 있지만
+//! 전부 문자열 리터럴이라 마스킹으로 지워지므로 자기 자신을 잡지 않는다. 예외를 두어
+//! 스스로를 빼면 그 예외만큼 이 파일이 사각이 되므로 그렇게 하지 않았다 —
+//! `the_guard_file_scans_itself` 가 포함 여부를 못박는다.
+//!
+//! ## 판정기는 스캔 루프에서 분리한다
+//!
+//! 각 가드의 판정은 순수 함수(`scan`)로 뽑아 두고, 레포 전수 테스트와 합성 입력
+//! 테스트가 **같은 함수**를 부른다. 루프 안에 인라인이면 면제를 찌르는 변이가
+//! "레포에 진짜 위반을 심었다 되돌리기" 로만 가능해지는데, 그건 느리고 트리를
+//! 더럽히며 되돌리다 사고가 난다.
+//!
+//! ## 면제에는 그것을 겨냥한 변이를 붙인다
+//!
+//! 면제(allowlist · 창 · skip 조건)를 하나 넣을 때마다 **그 면제 창 안쪽에 진짜
+//! 위반을 심었을 때 잡히는가**를 묻는 테스트를 함께 넣는다. 각 가드의
+//! `exemption_mutations` 모듈이 그것이다. 검증되지 않은 면제는 그 면제만큼 구멍이다.
 
 use std::path::PathBuf;
 
@@ -31,11 +49,6 @@ const MIN_SCANNED_FILES: usize = 900;
 /// 스캔 루트. 워크스페이스의 Rust 소스 전부(본체 + 모든 크레이트).
 const SCAN_ROOTS: &[&str] = &["src", "crates"];
 
-/// 이 파일 자신은 스캔에서 뺀다 — 금지 형태를 문자열 상수로 들고 있는 것이 이 파일의
-/// 본질이라, 스스로를 검사하면 항상 자기 자신을 잡는다. **한계**: 그래서 이 파일 안의
-/// 진짜 위반은 어떤 가드도 못 잡는다. 이 파일에는 테스트만 두어 그 표면을 최소로 유지한다.
-const SELF_RELATIVE_PATH: &[&str] = &["src", "source_guards.rs"];
-
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -45,7 +58,6 @@ fn repo_root() -> PathBuf {
 /// 이름으로 한 번 더 뺀다.
 fn rust_sources() -> Vec<(PathBuf, String)> {
     let root = repo_root();
-    let self_path: PathBuf = SELF_RELATIVE_PATH.iter().collect();
     let mut out = Vec::new();
     let mut stack: Vec<PathBuf> = SCAN_ROOTS.iter().map(|r| root.join(r)).collect();
     while let Some(dir) = stack.pop() {
@@ -65,9 +77,6 @@ fn rust_sources() -> Vec<(PathBuf, String)> {
                     .strip_prefix(&root)
                     .expect("스캔 경로는 레포 안이어야 한다")
                     .to_path_buf();
-                if rel == self_path {
-                    continue;
-                }
                 let text = std::fs::read_to_string(&path)
                     .unwrap_or_else(|e| panic!("소스를 읽을 수 없다: {} — {e}", path.display()));
                 out.push((rel, text.replace("\r\n", "\n")));
@@ -276,12 +285,23 @@ fn next_opening_delim(masked: &str, from: usize) -> Option<usize> {
         .map(|(offset, _)| from + offset)
 }
 
+/// 이 파일 자신이 스캔 모수에 들어 있는지 못박는다 — 자기 제외 면제를 두지 않았다는
+/// 근거다. 빠지면 이 파일 안의 진짜 위반을 어떤 가드도 못 잡게 된다.
+#[test]
+fn the_guard_file_scans_itself() {
+    let self_path: PathBuf = ["src", "source_guards.rs"].iter().collect();
+    assert!(
+        rust_sources().iter().any(|(path, _)| *path == self_path),
+        "가드 파일 자신이 스캔 모수에서 빠졌다 — 자기 제외 면제가 다시 생겼는지 확인해라"
+    );
+}
+
 mod define_class_return {
     //! `objc2` 의 `define_class!` / `declare_class!` 본문에서 **값을 돌려주는
     //! `return`** 을 금지한다.
     //!
     //! 그 매크로는 본문을 `let __objc2_result = { ...본문... };` 로 감싸 자기가 만든
-    //! `extern "C-unwind"` shim 안에 심는다. shim 의 반환 타입은 소스에 적힌 타입이
+    //! `extern "C-unwind"` shim 에 심는다. shim 의 반환 타입은 소스에 적힌 타입이
     //! 아니라 **변환된** `<T as ConvertReturn<_>>::Inner` 다(`bool` → `Bool`,
     //! `Retained<_>` → 별도 표현). 그래서 `return <값>` 은 사용자가 쓴 함수가 아니라
     //! shim 을 빠져나가며 변환 후 타입으로 검사돼 컴파일이 깨진다 — 반면 꼬리
@@ -291,11 +311,21 @@ mod define_class_return {
     //! **이 함정은 macOS 에서만 컴파일된다** — Linux·Windows 개발자는 로컬에서 볼 수
     //! 없고 CI 의 macOS 잡만 본다. 그래서 소스 스캔으로 전 플랫폼에서 막는다.
     //!
-    //! **판정 한계**: 반환 타입이 있는 메서드인지까지는 가르지 않는다. 값 없는
-    //! `return;`(반환 타입이 없는 메서드에서 합법)은 허용하고, 값을 돌려주는
-    //! `return <값>;` 만 잡는다. 반환 타입이 `EncodeReturn` 을 그대로 만족하는
-    //! 타입(예: `NSRect`)이면 `return <값>` 도 사실은 합법이지만, 그 구분은 텍스트로
-    //! 가를 수 없으므로 **일괄 금지**한다 — 표현식 형태로 쓰면 어느 경우든 옳다.
+    //! ## 면제와 그 근거
+    //!
+    //! - **값 없는 `return;` 은 허용한다**(A-1). 반환 타입이 없는 메서드에서는 매크로가
+    //!   변환 없이 전개하므로 합법이다. 이 면제의 경계는
+    //!   `catches_a_value_return_split_across_lines` 가 지킨다 — 줄바꿈이 끼어도 값
+    //!   반환은 값 반환이다.
+    //! - **주석·문자열 안은 보지 않는다**(A-2, `mask_non_code` 공통). 그 창 안쪽에
+    //!   진짜 위반을 심어도 잡히는지는
+    //!   `catches_a_real_return_next_to_a_commented_one` 이 확인한다.
+    //!
+    //! ## 의도적으로 넓게 잡는 곳
+    //!
+    //! 반환 타입이 `EncodeReturn` 을 그대로 만족하는 타입(예: `NSRect`)이면
+    //! `return <값>` 도 사실은 합법이지만, 텍스트로는 그 구분을 못 하므로 **일괄
+    //! 금지**한다. 과검출 방향이라 면제가 아니고, 표현식 형태로 쓰면 어느 경우든 옳다.
 
     use super::*;
 
@@ -304,40 +334,68 @@ mod define_class_return {
     const MIN_BLOCKS: usize = 1;
 
     const MACROS: &[&str] = &["define_class!", "declare_class!"];
+    const RETURN: &str = "return";
+
+    /// 마스킹된 소스 하나에 대한 판정 결과. 줄 번호는 1-based.
+    struct Scan {
+        /// 찾은 매크로 블록 수(스캔 하한용).
+        blocks: usize,
+        /// 값 반환 `return` 이 있는 줄.
+        violations: Vec<usize>,
+        /// 구분자가 닫히지 않은 매크로 시작 줄 — 마스킹이 깨졌다는 신호다.
+        unclosed: Vec<usize>,
+    }
+
+    /// 레포 전수 테스트와 합성 입력 테스트가 함께 부르는 판정기.
+    fn scan(masked: &str) -> Scan {
+        let mut out = Scan {
+            blocks: 0,
+            violations: Vec::new(),
+            unclosed: Vec::new(),
+        };
+        for mac in MACROS {
+            for start in word_positions(masked, mac) {
+                let Some(open) = next_opening_delim(masked, start) else {
+                    out.unclosed.push(line_of(masked, start));
+                    continue;
+                };
+                let Some(end) = matching_delim(masked, open) else {
+                    out.unclosed.push(line_of(masked, start));
+                    continue;
+                };
+                out.blocks += 1;
+                let body = &masked[open..end];
+                for rel in word_positions(body, RETURN) {
+                    let rest = body[rel + RETURN.len()..].trim_start();
+                    if !rest.starts_with(';') {
+                        out.violations.push(line_of(masked, open + rel));
+                    }
+                }
+            }
+        }
+        out
+    }
 
     #[test]
     fn no_value_returning_return_inside_define_class() {
         let mut blocks = 0usize;
         let mut violations = Vec::new();
+        let mut unclosed = Vec::new();
         for (path, text) in rust_sources() {
-            let masked = mask_non_code(&text);
-            for mac in MACROS {
-                for start in word_positions(&masked, mac) {
-                    let Some(open) = next_opening_delim(&masked, start) else {
-                        continue;
-                    };
-                    let Some(end) = matching_delim(&masked, open) else {
-                        panic!(
-                            "{}:{} — {mac} 의 구분자가 닫히지 않는다(마스킹이 깨졌을 수 있다)",
-                            path.display(),
-                            line_of(&masked, start)
-                        );
-                    };
-                    blocks += 1;
-                    let body = &masked[open..end];
-                    for rel in word_positions(body, "return") {
-                        let rest = body[rel + "return".len()..].trim_start();
-                        if !rest.starts_with(';') {
-                            violations.push(format!(
-                                "{}:{}",
-                                path.display(),
-                                line_of(&masked, open + rel)
-                            ));
-                        }
-                    }
-                }
+            let found = scan(&mask_non_code(&text));
+            blocks += found.blocks;
+            for line in found.violations {
+                violations.push(format!("{}:{line}", path.display()));
+            }
+            for line in found.unclosed {
+                unclosed.push(format!("{}:{line}", path.display()));
             }
         }
+        assert!(
+            unclosed.is_empty(),
+            "매크로 호출의 구분자가 닫히지 않는다 — 마스킹이 깨졌을 수 있다.\n  {}",
+            unclosed.join("\n  ")
+        );
         assert!(
             blocks >= MIN_BLOCKS,
             "스캔 하한 미달: {mac_list} 블록을 {blocks} 개 찾았다(하한 {MIN_BLOCKS}). \
@@ -351,6 +409,68 @@ mod define_class_return {
              macOS 에서만 컴파일이 깨진다. 값은 표현식으로 흘려라(if/else 또는 match).\n  {}",
             violations.join("\n  ")
         );
+    }
+
+    mod exemption_mutations {
+        //! 이 가드의 **면제마다** 그것을 겨냥한 변이. 면제 창 안쪽에 진짜 위반을 심었을
+        //! 때 잡히는지를 묻는다 — 면제를 넣기만 하고 검증하지 않으면 그 면제만큼 구멍이다.
+
+        use super::*;
+
+        /// A-2(주석·문자열 마스킹)를 겨냥한다. 주석 속 가짜 `return` 바로 옆에 진짜
+        /// 위반을 두어, 마스킹이 진짜까지 삼키지 않는지 본다.
+        #[test]
+        fn catches_a_real_return_next_to_a_commented_one() {
+            let src = "define_class!(\n    impl X {\n        fn f(&self) -> bool {\n            /* return false; */ return true;\n        }\n    }\n);\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.blocks, 1);
+            assert_eq!(found.violations, vec![4]);
+        }
+
+        /// 같은 면제의 정당한 쪽 — 문자열 안의 `return` 은 코드가 아니다.
+        ///
+        /// 스니펫에 `let _ =` 를 쓰지 않는다: pre-commit 의 `let _` 검사는 문자열
+        /// 리터럴을 덮지 않아 합성 스니펫 **안쪽**을 진짜 코드로 오인한다(이 가드가
+        /// 마스킹으로 피하는 바로 그 함정이다).
+        #[test]
+        fn ignores_a_return_that_only_appears_in_a_string_literal() {
+            let src = "define_class!(\n    impl X {\n        fn f(&self) -> usize {\n            let s = \"return true;\";\n            s.len()\n        }\n    }\n);\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.blocks, 1);
+            assert!(found.violations.is_empty());
+        }
+
+        /// A-1(값 없는 `return;` 허용)의 경계 — 줄바꿈이 끼어도 값 반환은 값 반환이다.
+        #[test]
+        fn catches_a_value_return_split_across_lines() {
+            let src = "define_class!(\n    fn f() -> bool {\n        return\n            true;\n    }\n);\n";
+            assert_eq!(scan(&mask_non_code(src)).violations, vec![3]);
+        }
+
+        /// A-1 의 정당한 쪽 — 세미콜론 앞에 공백이 끼어도 값이 없으면 통과다.
+        #[test]
+        fn allows_a_bare_return_with_whitespace_before_the_semicolon() {
+            let src = "define_class!(\n    fn f() {\n        return ;\n    }\n);\n";
+            assert!(scan(&mask_non_code(src)).violations.is_empty());
+        }
+
+        /// 스캔 범위의 경계 — 블록 밖의 값 반환은 이 가드의 대상이 아니다.
+        #[test]
+        fn ignores_returns_outside_any_macro_block() {
+            let src = "fn f() -> bool {\n    return true;\n}\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.blocks, 0);
+            assert!(found.violations.is_empty());
+        }
+
+        /// 구분자 면제 — 매크로를 중괄호로 불러도 같은 블록으로 본다.
+        #[test]
+        fn handles_a_brace_delimited_macro_call() {
+            let src = "define_class! {\n    fn f() -> bool {\n        return true;\n    }\n}\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.blocks, 1);
+            assert_eq!(found.violations, vec![3]);
+        }
     }
 }
 
@@ -366,13 +486,30 @@ mod read_only_handle_mtime {
     //! 이 함정은 서로 독립인 두 crate 의 테스트에서 같은 형태로 반복됐다. 한쪽을
     //! 고쳐도 다른 쪽이 남는 부류라 텍스트로 못박는다.
     //!
-    //! **판정 방식과 한계**: 이름이 아니라 **같은 표현식 체인인지**로 가른다 —
-    //! 마스킹된 소스를 `;` 단위 구문으로 잘라, 한 구문 안에 `File::open(` 과
-    //! `.set_modified(`(또는 `.set_times(`)가 함께 있을 때만 잡는다. 그래서
-    //! `OpenOptions` 로 연 핸들은 통과한다. 반대로 핸들을 변수에 담아 **두 구문으로**
-    //! 나눈 형태(`let f = File::open(p)?; f.set_modified(t)?;`)는 못 잡는다 —
-    //! 텍스트만으로는 그 변수가 어떻게 열렸는지 따라갈 수 없다. 못 가르는 것을
-    //! 가르는 척하지 않기 위해 여기 적어 둔다.
+    //! ## 판정 방식
+    //!
+    //! 이름이 아니라 **같은 표현식 체인인지**로 가른다 — 마스킹된 소스를 `;` 단위
+    //! 구문으로 잘라, 한 구문 안에 `File::open(` 과 `.set_modified(`(또는
+    //! `.set_times(`)가 함께 있을 때만 잡는다. 그래서 `OpenOptions` 로 연 핸들은
+    //! 통과한다(B-2, `does_not_flag_a_handle_opened_for_write`).
+    //!
+    //! ## 면제를 더 좁히지 않는 이유 — "면제는 좁게" 의 예외
+    //!
+    //! 창 단위를 `;` 구문에서 **줄**로 좁히면 rustfmt 가 줄바꿈한 멀티라인 체인
+    //! (이 레포의 실제 위반이 정확히 그 형태였다)을 통째로 놓친다. 즉 여기서는
+    //! **좁히는 쪽이 검출을 깎는다.** "면제는 좁게" 는 창이 문법 단위보다 넓을 때의
+    //! 처방이고, `;` 는 이 판정에서 곧 문법 단위(구문 = 표현식 체인의 경계)다.
+    //! 다음 사람이 이 예외를 규칙의 누락으로 오해하지 않도록 여기 적어 둔다.
+    //!
+    //! ## 의도된 false negative — 구문 경계 밖 바인딩(cross-statement binding)
+    //!
+    //! 핸들을 변수에 담아 두 구문으로 나눈 형태
+    //! (`let f = File::open(p)?;` / `f.set_modified(t)?;`)는 **일부러 안 잡는다**.
+    //! 텍스트만으로는 그 변수가 어떻게 열렸는지 따라갈 수 없기 때문이다. 못 가르는
+    //! 것을 가르는 척하지 않으려는 결정이며,
+    //! `intentionally_misses_a_handle_bound_across_statements` 가 그 결정을 고정한다.
+    //! 나중에 판정기가 이 형태를 잡게 된다면 그건 버그를 고친 것이 아니라 **이 결정을
+    //! 바꾼 것**이므로, 그 테스트를 함께 고쳐야 한다.
 
     use super::*;
 
@@ -383,29 +520,46 @@ mod read_only_handle_mtime {
     const READ_ONLY_OPEN: &str = "File::open(";
     const MTIME_WRITES: &[&str] = &[".set_modified(", ".set_times("];
 
+    /// 마스킹된 소스 하나에 대한 판정 결과. 줄 번호는 1-based.
+    struct Scan {
+        /// mtime 을 쓰는 호출 수(스캔 하한용).
+        sites: usize,
+        /// 읽기 전용 핸들로 쓰는 줄.
+        violations: Vec<usize>,
+    }
+
+    /// 레포 전수 테스트와 합성 입력 테스트가 함께 부르는 판정기.
+    fn scan(masked: &str) -> Scan {
+        let mut out = Scan {
+            sites: 0,
+            violations: Vec::new(),
+        };
+        let mut stmt_start = 0usize;
+        for (offset, _) in masked.match_indices(';').chain([(masked.len(), "")]) {
+            let stmt = &masked[stmt_start..offset];
+            for needle in MTIME_WRITES {
+                let Some(rel) = stmt.find(needle) else {
+                    continue;
+                };
+                out.sites += 1;
+                if stmt.contains(READ_ONLY_OPEN) {
+                    out.violations.push(line_of(masked, stmt_start + rel));
+                }
+            }
+            stmt_start = offset + 1;
+        }
+        out
+    }
+
     #[test]
     fn mtime_is_never_written_through_a_read_only_handle() {
         let mut sites = 0usize;
         let mut violations = Vec::new();
         for (path, text) in rust_sources() {
-            let masked = mask_non_code(&text);
-            let mut stmt_start = 0usize;
-            for (offset, _) in masked.match_indices(';').chain([(masked.len(), "")]) {
-                let stmt = &masked[stmt_start..offset];
-                for needle in MTIME_WRITES {
-                    let Some(rel) = stmt.find(needle) else {
-                        continue;
-                    };
-                    sites += 1;
-                    if stmt.contains(READ_ONLY_OPEN) {
-                        violations.push(format!(
-                            "{}:{}",
-                            path.display(),
-                            line_of(&masked, stmt_start + rel)
-                        ));
-                    }
-                }
-                stmt_start = offset + 1;
+            let found = scan(&mask_non_code(&text));
+            sites += found.sites;
+            for line in found.violations {
+                violations.push(format!("{}:{line}", path.display()));
             }
         }
         assert!(
@@ -420,6 +574,71 @@ mod read_only_handle_mtime {
              `std::fs::OpenOptions::new().write(true).open(..)` 로 열어라.\n  {}",
             violations.join("\n  ")
         );
+    }
+
+    mod exemption_mutations {
+        //! 이 가드의 **면제마다** 그것을 겨냥한 변이. 특히 B-1(`;` 구문 창)은 두 needle
+        //! **사이**에 세미콜론을 숨겨야 판별력이 생긴다 — 세미콜론이 needle 뒤에 있으면
+        //! 구문이 갈려도 앞 조각에 둘 다 남아 여전히 잡히므로 면제를 찌르지 못한다.
+
+        use super::*;
+
+        /// B-1 을 겨냥한다. 문자열 속 `;` 가 구문을 잘라 버리면 `File::open(` 과
+        /// `.set_modified(` 가 서로 다른 조각으로 갈려 진짜 위반이 빠져나간다.
+        #[test]
+        fn catches_a_chain_whose_semicolon_hides_in_a_string() {
+            let src = "std::fs::File::open(&p.join(\"a;b\")).unwrap().set_modified(t).unwrap();\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.sites, 1);
+            assert_eq!(found.violations, vec![1]);
+        }
+
+        /// 같은 면제, 주석판.
+        #[test]
+        fn catches_a_chain_whose_semicolon_hides_in_a_comment() {
+            let src = "std::fs::File::open(&p /* ; */).unwrap().set_modified(t).unwrap();\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.sites, 1);
+            assert_eq!(found.violations, vec![1]);
+        }
+
+        /// 같은 면제, 멀티라인 체인 — 줄 단위로 좁히면 놓치는 형태(레포의 실제 위반이
+        /// 이 모양이었다). 위반 줄은 mtime 을 쓰는 줄로 보고한다.
+        #[test]
+        fn catches_a_chain_broken_across_lines_by_rustfmt() {
+            let src = "std::fs::File::open(&stale)\n    .unwrap()\n    .set_modified(old)\n    .unwrap();\n";
+            assert_eq!(scan(&mask_non_code(src)).violations, vec![3]);
+        }
+
+        /// B-2 의 정당한 쪽 — 쓰기 권한으로 연 핸들은 잡지 않되, 호출 수에는 센다.
+        #[test]
+        fn does_not_flag_a_handle_opened_for_write() {
+            let src = "std::fs::OpenOptions::new().write(true).open(&p).unwrap().set_modified(t).unwrap();\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.sites, 1);
+            assert!(found.violations.is_empty());
+        }
+
+        /// **의도된 false negative — 구문 경계 밖 바인딩.** 이 테스트가 깨졌다면
+        /// 판정기가 넓어진 것이고, 그건 버그 수정이 아니라 결정 변경이다.
+        #[test]
+        fn intentionally_misses_a_handle_bound_across_statements() {
+            let src = "let f = std::fs::File::open(&p).unwrap();\nf.set_modified(t).unwrap();\n";
+            let found = scan(&mask_non_code(src));
+            assert_eq!(found.sites, 1);
+            assert!(
+                found.violations.is_empty(),
+                "구문 경계 밖 바인딩은 일부러 안 잡는다 — 판정기를 넓혔다면 이 결정을 \
+                 바꾼 것이므로 가드 doc 도 함께 고쳐라"
+            );
+        }
+
+        /// `set_times` 도 같은 부류다 — needle 목록이 줄어들지 않았는지 본다.
+        #[test]
+        fn catches_set_times_as_well_as_set_modified() {
+            let src = "std::fs::File::open(&p).unwrap().set_times(times).unwrap();\n";
+            assert_eq!(scan(&mask_non_code(src)).violations, vec![1]);
+        }
     }
 }
 
