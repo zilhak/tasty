@@ -263,7 +263,7 @@ fn data_popup(ui: &mut egui::Ui, theme: &Theme) {
         header_row(ui, theme);
         type_bar_row(ui, theme);
         body_row(ui, theme);
-        footer_row(ui, theme);
+        footer_row(ui, theme, "text/plain");
     });
 }
 
@@ -273,7 +273,7 @@ fn files_popup(ui: &mut egui::Ui, theme: &Theme) {
         header_row(ui, theme);
         type_bar_segmented_row(ui, theme);
         files_body_row(ui, theme);
-        footer_row_files(ui, theme);
+        footer_row(ui, theme, "text/uri-list");
     });
 }
 
@@ -284,7 +284,7 @@ fn image_popup(ui: &mut egui::Ui, theme: &Theme) {
         header_row(ui, theme);
         image_type_bar_row(ui, theme);
         image_body_row(ui, theme);
-        image_footer_row(ui, theme);
+        footer_row(ui, theme, "image/rgba8");
     });
 }
 
@@ -506,92 +506,6 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// footer(files) — mime(`text/uri-list`) + 우측 Close(secondary).
-fn footer_row_files(ui: &mut egui::Ui, theme: &Theme) {
-    let pad_x = theme.spacing_md.value();
-    let pad_y = theme.spacing_sm.value();
-    let ctrl_h = theme.item_height_tab.value();
-    let h = pad_y * 2.0 + ctrl_h;
-    let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top() + theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
-
-    ui.painter().text(
-        egui::pos2(rect.left() + pad_x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        "text/uri-list",
-        egui::FontId::monospace(theme.font_size_caption.value()),
-        theme.text_muted().to_egui(),
-    );
-
-    let btn_w = 64.0;
-    let btn_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
-        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
-    );
-    ui.painter().rect(
-        btn_rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        btn_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "Close",
-        egui::FontId::proportional(theme.font_size_term_sm.value()),
-        theme.text_secondary().to_egui(),
-    );
-}
-
-/// footer — mime(`image/rgba8`) + 우측 Close(secondary).
-fn image_footer_row(ui: &mut egui::Ui, theme: &Theme) {
-    let pad_x = theme.spacing_md.value();
-    let pad_y = theme.spacing_sm.value();
-    let ctrl_h = theme.item_height_tab.value();
-    let h = pad_y * 2.0 + ctrl_h;
-    let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top() + theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
-
-    ui.painter().text(
-        egui::pos2(rect.left() + pad_x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        "image/rgba8",
-        egui::FontId::monospace(theme.font_size_caption.value()),
-        theme.text_muted().to_egui(),
-    );
-
-    let btn_w = 64.0;
-    let btn_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
-        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
-    );
-    ui.painter().rect(
-        btn_rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        btn_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "Close",
-        egui::FontId::proportional(theme.font_size_term_sm.value()),
-        theme.text_secondary().to_egui(),
-    );
-}
-
 /// "기타" 버킷 상태 — header + type-bar(Other 뱃지) + body(포맷 블록 나열) + footer
 /// 4행(design 확정 결과).
 fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
@@ -599,7 +513,11 @@ fn other_popup(ui: &mut egui::Ui, theme: &Theme) {
         header_row(ui, theme);
         other_type_bar_row(ui, theme);
         other_body_row(ui, theme);
-        other_footer_row(ui, theme);
+        footer_row(
+            ui,
+            theme,
+            format!("{} unrecognized formats", OTHER_SAMPLES.len()),
+        );
     });
 }
 
@@ -722,50 +640,6 @@ fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
             ty += line_h;
         }
     }
-}
-
-/// footer(기타) — mime 자리에 "{n} unrecognized formats" 문구(mime 이 없어 대체,
-/// design 확정 결과) + 우측 Close(secondary).
-fn other_footer_row(ui: &mut egui::Ui, theme: &Theme) {
-    let pad_x = theme.spacing_md.value();
-    let pad_y = theme.spacing_sm.value();
-    let ctrl_h = theme.item_height_tab.value();
-    let h = pad_y * 2.0 + ctrl_h;
-    let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top() + theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
-
-    ui.painter().text(
-        egui::pos2(rect.left() + pad_x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        format!("{} unrecognized formats", OTHER_SAMPLES.len()),
-        egui::FontId::monospace(theme.font_size_caption.value()),
-        theme.text_muted().to_egui(),
-    );
-
-    let btn_w = 64.0;
-    let btn_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
-        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
-    );
-    ui.painter().rect(
-        btn_rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        btn_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "Close",
-        egui::FontId::proportional(theme.font_size_term_sm.value()),
-        theme.text_secondary().to_egui(),
-    );
 }
 
 /// 정상 데이터 상태(HTML) — header + type-bar(배지 + 우측 Pretty print 체크박스) +
@@ -988,55 +862,25 @@ fn body_row_text(ui: &mut egui::Ui, theme: &Theme, content: &str) {
     }
 }
 
-/// footer(HTML) — [`footer_row`]와 동일 레이아웃이나 mime 뒤에 `· {n} chars · {n}
-/// line(s)` 메타를 결합한다(design 확정 결과 예시 `text/html · 312 chars · 1 line`).
+/// footer(HTML) — mime 뒤에 `· {n} chars · {n} line(s)` 메타를 결합해
+/// [`footer_row`] 에 넘긴다(design 확정 결과 예시 `text/html · 312 chars · 1 line`).
 fn footer_row_html(ui: &mut egui::Ui, theme: &Theme, content: &str) {
-    let pad_x = theme.spacing_md.value();
-    let pad_y = theme.spacing_sm.value();
-    let ctrl_h = theme.item_height_tab.value();
-    let h = pad_y * 2.0 + ctrl_h;
-    let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top() + theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
-
     let chars = content.chars().count();
     let lines = content.lines().count().max(1);
     let word = if lines == 1 { "line" } else { "lines" };
-    ui.painter().text(
-        egui::pos2(rect.left() + pad_x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
+    footer_row(
+        ui,
+        theme,
         format!("text/html · {chars} chars · {lines} {word}"),
-        egui::FontId::monospace(theme.font_size_caption.value()),
-        theme.text_muted().to_egui(),
-    );
-
-    let btn_w = 64.0;
-    let btn_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.right() - pad_x - btn_w, rect.top() + pad_y),
-        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + ctrl_h),
-    );
-    ui.painter().rect(
-        btn_rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        btn_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "Close",
-        egui::FontId::proportional(theme.font_size_term_sm.value()),
-        theme.text_secondary().to_egui(),
     );
 }
 
 /// footer — mime(mono caption) + 우측 Close(secondary).
-fn footer_row(ui: &mut egui::Ui, theme: &Theme) {
+///
+/// 다섯 상태(text/plain · files · image · other · html)가 이 레이아웃을 그대로 쓰고
+/// **왼쪽 mime 라벨만 다르다.** 그래서 라벨을 인자로 받는다 — 상태마다 함수를 두면
+/// 레이아웃이 다섯 벌이 되고, 한 벌만 고친 채 나머지가 남는 어긋남이 조용히 생긴다.
+fn footer_row(ui: &mut egui::Ui, theme: &Theme, mime: impl ToString) {
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();
     let ctrl_h = theme.item_height_tab.value();
@@ -1052,7 +896,7 @@ fn footer_row(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().text(
         egui::pos2(rect.left() + pad_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
-        "text/plain",
+        mime,
         egui::FontId::monospace(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );
