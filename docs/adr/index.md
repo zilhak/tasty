@@ -158,3 +158,4 @@
 | 0145 | [길이 newtype 의 생성자는 당분간 열어 둔다 — 봉인의 이득이 정확성이 아니라 판정기의 정밀도이기 때문](0145-typed-length-constructors-stay-open-for-now.md) | Accepted | 2026-09-05 | typed-length, dpi, guard, tooling-cost |
 | 0147 | [같은 집합이 여러 곳에 적혀 있으면 합치지 않고 판정기로 잇는다](0147-multiple-carriers-are-joined-by-a-check-not-merged.md) | Accepted | 2026-09-05 | docs, guards, single-source-of-truth, drift |
 | 0146 | [스캔 가드는 빌드 디렉토리를 표식으로 가지치기한다 — 이름은 성질이 아니다](0146-build-dirs-are-pruned-by-their-tag-not-by-their-name.md) | Accepted | 2026-09-05 | guards, scan-population, build-artifacts, measurement, adr-0133, adr-0138, adr-0139 |
+| 0148 | [물리 px 상수는 "무엇을 위한 값인가" 로 갈라 다룬다](0148-physical-px-constants-are-split-by-what-they-are-for.md) | Accepted | 2026-09-05 | dpi, typed-length, layout, design-tokens, hidpi, adr-0145 |
