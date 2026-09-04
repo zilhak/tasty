@@ -50,3 +50,5 @@ mod generated_component;
 mod shadow_policy_guard;
 #[cfg(test)]
 mod zoom_coverage_guard;
+#[cfg(test)]
+mod zoom_exempt_fields_guard;
