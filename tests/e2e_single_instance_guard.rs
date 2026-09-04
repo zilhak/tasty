@@ -350,3 +350,27 @@ fn instance_spawning_test_files_match_snapshot() {
          \x20 추가됨: {added:?}\n\x20 사라짐: {removed:?}"
     );
 }
+
+/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
+///
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
+/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
+///
+/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
+/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+///
+/// 이 파일의 겹은 **둘**이고 가리키는 것이 같은 갈래(테스트 파일 경로)라 한 자리에서 본다.
+#[test]
+fn both_allowlists_point_at_test_files_that_exist() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cited = ALLOWLIST_FILES
+        .iter()
+        .chain(BIN_SELECTION_ALLOWLIST.iter())
+        .map(|(rel, _)| *rel);
+    let missing = tasty_doc_guards::missing_referents(root, cited);
+    assert!(
+        missing.is_empty(),
+        "면제가 없는 테스트 파일을 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 지워라: {missing:?}"
+    );
+}

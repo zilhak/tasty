@@ -175,3 +175,21 @@ fn no_emoji_in_source() {
         violations.join("\n")
     );
 }
+
+/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
+///
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
+/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
+///
+/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
+/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+#[test]
+fn allowlist_files_point_at_paths_that_exist() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let missing = tasty_doc_guards::missing_referents(root, ALLOWLIST_FILES.iter().copied());
+    assert!(
+        missing.is_empty(),
+        "면제가 없는 경로를 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 항목을 지워라: {missing:?}"
+    );
+}

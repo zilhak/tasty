@@ -83,6 +83,38 @@ pub fn is_build_cache_dir(dir: &Path) -> bool {
     head.starts_with(CACHEDIR_SIGNATURE)
 }
 
+/// 면제 항목이 가리키는 경로 중 **실재하지 않는 것**을 돌려준다 — 참조 무결성.
+///
+/// **이 판정의 초록이 뜻하는 것은 "면제가 아직 필요하다" 가 아니다.** 가리키는 것이
+/// 실재한다는 것뿐이다. 가리키는 파일이 있어도 그 면제가 아무것도 안 덮고 있을 수 있고,
+/// 그것은 결함이 아니다(ADR-0150). 두 축을 섞으면 "안 덮으면 지워라" 라는 틀린 처방이
+/// 참조 무결성의 옷을 입고 되살아난다.
+///
+/// **왜 필요한가**: 경로가 썩으면 그 면제는 조용히 아무 일도 안 하게 된다. 면제가 덮던
+/// 자리는 이제 검사받지만, 목록에는 "여기는 원래 위반해도 된다" 는 신호가 남는다. 실측
+/// (2026-09-05) 경로·키를 가리키는 면제 8 겹 중 이 검사를 가진 것은 하나뿐이었다.
+///
+/// **끝의 `/` 로 갈린다.** 접두 면제는 디렉토리를 가리키고 나머지는 파일을 가리킨다 —
+/// 한 목록이 둘을 섞어 담는 것은 그 목록의 매칭이 접두이기 때문이라 설계상 그렇다.
+/// 그래서 `exists()` 로 뭉개지 않고 쓰인 형태대로 판정한다: 파일 자리에 디렉토리가
+/// 생겨도(그 반대도) 면제는 의도한 것을 더 이상 안 가리킨다.
+pub fn missing_referents<'a>(
+    root: &Path,
+    cited: impl IntoIterator<Item = &'a str>,
+) -> Vec<&'a str> {
+    cited
+        .into_iter()
+        .filter(|rel| {
+            let full = root.join(rel.trim_end_matches('/'));
+            if rel.ends_with('/') {
+                !full.is_dir()
+            } else {
+                !full.is_file()
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,6 +130,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("임시 디렉토리 생성");
         dir
+    }
+
+    /// 양극성 — **합성 입력으로 잡는다.** 실재하는 면제 목록을 상대로만 시험하면 그
+    /// 목록을 고치는 순간 이 회귀가 거짓 초록이 된다.
+    #[test]
+    fn missing_referents_reports_only_what_is_absent() {
+        let root = repo_root();
+        let found = missing_referents(
+            &root,
+            [
+                "Cargo.toml",
+                "src/__no_such_file__.rs",
+                "crates/",
+                "crates/__no_such_dir__/",
+            ],
+        );
+        assert_eq!(
+            found,
+            vec!["src/__no_such_file__.rs", "crates/__no_such_dir__/"]
+        );
+    }
+
+    /// 끝의 `/` 가 판정을 가른다 — 파일을 디렉토리로, 디렉토리를 파일로 적으면 잡힌다.
+    /// 이 절이 없으면 `exists()` 로 뭉갠 구현도 위 테스트를 통과한다.
+    #[test]
+    fn the_trailing_slash_decides_which_kind_is_required() {
+        let root = repo_root();
+        assert_eq!(
+            missing_referents(&root, ["Cargo.toml/"]),
+            vec!["Cargo.toml/"]
+        );
+        assert_eq!(missing_referents(&root, ["crates"]), vec!["crates"]);
+        assert!(missing_referents(&root, ["Cargo.toml", "crates/"]).is_empty());
     }
 
     #[test]
