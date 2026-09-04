@@ -95,10 +95,14 @@ fn build_sandboxed_lua() -> mlua::Result<Lua> {
     ] {
         g.set(*name, Value::Nil)?;
     }
+    // 이 세 set 만 결과를 버린다. 근거는 바로 아래 `g.set("package", Value::Nil)?` 다 —
+    // 테이블 자체가 전역에서 사라지고 `require` 도 위에서 nil 이라, set 이 실패해 로더가
+    // 남아도 스크립트가 닿을 경로가 없다. 백스톱이 없는 곳에서는 버리면 안 된다
+    // (`crates/tasty-lua/src/sandbox.rs` 는 `require` 를 살리려 `package` 를 남겨 전파한다).
     if let Ok(pkg) = g.get::<Table>("package") {
-        let _ = pkg.set("loadlib", Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = pkg.set("searchers", Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = pkg.set("loaders", Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
+        let _ = pkg.set("loadlib", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
+        let _ = pkg.set("searchers", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
+        let _ = pkg.set("loaders", Value::Nil); // 아래 package 제거가 백스톱 — 실패해도 닿을 수 없다.
     }
     g.set("package", Value::Nil)?;
 
