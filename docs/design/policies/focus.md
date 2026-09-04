@@ -47,6 +47,9 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 - 활성 상태 *조회* 는 허용(`focused` 필드 등). 활성 상태에 *의존* 하는 동작은 금지.
 - target 미지정 명령은 **에러 + 사용법 안내**(silent fallback 금지). 호출자는 조회(`list surfaces` 등)로 ID 를 확인해 전달한다. 리소스 생성 명령은 응답에 생성된 ID 를 포함한다.
   - `terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast` 는 `--surface`(parent) 를 생략하면 host 가 "현재 engine 에 등록된 parent 가 정확히 1개"일 때만 그 parent 로 폴백한다(단일 윈도우 세션의 하위 호환). main window 가 **2개 이상** 열려 있는데 이 4개 메서드가 `--surface` 없이 호출되면, 어느 window 를 봐야 하는지 자체가 정해지지 않으므로 focused window 로 조용히 새지 않고 명시적 에러로 거부한다(`src/app/request_owner.rs` `find_request_owner`/`ambiguous_parent_fallback_requires_surface`).
+- **요청은 자기가 실은 ID 가 가리키는 창으로 간다.** 창이 여럿일 때 요청의 주인 창을 못 찾으면 라우터는 마지막 수단으로 **포커스된 창**에 넘긴다. 그 폴백이 답이 되는 순간 그 메서드는 포커스 의존이 되고, 증상은 에러가 아니라 "다른 창에서 not found" 라 원인이 라우팅이라는 것이 드러나지 않는다. 그래서 요청이 실은 id 로 주인 창을 찾는 범위를 넓게 잡는다 — surface·workspace·pane·tab, headless PTY, hook, output observer, preset capture 의 source 까지.
+  - 대상이 아닌 id 는 라우팅에 쓰지 않는다. `from_surface_id`(발신자)로 보내면 큐가 받는 쪽 engine 에 안 쌓여 **읽는 쪽이 영영 못 본다** — 조용한 폴백보다 나쁜 오배송이다. `caller_surface_id`(호출자)와 stream 클라이언트 id 도 같은 이유로 대상이 아니다.
+  - 이 인식 목록은 주석의 "확인했다" 로 유지되다 새 키 일곱 개를 놓쳤다. 지금은 핸들러 소스에서 뽑은 키 집합과 **집합 동등**으로 맞물려 있고, 대상이 아닌 키는 사유와 함께 면제 목록에 남는다(`every_id_key_a_handler_reads_is_routed_or_exempt`).
 - 리소스 생성/삭제 명령이 내부적으로 focus 를 일시 이동해야 하면 작업 후 **원래 focus 를 복원**한다.
 - `TASTY_SURFACE_ID` 환경변수(= "내가 있는 surface")는 focus 와 다르다. CLI `--surface` 기본값으로 쓸 수 있다.
 

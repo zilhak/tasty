@@ -604,5 +604,7 @@ fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
         .collect()
 }
 
+mod routing_key_coverage;
+
 #[cfg(test)]
 mod workflow_fail_fast_tests;
