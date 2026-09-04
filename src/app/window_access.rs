@@ -198,6 +198,54 @@ impl App {
         None
     }
 
+    /// 탭을 가진 MainView 의 WindowId 를 반환.
+    ///
+    /// 탭은 창에 직접 매이지 않는다 — `find_pane_for_tab` 이 그 탭을 담은 pane 을
+    /// 찾고, pane 이 engine 에 있으면 그 창이 주인이다.
+    pub(crate) fn find_main_with_tab(&self, tab_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && m.core_state.find_pane_for_tab(tab_id).is_some()
+            {
+                return Some(*wid);
+            }
+        }
+        None
+    }
+
+    /// headless pty 를 가진 MainView 의 WindowId 를 반환.
+    ///
+    /// `pty_registry` 는 **engine 마다 따로**다(`MainView::core_state`). 창이 둘이면
+    /// 한쪽에서 spawn 한 pty 는 다른 쪽 registry 에 없으므로, id 만 들고 온 요청은
+    /// 창을 건너 찾아야 주인을 만난다.
+    pub(crate) fn find_main_with_headless_pty(&self, pty_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && m.core_state.pty_registry.contains(pty_id)
+            {
+                return Some(*wid);
+            }
+        }
+        None
+    }
+
+    /// [`ResourceId`](crate::app::request_owner::ResourceId) 하나를 주인 창으로 푼다 —
+    /// kind 별 분기를 한 곳에만 둔다. 새 kind 를 더하면 여기서 컴파일이 깨지므로,
+    /// 라우팅 경로와 parked 경로가 서로 다른 집합을 보는 사고가 안 난다.
+    pub(crate) fn find_main_with_resource(
+        &self,
+        rid: crate::app::request_owner::ResourceId,
+    ) -> Option<WindowId> {
+        use crate::app::request_owner::Kind;
+        match rid.kind {
+            Kind::Surface => self.find_main_with_surface(rid.id),
+            Kind::Workspace => self.find_main_with_workspace(rid.id),
+            Kind::Pane => self.find_main_with_pane(rid.id),
+            Kind::Tab => self.find_main_with_tab(rid.id),
+            Kind::HeadlessPty => self.find_main_with_headless_pty(rid.id),
+        }
+    }
+
     /// Workspace 를 (id 또는 표시 이름) 문자열로 여러 window 에 걸쳐 찾는다 —
     /// `terminal::resolve_workspace_id` 와 동일한 우선순위(숫자 id exact match 우선,
     /// 실패 시 name exact match)를 단일 engine 이 아니라 **모든 main window** 에

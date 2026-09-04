@@ -72,15 +72,18 @@ impl App {
                 return IpcStep::Handled;
             }
         }
-        // parked owner 검사
-        let owner_in_parked = crate::app::request_owner::params_resource_id(&cmd.request.params)
-            .and_then(|(_, rid)| {
-                self.parked_states.iter_mut().find(|(_, e)| match rid.kind {
-                    crate::app::request_owner::Kind::Surface => e.has_surface(rid.id),
-                    crate::app::request_owner::Kind::Workspace => e.has_workspace(rid.id),
-                    crate::app::request_owner::Kind::Pane => e.has_pane(rid.id),
-                })
-            });
+        // parked owner 검사 — 창 순회와 **같은 리소스 집합**을 봐야 한다. 한쪽만
+        // 새 kind 를 알면 그 리소스는 창에서 못 찾힌 뒤 parked 에서도 안 잡혀
+        // 포커스 폴백으로 샌다.
+        let owner_in_parked = crate::app::request_owner::request_resource_id(
+            &cmd.request.method,
+            &cmd.request.params,
+        )
+        .and_then(|rid| {
+            self.parked_states
+                .iter_mut()
+                .find(|(_, e)| crate::app::request_owner::engine_has_resource(e, rid))
+        });
         if let Some((state, engine)) = owner_in_parked {
             let response = host_ipc::handler::handle_with_caller(
                 &mut self.core,

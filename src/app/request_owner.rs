@@ -21,6 +21,13 @@ pub(crate) enum Kind {
     Surface,
     Workspace,
     Pane,
+    /// 탭은 창에 직접 매이지 않고 pane 을 통해 매인다 — `CoreState::find_pane_for_tab`
+    /// 이 그 해석을 한다. `tab.close` 만 tab id 를 단독 대상으로 받는다(`tab.list` ·
+    /// `tab.create` · `tab.move` 는 `pane_id` 를 함께 받아 그쪽으로 풀린다).
+    Tab,
+    /// headless pty(`PTY_ID_BASE` 이상). 창이 아니라 **engine 의 `pty_registry`** 에
+    /// 산다 — 창마다 engine 이 따로이므로 창을 건너 찾아야 한다.
+    HeadlessPty,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -43,21 +50,75 @@ pub(crate) fn params_resource_id(params: &serde_json::Value) -> Option<(&str, Re
         "surface",
         "parent",
         "target",
+        "to_surface_id",
+        "tab_id",
         "pane_id",
         "pane",
+        "target_pane_id",
         "workspace_id",
+        "target_workspace_id",
     ] {
         if let Some(v) = params.get(key).and_then(|v| v.as_u64()) {
             let kind = match key {
-                "surface_id" | "surface" | "parent" | "target" => Kind::Surface,
-                "pane_id" | "pane" => Kind::Pane,
-                "workspace_id" => Kind::Workspace,
+                "surface_id" | "surface" | "parent" | "target" | "to_surface_id" => Kind::Surface,
+                "tab_id" => Kind::Tab,
+                "pane_id" | "pane" | "target_pane_id" => Kind::Pane,
+                "workspace_id" | "target_workspace_id" => Kind::Workspace,
                 _ => unreachable!(),
             };
             return Some((key, ResourceId { kind, id: v as u32 }));
         }
     }
     None
+}
+
+/// `pty.*` 의 `"id"` 는 headless pty id 지만, 이 키는 위 목록에 넣을 수 **없다** —
+/// `"id"` 는 host 핸들러 전체에서 25 곳이 각기 다른 의미로 쓰는 범용 키라(hook id ·
+/// agent id · plugin id …) 무조건 pty 로 해석하면 오탐이 쏟아진다. 그래서 여기만
+/// **메서드 이름으로 한정**한다.
+///
+/// `pty.attach_surface` 는 제외한다 — `"id"`(pty)와 함께 `"pane_id"` 를 받으므로
+/// 위 목록이 이미 그쪽으로 푼다. `pty.spawn` 도 제외다: 대상이 아니라 **생성**이라
+/// 실을 id 자체가 없다(그래서 지금도 포커스된 창의 engine 에 생긴다 — 이 함수가 고칠
+/// 수 있는 형태가 아니다).
+pub(crate) fn method_scoped_resource_id(
+    method: &str,
+    params: &serde_json::Value,
+) -> Option<ResourceId> {
+    if !matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
+        return None;
+    }
+    params
+        .get("id")
+        .and_then(|v| v.as_u64())
+        .map(|v| ResourceId {
+            kind: Kind::HeadlessPty,
+            id: v as u32,
+        })
+}
+
+/// 이 engine 이 그 리소스를 갖고 있는가 — parked engine 탐색의 술어.
+///
+/// kind 분기를 여기 한 곳에만 둔다. 같은 `match` 가 세 곳에 복제돼 있었고
+/// (`ipc/routing.rs` · `dispatch/intents.rs` · 그리고 창 순회 쪽), 복제된 분기는
+/// 한쪽만 새 kind 를 알게 되는 순간 **그 리소스가 창에서도 parked 에서도 안 잡혀
+/// 포커스 폴백으로 새는** 형태를 만든다. 창 쪽 대응물은
+/// [`App::find_main_with_resource`](crate::app::App::find_main_with_resource) 다.
+pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: ResourceId) -> bool {
+    match rid.kind {
+        Kind::Surface => engine.has_surface(rid.id),
+        Kind::Workspace => engine.has_workspace(rid.id),
+        Kind::Pane => engine.has_pane(rid.id),
+        Kind::Tab => engine.find_pane_for_tab(rid.id).is_some(),
+        Kind::HeadlessPty => engine.pty_registry.contains(rid.id),
+    }
+}
+
+/// 이 요청이 겨누는 리소스 — 키 이름으로 뽑히는 것과 메서드로 한정되는 것을 합친다.
+pub(crate) fn request_resource_id(method: &str, params: &serde_json::Value) -> Option<ResourceId> {
+    params_resource_id(params)
+        .map(|(_, rid)| rid)
+        .or_else(|| method_scoped_resource_id(method, params))
 }
 
 /// `terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast` 가
@@ -102,12 +163,8 @@ impl App {
         method: &str,
         params: &serde_json::Value,
     ) -> Result<Option<WindowId>, String> {
-        if let Some((_, rid)) = params_resource_id(params) {
-            let found = match rid.kind {
-                Kind::Surface => self.find_main_with_surface(rid.id),
-                Kind::Workspace => self.find_main_with_workspace(rid.id),
-                Kind::Pane => self.find_main_with_pane(rid.id),
-            };
+        if let Some(rid) = request_resource_id(method, params) {
+            let found = self.find_main_with_resource(rid);
             if found.is_some() {
                 return Ok(found);
             }
@@ -171,6 +228,82 @@ mod tests {
             rid(&json!({ "parent": 42, "workspace": "5" })),
             ("parent", Kind::Surface, 42)
         ));
+    }
+
+    /// `tab.close` 는 tab id 만 실어 온다 — 그 탭을 담은 pane 을 가진 창이 주인이다.
+    ///
+    /// 고치기 전에는 이 키가 목록에 없어 `None` 이었고, 그러면 요청이 **포커스된 창**
+    /// 으로 갔다. 창이 둘일 때 첫 창의 탭을 겨눈 `tab.close` 가 두 번째 창의 engine 에
+    /// 도착해 `closed:false` 를 돌려주는 형태로 관측됐다.
+    #[test]
+    fn tab_close_routes_by_tab_id() {
+        assert!(matches!(
+            rid(&json!({ "tab_id": 9 })),
+            ("tab_id", Kind::Tab, 9)
+        ));
+    }
+
+    /// `message.send` 는 **받는 쪽**으로 라우팅한다.
+    ///
+    /// 큐가 `to` 에 매여 있기 때문이다 — `CoreState::send_message` 가
+    /// `surface_messages.entry(to)` 에 넣고, `message.read` 는 `surface_id`(= 받는 쪽)로
+    /// 읽는다. 보내는 쪽 engine 에 넣으면 읽는 쪽이 영원히 못 본다.
+    #[test]
+    fn message_send_routes_by_the_recipient() {
+        assert!(matches!(
+            rid(&json!({ "to_surface_id": 5, "from_surface_id": 7 })),
+            ("to_surface_id", Kind::Surface, 5)
+        ));
+    }
+
+    /// `from_surface_id` 는 **라우팅 키가 아니다** — 보낸 사람을 적는 메타데이터다.
+    ///
+    /// 이 단언이 위 테스트의 대조다. 둘 다 인식하게 만들면 키 순서에 따라 어느 쪽이
+    /// 이기는지가 정해지고, 보내는 쪽이 이기는 순간 메시지가 받는 쪽이 안 보는
+    /// engine 에 쌓인다. "id 처럼 생겼으니 넣는다" 가 왜 틀린지의 실례다.
+    #[test]
+    fn the_sender_id_alone_does_not_pick_a_window() {
+        assert!(params_resource_id(&json!({ "from_surface_id": 7 })).is_none());
+    }
+
+    /// `preset.apply` 의 명시적 대상.
+    #[test]
+    fn preset_apply_routes_by_its_explicit_target() {
+        assert!(matches!(
+            rid(&json!({ "target_pane_id": 4 })),
+            ("target_pane_id", Kind::Pane, 4)
+        ));
+        assert!(matches!(
+            rid(&json!({ "target_workspace_id": 2 })),
+            ("target_workspace_id", Kind::Workspace, 2)
+        ));
+    }
+
+    /// headless pty 의 `"id"` 는 **그 키를 그 뜻으로 쓰는 메서드에서만** 대상이다.
+    ///
+    /// `"id"` 는 host 핸들러 전반이 각기 다른 의미로 쓰는 범용 키다. 키 목록에 넣으면
+    /// `hook.unset {id}` 같은 요청이 pty 로 해석돼 엉뚱한 창으로 간다 — 아래 두 번째
+    /// 단언이 그 오탐을 막는 대조다.
+    #[test]
+    fn a_pty_id_is_a_target_only_for_the_methods_that_take_one() {
+        let params = json!({ "id": 0x8000_0001u32 });
+        let got = method_scoped_resource_id("pty.wait", &params).expect("pty.wait 는 대상이 있다");
+        assert!(matches!(got.kind, Kind::HeadlessPty));
+        assert_eq!(got.id, 0x8000_0001);
+
+        assert!(method_scoped_resource_id("hook.unset", &params).is_none());
+        assert!(params_resource_id(&params).is_none());
+    }
+
+    /// `pty.attach_surface` 는 이 한정 목록에 **없다** — `pane_id` 로 이미 풀리기 때문이다.
+    ///
+    /// 이것이 없으면 "pty 를 받는 메서드는 전부 넣어야 한다" 로 읽혀 목록이 넓어진다.
+    /// 넓히면 틀리지는 않지만, 어느 키가 실제로 주인을 정하는지가 흐려진다.
+    #[test]
+    fn attach_surface_is_resolved_by_its_pane_not_its_pty() {
+        let params = json!({ "id": 0x8000_0002u32, "pane_id": 3 });
+        assert!(matches!(rid(&params), ("pane_id", Kind::Pane, 3)));
+        assert!(method_scoped_resource_id("pty.attach_surface", &params).is_none());
     }
 
     /// `terminal.adopt` 가 쓰는 `"target"` 키(입양 대상 기존 surface) — Surface.
