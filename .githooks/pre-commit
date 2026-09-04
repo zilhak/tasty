@@ -17,6 +17,7 @@
 #   C.9  egui::Window 직접 사용                          [diff 추가 라인]
 #   C.11 println! / eprintln! — tracing 강제             [diff 추가 라인]
 #   C.12 dbg! — debug leak 방지                          [diff 추가 라인]
+#   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [staged 파일 목록]
 #
 # 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서.
 
@@ -274,6 +275,33 @@ check_dbg() {
 }
 
 # ────────────────────────────────────────────────────────────
+# W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만, 커밋은 통과)
+# ────────────────────────────────────────────────────────────
+# CHANGELOG.md 는 "사용자가 의존하는 표면" 의 변경을 기록한다(CHANGELOG.md 머리말).
+# 그 표면이 선언되는 파일이 staged 인데 CHANGELOG.md 는 staged 가 아니면 상기시킨다.
+#   - crates/tasty-ipc/src/method_meta.rs   : IPC 메서드 표
+#   - crates/tasty-cli/src/commands/        : CLI 서브커맨드
+#   - crates/tasty-plugin-*/tasty-plugin.toml : plugin 매니페스트(권한·인자)
+# **경고만 한다** — 그 파일을 만졌다고 반드시 표면이 바뀌는 것은 아니다(내부 refactor,
+# 오타 수정, 버전 bump 만인 매니페스트). 하드 실패로 만들면 무해한 커밋마다
+# --no-verify 를 쓰게 되고 훅 전체가 무력화된다. 판단은 사람이 한다.
+check_changelog_reminder() {
+    local staged surface
+    staged=$(git diff --cached --name-only --diff-filter=ACMR)
+    if echo "$staged" | grep -qx 'CHANGELOG.md'; then return; fi
+    surface=$(echo "$staged" | grep -E \
+        -e '^crates/tasty-ipc/src/method_meta\.rs$' \
+        -e '^crates/tasty-cli/src/commands/' \
+        -e '^crates/tasty-plugin-[^/]+/tasty-plugin\.toml$' \
+        || true)
+    if [ -z "$surface" ]; then return; fi
+    yellow "▸ [W.1] 사용자 표면 선언 파일이 staged 인데 CHANGELOG.md 는 아니다:"
+    echo "$surface" | sed 's/^/      /' >&2
+    yellow "  표면이 실제로 바뀌었으면 CHANGELOG.md \`[Unreleased]\` 에 넣어라"
+    yellow "  (내부 refactor·버전 bump 뿐이면 무시해도 된다 — 경고일 뿐 커밋은 진행된다)."
+}
+
+# ────────────────────────────────────────────────────────────
 # 실행
 # ────────────────────────────────────────────────────────────
 check_mod_use_order
@@ -283,6 +311,7 @@ check_color_hardcode
 check_egui_window
 check_println
 check_dbg
+check_changelog_reminder
 
 if [ "$FAIL" -ne 0 ]; then
     echo >&2

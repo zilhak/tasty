@@ -20,7 +20,10 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 | C.9 | `egui::Window::` 직접 사용 | PopupManager 강제 ([popup-implementation](popup-implementation.md)) |
 | C.11 | `println!`/`eprintln!` | `tracing::*` 강제 (예외: CLI 출력 — `crates/tasty-cli/*`, `src/boot/cli_routing.rs`) |
 | C.12 | `dbg!` | release leak 방지 |
+| W.1 | 사용자 표면 선언 파일(`crates/tasty-ipc/src/method_meta.rs` · `crates/tasty-cli/src/commands/` · `crates/tasty-plugin-*/tasty-plugin.toml`)이 staged 인데 `CHANGELOG.md` 는 아님 | CHANGELOG 누락 상기 — **경고만, 커밋은 통과** |
 
+> W.1 이 경고에 그치는 이유: 그 파일을 만졌다고 반드시 사용자 표면이 바뀌는 것은 아니다(내부 refactor, 도움말 오타, 매니페스트 버전 bump). 하드 실패로 만들면 무해한 커밋마다 `--no-verify` 를 쓰게 되고 훅 전체가 무력화된다 — 판단은 사람이 한다.
+>
 > 색상 하드코딩(옛 C.8)은 pre-commit 에서 빠지고 **clippy `disallowed-methods`** 로 이관됐다 — `#[allow]` 와 path 예외를 정확히 인식한다([color-policy](color-policy.md), [clippy-policy](clippy-policy.md)).
 >
 > i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. CI `cargo test --workspace` 의 `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하고, 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
@@ -54,3 +57,5 @@ rebase 충돌 해결 시 충돌 마커만 지우지 말고, 각 충돌이 어떤
 ## 새 검사 추가
 
 `.githooks/pre-commit` 의 `check_*` 함수 패턴: staged 파일 순회 → 위반 시 `fail`(메시지+FAIL=1) → 마지막 exit code 결정. 1초 이상 느려지면 pre-push 로 옮긴다.
+
+경고만 내는 검사(W.*)는 `fail` 을 쓰지 않고 `yellow` 로 출력만 한다 — `FAIL` 을 건드리지 않으므로 exit code 에 영향이 없다.
