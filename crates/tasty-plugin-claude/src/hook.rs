@@ -573,22 +573,43 @@ fn deliver(host: &HostHandle, call: &HostCall) {
     }
 }
 
-fn resolve_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    if let Some(sid) = params
-        .get("surface")
-        .and_then(|v| v.as_u64())
-        .or_else(|| params.get("surface_id").and_then(|v| v.as_u64()))
-    {
-        return Ok(sid as u32);
+/// `surface` 해석의 판정부 — 환경을 읽지 않아 결정적이다.
+///
+/// 환경변수를 직접 읽으면 테스트가 그것을 피하려고 자기를 건너뛰게 되고(그 변수는 우리
+/// 실행 환경에 **항상** 있다), 그러면 초록은 "위반 없음" 이 아니라 "한 번도 안 돎" 을
+/// 뜻하게 된다. 그래서 env 값을 인자로 받는다.
+fn resolve_surface_id_from(
+    params: &Value,
+    env_surface: Option<&str>,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    // **값이 왔는데 숫자가 아닌 것**과 **키가 아예 없는 것**을 가른다. 둘을 합치면
+    // 잘못된 값이 조용히 env 폴백으로 넘어가고, 그 폴백은 호출자 **자신**이라
+    // 명령이 자기에게 배달된다 — 종료코드 0, 오류 없음.
+    for key in ["surface", "surface_id"] {
+        let Some(raw) = params.get(key) else { continue };
+        if raw.is_null() {
+            continue;
+        }
+        return match raw.as_u64() {
+            Some(sid) => Ok(sid as u32),
+            None => Err(IpcMethodError::invalid_params(
+                &tr.t_fmt("claude.params.surface_not_a_number", &raw.to_string()),
+            )),
+        };
     }
-    if let Ok(env) = std::env::var("TASTY_SURFACE_ID")
-        && let Ok(sid) = env.parse::<u32>()
-    {
+    if let Some(sid) = env_surface.and_then(|e| e.parse::<u32>().ok()) {
         return Ok(sid);
     }
     Err(IpcMethodError::invalid_params(
         tr.t("claude.params.missing_surface_no_env"),
     ))
+}
+
+/// 위 판정부에 실제 환경을 물려주는 얇은 껍데기.
+fn resolve_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
+    let env = std::env::var("TASTY_SURFACE_ID").ok();
+    resolve_surface_id_from(params, env.as_deref(), tr)
 }
 
 #[cfg(test)]
@@ -1322,13 +1343,33 @@ mod tests {
         assert_eq!(extract_tokens("xtoken: 5"), None); // 워드 경계 위반
     }
 
+    /// 예전 이 테스트는 `TASTY_SURFACE_ID` 가 있으면 `return` 으로 자기를 건너뛰었다.
+    /// 그 변수는 우리 실행 환경에 **항상** 있으므로 초록은 "위반 없음" 이 아니라
+    /// **"0회 실행"** 이었다. env 를 인자로 받는 판정부를 쓰면 건너뛸 이유가 없다.
     #[test]
-    fn resolve_surface_id_missing_returns_invalid_params() {
-        if std::env::var("TASTY_SURFACE_ID").is_ok() {
-            return;
-        }
-        let err = resolve_surface_id(&json!({}), &test_translator()).unwrap_err();
+    fn resolve_surface_id_missing_and_no_env_is_invalid_params() {
+        let err = resolve_surface_id_from(&json!({}), None, &test_translator()).unwrap_err();
         assert_eq!(err.code, -32602);
+    }
+
+    #[test]
+    fn resolve_surface_id_falls_back_to_env_when_the_param_is_absent() {
+        let sid = resolve_surface_id_from(&json!({}), Some("42"), &test_translator()).unwrap();
+        assert_eq!(sid, 42);
+    }
+
+    /// 값이 왔는데 숫자가 아니면 **거부**한다 — env 폴백으로 넘기지 않는다.
+    /// 넘기면 호출자 자신에게 배달된다. `--surface conductor` 로 실제로 그렇게 잃은 적이 있다.
+    #[test]
+    fn a_non_numeric_surface_is_rejected_and_does_not_fall_back_to_env() {
+        for bad in [
+            json!({ "surface": "conductor" }),
+            json!({ "surface_id": "7x" }),
+        ] {
+            let err = resolve_surface_id_from(&bad, Some("42"), &test_translator())
+                .expect_err("숫자가 아닌 surface 는 거부해야 한다");
+            assert_eq!(err.code, -32602, "params={bad}");
+        }
     }
 
     // ── error dedupe 초기화 배선 (disable/reset_dedupe/is_enabled 재배선) ──

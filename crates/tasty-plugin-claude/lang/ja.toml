@@ -24,6 +24,7 @@ io_error = "checklist marker ファイルの入出力に失敗しました: {}"
 [claude.params]
 missing_surface_id = "必須パラメータ 'surface'(または 'surface_id')がありません"
 missing_surface_no_env = "必須パラメータ 'surface_id' がありません(環境変数 TASTY_SURFACE_ID も未設定です)"
+surface_not_a_number = "'surface' に数値でない {} が渡されました — 無視せず拒否します: 無視すると TASTY_SURFACE_ID、つまり呼び出し元自身の surface にフォールバックします"
 missing_child_index = "必須パラメータ 'child'(または 'child_index')がありません"
 missing_text = "必須パラメータ 'text' がありません"
 missing_message = "必須パラメータ 'message' がありません"
