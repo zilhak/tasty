@@ -14,7 +14,7 @@
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 |
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
-| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <3 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
+| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <2 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
@@ -82,7 +82,7 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
 | lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — **두 조합 모두**가 실행한다(Windows 잡은 `--lib --bins`, 헤드리스 잡은 그 상위집합인 전체 스위트). 명령이 같아서가 아니라 둘 다 유닛 타깃을 포함해서다 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
-| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 3 건 제외). **기본 조합에는 없다** — Windows 잡은 `--lib --bins` 이고 `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
+| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 2 건 제외). **기본 조합에는 없다** — Windows 잡은 `--lib --bins` 이고 `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
