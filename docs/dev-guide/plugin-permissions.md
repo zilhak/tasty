@@ -46,7 +46,7 @@
 | `terminal.read` | `surface.read_since_mark` · `surface.screen_text` · `surface.commands` · `output.observe_*` · `pty.read` · `pty.wait` 등 | — |
 | `network` | `webhook.register` **하나뿐** (아래 "network" 절) | — |
 | `memory.read` | `memory.get/list/query/export` · `memory.exists/count/scopes/stats` · `memory.bb_*` 조회 · `memory.plan_*` 조회 · `memory.cache_get/cache_list` · `memory.goal_get` · `approval.summary.get` | — |
-| `memory.write` | `memory.put/delete/import` · `memory.bb_*` 변경 · `memory.plan_*` 변경 · `memory.cache_*` · `memory.goal_set/clear` · `approval.summary.set` | — |
+| `memory.write` | `memory.put/delete/import` · `memory.bb_*` 변경 · `memory.plan_*` 변경 · `memory.cache_*` · `memory.goal_set/goal_clear` · `approval.summary.set` | — |
 | `memory.secret` | `memory.secret.*` 전부 | — |
 | `approval` | `approval.*` 전부 · `plugin.request_permission`. `approval.summary.get/set` 은 `memory.read`/`memory.write` 를 함께 요구 | — |
 | `telemetry` | `telemetry.*` 전부(기록·조회·cap·anomaly) | — |
