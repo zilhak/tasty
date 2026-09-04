@@ -20,8 +20,8 @@ struct Copy {
     /// Primary button label once the visitor's OS is detected; `{os}` is
     /// replaced by the OS name.
     dl_for: &'static str,
-    /// Small heading above the per-platform cards.
-    dl_all: &'static str,
+    /// Ghost button next to the primary one, pointing at the release page.
+    cta_other: &'static str,
 
     why_kicker: &'static str,
     why_title: &'static str,
@@ -63,7 +63,7 @@ const KO_COPY: Copy = Copy {
     install_note: "OS 별 설치 절차와 첫 실행은",
     install_note_link: "설치 가이드 →",
     dl_for: "{os} 용 다운로드",
-    dl_all: "모든 플랫폼",
+    cta_other: "다른 플랫폼",
 
     why_kicker: "왜 Tasty 인가",
     why_title: "에이전트가 일해도 내 자리는 그대로다",
@@ -192,7 +192,7 @@ const EN_COPY: Copy = Copy {
     install_note: "Per-OS install steps and the first launch:",
     install_note_link: "Installation guide →",
     dl_for: "Download for {os}",
-    dl_all: "All platforms",
+    cta_other: "Other platforms",
 
     why_kicker: "Why Tasty",
     why_title: "The agent works, and your seat stays yours",
@@ -368,12 +368,9 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     <p class="hero__lede">{lede}</p>
     <div class="cta-row">
       <a class="btn btn--primary" id="dl-primary" href="{releases}" data-label="{dl_for}"{primary_data}>{primary}</a>
+      <a class="btn btn--ghost" href="{releases}">{other}</a>
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
-    </div>
-    <div class="dl">
-      <div class="dl__head"><span>{dl_all}</span><a href="{releases}">{release_tag} ↗</a></div>
-      <div class="dl__cards">{cards}</div>
     </div>
     <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
   </div>
@@ -396,14 +393,8 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         note_link = html_escape(copy.install_note_link),
         releases = releases_url(),
         dl_for = html_escape(copy.dl_for),
-        dl_all = html_escape(copy.dl_all),
-        release_tag = html_escape(
-            crate::release()
-                .map(|r| r.tag.as_str())
-                .unwrap_or("Releases")
-        ),
+        other = html_escape(copy.cta_other),
         primary_data = primary_data_attrs(),
-        cards = download_cards(),
         mock = mock(root),
     )
 }
@@ -509,53 +500,6 @@ fn glyph(paths: &str) -> String {
     )
 }
 
-/// Download cards: one per (OS, arch), each listing the package formats and
-/// the release-asset file-name suffix that identifies them. The suffixes
-/// follow the release workflow's naming (`docs/installation.md`).
-struct Platform {
-    id: &'static str,
-    os: &'static str,
-    arch: &'static str,
-    formats: &'static [(&'static str, &'static str)],
-}
-
-const PLATFORMS: &[Platform] = &[
-    Platform {
-        id: "macos",
-        os: "macOS",
-        arch: "Apple Silicon",
-        formats: &[(".dmg", "-macos-arm64.dmg")],
-    },
-    Platform {
-        id: "windows",
-        os: "Windows",
-        arch: "x64",
-        formats: &[(".msi", "-windows-x64.msi"), (".zip", "-windows-x64.zip")],
-    },
-    Platform {
-        id: "linux-x64",
-        os: "Linux",
-        arch: "x86_64",
-        formats: &[
-            (".deb", "_amd64.deb"),
-            (".rpm", ".x86_64.rpm"),
-            (".AppImage", "-x86_64.AppImage"),
-            (".tar.gz", "-linux-x64.tar.gz"),
-        ],
-    },
-    Platform {
-        id: "linux-arm64",
-        os: "Linux",
-        arch: "arm64",
-        formats: &[
-            (".deb", "_arm64.deb"),
-            (".rpm", ".aarch64.rpm"),
-            (".AppImage", "-aarch64.AppImage"),
-            (".tar.gz", "-linux-arm64.tar.gz"),
-        ],
-    },
-];
-
 /// The format the OS-detected primary button offers: the installer on
 /// macOS/Windows, and the distro-agnostic AppImage (x86_64) on Linux.
 const PRIMARY_FORMATS: &[(&str, &str)] = &[
@@ -584,28 +528,6 @@ fn primary_data_attrs() -> String {
     PRIMARY_FORMATS
         .iter()
         .filter_map(|(os, suffix)| asset_url(suffix).map(|url| format!(" data-{os}=\"{url}\"")))
-        .collect()
-}
-
-fn download_cards() -> String {
-    PLATFORMS
-        .iter()
-        .map(|p| {
-            let links = p
-                .formats
-                .iter()
-                .map(|(label, suffix)| match asset_url(suffix) {
-                    Some(url) => format!("<a href=\"{url}\">{label}</a>"),
-                    None => format!("<a href=\"{}\">{label}</a>", releases_url()),
-                })
-                .collect::<String>();
-            format!(
-                "<div class=\"dl__card\" data-platform=\"{id}\"><div class=\"dl__os\"><b>{os}</b><span>{arch}</span></div><div class=\"dl__links\">{links}</div></div>",
-                id = p.id,
-                os = p.os,
-                arch = p.arch,
-            )
-        })
         .collect()
 }
 

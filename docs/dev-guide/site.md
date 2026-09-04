@@ -173,20 +173,22 @@ cargo run --manifest-path site/Cargo.toml
 
 ## 다운로드
 
-랜딩의 다운로드 버튼과 플랫폼 카드는 **최신 릴리스 자산 파일을 직접** 가리킨다. 자산 파일명에
-버전이 들어 있어(`Tasty-0.10.2-macos-arm64.dmg`) 정적 링크로는 최신을 가리킬 수 없으므로, Pages
-워크플로가 생성기 실행 전에 `gh release view --json tagName,assets > site/release.json` 으로 최신
-릴리스를 받아두고 생성기가 그 파일을 읽는다(`main.rs` 의 `Release`). 로컬 빌드처럼 파일이 없으면
-모든 링크가 릴리스 페이지로 폴백하고 생성기가 `release: none` 을 출력한다. 로컬에서 실제 링크를
-보려면 같은 명령을 직접 실행해 두면 된다(`.gitignore` 대상).
+랜딩이 제공하는 다운로드 경로는 둘뿐이다. **주 버튼**은 방문자 OS 의 대표 설치 파일을 직접
+가리키고, 그 옆 **다른 플랫폼** 버튼은 최신 릴리스 페이지로 보낸다. OS·아키텍처·포맷 조합이 11 개라
+랜딩에 다 늘어놓으면 hero 가 무거워지고 릴리스 페이지·[설치 가이드](../../site/content/getting-started/install.md)
+와 삼중으로 겹친다 — 조합 선택은 그 두 곳이 맡는다.
 
-- 플랫폼 카드와 포맷 ↔ 자산 파일명 접미사 매핑은 `landing.rs` 의 `PLATFORMS` 다. 릴리스
-  워크플로의 파일 이름 규칙([installation](../installation.md) 의 산출물 표)이 바뀌면 여기도 맞춘다.
-  매핑에 없는 자산(예: `SHA256SUMS-*.txt`)은 노출하지 않는다.
+자산 파일명에 버전이 들어 있어(`Tasty-0.10.2-macos-arm64.dmg`) 정적 링크로는 최신을 가리킬 수
+없으므로, Pages 워크플로가 생성기 실행 전에 `gh release view --json tagName,assets > site/release.json`
+으로 최신 릴리스를 받아두고 생성기가 그 파일을 읽는다(`main.rs` 의 `Release`). 로컬 빌드처럼 파일이
+없으면 주 버튼도 릴리스 페이지로 폴백하고 생성기가 `release: none` 을 출력한다. 로컬에서 실제
+링크를 보려면 같은 명령을 직접 실행해 두면 된다(`.gitignore` 대상).
+
 - 주 버튼은 서버 렌더 시 릴리스 페이지를 가리키고, `site.js` 가 방문자 OS 를 감지해 대응 자산
-  (`PRIMARY_FORMATS`: macOS `.dmg` · Windows `.msi` · Linux x86_64 `.AppImage`)으로 바꾸고 라벨을
-  "{os} 용 다운로드" 로 바꾼다. 해당 카드에는 `data-current` 가 붙는다. 감지 실패나 JS 없음이면
-  릴리스 페이지 링크 그대로다.
+  (`landing.rs` 의 `PRIMARY_FORMATS`: macOS `.dmg` · Windows `.msi` · Linux x86_64 `.AppImage`)으로
+  바꾸고 라벨을 "{os} 용 다운로드" 로 바꾼다. 감지 실패나 JS 없음이면 릴리스 페이지 링크 그대로다.
+- 릴리스 워크플로의 파일 이름 규칙([installation](../installation.md) 의 산출물 표)이 바뀌면
+  `PRIMARY_FORMATS` 의 접미사도 맞춘다. 접미사가 어긋나면 그 OS 는 조용히 릴리스 페이지로 폴백한다.
 - 자산 URL 은 `?v=` 없이 그대로 쓴다 — GitHub 가 제공하는 영구 URL 이다.
 
 ## 배포
