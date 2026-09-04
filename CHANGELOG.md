@@ -18,6 +18,7 @@
 
 ### Added
 
+- `general.wheel_line_scroll`(설정 > 일반 > **휠 스크롤 거리**) — 휠 한 칸이 스크롤하는 거리를 논리 포인트로 정한다. 기본 50, 범위 10~200. 스크롤 속도는 접근성 축에서 조정 요구가 잦은 값인데 지금까지 어느 표면에서도 바꿀 수 없었다. 이 설정 하나가 **창 안 모든 표면**에 걸린다 — host 위젯은 egui 가 이 값으로 스크롤하고, plugin 표면은 같은 값이 와이어에 실린다.
 - `agent.semaphore_set_permits`(CLI `tasty agent semaphore-set-permits --workspace-id <id> --name <n> --permits <N>`) — 세마포어 한도를 제자리에서 바꾼다. 지금까지 한도를 바꾸려면 `semaphore-delete` → `semaphore-create` → 살아 있는 홀더를 대신 재acquire 하는 3단계가 필요했고, 그 사이 **세마포어가 존재하지 않는 순간**이 있어 아무 호출자나 임계구역에 들어갈 수 있었다. 확대는 즉시 반영되고, **축소는 drain** — 이미 점유 중인 홀더를 강제 회수하지 않고 새 acquire 만 거절해 새 한도로 수렴시킨다(`permits_available` 은 음수가 아니라 0). 권한 `agent`.
 - `agent.semaphore_acquire` 에 선택 인자 `ttl_ms`(CLI `--ttl-ms`) — 준 경우에만 그 permit 이 `now + ttl_ms` 에 만료되어 다음 `semaphore_acquire`/`semaphore_list` 에서 회수된다. 같은 holder 로 다시 acquire 하면 갱신된다(heartbeat). lease 의 `ttl_ms` 와 같은 메커니즘이다. **기본은 만료 없음** — 오래 걸리는 정당한 작업의 permit 이 도중에 회수돼 두 홀더가 동시에 임계구역에 들어가는 것이 교착보다 나쁘기 때문이다(ADR-0119).
 - 번들 plugin **Agent Stream**(`com.tasty.agent-stream`) 추가 — surface 에서 도는 에이전트 세션의 transcript 를 tailing 해 이벤트(`text` / `thinking` / `tool_use` / `turn_end`)로 모으고, 커서 기반 비파괴 조회(`agent_stream.poll`)와 SSE 엔드포인트(`agent_stream.serve`, `GET /events`)로 외부 소비자에게 흘린다. CLI `tasty agent-stream watch|turn-start|unwatch|list|poll|serve|serve-stop|serve-info`. `turn-start` 로 turn 을 열면 그 뒤 나오는 이벤트가 호출자가 준 `request_id` 를 달고 나온다 — 웹훅 `IpcSequence` 에서 `claude.tell` 앞에 두는 용도다(watch 중이 아니거나 turn 이 이미 열려 있으면 거절). `serve` 는 포트를 필수로 받고 자동 폴백이 없으며, `serve-info` 는 토큰을 싣지 않는다.
@@ -38,6 +39,7 @@
 
 ### Changed
 
+- **휠 한 칸이 옮기는 거리가 창 안에서 하나로 통일됐다.** 종전에는 같은 창인데도 표면에 따라 달랐다 — plugin 표면(egui-mesh surface·popup·banner·attach mirror)이 50pt, host egui 위젯(설정 모달·사이드바 등 `ScrollArea`)과 modifier hint 오버레이가 40pt 로 **25% 차이**였다. 선을 가르던 것은 표면의 성격이 아니라 그 코드가 어느 변환 경로를 지나는가였고(chrome 도 콘텐츠도 양쪽에 다 있었다), 두 값 중 어느 쪽도 측정이나 원리에서 나온 것이 아니다. **기존 사용자에게는 host UI 쪽 스크롤이 40 → 50 으로 빨라진 것으로 체감된다** — 되돌리려면 `general.wheel_line_scroll` 을 40 으로 두면 되고, 그 조정 수단이 같은 변경에 함께 들어갔다. 근거·대안·재검토 조건은 [ADR-0130](docs/adr/0130-wheel-notch-distance-is-uniform-and-user-set.md).
 - 첫 실행 셋업 카드의 lift 그림자가 앱 배경색으로 번지던 halo 대신 승인된 popover 그림자(검정 반투명 단차)로 그려진다. 내부 리팩터링이 그림자 색을 배경색 토큰으로 바꾸며 단차가 halo 로 무너졌던 것을 되돌린다.
 - **내장 언어 오버라이드(`~/.tasty/lang/<code>.toml`)에서 빈 문자열은 이제 "바꾸지 않음" 이다.** 값을 `""` 나 공백뿐으로 두어 그 문구를 화면에서 지우던 사용법은 더 이상 통하지 않는다 — 내장 문구가 다시 보인다(언어팩에 이미 걸려 있던 규칙과 같아졌다, [ADR-0124](docs/adr/0124-blank-value-rule-is-load-path-independent.md)). 의도적으로 빈 텍스트를 두려면 **폭 없는 문자 U+200B(ZWSP)** 또는 U+2060 을 쓴다. **NBSP(U+00A0)는 탈출구가 아니다** — `str::trim` 이 유니코드 `White_Space` 를 전부 먹으므로 함께 걷힌다(예전 문서 안내가 틀렸다).
 - (BREAK) `agent.semaphore_*` 응답의 `holders` 가 문자열 배열에서 객체 배열 `{ id, acquired_at?, expires_at? }` 로 바뀌었다. `semaphore-list` 만으로 **누가 언제부터 permit 을 잡고 있는지** 알 수 있다 — 종전에는 홀더 id 뿐이라 "이 홀더가 죽었는가" 를 판정할 근거가 없어 permit 이 묶인 채 대기자가 무한정 막히는 일이 있었다. `acquired_at` 이 없는 홀더는 시각 기록 도입 전에 잡힌 것이다(0 이 아니라 부재로 표현한다). 이미 저장된 구 형식 레코드는 그대로 읽는다.
