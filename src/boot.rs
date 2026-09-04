@@ -292,6 +292,7 @@ impl DropTailCounters {
 ///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
 ///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
 #[cfg(not(feature = "gui"))]
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: headless 부팅의 단일 진입점 — 위 시퀀스 1~5 가 순서 의존적이고 서로의 지역값(채널 송수신단 · waker · Settings · Core · 타이머 허브)을 그대로 이어받는다. 지금 헤드리스 조합에는 이 함수를 통째로 도는 테스트가 없어(부팅 자체가 프로세스 수명과 엮여 있다) 분해가 리팩터 위험에 비해 검증 수단이 없다. 분해는 별건 작업으로 뺀다.
 fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     use std::sync::mpsc;
     use std::time::Instant;

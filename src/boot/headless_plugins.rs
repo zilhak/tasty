@@ -109,6 +109,7 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 /// 전용 CoreEvent cascade(toast/이벤트버스 브로드캐스트)는 생략한다 — 그 브로드캐스트는
 /// PluginLoaded 등을 구독하는 *다른* plugin/UI 통지용이며, hello 를 마친 plugin 자신의
 /// 렌더링에는 영향이 없다(레지스트리 mutation 은 이 함수 안에서 이미 동기 반영됨).
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: hello 쌍마다 surface_kind 등록 · egui-mesh 분기 · hook_event 등록을 순차로 도는 평평한 루프라 중첩이 얕고, 쪼개면 세 함수가 같은 레지스트리 핸들 두 개를 계속 주고받게 된다. gui 등가(`plugin_glue/lifecycle.rs::finalize_plugin_hello`)와 나란히 읽히는 편이 유지에 유리하다.
 fn finalize_plugin_hello_headless(
     app: &mut App,
     engine: &CoreState,

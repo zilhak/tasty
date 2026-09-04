@@ -129,3 +129,11 @@ jobs:
       # 헤드리스 가드로 부적합하다(Windows 잡과 같은 근거).
       - name: cargo test (headless unit)
         run: cargo test --workspace --lib --bins --no-default-features --locked
+
+      # headless 조합의 clippy. 기본 조합의 clippy 는 Windows 잡이 보지만, 그 잡은
+      # `--no-default-features` 를 돌지 않아 headless 전용 코드(`run_headless` 등)의
+      # deny 레벨 린트 위반이 아무에게도 안 보였다. 위 테스트 스텝과 같은 이유로
+      # 여기서 함께 닫는다 — 헤드리스 사각을 닫는 잡이 clippy 만 사각으로 남기면
+      # 같은 구멍이 다시 자란다.
+      - name: cargo clippy (headless)
+        run: cargo clippy --workspace --all-targets --no-default-features --locked
