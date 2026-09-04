@@ -1,11 +1,15 @@
 # Tasty 터미널 에뮬레이터 - 한국어 (ko)
 
+[meta]
+name = "한국어"
+
 [app]
 name = "Tasty"
 
 [button]
 ok = "확인"
 cancel = "취소"
+quit = "종료"
 open = "열기"
 save = "저장"
 add = "추가"
@@ -25,6 +29,31 @@ overflow = "99+"
 title = "GPU 어댑터를 찾을 수 없음"
 body = "소프트웨어 fallback 까지 시도했지만 호환되는 GPU 어댑터를 찾지 못했습니다. 대부분 이 머신에 GPU 드라이버(Vulkan/OpenGL)가 없다는 뜻입니다."
 hint = "GPU 드라이버를 설치·업데이트하세요. GPU 없이 사용하려면 --no-default-features 옵션으로 소스에서 headless 빌드하세요."
+
+[boot.engine_error]
+title = "터미널을 시작할 수 없음"
+body = "시작할 때 터미널 엔진을 만들지 못했습니다. 대개 config.toml 의 shell 경로가 잘못된 경우입니다. 상세: {}"
+hint = "config.toml 의 general.shell 값이 실제로 존재하는 셸을 가리키는지 확인한 뒤 다시 실행하세요."
+
+[boot.window_error]
+title = "창을 열 수 없음"
+body = "첫 창을 만들지 못했습니다. 상세: {}"
+hint = "디스플레이·컴포지터와 그래픽 드라이버를 확인한 뒤 다시 실행하세요."
+
+[window_error.new_window]
+title = "새 창을 열 수 없음"
+body = "새 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+
+[window_error.settings]
+title = "설정 창을 열 수 없음"
+body = "설정 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+
+[window_error.plugins]
+title = "플러그인 창을 열 수 없음"
+body = "플러그인 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+
+[window_error.quit_confirm]
+skipped = "확인 창을 열 수 없어 확인 없이 종료합니다."
 
 [plugins]
 title = "플러그인"
@@ -253,12 +282,15 @@ restore_layout_label = "시작 시 레이아웃 복원:"
 restore_surface_content_label = "재시작 시 Surface 내용 복원:"
 workspace_categories_label = "워크스페이스 카테고리(폴더):"
 workspace_switch_crosses_category_label = "다음/이전 워크스페이스가 카테고리 경계를 넘음:"
+wheel_line_scroll_label = "휠 스크롤 거리:"
 close_behavior_label = "종료 동작:"
 close_behavior_ask = "물어보기"
 close_behavior_minimize = "백그라운드로 최소화"
 close_behavior_quit = "종료"
 language_label = "언어:"
 language_restart_notice = "언어 변경은 재시작 후 적용됩니다."
+language_missing_suffix = "(없음)"
+wheel_line_scroll_desc = "휠을 한 칸 굴렸을 때 스크롤되는 거리. 창 안 어디서나 같은 거리로 움직입니다 — plugin 표면·popup·설정과 사이드바 목록 모두."
 alt_display_style_label = "Alt 키 표시:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -793,7 +825,8 @@ undo = "실행 취소"
 redo = "다시 실행"
 
 [toast]
-char_limit_notice = "(200자 제한)"
+bashrc_save_failed = "Tasty 모드 bashrc를 저장하지 못했습니다 — 편집이 반영되지 않았습니다: {}"
+char_limit_notice = "({}자 제한)"
 copied = "복사됨"
 copied_osc52 = "복사됨 (OSC 52)"
 copied_path = "경로 복사됨"
@@ -813,6 +846,18 @@ vi_copy_macro_replay_failed = "매크로 재생 실패 (빈 register 또는 재�
 [webhook.warn]
 port_not_configured = "웹훅 포트가 설정되지 않아 인바운드 리스너를 시작하지 못했습니다. `tasty webhook config --port <번호>` 로 지정하세요."
 bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포트를 지정하고 방화벽을 확인하세요. 리스너가 시작되지 않았습니다."
+
+[i18n.warn]
+pack_missing = "언어 '{}' 가 설치되어 있지 않아 영어로 표시합니다. {} 에 언어팩을 두고 재시작하세요."
+pack_invalid = "언어팩 '{}' 을 불러오지 못해 영어로 표시합니다. {} 를 고치고 재시작하세요 ({})."
+
+[persistence.warn]
+settings_unparsable = "{} 을 읽지 못해 기본 설정으로 시작했습니다. 원본은 옆에 .bak 파일로 보관합니다."
+settings_locked = "설정 파일을 읽지 못했습니다. 파일을 덮어쓰지 않도록 설정 저장을 중단했습니다. 파일을 고치거나 옮긴 뒤 다시 시작하세요."
+layout_unparsable = "저장된 창 배치를 읽지 못해 새 배치로 시작했습니다. 저장된 파일은 옆에 .bak 파일로 보관합니다."
+layout_locked = "저장된 창 배치를 읽지 못해 기본 배치로 시작했습니다. 저장된 배치는 덮어쓰지 않습니다."
+settings_unparsable_blocked = "{} 옆에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 설정이 저장됩니다. 그 파일을 읽지 못했고 옆으로 옮기지도 못해 기본 설정으로 시작했습니다."
+layout_unparsable_blocked = "layouts 폴더에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 창 배치가 저장됩니다. 저장된 배치를 읽지 못했고 옆으로 옮기지도 못했습니다."
 
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
@@ -1310,13 +1355,34 @@ desc = "AI 에이전트용 자식 터미널 관리 (spawn/tell/children/kill/…
 spawn_no_parent = "오류: parent surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
 tell_no_target = "오류: 대상 surface 가 없습니다. --surface 를 지정하거나 tasty 터미널 안에서 실행하세요 (TASTY_SURFACE_ID)."
 
+# 포트 파일 조회 실패. `tasty-ipc` 는 조건만 타입으로 알리고 문구를 갖지 않으며, 사용자가
+# 실제로 읽는 문장은 이 값들이다(docs/dev-guide/i18n.md "호출자 주입").
+[cli.port_file]
+no_instance = "실행 중인 tasty 인스턴스를 찾을 수 없습니다 (포트 파일이 {} 에 없습니다)"
+home_unresolved = "설정 디렉토리를 찾을 수 없습니다"
+invalid_contents = "포트 파일 내용이 올바르지 않습니다"
+
 # `tasty` CLI — 클라이언트 측 인자 검증 오류와 stderr 상태 줄.
-# CLI 가 직접 출력하는 메시지는 "오류:" / "경고:" 접두를 값 안에 포함한다(언어별로 표현이
-# 다르다). `cli.dispatch.*`, `cli.plugin_cli.*`(manifest_skipped 제외), `cli.preset.*_read_failed`
-# / `not_json` 은 호출자가 접두를 붙이는 에러 본문이다.
+# 두 종류가 섞여 있고 값 자체로 구분된다: CLI 가 직접 출력하는 메시지는 "오류:" / "경고:"
+# 접두를 값 안에 포함하고(언어별로 표현이 다르다), 나머지는 호출자나 최상위 `오류: {}` 가
+# 접두를 붙이는 에러 본문이다.
 [cli.request]
 cwd_invalid = "오류: --cwd: {}"
 close_self_no_surface = "오류: TASTY_SURFACE_ID 가 설정되지 않았습니다. 'close self' 는 tasty 터미널 안에서만 쓸 수 있습니다."
+connect_failed = "포트 {} 의 tasty 인스턴스에 연결할 수 없습니다: {}. tasty 가 실행 중인가요?"
+
+# 경로 인자 정규화(`--cwd` / plugin `path_kind` 인자). 본문만 — 접두는 호출자가 붙인다
+# (`cli.request.cwd_invalid` / `cli.plugin_cli.arg_invalid`).
+[cli.cwd_resolve]
+current_dir_failed = "current_dir() 을 읽지 못했습니다"
+cwd_not_accessible = "cwd '{}' 이(가) 존재하지 않거나 접근할 수 없습니다"
+file_not_accessible = "파일 '{}' 이(가) 존재하지 않거나 접근할 수 없습니다"
+cwd_empty = "cwd 가 비어 있습니다"
+cwd_metadata_failed = "cwd '{}' 의 메타데이터를 읽지 못했습니다"
+cwd_not_directory = "cwd '{}' 은(는) 디렉토리가 아닙니다"
+path_empty = "경로가 비어 있습니다"
+file_metadata_failed = "파일 '{}' 의 메타데이터를 읽지 못했습니다"
+file_not_regular = "파일 '{}' 은(는) 일반 파일이 아닙니다"
 
 [cli.memory]
 value_file_read_failed = "오류: 값 파일을 읽지 못했습니다: {}"
@@ -1330,6 +1396,7 @@ goal_surface_required = "오류: surface 를 지정해야 합니다. --surface <
 
 [cli.agent]
 inputs_empty = "오류: --inputs 에는 task id 가 하나 이상 있어야 합니다"
+command_workspace_id_overridden = "--command JSON 의 workspace_id({}) 가 --workspace-id 플래그 값({}) 과 달라 {} 로 덮어썼습니다"
 flag_file_read_failed = "오류: {} 을(를) 읽지 못했습니다 ({} 용): {}"
 flag_not_json = "오류: {} 을(를) JSON 으로 파싱하지 못했습니다: {}"
 purge_filter_required = "오류: --states 또는 --older-than-ms 가 필요합니다 (워크스페이스 전체 purge 는 거부합니다)"
@@ -1355,6 +1422,8 @@ file_read_failed = "오류: --file {}: {}"
 settings_apply_source_required = "오류: settings apply 에는 --json 또는 --file 이 필요합니다"
 settings_patch_not_json = "오류: settings patch 의 JSON 이 올바르지 않습니다: {}"
 lua_eval_file_failed = "오류: lua eval-file {}: {}"
+frame_tag_mismatch = "frame {}: Data 태그를 기대했지만 {} 을(를) 받았습니다"
+frame_echo_mismatch = "frame {}: echo 불일치 — 보낸 값 {}, 받은 값 {}"
 
 [cli.plugin_cli]
 manifest_skipped = "경고: {} 의 plugin 매니페스트를 건너뜁니다: {}"
@@ -1363,8 +1432,32 @@ not_plugin_command = "'{}' 은(는) plugin 이 제공하는 cli 명령이 아닙
 subcommand_required = "'{}' 에는 서브커맨드가 필요합니다"
 unknown_subcommand = "알 수 없는 서브커맨드 '{} {}'"
 flag_repeated = "--{} 이(가) {}번 지정되었습니다 — 값은 하나만 받습니다 (앞의 값이 조용히 버려지는 것을 막기 위해 거부합니다)"
+flag_not_a_number = "--{} 에 숫자가 아닌 '{}' 이(가) 왔습니다 — 무시하지 않고 거부합니다: 무시된 값은 플래그가 아예 없는 것과 구별되지 않아, 명령이 조용히 기본 대상으로 실행됩니다"
 auto_wait_no_mode = "auto_wait '{}' 에 'polling' 과 'strategy' 가 모두 없습니다"
 auto_wait_unknown_strategy = "auto_wait '{}' 이(가) 알 수 없는 strategy '{}' 를 참조합니다"
+arg_invalid = "--{}: {}"
+
+# `tasty plugin` — `doctor` 리포트(stdout)와 이 명령군의 에러 본문. 리포트의 매니페스트
+# 필드명(`name:` … `api_version:`)·action kind(`surface "…"` / `ipc "…"`)·handler 행의
+# `detector` 는 매니페스트 키/값과 1:1 이라 그대로 둔다.
+[cli.plugin]
+doctor_header = "플러그인: {}"
+doctor_detectors = "제공 detector 수: {}"
+doctor_detector_row = "  - {} (rule: {} OK, {} 미지원)"
+doctor_rule_unsupported = "      ! rule kind \"{}\" 은(는) 이 host 버전에서 지원하지 않습니다"
+doctor_handlers = "제공 handler 수: {}"
+doctor_action_unknown = "(알 수 없음: {})"
+doctor_action_none = "(action 없음)"
+doctor_unsupported_summary = "미지원 rule {}개 — 무시됩니다. host 의 api_version 은 Cargo.toml 을 확인하세요."
+home_unresolved = "tasty 홈 디렉토리를 알아낼 수 없습니다"
+root_unresolved = "plugin 루트 디렉토리를 알아낼 수 없습니다"
+not_installed = "plugin '{}' 이(가) 설치되어 있지 않습니다 ({} 에 매니페스트가 없습니다)"
+manifest_load_failed = "'{}' 의 매니페스트를 읽지 못했습니다: {}"
+no_log_file = "plugin '{}' 의 로그 파일이 {} 에 없습니다"
+
+# 닫힌 파이프가 아닌 stdout 쓰기 실패(EIO / ENOSPC …) — `오류: …` + exit 1.
+[cli.out]
+write_failed = "stdout 에 쓰지 못했습니다"
 
 [cli.dispatch]
 ssh_profile_not_found = "ssh 프로필 '{}' 을(를) 찾을 수 없습니다 (tasty tool remote-profile list)."
@@ -1388,6 +1481,10 @@ tunnel_established = "ssh 터널 수립: 127.0.0.1:{} -> {}:{}"
 disconnected_reconnect = "연결이 끊겼습니다 — 백오프 후 재연결합니다 (세션은 서버에 남아 있습니다)"
 send_requires_send_to = "workspace 모드의 --send 는 --send-to <surface_id> 와 함께 써야 합니다 (무시합니다)."
 force_detached = "서버가 강제로 detach 했습니다"
+unexpected_first_frame = "attach Control 프레임을 기대했지만 {} 을(를) 받았습니다"
+rejected = "attach 가 거부되었습니다: {}"
+workspace_rejected = "workspace attach 가 거부되었습니다: {}"
+unexpected_control_event = "예상하지 못한 attach control 이벤트입니다: {}"
 
 [command_index.cap.soft]
 title = "명령 이력이 많습니다"
@@ -1576,7 +1673,7 @@ status_some = "{}개 상태"
 status_all = "상태 전체"
 this_workspace_only = "이 워크스페이스만"
 row_meta = "{} · {}"
-derived = "derived"
+derived = "파생"
 count = "{} / {} DAG"
 close = "닫기"
 empty_none = "DAG 없음"

@@ -1,11 +1,15 @@
 # Tasty Terminal Emulator - English (en)
 
+[meta]
+name = "English"
+
 [app]
 name = "Tasty"
 
 [button]
 ok = "OK"
 cancel = "Cancel"
+quit = "Quit"
 open = "Open"
 save = "Save"
 add = "Add"
@@ -25,6 +29,31 @@ overflow = "99+"
 title = "No GPU adapter found"
 body = "Tasty could not find a compatible GPU adapter, even after trying a software fallback. This usually means no GPU driver (Vulkan/OpenGL) is available on this machine."
 hint = "Install/update your GPU driver, or build Tasty from source with --no-default-features for headless (no GPU) operation."
+
+[boot.engine_error]
+title = "Could not start the terminal"
+body = "Tasty could not create the terminal engine on startup. The most common cause is a bad shell path in your config.toml. Details: {}"
+hint = "Check general.shell in your config.toml and make sure the shell exists, then start Tasty again."
+
+[boot.window_error]
+title = "Could not open the window"
+body = "Tasty could not create its first window. Details: {}"
+hint = "Check your display/compositor and graphics drivers, then start Tasty again."
+
+[window_error.new_window]
+title = "Could not open a new window"
+body = "The new window could not be opened, so it was cancelled. Your other windows keep running. Cause: {}"
+
+[window_error.settings]
+title = "Could not open Settings"
+body = "The settings window could not be opened, so it was cancelled. Your other windows keep running. Cause: {}"
+
+[window_error.plugins]
+title = "Could not open Plugins"
+body = "The plugins window could not be opened, so it was cancelled. Your other windows keep running. Cause: {}"
+
+[window_error.quit_confirm]
+skipped = "The confirmation window could not be opened, so Tasty is quitting without asking."
 
 [plugins]
 title = "Plugins"
@@ -253,12 +282,15 @@ restore_layout_label = "Restore layout on startup:"
 restore_surface_content_label = "Restore surface content on restart:"
 workspace_categories_label = "Workspace categories (folders):"
 workspace_switch_crosses_category_label = "Next/prev workspace crosses categories:"
+wheel_line_scroll_label = "Wheel scroll distance:"
 close_behavior_label = "Close behavior:"
 close_behavior_ask = "Ask"
 close_behavior_minimize = "Minimize to background"
 close_behavior_quit = "Quit"
 language_label = "Language:"
 language_restart_notice = "Language change will take effect after restart."
+language_missing_suffix = "(not found)"
+wheel_line_scroll_desc = "How far one wheel notch scrolls. The same distance applies everywhere in the window - plugin surfaces, popups, and the settings and sidebar lists."
 alt_display_style_label = "Alt key display:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -805,7 +837,8 @@ undo = "Undo"
 redo = "Redo"
 
 [toast]
-char_limit_notice = "(200 character limit)"
+bashrc_save_failed = "Tasty-mode bashrc was not saved — your edit is not in effect: {}"
+char_limit_notice = "({} character limit)"
 copied = "Copied"
 copied_osc52 = "Copied (OSC 52)"
 copied_path = "Path copied"
@@ -826,6 +859,18 @@ vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion 
 [webhook.warn]
 port_not_configured = "Webhook port not set — the inbound listener did not start. Set one with `tasty webhook config --port <N>`."
 bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and check your firewall; the listener did not start."
+
+[i18n.warn]
+pack_missing = "Language '{}' is not installed — showing English. Put a language pack at {}, then restart."
+pack_invalid = "Language pack '{}' could not be loaded — showing English. Fix {} and restart ({})."
+
+[persistence.warn]
+settings_unparsable = "Tasty could not read {} and started with default settings. The original is preserved beside it as a .bak file."
+settings_locked = "Your settings file could not be read. Saving settings is disabled so the file is not overwritten — fix or move it, then restart."
+layout_unparsable = "Tasty could not read your saved window layout and started with a fresh one. The saved file is preserved beside it as a .bak file."
+layout_locked = "Your saved window layout could not be read, so Tasty started with a fresh one. The saved layout will not be overwritten."
+settings_unparsable_blocked = "Settings will not be saved until you move or delete the .bak files next to {}, then restart. Tasty could not read that file, could not move it aside either, and started with defaults."
+layout_unparsable_blocked = "This window layout will not be saved until you move or delete the .bak files in the layouts folder, then restart. Tasty could not read the saved layout or move it aside."
 
 [banner.mouse_capture]
 title = "Mouse input captured"
@@ -1333,13 +1378,37 @@ desc = "Manage child terminals (spawn/tell/children/kill/…) for AI agents."
 spawn_no_parent = "Error: no parent surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 tell_no_target = "Error: no target surface. Pass --surface or run inside a tasty terminal (TASTY_SURFACE_ID)."
 
+# Port file lookup failures. `tasty-ipc` reports the condition as a typed error and owns no
+# wording; these values are what the user actually reads (see docs/dev-guide/i18n.md — a leaf
+# crate takes its wording from the caller).
+# The English values must stay byte-identical to `PortFileError`'s own rendering — a test in
+# `tasty-cli` asserts that, because the same failure must not read two ways in English.
+[cli.port_file]
+no_instance = "No running tasty instance found (port file not found at {})"
+home_unresolved = "Could not determine config directory"
+invalid_contents = "Invalid port file contents"
+
 # `tasty` CLI — client-side argument validation and status lines written to stderr.
-# Messages the CLI prints directly carry their own "Error:" / "warning:" prefix so each
-# language can phrase it. `cli.dispatch.*`, `cli.plugin_cli.*` (except manifest_skipped)
-# and `cli.preset.*_read_failed` / `not_json` are error bodies that the caller prefixes.
+# Two shapes live here, told apart by the value itself: messages the CLI prints directly
+# carry their own "Error:" / "warning:" prefix so each language can phrase it, while the
+# rest are error bodies whose prefix the caller (or the `Error: {}` top level) adds.
 [cli.request]
 cwd_invalid = "Error: --cwd: {}"
 close_self_no_surface = "Error: TASTY_SURFACE_ID not set. 'close self' can only be used inside a tasty terminal."
+connect_failed = "Could not connect to tasty instance on port {}: {}. Is tasty running?"
+
+# path-argument normalization (`--cwd` / plugin `path_kind` args). Bodies only — the caller
+# prefixes them (`cli.request.cwd_invalid` / `cli.plugin_cli.arg_invalid`).
+[cli.cwd_resolve]
+current_dir_failed = "failed to read current_dir()"
+cwd_not_accessible = "cwd '{}' does not exist or is not accessible"
+file_not_accessible = "file '{}' does not exist or is not accessible"
+cwd_empty = "cwd is empty"
+cwd_metadata_failed = "cwd '{}' metadata read failed"
+cwd_not_directory = "cwd '{}' is not a directory"
+path_empty = "path is empty"
+file_metadata_failed = "file '{}' metadata read failed"
+file_not_regular = "file '{}' is not a regular file"
 
 [cli.memory]
 value_file_read_failed = "Error: failed to read value file: {}"
@@ -1353,6 +1422,7 @@ goal_surface_required = "Error: must specify a surface. Use --surface <id>, or r
 
 [cli.agent]
 inputs_empty = "Error: --inputs must contain at least one task id"
+command_workspace_id_overridden = "--command JSON's workspace_id({}) differs from the --workspace-id flag ({}); overridden with {}"
 flag_file_read_failed = "Error: reading {} for {}: {}"
 flag_not_json = "Error: parsing {} as JSON: {}"
 purge_filter_required = "Error: --states or --older-than-ms is required (refusing to purge the whole workspace)"
@@ -1378,6 +1448,8 @@ file_read_failed = "Error: --file {}: {}"
 settings_apply_source_required = "Error: settings apply requires --json or --file"
 settings_patch_not_json = "Error: invalid JSON in settings patch: {}"
 lua_eval_file_failed = "Error: lua eval-file {}: {}"
+frame_tag_mismatch = "frame {}: expected Data tag, got {}"
+frame_echo_mismatch = "frame {}: echo mismatch — sent {}, got {}"
 
 [cli.plugin_cli]
 manifest_skipped = "warning: plugin manifest at {} skipped: {}"
@@ -1386,8 +1458,33 @@ not_plugin_command = "'{}' is not a plugin-contributed cli command"
 subcommand_required = "'{}' requires a subcommand"
 unknown_subcommand = "unknown subcommand '{} {}'"
 flag_repeated = "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)"
+flag_not_a_number = "--{} got '{}', which is not a number — rejected rather than ignored: an ignored value is indistinguishable from the flag being absent, so the command would silently fall back to its default target"
 auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
 auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
+arg_invalid = "--{}: {}"
+
+# `tasty plugin` — the `doctor` report (stdout) plus the command group's error bodies.
+# In the report, manifest field names (`name:` … `api_version:`), action kinds
+# (`surface "…"` / `ipc "…"`) and the handler row's `detector` stay literal — they mirror
+# manifest keys/values one-to-one (see docs/dev-guide/i18n.md exceptions).
+[cli.plugin]
+doctor_header = "Plugin: {}"
+doctor_detectors = "Detectors contributed: {}"
+doctor_detector_row = "  - {} (rules: {} OK, {} unsupported)"
+doctor_rule_unsupported = "      ! rule kind \"{}\" unsupported in this host version"
+doctor_handlers = "Handlers contributed: {}"
+doctor_action_unknown = "(unknown: {})"
+doctor_action_none = "(no action)"
+doctor_unsupported_summary = "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml."
+home_unresolved = "could not determine tasty home directory"
+root_unresolved = "could not determine plugin root directory"
+not_installed = "plugin '{}' not installed (no manifest at {})"
+manifest_load_failed = "failed to load manifest for '{}': {}"
+no_log_file = "no log file for plugin '{}' at {}"
+
+# stdout write failures other than a closed pipe (EIO / ENOSPC …) — `Error: …` + exit 1.
+[cli.out]
+write_failed = "failed writing to stdout"
 
 [cli.dispatch]
 ssh_profile_not_found = "ssh profile '{}' not found (tasty tool remote-profile list)."
@@ -1411,6 +1508,10 @@ tunnel_established = "ssh tunnel established: 127.0.0.1:{} -> {}:{}"
 disconnected_reconnect = "disconnected — reconnecting with backoff (the session stays on the server)"
 send_requires_send_to = "--send in workspace mode requires --send-to <surface_id> (ignored)."
 force_detached = "force-detached by server"
+unexpected_first_frame = "expected attach Control frame, got {}"
+rejected = "attach rejected: {}"
+workspace_rejected = "workspace attach rejected: {}"
+unexpected_control_event = "unexpected attach control event: {}"
 
 [command_index.cap.soft]
 title = "Command history is large"
