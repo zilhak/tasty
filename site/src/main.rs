@@ -111,20 +111,17 @@ struct Lang {
     src_dir: &'static str,
     /// Output prefix relative to the site root (`guide/` or `ko/guide/`).
     out_prefix: &'static str,
-    search_index: &'static str,
 }
 
 const LANG_KO: Lang = Lang {
     strings: &KO,
     src_dir: "site/content",
     out_prefix: "ko/guide/",
-    search_index: "assets/search-index.ko.json",
 };
 const LANG_EN: Lang = Lang {
     strings: &EN,
     src_dir: "site/content/en",
     out_prefix: "guide/",
-    search_index: "assets/search-index.json",
 };
 
 struct Translation {
@@ -288,7 +285,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        let index_path = out_dir.join(lang.search_index);
+        let index_path = out_dir.join(lang.strings.search_index);
         if let Some(parent) = index_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -768,7 +765,7 @@ fn render_page(
         ko_href: page.url(&LANG_KO),
         en_href: page.url(&LANG_EN),
         docs_prefix: lang.out_prefix,
-        search_index: lang.search_index,
+        search_index: lang.strings.search_index,
     });
 
     Ok((html, rendered))

@@ -375,11 +375,7 @@ pub fn render(strings: &Strings, root: &str, docs: &str) -> String {
         ko_href: "ko/index.html".to_string(),
         en_href: "index.html".to_string(),
         docs_prefix: docs,
-        search_index: if strings.lang == "en" {
-            "assets/search-index.en.json"
-        } else {
-            "assets/search-index.json"
-        },
+        search_index: strings.search_index,
     })
 }
 

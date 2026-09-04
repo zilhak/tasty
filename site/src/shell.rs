@@ -15,6 +15,9 @@ pub struct Strings {
     pub nav_changelog: &'static str,
     pub search_placeholder: &'static str,
     pub search_empty: &'static str,
+    /// Where this language's search index lands under the site root. The generator
+    /// writes the file from this same value, so the two cannot drift apart.
+    pub search_index: &'static str,
     pub copy: &'static str,
     pub copied: &'static str,
     pub toc_title: &'static str,
@@ -50,6 +53,7 @@ pub const KO: Strings = Strings {
     nav_download: "다운로드",
     nav_changelog: "변경 이력",
     search_placeholder: "가이드 검색  /",
+    search_index: "assets/search-index.ko.json",
     search_empty: "검색 결과가 없습니다",
     copy: "복사",
     copied: "복사됨",
@@ -85,6 +89,7 @@ pub const EN: Strings = Strings {
     nav_download: "Download",
     nav_changelog: "Changelog",
     search_placeholder: "Search the guide  /",
+    search_index: "assets/search-index.json",
     search_empty: "No results",
     copy: "copy",
     copied: "copied",
