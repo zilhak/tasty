@@ -100,6 +100,27 @@ pub enum ScanTarget {
     Child,
 }
 
+/// `ErrorScanner` 락을 잡는 유일한 통로. 이 값을 잡는 자리가 세 모듈(`main` 폴링 루프 ·
+/// `handlers` 등록/해제 · `hook` dedupe 초기화)에 흩어져 있어, 관측을 한 곳에 모은다.
+///
+/// **복구가 답인 이유**: 임계구역이 enabled 집합과 dedupe 맵 조작뿐이라 패닉이 지나가도
+/// 남는 값이 성립한다. 그리고 이 락을 잡는 자리 중 하나는 plugin 의 IPC 핸들러 스레드다.
+///
+/// **조용히 건너뛰면 안 되는 이유는 자리마다 다르다** — 그래서 전부 이 통로를 지난다:
+/// - 등록(`enable`)을 건너뛰면 그 surface 만 에러 스캔에서 통째로 빠진다.
+/// - 해제(`disable`)를 건너뛰면 죽은 surface 가 영원히 스캔 대상으로 남는다.
+/// - dedupe 초기화를 건너뛰면 지난 턴의 에러 텍스트가 이번 턴의 새 에러까지 억제한다.
+/// - 스캔 자체(`scan_one`)를 건너뛰면 기능이 조용히 아무것도 안 한다.
+///
+/// poison 은 sticky 라 넷 다 일회성이 아니라 영구적이다.
+pub fn lock_scanner(
+    scanner: &std::sync::Mutex<ErrorScanner>,
+) -> std::sync::MutexGuard<'_, ErrorScanner> {
+    const WHAT: &str = "the claude error scanner";
+    static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    tasty_utils::poison::recover_mutex(scanner.lock(), WHAT, &REPORTED)
+}
+
 #[derive(Default)]
 pub struct ErrorScanner {
     /// 스캔 대상 surface → 등록 경로. launch/spawn/respawn 시 enable,
@@ -840,5 +861,62 @@ mod tests {
         };
         liveness_tick(&mut s, &host);
         assert!(s.is_enabled(9));
+    }
+}
+
+#[cfg(test)]
+mod poison_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// poison 된 스캐너 락에서도 등록·조회가 계속 선다.
+    ///
+    /// 조준점이 **`enabled_snapshot`** 인 것이 요점이다. 이 락을 잡는 네 자리 중 셋은
+    /// 조용히 건너뛰고 있었지만, 폴링 루프의 스냅샷 자리만은 이미 로그를 남기고 있었다 —
+    /// 대신 `return` 으로 **루프를 접었다**. poison 은 sticky 라 그 한 번이 프로세스가
+    /// 끝날 때까지 에러 스캔 전체를 죽인다. 즉 여기 결함은 "무음" 이 아니라 "영구 정지"
+    /// 였고, 무음 세 곳만 고치면 이 자리는 그대로 남는다.
+    ///
+    /// 되돌리는 변이(`match … Err(_) => return`)는 스냅샷이 비어 아래 단언이 깨진다.
+    #[test]
+    fn a_poisoned_scanner_keeps_the_scan_loop_alive() {
+        let scanner = Mutex::new(ErrorScanner::default());
+        lock_scanner(&scanner).enable(7, ScanTarget::TopLevel);
+
+        let panicked = std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let _held = scanner.lock().expect("not poisoned yet");
+                    panic!("poison the error scanner");
+                })
+                .join()
+        });
+        assert!(panicked.is_err(), "the helper thread must have panicked");
+        assert!(
+            scanner.lock().is_err(),
+            "the scanner lock must actually be poisoned now"
+        );
+
+        assert_eq!(
+            lock_scanner(&scanner).enabled_snapshot().len(),
+            1,
+            "a poisoned scanner must still hand the polling loop its work list — giving up \
+             here kills error scanning for the rest of the process"
+        );
+        assert!(
+            lock_scanner(&scanner).is_enabled(7),
+            "reads must survive the poison"
+        );
+
+        lock_scanner(&scanner).enable(9, ScanTarget::Child);
+        assert!(
+            lock_scanner(&scanner).is_enabled(9),
+            "registration must land on a poisoned scanner, or that surface is never scanned"
+        );
+        lock_scanner(&scanner).disable(7);
+        assert!(
+            !lock_scanner(&scanner).is_enabled(7),
+            "deregistration must land too, or a dead surface is scanned forever"
+        );
     }
 }

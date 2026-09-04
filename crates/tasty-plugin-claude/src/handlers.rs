@@ -251,9 +251,8 @@ pub(crate) fn handle_kill(
         .get("killed_surface_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        && let Ok(mut s) = scanner.lock()
     {
-        s.disable(killed);
+        crate::error_scan::lock_scanner(scanner).disable(killed);
     }
     Ok(json!({ "killed": true }))
 }
@@ -579,9 +578,7 @@ pub(crate) fn handle_launch(
             tracing::warn!("surface.send (launch) failed: {e}");
         }
 
-        if let Ok(mut s) = scanner.lock() {
-            s.enable(sid, ScanTarget::TopLevel);
-        }
+        crate::error_scan::lock_scanner(scanner).enable(sid, ScanTarget::TopLevel);
     }
 
     Ok(json!({
@@ -652,7 +649,8 @@ pub(crate) fn handle_respawn(
     // 3) error scan 대상으로 (재)등록. PTY 가 갈렸으므로 이전 인스턴스의 dedupe
     //    스니펫은 버린다 — 안 버리면 재기동 후 같은 에러 텍스트가 다시 나도
     //    `claude-error` 가 억제된다.
-    if let Ok(mut s) = scanner.lock() {
+    {
+        let mut s = crate::error_scan::lock_scanner(scanner);
         s.enable(child_surface_id, ScanTarget::Child);
         s.reset_dedupe(child_surface_id);
     }
@@ -932,9 +930,7 @@ pub(crate) fn handle_spawn(
     // 2-1) error scan 대상 등록. `ScanTarget::Child` 로 넣으면 폴링 루프가
     //      `terminal.parent` 로 관계 생존을 대조하므로, kill/close 뿐 아니라
     //      `terminal.release`(surface 는 남기고 관계만 해제)까지 함께 정리된다.
-    if let Ok(mut s) = scanner.lock() {
-        s.enable(child_surface_id, ScanTarget::Child);
-    }
+    crate::error_scan::lock_scanner(scanner).enable(child_surface_id, ScanTarget::Child);
 
     // claude CLI/auto_wait 는 응답에 parent_surface_id 를 기대한다(호스트 응답엔
     // 없으므로 caller surface 로 채운다). 나머지 필드(child_surface_id/child_index/

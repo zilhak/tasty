@@ -153,9 +153,8 @@ fn is_new_turn_event(event: &str) -> bool {
 /// `terminal.release` 로 관계가 끊겨 disable 된) surface 의 hook 이벤트는 조용히
 /// 건너뛴다.
 fn reset_dedupe_if_enabled(scanner: &Arc<Mutex<ErrorScanner>>, surface_id: u32) {
-    if let Ok(mut s) = scanner.lock()
-        && s.is_enabled(surface_id)
-    {
+    let mut s = crate::error_scan::lock_scanner(scanner);
+    if s.is_enabled(surface_id) {
         s.reset_dedupe(surface_id);
     }
 }
