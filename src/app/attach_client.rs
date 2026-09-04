@@ -128,60 +128,76 @@ pub(crate) enum MirrorEvent {
     },
 }
 
-/// reader thread 가 누적하고 메인 스레드의 apply 가 비우는 원격 mirror 이벤트 버퍼.
+/// [`MirrorOutbox`] 를 담는 **모듈 경계**.
 ///
-/// 내부 `Mutex` 를 밖에 노출하지 않는 것이 이 타입의 존재 이유다 — 버퍼를 비우는 경로가
-/// [`MirrorOutbox::take_for`] 하나뿐이고 그것이 적용 대상([`MirrorHost`])을 인자로
-/// 요구하므로, "꺼냈는데 적용 대상이 없다" 는 상태를 **쓸 수가 없다**. 자유 함수와
-/// 노출된 `Mutex` 였을 때는 같은 유실을 인라인 `mem::take` 로 한 칸 옆에서 다시 만들 수
-/// 있었다(ADR-0110 "무엇이 무엇을 지탱하는가").
-#[derive(Clone)]
-pub(crate) struct MirrorOutbox {
-    events: Arc<Mutex<Vec<MirrorEvent>>>,
-}
+/// 이 모듈이 없으면 봉인이 성립하지 않는다 — Rust 의 private 은 **모듈 범위**라, 같은
+/// 파일(4,600 줄) 안의 다른 함수는 `sess.output.events.lock()` 으로 필드에 그대로 닿는다.
+/// 결함이 살던 함수가 바로 그 파일 안에 있으므로, 모듈로 감싸 필드를 실제로 닫는다.
+/// 밖으로 내보내는 것은 아래 메서드 넷뿐이다.
+mod outbox {
+    use std::sync::{Arc, Mutex};
 
-impl MirrorOutbox {
-    fn new() -> Self {
-        Self {
-            events: Arc::new(Mutex::new(Vec::new())),
-        }
+    use super::{MirrorEvent, MirrorHost};
+
+    /// reader thread 가 누적하고 메인 스레드의 apply 가 비우는 원격 mirror 이벤트 버퍼.
+    ///
+    /// 버퍼를 비우는 경로가 [`MirrorOutbox::take_for`] 하나뿐이고 그것이 적용 대상
+    /// ([`MirrorHost`])을 인자로 요구하므로, "꺼냈는데 적용 대상이 없다" 는 상태를 **쓸
+    /// 수가 없다**. 그 봉인을 지탱하는 것은 두 가지가 함께다 — 필드를 닫는 **모듈
+    /// 경계**(위 `mod outbox` 참고)와 host 를 요구하는 **시그니처**. 둘 중 하나만으로는
+    /// 부족하다: 모듈이 없으면 필드로 우회할 수 있고, 시그니처가 느슨하면 host 없이
+    /// 비울 수 있다(ADR-0110 "무엇이 무엇을 지탱하는가").
+    #[derive(Clone)]
+    pub(crate) struct MirrorOutbox {
+        events: Arc<Mutex<Vec<MirrorEvent>>>,
     }
 
-    /// reader thread 전용 — 도착 순서대로 쌓는다. 쌓았으면 `true`(메인 루프를 깨울지
-    /// 판단하는 데 쓴다). lock 이 오염됐으면 쌓지 않고 `false` — 오염은 메인 스레드가
-    /// 적용 중 패닉했다는 뜻이라 어차피 그 세션은 정리된다.
-    fn push(&self, ev: MirrorEvent) -> bool {
-        match self.events.lock() {
-            Ok(mut buf) => {
-                buf.push(ev);
-                true
+    impl MirrorOutbox {
+        pub(super) fn new() -> Self {
+            Self {
+                events: Arc::new(Mutex::new(Vec::new())),
             }
-            Err(_) => false,
         }
-    }
 
-    /// 쌓인 이벤트를 **도착 순서대로** 통째로 꺼낸다.
-    ///
-    /// 적용 대상을 **인자로 요구**하는 것이 요점이다 — host 없이 비울 방법이 타입 수준에
-    /// 없다. mutex 오염(reader thread panic)은 lock 을 무효화할 이유가 없어 안쪽 값을
-    /// 그대로 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지 않는다.
-    fn take_for(&self, _host: &MirrorHost<'_>) -> Vec<MirrorEvent> {
-        match self.events.lock() {
-            Ok(mut b) => std::mem::take(&mut *b),
-            Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+        /// reader thread 전용 — 도착 순서대로 쌓는다. 쌓았으면 `true`(메인 루프를 깨울지
+        /// 판단하는 데 쓴다). lock 이 오염됐으면 쌓지 않고 `false` — 오염은 메인 스레드가
+        /// 적용 중 패닉했다는 뜻이라 어차피 그 세션은 정리된다.
+        pub(super) fn push(&self, ev: MirrorEvent) -> bool {
+            match self.events.lock() {
+                Ok(mut buf) => {
+                    buf.push(ev);
+                    true
+                }
+                Err(_) => false,
+            }
         }
-    }
 
-    /// 테스트에서 버퍼를 채우고 들여다보는 유일한 창구 — 프로덕션 경로는
-    /// [`MirrorOutbox::push`] 와 [`MirrorOutbox::take_for`] 뿐이다.
-    ///
-    /// 즉 위 "host 없이는 비울 수 없다" 는 봉인의 범위는 프로덕션 빌드다. 테스트에서는
-    /// 이 창구로 버퍼를 직접 만질 수 있다(ADR-0110 "무엇이 무엇을 지탱하는가").
-    #[cfg(test)]
-    fn peek(&self) -> std::sync::MutexGuard<'_, Vec<MirrorEvent>> {
-        self.events.lock().unwrap_or_else(|p| p.into_inner())
+        /// 쌓인 이벤트를 **도착 순서대로** 통째로 꺼낸다.
+        ///
+        /// 적용 대상을 **인자로 요구**하는 것이 요점이다 — host 없이 비울 방법이 없다.
+        /// mutex 오염(reader thread panic)은 lock 을 무효화할 이유가 없어 안쪽 값을
+        /// 그대로 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지
+        /// 않는다.
+        pub(super) fn take_for(&self, _host: &MirrorHost<'_>) -> Vec<MirrorEvent> {
+            match self.events.lock() {
+                Ok(mut b) => std::mem::take(&mut *b),
+                Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+            }
+        }
+
+        /// 테스트에서 버퍼를 채우고 들여다보는 유일한 창구 — 프로덕션 경로는
+        /// [`MirrorOutbox::push`] 와 [`MirrorOutbox::take_for`] 뿐이다.
+        ///
+        /// 즉 위 "host 없이는 비울 수 없다" 는 봉인의 범위는 프로덕션 빌드다. 테스트에서는
+        /// 이 창구로 버퍼를 직접 만질 수 있다(ADR-0110 "무엇이 무엇을 지탱하는가").
+        #[cfg(test)]
+        pub(super) fn peek(&self) -> std::sync::MutexGuard<'_, Vec<MirrorEvent>> {
+            self.events.lock().unwrap_or_else(|p| p.into_inner())
+        }
     }
 }
+
+use outbox::MirrorOutbox;
 
 /// write 전용 스레드로 보내는 한 프레임. forwarder(Data)/heartbeat(Ping)/
 /// resize·structural(Control)/detach(Detach)가 모두 이 큐에 push 만 하고, 단일 write
@@ -4528,10 +4544,16 @@ mod tests {
         );
     }
 
-    /// **유실 방지의 핵심 단언** — 적용 대상을 확보하지 못하면 버퍼를 건드리지 않는다.
-    /// 꺼낸 뒤 적용에 실패하면 되돌릴 방법이 없고, mirror 이벤트 유실은 조용히
-    /// 일어난다(`Data` 는 복원 뒤 화면 결손, `StructuralDelta` 는 매핑 desync).
-    /// drain 을 host 확보보다 앞으로 옮기는 변이에서 이 테스트가 실패해야 한다.
+    /// 적용 대상을 확보하지 못하면 버퍼를 건드리지 않는다는 것을 **의도로 기록**한다.
+    ///
+    /// **집행 지점이 아니다.** 이 성질은 `MirrorOutbox::take_for` 가 host 를 요구하고
+    /// 필드가 `mod outbox` 밖에서 안 보인다는 사실이 지탱한다 — 위반하는 코드는 애초에
+    /// 컴파일되지 않으므로, 이 테스트가 잡을 수 있는 것은 `apply_pending_mirror_output`
+    /// 이 `None` 을 받고도 `true` 를 보고하는 정도의 사소한 변이뿐이다. 남겨둔 이유는
+    /// 둘이다: 아래 `a_host_…` 와의 **대칭축**(그 테스트만 있으면 "아무것도 안 하는
+    /// 함수" 가 통과한다), 그리고 왜 `None` 분기가 버퍼를 남기는지를 코드 옆에 적어두는
+    /// 것(꺼낸 뒤 적용에 실패하면 되돌릴 방법이 없고, mirror 이벤트 유실은 조용히
+    /// 일어난다 — `Data` 는 복원 뒤 화면 결손, `StructuralDelta` 는 매핑 desync).
     #[test]
     fn no_host_leaves_the_mirror_buffer_untouched() {
         let ws_id = 9_000u32;

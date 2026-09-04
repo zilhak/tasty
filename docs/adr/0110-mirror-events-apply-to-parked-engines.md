@@ -50,19 +50,27 @@ attach 세션의 수명은 창이 아니라 engine 에 매인다 — 마지막 �
 - **e2e 실측**(loopback attach, 창 있는 client 로 측정 — parked 도 같은 파싱 호출): 아래 "e2e 실측" 절.
 - **운영 비용 / 유지 부담**: 세 순회(판정 `mirror_workspace_engine_alive` · 정리 `cleanup_mirror_workspace` · 적용 `mirror_output_host`)의 범위를 함께 유지해야 한다. 각 함수 doc 가 서로를 가리키고, 적용 경로는 parked 단위 테스트(`parked_engine_receives_mirror_data_and_structural_delta`, `mirror_output_host_prefers_window_then_parked_then_none`)가 고정한다. `apply_one_mirror_event` 에 창 표면이 반드시 필요한 부수효과를 추가할 때는 `MirrorHost::windowed` 게이트를 거쳐야 한다.
 
-  위 "대상이 없으면 꺼내지 않는다" 와 부수효과 게이트는 다음 세 테스트가 고정한다(전부 해당 배선을 되돌리는 변이에서 실패하는 것을 확인했다):
+  부수효과 게이트와 적용 경로는 다음 두 테스트가 고정한다(각각 해당 배선을 되돌리는 변이에서 실패하는 것을 확인했다):
 
   | 테스트 | 고정하는 성질 |
   |---|---|
-  | `no_host_leaves_the_mirror_buffer_untouched` | host 가 `None` 이면 버퍼를 꺼내지 않는다 |
-  | `a_host_drains_and_applies_the_mirror_buffer` | host 가 있으면 같은 함수가 비우고 적용한다(위 테스트의 대칭축) |
+  | `a_host_drains_and_applies_the_mirror_buffer` | host 가 있으면 버퍼를 비우고 실제로 적용한다 |
   | `parked_host_does_not_stack_toasts_but_windowed_does` | 창 유무가 부수효과만 게이트한다 |
 
-  **무엇이 무엇을 지탱하는가** — 위 Decision 의 "적용 대상이 없는데 꺼내는 일이 구조적으로 사라진다" 를 지탱하는 것은 호출 순서 약속도, 테스트도 아니고 **타입**이다. mirror 버퍼는 `MirrorOutbox` 안에 있고 그 `Mutex` 는 밖에 노출되지 않는다. 비우는 경로는 `MirrorOutbox::take_for(&self, host: &MirrorHost)` 하나뿐이며 적용 대상을 **인자로 요구**한다. 그래서 "꺼냈는데 적용 대상이 없다" 는 상태를 쓸 수가 없고, 호출부의 2차 조회(`as_main_mut()`)가 실패해도 그 시점엔 아직 꺼내지 않았다. 꺼내는 일과 적용하는 일을 `MirrorHost::drain_and_apply` 가 함께 쥔다.
+  `no_host_leaves_the_mirror_buffer_untouched` 는 여기 없다 — **집행 지점이 아니라 의도 기록**이다. "host 가 없으면 꺼내지 않는다" 는 아래 타입 경계가 지탱하므로 위반하는 코드가 컴파일되지 않고, 이 테스트가 잡을 수 있는 것은 `None` 분기가 `true` 를 보고하는 정도다. 위 `a_host_…` 의 대칭축(그 테스트만 있으면 "아무것도 안 하는 함수" 가 통과한다)으로 남겨둔다.
+
+  **무엇이 무엇을 지탱하는가** — 위 Decision 의 "적용 대상이 없는데 꺼내는 일이 구조적으로 사라진다" 를 지탱하는 것은 호출 순서 약속도, 테스트도 아니고 **모듈 경계 + 시그니처** 둘의 조합이다.
+
+  - **모듈 경계**: mirror 버퍼는 `mod outbox` 안의 `MirrorOutbox` 가 들고, 내부 `Mutex` 필드는 그 모듈 밖에서 보이지 않는다. Rust 의 private 은 **모듈 범위**라 이 경계가 없으면 같은 파일(4,600 줄, 결함이 살던 바로 그 파일)의 다른 함수가 필드에 그대로 닿는다 — 실제로 리뷰에서 `sess.output.events.lock()` 여섯 글자로 결함이 되살아났다.
+  - **시그니처**: 밖으로 열린 유일한 비우기 경로 `MirrorOutbox::take_for(&self, host: &MirrorHost)` 가 적용 대상을 인자로 요구한다.
+
+  둘 중 하나만으로는 부족하다. 그래서 "꺼냈는데 적용 대상이 없다" 는 상태를 쓸 수가 없고, 호출부의 2차 조회(`as_main_mut()`)가 실패해도 그 시점엔 아직 꺼내지 않았다. 꺼내는 일과 적용하는 일은 `MirrorHost::drain_and_apply` 가 함께 쥔다.
 
   이 봉인의 범위는 **프로덕션 빌드**다 — 테스트 빌드에는 버퍼를 직접 채우고 들여다보는 `#[cfg(test)]` 접근자(`MirrorOutbox::peek`)가 있고, 그것을 읽기 전용으로 좁히려면 `MirrorEvent` 에 `Clone` 요구가 새로 생긴다(테스트 관심사 때문에 프로덕션 타입에 트레잇 요구를 얹는 것이라 비용 방향이 반대다). 보장하는 것보다 많이 주장하지 않기 위해 적어둔다.
 
-  이 형태가 되기 전에는 같은 단언을 **소스 문자열 스캔**(호출부 본문에 drain 호출이 없는지 보는 테스트)이 지탱했다. 그 가드는 이름 하나만 봤으므로 인라인 `mem::take` 로 같은 유실을 한 칸 옆에서 되살릴 수 있었고(Gate4 리뷰에서 실측 — 결함을 부활시켰는데 테스트 전부 통과), 반대로 무관한 함수의 doc 한 줄 편집에 거짓 실패를 냈다. 버퍼를 감싼 뒤에는 그 우회로가 타입 수준에서 사라져 가드를 지웠다 — 없어도 되는 가드가 남아 있으면 다음 사람이 무엇이 진짜 집행 지점인지 헷갈린다.
+  이 형태가 되기 전에는 같은 단언을 **소스 문자열 스캔**(호출부 본문에 drain 호출이 없는지 보는 테스트)이 지탱했다. 그 가드는 함수 이름 하나만 봤으므로 우회 형태 어느 것도 잡지 못했고(인라인 `mem::take` · 필드 직접 접근 — Gate4 리뷰가 둘 다 실측했다, 결함을 부활시켰는데 테스트 전부 통과), 반대로 무관한 함수의 doc 한 줄 편집에는 거짓 실패를 냈다.
+
+  위 두 경계가 그 우회 형태를 컴파일 단계에서 막으면서 그 가드의 술어는 공허해졌고, 그래서 지웠다 — 없어도 되는 가드가 남아 있으면 다음 사람이 무엇이 진짜 집행 지점인지 헷갈린다. (그 가드가 내던 거짓 실패도 함께 사라졌지만, 그건 앵커를 고쳐서가 아니라 **테스트를 지워서**다.)
 
 ### e2e 실측 (loopback attach, 2026-09-04)
 
