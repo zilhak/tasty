@@ -45,6 +45,37 @@ pub fn handle_semaphore_create(
     }
 }
 
+pub fn handle_semaphore_set_permits(
+    core: &Core,
+    _state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let name = match name_param(params, &id) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    let permits = match params.get("permits").and_then(|v| v.as_u64()) {
+        Some(c) if c <= u32::MAX as u64 => c as u32,
+        _ => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Missing or invalid 'permits' (must be u32 >= 1)",
+            );
+        }
+    };
+    match core.semaphore_set_permits(workspace_id, &name, permits, now_ms()) {
+        Ok(s) => serialize(id, s),
+        Err(e) => agent_err_to_response(id, e),
+    }
+}
+
 pub fn handle_semaphore_acquire(
     core: &Core,
     _state: &mut AppState,
@@ -65,7 +96,16 @@ pub fn handle_semaphore_acquire(
         Some(h) if !h.is_empty() => h.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'holder'"),
     };
-    match core.semaphore_acquire(workspace_id, &name, &holder) {
+    let ttl_ms = match params.get("ttl_ms") {
+        None | Some(Value::Null) => None,
+        Some(v) => match v.as_u64() {
+            Some(t) => Some(t),
+            None => {
+                return JsonRpcResponse::invalid_params(id, "Invalid 'ttl_ms' (must be u64)");
+            }
+        },
+    };
+    match core.semaphore_acquire(workspace_id, &name, &holder, ttl_ms, now_ms()) {
         Ok(outcome) => serialize(id, outcome),
         Err(e) => agent_err_to_response(id, e),
     }
@@ -109,7 +149,7 @@ pub fn handle_semaphore_list(
         Ok(w) => w,
         Err(e) => return e,
     };
-    match core.semaphore_list(workspace_id) {
+    match core.semaphore_list(workspace_id, now_ms()) {
         Ok(semaphores) => JsonRpcResponse::success(
             id,
             json!({ "total": semaphores.len(), "semaphores": semaphores }),

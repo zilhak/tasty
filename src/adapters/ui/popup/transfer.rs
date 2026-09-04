@@ -16,6 +16,7 @@
 //! 상태 공급: `AppState.dialogs.transfer_progress`(진행 행 Vec) / `transfer_error`(실패 큐).
 //! 08 워커가 진행 이벤트로 행을 갱신하고, 완료/실패 시 App 이 팝업을 open/close/승격한다.
 
+use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::adapters::ui::icons;
@@ -474,10 +475,10 @@ fn reason_well(ui: &mut egui::Ui, th: &theme::Theme, reason: &str) {
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(egui::Margin {
-            left: 10,
-            right: 10,
-            top: 8,
-            bottom: 8,
+            left: TRANSFER_CARD_PAD_X,
+            right: TRANSFER_CARD_PAD_X,
+            top: th.spacing_sm.value() as i8,
+            bottom: th.spacing_sm.value() as i8,
         })
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());

@@ -28,6 +28,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::adapters::ui::icons;
+
+/// 경로 breadcrumb 의 구분자 글리프. 아이콘 스케일 밖(13) — 스케일의 12 와 14 사이다.
+/// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0126 과 같은
+/// 처리). 갤러리 specimen 이 같은 값을 같은 이름으로 갖는다.
+const CRUMB_GLYPH: f32 = 13.0;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::{AppState, FilePickerResult, FpLoadState};
@@ -38,6 +43,12 @@ pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
 const POPUP_WIDTH: f32 = 640.0;
 const POPUP_HEIGHT: f32 = 480.0;
+
+// 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
+// `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
+use tasty_ui_widgets::tokens::{
+    CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE, STRUCT_GAP_2,
+};
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
 /// `disconnected` 플래그만으론 "서버는 살아있는데 응답이 안 오는" 케이스를 못 잡는다).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -167,10 +178,10 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
 
     // ── Path bar (breadcrumbs + refresh) ────────────────────────────────
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
         for (i, crumb) in props.crumbs.iter().enumerate() {
             if i > 0 {
-                ui.add(icons::CHEVRON_RIGHT.image(13.0, th.text_disabled().into()));
+                ui.add(icons::CHEVRON_RIGHT.image(CRUMB_GLYPH, th.text_disabled().into()));
             }
             let is_current = i + 1 == props.crumbs.len();
             let color = if is_current {
@@ -414,14 +425,14 @@ fn center_state(
         egui::vec2(ui.available_width(), body_height),
         egui::Layout::top_down(egui::Align::Center),
         |ui| {
-            ui.add_space((body_height - 100.0).max(0.0) * 0.5);
+            ui.add_space((body_height - CENTER_BLOCK_H).max(0.0) * 0.5);
             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
             match glyph {
                 CenterGlyph::Spinner => {
-                    Spinner::new().size(22.0).show(ui, th);
+                    Spinner::new().size(CENTER_GLYPH_SIZE).show(ui, th);
                 }
                 CenterGlyph::Icon(icon, color) => {
-                    ui.add(icon.image(22.0, color));
+                    ui.add(icon.image(CENTER_GLYPH_SIZE, color));
                 }
             }
             ui.label(

@@ -29,7 +29,17 @@ pub(crate) fn handle_completion(
         Some("needs_input") => AttentionKind::NeedsInput,
         _ => AttentionKind::Completion,
     };
-    let _ = engine; // handler 는 enqueue 만. cascade 가 highlight 발동 + redraw.
+    // 소속이 확인된 경우에만 여기서 직접 발동한다. Intent 큐를 drain 하는
+    // `App::dispatch_pending_intents` 는 gui 전용이라(`src/app.rs` 의
+    // `#[cfg(feature = "gui")] mod dispatch;`) headless 인스턴스에는 아래 cascade 가
+    // 아예 존재하지 않아, enqueue 만 하면 headless 에서는 attention 이 발동되지 않는다.
+    // `has_surface` 게이트는 응답 계약을 바꾸지 않기 위한 것이다 — 미존재 surface 에
+    // 대한 호출은 지금처럼 ok 로 응답하되(포커스 독립 검증은 `require_surface_id` 몫),
+    // 라우터 fallback 으로 남의 engine 에 도달했을 때 유령 레코드를 만들지 않는다.
+    if engine.has_surface(surface_id) {
+        engine.raise_attention(surface_id, kind);
+    }
+    // gui 에서는 cascade 가 소비처 redraw 를 얹는다(재발동은 같은 kind 라 no-op).
     state.dispatch_intent(
         crate::core::intent::DomainIntent::SurfaceCompletion { surface_id, kind }.from_agent_ipc(),
     );

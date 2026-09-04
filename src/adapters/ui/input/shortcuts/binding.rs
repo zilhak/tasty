@@ -133,6 +133,43 @@ pub(super) fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
     })
 }
 
+/// 바인딩 문자열이 `ctrl`/`alt`/`option` 중 하나 이상을 요구하는지 판정한다.
+/// `shift` 단독과 수식 없는 키는 `false`.
+///
+/// webview 키 포워딩 정책(`host_api/webview/keys.rs`)이 "페이지에 남길 키" 와
+/// "host 가 가져갈 키" 를 가르는 기준으로 쓴다 — 파싱 규칙을 그쪽에 복제하지
+/// 않도록 여기서 한 번만 판정한다.
+pub(crate) fn binding_has_modifier(binding: &str) -> bool {
+    match parse_binding(binding) {
+        Some(p) => p.ctrl || p.alt || p.option,
+        None => false,
+    }
+}
+
+/// 두 바인딩 문자열이 **같은 콤보**를 가리키는지 — 대소문자와 modifier 순서를
+/// 무시하고 비교한다.
+///
+/// 매칭을 실제로 하는 [`parse_binding`]/[`matches_binding`] 이 modifier 프리픽스를
+/// 순서 무관하게 벗기고 키 토큰을 `to_ascii_lowercase` 로 비교하므로, "같은 콤보인가"
+/// 판정도 반드시 같은 경로를 타야 한다 — 원시 문자열 비교(`"Ctrl+F"` ≠ `"ctrl+f"`)면
+/// 매칭 규칙과 갈라진다. webview 포워딩 정책(`host_api/webview/keys.rs`)이 plugin 콤보를
+/// 페이지 예약 콤보와 대조할 때 쓴다.
+///
+/// 어느 한쪽이 파싱 불가(빈 문자열·modifier 단독 등)면 원시 문자열의 대소문자 무시
+/// 비교로 폴백한다.
+pub(crate) fn bindings_equivalent(a: &str, b: &str) -> bool {
+    match (parse_binding(a), parse_binding(b)) {
+        (Some(pa), Some(pb)) => {
+            pa.ctrl == pb.ctrl
+                && pa.shift == pb.shift
+                && pa.alt == pb.alt
+                && pa.option == pb.option
+                && pa.key.eq_ignore_ascii_case(pb.key)
+        }
+        _ => a.eq_ignore_ascii_case(b),
+    }
+}
+
 /// Parse a binding string like "ctrl+shift+n" and check if it matches
 /// the given key + modifiers. Returns false for empty bindings.
 pub(super) fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {

@@ -87,16 +87,7 @@ pub(crate) fn draw_overlays(
     // 튜토리얼 오버레이 (마커 오버레이 + 안내 말풍선) — 팝업/toast/banner/modhint 위
     // 최상위 레이어. 마커/scrim 은 hit-transparent, 말풍선만 마우스 소비. 진입·진행은
     // 사용자 클릭으로만(원칙 1). 마커 좌표는 draw_ctx/terminal_rect 로 매 프레임 재해석.
-    let content_area = egui::Rect::from_min_size(
-        egui::pos2(
-            terminal_rect.x.value() / scale_factor,
-            terminal_rect.y.value() / scale_factor,
-        ),
-        egui::vec2(
-            terminal_rect.width.value() / scale_factor,
-            terminal_rect.height.value() / scale_factor,
-        ),
-    );
+    let content_area = crate::adapters::ui::to_egui_rect(terminal_rect, scale_factor);
     crate::adapters::ui::tutorial::draw_tutorial_overlay(
         ctx,
         state,

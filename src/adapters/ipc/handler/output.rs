@@ -172,6 +172,52 @@ fn observer_error_to_response(id: Value, e: ObserverError) -> JsonRpcResponse {
             JsonRpcResponse::invalid_params(id, e.to_string())
         }
         ObserverError::NotFound(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
-        ObserverError::FileOpen(_) => JsonRpcResponse::internal_error(id, e.to_string()),
+        ObserverError::FileOpen(_) | ObserverError::ThreadSpawn(_) => {
+            JsonRpcResponse::internal_error(id, e.to_string())
+        }
+    }
+}
+
+/// `observe.start` 의 실패가 **에이전트에게 도달**하는지 고정한다.
+///
+/// sink 스레드 spawn 실패는 한때 `.expect` 로 호스트 전체를 죽였다. 이제는
+/// `ObserverError::ThreadSpawn` 으로 올라오며, 그 값이 응답으로 매핑되지 않으면
+/// 에이전트는 실패를 영영 모른다
+/// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+#[cfg(test)]
+mod observer_error_mapping_tests {
+    use super::*;
+
+    fn code_of(e: ObserverError) -> i32 {
+        observer_error_to_response(Value::from(1), e)
+            .error
+            .expect("an ObserverError must map to a JSON-RPC error")
+            .code
+    }
+
+    #[test]
+    fn a_sink_thread_spawn_failure_maps_to_internal_error() {
+        assert_eq!(code_of(ObserverError::ThreadSpawn("EAGAIN".into())), -32603);
+    }
+
+    #[test]
+    fn thread_spawn_and_file_open_are_both_server_side_failures() {
+        // 같은 함수 안에서 갈리던 비대칭(파일 열기는 에러 반환, spawn 은 패닉)이
+        // 해소됐다 — 둘 다 같은 등급으로 보고된다.
+        assert_eq!(
+            code_of(ObserverError::ThreadSpawn("EAGAIN".into())),
+            code_of(ObserverError::FileOpen("EACCES".into())),
+        );
+    }
+
+    #[test]
+    fn caller_side_mistakes_stay_invalid_params() {
+        assert_eq!(code_of(ObserverError::InvalidPath("/x".into())), -32602);
+    }
+
+    #[test]
+    fn the_spawn_failure_message_names_the_cause() {
+        let msg = ObserverError::ThreadSpawn("EAGAIN".into()).to_string();
+        assert!(msg.contains("EAGAIN"), "got: {msg}");
     }
 }

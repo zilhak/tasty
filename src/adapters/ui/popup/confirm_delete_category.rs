@@ -17,7 +17,6 @@ pub const CONFIRM_DELETE_CATEGORY_POPUP_ID: &str = "confirm_delete_category";
 
 /// 다이얼로그 폭 (디자인 380px).
 const WIDTH: f32 = 380.0;
-const BODY_FONT_SIZE: f32 = 13.0;
 
 /// 대상 카테고리 스냅샷(이름 + 소속 워크스페이스 수).
 struct Target {
@@ -55,7 +54,7 @@ pub fn confirm_delete_category_sizer(
         .map(|tgt| tgt.name.chars().count() + 60)
         .unwrap_or(60);
     let approx_lines = (body_len as f32 / 42.0).ceil().max(2.0);
-    let body_h = approx_lines * BODY_FONT_SIZE * 1.5;
+    let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     // 헤더(글리프+제목) + 본문 + 버튼 행 + 여백.
     let content_h = 24.0 + body_h + 40.0;
     egui::vec2(WIDTH, popup::content_margin() * 2.0 + content_h)
@@ -123,7 +122,7 @@ pub fn draw_confirm_delete_category(
             &target.count.to_string(),
         ))
         .color(th.text_secondary())
-        .size(BODY_FONT_SIZE),
+        .size(th.font_size_body.value()),
     );
 
     // ── 푸터: 우측 정렬 Cancel(ghost) + Delete category(danger). ──

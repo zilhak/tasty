@@ -100,7 +100,7 @@ pub fn draw_collapsed_sidebar(
     .vline(
         sidebar_width - 0.5,
         panel_rect.y_range(),
-        egui::Stroke::new(1.0, th.border_default().to_egui()),
+        egui::Stroke::new(th.border_width.value(), th.border_default().to_egui()),
     );
 
     for action in deferred_actions {

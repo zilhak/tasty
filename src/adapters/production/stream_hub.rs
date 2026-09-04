@@ -301,6 +301,19 @@ impl Default for StreamHub {
     }
 }
 
+/// sink 맵 · bulk 결속 맵의 poison 을 각각 첫 1 회만 보고한다.
+///
+/// 둘 다 임계구역이 `HashMap` 조작뿐이라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
+/// 반대로 `push` 는 메인 루프의 pump 경로에서 도는지라 패닉하면 창 전체가 죽는다.
+/// 조용히 버리면 등록되지 않은 클라이언트가 프레임을 영영 못 받고(에러도 없다),
+/// `push` 는 살아 있는 연결을 `Unknown` 으로 접는다. 근거
+/// `docs/dev-guide/error-handling.md` "락 poison".
+static SINKS_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static BULK_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+const SINKS_WHAT: &str = "stream hub sink map";
+const BULK_WHAT: &str = "stream hub bulk binding map";
+
 impl StreamHub {
     pub fn new() -> Self {
         Self {
@@ -319,21 +332,17 @@ impl StreamHub {
     /// write thread drains to the socket.
     pub fn register(&self, id: StreamClientId) -> Receiver<StreamFrame> {
         let (tx, rx) = mpsc::sync_channel(SINK_CAP);
-        if let Ok(mut sinks) = self.sinks.lock() {
-            sinks.insert(id, StreamSink { tx, lag: 0 });
-        }
+        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED)
+            .insert(id, StreamSink { tx, lag: 0 });
         rx
     }
 
     /// Drop a client's sink (its write thread then exits when the sender drops).
     /// Idempotent. bulk 결속(있으면)도 함께 청소한다.
     pub fn unregister(&self, id: StreamClientId) {
-        if let Ok(mut sinks) = self.sinks.lock() {
-            sinks.remove(&id);
-        }
-        if let Ok(mut bulk) = self.bulk_bindings.lock() {
-            bulk.remove(&id);
-        }
+        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).remove(&id);
+        crate::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+            .remove(&id);
     }
 
     /// bulk 전송 전용 연결(ADR-0054)로 태깅한다. 핸드셰이크의 `bulk_workspace` 를
@@ -341,26 +350,23 @@ impl StreamHub {
     /// 시작 사이(같은 accept 스레드)에서 이뤄지므로 이후 pump 되는 모든 프레임에서
     /// [`bulk_workspace`](Self::bulk_workspace)로 조회된다.
     pub fn register_bulk(&self, id: StreamClientId, workspace_id: u32) {
-        if let Ok(mut bulk) = self.bulk_bindings.lock() {
-            bulk.insert(id, workspace_id);
-        }
+        crate::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+            .insert(id, workspace_id);
     }
 
     /// 이 연결이 bulk 전용이면 결속 workspace_id, 아니면 `None`. pump_inbound 의
     /// Data 분류(파일 청크 vs PTY 입력)와 begin/commit 인가에서 참조한다.
     pub fn bulk_workspace(&self, id: StreamClientId) -> Option<u32> {
-        self.bulk_bindings
-            .lock()
-            .ok()
-            .and_then(|b| b.get(&id).copied())
+        crate::poison::recover_mutex(self.bulk_bindings.lock(), BULK_WHAT, &BULK_POISONED)
+            .get(&id)
+            .copied()
     }
 
     /// Push a frame to one client. Non-blocking: a full sink drops the frame and,
     /// past [`LAG_LIMIT`] consecutive drops, disconnects the client.
     pub fn push(&self, id: StreamClientId, frame: StreamFrame) -> PushResult {
-        let Ok(mut sinks) = self.sinks.lock() else {
-            return PushResult::Unknown;
-        };
+        let mut sinks =
+            crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED);
         let Some(sink) = sinks.get_mut(&id) else {
             return PushResult::Unknown;
         };
@@ -390,7 +396,7 @@ impl StreamHub {
     // crate 전역 reachability 가 좁아지며 드러남.
     #[allow(dead_code)]
     pub fn client_count(&self) -> usize {
-        self.sinks.lock().map(|s| s.len()).unwrap_or(0)
+        crate::poison::recover_mutex(self.sinks.lock(), SINKS_WHAT, &SINKS_POISONED).len()
     }
 
     /// Drain inbound messages routed from stream clients (called by the main loop

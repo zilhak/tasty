@@ -4,11 +4,17 @@
 // unused_imports 침묵 — gui 빌드에선 검사 그대로.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
+#[cfg(test)]
+mod cli_entry_tests;
 mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
 #[cfg(debug_assertions)]
+mod debug_nav;
+#[cfg(debug_assertions)]
 pub(crate) mod debug_plugin;
+#[cfg(debug_assertions)]
+mod debug_terminal;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
@@ -19,7 +25,7 @@ mod hook_handler;
 mod hooks;
 #[cfg(feature = "gui")]
 mod image;
-#[cfg(all(target_os = "macos", feature = "gui"))]
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 mod input_source;
 #[cfg(feature = "gui")]
 mod markdown;
@@ -51,7 +57,7 @@ pub mod agent;
 pub mod approval;
 pub(crate) mod attach;
 pub mod audit;
-#[cfg(feature = "gui")]
+#[cfg(all(debug_assertions, feature = "gui"))]
 pub mod ime;
 pub mod plugin;
 #[cfg(all(debug_assertions, feature = "gui"))]
@@ -409,6 +415,17 @@ fn hard_occupied_structural_guard(
                         .map(|(i, _)| i)
                 })?
         }
+        // 워크스페이스 통째 닫기 — 대상 자체가 workspace 라 id/index 를 그대로 쓴다.
+        "workspace.close" => {
+            if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
+                engine
+                    .workspaces
+                    .iter()
+                    .position(|w| w.id == ws_id as u32)?
+            } else {
+                params.get("index").and_then(|v| v.as_u64())? as usize
+            }
+        }
         "tab.create" | "pane.close" | "tab.move" => {
             let pane_id = params
                 .get("pane_id")
@@ -527,6 +544,7 @@ fn route_engine_handler(
         "workspace.move" => {
             workspace::handle_workspace_move(core, state, engine, id, &request.params)
         }
+        "workspace.close" => workspace::handle_workspace_close(state, engine, id, &request.params),
         // workspace category (사이드바 폴더 CRUD — 원칙 1·3: active/포커스 불변)
         "workspace_category.list" => workspace_category::handle_list(state, engine, id),
         "workspace_category.create" => {
@@ -600,6 +618,12 @@ fn route_engine_handler(
         "surface.wake" => surface::handle_surface_wake(state, engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, engine, id, &request.params),
         "surface.completion" => surface::handle_completion(state, engine, id, &request.params),
+        "surface.attention.get" => {
+            surface::handle_attention_get(state, engine, id, &request.params)
+        }
+        "surface.attention.clear" => {
+            surface::handle_attention_clear(state, engine, id, &request.params)
+        }
         "surface.read_since_mark" => {
             surface::handle_read_since_mark(state, engine, id, &request.params)
         }
@@ -677,13 +701,6 @@ fn route_engine_handler(
         "message.read" => message::handle_message_read(core, state, engine, id, &request.params),
         "message.count" => message::handle_message_count(state, engine, id, &request.params),
         "message.clear" => message::handle_message_clear(core, state, engine, id, &request.params),
-        // input source (macOS)
-        #[cfg(all(target_os = "macos", feature = "gui"))]
-        "surface.switch_input_source" => {
-            input_source::handle_switch_input_source(id, &request.params)
-        }
-        #[cfg(all(target_os = "macos", feature = "gui"))]
-        "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
         // notification (focus-independent — workspace_id/surface_id로 라우팅)
         "notification.list" => notification::handle_notification_list(state, engine, id),
         "notification.create" => {
@@ -991,6 +1008,9 @@ fn route_engine_handler(
         "agent.semaphore_create" => {
             agent::handle_semaphore_create(core, state, engine, caller, id, &request.params)
         }
+        "agent.semaphore_set_permits" => {
+            agent::handle_semaphore_set_permits(core, state, engine, caller, id, &request.params)
+        }
         "agent.semaphore_acquire" => {
             agent::handle_semaphore_acquire(core, state, engine, caller, id, &request.params)
         }
@@ -1101,32 +1121,46 @@ fn route_debug_handler(
         // 통째로 멎는다" 는 구조와 stall 워치독 발화를 재현 검증한다. release 미노출.
         #[cfg(feature = "gui")]
         "debug.gpu.stall" => handle_debug_gpu_stall(id, &request.params),
-        #[cfg(feature = "gui")]
-        "debug.cell_info" => debug::handle_debug_cell_info(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "debug.screen_attrs" => {
-            debug::handle_debug_screen_attrs(state, engine, id, &request.params)
+        // 아래 셋은 터미널 그리드만 본다 — gui 게이트 없이 `debug_terminal` 모듈에
+        // 있고 헤드리스 debug 데몬에도 등록된다(그 모듈 doc).
+        "debug.cell_info" => {
+            debug_terminal::handle_debug_cell_info(state, engine, id, &request.params)
         }
-        #[cfg(feature = "gui")]
-        "debug.glyph_color" => debug::handle_debug_glyph_color(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "debug.feed_bytes" => debug::handle_debug_feed_bytes(state, engine, id, &request.params),
+        "debug.screen_attrs" => {
+            debug_terminal::handle_debug_screen_attrs(state, engine, id, &request.params)
+        }
+        "debug.glyph_color" => {
+            debug_terminal::handle_debug_glyph_color(state, engine, id, &request.params)
+        }
+        "debug.feed_bytes" => {
+            debug_terminal::handle_debug_feed_bytes(state, engine, id, &request.params)
+        }
         #[cfg(feature = "gui")]
         "debug.inject_mouse" => {
             debug::handle_debug_inject_mouse(state, engine, id, &request.params)
         }
         #[cfg(feature = "gui")]
         "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
+        // OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현이라 debug 격리.
+        // 이름은 `surface.*` 이지만 대상 surface 를 받지 못한다(CGEvent/TIS 가
+        // OS 전역에 나간다). 자세한 근거는 docs/adr/0115-input-reproduction-ipc-debug-isolation.md.
+        #[cfg(all(target_os = "macos", feature = "gui"))]
+        "surface.switch_input_source" => {
+            input_source::handle_switch_input_source(state, engine, id, &request.params)
+        }
+        #[cfg(all(target_os = "macos", feature = "gui"))]
+        "surface.raw_key" => input_source::handle_raw_key(state, engine, id, &request.params),
+        // 아래 셋은 gui feature 게이트가 없다 — 핸들러 본체가 gui 전용 필드를
+        // 하나도 안 만져서 headless debug 데몬에도 등록된다(`debug_nav` 모듈 doc).
         "debug.close_workspace" => {
-            debug::handle_debug_close_workspace(state, engine, id, &request.params)
+            debug_nav::handle_debug_close_workspace(state, engine, id, &request.params)
         }
-        #[cfg(feature = "gui")]
         "debug.switch_workspace" => {
-            debug::handle_debug_switch_workspace(state, engine, id, &request.params)
+            debug_nav::handle_debug_switch_workspace(state, engine, id, &request.params)
         }
-        #[cfg(feature = "gui")]
-        "debug.switch_tab" => debug::handle_debug_switch_tab(state, engine, id, &request.params),
+        "debug.switch_tab" => {
+            debug_nav::handle_debug_switch_tab(state, engine, id, &request.params)
+        }
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
         #[cfg(feature = "gui")]
         "debug.tool.list" => tool::handle_list(state, engine, id),

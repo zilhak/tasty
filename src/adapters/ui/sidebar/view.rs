@@ -10,6 +10,28 @@ use crate::theme::Theme;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
+/// attached(다른 client 점유) 표시 outline 굵기. 디자인 CollapsedSidebar 의 CSS
+/// `outline: 1.5px` 를 그대로 옮긴 값이다. `border_width`(1)·`focus_ring_width`(2) 어느
+/// 쪽도 아니고, `icon_stroke_width`(1.5) 는 popup 타이틀바의 전사 글리프 전용이라
+/// (theme.md "painter 전사 글리프") 재사용하지 않는다. 컴포넌트 토큰
+/// `status-dot-attached-ring-width` 는 2px 로 정의돼 있어 이 값과 어긋나며, 맞추려면
+/// ring 반경 계산(offset·stroke 절반)을 함께 다시 잡아야 해 디자인 확인이 선행한다.
+const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
+
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
+// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
+// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
+// "스케일 밖 폰트 값".
+
+/// alert 배지 안의 숫자. 스케일 밖(9.5) — `badge_font_size()`(micro 10)와 0.5 차이라
+/// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
+const ALERT_BADGE_FONT_SIZE: f32 = 9.5;
+/// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
+/// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
+const GHOST_WS_NAME_PRIMITIVE_12: f32 = 12.0;
+
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
 #[derive(Debug, Clone)]
@@ -220,7 +242,7 @@ fn paint_alert_badge(
     let h = 15.0;
     let galley = ui.painter().layout_no_wrap(
         count.to_string(),
-        egui::FontId::proportional(9.5),
+        egui::FontId::proportional(ALERT_BADGE_FONT_SIZE),
         egui::Color32::from(th.text_on_accent()),
     );
     let pad = 4.0;
@@ -637,7 +659,7 @@ pub fn draw_full_sidebar_view(
                             ghost_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             &ws.name,
-                            egui::FontId::proportional(12.0),
+                            egui::FontId::proportional(GHOST_WS_NAME_PRIMITIVE_12),
                             ghost_fg,
                         );
                     }
@@ -661,7 +683,7 @@ pub fn draw_full_sidebar_view(
                     ui.painter().rect_stroke(
                         new_ws_resp.rect,
                         4.0,
-                        egui::Stroke::new(2.0, th.accent_success()),
+                        egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -733,9 +755,10 @@ pub fn draw_collapsed_sidebar_view(
                     // 값-보존 위해 text_placeholder() 사용 (§4-8, placeholder vs disabled role 미확정).
                     th.text_placeholder().into()
                 };
-                icons::CHEVRONS_RIGHT.image(16.0, color).paint_at(
+                let sz = th.icon_glyph_size_md.value();
+                icons::CHEVRONS_RIGHT.image(sz, color).paint_at(
                     ui,
-                    egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                    egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz)),
                 );
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Expand);
@@ -879,7 +902,7 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter().rect_stroke(
                     rect,
                     4.0,
-                    egui::Stroke::new(2.0, th.accent_success()),
+                    egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -966,9 +989,10 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
             } else {
                 th.text_secondary().into()
             };
-            icons::CHEVRONS_LEFT.image(16.0, color).paint_at(
+            let sz = th.icon_glyph_size_md.value();
+            icons::CHEVRONS_LEFT.image(sz, color).paint_at(
                 ui,
-                egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz)),
             );
             resp.clone().on_hover_text(collapse_hover);
             collapse = resp.clicked();
@@ -1182,7 +1206,7 @@ fn draw_ws_row(
         ui.painter().rect_stroke(
             card_rect,
             4.0,
-            egui::Stroke::new(2.0, th.accent_success()),
+            egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1402,7 +1426,7 @@ fn draw_collapsed_avatar(
         ui.painter().rect_stroke(
             rect,
             4.0,
-            egui::Stroke::new(1.5, th.border_attached()),
+            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1469,7 +1493,7 @@ fn draw_workspace_card(
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
             // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
             // 중 ws-level 데이터로 결정 가능한 case 만 표시. dot 은 항상 렌더하고
             // 색만 상태별로 분기한다 (디자인 StatusDot 은 idle 에도 점을 그림).
@@ -1518,7 +1542,7 @@ fn draw_workspace_card(
                     ui.painter().circle_stroke(
                         dot_rect.center(),
                         6.25,
-                        egui::Stroke::new(1.5, th.border_attached()),
+                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {

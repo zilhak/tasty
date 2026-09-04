@@ -15,6 +15,7 @@
 //! 통해 이 경로에서만 일어난다(release IPC/에이전트 경로엔 없음). self(loopback) attach 는
 //! release 에서 `dispatch_pending_gui_attach` 게이트가 차단한다(원칙 1②).
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -43,6 +44,9 @@ const ATTACH_KIND: &str = "tasty-attach";
 const LEFT_W: f32 = 240.0;
 const HEADER_H: f32 = 47.0;
 const FOOTER_H: f32 = 49.0;
+
+// 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
+use tasty_ui_widgets::tokens::{CENTER_GLYPH_SIZE, STRUCT_GAP_2};
 const CAPS_H: f32 = 30.0;
 const PROFILE_ROW_H: f32 = 50.0;
 const WS_ROW_H: f32 = 34.0;
@@ -294,9 +298,11 @@ fn spawn_browse(ctx: &egui::Context, profile: String) -> BrowseJob {
                 workspaces,
             })
         })();
-        if let Ok(mut g) = slot_w.lock() {
-            *g = Some(res);
-        }
+        *crate::poison::recover_mutex(
+            slot_w.lock(),
+            BROWSE_SLOT_WHAT,
+            &BROWSE_SLOT_POISON_REPORTED,
+        ) = Some(res);
         ctx_w.request_repaint();
     });
     BrowseJob {
@@ -330,14 +336,32 @@ fn poll_decision(slot_filled: bool, elapsed: Duration, deadline: Duration) -> Po
     }
 }
 
+/// 조회 슬롯 · 생성 슬롯 · 터널 슬롯의 poison 을 각각 첫 1 회만 보고한다.
+///
+/// 세 락 모두 임계구역이 `Option<_>` 한 칸이라 패닉이 나도 불변식이 성립한다 — 복구가
+/// 맞다. 반대로 여기서 패닉하면 폴링이 **메인(렌더) 스레드**라 모든 창이 죽는다.
+/// 조용히 버리면 사용자에게는 "왜인지 모르게 시간 초과" 나 "Connect 를 눌렀는데
+/// 아무 일도 안 일어남" 으로만 보인다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
+static BROWSE_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static CREATE_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static READY_CONN_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+const BROWSE_SLOT_WHAT: &str = "remote attach browse slot";
+const CREATE_SLOT_WHAT: &str = "remote attach create slot";
+const READY_CONN_WHAT: &str = "remote attach ready connection";
+
 /// 워커 완료/상한 폴링 — 완료 시 job → conn(+ready) 전이. 재렌더당 1회.
 ///
 /// Connecting 상태에서는 Spinner 가 매 프레임 repaint 를 요청하므로 경과 시간 판정이
 /// 매 프레임 돈다.
 fn poll_browse(st: &mut UiState, deadline: Duration) {
     let Some(job) = st.job.as_ref() else { return };
-    // 뮤텍스가 poisoned 면 결과를 못 읽으므로 채워진 것으로 보고 아래에서 에러 전이.
-    let filled = job.slot.lock().map(|g| g.is_some()).unwrap_or(true);
+    let filled = crate::poison::recover_mutex(
+        job.slot.lock(),
+        BROWSE_SLOT_WHAT,
+        &BROWSE_SLOT_POISON_REPORTED,
+    )
+    .is_some();
     match poll_decision(filled, job.started_at.elapsed(), deadline) {
         PollDecision::Wait => return,
         PollDecision::TimedOut => {
@@ -351,7 +375,12 @@ fn poll_browse(st: &mut UiState, deadline: Duration) {
         PollDecision::Take => {}
     }
     let Some(job) = st.job.take() else { return };
-    let outcome = job.slot.lock().ok().and_then(|mut g| g.take());
+    let outcome = crate::poison::recover_mutex(
+        job.slot.lock(),
+        BROWSE_SLOT_WHAT,
+        &BROWSE_SLOT_POISON_REPORTED,
+    )
+    .take();
     match outcome {
         Some(Ok(ok)) => {
             // 원격에 ws 가 없으면 "+ 새 워크스페이스" 행을 **미리 선택**해 둔다 — pane
@@ -398,9 +427,11 @@ fn spawn_create(ctx: &egui::Context, port: u16) -> CreateJob {
                     .map(|n| n as u32)
                     .ok_or_else(|| t("remote_attach.create_failed_generic").to_string())
             });
-        if let Ok(mut g) = slot_w.lock() {
-            *g = Some(res);
-        }
+        *crate::poison::recover_mutex(
+            slot_w.lock(),
+            CREATE_SLOT_WHAT,
+            &CREATE_SLOT_POISON_REPORTED,
+        ) = Some(res);
         ctx_w.request_repaint();
     });
     CreateJob {
@@ -418,11 +449,11 @@ fn start_create(ctx: &egui::Context, st: &mut UiState) {
     if st.create.is_some() {
         return;
     }
-    let Some(port) = st
-        .ready
-        .as_ref()
-        .and_then(|a| a.lock().ok().and_then(|g| g.as_ref().map(|r| r.port)))
-    else {
+    let Some(port) = st.ready.as_ref().and_then(|a| {
+        crate::poison::recover_mutex(a.lock(), READY_CONN_WHAT, &READY_CONN_POISON_REPORTED)
+            .as_ref()
+            .map(|r| r.port)
+    }) else {
         st.phase = NewWsPhase::Failed(t("remote_attach.error_generic").to_string());
         return;
     };
@@ -438,7 +469,12 @@ fn start_create(ctx: &egui::Context, st: &mut UiState) {
 /// 경과 시간만으로 Creating 을 벗어난다.
 fn poll_create(st: &mut UiState, deadline: Duration) -> Option<u32> {
     let job = st.create.as_ref()?;
-    let filled = job.slot.lock().map(|g| g.is_some()).unwrap_or(true);
+    let filled = crate::poison::recover_mutex(
+        job.slot.lock(),
+        CREATE_SLOT_WHAT,
+        &CREATE_SLOT_POISON_REPORTED,
+    )
+    .is_some();
     match poll_decision(filled, job.started_at.elapsed(), deadline) {
         PollDecision::Wait => return None,
         PollDecision::TimedOut => {
@@ -452,7 +488,13 @@ fn poll_create(st: &mut UiState, deadline: Duration) -> Option<u32> {
         PollDecision::Take => {}
     }
     let job = st.create.take()?;
-    match job.slot.lock().ok().and_then(|mut g| g.take()) {
+    match crate::poison::recover_mutex(
+        job.slot.lock(),
+        CREATE_SLOT_WHAT,
+        &CREATE_SLOT_POISON_REPORTED,
+    )
+    .take()
+    {
         Some(Ok(id)) => Some(id),
         Some(Err(e)) => {
             st.phase = NewWsPhase::Failed(e);
@@ -475,7 +517,12 @@ fn push_attach(engine: &mut CoreState, st: &mut UiState, workspace: u32) {
     let Some(ready_arc) = st.ready.take() else {
         return;
     };
-    let Some(ReadyConn { port, tunnel }) = ready_arc.lock().ok().and_then(|mut g| g.take()) else {
+    let Some(ReadyConn { port, tunnel }) = crate::poison::recover_mutex(
+        ready_arc.lock(),
+        READY_CONN_WHAT,
+        &READY_CONN_POISON_REPORTED,
+    )
+    .take() else {
         return;
     };
     engine
@@ -683,7 +730,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
-    child.add(icons::TERMINAL_PROMPT.image(16.0, th.text_muted().into()));
+    child.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
     child.label(
         egui::RichText::new(t("remote_attach.heading"))
             .color(th.text_primary())
@@ -693,8 +740,10 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if ui
             .add(
-                egui::ImageButton::new(icons::CLOSE.image(16.0, th.text_muted().into()))
-                    .frame(false),
+                egui::ImageButton::new(
+                    icons::CLOSE.image(th.icon_glyph_size_md.value(), th.text_muted().into()),
+                )
+                .frame(false),
             )
             .on_hover_text(t("remote_attach.close"))
             .clicked()
@@ -800,7 +849,7 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
         egui::pos2(inner.left(), rect.top()),
         egui::pos2(inner.right(), rect.bottom()),
     ));
-    child.spacing_mut().item_spacing.y = 2.0;
+    child.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
     child.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let name_c = if selected {
@@ -1348,11 +1397,11 @@ fn center_state(
     col.spacing_mut().item_spacing.y = th.spacing_sm.value();
     match kind {
         CenterKind::Glyph(g, c) => {
-            col.add(g.image(22.0, c));
+            col.add(g.image(CENTER_GLYPH_SIZE, c));
         }
         CenterKind::Spinner => {
             tasty_ui_widgets::Spinner::new()
-                .size(22.0)
+                .size(CENTER_GLYPH_SIZE)
                 .show(&mut col, th);
         }
     }
@@ -1489,7 +1538,10 @@ fn badge(
         .painter()
         .layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER);
     let pad_x = th.spacing_sm.value();
-    let icon_w = if warn_icon { 12.0 + 4.0 } else { 0.0 };
+    // 아이콘 폭 + 라벨과의 간격. 아래 그리기·전진과 **같은 값**이어야 한다.
+    let icon_sz = th.icon_glyph_size_xs.value();
+    let icon_gap = th.spacing_xs.value();
+    let icon_w = if warn_icon { icon_sz + icon_gap } else { 0.0 };
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
@@ -1504,11 +1556,11 @@ fn badge(
     let mut tx = rect.left() + pad_x;
     if warn_icon {
         let ir = egui::Rect::from_min_size(
-            egui::pos2(tx, rect.center().y - 6.0),
-            egui::vec2(12.0, 12.0),
+            egui::pos2(tx, rect.center().y - icon_sz * 0.5),
+            egui::vec2(icon_sz, icon_sz),
         );
-        icons::ALERT_TRIANGLE.image(12.0, color).paint_at(ui, ir);
-        tx += 12.0 + 4.0;
+        icons::ALERT_TRIANGLE.image(icon_sz, color).paint_at(ui, ir);
+        tx += icon_sz + icon_gap;
     }
     ui.painter().galley(
         egui::pos2(tx, rect.center().y - galley.rect.height() * 0.5),
@@ -1528,6 +1580,53 @@ mod tests {
             started_at,
             cancel: SshCancel::new(),
         }
+    }
+
+    /// 슬롯이 poison 돼도 조회 결과가 화면까지 온다.
+    ///
+    /// 조용히 버리는 구현이면 `filled` 판정이 "채워졌다" 로 fallback 한 뒤 take 가
+    /// `None` 을 돌려줘, 결과가 있는데도 일반 오류로 떨어진다 — 사용자에게는 원인
+    /// 없는 실패로 보인다.
+    ///
+    /// **자동 실행 채널이 하나뿐이다.** 이 테스트는 `src/adapters/mod.rs` 의
+    /// `#[cfg(feature = "gui")] pub mod ui;` 안에 있어 `--no-default-features` 조합에서는
+    /// 컴파일 단계에 통째로 사라진다 — 헤드리스 잡의 초록은 이 테스트가 돌았다는 뜻이
+    /// 아니다(없는 테스트는 실패하지 못한다). 실측: 두 자동 잡의 명령을 워크플로에서
+    /// 그대로 읽어 `-- --list` 이름을 대조하면 기본 조합에만 뜬다. 팝업 상태를 직접
+    /// 쥐고 도는 테스트라 gui 밖으로 옮길 대상이 없어 고칠 수 있는 결함이 아니고,
+    /// 사실을 적어 두는 것이 맞는 처리다.
+    #[test]
+    fn a_poisoned_browse_slot_still_delivers_the_workspace_list() {
+        let mut st = UiState {
+            attach_sel: Some("loopback".into()),
+            conn: Conn::Connecting,
+            job: Some(test_job(Instant::now())),
+            ..Default::default()
+        };
+        let slot = Arc::clone(&st.job.as_ref().unwrap().slot);
+        *slot.lock().unwrap() = Some(Ok(BrowseOk {
+            port: 4321,
+            tunnel: None,
+            workspaces: Vec::new(),
+        }));
+
+        let poisoner = Arc::clone(&slot);
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh lock");
+            panic!("poison the browse slot on purpose");
+        })
+        .join();
+        assert!(
+            slot.is_poisoned(),
+            "락이 실제로 poison 됐어야 전제가 성립한다"
+        );
+
+        poll_browse(&mut st, BROWSE_DEADLINE);
+        assert!(
+            matches!(st.conn, Conn::Loaded(ref ws) if ws.is_empty()),
+            "poison 이후에도 조회 결과가 그대로 반영돼야 한다"
+        );
     }
 
     /// 워커가 결과를 채우지 않아도 상한 경과 후 Connecting 을 벗어난다(무한 로딩 회귀

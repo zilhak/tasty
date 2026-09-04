@@ -31,12 +31,19 @@ use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
-use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4};
+use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, Table, TableAlign,
     TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, hspace, margin_sym,
     status_dot, tag, vspace,
 };
+
+/// popup 좌우 안쪽 여백. 디자인 전사값 14 로 4px 그리드 밖이다(가장 가까운
+/// `spacing_md`=12 와 2px 차) — 헤더·필터·리스트·푸터가 같은 세로선에 서야 해서
+/// 한 값을 공유한다. `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+const PANEL_PAD_X: i8 = 14;
+/// 푸터 상하 여백. 디자인 전사값 9 로 그리드 밖이다(`spacing_sm`=8 과 1px 차).
+const FOOTER_PAD_Y: i8 = 9;
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
@@ -1023,10 +1030,10 @@ pub fn draw_port_scanner_view(
     // 헤더 — 디자인 padding 12 14 + borderBottom.
     let h_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
-            top: 12,
-            bottom: 12,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
+            top: props.theme.spacing_md.value() as i8,
+            bottom: props.theme.spacing_md.value() as i8,
         })
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
@@ -1048,10 +1055,10 @@ pub fn draw_port_scanner_view(
     // 필터 행 — 디자인 padding 8 14 + borderBottom.
     let f_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
-            top: 8,
-            bottom: 8,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
+            top: props.theme.spacing_sm.value() as i8,
+            bottom: props.theme.spacing_sm.value() as i8,
         })
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
@@ -1080,10 +1087,10 @@ pub fn draw_port_scanner_view(
         .resizable(false)
         .show_separator_line(false)
         .frame(egui::Frame::NONE.inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
-            top: 9,
-            bottom: 9,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
+            top: FOOTER_PAD_Y,
+            bottom: FOOTER_PAD_Y,
         }))
         .show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
@@ -1213,7 +1220,7 @@ fn header_tag_text(props: &PortScannerProps<'_>) -> Option<String> {
 fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
     egui::Frame::default()
         .fill(th.accent_primary().into())
-        .corner_radius(egui::CornerRadius::same(3))
+        .corner_radius(TAG_PILL_CORNER_RADIUS)
         // structural: 검색줄 control-internal nudge (size-4/size-1), spacing 리듬 아님.
         .inner_margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_1))
         .show(ui, |ui| {
@@ -1236,7 +1243,7 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     ui.style_mut().interaction.selectable_labels = false;
     ui.horizontal(|ui| {
         // B1: leading 포트 아이콘.
-        ui.add(icons::PORT.image(16.0, th.text_muted().into()));
+        ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
             egui::RichText::new(props.label_heading)
                 .color(th.text_primary())
@@ -1253,7 +1260,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, th, &|ui, rect, c| {
-                    icons::CLOSE.image(16.0, c).paint_at(ui, rect)
+                    icons::CLOSE
+                        .image(th.icon_glyph_size_md.value(), c)
+                        .paint_at(ui, rect)
                 })
                 .on_hover_text(props.label_close)
                 .clicked()
@@ -1264,7 +1273,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, th, &|ui, rect, c| {
-                    icons::REFRESH.image(16.0, c).paint_at(ui, rect)
+                    icons::REFRESH
+                        .image(th.icon_glyph_size_md.value(), c)
+                        .paint_at(ui, rect)
                 })
                 .on_hover_text(props.label_refresh)
                 .clicked()
@@ -1281,7 +1292,11 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             let resp = Input::new()
                 .placeholder(props.label_search_placeholder)
                 .width(200.0)
-                .icon(&|ui, rect, c| icons::SEARCH.image(15.0, c).paint_at(ui, rect))
+                .icon(&|ui, rect, c| {
+                    icons::SEARCH
+                        .image(th.icon_glyph_size_row_action.value(), c)
+                        .paint_at(ui, rect)
+                })
                 .show(ui, th, &mut buf);
             if resp.changed() && buf != props.filter.query {
                 out = Some(PortScannerAction::SetQuery(buf));
@@ -1319,7 +1334,9 @@ fn draw_column_chooser(
     let resp = IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .show(ui, th, &|ui, rect, c| {
-            icons::COLUMNS.image(16.0, c).paint_at(ui, rect)
+            icons::COLUMNS
+                .image(th.icon_glyph_size_md.value(), c)
+                .paint_at(ui, rect)
         })
         .on_hover_text(props.label_columns_button);
 
@@ -1407,7 +1424,7 @@ fn state_filter_button(
     };
     ui.add(
         egui::Button::image_and_text(
-            icons::FUNNEL.image(14.0, text_col),
+            icons::FUNNEL.image(th.icon_glyph_size_sm.value(), text_col),
             egui::RichText::new(label)
                 .color(text_col)
                 .size(th.font_size_body.value()),
@@ -1596,6 +1613,10 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
 /// 확정값이라 `column_layout` 의 다른 컬럼 최소폭들과 같은 방식으로 리터럴 유지.
 const FAV_COL_WIDTH: f32 = 28.0;
 
+/// 로딩 줄 스피너의 한 변. 값은 아이콘 스케일 md(16)와 같지만 아이콘 글리프가 아니라
+/// 스피너 지름이라 그 토큰을 쓰지 않고 이름을 따로 둔다.
+const LOADING_SPINNER_SIZE: f32 = 16.0;
+
 /// 즐겨찾기 리스트 스크롤 cap(design "5행 × 22px = 110 ≤ 112 cap") — 5행이 꽉 채워도
 /// 스크롤 시작 전 여유 2px 를 남겨 스크롤 가능함을 암시한다.
 const FAVORITES_LIST_MAX_H: f32 = 112.0;
@@ -1640,8 +1661,8 @@ fn draw_favorites_section(
     let ir = egui::Frame::NONE
         .fill(th.bg_sidebar().into())
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
             top: 0,
             bottom: 0,
         })
@@ -1825,7 +1846,11 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         // 않게 한다(세 상태 모두 같은 위치에 뜨는 게 사용자가 기대하는 동작).
         vspace(ui, th.spacing_xl * 2.0);
         ui.horizontal(|ui| {
-            ui.add(egui::Spinner::new().size(16.0).color(th.text_muted()));
+            ui.add(
+                egui::Spinner::new()
+                    .size(LOADING_SPINNER_SIZE)
+                    .color(th.text_muted()),
+            );
             ui.label(
                 egui::RichText::new(props.label_loading)
                     .color(th.text_muted())

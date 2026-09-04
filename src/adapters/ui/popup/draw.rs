@@ -680,6 +680,9 @@ impl PopupManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // 픽스처 폰트도 토큰에서 가져온다 — `Theme` 인스턴스가 없는 순수 유닛테스트라
+    // zoom 적용 전 원본 상수(`SIZING`)를 쓴다.
+    use tasty_type_appearance::theme::SIZING;
 
     /// `ctx.fonts()` 는 최소 한 프레임(`run`)이 지나야 폰트 정의가 로드된다.
     fn with_ctx<R>(f: impl FnOnce(&egui::Context) -> R) -> R {
@@ -695,7 +698,7 @@ mod tests {
     #[test]
     fn elide_for_width_keeps_short_text_untouched() {
         with_ctx(|ctx| {
-            let font = egui::FontId::proportional(14.0);
+            let font = egui::FontId::proportional(SIZING.font_size_max.value());
             let text = "짧은 제목";
             assert_eq!(elide_for_width(ctx, text, font, 1000.0), text);
         });
@@ -704,7 +707,7 @@ mod tests {
     #[test]
     fn elide_for_width_truncates_long_text_with_ellipsis() {
         with_ctx(|ctx| {
-            let font = egui::FontId::proportional(14.0);
+            let font = egui::FontId::proportional(SIZING.font_size_max.value());
             let text =
                 "파일 핸들러 선택: /Users/ljh/workspace/etc/teams-mcp-very-long-path/Cargo.toml";
             let result = elide_for_width(ctx, text, font, 40.0);
@@ -716,7 +719,7 @@ mod tests {
     #[test]
     fn elide_for_width_zero_or_negative_width_returns_empty() {
         with_ctx(|ctx| {
-            let font = egui::FontId::proportional(14.0);
+            let font = egui::FontId::proportional(SIZING.font_size_max.value());
             assert_eq!(elide_for_width(ctx, "anything", font.clone(), 0.0), "");
             assert_eq!(elide_for_width(ctx, "anything", font, -5.0), "");
         });

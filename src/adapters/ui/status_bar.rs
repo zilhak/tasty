@@ -64,9 +64,10 @@ pub fn draw_status_bar(
     let bar_h_logical = th.status_bar_height.value();
 
     // 작업 컬럼 하단 strip 의 logical 사각형.
-    let x = (terminal_rect.x.value() / scale_factor).round_ui();
-    let y = ((terminal_rect.y.value() + terminal_rect.height.value()) / scale_factor).round_ui();
-    let w = (terminal_rect.width.value() / scale_factor).round_ui();
+    let logical = terminal_rect.to_logical(scale_factor);
+    let x = logical.x.value().round_ui();
+    let y = (logical.y + logical.height).value().round_ui();
+    let w = logical.width.value().round_ui();
     let rect = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, bar_h_logical));
 
     // ── 데이터 추출 (immutable read) ──

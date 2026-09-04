@@ -1,15 +1,38 @@
+//! macOS 입력기 조작 — **debug 전용**.
+//!
+//! 두 핸들러 모두 tasty 프로세스 밖 **OS 전역 입력 상태** 를 건드린다
+//! (`CGEventPost` 로 이벤트 스트림에 키 주입 / `TISSelectInputSource` 로 시스템
+//! 입력 소스 전환). 대상 surface 를 받을 수단이 없어 "그 순간 OS 포커스를 가진
+//! 무엇" 이 결과를 받으며, 이는 사용자가 키보드·입력기 메뉴로 하는 조작의
+//! 재현이다. 따라서 identity 원칙 1 ②에 따라 release 표면에 두지 않고,
+//! `debug.inject_key` 와 같은 `--enable-input-simulation` 런타임 게이트를 함께
+//! 건다. 결정 근거는
+//! [`docs/adr/0115-input-reproduction-ipc-debug-isolation.md`].
+//!
+//! 이 모듈 선언(`handler.rs`)은 `#[cfg(all(debug_assertions, target_os = "macos",
+//! feature = "gui"))]` 이라 release·비-macOS·headless 빌드에서 통째로 사라진다.
+
 use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
+use super::debug::require_input_simulation;
 use crate::macos_permissions::{RawKeyDecision, accessibility_trusted, raw_key_decision};
+use crate::state::AppState;
 
 /// Switch the macOS input source (e.g. "com.apple.keylayout.ABC" or
 /// "com.apple.inputmethod.Korean.2SetKorean").
+///
+/// 시스템 전역 입력 소스를 바꾸므로 `--enable-input-simulation` 게이트를 지난다.
 pub fn handle_switch_input_source(
+    state: &AppState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    if let Err(e) = require_input_simulation(state, engine, &id) {
+        return e;
+    }
     let source_id = match params.get("source_id").and_then(|v| v.as_str()) {
         Some(s) => s,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'source_id' parameter"),
@@ -32,7 +55,15 @@ pub fn handle_switch_input_source(
 /// 본다. 그래서 주입 전에 권한을 확인하고 미승인이면 에러로 답한다. 확인은 **호출
 /// 시점마다** 한다 — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼 경우를 잘못
 /// 판정하고, 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있다.
-pub fn handle_raw_key(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+pub fn handle_raw_key(
+    state: &AppState,
+    engine: &crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    if let Err(e) = require_input_simulation(state, engine, &id) {
+        return e;
+    }
     let keycode = match params.get("keycode").and_then(|v| v.as_u64()) {
         Some(k) if k <= u16::MAX as u64 => k as u16,
         _ => return JsonRpcResponse::invalid_params(id, "Missing or invalid 'keycode' (u16)"),
@@ -174,7 +205,8 @@ fn switch_input_source(source_id: &str) -> Result<(), String> {
 fn post_key_event(keycode: u16, key_down: bool) {
     // SAFETY: CGEventSourceCreate → CGEventCreateKeyboardEvent → CGEventPost는 CoreGraphics
     // 표준 키 시뮬레이션 패턴. 반환된 source/event는 CF object로 ARC 없이는 leak되지만,
-    // 이는 debug-only `debug.raw_key` 경로에서 호출되어 leak 영향이 미미하고 별도 fix 대상.
+    // 이 모듈은 debug 빌드에서만 컴파일되는 `surface.raw_key` 경로 전용이라 leak
+    // 영향이 미미하고 별도 fix 대상.
     // 본 SAFETY 보증 범위는 호출 자체의 UB 부재.
     // CG 시퀀스가 한 단위라 분할 시 가독성 저하.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -191,10 +223,10 @@ fn post_key_event(keycode: u16, key_down: bool) {
 mod tests {
     // `switch_input_source`/`handle_switch_input_source` 둘 다 실제 TIS/CoreFoundation
     // FFI 호출을 포함해 macOS 실기 없이는 호출 불가 — 이 모듈 자체가 이 파일과 함께
-    // `#[cfg(all(target_os = "macos", feature = "gui"))]`로 게이트돼 있다(선언부는
-    // `handler.rs`). 두 함수가 공유하는 NUL 가드 판정(`source_id.contains('\0')`)만
-    // 순수 로직이라 여기서 pin — 실제 크래시 재현/복구 확인은 macOS 실기 수동 검증
-    // 필수(TODO 문서 "확인 절차" §2).
+    // `#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]` 로 게이트돼
+    // 있다(선언부는 `handler.rs`). 두 함수가 공유하는 NUL 가드
+    // 판정(`source_id.contains('\0')`)만 순수 로직이라 여기서 pin — 실제 크래시
+    // 재현/복구 확인은 macOS 실기 수동 검증이 필요하다.
     #[test]
     fn nul_byte_source_id_is_rejected() {
         assert!("abc\0def".contains('\0'));

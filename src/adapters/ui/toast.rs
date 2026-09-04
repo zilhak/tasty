@@ -46,20 +46,18 @@ const MAX_PER_SCOPE: usize = 5;
 /// 토스트 본문 최대 문자 수(유니코드 char 기준, 바이트 아님). 초과 시 앞
 /// `MAX_MESSAGE_CHARS` 자만 남기고 줄바꿈 + 안내 접미를 붙인다 — 비정상적으로
 /// 긴 입력(경로/에러/plugin 텍스트)이 토스트를 세로로 폭주시키는 것을 막는다.
-const MAX_MESSAGE_CHARS: usize = 200;
-/// 토스트 사이 세로 간격 (px).
-const TOAST_GAP: f32 = 6.0;
-/// 스코프 가장자리에서의 안쪽 여백 (px).
-const SCOPE_MARGIN: f32 = 12.0;
-/// 본문 텍스트의 좌우/상하 여백 (px).
-const PADDING_X: f32 = 12.0;
-const PADDING_Y: f32 = 8.0;
-/// 좌측 컬러 바 두께 (px).
-const ACCENT_BAR_WIDTH: f32 = 4.0;
-/// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
-/// `wrap_width`(= max_width - PADDING_X*2 - ACCENT_BAR_WIDTH)가 음수가 되지 않도록
-/// 최소 한 글자 분량의 여유를 보장한다.
-const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
+///
+/// 값은 [`crate::i18n::TOAST_MAX_CHARS`] 에서 온다. 캡에 맞춰 문구를 **만드는** 쪽
+/// (`tasty-i18n` 의 `fit_fragment`/`t_fmt_fit`)과 캡을 **집행하는** 여기가 서로 다른
+/// 상수를 들면, 한쪽만 바뀐 순간 "맞췄는데 잘리는" 상태가 조용히 생긴다.
+const MAX_MESSAGE_CHARS: usize = crate::i18n::TOAST_MAX_CHARS;
+// 카드 구조 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리 specimen 이
+// 같은 상수를 읽는다. 여기서 다시 정의하면 값이 갈릴 수 있는 구조가 되살아난다.
+use tasty_ui_widgets::tokens::{
+    TOAST_ACCENT_BAR_WIDTH as ACCENT_BAR_WIDTH, TOAST_GAP,
+    TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
+    TOAST_PADDING_X as PADDING_X, TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+};
 
 /// View 입력 — 그릴 준비가 끝난 토스트 1 개의 시각 데이터.
 ///
@@ -123,7 +121,9 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
             // 0.8*width < width-2*margin (width>120) 이라 0.8 폭이 그대로 — 시각
             // 무변경이고, 좁은 surface 에서만 클램프가 발동한다.
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
+            let max_width = (scope_rect.width() * 0.8)
+                .max(TOAST_MIN_MAX_WIDTH)
+                .min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
             // wrap_width 음수 방지(클램프로 max_width 가 작아질 때).
             let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
@@ -264,6 +264,14 @@ impl ToastManager {
         }
     }
 
+    /// 지금 떠 있는 토스트 수. **테스트 전용** — 부수효과 게이트(예: 창 없는 parked
+    /// engine 에는 토스트를 쌓지 않는다)를 단언하려면 개수를 볼 수 있어야 한다.
+    /// 프로덕션 표면을 넓히지 않으려고 `cfg(test)` 로 묶는다.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.toasts.len()
+    }
+
     /// 편의 헬퍼: Info 토스트.
     pub fn push_info(&mut self, message: impl Into<String>, scope: ToastScope) {
         self.push(message, ToastKind::Info, scope);
@@ -389,7 +397,9 @@ pub fn compute_alpha(t: &ToastState, now: Instant, reduced_motion: bool) -> f32 
 /// - 길이는 `chars().count()`(문자 수), 자르기는 `chars().take(..)`(char 경계)로
 ///   처리해 멀티바이트(한글/일문 등)에서 바이트 슬라이싱 panic 을 피한다.
 /// - 경계 정책: 원본이 `MAX_MESSAGE_CHARS` 를 *초과* 할 때만 자른다(정확히 같거나
-///   이하는 변경 없음). 접미는 본문 200자 *바깥* 에 추가로 붙는다.
+///   이하는 변경 없음). 접미는 캡 *바깥* 에 추가로 붙는다.
+/// - 접미가 말하는 숫자는 캡 상수에서 나온다 — 번역문에 숫자를 적어 두면 캡을 조정한
+///   순간 세 로케일이 전부 거짓말을 한다.
 /// - coalesce 비교 이전(push 진입부)에 적용되므로 같은 긴 메시지는 동일하게
 ///   잘려 정상 coalesce 된다.
 fn truncate_message(message: String) -> String {
@@ -397,7 +407,7 @@ fn truncate_message(message: String) -> String {
         return message;
     }
     let truncated: String = message.chars().take(MAX_MESSAGE_CHARS).collect();
-    let notice = crate::i18n::t("toast.char_limit_notice");
+    let notice = crate::i18n::t_fmt("toast.char_limit_notice", &MAX_MESSAGE_CHARS.to_string());
     format!("{truncated}\n{notice}")
 }
 
