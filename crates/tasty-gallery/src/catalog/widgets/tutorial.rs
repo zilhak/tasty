@@ -12,8 +12,16 @@
 //! 색·폰트·선굵기·간격·반경은 전부 `Theme` 토큰에서 가져온다. 재사용되는 구조 치수는
 //! **이름 붙인 상수**로 뽑았다 — 컴포넌트 박스 고정폭(244/360, `dialog::frame_card` 의
 //! `240.0` 관례)과 `paint_faux_app` 무대 비율(`FAUX_*` 사이드바·상태바·행; 탭바 높이는
-//! 값 복제를 피해 `theme.tab_bar_height` 를 따라간다). 그 밖에 한 지점에서만 쓰는 국소
-//! 배치 오프셋(말풍선 tail·데모 박스 치수 등)은 각 그리기 지점에 인라인으로 둔다.
+//! 값 복제를 피해 `theme.tab_bar_height` 를 따라간다). 말풍선 tail 오프셋과 marker 데모
+//! 무대도 여러 지점이 나눠 쓰므로 이름을 붙였다(`TAIL_OFFSET_*` · `MARKER_DEMO_*`).
+//!
+//! 한 지점에서만 쓰는 국소 배치 오프셋은 각 그리기 지점에 인라인으로 둔다. 그중 4px
+//! 그리드 밖인 것(dot rail 지름 5, 팝업 그림자 여백 10)은 그 자리에 이유를 적었다 —
+//! 그리드에 맞추면 원 중심이 픽셀에서 벗어나거나 그림자가 잘린다.
+//!
+//! 다른 값에서 파생되는 자리는 값을 복제하지 않는다. composite 데모의 마커 왼쪽
+//! 경계는 `faux_sidebar_w()` + 행 인셋으로 계산한다 — `116 + 8` 을 적어 두면 무대가
+//! 좁아 사이드바가 클램프될 때 마커가 경계를 넘는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
@@ -25,6 +33,22 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 const CALLOUT_W: f32 = 244.0;
 const POPUP_W: f32 = 360.0;
 const TAIL: f32 = 12.0; // 12px diamond → 삼각 tail
+
+// ── 재사용되는 국소 구조 값 (모듈 문서의 규칙: 재사용되면 이름을 붙인다) ─────
+// jsx tail offset — 위/아래 tail 은 말풍선 왼쪽에서 28, 좌/우 tail 은 위에서 24.
+// 네 방향 tail 이 두 값을 나눠 쓰므로 한 지점 오프셋이 아니다.
+const TAIL_OFFSET_X: f32 = 28.0;
+const TAIL_OFFSET_Y: f32 = 24.0;
+
+// marker 데모 박스 — ring 변형과 glow 변형이 같은 무대를 쓴다. 두 specimen 이
+// 같은 비율을 보여야 비교가 성립하므로 값을 공유한다. `FAUX_ROW_H` 와 아래
+// `MARKER_DEMO_INSET_B` 가 둘 다 22 인 것은 우연이라 서로 참조하지 않는다.
+const MARKER_DEMO_W: f32 = 260.0;
+const MARKER_DEMO_H: f32 = 150.0;
+const MARKER_DEMO_INSET_L: f32 = 34.0;
+const MARKER_DEMO_INSET_T: f32 = 38.0;
+const MARKER_DEMO_INSET_R: f32 = 16.0;
+const MARKER_DEMO_INSET_B: f32 = 22.0;
 
 // ── faux app 셸 (jsx `App`) ────────────────────────────────────────────────
 /// 마커가 그 위에 뜨는 가짜 앱 무대. jsx `App` 의 사이드바(116) + 탭바(24) +
@@ -41,13 +65,19 @@ const FAUX_DOT_R: f32 = 4.0;
 const FAUX_LABEL_GAP: f32 = 14.0;
 const FAUX_TEXT_PAD: f32 = 10.0;
 
+/// faux 무대의 사이드바 폭. 무대가 좁으면 절반으로 클램프된다 — 이 식을
+/// 복제하면 마커가 사이드바 경계에서 어긋나므로 한 곳에 둔다.
+fn faux_sidebar_w(r: egui::Rect) -> f32 {
+    FAUX_SIDEBAR_W.min(r.width() * 0.5)
+}
+
 fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     let sep = egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui());
     let inset = theme.spacing_sm.value(); // 8 — 행 좌우 인셋
     let cap = theme.font_size_caption.value(); // 11 — faux 앱 라벨 폰트
     // 본체 탭바 높이를 따라간다 — 값 복제(24) 대신 토큰(D5). 본체가 바뀌면 데모도 따라감.
     let tab_h = theme.tab_bar_height.value();
-    let sidebar_w = FAUX_SIDEBAR_W.min(r.width() * 0.5);
+    let sidebar_w = faux_sidebar_w(r);
 
     // ── 사이드바 (bg-sidebar, border-right) ──
     let side = egui::Rect::from_min_max(r.min, egui::pos2(r.min.x + sidebar_w, r.max.y));
@@ -254,6 +284,8 @@ fn callout(
                     } else {
                         theme.surface_active().to_egui()
                     };
+                    // dot rail — 지름 5(반지름 2.5). 4px 그리드 밖이지만 홀수여야
+                    // 중심이 픽셀에 맞아 원이 흐려지지 않는다.
                     let (r, _) = ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
                     ui.painter().circle_filled(r.center(), 2.5, c);
                 }
@@ -290,7 +322,7 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
     // jsx tail offset: up/down left:28, left/right top:24 (bubble 모서리에서의 위치).
     let (a, b, apex) = match tail {
         Tail::Up => {
-            let cx = bubble.min.x + 28.0;
+            let cx = bubble.min.x + TAIL_OFFSET_X;
             (
                 egui::pos2(cx - h, bubble.min.y),
                 egui::pos2(cx + h, bubble.min.y),
@@ -298,7 +330,7 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
             )
         }
         Tail::Down => {
-            let cx = bubble.min.x + 28.0;
+            let cx = bubble.min.x + TAIL_OFFSET_X;
             (
                 egui::pos2(cx - h, bubble.max.y),
                 egui::pos2(cx + h, bubble.max.y),
@@ -306,7 +338,7 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
             )
         }
         Tail::Left => {
-            let cy = bubble.min.y + 24.0;
+            let cy = bubble.min.y + TAIL_OFFSET_Y;
             (
                 egui::pos2(bubble.min.x, cy - h),
                 egui::pos2(bubble.min.x, cy + h),
@@ -314,7 +346,7 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
             )
         }
         Tail::Right => {
-            let cy = bubble.min.y + 24.0;
+            let cy = bubble.min.y + TAIL_OFFSET_Y;
             (
                 egui::pos2(bubble.max.x, cy - h),
                 egui::pos2(bubble.max.x, cy + h),
@@ -565,22 +597,22 @@ fn demo_box(
 pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "ring — solid 2px", |ui| {
-            demo_box(ui, theme, 260.0, 150.0, |p, r| {
+            demo_box(ui, theme, MARKER_DEMO_W, MARKER_DEMO_H, |p, r| {
                 paint_faux_app(p, r, theme);
                 let m = egui::Rect::from_min_max(
-                    egui::pos2(r.min.x + 34.0, r.min.y + 38.0),
-                    egui::pos2(r.max.x - 16.0, r.max.y - 22.0),
+                    egui::pos2(r.min.x + MARKER_DEMO_INSET_L, r.min.y + MARKER_DEMO_INSET_T),
+                    egui::pos2(r.max.x - MARKER_DEMO_INSET_R, r.max.y - MARKER_DEMO_INSET_B),
                 );
                 paint_marker(p, m, theme, false);
             });
         });
         spec::cluster(ui, theme, "glow + spotlight — default", |ui| {
-            demo_box(ui, theme, 260.0, 150.0, |p, r| {
+            demo_box(ui, theme, MARKER_DEMO_W, MARKER_DEMO_H, |p, r| {
                 paint_faux_app(p, r, theme);
                 paint_scrim(p, r, theme);
                 let m = egui::Rect::from_min_max(
-                    egui::pos2(r.min.x + 34.0, r.min.y + 38.0),
-                    egui::pos2(r.max.x - 16.0, r.max.y - 22.0),
+                    egui::pos2(r.min.x + MARKER_DEMO_INSET_L, r.min.y + MARKER_DEMO_INSET_T),
+                    egui::pos2(r.max.x - MARKER_DEMO_INSET_R, r.max.y - MARKER_DEMO_INSET_B),
                 );
                 paint_marker(p, m, theme, true);
             });
@@ -792,9 +824,13 @@ pub fn draw_composite(ui: &mut egui::Ui, theme: &Theme) {
             paint_faux_app(p, r, theme);
             paint_scrim(p, r, theme);
             // step 1 마커 = 콘텐츠 전체영역(사이드바 제외).
+            // 사이드바 오른쪽 경계 + 행 인셋에서 시작한다. 116+8 을 손으로 적으면
+            // 무대가 좁아 사이드바가 클램프될 때 마커가 경계를 넘는다.
+            let inset = theme.spacing_sm.value();
             let m = egui::Rect::from_min_max(
-                egui::pos2(r.min.x + 124.0, r.min.y + 8.0),
-                egui::pos2(r.max.x - 10.0, r.max.y - 8.0),
+                egui::pos2(r.min.x + faux_sidebar_w(r) + inset, r.min.y + inset),
+                // 오른쪽만 10 — 팝업 그림자 여백을 남기는 국소 값이라 그리드 밖이다.
+                egui::pos2(r.max.x - 10.0, r.max.y - inset),
             );
             paint_marker(p, m, theme, true);
         });
