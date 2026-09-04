@@ -21,7 +21,6 @@
 //! 나른다 — 상태 채널과 겹치지 않는 별개 축이다.
 
 use tasty_design_tokens::generated::component::dag::NODE_DIM_OPACITY;
-use tasty_design_tokens::generated::semantic::ICON_SIZE_SM;
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 
@@ -242,7 +241,7 @@ pub fn paint_node(
     let meta_font = egui::FontId::monospace(theme.dag_node_meta_font_size().value() * zoom);
     let gap = theme.dag_node_gap().value() * zoom;
     let row_gap = theme.dag_node_row_gap().value() * zoom;
-    let icon_side = ICON_SIZE_SM.value() * zoom;
+    let icon_side = theme.icon_glyph_size_sm.value() * zoom;
     let name_h = painter
         .ctx()
         .fonts(|f| f.row_height(&name_font))
