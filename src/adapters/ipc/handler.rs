@@ -419,10 +419,13 @@ fn hard_occupied_structural_guard(
 ) -> Option<JsonRpcResponse> {
     let ws_idx: usize = match method {
         "split" => {
+            // 자르지 않는다 — 자르면 `None` 이 아니라 **실재하는 다른 pane** 이 되어
+            // 라우팅이 성공한다. 범위 밖은 종전대로 대상 없음으로 흘려보내고, 그 뒤
+            // 핸들러의 `require_*` 가 이유를 붙여 거절한다.
             let target_pane = params
                 .get("target_pane")
                 .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
+                .and_then(|v| u32::try_from(v).ok());
             let target_surface = pane::resolve_surface_target(state, params);
             target_pane
                 .and_then(|pid| engine.find_workspace_index_for_pane(pid))
@@ -434,11 +437,12 @@ fn hard_occupied_structural_guard(
         }
         // 워크스페이스 통째 닫기 — 대상 자체가 workspace 라 id/index 를 그대로 쓴다.
         "workspace.close" => {
-            if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-                engine
-                    .workspaces
-                    .iter()
-                    .position(|w| w.id == ws_id as u32)?
+            if let Some(ws_id) = params
+                .get("id")
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u32::try_from(v).ok())
+            {
+                engine.workspaces.iter().position(|w| w.id == ws_id)?
             } else {
                 params.get("index").and_then(|v| v.as_u64())? as usize
             }
@@ -447,7 +451,7 @@ fn hard_occupied_structural_guard(
             let pane_id = params
                 .get("pane_id")
                 .and_then(|v| v.as_u64())
-                .map(|v| v as u32)?;
+                .and_then(|v| u32::try_from(v).ok())?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
         "tab.close" => {
@@ -462,7 +466,7 @@ fn hard_occupied_structural_guard(
             let surface_id = params
                 .get("surface_id")
                 .and_then(|v| v.as_u64())
-                .map(|v| v as u32)?;
+                .and_then(|v| u32::try_from(v).ok())?;
             engine
                 .find_workspace_index_for_surface(surface_id)
                 .map(|(i, _)| i)?
@@ -1240,13 +1244,12 @@ pub(super) fn require_surface_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    let raw = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .and_then(|v| u32::try_from(v).ok())
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'surface_id' parameter")
-        })?;
+    // 키가 없는 것과 값이 잘못된 것을 가른다 — 값이 왔는데 "missing" 이라고 답하면
+    // 호출자가 자기가 준 값을 안 의심한다(`handler/params.rs`).
+    let raw = match params::require_u32(params, "surface_id", id) {
+        Ok(v) => v,
+        Err(e) => return Err(e),
+    };
     if !crate::core::pty_registry::is_surface_id_space(raw) {
         return Err(JsonRpcResponse::invalid_params(
             id.clone(),
@@ -1261,13 +1264,7 @@ fn require_pane_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'pane_id' parameter")
-        })
+    params::require_u32(params, "pane_id", id)
 }
 
 /// Extract optional caller_surface_id from params.
