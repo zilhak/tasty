@@ -209,23 +209,28 @@ export DISPLAY XAUTHORITY
 ```
 
 **2. 창 id 는 `tasty list windows` 에서 받는다 — `xdotool search --pid` 로 고르지 않는다.**
-그 검색은 winit 의 입력 전용 더미 창까지 뱉는다(위 "모달 창의 ID"). 실측하면 창이 셋
-나오고, 그중 둘이 더미다:
+그 검색은 main 창이 아닌 작은 창들까지 뱉는다(위 "모달 창의 ID"). 실측하면 창이 셋
+나오고, 그중 둘이 main 창이 아니다:
 
 | `getwindowgeometry` | 정체 |
 |---|---|
 | 화면 크기와 같은 큰 값 | main 창 — 이것만 캡처·입력 대상이다 |
-| **16x16** | winit 입력 전용 더미 |
-| **10x10** | winit 입력 전용 더미 |
+| **16x16** (이름 `tray-icon tray app <pid>-N`) | 시스템 트레이 아이콘 창 |
+| **10x10** | GTK 내부 헬퍼 창 |
 
 아무 것이나 집으면 그 작은 값으로 포인터 좌표를 계산하게 되고, 음수가 나와
 `mousemove: unrecognized option '-104'` 로 끝난다 — 창을 잘못 골랐다는 신호다. main 창은
 IPC 가 직접 알려주므로 추측할 이유가 없다(X11 에서 winit `WindowId` = X11 window id).
 
-**두 더미창의 크기는 DPI 배율을 따라가지 않는다** — 배율 2 에서 main 창은 두 배가 되지만
-더미는 그대로 16x16 · 10x10 이다(실측). winit 이 X11 에 직접 만드는 창이라 tasty 의
-논리↔물리 변환을 거치지 않기 때문이다. 그래서 위 표의 두 값은 배율과 무관하게 그대로
-쓸 수 있다 — 배율을 바꿨다고 다시 잴 필요가 없다.
+**작은 창들의 크기를 판별 기준으로 삼지 않는다 — 그 값은 환경에 따라 변한다.** 이 둘은
+main 창과 **다른 X 클라이언트**(GTK 연결)에 속하고, 따라서 winit 의 DPI 배율이 아니라
+**GDK 의 배율**을 따른다. 실측: `WINIT_X11_SCALE_FACTOR=2` 만 주면 main 창만 두 배가 되고
+작은 창들은 16x16 · 10x10 그대로지만, 여기에 `GDK_SCALE=2` 를 더하면 작은 창들이
+**32x32 · 20x20** 이 된다. 위 표의 두 값은 `GDK_SCALE` 이 1 일 때의 값이다.
+
+**믿을 수 있는 판별은 크기가 아니라 출처다.** main 창은 `tasty list windows` 가 알려주고,
+X 리소스 id 대역도 갈린다 — main 창은 winit 의 연결(예 `0x2xxxxx`), 작은 창들과 GTK 가
+띄우는 네이티브 메뉴는 GTK 의 연결(예 `0xaxxxxx`)에 있다.
 
 **3. WM 이 없으므로 `windowactivate` 는 실패한다 — 그리고 필요도 없다.** 맨 Xvfb 에는 창
 관리자가 없어 `_NET_ACTIVE_WINDOW` 가 없고, `xdotool windowactivate` 는
