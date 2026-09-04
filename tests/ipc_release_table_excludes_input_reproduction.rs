@@ -46,11 +46,14 @@
 //! release 빌드에서는 `DEBUG_METHODS` 가 빈 슬라이스라 대조가 성립하지 않으므로
 //! `#![cfg(debug_assertions)]` 로 debug 에서만 돈다.
 //!
-//! **이 가드에는 자동 CI 채널이 없다.** 도는 곳은 두 군데뿐이다 — 작업 lane 이 로컬에서
-//! `cargo test --workspace --locked` 를 돌릴 때, 그리고 병합 후 main 에서 conductor 가
-//! 그것을 1 회 돌릴 때다. `test.yml` 의 전체 스위트 잡은 `workflow_dispatch` 전용이라
-//! push 로 돌지 않는다(채널 정본은 [ci-gates](../docs/dev-guide/ci-gates.md)).
-//! 따라서 이 가드를 근거로 검증을 건너뛰지 않는다.
+//! **채널 — 컴파일은 자동, 실행은 수동이다.** `tests/*.rs` 라 이 파일이 컴파일되는지는
+//! CI 가 자동으로 본다(`crossplatform-check.yml` 의 Windows `clippy --all-targets` 와
+//! headless `clippy --all-targets --no-default-features`). 하지만 **테스트를 실행하는**
+//! 잡은 `test.yml` 의 전체 스위트뿐이고 그건 `workflow_dispatch` 전용이라 push 로 돌지
+//! 않는다. 즉 이 가드의 **판정이 실제로 나는 곳은 둘** — 작업 lane 의 로컬
+//! `cargo test --workspace --locked`, 그리고 병합 후 main 에서의 1 회 실행이다
+//! (채널 정본은 [ci-gates](../docs/dev-guide/ci-gates.md)).
+//! 따라서 이 가드를 근거로 로컬 검증을 건너뛰지 않는다.
 #![cfg(debug_assertions)]
 
 use std::path::Path;

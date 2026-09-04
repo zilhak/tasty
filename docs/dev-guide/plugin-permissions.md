@@ -88,7 +88,7 @@
 
 **이것은 구멍이 아니라 정책이다.** 두 군 모두 "게이트를 빠뜨렸다" 가 아니라 그 자리에 게이트를 두지 않기로 한 결정이고, 특히 아래쪽 군은 SSH 접속 권한이 이미 그 이상을 허용하므로 별도 토큰을 만들지 않는다는 이 레포의 확립된 판단이다([ADR-0004](../adr/0004-ipc-transport-tcp.md)). 다만 그 사실이 **문서에 있어야** grant 화면을 보는 사용자와 매니페스트를 쓰는 plugin 작성자가 실제 개방 범위를 안다.
 
-위 표는 `tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 런타임 열거해 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다. 다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
+위 표는 `tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 런타임 열거해 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다. 이 문서의 다른 두 parity 가드와 마찬가지로 **CI 가 자동으로 실행하지는 않는다**(아래 [ci-gates](ci-gates.md) 언급 참조 — 스캔 가드라 컴파일 검사는 이 가드에 대해 아무것도 보장하지 않는다). 다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
 
 ### `network` — 여는 것 하나 + 정직한 선언
 
@@ -137,7 +137,7 @@ owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게
 2. `from_token`/`as_token` 매핑(scoped 면 `strip_prefix` + scope 검증 함수).
 3. `is_valid_<x>` 검증 함수 — **형식만**, owner 존재는 검증 안 함.
 4. runtime 게이트(`method_meta` 또는 manager) 배선.
-5. 이 문서의 [토큰 전체](#토큰-전체--무엇을-여나) 표 + [concepts/plugins](../concepts/plugins.md#권한-permissions) 나열 갱신 — `tests/permission_token_docs_parity.rs` 가 둘 다 CI 에서 강제한다.
+5. 이 문서의 [토큰 전체](#토큰-전체--무엇을-여나) 표 + [concepts/plugins](../concepts/plugins.md#권한-permissions) 나열 갱신 — `tests/permission_token_docs_parity.rs` 가 둘 다 강제한다. `tests/*.rs` 라 **컴파일은 CI 가 자동으로 보지만 실행 채널은 자동이 아니다**(스캔 가드라 컴파일 검사는 이 가드에 대해 아무것도 보장하지 않는다) — 판정이 나는 곳은 작업 lane 의 로컬 `cargo test --workspace --locked` 와 병합 후 main 에서의 1 회 실행이다([ci-gates](ci-gates.md)).
 
 `ipc.invoke`/`ext` 두 사례가 reference.
 
@@ -150,7 +150,7 @@ IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 
 
 게이트 목록의 단일 출처는 `crates/tasty-plugin-manifest/src/gates.rs` 의 `ContributesGate` 표다.
 `validate.rs` 의 검증 코드는 토큰 문자열을 그 표에서만 가져오고, `tests/contributes_gate_docs_parity.rs`
-가 표와 아래 행을 **양방향으로** 대조한다 — 코드에만 있는 게이트도, 문서에만 남은 행도 CI 에서 깨진다.
+가 표와 아래 행을 **양방향으로** 대조한다 — 코드에만 있는 게이트도, 문서에만 남은 행도 깨진다. 이것도 컴파일만 자동으로 검사되고 **실행 채널은 자동이 아닌** 가드다(위와 같다 — 스캔 가드라 컴파일 검사는 보장이 되지 않는다).
 
 | contributes | 요구 권한 |
 |-------------|-----------|
