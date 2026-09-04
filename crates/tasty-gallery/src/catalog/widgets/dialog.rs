@@ -7,13 +7,24 @@
 //! 보여주고(`draw`), 동시에 14 Spec 전부가 호출하는 frame/region/field 헬퍼를
 //! `pub` 으로 노출한다 (research §2.4 공통).
 //!
-//! 색·치수·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
+//! 색·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
 //! (`scrim-bg` black 50% / `shadow-modal` black .55) 을 black-alpha 로 도출한다.
+//!
+//! 치수 중 **specimen 무대의 비율**은 토큰이 아니다 — 대응하는 `Theme` 값이 없고
+//! (`measure_*` 는 300/400/460), 소비자가 이 파일 안뿐이라 토큰으로 올릴 근거가 없다.
+//! 대신 이름 붙인 상수로 둔다(`SCRIM_STAGE_H` · `FRAME_CARD_W`) — 두 anchor 변형이
+//! 같은 무대와 같은 카드 폭을 써야 나란히 놓고 비교할 수 있으므로 값이 갈리면 안 된다.
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::icons::MockGlyph;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+// ── specimen 무대 치수 (모듈 문서의 규칙: 두 변형이 나눠 쓰므로 이름을 붙인다) ──
+/// scrim Spec 무대의 높이. center anchor 와 top anchor 변형이 공유한다.
+const SCRIM_STAGE_H: f32 = 200.0;
+/// 무대 안에 놓는 모달 카드의 폭. 두 변형이 같아야 anchor 차이만 눈에 남는다.
+const FRAME_CARD_W: f32 = 240.0;
 
 // ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
 
@@ -200,37 +211,51 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // center anchor.
         spec::cluster(ui, theme, "center anchor", |ui| {
-            scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 64.0, |ui| {
-                frame_card(ui, theme, 240.0, panel_fill(theme), |ui| {
-                    region_sym(
-                        ui,
-                        theme.spacing_lg.value(),
-                        theme.spacing_md.value(),
-                        |ui| {
-                            title(ui, theme, "Frame");
-                            ui.add_space(theme.spacing_sm.value());
-                            body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
-                        },
-                    );
-                });
-            });
+            scrim_backdrop(
+                ui,
+                theme,
+                theme.measure_sm.value(),
+                SCRIM_STAGE_H,
+                64.0,
+                |ui| {
+                    frame_card(ui, theme, FRAME_CARD_W, panel_fill(theme), |ui| {
+                        region_sym(
+                            ui,
+                            theme.spacing_lg.value(),
+                            theme.spacing_md.value(),
+                            |ui| {
+                                title(ui, theme, "Frame");
+                                ui.add_space(theme.spacing_sm.value());
+                                body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
+                            },
+                        );
+                    });
+                },
+            );
         });
         // top anchor (~88px offset).
         spec::cluster(ui, theme, "top anchor (~88px)", |ui| {
-            scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 28.0, |ui| {
-                frame_card(ui, theme, 240.0, raised_fill(theme), |ui| {
-                    region_sym(
-                        ui,
-                        theme.spacing_lg.value(),
-                        theme.spacing_md.value(),
-                        |ui| {
-                            title(ui, theme, "Palette-style");
-                            ui.add_space(theme.spacing_sm.value());
-                            body(ui, theme, "surface-raised · spawns under the title bar");
-                        },
-                    );
-                });
-            });
+            scrim_backdrop(
+                ui,
+                theme,
+                theme.measure_sm.value(),
+                SCRIM_STAGE_H,
+                28.0,
+                |ui| {
+                    frame_card(ui, theme, FRAME_CARD_W, raised_fill(theme), |ui| {
+                        region_sym(
+                            ui,
+                            theme.spacing_lg.value(),
+                            theme.spacing_md.value(),
+                            |ui| {
+                                title(ui, theme, "Palette-style");
+                                ui.add_space(theme.spacing_sm.value());
+                                body(ui, theme, "surface-raised · spawns under the title bar");
+                            },
+                        );
+                    });
+                },
+            );
         });
     });
 
