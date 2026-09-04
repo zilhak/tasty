@@ -169,3 +169,4 @@ tab_switch_prev_key = "h"
 - [설정](settings.md) — 설정 창 구조와 `config.toml`.
 - [패인 · 탭 · 분할](../using/panes-tabs-splits.md) — 위 표의 분할 · 이동 동작이 실제로 무엇을 하는지.
 - [터미널 다루기](../using/terminal.md) — 복사 모드 · 검색 · 마우스 캡처.
+- [Lua 스크립트](scripts.md) — **스크립트 실행** 서브탭에 붙일 스크립트를 등록하는 법.

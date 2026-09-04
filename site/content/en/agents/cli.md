@@ -1,4 +1,4 @@
-<!-- source-hash: bfd3e65f22a1 -->
+<!-- source-hash: 4392a6b1e515 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -207,3 +207,9 @@ tasty read queue --surface 42 --clear    # empty everything
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
 - **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
+
+## What to read next
+
+- [Claude · Codex](claude-codex.md) — Spawning child agents and being told when they land.
+- [Task DAG](tasks.md) — Tying several pieces of work together by dependency.
+- [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.

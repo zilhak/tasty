@@ -81,7 +81,7 @@
 
 ### 기타
 
-- **스크립트** <!-- en: Scripts --> — 단축키로 실행할 Lua 스크립트를 등록한다. 파일 경로(예: `~/.tasty/scripts/my-script.lua`)와 표시 이름을 넣고, 단축키는 **단축키** > **스크립트 실행** 에서 붙인다. 등록 뒤 파일이 바뀌면 **변경됨** <!-- en: changed --> 표시가 붙고 다음 실행 때 확인을 묻는다.
+- **스크립트** <!-- en: Scripts --> — 단축키나 이벤트로 실행할 Lua 스크립트를 등록한다 ([Lua 스크립트](scripts.md)). 파일 경로(예: `~/.tasty/scripts/my-script.lua`)와 표시 이름을 넣고, 단축키는 **단축키** > **스크립트 실행** 에서 붙인다. 등록 뒤 파일이 바뀌면 **변경됨** <!-- en: changed --> 표시가 붙고 다음 실행 때 확인을 묻는다.
 - Windows 에서는 **Tastyrc** 섹션이 추가된다. 다른 OS 에서는 이 탭에 스크립트만 있다.
 
 ### 플러그인
@@ -232,7 +232,7 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 | `plugins/` · `plugins-logs/` | 설치된 플러그인과 로그 — [플러그인](../plugins/index.md) |
 | `file-handlers.toml` · `hook-handlers.toml` | 핸들러 탭의 사용자 항목 |
 | `remote-profiles.toml` | 원격 연결 프로필 — [원격 attach](../remote/attach.md) |
-| `scripts/` | Lua 스크립트를 두는 관례 위치 |
+| `scripts/` | Lua 스크립트를 두는 관례 위치 — [Lua 스크립트](scripts.md) |
 | `transfers/` | 원격에서 받은 파일 기본 저장 폴더 |
 | `tasty.port` · `debug.log` | 실행 중 인스턴스의 포트, 경고 이상 로그 — [문제 해결](../help/troubleshooting.md) |
 

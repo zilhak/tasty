@@ -1,4 +1,4 @@
-<!-- source-hash: ab794cb18a36 -->
+<!-- source-hash: 9cfd3f28725a -->
 # Working with Claude and Codex
 
 This page explains how to run Claude Code and Codex CLI inside Tasty, and how one agent drives another as a child to parallelise work. Install the hooks once, and the parent is notified automatically when a child finishes its work.
@@ -152,3 +152,8 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **`reboot` fails with "claude-session-id meta not set"** — the session-start hook failed to record the session ID. Set it directly with `tasty surface-meta set --key claude-session-id --value <session ID>`.
 - **The child is not spawned and you get an "occupied" error** — the target Workspace is being attached from a remote, or is a mirror. Use another Workspace.
 - **No notifications when launched from the app icon on macOS** — Tasty calls `tasty` again when it writes notifications, but Tasty adds its own executable path to PATH automatically, so this is normally not a problem. If it still fails, look at `hook-failures.log`.
+
+## What to read next
+
+- [Task DAG](tasks.md) — Running spawn and tell as one dependency graph.
+- [Hooks · notifications · webhooks](hooks-notifications.md) — Completion notices and approval gates.

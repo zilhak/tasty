@@ -1,4 +1,4 @@
-<!-- source-hash: 9a2625ef38ca -->
+<!-- source-hash: 8bd918dcf95d -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -82,7 +82,7 @@ These tables are stored not in `config.toml` but in `~/.tasty/file-handlers.toml
 
 ### Misc
 
-- **Scripts** — Register Lua scripts to run from a keybinding. Enter the file path (for example `~/.tasty/scripts/my-script.lua`) and a display name; attach the keybinding under **Keybindings** > **Run Scripts**. If the file changes after registration, a **changed** marker appears and you are asked to confirm on the next run.
+- **Scripts** — Register Lua scripts to run from a keybinding or an event ([Lua scripts](scripts.md)). Enter the file path (for example `~/.tasty/scripts/my-script.lua`) and a display name; attach the keybinding under **Keybindings** > **Run Scripts**. If the file changes after registration, a **changed** marker appears and you are asked to confirm on the next run.
 - On Windows a **Tastyrc** section is added. On other OSes this tab holds only Scripts.
 
 ### Plugins
@@ -238,7 +238,7 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 | `plugins/` · `plugins-logs/` | Installed plugins and their logs — [Plugins](../plugins/index.md) |
 | `file-handlers.toml` · `hook-handlers.toml` | User entries from the Handler tab |
 | `remote-profiles.toml` | Remote connection profiles — [Remote attach](../remote/attach.md) |
-| `scripts/` | The conventional place for Lua scripts |
+| `scripts/` | The conventional place for Lua scripts — [Lua scripts](scripts.md) |
 | `transfers/` | Default save folder for files received from a remote |
 | `tasty.port` · `debug.log` | The running instance's port, and the warning-and-above log — [Troubleshooting](../help/troubleshooting.md) |
 

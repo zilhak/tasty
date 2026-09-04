@@ -1,4 +1,4 @@
-<!-- source-hash: cacc74b4da3f -->
+<!-- source-hash: cd675c38778f -->
 # Panes · Tabs · splits
 
 After reading this page you will know how to divide the screen, work with Tabs, move Surfaces or change them to another kind, and save layouts you use often as presets. The terms follow [A first look](../getting-started/first-look.md).
@@ -78,7 +78,7 @@ The destination Surface is closed and the moved Surface takes its place. Create 
 
 ## Changing the kind
 
-Press `Alt+'` and the **Surface Type** popup appears. It changes the current Surface, in place, to **Terminal** · **Explorer** · **Markdown** · **HTML...** · **Image**. Choose with the arrow keys and `Enter`, or with the first letter. The button in the middle of an empty Surface is the same popup.
+Press `Alt+'` and the **Surface Type** popup appears. It changes the current Surface, in place, to **Terminal** · **Explorer** · **Markdown** · **HTML...** · **Image** · **DAG**. Choose with the arrow keys and `Enter`, or with the first letter. The button in the middle of an empty Surface is the same popup.
 
 - Changing to Explorer opens the terminal's current directory as the root.
 - Markdown · HTML ask for a file path · URL.

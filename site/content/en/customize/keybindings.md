@@ -1,4 +1,4 @@
-<!-- source-hash: e4d232bb7c47 -->
+<!-- source-hash: 695cecf33e5f -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
@@ -170,3 +170,4 @@ The `+` key itself is written as `ctrl++` or `ctrl+plus`, `-` as `ctrl+-` or `ct
 - [Settings](settings.md) — The settings window structure and `config.toml`.
 - [Panes · Tabs · splits](../using/panes-tabs-splits.md) — What the split · move actions in the tables above actually do.
 - [Working in the terminal](../using/terminal.md) — Copy mode · search · mouse capture.
+- [Lua scripts](scripts.md) — How to register the scripts that show up in the **Run Scripts** subtab.

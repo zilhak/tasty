@@ -151,3 +151,8 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **`reboot` 가 "claude-session-id meta not set" 으로 실패한다** — 세션 시작 훅이 세션 ID 를 못 남긴 것이다. `tasty surface-meta set --key claude-session-id --value <세션ID>` 로 직접 넣는다.
 - **자식이 spawn 되지 않고 "occupied" 오류** — 대상 워크스페이스가 원격에서 attach 중이거나 mirror 다. 다른 워크스페이스를 쓴다.
 - **macOS 에서 앱 아이콘으로 실행하면 알림이 안 온다** — Tasty 가 알림을 쓸 때 `tasty` 를 다시 호출하는데, Tasty 는 자기 실행 파일 경로를 자동으로 PATH 에 넣으므로 보통은 문제없다. 그래도 안 되면 `hook-failures.log` 를 본다.
+
+## 다음 읽을 것
+
+- [작업 DAG](tasks.md) — spawn 과 tell 을 의존 관계로 묶어 한 그래프로 돌리기.
+- [훅 · 알림 · 웹훅](hooks-notifications.md) — 완료 통지와 승인 게이트.
