@@ -604,12 +604,12 @@ fn ui_does_not_consume_generated_length_consts_directly() {
     for (rel, contents) in &scanned {
         let lines: Vec<&str> = contents.lines().collect();
         for (name, at) in generated_const_refs(&lines) {
-            if logical.iter().any(|n| *n == name) {
+            if logical.contains(&name) {
                 violations.push(format!(
                     "  {rel}:{at} — `{name}` 은 LogicalPx(배율 축)다. 같은 값의 `Theme` \
                      필드/접근자를 경유해라"
                 ));
-            } else if other.iter().any(|n| *n == name) {
+            } else if other.contains(&name) {
                 dimensionless += 1;
             } else {
                 violations.push(format!(
