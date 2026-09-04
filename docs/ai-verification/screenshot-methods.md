@@ -155,7 +155,7 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
 
-### plugin 변경을 눈으로 확인하기 전에 — 스테이징이 낡았는지부터 본다
+### 측정 전에 — 대상 바이너리가 최신인지 확인한다 (plugin)
 
 **`cargo build` 는 plugin 바이너리를 다시 만들지 않는다.** 실측으로 확인한 것이다:
 `crates/tasty-plugin-*/src/main.rs` 를 고치고 루트에서 `cargo build` 를 돌려도
@@ -193,6 +193,9 @@ ls -la target/debug/tasty-plugin-<name> \
 (winit → egui → plugin 까지의 실제 라우팅)을 끝까지 지날 수 있다. 다만 이 환경에는
 데스크톱과 다른 함정이 넷 있고, 넷 다 **조용히** 실패한다 — 하나만 놓쳐도 "화면이 비었다"
 같은 **거짓 관측**이 나온다.
+
+(이 넷은 *관측*의 함정이다. 그 앞에 *측정 대상*의 함정이 하나 더 있다 — 위 "측정 전에 —
+대상 바이너리가 최신인지 확인한다". plugin 을 고쳤다면 그것부터 확인하고 이 넷으로 넘어간다.)
 
 **1. `xdotool` 은 `xvfb-run` 이 만든 Xauthority 없이는 붙지 못한다.** `DISPLAY` 만 넘기면
 `Authorization required, but no authorization protocol specified` 뒤에
