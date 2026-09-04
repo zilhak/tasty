@@ -831,7 +831,13 @@ impl MainView {
         items: &[crate::platform::native_menu::MenuItem],
         cont: impl FnOnce(&mut MainView, Option<u32>) + 'static,
     ) {
-        use crate::platform::native_menu::{MenuOutcome, show_context_menu};
+        use crate::platform::native_menu::{
+            MenuOutcome, show_context_menu, warn_if_menu_anchor_scale_premise_broken,
+        };
+        // `x`/`y` 는 논리 좌표다. 플랫폼 백엔드가 그것을 **자기** 논리 좌표계로
+        // 읽으므로, 두 좌표계의 배율이 같다는 전제가 성립해야 앵커가 맞는다.
+        // Linux/GTK 에서만 그 둘의 출처가 갈린다(winit vs GDK) — 깨지면 경고한다.
+        warn_if_menu_anchor_scale_premise_broken(self.base.winit.scale_factor());
         match show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, items) {
             MenuOutcome::Ready(result) => {
                 cont(self, result);

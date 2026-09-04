@@ -76,6 +76,30 @@ tasty debug fullscreen state --window-id <ID>
 두 신호가 **함께** 움직이므로 배율이 적용됐고 효과도 났다. 하나만 움직였다면 그
 자체가 결함 신호다.
 
+## 네이티브 메뉴 앵커는 winit 배율 == GDK 배율을 전제한다
+
+`WINIT_X11_SCALE_FACTOR` 는 **winit 만** 움직인다. Linux 네이티브 컨텍스트 메뉴는
+GTK3 가 띄우고(`src/platform/native_menu/linux.rs`), GDK 는 배율을 `GDK_SCALE` 에서
+따로 읽는다. 앵커 좌표는 winit(=egui) 논리 좌표로 넘어가는데 GTK 는 같은 수를
+GDK 논리 좌표로 읽으므로, **두 배율이 같을 때만** 메뉴가 클릭 지점에 뜬다.
+
+실측(Xvfb `3200x2400`, 창 기본 크기, 실제 `xdotool` 우클릭):
+
+| winit 배율 | `GDK_SCALE` | 클릭(물리) | 메뉴 창 기하 | 판정 |
+|---|---|---|---|---|
+| 1 | 미지정(=1) | `(250,48)` | `184x172+250+48` | 앵커 일치 |
+| 2 | 미지정(=1) | `(500,96)` | `184x172+250+48` | 위치·크기 모두 1 배 — 어긋남 |
+| 2 | `2` | `(500,96)` | `368x344+500+96` | 앵커 일치 |
+
+즉 이 검증 환경에서 메뉴 좌표가 어긋나는 것은 tasty 의 산술 오류가 아니라
+**두 배율을 갈라놓은 환경** 때문이다. 배율 2 로 메뉴를 재려면 `GDK_SCALE=2` 를
+함께 준다. 반대로 `GDK_SCALE` 을 주지 않은 채 나온 메뉴 좌표는 실기기 HiDPI 의
+증거가 아니다 — 환경이 만든 어긋남이다.
+
+전제가 깨진 순간은 `show_context_menu` 를 부르기 직전에
+`warn_if_menu_anchor_scale_premise_broken` 이 `tracing::warn!` 한 줄로 남긴다.
+같은 배율 조합에 대해 한 번만 남으므로 우클릭 횟수에 비례하지 않는다.
+
 ## 관련
 
 - [screenshot-methods](screenshot-methods.md) — 캡처 수단과 Xvfb 함정

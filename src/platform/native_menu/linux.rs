@@ -20,6 +20,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use gtk::glib::Cast;
@@ -173,6 +174,71 @@ impl Drop for GtkMenuHandle {
         self.menu.popdown();
         self.release();
     }
+}
+
+/// 이미 경고한 `(winit 배율 비트, GDK 배율)` 조합.
+///
+/// 우클릭마다 로그가 뜨면 그 줄은 읽히지 않는다. 그렇다고 프로세스당 한 번
+/// (`Once`)으로 막으면 **배율이 다른 모니터로 창을 옮겨 어긋남의 모양이 바뀐 것**
+/// 을 놓치는데, 그 변화가 정확히 진단에 필요한 값이다. 그래서 횟수가 아니라
+/// **조합**으로 막는다 — 로그 줄 수는 우클릭 수가 아니라 서로 다른 배율 조합의
+/// 수(모니터 수 정도)에 비례한다. `f64` 는 비트로 넣어 정확 비교한다.
+static WARNED_ANCHOR_SCALES: Mutex<Vec<(u64, i32)>> = Mutex::new(Vec::new());
+
+/// 네이티브 메뉴 앵커 좌표계의 **전제**(winit 배율 == GDK 배율)가 깨졌으면 경고한다.
+///
+/// [`show_context_menu`] 에 넘기는 `x`/`y` 는 winit(=egui) **논리** 좌표다. GTK 는
+/// 같은 수를 `popup_at_rect` 에서 **GDK 논리** 좌표로 읽고 GDK 배율로 물리에
+/// 올린다. 두 배율이 같을 때만 그 수가 같은 점을 가리킨다 — 즉 이 좌표 전달을
+/// 맞게 만드는 것은 산술이 아니라 **전제**이고, 그 전제는 어디서도 강제되지
+/// 않는다. winit 은 `WINIT_X11_SCALE_FACTOR`/Xft.dpi 를, GDK 는 `GDK_SCALE` 을
+/// 서로 **다른 출처**에서 읽기 때문이다.
+///
+/// 전제가 깨지면 메뉴는 클릭 지점이 아니라 `winit 배율 / GDK 배율` 만큼 옮겨진
+/// 자리에 뜬다(실측: winit 2 · GDK 1 에서 클릭 `(500,96)` → 메뉴 `+250+48`).
+/// 산술을 고치지 않는 이유는 고칠 수 없어서가 아니라, **실기기 HiDPI X11 에서
+/// 두 값이 실제로 갈리는지**를 확정하지 못해 어느 쪽으로 맞출지가 정해지지 않기
+/// 때문이다. 그래서 전제를 주석으로만 두지 않고 깨진 순간을 로그로 남긴다 —
+/// 그 관측은 실사용자 환경에서만 만들어진다.
+///
+/// 측정 절차와 실측값: `docs/ai-verification/dpi-scale-verification.md`
+/// ("네이티브 메뉴 앵커는 winit 배율 == GDK 배율을 전제한다").
+pub fn warn_if_menu_anchor_scale_premise_broken(winit_scale: f64) {
+    if !ensure_gtk() {
+        return;
+    }
+    let Some(display) = gtk::gdk::Display::default() else {
+        return;
+    };
+    // GDK3/X11 의 배율은 디스플레이 전역(`GDK_SCALE`)이라 어느 모니터로 읽어도
+    // 같다. primary 가 없는 구성만 0 번으로 물러선다.
+    let Some(monitor) = display.primary_monitor().or_else(|| display.monitor(0)) else {
+        return;
+    };
+    let gdk_scale = monitor.scale_factor();
+    if winit_scale == f64::from(gdk_scale) {
+        return;
+    }
+
+    let key = (winit_scale.to_bits(), gdk_scale);
+    {
+        let mut warned = match WARNED_ANCHOR_SCALES.lock() {
+            Ok(guard) => guard,
+            // 경고 경로가 락 오염으로 침묵하면 안 된다 — 중복 억제는 부가 기능이다.
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if warned.contains(&key) {
+            return;
+        }
+        warned.push(key);
+    }
+
+    tracing::warn!(
+        "native context menu: winit scale_factor={winit_scale} vs GDK scale_factor={gdk_scale} \
+         — 배율 전제가 깨졌다. 네이티브 메뉴 앵커가 어긋날 수 있다 \
+         (메뉴가 클릭 지점에서 winit/GDK 배율비만큼 옮겨진 자리에 뜬다). \
+         절차: docs/ai-verification/dpi-scale-verification.md"
+    );
 }
 
 #[allow(clippy::cognitive_complexity)] // complexity-exempt: GTK/X11 grab 타이밍이 selected/done/grabbed/timed_out 4개 Rc<Cell<_>>를 공유하는 여러 클로저(activate/selection-done/button-press/idle/timeout)의 등록 순서 자체에 의미론이 있음(GDK Seat::grab을 idle 콜백에서 호출해야 하고 timeout이 없으면 유령 메뉴가 영원히 남음) — 클로저를 분리하면 각 함수가 4~5개 Rc<Cell<>> 핸들을 인자로 주고받아야 하고 실행 순서와 코드 위치가 물리적으로 분리되어 가독성이 오히려 나빠짐

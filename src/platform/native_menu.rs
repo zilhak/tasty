@@ -25,6 +25,14 @@ pub use macos::show_context_menu;
 #[cfg(windows)]
 pub use windows::show_context_menu;
 
+#[cfg(target_os = "linux")]
+pub use linux::warn_if_menu_anchor_scale_premise_broken;
+
+/// 비-Linux 백엔드는 앵커 좌표계가 하나뿐이라(NSMenu / TrackPopupMenu 가 창과
+/// 같은 좌표계를 쓴다) 어긋날 전제 자체가 없다 — 아무 것도 하지 않는다.
+#[cfg(not(target_os = "linux"))]
+pub fn warn_if_menu_anchor_scale_premise_broken(_winit_scale: f64) {}
+
 /// Result of asking the platform to show a context menu.
 pub enum MenuOutcome {
     /// The menu already ran to completion — selected item id, or `None` when
