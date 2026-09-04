@@ -206,10 +206,8 @@ fn build_event(
         .ok_or_else(|| "Missing 'metric'".to_string())?;
     validate_metric(metric).map_err(|e| e.to_string())?;
 
-    let value = params
-        .get("value")
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| "Missing or non-numeric 'value'".to_string())?;
+    let value =
+        super::params::read_f64(params, "value")?.ok_or_else(|| "Missing 'value'".to_string())?;
 
     let op_str = params.get("op").and_then(|v| v.as_str()).unwrap_or("inc");
     let op = op_str.parse::<Op>().map_err(|e| e.to_string())?;

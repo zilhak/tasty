@@ -56,6 +56,7 @@ pub(super) fn require_str<'a>(
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), format!("Missing '{key}'")))
 }
 
+use super::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::{
     ListOpts, MemoryArea, MemoryEntry, MemoryError, MemoryStats, MemoryValue, PutOpts, Scope,
@@ -425,8 +426,8 @@ pub fn handle_put(
         Err(e) => return e,
     };
     let opts = PutOpts {
-        expires_at: params.get("expires_at").and_then(|v| v.as_i64()),
-        cas: params.get("cas").and_then(|v| v.as_u64()),
+        expires_at: p_try!(params::opt_i64(params, "expires_at", &id)),
+        cas: p_try!(params::opt_int::<u64>(params, "cas", &id)),
     };
     let owner = caller.owner().to_string();
 
@@ -506,16 +507,10 @@ pub fn handle_list(
             .get("prefix")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        limit: params
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
-        since: params.get("since").and_then(|v| v.as_i64()),
-        until: params.get("until").and_then(|v| v.as_i64()),
-        offset: params
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
+        limit: p_try!(params::opt_int::<usize>(params, "limit", &id)),
+        since: p_try!(params::opt_i64(params, "since", &id)),
+        until: p_try!(params::opt_i64(params, "until", &id)),
+        offset: p_try!(params::opt_int::<usize>(params, "offset", &id)),
     };
     match core.with_memory(|s| s.list(&scope, &opts)) {
         Ok(entries) => {

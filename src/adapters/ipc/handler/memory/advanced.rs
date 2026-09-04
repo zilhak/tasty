@@ -1,5 +1,6 @@
 //! 메모리 도메인 IPC 핸들러의 advanced 그룹: gc / query / export / import.
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryEntry, MemoryValue};
 
@@ -67,8 +68,8 @@ pub fn handle_query(
             .get("limit")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize),
-        since: params.get("since").and_then(|v| v.as_i64()),
-        until: params.get("until").and_then(|v| v.as_i64()),
+        since: p_try!(params::opt_i64(params, "since", &id)),
+        until: p_try!(params::opt_i64(params, "until", &id)),
         offset: params
             .get("offset")
             .and_then(|v| v.as_u64())

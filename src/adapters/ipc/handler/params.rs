@@ -18,27 +18,127 @@
 use serde_json::Value;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-/// 값이 왔는데 `u32` 로 안 읽힐 때의 문구. 값을 되비춰 호출자가 자기 입력을 의심하게 한다.
-fn malformed(key: &str, raw: &Value) -> String {
+/// 값이 왔는데 안 읽힐 때의 문구. 값과 **기대한 폭**을 되비춰 호출자가 자기 입력을
+/// 의심하게 한다 — "숫자가 아니다" 와 "숫자인데 범위 밖이다" 는 고칠 방법이 다르다.
+fn malformed(key: &str, raw: &Value, what: &str) -> String {
     format!(
-        "'{key}' was given as {raw} — it must be a whole number that fits in 32 bits. \
-         Refusing rather than truncating it: a truncated id names a different, possibly real, target"
+        "'{key}' was given as {raw} — it must be {what}. Refusing rather than coercing it: \
+         a truncated id names a different, possibly real, target, and a dropped value is \
+         indistinguishable from the parameter being absent"
     )
 }
 
-/// 왔고 `u32` 범위 안이면 그 값. `null` 이거나 키가 없으면 `None`.
-/// **값이 왔는데 안 읽히면 `Err`** — 조용히 버리지 않는다.
+/// 키가 왔는가. `null` 은 **안 왔다**로 읽는다 — 직렬화가 빈 슬롯을 `null` 로 채우는
+/// 경우가 있어, 오타로 취급하면 정상 경로가 막힌다.
+fn present<'a>(params: &'a Value, key: &str) -> Option<&'a Value> {
+    params.get(key).filter(|v| !v.is_null())
+}
+
+/// 부호 없는 정수 파라미터를 **폭에 맞게** 읽는다. `null`/키 없음은 `None`,
+/// **값이 왔는데 안 읽히면 `Err`** — 조용히 버리거나 자르지 않는다.
 ///
-/// `JsonRpcResponse` 대신 `String` 오류를 쓰는 호출자(파서 헬퍼 등)가 직접 쓴다.
-pub(crate) fn read_u32(params: &Value, key: &str) -> Result<Option<u32>, String> {
-    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
+/// 폭은 호출부의 타입이 정한다(`read_int::<u32>` · `::<u16>` · `::<usize>` …).
+/// `try_into` 가 실패하는 것이 곧 "이 자리에 안 들어가는 값" 이다.
+pub(crate) fn read_int<T>(params: &Value, key: &str) -> Result<Option<T>, String>
+where
+    T: TryFrom<u64>,
+{
+    let Some(raw) = present(params, key) else {
         return Ok(None);
     };
     raw.as_u64()
-        .and_then(|n| u32::try_from(n).ok())
+        .and_then(|n| T::try_from(n).ok())
         .map(Some)
-        .ok_or_else(|| malformed(key, raw))
+        .ok_or_else(|| {
+            malformed(
+                key,
+                raw,
+                &format!(
+                    "a whole number that fits in {} bits and is not negative",
+                    std::mem::size_of::<T>() * 8
+                ),
+            )
+        })
 }
+
+/// 부호 있는 정수(시각·오프셋 등). 음수가 정당한 자리에 쓴다.
+pub(crate) fn read_i64(params: &Value, key: &str) -> Result<Option<i64>, String> {
+    let Some(raw) = present(params, key) else {
+        return Ok(None);
+    };
+    raw.as_i64()
+        .map(Some)
+        .ok_or_else(|| malformed(key, raw, "a whole number that fits in 64 signed bits"))
+}
+
+/// 실수 파라미터(정규화 좌표 등).
+pub(crate) fn read_f64(params: &Value, key: &str) -> Result<Option<f64>, String> {
+    let Some(raw) = present(params, key) else {
+        return Ok(None);
+    };
+    raw.as_f64()
+        .map(Some)
+        .ok_or_else(|| malformed(key, raw, "a number"))
+}
+
+/// `read_int::<u32>` 의 이름 있는 별칭 — surface/pane/workspace id 자리가 가장 많아
+/// 호출부가 매번 turbofish 를 쓰지 않게 한다.
+pub(crate) fn read_u32(params: &Value, key: &str) -> Result<Option<u32>, String> {
+    read_int::<u32>(params, key)
+}
+
+/// 선택 정수 파라미터 — **안 온 것만 `None`** 이다. 잘못 온 것은 `Err`.
+///
+/// 종전에는 `params.get(k).and_then(|v| v.as_u64())` 가 둘을 합쳐 `None` 을 냈고,
+/// 그러면 **필터가 필터링을 멈추거나**(`since`/`limit`) 호출자가 지정한 대상 대신
+/// 기본값이 쓰였다. 둘 다 조용히 틀린 결과를 낸다.
+pub(crate) fn opt_int<T>(
+    params: &Value,
+    key: &str,
+    id: &Value,
+) -> Result<Option<T>, JsonRpcResponse>
+where
+    T: TryFrom<u64>,
+{
+    let r = read_int::<T>(params, key);
+    match r {
+        Ok(v) => Ok(v),
+        Err(msg) => Err(JsonRpcResponse::invalid_params(id.clone(), msg)),
+    }
+}
+
+/// 선택 부호 있는 정수(시각·오프셋).
+pub(crate) fn opt_i64(
+    params: &Value,
+    key: &str,
+    id: &Value,
+) -> Result<Option<i64>, JsonRpcResponse> {
+    read_i64(params, key).map_err(|msg| JsonRpcResponse::invalid_params(id.clone(), msg))
+}
+
+/// 선택 실수(정규화 좌표·임계값).
+pub(crate) fn opt_f64(
+    params: &Value,
+    key: &str,
+    id: &Value,
+) -> Result<Option<f64>, JsonRpcResponse> {
+    read_f64(params, key).map_err(|msg| JsonRpcResponse::invalid_params(id.clone(), msg))
+}
+
+/// `Result<_, JsonRpcResponse>` 를 그 자리에서 풀거나 응답을 반환한다.
+///
+/// **구조체 리터럴 안에서 쓰려고** 있다. `ListOpts { since: p_try!(...), .. }` 처럼
+/// 식(expression) 자리에 들어가야 해서 `?` 를 못 쓴다(`?` 는 함수 반환 타입이
+/// `Result` 여야 하는데 핸들러는 `JsonRpcResponse` 를 그대로 돌려준다).
+macro_rules! p_try {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(resp) => return resp,
+        }
+    };
+}
+pub(crate) use p_try;
 
 /// 필수 `u32` 파라미터. 없으면 `missing '<key>'`, 잘못됐으면 그 값을 되비추는 문구.
 pub(crate) fn require_u32(params: &Value, key: &str, id: &Value) -> Result<u32, JsonRpcResponse> {

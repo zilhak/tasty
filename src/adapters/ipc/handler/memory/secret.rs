@@ -1,5 +1,6 @@
 //! `memory.secret.*` IPC handlers (secret 영역).
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, PutOpts};
 
@@ -34,7 +35,7 @@ pub fn handle_secret_put(
         Err(e) => return e,
     };
     let opts = PutOpts {
-        expires_at: params.get("expires_at").and_then(|v| v.as_i64()),
+        expires_at: p_try!(params::opt_i64(params, "expires_at", &id)),
         cas: params.get("cas").and_then(|v| v.as_u64()),
     };
     let owner = caller.owner().to_string();
@@ -114,8 +115,8 @@ pub fn handle_secret_list(
             .get("limit")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize),
-        since: params.get("since").and_then(|v| v.as_i64()),
-        until: params.get("until").and_then(|v| v.as_i64()),
+        since: p_try!(params::opt_i64(params, "since", &id)),
+        until: p_try!(params::opt_i64(params, "until", &id)),
         offset: params
             .get("offset")
             .and_then(|v| v.as_u64())

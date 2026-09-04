@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -23,7 +24,7 @@ pub(crate) fn handle_commands(
         .get("limit")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
-    let since = params.get("since").and_then(|v| v.as_i64());
+    let since = p_try!(params::opt_i64(params, "since", &id));
     let entries = match read_command_entries(core, surface_id, limit, since) {
         Ok(v) => v,
         Err(e) => return e.into_response(id),

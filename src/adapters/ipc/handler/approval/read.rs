@@ -1,6 +1,7 @@
 //! `approval` IPC: read 도메인.
 
 use super::*;
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 
 pub fn handle_cancel(
@@ -154,8 +155,8 @@ pub fn handle_history(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let since = params.get("since").and_then(|v| v.as_i64());
-    let until = params.get("until").and_then(|v| v.as_i64());
+    let since = p_try!(params::opt_i64(params, "since", &id));
+    let until = p_try!(params::opt_i64(params, "until", &id));
     let workspace_filter =
         match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
             Ok(v) => v,
