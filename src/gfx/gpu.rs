@@ -719,8 +719,9 @@ impl GpuState {
             && !state.modifier_hint_hovered
             && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
         {
-            let px = pos.x * self.scale_factor;
-            let py = pos.y * self.scale_factor;
+            // egui 가 준 hover 좌표는 논리, `winit_cursor_icon_at` 은 물리를 받는다.
+            let px = LogicalPx(pos.x).to_physical(self.scale_factor).value();
+            let py = LogicalPx(pos.y).to_physical(self.scale_factor).value();
             icon = state.winit_cursor_icon_at(
                 engine,
                 px,
