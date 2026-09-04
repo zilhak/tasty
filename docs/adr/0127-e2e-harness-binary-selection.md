@@ -60,7 +60,9 @@ nav 핸들러가 `gui` feature 게이트 아래 있어서 헤드리스에 존재
 - `tests/attach_attention_loopback.rs` — 15 passed / 0 failed / 0 ignored / 0 filtered out
 - `tests/e2e_tests.rs` — 8 passed / 0 failed / 0 ignored / 1 filtered out
 
-따라서 현재 상태는 이렇다.
+따라서 이 절 시점의 상태는 이렇다. (**이 절의 "하나" 가 가리키는 테스트는 그 뒤
+바뀌었다 — 아래 「발화한 트리거를 닫는다」 절.** 지금 그 자리는 `multi_window_owner_routing`
+이고, `all_e2e_tests` 라는 이름은 소스에 없다.)
 
 - **GUI 를 실제로 요구하는 것은 `tests/e2e_tests.rs` 의 `all_e2e_tests` 하나다.** 경계는
   스위트가 아니라 테스트 단위로 그어진다.
