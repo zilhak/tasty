@@ -129,8 +129,6 @@ const ABSENCE_MARKERS: &[&str] = &[
 /// **줄 단위로 보지 않는다** — 주석과 마크다운은 문장을 예사로 줄바꿈하고, 실제로
 /// `tests/macos_bundle_codesign.rs` 는 명령과 "채널" 을 다른 줄에 뒀다. 줄로 끊어 보면
 /// 그런 주장이 그대로 빠져나간다. 그래서 인용 지점 앞뒤 창을 한 덩어리로 읽는다.
-const CLAIM_WINDOW: usize = 220;
-
 /// CI 가 자동으로 돌린다는 뜻으로 읽히는 표지.
 const CI_MARKERS: &[&str] = &[
     "(CI)",
@@ -246,21 +244,18 @@ fn claim_offsets(text: &str, path: &str) -> Vec<usize> {
         if !is_prose_line(text, at, path) {
             continue;
         }
-        let lo = text[..at]
-            .char_indices()
-            .rev()
-            .nth(CLAIM_WINDOW)
-            .map_or(0, |(i, _)| i);
-        let hi = text[from..]
-            .char_indices()
-            .nth(CLAIM_WINDOW)
-            .map_or(text.len(), |(i, _)| from + i);
-        let window = &text[lo..hi];
-        if !CI_MARKERS.iter().any(|m| window.contains(m)) {
+        // 표지도 **같은 서술 안**에 있어야 한다. 글자 수 창(`CLAIM_WINDOW`)으로 보던
+        // 앞 형태는 문단을 넘어가 **다른 아이템의 코드 줄**에서 표지를 주웠다: 파서가
+        // 명령 문자열을 어떻게 잘못 읽는지 설명하는 doc 주석이, 그 위 상수 리터럴 안의
+        // `"test.yml"` 때문에 "CI 가 전체 스위트를 돌린다는 주장" 으로 고발됐다.
+        // 주장은 한 서술 안에서 성립한다 — 근처에 있다고 성립하지 않는다. 부재 표지가
+        // 이미 같은 규칙을 쓰고 있었고, 한 판정을 두 자리에서 다른 규칙으로 하면 그중
+        // 하나가 조용히 낡는다.
+        let scope = claim_scope(text, at);
+        if !CI_MARKERS.iter().any(|m| scope.contains(m)) {
             continue;
         }
         // 같은 서술이 부재를 함께 말하면 정당하다.
-        let scope = claim_scope(text, at);
         if ABSENCE_MARKERS.iter().any(|m| scope.contains(m)) {
             continue;
         }
@@ -1064,20 +1059,6 @@ fn is_prose_line(text: &str, at: usize, rel: &str) -> bool {
     text[start..end].trim_start().starts_with("//")
 }
 
-/// `at` 주변 창 — 첫 번째 축과 같은 폭으로 읽는다.
-fn window_around(text: &str, at: usize) -> &str {
-    let lo = text[..at]
-        .char_indices()
-        .rev()
-        .nth(CLAIM_WINDOW)
-        .map_or(0, |(i, _)| i);
-    let hi = text[at..]
-        .char_indices()
-        .nth(CLAIM_WINDOW)
-        .map_or(text.len(), |(i, _)| at + i);
-    &text[lo..hi]
-}
-
 /// 한 파일의 **집행 주장 위반**과 인용 수 — 파일 순회·경로 처리와 분리된 판정기.
 ///
 /// 순수 함수인 이유: 면제를 겨냥한 변이를 **합성 문자열**로 찌를 수 있어야 하기
@@ -1383,7 +1364,7 @@ fn the_theme_table_keeps_the_two_channels_apart() {
         "표가 통합 테스트 가드를 더 이상 인용하지 않는다 — 회귀 케이스가 사라졌다"
     );
     for at in integration {
-        let window = window_around(&text, at);
+        let window = claim_scope(&text, at);
         assert!(
             COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m)),
             "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다",
@@ -1398,7 +1379,7 @@ fn the_theme_table_keeps_the_two_channels_apart() {
         "표가 lib 유닛 테스트 행을 더 이상 인용하지 않는다 — 양방향성의 증거가 사라졌다"
     );
     for at in lib {
-        let window = window_around(&text, at);
+        let window = claim_scope(&text, at);
         assert!(
             AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m)),
             "{}:{} — lib 유닛 테스트인데 자동 채널이 적혀 있지 않다(사실보다 약하다)",
@@ -1672,11 +1653,50 @@ fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -
     dir
 }
 
+/// **설명문 안의 명령 문자열은 주장이 아니다.**
+///
+/// 이 축은 "CI 가 전체 스위트를 돌린다" 고 **주장하는** 서술을 찾는다. 그런데 표지를
+/// 글자 수 창으로 보던 형태는 문단을 넘어가 **다른 아이템의 코드 줄**에서 표지를 주웠고,
+/// 그래서 파서가 명령 문자열을 어떻게 잘못 읽는지 **설명하는** doc 주석이 고발됐다
+/// (`src/source_guards/mod.rs` 의 `flatten_workflow` doc — 그 위 상수 리터럴에 `"test.yml"`
+/// 이 있었다). 주장하는 문장과 인용하는 문장을 가르는 것은 거리가 아니라 **서술의 경계**다.
+///
+/// 두 방향을 함께 본다. 뒤쪽이 없으면 표지 판정이 아무것도 못 찾도록 망가져도 앞쪽
+/// 단언은 초록이다 — 이 축이 통째로 잠잠해진 것을 통과로 읽는다.
+#[test]
+fn an_example_command_inside_an_explanation_is_not_a_claim() {
+    // (가) 설명문. 표지(`test.yml`)는 위쪽 **코드 줄**에 있고 서술 안에는 없다.
+    let explaining = concat!(
+        "const EXPECTED: &[(&str, usize)] = &[(\"crossplatform-check.yml\", 2), (\"test.yml\", 3)];\n",
+        "\n",
+        "/// 평탄화하는 이유: 줄 끝 `\\` 이음이 한 명령을 여러 줄에 나눈다.\n",
+        "/// 줄 단위로 보면 `cargo test --workspace` 에서 끊겨 뒤 플래그를 놓친다.\n",
+    );
+    assert!(
+        claim_offsets(explaining, "src/x.rs").is_empty(),
+        "설명문 안의 인용을 주장으로 고발했다 — 표지가 그 서술 밖(위 상수)에 있는데도 걸렸다"
+    );
+
+    // (나) 진짜 주장. 표지가 **같은 서술 안**에 있다. 여전히 걸려야 한다.
+    let claiming = "/// 이 가드는 `cargo test --workspace` 로 CI 에서 자동으로 강제된다.\n";
+    assert_eq!(
+        claim_offsets(claiming, "src/x.rs").len(),
+        1,
+        "표지가 같은 서술 안에 있는 진짜 주장을 놓쳤다 — 축이 잠잠해졌다"
+    );
+
+    // (다) 대조: (가)의 표지를 그 서술 안으로 옮기면 걸린다. 못 잡는 이유가 "설명문이라
+    // 봐준다" 가 아니라 **표지가 그 서술에 없어서**라는 것.
+    let claiming_in_scope =
+        "/// `test.yml` 이 `cargo test --workspace` 로 이 가드를 자동 강제한다.\n";
+    assert_eq!(claim_offsets(claiming_in_scope, "src/x.rs").len(), 1);
+}
+
 /// `-p` 좁힘을 판정하려면 **패키지가 둘 이상인 합성 레포**가 필요하다. [`fake_repo`] 는
 /// 루트 `tests/` 만 만든다 — 그 형태로는 "다른 패키지의 타깃" 을 표현할 수 없다.
 fn fake_two_package_repo(name: &str) -> PathBuf {
     let dir = fake_repo(name, &[("root_side.rs", &one_test("a"))], &[]);
-    std::fs::write(&dir.join("Cargo.toml"), "[package]\nname = \"rootpkg\"\n")
+    std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"rootpkg\"\n")
         .expect("루트 매니페스트를 쓰지 못했다");
     let sub = dir.join("crates/subpkg");
     std::fs::create_dir_all(sub.join("tests")).expect("합성 크레이트를 만들지 못했다");
