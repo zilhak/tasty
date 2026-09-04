@@ -19,7 +19,10 @@ name: Cross-platform Check
 # 네이티브 host 타깃이 곧 x86_64-pc-windows-msvc / aarch64-apple-darwin 이므로
 # 별도 `--target` 지정은 불필요(오히려 rustup target 설치를 요구).
 #
-# Linux x64 gui 컴파일은 test.yml(cargo test --workspace)이 이미 커버하므로 여기서 생략.
+# Linux x64 gui 컴파일은 여기서 생략한다 — 다만 test.yml 의 전체 스위트 잡은 **수동
+# 전용**이라 자동 채널이 아니다(그쪽 헤더 2번 근거). 즉 Linux x64 gui 컴파일은 현재
+# 어떤 자동 잡도 보지 않으며, 사람이 병합 후 main 에서 돌리는 전체 스위트가 유일한
+# 채널이다.
 # 단, headless(`--no-default-features`) 빌드만은 어떤 workflow 도 돌지 않아 gui-gating
 # 누락(gui 전용 심볼을 cfg 게이팅 없이 사용)이 CI 를 통과해 유입됐다(headless-build-01).
 # gui feature 가 켜진 빌드에선 그 실수가 드러나지 않으므로, headless 회귀는 오직
