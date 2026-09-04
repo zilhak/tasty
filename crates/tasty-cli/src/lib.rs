@@ -76,7 +76,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: NewCommands,
     },
-    /// Close a resource (tab, pane, surface)
+    /// Close a resource (tab, pane, surface, workspace)
     Close {
         #[command(subcommand)]
         command: CloseCommands,

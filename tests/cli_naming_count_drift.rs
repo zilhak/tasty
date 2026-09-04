@@ -53,7 +53,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("webhook", 6),
     ("webview", 1),
     ("window", 3),
-    ("workspace", 4),
+    ("workspace", 5),
     ("workspace_category", 5),
 ];
 

@@ -2,6 +2,51 @@ use crate::core::CoreState;
 
 use super::AppState;
 
+/// 워크스페이스 닫기를 **누가** 요청했는가.
+///
+/// 사용자 경로와 에이전트 경로는 세 가지 부수효과가 갈린다 — 되돌리기 스택에
+/// 쌓는지, plugin `surface.closed` 에 실리는 reason 이 무엇인지, close 계측의
+/// 경로값이 무엇인지. 셋 다 **이 값 하나에서 파생**시킨다.
+///
+/// 종전에는 `save_snapshot: bool` 하나만 인자였고 나머지 둘은 함수 안에 상수로
+/// 박혀 있었다. 그래서 에이전트 경로를 추가했을 때 되돌리기 스택만 갈리고
+/// plugin 에는 `LifecycleReason::User` 가, 계측에는 `snapshot=true` 가 그대로
+/// 나갔다 — 같은 축을 나타내는 값이 셋인데 인자는 하나였던 형태가 원인이다.
+/// **축 하나 = 인자 하나**로 고정해 그 실수가 다시 생기지 않게 한다.
+///
+/// 원칙 1(에이전트 행동의 부수효과는 사용자 상태에 닿지 않는다)은
+/// [`docs/identity.md`] — 집행 지점이 여기다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceCloseOrigin {
+    /// 사용자가 자기 손으로 닫았다 — 단축키 · 사이드바 컨텍스트 메뉴 · 사용자
+    /// 입력을 재현하는 debug 전용 IPC.
+    User,
+    /// 에이전트가 release IPC/CLI(`workspace.close`)로 닫았다.
+    Agent,
+}
+
+impl WorkspaceCloseOrigin {
+    /// 사용자의 "닫은 항목" 되돌리기 스택(`Ctrl+Shift+T`)에 쌓을지.
+    /// 그 스택은 사용자가 자기 손으로 닫은 것만 담는다.
+    fn saves_snapshot(self) -> bool {
+        matches!(self, Self::User)
+    }
+
+    /// plugin `surface.closed` payload 의 `reason` — `LifecycleReason::User` 인지
+    /// `::Ipc` 인지를 가른다(`app::dispatch::surface_lifecycle`).
+    fn is_user_close(self) -> bool {
+        matches!(self, Self::User)
+    }
+
+    /// close 계측(`close_trace`)의 경로 구분값.
+    fn trace_path(self) -> &'static str {
+        match self {
+            Self::User => "gui",
+            Self::Agent => "ipc",
+        }
+    }
+}
+
 /// 워크스페이스 하나가 `removed_idx` 에서 제거된 뒤, **인덱스로 저장된 활성 포인터**가
 /// 계속 같은 워크스페이스를 가리키도록 보정한 값.
 ///
@@ -311,40 +356,58 @@ impl AppState {
     /// Close the active workspace. Returns true if the workspace was removed.
     /// Cleans up all surfaces (surface meta + per-surface view state) in the workspace.
     pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
-        self.close_workspace_at(engine, self.active_workspace)
+        self.close_workspace_at(engine, self.active_workspace, WorkspaceCloseOrigin::User)
     }
 
     /// Close a specific workspace by index (context menu 등 임의 지정 close).
-    /// Cleans up all surfaces + closed_item snapshot + memory scope purge.
-    pub fn close_workspace_at(&mut self, engine: &mut CoreState, ws_idx: usize) -> bool {
+    /// Cleans up all surfaces + memory scope purge.
+    ///
+    /// 사용자 경로와 에이전트 경로의 차이는 [`WorkspaceCloseOrigin`] 하나로만
+    /// 표현한다 — 갈리는 부수효과 셋(되돌리기 스택 / plugin 에 실리는 close
+    /// reason / close 계측 경로값)을 전부 거기서 파생시킨다.
+    ///
+    /// 포커스는 어느 경로든 `fix_workspace_pointers_after_removal` 이 제거 직후
+    /// 보정한다 — 보던 워크스페이스가 아닌 것을 닫으면 화면은 그대로다.
+    /// `workspace.closed` host event 는 origin 과 무관하게 발화한다: 워크스페이스가
+    /// 사라졌다는 사실 자체는 누가 닫았든 동일하고, cascade 경로
+    /// (`app::dispatch_domain` 의 `purge_closed_workspace_memory`)도 그렇게 한다.
+    pub fn close_workspace_at(
+        &mut self,
+        engine: &mut CoreState,
+        ws_idx: usize,
+        origin: WorkspaceCloseOrigin,
+    ) -> bool {
         use crate::close_trace;
         use std::time::Instant;
 
-        /// close 계측의 경로 구분값 — 이 함수는 GUI 트리거 전용이다.
-        const PATH: &str = "gui";
+        let save_snapshot = origin.saves_snapshot();
+        let path = origin.trace_path();
 
         if ws_idx >= engine.workspaces.len() {
             return false;
         }
         let t_close = Instant::now();
-        // C1 — Capture workspace snapshot before closing.
-        let t = Instant::now();
-        let snapshot = super::AppState::capture_workspace_snapshot(engine, ws_idx);
-        close_trace::log_snapshot(t, &snapshot, PATH);
-        // C2 — restore.command 주입 + 스크롤백 디스크 write + evict.
-        let t = Instant::now();
-        engine.push_closed_item(snapshot).log(t.elapsed(), PATH);
+        // C1/C2 — snapshot 은 조건부다. 에이전트 경로는 두 단계를 통째로 건너뛴다.
+        if save_snapshot {
+            let t = Instant::now();
+            let snapshot = super::AppState::capture_workspace_snapshot(engine, ws_idx);
+            close_trace::log_snapshot(t, &snapshot, path);
+            // C2 — restore.command 주입 + 스크롤백 디스크 write + evict.
+            let t = Instant::now();
+            engine.push_closed_item(snapshot).log(t.elapsed(), path);
+        }
         // C3 — Collect all (surface_id, persist_id) for cleanup before removing.
         let t = Instant::now();
         let targets = super::AppState::collect_workspace_close_targets(engine, ws_idx);
-        close_trace::log_collect(t, targets.len(), PATH);
+        close_trace::log_collect(t, targets.len(), path);
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         // C4 — Workspace scope 의 memory entry 정리. 안의 surface 들은 아래
         // cleanup_surface 에서 각자 자기 scope 를 purge 한다.
         let t = Instant::now();
+        self.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
         self.purge_workspace_memory_scope(workspace_id);
-        close_trace::log_ws_purge(t, PATH);
+        close_trace::log_ws_purge(t, path);
         // 활성 포인터를 대상 기준으로 보정 — 앞쪽 워크스페이스를 닫아도 보고 있던
         // 워크스페이스가 그대로 남는다.
         self.fix_workspace_pointers_after_removal(ws_idx, engine.workspaces.len());
@@ -359,9 +422,9 @@ impl AppState {
             })
             .collect();
         let surfaces = zipped.len();
-        self.cleanup_targets(engine, zipped, true, Some(PATH));
+        self.cleanup_targets(engine, zipped, origin.is_user_close(), Some(path));
         engine.mark_layout_dirty();
-        close_trace::log_total(t_close, surfaces, true, PATH);
+        close_trace::log_total(t_close, surfaces, save_snapshot, path);
         true
     }
 }

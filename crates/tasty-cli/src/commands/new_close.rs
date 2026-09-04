@@ -85,6 +85,23 @@ pub enum CloseCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Close a whole workspace by its ID, with every pane, tab and surface in it.
+    ///
+    /// This cannot be undone: every terminal in the workspace is killed, the
+    /// workspace does not enter the user's reopen history, and its scrollback is
+    /// not kept. Only closes the user made by hand can be reopened.
+    ///
+    /// The target is always given explicitly with --id (see `tasty list workspaces`);
+    /// it is never inferred from what is on screen. Closing a workspace the user is
+    /// not looking at leaves their current workspace on screen. A workspace holding
+    /// your own surface is refused, as is a workspace mirroring a remote attach
+    /// session and the last remaining workspace - closing the window is a separate
+    /// decision, see `tasty close window`.
+    Workspace {
+        /// Target workspace ID (required)
+        #[arg(long)]
+        id: u32,
+    },
     /// Close the calling surface itself (uses TASTY_SURFACE_ID)
     #[command(name = "self")]
     CloseSelf,

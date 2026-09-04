@@ -2078,3 +2078,94 @@ fn closing_the_focused_pane_reassigns_focus() {
         "포커스 pane 을 닫았으면 생존 pane 으로 재배정돼야 한다"
     );
 }
+
+// ---- 에이전트 close 와 사용자 close 가 갈리는 축 ----
+//
+// 포커스는 위 3계층 테스트가 고정한다. 여기서 고정하는 것은 `close_workspace_at`
+// 이 `WorkspaceCloseOrigin` 에서 파생시키는 세 부수효과다 — 되돌리기 스택,
+// plugin 에 실리는 close reason, 그리고 (아래 핸들러 테스트에서) 계측 경로값.
+// 불가침 원칙 1: 에이전트 행동의 부수효과는 사용자 상태에 닿지 않는다.
+
+#[test]
+fn agent_close_does_not_record_the_workspace_for_undo() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
+
+    assert!(
+        engine.closed_items.is_empty(),
+        "에이전트가 닫은 것은 사용자의 되돌리기 스택에 들어가면 안 된다"
+    );
+}
+
+#[test]
+fn user_close_still_records_the_workspace_for_undo() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
+
+    assert_eq!(engine.closed_items.len(), 1);
+}
+
+/// 에이전트가 닫으면 plugin `surface.closed` 의 reason 도 에이전트여야 한다.
+///
+/// 되돌리기 스택과 **같은 축**인데 값이 따로 있어서, 예전에는 스냅샷만 갈리고
+/// 이쪽은 사용자로 나갔다. `LifecycleReason::User`/`::Ipc` 매핑은
+/// `app::dispatch::surface_lifecycle` 에서 이 플래그 하나로 결정된다.
+#[test]
+fn agent_close_reports_agent_origin_to_plugins() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
+
+    let events = state.take_pending_lifecycle_events();
+    assert!(
+        !events.is_empty(),
+        "닫힌 surface 의 lifecycle 이벤트가 하나는 있어야 한다"
+    );
+    let flags: Vec<bool> = events.iter().map(|e| e.is_user_close).collect();
+    assert!(
+        flags.iter().all(|f| !*f),
+        "에이전트가 닫았는데 plugin 에는 사용자 close 로 나간다: {flags:?}"
+    );
+}
+
+#[test]
+fn user_close_reports_user_origin_to_plugins() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
+
+    let events = state.take_pending_lifecycle_events();
+    assert!(!events.is_empty());
+    assert!(events.iter().all(|e| e.is_user_close));
+}
+
+/// `workspace.closed` host event 는 **origin 과 무관하게** 나간다.
+///
+/// surface 를 하나씩 닫아 워크스페이스가 사라지는 cascade 경로는 이미 그렇게
+/// 한다(`app::dispatch_domain` 의 `purge_closed_workspace_memory`). 어느 명령을
+/// 썼느냐에 따라 plugin 이 받는 이벤트가 달라지면 안 된다.
+#[test]
+fn closing_a_workspace_emits_the_host_event_for_both_origins() {
+    for origin in [WorkspaceCloseOrigin::Agent, WorkspaceCloseOrigin::User] {
+        let (mut state, mut engine) = test_state();
+        add_test_workspace(&mut state, &mut engine);
+        let workspace_id = engine.workspaces[0].id;
+
+        assert!(state.close_workspace_at(&mut engine, 0, origin));
+
+        let emitted = state.take_pending_host_events().iter().any(|e| {
+            matches!(
+                e,
+                crate::state::PendingHostEvent::WorkspaceClosed { workspace_id: id }
+                    if *id == workspace_id
+            )
+        });
+        assert!(emitted, "{origin:?}: workspace.closed host event 가 없다");
+    }
+}

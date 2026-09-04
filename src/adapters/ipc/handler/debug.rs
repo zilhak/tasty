@@ -660,7 +660,7 @@ pub(super) fn handle_debug_close_workspace(
             "Refusing to close the last workspace (would leave no workspace)",
         );
     }
-    let closed = state.close_workspace_at(engine, index);
+    let closed = state.close_workspace_at(engine, index, crate::state::WorkspaceCloseOrigin::User);
     JsonRpcResponse::success(id, json!({"closed": closed, "index": index}))
 }
 

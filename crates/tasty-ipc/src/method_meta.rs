@@ -58,6 +58,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("workspace.create", plugin(&[SurfaceWrite])),
         ("workspace.update", plugin(&[SurfaceWrite])),
         ("workspace.move", plugin(&[SurfaceWrite])),
+        // workspace.create 와 대칭 — 만들 수 있는 주체는 닫을 수도 있어야 한다(원칙 2).
+        // 새 권한 토큰을 만들지 않는 이유: pane.close / tab.close 도 같은 SurfaceWrite
+        // 이고, 닫기만 따로 승인받게 하면 기존 plugin 이 전부 재승인 대상이 된다.
+        ("workspace.close", plugin(&[SurfaceWrite])),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
         ("workspace_category.list", plugin(&[SurfaceRead])),
         ("workspace_category.create", plugin(&[SurfaceWrite])),

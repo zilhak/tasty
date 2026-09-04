@@ -101,10 +101,21 @@ tasty split --level pane --target-pane 3 --direction horizontal          # 패�
 tasty new tab --pane 3 --cwd ~/proj                     # 패인에 새 탭
 tasty close surface --surface 99                        # 서피스 닫기
 tasty close tab --tab 12
+tasty close workspace --id 3                            # 워크스페이스를 통째로 (안의 탭·서피스까지)
 tasty close self                                        # 지금 이 서피스 닫기
 ```
 
 `--target-surface this` 는 자기 자신(`TASTY_SURFACE_ID`)이다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있다 ([파일 열기](../using/files.md)).
+
+워크스페이스는 마지막 하나를 닫지 못한다. 워크스페이스를 닫으면 창까지 사라지는 것이 아니라
+거절된다 — 창을 없애는 것은 별개의 결정이다. 자기 터미널이 들어 있는 대상은
+닫히지 않는다 — 그때는 `tasty close self` 다. 원격에 접속해 미러로 띄운 워크스페이스도 닫지 못한다 —
+그건 접속을 끊어서 정리한다. 보고 있지 않은 워크스페이스를 닫아도 화면에 떠 있는 워크스페이스는
+그대로 남는다.
+
+**워크스페이스 닫기는 되돌릴 수 없다.** 안에서 돌던 터미널이 전부 종료되고, "닫은 항목" 으로
+되살릴 수 없으며, 스크롤백도 남지 않는다. 되살릴 수 있는 건 사람이 자기 손으로 닫은 것뿐이다.
+지울 게 맞는지는 `tasty list workspaces` 로 먼저 확인한다.
 
 ## 알림 보내기
 

@@ -417,6 +417,96 @@ pub fn handle_workspace_update(
     )
 }
 
+/// `workspace.close` — 워크스페이스를 통째로 닫는다. 대상은 **id 로 직접 지정**하며
+/// (`index` 도 받지만 `workspace.update` 와 같은 보조 경로다) 활성 상태에 의존하지 않는다.
+///
+/// 사용자 상태를 건드리지 않기 위해 두 가지를 지킨다.
+///
+/// 1. **닫은 항목 히스토리에 쌓지 않는다** — `save_snapshot = false`. 되돌리기 스택은
+///    사용자가 자기 손으로 닫은 것만 담는다(원칙 1).
+/// 2. **포커스를 옮기지 않는다** — `close_workspace_at` 이 제거 직후
+///    `fix_workspace_pointers_after_removal` 로 인덱스 활성 포인터를 대상 기준으로
+///    보정한다. 활성 워크스페이스 자신을 닫을 때만 이동한다.
+///
+/// 마지막 워크스페이스는 거부한다. GUI 는 그 경우 창까지 닫지만, 창을 없애는 것은
+/// 별개의 결정이라 에이전트에게는 `window.close` 라는 명시적 수단을 따로 준다 —
+/// 워크스페이스 하나를 닫으라는 요청이 창 종료로 번지지 않게 한다.
+pub fn handle_workspace_close(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let ws_idx = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
+        let ws_id = ws_id as u32;
+        match engine.workspaces.iter().position(|w| w.id == ws_id) {
+            Some(i) => i,
+            None => {
+                return JsonRpcResponse::invalid_params(id, format!("Workspace {ws_id} not found"));
+            }
+        }
+    } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+        let idx = i as usize;
+        if idx >= engine.workspaces.len() {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!(
+                    "Workspace index {} out of range (0..{})",
+                    idx,
+                    engine.workspaces.len()
+                ),
+            );
+        }
+        idx
+    } else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
+    };
+
+    // 자기 자신 닫기 보호 — pane.close / tab.close 와 같은 규칙. 대상 워크스페이스에
+    // caller 의 surface 가 들어 있으면 이 요청은 자기 터미널을 죽인다.
+    if let Some(caller) = super::caller_surface_id(params)
+        && engine
+            .find_workspace_index_for_surface(caller)
+            .map(|(i, _)| i)
+            == Some(ws_idx)
+    {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot close a workspace that contains your own surface. Move elsewhere first, \
+             or use 'tasty close self' to close just your surface.",
+        );
+    }
+
+    // mirror 워크스페이스는 원격을 attach 해 들고 있는 그림자다. 거두는 절차가
+    // 따로 있고(`app::attach_client` 의 `remove_mirror_workspace_from_engine` —
+    // mirror 터미널 · busy · attention · mesh 프레임까지 함께 걷는다) 이 경로는
+    // 그중 아무것도 하지 않는다. 같은 이유로 `surface.attention.clear` 도 mirror
+    // surface 를 거절한다. detach 는 attach 세션 쪽 수단을 쓴다.
+    if engine.workspaces[ws_idx].mirror {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Workspace is a mirror of a remote attach session — detach it from that session \
+             instead of closing it here",
+        );
+    }
+
+    if engine.workspaces.len() == 1 {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Refusing to close the last workspace — closing the window instead is a separate \
+             decision; use 'window.close' explicitly if that is what you want",
+        );
+    }
+
+    let workspace_id = engine.workspaces[ws_idx].id;
+    // `ws_idx` 는 위에서 검증됐고 그 사이 워크스페이스가 제거되지 않으므로 `closed` 는
+    // 참일 수밖에 없다. 그래도 상수 `true` 를 싣지 않고 반환값을 그대로 싣는다 — 그
+    // 불변이 언젠가 깨지면 응답이 조용히 성공을 주장하는 대신 사실을 말한다.
+    let closed =
+        state.close_workspace_at(engine, ws_idx, crate::state::WorkspaceCloseOrigin::Agent);
+    JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
+}
+
 pub fn handle_workspace_move(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -453,3 +543,174 @@ pub fn handle_workspace_move(
 }
 
 // workspace.select removed: focus is user-only (shortcuts/clicks).
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 워크스페이스를 하나 더 만들고 그 인덱스를 돌려준다.
+    fn add_workspace(engine: &mut crate::core::CoreState) -> u32 {
+        let event = crate::core::apply_create_workspace_inner(
+            engine,
+            crate::core::WorkspaceCreationParams::terminal(),
+        )
+        .unwrap();
+        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+            panic!("expected WorkspaceCreated");
+        };
+        engine.workspaces[index].id
+    }
+
+    #[test]
+    fn closing_the_last_workspace_is_refused() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        assert_eq!(engine.workspaces.len(), 1);
+        let only = engine.workspaces[0].id;
+
+        let res = handle_workspace_close(&mut state, &mut engine, json!(1), &json!({ "id": only }));
+
+        assert!(res.error.is_some(), "마지막 워크스페이스는 거절해야 한다");
+        assert_eq!(
+            engine.workspaces.len(),
+            1,
+            "거절이면 아무것도 닫히지 않는다"
+        );
+    }
+
+    #[test]
+    fn closing_the_workspace_holding_your_own_surface_is_refused() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        add_workspace(&mut engine);
+        // caller 자신의 surface 가 든 워크스페이스를 대상으로 지정한다.
+        let target = engine.workspaces[0].id;
+        let caller = engine.workspaces[0]
+            .all_surface_ids()
+            .first()
+            .copied()
+            .expect("워크스페이스에 surface 가 있어야 한다");
+
+        let res = handle_workspace_close(
+            &mut state,
+            &mut engine,
+            json!(1),
+            &json!({ "id": target, "caller_surface_id": caller }),
+        );
+
+        assert!(
+            res.error.is_some(),
+            "자기 surface 가 든 대상은 거절해야 한다"
+        );
+        assert_eq!(engine.workspaces.len(), 2);
+    }
+
+    /// 성공 경로 — 이 lane 이 주장하는 것 전부를 한 자리에서 고정한다.
+    ///
+    /// 거절 테스트만 있으면 `close_workspace_at` 호출 줄에 **도달조차 하지 않아**,
+    /// 대상 해석(원칙 3) · 활성 포인터 보정(ADR-0113) · 되돌리기 스택 미기록
+    /// (원칙 1) · 응답 계약이 전부 무방비로 남는다. 실제로 그 네 축의 변이가
+    /// 전부 생존했다.
+    #[test]
+    fn closing_a_workspace_the_user_is_not_looking_at_leaves_the_view_alone() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let target_id = add_workspace(&mut engine);
+        add_workspace(&mut engine);
+        assert_eq!(engine.workspaces.len(), 3);
+
+        // 사용자는 **마지막** 워크스페이스를 보고 있고, 에이전트는 **중간** 것을 닫는다.
+        state.active_workspace = 2;
+        let viewing_id = engine.workspaces[2].id;
+        let target_idx = 1;
+        assert_eq!(engine.workspaces[target_idx].id, target_id);
+        assert_ne!(
+            target_idx as u32, target_id,
+            "인덱스와 id 가 같으면 응답이 어느 쪽을 실었는지 구분할 수 없다"
+        );
+
+        let res = handle_workspace_close(
+            &mut state,
+            &mut engine,
+            json!(1),
+            &json!({ "id": target_id }),
+        );
+
+        assert!(res.error.is_none(), "성공해야 한다: {:?}", res.error);
+        let result = res.result.expect("success 응답에는 result 가 있다");
+        assert_eq!(result["closed"], true);
+        assert_eq!(
+            result["id"], target_id,
+            "응답은 인덱스가 아니라 대상 워크스페이스 id 를 돌려줘야 한다"
+        );
+
+        // 원칙 3 — 지정한 대상만 사라진다. 활성 워크스페이스를 닫지 않는다.
+        assert_eq!(engine.workspaces.len(), 2);
+        assert!(
+            engine.workspaces.iter().all(|w| w.id != target_id),
+            "대상이 아직 남아 있다"
+        );
+
+        // ADR-0113 — 사용자가 보던 워크스페이스가 그대로여야 한다. 앞쪽이 빠지면
+        // 뒤가 한 칸 당겨지므로 인덱스는 2 에서 1 로 내려가되 **가리키는 대상은
+        // 같아야** 한다.
+        assert_eq!(
+            engine.workspaces[state.active_workspace].id, viewing_id,
+            "앞쪽 워크스페이스를 닫았는데 사용자 시야가 다른 워크스페이스로 옮겨갔다"
+        );
+
+        // 원칙 1 — 되돌리기 스택에 쌓지 않는다.
+        assert!(
+            engine.closed_items.is_empty(),
+            "에이전트가 닫은 것이 사용자의 되돌리기 스택에 들어갔다"
+        );
+
+        // 원칙 1 — plugin 에도 에이전트 close 로 나가야 한다.
+        let events = state.take_pending_lifecycle_events();
+        assert!(
+            !events.is_empty(),
+            "닫힌 surface 의 lifecycle 이벤트가 없다"
+        );
+        assert!(
+            events.iter().all(|e| !e.is_user_close),
+            "에이전트가 닫았는데 plugin 에는 사용자 close 로 나간다"
+        );
+    }
+
+    /// mirror 워크스페이스는 거둘 절차가 따로 있어 이 경로로 닫지 않는다.
+    #[test]
+    fn closing_a_mirror_workspace_is_refused() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let mirror_id = add_workspace(&mut engine);
+        let mirror_idx = engine
+            .workspaces
+            .iter()
+            .position(|w| w.id == mirror_id)
+            .expect("방금 만든 워크스페이스");
+        engine.workspaces[mirror_idx].mirror = true;
+
+        let res = handle_workspace_close(
+            &mut state,
+            &mut engine,
+            json!(1),
+            &json!({ "id": mirror_id }),
+        );
+
+        assert!(res.error.is_some(), "mirror 워크스페이스는 거절해야 한다");
+        assert_eq!(
+            engine.workspaces.len(),
+            2,
+            "거절이면 아무것도 닫히지 않는다"
+        );
+    }
+
+    #[test]
+    fn closing_an_unknown_workspace_id_is_refused() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        add_workspace(&mut engine);
+
+        let res =
+            handle_workspace_close(&mut state, &mut engine, json!(1), &json!({ "id": 999_999 }));
+
+        assert!(res.error.is_some());
+        assert_eq!(engine.workspaces.len(), 2);
+    }
+}

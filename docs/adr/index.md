@@ -129,3 +129,4 @@
 | 0117 | [창·모달 생성 실패는 패닉이 아니다 — 부팅은 진단 후 종료, 그 외는 취소 후 안내하며 안내 채널은 요청 origin 이 가른다](0117-window-and-modal-creation-failure-policy.md) | Accepted | 2026-09-04 | error-handling, window, modal, boot, panic, toast, info-modal, focus, identity-principle-1, i18n, shutdown |
 | 0118 | [캡처는 읽기라 행동 대상 집합을 넓히지 않는다 — 명시한 `window_id` 는 모달까지 찍고, 자동 선택은 main 창 하나로 유지한다](0118-screenshot-reads-any-window-explicit-id-only.md) | Accepted | 2026-09-04 | screenshot, ipc, window, modal, focus, identity-principle-1, identity-principle-3, local-only, ai-verification |
 | 0119 | [세마포어 한도는 원자적으로 조정하고, 홀더 만료는 opt-in 으로 둔다](0119-agent-semaphore-resize-and-holder-expiry.md) | Accepted | 2026-09-04 | agent-collaboration, semaphore, lease, concurrency, operability |
+| 0120 | [에이전트가 부르는 워크스페이스 닫기의 경계 — 마지막 하나와 mirror 는 거절하고, 비가역성은 숨기지 않는다](0120-agent-workspace-close-boundaries.md) | Accepted | 2026-09-04 | agent-surface, workspace, close, remote-attach, identity-principles, adr-0113 |

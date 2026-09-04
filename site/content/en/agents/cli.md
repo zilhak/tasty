@@ -102,10 +102,21 @@ tasty split --level pane --target-pane 3 --direction horizontal          # split
 tasty new tab --pane 3 --cwd ~/proj                     # new Tab in a Pane
 tasty close surface --surface 99                        # close a Surface
 tasty close tab --tab 12
+tasty close workspace --id 3                            # a whole Workspace, tabs and surfaces included
 tasty close self                                        # close this very Surface
 ```
 
 `--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)).
+
+The last remaining workspace cannot be closed. Closing a workspace never takes the window down
+with it; it is refused instead - removing the window is a separate decision. A target holding your
+own terminal is refused too - use `tasty close self`
+there. A workspace mirroring a remote connection is refused as well - end that connection instead.
+Closing a workspace you are not looking at leaves the one on screen where it was.
+
+**Closing a workspace cannot be undone.** Every terminal running inside it ends, it does not come
+back from "recently closed", and its scrollback is gone. Only what a person closed by hand can be
+restored. Check with `tasty list workspaces` before you close.
 
 ## Sending notifications
 

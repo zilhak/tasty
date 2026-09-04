@@ -379,6 +379,11 @@ fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, ser
             "surface.close",
             serde_json::json!({ "surface_id": surface, "caller_surface_id": caller }),
         ),
+        // 대상은 id 로 직접 지정 — 활성 워크스페이스/창에 암묵 의존하지 않는다.
+        CloseCommands::Workspace { id } => (
+            "workspace.close",
+            serde_json::json!({ "id": id, "caller_surface_id": caller }),
+        ),
         CloseCommands::CloseSelf => match caller {
             Some(sid) => (
                 "surface.close_self",

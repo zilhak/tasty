@@ -409,6 +409,17 @@ fn hard_occupied_structural_guard(
                         .map(|(i, _)| i)
                 })?
         }
+        // 워크스페이스 통째 닫기 — 대상 자체가 workspace 라 id/index 를 그대로 쓴다.
+        "workspace.close" => {
+            if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
+                engine
+                    .workspaces
+                    .iter()
+                    .position(|w| w.id == ws_id as u32)?
+            } else {
+                params.get("index").and_then(|v| v.as_u64())? as usize
+            }
+        }
         "tab.create" | "pane.close" | "tab.move" => {
             let pane_id = params
                 .get("pane_id")
@@ -527,6 +538,7 @@ fn route_engine_handler(
         "workspace.move" => {
             workspace::handle_workspace_move(core, state, engine, id, &request.params)
         }
+        "workspace.close" => workspace::handle_workspace_close(state, engine, id, &request.params),
         // workspace category (사이드바 폴더 CRUD — 원칙 1·3: active/포커스 불변)
         "workspace_category.list" => workspace_category::handle_list(state, engine, id),
         "workspace_category.create" => {

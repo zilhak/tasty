@@ -36,6 +36,8 @@ pub mod preset_apply;
 pub mod search;
 pub mod selection;
 
+pub use workspace::WorkspaceCloseOrigin;
+
 use std::collections::VecDeque;
 
 #[cfg(feature = "gui")]
@@ -1499,8 +1501,8 @@ impl AppState {
     //    자체가 사라지는" 동일 로직이라 여기 모아 dedup 한다. ──
 
     /// 지정 workspace 의 `ClosedItem` snapshot 을 만든다(push 는 호출자 책임 —
-    /// `close_case_workspace` 는 `save_snapshot` 조건부, `close_workspace_at` 은
-    /// 무조건이라 호출 여부 자체가 다르다).
+    /// 두 호출자 모두 조건부다: `close_case_workspace` 는 `save_snapshot` 인자로,
+    /// `close_workspace_at` 은 [`WorkspaceCloseOrigin`] 에서 파생한 값으로 가른다).
     fn capture_workspace_snapshot(engine: &CoreState, ws_idx: usize) -> crate::model::ClosedItem {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
         let ws = &engine.workspaces[ws_idx];

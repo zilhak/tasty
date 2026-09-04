@@ -1269,7 +1269,11 @@ impl MainView {
                 #[allow(clippy::collapsible_match)]
                 Some(6) => {
                     // Close workspace (모든 surface + closed_item snapshot)
-                    if this.state.close_workspace_at(engine, ws_idx) && engine.workspaces.is_empty()
+                    if this.state.close_workspace_at(
+                        engine,
+                        ws_idx,
+                        crate::state::WorkspaceCloseOrigin::User,
+                    ) && engine.workspaces.is_empty()
                     {
                         this.request_close();
                     }
