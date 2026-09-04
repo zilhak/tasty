@@ -109,7 +109,7 @@ check_cargo_fmt() {
         fail "[A.2 cargo fmt] 포맷 위반. \`cargo fmt\` 실행 후 다시 staging."
     fi
     for crate in $EXCLUDED_CRATES; do
-        if echo "$STAGED_RS" | grep -q "^$crate/"; then
+        if grep -q "^$crate/" <<<"$STAGED_RS"; then
             if ! cargo fmt --check --manifest-path "$crate/Cargo.toml" 2>/dev/null; then
                 fail "[A.2 cargo fmt] $crate/ 포맷 위반 (workspace exclude — 루트 cargo fmt 미검사). \`cargo fmt --manifest-path $crate/Cargo.toml\` 실행 후 다시 staging."
             fi
@@ -294,7 +294,7 @@ check_dbg() {
 check_changelog_reminder() {
     local staged surface
     staged=$(git diff --cached --name-only --diff-filter=ACMR)
-    if echo "$staged" | grep -qx 'CHANGELOG.md'; then return; fi
+    if grep -qx 'CHANGELOG.md' <<<"$staged"; then return; fi
     surface=$(echo "$staged" | grep -E \
         -e '^crates/tasty-ipc/src/method_meta\.rs$' \
         -e '^crates/tasty-cli/src/commands/' \
