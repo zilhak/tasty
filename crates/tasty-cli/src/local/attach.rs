@@ -582,6 +582,31 @@ enum RawEvent {
 /// 되돌리면, 그 사이 이미 설치된 새 세션의 sender 를 지워버릴 수 있다.
 type StdinSlot = Arc<Mutex<Option<mpsc::Sender<RawEvent>>>>;
 
+/// stdin 슬롯 poison 을 보고했는가(첫 1 회만 — poison 은 sticky 라 이후 모든 청크가
+/// 같은 경로를 탄다).
+static STDIN_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+/// stdin 슬롯 락을 poison 이어도 잡는다. 세 호출부(청크 라우팅 · EOF 라우팅 ·
+/// sender 설치)의 근거는 각 함수 doc 에 있고, 공통점은 **여기서 패닉하면 프로세스가
+/// 영구 사망**한다는 것이다. 복구를 택하더라도 관측은 남긴다
+/// (`docs/dev-guide/error-handling.md` "어느 선택을 하든 로그를 남긴다").
+///
+/// `tasty_utils::poison` 헬퍼를 쓰지 않는 이유는 이 파일의 형제 지점인 writer 락이
+/// **복구가 오답**이라 반대 선택을 하기 때문이다 — 한 파일에 두 형태를 섞으면 다음
+/// 사람이 "여기도 헬퍼면 되겠네" 로 잘못 통일하기 쉽다.
+fn lock_stdin_slot(slot: &StdinSlot) -> std::sync::MutexGuard<'_, Option<mpsc::Sender<RawEvent>>> {
+    slot.lock().unwrap_or_else(|p| {
+        if !STDIN_SLOT_POISON_REPORTED.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                "attach: stdin slot lock poisoned — a thread panicked while holding it; \
+                 recovering (the slot holds a plain `Option<Sender>`), later occurrences \
+                 are not logged"
+            );
+        }
+        p.into_inner()
+    })
+}
+
 /// 슬롯이 비어있는(세션 전환 중) 동안 발생한 진짜 stdin EOF/에러를 기억해두는
 /// latch. 리더 스레드가 세우고, [`install_sender`] 가 다음 세션 설치 시 확인해
 /// 즉시 `RawEvent::StdinEof` 를 전달한다 — 서버 단절→재연결 전환과 진짜 stdin
@@ -647,7 +672,7 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
     // 후에도 안전하게 읽을 수 있다(tearing 불가). 이 상시 리더 스레드는 `OnceLock`
     // 초기화로 프로세스 생애주기에 1번만 도므로, 여기서 패닉하면 재시작 없이 영구
     // 사망해 이후 모든 재연결 세션이 stdin 을 못 받는다.
-    let sender = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let sender = lock_stdin_slot(slot).clone();
     if let Some(tx) = sender {
         let _ = tx.send(RawEvent::Stdin(data.to_vec())); // 세션 전환 중 송신 실패는 버림 — 위 불변식 참고
     }
@@ -661,7 +686,7 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
 fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
     // route_stdin_chunk 와 동일한 이유로 poison 을 무시하고 계속 진행한다 — 이
     // 함수도 같은 상시 리더 스레드에서 돌므로 여기서 패닉하면 마찬가지로 영구 사망.
-    let sender = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let sender = lock_stdin_slot(slot).clone();
     let delivered = match sender {
         Some(tx) => tx.send(RawEvent::StdinEof).is_ok(),
         None => false,
@@ -679,7 +704,7 @@ fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<
     // poison 이어도 대입은 안전(값 자체가 tearing 불가) — 이 함수는 메인 스레드
     // (재연결 루프)에서 매 세션마다 호출되므로, 여기서 패닉하면 백오프 재연결
     // 루프조차 못 돌고 `tasty attach --raw --ssh` 프로세스 자체가 종료된다.
-    *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(tx.clone());
+    *lock_stdin_slot(slot) = Some(tx.clone());
     if eof_latch.swap(false, Ordering::AcqRel) {
         let _ = tx.send(RawEvent::StdinEof); // best-effort — 세션이 이미 끝났으면 무시.
     }
