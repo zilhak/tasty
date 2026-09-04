@@ -16,15 +16,29 @@
 대부분의 동작은 tasty CLI 로 시나리오를 만들 수 있다.
 
 ```bash
-cargo run &                                              # 백그라운드 실행
-until target/debug/tasty list info 2>/dev/null; do sleep 1; done  # IPC 대기 (sleep 루프 금지, until 조건검사)
+cargo build                                              # 먼저 빌드한다 — `cargo run &` 을 쓰면
+                                                         # $! 가 cargo 의 PID 라 kill 이 앱에 닿지 않는다
+target/debug/tasty --launch &                            # 백그라운드 실행 (--launch 는 아래 문단 참고)
+MY_APP=$!                                                # 띄운 즉시 PID 를 잡는다
+until target/debug/tasty list info 2>/dev/null; do       # IPC 대기 (sleep 루프 금지, until 조건검사)
+  kill -0 "$MY_APP" 2>/dev/null || { echo "기동 실패"; break; }   # 죽은 프로세스를 무한정 기다리지 않는다
+  sleep 1
+done
 
 target/debug/tasty list surfaces                         # 상태 조회
 target/debug/tasty list tree
 target/debug/tasty send text "echo HELLO\r" --surface 2  # 시나리오 조작
 target/debug/tasty read screen --surface 2               # 결과 확인
-pkill -f "target/debug/tasty\$"                          # 종료
+kill "$MY_APP"                                           # 종료 — 저장한 PID 로만
 ```
+
+**종료는 자기가 띄운 PID 로만 한다.** 이름이나 명령줄 패턴으로 찾아서 죽이면
+**자기 것이 아닌 인스턴스까지 죽인다** — 사용자 release · 다른 검증 세션 · 병렬 lane 의
+debug 인스턴스가 동시에 떠 있는 것이 이 레포의 일상이고, 실제로 그 형태가 다른 세션의
+프로세스를 죽인 사고가 두 번 났다. 레포의 PreToolUse 훅도 같은 이유로 패턴 기반 프로세스
+종료를 차단한다. PID 를 놓쳤을 때 소유자를 확인하는 방법은
+[ai-verification/screenshot-methods](../ai-verification/screenshot-methods.md) "사용자 세션을
+건드리지 않고 격리 실행".
 
 **이미 다른 tasty 인스턴스(사용자의 release 등)가 떠 있어도 충돌하지 않는다.** `cargo run` 은 debug 빌드라 데이터 루트가 `~/.tasty-debug/`(포트파일 `~/.tasty-debug/tasty.port`)로 release 의 `~/.tasty/` 와 **완전히 분리**된다 — 포트·layout·scrollback 모두 별도. 그러니 인스턴스가 떠 있는지 따지지 말고 그냥 `cargo run` 으로 자기 debug 인스턴스를 띄워 검증한다. (격리 표·`TASTY_HOME` override: [independent-verification.md](independent-verification.md))
 

@@ -103,11 +103,36 @@ debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자�
 루트를 명시적으로 분리하고 싶으면(병렬 debug 인스턴스 등) `TASTY_HOME` env 로 루트를 강제한다 — `tasty_home()` 이 `TASTY_HOME` 을 debug/release 자동 분기보다 우선한다(`crates/tasty-utils/src/path.rs`).
 
 ```bash
-TH=$(mktemp -d); mkdir -p "$TH"; cp ~/.tasty/config.toml "$TH/"   # config 는 루트 바로 아래
+TH=$(mktemp -d); cp ~/.tasty/config.toml "$TH/"    # config 는 루트 바로 아래
 TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
+MY_APP=$!                                          # 띄운 즉시 PID 를 잡는다
+kill -0 "$MY_APP" || echo "기동 실패 — 로그를 본다"  # 실패를 확인 안 하면 이후가 전부 헛돈다
 # "$TH/tasty.port" 로 ui.screenshot 호출 (TASTY_HOME 루트라 -debug 접미사 없음)
-# 정리: pkill -f "target/debug/tasty --launch"; rm -rf "$TH"
+kill "$MY_APP"; rm -rf "${TH:?}"                   # 정리 — 저장한 PID 로만
 ```
+
+**정리는 반드시 자기가 띄운 PID 로 한다.** 이름이나 명령줄 패턴으로 찾아서 죽이면
+**자기 것이 아닌 인스턴스까지 죽인다** — 이 레포는 사용자 release · 다른 검증 세션 ·
+병렬 lane 의 debug 인스턴스가 동시에 떠 있는 것이 일상이고, 실제로 그 형태가 다른
+세션의 프로세스를 죽인 사고가 두 번 났다. 레포의 PreToolUse 훅도 같은 이유로 패턴
+기반 프로세스 종료를 차단한다. `rm -rf` 의 대상에도 같은 원칙이 적용된다 —
+`${TH:?}` 로 빈 변수가 경로가 되는 경우를 막는다.
+
+PID 를 놓쳤다면 **패턴으로 찾아 죽이지 말고 소유자부터 확인한다.** 격리 실행은
+`TASTY_HOME` 이 인스턴스마다 다르므로 그것이 신원이 된다(Linux):
+
+```bash
+for pid in $(pgrep -x tasty); do
+  home=$(tr '\0' '\n' < "/proc/$pid/environ" | grep '^TASTY_HOME=' | cut -d= -f2-)
+  echo "$pid  TASTY_HOME=${home:-<없음>}"
+done
+# 위 목록에서 "$TH" 와 일치하는 PID 하나만 골라 kill <PID>
+```
+
+macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. 어느 쪽이든 내
+것이라고 확정할 수 없으면 죽이지 않는다. 남의 인스턴스를 죽였다면 **무엇을 언제
+죽였고 그래서 어떤 검증이 무효가 됐는지**를 보고에 적는다 — 무효가 된 검증을 유효한
+것처럼 보고하는 쪽이 사고 자체보다 나쁘다.
 
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
 
