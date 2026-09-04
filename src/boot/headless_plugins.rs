@@ -252,7 +252,28 @@ fn register_one_surface_kind(
     }
 }
 
+/// 헤드리스 진입부의 pre-gate. GUI 의 `App::gates_before_routing` 과 같은 3종을
+/// 같은 순서로 돌린다. 헤드리스는 engine 이 항상 하나라 그쪽의 view 탐색이 필요 없다.
+fn gates_before_intercept(
+    app: &mut App,
+    state: &AppState,
+    engine: &mut CoreState,
+    request: &crate::ipc::protocol::JsonRpcRequest,
+    caller: &crate::ipc::caller::CallerContext,
+) -> Option<crate::ipc::protocol::JsonRpcResponse> {
+    let canonical = crate::ipc::alias::canonicalize(&request.method);
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let ws = engine.workspaces.get(state.active_workspace).map(|w| w.id);
+    let core = &mut app.core;
+    crate::ipc::handler::check_permission_gate(core, engine, caller, canonical, ws, &id)
+        .or_else(|| crate::ipc::handler::check_cap_gate(core, engine, caller, canonical, ws, &id))
+        .or_else(|| {
+            crate::ipc::handler::check_rate_limit_gate(core, engine, caller, canonical, ws, &id)
+        })
+}
+
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.
+/// 게이트 3종을 인터셉트보다 먼저 돌리는 순서까지 같다(ADR-0152).
 /// `host.shared_buffer.create` 는 egui-mesh 프레임 생성에 필수라 그대로 인터셉트한다.
 /// popup.close/banner.open/banner.close 는 헤드리스에 대응하는 GUI 상태(popup/banner
 /// overlay, view)가 없어 생략한다.
@@ -269,6 +290,28 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         None => return,
     };
     for call in calls {
+        let caller = crate::ipc::caller::CallerContext::Plugin {
+            plugin_id: call.plugin_id.clone(),
+            permissions: call.permissions.clone(),
+        };
+        let request = crate::ipc::protocol::JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::Value::from(call.call_id)),
+            method: call.method.clone(),
+            params: call.params.clone(),
+            session_token: None,
+        };
+        // 게이트 3종이 **인터셉트보다 먼저** 돈다 — GUI 진입부와 같은 순서다
+        // (ADR-0152). 아래 인터셉트는 `handle_with_caller` 에 도달하지 않으므로,
+        // 게이트가 그 함수 안에만 있으면 그 갈래만 권한·cap·rate·audit 를 통째로
+        // 건너뛴다.
+        if let Some(resp) = gates_before_intercept(app, state, engine, &request, &caller) {
+            let msg = resp.error.map(|e| e.message);
+            if let Some(mgr) = app.plugin_manager.as_mut() {
+                mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg);
+            }
+            continue;
+        }
         if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
             let size = call
                 .params
@@ -285,17 +328,6 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
             }
             continue;
         }
-        let caller = crate::ipc::caller::CallerContext::Plugin {
-            plugin_id: call.plugin_id.clone(),
-            permissions: call.permissions.clone(),
-        };
-        let request = crate::ipc::protocol::JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(serde_json::Value::from(call.call_id)),
-            method: call.method.clone(),
-            params: call.params.clone(),
-            session_token: None,
-        };
         let response = crate::ipc::handler::handle_with_caller(
             &mut app.core,
             state,

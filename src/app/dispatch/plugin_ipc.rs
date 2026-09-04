@@ -319,22 +319,33 @@ mod tests {
         );
     }
 
-    /// 헤드리스 진입부도 같은 수를 지킨다. GUI 만 재고 넘어가면 "하나뿐" 이 반쪽이 된다
-    /// — 헤드리스는 `handle_with_caller` 직결이라 게이트를 타지만, 그 앞의 인터셉트는
-    /// 여기와 똑같이 게이트 밖이다.
+    /// 헤드리스 진입부도 같은 순서를 지킨다. GUI 만 재고 넘어가면 절반만 닫힌다 —
+    /// 헤드리스의 일반 경로는 `handle_with_caller` 직결이라 안쪽 게이트를 타지만,
+    /// 인터셉트는 그 함수에 도달하지 않아 게이트 밖이었다.
     #[test]
-    fn the_headless_entry_intercepts_the_same_single_method() {
+    fn the_headless_entry_also_gates_before_it_intercepts() {
         let src = include_str!("../../boot/headless_plugins.rs");
         let src = src.split("\n#[cfg(test)]").next().unwrap_or(src);
-        let n = src.matches("call.method ==").count();
-        assert_eq!(
-            n, 1,
-            "헤드리스 진입부가 게이트 앞에서 가로채는 메서드가 {n} 개다 — \
-             GUI 쪽 면제와 수가 갈리면 둘 중 하나는 검사 없이 답한다"
-        );
+        let body = src
+            .split_once("fn dispatch_plugin_ipc_calls_headless(")
+            .expect("헤드리스 진입 함수를 못 찾았다")
+            .1;
+        let gate = body
+            .find("gates_before_intercept(")
+            .expect("헤드리스 진입부에서 pre-gate 호출을 못 찾았다");
+        let intercept = body
+            .find("call.method ==")
+            .expect("헤드리스 인터셉트를 못 찾았다");
         assert!(
-            src.contains("call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE"),
-            "가로채는 그 하나가 shared buffer 생성이 아니다"
+            gate < intercept,
+            "게이트({gate})가 인터셉트({intercept})보다 뒤에 있다 — \
+             그 갈래는 검사 없이 응답한다"
+        );
+        assert_eq!(
+            body.matches("call.method ==").count(),
+            1,
+            "헤드리스가 이름으로 가로채는 갈래가 하나가 아니다 — 늘었으면 각각이 \
+             게이트 뒤인지 확인해야 한다"
         );
     }
 
