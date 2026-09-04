@@ -94,12 +94,44 @@ pub struct RunnerStatus {
 
 pub struct RunnerRegistry {
     threads: Mutex<HashMap<u32, RunnerControl>>,
+    /// poison 을 이미 보고했는가. `liveness` 는 렌더 경로가 프레임마다 부르므로
+    /// 매번 로그를 내면 폭주한다.
+    poison_reported: AtomicBool,
 }
 
 impl RunnerRegistry {
+    /// Poison 된 스레드 맵을 복구한다.
+    ///
+    /// 맵이 담는 것은 `RunnerControl`(mpsc `Sender` · `Arc<AtomicBool>` ·
+    /// `JoinHandle`)뿐이고 임계구역은 조회·삽입·제거밖에 하지 않는다 — 패닉이 나도
+    /// 맵의 불변식은 성립한다.
+    ///
+    /// 사망 범위가 두 겹이라 패닉이 특히 나쁘다.
+    ///
+    /// - [`Self::liveness`] 는 **렌더 경로**가 프레임마다 부른다(DAG surface 의 러너
+    ///   배지). 메인 스레드라 여기서 패닉하면 모든 창의 터미널 세션이 사라진다.
+    /// - [`Self::start`] 는 crashed 러너의 **재시작 경로**다. 그 경로가 패닉하면
+    ///   `catch_unwind` + `crashed` 플래그로 만들어 둔 자기 복구 설계가 무력해진다.
+    ///
+    /// 근거 전문은 [`error-handling.md`](../../../docs/dev-guide/error-handling.md)
+    /// "락 poison".
+    fn lock_recovering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, RunnerControl>> {
+        self.threads.lock().unwrap_or_else(|poisoned| {
+            if !self.poison_reported.swap(true, Ordering::Relaxed) {
+                tracing::error!(
+                    "RunnerRegistry mutex poisoned — a thread panicked while holding it. \
+                     Recovering the thread map so the render path and the runner restart path \
+                     keep working; later occurrences are not logged."
+                );
+            }
+            poisoned.into_inner()
+        })
+    }
+
     pub fn new() -> Self {
         Self {
             threads: Mutex::new(HashMap::new()),
+            poison_reported: AtomicBool::new(false),
         }
     }
 
@@ -108,7 +140,7 @@ impl RunnerRegistry {
     /// 실패**했거나. 둘을 구분해야 하는 소비자는 이 반환값이 아니라 [`Self::status`]
     /// 를 읽는다(spawn 실패면 등록되지 않으므로 `running: false` 로 드러난다).
     pub fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
-        let mut threads = self.threads.lock().expect("RunnerRegistry poisoned");
+        let mut threads = self.lock_recovering();
         if let Some(ctrl) = threads.get(&workspace_id)
             && !ctrl.crashed.load(Ordering::Relaxed)
         {
@@ -161,7 +193,7 @@ impl RunnerRegistry {
 
     /// 정지 신호를 보내고 join. 이미 멈춰있으면 false.
     pub fn stop(&self, workspace_id: u32) -> bool {
-        let mut threads = self.threads.lock().expect("RunnerRegistry poisoned");
+        let mut threads = self.lock_recovering();
         if let Some(mut ctrl) = threads.remove(&workspace_id) {
             let _ = ctrl.stop_tx.send(()); // thread 가 panic 후 종료 시 Err — 의도적 무시
             if let Some(j) = ctrl.join.take() {
@@ -177,7 +209,7 @@ impl RunnerRegistry {
     /// [`Self::status`] 가 workspace 전체를 세는 것과 달리, 부분집합(예: DAG 하나)만
     /// 세야 하는 호출자는 카운트를 스스로 만들고 생사만 여기서 물어온다.
     pub fn liveness(&self, workspace_id: u32) -> (bool, bool) {
-        let threads = self.threads.lock().expect("RunnerRegistry poisoned");
+        let threads = self.lock_recovering();
         match threads.get(&workspace_id) {
             Some(ctrl) => (
                 !ctrl.crashed.load(Ordering::Relaxed),
@@ -1795,5 +1827,40 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap()
         });
         assert!(matches!(task.state, TaskState::Running));
+    }
+}
+
+#[cfg(test)]
+mod poison_tests {
+    use super::*;
+
+    /// 스레드 맵이 poison 돼도 레지스트리는 계속 답한다.
+    ///
+    /// `.expect()` 이던 시절에는 `liveness` 가 패닉했다 — 그 호출자가 DAG surface 의
+    /// 러너 배지를 그리는 **렌더 경로**(메인 스레드, 프레임마다)라 패닉 하나가 모든 창의
+    /// 터미널 세션을 함께 죽였다. `start` 는 crashed 러너의 재시작 경로라, 거기서
+    /// 패닉하면 `catch_unwind` + `crashed` 로 만들어 둔 자기 복구가 무력해진다.
+    #[test]
+    fn a_poisoned_thread_map_still_answers_liveness_and_stop() {
+        let registry = Arc::new(RunnerRegistry::new());
+
+        let held = Arc::clone(&registry);
+        // 패닉시키는 것이 목적이라 join 결과를 아래에서 따로 검사한다.
+        let joined = thread::spawn(move || {
+            let _guard = held.threads.lock().expect("fresh mutex");
+            panic!("a thread dies while holding the runner registry");
+        })
+        .join();
+        assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+        assert!(registry.threads.lock().is_err(), "poison 됐어야 한다");
+
+        // 렌더 경로가 묻는 질문 — 패닉 없이 "러너 없음" 을 답한다.
+        assert_eq!(registry.liveness(1), (false, false));
+        // 정지 요청도 패닉하지 않는다(등록된 것이 없으니 false).
+        assert!(!registry.stop(1));
+        assert!(
+            registry.poison_reported.load(Ordering::Relaxed),
+            "poison 은 보고돼야 한다"
+        );
     }
 }
