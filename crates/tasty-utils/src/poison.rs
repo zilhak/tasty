@@ -217,8 +217,12 @@ mod forbidden_lock_guard {
          (상대가 채널을 죽은 것으로 판정하는 결과가 뒤따르므로 그 이유가 남아야 한다).",
     )];
 
-    /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다 —
-    /// 그것을 막는 유일한 장치다.
+    /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다.
+    ///
+    /// **하한만으로는 부족하다** — 스캔 대상이 1000개를 넘으므로 수백 개가 빠져도
+    /// 이 값을 안 건드리고, 위반이 0 건인 파일이 빠지면 offender 목록도 안 움직여
+    /// 아무 신호가 없다. 부분 누락은 아래 `the_scan_reaches_every_crate_and_both_cfg_sides`
+    /// 가 집합으로 잡는다. 이 상수는 그 위의 조잡한 안전망일 뿐이다.
     const MIN_FILES_SCANNED: usize = 200;
     const MIN_RECOVER_CALLS: usize = 30;
 
@@ -530,6 +534,60 @@ mod forbidden_lock_guard {
     }
 
     // ── 트리 스캔 테스트 ─────────────────────────────────────────────────
+
+    /// 스캔 **모집단**을 집합으로 못박는다.
+    ///
+    /// 기대 집합을 스캐너와 **다른 순회 방법**으로 만든다 — `rust_sources` 는 재귀
+    /// 스택 순회인데 여기서는 `crates/` 를 한 겹만 나열한다. 같은 방법으로 기대값을
+    /// 만들면 스캐너의 버그가 기대값에도 그대로 들어가 항상 통과한다.
+    ///
+    /// ②의 앵커 둘은 **cfg 양방향**을 하나씩 집는다. 이 가드는 컴파일된 심볼이 아니라
+    /// 디스크의 텍스트를 읽으므로 `--no-default-features` 조합에서도 같은 파일을 봐야
+    /// 하는데, 그 사실이 하한으로는 안 드러난다(빠져도 하한 위다). 앵커가 그것을
+    /// 조합마다 직접 증명한다.
+    #[test]
+    fn the_scan_reaches_every_crate_and_both_cfg_sides() {
+        let root = repo_root();
+        let scanned: std::collections::BTreeSet<PathBuf> =
+            rust_sources(&root).into_iter().collect();
+
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(root.join("crates"))
+            .expect("crates/ 가 있어야 한다")
+            .flatten()
+        {
+            let src = entry.path().join("src");
+            if !src.is_dir() {
+                continue;
+            }
+            if !scanned.iter().any(|p| p.starts_with(&src)) {
+                missing.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "스캔이 이 크레이트들의 src 를 하나도 안 읽었다: {}",
+            missing.join(", ")
+        );
+
+        for anchor in [
+            // `src/adapters/mod.rs` 의 `#[cfg(feature = "gui")] pub mod ui;` 안쪽.
+            "src/adapters/ui/popup/remote_attach.rs",
+            // `src/adapters/production/mod.rs` 의 `#[cfg(not(feature = "gui"))]` 안쪽.
+            "src/adapters/production/headless_waker.rs",
+        ] {
+            let path = root.join(anchor);
+            assert!(
+                path.is_file(),
+                "앵커 파일이 옮겨졌다: {anchor} — 같은 cfg 쪽의 다른 파일로 갱신해라"
+            );
+            assert!(
+                scanned.contains(&path),
+                "cfg 로 갈리는 자리를 스캔이 놓쳤다: {anchor}"
+            );
+        }
+    }
 
     #[test]
     fn forbidden_locks_are_never_recovered() {
