@@ -180,12 +180,9 @@ pub fn scrim_backdrop(
     let p = ui.painter_at(rect);
     // faux app (bg-app).
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
-    // scrim — black 50% (디자인 scrim-bg).
-    p.rect_filled(
-        rect,
-        theme.corner_radius.value(),
-        egui::Color32::from_black_alpha(128),
-    );
+    // scrim — theme.scrim() 토큰(다른 specimen·호스트와 동일 경로). SCRIM_ALPHA=128 이라
+    // 값은 from_black_alpha(128) 과 동일하다(theme.rs scrim() 주석) — 표류를 토큰으로 돌린다.
+    p.rect_filled(rect, theme.corner_radius.value(), theme.scrim().to_egui());
 
     // 모달을 위에서 top_space 만큼 띄워 가로 중앙 배치.
     let mut child = ui.new_child(
