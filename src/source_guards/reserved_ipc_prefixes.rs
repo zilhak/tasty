@@ -202,32 +202,38 @@ const DISPATCH_ROOT: &str = "src/adapters/ipc/handler.rs";
 /// 값의 근거: 2026-09-05 실측 213 개.
 const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 
-/// 번들 plugin 이 점유한 prefix 안에서 **호스트도 핸들러를 가진** 메서드.
+/// 번들 plugin 이 점유한 prefix 안에서 **호스트도 dispatch arm 을 가진** 메서드.
 ///
-/// 이 셋은 구현이 둘이고, 어느 쪽이 답하는지가 **조합마다 다르다.**
+/// `IpcNamespaceRegistry::resolve` 는 **prefix 만** 본다 — 메서드 단위 예외가 없다.
+/// 그래서 plugin 이 떠 있으면 그 prefix 의 **모든** 메서드가 plugin 으로 가고, 같은
+/// 이름의 호스트 arm 은 외부 호출자에게서 가려진다.
 ///
-/// - gui — `ipc_step_routing`(step 5)이 namespace forward 를 engine handler보다 **먼저**
-///   본다. `IpcNamespaceRegistry::resolve` 는 **prefix 만** 보므로, image plugin 이 떠
-///   있으면 `image.*` 가 전부 plugin 으로 간다. 호스트의 `handle_open`/`handle_list` 는
-///   그동안 닿지 않는다.
-/// - headless — `pump_ipc` 는 engine handler 를 먼저 부르고 `-32601` 일 때만 forward
-///   한다. 그래서 이 셋은 **호스트가** 답하고, plugin 은 나머지만 받는다.
+/// 지금 그것이 사고가 아닌 이유는 image plugin 이 이 셋을 **호스트로 되던지기**
+/// 때문이다(`trampoline` — 받은 메서드를 그대로 `host.call` 한다). 즉 이 셋은
+/// "가려졌지만 우회로가 있는" 상태이고, **넷째가 우회로 없이 생기면 그 호스트 구현은
+/// 외부에서 닿지 않게 된다.** 이 가드가 지키는 것이 그 경계다.
 ///
-/// 즉 같은 이름이 조합에 따라 다른 구현으로 간다. 어느 쪽이 옳은지는 이 가드가 정하지
-/// 않는다 — 그 셋이 **조용히 늘지 않는 것**만 지킨다. 여기에 이름이 하나 더 붙는다는
-/// 것은 조합 간 발산이 하나 더 생겼다는 뜻이다.
+/// 실측(2026-09-05, 두 조합을 띄워 같은 요청 대조):
+///
+/// - `image.list` — gui `{"entries":[]}` / headless `-32000 … Method not found`
+/// - `image.open` — 둘 다 `-32000` 이지만 사유가 다르다(gui 는 인자 부족, headless 는
+///   메서드 없음)
+/// - `markdown.navigate` — 둘 다 `-32601`. plugin 은 이 이름을 **부르기만** 하고 받지
+///   않으므로, 외부 호출자에게는 어느 조합에서도 없는 메서드다
+///
+/// 조합 차이의 원인은 라우팅 순서가 **아니다**. 세 arm 이 전부 `#[cfg(feature = "gui")]`
+/// 라 headless 에는 구현 자체가 없다. 순서 차이(gui 는 forward 가 먼저, headless 는
+/// engine handler 가 먼저)는 이 셋에서는 관측되지 않는다 — 어느 쪽이든 plugin 이 먼저
+/// 받고 trampoline 으로 되돌아오기 때문이다.
 const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     (
         "image.list",
         "호스트는 surface 순회, plugin 도 같은 이름을 구현한다",
     ),
-    (
-        "image.open",
-        "호스트는 ConvertSurface, plugin 도 같은 이름을 구현한다",
-    ),
+    ("image.open", "plugin 이 trampoline 으로 호스트에 되던진다"),
     (
         "markdown.navigate",
-        "호스트는 제자리 변환, plugin 도 같은 이름을 구현한다",
+        "plugin 이 자기 주소창에서 host.call 로 부른다 — 받지는 않는다",
     ),
 ];
 
@@ -297,8 +303,9 @@ fn the_methods_a_bundled_plugin_can_shadow_are_pinned() {
     assert_eq!(
         found, pinned,
         "번들 plugin 의 namespace 안에서 호스트가 dispatch 하는 메서드 집합이 달라졌다.\n\
-         늘었다면 조합 간 발산이 하나 더 생긴 것이다 — gui 는 plugin 이, headless 는 \
-         호스트가 답한다. 줄었다면 SHARED_WITH_A_BUNDLED_PLUGIN 에서 빼라"
+         늘었다면 호스트 구현 하나가 plugin namespace 뒤로 가려진 것이다. plugin 이 \
+         그 이름을 host 로 되던지지 않으면 외부 호출자는 그 호스트 구현에 닿지 못한다 — \
+         trampoline 이 있는지 확인하고 사유와 함께 여기 적어라. 줄었다면 빼라"
     );
 }
 
