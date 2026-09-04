@@ -446,6 +446,264 @@ fn const_radius_violations(
     }
 }
 
+/// 이 축의 스캔 모수는 `SCAN_ROOTS` 중 **`src/` 아래만**이다 — 갤러리는 뺀다.
+/// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 생성 const 값도
+/// 함께 커지므로 거기서는 결함이 아니다(`docs/adr/0135-…`). 넣으면 결함 아닌 자리가
+/// 위반이 되어 allowlist 만 불어난다.
+const ZOOM_CONST_SCAN_PREFIX: &str = "src/";
+
+/// 아래 셋은 **거짓 초록 하한**이다. 표가 비거나 코퍼스가 비면 위반이 0 이 되어 가드가
+/// 조용히 통과한다 — "위반 0" 은 모수가 비영일 때만 뜻이 있다.
+const MIN_GENERATED_LOGICAL_CONSTS: usize = 200;
+const MIN_GENERATED_OTHER_CONSTS: usize = 40;
+const MIN_ZOOM_CONST_SCANNED_FILES: usize = 100;
+
+/// 생성 DTCG 상수를 **타입으로** 가른다 — `(LogicalPx 인 것, 아닌 것)`.
+///
+/// 타입이 축을 가른다: `LogicalPx` 는 길이라 `ui_scale` 배율 축이고, `f32`(불투명도 ·
+/// 가중치 · 지속시간)는 무차원이라 배율과 무관하다. 그래서 전자만 위반이다.
+fn generated_const_types() -> (Vec<String>, Vec<String>) {
+    let dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/tasty-design-tokens/src/generated");
+    let (mut logical, mut other) = (Vec::new(), Vec::new());
+    for file in ["primitive.rs", "semantic.rs", "component.rs"] {
+        let text = std::fs::read_to_string(dir.join(file)).unwrap_or_else(|e| {
+            panic!(
+                "생성 토큰 파일을 읽을 수 없다: {file} — {e}. 조용히 건너뛰면 이름 표가 \
+                 비고, 빈 표로는 위반이 0 이 되어 가드가 통과한다."
+            )
+        });
+        for line in text.lines() {
+            let rest = line.trim_start();
+            // `pub` 뒤에 공백을 바로 요구하면 `pub(crate) const` 를 통째로 놓친다 —
+            // `primitive.rs` 전량이 그 형태라 표에서 한 층이 조용히 빠진다. 지금은
+            // 못 쓰는 층이지만(외부 크레이트가 참조하면 컴파일 에러) 표에 넣는 쪽이
+            // 안전하다: 가시성이 넓어지는 날 가드가 이미 덮고 있다.
+            let Some(rest) = rest.strip_prefix("pub") else {
+                continue;
+            };
+            let rest = rest.strip_prefix("(crate)").unwrap_or(rest);
+            let Some(rest) = rest.trim_start().strip_prefix("const ") else {
+                continue;
+            };
+            let Some((name, ty)) = rest.split_once(':') else {
+                continue;
+            };
+            let name = name.trim();
+            if !is_screaming_snake(name) {
+                continue;
+            }
+            let ty = ty.split('=').next().unwrap_or("").trim();
+            if ty == "LogicalPx" {
+                logical.push(name.to_string());
+            } else {
+                other.push(name.to_string());
+            }
+        }
+    }
+    (logical, other)
+}
+
+/// 생성 토큰 모듈(`generated`) 참조에서 **경로의 마지막 조각**을 뽑는다.
+///
+/// **이름이 아니라 경로로 잡는 이유**: 생성 모듈에는 `HEIGHT` · `SIZE` · `MAX_WIDTH`
+/// 같은 일반적인 이름이 있어서, 이름만 대조하면 무관한 로컬 상수를 대량 오검출한다.
+/// 경로가 있는 줄(= `use` 문)만 보면 소비 선언 하나당 정확히 한 번 잡힌다.
+fn generated_const_refs(lines: &[&str]) -> Vec<(String, usize)> {
+    // **바늘을 쪼갠다(R80).** 통짜로 두면 이 파일 자신이 그 패턴을 담게 되고,
+    // 지금은 스캔 루트 밖이라 안 걸리지만 그건 **우연**이다 — 루트가 넓어지는 날
+    // 가드가 자기를 물고, 그때의 처방은 보통 "자기 파일 제외" 라는 면제다.
+    // 면제를 두지 않으려면 애초에 바늘을 담지 않으면 된다.
+    // 쪼갬이 살아 있는지는 [`the_guard_does_not_carry_its_own_needle`] 가 본다.
+    const NEEDLE: &str = concat!("tasty_design_tokens", "::generated::");
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let mut rest = *line;
+        while let Some(at) = rest.find(NEEDLE) {
+            let tail = &rest[at + NEEDLE.len()..];
+            let path: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+                .collect();
+            out.push((path.rsplit("::").next().unwrap_or("").to_string(), i + 1));
+            rest = &rest[at + NEEDLE.len()..];
+        }
+    }
+    out
+}
+
+/// UI 계층은 생성 DTCG 상수 중 **길이(`LogicalPx`)** 를 직접 소비하지 않는다.
+///
+/// 규칙 자체는 새것이 아니다 — `crates/tasty-design-tokens/src/lib.rs` 의
+/// "zoom 우회 금지 (필수)" 가 "런타임 소비는 반드시 `&Theme` 필드/접근자를 경유한다" 고
+/// 못박고 `generated/semantic.rs` doc 도 같은 말을 반복한다. **없던 것은 집행이다.**
+///
+/// 생성 const 는 컴파일 타임 상수라 `with_colors_and_zoom` 의 `zoomed()` 밖이고,
+/// 같은 값의 `Theme` 필드는 안이다. zoom 1 에서만 같고 0.85 / 1.2 에서 갈라진다 —
+/// **토큰을 썼으니 됐다고 믿게 만들기 때문에 리터럴보다 나쁘다.**
+///
+/// 무차원 상수(`EDGE_DIM_OPACITY` 등 `f32`)는 배율 축이 아니라 대상이 아니다.
+#[test]
+fn ui_does_not_consume_generated_length_consts_directly() {
+    let (logical, other) = generated_const_types();
+    assert!(
+        logical.len() >= MIN_GENERATED_LOGICAL_CONSTS,
+        "생성 LogicalPx 상수가 {}개뿐이다(하한 {MIN_GENERATED_LOGICAL_CONSTS}) — 표가 \
+         비면 위반이 0 이 되어 가드가 조용히 통과한다. 무차원 표는 {}개",
+        logical.len(),
+        other.len()
+    );
+    assert!(
+        other.len() >= MIN_GENERATED_OTHER_CONSTS,
+        "생성 무차원 상수가 {}개뿐이다(하한 {MIN_GENERATED_OTHER_CONSTS}) — 두 갈래 중 \
+         하나가 비면 타입 분류가 한쪽으로 쏠린다. LogicalPx 표는 {}개",
+        other.len(),
+        logical.len()
+    );
+    // **한 이름이 두 갈래에 다 있으면 이름 분류가 모호해진다** — 그 순간 이 가드의
+    // 판정은 어느 쪽을 먼저 보느냐에 달린 값이 된다. 편입 시점 겹침 0 이고, 생기면
+    // 이름이 아니라 전체 경로로 분류하도록 바꿔야 한다.
+    let collisions: Vec<&String> = logical.iter().filter(|n| other.contains(n)).collect();
+    assert!(
+        collisions.is_empty(),
+        "생성 상수 이름 {}개가 LogicalPx 와 무차원 양쪽에 있다 — 이름만으로는 축을 \
+         가를 수 없다(경로 분류로 바꿔라): {:?}",
+        collisions.len(),
+        collisions
+    );
+
+    // 표가 실제로 두 갈래로 갈리는지 실소스로 확인한다 — 개수 하한은 "몇 개" 만 보고
+    // "무엇" 은 안 본다. 두 이름은 이 축의 양극이다(길이 하나 · 무차원 하나).
+    assert!(
+        logical.iter().any(|n| n == "ICON_SIZE_SM"),
+        "`ICON_SIZE_SM`(LogicalPx)이 길이 표에 없다 — 타입 파서가 죽었다"
+    );
+    assert!(
+        other.iter().any(|n| n == "EDGE_DIM_OPACITY"),
+        "`EDGE_DIM_OPACITY`(f32)가 무차원 표에 없다 — 타입 파서가 한쪽으로 쏠렸다"
+    );
+
+    let (sources, _) = scan_sources();
+    let scanned: Vec<_> = sources
+        .iter()
+        .filter(|(rel, _)| rel.starts_with(ZOOM_CONST_SCAN_PREFIX))
+        .collect();
+    assert!(
+        scanned.len() >= MIN_ZOOM_CONST_SCANNED_FILES,
+        "`{ZOOM_CONST_SCAN_PREFIX}` 아래 스캔 파일이 {}개뿐이다(하한 \
+         {MIN_ZOOM_CONST_SCANNED_FILES}) — 코퍼스가 비면 위반도 0 이다. 전체 스캔 {}개",
+        scanned.len(),
+        sources.len()
+    );
+
+    let mut violations = Vec::new();
+    let mut dimensionless = 0usize;
+    for (rel, contents) in &scanned {
+        let lines: Vec<&str> = contents.lines().collect();
+        for (name, at) in generated_const_refs(&lines) {
+            if logical.iter().any(|n| *n == name) {
+                violations.push(format!(
+                    "  {rel}:{at} — `{name}` 은 LogicalPx(배율 축)다. 같은 값의 `Theme` \
+                     필드/접근자를 경유해라"
+                ));
+            } else if other.iter().any(|n| *n == name) {
+                dimensionless += 1;
+            } else {
+                violations.push(format!(
+                    "  {rel}:{at} — `{name}` 을 생성 상수 표에서 못 찾았다. 모듈째 import \
+                     하면 타입을 못 가르므로 상수를 이름으로 import 해라"
+                ));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "UI 계층이 생성 DTCG 길이 상수를 직접 소비한다 — const 는 `zoomed()` 밖이라 \
+         `ui_scale` 을 안 타고 같은 값의 `Theme` 필드는 탄다(zoom 1 에서만 같다):\n{}\n\
+         (같은 스캔에서 무차원 상수 소비 {} 건은 정상으로 통과했다 — 판정기가 두 갈래를 \
+         실제로 가르고 있다는 뜻이다)",
+        violations.join("\n"),
+        dimensionless
+    );
+}
+
+/// R80 — 이 가드가 자기가 찾는 패턴을 자기 소스에 담지 않는다.
+///
+/// 담아도 오늘은 안 걸린다(이 파일은 스캔 루트 밖이다). 그건 우연이고, 루트가 넓어지는
+/// 날 가드가 자기를 문다 — 그때 흔한 처방이 "자기 파일 제외" 라는 면제인데, 면제는
+/// 그 파일이 **다른 위반**을 들여도 조용해진다. 바늘을 쪼개면 면제가 필요 없다.
+#[test]
+fn the_guard_does_not_carry_its_own_needle() {
+    let me = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design_token_guard.rs"),
+    )
+    .expect("자기 소스 read 실패");
+    let whole = concat!("tasty_design_tokens", "::generated::");
+    assert_eq!(
+        me.matches(whole).count(),
+        0,
+        "가드 소스가 자기 바늘을 통짜로 담고 있다 — 쪼개진 형태로 되돌려라"
+    );
+    // 비영 대조 — 위 0 이 "파일을 못 읽어서 0" 이 아님을 같은 줄에서 보인다(R56).
+    assert!(
+        me.matches("generated").count() > 0,
+        "자기 소스에서 `generated` 를 하나도 못 찾았다 — 파일을 못 읽은 것이다"
+    );
+}
+
+/// R79 — 변이 대상을 이름으로 박지 않고 **실측으로 최악을 고른다.**
+///
+/// 이 축의 최악은 `ICON_SIZE_SM` 처럼 눈에 띄는 이름이 아니라, **일반적인 이름을 깊은
+/// 모듈 경로로 도달**하는 형태다: `component::autocomplete::MAX_HEIGHT`. `MAX_HEIGHT` 는
+/// 생성 모듈 여러 곳에 있고 UI 소스에도 흔한 이름이라, 이름만 대조하는 판정기는 여기서
+/// 오검출로 무너지고, `semantic::` 한 모듈만 보는 판정기는 **조용히 통과한다.**
+///
+/// 그 약한 형태가 실제로 초록임을 같은 테스트에서 단정한다 — 그래야 "내 판정기가 더
+/// 강하다" 가 주장이 아니라 대조가 된다.
+#[test]
+fn the_path_parser_beats_the_weak_forms_on_the_deepest_path() {
+    // fixture 도 쪼갠다 — 통짜로 쓰면 이 파일이 바늘을 담게 되고
+    // [`the_guard_does_not_carry_its_own_needle`] 가 운다. (실제로 울었다.)
+    let line = concat!(
+        "use tasty_design_tokens",
+        "::generated::component::autocomplete::MAX_HEIGHT;"
+    );
+    let refs = generated_const_refs(&[line]);
+    assert_eq!(
+        refs.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        vec!["MAX_HEIGHT"],
+        "마지막 조각을 못 뽑았다 — 중간 모듈이 하나 더 끼면 무너진다"
+    );
+
+    // 약한 형태 ①: `semantic::` 한 모듈만 보는 판정기 → 이 줄에 **초록**이다.
+    assert!(
+        !line.contains("generated::semantic::"),
+        "약한 형태(semantic 전용)가 이 줄을 잡아 버리면 대조가 성립하지 않는다"
+    );
+    // 약한 형태 ②: 경로의 **첫** 조각을 상수 이름으로 읽는 판정기 → `component` 를
+    // 얻어 상수 표에서 못 찾고, 표에 없으면 무시하도록 짠 판정기는 초록이 된다.
+    let first = line
+        .split("::generated::")
+        .nth(1)
+        .and_then(|t| t.split("::").next())
+        .unwrap_or("");
+    assert_eq!(first, "component");
+    let (logical, other) = generated_const_types();
+    assert!(
+        !logical.iter().any(|n| n == first) && !other.iter().any(|n| n == first),
+        "첫 조각이 상수 표에 있으면 약한 형태 ②가 우연히 잡는다 — 대조가 무너진다"
+    );
+
+    // 그리고 최악의 이름이 실제로 길이 축이라는 것 — 이게 아니면 위 대조가 헛것이다.
+    assert!(
+        logical.iter().any(|n| n == "MAX_HEIGHT"),
+        "`MAX_HEIGHT` 가 LogicalPx 표에 없다 — 최악 후보를 잘못 골랐다"
+    );
+}
+
 /// 반경 축의 **명명 const 우회로**를 닫는다. 자매 가드는 리터럴만 막으므로,
 /// `const FOO: f32 = 8.0;` 를 만들어 `.corner_radius(FOO)` 로 쓰면 둘 다 통과했다.
 ///
