@@ -85,6 +85,14 @@ pub fn init_test_tracing() {
 /// `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가
 /// 듣는 것처럼 보인다. 경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다.
 ///
+/// **함정 2**: 별도 target 디렉토리에는 plugin 번들이 없다. host 는 `exe_dir/builtin-plugins`
+/// 를 먼저 보고, 없으면 exe 의 두 단계 위를 워크스페이스 루트로 역산하는데 — 레포 밖
+/// 디렉토리에서는 그 역산이 실패해 데몬이 plugin namespace 없이 올라온다. 증상은
+/// `Method not found: <plugin namespace>.<method>` 이고, 이는 §0 의 stale plugin drift 및
+/// "headless 에 아직 배선되지 않은 경로" 와 **문구가 같아** 빌드 절차 결함이 IPC 표면
+/// 차이로 오독된다. 그래서 override 절차는 번들을 exe 옆에 복사하는 줄을 포함한다
+/// (`docs/dev-guide/e2e-tests.md` §0-1).
+///
 /// 존재하지 않는 경로를 주면 spawn 이 "그냥 실패" 하는 대신 **여기서** 죽는다 —
 /// 30 초를 기다린 뒤 port file 미작성으로 오진되는 것을 막는다.
 pub fn instance_bin() -> std::ffi::OsString {

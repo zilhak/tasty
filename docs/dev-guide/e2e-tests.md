@@ -23,10 +23,17 @@
 
 ```
 CARGO_TARGET_DIR=/tmp/tasty-headless cargo build --no-default-features
+cp -r target/debug/builtin-plugins /tmp/tasty-headless/debug/
 TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_harness
 ```
 
-**함정 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
+**함정 1 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
+
+**함정 2 — 번들 복사 줄을 빼면 데몬이 plugin 없이 뜬다.** host 는 plugin 번들을 `exe_dir/builtin-plugins` 에서 찾고, 거기 없으면 exe 의 두 단계 위를 워크스페이스 루트로 역산해 dev bundle 을 만든다(`crates/tasty-host-plugin/src/builtin.rs`). 별도 target 디렉토리는 레포 밖이라 그 역산이 실패하고, 데몬은 plugin namespace 하나 없이 올라온다. 그러면 namespace 호출이 `Method not found: markdown.recent` 로 죽는다 — **§0 의 stale plugin drift, 그리고 바로 아래 "override 로도 통과하지 않는 스위트" 와 증상이 글자까지 같다.** 즉 빌드 절차 결함이 headless IPC 표면의 차이로 읽힌다. 번들을 exe 옆에 복사해 두면 역산 자체가 필요 없어진다(첫 분기에서 걸린다).
+
+실측(2026-09-05, `markdown_recent_is_read_only`)으로 세 팔을 갈랐다 — 번들 없이 레포 밖: **FAIL**(위 문구 그대로) / 번들 복사 후 레포 밖: **PASS** / 레포 안 target 디렉토리: **PASS**. 대조군은 CI headless 잡이다: 같은 테스트를 통과시키므로 실패는 조합이 아니라 절차 쪽에 있다.
+
+**이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 위 절차는 `--workspace` 없이 빌드한다. 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 번들을 따로 복사하므로 이 스위트들의 판정에는 영향이 없지만, **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
 
 **override 로도 통과하지 않는 스위트가 있다.** headless 데몬은 GUI 바이너리와 IPC 표면이 다르다 — 실제 창이 검증 대상인 스위트, 그리고 headless 에 아직 배선되지 않은 경로에 의존하는 스위트가 그렇다. 어느 것이 왜 빠지는지는 `.github/workflows/crossplatform-check.yml` 의 headless 스텝 주석이 `--skip` 목록과 함께 사유를 적어 둔다 — **여기 복제하지 않는다**(사유가 갈리면 어느 쪽이 정본인지 알 수 없게 된다).
 
