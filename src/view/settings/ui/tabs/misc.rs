@@ -26,8 +26,9 @@ use tasty_ui_widgets::vspace;
 const ROW_LINE_GAP: f32 = 2.0;
 /// changed 배지 고정 높이 (디자인 `height: 16`).
 const BADGE_HEIGHT: f32 = 16.0;
-/// 빈 상태 글리프 크기 (디자인 raw 26 — 아이콘 토큰 스케일(12/14/16) 밖의 일회성 값).
-const EMPTY_GLYPH: f32 = 26.0;
+// 빈 상태 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
+// specimen(`components/script_manager.rs`)이 같은 상수를 읽는다.
+use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
 /// Add card 라벨 컬럼 폭 (디자인 `width: 100`).
 const ADD_LABEL_W: f32 = 100.0;
 

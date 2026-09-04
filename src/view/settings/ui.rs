@@ -171,6 +171,9 @@ pub struct SettingsUiState {
     active_tab: SettingsTab,
     /// Working copy of settings being edited.
     draft: Option<Settings>,
+    /// 언어 콤보 목록(내장 3 + 발견된 언어팩). 첫 draw 에서 1회 스캔(`None` → lazy) —
+    /// `~/.tasty/lang/` 의 변화는 설정 창을 다시 열 때 반영된다.
+    languages: Option<Vec<crate::i18n::LanguageEntry>>,
     /// Which keybinding field+slot is currently recording input (None = not recording).
     recording_field: Option<RecordingSlot>,
     /// Active sub-tab within keybindings.
@@ -225,6 +228,10 @@ pub struct SettingsUiState {
     pub preview_font_loaded: std::collections::HashMap<String, String>,
     /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
     pub(crate) bashrc_user_draft: Option<String>,
+    /// Save 시 bashrc 저장이 실패한 사유. 모달이 닫힐 때 host App 이 회수해 main
+    /// window 의 토스트로 올린다 — 이 창은 Save 직후 닫히므로 여기서 띄우면
+    /// 사용자가 볼 수 없다(`plugin_shortcuts_draft` 와 같은 회수 경로).
+    pub(crate) bashrc_save_error: Option<String>,
     /// winit KeyboardInput에서 직접 캡처한 키 조합 (녹화 중일 때 사용).
     pub captured_winit_combo: Option<KeyCapture>,
     /// Plugins 서브탭이 표시할 plugin command snapshot (모달 오픈 시 1회 채워짐).
@@ -399,6 +406,7 @@ impl SettingsUiState {
         Self {
             active_tab: SettingsTab::General,
             draft: None,
+            languages: None,
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
@@ -422,6 +430,7 @@ impl SettingsUiState {
             font_filter: std::collections::HashMap::new(),
             preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
+            bashrc_save_error: None,
             captured_winit_combo: None,
             plugin_shortcuts: PluginShortcutSnapshot::default(),
             plugin_shortcuts_selected: None,
@@ -545,6 +554,12 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     if ui_state.font_families.is_none() {
         let font_config = crate::font::FontConfig::new(14.0, "");
         ui_state.font_families = Some(font_config.list_families());
+    }
+
+    // 언어 콤보 목록도 첫 접근 시 1회 스캔 — `~/.tasty/lang/` 디렉토리 I/O 를 매 프레임
+    // 반복하지 않는다.
+    if ui_state.languages.is_none() {
+        ui_state.languages = Some(crate::i18n::available_languages());
     }
 
     // Lazily load ~/.tasty/bashrc.user on first settings open.
@@ -1452,8 +1467,15 @@ fn apply_settings_draft(settings: &mut Settings, ui_state: &mut SettingsUiState)
     }
     // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭).
     #[cfg(windows)]
-    if let Some(bashrc) = &ui_state.bashrc_user_draft {
-        crate::settings::general::save_user_bashrc(bashrc);
+    if let Some(bashrc) = &ui_state.bashrc_user_draft
+        && let Err(reason) = crate::settings::general::save_user_bashrc(bashrc)
+    {
+        // 로그는 사후 진단용이고, 사용자에게 도달하는 것은 회수되는 이 값이다.
+        // 저장 실패는 사용자 작업이 의미를 잃는 사건이라(`docs/dev-guide/
+        // error-handling.md` 레벨 표) 화면에 도달해야 한다 — 설정 화면을 쓰는
+        // 사용자는 로그를 보지 않는다.
+        tracing::error!("save bashrc.user failed: {reason}");
+        ui_state.bashrc_save_error = Some(reason);
     }
 }
 
@@ -1535,7 +1557,9 @@ fn draw_active_content(
 ) {
     match ui_state.active_tab {
         SettingsTab::General => match ui_state.general_sub_tab {
-            GeneralSubTab::General => draw_general_tab(ui, draft),
+            GeneralSubTab::General => {
+                draw_general_tab(ui, draft, ui_state.languages.as_deref().unwrap_or(&[]))
+            }
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
             GeneralSubTab::Overlay => draw_overlay_tab(ui, draft),

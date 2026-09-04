@@ -94,6 +94,17 @@ impl SettingsView {
         self.settings_ui_state.set_settings_pages(pages);
     }
 
+    /// Save 시 bashrc 저장이 실패했으면 그 사유를 가져간다(1 회). 호출 후에는
+    /// `None` 이 남는다.
+    ///
+    /// 이 창이 아니라 host App 이 회수해 main window 토스트로 올린다 — Save 는
+    /// 곧바로 이 창을 닫으므로(`should_close`) 여기에 띄운 토스트는 화면에
+    /// 남지 않는다. 회수 경로는 [`take_plugin_shortcut_draft`](Self::take_plugin_shortcut_draft)
+    /// 와 같다.
+    pub fn take_bashrc_save_error(&mut self) -> Option<String> {
+        self.settings_ui_state.bashrc_save_error.take()
+    }
+
     /// 사용자가 Plugins 서브탭에서 변경한 override draft를 가져간다.
     /// 호출 후에는 빈 draft가 남는다. 모달 close 시 main App이 회수.
     pub fn take_plugin_shortcut_draft(

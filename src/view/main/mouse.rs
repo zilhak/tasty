@@ -633,8 +633,9 @@ impl MainView {
             self.state.dialogs.pending_native_menu =
                 Some(crate::state::PendingNativeMenu::TerminalSurface {
                     surface_id,
-                    x: x / sf,
-                    y: y / sf,
+                    // 네이티브 메뉴 좌표는 logical — 물리 마우스 좌표를 변환 API 로 내린다.
+                    x: PhysicalPx(x).to_logical(sf).value(),
+                    y: PhysicalPx(y).to_logical(sf).value(),
                 });
             self.mark_dirty();
         }
@@ -1139,12 +1140,21 @@ impl MainView {
             // 스크롤 델타를 논리 포인트로 변환해 누적하고 소비한다.
             if let Some(pos) = self.cursor_position {
                 let (x, y) = (pos.x as f32, pos.y as f32);
+                // 노치 거리는 host egui 옵션이 런타임 단일 출처다 — host 위젯이 스크롤하는
+                // 거리와 plugin 표면이 받는 거리를 같게 유지한다(ADR-0130).
+                let line_scroll =
+                    crate::plugin_bridge::wire_scroll::line_scroll(&self.base.gpu.egui_ctx);
                 if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
-                        MouseScrollDelta::LineDelta(lx, ly) => (lx * 50.0, ly * 50.0),
+                        MouseScrollDelta::LineDelta(lx, ly) => {
+                            ((line_scroll * lx).value(), (line_scroll * ly).value())
+                        }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
-                            (p.x as f32 / ppp, p.y as f32 / ppp)
+                            (
+                                PhysicalPx(p.x as f32).to_logical(ppp).value(),
+                                PhysicalPx(p.y as f32).to_logical(ppp).value(),
+                            )
                         }
                     };
                     self.egui_mesh_push_scroll(sid, dx, dy);
@@ -1155,10 +1165,15 @@ impl MainView {
                 // 목적지가 원격.
                 if let Some((sid, _rect)) = self.attach_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
-                        MouseScrollDelta::LineDelta(lx, ly) => (lx * 50.0, ly * 50.0),
+                        MouseScrollDelta::LineDelta(lx, ly) => {
+                            ((line_scroll * lx).value(), (line_scroll * ly).value())
+                        }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
-                            (p.x as f32 / ppp, p.y as f32 / ppp)
+                            (
+                                PhysicalPx(p.x as f32).to_logical(ppp).value(),
+                                PhysicalPx(p.y as f32).to_logical(ppp).value(),
+                            )
                         }
                     };
                     self.attach_mesh_push_scroll(sid, dx, dy);

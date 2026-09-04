@@ -12,6 +12,30 @@ use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::theme;
 
+/// 모달 헤더의 plug 글리프. 아이콘 스케일 밖(17) — 스케일은 12 · 14 · 15 · 16 이고
+/// 17 은 어디에도 없다. 인접 tier(16)로 맞추는 것은 값이 바뀌는 디자인 변경이라
+/// [ADR-0126](../../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)
+/// 과 같게 다룬다 — 스냅하지 않고 이름을 붙여 드리프트를 보이게 둔다.
+/// 토큰이 아니므로 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+const PLUG_HEADER_GLYPH: f32 = 17.0;
+
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에도,
+// DTCG primitive(10·11·12·13·14·16·17·20)에도 없는 값들이다. 토큰으로 스냅하면
+// 픽셀이 실제로 바뀌므로 조용히 반올림하지 않고 이름만 붙인다.
+//
+// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
+// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. 규칙 전문은
+// `docs/design/systems/theme.md` "스케일 밖 폰트 값".
+
+/// segment 탭 라벨. 스케일 밖(12.5).
+const SEGMENT_TAB_LABEL_SIZE: f32 = 12.5;
+/// segment 탭의 danger 배지 숫자. 스케일 밖(9.5).
+const SEGMENT_BADGE_SIZE: f32 = 9.5;
+/// segment 탭의 mono 카운트. 스케일 밖(10.5).
+const SEGMENT_COUNT_SIZE: f32 = 10.5;
+
 /// 상세 패널에 표시할 plugin command 한 줄.
 #[derive(Debug, Clone)]
 pub struct PluginCommandEntry {
@@ -233,11 +257,14 @@ pub fn draw_plugins_panel(
                 // 디자인 헤더: plug 아이콘 + 타이틀.
                 // divergence: 헤더 accent 인데 peach 리터럴 → accent-attention(=peach) role 로
                 // 값 보존 전사. "notice/주의환기"가 아니라 헤더 강조라 role 은 살짝 어긋남.
-                ui.add(icons::PLUG.image(17.0, egui::Color32::from(th.accent_attention())));
+                ui.add(icons::PLUG.image(
+                    PLUG_HEADER_GLYPH,
+                    egui::Color32::from(th.accent_attention()),
+                ));
                 hspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t("plugins.title"))
-                        .size(14.0)
+                        .size(th.font_size_max.value())
                         .strong()
                         .color(egui::Color32::from(th.text_primary())),
                 );
@@ -371,7 +398,7 @@ fn segment_tab(
     };
     let label_galley = ui.painter().layout_no_wrap(
         label.to_string(),
-        egui::FontId::proportional(12.5),
+        egui::FontId::proportional(SEGMENT_TAB_LABEL_SIZE),
         label_color,
     );
 
@@ -380,7 +407,7 @@ fn segment_tab(
     let badge_galley = if badge {
         Some(ui.painter().layout_no_wrap(
             count.unwrap().to_string(),
-            egui::FontId::proportional(9.5),
+            egui::FontId::proportional(SEGMENT_BADGE_SIZE),
             egui::Color32::from(th.text_on_accent()),
         ))
     } else {
@@ -388,8 +415,11 @@ fn segment_tab(
     };
     let count_galley = if !danger {
         count.map(|c| {
-            ui.painter()
-                .layout_no_wrap(c.to_string(), egui::FontId::monospace(10.5), count_color)
+            ui.painter().layout_no_wrap(
+                c.to_string(),
+                egui::FontId::monospace(SEGMENT_COUNT_SIZE),
+                count_color,
+            )
         })
     } else {
         None
@@ -462,9 +492,13 @@ fn segment_tab(
 /// 버전 표기 등 inline 메타데이터에 사용. 라벨 색은 `text_secondary`.
 pub(super) fn tag(ui: &mut egui::Ui, th: &theme::Theme, text: &str) {
     let color = egui::Color32::from(th.text_secondary());
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text.to_string(), egui::FontId::proportional(11.0), color);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        // 원래 값 11 은 caption 과 정확히 같다 — 값 보존 치환이다. component 토큰
+        // `tag_font_size()` 는 micro(10)라 여기 넣으면 1px 작아진다.
+        egui::FontId::proportional(th.font_size_caption.value()),
+        color,
+    );
     let pad = egui::vec2(7.0, 3.0);
     let size = galley.size() + pad * 2.0;
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());

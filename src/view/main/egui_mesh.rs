@@ -192,7 +192,12 @@ impl MainView {
     /// `attach_mesh_input.rs` 재사용.
     pub(super) fn mesh_local_point(&self, rect: PhysicalRect, x: f32, y: f32) -> (f32, f32) {
         let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
-        ((x - rect.x.value()) / ppp, (y - rect.y.value()) / ppp)
+        let local_x = PhysicalPx(x) - rect.x;
+        let local_y = PhysicalPx(y) - rect.y;
+        (
+            local_x.to_logical(ppp).value(),
+            local_y.to_logical(ppp).value(),
+        )
     }
 
     /// 포인터 버튼 누름/뗌을 egui-mesh surface 에 누적.
