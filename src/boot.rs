@@ -599,7 +599,9 @@ fn dispatch_headless_event(
     match event {
         AppEvent::Shutdown | AppEvent::QuitRequested => return std::ops::ControlFlow::Break(()),
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
-        AppEvent::IpcReady => headless_dispatch::pump_ipc(app, state, engine),
+        // pump 가 `system.shutdown` 을 받으면 break 를 돌려준다 — 데몬을 멈추는
+        // 유일한 IPC 경로다(gui 의 winit proxy 에 대응).
+        AppEvent::IpcReady => return headless_dispatch::pump_ipc(app, state, engine),
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
         AppEvent::RunLuaScript { source, name } => run_lua_script(app, &source, &name),
     }

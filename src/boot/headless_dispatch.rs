@@ -33,7 +33,11 @@ use crate::state::AppState;
 
 /// IPC 큐를 비차단으로 비우고 각 명령을 단일 engine 으로 dispatch 한다.
 /// `IpcReady` 수신 시 headless 메인 루프가 호출.
-pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
+pub(crate) fn pump_ipc(
+    app: &mut App,
+    state: &mut AppState,
+    engine: &mut CoreState,
+) -> std::ops::ControlFlow<()> {
     // 큐를 한 번에 drain (try_recv 결과는 owned 라 borrow 가 따라가지 않는다).
     let mut pending = Vec::new();
     if let Some(ipc) = app.hub.ipc_server.as_ref() {
@@ -134,6 +138,21 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
                     );
                     continue;
                 }
+                // 데몬은 자기 IPC 로 멈출 수 있어야 한다. gui 는 `AppEvent::Shutdown` 을
+                // winit proxy 로 보내는데 헤드리스엔 proxy 가 없으므로, 호출자에게 성공을
+                // 회신한 뒤 **호출자(run loop)에게 break 를 돌려준다.** gui 와 같은
+                // debug 격리(`DEBUG_METHODS`)를 유지한다.
+                #[cfg(debug_assertions)]
+                "system.shutdown" => {
+                    send_response(
+                        &cmd.response_tx,
+                        crate::ipc::protocol::JsonRpcResponse::success(
+                            rpc_id,
+                            serde_json::json!({"shutdown": true}),
+                        ),
+                    );
+                    return std::ops::ControlFlow::Break(());
+                }
                 _ => {}
             }
         }
@@ -187,6 +206,7 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
         }
         send_response(&cmd.response_tx, resp);
     }
+    std::ops::ControlFlow::Continue(())
 }
 
 /// engine handler 가 "그런 메서드 없다" 로 답했는가.
