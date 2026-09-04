@@ -30,6 +30,25 @@
 //! `CARGO_MANIFEST_DIR` 이 곧 레포 루트라 상향 경로(`../..`)가 필요 없다 — 상향 경로가
 //! 틀리면 스캔 대상이 0개가 되고 가드가 조용히 초록이 되는데, 그 위험 자체를 없앤다.
 //!
+//! # 판정은 순수 함수 세 층이다
+//!
+//! 파일 순회·읽기(부수효과)와 **판정**을 나눈다. 판정은 [`mask_non_code`] → [`violations`]
+//! → [`verdict`] 세 순수 함수뿐이고, **면제도 전부 이 셋 안에** 있다. 그래서 면제를 겨냥한
+//! 변이를 레포 트리를 실제로 고치지 않고 **합성 문자열**로 먹여 커밋되는 테스트로 붙박을 수
+//! 있다. 면제를 하나 늘리면 그것을 겨냥한 변이도 같이 늘려라 — 면제 로직이 검출 로직보다
+//! 넓어지는 순간 정밀화가 곧 무력화가 된다.
+//!
+//! 면제는 셋이다. ① 주석, ② 문자열 리터럴, ③ [`ALLOWED`]/[`PENDING_PORT`] 표.
+//!
+//! **①②를 줄 앞머리가 아니라 문자 단위 상태 기계로 판정하는 이유**: `*` 로 시작하는 줄을
+//! 블록 주석 이어짐으로 보면 역참조 대입(`*out = x * ppp;`)이 통째로 빠진다. 이 레포에 `*`
+//! 로 시작하는 **코드** 줄이 수백 개다. 주석 안인지 여부는 파일을 순회하며 `/*`…`*/` 상태를
+//! 들고 가야만 갈린다.
+//!
+//! **②(문자열 리터럴)는 검출을 깎지 않는다** — 리터럴 안의 산술은 실행되지 않는다. 대신
+//! 이 파일이 **자기 자신을 면제할 필요를 없앤다**: 탐지기 테스트의 예제(`"x * ppp"`)가
+//! 리터럴이라 코드로 세지 않는다. 그래서 파일 통째 제외(self-exemption)는 **없다**.
+//!
 //! # Windows 에서도 돈다
 //!
 //! 유닛 테스트를 도는 잡 중 하나는 Windows 러너다. 경로는 `Path` API 로 다루고 구분자를
@@ -74,12 +93,6 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     ),
 ];
 
-/// 가드 자신 — 스캔 대상에서 뺀다. 이 파일은 금지 형태를 **데이터로** 담는 것이 본질이라
-/// (탐지기 단위 테스트의 예제 문자열) 자기 자신을 세면 영원히 빨갛다. 여기엔 런타임 DPI
-/// 코드가 없으므로 빼도 잃는 것이 없다. `no_todo_file_citation` 의 ALLOWLIST 가 금지
-/// 형태를 담는 파일을 면제하는 것과 같은 처리다.
-const SELF_PATH: &str = "src/dpi_conversion_guard.rs";
-
 /// 아직 타입 API 로 옮기지 못한 자리 — `(경로, 건수)`. **지금은 비어 있다.**
 ///
 /// 비었다는 것이 이 목록의 정상 상태다. 여기에 항목이 생겼다면 새 변환 경로가 타입 API
@@ -95,6 +108,122 @@ const CONVERSION_IDENTS: &[&str] = &["ppp", "scale_factor", "sf", "pixels_per_po
 
 fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
+}
+
+/// 주석과 문자열 리터럴을 같은 자리수의 공백으로 덮는다 — **줄 구조는 보존**한다(줄 번호가
+/// 어긋나면 실패 메시지가 엉뚱한 줄을 가리킨다).
+///
+/// 줄 앞머리 휴리스틱이 아니라 문자 단위 상태 기계인 이유는 모듈 doc 참조. 러스트의 다음
+/// 형태를 모두 가른다: 줄 주석, **중첩되는** 블록 주석, 문자열(이스케이프 포함), raw
+/// 문자열(`r#"…"#`), 문자 리터럴, 그리고 **문자 리터럴처럼 생긴 라이프타임**(`&'a`).
+/// 마지막 것을 놓치면 `'a` 부터 다음 `'` 까지가 통째로 먹혀 그 사이 코드가 안 보인다.
+fn mask_non_code(source: &str) -> String {
+    let src: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+
+    // 원문의 `i..end` 를 공백으로 덮되 줄바꿈만 남긴다.
+    let blank = |out: &mut String, src: &[char], from: usize, to: usize| {
+        for &c in &src[from..to] {
+            out.push(if c == '\n' { '\n' } else { ' ' });
+        }
+    };
+
+    while i < src.len() {
+        let c = src[i];
+
+        // 줄 주석 — 줄 끝까지.
+        if c == '/' && src.get(i + 1) == Some(&'/') {
+            let mut j = i;
+            while j < src.len() && src[j] != '\n' {
+                j += 1;
+            }
+            blank(&mut out, &src, i, j);
+            i = j;
+            continue;
+        }
+
+        // 블록 주석 — 러스트는 중첩을 허용하므로 깊이를 센다.
+        if c == '/' && src.get(i + 1) == Some(&'*') {
+            let mut depth = 1usize;
+            let mut j = i + 2;
+            while j < src.len() && depth > 0 {
+                if src[j] == '/' && src.get(j + 1) == Some(&'*') {
+                    depth += 1;
+                    j += 2;
+                } else if src[j] == '*' && src.get(j + 1) == Some(&'/') {
+                    depth -= 1;
+                    j += 2;
+                } else {
+                    j += 1;
+                }
+            }
+            blank(&mut out, &src, i, j);
+            i = j;
+            continue;
+        }
+
+        // raw 문자열 — `r"…"` / `r#"…"#` / `br##"…"##`. `#` 뒤가 `"` 가 아니면
+        // raw 식별자(`r#type`)라 문자열이 아니다.
+        if c == 'r'
+            && !src[..i]
+                .last()
+                .is_some_and(|&p| is_ident_char(p) && p != 'b')
+        {
+            let mut hashes = 0;
+            while src.get(i + 1 + hashes) == Some(&'#') {
+                hashes += 1;
+            }
+            if src.get(i + 1 + hashes) == Some(&'"') {
+                let mut j = i + 2 + hashes;
+                loop {
+                    if j >= src.len() {
+                        break;
+                    }
+                    if src[j] == '"' && (1..=hashes).all(|k| src.get(j + k) == Some(&'#')) {
+                        j += 1 + hashes;
+                        break;
+                    }
+                    j += 1;
+                }
+                blank(&mut out, &src, i, j);
+                i = j;
+                continue;
+            }
+        }
+
+        // 일반 문자열 — 여러 줄에 걸칠 수 있다.
+        if c == '"' {
+            let mut j = i + 1;
+            while j < src.len() && src[j] != '"' {
+                j += if src[j] == '\\' { 2 } else { 1 };
+            }
+            j = (j + 1).min(src.len());
+            blank(&mut out, &src, i, j);
+            i = j;
+            continue;
+        }
+
+        // 문자 리터럴 대 라이프타임. `'a>` 는 라이프타임이라 그냥 코드로 흘린다.
+        if c == '\'' {
+            let escaped = src.get(i + 1) == Some(&'\\');
+            let plain = src.get(i + 2) == Some(&'\'');
+            if escaped || plain {
+                let mut j = i + 1;
+                while j < src.len() && src[j] != '\'' {
+                    j += if src[j] == '\\' { 2 } else { 1 };
+                }
+                j = (j + 1).min(src.len());
+                blank(&mut out, &src, i, j);
+                i = j;
+                continue;
+            }
+        }
+
+        out.push(c);
+        i += 1;
+    }
+    out
 }
 
 /// `line` 안에서 `ident` 가 **낱말로** 나타나고 그 바로 앞이나 뒤에 `*` 또는 `/` 가 붙은
@@ -142,32 +271,112 @@ fn conversion_hits(line: &str, ident: &str) -> usize {
     hits
 }
 
-/// 한 줄이 주석이면 세지 않는다 — 정책을 설명하는 문장이 위반으로 잡히면 안 된다.
-fn is_comment(line: &str) -> bool {
-    let t = line.trim_start();
-    t.starts_with("//") || t.starts_with("/*") || t.starts_with('*')
-}
-
-fn count_in_source(source: &str) -> usize {
-    source
-        .lines()
+/// 마스킹된 소스에서 수동 변환이 있는 **1-based 줄 번호**. 한 줄에 여러 건이면 그 줄이
+/// 건수만큼 들어가므로 `len()` 이 곧 건수다.
+///
+/// 입력은 반드시 [`mask_non_code`] 를 거친 것이어야 한다 — 이 함수는 주석/리터럴을 모른다.
+fn violations(masked: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (idx, line) in masked.lines().enumerate() {
         // CRLF 체크아웃(Windows 러너)에서 줄 끝 `\r` 이 판정에 섞이지 않게 떼어낸다.
-        .map(|l| l.trim_end_matches('\r'))
-        .filter(|l| !is_comment(l))
-        .map(|l| {
-            CONVERSION_IDENTS
-                .iter()
-                .map(|ident| conversion_hits(l, ident))
-                .sum::<usize>()
-        })
-        .sum()
+        let line = line.trim_end_matches('\r');
+        let hits: usize = CONVERSION_IDENTS
+            .iter()
+            .map(|ident| conversion_hits(line, ident))
+            .sum();
+        out.extend(std::iter::repeat_n(idx + 1, hits));
+    }
+    out
 }
 
-fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+/// 스캔 결과를 면제표와 대조해 **불평 목록**을 낸다. 비어 있으면 통과.
+///
+/// 표를 인자로 받는 이유: 실제 레포 트리를 고치지 않고 합성 입력으로 면제 로직 자체에
+/// 변이를 먹일 수 있게 하기 위해서다(모듈 doc 참조).
+fn verdict(
+    scanned: &[(String, Vec<usize>)],
+    allowed: &[(&str, usize, &str)],
+    pending: &[(&str, usize)],
+) -> Vec<String> {
+    let mut complaints = Vec::new();
+
+    let mut offenders: Vec<(&str, &Vec<usize>)> = scanned
+        .iter()
+        .filter(|(rel, lines)| {
+            !lines.is_empty()
+                && !allowed.iter().any(|(p, _, _)| *p == rel.as_str())
+                && !pending.iter().any(|(p, _)| *p == rel.as_str())
+        })
+        .map(|(rel, lines)| (rel.as_str(), lines))
+        .collect();
+    offenders.sort();
+    if !offenders.is_empty() {
+        complaints.push(format!(
+            "DPI 변환을 수동 산술로 하는 자리가 있다. `LogicalPx::to_physical(sf)` / \
+             `PhysicalPx::to_logical(sf)` 를 거쳐라 — 산술이 정당한 자리면 사유와 함께 \
+             이 파일의 ALLOWED 에 등재한다(docs/concepts/typed-length.md).\n\
+             위반(파일: 줄 번호): {offenders:#?}"
+        ));
+    }
+
+    let count_of = |path: &str| {
+        scanned
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, lines)| lines.len())
     };
-    for entry in entries.flatten() {
+
+    // 역방향 ① — 영구 면제. 건수가 다르면(줄었든 늘었든) 표가 낡은 것이다.
+    for (path, expected, reason) in allowed {
+        match count_of(path) {
+            None => complaints.push(format!(
+                "ALLOWED 에 `{path}` 가 있는데 스캔 대상에 없다 — 파일이 옮겨졌거나 \
+                 지워졌다. 등재를 지워라. (사유: {reason})"
+            )),
+            Some(actual) if actual != *expected => complaints.push(format!(
+                "`{path}` 의 수동 산술이 {actual}건인데 ALLOWED 는 {expected}건으로 \
+                 적혀 있다. 늘었으면 그 증가가 정말 사유({reason})에 해당하는지 \
+                 확인하고, 줄었으면 숫자를 낮춰라."
+            )),
+            Some(_) => {}
+        }
+    }
+
+    // 역방향 ② — 미이식 목록. 0 이 되면 행을 지워야 목록이 실제로 수렴한다.
+    for (path, expected) in pending {
+        match count_of(path) {
+            None => complaints.push(format!(
+                "PENDING_PORT 에 `{path}` 가 있는데 스캔 대상에 없다 — 파일이 \
+                 옮겨졌거나 지워졌다. 등재를 지워라."
+            )),
+            Some(0) => complaints.push(format!(
+                "`{path}` 의 수동 산술이 0건이다 — 이식이 끝났으니 PENDING_PORT \
+                 에서 그 행을 지워라. 남겨두면 이 파일이 나중에 다시 새도 안 잡힌다."
+            )),
+            Some(actual) if actual != *expected => complaints.push(format!(
+                "`{path}` 의 수동 산술이 {actual}건인데 PENDING_PORT 는 {expected}건 \
+                 으로 적혀 있다. 이식으로 줄었으면 숫자를 낮춰라."
+            )),
+            Some(_) => {}
+        }
+    }
+
+    complaints
+}
+
+/// 디렉토리 순회. **실패를 삼키지 않는다** — 못 읽은 디렉토리는 위반이 없는 디렉토리와
+/// 구분되지 않으므로, 조용히 건너뛰면 가드가 초록인 채로 눈이 먼다.
+fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!(
+            "스캔 디렉토리 `{}` 를 열지 못했다: {e}. 건너뛰면 그 하위의 위반이 \
+             통째로 안 보인 채 가드가 초록이 된다.",
+            dir.display()
+        )
+    });
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("`{}` 의 항목을 읽지 못했다: {e}.", dir.display()));
         let path = entry.path();
         if path.is_dir() {
             collect_rs(&path, out);
@@ -188,12 +397,40 @@ fn relative_slash(root: &Path, path: &Path) -> String {
         .join("/")
 }
 
+/// 파일 순회 + 읽기(부수효과 층). 판정은 하지 않고 `(상대경로, 위반 줄 번호)` 만 낸다.
+fn scan(root: &Path) -> Vec<(String, Vec<usize>)> {
+    let mut files = Vec::new();
+    collect_rs(&root.join("src"), &mut files);
+    collect_rs(&root.join("crates"), &mut files);
+    files.sort();
+    files
+        .iter()
+        .map(|path| {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| {
+                panic!(
+                    "스캔 대상 `{}` 를 읽지 못했다: {e}. 건너뛰면 이 파일의 위반이 \
+                     '위반 없음' 과 구분되지 않는다.",
+                    path.display()
+                )
+            });
+            (
+                relative_slash(root, path),
+                violations(&mask_non_code(&source)),
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn repo_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    fn count_in_source(source: &str) -> usize {
+        violations(&mask_non_code(source)).len()
     }
 
     #[test]
@@ -224,100 +461,132 @@ mod tests {
     }
 
     #[test]
-    fn comments_and_crlf_do_not_change_the_verdict() {
-        // 정책을 설명하는 주석이 위반으로 잡히면 문서를 못 쓴다.
-        assert_eq!(count_in_source("// 여기서 x * ppp 를 하면 안 된다"), 0);
-        assert_eq!(count_in_source("/// `PhysicalPx(x * ppp)` 는 금지"), 0);
+    fn violations_report_the_line_numbers() {
+        let src = "let a = 1;\nlet b = x * ppp;\n// 주석\nlet c = y / sf; let d = z / ppp;\n";
+        assert_eq!(violations(&mask_non_code(src)), vec![2, 4, 4]);
+    }
 
-        // Windows 러너의 CRLF 체크아웃에서 판정이 흔들리면 그 잡만 빨개진다.
+    /// 면제 ① 을 겨냥한 변이 — 주석 면제가 코드를 먹지 않는가.
+    ///
+    /// 줄 앞머리로 `*` 를 주석으로 보던 판정이 잡아내지 못하던 형태다. 이 레포에 `*` 로
+    /// 시작하는 코드 줄이 수백 개라, 그 판정에서는 역참조 대입이 전부 사각지대였다.
+    #[test]
+    fn a_deref_assignment_is_code_not_a_continued_block_comment() {
+        assert_eq!(count_in_source("*out = x * ppp;"), 1);
+        assert_eq!(count_in_source("    *self.w -= v / scale_factor;"), 1);
+
+        // 진짜 블록 주석 이어짐은 여전히 주석이다.
+        assert_eq!(count_in_source("/* 설명\n * x * ppp 는 금지\n */\n"), 0);
+        // 블록 주석이 닫힌 **뒤**의 코드는 다시 센다.
+        assert_eq!(count_in_source("/* 설명 */ let a = x * ppp;"), 1);
+        // 중첩 블록 주석에서 안쪽 `*/` 로 일찍 빠져나오면 뒤가 코드로 오인된다.
+        assert_eq!(count_in_source("/* a /* b */ x * ppp */ let v = 1;"), 0);
+        // 줄 주석은 줄 끝까지만. 다음 줄은 코드다.
+        assert_eq!(count_in_source("// x * ppp\nlet a = y * ppp;"), 1);
+    }
+
+    /// 면제 ② 를 겨냥한 변이 — 리터럴 면제가 코드를 먹지 않는가.
+    ///
+    /// 이 면제가 있어서 가드 파일이 자기 자신을 통째로 제외할 필요가 없다. 대신 마스커가
+    /// 리터럴의 끝을 못 찾으면 그 뒤 코드가 통째로 사라지므로, 경계마다 변이를 둔다.
+    #[test]
+    fn string_literals_are_data_but_the_code_around_them_is_not() {
+        assert_eq!(count_in_source(r#"let s = "x * ppp";"#), 0);
+        // 리터럴 **밖**의 산술은 그대로 잡는다.
+        assert_eq!(count_in_source(r#"let s = format!("{}", x * ppp);"#), 1);
+        assert_eq!(
+            count_in_source(r##"let s = r#"x * ppp"#; let a = y * ppp;"##),
+            1
+        );
+        // 이스케이프된 따옴표에서 리터럴이 일찍 끝난 것으로 보면 뒤가 새어 나온다.
+        assert_eq!(count_in_source(r#"let s = "a\" * ppp b"; let v = 1;"#), 0);
+        // 문자 리터럴 안의 따옴표.
+        assert_eq!(count_in_source("let c = '\"'; let a = x * ppp;"), 1);
+        // **라이프타임을 문자 리터럴로 오인하면** `'a` 부터 다음 `'` 까지가 먹힌다.
+        assert_eq!(
+            count_in_source("fn f<'a>(x: &'a f32) -> f32 { x * ppp }"),
+            1
+        );
+    }
+
+    /// 의도된 false negative — 붙박아 둔다.
+    ///
+    /// 나중에 누가 판정기를 여기까지 넓히면 이 테스트가 **먼저 깨져서** 그 결정이 드러난다.
+    #[test]
+    fn known_false_negatives_are_pinned() {
+        // ① 문자열 안의 산술은 실행되지 않으므로 세지 않는다.
+        assert_eq!(count_in_source(r#"let doc = "쓰지 마라: x * ppp";"#), 0);
+        // ② 매크로가 문자열에서 코드를 만들어 내는 형태는 못 본다. 이 레포엔 없다.
+        assert_eq!(count_in_source(r#"paste::paste! { "x * ppp" }"#), 0);
+        // ③ 판정 단위가 줄이라, 연산자와 식별자가 **다른 줄로** 갈리면 못 본다.
+        assert_eq!(count_in_source("let a = x *\n    ppp;"), 0);
+        // 다만 연산자가 식별자 쪽 줄에 남으면 줄바꿈이 있어도 잡는다 — 이쪽이 흔한 형태다.
+        assert_eq!(count_in_source("let a = x\n    * ppp;"), 1);
+    }
+
+    #[test]
+    fn crlf_does_not_change_the_verdict() {
         let lf = "let a = x * ppp;\nlet b = y / scale_factor;\n";
         let crlf = lf.replace('\n', "\r\n");
         assert_eq!(count_in_source(lf), 2);
         assert_eq!(count_in_source(&crlf), count_in_source(lf));
-
-        // 주석 판정도 CRLF 에서 같아야 한다.
         assert_eq!(count_in_source("// x * ppp\r\n"), 0);
+    }
+
+    /// 면제 ③ 을 겨냥한 변이 — 등재된 파일이 **새 위반**을 들이면 잡히는가.
+    #[test]
+    fn a_listed_file_that_gains_a_violation_is_still_caught() {
+        let allowed = &[("a.rs", 2, "사유")][..];
+        let listed = |n: usize| vec![("a.rs".to_string(), vec![1; n])];
+
+        // 건수가 맞으면 조용하다.
+        assert!(verdict(&listed(2), allowed, &[]).is_empty());
+        // 늘면 잡는다 — 파일 단위 면제였다면 여기서 새어 나간다.
+        assert!(!verdict(&listed(3), allowed, &[]).is_empty());
+        // 줄어도 잡는다 — 표가 낡으면 그만큼 사각지대가 생긴다.
+        assert!(!verdict(&listed(1), allowed, &[]).is_empty());
+        // 등재 파일이 사라지면 잡는다.
+        assert!(!verdict(&[], allowed, &[]).is_empty());
+        // 등재되지 않은 파일의 위반은 그대로 잡는다.
+        assert!(!verdict(&[("b.rs".to_string(), vec![7])], allowed, &[]).is_empty());
+    }
+
+    /// 면제 ③ 의 **의도된 사각지대** — 붙박아 둔다.
+    #[test]
+    fn a_same_count_swap_inside_a_listed_file_is_a_known_blind_spot() {
+        // 등재 파일 안에서 한 건을 지우고 다른 자리에 한 건을 들이면 건수가 같아 안 잡힌다.
+        // 줄 번호까지 고정하면 잡히지만, 위쪽에 한 줄만 끼어도 전부 어긋나 무관한 변경마다
+        // 빨개진다 — 그 소음은 결국 이 표를 통째로 넓히는 압력이 된다. 좁히지 않기로 한
+        // 결정이고, 넓히려면 이 테스트를 먼저 고쳐야 한다.
+        let allowed = &[("a.rs", 2, "사유")][..];
+        assert!(verdict(&[("a.rs".to_string(), vec![10, 20])], allowed, &[]).is_empty());
+        assert!(verdict(&[("a.rs".to_string(), vec![33, 44])], allowed, &[]).is_empty());
+    }
+
+    #[test]
+    fn the_pending_list_must_converge() {
+        let pending = &[("a.rs", 2)][..];
+        assert!(verdict(&[("a.rs".to_string(), vec![1, 2])], &[], pending).is_empty());
+        // 0 이 되면 행을 지우라고 한다.
+        assert!(!verdict(&[("a.rs".to_string(), vec![])], &[], pending).is_empty());
+        // 줄었으면 숫자를 낮추라고 한다.
+        assert!(!verdict(&[("a.rs".to_string(), vec![1])], &[], pending).is_empty());
     }
 
     #[test]
     fn dpi_conversion_goes_through_the_typed_api() {
         let root = repo_root();
-        let mut files = Vec::new();
-        collect_rs(&root.join("src"), &mut files);
-        collect_rs(&root.join("crates"), &mut files);
+        let scanned = scan(&root);
 
         assert!(
-            files.len() >= MIN_SCANNED_FILES,
+            scanned.len() >= MIN_SCANNED_FILES,
             "스캔한 .rs 파일이 {}개뿐이다(하한 {MIN_SCANNED_FILES}). 스캔 루트가 \
              어긋났을 때 위반 0건으로 조용히 통과하는 것을 막는 하한이다 — 위반이 \
              정말 없는 것이 아니라 아무것도 안 본 것이다.",
-            files.len(),
+            scanned.len(),
         );
 
-        let mut offenders: Vec<(String, usize)> = Vec::new();
-        let mut seen: Vec<(String, usize)> = Vec::new();
-
-        for path in &files {
-            let rel = relative_slash(&root, path);
-            if rel == SELF_PATH {
-                continue;
-            }
-            let Ok(source) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            let count = count_in_source(&source);
-            let listed = ALLOWED.iter().any(|(p, _, _)| *p == rel)
-                || PENDING_PORT.iter().any(|(p, _)| *p == rel);
-            if listed {
-                seen.push((rel, count));
-            } else if count > 0 {
-                offenders.push((rel, count));
-            }
-        }
-
-        offenders.sort();
-        assert!(
-            offenders.is_empty(),
-            "DPI 변환을 수동 산술로 하는 자리가 있다. `LogicalPx::to_physical(sf)` / \
-             `PhysicalPx::to_logical(sf)` 를 거쳐라 — 산술이 정당한 자리면 사유와 함께 \
-             이 파일의 ALLOWED 에 등재한다(docs/concepts/typed-length.md).\n위반: {offenders:#?}",
-        );
-
-        let actual_of = |path: &str| seen.iter().find(|(p, _)| p == path).map(|(_, c)| *c);
-
-        // 역방향 ① — 영구 면제. 건수가 다르면(줄었든 늘었든) 표가 낡은 것이다.
-        for (path, expected, reason) in ALLOWED {
-            match actual_of(path) {
-                None => panic!(
-                    "ALLOWED 에 `{path}` 가 있는데 스캔 대상에 없다 — 파일이 옮겨졌거나 \
-                     지워졌다. 등재를 지워라. (사유: {reason})"
-                ),
-                Some(actual) if actual != *expected => panic!(
-                    "`{path}` 의 수동 산술이 {actual}건인데 ALLOWED 는 {expected}건으로 \
-                     적혀 있다. 늘었으면 그 증가가 정말 사유({reason})에 해당하는지 \
-                     확인하고, 줄었으면 숫자를 낮춰라."
-                ),
-                Some(_) => {}
-            }
-        }
-
-        // 역방향 ② — 미이식 목록. 0 이 되면 행을 지워야 목록이 실제로 수렴한다.
-        for (path, expected) in PENDING_PORT {
-            match actual_of(path) {
-                None => panic!(
-                    "PENDING_PORT 에 `{path}` 가 있는데 스캔 대상에 없다 — 파일이 \
-                     옮겨졌거나 지워졌다. 등재를 지워라."
-                ),
-                Some(0) => panic!(
-                    "`{path}` 의 수동 산술이 0건이다 — 이식이 끝났으니 PENDING_PORT \
-                     에서 그 행을 지워라. 남겨두면 이 파일이 나중에 다시 새도 안 잡힌다."
-                ),
-                Some(actual) if actual != *expected => panic!(
-                    "`{path}` 의 수동 산술이 {actual}건인데 PENDING_PORT 는 {expected}건 \
-                     으로 적혀 있다. 이식으로 줄었으면 숫자를 낮춰라."
-                ),
-                Some(_) => {}
-            }
-        }
+        let complaints = verdict(&scanned, ALLOWED, PENDING_PORT);
+        assert!(complaints.is_empty(), "{}", complaints.join("\n\n---\n\n"));
     }
 }
