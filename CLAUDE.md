@@ -104,7 +104,7 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 48 개 — 그중 `
 | 빌드 (release 검증) | `cargo build --release` | 자동 채널 없음(dist 산출물은 `build-check.yml` 수동) |
 | lint | `cargo clippy --workspace --all-targets --locked` | 이 조합은 CI 의 **Windows 잡에서만** 돈다. pre-push 훅은 비슷하지만 다르다(`--locked` 없음 + `-- -D clippy::correctness`) |
 | 포맷 검사 | `cargo fmt --check` | ✅ 자동 — `format-check.yml`(main push · PR) + pre-commit A.2 |
-| 테스트 | `cargo test --workspace --locked` | **이 조합(기본 feature) 그대로는 자동 채널 없음** — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다. 다만 `check-headless` 가 main push 마다 **헤드리스 조합의 전체 스위트**를 돌아 통합 테스트 대부분이 자동으로 실행된다(실측: 통합 항목 472 중 436). 자동으로 안 도는 것은 `tests/gui_tests.rs` 33 건과 명명 `--skip` 3 건뿐이다 |
+| 테스트 | `cargo test --workspace --locked` | **이 조합(기본 feature) 그대로는 자동 채널 없음** — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다. 다만 `check-headless` 가 main push 마다 **헤드리스 조합의 전체 스위트**를 돌아 통합 테스트 대부분이 자동으로 실행된다(실측 `d7dc4079`: 통합 항목 474 중 438). 자동으로 안 도는 것은 `tests/gui_tests.rs` 33 건과 명명 `--skip` 3 건뿐이다 |
 
 - **`cargo build` 는 plugin 바이너리를 다시 만들지 않는다 (필수)**: `crates/tasty-plugin-*/src/` 를 고치고 루트에서 `cargo build` 를 돌려도 `target/debug/tasty-plugin-<name>` 이 갱신되지 않는다(실측). `cargo build --workspace` 나 `cargo build -p tasty-plugin-<name>` 은 갱신한다. host 는 **부팅할 때** `copy_if_newer` 로 `target/<profile>/builtin-plugins/` 를 채우고 거기서 `<TASTY_HOME>/plugins/` 로 sync 하므로(`crates/tasty-host-plugin/src/builtin.rs`), 안 만들어진 바이너리는 **낡은 채로 조용히 실행된다.** 그래서 plugin 을 고친 뒤 GUI·주입으로 확인하면 **직전 plugin 코드를 재게 되고, 그 오진은 양방향이다** — 고친 것이 안 고쳐진 것처럼도, 되돌린 것이 여전히 고쳐진 것처럼도 보인다. 뒤쪽은 뮤테이션 "죽었다/살아남았다" 판정을 통째로 뒤집으므로 그 위의 모든 판정이 무효가 된다. 정식 절차는 `PROFILE=debug just build-plugins`(빌드 + 스테이징). **측정 전에 한 줄로 확인한다:**
   ```bash
