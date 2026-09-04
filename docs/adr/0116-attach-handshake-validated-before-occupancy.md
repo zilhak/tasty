@@ -1,4 +1,4 @@
-# ADR-0110: attach 점유는 핸드셰이크가 검증된 뒤에만 잡는다 — proto 불일치와 self-attach 는 점유 전에 거절한다
+# ADR-0116: attach 점유는 핸드셰이크가 검증된 뒤에만 잡는다 — proto 불일치와 self-attach 는 점유 전에 거절한다
 
 - **Status**: Accepted
 - **Date**: 2026-09-04

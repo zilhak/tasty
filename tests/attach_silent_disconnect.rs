@@ -131,7 +131,7 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
     drop(stale_conn); // 정리 — 이미 서버측에서 release 됐으므로 이제 닫아도 무해.
 }
 
-// ───── 실패한 attach 는 점유를 남기지 않는다 (ADR-0110) ─────
+// ───── 실패한 attach 는 점유를 남기지 않는다 (ADR-0116) ─────
 
 /// 점유가 풀릴 때까지 폴링한다. 시한 내에 풀리면 걸린 시간, 아니면 `None`.
 fn wait_until_free(server: &TastyInstance, surface_id: u64, within: Duration) -> Option<Duration> {
@@ -234,7 +234,7 @@ fn the_stream_channel_ignores_session_token_so_auth_cannot_strand_occupancy() {
 /// 디스패치 단계에서 거절된다. 이 attach 는 GUI 메인 스레드가 자기 자신의 핸드셰이크
 /// 응답을 기다리며 교착돼 성립할 수 없는데, 실패하는 동안 대상 workspace 점유만
 /// 잡았다(관찰 사례: `expected attach Control frame, got Ping` + `attach: workspace N
-/// -> client M`). 상세: `docs/adr/0110-attach-handshake-validated-before-occupancy.md`.
+/// -> client M`). 상세: `docs/adr/0116-attach-handshake-validated-before-occupancy.md`.
 #[test]
 fn self_attach_is_rejected_before_it_can_take_occupancy() {
     let server = common::shared();

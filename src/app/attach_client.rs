@@ -323,7 +323,7 @@ impl App {
     /// client(`crates/tasty-cli/src/local/debug/attach.rs`)라 이 메인 스레드 교착과 무관하다.
     /// 원칙 1 ②(사용자 입력 재현은 debug 격리) 판단은 그대로 유지되며, 이 게이트는 거기에
     /// "성립 불가 + 점유 사고" 라는 별개 근거를 더해 무조건 거부로 올린 것이다.
-    /// 상세: `docs/adr/0110-attach-handshake-validated-before-occupancy.md`.
+    /// 상세: `docs/adr/0116-attach-handshake-validated-before-occupancy.md`.
     fn reject_self_attach(&self, port: u16, label: &str) -> bool {
         if self.hub.ipc_server.as_ref().map(|s| s.port()) != Some(port) {
             return false;

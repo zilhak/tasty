@@ -318,7 +318,7 @@ impl TcpIpcServer {
     /// 20 초) 그 workspace 를 붙잡아 정상 attach 를 `already_attached` 로 거절한다.
     /// 버전 불일치는 원격 attach 의 흔한 실패 경로라, 실패가 확정된 시점에 점유를
     /// 아예 잡지 않는 것이 유일하게 확실한 처리다. 근거:
-    /// `docs/adr/0110-attach-handshake-validated-before-occupancy.md`.
+    /// `docs/adr/0116-attach-handshake-validated-before-occupancy.md`.
     ///
     /// 거절은 프로토콜에 이미 있는 모양을 쓴다 — `StreamAck{ok:false, error}` 는
     /// client(`StreamConnection::open_with`)가 이미 검사해 그 `error` 문구로
