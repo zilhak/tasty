@@ -159,6 +159,97 @@ fn unit_counts(files: &[(PathBuf, String)]) -> BTreeMap<String, usize> {
     out
 }
 
+/// `cfg` 로 배제되는 두 축을 각각 대표하는 파일. 스캔은 `cfg` 를 해석하지 않고 디스크의
+/// 텍스트를 읽으므로 **어느 조합에서 돌든 둘 다 읽어야 한다.**
+///
+/// - `src/gfx/gpu.rs` — **feature 축**(`#[cfg(feature = "gui")] mod gfx;`). 헤드리스
+///   조합에서 `gfx::` 유닛 테스트가 31 개에서 0 개로 사라지는 것이 그 게이트의 실행 축
+///   증거다. 그 디렉터리의 `.rs` 중 `target_os` 를 쓰는 것은 0 이라 이 파일은 feature
+///   축만 단독으로 대표한다.
+/// - `src/host_api/webview/macos.rs` — **target_os 축**. Linux 에서는 두 조합 모두
+///   컴파일되지 않으므로 이 파일 하나로는 feature 축을 가를 수 없다. 두 파일이 필요한
+///   이유가 그것이다.
+///
+/// 텍스트로 `cfg` 를 찾아 판정하지 않는다 — 두 파일 다 게이트가 **자기 파일 밖**에 있어
+/// 파일만 열어서는 "게이트 없음" 으로 읽힌다.
+///
+/// ## 자동 채널 없음
+///
+/// 위 두 문장 중 **게이트가 어디에 있는지**와 **헤드리스에서 `gfx::` 가 31→0 이라는
+/// 실행 축 증거**는 이 크레이트 안에서 판정할 수 없다. 유닛 테스트는 **자기 조합
+/// 하나만** 보므로 다른 조합의 목록을 볼 수단이 없고, 게이트가 다른 파일로 옮겨가도
+/// 아래 단정들은 그대로 통과한다. 즉 이 두 문장은 **사람이 읽어야 잡히는 부류**이고
+/// 겨냥할 변이가 없다. 지어내지 않고 부재를 여기 적어둔다.
+///
+/// **이 선언의 좌표**: 모수 = 이 크레이트의 유닛 테스트, base = 이 커밋의 부모.
+/// 부재는 base 에 따라 만료된다 — 조합 간 목록을 대조하는 가드가 워크스페이스에
+/// 들어오면 이 두 문장은 그때부터 **가드 대상**이 되고 이 선언은 죽는다.
+/// 선언을 옮겨 적을 때 이 좌표를 함께 옮겨라.
+///
+/// 반면 "`src/gfx/` 에 target_os 가 없다" 는 전제는 실행으로 판정 가능해서
+/// `the_feature_axis_sample_is_not_also_target_gated` 가 재고 있다.
+/// feature 축 표본이 사는 디렉터리. 위 표본 경로와 아래 순수성 판정이 같은 값을 보게
+/// 한 곳에 둔다.
+const FEATURE_AXIS_DIR: &str = "src/gfx/";
+
+const CFG_EXCLUDED_SAMPLES: &[&str] = &["src/gfx/gpu.rs", "src/host_api/webview/macos.rs"];
+
+/// `src/gfx/gpu.rs` 가 **feature 축만** 대표한다는 전제를 못박는다. 그 디렉터리에
+/// `target_os` 분기가 하나라도 들어오면 이 표본은 두 축이 섞여 위 관측의 판별력을 잃는다.
+/// 전제가 실행으로 판정 가능하므로 산문으로 두지 않고 여기서 재는 쪽을 택했다.
+#[test]
+fn the_feature_axis_sample_is_not_also_target_gated() {
+    let sources = rust_sources();
+    let considered: Vec<&(PathBuf, String)> = sources
+        .iter()
+        .filter(|(path, _)| {
+            path.to_string_lossy()
+                .replace('\\', "/")
+                .starts_with(FEATURE_AXIS_DIR)
+        })
+        .collect();
+    // 판정기가 자기 모수를 함께 낸다. 접두가 어긋나 0 개를 훑으면 아래 단정은 아무것도
+    // 안 보면서 통과한다 — "0 건 발견" 과 "0 회 실행" 을 여기서 가른다. 접두를 없는
+    // 디렉터리로 바꾸는 변이가 이 줄이 없을 때 실제로 살아남는 것을 확인했다.
+    assert!(
+        !considered.is_empty(),
+        "{FEATURE_AXIS_DIR} 아래에서 훑은 파일이 0 개다 — 디렉터리가 옮겨졌거나 접두가 \
+         어긋났다. 이 상태로는 아래 판정이 아무것도 보지 않는다"
+    );
+    let dirty: Vec<String> = considered
+        .iter()
+        .filter(|(_, text)| mask_non_code(text).contains("target_os"))
+        .map(|(path, _)| path.display().to_string())
+        .collect();
+    assert!(
+        dirty.is_empty(),
+        "`src/gfx/` 에 target_os 분기가 생겼다 — feature 축 표본이 두 축을 섞게 된다. \
+         `CFG_EXCLUDED_SAMPLES` 의 feature 축 표본을 순수한 파일로 옮겨라: {dirty:?}"
+    );
+}
+
+/// 스캔이 **지금 이 빌드가 컴파일하지 않는 파일까지** 읽는다는 것을 못박는다. 헤드리스
+/// 조합에서 이 테스트가 통과하는 것이 feature 게이트 축의 직접 관측이고, 어느 조합에서든
+/// `macos.rs` 쪽이 target_os 축의 관측이다. 하한(`MIN_SCANNED_FILES`)은 총량만 보므로
+/// 특정 파일이 빠져도 통과한다 — 그래서 이름으로 따로 단정한다.
+#[test]
+fn the_scan_reads_files_this_build_never_compiles() {
+    let scanned: BTreeSet<String> = rust_sources()
+        .iter()
+        .map(|(path, _)| path.to_string_lossy().replace('\\', "/"))
+        .collect();
+    let missing: Vec<&str> = CFG_EXCLUDED_SAMPLES
+        .iter()
+        .copied()
+        .filter(|path| !scanned.contains(*path))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "cfg 로 배제된 대표 파일이 스캔에 없다: {missing:?}. 파일이 옮겨졌으면 이 목록을 \
+         함께 고쳐라 — 목록이 낡으면 이 단정은 아무것도 안 보면서 통과한다"
+    );
+}
+
 #[test]
 fn every_scan_unit_contributes_at_least_one_file() {
     let files = rust_sources();
@@ -540,6 +631,76 @@ mod define_class_return {
              shim 을 빠져나가 변환 후 타입(예: bool → objc2::runtime::Bool)으로 검사된다 — \
              macOS 에서만 컴파일이 깨진다. 값은 표현식으로 흘려라(if/else 또는 match).\n  {}",
             violations.join("\n  ")
+        );
+    }
+
+    /// 이 가드가 겨냥하는 유일한 실물. 이 파일은 부모(`src/host_api/webview.rs`)의
+    /// `#[cfg(target_os = "macos")]` 와 조부모(`src/host_api.rs`)의
+    /// `#[cfg(feature = "gui")]` 두 게이트 아래 있어 **Linux 의 어느 조합에서도
+    /// 컴파일되지 않는다.** 게이트가 파일 자신에도 부모에도 없고 조부모에 있으므로,
+    /// 이 파일만 열어 `cfg` 를 찾으면 "게이트 없음" 으로 잘못 읽힌다.
+    const GATED_FILE: &str = "src/host_api/webview/macos.rs";
+
+    /// 스캔이 실제로 읽어온 그 파일의 내용. 없으면 스캔이 거기 못 닿은 것이다.
+    fn gated_source() -> String {
+        rust_sources()
+            .into_iter()
+            .find(|(path, _)| path.to_string_lossy().replace('\\', "/") == GATED_FILE)
+            .map(|(_, text)| text)
+            .unwrap_or_else(|| panic!("스캔 결과에 {GATED_FILE} 이 없다"))
+    }
+
+    /// `MIN_BLOCKS` 하한은 **어딘가에서** 1개를 봤다는 것까지만 말한다. 그 1개가
+    /// **컴파일된 적 없는 이 파일에서 왔다**는 것은 하한이 못 보여준다 — 여기서 직접
+    /// 못박는다. 이 단정이 통과하는 것은 소스 스캔이 `cfg` 와 무관하게 대상을 본다는
+    /// 뜻이고, 그것이 이 모듈을 `tests/` 가 아니라 여기 둔 이유의 절반이다.
+    #[test]
+    fn the_scan_reaches_a_file_no_local_build_compiles() {
+        let found = scan(&mask_non_code(&gated_source()));
+        assert!(
+            found.blocks > 0,
+            "{GATED_FILE} 에서 매크로 블록을 하나도 못 찾았다 — 스캔이 이 파일에 닿지 \
+             못했거나 마스킹이 본문까지 지웠다"
+        );
+        assert!(
+            found.violations.is_empty(),
+            "실물 파일이 이미 위반을 담고 있다: {:?}",
+            found.violations
+        );
+    }
+
+    /// 위 단정은 "읽었다" 까지다. **읽은 것 안에 진짜 위반이 있으면 잡는가** 는 따로
+    /// 물어야 한다 — 판정기가 대상을 보면서도 아무것도 못 보는 상태를 배제한다.
+    /// 파일을 고치지 않고 읽어온 내용에 주입해서 확인하므로 트리는 그대로다.
+    #[test]
+    fn a_violation_planted_inside_that_gated_file_is_caught() {
+        let raw = gated_source();
+        let at = raw.find(MACROS[0]).expect("매크로 호출이 있어야 한다");
+        let open = raw[at..]
+            .find('(')
+            .map(|rel| at + rel + 1)
+            .expect("매크로 호출의 여는 구분자가 있어야 한다");
+        let mut mutated = String::with_capacity(raw.len() + 32);
+        mutated.push_str(&raw[..open]);
+        mutated.push_str("\n    return true;\n");
+        mutated.push_str(&raw[open..]);
+
+        let before = scan(&mask_non_code(&raw));
+        let after = scan(&mask_non_code(&mutated));
+        assert!(
+            before.violations.is_empty(),
+            "원본이 이미 빨갛다 — 이 변이가 무엇을 보였는지 갈리지 않는다: {:?}",
+            before.violations
+        );
+        assert_eq!(
+            after.blocks, before.blocks,
+            "주입이 블록 수를 바꾸면 안 된다(잡힌 이유가 흐려진다)"
+        );
+        assert_eq!(
+            after.violations.len(),
+            1,
+            "게이트된 파일 안에 심은 값 반환을 못 잡았다(또는 과검출했다): {:?}",
+            after.violations
         );
     }
 
