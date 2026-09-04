@@ -2345,3 +2345,41 @@ fn explicit_group_with_outside_dependency_is_not_a_cycle() {
     assert!(!g.has_cycle);
     assert_eq!(g.task_count, 1);
 }
+
+// `list` 는 손상된 task 엔트리를 **빈 목록으로 흡수하지 않는다.** 호스트 러너가
+// "조회 실패" 와 "task 없음" 을 구분해 로그를 남길 수 있어야 하고(빈 목록으로
+// 흡수되면 러너가 무음으로 정지한 것처럼 보인다), 그 구분의 전제가 여기서
+// Err 이 실제로 나온다는 사실이다.
+#[test]
+fn list_reports_error_on_corrupt_task_entry() {
+    let (_td, mut mem, seq) = fresh_store();
+    {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "a".to_string(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::Value::Null,
+                now_ms: 0,
+            })
+            .expect("create");
+    }
+    // task 접두사 아래에 Task 로 역직렬화되지 않는 값을 심는다.
+    mem.put(
+        "_host",
+        &tasty_memory::Scope::Workspace(1),
+        &format!("{TASK_KEY_PREFIX}corrupt"),
+        &tasty_memory::MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+        &tasty_memory::PutOpts::default(),
+    )
+    .expect("put");
+
+    let store = TaskStore::new(&mut mem, "_host", &seq);
+    assert!(
+        store.list(1).is_err(),
+        "손상된 엔트리가 빈 목록으로 흡수되면 러너가 실패를 관측할 수 없다"
+    );
+}

@@ -29,6 +29,43 @@ use tasty_agent::runner::PollOutcome;
 
 const TICK_INTERVAL: Duration = Duration::from_millis(500);
 
+/// task snapshot 조회가 연속 실패했을 때 몇 번째 실패를 `error!` 로 올릴지.
+/// `TICK_INTERVAL` 이 500ms 라 6 은 약 3 초 — 일시적 lock 경합 한두 번과
+/// "store 가 계속 안 읽힌다" 를 가른다.
+const STORE_LIST_ERROR_AFTER: u32 = 6;
+/// 그 뒤로는 이 주기(약 60 초)로만 다시 남긴다 — tick 마다 찍으면 초당 2 줄이라
+/// 로그가 쓸모없어진다.
+const STORE_LIST_REPEAT_EVERY: u32 = 120;
+
+/// 연속 `n` 번째 task snapshot 조회 실패를 어떻게 남길지.
+///
+/// 첫 실패는 `warn!`(일시적일 수 있다), [`STORE_LIST_ERROR_AFTER`] 번째부터는
+/// `error!` — 그 시점이면 runner 가 Ready/Running task 를 하나도 진행시키지
+/// 못하는 상태가 지속된다는 뜻이고, UI 는 여전히 진행 중으로 보인다
+/// (`docs/dev-guide/error-handling.md` 의 "복구 불가, 사용자 작업이 의미를 잃음").
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum StoreListFailureLog {
+    Silent,
+    Warn,
+    Error,
+}
+
+fn store_list_failure_log(consecutive: u32) -> StoreListFailureLog {
+    if consecutive == 1 {
+        return StoreListFailureLog::Warn;
+    }
+    if consecutive < STORE_LIST_ERROR_AFTER {
+        return StoreListFailureLog::Silent;
+    }
+    if consecutive == STORE_LIST_ERROR_AFTER
+        || (consecutive - STORE_LIST_ERROR_AFTER).is_multiple_of(STORE_LIST_REPEAT_EVERY)
+    {
+        StoreListFailureLog::Error
+    } else {
+        StoreListFailureLog::Silent
+    }
+}
+
 struct RunnerControl {
     stop_tx: mpsc::Sender<()>,
     crashed: Arc<AtomicBool>,
@@ -793,6 +830,59 @@ fn gc_apply_sweep_plan(
     }
 }
 
+/// tick 머리의 task snapshot 조회. 조회 실패를 **빈 목록으로 흡수하지 않고** 로그로
+/// 남긴다(`store_list_failures` 는 연속 실패 카운터 — rate-limit 판정에 쓰인다).
+///
+/// `tick` 은 넘겨받은 슬라이스만 순회하므로(terminal 흡수 · Running poll · Ready
+/// dispatch 전부) 빈 목록으로 진행하는 것과 이번 tick 을 건너뛰는 것의 **동작은
+/// 완전히 같다** — permit 회수도 snapshot 에서 terminal 로 바뀐 task 를 봤을 때만
+/// 일어난다. 그래서 여기서 바꾸는 것은 관측 가능성뿐이고, 흐름은 종전대로 빈
+/// snapshot 으로 tick 을 돌린다(다음 tick 에 회복되면 밀린 전이를 한꺼번에 흡수).
+fn tick_snapshot(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    store_list_failures: &mut u32,
+) -> Vec<tasty_agent::Task> {
+    let listed = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store.list(workspace_id)
+    });
+    let e = match listed {
+        Ok(tasks) => {
+            if *store_list_failures > 0 {
+                tracing::info!(
+                    "agent runner ws{workspace_id}: task store recovered after \
+                     {store_list_failures} consecutive list failures"
+                );
+                *store_list_failures = 0;
+            }
+            return tasks;
+        }
+        Err(e) => e,
+    };
+    *store_list_failures = store_list_failures.saturating_add(1);
+    log_store_list_failure(workspace_id, *store_list_failures, &e);
+    Vec::new()
+}
+
+/// [`tick_snapshot`] 의 실패 로그 — 레벨 판정은 [`store_list_failure_log`], 여기서는
+/// 실제 기록만 한다(호출부의 인지 복잡도 상한 때문에 분리).
+fn log_store_list_failure(workspace_id: u32, n: u32, e: &dyn std::fmt::Display) {
+    match store_list_failure_log(n) {
+        StoreListFailureLog::Warn => tracing::warn!(
+            "agent runner ws{workspace_id}: task store list failed: {e} \
+             — this tick advances no task"
+        ),
+        StoreListFailureLog::Error => tracing::error!(
+            "agent runner ws{workspace_id}: task store list failed {n} times in a row: {e} \
+             — the task DAG is stalled (no dispatch, no poll, no permit release) while the UI \
+             still shows Ready/Running"
+        ),
+        StoreListFailureLog::Silent => {}
+    }
+}
+
 fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
     let reloaded = purge_and_reload_on_restart(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
@@ -800,6 +890,7 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
     for (task_id, handle) in reloaded {
         runner.running.insert(task_id, handle);
     }
+    let mut store_list_failures: u32 = 0;
     loop {
         // 0. push 완료 전략 timeout 안전망 — tick 본문보다
         //    먼저 돌려 이번 tick 의 0단계(terminal 흡수)가 방금 Failed 된 task 의
@@ -808,11 +899,7 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
         expire_overdue_hook_waits(&ctx, now);
 
         // 1. tick 본문.
-        let snapshot = ctx.with_memory(|mem| {
-            let seq = ctx.agent_seq.clone();
-            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            store.list(workspace_id).unwrap_or_default()
-        });
+        let snapshot = tick_snapshot(&ctx, workspace_id, &mut store_list_failures);
 
         let ctx_for_set = ctx.clone();
         let ctx_for_res = ctx.clone();
@@ -872,6 +959,41 @@ mod tests {
     use tasty_agent::task::TaskCreateOpts;
     use tasty_agent::{OnFailure, TaskCommand};
     use tasty_memory::{MemoryStore, PutOpts};
+
+    // 조회 실패 로그가 tick 마다 쏟아지지 않는지(첫 실패 warn → 임계에서 error →
+    // 이후 주기적으로만 error). TICK_INTERVAL 이 500ms 라 정책이 무너지면 초당
+    // 2 줄이 무한히 쌓인다.
+    #[test]
+    fn store_list_failure_log_is_rate_limited() {
+        assert_eq!(store_list_failure_log(1), StoreListFailureLog::Warn);
+        for n in 2..STORE_LIST_ERROR_AFTER {
+            assert_eq!(
+                store_list_failure_log(n),
+                StoreListFailureLog::Silent,
+                "{n} 번째 실패는 첫 warn 과 error 임계 사이라 조용해야 한다"
+            );
+        }
+        assert_eq!(
+            store_list_failure_log(STORE_LIST_ERROR_AFTER),
+            StoreListFailureLog::Error
+        );
+        // 임계 직후부터 다음 주기 직전까지는 다시 조용하다.
+        for n in (STORE_LIST_ERROR_AFTER + 1)..(STORE_LIST_ERROR_AFTER + STORE_LIST_REPEAT_EVERY) {
+            assert_eq!(
+                store_list_failure_log(n),
+                StoreListFailureLog::Silent,
+                "{n}"
+            );
+        }
+        assert_eq!(
+            store_list_failure_log(STORE_LIST_ERROR_AFTER + STORE_LIST_REPEAT_EVERY),
+            StoreListFailureLog::Error
+        );
+        assert_eq!(
+            store_list_failure_log(STORE_LIST_ERROR_AFTER + 2 * STORE_LIST_REPEAT_EVERY),
+            StoreListFailureLog::Error
+        );
+    }
 
     fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
         let td = tempfile::tempdir().unwrap();
