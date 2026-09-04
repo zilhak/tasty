@@ -2029,6 +2029,95 @@ mod tests {
         }
     }
 
+    /// 스크롤 가능한 데모 UI 의 계측판 — `ScrollArea` 의 세로 offset 을 기록한다.
+    /// hover 판정이 레이아웃에 좌우되지 않도록 `auto_shrink` 를 꺼 영역을 패널 전체로
+    /// 편다(이 테스트가 보려는 것은 레이아웃이 아니라 **와이어 델타의 도착**이다).
+    fn draw_scroll_area_measured(ctx: &Context, offset: &std::cell::Cell<f32>) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let out = egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for i in 0..80 {
+                        ui.label(format!("scrollable line {i}"));
+                    }
+                });
+            offset.set(out.state.offset.y);
+        });
+    }
+
+    /// host 가 보내는 모양 그대로의 휠 델타가 **실제로 콘텐츠를 움직이는지**.
+    ///
+    /// 기존 스크롤 테스트들은 왕복 횟수(`passes_until_settled`)와 분할 형태만 보고
+    /// offset 을 단정하지 않았고, 입력 헬퍼(`raw_with`)는 포인터를 아예 넣지 않는다 —
+    /// 포인터가 없으면 egui 는 hover 대상을 못 찾아 델타를 소비하지 않으므로, 그 조합은
+    /// "델타는 도착하는데 화면이 안 움직인다" 를 구조적으로 볼 수 없다. 이 테스트가
+    /// 그 구간을 지난다: PointerMoved 로 hover 를 세우고, 분할된 델타를 넣고, offset 이
+    /// 델타만큼 움직였는지 본다.
+    #[test]
+    fn a_wheel_delta_actually_moves_the_scroll_offset() {
+        let (w, h, ppp) = (320u32, 200u32, 1.0f32);
+        let hover = egui::pos2(w as f32 / 2.0, h as f32 / 2.0);
+        let mut core = EguiMeshCore::new();
+        let offset = std::cell::Cell::new(f32::NAN);
+
+        let frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
+            let mut raw = build_raw_input(w, h, ppp, &RawInputWire::default());
+            raw.events = events;
+            core.render(raw, false, |ctx| draw_scroll_area_measured(ctx, &offset));
+        };
+
+        // bootstrap — 폰트 atlas 등 첫 frame 특유의 요청을 소진시키고 hover 를 세운다.
+        for _ in 0..16 {
+            frame(vec![Event::PointerMoved(hover)], &mut core);
+            if core.pending_self_repaint().is_none() {
+                break;
+            }
+        }
+        assert_eq!(offset.get(), 0.0, "시작 offset 은 0 이어야 한다");
+
+        let delta = vec2(0.0, -50.0);
+        let mut events = vec![Event::PointerMoved(hover)];
+        push_scroll_events(&mut events, delta);
+        frame(events, &mut core);
+        // 분할 델타는 입력 pass 에서 전량 소비되지만, 소비된 값이 다음 프레임의 레이아웃에
+        // 반영되는 것을 한 프레임 더 돌려서 읽는다.
+        frame(vec![Event::PointerMoved(hover)], &mut core);
+
+        assert!(
+            (offset.get() - 50.0).abs() < 1.0,
+            "휠 50pt 가 offset 을 그만큼 움직여야 한다 — 실제 {}",
+            offset.get()
+        );
+
+        // 음성 대조: 포인터가 **한 번도** 오지 않은 surface 는 같은 델타로 움직이지
+        // 않는다. host 는 커서 이동 시에만 `PointerMoved` 를 싣고 휠 이벤트에는 좌표를
+        // 넣지 않으므로(`egui_mesh_push_scroll`), hover 가 서지 않은 채 도착한 델타는
+        // 소비되지 않는 것이 정상이다 — 이 대조가 없으면 위 단정은 "어디서 굴려도
+        // 움직인다" 는 더 강한(그리고 틀린) 주장과 구별되지 않는다.
+        let mut never_hovered = EguiMeshCore::new();
+        let idle = std::cell::Cell::new(f32::NAN);
+        let mut idle_frame = |events: Vec<Event>, core: &mut EguiMeshCore| {
+            let mut raw = build_raw_input(w, h, ppp, &RawInputWire::default());
+            raw.events = events;
+            core.render(raw, false, |ctx| draw_scroll_area_measured(ctx, &idle));
+        };
+        for _ in 0..16 {
+            idle_frame(Vec::new(), &mut never_hovered);
+            if never_hovered.pending_self_repaint().is_none() {
+                break;
+            }
+        }
+        let mut wheel_only = Vec::new();
+        push_scroll_events(&mut wheel_only, delta);
+        idle_frame(wheel_only, &mut never_hovered);
+        idle_frame(Vec::new(), &mut never_hovered);
+        assert_eq!(
+            idle.get(),
+            0.0,
+            "hover 가 서지 않은 surface 는 휠로 움직이지 않아야 한다"
+        );
+    }
+
     /// 상한을 넘는 극단적 델타는 쪼개지 않고 그대로 넘긴다(이벤트 폭증 방지).
     /// 이 경우에만 egui 기본 스무딩으로 되돌아간다.
     #[test]
