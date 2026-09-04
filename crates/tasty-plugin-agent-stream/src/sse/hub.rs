@@ -16,6 +16,7 @@
 //! [`DROP_STREAK_LIMIT`] 를 넘으면 그 구독을 끊어 **누락을 재연결로 드러낸다**. 순간적인
 //! 버스트로 멀쩡한 구독자를 끊지 않도록 즉시가 아니라 연속 임계로 판정한다.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -114,6 +115,9 @@ struct HubInner {
     total_dropped: u64,
 }
 
+const INNER_WHAT: &str = "the SSE subscriber registry";
+static INNER_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 /// 구독자 fan-out 허브. 이벤트 생산자(tail 스레드)와 HTTP 연결 스레드가 공유한다.
 #[derive(Debug, Default)]
 pub struct SseHub {
@@ -121,19 +125,29 @@ pub struct SseHub {
 }
 
 impl SseHub {
+    /// 구독자 레지스트리 락. **여섯 접근자가 전부 이 한 곳을 지난다** — poison 대응을
+    /// 접근자마다 따로 쓰면 그중 하나만 어긋나도 스트림이 조용히 멎기 때문이다.
+    ///
+    /// poison 이면 복구한다. 임계구역이 남길 수 있는 최악의 손상은 `total_dropped`
+    /// **과소계상 하나**이고(`subs` 자체는 `retain_mut`/`drain` 이 일관성을 지킨다),
+    /// 그 대가로 잃는 것은 SSE 스트림 전체다. 게다가 poison 은 sticky 라 한 번 걸리면
+    /// 이후 방출이 **영구히** 멎는다 — 구독자는 연결된 채 아무것도 못 받고, 무엇을
+    /// 놓쳤는지 알 방법도 없다. 패닉도 답이 아니다 — 그리고 여기서 패닉의 대가는
+    /// 스레드 하나가 아니라 **프로세스 전체**다: [`Subscription`] 의 `Drop` 이 이 락을
+    /// 다시 잡으므로, 패닉이 언와인딩하며 `unsubscribe` 를 지나면 재패닉해 abort 한다.
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, HubInner> {
+        tasty_utils::poison::recover_mutex(self.inner.lock(), INNER_WHAT, &INNER_POISON_REPORTED)
+    }
+
     /// 구독자가 하나도 없는가. 생산자가 **직렬화 자체를 건너뛰기 위한** 빠른 검사다.
     pub fn is_idle(&self) -> bool {
-        // poisoned 면 구독자 상태를 신뢰할 수 없다 — 방출을 건너뛰는 쪽이 안전하다.
-        self.inner.lock().map(|i| i.subs.is_empty()).unwrap_or(true)
+        self.lock_inner().subs.is_empty()
     }
 
     /// 구독을 등록하고 수신단을 돌려준다. 반환값이 drop 되면 구독이 해제된다.
     pub fn subscribe(self: &Arc<Self>, opts: SubOptions) -> Subscription {
         let (tx, rx) = sync_channel(SUBSCRIBER_QUEUE_CAP);
-        let mut inner = match self.inner.lock() {
-            Ok(inner) => inner,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut inner = self.lock_inner();
         inner.next_id += 1;
         let id = inner.next_id;
         inner.subs.push(Sub {
@@ -154,9 +168,7 @@ impl SseHub {
 
     /// 이벤트를 모든 매칭 구독자에게 넣는다. **어떤 경우에도 블로킹하지 않는다.**
     pub fn publish(&self, event: Arc<Published>) {
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
+        let mut inner = self.lock_inner();
         // 끊긴 구독자의 통계는 목록에서 사라지므로, 그 누적 drop 만 총량으로 옮긴다
         // (살아 있는 구독자의 drop 은 `stats` 가 그때그때 합산한다 — 이중 계산 방지).
         let mut retired = 0u64;
@@ -171,10 +183,7 @@ impl SseHub {
     }
 
     fn unsubscribe(&self, id: u64) {
-        let mut inner = match self.inner.lock() {
-            Ok(inner) => inner,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut inner = self.lock_inner();
         if let Some(pos) = inner.subs.iter().position(|s| s.id == id) {
             let gone = inner.subs.remove(pos);
             inner.total_dropped += gone.dropped;
@@ -184,20 +193,14 @@ impl SseHub {
     /// 열린 구독을 전부 끊는다 — 송신단이 사라지면 연결 스레드의 `recv` 가 즉시
     /// 깨어나 응답을 닫는다(shutdown 경로).
     pub fn close_all(&self) {
-        let mut inner = match self.inner.lock() {
-            Ok(inner) => inner,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut inner = self.lock_inner();
         let carried: u64 = inner.subs.drain(..).map(|s| s.dropped).sum();
         inner.total_dropped += carried;
     }
 
     /// 현재 구독자 통계 + 끊긴 구독자까지 합산한 누적 drop.
     pub fn stats(&self) -> (Vec<SubStat>, u64) {
-        let inner = match self.inner.lock() {
-            Ok(inner) => inner,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let inner = self.lock_inner();
         let live_dropped: u64 = inner.subs.iter().map(|s| s.dropped).sum();
         let stats = inner
             .subs
@@ -259,6 +262,8 @@ impl Drop for Subscription {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     fn event(seq: u64, surface_id: u32, kind: EventKind) -> Arc<Published> {
@@ -350,6 +355,59 @@ mod tests {
         assert!(!hub.is_idle());
         drop(sub);
         assert!(hub.is_idle());
+    }
+
+    /// poison 이 걸린 뒤에도 스트림이 계속 흐르는가.
+    ///
+    /// 겨냥하는 곳은 두 자리다. `is_idle` 은 poison 을 "구독자 없음" 으로 읽어 생산자가
+    /// **직렬화조차 건너뛰게** 했고(`registry.rs` 의 hot path 분기), `publish` 는 그냥
+    /// 반환했다. 둘 다 조용했고 poison 은 sticky 라, 한 번 걸리면 구독자는 연결을 유지한
+    /// 채 이후 이벤트를 **영구히** 못 받는다 — 끊기지도 않으니 재구독으로 복구할 기회도
+    /// 없다. 그래서 이 테스트는 "패닉하지 않는다" 가 아니라 **이벤트가 실제로 도달한다** 를
+    /// 확인한다. 마지막의 보고 플래그 확인은 복구를 조용히 되돌리는(로그 없는
+    /// `into_inner()`) 변경을 잡기 위한 것으로, 동작만 보는 단언은 그 변경에 살아남는다.
+    #[test]
+    fn a_poisoned_registry_still_delivers_to_live_subscribers() {
+        let hub = Arc::new(SseHub::default());
+        let sub = hub.subscribe(SubOptions::default());
+
+        // 락을 쥔 채 패닉시켜 poison 을 건다. 구독을 **먼저** 등록해 두어야
+        // `is_idle` 이 "비어 있다" 로 답할 여지가 실제로 생긴다.
+        let poisoner = Arc::clone(&hub);
+        std::thread::spawn(move || {
+            let _guard = poisoner.inner.lock().expect("아직 성한 락");
+            panic!("이 스레드가 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(hub.inner.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        // 생산자의 빠른 검사가 살아 있는 구독자를 못 본 척하지 않는다.
+        assert!(
+            !hub.is_idle(),
+            "poison 이 구독자를 지운 것처럼 보이면 안 된다"
+        );
+
+        // 그리고 이벤트가 실제로 도달한다. `recv` 가 아니라 `recv_timeout` 인 이유는,
+        // 방출이 막히면 이 단언이 **실패가 아니라 정지**가 되기 때문이다 — 멈춘 테스트는
+        // 잡의 벽시계를 먹은 뒤 타임아웃으로 귀속돼, 여기서 잡으려던 결함을 가린다.
+        hub.publish(event(1, 1, EventKind::Text));
+        let got = sub
+            .rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("poison 뒤에도 도달해야 한다");
+        assert_eq!(got.seq, 1);
+
+        // 나머지 접근자도 같은 경로를 지난다.
+        let (stats, _) = hub.stats();
+        assert_eq!(stats.len(), 1);
+        hub.close_all();
+        assert!(hub.is_idle());
+
+        assert!(
+            INNER_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
+            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+        );
     }
 
     #[test]

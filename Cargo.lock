@@ -5962,12 +5962,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-agent-stream"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "directories",
  "serde_json",
  "tasty-plugin-sdk",
+ "tasty-utils",
  "tempfile",
  "tiny_http",
  "tracing",
