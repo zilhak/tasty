@@ -160,3 +160,4 @@
 | 0146 | [스캔 가드는 빌드 디렉토리를 표식으로 가지치기한다 — 이름은 성질이 아니다](0146-build-dirs-are-pruned-by-their-tag-not-by-their-name.md) | Accepted | 2026-09-05 | guards, scan-population, build-artifacts, measurement, adr-0133, adr-0138, adr-0139 |
 | 0148 | [물리 px 상수는 "무엇을 위한 값인가" 로 갈라 다룬다](0148-physical-px-constants-are-split-by-what-they-are-for.md) | Accepted | 2026-09-05 | dpi, typed-length, layout, design-tokens, hidpi, adr-0145 |
 | 0151 | [문서의 좌표 인용은 리터럴로만 판정하고, 오탐은 예외 목록이 아니라 인용 형태를 고쳐 없앤다](0151-cited-coordinates-are-judged-as-literals-not-by-context.md) | Accepted | 2026-09-05 | documentation, guards, citation, false-positive, allowlist, detector-design, adr-0105, adr-0133, adr-0138, adr-0139 |
+| 0152 | [게이트는 라우팅보다 먼저 돈다 — 조기 응답이 검사 자리를 건너뛴다](0152-gates-run-before-routing-not-inside-it.md) | Accepted | 2026-09-05 | security, permissions, ipc, plugin, routing, guards, telemetry, audit |
