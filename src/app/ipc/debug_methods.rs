@@ -390,7 +390,8 @@ impl App {
     /// `ui.screenshot` 과 달리 **명시한 id 도 main 창만** 받는다. 무대는 main 창에만
     /// 존재하므로(`docs/design/systems/fullscreen-stage.md`) 모달 id 를 받을 자리가
     /// 없다 — 캡처(읽기)와 달리 이건 무대를 여닫는 행동이라, 대상 집합을 넓히면
-    /// 사용자 조작 영역인 모달까지 에이전트 행동 대상이 된다.
+    /// 사용자 조작 영역인 모달까지 에이전트 행동 대상이 된다
+    /// (`docs/adr/0118-screenshot-reads-any-window-explicit-id-only.md`).
     fn pick_debug_window(
         &self,
         params: &serde_json::Value,

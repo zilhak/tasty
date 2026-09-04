@@ -1258,6 +1258,9 @@ fn remote_attach_create_worker(
 ///
 /// 캡처가 **행동** 대상 집합을 넓히는 것은 아니다 — `window.list` 와 `window.close` 는
 /// 종전대로 main 창만 다룬다(모달·preset 은 사용자 조작 영역).
+///
+/// 결정의 근거·기각 대안·재검토 조건:
+/// `docs/adr/0118-screenshot-reads-any-window-explicit-id-only.md`.
 fn resolve_screenshot_window(
     windows: &[(u64, bool)],
     requested: Option<u64>,
