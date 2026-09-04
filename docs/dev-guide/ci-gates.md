@@ -18,6 +18,20 @@
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 → **실효 없음** |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
+**문서만 담은 push 는 세 크로스플랫폼 잡을 발사하지 않는다.** `crossplatform-check.yml` 의
+push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 있다. 컴파일 입력이
+아닌 경로로 러너를 깨우지 않으려는 안전판인데, **문서 가드에는 정확히 거꾸로 작동한다** —
+문서를 고치는 push 가 문서를 검사하는 채널을 돌리지 않는다. 소스를 함께 담은 push 에서는
+걸러지지 않으므로 실무상 드물게 나타나지만, "문서만 고쳤으니 CI 가 봐 줄 것" 은 성립하지
+않는다.
+
+**자동 잡은 push 된 커밋만 본다.** 로컬에 쌓아 둔 커밋은 push 전까지 어느 자동 채널도
+보지 않는다 — 채널이 배선돼 있다는 사실과 그 채널이 네 커밋을 봤다는 사실은 다르다.
+
+**채널이 있다는 것은 그 잡이 초록이라는 뜻이 아니다.** 어떤 검사를 "CI 가 본다" 를 근거로
+면제하려면 **그 잡이 최근에 실제로 통과했는지**까지 확인해라(`gh run list`). 이 문서는
+배선을 기술하고, 배선은 건강을 보장하지 않는다.
+
 **포맷 잡만 PR 을 함께 받는 이유**: `format-check.yml` 은 공용 `ubuntu-latest` 에서 돌아
 러너 줄서기가 없다. 나머지 자동 잡은 self-hosted 러너를 쓰고, 특히 Linux X64 는 **한 대**를
 `check-headless` · complexity-check · supply-chain-check · release/dist 빌드가 함께 쓴다 —
