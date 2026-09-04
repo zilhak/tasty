@@ -2952,6 +2952,18 @@ fn indented_hint(
 }
 
 // ── detect 워커 ───────────────────────────────────
+
+/// detect 슬롯 poison 을 보고했는가(첫 1 회만 — 폴링이 프레임마다 돈다).
+///
+/// 임계구역은 `Option<Result<_, _>>` 한 칸이라 패닉이 나도 불변식이 성립하고, 폴링은
+/// **메인(렌더) 스레드**라 패닉하면 모든 창이 죽는다 — 복구가 맞다. 조용히 버리던
+/// 종전 형태는 두 방향 모두 사용자에게 원인을 남기지 않았다: 워커 쓰기를 버리면 완료
+/// 신호가 영영 안 와 **"Detecting…" 이 영구 표시**되고(이 워커에는 상한이 없다),
+/// 폴링의 `unwrap_or(true)` 는 끝나지 않은 detect 를 끝난 것으로 처리한다.
+/// 근거 `docs/dev-guide/error-handling.md` "락 poison".
+static DETECT_SLOT_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+const DETECT_SLOT_WHAT: &str = "remote tool detect slot";
 fn spawn_detect(ctx: &egui::Context, name: String) -> DetectJob {
     let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
     let slot_w = Arc::clone(&slot);
@@ -2961,9 +2973,8 @@ fn spawn_detect(ctx: &egui::Context, name: String) -> DetectJob {
         let res = tasty_ssh::detect_and_persist(&name_w)
             .map(|m| m.as_str().to_string())
             .map_err(|e| e.to_string());
-        if let Ok(mut g) = slot_w.lock() {
-            *g = Some(res);
-        }
+        *crate::poison::recover_mutex(slot_w.lock(), DETECT_SLOT_WHAT, &DETECT_SLOT_POISONED) =
+            Some(res);
         ctx_w.request_repaint();
     });
     DetectJob { name, slot }
@@ -2971,7 +2982,10 @@ fn spawn_detect(ctx: &egui::Context, name: String) -> DetectJob {
 
 fn poll_detect(st: &mut UiState) -> bool {
     let done = match &st.detecting {
-        Some(job) => job.slot.lock().map(|g| g.is_some()).unwrap_or(true),
+        Some(job) => {
+            crate::poison::recover_mutex(job.slot.lock(), DETECT_SLOT_WHAT, &DETECT_SLOT_POISONED)
+                .is_some()
+        }
         None => false,
     };
     if done {
@@ -2983,6 +2997,37 @@ fn poll_detect(st: &mut UiState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// detect 슬롯이 poison 돼도 "아직 안 끝났다" 를 그대로 답한다.
+    ///
+    /// 조용히 버리는 구현(`unwrap_or(true)`)이면 여기서 완료로 판정해 진행 중인
+    /// detect 를 끝난 것처럼 지운다 — 이 워커에는 상한이 없어 되돌릴 지점도 없다.
+    #[test]
+    fn a_poisoned_detect_slot_does_not_look_finished() {
+        let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
+        let poisoner = Arc::clone(&slot);
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh lock");
+            panic!("poison the detect slot on purpose");
+        })
+        .join();
+        assert!(slot.is_poisoned(), "전제: 락이 poison 이다");
+
+        let mut st = UiState {
+            detecting: Some(DetectJob {
+                name: "loopback".into(),
+                slot: Arc::clone(&slot),
+            }),
+            ..Default::default()
+        };
+        assert!(!poll_detect(&mut st), "빈 슬롯은 아직 끝나지 않은 것이다");
+        assert!(st.detecting.is_some(), "진행 중인 detect 를 지우면 안 된다");
+
+        *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(Ok("ssh".into()));
+        assert!(poll_detect(&mut st), "채워지면 완료로 판정한다");
+        assert!(st.detecting.is_none());
+    }
 
     fn prof(name: &str, kind: &str) -> RemoteProfile {
         RemoteProfile::new(name, kind)
