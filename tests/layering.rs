@@ -13,12 +13,17 @@
 //! `crate::cli::` 경로로 CLI 크레이트 전체에 닿기 때문이다. 경계를 만드는
 //! 리팩터는 가드를 먼저 세워야 이행 중에 새 위반이 안 들어온다.
 //!
-//! **두 목록은 성격이 다르다 (합치지 말 것)**:
+//! **세 목록은 성격이 다르다 (합치지 말 것)**:
 //! - [`ALLOWED_PATHS`] — **영구 허용**. 바이너리가 CLI 파서를 소유하는 정당한
 //!   의존(진입점 / boot 경로 / 재수출 지점). 비울 대상이 아니다.
 //! - [`BASELINE_FILES`] — **한시 허용**. 이행 중인 기존 위반의 스냅샷.
 //!   **줄어들기만 해야 한다.** 실제 위반이 사라지면 목록에서도 지워야 통과한다
 //!   (역방향 검사).
+//! - [`TEST_ONLY_FILES`] — **범위 밖**. `#[cfg(test)]` 로만 컴파일되는 모듈.
+//!   프로덕션 바이너리에 그 참조가 들어가지 않으므로 이 가드가 겨냥하는 의존
+//!   방향 역전이 애초에 일어나지 않는다. 이행 대상이 아니라 **성격이 다른 것**이라
+//!   베이스라인과 섞지 않는다. 근거
+//!   [ADR-0123](../docs/adr/0123-layering-guard-excludes-cfg-test-modules.md).
 //!
 //! 주석 안의 언급도 위반으로 본다 — 주석이 옛 경로를 가리키면 그것도 실제
 //! 오정보이므로 코드와 같이 갱신되어야 한다.
@@ -53,6 +58,64 @@ const ALLOWED_PATHS: &[&str] = &[
 /// **새 항목을 추가해서는 안 된다.** 여기에 이름을 적어 통과시키는 것은
 /// 위반을 해소한 게 아니라 가드를 끄는 것이다.
 const BASELINE_FILES: &[&str] = &[];
+
+/// **범위 밖** — `#[cfg(test)]` 전용 모듈. `(경로, 사유)` 쌍으로 적는다
+/// (`tests/no_todo_file_citation.rs` 의 `ALLOWLIST` 규약).
+///
+/// 여기 이름을 올리는 것은 위반을 눈감아 주는 것이 아니라 **그 파일이 프로덕션
+/// 빌드에 존재하지 않음**을 주장하는 것이다. 그래서 가드는 그 주장을 검사한다 —
+/// 부모 모듈이 정말 `#[cfg(test)]` 로 선언하고 있는지, 그리고 목록이 실제보다
+/// 넓지 않은지(위반이 사라졌으면 지워야 한다).
+const TEST_ONLY_FILES: &[(&str, &str)] = &[(
+    "src/adapters/ipc/handler/cli_entry_tests.rs",
+    "CLI 가 조립한 params 를 프로덕션 핸들러가 실제로 읽는지 검증한다. tasty 는 lib \
+     타깃이 없는 바이너리 크레이트라 tests/ 통합 테스트에서 핸들러·AppState 픽스처에 \
+     아예 닿을 수 없다(가시성이 아니라 링크 대상이 없다).",
+)];
+
+/// `rel` 이 부모 모듈에서 `#[cfg(test)]` 로 선언돼 있는지 확인한다.
+///
+/// 면제의 근거가 "프로덕션 빌드에 안 들어간다" 이므로, 누가 `#[cfg(test)]` 를 떼면
+/// 면제가 조용히 프로덕션 참조를 허용하게 된다. 그 순간 여기서 떨어져야 한다.
+fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
+    let path = Path::new(rel);
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return Err(format!("{rel}: 모듈 이름을 뽑을 수 없다"));
+    };
+    let dir = path.parent().unwrap_or(Path::new(""));
+    // `foo/bar/baz.rs` 의 부모 모듈은 `foo/bar.rs` 또는 `foo/bar/mod.rs`.
+    let candidates = [
+        root.join(dir).with_extension("rs"),
+        root.join(dir).join("mod.rs"),
+    ];
+    let Some((parent_rel, src)) = candidates.iter().find_map(|c| {
+        std::fs::read_to_string(c)
+            .ok()
+            .map(|s| (rel_of(c, root), s))
+    }) else {
+        return Err(format!("{rel}: 부모 모듈 파일을 찾지 못했다"));
+    };
+
+    let lines: Vec<&str> = src.lines().collect();
+    let decl = format!("mod {stem};");
+    let Some(i) = lines
+        .iter()
+        .position(|l| l.trim() == decl || l.trim().ends_with(&format!(" {decl}")))
+    else {
+        return Err(format!(
+            "{rel}: 부모 모듈 `{parent_rel}` 에 `{decl}` 선언이 없다"
+        ));
+    };
+    // 선언 바로 앞의 빈 줄 아닌 줄이 cfg(test) 게이트여야 한다.
+    let gate = lines[..i].iter().rev().find(|l| !l.trim().is_empty());
+    match gate {
+        Some(g) if g.contains("cfg(test)") => Ok(()),
+        _ => Err(format!(
+            "{rel}: 부모 모듈 `{parent_rel}` 의 `{decl}` 이 `#[cfg(test)]` 게이트 아래에 \
+             있지 않다 — 면제의 전제(프로덕션 빌드에 안 들어간다)가 깨졌다"
+        )),
+    }
+}
 
 /// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·VCS 가 `src/` 안에
 /// 섞여 들어와도 스캔이 새지 않게 한다.
@@ -119,8 +182,36 @@ fn src_does_not_reference_tasty_cli() {
         overlap.join("\n  ")
     );
 
+    // 세 목록은 성격이 다르므로 서로 겹치면 안 된다. 특히 테스트 전용 면제가
+    // BASELINE_FILES 에 섞이면 "줄어들기만 하는 이행 스냅샷" 이라는 그 목록의
+    // 의미가 거짓이 된다(테스트 모듈은 없앨 대상이 아니다).
+    let cross: Vec<&str> = TEST_ONLY_FILES
+        .iter()
+        .map(|(f, _)| *f)
+        .filter(|f| is_allowed(f) || BASELINE_FILES.contains(f))
+        .collect();
+    assert!(
+        cross.is_empty(),
+        "TEST_ONLY_FILES 항목이 ALLOWED_PATHS/BASELINE_FILES 에도 있다 — 성격이 다른 \
+         목록이라 섞으면 안 된다:\n  {}",
+        cross.join("\n  ")
+    );
+
+    // 면제의 전제를 실제로 검사한다 — 부모 모듈의 `#[cfg(test)]` 게이트.
+    let broken: Vec<String> = TEST_ONLY_FILES
+        .iter()
+        .filter_map(|(f, _)| declared_under_cfg_test(f, root).err())
+        .collect();
+    assert!(
+        broken.is_empty(),
+        "TEST_ONLY_FILES 면제의 전제가 깨졌다 — 면제는 `#[cfg(test)]` 전용 모듈에만 \
+         유효하다:\n  {}",
+        broken.join("\n  ")
+    );
+
     let mut new_violations = Vec::new();
     let mut baseline_hit = Vec::new();
+    let mut test_only_hit = Vec::new();
     for file in files {
         let rel = rel_of(&file, root);
         if is_allowed(&rel) {
@@ -140,6 +231,8 @@ fn src_does_not_reference_tasty_cli() {
         }
         if BASELINE_FILES.contains(&rel.as_str()) {
             baseline_hit.push(rel);
+        } else if TEST_ONLY_FILES.iter().any(|(f, _)| *f == rel) {
+            test_only_hit.push(rel);
         } else {
             new_violations.extend(hits);
         }
@@ -167,5 +260,19 @@ fn src_does_not_reference_tasty_cli() {
          (남겨두면 그 파일에 위반이 다시 들어와도 통과한다). 파일이 사라졌거나 이름이 \
          바뀐 경우도 같다:\n  {}",
         stale.join("\n  ")
+    );
+
+    // 역방향 — 면제 목록도 실제보다 넓으면 안 된다. 참조가 사라졌거나 파일이
+    // 없어졌으면 목록에서도 지워야 통과한다(BASELINE_FILES 와 같은 대우).
+    let stale_test_only: Vec<&str> = TEST_ONLY_FILES
+        .iter()
+        .map(|(f, _)| *f)
+        .filter(|f| !test_only_hit.iter().any(|h| h == f))
+        .collect();
+    assert!(
+        stale_test_only.is_empty(),
+        "TEST_ONLY_FILES 에 있으나 실제 참조가 없다 — 면제가 필요 없어졌으면 목록에서도 \
+         지울 것(남겨두면 그 파일이 나중에 무엇을 참조해도 통과한다):\n  {}",
+        stale_test_only.join("\n  ")
     );
 }

@@ -130,3 +130,4 @@
 | 0118 | [캡처는 읽기라 행동 대상 집합을 넓히지 않는다 — 명시한 `window_id` 는 모달까지 찍고, 자동 선택은 main 창 하나로 유지한다](0118-screenshot-reads-any-window-explicit-id-only.md) | Accepted | 2026-09-04 | screenshot, ipc, window, modal, focus, identity-principle-1, identity-principle-3, local-only, ai-verification |
 | 0119 | [세마포어 한도는 원자적으로 조정하고, 홀더 만료는 opt-in 으로 둔다](0119-agent-semaphore-resize-and-holder-expiry.md) | Accepted | 2026-09-04 | agent-collaboration, semaphore, lease, concurrency, operability |
 | 0120 | [에이전트가 부르는 워크스페이스 닫기의 경계 — 마지막 하나·mirror·원격이 점유 중인 것은 거절하고, 비가역성은 숨기지 않는다](0120-agent-workspace-close-boundaries.md) | Accepted | 2026-09-04 | agent-surface, workspace, close, remote-attach, occupancy, identity-principles, adr-0040, adr-0113 |
+| 0123 | [계층 가드는 `#[cfg(test)]` 전용 모듈을 범위 밖으로 둔다 — 면제는 전제(cfg 게이트)와 stale 을 함께 검사한다](0123-layering-guard-excludes-cfg-test-modules.md) | Accepted | 2026-09-05 | layering, guards, testing, tasty-cli, adr-0105 |
