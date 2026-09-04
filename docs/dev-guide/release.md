@@ -40,7 +40,7 @@ CLAUDE.md 정책의 운영 형태:
 ./scripts/sign-bundle.sh --key secrets/dev-private.pem --all-builtins
 ```
 
-생성/갱신되는 `*.toml.sig`(현재 8개)는 **`.gitignore` 로 제외된 빌드 산출물**이라 커밋되지 않는다 — 로컬 release 빌드·dev 검증용이며, CI 정식 release 는 각 self-hosted 러너가 그 자리에서 로컬 자동생성한 키로 재서명한다(영구 보관 안 함, dev/debug 빌드는 서명을 검증하지 않음). 따라서 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이고 `.sig` 재생성은 커밋 절차 밖이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
+생성/갱신되는 `*.toml.sig`(번들 plugin 매니페스트 전부 — `--all-builtins` 가 `crates/tasty-plugin-*/tasty-plugin.toml` 을 자동 검색한다)는 **`.gitignore` 로 제외된 빌드 산출물**이라 커밋되지 않는다 — 로컬 release 빌드·dev 검증용이며, CI 정식 release 는 각 self-hosted 러너가 그 자리에서 로컬 자동생성한 키로 재서명한다(영구 보관 안 함, dev/debug 빌드는 서명을 검증하지 않음). 따라서 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이고 `.sig` 재생성은 커밋 절차 밖이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
 
 ### 3. 커밋 — body 가 곧 릴리스 노트
 
