@@ -1,4 +1,4 @@
-<!-- source-hash: 005bf85448ee -->
+<!-- source-hash: de4f68449cf0 -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -31,7 +31,7 @@ Press the **Settings** button at the very bottom of the sidebar, or press `Ctrl+
 
 | Section | Entries |
 |------|------|
-| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Close behavior** (Ask / Minimize to background / Quit) · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) |
+| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Close behavior** (Ask / Minimize to background / Quit) · **Wheel scroll distance** (10-200pt, default 50) - how far one wheel notch scrolls, applied the same everywhere in the window · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) |
 | **Notifications** | **Notifications enabled** · **Sound** · **Coalesce interval (ms)** |
 | **Accessibility** | **Reduced motion** (skips the toast fade) · **Show modifier key hints** |
 | **Overlay** | **Toast duration** (1~10 seconds) |
@@ -162,6 +162,7 @@ Everything in the settings window is stored in this single file. Missing keys ar
 [general]
 language = "ko"                  # "en" | "ko" | "ja"
 close_behavior = "ask"           # "ask" | "minimize" | "quit"
+wheel_line_scroll = 50.0         # how far one wheel notch scrolls (pt), 10-200
 restore_layout = true
 restore_surface_content = true
 scrollback_lines = 10000

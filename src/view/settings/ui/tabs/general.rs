@@ -5,6 +5,12 @@ use tasty_ui_widgets::{LanguageOption, LanguageSelectLabels, language_select, vs
 /// `languages` 는 설정 창이 연 시점에 스캔한 언어 목록(내장 3 + 언어팩 N —
 /// `crate::i18n::available_languages`). 콤보는 그 목록만 보여 주고, 현재 설정값이 목록에
 /// 없으면(팩 삭제 등) 값을 덮어쓰지 않고 `<code> (not found)` 행으로 유지한다.
+/// 휠 노치 거리 슬라이더의 범위. 하한은 0 이 아니다 — 0 이면 휠이 아무 데서도 안
+/// 움직여 설정 창을 스크롤해 되돌리는 것조차 막힌다. 상한은 한 노치가 화면을 통째로
+/// 넘기지 않을 정도로 둔다.
+const WHEEL_LINE_SCROLL_MIN: f32 = 10.0;
+const WHEEL_LINE_SCROLL_MAX: f32 = 200.0;
+
 pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &[LanguageEntry]) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
@@ -46,6 +52,18 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
                 &mut settings.general.workspace_switch_crosses_category,
                 None,
                 true,
+            );
+            ui.end_row();
+
+            // 휠 한 칸이 스크롤하는 거리. 이 한 값이 host UI 위젯과 plugin 표면 양쪽에
+            // 걸린다(ADR-0130) — 어느 한쪽만 바뀌면 같은 창에서 표면마다 이동량이 갈린다.
+            ui.label(t("settings.general.wheel_line_scroll_label"));
+            ui.add(
+                egui::DragValue::new(&mut settings.general.wheel_line_scroll)
+                    .range(WHEEL_LINE_SCROLL_MIN..=WHEEL_LINE_SCROLL_MAX)
+                    .speed(1.0)
+                    .fixed_decimals(0)
+                    .suffix(" pt"),
             );
             ui.end_row();
 
@@ -99,6 +117,13 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
             );
             ui.end_row();
         });
+
+    vspace(ui, th.spacing_xs);
+    ui.label(
+        egui::RichText::new(t("settings.general.wheel_line_scroll_desc"))
+            .small()
+            .color(th.text_muted()),
+    );
 
     vspace(ui, th.spacing_sm);
     ui.label(

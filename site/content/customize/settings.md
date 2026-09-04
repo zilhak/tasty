@@ -30,7 +30,7 @@
 
 | 섹션 | 항목 |
 |------|------|
-| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **언어** (English / 한국어 / 日本語 + 설치한 [언어팩](#언어-추가하기-언어팩)) |
+| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **휠 스크롤 거리** <!-- en: Wheel scroll distance --> (10~200pt, 기본 50) — 휠 한 칸이 스크롤하는 거리이며 창 안 모든 곳에 같이 적용됩니다 · **언어** (English / 한국어 / 日本語 + 설치한 [언어팩](#언어-추가하기-언어팩)) |
 | **알림** <!-- en: Notifications --> | **알림 활성화** <!-- en: Notifications enabled --> · **소리** <!-- en: Sound --> · **알림 병합 간격 (ms)** <!-- en: Coalesce interval (ms) --> |
 | **접근성** <!-- en: Accessibility --> | **모션 줄이기** <!-- en: Reduced motion --> (토스트 페이드 생략) · **수정자 키 힌트 표시** <!-- en: Show modifier key hints --> |
 | **오버레이** <!-- en: Overlay --> | **토스트 표시 시간** <!-- en: Toast duration --> (1~10초) |
@@ -156,6 +156,7 @@ cancel = "Annuler"
 [general]
 language = "ko"                  # "en" | "ko" | "ja"
 close_behavior = "ask"           # "ask" | "minimize" | "quit"
+wheel_line_scroll = 50.0         # 휠 한 칸이 스크롤하는 거리(pt), 10~200
 restore_layout = true
 restore_surface_content = true
 scrollback_lines = 10000
