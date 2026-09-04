@@ -60,14 +60,54 @@ use std::path::{Path, PathBuf};
 
 /// 스캔 대상 (repo-relative). 자매 가드 `tests/design_token_adherence.rs` 의
 /// `SCAN_ROOTS` 와 같은 집합이다 — 같은 축을 보므로 갈라지면 안 된다.
+///
+/// **그 "갈라지면 안 된다" 는 오래 주석으로만 있었고 실제로 갈라졌다.** 자매 쪽이
+/// `src/gfx/gpu` 를 디렉토리로 넓히는 동안 이쪽은 `shell_setup.rs` 한 파일로 남았다.
+/// 지금은 [`the_two_sister_guards_scan_the_same_roots`] 가 그 불변식을 판정한다.
+///
+/// 개별 `.rs` 파일을 루트로 등재하지 않는다 — 그 디렉토리에 나중에 생기는 파일이 기본
+/// 제외가 되고, 그 누락은 아무 신호도 내지 않는다
+/// (`docs/adr/0133-guard-scan-population-is-pinned-not-enumerated.md`).
 const SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
-    "src/gfx/gpu/shell_setup.rs",
+    "src/gfx/gpu",
     "crates/tasty-gallery/src",
     "crates/tasty-ui-widgets/src",
     "crates/tasty-egui-theme/src",
 ];
+
+/// 자매 가드의 소스에서 `const SCAN_ROOTS` 블록의 문자열 리터럴을 뽑는다.
+///
+/// 두 가드는 각각 lib 유닛과 통합 타깃이라 상수를 **공유할 수 없다**(통합 테스트의
+/// 아이템은 본체 crate 에서 안 보인다). 그래서 값을 나누는 대신 소스를 읽어 대조한다 —
+/// 이 파일은 이미 같은 방식으로 소스를 스캔하므로 새 의존이 아니다.
+fn sister_scan_roots(src: &str) -> Vec<String> {
+    let Some(start) = src.find("const SCAN_ROOTS: &[&str] = &[") else {
+        return Vec::new();
+    };
+    let rest = &src[start..];
+    let Some(end) = rest.find("];") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut chars = rest[..end].char_indices();
+    while let Some((i, c)) = chars.next() {
+        if c != '"' {
+            continue;
+        }
+        if let Some(close) = rest[i + 1..end].find('"') {
+            out.push(rest[i + 1..i + 1 + close].to_string());
+            // 닫는 따옴표 뒤로 건너뛴다.
+            while let Some((j, _)) = chars.next() {
+                if j >= i + 1 + close {
+                    break;
+                }
+            }
+        }
+    }
+    out
+}
 
 /// UI 폰트 스케일의 값 — `font_size_micro`(10) · `caption`(11) · `body`(13) ·
 /// `heading`(13) · `max`(14). 이 다섯이 UI 스케일 전부다
@@ -357,6 +397,50 @@ fn no_named_const_copies_a_ui_font_token() {
          금지되는 것은 토큰 값의 **복사본**뿐이다(ADR-0126)\n{}",
         violations.join("\n")
     );
+}
+
+/// **두 자매 가드가 같은 루트를 본다** — 이 파일의 `SCAN_ROOTS` doc 이 오래 주석으로만
+/// 주장하던 불변식이다. 실제로 한 번 갈라졌고(자매가 `src/gfx/gpu` 를 디렉토리로 넓히는
+/// 동안 이쪽은 파일 하나로 남았다), 갈라진 동안 **양쪽 다 초록이었다.**
+///
+/// 두 가드가 같은 축(디자인 토큰 리터럴/사본)을 보므로 모수가 다르면 한쪽만 보는 사각이
+/// 생긴다. 상수를 공유할 수 없어(통합 테스트 아이템은 본체 crate 에서 안 보인다) 소스를
+/// 읽어 대조한다.
+///
+/// 자매 파일이 없거나 형태가 바뀌어 파싱이 0 을 내면 **조용히 통과하지 않는다** — 빈
+/// 목록도 실패로 본다.
+#[test]
+fn the_two_sister_guards_scan_the_same_roots() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sister = root.join("tests/design_token_adherence.rs");
+    let src = std::fs::read_to_string(&sister)
+        .unwrap_or_else(|e| panic!("자매 가드를 읽지 못했다 ({}): {e}", sister.display()));
+
+    let theirs = sister_scan_roots(&src);
+    assert!(
+        !theirs.is_empty(),
+        "자매 가드에서 `const SCAN_ROOTS` 를 못 뽑았다 — 형태가 바뀌었으면 \
+         `sister_scan_roots` 도 함께 고칠 것. 0 개를 통과로 세지 않는다"
+    );
+
+    let mine: Vec<String> = SCAN_ROOTS.iter().map(|s| (*s).to_string()).collect();
+    let mut a = mine.clone();
+    let mut b = theirs.clone();
+    a.sort();
+    b.sort();
+    assert_eq!(
+        a, b,
+        "두 자매 가드의 스캔 루트가 갈라졌다 — 같은 축을 보므로 한쪽만 넓히면 \
+         나머지 한쪽에 사각이 생긴다"
+    );
+
+    // 그리고 그 루트는 디렉토리여야 한다 — 파일 열거는 새 파일을 기본 제외로 만든다.
+    for r in SCAN_ROOTS {
+        assert!(
+            !r.ends_with(".rs"),
+            "스캔 루트에 개별 파일이 있다: {r}. 디렉토리로 쓸 것"
+        );
+    }
 }
 
 #[test]
