@@ -6,10 +6,14 @@
 //! selected surface-active) + 우측 content(flex, padding `spacing_lg`, Theme preset grid).
 //!
 //! **Settings 창의 미러가 아니다.** 그 미러는 별도 `settings` specimen
-//! (`components/settings.rs`, L2 200 · L1 44 = 본체 `SETTINGS_SIDEBAR_WIDTH`/`HEIGHT`)이다.
-//! 이쪽은 특정 창에 매이지 않는 일반 idiom 이라 치수를 어느 창 상수도 아닌 토큰에서 직접
-//! 도출한다. (예전 모듈 문서가 "Settings 창 idiom" 이라 적어 두 specimen 이 같은 것을 다른
-//! 값[168/40 vs 200/44]으로 그리는 것처럼 보였다 — 실제로는 서로 다른 대상이다.)
+//! (`components/settings.rs`)이고, 그쪽 L2 200 · L1 44 는 본체 Settings 창의
+//! `SETTINGS_SIDEBAR_WIDTH`(200) · `SETTINGS_HEADER_HEIGHT`(44) **값과 일치**한다 — 다만
+//! 갤러리 크레이트는 본체 bin 의 그 상수(비공개)를 참조할 수 없어, 값을 갤러리 로컬로
+//! 들고(`L2_WIDTH` 리터럴 · `titlebar_height + spacing_sm` 도출) **관례로 맞춘다**(컴파일
+//! 연동이 아니라 값 일치). 이쪽 twodepth 는 특정 창에 매이지 않는 일반 idiom 이라 치수를
+//! 어느 창 상수도 아닌 토큰에서 직접 도출한다(168/40). (예전 모듈 문서가 "Settings 창
+//! idiom" 이라 적어 두 specimen 이 같은 것을 다른 값[168/40 vs 200/44]으로 그리는 것처럼
+//! 보였다 — 실제로는 서로 다른 대상이다.)
 //!
 //! Theme 토큰만으로 정적 재현 (binary 미의존).
 

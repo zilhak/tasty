@@ -330,7 +330,10 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx` ↔ 본체
 `src/view/settings/ui.rs`(+ `settings/ui/tabs/*`, `keybindings_tab.rs`) ↔ 갤러리
-`components/settings.rs` (Overlays `settings` specimen, L2 200 · L1 44 = 본체 상수).
+`components/settings.rs` (Overlays `settings` specimen). 그 L2 200 · L1 44 는 본체
+`SETTINGS_SIDEBAR_WIDTH`(200) · `SETTINGS_HEADER_HEIGHT`(44) **값과 일치**하나 컴파일 연동은
+아니다 — 갤러리 크레이트가 본체 bin 의 비공개 상수를 참조할 수 없어 값을 로컬로 들고
+관례로 맞춘다(200 은 리터럴, 44 는 `titlebar_height + spacing_sm` 도출).
 Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
 않는 일반 2-depth idiom(168/40, 토큰 도출)이다 — 혼동 금지.
 
