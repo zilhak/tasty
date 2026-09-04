@@ -59,17 +59,30 @@ pub const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(40);
 /// S2 — 첫 surface 의 PTY 가 프롬프트를 낼 때까지. S1 이 끝난 뒤라 GPU 와 무관하다.
 pub const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// stderr 시그니처로 가릴 수 있는 부팅 차단 원인.
+/// stderr 시그니처로 가릴 수 있는 것. **두 갈래의 확신 수준이 다르다.**
 enum BootBlocker {
-    /// GPU/드라이버 스택을 못 잡았다 — 디바이스 경합이거나 미가용.
-    Gpu(&'static str),
-    /// 디스플레이 서버가 아예 없다 — winit 이 즉시 죽는다.
+    /// 디스플레이 서버가 아예 없다 — winit 이 즉시 죽는다. 이 시그니처는 부팅에
+    /// 성공한 인스턴스의 stderr 에는 **나오지 않으므로**(실측) 단독으로 원인이 된다.
     NoDisplay(&'static str),
+    /// GPU 드라이버가 가속 경로를 못 잡고 폴백했다. **원인 판정이 아니다** —
+    /// 아래 [`GPU_FALLBACK_MARKERS`] 의 주석 참조.
+    GpuFallback(&'static str),
 }
 
-/// GPU/드라이버가 실패할 때 스택이 남기는 문자열들.
-const GPU_MARKERS: &[&str] = &[
-    "renderD128", // DRM 렌더 노드 — 다른 프로세스가 점유했거나 접근 불가
+/// GPU 드라이버가 **가속 경로를 포기하고 폴백할 때** 스택이 남기는 문자열들.
+///
+/// 이름이 `..._FALLBACK_...` 인 것이 핵심이다. 이 줄들은 부팅 실패의 증거가 아니다 —
+/// mesa/turnip 이 `/dev/dri/renderD128` 을 못 열고 소프트웨어 경로로 내려가는 **정상
+/// 절차**의 흔적이고, 그렇게 내려간 뒤 부팅은 대개 성공한다. 실측(2026-09-04, 이
+/// 개발 머신): port file 을 정상적으로 쓴 인스턴스의 stderr 에 여섯 개가 **전부** 있었다.
+///
+/// 그래서 이 마커는 "GPU 때문이다" 를 단정하는 데 쓸 수 없고, 판정문도 단정하지
+/// 않는다([`boot_blocker_verdict`]). 정상 부팅에 안 나오는 GPU 시그니처를 대신 쓰고
+/// 싶었으나, 이 머신에서는 GPU 초기화가 **항상** 소프트웨어 폴백으로 성공해서 그런
+/// 로그를 채집할 수 없었다. 그런 시그니처를 실제로 관측하면 이 목록을 그것으로
+/// 바꾸고 판정문의 단정을 되살릴 수 있다.
+const GPU_FALLBACK_MARKERS: &[&str] = &[
+    "renderD128", // DRM 렌더 노드 — 열지 못했다(점유 중이거나 접근 불가)
     "VK_ERROR_",  // Vulkan 초기화 실패 전반
     "DRI3",       // X 서버가 DRI3 를 못 주는 경우(가속 경로 상실)
     "libEGL",     // EGL 경고 — 위 둘과 함께 나오는 것이 보통
@@ -77,7 +90,8 @@ const GPU_MARKERS: &[&str] = &[
     "failed to open device",
 ];
 
-/// 디스플레이 서버 부재를 가리키는 문자열들.
+/// 디스플레이 서버 부재를 가리키는 문자열들. 실측으로 정상 부팅 stderr 에는 없고
+/// `DISPLAY`/`WAYLAND_*` 를 모두 지운 부팅에서만 나온다.
 const NO_DISPLAY_MARKERS: &[&str] = &[
     "neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set",
     "cannot open display",
@@ -90,26 +104,28 @@ fn detect_blocker(stderr_tail: &str) -> Option<BootBlocker> {
     {
         return Some(BootBlocker::NoDisplay(m));
     }
-    GPU_MARKERS
+    GPU_FALLBACK_MARKERS
         .iter()
         .find(|m| stderr_tail.contains(**m))
-        .map(|m| BootBlocker::Gpu(m))
+        .map(|m| BootBlocker::GpuFallback(m))
 }
 
-/// stderr tail 에서 부팅 차단 원인을 찾아 판정문 한 줄을 만든다.
+/// stderr tail 에서 실패 원인의 단서를 찾아 한 줄로 만든다.
 ///
-/// 이 줄이 없으면 "느린 건지 GPU 가 없는 건지" 를 매번 사람이 stderr 을 읽어
-/// 판정해야 한다. 실제로 하루치 flaky 전건이 이 판정 하나로 갈렸다.
+/// 이 줄이 없으면 "느린 건지 환경이 막힌 건지" 를 매번 사람이 stderr 을 읽어 판정해야
+/// 한다. 다만 **단서의 강도가 다르면 문장의 강도도 달라야 한다** — 확신에 찬 오답은
+/// 조용한 타임아웃보다 나쁘다. 디스플레이 부재는 단정하고, GPU 폴백은 단정하지 않는다.
 pub fn boot_blocker_verdict(stderr_tail: &str) -> Option<String> {
     match detect_blocker(stderr_tail)? {
-        BootBlocker::Gpu(marker) => Some(format!(
-            "GPU 경합/미가용으로 보인다 — 코드 인과가 아니다(시그니처: `{marker}`). GUI 부팅이 \
-             GPU 디바이스를 못 잡으면 IPC 가 시작되지 않아 port file 이 끝내 안 써진다. 상한을 \
-             늘려도 결과는 같다. 다른 워크트리·인스턴스가 같은 디바이스를 쓰고 있는지 먼저 본다."
-        )),
         BootBlocker::NoDisplay(marker) => Some(format!(
             "디스플레이 서버가 없다 — 코드 인과가 아니다(시그니처: `{marker}`). 이 하네스는 실제 \
              GUI 를 띄우므로 `xvfb-run -a` 같은 디스플레이 위에서 돌려야 한다."
+        )),
+        BootBlocker::GpuFallback(marker) => Some(format!(
+            "GPU 가속 경로 폴백 흔적이 있다(시그니처: `{marker}`) — **이것만으로는 원인 판정이 \
+             되지 않는다.** 같은 줄이 부팅에 성공한 인스턴스의 stderr 에도 그대로 나온다. \
+             먼저 다른 워크트리·인스턴스가 같은 GPU 디바이스를 쓰고 있는지 확인하고, 그것이 \
+             아니면 코드 쪽(부팅 지연·plugin·셸 설정)을 그대로 본다."
         )),
     }
 }
@@ -149,19 +165,47 @@ pub fn spawn_timeout_message(
 mod tests {
     use super::*;
 
-    /// 2026-09-04 실측 로그. 워크트리 4 곳이 동시에 `cargo test` 를 돌려 GPU 디바이스가
-    /// 경합했을 때 실제로 남은 stderr 이다 — 판정이 이 형태를 놓치면 의미가 없다.
-    const REAL_GPU_CONTENTION_TAIL: &str = "\
+    /// 2026-09-04 실측 로그 — **부팅에 성공한** 인스턴스의 stderr 이다(port file 작성
+    /// 확인, port=43499). 처음에는 이것을 "워크트리 4 곳이 GPU 를 경합한 증거" 로 읽고
+    /// 판정문이 "코드 인과가 아니다" 를 단정했는데, 같은 세 줄이 아무 경합 없이 단독으로
+    /// 띄운 정상 부팅에도 한 글자 다르지 않게 나온다. turnip 이 `/dev/dri/renderD128` 을
+    /// 못 열고 소프트웨어로 내려가는 드라이버 폴백 상용구다.
+    const SUCCESSFUL_BOOT_GPU_FALLBACK_TAIL: &str = "\
 libEGL warning: DRI3 error: Could not get DRI3 device
 libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
 TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri/renderD128 (VK_ERROR_INCOMPATIBLE_DRIVER)";
 
+    /// 이 tail 로는 **코드를 무죄로 만들 수 없다.** 정상 부팅에도 그대로 나오는 줄이라,
+    /// 이걸로 "코드 인과가 아니다" 를 말하면 어떤 원인의 타임아웃이든 전부 GPU 탓이 된다.
     #[test]
-    fn real_gpu_contention_tail_is_called_out_as_environment_not_code() {
-        let verdict = boot_blocker_verdict(REAL_GPU_CONTENTION_TAIL)
-            .expect("실측 GPU 경합 로그는 판정되어야 한다");
-        assert!(verdict.contains("코드 인과가 아니다"), "{verdict}");
-        assert!(verdict.contains("GPU"), "{verdict}");
+    fn a_gpu_fallback_tail_does_not_rule_out_code() {
+        let verdict = boot_blocker_verdict(SUCCESSFUL_BOOT_GPU_FALLBACK_TAIL)
+            .expect("단서는 실어야 한다 — 다만 단정하지 않는다");
+        assert!(
+            !verdict.contains("코드 인과가 아니다"),
+            "정상 부팅에도 나오는 시그니처로 코드를 무죄 판정하면 안 된다: {verdict}"
+        );
+        assert!(
+            verdict.contains("원인 판정이 되지 않는다"),
+            "단정하지 않는다는 사실을 문장에 실어야 한다: {verdict}"
+        );
+        assert!(
+            verdict.contains("다른 워크트리"),
+            "먼저 확인할 것을 알려야 한다: {verdict}"
+        );
+    }
+
+    /// 디스플레이 부재는 반대다 — 정상 부팅 stderr 에는 나오지 않으므로(실측) 단정한다.
+    /// 두 갈래의 확신 수준이 실제로 다르다는 것을 여기서 고정한다.
+    #[test]
+    fn the_two_verdicts_do_not_carry_the_same_certainty() {
+        let display = boot_blocker_verdict(
+            "Error: neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set.",
+        )
+        .expect("디스플레이 부재는 판정 대상이다");
+        let gpu = boot_blocker_verdict(SUCCESSFUL_BOOT_GPU_FALLBACK_TAIL).expect("단서는 실린다");
+        assert!(display.contains("코드 인과가 아니다"), "{display}");
+        assert!(!gpu.contains("코드 인과가 아니다"), "{gpu}");
     }
 
     #[test]
