@@ -50,7 +50,7 @@ use std::path::{Path, PathBuf};
 const SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
-    "src/gfx/gpu/shell_setup.rs",
+    "src/gfx/gpu",
     "crates/tasty-gallery/src",
     "crates/tasty-ui-widgets/src",
     // Theme 를 egui 로 잇는 어댑터 크레이트. `stroke1()` 같은 헬퍼가 여기 살아서
@@ -68,14 +68,14 @@ const SCAN_ROOTS: &[&str] = &[
 const COLOR_SCAN_ROOTS: &[&str] = &[
     "src/view",
     "src/adapters/ui",
-    "src/gfx/gpu/shell_setup.rs",
+    "src/gfx/gpu",
     "crates/tasty-ui-widgets/src",
 ];
 
 /// raw 픽토그래픽 글리프 스캔 대상 — **host 전용**(widgets/gallery 미포함). gallery
 /// specimen 은 ↑↓↵→◀▶ 를 대량 사용하므로 SCAN_ROOTS 재사용 시 오검출된다(연구 §3).
 /// 플러그인(`crates/tasty-plugin-*`)도 미포함 — S-11 과 비중첩.
-const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu/shell_setup.rs"];
+const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu"];
 
 /// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
 /// 평면 필드 직접 접근(`th.blue`/`theme.surface0`)을 host UI 에서 금지하기 위한 목록.
@@ -137,6 +137,23 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     // 스케일 밖 값(13 · 17 · 22 · 26 · 28 · 30)은 ADR-0126 과 같게 명명 const 로 둔다 —
     // 그래서 이 접두에는 allowlist 항목이 없다(이식을 먼저 끝내고 넣었다).
     ".image(",
+    // 코너 반경 축. **접두가 둘인 이유가 이 축의 교훈이다** — 다수가
+    // `.corner_radius(egui::CornerRadius::same(12))` 로 한 겹 감싸여 있어서
+    // `.corner_radius(` 뒤에 숫자가 오지 않는다. 한쪽만 넣으면 축의 절반이 열린 채로
+    // 닫혔다고 읽힌다(`Margin::same(` 을 `inner_margin(` 과 따로 넣은 것과 같은 이유).
+    //
+    // 스케일은 `corner_radius_sm 2` · `corner_radius 4` · `corner_radius_lg 8` 이고
+    // DTCG 도 `radius-2/4/8/full` 뿐이다. 밖의 값(3 · 6 · 12)은 스냅하지 말고
+    // ADR-0126 대로 사유를 적은 명명 const 로 둔다 —
+    // `tasty_ui_widgets::tokens` 의 `BOOT_CHROME_CORNER_RADIUS` ·
+    // `BOOT_CARD_CORNER_RADIUS` · `TAG_PILL_CORNER_RADIUS` 가 그것이다.
+    // 전부 0 이면 `CornerRadius::ZERO`(`Margin::ZERO` 와 같은 관례).
+    //
+    // **이 축은 굵기 축과 대가가 다르다**: `corner_radius*` 는 `zoomed()` 를 타고
+    // `border_width` 는 안 탄다. 그래서 반경을 명명 const 로 빼면 그 자리만 배율에서
+    // 고정된다 — 스케일 밖 여섯 자리가 감수한 값이다. 이식 후 allowlist 항목 0.
+    ".corner_radius(",
+    "CornerRadius::same(",
 ];
 
 /// 숫자 인자 검사로는 잡히지 않는 **금지 형태**. 접두 규칙은 "접두 뒤 첫 문자가
@@ -317,6 +334,81 @@ fn the_return_signature_skip_only_covers_signatures() {
             ""
         ),
         Some("Stroke {")
+    );
+}
+
+/// 반경 축의 **두 접두가 서로를 대신하지 못한다**는 것을 고정한다.
+///
+/// 이 축은 셋을 세 번 틀리게 셌다(3 → 7 → 9). 3 은 `.corner_radius(` 뒤에 숫자가
+/// 오는 형태만 봐서, 7 은 모수를 스캔 루트로 잡아 `src/gfx/gpu/boot_error.rs` 를 빼서
+/// 나온 값이다. **패턴을 고쳐도 모수가 틀리면 다시 적게 센다** — 그래서 접두 하나로
+/// 닫혔다고 읽히는 길을 여기서 막는다.
+///
+/// 접두를 하나로 줄이면 이 테스트가 죽는다. 그것이 이 테스트의 용도다.
+#[test]
+fn the_corner_radius_axis_needs_both_prefixes() {
+    const F: &str = "src/view/x.rs";
+
+    // 감싸인 형태 — `.corner_radius(` 뒤는 `e` 라 그 접두로는 절대 안 잡힌다.
+    assert_eq!(
+        violating_prefix(
+            F,
+            "        .corner_radius(egui::CornerRadius::same(12))",
+            ""
+        ),
+        Some("CornerRadius::same(")
+    );
+    // 벗은 형태 — `CornerRadius::same(` 이 줄에 아예 없다.
+    assert_eq!(
+        violating_prefix(F, "        .corner_radius(4.0)", ""),
+        Some(".corner_radius(")
+    );
+
+    // 처방된 세 출구는 전부 통과한다 — 토큰 · 명명 const · 명명 ZERO.
+    for ok in [
+        "        .corner_radius(th.corner_radius.value())",
+        "        .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)",
+        "        .corner_radius(egui::CornerRadius::ZERO)",
+    ] {
+        assert_eq!(
+            violating_prefix(F, ok, ""),
+            None,
+            "처방 형태가 잡혔다: {ok}"
+        );
+    }
+}
+
+/// 모수가 **파일 열거가 아니라 디렉토리**여야 하는 이유를 고정한다.
+///
+/// `src/gfx/gpu` 는 예전에 `shell_setup.rs` 한 파일로 등재돼 있었다. 그 뒤 같은
+/// 디렉토리에 `boot_error.rs` 가 생겼고, **이미 등재된 접두**(`Stroke::new(`)를 쓰는
+/// 위반 넷을 조용히 들여왔다 — 가드는 초록이었고 축은 열려 있었다. 파일 열거는 새
+/// 파일을 기본 제외로 만든다.
+///
+/// 실측으로 확인한 형태다: 모수를 파일로 되돌린 채 위반을 심으면
+/// `no_inline_visual_token_literals` 는 **통과한다.** 그 조건에서 유일하게 우는 것이
+/// 이 테스트다.
+#[test]
+fn the_gpu_scan_root_is_a_directory_not_a_file() {
+    assert!(
+        SCAN_ROOTS.contains(&"src/gfx/gpu"),
+        "gpu UI 계층의 스캔 루트가 디렉토리가 아니다 — 파일 단위로 되돌리면 그 \
+         디렉토리에 새로 생기는 UI 파일이 기본 제외가 된다"
+    );
+    for roots in [SCAN_ROOTS, COLOR_SCAN_ROOTS, GLYPH_SCAN_ROOTS] {
+        assert!(
+            !roots.iter().any(|r| r.ends_with(".rs")),
+            "스캔 루트에 개별 `.rs` 파일이 있다: {roots:?}"
+        );
+    }
+    // 그리고 그 루트가 실제로 파일을 걷어 온다 — 경로가 틀리면 조용히 0 이 된다.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    gather_rs_files(&root.join("src/gfx/gpu"), &mut files);
+    assert!(
+        files.len() >= 2,
+        "src/gfx/gpu 에서 걷은 .rs 가 {} 개다 — 경로를 확인할 것",
+        files.len()
     );
 }
 
