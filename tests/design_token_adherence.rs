@@ -59,8 +59,10 @@ const SCAN_ROOTS: &[&str] = &[
     "crates/tasty-egui-theme/src",
 ];
 
-/// primitive 색 필드 접근 스캔 대상 — host UI 계층 + 위젯 크레이트. design-tokens-05 의
-/// semantic 접근자 전수 이식이 완료된 범위(현재 0). 위젯 크레이트도 primitive 절대 불가
+/// primitive 색 필드 접근 스캔 대상 — host UI 계층 + 위젯 크레이트. semantic 접근자
+/// 전수 이식이 끝난 범위다(남은 건수는 이 파일의
+/// [`no_primitive_color_field_access_in_host_ui`] 가 실시간으로 답한다 — 여기 숫자로
+/// 적으면 다음 병합에 썩는다). 위젯 크레이트도 primitive 절대 불가
 /// (ADR-0033): 재사용 위젯이라도 색은 semantic role 접근자로만 읽는다. 제외:
 /// - `crates/tasty-gallery/src`: 팔레트 데모가 raw primitive 를 의도적으로 노출.
 const COLOR_SCAN_ROOTS: &[&str] = &[
@@ -141,9 +143,9 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
 /// 생성자(`Stroke::new(<토큰>, ..)` · `FontId::proportional(<토큰>)`)를 쓴다. 그래야
 /// 접두 규칙이 계속 유효하다.
 ///
-/// 두 형태 다 **현재 스캔 범위 안에 구조체 리터럴로는 0건**이고(`Stroke {` 1건 ·
-/// `FontId {` 2건은 전부 반환 타입 시그니처), 시그니처는 아래 `->` 규칙이 가른다 —
-/// allowlist 항목은 필요 없다.
+/// 이 두 이름은 **반환 타입 시그니처**(`fn stroke1(..) -> egui::Stroke {`)로도 나타나는데,
+/// 그건 구조체 리터럴이 아니다. 아래 `->` 규칙이 그 둘을 가르므로 **allowlist 항목이
+/// 필요 없다** — 면제가 아니라 판별로 푼다.
 const FORBIDDEN_FORMS: &[&str] = &["Stroke {", "FontId {"];
 
 /// 스캔 예외 — **(경로, 접두, 구조 술어)** 셋이다.
@@ -183,8 +185,8 @@ const ALLOWLIST_PREFIXES: &[(&str, &str, Option<&str>)] = &[
     // 보이는 것이다. `.size()` 는 여기서 폰트가 아니라 위젯 지름이고, 값이 하나로
     // 수렴하면 specimen 이 성립하지 않는다.
     //
-    // 면제는 **수신자가 스피너인 줄에만** 걸린다 — 같은 파일이 `RichText` 라벨에도
-    // `.size()` 를 쓰기 때문이다(`:25`·`:43`). 파일만 보고 빼면 그 폰트 자리가 함께
+    // 면제는 **수신자가 스피너인 줄에만** 걸린다 — 같은 specimen 이 라벨 텍스트에도
+    // `RichText::..size()` 를 쓰기 때문이다. 파일만 보고 빼면 그 폰트 자리가 함께
     // 빠져나간다.
     (
         "crates/tasty-gallery/src/catalog/components/prim_spinner.rs",
@@ -513,9 +515,9 @@ fn numeric_literal(tok: &str) -> Option<f32> {
 
 /// **0 은 4px 그리드의 원점이지 예외가 아니다.** 그리드는 0 · 4 · 8 · 12 … 이고 0 은
 /// 그 첫 항이다 — "여백 없음" 은 규칙을 벗어난 값이 아니라 규칙 안의 값이다. 그래서
-/// 이 가드의 규칙은 처음부터 0 을 포함한다(면제 목록에 얹은 예외가 아니다). 레포에서
-/// `top: 0` · `item_spacing = vec2(0.0, 0.0)` 은 egui 기본 간격을 끄는 관용구로 60
-/// 자리 넘게 쓰이는데, 이걸 위반으로 세면 가드가 값이 아니라 관용구를 막게 된다.
+/// 이 가드의 규칙은 처음부터 0 을 포함한다(면제 목록에 얹은 예외가 아니다). `top: 0` ·
+/// `item_spacing = vec2(0.0, 0.0)` 은 egui 기본 간격을 끄는 **관용구**라 레포 전반에
+/// 퍼져 있는데, 이걸 위반으로 세면 가드가 값이 아니라 관용구를 막게 된다.
 ///
 /// **가드가 가르지 못하는 것**: `Margin { left: 0, right: 8, .. }` 같은 **부분 0** 이
 /// "왼쪽은 붙인다" 는 의도인지 아직 안 채운 미완성인지는 소스에 신호가 없다. 네 변이
