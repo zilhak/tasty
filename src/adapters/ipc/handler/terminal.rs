@@ -27,17 +27,7 @@ type CoreState = crate::core::CoreState;
 
 // ───── 파라미터 헬퍼 ─────
 
-fn require_u32(params: &Value, key: &str, id: &Value) -> Result<u32, JsonRpcResponse> {
-    params
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), format!("missing '{key}'")))
-}
-
-fn optional_u32(params: &Value, key: &str) -> Option<u32> {
-    params.get(key).and_then(|v| v.as_u64()).map(|v| v as u32)
-}
+use super::params::{optional_u32, require_u32};
 
 fn optional_str(params: &Value, key: &str) -> Option<String> {
     params.get(key).and_then(|v| v.as_str()).map(String::from)
@@ -123,7 +113,10 @@ fn format_index_ranges(sorted: &[u32]) -> String {
 
 /// `--surface`(parent) 명시가 없으면 유일 parent 로 폴백. 0 또는 2+ 면 에러(호출자 명시 요구).
 fn resolve_parent(engine: &CoreState, params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
-    if let Some(p) = optional_u32(params, "surface") {
+    // 잘못된 값은 여기서 멈춘다 — 종전에는 조용히 버려져 "안 줬다" 와 같아졌고,
+    // 그러면 호출자가 지정한 parent 대신 **유일 parent** 로 폴백했다. 자기 자신을
+    // 가리키기 십상인 폴백이라, 오타 하나가 엉뚱한 대상으로 성공한다.
+    if let Some(p) = optional_u32(params, "surface", id)? {
         return Ok(p);
     }
     engine.child_terminals.single_parent().ok_or_else(|| {
@@ -350,7 +343,11 @@ pub(crate) fn handle_spawn(
     // surface_id 를 박은 에이전트 특화 command(TASTY_SURFACE_ID=... / session token
     // 등)를 `surface.send` 로 별도 전송한다.
     let command = optional_str(params, "command");
-    let pane_override = optional_u32(params, "pane");
+    // 잘못된 `pane` 을 버리면 호출자가 지정한 pane 대신 기본 pane 에 만들어진다.
+    let pane_override = match optional_u32(params, "pane", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let cwd = optional_str(params, "cwd");
     let role = optional_str(params, "role");
     let nickname = optional_str(params, "nickname");

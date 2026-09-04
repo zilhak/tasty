@@ -27,13 +27,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 // ───── 파라미터 헬퍼 ─────
 
-fn require_u32(params: &Value, key: &str, id: &Value) -> Result<u32, JsonRpcResponse> {
-    params
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), format!("missing '{key}'")))
-}
+use super::params::require_u32;
 
 fn require_str(params: &Value, key: &str, id: &Value) -> Result<String, JsonRpcResponse> {
     params

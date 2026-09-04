@@ -48,19 +48,7 @@ fn require_str<'a>(
     })
 }
 
-fn require_u32(
-    params: &serde_json::Value,
-    key: &str,
-    id: &serde_json::Value,
-) -> Result<u32, JsonRpcResponse> {
-    params
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), format!("Missing '{key}' parameter"))
-        })
-}
+use super::params::require_u32;
 
 /// Core.preset_store 잠금 후 클로저 실행. Core 가 항상 보유하므로 실패 분기 없음.
 fn with_store<R>(

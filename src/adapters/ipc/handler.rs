@@ -35,6 +35,7 @@ mod meta;
 mod notification;
 mod output;
 pub(crate) mod pane;
+pub(crate) mod params;
 mod passkey;
 mod preset;
 mod pty;
