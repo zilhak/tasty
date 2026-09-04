@@ -731,19 +731,12 @@ pub fn load_user_bashrc() -> String {
 
 /// 사용자 편집 내용을 디스크에 쓰고, 파생 bashrc(builtin + user)를 재생성한다.
 ///
-/// 설정 화면의 저장이라 실패는 `error!` — `docs/dev-guide/error-handling.md` 의 레벨
-/// 표가 "설정 저장 실패" 를 error 의 대표 사례로 든다(사용자 작업이 의미를 잃는다).
-/// 합성 rc 쓰기 실패도 같다: 사용자 본문은 남았는데 셸이 읽는 파일이 옛 내용이면
-/// 편집이 반영되지 않은 것과 같다.
-pub fn save_user_bashrc(user_content: &str) {
-    if let Err(reason) = try_save_user_bashrc(user_content) {
-        tracing::error!("save bashrc.user failed: {reason}");
-    }
-}
-
-/// [`save_user_bashrc`] 의 본문 — 실패 사유를 문자열로 올려 로그 지점을 한 곳으로
-/// 모은다(호출자가 레벨을 소유).
-fn try_save_user_bashrc(user_content: &str) -> Result<(), String> {
+/// **실패 사유를 호출자에게 올린다** — 설정 화면의 저장이라 실패는 사용자 작업이
+/// 의미를 잃는 사건이고(`docs/dev-guide/error-handling.md` 의 레벨 표가 "설정 저장
+/// 실패" 를 `error` 의 대표 사례로 든다), 이 크레이트 안에서 로그로 삼켜버리면
+/// 호출자가 사용자에게 알릴 방법 자체가 없어진다. 합성 rc 쓰기 실패도 같은 등급이다:
+/// 사용자 본문은 남았는데 셸이 읽는 파일이 옛 내용이면 편집이 반영되지 않은 것과 같다.
+pub fn save_user_bashrc(user_content: &str) -> Result<(), String> {
     // 홈 미해석이면 **쓰지 않는다.** 빈 경로로 폴백하면 `create_dir_all("")` 이
     // `Ok` 라 경고 하나 없이 프로세스 CWD 에 `bashrc.user` 를 만들고 성공한 것처럼
     // 끝난다(`tasty_dir` 참고).
@@ -842,7 +835,11 @@ fn ensure_compiled_bashrc() {
         && !generated_file_stamp_current(&tasty_path, BUILTIN_BASHRC_STAMP)
     {
         let user = load_user_bashrc();
-        save_user_bashrc(&user);
+        // 부팅 시 재생성이라 실패는 `warn` — 다음 부팅에 다시 시도한다(사용자
+        // 저장 경로의 `error` 와 구분).
+        if let Err(reason) = save_user_bashrc(&user) {
+            tracing::warn!("regenerate tasty-mode bashrc failed: {reason}");
+        }
     }
     // default 모드 합성 rc — 양쪽 플랫폼 공통(비-Windows 는 이거 하나만 쓴다).
     // 홈 미해석이면 CWD 에 만들지 않고 그냥 만들지 않는다 — 호출자
@@ -944,6 +941,16 @@ fn ensure_compiled_zshenv() {
     write_generated_file(&path, &compiled);
 }
 
+/// # 이 모듈이 아직 덮지 못하는 것
+///
+/// `tasty_home()` 이 `None` 인 축(홈 **미해석**)에는 실행 검증이 없다. `directories`
+/// 가 `HOME` 없이도 passwd 엔트리로 홈을 찾아내므로 `env -u HOME` 만으로는 재현되지
+/// 않고, 재현하려면 passwd 엔트리가 없는 환경(컨테이너/`unshare`)이 필요하다. 그
+/// 축은 `let ... else` 가드와 리뷰로만 보장된다.
+///
+/// 대신 **같은 결함 형태 중 환경만으로 재현 가능한 축**인 상대 경로(`TASTY_HOME` 이
+/// 상대일 때 파생 경로가 자식 셸의 CWD 로 재해석되는 것)를
+/// `relative_tasty_home_is_absolutized_for_child_processes` 가 고정한다.
 #[cfg(test)]
 mod tests {
     use super::*;

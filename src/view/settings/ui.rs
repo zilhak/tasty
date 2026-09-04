@@ -1462,8 +1462,13 @@ fn apply_settings_draft(settings: &mut Settings, ui_state: &mut SettingsUiState)
     }
     // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭).
     #[cfg(windows)]
-    if let Some(bashrc) = &ui_state.bashrc_user_draft {
-        crate::settings::general::save_user_bashrc(bashrc);
+    if let Some(bashrc) = &ui_state.bashrc_user_draft
+        && let Err(reason) = crate::settings::general::save_user_bashrc(bashrc)
+    {
+        // UI 노출은 미구현 — 저장 버튼을 누른 사용자는 실패를 화면에서 알 수 없고
+        // 이 로그가 유일한 관측 지점이다. 토스트로 올리려면 문자열 3개 언어와
+        // 토스트 배선이 필요하다.
+        tracing::error!("save bashrc.user failed: {reason}");
     }
 }
 
