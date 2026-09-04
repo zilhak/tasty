@@ -14,7 +14,7 @@
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 |
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
-| headless 컴파일 | `cargo check --workspace --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
+| headless 컴파일 · 단위테스트 · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --lib --bins --no-default-features --locked` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | **PR 전용** · 매주 월 09:00 UTC · 수동 |
 
@@ -45,15 +45,17 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 | 훅 | 검사 | CI 에도 있는가 |
 |---|---|---|
 | pre-commit | `cargo fmt --check` | ✅ `format-check.yml` |
-| pre-commit | mod/use 선언 순서 · `let _ =` 주석 · `egui::Window` 직접 사용 · `println!`/`dbg!` | ❌ 훅에만 있다 |
+| pre-commit | mod/use 선언 순서 · `egui::Window` 직접 사용 · `println!`/`dbg!` | ❌ 훅에만 있다 |
+| pre-commit | 주석 없는 `let _ =` (C.6) | 부분 — 전수판 `tests/let_underscore_documented.rs` 가 훅의 상위집합이지만, 그것이 도는 `cargo test --workspace` 에 자동 채널이 없다 |
 | pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다 |
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
 
-즉 **훅에만 있는 검사가 넷**이다(mod/use 순서 · `let _ =` · `egui::Window` ·
-`println!`/`dbg!`). 훅을 설치하지 않은 체크아웃이나 `--no-verify` 커밋은 그 넷을
-통과한다 — 이것들은 diff 기반이라 CI 로 옮기려면 "무엇을 신규로 볼 것인가" 를 다시
-정의해야 해서 지금은 훅에 남아 있다.
+즉 **훅에만 있는 검사가 셋**이다(mod/use 순서 · `egui::Window` · `println!`/`dbg!`).
+훅을 설치하지 않은 체크아웃이나 `--no-verify` 커밋은 그 셋을 통과한다 — 이것들은 diff
+기반이라 CI 로 옮기려면 "무엇을 신규로 볼 것인가" 를 다시 정의해야 해서 지금은 훅에
+남아 있다. `let _ =` 만 성격이 다르다: 전수판이 이미 있고 diff 기반이 아니므로, 위
+"전체 스위트" 에 자동 채널이 생기면 그 순간 함께 자동화된다.
 
 ## 관련
 

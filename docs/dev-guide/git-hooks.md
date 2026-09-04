@@ -8,7 +8,7 @@
 
 안 하면 hook 이 안 돈다. 긴급 우회: `git commit --no-verify` / `git push --no-verify`. (merge 차단 우회는 아래 pre-merge-commit 절 참고)
 
-**어떤 검사가 CI 에도 있고 어떤 검사가 훅에만 있는지는 [ci-gates](ci-gates.md) 의 표가 정본이다.** 훅을 설치하지 않거나 우회하면 훅 전용 검사(mod/use 선언 순서 · `let _ =` 주석 · `egui::Window` 직접 사용 · `println!`/`dbg!`)는 아무 데서도 잡히지 않는다.
+**어떤 검사가 CI 에도 있고 어떤 검사가 훅에만 있는지는 [ci-gates](ci-gates.md) 의 표가 정본이다.** 훅을 설치하지 않거나 우회하면 훅 전용 검사(mod/use 선언 순서 · `egui::Window` 직접 사용 · `println!`/`dbg!`)는 아무 데서도 잡히지 않는다. `let _ =` 는 전수판(C.6 아래 참고)이 따로 있지만 그것이 도는 `cargo test --workspace` 에도 자동 채널은 없다.
 
 ## pre-commit (1–3초)
 
@@ -18,7 +18,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 |----|------|------|
 | A.1 | top-level 선언 영역에서 `mod` 가 `use` 뒤에 나오는지 | 선언 순서 |
 | A.2 | `cargo fmt --check` | rustfmt 강제 |
-| C.6 | 주석 없는 `let _ =` | 왜 무시하는지 흔적 강제 (전수판은 CI `tests/let_underscore_documented.rs`) |
+| C.6 | 주석 없는 `let _ =` | 왜 무시하는지 흔적 강제 (전수판은 `tests/let_underscore_documented.rs` — 아래 참고) |
 | C.9 | `egui::Window::` 직접 사용 | PopupManager 강제 ([popup-implementation](popup-implementation.md)) |
 | C.11 | `println!`/`eprintln!` | `tracing::*` 강제 (예외: CLI 출력 — `crates/tasty-cli/*`, `src/boot/cli_routing.rs`) |
 | C.12 | `dbg!` | release leak 방지 |
