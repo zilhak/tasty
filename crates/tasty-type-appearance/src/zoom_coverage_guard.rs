@@ -19,10 +19,10 @@
 //! 위임처가 배율을 안 타는 경우는 이 가드가 아니라 그 필드의 문제다.
 //!
 //! # 왜 lib 유닛 테스트인가 (관례 예외 — `tests/` 로 되돌리지 마라)
-//! `shadow_policy_guard` 와 같은 이유다. `tests/*.rs` 는 자동 채널이 `workflow_dispatch`
-//! 뿐이라(정본 `docs/dev-guide/ci-gates.md`) 스캔이 자동으로 실행되지 않는다. 크레이트
-//! `src/` 안 `#[cfg(test)]` 로 두면 Windows `--lib --bins` 와 headless
-//! `--lib --bins --no-default-features` 두 잡에서 **실행**된다. 순수 텍스트 스캔이라
+//! `shadow_policy_guard` 와 같은 이유다. `tests/*.rs` 는 자동 채널이 **헤드리스 조합 하나**
+//! 뿐이라(정본 `docs/dev-guide/ci-gates.md`) 기본 조합에서는 스캔이 자동으로 실행되지
+//! 않는다. 크레이트 `src/` 안 `#[cfg(test)]` 로 두면 Windows 잡(`--lib --bins`)과 헤드리스
+//! 잡(전체 스위트) 두 잡에서 **실행**된다. 순수 텍스트 스캔이라
 //! egui 없이도 선다.
 //!
 //! # 거짓 초록 방지
