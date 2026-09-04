@@ -755,14 +755,24 @@ mod tests {
     /// 명령이 **자기에게 배달**됐다 — 종료코드 0, 오류 없음. 실제로 그렇게 잃은 적이 있다.
     #[test]
     fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
+        // `tasty_i18n::init` 은 프로세스당 1 회 `OnceLock` 이고, 이 바이너리의 다른
+        // 테스트(`run.rs`)도 "en" 으로 초기화한다. 여기서 먼저 부르는 것은 값을 바꾸는
+        // 것이 아니라 **순서 경합을 없애는 것**이다 — 부르지 않으면 언어팩 로드 여부가
+        // 스레드 순서에 달려 메시지가 키(미로드)와 영문(로드) 사이에서 흔들린다.
+        tasty_i18n::init("en");
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
         let err = matches_to_request(&entries, &m).expect_err("비수치 --surface 는 오류여야 한다");
-        // 단위 테스트에는 언어팩이 로드되지 않아 `t_fmt2` 가 키를 그대로 돌려준다.
-        // 그래서 여기서 박는 것은 **어느 메시지를 쓰는가** 이고, 그 메시지가 플래그와
-        // 받은 값을 실제로 담는지(placeholder 2개, en/ko/ja 동수)는
-        // `tests/i18n_key_parity.rs` 가 강제한다.
-        assert_eq!(err.to_string(), "cli.plugin_cli.flag_not_a_number");
+        let msg = err.to_string();
+        assert_ne!(
+            msg, "cli.plugin_cli.flag_not_a_number",
+            "번역 키가 그대로 새어 나오면 안 된다"
+        );
+        assert!(
+            msg.contains("surface"),
+            "어느 플래그인지 담아야 한다: {msg}"
+        );
+        assert!(msg.contains("conductor"), "받은 값을 담아야 한다: {msg}");
     }
 
     /// 위 테스트의 대우 — 플래그가 **아예 없는** 것은 여전히 오류가 아니다.
