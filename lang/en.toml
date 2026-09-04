@@ -836,7 +836,7 @@ redo = "Redo"
 
 [toast]
 bashrc_save_failed = "Tasty-mode bashrc was not saved — your edit is not in effect: {}"
-char_limit_notice = "(200 character limit)"
+char_limit_notice = "({} character limit)"
 copied = "Copied"
 copied_osc52 = "Copied (OSC 52)"
 copied_path = "Path copied"

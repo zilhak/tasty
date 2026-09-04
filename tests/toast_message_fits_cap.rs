@@ -87,6 +87,34 @@ fn every_declared_toast_prefix_matches_at_least_one_key() {
     }
 }
 
+/// 캡 초과 안내 접미(`toast.char_limit_notice`)는 캡 값을 **인자로** 받는다 — 번역문에
+/// 숫자를 적지 않는다.
+///
+/// 위 두 테스트는 문구가 캡 *안에 드는지* 를 보고, 이것은 캡 *값의 출처* 를 본다.
+/// 접미가 자기 숫자를 들고 있으면 [`tasty_i18n::TOAST_MAX_CHARS`] 를 조정해도 화면
+/// 문구는 옛 값을 계속 말한다 — 사용자가 보는 유일한 캡 설명이 세 언어에서 동시에
+/// 틀리고, 그 거짓말은 컴파일도 위 테스트들도 통과한다.
+#[test]
+fn the_char_limit_notice_takes_the_cap_as_an_argument_in_every_locale() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("lang");
+    for lang in LANGS {
+        let notice = load(&root, lang)
+            .remove("toast.char_limit_notice")
+            .unwrap_or_else(|| panic!("lang/{lang}.toml 에 toast.char_limit_notice 가 없다"));
+        assert_eq!(
+            notice.matches("{}").count(),
+            1,
+            "lang/{lang}.toml `toast.char_limit_notice` 는 캡 값을 받을 `{{}}` 를 정확히 \
+             하나 가져야 한다 (현재: {notice:?})"
+        );
+        assert!(
+            !notice.chars().any(|c| c.is_ascii_digit()),
+            "lang/{lang}.toml `toast.char_limit_notice` 에 숫자가 박혀 있다 — 캡을 바꾸면 \
+             이 문구가 거짓이 된다. `{{}}` 로 받아라 (현재: {notice:?})"
+        );
+    }
+}
+
 fn load(dir: &Path, lang: &str) -> BTreeMap<String, String> {
     let path = dir.join(format!("{lang}.toml"));
     let text =

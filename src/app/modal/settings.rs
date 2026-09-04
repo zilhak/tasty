@@ -214,7 +214,7 @@ mod tests {
 
     /// 토스트 본문 캡(`src/adapters/ui/toast.rs` `MAX_MESSAGE_CHARS`). 넘으면 호스트가
     /// **꼬리를 자르고** "(문자 제한)" 접미를 붙인다.
-    const TOAST_MAX_CHARS: usize = 200;
+    const TOAST_MAX_CHARS: usize = tasty_i18n::TOAST_MAX_CHARS;
 
     fn frame(lang_toml: &str) -> String {
         let v: toml::Value = toml::from_str(lang_toml).expect("lang toml");

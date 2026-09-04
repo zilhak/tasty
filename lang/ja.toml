@@ -824,7 +824,7 @@ redo = "やり直し"
 
 [toast]
 bashrc_save_failed = "Tastyモードの bashrc を保存できませんでした — 編集は反映されていません: {}"
-char_limit_notice = "(200文字制限)"
+char_limit_notice = "({}文字制限)"
 copied = "コピーしました"
 copied_osc52 = "コピーしました (OSC 52)"
 copied_path = "パスをコピーしました"
