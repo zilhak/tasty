@@ -50,7 +50,11 @@ pub fn execute_binding(
     };
     match binding {
         // 하위호환: 익명 셸 핸들러. 옛 check_and_fire 의 셸 spawn 과 동일 동작.
-        HookBinding::InlineShell(command) => spawn_shell(command.clone(), Vec::new(), shell_env()),
+        HookBinding::InlineShell(command) => {
+            // fire-and-forget: 프로덕션은 자식 완료를 기다리지 않는다(UI 블록 방지). 반환된
+            // JoinHandle 은 버린다 — 스레드는 detach 되어 계속 돈다. 테스트만 이 핸들을 받아 join 한다.
+            let _ = spawn_shell(command.clone(), Vec::new(), shell_env());
+        }
         // 레지스트리 핸들러 참조 — 조회 + source 게이트 후 action 분기.
         HookBinding::Handler(id) => execute_handler_binding(id, injector, &payload, shell_env),
     }
@@ -75,7 +79,9 @@ fn execute_handler_binding(
     }
     match handler.action {
         HookHandlerAction::ShellCommand { command, args } => {
-            spawn_shell(command, args, shell_env())
+            // fire-and-forget: InlineShell arm 과 같다 — 반환된 JoinHandle 은 버린다(스레드는
+            // detach 되어 계속 돈다). 프로덕션은 hook 자식 완료를 기다리지 않는다.
+            let _ = spawn_shell(command, args, shell_env());
         }
         HookHandlerAction::IpcSequence { calls } => {
             execute_ipc_sequence_handler(id, injector, payload, &calls)
@@ -137,7 +143,11 @@ fn trigger_payload(received: &HookEvent, surface_id: u32) -> serde_json::Value {
 /// `args` 가 있으면 명령 문자열 뒤에 공백 join 해 붙인다(레지스트리 ShellCommand
 /// 용 — 인라인 셸은 항상 args 없음). `env` 는 트리거 컨텍스트(`TASTY_HOOK_*`) —
 /// 값 전달 전용이며 실행 대상은 바꾸지 못한다.
-fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
+fn spawn_shell(
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let full = if args.is_empty() {
             command
@@ -167,7 +177,7 @@ fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)>) {
         if let Err(e) = tasty_utils::process::hide_console(&mut process).output() {
             tracing::warn!("hook shell command spawn failed: {e}; cmd: {full}");
         }
-    });
+    })
 }
 
 #[cfg(test)]
@@ -226,18 +236,23 @@ mod tests {
             )
         };
 
-        execute_binding(
-            &HookBinding::InlineShell(cmd),
-            None,
-            &HookEvent::Bell,
-            &HookEvent::Bell,
-            42,
-        );
-
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline && !marker.exists() {
-            std::thread::sleep(Duration::from_millis(25));
-        }
+        // 벽시계 마감(5s 폴링) 대신 자식 완료를 기다린다 — spawn_shell 의 스레드는 자식
+        // 프로세스를 .output() 으로 끝까지 기다린 뒤 종료하므로, 그 JoinHandle 을 join 하면
+        // marker 가 확실히 쓰인 뒤 반환한다. 옛 5s 데드라인은 부하 높은 러너(특히 Windows
+        // cmd spawn)에서 확률적으로 넘겨 marker 미존재 → expect panic 이었다(형태 C).
+        // execute_binding 의 InlineShell 분기와 동일한 배선을 재조립한다(build_env(shell env)
+        // → spawn_shell): 이 테스트가 검증하는 것은 자식이 TASTY_HOOK_* env 를 받는가이고,
+        // build_env(pub) 가 그 env 를 만든다. execute_binding 은 JoinHandle 을 안 돌려주므로
+        // (프로덕션 fire-and-forget) 완료를 기다리려면 spawn_shell 을 직접 부른다.
+        let env = build_env(&HookShellEnv {
+            event: HookEvent::Bell.to_display_string(),
+            source: "hook",
+            surface_id: Some(42),
+            payload: trigger_payload(&HookEvent::Bell, 42),
+        });
+        spawn_shell(cmd, Vec::new(), env)
+            .join()
+            .expect("shell thread joined");
         let content = std::fs::read_to_string(&marker).expect("marker written");
         assert_eq!(content.trim(), "bell/hook/42");
     }
