@@ -50,7 +50,7 @@ pub const KO: Strings = Strings {
     nav_download: "다운로드",
     nav_changelog: "변경 이력",
     search_placeholder: "가이드 검색  /",
-    search_empty: "검색 결과가 없다",
+    search_empty: "검색 결과가 없습니다",
     copy: "복사",
     copied: "복사됨",
     toc_title: "이 페이지",
@@ -72,8 +72,8 @@ pub const KO: Strings = Strings {
     footer_plugins: "플러그인",
     footer_dev_docs: "개발 문서 (GitHub)",
     footer_note: "MIT 라이선스",
-    untranslated: "이 문서는 아직 번역되지 않았다. 한국어 원문을 표시한다.",
-    stale: "이 번역은 한국어 원문보다 오래됐다. 내용이 다를 수 있다.",
+    untranslated: "이 문서는 아직 번역되지 않았습니다. 한국어 원문을 표시합니다.",
+    stale: "이 번역은 한국어 원문보다 오래됐습니다. 내용이 다를 수 있습니다.",
     translate_cta: "원문 보기",
 };
 
