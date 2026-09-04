@@ -109,10 +109,16 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
     // 선언 바로 앞의 빈 줄 아닌 줄이 cfg(test) 게이트여야 한다.
     let gate = lines[..i].iter().rev().find(|l| !l.trim().is_empty());
     match gate {
-        Some(g) if g.contains("cfg(test)") => Ok(()),
-        _ => Err(format!(
-            "{rel}: 부모 모듈 `{parent_rel}` 의 `{decl}` 이 `#[cfg(test)]` 게이트 아래에 \
-             있지 않다 — 면제의 전제(프로덕션 빌드에 안 들어간다)가 깨졌다"
+        Some(g) if g.trim() == "#[cfg(test)]" => Ok(()),
+        Some(g) => Err(format!(
+            "{rel}: 부모 모듈 `{parent_rel}` 의 `{decl}` 앞이 `#[cfg(test)]` 가 아니라 \
+             `{}` 다 — 면제의 전제(프로덕션 빌드에 안 들어간다)를 이 가드가 확인할 수 \
+             있어야 하므로 정확히 `#[cfg(test)]` 형태로 적는다",
+            g.trim()
+        )),
+        None => Err(format!(
+            "{rel}: 부모 모듈 `{parent_rel}` 의 `{decl}` 앞에 게이트가 없다 — 면제의 \
+             전제(프로덕션 빌드에 안 들어간다)가 깨졌다"
         )),
     }
 }
@@ -274,5 +280,35 @@ fn src_does_not_reference_tasty_cli() {
         "TEST_ONLY_FILES 에 있으나 실제 참조가 없다 — 면제가 필요 없어졌으면 목록에서도 \
          지울 것(남겨두면 그 파일이 나중에 무엇을 참조해도 통과한다):\n  {}",
         stale_test_only.join("\n  ")
+    );
+}
+
+/// 전제 검사가 **판별력이 있는지** 고정한다.
+///
+/// 면제 목록의 값은 "이 파일은 프로덕션 빌드에 안 들어간다" 는 주장이고, 그 주장을
+/// 검사하는 것이 `declared_under_cfg_test` 다. 검사가 아무거나 통과시키면 면제가
+/// 그냥 예외 목록이 된다 — 그래서 게이트가 없는 실제 형제 모듈로 반대편을 고정한다.
+#[test]
+fn the_cfg_test_precondition_check_discriminates() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    // 게이트가 있는 실제 면제 대상 → Ok.
+    assert!(
+        declared_under_cfg_test("src/adapters/ipc/handler/cli_entry_tests.rs", root).is_ok(),
+        "면제 대상이 실제로 `#[cfg(test)]` 아래 있는데 검사가 거부한다"
+    );
+
+    // 같은 부모의 게이트 **없는** 형제 모듈 → Err. 검사가 선언 앞을 실제로 읽는다는
+    // 뜻이다(파일 존재 여부나 이름만 보는 게 아니다).
+    let ungated = declared_under_cfg_test("src/adapters/ipc/handler/completion_strategy.rs", root);
+    assert!(
+        ungated.is_err(),
+        "게이트 없는 모듈을 통과시킨다 — 전제 검사가 판별력이 없다"
+    );
+
+    // 부모 모듈이 아예 없는 경로 → Err (조용한 통과 금지).
+    assert!(
+        declared_under_cfg_test("src/does_not_exist/nope.rs", root).is_err(),
+        "부모 모듈을 못 찾았는데 통과시킨다"
     );
 }
