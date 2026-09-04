@@ -1,4 +1,4 @@
-<!-- source-hash: 9367b266ae76 -->
+<!-- source-hash: c54374c160db -->
 # Troubleshooting
 
 This page is where you look up the cause and the fix by symptom when you get stuck using Tasty. Once you know what gets written where, most problems narrow down to opening a single file.
@@ -62,6 +62,17 @@ You can see the current state in the **Settings** > **General** > **Permissions*
 
 - **The window does not respond to clicks · key input · the CLI at all** — when it freezes for more than 5 seconds, `~/.tasty/crash-reports/hang-*.log` is written automatically. If the file's `Render phase` is `acquire` / `submit` / `present`, the problem is on the GPU driver side — update the driver. Tasty does not recover on its own, so force-quit it and start it again.
 - **It exited suddenly** — look at `~/.tasty/crash-reports/crash-*.log`. Attach this file when you report the problem.
+
+## My settings or window layout look like they were reset
+
+- **The settings went back to their defaults** — if `~/.tasty/config.toml` cannot be parsed as TOML, Tasty starts from the defaults. Your original file is not deleted. It is left where it is, and moved next to it as `config.toml.bak` the moment settings are saved over it. Fix that file and rename it back to `config.toml` and your settings come back as they were. Which line failed is written to `~/.tasty/debug.log`.
+- **A saved window layout was not restored** — the same applies to a damaged slot file under `~/.tasty/layouts/`. The original is kept beside it as `01.json.bak`.
+- **A notification said saving is blocked until you move or delete the `.bak` files** — Tasty tried to move your original aside but all nine slots (`.bak` through `.bak.9`) are already taken, so there is nowhere to put it. It stops saving rather than delete your file, and it stays that way for the whole session. Move or delete the backups you no longer need, then start Tasty again.
+- **A notification said the settings file could not be read** — the file is there but Tasty could **not read** it (a permission problem or a disk error). In that case Tasty leaves the file alone and does not save over it, so the defaults on screen never replace your real settings. Fix the permissions or move the file aside, then start Tasty again.
+
+  ```sh
+  ls -l ~/.tasty/config.toml ~/.tasty/layouts/
+  ```
 
 ## The `tasty` command cannot connect
 
