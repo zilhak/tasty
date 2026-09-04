@@ -65,6 +65,10 @@ pub const REASON_SESSION_ENDED: &str = "stream:session_ended";
 pub const REASON_UNWATCHED: &str = "stream:unwatched";
 /// 같은 surface 를 다시 watch 해 이전 등록이 교체됐다 — 이전 등록의 턴을 닫는다.
 pub const REASON_REWATCHED: &str = "stream:rewatched";
+/// correlation 턴이 활동 없이 오래 열려 있어 정리됐다 — transcript 가 아니라 sweep 이
+/// 만든다. `agent_stream.turn_start` 는 등록됐는데 뒤이을 `claude.tell` 이 실패해 그 턴을
+/// 닫을 transcript 이벤트가 영영 오지 않는 경우의 안전망이다(`crate::registry`).
+pub const REASON_TURN_TIMEOUT: &str = "stream:turn_timeout";
 
 /// 사용자 취소 시 transcript 에 남는 마커. `[Request interrupted by user]` 와
 /// `[Request interrupted by user for tool use]` 두 형태가 관측되므로 접두로 본다.
@@ -362,6 +366,7 @@ mod tests {
             REASON_SESSION_ENDED,
             REASON_UNWATCHED,
             REASON_REWATCHED,
+            REASON_TURN_TIMEOUT,
         ] {
             assert!(
                 reserved.starts_with("stream:"),
