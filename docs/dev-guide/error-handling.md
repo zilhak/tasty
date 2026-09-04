@@ -144,6 +144,12 @@ poison 은 **이미 어딘가에서 패닉이 있었다**는 신호다. 조용�
 poison 은 **sticky** 다(한 번 걸리면 그 락은 영구히 poisoned). 초당 여러 번 도는 경로에서
 매번 로그를 내면 폭주하므로, 그런 지점은 `AtomicBool` 등으로 **첫 1 회만** 남긴다.
 
+복구를 택한 지점의 공용 헬퍼는 `tasty_utils::poison` 이다(`recover_mutex` ·
+`recover_read` · `recover_write` · `recover_try_write` — 각각 락 이름과 보고 플래그를
+받는다). 헬퍼를 쓰지 않는 쪽이 맞는 경우도 있다: 한 파일 안에서 지점마다 답이 갈리고
+그 판단이 이미 인라인으로 적혀 있다면, 그중 한 곳만 헬퍼로 바꾸는 것은 형태를 둘로
+늘릴 뿐이다(`crates/tasty-plugin-agent-stream` 이 그 예다).
+
 ```rust
 // ✅ 복구 + 관측 (자료구조 조작만 하는 임계구역)
 let mut gates = self.targeted_gates.lock().unwrap_or_else(|p| {

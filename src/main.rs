@@ -30,7 +30,6 @@ mod intent;
 mod model;
 mod platform;
 mod plugin_bridge;
-mod poison;
 mod ports;
 #[cfg(test)]
 mod source_guards;
@@ -44,6 +43,10 @@ mod waker;
 mod webhook;
 
 use anyhow::Result;
+
+/// 락 poison 복구 헬퍼 — 실체는 `tasty-utils` 에 있다(소비 크레이트가 셋이라 leaf 로
+/// 올렸다). 본체 코드가 `crate::poison::…` 로 계속 부르도록 이름만 잇는다.
+pub(crate) use tasty_utils::poison;
 
 pub use tasty_font as font;
 pub use tasty_settings as settings;

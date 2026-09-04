@@ -6258,6 +6258,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-memory",
+ "tasty-utils",
  "thiserror 2.0.18",
 ]
 
@@ -6342,6 +6343,7 @@ version = "0.1.0"
 dependencies = [
  "directories",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
