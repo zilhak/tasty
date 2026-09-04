@@ -12,6 +12,10 @@ use tasty_type_geometry::length::LogicalPx;
 use crate::catalog::{self, Category, Page};
 
 /// brand/nav 폭 (research §1.1 grid-template-columns 232px).
+/// 갤러리 좌측 네비게이션의 좌우 안쪽 여백. 디자인 전사값 10 으로 4px 그리드
+/// 밖이다. `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+const NAV_PAD_X: i8 = 10;
+
 const NAV_WIDTH: LogicalPx = LogicalPx(232.0);
 /// brand/top 높이 (research §1.1 grid-template-rows 52px).
 const HEADER_HEIGHT: LogicalPx = LogicalPx(52.0);
@@ -130,10 +134,10 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
             egui::Frame::new()
                 .fill(sidebar_bg)
                 .inner_margin(egui::Margin {
-                    left: 10,
-                    right: 10,
-                    top: 12,
-                    bottom: 24,
+                    left: NAV_PAD_X,
+                    right: NAV_PAD_X,
+                    top: state.theme.spacing_md.value() as i8,
+                    bottom: state.theme.spacing_xl.value() as i8,
                 }),
         )
         .show(ctx, |ui| nav_ui(ui, state));
@@ -454,7 +458,12 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
             ui.vertical(|ui| {
                 // 본문 컬럼 = 페이지폭 − 좌우 대칭 패딩(40×2).
                 // 매우 좁은 창에서 음수가 되지 않도록 0 으로 클램프.
-                ui.set_max_width((content_w - pad_x * 2.0).max(0.0));
+                let col_w = (content_w - pad_x * 2.0).max(0.0);
+                ui.set_max_width(col_w);
+                // spec::note 가 이 폭으로 문단을 줄바꿈하도록 심어둔다. specimen 무대가
+                // 컬럼보다 넓게 그리면 top_down max_rect 가 늘어나 note 의 available_width
+                // 가 팽창하므로, note 는 available_width 대신 이 값을 wrap 폭으로 쓴다.
+                ui.data_mut(|d| d.insert_temp(crate::catalog::spec::body_column_width_id(), col_w));
                 ui.add_space(theme.spacing_xl.value() + theme.spacing_md.value());
                 page_head(ui, theme, page.category);
                 for sec in &page.sections {
@@ -632,7 +641,7 @@ fn seg(ui: &mut egui::Ui, s: &SegStyle, items: &[(&str, bool)]) -> Option<usize>
                     let btn = egui::Button::new(egui::RichText::new(*label).size(s.font).color(fg))
                         .fill(bg)
                         .stroke(egui::Stroke::NONE)
-                        .corner_radius(0.0)
+                        .corner_radius(egui::CornerRadius::ZERO)
                         .min_size(egui::vec2(0.0, s.height));
                     if ui.add(btn).clicked() {
                         clicked = Some(i);

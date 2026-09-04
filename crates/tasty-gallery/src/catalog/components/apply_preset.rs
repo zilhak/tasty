@@ -5,6 +5,7 @@
 //! Apply to workspace).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::icons;
@@ -126,7 +127,7 @@ fn preset(ui: &mut egui::Ui, theme: &Theme, name: &str, meta: &str, selected: bo
         theme.text_secondary().to_egui(),
     );
     child.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 1.0;
+        ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
         ui.label(
             egui::RichText::new(name)
                 .size(theme.font_size_body.value())

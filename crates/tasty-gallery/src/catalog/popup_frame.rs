@@ -195,6 +195,13 @@ pub fn draw(
             frame_rect.max.y - CONTENT_MARGIN,
         ),
     );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
+    // 콘텐츠는 항상 세로 스택이다(본체 popup 콘텐츠와 동일). `new_child` 는 부모 Ui 의
+    // 레이아웃을 상속하므로, 호출부가 가로 컨텍스트(`cluster` 의 horizontal_wrapped)면
+    // 세로 스택이 가로로 흐르고 세로 중앙 정렬까지 걸린다 — 레이아웃을 명시해 끊는다.
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content_rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
     paint(&mut child);
 }

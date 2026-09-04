@@ -24,8 +24,8 @@ use crate::catalog::widgets::dialog as kit;
 /// 갤러리 프레임 최대 폭 (jsx `maxWidth: 560`). 본체는 settings content 폭을 상속하나
 /// 갤러리 미러는 카드로 감싸 560 으로 bound.
 const FRAME_MAX_W: f32 = 560.0;
-/// 빈 상태 글리프 크기 (jsx raw 26 — 아이콘 토큰 스케일(12/14/16) 밖의 일회성 값).
-const EMPTY_GLYPH: f32 = 26.0;
+// 빈 상태 글리프 크기는 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).
+use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
 /// 행 중앙 컬럼의 name→path→help 사이 hairline 간격 (jsx `gap: 2` — 4px 그리드 하위).
 const ROW_LINE_GAP: f32 = 2.0;
 

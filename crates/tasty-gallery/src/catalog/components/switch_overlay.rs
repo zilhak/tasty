@@ -266,7 +266,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             p.rect_filled(row, 0.0, egui::Color32::from(theme.surface_active()));
             let bar = egui::Rect::from_min_size(
                 row.min,
-                egui::vec2(theme.focus_ring_width.value(), row.height()),
+                egui::vec2(theme.tab_indicator_width.value(), row.height()),
             );
             p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
         } else if i > 0 {
@@ -582,7 +582,7 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 p.rect_filled(row, 0.0, egui::Color32::from(theme.surface_active()));
                 let bar = egui::Rect::from_min_size(
                     row.min,
-                    egui::vec2(theme.focus_ring_width.value(), row.height()),
+                    egui::vec2(theme.tab_indicator_width.value(), row.height()),
                 );
                 p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
             } else if i > 0 {

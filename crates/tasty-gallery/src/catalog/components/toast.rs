@@ -21,16 +21,33 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::vspace;
 
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::tokens::{
+    STRUCT_GAP_2, TOAST_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
+    TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+};
 
 use crate::catalog::toast_card::{
     self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind, accent_color,
 };
 
-const TOAST_GAP: f32 = 6.0;
-const SCOPE_MARGIN: f32 = 12.0;
-/// 본체 `toast.rs` 와 동일 — 좁은 surface 에서 max_width 클램프 하한.
-const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
+// ── specimen 무대 치수 ────────────────────────────────────────────────────────
+//
+// 토스트가 뜨는 "scope" 를 흉내 내는 데모 캔버스 크기다. 디자인 토큰이 아니라
+// **무대 크기**라 Theme 에서 오지 않는다 — 케이스마다 다른 것은 그 케이스가 무엇을
+// 보여야 하는지(1줄 · wrap · 스택)에 달려 있기 때문이다.
+
+/// 모든 케이스 공통 가로. wrap 케이스가 80% 폭 클램프를 실제로 넘도록 정한 값.
+const SPECIMEN_W: f32 = 480.0;
+/// 토스트 1 개 케이스의 세로.
+const SPECIMEN_H_SINGLE: f32 = 120.0;
+/// 여러 줄 wrap 케이스의 세로 — 한 장이 세로로 자란다.
+const SPECIMEN_H_WRAP: f32 = 180.0;
+/// 4 개 스택 케이스의 세로.
+const SPECIMEN_H_STACK: f32 = 280.0;
+
+/// 데모 프레임 좌상단 "scope (frame)" 라벨의 세로 인셋. 4px 그리드 밖(6px)이라
+/// spacing 토큰에 대응이 없다 — 프레임 border 와 캡 높이 사이를 눈으로 맞춘 값이다.
+const SCOPE_LABEL_INSET_Y: f32 = 6.0;
 
 #[derive(Clone, Debug)]
 struct ToastEntryView {
@@ -70,7 +87,9 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
             // 본체 toast.rs 와 동일: 좁은 surface 에서 좌측 누출 방지 클램프
             // (정상 폭에서는 0.8 폭 그대로 = 시각 무변경) + wrap_width 음수 가드.
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
+            let max_width = (scope_rect.width() * 0.8)
+                .max(TOAST_MIN_MAX_WIDTH)
+                .min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
             let text_color = th.text_primary().gamma_multiply(alpha);
             let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
@@ -151,7 +170,10 @@ fn frame_case(
 
     // 좌상단에 "scope" 라벨 — 데모임을 알림.
     painter.text(
-        egui::pos2(rect.min.x + 8.0, rect.min.y + 6.0),
+        egui::pos2(
+            rect.min.x + theme.spacing_sm.value(),
+            rect.min.y + SCOPE_LABEL_INSET_Y,
+        ),
         egui::Align2::LEFT_TOP,
         "scope (frame)",
         egui::FontId::proportional(theme.font_size_micro.value()),
@@ -201,8 +223,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                480.0,
-                120.0,
+                SPECIMEN_W,
+                SPECIMEN_H_SINGLE,
                 vec![ToastEntryView {
                     kind: ToastKind::Info,
                     message: "Reloaded settings.json".into(),
@@ -221,8 +243,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                480.0,
-                120.0,
+                SPECIMEN_W,
+                SPECIMEN_H_SINGLE,
                 vec![ToastEntryView {
                     kind: ToastKind::Success,
                     message: "Workspace saved.".into(),
@@ -241,8 +263,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                480.0,
-                120.0,
+                SPECIMEN_W,
+                SPECIMEN_H_SINGLE,
                 vec![ToastEntryView {
                     kind: ToastKind::Warning,
                     message: "Low disk space — clean up downloads.".into(),
@@ -261,8 +283,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                480.0,
-                120.0,
+                SPECIMEN_W,
+                SPECIMEN_H_SINGLE,
                 vec![ToastEntryView {
                     kind: ToastKind::Error,
                     message: "Plugin crashed: tasty-plugin-foo. See logs.".into(),
@@ -281,8 +303,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                480.0,
-                180.0,
+                SPECIMEN_W,
+                SPECIMEN_H_WRAP,
                 vec![ToastEntryView {
                     kind: ToastKind::Warning,
                     message:
@@ -309,8 +331,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                480.0,
-                280.0,
+                SPECIMEN_W,
+                SPECIMEN_H_STACK,
                 vec![
                     ToastEntryView {
                         kind: ToastKind::Info,

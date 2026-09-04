@@ -257,7 +257,7 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
             // 2px inset accent bar.
             let bar = egui::Rect::from_min_size(
                 row.min,
-                egui::vec2(theme.focus_ring_width.value(), row.height()),
+                egui::vec2(theme.tab_indicator_width.value(), row.height()),
             );
             p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
         }
@@ -410,7 +410,7 @@ fn paint_ws_row(
         );
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.focus_ring_width.value(), rect.height()),
+            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
         );
         p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
     }

@@ -20,6 +20,9 @@
 //! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::{
+    CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
+};
 use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, checkbox};
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -40,6 +43,18 @@ const SIZE_COL_W: f32 = 68.0;
 const MOD_COL_W: f32 = 108.0;
 const FOOTER_LABEL_W: f32 = 64.0; // 디자인 "File name" 라벨 고정폭
 const FOOTER_CHIP_W: f32 = 92.0; // "All files ▾" 타입필터 칩
+
+/// 원격 host 배지 칩의 높이(디자인 size-22). 4px 그리드 밖이고 대응 Theme 토큰이
+/// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
+const HOST_BADGE_H: f32 = 22.0;
+
+/// 브레드크럼 구분자·타입필터 칩 화살표의 글리프 한 변. **아이콘 스케일 밖이다** —
+/// Theme 은 12(xs) · 14(sm) · 15(row-action) · 16(md) 만 갖는데 디자인은 여기 13 을
+///쓴다. 조용히 12/14 로 반올림하지 않고 값을 보존한 채 이름만 붙였다.
+const CRUMB_GLYPH: f32 = 13.0;
+
+/// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
+const EMPTY_BODY_MAX_W: f32 = 340.0;
 const HOST: &str = "deploy@10.0.4.12";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -237,12 +252,6 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
         .show(ui, |ui| {
             ui.set_width(FRAME_W);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -310,7 +319,7 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
     let glyph = theme.icon_glyph_size_xs.value();
     let gap = theme.spacing_xs.value();
     let pad_x = theme.spacing_sm.value();
-    let h = 22.0; // 디자인 height 22
+    let h = HOST_BADGE_H;
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
@@ -417,13 +426,13 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
     ];
     let items = if remote { REMOTE_CRUMBS } else { LOCAL_CRUMBS };
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
         for (i, it) in items.iter().enumerate() {
             if i > 0 {
                 kit::icon(
                     ui,
                     icons::CHEVRON_RIGHT,
-                    13.0,
+                    CRUMB_GLYPH,
                     theme.text_disabled().to_egui(),
                 );
             }
@@ -558,7 +567,7 @@ fn row(
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.focus_ring_width.value(), rect.height()),
+            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
         );
         ui.painter()
             .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
@@ -713,12 +722,12 @@ fn center(
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    col.add_space((BODY_H - 120.0).max(0.0) * 0.5);
+    col.add_space((BODY_H - EMPTY_BLOCK_H).max(0.0) * 0.5);
     col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
     if spinner {
-        Spinner::new().size(22.0).show(&mut col, theme);
+        Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
     } else {
-        kit::icon(&mut col, glyph, 22.0, glyph_color);
+        kit::icon(&mut col, glyph, EMPTY_GLYPH, glyph_color);
     }
     col.label(
         egui::RichText::new(heading)
@@ -727,7 +736,7 @@ fn center(
             .color(heading_color),
     );
     if let Some(b) = body_text {
-        col.set_max_width(340.0);
+        col.set_max_width(EMPTY_BODY_MAX_W);
         col.label(
             egui::RichText::new(b)
                 .size(theme.font_size_caption.value())
@@ -848,10 +857,13 @@ fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
         theme.text_secondary().to_egui(),
     );
     let ir = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - pad - 13.0, rect.center().y - 6.5),
-        egui::vec2(13.0, 13.0),
+        egui::pos2(
+            rect.right() - pad - CRUMB_GLYPH,
+            rect.center().y - CRUMB_GLYPH * 0.5,
+        ),
+        egui::vec2(CRUMB_GLYPH, CRUMB_GLYPH),
     );
     icons::CHEVRON_DOWN
-        .image(13.0, theme.text_muted().to_egui())
+        .image(CRUMB_GLYPH, theme.text_muted().to_egui())
         .paint_at(ui, ir);
 }

@@ -30,5 +30,12 @@ tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 
+# 정본 `ToastKind` 와 갤러리 미러가 갈리지 않는지 대조하는 테스트 전용 의존.
+# **dev 전용인 것이 핵심** — 정본 크레이트는 termwiz/터미널 모델을 끌고 오므로
+# 갤러리 산출물에 넣지 않는다. 대조는 `src/catalog/toast_card.rs` 의 `mod tests`
+# — lib 유닛 테스트로 둔 이유는 그 모듈 doc 에 있다(자동 실행 채널).
+[dev-dependencies]
+tasty-model = { path = "../tasty-model" }
+
 [lints]
 workspace = true

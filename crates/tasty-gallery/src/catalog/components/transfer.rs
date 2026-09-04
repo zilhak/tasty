@@ -19,6 +19,7 @@
 //! - 푸터: `padding 10/14` · borderTop separator · 우측정렬 버튼(gap 8). danger-fill 금지.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::catalog::icons;
@@ -123,12 +124,6 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
         .show(ui, |ui| {
             ui.set_width(FRAME_W);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -339,10 +334,10 @@ fn reason_well(ui: &mut egui::Ui, theme: &Theme, reason: &str) {
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin {
-            left: 10,
-            right: 10,
-            top: 8,
-            bottom: 8,
+            left: TRANSFER_CARD_PAD_X,
+            right: TRANSFER_CARD_PAD_X,
+            top: theme.spacing_sm.value() as i8,
+            bottom: theme.spacing_sm.value() as i8,
         })
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
