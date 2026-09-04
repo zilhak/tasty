@@ -15,6 +15,7 @@ pub mod hook_failure;
 pub mod local;
 pub mod out;
 pub mod plugin;
+pub mod port_file;
 pub mod request;
 pub mod run;
 
@@ -75,7 +76,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: NewCommands,
     },
-    /// Close a resource (tab, pane, surface)
+    /// Close a resource (tab, pane, surface, workspace, window)
     Close {
         #[command(subcommand)]
         command: CloseCommands,
@@ -163,10 +164,15 @@ pub enum Commands {
         #[command(subcommand)]
         command: SurfaceMetaCommands,
     },
-    /// Surface actions (completion signal, …)
+    /// Surface actions (completion signal, queries, …)
     Surface {
         #[command(subcommand)]
         command: SurfaceCommands,
+    },
+    /// Agent session tokens (issue, revoke, list)
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
     },
     /// Manage child terminals (spawn/tell/children/kill/…) — host-internalized
     /// agent child-terminal management (ADR-0040).
@@ -285,6 +291,11 @@ pub enum Commands {
     /// focus or the visible frame. Otherwise captures a whole window: `--window`
     /// selects it by ID (see `list windows`); if omitted and only one window is
     /// open, that one is used.
+    ///
+    /// An explicit `--window` may name a window that `list windows` does not show,
+    /// such as the settings or plugins modal. Only the automatic (no `--window`)
+    /// choice is limited to main windows, and it never falls back to whichever
+    /// window happens to be focused.
     Screenshot {
         /// Output PNG path.
         #[arg(long)]
@@ -292,7 +303,8 @@ pub enum Commands {
         /// Terminal surface ID to capture (offscreen; focus-independent).
         #[arg(long)]
         surface: Option<u32>,
-        /// Window ID to capture (whole tasty frame). Required when multiple windows are open.
+        /// Window ID to capture (whole tasty frame). Required when multiple windows are
+        /// open. May name a modal window that `list windows` does not enumerate.
         #[arg(long)]
         window: Option<u64>,
     },
@@ -805,6 +817,39 @@ mod workspace_category_tests {
             "needs_input",
         ]);
         assert_eq!(r.method, "surface.completion");
+        assert_eq!(r.params["kind"], "needs_input");
+    }
+
+    #[test]
+    fn surface_attention_get_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "attention", "get", "--surface", "42"]);
+        assert_eq!(r.method, "surface.attention.get");
+        assert_eq!(r.params["surface_id"], 42);
+    }
+
+    #[test]
+    fn surface_attention_clear_maps_to_ipc() {
+        let r = req(&["tasty", "surface", "attention", "clear", "--surface", "42"]);
+        assert_eq!(r.method, "surface.attention.clear");
+        assert_eq!(r.params["surface_id"], 42);
+        // kind 미지정 = kind 무관 해제. 호스트가 "필터 없음" 으로 읽어야 하므로
+        // 문자열 기본값을 실어 보내지 않는다.
+        assert!(r.params["kind"].is_null());
+    }
+
+    #[test]
+    fn surface_attention_clear_carries_kind_filter() {
+        let r = req(&[
+            "tasty",
+            "surface",
+            "attention",
+            "clear",
+            "--surface",
+            "42",
+            "--kind",
+            "needs_input",
+        ]);
+        assert_eq!(r.method, "surface.attention.clear");
         assert_eq!(r.params["kind"], "needs_input");
     }
 

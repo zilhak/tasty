@@ -28,8 +28,12 @@ fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> R
     }
 }
 
-/// runner 요약 한 줄 — `{running, crashed, ready_count, running_count}` 형태의
-/// `runner` 서브객체를 공유(`task_list`/`task_graph`/`task_run` 응답 공통 shape).
+/// runner 요약 한 줄 — `{running, crashed, ready_count, running_count, store_error,
+/// list_failures}` 형태의 `runner` 서브객체를 공유(`task_list`/`task_graph`/`task_run`
+/// 응답 공통 shape).
+///
+/// 카운트는 **`null` 일 수 있다** — store 를 못 읽었다는 뜻이라 `?` 로 렌더하고
+/// `store_error` 를 붙인다. 0 으로 렌더하면 "task 가 없다" 와 구분이 안 된다.
 fn format_runner_summary(runner: &serde_json::Value) -> String {
     let running = runner
         .get("running")
@@ -39,12 +43,11 @@ fn format_runner_summary(runner: &serde_json::Value) -> String {
         .get("crashed")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let ready = runner
-        .get("ready_count")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let inflight = runner
-        .get("running_count")
+    let ready = runner.get("ready_count").and_then(|v| v.as_u64());
+    let inflight = runner.get("running_count").and_then(|v| v.as_u64());
+    let store_error = runner.get("store_error").and_then(|v| v.as_str());
+    let list_failures = runner
+        .get("list_failures")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     let status = if crashed {
@@ -54,9 +57,22 @@ fn format_runner_summary(runner: &serde_json::Value) -> String {
     } else {
         "stopped"
     };
-    let mut line = format!("runner: {status} (ready={ready} running={inflight})");
-    if !running && (ready > 0 || inflight > 0) {
+    let fmt_count = |c: Option<u64>| c.map_or_else(|| "?".to_string(), |v| v.to_string());
+    let mut line = format!(
+        "runner: {status} (ready={} running={})",
+        fmt_count(ready),
+        fmt_count(inflight)
+    );
+    if let Some(err) = store_error {
+        line.push_str(&format!(" — task store unreadable: {err}"));
+    } else if !running && (ready.unwrap_or(0) > 0 || inflight.unwrap_or(0) > 0) {
         line.push_str(" — pending work but no runner; `agent task-run --action start` to resume");
+    }
+    if list_failures > 0 {
+        line.push_str(&format!(
+            " — runner failed to read the task store {list_failures}x in a row; no task is \
+             advancing"
+        ));
     }
     line
 }
@@ -750,6 +766,36 @@ mod tests {
             "running": true, "crashed": false, "ready_count": 3, "running_count": 1,
         }));
         assert_eq!(s, "runner: running (ready=3 running=1)");
+    }
+
+    /// store 를 못 읽으면 카운트를 0 으로 렌더하지 않는다 — 0 은 "task 가 없다" 와
+    /// 값이 같아서, 조회가 실패했다는 사실이 화면에서 사라진다.
+    #[test]
+    fn runner_summary_unreadable_store_shows_unknown_counts_and_reason() {
+        let s = format_runner_summary(&json!({
+            "running": true, "crashed": false,
+            "ready_count": null, "running_count": null,
+            "store_error": "db is locked", "list_failures": 0,
+        }));
+        assert_eq!(
+            s,
+            "runner: running (ready=? running=?) — task store unreadable: db is locked"
+        );
+    }
+
+    /// 러너가 살아는 있는데 계속 못 읽는 상태 — `running: true` 만 보면 정상으로
+    /// 보이므로 연속 실패 횟수를 같은 줄에 붙인다.
+    #[test]
+    fn runner_summary_reports_consecutive_list_failures() {
+        let s = format_runner_summary(&json!({
+            "running": true, "crashed": false, "ready_count": 2, "running_count": 1,
+            "store_error": null, "list_failures": 9,
+        }));
+        assert_eq!(
+            s,
+            "runner: running (ready=2 running=1) — runner failed to read the task store 9x in \
+             a row; no task is advancing"
+        );
     }
 
     /// `terminal.spawn` 의 workspace-not-found 오류가 이 명령을 가리킨다 — 행에서

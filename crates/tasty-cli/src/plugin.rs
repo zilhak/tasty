@@ -8,7 +8,6 @@ use anyhow::Result;
 use serde_json::{Map, Value, json};
 
 use tasty_ipc::client::IpcConnection;
-use tasty_ipc::port_file;
 use tasty_plugin_manifest::Manifest;
 
 use crate::out::{out, outln};
@@ -16,7 +15,7 @@ use crate::out::{out, outln};
 fn log_dir() -> Result<PathBuf> {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("plugins-logs"))
-        .ok_or_else(|| anyhow::anyhow!("could not determine tasty home directory"))
+        .ok_or_else(|| anyhow::anyhow!("{}", tasty_i18n::t("cli.plugin.home_unresolved")))
 }
 
 /// Polls `plugin.audit_follow` every `interval_ms` and prints new records as
@@ -30,12 +29,15 @@ pub fn run_audit_follow(
     interval_ms: u64,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = port_file::read_port_file_from(port_file)?;
+    let port = crate::port_file::read_port(port_file)?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
-            port,
-            e
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
     let mut conn = IpcConnection::new(stream)?;
@@ -103,22 +105,32 @@ pub fn run_audit_follow(
 /// 표시한다. 호스트가 실행 중이지 않아도 작동하는 local-only 명령.
 pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     let root = tasty_host_plugin::plugin_root()
-        .ok_or_else(|| anyhow::anyhow!("could not determine plugin root directory"))?;
+        .ok_or_else(|| anyhow::anyhow!("{}", tasty_i18n::t("cli.plugin.root_unresolved")))?;
     let plugin_dir = root.join(plugin_id);
     if !plugin_dir.join("tasty-plugin.toml").exists() {
         anyhow::bail!(
-            "plugin '{}' not installed (no manifest at {})",
-            plugin_id,
-            plugin_dir.join("tasty-plugin.toml").display()
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.plugin.not_installed",
+                plugin_id,
+                &plugin_dir.join("tasty-plugin.toml").display().to_string()
+            )
         );
     }
     // F.B.13-3: host file 도메인 검증 (validate_bin_extras) 은 본 바이너리 잔존.
     // CLI tasty-cli 단독 빌드 가능을 위해 schema 검증 (Manifest::load 내장) 까지만
     // 수행. install/remove 경로의 daemon IPC handler 가 bin extras 를 추가 검증.
-    let manifest = Manifest::load(&plugin_dir)
-        .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
+    let manifest = Manifest::load(&plugin_dir).map_err(|e| {
+        anyhow::anyhow!(
+            "{}",
+            tasty_i18n::t_fmt2("cli.plugin.manifest_load_failed", plugin_id, &e.to_string())
+        )
+    })?;
 
-    outln!("Plugin: {}", manifest.id)?;
+    outln!(
+        "{}",
+        tasty_i18n::t_fmt("cli.plugin.doctor_header", &manifest.id)
+    )?;
     outln!("  name:             {}", manifest.name)?;
     outln!("  version:          {}", manifest.version)?;
     outln!("  manifest_version: {}", manifest.manifest_version)?;
@@ -129,7 +141,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     // bin glue 에서 수행하므로 여기 도달했다는 것은 schema 가 valid 함을 의미.
     let detectors = &manifest.contributes.detector;
     outln!()?;
-    outln!("Detectors contributed: {}", detectors.len())?;
+    outln!(
+        "{}",
+        tasty_i18n::t_fmt("cli.plugin.doctor_detectors", &detectors.len().to_string())
+    )?;
     let mut total_unsupported = 0_usize;
     for v in detectors {
         let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
@@ -157,23 +172,27 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
         let ok = total - unsupported.len();
         total_unsupported += unsupported.len();
         outln!(
-            "  - {} (rules: {} OK, {} unsupported)",
-            id,
-            ok,
-            unsupported.len()
+            "{}",
+            tasty_i18n::t_args(
+                "cli.plugin.doctor_detector_row",
+                &[id, &ok.to_string(), &unsupported.len().to_string()]
+            )
         )?;
         for rule in &unsupported {
             let kind_name = rule.get("kind").and_then(|k| k.as_str()).unwrap_or("?");
             outln!(
-                "      ! rule kind \"{}\" unsupported in this host version",
-                kind_name
+                "{}",
+                tasty_i18n::t_fmt("cli.plugin.doctor_rule_unsupported", kind_name)
             )?;
         }
     }
 
     let handlers = &manifest.contributes.handler;
     outln!()?;
-    outln!("Handlers contributed: {}", handlers.len())?;
+    outln!(
+        "{}",
+        tasty_i18n::t_fmt("cli.plugin.doctor_handlers", &handlers.len().to_string())
+    )?;
     for v in handlers {
         let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
         let detector_id = v.get("detector").and_then(|x| x.as_str()).unwrap_or("?");
@@ -193,10 +212,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
                         "ipc \"{}\"",
                         obj.get("method").and_then(|x| x.as_str()).unwrap_or("?")
                     )),
-                    other => Some(format!("(unknown: {other})")),
+                    other => Some(tasty_i18n::t_fmt("cli.plugin.doctor_action_unknown", other)),
                 }
             })
-            .unwrap_or_else(|| "(no action)".into());
+            .unwrap_or_else(|| tasty_i18n::t("cli.plugin.doctor_action_none").to_string());
         outln!(
             "  - {} → detector \"{}\" → {}",
             id,
@@ -208,8 +227,11 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     if total_unsupported > 0 {
         outln!()?;
         outln!(
-            "{} rule(s) unsupported — they will be ignored. host api_version: see Cargo.toml.",
-            total_unsupported
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.plugin.doctor_unsupported_summary",
+                &total_unsupported.to_string()
+            )
         )?;
     }
     Ok(())
@@ -219,9 +241,12 @@ pub fn run_plugin_logs(plugin_id: &str, follow: bool) -> Result<()> {
     let path = log_dir()?.join(format!("{plugin_id}.log"));
     if !path.exists() {
         anyhow::bail!(
-            "no log file for plugin '{}' at {}",
-            plugin_id,
-            path.display()
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.plugin.no_log_file",
+                plugin_id,
+                &path.display().to_string()
+            )
         );
     }
     if !follow {

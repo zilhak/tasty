@@ -206,12 +206,28 @@ pub fn matches_to_request(
                 {
                     match arg.path_kind.as_deref() {
                         Some("directory") => Value::String(
-                            super::cwd_resolve::normalize_cwd_arg(raw)
-                                .map_err(|e| anyhow!("--{}: {e}", arg.name))?,
+                            super::cwd_resolve::normalize_cwd_arg(raw).map_err(|e| {
+                                anyhow!(
+                                    "{}",
+                                    tasty_i18n::t_fmt2(
+                                        "cli.plugin_cli.arg_invalid",
+                                        &arg.name,
+                                        &e.to_string()
+                                    )
+                                )
+                            })?,
                         ),
                         Some("file") => Value::String(
-                            super::cwd_resolve::normalize_file_arg(raw)
-                                .map_err(|e| anyhow!("--{}: {e}", arg.name))?,
+                            super::cwd_resolve::normalize_file_arg(raw).map_err(|e| {
+                                anyhow!(
+                                    "{}",
+                                    tasty_i18n::t_fmt2(
+                                        "cli.plugin_cli.arg_invalid",
+                                        &arg.name,
+                                        &e.to_string()
+                                    )
+                                )
+                            })?,
                         ),
                         _ => v,
                     }
@@ -440,6 +456,31 @@ fn merge_stdin_params(params: &mut Map<String, Value>, group: &CliArgGroup, stdi
     }
 }
 
+/// 숫자 인자는 **값이 왔는데 못 읽으면 오류**다.
+///
+/// `parse().ok()` 로 `None` 을 만들면 하류에서 **"플래그가 아예 없음" 과 구별되지 않는다.**
+/// 그러면 없을 때 도는 기본값 경로가 그대로 돌아, 사용자가 지정한 대상 대신 기본 대상으로
+/// 조용히 실행된다 — `--surface` 의 기본값은 호출자 **자신**이라 명령이 자기에게 배달된다.
+/// 종료코드는 0 이고 오류도 없어서, 응답의 주소를 따로 대조하지 않으면 드러나지 않는다.
+fn parse_number<T>(raw: &str, arg: &CliArg) -> Result<T>
+where
+    T: std::str::FromStr,
+{
+    raw.parse::<T>().map_err(|_| {
+        anyhow!(
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.plugin_cli.flag_not_a_number",
+                arg.flag
+                    .as_deref()
+                    .unwrap_or(&arg.name)
+                    .trim_start_matches('-'),
+                raw
+            )
+        )
+    })
+}
+
 fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Result<Option<Value>> {
     // `reject_repeat` 인자는 build_arg 가 ArgAction::Append 로 등록하므로(모든
     // occurrence 보존), get_one 대신 get_many 로 개수부터 확인한다 — Set 전용
@@ -463,14 +504,14 @@ fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Result<Option<Value>> {
             ));
         }
         return Ok(match arg.ty {
-            CliArgType::U32 => values
-                .pop()
-                .and_then(|s| s.parse::<u32>().ok())
-                .map(Value::from),
-            CliArgType::I64 => values
-                .pop()
-                .and_then(|s| s.parse::<i64>().ok())
-                .map(Value::from),
+            CliArgType::U32 => match values.pop() {
+                Some(s) => Some(Value::from(parse_number::<u32>(s, arg)?)),
+                None => None,
+            },
+            CliArgType::I64 => match values.pop() {
+                Some(s) => Some(Value::from(parse_number::<i64>(s, arg)?)),
+                None => None,
+            },
             CliArgType::String => values.pop().map(|s| Value::String(s.clone())),
             // build_arg는 Bool을 항상 SetTrue로 등록한다(reject_repeat 무관) —
             // 여기 도달하면 매니페스트 오설정이니 get_flag로 안전하게 처리.
@@ -479,14 +520,14 @@ fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Result<Option<Value>> {
     }
     Ok(match arg.ty {
         CliArgType::Bool => Some(Value::Bool(matches.get_flag(&arg.name))),
-        CliArgType::U32 => matches
-            .get_one::<String>(&arg.name)
-            .and_then(|s| s.parse::<u32>().ok())
-            .map(Value::from),
-        CliArgType::I64 => matches
-            .get_one::<String>(&arg.name)
-            .and_then(|s| s.parse::<i64>().ok())
-            .map(Value::from),
+        CliArgType::U32 => match matches.get_one::<String>(&arg.name) {
+            Some(s) => Some(Value::from(parse_number::<u32>(s, arg)?)),
+            None => None,
+        },
+        CliArgType::I64 => match matches.get_one::<String>(&arg.name) {
+            Some(s) => Some(Value::from(parse_number::<i64>(s, arg)?)),
+            None => None,
+        },
         CliArgType::String => matches
             .get_one::<String>(&arg.name)
             .map(|s| Value::String(s.clone())),
@@ -705,6 +746,47 @@ mod tests {
         let p = req.params.as_object().unwrap();
         assert_eq!(p["surface"], Value::from(5_u32));
         assert_eq!(p["prompt"], Value::String("hello".into()));
+    }
+
+    /// 숫자 플래그에 비수치가 오면 **거부**한다.
+    ///
+    /// 예전에는 `parse().ok()` 로 `None` 이 되어 하류에서 "플래그 없음" 과 같아졌고,
+    /// 그 자리에 없을 때 도는 기본값이 들어갔다. `--surface` 의 기본값은 호출자 자신이라
+    /// 명령이 **자기에게 배달**됐다 — 종료코드 0, 오류 없음. 실제로 그렇게 잃은 적이 있다.
+    #[test]
+    fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
+        // `tasty_i18n::init` 은 프로세스당 1 회 `OnceLock` 이고, 이 바이너리의 다른
+        // 테스트(`run.rs`)도 "en" 으로 초기화한다. 여기서 먼저 부르는 것은 값을 바꾸는
+        // 것이 아니라 **순서 경합을 없애는 것**이다 — 부르지 않으면 언어팩 로드 여부가
+        // 스레드 순서에 달려 메시지가 키(미로드)와 영문(로드) 사이에서 흔들린다.
+        tasty_i18n::init("en");
+        let entries = vec![sample_entry()];
+        let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
+        let err = matches_to_request(&entries, &m).expect_err("비수치 --surface 는 오류여야 한다");
+        let msg = err.to_string();
+        assert_ne!(
+            msg, "cli.plugin_cli.flag_not_a_number",
+            "번역 키가 그대로 새어 나오면 안 된다"
+        );
+        assert!(
+            msg.contains("surface"),
+            "어느 플래그인지 담아야 한다: {msg}"
+        );
+        assert!(msg.contains("conductor"), "받은 값을 담아야 한다: {msg}");
+    }
+
+    /// 위 테스트의 대우 — 플래그가 **아예 없는** 것은 여전히 오류가 아니다.
+    /// 둘을 가르지 못하는 것이 원래 결함이었으므로 양쪽을 함께 박는다.
+    #[test]
+    fn an_absent_number_flag_is_still_not_an_error() {
+        let entries = vec![sample_entry()];
+        let m = parse(&["codex", "spawn", "--prompt", "hi"]);
+        let (req, _polling, _auto) =
+            matches_to_request(&entries, &m).expect("없는 플래그는 오류가 아니다");
+        assert_eq!(
+            req.params.as_object().unwrap()["prompt"],
+            Value::String("hi".into())
+        );
     }
 
     #[test]

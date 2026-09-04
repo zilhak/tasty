@@ -49,7 +49,12 @@ pub(crate) fn run_attach_on_port(
 ) -> Result<AttachExit> {
     let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {port}: {e}. Is tasty running?"
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
     let (mut conn, client_id) = StreamConnection::open_attach(sock, STREAM_PROTO, surface)?;
@@ -57,7 +62,13 @@ pub(crate) fn run_attach_on_port(
     // 핸드셰이크 ack 다음의 attach 결과 Control 프레임.
     let first = conn.recv()?;
     if first.tag != StreamTag::Control {
-        bail!("expected attach Control frame, got {:?}", first.tag);
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.attach.unexpected_first_frame",
+                &format!("{:?}", first.tag)
+            )
+        );
     }
     let ctrl: serde_json::Value = serde_json::from_slice(&first.payload)?;
     match ctrl.get("event").and_then(|v| v.as_str()) {
@@ -67,9 +78,12 @@ pub(crate) fn run_attach_on_port(
                 .get("reason")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            bail!("attach rejected: {reason}");
+            bail!("{}", tasty_i18n::t_fmt("cli.attach.rejected", reason));
         }
-        other => bail!("unexpected attach control event: {other:?}"),
+        other => bail!(
+            "{}",
+            tasty_i18n::t_fmt("cli.attach.unexpected_control_event", &format!("{other:?}"))
+        ),
     }
     let cols = ctrl.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
     let rows = ctrl.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
@@ -192,7 +206,12 @@ pub(crate) fn run_attach_workspace_on_port(
 ) -> Result<AttachExit> {
     let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
-            "Could not connect to tasty instance on port {port}: {e}. Is tasty running?"
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.request.connect_failed",
+                &port.to_string(),
+                &e.to_string()
+            )
         )
     })?;
     let (mut conn, client_id) =
@@ -200,7 +219,13 @@ pub(crate) fn run_attach_workspace_on_port(
 
     let first = conn.recv()?;
     if first.tag != StreamTag::Control {
-        bail!("expected attach Control frame, got {:?}", first.tag);
+        bail!(
+            "{}",
+            tasty_i18n::t_fmt(
+                "cli.attach.unexpected_first_frame",
+                &format!("{:?}", first.tag)
+            )
+        );
     }
     let ctrl: serde_json::Value = serde_json::from_slice(&first.payload)?;
     match ctrl.get("event").and_then(|v| v.as_str()) {
@@ -210,9 +235,15 @@ pub(crate) fn run_attach_workspace_on_port(
                 .get("reason")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            bail!("workspace attach rejected: {reason}");
+            bail!(
+                "{}",
+                tasty_i18n::t_fmt("cli.attach.workspace_rejected", reason)
+            );
         }
-        other => bail!("unexpected attach control event: {other:?}"),
+        other => bail!(
+            "{}",
+            tasty_i18n::t_fmt("cli.attach.unexpected_control_event", &format!("{other:?}"))
+        ),
     }
 
     // surfaces 디스크립터 → 터미널 mirror + 비-터미널 placeholder. 트리 순서 보존.
@@ -551,6 +582,31 @@ enum RawEvent {
 /// 되돌리면, 그 사이 이미 설치된 새 세션의 sender 를 지워버릴 수 있다.
 type StdinSlot = Arc<Mutex<Option<mpsc::Sender<RawEvent>>>>;
 
+/// stdin 슬롯 poison 을 보고했는가(첫 1 회만 — poison 은 sticky 라 이후 모든 청크가
+/// 같은 경로를 탄다).
+static STDIN_SLOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+/// stdin 슬롯 락을 poison 이어도 잡는다. 세 호출부(청크 라우팅 · EOF 라우팅 ·
+/// sender 설치)의 근거는 각 함수 doc 에 있고, 공통점은 **여기서 패닉하면 프로세스가
+/// 영구 사망**한다는 것이다. 복구를 택하더라도 관측은 남긴다
+/// (`docs/dev-guide/error-handling.md` "어느 선택을 하든 로그를 남긴다").
+///
+/// `tasty_utils::poison` 헬퍼를 쓰지 않는 이유는 이 파일의 형제 지점인 writer 락이
+/// **복구가 오답**이라 반대 선택을 하기 때문이다 — 한 파일에 두 형태를 섞으면 다음
+/// 사람이 "여기도 헬퍼면 되겠네" 로 잘못 통일하기 쉽다.
+fn lock_stdin_slot(slot: &StdinSlot) -> std::sync::MutexGuard<'_, Option<mpsc::Sender<RawEvent>>> {
+    slot.lock().unwrap_or_else(|p| {
+        if !STDIN_SLOT_POISON_REPORTED.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                "attach: stdin slot lock poisoned — a thread panicked while holding it; \
+                 recovering (the slot holds a plain `Option<Sender>`), later occurrences \
+                 are not logged"
+            );
+        }
+        p.into_inner()
+    })
+}
+
 /// 슬롯이 비어있는(세션 전환 중) 동안 발생한 진짜 stdin EOF/에러를 기억해두는
 /// latch. 리더 스레드가 세우고, [`install_sender`] 가 다음 세션 설치 시 확인해
 /// 즉시 `RawEvent::StdinEof` 를 전달한다 — 서버 단절→재연결 전환과 진짜 stdin
@@ -616,7 +672,7 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
     // 후에도 안전하게 읽을 수 있다(tearing 불가). 이 상시 리더 스레드는 `OnceLock`
     // 초기화로 프로세스 생애주기에 1번만 도므로, 여기서 패닉하면 재시작 없이 영구
     // 사망해 이후 모든 재연결 세션이 stdin 을 못 받는다.
-    let sender = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let sender = lock_stdin_slot(slot).clone();
     if let Some(tx) = sender {
         let _ = tx.send(RawEvent::Stdin(data.to_vec())); // 세션 전환 중 송신 실패는 버림 — 위 불변식 참고
     }
@@ -630,7 +686,7 @@ fn route_stdin_chunk(slot: &StdinSlot, data: &[u8]) {
 fn route_stdin_eof(slot: &StdinSlot, eof_latch: &StdinEofLatch) {
     // route_stdin_chunk 와 동일한 이유로 poison 을 무시하고 계속 진행한다 — 이
     // 함수도 같은 상시 리더 스레드에서 돌므로 여기서 패닉하면 마찬가지로 영구 사망.
-    let sender = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let sender = lock_stdin_slot(slot).clone();
     let delivered = match sender {
         Some(tx) => tx.send(RawEvent::StdinEof).is_ok(),
         None => false,
@@ -648,10 +704,26 @@ fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<
     // poison 이어도 대입은 안전(값 자체가 tearing 불가) — 이 함수는 메인 스레드
     // (재연결 루프)에서 매 세션마다 호출되므로, 여기서 패닉하면 백오프 재연결
     // 루프조차 못 돌고 `tasty attach --raw --ssh` 프로세스 자체가 종료된다.
-    *slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(tx.clone());
+    *lock_stdin_slot(slot) = Some(tx.clone());
     if eof_latch.swap(false, Ordering::AcqRel) {
         let _ = tx.send(RawEvent::StdinEof); // best-effort — 세션이 이미 끝났으면 무시.
     }
+}
+
+/// writer 락 poison 처리 — **복구하지 않는다.**
+///
+/// 임계구역이 소켓에 프레임을 쓰므로, 락을 든 채 죽은 스레드는 프레임을 절반만
+/// 남겼을 수 있다. 그 위에 이어 쓰면 스트림 프레이밍이 깨져 상대가 쓰레기를 읽는다 —
+/// 데이터를 신뢰할 수 없는 자리라 복구가 오답이다
+/// (`docs/dev-guide/error-handling.md` "락 poison").
+///
+/// 대신 **조용히** 접지도 않는다. 지금까지 poison 은 "쓰기 실패" 와 구분 없이 세션
+/// 종료로 흘러가, 사용자에게는 attach 가 이유 없이 끊긴 것으로 보였다.
+fn note_writer_poisoned(during: &str) {
+    tracing::error!(
+        "attach: writer lock poisoned while {during} — a thread panicked while holding it; \
+         ending this attach session rather than writing onto a half-written frame"
+    );
 }
 
 /// raw 브리지 모드: stdin→서버 입력, 서버 출력→stdout. detach 키 `Ctrl+\`(0x1c).
@@ -676,7 +748,11 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
     if let Some(s) = send {
-        let mut w = writer.lock().unwrap();
+        // 아직 이 writer 를 공유하는 스레드가 없다(heartbeat/stdin 라우팅은 아래에서
+        // 시작한다) — poison 이 발생할 수 있는 다른 홀더가 존재하지 않는 지점이다.
+        let mut w = writer
+            .lock()
+            .expect("attach writer before any other thread exists");
         stream::write_frame(&mut *w, StreamTag::Data, &decode_escapes(s))?;
         drop(w);
     }
@@ -693,7 +769,10 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
                 thread::sleep(stream::HEARTBEAT_INTERVAL);
                 let sent = match writer.lock() {
                     Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Ping, &[]).is_ok(),
-                    Err(_) => false,
+                    Err(_) => {
+                        note_writer_poisoned("sending a heartbeat");
+                        false
+                    }
                 };
                 if !sent {
                     break;
@@ -754,19 +833,28 @@ fn raw_bridge_main_loop(
             Ok(RawEvent::Stdin(data)) => {
                 if let Some(pos) = data.iter().position(|&b| b == 0x1c) {
                     // Ctrl+\ 이전 바이트만 보내고 detach.
-                    if pos > 0
-                        && let Ok(mut w) = writer.lock()
-                    {
-                        let _ = stream::write_frame(&mut *w, StreamTag::Data, &data[..pos]); // 종료 경로 best-effort 송신 — 무시
+                    if pos > 0 {
+                        match writer.lock() {
+                            Ok(mut w) => {
+                                let _ = stream::write_frame(&mut *w, StreamTag::Data, &data[..pos]); // 종료 경로 best-effort 송신 — 무시
+                            }
+                            Err(_) => note_writer_poisoned("flushing input before detach"),
+                        }
                     }
-                    if let Ok(mut w) = writer.lock() {
-                        let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                    match writer.lock() {
+                        Ok(mut w) => {
+                            let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                        }
+                        Err(_) => note_writer_poisoned("sending the detach notice"),
                     }
                     return Ok(AttachExit::Completed);
                 }
                 let write_ok = match writer.lock() {
                     Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Data, &data).is_ok(),
-                    Err(_) => false,
+                    Err(_) => {
+                        note_writer_poisoned("forwarding stdin");
+                        false
+                    }
                 };
                 if !write_ok {
                     return Ok(AttachExit::Completed);
@@ -885,6 +973,9 @@ mod tests {
 /// 백오프 재연결이 발동하지 않는" 것이었다 — 아래 `server_recv_err_reports_disconnected`
 /// 가 바로 그 회귀를 잡는다.
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod raw_bridge_tests {
     use std::io::Read;
     use std::net::{TcpListener, TcpStream};

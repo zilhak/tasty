@@ -44,8 +44,11 @@ pub enum ReadCommands {
         /// Surface ID (default: focused)
         #[arg(long)]
         surface: Option<u32>,
-        /// Number of lines to read from the bottom (dips into scrollback if needed).
-        /// Counted from the end of the content: trailing blank rows are skipped.
+        /// Number of lines to read from the bottom, counted from the end of the
+        /// content: trailing blank rows are skipped and the shortfall is filled from
+        /// scrollback. A surface with no scrollback cannot fill it — a TUI that took
+        /// the screen before anything scrolled off has none, so there the visible
+        /// screen is all you get no matter how large N is.
         #[arg(long)]
         lines: Option<usize>,
         /// Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells.
