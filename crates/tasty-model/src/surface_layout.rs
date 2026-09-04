@@ -29,7 +29,12 @@ pub enum SurfaceLayout {
 
 impl BinaryTree for SurfaceLayout {
     type Id = SurfaceId;
-    const BORDER_WIDTH: PhysicalPx = SURFACE_BORDER_WIDTH;
+    /// surface 보더는 **hairline** 이라 배율을 무시하는 것이 정답이다 —
+    /// 밀도와 무관하게 언제나 1 device px 로 남는다. 인자를 받고도 안 쓰는
+    /// 유일한 구현이고, 그것이 `PANE_BORDER_WIDTH` 와의 차이다.
+    fn border_width(_scale_factor: f32) -> PhysicalPx {
+        SURFACE_BORDER_WIDTH
+    }
 
     fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)> {
         match self {
@@ -494,12 +499,16 @@ impl SurfaceLayout {
         <Self as BinaryTree>::all_ids(self)
     }
 
-    pub fn compute_rects(&self, rect: PhysicalRect) -> Vec<(SurfaceId, PhysicalRect)> {
-        <Self as BinaryTree>::compute_rects(self, rect)
+    pub fn compute_rects(
+        &self,
+        rect: PhysicalRect,
+        scale_factor: f32,
+    ) -> Vec<(SurfaceId, PhysicalRect)> {
+        <Self as BinaryTree>::compute_rects(self, rect, scale_factor)
     }
 
-    pub fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
-        <Self as BinaryTree>::collect_dividers(self, rect)
+    pub fn collect_dividers(&self, rect: PhysicalRect, scale_factor: f32) -> Vec<PhysicalRect> {
+        <Self as BinaryTree>::collect_dividers(self, rect, scale_factor)
     }
 
     pub fn find_divider_at(
@@ -508,8 +517,9 @@ impl SurfaceLayout {
         y: f32,
         rect: PhysicalRect,
         threshold: f32,
+        scale_factor: f32,
     ) -> Option<DividerInfo> {
-        <Self as BinaryTree>::find_divider_at(self, x, y, rect, threshold)
+        <Self as BinaryTree>::find_divider_at(self, x, y, rect, threshold, scale_factor)
     }
 
     pub fn update_ratio_for_rect(
@@ -517,8 +527,15 @@ impl SurfaceLayout {
         split_rect: PhysicalRect,
         new_ratio: f32,
         current_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
-        <Self as BinaryTree>::update_ratio_for_rect(self, split_rect, new_ratio, current_rect)
+        <Self as BinaryTree>::update_ratio_for_rect(
+            self,
+            split_rect,
+            new_ratio,
+            current_rect,
+            scale_factor,
+        )
     }
 
     pub fn directional_focus(

@@ -23,6 +23,9 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
+        // `state`/`engine` 을 가변 차용하기 **전에** 잡는다 — 아래 match 안에서는
+        // `self.base` 를 다시 못 읽는다.
+        let scale_factor = self.base.gpu.scale_factor();
         let proxy = self.proxy.clone();
         let proxy = &proxy;
         // copy_path 등 clipboard 쓰기는 self.clipboard 차용이 필요해 match(=state/engine
@@ -52,6 +55,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "new_tab" => {
@@ -64,6 +68,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "split_pane_vertical" => {
@@ -79,6 +84,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "split_pane_horizontal" => {
@@ -94,6 +100,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "split_surface_vertical" => {
@@ -109,6 +116,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "split_surface_horizontal" => {
@@ -124,6 +132,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "toggle_settings" => {
@@ -177,6 +186,7 @@ impl MainView {
                         terminal_rect,
                         cell_w,
                         cell_h,
+                        scale_factor,
                     );
                 }
                 return true;
@@ -194,6 +204,7 @@ impl MainView {
                         terminal_rect,
                         cell_w,
                         cell_h,
+                        scale_factor,
                     );
                 }
                 return true;
@@ -212,6 +223,7 @@ impl MainView {
                         terminal_rect,
                         cell_w,
                         cell_h,
+                        scale_factor,
                     );
                 }
                 return true;
@@ -229,6 +241,7 @@ impl MainView {
                         terminal_rect,
                         cell_w,
                         cell_h,
+                        scale_factor,
                     );
                 }
                 return true;
@@ -249,6 +262,7 @@ impl MainView {
                     terminal_rect,
                     cell_w,
                     cell_h,
+                    scale_factor,
                 );
             }
             "quit" => send_app_event(proxy, crate::AppEvent::QuitRequested),
@@ -580,6 +594,7 @@ impl MainView {
         let cells = CellGeometry {
             w: crate::model::PhysicalPx(cell_w),
             h: crate::model::PhysicalPx(cell_h),
+            scale_factor: self.base.gpu.scale_factor(),
         };
         if Self::handle_keybinding_shortcuts(
             &mut self.state,

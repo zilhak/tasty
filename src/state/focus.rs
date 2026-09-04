@@ -48,9 +48,10 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: crate::model::PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
         let ws = self.active_workspace(engine);
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
         for (pane_id, rect) in pane_rects {
             if rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                 let old = self.active_workspace(engine).focused_pane;
@@ -73,10 +74,11 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: crate::model::PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
         let ws = self.active_workspace(engine);
         let focused_id = ws.focused_pane;
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
         // Find the focused pane's rect
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);

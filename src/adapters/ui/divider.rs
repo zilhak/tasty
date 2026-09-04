@@ -96,15 +96,16 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
     }
 }
 
-/// `state.surface_regions(engine, terminal_rect)` 결과를 view 용
+/// `state.surface_regions(...)` 결과를 view 용
 /// `Vec<SurfaceHighlightRegion>` 으로 평탄화. 별도 함수로 분리해 view 와 무관하게
 /// 단위 테스트 가능.
 pub(crate) fn regions_from_state(
     state: &AppState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
+    scale_factor: f32,
 ) -> Vec<SurfaceHighlightRegion> {
-    let regions = state.surface_regions(engine, terminal_rect);
+    let regions = state.surface_regions(engine, terminal_rect, scale_factor);
     let mut out = Vec::new();
     for (_pane_id, _pane_rect, surface_regions) in &regions {
         for r in surface_regions {
@@ -138,7 +139,7 @@ pub fn draw_surface_highlights(
     scale_factor: f32,
 ) {
     let th = theme::theme();
-    let regions = regions_from_state(state, engine, terminal_rect);
+    let regions = regions_from_state(state, engine, terminal_rect, scale_factor);
     let props = SurfaceHighlightsProps {
         theme: &th,
         regions: &regions,

@@ -463,6 +463,7 @@ impl GpuState {
             terminal_rect,
             self.renderer.cell_width(),
             self.renderer.cell_height(),
+            self.scale_factor,
         );
 
         let (pane_rects, dividers, focused_surface_id) =
@@ -559,7 +560,7 @@ impl GpuState {
 
         // 5. GPU render
         let t0 = std::time::Instant::now();
-        let regions = state.surface_regions(engine, terminal_rect);
+        let regions = state.surface_regions(engine, terminal_rect, self.scale_factor);
         stall_watchdog::set_phase(stall_watchdog::Phase::Acquire);
         let output = self.surface.get_current_texture()?;
         stall_watchdog::set_phase(stall_watchdog::Phase::Submit);
@@ -595,8 +596,12 @@ impl GpuState {
         // existing(비활성 탭/workspace 포함)이 비어도 호출해 닫힌 surface 의 GPU 자원을
         // retain 으로 정리한다(빈 target 게이팅은 `render_egui_mesh_surfaces` 내부에서 처리).
         if let Some(mgr) = plugin_manager {
-            let mesh_targets =
-                egui_mesh_prepare::collect_egui_mesh_targets(state, engine, terminal_rect);
+            let mesh_targets = egui_mesh_prepare::collect_egui_mesh_targets(
+                state,
+                engine,
+                terminal_rect,
+                self.scale_factor,
+            );
             let mesh_existing = state.egui_mesh_surfaces_existing(engine);
             self.render_egui_mesh_surfaces(&view, &mesh_targets, &mesh_existing, mgr);
         }
@@ -606,8 +611,12 @@ impl GpuState {
         // `PluginManager` 없이(원격에만 plugin 이 있음) `AttachMeshFrameStore`(TCP 로 받은
         // 최신 바이트)를 읽는다. `plugin_manager` 게이트가 없다 — attach 는 이 데이터에
         // 의존하지 않는다.
-        let attach_mesh_targets =
-            egui_mesh_prepare::collect_attach_mesh_targets(state, engine, terminal_rect);
+        let attach_mesh_targets = egui_mesh_prepare::collect_attach_mesh_targets(
+            state,
+            engine,
+            terminal_rect,
+            self.scale_factor,
+        );
         let attach_mesh_existing = state.attach_mesh_surfaces_existing(engine);
         if !attach_mesh_targets.is_empty()
             || !attach_mesh_existing.is_empty()
@@ -880,8 +889,10 @@ impl GpuState {
         terminal_rect: PhysicalRect,
     ) -> (Vec<(u32, PhysicalRect)>, Vec<PhysicalRect>, Option<u32>) {
         let pane_layout = state.active_workspace(engine).pane_layout();
-        let pane_rects: Vec<(u32, PhysicalRect)> = pane_layout.compute_rects(terminal_rect);
-        let mut dividers: Vec<PhysicalRect> = pane_layout.collect_dividers(terminal_rect);
+        let pane_rects: Vec<(u32, PhysicalRect)> =
+            pane_layout.compute_rects(terminal_rect, self.scale_factor);
+        let mut dividers: Vec<PhysicalRect> =
+            pane_layout.collect_dividers(terminal_rect, self.scale_factor);
 
         let focused_surface_id = state.focused_surface_id(engine);
         for (pane_id, pane_rect) in &pane_rects {
@@ -894,7 +905,10 @@ impl GpuState {
                     height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
                 };
                 if let Some(tab) = pane.tabs.get(pane.active_tab) {
-                    dividers.extend(tab.layout().collect_dividers(content_rect));
+                    dividers.extend(
+                        tab.layout()
+                            .collect_dividers(content_rect, self.scale_factor),
+                    );
                 }
             }
         }

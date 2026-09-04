@@ -84,8 +84,12 @@ fn rect_split_vertical() {
         width: px(200.0),
         height: px(100.0),
     };
-    let (r1, r2) = r.split_with_gap(SplitDirection::Vertical, 0.5, PANE_BORDER_WIDTH);
-    let gap = PANE_BORDER_WIDTH;
+    let (r1, r2) = r.split_with_gap(
+        SplitDirection::Vertical,
+        0.5,
+        PANE_BORDER_WIDTH.to_physical(1.0),
+    );
+    let gap = PANE_BORDER_WIDTH.to_physical(1.0);
     let usable = px(200.0) - gap;
     assert_eq!(r1.x, px(0.0));
     assert_eq!(r1.width, (usable * 0.5).floor());
@@ -103,8 +107,12 @@ fn rect_split_horizontal() {
         width: px(200.0),
         height: px(100.0),
     };
-    let (r1, r2) = r.split_with_gap(SplitDirection::Horizontal, 0.5, PANE_BORDER_WIDTH);
-    let gap = PANE_BORDER_WIDTH;
+    let (r1, r2) = r.split_with_gap(
+        SplitDirection::Horizontal,
+        0.5,
+        PANE_BORDER_WIDTH.to_physical(1.0),
+    );
+    let gap = PANE_BORDER_WIDTH.to_physical(1.0);
     let usable = px(100.0) - gap;
     assert_eq!(r1.y, px(0.0));
     assert_eq!(r1.height, (usable * 0.5).floor());
@@ -122,8 +130,12 @@ fn rect_split_unequal_ratio() {
         width: px(300.0),
         height: px(100.0),
     };
-    let (r1, r2) = r.split_with_gap(SplitDirection::Vertical, 0.3, PANE_BORDER_WIDTH);
-    let gap = PANE_BORDER_WIDTH;
+    let (r1, r2) = r.split_with_gap(
+        SplitDirection::Vertical,
+        0.3,
+        PANE_BORDER_WIDTH.to_physical(1.0),
+    );
+    let gap = PANE_BORDER_WIDTH.to_physical(1.0);
     let usable = px(300.0) - gap;
     assert_eq!(r1.width, (usable * 0.3).floor());
     assert_eq!(r2.width, usable - r1.width);
@@ -181,7 +193,7 @@ fn pane_node_compute_rects_single() {
         width: px(800.0),
         height: px(600.0),
     };
-    let rects = node.compute_rects(rect);
+    let rects = node.compute_rects(rect, 1.0);
     assert_eq!(rects.len(), 1);
     assert_eq!(rects[0].0, 1);
     assert_eq!(rects[0].1.width, px(800.0));
@@ -213,11 +225,11 @@ fn pane_node_compute_rects_split() {
         width: px(800.0),
         height: px(600.0),
     };
-    let rects = node.compute_rects(rect);
+    let rects = node.compute_rects(rect, 1.0);
     assert_eq!(rects.len(), 2);
     assert_eq!(rects[0].0, 1);
     assert_eq!(rects[1].0, 2);
-    let gap = PANE_BORDER_WIDTH;
+    let gap = PANE_BORDER_WIDTH.to_physical(1.0);
     let usable = px(800.0) - gap;
     assert_eq!(rects[0].1.width, (usable * 0.5).floor());
     assert_eq!(rects[1].1.width, usable - rects[0].1.width);
@@ -347,12 +359,12 @@ fn pane_node_find_divider_at_vertical() {
         height: px(600.0),
     };
     // Divider should be at x=400
-    let result = node.find_divider_at(401.0, 300.0, rect, 5.0);
+    let result = node.find_divider_at(401.0, 300.0, rect, 5.0, 1.0);
     assert!(result.is_some());
     assert_eq!(result.unwrap().direction, SplitDirection::Vertical);
 
     // Far from divider
-    let result = node.find_divider_at(200.0, 300.0, rect, 5.0);
+    let result = node.find_divider_at(200.0, 300.0, rect, 5.0, 1.0);
     assert!(result.is_none());
 }
 
@@ -979,4 +991,79 @@ fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
         result.is_err(),
         "a missing shell path must return Err, not Ok or panic"
     );
+}
+
+// ---- 보더 상수의 좌표계 (ADR-0148) ----
+
+/// 두 보더 상수가 **다른 좌표계**라는 것을 배율 2 에서 고정한다.
+///
+/// 배율 1 에서는 두 값이 각각 2·1 로 나오고, 그것은 상수가 논리든 물리든
+/// 똑같다 — 즉 **배율 1 관측으로는 이 결정을 지킬 수 없다.** 배율 2 에서만
+/// 갈린다: pane 보더는 논리라 4 로 커지고, surface 보더는 hairline 이라 1 에
+/// 머문다. 이 테스트가 그 갈림을 자동 채널로 만든다.
+///
+/// 이 단언이 깨지는 경우는 둘이다 — `PANE_BORDER_WIDTH` 를 물리로 되돌렸거나
+/// (그러면 4 가 2 가 된다), `SURFACE_BORDER_WIDTH` 를 논리로 바꿨거나
+/// (그러면 1 이 2 가 된다). 어느 쪽이든 ADR-0148 을 supersede 해야 하는 변경이다.
+#[test]
+fn border_constants_diverge_only_at_scale_two() {
+    // 배율 1: 두 상수의 좌표계가 달라도 관측값이 같다 — 판별 불가 구간.
+    assert_eq!(
+        <PaneNode as BinaryTree>::border_width(1.0),
+        px(2.0),
+        "배율 1 의 pane 보더"
+    );
+    assert_eq!(
+        <SurfaceLayout as BinaryTree>::border_width(1.0),
+        px(1.0),
+        "배율 1 의 surface 보더"
+    );
+
+    // 배율 2: 여기서 갈린다.
+    assert_eq!(
+        <PaneNode as BinaryTree>::border_width(2.0),
+        px(4.0),
+        "pane 보더는 논리라 배율을 탄다"
+    );
+    assert_eq!(
+        <SurfaceLayout as BinaryTree>::border_width(2.0),
+        px(1.0),
+        "surface 보더는 hairline 이라 배율을 안 탄다"
+    );
+}
+
+/// 상수의 좌표계가 실제 레이아웃 계산까지 흘러가는지 — 값 하나가 아니라
+/// `compute_rects` 가 만든 간격으로 확인한다. 상수만 보면 "선언은 맞는데
+/// 레이아웃은 다른 경로로 두께를 정한다" 를 못 가른다.
+#[test]
+fn pane_gap_in_computed_rects_follows_scale() {
+    let node = PaneNode::Split {
+        direction: SplitDirection::Vertical,
+        ratio: 0.5,
+        first: Box::new(PaneNode::Leaf(Pane {
+            id: 1,
+            tabs: vec![],
+            active_tab: 0,
+            tab_scroll_offset: 0.0,
+        })),
+        second: Box::new(PaneNode::Leaf(Pane {
+            id: 2,
+            tabs: vec![],
+            active_tab: 0,
+            tab_scroll_offset: 0.0,
+        })),
+    };
+    let rect = PhysicalRect {
+        x: px(0.0),
+        y: px(0.0),
+        width: px(800.0),
+        height: px(600.0),
+    };
+
+    for (sf, expected_gap) in [(1.0_f32, 2.0_f32), (2.0, 4.0)] {
+        let rects = node.compute_rects(rect, sf);
+        assert_eq!(rects.len(), 2);
+        let gap = rects[1].1.x - (rects[0].1.x + rects[0].1.width);
+        assert_eq!(gap, px(expected_gap), "배율 {sf} 에서 pane 간격");
+    }
 }

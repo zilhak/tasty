@@ -21,10 +21,16 @@ use super::{
 
 /// [`MainView::handle_keybinding_shortcuts`] 및 하위 `match_*_bindings` 가 공유하는
 /// 셀 크기(physical px) — `terminal_rect` 와 같은 typed-length 계열.
+///
+/// `scale_factor` 를 함께 싣는 이유: 이 셋은 **같은 프레임의 같은 창**에서 나오고
+/// 늘 함께 쓰인다(레이아웃 재계산은 셋 다 필요하다). 따로 흘리면 서로 다른
+/// 프레임의 값이 섞일 자리가 생긴다.
 #[derive(Clone, Copy)]
 pub(super) struct CellGeometry {
     pub w: crate::model::PhysicalPx,
     pub h: crate::model::PhysicalPx,
+    /// 논리↔물리 변환 배율. pane 보더가 논리라 레이아웃 계산에 필요하다.
+    pub scale_factor: f32,
 }
 
 impl MainView {
@@ -156,7 +162,13 @@ impl MainView {
                 }
                 .from_user_shortcut("split_pane_vertical"),
             );
-            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+            state.resize_all(
+                engine,
+                terminal_rect,
+                cells.w.value(),
+                cells.h.value(),
+                cells.scale_factor,
+            );
             return true;
         }
         if matches_any_binding(&kb.split_pane_horizontal, key, mods) {
@@ -166,7 +178,13 @@ impl MainView {
                 }
                 .from_user_shortcut("split_pane_horizontal"),
             );
-            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+            state.resize_all(
+                engine,
+                terminal_rect,
+                cells.w.value(),
+                cells.h.value(),
+                cells.scale_factor,
+            );
             return true;
         }
         if matches_any_binding(&kb.split_surface_vertical, key, mods) {
@@ -176,7 +194,13 @@ impl MainView {
                 }
                 .from_user_shortcut("split_surface_vertical"),
             );
-            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+            state.resize_all(
+                engine,
+                terminal_rect,
+                cells.w.value(),
+                cells.h.value(),
+                cells.scale_factor,
+            );
             return true;
         }
         if matches_any_binding(&kb.split_surface_horizontal, key, mods) {
@@ -186,7 +210,13 @@ impl MainView {
                 }
                 .from_user_shortcut("split_surface_horizontal"),
             );
-            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+            state.resize_all(
+                engine,
+                terminal_rect,
+                cells.w.value(),
+                cells.h.value(),
+                cells.scale_factor,
+            );
             return true;
         }
         false
@@ -292,7 +322,13 @@ impl MainView {
         if matches_any_binding(&kb.close_workspace, key, mods) {
             state.close_active_workspace(engine);
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+                state.resize_all(
+                    engine,
+                    terminal_rect,
+                    cells.w.value(),
+                    cells.h.value(),
+                    cells.scale_factor,
+                );
             }
             return true;
         }
@@ -301,7 +337,13 @@ impl MainView {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+                state.resize_all(
+                    engine,
+                    terminal_rect,
+                    cells.w.value(),
+                    cells.h.value(),
+                    cells.scale_factor,
+                );
             }
             return true;
         }
@@ -311,7 +353,13 @@ impl MainView {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+                state.resize_all(
+                    engine,
+                    terminal_rect,
+                    cells.w.value(),
+                    cells.h.value(),
+                    cells.scale_factor,
+                );
             }
             return true;
         }
@@ -390,7 +438,13 @@ impl MainView {
             state.dispatch_intent(
                 crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
             );
-            state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+            state.resize_all(
+                engine,
+                terminal_rect,
+                cells.w.value(),
+                cells.h.value(),
+                cells.scale_factor,
+            );
             return true;
         }
         if matches_any_binding(&kb.quit_immediate, key, mods) {
@@ -515,7 +569,13 @@ impl MainView {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
-                state.resize_all(engine, terminal_rect, cells.w.value(), cells.h.value());
+                state.resize_all(
+                    engine,
+                    terminal_rect,
+                    cells.w.value(),
+                    cells.h.value(),
+                    cells.scale_factor,
+                );
             }
             return true;
         }

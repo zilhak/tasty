@@ -19,8 +19,10 @@ impl MainView {
         if self.core_state.workspaces.is_empty() {
             self.request_close();
         } else {
+            let scale_factor = self.base.gpu.scale_factor();
             let engine = &mut self.core_state;
-            self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+            self.state
+                .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
         }
     }
 
@@ -61,6 +63,8 @@ impl MainView {
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();
         let cell_h = self.base.gpu.cell_height();
+        // `engine` 가변 차용 전에 잡는다.
+        let scale_factor = self.base.gpu.scale_factor();
 
         // Check all configurable bindings for double-tap matches
         let bindings_to_check: Vec<(&[String], &str)> = vec![
@@ -103,7 +107,8 @@ impl MainView {
                             }
                             .from_user_shortcut("new_workspace"),
                         );
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "close_workspace" => {
                         self.state.close_active_workspace(engine);
@@ -113,7 +118,8 @@ impl MainView {
                         if let Err(e) = self.state.add_tab(engine) {
                             tracing::warn!("add_tab failed: {e}");
                         }
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "close_pane" => {
                         if !self.state.close_active_pane(engine) {
@@ -128,7 +134,8 @@ impl MainView {
                             }
                             .from_user_shortcut("split_pane_vertical"),
                         );
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "split_pane_horizontal" => {
                         self.state.dispatch_intent(
@@ -137,7 +144,8 @@ impl MainView {
                             }
                             .from_user_shortcut("split_pane_horizontal"),
                         );
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "split_surface_vertical" => {
                         self.state.dispatch_intent(
@@ -146,7 +154,8 @@ impl MainView {
                             }
                             .from_user_shortcut("split_surface_vertical"),
                         );
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "split_surface_horizontal" => {
                         self.state.dispatch_intent(
@@ -155,7 +164,8 @@ impl MainView {
                             }
                             .from_user_shortcut("split_surface_horizontal"),
                         );
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "focus_pane_next" => {
                         self.state.move_pane_focus_forward(engine);
@@ -181,7 +191,8 @@ impl MainView {
                             crate::intent::Intent::RestoreClosedItem
                                 .from_user_shortcut("restore_closed"),
                         );
-                        self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                        self.state
+                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                     }
                     "quit" => {
                         send_app_event(&self.proxy, crate::AppEvent::QuitRequested);

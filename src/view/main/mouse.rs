@@ -56,13 +56,14 @@ impl MainView {
         // 마우스 아래 surface id를 구하고 그 surface의 terminal을 사용.
         // focused 기반이 아니라 실제 hover 위치의 surface로 판별해야 여러 pane 중
         // 어느 곳이든 동작한다.
-        let surface_id = self
-            .state
-            .surface_id_at_position(engine, x, y, terminal_rect)?;
+        let scale_factor = self.base.gpu.scale_factor();
+        let surface_id =
+            self.state
+                .surface_id_at_position(engine, x, y, terminal_rect, scale_factor)?;
         let terminal = engine.find_terminal_by_id(surface_id)?;
-        let surface_rect = self
-            .state
-            .surface_rect_by_id(engine, surface_id, terminal_rect)?;
+        let surface_rect =
+            self.state
+                .surface_rect_by_id(engine, surface_id, terminal_rect, scale_factor)?;
 
         let (cols, rows) = terminal.dimensions();
         let point = crate::selection::pixel_to_grid(
@@ -283,20 +284,30 @@ impl MainView {
         if let Some(drag) = self.dragging_divider {
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
+            let scale_factor = self.base.gpu.scale_factor();
             let changed = {
                 let engine = &mut self.core_state;
                 let changed = match drag.kind {
-                    DividerDragKind::Pane => {
-                        self.state
-                            .update_pane_divider(engine, &drag.info, x, y, terminal_rect)
-                    }
-                    DividerDragKind::Surface => {
-                        self.state
-                            .update_surface_divider(engine, &drag.info, x, y, terminal_rect)
-                    }
+                    DividerDragKind::Pane => self.state.update_pane_divider(
+                        engine,
+                        &drag.info,
+                        x,
+                        y,
+                        terminal_rect,
+                        scale_factor,
+                    ),
+                    DividerDragKind::Surface => self.state.update_surface_divider(
+                        engine,
+                        &drag.info,
+                        x,
+                        y,
+                        terminal_rect,
+                        scale_factor,
+                    ),
                 };
                 if changed {
-                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                    self.state
+                        .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
                 }
                 changed
             };
@@ -499,19 +510,23 @@ impl MainView {
             && let Some(pos) = self.cursor_position
         {
             let terminal_rect = self.compute_terminal_rect();
+            let scale_factor = self.base.gpu.scale_factor();
             let (x, y) = (pos.x as f32, pos.y as f32);
-            if let Some(sid) =
-                self.state
-                    .surface_id_at_position(&self.core_state, x, y, terminal_rect)
-                && self.state.focused_surface_id(&self.core_state) != Some(sid)
+            if let Some(sid) = self.state.surface_id_at_position(
+                &self.core_state,
+                x,
+                y,
+                terminal_rect,
+                scale_factor,
+            ) && self.state.focused_surface_id(&self.core_state) != Some(sid)
             {
                 let engine = &mut self.core_state;
-                let changed_pane = self
-                    .state
-                    .focus_pane_at_position(engine, x, y, terminal_rect);
+                let changed_pane =
+                    self.state
+                        .focus_pane_at_position(engine, x, y, terminal_rect, scale_factor);
                 let changed_surf =
                     self.state
-                        .focus_surface_at_position(engine, x, y, terminal_rect);
+                        .focus_surface_at_position(engine, x, y, terminal_rect, scale_factor);
                 if changed_pane || changed_surf {
                     self.base.dirty = true;
                 }
@@ -576,10 +591,13 @@ impl MainView {
         if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
             return;
         }
-        let Some(surface_id) =
-            self.state
-                .surface_id_at_position(&self.core_state, x, y, terminal_rect)
-        else {
+        let Some(surface_id) = self.state.surface_id_at_position(
+            &self.core_state,
+            x,
+            y,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) else {
             return;
         };
         let tracking = self
@@ -647,9 +665,13 @@ impl MainView {
         if let Some(pos) = self.cursor_position {
             let (x, y) = (pos.x as f32, pos.y as f32);
             if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y))
-                && let Some(surface_id) =
-                    self.state
-                        .surface_id_at_position(&self.core_state, x, y, terminal_rect)
+                && let Some(surface_id) = self.state.surface_id_at_position(
+                    &self.core_state,
+                    x,
+                    y,
+                    terminal_rect,
+                    self.base.gpu.scale_factor(),
+                )
                 && self
                     .core_state
                     .find_terminal_by_id(surface_id)
@@ -728,21 +750,25 @@ impl MainView {
         // hard 점유 화면은 최대 3초 지연된 mirror 스냅샷이라 그 시점에 보이는 링크가
         // 실제 PTY 상태와 다를 수 있다(ADR-0049). false 를 반환하면 handle_left_button 이
         // 기존처럼 press/release(선택·드래그)로 위임한다.
-        if let Some(sid) = self
-            .state
-            .surface_id_at_position(&self.core_state, x, y, *terminal_rect)
-            && self.core_state.attach.is_hard_occupied(sid)
+        if let Some(sid) = self.state.surface_id_at_position(
+            &self.core_state,
+            x,
+            y,
+            *terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) && self.core_state.attach.is_hard_occupied(sid)
         {
             return false;
         }
         if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
+            let scale_factor = self.base.gpu.scale_factor();
             let engine = &mut self.core_state;
-            let changed_pane = self
-                .state
-                .focus_pane_at_position(engine, x, y, *terminal_rect);
-            let changed_surf = self
-                .state
-                .focus_surface_at_position(engine, x, y, *terminal_rect);
+            let changed_pane =
+                self.state
+                    .focus_pane_at_position(engine, x, y, *terminal_rect, scale_factor);
+            let changed_surf =
+                self.state
+                    .focus_surface_at_position(engine, x, y, *terminal_rect, scale_factor);
             if changed_pane || changed_surf {
                 self.base.dirty = true;
             }
@@ -826,15 +852,16 @@ impl MainView {
     /// 좌클릭 로컬/보고 선택 시작. focus 전환 + IME flush 후, 순수
     /// `left_click_local_select` 결정에 따라 로컬 선택 시작 / 앱 보고 / Shift extend.
     fn begin_left_selection(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
+        let scale_factor = self.base.gpu.scale_factor();
         let engine = &mut self.core_state;
         let (need_flush, mouse_tracking) = {
             let old_surface = self.state.focused_surface_id(engine);
-            let changed_pane = self
-                .state
-                .focus_pane_at_position(engine, x, y, *terminal_rect);
-            let changed_surf = self
-                .state
-                .focus_surface_at_position(engine, x, y, *terminal_rect);
+            let changed_pane =
+                self.state
+                    .focus_pane_at_position(engine, x, y, *terminal_rect, scale_factor);
+            let changed_surf =
+                self.state
+                    .focus_surface_at_position(engine, x, y, *terminal_rect, scale_factor);
             if changed_pane || changed_surf {
                 self.base.dirty = true;
             }
@@ -926,9 +953,10 @@ impl MainView {
             self.dragging_divider = None;
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
+            let scale_factor = self.base.gpu.scale_factor();
             let engine = &mut self.core_state;
             self.state
-                .resize_all(engine, *terminal_rect, cell_w, cell_h);
+                .resize_all(engine, *terminal_rect, cell_w, cell_h, scale_factor);
             self.base.dirty = true;
         }
         // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료. 단, Shift+좌클릭
@@ -989,10 +1017,12 @@ impl MainView {
         else {
             return (1, 1);
         };
-        let Some(rect) = self
-            .state
-            .surface_rect_by_id(&self.core_state, surface_id, terminal_rect)
-        else {
+        let Some(rect) = self.state.surface_rect_by_id(
+            &self.core_state,
+            surface_id,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) else {
             return (1, 1);
         };
         let point = crate::selection::pixel_to_grid(
@@ -1074,10 +1104,13 @@ impl MainView {
                 )
             })
             .is_some();
-        let over_focused_surface =
-            self.state
-                .surface_id_at_position(&self.core_state, x, y, *terminal_rect)
-                == Some(sid);
+        let over_focused_surface = self.state.surface_id_at_position(
+            &self.core_state,
+            x,
+            y,
+            *terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) == Some(sid);
         if !should_report_hover_motion(HoverReportInput {
             window_focused: self.base.focused,
             over_focused_surface,
@@ -1190,8 +1223,13 @@ impl MainView {
                 .cursor_position
                 .and_then(|pos| {
                     let (x, y) = (pos.x as f32, pos.y as f32);
-                    self.state
-                        .surface_id_at_position(&self.core_state, x, y, terminal_rect)
+                    self.state.surface_id_at_position(
+                        &self.core_state,
+                        x,
+                        y,
+                        terminal_rect,
+                        self.base.gpu.scale_factor(),
+                    )
                 })
                 .or_else(|| self.state.focused_surface_id(&self.core_state));
 
@@ -1242,6 +1280,7 @@ impl MainView {
                                 &self.core_state,
                                 surface_id,
                                 terminal_rect,
+                                self.base.gpu.scale_factor(),
                             )?;
                             let point = crate::selection::pixel_to_grid(
                                 x,

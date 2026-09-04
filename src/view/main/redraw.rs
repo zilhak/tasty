@@ -44,12 +44,14 @@ impl MainView {
             let terminal_rect = self.compute_terminal_rect();
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
+            let scale_factor = self.base.gpu.scale_factor();
             crate::core::Core::resize_all_terminals(
                 &self.state,
                 &mut self.core_state,
                 terminal_rect,
                 cell_w,
                 cell_h,
+                scale_factor,
             );
         }
 
@@ -398,7 +400,9 @@ impl MainView {
         let mut all_html_ids: Vec<u32> = Vec::new();
 
         for (ws_idx, ws) in self.core_state.workspaces.iter().enumerate() {
-            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+            let pane_rects = ws
+                .pane_layout()
+                .compute_rects(terminal_rect, scale_factor as f32);
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     // tab bar 아래 콘텐츠 영역 — 탭 내부 분할(SurfaceGroup)의 leaf rect
@@ -419,7 +423,9 @@ impl MainView {
                         // 탭당 1 개(`Tab::surface()` = 포커스 leaf)가 아니라 레이아웃
                         // 트리의 모든 leaf 를 본다 — 비포커스 leaf 의 webview 도
                         // native overlay 를 가져야 한다.
-                        for (sid, leaf_rect) in layout.compute_rects(content_rect) {
+                        for (sid, leaf_rect) in
+                            layout.compute_rects(content_rect, scale_factor as f32)
+                        {
                             let Some(surface) = layout.find_surface(sid) else {
                                 continue;
                             };

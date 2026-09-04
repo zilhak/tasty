@@ -17,7 +17,10 @@ pub enum PaneNode {
 
 impl BinaryTree for PaneNode {
     type Id = PaneId;
-    const BORDER_WIDTH: PhysicalPx = crate::PANE_BORDER_WIDTH;
+    /// pane 보더는 **논리**라 배율을 받아 물리로 내린다.
+    fn border_width(scale_factor: f32) -> PhysicalPx {
+        crate::PANE_BORDER_WIDTH.to_physical(scale_factor)
+    }
 
     fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)> {
         match self {
@@ -362,12 +365,16 @@ impl PaneNode {
         <Self as BinaryTree>::prev_id(self, current)
     }
 
-    pub fn compute_rects(&self, rect: PhysicalRect) -> Vec<(PaneId, PhysicalRect)> {
-        <Self as BinaryTree>::compute_rects(self, rect)
+    pub fn compute_rects(
+        &self,
+        rect: PhysicalRect,
+        scale_factor: f32,
+    ) -> Vec<(PaneId, PhysicalRect)> {
+        <Self as BinaryTree>::compute_rects(self, rect, scale_factor)
     }
 
-    pub fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
-        <Self as BinaryTree>::collect_dividers(self, rect)
+    pub fn collect_dividers(&self, rect: PhysicalRect, scale_factor: f32) -> Vec<PhysicalRect> {
+        <Self as BinaryTree>::collect_dividers(self, rect, scale_factor)
     }
 
     pub fn find_divider_at(
@@ -376,8 +383,9 @@ impl PaneNode {
         y: f32,
         rect: PhysicalRect,
         threshold: f32,
+        scale_factor: f32,
     ) -> Option<DividerInfo> {
-        <Self as BinaryTree>::find_divider_at(self, x, y, rect, threshold)
+        <Self as BinaryTree>::find_divider_at(self, x, y, rect, threshold, scale_factor)
     }
 
     pub fn update_ratio_for_rect(
@@ -385,8 +393,15 @@ impl PaneNode {
         split_rect: PhysicalRect,
         new_ratio: f32,
         current_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
-        <Self as BinaryTree>::update_ratio_for_rect(self, split_rect, new_ratio, current_rect)
+        <Self as BinaryTree>::update_ratio_for_rect(
+            self,
+            split_rect,
+            new_ratio,
+            current_rect,
+            scale_factor,
+        )
     }
 
     pub fn directional_focus(

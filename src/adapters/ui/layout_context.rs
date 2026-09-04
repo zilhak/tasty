@@ -32,7 +32,9 @@ pub(crate) fn build_layout_context(
 
     // Compute surface rects using surface_regions
     let mut surface_rects = Vec::new();
-    for (_pane_id, _pane_rect, regions) in state.surface_regions(engine, terminal_rect) {
+    for (_pane_id, _pane_rect, regions) in
+        state.surface_regions(engine, terminal_rect, scale_factor)
+    {
         for r in regions {
             surface_rects.push((
                 r.id,

@@ -1104,7 +1104,7 @@ fn occupancy_suppresses_completion_highlight() {
 
     // 대조군: attention 만 → kind Some(Completion).
     engine.raise_attention(sid, AttentionKind::Completion);
-    let regions = regions_from_state(&state, &engine, term_rect);
+    let regions = regions_from_state(&state, &engine, term_rect, 1.0);
     assert!(
         regions
             .iter()
@@ -1117,7 +1117,7 @@ fn occupancy_suppresses_completion_highlight() {
         .attach
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
-    let regions = regions_from_state(&state, &engine, term_rect);
+    let regions = regions_from_state(&state, &engine, term_rect, 1.0);
     assert!(
         regions.iter().all(|r| r.kind.is_none()),
         "점유 중이면 완료 테두리를 억제해야 한다(점유 > 완료)"
@@ -1153,7 +1153,7 @@ fn needs_input_not_suppressed_by_occupancy() {
         .acquire_soft(sid, /* parent */ 9999, Some("agent".into()))
         .expect("soft 점유 획득");
     engine.raise_attention(sid, AttentionKind::NeedsInput);
-    let regions = regions_from_state(&state, &engine, term_rect);
+    let regions = regions_from_state(&state, &engine, term_rect, 1.0);
     assert!(
         regions
             .iter()

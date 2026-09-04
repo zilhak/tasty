@@ -143,9 +143,11 @@ impl MainView {
         y: f32,
     ) -> Option<(u32, String, PhysicalRect)> {
         let terminal_rect = self.compute_terminal_rect();
-        for (_pane_id, _pane_rect, regions) in
-            self.state.surface_regions(&self.core_state, terminal_rect)
-        {
+        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
+            &self.core_state,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
                     && let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>()
@@ -351,9 +353,11 @@ impl MainView {
         // 대상 수집 (surface_id, plugin_id, 물리 rect, kind, file, display_name).
         // kind/file/display_name 은 bootstrap 시 plugin 에 보낼 surface.create params 용.
         let mut targets: Vec<MeshTarget> = Vec::new();
-        for (_pane_id, _pane_rect, regions) in
-            self.state.surface_regions(&self.core_state, terminal_rect)
-        {
+        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
+            &self.core_state,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) {
             for r in regions {
                 if let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>() {
                     targets.push(MeshTarget {

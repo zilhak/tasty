@@ -314,6 +314,7 @@ impl MainView {
             preedit.anchor_row,
             self.base.gpu.cell_width(),
             self.base.gpu.cell_height(),
+            self.base.gpu.scale_factor(),
         ) else {
             return;
         };
@@ -451,8 +452,14 @@ impl View for MainView {
                     self.core_state.update_grid_size(cols, rows);
                     let cell_w = self.base.gpu.cell_width();
                     let cell_h = self.base.gpu.cell_height();
-                    self.state
-                        .resize_all(&mut self.core_state, terminal_rect, cell_w, cell_h);
+                    let scale_factor = self.base.gpu.scale_factor();
+                    self.state.resize_all(
+                        &mut self.core_state,
+                        terminal_rect,
+                        cell_w,
+                        cell_h,
+                        scale_factor,
+                    );
                 }
                 self.mark_dirty();
             }

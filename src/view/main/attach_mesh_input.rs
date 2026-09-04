@@ -54,9 +54,11 @@ impl MainView {
     /// [`super::egui_mesh::MainView::egui_mesh_target_at`]의 attach 대응.
     pub(super) fn attach_mesh_target_at(&self, x: f32, y: f32) -> Option<(u32, PhysicalRect)> {
         let terminal_rect = self.compute_terminal_rect();
-        for (_pane_id, _pane_rect, regions) in
-            self.state.surface_regions(&self.core_state, terminal_rect)
-        {
+        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
+            &self.core_state,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y))
                     && r.surface
@@ -186,9 +188,11 @@ impl MainView {
         let current_theme = self.mesh_theme_snapshot();
 
         let mut targets: Vec<(u32, PhysicalRect)> = Vec::new();
-        for (_pane_id, _pane_rect, regions) in
-            self.state.surface_regions(&self.core_state, terminal_rect)
-        {
+        for (_pane_id, _pane_rect, regions) in self.state.surface_regions(
+            &self.core_state,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) {
             for r in regions {
                 if r.surface
                     .as_any()
