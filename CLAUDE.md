@@ -104,11 +104,19 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 49 개 — 그중 `
 
 | 목적 | 명령 | 어디서 도는가 |
 |------|------|---------------|
-| 빌드 (dev) | `cargo build` — **plugin 을 고쳤으면 `cargo build --workspace`** (아래) | 자동 채널 없음. macOS·Windows 컴파일은 CI 가 본다(`crossplatform-check`), Linux gui 컴파일은 아무 자동 잡도 안 본다 |
+| 빌드 (dev) | `cargo build` — **plugin 을 고쳤으면 `cargo build --workspace`** (아래) | 자동 채널 없음. macOS·Windows 컴파일은 `crossplatform-check` 의 잡이 배선돼 있고(작업 트리 기준), Linux gui 컴파일은 아무 자동 잡도 안 본다. **배선과 초록은 다르다** — 표 아래 "배선돼 있다는 것과 초록이라는 것" 참조 |
 | 빌드 (release 검증) | `cargo build --release` | 자동 채널 없음(dist 산출물은 `build-check.yml` 수동) |
-| lint | `cargo clippy --workspace --all-targets --locked` | 이 조합은 CI 의 **Windows 잡에서만** 돈다. pre-push 훅은 비슷하지만 다르다(`--locked` 없음 + `-- -D clippy::correctness`) |
+| lint | `cargo clippy --workspace --all-targets --locked` | 이 조합을 배선한 자동 잡은 `crossplatform-check` 의 Windows 잡 하나뿐이다 — **그 하나가 빨간 동안 이 조합에는 실행 채널이 없다.** pre-push 훅은 비슷하지만 다르다(`--locked` 없음 + `-- -D clippy::correctness`) |
 | 포맷 검사 | `cargo fmt --check` | ✅ 자동 — `format-check.yml`(main push · PR) + pre-commit A.2 |
 | 테스트 | `cargo test --workspace --locked` | **이 조합(기본 feature) 그대로는 자동 채널 없음** — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다. 다만 `check-headless` 가 main push 마다 **헤드리스 조합의 전체 스위트**를 돌아 통합 테스트 대부분이 자동으로 실행된다(실측 `d7dc4079`: 통합 항목 474 중 438). 자동으로 안 도는 것은 `tests/gui_tests.rs` 33 건과 명명 `--skip` 3 건뿐이다 |
+
+- **배선돼 있다는 것과 초록이라는 것은 다르다 (필수).** 위 표는 워크플로 **파일**이 무엇을 배선했는지를 작업 트리 기준으로 적는다 — 그 잡이 지금 통과하는지는 적지 않는다([ADR-0139](docs/adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md): 커밋마다 바뀌는 값은 적는 순간 낡는다). 그러니 **"CI 가 본다" 를 근거로 자기 검증을 면제하려면 그 자리에서 직접 세라.** 규칙의 정본은 [`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md) 의 "채널이 있다는 것은 그 잡이 초록이라는 뜻이 아니다" 이고, 층의 정의는 [ADR-0142](docs/adr/0142-channel-claims-are-written-against-the-working-tree.md) 에 있다. 재는 명령:
+  ```bash
+  gh run list --limit 10                          # 워크플로 결론까지만 나온다
+  gh run view <run-id> --json jobs \
+    --jq '.jobs[] | "\(.conclusion) \(.name)"'   # 잡 단위 — 면제 판정은 이 줄로 한다
+  ```
+  **첫 줄만 보면 살아 있는 채널을 죽은 것으로 센다.** 워크플로 결론은 잡 하나만 빨개도 빨강이라, 잡이 여럿인 워크플로에서는 나머지가 초록인 것이 안 보인다 — `crossplatform-check` 가 그 형태다(잡 셋). 반대 방향의 함정도 있다: **앞 스텝이 죽으면 뒤 스텝은 아예 안 돈다.** 그때 뒤 스텝의 결과는 `0 failed` 로도 안 나온다 — 줄 자체가 없다. 그래서 **잡이 빨간 동안 그 잡이 배선한 커버리지는 실패가 아니라 미측정으로 센다.**
 
 - **`cargo build` 는 plugin 바이너리를 다시 만들지 않는다 (필수)**: `crates/tasty-plugin-*/src/` 를 고치고 루트에서 `cargo build` 를 돌려도 `target/debug/tasty-plugin-<name>` 이 갱신되지 않는다(실측). `cargo build --workspace` 나 `cargo build -p tasty-plugin-<name>` 은 갱신한다. host 는 **부팅할 때** `copy_if_newer` 로 `target/<profile>/builtin-plugins/` 를 채우고 거기서 `<TASTY_HOME>/plugins/` 로 sync 하므로(`crates/tasty-host-plugin/src/builtin.rs`), 안 만들어진 바이너리는 **낡은 채로 조용히 실행된다.** 그래서 plugin 을 고친 뒤 GUI·주입으로 확인하면 **직전 plugin 코드를 재게 되고, 그 오진은 양방향이다** — 고친 것이 안 고쳐진 것처럼도, 되돌린 것이 여전히 고쳐진 것처럼도 보인다. 뒤쪽은 뮤테이션 "죽었다/살아남았다" 판정을 통째로 뒤집으므로 그 위의 모든 판정이 무효가 된다. 정식 절차는 `PROFILE=debug just build-plugins`(빌드 + 스테이징). **측정 전에 한 줄로 확인한다:**
   ```bash
