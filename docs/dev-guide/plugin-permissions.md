@@ -129,8 +129,11 @@ owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게
 IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 거부):
 
 이 표는 위 [토큰 전체](#토큰-전체--무엇을-여나) 와 **방향이 반대인 색인**이다 — 위는 `토큰 → 여는 것`,
-여기는 `contributes 항목 → 요구 토큰`. 둘 다 `crates/tasty-plugin-manifest/src/validate.rs` 의 같은
-게이트를 가리키므로 한쪽만 갱신하면 어긋난다.
+여기는 `contributes 항목 → 요구 토큰`.
+
+게이트 목록의 단일 출처는 `crates/tasty-plugin-manifest/src/gates.rs` 의 `ContributesGate` 표다.
+`validate.rs` 의 검증 코드는 토큰 문자열을 그 표에서만 가져오고, `tests/contributes_gate_docs_parity.rs`
+가 표와 아래 행을 **양방향으로** 대조한다 — 코드에만 있는 게이트도, 문서에만 남은 행도 CI 에서 깨진다.
 
 | contributes | 요구 권한 |
 |-------------|-----------|
@@ -148,6 +151,14 @@ IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 
 | `[[contributes.completion_strategy]]` | `completion_strategy.define` |
 
 `event_subscribe` 는 별도 권한 없음 — 패턴 자체가 게이트.
+
+### 새 게이트 추가
+
+1. `gates.rs` 의 `contributes_gates!` 에 행 추가 — `enum` · `ALL` · `contributes_key` · `token` 이
+   그 한 행에서 함께 생성되므로 넷이 어긋날 수 없다.
+2. `validate.rs` 의 해당 검증 함수에서 `ContributesGate::<Variant>.required(...)` 로 토큰을 얻어
+   `permissions[]` 대조 — 토큰 리터럴을 그 자리에 다시 적지 않는다.
+3. 위 표에 행 추가. 빠뜨리면 parity 가드가 깨진다.
 
 ## Builtin 자동 grant
 
