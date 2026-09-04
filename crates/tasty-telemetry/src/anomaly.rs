@@ -5,6 +5,8 @@
 //! 필요할 수 있음"을 알리는 용도. false positive/negative 둘 다 있을 수
 //! 있다는 전제로 소비해야 한다.
 
+use std::sync::atomic::AtomicBool;
+
 use serde::{Deserialize, Serialize};
 
 pub const ANOMALY_KEY_PREFIX: &str = "tasty.telemetry.anomaly.";
@@ -112,6 +114,23 @@ pub struct AnomalyDetector {
     last_emitted: std::sync::Mutex<std::collections::HashMap<(String, AnomalyKind, String), u64>>,
 }
 
+/// 탐지 창(window)별 poison 보고 플래그(각각 첫 1 회만).
+///
+/// 넷 모두 임계구역이 `HashMap<_, VecDeque<_>>` 조작뿐이라 패닉이 나도 불변식이
+/// 성립한다 — 복구가 맞다. 반대로 여기서 패닉하면 IPC 호출 경로를 타고 호스트가
+/// 죽는다: **관측 도구가 관측 대상을 죽이는 것**은 어떤 경우에도 답이 아니다.
+/// 조용히 `None` 을 돌려주던 종전 형태는 이상 탐지가 **영구히 침묵**하게 만들었다 —
+/// 침묵하는 탐지기는 "이상이 없다" 와 구분되지 않는다.
+static CALL_WINDOWS_POISONED: AtomicBool = AtomicBool::new(false);
+static LOOP_WINDOWS_POISONED: AtomicBool = AtomicBool::new(false);
+static RSS_SAMPLES_POISONED: AtomicBool = AtomicBool::new(false);
+static LAST_EMITTED_POISONED: AtomicBool = AtomicBool::new(false);
+
+const CALL_WINDOWS_WHAT: &str = "telemetry call-burst window";
+const LOOP_WINDOWS_WHAT: &str = "telemetry slow-loop window";
+const RSS_SAMPLES_WHAT: &str = "telemetry rss sample window";
+const LAST_EMITTED_WHAT: &str = "telemetry anomaly dedup map";
+
 impl AnomalyDetector {
     pub fn new() -> Self {
         Self::default()
@@ -155,7 +174,11 @@ impl AnomalyDetector {
     ) -> Option<Anomaly> {
         let key = (agent.to_string(), method.to_string());
         let count = {
-            let mut windows = self.call_windows.lock().ok()?;
+            let mut windows = tasty_utils::poison::recover_mutex(
+                self.call_windows.lock(),
+                CALL_WINDOWS_WHAT,
+                &CALL_WINDOWS_POISONED,
+            );
             let dq = windows.entry(key).or_default();
             dq.push_back(ts_ms);
             let cutoff = ts_ms.saturating_sub(CALL_BURST_WINDOW_MS);
@@ -206,7 +229,11 @@ impl AnomalyDetector {
     ) -> Option<Anomaly> {
         let key = (agent.to_string(), method.to_string(), params_hash);
         let count = {
-            let mut windows = self.loop_windows.lock().ok()?;
+            let mut windows = tasty_utils::poison::recover_mutex(
+                self.loop_windows.lock(),
+                LOOP_WINDOWS_WHAT,
+                &LOOP_WINDOWS_POISONED,
+            );
             let dq = windows.entry(key).or_default();
             dq.push_back(ts_ms);
             let cutoff = ts_ms.saturating_sub(SLOW_LOOP_WINDOW_MS);
@@ -262,7 +289,11 @@ impl AnomalyDetector {
         id_seq: u64,
     ) -> Option<Anomaly> {
         let (is_monotonic, snapshot) = {
-            let mut samples = self.rss_samples.lock().ok()?;
+            let mut samples = tasty_utils::poison::recover_mutex(
+                self.rss_samples.lock(),
+                RSS_SAMPLES_WHAT,
+                &RSS_SAMPLES_POISONED,
+            );
             let dq = samples.entry(agent.to_string()).or_default();
             dq.push_back(rss_bytes);
             while dq.len() > RSS_SURGE_MIN_SAMPLES {
@@ -302,9 +333,11 @@ impl AnomalyDetector {
 
     /// dedup 체크 + emit 마킹을 한 번에. 쿨다운 내면 `false`(발화 취소).
     fn try_mark_emitted(&self, dedup_key: (String, AnomalyKind, String), ts_ms: u64) -> bool {
-        let Ok(mut last) = self.last_emitted.lock() else {
-            return false;
-        };
+        let mut last = tasty_utils::poison::recover_mutex(
+            self.last_emitted.lock(),
+            LAST_EMITTED_WHAT,
+            &LAST_EMITTED_POISONED,
+        );
         if let Some(&prev) = last.get(&dedup_key)
             && ts_ms.saturating_sub(prev) < ANOMALY_DEDUP_COOLDOWN_MS
         {
@@ -317,4 +350,35 @@ impl AnomalyDetector {
 
 fn anomaly_id(ts_ms: u64, id_seq: u64) -> String {
     format!("anom_{ts_ms:013}{seq:04}", seq = id_seq % 10_000)
+}
+
+#[cfg(test)]
+mod poison_tests {
+    use super::*;
+
+    /// 탐지 창이 poison 돼도 이상 탐지가 계속 발화한다.
+    ///
+    /// 조용히 `None` 을 돌려주던 종전 형태에서는 이 상황이 "이상 없음" 과 구분되지
+    /// 않았다 — 탐지기가 영구히 침묵하는데 그 사실을 아무도 모른다.
+    #[test]
+    fn a_poisoned_sample_window_still_fires() {
+        let d = AnomalyDetector::new();
+        let held = std::sync::Arc::new(d);
+        let poisoner = std::sync::Arc::clone(&held);
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.rss_samples.lock().expect("fresh lock");
+            panic!("poison the rss sample window on purpose");
+        })
+        .join();
+        assert!(held.rss_samples.is_poisoned(), "전제: 락이 poison 이다");
+
+        let mut fired = None;
+        for i in 0..RSS_SURGE_MIN_SAMPLES {
+            let rss = 100_000_000 + (i as u64) * 10_000_000;
+            fired = held.record_rss_sample("plugin_a", rss, 1_000 + i as u64, i as u64);
+        }
+        let a = fired.expect("poison 이후에도 RssSurge 가 발화해야 한다");
+        assert_eq!(a.kind, AnomalyKind::RssSurge);
+    }
 }
