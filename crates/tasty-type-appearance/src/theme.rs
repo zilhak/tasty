@@ -887,15 +887,21 @@ pub struct Theme {
     pub font_size_max: LogicalPx,
     /// markdown surface heading 앵커 — egui_commonmark 헤딩 사다리 최상단(H1). 렌더 CONTENT 라
     /// UI 14px 상한 예외 (20px). per-H2·본문 leading 은 라이브러리 소유로 은퇴됨.
+    /// **zoom 제외 — 렌더 콘텐츠라 UI 배율 축 밖이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_prose_h1: LogicalPx,
     /// UI 텍스트(툴팁 등) 줄간격 배수 (1.4, design `--tasty-line-height-ui`). 무차원 비율.
     pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
+    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
+    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_term: LogicalPx,
     /// terminal cell 스케일 — large (16px).
+    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_term_lg: LogicalPx,
+    /// 기본 보더 굵기 (1px).
+    /// **zoom 제외 — 1px 보더 정책. 배율을 태우면 hairline 이 아니게 된다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub border_width: LogicalPx,
     /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
     /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
@@ -911,6 +917,7 @@ pub struct Theme {
     /// 하는 구간은 굵기를 직접 정해야 한다. `border_width`(1) 와
     /// `focus_ring_width`(2) 사이의 hairline 이고 DTCG dim 토큰에 대응이 없다
     /// (`icon_glyph_size_row_action` 과 같은 부류).
+    /// **zoom 제외 — hairline. 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub icon_stroke_width: LogicalPx,
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
@@ -920,6 +927,8 @@ pub struct Theme {
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
+    /// 탭 하나의 기본 폭. 본체 탭바는 `AppearanceSettings.tab_width` 를 읽고, 이 필드의 소비자는 갤러리와 sub-menu 패널 폭이다.
+    /// **zoom 제외 — 탭바 크롬. 컨테이너와 그 안의 폰트가 함께 고정이라 클리핑이 안 난다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_width: LogicalPx,
     pub spacing_xs: LogicalPx,
     pub spacing_sm: LogicalPx,
@@ -949,15 +958,31 @@ pub struct Theme {
     pub sidebar_collapsed_icon_height: LogicalPx,
     pub sidebar_collapsed_workspace_height: LogicalPx,
     // ── Tab bar 전용 (host UI zoom 영향 받지 않음) ──
+    /// 탭바 자체 높이.
+    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_bar_height: LogicalPx,
+    /// 탭 라벨 폰트 크기.
+    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_bar_label_font_size: LogicalPx,
+    /// 좌/우 스크롤 화살표 폰트 크기.
+    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_bar_arrow_font_size: LogicalPx,
     // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
+    /// 작업영역 하단 StatusBar 높이.
+    /// **zoom 제외 — 상태바 크롬. 컨테이너와 내용이 함께 고정이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub status_bar_height: LogicalPx,
     // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
+    /// CSD 타이틀바 높이.
+    /// **zoom 제외 — CSD 타이틀바 크롬. OS 창 장식 기하라 배율과 독립이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub titlebar_height: LogicalPx,
+    /// macOS 신호등(traffic light) 점 지름.
+    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub traffic_size: LogicalPx,
+    /// Windows 캡션 버튼(min·max·close) 폭.
+    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub caption_width: LogicalPx,
+    /// Linux DE 버튼(min·max·close) 원형 지름.
+    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub window_button_size: LogicalPx,
     // ── 가독 폭 (Note / content / 모달 컬럼용) ──
     pub measure_sm: LogicalPx,
@@ -978,6 +1003,7 @@ pub struct Theme {
     pub toast_accent_width: LogicalPx,
     /// 한쪽 변에 붙는 띠(탭 밑줄·활성 행 좌측 accent 바). 감싸는 링은
     /// `focus_ring_width` — 값은 같은 2 지만 그쪽만 zoom 을 탄다.
+    /// **zoom 제외 — hairline 띠.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
 
