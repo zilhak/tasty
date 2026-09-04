@@ -1677,7 +1677,7 @@ fn font_family_picker(
 
                 if let Some(families) = font_families {
                     egui::ScrollArea::vertical()
-                        .max_height(250.0)
+                        .max_height(th.font_family_menu_max_height().value())
                         .drag_to_scroll(false)
                         .show(ui, |ui| {
                             for family in families {

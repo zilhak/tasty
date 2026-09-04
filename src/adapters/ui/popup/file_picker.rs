@@ -442,7 +442,7 @@ fn center_state(
                     .color(th.text_primary()),
             );
             if let Some(b) = body_text {
-                ui.set_max_width(340.0);
+                ui.set_max_width(th.file_picker_note_max_width().value());
                 ui.label(
                     egui::RichText::new(b)
                         .size(th.font_size_caption.value())

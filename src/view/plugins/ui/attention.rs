@@ -84,7 +84,7 @@ pub(super) fn draw_attention_tab(
     }
 
     egui::SidePanel::left("plugins_attention_list")
-        .exact_width(240.0)
+        .exact_width(th.plugins_side_panel_width().value())
         .resizable(false)
         .show(ctx, |ui| {
             vspace(ui, th.spacing_sm);

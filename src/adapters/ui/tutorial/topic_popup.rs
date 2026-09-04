@@ -83,7 +83,7 @@ pub fn draw_tutorial_topics_popup(
         .show(ui, |ui| {
             ui.set_width(width);
             egui::ScrollArea::vertical()
-                .max_height(200.0)
+                .max_height(th.tutorial_topic_body_max_height().value())
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = th.spacing_xs.value();

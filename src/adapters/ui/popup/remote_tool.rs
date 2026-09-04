@@ -614,7 +614,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         // 디자인 헤더 콘텐츠 높이 ~24 (title fontSize14 line-height). egui label/icon 은
         // 텍스트 박스가 더 낮아(~18) 헤더가 얕아진다 → min_height 로 디자인 높이 강제.
         // popup border 가 stroke Outside 라 콘텐츠가 1px 위에서 시작 → +2 보정해 26.
-        ui.set_min_height(26.0);
+        ui.set_min_height(th.remote_tool_header_min_height().value());
         ui.spacing_mut().item_spacing.x = HEADER_GAP_X;
         // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
         ui.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));

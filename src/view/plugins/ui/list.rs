@@ -37,7 +37,7 @@ pub(super) fn draw_list_tab(
         .collect();
 
     egui::SidePanel::left("plugins_list")
-        .exact_width(240.0)
+        .exact_width(th.plugins_side_panel_width().value())
         .resizable(false)
         .show(ctx, |ui| {
             vspace(ui, th.spacing_sm);

@@ -1351,7 +1351,7 @@ fn draw_column_chooser(
         &resp,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
-            ui.set_min_width(180.0);
+            ui.set_min_width(th.port_columns_menu_min_width().value());
             ui.label(
                 egui::RichText::new(props.label_columns_menu_title)
                     .color(th.text_muted())
@@ -1488,7 +1488,7 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
         egui::AboveOrBelow::Below,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
-            ui.set_min_width(216.0);
+            ui.set_min_width(th.port_state_menu_min_width().value());
             ui.label(
                 egui::RichText::new(props.label_state_filter_title)
                     .color(th.text_muted())
@@ -1501,7 +1501,7 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             let mut draft = read_state_draft(ui.ctx());
             let mut draft_changed = false;
             egui::ScrollArea::vertical()
-                .max_height(168.0)
+                .max_height(th.port_state_menu_max_height().value())
                 .show(ui, |ui| {
                     for st in present {
                         // shown 집합 → checked = 포함(remote_tool 의 !contains 와 반대).

@@ -1749,6 +1749,64 @@ impl Theme {
         LogicalPx((320.0 * self.ui_zoom).round())
     }
 
+    // ── 컴포넌트 치수 (디자인 export 에 아직 토큰이 없는 자리) ──
+    // 아래 아홉은 대응 디자인 토큰이 **없다.** 그래도 리터럴로 두면 안 되는 이유는
+    // 토큰 부재가 아니라 **배율**이다: 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
+    // (`gfx/gpu.rs` `update_scale_factor`) UI 배율을 `with_colors_and_zoom` 의
+    // `zoomed()` 로만 적용하므로, 호출부 리터럴은 `ui_scale` 을 따라가지 않는다.
+    // 상자만 고정이고 안의 폰트·간격·글리프는 커지므로 0.85 에서 여백이 뜨고 1.2 에서
+    // 내용이 잘린다 — 이 축의 값은 168~340 이라 폰트 축(13~17)보다 대가가 크다.
+    // 값은 이식 전 리터럴 그대로다(zoom 1 픽셀 불변, `component_accessors_invariant_at_zoom_one`).
+    // `modhint_*` · `multiselect_*` 와 같은 사정 — export 가 갱신되면 생성물로 넘어간다.
+    /// 포트 스캐너 컬럼 메뉴 최소 폭 (180px).
+    #[inline]
+    pub fn port_columns_menu_min_width(&self) -> LogicalPx {
+        LogicalPx((180.0 * self.ui_zoom).round())
+    }
+    /// 포트 스캐너 상태 필터 메뉴 최소 폭 (216px). 컬럼 메뉴보다 넓은 것은 라벨이
+    /// 길어서다 — 두 값을 하나로 합치면 컬럼 메뉴가 불필요하게 넓어진다.
+    #[inline]
+    pub fn port_state_menu_min_width(&self) -> LogicalPx {
+        LogicalPx((216.0 * self.ui_zoom).round())
+    }
+    /// 포트 스캐너 상태 필터 체크박스 리스트 최대 높이 (168px). 초과분은 내부 스크롤.
+    #[inline]
+    pub fn port_state_menu_max_height(&self) -> LogicalPx {
+        LogicalPx((168.0 * self.ui_zoom).round())
+    }
+    /// remote tool 헤더 최소 높이 (26px). 디자인 헤더 콘텐츠 높이 24 에, popup border 가
+    /// stroke Outside 라 콘텐츠가 1px 아래에서 시작하는 것을 +2 로 보정한 값이다.
+    /// 스케일 위의 값이 아니므로 토큰으로 스냅하지 않는다(ADR-0126).
+    #[inline]
+    pub fn remote_tool_header_min_height(&self) -> LogicalPx {
+        LogicalPx((26.0 * self.ui_zoom).round())
+    }
+    /// 튜토리얼 토픽 팝업 본문 스크롤 최대 높이 (200px).
+    #[inline]
+    pub fn tutorial_topic_body_max_height(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+    /// plugins 화면 헤더 높이 (48px).
+    #[inline]
+    pub fn plugins_header_height(&self) -> LogicalPx {
+        LogicalPx((48.0 * self.ui_zoom).round())
+    }
+    /// plugins 화면 좌측 리스트 패널 폭 (240px). 목록 탭과 알림 탭이 같은 폭을
+    /// 공유한다 — 탭을 바꿀 때 패널 경계가 움직이지 않아야 한다.
+    #[inline]
+    pub fn plugins_side_panel_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+    /// 설정 > 모양의 폰트 패밀리 리스트 최대 높이 (250px).
+    #[inline]
+    pub fn font_family_menu_max_height(&self) -> LogicalPx {
+        LogicalPx((250.0 * self.ui_zoom).round())
+    }
+    /// 파일 선택 팝업의 설명문 최대 폭 (340px) — 이 폭에서 줄바꿈한다.
+    #[inline]
+    pub fn file_picker_note_max_width(&self) -> LogicalPx {
+        LogicalPx((340.0 * self.ui_zoom).round())
+    }
     // ── 생성물로 넘어간 컴포넌트 토큰 그룹 ──
     // sidebar-category-header · autocomplete · md-table · drilldown · listctrl 의
     // 접근자는 전부 `generated_component.rs` 에서 생성된다. 디자인 export 에 해당
@@ -2245,6 +2303,80 @@ mod tests {
         assert_eq!(t.icon_glyph_size_row_action.value(), 15.0);
     }
 
+    /// 이 lane 이 리터럴에서 옮겨 온 컴포넌트 치수 아홉이 **`ui_scale` 을 탄다**는 것을
+    /// 고정한다. 위 `component_accessors_invariant_at_zoom_one` 은 zoom 1 값만 보므로,
+    /// 접근자를 다시 상수로 되돌리는 변경을 못 잡는다 — 그게 이 축의 원래 결함이었다.
+    /// 본체는 egui `zoom_factor` 를 1.0 으로 고정하고 배율을 `zoomed()` 로만 넣으므로,
+    /// 이 값들이 배율을 놓치면 상자만 고정되고 내용은 커져 1.2 에서 잘린다.
+    #[test]
+    fn component_dimensions_without_design_tokens_follow_ui_zoom() {
+        let at = |z: f32| Theme::with_colors_and_zoom(dummy_colors(), false, z);
+        // (접근자, zoom 1 값) — 값은 이식 전 호출부 리터럴이다.
+        let probes: &[(fn(&Theme) -> LogicalPx, f32, &str)] = &[
+            (
+                Theme::port_columns_menu_min_width,
+                180.0,
+                "port_columns_menu_min_width",
+            ),
+            (
+                Theme::port_state_menu_min_width,
+                216.0,
+                "port_state_menu_min_width",
+            ),
+            (
+                Theme::port_state_menu_max_height,
+                168.0,
+                "port_state_menu_max_height",
+            ),
+            (
+                Theme::remote_tool_header_min_height,
+                26.0,
+                "remote_tool_header_min_height",
+            ),
+            (
+                Theme::tutorial_topic_body_max_height,
+                200.0,
+                "tutorial_topic_body_max_height",
+            ),
+            (Theme::plugins_header_height, 48.0, "plugins_header_height"),
+            (
+                Theme::plugins_side_panel_width,
+                240.0,
+                "plugins_side_panel_width",
+            ),
+            (
+                Theme::font_family_menu_max_height,
+                250.0,
+                "font_family_menu_max_height",
+            ),
+            (
+                Theme::file_picker_note_max_width,
+                340.0,
+                "file_picker_note_max_width",
+            ),
+        ];
+        let (small, base, large) = (at(0.85), at(1.0), at(1.2));
+        for (f, expect_at_one, name) in probes {
+            assert_eq!(f(&base).value(), *expect_at_one, "{name} zoom 1");
+            assert_eq!(
+                f(&small).value(),
+                (expect_at_one * 0.85f32).round(),
+                "{name} zoom 0.85"
+            );
+            assert_eq!(
+                f(&large).value(),
+                (expect_at_one * 1.2f32).round(),
+                "{name} zoom 1.2"
+            );
+            // 배율 셋이 실제로 갈라지는지 — 이 축의 값은 전부 26 이상이라 반올림이
+            // 셋을 뭉개지 않는다(폰트·굵기 축과 다른 점이다, ADR-0126 의 표).
+            assert!(
+                f(&large).value() > f(&base).value() && f(&base).value() > f(&small).value(),
+                "{name} 이 배율을 안 탄다"
+            );
+        }
+    }
+
     /// 행 액션 글리프가 zoom 경로에 실제로 들어가 있는지. 평범한 `const` 로 두면
     /// 같은 팝업의 헤더 아이콘만 커지고 이 아이콘만 고정되므로, 배율이 적용되는지
     /// 자체를 고정한다(`zoomed` 는 반올림한다).
@@ -2415,6 +2547,16 @@ mod tests {
         assert_eq!(t.kbd_gap().value(), 3.0); // chip.rs KBD_GAP
         assert_eq!(t.kbd_shadow_depth().value(), 2.0); // chip.rs KBD_BOTTOM_BORDER
         assert_eq!(t.select_chevron_room().value(), 28.0); // select.rs CHEVRON_PAD
+        // 디자인 export 에 토큰이 없는 컴포넌트 치수 — 이식 전 호출부 리터럴과 동일.
+        assert_eq!(t.port_columns_menu_min_width().value(), 180.0);
+        assert_eq!(t.port_state_menu_min_width().value(), 216.0);
+        assert_eq!(t.port_state_menu_max_height().value(), 168.0);
+        assert_eq!(t.remote_tool_header_min_height().value(), 26.0);
+        assert_eq!(t.tutorial_topic_body_max_height().value(), 200.0);
+        assert_eq!(t.plugins_header_height().value(), 48.0);
+        assert_eq!(t.plugins_side_panel_width().value(), 240.0);
+        assert_eq!(t.font_family_menu_max_height().value(), 250.0);
+        assert_eq!(t.file_picker_note_max_width().value(), 340.0);
         // semantic-종착 — 이식 전 위젯이 읽던 바로 그 zoomed 필드와 동일 값.
         assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // button gap
         assert_eq!(t.button_radius().value(), t.corner_radius.value());

@@ -248,7 +248,7 @@ pub fn draw_plugins_panel(
     let th = theme::theme();
 
     egui::TopBottomPanel::top("plugins_header")
-        .exact_height(48.0)
+        .exact_height(th.plugins_header_height().value())
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
                 // 디자인 헤더 좌 패딩 10px 은 off-grid — 4px 그리드의 가장 가까운 값인
