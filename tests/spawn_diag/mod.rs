@@ -28,7 +28,6 @@ macro_rules! product_default_filter {
         "warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off"
     };
 }
-use product_default_filter;
 
 /// 자식에게 주는 기본 로그 필터 — **제품 기본값과 같은 모양**이어야 한다.
 ///
@@ -44,6 +43,17 @@ pub const LOG_FILTER: &str = product_default_filter!();
 /// 필요하다 — 나머지는 [`LOG_FILTER`] 를 **그대로 앞에 두고** 뒤에만 덧붙인다.
 pub const LOG_FILTER_WEBHOOK: &str =
     concat!(product_default_filter!(), ",tasty::webhook::listener=info");
+
+/// libtest 캡처로 흘러가는 `tracing` subscriber 를 설치한다(프로세스당 1회, 실패는 무시).
+///
+/// 하네스 진단을 `eprintln!` 로 쓰면 훅 C.11 의 예외가 필요해진다. 예외를 만들지 않고도
+/// 같은 자리에 출력이 남는다는 것을 실측으로 확인했다 — `with_test_writer()` 는 libtest 의
+/// per-thread 캡처를 타므로, 실패한 테스트의 출력 블록에 `eprintln!` 과 나란히 찍힌다.
+/// 이미 설치돼 있으면 `try_init` 이 `Err` 를 주고 그대로 두는 것이 맞다.
+pub fn init_test_tracing() {
+    // 두 번째 설치 시도는 정상 흐름이다(같은 바이너리의 다른 테스트가 이미 설치).
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+}
 
 /// S1 — `--port-file` 에 포트가 쓰이기까지. GUI 부팅(창 + GPU 디바이스 + boot
 /// 상태기계)이 끝나야 IPC 가 시작되므로 이 단계가 가장 길다.

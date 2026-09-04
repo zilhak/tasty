@@ -298,8 +298,9 @@ impl WebhookInstance {
                 BindOutcome::Stolen(line) if seeded && attempt < PORT_STEAL_RETRIES => {
                     // 우리가 고른 포트를 남이 가져갔다. 우리가 시딩한 값이므로 다시 고를
                     // 수 있다 — 인스턴스를 접고(Drop 이 자식을 회수한다) 새 포트로 재시도.
-                    eprintln!(
-                        "[webhook_common] webhook port {} was taken; retrying with a new port ({line})",
+                    spawn_diag::init_test_tracing();
+                    tracing::warn!(
+                        "webhook port {} was taken; retrying with a new port ({line})",
                         instance.webhook_port
                     );
                     let seeded_file = instance.home.join("webhooks.toml");
@@ -307,7 +308,7 @@ impl WebhookInstance {
                     // 지우지 못하면 다음 시도가 같은 포트를 다시 쓴다 — 그 경우에도
                     // 재시도가 무해하고(같은 실패로 끝난다) 아래 panic 이 원인을 알린다.
                     if let Err(e) = std::fs::remove_file(&seeded_file) {
-                        eprintln!("[webhook_common] could not reset {seeded_file:?}: {e}");
+                        tracing::warn!("could not reset {seeded_file:?}: {e}");
                     }
                     let fresh = free_port();
                     webhook_port = Some(fresh.port());
