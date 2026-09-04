@@ -455,9 +455,15 @@ mod tests {
     }
 
     /// 지금 비어 있는 루프백 포트 하나. 바인드해 번호를 읽고 바로 놓는다.
-    fn free_port() -> u16 {
+    /// 임시 포트를 리스너째 예약해 반환한다. 소비자(`handle_serve`)는 port 번호만 받으므로,
+    /// 실제 bind 직전에 이 리스너를 drop 해 예약~bind 사이의 TOCTOU 창을 최소화한다
+    /// (ADR-0129 형태 B 정방향, `tasty-ssh::reserve_local_port` 와 동형). 그냥 bind 후
+    /// 곧바로 놓아 port 번호만 돌려주면, 그 사이 같은 머신의 다른 완주가 포트를 집어가
+    /// `serve_bind_failed` 로 확률적 red 가 난다.
+    fn reserve_port() -> (std::net::TcpListener, u16) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        listener.local_addr().expect("addr").port()
+        let port = listener.local_addr().expect("addr").port();
+        (listener, port)
     }
 
     /// 레지스트리 락을 실제로 poisoned 로 만든다 — 락을 쥔 스레드를 패닉시키는 것이
@@ -488,11 +494,13 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
+        let (reservation, port) = reserve_port();
+        drop(reservation);
         handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "127.0.0.1"}),
+            json!({"port": port, "bind": "127.0.0.1"}),
         )
         .expect("the first bind succeeds");
         assert_ne!(snapshot_serve(dir.path()), Value::Null);
@@ -535,7 +543,8 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
-        let first_port = free_port();
+        let (reservation, first_port) = reserve_port();
+        drop(reservation);
         handle_serve(
             &registry,
             &mut server,
@@ -546,11 +555,12 @@ mod tests {
 
         poison_registry(&registry);
 
+        // poison 으로 bind 도달 전에 실패하므로 port 는 쓰이지 않는다 — 예약을 잡지 않는다.
         let err = handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "127.0.0.1"}),
+            json!({"port": reserve_port().1, "bind": "127.0.0.1"}),
         )
         .expect_err("a poisoned registry must be reported, not swallowed");
         assert!(
@@ -577,11 +587,13 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
+        let (reservation, port) = reserve_port();
+        drop(reservation);
         handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "127.0.0.1"}),
+            json!({"port": port, "bind": "127.0.0.1"}),
         )
         .expect("the first bind succeeds");
         assert!(registry.lock().expect("lock").serve_config().is_some());
@@ -591,7 +603,7 @@ mod tests {
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "192.0.2.1", "token": "t"}),
+            json!({"port": reserve_port().1, "bind": "192.0.2.1", "token": "t"}),
         )
         .expect_err("binding a foreign address must fail");
         assert!(

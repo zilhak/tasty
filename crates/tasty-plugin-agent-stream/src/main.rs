@@ -182,17 +182,21 @@ fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    fn free_port() -> u16 {
+    /// 임시 포트를 리스너째 예약해 반환한다. 소비자(`restore_endpoint`)는 port 번호만 받으므로,
+    /// 실제 bind 직전에 이 리스너를 drop 해 예약~bind 사이의 TOCTOU 창을 최소화한다
+    /// (ADR-0129 형태 B 정방향, `tasty-ssh::reserve_local_port` 와 동형).
+    fn reserve_port() -> (std::net::TcpListener, u16) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        listener.local_addr().expect("addr").port()
+        let port = listener.local_addr().expect("addr").port();
+        (listener, port)
     }
 
     #[test]
     fn a_persisted_endpoint_is_reopened_on_the_same_address_after_a_restart() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let port = free_port();
+        let (reservation, port) = reserve_port();
 
-        // 1 회차: 설정을 영속한다.
+        // 1 회차: 설정을 영속한다. (예약 리스너를 쥔 채라 이 사이 포트를 남이 못 가져간다.)
         {
             let mut reg = StreamRegistry::new(Some(dir.path()));
             reg.set_serve_config(Some(sse::ServeConfig {
@@ -204,6 +208,8 @@ mod tests {
         }
 
         // 2 회차: 재시작 상당. `new()` 가 스냅샷을 읽고 `restore_endpoint` 가 다시 연다.
+        // restore_endpoint 가 이 port 에 실제 bind 하므로, 그 직전에 예약을 놓는다.
+        drop(reservation);
         let mut plugin =
             AgentStreamPlugin::new(Some(dir.path().to_path_buf()), Translator::default());
         plugin.restore_endpoint();
