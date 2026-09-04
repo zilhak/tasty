@@ -390,9 +390,10 @@ impl WebhookInstance {
             .env_remove("ZSH")
             .env_remove("SHELL")
             .env_remove("TASTY_SURFACE_ID")
-            // 리스너 bind 성공/실패 판정에 필요한 타깃만 `info` 로 올리고 나머지는
-            // 공용 필터 그대로 둔다 — stderr ring 이 유한해서 전체 info 를 켜면
-            // 진단 줄이 밀려난다. 이름·값의 정의 자리는 `spawn_diag` 하나다.
+            // 실패 tail 을 사람이 읽을 때 "떴는데 connect 실패" 와 "끝내 안 떴다" 를
+            // 가르는 리스너 타깃만 `info` 로 올리고 나머지는 공용 필터 그대로 둔다 —
+            // stderr ring 이 유한해서 전체 info 를 켜면 진단 줄이 밀려난다.
+            // 이름·값의 정의 자리는 `spawn_diag` 하나다.
             .env(spawn_diag::LOG_ENV, spawn_diag::LOG_FILTER_WEBHOOK)
             .stderr(Stdio::piped());
         for (k, v) in env_args {

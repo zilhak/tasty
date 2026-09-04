@@ -39,8 +39,12 @@ macro_rules! product_default_filter {
 /// 늘리지 않으려면 기본값과 같은 모양을 명시하는 수밖에 없다.
 pub const LOG_FILTER: &str = product_default_filter!();
 
-/// 웹훅 하네스용 필터. 리스너의 bind 성공/실패 판정에 그 타깃의 `info` 두 줄이
-/// 필요하다 — 나머지는 [`LOG_FILTER`] 를 **그대로 앞에 두고** 뒤에만 덧붙인다.
+/// 웹훅 하네스용 필터 — [`LOG_FILTER`] 를 **그대로 앞에 두고** 뒤에만 덧붙인다.
+///
+/// 덧붙이는 것은 리스너 타깃의 `info` 한 줄(`webhook listener bound on {addr}`)이다.
+/// 도난 **판정**에는 필요 없다 — 그건 제품이 `warn!` 으로 내므로 기본 필터에서도
+/// 보인다. 필요한 것은 실패 보고를 사람이 읽을 때다: 실패 tail 에 `bound` 줄이
+/// 있으면 "떴는데 connect 가 안 됐다", 없으면 "끝내 안 떴다" 로 갈린다.
 pub const LOG_FILTER_WEBHOOK: &str =
     concat!(product_default_filter!(), ",tasty::webhook::listener=info");
 
