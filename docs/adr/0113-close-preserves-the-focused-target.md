@@ -137,3 +137,4 @@ close 경로를 타므로, 원격 사용자의 정리가 로컬 사용자 화면
 - [architecture/close-sequence.md](../architecture/close-sequence.md) — close cascade 단계(C1~C5)
 - [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md) — 점유 모델. 원격 attach forward 가 같은 close 경로를 탄다
 - 대조 구현: `AppState::move_workspace` · `Pane::move_tab` · `Core::apply_close_pane` 의 `was_focused` 가드
+- [ADR-0125](0125-category-landing-points-hold-ids.md) — 위 재검토 조건 중 재정렬 축(`category_last_active` 오착지)이 실제로 충족돼 내려진 후속 결정
