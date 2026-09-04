@@ -685,6 +685,22 @@ fn install_sender(slot: &StdinSlot, eof_latch: &StdinEofLatch, tx: mpsc::Sender<
     }
 }
 
+/// writer 락 poison 처리 — **복구하지 않는다.**
+///
+/// 임계구역이 소켓에 프레임을 쓰므로, 락을 든 채 죽은 스레드는 프레임을 절반만
+/// 남겼을 수 있다. 그 위에 이어 쓰면 스트림 프레이밍이 깨져 상대가 쓰레기를 읽는다 —
+/// 데이터를 신뢰할 수 없는 자리라 복구가 오답이다
+/// (`docs/dev-guide/error-handling.md` "락 poison").
+///
+/// 대신 **조용히** 접지도 않는다. 지금까지 poison 은 "쓰기 실패" 와 구분 없이 세션
+/// 종료로 흘러가, 사용자에게는 attach 가 이유 없이 끊긴 것으로 보였다.
+fn note_writer_poisoned(during: &str) {
+    tracing::error!(
+        "attach: writer lock poisoned while {during} — a thread panicked while holding it; \
+         ending this attach session rather than writing onto a half-written frame"
+    );
+}
+
 /// raw 브리지 모드: stdin→서버 입력, 서버 출력→stdout. detach 키 `Ctrl+\`(0x1c).
 /// 단계 4 옵션(완전 raw TTY 설정은 추후) — 기본 passthrough.
 ///
@@ -707,7 +723,11 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
     // 입력/Detach/heartbeat 송신용 단일 writer(여러 스레드가 공유 — 프레임 인터리브 방지).
     let writer = Arc::new(Mutex::new(conn.try_clone_writer()?));
     if let Some(s) = send {
-        let mut w = writer.lock().unwrap();
+        // 아직 이 writer 를 공유하는 스레드가 없다(heartbeat/stdin 라우팅은 아래에서
+        // 시작한다) — poison 이 발생할 수 있는 다른 홀더가 존재하지 않는 지점이다.
+        let mut w = writer
+            .lock()
+            .expect("attach writer before any other thread exists");
         stream::write_frame(&mut *w, StreamTag::Data, &decode_escapes(s))?;
         drop(w);
     }
@@ -724,7 +744,10 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
                 thread::sleep(stream::HEARTBEAT_INTERVAL);
                 let sent = match writer.lock() {
                     Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Ping, &[]).is_ok(),
-                    Err(_) => false,
+                    Err(_) => {
+                        note_writer_poisoned("sending a heartbeat");
+                        false
+                    }
                 };
                 if !sent {
                     break;
@@ -785,19 +808,28 @@ fn raw_bridge_main_loop(
             Ok(RawEvent::Stdin(data)) => {
                 if let Some(pos) = data.iter().position(|&b| b == 0x1c) {
                     // Ctrl+\ 이전 바이트만 보내고 detach.
-                    if pos > 0
-                        && let Ok(mut w) = writer.lock()
-                    {
-                        let _ = stream::write_frame(&mut *w, StreamTag::Data, &data[..pos]); // 종료 경로 best-effort 송신 — 무시
+                    if pos > 0 {
+                        match writer.lock() {
+                            Ok(mut w) => {
+                                let _ = stream::write_frame(&mut *w, StreamTag::Data, &data[..pos]); // 종료 경로 best-effort 송신 — 무시
+                            }
+                            Err(_) => note_writer_poisoned("flushing input before detach"),
+                        }
                     }
-                    if let Ok(mut w) = writer.lock() {
-                        let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                    match writer.lock() {
+                        Ok(mut w) => {
+                            let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]); // best-effort detach 통지 — 무시
+                        }
+                        Err(_) => note_writer_poisoned("sending the detach notice"),
                     }
                     return Ok(AttachExit::Completed);
                 }
                 let write_ok = match writer.lock() {
                     Ok(mut w) => stream::write_frame(&mut *w, StreamTag::Data, &data).is_ok(),
-                    Err(_) => false,
+                    Err(_) => {
+                        note_writer_poisoned("forwarding stdin");
+                        false
+                    }
                 };
                 if !write_ok {
                     return Ok(AttachExit::Completed);
