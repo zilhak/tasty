@@ -1466,7 +1466,9 @@ impl App {
             }
         }
         if let Err(e) = new_settings.save() {
-            tracing::warn!("failed to save settings: {e}");
+            // 사용자가 설정 화면에서 방금 바꾼 값이라 저장 실패는 그 작업이 통째로
+            // 사라진다는 뜻이다 — error-handling.md 표의 "설정 저장 실패" 그 자체.
+            tracing::error!("failed to save settings: {e}");
         }
 
         // Appearance (theme 색상 or host UI zoom) 변경 시 `UiIntent::AppearanceChanged`

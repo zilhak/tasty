@@ -208,6 +208,7 @@ impl SavedPane {
     fn restore(self, engine: &mut CoreState, is_active_workspace: bool) -> Option<Pane> {
         let pane_id = engine.next_ids.next_pane();
         let saved_active_tab = self.active_tab.min(self.tabs.len().saturating_sub(1));
+        let tab_count = self.tabs.len();
         let mut tabs = Vec::new();
         for (idx, saved_tab) in self.tabs.into_iter().enumerate() {
             // 활성 workspace 안에서도 사용자가 보고 있는 active_tab만 즉시 PTY spawn.
@@ -216,7 +217,13 @@ impl SavedPane {
             match saved_tab.restore(engine, tab_is_active) {
                 Some(tab) => tabs.push(tab),
                 None => {
-                    tracing::warn!("Failed to restore tab, skipping");
+                    // 어느 탭이 사라졌는지 알 수 있어야 사용자 문의를 추적할 수 있다.
+                    tracing::warn!(
+                        "failed to restore tab {}/{} in pane {pane_id} — skipping it; \
+                         the surface kind may be unregistered (plugin not loaded?)",
+                        idx + 1,
+                        tab_count,
+                    );
                 }
             }
         }
