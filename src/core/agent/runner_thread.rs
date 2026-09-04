@@ -1061,6 +1061,88 @@ mod tests {
     }
 
     /// J.A.S3: 현 프로세스 pid 로 ShellProcess handle 영속 + reload → 복원.
+    /// **배선 테스트** — 정책 함수(`store_list_failure_log`)가 tick 루프에 실제로
+    /// 연결돼 있는지. 순수 정책만 검증하면 카운터를 올리지 않는 배선(그래서 `error`
+    /// 승격이 영원히 일어나지 않고 회복 로그도 사라지는 상태)이 그대로 통과한다.
+    /// 호출부를 옛 `unwrap_or_default()` 로 되돌리는 변이는 dead-code 린트가 잡지만
+    /// **컴파일러가 잡는 것은 테스트가 아니다** — 함수를 전부 살려둔 채 배선만
+    /// 망가뜨리는 변이(카운터 미증가 · 회복 리셋 제거)에서 이 테스트가 실패해야 한다.
+    #[test]
+    fn tick_snapshot_counts_consecutive_failures_and_resets_on_recovery() {
+        let (_td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+        });
+        let failures = AtomicU32::new(0);
+
+        // 정상 경로에서는 카운터가 0 을 유지하고 snapshot 이 실제로 온다.
+        assert_eq!(tick_snapshot(&ctx, 1, &failures).len(), 1);
+        assert_eq!(failures.load(Ordering::Relaxed), 0);
+
+        // 실제 기록된 task 키 자리에 Task 로 역직렬화되지 않는 값을 덮어 조회를
+        // 실패시킨다(키 접두사를 테스트에 하드코딩하지 않으려고 런타임에 찾는다).
+        let corrupt_key = ctx.with_memory(|mem| {
+            let entries = mem
+                .list(&Scope::Workspace(1), &ListOpts::default())
+                .expect("list");
+            let key = entries
+                .iter()
+                .map(|e| e.key.clone())
+                .find(|k| k.contains("task"))
+                .expect("task key");
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &key,
+                &MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+                &PutOpts::default(),
+            )
+            .expect("put");
+            key
+        });
+
+        // 연속 실패는 **누적**돼야 한다 — 이 값이 `error` 승격 임계를 결정한다.
+        for expected in 1..=3u32 {
+            assert!(
+                tick_snapshot(&ctx, 1, &failures).is_empty(),
+                "조회 실패면 빈 snapshot"
+            );
+            assert_eq!(
+                failures.load(Ordering::Relaxed),
+                expected,
+                "연속 실패가 누적되지 않으면 error 승격이 영원히 일어나지 않는다"
+            );
+        }
+
+        // 회복하면 0 으로 리셋 — 다음 실패가 다시 1 회째부터 세어진다.
+        ctx.with_memory(|mem| {
+            mem.delete(HOST_OWNER, &Scope::Workspace(1), &corrupt_key, None)
+                .expect("delete");
+        });
+        assert!(tick_snapshot(&ctx, 1, &failures).is_empty());
+        assert_eq!(
+            failures.load(Ordering::Relaxed),
+            0,
+            "회복하면 카운터가 리셋돼야 한다"
+        );
+    }
+
     /// store 를 못 읽으면 `status` 는 카운트를 **0 이 아니라 `None`** 으로 낸다.
     /// 0 은 "task 가 없다" 와 값이 같아, `agent-runner.md` 가 계약으로 못박은
     /// "정지 상태는 조회로 드러난다" 가 거짓이 된다.
