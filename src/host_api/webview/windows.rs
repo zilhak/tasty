@@ -528,8 +528,8 @@ fn current_winit_mods() -> winit::keyboard::ModifiersState {
         GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
     };
     use winit::keyboard::ModifiersState;
-    // SAFETY: GetKeyState 는 호출 스레드의 키보드 상태만 읽는 순수 조회 API 다.
     let down = |vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY| -> bool {
+        // SAFETY: GetKeyState 는 호출 스레드의 키보드 상태만 읽는 순수 조회 API 다.
         (unsafe { GetKeyState(vk.0 as i32) } as u16 & 0x8000) != 0
     };
     let mut mods = ModifiersState::empty();
