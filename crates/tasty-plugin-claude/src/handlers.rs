@@ -52,20 +52,48 @@ pub(crate) fn resolve_profile_file_param(
     }
 }
 
+/// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
+///
+/// `hook.rs` 의 `resolve_surface_id_from` 이 같은 판정을 env 폴백까지 포함해서 한다.
+/// 이쪽은 폴백이 없어 어느 쪽이든 에러지만, **자르기는 여기도 위험하다**:
+/// `4_294_967_297 as u32` 는 `1` 이고 `5_000_000_000 as u32` 는 `705_032_704` 다.
+/// 둘 다 실재할 수 있는 다른 surface 의 id 라, 못 읽는 값이 조용히 남의 터미널로 간다.
+///
+/// 메시지도 가른다 — 값이 왔는데 "missing" 이라고 답하면 호출자가 자기가 준 값을
+/// 안 의심한다.
+fn require_u32(
+    params: &Value,
+    key: &str,
+    missing_key: &str,
+    malformed_key: &str,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
+        return Err(IpcMethodError::invalid_params(tr.t(missing_key)));
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| IpcMethodError::invalid_params(&tr.t_fmt(malformed_key, &raw.to_string())))
+}
+
 pub(crate) fn require_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_surface_id")))
+    require_u32(
+        params,
+        "surface_id",
+        "claude.params.missing_surface_id",
+        "claude.params.surface_id_not_a_number",
+        tr,
+    )
 }
 
 pub(crate) fn require_child_index(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    params
-        .get("child_index")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_child_index")))
+    require_u32(
+        params,
+        "child_index",
+        "claude.params.missing_child_index",
+        "claude.params.child_index_not_a_number",
+        tr,
+    )
 }
 
 /// `--child <index>` 를 그 자식의 **surface id** 로 해석한다.
@@ -1080,6 +1108,57 @@ pub(crate) fn handle_state(
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    /// `require_surface_id` / `require_child_index` 의 **네 갈래**를 픽스처로 못박는다.
+    /// 실재하는 surface id 를 쓰지 않는다 — 그 id 가 사라지면 회귀가 뜻을 잃는다.
+    #[test]
+    fn required_u32_params_separate_absent_from_malformed_and_refuse_to_truncate() {
+        let tr = test_translator();
+
+        // ① 키 없음.
+        assert!(require_surface_id(&json!({}), &tr).is_err());
+        assert!(require_child_index(&json!({}), &tr).is_err());
+
+        // ② 정상 — 경계값이 그대로 통과한다.
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": 0 }), &tr).unwrap(),
+            0
+        );
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": u32::MAX }), &tr).unwrap(),
+            u32::MAX
+        );
+
+        // ③ 숫자가 아니다 — 거부하고, "missing" 이라고 답하지 않는다.
+        let e = require_surface_id(&json!({ "surface_id": "conductor" }), &tr).unwrap_err();
+        let m = format!("{e:?}");
+        assert!(m.contains("32 bits"), "{m}");
+        assert!(!m.contains("Missing"), "값이 왔는데 없다고 답한다: {m}");
+
+        // ④ ★ 범위 초과 — 자르면 다른 surface 가 된다(`u32::MAX + 2` → 1).
+        for over in [
+            u64::from(u32::MAX) + 1,
+            u64::from(u32::MAX) + 2,
+            5_000_000_000,
+        ] {
+            assert!(
+                require_surface_id(&json!({ "surface_id": over }), &tr).is_err(),
+                "{over} 가 안 걸린다"
+            );
+            assert!(require_child_index(&json!({ "child_index": over }), &tr).is_err());
+        }
+
+        assert!(require_surface_id(&json!({ "surface_id": -1 }), &tr).is_err());
+    }
+
+    /// `null` 슬롯은 **안 왔다**로 읽는다 — 직렬화가 빈 슬롯을 `null` 로 채우는 경우가
+    /// 있어, 오타로 취급하면 정상 경로가 막힌다.
+    #[test]
+    fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
+        let tr = test_translator();
+        let e = require_surface_id(&json!({ "surface_id": Value::Null }), &tr).unwrap_err();
+        assert!(format!("{e:?}").contains("Missing"), "{e:?}");
+    }
 
     /// 실제 crate `lang/` 을 로드한 `Translator` — 하드코딩 영문 assertion 을
     /// lang 파일 드리프트로부터 고정한다(`checklist.rs` 의 SENTINEL 핀 테스트와
