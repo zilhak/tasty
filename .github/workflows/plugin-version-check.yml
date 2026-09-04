@@ -1,0 +1,75 @@
+name: Plugin Version Check
+
+# plugin 의 빌드 산출물이 달라졌는데 매니페스트 `version` 이 그대로인 것을 잡는다.
+# 목적은 라이브 반영이다 — `upgrade-builtins` 재sync 는 version 이 올랐을 때만 동작한다
+# (same-version skip). 판정은 scripts/check-plugin-version-bump.sh 하나가 하고, 로컬
+# 훅(pre-commit P.1)도 같은 스크립트를 부른다 — 두 자리가 갈리지 않게.
+#
+# 판별식이 파일 수 문턱이 아니라 **rustfmt 정규화 후 내용**인 근거·측정·대안:
+# docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md
+#
+# self-hosted Linux X64 근거: 컴파일이 없는 git+rustfmt 게이트라 초 단위로 끝난다.
+# complexity-check.yml / supply-chain-check.yml 과 같은 관행.
+
+on:
+  # 이 저장소는 PR 을 열지 않고 main 에 직접 push 한다 — main push 가 실질적 유일
+  # 채널이다(complexity-check.yml 이 같은 이유를 ADR-0131 근거로 적어 두었다).
+  # PR 트리거도 함께 둬서 PR 을 쓰기 시작하면 그때부터 자동으로 걸리게 한다.
+  push:
+    branches: [main]
+    paths:
+      - 'crates/tasty-plugin-*/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/tasty-plugin-*/**'
+  workflow_dispatch:
+
+concurrency:
+  group: plugin-version-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-bump:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      # **이 잡만 전체 이력이 필요하다.** 판정이 "밀어넣은 범위의 두 끝점" 을 비교하는데,
+      # 이 저장소의 다른 잡이 쓰는 기본 checkout 은 depth 1 이라 부모 커밋이 없다.
+      # 얕은 상태로 두면 스크립트가 rev 를 못 찾아 exit 2(판정 불가) 로 죽는다 —
+      # 조용히 통과하지는 않지만, 매번 빨개지므로 여기서 깊이를 준다.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # 판정에 rustfmt 가 필요하다. 없으면 스크립트가 exit 2 로 죽으므로 여기서 보장한다.
+      - name: Ensure rustfmt
+        run: |
+          if ! command -v rustfmt >/dev/null 2>&1; then
+            rustup component add rustfmt
+          fi
+          rustfmt --version
+
+      - name: Plugin version bump gate
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            BEFORE='${{ github.event.pull_request.base.sha }}'
+            AFTER='${{ github.event.pull_request.head.sha }}'
+          else
+            BEFORE='${{ github.event.before }}'
+            AFTER='${{ github.sha }}'
+          fi
+          # 브랜치 최초 생성 push 는 before 가 전부 0 이다 — 비교할 기준이 **없다**.
+          # 올릴 이전 값 자체가 없는 경우라 통과시키되, 그 사실을 출력한다.
+          # (판정 불가를 조용히 통과로 세지 않기 위해 반드시 찍는다.)
+          case "$BEFORE" in
+            0000000000000000000000000000000000000000|'')
+              echo "[plugin-version] skip: 기준 커밋이 없다(브랜치 최초 생성). 판정 대상 0."
+              exit 0 ;;
+          esac
+          echo "범위: $BEFORE..$AFTER"
+          bash scripts/check-plugin-version-bump.sh --range "$BEFORE" "$AFTER"

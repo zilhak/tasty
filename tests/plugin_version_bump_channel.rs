@@ -1,0 +1,329 @@
+//! `scripts/check-plugin-version-bump.sh` 의 판정을 **합성 git 저장소**로 양극성 고정한다.
+//!
+//! 왜 합성 저장소인가: 이 저장소 **자신의** 이력을 읽는 테스트는 배포 tarball(비-git),
+//! shallow clone, 첫 커밋에서 판정 불가가 되고, 그 셋이 CI 에서 조용히 통과로 세어질
+//! 위험이 크다. 여기서는 매번 저장소를 만들어 쓰므로 그 셋에 의존하지 않는다.
+//!
+//! **한 극성만 보면 항등식이다.** "bump 안 한 사본에서 FAIL" 만 보면 항상 FAIL 하는
+//! 게이트도 통과하고, "bump 한 사본에서 PASS" 만 보면 아무것도 안 하는 게이트도
+//! 통과한다. 그래서 최소 네 극성을 본다 — 부채(FAIL) · bump(PASS) · 포맷만(PASS) ·
+//! 판정 불가(exit 2, 통과 아님).
+//!
+//! 판별식의 근거·측정·대안은 `docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md`.
+
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+
+fn script() -> String {
+    format!(
+        "{}/scripts/check-plugin-version-bump.sh",
+        env!("CARGO_MANIFEST_DIR")
+    )
+}
+
+fn run_git(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap_or_else(|e| panic!("git {args:?} 실행 실패: {e}"));
+    assert!(
+        out.status.success(),
+        "git {args:?} 실패:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn write(dir: &Path, rel: &str, body: &str) {
+    let p = dir.join(rel);
+    fs::create_dir_all(p.parent().expect("부모 경로")).expect("디렉토리 생성");
+    fs::write(&p, body).unwrap_or_else(|e| panic!("{rel} 쓰기 실패: {e}"));
+}
+
+/// 스크립트를 돌리고 (exit code, stdout+stderr) 를 돌려준다.
+fn check(dir: &Path, args: &[&str]) -> (i32, String) {
+    let out = Command::new("bash")
+        .arg(script())
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("게이트 스크립트 실행");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.code().unwrap_or(-1), text)
+}
+
+const PLUGIN: &str = "crates/tasty-plugin-fixture";
+
+/// 루트 Cargo.toml(스크립트가 edition 을 읽는다) + plugin 한 벌을 담은 저장소를 만들고
+/// 첫 커밋까지 마친다.
+fn seed_repo() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("임시 디렉토리");
+    let d = tmp.path();
+    run_git(d, &["init", "--quiet"]);
+    run_git(d, &["config", "user.email", "fixture@example.invalid"]);
+    run_git(d, &["config", "user.name", "fixture"]);
+    // 훅이 이 저장소에 끼어들면 판정이 아니라 훅을 재게 된다.
+    run_git(d, &["config", "core.hooksPath", "/dev/null"]);
+
+    write(
+        d,
+        "Cargo.toml",
+        "[workspace]\n[package]\nedition = \"2024\"\n",
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/Cargo.toml"),
+        "[package]\nname = \"tasty-plugin-fixture\"\nversion = \"0.1.0\"\n",
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/tasty-plugin.toml"),
+        "id = \"com.tasty.fixture\"\nversion = \"0.1.0\"\n",
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"a  b\";\n}\n",
+    );
+    run_git(d, &["add", "-A"]);
+    run_git(d, &["commit", "--quiet", "-m", "seed"]);
+    tmp
+}
+
+fn bump_to(d: &Path, v: &str) {
+    write(
+        d,
+        &format!("{PLUGIN}/Cargo.toml"),
+        &format!("[package]\nname = \"tasty-plugin-fixture\"\nversion = \"{v}\"\n"),
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/tasty-plugin.toml"),
+        &format!("id = \"com.tasty.fixture\"\nversion = \"{v}\"\n"),
+    );
+}
+
+fn commit_all(d: &Path, msg: &str) {
+    run_git(d, &["add", "-A"]);
+    run_git(d, &["commit", "--quiet", "-m", msg]);
+}
+
+#[test]
+fn a_content_change_without_a_bump_is_rejected() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"changed\";\n}\n",
+    );
+    commit_all(d, "feat(fixture): change behaviour");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 1, "부채인데 통과했다:\n{text}");
+    assert!(
+        text.contains("version 이 안 올랐다"),
+        "위반 사유가 메시지에 없다:\n{text}"
+    );
+    assert!(
+        text.contains("src/main.rs"),
+        "어느 파일 때문인지 메시지에 없다:\n{text}"
+    );
+}
+
+#[test]
+fn the_same_change_with_a_bump_passes() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"changed\";\n}\n",
+    );
+    bump_to(d, "0.1.1");
+    commit_all(d, "feat(fixture): change behaviour + bump");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 0, "bump 했는데 막혔다:\n{text}");
+    // **통과가 무동작과 구분되어야 한다** — 판정 대상이 0 이면 게이트가 죽어도 초록이다.
+    assert!(
+        text.contains("판정 대상 1 건"),
+        "판정 대상 건수가 1 이 아니다(게이트가 이 변경을 아예 안 봤을 수 있다):\n{text}"
+    );
+}
+
+#[test]
+fn a_formatting_only_change_needs_no_bump() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    // rustfmt 가 되돌릴 수 있는 차이만 준다. 문자열 리터럴 안의 두 칸 공백은 그대로 둔다 —
+    // 공백을 통째로 제거하는 정규화였다면 여기서 리터럴 차이까지 삼켰을 자리다.
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn  main( )\n{\n        let  msg =   \"a  b\" ;\n}\n",
+    );
+    commit_all(d, "style(fixture): reformat");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 0, "포맷만 바뀌었는데 bump 를 요구했다:\n{text}");
+    assert!(
+        text.contains("판정 대상 0 건"),
+        "포맷 변경이 판정 대상으로 세어졌다:\n{text}"
+    );
+    // 비영 대조: 변경 자체는 있었다. 0 건이 "아무것도 안 바뀌었다" 가 아님을 고정한다.
+    assert!(
+        text.contains("변경된 crates 파일 1 개"),
+        "변경 파일 수가 안 찍힌다 — 0 건이 무변경인지 배제인지 구분되지 않는다:\n{text}"
+    );
+}
+
+#[test]
+fn a_literal_only_change_is_not_swallowed_by_normalization() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    // 공백 제거 정규화였다면 `"a  b"` 와 `"ab"` 가 같아져 **거짓 음성**이 됐을 변경.
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"ab\";\n}\n",
+    );
+    commit_all(d, "fix(fixture): collapse the literal");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 1,
+        "문자열 리터럴 안의 공백 변화가 정규화에 삼켜졌다 — 거짓 음성이다:\n{text}"
+    );
+}
+
+#[test]
+fn a_docs_only_file_outside_the_build_output_needs_no_bump() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(d, &format!("{PLUGIN}/README.md"), "설명이 늘었다\n");
+    commit_all(d, "docs(fixture): add a readme");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 0, "산출물 밖 파일에 bump 를 요구했다:\n{text}");
+    assert!(text.contains("판정 대상 0 건"), "{text}");
+}
+
+#[test]
+fn staged_mode_sees_the_index_before_a_commit_exists_for_it() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"staged\";\n}\n",
+    );
+    run_git(d, &["add", "-A"]);
+
+    let (code, text) = check(d, &["--staged"]);
+    assert_eq!(code, 1, "staged 부채를 못 봤다:\n{text}");
+
+    bump_to(d, "0.1.1");
+    run_git(d, &["add", "-A"]);
+    let (code, text) = check(d, &["--staged"]);
+    assert_eq!(code, 0, "staged 에서 bump 했는데 막혔다:\n{text}");
+    assert!(text.contains("판정 대상 1 건"), "{text}");
+}
+
+#[test]
+fn a_new_plugin_has_nothing_to_bump_from() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    let other = "crates/tasty-plugin-newcomer";
+    write(
+        d,
+        &format!("{other}/Cargo.toml"),
+        "[package]\nname = \"tasty-plugin-newcomer\"\nversion = \"0.1.0\"\n",
+    );
+    write(
+        d,
+        &format!("{other}/tasty-plugin.toml"),
+        "id = \"com.tasty.newcomer\"\nversion = \"0.1.0\"\n",
+    );
+    write(d, &format!("{other}/src/main.rs"), "fn main() {}\n");
+    commit_all(d, "feat(newcomer): add a plugin");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 0,
+        "새 plugin 의 최초 버전에 bump 를 요구했다:\n{text}"
+    );
+}
+
+#[test]
+fn a_version_that_goes_down_is_rejected() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    bump_to(d, "0.1.5");
+    commit_all(d, "chore(fixture): move to 0.1.5");
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"down\";\n}\n",
+    );
+    bump_to(d, "0.1.4");
+    commit_all(d, "feat(fixture): change with a lower version");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 1, "version 이 내려갔는데 통과했다:\n{text}");
+}
+
+#[test]
+fn a_non_git_directory_is_undecidable_not_a_pass() {
+    let tmp = tempfile::tempdir().expect("임시 디렉토리");
+    let (code, text) = check(tmp.path(), &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 2,
+        "비-git 환경에서 판정 불가가 아니라 다른 코드를 냈다 — 0 이면 판정 불가를 \
+         통과로 세는 것이다:\n{text}"
+    );
+    assert!(text.contains("판정 불가"), "{text}");
+}
+
+#[test]
+fn a_missing_rev_is_undecidable_not_a_pass() {
+    let tmp = seed_repo();
+    let (code, text) = check(tmp.path(), &["--range", "deadbeefdeadbeef", "HEAD"]);
+    assert_eq!(
+        code, 2,
+        "없는 rev(shallow clone 의 형태)에서 판정 불가가 아니다:\n{text}"
+    );
+    assert!(
+        text.contains("shallow"),
+        "shallow 단서가 메시지에 없다:\n{text}"
+    );
+}
+
+#[test]
+fn the_first_commit_has_no_baseline_and_says_so() {
+    let tmp = tempfile::tempdir().expect("임시 디렉토리");
+    let d = tmp.path();
+    run_git(d, &["init", "--quiet"]);
+    run_git(d, &["config", "user.email", "fixture@example.invalid"]);
+    run_git(d, &["config", "user.name", "fixture"]);
+    write(
+        d,
+        "Cargo.toml",
+        "[workspace]\n[package]\nedition = \"2024\"\n",
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/tasty-plugin.toml"),
+        "id = \"com.tasty.fixture\"\nversion = \"0.1.0\"\n",
+    );
+    run_git(d, &["add", "-A"]);
+
+    let (code, text) = check(d, &["--staged"]);
+    assert_eq!(code, 0, "첫 커밋에서 막혔다:\n{text}");
+    assert!(
+        text.contains("첫 커밋"),
+        "첫 커밋이라는 것이 출력에 안 나온다 — 조용한 통과와 구분되지 않는다:\n{text}"
+    );
+}

@@ -17,6 +17,7 @@
 #   C.9  egui::Window 직접 사용                          [diff 추가 라인]
 #   C.11 println! / eprintln! — tracing 강제             [diff 추가 라인]
 #   C.12 dbg! — debug leak 방지                          [diff 추가 라인]
+#   P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로 [staged diff]
 #   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [staged 파일 목록]
 #
 # 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서.
@@ -308,6 +309,42 @@ check_changelog_reminder() {
 }
 
 # ────────────────────────────────────────────────────────────
+# P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로
+#
+# 판정은 scripts/check-plugin-version-bump.sh 하나가 한다 — 훅과 CI 가 같은 것을
+# 불러야 둘이 갈리지 않는다. 판별식(파일 수 문턱이 아니라 rustfmt 정규화 후 내용)의
+# 근거·측정·대안은 docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md.
+#
+# **비교 기준은 HEAD 가 아니라 main 과의 merge-base 다.** HEAD 와 비교하면 `--amend`
+# 로 고쳐 커밋할 때 "이미 올린 그 커밋" 이 기준이 되어 두 번째 bump 를 요구하게 된다.
+# merge-base 기준이면 "이 lane 이 main 대비 한 번 올렸는가" 를 묻게 되어 amend·rebase
+# 어느 쪽에도 흔들리지 않고, 목적(반영 시점에 올라 있는가)과도 일치한다.
+# main 이 없거나(단독 clone) merge-base 를 못 구하면 HEAD 로 떨어진다.
+# ────────────────────────────────────────────────────────────
+check_plugin_version_bump() {
+    local staged_plugin base rc
+    staged_plugin=$(git diff --cached --name-only --diff-filter=ACMRD \
+        | /usr/bin/grep -E '^crates/tasty-plugin-[^/]+/' || true)
+    if [ -z "$staged_plugin" ]; then return; fi
+
+    base=$(git merge-base main HEAD 2>/dev/null || true)
+    [ -n "$base" ] || base=HEAD
+
+    set +e
+    bash scripts/check-plugin-version-bump.sh --staged --base "$base"
+    rc=$?
+    set -e
+    case "$rc" in
+        0) ;;
+        1) red "▸ [P.1] plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로다 (위 목록)."
+           FAIL=1 ;;
+        *) # **판정 불가를 통과로 세지 않는다.** 이유는 스크립트가 이미 출력했다.
+           red "▸ [P.1] 판정 불가 (exit $rc) — 위 사유를 해소하거나 --no-verify 로 우회해라."
+           FAIL=1 ;;
+    esac
+}
+
+# ────────────────────────────────────────────────────────────
 # 실행
 # ────────────────────────────────────────────────────────────
 check_mod_use_order
@@ -317,6 +354,7 @@ check_color_hardcode
 check_egui_window
 check_println
 check_dbg
+check_plugin_version_bump
 check_changelog_reminder
 
 if [ "$FAIL" -ne 0 ]; then
