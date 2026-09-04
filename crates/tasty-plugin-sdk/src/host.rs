@@ -26,6 +26,23 @@ use crate::shared_buffer::SharedBuffer;
 pub(crate) type HostCallResult = Result<Value, PluginError>;
 pub(crate) type PendingCalls = Arc<Mutex<HashMap<u64, mpsc::Sender<HostCallResult>>>>;
 
+/// 두 pending 맵의 poison 을 각각 첫 1 회만 보고한다 — poison 은 sticky 라 이후 모든
+/// 호출이 같은 경로를 탄다.
+///
+/// 임계구역은 `HashMap` 의 insert/remove 뿐이라 패닉이 나도 불변식이 성립한다. 방침표는
+/// plugin 프로세스 하나가 죽는 범위라면 패닉을 허용하지만, **복구가 가능한 자료구조에서
+/// 프로세스를 버리는 것은 재시작보다 비싸다** — `runtime.rs` 의 `fd_pending` 도 같은
+/// 이유로 복구를 택했다. 소켓 쓰기(writer)만 데이터를 신뢰할 수 없어 패닉을 유지한다.
+///
+/// 조용히 버리면 `deliver_ipc_result` 가 응답을 배달하지 못해 **이후 모든 host call 이
+/// timeout** 이 되고, 정리 경로에서 버리면 죽은 항목이 맵에 누적된다.
+static PENDING_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FD_PENDING_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+const PENDING_WHAT: &str = "plugin host call pending map";
+const FD_PENDING_WHAT: &str = "plugin shared-buffer fd pending map";
+
 /// `host.shared_buffer.create` RPC와 동일한 call_id로 매칭되는 fd waiter 맵.
 /// 보조 채널 reader가 `HandleAttach`를 받으면 여기 등록된 mpsc로 fd를 push한다.
 #[cfg(unix)]
@@ -167,9 +184,12 @@ impl HostHandle {
         match rx.recv_timeout(self.timeout) {
             Ok(result) => result,
             Err(_) => {
-                if let Ok(mut p) = self.pending.lock() {
-                    p.remove(&call_id);
-                }
+                tasty_utils::poison::recover_mutex(
+                    self.pending.lock(),
+                    PENDING_WHAT,
+                    &PENDING_POISONED,
+                )
+                .remove(&call_id);
                 Err(PluginError::HostCallTimeout {
                     method,
                     timeout: self.timeout,
@@ -219,9 +239,12 @@ impl HostHandle {
         let parsed: SharedBufferCreateResult = match rpc_result {
             Ok(v) => serde_json::from_value(v)?,
             Err(e) => {
-                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
-                    m.remove(&call_id);
-                }
+                tasty_utils::poison::recover_mutex(
+                    self.shared_buffer_fd_pending.lock(),
+                    FD_PENDING_WHAT,
+                    &FD_PENDING_POISONED,
+                )
+                .remove(&call_id);
                 return Err(e);
             }
         };
@@ -230,9 +253,12 @@ impl HostHandle {
         let fd = match fd_rx.recv_timeout(self.timeout) {
             Ok(fd) => fd,
             Err(_) => {
-                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
-                    m.remove(&call_id);
-                }
+                tasty_utils::poison::recover_mutex(
+                    self.shared_buffer_fd_pending.lock(),
+                    FD_PENDING_WHAT,
+                    &FD_PENDING_POISONED,
+                )
+                .remove(&call_id);
                 return Err(PluginError::HostCallTimeout {
                     method: format!("{} (handle attach)", METHOD_HOST_SHARED_BUFFER_CREATE),
                     timeout: self.timeout,
@@ -289,9 +315,12 @@ impl HostHandle {
         let parsed: SharedBufferCreateResult = match rpc_result {
             Ok(v) => serde_json::from_value(v)?,
             Err(e) => {
-                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
-                    m.remove(&call_id);
-                }
+                tasty_utils::poison::recover_mutex(
+                    self.shared_buffer_fd_pending.lock(),
+                    FD_PENDING_WHAT,
+                    &FD_PENDING_POISONED,
+                )
+                .remove(&call_id);
                 return Err(e);
             }
         };
@@ -299,9 +328,12 @@ impl HostHandle {
         let handle = match handle_rx.recv_timeout(self.timeout) {
             Ok(h) => h,
             Err(_) => {
-                if let Ok(mut m) = self.shared_buffer_fd_pending.lock() {
-                    m.remove(&call_id);
-                }
+                tasty_utils::poison::recover_mutex(
+                    self.shared_buffer_fd_pending.lock(),
+                    FD_PENDING_WHAT,
+                    &FD_PENDING_POISONED,
+                )
+                .remove(&call_id);
                 return Err(PluginError::HostCallTimeout {
                     method: format!("{} (handle attach)", METHOD_HOST_SHARED_BUFFER_CREATE),
                     timeout: self.timeout,
@@ -336,7 +368,9 @@ pub(crate) fn deliver_ipc_result(
     result: Option<Value>,
     error: Option<String>,
 ) {
-    let sender = pending.lock().ok().and_then(|mut p| p.remove(&call_id));
+    let sender =
+        tasty_utils::poison::recover_mutex(pending.lock(), PENDING_WHAT, &PENDING_POISONED)
+            .remove(&call_id);
     if let Some(tx) = sender {
         let out = match error {
             Some(message) => Err(PluginError::HostCall {

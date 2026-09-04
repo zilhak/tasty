@@ -6146,7 +6146,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "egui",
@@ -6154,6 +6154,7 @@ dependencies = [
  "serde_json",
  "tasty-plugin-protocol",
  "tasty-shm",
+ "tasty-utils",
  "tempfile",
  "thiserror 1.0.69",
  "toml 0.8.2",
