@@ -115,10 +115,6 @@ const PATTERNS: &[(&str, &str, Finder)] = &[
 /// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성 +
 /// vendored 서드파티 번들.
 ///
-/// `assets` — 서드파티 라이브러리 번들(수 MB 짜리 minified JS)과 폰트 바이너리만
-/// 들어 있다. 산문 패턴으로 훑는 것이 순수 비용이고, 라이브러리를 갱신했을 때 그
-/// 안의 문자열이 우연히 P4 형태를 띠면 **무관한 이유로 CI 가 빨개진다**. 이 디렉토리에
-/// 우리가 쓴 콘텐츠를 넣게 되면 이 가지치기를 좁혀야 한다.
 const PRUNE_DIRS: &[&str] = &[
     "target",
     "dist",
@@ -127,7 +123,29 @@ const PRUNE_DIRS: &[&str] = &[
     ".git",
     ".idea",
     "node_modules",
-    "assets",
+];
+
+/// vendored 서드파티 번들 — **파일 단위로 열거한다.**
+///
+/// 이유는 비용과 오탐이다. 수 MB 짜리 minified 번들을 산문 패턴으로 훑는 것이 순수
+/// 비용이고, 라이브러리를 갱신했을 때 그 안의 문자열이 우연히 P4 형태를 띠면
+/// **무관한 이유로 CI 가 빨개진다.**
+///
+/// **`assets` 라는 디렉토리 이름으로 면제하던 것을 파일 열거로 바꿨다.** 이름은 덮는
+/// 범위가 열려 있어서, 그 디렉토리에 우리 콘텐츠가 들어오면 조용히 안 봐진다. 그것이
+/// 가정이 아니라 이미 벌어진 상태였다 — 실측(2026-09-05) 이름 면제가 덮고 있던 것에
+/// 우리가 쓴 `assets/linux/tasty.desktop` · `assets/icons/*.svg` ·
+/// `crates/tasty-plugin-markdown/assets/NOTICE.md` 가 포함돼 있었다. 폰트·이미지는
+/// 이름이 아니라 [`SKIP_EXTS`] 가 이미 덮고 있어서, 이름 면제가 실제로 더 덮던 것은
+/// **우리 파일들뿐이었다.**
+///
+/// 열거는 새로 들어온 것을 안 덮는다는 점에서 이름과 강도가 다르다. 목록이 실재와
+/// 어긋나면 [`the_vendored_list_matches_what_is_there`] 가 빨개진다.
+const VENDORED_FILES: &[&str] = &[
+    "crates/tasty-plugin-markdown/assets/highlight.min.js",
+    "crates/tasty-plugin-markdown/assets/katex.min.css",
+    "crates/tasty-plugin-markdown/assets/katex.min.js",
+    "crates/tasty-plugin-markdown/assets/mermaid.min.js",
 ];
 
 /// gitignored 로컬 폴더 이름의 조각. 이 파일 자신이 P6 에 걸리지 않도록 나눠 둔다.
@@ -462,6 +480,9 @@ const SKIP_EXTS: &[&str] = &[
 /// 확장자만 뺀다. 확장자가 없는 파일(`Justfile` · 훅 스크립트)도 대상이다.
 /// 근거는 모듈 주석 "스캔 대상 정의" 참조.
 fn is_scan_target(rel: &str) -> bool {
+    if VENDORED_FILES.contains(&rel) {
+        return false;
+    }
     let name = rel.rsplit('/').next().unwrap_or("");
     // 선행 `.` 은 확장자 구분자가 아니다 — dotfile 은 확장자 없음으로 본다.
     let ext = name
@@ -844,12 +865,76 @@ fn a_build_dir_under_another_name_is_still_pruned() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// vendored 목록이 실재와 맞는가. **열거의 값은 여기서 나온다** — 목록이 이름 면제와
+/// 다른 것은 "새로 들어온 것을 안 덮는다" 는 점뿐이고, 그것은 목록이 낡지 않을 때만
+/// 성립한다.
+///
+/// 양방향으로 본다. 목록에 있는데 없는 파일(번들이 옮겨졌다)과, 같은 디렉토리에
+/// 목록에 없는 minified 번들이 새로 들어온 것.
 #[test]
-fn prunes_build_outputs_local_dirs_and_vendored_assets() {
+fn the_vendored_list_matches_what_is_there() {
+    let root = &tasty_doc_guards::repo_root();
+    for rel in VENDORED_FILES {
+        assert!(
+            root.join(rel).is_file(),
+            "vendored 목록이 없는 파일을 가리킨다: {rel} — 번들이 옮겨졌으면 목록도 옮겨라"
+        );
+    }
+
+    let dir = root.join("crates/tasty-plugin-markdown/assets");
+    let mut unlisted = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("vendored 디렉토리를 읽지 못했다") {
+        let path = entry.expect("디렉토리 항목").path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !(name.ends_with(".min.js") || name.ends_with(".min.css")) {
+            continue;
+        }
+        let rel = format!("crates/tasty-plugin-markdown/assets/{name}");
+        if !VENDORED_FILES.contains(&rel.as_str()) {
+            unlisted.push(rel);
+        }
+    }
+    assert!(
+        unlisted.is_empty(),
+        "목록에 없는 minified 번들이 있다 — 열거를 갱신해라: {unlisted:?}"
+    );
+}
+
+/// **이름 면제가 덮던 우리 파일들이 이제 스캔된다.** 반대 극성이다 — 위 목록만 있고
+/// 이름 면제가 남아 있으면 이 단언이 빨개진다.
+#[test]
+fn our_own_files_under_assets_are_scanned() {
+    for rel in [
+        "assets/linux/tasty.desktop",
+        "assets/icons/tasty-melon.svg",
+        "crates/tasty-plugin-markdown/assets/NOTICE.md",
+    ] {
+        assert!(
+            is_scan_target(rel),
+            "우리가 쓴 파일이 스캔 대상에서 빠졌다: {rel}"
+        );
+        let dir = rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+        let name = dir.rsplit('/').next().unwrap_or("");
+        assert!(
+            !is_pruned(name),
+            "그 파일이 든 디렉토리가 이름으로 가지치기된다: {dir}"
+        );
+    }
+    // 대조 — vendored 번들은 여전히 빠진다.
+    assert!(!is_scan_target(
+        "crates/tasty-plugin-markdown/assets/katex.min.js"
+    ));
+}
+
+#[test]
+fn prunes_build_outputs_and_local_dirs_but_not_assets() {
     assert!(is_pruned("target"));
     assert!(is_pruned("node_modules"));
-    // vendored 서드파티 번들 — 산문 패턴으로 훑을 대상이 아니다.
-    assert!(is_pruned("assets"));
+    // vendored 번들은 **디렉토리 이름이 아니라 파일 열거**로 뺀다 — 그 디렉토리에는
+    // 우리 파일도 산다(`the_vendored_list_matches_what_is_there` 참조).
+    assert!(!is_pruned("assets"));
     // gitignored 로컬 폴더(선행 `.`).
     assert!(is_pruned(fx!(".", "claude")));
     assert!(is_pruned(fx!(".", "claude", "-workspace")));
