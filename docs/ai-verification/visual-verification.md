@@ -39,6 +39,10 @@ for x in range(expected_x - 5, expected_x + 5):
 
 체크: ① 색이 배경과 다른가(코드) ② 레이어가 위에 그려지나(렌더 순서) ③ 픽셀 RGB 가 기대값과 일치하나(수치). 셋 다 통과 안 하면 "보인다" 고 말하지 않는다.
 
+**전후 캡처를 비교해 "안 바뀌었다" 를 판정하는 것은 위와 다른 축이다.** 그쪽은 양성 대조와
+노이즈 바닥을 먼저 세워야 하고, "바이트 동일" 은 판정 기준이 될 수 없다 —
+절차는 [screenshot-methods](screenshot-methods.md) "픽셀 diff 판정 전" 절이 정본이다.
+
 ## 스크린샷 판단 휴리스틱 (인지 함정 방지)
 
 픽셀 검증과 별개로, 눈으로 볼 때 빠지는 함정:
@@ -52,5 +56,6 @@ for x in range(expected_x - 5, expected_x + 5):
 
 ## 관련
 
+- [screenshot-methods](screenshot-methods.md) — 캡처 수단 · Xvfb 함정 · **전후 diff 판정의 노이즈 바닥과 양성 대조**
 - [dev-guide/debug-ipc](../dev-guide/debug-ipc.md) — `ui.screenshot` / `debug.glyph_color`
 - [dev-guide/gpu-rendering](../dev-guide/gpu-rendering.md) · [dev-guide/color-policy](../dev-guide/color-policy.md) · [design/systems/theme](../design/systems/theme.md)
