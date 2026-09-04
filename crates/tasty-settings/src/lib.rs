@@ -33,6 +33,28 @@ pub use types::{
     OverlaySettings, PerformanceSettings, RemoteTransferSettings,
 };
 
+/// 이 `Settings` 값이 어디서 왔는지 — **원본 파일을 덮어써도 되는지**를 판정한다.
+///
+/// 파싱 실패를 기본값으로 폴백하는 것 자체는 앱을 계속 쓰게 해 주므로 옳다. 위험한
+/// 것은 그 뒤의 저장이다: 폴백한 기본값을 원래 자리에 쓰면 사용자가 쓴 설정이 사라진다.
+/// 그래서 로드 결과에 "덮어써도 되는가" 를 실어 [`Settings::save`] 가 판정하게 한다.
+///
+/// **로드는 파일을 건드리지 않는다.** 보존(백업으로 이동)은 실제로 덮어쓰려는 순간,
+/// 즉 [`Settings::save`] 안에서 일어난다. 로드 시점에 옮기면 부팅 중 같은 파일을 여러 번
+/// 읽는 프로세스들 사이에서 첫 로드만 사건을 보고 나머지는 "부재" 로 관측하게 되어,
+/// 정작 사용자에게 알릴 프로세스가 아무것도 모르는 상태가 된다.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SettingsOrigin {
+    /// 파일을 정상적으로 읽었거나(부재 포함), 프로그램이 만든 값. 저장해도 잃을 것이 없다.
+    #[default]
+    Clean,
+    /// 원본이 그 자리에 있는데 해석하지 못해 기본값으로 폴백했다. 저장 직전에 원본을
+    /// `.bak` 으로 옮기고, 옮기지 못하면 저장을 거부한다.
+    Unparsable,
+    /// 원본을 **읽지도** 못했다(권한 · IO). 내용을 모르므로 옮기지도 않고, 저장만 막는다.
+    ProtectedUnreadable,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[derive(Default)]
@@ -63,6 +85,10 @@ pub struct Settings {
     /// 사용자 등록 Lua 스크립트 목록 (ADR-0031). 단축키 트리거·관리 창·TOFU 게이트의 기반.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 빈 목록).
     pub scripts: ScriptRegistry,
+    /// 이 값의 출처 — 원본 파일을 덮어써도 되는지. 디스크에 나가지 않는 런타임 상태라
+    /// `#[serde(skip)]`. clone 을 타고 전파되므로 어느 복사본으로 저장하든 판정이 같다.
+    #[serde(skip)]
+    pub origin: SettingsOrigin,
 }
 
 impl Settings {
@@ -118,16 +144,40 @@ impl Settings {
         Self::load_from_path(&path)
     }
 
-    /// 확정된 config 경로에서 읽어 파싱한다. 파일 부재는 로그 후 기본값.
+    /// 확정된 config 경로에서 읽어 파싱한다.
+    ///
+    /// **부재와 읽기 실패를 구분한다.** 둘을 같은 기본값으로 뭉개면 권한 오류·IO 오류가
+    /// "설정을 만든 적 없음" 과 같아지고, 이후 저장이 멀쩡한 사용자 파일을 기본값으로
+    /// 덮어쓴다. 읽지 못한 경우에는 파일을 건드리지 않고 저장만 막는다 — 내용을 확인하지
+    /// 못한 파일을 옮기면 일시적 오류에도 사용자 파일이 자리를 뜨기 때문이다.
     fn load_from_path(path: &std::path::Path) -> Self {
-        let Ok(contents) = fs::read_to_string(path) else {
-            tracing::info!("no settings file at {}, using defaults", path.display());
-            return Self::default();
+        let contents = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!("no settings file at {}, using defaults", path.display());
+                return Self::default();
+            }
+            Err(e) => {
+                tracing::error!(
+                    "failed to read settings file {}: {e} — using defaults and refusing to \
+                     overwrite it (fix permissions or move the file to start fresh)",
+                    path.display()
+                );
+                return Self {
+                    origin: SettingsOrigin::ProtectedUnreadable,
+                    ..Self::default()
+                };
+            }
         };
         Self::parse_or_default(&contents, path)
     }
 
     /// 파싱 성공/실패를 각각 로그하고, 실패 시 기본값으로 폴백한다.
+    ///
+    /// **파일은 건드리지 않는다.** 원본 보존은 실제로 덮어쓰려는 순간([`Settings::save`])에
+    /// 한다. 레벨이 `error!` 인 이유는 `docs/dev-guide/error-handling.md` 의 표가 "설정
+    /// 저장 실패" 를 그 레벨의 예로 들기 때문이다 — 파싱 실패는 사용자의 전체 설정이
+    /// 무효가 되는 같은 무게의 사건이다.
     fn parse_or_default(contents: &str, path: &std::path::Path) -> Self {
         match Self::parse_with_migration(contents) {
             Ok(settings) => {
@@ -135,8 +185,15 @@ impl Settings {
                 settings
             }
             Err(e) => {
-                tracing::warn!("failed to parse settings file: {e}, using defaults");
-                Self::default()
+                tracing::error!(
+                    "failed to parse settings file {}: {e} — using defaults; the file is left \
+                     as it is and will be moved aside to a .bak before anything overwrites it",
+                    path.display()
+                );
+                Self {
+                    origin: SettingsOrigin::Unparsable,
+                    ..Self::default()
+                }
             }
         }
     }
@@ -159,16 +216,90 @@ impl Settings {
         Ok(settings)
     }
 
+    /// 그 경로의 파일이 **지금도** 해석되지 않는가. 보존이 실제로 일어났는지 되묻는 데
+    /// 쓴다 — 원본을 `.bak` 으로 옮겼으면 그 자리는 새로 쓴 정상 파일이라 `false` 이고,
+    /// 옮기지 못했으면(백업 자리 소진 등) 원본이 그대로라 `true` 다. 파일이 없으면
+    /// 해석할 것이 없으므로 `false`.
+    pub fn file_is_unparsable(path: &std::path::Path) -> bool {
+        match fs::read_to_string(path) {
+            Ok(contents) => Self::parse_with_migration(&contents).is_err(),
+            Err(_) => false,
+        }
+    }
+
     /// Save settings to the config file.
+    ///
+    /// 원본을 읽지 못했고 보존도 못 한 상태([`SettingsOrigin::ProtectedUnreadable`])면
+    /// **거부한다.** 그 상태의 `self` 는 기본값이므로, 쓰면 디스크에 남아 있는 사용자
+    /// 설정을 기본값으로 대체하게 된다.
     pub fn save(&self) -> Result<()> {
         Self::ensure_config_dir()?;
         let Some(path) = Self::config_path() else {
             anyhow::bail!("could not determine config path");
         };
+        self.save_to_path(&path)
+    }
+
+    /// 확정된 경로에 쓴다. 덮어쓰기 전에 [`Self::protect_existing_file`] 로 기존 파일을
+    /// 지킨다.
+    fn save_to_path(&self, path: &std::path::Path) -> Result<()> {
+        self.protect_existing_file(path)?;
         let contents = toml::to_string_pretty(self)?;
-        fs::write(&path, contents)?;
+        fs::write(path, contents)?;
         tracing::info!("saved settings to {}", path.display());
         Ok(())
+    }
+
+    /// 덮어쓰기 직전에 디스크의 기존 파일을 지킨다.
+    ///
+    /// 이 프로세스가 로드할 때 해석하지 못했던 파일이 **아직 그 자리에 있으면** `.bak` 으로
+    /// 옮긴 뒤 진행한다. 읽지도 못했던 경우에는 옮길 수 없으므로 저장 자체를 거부한다 —
+    /// 지금 `self` 는 기본값이라, 쓰는 순간 사용자의 설정이 기본값으로 대체된다.
+    ///
+    /// 저장 시점에 다시 확인하는 이유: `save` 는 `&self` 라 한 번 보존했다는 사실을
+    /// 남길 곳이 없다. 파일을 다시 읽어 판정하면 두 번째 저장이 방금 쓴 정상 파일을
+    /// 백업으로 옮기는 일이 없다.
+    fn protect_existing_file(&self, path: &std::path::Path) -> Result<()> {
+        match self.origin {
+            SettingsOrigin::Clean => return Ok(()),
+            SettingsOrigin::ProtectedUnreadable => anyhow::bail!(
+                "refusing to overwrite the settings file {}: it could not be read (see the \
+                 earlier error); fix permissions or move it aside first",
+                path.display()
+            ),
+            SettingsOrigin::Unparsable => {}
+        }
+        let still_unparsable = match fs::read_to_string(path) {
+            Ok(contents) => Self::parse_with_migration(&contents).is_err(),
+            // 이미 사라졌다면 지킬 것이 없다.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => anyhow::bail!(
+                "refusing to overwrite the settings file {}: it could not be re-read before \
+                 being replaced ({e})",
+                path.display()
+            ),
+        };
+        if !still_unparsable {
+            return Ok(());
+        }
+        match tasty_utils::path::preserve_corrupt_file(path) {
+            Ok(Some(backup)) => {
+                tracing::error!(
+                    "the settings file {} could not be parsed at startup; it was moved to {} \
+                     before being replaced",
+                    path.display(),
+                    backup.display()
+                );
+                Ok(())
+            }
+            // 다른 곳에서 이미 옮겼다 — 원본은 그 백업에 있고 이 자리는 비었다.
+            Ok(None) => Ok(()),
+            Err(e) => anyhow::bail!(
+                "refusing to overwrite the settings file {}: the unparsable original could not \
+                 be preserved ({e}); move it aside first",
+                path.display()
+            ),
+        }
     }
 
     /// Validate enum-like string fields and replace invalid values with safe defaults.
@@ -392,6 +523,123 @@ ui_scale = "large"
         assert_eq!(parsed.appearance.default_font.font_size, 14.0);
         assert!(parsed.notification.enabled);
         assert!(!parsed.general.shell.is_empty());
+    }
+
+    /// 해석하지 못한 파일은 **로드가 건드리지 않는다.** 부팅 중 같은 파일을 여러 번 읽고,
+    /// 런처와 GUI 는 서로 다른 프로세스다 — 첫 로드가 파일을 옮겨버리면 정작 사용자에게
+    /// 알릴 프로세스는 "파일 없음" 만 보게 된다.
+    #[test]
+    fn unparsable_settings_file_is_left_in_place_by_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "this is not = valid toml [[[").unwrap();
+
+        for _ in 0..2 {
+            let loaded = Settings::load_from_path(&path);
+            assert_eq!(
+                loaded.origin,
+                SettingsOrigin::Unparsable,
+                "몇 번을 읽어도 같은 사실을 봐야 한다"
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "this is not = valid toml [[[",
+            "로드는 원본을 옮기지 않는다"
+        );
+        assert!(!tmp.path().join("config.toml.bak").exists());
+    }
+
+    /// 보존은 실제로 덮어쓰는 순간에 일어난다. 저장 뒤 원본은 `.bak` 에, 새 값은 원래
+    /// 자리에 있어야 한다.
+    #[test]
+    fn saving_over_an_unparsable_file_preserves_it_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "this is not = valid toml [[[").unwrap();
+
+        let loaded = Settings::load_from_path(&path);
+        loaded.save_to_path(&path).unwrap();
+
+        let backup = tmp.path().join("config.toml.bak");
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "this is not = valid toml [[[",
+            "원본이 백업에 그대로 남아야 한다"
+        );
+        assert!(
+            Settings::load_from_path(&path).origin == SettingsOrigin::Clean,
+            "새로 쓴 파일은 정상이어야 한다"
+        );
+        // 두 번째 저장은 방금 쓴 정상 파일을 백업으로 옮기지 않는다.
+        loaded.save_to_path(&path).unwrap();
+        assert!(!tmp.path().join("config.toml.bak.2").exists());
+    }
+
+    /// 파일이 없는 것은 정상이다 — 첫 실행. 저장을 막을 이유가 없다.
+    #[test]
+    fn missing_settings_file_is_clean() {
+        let tmp = tempfile::tempdir().unwrap();
+        let loaded = Settings::load_from_path(&tmp.path().join("config.toml"));
+        assert_eq!(loaded.origin, SettingsOrigin::Clean);
+    }
+
+    /// 읽기 자체가 실패하면 파일을 **건드리지 않고** 저장만 막는다. 일시적 권한 오류에
+    /// 사용자 설정이 자리를 뜨면 안 되고, 그 위에 기본값을 쓰면 더더욱 안 된다.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_settings_file_blocks_save_and_is_left_in_place() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[general]\nshell = \"/bin/zsh\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let loaded = Settings::load_from_path(&path);
+        assert_eq!(loaded.origin, SettingsOrigin::ProtectedUnreadable);
+        assert!(
+            loaded.save_to_path(&path).is_err(),
+            "읽지 못한 파일 위에 기본값을 쓰면 안 된다"
+        );
+
+        // 위 단정만으로는 부족하다 — mode 000 파일에는 `fs::write` 자체가 실패하므로
+        // 가드를 통째로 들어내도 그대로 통과한다(OS 권한을 검사하는 셈이다). 거부가
+        // **origin 판정에서** 나온다는 것을 보이려면 OS 가 막지 않는 자리에 써 봐야 한다.
+        let writable = tmp.path().join("elsewhere.toml");
+        assert!(
+            loaded.save_to_path(&writable).is_err(),
+            "쓸 수 있는 자리라도 거부해야 한다 — 거부의 근거는 파일 권한이 아니라 \
+             '원본을 읽지 못했다' 는 판정이다"
+        );
+        assert!(!writable.exists(), "거부했으면 파일을 만들지도 않는다");
+        // 대조군: 같은 자리라도 origin 이 Clean 이면 정상적으로 쓰인다 — 위 두 단정이
+        // "save_to_path 는 늘 실패한다" 로 통과하는 것을 막는다.
+        Settings::default()
+            .save_to_path(&writable)
+            .expect("Clean 인 설정은 쓸 수 있어야 한다");
+        assert!(writable.exists());
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[general]\nshell = \"/bin/zsh\"\n",
+            "원본이 그대로 있어야 한다"
+        );
+        assert!(
+            !tmp.path().join("config.toml.bak").exists(),
+            "백업도 만들지 않는다"
+        );
+    }
+
+    /// 정상 로드는 저장을 막지 않는다(회귀 가드 — 가드가 과하게 잠그면 설정 저장이 죽는다).
+    #[test]
+    fn valid_settings_file_stays_clean() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+        std::fs::write(&path, "[general]\nshell = \"/bin/zsh\"\n").unwrap();
+        let loaded = Settings::load_from_path(&path);
+        assert_eq!(loaded.origin, SettingsOrigin::Clean);
+        assert_eq!(loaded.general.shell, "/bin/zsh");
     }
 
     #[test]
