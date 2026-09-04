@@ -101,10 +101,14 @@
 
 | 단계 | 상수 | 값 | 조건 |
 |------|------|-----|------|
-| S1 | `SPAWN_PORT_TIMEOUT` | 30 s | `--port-file` 에 port 가 쓰여짐 |
-| S2 | `SPAWN_SHELL_TIMEOUT` | 15 s | first surface `screen_text` 가 non-empty (첫 PTY prompt) |
+| S1 | `SPAWN_PORT_TIMEOUT` | 40 s | `--port-file` 에 port 가 쓰여짐 |
+| S2 | `SPAWN_SHELL_TIMEOUT` | 20 s | first surface `screen_text` 가 non-empty (첫 PTY prompt) |
 
 값은 단순 증가가 아니라 **결정적 fix(config.toml 사전 작성) 위의 마진**이다 — dev cold path worst-case(GPU init + plugin discover/extract + theme/db init, dev 프로필 ~3.5× 느림) + self-hosted runner 변동 폭 흡수.
+
+두 상수는 **`tests/spawn_diag`** 한 곳에만 있고 `tests/common`·`tests/webhook_common` 이 그것을 쓴다. 두 하네스는 같은 바이너리를 같은 방식으로 띄우므로 같은 단계에 다른 잣대를 댈 근거가 없다(이전에는 30/15 와 40/20 으로 갈려 있었고 그 차이의 근거가 어디에도 없었다). 통합값은 둘 중 큰 쪽이다 — 낮추는 쪽은 근거 없는 동작 축소이고, 올리는 쪽이 늘리는 것은 *이미 실패할 spawn* 이 보고되기까지의 시간뿐인데 그 시간은 아래 조기 종료 감지가 대부분 없앤다.
+
+**상한을 다 기다리지 않는 경우**: port file 대기 루프가 매 바퀴 자식의 종료를 확인한다. 자식이 이미 죽었으면(디스플레이 부재·설정 오류 등 즉사 계열) 그 자리에서 실패시킨다 — 죽은 프로세스를 40 초 더 기다릴 이유가 없다.
 
 ## 5. stderr tail 진단
 
@@ -112,10 +116,22 @@ spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 �
 
 ## 6. Flaky 대응 절차
 
+0. **panic 메시지 두 번째 줄의 판정문을 먼저 읽는다.** 하네스가 stderr 시그니처로 원인을 미리 갈라 놓는다.
+   - "GPU 경합/미가용으로 보인다 — 코드 인과가 아니다" → 아래 GPU 분기로. 코드를 보지 않는다.
+   - "디스플레이 서버가 없다" → `xvfb-run -a` 위에서 다시 돌린다.
+   - "부팅 차단 시그니처는 없다" → 아래 1~4 의 일반 절차로.
 1. panic 의 `--- stderr (last 30 lines) ---` 확인.
 2. 마지막 `tracing::info!` 단계 식별: `IPC server listening on 127.0.0.1:{port}` 가 보이면 **S2**(PTY prompt) timeout → shell path/rc 점검. 안 보이면 **S1** → config.toml shell 유효성·plugin·theme init 점검.
 3. 재현: `cargo test --test e2e_tests -- --nocapture`.
 4. 결정적 차단이 깨졌으면 `TastyInstance::spawn` 의 env/config 보강.
+
+### 6-1. GPU 분기
+
+시그니처(`renderD128` · `VK_ERROR_` · `DRI3` · `libEGL` · `tu_knl` · `failed to open device`)가 stderr 에 있으면 원인은 코드가 아니라 **GPU 디바이스 경합 또는 미가용**이다. 인스턴스 하네스는 GUI 빌드를 그대로 띄우고, GUI 부팅은 창 + GPU 디바이스를 만든 뒤에야 IPC 를 시작한다 — GPU 를 못 잡으면 port file 이 끝내 안 써지므로 상한을 늘려도 결과는 같다.
+
+- 같은 머신에서 다른 워크트리·인스턴스가 GPU 를 쓰고 있는지 먼저 본다. 여러 에이전트가 병렬로 작업하는 환경에서는 GUI 를 띄우는 검증을 세마포어로 직렬화한다.
+- 같은 실행에서 **깨지는 스위트가 매번 다르면** 코드 인과가 아니라 자원 경합의 무작위 희생자라는 신호다.
+- 단독 재실행으로 통과하면 그 판정이 확정된다.
 
 ## VTE 시뮬레이터 (`tasty-tui-simulator`)
 

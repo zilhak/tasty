@@ -17,6 +17,9 @@
 
 #![allow(dead_code)]
 
+#[path = "../spawn_diag/mod.rs"]
+mod spawn_diag;
+
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -31,8 +34,11 @@ use serde_json::Value;
 const STDERR_RING_CAPACITY: usize = 256;
 const STDERR_TAIL_LINES: usize = 40;
 
-const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(40);
-const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(20);
+// spawn 2 단계의 상한은 `tests/common` 과 같은 값을 쓴다 — 같은 바이너리를 같은
+// 방식으로 띄우므로 잣대가 다를 근거가 없다. 근거는 `tests/spawn_diag`.
+use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT};
+
+/// 리스너가 accept 를 시작할 때까지의 상한. 위 두 단계와 달리 웹훅 고유 단계다.
 const WEBHOOK_READY_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// 포트를 뺏겼을 때 새 포트로 다시 띄우는 횟수 상한. 경합은 드물고(제3자가 하필 그
@@ -423,14 +429,30 @@ impl WebhookInstance {
         let port = loop {
             if start.elapsed() > SPAWN_PORT_TIMEOUT {
                 panic!(
-                    "tasty failed to start within {SPAWN_PORT_TIMEOUT:?}.\n--- stderr ---\n{}",
-                    stderr_tail(&stderr_ring, STDERR_TAIL_LINES)
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "tasty failed to start",
+                        SPAWN_PORT_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
                 );
             }
             if let Ok(content) = std::fs::read_to_string(&port_file)
                 && let Ok(port) = content.trim().parse::<u16>()
             {
                 break port;
+            }
+            // 자식이 이미 죽었으면 상한을 기다리지 않는다 (`tests/common` 과 동일).
+            if let Ok(Some(status)) = process.try_wait() {
+                panic!(
+                    "{}",
+                    spawn_diag::early_exit_message(
+                        &status.to_string(),
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
+                );
             }
             std::thread::sleep(Duration::from_millis(100));
         };
@@ -456,8 +478,13 @@ impl WebhookInstance {
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
                 panic!(
-                    "shell produced no output within {SPAWN_SHELL_TIMEOUT:?}.\n--- stderr ---\n{}",
-                    stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES)
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "shell produced no output",
+                        SPAWN_SHELL_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES),
+                    )
                 );
             }
             std::thread::sleep(Duration::from_millis(50));

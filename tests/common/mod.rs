@@ -17,6 +17,9 @@
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).
 #![allow(dead_code)]
 
+#[path = "../spawn_diag/mod.rs"]
+mod spawn_diag;
+
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -32,11 +35,9 @@ use serde_json::Value;
 const STDERR_RING_CAPACITY: usize = 256;
 const STDERR_TAIL_LINES: usize = 30;
 
-// dev cold path worst-case ~4 s + plugin/theme/gpu init 마진 + dev profile
-// (~3.5x release) + self-hosted runner 변동 폭을 흡수하기 위한 timeout.
 // S1=port file 작성 (init_app_state 후), S2=first surface PTY prompt.
-const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(30);
-const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(15);
+// 값과 그 근거는 두 하네스가 공유한다 — `tests/spawn_diag`.
+use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT};
 
 // ───── 공유 인스턴스 (test binary 단위) ─────
 
@@ -362,16 +363,35 @@ impl TastyInstance {
                 // 위와 동일.
                 let _ = std::fs::remove_dir_all(&isolated_home);
                 panic!(
-                    "tasty failed to start within {:?}.\n--- stderr (last {} lines) ---\n{}",
-                    SPAWN_PORT_TIMEOUT,
-                    STDERR_TAIL_LINES,
-                    stderr_tail(&stderr_ring, STDERR_TAIL_LINES)
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "tasty failed to start",
+                        SPAWN_PORT_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
                 );
             }
             if let Ok(content) = std::fs::read_to_string(&port_file)
                 && let Ok(port) = content.trim().parse::<u16>()
             {
                 break port;
+            }
+            // 자식이 이미 죽었으면 더 기다릴 이유가 없다. 부팅 실패는 대부분
+            // 즉사라, 이 확인 하나가 상한 전체를 기다리는 것을 막는다.
+            if let Ok(Some(status)) = process.try_wait() {
+                // 정리 실패해도 곧바로 panic 이라 보고할 자리가 없다(위 timeout 경로와 동일).
+                let _ = std::fs::remove_file(&port_file);
+                // 위와 동일.
+                let _ = std::fs::remove_dir_all(&isolated_home);
+                panic!(
+                    "{}",
+                    spawn_diag::early_exit_message(
+                        &status.to_string(),
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
+                );
             }
             std::thread::sleep(Duration::from_millis(100));
         };
@@ -403,10 +423,13 @@ impl TastyInstance {
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
                 panic!(
-                    "shell did not produce output within {:?}.\n--- stderr (last {} lines) ---\n{}",
-                    SPAWN_SHELL_TIMEOUT,
-                    STDERR_TAIL_LINES,
-                    stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES)
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "shell did not produce output",
+                        SPAWN_SHELL_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES),
+                    )
                 );
             }
             std::thread::sleep(Duration::from_millis(50));
