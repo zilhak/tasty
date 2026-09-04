@@ -237,6 +237,84 @@ fn the_spinner_exemption_discriminates_receiver() {
     ));
 }
 
+/// **면제마다 그 면제를 겨냥한 변이가 붙는다.** `spacing.rs` 의 네 항목은 구조 술어가
+/// `None` 이라 파일 전체에서 그 접두를 면제한다 — 가장 넓은 형태다. 그래서 "면제 창
+/// 안쪽에 *다른 축의* 진짜 위반을 심으면 잡히는가" 를 여기서 묻는다.
+///
+/// 답은 잡혀야 한다. `None` 면제는 **접두 하나**에만 걸리지 파일에 걸리지 않는다.
+#[test]
+fn the_typed_helper_exemption_does_not_cover_other_axes() {
+    const SP: &str = "crates/tasty-ui-widgets/src/spacing.rs";
+
+    // 면제된 접두 — 그 파일의 존재 이유다.
+    assert!(exempt(SP, "add_space(", "    ui.add_space(8.0);"));
+    assert!(exempt(SP, "Margin::same(", "    Margin::same(12.0)"));
+
+    // 같은 파일의 **다른 축**은 면제되지 않는다.
+    for form in [
+        ".size(",
+        "FontId::proportional(",
+        "Stroke::new(",
+        "inner_margin(",
+    ] {
+        let exempted = exempt(SP, form, "    x");
+        assert_eq!(
+            exempted,
+            form == "inner_margin(",
+            "`{form}` 의 면제 여부가 뒤집혔다 — spacing.rs 면제는 등록된 네 접두에만 \
+             걸려야 한다"
+        );
+    }
+
+    // 그리고 실제 판정에서도 잡힌다.
+    assert_eq!(
+        violating_prefix(SP, "    ui.label(RichText::new(x).size(13.0));", ""),
+        Some(".size(")
+    );
+    assert_eq!(
+        violating_prefix(SP, "    Stroke::new(2.0, c)", ""),
+        Some("Stroke::new(")
+    );
+}
+
+/// 반환 타입 시그니처를 넘기는 규칙도 **면제**다(형태가 있는데 안 잡는다). 그 창
+/// 안쪽에 진짜 구조체 리터럴을 심으면 잡혀야 한다.
+///
+/// **의도된 false negative 도 함께 고정한다**: 시그니처 줄은 잡지 않는 것이 옳다.
+/// 나중에 누가 이 규칙을 넓히면 그 결정이 여기서 실패로 드러난다.
+#[test]
+fn the_return_signature_skip_only_covers_signatures() {
+    // 시그니처 — 의도적으로 안 잡는다.
+    assert_eq!(
+        violating_prefix("src/view/x.rs", "fn s(..) -> egui::Stroke {", ""),
+        None
+    );
+    assert_eq!(
+        violating_prefix("src/view/x.rs", "fn f(..) -> egui::FontId {", ""),
+        None
+    );
+
+    // 같은 줄 모양이지만 구조체 리터럴 — 잡힌다.
+    assert_eq!(
+        violating_prefix(
+            "src/view/x.rs",
+            "    let s = egui::Stroke { width: 1.0 };",
+            ""
+        ),
+        Some("Stroke {")
+    );
+    // 시그니처 뒤에 리터럴이 이어 붙은 형태도 잡힌다 — `->` 하나가 줄 전체를 사면하지
+    // 않는다.
+    assert_eq!(
+        violating_prefix(
+            "src/view/x.rs",
+            "fn s() -> egui::Stroke { egui::Stroke { width: 1.0 } }",
+            ""
+        ),
+        Some("Stroke {")
+    );
+}
+
 /// `rel` 파일의 `line` 에서 `form` 이 면제되는가. 구조 술어가 있으면 **그 줄에서
 /// 접두보다 앞에** 마커가 있어야 한다.
 fn exempt(rel: &str, form: &str, line: &str) -> bool {
