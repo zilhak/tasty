@@ -629,6 +629,10 @@ fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
 /// 표식은 사람이 손으로 붙이고, 성질은 소스에 있다 — 갈라져도 아무 데서도 안 터진다.
 mod debug_gate_dagger;
 
+/// 번들 plugin 명부가 적힌 다섯 자리(cfg 두 갈래 · 매니페스트 실물 · 문서 두 곳)가
+/// 같은 집합인지 본다. 자리가 여럿인 것이 아니라 잇는 것이 없는 것이 결함이다.
+mod builtin_plugin_roster;
+
 mod reserved_ipc_prefixes;
 mod routing_key_coverage;
 
