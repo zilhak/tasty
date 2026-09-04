@@ -190,13 +190,16 @@ impl HostExecutor {
             .get("holder")
             .and_then(|v| v.as_str())
             .unwrap_or(task.id.as_str());
+        // lease metadata 와 같은 이름·같은 의미의 opt-in TTL. 생략하면 만료 없음.
+        let ttl_ms = meta.get("ttl_ms").and_then(|v| v.as_u64());
         let name = name.to_string();
         let holder = holder.to_string();
         let ws = task.workspace_id;
+        let now = now_ms();
         let result: Result<bool, String> = self.ctx.with_memory(|mem| {
             let mut store = SemaphoreStore::new(mem, HOST_OWNER);
             store
-                .acquire(ws, &name, &holder)
+                .acquire(ws, &name, &holder, ttl_ms, now)
                 .map(|o| o.acquired)
                 .map_err(|e| e.to_string())
         });

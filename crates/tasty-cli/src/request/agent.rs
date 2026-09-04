@@ -224,18 +224,34 @@ pub(super) fn agent_command_to_method_params(
                 "permits": *permits,
             }),
         ),
+        SemaphoreSetPermits {
+            workspace_id,
+            name,
+            permits,
+        } => (
+            "agent.semaphore_set_permits",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "name": name,
+                "permits": *permits,
+            }),
+        ),
         SemaphoreAcquire {
             workspace_id,
             name,
             holder,
-        } => (
-            "agent.semaphore_acquire",
-            serde_json::json!({
+            ttl_ms,
+        } => {
+            let mut p = serde_json::json!({
                 "workspace_id": *workspace_id,
                 "name": name,
                 "holder": holder,
-            }),
-        ),
+            });
+            if let Some(t) = ttl_ms {
+                p["ttl_ms"] = serde_json::Value::from(*t);
+            }
+            ("agent.semaphore_acquire", p)
+        }
         SemaphoreRelease {
             workspace_id,
             name,

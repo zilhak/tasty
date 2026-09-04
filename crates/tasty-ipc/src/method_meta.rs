@@ -337,6 +337,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.barrier_await", plugin(&[AgentManage])),
         ("agent.barrier_state", plugin(&[AgentManage])),
         ("agent.semaphore_create", plugin(&[AgentManage])),
+        ("agent.semaphore_set_permits", plugin(&[AgentManage])),
         ("agent.semaphore_acquire", plugin(&[AgentManage])),
         ("agent.semaphore_release", plugin(&[AgentManage])),
         ("agent.barrier_list", plugin(&[AgentManage])),

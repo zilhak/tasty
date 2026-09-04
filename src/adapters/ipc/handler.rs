@@ -997,6 +997,9 @@ fn route_engine_handler(
         "agent.semaphore_create" => {
             agent::handle_semaphore_create(core, state, engine, caller, id, &request.params)
         }
+        "agent.semaphore_set_permits" => {
+            agent::handle_semaphore_set_permits(core, state, engine, caller, id, &request.params)
+        }
         "agent.semaphore_acquire" => {
             agent::handle_semaphore_acquire(core, state, engine, caller, id, &request.params)
         }

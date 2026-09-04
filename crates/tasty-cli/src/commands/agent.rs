@@ -255,6 +255,18 @@ pub enum AgentCommands {
         #[arg(long)]
         permits: u32,
     },
+    /// Change a semaphore's permit count in place. Growing takes effect at
+    /// once; shrinking drains — current holders are never revoked, new
+    /// acquires are refused until the holder count falls under the new limit.
+    SemaphoreSetPermits {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+        /// New permit count (must be >= 1).
+        #[arg(long)]
+        permits: u32,
+    },
     /// Acquire 1 permit. Idempotent for the same holder.
     SemaphoreAcquire {
         #[arg(long)]
@@ -264,6 +276,11 @@ pub enum AgentCommands {
         /// Holder id (must be non-empty).
         #[arg(long)]
         holder: String,
+        /// Reclaim this permit automatically if the holder goes silent for
+        /// this many ms. Re-acquiring with the same holder renews it. Omit for
+        /// a permit that never expires (the default).
+        #[arg(long)]
+        ttl_ms: Option<u64>,
     },
     /// Release a permit. No-op if holder isn't currently holding.
     SemaphoreRelease {

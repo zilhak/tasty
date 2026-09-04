@@ -534,7 +534,8 @@ impl TaskExecutor for SemaphoreAwareExec {
                 .to_string();
             let mut mem = self.mem.borrow_mut();
             let mut store = SemaphoreStore::new(&mut *mem, "_host");
-            let outcome = match store.acquire(task.workspace_id, &name, &holder) {
+            // 이 test executor 에는 시계가 없고 TTL 도 쓰지 않는다 — 만료 없는 점유.
+            let outcome = match store.acquire(task.workspace_id, &name, &holder, None, 0) {
                 Ok(o) => o,
                 Err(e) => return DispatchOutcome::PermanentFail(format!("semaphore: {e}")),
             };

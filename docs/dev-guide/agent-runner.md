@@ -216,7 +216,7 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 
 | primitive | 통합 위치 | 결합 |
 |-----------|----------|------|
-| `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder? }` |
+| `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder?, ttl_ms? }` |
 | `Lease` | RunnerLoop dispatch | `task.metadata.lease = { resource, holder?, ttl_ms?, mode? }` 또는 pool 모드(`candidates`/`elastic` — 아래 "자원 풀 배정") |
 | `Barrier` | dispatch/poll | `WaitBarrier { name }` task(DAG 안 명시 gate) |
 | `RateLimit` | IPC dispatcher 미들웨어 | `(agent, "ipc_calls")` 호출당 1 차감 |
@@ -225,7 +225,24 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 
 `lease → semaphore` 순서로 점유. 한쪽 점유 후 다음이 Deferred/Err 면 점유 자원 즉시 release(idempotent). dead-lock 회피 — 두 자원 모두 가용일 때만 통과. permit/lease 는 task 가 Succeeded/Failed/Cancelled 로 종결되면 자동 release.
 
-**`holder == task.id` 컨벤션(강제)**: holder 가 task.id 와 다르면 *외부 도구가 직접 acquire 한 것* 으로 간주, 호스트 재시작 정화 대상에서 제외. 외부 점유 회수는 외부 도구 책임.
+**`holder == task.id` 컨벤션(강제)**: holder 가 task.id 와 다르면 *외부 도구가 직접 acquire 한 것* 으로 간주, 호스트 재시작 정화 대상에서 제외. 외부 점유 회수는 외부 도구 책임 — 그 회수 수단이 아래 "죽은 홀더와 한도 조정" 이다.
+
+### 죽은 홀더와 한도 조정
+
+세마포어 홀더는 `{ id, acquired_at?, expires_at? }` 객체다. `semaphore-list` 로 **누가 언제부터 잡고 있는지** 알 수 있고, 그게 "이 홀더가 죽었는가" 를 사람이 판정하는 근거다. `acquired_at` 이 없는 홀더는 시각 기록이 도입되기 전에 잡힌 것이다(0 이 아니라 부재로 표현한다).
+
+**만료는 opt-in 이다.** `semaphore-acquire --ttl-ms <N>` 으로 잡은 permit 은 `now + N` 에 만료되고, 다음 `acquire` 또는 `semaphore-list` 시점에 lazy 하게 회수된다. 같은 holder 로 다시 acquire 하면 갱신된다(heartbeat) — lease 의 `ttl_ms` 와 같은 메커니즘·같은 의미다. `--ttl-ms` 를 주지 않은 permit 은 **회수되지 않는다**: 오래 걸리는 정당한 작업의 permit 이 도중에 만료돼 두 홀더가 동시에 임계구역에 들어가는 것이 교착보다 나쁘기 때문이다([ADR-0119](../adr/0119-agent-semaphore-resize-and-holder-expiry.md)).
+
+**한도는 `semaphore-set-permits` 로 제자리에서 바꾼다.** `semaphore-create` 는 이미 있는 이름을 거절하므로, delete → create 로 우회하면 세마포어가 존재하지 않는 틈이 생기고 그 사이 아무나 임계구역에 들어간다.
+
+```sh
+tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 3   # 확대: 즉시 반영
+tasty agent semaphore-set-permits --workspace-id 1 --name cap2 --permits 1   # 축소: drain
+```
+
+축소는 **drain** 이다 — 이미 점유 중인 홀더를 강제로 끌어내지 않는다. `holders.len() > permits_total` 인 초과 상태를 그대로 두고 새 acquire 만 거절하므로, 홀더가 하나씩 반납하며 새 한도로 수렴한다. 그동안 `permits_available` 은 0 이다(음수로 내려가지 않는다).
+
+교착이 이미 났다면(홀더가 반납 없이 사라졌고 그 permit 에 TTL 이 없다면) 회수 수단은 두 가지다 — 제3자가 `semaphore-release --holder <그 id>` 로 대신 반납하거나, `semaphore-set-permits` 로 한도를 늘려 대기자를 통과시킨다. 어느 쪽이든 `semaphore-list` 의 `acquired_at` 을 보고 판단한다.
 
 ### 동시성 제한 (concurrency limit)
 
@@ -254,6 +271,7 @@ tasty agent task-list --workspace-id 1   # 즉시 조회 시 2개만 running, 2�
 tasty agent task-list --workspace-id 1   # 앞 2개가 끝나며 나머지 2개가 자동으로 running 전환
 tasty agent semaphore-list --workspace-id 1
 # 전부 종결 후 cap2 항목: permits_available == 2, holders: []
+# holders 원소는 { id, acquired_at?, expires_at? } — 누가 언제부터 잡고 있는지가 보인다
 ```
 
 ### 자원 풀 배정 (lease pool — `candidates`/`elastic`)
