@@ -10,6 +10,8 @@ mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
 #[cfg(debug_assertions)]
+mod debug_nav;
+#[cfg(debug_assertions)]
 pub(crate) mod debug_plugin;
 mod file_handler;
 #[cfg(feature = "gui")]
@@ -1142,16 +1144,17 @@ fn route_debug_handler(
         }
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.raw_key" => input_source::handle_raw_key(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
+        // 아래 셋은 gui feature 게이트가 없다 — 핸들러 본체가 gui 전용 필드를
+        // 하나도 안 만져서 headless debug 데몬에도 등록된다(`debug_nav` 모듈 doc).
         "debug.close_workspace" => {
-            debug::handle_debug_close_workspace(state, engine, id, &request.params)
+            debug_nav::handle_debug_close_workspace(state, engine, id, &request.params)
         }
-        #[cfg(feature = "gui")]
         "debug.switch_workspace" => {
-            debug::handle_debug_switch_workspace(state, engine, id, &request.params)
+            debug_nav::handle_debug_switch_workspace(state, engine, id, &request.params)
         }
-        #[cfg(feature = "gui")]
-        "debug.switch_tab" => debug::handle_debug_switch_tab(state, engine, id, &request.params),
+        "debug.switch_tab" => {
+            debug_nav::handle_debug_switch_tab(state, engine, id, &request.params)
+        }
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
         #[cfg(feature = "gui")]
         "debug.tool.list" => tool::handle_list(state, engine, id),
