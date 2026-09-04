@@ -286,10 +286,58 @@ fn as_slash(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-/// cargo 통합 테스트 타깃(`<크레이트>/tests/`)은 선언이 없어도 별도 target 이라 출하되지
-/// 않는다. 생성물도 게이트가 의도적으로 뺀다.
-fn exempt_for_other_reasons(rel: &str) -> bool {
-    rel.contains("/tests/") || rel.contains("generated")
+/// 면제를 떠받치는 **강제 가능한 성질**. `skip()` 의 정당화는 하나가 아니라 셋이고,
+/// 셋의 근거가 서로 다르다 — 앞의 둘은 "출하되지 않는다", 셋째는 "출하되지만 사람이
+/// 쓰지 않는다" 다. 셋 다 파일명과 독립으로 확인할 수 있다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Backing {
+    /// `#[cfg(test)]` 선언 아래에 있다 — 출하 빌드에 안 들어간다.
+    Declaration,
+    /// 크레이트 루트 바로 아래 `tests/` 다 — cargo 가 별도 타깃으로 빌드하므로 lib/bin 에
+    /// 안 들어간다. 이건 레이아웃이 강제하는 것이라 선언이 없어도 성립한다.
+    CargoTestTarget,
+    /// 생성기가 만든 파일이다 — 출하되지만 사람이 유지하지 않아 복잡도 예산 밖이다.
+    /// 근거는 파일 자신이 선언한다.
+    Generated,
+    /// **이름 말고는 아무 근거가 없다.** 면제가 개명 한 번으로 얻어진 상태다.
+    NameOnly,
+}
+
+/// 생성물이 자기를 밝히는 표식. 실측(2026-09-05, main `e5128a8c`): `*generated*` 에
+/// 걸리는 6 파일 전부가 **첫 줄에** 이 문구를 갖는다.
+///
+/// 표식은 파일이 스스로 다는 것이라 "정말 생성기가 만들었는가" 까지는 답하지 못한다.
+/// 답하는 것은 그보다 약한 명제다 — **이름만으로 면제되지는 않는다.** 이름은 옮기면
+/// 따라오지만 이 문구는 파일 안에 있어 diff 에 남는다.
+const GENERATED_MARKER: &str = "DO NOT EDIT";
+
+/// 크레이트 루트 바로 아래 `tests/` 인가. `src/` 안의 `tests/` 디렉토리는 **여기 해당하지
+/// 않는다** — 그건 그냥 모듈이고, 선언이 없으면 출하된다. 경로에 `/tests/` 가 들어 있는지
+/// 보는 것으로는 둘이 안 갈린다.
+fn is_cargo_test_target(rel: &str) -> bool {
+    let full = repo_root().join(rel);
+    let mut dir = full.parent();
+    while let Some(d) = dir {
+        if d.join("Cargo.toml").is_file() {
+            return full
+                .strip_prefix(d)
+                .is_ok_and(|rest| rest.starts_with("tests"));
+        }
+        dir = d.parent();
+    }
+    false
+}
+
+fn backing(c: &Candidate) -> Backing {
+    if c.test_only {
+        Backing::Declaration
+    } else if is_cargo_test_target(&c.rel) {
+        Backing::CargoTestTarget
+    } else if c.generated {
+        Backing::Generated
+    } else {
+        Backing::NameOnly
+    }
 }
 
 /// 판정 한 줄. 트리에서 뽑거나(`population`) 뮤테이션이 합성한다.
@@ -303,6 +351,7 @@ struct Candidate {
     rel: String,
     lines: usize,
     test_only: bool,
+    generated: bool,
 }
 
 /// 트리 실측 모수.
@@ -312,6 +361,10 @@ fn population() -> Vec<Candidate> {
         .into_iter()
         .map(|(path, text)| Candidate {
             test_only: test_only.contains(&path),
+            generated: text
+                .lines()
+                .take(20)
+                .any(|line| line.contains(GENERATED_MARKER)),
             rel: as_slash(&path),
             lines: text.lines().count(),
         })
@@ -326,7 +379,7 @@ fn bypassing(pop: &[Candidate], patterns: &[String]) -> (Vec<String>, usize) {
         .collect();
     let bad = skipped
         .iter()
-        .filter(|c| !c.test_only && !exempt_for_other_reasons(&c.rel))
+        .filter(|c| backing(c) == Backing::NameOnly)
         .map(|c| c.rel.clone())
         .collect();
     (bad, skipped.len())
@@ -561,7 +614,7 @@ fn a_shipping_file_renamed_to_a_test_name_is_caught() {
     );
 
     let victim = largest(&pop, |c| {
-        !c.test_only && !name_skipped(&c.rel, &patterns) && !exempt_for_other_reasons(&c.rel)
+        !c.test_only && !name_skipped(&c.rel, &patterns) && !c.generated
     });
     // 변이 강도를 단정한다 — 20 줄짜리를 숨기는 것과 수백 줄을 숨기는 것은 다른 사건이고,
     // 약한 대상으로 얻은 초록은 "개명 우회를 본다" 를 증명하지 않는다.
@@ -580,8 +633,8 @@ fn a_shipping_file_renamed_to_a_test_name_is_caught() {
          아래 판정이 무엇을 증명하는지 알 수 없다: {renamed}"
     );
     assert!(
-        !exempt_for_other_reasons(&renamed),
-        "다른 사유로도 면제되는 파일을 골랐다 — 개명이 원인이라고 말할 수 없다: {renamed}"
+        !is_cargo_test_target(&renamed) && !victim.generated,
+        "다른 근거로도 면제되는 파일을 골랐다 — 개명이 원인이라고 말할 수 없다: {renamed}"
     );
 
     let mut mutated = pop.clone();
@@ -617,7 +670,7 @@ fn a_name_skipped_file_that_starts_shipping_is_caught_without_changing_any_count
     assert!(before.is_empty(), "변이 전에 이미 위반이 있다: {before:?}");
 
     let victim = largest(&pop, |c| {
-        c.test_only && name_skipped(&c.rel, &patterns) && !exempt_for_other_reasons(&c.rel)
+        c.test_only && name_skipped(&c.rel, &patterns) && !is_cargo_test_target(&c.rel)
     });
 
     assert!(
@@ -715,4 +768,104 @@ fn a_measured_file_entering_the_review_list_is_caught_even_when_the_list_size_is
         "모수 밖 파일 `{outsider}` 이 목록에 있는 것을 위반으로 읽었다 — 출하 코드가 임계를 \
          넘어 심사받는 것은 게이트의 정상 동작이다"
     );
+}
+
+/// **면제 채널을 종류별로 연다.** 이름으로 게이트에서 빠지는 파일이 각각 **무엇에** 기대어
+/// 빠지는지 세고, 근거 없이 이름만으로 빠지는 것이 없음을 단정한다.
+///
+/// 개수를 문턱으로 박지 않는다 — 테스트 파일 하나가 커지면 그 수가 움직인다. 움직이는 것이
+/// 결함이 아닌 수를 문턱으로 쓰면 정상 성장에 빨개지고, **거짓 경보가 진짜 경보를 죽인다.**
+/// 잡아야 하는 것은 **크기가 아니라 종류의 변화**이므로 집합으로 판정한다.
+#[test]
+fn every_exemption_rests_on_something_other_than_the_name() {
+    let patterns = gate_skip_patterns();
+    let pop = population();
+
+    let mut by_kind: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for c in pop.iter().filter(|c| name_skipped(&c.rel, &patterns)) {
+        by_kind
+            .entry(format!("{:?}", backing(c)))
+            .or_default()
+            .push(c.rel.clone());
+    }
+
+    // 비영 대조 — 세 근거가 전부 실재해야 이 판정이 무엇을 재는지 알 수 있다.
+    for kind in ["Declaration", "CargoTestTarget", "Generated"] {
+        assert!(
+            by_kind.get(kind).is_some_and(|v| !v.is_empty()),
+            "면제 근거 `{kind}` 에 해당하는 파일이 0 개다 — 그 가지를 판정하는 코드가 아무것도 \
+             안 보고 있다. 관측된 종류: {:?}",
+            by_kind.keys().collect::<Vec<_>>()
+        );
+    }
+
+    let nameless = by_kind.get("NameOnly").cloned().unwrap_or_default();
+    assert!(
+        nameless.is_empty(),
+        "이름 말고는 면제 근거가 없는 파일이 있다 — 게이트에서 빠지는 데 필요한 것이 개명 \
+         하나뿐인 상태다. `#[cfg(test)]` 아래로 넣거나, 크레이트의 `tests/` 로 옮기거나, \
+         생성물이면 `{GENERATED_MARKER}` 표식을 달아라. 셋 다 아니면 심사 대상이다:\n  {}",
+        nameless.join("\n  ")
+    );
+}
+
+/// **닫은 구멍 둘** — 이름의 두 가지가 근거 없이도 면제를 주던 자리다. 둘 다 변이가 파일
+/// **개수를 바꾸지 않는다**(경로만 갈아끼운다).
+#[test]
+fn a_name_that_merely_looks_exempt_no_longer_buys_an_exemption() {
+    let patterns = gate_skip_patterns();
+    let pop = population();
+    let (before, _) = bypassing(&pop, &patterns);
+    assert!(before.is_empty(), "변이 전에 이미 위반이 있다: {before:?}");
+
+    let victim = largest(&pop, |c| {
+        !c.test_only && !name_skipped(&c.rel, &patterns) && !c.generated
+    });
+    assert!(
+        victim.lines >= 200,
+        "고른 출하 파일이 {} 줄({})뿐이다 — 변이가 약하다",
+        victim.lines,
+        victim.rel
+    );
+
+    // ① `src/` 안에 `tests/` 디렉토리를 만들어 넣는다. cargo 타깃이 아니라 **그냥 모듈**이라
+    //    선언이 없으면 출하되는데, 경로에 `/tests/` 가 들어갔다는 이유로 게이트는 뺀다.
+    let in_tests_dir = "src/tests/smuggled.rs".to_string();
+    assert!(
+        name_skipped(&in_tests_dir, &patterns),
+        "게이트가 이 경로를 면제하지 않는다 — 변이가 우회를 만들지 못했다: {in_tests_dir}"
+    );
+    assert!(
+        !is_cargo_test_target(&in_tests_dir),
+        "`{in_tests_dir}` 를 cargo 통합 타깃으로 읽었다 — 크레이트 루트 바로 아래 `tests/` 만 \
+         타깃이고 `src/` 안의 같은 이름 디렉토리는 모듈이다"
+    );
+
+    // ② 이름에 generated 를 넣는다. 표식이 없으면 생성물이라는 근거가 없다.
+    let named_generated = "src/looks_generated.rs".to_string();
+    assert!(
+        name_skipped(&named_generated, &patterns),
+        "게이트가 이 경로를 면제하지 않는다: {named_generated}"
+    );
+
+    for smuggled in [in_tests_dir, named_generated] {
+        let mut mutated = pop.clone();
+        let slot = mutated
+            .iter_mut()
+            .find(|c| c.rel == victim.rel)
+            .expect("고른 대상이 모수에 없다");
+        slot.rel = smuggled.clone();
+        assert_eq!(
+            mutated.len(),
+            pop.len(),
+            "경로만 바꾸는 변이가 모수 크기를 바꿨다"
+        );
+
+        let (after, _) = bypassing(&mutated, &patterns);
+        assert!(
+            after.contains(&smuggled),
+            "출하 파일을 `{smuggled}` 로 옮겼는데 (가)가 조용하다 — 이름의 이 가지가 아직 \
+             근거 없이 면제를 준다. 위반 목록: {after:?}"
+        );
+    }
 }
