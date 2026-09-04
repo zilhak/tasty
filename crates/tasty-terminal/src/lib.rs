@@ -478,11 +478,33 @@ pub(crate) fn default_tab_stops(cols: usize) -> Vec<bool> {
 /// 됐는지" 를 확인하는 데 쓴다.
 pub(crate) type WriteProgress = Arc<(Mutex<u64>, Condvar)>;
 
+const WRITE_PROGRESS_WHAT: &str = "the PTY write-progress counter";
+static WRITE_PROGRESS_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// [`WriteProgress`] 의 카운터 락. writer 스레드와 [`io::WriteAck`] 가 **둘 다** 이
+/// 한 곳을 지난다.
+///
+/// poison 이면 복구한다. ① 임계구역은 `u64` 증가와 condvar 대기뿐이라 깨진 채 남을
+/// 불변식이 없다. ② 패닉의 대가는 크고 비대칭이다 — writer 스레드에서 패닉하면 그
+/// 스레드가 죽어 **이후 모든 PTY write 가 영영 나가지 않고**(터미널이 입력을 안 받는
+/// 상태로 굳는다), `WriteAck::wait` 쪽에서 패닉하면 그것을 부른 IPC 핸들러 스레드가
+/// 죽는다. 조용히 건너뛰는 것도 답이 아니다: poison 은 sticky 라 카운터가 영구히 멎고,
+/// 그러면 `wait` 는 **실제로 flush 가 끝난 뒤에도** 매번 타임아웃까지 기다렸다가
+/// `false` 를 돌려준다 — 느려진 것이 결함으로 보이지 않는다.
+pub(crate) fn lock_write_progress(count: &Mutex<u64>) -> std::sync::MutexGuard<'_, u64> {
+    tasty_utils::poison::recover_mutex(
+        count.lock(),
+        WRITE_PROGRESS_WHAT,
+        &WRITE_PROGRESS_POISON_REPORTED,
+    )
+}
+
 /// PTY writer 스레드 본체 — 큐에 들어오는 write 를 순서대로 PTY 에
 /// write_all+flush 하고, 각 성공마다 `progress` 카운터를 올려 `\r` 를 별도로
 /// write 로 보내는 `IpcHandler` 가 `WriteAck` 로 실제 flush 완료를 확인할 수
 /// 있게 한다.
-fn run_writer_loop(
+pub(crate) fn run_writer_loop(
     mut pty_writer: Box<dyn Write + Send>,
     write_rx: mpsc::Receiver<Vec<u8>>,
     progress: WriteProgress,
@@ -495,10 +517,8 @@ fn run_writer_loop(
             break;
         }
         let (count, cvar) = &*progress;
-        if let Ok(mut n) = count.lock() {
-            *n += 1;
-            cvar.notify_all();
-        }
+        *lock_write_progress(count) += 1;
+        cvar.notify_all();
     }
 }
 

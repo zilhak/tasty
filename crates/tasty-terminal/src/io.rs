@@ -33,15 +33,17 @@ impl WriteAck {
     /// 이 경우도 최선 노력으로 다음 단계를 진행해야 한다(무한 대기 금지).
     pub fn wait(&self, timeout: Duration) -> bool {
         let (lock, cvar) = &*self.progress;
-        let Ok(guard) = lock.lock() else {
-            return false;
-        };
+        let guard = crate::lock_write_progress(lock);
         if *guard >= self.target {
             return true;
         }
         match cvar.wait_timeout_while(guard, timeout, |n| *n < self.target) {
             Ok((_, wait_result)) => !wait_result.timed_out(),
-            Err(_) => false,
+            // condvar 는 깨어나며 락을 다시 잡으므로 poison 을 한 번 더 만난다. 위
+            // `lock_write_progress` 와 같은 이유로 여기서도 복구한다 — 여기서만 `false`
+            // 로 떨어지면 이미 flush 가 끝난 write 를 "미완료" 로 보고하게 된다.
+            // 보고는 그 헬퍼가 이미 했다(첫 1 회만).
+            Err(poisoned) => !poisoned.into_inner().1.timed_out(),
         }
     }
 }
@@ -194,5 +196,63 @@ impl Terminal {
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).
     pub fn send_bytes(&mut self, bytes: &[u8]) {
         self.lock_state().write_input(bytes.to_vec());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Condvar, Mutex};
+
+    use super::*;
+    use crate::WriteProgress;
+
+    /// poison 이 걸린 뒤에도 write 완료가 보고되고 확인되는가.
+    ///
+    /// 겨냥하는 곳은 두 자리다. writer 스레드는 카운터 증가를 조용히 건너뛰었고,
+    /// [`WriteAck::wait`] 는 곧바로 `false` 를 돌려줬다. poison 은 sticky 라 둘 다
+    /// 영구다 — PTY 쓰기 자체는 계속 되므로 겉으로는 멀쩡하고, `wait` 를 부르는
+    /// 경로만 매번 타임아웃까지 기다렸다가 "완료 못 함" 으로 떨어진다.
+    #[test]
+    fn a_poisoned_write_counter_still_acks_completed_writes() {
+        let progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
+
+        let poisoner = Arc::clone(&progress);
+        std::thread::spawn(move || {
+            let _guard = poisoner.0.lock().expect("아직 성한 락");
+            panic!("이 스레드가 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(progress.0.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        // writer 스레드는 poison 뒤에도 flush 카운터를 올린다.
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let for_writer = Arc::clone(&progress);
+        let writer = std::thread::spawn(move || {
+            crate::run_writer_loop(Box::new(std::io::sink()), rx, for_writer);
+        });
+        tx.send(b"hello".to_vec())
+            .expect("writer 스레드가 살아 있어야 한다");
+
+        // 그리고 그 완료를 `wait` 가 실제로 확인해 준다. 타임아웃을 넉넉히 주므로
+        // `false` 는 "느렸다" 가 아니라 "poison 경로로 떨어졌다" 는 뜻이다.
+        let ack = WriteAck {
+            progress: Arc::clone(&progress),
+            target: 1,
+        };
+        assert!(
+            ack.wait(Duration::from_secs(5)),
+            "poison 뒤에도 flush 완료가 확인돼야 한다"
+        );
+
+        drop(tx);
+        writer
+            .join()
+            .expect("writer 스레드가 패닉 없이 끝나야 한다");
+
+        assert!(
+            crate::WRITE_PROGRESS_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
+            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+        );
     }
 }
