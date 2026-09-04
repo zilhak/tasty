@@ -467,6 +467,24 @@ mod tests {
     }
 
     #[test]
+    fn native_module_loaders_removed() {
+        let engine = LuaEngine::new().expect("init");
+        // lib.rs 가 "package.loadlib 제거" 를 보증으로 적어 두는데 그것을 확인하는
+        // 테스트가 없었다. `require` 를 살려 두는 정책상 `package` 는 계속 닿으므로
+        // 이 세 값이 실제로 비워졌는지가 native dylib 로드 차단의 전부다.
+        // eval 은 값을 돌려주지 않으므로(위 두 테스트와 같은 형태) 남아 있으면 error 를 던진다.
+        engine
+            .eval("if package.loadlib ~= nil then error('loadlib still reachable') end")
+            .expect("package.loadlib 가 남아 있다");
+        engine
+            .eval("if package.searchers ~= nil then error('searchers still reachable') end")
+            .expect("package.searchers 가 남아 있다");
+        engine
+            .eval("if package.cpath ~= '' then error('cpath not cleared') end")
+            .expect("package.cpath 가 비워지지 않았다");
+    }
+
+    #[test]
     fn loadstring_removed() {
         let engine = LuaEngine::new().expect("init");
         assert!(engine.eval("loadstring('print(1)')").is_err());

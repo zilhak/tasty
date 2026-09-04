@@ -37,10 +37,20 @@ pub(crate) fn apply(lua: &Lua) -> Result<(), LuaEngineError> {
         .map_err(LuaEngineError::Init)?;
 
     // package.loadlib 제거 — native dylib 로드 경로 차단.
+    //
+    // 실패를 삼키지 않는다. 위 `require` 를 살려 두는 정책 때문에 `package` 테이블은
+    // 스크립트에서 계속 닿을 수 있고, 여기 set 이 실패하면 native 로더가 **그대로
+    // 남는다** — 샌드박스가 조용히 약해지는 방향이라 "실패해도 무시" 가 성립하지 않는다.
+    // 같은 함수의 다른 하드닝(`dofile`/`load`/`debug` 제거)도 전부 전파한다.
+    // `package` 테이블 자체가 없으면 제거할 로더도 없으므로 그 경우만 건너뛴다.
     if let Ok(package) = globals.get::<mlua::Table>("package") {
-        let _ = package.set("loadlib", mlua::Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = package.set("searchers", mlua::Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = package.set("cpath", ""); // 샌드박스 하드닝: cpath 비움, set 실패 무시
+        for (key, value) in [
+            ("loadlib", mlua::Value::Nil),
+            ("searchers", mlua::Value::Nil),
+            ("cpath", mlua::Value::String(lua.create_string("")?)),
+        ] {
+            package.set(key, value).map_err(LuaEngineError::Init)?;
+        }
     }
 
     Ok(())
