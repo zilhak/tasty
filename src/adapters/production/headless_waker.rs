@@ -154,10 +154,8 @@ mod tests {
     /// (`docs/dev-guide/error-handling.md` "락 poison").
     ///
     /// **주의**: 이 모듈은 `#[cfg(not(feature = "gui"))]` 이고 기본 빌드는 gui 라,
-    /// `cargo test` 는 이 파일의 테스트를 컴파일하지 않는다. 반대로 `--no-default-features`
-    /// 로는 테스트 타깃 자체가 안 서므로(바이너리의 다른 테스트들이 egui 를 쓴다) 현재
-    /// 이 테스트를 실행할 수 있는 조합이 없다 — 같은 파일의 기존 테스트도 마찬가지다.
-    /// 실제로 도는 등가 커버리지는 `crate::waker::poison_tests` 에 있다.
+    /// `cargo test` 는 이 파일의 테스트를 컴파일하지 않는다. 실제로 도는 곳은
+    /// `--no-default-features` 빌드의 바이너리 단위 테스트다.
     #[test]
     fn a_poisoned_gate_map_does_not_take_the_factory_down() {
         let (tx, _rx) = mpsc::channel();
