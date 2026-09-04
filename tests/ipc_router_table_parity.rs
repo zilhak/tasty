@@ -25,16 +25,22 @@ use std::path::Path;
 
 use tasty_ipc::method_meta::method_meta;
 
-/// 라우터 dispatch 팔이 있는 소스. 각 파일에서 `"<method>" =>` 형태의 줄만 읽는다.
+/// 라우터 dispatch 팔이 있는 고정 소스([`ROUTER_DIRS`] 로 걷지 않는 위치).
+/// 각 파일에서 `"<method>" =>` 팔과 `… .method == "<method>"` 비교를 모두 읽는다.
 const ROUTER_SOURCES: &[&str] = &[
     "src/adapters/ipc/handler.rs",
     "src/adapters/ipc/handler/ime.rs",
     "src/adapters/ipc/handler/debug_plugin.rs",
     "src/app/dispatch/list_global.rs",
-    "src/app/ipc/app_methods.rs",
     "src/boot/headless_dispatch.rs",
-    "src/app/ipc/debug_methods.rs",
 ];
+
+/// 디렉토리째 걷는 라우터 소스 위치(`*.rs`, 비재귀). `src/app/ipc/` 는 dispatch
+/// 스텝이 모여 있어 파일이 늘어도 사람이 [`ROUTER_SOURCES`] 에 손으로 추가하는 걸
+/// 잊으면 사각지대가 생긴다 — `window_required.rs` 가 실제로 그렇게 빠져 6 메서드가
+/// 가드를 통과했다. 이 디렉토리는 통째로 걸어 새 파일이 자동으로 감시망에 들게 한다.
+/// 라우팅을 안 하는 파일(caller_gate·routing)은 매치가 0 이라 무해하다.
+const ROUTER_DIRS: &[&str] = &["src/app/ipc"];
 
 /// `    "foo.bar" => ...` 형태의 match 팔에서 메서드 이름만 뽑는다.
 ///
@@ -48,14 +54,41 @@ fn arm_method(line: &str) -> Option<&str> {
         return None;
     }
     // 메서드 이름 형태(`ns.method`)만 — 문자열 매칭 팔 전반이 아니라.
-    if !name.contains('.')
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
-    {
+    if !is_method_name(name) {
         return None;
     }
     Some(name)
+}
+
+/// `… .method == "foo.bar" …` 형태의 비교에서 메서드 이름을 **전부** 뽑는다.
+///
+/// `arm_method`(`"…" =>`)가 못 보는 `if cmd.request.method == "…"` 라우팅을 잡는다.
+/// `||` 로 이어진 다중 비교(`window_required.rs` 의 `is_window_required = … || … == "…"`)도
+/// 한 줄에 여러 개가 와도 각각 잡도록 줄 전체를 훑는다. `==` 왼쪽이 `method` 로 끝나는
+/// 비교만 받아 무관한 문자열 동치 비교(`kind == "terminal"` 등)를 배제한다.
+fn eq_methods(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = line;
+    while let Some(pos) = rest.find("== \"") {
+        let before = rest[..pos].trim_end();
+        let after = &rest[pos + 4..]; // `== "` 다음
+        let Some((name, tail)) = after.split_once('"') else {
+            break;
+        };
+        if before.ends_with("method") && is_method_name(name) {
+            out.push(name);
+        }
+        rest = tail;
+    }
+    out
+}
+
+/// `ns.method` 형태(소문자·`_`·`.`, 점 하나 이상)인지.
+fn is_method_name(name: &str) -> bool {
+    name.contains('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.')
 }
 
 #[test]
@@ -64,17 +97,41 @@ fn every_router_arm_is_registered_in_method_table() {
     let mut missing: Vec<String> = Vec::new();
     let mut scanned = 0usize;
 
-    for rel in ROUTER_SOURCES {
+    // 고정 소스 + 디렉토리째 걷는 소스(`src/app/ipc/*.rs`)를 합친다.
+    let mut sources: Vec<String> = ROUTER_SOURCES.iter().map(|s| s.to_string()).collect();
+    for dir in ROUTER_DIRS {
+        let abs = root.join(dir);
+        let entries = std::fs::read_dir(&abs)
+            .unwrap_or_else(|e| panic!("라우터 디렉토리를 읽을 수 없다: {dir}: {e}"));
+        for entry in entries {
+            let entry = entry.expect("디렉토리 엔트리");
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                let name = path.file_name().and_then(|n| n.to_str()).expect("파일명");
+                sources.push(format!("{dir}/{name}"));
+            }
+        }
+    }
+    sources.sort();
+    sources.dedup();
+
+    for rel in &sources {
         let path = root.join(rel);
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("라우터 소스를 읽을 수 없다: {rel}: {e}"));
         for line in src.lines() {
-            let Some(name) = arm_method(line) else {
-                continue;
-            };
-            scanned += 1;
-            if method_meta(name).is_none() {
-                missing.push(format!("{rel}: {name}"));
+            // `"…" =>` 팔과 `… .method == "…"` 비교를 모두 본다.
+            if let Some(name) = arm_method(line) {
+                scanned += 1;
+                if method_meta(name).is_none() {
+                    missing.push(format!("{rel}: {name}"));
+                }
+            }
+            for name in eq_methods(line) {
+                scanned += 1;
+                if method_meta(name).is_none() {
+                    missing.push(format!("{rel}: {name}"));
+                }
             }
         }
     }

@@ -34,6 +34,7 @@
 - `tasty send text --wait-idle` — 사용자가 타이핑 중이면 보내지 않는다. 판정과 전송을 한 번에 처리해 `tasty is-typing` → `tasty send text` 2단 조합에 남던 창(그 사이에 타이핑이 시작되는 경우)을 없앤다. 타이핑 중이면 `"sent": false`, `"reason": "typing"`.
 - `surface.attention.clear`(CLI `tasty surface attention clear --surface <id> [--kind completion|needs_input]`) — attention(주의 환기) 해제. 지금까지 attention 은 `surface.completion` 으로 발동만 가능하고 해제 수단이 IPC/CLI 에 없었다(해제 producer 두 개가 전부 GUI 로컬 사건 — 실 렌더 포커스, 알림 패널 읽음). `--kind` 를 주면 현재 기록된 kind 가 그 값일 때만 지운다(생략 = kind 무관, 알 수 없는 값은 거절). attention 이 없던 surface 도 성공하며(idempotent) 응답 `cleared`/`previous_kind` 가 실제 결과를 알린다. 존재하지 않는 surface · **하드 점유(원격 attach) 중인 surface** · **mirror surface** 는 명시적 에러 — 뒤의 둘은 그 attention 의 소유자가 다른 인스턴스다(각각 ADR-0040 · ADR-0098/0104). 미러 사용자가 그 화면을 실제로 보고 확인한 해제는 종전대로 소유 인스턴스로 전달된다. 권한 `Notification`.
 - `surface.attention.get`(CLI `tasty surface attention get --surface <id>`) — 그 surface 에 기록된 attention kind(`"completion"`/`"needs_input"`/`null`) 조회. 읽기 전용이라 mirror·점유 중에도 허용. 권한 `Notification`.
+- `remote.workspaces` IPC 메서드를 plugin/agent 호출자에게 개방(`plugin(&[])`) — 원격(또는 동일 머신 다른) tasty 인스턴스의 워크스페이스 목록 브라우징. 지금까지 권한 표에 없어 plugin/agent 는 `UnknownMethod` 로 거부됐고 로컬/CLI(`tasty remote workspaces`)에서만 가능했다 — 이번에 그 호출자들에게 처음 열리는 release 표면 확장이다. 조회(browse)라 `remote.profile.*` 와 같은 신뢰경계(연결 경계 = 소켓 도달 + SSH)를 쓰고 추가 Permission 은 없다. 짝인 `remote.attach` 는 로컬에 mirror 워크스페이스를 만드는 구조 op(사용자 상태에 닿음, 불가침 원칙 1)라 이번 개방에서 제외하고 local caller 전용으로 남겼다.
 
 ### Changed
 

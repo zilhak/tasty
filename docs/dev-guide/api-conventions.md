@@ -62,7 +62,7 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 미등재는 "닫혀 있음"으로 대충 넘어가지 않는다. `method_meta()` 가 `None` 이면 plugin/agent 호출자는 `UnknownMethod` 로 거부되긴 하지만, 그 거부가 **정책인지 등재 누락인지 표만 봐서는 구분되지 않는다** — 나중에 권한을 재검토하는 쪽이 "닫으려던 것"과 "잊은 것"을 판별할 수 없다. `local_only()` 등재는 그 판단을 코드에 남기는 선언이다(거부 자체는 `NotPluginCallable` 로 바뀔 뿐 동작은 같다).
 
-`tests/ipc_router_table_parity.rs` 가 라우터 소스의 `"<method>" =>` 팔을 전부 훑어 강제한다. **분기를 `if method == "…"` 형태로 쓰면 이 스캔에 잡히지 않는다**(`src/app/ipc/app_methods.rs` 가 그 형태다) — 그 계열에 메서드를 추가할 때는 게이트가 아니라 사람이 등재를 확인해야 한다. 등재 누락은 조용히 오래 남는 종류의 결함이라(형제 메서드가 전부 등재된 상태에서 한둘만 빠져도 아무 신호가 없다) 리뷰가 아니라 게이트로 잡는다. debug 빌드에서만 도는데, release 에서는 `DEBUG_METHODS` 가 설계상 비어 IPC 표면에서 사라지기 때문이다([debug-ipc](debug-ipc.md)).
+`tests/ipc_router_table_parity.rs` 가 라우터 소스를 훑어 강제한다. `"<method>" =>` 팔과 `… .method == "…"` 비교(`||` 로 이어진 다중 비교 포함, `src/app/ipc/app_methods.rs`·`window_required.rs` 가 그 형태다)를 **둘 다** 잡는다. 소스 목록은 고정 목록(`ROUTER_SOURCES`)에 더해 `src/app/ipc/` 를 **디렉토리째** 걷는다(`ROUTER_DIRS`) — dispatch 스텝이 몰려 있는 이 디렉토리에 새 파일을 만들어도 목록에 손으로 추가하는 걸 잊어 사각지대가 생기지 않게 한다(실제로 `window_required.rs` 가 그렇게 빠져 6 메서드가 통과했다). 등재 누락은 조용히 오래 남는 종류의 결함이라(형제 메서드가 전부 등재된 상태에서 한둘만 빠져도 아무 신호가 없다) 리뷰가 아니라 게이트로 잡는다. debug 빌드에서만 도는데, release 에서는 `DEBUG_METHODS` 가 설계상 비어 IPC 표면에서 사라지기 때문이다([debug-ipc](debug-ipc.md)). `src/app/ipc/` **밖**의 새 라우터 파일(예: `src/adapters/ipc/`)은 여전히 `ROUTER_SOURCES` 에 직접 추가한다.
 
 ## plugin 점유 namespace
 

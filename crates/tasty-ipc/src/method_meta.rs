@@ -392,6 +392,25 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // FS read 는 신뢰모델 범위 밖이라 프로필 CRUD 와 같은 메타를 쓴다.
         ("remote.profile.list_local", plugin(&[])),
         ("remote.profile.import", plugin(&[])),
+        // ── remote.workspaces (원격 ws 브라우징) ──────────────────────────
+        // profile CRUD 와 같은 `tasty_remote` 코어를 공유하는 release 경로다
+        // (`app/ipc/app_methods.rs`, 원칙 2: 에이전트가 CLI 없이 소켓으로도 수행 가능).
+        // 조회(browse)라 remote.profile.* 와 같은 신뢰경계 — 연결 경계(소켓 도달 + SSH)에
+        // 위임하고 추가 Permission 을 두지 않는다. CLI `remote workspaces` 와 대칭.
+        // 주의(호출자별로 의미가 다르다): 표는 Local 호출자에게 게이트가 아니다
+        // (`caller.rs` Local => Ok). Local(세션 토큰 없는 tasty CLI·로컬 스크립트)은 라우터
+        // 팔만 있으면 표와 무관하게 이미 도달 가능했다 — 이쪽은 재등재. 반면 plugin/agent
+        // 세션 토큰 호출자는 표에 없으면 UnknownMethod 로 거부됐고, 이 항목이 그들에게
+        // 처음 연다 — 이쪽은 **release 표면 확장**이다.
+        ("remote.workspaces", plugin(&[])),
+        // remote.attach 는 조회가 아니라 로컬에 mirror 워크스페이스를 만드는 구조 op 라
+        // 사용자 상태(불가침 원칙 1)에 닿는다. SSH 신뢰경계는 원격 셸 접근만 주고 그
+        // 사용자의 로컬 tasty 창에 워크스페이스를 만들 권한은 주지 않으므로, 다른
+        // remote.* 조회와 달리 연결경계 위임만으로 plugin 에 열 근거가 서지 않는다 —
+        // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
+        // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
+        // 트리거는 ADR-0121(docs/adr/0121-attach-trust-boundary-covers-remote-queries-not-local-structural-ops.md).
+        ("remote.attach", local_only()),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
         // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).
@@ -555,6 +574,13 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.gpu.stall", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
+    // window/egui 입력 주입(마우스·키) — 위 inject_* 와 같은 사용자 입력 재현 계열이라
+    // 같은 debug 격리(원칙 1·3). release 미노출.
+    ("debug.inject_window_mouse", local_only()),
+    ("debug.inject_egui_mouse", local_only()),
+    ("debug.inject_egui_key", local_only()),
+    // 임의 Lua 주입(ADR-0031) — release 에는 이 경로가 없다(원칙 1). local 전용.
+    ("debug.lua.eval", local_only()),
     // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*
     // 와 같은 계열이라 같은 debug 격리.
     ("debug.close_workspace", local_only()),
