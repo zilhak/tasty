@@ -1595,19 +1595,22 @@ mod tests {
     /// 홈 미해석이면 **합성 rc 파일을 아무 데도 만들지 않는다.** 빈 경로로 폴백하면
     /// 파생 경로가 상대가 되어 프로세스 CWD(= 이 크레이트 디렉토리)에 생긴다.
     ///
-    /// 사전 정리를 하는 이유: 앞선 실패/변이 실험이 그 파일을 남기면 "이미 있었으니
-    /// 변화 없음" 으로 **거짓 통과**한다(실제로 변이 실험 중 `bashrc.default` 가 남아
-    /// 그 위험을 확인했다). 이 이름들은 크레이트 소스 디렉토리에 정당하게 존재할 수
-    /// 없으므로 지우고 시작해, 사후에는 "없어야 한다" 를 그대로 단정한다.
+    /// 사전에 **지우지 않고 단정하는** 이유: 앞선 실패/변이 실험이 그 파일을 남기면
+    /// "이미 있었으니 변화 없음" 으로 **거짓 통과**한다(실제로 변이 실험 중
+    /// `bashrc.default` 가 남아 그 위험을 확인했다). 그렇다고 조용히 지우면 그 오염
+    /// 자체가 감춰진다 — 이 이름들은 크레이트 소스 디렉토리에 정당하게 존재할 수 없으므로
+    /// 있으면 그 사실을 실패로 드러내고, 정리는 사람이 한다.
     #[test]
     fn unresolved_home_writes_no_generated_files() {
         let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let cwd = std::env::current_dir().expect("cwd");
         let names = ["bashrc", "bashrc.default", "bashrc.user", "zsh-integration"];
         for n in names {
-            let path = cwd.join(n);
-            let _ = std::fs::remove_file(&path); // 없으면 Err — 존재 여부는 아래에서 단정한다
-            let _ = std::fs::remove_dir_all(&path); // 상동(zsh-integration 은 디렉토리)
+            assert!(
+                !cwd.join(n).exists(),
+                "{n} 이 이미 CWD 에 있다 — 앞선 실험이 남긴 오염이다. 이 테스트가 \
+                 무엇을 단정하는지 무의미해지므로 지우고 다시 돌려라"
+            );
         }
 
         ensure_compiled_bashrc_in(None);
