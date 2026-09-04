@@ -19,6 +19,48 @@ fn terminal_surface_in_tab(
 }
 
 impl AppState {
+    /// 이 close **요청**이 죽일 surface 중 원격이 하드 점유한 것이 있으면 거절한다.
+    /// 거절이면 `true` 를 돌리고 호출부는 아무것도 하지 않는다.
+    ///
+    /// 하드 점유(ADR-0040)는 "이 surface 는 지금 원격 사용자가 쓰고 있다" 는 선언이다.
+    /// 닫으면 그 세션이 예고 없이 죽고, 되돌리기 스택에 남는 것은 살아 있는 PTY 가 아니라
+    /// **같은 명령으로 새 세션을 여는 레시피**라(`capture_workspace_snapshot`) 복구가 아니다.
+    /// 그래서 close 는 거절이 맞다 — 같은 판정을 `workspace.close`·`surface.attention.clear`
+    /// IPC 가 이미 한다(ADR-0120 ④). 이 메서드가 **그 규칙의 소유자**이고, 호출부는 자기가
+    /// 죽일 대상 집합만 넘긴다.
+    ///
+    /// # 요청 경로만 이것을 본다 — 사후 정리 경로는 보면 안 된다
+    ///
+    /// PTY 가 스스로 끝나서 도는 정리(`cascade_terminal_process_exited`)는 이미 죽은
+    /// 프로세스를 치우는 것이다. 거기서 거절하면 점유 락 때문에 **좀비 surface 가 영구히
+    /// 남는다.** 그래서 검사는 공용 cascade 초크포인트(`close_surface_by_id_inner`)가 아니라
+    /// **사용자 제스처·에이전트 요청의 진입점**에 붙인다.
+    ///
+    /// # 로컬 사용자가 막히지 않는 근거
+    ///
+    /// 하드 점유 surface 위에는 강제 해제 버튼이 그려진다(`adapters/ui/egui_panels.rs` 의
+    /// `draw_occupied_overlays`) — 로컬 사용자는 그것을 눌러 점유를 끊고 닫을 수 있다.
+    /// 그 버튼이 없었다면 이 거절은 "로컬에서 영영 못 닫는" 상태를 만들었을 것이다.
+    pub(crate) fn refuse_if_hard_occupied(
+        &mut self,
+        engine: &CoreState,
+        targets: impl IntoIterator<Item = u32>,
+    ) -> bool {
+        let Some(_occupied) = targets
+            .into_iter()
+            .find(|sid| engine.attach.is_hard_occupied(*sid))
+        else {
+            return false;
+        };
+        #[cfg(feature = "gui")]
+        self.toasts.push(
+            crate::i18n::t("attach.toast.close_blocked_hard_occupied"),
+            crate::model::toast_kind::ToastKind::Warning,
+            crate::model::toast_kind::ToastScope::Window,
+        );
+        true
+    }
+
     /// active 워크스페이스가 mirror(원격 attach client)면 구조 변경을 원격으로
     /// **forward** 하고 `true` 를 돌려 로컬 실행/폴백 체인을 멈춘다(전체 mirror 뷰는
     /// 유지). mirror 워크스페이스는 원격 워크스페이스의 뷰라, 그 안의 구조 변경
@@ -152,6 +194,23 @@ impl AppState {
             return true;
         }
         let target_id = self.active_workspace(engine).focused_pane;
+        // 이 pane 이 품은 surface 중 하나라도 원격이 잡고 있으면 거절한다.
+        let in_pane: Vec<u32> = {
+            let ws = self.active_workspace(engine);
+            ws.pane_layout()
+                .find_pane(target_id)
+                .map(|pane| {
+                    let mut t: Vec<(u32, Option<String>)> = Vec::new();
+                    for tab in &pane.tabs {
+                        Self::collect_close_targets(tab, engine, &mut t);
+                    }
+                    t.into_iter().map(|(sid, _)| sid).collect()
+                })
+                .unwrap_or_default()
+        };
+        if self.refuse_if_hard_occupied(engine, in_pane) {
+            return false;
+        }
 
         // Capture closed-item snapshot (전용 `close_pane` 단축키는 항상 사용자
         // 행동이라 조건 없이 캡처한다 — `close_active_surface`의 무조건 스냅샷과
@@ -228,6 +287,11 @@ impl AppState {
             .unwrap_or_default();
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
+        }
+        // 이 경로가 죽이는 것은 포커스된 surface 하나다 — tab/pane/workspace 로 cascade 하는
+        // 경우도 그 surface 가 그 컨테이너의 유일한 거주자일 때뿐이라 대상 집합은 같다.
+        if self.refuse_if_hard_occupied(engine, focused_sid) {
+            return false;
         }
         let surface_id;
         // split 케이스의 closed-item 스냅샷용 tab_name — tab 이 mutate 되기 전(아래

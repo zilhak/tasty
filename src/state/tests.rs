@@ -2253,3 +2253,210 @@ fn inline_cascade_emits_the_workspace_closed_host_event() {
         "인라인 cascade 로 사라진 워크스페이스에 workspace.closed 가 없다"
     );
 }
+
+/// 원격 attach 가 **하드 점유**한 surface 를 GUI close 경로가 죽이지 않는다.
+///
+/// 하드 점유(ADR-0040)는 "지금 원격 사용자가 이 터미널을 쓰고 있다" 는 선언이다.
+/// `workspace.close` IPC 는 이미 거절하는데(ADR-0120 ④) **사용자 경로는 열려 있었다** —
+/// 같은 파괴가 에이전트에게는 막히고 사람에게는 무경고로 열린 비대칭이었다.
+///
+/// 이 모듈은 진입점마다 **거절과 통과를 짝으로** 고정한다. 거절만 세면 "전부 막았다" 와
+/// 구별이 안 되기 때문이다 — 점유가 없을 때 같은 제스처가 여전히 닫는 것을 같은 자리에서
+/// 확인한다. 픽스처는 전부 합성이라(`test_state`) 실제 문서·레이아웃을 고쳐도 안 흔들린다.
+///
+/// 로컬 사용자가 갇히지 않는 근거는 강제 해제 버튼이다
+/// (`adapters/ui/egui_panels.rs` 의 `draw_occupied_overlays`) — 점유를 끊고 다시 닫으면 된다.
+#[cfg(test)]
+mod close_refuses_hard_occupied {
+    use super::*;
+
+    /// 점유 client id. 값 자체에 의미는 없고 `acquire` 가 holder 를 요구할 뿐이다.
+    const HOLDER: u32 = 1;
+
+    fn add_ws(engine: &mut crate::core::CoreState) -> usize {
+        let event = crate::core::apply_create_workspace_inner(
+            engine,
+            crate::core::WorkspaceCreationParams::terminal(),
+        )
+        .expect("워크스페이스 생성");
+        let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+            panic!("expected WorkspaceCreated");
+        };
+        index
+    }
+
+    /// surface 가 아직 살아 있는가 — **렌즈 둘을 모두** 본다.
+    ///
+    /// 고침의 완료 판정을 고친 경로로 하면 안 된다. `close_*` 의 반환값은 그 경로가
+    /// 스스로 하는 말이고, 레이아웃 트리는 그 경로가 방금 손댄 자료구조다. 그래서
+    /// **터미널 레지스트리**(`engine.terminals` — cleanup 이 지우는 별도 저장소)를 함께
+    /// 본다. 둘이 어긋나면 그것 자체가 결함이므로 여기서 갈라 알린다.
+    fn alive(engine: &crate::core::CoreState, sid: u32) -> bool {
+        let in_tree = engine
+            .workspaces
+            .iter()
+            .any(|w| w.all_surface_ids().contains(&sid));
+        let has_terminal = engine.terminals.get(sid).is_some();
+        assert_eq!(
+            in_tree, has_terminal,
+            "surface {sid}: 레이아웃 트리({in_tree})와 터미널 레지스트리({has_terminal})가 \
+             어긋난다 — 한쪽만 정리된 것이다"
+        );
+        in_tree
+    }
+
+    /// 두 번째 pane 을 만들고 포커스된 surface 를 돌려준다.
+    fn split_pane(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
+        state
+            .test_split_pane(engine, SplitDirection::Vertical)
+            .expect("pane split");
+        state.focused_surface_id(engine).expect("포커스 surface")
+    }
+
+    #[test]
+    fn closing_a_workspace_holding_an_occupied_surface_is_refused() {
+        let (mut state, mut engine) = test_state();
+        let idx = add_ws(&mut engine);
+        let sid = engine.workspaces[idx].all_surface_ids()[0];
+        engine.attach.acquire(sid, HOLDER).expect("하드 점유");
+
+        let closed = state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User);
+
+        assert!(!closed, "점유된 워크스페이스는 닫히면 안 된다");
+        assert!(alive(&engine, sid), "surface 가 살아 있어야 한다");
+        assert_eq!(engine.workspaces.len(), 2, "거절이면 아무것도 안 사라진다");
+        assert!(
+            engine.attach.is_hard_occupied(sid),
+            "거절 경로가 점유 상태를 건드리면 안 된다"
+        );
+    }
+
+    /// 통과 대조 — 같은 제스처가 점유가 없으면 여전히 닫는다.
+    #[test]
+    fn closing_an_unoccupied_workspace_still_works() {
+        let (mut state, mut engine) = test_state();
+        let idx = add_ws(&mut engine);
+
+        assert!(state.close_workspace_at(&mut engine, idx, WorkspaceCloseOrigin::User));
+        assert_eq!(engine.workspaces.len(), 1);
+    }
+
+    #[test]
+    fn closing_the_focused_surface_when_occupied_is_refused() {
+        let (mut state, mut engine) = test_state();
+        let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
+        let pane_id = state.active_workspace(&engine).focused_pane;
+        let (ws_idx, _) = engine
+            .find_workspace_index_for_surface(sid_a)
+            .expect("워크스페이스");
+        let sid_b = engine.next_ids.next_surface();
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("pane")
+            .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
+            .expect("surface split");
+        engine
+            .terminals
+            .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+        engine.attach.acquire(sid_a, HOLDER).expect("하드 점유");
+
+        assert!(!state.close_active_surface(&mut engine), "거절해야 한다");
+        assert!(alive(&engine, sid_a));
+    }
+
+    /// 통과 대조.
+    #[test]
+    fn closing_an_unoccupied_focused_surface_still_works() {
+        let (mut state, mut engine) = test_state();
+        let sid_a = state.focused_surface_id(&engine).expect("포커스 surface");
+        let pane_id = state.active_workspace(&engine).focused_pane;
+        let (ws_idx, _) = engine
+            .find_workspace_index_for_surface(sid_a)
+            .expect("워크스페이스");
+        let sid_b = engine.next_ids.next_surface();
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .expect("pane")
+            .split_surface_by_id_marker(sid_a, SplitDirection::Horizontal, sid_b)
+            .expect("surface split");
+        engine
+            .terminals
+            .insert(sid_b, tasty_terminal::Terminal::new_detached(80, 24));
+
+        assert!(state.close_active_surface(&mut engine));
+        assert!(!alive(&engine, sid_a));
+    }
+
+    #[test]
+    fn closing_a_pane_holding_an_occupied_surface_is_refused() {
+        let (mut state, mut engine) = test_state();
+        let sid = split_pane(&mut state, &mut engine);
+        engine.attach.acquire(sid, HOLDER).expect("하드 점유");
+
+        assert!(!state.close_active_pane(&mut engine), "거절해야 한다");
+        assert!(alive(&engine, sid));
+        assert_eq!(
+            state
+                .active_workspace(&engine)
+                .pane_layout()
+                .all_pane_ids()
+                .len(),
+            2,
+            "거절이면 pane 도 그대로다"
+        );
+    }
+
+    /// 통과 대조.
+    #[test]
+    fn closing_an_unoccupied_pane_still_works() {
+        let (mut state, mut engine) = test_state();
+        let sid = split_pane(&mut state, &mut engine);
+
+        assert!(state.close_active_pane(&mut engine));
+        assert!(!alive(&engine, sid));
+    }
+
+    #[test]
+    fn closing_a_tab_holding_an_occupied_surface_is_refused() {
+        let (mut state, mut engine) = test_state();
+        state.add_tab(&mut engine).expect("탭 추가");
+        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
+        engine.attach.acquire(sid, HOLDER).expect("하드 점유");
+
+        assert!(!state.close_active_tab(&mut engine), "거절해야 한다");
+        assert!(alive(&engine, sid));
+    }
+
+    /// 통과 대조.
+    #[test]
+    fn closing_an_unoccupied_tab_still_works() {
+        let (mut state, mut engine) = test_state();
+        state.add_tab(&mut engine).expect("탭 추가");
+        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
+
+        assert!(state.close_active_tab(&mut engine));
+        assert!(!alive(&engine, sid));
+    }
+
+    /// **사후 정리 경로는 막지 않는다.**
+    ///
+    /// 셸이 스스로 끝나서 도는 정리(`cascade_terminal_process_exited` → 이 함수)는 이미
+    /// 죽은 프로세스를 치운다. 여기서 점유를 이유로 거절하면 락 때문에 **좀비 surface 가
+    /// 영구히 남는다.** 그래서 검사는 공용 cascade 초크포인트가 아니라 요청 진입점에만
+    /// 붙어 있고, 이 테스트가 그 경계를 고정한다 — 이 자리가 거절로 바뀌면 빨개진다.
+    #[test]
+    fn the_post_mortem_cleanup_path_still_closes_an_occupied_surface() {
+        let (mut state, mut engine) = test_state();
+        add_ws(&mut engine);
+        let sid = state.focused_surface_id(&engine).expect("포커스 surface");
+        engine.attach.acquire(sid, HOLDER).expect("하드 점유");
+
+        assert!(
+            state.close_surface_by_id_no_snapshot(&mut engine, sid, false),
+            "사후 정리는 점유와 무관하게 통해야 한다"
+        );
+        assert!(!alive(&engine, sid));
+    }
+}

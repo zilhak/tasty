@@ -11,7 +11,9 @@ pub(crate) mod query;
 mod send;
 
 pub(crate) use attention::{handle_attention_clear, handle_attention_get};
-pub(crate) use close::{handle_surface_close, handle_surface_close_self};
+pub(crate) use close::{
+    close_surface_for_attach_holder, handle_surface_close, handle_surface_close_self,
+};
 pub(crate) use commands::{handle_command_at, handle_commands, handle_last_command};
 pub(crate) use completion::handle_completion;
 pub(crate) use cwd::handle_set_cwd;

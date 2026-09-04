@@ -228,6 +228,22 @@ impl AppState {
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
         }
+        // 이 탭이 품은 surface 중 하나라도 원격이 하드 점유 중이면 거절한다.
+        let in_tab: Vec<u32> = {
+            let mut t: Vec<(u32, Option<String>)> = Vec::new();
+            if let Some(pane) = self
+                .active_workspace(engine)
+                .pane_layout()
+                .find_pane(pane_id)
+                && let Some(tab) = pane.tabs.get(tab_index)
+            {
+                super::AppState::collect_close_targets(tab, engine, &mut t);
+            }
+            t.into_iter().map(|(sid, _)| sid).collect()
+        };
+        if self.refuse_if_hard_occupied(engine, in_tab) {
+            return false;
+        }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let snapshot_opt = if let Some(pane) = self
             .active_workspace(engine)
@@ -286,6 +302,19 @@ impl AppState {
             .unwrap_or_default();
         if self.forward_mirror_structural(engine, mirror_op, candidates) {
             return true;
+        }
+        // 이 탭이 품은 surface 중 하나라도 원격이 하드 점유 중이면 거절한다.
+        let in_tab: Vec<u32> = {
+            let mut t: Vec<(u32, Option<String>)> = Vec::new();
+            if let Some(pane) = self.focused_pane(engine)
+                && let Some(tab) = pane.tabs.get(pane.active_tab)
+            {
+                super::AppState::collect_close_targets(tab, engine, &mut t);
+            }
+            t.into_iter().map(|(sid, _)| sid).collect()
+        };
+        if self.refuse_if_hard_occupied(engine, in_tab) {
+            return false;
         }
         // Capture tab snapshot + collect persist_ids (immutable borrow).
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();

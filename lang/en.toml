@@ -1231,6 +1231,10 @@ mirror_structural_blocked = "Can't change structure in a mirrored remote workspa
 # Shown when a structural change forwarded to the remote instance fails there —
 # most often because the requested surface kind isn't available on the remote.
 mirror_structural_forward_failed = "The remote workspace couldn't apply that change."
+# Shown when a close would destroy a surface a remote attach session hard-occupies.
+# Occupancy means someone is working in that terminal right now, so closing would kill
+# their session without warning. Reclaim it with the force-detach button, then close.
+close_blocked_hard_occupied = "Not closed — a remote session is using one of these terminals. Force-detach it first, then try again."
 # Shown after an interactive screenshot taken while focused on a mirror
 # workspace was uploaded and set as the remote instance's clipboard content.
 mirror_capture_saved = "Screenshot copied to the remote clipboard."

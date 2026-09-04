@@ -40,7 +40,12 @@ fn assert_params_were_understood(method: &str, resp: &tasty_ipc::protocol::JsonR
     }
 }
 
-fn test_core() -> crate::core::Core {
+/// 어댑터를 전부 테스트 더블로 채운 `Core`.
+///
+/// `pub(crate)`: sibling 핸들러 테스트(`surface::close` 의 하드 점유 회귀)가 같은 구성을
+/// 재사용한다 — 핸들러 테스트마다 어댑터 열 개를 다시 조립하면 그중 하나가 조용히
+/// 달라진다.
+pub(crate) fn test_core() -> crate::core::Core {
     use std::sync::{Arc, Mutex};
     crate::core::builder::CoreBuilder::new()
         .with_fs(Arc::new(crate::adapters::test::mem_fs::MemFileSystem::new()))

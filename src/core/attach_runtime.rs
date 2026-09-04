@@ -782,8 +782,10 @@ pub(crate) fn execute_forwarded_structural_op(
             resp
         }
         StructuralOp::CloseSurface { surface_id } => {
-            let p = json!({ "surface_id": surface_id });
-            surface::handle_surface_close(core, state, engine, rid, &p)
+            // holder 자신이 보낸 close 라 하드 점유 검사를 지나지 않는 진입점을 쓴다
+            // (`surface::close::close_surface_for_attach_holder` 의 doc 참조) — 면제를
+            // params 플래그로 두면 아무 에이전트나 같은 키를 실어 우회한다.
+            surface::close_surface_for_attach_holder(core, state, engine, rid, *surface_id)
         }
         StructuralOp::CloseTab { anchor_surface_id } => {
             let tab_id = engine

@@ -420,6 +420,14 @@ impl AppState {
         if ws_idx >= engine.workspaces.len() {
             return false;
         }
+        // 이 워크스페이스가 품은 surface 중 하나라도 원격이 하드 점유 중이면 거절한다.
+        // `workspace.close` IPC 는 더 자세한 사유를 실어 이 앞에서 이미 거절한다 — 여기
+        // 검사는 그 경로의 중복이 아니라 **규칙의 소유자**다(GUI 컨텍스트 메뉴 ·
+        // `close_active_workspace` 단축키 · debug IPC 가 전부 이리로 온다).
+        let in_ws = engine.workspaces[ws_idx].all_surface_ids();
+        if self.refuse_if_hard_occupied(engine, in_ws) {
+            return false;
+        }
         let t_close = Instant::now();
         // C1/C2 — snapshot 은 조건부다. 에이전트 경로는 두 단계를 통째로 건너뛴다.
         if save_snapshot {
