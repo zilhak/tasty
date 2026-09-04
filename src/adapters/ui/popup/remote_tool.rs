@@ -3002,6 +3002,13 @@ mod tests {
     ///
     /// 조용히 버리는 구현(`unwrap_or(true)`)이면 여기서 완료로 판정해 진행 중인
     /// detect 를 끝난 것처럼 지운다 — 이 워커에는 상한이 없어 되돌릴 지점도 없다.
+    ///
+    /// **자동 실행 채널이 하나뿐이다.** 이 테스트는 `src/adapters/mod.rs` 의
+    /// `#[cfg(feature = "gui")] pub mod ui;` 안에 있어 `--no-default-features` 조합에서는
+    /// 컴파일 단계에 통째로 사라진다 — 헤드리스 잡의 초록은 이 테스트가 돌았다는 뜻이
+    /// 아니다(없는 테스트는 실패하지 못한다). 실측: 두 조합의 `-- --list` 이름 대조에서
+    /// 기본에만 뜬다. 팝업 상태를 직접 쥐고 도는 테스트라 gui 밖으로 옮길 대상이 없어
+    /// 고칠 수 있는 결함이 아니고, 사실을 적어 두는 것이 맞는 처리다.
     #[test]
     fn a_poisoned_detect_slot_does_not_look_finished() {
         let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));

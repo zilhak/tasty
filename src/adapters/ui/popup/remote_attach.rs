@@ -1587,6 +1587,13 @@ mod tests {
     /// 조용히 버리는 구현이면 `filled` 판정이 "채워졌다" 로 fallback 한 뒤 take 가
     /// `None` 을 돌려줘, 결과가 있는데도 일반 오류로 떨어진다 — 사용자에게는 원인
     /// 없는 실패로 보인다.
+    ///
+    /// **자동 실행 채널이 하나뿐이다.** 이 테스트는 `src/adapters/mod.rs` 의
+    /// `#[cfg(feature = "gui")] pub mod ui;` 안에 있어 `--no-default-features` 조합에서는
+    /// 컴파일 단계에 통째로 사라진다 — 헤드리스 잡의 초록은 이 테스트가 돌았다는 뜻이
+    /// 아니다(없는 테스트는 실패하지 못한다). 실측: 두 조합의 `-- --list` 이름 대조에서
+    /// 기본에만 뜬다. 팝업 상태를 직접 쥐고 도는 테스트라 gui 밖으로 옮길 대상이 없어
+    /// 고칠 수 있는 결함이 아니고, 사실을 적어 두는 것이 맞는 처리다.
     #[test]
     fn a_poisoned_browse_slot_still_delivers_the_workspace_list() {
         let mut st = UiState {
