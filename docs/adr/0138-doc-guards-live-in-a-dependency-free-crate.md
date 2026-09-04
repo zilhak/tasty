@@ -78,6 +78,14 @@ GitHub 은 바뀐 파일이 **전부** 이 목록에 걸리면 워크플로를 �
 **이 셋은 이 ADR 이후에도 `check-headless` 가 유일 채널이고, 따라서 문서만 바뀐 push 에서
 여전히 안 돈다.** 안 적으면 "문서 가드는 이제 다 싸다" 로 읽힌다.
 
+**남은 셋 중 둘이 하필 노출이 가장 심한 쪽이다.** 가드 28 개를 경로 리터럴로 갈랐을 때
+*입력이 전부 무시 대상* 인 것이 셋이었는데(`architecture_crate_list_complete` ·
+`contributes_gate_docs_parity` · `permission_free_methods_docs_parity`), 그중 옮긴 것은
+첫째뿐이다. 다음 수단은 뒤의 둘을 각자의 소유 크레이트(`crates/tasty-ipc/tests/` ·
+`crates/tasty-plugin-manifest/tests/`)로 옮기고 `-p <그 크레이트>` 잡을 붙이는 것이다 —
+385 가 아니라 86 / 56 이 된다. 의존 0 은 아니므로 이 ADR 의 결정이 아니라 그 절충을 따로
+재는 후속이다.
+
 ### 루트 해석을 한 곳에 모으고, 틀리면 panic 한다
 
 옮기면 `CARGO_MANIFEST_DIR` 이 레포 루트가 아니라 `crates/tasty-doc-guards` 가 된다.

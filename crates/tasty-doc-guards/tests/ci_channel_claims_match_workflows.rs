@@ -701,6 +701,60 @@ fn integration_target_path(root: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
+/// 호출이 `-p` / `--package` 로 좁혀졌다면 그 패키지 이름들.
+///
+/// 이 축이 없던 동안 `cargo test -p <어떤것> --locked` 은 **좁혀지지 않은 호출**로 읽혔다.
+/// `--lib`/`--bins`/`--test` 중 아무것도 없기 때문이다. 그래서 한 패키지만 도는 잡 하나가
+/// 레포의 **모든** 통합 타깃에 채널을 주는 것으로 계산됐고, 그 결과 참인 "자동 채널 없음"
+/// 서술들이 무더기로 거짓으로 고발됐다. 실측으로 잡았다 — `doc-guards.yml` 을 넣은 회차에
+/// 무관한 타깃 여덟 자리가 한꺼번에 걸렸다.
+fn packages_named(tail: &str) -> Vec<String> {
+    let logical = logical_command(tail);
+    let words: Vec<&str> = logical.split_whitespace().collect();
+    let mut out: Vec<String> = words
+        .windows(2)
+        .filter(|w| w[0] == "-p" || w[0] == "--package")
+        .map(|w| w[1].to_string())
+        .collect();
+    out.extend(
+        words
+            .iter()
+            .filter_map(|w| {
+                w.strip_prefix("--package=")
+                    .or_else(|| w.strip_prefix("-p="))
+            })
+            .map(str::to_string),
+    );
+    out
+}
+
+/// 매니페스트의 `[package] name`.
+fn package_name(manifest: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(manifest).ok()?;
+    let block = text.split("[package]").nth(1)?;
+    let block = block.split("\n[").next()?;
+    toml_string(block, "name")
+}
+
+/// 그 통합 타깃 소스가 **어느 패키지 소속인가.**
+///
+/// `<root>/tests/x.rs` 면 루트 패키지, `<root>/crates/<디렉토리>/tests/x.rs` 면 그 크레이트다.
+/// 디렉토리 이름이 곧 패키지 이름이라고 가정하지 않는다 — 매니페스트에서 읽는다.
+fn owning_package(root: &Path, source: &Path) -> Option<String> {
+    let rel = source.strip_prefix(root).ok()?;
+    let mut parts = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string());
+    match parts.next()?.as_str() {
+        "tests" => package_name(&root.join("Cargo.toml")),
+        "crates" => {
+            let dir = parts.next()?;
+            package_name(&root.join("crates").join(dir).join("Cargo.toml"))
+        }
+        _ => None,
+    }
+}
+
 /// 그 통합 테스트가 **자동으로 도는 조합들.**
 ///
 /// 판정의 단위가 조합인 이유는 [`Combo`] 에 적었다. 여기서 세 가지를 함께 본다:
@@ -720,7 +774,14 @@ fn integration_target_channels(
     let Some(source) = integration_target_path(root, target) else {
         return out;
     };
+    let owner = owning_package(root, &source);
     for (combo, tail) in invocations {
+        // `-p` 로 좁힌 호출은 그 패키지의 타깃만 돌린다.
+        let named_packages = packages_named(tail);
+        if !named_packages.is_empty() && !owner.as_ref().is_some_and(|o| named_packages.contains(o))
+        {
+            continue;
+        }
         if let Some((required, defaults)) = features.get(target) {
             let enabled: &[String] = match combo {
                 Combo::Default => defaults,
@@ -764,7 +825,14 @@ fn integration_target_channels(
 /// 아니라 워크플로에 산다. 다른 두 축은 워크플로를 읽는데 이 축만 안 읽으면, Windows 잡의
 /// `--lib --bins` 가 사라지는 날 이 축은 **없는 채널을 근거로 고발한다.**
 fn lib_tests_run_automatically(root: &Path) -> bool {
+    let main = package_name(&root.join("Cargo.toml"));
     automatic_test_invocations(root).iter().any(|(_, tail)| {
+        // `-p <다른 패키지>` 로 좁힌 잡은 본체의 lib 유닛을 안 돌린다.
+        let named_packages = packages_named(tail);
+        if !named_packages.is_empty() && !main.as_ref().is_some_and(|m| named_packages.contains(m))
+        {
+            return false;
+        }
         let words: Vec<&str> = tail.split_whitespace().collect();
         if words.iter().any(|w| *w == "--lib") {
             return true;
@@ -1602,6 +1670,82 @@ fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -
             .expect("합성 워크플로를 쓰지 못했다");
     }
     dir
+}
+
+/// `-p` 좁힘을 판정하려면 **패키지가 둘 이상인 합성 레포**가 필요하다. [`fake_repo`] 는
+/// 루트 `tests/` 만 만든다 — 그 형태로는 "다른 패키지의 타깃" 을 표현할 수 없다.
+fn fake_two_package_repo(name: &str) -> PathBuf {
+    let dir = fake_repo(name, &[("root_side.rs", &one_test("a"))], &[]);
+    std::fs::write(&dir.join("Cargo.toml"), "[package]\nname = \"rootpkg\"\n")
+        .expect("루트 매니페스트를 쓰지 못했다");
+    let sub = dir.join("crates/subpkg");
+    std::fs::create_dir_all(sub.join("tests")).expect("합성 크레이트를 만들지 못했다");
+    std::fs::write(sub.join("Cargo.toml"), "[package]\nname = \"subpkg\"\n")
+        .expect("크레이트 매니페스트를 쓰지 못했다");
+    std::fs::write(sub.join("tests/sub_side.rs"), one_test("b"))
+        .expect("크레이트 타깃을 쓰지 못했다");
+    dir
+}
+
+/// `-p <패키지>` 로 좁힌 잡은 **그 패키지의 타깃만** 돌린다.
+///
+/// 이 축이 없던 동안 `-p` 호출은 `--lib`/`--bins`/`--test` 가 없다는 이유로 "안 좁혀진
+/// 전체 호출" 로 읽혔고, 한 패키지짜리 잡 하나가 레포의 모든 통합 타깃에 채널을 줬다.
+/// 그 결과는 침묵이 아니라 **거짓 고발**이었다 — 참인 "자동 채널 없음" 서술 여덟 자리가
+/// 한꺼번에 걸렸다. 그래서 이 테스트는 두 방향을 함께 본다: 남의 것은 안 받고, **자기
+/// 것은 받는다.** 뒤쪽이 없으면 `packages_named` 가 언제나 전부를 거르도록 망가져도
+/// 앞쪽 단언은 초록이다.
+#[test]
+fn a_package_narrowed_job_does_not_reach_another_package() {
+    let dir = fake_two_package_repo("pkgnarrow");
+    let invocations = vec![(
+        Combo::Default,
+        " -p subpkg --locked --no-fail-fast\n".to_string(),
+    )];
+    let features = std::collections::BTreeMap::new();
+
+    assert_eq!(
+        integration_target_channels(&dir, "sub_side", &invocations, &features),
+        combos(&[Combo::Default]),
+        "지목된 패키지 자신의 타깃은 채널을 받아야 한다"
+    );
+    assert_eq!(
+        integration_target_channels(&dir, "root_side", &invocations, &features),
+        combos(&[]),
+        "`-p subpkg` 가 루트 패키지의 타깃에까지 채널을 줬다"
+    );
+
+    // `-p` 가 없는 같은 호출은 둘 다 돌린다 — 좁힘을 만든 것이 `-p` 라는 대조.
+    let wide = vec![(Combo::Default, " --workspace --locked\n".to_string())];
+    assert_eq!(
+        integration_target_channels(&dir, "root_side", &wide, &features),
+        combos(&[Combo::Default])
+    );
+}
+
+/// `-p <다른 패키지>` 잡은 **본체의 lib 유닛 채널이 아니다.**
+///
+/// 역방향 축은 "`--lib`/`--test`/`--bins` 가 없으면 전부 돈다" 로 읽는다. `-p` 를 안 보면
+/// 문서 가드 잡 하나가 그 축에 "lib 유닛도 자동으로 돈다" 는 근거를 준다.
+#[test]
+fn a_package_narrowed_job_is_not_a_lib_channel() {
+    let dir = fake_two_package_repo("pkglib");
+    std::fs::write(
+        dir.join(".github/workflows/only-sub.yml"),
+        "on:\n  push:\n    branches: [main]\njobs:\n  j:\n    steps:\n      - run: cargo test -p subpkg --locked\n",
+    )
+    .expect("합성 워크플로를 쓰지 못했다");
+    assert!(!lib_tests_run_automatically(&dir));
+
+    std::fs::write(
+        dir.join(".github/workflows/only-sub.yml"),
+        "on:\n  push:\n    branches: [main]\njobs:\n  j:\n    steps:\n      - run: cargo test -p rootpkg --locked\n",
+    )
+    .expect("합성 워크플로를 쓰지 못했다");
+    assert!(
+        lib_tests_run_automatically(&dir),
+        "본체 패키지를 지목한 잡은 lib 채널이 맞다 — 이 대조가 없으면 위 단언은 언제나 참이다"
+    );
 }
 
 fn one_test(name: &str) -> String {

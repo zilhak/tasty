@@ -1,0 +1,38 @@
+name: Doc Guards
+
+# 문서를 읽는 가드를 **경로 필터 없이** 매 push 돌리는 잡. 이 워크플로의 존재 이유가
+# 곧 `paths-ignore` 의 부재다 — 상세는 ADR-0138.
+#
+# crossplatform-check.yml 의 `check-headless` 는 전체 스위트를 돌지만
+# `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서 꺼진다.**
+# 그런데 여기 도는 가드들을 위반하는 방법은 문서를 고치는 것뿐이다 — 유일하게 위반될 수
+# 있는 형태의 push 에서만 안 돌았다는 뜻이다(최근 main 300 커밋 중 20% 가 그 형태).
+#
+# 필터를 그냥 뗄 수 없었던 이유는 비용이다. 그래서 대상을 의존 0 크레이트로 옮겨
+# 잡을 싸게 만들었다. 실측(빈 CARGO_HOME + 빈 CARGO_TARGET_DIR): **7.53s**, 그중
+# 대부분이 레지스트리 인덱스 fetch다. 컴파일되는 크레이트는 tasty-doc-guards 하나뿐.
+#
+# 러너: 공용 `ubuntu-latest`. self-hosted Linux X64 한 대는 check-headless ·
+# complexity-check · release 빌드가 함께 써서 직렬로 줄을 선다(test.yml 헤더 참고).
+# 이 잡은 문서 push 마다 도는 것이 목적이라 그 줄에 세우면 안 된다.
+#
+# 캐시 액션을 안 붙인다 — 7.5 초짜리 잡에 캐시 복원/저장을 붙이면 그 자체가 비슷한
+# 시간을 먹고, 캐시 키가 어긋났을 때의 실패 모드만 새로 생긴다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  doc-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `--no-fail-fast` — 일곱은 서로 독립인데 없으면 첫 가드가 깨진 회차에서 나머지가
+      # 실행조차 안 된다. 그러면 "가드 1 건 실패" 로 보이지만 실제 위반 수는 모른다.
+      - name: cargo test -p tasty-doc-guards
+        run: cargo test -p tasty-doc-guards --locked --no-fail-fast
