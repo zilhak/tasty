@@ -277,7 +277,7 @@ impl App {
     ///
     /// audit 기록에 쓰는 engine 은 아무 것이나 된다 — 기록 대상은 프로세스 하나가
     /// 공유하는 memory store 이고 engine 은 workspace id 와 telemetry 순번을 줄 뿐이다.
-    fn gates_before_routing(
+    pub(crate) fn gates_before_routing(
         &mut self,
         request: &ipc::protocol::JsonRpcRequest,
         caller: &ipc::caller::CallerContext,
@@ -286,9 +286,9 @@ impl App {
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         let core = &mut self.core;
 
-        let mut run = |core: &mut crate::core::Core,
-                       engine: &mut crate::core::CoreState,
-                       ws: Option<u32>| {
+        let run = |core: &mut crate::core::Core,
+                   engine: &mut crate::core::CoreState,
+                   ws: Option<u32>| {
             ipc::handler::check_permission_gate(core, engine, caller, canonical, ws, &id)
                 .or_else(|| ipc::handler::check_cap_gate(core, engine, caller, canonical, ws, &id))
                 .or_else(|| {
