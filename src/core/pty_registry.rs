@@ -277,9 +277,13 @@ impl PtyRegistry {
                     EXIT_CELL_WHAT,
                     &EXIT_CELL_POISON_REPORTED,
                 ) = Some(outcome);
-                // cell 을 채운 직후 대기자(`wait_for_exit`)를 깨운다. 대기자가 아직 wait 에
-                // 들어가지 않았어도 신호가 유실되지 않는다 — 대기자는 wait 전에 cell 을 먼저
-                // 검사하고, wait 는 반드시 그 락을 쥔 채 시작하기 때문이다.
+                // cell 을 채운 직후 대기자(`wait_for_exit`)를 깨운다. 깨우는 이 쪽은
+                // 프로덕션 경로(exit-code 캡처 watcher 라 항상 돈다)인데 기다리는 쪽은
+                // `#[cfg(test)]` 뿐이라 비대칭이다 — 의도한 것이다: notify 는 받을 대기자가
+                // 없으면 아무 일도 안 하는 무비용 신호라, non-test 빌드에서 죽은 코드가 아니라
+                // 그냥 아무도 받지 않는 신호일 뿐이다. 대기자가 아직 wait 에 들어가지 않았어도
+                // 신호가 유실되지 않는다 — 대기자는 wait 전에 cell 을 먼저 검사하고, wait 는
+                // 반드시 그 락을 쥔 채 시작하기 때문이다.
                 cell.1.notify_all();
             });
         match handle {
@@ -303,8 +307,13 @@ impl PtyRegistry {
     /// 상한은 그래서 신호가 영영 오지 않을 때만 걸리는 안전망이고, 넉넉히 준다. 상한 안에
     /// 종료가 안 오면 `None`, 미존재 id 도 `None`.
     ///
-    /// `pty.wait` IPC 핸들러는 이걸 쓰지 않는다 — 그쪽은 즉시 반환해야 IPC 스레드가 막히지
-    /// 않으므로 [`PtyEntry::exit`] 스냅샷을 읽는다. 이 블로킹 대기는 테스트·내부 소비자용이다.
+    /// **테스트 전용**(`#[cfg(test)]`). `pty.wait` IPC 핸들러는 이걸 쓰지 않는다 — 그쪽은
+    /// 즉시 반환해야 IPC 스레드가 막히지 않으므로 [`PtyEntry::exit`] 스냅샷을 읽는다. 즉
+    /// 프로덕션에는 블로킹 대기 소비자가 없다. 이 메서드는 e2e 테스트가 폴링+마감시각 단정
+    /// 대신 종료 이벤트를 기다리게 하려고만 존재하므로 non-test 빌드에서 노출하지 않는다
+    /// (노출하면 dead code 라 이 레포는 error 로 잡는다). 프로덕션 소비자가 생기면 그때
+    /// 게이트를 벗긴다 — "나중에 쓸 것"은 미리 노출할 근거가 아니다.
+    #[cfg(test)]
     pub fn wait_for_exit(&self, id: u32, timeout: std::time::Duration) -> Option<PtyExit> {
         let pair = self.entries.get(&id)?.exit_result.clone();
         let (lock, cvar) = &*pair;
