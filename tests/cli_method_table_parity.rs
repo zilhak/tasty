@@ -31,7 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tasty_ipc::method_meta::method_meta;
+use tasty_ipc::method_meta::{METHOD_TABLE, method_meta};
 
 /// 값 위치(튜플 원소) 메서드 리터럴을 훑을 고정 소스.
 const CLI_REQUEST_SOURCES: &[&str] = &["crates/tasty-cli/src/request.rs"];
@@ -308,5 +308,55 @@ fn every_cli_method_string_is_registered_in_method_table() {
         stale.is_empty(),
         "NOT_SENT_SENTINELS 에 있으나 소스에 없다 — 갈래가 사라졌으면 목록에서도 지울 것:\n  {}",
         stale.join("\n  ")
+    );
+}
+
+/// 무점(root) 메서드는 위 스캔의 사각지대라, 반대 방향으로 막는다.
+///
+/// [`is_method_name`] 이 점을 요구하므로 `"split"` · `"tree"` 같은 root 메서드는 값 위치
+/// 스캔에 안 잡힌다. 점을 빼면 `"terminal"` · `"idle"` 같은 평범한 리터럴이 전부 후보가
+/// 되어 가드가 노이즈에 묻힌다.
+///
+/// 대신 **표 → CLI** 방향으로 본다: 표의 무점 메서드는 그 리터럴이 CLI request 소스에
+/// 정확히 있어야 한다. `"tree"` 를 `"tre"` 로 오타내면 `"tree"` 가 사라져 여기서 떨어진다.
+///
+/// 이 방향이 성립하는 근거는 명명 규칙이다 — `docs/dev-guide/api-conventions.md` 가
+/// root 등록을 `split` · `tree` **둘로 닫아** 두고 "새 메서드는 이 예외에 동참 금지" 라고
+/// 못박았다. 그래서 무점 메서드는 곧 "자주 쓰는 짧은 CLI 명령" 이고, CLI 진입점이 없는
+/// 무점 메서드는 존재하지 않는다. 규칙을 깨는 무점 메서드가 새로 생기면 여기서 실패하는데,
+/// 그건 오탐이 아니라 **그 규칙을 다시 논의하라는 신호**다.
+#[test]
+fn root_level_methods_are_reachable_from_the_cli() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut request_files: Vec<PathBuf> =
+        CLI_REQUEST_SOURCES.iter().map(|s| root.join(s)).collect();
+    for dir in CLI_REQUEST_DIRS {
+        gather_rs(&root.join(dir), &mut request_files);
+    }
+    let corpus: String = request_files
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok())
+        .collect();
+
+    let root_methods: Vec<&str> = METHOD_TABLE
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| !name.contains('.'))
+        .collect();
+    assert!(
+        !root_methods.is_empty(),
+        "표에 무점 메서드가 하나도 없다 — 추출이 깨졌거나 규칙이 바뀌었다"
+    );
+
+    let unreachable: Vec<&str> = root_methods
+        .iter()
+        .copied()
+        .filter(|name| !corpus.contains(&format!("\"{name}\"")))
+        .collect();
+    assert!(
+        unreachable.is_empty(),
+        "표의 root(무점) 메서드가 CLI request 소스에 리터럴로 없다 — 오타로 이름이 어긋났거나, \
+         명명 규칙이 닫아 둔 root 예외에 CLI 없는 메서드가 새로 들어왔다:\n  {}",
+        unreachable.join("\n  ")
     );
 }
