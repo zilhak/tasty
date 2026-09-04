@@ -5,6 +5,15 @@ use winit::raw_window_handle::HasWindowHandle;
 
 use super::DragResult;
 
+/// 드래그 결과 cell 의 poison 을 보고했는가(첫 1 회만).
+///
+/// 임계구역은 `Option<DragResult>` 한 칸이라 패닉이 나도 불변식이 성립하고, 읽는 쪽이
+/// 메인 스레드라 패닉하면 창 전체가 죽는다 — 복구가 맞다. 조용히 버리면 결과가
+/// `Accepted` 로 fallback 해 **사용자가 취소한 드래그가 수락으로 보고된다**.
+static DRAG_RESULT_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+const DRAG_RESULT_WHAT: &str = "file drag result cell";
+
 pub fn start_file_drag(
     window: &impl HasWindowHandle,
     paths: &[&str],
@@ -24,18 +33,18 @@ pub fn start_file_drag(
                 drag::DragResult::Dropped => DragResult::Accepted,
                 drag::DragResult::Cancel => DragResult::Cancelled,
             };
-            if let Ok(mut guard) = result_clone.lock() {
-                *guard = Some(drag_result);
-            }
+            *crate::poison::recover_mutex(
+                result_clone.lock(),
+                DRAG_RESULT_WHAT,
+                &DRAG_RESULT_POISONED,
+            ) = Some(drag_result);
         },
         Options::default(),
     )
     .map_err(|e| e.to_string())?;
 
-    let outcome = result
-        .lock()
-        .ok()
-        .and_then(|g| *g)
-        .unwrap_or(DragResult::Accepted);
+    let outcome =
+        (*crate::poison::recover_mutex(result.lock(), DRAG_RESULT_WHAT, &DRAG_RESULT_POISONED))
+            .unwrap_or(DragResult::Accepted);
     Ok(outcome)
 }

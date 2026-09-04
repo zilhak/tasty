@@ -22,10 +22,7 @@ use crate::file::format::types::{
 
 impl FileFormatRegistry {
     pub fn uninstall_plugin(&self, plugin_id: &str) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
             contribs.retain(|c| !matches!(&c.origin, RuleOrigin::Plugin(p) if p == plugin_id));

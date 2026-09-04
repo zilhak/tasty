@@ -30,10 +30,7 @@ impl FileFormatRegistry {
             }
         };
         let priorities = parse_extension_priority_section(toml_text).unwrap_or_default();
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_one(
                 &mut inner,
@@ -66,10 +63,7 @@ impl FileFormatRegistry {
             }
         };
         let priorities = parse_extension_priority_section(&text).unwrap_or_default();
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_one(
                 &mut inner,
@@ -86,10 +80,7 @@ impl FileFormatRegistry {
     }
 
     pub fn install_plugin_detectors(&self, plugin_id: &str, decls: &[DetectorDecl]) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             // Plugin 출처의 Lua detector rule 은 차단: host/user 만 사용자 권한으로
             // 실행되는 신뢰 영역. plugin 의 임의 Lua 는 sandbox 가 있어도 정책상 금지.

@@ -1066,3 +1066,29 @@ fn install_order_persists_across_patch_from_other_origin() {
         .install_order;
     assert_eq!(initial, after);
 }
+
+/// poison 된 레지스트리가 **조용히 아무것도 안 하는** 대신 계속 동작한다.
+///
+/// 이전에는 락 획득 24 곳이 전부 무음이라, poison 이후 detector 설치는 no-op 이 되고
+/// `identify_*` 는 빈 결과를 돌려줬다. 증상은 "그 확장자를 아무것도 못 알아본다" 인데
+/// 관측 지점이 0 이었다.
+#[test]
+fn a_poisoned_registry_still_installs_and_identifies() {
+    let reg = std::sync::Arc::new(FileFormatRegistry::new());
+
+    let held = std::sync::Arc::clone(&reg);
+    let joined = std::thread::spawn(move || {
+        let _guard = held.inner.write().expect("fresh rwlock");
+        panic!("a thread dies while holding the registry");
+    })
+    .join();
+    assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+    assert!(reg.inner.read().is_err(), "poison 됐어야 한다");
+
+    install_host_with_markdown(&reg);
+    assert!(
+        reg.identify(&target("readme.md"), DetectDepth::Cheap)
+            .is_some(),
+        "poison 이후에도 설치가 반영되고 식별이 된다"
+    );
+}
