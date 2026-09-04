@@ -1955,6 +1955,91 @@ mod tests {
         assert!(!t.is_light);
     }
 
+    /// 명명 const 로 값을 빼는 **대가가 축마다 다르다**는 것을 배율 ≠ 1 에서 고정한다.
+    ///
+    /// [`zoom_one_preserves_sizing`] 은 배율 1.0 에서만 재므로 `zoomed()` 를 타는 필드와
+    /// 안 타는 필드를 **원리적으로 가르지 못한다**. 이 테스트는 그것이 못 보는 조건에서 잰다.
+    ///
+    /// **처음에 "반경은 zoom 을 타고 굵기는 안 탄다" 로 적었다가 변이로 고쳤다.**
+    /// `border_width` 를 `zoomed()` 에 태우는 변이가 **살아남았고, 살아남는 것이 옳았다**:
+    /// `zoomed()` 는 `(px * z).round()` 이고 지원 배율은 0.85 · 1.0 · 1.2 뿐이라
+    /// (`AppearanceSettings::ui_scale_factor_for`), **1.0 과 2.0 은 셋 다 자기 자신으로
+    /// 되돌아온다.** 즉 그 값들에 대해서는 `zoomed()` 경유 여부가 **값에서 관측되지 않는다.**
+    ///
+    /// ```text
+    /// border_width      1.0 → 1 / 1 / 1     반올림 아래 배율 불변  → 경유 여부 관측 불가
+    /// focus_ring_width  2.0 → 2 / 2 / 2     (경유하는데도 값은 그대로)
+    /// corner_radius_sm  2.0 → 2 / 2 / 2
+    /// icon_stroke_width 1.5 → 1 / 2 / 2     경유하면 값이 변한다   → 관측 가능
+    /// corner_radius     4.0 → 3 / 4 / 5     경유하므로 값이 변한다
+    /// corner_radius_lg  8.0 → 7 / 8 / 10
+    /// ```
+    ///
+    /// 그래서 `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 의
+    /// "축 확장" 절이 드는 근거는 **경유 여부가 아니라 값의 배율 가변성**이다 — 명명
+    /// const 로 빼는 대가는 값이 배율에 따라 변하는 자리에서만 실재한다. 반경 기본·lg 는
+    /// 변하고, 1px 보더는 어차피 안 변한다.
+    ///
+    /// 이 테스트가 잡는 것은 셋이다.
+    /// 1. 반경 기본·lg 가 배율 가변성을 잃는다(스케일 값이 바뀌거나 반올림이 바뀐다).
+    /// 2. `icon_stroke_width` 가 `zoomed()` 를 타게 된다 — 이건 값이 변하므로 관측된다.
+    /// 3. **불변 셋의 전제가 깨진다** — 지원 배율에 예컨대 1.5 가 추가되면
+    ///    `1.0 * 1.5 = 1.5 → 2` 라 `border_width` 가 배율 가변이 되고, 그때는 굵기 축에도
+    ///    대가가 생긴다. 그 전제를 여기서 직접 잰다(배율 집합을 소스에서 읽지는 못한다 —
+    ///    `tasty-settings` 는 이 크레이트의 의존이 아니다. 값이 어긋나면 3번이 운다).
+    #[test]
+    fn zoom_cost_differs_by_axis() {
+        /// `AppearanceSettings::ui_scale_factor_for` 의 값. 의존 방향이 반대라 복사한다.
+        const SUPPORTED_ZOOMS: [f32; 3] = [0.85, 1.0, 1.2];
+
+        let base = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
+
+        for z in SUPPORTED_ZOOMS {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+
+            // ① 대가가 실재하는 축 — 배율에서 값이 `zoomed()` 결과와 같아야 한다.
+            for (name, b, v) in [
+                ("corner_radius", base.corner_radius, t.corner_radius),
+                (
+                    "corner_radius_lg",
+                    base.corner_radius_lg,
+                    t.corner_radius_lg,
+                ),
+            ] {
+                let want = LogicalPx((b.value() * z).round());
+                assert_eq!(v, want, "{name} 이 배율 {z} 에서 `zoomed()` 결과와 다르다");
+            }
+
+            // ② 굵기 hairline 은 `zoomed()` 밖이다. 1.5 라 경유하면 값이 변하므로
+            //    이 등식이 실제로 판별력을 갖는다(변이로 확인했다).
+            assert_eq!(
+                t.icon_stroke_width, base.icon_stroke_width,
+                "icon_stroke_width 가 배율 {z} 에서 변했다 — `zoomed()` 를 타게 됐다"
+            );
+
+            // ③ 불변 셋의 전제 — 이 값들은 경유하든 안 하든 배율에서 그대로다.
+            //    지원 배율이 바뀌면 여기가 먼저 운다.
+            for (name, v) in [
+                ("border_width", base.border_width),
+                ("focus_ring_width", base.focus_ring_width),
+                ("corner_radius_sm", base.corner_radius_sm),
+            ] {
+                assert_eq!(
+                    LogicalPx((v.value() * z).round()),
+                    v,
+                    "{name}({v:?}) 이 배율 {z} 에서 더 이상 반올림 불변이 아니다 — \
+                     굵기 축에 zoom 대가가 없다는 전제가 깨졌다"
+                );
+            }
+        }
+
+        // ①의 실물: 기본 반경은 지원 배율 양끝에서 실제로 다른 값이 된다.
+        let small = Theme::with_colors_and_zoom(dummy_colors(), false, 0.85);
+        let large = Theme::with_colors_and_zoom(dummy_colors(), false, 1.2);
+        assert_ne!(small.corner_radius, base.corner_radius);
+        assert_ne!(large.corner_radius, base.corner_radius);
+    }
+
     #[test]
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn zoom_one_preserves_sizing() {
