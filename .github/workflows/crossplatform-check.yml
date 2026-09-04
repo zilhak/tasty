@@ -149,17 +149,10 @@ jobs:
       # 부팅 진입점(`src/boot.rs` 의 `run_headless`)을 실제로 부팅해 IPC/attach/PTY 경로를
       # 끝까지 돌린다. `--lib --bins` 로는 그 경로가 한 줄도 안 돌았다.
       #
-      # 아래 `--skip` 2 건은 **GUI 가 필요해서가 아니다.** 원인과 무엇을 고치면 풀리는지를
-      # 각각 적어 둔다 — 고치면 skip 을 지우는 것이 이 목록의 용도다. 순서는 run: 의 순서와
-      # 같다. **skip 은 커버리지를 영구히 깎는 장치라, 하나씩 정당화가 없으면 넣지 않는다.**
-      #   1. hard_occupied_attention_survives_the_servers_local_focus
-      #      `debug.switch_workspace` 라우터 arm 이 `#[cfg(feature = "gui")]` 다. 핸들러
-      #      본체(`AppState::switch_workspace`)에는 gui 게이트가 없다. 다만 **arm 의
-      #      게이트만 떼면 컴파일이 안 된다** — `adapters/ipc/handler.rs` 가 `mod debug;`
-      #      자체를 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 걸어 두어 헤드리스
-      #      에서 `debug::` 가 미해결이 된다. 실제 해제 비용은 그 모듈을 gui 의존
-      #      핸들러(popup/banner/modifier_hint)와 비의존 핸들러로 나누는 것이다.
-      #   2. all_e2e_tests
+      # 아래 `--skip` 1 건은 **GUI 가 필요해서가 아니다.** 원인과 무엇을 고치면 풀리는지를
+      # 적어 둔다 — 고치면 skip 을 지우는 것이 이 목록의 용도다.
+      # **skip 은 커버리지를 영구히 깎는 장치라, 하나씩 정당화가 없으면 넣지 않는다.**
+      #   1. all_e2e_tests
       #      `markdown.recent` 에서 `Method not found` 로 멈춘다. headless 의 IPC dispatch 는
       #      plugin namespace forward 를 의도적으로 생략한다(`boot/headless_dispatch.rs`
       #      모듈 주석). 그 forward 를 headless 에 배선하면 풀린다. 이 파일은 33 개
@@ -171,6 +164,11 @@ jobs:
       # 버려 `output-match` 훅이 영영 fire 되지 않던 것)을 고쳤다 — `boot.rs` 의
       # `fire_output_match_hooks`. 이제 헤드리스에서도 7 passed / 0 failed 다.
       #
+      # `hard_occupied_attention_survives_the_servers_local_focus` 는 한때 첫 번째 skip
+      # 이었으나 **뺐다.** `debug.switch_workspace` 등 gui 비의존 debug 핸들러 셋이
+      # `debug.rs` 의 gui 게이트에 묶여 헤드리스 라우터에 없던 것이 원인이었고,
+      # `adapters/ipc/handler/debug_nav.rs` 로 갈라 해결했다(12 passed / 0 failed).
+      #
       # `closing_before_the_descriptor_releases_occupancy_promptly` 는 한때 네 번째 skip 이었으나
       # **뺐다.** 재판정에서 전체 스위트 3 회 연속 통과했고(각 회차 `test result 162`), 다른
       # 각도(테스트 바이너리는 gui 빌드 + spawn 인스턴스만 headless)의 전체 스위트 2 회도
@@ -181,7 +179,6 @@ jobs:
       - name: cargo test (headless)
         run: |
           cargo test --workspace --no-default-features --locked --no-fail-fast -- \
-            --skip hard_occupied_attention_survives_the_servers_local_focus \
             --skip all_e2e_tests
 
       # headless 조합의 clippy. 기본 조합의 clippy 는 Windows 잡이 보지만, 그 잡은
