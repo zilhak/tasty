@@ -1,4 +1,4 @@
-<!-- source-hash: 6fdcb706b293 -->
+<!-- source-hash: a13dc525a349 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -159,5 +159,5 @@ tasty read queue --surface 42 --clear    # empty everything
 ## Troubleshooting
 
 - **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
-- **Calling without `--surface` hits the wrong terminal** — in a shell without `TASTY_SURFACE_ID` (outside Tasty), the focused Surface becomes the target. Always write `--surface` in scripts.
+- **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.

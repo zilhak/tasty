@@ -158,5 +158,5 @@ tasty read queue --surface 42 --clear    # 전부 비움
 ## 문제 해결
 
 - **연결이 안 된다** — Tasty 가 실행 중인지, `~/.tasty/tasty.port` 파일이 있는지 확인한다. 파일이 남아 있는데 접속이 안 되면 이전 인스턴스가 비정상 종료된 것이다 ([문제 해결](../help/troubleshooting.md)).
-- **`--surface` 없이 부르면 엉뚱한 터미널에 간다** — `TASTY_SURFACE_ID` 가 없는 셸(Tasty 밖)에서는 포커스된 서피스가 대상이 된다. 스크립트에서는 항상 `--surface` 를 적는다.
+- **`--surface` 없이 부르면 거부된다** — `TASTY_SURFACE_ID` 가 없는 셸(Tasty 밖)에서는 대상 서피스를 알 수 없어 명령이 오류로 끝난다. Tasty 는 포커스된 서피스로 추측하지 않는다 — 어느 창이 앞에 나와 있든 같은 명령은 같은 결과를 낸다. 스크립트에서는 항상 `--surface` 를 적는다.
 - **`read since-mark` 가 비어 있다** — 마크를 찍기 전에 출력이 끝났거나, 명령이 아직 안 끝난 것이다. `read screen` 으로 현재 상태를 본다.
