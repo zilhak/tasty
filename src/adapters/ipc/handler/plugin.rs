@@ -6,26 +6,35 @@ use serde_json::{Value, json};
 use crate::plugin::PluginManager;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+/// 매니저가 아직 없으면 **에러로 답한다** — 빈 목록을 성공으로 돌려주지 않는다.
+///
+/// 이 파일의 다른 세 핸들러(`handle_show` / `handle_extension_list` /
+/// `handle_permissions`)가 모두 그렇게 하고, 여기만 `Vec::new()` 로 갈라져 있었다.
+/// 빈 목록을 성공으로 주면 "설치된 plugin 이 없다" 와 "아직 매니저를 안 띄웠다" 가
+/// 같은 응답이 되는데, 헤드리스 데몬은 plugin 메서드가 한 번 forward 되기 전까지
+/// 매니저가 `None` 인 것이 기본값이라(`src/boot/headless_dispatch.rs` 의 lazy 기동)
+/// 그 혼동이 실제로 일어난다. 호출자가 그 둘을 가를 수 없는 답은 없느니만 못하다.
 pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
-    let arr: Vec<Value> = match mgr {
-        Some(mgr) => mgr
-            .packages
-            .iter()
-            .map(|p| {
-                json!({
-                    "id": p.manifest.id,
-                    "name": p.manifest.name,
-                    "version": p.manifest.version,
-                    "description": p.manifest.description,
-                    "enabled": !mgr.config.is_disabled(&p.manifest.id),
-                    "running": mgr.is_running(&p.manifest.id),
-                    "surface_kinds": p.manifest.surface_kinds.iter().map(|k| &k.kind).collect::<Vec<_>>(),
-                    "log_path": mgr.log_path(&p.manifest.id).to_string_lossy(),
-                })
-            })
-            .collect(),
-        None => Vec::new(),
+    let mgr = match mgr {
+        Some(m) => m,
+        None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
     };
+    let arr: Vec<Value> = mgr
+        .packages
+        .iter()
+        .map(|p| {
+            json!({
+                "id": p.manifest.id,
+                "name": p.manifest.name,
+                "version": p.manifest.version,
+                "description": p.manifest.description,
+                "enabled": !mgr.config.is_disabled(&p.manifest.id),
+                "running": mgr.is_running(&p.manifest.id),
+                "surface_kinds": p.manifest.surface_kinds.iter().map(|k| &k.kind).collect::<Vec<_>>(),
+                "log_path": mgr.log_path(&p.manifest.id).to_string_lossy(),
+            })
+        })
+        .collect();
     JsonRpcResponse::success(id, json!({ "plugins": arr }))
 }
 
@@ -335,4 +344,48 @@ pub fn handle_permissions(
             "granted": granted,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 매니저가 없을 때 네 핸들러가 **같은 형태로** 답하는지 고정한다.
+    ///
+    /// 이 파일은 한때 `handle_list` 만 빈 목록을 성공으로 돌려주어, 호출자가
+    /// "plugin 이 없다" 와 "매니저가 아직 없다" 를 가를 수 없었다. 한 곳만 고치면
+    /// 다음에 핸들러가 늘 때 같은 이탈이 다시 생기므로, 넷을 한 자리에서 비교한다.
+    #[test]
+    fn every_plugin_handler_reports_a_missing_manager_the_same_way() {
+        let id = || Value::from(1);
+        let params = json!({"id": "any"});
+        let responses = [
+            ("plugin.list", handle_list(None, id())),
+            ("plugin.show", handle_show(None, id(), &params)),
+            ("plugin.extension.list", handle_extension_list(None, id())),
+            (
+                "plugin.permissions",
+                handle_permissions(None, id(), &params),
+            ),
+        ];
+
+        for (method, resp) in &responses {
+            let err = resp
+                .error
+                .as_ref()
+                .unwrap_or_else(|| panic!("{method} 가 매니저 없음을 에러로 답하지 않았다"));
+            assert_eq!(err.code, -32000, "{method} 의 에러 코드");
+            assert_eq!(
+                err.message, "plugin manager not initialized",
+                "{method} 의 에러 문구"
+            );
+        }
+    }
+
+    // 이 테스트의 반대 극(= 매니저가 있을 때 에러가 아니다)은 여기서 못 만든다 —
+    // `PluginManager::new` 는 `tasty-host-plugin` 크레이트의 `#[cfg(test)]` 라
+    // 본 크레이트의 unit test 에서는 존재하지 않고, `with_registries` 는 waker 와
+    // 두 registry port 를 요구해 단위 테스트가 감당할 대상이 아니다. 그 극은
+    // 헤드리스 통합 테스트가 실제 데몬에 `plugin.list` 를 쳐서 성공 응답을 받는
+    // 것으로 덮는다 — 그쪽이 없으면 위 단언은 "넷 다 무조건 에러" 여도 통과한다.
 }
