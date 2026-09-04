@@ -474,6 +474,61 @@ fn counting_identifiers_is_not_counting_tests() {
 /// 마스킹이 실제로 듣는가 — **이 파일 자신이 시험대다.** 위 합성 픽스처는 문자열 리터럴
 /// 안에 `#[test]` 와 `fn` 을 담고 있어서, 마스킹이 없으면 가드가 자기 픽스처를 진짜
 /// 테스트로 센다.
+/// `assets` 이름 면제가 지금 덮는 것이 0 이라는 사실을 박는다.
+///
+/// 모수 워커는 레포 전체를 훑으므로, cargo 가 컴파일하지 않는 `.rs` 가 섞이면
+/// 회차에 들어가지도 않는 이름을 사거리로 세게 된다. `assets` 면제는 그것을
+/// 막으려고 있는데, 근거가 이름이라 강제되는 것이 없다.
+///
+/// 지금 그 면제가 덮는 파일은 없다 — 그리고 **0 은 안전한 것이 아니라 관측되지
+/// 않은 것이다.** 면제가 옳은지 그른지 아무도 볼 수 없는 상태이고, 누군가
+/// `assets/` 아래에 `.rs` 를 두면 그 순간 조용히 활성화된다. 그 사람은 면제
+/// 목록에 손을 안 댔으므로 자기가 무엇을 가렸는지 모른다.
+///
+/// 그래서 이름 면제를 지우지도(지우면 컴파일 안 되는 `.rs` 를 세게 된다),
+/// 성질로 바꾸지도(갈래도 대상도 하나라 틀을 세울 일이 아니다) 않는다. 대신
+/// 조건이 깨지는 순간 여기서 시끄럽게 터지게 한다.
+#[test]
+fn the_assets_name_exemption_still_covers_nothing() {
+    fn scan(dir: &Path, in_assets: bool, hits: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name();
+            let name = name.to_string_lossy().into_owned();
+            if p.is_dir() {
+                if name == "target" || name == ".git" || name.starts_with('.') {
+                    continue;
+                }
+                scan(&p, in_assets || name == "assets", hits);
+            } else if in_assets && p.extension().is_some_and(|x| x == "rs") {
+                hits.push(p);
+            }
+        }
+    }
+    let root = repo_root();
+    let mut hits = Vec::new();
+    scan(&root, false, &mut hits);
+
+    // 비영 대조 — 스캐너가 죽어서 0 이 나온 것이 아님을 같은 회차에서 확인한다.
+    let mut any = Vec::new();
+    scan(&root.join("src"), true, &mut any);
+    assert!(
+        any.len() > 100,
+        "스캐너가 `.rs` 를 {} 개밖에 못 찾았다 — 0 이 면제의 성질이 아니라 측정 실패다",
+        any.len()
+    );
+
+    assert!(
+        hits.is_empty(),
+        "`assets/` 아래에 `.rs` 가 생겼다: {hits:?}\n\
+         이름 면제가 방금부터 이 파일들을 모수에서 가린다. 가리는 것이 맞는지 \
+         정하고, 맞다면 근거를 이름이 아닌 성질(cargo 가 컴파일하는가)로 다시 써라."
+    );
+}
+
 #[test]
 fn the_fixtures_in_this_file_are_not_counted_as_tests() {
     let raw = fs::read_to_string(repo_root().join("tests/headless_skip_names_are_exact.rs"))
