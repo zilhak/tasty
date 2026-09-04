@@ -2,7 +2,7 @@
 //!
 //! `src/app/ipc/routing.rs` 는 요청의 주인 창을 못 찾으면 **포커스된 창**으로 보낸다.
 //! 그래서 핸들러가 새 키로 대상을 받기 시작하면, 그 키를
-//! `src/app/request_owner.rs` 가 모르는 동안 그 메서드는 조용히 포커스 의존이 된다 —
+//! `src/core/request_target.rs` 가 모르는 동안 그 메서드는 조용히 포커스 의존이 된다 —
 //! 에러가 아니라 "다른 창에서 not found" 로 나타나므로 원인이 라우팅이라는 것이
 //! 드러나지 않는다. `docs/design/policies/focus.md` 의 "silent fallback 금지" 가
 //! 막으려는 형태다.
@@ -42,9 +42,13 @@ const HANDLER_DIR: &str = "src/adapters/ipc/handler";
 /// 그 디렉터리와 짝인 모듈 루트. 공용 `require_*` 헬퍼가 여기 있다.
 const HANDLER_ROOT: &str = "src/adapters/ipc/handler.rs";
 
-/// 인식 목록이 사는 곳. 상수를 직접 못 쓰는 이유는 그 모듈이 `gui` feature 로
-/// 게이트돼 있고 이 가드는 두 조합에서 다 돌기 때문이다 — 소스를 텍스트로 읽는다.
-const ROUTING_SOURCE: &str = "src/app/request_owner.rs";
+/// 인식 목록이 사는 곳.
+///
+/// 값이 아니라 텍스트로 읽는 이유는 목록이 함수 본문 속 배열 리터럴이라서다 — 이름을
+/// 밖으로 꺼낼 상수가 없다. (한때는 그 모듈이 `gui` 게이트라서이기도 했는데, 순수
+/// 판정이 두 조합에서 함께 쓰이게 되며 `core` 로 옮겨졌다. 옮겨졌다는 사실을 이 가드가
+/// "대조군이 죽었다" 로 잡아냈다.)
+const ROUTING_SOURCE: &str = "src/core/request_target.rs";
 
 /// 스캔한 핸들러 `.rs` 파일 수의 하한 — **연기 검사**다.
 /// 값의 근거: 2026-09-05 실측 **75 개**.
@@ -97,7 +101,7 @@ fn flatten(src: &str) -> String {
 /// id 처럼 생긴 키인가 — `_id` 로 끝나거나 단독 `id`.
 ///
 /// `child` 처럼 `_id` 로 안 끝나는 것은 대상이 아니라 **인덱스**다(그 판정은
-/// `app::request_owner` 의 `child_index_key_is_not_recognized` 가 든다).
+/// `core::request_target` 의 `child_index_key_is_not_recognized` 가 든다).
 fn is_id_shaped(key: &str) -> bool {
     key == "id" || key.ends_with("_id")
 }
@@ -136,12 +140,11 @@ fn collect_between(flat: &str, open: &str, close: &str, out: &mut BTreeSet<Strin
     }
 }
 
-/// 라우팅이 인식하는 id 키 — `request_owner.rs` 의 **테스트 밖** 부분에서 뽑는다.
+/// 라우팅이 인식하는 id 키 — `request_target.rs` 의 **테스트 밖** 부분에서 뽑는다.
 ///
 /// 테스트 모듈을 자르는 것이 핵심이다. 그 안에는 `json!({ "hook_id": … })` 같은
 /// 픽스처가 있어서, 통째로 읽으면 **테스트가 언급하기만 한 키가 인식된 것으로 잡힌다.**
 /// 그러면 이 가드는 자기 대조군을 스스로 부풀려 언제나 초록이 된다.
-
 fn recognised_routing_keys(src: &str) -> BTreeSet<String> {
     let production = super::strip_comments(src.split("#[cfg(test)]").next().unwrap_or(src));
     let mut out = BTreeSet::new();
@@ -258,7 +261,7 @@ fn every_id_key_a_handler_reads_is_routed_or_exempt() {
          \x20 라우팅도 면제도 모르는 키:\n{}\n\
          \x20 면제 목록에 있으나 아무 핸들러도 안 읽는 키: {stale:?}\n\
          앞의 것은 그 메서드가 조용히 **포커스된 창**으로 간다는 뜻이다. 창이 소유한 \
-         리소스를 가리키면 `request_owner.rs` 에 인식시키고(키가 여러 뜻이면 메서드로 \
+         리소스를 가리키면 `request_target.rs` 에 인식시키고(키가 여러 뜻이면 메서드로 \
          한정), 아니면 NOT_A_ROUTING_TARGET 에 **사유와 함께** 적어라.",
         unrouted.join("\n")
     );
@@ -294,7 +297,7 @@ fn the_extractor_sees_param_reads_and_not_lookalikes() {
 
 /// 인식 키는 **테스트 밖**에서만 뽑는다.
 ///
-/// `request_owner.rs` 의 테스트가 `json!({ "hook_id": … })` 로 키를 언급한다. 통째로
+/// `request_target.rs` 의 테스트가 `json!({ "hook_id": … })` 로 키를 언급한다. 통째로
 /// 읽으면 그 언급만으로 "인식됨" 이 되어, 라우팅이 실제로는 모르는 키가 통과한다.
 /// 자기 대조군을 부풀리는 형태라 면제로 못 막는다 — 잘라내는 것으로 막고 여기서 못박는다.
 #[test]

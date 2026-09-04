@@ -39,7 +39,7 @@ impl App {
         //
         // 지목한 요청: owner main → parked owner → **에러**. 포커스로 안 샌다.
         // 안 한 요청: owner(=`"workspace"` 문자열 대상) → focused main → parked[0].
-        let named = crate::app::request_owner::request_resource_id(
+        let named = crate::core::request_target::request_resource_id(
             &cmd.request.method,
             &cmd.request.params,
         );
@@ -84,7 +84,7 @@ impl App {
         let owner_in_parked = named.and_then(|rid| {
             self.parked_states
                 .iter_mut()
-                .find(|(_, e)| crate::app::request_owner::engine_has_resource(e, rid))
+                .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
         });
         if let Some((state, engine)) = owner_in_parked {
             let response = host_ipc::handler::handle_with_caller(
@@ -104,7 +104,7 @@ impl App {
                 &cmd.response_tx,
                 host_ipc::protocol::JsonRpcResponse::invalid_params(
                     id,
-                    Self::unowned_target_message(rid, &cmd.request.method),
+                    crate::core::request_target::unowned_target_message(rid, &cmd.request.method),
                 ),
             );
             return IpcStep::Handled;

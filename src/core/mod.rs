@@ -46,6 +46,7 @@ pub(crate) mod impl_pty;
 pub(crate) mod impl_split;
 pub(crate) mod impl_tab;
 pub(crate) mod impl_workspace;
+pub(crate) mod request_target;
 
 pub(crate) use state::{
     AttachMeshContextForward, AttentionKind, CoreState, GuiAttachUserReq, PendingImageUpload,

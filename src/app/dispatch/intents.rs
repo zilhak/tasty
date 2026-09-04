@@ -286,7 +286,7 @@ impl App {
             return resp;
         }
         let named =
-            crate::app::request_owner::request_resource_id(&request.method, &request.params);
+            crate::core::request_target::request_resource_id(&request.method, &request.params);
         let target_id = match self.find_request_owner(&request.method, &request.params) {
             Ok(id) if named.is_some() => id,
             Ok(id) => id.or(self.view.focused_view_id),
@@ -322,7 +322,7 @@ impl App {
         let owner_in_parked = named.and_then(|rid| {
             self.parked_states
                 .iter_mut()
-                .find(|(_, e)| crate::app::request_owner::engine_has_resource(e, rid))
+                .find(|(_, e)| crate::core::request_target::engine_has_resource(e, rid))
         });
         if let Some((state, engine)) = owner_in_parked {
             let response =
@@ -334,7 +334,7 @@ impl App {
             let id = request.id.clone().unwrap_or(serde_json::Value::Null);
             return ipc::protocol::JsonRpcResponse::invalid_params(
                 id,
-                Self::unowned_target_message(rid, &request.method),
+                crate::core::request_target::unowned_target_message(rid, &request.method),
             );
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
