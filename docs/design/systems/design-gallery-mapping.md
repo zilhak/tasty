@@ -9,7 +9,7 @@
 
 갤러리 실행: `cargo run -p tasty-gallery` (상단 toolbar 에서 theme·UI scale 토글, 좌측
 카탈로그 선택). 등록: `crates/tasty-gallery/src/catalog/{components,widgets}/<name>.rs` 의
-`draw(ui, theme)` + `catalog.rs::all()` 에 `CatalogItem` 한 줄.
+`draw(ui, theme)` + `catalog.rs::pages()` 의 해당 페이지에 `section(...)`/`spec(...)` 한 줄.
 
 ## remote_tool (Overlays)
 
@@ -47,7 +47,7 @@ active 를 `surface-active` 로 그리는 반면 본체(ui_kits jsx)는 `accent-
 
 **갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
 CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::
-load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(ui, &Theme)` 뿐이라
+load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Theme)` 뿐이라
 직접 호출 불가. view-only props 분리(model-view-split) 가 선행돼야 등록 가능. → **후속 과제.**
 그 전까지 검증은 본체 `debug.host_popup.open remote_tool` + `ui.screenshot` 로 한다.
 
@@ -330,7 +330,12 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx` ↔ 본체
 `src/view/settings/ui.rs`(+ `settings/ui/tabs/*`, `keybindings_tab.rs`) ↔ 갤러리
-`widgets/layout_2depth.rs` (Layouts `2 depth (Settings idiom)`).
+`components/settings.rs` (Overlays `settings` specimen). 그 L2 200 · L1 44 는 본체
+`SETTINGS_SIDEBAR_WIDTH`(200) · `SETTINGS_HEADER_HEIGHT`(44) **값과 일치**하나 컴파일 연동은
+아니다 — 갤러리 크레이트가 본체 bin 의 비공개 상수를 참조할 수 없어 값을 로컬로 들고
+관례로 맞춘다(200 은 리터럴, 44 는 `titlebar_height + spacing_sm` 도출).
+Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
+않는 일반 2-depth idiom(168/40, 토큰 도출)이다 — 혼동 금지.
 
 | 디자인 jsx 컴포넌트 | tasty 함수 (갤러리) | 비고 |
 |---|---|---|
