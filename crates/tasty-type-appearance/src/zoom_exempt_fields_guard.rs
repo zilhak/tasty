@@ -40,19 +40,19 @@ fn theme_source() -> String {
 
 /// 면제 사유의 갈래. 새 면제를 더할 때 **어느 갈래인지 말할 수 없으면 면제가 아니다.**
 ///
-/// # 이 갈래는 성질이 아니라 결정이다
+/// # 갈래는 결정이고, 그 결정이 관측되는지는 성질이다
 ///
-/// 갈래를 값이나 소비 자리 같은 **강제 가능한 성질**로 유도하려 했으나 두 반례가 섰다:
+/// 갈래 자체(왜 면제인가)는 강제할 수 없다. `tab_bar_height` 는 탭바 밖
+/// (`banner` · `egui_panels` · `overlay`)에서도 정당하게 소비되므로 "소비 자리로
+/// 갈래를 판정한다" 는 성립하지 않는다. 그래서 가드가 갈래에 대해 강제하는 것은
+/// **같은 결정이 두 곳(이 목록과 필드 doc)에 같게 적혀 있다**는 것뿐이다.
 ///
-/// - `tab_indicator_width`(2.0)는 면제이고 `focus_ring_width`(2.0)는 zoom 을 탄다 —
-///   **같은 값, 반대 판정.** 굵기로는 두 필드를 못 가른다(감싸는 링이냐 한쪽 변에
-///   붙는 띠냐는 기하 역할이고 값에 안 담긴다).
-/// - `tab_bar_height` 는 탭바 밖(`banner` · `egui_panels` · `overlay`)에서도 정당하게
-///   소비된다 — 탭바 아래 오프셋용이다. 소비 자리 국한도 성립하지 않는다.
-///
-/// 그래서 이 갈래는 **디자인 결정을 적은 것**이고, 가드가 강제하는 것은 그 결정이
-/// 두 곳(이 목록과 필드 doc)에 **같게** 적혀 있다는 것뿐이다. 주장의 참을 검사하지는
-/// 못한다 — 못 하는 것을 못 한다고 여기 고정해 둔다.
+/// 다만 **그 결정이 픽셀로 관측되는가**는 강제 가능한 성질이고, 그것은 따로 본다
+/// ([`the_unobservable_exemptions_are_exactly_the_pinned_ones`]). 한때 이 자리에
+/// "`tab_indicator_width`(2.0)는 면제인데 `focus_ring_width`(2.0)는 zoom 을 탄다 —
+/// 같은 값 반대 판정이니 성질이 없다" 고 적었는데 **틀렸다**: 지원 배율
+/// `0.85 / 1.0 / 1.2` 에서 둘 다 반올림 결과가 2 라, 판정이 갈려도 **픽셀은 같다.**
+/// 반례가 아니라 "차이가 관측되지 않는 쌍" 이었다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Reason {
     /// UI 크롬이 아니라 렌더 콘텐츠 — UI 배율 축 밖이다.
@@ -152,6 +152,32 @@ fn scan_fields(text: &str) -> Vec<Field> {
                 let zoomed = body.contains(zoom_call);
                 out.push((name, zoomed));
             }
+        }
+    }
+    out
+}
+
+/// `SIZING` 상수 블록에서 필드별 zoom 1 값을 읽는다.
+fn scan_sizing_values(text: &str) -> Vec<(String, f32)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let head = concat!("pub const SIZING: ", "ThemeSizing = ThemeSizing {");
+    let Some(s) = lines.iter().position(|l| l.starts_with(head)) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for line in lines.iter().skip(s + 1) {
+        let t = line.trim();
+        if t == "};" {
+            break;
+        }
+        let Some((name, rest)) = t.split_once(": LogicalPx(") else {
+            continue;
+        };
+        let Some((num, _)) = rest.split_once(')') else {
+            continue;
+        };
+        if let Ok(v) = num.parse::<f32>() {
+            out.push((name.to_string(), v));
         }
     }
     out
@@ -447,6 +473,90 @@ mod tests {
             EXEMPT.len(),
             "면제 {} 중 {hit} 만 표지를 담았다",
             EXEMPT.len()
+        );
+    }
+
+    /// `AppearanceSettings::ui_scale_factor_for` 의 값. 의존 방향이 반대라 복사한다.
+    /// **사본이라 원본을 따라가지 않는다** — 원본에 배율이 추가돼도 여기는 그대로이고,
+    /// 그 어긋남은 원본 크레이트의 `the_supported_ui_scale_set_is_pinned` 가 잡는다.
+    const SUPPORTED_ZOOMS: [f32; 3] = [0.85, 1.0, 1.2];
+
+    /// zoom 을 태우든 안 태우든 지원 배율 전체에서 **같은 픽셀**이 나오는 면제.
+    /// 이 둘에게 면제는 결정이 아니라 무상이다 — 어느 쪽을 골라도 관측되지 않는다.
+    const UNOBSERVABLE: &[&str] = &["border_width", "tab_indicator_width"];
+
+    /// 면제가 픽셀로 **관측되는가**를 집합으로 고정한다.
+    ///
+    /// 건수가 아니라 집합인 이유: 이 수는 두 가지로 움직인다 — 토큰 **값**이 바뀌거나
+    /// 지원 배율 **집합**이 바뀌거나. 둘 다 결함이 아니라 설계 변경이라, 문턱으로
+    /// 박으면 "몇 개가 늘었다" 만 알고 **어느 면제가 무상에서 유상으로 바뀌었는지**를
+    /// 모른다. 그 전이가 정확히 사람이 판단해야 하는 순간이다.
+    #[test]
+    fn the_unobservable_exemptions_are_exactly_the_pinned_ones() {
+        let src = theme_source();
+        let values: std::collections::BTreeMap<String, f32> =
+            scan_sizing_values(&src).into_iter().collect();
+        assert!(
+            values.len() >= FIELD_FLOOR,
+            "SIZING 값을 {} 개만 읽었다 — 하한 {}. 파서가 죽었다.",
+            values.len(),
+            FIELD_FLOOR
+        );
+
+        let mut measured: Vec<&str> = Vec::new();
+        let mut missing: Vec<&str> = Vec::new();
+        for (name, _) in EXEMPT {
+            let Some(v) = values.get(*name) else {
+                missing.push(name);
+                continue;
+            };
+            if SUPPORTED_ZOOMS.iter().all(|z| (v * z).round() == *v) {
+                measured.push(name);
+            }
+        }
+        assert!(missing.is_empty(), "SIZING 에 없는 면제 필드: {missing:?}");
+
+        let m: std::collections::BTreeSet<&str> = measured.into_iter().collect();
+        let p: std::collections::BTreeSet<&str> = UNOBSERVABLE.iter().copied().collect();
+        assert_eq!(
+            m,
+            p,
+            "면제의 관측 가능성이 바뀌었다.\n  새로 '무상' 이 된 것: {:?}\n               '유상' 으로 바뀐 것: {:?}\n             값이 바뀌었거나 지원 배율 집합이 바뀌었다. 어느 쪽이든 디자인 판단이 필요하다.",
+            m.difference(&p).collect::<Vec<_>>(),
+            p.difference(&m).collect::<Vec<_>>()
+        );
+
+        // 비영 대조 — 나머지 면제는 실제로 관측된다. 전부 무상이면 이 축이 무의미하다.
+        assert!(
+            EXEMPT.len() > p.len(),
+            "면제 전부가 관측 불가다 — 이 축에 걸린 것이 없다는 뜻이라 의심스럽다"
+        );
+    }
+
+    /// 판별식이 살아 있는가 — 면제 밖에서도 같은 성질이 갈려야 한다.
+    /// (`focus_ring_width` 2.0 은 면제가 아닌데 무상이고, `toast_accent_width` 3.0 은
+    /// 1.2 에서 4 가 되어 유상이다. 판정이 값에서 나온다는 증거다.)
+    #[test]
+    fn the_observability_test_discriminates_outside_the_exempt_set() {
+        let values: std::collections::BTreeMap<String, f32> =
+            scan_sizing_values(&theme_source()).into_iter().collect();
+        let free = |n: &str| {
+            let v = values
+                .get(n)
+                .unwrap_or_else(|| panic!("{n} 을 SIZING 에서 못 찾았다"));
+            SUPPORTED_ZOOMS.iter().all(|z| (v * z).round() == *v)
+        };
+        assert!(
+            free("focus_ring_width"),
+            "focus_ring_width(2.0)는 무상이어야 한다"
+        );
+        assert!(
+            !free("toast_accent_width"),
+            "toast_accent_width(3.0)는 유상이어야 한다"
+        );
+        assert!(
+            !free("icon_stroke_width"),
+            "icon_stroke_width(1.5)는 유상이어야 한다"
         );
     }
 
