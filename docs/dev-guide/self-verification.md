@@ -42,6 +42,15 @@ debug 인스턴스가 동시에 떠 있는 것이 이 레포의 일상이고, �
 
 **이미 다른 tasty 인스턴스(사용자의 release 등)가 떠 있어도 충돌하지 않는다.** `cargo run` 은 debug 빌드라 데이터 루트가 `~/.tasty-debug/`(포트파일 `~/.tasty-debug/tasty.port`)로 release 의 `~/.tasty/` 와 **완전히 분리**된다 — 포트·layout·scrollback 모두 별도. 그러니 인스턴스가 떠 있는지 따지지 말고 그냥 `cargo run` 으로 자기 debug 인스턴스를 띄워 검증한다. (격리 표·`TASTY_HOME` override: [independent-verification.md](independent-verification.md))
 
+**`--headless` 는 기본 빌드에서 headless 로 동작하지 않는다.** 기본 빌드는 `gui` feature 가 켜져 있고 그 빌드에는 headless 모드가 들어 있지 않아, `--headless` 를 줘도 **GUI 로 폴백해 실제 창을 띄운다.** 로그에 이렇게 남는다:
+
+```
+--headless requested in gui build; gui build does not embed headless mode.
+Build with --no-default-features to enable headless. Falling back to run_gui.
+```
+
+즉 `--headless` 만 믿고 "창은 안 뜬다" 고 가정하면 **세마포어 없이 공용 디스플레이에 창을 띄우게 된다**(실제로 그렇게 밟은 적이 있다). headless 검증에는 `cargo build --no-default-features` 로 만든 바이너리를 쓴다. GUI 가 떠도 되는 검증이면 폴백을 그대로 써도 되지만, 그때는 GUI 검증 규약(디스플레이 직렬화, 종료 확인)을 따른다.
+
 **tasty 터미널 내부(`TASTY_SURFACE_ID` 환경변수가 설정된 셸)에서 검증 인스턴스를 띄울 때는 `--launch` 플래그가 필수다.** `cargo run --bin tasty -- <플래그>` 를 `--launch` 없이 실행하면 `boot.rs:111` 의 GUI 부팅 skip 조건(`TASTY_SURFACE_ID` 설정 + `--launch` 미지정)에 걸려 GUI 가 뜨지 않고 CLI 도움말만 출력한 채 조용히 종료된다 — 이 상태로 `until target/debug/tasty list info ...` 같은 readiness poll 을 돌리면 죽은 프로세스를 무한정 기다리게 된다. 즉 `cargo run &` 을 `--launch` 없이 tasty 터미널 안에서 실행했다면, poll 이 멈추지 않을 때 프로세스가 애초에 GUI 로 뜬 게 맞는지부터 의심한다.
 
 ### 자주 쓰는 시나리오
