@@ -184,7 +184,7 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 
 - `start(ctx, ws) -> bool` — 이미 실행 중이면 false(idempotent). crashed 면 정리 후 재시작 허용.
 - `stop(ws) -> bool` — stop_tx + join.
-- `status(ctx, ws)` — `running`/`crashed`/`ready_count`/`running_count`.
+- `status(ctx, ws)` — `running`/`crashed`/`ready_count`/`running_count`/`store_error`/`list_failures`. 두 카운트는 `Option` 이다 — store 를 못 읽으면 `None`(응답에선 `null`)이고 `store_error` 가 이유를 싣는다. `list_failures` 는 러너 스레드의 연속 조회 실패 횟수(러너가 없으면 0).
 
 thread 본문은 `RunnerLoop::tick` + 500ms `recv_timeout`. tick 안 memory lock 은 *짧은 구간* 만(list → release → dispatch/poll(lock 밖) → re-lock for set_state) — 사용자 CLI 동시 호출과 락 경합 최소화.
 
@@ -197,7 +197,7 @@ tick 머리의 `TaskStore::list` 가 실패하면 **빈 목록으로 흡수하�
 **자동 시작은 하지 않는다.** 호스트 재시작 후 어떤 workspace 의 runner thread 도 자동으로 켜지지 않는다 — `agent.task_run --action start` 로 수동(또는 plugin) 재개해야 한다. 대신 다음 두 가지를 보장한다:
 
 1. **재시작 정화는 부팅 시 1회, runner 없이도 수행한다.** `purge_stale_agent_state_on_boot`(`Core`, `src/core/mod.rs`)가 headless(`src/boot.rs`, host IPC injector 등록 + `CoreState` 확보 직후)와 GUI(`src/app/boot_machine.rs::finish_boot`, 첫 윈도우 등록 직전) 양쪽 부팅 경로에서 호출된다. 라이브 `CoreState.workspaces` 전부에 대해 아래 "호스트 재시작 정화 + 핸들 영속" 절의 3종 세트(`purge_stale_semaphore_holders`/`purge_stale_lease_holders`/`reload_persistent_handles`)를 수행하고, `reload_persistent_handles` 가 되살린 handle 목록은 버린다(이 시점엔 그걸 넘겨받아 poll 할 runner 가 없다 — 다음 수동 start 가 다시 reload 한다). task 가 없는 workspace 는 각 정화 함수가 candidates 없음으로 조기 반환하므로 실질적으로 no-op — "라이브 workspace ∩ task 보유 workspace" 교집합과 동치. 여러 번 호출해도 안전(idempotent): `alive` 분류는 부수효과가 없고, `dead`/`stale`/`precise` 분류는 이미 정리된 뒤엔 대상이 남지 않는다.
-2. **정지 상태는 조회로 드러난다.** `task_run --action status` 뿐 아니라 `task_list`/`task_graph` 응답에도 `runner: { running, crashed, ready_count, running_count }` 를 동반한다 — runner 가 꺼져 있어도(`running: false`) `ready_count`/`running_count` 는 store 를 직접 조회한 실제 값이라, "비-terminal task 는 있는데 아무도 안 돌리고 있다"가 이 응답만으로 드러난다. `task_get` 응답은 task 가 `AwaitExternal` handle 로 외부 신호를 기다리는 중이면 `awaiting_external: { wait_key, deadline_ms }` 를 함께 실어 "그냥 running" 과 구분한다(`AwaitExternal` 의 poll 은 계약상 항상 Active 라 state 만으로는 대기 이유를 알 수 없다). CLI(`tasty agent task-{list,get,run}`)는 이 값들을 사람이 바로 읽는 텍스트로 렌더한다(`crates/tasty-cli/src/format.rs`) — runner 가 멈춰 있고 대기 중인 task 가 있으면 재개 커맨드까지 안내 문구로 보여준다.
+2. **정지 상태는 조회로 드러난다.** `task_run --action status` 뿐 아니라 `task_list`/`task_graph` 응답에도 `runner: { running, crashed, ready_count, running_count, store_error, list_failures }` 를 동반한다 — runner 가 꺼져 있어도(`running: false`) `ready_count`/`running_count` 는 store 를 직접 조회한 실제 값이라, "비-terminal task 는 있는데 아무도 안 돌리고 있다"가 이 응답만으로 드러난다. **그 조회 자체가 실패하면 두 카운트는 `null`** 이고 `store_error` 가 이유를 싣는다 — 0 을 돌려주면 "task 가 없다" 와 값이 같아져 이 계약이 거짓이 된다. 러너는 살아 있는데 계속 못 읽는 상태는 `list_failures`(연속 실패 횟수)로 드러난다: `running: true` 이면서 이 값이 크면 DAG 는 정지 상태다. `task_get` 응답은 task 가 `AwaitExternal` handle 로 외부 신호를 기다리는 중이면 `awaiting_external: { wait_key, deadline_ms }` 를 함께 실어 "그냥 running" 과 구분한다(`AwaitExternal` 의 poll 은 계약상 항상 Active 라 state 만으로는 대기 이유를 알 수 없다). CLI(`tasty agent task-{list,get,run}`)는 이 값들을 사람이 바로 읽는 텍스트로 렌더한다(`crates/tasty-cli/src/format.rs`) — runner 가 멈춰 있고 대기 중인 task 가 있으면 재개 커맨드까지 안내 문구로 보여준다.
 
 `hook_task_waits`(hook_id → task_id 매핑)는 여전히 **비영속**(프로세스 메모리 전용)이다 — 재시작하면 사라진다. 그래서 재시작 후 `AwaitExternal` task 는 **훅으로는 깨어날 수 없고**, 그 handle 에 실린 `deadline_ms`(위 참조)로만 마감된다: reload 시점에 이미 만료된 handle 은 즉시 `Failed`, 아직이면 그대로 복원되지만 이후 그 프로세스가 계속 살아있는 동안은(`AwaitExternal` poll 이 항상 Active 라 tick 이 deadline 을 검사하지 않음) 다음 재시작의 reload 가 다시 판정할 때까지 마감되지 않는다 — "재시작을 한 번 더 거쳐야 완전히 청소된다"는 절충이다.
 

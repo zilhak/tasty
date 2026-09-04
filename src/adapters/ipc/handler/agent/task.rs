@@ -321,14 +321,25 @@ pub fn handle_task_list(
 /// `running: false` 여도) `ready_count`/`running_count` 는 실제 값을 낸다 —
 /// "비-terminal task 는 있는데 아무도 안 돌리고 있다"가 `task_list`/`task_graph`
 /// 응답만으로 드러나는 이유.
+///
+/// 그 조회 자체가 실패하면 카운트는 **`null`** 이고 `store_error` 가 이유를 싣는다.
+/// 0 을 돌려주면 "task 가 없다" 와 값이 같아져 위 계약이 거짓이 된다.
+/// `list_failures` 는 러너 스레드의 연속 조회 실패 횟수 — `running: true` 인데 이
+/// 값이 크면 러너는 살아 있지만 DAG 는 정지 상태다.
 fn runner_status_json(core: &Core, engine: &crate::core::CoreState, workspace_id: u32) -> Value {
     let ctx = core.runner_context(engine);
     let status = core.agent_runner_registry().status(&ctx, workspace_id);
+    runner_status_value(&status)
+}
+
+fn runner_status_value(status: &crate::core::agent::runner_thread::RunnerStatus) -> Value {
     json!({
         "running": status.running,
         "crashed": status.crashed,
         "ready_count": status.ready_count,
         "running_count": status.running_count,
+        "store_error": status.store_error,
+        "list_failures": status.list_failures,
     })
 }
 
@@ -899,7 +910,8 @@ pub fn handle_task_reduce(
 // ============================================================
 //
 // action: "start" | "stop" | "status".
-// 응답: { running, crashed, ready_count, running_count }.
+// 응답: { running, crashed, ready_count, running_count, store_error, list_failures }.
+// store 조회 실패 시 두 카운트는 null 이고 store_error 가 이유를 싣는다.
 // start: 이미 실행 중이면 no-op (running=true 그대로).
 // stop:  실행 중이면 정지 후 join, 아니면 no-op.
 // status: 카운트만 갱신.
@@ -937,15 +949,7 @@ pub fn handle_task_run(
         }
     }
     let status = registry.status(&ctx, workspace_id);
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "running": status.running,
-            "crashed": status.crashed,
-            "ready_count": status.ready_count,
-            "running_count": status.running_count,
-        }),
-    )
+    JsonRpcResponse::success(id, runner_status_value(&status))
 }
 
 // ============================================================

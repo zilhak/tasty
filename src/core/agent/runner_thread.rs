@@ -11,7 +11,7 @@
 //! 닫고 thread 종료 — registry 의 status 는 자동으로 false 가 된다.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -69,6 +69,10 @@ fn store_list_failure_log(consecutive: u32) -> StoreListFailureLog {
 struct RunnerControl {
     stop_tx: mpsc::Sender<()>,
     crashed: Arc<AtomicBool>,
+    /// tick 머리의 task snapshot 조회가 **연속** 실패한 횟수(성공하면 0). 조회로
+    /// "러너가 살아는 있는데 아무것도 못 읽고 있다" 를 드러내기 위해 스레드와
+    /// 공유한다 — `running: true` 인데 이 값이 크면 DAG 는 정지 상태다.
+    list_failures: Arc<AtomicU32>,
     /// `Option` — `Drop` / `stop_workspace` 에서 `take()` 후 join.
     join: Option<thread::JoinHandle<()>>,
 }
@@ -77,8 +81,15 @@ struct RunnerControl {
 pub struct RunnerStatus {
     pub running: bool,
     pub crashed: bool,
-    pub ready_count: u32,
-    pub running_count: u32,
+    /// `None` = **셀 수 없었다**(store 조회 실패). 0 과 구분한다 — 조회가 실패했는데
+    /// 0 을 돌려주면 "task 가 없다" 와 같은 값이 되어, 이 응답이 계약대로
+    /// "정지 상태를 드러내는" 대신 정상으로 보이게 만든다.
+    pub ready_count: Option<u32>,
+    pub running_count: Option<u32>,
+    /// 위 카운트가 `None` 인 이유. 조회에 성공했으면 `None`.
+    pub store_error: Option<String>,
+    /// 러너 스레드의 연속 조회 실패 횟수(러너가 없으면 0).
+    pub list_failures: u32,
 }
 
 pub struct RunnerRegistry {
@@ -107,12 +118,14 @@ impl RunnerRegistry {
         let (tx, rx) = mpsc::channel::<()>();
         let crashed = Arc::new(AtomicBool::new(false));
         let crashed_thread = crashed.clone();
+        let list_failures = Arc::new(AtomicU32::new(0));
+        let list_failures_thread = list_failures.clone();
         let ctx_thread = ctx.clone();
         let spawned = thread::Builder::new()
             .name(format!("agent-runner-ws{workspace_id}"))
             .spawn(move || {
                 let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    run_loop(ctx_thread, workspace_id, rx);
+                    run_loop(ctx_thread, workspace_id, rx, &list_failures_thread);
                 }));
                 if panicked.is_err() {
                     crashed_thread.store(true, Ordering::Relaxed);
@@ -139,6 +152,7 @@ impl RunnerRegistry {
             RunnerControl {
                 stop_tx: tx,
                 crashed,
+                list_failures,
                 join: Some(join),
             },
         );
@@ -177,12 +191,29 @@ impl RunnerRegistry {
     /// (Core 측에 의존성 없음).
     pub fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
         let (running, crashed) = self.liveness(workspace_id);
-        let (ready_count, running_count) = count_ready_running(ctx, workspace_id);
-        RunnerStatus {
-            running,
-            crashed,
-            ready_count,
-            running_count,
+        let list_failures = {
+            let threads = self.threads.lock().expect("RunnerRegistry poisoned");
+            threads
+                .get(&workspace_id)
+                .map_or(0, |c| c.list_failures.load(Ordering::Relaxed))
+        };
+        match count_ready_running(ctx, workspace_id) {
+            Ok((ready_count, running_count)) => RunnerStatus {
+                running,
+                crashed,
+                ready_count: Some(ready_count),
+                running_count: Some(running_count),
+                store_error: None,
+                list_failures,
+            },
+            Err(e) => RunnerStatus {
+                running,
+                crashed,
+                ready_count: None,
+                running_count: None,
+                store_error: Some(e),
+                list_failures,
+            },
         }
     }
 }
@@ -193,24 +224,24 @@ impl Default for RunnerRegistry {
     }
 }
 
-fn count_ready_running(ctx: &RunnerContext, workspace_id: u32) -> (u32, u32) {
+/// `(ready, running)` 카운트. **조회 실패를 `(0, 0)` 으로 흡수하지 않는다** —
+/// 이 값이 `task_list`/`task_graph`/`task_run` 응답의 "정지 상태는 조회로
+/// 드러난다" 계약(`docs/dev-guide/agent-runner.md`)을 지탱하므로, 못 읽었을 때
+/// 0 을 돌려주면 그 계약이 거짓이 된다.
+fn count_ready_running(ctx: &RunnerContext, workspace_id: u32) -> Result<(u32, u32), String> {
     ctx.with_memory(|mem| {
         let seq = ctx.agent_seq.clone();
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        match store.list(workspace_id) {
-            Ok(tasks) => {
-                let r = tasks
-                    .iter()
-                    .filter(|t| matches!(t.state, TaskState::Ready))
-                    .count() as u32;
-                let g = tasks
-                    .iter()
-                    .filter(|t| matches!(t.state, TaskState::Running))
-                    .count() as u32;
-                (r, g)
-            }
-            Err(_) => (0, 0),
-        }
+        let tasks = store.list(workspace_id).map_err(|e| e.to_string())?;
+        let r = tasks
+            .iter()
+            .filter(|t| matches!(t.state, TaskState::Ready))
+            .count() as u32;
+        let g = tasks
+            .iter()
+            .filter(|t| matches!(t.state, TaskState::Running))
+            .count() as u32;
+        Ok((r, g))
     })
 }
 
@@ -841,7 +872,7 @@ fn gc_apply_sweep_plan(
 fn tick_snapshot(
     ctx: &RunnerContext,
     workspace_id: u32,
-    store_list_failures: &mut u32,
+    store_list_failures: &AtomicU32,
 ) -> Vec<tasty_agent::Task> {
     let listed = ctx.with_memory(|mem| {
         let seq = ctx.agent_seq.clone();
@@ -850,19 +881,22 @@ fn tick_snapshot(
     });
     let e = match listed {
         Ok(tasks) => {
-            if *store_list_failures > 0 {
+            let prev = store_list_failures.swap(0, Ordering::Relaxed);
+            if prev > 0 {
                 tracing::info!(
-                    "agent runner ws{workspace_id}: task store recovered after \
-                     {store_list_failures} consecutive list failures"
+                    "agent runner ws{workspace_id}: task store recovered after {prev} \
+                     consecutive list failures"
                 );
-                *store_list_failures = 0;
             }
             return tasks;
         }
         Err(e) => e,
     };
-    *store_list_failures = store_list_failures.saturating_add(1);
-    log_store_list_failure(workspace_id, *store_list_failures, &e);
+    let n = store_list_failures
+        .load(Ordering::Relaxed)
+        .saturating_add(1);
+    store_list_failures.store(n, Ordering::Relaxed);
+    log_store_list_failure(workspace_id, n, &e);
     Vec::new()
 }
 
@@ -883,14 +917,18 @@ fn log_store_list_failure(workspace_id: u32, n: u32, e: &dyn std::fmt::Display) 
     }
 }
 
-fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
+fn run_loop(
+    ctx: RunnerContext,
+    workspace_id: u32,
+    stop_rx: mpsc::Receiver<()>,
+    list_failures: &AtomicU32,
+) {
     let reloaded = purge_and_reload_on_restart(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
     for (task_id, handle) in reloaded {
         runner.running.insert(task_id, handle);
     }
-    let mut store_list_failures: u32 = 0;
     loop {
         // 0. push 완료 전략 timeout 안전망 — tick 본문보다
         //    먼저 돌려 이번 tick 의 0단계(terminal 흡수)가 방금 Failed 된 task 의
@@ -899,7 +937,7 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
         expire_overdue_hook_waits(&ctx, now);
 
         // 1. tick 본문.
-        let snapshot = tick_snapshot(&ctx, workspace_id, &mut store_list_failures);
+        let snapshot = tick_snapshot(&ctx, workspace_id, list_failures);
 
         let ctx_for_set = ctx.clone();
         let ctx_for_res = ctx.clone();
@@ -1023,6 +1061,66 @@ mod tests {
     }
 
     /// J.A.S3: 현 프로세스 pid 로 ShellProcess handle 영속 + reload → 복원.
+    /// store 를 못 읽으면 `status` 는 카운트를 **0 이 아니라 `None`** 으로 낸다.
+    /// 0 은 "task 가 없다" 와 값이 같아, `agent-runner.md` 가 계약으로 못박은
+    /// "정지 상태는 조회로 드러난다" 가 거짓이 된다.
+    #[test]
+    fn status_reports_unknown_counts_when_the_task_store_is_unreadable() {
+        let (_td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+        });
+        let registry = RunnerRegistry::new();
+        let healthy = registry.status(&ctx, 1);
+        assert_eq!(healthy.ready_count, Some(1));
+        assert!(healthy.store_error.is_none());
+
+        // 실제로 기록된 task 키를 읽어와 그 자리에 Task 로 역직렬화되지 않는 값을
+        // 덮는다 — 키 접두사를 테스트에 하드코딩하지 않으려고 런타임에 찾는다.
+        ctx.with_memory(|mem| {
+            let entries = mem
+                .list(&Scope::Workspace(1), &ListOpts::default())
+                .expect("list");
+            let key = entries
+                .iter()
+                .map(|e| e.key.clone())
+                .find(|k| k.contains("task"))
+                .expect("task key");
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &key,
+                &MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+                &PutOpts::default(),
+            )
+            .expect("put");
+        });
+
+        let broken = registry.status(&ctx, 1);
+        assert_eq!(broken.ready_count, None, "못 읽었으면 0 이 아니라 unknown");
+        assert_eq!(broken.running_count, None);
+        assert!(
+            broken.store_error.is_some(),
+            "카운트가 없는 이유가 응답에 실려야 한다"
+        );
+    }
+
     #[test]
     fn reload_persistent_handles_restores_alive_shell_process() {
         let (_td, ctx) = fresh_ctx();
