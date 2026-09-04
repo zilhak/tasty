@@ -94,15 +94,17 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 48 개 — 그중 `
 
 ## Conductor/에이전트 병렬 작업 시 빌드·검증 명령
 
-`role:conductor` 스킬(스택 중립적 공통 문서)이 프로젝트별 빌드/lint/test 명령을 이 CLAUDE.md에서 찾도록 되어 있다. 이 프로젝트(cargo workspace)의 명령은 다음과 같다 — CI(`.github/workflows/`)·pre-commit hook(`.githooks/pre-commit`)과 동일한 커맨드를 쓴다:
+`role:conductor` 스킬(스택 중립적 공통 문서)이 프로젝트별 빌드/lint/test 명령을 이 CLAUDE.md에서 찾도록 되어 있다. 이 프로젝트(cargo workspace)의 명령은 다음과 같다.
 
-| 목적 | 명령 |
-|------|------|
-| 빌드 (dev) | `cargo build` |
-| 빌드 (release 검증) | `cargo build --release` |
-| lint | `cargo clippy --workspace --all-targets --locked` |
-| 포맷 검사 | `cargo fmt --check` |
-| 테스트 | `cargo test --workspace --locked` |
+**"어디서 도는가" 열을 반드시 함께 읽는다** — 이 표의 명령이 CI·훅과 1:1로 같지 않다. 자동 채널이 없는 칸은 **네가 안 돌리면 아무도 안 돈다.** 전체 매트릭스(트리거·러너 포함)는 [`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md) 가 정본이다.
+
+| 목적 | 명령 | 어디서 도는가 |
+|------|------|---------------|
+| 빌드 (dev) | `cargo build` | 자동 채널 없음. macOS·Windows 컴파일은 CI 가 본다(`crossplatform-check`), Linux gui 컴파일은 아무 자동 잡도 안 본다 |
+| 빌드 (release 검증) | `cargo build --release` | 자동 채널 없음(dist 산출물은 `build-check.yml` 수동) |
+| lint | `cargo clippy --workspace --all-targets --locked` | 이 조합은 CI 의 **Windows 잡에서만** 돈다. pre-push 훅은 비슷하지만 다르다(`--locked` 없음 + `-- -D clippy::correctness`) |
+| 포맷 검사 | `cargo fmt --check` | ✅ 자동 — `format-check.yml`(main push · PR) + pre-commit A.2 |
+| 테스트 | `cargo test --workspace --locked` | **자동 채널 없음.** 병합 후 main 에서 conductor 가 1회 돌린다. CI 가 자동으로 도는 것은 SemVer 가드 3종(`test.yml`)과 Windows `--lib --bins` 뿐이다 |
 
 - **workspace exclude 크레이트는 위 명령이 보지 않는다**: `site/`(Pages 생성기)·`crates/tasty-plugin-sdk-wasm/` 은 `--manifest-path` 를 명시해 따로 검사한다 — `cargo fmt --check --manifest-path site/Cargo.toml` · `cargo check --manifest-path site/Cargo.toml`. pre-commit A.2 가 그 디렉토리의 `.rs` 가 staged 됐을 때 fmt 검사를 자동 실행한다([`docs/dev-guide/site.md`](docs/dev-guide/site.md) "왜 workspace 밖인가").
 - **의존성 설치 스텝 없음**: pnpm/npm과 달리 cargo는 별도 `install` 명령이 없다. `cargo build`/`cargo test` 등이 최초 실행 시 자동으로 fetch·컴파일한다. worktree를 새로 만든 직후 미리 받아두고 싶으면 `cargo fetch`.

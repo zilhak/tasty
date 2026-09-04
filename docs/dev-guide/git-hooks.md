@@ -6,7 +6,9 @@
 ./scripts/dev-setup.sh   # core.hooksPath 를 .githooks/ 로 설정 (멱등)
 ```
 
-안 하면 hook 이 안 돈다(CI 가 같은 검사를 돌리므로 결국 잡히지만 로컬 피드백을 위해 권장). 긴급 우회: `git commit --no-verify` / `git push --no-verify`. (merge 차단 우회는 아래 pre-merge-commit 절 참고)
+안 하면 hook 이 안 돈다. 긴급 우회: `git commit --no-verify` / `git push --no-verify`. (merge 차단 우회는 아래 pre-merge-commit 절 참고)
+
+**어떤 검사가 CI 에도 있고 어떤 검사가 훅에만 있는지는 [ci-gates](ci-gates.md) 의 표가 정본이다.** 훅을 설치하지 않거나 우회하면 훅 전용 검사(mod/use 선언 순서 · `let _ =` 주석 · `egui::Window` 직접 사용 · `println!`/`dbg!`)는 아무 데서도 잡히지 않는다.
 
 ## pre-commit (1–3초)
 
@@ -26,12 +28,14 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 >
 > 색상 하드코딩(옛 C.8)은 pre-commit 에서 빠지고 **clippy `disallowed-methods`** 로 이관됐다 — `#[allow]` 와 path 예외를 정확히 인식한다([color-policy](color-policy.md), [clippy-policy](clippy-policy.md)).
 >
-> C.6 은 staged diff 만 보므로 **기존 코드의 위반은 못 잡는다**. 전수 검사는 CI 의
+> C.6 은 staged diff 만 보므로 **기존 코드의 위반은 못 잡는다**. 전수 검사는
 > `tests/let_underscore_documented.rs` 가 한다 — 훅이 인정하는 세 형태(같은 줄·윗줄·다음 줄)를
-> 모두 포함하고 조금 더 넓어(빈 줄·속성 건너뛰기, 멀티라인 문장 내부), 훅이 통과시킨 코드를 CI 가
-> 떨어뜨리는 방향은 생기지 않는다. 판정 규약은 [error-handling](error-handling.md) "주석 위치".
+> 모두 포함하고 조금 더 넓어(빈 줄·속성 건너뛰기, 멀티라인 문장 내부), 훅이 통과시킨 코드를 전수
+> 검사가 떨어뜨리는 방향은 생기지 않는다. 다만 그 전수판이 도는 `cargo test --workspace` 는
+> **자동 채널이 없다**(병합 후 main 에서 사람이 돌린다 — [ci-gates](ci-gates.md)). 판정 규약은
+> [error-handling](error-handling.md) "주석 위치".
 >
-> i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. CI `cargo test --workspace` 의 `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하고, 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
+> i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하는데, 그 둘이 도는 `cargo test --workspace` 는 **자동 채널이 없다**(병합 후 main 에서 사람이 돌린다 — [ci-gates](ci-gates.md)). 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
 
 ## pre-push (수십초)
 
