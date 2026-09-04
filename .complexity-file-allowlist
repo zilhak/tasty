@@ -23,3 +23,39 @@ src/view/main/redraw.rs
 src/view/main/vi_copy.rs
 src/view/settings/ui.rs
 src/view/settings/ui/tabs/appearance.rs
+
+# ── 아래 26 건: 게이트가 한 번도 실행되지 않은 채 쌓인 드리프트 (2026-09-04 측정) ──
+# 위 18 건과 성격이 다르다. 위쪽은 게이트 도입(2026-07-06) 시점의 기존 대형 파일이고,
+# 아래쪽은 그 뒤 60 일 동안 임계를 새로 넘은 것이다 — 도입 시점에 1000 을 넘던 것은
+# 이 26 중 **0 건**이다(21 건은 그때 임계 이하, 5 건은 아예 없던 파일).
+# 게이트의 유일한 트리거가 `pull_request` 였고 이 저장소는 PR 을 열지 않아
+# run 이력이 0 건이었다. 근거·대안: docs/adr/0131-file-sloc-gate-needs-a-firing-trigger.md
+#
+# 이 블록은 **정당화된 예외가 아니라 부채 대장**이다. 위 래칫 조항대로 리팩터로
+# 1000 이하가 되면 줄을 지운다 — 지우는 것이 이 블록의 유일한 정상 종료다.
+crates/tasty-cli/src/request.rs
+crates/tasty-gallery/src/catalog/components/preset_editor.rs
+crates/tasty-i18n/src/lib.rs
+crates/tasty-plugin-agent-stream/src/registry.rs
+crates/tasty-plugin-claude/src/checklist.rs
+crates/tasty-plugin-claude/src/handlers.rs
+crates/tasty-plugin-claude/src/hook.rs
+crates/tasty-plugin-git-viewer/src/render.rs
+crates/tasty-plugin-manifest/src/validate.rs
+crates/tasty-plugin-sdk/src/egui_surface.rs
+crates/tasty-settings/src/general.rs
+crates/tasty-ssh/src/lib.rs
+src/adapters/ipc/handler.rs
+src/adapters/ipc/handler/agent/task.rs
+src/adapters/ipc/handler/terminal.rs
+src/adapters/ui/popup/remote_attach.rs
+src/adapters/ui/tab_bar.rs
+src/app/attach_client.rs
+src/app/event_handler.rs
+src/app/ipc/app_methods.rs
+src/core/agent/runner_thread.rs
+src/core/attach_runtime.rs
+src/core/impl_mirror.rs
+src/core/state.rs
+src/state.rs
+src/view/main/mouse.rs

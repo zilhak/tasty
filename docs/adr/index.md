@@ -139,3 +139,4 @@
 | 0126 | [스케일 밖 폰트 값은 토큰으로 스냅하지 않는다 — `.5` 값은 토큰이 될 수 없다](0126-off-scale-font-values-are-not-snapped-to-tokens.md) | Accepted | 2026-09-04 | theme, design-tokens, font-size, zoom, guards, adr-0033 |
 | 0127 | [e2e 하네스가 띄울 바이너리는 한 곳에서 정한다 — 기본 조합의 GPU 종속은 `App` 이분이 선행이다](0127-e2e-harness-binary-selection.md) | Accepted | 2026-09-04 | testing, e2e, headless, gpu, feature-flags, cargo, harness, adr-0090 |
 | 0128 | [DPI 변환 정합은 타입 봉인이 아니라 소스 스캔 가드로 지킨다](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) | Accepted | 2026-09-04 | typed-length, dpi, guard, scale-factor, geometry, drift-guard |
+| 0131 | [파일 SLOC 게이트는 발화하는 트리거를 갖는다 — 채널 없이 쌓인 26 건은 부채로 동결하고 래칫으로 갚는다](0131-file-sloc-gate-needs-a-firing-trigger.md) | Accepted | 2026-09-04 | ci, quality-gate, complexity, tokei, file-size, ratchet, trigger, drift, adr-0037 |

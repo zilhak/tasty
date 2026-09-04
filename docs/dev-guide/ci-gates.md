@@ -15,7 +15,7 @@
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
 | headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <3 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
-| 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 → **실효 없음** |
+| 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
 **문서만 담은 push 는 세 크로스플랫폼 잡을 발사하지 않는다.** `crossplatform-check.yml` 의
@@ -67,7 +67,7 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 | 복잡도 게이트의 축 | 강제 수단 | 실효 자동성 |
 |---|---|---|
 | 함수 cognitive | clippy `cognitive_complexity = "deny"` | **있다** — 자동 잡의 컴파일 단계에서 막힌다 |
-| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **없다** — PR 전용인데 이 저장소는 PR 을 열지 않는다 |
+| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **있다** — main push 마다 돈다. 2026-09-04 까지는 PR 전용이라 **run 이력이 0 건**이었고, 그 사이 임계를 새로 넘은 26 건이 부채로 동결됐다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)) |
 
 파일 SLOC 축은 지금 **아무 자동 채널도 없다.** 트리거를 고칠지는 러너 점유가 걸린 별개
 결정이라 이 문서는 상태만 기록한다.
