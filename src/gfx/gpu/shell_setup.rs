@@ -5,7 +5,9 @@ use winit::window::Window;
 // `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body 13 · max 14)에도, DTCG
 // primitive(10·11·12·13·14·16·17·20)에도 없는 값들이다. 토큰으로 스냅하면 픽셀이
 // 바뀌므로 조용히 반올림하지 않고 이름만 붙인다(스냅 여부는 디자인 판단 항목).
-// 토큰이 아니라 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+// 토큰이 아니라 `ui_scale` 줌을 타지 않는 것도 현행 유지다. 그 대가와 재검토
+// 조건은 `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 에
+// 있다 — 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
 
 /// 첫 실행 셸 설정 카드의 "Tasty" 브랜드 타이틀. 스케일 밖(30) — primitive 최댓값
 /// 20 보다도 크고, brand-wordmark semantic 은 17 이다.

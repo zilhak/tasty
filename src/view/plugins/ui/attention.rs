@@ -17,7 +17,10 @@ use crate::theme;
 // 어떤 `ui_scale` 에서도 정수다 — "zoom 1 에서만 0.5 다" 가 아니라 전 배율에서
 // 다르다. 규칙 전문은 `docs/design/systems/theme.md` "스케일 밖 폰트 값".
 //
-// 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다.
+// 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다. 그 대가와
+// 재검토 조건(디자인이 `.5` 스케일을 정식 tier 로 승인하면 발동)은
+// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 에 있다 —
+// 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
 
 /// 알림 비어있음 상태의 제목. 스케일 밖(13.5).
 const ATTN_EMPTY_TITLE_SIZE: f32 = 13.5;
