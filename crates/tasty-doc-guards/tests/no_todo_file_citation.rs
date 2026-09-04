@@ -991,8 +991,14 @@ fn allowlist_paths_match_exactly_not_by_prefix_or_suffix() {
     assert!(!allowed_patterns("CLAUDE.md").contains(&"P6"));
 }
 
+/// **이 초록이 뜻하는 것은 "면제가 아직 필요하다" 가 아니다.** 면제가 실재하는 파일과
+/// 실재하는 패턴 id 를 가리킨다는 것뿐이다 — 참조 무결성이다.
+///
+/// 그 파일이 더 이상 그 패턴을 담지 않아 면제가 아무 일도 안 하게 된 상태는 여기서
+/// 안 잡힌다. 그것을 잡으려면 항목을 빼고 가드를 돌려 빨개지는지 봐야 하고, 그 판정은
+/// 가드 안에서 할 수 없다. 재는 절차는 `docs/dev-guide/guard-population.md`.
 #[test]
-fn allowlist_entries_are_live() {
+fn allowlist_entries_point_at_things_that_exist() {
     // 경로가 썩으면 가드가 그 파일을 다시 잡아 **시끄럽게** 실패하지만, 패턴 id 가 썩으면
     // (오탈자·패턴 개명) 의도한 면제가 조용히 사라진 채 아무도 모른다. 뒤쪽을 여기서 잡는다.
     let root = &tasty_doc_guards::repo_root();

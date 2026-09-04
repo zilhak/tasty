@@ -86,8 +86,12 @@ fn the_scanned_files_all_exist() {
     }
 }
 
+/// **이 초록이 뜻하는 것은 문구가 아직 소스에 있다는 것까지다.** 그 자리가 여전히
+/// 위반인지는 안 본다 — 문구가 남아 있어도 주변이 바뀌어 더 이상 잡히지 않을 수 있다.
+/// 그 경우까지 가르려면 항목을 빼고 돌려야 하고, 절차는
+/// `docs/dev-guide/guard-population.md`.
 #[test]
-fn the_allowlist_entries_are_all_still_used() {
+fn the_allowlist_entries_still_appear_in_the_sources() {
     // 쓰이지 않는 allowlist 항목은 다음 사람에게 "여기는 원래 패닉해도 된다" 는 잘못된
     // 신호를 준다.
     let all: String = SCANNED.iter().map(|r| read(r)).collect();
