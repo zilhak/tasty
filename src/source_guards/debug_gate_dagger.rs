@@ -115,10 +115,24 @@ fn footnote_enumerated(doc: &str) -> BTreeSet<String> {
     out
 }
 
-/// dispatch 팔 `"a.b" | "c.d" => 모듈::함수(...)` 를 메서드 → 핸들러 함수로 편다.
-fn dispatch_map() -> BTreeMap<String, String> {
-    let src = strip_comments(&read(DISPATCH));
-    let mut out = BTreeMap::new();
+/// 응답만 만드는 팔의 호출 대상. 이 팔들은 **아무것도 실행하지 않는다** — 왜 못 하는지를
+/// 답할 뿐이다(예: 플랫폼 게이트의 상보 팔, ADR-0154). 게이트가 걸렸는지를 물을 대상이
+/// 아니므로 지도에서 뺀다. 안 빼면 한 메서드에 팔이 둘일 때 뒤엣것이 앞엣것을 덮어,
+/// **게이트된 실제 핸들러가 사라진 것처럼** 보인다(2026-09-05 실측: `surface.raw_key` 가
+/// 그렇게 게이트 없음으로 판정됐다).
+const REFUSAL_CALLEES: &[&str] = &["error", "invalid_params"];
+
+/// dispatch 팔 `"a.b" | "c.d" => 모듈::함수(...)` 를 메서드 → 핸들러 함수**들**로 편다.
+///
+/// 값이 집합인 이유: 한 메서드가 조합마다 다른 팔로 갈릴 수 있다. 하나만 담으면 나중 팔이
+/// 앞선 팔을 덮어 **조용히 판정을 뒤집는다.**
+fn dispatch_map() -> BTreeMap<String, BTreeSet<String>> {
+    dispatch_map_of(&strip_comments(&read(DISPATCH)))
+}
+
+/// 위의 순수부 — 합성 입력으로 면제를 찌를 수 있게 분리한다.
+fn dispatch_map_of(src: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (i, _) in src.match_indices("=>") {
         // 오른쪽: 첫 `식별자(` 의 마지막 경로 세그먼트가 핸들러 이름이다.
         let rhs = &src[i + 2..];
@@ -128,7 +142,7 @@ fn dispatch_map() -> BTreeMap<String, String> {
             .next()
             .unwrap_or_default()
             .to_owned();
-        if callee.is_empty() {
+        if callee.is_empty() || REFUSAL_CALLEES.contains(&callee.as_str()) {
             continue;
         }
         // 왼쪽: 이 팔의 문자열 리터럴들. 앞선 `=>` 나 블록 경계까지만 거슬러 본다.
@@ -141,7 +155,7 @@ fn dispatch_map() -> BTreeMap<String, String> {
             .max()
             .unwrap_or(0);
         for m in backticked_or_quoted(&src[lhs_start..i]) {
-            out.insert(m, callee.clone());
+            out.entry(m).or_default().insert(callee.clone());
         }
     }
     out
@@ -212,10 +226,21 @@ fn gated_handler_fns() -> BTreeSet<String> {
 }
 
 /// 실제로 게이트가 걸린 **메서드** 이름.
-fn gated_methods(map: &BTreeMap<String, String>) -> BTreeSet<String> {
-    let fns = gated_handler_fns();
+///
+/// 판정은 **모든** 실행 팔이 게이트를 부르는가다(`any` 가 아니라 `all`). 하나라도 게이트
+/// 없이 실행되는 길이 있으면 † 의 주장("이 메서드는 `--enable-input-simulation` 없이는
+/// 거부된다")이 그 길에서 거짓이기 때문이다. 거절만 하는 팔은 애초에 지도에 없다
+/// (`REFUSAL_CALLEES`).
+fn gated_methods(map: &BTreeMap<String, BTreeSet<String>>) -> BTreeSet<String> {
+    gated_methods_with(map, &gated_handler_fns())
+}
+
+fn gated_methods_with(
+    map: &BTreeMap<String, BTreeSet<String>>,
+    fns: &BTreeSet<String>,
+) -> BTreeSet<String> {
     map.iter()
-        .filter(|(_, callee)| fns.contains(*callee))
+        .filter(|(_, callees)| !callees.is_empty() && callees.iter().all(|c| fns.contains(c)))
         .map(|(method, _)| method.clone())
         .collect()
 }
@@ -355,6 +380,77 @@ fn the_footnote_parser_reads_only_the_enumeration() {
         assert!(
             !listed.contains(extra),
             "열거 밖의 이름 `{extra}` 이 열거로 읽혔다"
+        );
+    }
+}
+
+/// 거절 팔을 지도에서 빼는 면제가 **진짜 결손을 가리지 않는가.**
+///
+/// 이 면제는 실제 결함을 고치려고 넣은 것이라(상보 팔이 실제 핸들러를 덮었다), 그 면제
+/// 창 안쪽에 진짜 위반을 심었을 때 여전히 잡히는지를 여기서 못 박는다. 안 그러면 면제
+/// 자체가 구멍이 된다.
+#[cfg(test)]
+mod exemption_mutations {
+    use super::*;
+
+    fn fns(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// 거절 팔이 있어도 **실제 핸들러의 게이트 여부**로 판정한다 — 이번에 고친 형태.
+    #[test]
+    fn a_refusal_arm_does_not_hide_the_real_handler() {
+        let src = r#"
+match m {
+    "surface.raw_key" => input_source::handle_raw_key(state, engine, id, p),
+    "surface.raw_key" => JsonRpcResponse::error(id.clone(), -32015, WHY),
+}
+"#;
+        let map = dispatch_map_of(src);
+        assert_eq!(
+            map.get("surface.raw_key").map(BTreeSet::len),
+            Some(1),
+            "거절 팔이 지도에 들어왔거나 실제 핸들러가 사라졌다: {map:?}"
+        );
+        let gated = gated_methods_with(&map, &fns(&["handle_raw_key"]));
+        assert!(
+            gated.contains("surface.raw_key"),
+            "실제 핸들러가 게이트를 부르는데 거절 팔 때문에 게이트 없음으로 읽혔다"
+        );
+    }
+
+    /// 면제 창 안의 진짜 위반 — 게이트 없이 **실행되는** 길이 하나라도 있으면 잡는다.
+    #[test]
+    fn an_ungated_execution_path_is_still_caught() {
+        let src = r#"
+match m {
+    "surface.raw_key" => input_source::handle_raw_key(state, engine, id, p),
+    "surface.raw_key" => other::handle_raw_key_fallback(state, engine, id, p),
+    "surface.raw_key" => JsonRpcResponse::error(id.clone(), -32015, WHY),
+}
+"#;
+        let map = dispatch_map_of(src);
+        let gated = gated_methods_with(&map, &fns(&["handle_raw_key"]));
+        assert!(
+            !gated.contains("surface.raw_key"),
+            "게이트 없이 실행되는 팔이 남아 있는데 게이트됨으로 읽었다 — `all` 이 아니라 \
+             `any` 로 판정하고 있다"
+        );
+    }
+
+    /// 거절 팔**만** 있는 메서드는 게이트된 것이 아니다(빈 집합을 참으로 읽지 않는다).
+    #[test]
+    fn a_method_with_only_refusals_is_not_gated() {
+        let src = r#"
+match m {
+    "ns.only_refused" => JsonRpcResponse::error(id.clone(), -32015, WHY),
+}
+"#;
+        let map = dispatch_map_of(src);
+        let gated = gated_methods_with(&map, &fns(&["handle_raw_key"]));
+        assert!(
+            gated.is_empty(),
+            "빈 호출 집합을 게이트됨으로 읽었다: {gated:?}"
         );
     }
 }
