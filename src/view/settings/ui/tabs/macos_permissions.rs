@@ -5,9 +5,12 @@
 //! 자체가 없어** 사용자가 시스템 설정에서 직접 추가해야 한다. 이 탭은 그 상태를
 //! 보여주고 해당 패널로 바로 보내는 자리다.
 //!
-//! 손쉬운 사용은 release 에 소비자가 없어 프롬프트를 띄우지 않는다(debug 빌드 한정).
-//! 상태 행은 그대로 둔다 — 표시는 안내가 아니고, debug 빌드로 자기검증할 때 지금
-//! 승인 상태를 확인할 자리가 필요하다.
+//! **손쉬운 사용 행은 debug 빌드에만 있다.** 이 권한을 쓰는 표면(`surface.raw_key`)이
+//! debug 로 격리돼 release 에는 소비자가 없고, 프롬프트도 띄우지 않는다
+//! ([ADR-0115](../../../../../docs/adr/0115-input-reproduction-ipc-debug-isolation.md)).
+//! 소비자가 없는 권한을 release 화면에 남기면 사용자에게 영구히 "미승인" 으로만 보이는,
+//! 켤 이유도 끌 이유도 없는 행이 된다. debug 빌드에서는 자기검증 시 승인 상태를 볼
+//! 자리가 필요하므로 그대로 둔다.
 //!
 //! **표시되는 상태는 추정이다** — Full Disk Access 보유 여부를 묻는 공개 API 가 없어
 //! "그 권한으로만 읽히는 것으로 알려진 경로가 열리는가" 로 대신한다. 그래서 이 값으로
@@ -37,11 +40,14 @@ pub fn draw_macos_permissions_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ));
             ui.end_row();
 
-            ui.label(t("settings.macos_permissions.accessibility_label"));
-            ui.label(status_text(
-                crate::macos_permissions::accessibility_trusted(),
-            ));
-            ui.end_row();
+            #[cfg(debug_assertions)]
+            {
+                ui.label(t("settings.macos_permissions.accessibility_label"));
+                ui.label(status_text(
+                    crate::macos_permissions::accessibility_trusted(),
+                ));
+                ui.end_row();
+            }
         });
 
     vspace(ui, th.spacing_sm);

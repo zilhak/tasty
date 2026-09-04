@@ -98,7 +98,9 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 부여하면 "다른 앱의 데이터"
 
 ### 설정 탭 (일반 > 권한)
 
-macOS 에서만 노출된다. FDA(추정)·화면 기록·손쉬운 사용의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기, 부팅 안내 재표시 토글을 담는다. 부팅 안내를 지나쳤거나 껐어도 여기서 현재 상태를 볼 수 있다.
+macOS 에서만 노출된다. FDA(추정)·화면 기록의 현재 상태, FDA 가 추정임을 밝히는 주석, 전체 디스크 접근 권한 패널 바로가기, 부팅 안내 재표시 토글을 담는다. 부팅 안내를 지나쳤거나 껐어도 여기서 현재 상태를 볼 수 있다.
+
+**손쉬운 사용 상태 행은 debug 빌드에만 있다.** release 에는 이 권한을 소비하는 코드가 없어 프롬프트도 띄우지 않으므로, 행을 남기면 켤 이유도 끌 이유도 없는 항목이 영구히 "미승인" 으로 보인다. debug 빌드에서는 주입 경로를 자기검증할 때 승인 상태를 확인할 자리가 필요해 그대로 둔다.
 
 ### 프롬프트 본문 설명 문구
 
@@ -137,3 +139,5 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록·손쉬운 사용의 �
 - Given 손쉬운 사용 권한 승인 후 재시작 + `--enable-input-simulation` 으로 띄운 debug 빌드 When `surface.raw_key` 호출 Then OS 포커스를 가진 대상에 키가 실제로 입력된다
 - Given `--enable-input-simulation` 없이 띄운 debug 빌드 When `surface.raw_key` 호출 Then 손쉬운 사용 권한 여부와 무관하게 `-32001` 로 거부된다
 - Given release 빌드 When `surface.raw_key` 호출 Then `method_not_found` 로 떨어진다(메서드가 표에도 라우터에도 없다)
+- Given release 빌드 When 설정 > 일반 > 권한 탭 열기 Then 손쉬운 사용 상태 행이 없다(FDA·화면 기록 두 행만)
+- Given debug 빌드 When 설정 > 일반 > 권한 탭 열기 Then 손쉬운 사용 상태 행이 있다

@@ -36,7 +36,7 @@
 | **오버레이** <!-- en: Overlay --> | **토스트 표시 시간** <!-- en: Toast duration --> (1~10초) |
 | **원격 전송** <!-- en: Remote transfer --> | **저장 폴더** <!-- en: Save folder --> (기본 `~/.tasty/transfers/`) · **최대 용량** <!-- en: Maximum size --> (MiB) — 원격 워크스페이스에서 받은 파일이 저장되는 곳 |
 | **표시** <!-- en: Display --> (macOS 만) | **Alt 키 표시** · **Option 키 표시** · **Shift 키 표시** — 단축키 표기를 텍스트 / 심볼 중에서 고른다 |
-| **권한** <!-- en: Permissions --> (macOS 만) | **전체 디스크 접근 권한** <!-- en: Full Disk Access --> · **화면 기록** <!-- en: Screen recording --> · **손쉬운 사용 (키 주입)** <!-- en: Accessibility (key injection) --> 상태와 시스템 설정 열기 |
+| **권한** <!-- en: Permissions --> (macOS 만) | **전체 디스크 접근 권한** <!-- en: Full Disk Access --> · **화면 기록** <!-- en: Screen recording --> 상태와 시스템 설정 열기 |
 
 ### 터미널
 

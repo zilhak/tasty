@@ -174,7 +174,10 @@ fn prewarm_screen_recording() {
 // 켠 뒤에도 실행 중 프로세스에 즉시 반영되지 않아 재시작이 필요한 경우가 많다.
 // 그래서 부팅당 1 회만 요청한다 — 미설정 상태에서 반복 호출하면 프롬프트가 계속 뜬다.
 
-#[cfg(all(target_os = "macos", feature = "gui"))]
+// 상태 조회 심볼. 소비자(주입 경로 · pre-warm · 설정 탭의 상태 행)가 전부 debug 로
+// 내려가 release 에서는 참조가 0 이 되므로, 선언도 같은 cfg 로 내린다
+// (gui 빌드는 `dead_code = deny` 라 선언만 남으면 빌드가 깨진다).
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
@@ -217,7 +220,11 @@ unsafe extern "C" {
 /// **호출 시점마다 다시 묻는다** — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼
 /// 경우를 잘못 판정한다. 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있어서
 /// 캐시가 특히 위험하다.
-#[cfg(all(target_os = "macos", feature = "gui"))]
+///
+/// **debug 빌드 전용.** 이 값을 읽는 곳은 셋뿐이고 셋 다 debug 다 — 주입 경로
+/// (`surface.raw_key`), pre-warm 요청, 설정 권한 탭의 상태 행. release 에는 이
+/// 권한을 소비하는 코드가 없으므로 상태를 물을 이유도 없다.
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 pub(crate) fn accessibility_trusted() -> bool {
     // SAFETY: 인자도 반환 포인터도 없는 ApplicationServices C 함수 호출 — 포인터
     // 수명/해제 책임이 생기지 않는다. 현재 프로세스의 TCC 승인 상태를 묻기만 하고
@@ -227,8 +234,9 @@ pub(crate) fn accessibility_trusted() -> bool {
 }
 
 /// 비-macOS / headless — 손쉬운 사용 권한 개념이 없으므로 "승인됨" 으로 답한다.
-/// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다.
-#[cfg(not(all(target_os = "macos", feature = "gui")))]
+/// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다. macOS 구현과 같은
+/// 이유로 debug 한정이다.
+#[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
 pub(crate) fn accessibility_trusted() -> bool {
     true
 }

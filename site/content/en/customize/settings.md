@@ -1,4 +1,4 @@
-<!-- source-hash: e41a428d26c6 -->
+<!-- source-hash: 9a2625ef38ca -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -37,7 +37,7 @@ Press the **Settings** button at the very bottom of the sidebar, or press `Ctrl+
 | **Overlay** | **Toast duration** (1~10 seconds) |
 | **Remote transfer** | **Save folder** (default `~/.tasty/transfers/`) · **Maximum size** (MiB) — where files received from a remote Workspace are saved |
 | **Display** (macOS only) | **Alt key display** · **Option key display** · **Shift key display** — choose text or symbols for keybinding notation |
-| **Permissions** (macOS only) | **Full Disk Access** · **Screen recording** · **Accessibility (key injection)** status and a link to open System Settings |
+| **Permissions** (macOS only) | **Full Disk Access** · **Screen recording** status and a link to open System Settings |
 
 ### Terminal
 
