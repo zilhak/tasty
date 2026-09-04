@@ -79,7 +79,7 @@ finish_boot (Ready):
 
 - **window event** 는 전부 소비한다 (`handle_boot_window_event` — RedrawRequested
   = 스텝 구동, Resized = gpu.resize, CloseRequested = 종료, 그 외 무시).
-  CloseRequested 시 `reclaim_boot_engine_worker_for_exit` 가 먼저 불려 —
+  CloseRequested 시 `shutdown_step_reclaim_boot_worker` 가 먼저 불려 —
   `WaitingEngine` 체류 중이면 워커 결과(최대 5s 대기)를 회수해 그 안의
   `PluginManager` 를 graceful shutdown 한다(잔존 plugin 자식 프로세스 방지).
   WaitingEngine 이 아니거나 부팅 완료 후(steady-state 종료 cascade)에는 no-op.

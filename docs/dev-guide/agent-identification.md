@@ -46,4 +46,4 @@ env `TASTY_AGENT_ID` 는 **위조 가능**하다 — 적대적 agent 가 다른 
 
 ## 테스트
 
-`tasty_telemetry::agent_id::tests`(`from_env_host_when_unset` / `from_env_picks_up_value` / `from_env_empty_treated_as_host`).
+`tasty_telemetry::agent_id::tests` 의 `from_env_all_cases` 하나가 세 경우(미설정 → host / 값 있음 → 그 값 / 빈 값 → host)를 함께 단정한다.
