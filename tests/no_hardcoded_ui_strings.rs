@@ -56,6 +56,13 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     ),
     ("crates/tasty-tui-simulator/", "테스트용 TUI 시뮬레이터"),
     (
+        "src/source_guards/",
+        "src/main.rs 가 `#[cfg(test)] mod source_guards;` 로 다는 테스트 전용 모듈 — \
+         릴리스 바이너리에 없다. 이 스캐너는 파일 **안**의 `#[test]` 만 보므로 모듈 \
+         선언 쪽 cfg 를 못 따라간다. `#[test]` 밖 헬퍼의 진단 문구가 사용자 문구로 \
+         잘못 걸리던 것을 경로로 막는다 (`/debug/` 제외와 같은 근거)",
+    ),
+    (
         "crates/tasty-cli/src/format.rs",
         "tasty list 구조 출력의 고정 토큰 — 기계 파싱 대상 (i18n.md 예외, t() 미사용이 컨벤션)",
     ),
