@@ -119,3 +119,20 @@ cargo test --workspace --locked -- --test-threads=1  # 실행 순서 고정
 ```
 
 세 결과가 갈리면 어딘가에서 사용자 환경이 새고 있다는 뜻이다.
+
+## 6. feature 별 테스트 게이팅
+
+본 바이너리는 `gui` feature 로 갈린다(`--no-default-features` = headless). **gui 전용 타입·모듈을
+단정하는 테스트 모듈에는 `#[cfg(test)]` 가 아니라 `#[cfg(all(test, feature = "gui"))]` 를 건다.**
+`#[cfg(test)]` 만 걸면 headless 테스트 **바이너리 자체가 컴파일되지 않는다** — 프로덕션 코드는
+멀쩡히 `cargo check --no-default-features` 를 통과하는데도 그 feature 조합의 테스트가 한 줄도
+실행되지 않는 사각이 생긴다. 개별 테스트 함수만 gui 전용이면 함수에 `#[cfg(feature = "gui")]` 를
+건다.
+
+같은 이유로 프로덕션 코드에서도 **gui 게이트된 재export 를 경유하지 않는다** — 예를 들어
+`crate::terminal::*` 가 gui 전용 재export 라면 headless 에서도 도는 코드는 원본 크레이트를
+직접 가리킨다(`tasty_terminal::*`).
+
+CI 는 `cargo test --workspace --lib --bins --no-default-features --locked` 로 이 조합을 강제한다
+(`.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡). e2e/통합 테스트는 GUI
+기동이 필요해 이 잡에서 제외한다.

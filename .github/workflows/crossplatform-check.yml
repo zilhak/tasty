@@ -108,3 +108,13 @@ jobs:
 
       - name: cargo check (headless)
         run: cargo check --workspace --no-default-features --locked
+
+      # headless 단위테스트. 여기까지 오기 전에는 headless 테스트 바이너리가 **컴파일조차
+      # 되지 않아서**(gui 전용 상태를 단정하는 테스트 모듈이 cfg 게이팅 없이 있었다) 이
+      # 잡이 `cargo check` 로 프로덕션 코드만 봤고, headless 는 실행 가능한 테스트 커버리지가
+      # 0 이었다. 그 사각 때문에 gui 와 headless 에서 다르게 성립하는 불변식(cascade 의 활성
+      # 포인터 보정 등)이 리뷰 전까지 드러나지 않았다.
+      # `--lib --bins` 만 — e2e/integration 은 GUI spawn 이 필요해 headless 가드로 부적합
+      # (Windows 잡과 같은 근거).
+      - name: cargo test (headless unit)
+        run: cargo test --workspace --lib --bins --no-default-features --locked

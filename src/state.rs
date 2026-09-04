@@ -7,15 +7,24 @@
 mod accessors;
 mod detect;
 mod focus;
-#[cfg(test)]
+// gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
+// 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
+// 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
+#[cfg(all(test, feature = "gui"))]
 mod fullscreen_stage_tests;
 mod layout;
 mod mark;
 pub mod mouse;
 pub(crate) mod pane;
-#[cfg(test)]
+// gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
+// 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
+// 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
+#[cfg(all(test, feature = "gui"))]
 mod popup_close_tests;
-#[cfg(test)]
+// gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
+// 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
+// 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
+#[cfg(all(test, feature = "gui"))]
 mod popup_ownership_tests;
 mod tab;
 #[cfg(test)]

@@ -48,13 +48,19 @@ pub(crate) fn test_state_with_memory(
         "com.tasty.markdown",
         &decl.kind,
     );
-    let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
-    crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
-        "com.tasty.markdown",
-        &decl,
-        host_cmd_tx,
-    );
+    // remote kind 등록은 gui 전용 모듈(`plugin_bridge::remote_kind`)이라 headless
+    // 테스트 빌드에는 없다. 이 픽스처를 쓰는 headless 테스트(intent drain 등)는
+    // markdown surface 생성 경로를 타지 않으므로 등록만 건너뛴다.
+    #[cfg(feature = "gui")]
+    {
+        let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
+        crate::plugin_bridge::remote_kind::register_remote_kind(
+            &engine.surface_registry,
+            "com.tasty.markdown",
+            &decl,
+            host_cmd_tx,
+        );
+    }
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
@@ -1066,6 +1072,7 @@ fn server_push_apply_is_not_blocked_by_the_mirror_gate() {
 
 /// 점유(soft) 중 surface 는 Completion 하이라이트가 억제된다: `regions_from_state` 의
 /// 해당 region `kind` 가 `None`. 점유 없이 attention 만 있으면 `Some(Completion)`(대조군).
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn occupancy_suppresses_completion_highlight() {
     use crate::adapters::ui::divider::regions_from_state;
@@ -1111,6 +1118,7 @@ fn occupancy_suppresses_completion_highlight() {
 
 /// NeedsInput 은 점유보다 우선순위가 높아 점유 중에도 억제되지 않는다 — "지금 답하지
 /// 않으면 멈춘다"는 신호를 점유(정상적으로 잡혀 작업 중)가 가리면 안 되기 때문.
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn needs_input_not_suppressed_by_occupancy() {
     use crate::adapters::ui::divider::regions_from_state;
@@ -1467,6 +1475,7 @@ fn next_prev_workspace_in_active_category_noop_when_alone() {
 
 // ---- resolve_inherit_cwd_from_surface ----
 
+#[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
 #[test]
 fn resolve_inherit_cwd_from_markdown_surface() {
     // markdown(EguiMeshSurface) 의 source_cwd(파일 부모 디렉터리) 로 검증.
@@ -1500,6 +1509,7 @@ fn resolve_inherit_cwd_from_markdown_surface() {
     );
 }
 
+#[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
 #[test]
 fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
     let (mut state, mut engine) = test_state();
@@ -1639,6 +1649,7 @@ fn two_pane_setup(
     (pane_a, pane_b)
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn switch_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1666,6 +1677,7 @@ fn switch_tab_on_other_pane_moves_focus() {
     );
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn focus_pane_action_moves_focus_without_switching_tab() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1712,6 +1724,7 @@ fn focus_pane_action_moves_focus_without_switching_tab() {
     );
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn scroll_left_and_right_on_other_pane_move_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1741,6 +1754,7 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
     }
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn close_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1784,6 +1798,7 @@ fn close_tab_on_other_pane_moves_focus() {
     );
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn context_menu_actions_do_not_move_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};

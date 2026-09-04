@@ -1683,7 +1683,7 @@ mod git_query_tests {
     }
 
     fn test_engine() -> crate::core::CoreState {
-        let term_waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
+        let term_waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         crate::core::CoreState::new(80, 24, term_waker).expect("engine")
     }
 
@@ -1846,7 +1846,7 @@ mod mesh_descriptor_display_name_tests {
         plugin_id: &str,
         display_name: &str,
     ) -> (crate::core::CoreState, usize) {
-        let term_waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
+        let term_waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
         let surface: Box<dyn crate::model::Surface> = Box::new(EguiMeshSurface::new(
             100,
@@ -1930,7 +1930,7 @@ mod forward_exec_tests {
         use crate::core::builder::CoreBuilder;
         use crate::ports::notification_sound::NoopPlayer;
 
-        let term_waker: crate::terminal::Waker = Arc::new(|| {});
+        let term_waker: tasty_terminal::Waker = Arc::new(|| {});
         let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
         let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
             Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
