@@ -103,6 +103,15 @@ impl GpuState {
                                 )
                                 .min_size(btn_size)
                                 .fill(danger)
+                                // **이 stroke 는 두 면을 가르는 테두리가 아니다** —
+                                // 색이 `fill` 과 같아서 보이는 선이 없고, 실제 효과는
+                                // 칠해진 영역을 선 굵기의 절반만큼 넓히는 것뿐이다.
+                                // 그래도 `border_width` 를 쓰는 이유는 **다른 선택지가
+                                // 없기 때문**이다: 리터럴은 자매 가드의 `Stroke::new(`
+                                // 금지 접두에 걸리고, 1px 굵기를 주는 토큰은 이것뿐이다.
+                                // 대가는 적어 둔다 — `border_width` 가 1 을 벗어나면
+                                // 프레임 테두리는 의도대로 굵어지지만 **이 버튼은 크기가
+                                // 변한다.** 그때 다시 볼 자리다(ADR-0126 재검토 조건).
                                 .stroke(egui::Stroke::new(th.border_width.value(), danger))
                                 .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
                             )
