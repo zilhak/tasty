@@ -100,6 +100,40 @@ fn event_token(params: &serde_json::Value) -> String {
     }
 }
 
+/// `reason` 에 실을 수 있는 값 — **로케일과 무관한 영어 진단 문장**.
+///
+/// 이 파일을 읽는 주체는 사람이 아니라 에이전트일 수 있다. 알려진 실패 패턴과 대조하고
+/// `grep` 으로 찾으려면 문구가 사용자 언어 설정에 따라 흔들리면 안 된다. 반면 stderr 는
+/// 사용자 표면이라 번역문이 맞다 — **같은 실패의 두 산출물이 언어를 달리한다.**
+///
+/// 그 분리를 주석이 아니라 **타입**으로 세운 이유: [`record`] 가 `&str` 을 받으면 다음에
+/// 손대는 사람이 `t(...)` 결과를 그대로 넘기는 것을 막을 방법이 없고, 실제로 두 lane 이
+/// 각각 독립적으로 그렇게 만들었다. 지금은 번역문을 실으려면 [`Self::new_unchecked`] 를
+/// 명시적으로 불러야 하므로, 그 한 줄이 리뷰에서 보인다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticEnglish(String);
+
+impl DiagnosticEnglish {
+    /// 로케일 무관 영어임을 **호출자가 보증**하고 만든다.
+    ///
+    /// 쓸 수 있는 값: 크레이트가 `Display` 로 내는 영어 기본 렌더링(`PortFileError` 등),
+    /// 호스트가 돌려준 JSON-RPC 에러 문자열, 코드에 리터럴로 박은 영어 포맷.
+    /// **쓰면 안 되는 값**: `t()` / `t_fmt()` 로 만든 문구.
+    pub fn new_unchecked(text: impl Into<String>) -> Self {
+        Self(text.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for DiagnosticEnglish {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// 한 줄 기록. 공백을 구분자로 쓰는 `key=value` 나열이라 `grep`/`awk` 로 바로 읽힌다.
 /// `reason` 은 CLI 가 이미 만들어 둔 실패 메시지를 그대로 싣는다 — 없는 정보를 새로
 /// 만드는 게 아니라, 버려지던 정보를 붙잡아 두는 것이 이 모듈의 전부다. `event` 도
@@ -117,10 +151,13 @@ fn format_line(method: &str, params: &serde_json::Value, reason: &str) -> String
 
 /// hook 전달 실패를 기록한다. hook 이 아닌 method 는 무시한다.
 ///
+/// `reason` 이 [`DiagnosticEnglish`] 인 것은 규약이다 — 이 파일의 문구는 사용자 로케일을
+/// 따라가지 않는다. 사용자에게 보여줄 번역문은 호출자가 stderr 로 따로 낸다.
+///
 /// 실패해도 조용히 넘어간다(best-effort) — 호출자는 반환값을 볼 필요가 없다.
-pub fn record(method: &str, params: &serde_json::Value, reason: &str) {
+pub fn record(method: &str, params: &serde_json::Value, reason: &DiagnosticEnglish) {
     let Some(path) = log_path() else { return };
-    record_at(&path, method, params, reason);
+    record_at(&path, method, params, reason.as_str());
 }
 
 /// 경로를 주입받는 실제 구현 — 테스트가 프로세스 전역 env(`TASTY_HOME`)를 건드리지

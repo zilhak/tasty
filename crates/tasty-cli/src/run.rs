@@ -22,20 +22,49 @@ use tasty_ipc::client::IpcConnection;
 /// `remote_browse.rs` 의 `PROBE_TIMEOUT`.
 const IPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// 연결 실패 — **두 개의 문구를 함께 나른다.**
+///
+/// 사용자에게 보이는 stderr 는 번역문이어야 하고, `hook-failures.log` 에 남는 진단은
+/// 로케일 무관 영어여야 한다(`hook_failure` 모듈 참고). 포트 파일 쪽은 `PortFileError` 의
+/// `Display` 가 이미 영어 원본을 들고 있었지만 이 경로에는 대응물이 없어, 번역문이
+/// 그대로 로그에 실렸다. 그래서 여기서 원본을 만든다.
+pub(crate) struct ConnectFailure {
+    port: u16,
+    source: std::io::Error,
+}
+
+impl ConnectFailure {
+    /// 사용자 표시용 — 현재 로케일.
+    fn localized(&self) -> String {
+        tasty_i18n::t_fmt2(
+            "cli.request.connect_failed",
+            &self.port.to_string(),
+            &self.source.to_string(),
+        )
+    }
+
+    /// 진단용 — 로케일 무관 영어. `lang/en.toml` 의 같은 키와 문자 단위로 같아야 하며
+    /// 아래 테스트가 그것을 강제한다(포트 파일 쪽 선례와 같은 형태).
+    pub(crate) fn diagnostic(&self) -> crate::hook_failure::DiagnosticEnglish {
+        crate::hook_failure::DiagnosticEnglish::new_unchecked(format!(
+            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
+            self.port, self.source
+        ))
+    }
+}
+
+impl From<ConnectFailure> for anyhow::Error {
+    fn from(e: ConnectFailure) -> Self {
+        anyhow::anyhow!("{}", e.localized())
+    }
+}
+
 /// loopback IPC 포트에 상한을 걸고 연결한다. 실패 메시지는 `cli.request.connect_failed`
 /// 한 키를 모든 연결 지점(plugin audit-follow / debug stream-echo / attach)과 공유한다.
-fn connect_ipc(port: u16) -> Result<TcpStream> {
+fn connect_ipc(port: u16) -> std::result::Result<TcpStream, ConnectFailure> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    TcpStream::connect_timeout(&addr, IPC_CONNECT_TIMEOUT).map_err(|e| {
-        anyhow::anyhow!(
-            "{}",
-            tasty_i18n::t_fmt2(
-                "cli.request.connect_failed",
-                &port.to_string(),
-                &e.to_string()
-            )
-        )
-    })
+    TcpStream::connect_timeout(&addr, IPC_CONNECT_TIMEOUT)
+        .map_err(|source| ConnectFailure { port, source })
 }
 
 pub fn try_run_plugin_cli() -> Option<Result<()>> {
@@ -95,18 +124,26 @@ fn run_dynamic_client(
     request: tasty_ipc::protocol::JsonRpcRequest,
     port_file: Option<&str>,
 ) -> Result<()> {
-    let port = match crate::port_file::read_port(port_file) {
+    // 세 실패 지점 모두 **로그에는 영어, stderr 에는 번역문**을 낸다. `record` 가
+    // `DiagnosticEnglish` 만 받으므로 그 분리는 타입이 지킨다.
+    let port = match crate::port_file::read_port_diagnosed(port_file) {
         Ok(p) => p,
         Err(e) => {
-            hook_failure::record(&request.method, &request.params, &e.to_string());
-            return Err(e);
+            // `PortFileError` 의 `Display` 가 영어 원본이다. 사용자에게 낼 번역문은
+            // `read_port` 와 같은 지점(`port_file::localize`)이 만든다.
+            hook_failure::record(
+                &request.method,
+                &request.params,
+                &hook_failure::DiagnosticEnglish::new_unchecked(e.to_string()),
+            );
+            return Err(anyhow::anyhow!("{}", crate::port_file::localize(&e)));
         }
     };
     let stream = match connect_ipc(port) {
         Ok(s) => s,
         Err(e) => {
-            hook_failure::record(&request.method, &request.params, &e.to_string());
-            return Err(e);
+            hook_failure::record(&request.method, &request.params, &e.diagnostic());
+            return Err(e.into());
         }
     };
     let mut conn = IpcConnection::new(stream)?;
@@ -119,8 +156,16 @@ fn run_dynamic_client(
             Ok(())
         }
         Err(e) => {
+            // 이 경로의 문구는 이미 영어다 — 호스트가 돌려준 JSON-RPC `error.message`
+            // 이거나 `tasty-ipc` 가 코드에 박아 둔 영어 문장이고, 어느 쪽도 CLI 의
+            // 로케일을 타지 않는다. 따라서 stderr 와 로그가 같은 문자열이어도 규약을
+            // 어기지 않는다 — 앞의 둘과 달리 갈라 놓을 것이 없다.
             let msg = e.to_string();
-            hook_failure::record(&request.method, &request.params, &msg);
+            hook_failure::record(
+                &request.method,
+                &request.params,
+                &hook_failure::DiagnosticEnglish::new_unchecked(msg.clone()),
+            );
             if let Some(rest) = msg.strip_prefix("Error (") {
                 eprintln!("Error ({}", rest);
             } else {
@@ -538,5 +583,50 @@ mod tests {
         let plan = sample_plan(HashMap::new(), HashMap::new(), Map::new());
         let p = build_wait_params(&plan, &json!({}));
         assert!(p.get("timeout").is_none());
+    }
+}
+
+#[cfg(test)]
+mod language_split_tests {
+    use super::*;
+
+    fn failure(port: u16) -> ConnectFailure {
+        ConnectFailure {
+            port,
+            source: std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "Connection refused",
+            ),
+        }
+    }
+
+    /// en 로케일에서는 번역을 거친 문구가 코드에 박은 영어 진단문과 **같아야** 한다.
+    ///
+    /// 포트 파일 쪽(`port_file.rs`)과 같은 형태의 강제다. 두 값이 갈리면 같은 실패가
+    /// 경로에 따라 다른 영어 문장으로 나오고, `hook-failures.log` 를 알려진 패턴과
+    /// 대조하는 쪽이 그 차이에 걸린다.
+    #[test]
+    fn english_lang_value_matches_the_diagnostic_rendering() {
+        tasty_i18n::init("en");
+        let f = failure(59999);
+        assert_eq!(f.localized(), f.diagnostic().as_str());
+    }
+
+    /// 진단문은 **i18n 을 거치지 않는다** — 프로세스 로케일이 무엇이든 같은 문자열이다.
+    ///
+    /// `tasty_i18n::init` 은 프로세스당 1 회 `OnceLock` 이라 테스트 안에서 로케일을
+    /// 바꿔 가며 확인할 수 없다. 대신 검증하는 것은 그보다 강한 성질이다:
+    /// `diagnostic()` 의 값이 **로케일과 무관하게 고정**이라는 것. 실제로 두 출력이
+    /// 갈리는지는 위 en 파리티 테스트(번역 경로 == 영어 경로)와 `lang/ko.toml` 의
+    /// 값이 다르다는 사실이 함께 보장한다.
+    #[test]
+    fn the_diagnostic_rendering_is_locale_independent() {
+        let f = failure(59999);
+        assert_eq!(
+            f.diagnostic().as_str(),
+            "Could not connect to tasty instance on port 59999: Connection refused. \
+             Is tasty running?"
+        );
+        assert!(f.diagnostic().as_str().is_ascii());
     }
 }

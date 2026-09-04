@@ -20,12 +20,22 @@ use tasty_ipc::port_file::{self as pf, PortFileError};
 /// 반환은 단일 메시지 `anyhow::Error` 다 — `context` 로 원인을 체인하면 최상위
 /// 출력이 `Caused by:` 블록까지 붙어 기존 한 줄 출력과 달라진다.
 pub fn read_port(port_file: Option<&str>) -> Result<u16> {
-    pf::read_port_file_from(port_file).map_err(|e| anyhow::anyhow!("{}", localize(&e)))
+    read_port_diagnosed(port_file).map_err(|e| anyhow::anyhow!("{}", localize(&e)))
+}
+
+/// [`read_port`] 와 같은 조회지만 **번역 전의 에러 값**을 그대로 돌려준다.
+///
+/// `hook-failures.log` 에 실릴 문구는 로케일 무관 영어여야 하는데(`hook_failure` 모듈
+/// 참고), `read_port` 는 번역문만 돌려주므로 그 자리에서는 원본에 닿을 수 없었다.
+/// `PortFileError` 의 `Display` 가 곧 영어 렌더링이고, 아래 테스트가 그것이
+/// `lang/en.toml` 값과 문자 단위로 같음을 강제한다 — 두 문구가 갈리지 않는다.
+pub fn read_port_diagnosed(port_file: Option<&str>) -> std::result::Result<u16, PortFileError> {
+    pf::read_port_file_from(port_file)
 }
 
 /// 실패 조건 → 현재 로케일 문장. en 값은 [`PortFileError`] 의 기본 렌더링과
 /// 문자 단위로 같아야 한다(아래 테스트가 강제).
-fn localize(err: &PortFileError) -> String {
+pub(crate) fn localize(err: &PortFileError) -> String {
     match err {
         PortFileError::HomeUnresolved => t("cli.port_file.home_unresolved").to_string(),
         PortFileError::NotFound { path } => {
