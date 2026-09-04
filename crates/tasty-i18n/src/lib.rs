@@ -202,26 +202,44 @@ fn summarize_reason(error: &PackError) -> String {
 /// is gone. The warning below is built to stay under it.
 const TOAST_MAX_CHARS: usize = 200;
 
-/// Shortest path fragment worth showing. Below this the path says nothing, so the
-/// message keeps the ellipsis and the log carries the real path.
-const MIN_PATH_CHARS: usize = 12;
+/// Shortest fragment worth showing. Below this the fragment says nothing, so the
+/// message keeps the ellipsis and the log carries the real text.
+const MIN_FRAGMENT_CHARS: usize = 12;
 
-/// Render a warning that carries a path, shrinking **the path only** so the whole
-/// message fits [`TOAST_MAX_CHARS`].
+/// Render a message that carries one variable-length fragment, shrinking **the
+/// fragment only** so the whole message fits [`TOAST_MAX_CHARS`].
 ///
 /// `render` must interpolate its argument exactly once, which lets the budget be
-/// exact: everything except the path is rendered first (with an empty path) and
-/// whatever is left of the cap goes to the path.
-fn fit_path(path: &Path, render: impl Fn(&str) -> String) -> String {
-    let full = path.display().to_string();
+/// exact: everything except the fragment is rendered first (with an empty
+/// fragment) and whatever is left of the cap goes to the fragment.
+///
+/// The fragment is not required to be a path. A failure reason that *contains* a
+/// path is the other shape this serves: the host's own truncation drops the tail
+/// (`src/adapters/ui/toast.rs` `truncate_message`), and for a reason the tail is
+/// the OS error — the part that says *why*. Eliding the middle keeps both ends.
+pub fn fit_fragment(fragment: &str, render: impl Fn(&str) -> String) -> String {
     let skeleton = render("").chars().count();
-    let budget = TOAST_MAX_CHARS.saturating_sub(skeleton).max(MIN_PATH_CHARS);
-    render(&elide_middle(&full, budget))
+    let budget = TOAST_MAX_CHARS
+        .saturating_sub(skeleton)
+        .max(MIN_FRAGMENT_CHARS);
+    render(&elide_middle(fragment, budget))
 }
 
-/// Drop the middle of `s` so it fits `max` chars, keeping both ends. The tail is
-/// the half that matters here — it carries `<code>/pack.toml`, i.e. *which* pack —
-/// so it keeps roughly two thirds of the budget.
+/// [`fit_fragment`] over a path.
+fn fit_path(path: &Path, render: impl Fn(&str) -> String) -> String {
+    fit_fragment(&path.display().to_string(), render)
+}
+
+/// [`fit_fragment`] for the common single-placeholder case — `t_fmt(key, ..)`
+/// with the argument shrunk to fit the toast cap.
+pub fn t_fmt_fit(key: &str, fragment: &str) -> String {
+    fit_fragment(fragment, |f| t_fmt(key, f))
+}
+
+/// Drop the middle of `s` so it fits `max` chars, keeping both ends. The tail
+/// keeps roughly two thirds of the budget because it is the half that identifies:
+/// for a path it carries `<code>/pack.toml`, i.e. *which* pack; for a failure
+/// reason it carries the OS error, i.e. *why*.
 fn elide_middle(s: &str, max: usize) -> String {
     let count = s.chars().count();
     if count <= max {
@@ -1267,6 +1285,27 @@ mod tests {
             msg.ends_with("then restart."),
             "문장 끝(할 일)이 살아 있어야 한다"
         );
+    }
+
+    /// 실패 사유는 경로가 아니라 **경로를 품은 문장**이다. 호스트의 잘림은 꼬리를
+    /// 버리는데(`truncate_message`), 사유의 꼬리가 바로 OS 에러 — 왜 실패했는지다.
+    /// 가운데 생략은 어느 파일인지(머리)와 왜인지(꼬리)를 둘 다 남긴다.
+    #[test]
+    fn a_long_failure_reason_keeps_both_the_target_and_the_os_error() {
+        let deep: String = std::iter::repeat_n("verylongsegment", 40)
+            .collect::<Vec<_>>()
+            .join("/");
+        let reason = format!("write /{deep}/.tasty/bashrc.user: Access is denied. (os error 5)");
+        assert!(reason.chars().count() > 500);
+
+        let msg = fit_fragment(&reason, |r| format!("Could not save the edit: {r}"));
+        assert!(
+            msg.chars().count() <= TOAST_MAX_CHARS,
+            "{} chars: {msg}",
+            msg.chars().count()
+        );
+        assert!(msg.starts_with("Could not save the edit: write /"), "{msg}");
+        assert!(msg.ends_with("(os error 5)"), "왜인지가 남아야 한다: {msg}");
     }
 
     #[test]

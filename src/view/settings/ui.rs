@@ -228,6 +228,10 @@ pub struct SettingsUiState {
     pub preview_font_loaded: std::collections::HashMap<String, String>,
     /// Draft of ~/.tasty/bashrc.user content. None until the Misc tab loads it.
     pub(crate) bashrc_user_draft: Option<String>,
+    /// Save 시 bashrc 저장이 실패한 사유. 모달이 닫힐 때 host App 이 회수해 main
+    /// window 의 토스트로 올린다 — 이 창은 Save 직후 닫히므로 여기서 띄우면
+    /// 사용자가 볼 수 없다(`plugin_shortcuts_draft` 와 같은 회수 경로).
+    pub(crate) bashrc_save_error: Option<String>,
     /// winit KeyboardInput에서 직접 캡처한 키 조합 (녹화 중일 때 사용).
     pub captured_winit_combo: Option<KeyCapture>,
     /// Plugins 서브탭이 표시할 plugin command snapshot (모달 오픈 시 1회 채워짐).
@@ -426,6 +430,7 @@ impl SettingsUiState {
             font_filter: std::collections::HashMap::new(),
             preview_font_loaded: std::collections::HashMap::new(),
             bashrc_user_draft: None,
+            bashrc_save_error: None,
             captured_winit_combo: None,
             plugin_shortcuts: PluginShortcutSnapshot::default(),
             plugin_shortcuts_selected: None,
@@ -1465,10 +1470,12 @@ fn apply_settings_draft(settings: &mut Settings, ui_state: &mut SettingsUiState)
     if let Some(bashrc) = &ui_state.bashrc_user_draft
         && let Err(reason) = crate::settings::general::save_user_bashrc(bashrc)
     {
-        // UI 노출은 미구현 — 저장 버튼을 누른 사용자는 실패를 화면에서 알 수 없고
-        // 이 로그가 유일한 관측 지점이다. 토스트로 올리려면 문자열 3개 언어와
-        // 토스트 배선이 필요하다.
+        // 로그는 사후 진단용이고, 사용자에게 도달하는 것은 회수되는 이 값이다.
+        // 저장 실패는 사용자 작업이 의미를 잃는 사건이라(`docs/dev-guide/
+        // error-handling.md` 레벨 표) 화면에 도달해야 한다 — 설정 화면을 쓰는
+        // 사용자는 로그를 보지 않는다.
         tracing::error!("save bashrc.user failed: {reason}");
+        ui_state.bashrc_save_error = Some(reason);
     }
 }
 

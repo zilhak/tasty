@@ -40,6 +40,8 @@ impl App {
             let new_settings = settings_modal.settings.clone();
             // Plugin shortcut override draft 회수 — modal-specific (settings 와 별 경로).
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
+            // bashrc 저장 실패 사유 — 모달이 닫히므로 여기서 회수해 main window 로 올린다.
+            let bashrc_error = settings_modal.take_bashrc_save_error();
 
             // Settings cascade 는 Core 발행 → handle_core_event 통해 처리
             // (main/parked 갱신 + save + theme install + plugin event).
@@ -66,6 +68,9 @@ impl App {
                 main.state.settings_open = false;
             }
             self.apply_plugin_shortcut_draft(plugin_draft);
+            if let Some(reason) = bashrc_error {
+                self.surface_bashrc_save_failure(&reason);
+            }
         } else if modal.as_any().is::<view::PluginsView>() {
             for main in self.main_windows_iter_mut() {
                 main.state.plugins_open = false;

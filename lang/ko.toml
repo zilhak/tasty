@@ -822,6 +822,7 @@ undo = "실행 취소"
 redo = "다시 실행"
 
 [toast]
+bashrc_save_failed = "Tasty 모드 bashrc를 저장하지 못했습니다 — 편집이 반영되지 않았습니다: {}"
 char_limit_notice = "(200자 제한)"
 copied = "복사됨"
 copied_osc52 = "복사됨 (OSC 52)"

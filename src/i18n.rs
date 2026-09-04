@@ -16,7 +16,7 @@ use std::path::Path;
 #[allow(unused_imports)]
 pub use tasty_i18n::{
     LanguageEntry, LoadOutcome, LoadReport, available_languages, current_language, init,
-    load_report, register_namespace, t, t_args, t_fmt, t_fmt2, unregister_namespace,
+    load_report, register_namespace, t, t_args, t_fmt, t_fmt_fit, t_fmt2, unregister_namespace,
 };
 
 /// Plugin manager 가 의존하는 trait 의 본 바이너리 impl. boot wiring 에서
