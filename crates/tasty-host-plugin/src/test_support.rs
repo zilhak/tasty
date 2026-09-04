@@ -153,11 +153,37 @@ mod tests {
     /// 그쪽은 [`HOME_ENV_LOCK`] 을 잡지 않는 별개 경로가 되어, 동시에 도는 다른 테스트의
     /// 임시 루트를 지우거나 덮어쓴다(→ 사용자 실제 홈에 쓰게 된다). 그래서 이 crate 는
     /// **이 모듈 한 곳에서만** 두 키를 만진다는 것을 소스 스캔으로 고정한다.
+    /// 스캔 하한 — 위반 0 이 **정말 없어서인지 아무것도 안 봐서인지**를 가른다.
+    /// [`visit`] 는 디렉토리를 못 읽으면 `return` 으로 조용히 빠져나가므로, 하한이 없으면
+    /// 스캔 루트가 틀린 날 이 가드가 아무 말 없이 통과한다. 값은 실측 37 에 대해 아래쪽
+    /// 여유를 둔 것이다.
+    const MIN_SCANNED_FILES: usize = 20;
+
+    /// 스캔이 믿을 만한가. 단언 안에 인라인으로 두면 그 값이 무엇을 가르는지 시험할 자리가
+    /// 없고, 하한 자신이 장식이 된다.
+    fn scan_is_credible(found: usize) -> bool {
+        found >= MIN_SCANNED_FILES
+    }
+
+    /// 하한을 겨냥한 변이 — 하한 자신이 판정을 하는지 본다.
+    #[test]
+    fn the_scan_refuses_to_report_zero_from_an_empty_walk() {
+        assert!(!scan_is_credible(0), "빈 스캔을 믿을 만하다고 판정했다");
+        assert!(!scan_is_credible(MIN_SCANNED_FILES - 1));
+        assert!(scan_is_credible(MIN_SCANNED_FILES));
+    }
+
     #[test]
     fn home_env_is_only_touched_through_this_module() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut offenders = Vec::new();
-        visit(&root, &mut offenders);
+        let mut scanned = 0usize;
+        visit(&root, &mut offenders, &mut scanned);
+        assert!(
+            scan_is_credible(scanned),
+            "스캔한 `.rs` 가 {scanned}개다(하한 {MIN_SCANNED_FILES}) — 순회가 깨졌다. \
+             위반 0 은 이 상태에서 아무 뜻도 없다"
+        );
         assert!(
             offenders.is_empty(),
             "HOME/TASTY_HOME env 변경은 test_support::HomeEnvGuard 를 통해서만 한다 \
@@ -165,14 +191,14 @@ mod tests {
         );
     }
 
-    fn visit(dir: &Path, offenders: &mut Vec<String>) {
+    fn visit(dir: &Path, offenders: &mut Vec<String>, scanned: &mut usize) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                visit(&path, offenders);
+                visit(&path, offenders, scanned);
                 continue;
             }
             if path.extension().is_none_or(|e| e != "rs")
@@ -183,6 +209,7 @@ mod tests {
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            *scanned += 1;
             for (i, line) in text.lines().enumerate() {
                 let touches_env = line.contains("env::set_var") || line.contains("env::remove_var");
                 if touches_env && (line.contains("\"HOME\"") || line.contains("\"TASTY_HOME\"")) {

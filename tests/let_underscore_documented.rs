@@ -268,12 +268,44 @@ fn violations_in(text: &str) -> Vec<(usize, String)> {
     out
 }
 
+/// 스캔 하한 — 이 가드가 "위반 0" 을 내는 이유는 둘이다: 정말 없거나, **아무것도 안
+/// 봤거나.** [`gather`] 는 디렉토리를 못 읽으면 `return` 으로 조용히 빠져나가므로, 하한이
+/// 없으면 순회가 깨진 날 정확히 초록이 뜬다. 실측으로 확인했다 — 스캔 루트를 빈
+/// 디렉토리로 바꾸면 이 가드는 아무 말 없이 통과했다.
+///
+/// 값은 실측 1180 에 대해 아래쪽으로 넉넉한 여유를 둔다 — 순회가 통째로 깨진 경우를
+/// 결정적으로 잡는 것이 목적이고, 몇 퍼센트의 누락까지 조이면 레포가 줄어드는 날 거짓
+/// 빨강이 된다.
+const MIN_SCANNED_FILES: usize = 700;
+
+/// 스캔이 믿을 만한가.
+///
+/// 판정을 함수로 뽑아 둔다 — 단언 안에 인라인으로 두면 그 값이 무엇을 가르는지 시험할
+/// 자리가 없고, 하한 자신이 장식이 된다.
+fn scan_is_credible(found: usize) -> bool {
+    found >= MIN_SCANNED_FILES
+}
+
+/// 하한을 겨냥한 변이 — 하한 자신이 판정을 하는지 본다.
+#[test]
+fn the_scan_refuses_to_report_zero_from_an_empty_walk() {
+    assert!(!scan_is_credible(0), "빈 스캔을 믿을 만하다고 판정했다");
+    assert!(!scan_is_credible(MIN_SCANNED_FILES - 1));
+    assert!(scan_is_credible(MIN_SCANNED_FILES));
+}
+
 #[test]
 fn every_let_underscore_in_production_code_says_why() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     gather(root, &mut files);
     files.sort();
+    assert!(
+        scan_is_credible(files.len()),
+        "스캔한 `.rs` 가 {}개다(하한 {MIN_SCANNED_FILES}) — 순회가 깨졌다. 위반 0 은 이 \
+         상태에서 아무 뜻도 없다",
+        files.len()
+    );
 
     let mut report = Vec::new();
     for file in &files {
