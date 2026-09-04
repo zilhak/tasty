@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
@@ -21,6 +22,14 @@ pub struct HostListener {
     pending: Arc<Mutex<HashMap<String, mpsc::Sender<TcpStream>>>>,
     _accept_thread: std::thread::JoinHandle<()>,
 }
+
+/// 대기 중인 handshake 채널 맵의 poison 을 보고했는가(첫 1 회만).
+///
+/// 임계구역은 `HashMap` insert/remove 뿐이라 패닉이 나도 불변식이 성립한다 — 복구가
+/// 맞다. 조용히 버리면 등록이 안 된 채 `recv_timeout` 만 흘러 **"plugin 이 왜 안 뜨는지"
+/// 가 timeout 으로만 보이고**, 수락 쪽에서 버리면 이미 연결한 plugin 이 거절된다.
+static PENDING_POISONED: AtomicBool = AtomicBool::new(false);
+const PENDING_WHAT: &str = "plugin handshake pending map";
 
 impl HostListener {
     pub fn bind() -> anyhow::Result<Self> {
@@ -55,15 +64,17 @@ impl HostListener {
     /// `timeout` 내 connection이 안 오면 `None`.
     pub fn expect_connection(&self, token: &str, timeout: Duration) -> Option<TcpStream> {
         let (tx, rx) = mpsc::channel();
-        if let Ok(mut p) = self.pending.lock() {
-            p.insert(token.to_string(), tx);
-        }
+        tasty_utils::poison::recover_mutex(self.pending.lock(), PENDING_WHAT, &PENDING_POISONED)
+            .insert(token.to_string(), tx);
         match rx.recv_timeout(timeout) {
             Ok(stream) => Some(stream),
             Err(_) => {
-                if let Ok(mut p) = self.pending.lock() {
-                    p.remove(token);
-                }
+                tasty_utils::poison::recover_mutex(
+                    self.pending.lock(),
+                    PENDING_WHAT,
+                    &PENDING_POISONED,
+                )
+                .remove(token);
                 None
             }
         }
@@ -77,7 +88,9 @@ fn handle_incoming(
     let Some(auth) = read_auth_tcp(&stream) else {
         return;
     };
-    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+    let tx_opt =
+        tasty_utils::poison::recover_mutex(pending.lock(), PENDING_WHAT, &PENDING_POISONED)
+            .remove(&auth.token);
     match tx_opt {
         Some(tx) => accept_handshake_tcp(stream, auth, tx),
         None => reject_handshake_tcp(&stream, &auth),
@@ -214,6 +227,45 @@ mod tests {
 
             let stream = listener.expect_connection(&token, Duration::from_secs(2));
             assert!(stream.is_some(), "expected connection to be received");
+        });
+    }
+
+    /// 대기 맵이 poison 돼도 handshake 가 성사된다.
+    ///
+    /// 조용히 버리는 구현이면 `expect_connection` 의 등록이 사라져 수락 쪽이 채널을
+    /// 못 찾고, 호출자에게는 원인 없는 timeout 으로만 보인다.
+    #[test]
+    fn poisoned_pending_map_still_completes_the_handshake() {
+        let listener = HostListener::bind().expect("bind");
+        let port = listener.port();
+        let token = "poisoned-token".to_string();
+
+        let held = Arc::clone(&listener.pending);
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = std::thread::spawn(move || {
+            let _guard = held.lock().expect("fresh lock");
+            panic!("poison the pending map on purpose");
+        })
+        .join();
+        assert!(listener.pending.is_poisoned(), "전제: 락이 poison 이다");
+
+        std::thread::scope(|s| {
+            let token_clone = token.clone();
+            s.spawn(move || {
+                std::thread::sleep(Duration::from_millis(100));
+                let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+                let auth = AuthMessage {
+                    plugin_id: "com.test.plugin".into(),
+                    token: token_clone,
+                };
+                let line = serde_json::to_string(&auth).expect("serialize") + "\n";
+                stream.write_all(line.as_bytes()).expect("write");
+                stream.flush().expect("flush");
+                std::thread::sleep(Duration::from_millis(200));
+            });
+
+            let stream = listener.expect_connection(&token, Duration::from_secs(2));
+            assert!(stream.is_some(), "poison 이후에도 연결이 전달돼야 한다");
         });
     }
 
