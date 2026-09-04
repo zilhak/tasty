@@ -84,9 +84,20 @@ fn verify_one<H: HostCall>(
 ) {
     if !resolve::surface_exists(host, surface_id) {
         // 대상 자체가 사라졌다 — 소비자가 영원히 기다리지 않도록 턴을 닫고 해제한다.
-        if let Ok(mut reg) = registry.lock() {
-            reg.remove(surface_id, record::REASON_SESSION_ENDED);
-        }
+        // 임계구역은 registry 조작뿐이라 poison 이어도 값은 성립한다. 조용히 건너뛰면
+        // 사라진 대상의 턴이 열린 채 남아 **소비자가 영원히 기다린다** — 복구해서 닫는다.
+        let mut reg = match registry.lock() {
+            Ok(reg) => reg,
+            Err(poisoned) => {
+                tracing::warn!(
+                    "agent-stream: the registry lock is poisoned (the tail thread panicked) — \
+                     recovering it to close the turn of a surface that is already gone, \
+                     otherwise its consumers would wait forever"
+                );
+                poisoned.into_inner()
+            }
+        };
+        reg.remove(surface_id, record::REASON_SESSION_ENDED);
         return;
     }
     // meta 조회 실패(일시적 IPC 오류 포함)는 대상 유지 — 다음 verify 에서 재시도한다.
