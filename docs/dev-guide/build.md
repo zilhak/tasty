@@ -146,7 +146,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 
 `tasty-cli` 는 **바이너리의 진입 계층**(인자 파싱 + 그 파싱 결과로 실행되는 커맨드 구현)이다. GUI 런타임·IPC 핸들러·앱 상태(`src/`)가 그 크레이트 내부를 직접 들여다보면 의존 방향이 뒤집혀, CLI 쪽 타입 변경이 GUI 를 깨고 GUI 재사용 목적의 로직이 CLI 안에 눌러앉는다. 양쪽이 함께 쓰는 코어(ssh · remote browse · stream 등)는 CLI 가 아니라 **별도 크레이트**에 두고 본체는 그쪽을 참조한다.
 
-`src/adapters/cli.rs` 는 boot 진입점 7개(`Cli` · `Commands` · `run_client` · `try_run_plugin_cli` · `print_augmented_help` · `print_command_tree` · `format_parse_error`)만 이름으로 재수출한다. 그 밖의 CLI 심볼은 본체에서 경로 자체가 존재하지 않는다. 재수출 밖의 경로(`tasty_cli::` 직접 참조)는 **`tests/layering.rs` 가 `cargo test --workspace`(CI)로 막는다.** 목록 두 개의 성격이 다르다:
+`src/adapters/cli.rs` 는 boot 진입점 7개(`Cli` · `Commands` · `run_client` · `try_run_plugin_cli` · `print_augmented_help` · `print_command_tree` · `format_parse_error`)만 이름으로 재수출한다. 그 밖의 CLI 심볼은 본체에서 경로 자체가 존재하지 않는다. 재수출 밖의 경로(`tasty_cli::` 직접 참조)는 **`tests/layering.rs` 가 막는다**(`cargo test --workspace` — 자동 채널 없음, [ci-gates](ci-gates.md)). 목록 두 개의 성격이 다르다:
 
 | 상수 | 성격 | 내용 |
 |------|------|------|

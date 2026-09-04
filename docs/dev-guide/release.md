@@ -11,7 +11,7 @@ CLAUDE.md 정책의 운영 형태:
 - **Plugin 매니페스트 lockstep** (`crates/tasty-plugin-*/tasty-plugin.toml`): 위 patch +1 과 함께 매니페스트 `version` 을 **동일 값**으로 맞추고 `.sig` 를 재서명(`scripts/sign-bundle.sh`)해 같은 커밋에 포함. Cargo.toml 만 올리면 `plugin.list`·업그레이드 판정이 노출·비교하는 매니페스트 version 이 어긋난다(version drift). `tests/plugin_manifest_version_parity.rs` 가 정합을 CI 강제한다.
 - **minor / major**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 
-본체 patch bump 절차: `Cargo.toml` patch +1 → `cargo build`(Cargo.lock 갱신) → `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 같은 값으로 갱신 → `Cargo.toml` + `Cargo.lock` + 두 README 를 **함께** 커밋(`chore: bump version to X.Y.Z`) → 아래 릴리스 절차로 이어감. 배지를 빠뜨리면 `tests/readme_badge_parity.rs` 가 `cargo test --workspace`(CI)에서 실패시킨다 — 릴리스뿐 아니라 이 자동 patch +1 커밋에도 적용된다.
+본체 patch bump 절차: `Cargo.toml` patch +1 → `cargo build`(Cargo.lock 갱신) → `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 같은 값으로 갱신 → `Cargo.toml` + `Cargo.lock` + 두 README 를 **함께** 커밋(`chore: bump version to X.Y.Z`) → 아래 릴리스 절차로 이어감. 배지를 빠뜨리면 `tests/readme_badge_parity.rs` 가 실패시킨다 — 단 `cargo test --workspace` 에만 있고 그 잡은 수동 전용이라([ci-gates](ci-gates.md)) **직접 돌려야 잡힌다** — 릴리스뿐 아니라 이 자동 patch +1 커밋에도 적용된다.
 
 ## 릴리스 단계
 
@@ -26,7 +26,7 @@ CLAUDE.md 정책의 운영 형태:
    ### Fixed
    - `fix(...)`: ...
    ```
-3. `README.md`·`README.ko.md` 의 Version 배지(`img.shields.io/badge/version-X.Y.Z-blue`, `CHANGELOG.md` 로 링크)를 `Cargo.toml` 과 같은 값으로 갱신한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 이 단계가 빠지면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. 배지 변경은 §3 의 bump 커밋에 함께 넣는다. **`tests/readme_badge_parity.rs` 가 `cargo test --workspace`(CI)로 이 정합을 강제하므로, 배지를 빠뜨린 bump 커밋은 CI 에서 실패한다.** 로컬 확인:
+3. `README.md`·`README.ko.md` 의 Version 배지(`img.shields.io/badge/version-X.Y.Z-blue`, `CHANGELOG.md` 로 링크)를 `Cargo.toml` 과 같은 값으로 갱신한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 이 단계가 빠지면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. 배지 변경은 §3 의 bump 커밋에 함께 넣는다. **`tests/readme_badge_parity.rs` 가 이 정합을 강제한다. 다만 그 테스트에는 자동 채널이 없으므로**([ci-gates](ci-gates.md)) **배지를 빠뜨린 bump 커밋은 누군가 `cargo test --workspace` 를 돌릴 때까지 통과한 것처럼 보인다 — 아래 로컬 확인을 거르지 마라.** 로컬 확인:
    ```bash
    cargo test --test readme_badge_parity
    ```

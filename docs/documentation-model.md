@@ -92,7 +92,7 @@ docs/features/<feature>/
 
 - 새 화면/동작 → 해당 `features/<f>/` 의 기획·화면 문서에 흡수. 없으면 폴더 신설.
 - **문서 종류에 맞는 내용만 넣는다 (배치 규칙).** 내부 구현(파일·함수 콜사이트, feature gate, 동작 배선)은 **적어도 된다 — 단 위치가 dev-guide 또는 기획문서(내부 동작)** 다. `agent-guide`(usage)는 *agent 가 tasty 로 무엇을 할 수 있나* 만 다루므로 거기엔 구현 정보를 넣지 않는다 (구현이 *틀린* 게 아니라 *그 섹션에 불필요* 한 것). 단 빌드/로드맵 상태(`Phase …`, `구현 예정`, `이관 상태`)는 transient 이므로 어디에도 두지 않는다 (현재 상태만).
-- **마크다운 체크박스(task list)를 쓰지 않는다.** 목록 항목을 `[ ]`·`[x]` 로 시작하는 체크리스트 형식은 본질이 진행 추적(했다/안 했다)이라 위 transient 금지와 같은 이유로 docs 어디에도 두지 않는다 — 체크 상태에 정해진 의미가 없어 정보도 담지 못한다. Acceptance Criteria 는 평문 `Given … When … Then …` 불릿으로, 검증·절차 항목은 평문 불릿이나 번호 목록으로 적는다. 미구현 범위는 `Status` 줄과 본문 문장으로 적는다. `tests/no_checkbox_in_docs.rs` 가 `cargo test --workspace`(CI)로 `docs/**/*.md` 전체에 강제한다.
+- **마크다운 체크박스(task list)를 쓰지 않는다.** 목록 항목을 `[ ]`·`[x]` 로 시작하는 체크리스트 형식은 본질이 진행 추적(했다/안 했다)이라 위 transient 금지와 같은 이유로 docs 어디에도 두지 않는다 — 체크 상태에 정해진 의미가 없어 정보도 담지 못한다. Acceptance Criteria 는 평문 `Given … When … Then …` 불릿으로, 검증·절차 항목은 평문 불릿이나 번호 목록으로 적는다. 미구현 범위는 `Status` 줄과 본문 문장으로 적는다. `tests/no_checkbox_in_docs.rs` 가 `docs/**/*.md` 전체에 강제한다 — `cargo test --workspace` 에만 들어 있고 그 잡은 수동 전용이라 **자동 채널이 없다**([ci-gates](dev-guide/ci-gates.md)).
 - 시각 수치/토큰은 적지 말고 `design-system/` 을 링크.
 - 결정의 근거는 본문에 길게 쓰지 말고 ADR 로 박고 링크.
 - 합성 화면은 언급/링크로만 잇는다.

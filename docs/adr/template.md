@@ -58,6 +58,6 @@
   - 그곳에만 존재하는 근거 자료가 ADR 에 필요하면, **그 내용을 `docs/` 의 적절한 위치로 재구성해 git-tracked 문서로 만들고, 그 문서를 참조**한다. ADR 본문은 외부 휘발성 자료 없이 자족적이어야 한다.
   - 위치를 알려야 하는 서술은 위치 대신 위임으로 쓴다 — "커밋되지 않는 로컬 전용 지침이 정한다". (예전에는 "폴더의 존재·용도 설명은 허용" 이라는 예외가 있었으나 ADR-0105 이 폐지했다. 예외가 곧 누수 통로였다.)
   - 이 규칙(및 CLAUDE.md 의 TODO 파일·디자인 changelog 인용 금지)은
-    `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다.
+    `tests/no_todo_file_citation.rs` 가 `cargo test --workspace` 로 강제한다(자동 채널 없음 — [ci-gates](../dev-guide/ci-gates.md)).
     금지 형태를 담는 것이 본질인 파일은 그 테스트의 `ALLOWLIST` 에 **(경로, 허용 패턴)** 으로 등록한다.
 - 새 ADR 작성 시 [`index.md`](index.md) 의 표에 행을 추가한다.

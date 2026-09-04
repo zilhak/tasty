@@ -11,8 +11,12 @@
 //!
 //! CI 의 macOS 빌드 잡(`.github/workflows/build-check.yml`)은 `workflow_dispatch`
 //! 수동 트리거라 이 실패를 자동으로 잡지 못했다. 이 테스트가 `cargo test --workspace`
-//! 채널로 그 공백을 메운다 — 첫 테스트는 플랫폼 무관 정적 가드라 Linux CI 에서도
-//! 돌고, 둘째는 macOS 에서 실제 `codesign` 을 돌려 레이아웃을 증명한다.
+//! 로 그 공백을 메운다 — 첫 테스트는 플랫폼 무관 정적 가드라 Linux 에서도 돌고,
+//! 둘째는 macOS 에서 실제 `codesign` 을 돌려 레이아웃을 증명한다.
+//!
+//! **다만 그 채널도 수동이다** — 전체 스위트 잡 역시 `workflow_dispatch` 전용이라
+//! (`docs/dev-guide/ci-gates.md`) 이 테스트는 사람이 돌릴 때만 돈다. 메운 것은
+//! "자동으로 잡힌다" 가 아니라 "돌리면 잡힌다" 쪽이다.
 
 use std::path::PathBuf;
 

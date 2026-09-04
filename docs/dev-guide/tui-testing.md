@@ -73,7 +73,7 @@ tasty.wait_for_output(sid, "BYE", Duration::from_secs(2));
 
 ## 골든 셀 그리드 스냅샷 (`cargo test`, headless)
 
-E2E 와 달리 **GUI surface 없이** 도는 결정적 회귀 가드. `crates/tasty-terminal/tests/golden_grid.rs` 가 production VTE ingest 경로(`Terminal::new_detached` → `feed_bytes`, 실제 PTY 와 동일한 핸들러)에 `tasty-tui-sim` 의 고수준 명령에 대응하는 raw escape 를 먹이고, 결과 셀 그리드의 **결정적 텍스트 표현**을 골든으로 고정한다. `cargo test --workspace` 에 자동 포함되어 `test.yml` CI 채널에서 돈다(별도 인프라 불필요).
+E2E 와 달리 **GUI surface 없이** 도는 결정적 회귀 가드. `crates/tasty-terminal/tests/golden_grid.rs` 가 production VTE ingest 경로(`Terminal::new_detached` → `feed_bytes`, 실제 PTY 와 동일한 핸들러)에 `tasty-tui-sim` 의 고수준 명령에 대응하는 raw escape 를 먹이고, 결과 셀 그리드의 **결정적 텍스트 표현**을 골든으로 고정한다. `cargo test --workspace` 에 포함되어 별도 인프라 없이 돈다 — 다만 그 잡은 수동 전용이라 **자동 채널은 아니다**([ci-gates](ci-gates.md)).
 
 - `grid_text()` — 가시 그리드를 행당 한 줄로(후행 공백 trim, 빈 행 보존) 덤프. 레이아웃/커서/줄바꿈/스크롤/지우기 회귀용.
 - `styled_cells()` — populated 셀별 SGR 속성(bold/italic/underline/inverse/strike + palette fg/bg)을 `"{row},{col} {glyph} {flags}"` 로 덤프. SGR 적용 회귀의 정식 가드(예: bold 처리 누락 시 `0,0 B bold` → `0,0 B -` 로 골든이 깨짐).

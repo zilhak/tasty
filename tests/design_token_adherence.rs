@@ -10,7 +10,7 @@
 //! (`vspace`/`hspace`/`margin_all`/`margin_sym` + `th.spacing_*` / `STRUCT_GAP_*`)로
 //! 이식했다. 이 가드는 그 결과를 되돌림 없이 유지한다 — 소스에 `add_space(8.0)` 이나
 //! `Margin::same(12)` 같은 **인라인 숫자 리터럴**을 다시 넣으면 `cargo test --workspace`
-//! (`.github/workflows/test.yml`)에서 fail 한다. 선례: `tests/cli_naming_count_drift.rs`.
+//! 에서 fail 한다(그 잡은 수동 전용이라 자동 채널은 아니다 — `docs/dev-guide/ci-gates.md`). 선례: `tests/cli_naming_count_drift.rs`.
 //!
 //! **스코프 밖(의도적)**: `const NAME: LogicalPx = LogicalPx(N)` 같은 **명명 구조 상수**는
 //! 금지하지 않는다 — 그게 구조값(사이드바 폭·카드 크기·control nudge)의 *권장* 해결책이다
