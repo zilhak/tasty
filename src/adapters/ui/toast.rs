@@ -264,6 +264,14 @@ impl ToastManager {
         }
     }
 
+    /// 지금 떠 있는 토스트 수. **테스트 전용** — 부수효과 게이트(예: 창 없는 parked
+    /// engine 에는 토스트를 쌓지 않는다)를 단언하려면 개수를 볼 수 있어야 한다.
+    /// 프로덕션 표면을 넓히지 않으려고 `cfg(test)` 로 묶는다.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.toasts.len()
+    }
+
     /// 편의 헬퍼: Info 토스트.
     pub fn push_info(&mut self, message: impl Into<String>, scope: ToastScope) {
         self.push(message, ToastKind::Info, scope);

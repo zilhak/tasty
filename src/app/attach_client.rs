@@ -4569,6 +4569,41 @@ mod tests {
         );
     }
 
+    /// 창 유무는 **부수효과만** 게이트한다(ADR-0110). parked engine 에는 toast 를
+    /// 쌓지 않는다 — 표면이 없고 토스트 수명이 wall-clock 이라 복원 시점엔 이미
+    /// 만료돼 보이지도 않는다. 상태 변경은 게이트와 무관하게 항상 적용된다.
+    ///
+    /// `MirrorHost::parked` 의 `windowed` 를 `true` 로 뒤집는 변이에서 실패해야 한다.
+    #[test]
+    fn parked_host_does_not_stack_toasts_but_windowed_does() {
+        let ws_id = 9_000u32;
+        let mut sess = test_session(ws_id, HashMap::new());
+        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+        let failure = || vec![MirrorEvent::StructuralFailed("nope".to_string())];
+
+        let (mut parked_state, mut parked_engine) = crate::state::tests::test_state();
+        {
+            let mut host = MirrorHost::parked(&mut parked_state, &mut parked_engine);
+            apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, failure());
+        }
+        assert_eq!(
+            parked_state.toasts.len(),
+            0,
+            "창이 없는 engine 에는 toast 를 쌓지 않는다"
+        );
+
+        let (mut win_state, mut win_engine) = crate::state::tests::test_state();
+        {
+            let mut host = MirrorHost::windowed(&mut win_state, &mut win_engine);
+            apply_mirror_events(&mut sess, &mut host, &mut plugin_manager, failure());
+        }
+        assert_eq!(
+            win_state.toasts.len(),
+            1,
+            "창이 있으면 같은 이벤트가 toast 를 낸다 — 게이트가 창 유무로만 갈린다"
+        );
+    }
+
     /// 버퍼는 도착 순서대로 통째로 꺼내지고 비워진다 — resize 앞뒤 출력이 올바른
     /// grid 에서 재생되려면 순서가 보존돼야 한다.
     #[test]

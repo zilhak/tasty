@@ -50,13 +50,14 @@ attach 세션의 수명은 창이 아니라 engine 에 매인다 — 마지막 �
 - **e2e 실측**(loopback attach, 창 있는 client 로 측정 — parked 도 같은 파싱 호출): 아래 "e2e 실측" 절.
 - **운영 비용 / 유지 부담**: 세 순회(판정 `mirror_workspace_engine_alive` · 정리 `cleanup_mirror_workspace` · 적용 `mirror_output_host`)의 범위를 함께 유지해야 한다. 각 함수 doc 가 서로를 가리키고, 적용 경로는 parked 단위 테스트(`parked_engine_receives_mirror_data_and_structural_delta`, `mirror_output_host_prefers_window_then_parked_then_none`)가 고정한다. `apply_one_mirror_event` 에 창 표면이 반드시 필요한 부수효과를 추가할 때는 `MirrorHost::windowed` 게이트를 거쳐야 한다.
 
-  위 "대상이 없으면 drain 하지 않는다" 는 다음 세 테스트가 고정한다(전부 해당 배선을 되돌리는 변이에서 실패하는 것을 확인했다):
+  위 "대상이 없으면 drain 하지 않는다" 와 부수효과 게이트는 다음 네 테스트가 고정한다(전부 해당 배선을 되돌리는 변이에서 실패하는 것을 확인했다):
 
   | 테스트 | 고정하는 성질 |
   |---|---|
   | `no_host_leaves_the_mirror_buffer_untouched` | host 가 `None` 이면 버퍼를 꺼내지 않는다 |
   | `a_host_drains_and_applies_the_mirror_buffer` | host 가 있으면 같은 함수가 비우고 적용한다(위 테스트의 대칭축) |
   | `apply_output_never_drains_without_a_host` | 호출부(`apply_attach_client_output`)가 drain 을 직접 부르지 않는다 — 배선 자체를 고정 |
+  | `parked_host_does_not_stack_toasts_but_windowed_does` | 창 유무가 부수효과만 게이트한다 |
 
   drain 은 `apply_pending_mirror_output` 하나가 소유하고 `Option<MirrorHost>` 를 받는다 — 호출부의 2차 조회(`as_main_mut()`)가 실패해도 이미 꺼낸 이벤트가 버려지는 분기가 남지 않는다. 위 Decision 의 "적용 대상이 없는데 꺼내는 일이 구조적으로 사라진다" 는 이 배선으로 성립한다(호출 순서에 대한 약속이 아니라).
 
