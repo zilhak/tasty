@@ -91,3 +91,24 @@ fn window_create_ipc_routes_through_a_completion_channel() {
          보내야 한다 (ADR-0122).\n블록:\n{block}"
     );
 }
+
+/// winit 핸들러가 생성 결과를 `reply_window_create` 계약 함수로 흘려보내는지 —
+/// 이 함수의 *동작*(실패→에러+원인)은 `src/app/event.rs` 의 왕복 단위 테스트가
+/// 잡는다. 이 가드는 winit 측이 그 함수를 우회해 성공으로 즉답(inline `reply_ok`)
+/// 하지 못하게 배선을 고정한다. 둘이 합쳐져야 헤드라인 계약이 회귀에서 지켜진다.
+#[test]
+fn winit_handler_routes_the_outcome_through_the_contract_mapping() {
+    let src = read("src/app/event_handler.rs");
+    let start = src
+        .find("AppEvent::CreateWindow(origin, completion) =>")
+        .expect("CreateWindow winit handler arm not found");
+    let tail = &src[start..];
+    // 이 arm 은 create_new_window 결과를 completion 으로 돌려주는 짧은 블록이다.
+    let arm = &tail[..tail.find("\n            }").unwrap_or(tail.len().min(600))];
+    assert!(
+        arm.contains("reply_window_create"),
+        "CreateWindow winit 핸들러가 생성 결과를 reply_window_create 계약 함수로 \
+         돌려주지 않는다 — inline reply_ok 로 성공 즉답하면 실패가 요청자에게 안 간다 \
+         (ADR-0122).\narm:\n{arm}"
+    );
+}

@@ -61,6 +61,22 @@ impl IpcCompletion {
             crate::ipc::protocol::JsonRpcResponse::error(self.request_id, code, message.into()),
         );
     }
+
+    /// 창 생성 결과를 요청자에게 돌려준다 — `window.create`/`view.create` 왕복의
+    /// **핵심 계약**(ADR-0122). 성공은 `{"created": true, "window_id": <u64>}`,
+    /// 실패는 `-32000` 에러에 원인 문자열을 실어 보낸다. 이 매핑이 이 lane 의
+    /// 헤드라인 주장이다("window.create 가 생성 성공/실패를 응답에 싣는다") — winit
+    /// 핸들러는 이 함수를 부르는 얇은 caller 다. 되돌리면(성공으로 즉답 등)
+    /// `event::tests` 의 왕복 테스트가 깨진다.
+    pub(crate) fn reply_window_create(self, outcome: Result<u64, String>) {
+        match outcome {
+            Ok(window_id) => self.reply_ok(serde_json::json!({
+                "created": true,
+                "window_id": window_id,
+            })),
+            Err(msg) => self.reply_err(-32000, msg),
+        }
+    }
 }
 
 /// Custom events sent to the winit event loop from background threads.
@@ -214,5 +230,47 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::sync_channel::<crate::ipc::protocol::JsonRpcResponse>(1);
         drop(IpcCompletion::new(tx, serde_json::json!(1)));
         assert!(rx.recv().is_err(), "receiver must see disconnect, not hang");
+    }
+
+    /// **이 lane 의 헤드라인 계약** — 창 생성이 실패하면 `window.create` 왕복이
+    /// 요청자에게 **JSON-RPC 에러를 원인 문자열과 함께** 돌려준다(성공 즉답이 아니라).
+    /// winit 핸들러가 `create_new_window` 의 `Err` 를 이 매핑으로 흘려보내는 경로다.
+    ///
+    /// 변이 검증(conductor 수용 기준): `reply_window_create` 를 "만들되 성공으로
+    /// 즉답"(예: outcome 무시하고 항상 `reply_ok`)으로 되돌리면 — `IpcCompletion` 은
+    /// 그대로 쓰므로 dead-code 린트로는 안 잡히는 형태 — 이 테스트가 FAILED.
+    /// 실패가 에러로 오는지(result 가 아니라)를 값으로 단정하기 때문이다.
+    #[test]
+    fn window_create_failure_returns_a_jsonrpc_error_with_the_cause() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        IpcCompletion::new(tx, serde_json::json!(9))
+            .reply_window_create(Err("shell not found: /bad/path".to_string()));
+        let resp = rx.recv().expect("response");
+        assert_eq!(resp.id, serde_json::json!(9));
+        assert!(
+            resp.result.is_none(),
+            "실패는 success 응답이면 안 된다 — 요청자가 실패를 성공으로 오독한다"
+        );
+        let e = resp.error.expect("실패는 JSON-RPC 에러로 와야 한다");
+        assert_eq!(e.code, -32000);
+        assert!(
+            e.message.contains("shell not found: /bad/path"),
+            "원인 문자열이 에러 메시지에 실려야 한다: {}",
+            e.message
+        );
+    }
+
+    /// 대칭 — 창 생성이 성공하면 같은 왕복이 `{"created": true, "window_id": <u64>}`
+    /// 를 요청자에게 돌려준다. 변이(성공을 에러로)면 `resp.error.is_none()` 이 깨진다.
+    #[test]
+    fn window_create_success_returns_created_and_window_id() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        IpcCompletion::new(tx, serde_json::json!("req-ok")).reply_window_create(Ok(1234));
+        let resp = rx.recv().expect("response");
+        assert!(resp.error.is_none());
+        assert_eq!(
+            resp.result.expect("result"),
+            serde_json::json!({ "created": true, "window_id": 1234 })
+        );
     }
 }

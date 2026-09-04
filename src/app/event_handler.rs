@@ -36,15 +36,10 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::CreateWindow(origin, completion) => {
                 let outcome = self.create_new_window(event_loop, origin);
                 // IPC 요청자(있으면)에게 결과를 돌려준다. 사용자 경로(menu/tray)는
-                // completion 이 None 이라 조용히 끝난다. ADR-0122.
+                // completion 이 None 이라 조용히 끝난다. 결과→응답 매핑 계약은
+                // IpcCompletion::reply_window_create 하나로 모은다(ADR-0122).
                 if let Some(completion) = completion {
-                    match outcome {
-                        Ok(window_id) => completion.reply_ok(serde_json::json!({
-                            "created": true,
-                            "window_id": u64::from(window_id),
-                        })),
-                        Err(msg) => completion.reply_err(-32000, msg),
-                    }
+                    completion.reply_window_create(outcome.map(u64::from));
                 }
             }
             AppEvent::RunLuaScript { source, name } => {
