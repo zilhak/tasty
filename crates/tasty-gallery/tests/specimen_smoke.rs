@@ -16,6 +16,83 @@ fn run_frames(mut body: impl FnMut(&mut egui::Ui)) {
     }
 }
 
+/// egui id 충돌 마커를 **헤드리스로** 잡는다. `check_for_id_clash` 는 패닉하지 않고
+/// debug 레이어에 "First/Double use of … ID …" 텍스트만 그린다(`context.rs`) — 그래서
+/// `let _ = ctx.run(...)` 로 `FullOutput` 을 버리는 `run_frames` 는 못 잡는다(값을 버리는
+/// 것이 검증을 무력화한 실례: `docs/dev-guide/error-handling.md`). 여기서는 `FullOutput`
+/// 을 받아 그려진 모든 텍스트 shape 를 훑어 그 마커 문구가 있으면 실패시킨다.
+///
+/// 이 가드가 잡는 것은 **id 충돌뿐**이다 — "상자 밖 렌더"(레이아웃 깨짐)는 마커 없이도
+/// 일어나므로(리뷰 변이 B) 여기서 안 잡힌다. 그건 별도 rect-포함 단언이 필요하다.
+fn assert_no_id_clash(label: &str, mut body: impl FnMut(&mut egui::Ui)) {
+    let ctx = egui::Context::default();
+    // release 로 테스트를 돌려도(그땐 기본이 꺼짐) 마커가 그려지도록 강제 — 안 켜면
+    // "0 건" 이 프로파일 의존 동어반복이 된다(리뷰 §5-c1).
+    ctx.options_mut(|o| o.warn_on_id_clash = true);
+    let mut found: Vec<String> = Vec::new();
+    for _ in 0..3 {
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| body(ui));
+        });
+        for cs in &output.shapes {
+            collect_id_clash_text(&cs.shape, &mut found);
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "{label}: egui id 충돌 마커가 렌더됐다 — 같은 자리에서 auto-id 가 재사용된다\
+         (push_id 로 갈라야 한다). 마커: {found:?}"
+    );
+}
+
+fn collect_id_clash_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+    match shape {
+        egui::epaint::Shape::Text(t) => {
+            let s = t.galley.text();
+            // "First use of … ID …" / "Double use of … ID …" (egui context.rs).
+            if s.contains("use of") && s.contains("ID") {
+                out.push(s.to_string());
+            }
+        }
+        egui::epaint::Shape::Vec(v) => {
+            for s in v {
+                collect_id_clash_text(s, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── id 충돌 회귀 가드 (galfix ⑶) ────────────────────────────────────
+// modifier-hint 패널은 같은 소스 위치에서 4번 호출되는 panel() 의 auto-id 가 재사용돼
+// id 가 충돌했고, tutorial 의 topic popup 도 같은 계열의 ScrollArea id 충돌이 있었다.
+// push_id 로 갈라 고쳤다 — 되돌리면(push_id 제거) 이 가드가 마커를 잡아 FAIL 한다.
+
+#[test]
+fn modifier_hint_specimen_은_id_충돌_없이_렌더된다() {
+    use tasty_gallery::catalog::components::modifier_hint;
+    let theme = tasty_themes::mocha_fallback();
+    assert_no_id_clash("modifier_hint::draw", |ui| modifier_hint::draw(ui, &theme));
+}
+
+#[test]
+fn tutorial_specimen_4종은_id_충돌_없이_렌더된다() {
+    use tasty_gallery::catalog::widgets::tutorial;
+    let theme = tasty_themes::mocha_fallback();
+    assert_no_id_clash("tutorial::draw_marker", |ui| {
+        tutorial::draw_marker(ui, &theme)
+    });
+    assert_no_id_clash("tutorial::draw_callout", |ui| {
+        tutorial::draw_callout(ui, &theme)
+    });
+    assert_no_id_clash("tutorial::draw_topics", |ui| {
+        tutorial::draw_topics(ui, &theme)
+    });
+    assert_no_id_clash("tutorial::draw_composite", |ui| {
+        tutorial::draw_composite(ui, &theme)
+    });
+}
+
 #[test]
 fn listctrl_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
