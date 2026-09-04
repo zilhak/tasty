@@ -71,7 +71,7 @@ tasty send text "한국어 中文 日本語${CR}" --surface "$FIRST_SID" >/dev/n
 sleep 2
 if grep -qE "font fallback missing|no glyph for codepoint" "$LOG"; then
     echo "error: CJK fallback font missing — abort" >&2
-    grep -E "font fallback missing|no glyph for codepoint" "$LOG" | head -5 >&2
+    grep -m5 -E "font fallback missing|no glyph for codepoint" "$LOG" >&2
     exit 3
 fi
 

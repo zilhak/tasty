@@ -47,7 +47,7 @@ case "$ARCH_RAW" in
     *) echo "Error: Unsupported architecture: $ARCH_RAW" >&2; exit 1 ;;
 esac
 
-VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 DIST_DIR="dist"
 PKG_DIR="tasty-linux-${ARCH}"
 ARCHIVE_NAME="tasty-${VERSION}-linux-${ARCH}.tar.gz"
@@ -202,7 +202,7 @@ stage_plugins() {
     for c in "${PLUGIN_CRATES[@]}"; do
         local manifest="crates/$c/tasty-plugin.toml"
         local id
-        id=$(grep -E '^id[[:space:]]*=' "$manifest" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$manifest" | sed 's/.*"\([^"]*\)".*/\1/')
         if [[ -z "$id" ]]; then
             echo "Error: cannot parse id from $manifest" >&2
             exit 1
@@ -312,13 +312,15 @@ if [[ "$PROFILE" != "debug" ]]; then
 
     echo "==> Building .deb package..."
     cargo deb --no-build --profile "$PROFILE"
-    DEB_SRC=$(ls -t target/debian/tasty_*.deb | head -1)
+    deb_candidates=$(ls -t target/debian/tasty_*.deb)
+    DEB_SRC=$(head -1 <<<"$deb_candidates")
     cp "$DEB_SRC" "$DIST_DIR/"
     DEB_FILE="$DIST_DIR/$(basename "$DEB_SRC")"
 
     echo "==> Building .rpm package..."
     cargo generate-rpm --profile "$PROFILE"
-    RPM_SRC=$(ls -t target/generate-rpm/tasty-*.rpm | head -1)
+    rpm_candidates=$(ls -t target/generate-rpm/tasty-*.rpm)
+    RPM_SRC=$(head -1 <<<"$rpm_candidates")
     cp "$RPM_SRC" "$DIST_DIR/"
     RPM_FILE="$DIST_DIR/$(basename "$RPM_SRC")"
 
@@ -343,10 +345,16 @@ fi
 
 echo "==> Verifying artifacts..."
 # tar.gz: 내부에 tasty 존재 + 풀어서 --version 호출 가능
-# `tar -tzf ... | grep -q ...` 는 pipefail 하에서 SIGPIPE 레이스가 난다 — grep -q 가
-# 첫 매치에서 바로 종료하며 파이프를 닫으면 tar 가 나머지를 쓰다 SIGPIPE 로 죽고,
-# pipefail 때문에 grep 이 매치를 찾았어도 파이프 전체가 실패로 처리된다.
-# command substitution 으로 tar 출력을 완전히 받은 뒤 grep 하면 이 레이스가 없다.
+# **이 파일 전체의 규칙**: 조기에 끝나는 소비자(`grep -q` · `head` · `sed …q` ·
+# `awk …exit`)를 파이프의 오른쪽에 두지 않는다. 소비자가 먼저 파이프를 닫으면 아직 쓰던
+# producer 가 SIGPIPE 로 죽고, `set -o pipefail` 이 그 141 을 파이프라인 rc 로 올린다 —
+# 소비자가 원하는 것을 찾았는데도 실패로 판정된다. 여기서는 `set -e` 까지 켜져 있어
+# 대입문·단독 파이프라인이면 스크립트가 그 자리에서 죽고, `if`/`||` 자리면 조건이
+# 뒤집힌다. 실현 여부는 grep 이 끝난 시점의 잔여 출력량에 달려 있어 자리마다 다르고,
+# 큰 출력에서는 비결정이 아니라 **결정적으로** 매번 난다.
+#
+# 처방은 둘 중 하나이고 비용이 0 이다: producer 를 변수로 완전히 받은 뒤 히어스트링으로
+# 넘기거나(`grep -q PAT <<<"$out"`), 애초에 파이프를 만들지 않는다(`grep -m1 PAT FILE`).
 TAR_LISTING=$(tar -tzf "$DIST_DIR/$ARCHIVE_NAME")
 grep -q "$PKG_DIR/tasty" <<<"$TAR_LISTING" || {
     echo "Error: tasty not in $ARCHIVE_NAME" >&2
@@ -378,7 +386,8 @@ if [[ -n "$APPIMAGE_FILE" ]]; then
         echo "Error: AppImage missing: $APPIMAGE_FILE" >&2
         exit 1
     }
-    file "$APPIMAGE_FILE" | grep -q "ELF" || {
+    appimage_type=$(file "$APPIMAGE_FILE")
+    grep -q "ELF" <<<"$appimage_type" || {
         echo "Error: AppImage is not an ELF binary: $APPIMAGE_FILE" >&2
         exit 1
     }

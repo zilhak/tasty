@@ -24,7 +24,8 @@ cd "$(dirname "$0")/.."
 # macOS 26 이 마지막 지원 릴리스라 배포 대상에서 뺀다 — Intel 에서 쓰려면
 # `--target x86_64-apple-darwin` 으로 직접 빌드하면 된다.
 TARGET=aarch64-apple-darwin
-if ! rustup target list --installed 2>/dev/null | grep -qx "$TARGET"; then
+installed_targets=$(rustup target list --installed 2>/dev/null || true)
+if ! grep -qx "$TARGET" <<<"$installed_targets"; then
     echo "Error: rust target '$TARGET' not installed. Run: rustup target add $TARGET" >&2
     exit 1
 fi
@@ -46,7 +47,7 @@ elif [[ "${1:-}" == "--release" ]]; then
     CARGO_FLAGS="--release"
 fi
 
-VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 APP_NAME="Tasty"
 BUNDLE_ID="com.zilhak.tasty"
 DIST_DIR="dist"
@@ -129,7 +130,7 @@ PLUGINS_DIR="$APP_DIR/Contents/Resources/plugins"
 mkdir -p "$PLUGINS_DIR"
 for c in "${PLUGIN_CRATES[@]}"; do
     manifest="crates/$c/tasty-plugin.toml"
-    id=$(grep -E '^id[[:space:]]*=' "$manifest" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+    id=$(grep -m1 -E '^id[[:space:]]*=' "$manifest" | sed 's/.*"\([^"]*\)".*/\1/')
     if [[ -z "$id" ]]; then
         echo "Error: cannot parse id from $manifest" >&2
         exit 1
@@ -224,9 +225,9 @@ if [[ -z "$SIGN_IDENTITY" ]]; then
     # 로컬 설치 빌드(NO_DMG=1)에서만 개발 인증서를 자동으로 집는다. DMG 는 이
     # 인증서를 신뢰하지 않는 남의 머신으로 가므로 ad-hoc 을 유지해야 한다 —
     # self-hosted 러너의 키체인에 개발 인증서가 있어도 배포본이 오염되지 않는다.
+    codesign_identities=$(security find-identity -v -p codesigning 2>/dev/null || true)
     if [[ "${NO_DMG:-}" == "1" ]] &&
-        security find-identity -v -p codesigning 2>/dev/null |
-        grep -q "\"$DEV_IDENTITY_NAME\""; then
+        grep -q "\"$DEV_IDENTITY_NAME\"" <<<"$codesign_identities"; then
         SIGN_IDENTITY="$DEV_IDENTITY_NAME"
     else
         SIGN_IDENTITY="-"

@@ -21,7 +21,8 @@ OUT_DIR="target/poc"
 OUT="$OUT_DIR/clipboard-history.component.wasm"
 
 echo "[1/4] toolchain check"
-if ! rustup target list --installed | grep -q wasm32-wasip2; then
+installed_targets=$(rustup target list --installed)
+if ! grep -q wasm32-wasip2 <<<"$installed_targets"; then
     echo "    installing wasm32-wasip2 target..."
     rustup target add wasm32-wasip2
 fi
@@ -41,7 +42,8 @@ mkdir -p "$OUT_DIR"
 cp "$RAW" "$OUT"
 
 echo "[4/4] component WIT introspection"
-wasm-tools component wit "$OUT" | head -40
+component_wit=$(wasm-tools component wit "$OUT")
+head -40 <<<"$component_wit"
 
 echo
 echo "OK — $OUT ($(du -h "$OUT" | cut -f1))"
