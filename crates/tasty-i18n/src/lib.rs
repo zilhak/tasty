@@ -361,9 +361,13 @@ pub struct PackHead {
     pub font: FontDecl,
 }
 
-/// Read only the parts of a pack manifest that **discovery** needs — `[meta] name`
+/// Extract the two things **discovery** needs from a pack manifest — `[meta] name`
 /// and `[font]`. Validation is identical to [`load_pack`], so "listed in the combo"
 /// still means "will load".
+///
+/// This is not a partial read: the file is read whole (under [`MAX_PACK_BYTES`])
+/// and the TOML is parsed to the end, exactly as [`load_pack`] does. What it skips
+/// is the flatten — walking every string leaf into an owned `HashMap`.
 ///
 /// Kept separate from [`load_pack`] because the settings combo scans every pack in
 /// `~/.tasty/lang/` synchronously on the render thread the first time the window
@@ -386,8 +390,8 @@ pub fn load_pack_head(path: &Path) -> Result<PackHead, PackError> {
 /// is mandatory; `[meta] name` is optional. Every other string leaf becomes a
 /// translation key, overlaid on the English base at load time.
 ///
-/// This is the **load** path — it produces the string table. Discovery wants only
-/// the header and must use [`load_pack_head`] instead.
+/// This is the **load** path — it produces the string table. Discovery needs only
+/// the two header values and must use [`load_pack_head`] instead.
 ///
 /// A **blank value counts as "not translated"** and is dropped, so the English
 /// base shows through instead of a label-less button. A pack author leaving a key
