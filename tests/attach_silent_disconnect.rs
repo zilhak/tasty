@@ -15,7 +15,7 @@
 //! 걸리는 테스트이므로 인스턴스를 새로 띄우지 않는 편이 특히 이득이다.
 //!
 //! **이 테스트가 실제로 실행하는 서버 경로**: `common::shared()`
-//! 는 `CARGO_BIN_EXE_tasty` 를 `--no-default-features`/`--headless` 없이 그대로
+//! 는 하네스가 고른 바이너리(`spawn_diag::instance_bin`)를 그대로
 //! 실행한다 — 즉 `cargo test` 의 기본 feature(`default = ["gui"]`) 로 빌드된
 //! **GUI 이벤트 루프 경로**(`src/app/event_handler.rs` 의 `StreamInbound::Disconnected`
 //! → `release_attach_for_disconnected` → `release_all_for_client`)만 실제로

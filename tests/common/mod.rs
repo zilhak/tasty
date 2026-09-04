@@ -296,7 +296,7 @@ impl TastyInstance {
         // 경로를 막아 port file 이 항상 작성되도록 보장한다.
         write_isolated_config(&isolated_home, inherit_cwd);
 
-        let mut command = Command::new(env!("CARGO_BIN_EXE_tasty"));
+        let mut command = Command::new(spawn_diag::instance_bin());
         command
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())

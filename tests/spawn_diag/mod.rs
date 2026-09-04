@@ -1,7 +1,7 @@
 //! 인스턴스 spawn 의 **공통 설정과 실패 판정**을 두 하네스가 공유하는 자리.
 //!
 //! `tests/common`(범용 인스턴스)과 `tests/webhook_common`(웹훅 인스턴스)은 같은
-//! `CARGO_BIN_EXE_tasty` 를 같은 방식으로 띄운다. 그런데 상한값이 서로 달랐고
+//! 바이너리를 같은 방식으로 띄운다([`instance_bin`] 이 그 하나를 정한다). 그런데 상한값이 서로 달랐고
 //! (30/15 vs 40/20) 그 차이의 근거가 어디에도 없었다 — 같은 단계에 다른 잣대를
 //! 대면 한쪽에서만 재현되는 flaky 가 생기고, 그때마다 "이 하네스는 원래 느린가" 를
 //! 사람이 다시 판단해야 한다. 값을 여기 하나로 모은다. 자식의 로그 필터도 같다.
@@ -65,6 +65,60 @@ pub fn init_test_tracing() {
     // 두 번째 설치 시도는 정상 흐름이다(같은 바이너리의 다른 테스트가 이미 설치).
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 }
+
+/// 하네스가 띄울 tasty 바이너리를 정하는 **유일한 자리**.
+///
+/// 기본값은 `CARGO_BIN_EXE_tasty` — **테스트 자신과 같은 feature 로 빌드된 자기
+/// 바이너리**다. 그래서 기본(gui) 조합에서는 창과 GPU 디바이스를 만드는 바이너리가
+/// 뜨고, `--no-default-features` 조합에서는 같은 경로가 곧 headless 데몬이 된다.
+/// IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 여기에 있다
+/// (`docs/adr/0127-e2e-harness-binary-selection.md`).
+///
+/// `TASTY_E2E_BIN` 이 설정돼 있으면 그 경로를 대신 띄운다. 용도는 **미리 빌드해 둔
+/// headless 바이너리를 가리키는 것** — 워크트리 여러 개가 같은 GPU 를 다투는 상황에서
+/// IPC 전용 스위트를 GPU 밖으로 빼는 로컬 탈출구다. 절차와 함정은
+/// `docs/dev-guide/e2e-tests.md`.
+///
+/// **함정**: `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 같은
+/// 경로를 다툰다. 따라서 override 는 반드시 **별도 `CARGO_TARGET_DIR` 로 빌드한
+/// 산출물의 경로**여야 한다 — 같은 target 디렉토리에 headless 를 빌드하면 다음
+/// `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가
+/// 듣는 것처럼 보인다. 경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다.
+///
+/// 존재하지 않는 경로를 주면 spawn 이 "그냥 실패" 하는 대신 **여기서** 죽는다 —
+/// 30 초를 기다린 뒤 port file 미작성으로 오진되는 것을 막는다.
+pub fn instance_bin() -> std::ffi::OsString {
+    let from_env = std::env::var_os(INSTANCE_BIN_ENV);
+    let resolved = resolve_instance_bin(from_env.as_deref(), env!("CARGO_BIN_EXE_tasty"));
+    if from_env.is_some() && !std::path::Path::new(&resolved).is_file() {
+        panic!(
+            "{INSTANCE_BIN_ENV} 가 가리키는 경로에 실행 파일이 없다: {}\n\
+             별도 CARGO_TARGET_DIR 로 빌드한 산출물의 절대경로여야 한다 — \
+             docs/dev-guide/e2e-tests.md",
+            resolved.to_string_lossy()
+        );
+    }
+    resolved
+}
+
+/// [`instance_bin`] 의 선택 규칙만 떼어낸 것 — 환경변수를 건드리지 않고 시험할 수
+/// 있게 순수 함수로 둔다(테스트가 병렬로 도는데 `set_var` 는 프로세스 전역이다).
+///
+/// 빈 문자열은 **미설정과 같게** 다룬다. 셸에서 `TASTY_E2E_BIN=` 로 비우는 것이
+/// "기본으로 되돌린다" 는 뜻으로 읽히는 것이 자연스럽고, 빈 경로를 그대로 spawn 하면
+/// 원인을 알 수 없는 실패가 된다.
+fn resolve_instance_bin(
+    from_env: Option<&std::ffi::OsStr>,
+    default_bin: &str,
+) -> std::ffi::OsString {
+    match from_env {
+        Some(v) if !v.is_empty() => v.to_os_string(),
+        _ => std::ffi::OsString::from(default_bin),
+    }
+}
+
+/// 하네스가 띄울 바이너리를 덮어쓰는 환경변수 이름.
+pub const INSTANCE_BIN_ENV: &str = "TASTY_E2E_BIN";
 
 /// S1 — `--port-file` 에 포트가 쓰이기까지. GUI 부팅(창 + GPU 디바이스 + boot
 /// 상태기계)이 끝나야 IPC 가 시작되므로 이 단계가 가장 길다.
@@ -185,6 +239,29 @@ pub fn spawn_timeout_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_binary_is_the_one_cargo_built_for_this_test() {
+        let picked = resolve_instance_bin(None, "/built/by/cargo");
+        assert_eq!(picked, std::ffi::OsString::from("/built/by/cargo"));
+    }
+
+    #[test]
+    fn an_override_path_replaces_the_cargo_built_binary() {
+        let picked = resolve_instance_bin(
+            Some(std::ffi::OsStr::new("/prebuilt/headless/tasty")),
+            "/built/by/cargo",
+        );
+        assert_eq!(picked, std::ffi::OsString::from("/prebuilt/headless/tasty"));
+    }
+
+    #[test]
+    fn an_empty_override_means_the_default_not_an_empty_path() {
+        // 셸에서 `TASTY_E2E_BIN=` 로 비우는 것은 "기본으로 되돌린다" 로 읽힌다.
+        // 빈 경로를 그대로 spawn 하면 원인을 알 수 없는 실패가 된다.
+        let picked = resolve_instance_bin(Some(std::ffi::OsStr::new("")), "/built/by/cargo");
+        assert_eq!(picked, std::ffi::OsString::from("/built/by/cargo"));
+    }
 
     /// 2026-09-04 실측 로그 — **부팅에 성공한** 인스턴스의 stderr 이다(port file 작성
     /// 확인, port=43499). 처음에는 이것을 "워크트리 4 곳이 GPU 를 경합한 증거" 로 읽고

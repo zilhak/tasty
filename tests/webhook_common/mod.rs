@@ -10,7 +10,8 @@
 //!   재시작 테스트가 두 인스턴스 간 같은 홈을 공유할 수 있게 한다.
 //! - **실 HTTP 클라이언트** — 리스너에 실제 요청을 쏴 ACK/상태변화를 관측한다
 //!   (research §5: 로컬 실 HTTP 구동 검증).
-//! - **CLI 러너** — `CARGO_BIN_EXE_tasty` 를 `--port-file` 로 붙여 CLI→IPC 매핑을
+//! - **CLI 러너** — 인스턴스와 **같은 바이너리**([`spawn_diag::instance_bin`])를
+//!   `--port-file` 로 붙여 CLI→IPC 매핑을
 //!   실 바이너리로 검증한다.
 //!
 //! 기존 `tests/common` 을 건드리지 않으려고 별도 모듈로 둔다(격리).
@@ -384,7 +385,7 @@ impl WebhookInstance {
             std::fs::write(home.join(name), content).expect("write extra tasty file");
         }
 
-        let mut command = Command::new(env!("CARGO_BIN_EXE_tasty"));
+        let mut command = Command::new(spawn_diag::instance_bin());
         command
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
@@ -697,11 +698,11 @@ impl WebhookInstance {
 
     // ── CLI ─────────────────────────────────────────────────────────────
 
-    /// `CARGO_BIN_EXE_tasty <args> --port-file <this instance>` 를 CLI 클라이언트로
+    /// `<instance_bin> <args> --port-file <this instance>` 를 CLI 클라이언트로
     /// 실행한다(실 바이너리 → 실 IPC). stdout/stderr/exit 을 담아 반환.
     pub fn cli(&self, args: &[&str]) -> Output {
         // `--port-file` 은 전역(top-level) 플래그라 서브커맨드 **앞**에 와야 한다.
-        Command::new(env!("CARGO_BIN_EXE_tasty"))
+        Command::new(spawn_diag::instance_bin())
             .arg("--port-file")
             .arg(self.port_file.to_str().unwrap())
             .args(args)

@@ -11,6 +11,10 @@
 //! |---|---|---|
 //! | 파일당 전용 spawn 호출 수 | `#[test]` 마다 인스턴스를 띄우는 형태 | [`ALLOWLIST_FILES`] (미등록 = 0 회) |
 //! | 인스턴스를 띄우는 test 파일 개수 | 새 binary 가 늘어 총량이 다시 증가하는 형태 | [`EXPECTED_INSTANCE_TESTS`] |
+//! | 어느 바이너리를 띄우는가 | 하네스가 각자 다른 바이너리를 고르는 형태 | [`BIN_SELECTION_ALLOWLIST`] |
+//!
+//! 세 번째 축이 여기 있는 이유는 앞의 둘과 **같은 목록을 근거로 삼기 때문**이다 —
+//! "인스턴스를 띄우는 파일이 무엇인가" 를 아는 자리가 둘이 되면 그 둘이 갈린다.
 //!
 //! **동적 가드(실행 중 tasty PID 개수 세기)는 일부러 채택하지 않았다** — 가드가 공유
 //! 인스턴스 위에서 돌면 자기 프로세스를 포함해 세고, cargo 는 test 타겟을 순차 실행하므로
@@ -35,7 +39,7 @@ const DEDICATED_SPAWN_MARKERS: &[&str] = &[
     // tests/common 하네스의 전용 인스턴스 생성자 두 개.
     "TastyInstance::spawn(",
     "TastyInstance::spawn_with_inherit_cwd(",
-    // tests/webhook_common 하네스. 같은 `CARGO_BIN_EXE_tasty` 를 띄우므로 창 비용이 같다.
+    // tests/webhook_common 하네스. 같은 바이너리를 띄우므로 창 비용이 같다.
     // 이쪽은 공유 진입점이 없어 builder 호출 하나가 곧 인스턴스 하나다. 재시작 전용
     // 진입점도 같은 비용이라 함께 센다 — 빠뜨리면 인스턴스가 가드 밖에서 늘어난다.
     "WebhookInstance::builder(",
@@ -92,6 +96,177 @@ const EXPECTED_INSTANCE_TESTS: &[&str] = &[
     "tests/soak_memory.rs",
     "tests/webhook_integration.rs",
 ];
+
+/// `CARGO_BIN_EXE_tasty` 를 **직접** 써도 되는 자리와 그 이유.
+///
+/// 인스턴스를 띄우는 하네스는 `spawn_diag::instance_bin()` 하나를 거쳐야 한다 —
+/// 그래야 "무엇을 띄우는가" 를 한 곳에서 바꿀 수 있고, 하네스마다 다른 바이너리를
+/// 고르는 상태로 갈리지 않는다(근거: `docs/adr/0127-e2e-harness-binary-selection.md`).
+/// 아래 둘은 그 규칙 밖이다.
+///
+/// - `tests/gui_common/mod.rs`: **GUI 바이너리 자체가 검증 대상**이다(실제 데스크톱
+///   입력 주입). override 를 따라 headless 를 띄우면 검증이 성립하지 않는다.
+/// - `tests/cli_stdout_broken_pipe.rs`: 인스턴스를 띄우지 않는다 — cargo 가 방금 빌드한
+///   바이너리의 **CLI stdout 동작**이 검증 대상이라 그 바이너리여야 한다.
+///
+/// **면제는 파일 통째가 아니라 횟수까지 묶는다.** 파일 단위로 면제하면 그 파일 안에
+/// 새 spawn 이 하나 더 생겨도 가드가 침묵한다 — 면제가 검출보다 넓어지는 형태다.
+/// 여기 적힌 수를 넘으면 그 파일도 위반이 된다.
+const BIN_SELECTION_ALLOWLIST: &[(&str, usize)] = &[
+    ("tests/gui_common/mod.rs", 1),
+    ("tests/cli_stdout_broken_pipe.rs", 1),
+];
+
+/// 바이너리 선택의 유일한 자리 — 이 파일 안에서는 `CARGO_BIN_EXE_tasty` 가 정상이다.
+/// chokepoint 도 횟수를 묶는다(면제를 좁게 두는 것은 여기도 같다).
+const BIN_SELECTION_CHOKEPOINT: (&str, usize) = ("tests/spawn_diag/mod.rs", 1);
+
+/// [`BIN_SELECTION_MARKER`] 가 최소 이만큼은 나와야 스캔이 살아 있는 것으로 본다.
+/// chokepoint 1 + allowlist 2 = 3 이 현재 하한이다. 경로 계산이 틀려 스캔 대상이
+/// 0 개가 되면 **가드가 조용히 초록이 된다** — 그것을 잡는 유일한 장치다.
+const BIN_SELECTION_MIN_HITS: usize = 3;
+
+/// 스캔이 찾는 문자열 — **호출 형태**만 본다. 산문(doc 주석)이 이 이름을 언급하는
+/// 것은 위반이 아니고, `env!(` 이 붙은 자리가 곧 "이 파일이 바이너리를 직접 고른다"
+/// 이다.
+///
+/// **`concat!` 로 쪼개 둔 것이 핵심이다.** 한 리터럴로 적으면 이 가드 파일 자신이
+/// 자기 패턴에 걸려 "가드 파일 통째 제외" 라는 면제가 하나 더 필요해진다. 쪼개면
+/// 소스에 그 문자열이 이어진 형태로 존재하지 않아 **면제 없이** 자기 자신까지
+/// 스캔 대상으로 둘 수 있다. 면제는 적을수록 좋다.
+const BIN_SELECTION_MARKER: &str = concat!("env!(\"CARGO_BIN_EXE_", "tasty\")");
+
+/// 한 파일이 바이너리를 **직접** 고르는 자리의 줄 번호(1-기준).
+///
+/// 파일 순회·경로 처리와 분리한 **순수 함수**다 — 면제를 겨냥한 변이를 레포에 진짜
+/// 위반을 심어서가 아니라 **합성 입력**으로 찌를 수 있어야 하기 때문이다(아래
+/// `detects_*` / `does_not_flag_*` 테스트가 그 변이를 영구히 붙박는다).
+fn direct_binary_pick_lines(contents: &str) -> Vec<usize> {
+    contents
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains(BIN_SELECTION_MARKER))
+        .map(|(i, _)| i + 1)
+        .collect()
+}
+
+/// 그 파일에 허용된 직접 선택 횟수. 미등록 파일은 0.
+fn direct_pick_allowance(rel: &str) -> usize {
+    if rel == BIN_SELECTION_CHOKEPOINT.0 {
+        return BIN_SELECTION_CHOKEPOINT.1;
+    }
+    BIN_SELECTION_ALLOWLIST
+        .iter()
+        .find(|(f, _)| *f == rel)
+        .map(|(_, n)| *n)
+        .unwrap_or(0)
+}
+
+/// `tests/` 아래 **모든** `.rs` 를 모은다 — 하네스 모듈(`tests/<name>/mod.rs`)이
+/// 실제로 spawn 하는 자리라 깊이 1 만 봐서는 이 축을 못 본다.
+fn all_test_sources(tests_dir: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut stack = vec![tests_dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir)
+            .expect("tests/ 하위 read 실패")
+            .flatten()
+        {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(tests_dir.parent().expect("tests/ 의 부모"))
+                .expect("prefix")
+                .to_string_lossy()
+                .replace('\\', "/");
+            let contents = std::fs::read_to_string(&path).expect("test 파일 read 실패");
+            out.push((rel, contents));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+#[test]
+fn only_one_place_decides_which_binary_the_harness_spawns() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut hits = 0usize;
+    let mut violations = Vec::new();
+
+    // 이 파일 자신도 스캔한다 — `BIN_SELECTION_MARKER` 를 `concat!` 로 쪼개 둔 덕에
+    // 자기 패턴에 걸리지 않아 자기 제외 면제가 필요 없다.
+    for (rel, contents) in all_test_sources(&root.join("tests")) {
+        let lines = direct_binary_pick_lines(&contents);
+        if lines.is_empty() {
+            continue;
+        }
+        hits += lines.len();
+        let allowed = direct_pick_allowance(&rel);
+        if lines.len() > allowed {
+            violations.push(format!(
+                "  {rel} — {} 회 (허용 {allowed} 회, 줄 {lines:?})",
+                lines.len()
+            ));
+        }
+    }
+
+    assert!(
+        hits >= BIN_SELECTION_MIN_HITS,
+        "스캔이 {hits} 건만 찾았다(하한 {BIN_SELECTION_MIN_HITS}) — 경로 계산이 틀려 \
+         대상이 비었을 가능성이 크다. 가드가 아무것도 안 보면서 초록이 되는 형태다."
+    );
+
+    assert!(
+        violations.is_empty(),
+        "하네스가 띄울 바이너리는 `spawn_diag::instance_bin()` 한 곳에서 정한다 — \
+         `CARGO_BIN_EXE_tasty` 를 직접 부르면 그 자리는 override 를 따르지 않아, \
+         같은 완주 안에서 하네스마다 다른 바이너리를 띄우게 된다. 정당한 예외면 \
+         BIN_SELECTION_ALLOWLIST 에 이유와 함께 등록할 것. 근거: {DOC}\n{}",
+        violations.join("\n")
+    );
+}
+
+// ── 판정기 단위 테스트 ────────────────────────────────────────────────────
+// 아래 넷은 이 가드에 걸었던 변이를 **합성 입력으로 붙박은 것**이다. 레포에 진짜
+// 위반을 심어 돌리는 일회성 변이와 달리, 판정기를 넓히거나 좁히면 여기서 깨진다.
+
+#[test]
+fn detects_a_file_that_picks_the_binary_itself() {
+    let src = "mod common;\nlet c = Command::new(env!(\"CARGO_BIN_EXE_tasty\"));\n";
+    assert_eq!(direct_binary_pick_lines(src), vec![2]);
+}
+
+#[test]
+fn detects_an_extra_pick_inside_an_exempted_file() {
+    // 면제를 겨냥한 변이 — 면제된 파일이라도 **허용 횟수를 넘으면** 걸려야 한다.
+    // 면제를 파일 통째로 두면 이 입력이 조용히 통과한다.
+    let src = "let a = env!(\"CARGO_BIN_EXE_tasty\");\nlet b = env!(\"CARGO_BIN_EXE_tasty\");\n";
+    let lines = direct_binary_pick_lines(src);
+    assert_eq!(lines.len(), 2);
+    assert!(lines.len() > direct_pick_allowance("tests/gui_common/mod.rs"));
+}
+
+#[test]
+fn does_not_flag_prose_that_merely_names_the_variable() {
+    // doc 주석이 이름을 언급하는 것은 위반이 아니다 — 호출 형태(`env!(`)만 본다.
+    let src = "//! 하네스는 CARGO_BIN_EXE_tasty 를 띄우곤 했다.\n/// CARGO_BIN_EXE_tasty\n";
+    assert!(direct_binary_pick_lines(src).is_empty());
+}
+
+#[test]
+fn intentionally_does_not_see_a_runtime_lookup() {
+    // **의도된 false negative.** 런타임에 경로를 만드는 형태는 이 가드가 못 본다 —
+    // 컴파일 시점 매크로만 보기 때문이다. 판정기를 나중에 넓히면 이 테스트가 깨지고,
+    // 그때 그것이 의도된 확장인지 사람이 판단하게 된다(한계와 버그의 구분).
+    let src = "let bin = std::env::var(\"TASTY_E2E_BIN\").unwrap();\n";
+    assert!(direct_binary_pick_lines(src).is_empty());
+}
 
 /// `tests/*.rs` (깊이 1) 만 모은다 — test binary 의 진입 파일이다. 하네스 모듈은
 /// `tests/<name>/mod.rs` 에 있어 자연히 제외되며, 거기 있는 `pub fn spawn` 은 호출이

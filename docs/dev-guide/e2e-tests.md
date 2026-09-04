@@ -6,6 +6,30 @@
 
 **e2e 는 `cargo test --test e2e_tests` 단독 실행 전에 `cargo build --workspace` 가 선행돼야 한다** (또는 처음부터 `cargo test --workspace` 사용). package 한정 test 는 본체(tasty.exe)만 빌드하고 plugin bin crate 들을 빌드하지 않는데, dev bundle(`target/debug/builtin-plugins/`)은 **매니페스트는 소스에서, 바이너리는 target exe 에서 독립적으로** `copy_if_newer` 하므로 stale plugin exe 가 최신 매니페스트를 달고 격리 TASTY_HOME 에 설치된다. 이 drift 는 plugin↔host 계약이 바뀐 직후(예: `markdown.recent` 의 host adapter 이관) namespace 호출을 "Method not found" 로 깨뜨린다. 호스트는 hello 시 바이너리 보고 버전 ≠ 매니페스트 버전이면 `version drift` warn 을 남긴다 — spawn 실패 진단 시 stderr tail 에서 이 경고를 먼저 확인.
 
+## 0-1. 어느 바이너리를 띄우는가
+
+하네스가 띄우는 것은 `CARGO_BIN_EXE_tasty` — **테스트 자신과 같은 feature 로 빌드된 자기 바이너리**다. 이 한 줄이 조합별 성질을 전부 결정한다.
+
+| 조합 | 하네스가 띄우는 것 | 성질 |
+|---|---|---|
+| 기본 (`gui`) | GUI 바이너리 | 창 + wgpu 디바이스를 반드시 만든다. IPC 는 GPU 부팅이 끝난 뒤에야 시작되므로, GPU 를 못 잡으면 **port file 이 아예 안 써진다** |
+| `--no-default-features` | headless 데몬 | 창도 GPU 도 없다. 실측(2026-09-04, `DISPLAY`·`WAYLAND_DISPLAY` 둘 다 없는 상태): port file 까지 **54 ms** |
+
+즉 IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 검증 내용이 아니라 **빌드 조합**에 있다. 방향 결정과 대안은 [ADR-0127](../adr/0127-e2e-harness-binary-selection.md).
+
+**바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
+
+**로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.
+
+```
+CARGO_TARGET_DIR=/tmp/tasty-headless cargo build --no-default-features
+TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_harness
+```
+
+**함정 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
+
+**override 로도 통과하지 않는 스위트가 있다.** headless 데몬은 GUI 바이너리와 IPC 표면이 다르다 — 실제 창이 검증 대상인 스위트, 그리고 headless 에 아직 배선되지 않은 경로에 의존하는 스위트가 그렇다. 어느 것이 왜 빠지는지는 `.github/workflows/crossplatform-check.yml` 의 headless 스텝 주석이 `--skip` 목록과 함께 사유를 적어 둔다 — **여기 복제하지 않는다**(사유가 갈리면 어느 쪽이 정본인지 알 수 없게 된다).
+
 ## 1. 인스턴스 공유 원칙 (필수)
 
 **tasty 인스턴스는 test binary 당 1 개가 기본이고, 격리는 프로세스가 아니라 workspace 단위로 한다.** 새 e2e 테스트를 쓸 때 인스턴스를 새로 띄우지 말고 `common::shared()` 를 받아 `create_workspace()` 로 자기 workspace 를 만들어라. 결정의 근거·대안·재검토 조건은 [ADR-0090](../adr/0090-test-isolation-by-workspace-not-process.md).
@@ -34,7 +58,7 @@
 
 **선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 `cargo test --workspace` 에서도 실행되지 않는다 — 어느 채널에도 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
 
-**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 다만 그것이 도는 `cargo test --workspace` 에는 **자동 채널이 없다**(병합 후 main 에서 사람이 1회 돌린다, [ci-gates](ci-gates.md)). 두 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
+**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 통합 테스트라 **컴파일은 두 조합 모두 자동, 실행은 헤드리스 조합에서만 자동**이다(기본 조합의 전체 스위트는 자동 채널이 없다). 조합별 실태와 단서(`paths-ignore` 등)는 [ci-gates](ci-gates.md) 가 정본이고 여기 복제하지 않는다. 세 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`), ③ 바이너리 선택이 §0-1 의 한 곳을 거치는지(`BIN_SELECTION_ALLOWLIST` — **면제는 파일 통째가 아니라 횟수까지 묶는다**). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
 
 ## 2. 공유 하네스 (`common::shared()`)
 
