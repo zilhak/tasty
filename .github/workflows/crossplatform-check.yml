@@ -135,10 +135,45 @@ jobs:
       # (`state::workspace` 의 `both_close_cascades_route_through_the_pointer_helper`)가
       # 그쪽 담당이고, 그 이유는 그 테스트 doc 에 적혀 있다.
       #
-      # `--lib --bins` 만 — e2e/integration 은 컴파일은 되지만 실행에 GUI spawn 이 필요해
-      # 헤드리스 가드로 부적합하다(Windows 잡과 같은 근거).
-      - name: cargo test (headless unit)
-        run: cargo test --workspace --lib --bins --no-default-features --locked
+      # **통합 테스트까지 포함한다.** 한때 `--lib --bins` 로 좁혀 놓고 "e2e/integration 은
+      # 실행에 GUI spawn 이 필요하다" 고 적었는데, 실측해 보니 43 개 테스트 타깃 중 GUI 를
+      # 실제로 요구하는 것은 `tests/gui_tests.rs` 하나뿐이고 그것은 Cargo.toml 의
+      # `required-features = ["gui"]` 가 이미 빌드 대상에서 뺀다. 나머지 42 개는 headless
+      # 로 그대로 서고 돈다(201 passed). e2e 하네스가 띄우는 `CARGO_BIN_EXE_tasty` 는
+      # **같은 feature 로 빌드된 자기 바이너리**라, `--no-default-features` 에서는 그것이
+      # 곧 headless 데몬이다 — 즉 이 스텝이 headless 부팅 진입점(`src/boot/headless_run.rs`
+      # 의 `run_headless`)을 실제로 부팅해 IPC/attach/PTY 경로를 끝까지 돌린다. `--lib --bins` 로는 그 경로가 한 줄도 안 돌았다.
+      #
+      # 아래 `--skip` 4 건은 **GUI 가 필요해서가 아니다.** 원인과 무엇을 고치면 풀리는지를
+      # 각각 적어 둔다 — 고치면 skip 을 지우는 것이 이 목록의 용도다. 순서는 run: 의 순서와
+      # 같다.
+      #   1. hard_occupied_attention_survives_the_servers_local_focus
+      #      `debug.switch_workspace` 라우터 arm 이 `#[cfg(feature = "gui")]` 다. 핸들러
+      #      본체(`AppState::switch_workspace`)는 gui 게이트가 없어, arm 의 게이트만 풀면
+      #      headless 에서도 답할 수 있다.
+      #   2. all_e2e_tests
+      #      `markdown.recent` 에서 멈춘다. headless 의 IPC dispatch 는 plugin namespace
+      #      forward 를 의도적으로 생략한다(`boot/headless_dispatch.rs` 모듈 주석).
+      #      그 forward 를 headless 에 배선하면 풀린다.
+      #   3. output_match_hook_fires_on_real_pty_output
+      #      **제품 결함이다.** headless 는 `process_all_pty_output` 이 돌려준 CoreEvent 를
+      #      버리고 cascade 층 전체가 no-op stub 이라(`app/dispatch_domain_stubs.rs`),
+      #      `output-match` 훅이 영영 fire 되지 않는다. 같은 파일의 idle-timeout 훅은
+      #      메인 루프가 직접 배선해 두어 통과한다 — 두 훅의 차이가 그 배선뿐이다.
+      #   4. closing_before_the_descriptor_releases_occupancy_promptly
+      #      **간헐적이다** — 같은 전체 스위트 명령 2 회 중 1 회만 `attach_error:
+      #      already_attached` 로 떨어진다. 이 파일만 단독으로 headless 실행하면 3/3 통과.
+      #      부하 일반의 문제로 보기는 어렵다: 기본 조합의 전체 스위트는 같은 조건에서
+      #      4849 passed / 0 failed 였다. EOF 해제(`Disconnected` → `release_all_for_client`)
+      #      와 재attach 사이의 headless 고유 경합이 의심되나 재현 조건이 좁혀지지 않았다.
+      #      게이트를 불안정하게 만들지 않도록 지금은 뺀다.
+      - name: cargo test (headless)
+        run: |
+          cargo test --workspace --no-default-features --locked -- \
+            --skip hard_occupied_attention_survives_the_servers_local_focus \
+            --skip all_e2e_tests \
+            --skip output_match_hook_fires_on_real_pty_output \
+            --skip closing_before_the_descriptor_releases_occupancy_promptly
 
       # headless 조합의 clippy. 기본 조합의 clippy 는 Windows 잡이 보지만, 그 잡은
       # `--no-default-features` 를 돌지 않아 headless 전용 코드(`run_headless` 등)의
