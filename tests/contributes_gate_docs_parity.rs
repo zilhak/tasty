@@ -22,13 +22,23 @@ const DOC: &str = "docs/dev-guide/plugin-permissions.md";
 /// 표를 찾는 기준. 문서에 표가 여럿이라 헤더 행으로 특정한다.
 const TABLE_HEADER: &str = "| contributes | 요구 권한 |";
 
-/// 백틱과 여백을 걷어낸 셀 텍스트.
+/// 셀에서 **첫 백틱 코드 스팬**을 뽑는다.
 ///
-/// 표의 셀은 `` `[[contributes.commands]]` (`action.kind = "open_popup"`) `` 처럼 토큰
-/// 뒤에 단서가 붙는다. 단서는 사람이 읽는 설명이라 형태를 강제하지 않고, 대조는
-/// **셀이 해당 값으로 시작하는가** 로 한다.
-fn normalize(cell: &str) -> String {
-    cell.replace('`', "").trim().to_string()
+/// 표의 셀은 `` `[[contributes.commands]]` (`action.kind = "open_popup"`) `` 나
+/// `` `ui.settings_page` (카테고리 무관) `` 처럼 토큰 뒤에 사람이 읽는 단서가 붙는다.
+/// 그 단서는 **백틱 밖**에 있으므로 코드 스팬만 뽑으면 자연히 잘린다 — 그래서 대조를
+/// `starts_with` 로 느슨하게 할 이유가 없고 **정확 일치**로 본다.
+///
+/// 느슨하게 두면 문서 쪽 토큰의 접미사 오타(`ui.tool_item_TYPO`)가 그대로 통과한다 —
+/// 문서↔코드 drift 를 잡는 것이 이 가드의 존재 이유인데 그 한 방향이 뚫린다.
+fn code_span(cell: &str) -> String {
+    let mut parts = cell.split('`');
+    // split 결과: [백틱 앞, 코드 스팬, 백틱 뒤, …]
+    parts.next();
+    match parts.next() {
+        Some(span) if !span.trim().is_empty() => span.trim().to_string(),
+        _ => panic!("{DOC}: 게이트 표의 셀에 백틱 코드 스팬이 없다: {cell:?}"),
+    }
 }
 
 /// 문서에서 게이트 표의 (contributes, 요구 권한) 행을 읽어온다.
@@ -46,17 +56,22 @@ fn doc_rows(text: &str) -> Vec<(String, String)> {
             if cells.len() != 2 {
                 panic!("{DOC}: 게이트 표 행의 열 수가 2가 아니다: {line}");
             }
-            let (key, token) = (normalize(cells[0]), normalize(cells[1]));
-            // 구분선(`---`)이 섞여 들어오면 걸러낸다.
-            (!key.starts_with("---")).then_some((key, token))
+            // 구분선(`---`)이 섞여 들어오면 코드 스팬을 찾기 전에 걸러낸다.
+            if cells[0].trim().starts_with("---") {
+                return None;
+            }
+            Some((code_span(cells[0]), code_span(cells[1])))
         })
         .collect()
 }
 
 /// 게이트가 문서 행과 맞는가. 행은 (키, 토큰) 둘 다로 식별한다 — `ui.popup` 은 두 행에
 /// 나오고 `[[contributes.detector]]` 도 두 행에 나오므로 한쪽만으로는 특정되지 않는다.
+///
+/// 둘 다 **정확 일치**다. 사람이 읽는 단서는 [`code_span`] 이 이미 잘라냈으므로 접두사
+/// 비교로 느슨하게 둘 이유가 없다.
 fn matches(gate: ContributesGate, row: &(String, String)) -> bool {
-    row.0.starts_with(gate.contributes_key()) && row.1.starts_with(&gate.token().doc_form())
+    row.0 == gate.contributes_key() && row.1 == gate.token().doc_form()
 }
 
 #[test]
