@@ -135,16 +135,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Center, |ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+            // 각 패널을 고유 id scope 로 감싼다 — panel() 내부 ScrollArea 가 auto-id 를
+            // 쓰는데 4 개가 같은 소스 위치라 held 가 같은 두 "Ctrl" 패널을 포함해 id 가
+            // 충돌했다(egui 가 "ScrollArea ID … 중복" 마커를 그리고, 공유된 스크롤 상태로
+            // 패널들이 겹쳐 그려졌다). push_id 로 내부 auto-id 전체를 인스턴스별로 분기한다.
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                panel(ui, theme, "Ctrl", CTRL_SECTIONS);
-                panel(ui, theme, "Shift", SHIFT_SECTIONS);
+                ui.push_id("mh_ctrl", |ui| panel(ui, theme, "Ctrl", CTRL_SECTIONS));
+                ui.push_id("mh_shift", |ui| panel(ui, theme, "Shift", SHIFT_SECTIONS));
             });
             // 빈 조합 플레이스홀더(ADR-0038) — 혼재(채워진+빈) · 전체 빈 패널.
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                panel(ui, theme, "Ctrl", MIXED_SECTIONS);
-                panel(ui, theme, "Ctrl+Alt", EMPTY_SECTIONS);
+                ui.push_id("mh_ctrl_mixed", |ui| {
+                    panel(ui, theme, "Ctrl", MIXED_SECTIONS)
+                });
+                ui.push_id("mh_ctrl_alt", |ui| {
+                    panel(ui, theme, "Ctrl+Alt", EMPTY_SECTIONS)
+                });
             });
         });
     });
@@ -260,19 +268,24 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
         .shadow(theme.shadow_popover().to_egui());
 
     let resp = frame.show(ui, |ui| {
-        ui.set_width(w);
-        ui.set_height(h);
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        drag_strip(ui, theme, w, held);
-        // 스크롤 리스트 (남은 높이). specimen 은 정적이라 세로 오버플로가 없지만
-        // 본체와 동일하게 ScrollArea 로 감싸 스크롤 어포던스를 재현한다.
-        let list_h = h - theme.modhint_strip_height().value() - bw;
-        egui::ScrollArea::vertical()
-            .max_height(list_h)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                section_list(ui, theme, w, sections);
-            });
+        // frame 이 horizontal_top 안에 있어 inner ui 가 horizontal 레이아웃을 상속한다 —
+        // 명시적으로 세로 적층으로 바꾸지 않으면 drag_strip 과 아래 ScrollArea 가 가로로
+        // 배치돼(ScrollArea 가 strip 오른쪽 x+w 에서 시작) 리스트 본문이 패널 밖에 그려졌다.
+        ui.vertical(|ui| {
+            ui.set_width(w);
+            ui.set_height(h);
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            drag_strip(ui, theme, w, held);
+            // 스크롤 리스트 (남은 높이). specimen 은 정적이라 세로 오버플로가 없지만
+            // 본체와 동일하게 ScrollArea 로 감싸 스크롤 어포던스를 재현한다.
+            let list_h = h - theme.modhint_strip_height().value() - bw;
+            egui::ScrollArea::vertical()
+                .max_height(list_h)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    section_list(ui, theme, w, sections);
+                });
+        });
     });
 
     // 우하단 코너 그립 — 대각선 2획 (nwse-resize). right:2 bottom:2, 12×12.
@@ -343,12 +356,26 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
 fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) {
     let pad = theme.modhint_pad().value();
     let inner_w = w - pad * 2.0;
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(
-        ui.min_rect().min + egui::vec2(pad, pad),
-        egui::vec2(inner_w, ui.available_height()),
-    )));
-    child.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
-    child.vertical(|ui| {
+    // 패딩(pad)만큼 안쪽에서 시작하는 inner_w 폭 컬럼. 예전엔 `ui.min_rect().min` 기준
+    // 절대 좌표로 child 를 잡았는데, panel 이 horizontal_top 안의 auto_shrink 무한폭
+    // ScrollArea 라 그 기준점이 상자 밖(우측)으로 어긋나 리스트 본문이 패널 밖에 그려졌다.
+    // 좌/상 패딩은 add_space 로, 폭은 allocate_ui 로 고정해 흐름 기준으로 배치한다.
+    ui.add_space(pad);
+    ui.horizontal(|ui| {
+        ui.add_space(pad);
+        ui.allocate_ui_with_layout(
+            egui::vec2(inner_w, ui.available_height()),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
+                section_body(ui, theme, sections);
+            },
+        );
+    });
+}
+
+fn section_body(ui: &mut egui::Ui, theme: &Theme, sections: &[Section]) {
+    ui.vertical(|ui| {
         for sec in sections {
             chord_head(ui, theme, sec.chord);
             // 빈 조합(바인딩·역할 모두 없음)은 내부 간격을 3px(채워진 6px)로 좁혀 "바인딩
