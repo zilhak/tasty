@@ -310,8 +310,14 @@ pub fn handle_workspace_update(
         return resp;
     }
     // workspace_id resolve — `id` 우선, 없으면 `index` 로 lookup.
-    let workspace_id = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        ws_id as u32
+    // `id` 가 **왔는데 잘못된** 경우 `index` 로 흘러내리지 않는다 — 흘러내리면 오타
+    // 하나가 엉뚱한 워크스페이스를 성공적으로 가리킨다.
+    let id_param = match super::params::optional_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let workspace_id = if let Some(ws_id) = id_param {
+        ws_id
     } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
         let idx = i as usize;
         if idx >= engine.workspaces.len() {
@@ -441,8 +447,11 @@ pub fn handle_workspace_close(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let ws_idx = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        let ws_id = ws_id as u32;
+    let id_param = match super::params::optional_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let ws_idx = if let Some(ws_id) = id_param {
         match engine.workspaces.iter().position(|w| w.id == ws_id) {
             Some(i) => i,
             None => {

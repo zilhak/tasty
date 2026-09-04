@@ -1,6 +1,7 @@
 //! `approval` IPC: summary 도메인.
 
 use super::*;
+use crate::adapters::ipc::handler::params::require_u32;
 use crate::core::Core;
 
 pub fn handle_summary_set(
@@ -11,9 +12,9 @@ pub fn handle_summary_set(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let workspace_id = match params.get("workspace_id").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'workspace_id'"),
+    let workspace_id = match require_u32(params, "workspace_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let content = match params.get("content").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
@@ -41,9 +42,9 @@ pub fn handle_summary_get(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let workspace_id = match params.get("workspace_id").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'workspace_id'"),
+    let workspace_id = match require_u32(params, "workspace_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let scope = Scope::Workspace(workspace_id);
     match core.with_memory(|s| s.get(&scope, SUMMARY_KEY)) {

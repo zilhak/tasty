@@ -327,12 +327,19 @@ impl App {
                 return IpcStep::Handled;
             }
         };
-        let surface_id = cmd
-            .request
-            .params
-            .get("surface_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
+        let surface_id = match crate::adapters::ipc::handler::params::read_u32(
+            &cmd.request.params,
+            "surface_id",
+        ) {
+            Ok(v) => v,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(response_id, msg),
+                );
+                return IpcStep::Handled;
+            }
+        };
         let window_id = cmd.request.params.get("window_id").and_then(|v| v.as_u64());
 
         // ── surface 지정 오프스크린 캡처 (focus 독립) ──

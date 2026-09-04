@@ -1,3 +1,4 @@
+use super::params::require_u32;
 use serde_json::json;
 use tasty_hooks::HookEvent;
 
@@ -134,10 +135,10 @@ pub(crate) fn handle_hook_list(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id = match super::params::optional_u32(params, "surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
 
     let hooks: Vec<_> = engine
         .hook_manager
@@ -243,9 +244,9 @@ pub(crate) fn handle_global_hook_unset(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let hook_id = match params.get("hook_id").and_then(|v| v.as_u64()) {
-        Some(h) => h as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
+    let hook_id = match require_u32(params, "hook_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
 
     let removed = core.unregister_global_hook(engine, hook_id);

@@ -302,14 +302,15 @@ pub fn handle_apply(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    let target_pane_id = params
-        .get("target_pane_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
-    let target_workspace_id = params
-        .get("target_workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let target_pane_id = match super::params::optional_u32(params, "target_pane_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let target_workspace_id = match super::params::optional_u32(params, "target_workspace_id", &id)
+    {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
 
     // CLI/IPC 포커스 독립 원칙 — focus 항상 false.
     let opts = ApplyOptions { focus: false };

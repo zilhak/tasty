@@ -22,10 +22,11 @@ pub fn handle_session_summary(
     params: &Value,
 ) -> JsonRpcResponse {
     // workspace_id 가 없으면 모든 workspace 를 합산한다 — 포커스 독립 원칙.
-    let workspace_id = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let workspace_id =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     let since = params.get("since").and_then(|v| v.as_u64());
     let until = params.get("until").and_then(|v| v.as_u64());
     let format = params

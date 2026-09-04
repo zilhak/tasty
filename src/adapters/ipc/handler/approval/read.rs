@@ -109,10 +109,11 @@ pub fn handle_list(
     params: &Value,
 ) -> JsonRpcResponse {
     let state_filter = params.get("state").and_then(|v| v.as_str());
-    let workspace_filter = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let workspace_filter =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
     let mut records = engine.approval_store.list();
     if let Some(f) = state_filter {
@@ -155,10 +156,11 @@ pub fn handle_history(
 ) -> JsonRpcResponse {
     let since = params.get("since").and_then(|v| v.as_i64());
     let until = params.get("until").and_then(|v| v.as_i64());
-    let workspace_filter = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let workspace_filter =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     let requester_filter = params
         .get("requester_id")
         .and_then(|v| v.as_str())

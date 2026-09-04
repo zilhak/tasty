@@ -85,10 +85,11 @@ pub fn handle_delete(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let Some(cat_id) = params.get("id").and_then(|v| v.as_u64()) else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
+    let cat_id = match super::params::require_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
-    match engine.delete_category(cat_id as u32) {
+    match engine.delete_category(cat_id) {
         Ok(()) => {
             engine.mark_layout_dirty();
             JsonRpcResponse::success(id, json!({ "deleted": true, "id": cat_id }))

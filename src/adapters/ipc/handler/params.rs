@@ -28,7 +28,9 @@ fn malformed(key: &str, raw: &Value) -> String {
 
 /// 왔고 `u32` 범위 안이면 그 값. `null` 이거나 키가 없으면 `None`.
 /// **값이 왔는데 안 읽히면 `Err`** — 조용히 버리지 않는다.
-fn read_u32(params: &Value, key: &str) -> Result<Option<u32>, String> {
+///
+/// `JsonRpcResponse` 대신 `String` 오류를 쓰는 호출자(파서 헬퍼 등)가 직접 쓴다.
+pub(crate) fn read_u32(params: &Value, key: &str) -> Result<Option<u32>, String> {
     let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
         return Ok(None);
     };

@@ -4,6 +4,7 @@
 //! sync_webviews 가 매 프레임 RemoteSurface 의 webview_url 캐시를 읽어 native
 //! WebView 에 load_url 자동 호출.
 
+use super::params::require_u32;
 use serde_json::Value;
 
 use crate::plugin::PluginManager;
@@ -21,9 +22,9 @@ pub fn handle_set_url(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let sid = match params.get("surface_id").and_then(|v| v.as_u64()) {
-        Some(s) => s as u32,
-        None => return JsonRpcResponse::invalid_params(id, "missing 'surface_id'"),
+    let sid = match require_u32(params, "surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let url = match params.get("url").and_then(|v| v.as_str()) {
         Some(u) => u.to_string(),

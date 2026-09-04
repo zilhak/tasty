@@ -146,10 +146,10 @@ pub fn handle_split(
     };
 
     let target_surface_id = resolve_surface_target(state, params);
-    let target_pane_id = params
-        .get("target_pane")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let target_pane_id = match super::params::optional_u32(params, "target_pane", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
 
     // Validate: at least one target must be specified
     if target_surface_id.is_none() && target_pane_id.is_none() {

@@ -77,10 +77,7 @@ pub fn handle_observe_info(
 }
 
 fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id = super::params::read_u32(params, "surface_id")?;
 
     let parsers: Vec<String> = match params.get("parsers") {
         None | Some(Value::Null) => Vec::new(),

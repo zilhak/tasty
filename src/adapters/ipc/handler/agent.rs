@@ -26,13 +26,7 @@ pub(super) fn now_ms() -> u64 {
 }
 
 pub(super) fn workspace_id_param(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'workspace_id'")
-        })
+    super::params::require_u32(params, "workspace_id", id)
 }
 
 pub(super) fn task_id_param(params: &Value, id: &Value) -> Result<TaskId, JsonRpcResponse> {

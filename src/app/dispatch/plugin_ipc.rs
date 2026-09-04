@@ -141,15 +141,19 @@ impl App {
     fn handle_ipc_banner_open(&mut self, call: &PendingPluginCall) {
         let (result, error) = {
             let banner_id = call.params.get("banner_id").and_then(|v| v.as_str());
-            let surface_id = call.params.get("surface_id").and_then(|v| v.as_u64());
+            // `surface_id` 를 자르지 않는다 — 잘린 값은 실재하는 **다른 surface** 를
+            // 가리켜, plugin 이 남의 배너 자리를 성공적으로 차지한다.
+            let surface_id =
+                crate::adapters::ipc::handler::params::read_u32(&call.params, "surface_id");
             match (banner_id, surface_id) {
-                (Some(bid), Some(sid)) => {
+                (Some(bid), Ok(Some(sid))) => {
                     let bid = bid.to_string();
-                    match self.open_plugin_banner(Some(&call.plugin_id), &bid, sid as u32) {
+                    match self.open_plugin_banner(Some(&call.plugin_id), &bid, sid) {
                         Ok(iid) => (Some(json!({ "instance_id": iid })), None),
                         Err(e) => (None, Some(e)),
                     }
                 }
+                (_, Err(msg)) => (None, Some(format!("banner.open: {msg}"))),
                 _ => (
                     None,
                     Some("banner.open: missing 'banner_id' or 'surface_id'".to_string()),

@@ -712,12 +712,7 @@ pub fn handle_task_graph(
 /// (원칙 3, 포커스 독립성). 잘못된 타입이 오면 조용히 전체 순회로 떨어지지 않고
 /// invalid_params 로 거절한다.
 fn optional_workspace_id_param(params: &Value, id: &Value) -> Result<Option<u32>, JsonRpcResponse> {
-    match params.get("workspace_id") {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_u64().map(|w| Some(w as u32)).ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "'workspace_id' must be a number")
-        }),
-    }
+    crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", id)
 }
 
 /// `include_tasks=false`(기본)면 `task_ids` 를 응답에서 뺀다 — 목록 화면은 요약만

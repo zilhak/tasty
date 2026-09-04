@@ -37,10 +37,7 @@ impl QueryFilter {
         if let Some(ref a) = agent {
             validate_agent_id(a).map_err(|e| e.to_string())?;
         }
-        let workspace_id = params
-            .get("workspace_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
+        let workspace_id = crate::adapters::ipc::handler::params::read_u32(params, "workspace_id")?;
         let since = params.get("since").and_then(|v| v.as_u64());
         let until = params.get("until").and_then(|v| v.as_u64());
         Ok(Self {

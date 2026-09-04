@@ -222,11 +222,7 @@ fn build_event(
         .unwrap_or_else(|| default_agent.to_string());
     validate_agent_id(&agent).map_err(|e| e.to_string())?;
 
-    let workspace_id = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .or(default_workspace_id);
+    let workspace_id = super::params::read_u32(params, "workspace_id")?.or(default_workspace_id);
 
     let mut ev = TelemetryEvent::new(agent, metric, value, op, ts).map_err(|e| e.to_string())?;
     if let Some(w) = workspace_id {

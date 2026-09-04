@@ -73,10 +73,11 @@ pub fn handle_request(
         },
     };
 
-    let workspace_id = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    let workspace_id =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        }
         .or_else(|| {
             // 미지정이면 활성 워크스페이스로 fallback (편의).
             engine
@@ -85,10 +86,11 @@ pub fn handle_request(
                 .map(|ws| ws.id)
         });
 
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "surface_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
 
