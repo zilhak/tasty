@@ -246,6 +246,14 @@ fn line_of(text: &str, offset: usize) -> usize {
 /// yml 을 파싱하지 않고 들여쓰기로 잡 경계를 잡는다 — 이 레포의 워크플로는 전부
 /// `jobs:` 아래 2 칸 들여쓰기의 평평한 잡 목록이고, 파싱기를 들이는 것보다 이 구조를
 /// 깨뜨렸을 때 눈에 띄는 편이 낫다.
+/// 그 경로가 워크플로 파일인가 — GitHub Actions 가 인정하는 두 확장자를 모두 본다.
+fn is_workflow_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("yml") | Some("yaml")
+    )
+}
+
 fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
     let mut bodies = Vec::new();
     let Ok(entries) = std::fs::read_dir(workflows) else {
@@ -253,7 +261,16 @@ fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("yml") {
+        // GitHub Actions 는 `.yml` 과 `.yaml` 을 **둘 다** 워크플로로 읽는다. 여기서 한쪽만
+        // 보면 그 잡은 자동 채널 계산에서 통째로 빠지고, 그러면 이 가드의 세 축이 모두
+        // 그 잡을 못 본 채 판정한다 — 실제보다 **약한** 채널을 가정하게 되므로 거짓
+        // 위반(참인 서술을 짚음)이 난다.
+        //
+        // 이 파일 자신이 그 비대칭을 갖고 있었다: 스캔 대상 확장자([`TEXT_EXTS`])에는
+        // `yaml` 이 있어서, `.yaml` 워크플로는 **문서로는 읽히고 워크플로로는 안 읽히는**
+        // 상태였다. 한 파일 안에서 두 모수가 어긋나 있으면 어느 쪽이 옳은지 읽는 사람이
+        // 판단할 수 없다.
+        if !is_workflow_file(&path) {
             continue;
         }
         let text = std::fs::read_to_string(&path).unwrap_or_default();
@@ -1049,6 +1066,69 @@ fn the_full_suite_judgement_uses_the_same_narrowing_rule() {
     assert!(!a_job_body_runs_the_full_suite(
         "        run: cargo clippy --workspace --all-targets\n"
     ));
+}
+
+/// 합성 워크플로 디렉토리 — 판정기가 경로를 주입받으므로 조합 수를 마음대로 만들 수 있다.
+///
+/// 레포 실물에 고정하면 **조합이 하나뿐인 조건을 만들 수 없어** 한쪽 방향만 재게 된다.
+fn workflow_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "tasty-ci-guard-{}-{}-{:?}",
+        name,
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    // 이전 실행 잔여물 제거 — 없으면 NotFound 라 실패가 정상 경로다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("합성 워크플로 디렉토리를 만들지 못했다");
+    for (file, body) in files {
+        std::fs::write(dir.join(file), body).expect("합성 워크플로를 쓰지 못했다");
+    }
+    dir
+}
+
+const AUTOMATIC_FULL: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --workspace --locked\n";
+
+/// 워크플로 모수는 **두 확장자를 다 본다.**
+///
+/// 한쪽만 보면 그 잡이 자동 채널 계산에서 통째로 빠지고, 이 가드는 실제보다 약한 채널을
+/// 가정한 채 **참인 서술을 위반으로 짚는다.** 이 파일은 스캔 확장자에는 `yaml` 을 넣고
+/// 워크플로 판독에서는 뺀 상태였다 — 두 모수가 한 파일 안에서 어긋나 있었다.
+#[test]
+fn a_workflow_is_read_under_either_extension() {
+    for (name, file) in [("yml", "ci.yml"), ("yaml", "ci.yaml")] {
+        let dir = workflow_dir(name, &[(file, AUTOMATIC_FULL)]);
+        let bodies = automatic_job_bodies(&dir);
+        assert_eq!(bodies.len(), 1, "{file} 을 워크플로로 읽지 않았다");
+        assert!(bodies[0].contains("cargo test --workspace"));
+        // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 워크플로가 아닌 확장자는 들어오지 않는다 — 모수를 넓히는 것과 아무거나 읽는 것은 다르다.
+    let dir = workflow_dir("other", &[("notes.md", AUTOMATIC_FULL)]);
+    assert!(
+        automatic_job_bodies(&dir).is_empty(),
+        "워크플로가 아닌 파일을 잡 본문으로 읽었다"
+    );
+    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 자동 트리거가 없는 워크플로는 두 확장자 어느 쪽이든 제외된다 — 넓힌 것은 **확장자**이지
+/// 트리거 판정이 아니다.
+#[test]
+fn widening_the_extension_does_not_widen_the_trigger_rule() {
+    let manual = "on:\n  workflow_dispatch:\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --workspace --locked\n";
+    for (name, file) in [("m-yml", "manual.yml"), ("m-yaml", "manual.yaml")] {
+        let dir = workflow_dir(name, &[(file, manual)]);
+        assert!(
+            automatic_job_bodies(&dir).is_empty(),
+            "{file}: 수동 전용 워크플로가 자동 잡으로 들어왔다"
+        );
+        // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[test]
