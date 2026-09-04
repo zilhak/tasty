@@ -3,7 +3,6 @@ use winit::window::CursorIcon;
 
 use super::{DividerDrag, DividerDragKind, HoveredLink, MainView, MeshHoverTarget};
 use crate::core::intent::{DomainIntent, SendPayload};
-use crate::plugin_bridge::wire_scroll::LINE_SCROLL;
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
 use crate::theme;
@@ -1141,10 +1140,14 @@ impl MainView {
             // 스크롤 델타를 논리 포인트로 변환해 누적하고 소비한다.
             if let Some(pos) = self.cursor_position {
                 let (x, y) = (pos.x as f32, pos.y as f32);
+                // 노치 거리는 host egui 옵션이 런타임 단일 출처다 — host 위젯이 스크롤하는
+                // 거리와 plugin 표면이 받는 거리를 같게 유지한다(ADR-0130).
+                let line_scroll =
+                    crate::plugin_bridge::wire_scroll::line_scroll(&self.base.gpu.egui_ctx);
                 if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(lx, ly) => {
-                            ((LINE_SCROLL * lx).value(), (LINE_SCROLL * ly).value())
+                            ((line_scroll * lx).value(), (line_scroll * ly).value())
                         }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
@@ -1163,7 +1166,7 @@ impl MainView {
                 if let Some((sid, _rect)) = self.attach_mesh_target_at(x, y) {
                     let (dx, dy) = match delta {
                         MouseScrollDelta::LineDelta(lx, ly) => {
-                            ((LINE_SCROLL * lx).value(), (LINE_SCROLL * ly).value())
+                            ((line_scroll * lx).value(), (line_scroll * ly).value())
                         }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);

@@ -173,6 +173,9 @@ fn collect_mesh_banner_input(
 ) -> RawInputWire {
     let origin = content_rect.min;
     let pointer_inside = pointer_pos.is_some_and(|p| content_rect.contains(p));
+    // 노치 거리는 `ctx.input` 밖에서 읽는다 — 같은 컨텍스트의 다른 잠금이라
+    // 중첩을 만들 이유가 없다.
+    let line = wire_scroll::line_scroll(ctx);
     ctx.input(|i| {
         let modifiers = map_modifiers(&i.modifiers);
         let mut events: Vec<RawInputEventWire> = Vec::new();
@@ -208,6 +211,7 @@ fn collect_mesh_banner_input(
                         *unit,
                         *delta,
                         LogicalPx(i.screen_rect().height()),
+                        line,
                     );
                     events.push(RawInputEventWire::Scroll {
                         x: dx.value(),
@@ -255,7 +259,19 @@ mod tests {
     /// banner content 위 휠 이벤트 하나가 와이어에 싣는 `Scroll` 값(논리 포인트)을
     /// **실제 수집 함수**로 잰다.
     fn collected_scroll(unit: egui::MouseWheelUnit, delta: egui::Vec2) -> Option<(f32, f32)> {
+        collected_scroll_with_notch(unit, delta, tasty_settings::DEFAULT_WHEEL_LINE_SCROLL)
+    }
+
+    /// 위와 같되 노치 거리(host 가 egui 옵션에 밀어 넣는 값)를 지정한다 — 그 값이
+    /// 실제로 와이어까지 흐르는지 재는 데 쓴다.
+    fn collected_scroll_with_notch(
+        unit: egui::MouseWheelUnit,
+        delta: egui::Vec2,
+        notch: f32,
+    ) -> Option<(f32, f32)> {
         let ctx = Context::default();
+        // host 가 창을 만들 때 하는 것과 같다 — 이 설정 없이는 egui 기본값(40)이 남는다.
+        ctx.options_mut(|o| o.line_scroll_speed = notch);
         let content_rect =
             Rect::from_min_size(Pos2::new(40.0, 40.0), egui::Vec2::new(400.0, 120.0));
         let pointer = Pos2::new(100.0, 80.0);
@@ -289,8 +305,28 @@ mod tests {
         let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Line, egui::Vec2::new(0.0, -1.0))
             .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
         assert_eq!(dx, 0.0);
-        assert_eq!(dy, (wire_scroll::LINE_SCROLL * -1.0).value());
+        assert_eq!(dy, -tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
         assert_ne!(dy, -1.0);
+    }
+
+    /// 노치 거리는 이제 상수가 아니라 **host egui 옵션**에서 온다 — 사용자가 설정을
+    /// 바꾸면 banner 가 받는 거리도 따라와야 한다. 상수로 되돌아가면 이 테스트가 죽는다.
+    #[test]
+    fn the_wire_distance_follows_the_host_option() {
+        let (_, slow) = collected_scroll_with_notch(
+            egui::MouseWheelUnit::Line,
+            egui::Vec2::new(0.0, -1.0),
+            20.0,
+        )
+        .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        let (_, fast) = collected_scroll_with_notch(
+            egui::MouseWheelUnit::Line,
+            egui::Vec2::new(0.0, -1.0),
+            120.0,
+        )
+        .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(slow, -20.0);
+        assert_eq!(fast, -120.0);
     }
 
     /// 트랙패드 델타는 그대로 실린다(회귀 방지).

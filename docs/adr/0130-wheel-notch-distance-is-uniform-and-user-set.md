@@ -53,8 +53,9 @@ chrome 에 해당하는 것이 양쪽에 다 있고(modifier hint overlay 40 · 
    (`src/plugin_bridge/wire_scroll.rs`).
    바꿔야 할 곳이 적은 쪽이자, 프로세스 경계를 넘지 않는 쪽이다.
 2. **런타임 단일 출처는 egui `Options::line_scroll_speed` 다.** 설정값을 그 옵션에 밀어
-   넣고, 휠을 포인트로 환산하는 모든 지점이 그 옵션을 읽는다. `wire_scroll::LINE_SCROLL`
-   은 상수 소비처가 아니라 **설정 기본값의 정의**로만 남는다. 이 구조 덕에
+   넣고, 휠을 포인트로 환산하는 모든 지점이 그 옵션을 읽는다. `wire_scroll` 은 배율
+   상수를 갖지 않게 되고, 기본값의 정의처는 설정 쪽
+   (`tasty_settings::DEFAULT_WHEEL_LINE_SCROLL`) 하나다. 이 구조 덕에
    `modifier_hint_overlay` 는 손대지 않아도 따라온다 — 그것은 이미 이 옵션을 읽는다.
 3. **설정의 자리는 `GeneralSettings` 다.** 이 절은 이미 마우스 동작 설정을 담고 있다
    (`link_click_modifier` · `click_to_move_cursor` · `mouse_capture_hint` ·

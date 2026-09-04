@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+/// 휠 1노치가 스크롤하는 논리 포인트의 기본값 — [`GeneralSettings::wheel_line_scroll`]
+/// 의 유일한 정의처다.
+///
+/// 50 인 이유는 egui 기본값(native 40 / web 8)과 견주어 고른 것이 아니라 이 코드베이스가
+/// plugin 표면에 이미 쓰던 값을 보존하는 것이다. egui 는 그 두 값이 왜 달라야 하는지
+/// 자기 소스에 `TODO` 로 남겨 두었으므로 기준이 될 수 없다. 근거 전문은 ADR-0130.
+pub const DEFAULT_WHEEL_LINE_SCROLL: f32 = 50.0;
+
 /// 빌트인 bashrc 의 *전반부* — LANG/LC_ALL, MSYS PATH, `__tasty_osc7` 함수 정의.
 /// 모드와 무관하게 합성 rc 의 *맨 앞* 에 prepend 된다. 사용자 rc 가 이후에 source 된다.
 pub const BUILTIN_BASHRC_PRE: &str = r#"# === tasty built-in (auto-generated, do not edit) ===
@@ -155,6 +163,13 @@ pub struct GeneralSettings {
     /// `alias`: 구버전 settings.toml 의 `restore_terminal_content` 키를 계속 읽는다.
     #[serde(alias = "restore_terminal_content")]
     pub restore_surface_content: bool,
+    /// 휠 1노치(= 데스크톱 마우스 휠 한 칸)가 스크롤하는 논리 포인트. 이 값 하나가
+    /// host UI 위젯과 plugin 표면 **양쪽**에 걸린다 — egui `Options::line_scroll_speed`
+    /// 로 밀어 넣으면 host 의 `ScrollArea` 가 그것으로 스크롤하고, 휠을 포인트로 바꾸는
+    /// plugin 경로도 같은 옵션을 읽는다(ADR-0130). 기본값
+    /// [`DEFAULT_WHEEL_LINE_SCROLL`]. 스크롤 속도가 접근성 축의 조정 요구가 잦은 값이라
+    /// 노출하지만, 접근성 전용이 아니라 마우스 동작 설정이므로 이 절에 둔다.
+    pub wheel_line_scroll: f32,
     /// 터미널 내 링크 클릭 시 요구되는 수식키. "ctrl" | "alt" | "none".
     /// "none"이면 평범한 클릭으로 링크가 열리므로 텍스트 선택과 구분되지 않는 점에 유의.
     pub link_click_modifier: String,
@@ -289,6 +304,7 @@ impl Default for GeneralSettings {
             close_behavior: "ask".to_string(),
             restore_layout: true,
             restore_surface_content: true,
+            wheel_line_scroll: DEFAULT_WHEEL_LINE_SCROLL,
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
             reverse_screen_enabled: true,

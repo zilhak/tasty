@@ -464,6 +464,21 @@ impl App {
         appearance: &crate::settings::AppearanceSettings,
     ) -> anyhow::Result<GpuState> {
         let instance = Arc::clone(&self.gpu_instance);
+        // 창마다 만들어지는 egui 컨텍스트가 처음부터 같은 노치 거리를 갖게 한다 —
+        // 모달은 열릴 때 새로 만들어지므로 이 한 지점이 전부를 덮는다(ADR-0130).
+        // 첫 창은 CoreState 보다 먼저 만들어질 수 있어 `core_state()`(없으면 panic)를
+        // 쓰지 않는다 — 그때는 기본값이고, 이후 프레임이 설정값으로 덮는다.
+        let wheel_line_scroll = self
+            .core_state
+            .as_ref()
+            .map(|cs| cs.settings.general.wheel_line_scroll)
+            .or_else(|| {
+                self.view.views.values().find_map(|w| {
+                    w.as_main()
+                        .map(|m| m.core_state.settings.general.wheel_line_scroll)
+                })
+            })
+            .unwrap_or(tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
         let proxy = self.view.proxy.clone();
         pollster::block_on(async move {
             if self.gpu_adapter.is_none() {
@@ -499,7 +514,15 @@ impl App {
                     .as_ref()
                     .expect("gpu_adapter set above when None"),
             );
-            GpuState::new_shared(&instance, &adapter, window, appearance, proxy).await
+            GpuState::new_shared(
+                &instance,
+                &adapter,
+                window,
+                appearance,
+                wheel_line_scroll,
+                proxy,
+            )
+            .await
         })
     }
 

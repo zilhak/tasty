@@ -147,6 +147,7 @@ impl GpuState {
         adapter: &Arc<wgpu::Adapter>,
         window: Arc<Window>,
         appearance: &AppearanceSettings,
+        wheel_line_scroll: f32,
         proxy: EventLoopProxy<AppEvent>,
     ) -> Result<Self> {
         let size = window.inner_size();
@@ -236,6 +237,10 @@ impl GpuState {
         // but not the terminal renderer, causing inconsistent scaling.
         egui_ctx.options_mut(|opts| {
             opts.zoom_with_keyboard = false;
+            // 휠 1노치 거리는 tasty 가 정한다 — egui 는 이 값을 native 40 / web 8 로
+            // 갈라 두고 왜 달라야 하는지 자기 소스에 TODO 로 남겼다. 이 컨텍스트를 쓰는
+            // 모든 `ScrollArea` 와 plugin 표면이 이 한 값을 공유한다(ADR-0130).
+            opts.line_scroll_speed = wheel_line_scroll;
         });
 
         // egui_extras image loaders (SVG / PNG / ...). 정적 SVG 아이콘 (chevron 등) 을

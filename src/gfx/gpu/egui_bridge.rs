@@ -180,6 +180,11 @@ impl GpuState {
         host_popup_on_top: bool,
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
+        // 설정이 바뀌면 다음 프레임부터 따라오게 한다 — 생성 시점 값만 쓰면 설정 모달에서
+        // 슬라이더를 옮겨도 이미 열려 있는 창은 옛 거리로 스크롤한다(ADR-0130).
+        self.egui_ctx.options_mut(|o| {
+            o.line_scroll_speed = engine.settings.general.wheel_line_scroll;
+        });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
 

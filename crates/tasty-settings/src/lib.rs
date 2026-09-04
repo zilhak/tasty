@@ -20,7 +20,7 @@ pub use appearance::{
     ActiveTabIndicator, AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor,
     PluginSettingValue,
 };
-pub use general::{GeneralSettings, LinkModifier};
+pub use general::{DEFAULT_WHEEL_LINE_SCROLL, GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use port::SettingsStorage;
 pub use port_impl::FileSettingsStorage;
