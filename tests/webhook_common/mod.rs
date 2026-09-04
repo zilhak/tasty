@@ -382,10 +382,10 @@ impl WebhookInstance {
             .env_remove("ZSH")
             .env_remove("SHELL")
             .env_remove("TASTY_SURFACE_ID")
-            // 본체 필터는 `TASTY_LOG` 를 읽는다(`src/platform/crash_report.rs`).
-            // 리스너 bind 성공/실패 판정에 필요한 두 줄만 켜고 나머지는 기본 warn 으로
-            // 둔다 — stderr ring 이 유한해서 전체 info 를 켜면 진단 줄이 밀려난다.
-            .env("TASTY_LOG", "warn,tasty::webhook::listener=info")
+            // 리스너 bind 성공/실패 판정에 필요한 타깃만 `info` 로 올리고 나머지는
+            // 공용 필터 그대로 둔다 — stderr ring 이 유한해서 전체 info 를 켜면
+            // 진단 줄이 밀려난다. 이름·값의 정의 자리는 `spawn_diag` 하나다.
+            .env(spawn_diag::LOG_ENV, spawn_diag::LOG_FILTER_WEBHOOK)
             .stderr(Stdio::piped());
         for (k, v) in env_args {
             command.env(k, v);

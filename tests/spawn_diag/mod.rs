@@ -1,18 +1,49 @@
-//! 인스턴스 spawn 의 **상한값과 실패 판정**을 두 하네스가 공유하는 자리.
+//! 인스턴스 spawn 의 **공통 설정과 실패 판정**을 두 하네스가 공유하는 자리.
 //!
 //! `tests/common`(범용 인스턴스)과 `tests/webhook_common`(웹훅 인스턴스)은 같은
 //! `CARGO_BIN_EXE_tasty` 를 같은 방식으로 띄운다. 그런데 상한값이 서로 달랐고
 //! (30/15 vs 40/20) 그 차이의 근거가 어디에도 없었다 — 같은 단계에 다른 잣대를
 //! 대면 한쪽에서만 재현되는 flaky 가 생기고, 그때마다 "이 하네스는 원래 느린가" 를
-//! 사람이 다시 판단해야 한다. 값을 여기 하나로 모은다.
+//! 사람이 다시 판단해야 한다. 값을 여기 하나로 모은다. 자식의 로그 필터도 같다.
 //!
 //! 실패 원인 판정도 같이 둔다. spawn timeout 은 "느린 것" 과 "부팅이 아예 막힌 것"
 //! 이 똑같은 메시지로 보였는데, 둘은 대응이 완전히 다르다(전자는 기다리면 되고
-//! 후자는 기다려도 안 된다). stderr 시그니처와 자식의 조기 종료로 구분한다.
+//! 후자는 기다려도 안 된다). 디스플레이 서버 부재는 stderr 시그니처로 갈리고,
+//! 자식이 이미 죽은 경우는 조기 종료 감지로 갈린다.
 
 #![allow(dead_code)] // 두 하네스가 각자 일부만 쓴다
 
 use std::time::Duration;
+
+/// 제품이 로그 필터로 읽는 환경변수. **`RUST_LOG` 이 아니다** —
+/// `src/platform/crash_report.rs` 의 `EnvFilter::try_from_env("TASTY_LOG")` 다.
+/// 한 번 `RUST_LOG` 로 잘못 넣어 두 하네스가 몇 달 동안 필터 없이 돌았으므로,
+/// 이름은 상수로 고정하고 `tests/harness_log_env.rs` 가 제품 소스와 대조한다.
+pub const LOG_ENV: &str = "TASTY_LOG";
+
+/// 필터 문자열의 유일한 정의 자리. 두 상수가 같은 리터럴을 각자 적으면 한쪽만
+/// 고쳐져 어긋나므로 매크로로 한 번만 쓴다(`concat!` 은 리터럴만 받는다).
+macro_rules! product_default_filter {
+    () => {
+        "warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off"
+    };
+}
+use product_default_filter;
+
+/// 자식에게 주는 기본 로그 필터 — **제품 기본값과 같은 모양**이어야 한다.
+///
+/// `TASTY_LOG` 를 지정하는 순간 제품의 기본 필터는 통째로 대체된다. 그래서 `warn`
+/// 한 단어만 주면 기본값에 들어 있던 억제(`wgpu_hal=error` 등)가 전부 풀려
+/// **로그가 오히려 늘어난다** — 실측(격리 HOME, 정상 부팅, 12초): env 미지정 7줄 ·
+/// `warn` 12줄(wgpu 5줄) · 이 값 7줄. 늘어난 줄은 `STDERR_TAIL_LINES`(30) 짜리
+/// 진단 tail 을 그대로 밀어낸다. host 의 `TASTY_LOG=trace` 누수를 막으면서 노이즈는
+/// 늘리지 않으려면 기본값과 같은 모양을 명시하는 수밖에 없다.
+pub const LOG_FILTER: &str = product_default_filter!();
+
+/// 웹훅 하네스용 필터. 리스너의 bind 성공/실패 판정에 그 타깃의 `info` 두 줄이
+/// 필요하다 — 나머지는 [`LOG_FILTER`] 를 **그대로 앞에 두고** 뒤에만 덧붙인다.
+pub const LOG_FILTER_WEBHOOK: &str =
+    concat!(product_default_filter!(), ",tasty::webhook::listener=info");
 
 /// S1 — `--port-file` 에 포트가 쓰이기까지. GUI 부팅(창 + GPU 디바이스 + boot
 /// 상태기계)이 끝나야 IPC 가 시작되므로 이 단계가 가장 길다.

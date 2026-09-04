@@ -312,10 +312,10 @@ impl TastyInstance {
             // write 하면 OS pipe buffer 가 가득 차서 child 가 block 될 위험이 있다.
             // drain thread 가 1차 방어, verbosity cap 이 2차.
             //
-            // 본체가 읽는 변수는 **`TASTY_LOG`** 다(`RUST_LOG` 아님 —
-            // `docs/dev-guide/crash-diagnostics.md`). 여기서 `warn` 으로 고정하면
-            // 기본 필터와 같은 수준이면서 host 의 `TASTY_LOG=trace` 누수까지 막는다.
-            .env("TASTY_LOG", "warn")
+            // 이름과 값 모두 `spawn_diag` 가 유일한 정의 자리다 — 이름은 한 번
+            // `RUST_LOG` 로 틀렸던 자리이고, 값은 제품 기본 필터와 모양이 어긋나면
+            // 억제가 풀려 오히려 로그가 늘어난다(그 상수의 doc 에 실측이 있다).
+            .env(spawn_diag::LOG_ENV, spawn_diag::LOG_FILTER)
             .stderr(Stdio::piped());
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
         // 자식을 대신 죽여준다. 아래 Drop 은 부모가 살아서 unwind 될 때만 자식을
