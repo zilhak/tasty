@@ -538,8 +538,15 @@ const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
 /// 아니다 — grep 은 같은 파일들에서 9 줄을 내는데, 그중 넷은 `name: cargo test (unit)`
 /// 같은 스텝 이름과 주석이다. 둘을 섞으면 다음 사람이 이 상수를 grep 으로 검산하고
 /// 어긋난다고 판단한다.
-const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] =
-    &[("crossplatform-check.yml", 2), ("test.yml", 3)];
+///
+/// `doc-guards.yml` 은 문서 가드를 전용 잡으로 뺀 워크플로다(ADR-0138). 그 잡이 생기면서
+/// 호출이 하나 늘었고, 이 표가 **파일별**이라 그 사실이 "어느 파일에 생겼는가" 로 드러났다
+/// — 총계였으면 다른 파일에서 하나 줄어든 것과 구별되지 않았다.
+const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
+    ("crossplatform-check.yml", 2),
+    ("doc-guards.yml", 1),
+    ("test.yml", 3),
+];
 
 /// YAML 주석 줄을 지우고 전체를 한 줄로 평탄화한다.
 ///
