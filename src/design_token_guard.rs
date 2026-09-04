@@ -91,20 +91,31 @@ fn sister_scan_roots(src: &str) -> Vec<String> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    let mut chars = rest[..end].char_indices();
-    while let Some((i, c)) = chars.next() {
-        if c != '"' {
-            continue;
-        }
-        if let Some(close) = rest[i + 1..end].find('"') {
-            out.push(rest[i + 1..i + 1 + close].to_string());
-            // 닫는 따옴표 뒤로 건너뛴다. `by_ref()` 로 빌려 써야 바깥 루프가 같은
-            // 반복자를 이어 받는다 — `chars` 를 통째로 넘기면 소비돼서 못 돌아온다.
-            for (j, _) in chars.by_ref() {
-                if j >= i + 1 + close {
-                    break;
+    for line in rest[..end].lines() {
+        let chars: Vec<char> = line.chars().collect();
+        let mut in_string = false;
+        let mut buf = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            if in_string {
+                if c == '"' {
+                    out.push(std::mem::take(&mut buf));
+                    in_string = false;
+                } else {
+                    buf.push(c);
                 }
+            } else if c == '"' {
+                in_string = true;
+            } else if c == '/' && chars.get(i + 1) == Some(&'/') {
+                // 주석 — 줄의 나머지는 코드가 아니다. **줄 앞이든 뒤든 자른다.**
+                // 자매 파일의 이 블록에는 실제로 자유 주석이 있고, 거기에 경로를
+                // 따옴표로 인용하면(`// "src/gfx" 는 제외`) 그것이 루트로 뽑혀
+                // `assert_eq!` 가 **거짓 빨강**을 낸다. 방향은 안전하지만 메시지가
+                // "두 자매 가드의 스캔 루트가 갈라졌다" 라 원인을 잘못 가리킨다.
+                break;
             }
+            i += 1;
         }
     }
     out
@@ -550,6 +561,27 @@ fn unmapped_primitive_font_consts_say_so_in_their_name() {
 #[cfg(test)]
 mod discriminate {
     use super::*;
+
+    /// `SCAN_ROOTS` 블록 파서가 **주석 안의 따옴표를 루트로 읽지 않는다**.
+    ///
+    /// 이 블록에는 자유 주석이 들어간다(자매 파일에 실제로 있다). 거기에 경로를
+    /// 인용하면 파서가 그것을 루트로 뽑아 자매 대조가 **거짓 빨강**을 낸다 —
+    /// 방향은 안전하지만 메시지가 원인을 잘못 가리키므로 진단이 헛돈다.
+    #[test]
+    fn the_scan_root_parser_ignores_quotes_inside_comments() {
+        let src = "\
+const SCAN_ROOTS: &[&str] = &[
+    \"src\",
+    // \"src/gfx\" 는 제외한다 — 이 따옴표는 루트가 아니다
+    \"crates\", // \"tests\" 는 여기 없다
+];
+";
+        assert_eq!(
+            sister_scan_roots(src),
+            vec!["src".to_string(), "crates".to_string()],
+            "주석 안의 따옴표가 루트로 새어 들어왔다"
+        );
+    }
 
     /// 반경 축의 **전제 검사**. 폰트 축과 같은 축(값 × 자리)인지, 그리고 경로 수식을
     /// 벗기는 것이 실제로 동작하는지를 함께 잰다 — 반경 호출자리의 명명 const 는 다수가
