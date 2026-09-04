@@ -177,7 +177,7 @@ build-plugins:
     mkdir -p "$bundle_root"
     for c in "${crates[@]}"; do
         d="crates/$c"
-        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
             | sed 's/.*"\([^"]*\)".*/\1/')
         if [ -z "$id" ]; then
             echo "✘ $c: cannot parse id from $d/tasty-plugin.toml" >&2
@@ -234,7 +234,7 @@ build-plugin name:
     for d in crates/tasty-plugin-*; do
         [ -f "$d/tasty-plugin.toml" ] || continue
         c=$(basename "$d")
-        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
             | sed 's/.*"\([^"]*\)".*/\1/')
         short=${c#tasty-plugin-}
         if [ "$name" = "$c" ] || [ "$name" = "$short" ] || [ "$name" = "$id" ]; then
@@ -250,7 +250,7 @@ build-plugin name:
             [ -f "$d/tasty-plugin.toml" ] || continue
             c=$(basename "$d")
             short=${c#tasty-plugin-}
-            id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+            id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
                 | sed 's/.*"\([^"]*\)".*/\1/')
             echo "    $short  ($c, $id)" >&2
         done
@@ -393,7 +393,7 @@ link-plugins:
     abs_workspace=$(pwd)
     for c in "${crates[@]}"; do
         d="crates/$c"
-        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
             | sed 's/.*"\([^"]*\)".*/\1/')
         bin_name="$c$exe_ext"
         src_bin="$abs_workspace/$profile_dir/$bin_name"
