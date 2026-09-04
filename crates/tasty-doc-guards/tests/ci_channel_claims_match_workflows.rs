@@ -190,6 +190,32 @@ const AUTOMATIC_CHANNEL_MARKERS: &[&str] = &[
     "crossplatform-check",
 ];
 
+/// 그 서술이 **자동 실행을 적극적으로 주장**하는가 — 부재 표지의 면제를 무효로 만드는 축.
+///
+/// [`AUTOMATIC_CHANNEL_MARKERS`] 와 목록이 겹치지만 같지 않다. 저기엔 `--lib --bins` ·
+/// `crossplatform-check` 같은 **참조**가 들어 있는데, 잡이나 조합을 가리키는 것은 주장이
+/// 아니다 — "자동 채널 없음. 그건 `crossplatform-check` 의 잡이 배선했다" 는 정확한 서술이고
+/// 참조 때문에 모순이 되지 않는다. 이 축은 **서술어**만 표지로 삼는다.
+const AFFIRMATIVE_RUN_MARKERS: &[&str] = &["자동으로 돈다", "자동으로 돌린다", "✅ 자동"];
+
+/// 같은 서술의 부재 표지가 **면제로 성립하는가.**
+///
+/// 부재 표지가 서술 안에 있기만 하면 면제하던 형태에는 구멍이 있었다. 한 서술이 자동 실행과
+/// 부재를 **동시에** 말해도 면제가 성립했다. 표 행은 한 서술이므로 범위 판정은 정확했고,
+/// 틀린 것은 **범위 안의 모순을 준수로 읽은** 쪽이다 — 그래서 범위를 더 좁히는 것(글자 창 →
+/// 서술)으로는 안 닫힌다. 가드가 초록인데 문장이 거짓인 형태다.
+/// 재현형은 [`a_scope_that_asserts_both_automatic_and_absent_is_not_exempt`] 에 있다.
+///
+/// 면제와 검출의 부담이 다르다는 것이 이 판정의 근거다. **면제는 모호하면 안 된다** —
+/// 어느 쪽이 그 주장을 한정하는지 사람이 못 가르는 서술은 면제받을 자격이 없고, 갈라 쓰면
+/// 된다. 반대로 [`weak_absence_offsets`] 의 **출발점** 자격은 그대로 둔다: 긍정 표지가 함께
+/// 있어도 그 자리가 부재를 말한 것은 여전히 참이라, 출발점을 좁히면 역방향 검사에 거짓
+/// 음성만 는다.
+fn absence_exempts(scope: &str) -> bool {
+    ABSENCE_MARKERS.iter().any(|m| scope.contains(m))
+        && !AFFIRMATIVE_RUN_MARKERS.iter().any(|m| scope.contains(m))
+}
+
 /// lib 유닛 테스트 이름 추출의 하한 — 추출이 깨지면 역방향 검사가 통째로 잠잠해진다.
 const MIN_LIB_TESTS: usize = 100;
 
@@ -261,8 +287,9 @@ fn claim_offsets(text: &str, path: &str) -> Vec<usize> {
         if !CI_MARKERS.iter().any(|m| scope.contains(m)) {
             continue;
         }
-        // 같은 서술이 부재를 함께 말하면 정당하다.
-        if ABSENCE_MARKERS.iter().any(|m| scope.contains(m)) {
+        // 같은 서술이 부재를 함께 말하면 정당하다 — 다만 그 서술이 자동 실행도 함께
+        // 주장하면 모순이라 면제되지 않는다.
+        if absence_exempts(scope) {
             continue;
         }
         found.push(at);
@@ -1155,7 +1182,7 @@ fn enforcement_violations(
         if !ENFORCE_MARKERS.iter().any(|m| scope.contains(m)) {
             continue;
         }
-        if ABSENCE_MARKERS.iter().any(|m| scope.contains(m)) {
+        if absence_exempts(scope) {
             continue;
         }
         // 실행이 아니라 컴파일을 주장하는 문장은 참이다 — 자동 잡의 `--all-targets`
@@ -1567,6 +1594,56 @@ fn a_code_literal_is_not_a_claim() {
     );
     let (found, _) = enforcement_violations(&text, "src/some_module.rs", &no_named_tests());
     assert!(found.is_empty(), "코드 리터럴을 서술로 읽었다");
+}
+
+#[test]
+fn a_scope_that_asserts_both_automatic_and_absent_is_not_exempt() {
+    // 실측 뮤테이션의 형태다 — 한 표 행이 "자동으로 돌린다" 와 "workflow_dispatch 전용"
+    // 을 동시에 말한다. 범위는 정확한데(표 행은 한 서술) 그 안이 모순이라, 범위를 좁히는
+    // 것으로는 안 닫힌다.
+    let contradiction = "| 테스트 | `cargo test --workspace --locked` | 이 조합은 CI 가 자동으로 돌린다 — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다 |\n";
+    assert_eq!(
+        claim_offsets(contradiction, "docs/x.md").len(),
+        1,
+        "한 서술 안의 모순을 준수로 읽었다"
+    );
+
+    // 대조군: 같은 행에서 긍정 서술어만 빼면 정확한 서술이 되고, 그것은 면제된다.
+    let precise = "| 테스트 | `cargo test --workspace --locked` | 이 조합 그대로는 자동 채널 없음 — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다 |\n";
+    assert!(
+        claim_offsets(precise, "docs/x.md").is_empty(),
+        "정확히 쓴 행을 위반으로 짚었다"
+    );
+}
+
+#[test]
+fn a_reference_to_an_automatic_job_is_not_an_assertion_that_it_runs() {
+    // 면제를 무효로 만드는 것은 **서술어**지 참조가 아니다. 잡 이름이나 조합을 가리키는
+    // 것만으로 모순이 되면, "자동 채널 없음. 그건 `crossplatform-check` 의 잡이 배선했다"
+    // 처럼 정확히 쓴 서술이 통째로 위반이 된다.
+    let referring = "| lint | `cargo test --workspace --locked` | 자동 채널 없음 — `crossplatform-check` 의 Windows 잡이 `--lib --bins` 를 배선했다. `test.yml` 참조 |\n";
+    assert!(
+        claim_offsets(referring, "docs/x.md").is_empty(),
+        "참조를 자동 실행 주장으로 읽었다"
+    );
+}
+
+#[test]
+fn the_contradiction_rule_applies_to_the_enforcement_axis_too() {
+    // 같은 헬퍼가 두 자리에서 면제를 준다. 한쪽만 고치면 절반이다.
+    let contradiction = format!(
+        "`tests/b_guard.rs` 를 {} — 자동으로 돌린다. 그래도 그 잡은 수동 전용이다.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&contradiction, "docs/x.md", &no_named_tests());
+    assert_eq!(found.len(), 1, "집행 축에서 모순이 면제로 작동했다");
+
+    let precise = format!(
+        "`tests/b_guard.rs` 를 {} — 다만 그 잡은 수동 전용이다.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&precise, "docs/x.md", &no_named_tests());
+    assert!(found.is_empty(), "정확히 쓴 서술을 위반으로 짚었다");
 }
 
 #[test]
