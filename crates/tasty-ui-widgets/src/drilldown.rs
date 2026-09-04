@@ -186,7 +186,7 @@ impl<'a> DrillDown<'a> {
             &mut left_ui,
             theme,
             &|ui, irect, color| {
-                paint_chevron_left(ui, irect.center(), color);
+                paint_chevron_left(ui, theme, irect.center(), color);
             },
         );
         if !self.back_label.is_empty() {
@@ -223,15 +223,17 @@ impl<'a> DrillDown<'a> {
 }
 
 /// back 글리프(‹) — painter 폴리라인 (tree_row chevron 관례).
-fn paint_chevron_left(ui: &egui::Ui, center: egui::Pos2, color: egui::Color32) {
+fn paint_chevron_left(ui: &egui::Ui, theme: &Theme, center: egui::Pos2, color: egui::Color32) {
     let s = 3.5;
     let pts = vec![
         egui::pos2(center.x + s * 0.6, center.y - s),
         egui::pos2(center.x - s * 0.6, center.y),
         egui::pos2(center.x + s * 0.6, center.y + s),
     ];
-    ui.painter()
-        .add(egui::Shape::line(pts, egui::Stroke::new(1.5, color)));
+    ui.painter().add(egui::Shape::line(
+        pts,
+        egui::Stroke::new(theme.icon_stroke_width.value(), color),
+    ));
 }
 
 /// back bar 밴드 높이 — `max(backbar-height(36), ← 버튼 + 상하 패딩)`.

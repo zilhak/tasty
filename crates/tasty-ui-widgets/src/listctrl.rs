@@ -279,6 +279,7 @@ impl<'a> ListCtrl<'a> {
             let glyph = theme.icon_glyph_size_sm.value();
             paint_chevron_right(
                 ui,
+                theme,
                 egui::pos2(right - glyph * 0.5, rect.center().y),
                 theme.listctrl_chevron_fg().to_egui(),
             );
@@ -353,15 +354,17 @@ fn truncated_galley(
 }
 
 /// drill-in chevron(›) — tree_row 관례대로 painter 폴리라인으로 직접 그린다.
-fn paint_chevron_right(ui: &egui::Ui, center: egui::Pos2, color: egui::Color32) {
+fn paint_chevron_right(ui: &egui::Ui, theme: &Theme, center: egui::Pos2, color: egui::Color32) {
     let s = 3.0;
     let pts = vec![
         egui::pos2(center.x - s * 0.6, center.y - s),
         egui::pos2(center.x + s * 0.6, center.y),
         egui::pos2(center.x - s * 0.6, center.y + s),
     ];
-    ui.painter()
-        .add(egui::Shape::line(pts, egui::Stroke::new(1.5, color)));
+    ui.painter().add(egui::Shape::line(
+        pts,
+        egui::Stroke::new(theme.icon_stroke_width.value(), color),
+    ));
 }
 
 /// 행 높이 — `max(row-min-height, label + (1px + desc) + 상하 패딩)`.

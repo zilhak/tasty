@@ -9,6 +9,10 @@ use tasty_type_appearance::theme::Theme;
 /// 체크마크 글리프 영역(box 내부). 대응 checkbox component 토큰 없음 → Rust-only.
 const CHECK_GLYPH: f32 = 12.0;
 
+/// 체크마크 꺾은선 굵기. 같은 이유로 대응 토큰 없음 → Rust-only. `icon_stroke_width`(1.5)
+/// 는 popup 타이틀바의 전사 글리프 전용이라(theme.md "painter 전사 글리프") 여기 쓰지 않는다.
+const CHECK_STROKE: f32 = 2.0;
+
 /// `checkbox` 가 라벨을 자르지 않고 그리는 데 필요한 폭 — 박스 + gap + 라벨.
 ///
 /// 체크박스 행을 담는 컨테이너가 **자기 폭을 먼저 정해야** 할 때 쓴다(예: MultiSelect
@@ -100,7 +104,7 @@ pub fn checkbox(
         // 체크마크 — box 중앙 12px 영역에 꺾은선 2 segment.
         let o = box_rect.center() - egui::vec2(CHECK_GLYPH, CHECK_GLYPH) * 0.5;
         let p = |fx: f32, fy: f32| o + egui::vec2(CHECK_GLYPH * fx, CHECK_GLYPH * fy);
-        let stroke = egui::Stroke::new(2.0, dim(theme.checkbox_check_fg().to_egui()));
+        let stroke = egui::Stroke::new(CHECK_STROKE, dim(theme.checkbox_check_fg().to_egui()));
         ui.painter()
             .line_segment([p(0.22, 0.55), p(0.42, 0.74)], stroke);
         ui.painter()
