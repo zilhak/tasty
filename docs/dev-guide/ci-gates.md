@@ -15,8 +15,8 @@
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
 | headless 컴파일 · 단위테스트 · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --lib --bins --no-default-features --locked` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
-| 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 |
-| 공급망 | `cargo deny check` | `supply-chain-check.yml` | **PR 전용** · 매주 월 09:00 UTC · 수동 |
+| 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 → **실효 없음** |
+| 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
 **포맷 잡만 PR 을 함께 받는 이유**: `format-check.yml` 은 공용 `ubuntu-latest` 에서 돌아
 러너 줄서기가 없다. 나머지 자동 잡은 self-hosted 러너를 쓰고, 특히 Linux X64 는 **한 대**를
@@ -28,6 +28,47 @@
 두 워크플로**(`complexity-check` · `supply-chain-check`)는 사실상 수동/주간 채널만
 살아 있다고 보는 편이 맞다 — `supply-chain-check` 는 주간 cron 이 있어 자동으로
 돌지만, `complexity-check` 는 PR 이 없으면 영영 돌지 않는다.
+
+## "안 돈다" 를 쓰기 전에 두 가지를 갈라라
+
+**① 실행인가 컴파일인가.** 자동 잡의 clippy 는 `--all-targets` 라 `tests/*.rs` 를
+**컴파일한다.** 그러므로 통합 테스트에 대해 두 문장이 **모두 거짓**이다 — "CI 가 이
+테스트를 돌린다"(실행 채널이 없다) 와 "CI 가 컴파일조차 안 본다"(컴파일은 본다).
+정확한 서술은 **"컴파일은 자동으로 검사되고, 실행은 수동"** 이다. 한쪽 거짓을 고치다
+반대쪽 거짓을 심는 것이 이 축에서 가장 흔한 실패다.
+
+**② 강제 수단이 워크플로 안에 있는가.** "워크플로가 안 돌린다" 는 "아무도 안 막는다" 가
+**아니다.** clippy `deny`·`#[deny]` 어트리뷰트·pre-commit 훅·타입 시스템은 워크플로 밖에서
+막는다. 실례로 복잡도 게이트는 축이 둘인데 채널이 갈린다.
+
+| 복잡도 게이트의 축 | 강제 수단 | 실효 자동성 |
+|---|---|---|
+| 함수 cognitive | clippy `cognitive_complexity = "deny"` | **있다** — 자동 잡의 컴파일 단계에서 막힌다 |
+| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **없다** — PR 전용인데 이 저장소는 PR 을 열지 않는다 |
+
+파일 SLOC 축은 지금 **아무 자동 채널도 없다.** 트리거를 고칠지는 러너 점유가 걸린 별개
+결정이라 이 문서는 상태만 기록한다.
+
+## 테스트는 **어디 있느냐**로 채널이 갈린다
+
+위 표에서 가장 자주 오해되는 줄이다. 자동 잡이 돌리는 테스트 명령은 전부 좁혀져 있다
+(`--lib --bins`, 또는 `--test <이름>` 으로 이름 지목). 그래서 **같은 주제의 두 가드라도
+파일이 어디 있느냐에 따라 채널이 정반대**가 된다.
+
+| 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
+|---|---|---|---|
+| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — `--lib --bins` 가 **두 조합**(기본 / `--no-default-features`)에서 돈다 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
+| 통합 테스트 (`tests/*.rs`) | **없다** — 전체 스위트는 `workflow_dispatch` 전용 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
+| SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
+| 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
+
+**소스를 런타임에 스캔하는 드리프트 가드에게 "컴파일만 자동" 은 0 이다** — 스캔 로직이
+컴파일돼도 실행되지 않으면 아무것도 보지 않는다. 그래서 `tests/*.rs` 에 있는 가드는
+사람이 기억할 때만 도는 상태다.
+
+**두 방향 모두 틀릴 수 있다.** 통합 테스트에 "CI 가 강제한다" 를 붙이면 사실보다 강하고,
+lib 유닛 테스트에서 그 서술을 지우면 사실보다 약하다. 어느 쪽이든 다음 사람의 판단을
+망친다 — 채널을 서술할 때 "없다" 는 "있다" 만큼 확인이 필요하다.
 
 ## 사람이 돌리는 것 (자동 채널 없음)
 
@@ -52,7 +93,7 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 |---|---|---|
 | pre-commit | `cargo fmt --check` | ✅ `format-check.yml` |
 | pre-commit | mod/use 선언 순서 · `egui::Window` 직접 사용 · `println!`/`dbg!` | ❌ 훅에만 있다 |
-| pre-commit | 주석 없는 `let _ =` (C.6) | 부분 — 전수판 `tests/let_underscore_documented.rs` 가 훅의 상위집합이지만, 그것이 도는 `cargo test --workspace` 에 자동 채널이 없다. **CI 의 clippy 는 이 규칙을 집행하지 않는다** — `let_underscore_must_use` 는 주석을 못 읽어 사유가 달린 정상 코드까지 세는 명부다([error-handling](error-handling.md)) |
+| pre-commit | 주석 없는 `let _ =` (C.6) | 부분 — 전수판 `tests/let_underscore_documented.rs` 가 훅의 상위집합이지만, 통합 테스트라 자동 실행 채널이 없다(컴파일은 자동으로 검사된다). **자동 잡의 clippy 는 `let_underscore_must_use`(warn)로 그 자리를 표면화하지만 이 규칙을 집행하지는 않는다** — 주석을 못 읽어 사유가 달린 정상 코드까지 세는 명부이고, `-D warnings` 가 없어 빌드도 막지 않는다([error-handling](error-handling.md)) |
 | pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다 |
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
@@ -69,11 +110,30 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 열여덟 자리에 쌓여 있었다. 컴파일도 통과하고, 틀렸다는 사실은 워크플로 파일을 직접
 열어야만 보인다 — 그래서 리뷰로는 걸러지지 않는다.
 
-`tests/ci_channel_claims_match_workflows.rs` 가 그 형태를 막는다. 문서를 문서로 검사하지
-않고 **워크플로에서 자동 트리거를 가진 잡을 읽어** 전체 스위트가 그 안에 있는지 보고,
-없으면 그것을 강제 장치로 서술한 자리를 전부 짚는다. 부재를 함께 적은 문장
-(`수동 전용` 등)은 정당한 서술로 통과시키므로 등록 절차가 없다. 전체 스위트가 자동
-채널에 올라가는 날 이 가드는 스스로 잠잠해진다 — 그때 문서를 손으로 다시 훑지 않아도 된다.
+`tests/ci_channel_claims_match_workflows.rs` 가 그 형태를 막는다(이 가드 자신도 통합
+테스트라 자동 채널이 없다 — 위 규칙이 자기에게도 그대로 적용된다). 문서를 문서로
+검사하지 않고 **워크플로에서 자동 트리거를 가진 잡을 읽는다.** 세 축이 있다.
+
+- **명령을 인용한 형태** — 자동 잡이 전체 스위트를 돌리는지 보고, 돌리지 않으면 그것을
+  강제 장치로 서술한 자리를 전부 짚는다.
+- **명령을 적지 않는 형태** — 자동 잡이 `--test` 로 **이름을 지목한** 통합 테스트 목록을
+  워크플로에서 읽어, 그 밖의 `tests/*.rs` 를 집행 장치로 부르는 서술을 짚는다. 위
+  "테스트는 어디 있느냐로 채널이 갈린다" 의 구분이 이 축이다 — **lib 유닛 테스트에 붙은
+  같은 서술은 참이므로 건드리지 않는다.**
+
+부재를 함께 적은 문장(`수동 전용` 등)은 정당한 서술로 통과시키므로 등록 절차가 없다.
+목록을 가드 안에 복사해 두지 않고 워크플로에서 런타임에 읽으므로, 전체 스위트가 자동
+채널에 올라가거나 `--test` 열거가 바뀌는 날 이 가드는 스스로 따라간다 — 그때 문서를
+손으로 다시 훑지 않아도 된다.
+
+## 파생 문서는 채널을 다시 쓰지 않는다
+
+이번 스윕에서 실제로 어긋나 있던 것은 **이 문서가 아니라 채널을 따로 서술한 파생
+문서들**이었다(복잡도 게이트의 두 축을 한 문장에 묶어 "자동 차단" 이라 적은 자리들).
+정본 하나를 고쳐도 파생이 자기 문장을 들고 있으면 다시 어긋난다.
+
+그래서 규칙은 **다시 서술하지 말고 여기를 링크한다** 이다. 서술이 꼭 필요하면 그 문장이
+**실행/컴파일**과 **축 단위 실효성** 둘 다에서 이 문서와 같은 말을 하는지 확인한다.
 
 ## 관련
 
