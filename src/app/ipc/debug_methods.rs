@@ -210,9 +210,10 @@ impl App {
 /// `debug.fullscreen.*` — 전체화면 무대의 에이전트 진입/조회 표면.
 ///
 /// 무대는 창 하나에 하나(`docs/design/systems/fullscreen-stage.md`)라 모든 메서드가
-/// 창을 대상으로 한다. `window_id` 해석은 `ui.screenshot` 과 동형 —
-/// 지정하면 그 창, 미지정이고 창이 하나면 그 창, 여럿이면 에러다. 포커스된 창으로
-/// 조용히 폴백하지 않는다(`docs/design/policies/focus.md`).
+/// 창을 대상으로 한다. `window_id` 는 지정하면 그 창, 미지정이고 main 창이 하나면 그
+/// 창, 여럿이면 에러다. 포커스된 창으로 조용히 폴백하지 않는다
+/// (`docs/design/policies/focus.md`). 대상은 항상 main 창이다 — 상세는
+/// [`App::pick_debug_window`].
 #[cfg(feature = "gui")]
 impl App {
     fn ipc_debug_fullscreen(
@@ -380,11 +381,16 @@ impl App {
         )
     }
 
-    /// `window_id` 파라미터를 실제 창으로 해석한다 (`ui.screenshot` 과 동형).
+    /// `window_id` 파라미터를 실제 창으로 해석한다.
     ///
     /// 실패 시 `(JSON-RPC code, message)`. 미지정 + 창 여럿은 에러이지 폴백이 아니다 —
     /// "지금 보고 있는 창" 이라는 개념에 기대면 에이전트 명령이 사용자 포커스에
     /// 의존하게 된다.
+    ///
+    /// `ui.screenshot` 과 달리 **명시한 id 도 main 창만** 받는다. 무대는 main 창에만
+    /// 존재하므로(`docs/design/systems/fullscreen-stage.md`) 모달 id 를 받을 자리가
+    /// 없다 — 캡처(읽기)와 달리 이건 무대를 여닫는 행동이라, 대상 집합을 넓히면
+    /// 사용자 조작 영역인 모달까지 에이전트 행동 대상이 된다.
     fn pick_debug_window(
         &self,
         params: &serde_json::Value,

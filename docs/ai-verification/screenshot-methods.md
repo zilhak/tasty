@@ -25,8 +25,10 @@
     → `GpuState::capture_surface_to_png`). 소유 창은 surface_id 로 자동 해소(창별 CoreState 순회).
     **터미널만 지원**(v1). egui 패널(explorer/markdown/image/html)·plugin·webview surface 는
     범위 밖 — 명확한 에러 반환.
-  - **window 캡처** `--window <id>`(없고 창이 1개면 그 창; 다중이면 에러 — focus 기본값 금지)
-    — 그 창의 전체 프레임(chrome 포함)을 swapchain readback 으로 캡처(`pending_screenshot`).
+  - **window 캡처** `--window <id>`(없고 main 창이 1개면 그 창; 그 외는 에러 — focus 기본값
+    금지) — 그 창의 전체 프레임(chrome 포함)을 swapchain readback 으로 캡처
+    (`pending_screenshot`). 명시한 id 는 **설정·플러그인·종료 확인 모달과 preset 창**도
+    가리킬 수 있다(아래 "무엇을 캡처할 수 있는가").
 - 응답 `{ "path": .., ("surface_id"|"window_id"): .., "scheduled": true }` — **다음 프레임에
   캡처 예약**(비동기). 호출 직후 잠깐 기다렸다 파일을 읽는다. 대상 창은 자동으로 redraw 를
   요청받아(비-focus 창도) 캡처가 발화한다.
@@ -37,6 +39,48 @@ tasty screenshot --path /abs/out.png --surface 5
 # 창 전체 프레임 (창 여러 개면 --window 필수; list windows 로 ID 조회)
 tasty screenshot --path /abs/win.png --window 2
 ```
+
+### 무엇을 캡처할 수 있는가 (경계)
+
+**명시한 `--window <id>` 는 모든 창을 가리킬 수 있다** — main 창뿐 아니라 설정 · 플러그인 ·
+종료 확인 모달과 preset 창까지. 별도 winit 창으로 뜨는 UI 를 자동 시각 검증할 수 있어야
+디자인 정합 확인이 사람 눈에 의존하지 않는다. X11 화면 캡처는 GPU 창에서 검게 나오므로
+대안이 되지 못한다.
+
+경계는 **창의 종류가 아니라 두 가지 다른 축**에 있다.
+
+1. **명시 지정만 넓어진다.** `--window` 를 생략했을 때의 자동 선택은 종전대로 **main 창이
+   정확히 하나일 때뿐**이고, 모달로 폴백하지도 포커스를 보지도 않는다(불가침 원칙 3).
+   자동 선택이 "사용자가 무엇을 열어두었는가" 에 의존하기 시작하면 같은 명령이 실행할
+   때마다 다른 것을 찍는다.
+2. **캡처는 읽기이지 행동이 아니다.** `window.list` 와 `window.close` 는 종전대로 main 창만
+   다룬다 — 모달 · preset 은 사용자 조작 영역이라 에이전트 **행동** 대상이 아니다. 캡처가
+   가능해져도 그 집합은 넓어지지 않는다.
+
+원칙 1 은 에이전트 행동의 부수효과가 **사용자 상태**(포커스 / 닫은 항목 히스토리 / 선택 ·
+스크롤 · 커서)에 닿는 것을 금지한다. 캡처는 이미 그려진 프레임의 readback + 리페인트
+요청이고 리페인트는 멱등이라 그중 무엇도 바꾸지 않는다. 그리고 `ui.screenshot` 은
+`local_only`(plugin 미노출)라 호출자는 이미 사용자 권한으로 `config.toml`(설정 창이 그리는
+내용 전부)과 PTY 를 읽을 수 있다 — 모달 캡처를 막아도 새로 감춰지는 정보가 없고, 자동
+검증만 잃는다.
+
+### 모달 창의 ID 를 얻는 법
+
+`list windows`(`window.list`)는 위 2 번 때문에 **main 창만** 열거한다. 모달 id 는 OS 창
+목록에서 얻는다 — X11 에서 winit `WindowId` 는 **X11 window id 그 자체**라 그대로 넘길 수
+있다(다른 플랫폼은 대응이 다르므로 이 방법은 X11 한정).
+
+```bash
+# 모달을 띄우고(debug 빌드 전용) X11 창 목록에서 id 를 고른다
+tasty debug settings open --tab general
+for w in $(xdotool search --pid "$TASTY_PID"); do
+  echo "$w $(xdotool getwindowname "$w" 2>/dev/null)"
+done
+# xdotool 은 입력 전용 더미 창까지 뱉으므로 **창 이름으로 골라야 한다**(빈 이름 = 더미).
+tasty screenshot --path /abs/settings.png --window <위에서 고른 id>
+```
+
+존재하지 않는 id 는 `Window id <id> not found` 로 거절된다.
 
 CLI 없이 raw JSON-RPC(개행 구분)를 포트로 직접 보낼 수도 있다. 포트 파일은 debug 빌드면
 **debug 루트** `~/.tasty-debug/tasty.port`, release 면 `~/.tasty/tasty.port` 다(루트 분리 —

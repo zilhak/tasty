@@ -153,7 +153,7 @@ tasty read queue --surface 42 --clear    # empty everything
 | Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
 | Read the screen | `tasty read screen --surface ID --lines N` |
 | Notification | `tasty notify "body" --title "title"` |
-| Screenshot | `tasty screenshot --path out.png [--surface ID]` |
+| Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
 | Help | `tasty --help`, `tasty <command> --help`, `tasty -a -h` (full tree) |
 
 ## Troubleshooting
@@ -161,3 +161,4 @@ tasty read queue --surface 42 --clear    # empty everything
 - **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
 - **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
+- **Not sure which window `screenshot` captures** — `--window` is required when more than one window is open. An explicit `--window` may also name a window that `list windows` does not show, such as the settings window; omitting it works only when a single window is open (it never picks whichever window happens to be focused).

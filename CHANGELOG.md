@@ -36,6 +36,7 @@
 - `~/.tasty/lang/<code>.toml` 단일 파일은 이제 **내장 코드(`en`/`ko`/`ja`)의 오버라이드 전용**이다 — 내장이 아닌 코드의 단일 파일은 팩으로 인정하지 않고 `tracing::warn!` 후 무시한다(`<code>/pack.toml` 로 옮겨야 한다).
 - `general.language` 가 팩 없는/무효한 코드를 가리키면 영어로 폴백하고 부팅 후 경고 토스트 1회(요청 코드 + 기대 경로)를 띄운다 — headless/CLI 는 `tracing::warn!` 한 줄. 설정값은 덮어쓰지 않으며, `current_language()` 와 plugin 에 전달되는 `TASTY_LOCALE` 은 실제 적용 언어(`en`)를 싣는다. `tasty_i18n::init` 이 `LoadReport` 를 돌려준다(이전에는 반환값 없음).
 - 설정 콤보에서 현재 설정값이 목록에 없으면(팩 삭제 등) `<code> (not found)` 행으로 유지한다 — 콤보를 열고 닫아도 값이 바뀌지 않는다.
+- `ui.screenshot`(CLI `tasty screenshot`) 의 `--window <id>` 가 **모달·preset 창도** 가리킬 수 있다 — 설정·플러그인·종료 확인 창처럼 별도 창으로 뜨는 UI 를 자동 시각 검증할 수 있다(이전에는 `Target window is not a main view` 로 거절). 넓어진 것은 **명시 지정뿐**이다: `--window` 를 생략했을 때의 자동 선택은 종전대로 main 창이 정확히 하나일 때뿐이고 포커스로 폴백하지 않으며, `window.list` · `window.close` 가 다루는 **행동** 대상 집합도 종전대로 main 창만이다. main 창이 하나도 없을 때의 에러 문구가 "Multiple windows open" 에서 "No main window open" 으로 갈라졌다. 모달 id 는 `window.list` 에 없으므로 OS 창 목록에서 얻는다(X11 은 winit id = X11 window id).
 
 ### Fixed
 

@@ -405,6 +405,14 @@ impl GpuState {
             self.egui_renderer.free_texture(id);
         }
 
+        // `ui.screenshot`(window) 이 모달·preset 창을 대상으로 삼을 수 있으므로 이
+        // 경로에도 present 직전 readback 이 있어야 한다 — 없으면 요청이 큐에 남아
+        // 영구 대기한다. main 창 경로(`Gpu::render` / `render_fullscreen_stage`)의
+        // 같은 지점과 동형이다.
+        if let Some(path) = self.pending_screenshot.take() {
+            self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
+        }
+
         output.present();
     }
 }

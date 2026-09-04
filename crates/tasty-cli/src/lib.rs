@@ -286,6 +286,11 @@ pub enum Commands {
     /// focus or the visible frame. Otherwise captures a whole window: `--window`
     /// selects it by ID (see `list windows`); if omitted and only one window is
     /// open, that one is used.
+    ///
+    /// An explicit `--window` may name a window that `list windows` does not show,
+    /// such as the settings or plugins modal. Only the automatic (no `--window`)
+    /// choice is limited to main windows, and it never falls back to whichever
+    /// window happens to be focused.
     Screenshot {
         /// Output PNG path.
         #[arg(long)]
@@ -293,7 +298,8 @@ pub enum Commands {
         /// Terminal surface ID to capture (offscreen; focus-independent).
         #[arg(long)]
         surface: Option<u32>,
-        /// Window ID to capture (whole tasty frame). Required when multiple windows are open.
+        /// Window ID to capture (whole tasty frame). Required when multiple windows are
+        /// open. May name a modal window that `list windows` does not enumerate.
         #[arg(long)]
         window: Option<u64>,
     },

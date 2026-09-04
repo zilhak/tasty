@@ -302,7 +302,9 @@ impl App {
     ///
     /// params: { path (필수), surface_id? (u32), window_id? (u64) }
     /// - surface_id → 해당 터미널 surface 를 오프스크린 렌더로 캡처(가시성/포커스 무관).
-    /// - 아니면 window 프레임 캡처: window_id 지정, 없으면 유일 window, 다중이면 에러.
+    /// - 아니면 window 프레임 캡처: window_id 를 명시하면 **모달·preset 창을 포함한 모든
+    ///   창**, 미지정이면 main 창이 정확히 하나일 때만, 그 외는 에러. 두 갈래가 비대칭인
+    ///   근거는 [`resolve_screenshot_window`] 문서.
     fn ipc_handle_ui_screenshot(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
@@ -333,51 +335,45 @@ impl App {
         }
 
         // ── window(tasty 자체 화면) 캡처 (focus 독립) ──
-        let mains: Vec<_> = self
-            .view
-            .views
+        let ids: Vec<_> = self.view.views.keys().copied().collect();
+        let kinds: Vec<(u64, bool)> = ids
             .iter()
-            .filter(|(_, w)| w.as_main().is_some())
-            .map(|(id, _)| *id)
+            .map(|id| {
+                let is_main = self
+                    .view
+                    .views
+                    .get(id)
+                    .is_some_and(|w| w.as_main().is_some());
+                (u64::from(*id), is_main)
+            })
             .collect();
-        let target = match window_id {
-            Some(wid) => mains.iter().copied().find(|w| u64::from(*w) == wid),
-            None if mains.len() == 1 => mains.first().copied(),
-            None => None,
-        };
-        let response = match target {
-            Some(tid) => match self.view.views.get_mut(&tid).and_then(|w| w.as_main_mut()) {
-                Some(m) => {
-                    m.base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
-                    m.base.dirty = true;
-                    m.base.winit.request_redraw();
-                    host_ipc::protocol::JsonRpcResponse::success(
+        let response = match resolve_screenshot_window(&kinds, window_id) {
+            Ok(pos) => {
+                let tid = ids[pos];
+                match self.view.views.get_mut(&tid) {
+                    Some(w) => {
+                        let base = w.base_mut();
+                        base.gpu.pending_screenshot = Some(std::path::PathBuf::from(&path));
+                        base.dirty = true;
+                        base.winit.request_redraw();
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            response_id,
+                            serde_json::json!({
+                                "path": path,
+                                "window_id": u64::from(tid),
+                                "scheduled": true,
+                            }),
+                        )
+                    }
+                    // `ids` 는 바로 위에서 같은 맵에서 뽑았으므로 도달하지 않는다.
+                    None => host_ipc::protocol::JsonRpcResponse::error(
                         response_id,
-                        serde_json::json!({
-                            "path": path,
-                            "window_id": u64::from(tid),
-                            "scheduled": true,
-                        }),
-                    )
+                        -32603,
+                        "Target window disappeared while resolving",
+                    ),
                 }
-                None => host_ipc::protocol::JsonRpcResponse::error(
-                    response_id,
-                    -32602,
-                    "Target window is not a main view",
-                ),
-            },
-            None => match window_id {
-                Some(wid) => host_ipc::protocol::JsonRpcResponse::error(
-                    response_id,
-                    -32602,
-                    format!("Window id {wid} not found"),
-                ),
-                None => host_ipc::protocol::JsonRpcResponse::error(
-                    response_id,
-                    -32000,
-                    "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.",
-                ),
-            },
+            }
+            Err((code, msg)) => host_ipc::protocol::JsonRpcResponse::error(response_id, code, msg),
         };
         send_response(&cmd.response_tx, response);
         IpcStep::Handled
@@ -1240,4 +1236,118 @@ fn remote_attach_create_worker(
         ),
     );
     send_attach_outcome(tx, proxy, created.id, Ok((tunnel, port)));
+}
+
+/// `ui.screenshot` 의 대상 창 결정.
+///
+/// `windows` 는 `(window id, main view 인가)` 를 창 하나당 하나씩 담는다. 성공하면
+/// 그 슬라이스의 **인덱스**를 돌려준다(호출자가 같은 순서의 `WindowId` 배열에서
+/// 되찾을 수 있게 — u64 로 다시 찾는 왕복을 없앤다). 실패는 `(JSON-RPC code, message)`.
+///
+/// 두 갈래가 의도적으로 비대칭이다.
+///
+/// - **`window_id` 를 명시하면 모든 창이 대상이다** — 설정·플러그인·종료 확인 모달과
+///   preset 창을 포함한다. 캡처는 이미 그려진 프레임의 readback 이라 사용자 상태
+///   (포커스 / 선택 / 스크롤 / 커서)를 바꾸지 않으므로 원칙 1 의 금지 대상이 아니고,
+///   `ui.screenshot` 은 `local_only`(plugin 미노출)라 호출자는 이미 사용자 권한으로
+///   `config.toml` 과 PTY 를 읽을 수 있다. 근거 전체는
+///   `docs/ai-verification/screenshot-methods.md` "무엇을 캡처할 수 있는가".
+/// - **미지정 시의 자동 선택은 main 창이 정확히 하나일 때뿐이다** — 모달로는 절대
+///   폴백하지 않고 포커스도 보지 않는다(원칙 3). "지금 보고 있는 창" 에 기대는 순간
+///   같은 명령이 사용자 상태에 따라 다른 것을 캡처한다.
+///
+/// 캡처가 **행동** 대상 집합을 넓히는 것은 아니다 — `window.list` 와 `window.close` 는
+/// 종전대로 main 창만 다룬다(모달·preset 은 사용자 조작 영역).
+fn resolve_screenshot_window(
+    windows: &[(u64, bool)],
+    requested: Option<u64>,
+) -> Result<usize, (i32, String)> {
+    match requested {
+        Some(wid) => windows
+            .iter()
+            .position(|(id, _)| *id == wid)
+            .ok_or_else(|| (-32602, format!("Window id {wid} not found"))),
+        None => {
+            let mains: Vec<usize> = windows
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, is_main))| *is_main)
+                .map(|(i, _)| i)
+                .collect();
+            match mains.len() {
+                1 => Ok(mains[0]),
+                0 => Err((-32000, "No main window open; specify 'window_id'".to_string())),
+                _ => Err((
+                    -32000,
+                    "Multiple windows open; specify 'window_id' (focus-independent). Use 'window.list' to enumerate.".to_string(),
+                )),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod screenshot_target_tests {
+    use super::resolve_screenshot_window;
+
+    /// main 2 개(10, 11) + 설정 모달(20) + 종료 확인 모달(21).
+    const MIXED: &[(u64, bool)] = &[(10, true), (20, false), (11, true), (21, false)];
+    /// main 1 개(10) + 설정 모달(20).
+    const ONE_MAIN: &[(u64, bool)] = &[(10, true), (20, false)];
+
+    #[test]
+    fn an_explicit_id_can_name_a_modal_window() {
+        // 이것이 이 함수의 존재 이유다 — 되돌리면(모달을 후보에서 빼면) 여기서 깨진다.
+        assert_eq!(resolve_screenshot_window(MIXED, Some(20)), Ok(1));
+        assert_eq!(resolve_screenshot_window(MIXED, Some(21)), Ok(3));
+        assert_eq!(resolve_screenshot_window(ONE_MAIN, Some(20)), Ok(1));
+    }
+
+    #[test]
+    fn an_explicit_id_still_names_a_main_window() {
+        assert_eq!(resolve_screenshot_window(MIXED, Some(10)), Ok(0));
+        assert_eq!(resolve_screenshot_window(MIXED, Some(11)), Ok(2));
+    }
+
+    #[test]
+    fn an_unknown_id_is_a_parameter_error_naming_the_id() {
+        let (code, msg) = resolve_screenshot_window(MIXED, Some(999)).unwrap_err();
+        assert_eq!(code, -32602);
+        assert!(
+            msg.contains("999"),
+            "메시지가 문제의 id 를 담아야 한다: {msg}"
+        );
+    }
+
+    #[test]
+    fn without_an_id_a_lone_main_window_is_picked_and_the_modal_is_not() {
+        assert_eq!(resolve_screenshot_window(ONE_MAIN, None), Ok(0));
+    }
+
+    #[test]
+    fn without_an_id_a_modal_is_never_the_automatic_target() {
+        // main 이 없고 모달만 떠 있어도 "그거라도 찍는다" 로 가지 않는다 — 자동 선택이
+        // 사용자가 무엇을 열어뒀는지에 의존하기 시작하면 원칙 3 이 깨진다.
+        let only_modals: &[(u64, bool)] = &[(20, false), (21, false)];
+        let (code, _) = resolve_screenshot_window(only_modals, None).unwrap_err();
+        assert_eq!(code, -32000);
+    }
+
+    #[test]
+    fn without_an_id_multiple_mains_is_an_error_not_a_focus_fallback() {
+        let (code, msg) = resolve_screenshot_window(MIXED, None).unwrap_err();
+        assert_eq!(code, -32000);
+        assert!(
+            msg.contains("window_id"),
+            "무엇을 하라는 것인지 메시지가 말해야 한다: {msg}"
+        );
+    }
+
+    #[test]
+    fn no_window_at_all_is_an_error() {
+        let (code, _) = resolve_screenshot_window(&[], None).unwrap_err();
+        assert_eq!(code, -32000);
+        let (code, _) = resolve_screenshot_window(&[], Some(10)).unwrap_err();
+        assert_eq!(code, -32602);
+    }
 }
