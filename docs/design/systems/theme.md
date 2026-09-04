@@ -193,3 +193,9 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 - settings: `crates/tasty-settings/src/appearance.rs`
 - 부팅: `src/app/window_lifecycle.rs::boot_apply_theme`
 </content>
+
+## 떠 있는 표면의 그림자
+
+떠 있는 표면(popover · 배너 · tooltip · autocomplete 드롭다운 · modifier-hint · tutorial callout)의 lift 그림자는 **`SHADOW_POPOVER` 하나**다(design `--tasty-shadow-popover`, `theme.shadow_popover()`). 새 그림자 값을 만들지 않고 이 토큰을 재사용한다 — `Shadow {}` 를 직접 만드는 코드는 `crates/tasty-type-appearance/src/theme.rs` 의 `ShadowToken::to_egui()` 한 곳뿐이어야 하고, 그 밖의 생성은 `theme.shadow_popover().to_egui()` 로 라우팅한다. 페이드가 필요하면 그 결과의 `color` 에만 opacity 를 곱하고 기하(`offset`/`blur`/`spread`)는 바꾸지 않는다. 이 규칙은 `crates/tasty-type-appearance/src/shadow_policy_guard.rs`(lib 유닛 테스트)가 소스 스캔으로 집행한다.
+
+**모달은 현재 그림자가 없다.** 호스트 모달(`PopupManager`)은 scrim(`th.scrim()`)으로 떠 있음을 표현하고 `Frame::new()` 로 그려 그림자가 없으며, 갤러리 모달 specimen 도 이에 맞춰 그림자를 그리지 않는다. 모달이 그림자를 **가져야 하는지는 아직 결정되지 않았다**(popover 단차 재사용 / 모달 전용 토큰 신설 / 없음 확정 — 셋 중 미정). 이 문서는 "그림자가 없다"는 현재 상태만 기술하며, 결정이 서면 갱신한다. `crates/tasty-egui-theme` 이 `visuals.window_shadow` 를 매핑하지 않아 egui 기본 그림자도 이 정책의 사각지대로 남아 있다.
