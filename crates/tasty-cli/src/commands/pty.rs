@@ -35,9 +35,11 @@ pub enum PtyCommands {
         id: u32,
         /// Last N lines of content (default: full visible screen). Trailing blank
         /// rows are skipped and the shortfall is filled from scrollback, so N means
-        /// "the last N lines actually printed", not "the bottom N grid rows".
-        /// With no scrollback to draw on there is nothing to fill from, and the
-        /// visible screen is the ceiling however large N is.
+        /// "the last N lines actually printed", not "the bottom N grid rows". The
+        /// ceiling is the content, not the grid. On the alternate screen (a
+        /// full-screen TUI) the fill comes from the primary buffer's scrollback and
+        /// arrives with no marker, so a large N can prepend earlier shell output
+        /// above the TUI's own screen.
         #[arg(long)]
         lines: Option<usize>,
         /// Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells.
