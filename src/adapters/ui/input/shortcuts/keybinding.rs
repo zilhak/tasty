@@ -506,7 +506,7 @@ impl MainView {
         if matches_any_binding(&kb.new_window, key, mods) {
             send_app_event(
                 proxy,
-                crate::AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+                crate::AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User, None),
             );
             return true;
         }

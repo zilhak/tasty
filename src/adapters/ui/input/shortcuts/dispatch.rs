@@ -256,7 +256,7 @@ impl MainView {
             "quit_minimize" => send_app_event(proxy, crate::AppEvent::Minimize),
             "new_window" => send_app_event(
                 proxy,
-                crate::AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+                crate::AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User, None),
             ),
             "find" => {
                 // winit 경로는 검색창 비포커스(터미널 포커스) 상태에서만 도달한다.

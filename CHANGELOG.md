@@ -39,6 +39,7 @@
 ### Changed
 
 - (BREAK) `agent.semaphore_*` 응답의 `holders` 가 문자열 배열에서 객체 배열 `{ id, acquired_at?, expires_at? }` 로 바뀌었다. `semaphore-list` 만으로 **누가 언제부터 permit 을 잡고 있는지** 알 수 있다 — 종전에는 홀더 id 뿐이라 "이 홀더가 죽었는가" 를 판정할 근거가 없어 permit 이 묶인 채 대기자가 무한정 막히는 일이 있었다. `acquired_at` 이 없는 홀더는 시각 기록 도입 전에 잡힌 것이다(0 이 아니라 부재로 표현한다). 이미 저장된 구 형식 레코드는 그대로 읽는다.
+- (BREAK) `window.create` / `view.create`(CLI `tasty new window`) 가 즉시 `{"scheduled": true}` 를 돌려주는 fire-and-forget 을 그만두고, **창 생성 성공/실패를 기다렸다가 응답에 싣는다** — 성공은 `{"created": true, "window_id": <u64>}`, 실패는 JSON-RPC 에러(원인 문자열 포함). 이전에는 실패가 요청자에게 전혀 가지 않고 사용자 toast 로만 새어나갔다(요청하지도 않은 일의 실패 통지 — 원칙 1 위반). 그 toast 는 제거됐고, 에이전트 발 실패는 이제 응답 에러로만 간다(사용자 발 menu/tray 실패는 종전대로 InfoModal). `{"scheduled": true}` 를 파싱하던 호출자는 `created`/`window_id` 로 바꿔야 한다(ADR-0122, ADR-0117 갱신).
 - `surface.raw_key` 가 macOS 손쉬운 사용 권한이 없으면 `-32001 permission_denied` 로 거절한다 — 이전에는 `CGEventPost` 가 조용히 무시돼 호출자가 성공 응답을 받고도 아무 일도 일어나지 않았다. 판정은 호출 시점마다 한다(부팅 값 캐시 안 함).
 - claude plugin 이 `memory.read` 권한을 새로 요구하고, stop-gate 서브커맨드에 `--surface` 인자가 생겼다 — 세션 목표(`memory.goal_*`)를 읽어 stop gate 가 그 목표를 향해 계속 진행하기 위함이다. **권한이 늘었으므로 업그레이드 후 plugin 재승인이 한 번 요구된다.**
 - CLI 가 stderr 로 내는 오류·진단 문구, plugin 리포트 출력, host 알림 제목과 OS 메뉴·트레이·Jump List 라벨이 설정 언어(`general.language`)를 따른다 — 이전에는 영어 고정이었다. **stderr 문구를 문자열로 파싱하던 스크립트는 로케일에 따라 결과가 달라진다**(종료 코드와 stdout JSON 은 그대로다).

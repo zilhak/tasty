@@ -8,9 +8,11 @@
 ///
 /// 핵심 원칙 1 은 에이전트 행동의 부수효과가 사용자 상태(포커스)에 닿는 것을 금지한다.
 /// 실패 안내라도 예외가 아니다 — 사용자가 하지 않은 일의 실패 통지 때문에 하던 일의
-/// 포커스를 잃어서는 안 된다. 그래서 `Agent` 는 포커스를 건드리지 않는 toast 로,
-/// `User` 는 방금 그 조작의 결과이므로 모달로 알린다.
-/// 근거: `docs/adr/0117-window-and-modal-creation-failure-policy.md`.
+/// 포커스를 잃어서는 안 된다. 그래서 `User` 는 방금 그 조작의 결과이므로 모달로 알리고,
+/// `Agent` 발 실패는 요청자에게 IPC 응답으로 돌려주며 사용자 화면은 건드리지 않는다
+/// (완료 채널 = [`IpcCompletion`]).
+/// 근거: `docs/adr/0117-window-and-modal-creation-failure-policy.md`,
+/// `docs/adr/0122-winit-scheduled-fallible-ipc-returns-outcome.md`.
 #[cfg(feature = "gui")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WindowRequestOrigin {
@@ -18,6 +20,47 @@ pub(crate) enum WindowRequestOrigin {
     User,
     /// `window.create` / `view.create` IPC — 에이전트가 요청했다.
     Agent,
+}
+
+/// winit 이벤트 루프에 스케줄된 **실패 가능한** IPC op 의 결과를 요청자에게 돌려주는
+/// 완료 채널. IPC 핸들러는 `{"scheduled": true}` 를 즉시 돌려주는 대신 이 채널을
+/// `AppEvent` 에 실어 보내고 `IpcStep::Handled`(응답 defer)로 반환한다 — winit 핸들러가
+/// op 를 실제로 수행한 뒤 성공/실패를 이 채널로 보낸다. 메서드마다 계약이 갈리지 않게
+/// 한 벌로 공유한다. 근거: `docs/adr/0122-winit-scheduled-fallible-ipc-returns-outcome.md`.
+#[cfg(feature = "gui")]
+#[derive(Debug)]
+pub(crate) struct IpcCompletion {
+    response_tx: std::sync::mpsc::SyncSender<crate::ipc::protocol::JsonRpcResponse>,
+    request_id: serde_json::Value,
+}
+
+#[cfg(feature = "gui")]
+impl IpcCompletion {
+    pub(crate) fn new(
+        response_tx: std::sync::mpsc::SyncSender<crate::ipc::protocol::JsonRpcResponse>,
+        request_id: serde_json::Value,
+    ) -> Self {
+        Self {
+            response_tx,
+            request_id,
+        }
+    }
+
+    /// op 성공 — 결과 payload 를 요청자에게 돌려준다.
+    pub(crate) fn reply_ok(self, result: serde_json::Value) {
+        crate::ipc::server::send_response(
+            &self.response_tx,
+            crate::ipc::protocol::JsonRpcResponse::success(self.request_id, result),
+        );
+    }
+
+    /// op 실패 — JSON-RPC 에러(원인 문자열 포함)를 요청자에게 돌려준다.
+    pub(crate) fn reply_err(self, code: i32, message: impl Into<String>) {
+        crate::ipc::server::send_response(
+            &self.response_tx,
+            crate::ipc::protocol::JsonRpcResponse::error(self.request_id, code, message.into()),
+        );
+    }
 }
 
 /// Custom events sent to the winit event loop from background threads.
@@ -38,11 +81,14 @@ pub(crate) enum AppEvent {
     /// delay-aware repaint (`Duration > 0`) 는 idle frame loop 방지 위해 callback 단계에서 drop 된다.
     #[cfg(feature = "gui")]
     EguiRepaint { window_id: winit::window::WindowId },
-    /// Request to create a new window. 페이로드는 **누가 요청했는지** — 창 생성이
-    /// 실패했을 때 안내를 어느 채널로 낼지 가르는 유일한 기준이다
-    /// ([`WindowRequestOrigin`], `docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+    /// Request to create a new window. 첫 페이로드는 **누가 요청했는지** — 실패 안내를
+    /// 어느 채널로 낼지 가르는 기준이다([`WindowRequestOrigin`],
+    /// `docs/adr/0117-window-and-modal-creation-failure-policy.md`). 둘째는 IPC 요청자에게
+    /// 생성 성공/실패를 돌려줄 완료 채널 — `window.create`/`view.create` 는 `Some`,
+    /// 메뉴·단축키·tray 등 사용자 경로는 `None`
+    /// (`docs/adr/0122-winit-scheduled-fallible-ipc-returns-outcome.md`).
     #[cfg(feature = "gui")]
-    CreateWindow(WindowRequestOrigin),
+    CreateWindow(WindowRequestOrigin, Option<IpcCompletion>),
     /// CSD titlebar close 버튼이 발화하는 per-window 닫기 요청 (사용자 클릭).
     /// 네이티브 `WindowEvent::CloseRequested` 와 동일한 라이프사이클로 라우팅한다
     /// (단일 창이면 quit 흐름, 다중 창이면 해당 창만 닫음).
@@ -125,4 +171,48 @@ pub(crate) enum AppEvent {
         /// 건너뛴다(에이전트/IPC 강제 열기). 비동기 식별 왕복을 통과시키기 위함.
         ignore_size_limit: bool,
     },
+}
+
+#[cfg(all(test, feature = "gui"))]
+mod tests {
+    use super::*;
+
+    /// `reply_ok` 은 요청 id 를 보존한 success 응답에 결과 payload 를 싣는다.
+    /// 변이 검증: `reply_ok` 을 error 로 바꾸면 `resp.error.is_none()` 이 깨진다.
+    #[test]
+    fn reply_ok_carries_id_and_result() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        IpcCompletion::new(tx, serde_json::json!(7))
+            .reply_ok(serde_json::json!({ "created": true, "window_id": 42 }));
+        let resp = rx.recv().expect("response");
+        assert_eq!(resp.id, serde_json::json!(7));
+        assert!(resp.error.is_none());
+        assert_eq!(
+            resp.result.expect("result"),
+            serde_json::json!({ "created": true, "window_id": 42 })
+        );
+    }
+
+    /// `reply_err` 은 요청 id 를 보존한 error 응답에 code·원인 문자열을 싣는다.
+    /// 변이 검증: `reply_err` 이 success 를 보내면 `resp.result.is_none()` 이 깨진다.
+    #[test]
+    fn reply_err_carries_id_code_and_message() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        IpcCompletion::new(tx, serde_json::json!("req-1")).reply_err(-32000, "boom");
+        let resp = rx.recv().expect("response");
+        assert_eq!(resp.id, serde_json::json!("req-1"));
+        assert!(resp.result.is_none());
+        let e = resp.error.expect("error");
+        assert_eq!(e.code, -32000);
+        assert_eq!(e.message, "boom");
+    }
+
+    /// 완료 채널이 응답 없이 drop 되면 요청자의 receiver 는 무한 대기하지 않고
+    /// 즉시 disconnect 를 본다 — fire-and-forget 이 남긴 "영원히 안 오는 응답" 대신.
+    #[test]
+    fn dropping_without_reply_disconnects_the_receiver() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<crate::ipc::protocol::JsonRpcResponse>(1);
+        drop(IpcCompletion::new(tx, serde_json::json!(1)));
+        assert!(rx.recv().is_err(), "receiver must see disconnect, not hang");
+    }
 }

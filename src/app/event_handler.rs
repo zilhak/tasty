@@ -33,8 +33,19 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         match event {
-            AppEvent::CreateWindow(origin) => {
-                self.create_new_window(event_loop, origin);
+            AppEvent::CreateWindow(origin, completion) => {
+                let outcome = self.create_new_window(event_loop, origin);
+                // IPC 요청자(있으면)에게 결과를 돌려준다. 사용자 경로(menu/tray)는
+                // completion 이 None 이라 조용히 끝난다. ADR-0122.
+                if let Some(completion) = completion {
+                    match outcome {
+                        Ok(window_id) => completion.reply_ok(serde_json::json!({
+                            "created": true,
+                            "window_id": u64::from(window_id),
+                        })),
+                        Err(msg) => completion.reply_err(-32000, msg),
+                    }
+                }
             }
             AppEvent::RunLuaScript { source, name } => {
                 if let Some(engine) = self.lua_engine.as_ref() {
@@ -901,7 +912,10 @@ impl App {
                         tracing::info!("tray show: no live window, creating");
                         crate::shortcuts::send_app_event(
                             &self.view.proxy,
-                            AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+                            AppEvent::CreateWindow(
+                                crate::app::event::WindowRequestOrigin::User,
+                                None,
+                            ),
                         );
                     }
                 }
@@ -910,7 +924,7 @@ impl App {
             } else if menu_id == ids.new_window {
                 crate::shortcuts::send_app_event(
                     &self.view.proxy,
-                    AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+                    AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User, None),
                 );
             } else if menu_id == ids.quit {
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);

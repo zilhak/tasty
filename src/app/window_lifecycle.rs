@@ -574,11 +574,15 @@ impl App {
     }
 
     /// Create a new window with its own terminal.
+    /// 새 창을 만든다. 성공하면 새 창의 `WindowId`, 실패하면 사람이 읽을 원인 문자열을
+    /// 돌려준다 — IPC 요청자(`AppEvent::CreateWindow` 의 완료 채널)가 이 결과를 그대로
+    /// 응답에 싣는다(ADR-0122). 사용자 경로(menu/tray)는 완료 채널이 없어 반환값을 쓰지
+    /// 않고, 실패 안내는 `notify_window_creation_failed` 가 모달로 띄운다.
     pub(crate) fn create_new_window(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
         origin: crate::app::event::WindowRequestOrigin,
-    ) {
+    ) -> Result<winit::window::WindowId, String> {
         use winit::window::WindowAttributes;
 
         let title = if cfg!(debug_assertions) {
@@ -601,13 +605,12 @@ impl App {
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
-                self.notify_window_creation_failed(
+                return Err(self.notify_window_creation_failed(
                     WindowCreationTarget::NewWindow,
                     origin,
                     "failed to create new window",
                     e,
-                );
-                return;
+                ));
             }
         };
         window.set_ime_allowed(true);
@@ -630,13 +633,12 @@ impl App {
         let gpu = match self.create_gpu_state(window.clone(), &settings.appearance) {
             Ok(g) => g,
             Err(e) => {
-                self.notify_window_creation_failed(
+                return Err(self.notify_window_creation_failed(
                     WindowCreationTarget::NewWindow,
                     origin,
                     "failed to initialize GPU for new window",
                     e,
-                );
-                return;
+                ));
             }
         };
 
@@ -647,13 +649,12 @@ impl App {
             match self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width) {
                 Ok(pair) => pair,
                 Err(e) => {
-                    self.notify_window_creation_failed(
+                    return Err(self.notify_window_creation_failed(
                         WindowCreationTarget::NewWindow,
                         origin,
                         "failed to create engine for new window",
                         e,
-                    );
-                    return;
+                    ));
                 }
             };
         self.ensure_at_least_one_workspace(&mut core_state, &mut state);
@@ -674,56 +675,60 @@ impl App {
             );
         }
 
+        // register_window 가 window 을 consume 하므로 id 를 먼저 캡처 — IPC 요청자에게
+        // 돌려줄 window_id 다(ADR-0122). window.list 와 동일한 u64 변환을 쓴다.
+        let window_id = window.id();
         self.register_window(gpu, state, core_state, window);
         tracing::info!("created new window {:?}", self.view.focused_view_id);
+        Ok(window_id)
     }
 
     /// 창(또는 설정/플러그인/종료 모달) 생성 실패를 기존 창에 안내한다. 새 창은
     /// 그릴 수 없으므로(엔진·GPU 가 없다) 안내를 **이미 떠 있는** focused 창에 띄운다
     /// — 그 창의 세션은 그대로 살아 있다. 띄울 창이 하나도 없으면(첫 부팅 이전 등)
     /// 로그만 남긴다 — 그 경우는 부팅 경로가 별도로 종료를 판단한다.
+    /// 창(또는 설정/플러그인/종료 모달) 생성 실패를 처리하고, 요청자에게 돌려줄 사람이
+    /// 읽을 원인 문자열을 반환한다.
+    ///
+    /// `User`(메뉴·단축키·tray) 는 방금 그 조작의 결과이므로 **이미 떠 있는** 창에
+    /// InfoModal 로 알린다(실패한 창은 엔진·GPU 가 없어 그릴 수 없다). `Agent`(IPC) 발
+    /// 실패는 화면을 건드리지 않는다 — 반환한 문자열이 완료 채널로 요청자에게 간다.
+    /// 예전엔 Agent 도 toast 로 알렸으나, 사용자가 요청하지도 않은 일의 실패 통지가
+    /// 화면에 뜨는 것 자체가 원칙 1 위반이고 동기 응답이 생긴 지금은 불필요하다
+    /// (ADR-0117 재검토, ADR-0122).
     pub(super) fn notify_window_creation_failed(
         &mut self,
         target: WindowCreationTarget,
         origin: crate::app::event::WindowRequestOrigin,
         context: &str,
         err: impl std::fmt::Display,
-    ) {
+    ) -> String {
         use crate::app::event::WindowRequestOrigin;
 
         tracing::error!("{context}: {err}");
-        // 안내는 **이미 떠 있는** 창에 띄운다 — 실패한 창은 엔진도 GPU 도 없어 그릴 수
-        // 없다. focused 창이 모달(설정/플러그인)이면 `focused_window_mut` 이 None 을
-        // 주므로, 메인 창이 남아 있는 한 그 중 하나로 폴백한다. 안내가 조용히 사라지지
-        // 않게 하는 것이 요점이다.
-        let Some(view) = self.notice_window_mut() else {
+        let body = crate::i18n::t_fmt(target.body_key(), &err.to_string());
+
+        // Agent 발 실패는 요청자에게 IPC 응답으로만 돌려준다 — 사용자 화면 무변경.
+        if matches!(origin, WindowRequestOrigin::Agent) {
+            return body;
+        }
+
+        // User: 이미 떠 있는 창에 모달로 안내. 메인 창이 하나도 없으면(첫 부팅 이전 등)
+        // 로그만 남긴다 — 그 경우는 부팅 경로가 별도로 종료를 판단한다.
+        if let Some(view) = self.notice_window_mut() {
+            let modal = crate::adapters::ui::info_modal::InfoModal {
+                title: crate::i18n::t(target.title_key()).to_string(),
+                body: body.clone(),
+                on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
+                extra_buttons: Vec::new(),
+            };
+            crate::adapters::ui::info_modal::show_info_modal(&mut view.state, modal);
+        } else {
             tracing::error!(
                 "no main window to surface the window-creation failure notice ({context})"
             );
-            return;
-        };
-        match origin {
-            // 사용자가 방금 요청한 조작의 결과다 — 모달로 확실히 알린다.
-            WindowRequestOrigin::User => {
-                let modal = crate::adapters::ui::info_modal::InfoModal {
-                    title: crate::i18n::t(target.title_key()).to_string(),
-                    body: crate::i18n::t_fmt(target.body_key(), &err.to_string()),
-                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
-                    extra_buttons: Vec::new(),
-                };
-                crate::adapters::ui::info_modal::show_info_modal(&mut view.state, modal);
-            }
-            // 에이전트가 요청한 것이라 사용자는 이 실패를 기다리고 있지 않다. 모달은
-            // 포커스를 가져가므로 핵심 원칙 1 을 어긴다 — 포커스를 건드리지 않는
-            // toast 로 알린다 (ADR-0117).
-            WindowRequestOrigin::Agent => {
-                view.state.toasts.push(
-                    crate::i18n::t_fmt(target.body_key(), &err.to_string()),
-                    crate::adapters::ui::ToastKind::Error,
-                    crate::adapters::ui::ToastScope::Window,
-                );
-            }
         }
+        body
     }
 
     /// `create_new_window` 지원 — parked state 가 있으면 재사용, 없으면

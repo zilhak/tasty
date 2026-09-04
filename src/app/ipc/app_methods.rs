@@ -36,15 +36,21 @@ impl App {
             return self.ipc_handle_timer_list(cmd);
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
+            // 완료 채널을 실어 보내고 응답은 defer 한다 — winit 핸들러가 창 생성
+            // 성공/실패를 이 채널로 돌려준다(ADR-0122). 즉시 `{"scheduled": true}` 를
+            // 돌려주던 fire-and-forget 은 실패를 요청자에게 못 알려, 실패가 사용자
+            // toast 로만 새어나갔다(요청하지도 않은 일의 실패 통지 — 원칙 1 위반).
+            let completion = crate::app::event::IpcCompletion::new(
+                cmd.response_tx.clone(),
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            );
             crate::shortcuts::send_app_event(
                 &self.view.proxy,
-                AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::Agent),
+                AppEvent::CreateWindow(
+                    crate::app::event::WindowRequestOrigin::Agent,
+                    Some(completion),
+                ),
             );
-            let response = host_ipc::protocol::JsonRpcResponse::success(
-                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({"scheduled": true}),
-            );
-            send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
         if cmd.request.method == "window.close" || cmd.request.method == "view.close" {
