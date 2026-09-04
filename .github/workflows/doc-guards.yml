@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # `--no-fail-fast` — 일곱은 서로 독립인데 없으면 첫 가드가 깨진 회차에서 나머지가
+      # `--no-fail-fast` — 여기 사는 가드들은 서로 독립인데 없으면 첫 가드가 깨진 회차에서 나머지가
       # 실행조차 안 된다. 그러면 "가드 1 건 실패" 로 보이지만 실제 위반 수는 모른다.
       - name: cargo test -p tasty-doc-guards
         run: cargo test -p tasty-doc-guards --locked --no-fail-fast

@@ -93,6 +93,15 @@ docs/features/<feature>/
 - 새 화면/동작 → 해당 `features/<f>/` 의 기획·화면 문서에 흡수. 없으면 폴더 신설.
 - **문서 종류에 맞는 내용만 넣는다 (배치 규칙).** 내부 구현(파일·함수 콜사이트, feature gate, 동작 배선)은 **적어도 된다 — 단 위치가 dev-guide 또는 기획문서(내부 동작)** 다. `agent-guide`(usage)는 *agent 가 tasty 로 무엇을 할 수 있나* 만 다루므로 거기엔 구현 정보를 넣지 않는다 (구현이 *틀린* 게 아니라 *그 섹션에 불필요* 한 것). 단 빌드/로드맵 상태(`Phase …`, `구현 예정`, `이관 상태`)는 transient 이므로 어디에도 두지 않는다 (현재 상태만).
 - **마크다운 체크박스(task list)를 쓰지 않는다.** 목록 항목을 `[ ]`·`[x]` 로 시작하는 체크리스트 형식은 본질이 진행 추적(했다/안 했다)이라 위 transient 금지와 같은 이유로 docs 어디에도 두지 않는다 — 체크 상태에 정해진 의미가 없어 정보도 담지 못한다. Acceptance Criteria 는 평문 `Given … When … Then …` 불릿으로, 검증·절차 항목은 평문 불릿이나 번호 목록으로 적는다. 미구현 범위는 `Status` 줄과 본문 문장으로 적는다. `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` 가 `docs/**/*.md` 전체에 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다. 그 잡에는 **경로 필터가 없어 문서만 바뀐 push 에서도 돈다**([ADR-0138](adr/0138-doc-guards-live-in-a-dependency-free-crate.md) · [ci-gates](dev-guide/ci-gates.md)).
+- **인용한 좌표는 따라갈 수 있어야 한다.** `src/…` · `tests/…` · `crates/…` 처럼 레포 경로 형태로 적은 파일은 실재해야 한다. 없으면 (a) 옮겨졌으면 현재 경로로 고치고, (b) 남의 저장소 경로면 크레이트 이름을 앞에 붙여(`egui/src/style.rs`) 우리 경로 형태에서 빼고, (c) 생성물이거나 실재한 적이 없으면 경로 인용 대신 서술로 적는다. **틀린 좌표는 주어 없는 문장보다 나쁘다** — 이름과 경로가 붙어 있으면 확인된 것처럼 보여 아무도 다시 세지 않는다. 크레이트 안의 문서(`crates/<이름>/README.md` 등)가 적는 `src/…` 는 그 크레이트 기준으로도 해석하므로 그대로 써도 된다. `crates/tasty-doc-guards/tests/cited_coordinates_exist.rs` 가 추적되는 모든 `*.md` 에 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다.
+- **좌표 없이 이름만 적은 인용은 자동 채널이 없다.** 백틱으로만 적은 식별자(테스트 이름 · 함수 이름)가 실재하는지는 아무 가드도 보지 않는다. 이름 바로 뒤 괄호가 파일을 지목하는 형태(`` `이름`(`경로`) ``)로 적으면 그 한 형태만 위 가드가 판정한다. 전량을 재려면 손으로 돌린다:
+
+  ```bash
+  comm -23 <(git grep -ho '`[a-z][a-z0-9_]*`' -- '*.md' | tr -d '`' | grep _ | sort -u) \
+           <(git grep -hoE '[A-Za-z_][A-Za-z0-9_]*' -- '*.rs' '*.toml' '*.sh' '*.yml' | sort -u)
+  ```
+
+  이 명령의 함정 둘. **① 소스 모수에서 `*.toml` 을 빼면 안 된다** — plugin 매니페스트가 선언하는 이름(hook 인자 · action id 등)이 통째로 죽은 참조로 나온다. **② 결과는 답이 아니라 후보다** — 외부 크레이트 이름, clippy lint, egui API, 제거를 기록한 ADR 의 옛 이름이 정당하게 섞여 있다. 실제로 고쳐야 하는 것은 "이 테스트가 강제한다" 처럼 **우리 코드를 지목한 자리**뿐이다.
 - 시각 수치/토큰은 적지 말고 `design-system/` 을 링크.
 - 결정의 근거는 본문에 길게 쓰지 말고 ADR 로 박고 링크.
 - 합성 화면은 언급/링크로만 잇는다.
