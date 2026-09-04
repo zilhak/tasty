@@ -62,4 +62,3 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 - `active_modal_id` / `modal_active` 게이트: `src/app/event_handler.rs`(`self.view.active_modal_id`), View 디스패치.
 - focus 대상 해석 / `TASTY_SURFACE_ID` / `this`: `crates/tasty-cli/src/request.rs`.
 - `tasty close self`: `crates/tasty-cli/src/commands/new_close.rs`(`CloseCommands::CloseSelf`).
-</content>

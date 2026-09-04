@@ -16,8 +16,6 @@
 
 ## [Unreleased]
 
-### Fixed
-
 ### Added
 
 - `surface.attention.clear`(CLI `tasty surface attention clear --surface <id> [--kind completion|needs_input]`) — attention(주의 환기) 해제. 지금까지 attention 은 `surface.completion` 으로 발동만 가능하고 해제 수단이 IPC/CLI 에 없었다(해제 producer 두 개가 전부 GUI 로컬 사건 — 실 렌더 포커스, 알림 패널 읽음). `--kind` 를 주면 현재 기록된 kind 가 그 값일 때만 지운다(생략 = kind 무관, 알 수 없는 값은 거절). attention 이 없던 surface 도 성공하며(idempotent) 응답 `cleared`/`previous_kind` 가 실제 결과를 알린다. 존재하지 않는 surface · **하드 점유(원격 attach) 중인 surface** · **mirror surface** 는 명시적 에러 — 뒤의 둘은 그 attention 의 소유자가 다른 인스턴스다(각각 ADR-0040 · ADR-0098/0104). 미러 사용자가 그 화면을 실제로 보고 확인한 해제는 종전대로 소유 인스턴스로 전달된다. 권한 `Notification`.
