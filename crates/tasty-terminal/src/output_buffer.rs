@@ -78,16 +78,21 @@ impl OutputBuffer {
     }
 }
 
-/// CSI 파라미터 바이트는 `0-9;` 만이 아니다 — private mode 를 여는 `?` 가 들어가고
-/// (`\x1b[?25l` 커서 숨김, `\x1b[?1049h` alt 스크린, `\x1b[?2004h` bracketed paste),
-/// 종결 바이트도 알파벳만이 아니다(`@-~`). 좁은 문자군을 쓰면 그 시퀀스들이 **그대로
+/// CSI 파라미터 바이트는 ECMA-48 이 `0x30-0x3F` 로 정한 **16 글자 전부**다 —
+/// `0-9 : ; < = > ?`. 문자군은 그 범위를 그대로 적는다(`[0-9:;<=>?]`).
+/// `?` 는 private mode(`\x1b[?25l` 커서 숨김, `\x1b[?1049h` alt 스크린,
+/// `\x1b[?2004h` bracketed paste), `:` 는 서브파라미터(곱슬 밑줄 `\x1b[4:3m`,
+/// 콜론형 truecolor `\x1b[38:2::R:G:Bm`), `< = >` 는 private parameter prefix
+/// (SGR 마우스 `\x1b[<0;12;3M`, DA 질의 `\x1b[=1c`, modifyOtherKeys `\x1b[>4;1m`).
+/// 종결 바이트도 알파벳만이 아니다(`@-~`). 문자군이 좁으면 그 시퀀스들이 **그대로
 /// 남아**, `strip_ansi` 를 켠 호출자가 여전히 escape 가 섞인 텍스트를 받는다.
 ///
-/// 같은 정규식이 `tasty-output` 의 `strip_ansi` 에도 있고 그쪽은 처음부터 넓었다 —
-/// 두 사본이 갈라져 있었다. 여기서 **문자 단위로 같게** 맞춰 둔다. 한쪽만 고치면
-/// 다음에 또 갈라지므로, 하나로 합치는 것은 따로 다룬다.
+/// 같은 정규식이 `tasty-output` 의 `strip_ansi` 에도 있다. 두 사본은 **문자 단위로
+/// 같아야** 하고, 그 동등은 `tests/strip_ansi_regex_parity.rs` 가 강제한다 —
+/// 주석으로 적어두는 것만으로는 한쪽만 고치는 것을 막지 못한다. 하나로 합치는 것은
+/// 두 크레이트의 의존 방향 문제라 따로 다룬다.
 static ANSI_ESCAPE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+    regex::Regex::new(r"\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
         .expect("static regex is valid")
 });
 
@@ -117,6 +122,25 @@ mod tests {
         assert_eq!(strip_ansi_escapes("\x1b[2`y"), "y");
     }
 
+    /// ECMA-48 의 CSI 파라미터 바이트는 `0x30-0x3F` **전체**다 — `0-9 : ; < = > ?`.
+    /// `:` 는 서브파라미터 구분자(곱슬 밑줄 `\x1b[4:3m`, 콜론형 truecolor
+    /// `\x1b[38:2::R:G:Bm`, 밑줄 색 `\x1b[58:2::R:G:Bm`)이고, `< = >` 는 private
+    /// parameter prefix(SGR 마우스 `\x1b[<0;12;3M`, DA 질의 `\x1b[=1c`,
+    /// modifyOtherKeys `\x1b[>4;1m`)다. 이론적인 형태가 아니다 — vim/nvim 은 뜰 때마다
+    /// `\x1b[>4;1m` 을 방출하고, 최근 rustc/gcc 진단과 delta 는 `4:3` 곱슬 밑줄을 쓴다.
+    ///
+    /// 이 잔재는 **눈으로 훑으면 놓친다**: 닫는 `\x1b[0m` 은 파라미터가 없어 문자군과
+    /// 무관하게 지워지므로, 여는 escape 한쪽에만 남는다.
+    #[test]
+    fn csi_parameter_bytes_beyond_digits_are_stripped() {
+        assert_eq!(strip_ansi_escapes("\x1b[4:3mwavy\x1b[0m"), "wavy");
+        assert_eq!(strip_ansi_escapes("\x1b[38:2::255:0:0mred\x1b[0m"), "red");
+        assert_eq!(strip_ansi_escapes("\x1b[58:2::255:0:0mu\x1b[0m"), "u");
+        assert_eq!(strip_ansi_escapes("\x1b[>4;1mx"), "x");
+        assert_eq!(strip_ansi_escapes("\x1b[=1cy"), "y");
+        assert_eq!(strip_ansi_escapes("\x1b[<0;12;3Mz"), "z");
+    }
+
     /// 원래 잡던 것들은 그대로 잡는다 — 넓힌 것이 좁힌 것이 되지 않게.
     #[test]
     fn sgr_and_osc_are_still_stripped() {
@@ -132,6 +156,12 @@ mod tests {
         assert_eq!(
             strip_ansi_escapes("really? yes [0-9] ok"),
             "really? yes [0-9] ok"
+        );
+        // 파라미터 문자군을 `0x30-0x3F` 전체로 넓혔다고 본문의 `: < = >` 가 지워지면
+        // 안 된다 — 문자군은 `\x1b[` 뒤에서만 의미가 있다.
+        assert_eq!(
+            strip_ansi_escapes("a<b >c =d ratio 3:4"),
+            "a<b >c =d ratio 3:4"
         );
     }
 }

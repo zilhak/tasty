@@ -118,9 +118,13 @@ pub fn parse_buffer_with(text: &str, parsers: &[&'static dyn Parser]) -> Vec<Par
 /// ANSI escape (`\x1b[...m`, `\x1b]...\x07`, `\x1b]...\x1b\\`) 를 제거한 라인을
 /// 돌려준다. 파서 내부에서 plain text 매칭이 필요한 곳에서 사용. raw 라인의
 /// byte offset 매핑은 보존되지 않는다 (offset 은 stripped 결과 기준).
+///
+/// 정규식은 `tasty-terminal` 의 `ANSI_ESCAPE_RE` 와 **문자 단위로 같다** —
+/// 파라미터 문자군의 근거는 그쪽 주석에 있고, 동등은
+/// `tests/strip_ansi_regex_parity.rs` 가 강제한다.
 pub(crate) fn strip_ansi(s: &str) -> String {
     static RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap()
+        Regex::new(r"\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap()
     });
     RE.replace_all(s, "").into_owned()
 }
@@ -174,5 +178,20 @@ mod tests {
     fn strip_ansi_removes_csi_and_osc() {
         let s = "\x1b[31mred\x1b[0m \x1b]0;title\x07after";
         assert_eq!(strip_ansi(s), "red after");
+    }
+
+    /// 파라미터 바이트는 `0x30-0x3F` 전체다. 파서가 먹는 것은 컴파일러 진단·테스트
+    /// 출력·진행률인데, 최근 rustc/gcc 진단은 곱슬 밑줄 `\x1b[4:3m` 을 쓰고 nvim 은
+    /// `\x1b[>4;1m` 을 방출한다 — 남으면 파서의 plain text 매칭이 그만큼 어긋난다.
+    /// 사본이 둘이라 회귀 핀도 양쪽에 둔다.
+    #[test]
+    fn strip_ansi_removes_colon_and_private_prefix_parameters() {
+        assert_eq!(strip_ansi("\x1b[4:3mwavy\x1b[0m"), "wavy");
+        assert_eq!(strip_ansi("\x1b[38:2::255:0:0mred\x1b[0m"), "red");
+        assert_eq!(strip_ansi("\x1b[>4;1mx"), "x");
+        assert_eq!(strip_ansi("\x1b[=1cy"), "y");
+        assert_eq!(strip_ansi("\x1b[<0;12;3Mz"), "z");
+        // 본문의 같은 글자는 건드리지 않는다.
+        assert_eq!(strip_ansi("a<b >c =d ratio 3:4"), "a<b >c =d ratio 3:4");
     }
 }
