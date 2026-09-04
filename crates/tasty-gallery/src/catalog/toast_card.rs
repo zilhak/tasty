@@ -24,12 +24,27 @@ pub use tasty_ui_widgets::tokens::{
 /// 한 방향으로 깨진다(`docs/design/policies/gallery-completeness.md`). 정본을 그대로
 /// import 하지 않는 이유는 그 크레이트가 termwiz/터미널 모델까지 끌고 오기 때문이고,
 /// 본체 binary 의존 때문이 아니다.
+///
+/// 그 "동일해야 한다" 를 **이 파일 맨 아래의 `mod tests` 가 강제한다** — 두
+/// [`ToastKind::ALL`] 을 런타임에 열거해 양방향으로 대조하므로, 어느 한쪽에만 변종을
+/// 더하면 실패한다. 대조는 `dev-dependencies` 의 정본 크레이트로 하므로 갤러리
+/// 산출물에는 termwiz 가 들어가지 않는다.
 #[derive(Clone, Copy, Debug)]
 pub enum ToastKind {
     Info,
     Success,
     Warning,
     Error,
+}
+
+impl ToastKind {
+    /// 모든 변종 — 정본과의 대조 축. 변종을 더하면 여기에도 더한다.
+    pub const ALL: &'static [ToastKind] = &[
+        ToastKind::Info,
+        ToastKind::Success,
+        ToastKind::Warning,
+        ToastKind::Error,
+    ];
 }
 
 /// kind → accent 색. 본체 `toast.rs` 와 동일한 accent 매핑.
@@ -92,4 +107,84 @@ pub fn draw_card(
         rect.min.y + PADDING_Y,
     );
     painter.galley(text_pos, galley, colors.text);
+}
+
+#[cfg(test)]
+mod tests {
+    //! 미러 ↔ 정본 `ToastKind` 양방향 대조.
+    //!
+    //! ## 왜 `tests/` 가 아니라 lib 유닛 테스트인가 (관례를 깬 이유)
+    //!
+    //! 이 크레이트의 다른 검사들처럼 `tests/` 에 통합 테스트로 두면 **실행 채널이
+    //! 사라진다** — 통합 테스트는 컴파일만 자동으로 검사되고 실행은 수동이다
+    //! (`docs/dev-guide/ci-gates.md`). 그런데 이 가드의 본체는 **런타임 열거**라,
+    //! 컴파일만 되고 실행되지 않으면 아무것도 보지 않는다. 어느 한쪽에만 변종을
+    //! 더해도 코드는 멀쩡히 컴파일된다 — 그게 정확히 이 가드가 잡으려는 형태다.
+    //! lib 유닛 테스트로 두면 `--lib --bins` 를 도는 자동 잡에서 함께 실행된다.
+    //!
+    //! 단, **채널이 있다는 것과 그 채널이 지금 초록이라는 것은 별개다.** 그 잡이
+    //! 다른 이유로 실패 중이면 이 가드도 거기서 결과를 내지 못한다 — 자동 채널을
+    //! 근거로 로컬 확인을 건너뛰기 전에 그 잡이 최근에 통과했는지부터 봐라.
+    //!
+    //! **다음 사람에게**: "관례에 맞춘다" 며 `tests/` 로 되돌리지 마라. 되돌리는
+    //! 순간 이 가드는 조용히 자동 채널을 잃는다.
+    //!
+    //! ## 왜 텍스트 파싱이 아니라 런타임 열거인가
+    //!
+    //! 선례 `tests/permission_free_methods_docs_parity.rs` ·
+    //! `tests/contributes_gate_docs_parity.rs` 와 같은 형태다. 소스를 파싱하면
+    //! 주석·`#[cfg]`·줄바꿈에 흔들리고 파서 자체가 틀릴 수 있다. 두 `ALL` 배열을
+    //! 컴파일된 값으로 열거하면 그 실패 모드가 없다. 대조는 **`Debug` 이름**으로
+    //! 한다 — 두 타입은 서로 다른 크레이트의 별개 타입이라 값끼리 비교할 수 없고,
+    //! 비교해야 하는 것도 "같은 변종 집합인가" 이기 때문이다. 텍스트를 읽지 않으므로
+    //! 경로 구분자·CRLF 같은 플랫폼 차이에도 걸리지 않는다.
+    //!
+    //! ## 이 가드가 보지 않는 것
+    //!
+    //! 변종마다 **어떤 색을 칠하는가**는 보지 않는다. 정본 쪽 매핑은 본체
+    //! `src/adapters/ui/toast.rs` 에, 미러 쪽은 [`accent_color`] 에 있고 둘 다
+    //! `Theme` 접근자를 쓰지만, 같은 접근자를 고르는지는 기계가 판정할 값이 아니라
+    //! 사람이 본다. 집합이 같다는 것만 여기서 고정한다.
+    //!
+    //! `ALL` 자체가 손으로 유지되는 배열이라, 변종을 더하고 `ALL` 을 안 고치면 그쪽은
+    //! 이 가드를 통과한다 — 두 `ALL` 의 doc 주석이 그 전제를 적어 둔다.
+
+    use std::collections::BTreeSet;
+
+    use tasty_model::toast_kind::ToastKind as CanonicalKind;
+
+    use super::ToastKind as MirrorKind;
+
+    fn names<T: std::fmt::Debug>(all: &[T]) -> BTreeSet<String> {
+        all.iter().map(|k| format!("{k:?}")).collect()
+    }
+
+    #[test]
+    fn the_gallery_mirror_shows_exactly_the_kinds_the_app_can_produce() {
+        let canonical = names(CanonicalKind::ALL);
+        let mirror = names(MirrorKind::ALL);
+
+        let only_mirror: Vec<_> = mirror.difference(&canonical).cloned().collect();
+        assert!(
+            only_mirror.is_empty(),
+            "갤러리에만 있는 toast kind: {only_mirror:?} — 본체가 만들 수 없는 것을 \
+             카탈로그가 전시한다. 정본(crates/tasty-model/src/toast_kind.rs)에 더하거나 \
+             미러에서 빼라."
+        );
+
+        let only_canonical: Vec<_> = canonical.difference(&mirror).cloned().collect();
+        assert!(
+            only_canonical.is_empty(),
+            "본체에만 있는 toast kind: {only_canonical:?} — 갤러리가 본체의 일부를 \
+             빠뜨렸다(갤러리 완전성: docs/design/policies/gallery-completeness.md). \
+             crates/tasty-gallery/src/catalog/toast_card.rs 의 미러에 더하라."
+        );
+    }
+
+    #[test]
+    fn both_all_arrays_actually_enumerate_something() {
+        // 스캔 하한 — 어느 한쪽 `ALL` 이 빈 배열이 되면 위 대조가 공허하게 통과한다.
+        assert!(!CanonicalKind::ALL.is_empty());
+        assert_eq!(CanonicalKind::ALL.len(), MirrorKind::ALL.len());
+    }
 }

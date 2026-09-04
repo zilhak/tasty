@@ -13,6 +13,19 @@ pub enum ToastKind {
     Error,
 }
 
+impl ToastKind {
+    /// 모든 변종. 갤러리 미러(`tasty-gallery` 의 `catalog::toast_card::ToastKind`)와
+    /// 이 집합이 갈리지 않는지 그쪽 테스트가 **런타임 열거**로 대조한다 — 새 변종을
+    /// 여기 더하면 미러에도 더할 때까지 그 테스트가 실패한다. 변종을 추가할 때
+    /// 이 배열을 함께 갱신하는 것이 그 대조의 전제다.
+    pub const ALL: &'static [ToastKind] = &[
+        ToastKind::Info,
+        ToastKind::Success,
+        ToastKind::Warning,
+        ToastKind::Error,
+    ];
+}
+
 /// 어느 영역에 떠오를지 결정하는 위치 앵커.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToastScope {
