@@ -542,7 +542,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // lock+스냅샷+출력 forward, 입력 Data → 점유 surface PTY, 끊김 →
                 // lock free 환원(단계 3). 비-attach client 의 Data 는 debug echo.
                 let outcome = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
-                // 17번 TODO — attach mesh mirror 는 plugin surface(markdown/image/
+                // attach mesh mirror 는 plugin surface(markdown/image/
                 // mesh_demo)의 실제 plugin 프로세스가 필요하다. 상시 초기화는 회귀
                 // 위험이 넓어(스코프 결정) attach 세션이 실제로 시작되는 이 지점에서만
                 // lazy 초기화한다. 이후엔 프로세스 수명 동안 유지(tear-down 없음).

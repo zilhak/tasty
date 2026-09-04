@@ -18,7 +18,10 @@
 //! 3. 기능 동작 설명이면 — `docs/`(dev-guide / features / plugins) 문서를 참조
 //!
 //! **탐지 패턴 6 종** (하나만 잡는 정규식으로는 절반도 못 거른다):
-//! - P1 번호 인용 — 대문자 `TODO` + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자
+//! - P1 번호 인용 — 대문자 `TODO` + 공백 런(0 개 이상) + 선택적 하이픈 + 숫자.
+//!   **어순 양방향**: 한국어 문장에서는 번호가 앞에 온다(`<숫자>번 TODO`). 뒤 어순만
+//!   보던 시절 그 형태가 소스에 두 건 살아 있었다 — 같은 죽은 좌표인데 어순 하나로
+//!   가드를 통과했다.
 //! - P2 conductor 번호 인용 — `todo-conductor`(대소문자 무시) + 구분자 런 + 숫자
 //! - P3 경로 인용 — 로컬 작업 폴더 + `todo` / `todo-conductor` / `plans` / `conductor`
 //! - P4 디자인 changelog slug — `YYYY-MM-DD-<slug>`. 원격 Claude Design 프로젝트
@@ -195,7 +198,9 @@ fn digits_end(bytes: &[u8], i: usize) -> Option<usize> {
     Some(end)
 }
 
-/// P1 — 대문자 `TODO` + 공백 런 + 선택적 하이픈 + 숫자. 번호 없는 평범한 `TODO:`
+/// P1 — 번호와 대문자 `TODO` 가 붙어 있는 형태를 **양쪽 어순 모두** 잡는다.
+/// 뒤 어순은 `TODO` + 공백 런 + 선택적 하이픈 + 숫자, 앞 어순은 숫자 + `번` +
+/// 공백 런 + `TODO`(한국어 문장의 자연스러운 순서). 번호 없는 평범한 `TODO:`
 /// 주석은 대상이 아니다(금지 대상은 *파일 번호 인용* 이지 할 일 표시가 아니다).
 fn find_p1(line: &str) -> Option<String> {
     let bytes = line.as_bytes();
@@ -209,9 +214,27 @@ fn find_p1(line: &str) -> Option<String> {
         if let Some(end) = digits_end(bytes, i) {
             return Some(line[start..end].to_string());
         }
+        if let Some(num_start) = korean_ordinal_start(line, start) {
+            return Some(line[num_start..start + 4].to_string());
+        }
         from = start + 4;
     }
     None
+}
+
+/// 앞 어순 판정 — `line[..todo_at]` 의 꼬리가 `숫자+번` + 공백 런인지 본다.
+/// 맞으면 숫자열이 시작하는 바이트 인덱스.
+fn korean_ordinal_start(line: &str, todo_at: usize) -> Option<usize> {
+    const ORDINAL: &str = "번";
+    let head = line[..todo_at].trim_end_matches([' ', '\t']);
+    let digits = head.strip_suffix(ORDINAL)?;
+    let num_start = digits.len()
+        - digits
+            .chars()
+            .rev()
+            .take_while(char::is_ascii_digit)
+            .count();
+    (num_start < digits.len()).then_some(num_start)
 }
 
 /// P2 — `todo-conductor`(대소문자 무시) + 구분자 런 + 숫자.
@@ -565,6 +588,19 @@ fn p1_catches_numbered_todo_citation_only() {
     assert_eq!(find_p1("// TODO: refactor this later"), None);
     assert_eq!(find_p1("TODOS 는 소문자 아님"), None);
     // 임의 문장부호는 구분자로 보지 않는다 — 평범한 문장의 오탐을 막는다.
+    // 앞 어순(한국어) — 구분자 개수와 무관하게 잡는다.
+    assert_eq!(
+        find_p1(fx!("17번 ", "TODO", " — mesh mirror")),
+        Some(fx!("17번 ", "TODO").into())
+    );
+    assert_eq!(
+        find_p1(fx!("(18번", "TODO", ")")),
+        Some(fx!("18번", "TODO").into())
+    );
+    // `번` 앞에 숫자가 없으면 티켓 인용이 아니다.
+    assert_eq!(find_p1(fx!("이번 ", "TODO", " 는 크다")), None);
+    assert_eq!(find_p1(fx!("번 ", "TODO")), None);
+
     assert_eq!(find_p1("TODO: 40"), None);
     assert_eq!(find_p1("TODO. 40"), None);
     assert_eq!(find_p1("TODO #40"), None);
