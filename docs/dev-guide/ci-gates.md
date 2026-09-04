@@ -55,22 +55,29 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 하나 더 있고, 이 저장소는 로컬 main 이 원격보다 크게 앞서는 기간이 길어 그 층이 실제로
 벌어진다.
 
-2026-09-05 실측 (`complexity-check.yml`):
+**이 절은 값을 안 적는다.** 트리와 원격의 차분은 어느 한쪽이 움직일 때마다 바뀌고,
+`origin/main` 은 push 마다 움직인다 — 겉보기에 구조적인 수(워크플로 파일 수)라도 **두 ref
+의 차분으로 만든 수는 그중 빠른 쪽의 속도로 낡는다.** 실제로 이 자리에 값 넷을 적었다가
+하루 만에 넷 다 뒤집혔다.
 
-| 무엇 | 값 | 어떻게 쟀나 |
-|---|---|---|
-| 작업 트리의 트리거 | `push:[main]` + `pull_request:[main]` + `workflow_dispatch` | 파일 |
-| `origin/main` 의 트리거 | `pull_request:[main]` + `workflow_dispatch` | `git show origin/main:…` |
-| `.github/workflows/` 파일 수 | 로컬 10 / `origin/main` 8 | `git show origin/main:` — 두 워크플로는 원격에 **없다** |
-| 등록 이래 run 수 | **0** | `gh run list --workflow=complexity-check.yml` |
+판정이 필요하면 그 자리에서 센다:
 
-즉 [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md) 이 넣은 `push:[main]`
-은 **아직 발사된 적이 없다.** run 0 의 원인이 "PR 전용 트리거" 에서 "미push" 로 바뀐
-것이지, 0 이 해소된 것이 아니다.
+```bash
+git fetch origin main
+diff <(git show origin/main:.github/workflows/<이름>.yml) .github/workflows/<이름>.yml
+ls .github/workflows/*.yml | wc -l; git ls-tree --name-only origin/main .github/workflows/ | wc -l
+gh run list --workflow=<이름>.yml --limit 20
+```
 
-**이 표는 시점 측정이다.** 값을 갱신하려 들지 말고, 판정이 필요하면 오른쪽 열의 명령을
-그 자리에서 다시 돌려라 — 네 값이 각각 독립으로 움직인다. 커밋 수처럼 커밋마다 바뀌는
-값은 애초에 안 적었다.
+**이 층이 실재한다는 근거는 값이 아니라 이력이다.**
+[ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md) 이 `complexity-check` 에
+`push:[main]` 을 넣은 뒤에도, 그 커밋이 원격에 닿기 전까지 그 워크플로는 **등록 이래 run
+이력이 0 건**이었다. 트리거를 붙인 것과 그 잡이 도는 것 사이에 push 라는 층이 실제로
+벌어진 사례다. (그 뒤 push 되어 처음 발사됐다 — 사례는 과거형이라 안 낡는다.)
+
+**워크플로 파일이 그 push 로 처음 들어가도 GitHub 은 그 push 에 대해 발화시킨다**(실측).
+"새 워크플로는 다음 push 부터" 로 추정하지 마라 — `doc-guards.yml` 과
+`plugin-version-check.yml` 이 원격에 처음 들어간 그 push 에서 둘 다 돌았다.
 
 그러니 채널 판정에는 층이 셋이다: **① 그 명령이 그 테스트를 도는가**(아래 배치별 표)
 **② 그 잡이 애초에 발화하는가**(트리거 열) **③ 그 트리거가 원격에 가 있는가.**
@@ -91,7 +98,7 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 | 복잡도 게이트의 축 | 강제 수단 | 실효 자동성 |
 |---|---|---|
 | 함수 cognitive | clippy `cognitive_complexity = "deny"` | **있다** — 자동 잡의 컴파일 단계에서 막힌다 |
-| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **작업 트리에는 있다, 원격에는 아직 없다** — 아래 "트리거는 어느 ref 의 것인가" |
+| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **트리거는 붙어 있다** — 다만 그것이 원격에 가 있어야 발화한다. 아래 "트리거는 어느 ref 의 것인가" 의 명령으로 그 자리에서 확인한다 |
 
 **③ 그 채널이 실패할 수 있는가.** 트리거가 붙어 잡이 도는 것과, 그 잡이 문제를 만났을 때
 실제로 빨개지는 것은 다른 질문이다. 파일 SLOC 게이트가 그 예였다 — 트리거를 붙인 뒤에도
