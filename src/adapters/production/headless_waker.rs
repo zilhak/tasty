@@ -52,6 +52,7 @@ impl HeadlessWaker {
             tx: self.tx.clone(),
             default_gate: Arc::new(AtomicBool::new(false)),
             targeted_gates: Mutex::new(HashMap::new()),
+            poison_reported: AtomicBool::new(false),
         })
     }
 }
@@ -64,18 +65,21 @@ pub(crate) struct HeadlessWakerFactory {
     /// 이라 글로벌 1 개, Some 은 surface 단위 drain 이라 surface 별 게이트.
     default_gate: Arc<AtomicBool>,
     targeted_gates: Mutex<HashMap<u32, Arc<AtomicBool>>>,
+    /// `targeted_gates` poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
+    poison_reported: AtomicBool,
 }
 
 impl WakerFactory for HeadlessWakerFactory {
     fn make_targeted_waker(&self, surface_id: u32) -> Waker {
         let tx = self.tx.clone();
-        let gate = self
-            .targeted_gates
-            .lock()
-            .expect("HeadlessWakerFactory targeted_gates poisoned")
-            .entry(surface_id)
-            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
-            .clone();
+        let gate = crate::waker::recover_gate_lock(
+            self.targeted_gates.lock(),
+            "HeadlessWakerFactory targeted_gates",
+            &self.poison_reported,
+        )
+        .entry(surface_id)
+        .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+        .clone();
         Arc::new(move || {
             if gate.swap(true, Ordering::AcqRel) {
                 return;
@@ -98,11 +102,12 @@ impl WakerFactory for HeadlessWakerFactory {
     fn note_drained(&self, surface_id: Option<u32>) {
         match surface_id {
             Some(sid) => {
-                if let Some(gate) = self
-                    .targeted_gates
-                    .lock()
-                    .expect("HeadlessWakerFactory targeted_gates poisoned")
-                    .get(&sid)
+                if let Some(gate) = crate::waker::recover_gate_lock(
+                    self.targeted_gates.lock(),
+                    "HeadlessWakerFactory targeted_gates",
+                    &self.poison_reported,
+                )
+                .get(&sid)
                 {
                     gate.store(false, Ordering::Release);
                 }
@@ -113,10 +118,12 @@ impl WakerFactory for HeadlessWakerFactory {
 
     fn forget_surface(&self, surface_id: u32) {
         // surface 닫힘 — 게이트 제거(미제거 시 surface 마다 영구 누적).
-        self.targeted_gates
-            .lock()
-            .expect("HeadlessWakerFactory targeted_gates poisoned")
-            .remove(&surface_id);
+        crate::waker::recover_gate_lock(
+            self.targeted_gates.lock(),
+            "HeadlessWakerFactory targeted_gates",
+            &self.poison_reported,
+        )
+        .remove(&surface_id);
     }
 }
 
@@ -137,6 +144,57 @@ mod tests {
             }
         }
         (none, some)
+    }
+
+    /// 게이트 맵이 poison 돼도 factory 는 계속 동작한다.
+    ///
+    /// `.expect()` 이던 시절에는 이 세 호출이 전부 패닉했다. headless 호스트에서는
+    /// 그 패닉이 **메인 루프 스레드**에서 나 프로세스 전체가 죽는다 — 사망 범위가
+    /// 게이트 맵 하나의 정합성보다 압도적으로 크다는 것이 복구를 고른 이유다
+    /// (`docs/dev-guide/error-handling.md` "락 poison").
+    ///
+    /// **주의**: 이 모듈은 `#[cfg(not(feature = "gui"))]` 이고 기본 빌드는 gui 라,
+    /// `cargo test` 는 이 파일의 테스트를 컴파일하지 않는다. 반대로 `--no-default-features`
+    /// 로는 테스트 타깃 자체가 안 서므로(바이너리의 다른 테스트들이 egui 를 쓴다) 현재
+    /// 이 테스트를 실행할 수 있는 조합이 없다 — 같은 파일의 기존 테스트도 마찬가지다.
+    /// 실제로 도는 등가 커버리지는 `crate::waker::poison_tests` 에 있다.
+    #[test]
+    fn a_poisoned_gate_map_does_not_take_the_factory_down() {
+        let (tx, _rx) = mpsc::channel();
+        let factory = Arc::new(HeadlessWakerFactory {
+            tx,
+            default_gate: Arc::new(AtomicBool::new(false)),
+            targeted_gates: Mutex::new(HashMap::new()),
+            poison_reported: AtomicBool::new(false),
+        });
+        // 게이트를 하나 만들어 둔 뒤 락을 든 채 패닉시켜 poison 을 만든다.
+        let _ = factory.make_targeted_waker(11);
+        let held = Arc::clone(&factory);
+        let joined = std::thread::spawn(move || {
+            let _guard = held.targeted_gates.lock().expect("fresh mutex");
+            panic!("a thread dies while holding the gate map");
+        })
+        .join();
+        assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+        assert!(factory.targeted_gates.lock().is_err(), "poison 됐어야 한다");
+
+        // 세 진입점 모두 패닉하지 않는다.
+        let _ = factory.make_targeted_waker(12);
+        factory.note_drained(Some(11));
+        factory.forget_surface(11);
+
+        let gates = factory
+            .targeted_gates
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        assert!(
+            gates.contains_key(&12),
+            "poison 이후에도 게이트 등록이 된다"
+        );
+        assert!(
+            !gates.contains_key(&11),
+            "poison 이후에도 게이트 정리가 된다"
+        );
     }
 
     #[test]
