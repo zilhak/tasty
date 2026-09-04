@@ -123,10 +123,30 @@ pub struct PtyEntry {
     _watcher: Option<JoinHandle<()>>,
 }
 
+/// exit cell 의 poison 을 보고했는가(첫 1 회만).
+///
+/// cell 은 PTY 엔트리마다 하나씩이지만 보고는 클래스 단위로 한 번이면 된다 — poison 은
+/// sticky 라 한 번 걸린 프로세스에서는 이후 모든 엔트리가 같은 경로를 탄다.
+static EXIT_CELL_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// exit cell 락 이름(로그에 나가는 값).
+const EXIT_CELL_WHAT: &str = "pty exit cell";
+
 impl PtyEntry {
     /// 캡처된 종료 결과(있으면). watcher 가 아직 안 채웠으면 `None`(=실행 중).
+    ///
+    /// poison 은 복구한다. 임계구역은 `Option<PtyExit>` 한 칸을 읽고 쓰는 것뿐이라
+    /// 패닉이 나도 불변식이 성립하고, 여기서 `None` 으로 조용히 빠지면 **이미 죽은 자식이
+    /// 영원히 실행 중으로 보인다**(`has_exited` 가 계속 false) — 관측 지점 없이 상태가
+    /// 굳는다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
     pub fn exit(&self) -> Option<PtyExit> {
-        self.exit_result.lock().ok().and_then(|g| g.clone())
+        crate::poison::recover_mutex(
+            self.exit_result.lock(),
+            EXIT_CELL_WHAT,
+            &EXIT_CELL_POISON_REPORTED,
+        )
+        .clone()
     }
 
     /// 자식이 종료돼 exit-code 가 잡혔는가.
@@ -248,9 +268,13 @@ impl PtyRegistry {
             .name(format!("pty-exit-watcher-{id}"))
             .spawn(move || {
                 let outcome = wait_fn();
-                if let Ok(mut g) = cell.lock() {
-                    *g = Some(outcome);
-                }
+                // 여기서 조용히 버리면 종료 결과가 영영 안 채워져 자식이 계속 실행 중으로
+                // 보인다 — 위 `exit` 와 같은 이유로 복구한다.
+                *crate::poison::recover_mutex(
+                    cell.lock(),
+                    EXIT_CELL_WHAT,
+                    &EXIT_CELL_POISON_REPORTED,
+                ) = Some(outcome);
             });
         match handle {
             Ok(h) => {
@@ -505,5 +529,49 @@ mod tests {
     fn attach_exit_watcher_on_missing_id_is_false() {
         let mut reg = PtyRegistry::new();
         assert!(!reg.attach_exit_watcher(12345, || PtyExit::from_status(Some(0), true)));
+    }
+
+    /// exit cell 이 poison 돼도 읽기·쓰기가 모두 살아남는가.
+    ///
+    /// 조용히 빠지는 구현(`lock().ok()` / `if let Ok`)이면 두 방향 중 하나가 깨진다 —
+    /// 읽기를 버리면 여기서 패닉하고, 쓰기를 버리면 값이 영영 안 채워져 아래 poll 이
+    /// 타임아웃한다. 즉 이 테스트 하나가 두 지점을 같이 고정한다.
+    #[test]
+    fn exit_cell_survives_a_poisoned_lock() {
+        let mut reg = PtyRegistry::new();
+        let id = reg
+            .register(spec(&["echo", "hi"]), Instant::now())
+            .expect("register");
+
+        let cell = reg.get(id).expect("entry").exit_result.clone();
+        let poisoner = cell.clone();
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh lock");
+            panic!("poison the exit cell on purpose");
+        })
+        .join();
+        assert!(
+            cell.is_poisoned(),
+            "락이 실제로 poison 됐어야 전제가 성립한다"
+        );
+
+        // 읽기: 패닉 없이 "아직 안 끝났다" 를 그대로 답한다.
+        assert!(reg.get(id).expect("entry").exit().is_none());
+        assert!(!reg.get(id).expect("entry").has_exited());
+
+        // 쓰기: watcher 스레드가 poison 된 cell 에도 결과를 채운다.
+        assert!(reg.attach_exit_watcher(id, || PtyExit::from_status(Some(7), false)));
+        let mut captured = None;
+        for _ in 0..600 {
+            if let Some(e) = reg.get(id).expect("entry").exit() {
+                captured = Some(e);
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        let exit = captured.expect("poison 이후에도 종료 결과가 채워져야 한다");
+        assert_eq!(exit.code, Some(7));
+        assert!(reg.get(id).expect("entry").has_exited());
     }
 }
