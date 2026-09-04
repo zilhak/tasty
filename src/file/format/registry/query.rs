@@ -24,16 +24,13 @@ impl FileFormatRegistry {
     /// detector 조회 — clone 반환.
     pub fn detector(&self, id: &DetectorId) -> Option<FileFormatDetector> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
     pub fn list_detectors(&self) -> Vec<DetectorId> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         inner.finalized.keys().cloned().collect()
     }
 
@@ -48,7 +45,7 @@ impl FileFormatRegistry {
     /// 비면 기존 BTreeMap 순회 (PathGlob / IsDirectory / Magic / MIME 등) 로 fallback.
     pub fn identify(&self, target: &FileTarget, depth: DetectDepth) -> Option<DetectorId> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         let is_dir = target.is_directory();
 
         // 확장자 fast path — 파일에만 적용. 디렉토리는 IsDirectory pre-filter 로 처리.

@@ -31,10 +31,7 @@ impl FileFormatRegistry {
     /// 주의: TOML 주석/공백/key 순서는 보존하지 않는다 (재발급). 사용자 손편집 친화적
     /// round-trip 이 필요해지면 `toml_edit` 도입.
     pub fn export_user_config(&self) -> String {
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return String::new(),
-        };
+        let inner = self.lock_read();
         let mut doc = toml::value::Table::new();
         let mut detectors = Vec::<toml::Value>::new();
         for (id, contribs) in inner.contributions.iter() {

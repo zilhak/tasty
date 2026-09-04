@@ -732,3 +732,29 @@ fn host_port_shell_command_json_is_rejected_by_type() {
         "plugin shell_command must not install (type-level exclusion)"
     );
 }
+
+/// poison 된 레지스트리가 **조용히 아무것도 안 하는** 대신 계속 동작한다.
+///
+/// 이전에는 락 획득 19 곳이 전부 무음이었다 — 그중 둘은 더 나빴다.
+/// `upsert_full_handler` 는 등록하지 못한 채 `Ok(())` 를 돌려줬고,
+/// `upsert_user_handler` 는 `InvalidShortName("lock poisoned")` 로 사용자에게 id 가
+/// 틀렸다고 말했다. 어느 쪽도 진짜 원인을 남기지 않았다.
+#[test]
+fn a_poisoned_registry_still_installs_and_lists() {
+    let reg = std::sync::Arc::new(HookHandlerRegistry::new());
+
+    let held = std::sync::Arc::clone(&reg);
+    let joined = std::thread::spawn(move || {
+        let _guard = held.inner.write().expect("fresh rwlock");
+        panic!("a thread dies while holding the registry");
+    })
+    .join();
+    assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+    assert!(reg.inner.read().is_err(), "poison 됐어야 한다");
+
+    load_host(&reg);
+    assert!(
+        !reg.all_handlers().is_empty(),
+        "poison 이후에도 host default 설치가 반영돼야 한다"
+    );
+}

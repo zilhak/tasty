@@ -74,6 +74,8 @@ pub(super) struct Inner {
 
 pub struct FileFormatRegistry {
     pub(super) inner: RwLock<Inner>,
+    /// poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
+    pub(super) poison_reported: std::sync::atomic::AtomicBool,
     /// 다음 install 시 부여할 monotonic 카운터. install_one 이 새 detector id 에 대해
     /// fetch_add 로 받아온다.
     pub(super) next_install_order: AtomicU64,
@@ -91,18 +93,40 @@ impl FileFormatRegistry {
                 dirty: false,
             }),
             next_install_order: AtomicU64::new(0),
+            poison_reported: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
+    /// Poison 을 복구해 read guard 를 잡는다.
+    ///
+    /// 이전에는 락 획득 24 곳이 전부 `read().ok()?` / `Err(_) => return` 으로 **조용히**
+    /// 빠져나갔다. 그 결과는 "그 확장자를 아무 detector 도 못 알아본다" 인데 관측
+    /// 지점이 0 이었다. `Inner` 는 `BTreeMap` 들과 glob 캐시·`bool` 이고 임계구역은
+    /// 자료구조 조작만 하므로 패닉이 나도 불변식은 성립한다 — 복구가 맞다
+    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    pub(super) fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
+        crate::poison::recover_read(
+            self.inner.read(),
+            "file format registry",
+            &self.poison_reported,
+        )
+    }
+
+    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
+    pub(super) fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
+        crate::poison::recover_write(
+            self.inner.write(),
+            "file format registry",
+            &self.poison_reported,
+        )
+    }
+
     pub(super) fn ensure_finalized(&self) {
-        let needs_finalize = self.inner.read().map(|g| g.dirty).unwrap_or(false);
+        let needs_finalize = self.lock_read().dirty;
         if !needs_finalize {
             return;
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         if !inner.dirty {
             return;
         }
@@ -160,10 +184,7 @@ impl FileFormatRegistry {
 impl DetectorInfo for FileFormatRegistry {
     fn advertised_extensions(&self, detector: &DetectorId) -> Vec<String> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let Some(det) = inner.finalized.get(detector) else {
             return Vec::new();
         };
@@ -187,10 +208,7 @@ impl DetectorInfo for FileFormatRegistry {
         if ext_lower.is_empty() {
             return Vec::new();
         }
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut hits: Vec<(u64, DetectorId)> = inner
             .finalized
             .iter()
@@ -211,10 +229,7 @@ impl DetectorInfo for FileFormatRegistry {
 
     fn all_advertised_extensions(&self) -> Vec<String> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut out: Vec<String> = inner
             .finalized
             .values()
@@ -234,10 +249,7 @@ impl DetectorInfo for FileFormatRegistry {
 
     fn is_enabled(&self, detector: &DetectorId) -> bool {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return false,
-        };
+        let inner = self.lock_read();
         inner.finalized.get(detector).is_some_and(|d| !d.disabled)
     }
 }
