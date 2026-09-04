@@ -106,10 +106,28 @@ const KO_COPY: Copy = Copy {
             "using/panes-tabs-splits.html",
         ),
         (
+            "stack",
+            "워크스페이스와 프리셋",
+            "일감마다 워크스페이스를 두고, 자주 쓰는 배치는 프리셋으로 저장해 그대로 꺼내 쓴다.",
+            "using/workspaces.html",
+        ),
+        (
+            "files",
+            "터미널만 있는 게 아니다",
+            "탐색기 · 마크다운 · 이미지 · 웹 화면을 터미널과 같은 분할 안에 나란히 둔다.",
+            "using/files.html",
+        ),
+        (
             "agents",
             "여러 에이전트를 한 번에",
             "Claude · Codex 자식을 띄우고, 각각이 끝나는 대로 알림을 받는다.",
             "agents/claude-codex.html",
+        ),
+        (
+            "graph",
+            "작업 DAG",
+            "할 일을 의존 관계로 묶으면 순서대로 실행되고, 진행 상황을 그래프로 본다.",
+            "agents/tasks.html",
         ),
         (
             "terminal",
@@ -118,16 +136,22 @@ const KO_COPY: Copy = Copy {
             "agents/cli.html",
         ),
         (
-            "keyboard",
-            "vi 복사 모드",
-            "hjkl 이동, visual 선택, 검색까지 키보드만으로.",
+            "parse",
+            "명령 단위 출력",
+            "셸 프롬프트 경계를 인식해 방금 실행한 명령의 출력만 정확히 읽는다.",
             "using/terminal.html",
         ),
         (
-            "plug",
-            "플러그인",
-            "탐색기 · 마크다운 · 이미지 · git 보기가 번들로 들어 있다. 권한을 보고 켜고 끈다.",
-            "plugins/index.html",
+            "gauge",
+            "훅과 알림",
+            "프로세스 종료 · 출력 패턴 · 유휴 시간에 훅을 걸고 알림을 받는다.",
+            "agents/hooks-notifications.html",
+        ),
+        (
+            "script",
+            "Lua 스크립트",
+            "단축키나 창 · 탭 이벤트에 스크립트를 걸어 손이 가는 일을 자동으로 돌린다.",
+            "customize/scripts.html",
         ),
         (
             "link",
@@ -136,16 +160,10 @@ const KO_COPY: Copy = Copy {
             "remote/attach.html",
         ),
         (
-            "parse",
-            "명령 단위 출력",
-            "셸 프롬프트 경계를 인식해 방금 실행한 명령의 출력만 정확히 읽는다.",
-            "agents/cli.html",
-        ),
-        (
-            "gauge",
-            "훅과 알림",
-            "프로세스 종료 · 출력 패턴 · 유휴 시간에 훅을 걸고 알림을 받는다.",
-            "agents/hooks-notifications.html",
+            "plug",
+            "플러그인",
+            "탐색기 · 마크다운 · 이미지 · git 보기가 번들로 들어 있다. 권한을 보고 켜고 끈다.",
+            "plugins/index.html",
         ),
         (
             "palette",
@@ -237,30 +255,52 @@ const EN_COPY: Copy = Copy {
             "using/panes-tabs-splits.html",
         ),
         (
+            "stack",
+            "Workspaces and presets",
+            "One workspace per job, and a layout you keep coming back to saved as a preset.",
+            "using/workspaces.html",
+        ),
+        (
+            "files",
+            "More than terminals",
+            "A file explorer, Markdown, images and web pages sit in the same splits as your shells.",
+            "using/files.html",
+        ),
+        (
             "agents",
             "Several agents at once",
             "Spawn Claude and Codex children and hear back as each one finishes.",
             "agents/claude-codex.html",
         ),
         (
+            "graph",
+            "Task DAG",
+            "Tie work together by dependency and it runs in order, with the progress drawn as a graph.",
+            "agents/tasks.html",
+        ),
+        (
             "terminal",
             "Driven from the CLI",
-            "Splits, sending commands, reading output, notifications — one tasty command. \
-             An agent drives its own terminal directly.",
+            "Splits, sending commands, reading output, notifications — one tasty command. An agent drives its own terminal directly.",
             "agents/cli.html",
         ),
         (
-            "keyboard",
-            "vi copy mode",
-            "hjkl movement, visual selection, and search from the keyboard alone.",
+            "parse",
+            "Per-command output",
+            "Recognises shell prompt boundaries, so an agent reads exactly the output of the command it just ran.",
             "using/terminal.html",
         ),
         (
-            "plug",
-            "Plugins",
-            "Explorer, Markdown, image, and git views come bundled. See each one's permissions \
-             and switch it on or off.",
-            "plugins/index.html",
+            "gauge",
+            "Hooks and notifications",
+            "Hook process exit, output patterns, and idle time, and get notified.",
+            "agents/hooks-notifications.html",
+        ),
+        (
+            "script",
+            "Lua scripts",
+            "Bind a script to a shortcut or to window and tab events and let it do the repetitive part.",
+            "customize/scripts.html",
         ),
         (
             "link",
@@ -269,17 +309,10 @@ const EN_COPY: Copy = Copy {
             "remote/attach.html",
         ),
         (
-            "parse",
-            "Per-command output",
-            "Recognises shell prompt boundaries, so an agent reads exactly the output of the \
-             command it just ran.",
-            "agents/cli.html",
-        ),
-        (
-            "gauge",
-            "Hooks and notifications",
-            "Hook process exit, output patterns, and idle time, and get notified.",
-            "agents/hooks-notifications.html",
+            "plug",
+            "Plugins",
+            "Explorer, Markdown, image, and git views come bundled. See each one's permissions and switch it on or off.",
+            "plugins/index.html",
         ),
         (
             "palette",
@@ -741,6 +774,18 @@ fn icon_svg(name: &str) -> &'static str {
         ),
         "palette" => icon!(
             r#"<path d="M12 3a9 9 0 1 0 0 18 2 2 0 0 0 1.6-3.2 2 2 0 0 1 1.6-3.2H18a3 3 0 0 0 3-3 9 9 0 0 0-9-8.6z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>"#
+        ),
+        "stack" => icon!(
+            r#"<path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 16.5 9 4.5 9-4.5"/>"#
+        ),
+        "files" => icon!(
+            r#"<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>"#
+        ),
+        "graph" => icon!(
+            r#"<rect x="2.5" y="4" width="6" height="5" rx="1"/><rect x="2.5" y="15" width="6" height="5" rx="1"/><rect x="15.5" y="9.5" width="6" height="5" rx="1"/><path d="M8.5 6.5h3.5v5.5h3.5M8.5 17.5h3.5V12"/>"#
+        ),
+        "script" => icon!(
+            r#"<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="m10 12.5-1.5 1.5L10 15.5M13.5 12.5 15 14l-1.5 1.5"/>"#
         ),
         "windows" => icon!(
             r#"<path d="M3 6.5 10 5.4v6.1H3zM11.5 5.2 21 4v7.5h-9.5zM3 12.5h7v6.1L3 17.5zM11.5 12.5H21V20l-9.5-1.2z"/>"#
