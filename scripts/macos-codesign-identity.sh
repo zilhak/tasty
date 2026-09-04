@@ -38,11 +38,21 @@ list_identities() {
     security find-identity -v -p codesigning 2>/dev/null || true
 }
 
+# 조기에 끝나는 소비자(`grep -q`)를 파이프의 오른쪽에 두지 않는다. `grep -q` 는 첫 매치에서
+# 파이프를 닫고, 아직 쓰던 `security` 가 SIGPIPE 로 죽으며, `set -o pipefail` 이 그 141 을
+# 파이프라인 rc 로 올린다 — **identity 를 찾았는데 "없다" 로 뒤집힌다.** 출력을 먼저 변수로
+# 받아 히어스트링으로 넘기면 파이프 자체가 없어 그 레이스가 사라진다(비용 0).
+has_identity() {
+    local identities
+    identities=$(list_identities)
+    grep -q "$1" <<<"$identities"
+}
+
 if [[ "${1:-}" != "--create" ]]; then
     echo "==> 사용 가능한 코드 서명 identity:"
     list_identities
     echo ""
-    if list_identities | grep -q "$IDENTITY_NAME"; then
+    if has_identity "$IDENTITY_NAME"; then
         echo "'$IDENTITY_NAME' 사용 가능. 빌드 시:"
         echo "  ./scripts/install-macos.sh    # 키체인에서 자동으로 집는다"
     else
@@ -55,7 +65,7 @@ if [[ "${1:-}" != "--create" ]]; then
     exit 0
 fi
 
-if list_identities | grep -q "$IDENTITY_NAME"; then
+if has_identity "$IDENTITY_NAME"; then
     echo "==> '$IDENTITY_NAME' 이(가) 이미 있다. 발급을 건너뛴다."
     echo "  ./scripts/install-macos.sh    # 키체인에서 '$IDENTITY_NAME' 를 자동으로 집는다"
     exit 0
@@ -113,7 +123,7 @@ security add-trusted-cert -r trustRoot -p codeSign \
     -k "$HOME/Library/Keychains/login.keychain-db" "$WORK_DIR/cert.pem"
 
 echo ""
-if list_identities | grep -q "$IDENTITY_NAME"; then
+if has_identity "$IDENTITY_NAME"; then
     echo "완료. '$IDENTITY_NAME' 로 서명하려면:"
     echo "  ./scripts/install-macos.sh    # 키체인에서 '$IDENTITY_NAME' 를 자동으로 집는다"
     echo ""

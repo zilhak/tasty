@@ -35,7 +35,7 @@ for i in $(seq 1 $ITERS); do
     OUTPUT=$("$HOST" "$COMPONENT" 2>&1)
     LOAD=$(echo "$OUTPUT" | grep '^load' | awk '{print $2}')
     INIT=$(echo "$OUTPUT" | grep '^init' | awk '{print $2}')
-    OPEN=$(echo "$OUTPUT" | grep '^open_popup' | grep -oE '[0-9]+\.[0-9]+ ms' | head -1 | awk '{print $1}')
+    OPEN=$(echo "$OUTPUT" | grep '^open_popup' | grep -oE '[0-9]+\.[0-9]+ ms' | awk 'NR==1{print $1}')
     RT=$(echo "$OUTPUT" | grep '^handle_popup_event' | awk -F'total ' '{print $2}' | awk '{print $1}')
     echo "wasm,$i,$LOAD,$INIT,$OPEN,$RT" >> "$OUT"
 done
