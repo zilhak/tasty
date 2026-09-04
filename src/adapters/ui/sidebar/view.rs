@@ -29,8 +29,8 @@ const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
 /// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
 const ALERT_BADGE_FONT_SIZE: f32 = 9.5;
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
-/// semantic role 이 없어 `Theme` 필드가 없다 — primitive 값을 그대로 이름 붙여 둔다.
-const GHOST_WS_NAME_SIZE: f32 = 12.0;
+/// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
+const GHOST_WS_NAME_PRIMITIVE_12: f32 = 12.0;
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
@@ -659,7 +659,7 @@ pub fn draw_full_sidebar_view(
                             ghost_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             &ws.name,
-                            egui::FontId::proportional(GHOST_WS_NAME_SIZE),
+                            egui::FontId::proportional(GHOST_WS_NAME_PRIMITIVE_12),
                             ghost_fg,
                         );
                     }

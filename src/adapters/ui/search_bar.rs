@@ -13,8 +13,8 @@ use tasty_terminal::search::{SearchError, SearchOptions};
 // "스케일 밖 폰트 값".
 
 /// 매치 카운터(`3/17`) 폰트. DTCG primitive `font-size-12` 는 있으나 semantic role 이
-/// 없어 `Theme` 필드가 없다 — primitive 값을 그대로 이름 붙여 둔다.
-const COUNTER_FONT_SIZE: f32 = 12.0;
+/// 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
+const COUNTER_FONT_PRIMITIVE_12: f32 = 12.0;
 
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
@@ -207,7 +207,7 @@ fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     );
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
-        egui::FontId::proportional(COUNTER_FONT_SIZE),
+        egui::FontId::proportional(COUNTER_FONT_PRIMITIVE_12),
         color,
     );
     let pos = rect.center() - galley.size() * 0.5;

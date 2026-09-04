@@ -27,8 +27,8 @@ use tasty_presets::PresetKind;
 // "스케일 밖 폰트 값".
 
 /// preset 행 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
-/// `Theme` 필드가 없다 — primitive 값을 그대로 이름 붙여 둔다.
-const PRESET_ROW_LABEL_SIZE: f32 = 12.0;
+/// `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
+const PRESET_ROW_LABEL_PRIMITIVE_12: f32 = 12.0;
 
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
@@ -247,7 +247,7 @@ pub fn draw_apply_preset_view(
                             egui::pos2(rect.min.x + 8.0, rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             name,
-                            egui::FontId::proportional(PRESET_ROW_LABEL_SIZE),
+                            egui::FontId::proportional(PRESET_ROW_LABEL_PRIMITIVE_12),
                             if is_selected {
                                 th.text_primary().into()
                             } else {
