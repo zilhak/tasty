@@ -40,6 +40,66 @@ use super::*;
 /// 통과한다. 실제로 사라졌다면 이 하한을 의도적으로 고쳐야 한다.
 const MIN_MTIME_WRITE_SITES: usize = 1;
 
+/// mtime 쓰기 호출이 **어느 파일에 몇 곳** 있는지 고정한다 — 건수 고정이다.
+///
+/// ## 왜 하한으로 부족한가
+///
+/// `MIN_MTIME_WRITE_SITES = 1` 대 실측 4 다. **세 곳이 조용히 사라져도** 하한은 안
+/// 움직이고, 사라진 곳에 위반이 없으면 offender 목록도 안 움직여 신호가 아예 없다.
+///
+/// ## 왜 집합 동등이 아니라 건수 고정에서 멈추는가
+///
+/// `define_class_return` 은 블록마다 `struct <이름>;` 이라는 식별자가 있어 **이름 집합**을
+/// 고정할 수 있었다. 여기는 그런 것이 없다 — 네 사이트의 문장이 `.set_modified(old_mtime)`
+/// 로 **글자까지 같다.** 감싸는 함수 이름을 읽으면 갈리지만, 그러려면 이 가드 안에 함수
+/// 경계 파서를 새로 만들어야 하고 그 파서가 또 틀릴 수 있다. 겨누는 실패 모드는 "판정기가
+/// 사이트를 놓친다" 이고 파일별 건수가 그것을 잡으므로, 거기서 멈춘다.
+///
+/// **그래서 안 잡히는 것을 적어 둔다**: 한 파일 안에서 한 사이트를 지우고 다른 사이트를
+/// 더하면 이 표는 안 움직인다. `a_same_file_swap_is_not_distinguished` 가 그 한계를
+/// 고정한다 — 나중에 판정기가 그것을 가르게 된다면 결함을 고친 것이 아니라 **이 결정을
+/// 바꾼 것**이므로 그 테스트를 함께 고쳐야 한다.
+const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
+    ("crates/tasty-plugin-claude/src/handlers.rs", 2),
+    ("crates/tasty-plugin-codex/src/handlers.rs", 2),
+];
+
+/// 레포를 훑어 `파일 → 사이트 수` 를 만든다. 본 판정과 변이가 같은 것을 쓴다.
+fn scan_site_population() -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for (path, text) in rust_sources() {
+        let found = scan(&mask_non_code(&text));
+        if found.sites > 0 {
+            out.insert(path.to_string_lossy().replace('\\', "/"), found.sites);
+        }
+    }
+    out
+}
+
+/// 스냅샷과의 차이를 사람이 읽을 줄로 낸다. 순수 함수라 변이가 트리를 안 고치고 찌른다.
+fn site_drift(actual: &BTreeMap<String, usize>) -> Vec<String> {
+    let expected: BTreeMap<String, usize> = EXPECTED_MTIME_SITES
+        .iter()
+        .map(|(path, n)| ((*path).to_string(), *n))
+        .collect();
+    let mut drift = Vec::new();
+    for (path, n) in &expected {
+        match actual.get(path) {
+            None => drift.push(format!("  사라짐: {path} (스냅샷 {n} 곳)")),
+            Some(m) if m != n => {
+                drift.push(format!("  개수 다름: {path} — 스냅샷 {n} · 실측 {m}"));
+            }
+            Some(_) => {}
+        }
+    }
+    for (path, m) in actual {
+        if !expected.contains_key(path) {
+            drift.push(format!("  새로 생김: {path} ({m} 곳)"));
+        }
+    }
+    drift
+}
+
 const READ_ONLY_OPEN: &str = "File::open(";
 const MTIME_WRITES: &[&str] = &[".set_modified(", ".set_times("];
 
@@ -89,6 +149,13 @@ fn mtime_is_never_written_through_a_read_only_handle() {
         sites >= MIN_MTIME_WRITE_SITES,
         "스캔 하한 미달: mtime 을 쓰는 호출을 {sites} 곳 찾았다(하한 \
          {MIN_MTIME_WRITE_SITES}). 정말 사라졌다면 이 하한을 함께 고쳐라"
+    );
+    let drift = site_drift(&scan_site_population());
+    assert!(
+        drift.is_empty(),
+        "mtime 쓰기 사이트 분포가 스냅샷과 다르다 — 하한 {MIN_MTIME_WRITE_SITES} 은 네 곳 \
+         중 세 곳이 사라져도 안 움직이므로 파일별 건수를 고정한다.\n{}",
+        drift.join("\n")
     );
     assert!(
         violations.is_empty(),
@@ -163,5 +230,130 @@ mod exemption_mutations {
     fn catches_set_times_as_well_as_set_modified() {
         let src = "std::fs::File::open(&p).unwrap().set_times(times).unwrap();\n";
         assert_eq!(scan(&mask_non_code(src)).violations, vec![1]);
+    }
+}
+
+/// 이 승급을 겨냥한 변이.
+mod population_mutations {
+    use super::*;
+
+    /// 무변이 대조 + 같은 자리의 비영 대조.
+    #[test]
+    fn the_unmutated_site_map_has_no_drift() {
+        let actual = scan_site_population();
+        assert!(site_drift(&actual).is_empty(), "무변이인데 차분이 있다");
+        let total: usize = actual.values().sum();
+        assert!(
+            total > MIN_MTIME_WRITE_SITES,
+            "사이트를 {total} 곳만 찾았다(하한 {MIN_MTIME_WRITE_SITES}) — 하한과 같으면 \
+             '하한이 못 잡는 폭' 자체가 없다"
+        );
+    }
+
+    /// **하한이 못 잡는 폭을 같은 테스트에서 단정한다.** 한 파일이 통째로 빠져도 남은
+    /// 개수가 하한 이상이라 하한만 있는 가드는 초록이다.
+    #[test]
+    fn a_lost_file_is_caught_while_the_floor_stays_green() {
+        let actual = scan_site_population();
+        let victim = actual.keys().next().expect("대조군이 비었다").clone();
+        let mut lost = actual.clone();
+        let removed = lost.remove(&victim).expect("방금 고른 키다");
+
+        let left: usize = lost.values().sum();
+        assert!(
+            left >= MIN_MTIME_WRITE_SITES,
+            "전제가 깨졌다: {victim} 의 {removed} 곳을 잃으면 {left} 곳이 남아 하한 \
+             {MIN_MTIME_WRITE_SITES} 아래로 내려간다 — 그렇다면 하한이 이 변이를 잡는다. \
+             doc 의 서술을 다시 재고 고쳐라"
+        );
+
+        let drift = site_drift(&lost);
+        assert_eq!(drift.len(), 1, "잃은 파일 하나만 말해야 한다: {drift:?}");
+        assert!(
+            drift[0].contains(&victim),
+            "이름으로 말하지 않는다: {drift:?}"
+        );
+    }
+
+    /// 한 파일 안에서 개수가 하나 줄면 잡는다 — 하한이 못 보는 자리다.
+    #[test]
+    fn a_single_lost_site_inside_a_file_is_caught() {
+        let actual = scan_site_population();
+        let victim = actual.keys().next().expect("대조군이 비었다").clone();
+        let mut thinner = actual.clone();
+        *thinner.get_mut(&victim).expect("방금 고른 키다") -= 1;
+
+        let drift = site_drift(&thinner);
+        assert_eq!(drift.len(), 1, "{drift:?}");
+        assert!(drift[0].contains("개수 다름"), "{drift:?}");
+    }
+
+    /// **못 가르는 것을 가르는 척하지 않는다.** 한 파일 안에서 한 곳을 지우고 다른 곳을
+    /// 더하면 건수가 그대로라 이 표는 안 움직인다. `define_class_return` 은 블록마다
+    /// 이름이 있어 이것을 갈랐지만 여기는 사이트에 식별자가 없다. 판정기가 나중에 이
+    /// 형태를 가르게 된다면 그건 결함을 고친 것이 아니라 **이 결정을 바꾼 것**이므로,
+    /// 이 테스트를 함께 고쳐야 한다.
+    #[test]
+    fn a_same_file_swap_is_not_distinguished() {
+        // 같은 파일 안에서 사이트가 **다른 자리로 옮겨간** 두 소스. 내용은 다르고 건수는 같다.
+        let together = "\
+fn only_here() {
+    let f = std::fs::OpenOptions::new().write(true).open(p).unwrap();
+    f.set_modified(t).unwrap();
+    let g = std::fs::OpenOptions::new().write(true).open(p).unwrap();
+    g.set_modified(t).unwrap();
+}
+";
+        let apart = "\
+fn first() {
+    let f = std::fs::OpenOptions::new().write(true).open(p).unwrap();
+    f.set_modified(t).unwrap();
+}
+
+fn second() {
+    let g = std::fs::OpenOptions::new().write(true).open(p).unwrap();
+    g.set_modified(t).unwrap();
+}
+";
+        let a = scan(&mask_non_code(together));
+        let b = scan(&mask_non_code(apart));
+        assert_ne!(
+            together, apart,
+            "두 소스가 같으면 이 테스트는 아무것도 안 잰다"
+        );
+        assert!(
+            a.violations.is_empty() && b.violations.is_empty(),
+            "합성 소스에 위반이 있으면 아래 비교가 다른 이유로 갈린다"
+        );
+        assert_eq!(a.sites, 2, "합성 소스에서 사이트를 못 셌다");
+
+        // 파일별 건수만 들고 있으므로 두 소스의 판정이 **같다.** 이것이 이 승급이
+        // 가르지 못하는 형태다.
+        assert_eq!(
+            a.sites, b.sites,
+            "이 한계가 사라졌다면 판정기가 사이트 정체를 갖게 된 것이다 — doc 과 이 \
+             테스트를 함께 고쳐라"
+        );
+        let same_map: BTreeMap<String, usize> =
+            [("x.rs".to_string(), a.sites)].into_iter().collect();
+        let also_same: BTreeMap<String, usize> =
+            [("x.rs".to_string(), b.sites)].into_iter().collect();
+        assert_eq!(same_map, also_same);
+    }
+
+    /// 이 가드 파일 자신이 모수에 들어오지 않는가 — 여기 needle 은 전부 문자열이라
+    /// 마스킹으로 지워진다. 안 지워지면 스냅샷이 자기 참조가 된다.
+    #[test]
+    fn the_guard_file_does_not_count_itself() {
+        let actual = scan_site_population();
+        let me = "src/source_guards/read_only_handle_mtime.rs";
+        assert!(
+            !actual.contains_key(me),
+            "가드 자신이 모수에 들어왔다: {actual:?}"
+        );
+        assert!(
+            !actual.is_empty(),
+            "모수가 비었다 — 위 단정은 언제나 통과한다"
+        );
     }
 }
