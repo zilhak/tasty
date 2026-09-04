@@ -102,13 +102,14 @@ tasty new tab --pane 3 --cwd ~/proj                     # 패인에 새 탭
 tasty close surface --surface 99                        # 서피스 닫기
 tasty close tab --tab 12
 tasty close workspace --id 3                            # 워크스페이스를 통째로 (안의 탭·서피스까지)
+tasty close window --id 1                               # 창 닫기
 tasty close self                                        # 지금 이 서피스 닫기
 ```
 
 `--target-surface this` 는 자기 자신(`TASTY_SURFACE_ID`)이다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있다 ([파일 열기](../using/files.md)).
 
-워크스페이스는 마지막 하나를 닫지 못한다. 워크스페이스를 닫으면 창까지 사라지는 것이 아니라
-거절된다 — 창을 없애는 것은 별개의 결정이다. 자기 터미널이 들어 있는 대상은
+워크스페이스와 창은 마지막 하나를 닫지 못한다. 워크스페이스를 닫으면 창까지 사라지는 것이 아니라
+거절되므로, 창을 없앨 생각이면 `tasty close window` 를 따로 쓴다. 자기 터미널이 들어 있는 대상은
 닫히지 않는다 — 그때는 `tasty close self` 다. 원격에 접속해 미러로 띄운 워크스페이스도 닫지 못한다 —
 그건 접속을 끊어서 정리한다. 보고 있지 않은 워크스페이스를 닫아도 화면에 떠 있는 워크스페이스는
 그대로 남는다.
@@ -116,6 +117,37 @@ tasty close self                                        # 지금 이 서피스 �
 **워크스페이스 닫기는 되돌릴 수 없다.** 안에서 돌던 터미널이 전부 종료되고, "닫은 항목" 으로
 되살릴 수 없으며, 스크롤백도 남지 않는다. 되살릴 수 있는 건 사람이 자기 손으로 닫은 것뿐이다.
 지울 게 맞는지는 `tasty list workspaces` 로 먼저 확인한다.
+
+## 서피스 들여다보기
+
+```sh
+tasty surface cursor-position --surface 42     # 커서가 몇 행 몇 열에 있나
+tasty surface foreground-process --surface 42  # 지금 앞에서 도는 프로그램 (셸이면 유휴)
+tasty surface locate --surface 42              # 이 서피스가 속한 패인, 그리고 아직 살아 있는지
+tasty surface respawn-terminal --surface 42    # 자리를 유지한 채 셸만 다시 띄우기
+tasty surface fire-hook --surface 42 --event process-exit    # 훅을 직접 발화
+tasty surface fire-hook --surface 42 --event idle-timeout:300 # 초 단위가 붙는 이벤트도 있다
+```
+
+## 사람이 타이핑 중이면 보내지 않기
+
+```sh
+tasty send text "make test\r" --surface 42 --wait-idle
+```
+
+`--wait-idle` 은 판정과 전송을 한 번에 한다. `tasty is-typing` 으로 먼저 확인하고 보내면 그 사이에
+사람이 타이핑을 시작할 수 있는데, 이 플래그는 그 틈을 없앤다. 타이핑 중이면 보내지 않고
+`"sent": false` 와 이유를 돌려준다.
+
+## 자식 에이전트에게 권한 주기
+
+```sh
+tasty session issue --agent-id build-bot --permission surface.read --permission terminal.write
+tasty session list
+tasty session revoke --token <토큰>
+```
+
+발급한 토큰을 자식이 `TASTY_SESSION_TOKEN` 으로 들고 있으면 거기 적힌 권한만 쓸 수 있다.
 
 ## 알림 보내기
 

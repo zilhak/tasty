@@ -103,20 +103,52 @@ tasty new tab --pane 3 --cwd ~/proj                     # new Tab in a Pane
 tasty close surface --surface 99                        # close a Surface
 tasty close tab --tab 12
 tasty close workspace --id 3                            # a whole Workspace, tabs and surfaces included
+tasty close window --id 1                               # close a window
 tasty close self                                        # close this very Surface
 ```
 
 `--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)).
 
-The last remaining workspace cannot be closed. Closing a workspace never takes the window down
-with it; it is refused instead - removing the window is a separate decision. A target holding your
-own terminal is refused too - use `tasty close self`
+The last remaining workspace and the last remaining window cannot be closed. Closing a workspace
+never takes the window down with it; it is refused instead, so reach for `tasty close window` when
+that is what you mean. A target holding your own terminal is refused too - use `tasty close self`
 there. A workspace mirroring a remote connection is refused as well - end that connection instead.
 Closing a workspace you are not looking at leaves the one on screen where it was.
 
 **Closing a workspace cannot be undone.** Every terminal running inside it ends, it does not come
 back from "recently closed", and its scrollback is gone. Only what a person closed by hand can be
 restored. Check with `tasty list workspaces` before you close.
+
+## Looking into a surface
+
+```sh
+tasty surface cursor-position --surface 42     # which row and column the cursor sits at
+tasty surface foreground-process --surface 42  # what is running in front (a shell means idle)
+tasty surface locate --surface 42              # the pane it belongs to, and whether it still exists
+tasty surface respawn-terminal --surface 42    # restart the shell, keeping the surface in place
+tasty surface fire-hook --surface 42 --event process-exit    # fire a hook yourself
+tasty surface fire-hook --surface 42 --event idle-timeout:300 # some events carry a number
+```
+
+## Not sending while a person is typing
+
+```sh
+tasty send text "make test\r" --surface 42 --wait-idle
+```
+
+`--wait-idle` decides and sends in one step. Checking with `tasty is-typing` first leaves a gap in
+which the person may start typing; this flag closes it. When they are typing nothing is sent and you
+get `"sent": false` with the reason.
+
+## Granting permissions to a child agent
+
+```sh
+tasty session issue --agent-id build-bot --permission surface.read --permission terminal.write
+tasty session list
+tasty session revoke --token <token>
+```
+
+A child holding the issued token in `TASTY_SESSION_TOKEN` may use exactly the permissions named on it.
 
 ## Sending notifications
 

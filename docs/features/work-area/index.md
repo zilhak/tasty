@@ -95,7 +95,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - **AI Agent (IPC/CLI)**: 작업 영역의 도메인을 ID 로 직접 조작.
   - 생성: `tasty new workspace` · `tasty new tab --pane <P> [--type terminal|markdown|explorer|html|image]`.
   - 분할: `tasty split --level pane|surface --target <ID> [--direction …]` (상위/하위 레이아웃 각각).
-  - 닫기: `tasty close tab|pane|surface --… <ID>` · `tasty close workspace --id <W>`(안의 모든 pane/tab/surface 포함).
+  - 닫기: `tasty close tab|pane|surface --… <ID>` · `tasty close workspace --id <W>`(안의 모든 pane/tab/surface 포함) · `tasty close window --id <N>`.
     워크스페이스 닫기는 마지막 하나와 mirror 워크스페이스를 거부한다 — 창까지 없앨지는 별개의 결정이라 `close window` 로 명시하고, mirror 는 attach 세션 쪽에서 거둔다. **되돌릴 수 없다**(안의 터미널이 죽고 되돌리기 스택·스크롤백에 남지 않는다). 경계와 근거는 [ADR-0120](../../adr/0120-agent-workspace-close-boundaries.md).
     사용자가 보고 있지 않은 워크스페이스를 닫아도 화면에 있는 워크스페이스는 그대로다([포커스 독립성](../../design/policies/focus.md)).
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).

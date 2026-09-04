@@ -102,6 +102,15 @@ pub enum CloseCommands {
         #[arg(long)]
         id: u32,
     },
+    /// Close a window by its ID.
+    ///
+    /// The target is always given explicitly with --id (see `tasty list windows`).
+    /// The last remaining main window is refused - quitting is a user action.
+    Window {
+        /// Target window ID (required)
+        #[arg(long)]
+        id: u64,
+    },
     /// Close the calling surface itself (uses TASTY_SURFACE_ID)
     #[command(name = "self")]
     CloseSelf,

@@ -76,7 +76,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: NewCommands,
     },
-    /// Close a resource (tab, pane, surface, workspace)
+    /// Close a resource (tab, pane, surface, workspace, window)
     Close {
         #[command(subcommand)]
         command: CloseCommands,
@@ -164,10 +164,15 @@ pub enum Commands {
         #[command(subcommand)]
         command: SurfaceMetaCommands,
     },
-    /// Surface actions (completion signal, …)
+    /// Surface actions (completion signal, queries, …)
     Surface {
         #[command(subcommand)]
         command: SurfaceCommands,
+    },
+    /// Agent session tokens (issue, revoke, list)
+    Session {
+        #[command(subcommand)]
+        command: SessionCommands,
     },
     /// Manage child terminals (spawn/tell/children/kill/…) — host-internalized
     /// agent child-terminal management (ADR-0040).

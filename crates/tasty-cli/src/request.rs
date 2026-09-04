@@ -26,8 +26,8 @@ use telemetry::telemetry_command_to_method_params;
 
 use super::{
     CloseCommands, Commands, ListCommands, MoveCommands, NewCommands, ReadCommands, RemoteCommands,
-    SendCommands, SetCommands, SurfaceAttentionCommands, SurfaceCommands, SurfaceMetaCommands,
-    ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
+    SendCommands, SessionCommands, SetCommands, SurfaceAttentionCommands, SurfaceCommands,
+    SurfaceMetaCommands, ToolCommands, UnsetCommands, WorkspaceCategoryCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -238,6 +238,26 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "surface.completion",
                 serde_json::json!({ "surface_id": surface, "kind": kind }),
             ),
+            SurfaceCommands::CursorPosition { surface } => (
+                "surface.cursor_position",
+                serde_json::json!({ "surface_id": surface }),
+            ),
+            SurfaceCommands::ForegroundProcess { surface } => (
+                "surface.foreground_process",
+                serde_json::json!({ "surface_id": surface }),
+            ),
+            SurfaceCommands::Locate { surface } => (
+                "surface.locate",
+                serde_json::json!({ "surface_id": surface }),
+            ),
+            SurfaceCommands::RespawnTerminal { surface } => (
+                "surface.respawn_terminal",
+                serde_json::json!({ "surface_id": surface }),
+            ),
+            SurfaceCommands::FireHook { surface, event } => (
+                "surface.fire_hook",
+                serde_json::json!({ "surface_id": surface, "event": event }),
+            ),
             SurfaceCommands::Attention { command } => match command {
                 SurfaceAttentionCommands::Get { surface } => (
                     "surface.attention.get",
@@ -257,6 +277,24 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             "surface.wake",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
         ),
+        Commands::Session { command } => match command {
+            SessionCommands::Issue {
+                agent_id,
+                permissions,
+                ttl_ms,
+            } => (
+                "session.issue",
+                serde_json::json!({
+                    "agent_id": agent_id,
+                    "permissions": permissions,
+                    "ttl_ms": ttl_ms,
+                }),
+            ),
+            SessionCommands::Revoke { token } => {
+                ("session.revoke", serde_json::json!({ "token": token }))
+            }
+            SessionCommands::List => ("session.list", serde_json::json!({})),
+        },
         Commands::Tool { command } => tool_command_to_method_params(command),
         Commands::Plugin { command } => plugin_command_to_method_params(command),
         Commands::Memory { command } => memory_command_to_method_params(command),
@@ -384,6 +422,7 @@ fn close_command_to_method_params(command: &CloseCommands) -> (&'static str, ser
             "workspace.close",
             serde_json::json!({ "id": id, "caller_surface_id": caller }),
         ),
+        CloseCommands::Window { id } => ("window.close", serde_json::json!({ "id": id })),
         CloseCommands::CloseSelf => match caller {
             Some(sid) => (
                 "surface.close_self",
@@ -426,8 +465,18 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
 
 fn send_command_to_method_params(command: &SendCommands) -> (&'static str, serde_json::Value) {
     match command {
-        SendCommands::Text { text, surface } => (
-            "surface.send",
+        // --wait-idle 은 "타이핑 중인지 보고 아니면 보낸다" 를 한 번의 호출로 판정한다.
+        // is-typing → send 두 단계로는 그 사이에 사용자가 타이핑을 시작하는 창이 남는다.
+        SendCommands::Text {
+            text,
+            surface,
+            wait_idle,
+        } => (
+            if *wait_idle {
+                "surface.send_wait_idle"
+            } else {
+                "surface.send"
+            },
             serde_json::json!({ "text": unescape(text), "surface_id": resolve_surface_id(*surface) }),
         ),
         SendCommands::Key { key, surface } => (

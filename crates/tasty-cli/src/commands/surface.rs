@@ -18,6 +18,55 @@ pub enum SurfaceCommands {
         #[arg(long)]
         kind: Option<String>,
     },
+    /// Print where the cursor sits in a terminal surface, as column and row.
+    ///
+    /// The target surface is always given explicitly with --surface; it is
+    /// never inferred from focus.
+    CursorPosition {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
+    /// Print the process currently in the foreground of a terminal surface.
+    ///
+    /// Use it to tell whether a shell is idle or is running something. The
+    /// target surface is always given explicitly with --surface.
+    ForegroundProcess {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
+    /// Print which pane a surface belongs to, and whether it is still in the
+    /// tree at all.
+    ///
+    /// Use it to check that a surface you created or are waiting on has not
+    /// been closed. The target surface is always given explicitly with
+    /// --surface.
+    Locate {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
+    /// Restart the shell of a terminal surface in place, keeping the surface,
+    /// its tab and its position.
+    ///
+    /// The target surface is always given explicitly with --surface.
+    RespawnTerminal {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
+    /// Fire a surface hook by name, as if that event had just happened.
+    ///
+    /// The target surface is always given explicitly with --surface.
+    FireHook {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+        /// Hook event name to fire (required)
+        #[arg(long)]
+        event: String,
+    },
     /// Inspect or clear the attention highlight of a surface.
     ///
     /// The reverse of `completion`. The other two clear paths (real render
