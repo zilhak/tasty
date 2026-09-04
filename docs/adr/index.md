@@ -142,5 +142,6 @@
 | 0129 | [확률적 테스트 실패(flake)의 부류별 표준 처방](0129-flaky-test-classes-and-standard-fixes.md) | Proposed | 2026-09-04 | testing, flaky-tests, ci, concurrency, test-isolation, guards, cfg-feature-gate, source-scan-guard, adr-0128, adr-0105 |
 | 0130 | [휠 1노치가 옮기는 거리는 창 안에서 하나이고, 그 값은 사용자가 정한다](0130-wheel-notch-distance-is-uniform-and-user-set.md) | Accepted | 2026-09-04 | input, scroll, egui, plugin-bridge, settings, accessibility, wire-contract, adr-0108 |
 | 0131 | [파일 SLOC 게이트는 발화하는 트리거를 갖는다 — 채널 없이 쌓인 26 건은 부채로 동결하고 래칫으로 갚는다](0131-file-sloc-gate-needs-a-firing-trigger.md) | Accepted | 2026-09-04 | ci, quality-gate, complexity, tokei, file-size, ratchet, trigger, drift, adr-0037 |
+| 0132 | [매니페스트가 선언한 인자 타입은 파서가 강제한다 — 변환 실패는 값을 버리지 않고 거부한다](0132-declared-arg-types-are-enforced-not-documentation.md) | Accepted | 2026-09-04 | plugin, cli, manifest, argument-parsing, error-handling, agent-facing, silent-failure |
 | 0133 | [소스 스캔 가드의 모수는 열거하지 말고 고정한다](0133-guard-scan-population-is-pinned-not-enumerated.md) | Accepted | 2026-09-04 | guards, design-tokens, testing, ci, adr-0126, adr-0128, adr-0033 |
 | 0134 | [headless 는 host event 큐를 비우되 비-bus 소비자가 있는 종류만 적용한다](0134-headless-drains-host-events-but-applies-only-hook-fired.md) | Accepted | 2026-09-04 | headless, host-event, plugin-event-bus, agent-runner, hooks, queue, agent-surface |
