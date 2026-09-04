@@ -305,6 +305,14 @@ impl Core {
         if !should_save {
             return CoreEvent::LayoutSaved;
         }
+        // 부팅 때 이 슬롯을 읽지 못했으면 디스크에 사용자 레이아웃이 그대로 남아 있다.
+        // 지금 상태를 쓰면 그것을 대체하므로 저장을 건너뛴다 — 로드 실패는 이미
+        // `layout_persistence` 가 error 로 남겼고, 여기서는 매 flush 마다 반복되므로
+        // debug 로만 흔적을 둔다.
+        if engine.layout_slot_protected {
+            tracing::debug!("layout save skipped: slot is locked because it could not be read");
+            return CoreEvent::LayoutSaved;
+        }
         // engine 이 점유한 슬롯에만 쓴다 — 창(engine)마다 자기 파일이라
         // `App::flush_layout_persistence` 가 전 engine 을 돌아도 서로 덮어쓰지 않는다.
         // `None` 은 headless engine — 복원 자체를 적용하지 않으므로 저장도 하지

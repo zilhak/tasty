@@ -578,6 +578,26 @@ pub struct CoreState {
     /// `OccupancyRegistry` 와 같은 성격이라 재시작 시 전부 free 로 환원된다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
+    /// 점유한 슬롯을 **덮어쓰면 안 되는가.** 부팅 때 그 슬롯을 읽지 못했으면(권한·IO
+    /// 오류, 이 빌드가 모르는 미래 version) 사용자의 창 구성이 디스크에 그대로 남아
+    /// 있는데 옮길 수조차 없다. 그 위에 지금 상태를 쓰면 원본이 사라지므로
+    /// `apply_save_layout_now` 가 저장을 건너뛴다. 읽기에 성공했거나 슬롯이 애초에
+    /// 없었으면 `false`(정상 저장).
+    pub(crate) layout_slot_protected: bool,
+    /// 점유한 슬롯을 **덮어쓰기 전에 옮겨야 하는가.** 부팅 때 파일을 읽었지만 해석하지
+    /// 못한 경우다. 원본이 그 자리에 그대로 있으므로, 저장 직전에 `NN.json.bak` 으로
+    /// 옮긴 뒤 쓴다(`layout_persistence::save_slot`). 옮기고 나면 다시 `false`.
+    pub(crate) layout_slot_unparsable: bool,
+    /// 저장이 쓸 layouts 디렉터리 override — **테스트 전용**. 저장 경로 전체를
+    /// 사용자의 실제 홈을 건드리지 않고 지나가게 한다 — 디렉터리를 해석하는 두 곳
+    /// (`layout_persistence::save_slot` 과 [`CoreState::slot_preservation_is_blocked`])
+    /// 이 이 값을 먼저 본다.
+    #[cfg(test)]
+    pub(crate) layouts_dir_override: Option<std::path::PathBuf>,
+    /// 손상 슬롯을 **옮기지 못했는가.** 백업 자리(`.bak` … `.bak.9`)가 다 찼거나
+    /// 그 자리를 쓸 수 없으면 참이다. 이때 저장은 계속 거부되므로(원본을 지키는
+    /// 쪽이 옳다) 사용자에게 "보관했다" 가 아니라 "치워야 저장이 다시 된다" 를 알린다.
+    pub(crate) layout_slot_preserve_failed: bool,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
@@ -654,6 +674,52 @@ impl CoreState {
     /// 부팅 경로는 `new_with_ids` 로 `Settings::load()`(사용자 `config.toml`)를 넣고,
     /// 테스트 생성자 `new` 는 `Settings::default()` 를 넣는다. 이 분리가 없으면
     /// 테스트가 사용자 홈 설정을 읽어 로컬 환경에 따라 결과가 달라진다.
+    /// 부팅 때 읽은 슬롯의 판정을 engine 상태로 옮긴다.
+    ///
+    /// 별도 함수인 이유는 **이 배선이 유실 방지의 마지막 고리**이기 때문이다. 판정이
+    /// 아무리 정확해도 여기서 플래그를 세우지 않으면 `apply_save_layout_now` 와
+    /// `save_slot` 이 보호 장치를 못 보고 사용자 파일을 덮어쓴다. 부팅 전체를 세우지
+    /// 않고도 이 고리만 따로 검사할 수 있게 떼어 놓았다.
+    pub(crate) fn accept_slot_load(
+        &mut self,
+        load: crate::core::layout_persistence::SlotLoad,
+        slot: crate::core::layout_persistence::LayoutSlotId,
+    ) {
+        use crate::core::layout_persistence::SlotLoad;
+        match load {
+            SlotLoad::Loaded(saved) => self.pending_layout_restore = Some(saved),
+            // 쓴 적 없는 슬롯 — 호출자의 fallback 이 기본 워크스페이스를 만든다.
+            SlotLoad::Absent => {}
+            // 읽지 못했다. 기본 워크스페이스로 시작하되, 디스크에 남은 사용자
+            // 레이아웃을 이 세션이 덮어쓰지 않도록 슬롯을 잠근다(로그는 로더가 남긴다).
+            SlotLoad::Unreadable => self.layout_slot_protected = true,
+            // 해석하지 못했다. 기본 워크스페이스로 시작하되, 이 슬롯을 처음 저장할 때
+            // 원본을 백업으로 옮기도록 표시한다(로그는 로더가 남긴다).
+            SlotLoad::Unparsable => {
+                self.layout_slot_unparsable = true;
+                // 백업 자리가 이미 다 찼으면 그 첫 저장이 통째로 거부된다. 그 사실은
+                // 저장 시점(= `finish_boot` 이후)에야 확정되는데 부팅 알림은 그보다
+                // **먼저** 뜨므로, 여기서 예산을 미리 보지 않으면 사용자는 "옆에 .bak
+                // 으로 보관합니다" 라는 사실과 **반대인** 안내를 받고 원본을 지울 수 있다.
+                self.layout_slot_preserve_failed = self.slot_preservation_is_blocked(slot);
+            }
+        }
+    }
+
+    /// 이 슬롯의 백업 예산이 이미 소진됐는가. `save_slot` 과 **같은 디렉터리 해석**을
+    /// 쓴다 — 테스트는 `layouts_dir_override` 로 실제 홈을 건드리지 않고 이 판정까지
+    /// 지나간다.
+    fn slot_preservation_is_blocked(
+        &self,
+        slot: crate::core::layout_persistence::LayoutSlotId,
+    ) -> bool {
+        #[cfg(test)]
+        if let Some(dir) = self.layouts_dir_override.as_deref() {
+            return crate::core::layout_persistence::slot_preservation_is_blocked_in(dir, slot);
+        }
+        crate::core::layout_persistence::slot_preservation_is_blocked(slot)
+    }
+
     fn new_with_ids_and_settings(
         cols: usize,
         rows: usize,
@@ -769,6 +835,11 @@ impl CoreState {
             pending_scrollback_inject: HashMap::new(),
             pending_layout_restore: None,
             layout_slot,
+            layout_slot_protected: false,
+            layout_slot_unparsable: false,
+            #[cfg(test)]
+            layouts_dir_override: None,
+            layout_slot_preserve_failed: false,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             memory,
@@ -794,11 +865,8 @@ impl CoreState {
         // **하나**뿐이라, 그 슬롯의 ref 집합으로 GC 하면 다른 슬롯이 참조하는
         // `.bin` 을 전부 orphan 으로 판정해 지운다. 전 슬롯 union GC 로 부팅 1 회
         // 옮겼다 (`layout_persistence::migrate_and_gc_on_boot`).
-        if restore_layout
-            && let Some(slot) = layout_slot
-            && let Some(saved) = crate::core::layout_persistence::load_slot(slot)
-        {
-            engine.pending_layout_restore = Some(saved);
+        if restore_layout && let Some(slot) = layout_slot {
+            engine.accept_slot_load(crate::core::layout_persistence::load_slot(slot), slot);
         }
 
         // Fallback: 복원할 layout 이 없을 때만 기본 워크스페이스를 만든다.

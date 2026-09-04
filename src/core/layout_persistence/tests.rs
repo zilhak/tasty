@@ -245,9 +245,20 @@ mod slots {
         SavedWorkspace,
     };
     use super::super::{
-        LAYOUT_VERSION, delete_slot_in, gc_scrollback_orphans_all_slots_in, list_slots_in,
-        load_slot_in, migrate_legacy_in, save_slot_in, slot_path_in,
+        LAYOUT_VERSION, SlotLoad, delete_slot_in, gc_scrollback_orphans_all_slots_in,
+        list_slots_in, load_slot_in, migrate_legacy_in, preserve_unparsable_slot, save_slot_in,
+        slot_path_in,
     };
+
+    /// 슬롯이 정상 로드돼야 하는 자리. 실패하면 어떤 상태였는지 알려준다.
+    fn expect_loaded(dir: &Path, slot: u32) -> SavedLayout {
+        match load_slot_in(dir, slot) {
+            SlotLoad::Loaded(layout) => layout,
+            SlotLoad::Absent => panic!("슬롯 {slot} 이 없다"),
+            SlotLoad::Unreadable => panic!("슬롯 {slot} 을 읽지 못했다"),
+            SlotLoad::Unparsable => panic!("슬롯 {slot} 을 해석하지 못했다"),
+        }
+    }
 
     /// workspace 이름 하나 + terminal surface 하나(주어진 `scrollback_ref`)짜리
     /// 최소 레이아웃.
@@ -277,6 +288,11 @@ mod slots {
                 category: 0,
             }],
         }
+    }
+
+    /// `wiring` 모듈이 쓰는 정상 슬롯 작성기 — 레이아웃 조립 헬퍼를 공유한다.
+    pub(super) fn write_valid_slot(dir: &Path, slot: u32, ws_name: &str) {
+        write_slot(dir, slot, &layout_with(ws_name, None));
     }
 
     fn write_slot(dir: &Path, slot: u32, layout: &SavedLayout) {
@@ -337,12 +353,12 @@ mod slots {
         let layouts = home.join("layouts");
         assert!(!legacy.exists(), "레거시 파일은 복사가 아니라 이동이다");
         assert!(slot_path_in(&layouts, 1).exists());
-        let restored = load_slot_in(&layouts, 1).expect("슬롯 1 이 읽혀야 한다");
+        let restored = expect_loaded(&layouts, 1);
         assert_eq!(restored.workspaces[0].name, "legacy-ws");
 
         // 멱등: 두 번째 호출은 no-op (레거시가 이미 없다).
         migrate_legacy_in(home);
-        assert!(load_slot_in(&layouts, 1).is_some());
+        assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)));
     }
 
     #[test]
@@ -424,7 +440,7 @@ mod slots {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         assert_eq!(names, vec!["01.json".to_string()], "tmp 잔재가 없어야 한다");
-        assert_eq!(load_slot_in(&dir, 1).unwrap().workspaces[0].name, "second");
+        assert_eq!(expect_loaded(&dir, 1).workspaces[0].name, "second");
 
         // 판별 단정: 교체여야 한다. `.tmp` + rename 을 `fs::write(path, json)` 로
         // "단순화" 하면 위 두 단정은 그대로 통과하고 여기서만 걸린다.
@@ -448,7 +464,7 @@ mod slots {
         let dir = tmp.path().join("layouts");
         write_slot(&dir, 2, &layout_with("a", None));
         delete_slot_in(&dir, 2);
-        assert!(load_slot_in(&dir, 2).is_none());
+        assert!(matches!(load_slot_in(&dir, 2), SlotLoad::Absent));
         delete_slot_in(&dir, 2); // 없는 파일은 no-op
     }
 
@@ -523,8 +539,380 @@ mod slots {
         write_slot(&layouts, 1, &future);
         touch_bin(&scrollback, "aaa");
 
-        assert!(load_slot_in(&layouts, 1).is_none());
+        // 미래 version 은 "없음" 이 아니라 "읽지 못함" 이다 — 저장을 막아 신버전이
+        // 저장한 레이아웃을 구버전이 덮어쓰지 않게 한다.
+        assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Unreadable));
         gc_scrollback_orphans_all_slots_in(&layouts, &scrollback);
         assert!(bin_exists(&scrollback, "aaa"));
+    }
+
+    /// 미래 version 슬롯은 **손대지 않는다** — 백업으로 옮기면 그 파일을 읽을 수 있는
+    /// 새 빌드가 다음에 켜졌을 때 레이아웃이 사라진 것으로 보인다.
+    #[test]
+    fn future_version_slot_file_is_left_in_place() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut future = layout_with("w1", None);
+        future.version = LAYOUT_VERSION + 1;
+        write_slot(&layouts, 1, &future);
+        let before = std::fs::read_to_string(slot_path_in(&layouts, 1)).unwrap();
+
+        assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Unreadable));
+
+        let after = std::fs::read_to_string(slot_path_in(&layouts, 1)).unwrap();
+        assert_eq!(before, after, "미래 version 파일은 그대로 있어야 한다");
+        assert!(
+            !slot_path_in(&layouts, 1)
+                .with_extension("json.bak")
+                .exists(),
+            "백업을 만들지 않는다"
+        );
+    }
+
+    /// 손상 JSON 은 **읽기 시점에 건드리지 않는다** — 부팅 중 이 슬롯을 읽는 곳이 GC 와
+    /// engine 둘이라, 읽는 쪽이 옮기면 나중에 읽는 쪽은 사건 자체를 못 본다.
+    #[test]
+    fn unparsable_slot_is_left_in_place_by_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        std::fs::create_dir_all(&layouts).unwrap();
+        let path = slot_path_in(&layouts, 1);
+        std::fs::write(&path, "{ this is not valid json").unwrap();
+
+        for _ in 0..2 {
+            assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Unparsable));
+        }
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{ this is not valid json",
+            "읽기는 원본을 옮기지 않는다"
+        );
+        assert!(!layouts.join("01.json.bak").exists());
+    }
+
+    /// 보존은 실제로 덮어쓰는 순간에 일어난다. 옮긴 뒤에는 원본이 `.bak` 에 남고 그
+    /// 자리는 비므로, 이어지는 write 가 사용자 레이아웃을 지우지 않는다.
+    #[test]
+    fn preserving_an_unparsable_slot_moves_it_aside() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        std::fs::create_dir_all(&layouts).unwrap();
+        let path = slot_path_in(&layouts, 1);
+        std::fs::write(&path, "first corrupt").unwrap();
+
+        assert!(preserve_unparsable_slot(&layouts, 1));
+        assert!(!path.exists(), "원본은 자리를 떠야 한다");
+        assert_eq!(
+            std::fs::read_to_string(layouts.join("01.json.bak")).unwrap(),
+            "first corrupt"
+        );
+
+        // 먼저 만들어진 백업이 더 원본에 가깝다 — 덮어쓰지 않는다.
+        std::fs::write(&path, "second corrupt").unwrap();
+        assert!(preserve_unparsable_slot(&layouts, 1));
+        assert_eq!(
+            std::fs::read_to_string(layouts.join("01.json.bak")).unwrap(),
+            "first corrupt"
+        );
+        assert_eq!(
+            std::fs::read_to_string(layouts.join("01.json.bak.2")).unwrap(),
+            "second corrupt"
+        );
+
+        // 옮길 것이 없으면 실패가 아니다 — 덮어써도 잃을 것이 없다.
+        assert!(preserve_unparsable_slot(&layouts, 1));
+    }
+
+    /// 읽기 자체가 실패하면(권한) 파일을 **건드리지 않고** `Unreadable` 을 돌려준다.
+    /// 일시적 오류에 사용자 레이아웃이 자리를 뜨면 안 된다.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_slot_is_left_in_place_and_locked() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        write_slot(&layouts, 1, &layout_with("mine", None));
+        let path = slot_path_in(&layouts, 1);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let verdict = load_slot_in(&layouts, 1);
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(verdict, SlotLoad::Unreadable));
+        assert_eq!(
+            expect_loaded(&layouts, 1).workspaces[0].name,
+            "mine",
+            "권한을 되돌리면 원본이 그대로 있어야 한다"
+        );
+        assert!(
+            !layouts.join("01.json.bak").exists(),
+            "백업을 만들지 않는다"
+        );
+    }
+}
+
+/// 보호 장치의 **배선**을 검사한다 — 판정 함수와 백업 헬퍼가 각각 옳은 것만으로는
+/// 사용자 파일이 지켜지지 않는다. 판정이 engine 플래그가 되고, 그 플래그가 저장을
+/// 막거나 백업을 부르는 고리까지 이어져야 한다. 이 모듈이 그 고리를 지난다.
+#[cfg(test)]
+mod wiring {
+    use std::path::Path;
+
+    use super::super::{SlotLoad, load_slot_in, save_slot_in_dir, slot_path_in};
+    use crate::core::{Core, CoreState};
+
+    fn engine_with_layouts(dir: &Path) -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut engine = CoreState::new(80, 24, waker).unwrap();
+        std::fs::create_dir_all(dir).unwrap();
+        engine.layouts_dir_override = Some(dir.to_path_buf());
+        engine.layout_slot = Some(1);
+        engine.settings.general.restore_layout = true;
+        engine
+    }
+
+    /// 손상 슬롯 위에 저장하면 **먼저 옮기고** 쓴다. 보존 단계를 빼면 여기서 걸린다.
+    #[test]
+    fn saving_over_an_unparsable_slot_moves_it_aside_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        std::fs::write(slot_path_in(&layouts, 1), "{ NOT JSON {{").unwrap();
+        // 부팅이 손상으로 판정했다고 치자.
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+
+        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+
+        assert_eq!(
+            std::fs::read_to_string(layouts.join("01.json.bak")).unwrap(),
+            "{ NOT JSON {{",
+            "원본은 .bak 으로 옮겨져 있어야 한다"
+        );
+        assert!(
+            matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)),
+            "옮긴 뒤 자리에는 이번 세션의 레이아웃이 쓰여야 한다"
+        );
+        assert!(
+            !engine.layout_slot_unparsable,
+            "한 번 옮겼으면 플래그는 내려간다 — 다음 저장이 정상 파일을 또 옮기면 안 된다"
+        );
+    }
+
+    /// 플래그가 선 뒤 파일이 **정상으로 바뀌어 있으면** 옮기지 않는다. 같은
+    /// `TASTY_HOME` 을 쓰는 다른 인스턴스가 그 사이에 써 넣는 경우다.
+    #[test]
+    fn a_slot_that_became_valid_is_not_moved_aside() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        super::slots::write_valid_slot(&layouts, 1, "written-by-another-instance");
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+
+        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+
+        assert!(
+            !layouts.join("01.json.bak").exists(),
+            "멀쩡한 파일을 백업으로 흘리면 9개뿐인 예산을 정상 파일이 깎는다"
+        );
+        assert!(matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)));
+    }
+
+    /// 부팅 판정이 engine 플래그로 이어진다 — 이 고리가 끊기면 아래 두 테스트가
+    /// 지키는 저장 측 보호가 애초에 발동하지 않는다.
+    #[test]
+    fn boot_verdict_becomes_the_engine_flags() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+
+        engine.accept_slot_load(SlotLoad::Absent, 1);
+        assert!(!engine.layout_slot_protected && !engine.layout_slot_unparsable);
+
+        engine.accept_slot_load(SlotLoad::Unreadable, 1);
+        assert!(
+            engine.layout_slot_protected,
+            "읽지 못한 슬롯은 잠가야 저장이 사용자 레이아웃을 덮지 않는다"
+        );
+
+        let mut engine = engine_with_layouts(&layouts);
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+        assert!(
+            engine.layout_slot_unparsable,
+            "해석 못한 슬롯은 저장 직전에 옮기도록 표시해야 한다"
+        );
+        assert!(!engine.layout_slot_protected);
+        assert!(
+            !engine.layout_slot_preserve_failed,
+            "백업 자리가 남아 있으면 부팅은 '옮길 수 있다' 로 판정한다 — 아래 예산 소진 테스트의 대조군"
+        );
+    }
+
+    /// `.bak` … `.bak.9` 를 미리 채워 보존 예산을 소진시킨다.
+    fn exhaust_backup_budget(dir: &Path, slot: u32) {
+        let base = slot_path_in(dir, slot);
+        let mut name = base.as_os_str().to_os_string();
+        name.push(".bak");
+        std::fs::write(std::path::PathBuf::from(name), "older backup").unwrap();
+        for n in 2..=9 {
+            let mut name = base.as_os_str().to_os_string();
+            name.push(format!(".bak.{n}"));
+            std::fs::write(std::path::PathBuf::from(name), "older backup").unwrap();
+        }
+    }
+
+    /// **부팅 알림이 거짓말을 하지 않는다.** 백업 자리가 이미 다 찼으면 첫 저장이
+    /// 통째로 거부되는데, 그 사실은 저장 시점(= `finish_boot` 이후)에야 확정된다.
+    /// 부팅 알림은 그보다 먼저 뜨므로 판정도 부팅 때 서야 한다 — 서지 않으면 사용자는
+    /// "옆에 `.bak` 으로 보관합니다" 라는 **사실과 반대인** 안내를 받고 원본을 지운다.
+    #[test]
+    fn a_full_backup_budget_makes_the_boot_verdict_say_preservation_is_blocked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        std::fs::write(slot_path_in(&layouts, 1), "{ NOT JSON {{").unwrap();
+        exhaust_backup_budget(&layouts, 1);
+
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+
+        assert!(
+            engine.layout_slot_preserve_failed,
+            "부팅 시점에 이미 옮길 자리가 없다면 그 사실이 서야 한다 — 이 플래그가 \
+             `persistence.warn.layout_unparsable_blocked` 를 고른다"
+        );
+        assert!(engine.layout_slot_unparsable);
+    }
+
+    /// 저장이 보존에 실패하면 **그 사실을 남기고** 원본을 그대로 둔다. 플래그를
+    /// 세우지 않으면 같은 세션에서 저장이 계속 거부되는데 사용자는 그 이유를 알 길이 없다.
+    #[test]
+    fn a_save_that_cannot_preserve_records_it_and_keeps_the_original() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        let path = slot_path_in(&layouts, 1);
+        std::fs::write(&path, "{ NOT JSON {{").unwrap();
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+        // 부팅 뒤에 예산이 찬 경우 — 부팅 판정만으로는 잡히지 않는 자리다.
+        exhaust_backup_budget(&layouts, 1);
+        engine.layout_slot_preserve_failed = false;
+
+        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+
+        assert!(
+            engine.layout_slot_preserve_failed,
+            "옮기지 못했으면 그 사실이 서야 한다 — 안 세우면 알림이 반대로 나간다"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{ NOT JSON {{",
+            "옮기지 못했으면 원본을 덮어쓰지 않는다"
+        );
+    }
+
+    /// 그 사이 **신버전이 써 놓은** 슬롯은 옮기지도 덮어쓰지도 않는다. 구버전으로
+    /// 한 번 켰다고 신버전 레이아웃이 사라지면 안 된다.
+    #[test]
+    fn a_slot_that_became_a_newer_version_is_neither_moved_nor_overwritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        let path = slot_path_in(&layouts, 1);
+        let from_the_future = format!(
+            r#"{{"version":{},"workspaces":[],"active_workspace":0}}"#,
+            super::super::LAYOUT_VERSION + 1
+        );
+        std::fs::write(&path, &from_the_future).unwrap();
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+
+        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            from_the_future,
+            "신버전 레이아웃을 덮어쓰면 안 된다"
+        );
+        assert!(
+            !layouts.join("01.json.bak").exists(),
+            "신버전 레이아웃은 백업으로도 치우지 않는다 — 다음 신버전 실행이 그 자리에서 읽는다"
+        );
+    }
+
+    /// 저장 직전에 **다시 읽지 못한** 슬롯도 옮기지도 덮어쓰지도 않는다. 내용을
+    /// 모르는 파일을 치우면 일시적 오류 한 번에 사용자 레이아웃이 자리를 뜬다.
+    #[test]
+    #[cfg(unix)]
+    fn a_slot_that_cannot_be_re_read_is_neither_moved_nor_overwritten() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        let path = slot_path_in(&layouts, 1);
+        std::fs::write(&path, "{ NOT JSON {{").unwrap();
+        engine.accept_slot_load(SlotLoad::Unparsable, 1);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        save_slot_in_dir(&mut engine, 0, 1, &layouts);
+
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{ NOT JSON {{",
+            "다시 읽지 못한 파일을 덮어쓰면 안 된다"
+        );
+        assert!(
+            !layouts.join("01.json.bak").exists(),
+            "내용을 확인하지 못한 파일은 옮기지도 않는다"
+        );
+    }
+
+    /// 잠긴 슬롯에는 **아무것도 쓰지 않는다.** 저장 경로 전체를 지나며 확인한다.
+    #[test]
+    fn a_locked_slot_is_never_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        let path = slot_path_in(&layouts, 1);
+        std::fs::write(&path, "user layout we could not read").unwrap();
+        engine.accept_slot_load(SlotLoad::Unreadable, 1);
+        engine.mark_layout_dirty();
+
+        Core::apply_save_layout_now(&mut engine, 0, true);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "user layout we could not read",
+            "읽지 못한 사용자 레이아웃을 덮어쓰면 안 된다"
+        );
+        assert!(
+            !layouts.join("01.json.bak").exists(),
+            "내용을 모르는 파일은 옮기지도 않는다"
+        );
+        assert!(
+            engine.layout_dirty.is_dirty(),
+            "저장을 건너뛰었으면 dirty 는 남는다 — 지우면 나중에 저장할 기회까지 잃는다"
+        );
+    }
+
+    /// 잠기지 않은 슬롯은 평소대로 저장된다 — 위 테스트가 "항상 안 쓴다" 로
+    /// 통과하는 것을 막는 대조군이다.
+    #[test]
+    fn an_unlocked_slot_is_written_as_usual() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layouts = tmp.path().join("layouts");
+        let mut engine = engine_with_layouts(&layouts);
+        engine.accept_slot_load(SlotLoad::Absent, 1);
+        engine.mark_layout_dirty();
+
+        Core::apply_save_layout_now(&mut engine, 0, true);
+
+        assert!(
+            matches!(load_slot_in(&layouts, 1), SlotLoad::Loaded(_)),
+            "정상 슬롯은 저장돼야 한다"
+        );
+        assert!(
+            !engine.layout_dirty.is_dirty(),
+            "저장했으면 dirty 를 내린다"
+        );
     }
 }
