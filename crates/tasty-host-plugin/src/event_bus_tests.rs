@@ -192,3 +192,40 @@ fn unicast_to_plugin_bypasses_subscribers_and_uses_zero_sub_id() {
     assert_eq!(dispatch.plugin_id, "p1");
     assert_eq!(dispatch.sub_id, 0);
 }
+
+/// 버스가 poison 돼도 구독 등록·정리·fan-out 이 계속 동작한다.
+///
+/// `.expect()` 이던 시절에는 이 호출들이 전부 패닉했다. 버스는 `PluginManager` 가
+/// 소유해 **메인 스레드**에서 fan-out 되므로 그 패닉은 모든 창의 터미널 세션을
+/// 함께 죽인다 — `Inner` 가 구독 목록과 권한 맵뿐이라 데이터는 멀쩡한데도 그랬다
+/// (`docs/dev-guide/error-handling.md` "락 poison").
+#[test]
+fn a_poisoned_bus_keeps_serving_subscriptions_and_fan_out() {
+    let bus = EventBus::new();
+    bus.set_plugin_permissions("p1", vec!["evt.*".into()], vec![]);
+    bus.subscribe_plugin("p1", 1, "evt.*".into())
+        .expect("fresh bus accepts the subscription");
+
+    bus.poison_for_test();
+
+    // 등록된 구독은 살아 있고 fan-out 도 된다.
+    let dispatches = bus.publish_from_host(env("evt.one", EventOrigin::Host));
+    assert_eq!(dispatches.len(), 1, "poison 이후에도 fan-out 된다");
+
+    // 새 등록·해제도 된다.
+    bus.set_plugin_permissions("p2", vec!["evt.*".into()], vec![]);
+    bus.subscribe_plugin("p2", 1, "evt.*".into())
+        .expect("poison 이후에도 구독 등록이 된다");
+    assert_eq!(
+        bus.publish_from_host(env("evt.two", EventOrigin::Host))
+            .len(),
+        2
+    );
+    bus.clear_plugin("p1");
+    assert_eq!(
+        bus.publish_from_host(env("evt.three", EventOrigin::Host))
+            .len(),
+        1,
+        "poison 이후에도 정리가 된다"
+    );
+}

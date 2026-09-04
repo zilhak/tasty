@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 #[cfg(debug_assertions)]
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tasty_plugin_protocol::{
@@ -65,6 +66,9 @@ const TRACE_RING_CAPACITY: usize = 256;
 #[derive(Clone)]
 pub struct EventBus {
     inner: Arc<Mutex<Inner>>,
+    /// poison 을 이미 보고했는가. poison 은 sticky 라 fan-out 마다 같은 로그가
+    /// 나오는 것을 막는다.
+    poison_reported: Arc<AtomicBool>,
 }
 
 /// fan-out 결과. 호스트의 plugin 송신 루프가 후처리한다.
@@ -83,6 +87,27 @@ impl Default for EventBus {
 }
 
 impl EventBus {
+    /// Poison 된 버스 상태를 복구한다.
+    ///
+    /// `Inner` 는 구독 목록과 권한 맵뿐이고 임계구역은 `insert`/`remove`/`retain`/`push`
+    /// 밖에 하지 않는다 — 콜백도, 외부 호출도 없다. 그래서 패닉이 나도 맵의 불변식은
+    /// 성립하고 데이터는 그대로 쓸 수 있다. 반면 이 버스는 `PluginManager` 가 소유해
+    /// **메인 스레드**에서 fan-out 되므로, 여기서 패닉하면 모든 창의 터미널 세션이
+    /// 함께 죽는다 — 사망 범위가 비교가 안 된다
+    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    fn lock_recovering(&self) -> std::sync::MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|poisoned| {
+            if !self.poison_reported.swap(true, Ordering::Relaxed) {
+                tracing::error!(
+                    "event bus mutex poisoned — a thread panicked while holding it. Recovering \
+                     (subscription and permission maps keep their invariants); later occurrences \
+                     are not logged."
+                );
+            }
+            poisoned.into_inner()
+        })
+    }
+
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
@@ -92,6 +117,7 @@ impl EventBus {
                 #[cfg(debug_assertions)]
                 trace_ring: VecDeque::with_capacity(TRACE_RING_CAPACITY),
             })),
+            poison_reported: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -102,7 +128,7 @@ impl EventBus {
         subscribe_patterns: Vec<String>,
         publish_patterns: Vec<String>,
     ) {
-        let mut inner = self.inner.lock().expect("event bus poisoned");
+        let mut inner = self.lock_recovering();
         inner
             .plugin_subscribe_perms
             .insert(plugin_id.to_string(), subscribe_patterns);
@@ -113,7 +139,7 @@ impl EventBus {
 
     /// plugin이 종료되거나 비활성화되면 권한 + 구독 모두 제거.
     pub fn clear_plugin(&self, plugin_id: &str) {
-        let mut inner = self.inner.lock().expect("event bus poisoned");
+        let mut inner = self.lock_recovering();
         inner.plugin_subscribe_perms.remove(plugin_id);
         inner.plugin_publish_perms.remove(plugin_id);
         inner.plugin_subs.retain(|s| s.plugin_id != plugin_id);
@@ -127,7 +153,7 @@ impl EventBus {
         sub_id: u64,
         pattern: String,
     ) -> Result<(), EventBusError> {
-        let mut inner = self.inner.lock().expect("event bus poisoned");
+        let mut inner = self.lock_recovering();
         let allowed = inner
             .plugin_subscribe_perms
             .get(plugin_id)
@@ -152,7 +178,7 @@ impl EventBus {
     }
 
     pub fn unsubscribe_plugin(&self, plugin_id: &str, sub_id: u64) {
-        let mut inner = self.inner.lock().expect("event bus poisoned");
+        let mut inner = self.lock_recovering();
         inner
             .plugin_subs
             .retain(|s| !(s.plugin_id == plugin_id && s.sub_id == sub_id));
@@ -201,7 +227,7 @@ impl EventBus {
         }
         // publish 권한 매칭.
         let allowed = {
-            let inner = self.inner.lock().expect("event bus poisoned");
+            let inner = self.lock_recovering();
             inner
                 .plugin_publish_perms
                 .get(plugin_id)
@@ -225,7 +251,7 @@ impl EventBus {
         publisher_plugin_id: Option<&str>,
     ) -> Vec<PluginDispatch> {
         #[cfg_attr(not(debug_assertions), allow(unused_mut))]
-        let mut inner = self.inner.lock().expect("event bus poisoned");
+        let mut inner = self.lock_recovering();
         // debug 빌드: trace 링버퍼에 envelope 기록.
         #[cfg(debug_assertions)]
         {
@@ -268,7 +294,7 @@ impl EventBus {
     /// `(plugin_id, sub_id, 매니페스트의 구독 패턴)`.
     #[cfg(debug_assertions)]
     pub fn debug_list_subscribers(&self, key: &str) -> Vec<(String, u64, String)> {
-        let inner = self.inner.lock().expect("event bus poisoned");
+        let inner = self.lock_recovering();
         inner
             .plugin_subs
             .iter()
@@ -280,13 +306,30 @@ impl EventBus {
     /// debug 한정 — 링버퍼에서 `trace_id`가 일치하는 envelope들을 발화 순서로 반환.
     #[cfg(debug_assertions)]
     pub fn debug_trace(&self, trace_id: &str) -> Vec<EventEnvelope> {
-        let inner = self.inner.lock().expect("event bus poisoned");
+        let inner = self.lock_recovering();
         inner
             .trace_ring
             .iter()
             .filter(|e| e.meta.trace_id == trace_id)
             .cloned()
             .collect()
+    }
+
+    /// 테스트 전용 — 락을 든 채 패닉하는 스레드를 띄워 버스를 poison 시킨다.
+    ///
+    /// 프로덕션 임계구역에는 패닉 지점이 없어(순수 자료구조 조작) 바깥에서 poison 을
+    /// 만들 방법이 없다. 그래서 poison 이후에도 버스가 동작하는지 검증하려면 이런
+    /// 주입 지점이 필요하다.
+    #[cfg(test)]
+    pub(crate) fn poison_for_test(&self) {
+        let held = Arc::clone(&self.inner);
+        let joined = std::thread::spawn(move || {
+            let _guard = held.lock().expect("fresh mutex");
+            panic!("a thread dies while holding the event bus");
+        })
+        .join();
+        assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+        assert!(self.inner.lock().is_err(), "버스가 poison 됐어야 한다");
     }
 }
 

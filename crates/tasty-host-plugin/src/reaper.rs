@@ -28,8 +28,6 @@
 //! 모든 실패는 호출부에서 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로
 //! degrade 한다 — 결박 실패가 플러그인 기능이나 호스트를 죽여서는 안 된다.
 
-pub use imp::PluginReaper;
-
 #[cfg(windows)]
 mod imp {
     use std::io;
@@ -260,7 +258,12 @@ mod imp {
     }
 }
 
+pub use imp::PluginReaper;
+
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::PluginReaper;
 
