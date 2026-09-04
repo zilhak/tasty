@@ -81,8 +81,6 @@ pub fn unicode_width(ch: char) -> usize {
     }
 }
 
-#[cfg(debug_assertions)]
-pub use crate::cell_palette::compute_cell_colors as resolve_cell_colors;
 use crate::cell_palette::compute_cell_colors;
 use types::{BgInstance, GlyphInstance, Uniforms};
 
