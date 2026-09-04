@@ -112,7 +112,7 @@ done | wc -l                                    # 51
 
 - **연기 검사로서의 하한** — "경로가 틀렸거나 읽기에 실패했다" 를 잡는 용도. 이건 옳다.
   경로 오타는 예외가 아니라 **조용한 0** 을 만들고, 0 인 모수는 언제나 초록이기 때문이다.
-  현재 `MIN_SCANNED_FILES` 셋(`src/design_token_guard.rs` 200 · `src/source_guards.rs` 900 ·
+  현재 `MIN_SCANNED_FILES` 셋(`src/design_token_guard.rs` 200 · `src/source_guards/mod.rs` 900 ·
   `tests/ci_channel_claims_match_workflows.rs` 400)이 전부 이 용도이고 각자 doc 에 그렇게
   적혀 있다. 남긴다.
 - **모수 고정으로서의 하한** — "이만큼 봤으니 다 봤다" 의 근거로 쓰는 용도. 이건 쓰지
@@ -143,7 +143,7 @@ done | wc -l                                    # 51
   `the_gpu_scan_root_is_a_directory_not_a_file`(`tests/design_token_adherence.rs` —
   통합 타깃이라 헤드리스 잡)과 `the_two_sister_guards_scan_the_same_roots`
   (`src/design_token_guard.rs`), `every_scan_unit_contributes_at_least_one_file`
-  (`src/source_guards.rs`) — 뒤의 둘은 본체 crate 의 lib 유닛이라
+  (`src/source_guards/mod.rs`) — 뒤의 둘은 본체 crate 의 lib 유닛이라
   `cargo test --workspace --lib --bins` 로 **자동으로 돈다**. 그 셋 밖 —
   **나머지 11 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체(1178),
   base = `32c71757`.** base 가 바뀌어 공통 검사가 더 생기면 이 문단은 다시 만료된다.
@@ -204,7 +204,7 @@ done | wc -l                                    # 51
   이 ADR 의 발단이 된 반경 축 정리가 그 규약을 따랐다
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색 가드의 모수가 갤러리를 의도적으로
   빼는 근거. "계층마다 모수가 다르다" 의 실례
-- [`src/source_guards.rs`](../../src/source_guards.rs) `every_scan_unit_contributes_at_least_one_file`
+- [`src/source_guards/mod.rs`](../../src/source_guards/mod.rs) `every_scan_unit_contributes_at_least_one_file`
   — 이 ADR 과 **독립적으로** 같은 결론에 도달한 사례(커밋 `a37c310a`). 개수 하한을 집합
   동등으로 올린 근거가 그 함수의 doc 주석에 실측으로 적혀 있다
 - [ADR-0128](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) — 타입 봉인

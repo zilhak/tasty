@@ -1,0 +1,569 @@
+//! 소스 텍스트를 읽어 **한 플랫폼·한 빌드 조합에서만 드러나는 함정**을 전 플랫폼에서
+//! 막는 드리프트 가드.
+//!
+//! ## 왜 `tests/` 가 아니라 여기인가
+//!
+//! `tests/` 의 통합 테스트는 **헤드리스 조합에서만** 자동으로 실행된다
+//! (`check-headless` 가 전체 스위트를 돌린다). 기본 조합에는 실행 채널이 없고, 그
+//! 헤드리스 잡조차 `paths-ignore` 때문에 문서·site 만 담은 push 에서는 발사되지 않는다.
+//! 소스를 런타임에 읽는 스캔 가드는 컴파일만 되어서는 아무것도 보장하지 못하므로 —
+//! 가드의 본체가 곧 스캔이다 — 두 조합 모두에서 도는 곳에 둔다. 이 모듈은 `tasty` bin 의
+//! 유닛 테스트라 **두 조합의 자동 잡이 모두 실행한다** — Windows 잡은
+//! `cargo test --workspace --lib --bins` 로, 헤드리스 잡은 그 상위집합인 전체 스위트로.
+//! (한때 두 잡이 같은 `--lib --bins` 명령을 썼으나 헤드리스가 전체 스위트로 넓어졌다.
+//! 바뀐 것은 명령이지 이 모듈의 채널이 아니다 — `tests/` 로 옮기면 Windows 잡을 잃는다.)
+//!
+//! 채널의 **존재**는 채널의 **건강**이 아니다. 어떤 검증을 "이 가드가 CI 에서 잡아준다"
+//! 를 근거로 면제하려면, 그 잡이 최근 실행에서 실제로 통과했는지를 따로 확인해야 한다.
+//! 트리거·러너를 포함한 전체 매트릭스는 [`docs/dev-guide/ci-gates.md`] 가 정본이다.
+//!
+//! ## 스캔 방식
+//!
+//! 파일을 읽어 **주석·문자열·문자 리터럴을 공백으로 덮은 사본**(`mask_non_code`)을
+//! 만든 뒤 그 위에서만 판정한다. 줄 구조는 그대로 두므로 줄 번호가 보존된다.
+//! 들여쓰기나 rustfmt 스타일에 의존하지 않는다. CRLF 는 읽는 즉시 LF 로 정규화하고,
+//! 경로는 `Path::join` 으로만 만들어 Windows 에서도 같은 결과를 낸다.
+//!
+//! **이 모듈의 파일들도 스캔 대상에 포함된다.** 금지 형태를 상수·합성 스니펫으로 들고
+//! 있지만 전부 문자열 리터럴이라 마스킹으로 지워지므로 자기 자신을 잡지 않는다. 예외를
+//! 두어 스스로를 빼면 그 예외만큼 이 모듈이 사각이 되므로 그렇게 하지 않았다 —
+//! `the_guard_file_scans_itself` 가 조각 하나하나의 포함 여부를 못박는다.
+//!
+//! ## 판정기는 스캔 루프에서 분리한다
+//!
+//! 각 가드의 판정은 순수 함수(`scan`)로 뽑아 두고, 레포 전수 테스트와 합성 입력
+//! 테스트가 **같은 함수**를 부른다. 루프 안에 인라인이면 면제를 찌르는 변이가
+//! "레포에 진짜 위반을 심었다 되돌리기" 로만 가능해지는데, 그건 느리고 트리를
+//! 더럽히며 되돌리다 사고가 난다.
+//!
+//! ## 면제에는 그것을 겨냥한 변이를 붙인다
+//!
+//! 면제(allowlist · 창 · skip 조건)를 하나 넣을 때마다 **그 면제 창 안쪽에 진짜
+//! 위반을 심었을 때 잡히는가**를 묻는 테스트를 함께 넣는다. 각 가드의
+//! `exemption_mutations` 모듈이 그것이다. 검증되지 않은 면제는 그 면제만큼 구멍이다.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
+/// 스캔 하한 — 워커가 망가져 파일을 거의 못 읽으면 모든 가드가 조용히 통과한다.
+/// 현재 실측은 1100 개 남짓이라 여유를 두고 잡는다.
+const MIN_SCANNED_FILES: usize = 900;
+
+/// 스캔 루트. 워크스페이스의 Rust 소스 전부(본체 + 모든 크레이트).
+const SCAN_ROOTS: &[&str] = &["src", "crates"];
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// 스캔 루트 아래의 모든 `.rs` 를 (레포 상대 경로, LF 정규화된 내용)으로 모은다.
+/// 빌드 산출물(`target/`)은 루트 밑에 없지만, 크레이트별 `target/` 이 생길 수 있어
+/// 이름으로 한 번 더 뺀다.
+fn rust_sources() -> Vec<(PathBuf, String)> {
+    let root = repo_root();
+    let mut out = Vec::new();
+    let mut stack: Vec<PathBuf> = SCAN_ROOTS.iter().map(|r| root.join(r)).collect();
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("스캔 루트를 읽을 수 없다: {} — {e}", dir.display()));
+        for entry in entries {
+            let entry = entry.expect("디렉터리 항목을 읽을 수 없다");
+            let path = entry.path();
+            let file_type = entry.file_type().expect("파일 종류를 알 수 없다");
+            if file_type.is_dir() {
+                if entry.file_name() == "target" {
+                    continue;
+                }
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let rel = path
+                    .strip_prefix(&root)
+                    .expect("스캔 경로는 레포 안이어야 한다")
+                    .to_path_buf();
+                let text = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("소스를 읽을 수 없다: {} — {e}", path.display()));
+                out.push((rel, text.replace("\r\n", "\n")));
+            }
+        }
+    }
+    assert!(
+        out.len() >= MIN_SCANNED_FILES,
+        "스캔 하한 미달: {} 개만 읽었다(하한 {MIN_SCANNED_FILES}). 워커나 스캔 루트가 깨졌다",
+        out.len()
+    );
+    out
+}
+
+/// 스캔 **단위** — `src` 하나와 `crates/<이름>` 각각. 개수 하한(`MIN_SCANNED_FILES`)은
+/// 단위 하나가 통째로 빠져도 통과한다: 실측하면 가장 큰 크레이트가 108 개라
+/// 1114 − 108 = 1006 으로 하한 900 을 안 건드린다. 그래서 개수와 **별개로** 집합을 못박는다.
+/// 강도는 하한 < 개수 고정 < 집합 동등 순이고, 세지는 이유는 정밀도가 아니라 재는 대상이
+/// "몇 개 봤나" 에서 "무엇을 봤나" 로 바뀌기 때문이다.
+///
+/// 이 함수는 순수하다 — 변이 테스트가 조작한 목록을 그대로 먹일 수 있다.
+fn scanned_units(files: &[(PathBuf, String)]) -> BTreeSet<String> {
+    files.iter().filter_map(|(rel, _)| unit_of(rel)).collect()
+}
+
+/// 레포 상대 경로가 속한 스캔 단위. 스캔 루트 밖이면 `None`.
+fn unit_of(rel: &Path) -> Option<String> {
+    let mut parts = rel.components();
+    let first = parts.next()?.as_os_str().to_string_lossy().into_owned();
+    match first.as_str() {
+        "src" => Some("src".to_owned()),
+        "crates" => {
+            let name = parts.next()?.as_os_str().to_string_lossy().into_owned();
+            Some(format!("crates/{name}"))
+        }
+        _ => None,
+    }
+}
+
+/// 스캔과 **독립적인 경로로** 단위 집합을 만든다 — 파일을 훑지 않고 매니페스트의 존재로
+/// 센다. 같은 워커로 두 번 세면 워커의 결함이 양쪽에 똑같이 들어가 대조가 무의미해진다.
+fn expected_units() -> BTreeSet<String> {
+    let root = repo_root();
+    assert!(root.join("src").is_dir(), "`src` 스캔 루트가 없다");
+    let mut out = BTreeSet::from(["src".to_owned()]);
+    let entries = std::fs::read_dir(root.join("crates")).expect("`crates` 를 읽을 수 없다");
+    for entry in entries {
+        let entry = entry.expect("디렉터리 항목을 읽을 수 없다");
+        let is_dir = entry.file_type().expect("파일 종류를 알 수 없다").is_dir();
+        if is_dir && entry.path().join("Cargo.toml").is_file() {
+            out.insert(format!("crates/{}", entry.file_name().to_string_lossy()));
+        }
+    }
+    out
+}
+
+/// `(스캔에서 빠진 단위, 스캔에만 있는 단위)`. 양방향을 다 내는 이유는 개수가 같은 수로
+/// 상쇄될 수 있기 때문이다 — 하나가 빠지고 하나가 들어오면 총수는 안 변한다.
+fn unit_diff(
+    scanned: &BTreeSet<String>,
+    expected: &BTreeSet<String>,
+) -> (Vec<String>, Vec<String>) {
+    (
+        expected.difference(scanned).cloned().collect(),
+        scanned.difference(expected).cloned().collect(),
+    )
+}
+
+/// 단위별 파일 수. 변이가 겨냥할 최대 크레이트를 고르는 데 쓴다.
+fn unit_counts(files: &[(PathBuf, String)]) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for (rel, _) in files {
+        if let Some(unit) = unit_of(rel) {
+            *out.entry(unit).or_insert(0usize) += 1;
+        }
+    }
+    out
+}
+
+/// `cfg` 로 배제되는 두 축을 각각 대표하는 파일. 스캔은 `cfg` 를 해석하지 않고 디스크의
+/// 텍스트를 읽으므로 **어느 조합에서 돌든 둘 다 읽어야 한다.**
+///
+/// - `src/gfx/gpu.rs` — **feature 축**(`#[cfg(feature = "gui")] mod gfx;`). 헤드리스
+///   조합에서 `gfx::` 유닛 테스트가 31 개에서 0 개로 사라지는 것이 그 게이트의 실행 축
+///   증거다. 그 디렉터리의 `.rs` 중 `target_os` 를 쓰는 것은 0 이라 이 파일은 feature
+///   축만 단독으로 대표한다.
+/// - `src/host_api/webview/macos.rs` — **target_os 축**. Linux 에서는 두 조합 모두
+///   컴파일되지 않으므로 이 파일 하나로는 feature 축을 가를 수 없다. 두 파일이 필요한
+///   이유가 그것이다.
+///
+/// 텍스트로 `cfg` 를 찾아 판정하지 않는다 — 두 파일 다 게이트가 **자기 파일 밖**에 있어
+/// 파일만 열어서는 "게이트 없음" 으로 읽힌다.
+///
+/// ## 자동 채널 없음
+///
+/// 위 두 문장 중 **게이트가 어디에 있는지**와 **헤드리스에서 `gfx::` 가 31→0 이라는
+/// 실행 축 증거**는 이 크레이트 안에서 판정할 수 없다. 유닛 테스트는 **자기 조합
+/// 하나만** 보므로 다른 조합의 목록을 볼 수단이 없고, 게이트가 다른 파일로 옮겨가도
+/// 아래 단정들은 그대로 통과한다. 즉 이 두 문장은 **사람이 읽어야 잡히는 부류**이고
+/// 겨냥할 변이가 없다. 지어내지 않고 부재를 여기 적어둔다.
+///
+/// **이 선언의 좌표**: 모수 = 이 크레이트의 유닛 테스트, base = 이 커밋의 부모.
+/// 부재는 base 에 따라 만료된다 — 조합 간 목록을 대조하는 가드가 워크스페이스에
+/// 들어오면 이 두 문장은 그때부터 **가드 대상**이 되고 이 선언은 죽는다.
+/// 선언을 옮겨 적을 때 이 좌표를 함께 옮겨라.
+///
+/// 반면 "`src/gfx/` 에 target_os 가 없다" 는 전제는 실행으로 판정 가능해서
+/// `the_feature_axis_sample_is_not_also_target_gated` 가 재고 있다.
+/// feature 축 표본이 사는 디렉터리. 위 표본 경로와 아래 순수성 판정이 같은 값을 보게
+/// 한 곳에 둔다.
+const FEATURE_AXIS_DIR: &str = "src/gfx/";
+
+const CFG_EXCLUDED_SAMPLES: &[&str] = &["src/gfx/gpu.rs", "src/host_api/webview/macos.rs"];
+
+/// `src/gfx/gpu.rs` 가 **feature 축만** 대표한다는 전제를 못박는다. 그 디렉터리에
+/// `target_os` 분기가 하나라도 들어오면 이 표본은 두 축이 섞여 위 관측의 판별력을 잃는다.
+/// 전제가 실행으로 판정 가능하므로 산문으로 두지 않고 여기서 재는 쪽을 택했다.
+#[test]
+fn the_feature_axis_sample_is_not_also_target_gated() {
+    let sources = rust_sources();
+    let considered: Vec<&(PathBuf, String)> = sources
+        .iter()
+        .filter(|(path, _)| {
+            path.to_string_lossy()
+                .replace('\\', "/")
+                .starts_with(FEATURE_AXIS_DIR)
+        })
+        .collect();
+    // 판정기가 자기 모수를 함께 낸다. 접두가 어긋나 0 개를 훑으면 아래 단정은 아무것도
+    // 안 보면서 통과한다 — "0 건 발견" 과 "0 회 실행" 을 여기서 가른다. 접두를 없는
+    // 디렉터리로 바꾸는 변이가 이 줄이 없을 때 실제로 살아남는 것을 확인했다.
+    assert!(
+        !considered.is_empty(),
+        "{FEATURE_AXIS_DIR} 아래에서 훑은 파일이 0 개다 — 디렉터리가 옮겨졌거나 접두가 \
+         어긋났다. 이 상태로는 아래 판정이 아무것도 보지 않는다"
+    );
+    let dirty: Vec<String> = considered
+        .iter()
+        .filter(|(_, text)| mask_non_code(text).contains("target_os"))
+        .map(|(path, _)| path.display().to_string())
+        .collect();
+    assert!(
+        dirty.is_empty(),
+        "`src/gfx/` 에 target_os 분기가 생겼다 — feature 축 표본이 두 축을 섞게 된다. \
+         `CFG_EXCLUDED_SAMPLES` 의 feature 축 표본을 순수한 파일로 옮겨라: {dirty:?}"
+    );
+}
+
+/// 스캔이 **지금 이 빌드가 컴파일하지 않는 파일까지** 읽는다는 것을 못박는다. 헤드리스
+/// 조합에서 이 테스트가 통과하는 것이 feature 게이트 축의 직접 관측이고, 어느 조합에서든
+/// `macos.rs` 쪽이 target_os 축의 관측이다. 하한(`MIN_SCANNED_FILES`)은 총량만 보므로
+/// 특정 파일이 빠져도 통과한다 — 그래서 이름으로 따로 단정한다.
+#[test]
+fn the_scan_reads_files_this_build_never_compiles() {
+    let scanned: BTreeSet<String> = rust_sources()
+        .iter()
+        .map(|(path, _)| path.to_string_lossy().replace('\\', "/"))
+        .collect();
+    let missing: Vec<&str> = CFG_EXCLUDED_SAMPLES
+        .iter()
+        .copied()
+        .filter(|path| !scanned.contains(*path))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "cfg 로 배제된 대표 파일이 스캔에 없다: {missing:?}. 파일이 옮겨졌으면 이 목록을 \
+         함께 고쳐라 — 목록이 낡으면 이 단정은 아무것도 안 보면서 통과한다"
+    );
+}
+
+#[test]
+fn every_scan_unit_contributes_at_least_one_file() {
+    let files = rust_sources();
+    let (missing, extra) = unit_diff(&scanned_units(&files), &expected_units());
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "스캔 단위 집합이 어긋난다 — 빠진 단위 {missing:?} / 여분 {extra:?}. \
+         개수 하한은 단위 하나가 통째로 빠져도 통과하므로 이 대조가 따로 필요하다"
+    );
+}
+
+/// 집합 동등이라는 **면제 없는 판정**도 자기를 겨냥한 변이로 못박는다 — 판정기가 돌기만
+/// 하고 아무것도 못 보는 상태를 배제한다.
+mod scan_unit_mutations;
+
+/// 주석·문자열·문자 리터럴을 공백으로 덮은 사본을 만든다. 줄바꿈은 그대로 두므로
+/// 결과 문자열의 줄 번호는 원본과 같다. 라이프타임 틱(`'a`)은 문자 리터럴과 구분한다.
+fn mask_non_code(src: &str) -> String {
+    let chars: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        i = match chars[i] {
+            '/' if chars.get(i + 1) == Some(&'/') => mask_line_comment(&chars, i, &mut out),
+            '/' if chars.get(i + 1) == Some(&'*') => mask_block_comment(&chars, i, &mut out),
+            'r' | 'b' if raw_string_hashes(&chars, i).is_some() => {
+                mask_raw_string(&chars, i, &mut out)
+            }
+            '"' => mask_quoted(&chars, i, '"', &mut out),
+            '\'' if is_char_literal(&chars, i) => mask_quoted(&chars, i, '\'', &mut out),
+            c => {
+                out.push(c);
+                i + 1
+            }
+        };
+    }
+    out
+}
+
+/// 코드가 아닌 한 글자를 공백으로 덮는다 — 줄바꿈만 그대로 둬서 줄 번호를 지킨다.
+fn blank(out: &mut String, c: char) {
+    out.push(if c == '\n' { '\n' } else { ' ' });
+}
+
+fn mask_line_comment(chars: &[char], mut i: usize, out: &mut String) -> usize {
+    while i < chars.len() && chars[i] != '\n' {
+        blank(out, chars[i]);
+        i += 1;
+    }
+    i
+}
+
+fn mask_block_comment(chars: &[char], mut i: usize, out: &mut String) -> usize {
+    let mut depth = 0usize;
+    while i < chars.len() {
+        let opening = chars[i] == '/' && chars.get(i + 1) == Some(&'*');
+        let closing = chars[i] == '*' && chars.get(i + 1) == Some(&'/');
+        if opening || closing {
+            depth = if opening { depth + 1 } else { depth - 1 };
+            blank(out, chars[i]);
+            blank(out, chars[i + 1]);
+            i += 2;
+            if closing && depth == 0 {
+                break;
+            }
+        } else {
+            blank(out, chars[i]);
+            i += 1;
+        }
+    }
+    i
+}
+
+fn mask_raw_string(chars: &[char], i: usize, out: &mut String) -> usize {
+    let (quote, hashes) = raw_string_hashes(chars, i).expect("호출 전에 확인했다");
+    // 접두사(`r` / `br` / `#`)는 코드다 — 여는 따옴표부터 덮는다.
+    for c in &chars[i..quote] {
+        out.push(*c);
+    }
+    let mut i = quote;
+    blank(out, chars[i]);
+    i += 1;
+    while i < chars.len() {
+        if chars[i] == '"' && chars[i + 1..].iter().take(hashes).all(|c| *c == '#') {
+            for _ in 0..=hashes {
+                if i < chars.len() {
+                    blank(out, chars[i]);
+                    i += 1;
+                }
+            }
+            break;
+        }
+        blank(out, chars[i]);
+        i += 1;
+    }
+    i
+}
+
+/// `terminator` 로 닫히는 리터럴(문자열·문자)을 덮는다. 역슬래시 이스케이프를 따른다.
+fn mask_quoted(chars: &[char], mut i: usize, terminator: char, out: &mut String) -> usize {
+    blank(out, chars[i]);
+    i += 1;
+    while i < chars.len() {
+        if chars[i] == '\\' {
+            blank(out, chars[i]);
+            i += 1;
+            if i < chars.len() {
+                blank(out, chars[i]);
+                i += 1;
+            }
+            continue;
+        }
+        let done = chars[i] == terminator;
+        blank(out, chars[i]);
+        i += 1;
+        if done {
+            break;
+        }
+    }
+    i
+}
+
+/// `i` 가 raw string 접두사(`r"`, `r#"`, `br"`, `br#"` …)의 시작이면 여는 `"` 의
+/// 인덱스와 `#` 개수를 돌려준다.
+fn raw_string_hashes(chars: &[char], i: usize) -> Option<(usize, usize)> {
+    let mut j = i;
+    if chars.get(j) == Some(&'b') {
+        j += 1;
+    }
+    if chars.get(j) != Some(&'r') {
+        return None;
+    }
+    j += 1;
+    let hash_start = j;
+    while chars.get(j) == Some(&'#') {
+        j += 1;
+    }
+    if chars.get(j) == Some(&'"') {
+        Some((j, j - hash_start))
+    } else {
+        None
+    }
+}
+
+/// `'` 가 문자 리터럴의 시작인지(아니면 라이프타임 틱인지) 가른다.
+/// `'\n'` 처럼 이스케이프로 시작하거나, 두 칸 뒤가 닫는 따옴표면 문자 리터럴이다.
+fn is_char_literal(chars: &[char], i: usize) -> bool {
+    chars.get(i + 1) == Some(&'\\') || chars.get(i + 2) == Some(&'\'')
+}
+
+/// 마스킹된 소스에서 `pos`(char 인덱스 아님, 바이트 인덱스) 가 몇 번째 줄인지.
+fn line_of(masked: &str, pos: usize) -> usize {
+    masked[..pos].bytes().filter(|b| *b == b'\n').count() + 1
+}
+
+/// 식별자 경계에서 시작하는 단어인지.
+fn is_word_boundary(masked: &str, pos: usize, word: &str) -> bool {
+    let before = masked[..pos].chars().next_back();
+    let after = masked[pos + word.len()..].chars().next();
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    !before.is_some_and(ident) && !after.is_some_and(ident)
+}
+
+/// `masked` 안에서 `word` 가 단어로 나타나는 모든 바이트 위치.
+fn word_positions(masked: &str, word: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(rel) = masked[from..].find(word) {
+        let pos = from + rel;
+        if is_word_boundary(masked, pos, word) {
+            out.push(pos);
+        }
+        from = pos + word.len();
+    }
+    out
+}
+
+/// `open` 위치의 여는 구분자에 대응하는 닫는 구분자의 바이트 위치. 매크로 호출은
+/// `(`·`{`·`[` 중 아무것이나 쓸 수 있으므로 구분자를 고정하지 않는다.
+fn matching_delim(masked: &str, open: usize) -> Option<usize> {
+    let opener = masked[open..].chars().next()?;
+    let closer = match opener {
+        '(' => ')',
+        '{' => '}',
+        '[' => ']',
+        _ => return None,
+    };
+    let mut depth = 0usize;
+    for (offset, c) in masked[open..].char_indices() {
+        if c == opener {
+            depth += 1;
+        } else if c == closer {
+            depth -= 1;
+            if depth == 0 {
+                return Some(open + offset);
+            }
+        }
+    }
+    None
+}
+
+/// `from` 이후 첫 여는 구분자(`(`·`{`·`[`)의 바이트 위치.
+fn next_opening_delim(masked: &str, from: usize) -> Option<usize> {
+    masked[from..]
+        .char_indices()
+        .find(|(_, c)| matches!(c, '(' | '{' | '['))
+        .map(|(offset, _)| from + offset)
+}
+
+/// 이 모듈 자신이 스캔 모수에 들어 있는지 못박는다 — 자기 제외 면제를 두지 않았다는
+/// 근거다. 빠지면 이 모듈 안의 진짜 위반을 어떤 가드도 못 잡게 된다.
+///
+/// 모듈이 여러 파일로 나뉘어 있으므로 **이름을 외우지 않고 디렉토리를 읽는다.** 한 파일만
+/// 확인하면 나머지가 조용히 모수 밖으로 나가도 통과한다 — 파일이 하나였을 때는 그 구분이
+/// 없었지만 지금은 있다. 새 조각을 더해도 이 테스트가 따라온다.
+#[test]
+fn the_guard_file_scans_itself() {
+    let dir: PathBuf = ["src", "source_guards"].iter().collect();
+    let mut own: Vec<PathBuf> = std::fs::read_dir(repo_root().join(&dir))
+        .expect("가드 모듈 디렉토리를 읽지 못했다 — 경로가 바뀌었는지 확인해라")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name())
+        .filter(|name| Path::new(name).extension().is_some_and(|ext| ext == "rs"))
+        .map(|name| dir.join(name))
+        .collect();
+    own.sort();
+    assert!(
+        !own.is_empty(),
+        "가드 모듈에서 .rs 를 하나도 찾지 못했다 — 0 개를 통과로 세지 않는다"
+    );
+
+    let scanned: BTreeSet<PathBuf> = rust_sources().into_iter().map(|(path, _)| path).collect();
+    let missing: Vec<&PathBuf> = own.iter().filter(|path| !scanned.contains(*path)).collect();
+    assert!(
+        missing.is_empty(),
+        "가드 자신의 파일이 스캔 모수에서 빠졌다 — 자기 제외 면제가 다시 생겼는지 확인해라: {missing:?}"
+    );
+}
+
+mod define_class_return;
+
+mod read_only_handle_mtime;
+
+// ── 워크플로: 테스트를 **실행하는** 스텝은 `--no-fail-fast` 를 갖는다 ────────
+//
+// `cargo test` 는 기본적으로 **처음 실패한 테스트 바이너리에서 멈춘다.** 그러면 그 뒤에
+// 오는 타깃이 한 번도 실행되지 않는데, 로그는 "N failed" 라고만 말한다. 실측으로 기본
+// 조합 `--lib --bins` 가 이 플래그 없이는 바이너리 1 개(2017 passed)에서 멈췄고, 붙이면
+// 52 개(4551 passed)가 돌았다 — 51 개 크레이트가 조용히 가려져 있었다.
+//
+// 이 결함은 **문서 주장이 아니라 워크플로 내부의 비대칭**이라, 문서와 워크플로를 대조하는
+// `tests/ci_channel_claims_match_workflows.rs` 가 보지 못한다. 한 잡에 플래그를 넣으면서
+// 같은 파일의 다른 잡을 놓치는 형태가 실제로 있었고, 그것을 막는 것이 이 가드다.
+
+/// 워크플로 디렉토리(레포 루트 기준).
+const WORKFLOW_DIR: &str = ".github/workflows";
+
+/// 스캔 하한 — 디렉토리를 잘못 짚으면 0 개를 읽고 조용히 통과한다.
+const MIN_WORKFLOW_FILES: usize = 4;
+
+/// `cargo test` 호출 개수의 하한. 같은 이유.
+const MIN_TEST_INVOCATIONS: usize = 4;
+
+/// YAML 주석 줄을 지우고 전체를 한 줄로 평탄화한다.
+///
+/// 평탄화하는 이유: `run: |` 블록과 `run: >` 접힌 스칼라, 그리고 줄 끝 `\` 이음이 전부
+/// 한 명령을 여러 줄에 나눈다. 줄 단위로 보면 `cargo test --workspace \` 에서 끊겨
+/// 뒤에 오는 플래그를 놓친다 — 있는 플래그를 없다고 판정하는 쪽이라 더 나쁘다.
+///
+/// 주석을 먼저 지우는 이유: 이 파일의 주석에도 `--no-fail-fast` 라는 글자가 나온다.
+/// 안 지우면 **주석이 스텝을 면제해 준다.**
+///
+/// `name:` 줄도 지운다. 이 레포의 스텝 이름이 `cargo test (unit)` 처럼 명령을 그대로
+/// 쓰기 때문이다 — 안 지우면 이름이 호출로 잡혀 오탐이 되고, 더 나쁘게는 이름의 조각이
+/// 뒤따르는 진짜 명령까지 삼켜 그 명령을 **검사 대상에서 빼 버린다**(이름 슬라이스가
+/// 다음 `cargo ` 앞까지라 플래그를 대신 물어 준다).
+fn flatten_workflow(yaml: &str) -> String {
+    yaml.replace("\r\n", "\n")
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            !t.starts_with('#') && !t.starts_with("- name:") && !t.starts_with("name:")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 평탄화된 워크플로에서 `cargo test` 호출을 하나씩 잘라낸다. 각 조각은 그 호출부터
+/// 다음 `cargo ` 직전까지라, 한 스텝에 명령이 여럿이어도 플래그가 섞이지 않는다.
+fn cargo_test_invocations(flat: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = flat[from..].find("cargo test") {
+        let start = from + rel;
+        let rest = &flat[start + "cargo test".len()..];
+        let end = rest
+            .find("cargo ")
+            .map_or(flat.len(), |n| start + "cargo test".len() + n);
+        out.push(&flat[start..end]);
+        from = start + "cargo test".len();
+    }
+    out
+}
+
+/// `--no-fail-fast` 가 없는 **실행** 호출들. `--no-run` 은 컴파일만 하므로 면제다 —
+/// 실행하지 않는 호출에는 fail-fast 라는 개념이 없다.
+fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
+    let flat = flatten_workflow(yaml);
+    cargo_test_invocations(&flat)
+        .into_iter()
+        .filter(|inv| !inv.contains("--no-run") && !inv.contains("--no-fail-fast"))
+        .map(|inv| inv.split_whitespace().take(8).collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+#[cfg(test)]
+mod workflow_fail_fast_tests;

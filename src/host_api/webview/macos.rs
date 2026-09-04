@@ -176,7 +176,7 @@ define_class!(
         /// 빠져나가며 `Bool` 로 타입 검사돼 macOS 에서만 컴파일이 깨진다(꼬리
         /// 표현식은 `__objc2_result` 에 묶여 `bool` 로 추론되므로 멀쩡하다 — 한
         /// 함수 안에서 두 경로의 기대 타입이 다르다). 값은 전부 표현식으로 흘린다.
-        /// `src/source_guards.rs` 의 가드가 이 형태를 전 플랫폼에서 막는다.
+        /// `src/source_guards/define_class_return.rs` 의 가드가 이 형태를 전 플랫폼에서 막는다.
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
             if view_holds_first_responder(self) && self.forward_key_to_host(event) {
