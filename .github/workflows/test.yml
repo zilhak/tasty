@@ -50,9 +50,12 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # `--no-fail-fast` — 세 가드는 서로 독립인데, 없으면 첫 가드가 깨진 회차에서
+      # 나머지 둘이 실행조차 안 된다. 그러면 "SemVer 가드 1 건 실패" 로 보이지만 실제로는
+      # 두 건이 미판정이다. 근거 전문은 crossplatform-check.yml 의 Windows 단위테스트 스텝.
       - name: cargo test (semver guards)
         run: >
-          cargo test --locked --no-default-features
+          cargo test --locked --no-default-features --no-fail-fast
           --test api_baseline_0_7
           --test changelog_unreleased
           --test cli_naming_count_drift
@@ -72,5 +75,7 @@ jobs:
       - name: Build tests
         run: cargo test --workspace --no-run --locked
 
+      # 전체 스위트라 첫 실패가 가리는 범위가 가장 넓다 — 이 잡이 `tests/` 통합 타깃의
+      # 유일한 실행 채널이므로, 가려진 타깃은 다른 어디서도 안 돈다.
       - name: Run tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast

@@ -3,10 +3,13 @@
 //!
 //! ## 왜 `tests/` 가 아니라 여기인가
 //!
-//! `tests/` 의 통합 테스트에는 **자동 실행 채널이 없다**(컴파일만 자동으로 검사된다).
+//! `tests/` 의 통합 테스트는 **헤드리스 조합에서만** 자동으로 실행된다
+//! (`check-headless` 가 전체 스위트를 돌린다). 기본 조합에는 실행 채널이 없고, 그
+//! 헤드리스 잡조차 `paths-ignore` 때문에 문서·site 만 담은 push 에서는 발사되지 않는다.
 //! 소스를 런타임에 읽는 스캔 가드는 컴파일만 되어서는 아무것도 보장하지 못하므로 —
-//! 가드의 본체가 곧 스캔이다 — 실행 채널이 있는 곳에 둔다. 이 모듈은 `tasty` bin 의
-//! 유닛 테스트라 `cargo test --workspace --lib --bins` 를 도는 CI 잡에서 실행된다.
+//! 가드의 본체가 곧 스캔이다 — 두 조합 모두에서 도는 곳에 둔다. 이 모듈은 `tasty` bin 의
+//! 유닛 테스트라 `cargo test --workspace --lib --bins` 를 도는 CI 잡에서 실행되고,
+//! 그 명령은 기본·헤드리스 두 조합에 다 있다.
 //!
 //! 채널의 **존재**는 채널의 **건강**이 아니다. 어떤 검증을 "이 가드가 CI 에서 잡아준다"
 //! 를 근거로 면제하려면, 그 잡이 최근 실행에서 실제로 통과했는지를 따로 확인해야 한다.
@@ -417,5 +420,169 @@ mod read_only_handle_mtime {
              `std::fs::OpenOptions::new().write(true).open(..)` 로 열어라.\n  {}",
             violations.join("\n  ")
         );
+    }
+}
+
+// ── 워크플로: 테스트를 **실행하는** 스텝은 `--no-fail-fast` 를 갖는다 ────────
+//
+// `cargo test` 는 기본적으로 **처음 실패한 테스트 바이너리에서 멈춘다.** 그러면 그 뒤에
+// 오는 타깃이 한 번도 실행되지 않는데, 로그는 "N failed" 라고만 말한다. 실측으로 기본
+// 조합 `--lib --bins` 가 이 플래그 없이는 바이너리 1 개(2017 passed)에서 멈췄고, 붙이면
+// 52 개(4551 passed)가 돌았다 — 51 개 크레이트가 조용히 가려져 있었다.
+//
+// 이 결함은 **문서 주장이 아니라 워크플로 내부의 비대칭**이라, 문서와 워크플로를 대조하는
+// `tests/ci_channel_claims_match_workflows.rs` 가 보지 못한다. 한 잡에 플래그를 넣으면서
+// 같은 파일의 다른 잡을 놓치는 형태가 실제로 있었고, 그것을 막는 것이 이 가드다.
+
+/// 워크플로 디렉토리(레포 루트 기준).
+const WORKFLOW_DIR: &str = ".github/workflows";
+
+/// 스캔 하한 — 디렉토리를 잘못 짚으면 0 개를 읽고 조용히 통과한다.
+const MIN_WORKFLOW_FILES: usize = 4;
+
+/// `cargo test` 호출 개수의 하한. 같은 이유.
+const MIN_TEST_INVOCATIONS: usize = 4;
+
+/// YAML 주석 줄을 지우고 전체를 한 줄로 평탄화한다.
+///
+/// 평탄화하는 이유: `run: |` 블록과 `run: >` 접힌 스칼라, 그리고 줄 끝 `\` 이음이 전부
+/// 한 명령을 여러 줄에 나눈다. 줄 단위로 보면 `cargo test --workspace \` 에서 끊겨
+/// 뒤에 오는 플래그를 놓친다 — 있는 플래그를 없다고 판정하는 쪽이라 더 나쁘다.
+///
+/// 주석을 먼저 지우는 이유: 이 파일의 주석에도 `--no-fail-fast` 라는 글자가 나온다.
+/// 안 지우면 **주석이 스텝을 면제해 준다.**
+///
+/// `name:` 줄도 지운다. 이 레포의 스텝 이름이 `cargo test (unit)` 처럼 명령을 그대로
+/// 쓰기 때문이다 — 안 지우면 이름이 호출로 잡혀 오탐이 되고, 더 나쁘게는 이름의 조각이
+/// 뒤따르는 진짜 명령까지 삼켜 그 명령을 **검사 대상에서 빼 버린다**(이름 슬라이스가
+/// 다음 `cargo ` 앞까지라 플래그를 대신 물어 준다).
+fn flatten_workflow(yaml: &str) -> String {
+    yaml.replace("\r\n", "\n")
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            !t.starts_with('#') && !t.starts_with("- name:") && !t.starts_with("name:")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 평탄화된 워크플로에서 `cargo test` 호출을 하나씩 잘라낸다. 각 조각은 그 호출부터
+/// 다음 `cargo ` 직전까지라, 한 스텝에 명령이 여럿이어도 플래그가 섞이지 않는다.
+fn cargo_test_invocations(flat: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = flat[from..].find("cargo test") {
+        let start = from + rel;
+        let rest = &flat[start + "cargo test".len()..];
+        let end = rest
+            .find("cargo ")
+            .map_or(flat.len(), |n| start + "cargo test".len() + n);
+        out.push(&flat[start..end]);
+        from = start + "cargo test".len();
+    }
+    out
+}
+
+/// `--no-fail-fast` 가 없는 **실행** 호출들. `--no-run` 은 컴파일만 하므로 면제다 —
+/// 실행하지 않는 호출에는 fail-fast 라는 개념이 없다.
+fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
+    let flat = flatten_workflow(yaml);
+    cargo_test_invocations(&flat)
+        .into_iter()
+        .filter(|inv| !inv.contains("--no-run") && !inv.contains("--no-fail-fast"))
+        .map(|inv| inv.split_whitespace().take(8).collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+#[cfg(test)]
+mod workflow_fail_fast_tests {
+    use super::*;
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    #[test]
+    fn every_workflow_step_that_runs_tests_uses_no_fail_fast() {
+        let dir = repo_root().join(WORKFLOW_DIR);
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("워크플로 디렉토리를 읽지 못했다: {}: {e}", dir.display()));
+        let (mut files, mut invocations, mut violations) = (0usize, 0usize, Vec::new());
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|e| e != "yml" && e != "yaml") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            files += 1;
+            invocations += cargo_test_invocations(&flatten_workflow(&text)).len();
+            for inv in test_invocations_missing_no_fail_fast(&text) {
+                violations.push(format!("{}: {inv}", path.display()));
+            }
+        }
+        assert!(
+            files >= MIN_WORKFLOW_FILES,
+            "스캔 하한 미달: 워크플로 파일 {files} 개(하한 {MIN_WORKFLOW_FILES}) — 경로가 틀렸다"
+        );
+        assert!(
+            invocations >= MIN_TEST_INVOCATIONS,
+            "스캔 하한 미달: `cargo test` 호출 {invocations} 개(하한 {MIN_TEST_INVOCATIONS})"
+        );
+        assert!(
+            violations.is_empty(),
+            "테스트를 실행하는 워크플로 스텝에 `--no-fail-fast` 가 없다. 없으면 처음 실패한 \
+             테스트 바이너리에서 멈춰 뒤따르는 타깃이 통째로 실행되지 않고, 로그는 그것을 \
+             '실패 N 건' 으로만 보고한다. 컴파일만 하는 호출이면 `--no-run` 을 함께 써라.\n  {}",
+            violations.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn the_no_run_exemption_covers_only_compile_only_invocations() {
+        // 면제를 겨냥한 변이 — 면제 창 안쪽(같은 스텝, 같은 명령 형태)에 진짜 실행 호출을
+        // 심으면 잡혀야 한다.
+        let compile_only =
+            "      - name: Build\n        run: cargo test --workspace --no-run --locked\n";
+        assert!(test_invocations_missing_no_fail_fast(compile_only).is_empty());
+
+        let runs = "      - name: Run\n        run: cargo test --workspace --locked\n";
+        assert_eq!(test_invocations_missing_no_fail_fast(runs).len(), 1);
+
+        // 같은 스텝에 둘이 붙어 있어도 앞의 `--no-run` 이 뒤를 면제하지 않는다.
+        let both = "        run: |\n          cargo test --workspace --no-run --locked\n          cargo test --workspace --locked\n";
+        assert_eq!(test_invocations_missing_no_fail_fast(both).len(), 1);
+    }
+
+    #[test]
+    fn a_flag_on_a_continuation_line_or_folded_scalar_still_counts() {
+        // 줄 끝 `\` 이음 — 줄 단위로 보면 여기서 끊겨 있는 플래그를 놓친다.
+        let cont = "        run: |\n          cargo test --workspace --locked \\\n            --no-fail-fast\n";
+        assert!(test_invocations_missing_no_fail_fast(cont).is_empty());
+        // `>` 접힌 스칼라.
+        let folded = "        run: >\n          cargo test --locked\n          --no-fail-fast\n";
+        assert!(test_invocations_missing_no_fail_fast(folded).is_empty());
+    }
+
+    #[test]
+    fn a_step_name_that_quotes_the_command_is_not_an_invocation() {
+        // 이 레포의 스텝 이름은 `cargo test (unit)` 처럼 명령을 그대로 쓴다. 이름을
+        // 호출로 세면 오탐이고, 이름 슬라이스가 다음 `cargo ` 앞까지라 **뒤따르는 진짜
+        // 명령의 플래그를 대신 물어 그 명령을 검사에서 빼 버린다** — 오탐보다 이쪽이 나쁘다.
+        let yaml =
+            "      - name: cargo test (unit)\n        run: cargo test --workspace --locked\n";
+        assert_eq!(test_invocations_missing_no_fail_fast(yaml).len(), 1);
+        let named_ok = "      - name: cargo test (unit)\n        run: cargo test --workspace --locked --no-fail-fast\n";
+        assert!(test_invocations_missing_no_fail_fast(named_ok).is_empty());
+    }
+
+    #[test]
+    fn a_comment_mentioning_the_flag_does_not_exempt_a_step() {
+        // 주석이 면제해 주면 가드가 스스로 무력해진다 — 이 레포의 워크플로 주석에는
+        // 실제로 이 플래그 이름이 나온다.
+        let yaml = "      # `--no-fail-fast` 는 필수다\n      - name: unit\n        run: cargo test --workspace --locked\n";
+        assert_eq!(test_invocations_missing_no_fail_fast(yaml).len(), 1);
     }
 }
