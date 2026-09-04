@@ -1,8 +1,8 @@
 //! `method_meta` 단위 테스트.
 
 use crate::method_meta::{
-    METHOD_TABLE, PREFIX_RULES, clear_plugin_prefixes_for_tests, method_meta,
-    register_plugin_prefix, unregister_plugin_prefix,
+    METHOD_TABLE, PREFIX_RULES, clear_plugin_prefixes_for_tests, is_registered_plugin_prefix,
+    method_meta, plugin_prefixes, register_plugin_prefix, unregister_plugin_prefix,
 };
 use tasty_plugin_manifest::Permission;
 
@@ -444,4 +444,52 @@ fn audit_methods_are_local_only() {
         let m = method_meta(name).unwrap_or_else(|| panic!("registered: {name}"));
         assert!(!m.plugin_callable, "{name} should be local-only");
     }
+}
+
+/// registry 락이 poison 돼도 소유자 우회 차단이 계속 선다.
+///
+/// 조준점이 **등록된** prefix 인 것이 이 테스트의 요점이다. 미등록 prefix 로 겨누면
+/// 복구를 지워도 `unwrap_or(false)` 가 우연히 같은 답을 내서 변이가 살아남는다.
+/// 호출부(`method_allowed_for_owner`)가 이 함수를 `!` 로 뒤집어 쓰므로, poison 시
+/// `false` 를 돌려주는 것은 곧 Host/User 가 남의 plugin namespace 를 부르게 열어
+/// 주는 것이다 — 이 함수가 애초에 막으려던 우회 그 자체다.
+///
+/// poison 은 sticky 라 이 테스트 이후 같은 바이너리의 모든 접근이 복구 경로를 지난다.
+/// 그래도 다른 테스트가 깨지지 않는다는 것이 곧 복구가 자리잡았다는 증거다.
+#[test]
+fn a_poisoned_prefix_registry_still_blocks_the_owner_bypass() {
+    let _g = test_lock();
+    clear_plugin_prefixes_for_tests();
+
+    let panicked = std::thread::spawn(|| {
+        let _held = plugin_prefixes().write().expect("not poisoned yet");
+        panic!("poison the prefix registry");
+    })
+    .join();
+    assert!(panicked.is_err(), "the helper thread must have panicked");
+    assert!(
+        plugin_prefixes().read().is_err(),
+        "the registry lock must actually be poisoned now"
+    );
+
+    // 등록도 poison 이후에 한다 — 그래야 읽기 경로와 쓰기 경로가 **둘 다** 겨냥된다.
+    register_plugin_prefix("codex");
+    assert!(
+        is_registered_plugin_prefix("codex"),
+        "a poisoned registry must not report a registered prefix as free — that opens the \
+         very owner bypass this check exists to close"
+    );
+    assert!(
+        method_meta("codex.spawn")
+            .expect("still resolves")
+            .plugin_callable,
+        "prefix lookup must survive the poison too"
+    );
+
+    unregister_plugin_prefix("codex");
+    assert!(
+        !is_registered_plugin_prefix("codex"),
+        "writes must land on a poisoned registry as well, or a dead plugin keeps its namespace"
+    );
+    clear_plugin_prefixes_for_tests();
 }

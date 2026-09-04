@@ -8,7 +8,8 @@
 //! 호출했을 때**의 권한 요구사항이다.
 
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use tasty_plugin_manifest::Permission;
 
@@ -667,6 +668,30 @@ fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
     PLUGIN_PREFIXES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
+/// 이 락의 임계구역은 전부 `HashMap` 조작뿐이라 패닉이 지나가도 남는 값이 성립한다
+/// — 그래서 복구가 답이다. 반대로 조용히 건너뛰면 poison 이 sticky 인 탓에 registry 가
+/// **영구히 얼어붙고**, 그 결과가 방향별로 다르게 나쁘다: 등록이 얼면 plugin 이 뜬 채
+/// 자기 namespace 만 벙어리가 되고, 해제가 얼면 죽은 plugin 의 prefix 가 남아
+/// `plugin_callable=true, required=[]` 로 계속 통과한다.
+const PREFIXES_WHAT: &str = "the plugin IPC namespace registry";
+static PREFIXES_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+fn prefixes_write() -> RwLockWriteGuard<'static, HashMap<String, MethodMeta>> {
+    tasty_utils::poison::recover_write(
+        plugin_prefixes().write(),
+        PREFIXES_WHAT,
+        &PREFIXES_POISON_REPORTED,
+    )
+}
+
+fn prefixes_read() -> RwLockReadGuard<'static, HashMap<String, MethodMeta>> {
+    tasty_utils::poison::recover_read(
+        plugin_prefixes().read(),
+        PREFIXES_WHAT,
+        &PREFIXES_POISON_REPORTED,
+    )
+}
+
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` prefix 를 runtime 등록.
 /// 등록 후 `<prefix>.<method>` 형식의 모든 IPC 메서드가 plugin/agent caller 에게
 /// `plugin_callable=true, required=[]` 메타로 노출된다. 세부 권한은 host-plugin
@@ -675,19 +700,17 @@ fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
 /// 동일 prefix 재등록은 silent no-op (entry().or_insert(...) 시맨틱 — 첫
 /// 등록자 유지). 한 번 unregister 로 완전 제거.
 pub fn register_plugin_prefix(prefix: &str) {
-    if let Ok(mut map) = plugin_prefixes().write() {
-        map.entry(prefix.to_string()).or_insert(MethodMeta {
+    prefixes_write()
+        .entry(prefix.to_string())
+        .or_insert(MethodMeta {
             plugin_callable: true,
             required: &[],
         });
-    }
 }
 
 /// plugin unload / disable / restart 시 호출. 미등록 prefix 입력은 noop.
 pub fn unregister_plugin_prefix(prefix: &str) {
-    if let Ok(mut map) = plugin_prefixes().write() {
-        map.remove(prefix);
-    }
+    prefixes_write().remove(prefix);
 }
 
 /// **WARNING**: runtime invariant 를 강제로 비움. 운영 호출 금지 — tests-only.
@@ -695,20 +718,19 @@ pub fn unregister_plugin_prefix(prefix: &str) {
 /// `doc(hidden) pub` 으로 노출.
 #[doc(hidden)]
 pub fn clear_plugin_prefixes_for_tests() {
-    if let Ok(mut map) = plugin_prefixes().write() {
-        map.clear();
-    }
+    prefixes_write().clear();
 }
 
 /// `prefix` 가 어떤 plugin 의 `[[contributes.ipc_namespace]]` 로 runtime 등록돼
 /// 있는지 조회. host/user 소유 완료 판정 전략이 `_host` 권한으로 남의
 /// plugin namespace 를 호출하는 권한 우회를 막는 데 쓰인다 — register/unregister
 /// 는 기존에 있었으나 read 전용 조회가 없어 추가.
+///
+/// 호출부가 이 값을 `!` 로 뒤집어 쓰므로 **여기서 `false` 로 물러나면 차단이 뚫린다**
+/// — registry 를 못 읽었다는 사정이 "등록된 적 없는 prefix" 와 같은 답이 되어, 막으려던
+/// 우회가 그대로 열린다. 그래서 락이 poison 이어도 복구해서 실제 값을 본다.
 pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
-    plugin_prefixes()
-        .read()
-        .map(|map| map.contains_key(prefix))
-        .unwrap_or(false)
+    prefixes_read().contains_key(prefix)
 }
 
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
@@ -730,9 +752,7 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     }
     if let Some(dot) = method.find('.') {
         let prefix = &method[..dot];
-        if let Ok(map) = plugin_prefixes().read()
-            && let Some(meta) = map.get(prefix)
-        {
+        if let Some(meta) = prefixes_read().get(prefix) {
             return Some(*meta);
         }
     }
