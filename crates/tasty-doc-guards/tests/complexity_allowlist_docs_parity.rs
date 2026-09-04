@@ -25,8 +25,8 @@
 //!
 //! ## 채널
 //!
-//! 통합 타깃이라 자동 실행은 main push 의 `check-headless` 전체 스위트에서만 일어난다.
-//! 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌려야 그 자리에서 잡힌다**
+//! 이 타깃은 `doc-guards.yml` 이 main push · PR 마다 돌리고, `check-headless` 의 전체
+//! 스위트에서도 돈다. 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌리면 그 자리에서 잡힌다**
 //! (`docs/dev-guide/ci-gates.md`).
 
 use std::path::PathBuf;

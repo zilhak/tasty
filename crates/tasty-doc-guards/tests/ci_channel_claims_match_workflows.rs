@@ -14,7 +14,7 @@
 //! - 자동 트리거(`push` / `pull_request` / `schedule`)를 가진 워크플로의 잡 중,
 //!   `workflow_dispatch` 로 좁혀지지 않은 잡을 모은다.
 //! - 그 잡들이 **전체 스위트**(`cargo test --workspace` 를 `--lib`/`--bins`/`--test` 로
-//!   좁히지 않은 형태)를 돌리면 → 주장은 참이므로 이 가드는 조용히 통과한다.
+//!   좁히지 않은 형태)를 돌리면 → 주장은 참이므로 그 판정은 조용히 통과한다.
 //! - 돌리지 않으면 → "전체 스위트를 CI 가 돌린다" 는 서술은 전부 위반이다.
 //!
 //! 즉 전체 스위트가 자동화되는 날 이 가드는 스스로 잠잠해진다. 문서를 손으로 다시
@@ -63,8 +63,9 @@
 //!   않는다" 는 **워크플로 채널에 한한 말**이고, "아무도 안 막는다" 는 뜻이 아니다.
 //! - **문서 밖의 주장** — 커밋 메시지·PR 본문·티켓은 스캔 대상이 아니다.
 //!
-//! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**(R16). 아래 셋은 이 가드의 채널
-//! 모델이 딛고 선 사실인데, 이 레포에서 실행으로 확인할 방법이 없다. 변이를 지어내지도
+//! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**(R16). 아래 셋은 이 축의 채널
+//! 모델이 딛고 선 사실인데, 이 레포에서 실행으로 확인할 방법이 없다. (부재의 주어는 아래
+//! 세 전제이지 이 타깃의 실행 채널이 아니다.) 변이를 지어내지도
 //! 침묵하지도 않고 부재를 명시한다. 좌표는 base `0fb11bd4` — base 가 옮겨가 확인 수단이
 //! 생기면 이 선언은 만료되고, 그때는 선언을 지우고 검사를 넣는다(R16-b).
 //!
@@ -121,6 +122,11 @@ const ABSENCE_MARKERS: &[&str] = &[
     // 써야 하므로, 부재 표지도 이 형태를 알아야 한다.
     "실행 채널이 없",
     "실행 채널 없음",
+    // **배타 주장도 부재 주장이다.** "X 잡에서만 일어난다" 는 X 밖의 채널을 부정한다 —
+    // 조합이 하나뿐인 타깃에서는 [`COMBO_QUALIFIED_MARKERS`] 가 정당한 한정으로 통과시키고,
+    // 둘인 타깃에서는 어떻게 적어도 거짓이므로 걸린다. 이 표지가 없던 동안 조합이 둘로
+    // 늘어난 타깃 둘이 한 잡만 적은 채 살아 있었다.
+    "에서만 일어난다",
     "실행은 수동",
 ];
 
@@ -864,7 +870,26 @@ fn overstated_absence(
         // "선례: tests/X.rs" 도 같은 범위에 들어온다. 그래서 주어를 단정하지 않고, 이
         // 범위 안에 자동으로 도는 통합 테스트가 있다는 사실만 말한다.
         let mut running: Vec<(String, Vec<&str>)> = Vec::new();
-        for (_, target) in cited_tests(scope) {
+        let mut cited = cited_tests(scope);
+        // **모듈 doc 은 자기 자신에 대한 서술이다 — 그런데 자기 이름을 안 부른다.**
+        // 통합 타깃의 `//!` 는 "이 테스트는 …" 이라고 쓰지 "`tests/X.rs` 는 …" 이라고
+        // 쓰지 않는다. 지목이 없다는 이유로 건너뛰면 이 축은 **가드 자신의 채널 서술을
+        // 통째로 못 본다.** 실측으로 셋이 그렇게 살아남았다(옮긴 일곱 중 셋이 자기
+        // 모듈 doc 에서 "자동 채널이 없다" 를 유지하고 있었는데, 그 셋은 새 잡에서
+        // 실제로 돈다). 지목이 하나도 없을 때만 파일 자신을 주어로 세운다 — 남을
+        // 지목한 문장의 주어를 빼앗지 않기 위해서다.
+        let in_module_doc = text[text[..at].rfind('\n').map_or(0, |i| i + 1)..]
+            .trim_start()
+            .starts_with("//!");
+        if cited.is_empty()
+            && in_module_doc
+            && speaks_of_itself(scope)
+            && !is_quoted(text, scope, at)
+            && let Some(own) = integration_test_name(path)
+        {
+            cited.push((at, own.to_string()));
+        }
+        for (_, target) in cited {
             let channels = channels_of(&target);
             if channels.is_empty() {
                 continue;
@@ -897,6 +922,37 @@ fn overstated_absence(
     found.sort();
     found.dedup();
     found
+}
+
+/// 그 서술이 **자기 자신**을 가리키는가 — 모듈 doc 의 암묵 주어를 세울 조건.
+///
+/// 모듈 doc 이 채널을 말할 때 주어가 늘 이 타깃인 것은 아니다. 같은 doc 이 **다른 것**의
+/// 채널(축 하나 · 전제 하나 · 남의 잡)을 말하기도 한다. 자기지칭이 있는 서술만 자기
+/// 것으로 읽는다 — 없는 것까지 자기 것으로 읽으면 "이 축에는 자동 채널이 없다" 같은
+/// 참인 문장을 이 타깃의 부재 주장으로 오해한다(실측으로 넷이 그렇게 걸렸다).
+fn speaks_of_itself(scope: &str) -> bool {
+    ["이 테스트", "이 가드", "이 파일", "this test", "This test"]
+        .iter()
+        .any(|m| scope.contains(m))
+}
+
+/// 그 자리가 **인용 안**인가 — `at` 은 `text` 기준 오프셋이고 `scope` 는 그 부분 슬라이스다.
+///
+/// 인용된 문장은 주장이 아니라 예시다 — 이 가드 자신의 doc 이 판정 대상 문장을 그대로
+/// 옮겨 적는다. 같은 형태를 CI 표지 축에서도 고쳤다(설명문 안의 명령 문자열).
+fn is_quoted(text: &str, scope: &str, at: usize) -> bool {
+    let base = scope.as_ptr() as usize - text.as_ptr() as usize;
+    if at < base {
+        return false;
+    }
+    let rel = (at - base).min(scope.len());
+    scope
+        .char_indices()
+        .take_while(|(i, _)| *i < rel)
+        .filter(|(_, c)| *c == '"' || *c == '\u{201c}' || *c == '\u{201d}')
+        .count()
+        % 2
+        == 1
 }
 
 /// 경로가 통합 테스트면 그 테스트 이름 — `tests/X.rs` 와 `crates/<c>/tests/X.rs` 둘 다.
@@ -1653,6 +1709,50 @@ fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -
     dir
 }
 
+/// **모듈 doc 은 자기 이름을 안 부른다.**
+///
+/// 통합 타깃의 `//!` 는 "이 테스트는 …" 이라고 쓰지 "`tests/X.rs` 는 …" 이라고 쓰지
+/// 않는다. 지목이 없다는 이유로 건너뛰면 이 축은 **가드 자신의 채널 서술을 통째로 못
+/// 본다** — 실측으로 열셋이 그렇게 살아남았고, 전부 헤드리스 잡이 전체 스위트로 넓어지기
+/// 전의 문장이었다.
+///
+/// 다만 같은 doc 이 **남의** 채널을 말하기도 한다(축 하나 · 전제 하나 · 다른 잡). 그래서
+/// 자기지칭이 있고 인용 안이 아닌 서술에만 자기 타깃을 주어로 세운다. 네 방향을 함께
+/// 본다 — 셋째·넷째가 없으면 이 축이 아무것도 못 잡도록 망가져도 첫째가 초록이다.
+#[test]
+fn a_module_doc_speaks_for_its_own_target() {
+    let headless = |_: &str| combos(&[Combo::Headless]);
+    let none = |_: &str| combos(&[]);
+
+    // (가) 자기지칭 + 부재 주장 -> 자기 타깃의 채널로 판정한다.
+    let denying = "//! 이 테스트가 그 집행 채널이다 — 그 잡은 수동 전용이다.\n";
+    assert_eq!(
+        overstated_absence(denying, "tests/alpha.rs", &headless).len(),
+        1,
+        "자기 채널을 부정하는 모듈 doc 을 못 잡았다"
+    );
+
+    // (나) 자기지칭이 없으면 남의 말일 수 있다 — 주어를 세우지 않는다.
+    let other = "//! 그 빌드 잡은 수동 전용이라 이 실패를 자동으로 잡지 못한다.\n";
+    assert!(
+        overstated_absence(other, "tests/alpha.rs", &headless).is_empty(),
+        "주어가 남인 서술을 이 타깃의 부재 주장으로 읽었다"
+    );
+
+    // (다) 인용된 문장은 주장이 아니다.
+    let quoted = "//! 이 가드는 \"그 잡은 수동 전용이다\" 같은 서술을 잡는다.\n";
+    assert!(
+        overstated_absence(quoted, "tests/alpha.rs", &headless).is_empty(),
+        "인용을 주장으로 읽었다"
+    );
+
+    // (라) 채널이 정말 0 이면 부재 주장은 참이다 — 자기지칭이 있어도 안 걸린다.
+    assert!(
+        overstated_absence(denying, "tests/alpha.rs", &none).is_empty(),
+        "채널이 없는 타깃의 참인 부재 주장을 고발했다"
+    );
+}
+
 /// **설명문 안의 명령 문자열은 주장이 아니다.**
 ///
 /// 이 축은 "CI 가 전체 스위트를 돌린다" 고 **주장하는** 서술을 찾는다. 그런데 표지를
@@ -1989,6 +2089,46 @@ fn two_channels_cannot_be_qualified_away() {
         violations.len(),
         1,
         "두 조합에서 도는데 한정 표지 하나로 면제됐다"
+    );
+}
+
+/// **배타 주장도 부재 주장이다** — "X 잡에서만 돈다" 는 X 밖의 채널을 부정한다.
+///
+/// 이 형태가 표지 목록에 없던 동안, 조합이 하나에서 둘로 늘어난 타깃 둘이 **옛 잡 하나만
+/// 적은 채** 살아 있었다. 부재 어휘("없다")를 하나도 안 쓰기 때문에 다른 표지에 안 걸린다.
+/// 늘어난 쪽(고발돼야 한다)과 정확히 적은 쪽(고발되면 안 된다)을 같은 자리에서 못박는다.
+#[test]
+fn an_exclusive_job_claim_is_an_absence_claim() {
+    // 표지는 조각으로 조립한다 — 통째로 적으면 이 파일 자신이 위반으로 잡힌다.
+    let only = format!("{}일어난다", "에서만 ");
+
+    // (+) 조합이 둘인데 잡 하나만 적었다. 부재 어휘가 없으므로, 걸린다면 이 표지 때문이다.
+    let overstated = format!("`tests/alpha.rs` 가 강제한다 — 자동 실행은 그 잡{only}.\n");
+    let violations = overstated_absence(&overstated, "docs/x.md", &|_| {
+        combos(&[Combo::Default, Combo::Headless])
+    });
+    assert_eq!(
+        violations.len(),
+        1,
+        "두 조합에서 도는데 배타 주장이 통과했다: {violations:?}"
+    );
+
+    // (−) 조합이 하나뿐이고 그 조합을 함께 적었다 — 참인 문장이므로 통과해야 한다.
+    let exact = format!("`tests/alpha.rs` 가 강제한다 — 자동 실행은 `check-headless` 잡{only}.\n");
+    assert!(
+        overstated_absence(&exact, "docs/x.md", &|_| combos(&[Combo::Headless])).is_empty(),
+        "조합을 함께 적은 배타 주장을 위반으로 짚었다"
+    );
+
+    // (±) 같은 문장이라도 조합이 둘로 늘면 거짓이 된다 — 실제로 이렇게 낡았다.
+    assert_eq!(
+        overstated_absence(&exact, "docs/x.md", &|_| combos(&[
+            Combo::Default,
+            Combo::Headless
+        ]))
+        .len(),
+        1,
+        "조합이 둘로 늘었는데 옛 한정 표지가 계속 면제했다"
     );
 }
 

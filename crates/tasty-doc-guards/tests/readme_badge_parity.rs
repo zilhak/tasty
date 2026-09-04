@@ -5,8 +5,8 @@
 //! 릴리스 절차(`docs/dev-guide/release.md` §1)가 bump 커밋에 배지를 함께 넣도록
 //! 요구하지만 절차 문구만으로는 누락을 막지 못했고, 실제로 배지가 여러 마이너 뒤처진
 //! 채 방치된 적이 있다. 이 테스트가 그 집행 채널이다 —
-//! `cargo test --workspace` 가 강제한다 — 그 잡은 수동 전용이라 자동 채널은 아니다
-//! (`docs/dev-guide/ci-gates.md`).
+//! `doc-guards.yml` 이 main push · PR 마다 이 타깃을 돌리고, `check-headless` 의 전체
+//! 스위트에서도 돈다(`docs/dev-guide/ci-gates.md`).
 //!
 //! 선례: `tests/plugin_manifest_version_parity.rs`(plugin `Cargo.toml` ↔
 //! `tasty-plugin.toml` lockstep). 같은 형태의 "선언값이 두 곳에 중복 존재" 드리프트다.

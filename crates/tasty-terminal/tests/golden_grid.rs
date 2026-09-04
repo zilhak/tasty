@@ -6,9 +6,10 @@
 //! high-level commands of `tasty-tui-simulator` (see
 //! `crates/tasty-tui-simulator/src/lib.rs` — e.g. `cursor`, `print`, `bold`,
 //! `scroll-region`), but are written as raw escapes so the test needs no GUI
-//! surface and runs headless inside `cargo test --workspace`. That job is
-//! `workflow_dispatch`-only, so this runs when someone runs it, not on push
-//! (see `docs/dev-guide/ci-gates.md`).
+//! surface and runs headless inside `cargo test --workspace`. This test runs
+//! automatically in the headless combination only (`check-headless` runs the whole
+//! suite); the default-combination job is `--lib --bins` and never sees integration
+//! targets (see `docs/dev-guide/ci-gates.md`).
 //!
 //! Scope is deliberately narrow (see `docs/dev-guide/tui-testing.md`):
 //!   - COVERED: cursor positioning/layout, line wrapping, scroll-region scroll,

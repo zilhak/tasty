@@ -46,12 +46,12 @@
 //! release 빌드에서는 `DEBUG_METHODS` 가 빈 슬라이스라 대조가 성립하지 않으므로
 //! `#![cfg(debug_assertions)]` 로 debug 에서만 돈다.
 //!
-//! **채널 — 컴파일은 자동, 실행은 수동이다.** `tests/*.rs` 라 이 파일이 컴파일되는지는
-//! CI 가 자동으로 본다(`crossplatform-check.yml` 의 Windows `clippy --all-targets` 와
-//! headless `clippy --all-targets --no-default-features`). 하지만 **테스트를 실행하는**
-//! 잡은 `test.yml` 의 전체 스위트뿐이고 그건 `workflow_dispatch` 전용이라 push 로 돌지
-//! 않는다. 즉 이 가드의 **판정이 실제로 나는 곳은 둘** — 작업 lane 의 로컬
-//! `cargo test --workspace --locked`, 그리고 병합 후 main 에서의 1 회 실행이다
+//! **채널 — 컴파일은 두 조합 모두 자동, 실행은 한 조합만이다.** `tests/*.rs` 라 이 파일이
+//! 컴파일되는지는 CI 가 두 조합에서 본다(`crossplatform-check.yml` 의 Windows
+//! `clippy --all-targets` 와 headless `clippy --all-targets --no-default-features`).
+//! 실행 쪽은 자동 실행은 **헤드리스 조합**(`check-headless` 의 전체 스위트)에서만 일어난다
+//! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
+//! `test.yml` 의 기본 조합 전체 스위트는 `workflow_dispatch` 전용이라 거기엔 채널이 없다.
 //! (채널 정본은 [ci-gates](../docs/dev-guide/ci-gates.md)).
 //! 따라서 이 가드를 근거로 로컬 검증을 건너뛰지 않는다.
 #![cfg(debug_assertions)]
