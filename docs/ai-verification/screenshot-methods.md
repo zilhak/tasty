@@ -122,7 +122,10 @@ debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자�
 TH=$(mktemp -d); cp ~/.tasty/config.toml "$TH/"    # config 는 루트 바로 아래
 TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
 MY_APP=$!                                          # 띄운 즉시 PID 를 잡는다
-kill -0 "$MY_APP" || echo "기동 실패 — 로그를 본다"  # 실패를 확인 안 하면 이후가 전부 헛돈다
+until TASTY_HOME="$TH" ./target/debug/tasty list info >/dev/null 2>&1; do   # IPC 대기
+  kill -0 "$MY_APP" 2>/dev/null || { echo "기동 실패 — 로그를 본다"; break; }  # 죽은 프로세스를 무한정 기다리지 않는다
+  sleep 1
+done
 # "$TH/tasty.port" 로 ui.screenshot 호출 (TASTY_HOME 루트라 -debug 접미사 없음)
 kill "$MY_APP"; rm -rf "${TH:?}"                   # 정리 — 저장한 PID 로만
 ```
