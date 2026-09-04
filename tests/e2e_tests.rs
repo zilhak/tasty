@@ -1310,3 +1310,44 @@ fn a_platform_gated_debug_method_says_why_not_that_it_is_missing() {
         }
     }
 }
+
+/// engine 층 조회 중 **창을 하나도 안 읽는 것**은 두 조합에서 같이 답한다.
+///
+/// `theme.query` 가 읽는 것은 전역 Theme 과 `CoreState.settings` 둘뿐이다. 그런데 그
+/// 핸들러가 `gui` 게이트가 걸린 `webview` 모듈 안에 살고 있어서 arm 까지 함께 게이트됐고,
+/// 헤드리스에서는 `-32601`(그런 메서드 없음)로 끝났다 — 읽을 것이 다 있는데도.
+/// 헤드리스는 CLI 전용 실행 형태라 그 부재는 `docs/identity.md` 원칙 2 의 구멍이다.
+///
+/// 반대편도 같은 회차에서 본다. `webview.set_url` 이 쓰는 값을 소비하는 것은 렌더러뿐이라
+/// 헤드리스에서 없는 것이 정답이고, 그것을 여기 못 박아 두지 않으면 위 단언만 남아
+/// "전부 열어도 통과" 가 된다.
+#[test]
+fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    let resp = tasty.call_raw("theme.query", json!({}));
+    assert!(
+        resp.get("result").is_some(),
+        "`theme.query` 는 전역 Theme 과 settings 만 읽는다 — 두 조합에서 답해야 한다: {resp}"
+    );
+    assert!(
+        resp["result"].get("colors").is_some(),
+        "색상표가 실려야 한다 — 라우팅만 되고 빈 답이면 호출자에게 쓸모가 없다: {resp}"
+    );
+
+    let resp = tasty.call_raw("webview.set_url", json!({}));
+    let code = resp["error"]["code"].as_i64();
+    #[cfg(feature = "gui")]
+    assert_ne!(
+        code,
+        Some(-32601),
+        "gui 는 webview.set_url 에 답한다: {resp}"
+    );
+    #[cfg(not(feature = "gui"))]
+    assert_eq!(
+        code,
+        Some(-32601),
+        "webview 의 URL 을 소비하는 것은 렌더러뿐이라 헤드리스엔 없는 것이 정답이다: {resp}"
+    );
+}

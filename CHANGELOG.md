@@ -65,6 +65,7 @@
 
 ### Fixed
 
+- **헤드리스에서 `theme.query`(CLI `tasty` IPC)가 `-32601`(Method not found)로 끝나던 것.** 이 조회가 읽는 것은 전역 Theme 과 설정 둘뿐이라 창이 없어도 답이 정해지는데, 핸들러가 `gui` 전용 webview 모듈 안에 있어서 등록까지 함께 빠져 있었다. 헤드리스는 CLI 전용 실행 형태라 이 부재는 "에이전트 기능은 IPC + CLI 양면" 원칙의 구멍이었다. 두 조합이 이제 같은 함수로 답한다.
 - **호스트 IPC 가 `u32` 범위를 넘는 id 를 잘라서 받아들이던 것.** `surface_id` · `surface` · `pane` · `target` · `child` 등을 읽는 헬퍼가 `terminal` · `pty` · `preset` 에 같은 몸통으로 세 벌 있었고 셋 다 잘랐다(호출 20 곳, `terminal.tell` 포함). 실측: `surface.locate` 에 `<실재 id> + 2^32` 를 주면 그 실재 surface 를 `"exists": true` 로 되돌려줬다 — 명령이 조용히 **다른 터미널**로 갔다. 이제 `invalid_params` 로 거절하고, **키가 없는 것과 값이 잘못된 것을 다른 문구로** 답한다. 선택 인자(`pane` 등)도 잘못 온 값을 버리지 않는다 — 종전에는 버려져서 호출자가 지정한 대상 대신 기본값으로 폴백했다(`terminal.spawn` 은 그 폴백이 **유일 parent** 였다).
 - `codex.*` 의 `surface` / `surface_id` / `caller_surface` / `child` / `caller` / `target` 이 **`u32` 범위를 넘으면 잘려서 받아들여지던 것**. `4294967297` 은 `1` 로, `5000000000` 은 `705032704` 로 잘렸고 그 값은 실재할 수 있는 **다른 surface 의 id** 다 — 명령이 조용히 남의 터미널로 갔고 종료코드는 0 이었다. 이제 `invalid_params` 로 거절한다. `u32::MAX` 까지는 종전대로 유효하다. **에러 문구도 갈라졌다** — 키가 아예 없을 때만 "missing" 이고, 값이 왔는데 안 읽히면 그 값을 되비추며 거절한다(전에는 오타를 낸 호출자도 "missing" 을 받아 자기가 준 값을 안 의심했다).
 - `claude.*` 의 `surface_id` · `child_index` 가 같은 형태로 잘리던 것. `claude.hook` 은 앞서 고쳐졌지만 `profile` · `reboot` · `spawn` · `kill` · `respawn` 이 지나는 핸들러 헬퍼 둘은 여전히 잘랐다. 거절 문구가 "없음" 과 "잘못됨" 으로 갈라진다.

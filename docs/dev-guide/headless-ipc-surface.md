@@ -139,9 +139,43 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 
 `plugin.*` 의 12 건은 위 "`plugin.*` — 19 개 메서드의 판정" 절이 따로 가른다.
 
+## dispatch arm 이 `gui` 로 게이트된 표면
+
+위 절이 다루는 `app_methods` step 과 **다른 축**이다. 이쪽은 `src/adapters/ipc/handler.rs`
+의 dispatch arm 이 `#[cfg(feature = "gui")]` 인 경우와, gui 라우터의 debug step
+(`src/app/ipc/debug_methods.rs`)에만 있는 경우 둘이다.
+
+모수는 실행으로 세웠다 — `METHOD_TABLE` + `DEBUG_METHODS` 325 건을 두 조합에 각각 붙여
+같은 인자로 부르고, **gui 는 답하는데 헤드리스가 `-32601` 인 것**을 셌다(2026-09-05 실측).
+
+| 부류 | 건수 | 어디서 판정하나 |
+|------|------|-----------------|
+| 창 축(`window.*` · `view.*` · `ui.screenshot` · `remote.attach` · `system.gpu_stats`) | 11 | 위 "app 층 메서드" 절 |
+| `plugin.*` | 12 | 위 "`plugin.*` — 19 개 메서드의 판정" 절 |
+| `debug.*` | 36 | 이 절 |
+| 그 밖 | 4 | 이 절 |
+| **합** | **63** | |
+
+### 답한다
+
+| 메서드 | 읽는 것 |
+|--------|---------|
+| `theme.query` | 전역 Theme + `CoreState.settings` 뿐이다. 창도 surface 도 렌더러도 안 본다 |
+
+`theme.query` 는 창을 하나도 안 읽는데 핸들러가 `gui` 게이트가 걸린 `webview` 모듈 안에
+살고 있어 arm 까지 함께 게이트됐다. 핸들러를 `src/adapters/ipc/handler/theme.rs` 로 갈라
+게이트 밖으로 냈다 — 두 조합이 **같은 함수**를 쓴다.
+
+### 없는 것이 정답 (그 밖 3)
+
+| 메서드 | 왜 |
+|--------|-----|
+| `fs.pick_file` | OS 네이티브 파일 대화상자를 띄운다. 띄울 데스크톱이 없으면 하는 일 자체가 없다 |
+| `file_picker.trigger` | 창 안 popup(`state.dialogs.file_picker`)을 연다. 그릴 창이 없다 |
+| `webview.set_url` | 설정한 URL 을 소비하는 것이 매 프레임 도는 렌더러뿐이다. 값은 기록되겠지만 아무 일도 일어나지 않는다 |
+
 ## 남은 표면
 
-app 층 밖에서도 헤드리스가 답하지 않는 것이 있다 — `image.*` · `webview.set_url` ·
-`fs.pick_file` · `file_picker.trigger` · `theme.query`, 그리고 debug 빌드의 `debug.*`.
-이들은 `app_methods` step 이 아니라 `src/adapters/ipc/handler.rs` 의 dispatch arm 이
-`gui` feature 로 게이트된 경우라 위 가드의 대상이 아니다. 개별 판정은 아직 적히지 않았다.
+`debug.*` 36 건의 개별 판정은 아직 적히지 않았다. `image.*` 는 이 목록에 없다 — 번들
+plugin 이 그 namespace 를 점유하고 self-call trampoline 로 host 에 돌려주므로 두 조합에서
+같은 자리에 닿는다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)).
