@@ -136,6 +136,20 @@ const FONT_CALLS: &[&str] = &[
     "FontId::new(",
 ];
 
+/// **UI 반경 토큰의 값** — `SIZING.corner_radius_sm`(2) · `corner_radius`(4) ·
+/// `corner_radius_lg`(8). 주석이 아니라 `theme.rs:410-412` 의 정의에서 온 값이다.
+///
+/// 이 축이 폰트 축보다 나쁜 이유: `corner_radius*` 는 `Theme` 에서 `zoomed()` 를
+/// **타고**(`theme.rs` 의 `corner_radius: zoomed(SIZING.corner_radius)`) 명명 const 는
+/// 안 탄다. 그래서 반경 사본은 배율 0.85 / 1.2 에서 토큰과 **다른 픽셀로 그려진다** —
+/// 폰트 사본과 달리 시각적 회귀가 실재한다.
+const UI_RADIUS_TOKEN_VALUES: &[f32] = &[2.0, 4.0, 8.0];
+
+/// 반경을 받는 호출 형태. 자매 가드(`tests/design_token_adherence.rs`)의
+/// `FORBIDDEN_PREFIXES` 와 같은 둘이다 — 그쪽은 **리터럴**을, 여기는 **토큰 값을 복사한
+/// 명명 const** 를 막는다. 두 판정이 합쳐져야 이 축의 우회로가 닫힌다.
+const RADIUS_CALLS: &[&str] = &[".corner_radius(", "CornerRadius::same("];
+
 /// `const NAME: f32 = 13.0;` / `const NAME: LogicalPx = LogicalPx(13.0);` 를 모은다.
 ///
 /// 이름이 파일을 넘어 참조되므로(예 `CENTER_GLYPH_SIZE` 는 `tasty-ui-widgets` 에
@@ -219,8 +233,18 @@ fn spinner_receiver(lines: &[&str], at: usize, before_call: &str) -> bool {
 /// 한 줄에 폰트 호출이 둘 이상 올 수 있다 — 첫 개만 보면 뒤 호출이 앞 호출의 판정
 /// (특히 스피너 면제)에 묻힌다. 변이로 확인한 실제 누락이라 커서로 전부 훑는다.
 fn font_call_args(line: &str) -> Vec<(String, usize)> {
+    call_args(line, FONT_CALLS)
+}
+
+/// 주어진 호출 형태들의 **첫 인자가 명명 상수인** 자리를 모은다.
+///
+/// 경로 수식을 벗긴다 — `tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS` 는
+/// `BOOT_CARD_CORNER_RADIUS` 로 본다. 벗기지 않으면 **크레이트를 넘어 온 const 를
+/// 통째로 놓친다**: 반경 호출자리의 명명 const 는 다수가 이 형태다(실측). 상수 표
+/// (`collect_numeric_consts`)의 키가 벌거벗은 이름이라 마디를 맞춰야 조인된다.
+fn call_args(line: &str, calls: &[&str]) -> Vec<(String, usize)> {
     let mut hits = Vec::new();
-    for call in FONT_CALLS {
+    for call in calls {
         let mut cursor = 0usize;
         while let Some(rel_at) = line[cursor..].find(call) {
             let at = cursor + rel_at;
@@ -230,6 +254,7 @@ fn font_call_args(line: &str) -> Vec<(String, usize)> {
                 continue;
             };
             let arg = rest[..end].trim();
+            let arg = arg.rsplit("::").next().unwrap_or(arg).trim();
             if is_screaming_snake(arg) {
                 hits.push((arg.to_string(), at));
             }
@@ -379,6 +404,63 @@ fn scan_sources() -> (Vec<(String, String)>, Vec<(String, f32)>) {
     (sources, consts)
 }
 
+/// 반경 자리에 온 명명 상수의 값이 반경 토큰 값이면 위반이다.
+///
+/// 폰트 쪽 `const_font_violations` 와 같은 축(**값 × 자리**)이고, 다른 점은 예외가
+/// 없다는 것이다 — 폰트에는 스피너 수신자 예외가 있지만 반경에는 그런 자리가 없다.
+fn const_radius_violations(
+    rel: &str,
+    lines: &[&str],
+    consts: &[(String, f32)],
+    out: &mut Vec<String>,
+) {
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for (arg, _) in call_args(line, RADIUS_CALLS) {
+            let Some((_, value)) = consts.iter().find(|(n, _)| *n == arg) else {
+                continue;
+            };
+            if UI_RADIUS_TOKEN_VALUES.contains(value) {
+                out.push(format!(
+                    "  {}:{} — `{}` = {} 는 UI 반경 토큰과 같은 값이다",
+                    rel,
+                    i + 1,
+                    arg,
+                    value
+                ));
+            }
+        }
+    }
+}
+
+/// 반경 축의 **명명 const 우회로**를 닫는다. 자매 가드는 리터럴만 막으므로,
+/// `const FOO: f32 = 8.0;` 를 만들어 `.corner_radius(FOO)` 로 쓰면 둘 다 통과했다.
+///
+/// ADR-0126 이 이 자리를 "자동 채널이 없는 유일한 트리거" 로 적어 뒀고, 그 트리거가
+/// 사람 리뷰에서 실제로 발화해 이 판정이 생겼다.
+#[test]
+fn no_named_const_copies_a_radius_token() {
+    let (sources, consts) = scan_sources();
+    let mut violations = Vec::new();
+    for (rel, contents) in &sources {
+        let lines: Vec<&str> = contents.lines().collect();
+        const_radius_violations(rel, &lines, &consts, &mut violations);
+    }
+
+    assert!(
+        violations.is_empty(),
+        "UI 반경 토큰 값을 복사한 이름 상수가 반경 자리에 있다 — 토큰을 직접 쓸 것\n\
+         (`th.corner_radius_sm/corner_radius/corner_radius_lg`):\n\
+         · const 는 `ui_zoom` 을 타지 않는데 `corner_radius*` 토큰은 **탄다**. \
+         배율 0.85 / 1.2 에서 사본만 고정돼 다른 픽셀로 그려진다\n\
+         · 스케일 **밖** 값(3 · 6 · 12 …)의 명명 const 는 그대로 허용된다 — \
+         금지되는 것은 토큰 값(2 · 4 · 8)의 **복사본**뿐이다(ADR-0126)\n{}",
+        violations.join("\n")
+    );
+}
+
 #[test]
 fn no_named_const_copies_a_ui_font_token() {
     let (sources, consts) = scan_sources();
@@ -468,6 +550,45 @@ fn unmapped_primitive_font_consts_say_so_in_their_name() {
 #[cfg(test)]
 mod discriminate {
     use super::*;
+
+    /// 반경 축의 **전제 검사**. 폰트 축과 같은 축(값 × 자리)인지, 그리고 경로 수식을
+    /// 벗기는 것이 실제로 동작하는지를 함께 잰다 — 반경 호출자리의 명명 const 는 다수가
+    /// `크레이트::모듈::NAME` 형태라, 안 벗기면 **가드가 있어도 하나도 안 잡힌다.**
+    #[test]
+    fn the_radius_axis_strips_paths_and_checks_value_and_position() {
+        let consts = vec![
+            ("PILL_RADIUS".to_string(), 8.0_f32), // 토큰 값 = corner_radius_lg
+            ("BOOT_CARD_CORNER_RADIUS".to_string(), 12.0), // 스케일 밖 — 허용
+            ("SMALL_R".to_string(), 2.0),         // 토큰 값 = corner_radius_sm
+        ];
+        let check = |lines: &[&str]| {
+            let mut out = Vec::new();
+            const_radius_violations("f.rs", lines, &consts, &mut out);
+            out
+        };
+
+        // ① 벌거벗은 이름 — 잡힌다
+        assert_eq!(check(&["    .corner_radius(PILL_RADIUS)"]).len(), 1);
+        // ② 경로 수식 — 벗기지 않으면 놓친다. 이 단언이 그 벗기기를 못박는다.
+        assert_eq!(
+            check(&["    .corner_radius(tasty_ui_widgets::tokens::PILL_RADIUS)"]).len(),
+            1,
+            "경로 수식된 const 를 놓쳤다 — 실제 호출자리의 지배적 형태다"
+        );
+        // ③ 다른 생성자 형태
+        assert_eq!(check(&["    CornerRadius::same(SMALL_R)"]).len(), 1);
+        // ④ 스케일 밖 값은 허용 — ADR-0126 이 명시한 형태다
+        assert_eq!(
+            check(&["    .corner_radius(BOOT_CARD_CORNER_RADIUS)"]).len(),
+            0
+        );
+        // ⑤ 자리가 다르면 이 판정의 대상이 아니다(값은 같아도)
+        assert_eq!(check(&["    .size(PILL_RADIUS)"]).len(), 0);
+        // ⑥ 주석은 코드가 아니다
+        assert_eq!(check(&["    // .corner_radius(PILL_RADIUS)"]).len(), 0);
+        // ⑦ 표에 없는 이름은 값을 모르므로 판정하지 않는다(고발 기본값 금지)
+        assert_eq!(check(&["    .corner_radius(UNKNOWN_RADIUS)"]).len(), 0);
+    }
 
     /// 판정의 **전제 검사** — 이 가드는 "이름에 FONT 가 들어가는가" 가 아니라
     /// "**폰트 자리에 온 상수의 값이 토큰 값인가**" 로 가른다. 축이 이름으로
