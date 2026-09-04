@@ -26,6 +26,34 @@ use crate::registry::TailCheckout;
 use crate::resolve::{self, HostCall};
 use crate::tail::TailPoll;
 
+/// registry 락 poison 을 보고했는가(첫 1 회만 — poison 은 sticky 라 이후 모든 tick 이
+/// 같은 경로를 탄다).
+static REGISTRY_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// tail 루프의 registry 락을 poison 이어도 잡는다.
+///
+/// 임계구역은 registry 자료구조 조작뿐이라 패닉이 나도 값이 성립한다. 반대로 조용히
+/// 건너뛰면 **poison 이 sticky 라 다음 tick 재시도가 구제하지 못한다** — check_out 이
+/// 계속 실패하면 수집이 영구히 멈추고, check_in 을 못 하면 대상이 꺼내진 채 영구히
+/// 잠긴다. 어느 쪽도 겉으로는 "조용한 plugin" 과 구분되지 않는다.
+///
+/// 이 크레이트의 다른 락 지점들은 답이 다르다 — `handlers.rs` 는 IPC 응답으로 에러를
+/// 돌려주고, `main.rs` 의 엔드포인트 복원은 포기한다. 그래서 공용 헬퍼
+/// (`tasty_utils::poison`)로 통일하지 않고 tail 루프 전용으로 둔다.
+fn lock_registry(registry: &Shared) -> std::sync::MutexGuard<'_, StreamRegistry> {
+    registry.lock().unwrap_or_else(|poisoned| {
+        if !REGISTRY_POISON_REPORTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            tracing::error!(
+                "agent-stream: the registry lock is poisoned (a thread panicked while holding \
+                 it) — recovering so the tail loop keeps collecting; later occurrences are \
+                 not logged"
+            );
+        }
+        poisoned.into_inner()
+    })
+}
+
 /// 파일 폴링 간격. "응답 직후 수 초 내" 관측을 만족하면서도 idle 시 부하가 무시할 수준.
 pub const TICK: Duration = Duration::from_millis(300);
 
@@ -63,13 +91,9 @@ pub fn tail_loop(registry: Shared, host: HostHandle) {
 
 /// 호스트에 대상 생존과 세션 id 를 되묻는다. lock 은 IPC **바깥**에서만 잡는다.
 pub fn verify_targets<H: HostCall>(registry: &Shared, host: &H, root: Option<&Path>) {
-    let targets = match registry.lock() {
-        Ok(reg) => reg.targets(),
-        Err(e) => {
-            tracing::error!("agent-stream registry mutex poisoned: {e}");
-            return;
-        }
-    };
+    // 위 `pump_all` 과 같은 이유로 복구한다 — 여기서 접으면 대상 검증이 영구히 멈춰
+    // 사라진 surface 의 턴이 영영 안 닫힌다.
+    let targets = lock_registry(registry).targets();
     for (surface_id, session_id, _) in targets {
         verify_one(registry, host, root, surface_id, &session_id);
     }
@@ -84,20 +108,7 @@ fn verify_one<H: HostCall>(
 ) {
     if !resolve::surface_exists(host, surface_id) {
         // 대상 자체가 사라졌다 — 소비자가 영원히 기다리지 않도록 턴을 닫고 해제한다.
-        // 임계구역은 registry 조작뿐이라 poison 이어도 값은 성립한다. 조용히 건너뛰면
-        // 사라진 대상의 턴이 열린 채 남아 **소비자가 영원히 기다린다** — 복구해서 닫는다.
-        let mut reg = match registry.lock() {
-            Ok(reg) => reg,
-            Err(poisoned) => {
-                tracing::warn!(
-                    "agent-stream: the registry lock is poisoned (the tail thread panicked) — \
-                     recovering it to close the turn of a surface that is already gone, \
-                     otherwise its consumers would wait forever"
-                );
-                poisoned.into_inner()
-            }
-        };
-        reg.remove(surface_id, record::REASON_SESSION_ENDED);
+        lock_registry(registry).remove(surface_id, record::REASON_SESSION_ENDED);
         return;
     }
     // meta 조회 실패(일시적 IPC 오류 포함)는 대상 유지 — 다음 verify 에서 재시도한다.
@@ -111,20 +122,18 @@ fn verify_one<H: HostCall>(
     let path = root
         .and_then(|r| resolve::find_transcript(r, &current))
         .unwrap_or_default();
-    if let Ok(mut reg) = registry.lock() {
-        reg.switch_session(surface_id, current, path);
-    }
+    lock_registry(registry).switch_session(surface_id, current, path);
 }
 
 /// 등록된 모든 대상의 파일을 한 번씩 읽어 이벤트를 만든다.
 pub fn pump_all(registry: &Shared, root: Option<&Path>) {
-    let surfaces: Vec<u32> = match registry.lock() {
-        Ok(reg) => reg.targets().into_iter().map(|(id, _, _)| id).collect(),
-        Err(e) => {
-            tracing::error!("agent-stream registry mutex poisoned: {e}");
-            return;
-        }
-    };
+    // 로그만 남기고 return 하던 자리 — poison 이 sticky 라 그 return 은 곧 **수집의
+    // 영구 중단**이었다. 임계구역은 대상 목록 조회뿐이라 복구가 맞다.
+    let surfaces: Vec<u32> = lock_registry(registry)
+        .targets()
+        .into_iter()
+        .map(|(id, _, _)| id)
+        .collect();
     for surface_id in surfaces {
         pump_one(registry, surface_id, root);
     }
@@ -151,16 +160,14 @@ fn pump_one(registry: &Shared, surface_id: u32, root: Option<&Path>) {
 }
 
 fn check_out(registry: &Shared, surface_id: u32) -> Option<TailCheckout> {
-    registry.lock().ok()?.check_out(surface_id)
+    lock_registry(registry).check_out(surface_id)
 }
 
 /// 읽어온 결과를 되돌리고 이벤트로 바꾼다.
 fn apply_poll(registry: &Shared, checkout: TailCheckout, poll: std::io::Result<TailPoll>) {
     let surface_id = checkout.surface_id;
     let session_id = checkout.session_id.clone();
-    let Ok(mut reg) = registry.lock() else {
-        return;
-    };
+    let mut reg = lock_registry(registry);
     // 꺼내간 동안 대상이 바뀌었으면(unwatch · 세션 교체 · 재-watch) 읽어온 것은 옛 대상의
     // 진행 상태이므로 통째로 버린다.
     if !reg.check_in(checkout) {
@@ -211,15 +218,13 @@ fn resolve_pending_path(registry: &Shared, surface_id: u32, root: Option<&Path>)
     };
     // ───────────────────────────────────────────────────────────────────
 
-    if let Ok(mut reg) = registry.lock() {
-        // 그 사이 세션이 바뀌었으면 반영하지 않는다 — 방금 찾은 경로는 옛 세션 것이다.
-        reg.set_transcript(surface_id, &session_id, path);
-    }
+    // 그 사이 세션이 바뀌었으면 반영하지 않는다 — 방금 찾은 경로는 옛 세션 것이다.
+    lock_registry(registry).set_transcript(surface_id, &session_id, path);
 }
 
 /// 대상의 (session_id, transcript) 스냅샷. 락은 이 함수 안에서만 잡는다.
 fn target_of(registry: &Shared, surface_id: u32) -> Option<(String, std::path::PathBuf)> {
-    let reg = registry.lock().ok()?;
+    let reg = lock_registry(registry);
     reg.targets()
         .into_iter()
         .find(|(id, _, _)| *id == surface_id)
@@ -305,6 +310,41 @@ mod tests {
             .as_array()
             .expect("array")
             .clone()
+    }
+
+    /// registry 가 poison 돼도 tail 루프가 계속 수집한다.
+    ///
+    /// poison 은 sticky 라 조용히 건너뛰는 구현에서는 "다음 tick 에 재시도" 가 구제하지
+    /// 못한다 — 수집이 영구히 멈추는데 겉으로는 조용한 plugin 과 구분되지 않는다.
+    #[test]
+    fn a_poisoned_registry_does_not_stop_the_tail_loop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, b"").expect("create");
+        let registry = shared_with(&path);
+
+        let poisoner = Arc::clone(&registry);
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh lock");
+            panic!("poison the registry on purpose");
+        })
+        .join();
+        assert!(registry.is_poisoned(), "전제: 락이 poison 이다");
+
+        append(&path, &(assistant_line("u1", "hello", "end_turn") + "\n"));
+        pump_all(&registry, None);
+
+        // `events` 헬퍼는 `expect("lock")` 이라 poison 에서 스스로 패닉한다 —
+        // 프로덕션 경로와 같은 복구를 거쳐 읽는다.
+        let collected = lock_registry(&registry).poll_json(None, 0, 1000)["events"]
+            .as_array()
+            .expect("array")
+            .clone();
+        assert!(
+            !collected.is_empty(),
+            "poison 이후에도 tail 이 이벤트를 만들어야 한다"
+        );
     }
 
     #[test]
