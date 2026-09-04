@@ -48,3 +48,5 @@ mod generated_component;
 /// (`tests/` 로 옮기면 자동 실행 채널을 잃는다 — 되돌리지 마라).
 #[cfg(test)]
 mod shadow_policy_guard;
+#[cfg(test)]
+mod zoom_coverage_guard;
