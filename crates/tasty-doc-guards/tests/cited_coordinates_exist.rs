@@ -2,7 +2,8 @@
 //!
 //! ① **경로 축** — 마크다운 문서가 레포 경로 형태(`src/…` · `tests/…` · `crates/…` 등)로
 //!    적은 파일 경로는 실재해야 한다.
-//! ② **인접 짝 축** — `` `이름`(`경로`) `` 처럼 이름 바로 뒤 괄호가 파일을 지목하면,
+//! ② **디렉토리 축** — 백틱 안에서 `/` 로 끝나는 같은 형태는 디렉토리로 실재해야 한다.
+//! ③ **인접 짝 축** — `` `이름`(`경로`) `` 처럼 이름 바로 뒤 괄호가 파일을 지목하면,
 //!    그 이름은 그 파일 안에 있어야 한다.
 //!
 //! ## 왜 필요한가 — 없는 것을 가리키는 좌표는 "주어 없음" 보다 나쁘다
@@ -28,6 +29,11 @@
 //! **중괄호·와일드카드 축약은 판정 대상이 아니다.** `src/{a,b}.rs` 같은 형태는 여러
 //! 경로를 한 번에 쓰는 표기라 단일 파일로 풀 수 없다. 축약을 받아주는 것이 아니라
 //! **판정할 수 없는 것을 판정하지 않는 것**이고, 그만큼이 이 가드의 사각이다.
+//!
+//! 중괄호를 펼쳐서 판정하는 것도 재봤다 — 원소 25 개 중 12 개가 안 풀렸는데, 그 절반이
+//! **접두 자체가 약칭**이라 그렇다(`crates/tasty-shm/{lib.rs, footer.rs}` 는 실제로
+//! `crates/tasty-shm/src/` 아래다). 즉 위반이 "그 파일이 없다" 를 뜻하지 않는다. 판정의
+//! 뜻이 하나가 아니면 초록도 빨강도 못 읽으므로 펼치지 않는다.
 //!
 //! ## 오차 방향
 //!
@@ -139,6 +145,34 @@ fn scan_paths(line: &str) -> Vec<String> {
     out
 }
 
+/// 한 줄에서 백틱으로 감싼 **디렉토리 인용**(`/` 로 끝나는 레포 경로 형태)을 뽑는다.
+/// 백틱을 요구하는 이유는 산문 안의 슬래시 표기(`A/B` 선택지 등)와 갈리기 위해서다.
+fn scan_dirs(line: &str) -> Vec<String> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] != '`' {
+            i += 1;
+            continue;
+        }
+        let Some(close) = (i + 1..chars.len()).find(|&k| chars[k] == '`') else {
+            break;
+        };
+        let span: String = chars[i + 1..close].iter().collect();
+        i = close + 1;
+        if !span.ends_with('/') || span.contains('*') || span.contains('{') {
+            continue;
+        }
+        if ROOT_PREFIXES.iter().any(|p| span.starts_with(*p))
+            && span.chars().all(|c| is_path_char(c) || c == '/')
+        {
+            out.push(span.trim_end_matches('/').to_string());
+        }
+    }
+    out
+}
+
 /// 백틱 span 이 snake_case 식별자인가 — 소문자로 시작하고 밑줄이 하나 이상.
 fn is_snake_ident(s: &str) -> bool {
     !s.is_empty()
@@ -241,6 +275,17 @@ fn resolve(root: &Path, rel_doc: &str, cited: &str) -> Option<PathBuf> {
     nested.is_file().then_some(nested)
 }
 
+/// 레포 루트 또는 인용 문서의 크레이트 루트 기준으로 디렉토리를 푼다.
+fn resolve_dir(root: &Path, rel_doc: &str, cited: &str) -> Option<PathBuf> {
+    let direct = root.join(cited);
+    if direct.is_dir() {
+        return Some(direct);
+    }
+    let crate_rel = crate_root_of(root, rel_doc)?;
+    let nested = root.join(&crate_rel).join(cited);
+    nested.is_dir().then_some(nested)
+}
+
 /// 코드 펜스 밖의 줄만 (1-based 줄번호와 함께) 돌려준다.
 fn prose_lines(contents: &str) -> Vec<(usize, &str)> {
     let mut fence = false;
@@ -305,6 +350,37 @@ fn cited_repo_paths_resolve() {
          앞에 붙여(`egui/src/style.rs`) 우리 경로 형태에서 빼고, (c) 생성물이거나 실재한 \
          적이 없으면 경로 인용 대신 서술로 적는다. 예외 목록은 두지 않는다 — 형태를 \
          고치면 부류가 닫힌다.",
+        violations.len(),
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn cited_repo_directories_resolve() {
+    let root = &tasty_doc_guards::repo_root();
+    let docs = docs_of(root);
+    let mut judged = 0usize;
+    let mut violations = Vec::new();
+    for (rel, contents) in &docs {
+        for (line_no, line) in prose_lines(contents) {
+            for cited in scan_dirs(line) {
+                judged += 1;
+                if resolve_dir(root, rel, &cited).is_none() {
+                    violations.push(format!("  {rel}:{line_no} — `{cited}/`"));
+                }
+            }
+        }
+    }
+    assert!(
+        judged > 50,
+        "판정한 디렉토리 인용이 {judged} 개뿐이다 — 검출기가 죽었을 때도 초록이 되므로 \
+         모수를 함께 본다"
+    );
+    assert!(
+        violations.is_empty(),
+        "문서가 인용한 레포 디렉토리가 실재하지 않는다. 판정 {judged} 회 중 {} 회:\n{}\n\
+         고치는 법은 경로 축과 같다 — 옮겼으면 현재 경로로, 없어졌거나 아직 없으면 경로 \
+         인용을 빼고 서술로 적는다.",
         violations.len(),
         violations.join("\n")
     );
@@ -443,6 +519,21 @@ fn the_pair_scanner_needs_the_paren_right_after_the_name() {
 }
 
 #[test]
+fn the_dir_scanner_needs_backticks_and_a_trailing_slash() {
+    assert_eq!(scan_dirs("등록은 `src/core/` 아래"), ["src/core"]);
+    assert_eq!(
+        scan_dirs("`crates/tasty-doc-guards/tests/` 가 산다"),
+        ["crates/tasty-doc-guards/tests"]
+    );
+    // 파일은 경로 축이 본다 — 여기서 두 번 세지 않는다.
+    assert!(scan_dirs("`src/main.rs`").is_empty());
+    // 백틱이 없으면 산문의 슬래시 표기와 갈리지 않는다.
+    assert!(scan_dirs("src/core/ 아래").is_empty());
+    assert!(scan_dirs("`src/{a,b}/`").is_empty(), "중괄호 축약");
+    assert!(scan_dirs("`vendor/x/`").is_empty(), "모르는 최상위");
+}
+
+#[test]
 fn a_dead_coordinate_is_caught_and_a_live_one_is_not() {
     let root = &tasty_doc_guards::repo_root();
     // 살아 있는 좌표 — 이 파일 자신.
@@ -463,6 +554,10 @@ fn a_dead_coordinate_is_caught_and_a_live_one_is_not() {
     );
     // 크레이트 밖 문서에는 그 해석이 없다.
     assert_eq!(crate_root_of(root, "docs/dev-guide/build.md"), None);
+
+    // 디렉토리 축도 같은 양극성.
+    assert!(resolve_dir(root, "docs/x.md", "crates/tasty-doc-guards/tests").is_some());
+    assert!(resolve_dir(root, "docs/x.md", "crates/tasty-doc-guards/no_such_dir").is_none());
 
     // 인접 짝: 이 파일에 있는 이름과 없는 이름.
     let body = std::fs::read_to_string(root.join(live)).expect("자기 소스를 읽는다");
