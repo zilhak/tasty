@@ -1203,7 +1203,9 @@ mod tests {
         }
     }
 
-    #[cfg(not(windows))]
+    /// 플랫폼 무관 — Windows 에서도 `unresolved_home_emits_no_bash_rcfile_args` 와
+    /// `bash_rcfile_args_uses_the_resolved_root` 가 쓴다(그 둘은 홈 해석 축이라
+    /// 플랫폼별로 갈리지 않는다).
     fn settings_with_shell(shell: &str) -> GeneralSettings {
         GeneralSettings {
             shell: shell.to_string(),
