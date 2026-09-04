@@ -62,17 +62,17 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
 
 ## Acceptance Criteria
 
-- [ ] Given 플러그인 활성 Then 도구 메뉴에 git viewer 항목이 보인다.
-- [ ] Given repo 안에서 popup 열기 Then status/log/diff 가 표시된다.
-- [ ] Given 비-repo Then 적절한 빈/에러 표시.
-- [ ] Given worktree 가 여러 개인 repo Then rail 에 main + 모든 linked worktree 가 나열되고
+- Given 플러그인 활성 Then 도구 메뉴에 git viewer 항목이 보인다.
+- Given repo 안에서 popup 열기 Then status/log/diff 가 표시된다.
+- Given 비-repo Then 적절한 빈/에러 표시.
+- Given worktree 가 여러 개인 repo Then rail 에 main + 모든 linked worktree 가 나열되고
       cwd 가 속한 worktree 에 `current` 마커가 표시된다.
-- [ ] Given worktree 행 선택 Then status/log/diff 가 그 worktree 기준으로 전환되고
+- Given worktree 행 선택 Then status/log/diff 가 그 worktree 기준으로 전환되고
       실제 working dir/checkout 은 변하지 않는다.
-- [ ] Given worktree 가 없는 일반 repo Then rail 에 main 한 항목만 표시된다(하위 호환).
-- [ ] Given attach mirror 워크스페이스에서 popup 열기 Then 원격 저장소의 실제 status/log/diff/
+- Given worktree 가 없는 일반 repo Then rail 에 main 한 항목만 표시된다(하위 호환).
+- Given attach mirror 워크스페이스에서 popup 열기 Then 원격 저장소의 실제 status/log/diff/
       worktrees 가 표시된다(로컬 host 의 정보나 "No git repository found" 오표시가 아님).
-- [ ] Given mirror popup 에서 Refresh Then 원격에 새 커밋이 생겼으면 목록에 반영된다.
+- Given mirror popup 에서 Refresh Then 원격에 새 커밋이 생겼으면 목록에 반영된다.
 
 ## 화면
 

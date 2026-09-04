@@ -36,16 +36,16 @@
 
 ## Acceptance Criteria
 
-- [ ] Given 플러그인 활성 Then 도구 메뉴에 `Clipboard Viewer` 항목이 보인다.
-- [ ] Given 단축키(플러그인 커맨드 `open_viewer`) Then 뷰어 popup 이 열린다.
-- [ ] Given 클립보드에 텍스트가 있음 Then type-bar 에 text 타입 뱃지가 보이고 body 에 내용이 미리보기된다.
-- [ ] Given 클립보드에 파일(경로 목록)이 있음 Then type-bar 에 files 타입이 보이고 선택 시 body 에 아이콘+경로 목록이 한 줄씩 표시된다.
-- [ ] Given 클립보드에 이미지가 있음 Then type-bar 에 image 타입이 노출되고, 선택 시 body 에 아이콘 + 치수/용량 메타 + "인라인 미리보기 없음" 안내 문구가 보인다(실제 그림은 렌더링하지 않음).
-- [ ] Given 클립보드에 HTML 이 있음 Then type-bar 에 HTML 타입이 보이고, body 에 렌더링되지 않은 원본 소스가 표시되며, type-bar 우측에 "Pretty print" 체크박스가 뜬다.
-- [ ] Given HTML 타입에서 "Pretty print" 체크 Then body 가 들여쓰기 적용된 형태로 바뀌고, 체크 해제 시 원본으로 돌아온다. 푸터에 `{mime} · {n} chars · {n} line(s)` 가 표시된다.
-- [ ] Given 클립보드에 text/files/image/html 어디에도 속하지 않는 raw 포맷이 있음(예: 특정 앱 전용 커스텀 포맷) Then type-bar 에 "Other" 타입이 나타나고, 선택 시 body 에 포맷마다 이름+크기+텍스트화된 미리보기 블록이 separator 로 구분되어 나열된다. footer 에 "{n} unrecognized formats" 가 표시된다.
-- [ ] Given 브라우저에서 서식 있는 텍스트를 복사해 text 와 html 이 동시에 클립보드에 있음 Then "Other" 에 그 text/html 의 raw 변형이 중복으로 잡히지 않는다.
-- [ ] Given 클립보드가 비어 있음 Then 빈 상태 메시지가 보인다(Other 도 나타나지 않는다).
+- Given 플러그인 활성 Then 도구 메뉴에 `Clipboard Viewer` 항목이 보인다.
+- Given 단축키(플러그인 커맨드 `open_viewer`) Then 뷰어 popup 이 열린다.
+- Given 클립보드에 텍스트가 있음 Then type-bar 에 text 타입 뱃지가 보이고 body 에 내용이 미리보기된다.
+- Given 클립보드에 파일(경로 목록)이 있음 Then type-bar 에 files 타입이 보이고 선택 시 body 에 아이콘+경로 목록이 한 줄씩 표시된다.
+- Given 클립보드에 이미지가 있음 Then type-bar 에 image 타입이 노출되고, 선택 시 body 에 아이콘 + 치수/용량 메타 + "인라인 미리보기 없음" 안내 문구가 보인다(실제 그림은 렌더링하지 않음).
+- Given 클립보드에 HTML 이 있음 Then type-bar 에 HTML 타입이 보이고, body 에 렌더링되지 않은 원본 소스가 표시되며, type-bar 우측에 "Pretty print" 체크박스가 뜬다.
+- Given HTML 타입에서 "Pretty print" 체크 Then body 가 들여쓰기 적용된 형태로 바뀌고, 체크 해제 시 원본으로 돌아온다. 푸터에 `{mime} · {n} chars · {n} line(s)` 가 표시된다.
+- Given 클립보드에 text/files/image/html 어디에도 속하지 않는 raw 포맷이 있음(예: 특정 앱 전용 커스텀 포맷) Then type-bar 에 "Other" 타입이 나타나고, 선택 시 body 에 포맷마다 이름+크기+텍스트화된 미리보기 블록이 separator 로 구분되어 나열된다. footer 에 "{n} unrecognized formats" 가 표시된다.
+- Given 브라우저에서 서식 있는 텍스트를 복사해 text 와 html 이 동시에 클립보드에 있음 Then "Other" 에 그 text/html 의 raw 변형이 중복으로 잡히지 않는다.
+- Given 클립보드가 비어 있음 Then 빈 상태 메시지가 보인다(Other 도 나타나지 않는다).
 
 ## 화면
 

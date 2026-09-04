@@ -45,7 +45,7 @@ surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 naviga
 
 `crates/tasty-gallery/src/catalog/components/html_chrome.rs` — Layouts › `Content viewers` ›
 `HTML (webview) chrome`. boundary / placeholder / loading / error 4 chrome 상태만 전사(콘텐츠는
-overlay). 3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
+overlay). 3자 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ## 시각 소스
 

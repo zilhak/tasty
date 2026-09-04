@@ -1,15 +1,15 @@
 # Agent Stream (`com.tasty.agent-stream`)
 
-- **Status**: Implemented (수집 파이프라인) — 외부 방출(SSE)·인바운드 웹훅 배선은 미구현
+- **Status**: Implemented — 수집 파이프라인 + SSE 방출 + 턴 correlation. 인바운드 웹훅 배선은 owner 운영 작업(등록)으로 성립한다(아래 [턴 correlation + 웹훅 배선](#턴-correlation--웹훅-인바운드-배선))
 - **주체**: AI Agent (CLI/IPC). 로컬 사용자 UI 없음 — headless
 - **배포/통합**: workspace 번들(`BUILTINS` 등록) · CLI + IPC namespace — [plugins 개념](../../concepts/plugins.md)
   - `bundle = false` — 배포 패키징(DMG / AppImage / MSIX / deb)에서는 제외한다. 워크스페이스 빌드의 dev 번들 sync 는 그대로 동작한다.
 - **코드**: `crates/tasty-plugin-agent-stream/`
-- **권한**: `surface.read`(세션 id meta 조회 · 대상 생존 확인) · `fs.read`(transcript 읽기) · `fs.write`(data_dir 의 watch 스냅샷 쓰기)
+- **권한**: `surface.read`(세션 id meta 조회 · 대상 생존 확인) · `fs.read`(transcript 읽기) · `fs.write`(data_dir 의 watch 스냅샷 쓰기) · `network`(SSE 엔드포인트 bind)
 - **화면**: 없음
-- **근거**: [ADR-0093](../../adr/0093-agent-response-relay-reads-transcript-jsonl.md)
+- **근거**: [ADR-0093](../../adr/0093-agent-response-relay-reads-transcript-jsonl.md)(수집) · [ADR-0100](../../adr/0100-agent-stream-sse-endpoint-exposure.md)(SSE 노출) · [ADR-0112](../../adr/0112-agent-stream-turn-correlation.md)(턴 correlation) · [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)(웹훅 신뢰 모델)
 
-> **예제로서**: **상주 background 스레드 + CLI/IPC namespace** 예제 — SDK 가 async 를 지원하지 않는 조건에서 파일 tail 루프를 얹는 최소 형태 → [plugin-development](../../dev-guide/plugin-development.md#cli--ipc-namespace) · [§10 한계](../../dev-guide/plugin-development.md#10-한계-현재-sdk).
+> **예제로서**: **상주 background 스레드 + plugin 자체 HTTP 서버 + CLI/IPC namespace** 예제 — SDK 가 async 를 지원하지 않는 조건에서 파일 tail 루프를 얹는 최소 형태 → [plugin-development](../../dev-guide/plugin-development.md#cli--ipc-namespace) · [§10 한계](../../dev-guide/plugin-development.md#10-한계-현재-sdk).
 
 ## 목적
 
@@ -59,7 +59,7 @@ claude plugin 에 대한 **코드 의존은 없다**. 접점은 host IPC 로 읽
 | `tool_use` | `content[].type == "tool_use"` | `tool_name` · `tool_input` |
 | `turn_end` | 아래 표 | `reason` |
 
-모든 이벤트에 `seq`(전역 단조 증가) · `surface_id` · `session_id` 가 붙고, 파일에서 온 이벤트는 `record_uuid` · `timestamp` 도 함께 싣는다.
+모든 이벤트에 `seq`(전역 단조 증가) · `surface_id` · `session_id` 가 붙고, 파일에서 온 이벤트는 `record_uuid` · `timestamp` 도 함께 싣는다. 그 이벤트가 **열린 correlation 턴** 안에서 나왔으면 `request_id`(요청자가 준 값)도 실린다 — 턴 밖 이벤트는 그 필드가 아예 빠진다(아래 [턴 correlation](#턴-correlation--웹훅-인바운드-배선)).
 
 > **`thinking` 의 본문은 비어 있을 수 있다.** Claude Code 버전/설정에 따라 transcript 의 `thinking` 블록이 `signature` 만 남기고 본문을 비운 채 기록된다(실측). 이 경우 `thinking` 이벤트의 `text` 가 빈 문자열이다 — 소스에 없는 것을 지어내지 않고 그대로 중계한다. kind 분리 자체는 유효하므로 소비자는 여전히 사고 블록을 골라 버릴 수 있다.
 
@@ -75,6 +75,7 @@ claude plugin 에 대한 **코드 의존은 없다**. 접점은 host IPC 로 읽
 | `stream:session_ended` | 대상 surface 가 사라졌거나, 같은 surface 에서 새 세션이 시작돼 이전 세션이 닫혔다 |
 | `stream:unwatched` | `agent_stream.unwatch` 호출 |
 | `stream:rewatched` | 같은 surface 를 다시 `watch` 해 이전 등록이 교체됐다 |
+| `stream:turn_timeout` | 열린 correlation 턴이 자기 비활동 타임아웃을 넘겼다 — `turn_start` 뒤 `claude.tell` 이 실패한 경우의 안전망(아래 correlation 절) |
 
 사용자 프롬프트 본문 · 툴 결과 · 첨부 · 모드 전환 등 나머지 레코드는 **중계 대상이 아니다**(비-목표).
 
@@ -100,9 +101,13 @@ watch 대상과 byte offset 을 `TASTY_PLUGIN_DATA_DIR/watches.json` 에 남기�
 | CLI | IPC 메서드 | 설명 |
 |-----|-----------|------|
 | `tasty agent-stream watch [--surface N] [--from-start]` | `agent_stream.watch` | tail 시작. `--surface` 미지정 시 `TASTY_SURFACE_ID`. 기본은 현재 파일 끝부터 — `--from-start` 면 처음부터 |
+| `tasty agent-stream turn-start --request-id ID [--surface N] [--timeout-secs S]` | `agent_stream.turn_start` | correlation 턴을 연다. 이후 그 surface 의 이벤트가 `request_id` 로 태깅된다. 웹훅 IpcSequence 의 첫 스텝. watch 중이 아니거나 이미 열린 턴이 있으면 거부 |
 | `tasty agent-stream unwatch [--surface N]` | `agent_stream.unwatch` | tail 중지 + `turn_end{reason=stream:unwatched}` |
 | `tasty agent-stream list` | `agent_stream.list` | 전 대상 조회(포커스 무관). `status` 는 `tailing` / `awaiting_transcript` |
 | `tasty agent-stream poll [--surface N] [--after-seq S] [--limit L]` | `agent_stream.poll` | seq 커서 기반 **비파괴** 읽기. 여러 소비자가 각자 커서로 같은 버퍼를 읽는다 |
+| `tasty agent-stream serve --port N [--bind ADDR] [--token T]` | `agent_stream.serve` | SSE 엔드포인트를 연다. 이미 떠 있으면 끄고 새 설정으로 다시 연다(`replaced: true`) |
+| `tasty agent-stream serve-stop` | `agent_stream.serve_stop` | 엔드포인트를 닫고 열린 구독을 전부 끊는다 |
+| `tasty agent-stream serve-info` | `agent_stream.serve_info` | 엔드포인트 상태 + 구독자별 카운터. **토큰은 싣지 않는다** |
 
 `watch` 는 **surface_id 를 명시적으로 지정**하는 것만 지원한다 — "전부 watch" 와일드카드가 없다(ADR-0093 결정 3). 같은 surface 를 다시 `watch` 하면 이전 등록을 교체하고(`replaced: true`) 그 등록에 `turn_end{reason=stream:rewatched}` 를 남긴다.
 
@@ -112,26 +117,217 @@ watch 대상과 byte offset 을 `TASTY_PLUGIN_DATA_DIR/watches.json` 에 남기�
 
 수집 버퍼는 4096 개 상한의 링이다. 넘치면 오래된 것부터 버리고 `poll` 응답의 `dropped` 로 알린다.
 
+## SSE 엔드포인트
+
+수집한 이벤트를 외부 소비자(FE 서버 등)가 구독해 받아가는 채널이다. plugin 이 **자기 프로세스에서** HTTP 서버를 연다 — 본체 웹훅 리스너는 인바운드 전용이라 재사용할 수 없다(응답에 내부 데이터가 실릴 코드 경로가 없다). 근거·대안·재검토 조건은 [ADR-0100](../../adr/0100-agent-stream-sse-endpoint-exposure.md).
+
+```bash
+tasty agent-stream serve --port 8787                 # loopback, 무인증
+tasty agent-stream serve --port 8787 --bind 0.0.0.0 --token s3cret
+curl -N http://127.0.0.1:8787/events
+```
+
+### 계약
+
+| 항목 | 값 |
+|------|-----|
+| 경로 | `GET /events` (그 밖의 경로는 404, 다른 메서드는 405) |
+| 응답 | `200` · `Content-Type: text/event-stream` · `Cache-Control: no-cache` · `X-Accel-Buffering: no` · `Content-Length` 없음 |
+| 프레임 | `id: <seq>` / `event: <kind>` / `data: <JSON>` + 빈 줄. `data` 는 개행마다 `data:` 를 다시 붙인다 |
+| 첫 바디 | `retry: 3000` — 끊김이 정상 경로이므로 재접속 간격을 명시한다 |
+| keep-alive | 15s 유휴마다 `: keep-alive` 주석 줄 |
+| 종료 | plugin 이 죽거나 `serve-stop` 하면 연결이 닫힌다. 소비자는 **재구독 전제**로 만든다 |
+
+`event` 는 `text` / `thinking` / `tool_use` / `turn_end` 네 kind 와, 재개 시에만 나가는 `gap` 하나다. 네 kind 의 `data` JSON 은 **`poll` 응답의 이벤트 객체와 완전히 같은 스키마**다(`kind` · `seq` · `surface_id` · `session_id` · `timestamp` · `record_uuid` + 열린 턴 안이면 `request_id` + kind 별 필드). 두 채널이 같은 직렬화 함수를 쓰므로 소비자는 파서를 하나만 들면 된다. `gap` 은 수집 이벤트가 아니라 **재전송 불가 구간 통지**이고 `data` 는 `{"kind":"gap","from":<seq>,"to":<seq>}` 다(아래 재개 절).
+
+### 구독 파라미터
+
+| 파라미터 | 기본 | 의미 |
+|----------|------|------|
+| `?surface=<id>` | 전체 | 그 surface 의 이벤트만 받는다 |
+| `?thinking=1` | **꺼짐** | 사고 블록(`thinking`) 포함. 응답 텍스트와 민감도가 달라 기본은 제외한다 |
+| `?after_seq=<n>` | 없음 | 재개 커서(아래) |
+| `?token=<t>` | — | 구독 토큰(헤더 대신 쓸 때) |
+
+### 인증
+
+토큰이 설정돼 있으면 `Authorization: Bearer <t>` 또는 `?token=<t>` 로 제시한다(**상수시간 비교**). 미제시·불일치는 `401` 이고 **바디는 비어 있다** — 거부 응답에 내부 상태를 싣지 않는다. 쿼리 경로를 함께 두는 이유는 브라우저 `EventSource` 가 커스텀 헤더를 붙이지 못하기 때문이다.
+
+**bind 정책**: 기본은 `127.0.0.1`. loopback 이 아닌 주소는 `--token` 없이는 **거부한다** — 이 엔드포인트로 나가는 것은 대화 전문이라 "실수로 `0.0.0.0` 무인증" 조합을 설정 검증에서 구조적으로 막는다. HTTP 레이어(`tiny_http`)에는 헤더 크기 상한도 읽기 타임아웃도 없어 **광역 bind 에서는 연결당 메모리·스레드 상한이 없다** — 루프백 밖으로 열 때는 앞단에 리버스 프록시를 두고 상한·타임아웃·TLS 를 거기서 거는 것을 권장한다.
+
+**포트 정책**: `--port` 는 필수이고 **자동 폴백이 없다**(본체 웹훅 리스너와 같은 정책). bind 실패는 그대로 에러로 올라온다 — 임의 포트로 옮겨 뜨면 소비자가 붙을 고정 주소가 없어진다.
+
+### 재개 (`Last-Event-ID`)
+
+SSE 의 `id` 는 수집 파이프라인의 전역 단조 증가 `seq` 이고, 그 값이 곧 `poll` 의 `after_seq` 커서다. 재접속 시 `Last-Event-ID: <seq>` 헤더(또는 `?after_seq=<seq>`)를 주면 **그 뒤의 이벤트부터** 재전송한다.
+
+- 재전송 원본은 **수집 버퍼 그대로**(4096 개 상한)다. 별도 재개 버퍼를 두지 않는다 — 두 버퍼의 상한이 다르면 "`poll` 로는 보이는데 SSE 로는 안 보이는" 불일치가 생긴다.
+- 커서를 주지 않은 구독은 **재전송 없이 지금부터** 흘린다.
+- 커서가 버퍼에서 이미 밀려난 경우 그 구간은 복구되지 않는다. `poll` 응답의 `dropped` 와 같은 한계다. 다만 **조용히 건너뛰지는 않는다** — 재전송에 앞서 `gap` 이벤트로 잃어버린 구간을 먼저 알린다.
+
+  ```
+  id: 0
+  event: gap
+  data: {"kind":"gap","from":1,"to":5}
+  ```
+
+  `id` 는 소비자가 보낸 커서 그대로다 — 갭 통지가 커서를 전진시키면 그 뒤 재연결에서 남은 이벤트까지 건너뛴다.
+- **plugin 재시작을 건너뛴 재개는 되지 않는다.** `seq` 커서 자체는 스냅샷으로 보존되지만 버퍼 내용은 메모리에만 있다. 재시작 후의 재개 요청은 그 시점 이후의 이벤트만 받는다 — 이 구간의 누락은 tail 쪽 at-least-once 재개([ADR-0093](../../adr/0093-agent-response-relay-reads-transcript-jsonl.md))가 파일에서 다시 읽어 메운다. 이 경우도 조용하지 않다 — 커서가 **재시작 시점의 마지막 `seq` 보다 뒤에 있으면** 그 사이 구간을 알리는 **`gap` 프레임이 먼저 나가고**, 이어서 tail 이 파일에서 다시 읽은 내용을 **새 `seq`** 로 흘린다. 같은 내용이 두 번 오는 구간은 소비자가 `record_uuid` 로 접는다. 재시작 직전까지 다 받은 소비자(커서 = 마지막 `seq`)에게는 놓친 구간이 없으므로 `gap` 이 나가지 않는다.
+
+### 백압 · 느린 구독자
+
+구독자마다 **256 슬롯 bounded 큐**를 둔다. 생산자(tail 스레드)는 `try_send` 만 쓰고 **절대 블로킹하지 않는다** — 느린 구독자가 수집 자체를 멈추면 안 되기 때문이다. 가득 차면 버리고 `serve-info` 의 `dropped` 카운터를 올린다.
+
+**연속 64 회 버려진 구독은 허브에서 끊는다.** 버리기만 하고 연결을 유지하면 소비자는 "연결은 살아 있는데 구멍 난 스트림" 을 받아 무엇을 놓쳤는지 알 수 없다. 끊으면 소비자가 재접속하고 `Last-Event-ID` 로 이어붙이므로 누락이 복구 가능한 형태로 드러난다.
+
+끊기는 것은 **허브의 구독 등록**이고, 소켓은 진행 중인 write 가 끝나거나 실패할 때 닫힌다. 즉 TCP 송신 버퍼까지 채운 소비자에게는 커널이 그 write 를 포기할 때까지 연결 스레드 1 개가 남을 수 있다.
+
+### 재시작 후 자동 복구
+
+`serve` 설정(bind/port/token)은 watch 스냅샷(`<data_dir>/watches.json`)에 함께 남고, 강제 재시작 후 자동으로 다시 bind 한다. 되살아나지 않으면 watch 는 복구됐는데 붙을 곳이 없어 "재구독으로 복구" 전제가 무너진다. 재기동 bind 가 실패하면 경고만 남기고 수집은 계속된다(`poll` 로는 계속 읽을 수 있다). **스냅샷의 `serve` 절은 지금 떠 있는(혹은 떠 있지 않은) 엔드포인트를 기술한다** — `serve` / `serve-stop` 이 리스너를 건드린 뒤라면 레지스트리 락이 오염돼 있어도 기록을 건너뛰지 않는다. 다만 스냅샷 파일 쓰기 자체가 실패하면(디스크 오류 등) 경고만 남고 옛 스냅샷이 남는다. 이 둘이 어긋나면 재시작이 사용자가 닫은 주소를 열거나 열어둔 주소를 열지 않는다.
+
+**`serve` 재호출이 bind 단계에서 실패하면 엔드포인트는 닫힘으로 확정된다** — 옛 리스너는 이미 내려간 상태이고 영속된 `serve` 설정도 함께 지워지므로, 재시작해도 옛 주소로 되살아나지 않는다. 다시 열려면 `serve` 를 명시적으로 다시 호출한다. 실패한 요청이 "닫힌 줄 알았던 엔드포인트" 를 나중에 되살리는 쪽이 대화 전문 채널에서는 더 위험하기 때문이다([ADR-0100](../../adr/0100-agent-stream-sse-endpoint-exposure.md) 결정 1). **인자 검증에서 거부된 재호출은 여기 해당하지 않는다** — `--port` 누락·범위 밖·IP 로 해석되지 않는 bind·광역 bind 무토큰은 옛 서버를 건드리기 전에 반환하므로, 떠 있던 엔드포인트와 스냅샷이 그대로 유지된다. 잘못된 인자 하나가 멀쩡히 돌던 스트림을 내리지는 않는다.
+
+> **토큰은 그 스냅샷 파일에 평문으로 남는다.** 본체 웹훅 토큰과 같은 신뢰 수준·같은 저장 방식이다(설정 파일 평문). unix 에서는 스냅샷 파일을 `0600` 으로 만들어 같은 머신의 다른 사용자에게 열리지 않게 한다(Windows 는 파일 ACL 기본값을 따른다).
+
+## 턴 correlation + 웹훅 인바운드 배선
+
+목표 구성은 **웹 FE 가 프롬프트를 보내고 그 응답을 받아 화면에 뿌리는 것**이다. 인바운드(웹훅)와 아웃바운드(SSE)는 **서로 다른 채널**이라, FE 는 도착한 SSE 이벤트가 자기가 보낸 어느 요청의 결과인지 알 방법이 없다. 이 절이 그 둘을 잇는다.
+
+### correlation 모델 — 요청자 제공 `request_id`
+
+FE 가 요청마다 **자기가 만든 `request_id`** 를 웹훅 페이로드에 담아 보낸다. 그 값이 `turn_start` 로 전달돼 열린 턴에 박히고, 그 턴이 만든 모든 SSE 이벤트에 `request_id` 로 실려 돌아온다. FE 는 그 값으로 응답을 요청에 되짚는다.
+
+**요청자 제공이 유일한 성립 경로다.** plugin 이 id 를 자체 생성하면 FE 가 그 값을 알 방법이 없다 — 웹훅 응답은 고정 ACK 라(ADR-0046 불변식 2) 실행 결과를 실어 돌려줄 수 없기 때문이다. 그래서 `request_id` 는 **필수**이고, 없으면 `turn_start` 가 거부한다.
+
+### 턴 경계
+
+| 신호 | 출처 | 성격 |
+|------|------|------|
+| `turn_start` | 웹훅 IpcSequence 의 첫 스텝 | 턴 시작 — 이후 이벤트가 `request_id` 로 태깅된다 |
+| `turn_end` 이벤트 | transcript `stop_reason`(정상 종료·`max_tokens`) · 취소 · API 오류, 또는 해제/세션 소멸/재-watch/타임아웃 | 턴 종료 — 태깅을 멈추고 턴을 닫는다 |
+
+**턴 종료는 transcript 가 이미 만드는 `turn_end` 를 그대로 쓴다.** claude plugin 의 `claude-idle`(Stop) 훅을 구독하지 않는다 — transcript 의 `stop_reason` 이 같은 "턴 끝" 신호를 이미 만들고(ADR-0093 결정 4), 훅 구독은 **claude plugin 이 활성일 때만** 성립하는 의존을 새로 만들기 때문이다(hook 이벤트 카탈로그 검증). 한 프롬프트가 만드는 여러 assistant 메시지 중 중간 단계는 `stop_reason=tool_use` 라 `turn_end` 가 아니고(툴 결과를 받아 계속된다), 진짜 종료 메시지 하나만 `turn_end` 가 된다 — 프롬프트당 정확히 한 번 닫힌다. 긴 툴이 걸려 그 사이 이벤트 간격이 벌어져도 종료 판정에는 영향이 없다(종료는 진짜 끝에 온다).
+
+모든 종료 경로가 `push_event` 한 곳을 지나므로, 어느 사유로 닫히든 그 `turn_end` 이벤트가 열린 `request_id` 로 태깅된 채 나간다 — FE 는 자기 요청의 종료를 항상 식별한다.
+
+### 시퀀스 구조 — 호출 순서
+
+웹훅에 거는 `IpcSequence` 는 두 스텝이다. `${body.*}` 는 **값 leaf 에만** 치환되고 method·객체 key 는 owner 가 고정한 리터럴이다(ADR-0046 불변식 1, `src/hook_handler/exec.rs` 의 `substitute_params`).
+
+1. `agent_stream.turn_start` — `surface`(owner 고정 리터럴) + `request_id`(`${body.request_id}`)
+2. `claude.tell` — `message`(`${body.prompt}`) + `surface`(owner 고정 리터럴)
+
+**순서가 중요하다.** `turn_start` 가 먼저 끝나야 그 뒤 `claude.tell` 이 유발한 transcript 이벤트가 누락 없이 태깅된다. `execute_sequence` 는 스텝을 **순차** 실행하므로(각 스텝을 dispatch 하고 응답을 기다린 뒤 다음으로) 이 순서가 보장된다.
+
+### 입력 검증 — 크기 상한 · 악의적 페이로드
+
+웹훅은 외부 입력이다. `${body.request_id}` 는 발신자가 통제하는 값 leaf 라, `turn_start` 가 이를 받는 경계에서 다음을 강제한다.
+
+| 벡터 | 처리 |
+|------|------|
+| method·객체 key 주입 | 불가능. `${body.*}` 는 **값 leaf 에만** 치환되고 method(`agent_stream.turn_start`)·key(`surface`/`request_id`)는 owner 고정 리터럴이다(ADR-0046 불변식 1). 발신자는 어느 IPC 를 부를지도, 어느 surface 에 걸지도 못 정한다 |
+| 빈/누락 `request_id` | **거부**(`missing_request_id`). 매칭이 성립할 값이 없다 |
+| 거대 `request_id` (증폭) | **거부**(`request_id_too_long`, 512 바이트 상한). 상한이 없으면 거대한 값이 열린 턴에 저장돼 그 턴의 **모든** 이벤트(SSE·poll)에 복제된다 — 한 번의 큰 페이로드가 스트림 전체로 증폭되는 것을 저장 단계에서 막는다. 자르지 않고 거부해 잘린 id 가 매칭을 깨는 것도 피한다. 타입은 문자열/숫자만 받아 문자열로 정규화한다 |
+| `timeout_secs` 극단값 | 범위로 **클램프**(10s~86400s). 0 이나 과대값으로 타임아웃 안전망을 무력화할 수 없다 |
+
+> **상류 body 상한은 이 plugin 밖이다 — 그리고 인증이 그것을 막아주지 않는다.** 웹훅 요청 body 자체를 읽는 것은 본체 리스너(`src/webhook/listener.rs`)이고, 현재 그 리더에는 body 바이트 상한이 없다(SSE `serve` 의 HTTP 레이어 상한 부재와 같은 성격, [인증](#인증) 절 참고). `request_id` 상한은 이 plugin 이 저장·증폭하는 값을 막지만, body 전체를 메모리에 받는 단계는 그보다 앞이다.
+>
+> **토큰을 걸어도 이 단계는 보호되지 않는다.** 리스너는 body 를 **먼저 전부 읽고**(`listener.rs:96`) 그 뒤에 경로 매칭과 토큰 검증을 한다(`:98` → `:188`). 즉 토큰이 틀린 요청도 body 는 이미 메모리에 올라간 뒤에 `401` 을 받는다. 남용 차단(쿨다운 `429`)도 이 경우를 걸러내지 못한다 — 실패로 집계하는 것이 `404`/`405` 뿐이라(`:101-103`) `401` 이 반복돼도 쿨다운이 걸리지 않는다.
+>
+> 따라서 **비-loopback 으로 노출한다면 리버스 프록시의 body 크기 제한이 현재 유일한 실효 방어**다(그 다음은 본체 리스너 자체를 고치는 몫). 인증은 여전히 필수지만 그것이 막는 것은 **다른 위협**이다 — 토큰이 없으면 시퀀스가 실행되지 않아 claude 에 프롬프트가 주입되지 않는다(아래 [등록 예시](#등록-예시)). owner 신뢰 모델(ADR-0046)이 덮는 범위도 "누가 이 IPC 를 트리거할 수 있는가" 까지이고, "얼마나 큰 body 를 메모리에 받는가" 는 그 바깥이다.
+
+### 정책 — 겹침 · 중복 · 막힌 턴 · 턴 밖 이벤트
+
+| 상황 | 동작 |
+|------|------|
+| 같은 surface 에 턴이 열린 채 `turn_start` 재호출 | **거부**(`turn_already_open`). claude 는 한 번에 한 턴만 처리한다 — FE 는 앞 턴의 `turn_end`(같은 `request_id`)를 받은 뒤 다음을 보낸다. plugin 은 요청을 큐잉하지 않는다 |
+| watch 중이 아닌 surface 에 `turn_start` | **거부**(`turn_not_watched`). 태깅할 이벤트가 애초에 나오지 않는다 — 먼저 `agent-stream watch` 한다 |
+| 앞 턴이 닫힌 뒤 같은 `request_id` 재사용 | **허용**. 겹침이 아니라 새 턴이다(id 는 요청자 소유의 불투명 값) |
+| `turn_start` 는 됐는데 `claude.tell` 이 실패해 턴이 안 닫힘 | **비활동 타임아웃**으로 정리. 그 턴이 자기 타임아웃(기본 600s, `--timeout-secs` 로 조정) 동안 이벤트가 하나도 없으면 `turn_end{reason=stream:turn_timeout}` 로 닫는다. 이벤트가 오는 동안은 갱신되므로 정상 턴은 걸리지 않는다 — 다만 **아무 출력 없이 타임아웃보다 오래 도는 툴**은 조기 종료될 수 있어, 그런 배치는 `--timeout-secs` 를 올린다 |
+| 턴 밖 이벤트(사용자가 터미널에서 직접 입력한 응답 등) | **태그 없이 방출**한다(버리지 않는다). `request_id` 필드가 빠진 채 나가므로 FE 는 "요청에서 비롯되지 않은 것" 으로 가른다 |
+
+> **겹침 거부의 한계.** `execute_sequence` 는 스텝 실패에도 다음 스텝을 계속 실행한다(fire-and-forget). 따라서 `turn_start` 가 거부돼도 뒤이은 `claude.tell` 은 여전히 발사돼 프롬프트가 주입된다 — 그 결과 이벤트는 (열려 있던 앞 턴이 있으면) 앞 턴의 `request_id` 로 태깅되거나 태그 없이 나간다. **correlation 은 요청을 직렬화해 쓰는 전제**(FE 가 앞 턴의 `turn_end` 를 받고 다음을 보냄)에서 정확하고, 겹쳐 보내는 경우는 best-effort 다. 이 계약을 지키는 것이 FE 쪽 책임이다.
+
+### 등록 예시
+
+`Persistent` + `Unlimited`(FE 서버가 상시 호출) + **인증 토큰** 조합으로 등록한다. 이 조합만 `~/.tasty/webhooks.toml` 에 저장돼 재시작 후 복원된다.
+
+```bash
+# 대상 surface(예: 42)를 먼저 watch 한다 — turn_start 는 watch 중인 surface 만 받는다.
+tasty agent-stream watch --surface 42
+
+# 웹훅을 등록한다: turn_start → claude.tell 2-스텝 시퀀스, 토큰 인증, 영속.
+tasty webhook register \
+  --method POST \
+  --persistent \
+  --auth-location bearer --auth-token "$WEBHOOK_TOKEN" \
+  --sequence '[
+    {"method":"agent_stream.turn_start","params":{"surface":42,"request_id":"${body.request_id}"}},
+    {"method":"claude.tell","params":{"message":"${body.prompt}","surface":42}}
+  ]'
+```
+
+등록하면 opaque URL(`/webhook/<16-hex>`)이 반환된다. FE 는 그 URL 로 POST 한다.
+
+```bash
+curl -X POST https://<host>/webhook/<hex> \
+  -H "Authorization: Bearer $WEBHOOK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"req-8f3a","prompt":"summarize the last build log"}'
+```
+
+그러면 surface 42 의 claude 가 그 프롬프트를 받아 실행하고, 그 실행이 만든 SSE 이벤트에 `"request_id":"req-8f3a"` 가 실린다. 그 요청의 `turn_end` 도 같은 값으로 실려 종료를 알린다.
+
+> **인증 토큰을 반드시 건다.** 이 배선은 외부 발신자가 claude 에게 임의 자연어를 주입하게 하고 claude 는 셸에 닿는다. ADR-0046 은 이 경우를 이미 다룬다 — owner 가 값 슬롯에 민감한 IPC 를 열면 그 트리거 책임은 owner 몫이고, **대응책은 인증으로 트리거 주체를 좁히는 것**이다. 무인증 배선을 예시로 쓰지 않는다. 토큰 없는/틀린 호출은 본체 웹훅 리스너가 `401` 로 거부하고 claude 는 실행되지 않는다(거부 바디는 비어 있다 — 불변식 2). 웹훅 토큰은 SSE 토큰과 같은 신뢰 수준·같은 저장(설정 파일 평문, unix `0600`)이다.
+
+### FE 계약 요약
+
+- 요청마다 `request_id` 를 만들어 페이로드에 담는다(필수).
+- 앞 요청의 `turn_end{request_id=…}` 를 SSE 로 받은 **뒤에** 다음 요청을 보낸다(직렬화).
+- 응답 이벤트는 `request_id` 로 요청에 되짚는다. `request_id` 가 없는 이벤트는 요청 밖에서 나온 것이다.
+- 끊기면 `Last-Event-ID` 로 재구독한다(SSE 절). `request_id` 는 재전송 프레임에도 그대로 실린다.
+
+근거·대안·재검토 조건은 [ADR-0112](../../adr/0112-agent-stream-turn-correlation.md), 웹훅 신뢰 모델은 [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md).
+
 ## 비-목표
 
-- **외부 방출(SSE)** — 이 plugin 은 수집까지만 한다. 방출 채널은 별개다.
-- **인바운드 웹훅 배선** — 외부 요청으로 에이전트를 실행시키는 경로는 별개다. 그 방향의 host 리스너는 [webhook](../../features/webhook/index.md).
+- **claude-idle 훅 구독** — 턴 종료를 위해 claude plugin 의 hook 이벤트를 구독하지 않는다. transcript 가 이미 그 신호를 만들고(ADR-0093), 훅 구독은 claude plugin 활성 의존을 새로 만든다([턴 correlation](#턴-correlation--웹훅-인바운드-배선)).
+- **동시 다중 턴 · 큐잉** — 한 surface 에 턴이 겹쳐 들어오면 거부한다. claude 는 한 번에 한 턴만 처리하므로 correlation 도 한 번에 하나만 연다. 요청 큐잉은 이 plugin 이 하지 않는다.
+- **웹훅 등록 자체** — 등록은 owner 운영 작업(`tasty webhook register`)이다. 이 plugin 은 turn correlation 을 제공하고, 배선은 [아래 예시](#등록-예시)로 문서에 남긴다.
 - **사용자 프롬프트 · 툴 결과 중계** — 에이전트가 낸 것만 이벤트로 만든다.
 - **codex transcript** — 이름은 담고 있으나 현재 해석되는 소스는 Claude Code 하나다.
 - **transcript 쓰기/변경** — 읽기 전용이다.
 
 ## Acceptance Criteria
 
-- [ ] Given 에이전트가 도는 surface Then `agent-stream watch` 가 세션 id 를 해석하고 transcript 경로를 돌려준다.
-- [ ] Given watch 중인 surface 에서 에이전트가 응답 Then 수 초 내에 그 텍스트가 `text` 이벤트로 `poll` 에 나타난다.
-- [ ] Given 사고 블록이 있는 응답 Then `thinking` 과 `text` 가 서로 다른 kind 로 나온다.
-- [ ] Given `claude-session-id` meta 가 없는 surface Then `watch` 가 명확한 에러로 거부된다(조용한 무동작 없음).
-- [ ] Given 턴이 오류/취소/세션 종료로 끝남 Then 그에 맞는 `reason` 의 `turn_end` 가 나온다.
-- [ ] Given plugin `disable && enable` Then 저장된 offset 에서 tail 이 재개된다(중복 허용).
+- Given 에이전트가 도는 surface Then `agent-stream watch` 가 세션 id 를 해석하고 transcript 경로를 돌려준다.
+- Given watch 중인 surface 에서 에이전트가 응답 Then 수 초 내에 그 텍스트가 `text` 이벤트로 `poll` 에 나타난다.
+- Given 사고 블록이 있는 응답 Then `thinking` 과 `text` 가 서로 다른 kind 로 나온다.
+- Given `claude-session-id` meta 가 없는 surface Then `watch` 가 명확한 에러로 거부된다(조용한 무동작 없음).
+- Given 턴이 오류/취소/세션 종료로 끝남 Then 그에 맞는 `reason` 의 `turn_end` 가 나온다.
+- Given plugin `disable && enable` Then 저장된 offset 에서 tail 이 재개된다(중복 허용).
+- Given `serve` 로 연 엔드포인트 Then `curl -N` 이 연결을 유지한 채 응답 이벤트를 순차 출력한다.
+- Given 토큰을 설정한 엔드포인트 Then 토큰 없는/틀린 구독이 401 로 거부되고 바디가 비어 있다.
+- Given `?thinking=1` 유무 Then 사고 블록이 구독별로 포함/제외된다.
+- Given 수집 버퍼 밖으로 밀려난 재개 커서 Then 재전송보다 **먼저** `gap` 이벤트가 나오고 그 `from`/`to` 가 잃어버린 구간을 가리킨다.
+- Given 느린 구독자 Then tail 파이프라인이 멈추지 않고 `serve-info` 의 `dropped` 만 오른다.
+- Given 구독 중 plugin `disable && enable` Then 연결이 끊기고 엔드포인트가 자동으로 다시 열려 재구독이 성공한다.
+- Given `turn_start --request-id R` 뒤의 응답 Then 그 응답 이벤트와 `turn_end` 가 `request_id=R` 로 태깅돼 나온다.
+- Given 턴 밖에서 나온 이벤트 Then `request_id` 필드 없이 방출된다(버려지지 않는다).
+- Given 같은 surface 에 턴이 열린 채 `turn_start` 재호출 Then `turn_already_open` 으로 거부된다.
+- Given watch 중이 아닌 surface 에 `turn_start` Then `turn_not_watched` 로 거부된다.
+- Given `turn_start` 뒤 `claude.tell` 이 실패해 이벤트가 오지 않음 Then 타임아웃 후 `turn_end{reason=stream:turn_timeout}` 로 그 턴이 정리된다.
+- Given 토큰 없는 웹훅 호출 Then 본체 리스너가 `401` 로 거부하고 claude 가 실행되지 않는다.
 
 ## 관련
 
 - [ADR-0093](../../adr/0093-agent-response-relay-reads-transcript-jsonl.md) — 소스·전달 보장·대상 지정 방식의 근거
+- [ADR-0100](../../adr/0100-agent-stream-sse-endpoint-exposure.md) — SSE 엔드포인트 노출 정책의 근거
+- [ADR-0112](../../adr/0112-agent-stream-turn-correlation.md) — 턴 correlation 모델(요청자 제공 id · transcript 턴 경계 · 겹침 거부)의 근거
+- [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md) — 인바운드 웹훅 신뢰 모델(값/흐름 분리 · 단방향 ACK · 인증)
+- [features/webhook](../../features/webhook/index.md) — 웹훅 lifetime · 인증 위치 · 남용차단 · 영속화
+- [ADR-0048](../../adr/0048-webhook-http-tiny-http-blocking.md) — 같은 HTTP 레이어(`tiny_http`)를 고른 근거
 - [claude](../claude/index.md) — `claude-session-id` surface meta 를 기록하는 쪽
 - [dev-guide/plugin-development](../../dev-guide/plugin-development.md) — §9.1 반영 절차 · §10 한계
 - [features/terminal-output](../../features/terminal-output/index.md) — 화면 기반 출력 구조화(다른 소스)

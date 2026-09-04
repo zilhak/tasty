@@ -32,9 +32,9 @@
 
 ## Acceptance Criteria
 
-- [ ] Given image 플러그인 활성 When 이미지 파일 열기 Then image surface 로 표시된다.
-- [ ] Given `tasty image open --file <f>` Then 활성 surface 가 image kind 로 전환되어 파일을 로드한다.
-- [ ] Given 빈 캔버스 Then 그림판으로 그릴 수 있다.
+- Given image 플러그인 활성 When 이미지 파일 열기 Then image surface 로 표시된다.
+- Given `tasty image open --file <f>` Then 활성 surface 가 image kind 로 전환되어 파일을 로드한다.
+- Given 빈 캔버스 Then 그림판으로 그릴 수 있다.
 
 ## 화면
 

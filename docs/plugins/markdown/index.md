@@ -50,9 +50,9 @@
 
 ## Acceptance Criteria
 
-- [ ] Given markdown 플러그인 활성 When 마크다운 파일 열기 Then markdown surface 로 렌더된다.
-- [ ] Given `tasty new tab --type markdown --file <f>` Then 그 파일이 렌더된다.
-- [ ] Given `tasty list surfaces` Then 해당 surface 가 `kind:"markdown"` 으로 보고된다.
+- Given markdown 플러그인 활성 When 마크다운 파일 열기 Then markdown surface 로 렌더된다.
+- Given `tasty new tab --type markdown --file <f>` Then 그 파일이 렌더된다.
+- Given `tasty list surfaces` Then 해당 surface 가 `kind:"markdown"` 으로 보고된다.
 
 ## 화면
 

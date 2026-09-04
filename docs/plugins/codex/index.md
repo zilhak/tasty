@@ -48,7 +48,7 @@
 
 ## Acceptance Criteria
 
-- [ ] Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 패인 분할로 생성되고 CLI 는 즉시 반환된다.
-- [ ] Given 자식 When `tasty codex tell <msg>` Then 줄바꿈 보존하며 메시지가 전송·제출되고 CLI 는 즉시 반환된다.
-- [ ] Given `spawn`/`tell` 로 등록된 완료 대기 When 대상이 idle 또는 exited 에 도달 Then caller surface 에 알림이 주입되고 형제 hook 이 정리된다. exited 가 아니었다면(=idle) 형제 hook 이 재등록돼 이후 상태 전환에도 계속 알림이 온다.
+- Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 패인 분할로 생성되고 CLI 는 즉시 반환된다.
+- Given 자식 When `tasty codex tell <msg>` Then 줄바꿈 보존하며 메시지가 전송·제출되고 CLI 는 즉시 반환된다.
+- Given `spawn`/`tell` 로 등록된 완료 대기 When 대상이 idle 또는 exited 에 도달 Then caller surface 에 알림이 주입되고 형제 hook 이 정리된다. exited 가 아니었다면(=idle) 형제 hook 이 재등록돼 이후 상태 전환에도 계속 알림이 온다.
 </content>

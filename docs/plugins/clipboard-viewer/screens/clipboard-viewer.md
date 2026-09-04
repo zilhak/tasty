@@ -122,7 +122,7 @@ CenterState 를 토큰으로 전사(본체/plugin crate 비의존, 픽셀 동일
 `clipboard::OtherFormatEntry` 와 동일 규칙으로 수기 정리한 샘플이다(갤러리는 plugin crate 를
 의존할 수 없다). `SEG_COMPACT_AT`(5) 이상의 압축 세그먼트는 실 데이터가 5종(Text/Files/Image/
 Html/Other)뿐이라 동시에 전부 co-occur 하는 시나리오가 흔치 않아 아직 specimen 에 없다. 3자 매핑:
-[design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#clipboard-viewer-overlays).
+[design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#clipboard-viewer-plugins).
 
 ## 시각 소스
 
