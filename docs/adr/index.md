@@ -146,4 +146,5 @@
 | 0133 | [소스 스캔 가드의 모수는 열거하지 말고 고정한다](0133-guard-scan-population-is-pinned-not-enumerated.md) | Accepted | 2026-09-04 | guards, design-tokens, testing, ci, adr-0126, adr-0128, adr-0033 |
 | 0134 | [headless 는 host event 큐를 비우되 비-bus 소비자가 있는 종류만 적용한다](0134-headless-drains-host-events-but-applies-only-hook-fired.md) | Accepted | 2026-09-04 | headless, host-event, plugin-event-bus, agent-runner, hooks, queue, agent-surface |
 | 0135 | [본체의 UI 길이 리터럴은 배율을 안 탄다 — 갤러리는 탄다](0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md) | Accepted | 2026-09-05 | theme, design-tokens, ui-scale, zoom, egui, gallery, guards, adr-0126, adr-0033 |
+| 0136 | [조회는 자기가 관측하는 것을 만들지 않는다 — headless plugin 조회 표면](0136-a-query-does-not-create-what-it-observes.md) | Accepted | 2026-09-05 | headless, plugin, ipc, identity-principle-2, agent-surface, observability |
 | 0137 | [plugin 패치 bump 의무는 파일 수 문턱이 아니라 정규화된 내용으로 판정하고, 자동 채널을 세운다](0137-plugin-version-bump-is-judged-by-content-not-file-count.md) | Accepted | 2026-09-05 | plugin, versioning, ci-gates, guard, measurement, adr-0037 |
