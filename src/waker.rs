@@ -26,15 +26,7 @@ pub(crate) fn recover_gate_lock<'a, T>(
     what: &'static str,
     reported: &AtomicBool,
 ) -> MutexGuard<'a, T> {
-    acquired.unwrap_or_else(|poisoned| {
-        if !reported.swap(true, Ordering::Relaxed) {
-            tracing::error!(
-                "{what} gate map mutex poisoned — a thread panicked while holding it. \
-                 Recovering the map (its invariants survive); later occurrences are not logged."
-            );
-        }
-        poisoned.into_inner()
-    })
+    crate::poison::recover_mutex(acquired, what, reported)
 }
 
 #[cfg(test)]

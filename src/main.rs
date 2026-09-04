@@ -23,6 +23,7 @@ mod intent;
 mod model;
 mod platform;
 mod plugin_bridge;
+mod poison;
 mod ports;
 mod state;
 mod store;
