@@ -479,6 +479,28 @@ mod tests {
         assert_eq!(t.screen_text_lines(3, false), "t1\nt2\nt3\n");
     }
 
+    /// alt 스크린에서 `n` 이 화면 높이를 넘으면 **primary 스크롤백**에서 채운다.
+    /// `screen_text_lines` 의 독스트링이 그렇게 약속하는데 그 경로를 재는 테스트가
+    /// 없었다 — 바로 위 테스트는 `n < 화면 높이` 만 본다. 에이전트가 TUI surface 를
+    /// `--lines <큰 수>` 로 읽을 때 실제로 타는 경로가 이쪽이다.
+    #[test]
+    fn screen_text_lines_on_alt_screen_fills_from_primary_scrollback() {
+        let mut t = Terminal::new_detached(20, 4);
+        // primary 에 8 줄 → 화면 4 줄, 스크롤백 4 줄.
+        t.feed_bytes(b"p0\r\np1\r\np2\r\np3\r\np4\r\np5\r\np6\r\np7");
+        assert_eq!(t.scrollback_len(), 4, "전제: primary 스크롤백이 4 줄");
+
+        t.feed_bytes(b"\x1b[?1049h"); // alt 스크린 진입 — 자체 스크롤백이 없다
+        t.feed_bytes(b"t0\r\nt1\r\nt2\r\nt3");
+
+        // 화면 4 줄로는 6 을 못 채우므로 primary 스크롤백에서 2 줄을 끌어와야 한다.
+        assert_eq!(
+            t.screen_text_lines(6, false),
+            "p2\np3\nt0\nt1\nt2\nt3\n",
+            "alt 스크린에서 화면 높이를 넘는 요청이 primary 스크롤백까지 내려가야 한다"
+        );
+    }
+
     #[test]
     fn bold_is_not_treated_as_dim() {
         let mut t = Terminal::new_detached(20, 1);
