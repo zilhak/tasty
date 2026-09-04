@@ -23,7 +23,7 @@ use tasty_plugin_protocol::{
 
 use crate::adapters::ui::popup;
 use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
-use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
+use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
 use crate::plugin_bridge::wire_scroll;
@@ -265,8 +265,9 @@ pub fn draw_plugin_popups(
         // bootstrap 은 1회만: paint frame 이 도착하기 전 매 frame 스팸하면 plugin 이 여러 번
         // paint 하고(첫 frame 의 폰트 atlas delta 가 후속 frame 엔 없음) host 가 최신 frame 만
         // 보관해 atlas 를 못 받는다("Missing texture Managed(0)"). 1회 보내고 frame 을 기다린다.
-        let w_px = (content_rect.width() * ppp).round().max(1.0) as u32;
-        let h_px = (content_rect.height() * ppp).round().max(1.0) as u32;
+        let physical = crate::plugin_bridge::mesh_region_of(content_rect, ppp);
+        let w_px = physical.width.value().round().max(1.0) as u32;
+        let h_px = physical.height.value().round().max(1.0) as u32;
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.popup_mesh_frame(snap.instance_id).is_some();
@@ -321,15 +322,9 @@ pub fn draw_plugin_popups(
 
         // 합성 영역(물리 px) 적재 — gpu.render 가 이 popup 의 z_seq 와 현재 열린 host popup
         // 최대 z_seq 를 비교해 host egui pass 전/후 중 알맞은 시점에 mesh 를 합성한다.
-        state.plugin_mesh_popup_regions.push((
-            snap.instance_id,
-            PhysicalRect {
-                x: PhysicalPx(content_rect.min.x * ppp),
-                y: PhysicalPx(content_rect.min.y * ppp),
-                width: PhysicalPx(content_rect.width() * ppp),
-                height: PhysicalPx(content_rect.height() * ppp),
-            },
-        ));
+        state
+            .plugin_mesh_popup_regions
+            .push((snap.instance_id, physical));
 
         // popup 내부 클릭 시 z-order 승격(규칙 7 "클릭된 것이 앞") — host popup 의
         // `bring_to_front`(click-to-front)와 동형. `mgr` 이 `&PluginManager` 불변

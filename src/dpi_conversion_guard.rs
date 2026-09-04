@@ -88,8 +88,6 @@ const SELF_PATH: &str = "src/dpi_conversion_guard.rs";
 const PENDING_PORT: &[(&str, usize)] = &[
     ("src/gfx/gpu.rs", 2),
     ("src/gfx/gpu/egui_mesh_prepare.rs", 6),
-    ("src/plugin_bridge/banner_render.rs", 6),
-    ("src/plugin_bridge/popup_render.rs", 6),
     ("src/view/main/debug_input.rs", 4),
     ("src/view/main/egui_mesh.rs", 2),
     ("src/view/main/mouse.rs", 4),

@@ -18,7 +18,7 @@ use tasty_plugin_protocol::{
 };
 
 use crate::adapters::ui::PluginBannerCloseKind;
-use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
+use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
 use crate::plugin_bridge::wire_scroll;
 use crate::state::AppState;
@@ -106,8 +106,9 @@ pub fn draw_plugin_banners(
 
         // set_context forward — geom 변경 / 입력 / bootstrap(미paint) / theme 변경 시만.
         // bootstrap 은 1회만 (popup 과 동일: 첫 frame 폰트 atlas delta 를 host 가 반드시 decode).
-        let w_px = (content_rect.width() * ppp).round().max(1.0) as u32;
-        let h_px = (content_rect.height() * ppp).round().max(1.0) as u32;
+        let physical = crate::plugin_bridge::mesh_region_of(content_rect, ppp);
+        let w_px = physical.width.value().round().max(1.0) as u32;
+        let h_px = physical.height.value().round().max(1.0) as u32;
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.banner_mesh_frame(slot.instance_id).is_some();
@@ -154,15 +155,9 @@ pub fn draw_plugin_banners(
         }
 
         // 합성 영역(물리 px) 적재 — gpu.render 가 host egui pass 후 mesh 를 그린다.
-        state.plugin_mesh_banner_regions.push((
-            slot.instance_id,
-            PhysicalRect {
-                x: PhysicalPx(content_rect.min.x * ppp),
-                y: PhysicalPx(content_rect.min.y * ppp),
-                width: PhysicalPx(content_rect.width() * ppp),
-                height: PhysicalPx(content_rect.height() * ppp),
-            },
-        ));
+        state
+            .plugin_mesh_banner_regions
+            .push((slot.instance_id, physical));
     }
 }
 
