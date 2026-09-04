@@ -497,6 +497,50 @@ mod tests {
         );
     }
 
+    /// `WebViewBounds::to_physical` 의 macOS `allow(dead_code)` 면제가 든 **근거**를
+    /// 검사한다.
+    ///
+    /// 그 면제는 "지우거나 `#[cfg]` 로 빼지 않는 이유는 왕복 테스트가 세 OS 모두에서
+    /// 이 함수를 `from_physical` 의 역으로 고정하기 때문" 이라고 적는다. 함수의 존재만
+    /// 보면 그 근거가 거짓이 되는 것을 못 본다 — 왕복 테스트에 OS 게이트가 붙는 순간
+    /// macOS 에서 고정이 사라지고, 그때 면제는 "안 쓰는 함수를 남겨 둔 것" 이 된다.
+    #[test]
+    fn the_macos_dead_code_exemption_still_has_its_reason() {
+        let src = std::fs::read_to_string(repo_root().join("src/host_api/webview.rs"))
+            .expect("webview.rs 를 못 읽었다");
+
+        // ① 근거가 지목하는 왕복 테스트가 실재하고 두 방향을 다 부른다.
+        let start = src
+            .find("mod bounds_tests {")
+            .expect("왕복 테스트 모듈이 없다 — 면제의 근거가 사라졌다");
+        let tests = &src[start..];
+        for needle in [
+            "fn the_physical_round_trip_returns_the_original_rect",
+            "from_physical(",
+            "to_physical(",
+        ] {
+            assert!(
+                tests.contains(needle),
+                "왕복 테스트에 `{needle}` 이 없다 — 면제의 근거가 거짓이 됐다"
+            );
+        }
+
+        // ② 그 테스트가 **세 OS 모두에서** 도는가. OS 게이트가 붙으면 근거가 무너진다.
+        assert!(
+            !tests.contains("target_os"),
+            "왕복 테스트 모듈에 OS 게이트가 생겼다 — 면제의 근거('세 OS 모두에서 \
+             고정한다')가 거짓이 됐다. 게이트를 빼거나 면제를 다시 판단해라."
+        );
+
+        // ③ 비영 대조 — 파일에는 OS 게이트가 실제로 있다(면제 자신이 그것이다).
+        //    ②의 0 이 "게이트가 없다" 인지 "파일을 못 읽었다" 인지를 가른다.
+        assert!(
+            src[..start].contains("target_os"),
+            "webview.rs 앞부분에 OS 게이트가 하나도 없다 — 면제 자체가 사라졌거나 \
+             파일을 잘못 읽었다. 그렇다면 이 테스트의 전제부터 다시 봐라."
+        );
+    }
+
     /// 위 판정기가 살아 있는가 — 주석 언급과 진짜 선언을 가르는지 fixture 로 본다.
     /// (모수 단언과 서로를 대체하지 않는다: 이쪽은 "판정기가 죽었는가", 위는 "볼 것이
     /// 주어졌는가" 를 본다.)
