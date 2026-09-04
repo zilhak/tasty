@@ -268,3 +268,18 @@ TASTY_GALLERY_SIZE=1360x1000 \
 
 - **macOS** `screencapture` — 해당 프로세스에 화면 녹화 권한 필요(없으면 `could not create image from display` 실패 → `ui.screenshot` 또는 갤러리는 `TASTY_GALLERY_SHOT` 사용).
 - **Windows** PowerShell `CopyFromScreen`. 윈도우가 가려져 있으면 `ShowWindow`+`SetForegroundWindow` 로 최대화 후 캡처. tasty.exe 실행 중이면 `cargo build` 가 exe 를 못 덮어쓰니 빌드 전 종료(`Stop-Process -Force`).
+
+## 픽셀 diff 판정 전 — 통제군으로 노이즈 바닥을 먼저 재라
+
+두 트리(before/after)의 스크린샷을 픽셀 diff 로 비교해 변화를 판정할 때, **diff 가 0 이 아니라는 것이 곧 코드 변화라는 뜻은 아니다.** llvmpipe(소프트웨어 GPU) 텍스트 안티앨리어싱은 같은 바이너리·같은 화면이라도 런마다 미세하게 다를 수 있다. 그 런-간 노이즈보다 작은 변화는 픽셀 diff 로 판별할 수 없고, 노이즈를 실제 변화로 오해하면 거짓 결함이 된다.
+
+**규칙: before/after 를 비교하기 전에, 동일 바이너리로 같은 화면을 2회 캡처해 그 둘의 diff(=노이즈 바닥)를 먼저 재라.** before/after diff 가 그 바닥보다 확실히 크고 변화가 예상 영역(bbox)에 국한될 때만 실제 변화로 판정한다.
+
+**노이즈 바닥은 화면 내용에 따라 다르다 — 반드시 측정하고 고정값을 가정하지 마라.**
+
+- 애니메이션이 있는 화면(예: 부팅 로딩 스피너)은 노이즈가 크다 — 한 측정에서 동일 바이너리 통제군 diff 가 ~548px 였다.
+- 정적 specimen(예: 갤러리 모달 dialog)은 노이즈가 **0px**(diff bbox `None`)이었다 — 이 경우 어떤 diff 든 실제 변화다.
+
+같은 llvmpipe 환경에서도 이렇게 갈리므로 수치를 재사용하지 말고 **매번** 통제군을 찍는다.
+
+**소스로 증명되는 더 강한 경로가 있으면 우선한다.** 픽셀 대조가 노이즈 바닥 근처라 애매할 때, 코드상 값 델타가 0(동일값 const 인라인)이거나 변경이 한 필드로 국한되는 등 소스로 자명한 경로가 있으면 그쪽이 픽셀 대조보다 강하다 — 픽셀 대조는 그 경우 보조 확인이다.
