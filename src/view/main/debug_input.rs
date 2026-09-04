@@ -9,6 +9,7 @@
 
 #![cfg(debug_assertions)]
 
+use crate::model::PhysicalPx;
 use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
@@ -156,13 +157,14 @@ impl MainView {
             else {
                 return false;
             };
-            egui::pos2(
-                (rect.x.value() + fx * rect.width.value()) / ppp,
-                (rect.y.value() + fy * rect.height.value()) / ppp,
-            )
+            let point = PhysicalPx(rect.x.value() + fx * rect.width.value());
+            let line = PhysicalPx(rect.y.value() + fy * rect.height.value());
+            egui::pos2(point.to_logical(ppp).value(), line.to_logical(ppp).value())
         } else {
             let (w, h) = self.base.gpu.surface_config_size();
-            egui::pos2((w as f32 / ppp) * fx, (h as f32 / ppp) * fy)
+            let logical_w = PhysicalPx(w as f32).to_logical(ppp).value();
+            let logical_h = PhysicalPx(h as f32).to_logical(ppp).value();
+            egui::pos2(logical_w * fx, logical_h * fy)
         };
         // 직전 포획본을 비운다 — egui 프레임이 세우는 메뉴를 `process_pending_native_menu`
         // 의 suppress 훅이 이 슬롯에 새로 포획한다(mesh 경로와 동일 관찰 규약). 비우지

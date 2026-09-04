@@ -1148,7 +1148,10 @@ impl MainView {
                         }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
-                            (p.x as f32 / ppp, p.y as f32 / ppp)
+                            (
+                                PhysicalPx(p.x as f32).to_logical(ppp).value(),
+                                PhysicalPx(p.y as f32).to_logical(ppp).value(),
+                            )
                         }
                     };
                     self.egui_mesh_push_scroll(sid, dx, dy);
@@ -1164,7 +1167,10 @@ impl MainView {
                         }
                         MouseScrollDelta::PixelDelta(p) => {
                             let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
-                            (p.x as f32 / ppp, p.y as f32 / ppp)
+                            (
+                                PhysicalPx(p.x as f32).to_logical(ppp).value(),
+                                PhysicalPx(p.y as f32).to_logical(ppp).value(),
+                            )
                         }
                     };
                     self.attach_mesh_push_scroll(sid, dx, dy);

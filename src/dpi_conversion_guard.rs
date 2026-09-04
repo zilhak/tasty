@@ -80,16 +80,15 @@ const ALLOWED: &[(&str, usize, &str)] = &[
 /// 형태를 담는 파일을 면제하는 것과 같은 처리다.
 const SELF_PATH: &str = "src/dpi_conversion_guard.rs";
 
-/// 아직 타입 API 로 옮기지 못한 자리 — `(경로, 건수)`. **이 목록은 0 으로 수렴한다.**
+/// 아직 타입 API 로 옮기지 못한 자리 — `(경로, 건수)`. **지금은 비어 있다.**
+///
+/// 비었다는 것이 이 목록의 정상 상태다. 여기에 항목이 생겼다면 새 변환 경로가 타입 API
+/// 밖에 만들어졌다는 뜻이므로, 등재하기 전에 먼저 옮길 수 있는지 본다.
 ///
 /// [`ALLOWED`] 와 분리해 둔 이유는 성격이 반대이기 때문이다. `ALLOWED` 는 "여기 산술이
 /// 있는 것이 정상" 이라 영구적이고, 이쪽은 "아직 못 옮겼다" 라 없어져야 한다. 한 표에
 /// 섞으면 다음 사람이 둘을 구분하지 못해 미이식분이 영구 면제로 굳는다.
-const PENDING_PORT: &[(&str, usize)] = &[
-    ("src/view/main/debug_input.rs", 4),
-    ("src/view/main/egui_mesh.rs", 2),
-    ("src/view/main/mouse.rs", 4),
-];
+const PENDING_PORT: &[(&str, usize)] = &[];
 
 /// 수동 변환으로 보는 식별자. `pixels_per_point` 는 메서드 호출 형태(`ppp()` )로도 쓰인다.
 const CONVERSION_IDENTS: &[&str] = &["ppp", "scale_factor", "sf", "pixels_per_point"];
