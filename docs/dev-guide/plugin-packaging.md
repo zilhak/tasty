@@ -4,10 +4,11 @@
 
 ## 번들 plugin 목록 (SoT)
 
-`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처. 8 종:
+`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처다. 아래 표는 그 복제본이라 낡을 수 있다 — **수를 세지 말고 그 상수를 봐라**(실제로 `agent-stream` 이 빠진 채 "8 종" 으로 남아 있었다):
 
 | crate | plugin ID |
 |-------|-----------|
+| `tasty-plugin-agent-stream` | `com.tasty.agent-stream` |
 | `tasty-plugin-claude` | `com.tasty.claude` |
 | `tasty-plugin-clipboard-viewer` | `com.tasty.clipboard-viewer` |
 | `tasty-plugin-codex` | `com.tasty.codex` |
