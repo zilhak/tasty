@@ -15,6 +15,7 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use crate::model::{Surface, SurfaceId};
@@ -68,6 +69,28 @@ pub struct RemoteSurface {
     pub cwd: Arc<Mutex<Option<PathBuf>>>,
 }
 
+/// mirror 필드별 poison 보고 플래그(각각 첫 1 회만).
+///
+/// 다섯 필드 모두 임계구역이 값 한 칸이라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
+/// 반대로 여기서 패닉하면 읽기 쪽이 **egui 렌더 경로**(`nav_state` · `display_name` 은
+/// 매 프레임 돈다)라 모든 창이 죽는다. 조용히 버리면 plugin 이 IPC 로 바꾼 상태가
+/// 반영되지 않는데 에러도 없다 — 탭 이름이 kind 이름으로 되돌아가거나 loading chrome
+/// 이 영영 안 걷히는 형태로만 보인다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
+///
+/// 필드를 나눠 두는 이유: 어느 mirror 가 굳었는지가 곧 증상의 이름이라, 하나로 묶으면
+/// 첫 필드만 보고되고 나머지는 침묵한다.
+pub(crate) static SNAPSHOT_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static DISPLAY_NAME_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static WEBVIEW_URL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static NAV_STATE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+static CWD_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) const SNAPSHOT_WHAT: &str = "remote surface snapshot cache";
+const DISPLAY_NAME_WHAT: &str = "remote surface display name";
+const WEBVIEW_URL_WHAT: &str = "remote surface webview url";
+const NAV_STATE_WHAT: &str = "remote surface nav state";
+const CWD_WHAT: &str = "remote surface cwd";
+
 impl RemoteSurface {
     pub fn new(
         id: SurfaceId,
@@ -89,41 +112,51 @@ impl RemoteSurface {
 
     /// `webview.set_url` IPC 가 호출 — webview-enabled kind 의 surface 만 의미 있음.
     pub fn set_webview_url(&self, url: Option<String>) {
-        if let Ok(mut slot) = self.webview_url.lock() {
-            *slot = url;
-        }
+        *crate::poison::recover_mutex(
+            self.webview_url.lock(),
+            WEBVIEW_URL_WHAT,
+            &WEBVIEW_URL_POISON_REPORTED,
+        ) = url;
     }
 
     /// sync_webviews 가 매 프레임 native nav_state 를 mirror 할 때 호출.
     pub fn set_nav_state(&self, s: NavState) {
-        if let Ok(mut slot) = self.nav_state.lock() {
-            *slot = s;
-        }
+        *crate::poison::recover_mutex(
+            self.nav_state.lock(),
+            NAV_STATE_WHAT,
+            &NAV_STATE_POISON_REPORTED,
+        ) = s;
     }
 
     /// 현재 mirror 된 navigation 상태. egui 렌더 경로가 chrome 분기에 읽는다.
     pub fn nav_state(&self) -> NavState {
-        self.nav_state.lock().map(|g| *g).unwrap_or(NavState::Idle)
+        *crate::poison::recover_mutex(
+            self.nav_state.lock(),
+            NAV_STATE_WHAT,
+            &NAV_STATE_POISON_REPORTED,
+        )
     }
 
     /// `surface.set_cwd` IPC 가 호출. plugin 측 root/working dir 변경을 host 에 통보.
     /// `Surface::source_cwd()` 가 다음 surface 의 carry 후보로 이 값을 노출.
     pub fn set_cwd(&self, cwd: Option<PathBuf>) {
-        if let Ok(mut slot) = self.cwd.lock() {
-            *slot = cwd;
-        }
+        *crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED) = cwd;
     }
 
     pub fn set_display_name(&self, name: String) {
-        if let Ok(mut slot) = self.display_name.lock() {
-            *slot = name;
-        }
+        *crate::poison::recover_mutex(
+            self.display_name.lock(),
+            DISPLAY_NAME_WHAT,
+            &DISPLAY_NAME_POISON_REPORTED,
+        ) = name;
     }
 
     pub fn cache_snapshot(&self, data: Value) {
-        if let Ok(mut slot) = self.snapshot_cache.lock() {
-            *slot = Some(data);
-        }
+        *crate::poison::recover_mutex(
+            self.snapshot_cache.lock(),
+            SNAPSHOT_WHAT,
+            &SNAPSHOT_POISON_REPORTED,
+        ) = Some(data);
     }
 
     /// manager가 surface와 동기화하기 위해 필요한 핸들 묶음을 클론하여 반환.
@@ -156,18 +189,25 @@ impl Surface for RemoteSurface {
     /// root 변경마다 `surface.set_cwd` 를 발사하여 이 값을 갱신한다. cwd 의미가
     /// 없는 다른 RemoteSurface kind 는 None 유지.
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
-        self.cwd.lock().ok().and_then(|g| g.clone())
+        crate::poison::recover_mutex(self.cwd.lock(), CWD_WHAT, &CWD_POISON_REPORTED).clone()
     }
 
     fn display_name(&self) -> String {
-        self.display_name
-            .lock()
-            .map(|n| n.clone())
-            .unwrap_or_else(|_| self.kind_static.to_string())
+        crate::poison::recover_mutex(
+            self.display_name.lock(),
+            DISPLAY_NAME_WHAT,
+            &DISPLAY_NAME_POISON_REPORTED,
+        )
+        .clone()
     }
 
     fn webview_url(&self) -> Option<String> {
-        self.webview_url.lock().ok().and_then(|g| g.clone())
+        crate::poison::recover_mutex(
+            self.webview_url.lock(),
+            WEBVIEW_URL_WHAT,
+            &WEBVIEW_URL_POISON_REPORTED,
+        )
+        .clone()
     }
 
     fn to_tree_json(&self) -> serde_json::Value {
@@ -191,6 +231,38 @@ mod tests {
         assert_eq!(s.kind(), "explorer");
         assert_eq!(s.type_name(), "Remote");
         assert_eq!(s.display_name(), "Files");
+    }
+
+    /// mirror 가 poison 돼도 값이 그대로 읽힌다.
+    ///
+    /// 조용히 버리는 구현이면 탭 이름이 kind 이름("explorer")으로 되돌아가고,
+    /// nav_state 는 `Idle` 로 굳어 loading chrome 이 영영 안 걷힌다 — 둘 다 원인이
+    /// 화면에 남지 않는 형태라 한 테스트로 같이 고정한다.
+    #[test]
+    fn poisoned_mirrors_still_read_their_values() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        s.set_nav_state(NavState::Loading);
+
+        let name_lock = Arc::clone(&s.display_name);
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = std::thread::spawn(move || {
+            let _guard = name_lock.lock().expect("fresh lock");
+            panic!("poison the display name mirror on purpose");
+        })
+        .join();
+        let nav_lock = Arc::clone(&s.nav_state);
+        // 이유: 위와 같다.
+        let _ = std::thread::spawn(move || {
+            let _guard = nav_lock.lock().expect("fresh lock");
+            panic!("poison the nav state mirror on purpose");
+        })
+        .join();
+        assert!(s.display_name.is_poisoned() && s.nav_state.is_poisoned());
+
+        assert_eq!(s.display_name(), "Files");
+        assert_eq!(s.nav_state(), NavState::Loading);
+        s.set_display_name("Browser".into());
+        assert_eq!(s.display_name(), "Browser");
     }
 
     #[test]
