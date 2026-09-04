@@ -25,8 +25,10 @@
 //! 그 밖에서 요청을 직접 만드는 곳은 `method: "…"` 필드 형태를 크레이트 전체에서 훑는다.
 //!
 //! release 빌드에서는 `DEBUG_METHODS` 가 설계상 비어 있어(`debug.*` 가 release IPC 표면에서
-//! 사라진다) CLI 의 debug 커맨드 이름과 대조가 성립하지 않는다. 따라서 debug 빌드에서만
-//! 돈다 — CI 의 `cargo test --workspace --locked` 가 debug 다.
+//! 사라진다) CLI 의 debug 커맨드 이름과 대조가 성립하지 않는다. 따라서 아래
+//! `#![cfg(debug_assertions)]` 로 debug 빌드에서만 돈다 — `cargo test` 의 기본 프로필이
+//! debug 라 그냥 돌리면 포함되고, 테스트를 `--release` 로 돌리면 이 파일은 통째로
+//! 컴파일에서 빠져 아무것도 검증하지 않는다.
 #![cfg(debug_assertions)]
 
 use std::path::{Path, PathBuf};
