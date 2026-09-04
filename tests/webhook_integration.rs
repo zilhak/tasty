@@ -118,7 +118,7 @@ fn register_notify_webhook(inst: &WebhookInstance, params_extra: Value) -> (Stri
     (id, url)
 }
 
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: 단일 공유 인스턴스에서 순차 e2e 스텝 나열(포커스 도난 최소화 설계) — tests/e2e_tests.rs::all_e2e_tests 와 동형 패턴.
+#[allow(clippy::cognitive_complexity)] // complexity-exempt: 단일 공유 인스턴스에서 순차 e2e 스텝 나열(포커스 도난 최소화 설계) — 웹훅 재시작 시나리오는 상태를 물려받아야 해 갈 수 없다(docs/dev-guide/e2e-tests.md §1-1).
 fn integration_flow(inst: &WebhookInstance) {
     // ========== 1) 등록 → 실 HTTP POST → ACK + 상태변화 + 페이로드 치환 ==========
     {

@@ -152,17 +152,17 @@ jobs:
       # 아래 `--skip` 1 건은 **GUI 가 필요해서가 아니다.** 원인과 무엇을 고치면 풀리는지를
       # 적어 둔다 — 고치면 skip 을 지우는 것이 이 목록의 용도다.
       # **skip 은 커버리지를 영구히 깎는 장치라, 하나씩 정당화가 없으면 넣지 않는다.**
-      #   1. all_e2e_tests
-      #      **"forward 를 배선하면 풀린다" 는 서술이 한때 여기 있었다. 틀렸다** —
-      #      배선하고 재 봤더니 벽이 세 번 더 나왔다. 지금까지 고친 것:
-      #      plugin namespace forward(`boot/headless_dispatch.rs`) · 터미널 그리드 debug
-      #      핸들러 넷(`handler/debug_terminal.rs`). 그 결과 이 테스트는 `markdown.recent`
-      #      (파일 74 행)에서 **749 행**(파일 842 행)까지 전진했다.
-      #      남은 벽은 `window.create` 하나이고 **그건 진짜 GUI 의존이다** — headless 에
-      #      창이 없다. 즉 이 skip 은 "고치면 풀리는" 부류가 아니라, 이 파일이 33 개
-      #      시나리오를 `#[test]` 하나에 몰아넣어(파일 doc) **GUI 필요 구간과 아닌 구간을
-      #      `--skip` 으로 가를 수 없는** 구조 문제로 남았다. 해제 경로는 그 구조를 쪼개는
-      #      것이고, 그 판단은 e2e 하네스 축이 소유한다.
+      #   1. multi_window_owner_routing
+      #      **GUI 요구.** `window.create` 는 gui 라우터의 `app_methods` step 에만 있고,
+      #      headless 데몬에는 창이 없다 — 배선 결함이 아니라 창의 부재다. 이 축을
+      #      배선으로 오해한 서술이 한때 여기 있었고, 그때 실제로 배선해서 풀린 것들은
+      #      이미 빠졌다(plugin namespace forward: `boot/headless_dispatch.rs` · 터미널
+      #      그리드 debug 핸들러 넷: `handler/debug_terminal.rs`).
+      #      **skip 이 한 스위트 통째에서 테스트 하나로 좁아진 경위**: `tests/e2e_tests.rs`
+      #      가 33 개 시나리오를 `#[test]` 하나(`all_e2e_tests`)에 몰아 두어 GUI 필요
+      #      구간과 아닌 구간을 `--skip` 으로 가를 수 없었다. 시나리오 단위로 쪼갠 지금은
+      #      창을 요구하는 단언이 이 테스트 하나에 모여 있고, 나머지 18 개는 헤드리스에서
+      #      실제로 돈다(실측: 26 passed / 1 filtered). 경계는 **파일이 아니라 테스트**다.
       #
       # `output_match_hook_fires_on_real_pty_output` 은 한때 세 번째 skip 이었으나 **뺐다.**
       # 그 skip 의 근거였던 제품 결함(headless 가 `process_all_pty_output` 의 CoreEvent 를
@@ -184,7 +184,7 @@ jobs:
       - name: cargo test (headless)
         run: |
           cargo test --workspace --no-default-features --locked --no-fail-fast -- \
-            --skip all_e2e_tests
+            --skip multi_window_owner_routing
 
       # headless 조합의 clippy. 기본 조합의 clippy 는 Windows 잡이 보지만, 그 잡은
       # `--no-default-features` 를 돌지 않아 headless 전용 코드(`run_headless` 등)의

@@ -58,8 +58,6 @@ const INSTANCE_HARNESS_MARKERS: &[&str] =
 /// `common::shared()` 를 쓰고 workspace 로 격리해야 한다. 등록은 "프로세스 경계 자체가
 /// 검증 대상" 일 때만 정당하다.
 ///
-/// - `tests/e2e_tests.rs` (1): 33 개 시나리오를 `#[test]` 하나에 몰아넣어 인스턴스를 1 개만
-///   쓴다 — 공유 하네스가 생기기 전부터 이 원칙을 지켜 온 원본이다.
 /// - `tests/soak_memory.rs` (1): 프로세스 트리 RSS 를 **외부에서** 측정한다(`pid()`).
 ///   다른 테스트의 활동이 섞이면 측정 자체가 무의미해진다. 전수 `#[ignore]`.
 /// - `tests/attach_convert_cwd_loopback.rs` (1): 검증 대상 동작이 `inherit_cwd` 설정에
@@ -71,7 +69,6 @@ const INSTANCE_HARNESS_MARKERS: &[&str] =
 /// - `tests/webhook_integration.rs` (2): 위와 같은 이유 + **재시작 시나리오**라 같은 HOME 을
 ///   물려받는 두 번째 인스턴스가 검증 대상 그 자체다(영속성 확인).
 const ALLOWLIST_FILES: &[(&str, usize)] = &[
-    ("tests/e2e_tests.rs", 1),
     ("tests/soak_memory.rs", 1),
     ("tests/attach_convert_cwd_loopback.rs", 1),
     ("tests/hook_env_integration.rs", 1),

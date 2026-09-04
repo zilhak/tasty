@@ -56,6 +56,24 @@ TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_
 
 웹훅 하네스(`tests/webhook_common/mod.rs`)는 인스턴스마다 `TASTY_HOME`/`webhooks.toml` 을 시딩해야 해서 공유 진입점이 없고, 재시작 영속성 테스트는 같은 HOME 을 물려받는 두 번째 인스턴스가 검증 대상 그 자체다.
 
+### 1-1. 시나리오 하나에 `#[test]` 하나
+
+**한 `#[test]` 에 시나리오를 직렬로 쌓지 않는다.** 앞에서 하나가 죽으면 뒤의 전부가 실행되지
+않고, 그 하나 때문에 CI 가 파일 전체를 `--skip` 하게 된다 — GUI 를 요구하지 않는 시나리오까지
+같이 사라진다. `tests/e2e_tests.rs` 가 실제로 그 형태였고(33 개 시나리오 / `#[test]` 1 개),
+헤드리스 조합에서 파일이 통째로 빠져 있었다. 벽은 마지막 시나리오의 `window.create` 하나였다.
+
+지금은 시나리오마다 `#[test]` 가 하나고, 각 테스트는 `common::shared()` + `create_workspace()`
+로 자기 workspace 안에서만 움직인다. 창을 요구하는 단언은 한 테스트에 모아 두어 `--skip` 이
+**파일이 아니라 테스트**를 가리킨다. 판정 단위의 근거는 [ADR-0127](../adr/0127-e2e-harness-binary-selection.md)
+의 「경계는 테스트 단위로 긋는다」 절.
+
+**따라오는 제약 — 전역 목록 위에서는 길이 산술을 쓰지 않는다.** 테스트는 병렬로 도는데
+`pane.list` / `workspace.list` / `hook.list` / `pty.list` / notification 은 workspace 로
+격리되지 않는 전역 목록이라, `before + 1` 같은 델타는 다른 테스트가 동시에 만들고 지우면
+깨진다. **"내 것이 있는가/없는가"**(`any` / `all`) 로 쓰거나, 세야 한다면 자기 workspace 로
+필터한 뒤 센다.
+
 **선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 `cargo test --workspace` 에서도 실행되지 않는다 — 어느 채널에도 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
 
 **집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 통합 테스트라 **컴파일은 두 조합 모두 자동, 실행은 헤드리스 조합에서만 자동**이다(기본 조합의 전체 스위트는 자동 채널이 없다). 조합별 실태와 단서(`paths-ignore` 등)는 [ci-gates](ci-gates.md) 가 정본이고 여기 복제하지 않는다. 세 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`), ③ 바이너리 선택이 §0-1 의 한 곳을 거치는지(`BIN_SELECTION_ALLOWLIST` — **면제는 파일 통째가 아니라 횟수까지 묶는다**). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
