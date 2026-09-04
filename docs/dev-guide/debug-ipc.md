@@ -68,18 +68,6 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.modifier_hint.state` | `{}` | 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 덤프: `held{ctrl,alt,option,shift}\|null` · `hold_elapsed_ms` · `dismissed` · `reveal_delay_ms`(Shift 단독 2000, 그 외 500) · `visible` · `alpha` · `header_combo`(전체 조합 키캡) · `sections[{combo,rows,roles,empty}]`(눌린 조합으로 좁혀진 섹션 — `combo`=섹션 헤더의 조합 전체 키캡, `rows`=각 행의 **leaf 키캡만**(`Ctrl+K` 가 아니라 `K` — modifier 는 섹션 헤더가 담당), `roles`=역할 설명 키, `empty`=바인딩·역할 모두 없는 조합(draw 가 "바인딩 없음" 플레이스홀더로 렌더, ADR-0038)). 스크린샷 없이 좁힘·즉시갱신·지연·빈-플레이스홀더 자동 단정용 |
 | `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
 | `debug.settings.apply` | `settings` (object) | 부분(또는 전체) 설정 patch 를 **라이브 settings 직렬화 복사본** 위에 재귀 deep-merge 한 뒤 완성된 전체 `Settings` 로 `UpdateSettings` 를 dispatch — 설정 모달 저장과 **동일 경로**라 collapse·theme·`config.toml` save 까지 cascade 가 처리한다(모달/proxy 불요). 라이브를 pre-mutate 하지 않으므로 cascade 의 prev≠new 비교가 살아 collapse 분기가 정상 발화. **알 수 없는 키는 조용히 무시(no-op)** — `Settings` 가 `deny_unknown_fields` 가 아니라 `#[serde(default)]` 이므로 오타 키는 변화 없이 통과한다(검증자 혼동 주의). 타입 불일치/비-object 는 `-32602` 로 거부되고 라이브는 불변. gui 게이트 없이 headless 에서도 동작 |
-
-`debug.settings.open` 의 `subtab` 키(활성 `tab` 종속):
-
-| `tab` | 유효 `subtab` 키 |
-|-------|------------------|
-| `general` | `general` · `notifications` · `accessibility` · `overlay` · `remote_transfer` · `display`(macOS 전용 UI — 키 자체는 크로스플랫폼으로 강제 선택 가능) |
-| `terminal` | `general` · `mouse_capture` · `tui` · `performance` |
-| `appearance` | `theme` · `colors` · `general` · `display` · `tasty` · `terminal` |
-| `keybindings` | `general` · `workspace` · `pane` · `tab` · `surface` · `clipboard` · `zoom` · `image` · `preset` · `plugins` |
-| `file_handler` | `extension_mapping` · `detectors` · `handlers` |
-| `misc` | `tastyrc` (Windows 전용) |
-| `plugins` | — (L2 가 plugin contribute page 라 정적 키 없음; 무시) |
 | `debug.banner.list` | `{}` | 빌트인 배너 정의 + 현재 표시 중/큐 배너(스코프 token·남은초·`total_queued`) |
 | `debug.banner.show` | `banner_id, scope` | 배너 강제 발화 (def 의 ttl 따라 ttl/persistent, 응답에 push `outcome`) — 사용자 조작 우회, 시각 검증용 |
 | `debug.banner.close` | `banner_id` | 표시 중/큐 배너 강제 close (표시 중이면 큐 head 승격) |
@@ -100,6 +88,18 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS 전용.** `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |
 | `surface.switch_input_source` | `source_id` | **macOS 전용.** `TISSelectInputSource` 로 시스템 입력 소스(키보드 레이아웃·입력기)를 바꾼다 — 사용자가 입력기 메뉴로 하는 조작의 재현. 위 `raw_key` 로 한글/CJK 경로를 검증하기 전 입력기를 맞추는 데 쓴다 † |
 | `surface.ime_enable` / `ime_disable` / `ime_preedit` / `ime_commit` / `ime_status` | `text`/`cursor`(preedit·commit) | 포커스된 창의 IME 조합 상태(`ime_active`/`ime_preedit`)를 강제로 세팅·조회한다 — 사용자 입력기 조합의 재현. 대상을 ID 로 받지 못하고 포커스된 창에 작용하므로 포커스 독립성도 만족하지 않는다. 개별 등재가 아니라 `PREFIX_RULES` 의 `surface.ime_` 로 해소되며, 그 규칙 자체가 `#[cfg(debug_assertions)]` 다. 사용법은 [ime-testing](../ai-verification/ime-testing.md) |
+
+`debug.settings.open` 의 `subtab` 키(활성 `tab` 종속):
+
+| `tab` | 유효 `subtab` 키 |
+|-------|------------------|
+| `general` | `general` · `notifications` · `accessibility` · `overlay` · `remote_transfer` · `display`(macOS 전용 UI — 키 자체는 크로스플랫폼으로 강제 선택 가능) |
+| `terminal` | `general` · `mouse_capture` · `tui` · `performance` |
+| `appearance` | `theme` · `colors` · `general` · `display` · `tasty` · `terminal` |
+| `keybindings` | `general` · `workspace` · `pane` · `tab` · `surface` · `clipboard` · `zoom` · `image` · `preset` · `plugins` |
+| `file_handler` | `extension_mapping` · `detectors` · `handlers` |
+| `misc` | `tastyrc` (Windows 전용) |
+| `plugins` | — (L2 가 plugin contribute page 라 정적 키 없음; 무시) |
 
 > **이 표에는 자동 채널이 없다.** `DEBUG_METHODS` 와 이 표가 어긋나도 어떤 잡도 안 터진다 —
 > 실제로 일곱 건이 빠져 있었고 손으로 채웠다. 판정기를 안 만든 이유는 이 표가 사이에 낀
