@@ -44,6 +44,32 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 `attach.*` IPC namespace 는 `tasty attach` 로 노출되지 않고 용도별 CLI 로 갈린다: `tasty remote attach`/`remote check`(release, 원격 SSH), `tasty debug attach`(debug 전용, 로컬 loopback). 근거·동작은 [attach-behavior](attach-behavior.md), 격리는 [debug-ipc](debug-ipc.md).
 
+### release IPC 에 있는데 CLI 가 없는 메서드
+
+[identity §2.2](../identity.md) 원칙 2 는 "**에이전트가 자기 작업에 필요한 기능**은 IPC + CLI 양면으로 동작해야 한다" 이다. 걸리는 대상은 **에이전트 기능**이지 release IPC 표면 전체가 아니다 — plugin 이 host 에게 자기 자원을 요청하는 서비스 메서드는 애초에 CLI 호출자가 존재하지 않는다.
+
+그래서 "release 표에 있는데 CLI 가 없다" 는 그 자체로 결함이 아니다. 아래가 현재 그런 메서드 전부이고, 각 행이 왜 원칙 2 밖인지 또는 어떻게 이미 충족되는지를 적는다. **새로 그런 메서드를 만들면 여기에 행을 추가한다** — `tests/cli_method_table_parity.rs` 가 이 표와 실제 집합을 양방향으로 대조하므로, 빠뜨리면 테스트가 떨어진다.
+
+총 35개.
+
+| 이유 | 메서드 | 왜 CLI 가 없나 |
+|---|---|---|
+| plugin → host 서비스 | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
+| plugin → host 서비스 | `fs.pick_file` · `file_picker.trigger` | plugin 프로세스가 못 여는 host UI 스레드 자원(native 다이얼로그 · host 소유 popup)을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다 |
+| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` · `recent.query` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. host 는 kind 를 모르고 generic 하게 대행할 뿐이다 |
+| plugin → host 서비스 | `webview.set_url` · `surface.set_cwd` | plugin 이 **자기** surface 의 상태를 host 에 통보한다 |
+| plugin → host 서비스 | `theme.query` | webview-kind surface 가 `set_context` 를 못 받아 문서 재생성 시 Theme 을 직접 조회한다(ADR-0065). 사람이 볼 값은 `tasty settings get` 쪽이다 |
+| plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
+| plugin → host 서비스 | `file_handler.dispatch` | explorer plugin 의 더블클릭 같은 in-app 흐름 진입점이다. 사람이 파일을 열 때는 `tasty open` 계열이 그 앞단이다 |
+| plugin → host 서비스 | `telemetry.record_batch` | 단건 `telemetry.record` 는 `tasty telemetry record` 로 있다. batch 는 plugin 이 다건을 모아 보내는 효율 변종이라 CLI 한 줄에 대응하지 않는다 |
+| CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
+| CLI 는 있고 IPC 를 안 탄다 | `remote.profile.add` · `remote.profile.get` · `remote.profile.list` · `remote.profile.list_local` · `remote.profile.detect` · `remote.profile.import` · `remote.profile.remove` | `tasty tool remote-profile …` 이 로컬 프로필 파일을 직접 다룬다(IPC 없음). 인스턴스가 떠 있지 않아도 되어야 하는 명령이라 그쪽이 옳다 |
+| CLI 는 있고 IPC 를 안 탄다 | `remote.passkey.add` · `remote.passkey.get` · `remote.passkey.list` · `remote.passkey.remove` | `tasty tool passkey …` 가 같은 이유로 로컬 처리한다 |
+| 다른 이름으로 이미 있다 | `view.create` · `view.close` · `view.list` | `window.*` 의 어휘 통일 alias 로 동작이 동등하다. CLI 는 `tasty new window` · `tasty close window` · `tasty list windows` 쪽 한 벌만 노출한다 |
+| 같은 능력을 다른 명령이 준다 | `surface.send_combo` | `surface.send_key` 가 `"ctrl+c"` 형태를 파싱하므로 `tasty send key ctrl+c` 로 덮인다. 이쪽은 modifier 를 배열로 받는 JSON 친화 변종이다 |
+| 같은 능력을 다른 명령이 준다 | `surface.send_to` | `surface.send` 와 동형이라 `tasty send text --surface <id>` 로 덮인다 |
+| 연결 경계가 대신한다 | `attach.acquire` · `attach.release` · `attach.list` | 위 "CLI vs IPC" 의 `attach.*` 항목 참조. `client_id` 가 `stream.open` 핸드셰이크 발급물이라 one-shot CLI 가 들 수 없고, 사람이 쓰는 표면은 `tasty remote attach` / `tasty tool attach` 가 세션 전체를 안에서 처리한다 |
+
 ## 응답 계약 — mirror 워크스페이스로 간 구조 op
 
 대상이 **mirror(원격 attach client) 워크스페이스**인 구조 op(`tab.create`/`split`/`tab.close`/`tab.move`/`pane.close`/`surface.close`/convert 등)는 로컬에서 실행되지 않고 원격으로 forward 된다([remote-attach](../features/remote-attach/index.md#mirror-워크스페이스-내-구조-변경)). 그 응답은 **fire-and-forget success** 다:

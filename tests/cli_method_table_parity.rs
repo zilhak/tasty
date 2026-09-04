@@ -126,8 +126,8 @@ fn is_call_argument(before: &str, prev_lines: &[&str]) -> bool {
         .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_' || c == '!')
 }
 
-/// 한 줄에서 값 위치의 메서드 리터럴을 전부 뽑는다.
-fn value_position_methods<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str> {
+/// 한 줄에서 **값 위치**(호출 인자가 아닌) 리터럴을 전부 뽑는다. 이름 모양은 안 본다.
+fn value_position_literals<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str> {
     let mut out = Vec::new();
     let mut idx = 0usize;
     while let Some(rel) = line[idx..].find('"') {
@@ -136,13 +136,26 @@ fn value_position_methods<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str
             break;
         };
         let end = start + rel_end;
-        let name = &line[start..end];
-        if is_method_name(name) && !is_call_argument(&line[..start - 1], prev_lines) {
-            out.push(name);
+        if !is_call_argument(&line[..start - 1], prev_lines) {
+            out.push(&line[start..end]);
         }
         idx = end + 1;
     }
     out
+}
+
+/// 값 위치 리터럴 중 `ns.verb` 모양인 것만.
+///
+/// 점을 요구하는 이유는 **오타 탐지 방향**(이 이름이 표에 있나)에서는 모양 제한이 없으면
+/// `"terminal"`·`"idle"` 같은 평범한 리터럴이 전부 후보가 되어 가드가 노이즈에 묻히기
+/// 때문이다. 반대 방향(표의 이름이 CLI 에 있나)에서는 표와 교집합을 잡으므로 노이즈가
+/// 무해해 [`value_position_literals`] 를 그대로 쓴다 — 무점 root 메서드(`split`·`tree`)가
+/// 그 차이로 살아난다.
+fn value_position_methods<'a>(line: &'a str, prev_lines: &[&str]) -> Vec<&'a str> {
+    value_position_literals(line, prev_lines)
+        .into_iter()
+        .filter(|name| is_method_name(name))
+        .collect()
 }
 
 /// `method: "ns.verb"` 필드 초기화에서 이름을 뽑는다. `jsonrpc: "2.0"` 같은 다른 필드는
@@ -358,5 +371,209 @@ fn root_level_methods_are_reachable_from_the_cli() {
         "표의 root(무점) 메서드가 CLI request 소스에 리터럴로 없다 — 오타로 이름이 어긋났거나, \
          명명 규칙이 닫아 둔 root 예외에 CLI 없는 메서드가 새로 들어왔다:\n  {}",
         unreachable.join("\n  ")
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 표 → CLI 방향: "release 표에 있는데 CLI 가 없는" 집합이 문서와 1:1 인가.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CLI_GAP_DOC: &str = "docs/dev-guide/api-conventions.md";
+
+/// 문서에서 표를 특정하는 헤더 행.
+const CLI_GAP_TABLE_HEADER: &str = "| 이유 | 메서드 | 왜 CLI 가 없나 |";
+
+/// 셀 안의 **모든 백틱 코드 스팬**. 한 셀에 메서드를 `·` 로 여럿 늘어놓는다.
+///
+/// 코드 스팬만 뽑으므로 백틱 밖의 사람이 읽는 단서는 자연히 잘린다 — 그래서 대조를
+/// `starts_with` 로 느슨하게 할 이유가 없고 **정확 일치**로 본다. 느슨하면 문서 쪽
+/// 접미사 오타(`attach.list_TYPO`)가 그대로 통과해 이 가드의 존재 이유가 반쪽이 된다.
+/// (`permission_free_methods_docs_parity.rs` 와 같은 규약.)
+fn code_spans(cell: &str) -> Vec<String> {
+    cell.split('`')
+        .skip(1)
+        .step_by(2)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// CLI 에서 도달 가능한 메서드 이름 전부.
+///
+/// 세 경로를 합친다 — request 소스의 값 위치 리터럴, 크레이트 전역의 `method: "…"` 필드,
+/// 번들 plugin 매니페스트의 `ipc_method`(동적 plugin CLI 가 그 이름으로 부른다).
+fn cli_reachable_methods(root: &Path) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+
+    let mut request_files: Vec<PathBuf> =
+        CLI_REQUEST_SOURCES.iter().map(|s| root.join(s)).collect();
+    for dir in CLI_REQUEST_DIRS {
+        gather_rs(&root.join(dir), &mut request_files);
+    }
+    for path in &request_files {
+        let Ok(src) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let lines: Vec<&str> = src.lines().collect();
+        let in_tests = test_module_lines(&lines);
+        for (i, line) in lines.iter().enumerate() {
+            if in_tests[i] {
+                continue;
+            }
+            for name in value_position_literals(line, &lines[..i]) {
+                out.insert(name.to_string());
+            }
+        }
+    }
+
+    let mut all_files = Vec::new();
+    gather_rs(&root.join(CLI_CRATE_ROOT), &mut all_files);
+    for path in &all_files {
+        let Ok(src) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let lines: Vec<&str> = src.lines().collect();
+        let in_tests = test_module_lines(&lines);
+        for (i, line) in lines.iter().enumerate() {
+            if !in_tests[i]
+                && let Some(name) = field_method(line)
+            {
+                out.insert(name.to_string());
+            }
+        }
+    }
+
+    // 번들 plugin 매니페스트의 `ipc_method = "…"`.
+    let mut manifests = Vec::new();
+    collect_manifests(&root.join("crates"), &mut manifests);
+    for path in &manifests {
+        let Ok(src) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        // `ipc_method = "…"` 는 줄 맨 앞에도, 인라인 테이블
+        // (`{ name = "open", ipc_method = "image.open", … }`) 안에도 온다.
+        for line in src.lines() {
+            let mut rest = line;
+            while let Some(pos) = rest.find("ipc_method") {
+                let after = &rest[pos + "ipc_method".len()..];
+                rest = after;
+                let Some(eq) = after.trim_start().strip_prefix('=') else {
+                    continue;
+                };
+                let Some(q) = eq.trim_start().strip_prefix('"') else {
+                    continue;
+                };
+                if let Some((name, tail)) = q.split_once('"') {
+                    out.insert(name.to_string());
+                    rest = tail;
+                }
+            }
+        }
+    }
+    out
+}
+
+fn collect_manifests(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_manifests(&p, out);
+        } else if p.file_name().and_then(|n| n.to_str()) == Some("tasty-plugin.toml") {
+            out.push(p);
+        }
+    }
+}
+
+/// release 표에 있는데 CLI 진입점이 없는 메서드가 문서 표와 **양방향으로** 맞는지.
+///
+/// 원칙 2("에이전트 기능은 IPC + CLI 양면")는 release IPC 표면 **전체**가 아니라
+/// 에이전트 기능에 걸린다 — plugin 이 host 에게 자기 자원을 요청하는 서비스 메서드는
+/// CLI 호출자가 애초에 없다. 그래서 이 집합이 비어 있어야 하는 것이 아니라, **각 항목이
+/// 왜 밖인지가 문서에 남아 있어야** 한다. 이유 없이 남아 있으면 누락과 구분되지 않고,
+/// 실제로 같은 감사 티켓이 두 번 올라왔다.
+///
+/// 이 가드는 **이유의 내용**은 보지 않는다(기계가 판정할 값이 아니다) — 목록이 문서와
+/// 어긋나는 것만 본다.
+#[test]
+fn methods_without_a_cli_entry_point_are_documented() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let reachable = cli_reachable_methods(root);
+
+    let actual: std::collections::BTreeSet<String> = METHOD_TABLE
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .filter(|name| !reachable.contains(name))
+        .collect();
+
+    let text = std::fs::read_to_string(root.join(CLI_GAP_DOC))
+        .unwrap_or_else(|e| panic!("read {CLI_GAP_DOC}: {e}"));
+    let after_header = text
+        .split_once(CLI_GAP_TABLE_HEADER)
+        .unwrap_or_else(|| panic!("{CLI_GAP_DOC}: `{CLI_GAP_TABLE_HEADER}` 표 헤더를 찾지 못했다"))
+        .1;
+    let listed: Vec<String> = after_header
+        .lines()
+        .skip(1) // `|---|---|---|` 구분선
+        .take_while(|l| l.trim_start().starts_with('|'))
+        .flat_map(|line| {
+            let cells: Vec<&str> = line.trim().trim_matches('|').split('|').collect();
+            if cells.len() != 3 {
+                panic!("{CLI_GAP_DOC}: 표 행의 열 수가 3이 아니다: {line}");
+            }
+            // `|---|---|---|` 구분선(헤더 split 뒤 첫 줄이 헤더의 잔여 빈 문자열이라
+            // skip(1) 만으로는 구분선이 남는다).
+            if cells[0].trim().starts_with("---") {
+                return Vec::new();
+            }
+            let methods = code_spans(cells[1]);
+            assert!(
+                !methods.is_empty(),
+                "{CLI_GAP_DOC}: 표 행의 메서드 열이 비었다: {line}"
+            );
+            methods
+        })
+        .collect();
+
+    let listed_set: std::collections::BTreeSet<String> = listed.iter().cloned().collect();
+    assert_eq!(
+        listed.len(),
+        listed_set.len(),
+        "{CLI_GAP_DOC}: 표에 같은 메서드가 두 번 적혔다 — 한 메서드의 이유는 한 곳이어야 한다"
+    );
+
+    let undocumented: Vec<&String> = actual.difference(&listed_set).collect();
+    assert!(
+        undocumented.is_empty(),
+        "release 표에 있는데 CLI 진입점이 없고, {CLI_GAP_DOC} 에도 이유가 없다. \
+         에이전트 기능이면 CLI 를 만들고(원칙 2), 원칙 밖이면 그 이유를 표에 적어라 \
+         — 이유 없이 두면 누락과 구분되지 않는다:\n  {}",
+        undocumented
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+
+    let stale: Vec<&String> = listed_set.difference(&actual).collect();
+    assert!(
+        stale.is_empty(),
+        "{CLI_GAP_DOC} 표에 있으나 실제로는 CLI 진입점이 생겼거나 메서드가 사라졌다 — \
+         행을 지워야 표가 참이 된다:\n  {}",
+        stale
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+
+    // 산문에 박아 둔 개수도 함께 맞춘다 — 표만 고치고 개수를 두면 문서가 자기모순이 된다.
+    let count_marker = format!("총 {}개.", actual.len());
+    assert!(
+        text.contains(&count_marker),
+        "{CLI_GAP_DOC}: 표 앞 산문의 개수가 실제({})와 다르다 — `{count_marker}` 로 맞춰라",
+        actual.len()
     );
 }
