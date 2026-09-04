@@ -300,6 +300,20 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   border-radius: var(--radius-sm);
 }
 .search input::placeholder { color: var(--overlay0); }
+
+/* Stands in for the placeholder once the field collapses to a square below
+   900px; clicks fall through to the input, which expands it again. */
+.search__icon {
+  display: none;
+  position: absolute;
+  left: 0; top: 0;
+  width: 34px; height: 32px;
+  align-items: center;
+  justify-content: center;
+  color: var(--overlay0);
+  pointer-events: none;
+}
+.search__icon svg { width: 15px; height: 15px; }
 .search input:focus { outline: none; border-color: var(--brand); }
 
 .search__results {
@@ -1270,6 +1284,10 @@ a.card:hover { text-decoration: none; }
   .search { flex-basis: 34px; transition: flex-basis 160ms ease; }
   .search:focus-within { flex-basis: 190px; }
   .search input { padding: 0 var(--sp-2); }
+  .search input::placeholder { color: transparent; }
+  .search__icon { display: flex; }
+  .search:focus-within input::placeholder { color: var(--overlay0); }
+  .search:focus-within .search__icon { display: none; }
   .brand__version { display: none; }
   .cta-band { padding: var(--sp-8) var(--sp-5); }
   .site-footer__inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
