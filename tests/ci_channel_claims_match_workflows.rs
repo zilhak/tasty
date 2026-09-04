@@ -167,14 +167,34 @@ const MIN_TEST_CITATIONS: usize = 40;
 /// 인용된 명령이 **좁혀진 조합**인가 — `--lib`/`--bins`/`--test` 로 좁힌 형태는 실제로
 /// 자동으로 돈다(`crossplatform-check.yml` 의 Windows·headless 잡, semver 가드).
 fn is_narrowed(tail: &str) -> bool {
-    // 명령 끝(줄바꿈)까지 본다. 앞 몇 단어만 보면 플래그가 하나 늘 때마다 판정이 밀린다
-    // — 실제로 `--no-fail-fast` 가 나중에 추가됐고, 고정 개수였다면 그 순간 좁힘을
-    // 놓쳤을 것이다. 상수를 없애 그 취약성 자체를 지운다.
-    tail.lines()
-        .next()
-        .unwrap_or("")
+    logical_command(tail)
         .split_whitespace()
         .any(|w| w.starts_with("--lib") || w.starts_with("--bins") || w.starts_with("--test"))
+}
+
+/// 인용 지점부터 **그 명령이 끝나는 곳까지** — YAML 의 백슬래시 연속행을 이어 붙인다.
+///
+/// 판정 범위를 상수로 잡지 않는다. 이 함수의 앞선 두 형태가 각각 상수 하나씩을 들고
+/// 있다가 밀렸다: 앞 N 단어만 보던 형태는 `--no-fail-fast` 가 추가된 날 좁힘을 놓쳤고,
+/// 그것을 고치며 들어온 "물리적 한 줄" 형태는 연속행에 놓인 플래그를 못 본다. 두 번째
+/// 형태의 주석은 "명령 끝까지 본다" 고 적고 있었는데 — **고정 개수를 지웠을 뿐 고정
+/// 범위를 안 지웠다.** 끝나는 자리를 셸과 같은 규칙(줄 끝 `\` 가 없으면 거기서 끝)으로
+/// 구조에서 끌어내면 남는 상수가 없다.
+///
+/// 다음 YAML 스텝까지 끌어오지는 않는다 — 연속 표시가 없는 줄에서 멈추므로, 아래에
+/// 놓인 다른 `run:` 의 플래그가 이 명령의 판정에 섞이지 않는다.
+fn logical_command(tail: &str) -> String {
+    let mut out = String::new();
+    for line in tail.lines() {
+        let trimmed = line.trim_end();
+        let continues = trimmed.ends_with('\\');
+        out.push_str(trimmed.trim_end_matches('\\'));
+        out.push(' ');
+        if !continues {
+            break;
+        }
+    }
+    out
 }
 
 /// 텍스트에서 "전체 스위트를 CI 가 돌린다" 는 주장의 바이트 오프셋들.
@@ -967,6 +987,27 @@ fn narrowing_is_seen_however_many_flags_precede_it() {
     // 다음 줄의 좁힘을 끌어오지 않는다.
     assert!(!is_narrowed(
         " --locked\n      - name: other\n        run: cargo test --lib\n"
+    ));
+}
+
+/// 좁힘이 **백슬래시 연속행**에 놓여도 본다. YAML 의 `run:` 은 긴 명령을 줄로 나누는 것이
+/// 관례이고, 물리적 한 줄만 읽으면 그 형태에서 좁혀진 스텝을 "안 좁혀졌다" 로 판정한다 —
+/// 그러면 그 위에 선 채널 주장 판정이 통째로 뒤집힌다.
+///
+/// 이 테스트가 판정 범위를 붙박는 변이다. 범위를 다시 물리적 한 줄로 되돌리면 첫 두
+/// 단언이 죽고, 반대로 줄 수 제한 없이 통째로 읽게 넓히면 마지막 단언이 죽는다.
+#[test]
+fn narrowing_is_seen_on_a_continuation_line() {
+    assert!(is_narrowed(
+        " --workspace --locked \\\n      --lib --bins\n"
+    ));
+    // 연속이 여러 번 이어져도 끝까지 따라간다.
+    assert!(is_narrowed(
+        " --workspace \\\n      --locked \\\n      --no-fail-fast \\\n      --test api_baseline_0_7\n"
+    ));
+    // 연속 표시가 끝난 **다음** 줄의 플래그는 이 명령의 것이 아니다.
+    assert!(!is_narrowed(
+        " --workspace \\\n      --locked\n      --lib --bins\n"
     ));
 }
 
