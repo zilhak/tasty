@@ -223,10 +223,15 @@ fn register_one_surface_kind(
 
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.
 /// `host.shared_buffer.create` 는 egui-mesh 프레임 생성에 필수라 그대로 인터셉트한다.
-/// popup.close/banner.open/banner.close/namespace forward 는 헤드리스에 대응하는
-/// GUI 상태(popup/banner overlay, view)가 없어 이 스코프에서는 생략 — 대상 plugin
-/// (markdown/image/mesh_demo)이 기동 시 이들을 호출하지 않는 한 영향 없다(생략 항목은
-/// 스코프를 벗어나는 발견 시 별도 TODO로 기록).
+/// popup.close/banner.open/banner.close 는 헤드리스에 대응하는 GUI 상태(popup/banner
+/// overlay, view)가 없어 생략한다.
+///
+/// **namespace forward 는 그 근거가 아니다.** 여기서 빠져 있는 것은 plugin → plugin
+/// 방향(`forward_namespace_call_from_plugin`)이고, 그건 GUI 상태와 무관하다 — 같은
+/// 근거 문장에 묶여 있었을 뿐이다. host → plugin 방향은 이제 `headless_dispatch.rs`
+/// 가 배선한다. plugin → plugin 방향은 아직 없다: 한 plugin 이 다른 plugin 의
+/// namespace 를 부르는 시나리오가 헤드리스에서 관측된 적이 없어 남겨 두는 것이며,
+/// 관측되면 그때 gui `app/dispatch/plugin_ipc.rs` 와 동형으로 배선하면 된다.
 fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
     let calls = match app.plugin_manager.as_mut() {
         Some(mgr) => mgr.take_pending_plugin_calls(),
