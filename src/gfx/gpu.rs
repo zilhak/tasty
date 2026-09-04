@@ -1,3 +1,4 @@
+mod boot_error;
 mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
@@ -36,6 +37,17 @@ pub enum ShellSetupAction {
     None,
     Confirmed,
     Exit,
+}
+
+/// 부팅 실패 화면에 그릴 진단(제목/본문/힌트). GPU 는 살아있으나 엔진 생성이 실패했을
+/// 때, 런처(dock/시작 메뉴)로 실행한 사용자는 stderr 를 못 봐 "창이 깜빡이고 사라지는
+/// 것" 이 전부다 — 그 진단을 창에 그려 보인다. i18n 해석은 App 층에서 하고 여기엔 해석된
+/// 문자열만 담는다(gpu 층은 i18n 을 모른다). 근거:
+/// `docs/adr/0117-window-and-modal-creation-failure-policy.md` 재검토 트리거.
+pub struct BootErrorInfo {
+    pub title: String,
+    pub body: String,
+    pub hint: String,
 }
 
 /// surface configure 치수를 물리 유효 범위로 clamp 한다.

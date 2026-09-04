@@ -9,6 +9,7 @@ name = "Tasty"
 [button]
 ok = "OK"
 cancel = "キャンセル"
+quit = "終了"
 open = "開く"
 save = "保存"
 add = "追加"

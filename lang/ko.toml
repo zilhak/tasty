@@ -9,6 +9,7 @@ name = "Tasty"
 [button]
 ok = "확인"
 cancel = "취소"
+quit = "종료"
 open = "열기"
 save = "저장"
 add = "추가"

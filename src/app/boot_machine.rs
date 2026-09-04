@@ -89,22 +89,18 @@ pub(crate) struct BootState {
     pub(crate) pending_events: Vec<crate::AppEvent>,
 }
 
-/// 부팅 중 engine(터미널 엔진) 생성이 실패했을 때의 정상 종료. 첫 창이라 안내를 띄울
-/// 창 자체가 없으므로, 패닉(가짜 크래시 리포트) 대신 사람이 읽을 진단을 stderr 로 내고
-/// 종료한다 — `try_init_boot_gpu` 의 GPU 어댑터 부재 처리와 같은 방식이다. 흔한 원인은
-/// 사용자 `config.toml` 의 shell 경로 오타(=셸 spawn 실패)다.
-fn boot_fatal_engine_error(err: &anyhow::Error) -> ! {
-    // tracing::error! 는 fmt subscriber 로 stderr(터미널 사용자에게 보임) + 파일 로그
-    // 둘 다에 나간다 — eprintln 은 파일에 안 남아 사후 진단이 불가능하다(C.11 준수).
-    // 진단 3줄을 한 이벤트로 합친다 — tracing 매크로 확장이 커서 여러 번 부르면
-    // cognitive_complexity(deny) 를 넘긴다.
-    tracing::error!(
-        "boot engine creation failed: {err:#}\n{}\n{}\n{}",
-        crate::i18n::t("boot.engine_error.title"),
-        crate::i18n::t_fmt("boot.engine_error.body", &err.to_string()),
-        crate::i18n::t("boot.engine_error.hint"),
-    );
-    std::process::exit(1);
+/// 부팅 중 engine 생성 실패의 진단을 만든다. 예전엔 곧바로 `exit(1)` 했으나, 이 단계는
+/// 부팅 GPU init 이후라 **GPU·창이 살아있다** — 그래서 진단을 창에 그려 런처로 실행한
+/// 사용자에게도 보이게 한다(`enter_boot_error_mode`). stderr·파일 로그로도 낸다(터미널
+/// 사용자용): `tracing::error!` 는 fmt subscriber 로 stderr + 파일 둘 다에 나간다
+/// (eprintln 은 파일에 안 남아 사후 진단이 불가능, C.11 준수). 진단 3줄을 한 이벤트로
+/// 합친다 — tracing 매크로 확장이 커서 여러 번 부르면 cognitive_complexity(deny)를 넘긴다.
+fn boot_engine_error_info(err: &anyhow::Error) -> crate::gpu::BootErrorInfo {
+    let title = crate::i18n::t("boot.engine_error.title").to_string();
+    let body = crate::i18n::t_fmt("boot.engine_error.body", &err.to_string());
+    let hint = crate::i18n::t("boot.engine_error.hint").to_string();
+    tracing::error!("boot engine creation failed: {err:#}\n{title}\n{body}\n{hint}");
+    crate::gpu::BootErrorInfo { title, body, hint }
 }
 
 impl App {
@@ -197,6 +193,14 @@ impl App {
             return;
         };
         let ready = self.boot_step(&mut boot);
+        // 엔진 생성이 실패했다 — GPU·창은 살아있으니(부팅 GPU init 이후 단계) 실패
+        // 화면을 그려 사용자에게 보인다. boot 는 재저장하지 않고 window/gpu 소유권을
+        // boot error 모드로 넘긴다. GPU 부재·창 생성 실패는 여기 오지 않는다(그쪽은
+        // 그릴 수단이 없어 진단 후 즉시 exit). ADR-0117 재검토 트리거.
+        if self.boot_error_info.is_some() {
+            self.enter_boot_error_mode(boot.window, boot.gpu);
+            return;
+        }
         if ready {
             self.finish_boot(boot, event_loop);
             return;
@@ -268,10 +272,11 @@ impl App {
                 self.boot_transition_after_engine(boot)
             }
             Ok(Err(e)) => {
-                // 워커가 engine 생성에 실패했다(셸 spawn·PTY/fd 등). 첫 창이라
-                // 안내를 띄울 창이 없으므로, 패닉(크래시 리포트) 대신 진단 후
-                // 정상 종료한다 — GPU 어댑터 부재(`try_init_boot_gpu`)와 같은 방식.
-                boot_fatal_engine_error(&e);
+                // 워커가 engine 생성에 실패했다(셸 spawn·PTY/fd 등). GPU·창은
+                // 살아있으니 진단을 창에 그려 보인다(drive_boot_frame 이 boot_error_info
+                // 를 보고 boot error 모드로 전환). 첫 창이라도 사라지며 깜빡이지 않는다.
+                self.boot_error_info = Some(boot_engine_error_info(&e));
+                false
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -287,7 +292,8 @@ impl App {
                 if let Err(e) = self
                     .ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width)
                 {
-                    boot_fatal_engine_error(&e);
+                    self.boot_error_info = Some(boot_engine_error_info(&e));
+                    return false;
                 }
                 self.boot_transition_after_engine(boot)
             }
@@ -733,4 +739,27 @@ fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::Inf
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
 fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
     Vec::new()
+}
+
+#[cfg(test)]
+mod boot_error_tests {
+    use super::*;
+
+    /// `boot_engine_error_info` 가 title/body/hint 를 서로 다른 세 진단 소스에서
+    /// 읽는다(복붙으로 hint 에 title 키를 쓰는 류 실수 방지). pairwise-distinct +
+    /// non-empty 는 i18n 초기화 여부와 무관하게 성립한다 — 미초기화면 세 키가 그대로,
+    /// 초기화면 세 번역문이 오는데 둘 다 서로 다르다.
+    ///
+    /// 변이 검증: 셋 중 하나를 다른 것과 같은 소스로 바꾸면(예: `hint: title`)
+    /// pairwise assert 가 깨진다.
+    #[test]
+    fn engine_error_info_reads_three_distinct_diagnostics() {
+        let info = boot_engine_error_info(&anyhow::anyhow!("shell not found: /bad/path"));
+        assert!(!info.title.is_empty(), "title must be present");
+        assert!(!info.body.is_empty(), "body must be present");
+        assert!(!info.hint.is_empty(), "hint must be present");
+        assert_ne!(info.title, info.body, "title and body must differ");
+        assert_ne!(info.body, info.hint, "body and hint must differ");
+        assert_ne!(info.title, info.hint, "title and hint must differ");
+    }
 }

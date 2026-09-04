@@ -33,7 +33,7 @@ plugin 팝업 제작 절차는 [plugin-development](plugin-development.md) · [e
 - `PopupManager` 의 입력 계층(`popup_hovered`)을 우회 → 팝업 위를 클릭해도 뒤 surface 가 클릭을 받는다.
 - z-order·드래그·스코프 경계 클램핑 같은 공통 동작이 빠진다.
 
-(예외: `src/gfx/gpu/shell_setup.rs` 의 부팅 전 셸 셋업처럼 popup 시스템이 살아있기 전 단계만. 앱 내부 다이얼로그는 전부 PopupDef.)
+(예외: `src/gfx/gpu/shell_setup.rs` 의 부팅 전 셸 셋업, `src/gfx/gpu/boot_error.rs` 의 부팅 실패 화면처럼 popup 시스템이 살아있기 전 단계만. 앱 내부 다이얼로그는 전부 PopupDef.)
 
 ## 팝업 추가 — 3단계
 

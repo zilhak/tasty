@@ -9,6 +9,7 @@ name = "Tasty"
 [button]
 ok = "OK"
 cancel = "Cancel"
+quit = "Quit"
 open = "Open"
 save = "Save"
 add = "Add"

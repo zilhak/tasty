@@ -167,7 +167,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 재진입 가드 — macOS 등은 resumed() 를 재호출할 수 있다. 부팅 상태 머신
         // 진행 중(boot Some)에는 views 가 아직 비어 있으므로 boot 조건이 없으면
         // 창이 중복 생성된다.
-        if !self.view.views.is_empty() || self.shell_setup_gpu.is_some() || self.boot.is_some() {
+        if !self.view.views.is_empty()
+            || self.shell_setup_gpu.is_some()
+            || self.boot.is_some()
+            || self.boot_error_gpu.is_some()
+        {
             return;
         }
 
@@ -242,6 +246,12 @@ impl ApplicationHandler<AppEvent> for App {
         // 방식으로는 누락이 생긴다. 진입부에서 한 번 버리면 새 View 가 늘어도 자동으로
         // 덮인다. 정책: `docs/design/policies/key-mapping.md`.
         if is_synthetic_key_event(&event) {
+            return;
+        }
+
+        // Boot error mode — 엔진 실패 화면. App 이 직접 처리하고 종료는 exit(1).
+        if self.boot_error_mode {
+            self.handle_boot_error_window_event(event);
             return;
         }
 
@@ -1200,6 +1210,73 @@ impl App {
             gpu.handle_egui_event(window, &event);
             if let WindowEvent::CloseRequested = &event {
                 event_loop.exit();
+            }
+        }
+    }
+
+    /// 부팅 실패 화면 진입 — 엔진 생성 실패인데 GPU·창은 살아있을 때. window/gpu
+    /// 소유권을 `self` 로 넘기고 첫 프레임을 그려 창을 보인다(런처로 실행해 stderr 를
+    /// 못 보는 사용자에게도 진단이 닿게). 이후는 `handle_boot_error_window_event` 가
+    /// 구동한다. shell setup 진입(`enter_shell_setup_mode`)과 같은 구조다.
+    pub(crate) fn enter_boot_error_mode(
+        &mut self,
+        window: std::sync::Arc<winit::window::Window>,
+        mut gpu: crate::gpu::GpuState,
+    ) {
+        tracing::warn!("boot failed with a live GPU — showing the boot error screen");
+        self.boot_error_mode = true;
+        // 첫 프레임 — 실패해도 창은 표시한다(영구 hidden 방지 fallback). 사용자 입력
+        // 전이라 quit 반환은 항상 false.
+        if let Some(info) = &self.boot_error_info
+            && let Err(e) = gpu.render_boot_error(&window, info)
+        {
+            tracing::warn!("boot error first frame render failed: {e} — showing window anyway");
+        }
+        window.set_visible(true);
+        self.boot_error_gpu = Some(gpu);
+        self.boot_error_window = Some(window);
+    }
+
+    /// 부팅 실패 화면의 `WindowEvent` 처리 — `handle_shell_setup_window_event` 와 같은
+    /// 구조다. 사용자가 종료 버튼(또는 Esc/Enter)·창 닫기를 하면 `exit(1)` 한다 —
+    /// 엔진이 없어 정상 진행이 불가능한 부팅 실패이므로 실패 종료 코드를 유지한다
+    /// (엔진·세션이 없어 정리할 상태도 없다).
+    fn handle_boot_error_window_event(&mut self, event: WindowEvent) {
+        if let WindowEvent::RedrawRequested = &event {
+            let quit = if let (Some(gpu), Some(window), Some(info)) = (
+                &mut self.boot_error_gpu,
+                &self.boot_error_window,
+                &self.boot_error_info,
+            ) {
+                match gpu.render_boot_error(window, info) {
+                    Ok(quit) => quit,
+                    Err(e) => {
+                        let msg = format!("boot error render error: {e}");
+                        tracing::warn!("{}", msg);
+                        crate::crash_report::record_error(&msg);
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+            if quit {
+                std::process::exit(1);
+            }
+            // RedrawRequested 갈래에서는 redraw 를 다시 요청하지 않는다 — 그러면
+            // 렌더→요청→렌더 무한 루프(CPU/GPU spin)가 된다. 입력 이벤트 때만
+            // 요청해 hover/click 을 반영하고, 반영 후엔 idle 로 돌아간다.
+            if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
+                gpu.handle_egui_event(window, &event);
+            }
+            return;
+        }
+        if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
+            gpu.handle_egui_event(window, &event);
+            // 입력을 반영하려면 다음 프레임을 그려야 한다(hover/press 상태 변화).
+            window.request_redraw();
+            if let WindowEvent::CloseRequested = &event {
+                std::process::exit(1);
             }
         }
     }

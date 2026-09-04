@@ -197,6 +197,11 @@ check_egui_window() {
         case "$f" in
             src/ui/popup/*) continue ;;
             src/ui/popup_defs.rs) continue ;;
+            # 부팅 시점 렌더러 — PopupManager/AppState 가 살아있기 전 단계라
+            # egui::Window 를 직접 쓸 수밖에 없다(docs/dev-guide/popup-implementation.md
+            # 의 예외 항목). 앱 내부 다이얼로그는 여기 없다.
+            src/gfx/gpu/shell_setup.rs) continue ;;
+            src/gfx/gpu/boot_error.rs) continue ;;
         esac
         local violation
         violation=$(git diff --cached -U0 -- "$f" \

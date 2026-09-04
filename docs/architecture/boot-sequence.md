@@ -34,15 +34,19 @@ resumed() (src/app/event_handler.rs)
                    PluginManager)>` 로, 결과가 셋 중 하나다.
                    · Ok  → 장착하고 pending layout restore 있으면 →
                      WaitingPlugins, 없으면 → Ready.
-                   · Err → engine 생성 실패(셸 spawn·PTY/fd 등). 첫 창이라
-                     안내를 띄울 창이 없으므로 진단 3줄을 `tracing::error!`
-                     (stderr + 파일 로그)로 내고 `exit(1)` — 패닉(가짜 크래시
-                     리포트)이 아니다. GPU 어댑터 부재와 같은 처리다
-                     (ADR-0117).
+                   · Err → engine 생성 실패(셸 spawn·PTY/fd 등). 이 단계는
+                     부팅 GPU init 이후라 **GPU·창이 살아있으므로**, 진단을
+                     `boot_error_info` 로 담아(`boot_engine_error_info`) 두고
+                     `drive_boot_frame` 이 `enter_boot_error_mode` 로 전환해
+                     **실패 화면을 창에 그려 유지**한다(사용자가 종료할 때까지 →
+                     `exit(1)`). 런처로 실행해 stderr 를 못 보는 사용자도 원인을
+                     본다. 진단 3줄은 `tracing::error!`(stderr + 파일 로그)로도
+                     남긴다. GPU 어댑터 부재·부팅 창 생성 실패는 그릴 수단이 없어
+                     이 경로가 아니다(진단 후 즉시 `exit(1)`). (ADR-0117)
                    · disconnect → **워커 스레드 자체의 예상 밖 panic** 만
                      여기로 온다(engine 생성 실패는 위 Err 로 온다). 메인 동기
                      `ensure_engine_and_plugins` 재시도로 fallback 하고, 그것도
-                     실패하면 같은 진단 후 종료.
+                     실패하면 위와 같이 실패 화면으로 전환한다.
   WaitingPlugins   pump → finalize_plugin_hello → 필요 surface kind 등록 확인.
   (deadline 300ms) 미충족이면 다음 프레임 재시도. 충족/초과 시
                    ApplyPendingLayoutRestore 1회 apply 후 → RestoringLayout
