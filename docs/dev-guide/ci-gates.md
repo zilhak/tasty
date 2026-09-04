@@ -42,10 +42,15 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 그래서 semver 가드는 PR 트리거를 붙이지 않았다(트리거가 잡마다 다른 것은 러너가 다르기
 때문이지 중요도가 달라서가 아니다).
 
-이 저장소는 PR 을 거의 열지 않고 main 에 직접 push 한다. 그래서 **PR 전용 트리거인
-두 워크플로**(`complexity-check` · `supply-chain-check`)는 사실상 수동/주간 채널만
-살아 있다고 보는 편이 맞다 — `supply-chain-check` 는 주간 cron 이 있어 자동으로
-돌지만, `complexity-check` 는 PR 이 없으면 영영 돌지 않는다.
+이 저장소는 PR 을 열지 않고 main 에 직접 push 한다. **"거의" 가 아니라 실측 0 이다** —
+최근 200 run 의 이벤트 분포가 `push 48 · schedule 8 · workflow_dispatch 1`, `pull_request`
+**0** 이다. 그래서 **PR 전용 트리거인 두 워크플로**(`complexity-check` ·
+`supply-chain-check`)에서 PR 트리거는 장식이다 — `supply-chain-check` 는 주간 cron 이
+있어 자동으로 돌지만, `complexity-check` 는 **등록 이래 run 이력이 0 건**이다
+(워크플로는 `active` 로 등록돼 있다 — 조회 실패가 아니라 실제 0).
+
+그러니 채널 판정에는 층이 둘이다: **① 그 명령이 그 테스트를 도는가**(아래 배치별 표)
+**② 그 잡이 애초에 발화하는가**(트리거 열). ①만 보면 PR 트리거를 채널로 세게 된다.
 
 ## "안 돈다" 를 쓰기 전에 두 가지를 갈라라
 
@@ -76,7 +81,7 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
-| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — `--lib --bins` 가 **두 조합**(기본 / `--no-default-features`)에서 돈다 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
+| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — **두 조합 모두**가 실행한다(Windows 잡은 `--lib --bins`, 헤드리스 잡은 그 상위집합인 전체 스위트). 명령이 같아서가 아니라 둘 다 유닛 타깃을 포함해서다 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
 | 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 3 건 제외). **기본 조합에는 없다** — Windows 잡은 `--lib --bins` 이고 `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
