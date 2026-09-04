@@ -599,6 +599,12 @@ const COMBO_QUALIFIED_MARKERS: &[&str] = &[
     "기본 조합에는",
     "기본 조합 전용",
     "조합에서만",
+    // 채널이 하나라고 **세어서** 적은 형태. "…에서만" 과 뜻이 같은데 문자열이 다르다.
+    // 성질로 가르는 쪽(구체적 조합 선택자를 부르는가)은 실측에서 기각됐다 — 낡은 서술도
+    // 같은 서술 안에 `--lib --bins` 를 담고 있어서, 성질로 가르면 **낡은 것을 면제한다.**
+    // 한정자가 어느 주장에 붙는지를 못 가르는 문제라 [ADR-0144] 와 같은 벽이다. 목록이
+    // 자라는 대가는 그 ADR 의 재검토 조건이 받는다.
+    "조합 하나",
 ];
 
 /// `key = "value"` 한 줄.
@@ -879,11 +885,21 @@ fn overstated_absence(
     text: &str,
     path: &str,
     channels_of: &dyn Fn(&str) -> std::collections::BTreeSet<Combo>,
+    class_channels: &std::collections::BTreeSet<Combo>,
 ) -> Vec<(usize, String)> {
-    // 정의 파일 자신은 대상이 아니다 — 거기 이름이 있는 것은 서술이 아니라 정의다.
-    if path.starts_with("src/") || path.contains("/src/") {
-        return Vec::new();
-    }
+    // 경로로 면제하지 않는다. 이 축의 대상은 **통합 타깃**이고, cargo 는 통합 타깃을
+    // `tests/X.rs` 라는 위치로 정의한다 — 그러므로 `src/` 파일은 이 축의 대상을 정의할
+    // 수 없고, "정의 파일 자신" 이라는 면제 사유가 여기서는 성립하지 않는다.
+    //
+    // 앞 형태는 `src/` 를 통째로 건너뛰었다. 실측하니 그 면제를 걷어도 걸리는 자리가
+    // **0** 이었다 — 방패가 둘 겹쳐 있었고 위쪽(클래스 지목)이 먼저 막고 있었기 때문이다.
+    // 그래서 이 면제는 크기를 줄인 것이 아니라 **효과가 없었다.** 아래 클래스 지목과
+    // 함께 봐야 이 축이 값을 한다.
+    //
+    // 여기서 경로를 읽는 것은 이름 기반 휴리스틱이 아니다. `tests/X.rs` → 타깃 X 는
+    // **cargo 의 규격**이지 이 가드의 짐작이 아니다. 한 겹 아래가 또 짐작인 판정(예:
+    // 무시 목록 파일로 "생성물" 을 가르는 것)과는 갈린다 — 그쪽은 규격이 아니라 관례라
+    // 기각됐다. 이 주석이 그 구분을 소유한다.
     let mut found = Vec::new();
     for at in absence_offsets(text) {
         if !is_prose_line(text, at, path) {
@@ -925,6 +941,18 @@ fn overstated_absence(
             if running.iter().all(|(name, _)| *name != target) {
                 running.push((target, labels));
             }
+        }
+
+        // **클래스 지목도 지목이다.** `tests/*.rs` 는 이름이 아니라 부류를 부르는데,
+        // 이름만 세던 추출기에서는 지목 0 건이 되어 그 서술을 **아무 축도 판정하지
+        // 않았다.** 실측으로 다섯 자리가 그 사각에서 낡은 채로 살아 있었고, 그중 셋은
+        // `src/` 밖이었다 — 경로 면제를 아무리 좁혀도 안 잡히는 자리다.
+        //
+        // 부류의 채널은 통합 타깃 전체의 합집합이다. "통합 테스트는 자동으로 안 돈다"
+        // 는 그 합집합이 비어 있을 때만 참이다.
+        if running.is_empty() && !class_channels.is_empty() && cites_the_test_class(scope) {
+            let labels: Vec<&str> = class_channels.iter().map(|c| c.label()).collect();
+            running.push(("*".to_string(), labels));
         }
         if running.is_empty() {
             continue;
@@ -989,6 +1017,27 @@ fn integration_test_name(rel: &str) -> Option<&str> {
         return None;
     }
     after.strip_suffix(".rs")
+}
+
+/// 그 서술이 통합 테스트를 **부류로** 지목하는가 — `tests/*.rs` · `tests/*_guard.rs` 형태.
+///
+/// 이름 지목([`cited_tests`])과 같은 자격이다. 다른 것은 주어가 하나가 아니라 전부라는
+/// 점뿐이고, 그래서 채널도 통합 타깃 전체의 합집합으로 잰다.
+fn cites_the_test_class(scope: &str) -> bool {
+    let mut from = 0;
+    while let Some(rel) = scope[from..].find("tests/") {
+        let at = from + rel;
+        from = at + "tests/".len();
+        let rest = &scope[from..];
+        let end = rest
+            .char_indices()
+            .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '*'))
+            .map_or(rest.len(), |(i, _)| i);
+        if rest[..end].contains('*') && rest[end..].starts_with(".rs") {
+            return true;
+        }
+    }
+    false
 }
 
 /// 텍스트가 지목하는 통합 테스트 인용 지점 — (오프셋, 이름).
@@ -1203,10 +1252,12 @@ fn weak_absence_offsets(
     path: &str,
     lib_tests: &std::collections::BTreeSet<String>,
 ) -> Vec<usize> {
-    // 정의 파일 자신은 대상이 아니다 — 거기 이름이 있는 것은 서술이 아니라 정의다.
-    if path.starts_with("src/") || path.contains("/src/") {
-        return Vec::new();
-    }
+    // 면제의 사유는 **이 파일이 그 이름을 정의한다**는 성질이지 경로 이름이 아니다.
+    // 앞 형태는 `src/` 를 통째로 건너뛰었는데, 그러면 남의 테스트 이름을 부르는 `src/`
+    // 모듈 doc 까지 함께 빠진다 — 거기에도 채널 주장이 산다. 이 파일이 정의하는 이름만
+    // 빼고 나머지는 판정한다.
+    let defined_here: std::collections::BTreeSet<String> =
+        test_fn_names(text).into_iter().collect();
     let mut found = Vec::new();
     // 부재를 적은 자리에서 출발한다 — lib 테스트 이름 전체를 파일마다 훑으면 이름 수 x
     // 파일 수가 되어 스캔이 느려지고, 얻는 것은 같다.
@@ -1218,7 +1269,10 @@ fn weak_absence_offsets(
         if AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| scope.contains(m)) {
             continue;
         }
-        if lib_tests.iter().any(|n| !word_offsets(scope, n).is_empty()) {
+        if lib_tests
+            .iter()
+            .any(|n| !defined_here.contains(n) && !word_offsets(scope, n).is_empty())
+        {
             found.push(at);
         }
     }
@@ -1403,6 +1457,25 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
         files.len()
     );
 
+    // 부류 지목(`tests/*.rs`)의 채널 = **루트 패키지** 통합 타깃의 합집합.
+    //
+    // 모수를 워크스페이스 전체로 잡으면 안 된다. 크레이트 자기 `tests/` 를 자기 잡에서
+    // 도는 패키지가 있어서 합집합이 두 조합으로 부풀고, 그러면 루트 관례를 말하는
+    // 정확한 서술까지 "조합을 한정해서 적어라" 로 고발한다 — 실측으로 그 형태가 났다.
+    // `tests/X.rs`(루트) 와 `crates/<c>/tests/X.rs` 는 cargo 가 다른 패키지의 타깃으로
+    // 가르므로, 이 구분은 이름이 아니라 **소유 패키지**라는 성질이다.
+    let mut class_channels = std::collections::BTreeSet::new();
+    for file in &files {
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        if !rel_str.ends_with(".rs") || !rel_str.starts_with("tests/") {
+            continue;
+        }
+        if let Some(name) = integration_test_name(&rel_str) {
+            class_channels.extend(channels_of(name));
+        }
+    }
+
     let mut violations = Vec::new();
     for file in &files {
         let rel = file.strip_prefix(&root).unwrap_or(file);
@@ -1410,7 +1483,7 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
-        for (at, why) in overstated_absence(&text, &rel_str, &channels_of) {
+        for (at, why) in overstated_absence(&text, &rel_str, &channels_of, &class_channels) {
             violations.push(format!("{rel_str}:{} — {why}", line_of(&text, at)));
         }
     }
@@ -1804,7 +1877,7 @@ fn a_module_doc_speaks_for_its_own_target() {
     // (가) 자기지칭 + 부재 주장 -> 자기 타깃의 채널로 판정한다.
     let denying = "//! 이 테스트가 그 집행 채널이다 — 그 잡은 수동 전용이다.\n";
     assert_eq!(
-        overstated_absence(denying, "tests/alpha.rs", &headless).len(),
+        overstated_absence(denying, "tests/alpha.rs", &headless, &combos(&[])).len(),
         1,
         "자기 채널을 부정하는 모듈 doc 을 못 잡았다"
     );
@@ -1812,20 +1885,20 @@ fn a_module_doc_speaks_for_its_own_target() {
     // (나) 자기지칭이 없으면 남의 말일 수 있다 — 주어를 세우지 않는다.
     let other = "//! 그 빌드 잡은 수동 전용이라 이 실패를 자동으로 잡지 못한다.\n";
     assert!(
-        overstated_absence(other, "tests/alpha.rs", &headless).is_empty(),
+        overstated_absence(other, "tests/alpha.rs", &headless, &combos(&[])).is_empty(),
         "주어가 남인 서술을 이 타깃의 부재 주장으로 읽었다"
     );
 
     // (다) 인용된 문장은 주장이 아니다.
     let quoted = "//! 이 가드는 \"그 잡은 수동 전용이다\" 같은 서술을 잡는다.\n";
     assert!(
-        overstated_absence(quoted, "tests/alpha.rs", &headless).is_empty(),
+        overstated_absence(quoted, "tests/alpha.rs", &headless, &combos(&[])).is_empty(),
         "인용을 주장으로 읽었다"
     );
 
     // (라) 채널이 정말 0 이면 부재 주장은 참이다 — 자기지칭이 있어도 안 걸린다.
     assert!(
-        overstated_absence(denying, "tests/alpha.rs", &none).is_empty(),
+        overstated_absence(denying, "tests/alpha.rs", &none, &combos(&[])).is_empty(),
         "채널이 없는 타깃의 참인 부재 주장을 고발했다"
     );
 }
@@ -2135,12 +2208,23 @@ fn the_lib_axis_reads_the_workflow_instead_of_assuming() {
 #[test]
 fn an_absence_claim_about_a_running_integration_test_needs_the_combination() {
     let bare = "`tests/alpha.rs` 가 강제한다 — 자동 채널이 없다.\n";
-    let violations = overstated_absence(bare, "docs/x.md", &|_| combos(&[Combo::Headless]));
+    let violations = overstated_absence(
+        bare,
+        "docs/x.md",
+        &|_| combos(&[Combo::Headless]),
+        &combos(&[]),
+    );
     assert_eq!(violations.len(), 1, "도는 테스트의 부재 주장을 놓쳤다");
 
     let qualified = "`tests/alpha.rs` 가 강제한다 — 기본 조합에는 자동 채널이 없다(자동 실행은 헤드리스에서만).\n";
     assert!(
-        overstated_absence(qualified, "docs/x.md", &|_| combos(&[Combo::Headless])).is_empty(),
+        overstated_absence(
+            qualified,
+            "docs/x.md",
+            &|_| combos(&[Combo::Headless]),
+            &combos(&[])
+        )
+        .is_empty(),
         "조합을 한정해 정확히 쓴 문장을 위반으로 짚었다"
     );
 }
@@ -2150,7 +2234,7 @@ fn an_absence_claim_about_a_running_integration_test_needs_the_combination() {
 fn a_test_with_no_channel_keeps_its_absence_claim() {
     let text = "`tests/alpha.rs` 는 자동 채널이 없다.\n";
     assert!(
-        overstated_absence(text, "docs/x.md", &|_| combos(&[])).is_empty(),
+        overstated_absence(text, "docs/x.md", &|_| combos(&[]), &combos(&[])).is_empty(),
         "채널이 0 인데 위반으로 짚었다"
     );
 }
@@ -2159,9 +2243,12 @@ fn a_test_with_no_channel_keeps_its_absence_claim() {
 #[test]
 fn two_channels_cannot_be_qualified_away() {
     let text = "`tests/alpha.rs` 는 기본 조합에는 자동 채널이 없다(헤드리스에서만 돈다).\n";
-    let violations = overstated_absence(text, "docs/x.md", &|_| {
-        combos(&[Combo::Default, Combo::Headless])
-    });
+    let violations = overstated_absence(
+        text,
+        "docs/x.md",
+        &|_| combos(&[Combo::Default, Combo::Headless]),
+        &combos(&[]),
+    );
     assert_eq!(
         violations.len(),
         1,
@@ -2181,9 +2268,12 @@ fn an_exclusive_job_claim_is_an_absence_claim() {
 
     // (+) 조합이 둘인데 잡 하나만 적었다. 부재 어휘가 없으므로, 걸린다면 이 표지 때문이다.
     let overstated = format!("`tests/alpha.rs` 가 강제한다 — 자동 실행은 그 잡{only}.\n");
-    let violations = overstated_absence(&overstated, "docs/x.md", &|_| {
-        combos(&[Combo::Default, Combo::Headless])
-    });
+    let violations = overstated_absence(
+        &overstated,
+        "docs/x.md",
+        &|_| combos(&[Combo::Default, Combo::Headless]),
+        &combos(&[]),
+    );
     assert_eq!(
         violations.len(),
         1,
@@ -2193,16 +2283,24 @@ fn an_exclusive_job_claim_is_an_absence_claim() {
     // (−) 조합이 하나뿐이고 그 조합을 함께 적었다 — 참인 문장이므로 통과해야 한다.
     let exact = format!("`tests/alpha.rs` 가 강제한다 — 자동 실행은 `check-headless` 잡{only}.\n");
     assert!(
-        overstated_absence(&exact, "docs/x.md", &|_| combos(&[Combo::Headless])).is_empty(),
+        overstated_absence(
+            &exact,
+            "docs/x.md",
+            &|_| combos(&[Combo::Headless]),
+            &combos(&[])
+        )
+        .is_empty(),
         "조합을 함께 적은 배타 주장을 위반으로 짚었다"
     );
 
     // (±) 같은 문장이라도 조합이 둘로 늘면 거짓이 된다 — 실제로 이렇게 낡았다.
     assert_eq!(
-        overstated_absence(&exact, "docs/x.md", &|_| combos(&[
-            Combo::Default,
-            Combo::Headless
-        ]))
+        overstated_absence(
+            &exact,
+            "docs/x.md",
+            &|_| combos(&[Combo::Default, Combo::Headless]),
+            &combos(&[])
+        )
         .len(),
         1,
         "조합이 둘로 늘었는데 옛 한정 표지가 계속 면제했다"
@@ -2217,18 +2315,59 @@ fn an_exclusive_job_claim_is_an_absence_claim() {
 fn a_statement_that_asserts_no_absence_is_not_judged() {
     let text = "`tests/alpha.rs` 의 채널은 여기서 단정하지 않는다 — 정본은 ci-gates 다.\n";
     assert!(
-        overstated_absence(text, "docs/x.md", &|_| combos(&[Combo::Headless])).is_empty(),
+        overstated_absence(
+            text,
+            "docs/x.md",
+            &|_| combos(&[Combo::Headless]),
+            &combos(&[])
+        )
+        .is_empty(),
         "부재를 주장하지 않은 문장을 짚었다"
     );
 }
 
-/// 정의 파일(`src/`)은 이 축의 대상이 아니다.
+/// `src/` 파일도 이 축의 대상이다 — 통합 타깃은 거기서 정의될 수 없기 때문이다.
+///
+/// 앞 형태는 `src/` 를 통째로 면제했다. 그 면제가 겨냥한 것은 "정의 파일의 이름 등장은
+/// 서술이 아니다" 인데, 이 축의 대상은 `tests/X.rs` 라는 **위치**로 정의되는 통합 타깃이라
+/// `src/` 파일은 그것을 정의할 수 없다. 면제 사유가 성립하지 않는 자리였고, 그 사이 `src/`
+/// 모듈 doc 의 채널 주장이 통째로 사각이었다.
 #[test]
-fn a_source_file_is_not_judged_by_the_combination_axis() {
+fn a_source_file_is_judged_because_it_cannot_define_an_integration_target() {
     let text = "// `tests/alpha.rs` 는 자동 채널이 없다.\n";
+    assert_eq!(
+        overstated_absence(
+            text,
+            "src/x.rs",
+            &|_| combos(&[Combo::Headless]),
+            &combos(&[])
+        )
+        .len(),
+        1,
+        "src/ 를 통째로 면제해 모듈 doc 의 채널 주장을 놓쳤다"
+    );
+}
+
+/// 부류 지목(`tests/*.rs`)도 이름 지목과 같은 자격으로 판정된다.
+#[test]
+fn a_class_citation_is_judged_against_the_whole_class() {
+    let text = "`tests/*.rs` 는 자동 채널이 없다.\n";
+    assert_eq!(
+        overstated_absence(
+            text,
+            "docs/x.md",
+            &|_| combos(&[]),
+            &combos(&[Combo::Headless])
+        )
+        .len(),
+        1,
+        "부류를 지목한 부재 주장이 판정에서 빠졌다"
+    );
+
+    // 대조군 — 부류의 채널이 실제로 비어 있으면 그 주장은 참이다.
     assert!(
-        overstated_absence(text, "src/x.rs", &|_| combos(&[Combo::Headless])).is_empty(),
-        "정의 파일을 서술로 읽었다"
+        overstated_absence(text, "docs/x.md", &|_| combos(&[]), &combos(&[])).is_empty(),
+        "채널이 없는데 부재 주장을 고발했다"
     );
 }
 
@@ -2286,12 +2425,24 @@ fn a_claim_that_names_no_test_is_deliberately_not_judged() {
     );
 }
 
+/// 면제의 사유는 **이 파일이 그 이름을 정의한다**는 성질이지 `src/` 라는 경로가 아니다.
 #[test]
-fn a_definition_file_under_src_is_deliberately_not_judged() {
+fn only_the_file_that_defines_the_name_is_exempt() {
     let libs = named(&["some_lib_test"]);
-    let text = "//! `some_lib_test` 는 자동 채널이 없다.\n";
+
+    // 그 이름을 여기서 정의한다 — 이름 등장은 서술이 아니라 정의다.
+    let defines = "//! `some_lib_test` 는 자동 채널이 없다.\n#[test]\nfn some_lib_test() {}\n";
     assert!(
-        weak_absence_offsets(text, "crates/x/src/lib.rs", &libs).is_empty(),
-        "정의 파일의 이름 등장은 서술이 아니다"
+        weak_absence_offsets(defines, "crates/x/src/lib.rs", &libs).is_empty(),
+        "정의 파일의 이름 등장을 서술로 읽었다"
+    );
+
+    // 남의 이름을 부르는 `src/` 모듈 doc 은 서술이다 — 앞 형태는 경로만 보고 이것까지
+    // 면제했다.
+    let refers = "//! `some_lib_test` 는 자동 채널이 없다.\n";
+    assert_eq!(
+        weak_absence_offsets(refers, "crates/x/src/lib.rs", &libs).len(),
+        1,
+        "남의 이름을 부른 모듈 doc 이 경로 면제로 빠졌다"
     );
 }
