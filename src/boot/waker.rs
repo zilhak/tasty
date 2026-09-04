@@ -22,6 +22,8 @@ pub struct WinitWakerFactory {
     /// `make_targeted_waker` (`TerminalOutput(Some(sid))`) 의 surface 별 dedup
     /// 게이트. Some 은 해당 surface 만 drain 하므로 surface 마다 독립 게이트 필요.
     targeted_gates: Mutex<HashMap<u32, Arc<AtomicBool>>>,
+    /// `targeted_gates` poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
+    poison_reported: AtomicBool,
 }
 
 impl WinitWakerFactory {
@@ -30,6 +32,7 @@ impl WinitWakerFactory {
             proxy,
             default_gate: Arc::new(AtomicBool::new(false)),
             targeted_gates: Mutex::new(HashMap::new()),
+            poison_reported: AtomicBool::new(false),
         }
     }
 }
@@ -37,13 +40,14 @@ impl WinitWakerFactory {
 impl WakerFactory for WinitWakerFactory {
     fn make_targeted_waker(&self, surface_id: u32) -> Waker {
         let proxy = self.proxy.clone();
-        let gate = self
-            .targeted_gates
-            .lock()
-            .expect("WinitWakerFactory targeted_gates poisoned")
-            .entry(surface_id)
-            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
-            .clone();
+        let gate = crate::waker::recover_gate_lock(
+            self.targeted_gates.lock(),
+            "WinitWakerFactory targeted_gates",
+            &self.poison_reported,
+        )
+        .entry(surface_id)
+        .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+        .clone();
         Arc::new(move || {
             // 직전 wake 가 아직 소화되지 않았으면(게이트 true) 큐잉을 스킵해 폭주 방지.
             if gate.swap(true, Ordering::AcqRel) {
@@ -67,11 +71,12 @@ impl WakerFactory for WinitWakerFactory {
     fn note_drained(&self, surface_id: Option<u32>) {
         match surface_id {
             Some(sid) => {
-                if let Some(gate) = self
-                    .targeted_gates
-                    .lock()
-                    .expect("WinitWakerFactory targeted_gates poisoned")
-                    .get(&sid)
+                if let Some(gate) = crate::waker::recover_gate_lock(
+                    self.targeted_gates.lock(),
+                    "WinitWakerFactory targeted_gates",
+                    &self.poison_reported,
+                )
+                .get(&sid)
                 {
                     gate.store(false, Ordering::Release);
                 }
@@ -82,9 +87,11 @@ impl WakerFactory for WinitWakerFactory {
 
     fn forget_surface(&self, surface_id: u32) {
         // surface 닫힘 — 게이트 제거(미제거 시 surface 마다 영구 누적).
-        self.targeted_gates
-            .lock()
-            .expect("WinitWakerFactory targeted_gates poisoned")
-            .remove(&surface_id);
+        crate::waker::recover_gate_lock(
+            self.targeted_gates.lock(),
+            "WinitWakerFactory targeted_gates",
+            &self.poison_reported,
+        )
+        .remove(&surface_id);
     }
 }

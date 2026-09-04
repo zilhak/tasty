@@ -13,8 +13,8 @@
 //!   만들 때 넘긴 `SharedWakerFactory` — 즉 `CoreState::waker_factory` 와 **동일
 //!   인스턴스**를 공유한다. 헤드리스에서 default waker 는 `AppEvent::TerminalOutput(None)`
 //!   을 발화하므로, plugin 이벤트(hello 응답, `PaintFrame` 등)는 이미 이 이벤트로 host 를
-//!   깨운다 — 별도 wake 채널이 필요 없다(18번 TODO 의 "PaintFrame 도착 시 즉시 wake"
-//!   요구도 이 경로가 충족한다).
+//!   깨운다 — 별도 wake 채널이 필요 없다("PaintFrame 도착 시 즉시 wake" 요구도 이
+//!   경로가 충족한다).
 //! - plugin 자체 주기 작업(ping/healthcheck/RSS/auto-reload)은 `PluginManager` 가
 //!   소유한 타이머 허브가 스케줄한다 — headless 메인 루프가 그 데드라인을 자기
 //!   대기 계산에 합성하므로(`docs/dev-guide/timer-hub.md`) plugin 소켓이 조용해도
@@ -120,20 +120,7 @@ fn finalize_plugin_hello_headless(
         return;
     };
 
-    for (plugin_id, _) in &hello_pairs {
-        if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
-            let keys: Vec<String> = pkg
-                .manifest
-                .contributes
-                .hook_events
-                .iter()
-                .map(|h| h.key.clone())
-                .collect();
-            if !keys.is_empty() {
-                hook_event_registry.register(plugin_id, keys);
-            }
-        }
-    }
+    register_hook_events(mgr, &hook_event_registry, &hello_pairs);
 
     let host_registry = mgr.surface_registry.is_some().then_some(core_registry);
     let Some(registry) = host_registry else {
@@ -147,7 +134,42 @@ fn finalize_plugin_hello_headless(
         return;
     };
 
-    for (plugin_id, _version) in &hello_pairs {
+    register_surface_kinds(mgr, &registry, &hello_pairs);
+}
+
+/// hello 를 마친 plugin 이 선언한 `contributes.hook_events` 키를 공유 레지스트리에
+/// 등록한다. 이 단계가 보는 것은 hook 레지스트리 하나뿐이라 surface_kind 등록과
+/// 자원이 겹치지 않는다.
+fn register_hook_events(
+    mgr: &crate::plugin::PluginManager,
+    hook_event_registry: &std::sync::Arc<crate::core::hook_event_registry::PluginHookEventRegistry>,
+    hello_pairs: &[(String, String)],
+) {
+    for (plugin_id, _) in hello_pairs {
+        if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+            let keys: Vec<String> = pkg
+                .manifest
+                .contributes
+                .hook_events
+                .iter()
+                .map(|h| h.key.clone())
+                .collect();
+            if !keys.is_empty() {
+                hook_event_registry.register(plugin_id, keys);
+            }
+        }
+    }
+}
+
+/// 선언된 surface_kind 를 등록하고 plugin 을 등록 완료로 표시한다.
+/// egui-mesh 만 실제로 등록된다 — 나머지 rendering 종류는 창을 전제해 headless 에
+/// 재현 대상이 없다(아래 arm 주석).
+fn register_surface_kinds(
+    mgr: &mut crate::plugin::PluginManager,
+    registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
+    hello_pairs: &[(String, String)],
+) {
+    for (plugin_id, _version) in hello_pairs {
         if let Some(pkg) = mgr
             .packages
             .iter()
@@ -158,43 +180,58 @@ fn finalize_plugin_hello_headless(
                 if let Some(default) = &decl.default_colors {
                     tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
                 }
-                match decl.rendering {
-                    crate::plugin::manifest::SurfaceKindRendering::Remote
-                    | crate::plugin::manifest::SurfaceKindRendering::Webview => {
-                        // `plugin_bridge::remote_kind`/webview surface stand-in은
-                        // GUI 전용(`#[cfg(feature = "gui")]`) — 실제 렌더가 창을
-                        // 전제하는 surface 라 headless 에 재현할 대상이 없다. attach
-                        // mesh mirror 스코프(markdown/image/mesh_demo=egui-mesh) 밖이라
-                        // 등록을 skip 한다(기존 headless 동작과 동일 — 회귀 아님).
-                        tracing::debug!(
-                            "plugin '{}' declared non-egui-mesh surface kind '{}' \
-                             (rendering={:?}); skipped in headless (gui-only registration)",
-                            plugin_id,
-                            decl.kind,
-                            decl.rendering
-                        );
-                    }
-                    crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
-                        crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
-                            &registry,
-                            plugin_id,
-                            decl,
-                            &pkg.manifest.api_version,
-                        );
-                    }
-                }
+                register_one_surface_kind(registry, plugin_id, &pkg.manifest.api_version, decl);
             }
         }
         mgr.registered_plugins.insert(plugin_id.clone());
     }
 }
 
+/// surface_kind 선언 하나를 rendering 종류에 따라 등록하거나 건너뛴다.
+fn register_one_surface_kind(
+    registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
+    plugin_id: &str,
+    api_version: &str,
+    decl: &crate::plugin::manifest::SurfaceKindDecl,
+) {
+    match decl.rendering {
+        crate::plugin::manifest::SurfaceKindRendering::Remote
+        | crate::plugin::manifest::SurfaceKindRendering::Webview => {
+            // `plugin_bridge::remote_kind`/webview surface stand-in은
+            // GUI 전용(`#[cfg(feature = "gui")]`) — 실제 렌더가 창을
+            // 전제하는 surface 라 headless 에 재현할 대상이 없다. attach
+            // mesh mirror 스코프(markdown/image/mesh_demo=egui-mesh) 밖이라
+            // 등록을 skip 한다(기존 headless 동작과 동일 — 회귀 아님).
+            tracing::debug!(
+                "plugin '{}' declared non-egui-mesh surface kind '{}' \
+                 (rendering={:?}); skipped in headless (gui-only registration)",
+                plugin_id,
+                decl.kind,
+                decl.rendering
+            );
+        }
+        crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
+            crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
+                registry,
+                plugin_id,
+                decl,
+                api_version,
+            );
+        }
+    }
+}
+
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.
 /// `host.shared_buffer.create` 는 egui-mesh 프레임 생성에 필수라 그대로 인터셉트한다.
-/// popup.close/banner.open/banner.close/namespace forward 는 헤드리스에 대응하는
-/// GUI 상태(popup/banner overlay, view)가 없어 이 스코프에서는 생략 — 대상 plugin
-/// (markdown/image/mesh_demo)이 기동 시 이들을 호출하지 않는 한 영향 없다(생략 항목은
-/// 스코프를 벗어나는 발견 시 별도 TODO로 기록).
+/// popup.close/banner.open/banner.close 는 헤드리스에 대응하는 GUI 상태(popup/banner
+/// overlay, view)가 없어 생략한다.
+///
+/// **namespace forward 는 그 근거가 아니다.** 여기서 빠져 있는 것은 plugin → plugin
+/// 방향(`forward_namespace_call_from_plugin`)이고, 그건 GUI 상태와 무관하다 — 같은
+/// 근거 문장에 묶여 있었을 뿐이다. host → plugin 방향은 이제 `headless_dispatch.rs`
+/// 가 배선한다. plugin → plugin 방향은 아직 없다: 한 plugin 이 다른 plugin 의
+/// namespace 를 부르는 시나리오가 헤드리스에서 관측된 적이 없어 남겨 두는 것이며,
+/// 관측되면 그때 gui `app/dispatch/plugin_ipc.rs` 와 동형으로 배선하면 된다.
 fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
     let calls = match app.plugin_manager.as_mut() {
         Some(mgr) => mgr.take_pending_plugin_calls(),
@@ -235,6 +272,11 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
             &request,
             &caller,
         );
+        // plugin 호출도 같은 IPC 핸들러를 타므로(예: Claude 플러그인 훅의
+        // `surface.completion`) 결과 회신 전에 Intent 큐를 적용한다 —
+        // `docs/adr/0111-headless-drains-the-intent-queue.md`.
+        crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
         let (result, error) = match response.error {
             Some(err) => (None, Some(err.message)),
             None => (response.result, None),

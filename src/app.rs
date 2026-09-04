@@ -50,6 +50,8 @@ pub(crate) mod sweeps;
 pub(crate) mod timer_report;
 pub(crate) mod timers;
 #[cfg(feature = "gui")]
+pub(crate) mod webview_keys;
+#[cfg(feature = "gui")]
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
 pub(crate) mod window_lifecycle;
@@ -137,6 +139,20 @@ pub(crate) struct App {
     pub(crate) shell_setup_gpu: Option<GpuState>,
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_window: Option<Arc<Window>>,
+    // Boot error mode (엔진 생성 실패인데 GPU·창은 살아있을 때). shell setup 과 같은
+    // 구조로 실패 화면을 그린 채 유지하다 사용자가 종료를 누르면 exit(1) 한다.
+    // GPU 부재·창 생성 실패는 그릴 수단이 없어 이 경로가 아니다(진단 후 즉시 exit).
+    // 근거: ADR-0117 재검토 트리거.
+    #[cfg(feature = "gui")]
+    pub(crate) boot_error_mode: bool,
+    #[cfg(feature = "gui")]
+    pub(crate) boot_error_gpu: Option<GpuState>,
+    #[cfg(feature = "gui")]
+    pub(crate) boot_error_window: Option<Arc<Window>>,
+    /// 그릴 진단. 엔진 실패 경로가 설정하고 `drive_boot_frame` 이 이를 보고 boot error
+    /// 모드로 전환한다(pending 신호 겸 렌더 소스).
+    #[cfg(feature = "gui")]
+    pub(crate) boot_error_info: Option<crate::gpu::BootErrorInfo>,
     /// System tray / status item. Must be kept alive for the tray to remain visible.
     /// `None` when the platform tray is unavailable (graceful degradation, ADR-0001).
     #[cfg(all(
@@ -321,6 +337,10 @@ impl App {
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
             shell_setup_window: None,
+            boot_error_mode: false,
+            boot_error_gpu: None,
+            boot_error_window: None,
+            boot_error_info: None,
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             tray_icon: None,
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
@@ -444,6 +464,21 @@ impl App {
         appearance: &crate::settings::AppearanceSettings,
     ) -> anyhow::Result<GpuState> {
         let instance = Arc::clone(&self.gpu_instance);
+        // 창마다 만들어지는 egui 컨텍스트가 처음부터 같은 노치 거리를 갖게 한다 —
+        // 모달은 열릴 때 새로 만들어지므로 이 한 지점이 전부를 덮는다(ADR-0130).
+        // 첫 창은 CoreState 보다 먼저 만들어질 수 있어 `core_state()`(없으면 panic)를
+        // 쓰지 않는다 — 그때는 기본값이고, 이후 프레임이 설정값으로 덮는다.
+        let wheel_line_scroll = self
+            .core_state
+            .as_ref()
+            .map(|cs| cs.settings.general.wheel_line_scroll)
+            .or_else(|| {
+                self.view.views.values().find_map(|w| {
+                    w.as_main()
+                        .map(|m| m.core_state.settings.general.wheel_line_scroll)
+                })
+            })
+            .unwrap_or(tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
         let proxy = self.view.proxy.clone();
         pollster::block_on(async move {
             if self.gpu_adapter.is_none() {
@@ -479,7 +514,15 @@ impl App {
                     .as_ref()
                     .expect("gpu_adapter set above when None"),
             );
-            GpuState::new_shared(&instance, &adapter, window, appearance, proxy).await
+            GpuState::new_shared(
+                &instance,
+                &adapter,
+                window,
+                appearance,
+                wheel_line_scroll,
+                proxy,
+            )
+            .await
         })
     }
 

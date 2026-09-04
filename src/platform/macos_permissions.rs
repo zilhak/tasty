@@ -174,17 +174,29 @@ fn prewarm_screen_recording() {
 // 켠 뒤에도 실행 중 프로세스에 즉시 반영되지 않아 재시작이 필요한 경우가 많다.
 // 그래서 부팅당 1 회만 요청한다 — 미설정 상태에서 반복 호출하면 프롬프트가 계속 뜬다.
 
-#[cfg(all(target_os = "macos", feature = "gui"))]
+// 상태 조회 심볼. 소비자(주입 경로 · pre-warm · 설정 탭의 상태 행)가 전부 debug 로
+// 내려가 release 에서는 참조가 0 이 되므로, 선언도 같은 cfg 로 내린다
+// (gui 빌드는 `dead_code = deny` 라 선언만 남으면 빌드가 깨진다).
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> bool;
+}
+
+// 프롬프트를 띄우는 쪽(`prewarm_accessibility`)만 쓰는 심볼들. 그 함수가 debug 전용이
+// 되면서 release 에서는 참조가 0 이 되는데, gui 빌드는 `dead_code = deny` 라 선언만
+// 남아 있으면 빌드가 깨진다. 그래서 선언도 같은 cfg 로 내린다.
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
     fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> bool;
     /// 옵션 딕셔너리의 키(`CFStringRef` 전역). 문자열 값을 직접 만들지 않고 프레임워크가
     /// 내보내는 심볼을 그대로 쓴다 — 값이 바뀌어도 따라간다.
     static kAXTrustedCheckOptionPrompt: *const std::ffi::c_void;
 }
 
-#[cfg(all(target_os = "macos", feature = "gui"))]
+// CoreFoundation 쪽도 전량 `prewarm_accessibility` 전용이다(위와 같은 이유로 debug 한정).
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     static kCFBooleanTrue: *const std::ffi::c_void;
@@ -208,7 +220,11 @@ unsafe extern "C" {
 /// **호출 시점마다 다시 묻는다** — 부팅 값을 캐시하면 그 사이 사용자가 설정을 바꾼
 /// 경우를 잘못 판정한다. 이 권한은 켠 뒤 반영에 재시작이 필요한 경우까지 있어서
 /// 캐시가 특히 위험하다.
-#[cfg(all(target_os = "macos", feature = "gui"))]
+///
+/// **debug 빌드 전용.** 이 값을 읽는 곳은 셋뿐이고 셋 다 debug 다 — 주입 경로
+/// (`surface.raw_key`), pre-warm 요청, 설정 권한 탭의 상태 행. release 에는 이
+/// 권한을 소비하는 코드가 없으므로 상태를 물을 이유도 없다.
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 pub(crate) fn accessibility_trusted() -> bool {
     // SAFETY: 인자도 반환 포인터도 없는 ApplicationServices C 함수 호출 — 포인터
     // 수명/해제 책임이 생기지 않는다. 현재 프로세스의 TCC 승인 상태를 묻기만 하고
@@ -218,8 +234,9 @@ pub(crate) fn accessibility_trusted() -> bool {
 }
 
 /// 비-macOS / headless — 손쉬운 사용 권한 개념이 없으므로 "승인됨" 으로 답한다.
-/// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다.
-#[cfg(not(all(target_os = "macos", feature = "gui")))]
+/// 그래야 주입 경로가 다른 플랫폼에서 기존과 똑같이 동작한다. macOS 구현과 같은
+/// 이유로 debug 한정이다.
+#[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
 pub(crate) fn accessibility_trusted() -> bool {
     true
 }
@@ -245,7 +262,15 @@ pub(crate) fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
 }
 
 /// 손쉬운 사용 권한을 **부팅당 1 회** 요청한다. 이미 승인돼 있으면 아무것도 하지 않는다.
-#[cfg(all(target_os = "macos", feature = "gui"))]
+///
+/// **debug 빌드 전용.** 이 권한을 소비하는 표면(`surface.raw_key` — `CGEventPost` 로
+/// OS 이벤트 스트림에 키 주입)이 debug 로 격리돼 있어
+/// ([ADR-0115](../../docs/adr/0115-input-reproduction-ipc-debug-isolation.md)),
+/// release 빌드에는 이 권한을 쓰는 코드가 하나도 없다. 소비자가 0 인데 첫 실행에
+/// "이 앱이 내 모든 입력을 볼 수 있게 해달라" 로 읽히는 프롬프트를 띄우는 것은
+/// 최소권한 원칙에 어긋난다. 그래서 요청 자체를 debug 로 내린다 — release 사용자는
+/// 이 프롬프트를 보지 않고, 손쉬운 사용은 켤 필요가 없는 항목이 된다.
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 fn prewarm_accessibility() {
     if accessibility_trusted() {
         tracing::debug!("prewarm: 손쉬운 사용 권한 이미 승인됨");
@@ -390,7 +415,9 @@ fn home_dir() -> Option<PathBuf> {
 /// **하나의 스레드에서 하나씩 순차로** 처리한다. 동시에 건드리면 프롬프트가 겹쳐 뜬다 —
 /// 순차면 앞의 것을 닫아야 다음이 뜬다. 순서는 파일 폴더 → 화면 기록 → 손쉬운 사용:
 /// 앞의 둘은 그 자리에서 허용/거부가 끝나지만 손쉬운 사용 프롬프트는 시스템 설정으로
-/// 사용자를 내보내므로, 그 이탈을 시퀀스 맨 끝에 둔다.
+/// 사용자를 내보내므로, 그 이탈을 시퀀스 맨 끝에 둔다. 마지막 손쉬운 사용은 **debug
+/// 빌드에서만** 돈다 — release 에는 그 권한을 소비하는 코드가 없다
+/// (`prewarm_accessibility` 참고).
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub(crate) fn spawn_prewarm() {
     std::thread::spawn(|| {
@@ -407,6 +434,8 @@ pub(crate) fn spawn_prewarm() {
             }
         }
         prewarm_screen_recording();
+        // 손쉬운 사용은 debug 빌드에서만 요청한다 — release 에는 소비자가 없다.
+        #[cfg(debug_assertions)]
         prewarm_accessibility();
     });
 }

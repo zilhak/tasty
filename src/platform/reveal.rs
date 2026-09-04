@@ -25,6 +25,7 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
     }
     #[cfg(not(any(windows, target_os = "macos", all(unix, not(target_os = "macos")))))]
     {
+        // 지원하지 않는 플랫폼 — 열 수단이 없어 path 를 쓸 곳이 없다.
         let _ = path;
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,

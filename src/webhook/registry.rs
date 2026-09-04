@@ -51,10 +51,25 @@ fn state() -> &'static Mutex<WebhookState> {
     STATE.get_or_init(|| Mutex::new(WebhookState::default()))
 }
 
+const STATE_WHAT: &str = "the webhook registry";
+static STATE_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 웹훅 레지스트리 락. 이 모듈의 모든 접근자가 이 한 곳을 지난다.
+///
+/// poison 이면 복구한다. ① 임계구역은 `entries` 조작과 그 직렬화(`persist_locked`)뿐이라
+/// 최악의 손상이 "반쯤 반영된 항목 하나" 로 갇힌다. ② 패닉하면 IPC 핸들러(메인 스레드)와
+/// 리스너 스레드가 죽는다 — 메인 스레드 패닉은 정책상 금지고, 리스너가 죽으면 발급된
+/// 모든 URL 이 조용히 죽은 주소가 된다.
+///
+/// 락을 인자로 받는 이유는 전역이 [`OnceLock`] 이라서다 — 테스트가 전역을 poison 하면
+/// 같은 바이너리의 뒤 테스트가 그 상태를 물려받는다. 회귀 테스트는 지역 뮤텍스를 겨냥한다.
+fn lock_state(state: &Mutex<WebhookState>) -> MutexGuard<'_, WebhookState> {
+    tasty_utils::poison::recover_mutex(state.lock(), STATE_WHAT, &STATE_POISON_REPORTED)
+}
+
 fn lock() -> MutexGuard<'static, WebhookState> {
-    state()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    lock_state(state())
 }
 
 /// 리스너 runtime 설정 주입(부팅 헬퍼가 bind 전에 호출).
@@ -318,6 +333,36 @@ mod tests {
             persistence: Persistence::Temporary,
             limit,
         }
+    }
+
+    /// poison 이 걸린 뒤에도 레지스트리가 읽고 쓰이는가.
+    ///
+    /// 전역([`STATE`])이 아니라 지역 뮤텍스를 겨냥한다 — 전역을 poison 하면 같은 테스트
+    /// 바이너리의 뒤 테스트가 그 상태를 물려받는다.
+    #[test]
+    fn a_poisoned_registry_still_reads_and_writes() {
+        let shared = std::sync::Arc::new(Mutex::new(WebhookState::default()));
+
+        let poisoner = std::sync::Arc::clone(&shared);
+        std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("아직 성한 락");
+            panic!("이 스레드가 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(shared.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        lock_state(&shared).port = Some(8123);
+        assert_eq!(
+            lock_state(&shared).port,
+            Some(8123),
+            "poison 뒤에도 설정이 읽고 쓰여야 한다"
+        );
+
+        assert!(
+            STATE_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
+            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+        );
     }
 
     #[test]

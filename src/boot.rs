@@ -19,6 +19,8 @@ pub(crate) mod event_loop;
 pub(crate) mod headless_dispatch;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_plugins;
+#[cfg(not(feature = "gui"))]
+pub(crate) mod headless_stream;
 pub(crate) mod locale;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
@@ -281,31 +283,168 @@ impl DropTailCounters {
     }
 }
 
-/// Headless 부트. winit / wgpu / egui 가 없는 빌드 (`--no-default-features`) 전용.
-///
-/// 시퀀스:
-/// 1. `mpsc::channel::<AppEvent>` 생성 + `HeadlessWaker` 로 IPC/PTY waker 발급
-/// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
-/// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
-/// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
-/// 5. 데드라인 인지 수신 loop — 중앙 타이머 허브의 `next_deadline()` 까지만
-///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
-///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
+/// 시간축 — 이번 바퀴에 due 한 타이머 키를 전부 실행한다. gui `about_to_wait` 의
+/// drain 블록과 동형이며, 각 arm 이 무엇의 headless 등가인지는 arm 주석에 있다.
 #[cfg(not(feature = "gui"))]
-fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
-    use std::sync::mpsc;
+fn run_due_timers(
+    app: &mut crate::app::App,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) {
     use std::time::Instant;
 
-    use crate::AppEvent;
-    use crate::adapters::production::headless_waker::HeadlessWaker;
-    use crate::app::App;
+    for key in app.timers.drain_due(Instant::now()) {
+        match key {
+            crate::app::timers::Tick::Busy => {
+                // 렌더가 없어 로컬 redraw 는 무의미하지만(반환값 무시), attach
+                // client 로의 busy forward 는 headless 가 원격 attach 의 주
+                // 시나리오라 필수 — gui `app/busy.rs` 의 `poll_busy_states` 와
+                // 동형(엔진 1 개라 순회 불필요).
+                // StatusBar 브랜치 캐시(`core/state/branch.rs`)는 **의도적으로**
+                // 여기에 배선하지 않는다 — headless 는 StatusBar 를 렌더하지 않아
+                // 읽는 쪽이 없고(그래서 캐시 자체가 `gui` feature 게이트다), 갱신하면
+                // 읽히지도 않을 `.git/HEAD` 를 초당 한 번 여는 것이 된다.
+                engine.refresh_busy_surfaces();
+                engine.forward_busy_activity(&app.stream_hub);
+                // attention forward 도 같은 tick(gui `app/busy.rs` 와 동형).
+                // headless 가 원격 attach 의 주 시나리오라 이 배선이 없으면
+                // mirror 는 서버 attention 을 영원히 못 받는다.
+                engine.forward_attention(&app.stream_hub);
+                // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
+                // 동형(엔진 1 개라 순회 불필요).
+                engine.poll_global_hooks();
+                // IdleTimeout 훅 — gui `app/idle_hooks.rs` 의
+                // `poll_idle_timeout_hooks` 와 동형(엔진 1 개라 순회 불필요).
+                // 바인딩 실행 + host event enqueue 는 여기서 직접 한다(엔진
+                // 레이어는 순수 조회만 함 — `CoreState::poll_idle_timeout_hooks`).
+                let injector = app.core.host_ipc_injector.get().cloned();
+                for (surface_id, f) in engine.poll_idle_timeout_hooks() {
+                    crate::hook_handler::trigger::execute_binding(
+                        &f.binding,
+                        injector.as_ref(),
+                        &f.event,
+                        &f.received,
+                        surface_id,
+                    );
+                    state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                        hook_id: f.hook_id,
+                        event_kind: "idle-timeout".to_string(),
+                        surface_id,
+                        exit_code: None,
+                    });
+                }
+                // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록
+                // 1Hz 안전망으로 편승(주 wake 경로는 TerminalOutput(None)).
+                headless_plugins::pump_plugins(app, state, engine);
+            }
+            // TTL 정리 3종 — gui `app/sweeps.rs` 와 동형(엔진 1 개라 순회 불필요).
+            // 접근 시점 lazy 경로를 대체하지 않고 보완한다
+            // (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
+            // headless 야말로 이 보완이 가장 필요한 실행 형태다 — GUI 조작이
+            // 아예 없어 lazy 를 굴릴 사용자 접근 자체가 없다.
+            crate::app::timers::Tick::PtySweep => {
+                // 반환 id 는 쓰지 않는다 — 두 store 회수까지 공용 함수가 끝냈다.
+                let _ = engine.sweep_idle_ptys(Instant::now());
+            }
+            crate::app::timers::Tick::CaptureSweep => {
+                engine.capture_uploads.sweep_expired(Instant::now());
+            }
+            crate::app::timers::Tick::LogPrune => {
+                let now_ms = u64::try_from(app.core.now_unix_millis()).unwrap_or(0);
+                app.core.with_memory(|mem| {
+                    crate::adapters::ipc::log_retention::maybe_prune(mem, now_ms);
+                });
+            }
+        }
+    }
+}
 
-    locale::init();
+/// PTY 출력 wake 처리 — dedup 게이트 해제 후 대상 surface(또는 전체)를 drain 한다.
+#[cfg(not(feature = "gui"))]
+fn handle_terminal_output(
+    app: &mut crate::app::App,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    id: Option<u32>,
+) {
+    // Early reset: drain 직전에 dedup 게이트를 풀어 경합 wake 유실 방지
+    // (research §8). headless 는 단일 engine 이라 순회 불필요.
+    if let Some(factory) = engine.waker_factory.as_ref() {
+        factory.note_drained(id);
+    }
+    // Targeted wake 는 해당 surface 만, default wake 는 전체 drain.
+    // 반환 CoreEvent 중 소비하는 것은 `TerminalOutputMatch` 뿐이다 — 나머지
+    // (Notification/Bell/Title/Cwd/Exit)는 cascade 주체(view/plugin)가 없어
+    // 버린다. 직접 부수효과(observer/command_index/OSC52)는 process 함수
+    // 내부에서 이미 적용됐다. 하나만 소비하는 근거는
+    // `fire_output_match_hooks` 의 doc 참조.
+    let outcome = match id {
+        Some(sid) => app.core.process_pty_output(engine, sid), // targeted: 해당 surface 만 drain
+        None => {
+            let outcome = app.core.process_all_pty_output(engine); // default: 전체 drain
+            // plugin 프로세스 수신 스레드도 이 default waker 를 공유한다
+            // (headless_plugins 모듈 주석 참조) — hello 응답/PaintFrame 등
+            // plugin 이벤트도 이 wake 로 도착하므로 여기서 함께 pump.
+            headless_plugins::pump_plugins(app, state, engine);
+            outcome
+        }
+    };
+    fire_output_match_hooks(app, engine, outcome.events);
+}
 
-    let (tx, rx) = mpsc::channel::<AppEvent>();
-    let waker = HeadlessWaker::new(tx);
+/// PTY drain 이 돌려준 `CoreEvent` 에서 `output-match` 훅만 골라 발화한다.
+///
+/// gui 는 `App::cascade_terminal_output_match`(`app/dispatch_domain.rs`)가 하는
+/// 일이고, headless 에는 그 cascade 층이 없다(`app/dispatch_domain_stubs.rs`).
+/// stub 의 근거는 "cascade 는 View 의 모든 window 에 broadcast 하는 것" 인데
+/// **훅 실행은 view 와 무관한 부수효과**라 그 근거가 닿지 않는다 — 같은 stub
+/// 파일에 묶여 함께 죽어 있었다. `tasty set hook --event output-match:...` 는
+/// CLI 로 노출된 에이전트 기능이므로 headless 에서도 동작해야 한다
+/// (`docs/identity.md` 원칙 2).
+///
+/// **`PendingHostEvent::HookFired` enqueue 는 일부러 하지 않는다.** 그 큐의
+/// 배수 주체는 `app/dispatch/host_events.rs` 하나뿐이고 `src/app.rs` 가 그
+/// 모듈을 `#[cfg(feature = "gui")]` 로 걸어, headless 에는 빼 가는 쪽이 없다.
+///
+/// 주의 — **그 큐는 headless 에서 이미 자라고 있다.** 같은 파일의 idle-timeout
+/// 경로가 훅 발화마다 넣는데 빼 가는 쪽이 없다(`intent/headless.rs` 모듈 주석도
+/// 같은 사실을 적는다). 그러니 여기서 넣지 않는 것은 "증가를 막는" 것이 아니라
+/// **증가율을 올리지 않는** 것이다 — 이쪽은 매칭되는 라인마다 1 건이라 상시 구동
+/// 데몬의 가장 뜨거운 경로가 된다. 그러면서 관측 가능한 효과는 여전히 0 이다.
+/// headless 에 배수 주체가 생기면 그때 idle-timeout 배선과 함께 다시 본다 —
+/// 그 조건이 성립하면 이 생략은 결함이 되고, 저쪽 누수는 정상 경로가 된다.
+#[cfg(not(feature = "gui"))]
+fn fire_output_match_hooks(
+    app: &crate::app::App,
+    engine: &mut crate::core::CoreState,
+    events: Vec<crate::core::intent::CoreEvent>,
+) {
+    let injector = app.core.host_ipc_injector.get().cloned();
+    for event in events {
+        let crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } = event else {
+            continue;
+        };
+        let fired = engine
+            .hook_manager
+            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::OutputMatch(text)]);
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(
+                &f.binding,
+                injector.as_ref(),
+                &f.event,
+                &f.received,
+                surface_id,
+            );
+        }
+    }
+}
 
-    let boot_settings = crate::settings::Settings::load();
+/// 부팅 시 memory.db 초기화 — 설정의 상한/쿼터를 반영하고 유지보수를 1 회 돌린다.
+/// 실패해도 데몬은 뜬다(memory 없는 상태로 계속) — 반환 `None` 이 그 상태다.
+#[cfg(not(feature = "gui"))]
+fn boot_memory(
+    boot_settings: &crate::settings::Settings,
+) -> Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>> {
     let memory_config = tasty_memory::MemoryConfig {
         entry_max_bytes: boot_settings
             .memory
@@ -330,8 +469,17 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             None
         }
     };
+    memory_arc
+}
 
-    let mut app = App::new_headless(cli.port_file, memory_arc)?;
+/// IPC accept 스레드를 띄우고, 그 라우터를 필요로 하는 전역 레지스트리를 시드한다.
+/// `start_ipc` 가 injector 를 돌려주지 않으면(IPC 미기동) 시드도 하지 않는다 —
+/// 시드 대상이 전부 IPC 라우터를 전제하기 때문이다.
+#[cfg(not(feature = "gui"))]
+fn start_ipc_and_seed(
+    app: &mut crate::app::App,
+    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
+) {
     let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
         hub: app.stream_hub.clone(),
         inbound_tx: app.stream_inbound_tx.clone(),
@@ -351,23 +499,20 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 완료 판정 전략 레지스트리 시드 — 훅 핸들러와 대칭 위치.
         // notify_via 참조 무결성 검증이 훅 핸들러 레지스트리를 보므로 그 뒤에 둔다.
         crate::completion_strategy::install_default_sources();
+        // 반환 report 는 여기서 소비하지 않는다 — headless 엔 toast UI 가 없어
+        // 포트 미설정/bind 실패는 리스너 내부 `tracing::warn!` 로만 노출된다.
         let _ = crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }
+}
 
-    // ── Engine 부트스트랩 ──────────────────────────────────────────────
-    // gui 는 첫 MainView 생성 시 CoreState/AppState 를 만든다 (window_lifecycle).
-    // headless 는 창이 없으므로 여기서 직접 1 회 만든다. `CoreState::new_with_ids`
-    // 가 default workspace + 터미널 1 개를 spawn 하므로 client 0 명에도 PTY 가 산다.
-    // 터미널 reader 스레드는 factory 가 발급한 waker 로 `TerminalOutput` 을 push,
-    // 아래 메인 루프가 `process_all_pty_output` 으로 채널을 drain 한다.
-    //
-    // 0-B: 창이 없어 grid 크기를 측정할 수 없으므로 기본 80×24.
-    // 0-C: layout 복원은 gui 의 plugin-pump 경로(ApplyPendingLayoutRestore)에
-    //      종속이라 headless 엔 미적용. 그래서 슬롯을 `None` 으로 넘겨 `load_slot`
-    //      자체를 하지 않고, `pending_layout_restore` 가 `None` 으로 남는다 —
-    //      `new_with_ids` 의 fallback 이 실행되는 조건이 바로 이것이라 headless 는
-    //      항상 default workspace + 터미널 1 개로 뜬다.
+/// Engine 부트스트랩 — gui 가 첫 MainView 생성 시 하는 일의 headless 등가.
+#[cfg(not(feature = "gui"))]
+fn bootstrap_engine(
+    app: &mut crate::app::App,
+    boot_settings: &crate::settings::Settings,
+    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
+) -> anyhow::Result<crate::core::CoreState> {
     let factory = waker.waker_factory();
     let base_waker = factory.make_default_waker();
     // gui 의 `begin_boot` 과 같은 부팅 1 회 훅 — 레거시 `layout.json` 마이그레이션 +
@@ -393,6 +538,103 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록 IPC
     // 서버와 동일한 StreamHub 를 attach registry 에 주입.
     engine.attach.set_notifier(app.stream_hub.clone());
+    Ok(engine)
+}
+
+/// 한 바퀴의 대기 결과.
+#[cfg(not(feature = "gui"))]
+enum Wait {
+    /// 이벤트가 도착했다.
+    Event(crate::AppEvent),
+    /// 타이머 데드라인에 도달했다 — 이번 바퀴는 타이머만 돌린다.
+    Deadline,
+    /// 송신단이 전부 사라졌다 — 루프를 끝낸다.
+    Disconnected,
+}
+
+/// 데드라인 인지 수신 — gui 의 `about_to_wait` 와 대칭이다. gui 는 waker 스레드가
+/// 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
+/// 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
+#[cfg(not(feature = "gui"))]
+fn wait_for_event(
+    rx: &std::sync::mpsc::Receiver<crate::AppEvent>,
+    deadline: Option<std::time::Instant>,
+) -> Wait {
+    match deadline {
+        Some(at) => {
+            match rx.recv_timeout(at.saturating_duration_since(std::time::Instant::now())) {
+                Ok(ev) => Wait::Event(ev),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Wait::Deadline,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Wait::Disconnected,
+            }
+        }
+        // 등록된 타이머가 없다 — 깨울 이유가 없으므로 무기한 블로킹.
+        None => match rx.recv() {
+            Ok(ev) => Wait::Event(ev),
+            Err(_) => Wait::Disconnected,
+        },
+    }
+}
+
+/// `RunLuaScript` 처리 — gui event_handler 와 동일. headless 발신원은 현재 없지만
+/// (단축키=gui, debug IPC=App 경로) 이벤트 계약상 동작을 미러링한다.
+#[cfg(not(feature = "gui"))]
+fn run_lua_script(app: &crate::app::App, source: &str, name: &str) {
+    if let Some(engine) = app.lua_engine.as_ref() {
+        engine.run_script(source, Some(name));
+    } else {
+        tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
+    }
+}
+
+/// 도착한 이벤트 하나를 처리한다. `Break` 면 메인 루프를 끝낸다.
+#[cfg(not(feature = "gui"))]
+fn dispatch_headless_event(
+    app: &mut crate::app::App,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    event: crate::AppEvent,
+) -> std::ops::ControlFlow<()> {
+    use crate::AppEvent;
+    match event {
+        AppEvent::Shutdown | AppEvent::QuitRequested => return std::ops::ControlFlow::Break(()),
+        AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
+        AppEvent::IpcReady => headless_dispatch::pump_ipc(app, state, engine),
+        AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
+        AppEvent::RunLuaScript { source, name } => run_lua_script(app, &source, &name),
+    }
+    std::ops::ControlFlow::Continue(())
+}
+
+/// Headless 부트. winit / wgpu / egui 가 없는 빌드 (`--no-default-features`) 전용.
+///
+/// 시퀀스:
+/// 1. `mpsc::channel::<AppEvent>` 생성 + `HeadlessWaker` 로 IPC/PTY waker 발급
+/// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
+/// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
+/// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
+/// 5. 데드라인 인지 수신 loop — 중앙 타이머 허브의 `next_deadline()` 까지만
+///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
+///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
+#[cfg(not(feature = "gui"))]
+fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
+    use std::sync::mpsc;
+
+    use crate::adapters::production::headless_waker::HeadlessWaker;
+    use crate::app::App;
+
+    locale::init();
+
+    let (tx, rx) = mpsc::channel::<crate::AppEvent>();
+    let waker = HeadlessWaker::new(tx);
+
+    let boot_settings = crate::settings::Settings::load();
+    let memory_arc = boot_memory(&boot_settings);
+
+    let mut app = App::new_headless(cli.port_file, memory_arc)?;
+    start_ipc_and_seed(&mut app, &waker);
+
+    let mut engine = bootstrap_engine(&mut app, &boot_settings, &waker)?;
     let preset_store = app.core.preset_store.clone();
     let memory = app.core.memory_arc();
     let mut state = crate::state::AppState::new(&mut engine, preset_store, memory);
@@ -409,467 +651,32 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
-    // 데드라인 인지 수신 — gui 의 `about_to_wait` 와 대칭이다. gui 는 waker 스레드가
-    // 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
-    // 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
     loop {
+        // 블로킹 대기에 들어가기 전에 Intent 큐를 비운다. 정상 경로에서는 발화 지점
+        // (IPC / plugin 호출)이 이미 응답 전에 drain 하므로 여기서는 비어 있지만,
+        // 앞으로 다른 발화점이 생겨도 큐가 프로세스 수명 동안 쌓이지 않게 하는
+        // 최종 방어선이다 — `docs/adr/0111-headless-drains-the-intent-queue.md`.
+        crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine);
         // plugin manager 는 자기 허브를 따로 소유한다 — 대기 계산은 min 으로 합성.
         let deadline = crate::app::timers::min_deadline(
             app.timers.next_deadline(),
             app.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
         );
-        let pending = match deadline {
-            Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
-                Ok(ev) => Some(ev),
-                // 데드라인 도달 — 이번 바퀴는 타이머만 돌린다.
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            },
-            // 등록된 타이머가 없다 — 깨울 이유가 없으므로 무기한 블로킹.
-            None => match rx.recv() {
-                Ok(ev) => Some(ev),
-                Err(_) => break,
-            },
+        let pending = match wait_for_event(&rx, deadline) {
+            Wait::Event(ev) => Some(ev),
+            Wait::Deadline => None,
+            Wait::Disconnected => break,
         };
 
         // 시간축 — due 한 타이머 키 실행. gui `about_to_wait` 의 drain 블록과 동형.
-        for key in app.timers.drain_due(Instant::now()) {
-            match key {
-                crate::app::timers::Tick::Busy => {
-                    // 렌더가 없어 로컬 redraw 는 무의미하지만(반환값 무시), attach
-                    // client 로의 busy forward 는 headless 가 원격 attach 의 주
-                    // 시나리오라 필수 — gui `app/busy.rs` 의 `poll_busy_states` 와
-                    // 동형(엔진 1 개라 순회 불필요).
-                    // StatusBar 브랜치 캐시(`core/state/branch.rs`)는 **의도적으로**
-                    // 여기에 배선하지 않는다 — headless 는 StatusBar 를 렌더하지 않아
-                    // 읽는 쪽이 없고(그래서 캐시 자체가 `gui` feature 게이트다), 갱신하면
-                    // 읽히지도 않을 `.git/HEAD` 를 초당 한 번 여는 것이 된다.
-                    engine.refresh_busy_surfaces();
-                    engine.forward_busy_activity(&app.stream_hub);
-                    // attention forward 도 같은 tick(gui `app/busy.rs` 와 동형).
-                    // headless 가 원격 attach 의 주 시나리오라 이 배선이 없으면
-                    // mirror 는 서버 attention 을 영원히 못 받는다.
-                    engine.forward_attention(&app.stream_hub);
-                    // 글로벌 훅 — gui `app/global_hooks.rs` 의 `poll_global_hooks` 와
-                    // 동형(엔진 1 개라 순회 불필요).
-                    engine.poll_global_hooks();
-                    // IdleTimeout 훅 — gui `app/idle_hooks.rs` 의
-                    // `poll_idle_timeout_hooks` 와 동형(엔진 1 개라 순회 불필요).
-                    // 바인딩 실행 + host event enqueue 는 여기서 직접 한다(엔진
-                    // 레이어는 순수 조회만 함 — `CoreState::poll_idle_timeout_hooks`).
-                    let injector = app.core.host_ipc_injector.get().cloned();
-                    for (surface_id, f) in engine.poll_idle_timeout_hooks() {
-                        crate::hook_handler::trigger::execute_binding(
-                            &f.binding,
-                            injector.as_ref(),
-                            &f.event,
-                            &f.received,
-                            surface_id,
-                        );
-                        state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
-                            hook_id: f.hook_id,
-                            event_kind: "idle-timeout".to_string(),
-                            surface_id,
-                            exit_code: None,
-                        });
-                    }
-                    // plugin 소켓이 조용해도 healthcheck/재시작 타이머가 진행되도록
-                    // 1Hz 안전망으로 편승(주 wake 경로는 TerminalOutput(None)).
-                    headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
-                }
-                // TTL 정리 3종 — gui `app/sweeps.rs` 와 동형(엔진 1 개라 순회 불필요).
-                // 접근 시점 lazy 경로를 대체하지 않고 보완한다
-                // (`docs/adr/0050-headless-pty-primitive.md` "좀비 회수 시점").
-                // headless 야말로 이 보완이 가장 필요한 실행 형태다 — GUI 조작이
-                // 아예 없어 lazy 를 굴릴 사용자 접근 자체가 없다.
-                crate::app::timers::Tick::PtySweep => {
-                    // 반환 id 는 쓰지 않는다 — 두 store 회수까지 공용 함수가 끝냈다.
-                    let _ = engine.sweep_idle_ptys(Instant::now());
-                }
-                crate::app::timers::Tick::CaptureSweep => {
-                    engine.capture_uploads.sweep_expired(Instant::now());
-                }
-                crate::app::timers::Tick::LogPrune => {
-                    let now_ms = u64::try_from(app.core.now_unix_millis()).unwrap_or(0);
-                    app.core.with_memory(|mem| {
-                        crate::adapters::ipc::log_retention::maybe_prune(mem, now_ms);
-                    });
-                }
-            }
-        }
+        run_due_timers(&mut app, &mut state, &mut engine);
 
         let Some(event) = pending else {
             continue;
         };
-        match event {
-            AppEvent::Shutdown | AppEvent::QuitRequested => break,
-            AppEvent::TerminalOutput(id) => {
-                // Early reset: drain 직전에 dedup 게이트를 풀어 경합 wake 유실 방지
-                // (research §8). headless 는 단일 engine 이라 순회 불필요.
-                if let Some(factory) = engine.waker_factory.as_ref() {
-                    factory.note_drained(id);
-                }
-                // Targeted wake 는 해당 surface 만, default wake 는 전체 drain.
-                // 반환 CoreEvent (Notification/Bell/Title/Cwd/Exit) 는 cascade 주체
-                // (view/plugin)가 없으므로 단계 0 에선 무시한다 — 직접 부수효과
-                // (observer/command_index/OSC52) 는 process 함수 내부에서 이미 적용됨.
-                match id {
-                    Some(sid) => {
-                        let _ = app.core.process_pty_output(&mut engine, sid); // targeted: 해당 surface 만 drain — CoreEvent 무시 사유는 위 주석 참조
-                    }
-                    None => {
-                        let _ = app.core.process_all_pty_output(&mut engine); // default: 전체 drain — CoreEvent 무시 사유는 위 주석 참조
-                        // plugin 프로세스 수신 스레드도 이 default waker 를 공유한다
-                        // (headless_plugins 모듈 주석 참조) — hello 응답/PaintFrame 등
-                        // plugin 이벤트도 이 wake 로 도착하므로 여기서 함께 pump.
-                        headless_plugins::pump_plugins(&mut app, &mut state, &mut engine);
-                    }
-                }
-            }
-            AppEvent::IpcReady => {
-                headless_dispatch::pump_ipc(&mut app, &mut state, &mut engine);
-            }
-            AppEvent::StreamReady => {
-                // 스트림 클라 inbound 를 분류해 attach 결선(단계 4): attach 요청 →
-                // lock+스냅샷+출력 forward, 입력 Data → 점유 surface PTY, 끊김 →
-                // lock free 환원(단계 3). 비-attach client 의 Data 는 debug echo.
-                let outcome = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
-                // 17번 TODO — attach mesh mirror 는 plugin surface(markdown/image/
-                // mesh_demo)의 실제 plugin 프로세스가 필요하다. 상시 초기화는 회귀
-                // 위험이 넓어(스코프 결정) attach 세션이 실제로 시작되는 이 지점에서만
-                // lazy 초기화한다. 이후엔 프로세스 수명 동안 유지(tear-down 없음).
-                if !outcome.attach_requests.is_empty()
-                    || !outcome.workspace_attach_requests.is_empty()
-                {
-                    headless_plugins::ensure_plugin_manager(&mut app, &engine);
-                }
-                for (client_id, surface_id) in outcome.attach_requests {
-                    engine.attach_surface_for_stream(surface_id, client_id, &app.stream_hub);
-                }
-                for (client_id, workspace_id) in outcome.workspace_attach_requests {
-                    engine.attach_workspace_for_stream(workspace_id, client_id, &app.stream_hub);
-                }
-                for (client_id, bytes) in outcome.input_frames {
-                    // workspace mode(단계 6)면 입력은 surface-prefixed → demux 후 지정
-                    // surface 로. 아니면 단계 4 의 bare 입력(점유 단일 surface).
-                    let routed = if engine.attach.client_holds_workspace(client_id) {
-                        match crate::ipc::stream::decode_mux(&bytes) {
-                            Some((sid, payload)) => {
-                                engine.feed_attached_workspace_input(client_id, sid, payload)
-                            }
-                            None => false,
-                        }
-                    } else {
-                        engine.feed_attached_input(client_id, &bytes)
-                    };
-                    #[cfg(debug_assertions)]
-                    if !routed {
-                        // 단계 1 echo client(점유 surface 없음): debug 빌드 회신.
-                        let echo_frame = crate::ipc::stream::StreamFrame::new(
-                            crate::ipc::stream::StreamTag::Data,
-                            bytes,
-                        );
-                        let _ = app.stream_hub.push(client_id, echo_frame); // best-effort echo — PushResult(Result 아님) 무시: client 끊김 시 무해.
-                    }
-                    #[cfg(not(debug_assertions))]
-                    let _ = routed; // release: echo 분기 없어 routed 미사용 — 값 drop(Result 아님).
-                }
-                for (client_id, op_id, op) in outcome.structural_ops {
-                    // mirror client 가 forward 한 구조 op — anchor 워크스페이스를 그
-                    // client 가 점유(holder)할 때만 실행하고 StructuralResult 로 회신,
-                    // 성공 시 StructuralDelta 로 역반영(3단계). 순서: result → delta →
-                    // 새 surface tap(client 가 매핑을 만든 뒤 스냅샷을 받게).
-                    let anchor = op.anchor_surface_id();
-                    let (ok, reason, delta) = match engine.attach.workspace_of_surface(anchor) {
-                        Some(ws) if engine.attach.workspace_holder(ws) == Some(client_id) => {
-                            match crate::core::attach_runtime::execute_forwarded_structural_op(
-                                &mut app.core,
-                                &mut state,
-                                &mut engine,
-                                &op,
-                            ) {
-                                Ok(delta) => (true, None, delta),
-                                Err(reason) => (false, Some(reason), None),
-                            }
-                        }
-                        Some(_) => (false, Some("not workspace holder".to_string()), None),
-                        None => (false, Some("workspace not found".to_string()), None),
-                    };
-                    let reply =
-                        crate::ipc::stream::StreamControl::StructuralResult { op_id, ok, reason };
-                    let frame = crate::ipc::stream::StreamFrame::new(
-                        crate::ipc::stream::StreamTag::Control,
-                        serde_json::to_vec(&reply).unwrap_or_default(),
-                    );
-                    let _ = app.stream_hub.push(client_id, frame); // best-effort 회신 — 무시.
-                    if let Some(fd) = delta {
-                        let delta_frame = crate::ipc::stream::StreamFrame::new(
-                            crate::ipc::stream::StreamTag::Control,
-                            serde_json::to_vec(&fd.delta).unwrap_or_default(),
-                        );
-                        let _ = app.stream_hub.push(client_id, delta_frame); // best-effort delta — 무시.
-                        for sid in fd.added_terminals {
-                            engine.tap_surface_for_stream(sid, client_id, &app.stream_hub);
-                        }
-                        // forward 된 ConvertSurface 가 실제 kind 를 바꿨으면 egui-mesh stale
-                        // frame 을 버린다(`app/event_handler.rs` 의 동일 처리와 짝).
-                        if let Some(sid) = fd.converted_surface
-                            && let Some(mgr) = app.plugin_manager.as_mut()
-                        {
-                            mgr.drop_egui_mesh_frame(sid);
-                        }
-                    }
-                }
-                for (client_id, remote_surface_id) in outcome.attention_clear_requests {
-                    // 미러 사용자가 그 surface 를 확인(실-포커스 / 알림 읽음)했다는
-                    // 판정을 소유 인스턴스에 적용한다. holder 검증은 헬퍼가 담당하고,
-                    // 지워진 값은 다음 attention diff tick 이 `kind: null` push 로
-                    // 미러에 되돌려 확정한다(추가 push 없음). headless 서버가 주
-                    // 시나리오다.
-                    engine.apply_attached_attention_clear(client_id, remote_surface_id);
-                }
-                for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests {
-                    // client-driven mirror geometry(ADR-0045): mirror client 가
-                    // 요청한 크기로 원격 PTY 를 resize. holder 검증은 헬퍼가 담당,
-                    // 변화 시 기존 resize tap 이 server→client Resize echo 를 자동
-                    // fan-out 한다(추가 push 없음). headless 서버가 주 시나리오다.
-                    engine.apply_attached_workspace_resize(
-                        client_id,
-                        remote_surface_id,
-                        cols,
-                        rows,
-                    );
-                }
-                for (
-                    client_id,
-                    surface_id,
-                    width_px,
-                    height_px,
-                    pixels_per_point,
-                    theme,
-                    focused,
-                ) in outcome.mesh_context_requests
-                {
-                    // mesh 구독/geometry 갱신(attach mesh mirror 소비 경로 — 상세
-                    // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`) —
-                    // 구독 요청 자체가 capability negotiation. holder 불일치/미점유
-                    // surface 는 명시 MeshError 로 회신한다(무시 대신 오류).
-                    let ok = engine.apply_attached_mesh_context(
-                        surface_id,
-                        client_id,
-                        width_px,
-                        height_px,
-                        pixels_per_point,
-                        theme,
-                        focused,
-                    );
-                    if !ok {
-                        let reply = crate::ipc::stream::StreamControl::MeshError {
-                            surface_id,
-                            reason: "not_attached".to_string(),
-                        };
-                        let frame = crate::ipc::stream::StreamFrame::new(
-                            crate::ipc::stream::StreamTag::Control,
-                            serde_json::to_vec(&reply).unwrap_or_default(),
-                        );
-                        let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
-                    }
-                }
-                for (client_id, surface_id) in outcome.mesh_full_resend_requests {
-                    let ok = engine.apply_attached_mesh_full_resend(surface_id, client_id);
-                    if !ok {
-                        let reply = crate::ipc::stream::StreamControl::MeshError {
-                            surface_id,
-                            reason: "not_attached".to_string(),
-                        };
-                        let frame = crate::ipc::stream::StreamFrame::new(
-                            crate::ipc::stream::StreamTag::Control,
-                            serde_json::to_vec(&reply).unwrap_or_default(),
-                        );
-                        let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
-                    }
-                }
-                for (client_id, surface_id, input) in outcome.mesh_input_events {
-                    // attach mesh mirror 입력 역방향 forward(상세
-                    // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`) —
-                    // holder 검증은 apply_attached_mesh_input 이 담당. 실제 plugin 구동은
-                    // headless_plugins::forward_mesh_frames 가 다음 tick 에 누적된
-                    // 이벤트를 소비한다.
-                    let ok = engine.apply_attached_mesh_input(surface_id, client_id, input);
-                    if !ok {
-                        let reply = crate::ipc::stream::StreamControl::MeshError {
-                            surface_id,
-                            reason: "not_attached".to_string(),
-                        };
-                        let frame = crate::ipc::stream::StreamFrame::new(
-                            crate::ipc::stream::StreamTag::Control,
-                            serde_json::to_vec(&reply).unwrap_or_default(),
-                        );
-                        let _ = app.stream_hub.push(client_id, frame); // best-effort 오류 회신 — 무시.
-                    }
-                }
-                for (client_id, msg) in outcome.capture_uploads {
-                    // (03) screenshot→remote-clipboard: mirror client 가 이 headless
-                    // 인스턴스로 화면 캡처를 업로드 — headless 는 단일 engine 이라
-                    // gui 의 holder 순회가 필요 없다. holder 검증은 finalize 내부.
-                    use crate::adapters::production::stream_hub::CaptureUploadMsg;
-                    match msg {
-                        CaptureUploadMsg::CaptureChunk {
-                            upload_id,
-                            data_b64,
-                            ..
-                        } => {
-                            use base64::Engine as _;
-                            match base64::engine::general_purpose::STANDARD.decode(&data_b64) {
-                                Ok(bytes) if engine.attach.client_holds_workspace(client_id) => {
-                                    engine.capture_uploads.append(
-                                        client_id,
-                                        upload_id,
-                                        &bytes,
-                                        std::time::Instant::now(),
-                                    );
-                                }
-                                Ok(_) => tracing::warn!(
-                                    "capture upload: client {client_id} does not hold a workspace — dropping chunk"
-                                ),
-                                Err(_) => tracing::warn!(
-                                    "capture upload: invalid base64 chunk (client {client_id}, upload {upload_id})"
-                                ),
-                            }
-                        }
-                        CaptureUploadMsg::CaptureCommit {
-                            upload_id,
-                            file_name,
-                        } => {
-                            crate::core::attach_runtime::finalize_capture_upload(
-                                &mut engine,
-                                &app.core,
-                                &app.stream_hub,
-                                client_id,
-                                upload_id,
-                                &file_name,
-                            );
-                        }
-                    }
-                }
-                for (client_id, msg) in outcome.list_dir_requests {
-                    // (04) file picker: mirror client 가 이 headless 인스턴스로
-                    // 디렉토리 목록을 요청 — headless 는 단일 engine 이라 gui 의
-                    // holder 순회가 필요 없다. holder 검증은 핸들러 내부.
-                    use crate::adapters::production::stream_hub::ListDirRequestMsg;
-                    let ListDirRequestMsg::ListDirRequest { request_id, dir } = msg;
-                    crate::core::attach_runtime::handle_list_dir_request(
-                        &mut engine,
-                        &app.stream_hub,
-                        client_id,
-                        request_id,
-                        &dir,
-                    );
-                }
-                for (client_id, msg) in outcome.git_query_requests {
-                    // git-viewer(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`):
-                    // mirror client 가 이 headless 인스턴스로 git status/log/worktrees
-                    // 또는 diff 조회를 요청 — list_dir 와 동일하게 headless 는 단일
-                    // engine 이라 holder 순회 불요.
-                    use crate::adapters::production::stream_hub::GitQueryRequestMsg;
-                    let GitQueryRequestMsg::GitQueryRequest {
-                        request_id,
-                        surface_id,
-                        kind,
-                        worktree_path,
-                        diff_path,
-                    } = msg;
-                    crate::core::attach_runtime::handle_git_query_request(
-                        &mut engine,
-                        &app.stream_hub,
-                        client_id,
-                        request_id,
-                        surface_id,
-                        kind,
-                        worktree_path,
-                        diff_path,
-                    );
-                }
-                for (client_id, event) in outcome.bulk_events {
-                    // (06) native bulk 파일 전송: begin/chunk/commit 을 **도착 순서
-                    // 그대로** 처리한다(단일 벡터라 chunk 가 begin 을 앞지르지 않음 —
-                    // 분리 벡터 시절의 전량 폐기 + 빈 파일 성공 오보 결함 방지). 결속
-                    // workspace 는 연결-단위 bulk 태깅에서 조회(begin 이 ws 를 싣지 않음).
-                    use crate::adapters::production::stream_hub::BulkEvent;
-                    let Some(ws) = app.stream_hub.bulk_workspace(client_id) else {
-                        tracing::warn!(
-                            "bulk transfer: event from non-bulk client {client_id} — ignoring"
-                        );
-                        continue;
-                    };
-                    match event {
-                        BulkEvent::Begin {
-                            transfer_id,
-                            filename,
-                            total_size,
-                        } => {
-                            // (07) 용량 사전판정 — 초과면 등록하지 않고 capacity-exceeded
-                            // 회신(청크 0바이트 수신). 통과 시 begin 등록.
-                            crate::core::attach_runtime::begin_bulk_transfer(
-                                &mut engine,
-                                &app.stream_hub,
-                                client_id,
-                                transfer_id,
-                                filename,
-                                total_size,
-                            );
-                        }
-                        BulkEvent::Chunk {
-                            transfer_id,
-                            seq,
-                            bytes,
-                        } => {
-                            if !engine
-                                .bulk_transfers
-                                .append(client_id, transfer_id, seq, &bytes)
-                            {
-                                tracing::warn!(
-                                    "bulk transfer: chunk for unknown transfer (client {client_id}, transfer {transfer_id}) — no begin? dropping"
-                                );
-                            }
-                        }
-                        BulkEvent::Commit { transfer_id } => {
-                            // (07) 저장 dir 은 설정값(빈 값이면 기본 폴더) — begin 용량
-                            // 판정과 같은 폴더 기준.
-                            let dir = crate::core::attach_runtime::resolve_bulk_transfer_dir(
-                                &engine.settings,
-                            );
-                            crate::core::attach_runtime::finalize_bulk_transfer(
-                                &mut engine,
-                                &app.stream_hub,
-                                client_id,
-                                transfer_id,
-                                ws,
-                                dir,
-                            );
-                        }
-                    }
-                }
-                for client_id in outcome.disconnected {
-                    engine.attach.release_all_for_client(client_id);
-                    // bulk 연결 종료 시 커밋 안 된 대용량 partial 청소.
-                    engine.bulk_transfers.clear_client(client_id);
-                    // 캡처 업로드 연결 종료 시 커밋 안 된 partial 청소.
-                    engine.capture_uploads.clear_client(client_id);
-                    // mesh 구독 정리 — 불필요한 plugin CPU 낭비 방지(상세
-                    // `docs/dev-guide/egui-mesh-channel.md#attach-mesh-mirror-소비-경로`).
-                    engine.mesh_mirror.remove_for_client(client_id);
-                }
-            }
-            AppEvent::RunLuaScript { source, name } => {
-                // gui event_handler 와 동일 처리. headless 발신원은 현재 없지만
-                // (단축키=gui, debug IPC=App 경로) 이벤트 계약상 동작을 미러링한다.
-                if let Some(engine) = app.lua_engine.as_ref() {
-                    engine.run_script(&source, Some(&name));
-                } else {
-                    tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
-                }
-            }
+        if dispatch_headless_event(&mut app, &mut state, &mut engine, event).is_break() {
+            break;
         }
     }
     Ok(())

@@ -618,3 +618,45 @@ fn user_override_patches_priority_only() {
         CompletionStrategyKind::Push { .. } => panic!("expected poll"),
     }
 }
+
+/// poison 된 레지스트리가 **조용히 아무것도 안 하는** 대신 계속 동작한다.
+///
+/// 이전에는 모든 락 획득이 `read().ok()?` / `Err(_) => return` 이라, poison 이후
+/// `install_*` 는 무음 no-op 이 되고 조회는 빈 결과를 돌려줬다. 증상은 "등록한 완료
+/// 전략이 안 먹는다" 인데 관측 지점이 0 이었다 —
+/// `docs/dev-guide/error-handling.md` 의 "처리하거나 로그를 남긴다" 를 정면으로
+/// 어기는 형태다. `Inner` 는 `BTreeMap` 셋과 `bool` 하나뿐이라 복구가 맞다.
+#[test]
+fn a_poisoned_registry_still_installs_and_lists() {
+    let reg = std::sync::Arc::new(CompletionStrategyRegistry::new());
+
+    let held = std::sync::Arc::clone(&reg);
+    let joined = std::thread::spawn(move || {
+        let _guard = held.inner.write().expect("fresh rwlock");
+        panic!("a thread dies while holding the registry");
+    })
+    .join();
+    assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+    assert!(reg.inner.read().is_err(), "poison 됐어야 한다");
+
+    reg.install_host_defaults(&poll_toml(
+        "poisoned_probe",
+        10,
+        "surface.locate",
+        "\"surface.locate\"",
+    ));
+
+    let ids: Vec<String> = reg
+        .all_strategies_including_disabled()
+        .into_iter()
+        .map(|s| s.id.0)
+        .collect();
+    assert!(
+        ids.iter().any(|id| id.ends_with("poisoned_probe")),
+        "poison 이후에도 설치가 반영돼야 한다: {ids:?}"
+    );
+    assert!(
+        reg.resolve_default_for_method("surface.locate").is_some(),
+        "finalize 도 poison 이후에 돈다"
+    );
+}

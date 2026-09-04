@@ -21,6 +21,7 @@
 //! `clippy::wrong_self_convention` 은 모듈 단위로 허용한다.
 
 pub mod closed_item;
+pub(crate) mod headless;
 pub mod pane;
 pub mod popup;
 pub mod preset;

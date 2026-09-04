@@ -164,6 +164,10 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
 
 static DB: OnceLock<Mutex<Db>> = OnceLock::new();
 
+/// `state.db` 접근 락의 poison 을 보고했는가(첫 1 회만).
+static DB_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const DB_WHAT: &str = "state.db connection";
+
 /// `state.db` 경로 (`tasty_home()/state.db`). `None`이면 홈 디렉터리 미확인.
 pub fn default_db_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("state.db"))
@@ -185,9 +189,16 @@ pub fn init() -> Result<(), DbInitError> {
 }
 
 /// 싱글톤 접근. `init()`이 호출되지 않았으면 None.
+///
+/// poison 은 복구한다. 미완 트랜잭션은 unwind 때 rusqlite 의 RAII guard 가 rollback
+/// 하므로 연결은 불변식을 유지하고, 여기서 패닉하면 메인 스레드를 포함한 아무 데서나
+/// 호출되는 접근자라 창 전체가 죽는다. 조용히 `None` 을 돌려주면 호출자가 **"DB 가
+/// 아직 없다" 와 "락이 깨졌다" 를 구분할 수 없어**, 설정·최근 항목 저장이 원인 없이
+/// 사라진다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> T) -> Option<T> {
     let mutex = DB.get()?;
-    let mut guard: MutexGuard<'_, Db> = mutex.lock().ok()?;
+    let mut guard: MutexGuard<'_, Db> =
+        crate::poison::recover_mutex(mutex.lock(), DB_WHAT, &DB_POISONED);
     Some(f(&mut guard))
 }
 

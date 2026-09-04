@@ -68,9 +68,35 @@ struct Inner {
 /// 공유 훅 핸들러 레지스트리 (3출처 병합 + patch semantics + lazy finalize).
 pub struct HookHandlerRegistry {
     inner: RwLock<Inner>,
+    /// poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
+    poison_reported: std::sync::atomic::AtomicBool,
 }
 
 impl HookHandlerRegistry {
+    /// Poison 을 복구해 read guard 를 잡는다.
+    ///
+    /// 이전에는 락 획득 19 곳이 전부 `read().ok()?` / `Err(_) => return` 으로 **조용히**
+    /// 빠져나갔다. 그 결과는 "등록한 hook handler 가 안 불린다" 인데 관측 지점이 0 이라
+    /// 원인을 찾을 방법이 없었다. `Inner` 는 `BTreeMap` 들과 `bool` 하나뿐이고 임계구역은
+    /// 자료구조 조작만 하므로 패닉이 나도 불변식은 성립한다 — 복구가 맞다
+    /// ([`error-handling.md`](../../docs/dev-guide/error-handling.md) "락 poison").
+    fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
+        crate::poison::recover_read(
+            self.inner.read(),
+            "hook handler registry",
+            &self.poison_reported,
+        )
+    }
+
+    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
+    fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
+        crate::poison::recover_write(
+            self.inner.write(),
+            "hook handler registry",
+            &self.poison_reported,
+        )
+    }
+
     pub fn new() -> Self {
         Self {
             inner: RwLock::new(Inner {
@@ -78,6 +104,7 @@ impl HookHandlerRegistry {
                 finalized: BTreeMap::new(),
                 dirty: false,
             }),
+            poison_reported: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -86,7 +113,7 @@ impl HookHandlerRegistry {
     /// id 로 단건 lookup (owned). 없으면 `None`.
     pub fn get(&self, id: &HookHandlerId) -> Option<HookHandler> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
@@ -102,20 +129,14 @@ impl HookHandlerRegistry {
     #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn contains(&self, id: &HookHandlerId) -> bool {
         self.ensure_finalized();
-        self.inner
-            .read()
-            .map(|g| g.finalized.contains_key(id))
-            .unwrap_or(false)
+        self.lock_read().finalized.contains_key(id)
     }
 
     /// 전체 핸들러 id (정렬순). 포커스 독립 — 전 범위 조회.
     #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn list_handlers(&self) -> Vec<HookHandlerId> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         inner.finalized.keys().cloned().collect()
     }
 
@@ -123,10 +144,7 @@ impl HookHandlerRegistry {
     #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn all_handlers(&self) -> Vec<HookHandler> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut v: Vec<HookHandler> = inner
             .finalized
             .values()
@@ -141,10 +159,7 @@ impl HookHandlerRegistry {
     /// 표면(`hook_handler.list`)이 disabled 핸들러도 보여줘 재활성 대상을 노출한다.
     pub fn all_handlers_including_disabled(&self) -> Vec<HookHandler> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut v: Vec<HookHandler> = inner.finalized.values().cloned().collect();
         sort_handlers(&mut v);
         v
@@ -156,10 +171,7 @@ impl HookHandlerRegistry {
     #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn handlers_for_source(&self, trigger: TriggerSource) -> Vec<HookHandler> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut v: Vec<HookHandler> = inner
             .finalized
             .values()
@@ -181,10 +193,7 @@ impl HookHandlerRegistry {
                 return;
             }
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_host(&mut inner, decl);
         }
@@ -207,10 +216,7 @@ impl HookHandlerRegistry {
                 return;
             }
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_user(&mut inner, decl);
         }
@@ -222,10 +228,7 @@ impl HookHandlerRegistry {
         plugin_id: &str,
         decls: &[HookHandlerDecl<PluginHookHandlerActionDecl>],
     ) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_plugin(&mut inner, plugin_id, decl.clone());
         }
@@ -233,10 +236,7 @@ impl HookHandlerRegistry {
     }
 
     pub fn uninstall_plugin(&self, plugin_id: &str) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
             contribs.retain(|c| !matches!(&c.owner, HookHandlerOwner::Plugin(p) if p == plugin_id));
@@ -265,10 +265,9 @@ impl HookHandlerRegistry {
                 id: handler.id.0.clone(),
             });
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return Ok(()),
-        };
+        // poison 을 `Ok(())` 로 보고하던 자리다 — 등록이 안 됐는데 호출자에게는
+        // 성공이라고 답했다. 이제 복구하고 실제 등록을 수행한다.
+        let mut inner = self.lock_write();
         push_contribution(
             &mut inner,
             handler.id.clone(),
@@ -289,10 +288,7 @@ impl HookHandlerRegistry {
 
     /// user 출처 contribution 만 모아 TOML 문자열로 직렬화. Settings UI 변경 저장에 사용.
     pub fn export_user_config(&self) -> String {
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return String::new(),
-        };
+        let inner = self.lock_read();
         let mut handlers = Vec::<toml::Value>::new();
         for (id, contribs) in inner.contributions.iter() {
             let Some(user) = contribs
@@ -367,10 +363,7 @@ impl HookHandlerRegistry {
 
     /// host/plugin/user handler 를 user-origin override 로 disable/enable.
     pub fn set_user_handler_disabled(&self, id: &HookHandlerId, disabled: bool) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
             warn!(
                 handler = id.as_str(),
@@ -399,10 +392,7 @@ impl HookHandlerRegistry {
     /// User-origin contribution 의 `disabled_override` 만 비운다. 다른 user 필드 보존.
     #[allow(dead_code)] // 상동 — 테스트 전용, API 대칭 유지
     pub fn clear_user_handler_override(&self, id: &HookHandlerId) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
             return;
         };
@@ -428,10 +418,7 @@ impl HookHandlerRegistry {
 
     /// user-origin contribution 전체 제거. host/plugin 은 보존.
     pub fn remove_user_handler(&self, id: &HookHandlerId) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
             return;
         };
@@ -460,14 +447,9 @@ impl HookHandlerRegistry {
                 });
             }
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => {
-                return Err(HookHandlerDeclError::InvalidShortName(
-                    "lock poisoned".into(),
-                ));
-            }
-        };
+        // poison 을 `InvalidShortName("lock poisoned")` 으로 보고하던 자리다 —
+        // 사용자에게 id 형식이 틀렸다고 말하면서 진짜 원인은 남기지 않았다.
+        let mut inner = self.lock_write();
         push_contribution(
             &mut inner,
             HookHandlerId(decl.id),
@@ -491,10 +473,7 @@ impl HookHandlerRegistry {
         let Some(decls) = read_user_decls(path) else {
             return;
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
             contribs.retain(|c| !matches!(c.owner, HookHandlerOwner::User));
@@ -512,14 +491,11 @@ impl HookHandlerRegistry {
     }
 
     fn ensure_finalized(&self) {
-        let needs = self.inner.read().map(|g| g.dirty).unwrap_or(false);
+        let needs = self.lock_read().dirty;
         if !needs {
             return;
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         if !inner.dirty {
             return;
         }

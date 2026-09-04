@@ -7,15 +7,24 @@
 mod accessors;
 mod detect;
 mod focus;
-#[cfg(test)]
+// gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
+// 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
+// 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
+#[cfg(all(test, feature = "gui"))]
 mod fullscreen_stage_tests;
 mod layout;
 mod mark;
 pub mod mouse;
 pub(crate) mod pane;
-#[cfg(test)]
+// gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
+// 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
+// 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
+#[cfg(all(test, feature = "gui"))]
 mod popup_close_tests;
-#[cfg(test)]
+// gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
+// 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
+// 통째로 깨진다 — `docs/dev-guide/unit-test-isolation.md` "feature 별 테스트 게이팅".
+#[cfg(all(test, feature = "gui"))]
 mod popup_ownership_tests;
 mod tab;
 #[cfg(test)]
@@ -26,6 +35,8 @@ pub mod command_palette;
 pub mod preset_apply;
 pub mod search;
 pub mod selection;
+
+pub use workspace::WorkspaceCloseOrigin;
 
 use std::collections::VecDeque;
 
@@ -264,12 +275,19 @@ pub enum PendingHostEvent {
 pub struct AppState {
     // ── Window-level UI state ──
     pub(crate) active_workspace: usize,
-    /// 카테고리별 마지막 active 워크스페이스(전역 인덱스). 카테고리 quick-switch(T4WS ②⑤)가
+    /// 카테고리별 마지막 active 워크스페이스의 **id**. 카테고리 quick-switch(T4WS ②⑤)가
     /// 대상 카테고리로 점프할 때 그 카테고리의 마지막 포커스 워크스페이스로 착지하기 위한
-    /// 세션-런타임 상태(영속 안 함 — "never visited" 는 first 로 폴백). 전역 인덱스는
-    /// move/close 로 흔들릴 수 있어 사용 시점에 소속 카테고리 일치를 재검증한다.
-    pub(crate) category_last_active:
-        std::collections::HashMap<tasty_utils::id::WorkspaceCategoryId, usize>,
+    /// 세션-런타임 상태(영속 안 함 — "never visited" 는 first 로 폴백).
+    ///
+    /// **전역 인덱스가 아니라 id 다.** 인덱스를 들면 워크스페이스 제거·재정렬마다
+    /// 이 맵을 함께 밀어줘야 하고, 밀어주는 것을 잊은 경로가 생기면 "같은 카테고리의
+    /// 다른 워크스페이스로 착지" 하는 조용한 오작동이 된다(실제로 재정렬 경로 두 곳이
+    /// 그랬다). id 는 순서 변경과 무관하므로 그 유지보수 자체가 없어진다 —
+    /// 착지 시점에 id → 인덱스로 한 번 찾고, 못 찾으면(제거됐으면) first 로 폴백한다.
+    pub(crate) category_last_active: std::collections::HashMap<
+        tasty_utils::id::WorkspaceCategoryId,
+        tasty_utils::id::WorkspaceId,
+    >,
     /// Whether the settings window is open.
     pub(crate) settings_open: bool,
     /// Whether the plugins window is open.
@@ -1490,8 +1508,8 @@ impl AppState {
     //    자체가 사라지는" 동일 로직이라 여기 모아 dedup 한다. ──
 
     /// 지정 workspace 의 `ClosedItem` snapshot 을 만든다(push 는 호출자 책임 —
-    /// `close_case_workspace` 는 `save_snapshot` 조건부, `close_workspace_at` 은
-    /// 무조건이라 호출 여부 자체가 다르다).
+    /// 두 호출자 모두 조건부다: `close_case_workspace` 는 `save_snapshot` 인자로,
+    /// `close_workspace_at` 은 [`WorkspaceCloseOrigin`] 에서 파생한 값으로 가른다).
     fn capture_workspace_snapshot(engine: &CoreState, ws_idx: usize) -> crate::model::ClosedItem {
         let mut snap_fn = crate::core::surface_registry::snapshot_fn_for(&engine.surface_registry);
         let ws = &engine.workspaces[ws_idx];
@@ -1517,8 +1535,29 @@ impl AppState {
         targets
     }
 
+    /// 워크스페이스가 `engine.workspaces` 에서 **제거된 직후** 반드시 도는 뒷정리 —
+    /// plugin 에 나가는 `workspace.closed` 발화 + workspace scope memory purge.
+    ///
+    /// **제거 경로가 셋이라 초크포인트로 모았다.** 각자 쏘던 때 실제로 하나가
+    /// 빠져 있었다(인라인 cascade — 마지막 터미널이 스스로 종료돼 워크스페이스가
+    /// 사라지는 경로에서 `workspace.closed` 가 안 나갔다). 넷째 경로가 생겨도
+    /// 여기를 지나기만 하면 같은 누락이 반복되지 않는다. 현재 호출자:
+    ///
+    /// - [`AppState::close_workspace_at`] — GUI 닫기 · `workspace.close` IPC
+    /// - `AppState::close_case_workspace`(`state/pane.rs`) — 인라인 cascade
+    /// - `app::dispatch_domain::cascade_surface_closed` — Core cascade
+    ///
+    /// `path` 는 close 계측의 경로 구분값(`"gui"`/`"ipc"`/`"inline"`/`"cascade"`)이다.
+    pub(crate) fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str) {
+        self.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
+        let t = std::time::Instant::now();
+        self.purge_workspace_memory_scope(workspace_id);
+        crate::close_trace::log_ws_purge(t, path);
+    }
+
     /// workspace scope 의 memory entry 정리(안의 surface 들은 각자
-    /// `cleanup_surface` 가 자기 scope 를 purge).
+    /// `cleanup_surface` 가 자기 scope 를 purge). 발화와 짝지어 돌아야 하므로
+    /// 직접 부르지 말고 [`AppState::after_workspace_removed`] 를 쓴다.
     fn purge_workspace_memory_scope(&mut self, workspace_id: u32) {
         let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
         match self.with_memory(|m| m.purge_scope(&ws_scope)) {

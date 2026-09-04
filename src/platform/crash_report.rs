@@ -266,7 +266,12 @@ fn init_tracing() {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    let stderr_layer = tracing_subscriber::fmt::layer().with_filter(make_env_filter());
+    // `fmt::layer()` 의 기본 writer 는 **stdout** 이다 — 그대로 두면 진단 로그가
+    // 명령 출력에 섞인다. 이 제품에서 stdout 은 에이전트가 파싱하는 채널이라
+    // (`tasty list tree | jq .`), 경고 한 줄이 JSON 앞에 붙는 것만으로 깨진다.
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_filter(make_env_filter());
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(HostLogWriter)
         .with_ansi(false)

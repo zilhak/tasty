@@ -291,4 +291,37 @@ mod tests {
         );
         assert_eq!(out, json!({"a": ["hi", {"b": 42}]}));
     }
+
+    #[test]
+    fn agent_stream_turn_correlation_sequence_substitutes_only_value_slots() {
+        // agent-stream 턴 correlation 웹훅이 거는 시퀀스(문서 등록 예시와 같은 형태):
+        // turn_start 의 request_id 와 claude.tell 의 message 만 body 에서 채워지고,
+        // method·surface 같은 owner 고정 리터럴은 치환 대상이 아니다(ADR-0046 불변식 1).
+        let ctx = SubstitutionContext {
+            body: json!({"request_id": "req-8f3a", "prompt": "summarize the build log"}),
+            ..Default::default()
+        };
+        let turn_start_params = substitute_params(
+            &json!({"surface": 42, "request_id": "${body.request_id}"}),
+            &ctx,
+        );
+        assert_eq!(
+            turn_start_params,
+            json!({"surface": 42, "request_id": "req-8f3a"}),
+            "request_id 는 값 슬롯에서 치환되고 surface 리터럴은 그대로다"
+        );
+        let tell_params =
+            substitute_params(&json!({"message": "${body.prompt}", "surface": 42}), &ctx);
+        assert_eq!(
+            tell_params,
+            json!({"message": "summarize the build log", "surface": 42})
+        );
+        // 객체 key 위치의 `${...}` 는 치환되지 않는다(값 leaf 만).
+        let key_shaped = substitute_params(&json!({"${body.request_id}": "x"}), &ctx);
+        assert_eq!(
+            key_shaped,
+            json!({"${body.request_id}": "x"}),
+            "key 위치는 절대 치환하지 않는다"
+        );
+    }
 }

@@ -7,11 +7,18 @@
 mod adapters;
 mod app;
 mod boot;
+// 셀 색 해석 — gui 게이트 밖이다. 렌더러가 쓰지만 순수 계산이라
+// headless 의 `debug.glyph_color` 도 같은 함수로 답한다.
+mod cell_palette;
 mod clipboard;
 mod close_trace;
 mod completion_strategy;
 mod core;
 mod db;
+#[cfg(test)]
+mod design_token_guard;
+#[cfg(test)]
+mod dpi_conversion_guard;
 mod file;
 #[cfg(feature = "gui")]
 mod gfx;
@@ -24,6 +31,8 @@ mod model;
 mod platform;
 mod plugin_bridge;
 mod ports;
+#[cfg(test)]
+mod source_guards;
 mod state;
 mod store;
 #[cfg(test)]
@@ -34,6 +43,10 @@ mod waker;
 mod webhook;
 
 use anyhow::Result;
+
+/// 락 poison 복구 헬퍼 — 실체는 `tasty-utils` 에 있다(소비 크레이트가 셋이라 leaf 로
+/// 올렸다). 본체 코드가 `crate::poison::…` 로 계속 부르도록 이름만 잇는다.
+pub(crate) use tasty_utils::poison;
 
 pub use tasty_font as font;
 pub use tasty_settings as settings;

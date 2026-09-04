@@ -44,17 +44,31 @@ pub(crate) fn test_state_with_memory(
         }],
     }))
     .expect("test SurfaceKindDecl");
-    crate::core::surface_registry::webview_kind::register_webview_kind(
-        "com.tasty.markdown",
-        &decl.kind,
-    );
-    let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
-    crate::plugin_bridge::remote_kind::register_remote_kind(
-        &engine.surface_registry,
-        "com.tasty.markdown",
-        &decl,
-        host_cmd_tx,
-    );
+    // WEBVIEW_KINDS 는 프로세스 전역이라, 이 register 가 webview_kind 의 poison/query
+    // 테스트와 병렬로 끼어들면 그쪽의 `!is_webview_kind("markdown")` 단언을 깨뜨린다.
+    // 그 전역을 만지는 테스트가 공유하는 락으로 이 register 를 감싼다.
+    {
+        let _g = crate::core::surface_registry::webview_kind::WEBVIEW_KIND_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        crate::core::surface_registry::webview_kind::register_webview_kind(
+            "com.tasty.markdown",
+            &decl.kind,
+        );
+    }
+    // remote kind 등록은 gui 전용 모듈(`plugin_bridge::remote_kind`)이라 headless
+    // 테스트 빌드에는 없다. 이 픽스처를 쓰는 headless 테스트(intent drain 등)는
+    // markdown surface 생성 경로를 타지 않으므로 등록만 건너뛴다.
+    #[cfg(feature = "gui")]
+    {
+        let (host_cmd_tx, _host_cmd_rx) = std::sync::mpsc::channel();
+        crate::plugin_bridge::remote_kind::register_remote_kind(
+            &engine.surface_registry,
+            "com.tasty.markdown",
+            &decl,
+            host_cmd_tx,
+        );
+    }
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
@@ -1066,6 +1080,7 @@ fn server_push_apply_is_not_blocked_by_the_mirror_gate() {
 
 /// 점유(soft) 중 surface 는 Completion 하이라이트가 억제된다: `regions_from_state` 의
 /// 해당 region `kind` 가 `None`. 점유 없이 attention 만 있으면 `Some(Completion)`(대조군).
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn occupancy_suppresses_completion_highlight() {
     use crate::adapters::ui::divider::regions_from_state;
@@ -1111,6 +1126,7 @@ fn occupancy_suppresses_completion_highlight() {
 
 /// NeedsInput 은 점유보다 우선순위가 높아 점유 중에도 억제되지 않는다 — "지금 답하지
 /// 않으면 멈춘다"는 신호를 점유(정상적으로 잡혀 작업 중)가 가리면 안 되기 때문.
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn needs_input_not_suppressed_by_occupancy() {
     use crate::adapters::ui::divider::regions_from_state;
@@ -1467,6 +1483,7 @@ fn next_prev_workspace_in_active_category_noop_when_alone() {
 
 // ---- resolve_inherit_cwd_from_surface ----
 
+#[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
 #[test]
 fn resolve_inherit_cwd_from_markdown_surface() {
     // markdown(EguiMeshSurface) 의 source_cwd(파일 부모 디렉터리) 로 검증.
@@ -1500,6 +1517,7 @@ fn resolve_inherit_cwd_from_markdown_surface() {
     );
 }
 
+#[cfg(feature = "gui")] // markdown surface 생성이 gui 전용 remote-kind 등록에 의존한다
 #[test]
 fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
     let (mut state, mut engine) = test_state();
@@ -1639,6 +1657,7 @@ fn two_pane_setup(
     (pane_a, pane_b)
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn switch_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1666,6 +1685,7 @@ fn switch_tab_on_other_pane_moves_focus() {
     );
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn focus_pane_action_moves_focus_without_switching_tab() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1712,6 +1732,7 @@ fn focus_pane_action_moves_focus_without_switching_tab() {
     );
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn scroll_left_and_right_on_other_pane_move_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1741,6 +1762,7 @@ fn scroll_left_and_right_on_other_pane_move_focus() {
     }
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn close_tab_on_other_pane_moves_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1784,6 +1806,7 @@ fn close_tab_on_other_pane_moves_focus() {
     );
 }
 
+#[cfg(feature = "gui")] // gui 어댑터(divider / tab_bar / egui 좌표)를 직접 부르는 테스트
 #[test]
 fn context_menu_actions_do_not_move_focus() {
     use crate::adapters::ui::tab_bar::{TabBarAction, apply_tab_bar_actions};
@@ -1927,5 +1950,306 @@ fn workspace_close_purges_each_surface_scope_once() {
         guard.purge_scope_calls().len(),
         sids.len(),
         "surface 수만큼만 purge 해야 한다 (2N 이면 중복 회귀)"
+    );
+}
+
+// ---- 에이전트 close 가 사용자 포커스를 옮기지 않는다 (workspace/tab/pane 3계층) ----
+//
+// 세 계층 모두 인덱스(`active_workspace` / `active_tab`) 또는 무조건 대입
+// (`focused_pane`)을 쓰고 있어, 사용자가 **보고 있지 않은** 대상을 닫아도 시야가
+// 밀렸다(불가침 원칙 1 위반). 단정은 인덱스가 아니라 **id** 로 한다 — 인덱스는
+// 보존돼도 가리키는 대상이 바뀔 수 있기 때문이다.
+//
+// 규칙: 닫힌 것이 사용자가 보던 대상 **자체**일 때만 시야가 움직인다.
+
+/// workspace 계층 — 앞쪽 워크스페이스가 통째로 닫혀도 보던 워크스페이스가 유지된다.
+#[test]
+fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
+    let (mut state, mut engine) = test_state();
+    let victim_sid = engine.workspaces[0].all_surface_ids()[0];
+    for _ in 0..3 {
+        add_test_workspace(&mut state, &mut engine);
+    }
+    state.switch_workspace(&mut engine, 2);
+    let viewed_id = engine.workspaces[2].id;
+
+    // 에이전트가 index 0 워크스페이스의 마지막 surface 를 닫는다 → workspace 째 cascade.
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, victim_sid, false));
+
+    assert_eq!(engine.workspaces.len(), 3);
+    assert_eq!(
+        engine.workspaces[state.active_workspace].id, viewed_id,
+        "앞쪽 워크스페이스가 닫혀도 사용자가 보던 워크스페이스는 그대로여야 한다"
+    );
+}
+
+/// workspace 계층 — 보던 워크스페이스 **자체**를 닫으면 이동은 정상이다(대상 소멸).
+#[test]
+fn closing_the_viewed_workspace_moves_to_a_neighbour() {
+    let (mut state, mut engine) = test_state();
+    for _ in 0..2 {
+        add_test_workspace(&mut state, &mut engine);
+    }
+    state.switch_workspace(&mut engine, 1);
+    let viewed_sid = engine.workspaces[1].all_surface_ids()[0];
+    let survivors: Vec<u32> = [engine.workspaces[0].id, engine.workspaces[2].id].into();
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, viewed_sid, false));
+
+    assert_eq!(engine.workspaces.len(), 2);
+    assert!(
+        survivors.contains(&engine.workspaces[state.active_workspace].id),
+        "닫힌 대상이 보던 워크스페이스였으면 생존 워크스페이스로 이동한다"
+    );
+}
+
+/// tab 계층 — 앞쪽 탭이 닫혀도 보던 탭(=focused surface)이 유지된다.
+#[test]
+fn closing_an_earlier_tab_keeps_the_viewed_tab() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state.add_tab(&mut engine).unwrap();
+    state.add_tab(&mut engine).unwrap();
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    // 사용자는 가운데 탭(index 1)을 본다.
+    engine.workspaces[state.active_workspace]
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+        .unwrap()
+        .active_tab = 1;
+    let viewed_tab_id = {
+        let pane = state
+            .active_workspace(&engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .unwrap();
+        pane.tabs[1].id
+    };
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
+
+    let pane = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .find_pane(pane_id)
+        .unwrap();
+    assert_eq!(pane.tabs.len(), 2);
+    assert_eq!(
+        pane.tabs[pane.active_tab].id, viewed_tab_id,
+        "앞쪽 탭이 닫혀도 사용자가 보던 탭은 그대로여야 한다"
+    );
+}
+
+/// pane 계층 — 포커스와 무관한 pane 이 닫혀도 `focused_pane` 이 유지된다.
+#[test]
+fn closing_an_unfocused_pane_keeps_the_focused_pane() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
+    assert_eq!(pane_ids.len(), 3);
+    // 사용자는 마지막 pane 에 포커스를 두고 있다. sid0 은 첫 pane 소속.
+    let focused_pane = *pane_ids.last().unwrap();
+    engine.workspaces[state.active_workspace].focused_pane = focused_pane;
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
+
+    assert_eq!(
+        state.active_workspace(&engine).focused_pane,
+        focused_pane,
+        "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
+    );
+}
+
+/// pane 계층 — 포커스 pane 자체를 닫으면 생존 pane 으로 재배정된다(대상 소멸).
+#[test]
+fn closing_the_focused_pane_reassigns_focus() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    let (_, sid0_pane) = engine.find_workspace_index_for_surface(sid0).unwrap();
+    engine.workspaces[state.active_workspace].focused_pane = sid0_pane;
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
+
+    let ws = state.active_workspace(&engine);
+    assert_ne!(ws.focused_pane, sid0_pane);
+    assert!(
+        ws.pane_layout().find_pane(ws.focused_pane).is_some(),
+        "포커스 pane 을 닫았으면 생존 pane 으로 재배정돼야 한다"
+    );
+}
+
+// ---- 에이전트 close 와 사용자 close 가 갈리는 축 ----
+//
+// 포커스는 위 3계층 테스트가 고정한다. 여기서 고정하는 것은 `close_workspace_at`
+// 이 `WorkspaceCloseOrigin` 에서 파생시키는 세 부수효과다 — 되돌리기 스택,
+// plugin 에 실리는 close reason, 그리고 (아래 핸들러 테스트에서) 계측 경로값.
+// 불가침 원칙 1: 에이전트 행동의 부수효과는 사용자 상태에 닿지 않는다.
+
+#[test]
+fn agent_close_does_not_record_the_workspace_for_undo() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
+
+    assert!(
+        engine.closed_items.is_empty(),
+        "에이전트가 닫은 것은 사용자의 되돌리기 스택에 들어가면 안 된다"
+    );
+}
+
+#[test]
+fn user_close_still_records_the_workspace_for_undo() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
+
+    assert_eq!(engine.closed_items.len(), 1);
+}
+
+/// 에이전트가 닫으면 plugin `surface.closed` 의 reason 도 에이전트여야 한다.
+///
+/// 되돌리기 스택과 **같은 축**인데 값이 따로 있어서, 예전에는 스냅샷만 갈리고
+/// 이쪽은 사용자로 나갔다. `LifecycleReason::User`/`::Ipc` 매핑은
+/// `app::dispatch::surface_lifecycle` 에서 이 플래그 하나로 결정된다.
+#[test]
+fn agent_close_reports_agent_origin_to_plugins() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::Agent));
+
+    let events = state.take_pending_lifecycle_events();
+    assert!(
+        !events.is_empty(),
+        "닫힌 surface 의 lifecycle 이벤트가 하나는 있어야 한다"
+    );
+    let flags: Vec<bool> = events.iter().map(|e| e.is_user_close).collect();
+    assert!(
+        flags.iter().all(|f| !*f),
+        "에이전트가 닫았는데 plugin 에는 사용자 close 로 나간다: {flags:?}"
+    );
+}
+
+#[test]
+fn user_close_reports_user_origin_to_plugins() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+
+    assert!(state.close_workspace_at(&mut engine, 0, WorkspaceCloseOrigin::User));
+
+    let events = state.take_pending_lifecycle_events();
+    assert!(!events.is_empty());
+    assert!(events.iter().all(|e| e.is_user_close));
+}
+
+/// `workspace.closed` host event 는 **origin 과 무관하게** 나간다.
+///
+/// 어느 명령을 썼느냐에 따라 plugin 이 받는 이벤트가 달라지면 안 된다. 제거 경로별
+/// 발화는 아래 `inline_cascade_...` 가 따로 고정한다.
+#[test]
+fn closing_a_workspace_emits_the_host_event_for_both_origins() {
+    for origin in [WorkspaceCloseOrigin::Agent, WorkspaceCloseOrigin::User] {
+        let (mut state, mut engine) = test_state();
+        add_test_workspace(&mut state, &mut engine);
+        let workspace_id = engine.workspaces[0].id;
+
+        assert!(state.close_workspace_at(&mut engine, 0, origin));
+
+        let emitted = state.take_pending_host_events().iter().any(|e| {
+            matches!(
+                e,
+                crate::state::PendingHostEvent::WorkspaceClosed { workspace_id: id }
+                    if *id == workspace_id
+            )
+        });
+        assert!(emitted, "{origin:?}: workspace.closed host event 가 없다");
+    }
+}
+
+/// `save_snapshot` 과 `is_user_close` 는 **독립 축**이다 — 인라인 cascade 경로에서
+/// 한 값으로 접으면 안 된다.
+///
+/// PTY 프로세스가 스스로 종료돼 도는 cleanup(`cascade_terminal_process_exited`)은
+/// `save_snapshot=false, is_user_close=true` 로 부른다: 셸이 이미 끝나 되살릴 것이
+/// 없으니 되돌리기 스택에는 안 넣지만, 그 종료를 일으킨 것은 에이전트가 아니라
+/// 사람이므로 plugin 에는 사용자 close 로 나가야 한다. 워크스페이스 close 쪽
+/// (`WorkspaceCloseOrigin`)처럼 하나로 접으면 이 조합에서 둘 중 하나가 반드시
+/// 틀린 값이 된다.
+#[test]
+fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+    let ws_idx = state.active_workspace;
+    let surface = engine.workspaces[ws_idx].all_surface_ids()[0];
+    let closed_before = engine.closed_items.len();
+
+    // PTY 종료 cleanup 과 같은 조합: 스냅샷 없음 + 사용자 close.
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface, true));
+
+    assert_eq!(
+        engine.closed_items.len(),
+        closed_before,
+        "스스로 끝난 셸은 되돌리기 스택에 쌓이지 않는다(save_snapshot=false)"
+    );
+    let events = state.take_pending_lifecycle_events();
+    assert!(!events.is_empty(), "close 는 lifecycle 이벤트를 낸다");
+    assert!(
+        events.iter().all(|e| e.is_user_close),
+        "같은 호출이 plugin 에는 사용자 close 로 나가야 한다(is_user_close=true)"
+    );
+}
+
+/// 워크스페이스의 **마지막 surface 가 스스로 닫혀** 워크스페이스까지 사라지는
+/// 인라인 cascade(`AppState::close_case_workspace`)에서도 `workspace.closed` 가
+/// 나간다.
+///
+/// 이 경로는 PTY 프로세스 종료 cleanup 과 egui close 가 쓴다. 한때 여기만 발화를
+/// 빠뜨려서, 같은 소멸이라도 `workspace.close` 로 일으키면 plugin 이 이벤트를 받고
+/// 터미널이 스스로 죽어 사라지면 못 받았다 — 무엇으로 사라졌느냐가 plugin 이 보는
+/// 사실을 갈랐다. 발화를 초크포인트([`AppState::after_workspace_removed`])로 모아
+/// 고쳤고, 이 테스트가 그 경로를 고정한다.
+#[test]
+fn inline_cascade_emits_the_workspace_closed_host_event() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+    let ws_idx = state.active_workspace;
+    let workspace_id = engine.workspaces[ws_idx].id;
+    let surface_ids = engine.workspaces[ws_idx].all_surface_ids();
+    assert_eq!(
+        surface_ids.len(),
+        1,
+        "워크스페이스에 surface 가 하나여야 한다"
+    );
+    let before = engine.workspaces.len();
+
+    // 마지막 surface 를 닫으면 워크스페이스까지 사라진다(Case 4/5).
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface_ids[0], false));
+    assert_eq!(
+        engine.workspaces.len(),
+        before - 1,
+        "워크스페이스가 실제로 사라져야 이 경로를 지난 것이다"
+    );
+
+    let emitted = state.take_pending_host_events().iter().any(|e| {
+        matches!(
+            e,
+            crate::state::PendingHostEvent::WorkspaceClosed { workspace_id: id }
+                if *id == workspace_id
+        )
+    });
+    assert!(
+        emitted,
+        "인라인 cascade 로 사라진 워크스페이스에 workspace.closed 가 없다"
     );
 }

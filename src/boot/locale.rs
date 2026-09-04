@@ -4,6 +4,12 @@
 //! ① 본 프로세스의 i18n 테이블(`crate::i18n::init`)과
 //! ② 자식 프로세스가 상속할 env(`TASTY_LOCALE` / `TASTY_LOCALE_FONT`)에 함께 반영한다.
 //!
+//! 설정값이 내장 언어(`en`/`ko`/`ja`)가 아니면 `tasty-i18n` 이 `~/.tasty/lang/<code>/pack.toml`
+//! 언어팩을 찾는다. 팩이 없거나 형상이 틀리면(`[font]` 부재 등) **영어로 폴백**하고
+//! `LoadReport` 로 알린다 — 그 경우 ②의 `TASTY_LOCALE` 도 실제 적용 언어(`en`)를 싣는다.
+//! 설정값 자체는 어느 경로에서도 고쳐 쓰지 않는다(GUI 는 부팅 후 경고 토스트 1회 —
+//! `app::boot_machine::report_locale_fallback`, headless/CLI 는 로드 시점의 `tracing::warn!`).
+//!
 //! plugin 프로세스는 host i18n 카탈로그에 접근하지 못하고 env 로만 언어를 받으므로
 //! (`crates/tasty-plugin-sdk/src/env.rs`) ② 가 빠지면 plugin UI 는 영어로 고정된다.
 //! host-plugin 크레이트는 `tasty-i18n` 에 의존하지 않고 이 env 를 그대로 자식에
@@ -21,25 +27,21 @@ pub(crate) const LOCALE_FONT_ENV: &str = "TASTY_LOCALE_FONT";
 /// 부팅 시 확정된 로케일 — 본 프로세스 i18n 과 자식 env 의 단일 출처.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedLocale {
-    /// 언어 코드(`en` / `ko` / `ja` …). 설정이 비어 있으면 `en`.
+    /// 실제 적용된 언어 코드(`en` / `ko` / `ja` / 언어팩 코드 …). 요청 언어의 팩이 없어
+    /// 영어로 폴백했으면 `en` — 설정값이 아니라 i18n 테이블이 실제로 담은 언어다.
     pub code: String,
     /// 언어팩이 제공하는 폰트 파일의 절대경로. 언어팩이 폰트를 제공하지 않거나
     /// 내장 폰트를 쓰면 `None` — 이때 `TASTY_LOCALE_FONT` 는 설정하지 않는다(unset).
+    /// 언어팩 `[font]` 선언(`LoadOutcome::Pack { font, .. }`)을 실제 파일로 resolve 하는
+    /// 단계는 아직 없어 현재는 항상 `None` 이다.
     pub font_file: Option<PathBuf>,
 }
 
 impl ResolvedLocale {
-    /// 설정 문자열에서 로케일을 확정한다. 공백/빈 값은 `en` 으로 정규화한다 — 빈 코드는
-    /// host i18n 과 plugin SDK 양쪽에서 "언어 파일 없음" 으로 영어와 같게 동작하지만,
-    /// env 로 빈 문자열이 흘러가면 소비처마다 해석이 갈린다.
-    pub fn from_setting(language: &str) -> Self {
-        let code = language.trim();
+    /// i18n 로드 결과에서 로케일을 확정한다 — `effective` 가 곧 코드다(폴백 반영).
+    pub fn from_report(report: &crate::i18n::LoadReport) -> Self {
         Self {
-            code: if code.is_empty() {
-                "en".to_string()
-            } else {
-                code.to_string()
-            },
+            code: report.effective.clone(),
             font_file: None,
         }
     }
@@ -57,6 +59,18 @@ impl ResolvedLocale {
     }
 }
 
+/// 설정 문자열을 요청 코드로 정규화한다. 공백/빈 값은 `en` — 빈 코드는 host i18n 과
+/// plugin SDK 양쪽에서 "언어 파일 없음" 으로 영어와 같게 동작하지만, env 로 빈 문자열이
+/// 흘러가면 소비처마다 해석이 갈린다.
+pub(crate) fn normalize_code(language: &str) -> String {
+    let code = language.trim();
+    if code.is_empty() {
+        "en".to_string()
+    } else {
+        code.to_string()
+    }
+}
+
 use std::sync::Once;
 
 static INIT: Once = Once::new();
@@ -68,8 +82,9 @@ static INIT: Once = Once::new();
 pub(crate) fn init() {
     INIT.call_once(|| {
         let lang_settings = crate::settings::Settings::load();
-        let locale = ResolvedLocale::from_setting(&lang_settings.general.language);
-        crate::i18n::init(&locale.code);
+        let requested = normalize_code(&lang_settings.general.language);
+        let report = crate::i18n::init(&requested);
+        let locale = ResolvedLocale::from_report(&report);
         export_to_process_env(&locale);
     });
 }
@@ -111,24 +126,46 @@ fn export_to_process_env(locale: &ResolvedLocale) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{LoadOutcome, LoadReport};
+
+    fn report(requested: &str, effective: &str, outcome: LoadOutcome) -> LoadReport {
+        LoadReport {
+            requested: requested.to_string(),
+            effective: effective.to_string(),
+            outcome,
+        }
+    }
 
     #[test]
-    fn from_setting_keeps_code_and_has_no_font() {
-        let l = ResolvedLocale::from_setting("ko");
+    fn from_report_keeps_effective_code_and_has_no_font() {
+        let l = ResolvedLocale::from_report(&report("ko", "ko", LoadOutcome::Builtin));
         assert_eq!(l.code, "ko");
         assert_eq!(l.font_file, None);
     }
 
     #[test]
-    fn from_setting_normalizes_blank_to_en() {
-        assert_eq!(ResolvedLocale::from_setting("").code, "en");
-        assert_eq!(ResolvedLocale::from_setting("  ").code, "en");
-        assert_eq!(ResolvedLocale::from_setting(" ja ").code, "ja");
+    fn from_report_uses_fallback_language_not_the_requested_one() {
+        let l = ResolvedLocale::from_report(&report(
+            "zz",
+            "en",
+            LoadOutcome::PackMissing {
+                expected: PathBuf::from("lang/zz/pack.toml"),
+            },
+        ));
+        assert_eq!(l.code, "en");
+    }
+
+    #[test]
+    fn normalize_code_maps_blank_to_en() {
+        assert_eq!(normalize_code(""), "en");
+        assert_eq!(normalize_code("  "), "en");
+        assert_eq!(normalize_code(" ja "), "ja");
+        assert_eq!(normalize_code("xx"), "xx");
     }
 
     #[test]
     fn env_entries_set_locale_and_unset_font_when_absent() {
-        let l = ResolvedLocale::from_setting("ja");
+        let l = ResolvedLocale::from_report(&report("ja", "ja", LoadOutcome::Builtin));
         let [(k1, v1), (k2, v2)] = l.env_entries();
         assert_eq!(k1, "TASTY_LOCALE");
         assert_eq!(v1, Some(OsString::from("ja")));
