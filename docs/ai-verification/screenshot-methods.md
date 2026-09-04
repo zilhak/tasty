@@ -75,11 +75,26 @@ tasty screenshot --path /abs/win.png --window 2
 # 모달을 띄우고(debug 빌드 전용) X11 창 목록에서 id 를 고른다
 tasty debug settings open --tab general
 for w in $(xdotool search --pid "$TASTY_PID"); do
-  echo "$w $(xdotool getwindowname "$w" 2>/dev/null)"
+  echo "$w  $(xdotool getwindowname "$w" 2>/dev/null)"
 done
-# xdotool 은 입력 전용 더미 창까지 뱉으므로 **창 이름으로 골라야 한다**(빈 이름 = 더미).
-tasty screenshot --path /abs/settings.png --window <위에서 고른 id>
+tasty screenshot --path /abs/settings.png --window <아래 표로 고른 id>
 ```
+
+`xdotool` 은 winit 이 만드는 **입력 전용 더미 창**까지 뱉는다. 더미를 "이름이 비어 있는
+것" 으로 거르면 안 된다 — 더미 이름은 비어 있지 않고 소문자 `tasty` 라, 그 필터를 쓰면
+더미가 후보에 그대로 남아 `Window id <id> not found` 로 실패한다. **찍으려는 창을 제목으로
+직접 지목한다:**
+
+| 창 | 제목 |
+|---|---|
+| 메인 창 | `Tasty` (debug 빌드는 `Tasty (Debug)`) |
+| 설정 | `Tasty Settings` |
+| Plugin 관리 | `Tasty Plugins` |
+| 종료 확인 | `Tasty` |
+| 프리셋 | 번역 문자열 (`preset.window.title` — en `Layout Presets`) |
+
+프리셋 창만 제목이 i18n 이라 `Tasty` 로 시작하지 않는다. 즉 `Tasty` 접두어 필터는 그
+창을 놓치므로, 접두어를 거르개로 쓸 때는 프리셋 창이 대상이 아닌 경우로 한정한다.
 
 존재하지 않는 id 는 `Window id <id> not found` 로 거절된다.
 
