@@ -40,7 +40,8 @@
 //! 위반을 심었을 때 잡히는가**를 묻는 테스트를 함께 넣는다. 각 가드의
 //! `exemption_mutations` 모듈이 그것이다. 검증되지 않은 면제는 그 면제만큼 구멍이다.
 
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 /// 스캔 하한 — 워커가 망가져 파일을 거의 못 읽으면 모든 가드가 조용히 통과한다.
 /// 현재 실측은 1100 개 남짓이라 여유를 두고 잡는다.
@@ -89,6 +90,135 @@ fn rust_sources() -> Vec<(PathBuf, String)> {
         out.len()
     );
     out
+}
+
+/// 스캔 **단위** — `src` 하나와 `crates/<이름>` 각각. 개수 하한(`MIN_SCANNED_FILES`)은
+/// 단위 하나가 통째로 빠져도 통과한다: 실측하면 가장 큰 크레이트가 108 개라
+/// 1114 − 108 = 1006 으로 하한 900 을 안 건드린다. 그래서 개수와 **별개로** 집합을 못박는다.
+/// 강도는 하한 < 개수 고정 < 집합 동등 순이고, 세지는 이유는 정밀도가 아니라 재는 대상이
+/// "몇 개 봤나" 에서 "무엇을 봤나" 로 바뀌기 때문이다.
+///
+/// 이 함수는 순수하다 — 변이 테스트가 조작한 목록을 그대로 먹일 수 있다.
+fn scanned_units(files: &[(PathBuf, String)]) -> BTreeSet<String> {
+    files.iter().filter_map(|(rel, _)| unit_of(rel)).collect()
+}
+
+/// 레포 상대 경로가 속한 스캔 단위. 스캔 루트 밖이면 `None`.
+fn unit_of(rel: &Path) -> Option<String> {
+    let mut parts = rel.components();
+    let first = parts.next()?.as_os_str().to_string_lossy().into_owned();
+    match first.as_str() {
+        "src" => Some("src".to_owned()),
+        "crates" => {
+            let name = parts.next()?.as_os_str().to_string_lossy().into_owned();
+            Some(format!("crates/{name}"))
+        }
+        _ => None,
+    }
+}
+
+/// 스캔과 **독립적인 경로로** 단위 집합을 만든다 — 파일을 훑지 않고 매니페스트의 존재로
+/// 센다. 같은 워커로 두 번 세면 워커의 결함이 양쪽에 똑같이 들어가 대조가 무의미해진다.
+fn expected_units() -> BTreeSet<String> {
+    let root = repo_root();
+    assert!(root.join("src").is_dir(), "`src` 스캔 루트가 없다");
+    let mut out = BTreeSet::from(["src".to_owned()]);
+    let entries = std::fs::read_dir(root.join("crates")).expect("`crates` 를 읽을 수 없다");
+    for entry in entries {
+        let entry = entry.expect("디렉터리 항목을 읽을 수 없다");
+        let is_dir = entry.file_type().expect("파일 종류를 알 수 없다").is_dir();
+        if is_dir && entry.path().join("Cargo.toml").is_file() {
+            out.insert(format!("crates/{}", entry.file_name().to_string_lossy()));
+        }
+    }
+    out
+}
+
+/// `(스캔에서 빠진 단위, 스캔에만 있는 단위)`. 양방향을 다 내는 이유는 개수가 같은 수로
+/// 상쇄될 수 있기 때문이다 — 하나가 빠지고 하나가 들어오면 총수는 안 변한다.
+fn unit_diff(
+    scanned: &BTreeSet<String>,
+    expected: &BTreeSet<String>,
+) -> (Vec<String>, Vec<String>) {
+    (
+        expected.difference(scanned).cloned().collect(),
+        scanned.difference(expected).cloned().collect(),
+    )
+}
+
+/// 단위별 파일 수. 변이가 겨냥할 최대 크레이트를 고르는 데 쓴다.
+fn unit_counts(files: &[(PathBuf, String)]) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for (rel, _) in files {
+        if let Some(unit) = unit_of(rel) {
+            *out.entry(unit).or_insert(0usize) += 1;
+        }
+    }
+    out
+}
+
+#[test]
+fn every_scan_unit_contributes_at_least_one_file() {
+    let files = rust_sources();
+    let (missing, extra) = unit_diff(&scanned_units(&files), &expected_units());
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "스캔 단위 집합이 어긋난다 — 빠진 단위 {missing:?} / 여분 {extra:?}. \
+         개수 하한은 단위 하나가 통째로 빠져도 통과하므로 이 대조가 따로 필요하다"
+    );
+}
+
+/// 집합 동등이라는 **면제 없는 판정**도 자기를 겨냥한 변이로 못박는다 — 판정기가 돌기만
+/// 하고 아무것도 못 보는 상태를 배제한다.
+mod scan_unit_mutations {
+    use super::*;
+
+    /// 크레이트 하나를 스캔 결과에서 통째로 지운다. **개수 하한은 여전히 통과**하는
+    /// 크기라, 이 변이가 죽는 것은 오직 집합 대조 때문이다.
+    #[test]
+    fn a_crate_dropped_from_the_scan_is_reported_missing() {
+        let files = rust_sources();
+        let counts = unit_counts(&files);
+        let victim = counts
+            .iter()
+            .filter(|(unit, _)| unit.starts_with("crates/"))
+            .max_by_key(|(_, n)| **n)
+            .map(|(unit, _)| unit.clone())
+            .expect("크레이트 단위가 하나도 없다");
+        let mutated: Vec<(PathBuf, String)> = files
+            .into_iter()
+            .filter(|(rel, _)| unit_of(rel).as_deref() != Some(victim.as_str()))
+            .collect();
+        assert!(
+            mutated.len() >= MIN_SCANNED_FILES,
+            "변이가 개수 하한까지 건드리면 무엇이 이 변이를 죽였는지 갈리지 않는다 — 남은 {}",
+            mutated.len()
+        );
+        let (missing, extra) = unit_diff(&scanned_units(&mutated), &expected_units());
+        assert_eq!(missing, vec![victim], "빠진 단위를 지목하지 못했다");
+        assert!(extra.is_empty(), "여분이 생기면 안 된다: {extra:?}");
+    }
+
+    /// 반대 방향 — 스캔에만 있고 매니페스트 쪽에 없는 단위도 잡아야 한다.
+    #[test]
+    fn a_unit_absent_from_the_manifest_side_is_reported_extra() {
+        let ghost = "crates/definitely-not-a-crate".to_owned();
+        let mut scanned = scanned_units(&rust_sources());
+        scanned.insert(ghost.clone());
+        let (missing, extra) = unit_diff(&scanned, &expected_units());
+        assert!(missing.is_empty(), "빠진 단위가 없어야 한다: {missing:?}");
+        assert_eq!(extra, vec![ghost], "여분 단위를 지목하지 못했다");
+    }
+
+    /// 정당한 형태는 그대로 통과해야 한다 — 판정기가 무조건 빨간 것이 아님을 못박는다.
+    #[test]
+    fn the_unmutated_scan_passes() {
+        let (missing, extra) = unit_diff(&scanned_units(&rust_sources()), &expected_units());
+        assert!(
+            missing.is_empty() && extra.is_empty(),
+            "{missing:?} / {extra:?}"
+        );
+    }
 }
 
 /// 주석·문자열·문자 리터럴을 공백으로 덮은 사본을 만든다. 줄바꿈은 그대로 두므로
