@@ -46,6 +46,83 @@ pub fn os_home_dir() -> Option<PathBuf> {
     BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
 }
 
+/// 읽거나 해석하지 못한 사용자 파일을 옆자리로 옮겨 보존한다. 성공하면 옮긴 경로.
+///
+/// 설정·레이아웃처럼 **해석 실패를 기본값으로 폴백하는** 경로에서 쓴다. 그런 경로의
+/// 진짜 위험은 폴백 자체가 아니라 **그 뒤의 저장**이다 — 기본값을 원래 자리에 쓰면
+/// 사용자가 쓴 원본이 사라진다. 원본을 먼저 옮겨 두면 이후 저장이 새 파일을 만들어도
+/// 데이터가 남는다.
+///
+/// `rename` 이므로 원본 자리는 비고, 다음 로드는 "파일 없음"(정상 기본값 경로)이 된다 —
+/// 같은 파일에 대해 백업이 반복 생성되지 않는다. `<name>.bak` 이 이미 있으면 덮어쓰지
+/// 않고 `<name>.bak.2`, `.bak.3` … 를 찾는다. 먼저 만들어진 백업이 더 원본에 가깝기
+/// 때문이다.
+///
+/// **실패하면 호출자는 그 자리에 쓰면 안 된다.** 원본을 보호할 다른 수단이 없다.
+/// 읽기 자체가 실패한 경우(권한·IO 오류)에는 이 함수를 부르지 않는다 — 내용을 확인하지
+/// 못한 파일을 옮기면 일시적 오류에도 사용자 파일이 자리를 뜬다.
+///
+/// `Ok(None)` 은 **옮길 것이 이미 없었다**는 뜻이다. 부팅 중 같은 파일을 두 곳에서
+/// 읽으면(설정은 실제로 그렇다) 둘 다 해석에 실패하고, 한쪽이 먼저 옮긴 뒤 다른 쪽의
+/// `rename` 이 `NotFound` 로 실패한다. 이때 원본은 이미 안전하게 백업에 있으므로 저장을
+/// 막을 이유가 없다 — 실패로 취급하면 경합에 진 쪽이 애먼 저장 금지를 걸어버린다.
+pub fn preserve_corrupt_file(path: &Path) -> std::io::Result<Option<PathBuf>> {
+    let Some(candidate) = next_backup_slot(path) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("{MAX_BACKUPS} backups already exist for {}", path.display()),
+        ));
+    };
+    match std::fs::rename(path, &candidate) {
+        Ok(()) => Ok(Some(candidate)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// 한 파일이 쌓아둘 수 있는 백업 개수(`.bak` + `.bak.2` … `.bak.9`).
+const MAX_BACKUPS: u32 = 9;
+
+/// [`preserve_corrupt_file`] 이 지금 쓸 백업 이름. 예산이 소진됐으면 `None`.
+fn next_backup_slot(path: &Path) -> Option<PathBuf> {
+    let mut candidate = with_appended_extension(path, "bak");
+    let mut n = 2;
+    while candidate.exists() {
+        if n > MAX_BACKUPS {
+            return None;
+        }
+        candidate = with_appended_extension(path, &format!("bak.{n}"));
+        n += 1;
+    }
+    Some(candidate)
+}
+
+/// [`preserve_corrupt_file`] 이 **지금 부르면 예산 소진으로 실패하는가** — 파일을
+/// 건드리지 않고 자리만 센다.
+///
+/// 보존은 첫 저장 시점에 일어나는데, 그보다 훨씬 이른 **부팅 알림** 시점에 이미
+/// "이 파일은 옆으로 옮겨질 것" 이라고 말할지 "옮기지 못해 저장이 막힌다" 고 말할지를
+/// 정해야 한다. 그 판정을 예산 계산을 복제하지 않고 여기서 함께 답한다 — 두 곳이
+/// 어긋나면 사용자에게 **사실과 반대인 안내**가 나간다(보관됐다고 알리고 실제로는
+/// 보관되지 않는다).
+///
+/// 판정과 실제 보존 사이에 다른 프로세스가 `.bak` 을 지우거나 만들 수 있다 — 이 값은
+/// 알림 문구를 고르는 데만 쓰고, 저장 여부는 [`preserve_corrupt_file`] 의 실제 결과가
+/// 정한다.
+pub fn backup_budget_is_exhausted(path: &Path) -> bool {
+    next_backup_slot(path).is_none()
+}
+
+/// `config.toml` + `bak` → `config.toml.bak`. `Path::with_extension` 은 기존 확장자를
+/// **대체**하므로(`config.bak`) 쓸 수 없다 — 원래 이름이 백업에 그대로 남아야 사용자가
+/// 무엇의 백업인지 안다.
+fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".");
+    name.push(ext);
+    PathBuf::from(name)
+}
+
 /// 홈 아래 경로를 `~/…` 로 줄여 **표시용** 문자열로 만든다. 홈 밖이거나 홈을 못 찾으면
 /// 원래 경로 그대로. 파일 접근에 쓰라고 만든 값이 아니다 — 표 한 칸을 홈 접두사가
 /// 통째로 잡아먹는 것을 막는 용도다.
@@ -265,5 +342,34 @@ mod tests {
     #[cfg(not(windows))]
     fn from_slash_is_noop_on_non_windows() {
         assert_eq!(from_slash("src/file/format.rs"), "src/file/format.rs");
+    }
+
+    /// 백업은 원래 이름을 통째로 남기고(`config.toml.bak`), 두 번째부터 번호가 붙는다 —
+    /// 먼저 만들어진 백업이 더 원본에 가까우므로 덮어쓰지 않는다.
+    #[test]
+    fn backups_do_not_clobber_each_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.toml");
+
+        std::fs::write(&path, "first").unwrap();
+        let first = preserve_corrupt_file(&path).unwrap().unwrap();
+        assert_eq!(first, tmp.path().join("config.toml.bak"));
+
+        std::fs::write(&path, "second").unwrap();
+        let second = preserve_corrupt_file(&path).unwrap().unwrap();
+        assert_eq!(second, tmp.path().join("config.toml.bak.2"));
+
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "first");
+        assert_eq!(std::fs::read_to_string(&second).unwrap(), "second");
+        assert!(!path.exists(), "원본은 자리를 떠야 다음 저장이 안전하다");
+    }
+
+    /// 옮길 것이 이미 없으면 실패가 아니다. 부팅 중 같은 파일을 두 곳에서 읽으면 한쪽이
+    /// 먼저 옮기고, 다른 쪽은 여기로 온다 — 그때 저장을 막으면 애먼 금지가 걸린다.
+    #[test]
+    fn already_moved_file_is_not_a_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("config.toml");
+        assert_eq!(preserve_corrupt_file(&missing).unwrap(), None);
     }
 }
