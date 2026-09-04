@@ -244,7 +244,7 @@ pub fn matches_to_request(
         if sub_decl.stdin_json
             && let Some(stdin_json) = read_stdin_json()
         {
-            merge_stdin_params(&mut params, g, &stdin_json);
+            merge_stdin_params(&mut params, g, &stdin_json)?;
         }
         // claude CLI의 resolve_surface_id와 동일한 폴백 규칙. plugin이 정의한
         // `surface` (u32) 인자가 사용자 입력에 없으면 TASTY_SURFACE_ID env로 채운다.
@@ -439,9 +439,18 @@ fn try_read_stdin_json() -> Result<Value, StdinSkipReason> {
 /// CLI 로 지정되지 않은 params 필드를, stdin JSON 의 해당 키에서 꺼내 채운다.
 /// 매칭 키는 `arg.stdin_field` 우선, 없으면 `arg.name`. CLI 가 이미 채운 키는
 /// 건드리지 않는다.
-fn merge_stdin_params(params: &mut Map<String, Value>, group: &CliArgGroup, stdin: &Value) {
+///
+/// **선언 타입은 여기서도 강제한다.** 이 경로는 `extract_value`(=`--flag` 경로)를
+/// 지나지 않으므로, 강제를 그쪽에만 두면 같은 `CliArg` 선언이 **들어온 문으로만**
+/// 참인 보증이 된다(ADR-0132). 매니페스트가 `u32` 라고 적어둔 인자에 stdin JSON 이
+/// 객체나 문자열을 실어 보내면 그대로 params 에 들어가 하류가 그것을 받는다.
+fn merge_stdin_params(
+    params: &mut Map<String, Value>,
+    group: &CliArgGroup,
+    stdin: &Value,
+) -> Result<()> {
     let Some(obj) = stdin.as_object() else {
-        return;
+        return Ok(());
     };
     for arg in group.positional.iter().chain(group.flags.iter()) {
         if params.contains_key(&arg.name) {
@@ -451,9 +460,37 @@ fn merge_stdin_params(params: &mut Map<String, Value>, group: &CliArgGroup, stdi
         if let Some(v) = obj.get(key)
             && !v.is_null()
         {
-            params.insert(arg.name.clone(), v.clone());
+            params.insert(arg.name.clone(), coerce_stdin_value(v, arg)?);
         }
     }
+    Ok(())
+}
+
+/// stdin JSON 값을 선언 타입에 맞춘다. 숫자 타입은 `--flag` 경로와 **같은 규칙**을
+/// 쓴다 — 숫자로 읽히면 숫자로, 아니면 거부. `string`/`bool` 은 JSON 이 이미 타입을
+/// 싣고 오므로 그대로 통과시킨다(그 둘의 강제는 이 ADR 의 범위 밖이다).
+fn coerce_stdin_value(v: &Value, arg: &CliArg) -> Result<Value> {
+    match arg.ty {
+        CliArgType::U32 => coerce_stdin_number::<u32>(v, arg),
+        CliArgType::I64 => coerce_stdin_number::<i64>(v, arg),
+        CliArgType::String | CliArgType::Bool => Ok(v.clone()),
+    }
+}
+
+/// JSON 값을 문자열 한 형태로 눕힌 뒤 `parse_number` 에 넘긴다. 눕히는 이유는
+/// 오류 메시지를 `--flag` 경로와 같게 하기 위해서다 — 호출자는 두 문 중 어느 쪽으로
+/// 들어왔든 "어느 인자의 어떤 값이 문제인가" 를 같은 문장으로 받는다.
+/// `1.5`(정수 아님) · `true` · 배열/객체는 전부 여기서 거부된다.
+fn coerce_stdin_number<T>(v: &Value, arg: &CliArg) -> Result<Value>
+where
+    T: std::str::FromStr,
+    Value: From<T>,
+{
+    let raw = match v {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    Ok(Value::from(parse_number::<T>(&raw, arg)?))
 }
 
 /// 숫자 인자는 **값이 왔는데 못 읽으면 오류**다.
@@ -683,7 +720,8 @@ mod tests {
             "irrelevant": 42
         });
         let mut params = Map::new();
-        merge_stdin_params(&mut params, &group, &stdin);
+        merge_stdin_params(&mut params, &group, &stdin)
+            .expect("이 회차의 stdin 값은 선언 타입과 맞다");
         assert_eq!(params["session"], Value::String("abc-123".into()));
         assert_eq!(params["message"], Value::String("hi".into()));
         // CLI arg 에 없는 stdin 키는 params 에 들어오지 않는다.
@@ -710,7 +748,8 @@ mod tests {
         let stdin = serde_json::json!({ "session_id": "from-stdin" });
         let mut params = Map::new();
         params.insert("session".into(), Value::String("from-cli".into()));
-        merge_stdin_params(&mut params, &group, &stdin);
+        merge_stdin_params(&mut params, &group, &stdin)
+            .expect("이 회차의 stdin 값은 선언 타입과 맞다");
         assert_eq!(params["session"], Value::String("from-cli".into()));
     }
 
@@ -733,7 +772,8 @@ mod tests {
         };
         let stdin = serde_json::json!({ "session_id": null });
         let mut params = Map::new();
-        merge_stdin_params(&mut params, &group, &stdin);
+        merge_stdin_params(&mut params, &group, &stdin)
+            .expect("이 회차의 stdin 값은 선언 타입과 맞다");
         assert!(!params.contains_key("session"));
     }
 
@@ -753,6 +793,90 @@ mod tests {
     /// 예전에는 `parse().ok()` 로 `None` 이 되어 하류에서 "플래그 없음" 과 같아졌고,
     /// 그 자리에 없을 때 도는 기본값이 들어갔다. `--surface` 의 기본값은 호출자 자신이라
     /// 명령이 **자기에게 배달**됐다 — 종료코드 0, 오류 없음. 실제로 그렇게 잃은 적이 있다.
+    /// stdin JSON 경로는 `extract_value` 를 지나지 않는다. 강제를 한쪽 문에만 두면
+    /// 같은 `CliArg` 선언이 들어온 문에 따라 다른 뜻이 된다 — 그 비대칭을 고정한다.
+    fn spawn_group(entry: &PluginCliEntry) -> &CliArgGroup {
+        entry
+            .cli
+            .arg_groups
+            .get("spawn_args")
+            .expect("전제: sample_entry 에 spawn_args 가 있다")
+    }
+
+    #[test]
+    fn stdin_json_number_flag_takes_a_number_and_a_numeric_string() {
+        tasty_i18n::init("en");
+        let entry = sample_entry();
+        let g = spawn_group(&entry);
+
+        let mut params = Map::new();
+        let stdin = serde_json::json!({ "surface": 42 });
+        merge_stdin_params(&mut params, g, &stdin).expect("숫자는 통과해야 한다");
+        assert_eq!(params.get("surface"), Some(&Value::from(42u32)));
+
+        // 문자열이라도 숫자로 읽히면 `--surface 42` 와 같게 다룬다 — 두 문의 규칙이
+        // 달라지면 그 자체가 다음 오보의 자리가 된다.
+        let mut params = Map::new();
+        let stdin = serde_json::json!({ "surface": "42" });
+        merge_stdin_params(&mut params, g, &stdin).expect("숫자 문자열도 통과해야 한다");
+        assert_eq!(params.get("surface"), Some(&Value::from(42u32)));
+    }
+
+    #[test]
+    fn stdin_json_non_numeric_value_for_a_number_flag_is_rejected() {
+        tasty_i18n::init("en");
+        let entry = sample_entry();
+        let g = spawn_group(&entry);
+
+        for bad in [
+            serde_json::json!({ "surface": "conductor" }),
+            serde_json::json!({ "surface": 1.5 }),
+            serde_json::json!({ "surface": true }),
+            serde_json::json!({ "surface": { "id": 1 } }),
+        ] {
+            let mut params = Map::new();
+            let err = merge_stdin_params(&mut params, g, &bad)
+                .expect_err("비수치 stdin 값은 오류여야 한다: {bad}");
+            let msg = err.to_string();
+            assert!(msg.contains("surface"), "어느 인자인지 담아야 한다: {msg}");
+            assert!(
+                params.get("surface").is_none(),
+                "거부된 값이 params 에 남으면 안 된다"
+            );
+        }
+    }
+
+    #[test]
+    fn stdin_json_does_not_override_a_value_the_cli_already_gave() {
+        tasty_i18n::init("en");
+        let entry = sample_entry();
+        let g = spawn_group(&entry);
+
+        // CLI 가 이미 채운 키는 stdin 이 무엇을 싣고 오든 건드리지 않는다. 그래서
+        // 그 값이 비수치여도 여기서는 오류가 나지 않는다 — `--flag` 경로가 이미
+        // 검사한 뒤이기 때문이다(같은 값을 두 번 판정하지 않는다).
+        let mut params = Map::new();
+        params.insert("surface".into(), Value::from(7u32));
+        params.insert("prompt".into(), Value::String("hi".into()));
+        let stdin = serde_json::json!({ "surface": "conductor", "prompt": "bye" });
+        merge_stdin_params(&mut params, g, &stdin).expect("CLI 값이 우선이라 통과한다");
+        assert_eq!(params.get("surface"), Some(&Value::from(7u32)));
+        assert_eq!(params.get("prompt"), Some(&Value::String("hi".into())));
+    }
+
+    #[test]
+    fn stdin_json_string_and_bool_args_pass_through_unchanged() {
+        tasty_i18n::init("en");
+        let entry = sample_entry();
+        let g = spawn_group(&entry);
+
+        let mut params = Map::new();
+        let stdin = serde_json::json!({ "prompt": "hi", "force": true });
+        merge_stdin_params(&mut params, g, &stdin).expect("문자열·불리언은 그대로");
+        assert_eq!(params.get("prompt"), Some(&Value::String("hi".into())));
+        assert_eq!(params.get("force"), Some(&Value::Bool(true)));
+    }
+
     #[test]
     fn non_numeric_value_for_a_number_flag_is_rejected_not_dropped() {
         // `tasty_i18n::init` 은 프로세스당 1 회 `OnceLock` 이고, 이 바이너리의 다른
