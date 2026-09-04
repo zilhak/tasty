@@ -63,10 +63,12 @@ src/state/mouse.rs              DIVIDER_HIT_THRESHOLD   (이전: 타입 없는 f
   — `SURFACE_BORDER_WIDTH` 는 물리 1px 로 남기되, 그것이 **hairline 정책**이라는 것을
   상수 doc 에 적는다(지금은 "physical pixels" 라고만 적혀 있어 의도가 안 읽힌다).
 
-**본 ADR 은 결정만 정하고 구현은 후속으로 뺀다.** `PANE_BORDER_WIDTH` 의 이관과
-`SURFACE_BORDER_WIDTH` doc 의 hairline 명시 둘 다 후속 티켓에서 수행한다 — 이관은 렌더
-좌표 사용처가 걸려 있고(아래 "운영 비용"), doc 은 그 이관과 같은 자리를 만지므로 함께
-넣는 것이 싸다. 이 회차에서 실제로 바뀐 코드는 `DIVIDER_HIT_THRESHOLD` 하나다.
+세 갈래 모두 적용됐다. `BinaryTree::BORDER_WIDTH` 는 연관 상수라 배율을 못 받으므로
+`border_width(scale_factor)` 메서드로 바뀌었다 — pane 보더는 논리라 배율을 받아야 물리가
+나오고 surface 보더는 hairline 이라 배율을 **무시하는 것이 정답**이라, 두 경우를 한
+상수로 표현할 수 없다. 그 인자는 레이아웃 계산 경로를 따라 흐른다(배율을 캐시하지 않는
+것이 [`typed-length`](../concepts/typed-length.md) 의 "변환에 scale factor 가 강제 인자"
+와 같은 방향이다).
 
 ## Consequences
 
@@ -78,13 +80,18 @@ src/state/mouse.rs              DIVIDER_HIT_THRESHOLD   (이전: 타입 없는 f
 - **잃은 것**: 상수족이 더 이상 한 규칙을 따르지 않는다. `PANE_BORDER_WIDTH` 는 논리고
   `SURFACE_BORDER_WIDTH` 는 물리라, 둘을 나란히 보는 사람은 이 ADR 을 읽어야 이유를
   안다. 그래서 두 상수 doc 에 각각 근거를 적는 것이 결정의 일부다.
-- **운영 비용 / 유지 부담**: `PANE_BORDER_WIDTH` 사용처는 9 자리이고 대부분 렌더 좌표
-  계산이다. 동시에 여러 작업 갈래가 렌더 경로를 만지는 동안 이 이관을 함께 넣으면
-  변경이 교차한다. 그래서 결정과 구현을 나눴다 — 결정은 지금 고정되고, 이관은 렌더
-  경로가 한산할 때 한 번에 한다.
-- **자동 채널 없음**: "논리여야 할 값이 물리로 적혔다" 를 소스 패턴으로 잡는 검사는
-  만들지 않는다. 그 판정의 근거가 *수가 겹치는가* 가 아니라 *용도가 무엇인가* 라
-  구문에 안 드러나기 때문이다. 배율 2 실측이 유일한 관측면이고, 절차는
+- **운영 비용 / 유지 부담**: 비용은 상수가 몇 번 쓰였나가 아니라 **배율이 흘러야 하는
+  경로의 길이**였다. 상수 이름의 등장은 여덟 자리인데, 논리로 바꾸는 순간 그것을 쓰는
+  트리 순회 메서드 넷(`compute_rects` · `collect_dividers` · `find_divider_at` ·
+  `update_ratio_for_rect`)과 그 호출 경로 전체가 `scale_factor` 를 받아야 해서 실제로는
+  26 개 파일이 바뀌었다. 이 상수족을 더 옮길 때 같은 형태의 과소평가를 하지 않도록
+  두 수를 함께 적어 둔다.
+- **일반 검사는 없고, 이 결정만 지키는 검사는 있다**: "논리여야 할 값이 물리로 적혔다"
+  를 소스 패턴으로 잡는 검사는 만들지 않는다 — 그 판정의 근거가 *수가 겹치는가* 가
+  아니라 *용도가 무엇인가* 라 구문에 안 드러난다. 다만 **이 두 상수의 갈림**은
+  `crates/tasty-model` 의 단위 테스트가 배율 2 에서 고정한다(pane 4 물리px ·
+  surface 1 물리px). 배율 1 에서는 두 좌표계가 같은 관측(2·1)을 내므로 그 테스트는
+  **반드시 배율 2 를 함께 단언해야** 의미가 있다. 화면 쪽 관측 절차는
   [`dpi-scale-verification`](../ai-verification/dpi-scale-verification.md) 에 있다.
 
 ## Alternatives Considered
