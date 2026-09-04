@@ -6,33 +6,20 @@
 //! 바꾼다 — 갤러리가 두 화면의 동일성을 눈으로 확인하는 자리다.
 //!
 //! 실 렌더 경로(`src/gfx/gpu/loading.rs::render_loading`)와 동일한 스택 구성을
-//! egui 로 재현한다. 갤러리는 root 바이너리 크레이트를 의존하지 않으므로
-//! (위젯/테마 크레이트만 의존) 워드마크 자산(PNG)·브랜드 색은 `src/adapters/ui/brand.rs`
-//! 를 이 모듈에 로컬로 미러링한다 — 두 곳 다 같은 `assets/icons/icon_256.png` 를
-//! `include_bytes!` 한다(크레이트 경계상 불가피한 자산 복제, 로직 복제 아님).
+//! egui 로 재현한다. 워드마크 락업(마크 PNG·브랜드 색·`draw_wordmark`)과 로딩
+//! 스택 상수는 위젯 크레이트 [`tasty_ui_widgets::brand`] 의 단일 출처를 쓴다 —
+//! 본체 `render_loading` 도 같은 출처를 부르므로, 이 specimen 과 실 화면이 값·렌더를
+//! 공유한다(예전의 로컬 복제는 승격으로 제거).
 
-use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
+// 워드마크 락업 상수·렌더·브랜드 색은 위젯 크레이트가 단일 출처다 — 예전엔 본체
+// `src/adapters/ui/brand.rs` 값을 여기 로컬 미러링했으나 승격으로 복제를 없앴다.
+use tasty_ui_widgets::brand::{
+    self, PHASE_SLOT_HEIGHT, SPINNER_SIZE, WORDMARK_FONT_SIZE, WORDMARK_ICON_SIZE,
+};
 
 use crate::catalog::spec::{meta, note};
-
-/// 수박 과육 (`src/adapters/ui/brand.rs::MELON_FLESH` 미러 — 근거는 그 모듈 doc).
-#[allow(clippy::disallowed_methods)]
-const MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
-
-const LOGO_PNG: &[u8] = include_bytes!("../../../../assets/icons/icon_256.png");
-const LOGO_URI: &str = "bytes://tasty_gallery_boot_logo_256.png";
-
-/// 워드마크 마크 크기 — 브랜드 락업 확정값(14px 상한의 sanctioned 예외).
-const WORDMARK_ICON_SIZE: LogicalPx = LogicalPx(64.0);
-/// 워드마크 `tasty.` 폰트 크기 — 위와 동일 근거.
-const WORDMARK_FONT_SIZE: LogicalPx = LogicalPx(38.0);
-/// 스피너 boot hero 크기(디자인 확정: 기본 16 → boot 32).
-const SPINNER_SIZE: LogicalPx = LogicalPx(32.0);
-/// phase 문구 고정 높이 슬롯(`--tasty-size-16`).
-const PHASE_SLOT_HEIGHT: LogicalPx = LogicalPx(16.0);
 
 /// 실 부팅 로딩 화면 1장 — `canvas` 크기의 faux 창에 워드마크→스피너→phase 문구
 /// 중앙 스택을 그린다. `render_loading` 과 동일하게 창 크기와 무관하게 스택
@@ -55,7 +42,7 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
     child.add_space(top_pad);
-    draw_wordmark(&mut child, theme);
+    brand::draw_wordmark(&mut child, theme, WORDMARK_ICON_SIZE, WORDMARK_FONT_SIZE);
     child.add_space(theme.spacing_xl.value());
     Spinner::new()
         .size(SPINNER_SIZE.value())
@@ -75,57 +62,6 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
             theme.text_muted().to_egui(),
         );
     }
-}
-
-/// 워드마크 락업 — 수박 마크 + `tasty.` mono(`.` 는 `MELON_FLESH`). 근거·구조는
-/// `src/adapters/ui/brand.rs::draw_wordmark` 와 동일(호스트 앱은 그쪽을 쓴다).
-fn draw_wordmark(ui: &mut egui::Ui, theme: &Theme) {
-    let icon_vec = egui::vec2(WORDMARK_ICON_SIZE.value(), WORDMARK_ICON_SIZE.value());
-    let gap = theme.spacing_sm.value();
-
-    let mut job = egui::text::LayoutJob::default();
-    let font = egui::FontId::monospace(WORDMARK_FONT_SIZE.value());
-    job.append(
-        "tasty",
-        0.0,
-        egui::TextFormat {
-            font_id: font.clone(),
-            extra_letter_spacing: -0.5,
-            color: theme.text_primary().to_egui(),
-            ..Default::default()
-        },
-    );
-    job.append(
-        ".",
-        0.0,
-        egui::TextFormat {
-            font_id: font,
-            extra_letter_spacing: -0.5,
-            color: MELON_FLESH.to_egui(),
-            ..Default::default()
-        },
-    );
-    // 실 렌더(`brand::draw_wordmark`)와 동일: 내용 크기만큼만 영역을 잡아 centered
-    // 부모(`top_down(Center)`)가 락업을 가로 중앙에 두게 한다.
-    let galley = ui.fonts(|f| f.layout_job(job));
-    // gap + label 앞 item_spacing 을 함께 더해 desired 폭 = 실제 내용 폭 (실 렌더와 동일).
-    let item_spacing = ui.spacing().item_spacing.x;
-    let content = egui::vec2(
-        icon_vec.x + gap + item_spacing + galley.size().x,
-        icon_vec.y.max(galley.size().y),
-    );
-    ui.allocate_ui_with_layout(
-        content,
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            let (icon_rect, _) = ui.allocate_exact_size(icon_vec, egui::Sense::hover());
-            egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
-                .fit_to_exact_size(icon_vec)
-                .paint_at(ui, icon_rect);
-            ui.add_space(gap);
-            ui.label(galley);
-        },
-    );
 }
 
 /// 기본 — 1280×720, `GpuInit` 문구.

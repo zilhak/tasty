@@ -12,19 +12,10 @@ use winit::window::Window;
 
 use super::GpuState;
 use crate::app::boot_machine::BootPhase;
-use crate::model::LogicalPx;
-
-/// 워드마크 마크(수박 아이콘) 크기 — 브랜드 락업 확정값(`guidelines/brand-logo.html`,
-/// S-17 디자인 확정 §1). 14px UI 폰트 상한의 sanctioned 예외(브랜드 락업 자체가
-/// 예외 대상 — `docs/design/systems/theme.md` "명명 구조 상수" 참고).
-const WORDMARK_ICON_SIZE: LogicalPx = LogicalPx(64.0);
-/// 워드마크 `tasty.` 폰트 크기 — 위와 동일 근거로 확정된 브랜드 락업 값.
-const WORDMARK_FONT_SIZE: LogicalPx = LogicalPx(38.0);
-/// 스피너 boot hero 크기 (디자인 확정: 기본 16 → boot 32).
-const SPINNER_SIZE: LogicalPx = LogicalPx(32.0);
-/// phase 문구 고정 높이 슬롯 (`--tasty-size-16`) — 문구 유무와 무관하게 레이아웃이
-/// 흔들리지 않도록 항상 이 높이만큼 공간을 예약한다.
-const PHASE_SLOT_HEIGHT: LogicalPx = LogicalPx(16.0);
+// 워드마크 락업 상수·렌더는 위젯 크레이트가 단일 출처다(갤러리 specimen 과 공유).
+use crate::adapters::ui::brand::{
+    PHASE_SLOT_HEIGHT, SPINNER_SIZE, WORDMARK_FONT_SIZE, WORDMARK_ICON_SIZE,
+};
 
 /// 부팅 phase → i18n 문구 키. `WaitingEngine`(S-7 추가) 은 별도 확정 문구가 없어
 /// 선행 단계 `GpuInit` 과 같은 문구로 묶는다(디자인 확정값 부재 시 가장 가까운

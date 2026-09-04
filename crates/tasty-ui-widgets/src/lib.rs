@@ -11,6 +11,7 @@
 //! 위젯 함수는 후속 step 에서 점진적으로 추가된다.
 
 mod autocomplete;
+pub mod brand;
 mod button;
 mod chip;
 mod control;
