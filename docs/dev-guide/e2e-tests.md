@@ -32,9 +32,9 @@
 
 웹훅 하네스(`tests/webhook_common/mod.rs`)는 인스턴스마다 `TASTY_HOME`/`webhooks.toml` 을 시딩해야 해서 공유 진입점이 없고, 재시작 영속성 테스트는 같은 HOME 을 물려받는 두 번째 인스턴스가 검증 대상 그 자체다.
 
-**선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 일반 `cargo test --workspace` 에서 실행되지 않는다 — 그래서 CI 경로에는 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
+**선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 `cargo test --workspace` 에서도 실행되지 않는다 — 어느 채널에도 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
 
-**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 `cargo test --workspace`(CI)로 강제한다. 두 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
+**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 다만 그것이 도는 `cargo test --workspace` 에는 **자동 채널이 없다**(병합 후 main 에서 사람이 1회 돌린다, [ci-gates](ci-gates.md)). 두 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
 
 ## 2. 공유 하네스 (`common::shared()`)
 
