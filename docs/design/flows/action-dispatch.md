@@ -75,7 +75,8 @@ pub enum IntentOrigin { User { source: UserSource }, Agent { source: AgentSource
 |----------|------|
 | `meta.origin` | `User`→`{kind:host}`, `Agent{Plugin(id)}`→`{kind:plugin,plugin_id}`, 그 외 Agent→`{kind:host}` |
 | `meta.trace_id` | `intent.trace_id` 있으면 그대로, 없으면 새 발급 |
-| `meta.scope` | 핸들러가 mutation 결과 보고 채움 · `meta.hop` | 호스트 발화이므로 `0` |
+| `meta.scope` | 핸들러가 mutation 결과 보고 채움 |
+| `meta.hop` | 호스트 발화이므로 `0` |
 
 ## User vs Agent 정책
 
