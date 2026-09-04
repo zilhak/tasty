@@ -116,7 +116,7 @@ pub fn draw_search_bar(
                 .replace("{total}", &state.search.matches.len().to_string());
             (text, theme.text_muted())
         };
-        draw_counter(ui, &counter_text, counter_color.into());
+        draw_counter(ui, &theme, &counter_text, counter_color.into());
 
         // Prev/Next buttons — 항상 렌더, 매치가 없으면 disabled. (디자인 IconButton
         // size="sm", chevron SVG. search_bar.jsx:71-80)
@@ -189,14 +189,16 @@ pub fn draw_search_bar(
 
 /// 고정폭(40px) 매치 카운터를 가운데 정렬로 그린다. 텍스트 길이와 무관하게
 /// 폭이 고정되어 옆의 ▲▼/토글이 좌우로 밀리지 않는다. (디자인 width:40, center)
-fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
+fn draw_counter(ui: &mut egui::Ui, theme: &Theme, text: &str, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(40.0, ui.available_height()),
         egui::Sense::hover(),
     );
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), color);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        color,
+    );
     let pos = rect.center() - galley.size() * 0.5;
     ui.painter().galley(pos, galley, color);
 }
@@ -290,9 +292,11 @@ fn toggle_button(
     } else {
         theme.text_muted().into()
     };
-    let galley =
-        ui.painter()
-            .layout_no_wrap(label.to_string(), egui::FontId::monospace(11.0), color);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_string(),
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        color,
+    );
     let pos = rect.center() - galley.size() * 0.5;
     ui.painter().galley(pos, galley, color);
     resp.clone().on_hover_text(tooltip);

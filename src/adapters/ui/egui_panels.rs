@@ -715,7 +715,7 @@ fn draw_occupied_overlays(
         painter.rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(1.0, border_color),
+            egui::Stroke::new(th.border_width.value(), border_color),
             egui::StrokeKind::Inside,
         );
     }

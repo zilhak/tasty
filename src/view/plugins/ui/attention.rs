@@ -87,7 +87,7 @@ pub(super) fn draw_attention_tab(
                         name_pos,
                         egui::Align2::LEFT_TOP,
                         &entry.name,
-                        egui::FontId::proportional(13.0),
+                        egui::FontId::proportional(th.font_size_body.value()),
                         visuals.text_color(),
                     );
                     let (label_key, _) = reason_text(entry.kind);
@@ -95,7 +95,7 @@ pub(super) fn draw_attention_tab(
                         name_pos + egui::vec2(0.0, 18.0),
                         egui::Align2::LEFT_TOP,
                         t(label_key),
-                        egui::FontId::proportional(10.5),
+                        egui::FontId::proportional(th.font_size_micro.value()),
                         color,
                     );
                     // 우측 severity dot.

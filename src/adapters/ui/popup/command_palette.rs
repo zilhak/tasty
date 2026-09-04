@@ -259,8 +259,8 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            // 디자인 footer fontSize 10.5 (토큰 아닌 raw).
-            let hint_font = egui::FontId::monospace(10.5);
+            // footer 힌트는 kbd 힌트 계열 → component.kbd-font-size(micro).
+            let hint_font = egui::FontId::monospace(theme.kbd_font_size().value());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 14.0;
                 for hint in [

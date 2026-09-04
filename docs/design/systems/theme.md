@@ -131,10 +131,13 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 색 팔레트 | Catppuccin Mocha 톤 기준 |
 | 간격 | **4px 그리드** — `spacing_xs/sm/md/lg/xl` 만 |
 | 간격 API | **`add_space`/`inner_margin`/`Margin::same|symmetric` 에 숫자 리터럴 직접 전달 금지** — `tasty-ui-widgets` 의 typed 헬퍼(`vspace`/`hspace`/`margin_all`/`margin_sym`)에 `th.spacing_*`(LogicalPx)를 넘긴다. 그리드 밖 미세 구조 간격(1~4px)은 `tasty_ui_widgets::tokens::STRUCT_GAP_1/2/3/4` (DTCG `primitive.size-1/2/3/4` 대응). **`tests/design_token_adherence.rs` 가드가 인라인 리터럴 재유입을 `cargo test --workspace`(CI)로 강제**한다. 명명 구조 상수(`const NAME: LogicalPx = LogicalPx(N)`, 예: 사이드바 폭·카드 크기·control nudge)는 스코프 밖(권장 해결책이라 금지 아님) |
-| UI 폰트 최대 | **14px**(`font_size_body`) |
+| UI 폰트 스케일 | **`font_size_micro`(10) · `caption`(11) · `body`(13) · `heading`(13) · `max`(14) 만.** 이 다섯이 UI 스케일 전부이고 `ui_scale` zoom 을 받는다. 역할이 이름에 있으면 component 접근자(`badge_font_size()` · `tag_font_size()` · `kbd_font_size()` 등)를 우선한다. `font_size_term*`/`prose_h1` 은 **콘텐츠** 폰트라 UI 에 쓰지 않는다 |
+| UI 폰트 최대 | **14px**(`font_size_max`) |
+| 폰트 크기 API | **`FontId::proportional`/`monospace` 에 숫자 리터럴 직접 전달 금지** — 위 토큰의 `.value()` 를 넘긴다. **`tests/design_token_adherence.rs` 가드가 인라인 리터럴을 `cargo test --workspace`(CI)로 강제**한다 |
 | 보더 | 항상 **1px**(`border_width`) |
-| 포커스 링 | 2px accent-primary(`focus_ring_width`) |
-| painter 전사 글리프 | 선 굵기는 **`icon_stroke_width`**(1.5px) — `Ui` 가 없어 SVG 아이콘 대신 `Painter::line_segment` 로 형상을 옮기는 구간(popup 타이틀바의 close X · 전체화면 브래킷) 전용. `border_width`(1)/`focus_ring_width`(2) 어느 쪽도 아니라 별도 필드이고, DTCG dim 토큰에 대응은 없다 |
+| 포커스 링 | 2px(`focus_ring_width`) — 키보드 포커스뿐 아니라 **대상을 감싸 지목하는 2px 링 전반**의 굵기 토큰이다(우클릭 대상 표시, DAG 노드 선택 링). 색은 별개 축이라 `accent_success` 등 다른 semantic 색과 조합해도 이 토큰을 쓴다 |
+| painter 전사 글리프 | 선 굵기는 **`icon_stroke_width`**(1.5px) — `Ui` 가 없어 SVG 아이콘 대신 `Painter::line_segment` 로 형상을 옮기는 구간(popup 타이틀바의 close X · 전체화면 브래킷 · chevron · tree 가지) 전용. `border_width`(1)/`focus_ring_width`(2) 어느 쪽도 아니라 별도 필드이고, DTCG dim 토큰에 대응은 없다 |
+| 선 굵기 API | **`Stroke::new` 에 숫자 리터럴 직접 전달 금지** — 위 세 필드의 `.value()` 를 넘긴다. 같은 가드가 강제한다. 세 필드 어디에도 해당하지 않는 값(예: 체크마크 꺾은선, attached outline)은 명명 const 로 승격하고 사유를 주석에 남긴다 |
 | 호버 오버레이 | `hover_overlay`(라이트 검정 8% / 다크 흰색 8% 자동 도출) — 직접 값 금지 |
 | 활성 오버레이 | `active_overlay`(12%) — 선택/active 행, hover(8%)와 구분 |
 | 텍스트 대비 | 최소 **4.5:1**. 위반 시 [`ai-verification/visual-verification`](../../ai-verification/visual-verification.md) 체크리스트 |

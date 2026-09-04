@@ -371,7 +371,7 @@ fn segment_tab(
     };
     let label_galley = ui.painter().layout_no_wrap(
         label.to_string(),
-        egui::FontId::proportional(12.5),
+        egui::FontId::proportional(th.font_size_body.value()),
         label_color,
     );
 
@@ -380,7 +380,7 @@ fn segment_tab(
     let badge_galley = if badge {
         Some(ui.painter().layout_no_wrap(
             count.unwrap().to_string(),
-            egui::FontId::proportional(9.5),
+            egui::FontId::proportional(th.badge_font_size().value()),
             egui::Color32::from(th.text_on_accent()),
         ))
     } else {
@@ -388,8 +388,11 @@ fn segment_tab(
     };
     let count_galley = if !danger {
         count.map(|c| {
-            ui.painter()
-                .layout_no_wrap(c.to_string(), egui::FontId::monospace(10.5), count_color)
+            ui.painter().layout_no_wrap(
+                c.to_string(),
+                egui::FontId::monospace(th.badge_font_size().value()),
+                count_color,
+            )
         })
     } else {
         None
@@ -462,9 +465,11 @@ fn segment_tab(
 /// 버전 표기 등 inline 메타데이터에 사용. 라벨 색은 `text_secondary`.
 pub(super) fn tag(ui: &mut egui::Ui, th: &theme::Theme, text: &str) {
     let color = egui::Color32::from(th.text_secondary());
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text.to_string(), egui::FontId::proportional(11.0), color);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        egui::FontId::proportional(th.tag_font_size().value()),
+        color,
+    );
     let pad = egui::vec2(7.0, 3.0);
     let size = galley.size() + pad * 2.0;
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());

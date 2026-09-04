@@ -10,6 +10,14 @@ use crate::theme::Theme;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
+/// attached(다른 client 점유) 표시 outline 굵기. 디자인 CollapsedSidebar 의 CSS
+/// `outline: 1.5px` 를 그대로 옮긴 값이다. `border_width`(1)·`focus_ring_width`(2) 어느
+/// 쪽도 아니고, `icon_stroke_width`(1.5) 는 popup 타이틀바의 전사 글리프 전용이라
+/// (theme.md "painter 전사 글리프") 재사용하지 않는다. 컴포넌트 토큰
+/// `status-dot-attached-ring-width` 는 2px 로 정의돼 있어 이 값과 어긋나며, 맞추려면
+/// ring 반경 계산(offset·stroke 절반)을 함께 다시 잡아야 해 디자인 확인이 선행한다.
+const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
+
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
 #[derive(Debug, Clone)]
@@ -220,7 +228,7 @@ fn paint_alert_badge(
     let h = 15.0;
     let galley = ui.painter().layout_no_wrap(
         count.to_string(),
-        egui::FontId::proportional(9.5),
+        egui::FontId::proportional(th.badge_font_size().value()),
         egui::Color32::from(th.text_on_accent()),
     );
     let pad = 4.0;
@@ -637,7 +645,7 @@ pub fn draw_full_sidebar_view(
                             ghost_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             &ws.name,
-                            egui::FontId::proportional(12.0),
+                            egui::FontId::proportional(th.font_size_body.value()),
                             ghost_fg,
                         );
                     }
@@ -661,7 +669,7 @@ pub fn draw_full_sidebar_view(
                     ui.painter().rect_stroke(
                         new_ws_resp.rect,
                         4.0,
-                        egui::Stroke::new(2.0, th.accent_success()),
+                        egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -879,7 +887,7 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter().rect_stroke(
                     rect,
                     4.0,
-                    egui::Stroke::new(2.0, th.accent_success()),
+                    egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -1182,7 +1190,7 @@ fn draw_ws_row(
         ui.painter().rect_stroke(
             card_rect,
             4.0,
-            egui::Stroke::new(2.0, th.accent_success()),
+            egui::Stroke::new(th.focus_ring_width.value(), th.accent_success()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1402,7 +1410,7 @@ fn draw_collapsed_avatar(
         ui.painter().rect_stroke(
             rect,
             4.0,
-            egui::Stroke::new(1.5, th.border_attached()),
+            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1518,7 +1526,7 @@ fn draw_workspace_card(
                     ui.painter().circle_stroke(
                         dot_rect.center(),
                         6.25,
-                        egui::Stroke::new(1.5, th.border_attached()),
+                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {

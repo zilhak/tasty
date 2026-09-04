@@ -88,8 +88,10 @@ pub fn tree_row(
                 egui::pos2(chev_c.x - s * 0.6, chev_c.y + s),
             ]
         };
-        ui.painter()
-            .add(egui::Shape::line(pts, egui::Stroke::new(1.5, dim(muted))));
+        ui.painter().add(egui::Shape::line(
+            pts,
+            egui::Stroke::new(theme.icon_stroke_width.value(), dim(muted)),
+        ));
     }
     x += CHEVRON_SLOT + GAP;
 

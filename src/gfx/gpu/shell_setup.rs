@@ -73,7 +73,7 @@ impl GpuState {
                 .frame(
                     egui::Frame::new()
                         .fill(bg_card.into())
-                        .stroke(egui::Stroke::new(1.0, border))
+                        .stroke(egui::Stroke::new(th.border_width.value(), border))
                         .corner_radius(egui::CornerRadius::same(12))
                         .inner_margin(margin_all(th.spacing_xl))
                         .shadow(egui::Shadow {
@@ -107,7 +107,10 @@ impl GpuState {
                     // ── Warning ────────────────────────────────────
                     egui::Frame::new()
                         .fill(th.surface_raised().into())
-                        .stroke(egui::Stroke::new(1.0, th.border_strong()))
+                        .stroke(egui::Stroke::new(
+                            th.border_width.value(),
+                            th.border_strong(),
+                        ))
                         .corner_radius(egui::CornerRadius::same(6))
                         .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
                         .show(ui, |ui| {
@@ -176,7 +179,7 @@ impl GpuState {
                                     )
                                     .min_size(btn_size)
                                     .fill(th.bg_panel())
-                                    .stroke(egui::Stroke::new(1.0, border))
+                                    .stroke(egui::Stroke::new(th.border_width.value(), border))
                                     .corner_radius(egui::CornerRadius::same(6)),
                                 )
                                 .clicked()
@@ -192,7 +195,7 @@ impl GpuState {
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {
                                 (
                                     th.accent_success(),
-                                    egui::Stroke::new(1.0, th.accent_success()),
+                                    egui::Stroke::new(th.border_width.value(), th.accent_success()),
                                     // accent 위 텍스트 — 값-동일 bg_panel()(=base). text_on_accent()=crust 와 값 달라 값-보존 유지.
                                     th.bg_panel(),
                                 )
@@ -201,7 +204,7 @@ impl GpuState {
                                 // overlay0 dim 텍스트 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
                                 (
                                     accent_dis,
-                                    egui::Stroke::new(1.0, th.surface_active()),
+                                    egui::Stroke::new(th.border_width.value(), th.surface_active()),
                                     th.text_placeholder(),
                                 )
                             };

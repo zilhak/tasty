@@ -214,8 +214,10 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
     // `--tasty-separator` 색). Theme 의 separator 토큰을 1px stroke 로 전사한다.
     vspace(ui, th.spacing_md);
     ui.scope(|ui| {
-        ui.visuals_mut().widgets.noninteractive.bg_stroke =
-            egui::Stroke::new(1.0, th.separator.to_egui_premultiplied());
+        ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        );
         ui.separator();
     });
     vspace(ui, th.spacing_md);
@@ -309,8 +311,10 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
     // 캡처 블랙리스트와 배너 억제 블랙리스트를 구분하는 1px 구분선(위와 동일 패턴).
     vspace(ui, th.spacing_md);
     ui.scope(|ui| {
-        ui.visuals_mut().widgets.noninteractive.bg_stroke =
-            egui::Stroke::new(1.0, th.separator.to_egui_premultiplied());
+        ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        );
         ui.separator();
     });
     vspace(ui, th.spacing_md);

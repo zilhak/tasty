@@ -345,7 +345,10 @@ pub fn draw_pane_tab_bars_view(
                                 ui.painter().rect_stroke(
                                     clip_rect,
                                     0.0,
-                                    egui::Stroke::new(2.0, th.accent_success()),
+                                    egui::Stroke::new(
+                                        th.focus_ring_width.value(),
+                                        th.accent_success(),
+                                    ),
                                     egui::StrokeKind::Inside,
                                 );
                             } else if viewport_resp.clicked() {
@@ -600,7 +603,10 @@ pub fn draw_pane_tab_bars_view(
                                         painter.rect_stroke(
                                             tab_clip,
                                             0.0,
-                                            egui::Stroke::new(2.0, th.accent_success()),
+                                            egui::Stroke::new(
+                                                th.focus_ring_width.value(),
+                                                th.accent_success(),
+                                            ),
                                             egui::StrokeKind::Inside,
                                         );
                                     }
@@ -682,7 +688,10 @@ pub fn draw_pane_tab_bars_view(
                                         painter.rect_stroke(
                                             plus_clip,
                                             0.0,
-                                            egui::Stroke::new(2.0, th.accent_success()),
+                                            egui::Stroke::new(
+                                                th.focus_ring_width.value(),
+                                                th.accent_success(),
+                                            ),
                                             egui::StrokeKind::Inside,
                                         );
                                     }

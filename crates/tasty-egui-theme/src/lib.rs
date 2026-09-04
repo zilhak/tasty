@@ -29,9 +29,11 @@ pub fn hint_text(theme: &Theme, text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text).color(egui::Color32::from(theme.placeholder))
 }
 
+/// 보더 1줄 stroke — 굵기는 `Theme` 의 `border_width`(theme.md "보더 항상 1px").
+/// 색만 인자로 받는다.
 #[inline]
-fn stroke1(c: HexColor) -> egui::Stroke {
-    egui::Stroke::new(1.0, c)
+fn stroke1(theme: &Theme, c: HexColor) -> egui::Stroke {
+    egui::Stroke::new(theme.border_width.value(), c)
 }
 
 /// Apply this theme to an egui context.
@@ -52,7 +54,7 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // ── Panel / Window / Extreme ──
     visuals.panel_fill = theme.mantle.into();
     visuals.window_fill = theme.base.into();
-    visuals.window_stroke = stroke1(theme.surface0);
+    visuals.window_stroke = stroke1(theme, theme.surface0);
     visuals.extreme_bg_color = theme.crust.into();
     visuals.faint_bg_color = theme.surface0.into();
     visuals.code_bg_color = theme.surface0.into();
@@ -63,28 +65,28 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // bg/weak_bg/bg_stroke/fg_stroke 를 명시한다.
     visuals.widgets.noninteractive.bg_fill = theme.mantle.into();
     visuals.widgets.noninteractive.weak_bg_fill = theme.mantle.into();
-    visuals.widgets.noninteractive.bg_stroke = stroke1(theme.surface0);
-    visuals.widgets.noninteractive.fg_stroke = stroke1(theme.text);
+    visuals.widgets.noninteractive.bg_stroke = stroke1(theme, theme.surface0);
+    visuals.widgets.noninteractive.fg_stroke = stroke1(theme, theme.text);
 
     visuals.widgets.inactive.bg_fill = theme.base.into();
     visuals.widgets.inactive.weak_bg_fill = theme.base.into();
-    visuals.widgets.inactive.bg_stroke = stroke1(theme.surface0);
-    visuals.widgets.inactive.fg_stroke = stroke1(theme.text);
+    visuals.widgets.inactive.bg_stroke = stroke1(theme, theme.surface0);
+    visuals.widgets.inactive.fg_stroke = stroke1(theme, theme.text);
 
     visuals.widgets.hovered.bg_fill = theme.surface0.into();
     visuals.widgets.hovered.weak_bg_fill = theme.surface0.into();
-    visuals.widgets.hovered.bg_stroke = stroke1(theme.surface1);
-    visuals.widgets.hovered.fg_stroke = stroke1(theme.text);
+    visuals.widgets.hovered.bg_stroke = stroke1(theme, theme.surface1);
+    visuals.widgets.hovered.fg_stroke = stroke1(theme, theme.text);
 
     visuals.widgets.active.bg_fill = theme.surface1.into();
     visuals.widgets.active.weak_bg_fill = theme.surface1.into();
-    visuals.widgets.active.bg_stroke = stroke1(theme.surface2);
-    visuals.widgets.active.fg_stroke = stroke1(theme.text);
+    visuals.widgets.active.bg_stroke = stroke1(theme, theme.surface2);
+    visuals.widgets.active.fg_stroke = stroke1(theme, theme.text);
 
     visuals.widgets.open.bg_fill = theme.surface1.into();
     visuals.widgets.open.weak_bg_fill = theme.surface1.into();
-    visuals.widgets.open.bg_stroke = stroke1(theme.surface2);
-    visuals.widgets.open.fg_stroke = stroke1(theme.text);
+    visuals.widgets.open.bg_stroke = stroke1(theme, theme.surface2);
+    visuals.widgets.open.fg_stroke = stroke1(theme, theme.text);
 
     // ── Selection / focus ring ──
     // A2 시범 이식: primitive 직접접근 → semantic 접근자(동일 primitive 리턴, 픽셀 동일).

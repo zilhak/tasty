@@ -1,4 +1,10 @@
-//! 간격/마진 토큰 준수 가드 — inline spacing rhythm 리터럴의 재유입을 차단한다.
+//! 시각 토큰 준수 가드 — 간격/폰트 크기/선 굵기 리터럴의 재유입을 차단한다.
+//!
+//! `CLAUDE.md` "UI 디자인 (필수)" 가 강제하는 네 축 중 색은 clippy
+//! `disallowed_methods`(deny)가 컴파일 단계에서 막고, 나머지 셋(간격·폰트 크기·선
+//! 굵기)을 이 파일이 맡는다. 셋 다 같은 형태(`<접두>(<숫자>`)라 판정기
+//! [`violating_prefix`] 하나를 공유한다 — 토큰을 넘기는 정상 코드
+//! (`Stroke::new(th.border_width.value(), ..)`)는 숫자로 시작하지 않아 걸리지 않는다.
 //!
 //! design-tokens-02 가 `add_space`/`Margin` 의 off-grid 리터럴을 typed 헬퍼
 //! (`vspace`/`hspace`/`margin_all`/`margin_sym` + `th.spacing_*` / `STRUCT_GAP_*`)로
@@ -69,23 +75,44 @@ const PRIMITIVE_COLOR_FIELDS: &[&str] = &[
     "rosewater",
 ];
 
-/// 스캔에서 제외할 파일 (repo-relative). typed 헬퍼 구현 — 내부에서 raw `add_space`/
-/// `Margin` 을 정당하게 쓰고 doc 주석에 예시 리터럴을 포함한다.
-const ALLOWLIST_FILES: &[&str] = &["crates/tasty-ui-widgets/src/spacing.rs"];
-
 /// 금지 패턴: `<prefix>` 뒤 (공백 무시) 첫 문자가 숫자면 인라인 리터럴로 본다.
 /// typed 헬퍼(`margin_all(th.spacing_md)`)·토큰(`spacing_xs.value()`)은 숫자로 시작하지
 /// 않으므로 걸리지 않는다.
+///
+/// 폰트 크기는 `th.font_size_*` 또는 component 접근자(`th.badge_font_size()` 등),
+/// 선 굵기는 `th.border_width`/`focus_ring_width`/`icon_stroke_width` 로 바꾼다.
 const FORBIDDEN_PREFIXES: &[&str] = &[
     "add_space(",
     "Margin::same(",
     "Margin::symmetric(",
     "inner_margin(",
+    "FontId::proportional(",
+    "FontId::monospace(",
+    "Stroke::new(",
+];
+
+/// 스캔 예외 — **파일 통째가 아니라 (경로, 접두) 쌍**이다. 파일 하나를 통째로 빼면
+/// 그 파일이 *다른* 형태의 위반을 새로 들여도 잡히지 않으므로, 정당한 그 한 형태만
+/// 면제한다. 새 항목에는 왜 그 파일에서 그 접두가 정당한지 사유를 남긴다.
+const ALLOWLIST_PREFIXES: &[(&str, &str)] = &[
+    // typed 간격 헬퍼의 구현 자체 — 내부에서 raw `add_space`/`Margin` 을 호출하고
+    // doc 주석에 예시 리터럴을 담는다. 폰트·선굵기는 면제 대상이 아니다.
+    ("crates/tasty-ui-widgets/src/spacing.rs", "add_space("),
+    ("crates/tasty-ui-widgets/src/spacing.rs", "Margin::same("),
+    (
+        "crates/tasty-ui-widgets/src/spacing.rs",
+        "Margin::symmetric(",
+    ),
+    ("crates/tasty-ui-widgets/src/spacing.rs", "inner_margin("),
 ];
 
 /// `line` 에 금지 prefix + 숫자 인자가 있으면 매칭된 prefix 를 돌려준다.
-fn violating_prefix(line: &str) -> Option<&'static str> {
+/// `rel` 파일에 대해 그 접두가 [`ALLOWLIST_PREFIXES`] 에 있으면 건너뛴다.
+fn violating_prefix(rel: &str, line: &str) -> Option<&'static str> {
     for &prefix in FORBIDDEN_PREFIXES {
+        if ALLOWLIST_PREFIXES.contains(&(rel, prefix)) {
+            continue;
+        }
         let mut from = 0;
         while let Some(idx) = line[from..].find(prefix) {
             let after = &line[from + idx + prefix.len()..];
@@ -99,17 +126,13 @@ fn violating_prefix(line: &str) -> Option<&'static str> {
     None
 }
 
-fn is_allowlisted(rel: &str) -> bool {
-    ALLOWLIST_FILES.contains(&rel)
-}
-
 fn is_word_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
 /// `line` 에 `th.<primitive>` / `theme.<primitive>` 평면 필드 접근이 있으면 그 표현을 돌려준다.
 /// 앞뒤 경계를 검사해 `th.text_primary()`(semantic) 나 `mytheme.blue` 오검출을 배제한다.
-fn violating_color(line: &str) -> Option<String> {
+fn violating_color(_rel: &str, line: &str) -> Option<String> {
     for receiver in ["th.", "theme."] {
         let mut from = 0;
         while let Some(idx) = line[from..].find(receiver) {
@@ -135,33 +158,35 @@ fn violating_color(line: &str) -> Option<String> {
     None
 }
 
-/// `target` 하위 `.rs` 파일을 모아, 각 라인에 `detect` 를 적용해 위반을 수집한다.
-/// 주석 라인(`//`)·allowlist 파일은 스킵.
+/// `target` 하위 `.rs` 파일을 모아, 각 라인에 `detect(rel, line)` 을 적용해 위반을
+/// 수집한다. 주석 라인(`//`)은 스킵 — 파일 단위 면제는 없다([`ALLOWLIST_PREFIXES`]).
 fn collect_violations(
     root: &Path,
     target: &str,
-    detect: &dyn Fn(&str) -> Option<String>,
+    detect: &dyn Fn(&str, &str) -> Option<String>,
     out: &mut Vec<String>,
 ) {
     let path = root.join(target);
     let mut files = Vec::new();
     gather_rs_files(&path, &mut files);
+    assert!(
+        !files.is_empty(),
+        "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다 — 경로가 바뀌었거나 \
+         읽기에 실패했다. 조용한 미스캔은 위양성보다 나쁘므로 여기서 실패시킨다."
+    );
     for file in files {
         let rel = file
             .strip_prefix(root)
             .unwrap_or(&file)
             .to_string_lossy()
             .replace('\\', "/");
-        if is_allowlisted(&rel) {
-            continue;
-        }
         let contents = std::fs::read_to_string(&file).expect("소스 파일 read 실패");
         for (i, line) in contents.lines().enumerate() {
             // 주석 라인(// 로 시작)은 스킵 — doc/설명의 예시 리터럴 false positive 방지.
             if line.trim_start().starts_with("//") {
                 continue;
             }
-            if let Some(hit) = detect(line) {
+            if let Some(hit) = detect(&rel, line) {
                 out.push(format!("  {}:{} — `{}`", rel, i + 1, hit));
             }
         }
@@ -175,26 +200,37 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
         }
         return;
     }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
+    let entries = std::fs::read_dir(path).unwrap_or_else(|e| {
+        panic!(
+            "스캔 대상 디렉토리를 읽을 수 없다: {} — {e}. 조용히 건너뛰면 가드가 \
+             아무것도 검사하지 않은 채 통과한다.",
+            path.display()
+        )
+    });
     for entry in entries.flatten() {
         gather_rs_files(&entry.path(), out);
     }
 }
 
 #[test]
-fn no_inline_spacing_literals() {
+fn no_inline_visual_token_literals() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let detect = |line: &str| violating_prefix(line).map(|p| format!("{p}<숫자>"));
+    let detect = |rel: &str, line: &str| violating_prefix(rel, line).map(|p| format!("{p}<숫자>"));
     let mut violations = Vec::new();
     for target in SCAN_ROOTS {
         collect_violations(root, target, &detect, &mut violations);
     }
     assert!(
         violations.is_empty(),
-        "인라인 간격/마진 리터럴이 재유입됨 — typed 헬퍼(vspace/hspace/margin_all/margin_sym \
-         + th.spacing_* / STRUCT_GAP_*)로 바꿀 것:\n{}",
+        "인라인 시각 토큰 리터럴이 재유입됨 — 각 축의 대체 수단으로 바꿀 것:\n\
+         · 간격/마진 → typed 헬퍼(vspace/hspace/margin_all/margin_sym) + th.spacing_* / \
+         STRUCT_GAP_*\n\
+         · 폰트 크기 → th.font_size_micro/caption/body/heading/max, 또는 역할을 이름에 \
+         담은 component 접근자(th.badge_font_size() · th.tag_font_size() · \
+         th.kbd_font_size() 등)\n\
+         · 선 굵기 → th.border_width(1) / th.focus_ring_width(2) / th.icon_stroke_width(1.5)\n\
+         대응 토큰이 없는 구조값은 명명 const(`const NAME: LogicalPx = LogicalPx(N)`)로 \
+         승격한다 — 그건 스코프 밖이다:\n{}",
         violations.join("\n")
     );
 }
@@ -210,7 +246,7 @@ fn is_forbidden_pictographic(cp: u32) -> bool {
 /// `line` 에서 픽토그래픽 글리프를 찾으면 그 표현을 돌려준다. **두 형태 모두** 검사:
 /// ① 리터럴 코드포인트(누가 📂 를 그대로 붙여넣음) ② `\u{HEX}` 이스케이프 파싱 후 범위검사.
 /// 주석 라인 skip 은 상위 `collect_violations` 가 처리한다.
-fn violating_glyph(line: &str) -> Option<String> {
+fn violating_glyph(_rel: &str, line: &str) -> Option<String> {
     // ① 리터럴 char.
     for ch in line.chars() {
         let cp = ch as u32;

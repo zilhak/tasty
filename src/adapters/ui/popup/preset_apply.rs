@@ -236,7 +236,7 @@ pub fn draw_apply_preset_view(
                             egui::pos2(rect.min.x + 8.0, rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             name,
-                            egui::FontId::proportional(12.0),
+                            egui::FontId::proportional(th.font_size_body.value()),
                             if is_selected {
                                 th.text_primary().into()
                             } else {

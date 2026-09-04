@@ -96,7 +96,7 @@ pub(super) fn draw_list_tab(
                         name_pos,
                         egui::Align2::LEFT_TOP,
                         &name_text,
-                        egui::FontId::proportional(13.0),
+                        egui::FontId::proportional(th.font_size_body.value()),
                         visuals.text_color(),
                     );
                     let sub_pos = name_pos + egui::vec2(0.0, 18.0);
@@ -104,7 +104,7 @@ pub(super) fn draw_list_tab(
                         sub_pos,
                         egui::Align2::LEFT_TOP,
                         &sub,
-                        egui::FontId::proportional(10.0),
+                        egui::FontId::proportional(th.font_size_micro.value()),
                         egui::Color32::from(th.text_muted()),
                     );
                     // 디자인 StatusDot(danger): spawn 반복 실패로 자동 비활성화된
