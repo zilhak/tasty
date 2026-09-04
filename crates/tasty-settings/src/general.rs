@@ -1002,13 +1002,17 @@ fn ensure_compiled_zshenv_in(dir: Option<&std::path::Path>) {
 /// 덮는다 — [`resolve_tasty_dir`] 와 각 `_in` 함수에 `None` 을 그대로 넣어 단정한다
 /// (`unresolved_home_*` 테스트들).
 ///
-/// 덮지 못하는 것은 **얇은 래퍼 한 줄**이다: `tasty_dir()` 이 실제로
-/// `tasty_utils::path::tasty_home()` 을 부르고 그 결과를 순수부에 넘기는 부분, 그리고
-/// 각 `pub fn` 이 `tasty_dir().as_deref()` 를 넘기는 한 줄. `directories` 가 `HOME`
-/// 없이도 passwd 엔트리로 홈을 찾아내므로 `env -u HOME` 만으로는 `None` 을 만들 수
-/// 없고, 재현하려면 passwd 엔트리가 없는 환경(컨테이너/`unshare`)이 필요하다. 그
-/// 한 줄들은 리뷰로만 보장된다 — 프로덕션에 테스트 전용 주입 지점을 만드는 비용보다
+/// 덮지 못하는 것은 **`None` 을 만드는 축 하나**다: `tasty_dir()` 이
+/// `tasty_utils::path::tasty_home()` 에서 실제로 `None` 을 받는 경우. `directories` 가
+/// `HOME` 없이도 passwd 엔트리로 홈을 찾아내므로 `env -u HOME` 만으로는 `None` 을 만들
+/// 수 없고, 재현하려면 passwd 엔트리가 없는 환경(컨테이너/`unshare`)이 필요하다. 그
+/// 한 줄은 리뷰로만 보장된다 — 프로덕션에 테스트 전용 주입 지점을 만드는 비용보다
 /// 낫다고 판단했다.
+///
+/// **각 `pub fn` 의 `tasty_dir().as_deref()` 위임은 덮는다** — `None` 이 필요 없고
+/// 상대 `TASTY_HOME` 이면 갈리기 때문이다(절대 경로는 해석 전후가 같아 구분되지
+/// 않는다). 출력 경로 둘(`bash_rcfile_args`·`effective_shell_envs`)을
+/// `*_uses_the_resolved_root` 가 각각 고정한다.
 ///
 /// 상대 경로 축(`TASTY_HOME` 이 상대일 때 파생 경로가 자식 셸의 CWD 로 재해석되는 것)
 /// 은 환경만으로 재현 가능해 `relative_tasty_home_is_absolutized_for_child_processes`
@@ -1655,6 +1659,136 @@ mod tests {
         assert_eq!(
             zdotdir,
             cwd.join("relative-tasty-home").join("zsh-integration")
+        );
+    }
+
+    /// 상대 `TASTY_HOME` 을 세팅하고 복원하는 가드.
+    ///
+    /// [`HomeGuard`] 는 임시 디렉토리의 **절대** 경로를 넣으므로 "래퍼가 해석된 루트를
+    /// 넘기는가" 를 구분하지 못한다 — 절대 경로는 해석 전후가 같기 때문이다. 상대
+    /// 경로여야 `tasty_dir()`(CWD 기준 절대화)과 미해석 `tasty_home()` 이 갈린다.
+    struct RelativeHomeGuard {
+        prev: Option<String>,
+        /// 실제로 파일이 떨어질 임시 디렉토리(파일을 만드는 경로에서만 쓴다).
+        _dir: Option<tempfile::TempDir>,
+    }
+
+    impl RelativeHomeGuard {
+        fn set(rel: &std::path::Path, dir: Option<tempfile::TempDir>) -> Self {
+            let prev = std::env::var("TASTY_HOME").ok();
+            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+            unsafe { std::env::set_var("TASTY_HOME", rel) };
+            Self { prev, _dir: dir }
+        }
+
+        /// CWD 아래의 상대 이름. **파일을 만들지 않는 경로에서만** 쓴다 — 만들면
+        /// 레포 워킹트리가 더러워진다.
+        fn name(rel: &str) -> Self {
+            Self::set(std::path::Path::new(rel), None)
+        }
+
+        /// 임시 디렉토리를 가리키는 **상대** 경로(CWD 에서 `..` 로 거슬러 올라간다).
+        /// 상대성은 유지하면서 생성 파일은 임시 디렉토리에 떨어뜨린다.
+        fn temp() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cwd = std::env::current_dir().expect("cwd");
+            let mut rel = std::path::PathBuf::new();
+            for c in cwd.components() {
+                if matches!(c, std::path::Component::Normal(_)) {
+                    rel.push("..");
+                }
+            }
+            for c in dir.path().components() {
+                if let std::path::Component::Normal(seg) = c {
+                    rel.push(seg);
+                }
+            }
+            assert!(rel.is_relative(), "가드가 상대 경로를 만들어야 의미가 있다");
+            Self::set(&rel, Some(dir))
+        }
+    }
+
+    impl Drop for RelativeHomeGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+                Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
+                // SAFETY: 상동.
+                None => unsafe { std::env::remove_var("TASTY_HOME") },
+            }
+        }
+    }
+
+    fn bash_shell_path() -> String {
+        if cfg!(windows) {
+            "bash.exe"
+        } else {
+            "/bin/bash"
+        }
+        .to_string()
+    }
+
+    /// `bash_rcfile_args` 가 **해석된** 루트를 쓰는지.
+    ///
+    /// `relative_tasty_home_is_absolutized_for_child_processes` 는 경로 헬퍼만 부르므로
+    /// 이 함수의 래퍼 한 줄(`tasty_dir().as_deref()`)을 지나지 않는다 — 그 한 줄을
+    /// 미해석 홈으로 되돌리는 변이가 잡히지 않는다. `--rcfile` 은 자식 셸이 **자기 CWD**
+    /// 기준으로 다시 해석하므로 상대 경로가 나가면 통합이 무음으로 죽는다.
+    #[test]
+    fn bash_rcfile_args_uses_the_resolved_root() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        // 이 함수는 문자열만 조립하고 파일을 만들지 않는다 — 그래서 CWD 아래를
+        // 가리키는 상대 이름을 그대로 써도 워킹트리가 더러워지지 않는다.
+        let _home = RelativeHomeGuard::name("relative-tasty-home");
+
+        let settings = GeneralSettings {
+            shell: bash_shell_path(),
+            ..GeneralSettings::default()
+        };
+        let args = bash_rcfile_args(&settings);
+
+        let rc = args
+            .iter()
+            .position(|a| a == "--rcfile")
+            .and_then(|i| args.get(i + 1))
+            .expect("--rcfile 인자");
+        assert!(
+            std::path::Path::new(rc).is_absolute(),
+            "래퍼가 해석된 루트를 넘겨야 한다 — 상대 --rcfile 은 자식 셸의 CWD 로 \
+             재해석된다, got {rc}"
+        );
+        assert!(
+            rc.contains("relative-tasty-home"),
+            "설정한 TASTY_HOME 아래를 가리켜야 한다, got {rc}"
+        );
+    }
+
+    /// `effective_shell_envs`(zsh `ZDOTDIR`)도 같은 래퍼 한 줄을 지난다 — 위 bash
+    /// 테스트와 같은 이유로 별도 단정이 필요하다. 상대 `ZDOTDIR` 이 나가면 zsh 가
+    /// 자기 CWD 기준으로 wrapper 를 찾아 통합이 무음으로 죽는다.
+    ///
+    /// 이 경로는 wrapper `.zshenv` 를 **실제로 만든다** — 그래서 상대성을 유지하되
+    /// 임시 디렉토리를 가리키는 가드를 쓴다(CWD 를 더럽히지 않는다).
+    #[test]
+    fn effective_shell_envs_uses_the_resolved_root() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = RelativeHomeGuard::temp();
+
+        let settings = GeneralSettings {
+            shell: "zsh".to_string(),
+            ..GeneralSettings::default()
+        };
+        let envs = settings.effective_shell_envs();
+
+        let zdotdir = envs
+            .iter()
+            .find(|(k, _)| k == "ZDOTDIR")
+            .map(|(_, v)| v.as_str())
+            .expect("ZDOTDIR");
+        assert!(
+            std::path::Path::new(zdotdir).is_absolute(),
+            "래퍼가 해석된 루트를 넘겨야 한다 — 상대 ZDOTDIR 은 zsh 의 CWD 로 \
+             재해석된다, got {zdotdir}"
         );
     }
 
