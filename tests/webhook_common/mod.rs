@@ -50,6 +50,13 @@ const PORT_STEAL_RETRIES: usize = 2;
 /// 이 줄이 stderr 에 있으면 "안 떴다" 가 아니라 "포트를 가져갔다" 가 확정된다.
 const BIND_FAILED_MARKER: &str = "webhook listener bind";
 
+/// stderr 한 줄이 **bind 실패**인가. 재시도 여부가 여기서 갈리므로 순수 함수로 떼어
+/// 두고 아래 테스트가 제품의 실제 문구 셋과 대조한다 — 성공 줄(`bound`)을 실패로
+/// 읽으면 하네스가 정상 인스턴스를 버리고 재시도를 돌게 된다.
+fn is_bind_failure(line: &str) -> bool {
+    line.contains(BIND_FAILED_MARKER) && line.contains("failed")
+}
+
 /// OS 가 배정한 free TCP 포트의 **예약**. 리스너를 살려 둔 채 번호만 알려주므로,
 /// 이 값이 살아 있는 동안에는 제3자가 같은 포트를 가져갈 수 없다.
 ///
@@ -547,9 +554,7 @@ impl WebhookInstance {
     /// stderr 링에서 리스너 bind 실패 경고 한 줄을 찾는다.
     fn stderr_bind_failure(&self) -> Option<String> {
         let ring = self.stderr_ring.lock().unwrap();
-        ring.iter()
-            .find(|line| line.contains(BIND_FAILED_MARKER) && line.contains("failed"))
-            .cloned()
+        ring.iter().find(|line| is_bind_failure(line)).cloned()
     }
 
     /// 실패 원인을 사람이 바로 읽을 수 있게 조립한다. `seeded` 는 이 인스턴스의 포트를
@@ -786,4 +791,42 @@ pub fn stdout_str(out: &Output) -> String {
 
 pub fn stderr_str(out: &Output) -> String {
     String::from_utf8_lossy(&out.stderr).to_string()
+}
+
+#[cfg(test)]
+mod bind_detection_tests {
+    use super::*;
+
+    /// `src/webhook/listener.rs` 가 실제로 내는 세 문구. 하나라도 오분류되면 재시도
+    /// 판정이 뒤집힌다 — 성공을 도난으로 읽으면 멀쩡한 인스턴스를 버리고, 도난을
+    /// 침묵으로 읽으면 재시도 없이 실패한다.
+    #[test]
+    fn only_the_bind_failure_line_counts_as_a_steal() {
+        assert!(is_bind_failure(
+            "WARN tasty::webhook::listener: webhook listener bind 0.0.0.0:28429 failed: \
+             Address already in use (os error 98) — set a free port and check firewall"
+        ));
+        assert!(!is_bind_failure(
+            "INFO tasty::webhook::listener: webhook listener bound on 0.0.0.0:28429"
+        ));
+        assert!(!is_bind_failure(
+            "DEBUG tasty::webhook::listener: webhook listener already bound; skip re-init"
+        ));
+    }
+
+    /// 재시도 횟수가 0 으로 되돌아가면 도난 대응이 사라진다 — 그 변경에는 아무
+    /// 컴파일 오류도 테스트 실패도 따라붙지 않으므로 여기서 고정한다. 상한이 있는
+    /// 이유는 도난이 계속되는 상황(누가 그 대역을 계속 쓴다)에서 무한 재시도가
+    /// 원인을 감추기 때문이다.
+    #[test]
+    fn a_stolen_port_is_retried_a_bounded_number_of_times() {
+        assert!(
+            PORT_STEAL_RETRIES > 0,
+            "도난 대응이 없으면 예약만으로는 부족하다"
+        );
+        assert!(
+            PORT_STEAL_RETRIES <= 3,
+            "재시도가 길어지면 원인이 로그에 묻힌다"
+        );
+    }
 }
