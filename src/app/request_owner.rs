@@ -36,6 +36,21 @@ pub(crate) enum Kind {
     Observer,
 }
 
+impl Kind {
+    /// 에러 메시지에 쓰는 이름. 호출자가 "무엇의 id 였는지" 를 알아야 고칠 수 있다.
+    fn label(self) -> &'static str {
+        match self {
+            Kind::Surface => "surface",
+            Kind::Workspace => "workspace",
+            Kind::Pane => "pane",
+            Kind::Tab => "tab",
+            Kind::HeadlessPty => "headless pty",
+            Kind::Hook => "surface hook",
+            Kind::Observer => "output observer",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ResourceId {
     pub kind: Kind,
@@ -201,6 +216,22 @@ impl App {
     /// - `method` 가 [`ambiguous_parent_fallback_requires_surface`] 에 해당하고
     ///   (`terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast`)
     ///   리소스 id 를 전혀 못 찾은 채 main window 가 2개 이상 열려 있을 때
+    /// 요청이 지목한 대상을 **아무 engine 도 안 가졌을 때** 돌려줄 메시지.
+    ///
+    /// 예전에는 이 자리에서 포커스된 창으로 넘겼다. 그러면 대상을 잘못 적은 요청이
+    /// **다른 창에서 조용히 성공한다** — 실측(2026-09-05): 존재하지 않는
+    /// `workspace_id` 를 실은 `workspace.create` 가 포커스된 창에 워크스페이스를
+    /// 만들고 성공을 돌려줬다. 호출자는 자기가 지목한 곳에 만들어진 줄 안다.
+    /// `docs/design/policies/focus.md` 의 "silent fallback 금지" 가 그것이다.
+    pub(crate) fn unowned_target_message(rid: ResourceId, method: &str) -> String {
+        format!(
+            "no window owns {} {} (named by '{method}'); \
+             list the resource to get a live id — the request is not sent to the focused window",
+            rid.kind.label(),
+            rid.id
+        )
+    }
+
     pub(crate) fn find_request_owner(
         &self,
         method: &str,

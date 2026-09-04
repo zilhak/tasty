@@ -35,9 +35,16 @@ impl App {
             return IpcStep::Handled;
         }
 
-        // owner main → focused main → parked owner → parked[0] 순으로 라우팅
-        // (CLAUDE.md "포커스 독립" 원칙).
+        // 대상을 **지목한** 요청과 안 한 요청을 가른다(핵심 원칙 3).
+        //
+        // 지목한 요청: owner main → parked owner → **에러**. 포커스로 안 샌다.
+        // 안 한 요청: owner(=`"workspace"` 문자열 대상) → focused main → parked[0].
+        let named = crate::app::request_owner::request_resource_id(
+            &cmd.request.method,
+            &cmd.request.params,
+        );
         let target_id = match self.find_request_owner(&cmd.request.method, &cmd.request.params) {
+            Ok(id) if named.is_some() => id,
             Ok(id) => id.or(self.view.focused_view_id),
             Err(msg) => {
                 let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -73,13 +80,8 @@ impl App {
             }
         }
         // parked owner 검사 — 창 순회와 **같은 리소스 집합**을 봐야 한다. 한쪽만
-        // 새 kind 를 알면 그 리소스는 창에서 못 찾힌 뒤 parked 에서도 안 잡혀
-        // 포커스 폴백으로 샌다.
-        let owner_in_parked = crate::app::request_owner::request_resource_id(
-            &cmd.request.method,
-            &cmd.request.params,
-        )
-        .and_then(|rid| {
+        // 새 kind 를 알면 그 리소스는 창에서 못 찾힌 뒤 parked 에서도 안 잡힌다.
+        let owner_in_parked = named.and_then(|rid| {
             self.parked_states
                 .iter_mut()
                 .find(|(_, e)| crate::app::request_owner::engine_has_resource(e, rid))
@@ -94,6 +96,17 @@ impl App {
             );
             send_response(&cmd.response_tx, response);
             self.dispatch_pending_intents();
+            return IpcStep::Handled;
+        }
+        if let Some(rid) = named {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            send_response(
+                &cmd.response_tx,
+                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    id,
+                    Self::unowned_target_message(rid, &cmd.request.method),
+                ),
+            );
             return IpcStep::Handled;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {

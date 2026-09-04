@@ -1144,3 +1144,62 @@ fn lifecycle_methods_are_still_absent_in_a_headless_daemon() {
         "헤드리스에서 plugin.enable 은 아직 없는 메서드여야 한다: {resp}"
     );
 }
+
+/// 대상을 **지목했는데 아무 창도 안 가진** 요청은 거절된다 — 포커스된 창으로 안 샌다.
+///
+/// 지우기 전의 폴백은 이 요청을 포커스된 창에 넘겼고, 그래서 **존재하지 않는
+/// `workspace_id` 를 실은 `workspace.create` 가 조용히 성공했다**(실측 2026-09-05:
+/// 포커스된 창에 워크스페이스를 만들고 그 id 를 돌려줬다). 호출자는 자기가 지목한
+/// 곳에 만들어진 줄 안다. `docs/design/policies/focus.md` 의 "silent fallback 금지".
+///
+/// gui 전용인 이유: 헤드리스 pump 는 이 라우터를 타지 않는다(engine 이 하나뿐이라
+/// 라우팅 자체가 없다). 그쪽의 같은 증상은 별도 축이다.
+#[cfg(feature = "gui")]
+#[test]
+fn a_request_naming_an_unowned_target_is_rejected() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    // 지목했고 아무도 안 가졌다 → 에러. 핸들러가 그 키를 무시하더라도 그렇다.
+    let resp = tasty.call_raw(
+        "workspace.create",
+        json!({ "workspace_id": 999_999, "name": "unowned-target-probe" }),
+    );
+    assert!(
+        resp.get("error").is_some(),
+        "지목한 대상을 아무도 안 가졌으면 거절해야 한다(성공하면 포커스된 창에 \
+         만들어진 것이다): {resp}"
+    );
+    let msg = resp["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("999999") && msg.contains("workspace"),
+        "에러가 무엇을 못 찾았는지 말해야 고칠 수 있다: {resp}"
+    );
+
+    // plugin → host call 경로도 같은 판정을 받는다. 라우팅 사본이 둘이라
+    // (IPC 라우터 / intent 디스패처) 한쪽만 고치면 다른 쪽이 조용히 옛 동작을 남긴다.
+    // `image.*` 는 image plugin 의 namespace 이고 그 plugin 이 `image.open` 을 호스트로
+    // 되던지므로, 이 호출이 그 사본을 탄다 — 응답의 `host call ... failed` 감싸기가
+    // 경로를 드러낸다.
+    let via_plugin = tasty.call_raw(
+        "image.open",
+        json!({ "surface_id": 999_999, "path": "/tmp/does-not-exist.png" }),
+    );
+    let via_msg = via_plugin
+        .get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(|m| m.as_str())
+        .unwrap_or_default();
+    assert!(
+        via_msg.contains("no window owns surface 999999"),
+        "plugin 을 경유한 호출도 지목한 대상이 없으면 같은 이유로 거절돼야 한다: \
+         {via_plugin}"
+    );
+
+    // 지목 안 한 같은 메서드는 그대로 동작한다 — 폴백을 통째로 없앤 것이 아니다.
+    let ok = tasty.call_raw("workspace.create", json!({ "name": "no-target-probe" }));
+    assert!(
+        ok.get("result").is_some(),
+        "대상을 지목하지 않은 생성 요청은 계속 동작해야 한다: {ok}"
+    );
+}

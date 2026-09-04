@@ -272,11 +272,10 @@ impl App {
     /// 진입점에 caller를 주입한다. 호스트 자체 메서드(window.*/plugin.*)는
     /// `process_ipc`가 별도로 처리하므로 여기서는 라우터에만 위임한다.
     ///
-    /// Routing 우선순위 (CLAUDE.md "포커스 독립" 원칙):
-    /// 1. request 가 surface_id/workspace_id/pane_id 를 명시했고 owner main 이
-    ///    있으면 그 main 으로 — focus 와 무관하게 ID 로 직접 라우팅.
-    /// 2. owner 못 찾으면 focused main 으로 (대상 미지정 / list 외 폴백).
-    /// 3. 그것도 없으면 parked[0].
+    /// Routing 우선순위 (핵심 원칙 3 "포커스 독립"):
+    /// 요청이 대상을 **지목했는가**로 갈린다.
+    /// - 지목함: owner main → parked owner → **에러**. 포커스로 안 샌다.
+    /// - 안 함: `"workspace"` 문자열 대상 → focused main → parked[0].
     pub(crate) fn dispatch_with_caller(
         &mut self,
         request: &ipc::protocol::JsonRpcRequest,
@@ -286,7 +285,10 @@ impl App {
         if let Some(resp) = self.dispatch_list_global(request) {
             return resp;
         }
+        let named =
+            crate::app::request_owner::request_resource_id(&request.method, &request.params);
         let target_id = match self.find_request_owner(&request.method, &request.params) {
+            Ok(id) if named.is_some() => id,
             Ok(id) => id.or(self.view.focused_view_id),
             Err(msg) => {
                 let id = request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -317,18 +319,23 @@ impl App {
             }
         }
         // parked 도 owner 검사 후 fallback.
-        let owner_in_parked =
-            crate::app::request_owner::request_resource_id(&request.method, &request.params)
-                .and_then(|rid| {
-                    self.parked_states
-                        .iter_mut()
-                        .find(|(_, e)| crate::app::request_owner::engine_has_resource(e, rid))
-                });
+        let owner_in_parked = named.and_then(|rid| {
+            self.parked_states
+                .iter_mut()
+                .find(|(_, e)| crate::app::request_owner::engine_has_resource(e, rid))
+        });
         if let Some((state, engine)) = owner_in_parked {
             let response =
                 ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
             self.dispatch_pending_intents();
             return response;
+        }
+        if let Some(rid) = named {
+            let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+            return ipc::protocol::JsonRpcResponse::invalid_params(
+                id,
+                Self::unowned_target_message(rid, &request.method),
+            );
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
