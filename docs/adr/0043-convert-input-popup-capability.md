@@ -53,6 +53,6 @@ host 가 plugin 팝업을 여는 generic API 는 이미 존재한다: `PluginMan
 
 - [ADR-0028: plugin egui-mesh render channel](0028-plugin-egui-mesh-render-channel.md) — plugin 팝업 egui-mesh 렌더 + host 화이트리스트
 - [ADR-0042: fs.pick_file native dialog host delegation](0042-fs-pick-file-native-dialog-host-delegation.md) — file-open 팝업의 browse 위임
-- `src/engine/surface_registry.rs` (`SurfaceKindDef`), `src/engine/surface_registry/{egui_mesh,remote_kind... }` — qualify 등록
+- `src/core/surface_registry.rs` (`SurfaceKindDef`), `src/engine/surface_registry/{egui_mesh,remote_kind... }` — qualify 등록
 - `src/state.rs` (`AppState::enqueue_convert_input_popup`), `src/adapters/ui/popup/convert.rs` (`ConvertAction::RequiresInput`)
 - `crates/tasty-plugin-markdown/tasty-plugin.toml`, `crates/tasty-plugin-markdown/src/main.rs` (`FileOpenState`)

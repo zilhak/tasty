@@ -3,7 +3,7 @@
 - **Status**: Implemented (bundled plugin)
 - **주체**: 로컬 사용자 (GUI surface) · AI Agent (`tasty image` CLI)
 - **배포/통합**: bundled · surface_kind(egui-mesh) · 파일 핸들러 — [plugins 개념](../../concepts/plugins.md)
-- **코드**: `crates/tasty-plugin-image/`(`main.rs`/`doc.rs`/`render.rs`), 등록 `src/engine/surface_registry/egui_mesh.rs`(화이트리스트)
+- **코드**: `crates/tasty-plugin-image/`(`main.rs`/`doc.rs`/`render.rs`), 등록 `src/core/surface_registry/egui_mesh.rs`(화이트리스트)
 - **권한**: 매니페스트 `permissions`
 - **결정**: [ADR-0028](../../adr/0028-plugin-egui-mesh-render-channel.md)(egui-mesh 채널) · [ADR-0030](../../adr/0030-image-egui-mesh-bitmap-texture.md)(image mesh-only 개정)
 - **화면**: [screens/image.md](screens/image.md)

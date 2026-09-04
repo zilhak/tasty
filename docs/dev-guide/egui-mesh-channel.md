@@ -38,7 +38,7 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 | paint_frame 수신 라우팅 / 송신 헬퍼 | `crates/tasty-host-plugin/src/manager/{pump,events,buffer}.rs` |
 | 보조 핸들 채널 (shared buffer 핸들 전송) | host `crates/tasty-host-plugin/src/handle_channel.rs` · plugin `crates/tasty-plugin-sdk/src/handle_channel.rs` · 매핑 `crates/tasty-shm/` |
 | host 측 surface stand-in | `src/plugin_bridge/egui_mesh_surface.rs` |
-| 화이트리스트 + api_version gate + registry 등록 | `src/engine/surface_registry/egui_mesh.rs` |
+| 화이트리스트 + api_version gate + registry 등록 | `src/core/surface_registry/egui_mesh.rs` |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` |
 
 ### 보조 핸들 채널 — shared buffer 를 plugin 에 넘기는 전송 (크로스플랫폼)

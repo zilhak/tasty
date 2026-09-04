@@ -234,7 +234,7 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - Given client 가 FIN/RST 없이 조용히 끊김(silent disconnect) When attach heartbeat TTL 이 만료 Then 점유 lock 이 EOF 와 동일하게 자동 free 되고, 같은 surface/workspace 로 새 client 의 재attach 가 성공한다.
 - Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
 - Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
-- Given workspace attach 대상에 bundled egui-mesh surface(image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서 빠져 이 mesh-mirror 채널을 더 이상 쓰지 않는다 — attach 시 다른 webview/remote kind 와 동일하게 placeholder 로 내려간다(과거 `tests/attach_markdown_mesh_mirror_loopback.rs` 로 프로토콜 레벨 검증했으나, markdown 이 이 채널을 벗어나며 삭제).
+- Given workspace attach 대상에 bundled egui-mesh surface(image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서 빠져 이 mesh-mirror 채널을 더 이상 쓰지 않는다 — attach 시 다른 webview/remote kind 와 동일하게 placeholder 로 내려간다(과거 `attach_markdown_mesh_mirror_loopback.rs` 통합 타깃으로 프로토콜 레벨 검증했으나, markdown 이 이 채널을 벗어나며 삭제).
   - image — 미검증.
   - mesh_demo — 미검증.
   - 2종 공통 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.

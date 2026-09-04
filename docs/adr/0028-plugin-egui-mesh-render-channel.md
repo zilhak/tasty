@@ -9,8 +9,8 @@
 
 현재 plugin 렌더 채널은 `SurfaceKindRendering` enum 의 세 variant — `Remote` / `Host` / `Webview` — 가 단일 출처다 (`crates/tasty-plugin-manifest/src/types.rs:356-369`). 이 중 host-rendered 채널(`rendering = "host"`)로 동작하는 image / markdown surface 는 다음 한계를 안고 있다.
 
-- **host-rendered surface 는 껍데기다.** manifest 등록·IPC namespace 만 점유할 뿐, 모델 타입·렌더 로직·편집 히스토리가 전부 본체에 산다. `ImagePanel` / `MarkdownPanel` 모델은 식별·네비게이션 메타데이터만 갖고(`crates/tasty-model/src/image_panel.rs:17-18`, `markdown_panel.rs:6-8`), 실제 픽셀·텍스처·스크롤·편집 상태는 host 의 `ImageView` / `MarkdownView` 가 소유한다. plugin 프로세스(`crates/tasty-plugin-image/src/main.rs:32-34`, `crates/tasty-plugin-markdown/src/main.rs:28-30`)는 `SurfaceResult::default()` 만 돌려주는 trampoline 이고, 렌더는 본체 egui 가 `downcast_mut` 으로 직접 수행한다(`src/adapters/ui/egui_panels.rs:154,204`). "plugin 으로 분리했다"는 의미가 사실상 없다.
-- **`UiNode` DSL 은 고정 위젯 어휘다.** `Vbox`/`Hbox`/`Label`/`Button`/`Tree`/`Canvas` 등 고정 위젯만 있어(`crates/tasty-plugin-protocol/src/ui_tree.rs:14-151`), 흐르는 rich-text·인라인 혼합 서식(bold+code+link)·인라인 클릭 링크·테이블을 표현할 어휘가 없다. markdown 렌더(헤딩/리스트/인라인 코드/링크/이미지/테이블)는 이 DSL 로 옮길 수 없다. 그래서 현재 host 가 직접 그린다.
+- **host-rendered surface 는 껍데기다.** manifest 등록·IPC namespace 만 점유할 뿐, 모델 타입·렌더 로직·편집 히스토리가 전부 본체에 산다. `ImagePanel` / `MarkdownPanel` 모델은 식별·네비게이션 메타데이터만 갖고(당시 `tasty-model` 의 `image_panel.rs` · `markdown_panel.rs` — 두 모델은 이후 제거됐다), 실제 픽셀·텍스처·스크롤·편집 상태는 host 의 `ImageView` / `MarkdownView` 가 소유한다. plugin 프로세스(`crates/tasty-plugin-image/src/main.rs:32-34`, `crates/tasty-plugin-markdown/src/main.rs:28-30`)는 `SurfaceResult::default()` 만 돌려주는 trampoline 이고, 렌더는 본체 egui 가 `downcast_mut` 으로 직접 수행한다(`src/adapters/ui/egui_panels.rs:154,204`). "plugin 으로 분리했다"는 의미가 사실상 없다.
+- **`UiNode` DSL 은 고정 위젯 어휘다.** `Vbox`/`Hbox`/`Label`/`Button`/`Tree`/`Canvas` 등 고정 위젯만 있어(당시 `tasty-plugin-protocol` 의 `ui_tree.rs` — 이 DSL 은 이후 제거됐다), 흐르는 rich-text·인라인 혼합 서식(bold+code+link)·인라인 클릭 링크·테이블을 표현할 어휘가 없다. markdown 렌더(헤딩/리스트/인라인 코드/링크/이미지/테이블)는 이 DSL 로 옮길 수 없다. 그래서 현재 host 가 직접 그린다.
 - **Canvas(SharedBuffer 픽셀)는 고정 해상도 래스터다.** 픽셀 프레임버퍼를 plugin 이 직접 채우는 경로(`CanvasTextureCache`)는 완비돼 있으나, DPI/줌 변화에서 텍스트가 깨지고 plugin 이 폰트·레이아웃을 스스로 래스터화해야 한다.
 - **같은 한계가 surface 를 넘어 popup·banner 에도 적용된다.** plugin 팝업(git-viewer·clipboard-viewer)은 `UiNode` tree 를 host 가 `render_popup_tree` 로 그리므로 위 DSL 어휘 한계를 그대로 안고(git-viewer 의 섹션 strip·diff well·2줄 행 등 디자인을 표현 불가), banner 는 아예 plugin 이 기여할 채널이 없다. 즉 host 가 plugin-content 를 대신 그리는 구조(host-rendered `Host` + UiNode `Remote` 렌더) 전반이 의도된 아키텍처가 아니다.
 
@@ -24,7 +24,7 @@
 
 - **tessellate 는 plugin 이 한다.** 텍스트 tessellation 은 plugin 이 소유한 `Fonts`/galley 에 의존하므로, host 는 plugin 의 폰트 atlas 없이 text shape 를 tessellate 할 수 없다. plugin 이 `ctx.run(...)` → `FullOutput` → `ctx.tessellate(...)` 까지 마친 mesh 를 보낸다. un-tessellated `Shape` 를 보내 폰트 동기화를 host 로 떠넘기는 변형은 기각한다.
 - **taxonomy 확장.** `SurfaceKindRendering` 에 4번째 variant `EguiMesh`(와이어 키 `"egui-mesh"`)를 추가하고, 같은 mesh 메커니즘을 **popup·banner 렌더 채널에도** 적용한다(팝업은 현재 UiNode tree, banner 는 **신규 plugin 기여 채널** — 기존엔 plugin banner 경로가 없다). 전환 기간엔 기존 `Host`/`Remote`(UiNode) 와 공존하지만 이는 **과도기일 뿐**이며, 전환 완료 시 `Host`·`Remote`(UiNode) 는 제거되어 plugin-content 채널은 `EguiMesh`(+image 비트맵의 Canvas) 와 html 의 `Webview` 만 남는다.
-- **개방 정책 = bundled 전용.** host-rendered 와 동일 패턴의 `(kind, plugin_id)` 화이트리스트(`src/engine/surface_registry/host_rendered.rs:14-19` 미러) + epaint 버전 pin + `api_version` gate 로 제한한다. user plugin 개방은 epaint 와이어 포맷이 host·plugin 동일 컴파일을 강제하는 동안 보류한다(1.0 이후 재검토).
+- **개방 정책 = bundled 전용.** host-rendered 와 동일 패턴의 `(kind, plugin_id)` 화이트리스트(당시 `engine/surface_registry/host_rendered.rs` 미러 — 그 파일은 이후 제거됐다) + epaint 버전 pin + `api_version` gate 로 제한한다. user plugin 개방은 epaint 와이어 포맷이 host·plugin 동일 컴파일을 강제하는 동안 보류한다(1.0 이후 재검토).
 - **scope = 단계적 전환 후 host-rendered 전면 제거.** 순서: (1) **surface** — markdown(순수 위젯, 비트맵 불필요)을 mesh 만으로 먼저 검증 → image 는 비트맵=SharedBuffer/Canvas + 툴바·핸들 chrome=mesh 하이브리드. (2) **popup** — git-viewer(+새 디자인 자가 렌더)·clipboard-viewer 를 mesh 팝업으로. (3) **banner** — plugin 이 banner 를 띄우는 신규 mesh 채널 신설. (4) **제거** — 위가 전부 전환되면 host-rendered(`Host`) + UiNode(`Remote`) 렌더 경로(`ui_tree_render.rs`/`render_popup_tree`/`egui_panels.rs` 직접 렌더)와 `UiNode` DSL 을 제거한다. 현 host-rendered 구현은 의도된 아키텍처가 아니므로 잔존시키지 않는다.
 - **인프라 재사용.** 텍스처(폰트 atlas·이미지)는 기존 SharedBuffer / `CanvasTextureCache` 채널을 재사용하고(작은 image delta 는 inline 허용), mesh 는 binary stream frame(`crates/tasty-ipc/src/stream.rs`, `StreamTag::Data`)으로 보낸다. plugin→host `surface.paint_frame`, host→plugin `surface.set_context`(size/ppp/raw input) 신규 메시지를 둔다.
 
@@ -51,7 +51,7 @@
 - **A. in-process dylib egui**: plugin 이 host 프로세스 안에서 `ui.label()` 을 직접 호출. 격리·권한 모델을 위배하고(권한 게이트는 plugin 이 별도 프로세스라는 전제 위에 선다, `docs/concepts/plugins.md:48`), 크래시가 host 로 전파되며, Rust ABI/egui 버전을 락한다. 진입로 자체가 `Entry::Process` 단일 variant 라(`types.rs:73-82`) 구조와도 충돌 → **기각**.
 - **Canvas-only(고정 해상도 픽셀 프레임버퍼)**: plugin 이 픽셀을 직접 채워 SharedBuffer 로 전송. DPI/텍스트 품질 한계로 markdown 같은 벡터 콘텐츠에 부적합 → image 비트맵에만 부분 채택(하이브리드).
 - **`UiNode` 어휘 확장(rich-text 노드 추가)**: DSL 에 인라인 서식·테이블 노드를 계속 더하는 길. 사실상 egui 재구현으로 DSL 이 비대해지고, 표현력을 영원히 따라가야 함 → **기각**.
-- **host builtin 강등(plugin 폐기)**: image/markdown 을 explorer 선례(`src/engine/surface_registry/builtins.rs:155-193`)처럼 host builtin 으로 굳히는 길. 기술적으로 가능하나 "plugin 이 내용을 소유한다"는 사용자 의도와 정반대 → **기각**(기록만).
+- **host builtin 강등(plugin 폐기)**: image/markdown 을 explorer 선례(`src/core/surface_registry/builtins.rs`)처럼 host builtin 으로 굳히는 길. 기술적으로 가능하나 "plugin 이 내용을 소유한다"는 사용자 의도와 정반대 → **기각**(기록만).
 - **C. wgpu 텍스처/서피스 직접 공유(외부 GPU 메모리)**: plugin 이 자기 wgpu device 로 그린 텍스처를 DMA-BUF / D3D11 shared handle / IOSurface 로 host 와 GPU 레벨 공유. IPC 직렬화는 0 이지만 플랫폼별 GPU 공유 API 가 제각각이고 wgpu 24 의 cross-API external texture 지원이 미성숙하며 크로스플랫폼 1급(CLAUDE.md 원칙4) 부담이 크다 → **기각**(image 거대 비트맵 특수 최적화로 재검토 여지).
 
 ## Reconsideration Triggers

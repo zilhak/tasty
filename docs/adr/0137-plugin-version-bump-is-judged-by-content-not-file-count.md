@@ -62,7 +62,7 @@ CLAUDE.md 의 plugin 버전 정책은 트리거와 목적이 서로 다르게 �
 
 **삼킴 검사**(반대 극성): rustfmt 정규화가 배제한 6 쌍은 `style:` 커밋 두 개에서만 나왔다. 남은 33 쌍 / 28 커밋의 type 은 fix 8 · docs 8 · feat 6 · refactor 5 · style 1 이다.
 
-그 `style 1` 이 커밋 type 을 판별식으로 쓸 수 없다는 증거다. `8fb6e243`(`style: cargo fmt --all` + `render.rs` 선언순서)은 **한 커밋 안에서 갈린다** — `tasty-plugin-markdown` 쪽은 정규화가 삼키고, `tasty-plugin-image` 쪽은 남는다. 그 plugin 안에서도 `build.rs` 는 순수 포맷이라 삼켜지고 `src/render.rs` 만 남는다. 판별식은 커밋보다도, 파일 종류보다도 잘게 자른다.
+그 `style 1` 이 커밋 type 을 판별식으로 쓸 수 없다는 증거다. `8fb6e243`(`style: cargo fmt --all` + `render.rs` 선언순서)은 **한 커밋 안에서 갈린다** — `tasty-plugin-markdown` 쪽은 정규화가 삼키고, `tasty-plugin-image` 쪽은 남는다. 그 plugin 안에서도 `build.rs` 는 순수 포맷이라 삼켜지고 `crates/tasty-plugin-image/src/render.rs` 만 남는다. 판별식은 커밋보다도, 파일 종류보다도 잘게 자른다.
 
 남은 `render.rs` 는 `use` 블록이 `mod` 경계 너머로 옮겨간 것이다 — rustfmt 는 떨어진 `use` 그룹을 합치지 않으므로 정규화를 통과한다. 컴파일 산출물은 같으니 **알려진 오탐 한 종류가 더 있다**(주석 외에 선언 재배치). 대가는 불필요한 patch bump 하나이므로 아래 Decision 의 비대칭 판단을 바꾸지 않는다.
 

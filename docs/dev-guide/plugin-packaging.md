@@ -70,7 +70,7 @@ repo 의 `.sig` 는 *로컬 release/dev 검증용* — CI 정식 release 는 그
 
 ### 영구 release 키를 두지 않는 이유
 
-원래는 운영자가 Ed25519 keypair 를 1회 발급해 `crates/tasty-host-plugin/keys/release-pubkey.bin` 에 영구 커밋하고, 개인키를 GitHub Secret `TASTY_RELEASE_SIGN_KEY` 로 등록해 모든 release 빌드가 공유하는 설계였다. 하지만 이 절차가 실제로 완료된 적이 없어(`release-pubkey.bin` 이 계속 all-zero placeholder) CI 가 매 release 마다 secret 부재로 실패했다.
+원래는 운영자가 Ed25519 keypair 를 1회 발급해 `tasty-host-plugin` 의 `keys/release-pubkey.bin` 에 영구 커밋하고, 개인키를 GitHub Secret `TASTY_RELEASE_SIGN_KEY` 로 등록해 모든 release 빌드가 공유하는 설계였다. 하지만 이 절차가 실제로 완료된 적이 없어(`release-pubkey.bin` 이 계속 all-zero placeholder) CI 가 매 release 마다 secret 부재로 실패했다.
 
 `install_builtins_if_needed()`(`crates/tasty-host-plugin/src/builtin.rs`) 확인 결과, builtin plugin 은 항상 그 앱 바이너리와 **같은 설치 번들 안에서 로컬로 복사**된다 — 앱 버전과 독립적으로 원격에서 개별 업데이트되는 경로가 없다. 즉 "구버전 바이너리가 신버전 키로 서명된 plugin 을 검증해야 하는" 상황 자체가 없어, 릴리스마다 자기 안에서 완결되는 신뢰 단위다. 그래서 영구 신뢰 루트 대신 **매 빌드 로컬 자동생성 dev 키**로 통일했다 — 수동 키 배포 절차가 없어지고, 유출 리스크도 그 빌드 1 회로 국한된다. 대신 "이 서명이 특정 발급자가 발급했다"는 장기 정체성 보증은 포기하는데, 애초에 이 서명이 막으려는 건 발급자 신원 위조가 아니라 매니페스트 변조에 의한 confused-deputy(위 표 참고)라 이 트레이드오프가 맞는다. 배경·대안은 [ADR-0051](../adr/0051-ephemeral-release-signing-key.md) 참고.
 

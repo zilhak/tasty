@@ -101,7 +101,7 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
 ## switch_overlay (Overlays)
 
 디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw 는 **P2 예정**
-(`src/adapters/ui/.../tab_bar.rs` 탭 스트립 + `sidebar/{full,collapsed}.rs`). 갤러리 specimen
+(`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/{full,collapsed}.rs`). 갤러리 specimen
 은 P1 에서 본체보다 먼저 추가됨 (gallery-first, ADR-0020).
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |

@@ -10,7 +10,7 @@
 
 B2 구현 착수 시 두 전제를 실측 검증한 결과 둘 다 성립하지 않았다.
 
-- **재사용할 Canvas substrate 가 실재하지 않는다.** `Canvas` 는 `UiNode` DSL 의 위젯일 뿐이고(`CanvasTextureCache` 는 그 위젯의 GPU 경로), surface 단위로 "비트맵 Canvas 레이어를 mesh chrome *아래* 합성"하는 호스트 경로는 없다. 전환 이전의 image 조차 `CanvasTextureCache` 를 쓰지 않고 host egui 의 `load_texture` 로 직접 그렸다(당시 `src/adapters/ui/surface/image/view.rs` — image 기능은 이후 `crates/tasty-plugin-image`로 전부 이전되어 이 host 경로 자체가 사라졌다, 현재는 `crates/tasty-plugin-image/src/render.rs`). 하이브리드를 문구대로 구현하려면 surface 단위 Canvas 레이어 + z-order + 입력 라우팅 분리를 **새로** 신설해야 하며, 이는 ADR-0028 이 없애려던 "이중 렌더 경로"를 오히려 하나 더 만드는 것이다.
+- **재사용할 Canvas substrate 가 실재하지 않는다.** `Canvas` 는 `UiNode` DSL 의 위젯일 뿐이고(`CanvasTextureCache` 는 그 위젯의 GPU 경로), surface 단위로 "비트맵 Canvas 레이어를 mesh chrome *아래* 합성"하는 호스트 경로는 없다. 전환 이전의 image 조차 `CanvasTextureCache` 를 쓰지 않고 host egui 의 `load_texture` 로 직접 그렸다(당시 host 경로는 `adapters/ui/surface/image/view.rs` — image 기능은 이후 `crates/tasty-plugin-image`로 전부 이전되어 이 host 경로 자체가 사라졌다, 현재는 `crates/tasty-plugin-image/src/render.rs`). 하이브리드를 문구대로 구현하려면 surface 단위 Canvas 레이어 + z-order + 입력 라우팅 분리를 **새로** 신설해야 하며, 이는 ADR-0028 이 없애려던 "이중 렌더 경로"를 오히려 하나 더 만드는 것이다.
 - **mesh 채널이 이미 임의 텍스처를 native 로 처리한다.** host 측 egui-mesh 합성기는 surface 마다 전용 `egui_wgpu::Renderer` 를 두고 `TexturesDelta.set` 의 **모든 텍스처**(폰트 atlas + 임의 이미지)를 업로드한다(`src/gfx/gpu/egui_mesh_prepare.rs`). 와이어(`mesh_wire`)는 `ImageData::Color`(RGBA 이미지)와 `ImageDelta.pos`(부분 sub-rect 업로드)를 완전 지원한다. 즉 비트맵을 plugin egui `Context` 에 텍스처로 올리면 폰트 atlas 와 **동일 경로**로 1회 업로드되어 전용 Renderer 에 캐시되고, 이후 프레임은 텍스처를 참조하는 quad(정점 몇 개)만 나른다. egui 의 `TexturesDelta` 는 변경 시에만 픽셀을 재전송하므로 정적 화면·pan/zoom 에는 픽셀 재전송이 없다(SDK 의 출력 해시 가드로 프레임 자체도 생략). "거대 비트맵 per-frame 직렬화" 우려의 전제가 성립하지 않는다.
 
 ## Decision
@@ -44,4 +44,4 @@ B2 구현 착수 시 두 전제를 실측 검증한 결과 둘 다 성립하지 
 ## References
 
 - 개정 대상: [ADR-0028](0028-plugin-egui-mesh-render-channel.md) (image Canvas-하이브리드 조항).
-- 코드 근거: `src/gfx/gpu/egui_mesh_prepare.rs`(텍스처 업로드·전용 Renderer), `crates/tasty-plugin-protocol/src/mesh_wire.rs`(`ImageData::Color`·`ImageDelta.pos`), `crates/tasty-plugin-image/src/{main.rs,doc.rs,render.rs}`, `crates/tasty-plugin-markdown/src/main.rs`(B1 선례), `src/engine/surface_registry/egui_mesh.rs`(화이트리스트).
+- 코드 근거: `src/gfx/gpu/egui_mesh_prepare.rs`(텍스처 업로드·전용 Renderer), `crates/tasty-plugin-protocol/src/mesh_wire.rs`(`ImageData::Color`·`ImageDelta.pos`), `crates/tasty-plugin-image/src/{main.rs,doc.rs,render.rs}`, `crates/tasty-plugin-markdown/src/main.rs`(B1 선례), `src/core/surface_registry/egui_mesh.rs`(화이트리스트).
