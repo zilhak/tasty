@@ -18,9 +18,11 @@
 //! # zoom 우회 금지 (필수)
 //!
 //! 생성된 raw const 를 위젯/뷰가 직접 소비하면 `Theme::with_colors_and_zoom()` 의
-//! host UI zoom 적용·반올림과 zoom 제외 정책(tab bar / status bar / titlebar 고정
-//! px)을 우회한다. **generated const 의 역할은 `SIZING` 초기값 공급과 정합 테스트
-//! 까지다 — 런타임 소비는 반드시 `&Theme` 필드/접근자를 경유한다.**
+//! host UI zoom 적용·반올림과 zoom 제외 정책을 우회한다. 제외 갈래는 hairline / 탭바 /
+//! 상태바 / CSD 타이틀바 / 렌더 콘텐츠 폰트이고, **정본 집합은 `tasty-type-appearance`
+//! 의 zoom 면제 가드가 이름 단위로 든다** — 여기 적힌 갈래 이름은 요약이다.
+//! **generated const 의 역할은 `SIZING` 초기값 공급과 정합 테스트 까지다 — 런타임
+//! 소비는 반드시 `&Theme` 필드/접근자를 경유한다.**
 //!
 //! # 색 토큰
 //!
