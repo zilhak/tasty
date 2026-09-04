@@ -21,6 +21,21 @@ use tasty_ui_widgets::brand::{
 
 use crate::catalog::spec::{meta, note};
 
+// ── 무대 canvas 치수 ─────────────────────────────────────────────────────────
+//
+// specimen 이 그리는 faux 부팅창의 크기다. 디자인 토큰이 아니라 **무대 크기**라
+// Theme 에서 오지 않는다 — 값이 케이스마다 다른 이유는 그 케이스가 무엇을 보여야
+// 하는지(기본/최소/나란히 비교)에 있다. 로딩 스택은 창 크기와 무관하게 고정
+// 크기(반응형 축소 없음)라, 이 값들은 "축소가 없다"·"슬롯이 흔들리지 않는다" 를
+// 눈으로 확인시키는 무대일 뿐이다.
+
+/// 기본 부팅/종료 창 — 실 렌더가 흔히 present 하는 1280×720.
+const CANVAS_DEFAULT: (f32, f32) = (1280.0, 720.0);
+/// 최소창 데모 — 반응형 축소가 없음을 보이는 640×480 극단(문구 없음·Latte 변형 공용).
+const CANVAS_MIN: (f32, f32) = (640.0, 480.0);
+/// phase 문구 3~4종을 가로로 나란히 비교하는 좁은 무대.
+const CANVAS_MULTI: (f32, f32) = (320.0, 240.0);
+
 /// 실 부팅 로딩 화면 1장 — `canvas` 크기의 faux 창에 워드마크→스피너→phase 문구
 /// 중앙 스택을 그린다. `render_loading` 과 동일하게 창 크기와 무관하게 스택
 /// 자체는 고정 크기(반응형 축소 없음) — `top_pad` 로만 수직 중앙 정렬한다.
@@ -69,7 +84,7 @@ pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(
         ui,
         theme,
-        egui::vec2(1280.0, 720.0),
+        egui::vec2(CANVAS_DEFAULT.0, CANVAS_DEFAULT.1),
         Some("Initializing graphics…"),
     );
     meta(
@@ -85,7 +100,7 @@ pub fn draw_min(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(
         ui,
         theme,
-        egui::vec2(640.0, 480.0),
+        egui::vec2(CANVAS_MIN.0, CANVAS_MIN.1),
         Some("Loading plugins…"),
     );
     meta(
@@ -110,7 +125,12 @@ pub fn draw_phases(ui: &mut egui::Ui, theme: &Theme) {
             "Loading plugins…",
             "Restoring layout…",
         ] {
-            draw_frame(ui, theme, egui::vec2(320.0, 240.0), Some(text));
+            draw_frame(
+                ui,
+                theme,
+                egui::vec2(CANVAS_MULTI.0, CANVAS_MULTI.1),
+                Some(text),
+            );
         }
     });
     meta(
@@ -127,7 +147,7 @@ pub fn draw_phases(ui: &mut egui::Ui, theme: &Theme) {
 
 /// 문구 없는 변형 — 슬롯은 예약되지만 비어 있다(첫 설치, RestoringLayout 스킵).
 pub fn draw_no_text(ui: &mut egui::Ui, theme: &Theme) {
-    draw_frame(ui, theme, egui::vec2(640.0, 480.0), None);
+    draw_frame(ui, theme, egui::vec2(CANVAS_MIN.0, CANVAS_MIN.1), None);
     note(
         ui,
         theme,
@@ -142,7 +162,7 @@ pub fn draw_latte(ui: &mut egui::Ui, _theme: &Theme) {
     draw_frame(
         ui,
         &latte,
-        egui::vec2(640.0, 480.0),
+        egui::vec2(CANVAS_MIN.0, CANVAS_MIN.1),
         Some("Restoring layout…"),
     );
     note(
@@ -163,7 +183,12 @@ pub fn draw_shutdown_phases(ui: &mut egui::Ui, theme: &Theme) {
             "Closing surfaces…",
             "Stopping plugins…",
         ] {
-            draw_frame(ui, theme, egui::vec2(320.0, 240.0), Some(text));
+            draw_frame(
+                ui,
+                theme,
+                egui::vec2(CANVAS_MULTI.0, CANVAS_MULTI.1),
+                Some(text),
+            );
         }
     });
     meta(
@@ -189,7 +214,7 @@ pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
     draw_frame(
         ui,
         theme,
-        egui::vec2(1280.0, 720.0),
+        egui::vec2(CANVAS_DEFAULT.0, CANVAS_DEFAULT.1),
         Some("Stopping plugins…"),
     );
     meta(
