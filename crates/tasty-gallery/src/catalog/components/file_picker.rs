@@ -568,7 +568,7 @@ fn row(
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         let bar = egui::Rect::from_min_size(
             rect.min,
-            egui::vec2(theme.focus_ring_width.value(), rect.height()),
+            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
         );
         ui.painter()
             .rect_filled(bar, 0.0, theme.accent_primary().to_egui());

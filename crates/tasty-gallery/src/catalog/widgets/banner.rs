@@ -190,8 +190,11 @@ fn faux_chrome(
             painter.rect_filled(this, 0.0, theme.bg_panel().to_egui());
             // active underline (accent, 2px).
             let bar = egui::Rect::from_min_size(
-                egui::pos2(this.left(), this.bottom() - theme.focus_ring_width.value()),
-                egui::vec2(this.width(), theme.focus_ring_width.value()),
+                egui::pos2(
+                    this.left(),
+                    this.bottom() - theme.tab_indicator_width.value(),
+                ),
+                egui::vec2(this.width(), theme.tab_indicator_width.value()),
             );
             painter.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
         }

@@ -298,7 +298,7 @@ fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color3
         let r = resp.response.rect;
         let bar = egui::Rect::from_min_size(
             r.min,
-            egui::vec2(theme.focus_ring_width.value(), r.height()),
+            egui::vec2(theme.tab_indicator_width.value(), r.height()),
         );
         ui.painter().rect_filled(bar, 0.0, accent);
     });

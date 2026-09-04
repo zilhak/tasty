@@ -753,8 +753,8 @@ fn table_divider(ui: &mut egui::Ui, theme: &Theme) {
 /// nested blockquote — left bar(border-strong) + muted 본문, 1단계 중첩.
 fn blockquote(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
-    // 좌측 강조 바 폭 — spec.rs accent_bar 좌측 바와 동일하게 focus_ring_width(2px) 토큰.
-    let bar_w = theme.focus_ring_width.value();
+    // 좌측 강조 바 폭 — spec.rs accent_bar 좌측 바와 동일하게 tab_indicator_width(2px) 토큰.
+    let bar_w = theme.tab_indicator_width.value();
     let gap = theme.spacing_md.value();
     quote_block(ui, theme, bar_w, gap, |ui| {
         ui.label(rich(

@@ -271,7 +271,13 @@ pub struct ThemeSizing {
     /// terminal cell 스케일 — large (16px).
     pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
-    /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
+    /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
+    /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
+    /// 선택 카드 테두리처럼 "이것" 을 가리키는 링 전반이 같은 굵기를 쓴다. 색은
+    /// 별개 축이라 `accent_success` 등과 조합해도 이 토큰이다.
+    ///
+    /// **한쪽 변에 붙는 띠(활성 행 좌측 바·탭 밑줄)는 이 토큰이 아니다** —
+    /// `tab_indicator_width` 다. 값은 같은 2 지만 이쪽만 `zoomed()` 를 탄다.
     pub focus_ring_width: LogicalPx,
     /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
     /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
@@ -379,7 +385,9 @@ pub struct ThemeSizing {
     pub spinner_size: LogicalPx,
     /// 토스트 좌측 accent 바 두께 (3px).
     pub toast_accent_width: LogicalPx,
-    /// 탭 active indicator 두께 (2px).
+    /// 탭 active indicator 두께 (2px). 대상을 감싸지 않고 **한쪽 변에 붙는 띠**
+    /// 전반 — 탭 밑줄, 활성 행의 좌측 accent 바. 감싸는 링은
+    /// `focus_ring_width`(같은 2 지만 그쪽만 `zoomed()` 를 탄다).
     pub tab_indicator_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
@@ -889,7 +897,13 @@ pub struct Theme {
     /// terminal cell 스케일 — large (16px).
     pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
-    /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
+    /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
+    /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
+    /// 선택 카드 테두리처럼 "이것" 을 가리키는 링 전반이 같은 굵기를 쓴다. 색은
+    /// 별개 축이라 `accent_success` 등과 조합해도 이 토큰이다.
+    ///
+    /// **한쪽 변에 붙는 띠(활성 행 좌측 바·탭 밑줄)는 이 토큰이 아니다** —
+    /// `tab_indicator_width` 다. 값은 같은 2 지만 이쪽만 `zoomed()` 를 탄다.
     pub focus_ring_width: LogicalPx,
     /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
     /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
@@ -962,6 +976,8 @@ pub struct Theme {
     pub status_dot_size: LogicalPx,
     pub spinner_size: LogicalPx,
     pub toast_accent_width: LogicalPx,
+    /// 한쪽 변에 붙는 띠(탭 밑줄·활성 행 좌측 accent 바). 감싸는 링은
+    /// `focus_ring_width` — 값은 같은 2 지만 그쪽만 zoom 을 탄다.
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
 

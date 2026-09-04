@@ -304,6 +304,38 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// 링 토큰(`focus_ring_width`)이 **바** 자리에 쓰였는가. 두 토큰은 값이 둘 다 2 라
+/// 서로 바꿔 써도 zoom 1 에서는 아무 일도 일어나지 않는다 — 그래서 조용히 섞인다.
+/// 실제로 갤러리 9자리가 좌측 accent 바·탭 밑줄을 `focus_ring_width` 로 그리고
+/// 있었다.
+///
+/// 판별은 **구조**로 한다: 바는 크기 벡터가 필요해 `vec2(<굵기>, <길이>)` 형태로
+/// 나타나고, 링은 `Stroke::new(<굵기>, <색>)` 이라 크기 벡터를 만들지 않는다. 즉
+/// **`vec2(` 안에 `focus_ring_width` 가 있으면 그건 링이 아니라 바**이고, 정본은
+/// `tab_indicator_width` 다(값 2 로 동일, 대신 zoom 을 타지 않는다 — 호스트의 바가
+/// 원래 그렇다).
+///
+/// **한계**: 굵기를 먼저 지역 변수에 담는 형태(`let bar_w = ..focus_ring_width..;`)
+/// 나 좌표 산술(`pos2(x, bottom - ..)`)은 못 잡는다. 이식 당시 그 두 형태가 각각
+/// 1자리씩 있었다.
+fn ring_token_used_as_bar(rel: &str, lines: &[&str], out: &mut Vec<String>) {
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let Some(v) = line.find("vec2(") else {
+            continue;
+        };
+        if line[v..].contains("focus_ring_width") {
+            out.push(format!(
+                "  {}:{} — `vec2(.. focus_ring_width ..)` 는 바다.                  `tab_indicator_width` 를 쓸 것",
+                rel,
+                i + 1
+            ));
+        }
+    }
+}
+
 /// 접두 규칙이 구조적으로 못 보는 두 관용구 — **레포에 실제로 존재하던 형태**만
 /// 닫는다. 회피 변이 목록의 나머지(괄호 감싸기·매크로 등)는 레포에 없고 의도적
 /// 우회로만 나오므로, 모듈 doc 의 "가드가 막지 못하는 것" 에 한계로 적어 두었다.
@@ -329,6 +361,7 @@ fn no_literal_margin_fields_or_item_spacing() {
             let lines: Vec<&str> = contents.lines().collect();
             margin_field_violations(&rel, &lines, &mut violations);
             item_spacing_violations(&rel, &lines, &mut violations);
+            ring_token_used_as_bar(&rel, &lines, &mut violations);
         }
     }
     assert!(
@@ -339,7 +372,9 @@ fn no_literal_margin_fields_or_item_spacing() {
          `.value()`(item_spacing)\n\
          · 1~4px 미세 간격 → `tasty_ui_widgets::tokens::STRUCT_GAP_1..4`\n\
          · 그리드 밖 값(9·10·11·14 등) → 사유를 적은 명명 const\n\
-         · 0 은 위반이 아니다(값의 부재)\n{}",
+         · 0 은 위반이 아니다(값의 부재)\n\
+         · 링 토큰을 바에 쓰지 말 것 — 감싸는 획은 `focus_ring_width`, 한쪽 변에 \
+         붙는 띠는 `tab_indicator_width`(둘 다 2 지만 zoom 거동이 다르다)\n{}",
         violations.join("\n")
     );
 }
