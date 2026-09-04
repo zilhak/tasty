@@ -41,7 +41,9 @@ const POPUP_HEIGHT: f32 = 480.0;
 
 // 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
 // `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
-use tasty_ui_widgets::tokens::{CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE};
+use tasty_ui_widgets::tokens::{
+    CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE, STRUCT_GAP_2,
+};
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
 /// `disconnected` 플래그만으론 "서버는 살아있는데 응답이 안 오는" 케이스를 못 잡는다).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
@@ -171,7 +173,7 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
 
     // ── Path bar (breadcrumbs + refresh) ────────────────────────────────
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
         for (i, crumb) in props.crumbs.iter().enumerate() {
             if i > 0 {
                 ui.add(icons::CHEVRON_RIGHT.image(13.0, th.text_disabled().into()));

@@ -6,6 +6,7 @@
 //! 디자인 SoT `gallery/overlays-tutorial.jsx::TopicPopup/Topic` 의 host 대응.
 //! "진행" 클릭 → `TutorialRuntime::request_start` 로 시작 큐 + 팝업 close.
 
+use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, margin_all,
 };
@@ -159,7 +160,7 @@ fn topic_row(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
+                ui.spacing_mut().item_spacing.x = TUTORIAL_STEP_GAP_X;
                 let (cap, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                 let (cap_bg, cap_fg) = if sel {
                     (th.accent_primary().to_egui(), th.text_on_accent().to_egui())
@@ -176,7 +177,7 @@ fn topic_row(
                     cap_fg,
                 );
                 ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
                     ui.label(
                         egui::RichText::new(title)
                             .size(th.font_size_body.value())

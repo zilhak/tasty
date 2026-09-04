@@ -16,6 +16,7 @@
 //! 배치 오프셋(말풍선 tail·데모 박스 치수 등)은 각 그리기 지점에 인라인으로 둔다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -361,7 +362,7 @@ fn topic_row(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
+                ui.spacing_mut().item_spacing.x = TUTORIAL_STEP_GAP_X;
                 // 인덱스 캡 (20x20, radius-sm).
                 let (cap, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
                 let (cap_bg, cap_fg) = if sel {
@@ -385,7 +386,7 @@ fn topic_row(
                     cap_fg,
                 );
                 ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
                     ui.label(
                         egui::RichText::new(title)
                             .size(theme.font_size_body.value())

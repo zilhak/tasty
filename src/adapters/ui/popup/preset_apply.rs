@@ -211,7 +211,7 @@ pub fn draw_apply_preset_view(
     let mut double_clicked_name: Option<String> = None;
 
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
 
         if names.is_empty() {
             ui.label(

@@ -131,3 +131,15 @@ pub const EMPTY_STATE_GLYPH_SIZE: f32 = 26.0;
 /// 클립보드 뷰어 CenterState 아이콘 크기 — 아이콘 글리프 토큰 상한(16) 밖의 화면
 /// 전용 고정값. plugin 본체와 갤러리 specimen 이 같은 상수를 읽는다.
 pub const CLIPBOARD_CENTER_ICON_SIZE: f32 = 28.0;
+
+// ── 본체 ↔ 갤러리 specimen 공용 — 4px 그리드 밖 구조값 ─────────────────────────
+
+/// 튜토리얼 스텝 행의 인덱스 캡 ↔ 본문 가로 간격. 디자인 전사값 10 으로 그리드
+/// 밖이고, 같은 프레임의 `inner_margin` 이 쓰는 10(= `spacing_xs * 2.5`)과 짝이다.
+/// 본체 `adapters/ui/tutorial/topic_popup.rs` 와 갤러리 specimen 이 같이 읽는다.
+pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
+
+/// 전송(transfer) 카드의 좌우 안쪽 여백. 디자인 전사값 10 으로 그리드 밖이다.
+/// 본체 `adapters/ui/popup/transfer.rs` 와 갤러리 specimen 이 같이 읽는다.
+/// `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+pub const TRANSFER_CARD_PAD_X: i8 = 10;

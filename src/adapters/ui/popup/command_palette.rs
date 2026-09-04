@@ -30,6 +30,10 @@ use tasty_ui_widgets::{margin_all, margin_sym};
 /// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
 const PALETTE_HINT_FONT_SIZE: f32 = 10.5;
 
+/// footer 힌트 사이 가로 간격. 디자인 전사값 14 로 4px 그리드 밖이다
+/// (`spacing_md`=12 와 2px 차).
+const PALETTE_HINT_GAP_X: f32 = 14.0;
+
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
 /// View 입력 — 한 명령 행의 시각/의미 데이터.
@@ -263,16 +267,16 @@ pub fn draw_command_palette_view(
     ui.painter().hline(full.x_range(), footer_top, sep);
     egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 12,
-            right: 12,
-            top: 8,
-            bottom: 8,
+            left: theme.spacing_md.value() as i8,
+            right: theme.spacing_md.value() as i8,
+            top: theme.spacing_sm.value() as i8,
+            bottom: theme.spacing_sm.value() as i8,
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
             let hint_font = egui::FontId::monospace(PALETTE_HINT_FONT_SIZE);
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 14.0;
+                ui.spacing_mut().item_spacing.x = PALETTE_HINT_GAP_X;
                 for hint in [
                     format!("↑↓ {}", props.hint_navigate),
                     format!("↵ {}", props.hint_run),

@@ -12,6 +12,10 @@ use tasty_type_geometry::length::LogicalPx;
 use crate::catalog::{self, Category, Page};
 
 /// brand/nav 폭 (research §1.1 grid-template-columns 232px).
+/// 갤러리 좌측 네비게이션의 좌우 안쪽 여백. 디자인 전사값 10 으로 4px 그리드
+/// 밖이다. `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+const NAV_PAD_X: i8 = 10;
+
 const NAV_WIDTH: LogicalPx = LogicalPx(232.0);
 /// brand/top 높이 (research §1.1 grid-template-rows 52px).
 const HEADER_HEIGHT: LogicalPx = LogicalPx(52.0);
@@ -130,10 +134,10 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
             egui::Frame::new()
                 .fill(sidebar_bg)
                 .inner_margin(egui::Margin {
-                    left: 10,
-                    right: 10,
-                    top: 12,
-                    bottom: 24,
+                    left: NAV_PAD_X,
+                    right: NAV_PAD_X,
+                    top: state.theme.spacing_md.value() as i8,
+                    bottom: state.theme.spacing_xl.value() as i8,
                 }),
         )
         .show(ctx, |ui| nav_ui(ui, state));

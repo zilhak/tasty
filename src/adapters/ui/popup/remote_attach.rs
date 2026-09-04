@@ -45,7 +45,7 @@ const HEADER_H: f32 = 47.0;
 const FOOTER_H: f32 = 49.0;
 
 // 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
-use tasty_ui_widgets::tokens::CENTER_GLYPH_SIZE;
+use tasty_ui_widgets::tokens::{CENTER_GLYPH_SIZE, STRUCT_GAP_2};
 const CAPS_H: f32 = 30.0;
 const PROFILE_ROW_H: f32 = 50.0;
 const WS_ROW_H: f32 = 34.0;
@@ -803,7 +803,7 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
         egui::pos2(inner.left(), rect.top()),
         egui::pos2(inner.right(), rect.bottom()),
     ));
-    child.spacing_mut().item_spacing.y = 2.0;
+    child.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
     child.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let name_c = if selected {

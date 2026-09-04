@@ -304,6 +304,46 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// 접두 규칙이 구조적으로 못 보는 두 관용구 — **레포에 실제로 존재하던 형태**만
+/// 닫는다. 회피 변이 목록의 나머지(괄호 감싸기·매크로 등)는 레포에 없고 의도적
+/// 우회로만 나오므로, 모듈 doc 의 "가드가 막지 못하는 것" 에 한계로 적어 두었다.
+#[test]
+fn no_literal_margin_fields_or_item_spacing() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut violations = Vec::new();
+    for target in SCAN_ROOTS {
+        let path = root.join(target);
+        let mut files = Vec::new();
+        gather_rs_files(&path, &mut files);
+        assert!(
+            !files.is_empty(),
+            "스캔 루트 `{target}` 에서 .rs 파일을 찾지 못했다"
+        );
+        for file in files {
+            let rel = file
+                .strip_prefix(root)
+                .unwrap_or(&file)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let contents = std::fs::read_to_string(&file).expect("소스 파일 read 실패");
+            let lines: Vec<&str> = contents.lines().collect();
+            margin_field_violations(&rel, &lines, &mut violations);
+            item_spacing_violations(&rel, &lines, &mut violations);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "`Margin` 필드 / `item_spacing` 에 인라인 숫자 리터럴이 있다 — 토큰이나 명명 \
+         const 로 바꿀 것:\n\
+         · 4px 그리드 값 → `th.spacing_xs/sm/md/lg/xl.value() as i8`(Margin) 또는 \
+         `.value()`(item_spacing)\n\
+         · 1~4px 미세 간격 → `tasty_ui_widgets::tokens::STRUCT_GAP_1..4`\n\
+         · 그리드 밖 값(9·10·11·14 등) → 사유를 적은 명명 const\n\
+         · 0 은 위반이 아니다(값의 부재)\n{}",
+        violations.join("\n")
+    );
+}
+
 #[test]
 fn no_inline_visual_token_literals() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -338,6 +378,114 @@ fn no_inline_visual_token_literals() {
          승격한다 — 그건 스코프 밖이다:\n{}",
         violations.join("\n")
     );
+}
+
+/// 숫자 리터럴 토큰인가 — `12` · `12.0` · `1.5f32` 등. 부호는 호출부가 뗀다.
+fn numeric_literal(tok: &str) -> Option<f32> {
+    let t = tok.trim().trim_end_matches("f32").trim_end_matches("f64");
+    if t.is_empty() || !t.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    t.parse::<f32>().ok()
+}
+
+/// **0 은 위반이 아니다.** "여백 없음" · "간격 없음" 은 디자인 값이 아니라 값의
+/// *부재*이고, 대응 토큰이 있을 수도 없다(4px 그리드에 0 은 없다). 레포에서
+/// `top: 0` · `item_spacing = vec2(0.0, 0.0)` 은 egui 기본 간격을 끄는 관용구로
+/// 60 자리 넘게 쓰이는데, 이걸 위반으로 세면 가드가 값이 아니라 관용구를 막게 된다.
+fn is_zero(v: f32) -> bool {
+    v == 0.0
+}
+
+/// `egui::Margin { left: 14, .. }` 의 **필드 값** 위반. `Stroke {` 처럼 형태 자체를
+/// 막을 수는 없다 — 네 변을 따로 주는 방법이 구조체 리터럴밖에 없기 때문이다
+/// (`Margin::same`/`symmetric` 은 대칭 전용). 그래서 형태 대신 값을 본다.
+///
+/// `.inner_margin(` 접두 규칙은 여기 무력하다: `inner_margin(egui::Margin {` 는
+/// 접두 뒤 첫 문자가 `e` 라 숫자 검사를 그대로 빠져나간다. 실제 회피 변이에서
+/// 이 형태로 뚫렸고, 레포에 이미 열 자리가 있었다.
+fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
+    let mut depth = 0usize;
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim_start();
+        if t.starts_with("//") {
+            continue;
+        }
+        if depth > 0 {
+            if let Some((name, rest)) = t.split_once(':')
+                && matches!(name.trim(), "left" | "right" | "top" | "bottom")
+                && let Some(v) = numeric_literal(rest.trim().trim_end_matches(','))
+                && !is_zero(v)
+            {
+                out.push(format!(
+                    "  {}:{} — `Margin {{ {}: {v} }}`",
+                    rel,
+                    i + 1,
+                    name.trim()
+                ));
+            }
+            if line.contains('}') {
+                depth = 0;
+            }
+            continue;
+        }
+        if line.contains("Margin {") && !line.trim_end().ends_with("Margin {") {
+            // 한 줄 리터럴(`Margin { left: 14, .. }`) — 같은 줄에서 필드를 훑는다.
+            for part in line.split(&['{', ',', '}'][..]) {
+                if let Some((name, rest)) = part.split_once(':')
+                    && matches!(name.trim(), "left" | "right" | "top" | "bottom")
+                    && let Some(v) = numeric_literal(rest)
+                    && !is_zero(v)
+                {
+                    out.push(format!(
+                        "  {}:{} — `Margin {{ {}: {v} }}`",
+                        rel,
+                        i + 1,
+                        name.trim()
+                    ));
+                }
+            }
+        } else if line.contains("Margin {") {
+            depth = 1;
+        }
+    }
+}
+
+/// `ui.spacing_mut().item_spacing.y = 8.0` 계열. **이 lane 이 두 자리에서 고친 바로
+/// 그 형태**인데 재유입은 막혀 있지 않았다. `.x`/`.y` 개별 대입과 `= vec2(a, b)`
+/// 통째 대입을 모두 본다(대입문이 다음 줄로 넘어가는 형태 포함).
+fn item_spacing_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let Some(eq) = line.find("item_spacing").map(|p| p + "item_spacing".len()) else {
+            continue;
+        };
+        let Some(rel_eq) = line[eq..].find('=') else {
+            continue;
+        };
+        // `==` 비교나 `item_spacing.x` 뒤의 다른 문장은 대상이 아니다.
+        if line[eq + rel_eq..].starts_with("==") {
+            continue;
+        }
+        // 대입문 전체를 `;` 까지 이어 붙인다 — `= egui::vec2(\n 0.0,\n 0.0);` 형태.
+        let mut stmt = line[eq + rel_eq + 1..].to_string();
+        let mut j = i;
+        while !stmt.contains(';') && j + 1 < lines.len() && j - i < 3 {
+            j += 1;
+            stmt.push(' ');
+            stmt.push_str(lines[j].trim());
+        }
+        for tok in stmt.split(&['(', ')', ',', ';'][..]) {
+            if let Some(v) = numeric_literal(tok)
+                && !is_zero(v)
+            {
+                out.push(format!("  {}:{} — `item_spacing = {v}`", rel, i + 1));
+                break;
+            }
+        }
+    }
 }
 
 /// 픽토그래픽 글리프 금지 범위(Tier-A) — UI 프로포셔널 폰트에서 tofu 나는 계열만

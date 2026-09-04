@@ -1491,7 +1491,7 @@ fn draw_workspace_card(
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
             // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
             // 중 ws-level 데이터로 결정 가능한 case 만 표시. dot 은 항상 렌더하고
             // 색만 상태별로 분기한다 (디자인 StatusDot 은 idle 에도 점을 그림).

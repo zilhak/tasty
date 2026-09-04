@@ -34,6 +34,17 @@ use tasty_ui_widgets::vspace;
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
 
 /// 콤보박스 제안용 알려진 프로필 타입(열린 string — 자유 입력 허용).
+/// 헤더·본문의 좌측 안쪽 여백. 디자인 전사값 14 로 4px 그리드 밖이다
+/// (`spacing_md`=12 와 2px 차). `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+const PANEL_PAD_L: i8 = 14;
+/// 헤더 상하 여백. 디자인 전사값 11 로 그리드 밖이다(`spacing_md`=12 와 1px 차).
+const HEADER_PAD_Y: i8 = 11;
+/// 본문 상단 여백. 디자인 전사값 10 으로 그리드 밖이다(하단은 `spacing_sm`=8 로
+/// 비대칭 — 디자인 전사 그대로다).
+const CONTENT_PAD_TOP: i8 = 10;
+/// 헤더 아이템 가로 간격. 디자인 전사값 9 로 그리드 밖이다(`spacing_sm`=8 과 1px 차).
+const HEADER_GAP_X: f32 = 9.0;
+
 const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 const UI_MEMORY_ID: &str = "remote_tool.ui";
@@ -380,10 +391,10 @@ pub fn draw_remote_tool_popup(
     // 헤더 — 디자인 padding T11 R12 B11 L14 + borderBottom separator.
     let header_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 12,
-            top: 11,
-            bottom: 11,
+            left: PANEL_PAD_L,
+            right: th.spacing_md.value() as i8,
+            top: HEADER_PAD_Y,
+            bottom: HEADER_PAD_Y,
         })
         .show(ui, |ui| draw_header(ui, &th));
     if header_ir.inner {
@@ -421,10 +432,10 @@ pub fn draw_remote_tool_popup(
         egui::Margin::ZERO
     } else {
         egui::Margin {
-            left: 14,
-            right: 14,
-            top: 10,
-            bottom: 8,
+            left: PANEL_PAD_L,
+            right: PANEL_PAD_L,
+            top: CONTENT_PAD_TOP,
+            bottom: th.spacing_sm.value() as i8,
         }
     };
     egui::Frame::NONE
@@ -604,8 +615,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         // 텍스트 박스가 더 낮아(~18) 헤더가 얕아진다 → min_height 로 디자인 높이 강제.
         // popup border 가 stroke Outside 라 콘텐츠가 1px 위에서 시작 → +2 보정해 26.
         ui.set_min_height(26.0);
-        // 디자인 헤더 gap 9 (토큰 아닌 raw — 가장 가까운 토큰 spacing_sm=8 과 1px 차).
-        ui.spacing_mut().item_spacing.x = 9.0;
+        ui.spacing_mut().item_spacing.x = HEADER_GAP_X;
         // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
         ui.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(

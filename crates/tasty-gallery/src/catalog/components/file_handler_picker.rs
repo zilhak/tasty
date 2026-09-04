@@ -5,6 +5,7 @@
 //! footer(Always 체크 + Cancel/Open).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -168,7 +169,7 @@ fn handler(
         theme.text_secondary().to_egui(),
     );
     child.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 1.0;
+        ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
         ui.label(
             egui::RichText::new(name)
                 .size(theme.font_size_body.value())

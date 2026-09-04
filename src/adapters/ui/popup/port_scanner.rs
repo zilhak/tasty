@@ -38,6 +38,13 @@ use tasty_ui_widgets::{
     status_dot, tag, vspace,
 };
 
+/// popup 좌우 안쪽 여백. 디자인 전사값 14 로 4px 그리드 밖이다(가장 가까운
+/// `spacing_md`=12 와 2px 차) — 헤더·필터·리스트·푸터가 같은 세로선에 서야 해서
+/// 한 값을 공유한다. `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
+const PANEL_PAD_X: i8 = 14;
+/// 푸터 상하 여백. 디자인 전사값 9 로 그리드 밖이다(`spacing_sm`=8 과 1px 차).
+const FOOTER_PAD_Y: i8 = 9;
+
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
 /// Which set of listening ports a scan covers.
@@ -1023,10 +1030,10 @@ pub fn draw_port_scanner_view(
     // 헤더 — 디자인 padding 12 14 + borderBottom.
     let h_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
-            top: 12,
-            bottom: 12,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
+            top: props.theme.spacing_md.value() as i8,
+            bottom: props.theme.spacing_md.value() as i8,
         })
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
@@ -1048,10 +1055,10 @@ pub fn draw_port_scanner_view(
     // 필터 행 — 디자인 padding 8 14 + borderBottom.
     let f_ir = egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
-            top: 8,
-            bottom: 8,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
+            top: props.theme.spacing_sm.value() as i8,
+            bottom: props.theme.spacing_sm.value() as i8,
         })
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
@@ -1080,10 +1087,10 @@ pub fn draw_port_scanner_view(
         .resizable(false)
         .show_separator_line(false)
         .frame(egui::Frame::NONE.inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
-            top: 9,
-            bottom: 9,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
+            top: FOOTER_PAD_Y,
+            bottom: FOOTER_PAD_Y,
         }))
         .show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing = saved_spacing;
@@ -1644,8 +1651,8 @@ fn draw_favorites_section(
     let ir = egui::Frame::NONE
         .fill(th.bg_sidebar().into())
         .inner_margin(egui::Margin {
-            left: 14,
-            right: 14,
+            left: PANEL_PAD_X,
+            right: PANEL_PAD_X,
             top: 0,
             bottom: 0,
         })
