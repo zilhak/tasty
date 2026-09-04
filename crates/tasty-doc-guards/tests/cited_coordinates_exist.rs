@@ -111,6 +111,16 @@ fn has_file_extension(p: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
+/// 링크 대상을 **인용한 문서의 디렉토리** 기준으로 푼다.
+///
+/// 이 한 줄이 축의 전부라 따로 뽑았다 — 본 판정 안에 인라인으로 두면 합성 픽스처로
+/// 극성을 못 건드리고, 회귀를 실재하는 죽은 링크에 걸 수밖에 없다. 그러면 그 링크를
+/// 고치는 순간 회귀가 거짓 초록이 된다.
+fn link_resolves(root: &Path, doc_rel: &str, target: &str) -> bool {
+    let dir = Path::new(doc_rel).parent().unwrap_or(Path::new(""));
+    root.join(dir).join(target).exists()
+}
+
 /// 한 줄에서 레포 경로 형태 인용을 뽑는다. 중괄호 축약(`…/{a,b}.rs`)은 뺀다.
 fn scan_paths(line: &str) -> Vec<String> {
     let chars: Vec<char> = line.chars().collect();
@@ -568,4 +578,179 @@ fn a_dead_coordinate_is_caught_and_a_live_one_is_not() {
     assert!(!contains_token(&body, &absent));
     // 부분문자열은 토큰이 아니다.
     assert!(!contains_token("fn scan_pairs_more() {}", "scan_pairs"));
+}
+
+// ─── ④ 링크 축 — 마크다운 링크는 **문서 자신의 자리**에서 푼다 ─────────────────
+//
+// 위 세 축은 인용을 레포 루트(또는 크레이트 루트) 기준으로 푼다. 그 해석은 산문 인용에는
+// 맞지만 **마크다운 링크에는 안 맞는다** — 링크는 렌더러가 그 문서의 디렉토리 기준으로
+// 따라간다. 그래서 형제 파일을 가리키는 `](0147-….md)` 같은 링크는 루트 접두가 없어
+// ① 의 `ROOT_PREFIXES` 에 아예 안 걸리고, 죽어 있어도 조용하다. 실측(2026-09-05)으로
+// 그 형태의 죽은 링크가 ADR 에 실재했다.
+
+/// 인라인 코드 스팬(백틱)을 지운 줄. 링크 **문법을 설명하는 예시**(`` `[text](url)` ``)를
+/// 실제 링크로 세지 않기 위해서다. 실측에서 안 지웠을 때 걸린 다섯 건이 전부 그 형태였다.
+fn without_inline_code(line: &str) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    for ch in line.chars() {
+        if ch == '`' {
+            in_code = !in_code;
+            continue;
+        }
+        if !in_code {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// 링크 축의 면제 — **파일 단위로 열거한다.**
+///
+/// 템플릿은 복사돼 갈 자리를 기준으로 링크를 적는다. `docs/features/<범주>/<이름>.md` 로
+/// 복사되면 `../../concepts/…` 가 `docs/concepts/…` 로 풀리지만, 템플릿 자신의 자리에서는
+/// 레포 밖을 가리킨다. 자기 자리에서 안 풀리는 것이 **정상인 유일한 갈래**라 이름 규칙
+/// 대신 파일을 적는다 — 이름으로 면제하면 `_` 로 시작하는 아무 문서나 같이 빠진다.
+const LINK_EXEMPT_DOCS: &[&str] = &["docs/features/_feature.template.md"];
+
+/// 한 줄에서 **레포 안을 가리키는 마크다운 링크 대상**을 뽑는다.
+///
+/// 밖으로 나가는 것(스킴 있는 URL), 같은 문서 안의 앵커, 루트 절대 경로는 이 판정의
+/// 대상이 아니다 — 앞의 둘은 파일이 아니고, 절대 경로는 렌더러마다 기준이 다르다.
+fn scan_links(line: &str) -> Vec<String> {
+    let line = without_inline_code(line);
+    let mut out = Vec::new();
+    let bytes: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == ']' && bytes[i + 1] == '(' {
+            let mut j = i + 2;
+            while j < bytes.len() && bytes[j] != ')' && !bytes[j].is_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == ')' {
+                let target: String = bytes[i + 2..j].iter().collect();
+                let head = target.split('#').next().unwrap_or("").to_string();
+                let external = target.contains("://")
+                    || target.starts_with("mailto:")
+                    || target.starts_with('#')
+                    || target.starts_with('/');
+                if !external && !head.is_empty() {
+                    out.push(head);
+                }
+            }
+            i = j.max(i + 1);
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
+/// 마크다운 링크가 **그 문서의 자리에서** 풀리는가.
+///
+/// 초록의 뜻은 "링크 대상이 실재한다" 까지다. 그 문서가 옳은 것을 가리키는지, 그 링크가
+/// 아직 필요한지는 안 본다.
+#[test]
+fn cited_markdown_links_resolve_from_their_own_document() {
+    let root = &tasty_doc_guards::repo_root();
+    let docs = docs_of(root);
+    assert!(
+        !docs.is_empty(),
+        "문서를 하나도 못 읽었다 — 모수가 0 이면 언제나 초록이다"
+    );
+
+    let mut checked = 0usize;
+    let mut broken = Vec::new();
+    for (rel, contents) in &docs {
+        if LINK_EXEMPT_DOCS.contains(&rel.as_str()) {
+            continue;
+        }
+        for (line_no, line) in prose_lines(contents) {
+            for target in scan_links(line) {
+                checked += 1;
+                if !link_resolves(root, rel, &target) {
+                    broken.push(format!("  {rel}:{line_no} — `{target}`"));
+                }
+            }
+        }
+    }
+
+    assert!(
+        checked >= MIN_LINKS,
+        "링크를 {checked} 개밖에 못 봤다 — 스캐너가 깨졌다면 이 단정이 조용히 통과한다"
+    );
+    assert!(
+        broken.is_empty(),
+        "마크다운 링크가 그 문서의 자리에서 안 풀린다 — 대상이 옮겨졌으면 링크도 옮겨라. \
+         링크는 레포 루트가 아니라 **그 문서의 디렉토리** 기준이다:\n{}",
+        broken.join("\n")
+    );
+}
+
+/// 본 판정이 보는 링크 수의 하한 — **연기 검사**다. 스캐너가 깨져 0 을 내면 위 단정이
+/// 언제나 초록이 된다(ADR-0133).
+///
+/// 값은 실측의 절반 아래로 잡았다 — 문서가 늘고 주는 것으로는 안 깨지고 스캐너가
+/// 무너질 때만 걸리게. **지금 몇인지는 이 상수를 크게 올려 실패 메시지로 읽는다**
+/// (그 시점의 수를 여기 적으면 그 수가 낡는다 — ADR-0139).
+const MIN_LINKS: usize = 1500;
+
+/// 링크 축의 극성을 픽스처로 못박는다 — **실재하는 문서를 상대로만 시험하면 그 문서를
+/// 고치는 순간 이 회귀가 거짓 초록이 된다.**
+#[test]
+fn the_link_scanner_reads_only_repo_local_link_targets() {
+    // 잡는다 — 형제 경로, 상위 경로, 앵커가 붙은 것.
+    assert_eq!(scan_links("[a](0147-x.md)"), vec!["0147-x.md"]);
+    assert_eq!(
+        scan_links("[a](../dev-guide/x.md)"),
+        vec!["../dev-guide/x.md"]
+    );
+    assert_eq!(scan_links("[a](x.md#절)"), vec!["x.md"]);
+
+    // 안 잡는다 — 밖으로 나가는 것, 같은 문서 앵커, 루트 절대 경로.
+    assert!(scan_links("[a](https://example.com/x.md)").is_empty());
+    assert!(scan_links("[a](mailto:x@example.com)").is_empty());
+    assert!(scan_links("[a](#절)").is_empty());
+    assert!(scan_links("[a](/etc/passwd)").is_empty());
+
+    // 인라인 코드 안의 링크 **문법 예시**는 링크가 아니다.
+    assert!(scan_links("일반 상대링크 `[text](문서명.md)` 와 같은 모양").is_empty());
+
+    // 면제는 파일 단위다 — 이름 규칙이 아니다.
+    assert!(LINK_EXEMPT_DOCS.iter().all(|rel| root_has(rel)));
+}
+
+/// 해석의 **양극성**을 합성 픽스처로 못박는다.
+///
+/// 이름을 조각에서 조립하는 것은 이 소스 자신이 그 이름을 담아 판정을 뒤집는 것을
+/// 막기 위해서다 — 이 파일도 스캔 대상이다.
+#[test]
+fn a_link_is_resolved_next_to_the_document_that_cites_it() {
+    let root = &tasty_doc_guards::repo_root();
+
+    // 산다 — ADR 이 형제 ADR 을 루트 접두 없이 가리키는 형태. ① 의 ROOT_PREFIXES 로는
+    // 안 보이는 바로 그 모양이다.
+    assert!(link_resolves(root, "docs/adr/0146-x.md", "template.md"));
+    // 산다 — 상위로 올라가는 형태.
+    assert!(link_resolves(root, "docs/adr/0146-x.md", "../index.md"));
+
+    // 죽는다 — 같은 이름이 **레포 루트에는** 있어도 그 문서 옆에는 없다.
+    assert!(root.join("CLAUDE.md").is_file());
+    assert!(!link_resolves(root, "docs/adr/0146-x.md", "CLAUDE.md"));
+
+    // 죽는다 — 아무 데도 없는 이름.
+    let absent = format!("{}{}", "0133-scan-guards-", "assert-their-population.md");
+    assert!(!link_resolves(root, "docs/adr/0146-x.md", &absent));
+    assert!(!link_resolves(
+        root,
+        "docs/adr/0146-x.md",
+        &format!("../{absent}")
+    ));
+}
+
+/// 면제가 가리키는 문서가 실재하는가 — 참조 무결성. 면제가 썩으면 그 문서는 검사받게
+/// 되는데 목록에는 "여기는 안 풀려도 된다" 는 신호가 남는다.
+fn root_has(rel: &str) -> bool {
+    tasty_doc_guards::repo_root().join(rel).is_file()
 }
