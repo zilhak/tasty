@@ -8,7 +8,7 @@ pub use tasty_terminal::waker_factory::SharedWakerFactory;
 #[cfg(feature = "gui")]
 pub use tasty_terminal::waker_factory::WakerFactory;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{MutexGuard, PoisonError};
 
 /// Poison 된 waker 게이트 맵을 복구한다.
@@ -33,6 +33,7 @@ pub(crate) fn recover_gate_lock<'a, T>(
 mod poison_tests {
     use super::*;
     use std::collections::HashMap;
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Mutex};
 
     /// 게이트 맵이 poison 돼도 **패닉하지 않고** 데이터를 그대로 돌려준다.
