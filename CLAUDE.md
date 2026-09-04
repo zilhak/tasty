@@ -51,6 +51,7 @@ Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs
 - **사용자에게 보이는 동작**(메뉴·단축키·설정 키·CLI 명령·설치 절차)이 바뀌면 공개 사이트의 사용자 가이드 [`site/content/`](site/content/index.md) 도 같은 커밋에서 갱신한다. 가이드는 `docs/` 명세와 독자가 다르다(설치해서 쓰는 사람) — 소스 경로·ADR·IPC 메서드명을 넣지 않는다. 영어 번역(`site/content/en/`)을 손봤으면 `--stamp` 한다 ([`docs/dev-guide/site.md`](docs/dev-guide/site.md)).
 - 해당 카테고리의 인덱스(예: [`docs/features/index.md`](docs/features/index.md), [`docs/dev-guide/index.md`](docs/dev-guide/index.md))를 갱신. [`docs/index.md`](docs/index.md) 는 카테고리 진입점 표라, 카테고리 자체가 신설/폐지될 때만 손댄다.
 - 구현 히스토리는 남기지 않는다. **현재 상태만** 기술한다.
+- docs 문서에 마크다운 체크박스(task list)를 넣지 않는다 — 체크 상태는 진행 추적이라 transient 다. Acceptance Criteria 는 평문 Given/When/Then 불릿, 검증·절차 항목은 평문 불릿이나 번호 목록 ([`docs/documentation-model.md`](docs/documentation-model.md) §6). `tests/no_checkbox_in_docs.rs` 가 강제한다.
 - 결정의 *근거 / 대안 / 재검토 조건* 은 `docs/adr/` 에 ADR 로 박는다. design/ 본문은 결정의 *현재 운영 상태* 만 기술. ADR 작성/수정 시 [`docs/adr/template.md`](docs/adr/template.md) 의 작성규칙을 먼저 읽는다.
 
 ## 커밋 정책
@@ -66,14 +67,14 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 ### 본체 (`Cargo.toml` 루트)
 
 - **패치 버전**: 사용자가 빌드를 요청했을 때, 마지막 빌드 이후 새 커밋이 있고 사용자가 막지 않았다면 AI 가 자동으로 +1 한다.
-- **README 배지 lockstep (필수)**: 위 patch +1 과 함께 `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 **동일 값**으로 맞춰 **같은 커밋**에 포함한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 빠뜨리면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. `tests/readme_badge_parity.rs` 가 정합을 CI 강제한다.
+- **README 배지 lockstep (필수)**: 위 patch +1 과 함께 `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 **동일 값**으로 맞춰 **같은 커밋**에 포함한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 빠뜨리면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. `tests/readme_badge_parity.rs` 가 정합을 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동). 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌려야 그 자리에서 잡힌다**([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)).
 - **마이너 / 메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 - **AI 자체 검증용 빌드** (`cargo build` / `cargo test`): 버전을 올리지 않는다.
 
 ### Plugin (`crates/tasty-plugin-*/Cargo.toml`)
 
-- **패치 버전 자동 +1 (무조건)**: 한 커밋에 특정 plugin 디렉토리(`crates/tasty-plugin-<name>/`) 의 파일이 하나라도 staged 되어 있으면, 그 plugin 의 `Cargo.toml.version` 의 패치를 +1 하고 **같은 커밋**에 포함한다. 사용자가 명시적으로 막지 않는 한 적용.
-- **매니페스트 lockstep (필수)**: 그 plugin 의 매니페스트(`crates/tasty-plugin-<name>/tasty-plugin.toml`) 의 `version` 을 **Cargo.toml 과 동일 값**으로 맞춰 **같은 커밋**에 포함한다. Cargo.toml 만 올리고 매니페스트를 방치하면 `plugin.list`·업그레이드 판정이 노출·비교하는 값이 어긋난다(version drift). 정합은 `tests/plugin_manifest_version_parity.rs` 가 CI 강제한다. **`.sig` 는 커밋 대상이 아니다** — `.gitignore` 로 제외된 빌드 산출물이며, dev/debug 빌드는 서명을 검증하지 않고 release/dist 빌드가 `scripts/sign-bundle.sh` 로 자동 재생성한다. 따라서 매니페스트 version bump 시 커밋되는 건 매니페스트 `version` 한 줄뿐이고, 재서명은 커밋 절차가 아니다(로컬 release 빌드 확인이 필요할 때만 `scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --manifest <경로>`).
+- **패치 버전 자동 +1 (무조건)**: 한 커밋에 특정 plugin 디렉토리(`crates/tasty-plugin-<name>/` 중 **`tasty-plugin.toml` 을 가진 것** — 이름만 같고 매니페스트가 없는 라이브러리 크레이트는 대상이 아니다) 의 파일이 하나라도 staged 되어 있으면, 그 plugin 의 `Cargo.toml.version` 의 패치를 +1 하고 **같은 커밋**에 포함한다. 사용자가 명시적으로 막지 않는 한 적용.
+- **매니페스트 lockstep (필수)**: 그 plugin 의 매니페스트(`crates/tasty-plugin-<name>/tasty-plugin.toml`) 의 `version` 을 **Cargo.toml 과 동일 값**으로 맞춰 **같은 커밋**에 포함한다. Cargo.toml 만 올리고 매니페스트를 방치하면 `plugin.list`·업그레이드 판정이 노출·비교하는 값이 어긋난다(version drift). 정합은 `tests/plugin_manifest_version_parity.rs` 가 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동). 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌려야 그 자리에서 잡힌다**([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)). **`.sig` 는 커밋 대상이 아니다** — `.gitignore` 로 제외된 빌드 산출물이며, dev/debug 빌드는 서명을 검증하지 않고 release/dist 빌드가 `scripts/sign-bundle.sh` 로 자동 재생성한다. 따라서 매니페스트 version bump 시 커밋되는 건 매니페스트 `version` 한 줄뿐이고, 재서명은 커밋 절차가 아니다(로컬 release 빌드 확인이 필요할 때만 `scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --manifest <경로>`).
 - 여러 plugin 이 함께 변경된 커밋은 각 plugin 에 독립 적용 (각각의 Cargo.toml + 매니페스트 모두 갱신).
 - **마이너 / 메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 - 본체 정책과 독립적으로 적용된다 (같은 커밋에 본체와 plugin 이 함께 변경돼도 본체는 본체 규칙, plugin 은 plugin 규칙).
@@ -93,16 +94,24 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 48 개 — 그중 `
 
 ## Conductor/에이전트 병렬 작업 시 빌드·검증 명령
 
-`role:conductor` 스킬(스택 중립적 공통 문서)이 프로젝트별 빌드/lint/test 명령을 이 CLAUDE.md에서 찾도록 되어 있다. 이 프로젝트(cargo workspace)의 명령은 다음과 같다 — CI(`.github/workflows/`)·pre-commit hook(`.githooks/pre-commit`)과 동일한 커맨드를 쓴다:
+`role:conductor` 스킬(스택 중립적 공통 문서)이 프로젝트별 빌드/lint/test 명령을 이 CLAUDE.md에서 찾도록 되어 있다. 이 프로젝트(cargo workspace)의 명령은 다음과 같다.
 
-| 목적 | 명령 |
-|------|------|
-| 빌드 (dev) | `cargo build` |
-| 빌드 (release 검증) | `cargo build --release` |
-| lint | `cargo clippy --workspace --all-targets --locked` |
-| 포맷 검사 | `cargo fmt --check` |
-| 테스트 | `cargo test --workspace --locked` |
+**"어디서 도는가" 열을 반드시 함께 읽는다** — 이 표의 명령이 CI·훅과 1:1로 같지 않다. 자동 채널이 없는 칸은 **네가 안 돌리면 아무도 안 돈다.** 전체 매트릭스(트리거·러너 포함)는 [`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md) 가 정본이다.
 
+| 목적 | 명령 | 어디서 도는가 |
+|------|------|---------------|
+| 빌드 (dev) | `cargo build` — **plugin 을 고쳤으면 `cargo build --workspace`** (아래) | 자동 채널 없음. macOS·Windows 컴파일은 CI 가 본다(`crossplatform-check`), Linux gui 컴파일은 아무 자동 잡도 안 본다 |
+| 빌드 (release 검증) | `cargo build --release` | 자동 채널 없음(dist 산출물은 `build-check.yml` 수동) |
+| lint | `cargo clippy --workspace --all-targets --locked` | 이 조합은 CI 의 **Windows 잡에서만** 돈다. pre-push 훅은 비슷하지만 다르다(`--locked` 없음 + `-- -D clippy::correctness`) |
+| 포맷 검사 | `cargo fmt --check` | ✅ 자동 — `format-check.yml`(main push · PR) + pre-commit A.2 |
+| 테스트 | `cargo test --workspace --locked` | **이 조합(기본 feature) 그대로는 자동 채널 없음** — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다. 다만 `check-headless` 가 main push 마다 **헤드리스 조합의 전체 스위트**를 돌아 통합 테스트 대부분이 자동으로 실행된다(실측 `d7dc4079`: 통합 항목 474 중 438). 자동으로 안 도는 것은 `tests/gui_tests.rs` 33 건과 명명 `--skip` 3 건뿐이다 |
+
+- **`cargo build` 는 plugin 바이너리를 다시 만들지 않는다 (필수)**: `crates/tasty-plugin-*/src/` 를 고치고 루트에서 `cargo build` 를 돌려도 `target/debug/tasty-plugin-<name>` 이 갱신되지 않는다(실측). `cargo build --workspace` 나 `cargo build -p tasty-plugin-<name>` 은 갱신한다. host 는 **부팅할 때** `copy_if_newer` 로 `target/<profile>/builtin-plugins/` 를 채우고 거기서 `<TASTY_HOME>/plugins/` 로 sync 하므로(`crates/tasty-host-plugin/src/builtin.rs`), 안 만들어진 바이너리는 **낡은 채로 조용히 실행된다.** 그래서 plugin 을 고친 뒤 GUI·주입으로 확인하면 **직전 plugin 코드를 재게 되고, 그 오진은 양방향이다** — 고친 것이 안 고쳐진 것처럼도, 되돌린 것이 여전히 고쳐진 것처럼도 보인다. 뒤쪽은 뮤테이션 "죽었다/살아남았다" 판정을 통째로 뒤집으므로 그 위의 모든 판정이 무효가 된다. 정식 절차는 `PROFILE=debug just build-plugins`(빌드 + 스테이징). **측정 전에 한 줄로 확인한다:**
+  ```bash
+  ls -la target/debug/tasty-plugin-<name> \
+         target/debug/builtin-plugins/<manifest-id>/tasty-plugin-<name>
+  ```
+  판별 기준이 mtime 이라, 빌드 산출물이 스테이징본보다 **새것이면 아직 반영 전**이다(다음 부팅에 반영된다). 검증 절차 쪽 서술은 [`docs/ai-verification/screenshot-methods.md`](docs/ai-verification/screenshot-methods.md).
 - **workspace exclude 크레이트는 위 명령이 보지 않는다**: `site/`(Pages 생성기)·`crates/tasty-plugin-sdk-wasm/` 은 `--manifest-path` 를 명시해 따로 검사한다 — `cargo fmt --check --manifest-path site/Cargo.toml` · `cargo check --manifest-path site/Cargo.toml`. pre-commit A.2 가 그 디렉토리의 `.rs` 가 staged 됐을 때 fmt 검사를 자동 실행한다([`docs/dev-guide/site.md`](docs/dev-guide/site.md) "왜 workspace 밖인가").
 - **의존성 설치 스텝 없음**: pnpm/npm과 달리 cargo는 별도 `install` 명령이 없다. `cargo build`/`cargo test` 등이 최초 실행 시 자동으로 fetch·컴파일한다. worktree를 새로 만든 직후 미리 받아두고 싶으면 `cargo fetch`.
 - **turbo류 캐시 재생 이슈 해당 없음**: `conductor-core.md`의 "빌드 검증 시 캐시 무효화" 규칙은 콘텐츠 해시 기반으로 컴파일을 통째로 건너뛰는 빌드 시스템(turbo 등)을 겨냥한다. cargo의 기본 incremental build는 변경분을 실제로 재컴파일하므로 이 프로젝트에서는 `--force` 류의 캐시 무효화 플래그가 불필요하다.
@@ -121,7 +130,8 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 48 개 — 그중 `
 
 - `PhysicalPx`: GPU, wgpu, winit 마우스 좌표, `Rect` 필드
 - `LogicalPx`: egui UI, Theme 상수, 사이드바 너비
-- 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수.
+- 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수. 사각형은 `PhysicalRect` / `LogicalRect` 짝으로 네 변을 한 번에 변환한다.
+- **강제 수단이 둘이다**: 두 좌표계를 *섞는* 것은 컴파일러가 막고, 변환을 *빠뜨리는* 것(`.value()` 로 벗겨서 `× ppp` / `÷ scale_factor`)은 `src/dpi_conversion_guard.rs` 가 막는다. 타입만으로는 후자가 안 잡힌다.
 
 상세: [`docs/concepts/typed-length.md`](docs/concepts/typed-length.md).
 
@@ -170,6 +180,8 @@ tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등
 
 ## 소스 주석의 TODO 파일 및 디자인 changelog 인용 금지 (필수)
 
+**상위 규칙**: git 이 추적하는 파일에는 git 에 존재하지 않는 경로를 적지 않는다 — `.gitignore` 로 제외된 레포 로컬 작업 폴더는 경로도, 폴더 이름 단독 언급도 대상이다. 그 위치는 커밋되지 않는 로컬 전용 지침이 정하고, 추적 문서는 규칙의 내용만 쓴다. 범위 밖(적어도 되는 것)은 빌드가 만들어내는 산출물 경로, 사용자 홈의 런타임 경로, 경로가 아닌 식별자, `.gitignore` 자신이다. 근거·대안·재검토 조건은 [`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`](docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md). 아래는 그 규칙이 가장 자주 깨지는 두 형태를 구체화한 것이다.
+
 `.gitignore` 대상인 로컬 작업 폴더의 TODO 티켓 파일(conductor 티켓 포함)은 git에 커밋되지 않고, 완료된 항목은 관례상 파일 자체가 삭제된다 — **로컬 세션에서만 유효한 휘발성 식별자**다. 소스 코드 주석·문자열(UI에 노출되는 텍스트 포함)에서 그 파일 번호를 "TODO 40", "(TODO18)" 같은 형태로 인용하지 않는다. 저장소를 새로 clone한 사람에게는 그 번호가 가리키는 문서가 존재한 적이 없으므로, 인용 자체가 추적 불가능한 죽은 참조가 된다.
 
 Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 금지 대상이다 — changelog는 `.gitignore` 대상 로컬 디렉토리보다 한층 더 휘발적이다: 원격 Claude Design 프로젝트 **내부에만** 존재하며 로컬 파일시스템에는 애초에 흔적조차 남지 않는다. "2026-07-03-spacing-offgrid" 같은 changelog 판정 slug를 소스 주석·문자열에서 인용하지 않는다 — TODO 파일 번호와 완전히 같은 이유(추적 불가능한 죽은 참조)다.
@@ -179,7 +191,7 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 - **설계 결정이 크면**: 커밋되는 [`docs/adr/`](docs/adr/) ADR을 작성하고 그 경로를 인용한다.
 - **기능 동작을 설명해야 하면**: 커밋되는 [`docs/`](docs/) 문서(예: `docs/dev-guide/`, `docs/features/`, `docs/plugins/`)를 참조하거나 신설해 그 경로를 인용한다.
 
-이 금지는 `tests/no_todo_file_citation.rs` 가 `cargo test --workspace`(CI)로 강제한다 — 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4) 네 형태를 모두 잡는다. 금지 형태를 담는 것이 본질인 파일(규칙 본문·테스트 픽스처 등)은 그 테스트의 `ALLOWLIST_FILES` 에 등록한다.
+상위 규칙과 위 두 형태를 함께 `tests/no_todo_file_citation.rs` 가 강제한다 — 그 타깃은 main push 마다 `check-headless` 의 전체 스위트에서 **자동으로 실행된다**(기본 조합 전용 잡은 `--lib --bins` 라 못 본다). 다만 자동 잡은 push 된 커밋만 본다([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)). 즉 커밋 전에 직접 돌려야 잡힌다. 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4)·앵커 슬러그 번호(P5)·로컬 작업 폴더 언급(P6) 여섯 형태를 모두 잡는다. 스캔 대상은 레포 전체 파일이다(스크립트·CI 설정·루트 문서 포함) — 바이너리 확장자, 빌드 산출물, gitignored 로컬 폴더, vendored `assets/` 만 뺀다. 금지 형태를 담는 것이 본질인 파일(규칙 본문 등)은 그 테스트의 `ALLOWLIST` 에 **(경로, 허용 패턴)** 으로 등록한다 — 파일 통째가 아니라 패턴 단위로 면제해, 그 파일이 다른 형태의 위반을 새로 들이면 그건 잡히게 한다.
 
 로컬 작업을 추적할 목적 자체는 유효하다 — 로컬 작업 폴더에 번호 붙은 TODO 파일을 쓰는 관례는 그대로 유지한다(폴더 위치는 위 "임시 파일·계획 위치" 와 같이 로컬 전용 지침이 정한다). 다만 그 번호는 **작업 티켓**일 뿐 **영구 코드 근거 좌표**가 아니므로, 소스에 스며들게 하지 않는다.
 
