@@ -97,16 +97,17 @@ approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는
 
 ### 토큰 없이도 열려 있는 메서드
 
-위 표는 **토큰을 축으로** 하므로, 어느 토큰도 요구하지 않는 메서드는 어느 행에도 나타나지 않는다. `method_meta` 에는 그런 항목이 있다 — `plugin_callable` 이면서 `required` 가 빈 21개다. **매니페스트에 `permissions` 를 하나도 적지 않은 plugin 도 이것들은 부를 수 있다.** 앞 절이 "토큰이 이름보다 좁게 연다" 는 방향이라면 이것은 반대편이다.
+위 표는 **토큰을 축으로** 하므로, 어느 토큰도 요구하지 않는 메서드는 어느 행에도 나타나지 않는다. `method_meta` 에는 그런 항목이 있다 — `plugin_callable` 이면서 `required` 가 빈 22개다. **매니페스트에 `permissions` 를 하나도 적지 않은 plugin 도 이것들은 부를 수 있다.** 앞 절이 "토큰이 이름보다 좁게 연다" 는 방향이라면 이것은 반대편이다.
 
-근거가 **두 갈래**다. 한 덩어리로 적으면 "권한 없이 열린 건 전부 SSH 때문" 으로 잘못 일반화되므로 군을 나눈다.
+근거가 **세 갈래**다. 한 덩어리로 적으면 "권한 없이 열린 건 전부 SSH 때문" 으로 잘못 일반화되므로 군을 나눈다. 특히 셋째 군은 앞의 둘과 성질이 다르다 — **결정이 아니라 미결**이다.
 
 | 군 | 메서드 | 왜 토큰을 요구하지 않나 |
 |----|--------|------------------------|
 | 전역·자기 정보 조회 | `system.info` · `theme.query` · `plugin.list_agent_permissions` | 상태를 바꾸지 않고 특정 surface 의 내용도 노출하지 않는다. 앞의 둘은 인스턴스·테마의 **전역** 스냅샷이고(webview-kind surface 는 `set_context` 로 Theme 를 push 받지 못해 문서를 그릴 때마다 `theme.query` 로 대신한다 — [ADR-0065](../adr/0065-markdown-webview-render-channel.md)), 마지막은 **자기에게 지금 무슨 권한이 있는지**를 되읽는 self-introspection 이라 토큰을 요구하면 순환이 된다 |
 | attach · 원격 프로필 · 패스키 | `attach.acquire` · `attach.release` · `attach.force_detach` · `attach.force_detach_workspace` · `attach.into_gui` · `attach.list` · `remote.profile.list` · `remote.profile.get` · `remote.profile.add` · `remote.profile.detect` · `remote.profile.remove` · `remote.profile.list_local` · `remote.profile.import` · `remote.workspaces` · `remote.passkey.list` · `remote.passkey.get` · `remote.passkey.add` · `remote.passkey.remove` | 신뢰경계가 이 권한 모델이 아니라 **연결 경계(SSH + loopback)** 다 — 근거는 아래 [한계](#한계) 의 attach 문단에 있고 여기서 되풀이하지 않는다. 프로필은 비밀 없는 장비 인벤토리이고, 원격 워크스페이스 열거도 같은 조회이며(구조를 만드는 `remote.attach` 는 이 군에 **없다** — 사용자의 로컬 창에 워크스페이스를 만드는 것은 SSH 가 주는 권한이 아니라서 local 전용이다, [ADR-0121](../adr/0121-attach-trust-boundary-covers-remote-queries-not-local-structural-ops.md)), 패스키도 `list`/`get` 이 이름과 종류만 돌려주며 키 파일 내용은 반환하지 않는다([ADR-0016](../adr/0016-passkey-store-path-convergence.md)) |
+| 아직 정하지 않은 것 | `host.shared_buffer.create` | **정책이 아니다.** egui-mesh 로 그리는 plugin 이 프레임 버퍼를 얻는 통로이고, 요구 토큰이 없는 것은 그렇게 정해서가 아니라 **정한 적이 없어서**다. 원래는 `METHOD_TABLE` 에 등재조차 없어 게이트가 이름을 못 찾았고, 그래서 권한뿐 아니라 cap·rate·audit 도 통째로 건너뛰었다. 지금은 현재 동작 그대로 등재해 최소한 그 셋은 걸리게 해 둔 상태다. 어떤 토큰을 요구할지와 개수·총량 상한을 함께 둘지는 매니페스트 호환성이 걸린 별도 결정이라 [ADR-0152](../adr/0152-gates-run-before-routing-not-inside-it.md) 의 열린 질문으로 남아 있다 |
 
-**이것은 구멍이 아니라 정책이다.** 두 군 모두 "게이트를 빠뜨렸다" 가 아니라 그 자리에 게이트를 두지 않기로 한 결정이고, 특히 아래쪽 군은 SSH 접속 권한이 이미 그 이상을 허용하므로 별도 토큰을 만들지 않는다는 이 레포의 확립된 판단이다([ADR-0004](../adr/0004-ipc-transport-tcp.md)). 다만 그 사실이 **문서에 있어야** grant 화면을 보는 사용자와 매니페스트를 쓰는 plugin 작성자가 실제 개방 범위를 안다.
+**앞의 두 군은 구멍이 아니라 정책이다.** 그 둘은 "게이트를 빠뜨렸다" 가 아니라 그 자리에 게이트를 두지 않기로 한 결정이고, 특히 아래쪽 군은 SSH 접속 권한이 이미 그 이상을 허용하므로 별도 토큰을 만들지 않는다는 이 레포의 확립된 판단이다([ADR-0004](../adr/0004-ipc-transport-tcp.md)). 다만 그 사실이 **문서에 있어야** grant 화면을 보는 사용자와 매니페스트를 쓰는 plugin 작성자가 실제 개방 범위를 안다. 셋째 군은 그 반대다 — 결정을 기다리는 자리이므로, 같은 표에 있다는 것이 같은 근거를 갖는다는 뜻이 되지 않게 군을 갈라 둔다.
 
 위 표는 `tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 런타임 열거해 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다. 이 문서의 다른 두 parity 가드와 마찬가지로 **CI 가 자동으로 실행하지는 않는다**(아래 [ci-gates](ci-gates.md) 언급 참조 — 스캔 가드라 컴파일 검사는 이 가드에 대해 아무것도 보장하지 않는다). 다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
 

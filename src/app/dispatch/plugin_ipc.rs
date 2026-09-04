@@ -6,20 +6,6 @@ use tasty_host_plugin::manager::PendingPluginCall;
 use crate::app::App;
 use crate::ipc;
 
-/// pre-gate 를 태우지 않는 메서드.
-///
-/// `host.shared_buffer.create` 는 `METHOD_TABLE` 에 항목이 없다 — `ensure_allowed` 가
-/// 이름을 못 찾으면 fail-closed 로 떨어뜨리므로, 지금 그대로 게이트에 태우면 egui-mesh
-/// 로 그리는 번들 plugin 이 전부 끊긴다(실측: 9 개 중 5 개가 `EguiMeshSurface` /
-/// `EguiMeshPopup` / `EguiMeshBanner` 를 통해 이 메서드에 도달하고, 그 다섯이 공통으로
-/// 선언한 기존 권한 토큰은 하나도 없다). **어떤 권한을 요구할 것인가는 매니페스트
-/// 호환성이 걸린 별도 결정이라 이 자리에서 정하지 않는다** — 열린 질문으로
-/// [ADR-0152](../../../docs/adr/0152-gates-run-before-routing-not-inside-it.md) 에 적었다.
-///
-/// 이 목록이 늘어나는 것 자체가 결함이다. `the_pre_gate_exempts_exactly_one_method` 가
-/// 개수를 고정한다.
-const PRE_GATE_EXEMPT: &[&str] = &[tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE];
-
 impl App {
     /// plugin process가 보낸 IPC 호출들을 라우터로 디스패치하고 결과를 plugin에 회신.
     ///
@@ -36,16 +22,14 @@ impl App {
             None => return,
         };
         for call in calls {
-            if !PRE_GATE_EXEMPT.contains(&call.method.as_str()) {
-                let caller = Self::plugin_caller(&call);
-                let request = Self::plugin_call_request(&call);
-                if let Some(resp) = self.gates_before_routing(&request, &caller) {
-                    let msg = resp.error.map(|e| e.message);
-                    if let Some(mgr) = self.plugin_manager.as_mut() {
-                        mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg);
-                    }
-                    continue;
+            let caller = Self::plugin_caller(&call);
+            let request = Self::plugin_call_request(&call);
+            if let Some(resp) = self.gates_before_routing(&request, &caller) {
+                let msg = resp.error.map(|e| e.message);
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg);
                 }
+                continue;
             }
             // shared buffer 생성은 main 채널 + 보조 채널을 동시에 다뤄야 해서
             // dispatcher에 노출하지 않고 매니저가 직접 처리한다.
@@ -246,7 +230,6 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::PRE_GATE_EXEMPT;
     use std::collections::HashSet;
     use tasty_plugin_manifest::Permission;
 
@@ -315,15 +298,20 @@ mod tests {
         );
     }
 
-    /// 면제는 하나뿐이고, 그 하나가 무엇인지도 고정한다. 목록으로 남겨 두면 다음 사람이
-    /// 이름만 얹고 지나간다 — 늘어나는 것 자체가 결함이라 수를 박는다.
+    /// 진입부에는 면제가 없다 — 모든 갈래가 게이트를 탄다. `host.shared_buffer.create`
+    /// 는 `METHOD_TABLE` 에 등재돼 있어(현재 요구 토큰 없음) 게이트를 통과하지, 게이트를
+    /// 건너뛰는 것이 아니다. 면제를 하나라도 되살리면 그 메서드만 cap·rate·audit 밖으로
+    /// 빠지므로 수를 0 으로 박는다.
     #[test]
-    fn the_pre_gate_exempts_exactly_one_method() {
-        assert_eq!(
-            PRE_GATE_EXEMPT,
-            &[tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE],
-            "면제 목록이 바뀌었다 — 늘렸다면 그 메서드가 왜 게이트를 못 타는지 \
-             ADR 에 적고 이 테스트를 같이 고쳐라"
+    fn the_entry_gates_every_branch_without_exemption() {
+        let src = source();
+        assert!(
+            !src.contains("PRE_GATE_EXEMPT"),
+            "면제 목록이 되살아났다 — 게이트 밖으로 빼는 대신 METHOD_TABLE 에 등재해라"
+        );
+        assert!(
+            !src.contains("continue;\n            }\n            let caller"),
+            "게이트 앞에 조기 continue 가 생겼다"
         );
     }
 

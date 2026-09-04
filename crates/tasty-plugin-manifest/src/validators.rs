@@ -83,6 +83,10 @@ pub const RESERVED_IPC_PREFIXES: &[&str] = &[
     "global_hook",
     "hook",
     "hook_handler",
+    // plugin ↔ host 보조 채널 계열(`host.shared_buffer.*`). 매니페스트로 이 이름을
+    // 점유하면 그 뒤 호스트가 같은 prefix 에 메서드를 더할 때 표에 없는 `host.*` 가
+    // plugin 으로 forward 된다.
+    "host",
     "ime",
     "ipc",
     "memory",
