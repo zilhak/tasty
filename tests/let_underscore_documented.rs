@@ -43,11 +43,28 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// 금지 형태를 담는 것이 본질인 파일. **현재 비어 있다** — 이 가드 자신도 예외가
-/// 아니어서, 헬퍼 테스트의 픽스처는 금지 형태를 소스에 그대로 적지 않고 런타임에
-/// 조립한다([`ignore_stmt`]). `.githooks/pre-commit` C.6 에는 면제 장치가 없으므로
-/// 어차피 그렇게 해야 하고, 덕분에 가드가 자기 자신도 검사한다.
-const ALLOWLIST: &[&str] = &[];
+/// 금지 형태를 담는 것이 본질인 자리의 **면제 조각**. 파일 통째가 아니라
+/// `(경로, 그 파일에서 면제할 코드 조각)` 쌍이다 — 등록한 조각을 담은 줄만 넘어가고,
+/// 같은 파일이 **다른 형태의 위반을 새로 들이면 그건 잡힌다.** 조립도 근거도
+/// `tests/no_todo_file_citation.rs` 의 ALLOWLIST 와 같다(루트 `CLAUDE.md` 가 그
+/// 이유를 적어놨다 — "파일 통째가 아니라 패턴 단위로 면제해, 그 파일이 다른 형태의
+/// 위반을 새로 들이면 그건 잡히게 한다").
+///
+/// **현재 비어 있다.** 면제가 필요할 만한 유일한 형태는 문자열 리터럴 안의 금지
+/// 형태인데([`has_let_underscore`] 가 리터럴을 파싱하지 않는다), 아직 그런 줄이
+/// 없다. 이 가드 파일 자신은 `tests/` 아래라 [`is_test_path`] 로 이미 빠지므로
+/// 여기 등록될 일이 없다 — 그럼에도 픽스처는 런타임에 조립한다([`ignore_stmt`]).
+/// `.githooks/pre-commit` C.6 에는 면제 장치가 **아예 없어서** 어차피 그래야 하고,
+/// 덕분에 훅이 이 파일도 검사한다.
+const ALLOWLIST: &[(&str, &[&str])] = &[];
+
+/// 위반 줄이 `entries` 에 등록된 조각을 담고 있으면 면제다. 판정이 **파일 단위가
+/// 아니라 줄 단위**라, 등록된 파일이 새로 들이는 다른 위반은 그대로 잡힌다.
+fn is_allowlisted(entries: &[(&str, &[&str])], rel: &str, line: &str) -> bool {
+    entries
+        .iter()
+        .any(|(path, snippets)| *path == rel && snippets.iter().any(|s| line.contains(s)))
+}
 
 const PRUNE_DIRS: &[&str] = &[
     "target",
@@ -100,8 +117,11 @@ fn is_test_path(rel: &str) -> bool {
 
 /// `let _ =` 가 코드에 실제로 나타나는 열 위치. 줄 주석(`//`) 뒤는 제외한다.
 ///
-/// 문자열 리터럴 안의 형태까지 배제하려면 렉서가 필요한데, 실제로 그걸 담는 파일은
-/// 이 가드 자신뿐이라 [`ALLOWLIST`] 로 처리한다 — 렉서를 들이는 것보다 싸다.
+/// 문자열 리터럴은 파싱하지 않는다 — 리터럴 안에 금지 형태를 담은 줄을 코드로
+/// 오인한다. 렉서를 들이는 것보다 싸고, 그런 줄이 실제로 생기면 [`ALLOWLIST`] 에
+/// `(경로, 조각)` 으로 등록한다. 이 가드 파일 자신이 면제 없이 통과하는 이유는
+/// ALLOWLIST 가 아니라 `tests/` 경로 제외([`is_test_path`]) + 픽스처 런타임 조립
+/// ([`ignore_stmt`]) 이다.
 fn has_let_underscore(line: &str) -> bool {
     let code = match line.find("//") {
         Some(i) => &line[..i],
@@ -236,13 +256,16 @@ fn every_let_underscore_in_production_code_says_why() {
     let mut report = Vec::new();
     for file in &files {
         let rel = rel_of(file, root);
-        if ALLOWLIST.contains(&rel.as_str()) || is_test_path(&rel) {
+        if is_test_path(&rel) {
             continue;
         }
         let Ok(text) = fs::read_to_string(file) else {
             continue;
         };
         for (line, snippet) in violations_in(&text) {
+            if is_allowlisted(ALLOWLIST, &rel, &snippet) {
+                continue;
+            }
             report.push(format!("  {rel}:{line}  {snippet}"));
         }
     }
@@ -340,6 +363,29 @@ mod helper_tests {
     #[test]
     fn a_form_inside_a_line_comment_is_not_a_violation() {
         assert!(fixture("fn f() {\n    // 예: {IGNORE}\n}\n").is_empty());
+    }
+
+    /// 면제는 파일 통째가 아니라 조각 단위다 — 등록한 파일이 새로 들이는 다른
+    /// 위반은 그대로 잡혀야 한다. 이 성질이 깨지면 ALLOWLIST 는 "그 파일에서
+    /// 가드를 끄는" 스위치가 되고, 등록 한 번이 그 파일의 미래 위반까지 전부
+    /// 통과시킨다.
+    #[test]
+    fn the_allowlist_exempts_a_registered_snippet_not_the_whole_file() {
+        let entries: &[(&str, &[&str])] = &[("src/x.rs", &["RULE_TEXT"])];
+
+        assert!(is_allowlisted(
+            entries,
+            "src/x.rs",
+            "let s = \"RULE_TEXT\";"
+        ));
+        assert!(
+            !is_allowlisted(entries, "src/x.rs", &ignore_stmt()),
+            "등록 파일의 다른 위반까지 면제되면 파일 통째 면제와 같아진다"
+        );
+        assert!(
+            !is_allowlisted(entries, "src/y.rs", "let s = \"RULE_TEXT\";"),
+            "같은 조각이어도 등록되지 않은 파일은 면제가 아니다"
+        );
     }
 
     #[test]
