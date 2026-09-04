@@ -36,6 +36,7 @@ pub(crate) mod state;
 pub(crate) mod surface_registry;
 pub(crate) mod terminal_store;
 
+pub(crate) mod app_surface;
 pub(crate) mod impl_attach;
 pub(crate) mod impl_clipboard;
 pub(crate) mod impl_close;
