@@ -1,10 +1,36 @@
 name: Test
 
-# `cargo test --workspace` 만 책임. release/build-check 와 분리.
-# 본 워크플로가 J.B 의 semver guard test (api_baseline_0_7,
-# changelog_unreleased, cli_naming_count_drift) 의 자동 실행 채널이다.
+# 두 잡이 성격이 다르다 — 트리거도 다르다.
+#
+# 1. `semver-guards` (자동, main push): 0.7.x SemVer 가드 세 개
+#    (`api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift`).
+#    이 셋은 소스/문서 텍스트와 `METHOD_TABLE` 상수만 보는 가드라 GUI 도 GPU 도
+#    필요 없고 수 밀리초에 끝난다. **수동 실행에만 매달아 두면 의미가 없다** —
+#    "메서드가 조용히 사라졌다" 를 잡는 것이 목적인데 사람이 기억해서 눌러야만
+#    돈다면 그 결함은 다음 릴리스까지 살아남는다. 그래서 이 잡만 자동으로 돈다.
+#    `--no-default-features` 로 도는 이유: 세 가드 중 gui feature 에 의존하는 것이
+#    없고(`METHOD_TABLE` 은 `tasty-ipc` 소속이라 feature 와 무관), 헤드리스 쪽이
+#    컴파일 입력이 적어 러너 점유가 짧다.
+#
+# 2. `test-linux-x64` (수동 전용): `cargo test --workspace` 전체 스위트.
+#    **자동으로 돌지 않는다.** 전체 스위트는 실측 274.5s(148 suite)이고 그중
+#    222.4s 가 GUI 인스턴스를 띄우는 11개다 — self-hosted 러너의 GPU 가용성에
+#    따라 그대로 flaky 가 된다. 그래서 지금은 **사람이 돌린다**: 병합 후 main 에서
+#    conductor 가 1회. e2e 하네스가 GPU GUI 대신 헤드리스로 뜨게 되면 이 잡을
+#    자동 트리거로 올리는 것이 훨씬 싸진다 — 그 전환이 선행 조건이다.
+#    각 작업 lane 은 자기 변경이 닿는 테스트만 돌린다(CLAUDE.md 의 명령 표 참고).
 
+# `pull_request` 가 없는 이유(`format-check.yml` 은 붙어 있다 — 의도된 차이다):
+# 이 잡은 **self-hosted Linux X64 러너 한 대**(release-runners.md 의 `tasty-server-x64`)
+# 에서 돈다. 그 한 대를 crossplatform-check 의 `check-headless` · complexity-check ·
+# supply-chain-check · release/dist 빌드가 함께 쓰므로 잡이 직렬로 줄을 선다. PR 을 거의
+# 열지 않는 이 저장소의 흐름에서 PR 트리거는 발사가 드문 반면, 발사되면 긴 빌드 뒤에
+# 줄 서 다른 가드를 늦춘다. `format-check.yml` 은 공용 `ubuntu-latest` 라 그 제약이
+# 없어서 PR 을 함께 받는다 — 두 잡의 트리거가 다른 것은 러너가 다르기 때문이다.
+# PR 흐름을 쓰게 되면 이 판단을 다시 본다(ci-gates.md "자동으로 도는 것" 참고).
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 # 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
@@ -14,7 +40,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  semver-guards:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # `--no-fail-fast` — 세 가드는 서로 독립인데, 없으면 첫 가드가 깨진 회차에서
+      # 나머지 둘이 실행조차 안 된다. 그러면 "SemVer 가드 1 건 실패" 로 보이지만 실제로는
+      # 두 건이 미판정이다. 근거 전문은 crossplatform-check.yml 의 Windows 단위테스트 스텝.
+      - name: cargo test (semver guards)
+        run: >
+          cargo test --locked --no-default-features --no-fail-fast
+          --test api_baseline_0_7
+          --test changelog_unreleased
+          --test cli_naming_count_drift
+
   test-linux-x64:
+    # 수동 전용 — 위 헤더의 2번 근거. push 로는 발사되지 않는다.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v4
@@ -27,5 +75,7 @@ jobs:
       - name: Build tests
         run: cargo test --workspace --no-run --locked
 
+      # 전체 스위트라 첫 실패가 가리는 범위가 가장 넓다 — 이 잡이 `tests/` 통합 타깃의
+      # 유일한 실행 채널이므로, 가려진 타깃은 다른 어디서도 안 돈다.
       - name: Run tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast

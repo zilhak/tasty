@@ -1,7 +1,7 @@
 name: Cross-platform Check
 
 # 불가침 원칙 #4(크로스플랫폼: 한 OS 전용 코드가 다른 OS 컴파일을 깨뜨리지 않게)를
-# 매 PR 단위로 자동 강제하는 가벼운 가드.
+# main 에 들어온 변경마다 자동 강제하는 가벼운 가드.
 #
 # build-check.yml / release.yml 의 build-* 잡은 dist 빌드 스크립트(무거움) + 수동
 # 트리거라 매-커밋 가드 역할을 못 한다. 본 워크플로는 dist 산출물 없이
@@ -19,14 +19,40 @@ name: Cross-platform Check
 # 네이티브 host 타깃이 곧 x86_64-pc-windows-msvc / aarch64-apple-darwin 이므로
 # 별도 `--target` 지정은 불필요(오히려 rustup target 설치를 요구).
 #
-# Linux x64 gui 컴파일은 test.yml(cargo test --workspace)이 이미 커버하므로 여기서 생략.
+# Linux x64 gui 컴파일은 여기서 생략한다 — 다만 test.yml 의 전체 스위트 잡은 **수동
+# 전용**이라 자동 채널이 아니다(그쪽 헤더 2번 근거). 즉 Linux x64 gui 컴파일은 현재
+# 어떤 자동 잡도 보지 않으며, 사람이 병합 후 main 에서 돌리는 전체 스위트가 유일한
+# 채널이다.
 # 단, headless(`--no-default-features`) 빌드만은 어떤 workflow 도 돌지 않아 gui-gating
 # 누락(gui 전용 심볼을 cfg 게이팅 없이 사용)이 CI 를 통과해 유입됐다(headless-build-01).
 # gui feature 가 켜진 빌드에선 그 실수가 드러나지 않으므로, headless 회귀는 오직
 # `--no-default-features` 컴파일로만 잡힌다. Linux x64 는 gui 네이티브 의존 없이 순수
-# 컴파일만 필요해 가볍게 돌릴 수 있어 아래 check-headless 잡으로 매 PR 가드한다.
+# 컴파일만 필요해 가볍게 돌릴 수 있어 아래 check-headless 잡으로 함께 가드한다.
 
+# 트리거 근거: 이 저장소는 PR 을 열지 않고 main 에 직접 커밋·push 하는 흐름이라
+# `pull_request` 만으로는 이 가드가 발사되지 않는다. 그래서 main push 를 1차 트리거로
+# 둔다. 발사 단위는 커밋이 아니라 push 라 빈도가 낮고(최근 30 일 26 회, 하루 최대 4 회),
+# 세 잡이 서로 다른 러너에서 병렬로 돌며, 아래 concurrency 가 연속 push 의 앞선 실행을
+# 취소한다. 러너 점유 실측(러너 로그 기준): check-macos 137~145s · check-windows
+# 180~508s · check-headless 328s(check 80 + test 215 + clippy 22). Linux X64 러너는
+# **한 대**를 complexity-check · supply-chain-check · dist 빌드와 함께 쓴다
+# (채널 정본: `docs/dev-guide/ci-gates.md`) — concurrency 는 같은 워크플로·같은 ref 만
+# 취소하므로 다른 워크플로와의 줄서기는 막지 않는다.
+# 기각한 대안: (a) 주기 실행(cron) — 변경이 없어도 러너를 깨우고 회귀 검출이 최대 하루
+# 늦다. (b) PR 전용 유지 — 이 저장소의 흐름에서 가드가 영영 돌지 않는다.
+# `pull_request` 는 PR 흐름을 쓰게 될 때를 위해 남겨 둔다.
 on:
+  push:
+    branches: [main]
+    # 아래 세 경로는 컴파일 입력이 아니다 — docs/ 와 site/ 는 워크스페이스 밖이고,
+    # 마크다운을 include_str! 하는 크레이트도 없다. 문서만 담은 push 가 mac/win 러너를
+    # 깨우지 않게 하는 안전판이다(실측상 대부분의 push 는 소스를 함께 담아 실제로
+    # 걸러지는 경우는 드물다). 제외 목록 방식이라 여기 없는 경로가 하나라도 바뀌면
+    # 실행된다 — 새 소스 디렉토리가 생겨도 가드가 자동으로 따라붙는다.
+    paths-ignore:
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.md'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -69,13 +95,21 @@ jobs:
       # 전례). `--lib --bins` 만 — e2e/integration 은 GUI spawn·plugin 빌드 오케스트레이션이
       # 필요해 러너 가드로 부적합. clippy --all-targets 가 테스트 타깃을 이미 컴파일해
       # 추가 비용은 실행 시간뿐이다.
+      #
+      # `--no-fail-fast` 는 필수다. 이것이 없으면 cargo 는 **처음 실패한 테스트
+      # 바이너리에서 러너를 멈춰**, 알파벳 순으로 그 뒤에 오는 크레이트가 한 번도
+      # 실행되지 않는다. 실제로 `tasty-plugin-claude` 의 실패가 뒤따르는 크레이트
+      # 전부를 가렸고, 그중 하나에는 글자 그대로 같은 결함이 있었다 — 앞을 고치면
+      # 다음 실행에서 뒤가 새로 빨개지는 형태다. 잡이 초록일 때 추가 비용은 0 이고
+      # (실패가 없으면 어차피 전부 돈다), 빨갈 때만 더 도는 것이 이 플래그의 목적이다.
       - name: cargo test (unit)
         shell: pwsh
-        run: cargo test --workspace --lib --bins --locked
+        run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
   # headless(`--no-default-features`) 컴파일 가드. gui feature 를 끈 상태로만 드러나는
-  # gui-gating 누락(headless-build-01 회귀)을 매 PR 자동 검출한다. gui 네이티브 의존이
-  # 빠져 순수 컴파일만 필요하므로 Linux x64 러너에서 가볍게 돈다.
+  # gui-gating 누락(headless-build-01 회귀)을 `main` push 마다 자동 검출한다(문서만
+  # 바뀐 push 는 제외 — 위 `paths-ignore`). gui 네이티브 의존이 빠져 순수 컴파일만
+  # 필요하므로 Linux x64 러너에서 가볍게 돈다.
   check-headless:
     runs-on: [self-hosted, Linux, X64]
     steps:
@@ -88,3 +122,74 @@ jobs:
 
       - name: cargo check (headless)
         run: cargo check --workspace --no-default-features --locked
+
+      # headless 단위테스트. 여기까지 오기 전에는 headless 테스트 바이너리가 **컴파일조차
+      # 되지 않아서**(gui 전용 상태를 단정하는 테스트 모듈이 cfg 게이팅 없이 있었다) 이
+      # 잡이 `cargo check` 로 프로덕션 코드만 봤고, headless 는 실행 가능한 테스트 커버리지가
+      # 0 이었다.
+      #
+      # 이 스텝이 여는 것은 **headless 전용 구현의 행동 커버리지**다 — 예를 들어
+      # `src/app/dispatch_domain_stubs.rs`(파일 전체가 `#![cfg(not(feature = "gui"))]`)의
+      # 자원 해제를 없애면 여기서만 테스트가 깨진다. gui 빌드에서는 그 파일이 통째로
+      # 비어 있어 같은 변이가 영향조차 주지 못한다. 즉 같은 테스트가 빌드 형태에 따라
+      # 서로 다른 구현을 검증한다.
+      #
+      # 반대로 gui/headless 에서 **결과가 같아지는** 불변식(close cascade 의 활성 포인터
+      # 보정 등)은 이 스텝이 행동으로 잡지 못한다 — 기본 빌드에서 도는 소스 가드
+      # (`state::workspace` 의 `both_close_cascades_route_through_the_pointer_helper`)가
+      # 그쪽 담당이고, 그 이유는 그 테스트 doc 에 적혀 있다.
+      #
+      # **통합 테스트까지 포함한다.** 한때 `--lib --bins` 로 좁혀 놓고 "e2e/integration 은
+      # 실행에 GUI spawn 이 필요하다" 고 적었는데, 실측해 보니 루트 `tests/*.rs` 48 개 중
+      # GUI 를 실제로 요구하는 것은 `tests/gui_tests.rs` 하나뿐이고 그것은 Cargo.toml 의
+      # `required-features = ["gui"]` 가 이미 빌드 대상에서 뺀다. 나머지 47 개는 워크스페이스
+      # 크레이트의 통합 타깃과 함께 headless 로 그대로 서고 돈다(통합 타깃 70 개 / 367 테스트).
+      # e2e 하네스가 띄우는 `CARGO_BIN_EXE_tasty` 는 **같은 feature 로 빌드된 자기 바이너리**
+      # 라, `--no-default-features` 에서는 그것이 곧 headless 데몬이다 — 즉 이 스텝이 headless
+      # 부팅 진입점(`src/boot.rs` 의 `run_headless`)을 실제로 부팅해 IPC/attach/PTY 경로를
+      # 끝까지 돌린다. `--lib --bins` 로는 그 경로가 한 줄도 안 돌았다.
+      #
+      # 아래 `--skip` 1 건은 **GUI 가 필요해서가 아니다.** 원인과 무엇을 고치면 풀리는지를
+      # 적어 둔다 — 고치면 skip 을 지우는 것이 이 목록의 용도다.
+      # **skip 은 커버리지를 영구히 깎는 장치라, 하나씩 정당화가 없으면 넣지 않는다.**
+      #   1. multi_window_owner_routing
+      #      **GUI 요구.** `window.create` 는 gui 라우터의 `app_methods` step 에만 있고,
+      #      headless 데몬에는 창이 없다 — 배선 결함이 아니라 창의 부재다. 이 축을
+      #      배선으로 오해한 서술이 한때 여기 있었고, 그때 실제로 배선해서 풀린 것들은
+      #      이미 빠졌다(plugin namespace forward: `boot/headless_dispatch.rs` · 터미널
+      #      그리드 debug 핸들러 넷: `handler/debug_terminal.rs`).
+      #      **skip 이 한 스위트 통째에서 테스트 하나로 좁아진 경위**: `tests/e2e_tests.rs`
+      #      가 33 개 시나리오를 `#[test]` 하나(`all_e2e_tests`)에 몰아 두어 GUI 필요
+      #      구간과 아닌 구간을 `--skip` 으로 가를 수 없었다. 시나리오 단위로 쪼갠 지금은
+      #      창을 요구하는 단언이 이 테스트 하나에 모여 있고, 나머지 18 개는 헤드리스에서
+      #      실제로 돈다(실측: 26 passed / 1 filtered). 경계는 **파일이 아니라 테스트**다.
+      #
+      # `output_match_hook_fires_on_real_pty_output` 은 한때 세 번째 skip 이었으나 **뺐다.**
+      # 그 skip 의 근거였던 제품 결함(headless 가 `process_all_pty_output` 의 CoreEvent 를
+      # 버려 `output-match` 훅이 영영 fire 되지 않던 것)을 고쳤다 — `boot.rs` 의
+      # `fire_output_match_hooks`. 이제 헤드리스에서도 7 passed / 0 failed 다.
+      #
+      # `hard_occupied_attention_survives_the_servers_local_focus` 는 한때 첫 번째 skip
+      # 이었으나 **뺐다.** `debug.switch_workspace` 등 gui 비의존 debug 핸들러 셋이
+      # `debug.rs` 의 gui 게이트에 묶여 헤드리스 라우터에 없던 것이 원인이었고,
+      # `adapters/ipc/handler/debug_nav.rs` 로 갈라 해결했다(12 passed / 0 failed).
+      #
+      # `closing_before_the_descriptor_releases_occupancy_promptly` 는 한때 네 번째 skip 이었으나
+      # **뺐다.** 재판정에서 전체 스위트 3 회 연속 통과했고(각 회차 `test result 162`), 다른
+      # 각도(테스트 바이너리는 gui 빌드 + spawn 인스턴스만 headless)의 전체 스위트 2 회도
+      # 통과했다. 관측된 실패는 부하가 높던 이전 베이스의 1 회뿐이라 skip 근거로 약하다 —
+      # 재현 조건이 좁혀지지 않은 간헐 실패는 커버리지를 영구히 깎는 대신 티켓으로 남긴다.
+      # `--no-fail-fast` 를 붙이는 근거는 위 Windows 단위테스트 스텝에 적힌 것과 같다 —
+      # 여기서는 타깃이 123 개라 첫 실패가 가리는 범위가 그쪽보다 넓다.
+      - name: cargo test (headless)
+        run: |
+          cargo test --workspace --no-default-features --locked --no-fail-fast -- \
+            --skip multi_window_owner_routing
+
+      # headless 조합의 clippy. 기본 조합의 clippy 는 Windows 잡이 보지만, 그 잡은
+      # `--no-default-features` 를 돌지 않아 headless 전용 코드(`run_headless` 등)의
+      # deny 레벨 린트 위반이 아무에게도 안 보였다. 위 테스트 스텝과 같은 이유로
+      # 여기서 함께 닫는다 — 헤드리스 사각을 닫는 잡이 clippy 만 사각으로 남기면
+      # 같은 구멍이 다시 자란다.
+      - name: cargo clippy (headless)
+        run: cargo clippy --workspace --all-targets --no-default-features --locked

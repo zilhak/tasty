@@ -12,6 +12,20 @@ name: Complexity Check
 # supply-chain-check.yml 과 동일한 self-hosted Linux X64 관행을 따른다.
 
 on:
+  # main push 가 이 게이트의 **실질적인 유일 채널**이다 — 이 저장소는 PR 을 열지 않고
+  # main 에 직접 push 한다(실측: 최근 200 run 의 `pull_request` = 0). PR 트리거만
+  # 두었던 동안 이 워크플로는 등록 이래 run 이력이 0 건이었고, 그 사이 임계를 새로
+  # 넘은 파일이 26 개 쌓였다. 근거 전문은 ADR-0131.
+  #
+  # `paths-ignore` 는 crossplatform-check 와 같은 세 경로다. 이 게이트는 `.rs` 의
+  # code SLOC 만 보므로 문서만 담은 push 는 판정을 바꿀 수 없다 — 러너를 깨울 이유가
+  # 없다(레포 전체를 훑는 문서 가드와 달리 여기서는 사각이 생기지 않는다).
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.md'
   pull_request:
     branches: [main]
   workflow_dispatch:
