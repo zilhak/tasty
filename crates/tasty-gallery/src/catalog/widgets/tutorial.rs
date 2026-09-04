@@ -9,8 +9,9 @@
 //!   4방 tail). 버튼은 DS `Button` 재사용.
 //! - **Topic popup** — 360px CenteredFocused 팝업(스크롤 리스트 + 진행).
 //!
-//! 색·폰트·선굵기·간격·반경은 전부 `Theme` 토큰. 고정폭(244/360) 등 컴포넌트 박스
-//! 치수는 구조적 레이아웃 값으로 `dialog::frame_card` 의 `240.0` 관례를 따라 리터럴.
+//! 색·폰트·선굵기·간격·반경은 전부 `Theme` 토큰에서 가져온다. 리터럴은 **이름 붙인
+//! 구조 상수**만 남긴다 — 컴포넌트 박스 고정폭(244/360, `dialog::frame_card` 의 `240.0`
+//! 관례)과 `paint_faux_app` 무대 치수(`FAUX_*` 사이드바·탭바·상태바·행 비율).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
@@ -25,20 +26,35 @@ const TAIL: f32 = 12.0; // 12px diamond → 삼각 tail
 // ── faux app 셸 (jsx `App`) ────────────────────────────────────────────────
 /// 마커가 그 위에 뜨는 가짜 앱 무대. jsx `App` 의 사이드바(116) + 탭바(24) +
 /// 터미널 본문 + 상태바(20) 를 painter 로 절대 배치 전사한다.
+// faux 앱 무대 치수 — 본체 셸(사이드바·탭바·상태바·워크스페이스 행)의 비율을 흉내 내는
+// 데모 전용 구조 상수다. Theme 토큰이 아니라 이 무대 장치의 값·비율 자체가 의미라 명명
+// const 로 고정한다. 나머지 여백(8·12·16)은 실제 spacing 토큰과 값이 같아 토큰을 쓴다.
+const FAUX_SIDEBAR_W: f32 = 116.0;
+const FAUX_TABBAR_H: f32 = 24.0;
+const FAUX_STATUSBAR_H: f32 = 20.0;
+const FAUX_ROW_H: f32 = 22.0;
+const FAUX_ROW_GAP: f32 = 3.0;
+const FAUX_GLYPH_INSET: f32 = 6.0;
+const FAUX_DOT_R: f32 = 4.0;
+const FAUX_LABEL_GAP: f32 = 14.0;
+const FAUX_TEXT_PAD: f32 = 10.0;
+
 fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     let sep = egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui());
-    let sidebar_w = 116.0_f32.min(r.width() * 0.5);
+    let inset = theme.spacing_sm.value(); // 8 — 행 좌우 인셋
+    let cap = theme.font_size_caption.value(); // 11 — faux 앱 라벨 폰트
+    let sidebar_w = FAUX_SIDEBAR_W.min(r.width() * 0.5);
 
     // ── 사이드바 (bg-sidebar, border-right) ──
     let side = egui::Rect::from_min_max(r.min, egui::pos2(r.min.x + sidebar_w, r.max.y));
     p.rect_filled(side, 0.0, theme.bg_sidebar().to_egui());
     p.vline(side.max.x, side.y_range(), sep);
     let rows = [("web", true), ("api", false), ("db", false)];
-    let mut ry = side.min.y + 10.0;
+    let mut ry = side.min.y + FAUX_TEXT_PAD;
     for (label, active) in rows {
         let row = egui::Rect::from_min_size(
-            egui::pos2(side.min.x + 8.0, ry),
-            egui::vec2(sidebar_w - 16.0, 22.0),
+            egui::pos2(side.min.x + inset, ry),
+            egui::vec2(sidebar_w - inset * 2.0, FAUX_ROW_H),
         );
         if active {
             p.rect_filled(
@@ -49,43 +65,48 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
         }
         // workspace 상태 dot (accent-success).
         p.circle_filled(
-            egui::pos2(row.min.x + 6.0 + 4.0, row.center().y),
-            4.0,
+            egui::pos2(row.min.x + FAUX_GLYPH_INSET + FAUX_DOT_R, row.center().y),
+            FAUX_DOT_R,
             theme.accent_success().to_egui(),
         );
         p.text(
-            egui::pos2(row.min.x + 6.0 + 14.0, row.center().y),
+            egui::pos2(
+                row.min.x + FAUX_GLYPH_INSET + FAUX_LABEL_GAP,
+                row.center().y,
+            ),
             egui::Align2::LEFT_CENTER,
             label,
-            egui::FontId::proportional(11.0),
+            egui::FontId::proportional(cap),
             if active {
                 theme.text_primary().to_egui()
             } else {
                 theme.text_muted().to_egui()
             },
         );
-        ry += 22.0 + 3.0;
+        ry += FAUX_ROW_H + FAUX_ROW_GAP;
     }
 
     // ── 메인 컬럼 ──
     let main = egui::Rect::from_min_max(egui::pos2(side.max.x, r.min.y), r.max);
-    // 탭바 (24, bg-panel, border-bottom).
-    let tabbar = egui::Rect::from_min_size(main.min, egui::vec2(main.width(), 24.0));
+    // 탭바 (bg-panel, border-bottom).
+    let tabbar = egui::Rect::from_min_size(main.min, egui::vec2(main.width(), FAUX_TABBAR_H));
     p.rect_filled(tabbar, 0.0, theme.bg_panel().to_egui());
     p.hline(tabbar.x_range(), tabbar.max.y, sep);
     let term_bg = theme.surface("terminal").focused_bg.to_egui();
+    let tab_pad = theme.spacing_md.value(); // 12 — 탭 좌우 패딩
     let mut tx = tabbar.min.x;
     for (i, t) in ["zsh", "logs", "vim"].iter().enumerate() {
-        let tw = 12.0
+        let tw = tab_pad
             + p.layout_no_wrap(
                 t.to_string(),
-                egui::FontId::proportional(11.0),
+                egui::FontId::proportional(cap),
                 egui::Color32::WHITE,
             )
             .size()
             .x
-            + 12.0;
-        let tab = egui::Rect::from_min_size(egui::pos2(tx, tabbar.min.y), egui::vec2(tw, 24.0));
+            + tab_pad;
+        let tab =
+            egui::Rect::from_min_size(egui::pos2(tx, tabbar.min.y), egui::vec2(tw, FAUX_TABBAR_H));
         if i == 0 {
             p.rect_filled(tab, 0.0, term_bg);
         }
@@ -94,7 +115,7 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
             tab.center(),
             egui::Align2::CENTER_CENTER,
             t,
-            egui::FontId::proportional(11.0),
+            egui::FontId::proportional(cap),
             if i == 0 {
                 theme.text_primary().to_egui()
             } else {
@@ -107,18 +128,18 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     // 터미널 본문 (surface-terminal-focused-bg).
     let body = egui::Rect::from_min_max(
         egui::pos2(main.min.x, tabbar.max.y),
-        egui::pos2(main.max.x, main.max.y - 20.0),
+        egui::pos2(main.max.x, main.max.y - FAUX_STATUSBAR_H),
     );
     p.rect_filled(body, 0.0, term_bg);
     p.text(
-        egui::pos2(body.min.x + 12.0, body.min.y + 10.0),
+        egui::pos2(body.min.x + tab_pad, body.min.y + FAUX_TEXT_PAD),
         egui::Align2::LEFT_TOP,
         "$ kubectl get pods -n prod",
-        egui::FontId::monospace(11.0),
+        egui::FontId::monospace(cap),
         theme.text_muted().to_egui(),
     );
 
-    // 상태바 (20, bg-sidebar, border-top).
+    // 상태바 (bg-sidebar, border-top).
     let status = egui::Rect::from_min_max(egui::pos2(main.min.x, body.max.y), main.max);
     p.rect_filled(status, 0.0, theme.bg_sidebar().to_egui());
     p.hline(status.x_range(), status.min.y, sep);
