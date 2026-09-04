@@ -47,6 +47,9 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.gpu.stall` | `ms` | 다음 프레임의 `present` 직전을 `ms` 밀리초 블로킹(1 회). 이벤트 루프 stall 재현 — CLI 는 `tasty debug gpu-stall --ms N` |
 | `debug.inject_mouse` | `surface_id, row, col, button?, event_type?` | SGR mouse(1006) 시퀀스로 마우스 이벤트 주입 † |
 | `debug.inject_key` | `surface_id, bytes(hex)` 또는 `text` | 키 이벤트 주입 † |
+| `debug.inject_window_mouse` | `surface_id?`, `fx?`/`fy?`(기본 0.5, 창 정규화 좌표), `event_type?`, `button?`, `scroll_dx?`/`scroll_dy?`, `unit?`(기본 `line`) | winit 레벨 마우스 이벤트 주입 — 포커스된 창에 작용한다. 스크롤 단위는 아래 [휠 주입의 단위](#휠-주입의-단위-unit) |
+| `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point` | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다 |
+| `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`) | egui 레벨 키 이벤트 주입 |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
@@ -89,10 +92,20 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.fullscreen.open` | `stage_id`, `window_id?` | 무대를 창에 강제로 올린다(popup 타이틀바 전체화면 버튼 우회, 시각 검증용). 창당 하나 계약 그대로 — 다른 무대가 올라와 있으면 **교체**(닫힘 훅 발화), 같은 id 면 no-op. 정의 테이블에 없는 `stage_id` 는 창을 고르기 전에 `-32602` 로 **거부**(조용한 no-op 아님). 응답: `window_id`·`stage_id`·`previous_stage_id`·`replaced` |
 | `debug.fullscreen.close` | `window_id?` | 그 창의 활성 무대를 내린다. 응답 `closed` 는 실제로 내린 무대가 있었는지(없었으면 `false`), `stage_id` 는 내려간 무대 id |
 | `debug.fullscreen.state` | `window_id?` | 활성 무대 id(없으면 `null`) + 창 상태 덤프: `stage_active`·`os_fullscreen`·`maximized`·`inner_size{width,height}`·`monitor{name,position,size,scale_factor}`. **무대 상태와 OS 창 전환은 별개** — `open` 직후 `stage_id` 는 즉시 서지만 `os_fullscreen` 은 다음 프레임의 `sync_window_fullscreen` 이 반영한다 |
+| `debug.lua.eval` | `source` | Lua 스크립트를 워커에서 실행한다 — fire-and-forget 이라 응답은 `scheduled` 뿐이고 결과·부수효과는 로그로 관측한다. 임의 코드 실행이라 debug 격리가 유일한 경계다 |
+| `debug.plugin_banner.open` | `banner_id`, `surface_id` | plugin 이 기여한 배너를 강제로 띄운다 (응답 `instance_id`). 위 `debug.banner.*` 는 빌트인 배너 쪽이다 |
+| `debug.plugin_banner.close` | `instance_id` | plugin 배너 인스턴스 강제 close (응답 `closed`) |
+| `system.shutdown` | `{}` | 프로세스 종료를 요청한다 — 응답 `shutdown` 을 먼저 보내고 `AppEvent::Shutdown` 을 발사한다. 사용자만 내리던 것을 에이전트가 내리므로 debug 전용이다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
 | `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS 전용.** `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |
 | `surface.switch_input_source` | `source_id` | **macOS 전용.** `TISSelectInputSource` 로 시스템 입력 소스(키보드 레이아웃·입력기)를 바꾼다 — 사용자가 입력기 메뉴로 하는 조작의 재현. 위 `raw_key` 로 한글/CJK 경로를 검증하기 전 입력기를 맞추는 데 쓴다 † |
 | `surface.ime_enable` / `ime_disable` / `ime_preedit` / `ime_commit` / `ime_status` | `text`/`cursor`(preedit·commit) | 포커스된 창의 IME 조합 상태(`ime_active`/`ime_preedit`)를 강제로 세팅·조회한다 — 사용자 입력기 조합의 재현. 대상을 ID 로 받지 못하고 포커스된 창에 작용하므로 포커스 독립성도 만족하지 않는다. 개별 등재가 아니라 `PREFIX_RULES` 의 `surface.ime_` 로 해소되며, 그 규칙 자체가 `#[cfg(debug_assertions)]` 다. 사용법은 [ime-testing](../ai-verification/ime-testing.md) |
+
+> **이 표에는 자동 채널이 없다.** `DEBUG_METHODS` 와 이 표가 어긋나도 어떤 잡도 안 터진다 —
+> 실제로 일곱 건이 빠져 있었고 손으로 채웠다. 판정기를 안 만든 이유는 이 표가 사이에 낀
+> 다른 표에 끊겨 있고 한 칸에 메서드가 여럿인 행이 있어, 그것을 다루는 파서가 판정하려는
+> 명제보다 커지기 때문이다. 메서드를 더하면 **여기도 같이 고쳐야 한다.** 판정 기준은
+> [duplicated-sets](duplicated-sets.md).
 
 † **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 `surface.ime_*` 는 창 내부 상태만 바꾸는 in-process 시뮬레이션이라 이 게이트가 없다 — cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
 
