@@ -165,8 +165,24 @@ fn tracker() -> &'static Mutex<AbuseTracker> {
     TRACKER.get_or_init(|| Mutex::new(AbuseTracker::new(AbuseConfig::from_env())))
 }
 
+const TRACKER_WHAT: &str = "the webhook abuse tracker";
+static TRACKER_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 남용 추적기 락. 두 전역 진입점이 이 한 곳을 지난다.
+///
+/// poison 이면 복구한다. ① 임계구역은 `sources` 맵 조작과 saturating 산술뿐이라 최악의
+/// 손상이 "한 출처의 실패 카운트가 어긋난 것" 으로 갇힌다. ② 패닉하면 그 요청을 처리하던
+/// 리스너 스레드가 죽는다. 조용한 복구도 답이 아니다 — 여기는 차단 판정 경로라, 카운트가
+/// 어긋나 차단이 안 걸리거나 과하게 걸려도 그 사실이 어디에도 안 남는다.
+///
+/// 락을 인자로 받는 이유는 [`registry::lock_state`](super::registry) 와 같다.
+fn lock_tracker(tracker: &Mutex<AbuseTracker>) -> MutexGuard<'_, AbuseTracker> {
+    tasty_utils::poison::recover_mutex(tracker.lock(), TRACKER_WHAT, &TRACKER_POISON_REPORTED)
+}
+
 fn lock() -> MutexGuard<'static, AbuseTracker> {
-    tracker().lock().unwrap_or_else(|p| p.into_inner())
+    lock_tracker(tracker())
 }
 
 /// 전역 진입점 — 이 출처가 현재 쿨다운(즉시 429) 대상인가.
@@ -239,6 +255,38 @@ mod tests {
         t.record_failure("slow", base + Duration::from_secs(12));
         // 리셋 이후 2회뿐이라 임계치(3) 미달 → 차단 안 됨.
         assert!(!t.is_blocked("slow", base + Duration::from_secs(12)));
+    }
+
+    /// poison 이 걸린 뒤에도 차단 판정이 계속 돌고, 그 사실이 한 번은 남는가.
+    ///
+    /// 전역이 아니라 지역 뮤텍스를 겨냥한다 — 전역을 poison 하면 같은 테스트
+    /// 바이너리의 뒤 테스트가 그 상태를 물려받는다.
+    #[test]
+    fn a_poisoned_tracker_keeps_judging_and_says_so_once() {
+        let shared = std::sync::Arc::new(Mutex::new(AbuseTracker::new(cfg(2))));
+
+        let poisoner = std::sync::Arc::clone(&shared);
+        std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("아직 성한 락");
+            panic!("이 스레드가 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(shared.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        // 판정이 계속 돈다 — 임계치까지 집계하고 차단으로 넘어간다.
+        let base = Instant::now();
+        lock_tracker(&shared).record_failure("9.9.9.9", base);
+        lock_tracker(&shared).record_failure("9.9.9.9", base);
+        assert!(
+            lock_tracker(&shared).is_blocked("9.9.9.9", base),
+            "poison 뒤에도 임계치를 넘으면 차단해야 한다"
+        );
+
+        assert!(
+            TRACKER_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
+            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 오판과 구분되지 않는다"
+        );
     }
 
     #[test]
