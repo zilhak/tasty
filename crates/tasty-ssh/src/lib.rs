@@ -2013,8 +2013,18 @@ mod tests {
         // bind 해서, 그 사이 다른 프로세스/테스트가 같은 포트를 채가면 깨지는 TOCTOU 였다.
         let (listener, p) = reserve_local_port().unwrap();
         assert!(p > 0);
-        // 반환된 리스너가 바로 그 포트를 점유한다 — rebind 레이스 없이 usable 을 증명.
-        assert_eq!(listener.local_addr().unwrap().port(), p);
+        // 판별력: 잡고 있는 동안 같은 포트 재bind 는 실패해야 한다(리스너가 실제 점유 중).
+        // local_addr 재읽기는 같은 불변 속성의 재읽기라 항진명제였다 — usable 을 재지 못한다.
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", p)).is_err(),
+            "reserved port {p} must be held while the listener is alive"
+        );
+        // 대조군: 놓으면 usable — drop 후엔 같은 포트로 bind 가능해야 한다.
+        drop(listener);
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
+            "port {p} must be rebindable after the reservation is dropped"
+        );
     }
 
     /// 등록된 자식은 `cancel()` 로 kill + reaping 된다 — 실제 ssh 없이 오래 사는 더미
