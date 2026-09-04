@@ -141,6 +141,8 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | accent 바 · 인디케이터 | 2px(`tab_indicator_width`) — 대상을 감싸지 않고 **한쪽 변에 붙는 띠**: 활성 행의 좌측 바, 탭 밑줄, 선택 리스트 행의 강조 바. 값은 `focus_ring_width` 와 같은 2 지만 **다른 토큰이고 zoom 거동이 다르다** — 링은 `zoomed()` 를 타고 이 토큰은 안 탄다. 값이 같다고 링 토큰을 바에 쓰지 않는다(그 오용이 갤러리 9자리에 있었다). 토스트 좌측 바만 3px(`toast_accent_width`)로 따로 있다 |
 | painter 전사 글리프 | 선 굵기는 **`icon_stroke_width`**(1.5px) — `Ui` 가 없어 SVG 아이콘 대신 `Painter::line_segment` 로 형상을 옮기는 구간(popup 타이틀바의 close X · 전체화면 브래킷 · chevron · tree 가지) 전용. `border_width`(1)/`focus_ring_width`(2) 어느 쪽도 아니라 별도 필드이고, DTCG dim 토큰에 대응은 없다 |
 | 선 굵기 API | **`Stroke::new` 에 숫자 리터럴 직접 전달 금지** — 위 세 필드의 `.value()` 를 넘긴다. `egui::Stroke { width: .. }` **구조체 리터럴 형태도 금지**다(값과 무관하게) — 필드명이 먼저 와서 숫자 인자 검사를 그대로 빠져나가기 때문이며, 같은 가드가 그 형태를 따로 막는다. 세 필드 어디에도 해당하지 않는 값(예: 체크마크 꺾은선, attached outline)은 명명 const 로 승격하고 사유를 주석에 남긴다 |
+| 코너 반경 | **`corner_radius_sm`(2) · `corner_radius`(4) · `corner_radius_lg`(8) 만.** DTCG 도 `radius-2/4/8/full` 뿐이라 이 셋이 스케일 전부다. 떠 있는 패널(배너·부팅 카드)은 `_lg`, 작은 inner element(키캡·배지)는 `_sm`, 나머지는 기본. 셋 다 `ui_scale` zoom 을 받는다 — **굵기 축(`border_width`·`icon_stroke_width`)이 zoom 을 안 받는 것과 반대다** |
+| 코너 반경 API | **`.corner_radius(<숫자>)` 와 `CornerRadius::same(<숫자>)` 둘 다 금지** — 위 토큰의 `.value()` 를 넘긴다. **접두 둘을 함께 막아야 한다**: 다수가 `.corner_radius(egui::CornerRadius::same(12))` 로 한 겹 감싸여 `.corner_radius(` 뒤에 숫자가 오지 않는다(`Margin::same(` 을 `inner_margin(` 과 따로 막는 것과 같은 이유). 반경이 없는 자리는 `0.0` 대신 **`CornerRadius::ZERO`** — 0 은 그리드의 원점이라 규칙 안에 있고, 전부 0 이면 이름을 쓴다(`Margin::ZERO` 와 같은 관례). 스케일 밖 값(3 · 6 · 12)은 스냅하지 말고 사유를 적은 명명 const 로 둔다 — 현재 `tasty_ui_widgets::tokens` 의 `BOOT_CHROME_CORNER_RADIUS`(6) · `BOOT_CARD_CORNER_RADIUS`(12) · `TAG_PILL_CORNER_RADIUS`(3) 셋이다. **폰트 축과 결론은 같고 대가는 더 크다**([ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 의 논리): 명명 const 는 `zoomed()` 밖인데 반경 토큰은 zoom 을 타므로, 그 자리들만 배율 0.85 / 1.2 에서 고정 반경으로 남는다. `tests/design_token_adherence.rs` 가 두 접두를 막고, 실행 채널은 [ci-gates](../../dev-guide/ci-gates.md) 가 정본이다 |
 | 호버 오버레이 | `hover_overlay`(라이트 검정 8% / 다크 흰색 8% 자동 도출) — 직접 값 금지 |
 | 활성 오버레이 | `active_overlay`(12%) — 선택/active 행, hover(8%)와 구분 |
 | 텍스트 대비 | 최소 **4.5:1**. 위반 시 [`ai-verification/visual-verification`](../../ai-verification/visual-verification.md) 체크리스트 |
@@ -180,7 +182,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 `AppearanceSettings.ui_scale`(`small/medium/large` = `0.85/1.0/1.2`). `install_global_with_zoom` 이 sizing 토큰 자체에 배율을 곱해 전역 `Theme` 재빌드 — UI 코드는 곱셈 무지(`theme().spacing_*` 가 이미 zoomed).
 
-- **zoom 받음**: `spacing_*` · `font_size_*` · `corner_radius` · `focus_ring_width` · `item_height_*` · 사이드바 sizing 토큰들.
+- **zoom 받음**: `spacing_*` · `font_size_*` · `corner_radius`(`_sm`/`_lg` 포함) · `focus_ring_width` · `item_height_*` · 사이드바 sizing 토큰들.
 - **zoom 제외**: `border_width`(1px 정책) · `icon_stroke_width`(이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다) · 탭바 토큰(`tab_width`/`tab_bar_*`) · CSD 타이틀바 토큰 · 터미널 콘텐츠 폰트(별도 `effective_terminal_font` 경로로 GPU 셰이더에 전달).
 - **4px 그리드 + zoom**: 비정수(`12×1.2=14.4`)는 `round_ui()`/`f32::round()` 로 GPU 픽셀 정수 흡수.
 - **라이브 갱신**: settings save / IPC update 시 `UiIntent::AppearanceChanged` 발화 → `cascade_appearance_changed` 가 전 윈도우 GpuState 에 broadcast(polling 아님, 변경 시 1회).

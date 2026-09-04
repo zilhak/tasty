@@ -1,8 +1,12 @@
-# ADR-0126: 스케일 밖 폰트 값은 토큰으로 스냅하지 않는다 — `.5` 값은 토큰이 될 수 없다
+# ADR-0126: 스케일 밖 값은 토큰으로 스냅하지 않는다 — `.5` 폰트 값은 토큰이 될 수 없다
 
 - **Status**: Accepted
 - **Date**: 2026-09-04
-- **Tags**: theme, design-tokens, font-size, zoom, guards, adr-0033
+- **Tags**: theme, design-tokens, font-size, corner-radius, zoom, guards, adr-0033
+
+> **파일명 슬러그는 결정보다 좁다** — `off-scale-font-values-…` 는 이 ADR 이 폰트 축에서
+> 처음 나왔을 때의 이름이다. 슬러그는 ADR 번호와 함께 영구 식별자라 바꾸지 않는다(바꾸면
+> 기존 참조가 끊긴다). 적용 범위는 제목과 아래 "축 확장" 절이 정한다.
 
 ## Context
 
@@ -62,6 +66,45 @@ semantic 이 없는 primitive(12 · 16)를 쓰는 자리도 같게 다루되 con
 돈다([ci-gates](../dev-guide/ci-gates.md)). 전제가 깨지는 길 둘 — `zoomed()` 가 반올림을 그만두는 것, 새 UI 폰트 필드가
 `zoomed()` 를 우회하는 것 — 이 그 테스트에 걸린다.
 
+### 축 확장 — 반경 축도 같은 결정이다 (`lane-literalaxes` 에서 확정)
+
+이 ADR 은 폰트 축에서 나왔지만 **결정 자체는 축 중립**이다: 스케일 밖 값은 스냅하지 않고
+사유를 적은 명명 const 로 둔다. 코너 반경 축을 정리하면서 같은 형태가 그대로 나왔으므로
+여기에 명시한다 — 제목도 그에 맞춰 좁은 표현을 걷었다(결정을 바꾼 것이 아니라 처음부터
+그 결정이었던 것을 제목이 좁게 적고 있었다).
+
+반경 스케일은 `corner_radius_sm`(2) · `corner_radius`(4) · `corner_radius_lg`(8) 뿐이고
+DTCG 도 `radius-2/4/8/full` 뿐이다. 실제 소스에는 3(태그 pill) · 6(부팅 chrome 버튼·인셋
+프레임) · 12(부팅 카드)가 있었다. 값이 토큰과 정확히 같던 두 자리(4 · 8)는 토큰의
+사본이므로 토큰으로 보냈고, 나머지 여섯은 명명 const 로 두었다.
+
+**결론은 같고 근거가 하나 더 있다 — 그리고 그 근거는 축마다 다르다.** 폰트 축의 추가
+근거는 반올림이었다(`.5` 는 어떤 배율에서도 토큰과 값이 다르다). 반경 축의 추가 근거는
+**대가의 실재**다:
+
+| 축 | 토큰이 `zoomed()` 를 타는가 | 명명 const 로 빼는 대가 |
+|---|---|---|
+| 폰트 크기 | 탄다 | 배율에서 고정 — 실재 |
+| 코너 반경 | **탄다** (`zoomed(SIZING.corner_radius)`) | 배율에서 고정 — **실재** |
+| 선 굵기 (`border_width` · `icon_stroke_width`) | **안 탄다** | **없다** |
+
+그래서 굵기 축에서 리터럴을 토큰으로 옮기는 것은 어느 배율에서도 픽셀을 안 바꾸지만,
+반경 축에서는 **토큰으로 옮기는 것 자체가 배율 거동을 바꾼다**(4 → 0.85 에서 3, 1.2 에서
+5). 이것은 회귀가 아니라 고침이다 — 같은 프레임의 `inner_margin(th.spacing_xs)` 이 이미
+zoom 을 타고 있었고 반경만 고정이었다.
+
+**재검토 트리거가 축마다 다르다는 것이 이 절의 핵심이다.** `border_width` 가 나중에
+`zoomed()` 를 타게 되면 **반경 축과 굵기 축의 비대칭이 사라지고** 위 표의 셋째 행이
+무효가 되지만, 폰트 축의 근거(반올림)는 그대로 선다. 반대로 `zoomed()` 가 반올림을
+그만두면 폰트 축의 근거가 무너지고 반경 축은 그대로다. **두 축의 근거는 독립이므로 한쪽이
+무너져도 이 ADR 전체가 무너지지 않는다** — 무너진 축만 다시 본다.
+
+기계가 가르는 경계도 축마다 다르다. 폰트 축은 `no_named_const_copies_a_ui_font_token` 이
+"토큰 값과 같은 const" 를 잡는다. 반경 축에는 대응 가드가 아직 없다 — 지금 막는 것은
+`tests/design_token_adherence.rs` 의 인라인 리터럴(`.corner_radius(` ·
+`CornerRadius::same(` 두 접두)까지이고, **값이 반경 토큰과 같은 명명 const** 는 열려 있다.
+그 형태가 실제로 나타나면 폰트 쪽 가드와 같은 모양으로 넓히면 된다.
+
 ## Consequences
 
 - **얻은 것**: 리터럴 정리가 픽셀을 바꾸지 않는다는 것을 규칙으로 보장한다. "토큰으로
@@ -103,11 +146,19 @@ semantic 이 없는 primitive(12 · 16)를 쓰는 자리도 같게 다루되 con
 - 디자인이 `.5` 스케일을 정식 tier 로 승인해 대응 semantic 토큰이 생긴다.
 - 명명 const 가 zoom 을 안 타는 것이 실제 사용자 문제로 보고된다 — 그때는 A 나 B 중
   하나를 골라야 한다.
+- **(반경 축)** `border_width` 가 `zoomed()` 를 타게 된다 — 위 표의 비대칭이 사라지고
+  반경 축의 추가 근거 하나가 무효가 된다. 폰트 축은 영향받지 않는다.
+- **(반경 축)** 값이 반경 토큰과 같은 명명 const 가 나타난다 — 폰트 쪽
+  `no_named_const_copies_a_ui_font_token` 과 같은 모양의 가드를 반경 축에도 넣을 시점이다.
+- **(반경 축)** 디자인이 3 · 6 · 12 를 정식 tier 로 승인하거나 기존 스케일로 수렴시킨다 —
+  그러면 해당 명명 const 가 통째로 사라진다.
 
 ## References
 
 - [`docs/design/systems/theme.md`](../design/systems/theme.md) — "스케일 밖 폰트 값" ·
-  "`.5` 값은 토큰이 될 수 없다" 행
+  "`.5` 값은 토큰이 될 수 없다" · "코너 반경" · "코너 반경 API" 행
+- [`docs/architecture/ui-widgets-crate.md`](../architecture/ui-widgets-crate.md) —
+  "SIZING 에 대응이 없는 값". 스케일 밖 명명 const 가 사는 위치와 그 부류에 붙는 규칙
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색은 semantic role 접근자로만
   읽는다. 같은 축(값이 아니라 토큰을 경유한다)의 색 쪽 결정
 - `tests/design_token_adherence.rs` — 폰트/선굵기/간격 리터럴 재유입 가드와 그 한계 목록

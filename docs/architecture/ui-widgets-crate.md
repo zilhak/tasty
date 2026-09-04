@@ -44,6 +44,25 @@ tasty-ui-widgets     layout / 위젯 primitive (본 문서)
 | `PANEL_SPACING` | `spacing_sm` | 좌·우 horizontal spacing |
 | `TAB_CONTENT_PADDING` | `spacing_lg` | `tab_content_frame` inner margin |
 
+### SIZING 에 대응이 없는 값
+
+`tokens` 모듈은 두 부류를 담는다. 위 표는 **SIZING 을 참조하는 쪽**이고, 나머지는 대응
+토큰이 아예 없어 여기가 단일 위치인 값들이다 — 4px 그리드 밖 미세 구조 간격
+(`STRUCT_GAP_1..4` = DTCG `primitive.size-1..4`), 스케일 밖 코너 반경
+(`*_CORNER_RADIUS`), 토스트·중앙 블록 기하 등. 전수는 소스가 정본이다(여기 열거하면
+다음 추가에서 바로 낡는다).
+
+이 부류에는 규칙이 둘 붙는다.
+
+- **값이 토큰과 같으면 이쪽이 아니라 SIZING 쪽이다.** 값이 같은 const 는 토큰의
+  사본이고, 사본은 `Theme::with_colors_and_zoom` 의 `zoomed()` 경로 밖이라 `ui_scale`
+  을 타지 않는다 — zoom 1 에서만 같고 나머지 배율에서 갈라진다
+  ([ADR-0126](../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)).
+- **그래서 스케일 밖 const 에는 사유를 적는다.** 어느 토큰 근처인지, 왜 스냅하지
+  않는지, 그리고 zoom 을 안 타는 대가를 doc 주석에 남긴다. 대가의 크기는 축마다
+  다르다 — 반경 토큰은 zoom 을 타므로 실재하고, `border_width` 처럼 애초에 zoom 을
+  안 타는 축은 대가가 없다.
+
 ## 호출 idiom — borrow snapshot
 
 `two_depth_layout` 처럼 *좌측 클릭 시 sub_tab 갱신 + 우측은 현재 sub_tab 분기* 인 경우, 좌·우 두 클로저가 `&mut sub_tab` 을 동시에 캡처할 수 없다. 호출자에서 snapshot 으로 푼다:
