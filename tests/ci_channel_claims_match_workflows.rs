@@ -91,28 +91,6 @@ const ABSENCE_MARKERS: &[&str] = &[
     "실행은 수동",
 ];
 
-/// 위 규칙으로도 걸러지지 않는 예외 — (경로, 창에 함께 있어야 하는 말, 이유).
-///
-/// 파일 통째를 빼지 않는다: 경로만으로 면제하면 그 파일이 나중에 들이는 진짜 위반까지
-/// 함께 새어 나간다(`tests/no_todo_file_citation.rs` 와 같은 이유).
-const ALLOWLIST: &[(&str, &str, &str)] = &[
-    (
-        "tests/ci_channel_claims_match_workflows.rs",
-        "automatic_job_bodies",
-        "이 가드 자신 — 검사 로직이 그 명령 문자열을 리터럴로 다룬다",
-    ),
-    (
-        "tests/ci_channel_claims_match_workflows.rs",
-        "문자열이 아니라 대상의 위치",
-        "이 가드 자신 — 판정 축을 설명하려면 금지된 서술 형태를 인용해야 한다",
-    ),
-    (
-        "tests/ci_channel_claims_match_workflows.rs",
-        "대상을 특정하지 않은 집행 서술",
-        "이 가드 자신 — 사각지대를 적으려면 통과시키는 형태를 예시로 들어야 한다",
-    ),
-];
-
 /// `cargo test --workspace` 인용 지점 주변에서 "CI 가 돌린다" 는 표지를 찾는다.
 ///
 /// **줄 단위로 보지 않는다** — 주석과 마크다운은 문장을 예사로 줄바꿈하고, 실제로
@@ -195,7 +173,7 @@ fn is_narrowed(tail: &str) -> bool {
 }
 
 /// 텍스트에서 "전체 스위트를 CI 가 돌린다" 는 주장의 바이트 오프셋들.
-fn claim_offsets(text: &str, exempt: &[&str]) -> Vec<usize> {
+fn claim_offsets(text: &str, path: &str) -> Vec<usize> {
     const NEEDLE: &str = "cargo test --workspace";
     let mut found = Vec::new();
     let mut from = 0;
@@ -203,6 +181,11 @@ fn claim_offsets(text: &str, exempt: &[&str]) -> Vec<usize> {
         let at = from + rel;
         from = at + NEEDLE.len();
         if is_narrowed(&text[from..]) {
+            continue;
+        }
+        // 주장은 산문이다. Rust 소스의 문자열 리터럴·식별자는 검사 로직 자신일 뿐이라
+        // 여기서 걸러진다 — 그래서 이 가드는 자기 자신을 위한 경로 면제가 필요 없다.
+        if !is_prose_line(text, at, path) {
             continue;
         }
         let lo = text[..at]
@@ -218,11 +201,9 @@ fn claim_offsets(text: &str, exempt: &[&str]) -> Vec<usize> {
         if !CI_MARKERS.iter().any(|m| window.contains(m)) {
             continue;
         }
-        // 같은 창이 부재를 함께 말하면 정당한 서술이다.
-        if ABSENCE_MARKERS.iter().any(|m| window.contains(m)) {
-            continue;
-        }
-        if exempt.iter().any(|e| window.contains(e)) {
+        // 같은 서술이 부재를 함께 말하면 정당하다.
+        let scope = claim_scope(text, at);
+        if ABSENCE_MARKERS.iter().any(|m| scope.contains(m)) {
             continue;
         }
         found.push(at);
@@ -401,8 +382,8 @@ fn cited_tests(text: &str) -> Vec<(usize, String)> {
 
 /// `src/` 안의 lib 유닛 테스트 이름(`#[test]` 가 붙은 함수).
 ///
-/// 이 목록이 역방향 판정의 축이다 — **문자열이 아니라 대상의 위치**로 가른다. 같은
-/// "CI 가 강제한다" 라도 그 테스트가 여기 있으면 참이고 `tests/*.rs` 에 있으면 거짓이다.
+/// 이 목록이 역방향 판정의 축이다 — **문자열이 아니라 대상의 위치**로 가른다. 똑같은
+/// 집행 서술이라도 그 테스트가 여기 있으면 참이고 `tests/` 아래 있으면 거짓이다.
 fn lib_test_names(root: &Path) -> std::collections::BTreeSet<String> {
     let mut files = Vec::new();
     collect_files(root, &mut files);
@@ -469,14 +450,68 @@ fn word_offsets(text: &str, name: &str) -> Vec<usize> {
     found
 }
 
-/// 주장이 놓인 **줄(표에서는 셀)** — 컴파일 면제는 이 좁은 범위에서만 판단한다.
+/// 주장이 놓인 **한 서술의 범위** — 표는 그 행, 산문은 그 문단, Rust 는 이어진 주석
+/// 블록. 면제도 표지 탐색도 이 범위에서 한다.
 ///
-/// 넓은 창으로 면제하면 근처 문단이 컴파일을 한 번 언급했다는 이유로 진짜 위반이
-/// 가려진다. 실측으로 그렇게 새어 나갔다: 이 문서 끝에 실행 주장을 붙였는데 앞 절에
-/// 있던 "컴파일" 한 단어가 면제로 작동했다. 면제는 좁게, 검출은 넓게.
-fn claim_cell(text: &str, at: usize) -> &str {
-    let lo = text[..at].rfind(['\n', '|']).map_or(0, |i| i + 1);
-    let hi = text[at..].find(['\n', '|']).map_or(text.len(), |i| at + i);
+/// **면제는 좁게, 검출은 넓게** 가 원칙이지만, 둘의 단위가 어긋나면 반대로 샌다.
+/// 실측한 두 형태가 그것이다.
+/// - 면제만 넓으면: 문서 끝에 붙인 실행 주장이, 앞 절에 있던 "컴파일" 한 단어로
+///   면제됐다.
+/// - 검출만 넓으면: 표의 **옆 행**에 있는 표지를 끌어와 정확히 쓴 행을 위반으로 짚었다.
+///
+/// 그래서 단위를 하나로 맞춘다. 셋으로 갈리는 이유:
+/// - **표 행**(`|` 로 시작)과 **목록 항목**(`-`/`*`/`1.` 로 시작) — 한 행·한 항목이 곧
+///   한 서술인데 사이에 빈 줄이 없어, 문단으로 묶으면 표나 목록 전체가 한 덩어리가
+///   된다. 실측으로 옆 항목의 표지가 끌려와 오탐이 났다. 항목의 접힌 줄(들여쓴 이어짐)
+///   은 그 항목에 붙인다.
+/// - **문단**(빈 줄 사이) — 마크다운 산문은 한 문장을 예사로 줄바꿈한다. 줄로 끊으면
+///   "그 잡은 수동 / 전용이라" 처럼 정확히 쓴 서술이 반토막 난다.
+/// - **주석 블록** — Rust doc 도 같은 이유. 빈 주석 줄(`//!` 뿐)이 문단 경계다.
+fn claim_scope(text: &str, at: usize) -> &str {
+    let line_start = |i: usize| text[..i].rfind('\n').map_or(0, |j| j + 1);
+    let line_end = |i: usize| text[i..].find('\n').map_or(text.len(), |j| i + j);
+    let kind = |start: usize| -> u8 {
+        let line = text[start..line_end(start)].trim_start();
+        if line.starts_with('|') {
+            0 // 표 행 — 혼자 선다
+        } else if line.starts_with("//!") || line.starts_with("///") {
+            if line.trim_end().len() <= 3 { 2 } else { 1 } // 주석 / 빈 주석(경계)
+        } else if line.trim().is_empty() {
+            2 // 빈 줄 — 경계
+        } else {
+            3 // 산문
+        }
+    };
+
+    let starts_item = |start: usize| {
+        let line = text[start..line_end(start)].trim_start();
+        line.starts_with("- ")
+            || line.starts_with("* ")
+            || line.split_once(". ").is_some_and(|(head, _)| {
+                !head.is_empty() && head.bytes().all(|b| b.is_ascii_digit())
+            })
+    };
+
+    let mut lo = line_start(at);
+    let mut hi = line_end(at);
+    let here = kind(lo);
+    if here == 0 || here == 2 {
+        return &text[lo..hi];
+    }
+    while lo > 0 && !starts_item(lo) {
+        let prev = line_start(lo - 1);
+        if kind(prev) != here {
+            break;
+        }
+        lo = prev;
+    }
+    while hi < text.len() {
+        let next = hi + 1;
+        if next >= text.len() || kind(next) != here || starts_item(next) {
+            break;
+        }
+        hi = line_end(next);
+    }
     &text[lo..hi]
 }
 
@@ -507,6 +542,89 @@ fn window_around(text: &str, at: usize) -> &str {
     &text[lo..hi]
 }
 
+/// 한 파일의 **집행 주장 위반**과 인용 수 — 파일 순회·경로 처리와 분리된 판정기.
+///
+/// 순수 함수인 이유: 면제를 겨냥한 변이를 **합성 문자열**로 찌를 수 있어야 하기
+/// 때문이다. 판정이 순회 루프 안에 있으면 변이가 "레포에 진짜 위반을 심는" 방식으로만
+/// 가능해지고, 그건 느리고 트리를 더럽히며 되돌리다 사고가 난다.
+fn enforcement_violations(
+    text: &str,
+    path: &str,
+    automatic: &std::collections::BTreeSet<String>,
+) -> (Vec<usize>, usize) {
+    let mut candidates = cited_tests(text);
+    let cited = candidates.len();
+    // 자기 자신을 "이 테스트가 …" 로만 부르는 형태 — 파일 안에 자기 경로가 없어서 위
+    // 인용 추출로는 잡히지 않는다. 통합 테스트 파일이면 집행 표지가 놓인 자리마다 자기
+    // 이름을 인용한 것으로 본다.
+    if let Some(own) = integration_test_name(path) {
+        for marker in ENFORCE_MARKERS {
+            let mut from = 0;
+            while let Some(off) = text[from..].find(marker) {
+                let at = from + off;
+                from = at + marker.len();
+                candidates.push((at, own.to_string()));
+            }
+        }
+    }
+
+    let mut found = Vec::new();
+    for (at, name) in candidates {
+        if automatic.contains(&name) {
+            continue;
+        }
+        if !is_prose_line(text, at, path) {
+            continue;
+        }
+        // 표지도 같은 범위에서 찾는다 — 옆 행·옆 항목의 표지를 끌어오면 정확히 쓴
+        // 서술이 위반으로 걸린다.
+        let scope = claim_scope(text, at);
+        if !ENFORCE_MARKERS.iter().any(|m| scope.contains(m)) {
+            continue;
+        }
+        if ABSENCE_MARKERS.iter().any(|m| scope.contains(m)) {
+            continue;
+        }
+        // 실행이 아니라 컴파일을 주장하는 문장은 참이다 — 자동 잡의 `--all-targets`
+        // clippy 가 통합 테스트 타깃을 컴파일한다.
+        if COMPILE_CLAIM_MARKERS.iter().any(|m| scope.contains(m)) {
+            continue;
+        }
+        found.push(at);
+    }
+    found.sort_unstable();
+    found.dedup();
+    (found, cited)
+}
+
+/// 한 파일에서 **lib 테스트를 두고 부재를 적은 자리** — 역방향 판정기.
+fn weak_absence_offsets(
+    text: &str,
+    path: &str,
+    lib_tests: &std::collections::BTreeSet<String>,
+) -> Vec<usize> {
+    // 정의 파일 자신은 대상이 아니다 — 거기 이름이 있는 것은 서술이 아니라 정의다.
+    if path.starts_with("src/") || path.contains("/src/") {
+        return Vec::new();
+    }
+    let mut found = Vec::new();
+    // 부재를 적은 자리에서 출발한다 — lib 테스트 이름 전체를 파일마다 훑으면 이름 수 x
+    // 파일 수가 되어 스캔이 느려지고, 얻는 것은 같다.
+    for at in absence_offsets(text) {
+        if !is_prose_line(text, at, path) {
+            continue;
+        }
+        let scope = claim_scope(text, at);
+        if AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| scope.contains(m)) {
+            continue;
+        }
+        if lib_tests.iter().any(|n| !word_offsets(scope, n).is_empty()) {
+            found.push(at);
+        }
+    }
+    found
+}
+
 /// 문서가 "CI 가 전체 스위트를 돌린다" 고 말하면, 실제로 그런지 워크플로와 대조한다.
 #[test]
 fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
@@ -527,15 +645,10 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
     for file in &files {
         let rel = file.strip_prefix(&root).unwrap_or(file);
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        let exempt: Vec<&str> = ALLOWLIST
-            .iter()
-            .filter(|(p, _, _)| rel_str == *p)
-            .map(|(_, needle, _)| *needle)
-            .collect();
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
-        for at in claim_offsets(&text, &exempt) {
+        for at in claim_offsets(&text, &rel_str) {
             violations.push(format!("{rel_str}:{}", line_of(&text, at)));
         }
     }
@@ -550,8 +663,8 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
     );
 }
 
-/// 문서가 "`tests/X.rs` 가 CI 강제한다" 고 말하면, 자동 잡이 실제로 그 이름을 돌리는지
-/// 워크플로에서 읽어 대조한다.
+/// 문서가 어떤 통합 테스트를 자동 집행 장치로 부르면, 자동 잡이 실제로 그 이름을
+/// 돌리는지 워크플로에서 읽어 대조한다.
 #[test]
 fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
     let root = repo_root();
@@ -574,58 +687,14 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
     for file in &files {
         let rel = file.strip_prefix(&root).unwrap_or(file);
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        let exempt: Vec<&str> = ALLOWLIST
-            .iter()
-            .filter(|(p, _, _)| rel_str == *p)
-            .map(|(_, needle, _)| *needle)
-            .collect();
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
 
-        let mut candidates = cited_tests(&text);
-        citations += candidates.len();
-        // 자기 자신을 "이 테스트가 …" 로만 부르는 형태 — 파일 안에 자기 경로가 없어서
-        // 위 인용 추출로는 잡히지 않는다. 통합 테스트 파일이면 집행 표지가 놓인 자리마다
-        // 자기 이름을 인용한 것으로 본다.
-        if let Some(own) = integration_test_name(&rel_str) {
-            for marker in ENFORCE_MARKERS {
-                let mut from = 0;
-                while let Some(off) = text[from..].find(marker) {
-                    let at = from + off;
-                    from = at + marker.len();
-                    candidates.push((at, own.to_string()));
-                }
-            }
-        }
-
-        for (at, name) in candidates {
-            if automatic.contains(&name) {
-                continue;
-            }
-            if !is_prose_line(&text, at, &rel_str) {
-                continue;
-            }
-            let window = window_around(&text, at);
-            if !ENFORCE_MARKERS.iter().any(|m| window.contains(m)) {
-                continue;
-            }
-            if ABSENCE_MARKERS.iter().any(|m| window.contains(m)) {
-                continue;
-            }
-            // 실행이 아니라 컴파일을 주장하는 문장은 참이다 — 자동 잡의 `--all-targets`
-            // clippy 가 통합 테스트 타깃을 컴파일한다. 면제 판단만 좁은 범위로 한다.
-            let cell = claim_cell(&text, at);
-            if COMPILE_CLAIM_MARKERS.iter().any(|m| cell.contains(m)) {
-                continue;
-            }
-            if exempt.iter().any(|e| window.contains(e)) {
-                continue;
-            }
-            violations.push(format!(
-                "{rel_str}:{} — tests/{name}.rs",
-                line_of(&text, at)
-            ));
+        let (found, cited) = enforcement_violations(&text, &rel_str, &automatic);
+        citations += cited;
+        for at in found {
+            violations.push(format!("{rel_str}:{}", line_of(&text, at)));
         }
     }
 
@@ -667,36 +736,13 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
     for file in &files {
         let rel = file.strip_prefix(&root).unwrap_or(file);
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        // 정의 파일 자신은 대상이 아니다 — 거기 이름이 있는 것은 서술이 아니라 정의다.
-        if rel_str.starts_with("src/") || rel_str.contains("/src/") {
-            continue;
-        }
-        let exempt: Vec<&str> = ALLOWLIST
-            .iter()
-            .filter(|(p, _, _)| rel_str == *p)
-            .map(|(_, needle, _)| *needle)
-            .collect();
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
         // 부재를 적은 자리에서 출발한다 — lib 테스트 이름 전체를 파일마다 훑으면
         // 이름 수 x 파일 수가 되어 스캔이 느려지고, 얻는 것은 같다.
-        for at in absence_offsets(&text) {
-            if !is_prose_line(&text, at, &rel_str) {
-                continue;
-            }
-            let window = window_around(&text, at);
-            if AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m)) {
-                continue;
-            }
-            if exempt.iter().any(|e| window.contains(e)) {
-                continue;
-            }
-            for name in &lib_tests {
-                if !word_offsets(window, name).is_empty() {
-                    violations.push(format!("{rel_str}:{} — {name}", line_of(&text, at)));
-                }
-            }
+        for at in weak_absence_offsets(&text, &rel_str, &lib_tests) {
+            violations.push(format!("{rel_str}:{}", line_of(&text, at)));
         }
     }
 
@@ -751,4 +797,172 @@ fn the_theme_table_keeps_the_two_channels_apart() {
             line_of(&text, at)
         );
     }
+}
+
+// ─── 면제를 겨냥한 변이 (합성 입력) ───────────────────────────────────────────
+//
+// 면제를 하나 추가할 때마다 **그 면제를 겨냥한 변이**를 같이 넣는다. "면제 범위 안쪽에
+// 진짜 위반을 심었을 때 잡히는가" 를 묻는 것이고, 검증하지 않은 면제는 그 면제만큼
+// 구멍이다. 실측으로 두 번 샜다 — 한 번은 앞 절의 컴파일 언급이 면제로 작동해 위반을
+// 가렸고, 한 번은 표의 옆 행 표지를 끌어와 정확히 쓴 행을 위반으로 짚었다.
+//
+// 판정기가 순수 함수라 합성 문자열로 찌른다. 레포에 진짜 위반을 심는 방식은 느리고
+// 트리를 더럽히며 되돌리다 사고가 난다.
+//
+// **픽스처의 표지는 조각으로 조립한다.** 통째로 적으면 이 파일 자신이 위반으로 잡힌다 —
+// 그것을 경로 면제로 덮으면 면제가 하나 늘고, 그 파일이 나중에 들이는 진짜 위반까지
+// 함께 새어 나간다. 조립하면 면제 없이 닫힌다.
+fn enforce() -> String {
+    format!("CI 가 {}", "강제한다")
+}
+
+/// 자동 잡이 이름으로 지목하는 통합 테스트가 하나도 없는 상태.
+fn no_named_tests() -> std::collections::BTreeSet<String> {
+    std::collections::BTreeSet::new()
+}
+
+fn named(names: &[&str]) -> std::collections::BTreeSet<String> {
+    names.iter().map(|s| (*s).to_string()).collect()
+}
+
+#[test]
+fn an_absence_marker_in_a_neighbouring_table_row_does_not_exempt() {
+    let text = format!(
+        "| 포맷 | `tests/a_guard.rs` 가 강제한다 — 자동 채널이 없다 |\n| 린트 | `tests/b_guard.rs` 를 {} |\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert_eq!(found.len(), 1, "옆 행의 부재 표지가 면제로 작동했다");
+    assert_eq!(line_of(&text, found[0]), 2);
+}
+
+#[test]
+fn an_absence_marker_in_a_neighbouring_list_item_does_not_exempt() {
+    let text = format!(
+        "- `tests/a_guard.rs` 가 강제한다 — 자동 채널이 없다.\n- `tests/b_guard.rs` 를 {}.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert_eq!(found.len(), 1, "옆 항목의 부재 표지가 면제로 작동했다");
+    assert_eq!(line_of(&text, found[0]), 2);
+}
+
+#[test]
+fn a_compile_marker_in_another_paragraph_does_not_exempt() {
+    // 실측한 누수 그대로: 앞 문단이 컴파일을 언급하고, 뒤 문단이 실행을 주장한다.
+    let text = format!(
+        "자동 잡의 clippy 는 통합 테스트를 컴파일한다.\n\n`tests/b_guard.rs` 를 {}.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert_eq!(found.len(), 1, "앞 문단의 컴파일 언급이 면제로 작동했다");
+}
+
+#[test]
+fn a_compile_claim_in_the_same_sentence_is_true_and_exempt() {
+    let text = format!(
+        "`tests/b_guard.rs` 를 {} — 다만 그것은 컴파일 검사다.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert!(found.is_empty(), "참인 컴파일 주장을 위반으로 짚었다");
+}
+
+#[test]
+fn a_wrapped_sentence_keeps_its_absence_marker_in_scope() {
+    // 마크다운 산문은 한 문장을 예사로 줄바꿈한다 — 반토막 내면 정확히 쓴 서술이
+    // 오탐이 된다.
+    let text = format!(
+        "`tests/b_guard.rs` 를 {} — 다만 그 잡은 수동\n전용이라 실행 채널이 없다.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert!(found.is_empty(), "접힌 문장이 반토막 나 오탐이 났다");
+}
+
+#[test]
+fn a_doc_comment_block_is_one_scope_but_a_blank_comment_line_splits_it() {
+    let joined = format!(
+        "//! `tests/b_guard.rs` 를 {} — 그 잡은 수동\n//! 전용이라 실행 채널이 없다.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&joined, "src/some_module.rs", &no_named_tests());
+    assert!(found.is_empty(), "이어진 주석 블록이 갈라졌다");
+
+    let split = format!(
+        "//! 그 잡은 수동 전용이라 실행 채널이 없다.\n//!\n//! `tests/b_guard.rs` 를 {}.\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&split, "src/some_module.rs", &no_named_tests());
+    assert_eq!(
+        found.len(),
+        1,
+        "빈 주석 줄 너머의 부재 표지가 면제로 작동했다"
+    );
+}
+
+#[test]
+fn the_named_enumeration_exempts_only_the_names_the_workflow_lists() {
+    let text = format!("`tests/api_baseline_0_7.rs` 를 {}.\n", enforce());
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &named(&["api_baseline_0_7"]));
+    assert!(found.is_empty(), "열거된 이름을 위반으로 짚었다");
+
+    // 워크플로에서 그 이름이 빠지면 같은 문장이 거짓이 된다 — 목록을 복사해 갖고 있지
+    // 않다는 것이 이 대비로 드러난다.
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert_eq!(found.len(), 1, "열거가 사라졌는데 판정이 따라오지 않았다");
+}
+
+#[test]
+fn a_code_literal_is_not_a_claim() {
+    let text = format!(
+        "    let needle = \"`tests/b_guard.rs` 를 {}\";\n",
+        enforce()
+    );
+    let (found, _) = enforcement_violations(&text, "src/some_module.rs", &no_named_tests());
+    assert!(found.is_empty(), "코드 리터럴을 서술로 읽었다");
+}
+
+#[test]
+fn the_automatic_channel_marker_exempts_only_inside_the_same_row() {
+    let libs = named(&["some_lib_test"]);
+
+    let same_row = "| lib | 있다 — `--lib --bins` 가 돈다 | `some_lib_test` 자동 채널이 없다 |\n";
+    assert!(
+        weak_absence_offsets(same_row, "docs/x.md", &libs).is_empty(),
+        "자동 채널을 함께 적은 행을 약한 서술로 짚었다"
+    );
+
+    let other_row =
+        "| lib | 있다 — `--lib --bins` 가 돈다 |\n| 통합 | `some_lib_test` 는 자동 채널이 없다 |\n";
+    assert_eq!(
+        weak_absence_offsets(other_row, "docs/x.md", &libs).len(),
+        1,
+        "옆 행의 자동 채널 표지가 면제로 작동했다"
+    );
+}
+
+// ─── 의도된 false negative (한계를 붙박는다) ─────────────────────────────────
+//
+// 못 잡는 것이 **의도**인 입력도 고정한다. 나중에 판정기를 넓힐 때 그 결정이 테스트
+// 실패로 드러나야 하고, 안 적어 두면 의도된 한계와 버그가 구분되지 않는다.
+
+#[test]
+fn a_claim_that_names_no_test_is_deliberately_not_judged() {
+    let text = format!("이 규칙은 {}.\n", enforce());
+    let (found, _) = enforcement_violations(&text, "docs/x.md", &no_named_tests());
+    assert!(
+        found.is_empty(),
+        "대상이 특정되지 않은 서술은 판정하지 않는다 — 짚을 좌표가 없다"
+    );
+}
+
+#[test]
+fn a_definition_file_under_src_is_deliberately_not_judged() {
+    let libs = named(&["some_lib_test"]);
+    let text = "//! `some_lib_test` 는 자동 채널이 없다.\n";
+    assert!(
+        weak_absence_offsets(text, "crates/x/src/lib.rs", &libs).is_empty(),
+        "정의 파일의 이름 등장은 서술이 아니다"
+    );
 }
