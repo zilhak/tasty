@@ -402,11 +402,15 @@ mod workspace_pointer_tests {
     /// **두 실행 형태 모두** close cascade 가 이 헬퍼를 지나는지 소스 수준으로 고정한다.
     ///
     /// cascade 는 gui(`app/dispatch_domain.rs`)와 headless(`app/dispatch_domain_stubs.rs`)
-    /// 로 `#[cfg(feature = "gui")]` 분기되어 있고, **CI 는 headless 를 컴파일만 하고
-    /// 실행하지 않는다**(`.github/workflows/crossplatform-check.yml` 의
-    /// `cargo check --workspace --no-default-features`). 그래서 headless 쪽만 옛 범위
-    /// 초과 clamp 로 남아도 어떤 테스트도 실패하지 않는다 — 실제로 그렇게 한 번
-    /// 놓쳤다. 기본 빌드에서 도는 이 소스 가드가 그 사각을 덮는다.
+    /// 로 `#[cfg(feature = "gui")]` 분기되어 있다. CI 는 이제 headless 도 실행한다
+    /// (`.github/workflows/crossplatform-check.yml` 의 `cargo test --workspace --lib
+    /// --bins --no-default-features`). **그런데도 이 소스 가드가 여전히 필요하다** —
+    /// 이 불변식은 headless **행동** 테스트로 원리적으로 잡히지 않기 때문이다: 오늘의
+    /// headless 는 `active_workspace` 가 0 을 벗어날 수단이 없어(레이아웃 복원 없음 ·
+    /// `preset.apply` 가 `focus: false` 강제 · `debug.switch_workspace` 는 gui 게이트)
+    /// 올바른 보정과 옛 범위 초과 clamp 의 **결과가 같다**. 그래서 headless 쪽만 옛
+    /// clamp 로 남아도 어떤 실행 테스트도 실패하지 않는다 — 실제로 그렇게 한 번
+    /// 놓쳤고, 그때 잡은 것도 (기본 빌드에서 도는) 이 소스 가드였다.
     /// 근거 [ADR-0113](../../docs/adr/0113-close-preserves-the-focused-target.md).
     #[test]
     fn both_close_cascades_route_through_the_pointer_helper() {

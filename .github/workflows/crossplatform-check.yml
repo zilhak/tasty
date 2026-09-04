@@ -112,9 +112,20 @@ jobs:
       # headless 단위테스트. 여기까지 오기 전에는 headless 테스트 바이너리가 **컴파일조차
       # 되지 않아서**(gui 전용 상태를 단정하는 테스트 모듈이 cfg 게이팅 없이 있었다) 이
       # 잡이 `cargo check` 로 프로덕션 코드만 봤고, headless 는 실행 가능한 테스트 커버리지가
-      # 0 이었다. 그 사각 때문에 gui 와 headless 에서 다르게 성립하는 불변식(cascade 의 활성
-      # 포인터 보정 등)이 리뷰 전까지 드러나지 않았다.
-      # `--lib --bins` 만 — e2e/integration 은 GUI spawn 이 필요해 headless 가드로 부적합
-      # (Windows 잡과 같은 근거).
+      # 0 이었다.
+      #
+      # 이 스텝이 여는 것은 **headless 전용 구현의 행동 커버리지**다 — 예를 들어
+      # `src/app/dispatch_domain_stubs.rs`(파일 전체가 `#![cfg(not(feature = "gui"))]`)의
+      # 자원 해제를 없애면 여기서만 테스트가 깨진다. gui 빌드에서는 그 파일이 통째로
+      # 비어 있어 같은 변이가 영향조차 주지 못한다. 즉 같은 테스트가 빌드 형태에 따라
+      # 서로 다른 구현을 검증한다.
+      #
+      # 반대로 gui/headless 에서 **결과가 같아지는** 불변식(close cascade 의 활성 포인터
+      # 보정 등)은 이 스텝이 행동으로 잡지 못한다 — 기본 빌드에서 도는 소스 가드
+      # (`state::workspace` 의 `both_close_cascades_route_through_the_pointer_helper`)가
+      # 그쪽 담당이고, 그 이유는 그 테스트 doc 에 적혀 있다.
+      #
+      # `--lib --bins` 만 — e2e/integration 은 컴파일은 되지만 실행에 GUI spawn 이 필요해
+      # 헤드리스 가드로 부적합하다(Windows 잡과 같은 근거).
       - name: cargo test (headless unit)
         run: cargo test --workspace --lib --bins --no-default-features --locked
