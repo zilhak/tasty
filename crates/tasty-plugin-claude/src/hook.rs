@@ -1030,9 +1030,15 @@ mod tests {
         let (calls, plan) = session_start_calls(7, "sess-1", &no_meta(), tmp.path());
 
         let generated = plan.profile_file.expect("프로필이 해석돼야 한다");
+        // 프로덕션은 `data_dir.join("profiles").join("generated")` 로 만들므로 Windows
+        // 에서는 `\` 로 구분된다 — 문자열 비교가 아니라 `Path::ends_with` 로 컴포넌트를
+        // 견준다(std 의 `Path` 는 Windows 에서 `/` 도 구분자로 인정하므로 패턴은 그대로
+        // 쓸 수 있다). 실패 메시지에는 기대값과 실제값을 함께 남긴다 — 경로만 찍으면
+        // CI 로그만 보고는 무엇이 어긋났는지 알 수 없다.
+        let expected = "profiles/generated/reviewer.json";
         assert!(
-            generated.ends_with("profiles/generated/reviewer.json"),
-            "{generated}"
+            std::path::Path::new(&generated).ends_with(expected),
+            "생성 프로필 경로가 `{expected}` 로 끝나야 하는데 실제로는 `{generated}` 다"
         );
         assert_eq!(
             restore_command(&calls).unwrap(),

@@ -350,3 +350,72 @@ mod define_class_return {
         );
     }
 }
+
+mod read_only_handle_mtime {
+    //! 읽기 전용으로 연 `File` 핸들에 **mtime 을 쓰는 것**을 금지한다.
+    //!
+    //! `File::open` 은 읽기 접근만 얻는다. Windows 의 `SetFileTime` 은 핸들에
+    //! `FILE_WRITE_ATTRIBUTES` 를 요구하므로 그 핸들로 `set_modified`/`set_times` 를
+    //! 부르면 `PermissionDenied(os error 5)` 가 난다. POSIX `futimens` 는 소유자면
+    //! 읽기 전용 fd 로도 통과하므로 **Linux·macOS 에서는 드러나지 않는다** — 쓰기
+    //! 권한으로 열면(`OpenOptions::new().write(true).open(..)`) 양쪽 다 동작한다.
+    //!
+    //! 이 함정은 서로 독립인 두 crate 의 테스트에서 같은 형태로 반복됐다. 한쪽을
+    //! 고쳐도 다른 쪽이 남는 부류라 텍스트로 못박는다.
+    //!
+    //! **판정 방식과 한계**: 이름이 아니라 **같은 표현식 체인인지**로 가른다 —
+    //! 마스킹된 소스를 `;` 단위 구문으로 잘라, 한 구문 안에 `File::open(` 과
+    //! `.set_modified(`(또는 `.set_times(`)가 함께 있을 때만 잡는다. 그래서
+    //! `OpenOptions` 로 연 핸들은 통과한다. 반대로 핸들을 변수에 담아 **두 구문으로**
+    //! 나눈 형태(`let f = File::open(p)?; f.set_modified(t)?;`)는 못 잡는다 —
+    //! 텍스트만으로는 그 변수가 어떻게 열렸는지 따라갈 수 없다. 못 가르는 것을
+    //! 가르는 척하지 않기 위해 여기 적어 둔다.
+
+    use super::*;
+
+    /// mtime 을 쓰는 호출이 레포에서 통째로 사라지면 이 가드는 아무것도 안 보고
+    /// 통과한다. 실제로 사라졌다면 이 하한을 의도적으로 고쳐야 한다.
+    const MIN_MTIME_WRITE_SITES: usize = 1;
+
+    const READ_ONLY_OPEN: &str = "File::open(";
+    const MTIME_WRITES: &[&str] = &[".set_modified(", ".set_times("];
+
+    #[test]
+    fn mtime_is_never_written_through_a_read_only_handle() {
+        let mut sites = 0usize;
+        let mut violations = Vec::new();
+        for (path, text) in rust_sources() {
+            let masked = mask_non_code(&text);
+            let mut stmt_start = 0usize;
+            for (offset, _) in masked.match_indices(';').chain([(masked.len(), "")]) {
+                let stmt = &masked[stmt_start..offset];
+                for needle in MTIME_WRITES {
+                    let Some(rel) = stmt.find(needle) else {
+                        continue;
+                    };
+                    sites += 1;
+                    if stmt.contains(READ_ONLY_OPEN) {
+                        violations.push(format!(
+                            "{}:{}",
+                            path.display(),
+                            line_of(&masked, stmt_start + rel)
+                        ));
+                    }
+                }
+                stmt_start = offset + 1;
+            }
+        }
+        assert!(
+            sites >= MIN_MTIME_WRITE_SITES,
+            "스캔 하한 미달: mtime 을 쓰는 호출을 {sites} 곳 찾았다(하한 \
+             {MIN_MTIME_WRITE_SITES}). 정말 사라졌다면 이 하한을 함께 고쳐라"
+        );
+        assert!(
+            violations.is_empty(),
+            "`File::open` 은 읽기 접근만 얻는다 — 그 핸들로 mtime 을 쓰면 Windows 에서 \
+             `PermissionDenied(os error 5)` 가 난다(Linux·macOS 는 통과해서 안 드러난다). \
+             `std::fs::OpenOptions::new().write(true).open(..)` 로 열어라.\n  {}",
+            violations.join("\n  ")
+        );
+    }
+}
