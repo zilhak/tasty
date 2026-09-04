@@ -634,6 +634,10 @@ mod debug_gate_dagger;
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
 
+/// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
+/// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.
+mod port_mode_roster;
+
 mod reserved_ipc_prefixes;
 mod routing_key_coverage;
 
