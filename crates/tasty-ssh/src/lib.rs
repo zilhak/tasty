@@ -1210,13 +1210,15 @@ pub fn detect_and_persist(name: &str) -> Result<PortMode> {
     result
 }
 
-/// `127.0.0.1:0` 바인드로 비어있는 로컬 포트를 확보한 뒤 즉시 해제한다(ssh 가 다시
-/// bind). 짧은 TOCTOU 레이스가 있으나 표준 관행(충돌 시 ready-probe 타임아웃 → 재시도).
-fn pick_local_port() -> Result<u16> {
+/// `127.0.0.1:0` 바인드로 비어있는 로컬 포트를 확보하고, 그 포트를 점유하는 리스너를
+/// 함께 반환한다. 리스너를 잡고 있는 동안 그 포트는 이 프로세스 소유라 TOCTOU 가 없다 —
+/// 소비자가 리스너를 drop 하는 순간부터 레이스가 시작된다(ssh 가 rebind, ready-probe
+/// 타임아웃 → 재시도로 흡수). 예전엔 함수 안에서 drop 하고 port 만 돌려줬고, 그러면
+/// 반환값을 다시 bind 하려는 코드는 전부 그 짧은 창을 노출한 TOCTOU 였다.
+fn reserve_local_port() -> Result<(std::net::TcpListener, u16)> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
-    drop(listener);
-    Ok(port)
+    Ok((listener, port))
 }
 
 /// `ssh -L` 포트포워딩 터널의 자식 프로세스 핸들(plan §5).
@@ -1238,7 +1240,10 @@ impl SshTunnel {
         remote_port: u16,
         verify: bool,
     ) -> Result<Self> {
-        let local_port = pick_local_port()?;
+        // 포트를 리스너로 점유한 뒤 즉시 놓는다 — 이 drop 부터 ssh 의 rebind 까지가
+        // 본질적 TOCTOU 이고, 아래 ready-probe 폴링이 그 창의 충돌을 흡수한다.
+        let (reservation, local_port) = reserve_local_port()?;
+        drop(reservation);
         // 로컬 끝점도 loopback 한정(`-L *:` / `-g` 금지) — 멀티유저 노출 차단.
         let forward = format!("127.0.0.1:{local_port}:127.0.0.1:{remote_port}");
 
@@ -2003,12 +2008,13 @@ mod tests {
     }
 
     #[test]
-    fn pick_local_port_returns_usable() {
-        let p = pick_local_port().unwrap();
+    fn reserve_local_port_holds_a_usable_port() {
+        // 리스너를 잡은 채 검증한다 — 예전 테스트는 확보한 포트를 놓았다가 다시
+        // bind 해서, 그 사이 다른 프로세스/테스트가 같은 포트를 채가면 깨지는 TOCTOU 였다.
+        let (listener, p) = reserve_local_port().unwrap();
         assert!(p > 0);
-        // 해제됐으니 다시 bind 가능해야 함.
-        let l = std::net::TcpListener::bind(("127.0.0.1", p));
-        assert!(l.is_ok());
+        // 반환된 리스너가 바로 그 포트를 점유한다 — rebind 레이스 없이 usable 을 증명.
+        assert_eq!(listener.local_addr().unwrap().port(), p);
     }
 
     /// 등록된 자식은 `cancel()` 로 kill + reaping 된다 — 실제 ssh 없이 오래 사는 더미
