@@ -200,11 +200,14 @@ fn summarize_reason(error: &PackError) -> String {
 /// `MAX_MESSAGE_CHARS`). Going over does not just lose the tail — the host appends
 /// a "(character limit)" notice, so the overflow is visible *and* the instruction
 /// is gone. The warning below is built to stay under it.
-const TOAST_MAX_CHARS: usize = 200;
+pub const TOAST_MAX_CHARS: usize = 200;
 
 /// Shortest fragment worth showing. Below this the fragment says nothing, so the
 /// message keeps the ellipsis and the log carries the real text.
-const MIN_FRAGMENT_CHARS: usize = 12;
+///
+/// Public because a test that asserts messages fit the cap has to know the floor:
+/// a skeleton that leaves less than this cannot be rescued by shrinking.
+pub const MIN_FRAGMENT_CHARS: usize = 12;
 
 /// Render a message that carries one variable-length fragment, shrinking **the
 /// fragment only** so the whole message fits [`TOAST_MAX_CHARS`].
