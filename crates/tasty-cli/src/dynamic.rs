@@ -504,17 +504,22 @@ where
     T: std::str::FromStr,
 {
     raw.parse::<T>().map_err(|_| {
-        anyhow!(
-            "{}",
-            tasty_i18n::t_fmt2(
-                "cli.plugin_cli.flag_not_a_number",
-                arg.flag
-                    .as_deref()
-                    .unwrap_or(&arg.name)
-                    .trim_start_matches('-'),
-                raw
-            )
-        )
+        let flag = arg
+            .flag
+            .as_deref()
+            .unwrap_or(&arg.name)
+            .trim_start_matches('-');
+        // **정수인데 범위를 벗어난 것**과 **애초에 숫자가 아닌 것**을 가른다.
+        // 둘을 한 문구로 답하면 `4294967297` 을 준 사용자가 "숫자가 아니다" 를 듣고
+        // 자기가 오타를 냈다고 생각한다 — 실제로는 값이 크기만 한 것이고, 고칠 방법이
+        // 전혀 다르다. `i128` 로 한 번 더 읽어 어느 쪽인지 판정한다(u32·i64 를 모두
+        // 담는다).
+        let key = if raw.trim().parse::<i128>().is_ok() {
+            "cli.plugin_cli.flag_number_out_of_range"
+        } else {
+            "cli.plugin_cli.flag_not_a_number"
+        };
+        anyhow!("{}", tasty_i18n::t_fmt2(key, flag, raw))
     })
 }
 
@@ -897,6 +902,36 @@ mod tests {
             "어느 플래그인지 담아야 한다: {msg}"
         );
         assert!(msg.contains("conductor"), "받은 값을 담아야 한다: {msg}");
+    }
+
+    /// **숫자인데 범위 밖**인 것은 "숫자가 아니다" 와 다른 문구여야 한다.
+    ///
+    /// 한 문구로 답하면 `4294967297` 을 준 사용자가 자기 오타를 찾으러 간다 — 실제로는
+    /// 값이 크기만 한 것이고 고칠 방법이 다르다. 실측으로 이 자리에서 두 경우가 같은
+    /// 문구를 받고 있었다.
+    #[test]
+    fn an_out_of_range_number_is_not_reported_as_a_non_number() {
+        tasty_i18n::init("en");
+        let entries = vec![sample_entry()];
+
+        let over = format!("{}", u64::from(u32::MAX) + 2);
+        let m = parse(&["codex", "spawn", "--surface", &over, "--prompt", "hi"]);
+        let msg = matches_to_request(&entries, &m)
+            .expect_err("u32 범위 밖 --surface 는 오류여야 한다")
+            .to_string();
+        assert!(msg.contains(&over), "받은 값을 담아야 한다: {msg}");
+        assert!(msg.contains("range"), "범위 문제라고 말해야 한다: {msg}");
+        assert!(
+            !msg.contains("not a number"),
+            "숫자인데 숫자가 아니라고 답한다: {msg}"
+        );
+
+        // 대우 — 진짜 숫자가 아닌 것은 종전 문구 그대로다.
+        let m = parse(&["codex", "spawn", "--surface", "conductor", "--prompt", "hi"]);
+        let msg = matches_to_request(&entries, &m)
+            .expect_err("비수치는 오류")
+            .to_string();
+        assert!(msg.contains("not a number"), "{msg}");
     }
 
     /// 위 테스트의 대우 — 플래그가 **아예 없는** 것은 여전히 오류가 아니다.
