@@ -447,17 +447,22 @@ mod tests {
         resp.result.expect("expected success result")
     }
 
-    /// exit cell 이 채워질 때까지 bounded poll(최대 ~8s). 종료 정보를 반환.
+    /// exit-watcher 의 종료 신호를 기다려 종료 정보를 반환한다 — 고정 간격 폴링이 아니라
+    /// `Condvar` 대기라, 러너 부하로 스케줄이 밀려도 종료 즉시 반환한다(ADR-0129 형태 C 근본).
+    /// 상한은 신호가 영영 안 올 때만 걸리는 안전망이라 넉넉히 둔다(정상 경로는 수 ms).
     fn wait_for_exit(engine: &mut CoreState, pty_id: u32) -> Value {
-        for _ in 0..800 {
-            let resp = handle_wait(engine, json!(1), &json!({ "id": pty_id }));
-            let v = ok(resp);
-            if v["exited"] == Value::Bool(true) {
-                return v;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+        match engine
+            .pty_registry
+            .wait_for_exit(pty_id, std::time::Duration::from_secs(30))
+        {
+            Some(exit) => json!({
+                "id": pty_id,
+                "exited": true,
+                "exit_code": exit.code,
+                "success": exit.success,
+            }),
+            None => panic!("headless pty {pty_id} did not exit within timeout"),
         }
-        panic!("headless pty {pty_id} did not exit within timeout");
     }
 
     #[test]
