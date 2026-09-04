@@ -139,6 +139,7 @@
 | 0126 | [스케일 밖 값은 토큰으로 스냅하지 않는다 — `.5` 폰트 값은 토큰이 될 수 없다](0126-off-scale-font-values-are-not-snapped-to-tokens.md) | Accepted | 2026-09-04 | theme, design-tokens, font-size, corner-radius, zoom, guards, adr-0033 |
 | 0127 | [e2e 하네스가 띄울 바이너리는 한 곳에서 정한다 — 기본 조합의 GPU 종속은 `App` 이분이 선행이다](0127-e2e-harness-binary-selection.md) | Accepted | 2026-09-04 | testing, e2e, headless, gpu, feature-flags, cargo, harness, adr-0090 |
 | 0128 | [DPI 변환 정합은 타입 봉인이 아니라 소스 스캔 가드로 지킨다](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) | Accepted | 2026-09-04 | typed-length, dpi, guard, scale-factor, geometry, drift-guard |
+| 0129 | [확률적 테스트 실패(flake)의 부류별 표준 처방](0129-flaky-test-classes-and-standard-fixes.md) | Proposed | 2026-09-04 | testing, flaky-tests, ci, concurrency, test-isolation, guards, cfg-feature-gate, source-scan-guard, adr-0128, adr-0105 |
 | 0130 | [휠 1노치가 옮기는 거리는 창 안에서 하나이고, 그 값은 사용자가 정한다](0130-wheel-notch-distance-is-uniform-and-user-set.md) | Accepted | 2026-09-04 | input, scroll, egui, plugin-bridge, settings, accessibility, wire-contract, adr-0108 |
 | 0131 | [파일 SLOC 게이트는 발화하는 트리거를 갖는다 — 채널 없이 쌓인 26 건은 부채로 동결하고 래칫으로 갚는다](0131-file-sloc-gate-needs-a-firing-trigger.md) | Accepted | 2026-09-04 | ci, quality-gate, complexity, tokei, file-size, ratchet, trigger, drift, adr-0037 |
 | 0133 | [소스 스캔 가드의 모수는 열거하지 말고 고정한다](0133-guard-scan-population-is-pinned-not-enumerated.md) | Accepted | 2026-09-04 | guards, design-tokens, testing, ci, adr-0126, adr-0128, adr-0033 |
