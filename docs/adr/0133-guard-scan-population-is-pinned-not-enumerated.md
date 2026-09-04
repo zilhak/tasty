@@ -138,14 +138,22 @@ done | wc -l                                    # 51
   넣는 것보다 손이 더 간다 — 그것이 이 결정이 사려는 것이다(면제는 남고 미등재는 안 남는다).
 - **운영 비용**: 새 스캔 루트를 넣을 때 넓힌 비용을 한 번 재야 한다. 실제로는 명령 한 줄이고,
   그 값이 0이면 그대로 넣는다.
-- **강제 범위 — 세 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
-  안에서만 성립한다. 기계가 보는 판정은 셋이다:
+- **강제 범위 — 네 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
+  안에서만 성립한다. 기계가 보는 판정은 넷이다:
   `the_gpu_scan_root_is_a_directory_not_a_file`(`tests/design_token_adherence.rs` —
   통합 타깃이라 헤드리스 잡)과 `the_two_sister_guards_scan_the_same_roots`
   (`src/design_token_guard.rs`), `every_scan_unit_contributes_at_least_one_file`
-  (`src/source_guards/mod.rs`) — 뒤의 둘은 본체 crate 의 lib 유닛이라
-  `cargo test --workspace --lib --bins` 로 **자동으로 돈다**. 그 셋 밖 —
-  **나머지 11 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체(1178),
+  (`src/source_guards/mod.rs`), `the_scan_population_matches_what_git_lists`
+  (`src/source_guards/scan_population.rs`) — 뒤의 셋은 본체 crate 의 lib 유닛이라
+  `cargo test --workspace --lib --bins` 로 **자동으로 돈다**.
+  넷째는 셋째를 한 칸 더 조인 것이다: 셋째는 스캔 **단위**(`src` · `crates/<이름>`) 집합을
+  고정하고, 넷째는 **파일** 집합을 고정한다 — 단위 동등은 크레이트가 통째로 빠지는 것은
+  잡지만 한 단위 안에서 파일이 사라지는 것은 못 잡는다. 모수는 스냅샷 상수가 아니라
+  `git ls-files` 다. 파일이 1100 개 남짓이라 상수로 박으면 **사람이 갱신을 잊는** 형태가
+  되는데, 그것이 바로 이 ADR 이 막으려는 실패이기 때문이다. 그 넷 밖 —
+  **나머지 11 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 넷째가 늘어도
+  이 11 은 안 줄어든다 — 넷째는 `source_guards` 자신의 모수를 더 조인 것이지 다른 목록을
+  덮지 않는다. 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체(1178),
   base = `32c71757`.** base 가 바뀌어 공통 검사가 더 생기면 이 문단은 다시 만료된다.
   - **셋째 자리는 이 ADR 밖에서 왔다 — 그 사실이 근거다.**
     `every_scan_unit_contributes_at_least_one_file` 은 디자인 토큰 축이 아니라 소스 가드

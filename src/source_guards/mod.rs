@@ -265,6 +265,10 @@ fn every_scan_unit_contributes_at_least_one_file() {
 /// 하고 아무것도 못 보는 상태를 배제한다.
 mod scan_unit_mutations;
 
+/// 스캔 **단위**가 아니라 **파일** 집합을 고정한다. 위 단위 동등은 크레이트가 통째로
+/// 빠지는 것을 잡지만, 한 단위 안에서 파일이 사라지는 것은 못 잡는다.
+mod scan_population;
+
 /// 주석·문자열·문자 리터럴을 공백으로 덮은 사본을 만든다. 줄바꿈은 그대로 두므로
 /// 결과 문자열의 줄 번호는 원본과 같다. 라이프타임 틱(`'a`)은 문자 리터럴과 구분한다.
 fn mask_non_code(src: &str) -> String {
