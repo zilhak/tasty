@@ -5,14 +5,23 @@
 //! 단 하나뿐이라 그 전부가 불필요하므로, caller 해석 → `handle_with_caller` 직결로
 //! 간소화한다.
 //!
-//! 생략(gui 대비, 단계 0 토대 범위):
-//! - plugin namespace forward (plugin_manager 없음)
+//! 생략(gui 대비):
 //! - caller elevation / audit-on-deny (view 의존; deny 자체는 handle_with_caller 가 회신)
 //! - app_methods / window_required / debug step (창/스크린샷/system.shutdown 등).
 //!   예외는 `timer.list` 하나 — 읽는 대상(TimerHub)이 `App` 에 있어 engine handler
 //!   로는 답할 수 없고, 관측이 gui 에서만 되면 headless 인스턴스의 wakeup 원인을
 //!   물어볼 방법이 사라진다.
 //! - dispatch_list_global / find_request_owner / parked fallback (engine 1 개)
+//!
+//! plugin namespace forward 는 **생략하지 않는다** — plugin 이 contribute 한
+//! namespace(`markdown.*` 등)는 CLI 로 노출된 에이전트 표면이라 headless 에서도
+//! 답해야 한다(`docs/identity.md` 원칙 2). 다만 배치가 gui 와 다르다: gui 는
+//! namespace forward 를 engine handler **앞**에 두지만(`app/ipc/routing.rs` step 5),
+//! 여기서는 engine handler 가 `-32601` 을 돌려준 **뒤**의 fallback 이다. 그래야
+//! 호스트가 답할 수 있는 메서드의 경로가 한 줄도 안 바뀌고, plugin 기동을
+//! "실제로 plugin 메서드가 불렸을 때" 로 미룰 수 있다 — namespace 표는 plugin 이
+//! spawn 돼야 채워지므로(`manager/lifecycle.rs` 의 `on_plugin_spawn_success`),
+//! 부르기 전에 아는 방법이 없다.
 
 #![cfg(not(feature = "gui"))]
 
@@ -68,6 +77,53 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
         //    (`docs/adr/0111-headless-drains-the-intent-queue.md`) set_mark /
         //    completion / notification 같은 에이전트 표면이 headless 에서 무응답이 된다.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
+        // 5) 호스트가 모르는 메서드는 plugin namespace 로 넘긴다. 넘어갔으면 응답은
+        //    plugin 이 줄 때까지 보류되고, `headless_plugins::pump_plugins` 의
+        //    `mgr.pump` 가 도착 시 client 에 회신한다(gui 와 같은 계약).
+        if is_method_not_found(&resp) && forward_to_plugin_namespace(app, engine, &cmd) {
+            continue;
+        }
         send_response(&cmd.response_tx, resp);
     }
+}
+
+/// engine handler 가 "그런 메서드 없다" 로 답했는가.
+#[cfg(not(feature = "gui"))]
+fn is_method_not_found(resp: &crate::ipc::protocol::JsonRpcResponse) -> bool {
+    resp.error.as_ref().is_some_and(|e| e.code == -32601)
+}
+
+/// plugin namespace forward — 넘겼으면 `true`(응답은 plugin 이 준다).
+///
+/// plugin manager 를 여기서 lazy 로 띄운다. 헤드리스 데몬은 attach 세션이 없으면
+/// plugin 을 하나도 안 띄우는 것이 기본값이고(그래서 `ensure_plugin_manager` 의
+/// 유일한 호출자가 attach 경로였다), 그 가벼움을 유지하면서 plugin 메서드에는
+/// 답하려면 **처음 그런 호출이 왔을 때** 띄우는 수밖에 없다 — namespace 표가
+/// spawn 시점에 채워져서 부르기 전에는 소속을 알 수 없기 때문이다.
+///
+/// 대가는 명시해 둔다: 호스트가 모르는 메서드를 **한 번이라도** 부르면(오타 포함)
+/// 그 데몬은 그 시점에 plugin 을 기동한다. 기동은 프로세스 수명당 1 회고,
+/// 기동 후에도 namespace 가 안 맞으면 원래의 `-32601` 이 그대로 나간다.
+#[cfg(not(feature = "gui"))]
+fn forward_to_plugin_namespace(
+    app: &mut App,
+    engine: &CoreState,
+    cmd: &crate::ipc::server::IpcCommand,
+) -> bool {
+    super::headless_plugins::ensure_plugin_manager(app, engine);
+    let Some(mgr) = app.plugin_manager.as_mut() else {
+        return false;
+    };
+    if mgr.ipc_namespaces.resolve(&cmd.request.method).is_none() {
+        return false;
+    }
+    let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+    mgr.forward_namespace_call(
+        &cmd.request.method,
+        cmd.request.params.clone(),
+        None, // CLI/사용자 호출 — plugin → plugin 호출은 별도 경로(gui 와 같다).
+        id,
+        cmd.response_tx.clone(),
+    );
+    true
 }
