@@ -493,6 +493,31 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// `rel` 이 면제받는 패턴 id 들. `ALLOWLIST` 조회를 순회에서 분리한 것이라
+/// 합성 경로로 면제 창을 직접 찌를 수 있다.
+///
+/// 경로는 **정확 일치**다 — 접두/접미로 넓히면 `CLAUDE.md` 하나를 면제한 것이
+/// `docs/CLAUDE.md` 나 `CLAUDE.md.bak` 까지 덮는다.
+fn allowed_patterns(rel: &str) -> &'static [&'static str] {
+    ALLOWLIST
+        .iter()
+        .find(|(f, _)| *f == rel)
+        .map_or(&[], |(_, pats)| *pats)
+}
+
+/// 한 줄에 대한 판정 — 면제 적용까지 포함한다. 순회(파일 열기·경로 처리)와 갈라 둔 이유는
+/// 면제를 겨냥한 변이를 **합성 문자열**로 찌르기 위해서다. 판정이 순회 안에 인라인으로
+/// 있으면 면제 창을 시험하려면 레포에 진짜 위반을 심는 수밖에 없고, 그건 느린 데다
+/// 되돌리다 사고가 난다.
+fn violations_in_line(rel: &str, line: &str) -> Vec<String> {
+    let allowed = allowed_patterns(rel);
+    PATTERNS
+        .iter()
+        .filter(|(id, _, _)| !allowed.contains(id))
+        .filter_map(|(id, kind, find)| find(line).map(|m| format!("{id} {kind}: `{m}`")))
+        .collect()
+}
+
 fn rel_of(file: &Path, root: &Path) -> String {
     file.strip_prefix(root)
         .unwrap_or(file)
@@ -510,21 +535,12 @@ fn no_todo_file_citation() {
     let mut violations = Vec::new();
     for file in files {
         let rel = rel_of(&file, root);
-        let allowed: &[&str] = ALLOWLIST
-            .iter()
-            .find(|(f, _)| *f == rel)
-            .map_or(&[], |(_, pats)| *pats);
         let Ok(contents) = std::fs::read_to_string(&file) else {
             continue; // 비-UTF8 은 인용을 담을 수 없다.
         };
         for (i, line) in contents.lines().enumerate() {
-            for (id, kind, find) in PATTERNS {
-                if allowed.contains(id) {
-                    continue;
-                }
-                if let Some(matched) = find(line) {
-                    violations.push(format!("  {}:{} — {id} {kind}: `{matched}`", rel, i + 1));
-                }
+            for found in violations_in_line(&rel, line) {
+                violations.push(format!("  {}:{} — {found}", rel, i + 1));
             }
         }
     }
@@ -799,4 +815,78 @@ fn prunes_build_outputs_local_dirs_and_vendored_assets() {
     // 점 없는 같은 이름은 일반 디렉토리다.
     assert!(!is_pruned(fx!("claude")));
     assert!(!is_pruned("src"));
+}
+
+// ── 면제(ALLOWLIST) 를 겨냥한 변이 ──────────────────────────────────────
+//
+// 면제를 하나 두면 그 면제만큼 구멍이다. 면제 창 **안쪽**에 진짜 위반을 심었을 때
+// 잡히는지를 묻는 것이 아래 셋이고, 셋 다 `violations_in_line` 에 합성 입력을 먹인다 —
+// 레포에 위반을 심어 보는 방식이 아니라 판정기에 영구히 붙는 형태다.
+
+#[test]
+fn allowlist_exempts_only_the_named_pattern_not_the_whole_file() {
+    // `CLAUDE.md` 는 P1·P4 만 면제다. 같은 파일에 P3(경로 인용)을 심으면 잡혀야 한다 —
+    // 이 단언이 깨지는 형태가 곧 "파일 통째 면제" 로의 회귀다.
+    let planted = fx!("claude", "-workspace/todo/3.md");
+    let found = violations_in_line("CLAUDE.md", planted);
+    assert!(
+        found.iter().any(|v| v.starts_with("P3")),
+        "면제 파일에 심은 비면제 패턴이 통과했다: {found:?}"
+    );
+
+    // 면제된 쪽은 그대로 통과한다(면제가 실제로 동작하는지의 반대편).
+    assert!(violations_in_line("CLAUDE.md", fx!("see TODO", " 40")).is_empty());
+    // 같은 줄이 면제 없는 파일에서는 잡힌다 — 통과가 패턴 고장이 아니라 면제 때문임을 가른다.
+    assert!(
+        violations_in_line("src/main.rs", fx!("see TODO", " 40"))
+            .iter()
+            .any(|v| v.starts_with("P1"))
+    );
+
+    // 반대 방향 — ADR 0027 은 P3·P6 면제이므로 P1 은 잡혀야 한다.
+    let adr = "docs/adr/0027-figma-planning-sot-naming-derived-index.md";
+    assert!(
+        violations_in_line(adr, fx!("(TODO", "18)"))
+            .iter()
+            .any(|v| v.starts_with("P1"))
+    );
+}
+
+#[test]
+fn allowlist_paths_match_exactly_not_by_prefix_or_suffix() {
+    assert!(allowed_patterns("CLAUDE.md").contains(&"P1"));
+    // 창은 경로 하나다 — 접두/접미가 겹치는 다른 파일로 새지 않는다.
+    assert!(allowed_patterns("docs/CLAUDE.md").is_empty());
+    assert!(allowed_patterns("CLAUDE.md.bak").is_empty());
+    assert!(allowed_patterns("crates/x/CLAUDE.md").is_empty());
+    assert!(allowed_patterns("").is_empty());
+    // 면제되지 않은 패턴은 면제 파일에서도 목록에 없다.
+    assert!(!allowed_patterns("CLAUDE.md").contains(&"P3"));
+    assert!(!allowed_patterns("CLAUDE.md").contains(&"P6"));
+}
+
+#[test]
+fn allowlist_entries_are_live() {
+    // 경로가 썩으면 가드가 그 파일을 다시 잡아 **시끄럽게** 실패하지만, 패턴 id 가 썩으면
+    // (오탈자·패턴 개명) 의도한 면제가 조용히 사라진 채 아무도 모른다. 뒤쪽을 여기서 잡는다.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let ids: Vec<&str> = PATTERNS.iter().map(|(id, _, _)| *id).collect();
+    for (rel, pats) in ALLOWLIST {
+        assert!(
+            root.join(rel).exists(),
+            "면제 항목이 가리키는 파일이 없다 — 옮겼거나 지웠으면 항목도 지워라: {rel}"
+        );
+        assert!(
+            !pats.is_empty(),
+            "빈 면제 목록은 항목을 지우라는 뜻이다: {rel}"
+        );
+        for pat in *pats {
+            assert!(
+                ids.contains(pat),
+                "면제가 없는 패턴 id 를 가리킨다(오탈자·개명): {rel} → {pat}"
+            );
+        }
+    }
+    // 하한 — 목록이 통째로 비면 위 루프가 아무것도 검사하지 않고 초록이 된다.
+    assert!(ALLOWLIST.len() >= 3);
 }
