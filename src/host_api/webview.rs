@@ -83,6 +83,12 @@ impl WebViewBounds {
     ///
     /// macOS 는 Cocoa 가 논리 좌표(point)를 그대로 받으므로 이 변환을 쓰지 않는다 —
     /// 물리로 올리는 쪽은 X11(GTK)·Win32 다.
+    ///
+    /// 그래서 macOS 빌드에서는 호출부가 없다. `-D dead-code` 아래서 그것이 컴파일
+    /// 에러가 되므로 그 플랫폼에서만 면제한다 — 지우거나 `#[cfg]` 로 빼지 않는 이유는
+    /// 아래 왕복 테스트가 세 OS 모두에서 이 함수를 `from_physical` 의 역으로 고정하기
+    /// 때문이다. macOS 에서만 그 고정이 사라지면 한쪽만 바뀌는 것을 못 잡는다.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn to_physical(self, scale_factor: f64) -> PhysicalWebViewBounds {
         PhysicalWebViewBounds {
             x: self.x * scale_factor,
