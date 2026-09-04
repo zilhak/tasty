@@ -12,6 +12,11 @@ use crate::theme;
 // 없다** — 코드에서 자란 값이라 토큰으로 스냅하면 실제로 픽셀이 바뀐다. 조용히
 // 반올림하지 않고 이름만 붙여 한곳에 모아 둔다(스냅 여부는 디자인 판단 항목).
 //
+// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다.** 토큰 폰트 크기는
+// `Theme::with_colors_and_zoom` 의 `zoomed()` 를 거치는데 그게 `.round()` 하므로
+// 어떤 `ui_scale` 에서도 정수다 — "zoom 1 에서만 0.5 다" 가 아니라 전 배율에서
+// 다르다. 규칙 전문은 `docs/design/systems/theme.md` "스케일 밖 폰트 값".
+//
 // 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다.
 
 /// 알림 비어있음 상태의 제목. 스케일 밖(13.5).
@@ -20,6 +25,9 @@ const ATTN_EMPTY_TITLE_SIZE: f32 = 13.5;
 const ATTN_REASON_BLURB_SIZE: f32 = 12.5;
 /// 서명 지문 라벨/값. 스케일 밖(11.5).
 const ATTN_FINGERPRINT_SIZE: f32 = 11.5;
+/// 항목 행의 사유 라벨. 스케일 밖(10.5) — `font_size_micro`(10)와 0.5 차이라
+/// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
+const ATTN_REASON_LABEL_SIZE: f32 = 10.5;
 
 /// DTCG primitive `font-size-12` 를 직접 쓰는 자리. 12px 는 primitive 에는 있지만
 /// **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다 — 어느 semantic 에
@@ -116,7 +124,7 @@ pub(super) fn draw_attention_tab(
                         name_pos + egui::vec2(0.0, 18.0),
                         egui::Align2::LEFT_TOP,
                         t(label_key),
-                        egui::FontId::proportional(th.font_size_micro.value()),
+                        egui::FontId::proportional(ATTN_REASON_LABEL_SIZE),
                         color,
                     );
                     // 우측 severity dot.

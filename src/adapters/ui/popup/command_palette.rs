@@ -19,6 +19,17 @@ use crate::theme::Theme;
 use tasty_settings::KeybindingSettings;
 use tasty_ui_widgets::{margin_all, margin_sym};
 
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
+// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
+// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
+// "스케일 밖 폰트 값".
+
+/// footer 의 kbd 힌트 줄. 스케일 밖(10.5) — `kbd_font_size()`(micro 10)와 0.5 차이라
+/// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
+const PALETTE_HINT_FONT_SIZE: f32 = 10.5;
+
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
 /// View 입력 — 한 명령 행의 시각/의미 데이터.
@@ -259,8 +270,7 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            // footer 힌트는 kbd 힌트 계열 → component.kbd-font-size(micro).
-            let hint_font = egui::FontId::monospace(theme.kbd_font_size().value());
+            let hint_font = egui::FontId::monospace(PALETTE_HINT_FONT_SIZE);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 14.0;
                 for hint in [

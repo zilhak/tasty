@@ -5,6 +5,17 @@ use crate::state::AppState;
 use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
 
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// **`.5` 로 끝나는 값은 애초에 토큰이 될 수 없다** — 토큰 폰트 크기는 `zoomed()` 의
+// `.round()` 를 거쳐 어떤 `ui_scale` 에서도 정수다. semantic 이 없는 primitive(12)도
+// 같은 이유로 이름만 붙인다. 규칙 전문은 `docs/design/systems/theme.md`
+// "스케일 밖 폰트 값".
+
+/// 매치 카운터(`3/17`) 폰트. DTCG primitive `font-size-12` 는 있으나 semantic role 이
+/// 없어 `Theme` 필드가 없다 — primitive 값을 그대로 이름 붙여 둔다.
+const COUNTER_FONT_SIZE: f32 = 12.0;
+
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
     ui: &mut egui::Ui,
@@ -116,7 +127,7 @@ pub fn draw_search_bar(
                 .replace("{total}", &state.search.matches.len().to_string());
             (text, theme.text_muted())
         };
-        draw_counter(ui, &theme, &counter_text, counter_color.into());
+        draw_counter(ui, &counter_text, counter_color.into());
 
         // Prev/Next buttons — 항상 렌더, 매치가 없으면 disabled. (디자인 IconButton
         // size="sm", chevron SVG. search_bar.jsx:71-80)
@@ -189,14 +200,14 @@ pub fn draw_search_bar(
 
 /// 고정폭(40px) 매치 카운터를 가운데 정렬로 그린다. 텍스트 길이와 무관하게
 /// 폭이 고정되어 옆의 ▲▼/토글이 좌우로 밀리지 않는다. (디자인 width:40, center)
-fn draw_counter(ui: &mut egui::Ui, theme: &Theme, text: &str, color: egui::Color32) {
+fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(40.0, ui.available_height()),
         egui::Sense::hover(),
     );
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
-        egui::FontId::proportional(theme.font_size_caption.value()),
+        egui::FontId::proportional(COUNTER_FONT_SIZE),
         color,
     );
     let pos = rect.center() - galley.size() * 0.5;

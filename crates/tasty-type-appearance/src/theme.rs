@@ -2329,4 +2329,34 @@ mod tests {
         assert_eq!(t.tree_row_height().value(), t.item_height_tree.value()); // 33
         assert_eq!(t.input_height().value(), 42.0); // control-height 28 * 1.5
     }
+
+    /// UI 폰트 토큰은 **어떤 zoom 에서도 정수**다 — `zoomed()` 가 `.round()` 하기
+    /// 때문이다. 이건 편의 성질이 아니라 `docs/design/systems/theme.md` "스케일 밖
+    /// 폰트 값" 규칙("`.5` 로 끝나는 값은 토큰이 될 수 없다")이 서 있는 전제다.
+    /// 그 전제가 깨지는 길은 둘이다 — `zoomed()` 가 반올림을 그만두거나, 새 UI 폰트
+    /// 필드가 `zoomed()` 를 우회해 `SIZING` 값을 그대로 받거나. 어느 쪽이든 규칙
+    /// 문장이 먼저 거짓이 되므로 여기서 잡는다. (`SIZING` 리터럴 자체가 `.5` 가
+    /// 되는 것은 여기 걸리지 않는다 — 그래도 `zoomed()` 가 정수로 만들기 때문이고,
+    /// 규칙이 말하는 "토큰 값" 은 zoom 을 거친 뒤의 값이다.)
+    #[test]
+    fn ui_font_size_tokens_are_integers_at_every_zoom() {
+        for zoom in [0.5, 0.85, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 3.0] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, zoom);
+            for (name, px) in [
+                ("font_size_micro", t.font_size_micro),
+                ("font_size_caption", t.font_size_caption),
+                ("font_size_body", t.font_size_body),
+                ("font_size_heading", t.font_size_heading),
+                ("font_size_max", t.font_size_max),
+            ] {
+                let v = px.value();
+                assert_eq!(
+                    v,
+                    v.round(),
+                    "{name} 이 zoom {zoom} 에서 정수가 아니다({v}) — theme.md 의 \
+                     \"`.5` 값은 토큰이 될 수 없다\" 규칙이 이 성질 위에 서 있다"
+                );
+            }
+        }
+    }
 }
