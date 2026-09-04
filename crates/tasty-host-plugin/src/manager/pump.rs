@@ -309,8 +309,13 @@ impl PluginManager {
         }
     }
 
-    /// 수집된 이벤트를 원본 pump 와 동일한 순서로 처리 (부수효과 확정).
+    /// 수집된 이벤트의 부수효과를 확정한다.
     /// 반환: 본 tick 에서 처음 hello 받은 plugin 의 `(plugin_id, version)`.
+    ///
+    /// **plugin IPC 호출의 큐잉만 hello 등록 뒤로 뺐다.** 나머지 항목(frame /
+    /// invalidate / buffer / event bus)은 서로 독립인 맵을 건드려 순서가 관측되지
+    /// 않지만, 호출은 권한 셋을 함께 실어 나르므로 등록보다 앞서면 hello 와 같은
+    /// 배치로 온 첫 호출이 빈 권한으로 굳는다 — 아래 `restamp_permissions` 주석.
     fn apply_collected_events(
         &mut self,
         collected: CollectedPluginEvents,
@@ -318,7 +323,7 @@ impl PluginManager {
         let CollectedPluginEvents {
             hello_log,
             to_register,
-            new_calls,
+            mut new_calls,
             new_event_publishes,
             new_event_subscribes,
             new_event_unsubscribes,
@@ -332,9 +337,6 @@ impl PluginManager {
         } = collected;
 
         self.clear_dead_plugin_frames(&disconnected);
-        if !new_calls.is_empty() {
-            self.pending_plugin_calls.extend(new_calls);
-        }
         for (surface_id, frame) in new_paint_frames {
             self.egui_mesh_frames.insert(surface_id, frame);
         }
@@ -355,6 +357,16 @@ impl PluginManager {
         }
         self.log_hello_and_check_drift(hello_log);
         let hello_pairs = self.register_new_hellos(&to_register);
+        // **권한은 등록 뒤에 붙인다.** `classify_event` 는 IpcCall 을 볼 때
+        // `plugin_permissions` 를 그 자리에서 읽는데, plugin 의 hello 와 그 plugin 의
+        // 첫 IpcCall 이 **같은 배치**로 수집되면 그 시점엔 아직 아무것도 등록돼 있지
+        // 않아 빈 권한 셋이 박힌다 — 첫 호출만 `permission_denied` 로 떨어지고 다음
+        // 호출부터 멀쩡해지는 형태다. 등록(`register_new_hellos`)이 끝난 뒤 다시
+        // 붙이면 두 이벤트가 한 배치로 오든 나뉘어 오든 결과가 같다.
+        self.restamp_permissions(&mut new_calls);
+        if !new_calls.is_empty() {
+            self.pending_plugin_calls.extend(new_calls);
+        }
         self.apply_event_bus_changes(
             new_event_subscribes,
             new_event_unsubscribes,
@@ -362,6 +374,19 @@ impl PluginManager {
         );
 
         hello_pairs
+    }
+
+    /// 수집 시점에 비어 있었을 수 있는 권한 셋을 **현재** 등록 상태로 다시 붙인다.
+    ///
+    /// 등록된 plugin 이면 그 권한으로 덮고, 아직 모르는 plugin 이면 수집 시점 값을
+    /// 그대로 둔다(모르는 것을 허용으로 바꾸지 않는다). 같은 pump 안이라 그 사이
+    /// 권한이 취소될 수 없으므로 멱등이다.
+    fn restamp_permissions(&self, calls: &mut [PendingPluginCall]) {
+        for call in calls.iter_mut() {
+            if let Some(perms) = self.plugin_permissions.get(&call.plugin_id) {
+                call.permissions = perms.clone();
+            }
+        }
     }
 
     /// 죽은(disconnected) plugin 이 남긴 egui-mesh/popup/banner frame 메타를 즉시
@@ -692,6 +717,55 @@ mod tests {
         let mut out = CollectedPluginEvents::default();
         mgr.classify_event("com.example.test", hello("com.example.test"), &mut out);
         assert_eq!(out.to_register, vec!["com.example.test".to_string()]);
+    }
+
+    /// hello 와 그 plugin 의 첫 IpcCall 이 **같은 배치**로 수집되면 `classify_event`
+    /// 시점엔 `plugin_permissions` 가 비어 있어 빈 권한이 박힌다. 등록 뒤 다시 붙이는
+    /// 것이 그 자리를 메운다 — 실측된 증상은 헤드리스에서 lazy 로 띄운
+    /// `com.tasty.markdown` 의 **첫** host call 만 `permission_denied` 로 떨어지는
+    /// 것이었다(다음 호출부터는 정상).
+    ///
+    /// 이 테스트가 붙박는 것은 **재부착 그 자체**다. 재부착이 `register_new_hellos`
+    /// *뒤*에 온다는 순서까지는 보지 않는다(그 축은 `apply_collected_events` 본문의
+    /// 배치와 주석이 진다).
+    #[test]
+    fn a_call_queued_with_an_empty_permission_set_is_restamped_after_registration() {
+        let mut mgr = mgr();
+        mgr.set_plugin_permissions("com.example.test", HashSet::from([Permission::SurfaceRead]));
+        let mut calls = vec![PendingPluginCall {
+            plugin_id: "com.example.test".to_string(),
+            call_id: 1,
+            method: "recent.query".to_string(),
+            params: json!({}),
+            // 수집 시점의 상태 — 아직 등록 전이라 빈 셋.
+            permissions: Arc::new(HashSet::new()),
+        }];
+        mgr.restamp_permissions(&mut calls);
+        assert!(
+            calls[0].permissions.contains(&Permission::SurfaceRead),
+            "등록된 권한이 다시 붙어야 한다: {:?}",
+            calls[0].permissions
+        );
+    }
+
+    /// 반대 방향 — 모르는 plugin 을 허용으로 바꾸지 않는다. 재부착이 "없으면 비운다"
+    /// 가 아니라 "있으면 덮는다" 인지 가른다.
+    #[test]
+    fn an_unregistered_plugins_call_keeps_its_empty_permission_set() {
+        let mgr = mgr();
+        let mut calls = vec![PendingPluginCall {
+            plugin_id: "com.example.unknown".to_string(),
+            call_id: 2,
+            method: "recent.query".to_string(),
+            params: json!({}),
+            permissions: Arc::new(HashSet::new()),
+        }];
+        mgr.restamp_permissions(&mut calls);
+        assert!(
+            calls[0].permissions.is_empty(),
+            "모르는 plugin 은 그대로 비어 있어야 한다: {:?}",
+            calls[0].permissions
+        );
     }
 
     #[test]
