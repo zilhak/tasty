@@ -81,6 +81,61 @@ let _ = tx.send(msg);
 `(경로, 조각)` 으로 등록해 처리한다 — **파일을 통째로 면제하지 않는다.** 한계 전문은
 가드 파일 머리 주석에 있다.
 
+## 락 poison (`Mutex` / `RwLock`)
+
+poison 은 **"다른 스레드가 이 락을 든 채 패닉했다"** 는 사실만 알려준다. 보호 중인 데이터가
+실제로 깨졌다는 뜻이 **아니다**. 그래서 `.unwrap()` / `.expect()` 로 일괄 패닉시키는 것도,
+`Err(_) => return` 으로 일괄 무시하는 것도 틀렸다 — 지점마다 아래 두 질문에 답해서 고른다.
+
+### 질문 1 — 임계구역이 불변식을 깨진 채 남길 수 있는가
+
+| 임계구역이 하는 일 | 처리 |
+|---|---|
+| 자료구조 조작만 (`insert` / `remove` / `retain` / 필드 하나 갱신) | **복구** — `lock().unwrap_or_else(\|p\| p.into_inner())` |
+| 여러 필드를 순서대로 갱신하거나, 콜백·trait object·외부 crate 등 **임의 코드**를 호출 | **에러 반환**하거나 그 항목만 폐기 후 재구성. 데이터를 신뢰하지 않는다 |
+
+임계구역이 순수 자료구조 조작뿐이면 그 안에 패닉 지점이 사실상 없고, 있더라도(할당 실패 등)
+컨테이너는 불변식을 유지한다. 그런 락을 poison 때문에 영구 사용 불가로 만드는 것은
+**원래 패닉의 피해를 스스로 확대하는 것**이다.
+
+### 질문 2 — 여기서 패닉하면 무엇이 죽는가
+
+사망 범위가 클수록 패닉은 나쁜 선택이다.
+
+| 범위 | 어디 | 방침 |
+|---|---|---|
+| **프로세스 전체** | winit 메인 스레드에서 도는 코드 — 이벤트 루프, 렌더, `AppEvent` 처리 | **패닉 금지.** 실행 중인 모든 창의 모든 터미널 세션이 사라진다 (창 생성 실패 절과 같은 근거) |
+| **호스트 스레드 하나** | IPC 핸들러, agent runner, PTY 리더 | 그 요청/러너만 죽는다. 다만 **패닉이 자기 복구 경로까지 죽이지 않는지** 확인한다 — 재시작을 위해 읽어야 하는 레지스트리를 재시작 경로가 다시 패닉시키면 복구 설계가 무력해진다 |
+| **플러그인 프로세스 하나** | `crates/tasty-plugin-sdk` 안 | 폭발 반경이 그 plugin 으로 한정된다. 패닉 허용 (plugin 스레드 spawn 정책과 같은 근거) |
+
+### 어느 선택을 하든 로그를 남긴다
+
+poison 은 **이미 어딘가에서 패닉이 있었다**는 신호다. 조용한 복구도 조용한 무시도 그 신호를
+지운다. 레벨은 `tracing::error!` — 원인이 된 패닉은 이미 일어났고 복구 불가다.
+
+poison 은 **sticky** 다(한 번 걸리면 그 락은 영구히 poisoned). 초당 여러 번 도는 경로에서
+매번 로그를 내면 폭주하므로, 그런 지점은 `AtomicBool` 등으로 **첫 1 회만** 남긴다.
+
+```rust
+// ✅ 복구 + 관측 (자료구조 조작만 하는 임계구역)
+let mut gates = self.targeted_gates.lock().unwrap_or_else(|p| {
+    tracing::error!("targeted_gates mutex poisoned — recovering; a thread panicked while holding it");
+    p.into_inner()
+});
+
+// ✅ 에러 반환 (데이터를 신뢰할 수 없는 임계구역)
+let mut inner = self.inner.write().map_err(|e| {
+    tracing::error!("registry write lock poisoned: {e}");
+    RegistryError::Poisoned
+})?;
+
+// ❌ 무음 return — 등록이 반영되지 않았는데 관측 지점이 0 이다
+let mut inner = match self.inner.write() { Ok(g) => g, Err(_) => return };
+
+// ❌ 사망 범위를 안 따진 일괄 패닉
+let mut inner = self.inner.lock().expect("poisoned");
+```
+
 ## stdout 쓰기 (CLI 클라이언트)
 
 `println!` / `print!` 는 stdout 쓰기 실패를 panic 으로 승격한다. 읽는 쪽이 파이프를 먼저 닫으면
