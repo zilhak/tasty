@@ -216,7 +216,7 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 
 | primitive | 통합 위치 | 결합 |
 |-----------|----------|------|
-| `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder?, ttl_ms? }` |
+| `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder?, ttl_ms? }` — `ttl_ms` 는 task 최대 소요보다 길게(아래 dispatch 게이트) |
 | `Lease` | RunnerLoop dispatch | `task.metadata.lease = { resource, holder?, ttl_ms?, mode? }` 또는 pool 모드(`candidates`/`elastic` — 아래 "자원 풀 배정") |
 | `Barrier` | dispatch/poll | `WaitBarrier { name }` task(DAG 안 명시 gate) |
 | `RateLimit` | IPC dispatcher 미들웨어 | `(agent, "ipc_calls")` 호출당 1 차감 |
@@ -224,6 +224,8 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 ### dispatch 게이트 (lease → semaphore)
 
 `lease → semaphore` 순서로 점유. 한쪽 점유 후 다음이 Deferred/Err 면 점유 자원 즉시 release(idempotent). dead-lock 회피 — 두 자원 모두 가용일 때만 통과. permit/lease 는 task 가 Succeeded/Failed/Cancelled 로 종결되면 자동 release.
+
+**`ttl_ms` 는 그 task 의 최대 소요보다 길어야 한다(호출자 책임).** runner 는 dispatch 시점에만 permit 을 잡고, 이미 `Running` 인 task 의 permit 을 **renew 하지 않는다** — 재dispatch 되지 않으므로 heartbeat 할 지점이 없다. 그래서 `metadata.semaphore.ttl_ms` 를 실제 소요보다 짧게 걸면 permit 이 실행 도중 만료되고, 다음 tick 에 대기하던 task 가 **같은 슬롯을 취득해 둘이 동시에 임계구역에 들어간다**(이중 dispatch). `ttl_ms` 를 아예 주지 않으면(기본) 만료가 없어 이 상태가 생기지 않는다 — TTL 은 "홀더가 죽어도 permit 이 돌아오게" 하는 opt-in 이지 소요시간 추정 장치가 아니다. 근거와 기각한 대안(runner 가 poll 마다 renew)은 [ADR-0119](../adr/0119-agent-semaphore-resize-and-holder-expiry.md).
 
 **`holder == task.id` 컨벤션(강제)**: holder 가 task.id 와 다르면 *외부 도구가 직접 acquire 한 것* 으로 간주, 호스트 재시작 정화 대상에서 제외. 외부 점유 회수는 외부 도구 책임 — 그 회수 수단이 아래 "죽은 홀더와 한도 조정" 이다.
 
