@@ -31,7 +31,7 @@ use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
-use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4};
+use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, Table, TableAlign,
     TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, hspace, margin_sym,
@@ -1220,7 +1220,7 @@ fn header_tag_text(props: &PortScannerProps<'_>) -> Option<String> {
 fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
     egui::Frame::default()
         .fill(th.accent_primary().into())
-        .corner_radius(egui::CornerRadius::same(3))
+        .corner_radius(TAG_PILL_CORNER_RADIUS)
         // structural: 검색줄 control-internal nudge (size-4/size-1), spacing 리듬 아님.
         .inner_margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_1))
         .show(ui, |ui| {

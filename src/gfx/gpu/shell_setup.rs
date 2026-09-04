@@ -91,7 +91,7 @@ impl GpuState {
                     egui::Frame::new()
                         .fill(bg_card.into())
                         .stroke(egui::Stroke::new(th.border_width.value(), border))
-                        .corner_radius(egui::CornerRadius::same(12))
+                        .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)
                         .inner_margin(margin_all(th.spacing_xl))
                         .shadow(th.shadow_popover().to_egui()),
                 )
@@ -123,7 +123,7 @@ impl GpuState {
                             th.border_width.value(),
                             th.border_strong(),
                         ))
-                        .corner_radius(egui::CornerRadius::same(6))
+                        .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS)
                         .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
                         .show(ui, |ui| {
                             ui.add(
@@ -192,7 +192,9 @@ impl GpuState {
                                     .min_size(btn_size)
                                     .fill(th.bg_panel())
                                     .stroke(egui::Stroke::new(th.border_width.value(), border))
-                                    .corner_radius(egui::CornerRadius::same(6)),
+                                    .corner_radius(
+                                        tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS,
+                                    ),
                                 )
                                 .clicked()
                             {
@@ -232,7 +234,7 @@ impl GpuState {
                                 .min_size(btn_size)
                                 .fill(ok_fill)
                                 .stroke(ok_stroke)
-                                .corner_radius(egui::CornerRadius::same(6)),
+                                .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
                             );
                             if ok_resp.clicked()
                                 || (response.lost_focus()

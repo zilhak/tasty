@@ -641,7 +641,7 @@ fn seg(ui: &mut egui::Ui, s: &SegStyle, items: &[(&str, bool)]) -> Option<usize>
                     let btn = egui::Button::new(egui::RichText::new(*label).size(s.font).color(fg))
                         .fill(bg)
                         .stroke(egui::Stroke::NONE)
-                        .corner_radius(0.0)
+                        .corner_radius(egui::CornerRadius::ZERO)
                         .min_size(egui::vec2(0.0, s.height));
                     if ui.add(btn).clicked() {
                         clicked = Some(i);

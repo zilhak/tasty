@@ -143,3 +143,36 @@ pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
 /// 본체 `adapters/ui/popup/transfer.rs` 와 갤러리 specimen 이 같이 읽는다.
 /// `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
 pub const TRANSFER_CARD_PAD_X: i8 = 10;
+
+// ── 스케일 밖 코너 반경 — DTCG radius 스케일에 대응이 없는 값 (ADR-0126) ──
+//
+// DTCG radius 스케일은 `radius-2` · `radius-4` · `radius-8` · `radius-full` 뿐이고
+// `Theme` 의 `corner_radius_sm`(2) · `corner_radius`(4) · `corner_radius_lg`(8) 가 그
+// 셋을 그대로 노출한다. 아래 값들은 어디에도 없다. ADR-0126 대로 **가까운 토큰으로
+// 스냅하지 않는다** — 스냅은 픽셀을 바꾸는 디자인 결정이고, 리터럴 정리가 곁다리로
+// 할 일이 아니다. 이름과 사유를 붙여 드리프트를 눈에 보이게 두고, 수렴 여부는 디자인
+// 판단으로 넘긴다.
+//
+// **대가는 폰트 축과 같다**: 명명 const 는 `Theme::with_colors_and_zoom` 의 `zoomed()`
+// 경로 밖이라 `ui_scale` 을 타지 않는다. 그리고 `corner_radius*` 토큰은 **탄다**
+// (`zoomed(SIZING.corner_radius)`) — 그래서 이 자리들만 배율 0.85 / 1.2 에서 고정
+// 반경으로 남는다. 굵기 쪽(`border_width` · `icon_stroke_width`)이 애초에 zoom 을 타지
+// 않는 것과 다르다. 반경은 대가가 실재한다.
+//
+// `.corner_radius()` 는 `impl Into<CornerRadius>` 를 받고 `From<f32>` 가
+// `same(radius.round() as u8)` 이라, f32 로 넘기는 것은 `CornerRadius::same(n)` 과
+// 값이 같다.
+
+/// 부팅 화면 chrome(버튼 · 인셋 프레임)의 코너 반경. **스케일 밖 6px.**
+/// 디자인의 `component.button-radius` 는 `semantic.radius`(4)인데 부팅 전 셸
+/// (`shell_setup` · `boot_error`)만 6 을 쓴다. 의도인지 표류인지 소스에 신호가 없어
+/// 값을 그대로 두고 이름만 붙였다.
+pub const BOOT_CHROME_CORNER_RADIUS: f32 = 6.0;
+
+/// 부팅 셸 카드의 코너 반경. **스케일 밖 12px.** 떠 있는 패널용 토큰
+/// `corner_radius_lg`(8 = `primitive.radius-8`)보다 크다.
+pub const BOOT_CARD_CORNER_RADIUS: f32 = 12.0;
+
+/// accent tag pill 의 코너 반경. **스케일 밖 3px.** 디자인의
+/// `component.badge-radius` 는 `semantic.radius-sm`(2)다.
+pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;

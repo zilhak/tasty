@@ -101,7 +101,7 @@ pub(crate) fn draw_notification_content_inner(
                 egui::Frame::new()
                     .fill(bg)
                     .inner_margin(margin_all(th.spacing_xs))
-                    .corner_radius(4.0)
+                    .corner_radius(th.corner_radius.value())
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             if !*read {

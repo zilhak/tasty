@@ -54,7 +54,7 @@ impl GpuState {
                             th.border_width.value(),
                             th.border_default(),
                         ))
-                        .corner_radius(egui::CornerRadius::same(8))
+                        .corner_radius(th.corner_radius_lg.value())
                         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg)),
                 )
                 .show(ctx, |ui| {
@@ -104,7 +104,7 @@ impl GpuState {
                                 .min_size(btn_size)
                                 .fill(danger)
                                 .stroke(egui::Stroke::new(th.border_width.value(), danger))
-                                .corner_radius(egui::CornerRadius::same(6)),
+                                .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
                             )
                             .clicked()
                             || ui.input(|i| {
