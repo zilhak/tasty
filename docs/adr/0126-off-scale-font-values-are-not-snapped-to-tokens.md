@@ -11,8 +11,9 @@
 ## Context
 
 UI 디자인 규칙은 "폰트 크기는 `Theme` 에서 가져온다"이고, `tests/design_token_adherence.rs`
-가드가 `FontId::*`/`RichText::size` 의 숫자 리터럴을 막는다(통합 테스트라 자동 실행
-채널이 없다 — 컴파일만 자동 검사, [ci-gates](../dev-guide/ci-gates.md)). 리터럴을 걷어내는
+가드가 `FontId::*`/`RichText::size` 의 숫자 리터럴을 막는다(통합 테스트라 자동 실행은
+헤드리스 조합 하나에서만 일어난다 — 기본 조합의 자동 잡은 `--lib --bins` 라 못 본다,
+[ci-gates](../dev-guide/ci-gates.md)). 리터럴을 걷어내는
 작업을 하다 보면 **대응 토큰이 없는 값**을 만난다 — 코드에서 자란 9.5 · 10.5 · 11.5 ·
 12.5 · 13.5, DTCG primitive 에는 있으나 semantic role 이 없어 `Theme` 필드가 없는 12 ·
 16, 어느 tier 에도 없는 30.
