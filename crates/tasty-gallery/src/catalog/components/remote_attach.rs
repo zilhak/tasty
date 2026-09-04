@@ -15,7 +15,9 @@
 //! 막다른 center-state 가 아니라 "행이 정확히 하나인 목록"으로 degrade 한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::tokens::{
+    CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
+};
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Spinner, StatusKind,
     status_dot,
@@ -41,13 +43,6 @@ const STRIP_W: f32 = 440.0; // 새 행 상태 specimen 의 pane 폭
 /// 두 열의 caps 헤더("ATTACH PROFILES" / "REMOTE WORKSPACES") 행 높이 —
 /// padding 12/12 + micro caps 한 줄. 4px 그리드 밖이고 대응 Theme 토큰이 없다.
 const CAPS_HEADER_H: f32 = 30.0;
-
-/// 빈/로딩/오류 상태 블록의 공칭 높이 — pane 안에서 세로 가운데로 띄우는 기준이다.
-/// `file_picker` specimen 의 같은 이름 상수와 값이 같다(두 모달의 같은 이디엄).
-const EMPTY_BLOCK_H: f32 = 120.0;
-
-/// 그 블록 맨 위 스피너·글리프의 한 변.
-const EMPTY_GLYPH: f32 = 22.0;
 
 /// 우측 pane 상태. `Loaded` / `Empty` 는 같은 목록 렌더 경로를 타고 ws 목록의
 /// 길이만 다르다.

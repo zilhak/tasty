@@ -47,19 +47,13 @@ const MAX_PER_SCOPE: usize = 5;
 /// `MAX_MESSAGE_CHARS` 자만 남기고 줄바꿈 + 안내 접미를 붙인다 — 비정상적으로
 /// 긴 입력(경로/에러/plugin 텍스트)이 토스트를 세로로 폭주시키는 것을 막는다.
 const MAX_MESSAGE_CHARS: usize = 200;
-/// 토스트 사이 세로 간격 (px).
-const TOAST_GAP: f32 = 6.0;
-/// 스코프 가장자리에서의 안쪽 여백 (px).
-const SCOPE_MARGIN: f32 = 12.0;
-/// 본문 텍스트의 좌우/상하 여백 (px).
-const PADDING_X: f32 = 12.0;
-const PADDING_Y: f32 = 8.0;
-/// 좌측 컬러 바 두께 (px).
-const ACCENT_BAR_WIDTH: f32 = 4.0;
-/// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
-/// `wrap_width`(= max_width - PADDING_X*2 - ACCENT_BAR_WIDTH)가 음수가 되지 않도록
-/// 최소 한 글자 분량의 여유를 보장한다.
-const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
+// 카드 구조 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리 specimen 이
+// 같은 상수를 읽는다. 여기서 다시 정의하면 값이 갈릴 수 있는 구조가 되살아난다.
+use tasty_ui_widgets::tokens::{
+    TOAST_ACCENT_BAR_WIDTH as ACCENT_BAR_WIDTH, TOAST_GAP,
+    TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
+    TOAST_PADDING_X as PADDING_X, TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+};
 
 /// View 입력 — 그릴 준비가 끝난 토스트 1 개의 시각 데이터.
 ///
@@ -123,7 +117,9 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
             // 0.8*width < width-2*margin (width>120) 이라 0.8 폭이 그대로 — 시각
             // 무변경이고, 좁은 surface 에서만 클램프가 발동한다.
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
+            let max_width = (scope_rect.width() * 0.8)
+                .max(TOAST_MIN_MAX_WIDTH)
+                .min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
             // wrap_width 음수 방지(클램프로 max_width 가 작아질 때).
             let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);

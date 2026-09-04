@@ -44,9 +44,8 @@ const LEFT_W: f32 = 240.0;
 const HEADER_H: f32 = 47.0;
 const FOOTER_H: f32 = 49.0;
 
-/// 빈/로딩/오류 중앙 블록 맨 위 스피너·글리프의 한 변. 아이콘 스케일 밖이고 대응
-/// Theme 토큰이 없다 — `file_picker` popup 의 같은 이름 상수와 같은 이디엄이다.
-const CENTER_GLYPH_SIZE: f32 = 22.0;
+// 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
+use tasty_ui_widgets::tokens::CENTER_GLYPH_SIZE;
 const CAPS_H: f32 = 30.0;
 const PROFILE_ROW_H: f32 = 50.0;
 const WS_ROW_H: f32 = 34.0;

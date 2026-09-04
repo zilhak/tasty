@@ -8,13 +8,16 @@
 //! 스택 데모는 alpha 를 미리 곱한 색을 넘기고, 단일 카드 데모는 alpha=1.0 (=곱 항등)
 //! 으로 같은 헬퍼를 호출한다.
 //!
-//! 상수 (`PADDING_X` / `PADDING_Y` / `ACCENT_BAR_WIDTH`) 는 본체 `toast.rs` 와 동일.
+//! 카드 구조 치수는 본체와 **같은 상수**를 읽는다 — `tasty-ui-widgets::tokens` 가
+//! 단일 출처다. 예전에는 여기서 같은 값을 다시 정의했는데, 값이 같아 보여도 정의가
+//! 둘이면 언제든 갈릴 수 있고 갈린 뒤엔 어느 쪽이 정본인지 알 수 없다.
 
 use tasty_type_appearance::theme::Theme;
 
-pub const PADDING_X: f32 = 12.0;
-pub const PADDING_Y: f32 = 8.0;
-pub const ACCENT_BAR_WIDTH: f32 = 4.0;
+pub use tasty_ui_widgets::tokens::{
+    TOAST_ACCENT_BAR_WIDTH as ACCENT_BAR_WIDTH, TOAST_PADDING_X as PADDING_X,
+    TOAST_PADDING_Y as PADDING_Y,
+};
 
 /// 본체 정본 `crates/tasty-model/src/toast_kind.rs::ToastKind` 와 **kind-for-kind
 /// 동일**해야 한다 — 본체가 만들 수 없는 종류를 갤러리가 전시하면 demo=main 등가성이

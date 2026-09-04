@@ -20,7 +20,9 @@
 //! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::tokens::{
+    CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
+};
 use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, checkbox};
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -50,12 +52,6 @@ const HOST_BADGE_H: f32 = 22.0;
 /// Theme 은 12(xs) · 14(sm) · 15(row-action) · 16(md) 만 갖는데 디자인은 여기 13 을
 ///쓴다. 조용히 12/14 로 반올림하지 않고 값을 보존한 채 이름만 붙였다.
 const CRUMB_GLYPH: f32 = 13.0;
-
-/// 빈/로딩/오류 상태 블록의 공칭 높이 — body 안에서 세로 가운데로 띄우는 기준이다.
-const EMPTY_BLOCK_H: f32 = 120.0;
-
-/// 그 블록 맨 위 스피너·글리프의 한 변.
-const EMPTY_GLYPH: f32 = 22.0;
 
 /// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
 const EMPTY_BODY_MAX_W: f32 = 340.0;

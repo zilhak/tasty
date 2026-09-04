@@ -69,3 +69,65 @@ pub const STRUCT_GAP_3: LogicalPx = LogicalPx(3.0);
 /// 처럼 요소 간 간격 리듬으로 반복 사용되는 스케일이 아니라 컨트롤 내부 위치를
 /// 맞추는 1회성 보정값이라 별도 상수로 구분한다.
 pub const STRUCT_GAP_4: LogicalPx = LogicalPx(4.0);
+
+// ── toast 카드 구조 치수 — 본체와 갤러리 specimen 의 **단일 출처** ──────────────
+//
+// 이 값들은 본체 `src/adapters/ui/toast.rs` 와 갤러리
+// (`catalog/toast_card.rs` · `catalog/components/toast.rs`)에 **각각 정의**돼 있었다.
+// 값이 같아 보여도 정의가 둘이면 언제든 갈릴 수 있고, 갈린 뒤에는 어느 쪽이 정본인지
+// 알 방법이 없다 — "본체와 동일" 이라고 적힌 주석이 실제로는 자체 사본이었던 사고가
+// 같은 라운드의 다른 리뷰에서 나왔다. 그래서 값을 옮기지 않고 **정의를 여기 하나로**
+// 모은다(값 무변경).
+//
+// 아래 넷은 `SIZING` 과 값이 정확히 같으므로 매직넘버로 재정의하지 않고 참조한다 —
+// 이름이 "이 위치에서 어떤 토큰을 쓰는지" 를 남긴다(이 파일 상단 규칙).
+
+/// 스코프 가장자리에서의 안쪽 여백. = `SIZING.spacing_md`.
+pub const TOAST_SCOPE_MARGIN: f32 = SIZING.spacing_md.0;
+/// 본문 텍스트의 좌우 여백. = `SIZING.spacing_md`.
+pub const TOAST_PADDING_X: f32 = SIZING.spacing_md.0;
+/// 본문 텍스트의 상하 여백. = `SIZING.spacing_sm`.
+pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
+/// 좌측 컬러 바 두께. = `SIZING.spacing_xs`.
+pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
+
+/// 토스트 사이 세로 간격. **4px 그리드 밖(6)** 이라 대응 토큰이 없다.
+pub const TOAST_GAP: f32 = 6.0;
+
+/// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
+/// `wrap_width`(= max_width - PADDING_X*2 - ACCENT_BAR_WIDTH)가 음수가 되지 않도록
+/// 최소 한 글자 분량의 여유를 보장한다.
+pub const TOAST_MIN_INNER_WIDTH: f32 = 48.0;
+
+/// 스코프 폭의 80% 를 쓰되 그 결과가 이 값보다 작아지지 않게 하는 하한.
+pub const TOAST_MIN_MAX_WIDTH: f32 = 80.0;
+
+// ── 빈/로딩/오류 중앙 블록 — file_picker · remote_attach 공통 이디엄 ────────────
+
+/// 그 블록 맨 위 스피너·글리프의 한 변. 아이콘 스케일(12·14·15·16) 밖이고 대응
+/// `Theme` 토큰이 없다 — 이 블록만의 구조 크기다. 본체 popup 둘과 갤러리 specimen
+/// 둘, 네 곳이 같은 값을 각자 들고 있던 것을 여기로 모았다.
+pub const CENTER_GLYPH_SIZE: f32 = 22.0;
+
+/// 그 블록의 공칭 높이 — 본체 popup(`file_picker`). 세로 가운데 정렬의 기준이다.
+///
+/// **갤러리 specimen 은 [`CENTER_BLOCK_H_SPECIMEN`](120)을 쓴다 — 값이 갈려 있다.**
+/// 어느 쪽이 맞는지는 디자인 질문이라 값을 맞추지 않고 정의만 한곳에 모았다.
+pub const CENTER_BLOCK_H_POPUP: f32 = 100.0;
+
+/// 같은 블록의 갤러리 specimen 값. [`CENTER_BLOCK_H_POPUP`] 참고 — 불일치는 의도가
+/// 아니라 미해결 상태다.
+pub const CENTER_BLOCK_H_SPECIMEN: f32 = 120.0;
+
+// ── 본체 ↔ 갤러리 specimen 이중 정의였던 나머지 ─────────────────────────────────
+//
+// toast 상수와 같은 형태로 발견된 것들이다. 값이 같아 보여도 정의가 둘이면 갈릴 수
+// 있고, 이 둘은 실제로 주석까지 서로 다르게 적혀 있었다(같은 값에 다른 근거).
+
+/// 빈 상태 글리프 크기 — 아이콘 스케일(12·14·15·16) 밖의 일회성 값. 설정
+/// Misc › Scripts 와 그 갤러리 specimen 이 같은 상수를 읽는다.
+pub const EMPTY_STATE_GLYPH_SIZE: f32 = 26.0;
+
+/// 클립보드 뷰어 CenterState 아이콘 크기 — 아이콘 글리프 토큰 상한(16) 밖의 화면
+/// 전용 고정값. plugin 본체와 갤러리 specimen 이 같은 상수를 읽는다.
+pub const CLIPBOARD_CENTER_ICON_SIZE: f32 = 28.0;

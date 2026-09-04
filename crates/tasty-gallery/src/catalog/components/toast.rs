@@ -21,16 +21,14 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::vspace;
 
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::tokens::{
+    STRUCT_GAP_2, TOAST_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_MIN_MAX_WIDTH,
+    TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+};
 
 use crate::catalog::toast_card::{
     self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind, accent_color,
 };
-
-const TOAST_GAP: f32 = 6.0;
-const SCOPE_MARGIN: f32 = 12.0;
-/// 본체 `toast.rs` 와 동일 — 좁은 surface 에서 max_width 클램프 하한.
-const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
 
 // ── specimen 무대 치수 ────────────────────────────────────────────────────────
 //
@@ -89,7 +87,9 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
             // 본체 toast.rs 와 동일: 좁은 surface 에서 좌측 누출 방지 클램프
             // (정상 폭에서는 0.8 폭 그대로 = 시각 무변경) + wrap_width 음수 가드.
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
-            let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
+            let max_width = (scope_rect.width() * 0.8)
+                .max(TOAST_MIN_MAX_WIDTH)
+                .min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
             let text_color = th.text_primary().gamma_multiply(alpha);
             let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);

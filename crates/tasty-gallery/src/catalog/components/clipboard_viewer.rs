@@ -42,8 +42,8 @@ use crate::catalog::widgets::dialog as kit;
 const POPUP_W: f32 = 480.0;
 const POPUP_H: f32 = 360.0;
 
-/// CenterState 아이콘 크기(design 고정값 28 — Theme 아이콘 글리프 토큰은 16 상한).
-const CENTER_ICON_SIZE: f32 = 28.0;
+// CenterState 아이콘 크기는 plugin 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).
+use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
 
 /// body well 안 mono 미리보기 샘플 — 현재 클립보드 text 표현.
 const PREVIEW: &[&str] = &[

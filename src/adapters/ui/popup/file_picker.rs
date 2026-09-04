@@ -39,13 +39,9 @@ pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 const POPUP_WIDTH: f32 = 640.0;
 const POPUP_HEIGHT: f32 = 480.0;
 
-/// 빈/로딩/오류 중앙 블록 맨 위 스피너·글리프의 한 변. 아이콘 스케일(12·14·15·16)
-/// 밖이고 대응 Theme 토큰이 없다 — 이 블록만의 구조 크기다.
-const CENTER_GLYPH_SIZE: f32 = 22.0;
-
-/// 그 블록의 공칭 높이 — body 안에서 세로 가운데로 띄우는 기준이다.
-/// **갤러리 specimen(`components/file_picker.rs`)은 120 을 쓴다** — 값이 갈린 상태다.
-const CENTER_BLOCK_H: f32 = 100.0;
+// 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
+// `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
+use tasty_ui_widgets::tokens::{CENTER_BLOCK_H_POPUP as CENTER_BLOCK_H, CENTER_GLYPH_SIZE};
 /// 원격 응답이 이 시간 안에 오지 않으면 `ErrorConn` 으로 전이(soft timeout — 세션의
 /// `disconnected` 플래그만으론 "서버는 살아있는데 응답이 안 오는" 케이스를 못 잡는다).
 const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
