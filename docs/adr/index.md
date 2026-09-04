@@ -145,3 +145,4 @@
 | 0132 | [매니페스트가 선언한 인자 타입은 파서가 강제한다 — 변환 실패는 값을 버리지 않고 거부한다](0132-declared-arg-types-are-enforced-not-documentation.md) | Accepted | 2026-09-04 | plugin, cli, manifest, argument-parsing, error-handling, agent-facing, silent-failure |
 | 0133 | [소스 스캔 가드의 모수는 열거하지 말고 고정한다](0133-guard-scan-population-is-pinned-not-enumerated.md) | Accepted | 2026-09-04 | guards, design-tokens, testing, ci, adr-0126, adr-0128, adr-0033 |
 | 0134 | [headless 는 host event 큐를 비우되 비-bus 소비자가 있는 종류만 적용한다](0134-headless-drains-host-events-but-applies-only-hook-fired.md) | Accepted | 2026-09-04 | headless, host-event, plugin-event-bus, agent-runner, hooks, queue, agent-surface |
+| 0135 | [본체의 UI 길이 리터럴은 배율을 안 탄다 — 갤러리는 탄다](0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md) | Accepted | 2026-09-05 | theme, design-tokens, ui-scale, zoom, egui, gallery, guards, adr-0126, adr-0033 |
