@@ -13,7 +13,7 @@
 | 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 |
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 |
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
-| Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
+| Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
 | headless 컴파일 · 단위테스트 · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --lib --bins --no-default-features --locked` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 → **실효 없음** |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |

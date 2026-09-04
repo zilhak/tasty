@@ -167,8 +167,13 @@ const MIN_TEST_CITATIONS: usize = 40;
 /// 인용된 명령이 **좁혀진 조합**인가 — `--lib`/`--bins`/`--test` 로 좁힌 형태는 실제로
 /// 자동으로 돈다(`crossplatform-check.yml` 의 Windows·headless 잡, semver 가드).
 fn is_narrowed(tail: &str) -> bool {
-    tail.split_whitespace()
-        .take(4)
+    // 명령 끝(줄바꿈)까지 본다. 앞 몇 단어만 보면 플래그가 하나 늘 때마다 판정이 밀린다
+    // — 실제로 `--no-fail-fast` 가 나중에 추가됐고, 고정 개수였다면 그 순간 좁힘을
+    // 놓쳤을 것이다. 상수를 없애 그 취약성 자체를 지운다.
+    tail.lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
         .any(|w| w.starts_with("--lib") || w.starts_with("--bins") || w.starts_with("--test"))
 }
 
@@ -946,6 +951,24 @@ fn the_automatic_channel_marker_exempts_only_inside_the_same_row() {
 //
 // 못 잡는 것이 **의도**인 입력도 고정한다. 나중에 판정기를 넓힐 때 그 결정이 테스트
 // 실패로 드러나야 하고, 안 적어 두면 의도된 한계와 버그가 구분되지 않는다.
+
+#[test]
+fn narrowing_is_seen_however_many_flags_precede_it() {
+    // 좁힘 판정이 앞 몇 단어만 본다면, 플래그가 늘어난 날 조용히 밀린다.
+    assert!(is_narrowed(" --workspace --lib --bins --locked\n"));
+    assert!(is_narrowed(
+        " --locked --no-fail-fast --frozen --offline --lib --bins\n"
+    ));
+    assert!(is_narrowed(
+        " --locked --no-default-features --test api_baseline_0_7\n"
+    ));
+    // 좁혀지지 않은 전체 스위트는 그대로 잡힌다.
+    assert!(!is_narrowed(" --locked --no-fail-fast\n"));
+    // 다음 줄의 좁힘을 끌어오지 않는다.
+    assert!(!is_narrowed(
+        " --locked\n      - name: other\n        run: cargo test --lib\n"
+    ));
+}
 
 #[test]
 fn a_claim_that_names_no_test_is_deliberately_not_judged() {
