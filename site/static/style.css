@@ -238,6 +238,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 32px; height: 32px;
   padding: 0;
   border: var(--border);
@@ -250,8 +251,13 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .icon-btn:hover { background: var(--surface0); color: var(--text); }
 .icon-btn svg { width: 16px; height: 16px; }
 
+/* A segmented control, so it has to match the height of the field and the
+   icon buttons beside it. The active fill uses surface1 because surface0 is
+   the border colour: filling with it merged the active half into the outline. */
 .lang-switch {
   display: inline-flex;
+  flex: none;
+  height: 32px;
   border: var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -261,14 +267,15 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  padding: 6px var(--sp-2);
+  padding: 0 var(--sp-3);
   color: var(--subtext0);
   line-height: 1;
   display: inline-flex;
   align-items: center;
 }
+.lang-switch a + a { border-left: var(--border); }
 .lang-switch a:hover { background: var(--surface0); color: var(--text); text-decoration: none; }
-.lang-switch a[aria-current] { background: var(--surface0); color: var(--text); }
+.lang-switch a[aria-current] { background: var(--surface1); color: var(--text); }
 
 /* theme toggle shows the icon of the theme you'd switch *to* */
 .theme-toggle .icon-sun { display: none; }
