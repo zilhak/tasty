@@ -46,13 +46,35 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 
 이 저장소는 PR 을 열지 않고 main 에 직접 push 한다. **"거의" 가 아니라 실측 0 이다** —
 최근 200 run 의 이벤트 분포가 `push 48 · schedule 8 · workflow_dispatch 1`, `pull_request`
-**0** 이다. 그래서 **PR 전용 트리거인 두 워크플로**(`complexity-check` ·
-`supply-chain-check`)에서 PR 트리거는 장식이다 — `supply-chain-check` 는 주간 cron 이
-있어 자동으로 돌지만, `complexity-check` 는 **등록 이래 run 이력이 0 건**이다
-(워크플로는 `active` 로 등록돼 있다 — 조회 실패가 아니라 실제 0).
+**0** 이다(2026-09-04 측정). 그래서 PR 전용 트리거는 이 저장소에서 장식이다.
 
-그러니 채널 판정에는 층이 둘이다: **① 그 명령이 그 테스트를 도는가**(아래 배치별 표)
-**② 그 잡이 애초에 발화하는가**(트리거 열). ①만 보면 PR 트리거를 채널로 세게 된다.
+### 트리거는 어느 ref 의 것인가 — 작업 트리와 원격이 갈린다
+
+트리거를 고쳐도 **push 하기 전까지 아무것도 안 바뀐다.** GitHub 은 `origin/main` 에 있는
+워크플로 파일을 읽는다. 그래서 "트리거를 붙였다" 와 "그 잡이 돈다" 사이에 push 라는 층이
+하나 더 있고, 이 저장소는 로컬 main 이 원격보다 크게 앞서는 기간이 길어 그 층이 실제로
+벌어진다.
+
+2026-09-05 실측 (`complexity-check.yml`):
+
+| 무엇 | 값 | 어떻게 쟀나 |
+|---|---|---|
+| 작업 트리의 트리거 | `push:[main]` + `pull_request:[main]` + `workflow_dispatch` | 파일 |
+| `origin/main` 의 트리거 | `pull_request:[main]` + `workflow_dispatch` | `git show origin/main:…` |
+| `.github/workflows/` 파일 수 | 로컬 10 / `origin/main` 8 | `git show origin/main:` — 두 워크플로는 원격에 **없다** |
+| 등록 이래 run 수 | **0** | `gh run list --workflow=complexity-check.yml` |
+
+즉 [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md) 이 넣은 `push:[main]`
+은 **아직 발사된 적이 없다.** run 0 의 원인이 "PR 전용 트리거" 에서 "미push" 로 바뀐
+것이지, 0 이 해소된 것이 아니다.
+
+**이 표는 시점 측정이다.** 값을 갱신하려 들지 말고, 판정이 필요하면 오른쪽 열의 명령을
+그 자리에서 다시 돌려라 — 네 값이 각각 독립으로 움직인다. 커밋 수처럼 커밋마다 바뀌는
+값은 애초에 안 적었다.
+
+그러니 채널 판정에는 층이 셋이다: **① 그 명령이 그 테스트를 도는가**(아래 배치별 표)
+**② 그 잡이 애초에 발화하는가**(트리거 열) **③ 그 트리거가 원격에 가 있는가.**
+①만 보면 PR 트리거를 채널로 세고, ②만 보면 push 안 된 트리거를 채널로 센다.
 
 ## "안 돈다" 를 쓰기 전에 두 가지를 갈라라
 
@@ -69,7 +91,7 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 | 복잡도 게이트의 축 | 강제 수단 | 실효 자동성 |
 |---|---|---|
 | 함수 cognitive | clippy `cognitive_complexity = "deny"` | **있다** — 자동 잡의 컴파일 단계에서 막힌다 |
-| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **있다** — main push 마다 돈다. 2026-09-04 까지는 PR 전용이라 **run 이력이 0 건**이었고, 그 사이 임계를 새로 넘은 26 건이 부채로 동결됐다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)) |
+| 파일 SLOC | `scripts/check-file-size.sh` (`complexity-check.yml`) | **작업 트리에는 있다, 원격에는 아직 없다** — 아래 "트리거는 어느 ref 의 것인가" |
 
 **③ 그 채널이 실패할 수 있는가.** 트리거가 붙어 잡이 도는 것과, 그 잡이 문제를 만났을 때
 실제로 빨개지는 것은 다른 질문이다. 파일 SLOC 게이트가 그 예였다 — 트리거를 붙인 뒤에도

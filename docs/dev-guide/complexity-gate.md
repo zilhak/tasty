@@ -2,7 +2,7 @@
 
 함수 cognitive 복잡도와 파일 SLOC 이 임계를 넘는 **신규/증가분**을 차단한다. 기존 초과분은 위치 단위 예외로 동결(grandfather)하고, 리팩터로 줄면 예외를 지워 래칫을 조인다.
 
-**두 축의 강제 채널은 다르다** — cognitive 는 clippy `deny` 라 자동 잡에서 컴파일 자체가 막히고, 파일 SLOC 은 전용 워크플로가 main push 마다 돌린다(2026-09-04 이전에는 PR 전용이라 한 번도 발화하지 않았다 — [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). 채널 정본은 [ci-gates](ci-gates.md). 결정 근거·대안은 [ADR-0037](../adr/0037-complexity-gate.md).
+**두 축의 강제 채널은 다르다** — cognitive 는 clippy `deny` 라 자동 잡에서 컴파일 자체가 막히고, 파일 SLOC 은 전용 워크플로(`complexity-check.yml`)가 담당한다 — **그 트리거와 실제 발사 여부는 시점마다 다르니 여기서 값을 주장하지 않는다.** [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md) 이 `push:[main]` 을 더했고, 그것이 원격에 가 있는지까지가 판정이다. 채널 정본은 [ci-gates](ci-gates.md). 결정 근거·대안은 [ADR-0037](../adr/0037-complexity-gate.md).
 
 ## 무엇을·도구·임계값
 
