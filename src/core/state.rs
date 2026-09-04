@@ -1758,3 +1758,63 @@ mod default_params_tests {
         assert!(!e.apply_kind_default_params(&def, &mut params, None));
     }
 }
+
+/// 엔진 생성 실패가 **패닉이 아니라 `Err`** 로 표면화되는지 고정한다.
+///
+/// 창 생성 경로(`window_lifecycle::create_new_window`)는 이 `Err` 를 받아 창만 취소하고
+/// 나머지 창의 세션을 살린다. 여기가 패닉하면 그 위의 graceful 처리가 전부 무의미해지고,
+/// 사용자 `config.toml` 의 셸 경로 오타 하나가 실행 중인 모든 세션을 날린다
+/// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+#[cfg(test)]
+mod engine_creation_failure_tests {
+    use super::*;
+
+    fn bogus_shell_settings() -> Settings {
+        let mut s = Settings::default();
+        s.general.shell = "/nonexistent/definitely/not/a/real/shell-xyzzy".to_string();
+        // 레이아웃 복원이 켜져 있으면 셸 spawn 경로를 타지 않을 수 있다 — 첫 부팅과
+        // 같은 "워크스페이스를 새로 만드는" 경로를 강제한다.
+        s.general.restore_layout = false;
+        s
+    }
+
+    fn in_memory() -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
+        std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_memory::MemoryStore::open_in_memory().expect("in-memory store"),
+        ))
+    }
+
+    #[test]
+    fn a_bogus_shell_path_makes_engine_creation_return_err_not_panic() {
+        let waker: Waker = std::sync::Arc::new(|| {});
+        let result = CoreState::new_with_ids_and_settings(
+            80,
+            24,
+            waker,
+            None,
+            None,
+            in_memory(),
+            bogus_shell_settings(),
+        );
+        let err = result
+            .err()
+            .expect("a bogus shell must fail engine creation");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("shell-xyzzy"),
+            "the error must name the shell that could not be spawned, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn a_valid_shell_still_produces_an_engine_with_one_workspace() {
+        // 위 테스트가 "무조건 Err" 로 통과하지 않는다는 것을 함께 고정한다.
+        let waker: Waker = std::sync::Arc::new(|| {});
+        let mut ok = Settings::default();
+        ok.general.restore_layout = false;
+        let engine =
+            CoreState::new_with_ids_and_settings(80, 24, waker, None, None, in_memory(), ok)
+                .expect("default settings must produce an engine");
+        assert_eq!(engine.workspaces.len(), 1);
+    }
+}

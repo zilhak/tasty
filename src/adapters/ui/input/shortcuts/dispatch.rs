@@ -254,7 +254,10 @@ impl MainView {
             "quit" => send_app_event(proxy, crate::AppEvent::QuitRequested),
             "quit_immediate" => send_app_event(proxy, crate::AppEvent::Shutdown),
             "quit_minimize" => send_app_event(proxy, crate::AppEvent::Minimize),
-            "new_window" => send_app_event(proxy, crate::AppEvent::CreateWindow),
+            "new_window" => send_app_event(
+                proxy,
+                crate::AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+            ),
             "find" => {
                 // winit 경로는 검색창 비포커스(터미널 포커스) 상태에서만 도달한다.
                 // 검색창 포커스 상태의 find 는 egui 경로(search_bar)가 처리한다.

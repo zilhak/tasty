@@ -80,8 +80,9 @@ pub(super) fn boot_grid_size(
 /// 머신이 워커 스레드에서 실행하며(`boot_machine.rs` 의 WaitingEngine),
 /// 동기 wrapper 의 첫 부팅 분기도 같은 본문을 쓴다.
 ///
-/// panic: `CoreState::new_with_ids` 실패 시 expect — 워커에서 돌 때는 결과
-/// 채널 drop 으로 표면화되고 WaitingEngine 의 disconnect fallback 이 받는다.
+/// 실패: `CoreState::new_with_ids`(셸 spawn 등) 실패를 `Err` 로 반환한다. 워커에서
+/// 돌 때는 그 `Err` 가 결과 채널로 전달돼 `WaitingEngine` 이 진단 후 정상 종료하고,
+/// 동기 wrapper 경로는 caller 로 전파된다(패닉시키지 않는다).
 pub(super) fn build_engine_and_plugins(
     cols: usize,
     rows: usize,
@@ -90,7 +91,7 @@ pub(super) fn build_engine_and_plugins(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
-) -> (crate::core::CoreState, plugin::PluginManager) {
+) -> anyhow::Result<(crate::core::CoreState, plugin::PluginManager)> {
     let engine = build_core_state_first_boot(
         cols,
         rows,
@@ -100,9 +101,9 @@ pub(super) fn build_engine_and_plugins(
         layout_slot,
         #[cfg(debug_assertions)]
         input_simulation_enabled,
-    );
+    )?;
     let mgr = build_plugin_manager(factory, &engine);
-    (engine, mgr)
+    Ok((engine, mgr))
 }
 
 /// 첫 부팅의 CoreState 생성 (T2.6 계측 포함). 공유 source 없음 —
@@ -116,15 +117,16 @@ fn build_core_state_first_boot(
     memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     layout_slot: crate::core::layout_persistence::LayoutSlotId,
     #[cfg(debug_assertions)] input_simulation_enabled: bool,
-) -> crate::core::CoreState {
+) -> anyhow::Result<crate::core::CoreState> {
     // 레이아웃 슬롯 로드 등 디스크 I/O 포함 — T2↔T3 갭의 두 번째 기여자라 별도
     // 계측 (첫 번째는 begin_boot 의 db+theme). scrollback orphan GC 는 여기 없다 —
     // 전 슬롯 union 으로 부팅 1 회만 돈다(`begin_boot` 초입).
     let t_engine = std::time::Instant::now();
     let waker: crate::terminal::Waker = factory.make_default_waker();
+    // engine 생성 실패(= 사용자 shell 경로 오타·PTY/fd 고갈 등)를 패닉으로 올리지
+    // 않고 caller 로 반환한다. 부팅은 진단 후 정상 종료, 새 창은 안내 후 취소한다.
     let mut engine =
-        crate::core::CoreState::new_with_ids(cols, rows, waker, None, Some(layout_slot), memory)
-            .expect("failed to create engine state");
+        crate::core::CoreState::new_with_ids(cols, rows, waker, None, Some(layout_slot), memory)?;
     engine.waker_factory = Some(factory);
     // 첫 부팅 — identify_worker 는 App proxy 가 필요.
     engine.identify_worker = Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
@@ -140,7 +142,7 @@ fn build_core_state_first_boot(
         ms = t_engine.elapsed().as_secs_f64() * 1000.0,
         "T2.6 engine_init (CoreState::new_with_ids + layout slot load)"
     );
-    engine
+    Ok(engine)
 }
 
 /// PluginManager 생성 + builtin 설치·discovery·spawn (T3a·T3b 계측 포함).
@@ -187,6 +189,36 @@ fn build_plugin_manager(
     mgr
 }
 
+/// 어떤 창을 열려다 실패했는지 — 안내 문구를 고르는 유일한 기준이다.
+///
+/// 지점마다 문구가 달라야 한다: 설정 창이 안 열렸는데 "새 창을 열 수 없습니다" 가 뜨면
+/// 그냥 틀린 안내다. 종료 확인 모달은 여기 없다 — 그 실패는 안내가 아니라
+/// `begin_shutdown` 폴백으로 처리한다(ADR-0117).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WindowCreationTarget {
+    NewWindow,
+    Settings,
+    Plugins,
+}
+
+impl WindowCreationTarget {
+    fn title_key(self) -> &'static str {
+        match self {
+            Self::NewWindow => "window_error.new_window.title",
+            Self::Settings => "window_error.settings.title",
+            Self::Plugins => "window_error.plugins.title",
+        }
+    }
+
+    fn body_key(self) -> &'static str {
+        match self {
+            Self::NewWindow => "window_error.new_window.body",
+            Self::Settings => "window_error.settings.body",
+            Self::Plugins => "window_error.plugins.body",
+        }
+    }
+}
+
 impl App {
     /// Create an AppState from a GPU state, computing grid size from the sidebar width.
     ///
@@ -198,8 +230,8 @@ impl App {
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) -> crate::state::AppState {
-        self.ensure_engine_and_plugins(gpu, sidebar_width);
+    ) -> anyhow::Result<crate::state::AppState> {
+        self.ensure_engine_and_plugins(gpu, sidebar_width)?;
 
         // pending_layout_restore 가 있으면: wait-for-plugin loop 를 거쳐 등록
         // 대기 → `DomainIntent::ApplyPendingLayoutRestore` 발화. Intent 본문
@@ -225,7 +257,7 @@ impl App {
             None => None,
         };
 
-        self.assemble_app_state(bootstrapped.or(restored_idx_after_layout))
+        Ok(self.assemble_app_state(bootstrapped.or(restored_idx_after_layout)))
     }
 
     /// 엔진(CoreState)·plugin manager 의 원자 초기화 — `create_app_state` 선두 절반.
@@ -240,7 +272,7 @@ impl App {
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) {
+    ) -> anyhow::Result<()> {
         let (cols, rows) = boot_grid_size(gpu, sidebar_width);
         let factory: crate::waker::SharedWakerFactory = Arc::new(
             crate::waker_factory_winit::WinitWakerFactory::new(self.view.proxy.clone()),
@@ -300,8 +332,7 @@ impl App {
                     Some(next_ids),
                     Some(layout_slot),
                     self.core.memory_arc(),
-                )
-                .expect("failed to create engine state");
+                )?;
                 engine.waker_factory = Some(factory.clone());
                 engine.surface_registry = surface_registry;
                 engine.file_format = file_format;
@@ -331,7 +362,7 @@ impl App {
                     layout_slot,
                     #[cfg(debug_assertions)]
                     self.input_simulation_enabled,
-                )
+                )?
             };
             self.core_state = Some(engine);
         }
@@ -340,6 +371,7 @@ impl App {
             let mgr = build_plugin_manager(factory, self.core_state());
             self.plugin_manager = Some(mgr);
         }
+        Ok(())
     }
 
     /// `DomainIntent::ApplyPendingLayoutRestore` 1회 apply (T5 계측 포함).
@@ -542,7 +574,11 @@ impl App {
     }
 
     /// Create a new window with its own terminal.
-    pub(crate) fn create_new_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    pub(crate) fn create_new_window(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        origin: crate::app::event::WindowRequestOrigin,
+    ) {
         use winit::window::WindowAttributes;
 
         let title = if cfg!(debug_assertions) {
@@ -560,11 +596,20 @@ impl App {
         // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
         attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
 
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create window"),
-        );
+        // 새 창 생성 실패는 패닉이 아니다 — 이미 떠 있는 창들의 세션을 죽이지 않도록,
+        // 기존 창에 안내를 띄우고 새 창만 취소한다.
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                self.notify_window_creation_failed(
+                    WindowCreationTarget::NewWindow,
+                    origin,
+                    "failed to create new window",
+                    e,
+                );
+                return;
+            }
+        };
         window.set_ime_allowed(true);
 
         // Windows 절전(suspend/resume) 감지 — WM_POWERBROADCAST 후킹. resume 시
@@ -579,12 +624,38 @@ impl App {
         let db_init_error = crate::db::init().err();
 
         let (settings, invalid_theme_name) = boot_load_and_normalize_settings();
-        let gpu = self
-            .create_gpu_state(window.clone(), &settings.appearance)
-            .expect("failed to initialize GPU");
+        // GPU 초기화 실패(어댑터 부재 등) — 부팅 경로처럼 안내 후 창을 취소한다.
+        // 부팅과 달리 종료하지 않는다(기존 창이 계속 그려져야 한다). window 는 여기서
+        // 반환하며 drop 돼 OS 창이 닫힌다.
+        let gpu = match self.create_gpu_state(window.clone(), &settings.appearance) {
+            Ok(g) => g,
+            Err(e) => {
+                self.notify_window_creation_failed(
+                    WindowCreationTarget::NewWindow,
+                    origin,
+                    "failed to initialize GPU for new window",
+                    e,
+                );
+                return;
+            }
+        };
 
+        // 엔진 생성 실패의 유일한 `?` 는 셸 spawn 이다 — 사용자 `config.toml` 의 shell
+        // 경로 오타·PTY/fd 고갈이 여기로 온다. 패닉시키면 실행 중인 모든 세션이 사라지므로,
+        // 안내 후 새 창만 취소한다(window·gpu 는 반환하며 drop).
         let (mut state, mut core_state) =
-            self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width);
+            match self.acquire_app_state_and_engine(&gpu, settings.appearance.sidebar_width) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    self.notify_window_creation_failed(
+                        WindowCreationTarget::NewWindow,
+                        origin,
+                        "failed to create engine for new window",
+                        e,
+                    );
+                    return;
+                }
+            };
         self.ensure_at_least_one_workspace(&mut core_state, &mut state);
 
         // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
@@ -607,13 +678,61 @@ impl App {
         tracing::info!("created new window {:?}", self.view.focused_view_id);
     }
 
+    /// 창(또는 설정/플러그인/종료 모달) 생성 실패를 기존 창에 안내한다. 새 창은
+    /// 그릴 수 없으므로(엔진·GPU 가 없다) 안내를 **이미 떠 있는** focused 창에 띄운다
+    /// — 그 창의 세션은 그대로 살아 있다. 띄울 창이 하나도 없으면(첫 부팅 이전 등)
+    /// 로그만 남긴다 — 그 경우는 부팅 경로가 별도로 종료를 판단한다.
+    pub(super) fn notify_window_creation_failed(
+        &mut self,
+        target: WindowCreationTarget,
+        origin: crate::app::event::WindowRequestOrigin,
+        context: &str,
+        err: impl std::fmt::Display,
+    ) {
+        use crate::app::event::WindowRequestOrigin;
+
+        tracing::error!("{context}: {err}");
+        // 안내는 **이미 떠 있는** 창에 띄운다 — 실패한 창은 엔진도 GPU 도 없어 그릴 수
+        // 없다. focused 창이 모달(설정/플러그인)이면 `focused_window_mut` 이 None 을
+        // 주므로, 메인 창이 남아 있는 한 그 중 하나로 폴백한다. 안내가 조용히 사라지지
+        // 않게 하는 것이 요점이다.
+        let Some(view) = self.notice_window_mut() else {
+            tracing::error!(
+                "no main window to surface the window-creation failure notice ({context})"
+            );
+            return;
+        };
+        match origin {
+            // 사용자가 방금 요청한 조작의 결과다 — 모달로 확실히 알린다.
+            WindowRequestOrigin::User => {
+                let modal = crate::adapters::ui::info_modal::InfoModal {
+                    title: crate::i18n::t(target.title_key()).to_string(),
+                    body: crate::i18n::t_fmt(target.body_key(), &err.to_string()),
+                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
+                    extra_buttons: Vec::new(),
+                };
+                crate::adapters::ui::info_modal::show_info_modal(&mut view.state, modal);
+            }
+            // 에이전트가 요청한 것이라 사용자는 이 실패를 기다리고 있지 않다. 모달은
+            // 포커스를 가져가므로 핵심 원칙 1 을 어긴다 — 포커스를 건드리지 않는
+            // toast 로 알린다 (ADR-0117).
+            WindowRequestOrigin::Agent => {
+                view.state.toasts.push(
+                    crate::i18n::t_fmt(target.body_key(), &err.to_string()),
+                    crate::adapters::ui::ToastKind::Error,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+            }
+        }
+    }
+
     /// `create_new_window` 지원 — parked state 가 있으면 재사용, 없으면
     /// `create_app_state`(+ `App.core_state` take)로 새로 만든다.
     fn acquire_app_state_and_engine(
         &mut self,
         gpu: &GpuState,
         sidebar_width: tasty_type_geometry::length::LogicalPx,
-    ) -> (crate::state::AppState, crate::core::CoreState) {
+    ) -> anyhow::Result<(crate::state::AppState, crate::core::CoreState)> {
         // Reuse parked state if available (restoring previous session)
         let (state, parked_engine) = if !self.parked_states.is_empty() {
             let parked = self.parked_states.remove(0);
@@ -624,7 +743,7 @@ impl App {
             let (st, eng) = parked;
             (st, Some(eng))
         } else {
-            let st = self.create_app_state(gpu, sidebar_width);
+            let st = self.create_app_state(gpu, sidebar_width)?;
             (st, None)
         };
 
@@ -645,7 +764,7 @@ impl App {
                 .take()
                 .expect("App.core_state must be present to register a main window"),
         };
-        (state, core_state)
+        Ok((state, core_state))
     }
 
     /// `create_new_window` 지원 — 새 윈도우의 engine 이 워크스페이스가 하나도 없으면

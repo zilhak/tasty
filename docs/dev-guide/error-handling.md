@@ -72,6 +72,29 @@ crate::out::flush()?;
 println!("{}", serde_json::to_string_pretty(&value)?);
 ```
 
+## 창·GPU·엔진·스레드 생성 실패
+
+생성 실패는 패닉하지 않는다. 이미 터미널 세션이 떠 있는 상태에서 패닉하면 그 창 하나가
+아니라 **실행 중인 모든 창의 작업**이 사라진다. 결정 전문과 근거는
+[ADR-0117](../adr/0117-window-and-modal-creation-failure-policy.md).
+
+| 지점 | 처리 |
+|------|------|
+| 부팅 창 생성 · 부팅 엔진 생성 · GPU 어댑터 부재 | 진단 3줄을 `tracing::error!` 한 이벤트로 내고 `exit(1)`. `eprintln!` 은 파일 로그에 안 남아 쓰지 않는다 |
+| 부팅의 그 외 GPU 실패 | 패닉 유지 — 환경 문제가 아니라 버그이므로 크래시 리포팅 경로에 남긴다 |
+| 새 창 · 설정 · 플러그인 모달 | 그 창만 취소하고 살아 있는 메인 창에 안내. 안내 문구는 지점별 i18n 키 |
+| 종료 확인 모달 | 확인을 건너뛰고 `begin_shutdown()`. 생략 사실을 toast + `error!` 로 알린다 |
+| 호스트 스레드 spawn | 에러 반환(`ObserverError::ThreadSpawn`) 또는 로그 후 미등록 |
+| plugin 프로세스 스레드 spawn | 패닉 유지 — 폭발 반경이 그 plugin 프로세스로 한정된다 |
+
+**안내 채널은 요청 origin 이 가른다.** 사용자 조작(메뉴 · 단축키 · dock · tray)발 실패는
+`InfoModal`, 에이전트 IPC(`window.create`)발 실패는 **toast** 다. `InfoModal` 은 포커스를
+가져가므로, 에이전트 행동의 부수효과가 사용자 포커스에 닿지 않는다는 핵심 원칙 1 을
+어기게 된다.
+
+이 경로들은 winit `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다 —
+`tests/no_panic_in_window_creation.rs` 가 소스 형태로 패닉 재유입을 막는다.
+
 ## 로그 메시지 작성
 
 **무엇이** 실패했는지 + **원인** + (가능하면) **영향**. 변수 보간으로 컨텍스트를 담는다.

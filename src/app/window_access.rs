@@ -28,6 +28,25 @@ impl App {
             .and_then(|w| w.as_main_mut())
     }
 
+    /// 사용자 안내(InfoModal / toast)를 띄울 메인 창.
+    ///
+    /// 포커스된 뷰가 모달(설정 · 플러그인 · 종료 확인)이면 [`Self::focused_window_mut`]
+    /// 은 `None` 을 준다 — 그때도 메인 창이 남아 있으면 그 중 하나로 폴백한다. 안내가
+    /// "포커스가 마침 모달에 있었다" 는 이유로 조용히 사라지지 않게 하는 것이 요점이다
+    /// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+    pub(crate) fn notice_window_mut(&mut self) -> Option<&mut view::main::MainView> {
+        let id = match self.focused_window() {
+            Some(_) => self.view.focused_view_id,
+            None => self
+                .view
+                .views
+                .iter()
+                .find(|(_, w)| w.as_main().is_some())
+                .map(|(id, _)| *id),
+        }?;
+        self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
+    }
+
     /// 모든 MainView를 순회. 모달은 제외된다.
     pub(crate) fn main_windows_iter_mut(
         &mut self,

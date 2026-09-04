@@ -33,8 +33,8 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         match event {
-            AppEvent::CreateWindow => {
-                self.create_new_window(event_loop);
+            AppEvent::CreateWindow(origin) => {
+                self.create_new_window(event_loop, origin);
             }
             AppEvent::RunLuaScript { source, name } => {
                 if let Some(engine) = self.lua_engine.as_ref() {
@@ -595,11 +595,26 @@ impl App {
         }
         // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
         attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
-        let window = std::sync::Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create window"),
-        );
+        // 첫(부팅) 창 생성 실패 — 표시할 창 자체가 없다. 패닉(가짜 크래시 리포트)
+        // 대신 사람이 읽을 진단을 stderr 로 내고 정상 종료한다(GPU 어댑터 부재 처리와
+        // 같은 방식).
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => std::sync::Arc::new(w),
+            Err(e) => {
+                // tracing::error! 는 fmt subscriber 로 stderr(터미널에서 실행한
+                // 사용자에게 보임) + 파일 로그 둘 다에 나간다 — eprintln 은 파일에
+                // 안 남아 사후 진단이 불가능하다(C.11 println 금지와도 합치). 진단
+                // 3줄(title/body/hint)을 한 이벤트로 합친다 — tracing 매크로 확장이
+                // 커서 여러 번 부르면 cognitive_complexity(deny) 를 넘긴다.
+                tracing::error!(
+                    "boot window creation failed: {e}\n{}\n{}\n{}",
+                    crate::i18n::t("boot.window_error.title"),
+                    crate::i18n::t_fmt("boot.window_error.body", &e.to_string()),
+                    crate::i18n::t("boot.window_error.hint"),
+                );
+                std::process::exit(1);
+            }
+        };
         tracing::info!(
             target: "tasty::boot",
             ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
@@ -623,8 +638,9 @@ impl App {
     }
 
     /// `resumed()` 의 GPU 초기화. 어댑터가 아예 없으면(드라이버 미설치 등 정상적으로
-    /// 발생 가능한 환경 문제) panic(크래시 리포트 대상) 대신 사람이 읽을 안내를
-    /// stderr 로 내고 조용히 종료한다. 그 외 에러는 예상 밖 실패이므로 panic 시켜
+    /// 발생 가능한 환경 문제) panic(크래시 리포트 대상) 대신 사람이 읽을 진단을
+    /// `tracing::error!`(stderr + 파일 로그)로 내고 정상 종료한다 — 부팅 창 생성·엔진
+    /// 생성 실패와 같은 처리다(ADR-0117). 그 외 에러는 예상 밖 실패이므로 panic 시켜
     /// 크래시 리포팅 경로를 유지한다.
     fn try_init_boot_gpu(
         &mut self,
@@ -635,9 +651,17 @@ impl App {
         let gpu = match self.create_gpu_state(window.clone(), appearance) {
             Ok(gpu) => gpu,
             Err(e) if e.downcast_ref::<crate::app::NoGpuAdapter>().is_some() => {
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.title"));
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.body"));
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.hint"));
+                // 부팅 창 생성·엔진 생성 실패와 같은 채널로 낸다 — `tracing::error!` 는
+                // stderr(터미널 사용자에게 보임) + 파일 로그 둘 다에 나가고, eprintln 은
+                // 파일에 안 남아 사후 진단이 불가능하다(C.11 준수). 진단 3줄을 한
+                // 이벤트로 합친다 — tracing 매크로 확장이 커서 여러 번 부르면
+                // cognitive_complexity(deny) 를 넘긴다.
+                tracing::error!(
+                    "boot gpu init failed: no compatible adapter\n{}\n{}\n{}",
+                    crate::i18n::t("boot.gpu_error.title"),
+                    crate::i18n::t("boot.gpu_error.body"),
+                    crate::i18n::t("boot.gpu_error.hint"),
+                );
                 std::process::exit(1);
             }
             Err(e) => panic!("failed to initialize GPU: {e}"),
@@ -875,13 +899,19 @@ impl App {
                         tracing::info!("tray show: focusing existing main window");
                     } else {
                         tracing::info!("tray show: no live window, creating");
-                        crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+                        crate::shortcuts::send_app_event(
+                            &self.view.proxy,
+                            AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+                        );
                     }
                 }
                 #[cfg(any(windows, target_os = "linux"))]
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::TrayShowWindow);
             } else if menu_id == ids.new_window {
-                crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+                crate::shortcuts::send_app_event(
+                    &self.view.proxy,
+                    AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+                );
             } else if menu_id == ids.quit {
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             }

@@ -29,6 +29,31 @@ title = "GPU 어댑터를 찾을 수 없음"
 body = "소프트웨어 fallback 까지 시도했지만 호환되는 GPU 어댑터를 찾지 못했습니다. 대부분 이 머신에 GPU 드라이버(Vulkan/OpenGL)가 없다는 뜻입니다."
 hint = "GPU 드라이버를 설치·업데이트하세요. GPU 없이 사용하려면 --no-default-features 옵션으로 소스에서 headless 빌드하세요."
 
+[boot.engine_error]
+title = "터미널을 시작할 수 없음"
+body = "시작할 때 터미널 엔진을 만들지 못했습니다. 대개 config.toml 의 shell 경로가 잘못된 경우입니다. 상세: {}"
+hint = "config.toml 의 general.shell 값이 실제로 존재하는 셸을 가리키는지 확인한 뒤 다시 실행하세요."
+
+[boot.window_error]
+title = "창을 열 수 없음"
+body = "첫 창을 만들지 못했습니다. 상세: {}"
+hint = "디스플레이·컴포지터와 그래픽 드라이버를 확인한 뒤 다시 실행하세요."
+
+[window_error.new_window]
+title = "새 창을 열 수 없음"
+body = "새 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+
+[window_error.settings]
+title = "설정 창을 열 수 없음"
+body = "설정 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+
+[window_error.plugins]
+title = "플러그인 창을 열 수 없음"
+body = "플러그인 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+
+[window_error.quit_confirm]
+skipped = "확인 창을 열 수 없어 확인 없이 종료합니다."
+
 [plugins]
 title = "플러그인"
 empty = "설치된 플러그인이 없습니다."

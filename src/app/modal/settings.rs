@@ -34,17 +34,35 @@ impl App {
             attrs = attrs.with_window_icon(Some(icon));
         }
 
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create settings window"),
-        );
+        // 모달 창·GPU 생성 실패는 패닉이 아니다 — 기존 창들을 살리고 안내만 띄운 뒤
+        // 모달 열기를 취소한다.
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                self.notify_window_creation_failed(
+                    crate::app::window_lifecycle::WindowCreationTarget::Settings,
+                    crate::app::event::WindowRequestOrigin::User,
+                    "failed to create settings window",
+                    e,
+                );
+                return;
+            }
+        };
 
         let init = self.resolve_settings_init_data();
 
-        let gpu = self
-            .create_gpu_state(window.clone(), &init.settings.appearance)
-            .expect("failed to initialize GPU for settings");
+        let gpu = match self.create_gpu_state(window.clone(), &init.settings.appearance) {
+            Ok(g) => g,
+            Err(e) => {
+                self.notify_window_creation_failed(
+                    crate::app::window_lifecycle::WindowCreationTarget::Settings,
+                    crate::app::event::WindowRequestOrigin::User,
+                    "failed to initialize GPU for settings",
+                    e,
+                );
+                return;
+            }
+        };
 
         let modal_window_id = window.id();
         let mut modal = view::SettingsView::new(

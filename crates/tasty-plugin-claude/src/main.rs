@@ -260,6 +260,10 @@ impl Plugin for ClaudePlugin {
         // enable 되며, 추적 대상이 사라지면 이 스레드 자신이 매 tick 생존을 확인해
         // disable 한다(`error_scan_loop` / `error_scan::scan_target_is_alive` 참조).
         let scanner = self.scanner.clone();
+        // spawn 실패 시 패닉을 유지한다 — 호스트(tasty)가 아니라 **이 plugin
+        // 프로세스만** 죽고, 호스트는 plugin 사망을 이미 감지·복구한다. 호스트 쪽
+        // 스레드 spawn 이 에러 반환으로 바뀐 것과 대칭이 아닌 이유가 이것이다:
+        // 실패 폭발 반경이 다르다(`docs/dev-guide/error-handling.md`).
         std::thread::Builder::new()
             .name("claude-error-scan".into())
             .spawn(move || error_scan_loop(scanner, host))

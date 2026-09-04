@@ -36,7 +36,10 @@ impl App {
             return self.ipc_handle_timer_list(cmd);
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
-            crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+            crate::shortcuts::send_app_event(
+                &self.view.proxy,
+                AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::Agent),
+            );
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({"scheduled": true}),

@@ -150,6 +150,10 @@ impl Plugin for AgentStreamPlugin {
     fn on_start(&mut self, host: HostHandle, _bus: BusHandle) {
         self.restore_endpoint();
         let registry = self.registry.clone();
+        // spawn 실패 시 패닉을 유지한다 — 호스트(tasty)가 아니라 **이 plugin
+        // 프로세스만** 죽고, 호스트는 plugin 사망을 이미 감지·복구한다. 호스트 쪽
+        // 스레드 spawn 이 에러 반환으로 바뀐 것과 대칭이 아닌 이유가 이것이다:
+        // 실패 폭발 반경이 다르다(`docs/dev-guide/error-handling.md`).
         std::thread::Builder::new()
             .name("agent-stream-tail".into())
             .spawn(move || pump::tail_loop(registry, host))

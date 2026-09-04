@@ -4,6 +4,22 @@
 //! 하면 App::user_event 가 분기 처리한다. variant 별 producer/consumer 매핑은
 //! 각 doc-comment 참조.
 
+/// 새 창 생성을 **누가** 요청했는지. 실패 안내 채널을 가르는 유일한 기준이다.
+///
+/// 핵심 원칙 1 은 에이전트 행동의 부수효과가 사용자 상태(포커스)에 닿는 것을 금지한다.
+/// 실패 안내라도 예외가 아니다 — 사용자가 하지 않은 일의 실패 통지 때문에 하던 일의
+/// 포커스를 잃어서는 안 된다. 그래서 `Agent` 는 포커스를 건드리지 않는 toast 로,
+/// `User` 는 방금 그 조작의 결과이므로 모달로 알린다.
+/// 근거: `docs/adr/0117-window-and-modal-creation-failure-policy.md`.
+#[cfg(feature = "gui")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WindowRequestOrigin {
+    /// 메뉴 · 단축키 · dock · tray — 사용자가 방금 요청했다.
+    User,
+    /// `window.create` / `view.create` IPC — 에이전트가 요청했다.
+    Agent,
+}
+
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
 pub(crate) enum AppEvent {
@@ -22,9 +38,11 @@ pub(crate) enum AppEvent {
     /// delay-aware repaint (`Duration > 0`) 는 idle frame loop 방지 위해 callback 단계에서 drop 된다.
     #[cfg(feature = "gui")]
     EguiRepaint { window_id: winit::window::WindowId },
-    /// Request to create a new window (triggered by IPC or shortcut).
+    /// Request to create a new window. 페이로드는 **누가 요청했는지** — 창 생성이
+    /// 실패했을 때 안내를 어느 채널로 낼지 가르는 유일한 기준이다
+    /// ([`WindowRequestOrigin`], `docs/adr/0117-window-and-modal-creation-failure-policy.md`).
     #[cfg(feature = "gui")]
-    CreateWindow,
+    CreateWindow(WindowRequestOrigin),
     /// CSD titlebar close 버튼이 발화하는 per-window 닫기 요청 (사용자 클릭).
     /// 네이티브 `WindowEvent::CloseRequested` 와 동일한 라이프사이클로 라우팅한다
     /// (단일 창이면 quit 흐름, 다중 창이면 해당 창만 닫음).

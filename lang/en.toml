@@ -29,6 +29,31 @@ title = "No GPU adapter found"
 body = "Tasty could not find a compatible GPU adapter, even after trying a software fallback. This usually means no GPU driver (Vulkan/OpenGL) is available on this machine."
 hint = "Install/update your GPU driver, or build Tasty from source with --no-default-features for headless (no GPU) operation."
 
+[boot.engine_error]
+title = "Could not start the terminal"
+body = "Tasty could not create the terminal engine on startup. The most common cause is a bad shell path in your config.toml. Details: {}"
+hint = "Check general.shell in your config.toml and make sure the shell exists, then start Tasty again."
+
+[boot.window_error]
+title = "Could not open the window"
+body = "Tasty could not create its first window. Details: {}"
+hint = "Check your display/compositor and graphics drivers, then start Tasty again."
+
+[window_error.new_window]
+title = "Could not open a new window"
+body = "The new window could not be opened, so it was cancelled. Your other windows keep running. Cause: {}"
+
+[window_error.settings]
+title = "Could not open Settings"
+body = "The settings window could not be opened, so it was cancelled. Your other windows keep running. Cause: {}"
+
+[window_error.plugins]
+title = "Could not open Plugins"
+body = "The plugins window could not be opened, so it was cancelled. Your other windows keep running. Cause: {}"
+
+[window_error.quit_confirm]
+skipped = "The confirmation window could not be opened, so Tasty is quitting without asking."
+
 [plugins]
 title = "Plugins"
 empty = "No plugins installed."

@@ -504,7 +504,10 @@ impl MainView {
         proxy: &winit::event_loop::EventLoopProxy<crate::AppEvent>,
     ) -> bool {
         if matches_any_binding(&kb.new_window, key, mods) {
-            send_app_event(proxy, crate::AppEvent::CreateWindow);
+            send_app_event(
+                proxy,
+                crate::AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+            );
             return true;
         }
         if matches_any_binding(&kb.close_active, key, mods) {

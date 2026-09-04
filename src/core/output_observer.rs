@@ -132,6 +132,10 @@ pub enum ObserverError {
     InvalidPath(String),
     FileOpen(String),
     NotFound(ObserverId),
+    /// sink 워커 스레드 spawn 실패(스레드 한계·EAGAIN 등). `observe.start` 마다
+    /// 스레드를 하나 만들므로, 패닉으로 승격하면 호스트 전체가 죽는다 — 파일 열기
+    /// 실패와 같은 비대칭을 없애고 에러로 반환한다.
+    ThreadSpawn(String),
 }
 
 impl std::fmt::Display for ObserverError {
@@ -141,6 +145,7 @@ impl std::fmt::Display for ObserverError {
             ObserverError::InvalidPath(p) => write!(f, "invalid sink path: {p}"),
             ObserverError::FileOpen(e) => write!(f, "failed to open sink file: {e}"),
             ObserverError::NotFound(id) => write!(f, "observer not found: {id}"),
+            ObserverError::ThreadSpawn(e) => write!(f, "failed to spawn sink thread: {e}"),
         }
     }
 }
@@ -209,7 +214,7 @@ impl ObserverRouter {
                     thread::Builder::new()
                         .name(format!("tasty-observer-mem-{worker_id}"))
                         .spawn(move || run_memory_sink(worker_id, cap, rx, mem))
-                        .expect("spawn memory sink thread"),
+                        .map_err(|e| ObserverError::ThreadSpawn(e.to_string()))?,
                 )
             }
             SinkView::File { path } => {
@@ -223,7 +228,7 @@ impl ObserverRouter {
                     thread::Builder::new()
                         .name(format!("tasty-observer-file-{worker_id}"))
                         .spawn(move || run_file_sink(worker_id, file, rx))
-                        .expect("spawn file sink thread"),
+                        .map_err(|e| ObserverError::ThreadSpawn(e.to_string()))?,
                 )
             }
         };

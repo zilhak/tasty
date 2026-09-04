@@ -21,7 +21,10 @@ static PROXY: OnceLock<EventLoopProxy<AppEvent>> = OnceLock::new();
 
 fn send_create_window() {
     if let Some(proxy) = PROXY.get() {
-        crate::shortcuts::send_app_event(proxy, AppEvent::CreateWindow);
+        crate::shortcuts::send_app_event(
+            proxy,
+            AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User),
+        );
     }
 }
 

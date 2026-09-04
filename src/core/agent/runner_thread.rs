@@ -55,7 +55,10 @@ impl RunnerRegistry {
         }
     }
 
-    /// 이미 실행 중이면 false (idempotent — 중복 start 는 no-op).
+    /// `true` = 이 호출이 러너를 새로 띄웠다. `false` 는 두 경우를 함께 뜻한다 —
+    /// **이미 실행 중**(idempotent, 중복 start 는 no-op)이거나 **스레드 spawn 이
+    /// 실패**했거나. 둘을 구분해야 하는 소비자는 이 반환값이 아니라 [`Self::status`]
+    /// 를 읽는다(spawn 실패면 등록되지 않으므로 `running: false` 로 드러난다).
     pub fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
         let mut threads = self.threads.lock().expect("RunnerRegistry poisoned");
         if let Some(ctrl) = threads.get(&workspace_id)
@@ -68,7 +71,7 @@ impl RunnerRegistry {
         let crashed = Arc::new(AtomicBool::new(false));
         let crashed_thread = crashed.clone();
         let ctx_thread = ctx.clone();
-        let join = thread::Builder::new()
+        let spawned = thread::Builder::new()
             .name(format!("agent-runner-ws{workspace_id}"))
             .spawn(move || {
                 let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -81,8 +84,19 @@ impl RunnerRegistry {
                          marked crashed. Restart via agent.task_run start."
                     );
                 }
-            })
-            .expect("spawn agent-runner thread");
+            });
+        // 스레드 한계·EAGAIN 으로 spawn 이 실패해도 호스트를 죽이지 않는다. 시작하지
+        // 못한 것으로 보고(false)하고, crashed 재시작과 같은 경로로 다시 시도할 수 있게
+        // 한다 — 등록하지 않으므로 다음 start 가 새로 만든다.
+        let join = match spawned {
+            Ok(j) => j,
+            Err(e) => {
+                tracing::error!(
+                    "failed to spawn agent-runner thread for workspace {workspace_id}: {e}"
+                );
+                return false;
+            }
+        };
         threads.insert(
             workspace_id,
             RunnerControl {

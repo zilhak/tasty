@@ -51,7 +51,9 @@ pub(crate) enum BootPhase {
     /// fallback 으로 받는다.
     WaitingEngine {
         started: Instant,
-        rx: std::sync::mpsc::Receiver<(crate::core::CoreState, crate::plugin::PluginManager)>,
+        rx: std::sync::mpsc::Receiver<
+            anyhow::Result<(crate::core::CoreState, crate::plugin::PluginManager)>,
+        >,
         /// 워커 체류 동안 돈 부팅 프레임 스텝 수 — 로딩 프레임이 실제로
         /// 갱신됐는지의 계측 증거 (T2.7 로그).
         frames: u32,
@@ -85,6 +87,24 @@ pub(crate) struct BootState {
     restored_idx: Option<usize>,
     /// 부팅 미완 중 도착한 `AppEvent` — Ready 후 도착 순서대로 재생한다.
     pub(crate) pending_events: Vec<crate::AppEvent>,
+}
+
+/// 부팅 중 engine(터미널 엔진) 생성이 실패했을 때의 정상 종료. 첫 창이라 안내를 띄울
+/// 창 자체가 없으므로, 패닉(가짜 크래시 리포트) 대신 사람이 읽을 진단을 stderr 로 내고
+/// 종료한다 — `try_init_boot_gpu` 의 GPU 어댑터 부재 처리와 같은 방식이다. 흔한 원인은
+/// 사용자 `config.toml` 의 shell 경로 오타(=셸 spawn 실패)다.
+fn boot_fatal_engine_error(err: &anyhow::Error) -> ! {
+    // tracing::error! 는 fmt subscriber 로 stderr(터미널 사용자에게 보임) + 파일 로그
+    // 둘 다에 나간다 — eprintln 은 파일에 안 남아 사후 진단이 불가능하다(C.11 준수).
+    // 진단 3줄을 한 이벤트로 합친다 — tracing 매크로 확장이 커서 여러 번 부르면
+    // cognitive_complexity(deny) 를 넘긴다.
+    tracing::error!(
+        "boot engine creation failed: {err:#}\n{}\n{}\n{}",
+        crate::i18n::t("boot.engine_error.title"),
+        crate::i18n::t_fmt("boot.engine_error.body", &err.to_string()),
+        crate::i18n::t("boot.engine_error.hint"),
+    );
+    std::process::exit(1);
 }
 
 impl App {
@@ -234,7 +254,7 @@ impl App {
         };
         *frames += 1;
         match rx.try_recv() {
-            Ok((engine, mgr)) => {
+            Ok(Ok((engine, mgr))) => {
                 let wait_ms = started.elapsed().as_secs_f64() * 1000.0;
                 let frames = *frames;
                 self.core_state = Some(engine);
@@ -247,19 +267,28 @@ impl App {
                 );
                 self.boot_transition_after_engine(boot)
             }
+            Ok(Err(e)) => {
+                // 워커가 engine 생성에 실패했다(셸 spawn·PTY/fd 등). 첫 창이라
+                // 안내를 띄울 창이 없으므로, 패닉(크래시 리포트) 대신 진단 후
+                // 정상 종료한다 — GPU 어댑터 부재(`try_init_boot_gpu`)와 같은 방식.
+                boot_fatal_engine_error(&e);
+            }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                // 워커 panic (예: engine 생성 expect) — 결과 없이 채널이
-                // drop 됐다. 동기 재시도: 워커 도입 전과 동일한 경로라,
-                // 같은 원인이면 같은 표면(메인 panic)으로 수렴하고 일시
-                // 원인이면 부팅이 정상 진행된다.
+                // 워커 스레드 자체가 panic 해 결과 없이 채널이 drop 된 경우(engine
+                // 생성 실패는 이제 위 `Ok(Err)` 로 오므로, 여기는 그 밖의 예상 밖
+                // panic 이다). 동기 재시도 — 일시 원인이면 부팅이 진행된다.
                 //
                 // 슬롯: `ensure_engine_and_plugins` 가 스스로 다시 고른다. 워커가
                 // 결과를 못 보냈다는 건 그 engine 이 살아남지 못했다는 뜻이라 점유
                 // 집합은 여전히 비어 있고, 슬롯 파일 목록도 그대로여서 워커가
                 // 골랐던 것과 같은 슬롯으로 수렴한다.
                 tracing::error!("boot engine worker channel disconnected — synchronous fallback");
-                self.ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width);
+                if let Err(e) = self
+                    .ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width)
+                {
+                    boot_fatal_engine_error(&e);
+                }
                 self.boot_transition_after_engine(boot)
             }
         }
@@ -328,7 +357,9 @@ impl App {
     fn spawn_engine_worker(
         &self,
         boot: &BootState,
-    ) -> std::sync::mpsc::Receiver<(crate::core::CoreState, crate::plugin::PluginManager)> {
+    ) -> std::sync::mpsc::Receiver<
+        anyhow::Result<(crate::core::CoreState, crate::plugin::PluginManager)>,
+    > {
         let (cols, rows) = crate::app::window_lifecycle::boot_grid_size(
             &boot.gpu,
             boot.settings.appearance.sidebar_width,
@@ -423,7 +454,9 @@ impl App {
             return Err(());
         };
         match rx.try_recv() {
-            Ok(payload) => Ok(Some(payload)),
+            Ok(Ok(payload)) => Ok(Some(payload)),
+            // engine 생성이 실패해 회수할 PluginManager 가 없다 — 회수 대상 없음으로 취급.
+            Ok(Err(_)) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("boot engine worker not reclaimed before exit: disconnected");

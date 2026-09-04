@@ -30,10 +30,19 @@ resumed() (src/app/event_handler.rs)
                    의존이라 spawn 전 메인에서 계산해 워커에 값으로 전달.
   WaitingEngine    워커 결과 채널을 매 스텝 try_recv 폴링 — 원자 구간(T2.6+T3
                    ≈470ms)에도 메인은 로딩 프레임만 그리므로 스피너가 멈추지
-                   않는다. 도착 시 `(CoreState, PluginManager)` 를 장착하고
-                   pending layout restore 있으면 → WaitingPlugins, 없으면 →
-                   Ready. 채널 disconnect(워커 panic 등)는 메인 동기
-                   `ensure_engine_and_plugins` 재시도로 fallback.
+                   않는다. 채널 payload 는 `anyhow::Result<(CoreState,
+                   PluginManager)>` 로, 결과가 셋 중 하나다.
+                   · Ok  → 장착하고 pending layout restore 있으면 →
+                     WaitingPlugins, 없으면 → Ready.
+                   · Err → engine 생성 실패(셸 spawn·PTY/fd 등). 첫 창이라
+                     안내를 띄울 창이 없으므로 진단 3줄을 `tracing::error!`
+                     (stderr + 파일 로그)로 내고 `exit(1)` — 패닉(가짜 크래시
+                     리포트)이 아니다. GPU 어댑터 부재와 같은 처리다
+                     (ADR-0117).
+                   · disconnect → **워커 스레드 자체의 예상 밖 panic** 만
+                     여기로 온다(engine 생성 실패는 위 Err 로 온다). 메인 동기
+                     `ensure_engine_and_plugins` 재시도로 fallback 하고, 그것도
+                     실패하면 같은 진단 후 종료.
   WaitingPlugins   pump → finalize_plugin_hello → 필요 surface kind 등록 확인.
   (deadline 300ms) 미충족이면 다음 프레임 재시도. 충족/초과 시
                    ApplyPendingLayoutRestore 1회 apply 후 → RestoringLayout
