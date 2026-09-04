@@ -894,7 +894,17 @@ impl Translations {
         if self.language != "en" {
             let lang_path = lang_dir.join(format!("{}.toml", self.language));
             if let Ok(s) = std::fs::read_to_string(&lang_path) {
-                Self::parse_toml_into(&mut strings, &s);
+                // 활성 언어는 **덮어쓰기**라 빈 값을 그대로 얹으면 바로 위 en 문자열을
+                // 지운다. 팩·내장 오버라이드와 같은 규칙을 여기에도 건다(ADR-0124):
+                // 빈 값은 번역 없음이고, 아래 층인 그 plugin 의 영어가 보인다.
+                let mut overlay = HashMap::new();
+                Self::parse_toml_into(&mut overlay, &s);
+                drop_blank_values_warned(
+                    &mut overlay,
+                    &format!("plugin lang file {}", lang_path.display()),
+                    "fall back to the plugin's English string",
+                );
+                strings.extend(overlay);
             }
         }
 
@@ -1757,6 +1767,64 @@ mod tests {
         assert_eq!(tr.get("plugin.x.title"), "새로고침");
         // en에만 있는 키는 fallback으로 노출
         assert_eq!(tr.get("plugin.x.body"), "OnlyEn");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// plugin 네임스페이스의 빈 값도 **번역 없음**이다 — 아래 층인 그 plugin 의 영어
+    /// 문자열이 보인다.
+    ///
+    /// 팩과 내장 오버라이드는 이미 이 규칙을 따른다(ADR-0124). 네임스페이스만 빠져
+    /// 있으면 같은 실수가 plugin 에서만 라벨 없는 버튼이 되고, 규칙을 한 줄로 적을 수
+    /// 없어 다음 사람은 먼저 읽은 쪽을 믿는다.
+    #[test]
+    fn blank_namespace_values_fall_back_to_the_plugin_english_string() {
+        let tmp = temp_dir("ns-blank");
+        std::fs::write(
+            tmp.join("en.toml"),
+            "[plugin.x]\ntitle = \"Refresh\"\nbody = \"Reload the view\"\n",
+        )
+        .unwrap();
+        // ko 가 body 를 비워 뒀다 — 번역을 잊은 흔한 형태.
+        std::fs::write(
+            tmp.join("ko.toml"),
+            "[plugin.x]\ntitle = \"새로고침\"\nbody = \"\"\n",
+        )
+        .unwrap();
+
+        let tr = Translations {
+            base: HashMap::new(),
+            namespaces: RwLock::new(HashMap::new()),
+            language: "ko".to_string(),
+        };
+        tr.register_namespace("com.example.x", &tmp);
+
+        assert_eq!(tr.get("plugin.x.title"), "새로고침");
+        assert_eq!(
+            tr.get("plugin.x.body"),
+            "Reload the view",
+            "빈 값이 영어를 덮으면 화면에 라벨 없는 자리가 남는다"
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// 폭 0 문자는 빈 값이 아니다 — 일부러 비운 텍스트의 탈출구(ADR-0124)가
+    /// 네임스페이스에서도 같아야 한다.
+    #[test]
+    fn zero_width_namespace_values_survive_the_blank_rule() {
+        let tmp = temp_dir("ns-zw");
+        std::fs::write(tmp.join("en.toml"), "[plugin.x]\nsuffix = \"EN\"\n").unwrap();
+        std::fs::write(tmp.join("ko.toml"), "[plugin.x]\nsuffix = \"\u{2060}\"\n").unwrap();
+
+        let tr = Translations {
+            base: HashMap::new(),
+            namespaces: RwLock::new(HashMap::new()),
+            language: "ko".to_string(),
+        };
+        tr.register_namespace("com.example.x", &tmp);
+
+        assert_eq!(tr.get("plugin.x.suffix"), "\u{2060}");
 
         std::fs::remove_dir_all(&tmp).ok();
     }
