@@ -5,9 +5,9 @@
 //! `src/bin/generate.rs` 가 치수 계열($type: dimension/duration/number/fontWeight)을
 //! `src/generated/` 의 Rust const 로 생성한다. **생성물은 커밋**되며, freshness
 //! 테스트(`tests/freshness.rs`)가 vendor json ↔ 생성물 텍스트 일치를 강제한다 — 통합
-//! 테스트라 자동 실행 채널이 없다 — 컴파일만 자동으로 검사된다
-//! (`docs/dev-guide/ci-gates.md`). 토큰을 다시 vendor 했으면
-//! 직접 돌려라.
+//! 테스트라 **자동 실행은 헤드리스 잡뿐**이다(`check-headless` 가 전체 스위트를 돌린다).
+//! 기본 조합 잡은 `--lib --bins` 라 못 보고, 자동 잡은 push 된 커밋만 본다
+//! (`docs/dev-guide/ci-gates.md`). 토큰을 다시 vendor 했으면 커밋 전에 직접 돌려라.
 //!
 //! # Tier 규율 (컴파일 타임 강제)
 //!

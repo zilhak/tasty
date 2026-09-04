@@ -8,7 +8,7 @@ CLAUDE.md 정책의 운영 형태:
 
 - **본체** (`Cargo.toml` 루트): 사용자가 *빌드를 요청* 했고, 마지막 빌드 이후 새 커밋이 있으며, 사용자가 막지 않았으면 **patch +1**. AI 자체 검증 빌드(`cargo build`/`test`)는 올리지 않는다.
 - **Plugin** (`crates/tasty-plugin-*/Cargo.toml`): 한 커밋에 특정 plugin 디렉토리 파일이 하나라도 staged 되면 그 plugin 의 **patch +1 을 같은 커밋에** 포함(무조건, 명시적 거부 없는 한). 여러 plugin 변경 시 각각 독립 적용. 본체 규칙과 독립.
-- **Plugin 매니페스트 lockstep** (`crates/tasty-plugin-*/tasty-plugin.toml`): 위 patch +1 과 함께 매니페스트 `version` 을 **동일 값**으로 맞추고 `.sig` 를 재서명(`scripts/sign-bundle.sh`)해 같은 커밋에 포함. Cargo.toml 만 올리면 `plugin.list`·업그레이드 판정이 노출·비교하는 매니페스트 version 이 어긋난다(version drift). `tests/plugin_manifest_version_parity.rs` 가 정합을 강제한다 — 통합 테스트라 자동 실행 채널이 없다(컴파일만 자동 검사 — [ci-gates](ci-gates.md)).
+- **Plugin 매니페스트 lockstep** (`crates/tasty-plugin-*/tasty-plugin.toml`): 위 patch +1 과 함께 매니페스트 `version` 을 **동일 값**으로 맞추고 `.sig` 를 재서명(`scripts/sign-bundle.sh`)해 같은 커밋에 포함. Cargo.toml 만 올리면 `plugin.list`·업그레이드 판정이 노출·비교하는 매니페스트 version 이 어긋난다(version drift). `tests/plugin_manifest_version_parity.rs` 가 정합을 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동 — [ci-gates](ci-gates.md)). 자동 잡은 push 된 커밋만 보므로 커밋 전에는 직접 돌린다.
 - **minor / major**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 
 본체 patch bump 절차: `Cargo.toml` patch +1 → `cargo build`(Cargo.lock 갱신) → `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 같은 값으로 갱신 → `Cargo.toml` + `Cargo.lock` + 두 README 를 **함께** 커밋(`chore: bump version to X.Y.Z`) → 아래 릴리스 절차로 이어감. 배지를 빠뜨리면 `tests/readme_badge_parity.rs` 가 실패시킨다 — 단 `cargo test --workspace` 에만 있고 그 잡은 수동 전용이라([ci-gates](ci-gates.md)) **직접 돌려야 잡힌다** — 릴리스뿐 아니라 이 자동 patch +1 커밋에도 적용된다.
