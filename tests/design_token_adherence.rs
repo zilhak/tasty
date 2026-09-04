@@ -16,6 +16,30 @@
 //! 금지하지 않는다 — 그게 구조값(사이드바 폭·카드 크기·control nudge)의 *권장* 해결책이다
 //! — structural 값은 magic number 대신 명명 const 로 둬야 의미가 이름에 남는다.
 //! 이 가드가 잡는 건 4px 리듬 자리에 박힌 인라인 리터럴뿐이다.
+//!
+//! # 가드가 막지 못하는 것 (실측 — 회피 변이로 확인)
+//!
+//! 소스 텍스트 스캔이라 **한계가 있고, 그 한계를 여기 적어 둔다.** 이 목록이 없으면
+//! "가드가 폰트/간격 축을 강제한다" 는 문서 문장이 사실보다 강해진다 — 실제로 이
+//! 파일의 앞 라운드가 그 상태였다(`tests/let_underscore_documented.rs` 와 같은 방식).
+//! 아래는 전부 **컴파일되고 `cargo fmt --check` 도 통과하는** 형태다.
+//!
+//! | 형태 | 예 | 왜 못 잡나 |
+//! |---|---|---|
+//! | 괄호 감싸기 | `.size((13.0))` | 접두 뒤 첫 문자가 `(` 라 숫자 검사에 걸리지 않는다 |
+//! | 인라인 주석 | `.size(/*x*/ 13.0)` | 같음 |
+//! | 개행 + 주석 줄 | `.size(` ⏎ `// c` ⏎ `13.0)` | 다음 줄 프로브가 **한 줄만** 본다. 그 줄이 주석이면 그대로 빠져나간다 |
+//! | 형변환 | `.size(f32::from(13u8))` | 첫 문자가 `f` |
+//! | 매크로 | `.size(sz!())` | 같음 |
+//! | 단항 마이너스 | `add_space(-8.0)` | 첫 문자가 `-` |
+//! | 명명 const 경유 | `const S: f32 = 13.0; .size(S)` | **설계상 허용**(위 "스코프 밖") |
+//! | 변수 경유 | `let s = 13.0; .size(s)` | 같은 이유. 값의 출처를 소스 스캔으로 따라갈 수 없다 |
+//! | egui 기본 스타일 | `Style::default()` 가 주는 크기 | 소스에 숫자가 없다 |
+//!
+//! 이것들을 닫으려면 텍스트 스캔이 아니라 **AST/HIR 수준 lint** 가 필요하다. 여기서
+//! 막는 것은 *레포에 실제로 나타나는 관용구*이고, 위 목록은 "우연히 새는 것" 이 아니라
+//! **의도적으로 우회해야 나오는 형태**다 — 가드의 목적(무심코 되돌리는 것을 막는다)은
+//! 그 선까지다.
 
 use std::path::{Path, PathBuf};
 
@@ -92,6 +116,11 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     "inner_margin(",
     "FontId::proportional(",
     "FontId::monospace(",
+    // `proportional`/`monospace` 는 **이것의 얇은 래퍼**다. 셋째 경로를 열어두면
+    // 앞의 둘을 막은 의미가 없다 — 같은 폰트를 `FontId::new(13.0, Proportional)`
+    // 로 그대로 만들 수 있다. 전역 폰트 치환(`Style::text_styles`)도 결국 `FontId`
+    // 를 만들어야 하므로 이 셋을 다 막으면 그 경로의 리터럴도 함께 닫힌다.
+    "FontId::new(",
     "Stroke::new(",
     // `RichText::new(..).size(13.5)` — `FontId::*` 와 **같은 결함의 다른 표기**다.
     // egui 에서 폰트 크기를 지정하는 두 경로가 이 둘이라 한쪽만 막으면 다른 쪽으로
@@ -106,9 +135,13 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
 /// 형태로 한 번 뚫렸다.
 ///
 /// 여기 있는 형태는 **값과 무관하게** 금지다 — 토큰을 넣든 리터럴을 넣든 쓰지 말고
-/// `Stroke::new(<토큰>, ..)` 를 쓴다. 그래야 접두 규칙이 계속 유효하다. 현재 스캔
-/// 범위 안 출현 0 이라 allowlist 가 필요 없다.
-const FORBIDDEN_FORMS: &[&str] = &["Stroke {"];
+/// 생성자(`Stroke::new(<토큰>, ..)` · `FontId::proportional(<토큰>)`)를 쓴다. 그래야
+/// 접두 규칙이 계속 유효하다.
+///
+/// 두 형태 다 **현재 스캔 범위 안에 구조체 리터럴로는 0건**이고(`Stroke {` 1건 ·
+/// `FontId {` 2건은 전부 반환 타입 시그니처), 시그니처는 아래 `->` 규칙이 가른다 —
+/// allowlist 항목은 필요 없다.
+const FORBIDDEN_FORMS: &[&str] = &["Stroke {", "FontId {"];
 
 /// 스캔 예외 — **파일 통째가 아니라 (경로, 접두) 쌍**이다. 파일 하나를 통째로 빼면
 /// 그 파일이 *다른* 형태의 위반을 새로 들여도 잡히지 않으므로, 정당한 그 한 형태만
@@ -142,10 +175,11 @@ fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static s
         let mut from = 0;
         while let Some(idx) = line[from..].find(form) {
             let start = from + idx;
-            // `fn stroke1(..) -> egui::Stroke {` 같은 **반환 타입**은 구조체 리터럴이
-            // 아니다. 형태 앞의 경로 한정자(`egui::`)를 걷어낸 뒤 `->` 로 끝나면
-            // 시그니처이므로 넘긴다 — `crates/tasty-egui-theme` 를 스캔에 넣을 때
-            // 실제로 이 위양성이 났다(그때는 `egui::` 때문에 `->` 검사가 빗나갔다).
+            // `fn stroke1(..) -> egui::Stroke {` / `fn mono(..) -> egui::FontId {`
+            // 같은 **반환 타입**은 구조체 리터럴이 아니다. 형태 앞의 경로 한정자
+            // (`egui::`)를 걷어낸 뒤 `->` 로 끝나면 시그니처이므로 넘긴다 —
+            // `crates/tasty-egui-theme` 를 스캔에 넣을 때 실제로 이 위양성이 났다
+            // (그때는 `egui::` 때문에 `->` 검사가 빗나갔다).
             let head = line[..start]
                 .trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == ':');
             if !head.trim_end().ends_with("->") {
@@ -278,7 +312,10 @@ fn no_inline_visual_token_literals() {
     let detect = |rel: &str, line: &str, next: &str| {
         violating_prefix(rel, line, next).map(|p| {
             if FORBIDDEN_FORMS.contains(&p) {
-                format!("{p}` — 구조체 리터럴 형태 자체가 금지(`Stroke::new(<토큰>, ..)` 를 쓴다)`")
+                format!(
+                    "{p}` — 구조체 리터럴 형태 자체가 금지(생성자 \
+                     `Stroke::new(<토큰>, ..)` · `FontId::proportional(<토큰>)` 를 쓴다)`"
+                )
             } else {
                 format!("{p}<숫자>")
             }
