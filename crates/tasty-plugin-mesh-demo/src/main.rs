@@ -192,11 +192,20 @@ fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
         }
         ui.separator();
         // 스크롤 효과를 보이는 영역 — 줄 번호가 스크롤 시 위로 사라진다.
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for i in 1..=80 {
-                ui.label(format!("scrollable line {i}"));
-            }
-        });
+        //
+        // `auto_shrink` 를 끄는 것이 이 표면의 스크롤 가능 여부를 가른다. 기본값(둘 다
+        // `true`)이면 egui 가 스크롤하지 않는 축(여기서는 가로)의 크기를 **콘텐츠 폭**으로
+        // 줄이고, 휠 hover 판정도 그 좁아진 사각형으로 한다. 라벨이 짧아 그 폭은 100pt
+        // 남짓이라, 표면 대부분(오른쪽 빈 영역)에서 굴린 휠은 아무 데도 닿지 않는다 —
+        // 화면에는 목록이 전폭으로 보이는데 거기서는 스크롤이 안 되는 상태가 된다.
+        // 끄면 판정 사각형이 보이는 영역과 같아진다.
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for i in 1..=80 {
+                    ui.label(format!("scrollable line {i}"));
+                }
+            });
     });
 }
 
@@ -252,6 +261,98 @@ mod tests {
         // Cargo.toml 이 SoT — 하드코딩 기대값은 버전 bump 마다 드리프트한다
         // (0.1.2 vs 0.1.6 실재, Windows 단위테스트 CI 부재로 잠복했던 것).
         assert_eq!(p.version(), env!("CARGO_PKG_VERSION"));
+    }
+
+    /// 데모 표면의 **오른쪽 빈 영역**에서 굴린 휠이 목록을 움직이는가.
+    ///
+    /// host 는 휠 이벤트에 좌표를 싣지 않고 커서 이동 때 `PointerMoved` 로 hover 를
+    /// 세운다. 그래서 스크롤 여부는 전적으로 "그 좌표가 `ScrollArea` 의 판정 사각형
+    /// 안인가" 로 갈린다. `auto_shrink` 가 켜져 있으면 그 사각형이 콘텐츠 폭(라벨 몇
+    /// 십 pt)으로 줄어, 목록이 전폭으로 보이는데도 오른쪽에서는 휠이 먹지 않는다.
+    /// 표면 오른쪽 끝 근처를 고른 이유가 그것이다 — 가운데였다면 좁은 사각형 안에
+    /// 들어가 버려 회귀를 놓친다.
+    ///
+    /// 단정 대상은 내부 상태가 아니라 **그려진 결과**다. 이 버그의 증상이 "델타는
+    /// 도착하는데 화면이 안 바뀐다" 이므로, 첫 줄이 실제로 위로 올라갔는지를 본다.
+    #[cfg(unix)]
+    #[test]
+    fn the_wheel_scrolls_the_list_from_anywhere_on_the_surface() {
+        let (w, h) = (1200.0_f32, 800.0_f32);
+        let ctx = egui::Context::default();
+        let mut clicks = 0_u32;
+        let mut draw = |events: Vec<egui::Event>| -> Option<f32> {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(w, h),
+                )),
+                events,
+                ..Default::default()
+            };
+            let out = ctx.run(raw, |ctx| draw_demo(ctx, &mut clicks));
+            probe_line_y(&out)
+        };
+
+        // 표면 오른쪽 끝 근처 — 라벨 콘텐츠 폭 밖이다.
+        let far_right = egui::pos2(w - 40.0, h / 2.0);
+        let mut before = None;
+        for _ in 0..8 {
+            before = draw(vec![egui::Event::PointerMoved(far_right)]);
+        }
+        let before = before.expect("기준 줄이 그려져야 한다");
+
+        draw(vec![
+            egui::Event::PointerMoved(far_right),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -50.0),
+                modifiers: egui::Modifiers::default(),
+            },
+        ]);
+        let mut after = None;
+        for _ in 0..8 {
+            after = draw(vec![egui::Event::PointerMoved(far_right)]);
+        }
+        let after = after.expect("기준 줄이 그려져야 한다");
+
+        let moved = before - after;
+        assert!(
+            (moved - 50.0).abs() < 5.0,
+            "표면 오른쪽에서 굴린 휠 50pt 가 목록을 그만큼 올려야 한다 — \
+             {PROBE_LINE} y {before} -> {after} (이동 {moved})",
+        );
+    }
+
+    /// 이번 frame 에 그려진 기준 줄의 세로 위치. 스크롤되면 그만큼 작아진다.
+    ///
+    /// 첫 줄이 아니라 20번째 줄을 쓴다 — 첫 줄은 조금만 스크롤해도 뷰포트 밖으로 나가
+    /// egui 가 아예 그리지 않으므로(`Ui::is_rect_visible` 컬링), "안 그려졌다" 와
+    /// "이동량" 을 구별할 수 없다.
+    #[cfg(unix)]
+    const PROBE_LINE: &str = "scrollable line 20";
+
+    #[cfg(unix)]
+    fn probe_line_y(out: &egui::FullOutput) -> Option<f32> {
+        fn walk(shape: &egui::epaint::Shape, found: &mut Option<f32>) {
+            match shape {
+                egui::epaint::Shape::Text(t) => {
+                    if t.galley.job.text.trim() == PROBE_LINE {
+                        *found = Some(t.pos.y);
+                    }
+                }
+                egui::epaint::Shape::Vec(v) => {
+                    for s in v {
+                        walk(s, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut found = None;
+        for clipped in &out.shapes {
+            walk(&clipped.shape, &mut found);
+        }
+        found
     }
 
     #[test]

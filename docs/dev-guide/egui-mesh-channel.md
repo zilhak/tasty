@@ -602,6 +602,30 @@ egui::ScrollArea::vertical()
 > 갤러리 specimen 은 보통 `ScrollArea` 없이 고정 목록을 그려 이 결함을 재현하지 못한다 —
 > virtualization 회귀는 clip 회귀와 마찬가지로 본체 popup 에서 스크롤시켜 확인한다.
 
+## `ScrollArea` 의 휠 판정 영역 (surface·popup·banner 공통)
+
+**`auto_shrink` 를 끄지 않으면 목록이 전폭으로 보여도 그 위 대부분에서 휠이 먹지 않는다.**
+기본값은 두 축 모두 `true` 라, egui 는 **스크롤하지 않는 축**의 크기를 콘텐츠 크기로 줄인다
+(`ScrollArea::vertical()` 이면 가로). 휠 hover 판정은 그렇게 줄어든 사각형으로 하므로,
+짧은 라벨 몇 십 pt 폭 밖 — 즉 표면의 대부분 — 에서 굴린 휠은 아무 데도 닿지 않는다.
+
+이것이 egui-mesh 에서 특히 눈에 띄는 이유가 있다. host 는 **휠 이벤트에 좌표를 싣지
+않는다**(`egui_mesh_push_scroll`) — 좌표는 커서가 움직일 때 `PointerMoved` 로만 간다.
+그래서 plugin 쪽 hover 판정이 스크롤 여부를 단독으로 결정하고, 실패해도 host 로그에는
+"델타를 보냈다" 만 남아 **와이어는 정상인데 화면만 안 움직이는** 모양이 된다.
+
+```rust
+egui::ScrollArea::vertical()
+    .auto_shrink([false, false])   // 판정 사각형 = 보이는 영역
+    .show(ui, |ui| { … });
+```
+
+가로 축 하나만 켜져 있어도(`[true, false]`) 같은 증상이 난다 — 문제를 만드는 것은
+스크롤하지 **않는** 축의 shrink 다. 회귀는 표면 **오른쪽 끝 근처**에서 굴려야 잡힌다.
+가운데는 좁아진 사각형 안에 들어가 버려 통과한다
+(`crates/tasty-plugin-mesh-demo/src/main.rs` 의
+`the_wheel_scrolls_the_list_from_anywhere_on_the_surface`).
+
 ## egui-mesh popup 채널 (A2)
 
 surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**할 수 있다. surface
