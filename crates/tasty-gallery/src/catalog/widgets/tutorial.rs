@@ -9,9 +9,11 @@
 //!   4방 tail). 버튼은 DS `Button` 재사용.
 //! - **Topic popup** — 360px CenteredFocused 팝업(스크롤 리스트 + 진행).
 //!
-//! 색·폰트·선굵기·간격·반경은 전부 `Theme` 토큰에서 가져온다. 리터럴은 **이름 붙인
-//! 구조 상수**만 남긴다 — 컴포넌트 박스 고정폭(244/360, `dialog::frame_card` 의 `240.0`
-//! 관례)과 `paint_faux_app` 무대 치수(`FAUX_*` 사이드바·탭바·상태바·행 비율).
+//! 색·폰트·선굵기·간격·반경은 전부 `Theme` 토큰에서 가져온다. 재사용되는 구조 치수는
+//! **이름 붙인 상수**로 뽑았다 — 컴포넌트 박스 고정폭(244/360, `dialog::frame_card` 의
+//! `240.0` 관례)과 `paint_faux_app` 무대 비율(`FAUX_*` 사이드바·상태바·행; 탭바 높이는
+//! 값 복제를 피해 `theme.tab_bar_height` 를 따라간다). 그 밖에 한 지점에서만 쓰는 국소
+//! 배치 오프셋(말풍선 tail·데모 박스 치수 등)은 각 그리기 지점에 인라인으로 둔다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
@@ -30,7 +32,6 @@ const TAIL: f32 = 12.0; // 12px diamond → 삼각 tail
 // 데모 전용 구조 상수다. Theme 토큰이 아니라 이 무대 장치의 값·비율 자체가 의미라 명명
 // const 로 고정한다. 나머지 여백(8·12·16)은 실제 spacing 토큰과 값이 같아 토큰을 쓴다.
 const FAUX_SIDEBAR_W: f32 = 116.0;
-const FAUX_TABBAR_H: f32 = 24.0;
 const FAUX_STATUSBAR_H: f32 = 20.0;
 const FAUX_ROW_H: f32 = 22.0;
 const FAUX_ROW_GAP: f32 = 3.0;
@@ -43,6 +44,8 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     let sep = egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui());
     let inset = theme.spacing_sm.value(); // 8 — 행 좌우 인셋
     let cap = theme.font_size_caption.value(); // 11 — faux 앱 라벨 폰트
+    // 본체 탭바 높이를 따라간다 — 값 복제(24) 대신 토큰(D5). 본체가 바뀌면 데모도 따라감.
+    let tab_h = theme.tab_bar_height.value();
     let sidebar_w = FAUX_SIDEBAR_W.min(r.width() * 0.5);
 
     // ── 사이드바 (bg-sidebar, border-right) ──
@@ -89,7 +92,7 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     // ── 메인 컬럼 ──
     let main = egui::Rect::from_min_max(egui::pos2(side.max.x, r.min.y), r.max);
     // 탭바 (bg-panel, border-bottom).
-    let tabbar = egui::Rect::from_min_size(main.min, egui::vec2(main.width(), FAUX_TABBAR_H));
+    let tabbar = egui::Rect::from_min_size(main.min, egui::vec2(main.width(), tab_h));
     p.rect_filled(tabbar, 0.0, theme.bg_panel().to_egui());
     p.hline(tabbar.x_range(), tabbar.max.y, sep);
     let term_bg = theme.surface("terminal").focused_bg.to_egui();
@@ -105,8 +108,7 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
             .size()
             .x
             + tab_pad;
-        let tab =
-            egui::Rect::from_min_size(egui::pos2(tx, tabbar.min.y), egui::vec2(tw, FAUX_TABBAR_H));
+        let tab = egui::Rect::from_min_size(egui::pos2(tx, tabbar.min.y), egui::vec2(tw, tab_h));
         if i == 0 {
             p.rect_filled(tab, 0.0, term_bg);
         }
