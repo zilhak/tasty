@@ -63,6 +63,8 @@
 
 ### Fixed
 
+- **감사 로그가 `memory.read`/`memory.write` 로 새던 것을 막았다.** `plugin.audit_*` 는 넷 다 plugin 에게 닫혀 있었지만 같은 행이 memory store 에 `tasty.audit.` 키로 앉아 있어, `memory.read` 를 받은 plugin·agent 가 다른 caller 의 권한 거부 기록 전부를 읽고 `memory.write` 로 거짓 기록을 심을 수 있었다(심은 기록은 호스트 조회에 그대로 섞였다). 이제 접두 `tasty.` 로 시작하는 키는 호스트 예약이라 권한 caller 의 raw `memory.*` 에서 지목·열거·계수 모두 막힌다. `Local`(CLI·사용자)은 제외라 `tasty memory list --prefix tasty.audit.` 은 그대로 동작한다. plugin 이 `memory.bb_*`/`plan_*`/`cache_*` 로 접근하던 경로도 그대로다 — 전용 메서드는 raw kv 를 거치지 않는다. 근거·대안은 [ADR-0141](docs/adr/0141-host-key-namespace-is-reserved-in-raw-memory-kv.md).
+
 - `claude.hook` 의 `surface`/`surface_id` 가 **`u32` 범위를 넘으면 잘려서 받아들여지던 것**. `5000000000` 이 `705032704` 로 잘렸고, 그 값은 실재할 수 있는 **다른 surface 의 id** 다 — 명령이 조용히 남의 터미널로 갔고 종료코드는 0 이었다. 이제 숫자가 아닌 값과 같은 자리에서 `invalid_params` 로 거절한다(음수는 종전에도 거절됐다; 빠져 있던 것은 위쪽 범위뿐이다). `u32::MAX` 까지는 종전대로 유효하다.
 - plugin 이 기동 직후 호스트에 거는 **첫 호출**이 권한이 있는데도
   `permission_denied` 로 거절되던 문제. 호스트가 plugin 의 `hello` 와 그 plugin 의 첫

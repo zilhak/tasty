@@ -8,7 +8,10 @@ use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{decode_b64, entry_to_json, map_error, optional_scope, require_scope};
+use super::{
+    decode_b64, entry_to_json, hide_host_keys, map_error, optional_scope, reject_host_key,
+    require_scope,
+};
 
 /// `memory.gc` — local_only. 만료 entry 일괄 DELETE (regular + secret).
 /// 응답: `{ regular: N, secret: M }`. read 경로는 항상 만료 필터를 거치므로
@@ -37,7 +40,7 @@ pub fn handle_query(
     core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
-    _caller: &CallerContext,
+    caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -73,6 +76,7 @@ pub fn handle_query(
     };
     match core.with_memory(|s| s.query(&scope, &path, &equals, &opts)) {
         Ok(entries) => {
+            let entries = hide_host_keys(caller, entries);
             let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
             JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
         }
@@ -86,7 +90,7 @@ pub fn handle_export(
     core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::core::CoreState,
-    _caller: &CallerContext,
+    caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -96,6 +100,7 @@ pub fn handle_export(
     };
     match core.with_memory(|s| s.export_regular(scope.as_ref())) {
         Ok(entries) => {
+            let entries = hide_host_keys(caller, entries);
             let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
             JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
         }
@@ -130,6 +135,11 @@ pub fn handle_import(
         match parse_export_entry(ev) {
             Ok(e) => entries.push(e),
             Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+        }
+    }
+    for e in &entries {
+        if let Err(resp) = reject_host_key(caller, &e.key, &id) {
+            return resp;
         }
     }
     let owner = caller.owner().to_string();

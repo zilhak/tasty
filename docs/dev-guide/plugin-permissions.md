@@ -65,6 +65,26 @@
 | `file_handler.handle:<id>` | 없음 | `[[contributes.handler]]` 가 그 detector 에 붙을 때 요구 |
 | `hook_handler.handle:<id>` | 없음 | **없음** — 형식 검증만 있고 강제하는 지점이 아직 없다(핸들러 id 단위 grant 가시성을 위해 예약된 토큰) |
 
+### 호스트 키 namespace 는 memory 권한으로 열리지 않는다
+
+`memory.read` / `memory.write` 는 regular memory 를 연다. regular memory 는 **설계상 공유
+네임스페이스**라 읽기 API 에 owner 차원이 아예 없다 — plugin 별 비공개가 필요하면
+`memory.secret` 을 쓴다.
+
+호스트도 자기 상태를 그 공유 네임스페이스에 둔다(감사 로그·telemetry·agent primitive·
+approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는 키는 예약**이고, 권한을
+받는 caller(plugin / agent)의 raw kv 표면에서는 존재하지 않는 것으로 다룬다 — 지목하면
+거부, 열거하면 결과에서 빠지고, 세는 수에도 안 들어간다. `Local`(CLI·사용자)은 제외라
+`tasty memory list --prefix tasty.audit.` 은 그대로 동작한다.
+
+이 예약이 없으면 전용 메서드로 잠근 데이터가 옆문으로 열린다. 감사 로그는
+`plugin.audit_*` 가 넷 다 plugin 에게 닫혀 있는데, 같은 행이 `tasty.audit.` 키로 앉아 있어
+`memory.read` 로 전부 읽히고 `memory.write` 로 날조됐다. 근거와 대안은
+[ADR-0141](../adr/0141-host-key-namespace-is-reserved-in-raw-memory-kv.md).
+
+`memory.bb_*` · `memory.plan_*` · `memory.cache_*` 는 영향받지 않는다 — 자기 접두로만 키를
+조립하는 전용 메서드라 raw kv 를 거치지 않는다.
+
 ### 선언 범위와 실제 개방 범위는 같지 않다
 
 토큰 이름은 넓은 범주를 가리키지만, 그 토큰이 지금 여는 호스트 IPC 는 표의 가운데 열이 전부다. 특히:
