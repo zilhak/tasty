@@ -28,6 +28,14 @@
 //! 실모달은 현재 그림자가 없다** — 그것이 "없어야 한다" 로 결정된 것인지는 미정이다(별개
 //! 디자인 결정). "허용 그림자 1종" 정책은 egui 기본 그림자에 대해 아무 말도 하지 않는다
 //! = 정책의 구멍이다. 메우는 것은 이 가드가 아니라 그 디자인 결정의 몫이다.
+//!
+//! # 검출은 순수 함수 — 면제 변이를 합성 입력으로 찌른다
+//! 판정([`is_shadow_literal`]·[`shadow_literal_violations`]·[`geom_reassign_violations`])은
+//! 파일 순회·경로 처리와 분리된 순수 함수다. 그래서 각 면제(반환타입 화살표 · `==`
+//! 비교 · 자기 제외)를 겨냥한 변이를 레포에 진짜 위반을 심지 않고 **합성 문자열**로
+//! 유닛 테스트에 붙박는다(아래 `mutation_*`). 못 잡는 것이 **의도**인 입력(scrim
+//! 오버레이)도 `intended_miss_*` 로 고정해, 나중에 판정기를 넓혀 그걸 잡기 시작하면
+//! 그 결정이 테스트 실패로 드러나게 한다 — 의도된 한계와 버그를 구분한다.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -71,9 +79,15 @@ fn scan_files() -> Vec<PathBuf> {
             }
         }
     }
-    // 이 가드 파일 자신은 판정 패턴 문자열(`egui::Shadow {` 등)과 뮤테이션 샘플을 담는
-    // 것이 본질이라 스캔에서 뺀다 — 파일 통째 면제(그래서 이 파일이 다른 형태의 실제
-    // 위반을 새로 들이면 못 잡는다. 판정기 밖에 새 그림자 코드를 두지 않는다).
+    // 이 가드 파일 자신은 판정 needle 과 뮤테이션 합성 입력을 담는 것이 본질이라
+    // (판정기를 합성 문자열로 찌르는 변이가 붙박여 있다) 연속 needle 이 불가피하게
+    // 등장한다. 자기 제외를 없애려면 그 needle 이 파일에 연속으로 없어야 하는데 —
+    // doc 시연과 변이 입력이 그걸 요구하므로 불가능하다(needle 조각 결합은 doc 주석엔
+    // 못 쓰고, 변이마다 강제할 장치도 없다). 그래서 파일 통째 면제한다.
+    // 한계(강제되지 않음): 이 파일 안 판정기 밖에 실제 위반을 새로 들이면 못 잡는다.
+    // 그 면제가 **실효 있음**(제외 없으면 오탐)은
+    // `mutation_self_file_is_excluded_but_would_otherwise_flag` 가 고정하고, 판정기 밖에
+    // 새 그림자 코드를 두지 않는다는 규율은 리뷰가 지킨다.
     let self_file = repo_root().join("crates/tasty-type-appearance/src/shadow_policy_guard.rs");
     files.retain(|f| f != &self_file);
     files
@@ -83,12 +97,30 @@ fn scan_files() -> Vec<PathBuf> {
 /// (`-> egui::epaint::Shadow {`)은 리터럴 생성이 아니라 제외한다. scrim 등
 /// `from_black_alpha` 로 그리는 배경 오버레이는 `Shadow` 타입이 아니라 대상 밖이다
 /// — **구조체 리터럴만** 본다. 이 판단을 넓히면 scrim 오탐이 시작된다.
+///
+/// 반환타입 제외는 **줄이 아니라 위치**로 판정한다. 줄 어딘가에 `->` 한 토큰이 있다는
+/// 이유만으로 통째 면제하면(면제 창 = 줄) 같은 줄의 진짜 생성을 화살표가 가린다 —
+/// 예: `|| -> u32 { let s = egui::Shadow { .. } }`. 그래서 화살표가 리터럴 **직전
+/// 타입 위치**(리터럴 앞에 있고 그 사이에 대입 `=` 이 없음)일 때만 반환타입으로 본다.
 fn is_shadow_literal(line: &str) -> bool {
     let t = line.trim_end();
-    if t.contains("->") {
-        return false; // 반환타입 선언(생성 아님)
+    // `= Shadow {` 는 명백한 대입 생성 — 줄의 `->` 유무와 무관하게 위반 후보.
+    if t.contains("= Shadow {") {
+        return true;
     }
-    t.contains("egui::Shadow {") || t.contains("epaint::Shadow {") || t.contains("= Shadow {")
+    for pat in ["egui::Shadow {", "epaint::Shadow {"] {
+        if let Some(pos) = t.find(pat) {
+            let before = &t[..pos];
+            // 화살표가 리터럴 앞에 있고 그 뒤로 대입이 없으면 반환타입 선언(생성 아님).
+            let is_return_type = before
+                .rfind("->")
+                .is_some_and(|a| !before[a..].contains('='));
+            if !is_return_type {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// `theme.rs` 에서 `to_egui` 함수의 줄 범위 `[start, end]` 를 중괄호 깊이로 구한다.
@@ -276,4 +308,70 @@ fn mutation_allows_color_fade_on_popover_shadow() {
         geom_reassign_violations("x.rs", text).is_empty(),
         "color 페이드는 허용 — 정당한 사용을 죽이면 안 된다"
     );
+}
+
+// ── 면제 겨냥 변이: 각 면제 창 안쪽에 진짜 위반/정당을 심어 판정기를 찌른다 ────────
+
+#[test]
+fn mutation_arrow_on_line_does_not_hide_a_real_creation() {
+    // 반환타입 화살표 면제가 **줄 단위**면 같은 줄의 실제 생성을 가린다(면제 창 과다).
+    // 화살표가 리터럴 앞 타입 위치일 때만 반환타입으로 봐야 이 위반이 잡힌다.
+    let hidden = "    let f = || -> u32 { let s = egui::Shadow { blur: 4 }; 0 };";
+    assert!(
+        is_shadow_literal(hidden),
+        "줄에 `->` 가 있어도 대입(=) 뒤 실제 생성은 위반이다"
+    );
+    // 정당 면제 대상 — 화살표가 리터럴 직전 타입 위치(반환타입 선언)면 생성이 아니다.
+    let return_type = "    pub fn to_egui(self) -> egui::epaint::Shadow {";
+    assert!(
+        !is_shadow_literal(return_type),
+        "반환타입 선언은 생성이 아니다 — 정당 면제를 죽이면 안 된다"
+    );
+}
+
+#[test]
+fn mutation_geometry_comparison_is_not_a_reassignment() {
+    // `offset ==` 비교 면제(`!contains("== ")`)가 진짜 대입(`=`)을 가리지 않는지 —
+    // 비교는 통과하고 대입은 `mutation_catches_geometry_reassignment` 가 잡는다.
+    let text = "let mut shadow = theme.shadow_popover().to_egui();\n\
+                if shadow.offset == [0, 8] { paint(shadow); }\n";
+    assert!(
+        geom_reassign_violations("x.rs", text).is_empty(),
+        "== 비교는 재대입이 아니다 — 정당 비교를 죽이면 안 된다"
+    );
+}
+
+#[test]
+fn mutation_self_file_is_excluded_but_would_otherwise_flag() {
+    // 자기 제외가 **실효 있음**을 증명 — 이 파일을 그냥 판정기에 먹이면 판정 needle 과
+    // 변이 합성 입력이 위반으로 잡힌다. 그래서 scan_files() 가 이 파일을 제외한다.
+    // (제외 없으면 오탐 → 제외는 진짜 무언가를 가리는 면제다.)
+    let self_src = fs::read_to_string(
+        repo_root().join("crates/tasty-type-appearance/src/shadow_policy_guard.rs"),
+    )
+    .expect("self 파일 읽기");
+    let (v, _) = shadow_literal_violations("self.rs", &self_src, None);
+    assert!(
+        !v.is_empty(),
+        "이 파일엔 판정 needle 이 있어 제외 없으면 오탐된다(면제가 실효 있음)"
+    );
+    assert!(
+        !scan_files()
+            .iter()
+            .any(|f| f.ends_with("shadow_policy_guard.rs")),
+        "scan_files 는 자기 파일을 제외해야 한다"
+    );
+}
+
+#[test]
+fn intended_miss_scrim_overlay_is_not_a_shadow_literal() {
+    // 의도된 false negative: scrim 은 `from_black_alpha` 배경 오버레이라 Shadow 타입이
+    // 아니다 — 이 가드가 일부러 안 잡는다. 판정기를 넓혀 이걸 잡기 시작하면(scrim
+    // 오탐) 이 테스트가 실패해 그 결정이 드러난다. 한계가 의도임을 붙박는다.
+    assert!(!is_shadow_literal(
+        "        p.rect_filled(rect, r, theme.scrim().to_egui());"
+    ));
+    assert!(!is_shadow_literal(
+        "        let s = egui::Color32::from_black_alpha(128);"
+    ));
 }
