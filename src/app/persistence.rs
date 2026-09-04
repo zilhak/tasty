@@ -118,7 +118,8 @@ impl App {
             force,
         };
         if let Err(e) = core.apply(engine, intent) {
-            tracing::warn!("SaveLayoutNow({label}) failed ({kind}): {e}");
+            // 이번 세션의 창 구성이 디스크에 남지 않는다 = 다음 부팅에 사용자 작업 소실.
+            tracing::error!("SaveLayoutNow({label}) failed ({kind}): {e}");
         }
     }
 }
