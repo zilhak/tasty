@@ -32,14 +32,7 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[PhysicalRect], scale_
     // surface2 값을 반환하는 border-role 접근자가 없어(§4-3) 값-보존 위해 surface_active() 사용.
     let border_color = th.surface_active();
     for div in dividers {
-        let rect = egui::Rect::from_min_size(
-            egui::pos2(div.x.value() / scale_factor, div.y.value() / scale_factor),
-            egui::vec2(
-                div.width.value() / scale_factor,
-                div.height.value() / scale_factor,
-            ),
-        )
-        .round_ui();
+        let rect = crate::adapters::ui::to_egui_rect(*div, scale_factor).round_ui();
         painter.rect_filled(rect, 0.0, border_color);
     }
 }
@@ -93,14 +86,7 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
         };
         let stroke_color = highlight_stroke_color(props.theme, kind);
         let r = region.rect;
-        let egui_rect = egui::Rect::from_min_size(
-            egui::pos2(r.x.value() / scale_factor, r.y.value() / scale_factor),
-            egui::vec2(
-                r.width.value() / scale_factor,
-                r.height.value() / scale_factor,
-            ),
-        )
-        .round_ui();
+        let egui_rect = crate::adapters::ui::to_egui_rect(r, scale_factor).round_ui();
         painter.rect_stroke(
             egui_rect,
             0.0,

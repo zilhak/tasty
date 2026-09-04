@@ -84,3 +84,20 @@ pub fn draw_popups(
     popup::frame::draw_popup_layer(ctx, state, engine, &draw_ctx);
     overlay::draw_overlays(ctx, state, engine, &draw_ctx, terminal_rect, scale_factor);
 }
+
+/// 물리 사각형을 egui 가 그리는 논리 좌표 사각형으로 내린다.
+///
+/// 변환 자체는 [`PhysicalRect::to_logical`] 이 하고 여기서는 egui 타입으로 옮기기만
+/// 한다. 네 변을 각각 `÷ scale_factor` 하던 자리를 이 한 곳으로 모은 것 — 나눗셈이
+/// 네 번이면 하나를 빠뜨려도 컴파일이 통과하지만, 변환이 한 번이면 빠뜨릴 것이 없다.
+///
+/// `.value()` 로 타입을 벗기는 것은 여기서 정당하다. egui 는 `f32` 를 받는 외부
+/// 라이브러리이고, 정책이 허용하는 것이 정확히 그 경계다
+/// (`docs/concepts/typed-length.md` "외부 API 경계에서만 `.value()`").
+pub(crate) fn to_egui_rect(rect: crate::model::PhysicalRect, scale_factor: f32) -> egui::Rect {
+    let logical = rect.to_logical(scale_factor);
+    egui::Rect::from_min_size(
+        egui::pos2(logical.x.value(), logical.y.value()),
+        egui::vec2(logical.width.value(), logical.height.value()),
+    )
+}

@@ -86,12 +86,6 @@ const SELF_PATH: &str = "src/dpi_conversion_guard.rs";
 /// 있는 것이 정상" 이라 영구적이고, 이쪽은 "아직 못 옮겼다" 라 없어져야 한다. 한 표에
 /// 섞으면 다음 사람이 둘을 구분하지 못해 미이식분이 영구 면제로 굳는다.
 const PENDING_PORT: &[(&str, usize)] = &[
-    ("src/adapters/ui/divider.rs", 8),
-    ("src/adapters/ui/drop_overlay.rs", 4),
-    ("src/adapters/ui/egui_panels.rs", 8),
-    ("src/adapters/ui/layout_context.rs", 8),
-    ("src/adapters/ui/overlay.rs", 4),
-    ("src/adapters/ui/status_bar.rs", 3),
     ("src/gfx/gpu.rs", 2),
     ("src/gfx/gpu/egui_mesh_prepare.rs", 6),
     ("src/plugin_bridge/banner_render.rs", 6),

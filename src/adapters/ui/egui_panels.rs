@@ -93,13 +93,14 @@ pub fn draw_egui_panels(
                             p, ws_id,
                         )
                     });
+                let logical = r.rect.to_logical(scale_factor);
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
-                    logical_x: (r.rect.x.value() / scale_factor).round_ui(),
-                    logical_y: (r.rect.y.value() / scale_factor).round_ui(),
-                    logical_w: (r.rect.width.value() / scale_factor).round_ui(),
-                    logical_h: (r.rect.height.value() / scale_factor).round_ui(),
+                    logical_x: logical.x.value().round_ui(),
+                    logical_y: logical.y.value().round_ui(),
+                    logical_w: logical.width.value().round_ui(),
+                    logical_h: logical.height.value().round_ui(),
                     explorer_cwd,
                     dag_poll,
                 };
@@ -677,13 +678,14 @@ fn draw_occupied_overlays(
                         None => continue,
                     }
                 };
+                let logical = r.rect.to_logical(scale_factor);
                 occ.push(Occ {
                     sid: r.id,
                     hard,
-                    x: (r.rect.x.value() / scale_factor).round_ui(),
-                    y: (r.rect.y.value() / scale_factor).round_ui(),
-                    w: (r.rect.width.value() / scale_factor).round_ui(),
-                    h: (r.rect.height.value() / scale_factor).round_ui(),
+                    x: logical.x.value().round_ui(),
+                    y: logical.y.value().round_ui(),
+                    w: logical.width.value().round_ui(),
+                    h: logical.height.value().round_ui(),
                 });
             }
         }

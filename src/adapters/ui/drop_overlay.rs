@@ -25,16 +25,7 @@ pub fn draw_drop_overlay(
     let theme = crate::theme::theme();
 
     // 물리 픽셀 → 논리 픽셀 (egui 좌표계).
-    let rect = egui::Rect::from_min_size(
-        egui::pos2(
-            terminal_rect.x.value() / scale_factor,
-            terminal_rect.y.value() / scale_factor,
-        ),
-        egui::vec2(
-            terminal_rect.width.value() / scale_factor,
-            terminal_rect.height.value() / scale_factor,
-        ),
-    );
+    let rect = crate::adapters::ui::to_egui_rect(terminal_rect, scale_factor);
 
     let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drop_overlay"));
     let painter = ctx.layer_painter(layer);

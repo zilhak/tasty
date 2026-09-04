@@ -27,18 +27,7 @@ pub(crate) fn build_layout_context(
     // Convert physical pixel pane rects to logical pixel egui rects
     let pane_rects_logical: Vec<(u32, egui::Rect)> = pane_rects
         .iter()
-        .map(|(id, r)| {
-            (
-                *id,
-                egui::Rect::from_min_size(
-                    egui::pos2(r.x.value() / scale_factor, r.y.value() / scale_factor),
-                    egui::vec2(
-                        r.width.value() / scale_factor,
-                        r.height.value() / scale_factor,
-                    ),
-                ),
-            )
-        })
+        .map(|(id, r)| (*id, crate::adapters::ui::to_egui_rect(*r, scale_factor)))
         .collect();
 
     // Compute surface rects using surface_regions
@@ -47,16 +36,7 @@ pub(crate) fn build_layout_context(
         for r in regions {
             surface_rects.push((
                 r.id,
-                egui::Rect::from_min_size(
-                    egui::pos2(
-                        r.rect.x.value() / scale_factor,
-                        r.rect.y.value() / scale_factor,
-                    ),
-                    egui::vec2(
-                        r.rect.width.value() / scale_factor,
-                        r.rect.height.value() / scale_factor,
-                    ),
-                ),
+                crate::adapters::ui::to_egui_rect(r.rect, scale_factor),
             ));
         }
     }
