@@ -747,7 +747,17 @@ fn all_e2e_tests() {
         .collect();
 
     let create_resp = tasty.call("window.create", json!({}));
-    assert_eq!(create_resp["scheduled"], true);
+    // window.create 는 더 이상 fire-and-forget(`{"scheduled": true}`)이 아니라 완료
+    // 채널로 생성 성공/실패를 왕복시킨다 — 성공은 `{"created": true, "window_id": …}`
+    // (ADR-0122). 옛 `scheduled` 계약을 보면 Null 이 잡힌다.
+    assert_eq!(
+        create_resp["created"], true,
+        "window.create 성공 응답이 created=true 를 실어야 한다: {create_resp:?}"
+    );
+    assert!(
+        create_resp["window_id"].as_u64().is_some(),
+        "window.create 성공 응답에 window_id 가 있어야 한다: {create_resp:?}"
+    );
 
     // 새 윈도우의 PTY shell 이 surface.list 에 등장할 때까지 polling.
     let start = std::time::Instant::now();
