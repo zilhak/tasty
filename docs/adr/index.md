@@ -152,3 +152,4 @@
 | 0139 | [문서에 적는 수는 계보로 분류하고, 빨리 낡는 수는 세 형태 중 하나로 바꾼다](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) | Accepted | 2026-09-05 | documentation, guards, staleness, measurement, ci-gates, adr-0037, adr-0131, adr-0138 |
 | 0140 | [호스트 IPC prefix 는 집행할 수 있는 자리에서 예약한다 — 파생이 아니라 고정으로](0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md) | Accepted | 2026-09-05 | plugin, ipc, manifest, namespace, guards, compatibility, adr-0133 |
 | 0142 | [채널 주장은 작업 트리 기준으로 쓴다 — 원격 층은 오프라인으로 못 고정한다](0142-channel-claims-are-written-against-the-working-tree.md) | Accepted | 2026-09-05 | ci, docs, guards, remote, push, observability, adr-0133, adr-0138, adr-0139 |
+| 0145 | [길이 newtype 의 생성자는 당분간 열어 둔다 — 봉인의 이득이 정확성이 아니라 판정기의 정밀도이기 때문](0145-typed-length-constructors-stay-open-for-now.md) | Accepted | 2026-09-05 | typed-length, dpi, guard, tooling-cost |
