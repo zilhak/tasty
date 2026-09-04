@@ -390,31 +390,12 @@ fn handle_terminal_output(
     }
 }
 
-/// Headless 부트. winit / wgpu / egui 가 없는 빌드 (`--no-default-features`) 전용.
-///
-/// 시퀀스:
-/// 1. `mpsc::channel::<AppEvent>` 생성 + `HeadlessWaker` 로 IPC/PTY waker 발급
-/// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
-/// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
-/// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
-/// 5. 데드라인 인지 수신 loop — 중앙 타이머 허브의 `next_deadline()` 까지만
-///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
-///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
+/// 부팅 시 memory.db 초기화 — 설정의 상한/쿼터를 반영하고 유지보수를 1 회 돌린다.
+/// 실패해도 데몬은 뜬다(memory 없는 상태로 계속) — 반환 `None` 이 그 상태다.
 #[cfg(not(feature = "gui"))]
-fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
-    use std::sync::mpsc;
-    use std::time::Instant;
-
-    use crate::AppEvent;
-    use crate::adapters::production::headless_waker::HeadlessWaker;
-    use crate::app::App;
-
-    locale::init();
-
-    let (tx, rx) = mpsc::channel::<AppEvent>();
-    let waker = HeadlessWaker::new(tx);
-
-    let boot_settings = crate::settings::Settings::load();
+fn boot_memory(
+    boot_settings: &crate::settings::Settings,
+) -> Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>> {
     let memory_config = tasty_memory::MemoryConfig {
         entry_max_bytes: boot_settings
             .memory
@@ -439,8 +420,17 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             None
         }
     };
+    memory_arc
+}
 
-    let mut app = App::new_headless(cli.port_file, memory_arc)?;
+/// IPC accept 스레드를 띄우고, 그 라우터를 필요로 하는 전역 레지스트리를 시드한다.
+/// `start_ipc` 가 injector 를 돌려주지 않으면(IPC 미기동) 시드도 하지 않는다 —
+/// 시드 대상이 전부 IPC 라우터를 전제하기 때문이다.
+#[cfg(not(feature = "gui"))]
+fn start_ipc_and_seed(
+    app: &mut crate::app::App,
+    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
+) {
     let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
         hub: app.stream_hub.clone(),
         inbound_tx: app.stream_inbound_tx.clone(),
@@ -465,20 +455,15 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         let _ = crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }
+}
 
-    // ── Engine 부트스트랩 ──────────────────────────────────────────────
-    // gui 는 첫 MainView 생성 시 CoreState/AppState 를 만든다 (window_lifecycle).
-    // headless 는 창이 없으므로 여기서 직접 1 회 만든다. `CoreState::new_with_ids`
-    // 가 default workspace + 터미널 1 개를 spawn 하므로 client 0 명에도 PTY 가 산다.
-    // 터미널 reader 스레드는 factory 가 발급한 waker 로 `TerminalOutput` 을 push,
-    // 아래 메인 루프가 `process_all_pty_output` 으로 채널을 drain 한다.
-    //
-    // 0-B: 창이 없어 grid 크기를 측정할 수 없으므로 기본 80×24.
-    // 0-C: layout 복원은 gui 의 plugin-pump 경로(ApplyPendingLayoutRestore)에
-    //      종속이라 headless 엔 미적용. 그래서 슬롯을 `None` 으로 넘겨 `load_slot`
-    //      자체를 하지 않고, `pending_layout_restore` 가 `None` 으로 남는다 —
-    //      `new_with_ids` 의 fallback 이 실행되는 조건이 바로 이것이라 headless 는
-    //      항상 default workspace + 터미널 1 개로 뜬다.
+/// Engine 부트스트랩 — gui 가 첫 MainView 생성 시 하는 일의 headless 등가.
+#[cfg(not(feature = "gui"))]
+fn bootstrap_engine(
+    app: &mut crate::app::App,
+    boot_settings: &crate::settings::Settings,
+    waker: &crate::adapters::production::headless_waker::HeadlessWaker,
+) -> anyhow::Result<crate::core::CoreState> {
     let factory = waker.waker_factory();
     let base_waker = factory.make_default_waker();
     // gui 의 `begin_boot` 과 같은 부팅 1 회 훅 — 레거시 `layout.json` 마이그레이션 +
@@ -504,6 +489,103 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록 IPC
     // 서버와 동일한 StreamHub 를 attach registry 에 주입.
     engine.attach.set_notifier(app.stream_hub.clone());
+    Ok(engine)
+}
+
+/// 한 바퀴의 대기 결과.
+#[cfg(not(feature = "gui"))]
+enum Wait {
+    /// 이벤트가 도착했다.
+    Event(crate::AppEvent),
+    /// 타이머 데드라인에 도달했다 — 이번 바퀴는 타이머만 돌린다.
+    Deadline,
+    /// 송신단이 전부 사라졌다 — 루프를 끝낸다.
+    Disconnected,
+}
+
+/// 데드라인 인지 수신 — gui 의 `about_to_wait` 와 대칭이다. gui 는 waker 스레드가
+/// 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
+/// 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
+#[cfg(not(feature = "gui"))]
+fn wait_for_event(
+    rx: &std::sync::mpsc::Receiver<crate::AppEvent>,
+    deadline: Option<std::time::Instant>,
+) -> Wait {
+    match deadline {
+        Some(at) => {
+            match rx.recv_timeout(at.saturating_duration_since(std::time::Instant::now())) {
+                Ok(ev) => Wait::Event(ev),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Wait::Deadline,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Wait::Disconnected,
+            }
+        }
+        // 등록된 타이머가 없다 — 깨울 이유가 없으므로 무기한 블로킹.
+        None => match rx.recv() {
+            Ok(ev) => Wait::Event(ev),
+            Err(_) => Wait::Disconnected,
+        },
+    }
+}
+
+/// `RunLuaScript` 처리 — gui event_handler 와 동일. headless 발신원은 현재 없지만
+/// (단축키=gui, debug IPC=App 경로) 이벤트 계약상 동작을 미러링한다.
+#[cfg(not(feature = "gui"))]
+fn run_lua_script(app: &crate::app::App, source: &str, name: &str) {
+    if let Some(engine) = app.lua_engine.as_ref() {
+        engine.run_script(source, Some(name));
+    } else {
+        tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
+    }
+}
+
+/// 도착한 이벤트 하나를 처리한다. `Break` 면 메인 루프를 끝낸다.
+#[cfg(not(feature = "gui"))]
+fn dispatch_headless_event(
+    app: &mut crate::app::App,
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    event: crate::AppEvent,
+) -> std::ops::ControlFlow<()> {
+    use crate::AppEvent;
+    match event {
+        AppEvent::Shutdown | AppEvent::QuitRequested => return std::ops::ControlFlow::Break(()),
+        AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
+        AppEvent::IpcReady => headless_dispatch::pump_ipc(app, state, engine),
+        AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
+        AppEvent::RunLuaScript { source, name } => run_lua_script(app, &source, &name),
+    }
+    std::ops::ControlFlow::Continue(())
+}
+
+/// Headless 부트. winit / wgpu / egui 가 없는 빌드 (`--no-default-features`) 전용.
+///
+/// 시퀀스:
+/// 1. `mpsc::channel::<AppEvent>` 생성 + `HeadlessWaker` 로 IPC/PTY waker 발급
+/// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
+/// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
+/// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
+/// 5. 데드라인 인지 수신 loop — 중앙 타이머 허브의 `next_deadline()` 까지만
+///    `recv_timeout` 으로 기다리고, 매 바퀴 due 한 타이머 키를 실행한다.
+///    Shutdown / QuitRequested 수신 시 break (`docs/dev-guide/timer-hub.md`)
+#[cfg(not(feature = "gui"))]
+fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
+    use std::sync::mpsc;
+
+    use crate::adapters::production::headless_waker::HeadlessWaker;
+    use crate::app::App;
+
+    locale::init();
+
+    let (tx, rx) = mpsc::channel::<crate::AppEvent>();
+    let waker = HeadlessWaker::new(tx);
+
+    let boot_settings = crate::settings::Settings::load();
+    let memory_arc = boot_memory(&boot_settings);
+
+    let mut app = App::new_headless(cli.port_file, memory_arc)?;
+    start_ipc_and_seed(&mut app, &waker);
+
+    let mut engine = bootstrap_engine(&mut app, &boot_settings, &waker)?;
     let preset_store = app.core.preset_store.clone();
     let memory = app.core.memory_arc();
     let mut state = crate::state::AppState::new(&mut engine, preset_store, memory);
@@ -520,9 +602,6 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 
-    // 데드라인 인지 수신 — gui 의 `about_to_wait` 와 대칭이다. gui 는 waker 스레드가
-    // 이벤트 루프를 깨우지만, headless 는 메인 루프가 직접 `recv_timeout` 으로 허브
-    // 데드라인을 지키므로 wake 신호를 위한 ticker 스레드가 아예 필요 없다.
     loop {
         // 블로킹 대기에 들어가기 전에 Intent 큐를 비운다. 정상 경로에서는 발화 지점
         // (IPC / plugin 호출)이 이미 응답 전에 drain 하므로 여기서는 비어 있지만,
@@ -534,18 +613,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             app.timers.next_deadline(),
             app.plugin_manager.as_ref().and_then(|m| m.next_deadline()),
         );
-        let pending = match deadline {
-            Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
-                Ok(ev) => Some(ev),
-                // 데드라인 도달 — 이번 바퀴는 타이머만 돌린다.
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            },
-            // 등록된 타이머가 없다 — 깨울 이유가 없으므로 무기한 블로킹.
-            None => match rx.recv() {
-                Ok(ev) => Some(ev),
-                Err(_) => break,
-            },
+        let pending = match wait_for_event(&rx, deadline) {
+            Wait::Event(ev) => Some(ev),
+            Wait::Deadline => None,
+            Wait::Disconnected => break,
         };
 
         // 시간축 — due 한 타이머 키 실행. gui `about_to_wait` 의 drain 블록과 동형.
@@ -554,26 +625,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         let Some(event) = pending else {
             continue;
         };
-        match event {
-            AppEvent::Shutdown | AppEvent::QuitRequested => break,
-            AppEvent::TerminalOutput(id) => {
-                handle_terminal_output(&mut app, &mut state, &mut engine, id);
-            }
-            AppEvent::IpcReady => {
-                headless_dispatch::pump_ipc(&mut app, &mut state, &mut engine);
-            }
-            AppEvent::StreamReady => {
-                headless_stream::handle_stream_ready(&mut app, &mut state, &mut engine);
-            }
-            AppEvent::RunLuaScript { source, name } => {
-                // gui event_handler 와 동일 처리. headless 발신원은 현재 없지만
-                // (단축키=gui, debug IPC=App 경로) 이벤트 계약상 동작을 미러링한다.
-                if let Some(engine) = app.lua_engine.as_ref() {
-                    engine.run_script(&source, Some(&name));
-                } else {
-                    tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
-                }
-            }
+        if dispatch_headless_event(&mut app, &mut state, &mut engine, event).is_break() {
+            break;
         }
     }
     Ok(())

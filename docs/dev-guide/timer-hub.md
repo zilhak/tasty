@@ -7,7 +7,7 @@
 - 크레이트: [`crates/tasty-timer`](../../crates/tasty-timer/src/lib.rs)
 - 호스트측 키/등록: [`src/app/timers.rs`](../../src/app/timers.rs)
 - gui 실행부: `src/app/event_handler.rs` `about_to_wait`
-- headless 실행부: `src/boot.rs` `run_headless` 의 `recv_timeout` 루프
+- headless 실행부: `src/boot.rs` `run_headless` 의 루프 — 대기는 `wait_for_event`(`recv_timeout`), 실행은 `run_due_timers`
 
 ## 두 축을 섞지 않는다
 
@@ -165,17 +165,19 @@ self.sync_timer_control_flow(event_loop);   // waker + ControlFlow 를 한 번�
 ### headless — `run_headless`
 
 ```rust
-let ev = match app.timers.next_deadline() {
-    Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
-        Ok(ev) => Some(ev),
-        Err(Timeout) => None,          // 타이머만 돌린다
-        Err(Disconnected) => break,
-    },
-    None => match rx.recv() { Ok(ev) => Some(ev), Err(_) => break },
+// wait_for_event: 데드라인까지만 블로킹. 세 결과를 `Wait` 로 이름 붙인다.
+let pending = match wait_for_event(&rx, app.timers.next_deadline()) {
+    Wait::Event(ev) => Some(ev),
+    Wait::Deadline => None,          // 타이머만 돌린다
+    Wait::Disconnected => break,
 };
-for key in app.timers.drain_due(Instant::now()) { /* headless 실행부 */ }
-let Some(event) = ev else { continue };
+run_due_timers(&mut app, &mut state, &mut engine);  // drain_due + headless 실행부
+let Some(event) = pending else { continue };
 ```
+
+`Wait` 가 필요한 이유는 `Option<AppEvent>` 하나로는 "타이머만 돌린다"(계속)와
+"송신단이 사라졌다"(종료)가 구분되지 않기 때문이다 — 대기를 함수로 빼려면 그 셋이
+값이어야 한다.
 
 gui/headless 는 **같은 키 집합을 같은 주기로** 굴린다. `Tick::Busy` 가 headless 에서
 하는 일은 넷이다 — busy 재평가 + attach forward / 글로벌 훅 / idle-timeout 훅(바인딩

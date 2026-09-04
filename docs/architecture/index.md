@@ -75,7 +75,7 @@ ports-and-adapters 배치:
 
 | 모듈 | 역할 |
 |------|------|
-| `boot/` | `fn main` 부팅 시퀀스(`run()` 진입점) — event_loop, headless_dispatch, cli_routing, wiring, locale, trace(부팅 계측) |
+| `boot/` | `fn main` 부팅 시퀀스(`run()` 진입점) — event_loop, headless_{dispatch,stream,plugins}, cli_routing, wiring, locale, trace(부팅 계측) |
 | `app/` | `App`(winit `ApplicationHandler`) — window_lifecycle, boot_machine(첫 윈도우 부팅 상태 머신 — [boot-sequence](boot-sequence.md)), shutdown_cascade(종료 cascade — [shutdown-sequence](shutdown-sequence.md)), modal, ipc dispatch, attach, dispatch_domain(workspace close cascade — [close-sequence](close-sequence.md)) |
 | `core/` | **도메인 본체**(`Core`) — state, session, attach, agent, terminal_store, ipc_facade |
 | `hub.rs` | **외부 통신**(`Hub`) — IPC 서버, 포트 파일 |
