@@ -661,7 +661,9 @@ impl App {
     /// (로컬 워크스페이스와 동일한 반응성). `Tick::AttachView` 3초 tick 도 backstop 으로 호출.
     ///
     /// 적용 대상은 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`),
-    /// 대상을 찾은 **뒤에야** 버퍼를 drain 한다. 창이 없는 parked 상태에서도 mirror
+    /// 대상을 찾은 **뒤에야** 버퍼를 drain 한다 — drain 은 이 함수가 아니라
+    /// [`apply_pending_mirror_output`] 이 하며, 그 함수는 host 가 `None` 이면 꺼내지
+    /// 않는다(2차 조회 실패까지 포함해 유실 분기가 남지 않는다). 창이 없는 parked 상태에서도 mirror
     /// 터미널·매핑은 그 engine 안에 그대로 살아 있으므로 로컬 PTY 출력
     /// (`handle_terminal_output` 의 parked 순회)과 똑같이 즉시 적용한다 — 창 복원 시
     /// 새 창이 그 engine 을 그대로 그리므로 최소화 동안의 출력이 남아 있다. 어느
@@ -693,39 +695,40 @@ impl App {
                 &self.parked_states,
                 local_ws,
             );
-            if let Some(host) = host {
-                let drained = drain_mirror_output(&self.attach_client_sessions[idx].output);
-                if !drained.is_empty() {
-                    // 세션(remote→local 매핑)과 그 mirror 를 호스팅하는 engine 을 **분리
-                    // 대여**(self 의 서로 다른 필드 → disjoint borrow). delta 가 매핑을
-                    // 갱신하므로 clone 이 아닌 **라이브 매핑**을 써야 같은 drain 안의 이후
-                    // Data 가 새 surface 로 라우팅된다. 이벤트를 **도착 순서대로** 적용한다.
+            // 세션(remote→local 매핑)과 그 mirror 를 호스팅하는 engine 을 **분리
+            // 대여**(self 의 서로 다른 필드 → disjoint borrow). delta 가 매핑을
+            // 갱신하므로 clone 이 아닌 **라이브 매핑**을 써야 같은 drain 안의 이후
+            // Data 가 새 surface 로 라우팅된다.
+            //
+            // drain 은 이 함수가 직접 하지 않는다 — `apply_pending_mirror_output` 이
+            // `Option<MirrorHost>` 를 받아 **`Some` 일 때만** 꺼낸다. 그래서 아래
+            // `as_main_mut()` 같은 2차 조회가 실패해도 이미 꺼낸 이벤트가 버려지는 일이
+            // 구조적으로 없다(ADR-0110 — 유실이 생기면 조용히 생긴다).
+            match host {
+                Some(MirrorOutputHost::Window(wid)) => {
                     let sess = &mut self.attach_client_sessions[idx];
-                    match host {
-                        MirrorOutputHost::Window(wid) => {
-                            if let Some(main) =
-                                self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                            {
-                                let mut host =
-                                    MirrorHost::windowed(&mut main.state, &mut main.core_state);
-                                apply_mirror_events(
-                                    sess,
-                                    &mut host,
-                                    &mut self.plugin_manager,
-                                    drained,
-                                );
-                                main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
-                            }
-                        }
-                        MirrorOutputHost::Parked(pidx) => {
-                            // 창이 없으니 repaint 대상도 없다 — 복원 시 새 창이 이 engine 의
-                            // 터미널 grid 를 그대로 그린다.
-                            let (state, engine) = &mut self.parked_states[pidx];
-                            let mut host = MirrorHost::parked(state, engine);
-                            apply_mirror_events(sess, &mut host, &mut self.plugin_manager, drained);
-                        }
+                    let mut main = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut());
+                    let mirror_host = main
+                        .as_mut()
+                        .map(|m| MirrorHost::windowed(&mut m.state, &mut m.core_state));
+                    let applied =
+                        apply_pending_mirror_output(sess, mirror_host, &mut self.plugin_manager);
+                    if applied && let Some(main) = main {
+                        main.mark_dirty_from(crate::view::RepaintSource::AttachMirror);
                     }
                 }
+                Some(MirrorOutputHost::Parked(pidx)) => {
+                    // 창이 없으니 repaint 대상도 없다 — 복원 시 새 창이 이 engine 의
+                    // 터미널 grid 를 그대로 그린다.
+                    let sess = &mut self.attach_client_sessions[idx];
+                    let (state, engine) = &mut self.parked_states[pidx];
+                    apply_pending_mirror_output(
+                        sess,
+                        Some(MirrorHost::parked(state, engine)),
+                        &mut self.plugin_manager,
+                    );
+                }
+                None => {}
             }
             // `state` 를 같이 확인하는 이유: `disconnected` atomic 은 한 번 true 가 되면
             // 다음 성공적 재연결 전까지 계속 true 로 남는다(리더/write 스레드가 리셋하지
@@ -1497,8 +1500,10 @@ fn find_parked_with_workspace(
         .position(|(_, engine)| engine.has_workspace(local_workspace))
 }
 
-/// reader thread 가 쌓아둔 mirror 이벤트를 **도착 순서대로** 통째로 꺼낸다. 적용 대상
-/// (`mirror_output_host`)을 찾은 뒤에만 부른다 — 대상이 없는데 꺼내면 되돌릴 수 없다.
+/// reader thread 가 쌓아둔 mirror 이벤트를 **도착 순서대로** 통째로 꺼낸다. 호출자는
+/// [`apply_pending_mirror_output`] 하나뿐이고, 그 함수가 적용 대상을 확보한 뒤에만
+/// 부른다 — 대상이 없는데 꺼내면 되돌릴 수 없다. `apply_attach_client_output` 이
+/// 이걸 직접 부르지 않는다는 것을 `apply_output_never_drains_without_a_host` 가 고정한다.
 /// mutex 오염(reader thread panic)은 lock 을 무효화할 이유가 없어 안쪽 값을 그대로
 /// 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지 않는다.
 fn drain_mirror_output(output: &RemoteOutputBuffer) -> Vec<MirrorEvent> {
@@ -1555,6 +1560,31 @@ impl<'a> MirrorHost<'a> {
             tracing::info!("attach mirror: parked engine 이라 toast 생략 — {message}");
         }
     }
+}
+
+/// 적용 대상이 **확보된 경우에만** 버퍼를 비우고 적용한다. 적용된 이벤트가 있었으면
+/// `true`(호출부의 repaint 판단용).
+///
+/// `host` 가 `None` 이면 **아무것도 꺼내지 않는다** — 꺼낸 뒤 적용에 실패하면 되돌릴
+/// 방법이 없고, mirror 이벤트의 유실은 조용히 일어난다(`Data` 는 복원 뒤 화면 결손,
+/// `StructuralDelta` 는 매핑 desync). ADR-0110 이 "적용 대상이 없는데 꺼내는 일이
+/// 구조적으로 사라진다" 고 단언하는 지점이 여기다 — 호출부가 drain 을 직접 하지 않고
+/// 이 함수에 `Option` 을 넘기는 배선이 그 단언을 타입으로 지탱한다. 버퍼를 그대로
+/// 두면 다음 호출(`AttachClientData` wake 또는 `Tick::AttachView`)이 다시 시도한다.
+fn apply_pending_mirror_output(
+    sess: &mut AttachClientSession,
+    host: Option<MirrorHost<'_>>,
+    plugin_manager: &mut Option<crate::plugin::PluginManager>,
+) -> bool {
+    let Some(mut host) = host else {
+        return false;
+    };
+    let drained = drain_mirror_output(&sess.output);
+    if drained.is_empty() {
+        return false;
+    }
+    apply_mirror_events(sess, &mut host, plugin_manager, drained);
+    true
 }
 
 /// drain 한 mirror 이벤트들을 **도착 순서대로** 한 engine 에 적용한다. 창 있는 engine 과
@@ -4448,6 +4478,94 @@ mod tests {
             parked[0].1.workspaces.len(),
             untouched_ws_count,
             "무관한 parked engine 은 건드리지 않는다"
+        );
+    }
+
+    /// **유실 방지의 핵심 단언** — 적용 대상을 확보하지 못하면 버퍼를 건드리지 않는다.
+    /// 꺼낸 뒤 적용에 실패하면 되돌릴 방법이 없고, mirror 이벤트 유실은 조용히
+    /// 일어난다(`Data` 는 복원 뒤 화면 결손, `StructuralDelta` 는 매핑 desync).
+    /// drain 을 host 확보보다 앞으로 옮기는 변이에서 이 테스트가 실패해야 한다.
+    #[test]
+    fn no_host_leaves_the_mirror_buffer_untouched() {
+        let ws_id = 9_000u32;
+        let mut sess = test_session(ws_id, HashMap::new());
+        sess.output.lock().unwrap().extend([
+            MirrorEvent::Data(1, b"a".to_vec()),
+            MirrorEvent::Resize(1, 10, 5),
+        ]);
+        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+
+        let applied = apply_pending_mirror_output(&mut sess, None, &mut plugin_manager);
+
+        assert!(!applied, "적용 대상이 없으면 적용했다고 보고하지 않는다");
+        let buf = sess.output.lock().unwrap();
+        assert_eq!(
+            buf.len(),
+            2,
+            "host 가 없으면 버퍼는 그대로 남아 다음 호출이 다시 시도한다"
+        );
+        assert!(matches!(buf[0], MirrorEvent::Data(1, ref b) if b == b"a"));
+        assert!(matches!(buf[1], MirrorEvent::Resize(1, 10, 5)));
+    }
+
+    /// host 가 있으면 같은 함수가 버퍼를 비우고 적용한다 — 위 테스트가 "아무것도
+    /// 안 하는 함수" 를 통과시키는 것이 아님을 고정하는 대칭 축.
+    #[test]
+    fn a_host_drains_and_applies_the_mirror_buffer() {
+        let ws_id = 9_000u32;
+        let local_surface = 9_003u32;
+        let remote_surface = 42u32;
+        let mut parked = parked_with_mirror(ws_id, local_surface);
+        let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
+        sess.output
+            .lock()
+            .unwrap()
+            .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
+        let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
+
+        let pidx = find_parked_with_workspace(&parked, ws_id).expect("mirror 를 든 parked engine");
+        let applied = {
+            let (state, engine) = &mut parked[pidx];
+            apply_pending_mirror_output(
+                &mut sess,
+                Some(MirrorHost::parked(state, engine)),
+                &mut plugin_manager,
+            )
+        };
+
+        assert!(applied);
+        assert!(
+            sess.output.lock().unwrap().is_empty(),
+            "적용했으면 버퍼는 비워진다"
+        );
+        let term = parked[pidx]
+            .1
+            .terminals
+            .get(local_surface)
+            .expect("mirror 터미널");
+        assert!(term.screen_text(false).contains("applied-here"));
+    }
+
+    /// `apply_attach_client_output` 이 drain 을 **직접** 하지 않는다는 배선 자체를
+    /// 고정한다. 순수 함수 테스트는 `apply_pending_mirror_output` 안의 순서만 잡고,
+    /// 호출부에서 drain 을 host 탐색보다 앞으로 되돌리는 변이는 잡지 못한다 —
+    /// 그게 이 결함의 원래 형태(ADR-0110 Context 2)라 소스 배선으로 막는다.
+    #[test]
+    fn apply_output_never_drains_without_a_host() {
+        let src = include_str!("attach_client.rs");
+        let start = src
+            .find("pub(crate) fn apply_attach_client_output(&mut self)")
+            .expect("apply_attach_client_output 정의");
+        let body = &src[start..];
+        let end = body
+            .find("\n    /// attach-behavior.md#gui-자동-재연결-스코프")
+            .expect("다음 항목의 시작");
+        let body = &body[..end];
+        assert!(
+            !body.contains("drain_mirror_output("),
+            "apply_attach_client_output 은 drain 을 직접 부르지 않는다 — \
+             `apply_pending_mirror_output` 에 `Option<MirrorHost>` 를 넘겨, host 를 \
+             확보하지 못하면 꺼내지 않게 한다"
         );
     }
 
