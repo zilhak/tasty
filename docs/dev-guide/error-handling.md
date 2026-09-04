@@ -170,6 +170,22 @@ let mut inner = match self.inner.write() { Ok(g) => g, Err(_) => return };
 let mut inner = self.inner.lock().expect("poisoned");
 ```
 
+### 이 방침이 덮는 범위와 덮지 않는 범위
+
+**가드가 보는 축은 하나다** — `crates/tasty-utils/src/poison.rs` 의 `FORBIDDEN_LOCKS` 스캔은
+**복구하면 안 되는 락을 복구하거나 조용히 지나치는 것**을 잡는다. 그 밖은 안 본다.
+
+**안 보는 축이 하나 남아 있다**: "복구는 해도 되지만 **보고를 거쳐야 한다**". 헬퍼
+(`recover_mutex` 계열)를 거치지 않고 `PoisonError::into_inner()` 로 직접 복구하면 아무
+흔적이 남지 않는데, 그것을 막는 자동 채널이 없다. 그런 자리가 `src/` 프로덕션에 **32 건**
+있다(측정: `into_inner()` 계열 문자열, `#[cfg(test)]` 블록 이후를 잘라낸 근사 — `#[cfg(test)]`
+가 여러 번 나오는 5 개 파일에서는 **과소계수**한다).
+
+**그 32 건은 "판단해서 남긴 것" 이다** — 대부분 임계구역이 맵 insert/remove 나 카운터라
+복구 자체는 옳다. 틀린 것은 복구가 아니라 **흔적이 없다는 것**이고, 그 판정은 자리마다
+달라 일괄 치환이 답이 아니다. 새로 생기는 것을 막을 채널이 없다는 것이 지금의 상태다.
+
+
 ## stdout 쓰기 (CLI 클라이언트)
 
 `println!` / `print!` 는 stdout 쓰기 실패를 panic 으로 승격한다. 읽는 쪽이 파이프를 먼저 닫으면
