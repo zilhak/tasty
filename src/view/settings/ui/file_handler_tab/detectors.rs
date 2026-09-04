@@ -97,6 +97,7 @@ pub(super) fn draw_detectors(
 }
 
 fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
+    let th = crate::theme::theme();
     let toggle_label = if fh.add_detector_form.open {
         t("settings.file_handler.detectors.add_close")
     } else {
@@ -129,7 +130,7 @@ fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
                     ui.add(
                         egui::TextEdit::singleline(&mut fh.add_detector_form.id_input)
                             .hint_text("my-detector")
-                            .desired_width(200.0),
+                            .desired_width(th.field_width_lg.value()),
                     );
                     ui.end_row();
 
@@ -137,7 +138,7 @@ fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
                     ui.add(
                         egui::TextEdit::singleline(&mut fh.add_detector_form.extensions_input)
                             .hint_text("md, mdx")
-                            .desired_width(200.0),
+                            .desired_width(th.field_width_lg.value()),
                     );
                     ui.end_row();
 
@@ -145,7 +146,7 @@ fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
                     ui.add(
                         egui::TextEdit::singleline(&mut fh.add_detector_form.path_glob_input)
                             .hint_text("Dockerfile")
-                            .desired_width(200.0),
+                            .desired_width(th.field_width_lg.value()),
                     );
                     ui.end_row();
                 });

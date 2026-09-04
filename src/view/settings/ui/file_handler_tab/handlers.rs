@@ -106,6 +106,7 @@ fn draw_add_handler_form(
     fh: &mut FileHandlerEditDraft,
     file_format: &FileFormatRegistry,
 ) {
+    let th = crate::theme::theme();
     let toggle_label = if fh.add_handler_form.open {
         t("settings.file_handler.handlers.add_close")
     } else {
@@ -138,7 +139,7 @@ fn draw_add_handler_form(
                     ui.add(
                         egui::TextEdit::singleline(&mut fh.add_handler_form.short_name_input)
                             .hint_text("my-viewer")
-                            .desired_width(200.0),
+                            .desired_width(th.field_width_lg.value()),
                     );
                     ui.end_row();
 
@@ -208,7 +209,7 @@ fn draw_add_handler_form(
                                     &mut fh.add_handler_form.action_surface_kind,
                                 )
                                 .hint_text("markdown_view")
-                                .desired_width(200.0),
+                                .desired_width(th.field_width_lg.value()),
                             );
                             ui.end_row();
                             ui.label(t("settings.file_handler.handlers.field_param_key"));

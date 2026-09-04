@@ -324,7 +324,7 @@ pub fn draw_plugins_panel(
                                 &th,
                                 t("plugins.filter_placeholder"),
                             ))
-                            .desired_width(200.0);
+                            .desired_width(th.field_width_lg.value());
                         ui.add(edit);
                     }
                 });
