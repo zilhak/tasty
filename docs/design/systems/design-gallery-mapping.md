@@ -251,23 +251,49 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
 
-## Layouts — plugins window (1-depth idiom)
+## Overlays — plugins window
 
 디자인 `ui_kits/terminal/overlays/plugins_window.jsx` (820×540 모달) ↔ 본체 `src/view/plugins/`
-↔ 갤러리 `1 depth (Plugins idiom)` (Layouts). 본체 binary 의존 0 — 로컬 mock 데이터로 시각 복제.
+↔ 갤러리 `Plugins manager window` (Overlays). 본체 binary 의존 0 — 로컬 mock 데이터로 시각 복제.
 
-| 디자인 jsx 컴포넌트 | 갤러리 함수 (`widgets/layout_1depth.rs`) | 비고 |
+본체는 `TopBottomPanel`/`SidePanel` 을 `Context` 에 직접 붙여 창 전체를 채우므로 갤러리가 그
+함수를 호출할 수 없다 — 같은 구조를 rect 기준으로 전사한다. 전사할 고정 창 크기가 본체에
+없어서 무대 크기는 토큰으로 조립한다(`LIST_W + measure_md` × `measure_sm`). 디자인의 820×540
+은 여기 들어오지 않는다. (Layouts 의 `1-depth (Plugins idiom)` specimen
+`crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` 은 이 창이 아니라 **리스트→상세
+배치 관용구 자체**를 보이는 별개 specimen 이다.)
+
+| 디자인 jsx 컴포넌트 | 본체 | 갤러리 함수 (`crates/tasty-gallery/src/catalog/components/plugins_window.rs`) |
 |---|---|---|
-| `PluginsWindow`(container) | `draw_modal` | 820×540 고정, 48px 헤더 |
-| header + `Seg` 세그먼트 | `draw_header` / `draw_segments` | Installed \| Attention(danger badge) \| Add |
-| installed list+detail | `draw_installed` (`with_list_panel`/`with_detail`) | 288 리스트 + 디테일 + 액션바 |
-| `AttentionPanel` (4케이스) | `draw_attention` / `reason_banner` / `reason_detail` | unknown-key·signature-invalid·permissions-changed·health-error |
-| `AddPluginForm` (trust 흐름) | `draw_add` (`add_path_picker`/`add_manifest_preview`) | 매니페스트 프리뷰 + 미신뢰 배너 + Trust & add |
-| `PluginAvatar` | `cat_avatar` / `draw_avatar` | color-mix → `mix`/`alpha` 헬퍼 |
+| `PluginsWindow`(container) | `src/view/plugins/ui.rs` `draw_plugins_panel` | `window` + `stage_size` — 탭 상태 `Tab`(Installed / Attention / Add{preview}) 로 본문이 갈린다 |
+| header + `Seg` 세그먼트 | 같음(헤더 밴드) | `header` / `segment_tab` — Installed \| Attention(danger 배지) \| Add plugin. 필터 입력은 Installed 탭에서만 |
+| installed list+detail | `src/view/plugins/ui/list.rs` `draw_list_tab` | `list_pane` / `detail_pane` — 목록은 전부, **상세는 identity + 설명까지만**. 본체 상세의 Status/Configure · Surface kinds · Permissions · Install path · Log · Uninstall 블록은 아직 specimen 에 없다 |
+| `AttentionPanel` (4케이스) | `src/view/plugins/ui/attention.rs` `draw_attention_tab` | `plugins_window/attention.rs`: `list_pane` / `detail_pane` / `banner` / `reason_detail` / `action_bar` / `reason_cards` |
+| `AddPluginForm` (trust 흐름) | `src/view/plugins/ui/add.rs` `draw_add_tab` | `plugins_window/add.rs`: `input_pane` / `preview_pane` / `untrusted_warning` |
+| `PluginAvatar` | (없음) | (없음) — 디자인에만 있는 컴포넌트다 |
 
-검증: `TASTY_GALLERY_SHOT=31:<png>` (Installed)·기본탭 임시 변경으로 Attention 4케이스/Add 캡처.
-좌표 ±1px(모달 820×540, 헤더 48, 리스트 288), RGB 정확(bg_sidebar/bg_panel/border_strong). 화면전용
-고정값(820/540/48/288/26/14/22)은 token-policy §c verbatim const, 브랜드 마크색은 테마불변 const.
+severity 는 본체 `src/view/plugins/ui.rs` `is_danger` 를 따른다 — 서명 계열만 danger, 권한
+변경·런타임 오류는 warning. Installed 목록의 health dot 과는 다른 축이다(health dot 은 실행 중
+실패 하나만 본다).
+
+검증: specimen 이 다섯 상태(Installed · Attention · Attention 빈 상태 · Add 경로입력 ·
+Add 매니페스트 프리뷰)를 세로로 모두 그리므로 탭 전환 없이 대조한다. 페이지는 Overlays(idx 3)
+이고 이 섹션은 그 페이지 맨 아래라 스크롤 오프셋을 준다 — 정확한 y 는 위에 섹션이 늘면 밀리므로
+오프셋 몇 개를 한 배치로 훑어 고른다([screenshot-methods](../../ai-verification/screenshot-methods.md)).
+
+```bash
+TASTY_GALLERY_SIZE=1400x2500 TASTY_GALLERY_SHOT="3@37000:/abs/a.png,3@38200:/abs/b.png" \
+  ./target/debug/tasty-gallery
+```
+
+본체 대조는 Plugins 창을 띄우고 그 창 id 로 찍는다. 이 창은 사이드바 버튼에서만 열리고 그
+경로를 여는 IPC 가 없으므로(원칙 1 — 사용자 조작 재현은 release 에 없다), 열기는 창 클릭으로
+한다. 창 제목은 `Tasty Plugins` 다([screenshot-methods](../../ai-verification/screenshot-methods.md)
+의 창 제목 표).
+
+```bash
+tasty screenshot --path /abs/host.png --window <Tasty Plugins 창 id>
+```
 
 ## Specimen 공용 헬퍼 (dedup)
 

@@ -24,6 +24,9 @@
 //! 행 40 → `item_height_interactive + spacing_md`, 이름 13 → `font_size_body`,
 //! 부제 10 → `font_size_micro`.
 
+mod add;
+mod attention;
+
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{TagVariant, tag};
@@ -31,18 +34,39 @@ use tasty_ui_widgets::{TagVariant, tag};
 use crate::catalog::icons::{CLOSE, PLUG};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 본체 `SidePanel::left("plugins_list").exact_width`.
-const LIST_W: f32 = 240.0;
+/// 세그먼트 탭 셋 — 본체 `PluginsUiState.tab`. 세 탭은 서로 다른 본문을 그린다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Installed,
+    /// Attention 은 대상이 0 이면 본문이 통째로 안내로 바뀌고 세그먼트 배지도 사라진다.
+    Attention {
+        empty: bool,
+    },
+    /// `Add plugin` 은 상태가 둘이라 어느 쪽을 그릴지 함께 든다.
+    Add {
+        preview: bool,
+    },
+}
+
+/// 본체 `SidePanel::left("plugins_list").exact_width` 와 같은 값을 같은 곳에서 읽는다 —
+/// Installed·Attention 두 탭이 같은 접근자를 쓰므로(`ui/list.rs` · `ui/attention.rs`)
+/// 갤러리도 상수를 새로 짓지 않고 접근자를 부른다.
+fn list_w(theme: &Theme) -> f32 {
+    theme.plugins_side_panel_width().value()
+}
 
 /// 창 데모 무대 크기 — 본체 Plugins 창은 `TopBottomPanel`/`SidePanel` 조합으로 창
 /// 전체를 채우므로 전사할 고정 크기가 없다. 그래서 무대는 갤러리가 정하되, 값을
 /// 새로 짓지 않고 토큰으로 조립한다.
 ///
-/// - 폭 = `LIST_W`(본체 목록 폭) + `measure_md` — 상세 컬럼을 본문 측정 토큰 하나로
+/// - 폭 = `list_w`(본체 목록 폭) + `measure_md` — 상세 컬럼을 본문 측정 토큰 하나로
 ///   잡으면 목록/상세 경계가 무대 폭에 종속되지 않는다.
 /// - 높이 = `measure_sm` — 헤더(48) + 40px 행 3개가 잘리지 않는 가장 작은 측정 토큰.
 fn stage_size(theme: &Theme) -> egui::Vec2 {
-    egui::vec2(LIST_W + theme.measure_md.value(), theme.measure_sm.value())
+    egui::vec2(
+        list_w(theme) + theme.measure_md.value(),
+        theme.measure_sm.value(),
+    )
 }
 
 /// 목록 행 하나의 표시 데이터 — 본체 `PluginsSnapshot.plugins` 항목과 동형.
@@ -204,7 +228,8 @@ fn segment_tab(
 }
 
 /// 헤더 밴드 (높이 48) — 본체 `TopBottomPanel::top("plugins_header")`.
-fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+/// 선택 세그먼트와 필터 입력의 유무가 `tab` 에 달려 있다.
+fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
     p.hline(
@@ -262,7 +287,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             label: "Installed",
             count: Some(ROWS.len()),
             danger: false,
-            selected: true,
+            selected: tab == Tab::Installed,
         },
     ) + STRUCT_GAP_2.value();
     x += segment_tab(
@@ -272,9 +297,15 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         egui::pos2(x, tab_y),
         &Segment {
             label: "Attention",
-            count: Some(1),
+            // 본체는 언제나 `snapshot.attention.len()` 을 넘기고, 0 을 지우는 것은
+            // `segment_tab` 안의 `count > 0` 규칙이다 — 여기서 미리 지우면 그 규칙이
+            // 갤러리에서 한 번도 안 걸린다.
+            count: Some(match tab {
+                Tab::Attention { empty: true } => 0,
+                _ => attention::ENTRIES.len(),
+            }),
             danger: true,
-            selected: false,
+            selected: matches!(tab, Tab::Attention { .. }),
         },
     ) + STRUCT_GAP_2.value();
     segment_tab(
@@ -286,7 +317,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             label: "Add plugin",
             count: None,
             danger: false,
-            selected: false,
+            selected: matches!(tab, Tab::Add { .. }),
         },
     );
 
@@ -312,6 +343,11 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             ),
         );
 
+    // 목록이 있는 Installed 탭에서만 필터가 나타난다 — 본체와 같다.
+    if tab != Tab::Installed {
+        return;
+    }
+
     let filter_w = theme.field_width_lg.value();
     let filter_h = theme.item_height_interactive.value();
     let filter_rect = egui::Rect::from_min_size(
@@ -334,13 +370,13 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             filter_rect.center().y,
         ),
         egui::Align2::LEFT_CENTER,
-        "Filter plugins…",
+        "Filter installed…",
         egui::FontId::proportional(theme.font_size_body.value()),
         theme.text_placeholder().to_egui(),
     );
 }
 
-/// 좌측 목록 (폭 240) — 40px 2줄 행.
+/// 좌측 목록 (폭 `plugins_side_panel_width`) — 40px 2줄 행.
 fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
@@ -440,7 +476,7 @@ fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     );
 }
 
-fn window(ui: &mut egui::Ui, theme: &Theme) {
+fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
     let (rect, _) = ui.allocate_exact_size(stage_size(theme), egui::Sense::hover());
     ui.painter().rect_filled(
         rect,
@@ -451,30 +487,60 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
     let header_h =
         theme.item_height_interactive.value() + theme.spacing_lg.value() + theme.spacing_xs.value();
     let header_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), header_h));
-    header(ui, theme, header_rect);
+    header(ui, theme, header_rect, tab);
 
     let body_top = header_rect.bottom();
-    let list_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.min.x, body_top),
-        egui::pos2(rect.min.x + LIST_W, rect.max.y),
-    );
-    list_pane(ui, theme, list_rect);
-    detail_pane(
-        ui,
-        theme,
-        egui::Rect::from_min_max(egui::pos2(list_rect.max.x, body_top), rect.max),
-    );
+    let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, body_top), rect.max);
 
-    // 목록/상세 경계 1px.
-    ui.painter().vline(
-        list_rect.max.x,
-        egui::Rangef::new(body_top, rect.max.y),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-    );
+    // Installed·Attention 은 목록+상세 2열, Add 는 단일 열 — 본체와 같은 갈래다.
+    let split = |ui: &mut egui::Ui,
+                 list: fn(&mut egui::Ui, &Theme, egui::Rect),
+                 detail: fn(&mut egui::Ui, &Theme, egui::Rect)| {
+        let list_rect =
+            egui::Rect::from_min_max(body.min, egui::pos2(body.min.x + list_w(theme), body.max.y));
+        list(ui, theme, list_rect);
+        detail(
+            ui,
+            theme,
+            egui::Rect::from_min_max(egui::pos2(list_rect.max.x, body_top), body.max),
+        );
+        ui.painter().vline(
+            list_rect.max.x,
+            egui::Rangef::new(body_top, body.max.y),
+            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        );
+    };
+
+    match tab {
+        Tab::Installed => split(ui, list_pane, detail_pane),
+        Tab::Attention { empty: false } => split(ui, attention::list_pane, attention::detail_pane),
+        Tab::Attention { empty: true } => {
+            split(ui, attention::empty_list_pane, attention::empty_detail_pane)
+        }
+        Tab::Add { preview: false } => add::input_pane(ui, theme, body),
+        Tab::Add { preview: true } => add::preview_pane(ui, theme, body),
+    }
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Solo, |ui| window(ui, theme));
+    // 네 화면을 다 전시한다 — 본체는 한 번에 하나만 그리지만 갤러리는 cut 하지 않는다.
+    for (label, tab) in [
+        ("Installed", Tab::Installed),
+        ("Attention", Tab::Attention { empty: false }),
+        ("Attention — empty", Tab::Attention { empty: true }),
+        ("Add plugin — path input", Tab::Add { preview: false }),
+        (
+            "Add plugin — manifest preview (untrusted)",
+            Tab::Add { preview: true },
+        ),
+    ] {
+        spec::cluster(ui, theme, label, |ui| {
+            spec::stage(ui, theme, StageVariant::Solo, |ui| window(ui, theme, tab));
+        });
+    }
+    spec::cluster(ui, theme, "attention reasons (4)", |ui| {
+        attention::reason_cards(ui, theme);
+    });
 
     spec::meta(
         ui,
@@ -488,9 +554,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "segments",
                 "Installed N(mono count) / Attention N(danger 배지) / Add plugin",
             ),
-            ("list", "폭 240 · 행 40 · 이름 13 + 부제 10 muted"),
+            (
+                "list",
+                "폭 `plugins_side_panel_width` · 행 40 · 이름 13 + 부제 10 muted",
+            ),
             ("builtin", "이름 뒤 `•` · 상세는 accent-agent 배지"),
             ("health error", "enabled + error 인 행만 우측 danger dot"),
+            (
+                "attention",
+                "같은 2열 · 2번째 줄이 사유 라벨(severity 색) · 상세는 배너 + 사유 detail + 액션 바 · 0 건이면 배지가 사라지고 본문이 안내로 바뀐다",
+            ),
+            (
+                "add",
+                "단일 열 · 경로 입력(입력+Verify / 구분선 / 폴더 찾기)과 매니페스트 프리뷰 두 상태",
+            ),
         ],
         &[
             TokenChip::new(
@@ -520,5 +597,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          이유와 다음 수를 보여주며, Add plugin 은 로컬 폴더 경로로 설치한다. 검색 입력은 \
          목록이 있는 Installed 탭에서만 나타난다. 사용자가 직접 끈 plugin 은 error 가 아니라 \
          정상 종료이므로 danger dot 이 붙지 않는다.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Attention 의 severity 는 사유로 갈린다 — 서명 계열(신뢰 안 됨 · 무효)은 danger, \
+         권한 변경과 런타임 오류는 warning 이다. 이것은 Installed 목록의 health dot 과 다른 \
+         축이다: health dot 은 '실행 중 실패' 하나만 보고, Attention 은 등록 거부까지 함께 \
+         모은다. Add 는 미신뢰 plugin 에 공개키가 있을 때만 Add 버튼이 살아 있다 — 공개키가 \
+         없거나 서명 오류면 신뢰를 등록할 방법이 없어 버튼이 꺼진다.",
     );
 }
