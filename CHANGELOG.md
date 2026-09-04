@@ -1,6 +1,6 @@
 # Changelog
 
-본 문서는 사용자(AI 에이전트 포함)가 의존하는 표면 — CLI 명령, IPC 메서드, 매니페스트 스키마, plugin 인터페이스 — 의 변경만 기록한다. 내부 refactor·테스트·문서는 `git log`를 참조.
+본 문서는 사용자(AI 에이전트 포함)가 의존하는 표면 — CLI 명령, IPC 메서드, 매니페스트 스키마, plugin 인터페이스 — 와 **사용자가 직접 체감하는 동작**(단축키, 입력·창 처리, OS 권한 흐름, 디스크에 남는 산출물)의 변경을 기록한다. 내부 refactor·성능 개선·테스트·문서는 `git log`를 참조.
 
 형식: [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/). 버전: [SemVer](https://semver.org/lang/ko/).
 
@@ -18,18 +18,33 @@
 
 ### Added
 
+- 번들 plugin **Agent Stream**(`com.tasty.agent-stream`) 추가 — surface 에서 도는 에이전트 세션의 transcript 를 tailing 해 이벤트(`text` / `thinking` / `tool_use` / `turn_end`)로 모으고, 커서 기반 비파괴 조회(`agent_stream.poll`)와 SSE 엔드포인트(`agent_stream.serve`, `GET /events`)로 외부 소비자에게 흘린다. CLI `tasty agent-stream watch|turn-start|unwatch|list|poll|serve|serve-stop|serve-info`. `turn-start` 로 turn 을 열면 그 뒤 나오는 이벤트가 호출자가 준 `request_id` 를 달고 나온다 — 웹훅 `IpcSequence` 에서 `claude.tell` 앞에 두는 용도다(watch 중이 아니거나 turn 이 이미 열려 있으면 거절). `serve` 는 포트를 필수로 받고 자동 폴백이 없으며, `serve-info` 는 토큰을 싣지 않는다.
+- `timer.list`(CLI `tasty list timers`) — 이 인스턴스를 깨우고 있는 타이머 목록 조회. "idle 인데 왜 계속 깨나" 를 IPC/CLI 로 답한다.
+- `memory.goal_set` / `memory.goal_get` / `memory.goal_clear`(CLI `tasty memory goal set|get|clear`) — surface 범위의 세션 목표 오버레이.
+- 원격 attach 픽커에서 **원격에 워크스페이스를 새로 만들어 바로 mirror** 할 수 있다 — 목록 첫 행 "+ 새 워크스페이스" 를 고르면 조회에 쓰던 같은 터널로 원격에 `workspace.create` 를 1 회 보내고, 그 워크스페이스를 기존 Connect 와 같은 지점으로 넘긴다. 이름·cwd 는 묻지 않고 원격 기본값을 쓴다(클라이언트는 원격 파일시스템 경로를 모른다). 이전에는 원격 워크스페이스가 0 개면 팝업 안에 회복 경로가 없었다.
+- macOS: 부팅 직후 **손쉬운 사용**(`surface.raw_key` 의 키 주입에 필요)과 **화면 기록**(인터랙티브 캡처에 필요) 권한을 미리 요청하고, **전체 디스크 접근**이 없어 보이면 설정 패널로 보내는 안내를 1 회 띄운다. 앱 번들에 TCC usage description 이 선언돼 프롬프트에 사유가 표시된다. 기능을 처음 쓰는 순간 조용히 막히던 것을 부팅 시점으로 앞당긴 것이다.
+- 이벤트 루프 콜백이 5 초 안에 돌아오지 않으면 워치독이 `~/.tasty/crash-reports/hang-<타임스탬프>.log` 를 남긴다(모든 빌드, stall 당 1 개). 창이 클릭·키·IPC 에 전혀 반응하지 않는 증상(GPU 드라이버 행이 대표적)이 어느 콜백·어느 단계에서 멎었는지 파일로 남는다 — 복구는 하지 않는 관측 전용이다.
 - 사용자 언어팩 발견·선택 — `~/.tasty/lang/<code>/pack.toml`(디렉토리 + 매니페스트)이 하나의 언어팩이다. `[meta] name`(콤보 표시 이름, 없으면 코드)과 **필수** `[font]`(`builtin = true` / `file` / `family` / `candidates` 중 하나)를 갖고, 나머지 문자열 키는 영어 베이스 위에 overlay 된다(빈 문자열 값은 번역 없음으로 보고 영어로 폴백). Settings › General 의 언어 콤보가 내장 `en`/`ko`/`ja` + 발견된 팩 전부를 노출한다(`tasty_i18n::available_languages`). 내장 `lang/{en,ko,ja}.toml` 에도 `[meta] name` 이 생겼다.
 - `surface.attention.clear`(CLI `tasty surface attention clear --surface <id> [--kind completion|needs_input]`) — attention(주의 환기) 해제. 지금까지 attention 은 `surface.completion` 으로 발동만 가능하고 해제 수단이 IPC/CLI 에 없었다(해제 producer 두 개가 전부 GUI 로컬 사건 — 실 렌더 포커스, 알림 패널 읽음). `--kind` 를 주면 현재 기록된 kind 가 그 값일 때만 지운다(생략 = kind 무관, 알 수 없는 값은 거절). attention 이 없던 surface 도 성공하며(idempotent) 응답 `cleared`/`previous_kind` 가 실제 결과를 알린다. 존재하지 않는 surface · **하드 점유(원격 attach) 중인 surface** · **mirror surface** 는 명시적 에러 — 뒤의 둘은 그 attention 의 소유자가 다른 인스턴스다(각각 ADR-0040 · ADR-0098/0104). 미러 사용자가 그 화면을 실제로 보고 확인한 해제는 종전대로 소유 인스턴스로 전달된다. 권한 `Notification`.
 - `surface.attention.get`(CLI `tasty surface attention get --surface <id>`) — 그 surface 에 기록된 attention kind(`"completion"`/`"needs_input"`/`null`) 조회. 읽기 전용이라 mirror·점유 중에도 허용. 권한 `Notification`.
 
 ### Changed
 
+- `surface.raw_key` 가 macOS 손쉬운 사용 권한이 없으면 `-32001 permission_denied` 로 거절한다 — 이전에는 `CGEventPost` 가 조용히 무시돼 호출자가 성공 응답을 받고도 아무 일도 일어나지 않았다. 판정은 호출 시점마다 한다(부팅 값 캐시 안 함).
+- claude plugin 이 `memory.read` 권한을 새로 요구하고, stop-gate 서브커맨드에 `--surface` 인자가 생겼다 — 세션 목표(`memory.goal_*`)를 읽어 stop gate 가 그 목표를 향해 계속 진행하기 위함이다. **권한이 늘었으므로 업그레이드 후 plugin 재승인이 한 번 요구된다.**
+- CLI 가 stderr 로 내는 오류·진단 문구, plugin 리포트 출력, host 알림 제목과 OS 메뉴·트레이·Jump List 라벨이 설정 언어(`general.language`)를 따른다 — 이전에는 영어 고정이었다. **stderr 문구를 문자열로 파싱하던 스크립트는 로케일에 따라 결과가 달라진다**(종료 코드와 stdout JSON 은 그대로다).
 - `~/.tasty/lang/<code>.toml` 단일 파일은 이제 **내장 코드(`en`/`ko`/`ja`)의 오버라이드 전용**이다 — 내장이 아닌 코드의 단일 파일은 팩으로 인정하지 않고 `tracing::warn!` 후 무시한다(`<code>/pack.toml` 로 옮겨야 한다).
 - `general.language` 가 팩 없는/무효한 코드를 가리키면 영어로 폴백하고 부팅 후 경고 토스트 1회(요청 코드 + 기대 경로)를 띄운다 — headless/CLI 는 `tracing::warn!` 한 줄. 설정값은 덮어쓰지 않으며, `current_language()` 와 plugin 에 전달되는 `TASTY_LOCALE` 은 실제 적용 언어(`en`)를 싣는다. `tasty_i18n::init` 이 `LoadReport` 를 돌려준다(이전에는 반환값 없음).
 - 설정 콤보에서 현재 설정값이 목록에 없으면(팩 삭제 등) `<code> (not found)` 행으로 유지한다 — 콤보를 열고 닫아도 값이 바뀌지 않는다.
 
 ### Fixed
 
+- `tasty read screen --lines N` 이 내용 대신 빈 줄을 돌려주던 문제. 화면 하단 N **행**을 그대로 잘라서, 대부분 비어 있는 화면에서는 짧은 프롬프트와 공백만 나왔다 — 이제 내용 아래 공백 행을 건너뛰고 **내용 기준 마지막 N 줄**을 세며, 화면에 모자라면 스크롤백에서 채운다(대체 화면 포함). 살아 있는 터미널이 `--lines` 때문에 빈 결과를 내는 일이 없어졌다. 같은 N 이라도 이전과 다른 줄이 나오므로, 출력 줄 수를 고정으로 가정하던 스크립트는 확인이 필요하다.
+- `rendering = "webview"` surface(`markdown` · `html`)에 포커스가 있으면 사용자가 설정한 단축키가 통째로 죽던 문제. 그 surface 는 OS 자식 창이라 winit 최상위 창이 키 이벤트를 아예 받지 못했다(포인터가 그 위에 있기만 해도 그랬다). 이제 세 백엔드가 native 키를 host 로 포워딩하며, 가져갈 콤보는 `KeybindingSettings` + plugin 명령 레지스트리에서 전량 도출한다 — 페이지가 갖는 것은 수식 없는 키·`shift` 전용 키와 페이지 예약 액션(`find`/`copy`/`cut`/`paste`/`select_all`)뿐이다. 키캡과 다른 문자를 내는 레이아웃(러시아어 등)도 물리 키 폴백으로 매칭된다. 분할 탭 안의 webview 도 함께 고쳤다(비포커스 leaf 에서 `webview.set_url` 이 실패하고, 포커스 leaf 의 native overlay 가 옆 leaf 를 덮던 문제). 근거 ADR-0102.
+- 창이나 그 GPU 초기화가 실패하면 프로세스가 panic 해 **다른 창의 세션까지 함께 죽던** 문제. 설정된 셸 경로 오타 하나로 전체가 내려갔다 — 이제 실패를 보고하고 이미 떠 있는 창은 건드리지 않는다.
+- popup 과 banner 가 휠 스크롤에 거의 반응하지 않던 문제. 두 렌더러가 델타의 단위를 버리고 노치 하나를 1 포인트로 취급했다.
+- 다른 앱에서 포커스가 돌아올 때 유령 키 입력이 들어오던 문제. winit 은 포커스를 얻거나 잃는 순간 그때 눌려 있던 모든 키의 Pressed/Released 를 합성해 보내는데(X11 · Windows) tasty 가 `is_synthetic` 을 어디에서도 읽지 않았다 — 다른 앱을 `Alt+F4` 로 닫고 돌아오면 남아 있던 `F4` 가 탭 이름 변경 팝업을 저절로 띄웠다. 이제 창 이벤트 진입부 한 곳에서 버린다.
+- 실사용 surface id 가 2^31 을 넘어 headless PTY id 공간과 겹치던 문제(두 공간은 서로소여야 한다). 오염 유입을 막고, 부팅 시 이미 오염된 범위를 정리한다.
 - 진단 로그(`tracing`)가 **stdout** 으로 나가 CLI 출력을 오염시키던 문제. `tasty list tree | jq .` 처럼 stdout 을 기계가 파싱하는 경로에서, 경고가 한 줄이라도 나면 JSON 앞에 섞여 파싱이 깨졌다 — 로그 레이어의 writer 가 stderr 가 아니라 기본값(stdout)이었다. 이제 stderr 로 나간다(파일 로그 레이어는 종전과 동일).
 - 에이전트의 close 가 사용자가 보고 있던 워크스페이스 · 탭 · pane 을 옮기던 문제(3계층 전부). 활성 포인터 중 둘(`active_workspace` · `active_tab`)이 인덱스라 **앞쪽** 원소가 닫히면 인덱스는 그대로인 채 가리키는 대상이 바뀌었고, pane 은 닫힌 pane 이 포커스였는지 보지 않고 무조건 첫 pane 으로 포커스를 재배정했다. 그래서 에이전트가 release IPC `surface.close` 로 자기 워크스페이스를 정리하는 것만으로 사용자 화면이 흔들렸다(불가침 원칙 1 위반). 이제 세 계층 모두 **제거 위치를 기준으로 보정**해 같은 대상을 계속 가리키고, 시야는 사용자가 보던 대상 자체가 사라졌을 때만 움직인다. 같은 보정이 사용자 경로(컨텍스트 메뉴로 앞쪽 탭/워크스페이스 닫기)·`surface.move`·원격 attach forward 에도 적용된다. mirror 워크스페이스 teardown 은 이미 같은 보정을 하고 있었고, 이번엔 같은 헬퍼로 수렴시켰다 — 거기서 순증한 것은 카테고리 착지점 보정이다. 카테고리 quick-switch 착지점(전역 인덱스)도 함께 보정된다. 근거 ADR-0113.
 - headless 인스턴스(`--headless`)에서 `surface.completion` 이 아무 효과가 없던 문제. Intent 큐를 drain 하는 지점이 gui 빌드 전용이고 headless IPC 펌프는 그 큐를 읽지 않아, 핸들러가 enqueue 한 발동 요청을 처리할 주체가 없었다 — 이제 IPC 핸들러가 대상 engine 에 직접 적용한다(응답 계약은 불변). 같은 이유로 새 `surface.attention.{get,clear}` 도 headless 에서 동작한다.
