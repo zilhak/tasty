@@ -1351,3 +1351,134 @@ fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
         "webview 의 URL 을 소비하는 것은 렌더러뿐이라 헤드리스엔 없는 것이 정답이다: {resp}"
     );
 }
+/// 지목한 대상이 **없으면** 부류를 가리지 않고 거절하고, **있으면** 그 검사가 안 걸린다.
+///
+/// 앞선 자리(`a_request_naming_an_unowned_target_is_rejected`)는 이 판정을 `workspace_id`
+/// **한 키**로만 고정했다. 그런데 판정기가 보는 키는 열하나이고 부류는 일곱이다
+/// (`core::request_target::params_resource_id`) — 한 키만 박아 두면 나머지 열이 조용히
+/// 빠져도 초록이다. 실제로 이 저장소에서 같은 형태가 났다: 같은 판정을 워크스페이스
+/// 단위에서는 하고 surface 단위에서는 안 하던 자리가 있었다(ADR-0156).
+///
+/// **두 방향을 짝으로 본다.** 거절만 세면 "전부 거절" 과 구별이 안 되므로, 같은 메서드에
+/// **살아 있는** id 를 실었을 때 이 검사가 걸리지 않는 것을 같은 회차에서 확인한다.
+///
+/// 그리고 **두 조합에서 같은 몸통이 돈다.** gui 는 라우터 앞에서, 헤드리스는 engine
+/// handler 앞에서 판정하는데 — 경로가 다르므로 결과가 같은지는 재야 안다.
+#[test]
+fn an_unowned_target_is_rejected_for_every_resource_kind() {
+    let _lane = lane();
+    let tasty = common::shared();
+    const MISSING: u64 = 999_999;
+
+    // (부류/키, 메서드, 그 키를 뺀 나머지 params). 메서드는 그 키를 실제로 받는
+    // **호스트 예약 prefix** 로 고른다 — plugin prefix 는 애초에 이 판정을 안 지난다.
+    let cases: Vec<(&str, &str, &str, serde_json::Value)> = vec![
+        (
+            "workspace",
+            "workspace_id",
+            "workspace.create",
+            json!({ "name": "unowned-kind-probe" }),
+        ),
+        (
+            "workspace",
+            "target_workspace_id",
+            "workspace.move",
+            json!({}),
+        ),
+        ("surface", "surface_id", "surface.close", json!({})),
+        ("surface", "surface", "terminal.children", json!({})),
+        ("surface", "parent", "terminal.kill", json!({})),
+        ("surface", "target", "surface.split", json!({})),
+        (
+            "surface",
+            "to_surface_id",
+            "message.send",
+            json!({ "message": "x" }),
+        ),
+        ("tab", "tab_id", "tab.close", json!({})),
+        ("pane", "pane_id", "pane.close", json!({})),
+        ("pane", "pane", "tab.new", json!({})),
+        (
+            "pane",
+            "target_pane_id",
+            "split",
+            json!({ "level": "pane" }),
+        ),
+        ("headless pty", "id", "pty.write", json!({ "data": "x" })),
+        ("surface hook", "hook_id", "hook.unset", json!({})),
+        (
+            "output observer",
+            "observer_id",
+            "output.observe_stop",
+            json!({}),
+        ),
+    ];
+
+    // ── 방향 ①: 없는 대상은 부류를 가리지 않고 거절된다.
+    for (kind, key, method, base) in &cases {
+        let mut params = base.clone();
+        params[*key] = json!(MISSING);
+        let resp = tasty.call_raw(method, params);
+        let msg = resp
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        assert!(
+            !msg.contains("Method not found"),
+            "{method} 가 없는 메서드다 — 이 줄은 판정이 아니라 미측정이다. 이름을 고쳐라: {resp}"
+        );
+        assert!(
+            msg.contains(&MISSING.to_string()),
+            "{key}({kind}) 를 없는 id 로 실었는데 그것을 말하는 거절이 안 나왔다 \
+             — 지목한 대상이 없는데 조용히 성공했을 수 있다: {resp}"
+        );
+        assert!(
+            msg.contains(kind),
+            "거절이 **무엇을** 못 찾았는지 말해야 고칠 수 있다({kind} 를 기대): {resp}"
+        );
+    }
+
+    // ── 방향 ②: 살아 있는 대상에는 이 검사가 안 걸린다.
+    // 거절만 세면 "전부 거절" 과 구별이 안 된다. 여기서 다른 이유의 실패는 허용한다
+    // (자기 surface 를 닫으려 한다든지) — 보는 것은 **소유 검사가 걸렸는가** 하나다.
+    let tree = tasty.call("tree", json!({}));
+    let live_ws = tree[0]["id"].as_u64().expect("살아 있는 workspace id");
+    let surfaces = tasty.call("surface.list", json!({}));
+    let live_surface = surfaces
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|s| s["id"].as_u64())
+        .expect("살아 있는 surface id");
+    let panes = tasty.call("pane.list", json!({}));
+    let live_pane = panes
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|p| p["id"].as_u64())
+        .expect("살아 있는 pane id");
+
+    let live: Vec<(&str, &str, serde_json::Value, u64)> = vec![
+        (
+            "workspace_id",
+            "workspace.create",
+            json!({ "name": "live-kind-probe" }),
+            live_ws,
+        ),
+        ("surface", "terminal.children", json!({}), live_surface),
+        ("pane", "tab.new", json!({}), live_pane),
+    ];
+    for (key, method, base, id) in live {
+        let mut params = base.clone();
+        params[key] = json!(id);
+        let resp = tasty.call_raw(method, params);
+        let msg = resp
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        assert!(
+            !msg.contains("no live"),
+            "{key}={id} 는 살아 있는데 소유 검사가 걸렸다 — 검사가 너무 넓다: {resp}"
+        );
+    }
+}
