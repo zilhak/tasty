@@ -26,6 +26,12 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
 **③ 파괴력에 대한 안전장치를 둘 것인가.** 워크스페이스 하나를 닫으면 그 안에서 돌던
 터미널 세션이 전부 죽는다. surface 하나를 닫는 것과 규모가 다르다.
 
+**④ 원격 attach 가 점유 중인 surface 가 들어 있으면 어떻게 하는가.** ②의 mirror 와는
+다른 상태다 — mirror 는 "이 인스턴스가 원격을 비추는 그림자" 이고, 하드 점유는 "이
+인스턴스가 소유한 surface 를 원격 클라이언트가 배타적으로 잡고 있는" 상태다
+(`OccupancyRegistry::is_hard_occupied`, [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md)). 후자에서
+그 터미널을 실제로 쓰고 있는 것은 **다른 사람**이고, 로컬 입력은 이미 차단돼 있다.
+
 배경 원칙은 [`identity.md`](../identity.md) 원칙 1(사용자 행동 ↔ 에이전트 행동 분리)과
 원칙 3(포커스 독립성), 포커스 보존의 구체는 [ADR-0113](0113-close-preserves-the-focused-target.md).
 
@@ -45,8 +51,17 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
 가이드에 "되돌릴 수 없다" 를 명시**한다 — 안전장치를 두지 않는 대신 호출자가 그 사실을
 모르는 상태로 두지는 않는다.
 
-셋은 한 가족이다: **에이전트가 부르는 파괴적 워크스페이스 명령은, 회복 경로가 따로 있는
-대상(창 · mirror)에는 손대지 않고, 손대는 범위에 대해서는 비가역성을 숨기지 않는다.**
+**④ 원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스도 거절한다.** 워크스페이스의
+surface 를 훑어 하나라도 하드 점유 상태면 거절하고, 어느 surface 때문인지 응답에 싣는다.
+점유 중인 터미널에서 일하고 있는 것은 이 인스턴스의 사용자가 아니라 원격 사용자이고,
+이 경로는 비가역이라 "닫고 나서 되돌리기" 가 없다. 로컬 입력조차 차단된 대상을 로컬
+에이전트가 파괴할 수 있는 것은 점유 모델의 구멍이다. `surface.attention.clear` 가 하드
+점유 surface에 대해 이미 같은 선택을 했다(그쪽은 상태 소유권 논거, 이쪽은 파괴 논거지만
+둘 다 "점유 중에는 holder 가 주인" 이다).
+
+넷은 한 가족이다: **에이전트가 부르는 파괴적 워크스페이스 명령은, 회복 경로가 따로 있는
+대상(창 · mirror)이나 지금 다른 주체가 쓰고 있는 대상(하드 점유)에는 손대지 않고, 손대는
+범위에 대해서는 비가역성을 숨기지 않는다.**
 
 ## Consequences
 
@@ -56,6 +71,7 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
   - "워크스페이스를 닫아라" 가 창 종료로 번지지 않는다. 에이전트 루프가 마지막 하나에
     도달해도 결과가 예측 가능하다.
   - mirror 의 전용 teardown 을 우회하는 경로가 생기지 않는다.
+  - 원격 사용자가 점유해 쓰고 있는 터미널이 로컬 에이전트의 루프에 휩쓸려 죽지 않는다.
   - 비가역성이 호출 지점(`--help`)에서 보인다.
 - **잃은 것**
   - "워크스페이스를 다 치우고 창도 닫는다" 를 한 번에 못 한다 — `workspace.close` 반복 후
@@ -68,6 +84,8 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
   - 워크스페이스를 제거하는 새 경로가 생길 때마다 `WorkspaceCloseOrigin` 과
     `fix_workspace_pointers_after_removal` 을 함께 태워야 한다(후자는 ADR-0113).
   - mirror 판정은 `Workspace::mirror` 플래그 한 줄이라 attach 모델이 바뀌면 함께 본다.
+  - ④는 워크스페이스의 surface 를 전수 훑는다. 점유 술어가 hard 전용이라는 ADR-0040 의
+    계약에 기대므로, soft 점유가 그 술어에 섞이면 정상 요청이 거절되기 시작한다.
 
 ## Alternatives Considered
 
@@ -88,6 +106,13 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
   있는 surface 가 N 개 이상이면 `force` 없이는 거절. 사고는 줄지만 이 프로젝트에 그런
   선례가 없고, 에이전트 자동화 코드에 조건 분기를 늘린다. 무엇보다 "어디부터 위험한가" 의
   임계값을 근거 없이 정하게 된다.
+- **④-A 하드 점유는 무시하고 닫는다** — 점유는 "입력 차단" 이지 "삭제 금지" 가 아니라는
+  독해. 그러나 입력을 막아 둔 이유가 "그 surface 의 주인은 지금 holder 다" 라면, 같은
+  이유가 파괴에는 더 강하게 적용된다. 입력은 막고 삭제는 허용하는 조합은 설명할 수 없다.
+- **④-B 점유된 surface 만 남기고 나머지를 닫는다(부분 close)** — "요청을 최대한 수행한다"
+  는 매력이 있으나 `workspace.close` 의 계약("워크스페이스를 통째로 닫는다")이 조건부로
+  변한다. 워크스페이스가 남을지 사라질지가 원격 세션의 상태에 따라 갈리면 에이전트가
+  결과를 예측할 수 없다. 부분 정리는 이미 `surface.close` 로 가능하다.
 - **③-B 에이전트 경로도 되돌리기 스택에 넣어 되살릴 수 있게 한다** — 비가역성 자체가
   사라지므로 매력적이지만, 에이전트 행동이 사용자의 "닫은 항목" 히스토리를 오염시킨다.
   원칙 1 과 정면 충돌이라 채택 불가.
@@ -102,6 +127,8 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
   ③-A 가 "선례 없음" 이라는 기각 사유를 잃는다.
 - 에이전트가 닫은 것을 되살려야 한다는 요구가 생긴다 — 사용자 히스토리와 **분리된** 별도
   스택(에이전트 전용 되돌리기)이라면 원칙 1 과 충돌하지 않으므로 ③-B 와 다른 선택지가 된다.
+- 점유 tier 모델이 바뀌어 `is_hard_occupied` 가 hard 전용이 아니게 된다 — ④가 그 술어의
+  hard 전용 계약(ADR-0040)에 기대므로 함께 본다.
 - `window.close` 가 마지막 창 거절 정책을 바꾼다 — ① 이 "창 종료는 `window.close` 로" 라는
   위임에 기대고 있으므로 함께 본다.
 
@@ -109,6 +136,7 @@ mirror attention · mesh 프레임 캐시를 워크스페이스 행과 **함께*
 
 - [`docs/identity.md`](../identity.md) — 원칙 1(사용자/에이전트 행동 분리) · 원칙 2(IPC+CLI 양면) · 원칙 3(포커스 독립성)
 - [ADR-0113](0113-close-preserves-the-focused-target.md) — close 가 포커스된 대상을 보존한다
+- [ADR-0040](0040-occupancy-soft-hard-tiers-agent-occupant.md) — 점유 tier(soft/hard)와 `is_hard_occupied` 의 hard 전용 계약
 - [`docs/design/policies/focus.md`](../design/policies/focus.md) — 자기 자신 닫기 보호 · 삭제 시 활성 포인터 보정
 - [`docs/features/remote-attach/index.md`](../features/remote-attach/index.md) — mirror 워크스페이스와 attach 점유 모델
 - [`docs/features/work-area/index.md`](../features/work-area/index.md) — 작업 영역 계층과 에이전트 조작

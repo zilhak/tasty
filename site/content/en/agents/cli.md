@@ -113,6 +113,8 @@ The last remaining workspace and the last remaining window cannot be closed. Clo
 never takes the window down with it; it is refused instead, so reach for `tasty close window` when
 that is what you mean. A target holding your own terminal is refused too - use `tasty close self`
 there. A workspace mirroring a remote connection is refused as well - end that connection instead.
+The other way round, a workspace holding **a terminal someone is using over a remote connection**
+is refused too - it closes once that person lets go of it.
 Closing a workspace you are not looking at leaves the one on screen where it was.
 
 **Closing a workspace cannot be undone.** Every terminal running inside it ends, it does not come

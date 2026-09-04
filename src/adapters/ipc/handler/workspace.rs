@@ -428,6 +428,10 @@ pub fn handle_workspace_update(
 ///    `fix_workspace_pointers_after_removal` 로 인덱스 활성 포인터를 대상 기준으로
 ///    보정한다. 활성 워크스페이스 자신을 닫을 때만 이동한다.
 ///
+/// 거절은 넷이다(대상 해석 실패 제외) — caller 자신의 surface 가 든 워크스페이스 ·
+/// mirror 워크스페이스 · **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스** ·
+/// 마지막 하나 남은 워크스페이스. 근거는 [ADR-0120](../../../../docs/adr/0120-agent-workspace-close-boundaries.md).
+///
 /// 마지막 워크스페이스는 거부한다. GUI 는 그 경우 창까지 닫지만, 창을 없애는 것은
 /// 별개의 결정이라 에이전트에게는 `window.close` 라는 명시적 수단을 따로 준다 —
 /// 워크스페이스 하나를 닫으라는 요청이 창 종료로 번지지 않게 한다.
@@ -487,6 +491,27 @@ pub fn handle_workspace_close(
             id,
             "Workspace is a mirror of a remote attach session — detach it from that session \
              instead of closing it here",
+        );
+    }
+
+    // 원격 attach 가 **하드 점유** 중인 surface 가 하나라도 들어 있으면 거절한다.
+    // 점유 중에는 그 surface 를 holder 세션이 소유하고 원격 사용자가 지금 그
+    // 터미널을 쓰고 있다 — 여기서 닫으면 남의 작업이 예고 없이 죽는다. 같은 이유로
+    // `surface.attention.clear` 도 하드 점유 surface 를 거절한다(ADR-0120 ④).
+    // mirror 검사와 별개다: mirror 는 "이 인스턴스가 원격을 비추는 그림자", 하드
+    // 점유는 "이 인스턴스의 surface 를 원격 클라이언트가 잡고 있는 상태" 다.
+    if let Some(occupied) = engine.workspaces[ws_idx]
+        .all_surface_ids()
+        .into_iter()
+        .find(|sid| engine.attach.is_hard_occupied(*sid))
+    {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!(
+                "Workspace holds surface {occupied}, which is occupied by a remote attach \
+                 session (hard-occupied) — someone is working in that terminal right now. \
+                 Release it from the attaching instance first."
+            ),
         );
     }
 
@@ -575,6 +600,52 @@ mod close_tests {
             engine.workspaces.len(),
             1,
             "거절이면 아무것도 닫히지 않는다"
+        );
+    }
+
+    /// 원격 attach 가 하드 점유한 surface 가 든 워크스페이스는 거절한다.
+    ///
+    /// 점유 중에는 그 터미널을 원격 사용자가 실제로 쓰고 있다. 이 검사가 없으면
+    /// 에이전트가 id 를 훑다가 남의 작업 세션을 예고 없이 죽인다 — 되돌릴 수도 없다.
+    /// (ADR-0120 ④. 같은 판단의 선례는 `surface.attention.clear`.)
+    #[test]
+    fn closing_a_workspace_a_remote_session_occupies_is_refused() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let target = add_workspace(&mut engine);
+        let ws_idx = engine
+            .workspaces
+            .iter()
+            .position(|w| w.id == target)
+            .expect("방금 만든 워크스페이스가 있어야 한다");
+        let occupied = engine.workspaces[ws_idx]
+            .all_surface_ids()
+            .first()
+            .copied()
+            .expect("워크스페이스에 surface 가 있어야 한다");
+        engine
+            .attach
+            .acquire(occupied, 1)
+            .expect("하드 점유를 잡을 수 있어야 한다");
+
+        let res =
+            handle_workspace_close(&mut state, &mut engine, json!(1), &json!({ "id": target }));
+
+        let err = res
+            .error
+            .expect("하드 점유 중인 워크스페이스는 거절해야 한다");
+        assert!(
+            err.message.contains("hard-occupied"),
+            "거절 사유가 점유임을 알려야 한다: {}",
+            err.message
+        );
+        assert_eq!(
+            engine.workspaces.len(),
+            2,
+            "거절이면 아무것도 닫히지 않는다"
+        );
+        assert!(
+            engine.attach.is_hard_occupied(occupied),
+            "거절 경로가 점유 상태를 건드리면 안 된다"
         );
     }
 
