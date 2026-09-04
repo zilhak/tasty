@@ -47,7 +47,17 @@ cargo clippy --workspace --all-targets
 bash scripts/check-file-size.sh
 ```
 
-`check-file-size.sh` 는 `tokei` 와 `python`(JSON 파싱)을 요구한다. 러너에 없으면 설치 가드가 exit 2 로 안내한다.
+`check-file-size.sh` 는 `tokei` 와 `python`(JSON 파싱)을 요구한다. 종료코드 세 가지를 **서로 구분**한다.
+
+| 코드 | 뜻 |
+|---|---|
+| 0 | 측정에 성공했고 위반이 없다 |
+| 1 | 측정에 성공했고 allowlist 밖 대형 파일이 있다 (목록 출력) |
+| 2 | **측정 자체가 안 됐다** — 도구 미설치, tokei 실행 실패, JSON 파싱 실패, Rust 파일 0건 보고 |
+
+**2 를 0 과 합치지 않는 것이 요점이다.** 측정이 안 된 것을 "위반 없음" 으로 읽으면 러너에서 tokei 가
+어긋나는 순간 게이트가 영원히 초록이 된다. `tests/file_sloc_gate_fails_loudly.rs` 가 스텁 tokei 로
+네 경우(위반 / 정상 / 실행 실패 / 빈 보고)를 고정한다.
 
 ## baseline 갱신
 
