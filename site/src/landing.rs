@@ -23,7 +23,6 @@ struct Copy {
     /// Ghost button next to the primary one, pointing at the release page.
     cta_other: &'static str,
 
-    why_kicker: &'static str,
     why_title: &'static str,
     why_body: &'static str,
     why_points: &'static [(&'static str, &'static str, &'static str)],
@@ -64,7 +63,6 @@ const KO_COPY: Copy = Copy {
     dl_for: "{os} 용 다운로드",
     cta_other: "다른 플랫폼",
 
-    why_kicker: "왜 Tasty 인가",
     why_title: "에이전트가 일해도 내 자리는 그대로입니다",
     why_body: "에이전트가 탭을 만들든 명령을 보내든, 내가 보던 화면은 움직이지 않습니다. \
                잡아둔 선택도, 스크롤 위치도 그대로입니다. 사용자 입력을 흉내 내는 기능은 아예 없습니다.",
@@ -211,7 +209,6 @@ const EN_COPY: Copy = Copy {
     dl_for: "Download for {os}",
     cta_other: "Other platforms",
 
-    why_kicker: "Why Tasty",
     why_title: "The agent works, and your seat stays yours",
     why_body: "An agent can open tabs and send commands, and the screen you were looking at, \
                the text you selected, and your scroll position do not move. \
@@ -580,14 +577,12 @@ fn why(copy: &Copy) -> String {
         r##"<section class="section">
   <div class="split">
     <div class="section__head" style="margin-bottom:0">
-      <div class="section__kicker">{kicker}</div>
       <h2>{title}</h2>
       <p>{body}</p>
     </div>
     <ul class="feature-list">{points}</ul>
   </div>
 </section>"##,
-        kicker = html_escape(copy.why_kicker),
         title = html_escape(copy.why_title),
         body = html_escape(copy.why_body),
         points = points,
