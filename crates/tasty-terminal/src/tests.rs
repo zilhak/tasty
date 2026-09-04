@@ -1304,11 +1304,14 @@ fn alive_check_throttled_within_window() {
 
 #[test]
 fn process_exited_eventually_emitted() {
-    // 폴링(고정 sleep 간격) 대신 waker 신호로 대기한다 — parser 스레드가 새 데이터/EOF 마다
-    // 이 콜백을 부르므로, 러너 부하로 스케줄이 밀려도 고정 간격을 낭비하지 않고 wake 즉시
-    // process 한다. 옛 형태(5s deadline + 50ms sleep)는 벽시계 예산이라 부하 아래서 확률적으로
-    // 마감을 넘겼다(형태 C). 이제 대기는 이벤트 기반이고, deadline 은 wake 가 영영 오지 않을
-    // 때만 걸리는 안전망이라 넉넉히 둔다(정상 경로에선 수십 ms 안에 끝난다).
+    // 대기는 두 축이다 — 이벤트(waker) 우선, 상한은 제품의 alive-check 폴 주기로 자른다.
+    // parser 스레드가 새 데이터/EOF 마다 waker 를 부르므로 정상 경로에선 wake 즉시 process() 해
+    // 수십 ms 에 끝난다. 그러나 부하가 높으면 종료 시의 EOF-waker 가 유실·지연될 수 있어
+    // (sync_channel(1) 신호 병합 + 스케줄 밀림) 순수 이벤트 대기만으로는 자식이 이미 죽었는데도
+    // 대기자가 안 깨는 창이 남는다(형태 C 의 잔여 — 옛 5s+50ms 폴링을 이벤트로 바꿔도 남는다).
+    // 그래서 recv 상한을 ALIVE_CHECK_INTERVAL 로 잘라, wake 가 안 와도 그 주기마다 process() 가
+    // 돌며 제품이 이미 가진 try_wait 폴백으로 종료를 잡는다(process() 는 wake 없이 그 주기 throttle
+    // 로 try_wait 한다). deadline 은 그 위의 최후 안전망이라 넉넉히 둔다.
     // SyncSender + try_send: waker 콜백이 절대 블록되지 않아야 parser 스레드가 멈추지 않는다.
     let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
     let waker: Waker = Arc::new(move || {
@@ -1343,12 +1346,14 @@ fn process_exited_eventually_emitted() {
             seen = true;
             break;
         }
-        // 다음 wake 까지 블록한다(폴링 아님). 상한은 남은 deadline 을 넘지 않게 자른다 —
-        // wake 가 오면 즉시, 안 오면 상한 후 루프 조건이 종료를 판정한다.
+        // 상한을 ALIVE_CHECK_INTERVAL 로 자른다(위 함수 주석) — wake 가 오면 그 전에 즉시 깨고,
+        // 안 와도 이 주기마다 process() 가 try_wait 폴백을 돌린다. 폴링으로의 회귀가 아니라
+        // 이벤트 우선 + 제품 폴 주기 폴백이다. remaining 으로 한 번 더 자르는 건 남은 deadline 을
+        // 넘기지 않으려는 것(마지막 반복).
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         // wake 로 깼는지 상한으로 깼는지 구분할 필요가 없다 — 루프 상단의 process()+이벤트 검사와
         // deadline 조건이 다음 반복에서 판정한다. 그래서 recv 결과는 무시한다.
-        let _ = rx.recv_timeout(remaining);
+        let _ = rx.recv_timeout(remaining.min(ALIVE_CHECK_INTERVAL));
     }
     assert!(seen, "ProcessExited not emitted before deadline");
 }
