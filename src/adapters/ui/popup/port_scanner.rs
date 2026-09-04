@@ -1243,7 +1243,7 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     ui.style_mut().interaction.selectable_labels = false;
     ui.horizontal(|ui| {
         // B1: leading 포트 아이콘.
-        ui.add(icons::PORT.image(16.0, th.text_muted().into()));
+        ui.add(icons::PORT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
             egui::RichText::new(props.label_heading)
                 .color(th.text_primary())
@@ -1260,7 +1260,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, th, &|ui, rect, c| {
-                    icons::CLOSE.image(16.0, c).paint_at(ui, rect)
+                    icons::CLOSE
+                        .image(th.icon_glyph_size_md.value(), c)
+                        .paint_at(ui, rect)
                 })
                 .on_hover_text(props.label_close)
                 .clicked()
@@ -1271,7 +1273,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             if IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, th, &|ui, rect, c| {
-                    icons::REFRESH.image(16.0, c).paint_at(ui, rect)
+                    icons::REFRESH
+                        .image(th.icon_glyph_size_md.value(), c)
+                        .paint_at(ui, rect)
                 })
                 .on_hover_text(props.label_refresh)
                 .clicked()
@@ -1288,7 +1292,11 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             let resp = Input::new()
                 .placeholder(props.label_search_placeholder)
                 .width(200.0)
-                .icon(&|ui, rect, c| icons::SEARCH.image(15.0, c).paint_at(ui, rect))
+                .icon(&|ui, rect, c| {
+                    icons::SEARCH
+                        .image(th.icon_glyph_size_row_action.value(), c)
+                        .paint_at(ui, rect)
+                })
                 .show(ui, th, &mut buf);
             if resp.changed() && buf != props.filter.query {
                 out = Some(PortScannerAction::SetQuery(buf));
@@ -1326,7 +1334,9 @@ fn draw_column_chooser(
     let resp = IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .show(ui, th, &|ui, rect, c| {
-            icons::COLUMNS.image(16.0, c).paint_at(ui, rect)
+            icons::COLUMNS
+                .image(th.icon_glyph_size_md.value(), c)
+                .paint_at(ui, rect)
         })
         .on_hover_text(props.label_columns_button);
 
@@ -1414,7 +1424,7 @@ fn state_filter_button(
     };
     ui.add(
         egui::Button::image_and_text(
-            icons::FUNNEL.image(14.0, text_col),
+            icons::FUNNEL.image(th.icon_glyph_size_sm.value(), text_col),
             egui::RichText::new(label)
                 .color(text_col)
                 .size(th.font_size_body.value()),

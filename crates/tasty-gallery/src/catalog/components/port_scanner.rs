@@ -391,7 +391,7 @@ fn funnel_button(ui: &mut egui::Ui, theme: &Theme, label: &str, applied: bool) {
     };
     ui.add(
         egui::Button::image_and_text(
-            icons::FUNNEL.image(14.0, text_col),
+            icons::FUNNEL.image(theme.icon_glyph_size_sm.value(), text_col),
             egui::RichText::new(label)
                 .color(text_col)
                 .size(theme.font_size_body.value()),

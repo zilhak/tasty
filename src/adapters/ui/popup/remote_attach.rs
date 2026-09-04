@@ -686,7 +686,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
-    child.add(icons::TERMINAL_PROMPT.image(16.0, th.text_muted().into()));
+    child.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
     child.label(
         egui::RichText::new(t("remote_attach.heading"))
             .color(th.text_primary())
@@ -696,8 +696,10 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if ui
             .add(
-                egui::ImageButton::new(icons::CLOSE.image(16.0, th.text_muted().into()))
-                    .frame(false),
+                egui::ImageButton::new(
+                    icons::CLOSE.image(th.icon_glyph_size_md.value(), th.text_muted().into()),
+                )
+                .frame(false),
             )
             .on_hover_text(t("remote_attach.close"))
             .clicked()
@@ -1492,7 +1494,10 @@ fn badge(
         .painter()
         .layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER);
     let pad_x = th.spacing_sm.value();
-    let icon_w = if warn_icon { 12.0 + 4.0 } else { 0.0 };
+    // 아이콘 폭 + 라벨과의 간격. 아래 그리기·전진과 **같은 값**이어야 한다.
+    let icon_sz = th.icon_glyph_size_xs.value();
+    let icon_gap = th.spacing_xs.value();
+    let icon_w = if warn_icon { icon_sz + icon_gap } else { 0.0 };
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
@@ -1507,11 +1512,11 @@ fn badge(
     let mut tx = rect.left() + pad_x;
     if warn_icon {
         let ir = egui::Rect::from_min_size(
-            egui::pos2(tx, rect.center().y - 6.0),
-            egui::vec2(12.0, 12.0),
+            egui::pos2(tx, rect.center().y - icon_sz * 0.5),
+            egui::vec2(icon_sz, icon_sz),
         );
-        icons::ALERT_TRIANGLE.image(12.0, color).paint_at(ui, ir);
-        tx += 12.0 + 4.0;
+        icons::ALERT_TRIANGLE.image(icon_sz, color).paint_at(ui, ir);
+        tx += icon_sz + icon_gap;
     }
     ui.painter().galley(
         egui::pos2(tx, rect.center().y - galley.rect.height() * 0.5),

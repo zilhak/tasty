@@ -755,9 +755,10 @@ pub fn draw_collapsed_sidebar_view(
                     // 값-보존 위해 text_placeholder() 사용 (§4-8, placeholder vs disabled role 미확정).
                     th.text_placeholder().into()
                 };
-                icons::CHEVRONS_RIGHT.image(16.0, color).paint_at(
+                let sz = th.icon_glyph_size_md.value();
+                icons::CHEVRONS_RIGHT.image(sz, color).paint_at(
                     ui,
-                    egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                    egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz)),
                 );
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Expand);
@@ -988,9 +989,10 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
             } else {
                 th.text_secondary().into()
             };
-            icons::CHEVRONS_LEFT.image(16.0, color).paint_at(
+            let sz = th.icon_glyph_size_md.value();
+            icons::CHEVRONS_LEFT.image(sz, color).paint_at(
                 ui,
-                egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz)),
             );
             resp.clone().on_hover_text(collapse_hover);
             collapse = resp.clicked();
