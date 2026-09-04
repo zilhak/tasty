@@ -18,14 +18,13 @@ src/adapters/ui/sidebar/view.rs
 src/adapters/ui/surface/explorer.rs
 src/app/dispatch_domain.rs
 src/core/agent/runner_host.rs
-src/core/mod.rs
 src/view/main/redraw.rs
 src/view/main/vi_copy.rs
 src/view/settings/ui.rs
 src/view/settings/ui/tabs/appearance.rs
 
 # ── 아래 26 건: 게이트가 한 번도 실행되지 않은 채 쌓인 드리프트 (2026-09-04 측정) ──
-# 위 18 건과 성격이 다르다. 위쪽은 게이트 도입(2026-07-06) 시점의 기존 대형 파일이고,
+# 위 17 건과 성격이 다르다. 위쪽은 게이트 도입(2026-07-06) 시점의 기존 대형 파일이고,
 # 아래쪽은 그 뒤 60 일 동안 임계를 새로 넘은 것이다 — 도입 시점에 1000 을 넘던 것은
 # 이 26 중 **0 건**이다(21 건은 그때 임계 이하, 5 건은 아예 없던 파일).
 # 게이트의 유일한 트리거가 `pull_request` 였고 이 저장소는 PR 을 열지 않아
