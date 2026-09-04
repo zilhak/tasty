@@ -92,12 +92,7 @@ impl GpuState {
                         .stroke(egui::Stroke::new(th.border_width.value(), border))
                         .corner_radius(egui::CornerRadius::same(12))
                         .inner_margin(margin_all(th.spacing_xl))
-                        .shadow(egui::Shadow {
-                            offset: [0, 8],
-                            blur: 24,
-                            spread: 0,
-                            color: th.bg_app().into(),
-                        }),
+                        .shadow(th.shadow_popover().to_egui()),
                 )
                 .show(ctx, |ui| {
                     // ── Title ──────────────────────────────────────
