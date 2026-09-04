@@ -11,11 +11,21 @@
 //!
 //! 인스턴스 공유 원칙(binary 당 1 개 · workspace 격리)·격리 전략·timeout 정책은
 //! [`docs/dev-guide/e2e-tests.md`], 그 결정 근거는 ADR-0090. 원칙 위반은
-//! `tests/e2e_single_instance_guard.rs` 가 CI 에서 잡는다.
+//! `tests/e2e_single_instance_guard.rs` 가 잡는다 — 그 가드는 **헤드리스 조합에서만**
+//! 자동으로 돈다(`check-headless` 가 전체 스위트를 돌리고 그 잡의 `--skip` 목록에
+//! 없다). 기본 조합에는 컴파일 채널뿐이다. 정본은 `docs/dev-guide/ci-gates.md`.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
 // 다중 test binary 가 공유하는 test-support 모듈 — binary 마다 사용하는 부분집합이
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).
 #![allow(dead_code)]
+
+#[path = "../spawn_diag/mod.rs"]
+mod spawn_diag;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -32,11 +42,9 @@ use serde_json::Value;
 const STDERR_RING_CAPACITY: usize = 256;
 const STDERR_TAIL_LINES: usize = 30;
 
-// dev cold path worst-case ~4 s + plugin/theme/gpu init 마진 + dev profile
-// (~3.5x release) + self-hosted runner 변동 폭을 흡수하기 위한 timeout.
 // S1=port file 작성 (init_app_state 후), S2=first surface PTY prompt.
-const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(30);
-const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(15);
+// 값과 그 근거는 두 하네스가 공유한다 — `tests/spawn_diag`.
+use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT};
 
 // ───── 공유 인스턴스 (test binary 단위) ─────
 
@@ -289,7 +297,7 @@ impl TastyInstance {
         // 경로를 막아 port file 이 항상 작성되도록 보장한다.
         write_isolated_config(&isolated_home, inherit_cwd);
 
-        let mut command = Command::new(env!("CARGO_BIN_EXE_tasty"));
+        let mut command = Command::new(spawn_diag::instance_bin());
         command
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
@@ -307,10 +315,14 @@ impl TastyInstance {
             // child 가 augmented help 만 출력하고 종료한다 (boot/cli_routing.rs:55).
             // 자식은 항상 본 GUI 로 부팅해야 하므로 명시 제거.
             .env_remove("TASTY_SURFACE_ID")
-            // host 의 RUST_LOG=debug/trace 가 새어들어와 child 가 polled stderr
-            // 보다 빠르게 write 하면 OS pipe buffer 가 가득 차서 child 가 block
-            // 될 위험이 있다. drain thread 가 1차 방어, verbosity cap 이 2차.
-            .env("RUST_LOG", "tasty=info")
+            // host 의 로그 레벨이 새어들어와 child 가 polled stderr 보다 빠르게
+            // write 하면 OS pipe buffer 가 가득 차서 child 가 block 될 위험이 있다.
+            // drain thread 가 1차 방어, verbosity cap 이 2차.
+            //
+            // 이름과 값 모두 `spawn_diag` 가 유일한 정의 자리다 — 이름은 한 번
+            // `RUST_LOG` 로 틀렸던 자리이고, 값은 제품 기본 필터와 모양이 어긋나면
+            // 억제가 풀려 오히려 로그가 늘어난다(그 상수의 doc 에 실측이 있다).
+            .env(spawn_diag::LOG_ENV, spawn_diag::LOG_FILTER)
             .stderr(Stdio::piped());
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
         // 자식을 대신 죽여준다. 아래 Drop 은 부모가 살아서 unwind 될 때만 자식을
@@ -358,16 +370,35 @@ impl TastyInstance {
                 // 위와 동일.
                 let _ = std::fs::remove_dir_all(&isolated_home);
                 panic!(
-                    "tasty failed to start within {:?}.\n--- stderr (last {} lines) ---\n{}",
-                    SPAWN_PORT_TIMEOUT,
-                    STDERR_TAIL_LINES,
-                    stderr_tail(&stderr_ring, STDERR_TAIL_LINES)
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "tasty failed to start",
+                        SPAWN_PORT_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
                 );
             }
             if let Ok(content) = std::fs::read_to_string(&port_file)
                 && let Ok(port) = content.trim().parse::<u16>()
             {
                 break port;
+            }
+            // 자식이 이미 죽었으면 더 기다릴 이유가 없다. 부팅 실패는 대부분
+            // 즉사라, 이 확인 하나가 상한 전체를 기다리는 것을 막는다.
+            if let Ok(Some(status)) = process.try_wait() {
+                // 정리 실패해도 곧바로 panic 이라 보고할 자리가 없다(위 timeout 경로와 동일).
+                let _ = std::fs::remove_file(&port_file);
+                // 위와 동일.
+                let _ = std::fs::remove_dir_all(&isolated_home);
+                panic!(
+                    "{}",
+                    spawn_diag::early_exit_message(
+                        &status.to_string(),
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
+                );
             }
             std::thread::sleep(Duration::from_millis(100));
         };
@@ -399,10 +430,13 @@ impl TastyInstance {
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
                 panic!(
-                    "shell did not produce output within {:?}.\n--- stderr (last {} lines) ---\n{}",
-                    SPAWN_SHELL_TIMEOUT,
-                    STDERR_TAIL_LINES,
-                    stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES)
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "shell did not produce output",
+                        SPAWN_SHELL_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES),
+                    )
                 );
             }
             std::thread::sleep(Duration::from_millis(50));
@@ -623,9 +657,48 @@ impl TastyInstance {
         self.port
     }
 
-    /// Shutdown the instance gracefully.
+    /// graceful shutdown 을 **best-effort 로** 요청한다 — 실패가 정상인 경로다.
+    ///
+    /// [`Self::call`] 을 쓰지 않는다. `call` 이 error 응답을 panic 으로 올리는 것은
+    /// 다른 호출부에서는 옳다(거기서는 error 가 곧 테스트 실패다). 여기서는 실패가
+    /// 두 가지 정상 사유로 일어난다:
+    ///
+    /// 1. **헤드리스 빌드에는 `system.shutdown` 핸들러가 없다.** `src/app.rs` 가
+    ///    `app/ipc` 를 `gui` feature 로 게이트하고, `src/boot/headless_dispatch.rs`
+    ///    가 그 생략을 설계로 명시한다. 그래서 `-32601` 이 돌아온다.
+    /// 2. 이미 죽은 인스턴스는 연결부터 실패한다.
+    ///
+    /// 어느 쪽이든 뒤이은 force kill 이 회수를 완수하므로 실패가 문제되지 않는다.
+    /// 호출부에서 `catch_unwind` 로 삼키는 것으로는 부족했다 — 기본 panic hook 이
+    /// unwind **전에** stderr 로 찍어서, 헤드리스 회차마다 인스턴스를 띄우는 타깃
+    /// 수만큼 실패처럼 보이는 줄이 산출물에 남는다(실측 8 건). 그래서 여기서는
+    /// 애초에 panic 하지 않는 경로로 보낸다.
+    ///
+    /// [`Self::call_raw`] 로도 부족하다 — 그것은 error 응답은 돌려주지만 연결
+    /// 실패에서 `.expect` 로 panic 한다. 위 2번이 정확히 그 경우다.
     pub fn shutdown(&self) {
-        let _ = self.call("system.shutdown", serde_json::json!({}));
+        let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", self.port)) else {
+            return;
+        };
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "system.shutdown",
+            "params": {},
+            "id": 1
+        });
+        let Ok(mut msg) = serde_json::to_string(&request) else {
+            return;
+        };
+        msg.push('\n');
+        if stream.write_all(msg.as_bytes()).is_err() {
+            return;
+        }
+        let mut line = String::new();
+        // 응답은 읽되 내용도 성패도 보지 않는다 — 성공이든 `-32601` 이든 이 경로의
+        // 행동은 같고, 읽는 것은 서버가 처리를 마칠 시간을 주기 위해서다. 읽기가
+        // 실패했다면 인스턴스가 이미 죽은 것이고, 그것도 이 자리에서는 정상이다.
+        let _ = BufReader::new(&stream).read_line(&mut line);
     }
 
     /// 공유 인스턴스 정리 경로 — atexit 에서 호출한다.
@@ -634,11 +707,9 @@ impl TastyInstance {
     /// 그래서 `Child::kill`/`wait` 대신 pid 기반 kill 을 쓴다 — 어차피 test
     /// 프로세스가 종료하는 중이라 reap 은 init 이 대신한다.
     fn terminate(&self) {
-        // graceful shutdown 은 best-effort — 이미 죽었거나 응답이 없으면 `call` 이
-        // panic 하는데, 뒤이은 force kill 이 어차피 회수하므로 삼킨다.
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.shutdown();
-        }));
+        // graceful shutdown 은 best-effort — `shutdown` 자체가 실패를 삼키므로
+        // 여기서 감쌀 것이 없다. 회수는 뒤이은 force kill 이 완수한다.
+        self.shutdown();
         std::thread::sleep(Duration::from_millis(200));
         force_kill(self.process.id());
         // atexit 안이라 로깅 대상(테스트 출력)이 이미 닫혀 있을 수 있다 — 회수
@@ -653,10 +724,8 @@ impl TastyInstance {
 /// 살아 `Drop` 이 돌지 않고, 대신 atexit 가 [`TastyInstance::terminate`] 를 호출한다.
 impl Drop for TastyInstance {
     fn drop(&mut self) {
-        // Try graceful shutdown
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.shutdown();
-        }));
+        // Try graceful shutdown — `shutdown` 이 실패를 삼키므로 감싸지 않는다.
+        self.shutdown();
         // Wait briefly, then force kill the entire process tree.
         std::thread::sleep(Duration::from_millis(200));
         force_kill(self.process.id());

@@ -13,7 +13,7 @@ use tasty_ipc::method_meta::METHOD_TABLE;
 /// host namespace 별 기대 메서드 수 스냅샷. `METHOD_TABLE` 이 SoT 이고 본 표는 그 카운트
 /// 미러다. 메서드 추가/제거 시 동기화한다 (추가 = 같은 minor 내 OK, 제거 = SemVer major).
 const EXPECTED: &[(&str, usize)] = &[
-    ("agent", 32),
+    ("agent", 33), // + agent.semaphore_set_permits
     ("approval", 9),
     ("attach", 6),
     ("banner", 2),
@@ -38,9 +38,13 @@ const EXPECTED: &[(&str, usize)] = &[
     ("preset", 7),
     ("pty", 7),
     ("recent", 1),
-    ("remote", 11),
+    ("remote", 13),
     ("session", 3),
     ("settings", 3),
+    // 32 → 30: `surface.raw_key` / `surface.switch_input_source` 가 debug 표
+    // (`DEBUG_METHODS`)로 이동. 사용자 입력 재현을 release 표면에서 뺀 보안
+    // 목적 제거라 major bump 없이 처리된다(ADR-0115 · api-conventions.md
+    // "안정성 정책" 의 보안 예외).
     ("surface", 30),
     ("system", 2),
     ("tab", 4),
@@ -53,7 +57,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("webhook", 6),
     ("webview", 1),
     ("window", 3),
-    ("workspace", 4),
+    ("workspace", 5),
     ("workspace_category", 5),
 ];
 

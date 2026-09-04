@@ -6,6 +6,14 @@
 #
 # 갱신 절차: X.0.0 (major) tag 직전에만 본 파일을 갱신한다 (PR 에 명시).
 # 정책: docs/dev-guide/release.md.
+#
+# 보안 예외로 제거된 항목 (api-conventions.md "안정성 정책" — 0.x 에서
+# 보안·심각 버그는 deprecation 없이 즉시 제거 가능):
+#   surface.raw_key            — macOS CGEventPost 로 OS 전역 키 주입.
+#   surface.switch_input_source — TISSelectInputSource 로 시스템 입력 소스 전환.
+# 둘 다 사용자 입력 재현이라 release 표면에 있어선 안 되는 것이 원칙이었고
+# (docs/identity.md 원칙 1 ②), TerminalWrite 권한 plugin 에까지 열려 있었다.
+# debug 전용 local_only() 로 옮겼다 — ADR-0115.
 
 agent.barrier_await
 agent.barrier_create
@@ -160,7 +168,6 @@ surface.meta.list
 surface.meta.set
 surface.meta.unset
 surface.parse_since_mark
-surface.raw_key
 surface.read_since_mark
 surface.respawn_terminal
 surface.screen_text
@@ -170,7 +177,6 @@ surface.send_key
 surface.send_to
 surface.send_wait_idle
 surface.set_mark
-surface.switch_input_source
 surface.wake
 system.info
 tab.close

@@ -1,0 +1,109 @@
+//! 파일 SLOC 게이트가 **측정 실패를 통과로 읽지 않는지** 고정한다.
+//!
+//! `scripts/check-file-size.sh` 는 tokei 로 재고 파이썬으로 판정한다. 둘 중 하나가 죽어도
+//! 게이트가 `exit 0` 을 내던 자리가 있었다 — `mapfile < <(...)` 의 프로세스 치환이 종료코드를
+//! 버려서 `set -o pipefail` 이 닿지 않았고, "결과 0 줄" 과 "위반 0 건" 이 구분되지 않았다.
+//! 그 상태에서는 러너에서 tokei 가 어긋나는 순간 게이트가 **영원히 초록**이 된다.
+//!
+//! `docs/adr/0131-file-sloc-gate-needs-a-firing-trigger.md` 가 이 게이트에 발화 트리거를 달았기
+//! 때문에 그 결함이 그때부터 활성이다. 채널을 켠 것과 같은 계보에서 닫는다.
+//!
+//! **판정 방식**: 실제 tokei 를 쓰지 않는다. PATH 앞에 스텁 `tokei` 를 놓아 네 경우를 주입하고
+//! 종료코드만 본다 — 러너에 tokei 가 없어도 돌고, 레포 내용이 바뀌어도 값이 안 흔들린다.
+//! 위반(1) / 측정 실패(2) / 통과(0) 를 **서로 다른 코드**로 요구하므로, 셋 중 둘이 같은 값으로
+//! 붕괴하면 여기서 죽는다.
+//!
+//! **자동 채널**: 통합 테스트라 헤드리스 잡(전체 스위트)이 본다. Windows 잡은 `--lib --bins` 라
+//! 보지 않는데, 이 테스트는 `#[cfg(unix)]` 라 애초에 그 조합의 대상이 아니다.
+
+#![cfg(unix)]
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::process::Command;
+
+/// PATH 앞에 놓을 스텁 `tokei` 를 만든다. `body` 는 셸 스크립트 본문(shebang 제외).
+fn stub_dir(body: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("임시 디렉토리");
+    let path = dir.path().join("tokei");
+    fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("스텁 작성");
+    let mut perm = fs::metadata(&path).expect("스텁 metadata").permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&path, perm).expect("실행권한");
+    dir
+}
+
+/// 스텁 tokei 를 PATH 앞에 두고 게이트를 돌려 종료코드를 얻는다.
+fn run_gate_with(body: &str) -> i32 {
+    let dir = stub_dir(body);
+    let root = env!("CARGO_MANIFEST_DIR");
+    let old = std::env::var("PATH").unwrap_or_default();
+    let path = format!("{}:{}", dir.path().display(), old);
+    let out = Command::new("bash")
+        .arg(format!("{root}/scripts/check-file-size.sh"))
+        .env("PATH", path)
+        .current_dir(root)
+        .output()
+        .expect("게이트 실행");
+    out.status.code().unwrap_or(-1)
+}
+
+/// tokei 가 정상 동작해 임계 이하만 보고하는 JSON.
+const UNDER_THRESHOLD: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_small.rs","stats":{"code":10}}]}}'"#;
+
+/// 임계를 넘는 파일 하나 — allowlist 에도 skip 패턴에도 걸리지 않는 경로여야 한다.
+const OVER_THRESHOLD: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_violation.rs","stats":{"code":9999}}]}}'"#;
+
+#[test]
+fn real_violations_still_exit_one() {
+    assert_eq!(
+        run_gate_with(OVER_THRESHOLD),
+        1,
+        "임계 초과 파일이 있으면 exit 1 이어야 한다 — 이게 게이트의 본래 일이다"
+    );
+}
+
+#[test]
+fn a_clean_tree_exits_zero() {
+    // 대조군. 이것이 없으면 아래 두 테스트는 "항상 실패하는 게이트" 로도 통과한다.
+    assert_eq!(
+        run_gate_with(UNDER_THRESHOLD),
+        0,
+        "임계 초과가 없으면 exit 0 이어야 한다"
+    );
+}
+
+#[test]
+fn a_failing_tokei_is_not_a_pass() {
+    assert_eq!(
+        run_gate_with("echo boom >&2\nexit 7"),
+        2,
+        "tokei 가 죽으면 측정 실패(exit 2)여야 한다 — 통과(0)도 위반(1)도 아니다"
+    );
+}
+
+#[test]
+fn an_empty_report_is_not_a_pass() {
+    // 가장 위험한 형태: rc 0 + 유효한 JSON. 고치기 전에는 "게이트 통과" 라고 출력했다.
+    assert_eq!(
+        run_gate_with(r#"echo '{}'"#),
+        2,
+        "Rust report 가 비면 측정 실패(exit 2)여야 한다 — 위반 0 건과 구분되지 않으면 안 된다"
+    );
+    assert_eq!(
+        run_gate_with(r#"echo '{"Rust":{"reports":[]}}'"#),
+        2,
+        "reports 가 빈 배열인 경우도 같다"
+    );
+}
+
+#[test]
+fn malformed_json_is_not_a_pass() {
+    assert_eq!(
+        run_gate_with("echo 'not json at all'"),
+        2,
+        "파서가 죽으면 측정 실패(exit 2)여야 한다"
+    );
+}
