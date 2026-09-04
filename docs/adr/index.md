@@ -135,3 +135,4 @@
 | 0123 | [계층 가드는 `#[cfg(test)]` 전용 모듈을 범위 밖으로 둔다 — 면제는 전제(cfg 게이트)와 stale 을 함께 검사한다](0123-layering-guard-excludes-cfg-test-modules.md) | Accepted | 2026-09-05 | layering, guards, testing, tasty-cli, adr-0105 |
 | 0124 | [빈 값이 "번역 없음" 이라는 규칙은 로드 경로와 무관하다 — 언어팩과 내장 오버라이드가 같은 규칙을 쓰고, 폴백 대상만 다르다](0124-blank-value-rule-is-load-path-independent.md) | Accepted | 2026-09-04 | i18n, language-pack, blank-value, unicode, trim, adr-0114 |
 | 0125 | [카테고리 착지점은 id 를 들고, 재정렬 축은 제거 축과 같은 초크포인트로 모은다](0125-category-landing-points-hold-ids.md) | Accepted | 2026-09-05 | focus, workspace, reorder, index-vs-id, cascade, invariant, adr-0113 |
+| 0126 | [스케일 밖 폰트 값은 토큰으로 스냅하지 않는다 — `.5` 값은 토큰이 될 수 없다](0126-off-scale-font-values-are-not-snapped-to-tokens.md) | Accepted | 2026-09-04 | theme, design-tokens, font-size, zoom, guards, adr-0033 |
