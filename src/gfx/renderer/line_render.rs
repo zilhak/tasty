@@ -6,9 +6,9 @@ use crate::font::GlyphKey;
 use crate::selection::{NormalizedSelection, SelectionPoint};
 use crate::terminal_link::LinkHighlight;
 
-use super::palette::compute_cell_colors;
 use super::types::{BgInstance, GlyphInstance};
 use super::{CellRenderer, unicode_width};
+use crate::cell_palette::compute_cell_colors;
 
 impl CellRenderer {
     /// Render a single cell into instance buffers (shared logic for both line types).

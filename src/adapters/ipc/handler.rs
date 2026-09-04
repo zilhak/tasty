@@ -13,6 +13,8 @@ mod debug;
 mod debug_nav;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_plugin;
+#[cfg(debug_assertions)]
+mod debug_terminal;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
@@ -1119,16 +1121,20 @@ fn route_debug_handler(
         // 통째로 멎는다" 는 구조와 stall 워치독 발화를 재현 검증한다. release 미노출.
         #[cfg(feature = "gui")]
         "debug.gpu.stall" => handle_debug_gpu_stall(id, &request.params),
-        #[cfg(feature = "gui")]
-        "debug.cell_info" => debug::handle_debug_cell_info(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "debug.screen_attrs" => {
-            debug::handle_debug_screen_attrs(state, engine, id, &request.params)
+        // 아래 셋은 터미널 그리드만 본다 — gui 게이트 없이 `debug_terminal` 모듈에
+        // 있고 헤드리스 debug 데몬에도 등록된다(그 모듈 doc).
+        "debug.cell_info" => {
+            debug_terminal::handle_debug_cell_info(state, engine, id, &request.params)
         }
-        #[cfg(feature = "gui")]
-        "debug.glyph_color" => debug::handle_debug_glyph_color(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "debug.feed_bytes" => debug::handle_debug_feed_bytes(state, engine, id, &request.params),
+        "debug.screen_attrs" => {
+            debug_terminal::handle_debug_screen_attrs(state, engine, id, &request.params)
+        }
+        "debug.glyph_color" => {
+            debug_terminal::handle_debug_glyph_color(state, engine, id, &request.params)
+        }
+        "debug.feed_bytes" => {
+            debug_terminal::handle_debug_feed_bytes(state, engine, id, &request.params)
+        }
         #[cfg(feature = "gui")]
         "debug.inject_mouse" => {
             debug::handle_debug_inject_mouse(state, engine, id, &request.params)

@@ -7,6 +7,9 @@
 mod adapters;
 mod app;
 mod boot;
+// 셀 색 해석 — gui 게이트 밖이다. 렌더러가 쓰지만 순수 계산이라
+// headless 의 `debug.glyph_color` 도 같은 함수로 답한다.
+mod cell_palette;
 mod clipboard;
 mod close_trace;
 mod completion_strategy;
