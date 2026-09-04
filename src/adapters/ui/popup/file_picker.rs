@@ -28,6 +28,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::adapters::ui::icons;
+
+/// 경로 breadcrumb 의 구분자 글리프. 아이콘 스케일 밖(13) — 스케일의 12 와 14 사이다.
+/// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0126 과 같은
+/// 처리). 갤러리 specimen 이 같은 값을 같은 이름으로 갖는다.
+const CRUMB_GLYPH: f32 = 13.0;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::{AppState, FilePickerResult, FpLoadState};
@@ -176,7 +181,7 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
         ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
         for (i, crumb) in props.crumbs.iter().enumerate() {
             if i > 0 {
-                ui.add(icons::CHEVRON_RIGHT.image(13.0, th.text_disabled().into()));
+                ui.add(icons::CHEVRON_RIGHT.image(CRUMB_GLYPH, th.text_disabled().into()));
             }
             let is_current = i + 1 == props.crumbs.len();
             let color = if is_current {

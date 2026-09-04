@@ -12,6 +12,13 @@ use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::theme;
 
+/// 모달 헤더의 plug 글리프. 아이콘 스케일 밖(17) — 스케일은 12 · 14 · 15 · 16 이고
+/// 17 은 어디에도 없다. 인접 tier(16)로 맞추는 것은 값이 바뀌는 디자인 변경이라
+/// [ADR-0126](../../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)
+/// 과 같게 다룬다 — 스냅하지 않고 이름을 붙여 드리프트를 보이게 둔다.
+/// 토큰이 아니므로 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+const PLUG_HEADER_GLYPH: f32 = 17.0;
+
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
 // `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body/heading 13 · max 14)에도,
@@ -250,7 +257,10 @@ pub fn draw_plugins_panel(
                 // 디자인 헤더: plug 아이콘 + 타이틀.
                 // divergence: 헤더 accent 인데 peach 리터럴 → accent-attention(=peach) role 로
                 // 값 보존 전사. "notice/주의환기"가 아니라 헤더 강조라 role 은 살짝 어긋남.
-                ui.add(icons::PLUG.image(17.0, egui::Color32::from(th.accent_attention())));
+                ui.add(icons::PLUG.image(
+                    PLUG_HEADER_GLYPH,
+                    egui::Color32::from(th.accent_attention()),
+                ));
                 hspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t("plugins.title"))
