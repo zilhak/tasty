@@ -197,6 +197,45 @@ fn violations(text: &str) -> Vec<(usize, String)> {
     found
 }
 
+/// shebang 을 읽기 위해 여는 **앞부분 바이트 수**. 한 줄을 판정하는 데 필요한 만큼만
+/// 읽는다.
+///
+/// 종전에는 `read_to_string` 으로 파일을 통째로 읽었다. 이 수집기는 확장자를 안 보고
+/// **모든 파일**을 열어 보므로, 그 비용이 트리의 총 바이트에 비례했다 — 실측(2026-09-05)
+/// 다른 이름의 빌드 디렉토리가 모수에 들어왔을 때 이 가드가 0.05s → 89.17s (1783 배) 가
+/// 됐고, 27 타깃 중 가장 크게 움직였다. 가지치기(ADR-0146)가 그 경로를 막았지만 크기에
+/// 비례하는 성질 자체는 남아 있었다 — 산출물이 아닌 큰 파일이 늘면 다시 비싸진다.
+///
+/// 셸 첫 줄은 실질적으로 이보다 훨씬 짧다. 이 창을 넘는 첫 줄은 shebang 이 아니다.
+const SHEBANG_WINDOW: usize = 256;
+
+/// 첫 줄이 셸 shebang 인가.
+///
+/// UTF-8 로 못 읽는 파일은 셸 스크립트가 아니다. 앞부분만 보므로 **뒤쪽이 UTF-8 이
+/// 아닌 파일도 첫 줄로 판정된다** — 종전의 통째 읽기는 그런 파일을 통째로 건너뛰었다.
+/// 방향이 옳은 쪽으로만 달라진다: shebang 을 가진 파일이 뒤에 이진 바이트를 담았다고
+/// 모수에서 빠질 이유가 없다.
+fn has_shell_shebang(path: &Path) -> bool {
+    use std::io::Read;
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = [0u8; SHEBANG_WINDOW];
+    let Ok(n) = file.read(&mut head) else {
+        return false;
+    };
+    let head = &head[..n];
+    if !head.starts_with(b"#!") {
+        return false;
+    }
+    let line_end = head.iter().position(|b| *b == b'\n').unwrap_or(head.len());
+    let Ok(first) = std::str::from_utf8(&head[..line_end]) else {
+        return false;
+    };
+    first.contains("bash") || first.contains("sh")
+}
+
 fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         panic!("디렉토리를 읽지 못했다: {}", dir.display());
@@ -220,11 +259,7 @@ fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
         } else {
             // 확장자가 아니라 **shebang** 으로 고른다 — `.githooks/pre-commit` 처럼 확장자가
             // 없는 셸 스크립트가 있고, `*.sh` 로 훑으면 그것이 통째로 모수 밖에 남는다.
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let first = text.lines().next().unwrap_or("");
-            if first.starts_with("#!") && (first.contains("bash") || first.contains("sh")) {
+            if has_shell_shebang(&path) {
                 out.push(path);
             }
         }
