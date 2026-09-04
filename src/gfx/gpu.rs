@@ -109,7 +109,7 @@ pub struct GpuState {
     /// tab, and focus (the surface is rendered at its own grid size). See
     /// [`Self::capture_surface_to_png`].
     pub pending_surface_screenshot: Option<(u32, std::path::PathBuf)>,
-    /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
+    /// Frame timing 집계기. `TASTY_LOG=tasty::gfx::perf=info` 일 때만 출력.
     pub(super) perf: PerfAggregator,
     /// Set when a frame hid the focused terminal cursor during an output burst.
     /// The view consumes this to request one follow-up redraw so the cursor

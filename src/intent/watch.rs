@@ -2,7 +2,8 @@
 //!
 //! release 빌드에는 컴파일되지 않는다 (`#[cfg(debug_assertions)]`).
 //!
-//! 활성화: `RUST_LOG=tasty::intent::watch=debug`.
+//! 활성화: `TASTY_LOG=tasty::intent::watch=debug`. 본체가 읽는 변수는 `TASTY_LOG` 다
+//! (`RUST_LOG` 아님 — `docs/dev-guide/crash-diagnostics.md`).
 
 use super::DispatchedIntent;
 
