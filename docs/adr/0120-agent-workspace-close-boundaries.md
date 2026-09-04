@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-04
-- **Tags**: agent-surface, workspace, close, remote-attach, identity-principles
+- **Tags**: agent-surface, workspace, close, remote-attach, occupancy, identity-principles, adr-0040, adr-0113
 
 ## Context
 
