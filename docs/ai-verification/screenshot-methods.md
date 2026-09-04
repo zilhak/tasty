@@ -155,6 +155,38 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
 
+### plugin 변경을 눈으로 확인하기 전에 — 스테이징이 낡았는지부터 본다
+
+**`cargo build` 는 plugin 바이너리를 다시 만들지 않는다.** 실측으로 확인한 것이다:
+`crates/tasty-plugin-*/src/main.rs` 를 고치고 루트에서 `cargo build` 를 돌려도
+`target/debug/tasty-plugin-<name>` 의 mtime 이 그대로다. `cargo build --workspace` 나
+`cargo build -p tasty-plugin-<name>` 은 다시 만든다.
+
+여기에 스테이징이 겹친다. host 는 **부팅할 때** `copy_if_newer` 로
+`target/<profile>/builtin-plugins/` 를 갱신하고 거기서 `<TASTY_HOME>/plugins/` 로
+sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 판정 기준이 mtime 이라, 안 만들어진
+바이너리는 **낡은 채로 조용히 실행된다.**
+
+그래서 plugin 을 고친 뒤 GUI 로 확인하면 **직전 plugin 코드를 재고 있을 수 있다.**
+실패로도 성공으로도 오진할 수 있는 형태다 — 고친 것이 안 고쳐진 것처럼 보이거나,
+되돌린 것이 여전히 고쳐진 것처럼 보인다. 실제로 이 함정 때문에 "주입한 휠이 mesh
+surface 를 못 움직인다" 는 결함을 없는데 있다고 판단한 적이 있다(같은 절차가 낡은
+바이너리에서는 0px, 새 바이너리에서는 19275px 였다).
+
+기동 전에 다음 중 하나를 돌린다:
+
+```bash
+PROFILE=debug just build-plugins        # 정식 절차 — 빌드 + 스테이징까지
+cargo build --workspace                 # 최소한 이것 (스테이징은 부팅이 한다)
+```
+
+확인은 mtime·크기 비교가 제일 싸다:
+
+```bash
+ls -la target/debug/tasty-plugin-<name> \
+       target/debug/builtin-plugins/<manifest-id>/tasty-plugin-<name>
+```
+
 ### Xvfb 에서 실제 입력(휠·클릭)을 굴릴 때
 
 전용 디스플레이를 띄우고 `xdotool` 로 진짜 X11 입력을 넣으면, IPC 주입이 닿지 않는 구간
