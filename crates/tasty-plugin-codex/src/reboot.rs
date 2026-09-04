@@ -167,13 +167,27 @@ pub(crate) fn handle_reboot(
     }))
 }
 
+/// `surface` / `surface_id` 중 먼저 온 것을 읽는다 — `handlers::require_u32` 와 같은
+/// 이유로 **자르지 않는다**(범위 초과가 남의 surface id 가 된다).
 fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
-    params
+    let Some(raw) = params
         .get("surface")
         .or_else(|| params.get("surface_id"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'surface' parameter"))
+        .filter(|v| !v.is_null())
+    else {
+        return Err(IpcMethodError::invalid_params(
+            "Missing required 'surface' parameter",
+        ));
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!(
+                "'surface' was given as {raw} — it must be a whole number that fits in 32 bits. \
+                 Refusing rather than truncating it: a truncated id names a different, \
+                 possibly real, target"
+            ))
+        })
 }
 
 /// `--delay`(기본 5초) / `--prompt`(안내문 뒤에 덧붙일 추가 텍스트) 파싱.
@@ -517,5 +531,14 @@ mod tests {
         assert_eq!(require_surface(&json!({ "surface": 7 })).unwrap(), 7);
         assert_eq!(require_surface(&json!({ "surface_id": 9 })).unwrap(), 9);
         assert!(require_surface(&json!({})).is_err());
+
+        // 자르지 않는다 — `u32::MAX + 2` 를 자르면 1 이 되고, 그것은 실재할 수 있는
+        // 다른 surface 의 id 다. `handlers::require_u32` 와 같은 갈래.
+        assert!(require_surface(&json!({ "surface": u64::from(u32::MAX) + 2 })).is_err());
+        assert!(require_surface(&json!({ "surface": "conductor" })).is_err());
+        assert_eq!(
+            require_surface(&json!({ "surface": u32::MAX })).unwrap(),
+            u32::MAX
+        );
     }
 }

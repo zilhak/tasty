@@ -23,12 +23,28 @@ fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, Ip
         .map_err(|e| IpcMethodError::new(format!("host call '{method}' failed: {e}")))
 }
 
+/// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
+///
+/// `as u32` 로 자르면 `4_294_967_297` 이 `1` 이 되고 `5_000_000_000` 이
+/// `705_032_704` 가 된다. 둘 다 **실재할 수 있는 다른 surface 의 id** 다 — 못 읽는
+/// 값이 조용히 남의 터미널로 배달된다. 자르지 말고 거부한다.
+///
+/// 메시지도 가른다. 키가 아예 없는 것은 호출자가 인자를 빠뜨린 것이고, 값이 왔는데
+/// 안 읽히는 것은 오타이거나 타입이 틀린 것이다 — "missing" 이라고 답하면 호출자가
+/// 자기가 준 값을 안 의심한다.
 fn require_u32(params: &Value, key: &str) -> Result<u32, IpcMethodError> {
-    params
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params(&format!("missing '{key}'")))
+    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
+        return Err(IpcMethodError::invalid_params(&format!("missing '{key}'")));
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!(
+                "'{key}' was given as {raw} — it must be a whole number that fits in 32 bits. \
+                 Refusing rather than truncating it: a truncated id names a different, \
+                 possibly real, target"
+            ))
+        })
 }
 
 fn optional_str(params: &Value, key: &str) -> Option<String> {
@@ -1109,6 +1125,50 @@ fn remove_install(mut value: toml::Value) -> toml::Value {
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    /// `require_u32` 의 **네 갈래**를 픽스처로 못박는다. 실재하는 surface id 를 쓰지
+    /// 않는 이유: 그 id 가 사라지거나 바뀌면 이 회귀가 조용히 뜻을 잃는다.
+    #[test]
+    fn require_u32_separates_absent_from_malformed_and_refuses_to_truncate() {
+        // ① 키 없음 — 호출자가 인자를 빠뜨렸다.
+        let e = require_u32(&json!({}), "surface").unwrap_err();
+        assert!(format!("{e:?}").contains("missing"), "{e:?}");
+
+        // ② 정상 — 경계값이 그대로 통과한다.
+        assert_eq!(require_u32(&json!({ "surface": 0 }), "surface").unwrap(), 0);
+        assert_eq!(
+            require_u32(&json!({ "surface": u32::MAX }), "surface").unwrap(),
+            u32::MAX
+        );
+
+        // ③ 숫자가 아니다 — 거부하고, "missing" 이라고 답하지 않는다.
+        let e = require_u32(&json!({ "surface": "conductor" }), "surface").unwrap_err();
+        let m = format!("{e:?}");
+        assert!(m.contains("32 bits"), "{m}");
+        assert!(!m.contains("missing"), "값이 왔는데 없다고 답한다: {m}");
+
+        // ④ ★ 범위 초과 — 자르면 **다른 surface** 가 된다. u32::MAX + 2 는 1 로,
+        //    5_000_000_000 은 705_032_704 로 잘린다. 둘 다 실재할 수 있는 id 다.
+        for over in [
+            u64::from(u32::MAX) + 1,
+            u64::from(u32::MAX) + 2,
+            5_000_000_000,
+        ] {
+            let e = require_u32(&json!({ "surface": over }), "surface").unwrap_err();
+            assert!(format!("{e:?}").contains("32 bits"), "{over} 가 안 걸린다");
+        }
+
+        // 음수도 같은 갈래다 — `as_u64()` 가 못 읽는다.
+        assert!(require_u32(&json!({ "surface": -1 }), "surface").is_err());
+    }
+
+    /// `null` 은 **값이 왔다**가 아니라 **안 왔다**로 읽는다 — JSON 직렬화가 빈 슬롯을
+    /// `null` 로 채우는 경우가 있어서, 이것을 오타로 취급하면 정상 경로가 막힌다.
+    #[test]
+    fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
+        let e = require_u32(&json!({ "surface": Value::Null }), "surface").unwrap_err();
+        assert!(format!("{e:?}").contains("missing"), "{e:?}");
+    }
 
     /// 이 crate 의 `lang/` 를 en 으로 로드한 번역기 — 런타임에 호스트가 주입하는
     /// `plugin_dir` 없이도 같은 카탈로그를 본다(claude plugin 의 `test_translator` 와 동형).
