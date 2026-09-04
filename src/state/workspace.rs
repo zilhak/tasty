@@ -76,8 +76,12 @@ pub(crate) fn active_index_after_removal(
 }
 
 impl AppState {
-    /// 워크스페이스 제거 직후, 인덱스를 값으로 들고 있는 **모든** 활성 포인터를 대상
-    /// 기준으로 보정한다 — `active_workspace` 와 카테고리별 last-active 착지점.
+    /// 워크스페이스 제거 직후, 인덱스를 값으로 들고 있는 활성 포인터를 대상 기준으로
+    /// 보정한다.
+    ///
+    /// 지금 그런 포인터는 `active_workspace` **하나뿐**이다 — 카테고리 quick-switch
+    /// 착지점([`AppState::category_last_active`])은 id 를 들고 있어 이 밀림을 겪지
+    /// 않는다. 인덱스를 값으로 드는 상태를 새로 만들면 여기에 등록한다.
     ///
     /// 호출자는 `engine.workspaces.remove(removed_idx)` **직후**에 부른다.
     pub(crate) fn fix_workspace_pointers_after_removal(
@@ -87,15 +91,6 @@ impl AppState {
     ) {
         self.active_workspace =
             active_index_after_removal(self.active_workspace, removed_idx, remaining);
-        // 카테고리 quick-switch 착지점도 같은 밀림을 겪는다. 제거된 워크스페이스를
-        // 가리키던 항목은 착지 대상이 사라진 것이라 지운다(사용 시점에 first 로 폴백).
-        self.category_last_active
-            .retain(|_, idx| *idx != removed_idx);
-        for idx in self.category_last_active.values_mut() {
-            if *idx > removed_idx {
-                *idx -= 1;
-            }
-        }
     }
 
     /// Switch to workspace by index (0-based).
@@ -104,7 +99,8 @@ impl AppState {
             self.active_workspace = index;
             // 카테고리별 last-active 기록 — 카테고리 quick-switch(T4WS ⑤) 착지점.
             let cat = engine.workspaces[index].category;
-            self.category_last_active.insert(cat, index);
+            self.category_last_active
+                .insert(cat, engine.workspaces[index].id);
             self.ensure_active_workspace_initialized(engine);
         }
     }
@@ -132,11 +128,19 @@ impl AppState {
             engine.mark_layout_dirty();
         }
         // (2) last-active(소속 재검증) → 없으면 first-in-category.
+        // id → 전역 인덱스. 제거됐거나 다른 카테고리로 옮겨졌으면 못 찾고 first 로 간다.
+        // 워크스페이스 수가 수십 규모이고 이 조회는 사용자 키 입력당 한 번이라 선형
+        // 탐색으로 충분하다.
         let target = self
             .category_last_active
             .get(&cat)
             .copied()
-            .filter(|&gi| engine.workspaces.get(gi).is_some_and(|w| w.category == cat))
+            .and_then(|ws_id| {
+                engine
+                    .workspaces
+                    .iter()
+                    .position(|w| w.id == ws_id && w.category == cat)
+            })
             .or_else(|| {
                 engine
                     .workspaces_in_category(cat)
@@ -491,27 +495,91 @@ mod workspace_pointer_tests {
         }
     }
 
+    /// 재현: 카테고리 착지점이 **재정렬**에서 밀린다.
+    ///
+    /// 완충(`switch_to_category` 의 소속 재검증)이 "다른 카테고리로 튀는" 형태는
+    /// 막지만, 밀린 인덱스가 **같은 카테고리의 다른 워크스페이스**를 가리키면
+    /// 재검증을 통과해 그대로 착지한다 — 그게 남은 오작동이다.
     #[test]
-    fn category_landing_points_follow_the_same_shift() {
-        let (mut state, _engine) = crate::state::tests::test_state();
-        let cat_a = tasty_utils::id::WorkspaceCategoryId::from(7u32);
-        let cat_b = tasty_utils::id::WorkspaceCategoryId::from(8u32);
-        state.active_workspace = 2;
-        state.category_last_active.insert(cat_a, 3);
-        state.category_last_active.insert(cat_b, 0);
+    fn reordering_keeps_the_category_landing_on_the_same_workspace() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        while engine.workspaces.len() < 3 {
+            crate::core::apply_create_workspace_inner(
+                &mut engine,
+                crate::core::WorkspaceCreationParams::terminal(),
+            )
+            .unwrap();
+        }
+        let cat_a = engine.create_category("A").unwrap();
+        let cat_b = engine.create_category("B").unwrap();
+        let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+        engine.set_workspace_category(ids[0], cat_a).unwrap();
+        engine.set_workspace_category(ids[1], cat_b).unwrap();
+        engine.set_workspace_category(ids[2], cat_a).unwrap();
+        // categories(): [normal, A, B] → A 의 섹션 인덱스는 1.
+        assert_eq!(engine.categories()[1].id, cat_a);
 
-        state.fix_workspace_pointers_after_removal(0, 3);
+        // 사용자가 A 안에서 마지막으로 본 것은 ids[2], 그 다음 B 로 이동해 있다.
+        state.switch_workspace(&mut engine, 2);
+        state.switch_workspace(&mut engine, 1);
 
-        assert_eq!(state.active_workspace, 1);
+        // ids[0] 을 맨 뒤로 옮긴다 → [ids[1], ids[2], ids[0]].
+        assert!(state.move_workspace(&mut engine, 0, 2));
         assert_eq!(
-            state.category_last_active.get(&cat_a).copied(),
-            Some(2),
-            "뒤쪽 착지점은 한 칸 당겨져 같은 워크스페이스를 가리켜야 한다"
+            engine.workspaces.iter().map(|w| w.id).collect::<Vec<_>>(),
+            vec![ids[1], ids[2], ids[0]]
         );
+
+        // A 로 quick-switch → 마지막으로 본 ids[2] 로 돌아가야 한다.
+        state.switch_to_category(&mut engine, 1);
         assert_eq!(
-            state.category_last_active.get(&cat_b),
-            None,
-            "제거된 워크스페이스를 가리키던 착지점은 지워져 first 로 폴백한다"
+            engine.workspaces[state.active_workspace].id, ids[2],
+            "재정렬 뒤에도 그 카테고리에서 마지막으로 본 워크스페이스로 착지해야 한다"
+        );
+    }
+
+    /// 제거로 인한 인덱스 밀림이 **착지점을 건드리지 않는다** — 값이 id 라서
+    /// 밀릴 것이 없기 때문이다. 앞쪽 워크스페이스를 지워 인덱스를 한 칸씩 당긴 뒤에도
+    /// 같은 워크스페이스로 착지하는지, 그리고 제거된 워크스페이스를 가리키던 착지점은
+    /// first 로 폴백하는지를 본다.
+    #[test]
+    fn category_landing_points_survive_a_removal_because_they_hold_ids() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        while engine.workspaces.len() < 3 {
+            crate::core::apply_create_workspace_inner(
+                &mut engine,
+                crate::core::WorkspaceCreationParams::terminal(),
+            )
+            .unwrap();
+        }
+        let cat_a = engine.create_category("A").unwrap();
+        let cat_b = engine.create_category("B").unwrap();
+        let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+        engine.set_workspace_category(ids[0], cat_b).unwrap();
+        engine.set_workspace_category(ids[1], cat_a).unwrap();
+        engine.set_workspace_category(ids[2], cat_a).unwrap();
+
+        state.switch_workspace(&mut engine, 2); // A 의 착지점 = ids[2]
+        state.switch_workspace(&mut engine, 0); // B 의 착지점 = ids[0]
+
+        // ids[0] 제거 → 남은 것은 [ids[1], ids[2]], 인덱스가 한 칸씩 당겨진다.
+        engine.workspaces.remove(0);
+        state.fix_workspace_pointers_after_removal(0, engine.workspaces.len());
+
+        // A: 인덱스는 2 → 1 로 밀렸지만 id 는 그대로라 같은 워크스페이스에 착지한다.
+        state.switch_to_category(&mut engine, 1);
+        assert_eq!(
+            engine.workspaces[state.active_workspace].id, ids[2],
+            "제거로 인덱스가 밀려도 같은 워크스페이스로 착지해야 한다"
+        );
+
+        // B: 착지 대상이 사라졌으므로 그 카테고리의 first 로 폴백 — 여기서는 아무것도
+        // 없으니 전환 자체가 일어나지 않는다(직전 착지 그대로).
+        let before = state.active_workspace;
+        state.switch_to_category(&mut engine, 2);
+        assert_eq!(
+            state.active_workspace, before,
+            "빈 카테고리로는 전환하지 않는다(stale 착지점을 그대로 쓰지도 않는다)"
         );
     }
 }

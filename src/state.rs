@@ -275,12 +275,19 @@ pub enum PendingHostEvent {
 pub struct AppState {
     // ── Window-level UI state ──
     pub(crate) active_workspace: usize,
-    /// 카테고리별 마지막 active 워크스페이스(전역 인덱스). 카테고리 quick-switch(T4WS ②⑤)가
+    /// 카테고리별 마지막 active 워크스페이스의 **id**. 카테고리 quick-switch(T4WS ②⑤)가
     /// 대상 카테고리로 점프할 때 그 카테고리의 마지막 포커스 워크스페이스로 착지하기 위한
-    /// 세션-런타임 상태(영속 안 함 — "never visited" 는 first 로 폴백). 전역 인덱스는
-    /// move/close 로 흔들릴 수 있어 사용 시점에 소속 카테고리 일치를 재검증한다.
-    pub(crate) category_last_active:
-        std::collections::HashMap<tasty_utils::id::WorkspaceCategoryId, usize>,
+    /// 세션-런타임 상태(영속 안 함 — "never visited" 는 first 로 폴백).
+    ///
+    /// **전역 인덱스가 아니라 id 다.** 인덱스를 들면 워크스페이스 제거·재정렬마다
+    /// 이 맵을 함께 밀어줘야 하고, 밀어주는 것을 잊은 경로가 생기면 "같은 카테고리의
+    /// 다른 워크스페이스로 착지" 하는 조용한 오작동이 된다(실제로 재정렬 경로 두 곳이
+    /// 그랬다). id 는 순서 변경과 무관하므로 그 유지보수 자체가 없어진다 —
+    /// 착지 시점에 id → 인덱스로 한 번 찾고, 못 찾으면(제거됐으면) first 로 폴백한다.
+    pub(crate) category_last_active: std::collections::HashMap<
+        tasty_utils::id::WorkspaceCategoryId,
+        tasty_utils::id::WorkspaceId,
+    >,
     /// Whether the settings window is open.
     pub(crate) settings_open: bool,
     /// Whether the plugins window is open.
