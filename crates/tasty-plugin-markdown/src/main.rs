@@ -277,6 +277,14 @@ impl Plugin for MarkdownPlugin {
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
             "markdown.reload" => self.markdown_reload(&ctx.params),
+            // host 가 구현한 이름이다(surface 를 열고 있는 창을 host 가 안다). 이
+            // namespace 를 plugin 이 점유하는 순간 외부 호출은 전부 여기로 forward 되므로,
+            // arm 이 없으면 host 구현이 **외부에서만** 안 닿는다 — plugin 이 설치돼 있으면
+            // 막히고 빠지면 열리는, 설치 상태에 따라 흔들리는 표면이 된다.
+            // 실측(2026-09-05): arm 이 없을 때 외부 `markdown.navigate` 는 plugin 의
+            // not_found 로 끝났고, plugin 을 빼면 같은 호출이 host arm 에 닿았다.
+            // image.open/list 와 같은 self-call trampoline 로 host 에 돌려준다.
+            "markdown.navigate" => Ok(ctx.host.call(&ctx.method, ctx.params)?),
             // 최근목록 조회는 host 소유(AppState.recent_files) — plugin 은 저장소를 못 본다.
             // host 는 generic `recent.query {kind}` 만 알고 "markdown" 을 모른다. CLI/주소창
             // caller 가 이 plugin namespace 로 보낸 호출을 host 의 generic 메서드로 kind 를
