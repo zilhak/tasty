@@ -23,20 +23,38 @@ impl App {
             attrs = attrs.with_window_icon(Some(icon));
         }
 
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create plugins window"),
-        );
+        // 모달 창·GPU 생성 실패는 패닉이 아니다 — 기존 창들을 살리고 안내만 띄운 뒤
+        // 모달 열기를 취소한다.
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                self.notify_window_creation_failed(
+                    crate::app::window_lifecycle::WindowCreationTarget::Plugins,
+                    crate::app::event::WindowRequestOrigin::User,
+                    "failed to create plugins window",
+                    e,
+                );
+                return;
+            }
+        };
 
         let appearance = self
             .focused_window()
             .map(|w| w.core_state.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance);
 
-        let gpu = self
-            .create_gpu_state(window.clone(), &appearance)
-            .expect("failed to initialize GPU for plugins window");
+        let gpu = match self.create_gpu_state(window.clone(), &appearance) {
+            Ok(g) => g,
+            Err(e) => {
+                self.notify_window_creation_failed(
+                    crate::app::window_lifecycle::WindowCreationTarget::Plugins,
+                    crate::app::event::WindowRequestOrigin::User,
+                    "failed to initialize GPU for plugins window",
+                    e,
+                );
+                return;
+            }
+        };
 
         let snapshot = self.snapshot_plugins();
         let modal_window_id = window.id();

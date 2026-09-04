@@ -1,31 +1,56 @@
 //! step 4: focused window 가 필요한 메서드 (GPU/IME/debug 도구).
 //!
-//! - `surface.ime_*`
+//! - `surface.ime_*` (debug only — 창 IME 조합 상태를 강제로 세팅하는 사용자
+//!   입력 재현이고, 대상을 ID 로 받지 못한 채 포커스된 창에 작용한다)
 //! - `debug.info` (debug only)
+//!
+//! 이 step 은 통째로 debug 표면이다 — release 빌드에서는 어떤 메서드도 여기
+//! 걸리지 않는다.
 //!
 //! `ui.screenshot` was promoted to a release, focus-independent method — it now
 //! lives in the `app_methods` step (targets window/surface by ID, not focus).
 
 use crate::app::App;
 use crate::app::ipc::IpcStep;
+use crate::ipc::server::IpcCommand;
+// 응답을 실제로 만들어 보내는 것은 debug 경로뿐이다 — release stub 은 곧바로
+// `NotHandled` 만 돌려준다.
+#[cfg(debug_assertions)]
 use crate::ipc as host_ipc;
-use crate::ipc::server::{IpcCommand, send_response};
+#[cfg(debug_assertions)]
+use crate::ipc::server::send_response;
+
+/// 모르는 `unit` 값은 기본값으로 삼키지 않고 거절한다 — 오타를 point 로 대신 재면
+/// 테스트가 의도한 것과 다른 환산 경로를 재고도 통과한다.
+#[cfg(debug_assertions)]
+fn reject_unknown_scroll_unit(cmd: &IpcCommand) -> IpcStep {
+    let response = host_ipc::protocol::JsonRpcResponse::error(
+        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+        -32602,
+        "unknown scroll unit: expected \"line\", \"point\" or \"page\"",
+    );
+    send_response(&cmd.response_tx, response);
+    IpcStep::Handled
+}
 
 impl App {
+    /// release 빌드에는 window-required 메서드가 하나도 없다 — 이 step 전체가
+    /// debug 표면이라 통째로 사라진다. cfg 가드는 이 stub 한 쌍뿐이다.
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn ipc_step_window_required(&mut self, _cmd: &IpcCommand) -> IpcStep {
+        IpcStep::NotHandled
+    }
+
+    #[cfg(debug_assertions)]
     pub(crate) fn ipc_step_window_required(&mut self, cmd: &IpcCommand) -> IpcStep {
-        #[allow(unused_mut)]
-        let mut is_window_required = cmd.request.method.starts_with("surface.ime_");
-        #[cfg(debug_assertions)]
-        {
-            is_window_required = is_window_required
-                || cmd.request.method == "debug.info"
-                || cmd.request.method == "debug.inject_window_mouse"
-                || cmd.request.method == "debug.inject_egui_mouse"
-                || cmd.request.method == "debug.inject_egui_key"
-                || cmd.request.method == "debug.selection"
-                || cmd.request.method == "debug.pending_menu"
-                || cmd.request.method == "debug.focused_surface";
-        }
+        let is_window_required = cmd.request.method.starts_with("surface.ime_")
+            || cmd.request.method == "debug.info"
+            || cmd.request.method == "debug.inject_window_mouse"
+            || cmd.request.method == "debug.inject_egui_mouse"
+            || cmd.request.method == "debug.inject_egui_key"
+            || cmd.request.method == "debug.selection"
+            || cmd.request.method == "debug.pending_menu"
+            || cmd.request.method == "debug.focused_surface";
         if !is_window_required {
             return IpcStep::NotHandled;
         }
@@ -71,8 +96,14 @@ impl App {
         }
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_window_mouse" {
-            use crate::view::main::debug_input::InjectPointer;
+            use crate::view::main::debug_input::{InjectPointer, ScrollUnit};
             let p = &cmd.request.params;
+            // 이 경로는 종전까지 항상 winit `LineDelta` 를 합성했으므로 기본이 line 이다.
+            let Some(unit) =
+                ScrollUnit::from_name(p.get("unit").and_then(|v| v.as_str()).unwrap_or("line"))
+            else {
+                return reject_unknown_scroll_unit(cmd);
+            };
             let surface_id = p.get("surface_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             // fx, fy ∈ [0,1] surface-local 정규화 좌표 (기본 중앙).
             let fx = p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
@@ -98,6 +129,7 @@ impl App {
                 "scroll" => InjectPointer::Scroll {
                     dx: p.get("scroll_dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
                     dy: p.get("scroll_dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    unit,
                 },
                 _ => InjectPointer::Move,
             };
@@ -114,8 +146,15 @@ impl App {
         // window 정규화 (fx,fy ∈ [0,1] 논리). release 미노출, debug 격리(원칙 1·3).
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_egui_mouse" {
-            use crate::view::main::debug_input::InjectPointer;
+            use crate::view::main::debug_input::{InjectPointer, ScrollUnit};
             let p = &cmd.request.params;
+            // 이 경로는 종전까지 항상 `MouseWheelUnit::Point` 를 합성했으므로 기본이
+            // point 다 — 기존 호출자가 단위를 넘기지 않아도 같은 것을 재현한다.
+            let Some(unit) =
+                ScrollUnit::from_name(p.get("unit").and_then(|v| v.as_str()).unwrap_or("point"))
+            else {
+                return reject_unknown_scroll_unit(cmd);
+            };
             let fx = p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
             let fy = p.get("fy").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
             let event_type = p
@@ -139,6 +178,7 @@ impl App {
                 "scroll" => InjectPointer::Scroll {
                     dx: p.get("scroll_dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
                     dy: p.get("scroll_dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    unit,
                 },
                 _ => InjectPointer::Move,
             };

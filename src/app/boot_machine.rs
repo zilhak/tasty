@@ -51,7 +51,9 @@ pub(crate) enum BootPhase {
     /// fallback 으로 받는다.
     WaitingEngine {
         started: Instant,
-        rx: std::sync::mpsc::Receiver<(crate::core::CoreState, crate::plugin::PluginManager)>,
+        rx: std::sync::mpsc::Receiver<
+            anyhow::Result<(crate::core::CoreState, crate::plugin::PluginManager)>,
+        >,
         /// 워커 체류 동안 돈 부팅 프레임 스텝 수 — 로딩 프레임이 실제로
         /// 갱신됐는지의 계측 증거 (T2.7 로그).
         frames: u32,
@@ -75,6 +77,10 @@ pub(crate) struct BootState {
     pub(crate) window: Arc<Window>,
     pub(crate) gpu: GpuState,
     settings: crate::settings::Settings,
+    /// 부팅이 **설정 파일을 처음 읽었을 때** 본 상태. T2.5 의 theme 저장이 이미
+    /// 손상 원본을 백업으로 옮기고 정상 파일을 써 놓으므로, 나중에 만들어지는 engine 의
+    /// `settings.origin` 은 늘 `Clean` 이다 — 사용자에게 알리려면 여기서 붙잡아 둬야 한다.
+    settings_origin: tasty_settings::SettingsOrigin,
     pub(crate) phase: BootPhase,
     /// 부팅 시작 시각 (`boot_total` 계측 기준). 일반 경로는 `resumed()` 진입 시각,
     /// shell setup 경로는 Confirmed 시각.
@@ -85,6 +91,20 @@ pub(crate) struct BootState {
     restored_idx: Option<usize>,
     /// 부팅 미완 중 도착한 `AppEvent` — Ready 후 도착 순서대로 재생한다.
     pub(crate) pending_events: Vec<crate::AppEvent>,
+}
+
+/// 부팅 중 engine 생성 실패의 진단을 만든다. 예전엔 곧바로 `exit(1)` 했으나, 이 단계는
+/// 부팅 GPU init 이후라 **GPU·창이 살아있다** — 그래서 진단을 창에 그려 런처로 실행한
+/// 사용자에게도 보이게 한다(`enter_boot_error_mode`). stderr·파일 로그로도 낸다(터미널
+/// 사용자용): `tracing::error!` 는 fmt subscriber 로 stderr + 파일 둘 다에 나간다
+/// (eprintln 은 파일에 안 남아 사후 진단이 불가능, C.11 준수). 진단 3줄을 한 이벤트로
+/// 합친다 — tracing 매크로 확장이 커서 여러 번 부르면 cognitive_complexity(deny)를 넘긴다.
+fn boot_engine_error_info(err: &anyhow::Error) -> crate::gpu::BootErrorInfo {
+    let title = crate::i18n::t("boot.engine_error.title").to_string();
+    let body = crate::i18n::t_fmt("boot.engine_error.body", &err.to_string());
+    let hint = crate::i18n::t("boot.engine_error.hint").to_string();
+    tracing::error!("boot engine creation failed: {err:#}\n{title}\n{body}\n{hint}");
+    crate::gpu::BootErrorInfo { title, body, hint }
 }
 
 impl App {
@@ -102,6 +122,7 @@ impl App {
         boot_t0: Instant,
         window_hidden: bool,
     ) {
+        let settings_origin = settings.origin;
         let (db_init_error, invalid_theme_name) = Self::init_boot_db_and_theme(&mut settings);
 
         // 레거시 `layout.json` → `layouts/01.json` 마이그레이션 + 전 슬롯 union
@@ -113,6 +134,7 @@ impl App {
             window,
             gpu,
             settings,
+            settings_origin,
             phase: BootPhase::GpuInit,
             boot_t0,
             db_init_error,
@@ -177,6 +199,14 @@ impl App {
             return;
         };
         let ready = self.boot_step(&mut boot);
+        // 엔진 생성이 실패했다 — GPU·창은 살아있으니(부팅 GPU init 이후 단계) 실패
+        // 화면을 그려 사용자에게 보인다. boot 는 재저장하지 않고 window/gpu 소유권을
+        // boot error 모드로 넘긴다. GPU 부재·창 생성 실패는 여기 오지 않는다(그쪽은
+        // 그릴 수단이 없어 진단 후 즉시 exit). ADR-0117 재검토 트리거.
+        if self.boot_error_info.is_some() {
+            self.enter_boot_error_mode(boot.window, boot.gpu);
+            return;
+        }
         if ready {
             self.finish_boot(boot, event_loop);
             return;
@@ -234,7 +264,7 @@ impl App {
         };
         *frames += 1;
         match rx.try_recv() {
-            Ok((engine, mgr)) => {
+            Ok(Ok((engine, mgr))) => {
                 let wait_ms = started.elapsed().as_secs_f64() * 1000.0;
                 let frames = *frames;
                 self.core_state = Some(engine);
@@ -247,19 +277,30 @@ impl App {
                 );
                 self.boot_transition_after_engine(boot)
             }
+            Ok(Err(e)) => {
+                // 워커가 engine 생성에 실패했다(셸 spawn·PTY/fd 등). GPU·창은
+                // 살아있으니 진단을 창에 그려 보인다(drive_boot_frame 이 boot_error_info
+                // 를 보고 boot error 모드로 전환). 첫 창이라도 사라지며 깜빡이지 않는다.
+                self.boot_error_info = Some(boot_engine_error_info(&e));
+                false
+            }
             Err(std::sync::mpsc::TryRecvError::Empty) => false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                // 워커 panic (예: engine 생성 expect) — 결과 없이 채널이
-                // drop 됐다. 동기 재시도: 워커 도입 전과 동일한 경로라,
-                // 같은 원인이면 같은 표면(메인 panic)으로 수렴하고 일시
-                // 원인이면 부팅이 정상 진행된다.
+                // 워커 스레드 자체가 panic 해 결과 없이 채널이 drop 된 경우(engine
+                // 생성 실패는 이제 위 `Ok(Err)` 로 오므로, 여기는 그 밖의 예상 밖
+                // panic 이다). 동기 재시도 — 일시 원인이면 부팅이 진행된다.
                 //
                 // 슬롯: `ensure_engine_and_plugins` 가 스스로 다시 고른다. 워커가
                 // 결과를 못 보냈다는 건 그 engine 이 살아남지 못했다는 뜻이라 점유
                 // 집합은 여전히 비어 있고, 슬롯 파일 목록도 그대로여서 워커가
                 // 골랐던 것과 같은 슬롯으로 수렴한다.
                 tracing::error!("boot engine worker channel disconnected — synchronous fallback");
-                self.ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width);
+                if let Err(e) = self
+                    .ensure_engine_and_plugins(&boot.gpu, boot.settings.appearance.sidebar_width)
+                {
+                    self.boot_error_info = Some(boot_engine_error_info(&e));
+                    return false;
+                }
                 self.boot_transition_after_engine(boot)
             }
         }
@@ -328,7 +369,9 @@ impl App {
     fn spawn_engine_worker(
         &self,
         boot: &BootState,
-    ) -> std::sync::mpsc::Receiver<(crate::core::CoreState, crate::plugin::PluginManager)> {
+    ) -> std::sync::mpsc::Receiver<
+        anyhow::Result<(crate::core::CoreState, crate::plugin::PluginManager)>,
+    > {
         let (cols, rows) = crate::app::window_lifecycle::boot_grid_size(
             &boot.gpu,
             boot.settings.appearance.sidebar_width,
@@ -423,7 +466,9 @@ impl App {
             return Err(());
         };
         match rx.try_recv() {
-            Ok(payload) => Ok(Some(payload)),
+            Ok(Ok(payload)) => Ok(Some(payload)),
+            // engine 생성이 실패해 회수할 PluginManager 가 없다 — 회수 대상 없음으로 취급.
+            Ok(Err(_)) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("boot engine worker not reclaimed before exit: disconnected");
@@ -440,6 +485,7 @@ impl App {
             window,
             gpu,
             settings: _,
+            settings_origin,
             phase: _,
             boot_t0,
             db_init_error,
@@ -457,7 +503,9 @@ impl App {
         };
         let mut state = self.assemble_app_state(bootstrapped.or(restored_idx));
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
+        Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);
+        Self::report_persistence_incidents(settings_origin, self.core_state(), &mut state);
 
         let mut core_state = self
             .core_state
@@ -506,6 +554,23 @@ impl App {
         for ev in pending_events {
             use winit::application::ApplicationHandler;
             self.user_event(event_loop, ev);
+        }
+    }
+
+    /// 부팅 로케일 판정이 영어로 폴백했으면(요청 언어의 팩 부재 · 형상 위반 —
+    /// `docs/dev-guide/i18n.md` "언어팩") 경고 토스트 1회. 치명적이지 않으니 웹훅 bind
+    /// 실패 경고와 같은 구조(`ToastKind::Warning`, 창 스코프)로 알리고, 설정값은 건드리지
+    /// 않는다. headless/CLI 경로는 `tasty_i18n` 이 load 시점에 남긴 `tracing::warn!` 한
+    /// 줄이 전부다 — 여기서 로그를 중복 남기지 않는다.
+    fn report_locale_fallback(state: &mut crate::state::AppState) {
+        if let Some(msg) =
+            crate::i18n::load_report().and_then(crate::i18n::LoadReport::user_warning)
+        {
+            state.toasts.push(
+                msg,
+                crate::adapters::ui::ToastKind::Warning,
+                crate::adapters::ui::ToastScope::Window,
+            );
         }
     }
 
@@ -581,6 +646,57 @@ impl App {
 
     /// IPC/stream 서버 시작 + 웹훅 리스너 init — `finish_boot` 의 첫 윈도우 등록
     /// 직전 1회 지점. 웹훅 bind 실패는 `state` 에 Warning 토스트로 반영한다.
+    /// 부팅 때 사용자 파일(설정·레이아웃)을 읽지 못한 사실을 한 번 알린다.
+    ///
+    /// 로그만으로는 부족하다 — 사용자가 보는 것은 "설정이 초기화됐다" / "탭이 사라졌다"
+    /// 이고, 원본이 어디로 갔는지(백업 경로)와 왜 저장이 멈췄는지를 알아야 복구할 수
+    /// 있다. 웹훅 미기동과 같은 Warning 토스트 인프라를 재사용한다.
+    fn report_persistence_incidents(
+        settings_origin: tasty_settings::SettingsOrigin,
+        engine: &crate::core::CoreState,
+        state: &mut crate::state::AppState,
+    ) {
+        use crate::adapters::ui::{ToastKind, ToastScope};
+        use tasty_settings::SettingsOrigin;
+
+        let mut warn = |msg: String| {
+            state
+                .toasts
+                .push(msg, ToastKind::Warning, ToastScope::Window);
+        };
+        // `engine.settings.origin` 이 아니라 부팅이 처음 읽었을 때의 값을 본다 — 그 사이
+        // T2.5 의 theme 저장이 원본을 백업으로 옮기고 정상 파일을 써 놓기 때문이다.
+        match settings_origin {
+            SettingsOrigin::Clean => {}
+            SettingsOrigin::Unparsable => {
+                let path = tasty_settings::Settings::config_path().unwrap_or_default();
+                let shown = tasty_utils::path::tilde_abbreviate(&path);
+                // 위 T2.5 저장이 원본을 옮겼으면 그 자리는 이제 정상 파일이다. 아직도
+                // 해석되지 않는다면 보존이 실패한 것(백업 자리 소진 등)이고 저장은 계속
+                // 거부된다 — 그때 "보관했다" 고 말하면 사용자가 없는 파일을 찾는다.
+                let key = if tasty_settings::Settings::file_is_unparsable(&path) {
+                    "persistence.warn.settings_unparsable_blocked"
+                } else {
+                    "persistence.warn.settings_unparsable"
+                };
+                // `t_fmt` 가 아니라 `t_fmt_fit` 이다 — 긴 경로가 문구를 토스트 캡 밖으로
+                // 밀어내면 잘려나가는 것이 문장 끝의 조치 안내다. 경로만 줄인다.
+                warn(crate::i18n::t_fmt_fit(key, &shown));
+            }
+            SettingsOrigin::ProtectedUnreadable => {
+                warn(crate::i18n::t("persistence.warn.settings_locked").to_string());
+            }
+        }
+        if engine.layout_slot_preserve_failed {
+            warn(crate::i18n::t("persistence.warn.layout_unparsable_blocked").to_string());
+        } else if engine.layout_slot_unparsable {
+            warn(crate::i18n::t("persistence.warn.layout_unparsable").to_string());
+        }
+        if engine.layout_slot_protected {
+            warn(crate::i18n::t("persistence.warn.layout_locked").to_string());
+        }
+    }
+
     fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::AppState) {
         let ipc_proxy = self.view.proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
@@ -682,4 +798,27 @@ fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::Inf
 #[cfg(not(all(target_os = "macos", feature = "gui")))]
 fn full_disk_access_notice_buttons() -> Vec<crate::adapters::ui::info_modal::InfoModalButton> {
     Vec::new()
+}
+
+#[cfg(test)]
+mod boot_error_tests {
+    use super::*;
+
+    /// `boot_engine_error_info` 가 title/body/hint 를 서로 다른 세 진단 소스에서
+    /// 읽는다(복붙으로 hint 에 title 키를 쓰는 류 실수 방지). pairwise-distinct +
+    /// non-empty 는 i18n 초기화 여부와 무관하게 성립한다 — 미초기화면 세 키가 그대로,
+    /// 초기화면 세 번역문이 오는데 둘 다 서로 다르다.
+    ///
+    /// 변이 검증: 셋 중 하나를 다른 것과 같은 소스로 바꾸면(예: `hint: title`)
+    /// pairwise assert 가 깨진다.
+    #[test]
+    fn engine_error_info_reads_three_distinct_diagnostics() {
+        let info = boot_engine_error_info(&anyhow::anyhow!("shell not found: /bad/path"));
+        assert!(!info.title.is_empty(), "title must be present");
+        assert!(!info.body.is_empty(), "body must be present");
+        assert!(!info.hint.is_empty(), "hint must be present");
+        assert_ne!(info.title, info.body, "title and body must differ");
+        assert_ne!(info.body, info.hint, "body and hint must differ");
+        assert_ne!(info.title, info.hint, "title and hint must differ");
+    }
 }

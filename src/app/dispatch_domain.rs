@@ -32,7 +32,8 @@ pub(crate) struct SurfaceCloseCascade {
     pub(crate) cleanup_targets: Vec<(u32, Option<String>)>,
     pub(crate) closed_tab_ids: Vec<u32>,
     pub(crate) closed_pane_ids: Vec<u32>,
-    pub(crate) workspace_id_purged: Option<u32>,
+    /// workspace 째 사라졌다면 그 **(인덱스, id)** — 짝을 타입이 강제한다.
+    pub(crate) workspace_purged: Option<(usize, u32)>,
     pub(crate) workspaces_now_empty: bool,
     pub(crate) is_user_close: bool,
 }
@@ -137,6 +138,9 @@ impl App {
             }
             CoreEvent::SurfaceCompletionRequested { surface_id, kind } => {
                 self.cascade_surface_completion(surface_id, kind);
+            }
+            CoreEvent::SurfaceAttentionClearRequested { surface_id, kind } => {
+                self.cascade_surface_attention_clear(surface_id, kind);
             }
             CoreEvent::WorkspaceCreated {
                 id,
@@ -273,7 +277,7 @@ impl App {
                 cleanup_targets,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
             } => {
                 if closed {
@@ -285,7 +289,7 @@ impl App {
                             cleanup_targets,
                             closed_tab_ids,
                             closed_pane_ids,
-                            workspace_id_purged,
+                            workspace_purged,
                             workspaces_now_empty,
                             is_user_close,
                         },
@@ -318,7 +322,7 @@ impl App {
                 cascade_level,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
             } => {
                 // 이동(replace) 완료. 의미상 "B 닫힘 + A 옛자리 구조 cascade" 라
@@ -337,7 +341,7 @@ impl App {
                             cleanup_targets,
                             closed_tab_ids,
                             closed_pane_ids,
-                            workspace_id_purged,
+                            workspace_purged,
                             workspaces_now_empty,
                             is_user_close,
                         },
@@ -1338,6 +1342,49 @@ impl App {
         }
     }
 
+    /// Surface attention 해제 cascade — `cascade_surface_completion` 의 역방향.
+    /// surface 를 보유한 engine 의 `clear_attention(surface_id)` 로 attention 을
+    /// 지우고, main window 면 redraw 를 요청해 소비처(테두리·탭·개수 배지)가 즉시
+    /// 갱신되게 한다.
+    ///
+    /// `kind_filter` 가 `Some(k)` 면 **현재 기록된 kind 가 `k` 일 때만** 지운다 —
+    /// 해제 요청을 만든 시점과 적용 시점 사이에 다른 producer 가 더 급한 kind 로
+    /// 다시 발동했을 수 있고, 그것까지 지워버리면 "지금 답하지 않으면 멈추는" 신호가
+    /// 조용히 사라진다. 필터가 걸려 아무것도 지우지 않은 경우에도 engine 탐색은
+    /// 여기서 끝난다(surface 는 한 engine 에만 있다).
+    ///
+    /// redraw 요청(`mark_layout_dirty`/`mark_dirty`)은 필터 결과와 무관하게 건다 —
+    /// IPC 경로는 핸들러(`ipc/handler/surface/attention.rs`)가 owner engine 에 해제를
+    /// 이미 적용한 뒤 이 cascade 를 태우므로(headless 에는 cascade 자체가 없어 핸들러가
+    /// 적용 주체다), 여기서 "지울 게 남아 있는지" 로 redraw 를 게이트하면 정작 방금
+    /// 바뀐 화면이 갱신되지 않는다. 프레임 한 번의 비용이라 무조건 거는 쪽이 안전하다.
+    fn cascade_surface_attention_clear(
+        &mut self,
+        surface_id: u32,
+        kind_filter: Option<AttentionKind>,
+    ) {
+        for main in self.main_windows_iter_mut() {
+            if main.core_state.has_surface(surface_id) {
+                if kind_filter.is_none_or(|k| main.core_state.attention_kind(surface_id) == Some(k))
+                {
+                    main.core_state.clear_attention(surface_id);
+                }
+                main.core_state.mark_layout_dirty();
+                main.mark_dirty();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.has_surface(surface_id) {
+                if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
+                    engine.clear_attention(surface_id);
+                }
+                engine.mark_layout_dirty();
+                return;
+            }
+        }
+    }
+
     /// Surface 의 cwd 가 바뀌었을 때 cascade. 모든 main window 를 순회해 해당
     /// surface 를 보유한 main 의 engine 에 적용 — `refresh_tab_display_name`
     /// (탭 이름 prefix 갱신) + `mark_layout_dirty` (다음 capture 가 새 cwd 반영).
@@ -1419,7 +1466,9 @@ impl App {
             }
         }
         if let Err(e) = new_settings.save() {
-            tracing::warn!("failed to save settings: {e}");
+            // 사용자가 설정 화면에서 방금 바꾼 값이라 저장 실패는 그 작업이 통째로
+            // 사라진다는 뜻이다 — error-handling.md 표의 "설정 저장 실패" 그 자체.
+            tracing::error!("failed to save settings: {e}");
         }
 
         // Appearance (theme 색상 or host UI zoom) 변경 시 `UiIntent::AppearanceChanged`
@@ -1634,8 +1683,10 @@ pub(crate) fn cascade_closed_item_restored(
 /// 2. cascade_level 별 host event (`tab.closed` / `pane.closed` / `workspace.closed`)
 ///    enqueue + baseline 동기화. `surface.closed` 자체는 별 큐
 ///    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
-/// 3. workspace_id_purged 가 Some 이면 memory scope purge
-/// 4. cascade_level == Workspace 면 active_workspace 보정
+/// 3. workspace_purged 가 Some 이면 memory scope purge
+/// 4. 같은 경우 활성 포인터(`active_workspace` · 카테고리 last-active)를 제거 위치
+///    기준으로 보정 — 범위 초과 clamp 만으로는 사용자가 보던 것보다 **앞쪽**
+///    workspace 가 빠질 때 인덱스가 유효한 채 다른 workspace 를 가리킨다(원칙 1)
 pub(crate) fn cascade_surface_closed(
     core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
@@ -1652,11 +1703,26 @@ pub(crate) fn cascade_surface_closed(
     enqueue_closed_tab_events(state, &c.closed_tab_ids, &c.closed_pane_ids);
     enqueue_closed_pane_events(state, &c.closed_pane_ids);
 
-    // C4 — 3. workspace_id_purged 가 Some 이면 memory scope purge
-    purge_closed_workspace_memory(state, c.workspace_id_purged);
-
-    // 4. cascade_level == Workspace 면 active_workspace 보정
-    fix_active_workspace_after_cascade(state, engine, c.cascade_level);
+    // workspace 가 통째로 사라진 경우에만 도는 두 단계. 하나의 `Option<(usize, u32)>`
+    // 라 "purge 는 했는데 포인터 보정은 안 했다" 가 성립하지 않는다.
+    //    C4 — 3. memory scope purge + `workspace.closed` host event
+    //    4. 인덱스 SoT 인 활성 포인터를 제거 위치 기준으로 보정
+    // `workspace_purged` 는 Workspace level cascade 에서만 실린다 — 둘이 어긋나면
+    // 보정이 조용히 건너뛰어져 사용자 화면이 밀리므로 debug 에서 고정한다.
+    debug_assert_eq!(
+        matches!(
+            c.cascade_level,
+            crate::core::intent::CascadeLevel::Workspace
+        ),
+        c.workspace_purged.is_some(),
+        "workspace level cascade 와 제거 위치는 함께 실려야 한다"
+    );
+    if let Some((removed_idx, workspace_id)) = c.workspace_purged {
+        // 제거 후 공통 뒷정리는 초크포인트 하나가 한다 — 제거 경로 셋이 각자 쏘던
+        // 때 인라인 cascade 가 `workspace.closed` 를 빠뜨렸다.
+        state.after_workspace_removed(workspace_id, "cascade");
+        state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
+    }
 
     recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);
 
@@ -1720,53 +1786,6 @@ fn enqueue_closed_tab_events(
 fn enqueue_closed_pane_events(state: &mut crate::state::AppState, closed_pane_ids: &[u32]) {
     for pane_id in closed_pane_ids {
         state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id: *pane_id });
-    }
-}
-
-/// `cascade_surface_closed` 3 단계: `workspace_id_purged` 가 Some 이면
-/// `workspace.closed` host event enqueue + memory scope purge.
-fn purge_closed_workspace_memory(
-    state: &mut crate::state::AppState,
-    workspace_id_purged: Option<u32>,
-) {
-    let Some(workspace_id) = workspace_id_purged else {
-        return;
-    };
-    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
-    let t = std::time::Instant::now();
-    let scope = tasty_memory::Scope::Workspace(workspace_id);
-    let purged = {
-        let mut guard = match state.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        guard.purge_scope(&scope)
-    };
-    crate::close_trace::log_ws_purge(t, "cascade");
-    match purged {
-        Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-            workspace_id,
-            regular = stats.regular,
-            secret = stats.secret,
-            "memory: purged closed-workspace scope",
-        ),
-        Ok(_) => {}
-        Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-    }
-}
-
-/// `cascade_surface_closed` 4 단계: `cascade_level == Workspace` 면
-/// `active_workspace` 가 범위를 벗어났을 때 마지막 workspace 로 보정.
-fn fix_active_workspace_after_cascade(
-    state: &mut crate::state::AppState,
-    engine: &crate::core::CoreState,
-    cascade_level: crate::core::intent::CascadeLevel,
-) {
-    if matches!(cascade_level, crate::core::intent::CascadeLevel::Workspace)
-        && state.active_workspace >= engine.workspaces.len()
-        && !engine.workspaces.is_empty()
-    {
-        state.active_workspace = engine.workspaces.len() - 1;
     }
 }
 
@@ -1914,10 +1933,10 @@ fn find_surface_location(
     None
 }
 
-/// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해
-/// active_workspace 인덱스를 보정한다.
-/// - 이동한 ws 가 active 였으면 따라간다 (`active = to`).
-/// - from 과 to 사이를 자기 위치가 통과하면 shift 보정.
+/// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해 인덱스로
+/// 저장된 활성 포인터를 보정한다 — 규칙 자체는
+/// `AppState::fix_workspace_pointers_after_move` 하나에만 있다(같은 규칙을 여기에
+/// 복제하면 `move_workspace` 와 갈린다).
 ///
 /// IPC handler 도 직접 호출 가능.
 pub(crate) fn cascade_workspace_moved(
@@ -1925,19 +1944,7 @@ pub(crate) fn cascade_workspace_moved(
     from_index: usize,
     to_index: usize,
 ) {
-    if state.active_workspace == from_index {
-        state.active_workspace = to_index;
-    } else if from_index < to_index
-        && state.active_workspace > from_index
-        && state.active_workspace <= to_index
-    {
-        state.active_workspace -= 1;
-    } else if from_index > to_index
-        && state.active_workspace >= to_index
-        && state.active_workspace < from_index
-    {
-        state.active_workspace += 1;
-    }
+    state.fix_workspace_pointers_after_move(from_index, to_index);
 }
 
 /// `CoreEvent::TabCreated` 의 외부 cascade. host events (`tab.created` +

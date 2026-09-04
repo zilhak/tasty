@@ -28,6 +28,25 @@ impl App {
             .and_then(|w| w.as_main_mut())
     }
 
+    /// 사용자 안내(InfoModal / toast)를 띄울 메인 창.
+    ///
+    /// 포커스된 뷰가 모달(설정 · 플러그인 · 종료 확인)이면 [`Self::focused_window_mut`]
+    /// 은 `None` 을 준다 — 그때도 메인 창이 남아 있으면 그 중 하나로 폴백한다. 안내가
+    /// "포커스가 마침 모달에 있었다" 는 이유로 조용히 사라지지 않게 하는 것이 요점이다
+    /// (`docs/adr/0117-window-and-modal-creation-failure-policy.md`).
+    pub(crate) fn notice_window_mut(&mut self) -> Option<&mut view::main::MainView> {
+        let id = match self.focused_window() {
+            Some(_) => self.view.focused_view_id,
+            None => self
+                .view
+                .views
+                .iter()
+                .find(|(_, w)| w.as_main().is_some())
+                .map(|(id, _)| *id),
+        }?;
+        self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
+    }
+
     /// 모든 MainView를 순회. 모달은 제외된다.
     pub(crate) fn main_windows_iter_mut(
         &mut self,
@@ -141,8 +160,10 @@ impl App {
     /// 조용히 풀린다. 여기서 묻는 것은 "창이 있는가"가 아니라 "그 워크스페이스를
     /// 들고 있는 engine 이 살아 있는가"다.
     ///
-    /// 순회 범위는 `attach_client::cleanup_mirror_workspace` 와 **같아야** 한다 —
-    /// 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생긴다.
+    /// 순회 범위는 `attach_client::cleanup_mirror_workspace`(정리)·
+    /// `attach_client::mirror_output_host`(mirror 이벤트 적용 대상 탐색)와 **같아야**
+    /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생기고, 적용이
+    /// 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
     ///
     /// **`App.core_state` 는 의도적으로 제외한다.** 바로 위 `occupied_layout_slots`
     /// 는 `views`/`parked_states` 에 더해 그 자리(첫 MainView 등록 전 engine 이 임시로

@@ -33,8 +33,14 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         match event {
-            AppEvent::CreateWindow => {
-                self.create_new_window(event_loop);
+            AppEvent::CreateWindow(origin, completion) => {
+                let outcome = self.create_new_window(event_loop, origin);
+                // IPC 요청자(있으면)에게 결과를 돌려준다. 사용자 경로(menu/tray)는
+                // completion 이 None 이라 조용히 끝난다. 결과→응답 매핑 계약은
+                // IpcCompletion::reply_window_create 하나로 모은다(ADR-0122).
+                if let Some(completion) = completion {
+                    completion.reply_window_create(outcome.map(u64::from));
+                }
             }
             AppEvent::RunLuaScript { source, name } => {
                 if let Some(engine) = self.lua_engine.as_ref() {
@@ -156,7 +162,11 @@ impl ApplicationHandler<AppEvent> for App {
         // 재진입 가드 — macOS 등은 resumed() 를 재호출할 수 있다. 부팅 상태 머신
         // 진행 중(boot Some)에는 views 가 아직 비어 있으므로 boot 조건이 없으면
         // 창이 중복 생성된다.
-        if !self.view.views.is_empty() || self.shell_setup_gpu.is_some() || self.boot.is_some() {
+        if !self.view.views.is_empty()
+            || self.shell_setup_gpu.is_some()
+            || self.boot.is_some()
+            || self.boot_error_gpu.is_some()
+        {
             return;
         }
 
@@ -231,6 +241,12 @@ impl ApplicationHandler<AppEvent> for App {
         // 방식으로는 누락이 생긴다. 진입부에서 한 번 버리면 새 View 가 늘어도 자동으로
         // 덮인다. 정책: `docs/design/policies/key-mapping.md`.
         if is_synthetic_key_event(&event) {
+            return;
+        }
+
+        // Boot error mode — 엔진 실패 화면. App 이 직접 처리하고 종료는 exit(1).
+        if self.boot_error_mode {
+            self.handle_boot_error_window_event(event);
             return;
         }
 
@@ -383,6 +399,9 @@ impl ApplicationHandler<AppEvent> for App {
                 // 깨어나는 것 자체가 목적 — 실제 폴링은 아래
                 // `poll_pending_native_menus` 가 매 프레임 수행한다.
                 Tick::NativeMenu => {}
+                // 깨어나는 것 자체가 목적 — 실제 소비는 아래
+                // `pump_webview_key_events` 가 매 프레임 수행한다(Linux 에서만 걸린다).
+                Tick::WebviewKeyPoll => {}
                 // TTL 정리 3종(`app/sweeps.rs`) — 접근 시점 lazy 경로의 보완.
                 Tick::PtySweep => self.poll_pty_sweep(),
                 Tick::CaptureSweep => self.poll_capture_sweep(),
@@ -507,6 +526,21 @@ impl ApplicationHandler<AppEvent> for App {
 
         self.poll_tray_menu_events();
 
+        // native webview 가 올린 키/포커스 이벤트 소비 — webview 는 winit 창과 별개의
+        // OS 자식 창이라 그 안에서 눌린 키가 `WindowEvent::KeyboardInput` 으로 오지
+        // 않는다(`docs/adr/0102-webview-key-forwarding.md`).
+        let needs_key_poll = self.pump_webview_key_events();
+        // 폴링 tick 재예약/취소. tick 이 실제로 걸리는 것은 **Linux 뿐**이고 그 판정은
+        // 함수 안에 있다 — macOS/Windows 는 native 키 콜백이 winit 과 같은 OS 이벤트
+        // 루프에서 발화해 폴링이 필요 없고, 거기까지 상시 16ms wakeup 을 두면 유휴
+        // 인스턴스가 초당 60 번 깬다. Linux 의 GDK 만 자기 X 연결로 이벤트를 받아
+        // winit 루프를 깨우지 못한다.
+        crate::app::timers::reschedule_webview_key_poll(
+            &mut self.timers,
+            needs_key_poll,
+            std::time::Instant::now(),
+        );
+
         // 열려 있는 네이티브 컨텍스트 메뉴를 펌프한다(비블로킹). redraw 경로와
         // 이중이지만, 메뉴가 떠 있는 동안은 아래 WaitUntil 이 이 경로를 8ms 주기로
         // 확실히 굴려 준다 — redraw 이벤트가 안 오는 순간에도 폴링이 이어진다.
@@ -577,11 +611,26 @@ impl App {
         }
         // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
         attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
-        let window = std::sync::Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create window"),
-        );
+        // 첫(부팅) 창 생성 실패 — 표시할 창 자체가 없다. 패닉(가짜 크래시 리포트)
+        // 대신 사람이 읽을 진단을 stderr 로 내고 정상 종료한다(GPU 어댑터 부재 처리와
+        // 같은 방식).
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => std::sync::Arc::new(w),
+            Err(e) => {
+                // tracing::error! 는 fmt subscriber 로 stderr(터미널에서 실행한
+                // 사용자에게 보임) + 파일 로그 둘 다에 나간다 — eprintln 은 파일에
+                // 안 남아 사후 진단이 불가능하다(C.11 println 금지와도 합치). 진단
+                // 3줄(title/body/hint)을 한 이벤트로 합친다 — tracing 매크로 확장이
+                // 커서 여러 번 부르면 cognitive_complexity(deny) 를 넘긴다.
+                tracing::error!(
+                    "boot window creation failed: {e}\n{}\n{}\n{}",
+                    crate::i18n::t("boot.window_error.title"),
+                    crate::i18n::t_fmt("boot.window_error.body", &e.to_string()),
+                    crate::i18n::t("boot.window_error.hint"),
+                );
+                std::process::exit(1);
+            }
+        };
         tracing::info!(
             target: "tasty::boot",
             ms = boot_t0.elapsed().as_secs_f64() * 1000.0,
@@ -605,8 +654,9 @@ impl App {
     }
 
     /// `resumed()` 의 GPU 초기화. 어댑터가 아예 없으면(드라이버 미설치 등 정상적으로
-    /// 발생 가능한 환경 문제) panic(크래시 리포트 대상) 대신 사람이 읽을 안내를
-    /// stderr 로 내고 조용히 종료한다. 그 외 에러는 예상 밖 실패이므로 panic 시켜
+    /// 발생 가능한 환경 문제) panic(크래시 리포트 대상) 대신 사람이 읽을 진단을
+    /// `tracing::error!`(stderr + 파일 로그)로 내고 정상 종료한다 — 부팅 창 생성·엔진
+    /// 생성 실패와 같은 처리다(ADR-0117). 그 외 에러는 예상 밖 실패이므로 panic 시켜
     /// 크래시 리포팅 경로를 유지한다.
     fn try_init_boot_gpu(
         &mut self,
@@ -617,9 +667,17 @@ impl App {
         let gpu = match self.create_gpu_state(window.clone(), appearance) {
             Ok(gpu) => gpu,
             Err(e) if e.downcast_ref::<crate::app::NoGpuAdapter>().is_some() => {
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.title"));
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.body"));
-                eprintln!("{}", crate::i18n::t("boot.gpu_error.hint"));
+                // 부팅 창 생성·엔진 생성 실패와 같은 채널로 낸다 — `tracing::error!` 는
+                // stderr(터미널 사용자에게 보임) + 파일 로그 둘 다에 나가고, eprintln 은
+                // 파일에 안 남아 사후 진단이 불가능하다(C.11 준수). 진단 3줄을 한
+                // 이벤트로 합친다 — tracing 매크로 확장이 커서 여러 번 부르면
+                // cognitive_complexity(deny) 를 넘긴다.
+                tracing::error!(
+                    "boot gpu init failed: no compatible adapter\n{}\n{}\n{}",
+                    crate::i18n::t("boot.gpu_error.title"),
+                    crate::i18n::t("boot.gpu_error.body"),
+                    crate::i18n::t("boot.gpu_error.hint"),
+                );
                 std::process::exit(1);
             }
             Err(e) => panic!("failed to initialize GPU: {e}"),
@@ -857,13 +915,22 @@ impl App {
                         tracing::info!("tray show: focusing existing main window");
                     } else {
                         tracing::info!("tray show: no live window, creating");
-                        crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+                        crate::shortcuts::send_app_event(
+                            &self.view.proxy,
+                            AppEvent::CreateWindow(
+                                crate::app::event::WindowRequestOrigin::User,
+                                None,
+                            ),
+                        );
                     }
                 }
                 #[cfg(any(windows, target_os = "linux"))]
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::TrayShowWindow);
             } else if menu_id == ids.new_window {
-                crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+                crate::shortcuts::send_app_event(
+                    &self.view.proxy,
+                    AppEvent::CreateWindow(crate::app::event::WindowRequestOrigin::User, None),
+                );
             } else if menu_id == ids.quit {
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             }
@@ -1138,6 +1205,73 @@ impl App {
             gpu.handle_egui_event(window, &event);
             if let WindowEvent::CloseRequested = &event {
                 event_loop.exit();
+            }
+        }
+    }
+
+    /// 부팅 실패 화면 진입 — 엔진 생성 실패인데 GPU·창은 살아있을 때. window/gpu
+    /// 소유권을 `self` 로 넘기고 첫 프레임을 그려 창을 보인다(런처로 실행해 stderr 를
+    /// 못 보는 사용자에게도 진단이 닿게). 이후는 `handle_boot_error_window_event` 가
+    /// 구동한다. shell setup 진입(`enter_shell_setup_mode`)과 같은 구조다.
+    pub(crate) fn enter_boot_error_mode(
+        &mut self,
+        window: std::sync::Arc<winit::window::Window>,
+        mut gpu: crate::gpu::GpuState,
+    ) {
+        tracing::warn!("boot failed with a live GPU — showing the boot error screen");
+        self.boot_error_mode = true;
+        // 첫 프레임 — 실패해도 창은 표시한다(영구 hidden 방지 fallback). 사용자 입력
+        // 전이라 quit 반환은 항상 false.
+        if let Some(info) = &self.boot_error_info
+            && let Err(e) = gpu.render_boot_error(&window, info)
+        {
+            tracing::warn!("boot error first frame render failed: {e} — showing window anyway");
+        }
+        window.set_visible(true);
+        self.boot_error_gpu = Some(gpu);
+        self.boot_error_window = Some(window);
+    }
+
+    /// 부팅 실패 화면의 `WindowEvent` 처리 — `handle_shell_setup_window_event` 와 같은
+    /// 구조다. 사용자가 종료 버튼(또는 Esc/Enter)·창 닫기를 하면 `exit(1)` 한다 —
+    /// 엔진이 없어 정상 진행이 불가능한 부팅 실패이므로 실패 종료 코드를 유지한다
+    /// (엔진·세션이 없어 정리할 상태도 없다).
+    fn handle_boot_error_window_event(&mut self, event: WindowEvent) {
+        if let WindowEvent::RedrawRequested = &event {
+            let quit = if let (Some(gpu), Some(window), Some(info)) = (
+                &mut self.boot_error_gpu,
+                &self.boot_error_window,
+                &self.boot_error_info,
+            ) {
+                match gpu.render_boot_error(window, info) {
+                    Ok(quit) => quit,
+                    Err(e) => {
+                        let msg = format!("boot error render error: {e}");
+                        tracing::warn!("{}", msg);
+                        crate::crash_report::record_error(&msg);
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+            if quit {
+                std::process::exit(1);
+            }
+            // RedrawRequested 갈래에서는 redraw 를 다시 요청하지 않는다 — 그러면
+            // 렌더→요청→렌더 무한 루프(CPU/GPU spin)가 된다. 입력 이벤트 때만
+            // 요청해 hover/click 을 반영하고, 반영 후엔 idle 로 돌아간다.
+            if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
+                gpu.handle_egui_event(window, &event);
+            }
+            return;
+        }
+        if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
+            gpu.handle_egui_event(window, &event);
+            // 입력을 반영하려면 다음 프레임을 그려야 한다(hover/press 상태 변화).
+            window.request_redraw();
+            if let WindowEvent::CloseRequested = &event {
+                std::process::exit(1);
             }
         }
     }

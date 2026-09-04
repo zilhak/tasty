@@ -56,6 +56,28 @@ impl App {
         }
     }
 
+    /// 종료 확인 모달을 띄우지 못했을 때의 폴백 — 확인을 건너뛰고 종료한다.
+    ///
+    /// 확인 절차가 생략됐다는 사실을 toast 로 알리고 `tracing::error!` 로도 남긴다.
+    /// toast 는 종료 화면이 곧바로 덮으므로 best-effort 이고, 사후 진단의 실체는
+    /// 파일 로그에 남는 error 라인이다 (ADR-0117).
+    fn quit_without_confirmation(
+        &mut self,
+        context: &str,
+        err: impl std::fmt::Display,
+        event_loop: &ActiveEventLoop,
+    ) {
+        tracing::error!("{context}: {err} — quitting without the confirmation step");
+        if let Some(view) = self.notice_window_mut() {
+            view.state.toasts.push(
+                crate::i18n::t("window_error.quit_confirm.skipped"),
+                crate::adapters::ui::ToastKind::Error,
+                crate::adapters::ui::ToastScope::Window,
+            );
+        }
+        self.begin_shutdown(event_loop);
+    }
+
     pub(crate) fn open_quit_modal(&mut self, event_loop: &ActiveEventLoop) {
         use winit::window::WindowAttributes;
 
@@ -68,18 +90,33 @@ impl App {
             attrs = attrs.with_window_icon(Some(icon));
         }
 
-        let window = std::sync::Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("failed to create quit modal window"),
-        );
+        // 종료 확인 모달은 다른 창들과 다르게 다룬다 — 안내 후 취소하면 사용자가
+        // **앱을 끌 수 없는 상태**에 갇힌다(창 생성이 실패하는 환경은 이미 degraded 라
+        // 남는 수단이 프로세스 강제 종료뿐이다). 사용자가 표명한 의도는 이미 "종료"이고
+        // 확인 모달은 그 의도를 되묻는 장치일 뿐 종료를 막는 장치가 아니므로, 확인을
+        // 건너뛰고 종료로 폴백한다. 생략됐다는 사실은 반드시 알린다 (ADR-0117).
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => std::sync::Arc::new(w),
+            Err(e) => {
+                self.quit_without_confirmation("failed to create quit modal window", e, event_loop);
+                return;
+            }
+        };
 
-        let gpu = self
-            .create_gpu_state(
-                window.clone(),
-                &crate::settings::Settings::load().appearance,
-            )
-            .expect("failed to initialize GPU for quit modal");
+        let gpu = match self.create_gpu_state(
+            window.clone(),
+            &crate::settings::Settings::load().appearance,
+        ) {
+            Ok(g) => g,
+            Err(e) => {
+                self.quit_without_confirmation(
+                    "failed to initialize GPU for quit modal",
+                    e,
+                    event_loop,
+                );
+                return;
+            }
+        };
 
         let window_id = window.id();
         let mut modal = crate::view::QuitView::new(gpu, window);

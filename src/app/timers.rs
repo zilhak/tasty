@@ -32,6 +32,19 @@ pub(crate) enum Tick {
     /// 일회성. 네이티브 컨텍스트 메뉴가 떠 있는 동안 다음 폴링 프레임을 예약한다.
     #[cfg(feature = "gui")]
     NativeMenu,
+    /// 일회성. 살아있는 native webview 가 있는 동안 다음 폴링 프레임을 예약한다.
+    ///
+    /// webview 는 winit 창과 별개의 OS 자식 창이라 그 자식으로 들어간 키/클릭이
+    /// winit 이벤트 루프를 깨우지 못한다(Linux 는 GDK 가 자기 X 연결로 받는다).
+    /// 이 tick 이 없으면 webview 에 포커스가 있는 동안 host 가 영영 깨지 않아
+    /// 포워딩된 키가 큐에 쌓인 채 멈춘다. 깨우는 것 자체가 역할이고 실행부는 없다
+    /// (`about_to_wait` 의 `pump_webview_key_events` 가 파이프라인에서 처리한다).
+    ///
+    /// **실제로 걸리는 것은 Linux 뿐이다** — macOS/Windows 는 native 키 콜백이 winit 과
+    /// 같은 OS 이벤트 루프에서 발화해 폴링이 필요 없고, 거기까지 상시 60Hz wakeup 을
+    /// 둘 이유가 없다(`reschedule_webview_key_poll` 이 그 판정을 갖는다).
+    #[cfg(feature = "gui")]
+    WebviewKeyPoll,
     /// 일회성 디바운스. 레이아웃이 처음 dirty 가 된 시각 + `LAYOUT_FLUSH_DEBOUNCE`
     /// 에 슬롯 파일로 flush 한다. **`every` 가 아니다** — 주기로 두면 변경이 없어도
     /// 500ms 마다 깨어나는 회귀가 된다.
@@ -104,6 +117,11 @@ pub(crate) const RECONNECT_MIN_BACKOFF: Duration = Duration::from_millis(500);
 /// 계속 깨우지는 않을 만큼만 짧다(메뉴가 닫히면 등록 자체가 사라진다).
 #[cfg(feature = "gui")]
 pub(crate) const PENDING_MENU_POLL_INTERVAL: Duration = Duration::from_millis(8);
+
+/// 살아있는 webview 가 있는 동안의 키 포워딩 폴링 주기. 단축키 반응 지연이 사람에게
+/// 안 느껴질 만큼 짧고(한 프레임 수준), webview 가 없으면 등록 자체가 사라진다.
+#[cfg(feature = "gui")]
+pub(crate) const WEBVIEW_KEY_POLL_INTERVAL: Duration = Duration::from_millis(16);
 
 /// TTL 정리 tick 주기. TTL(5분) 대비 충분히 촘촘해 회수 지연 상한이
 /// `TTL + interval + slack` = 최대 6.5분이다. TTL 자체는 바꾸지 않는다.
@@ -354,6 +372,32 @@ pub(crate) fn reschedule_pending_menu_poll(
         );
     } else {
         hub.cancel(Tick::NativeMenu);
+    }
+}
+
+/// "드러난 webview + 활성 창" 여부 → 다음 키 폴링 wakeup 예약/취소(Linux 전용).
+///
+/// `reschedule_pending_menu_poll` 과 같은 이유로 순수 함수다 — 이 재예약을 빠뜨리면
+/// webview 에 키보드 포커스가 있는 동안 host 가 깨지 않아 단축키가 통째로 멈춘다.
+/// 반대로 조건이 풀리면 반드시 취소해야 배경 인스턴스가 16ms 마다 깨지 않는다.
+#[cfg(feature = "gui")]
+pub(crate) fn reschedule_webview_key_poll(
+    hub: &mut TimerHub<Tick>,
+    needs_poll: bool,
+    now: Instant,
+) {
+    // tick 을 세우는 것은 **Linux 뿐**이다. macOS/Windows 는 native 키 콜백이 winit 과
+    // 같은 OS 이벤트 루프에서 발화해 폴링이 필요 없어, 조건과 무관하게 세우지 않는다.
+    let arm = needs_poll && cfg!(target_os = "linux");
+    if arm {
+        hub.once_after(
+            Tick::WebviewKeyPoll,
+            WEBVIEW_KEY_POLL_INTERVAL,
+            Precision::Strict,
+            now,
+        );
+    } else {
+        hub.cancel(Tick::WebviewKeyPoll);
     }
 }
 

@@ -134,6 +134,30 @@ impl App {
         if ke.state != ElementState::Pressed {
             return false;
         }
+        let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) else {
+            return false;
+        };
+        // physical key fallback (IME 영향 회피) — keyboard.rs와 동일 규칙
+        let mods = main.base.modifiers;
+        let shortcut_key = if mods.control_key() || mods.super_key() || mods.alt_key() {
+            shortcuts::physical_key_to_logical(&ke.physical_key)
+                .unwrap_or_else(|| ke.logical_key.clone())
+        } else {
+            ke.logical_key.clone()
+        };
+        self.dispatch_plugin_shortcut_key(id, &shortcut_key, mods)
+    }
+
+    /// `(key, mods)` 만으로 plugin 명령 단축키를 매칭·실행한다. winit `KeyEvent` 경로
+    /// (`try_plugin_shortcut`)와 native webview 포워딩 경로가 **같은 게이트·같은
+    /// 우선순위**를 쓰도록 실제 판정을 여기 한 곳에 둔다. `winit::event::KeyEvent` 는
+    /// 합성 생성이 불가능하므로 포워딩 경로는 이 진입점을 쓴다.
+    pub(crate) fn dispatch_plugin_shortcut_key(
+        &mut self,
+        id: winit::window::WindowId,
+        shortcut_key: &winit::keyboard::Key,
+        mods: winit::keyboard::ModifiersState,
+    ) -> bool {
         // Modal이 활성화되면 plugin shortcut은 동작하지 않는다.
         if self.view.is_modal_active() {
             return false;
@@ -158,14 +182,6 @@ impl App {
             &main.state,
             &main.core_state,
         );
-        // physical key fallback (IME 영향 회피) — keyboard.rs와 동일 규칙
-        let mods = main.base.modifiers;
-        let shortcut_key = if mods.control_key() || mods.super_key() || mods.alt_key() {
-            shortcuts::physical_key_to_logical(&ke.physical_key)
-                .unwrap_or_else(|| ke.logical_key.clone())
-        } else {
-            ke.logical_key.clone()
-        };
         let host_kb = main.core_state.settings.keybindings.clone();
 
         // (plugin_id, command_id, 대상 surface — Surface 경로만 Some) 매칭 결과.
@@ -178,7 +194,7 @@ impl App {
                     crate::plugin_bridge::key_dispatch::match_plugin_shortcut(
                         mgr,
                         plugin_id,
-                        &shortcut_key,
+                        shortcut_key,
                         mods,
                         &host_kb,
                     )
@@ -186,7 +202,7 @@ impl App {
                 }
                 None => crate::plugin_bridge::key_dispatch::match_global_shortcut(
                     mgr,
-                    &shortcut_key,
+                    shortcut_key,
                     mods,
                     &host_kb,
                 )
