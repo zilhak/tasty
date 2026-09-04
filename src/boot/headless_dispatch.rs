@@ -77,6 +77,7 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
         //    (`docs/adr/0111-headless-drains-the-intent-queue.md`) set_mark /
         //    completion / notification 같은 에이전트 표면이 headless 에서 무응답이 된다.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
         // 5) 호스트가 모르는 메서드는 plugin namespace 로 넘긴다. 넘어갔으면 응답은
         //    plugin 이 줄 때까지 보류되고, `headless_plugins::pump_plugins` 의
         //    `mgr.pump` 가 도착 시 client 에 회신한다(gui 와 같은 계약).

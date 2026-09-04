@@ -276,6 +276,7 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         // `surface.completion`) 결과 회신 전에 Intent 큐를 적용한다 —
         // `docs/adr/0111-headless-drains-the-intent-queue.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
         let (result, error) = match response.error {
             Some(err) => (None, Some(err.message)),
             None => (response.result, None),

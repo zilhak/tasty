@@ -70,6 +70,38 @@ pub(crate) fn drain_pending_intents(core: &mut Core, state: &mut AppState, engin
     }
 }
 
+/// `AppState` 의 pending host event 큐를 비우고, **비-bus 소비자가 있는 종류만**
+/// 적용한다.
+///
+/// 오늘 그 조건을 만족하는 것은 `HookFired` 하나다 — push 완료 전략
+/// (`core::agent::runner_host::dispatch_push_strategy`)이 훅을 걸고
+/// `hook_task_waits` 에 등록한 task 를 이 발화가 마감한다. 그 배선이 없으면
+/// headless 에서 `agent.task_await` 대기자는 훅이 발화해도 깨어나지 않고
+/// deadline 까지 간 뒤 `runner_thread::expire_overdue_hook_waits` 가 Failed 로
+/// 마감한다 — 무응답이 아니라 **틀린 결과**다.
+///
+/// 나머지 종류는 소비자가 plugin event bus 뿐이라 여기서 버린다. gui 의
+/// `emit_*`(`src/app/dispatch/host_events/`)를 headless 로 끌어오려면 window /
+/// lua autofire 컨텍스트가 따라와야 하는데 그 소비처는 headless 에 없다. 버려도
+/// 오늘 잃는 것은 없다 — 이 큐는 headless 에서 애초에 아무도 비우지 않았으므로
+/// bus 로 나간 적이 없다. 다만 **번들 plugin 중 이 이벤트들을 구독하는 것이
+/// 0건**이라는 사실 위에 선 판단이라, 구독 요구가 실제로 생기면 그때 bus 배선을
+/// 별도로 검토한다.
+///
+/// 비우는 것 자체가 두 번째 목적이다. 이 큐는 idle-timeout 훅 발화(`src/boot.rs`)
+/// 와 `surface.fire_hook`(`src/adapters/ipc/handler/hooks.rs`)이 계속 밀어넣는데
+/// headless 에 빼 가는 쪽이 없어 프로세스 수명 동안 자라고 있었다.
+pub(crate) fn drain_pending_host_events(core: &Core, state: &mut AppState, engine: &CoreState) {
+    for event in state.take_pending_host_events() {
+        if let crate::state::PendingHostEvent::HookFired {
+            hook_id, exit_code, ..
+        } = event
+        {
+            core.resolve_hook_task_wait(engine, hook_id, exit_code);
+        }
+    }
+}
+
 /// 단일 intent 적용. gui 의 분류(`App::classify_intent`)와 같은 경계다 —
 /// `Intent::Domain` 은 `Core::apply` + cascade, 나머지는 도메인 핸들러 직결.
 fn apply_one(
@@ -374,6 +406,163 @@ mod tests {
         );
     }
 
+    /// 대상 surface 에 `command-completed` 훅을 하나 건다(1회성 아님 — 반복 발화가
+    /// 매번 큐에 한 건씩 넣어야 큐 성장을 관측할 수 있다). `hook_id` 반환.
+    fn set_a_hook(core: &mut Core, state: &mut AppState, engine: &mut CoreState, sid: u32) -> u64 {
+        let resp = crate::ipc::handler::handle_with_caller(
+            core,
+            state,
+            engine,
+            &request(
+                "hook.set",
+                serde_json::json!({
+                    "surface_id": sid,
+                    "event": "command-completed",
+                    "command": "true",
+                }),
+            ),
+            &CallerContext::Local,
+        );
+        resp.result
+            .as_ref()
+            .and_then(|v| v.get("hook_id"))
+            .and_then(|v| v.as_u64())
+            .expect("hook.set returns hook_id")
+    }
+
+    /// **재현 — 훅이 발화해도 그것을 기다리던 agent task 가 마감되지 않는다.**
+    ///
+    /// push 완료 전략(`runner_host.rs::dispatch_push_strategy`)은 대상 surface 에
+    /// 1회성 훅을 걸고 그 `hook_id` 를 `hook_task_waits` 에 등록한 뒤 task 를
+    /// `AwaitExternal` 로 둔다. 종결은 훅 발화가 낳는
+    /// `PendingHostEvent::HookFired` 를 소비하는 쪽의 몫인데, headless 에는 그
+    /// 소비자가 없다. 여기서는 등록을 dispatch 없이 직접 흉내 내고(그 함수는
+    /// plugin IPC 왕복이 필요하다) 발화만 실제 IPC 경로로 낸다.
+    #[test]
+    fn a_fired_hook_completes_the_task_that_waited_on_it() {
+        use tasty_agent::TaskState;
+        use tasty_agent::task::{OnFailure, TaskCommand};
+
+        let (mut core, mut state, mut engine, sid) = fixture();
+        let ws = state.active_workspace(&engine).id;
+
+        let task_id = core
+            .task_create(
+                &engine,
+                tasty_agent::task::TaskCreateOpts {
+                    workspace_id: ws,
+                    name: "push-wait".to_string(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: ws,
+                        cwd: None,
+                    },
+                    depends_on: Vec::new(),
+                    on_failure: OnFailure::default(),
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1,
+                },
+                false,
+            )
+            .expect("task_create")
+            .id;
+        core.task_set_state(&engine, ws, &task_id, TaskState::Running, 2)
+            .expect("Ready -> Running");
+
+        // 훅 등록은 실제 IPC 경로로 — hook_id 가 진짜여야 발화가 그 id 를 싣는다.
+        let resp = crate::ipc::handler::handle_with_caller(
+            &mut core,
+            &mut state,
+            &mut engine,
+            &request(
+                "hook.set",
+                serde_json::json!({
+                    "surface_id": sid,
+                    "event": "command-completed",
+                    "command": "true",
+                    "once": true,
+                }),
+            ),
+            &CallerContext::Local,
+        );
+        let hook_id = resp
+            .result
+            .as_ref()
+            .and_then(|v| v.get("hook_id"))
+            .and_then(|v| v.as_u64())
+            .expect("hook.set returns hook_id");
+
+        // dispatch_push_strategy 가 하는 등록과 같은 것.
+        core.hook_task_waits
+            .register(hook_id, ws, task_id.clone(), u64::MAX);
+
+        send(
+            &mut core,
+            &mut state,
+            &mut engine,
+            "surface.fire_hook",
+            serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
+        );
+        drain_pending_intents(&mut core, &mut state, &mut engine);
+        drain_pending_host_events(&core, &mut state, &engine);
+
+        let task = core
+            .task_get(&engine, ws, &task_id)
+            .expect("task_get")
+            .expect("task exists");
+        assert!(
+            matches!(task.state, TaskState::Succeeded),
+            "훅이 발화했는데 기다리던 task 가 마감되지 않았다 (state={:?})",
+            task.state
+        );
+    }
+
+    /// host event 큐도 유계여야 한다. `surface.fire_hook` 은 발화한 훅마다 한 건씩
+    /// 넣으므로, 빼 가는 쪽이 없으면 요청 수에 비례해 자란다.
+    #[test]
+    fn repeated_hook_fires_leave_the_host_event_queue_bounded() {
+        let (mut core, mut state, mut engine, sid) = fixture();
+        set_a_hook(&mut core, &mut state, &mut engine, sid);
+
+        for i in 0..N {
+            send(
+                &mut core,
+                &mut state,
+                &mut engine,
+                "surface.fire_hook",
+                serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
+            );
+            drain_pending_host_events(&core, &mut state, &engine);
+            assert!(
+                state.pending_host_events.is_empty(),
+                "drain 후 host event 큐가 남아 있으면 안 된다 (i={i})"
+            );
+        }
+    }
+
+    /// 위 테스트가 무엇을 잡는지 고정하는 대조군 — drain 이 없으면 host event 큐는
+    /// 발화 수만큼 자란다(수정 전 headless 의 실제 상태).
+    #[test]
+    fn without_a_drain_the_host_event_queue_grows_with_every_fire() {
+        let (mut core, mut state, mut engine, sid) = fixture();
+        set_a_hook(&mut core, &mut state, &mut engine, sid);
+
+        for _ in 0..N {
+            send(
+                &mut core,
+                &mut state,
+                &mut engine,
+                "surface.fire_hook",
+                serde_json::json!({ "surface_id": sid, "event": "command-completed:0" }),
+            );
+        }
+        assert_eq!(
+            state.pending_host_events.len(),
+            N,
+            "drain 이 없으면 큐는 발화 수만큼 자란다"
+        );
+    }
+
     /// 배선 가드 — headless 진입점이 drain 을 실제로 부르는지 소스에서 확인한다.
     /// 위 테스트들은 drain 함수 자체의 계약만 보므로, 호출부가 빠지면(가장 그럴듯한
     /// 회귀 형태다) 그것만으로는 잡히지 않는다.
@@ -393,6 +582,11 @@ mod tests {
             assert!(
                 src.contains("headless::drain_pending_intents"),
                 "{path} 이 Intent 큐 drain 을 호출하지 않는다 — headless 큐 누적 회귀"
+            );
+            assert!(
+                src.contains("headless::drain_pending_host_events"),
+                "{path} 이 host event 큐 drain 을 호출하지 않는다 — 훅을 기다리는 \
+                 agent task 가 headless 에서 마감되지 않는다"
             );
         }
     }

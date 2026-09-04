@@ -657,6 +657,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 앞으로 다른 발화점이 생겨도 큐가 프로세스 수명 동안 쌓이지 않게 하는
         // 최종 방어선이다 — `docs/adr/0111-headless-drains-the-intent-queue.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, &mut state, &mut engine);
+        crate::intent::headless::drain_pending_host_events(&app.core, &mut state, &engine);
         // plugin manager 는 자기 허브를 따로 소유한다 — 대기 계산은 min 으로 합성.
         let deadline = crate::app::timers::min_deadline(
             app.timers.next_deadline(),
