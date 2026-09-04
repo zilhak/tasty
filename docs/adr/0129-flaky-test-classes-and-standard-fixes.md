@@ -333,5 +333,9 @@ check-headless 가, 둘째에만 나오면 `gui` 쪽에 걸려 check-windows 가
   가드를 `tests/` 가 아니라 루트 패키지 `#[cfg(test)]` 로 두는 이유(자동 실행 축 확보).
   본 ADR 의 가드도 같은 이유로 그렇게 배치한다. 0128 은 `tests/*.rs` 채널 방침 자체를
   결정하지 않으므로, 이 참조는 가드 배치 근거로만 한정한다.
+- [ADR-0155](0155-global-state-race-prescription-by-parameterization.md) — 본 ADR 의 형태 A
+  (인-프로세스 공유 상태) 안에서 처방 등급이 갈리는 축을 확정한다: 전역 상태 경합을 두 갈래
+  (테스트 전용 전역 / 프로덕션도 읽는 OS 전역)로 가르고, 처방을 crate 이름이 아니라
+  "프로덕션이 이미 그 상태를 인자로 받는가" 에 건다.
 - 자연실험: `crates/tasty-themes/src/plugin_defaults.rs`(락 있음) ↔
   `src/core/surface_registry/webview_kind.rs`(락 없음)
