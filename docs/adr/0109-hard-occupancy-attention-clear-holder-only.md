@@ -96,7 +96,8 @@ ADR-0040 의 테두리 우선순위와도 정합한다 — 점유 테두리가 �
   두 함수의 역할 분리가 이 결정의 유지 조건이다.
 - **검증 범위**: 렌더 경로는 GPU 없이 실행할 수 없으므로 게이트 술어와 로컬 축 진입점을 단위
   테스트가 값으로 고정한다(점유 중 유지 / 점유 해제 후 제거 / soft 무영향 / 알림 read 플래그
-  독립 / 홀더 경로 비차단 / 미러 비차단). 실제 렌더 포커스가 게이트를 밟는 것까지는 loopback
+  독립 / 홀더 경로 비차단 / 미러 비차단) — `local_clear_is_disallowed_exactly_while_hard_occupied`
+  와 `hard_occupied_surface_survives_the_local_focus_clear` 가 그 축의 진입점이다. 실제 렌더 포커스가 게이트를 밟는 것까지는 loopback
   e2e 가 실행한다 — GUI 서버 인스턴스의 활성 워크스페이스를 점유된 워크스페이스로 전환해
   `gpu.rs` 의 매 프레임 해제를 실제로 태우고, 해제가 일어났다면 반드시 따라오는 `kind: null`
   diff push 의 부재로 관측한다(서버 attention 을 직접 조회하는 IPC 가 없다). 게이트를 제거하면

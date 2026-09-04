@@ -58,7 +58,7 @@ DPI 변환의 정합을 **타입 수준 봉인이 아니라, 소스 스캔 가�
 - **짝 타입**: 사각형은 `PhysicalRect` ↔ `LogicalRect` 로 네 변을 한 번에 변환한다.
   변을 하나씩 나누면 하나를 빠뜨려도 컴파일이 통과하지만, 변환이 한 번이면 빠뜨릴
   것이 없다. `WebViewBounds` ↔ `PhysicalWebViewBounds` 도 같은 형태다.
-- **왕복 상쇄 테스트**: 짝 타입마다 내렸다 올린 값이 원본과 같음을 고정한다. 손으로
+- **왕복 상쇄 테스트**(`physical_and_logical_round_trip_cancels`): 짝 타입마다 내렸다 올린 값이 원본과 같음을 고정한다. 손으로
   나누던 시절에는 이 성질을 확인할 자리 자체가 없었다.
 
 ## Consequences

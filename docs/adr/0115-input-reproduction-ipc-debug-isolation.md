@@ -38,7 +38,7 @@
 
 - **얻은 것**: macOS release 빌드에서 OS 전역 키 주입·입력 소스 전환 표면이 **사라진다**(코드째 컴파일되지 않는다). `TerminalWrite` 토큰이 "터미널 쓰기" 보다 넓은 능력을 함의하던 어긋남이 해소돼, 권한 토큰의 이름과 실제 능력이 일치한다. IPC 와 CLI 의 노출 빌드가 세 계열 모두에서 일치한다. 손쉬운 사용(Accessibility) 권한 요구가 debug 빌드 한정이 되어, release 사용자가 그 권한을 켜야 할 이유가 하나 줄어든다.
 - **잃은 것**: release 빌드로는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증을 구동할 수 없다. 이 검증은 원래 자기검증 용도이므로 debug 빌드에서 수행하는 것이 정상 경로다. 외부 자동화가 release 인스턴스에 `surface.raw_key`/`surface.ime_*` 를 쏘고 있었다면 `method_not_found` 로 깨진다 — 이 표면은 문서상 debug 검증용이었으므로 의도된 파급이다.
-- **운영 비용 / 유지 부담**: 가드 2 의 이름 패턴은 정상 에이전트 메서드를 오탐할 수 있다. 오탐이 나면 패턴을 좁히고 근거를 남기는 것이 절차다(가드가 막는 것이 아니라 판정을 강제하는 장치다). 가드 3 은 `PREFIX_RULES` 정의를 소스 텍스트로 읽으므로 그 정의의 형태가 바뀌면 함께 손봐야 한다.
+- **운영 비용 / 유지 부담**: 가드 2 의 이름 패턴은 정상 에이전트 메서드를 오탐할 수 있다. 오탐이 나면 패턴을 좁히고 근거를 남기는 것이 절차다(가드가 막는 것이 아니라 판정을 강제하는 장치다). 가드 3(`src/source_guards/reserved_ipc_prefixes.rs`)은 `PREFIX_RULES` 정의를 소스 텍스트로 읽으므로 그 정의의 형태가 바뀌면 함께 손봐야 한다.
 
 ## Alternatives Considered
 

@@ -31,7 +31,7 @@ prefix 를 만들 때 함께 갱신된다는 보장이 없었다.
 
 **호스트가 쓰는 prefix 45 개 중 번들 plugin 이 이미 점유한 2 개를 뺀 전부를 예약한다.
 집행은 매니페스트 검증(`Manifest::validate`)에 그대로 두고, 목록은 파생하지 않고
-가드로 고정한다.**
+가드(`src/source_guards/reserved_ipc_prefixes.rs`)로 고정한다.**
 
 집행 지점이 이 결정의 형태를 정했다. 두 검증 층의 도달 범위가 다르다.
 

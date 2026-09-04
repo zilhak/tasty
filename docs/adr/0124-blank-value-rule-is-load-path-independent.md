@@ -39,7 +39,7 @@
 | `"\u{200B}"` (ZERO WIDTH SPACE) | **남는다** |
 | `"\u{2060}"` (WORD JOINER) | **남는다** |
 
-즉 탈출구는 **U+200B · U+2060** 이며, 이 표 자체가 결정의 운영 조건이라 테스트로 고정한다.
+즉 탈출구는 **U+200B · U+2060** 이며, 이 표 자체가 결정의 운영 조건이라 테스트(`a_blank_value_means_the_same_thing_in_a_pack_and_in_an_override` · `blank_pack_values_fall_back_to_english_instead_of_showing_empty`)로 고정한다.
 
 ## Consequences
 

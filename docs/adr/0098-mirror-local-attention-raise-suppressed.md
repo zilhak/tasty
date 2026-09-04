@@ -52,7 +52,7 @@ OSC 9/777 알림이 미러에서도 나온다. 여기에 더해 `surface.complet
 - **잃은 것**: 미러 인스턴스에서 도는 에이전트가 자기 화면의 mirror surface 를 스스로 표시할
   방법이 없다. 그 에이전트는 원격 surface 를 소유하지 않으므로 표시 권한도 없다고 본다 —
   필요하면 서버 인스턴스의 IPC 로 원격 surface id 를 대상으로 호출하면 된다.
-- **검증 방식**: 미러 측 억제는 `AppState`/`CoreState` 단위 테스트로 고정한다. loopback e2e
+- **검증 방식**: 미러 측 억제는 `AppState`/`CoreState` 단위 테스트로 고정한다(`local_attention_raise_is_suppressed_on_mirror_surface` · `mirror_attention_lands_in_the_same_store_consumers_read` · `mirror_apply_does_not_touch_forward_cache`). loopback e2e
   로 대체하지 않은 이유는 두 가지다 — 헤드리스 환경에서 GUI 두 인스턴스를 실제로 attach 할
   수 없고(기존 loopback client 는 raw `TcpStream` 이라 미러 store 자체가 없다), "미러 포커스
   → 양쪽 해제" 는 해제 forward(mirror→server)가 들어오기 전에는 정의상 성립하지 않는 후속
