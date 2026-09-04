@@ -96,8 +96,9 @@ fn host_prefixes() -> BTreeSet<&'static str> {
 fn every_host_method_prefix_is_reserved_or_carries_a_reason() {
     assert!(
         METHOD_TABLE.len() >= MIN_HOST_METHODS,
-        "호스트 메서드가 {} 건뿐이다(하한 {MIN_HOST_METHODS}, 2026-09-05 실측 325). \
-         표가 비면 아래 집합 동등은 양쪽이 빈 집합이라 그냥 통과한다",
+        "호스트 메서드가 {} 건뿐이다(하한 {MIN_HOST_METHODS}, 2026-09-05 실측 \
+         `METHOD_TABLE.len()` = 276). 표가 비면 아래 집합 동등은 양쪽이 빈 집합이라 \
+         그냥 통과한다",
         METHOD_TABLE.len()
     );
     let host = host_prefixes();
