@@ -30,10 +30,23 @@ resumed() (src/app/event_handler.rs)
                    의존이라 spawn 전 메인에서 계산해 워커에 값으로 전달.
   WaitingEngine    워커 결과 채널을 매 스텝 try_recv 폴링 — 원자 구간(T2.6+T3
                    ≈470ms)에도 메인은 로딩 프레임만 그리므로 스피너가 멈추지
-                   않는다. 도착 시 `(CoreState, PluginManager)` 를 장착하고
-                   pending layout restore 있으면 → WaitingPlugins, 없으면 →
-                   Ready. 채널 disconnect(워커 panic 등)는 메인 동기
-                   `ensure_engine_and_plugins` 재시도로 fallback.
+                   않는다. 채널 payload 는 `anyhow::Result<(CoreState,
+                   PluginManager)>` 로, 결과가 셋 중 하나다.
+                   · Ok  → 장착하고 pending layout restore 있으면 →
+                     WaitingPlugins, 없으면 → Ready.
+                   · Err → engine 생성 실패(셸 spawn·PTY/fd 등). 이 단계는
+                     부팅 GPU init 이후라 **GPU·창이 살아있으므로**, 진단을
+                     `boot_error_info` 로 담아(`boot_engine_error_info`) 두고
+                     `drive_boot_frame` 이 `enter_boot_error_mode` 로 전환해
+                     **실패 화면을 창에 그려 유지**한다(사용자가 종료할 때까지 →
+                     `exit(1)`). 런처로 실행해 stderr 를 못 보는 사용자도 원인을
+                     본다. 진단 3줄은 `tracing::error!`(stderr + 파일 로그)로도
+                     남긴다. GPU 어댑터 부재·부팅 창 생성 실패는 그릴 수단이 없어
+                     이 경로가 아니다(진단 후 즉시 `exit(1)`). (ADR-0117)
+                   · disconnect → **워커 스레드 자체의 예상 밖 panic** 만
+                     여기로 온다(engine 생성 실패는 위 Err 로 온다). 메인 동기
+                     `ensure_engine_and_plugins` 재시도로 fallback 하고, 그것도
+                     실패하면 위와 같이 실패 화면으로 전환한다.
   WaitingPlugins   pump → finalize_plugin_hello → 필요 surface kind 등록 확인.
   (deadline 300ms) 미충족이면 다음 프레임 재시도. 충족/초과 시
                    ApplyPendingLayoutRestore 1회 apply 후 → RestoringLayout

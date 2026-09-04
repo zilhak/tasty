@@ -25,8 +25,10 @@
     → `GpuState::capture_surface_to_png`). 소유 창은 surface_id 로 자동 해소(창별 CoreState 순회).
     **터미널만 지원**(v1). egui 패널(explorer/markdown/image/html)·plugin·webview surface 는
     범위 밖 — 명확한 에러 반환.
-  - **window 캡처** `--window <id>`(없고 창이 1개면 그 창; 다중이면 에러 — focus 기본값 금지)
-    — 그 창의 전체 프레임(chrome 포함)을 swapchain readback 으로 캡처(`pending_screenshot`).
+  - **window 캡처** `--window <id>`(없고 main 창이 1개면 그 창; 그 외는 에러 — focus 기본값
+    금지) — 그 창의 전체 프레임(chrome 포함)을 swapchain readback 으로 캡처
+    (`pending_screenshot`). 명시한 id 는 **설정·플러그인·종료 확인 모달과 preset 창**도
+    가리킬 수 있다(아래 "무엇을 캡처할 수 있는가").
 - 응답 `{ "path": .., ("surface_id"|"window_id"): .., "scheduled": true }` — **다음 프레임에
   캡처 예약**(비동기). 호출 직후 잠깐 기다렸다 파일을 읽는다. 대상 창은 자동으로 redraw 를
   요청받아(비-focus 창도) 캡처가 발화한다.
@@ -37,6 +39,64 @@ tasty screenshot --path /abs/out.png --surface 5
 # 창 전체 프레임 (창 여러 개면 --window 필수; list windows 로 ID 조회)
 tasty screenshot --path /abs/win.png --window 2
 ```
+
+### 무엇을 캡처할 수 있는가 (경계)
+
+**명시한 `--window <id>` 는 모든 창을 가리킬 수 있다** — main 창뿐 아니라 설정 · 플러그인 ·
+종료 확인 모달과 preset 창까지. 별도 winit 창으로 뜨는 UI 를 자동 시각 검증할 수 있어야
+디자인 정합 확인이 사람 눈에 의존하지 않는다. X11 화면 캡처는 GPU 창에서 검게 나오므로
+대안이 되지 못한다.
+
+경계는 **창의 종류가 아니라 두 가지 다른 축**에 있다 (근거·기각 대안·재검토 조건:
+[ADR-0118](../adr/0118-screenshot-reads-any-window-explicit-id-only.md)).
+
+1. **명시 지정만 넓어진다.** `--window` 를 생략했을 때의 자동 선택은 종전대로 **main 창이
+   정확히 하나일 때뿐**이고, 모달로 폴백하지도 포커스를 보지도 않는다(불가침 원칙 3).
+   자동 선택이 "사용자가 무엇을 열어두었는가" 에 의존하기 시작하면 같은 명령이 실행할
+   때마다 다른 것을 찍는다.
+2. **캡처는 읽기이지 행동이 아니다.** `window.list` 와 `window.close` 는 종전대로 main 창만
+   다룬다 — 모달 · preset 은 사용자 조작 영역이라 에이전트 **행동** 대상이 아니다. 캡처가
+   가능해져도 그 집합은 넓어지지 않는다.
+
+원칙 1 은 에이전트 행동의 부수효과가 **사용자 상태**(포커스 / 닫은 항목 히스토리 / 선택 ·
+스크롤 · 커서)에 닿는 것을 금지한다. 캡처는 이미 그려진 프레임의 readback + 리페인트
+요청이고 리페인트는 멱등이라 그중 무엇도 바꾸지 않는다. 그리고 `ui.screenshot` 은
+`local_only`(plugin 미노출)라 호출자는 이미 사용자 권한으로 `config.toml`(설정 창이 그리는
+내용 전부)과 PTY 를 읽을 수 있다 — 모달 캡처를 막아도 새로 감춰지는 정보가 없고, 자동
+검증만 잃는다.
+
+### 모달 창의 ID 를 얻는 법
+
+`list windows`(`window.list`)는 위 2 번 때문에 **main 창만** 열거한다. 모달 id 는 OS 창
+목록에서 얻는다 — X11 에서 winit `WindowId` 는 **X11 window id 그 자체**라 그대로 넘길 수
+있다(다른 플랫폼은 대응이 다르므로 이 방법은 X11 한정).
+
+```bash
+# 모달을 띄우고(debug 빌드 전용) X11 창 목록에서 id 를 고른다
+tasty debug settings open --tab general
+for w in $(xdotool search --pid "$TASTY_PID"); do
+  echo "$w  $(xdotool getwindowname "$w" 2>/dev/null)"
+done
+tasty screenshot --path /abs/settings.png --window <아래 표로 고른 id>
+```
+
+`xdotool` 은 winit 이 만드는 **입력 전용 더미 창**까지 뱉는다. 더미를 "이름이 비어 있는
+것" 으로 거르면 안 된다 — 더미 이름은 비어 있지 않고 소문자 `tasty` 라, 그 필터를 쓰면
+더미가 후보에 그대로 남아 `Window id <id> not found` 로 실패한다. **찍으려는 창을 제목으로
+직접 지목한다:**
+
+| 창 | 제목 |
+|---|---|
+| 메인 창 | `Tasty` (debug 빌드는 `Tasty (Debug)`) |
+| 설정 | `Tasty Settings` |
+| Plugin 관리 | `Tasty Plugins` |
+| 종료 확인 | `Tasty` |
+| 프리셋 | 번역 문자열 (`preset.window.title` — en `Layout Presets`) |
+
+프리셋 창만 제목이 i18n 이라 `Tasty` 로 시작하지 않는다. 즉 `Tasty` 접두어 필터는 그
+창을 놓치므로, 접두어를 거르개로 쓸 때는 프리셋 창이 대상이 아닌 경우로 한정한다.
+
+존재하지 않는 id 는 `Window id <id> not found` 로 거절된다.
 
 CLI 없이 raw JSON-RPC(개행 구분)를 포트로 직접 보낼 수도 있다. 포트 파일은 debug 빌드면
 **debug 루트** `~/.tasty-debug/tasty.port`, release 면 `~/.tasty/tasty.port` 다(루트 분리 —
@@ -59,13 +119,129 @@ debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자�
 루트를 명시적으로 분리하고 싶으면(병렬 debug 인스턴스 등) `TASTY_HOME` env 로 루트를 강제한다 — `tasty_home()` 이 `TASTY_HOME` 을 debug/release 자동 분기보다 우선한다(`crates/tasty-utils/src/path.rs`).
 
 ```bash
-TH=$(mktemp -d); mkdir -p "$TH"; cp ~/.tasty/config.toml "$TH/"   # config 는 루트 바로 아래
+TH=$(mktemp -d); cp ~/.tasty/config.toml "$TH/"    # config 는 루트 바로 아래
 TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
+MY_APP=$!                                          # 띄운 즉시 PID 를 잡는다
+until TASTY_HOME="$TH" ./target/debug/tasty list info >/dev/null 2>&1; do   # IPC 대기
+  kill -0 "$MY_APP" 2>/dev/null || { echo "기동 실패 — 로그를 본다"; break; }  # 죽은 프로세스를 무한정 기다리지 않는다
+  sleep 1
+done
 # "$TH/tasty.port" 로 ui.screenshot 호출 (TASTY_HOME 루트라 -debug 접미사 없음)
-# 정리: pkill -f "target/debug/tasty --launch"; rm -rf "$TH"
+kill "$MY_APP"; rm -rf "${TH:?}"                   # 정리 — 저장한 PID 로만
 ```
 
+**정리는 반드시 자기가 띄운 PID 로 한다.** 이름이나 명령줄 패턴으로 찾아서 죽이면
+**자기 것이 아닌 인스턴스까지 죽인다** — 이 레포는 사용자 release · 다른 검증 세션 ·
+병렬 lane 의 debug 인스턴스가 동시에 떠 있는 것이 일상이고, 실제로 그 형태가 다른
+세션의 프로세스를 죽인 사고가 두 번 났다. 레포의 PreToolUse 훅도 같은 이유로 패턴
+기반 프로세스 종료를 차단한다. `rm -rf` 의 대상에도 같은 원칙이 적용된다 —
+`${TH:?}` 로 빈 변수가 경로가 되는 경우를 막는다.
+
+PID 를 놓쳤다면 **패턴으로 찾아 죽이지 말고 소유자부터 확인한다.** 격리 실행은
+`TASTY_HOME` 이 인스턴스마다 다르므로 그것이 신원이 된다(Linux):
+
+```bash
+for pid in $(pgrep -x tasty); do
+  home=$(tr '\0' '\n' < "/proc/$pid/environ" | grep '^TASTY_HOME=' | cut -d= -f2-)
+  echo "$pid  TASTY_HOME=${home:-<없음>}"
+done
+# 위 목록에서 "$TH" 와 일치하는 PID 하나만 골라 kill <PID>
+```
+
+macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. 어느 쪽이든 내
+것이라고 확정할 수 없으면 죽이지 않는다. 남의 인스턴스를 죽였다면 **무엇을 언제
+죽였고 그래서 어떤 검증이 무효가 됐는지**를 보고에 적는다 — 무효가 된 검증을 유효한
+것처럼 보고하는 쪽이 사고 자체보다 나쁘다.
+
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
+
+### 측정 전에 — 대상 바이너리가 최신인지 확인한다 (plugin)
+
+**`cargo build` 는 plugin 바이너리를 다시 만들지 않는다.** 실측으로 확인한 것이다:
+`crates/tasty-plugin-*/src/main.rs` 를 고치고 루트에서 `cargo build` 를 돌려도
+`target/debug/tasty-plugin-<name>` 의 mtime 이 그대로다. `cargo build --workspace` 나
+`cargo build -p tasty-plugin-<name>` 은 다시 만든다.
+
+여기에 스테이징이 겹친다. host 는 **부팅할 때** `copy_if_newer` 로
+`target/<profile>/builtin-plugins/` 를 갱신하고 거기서 `<TASTY_HOME>/plugins/` 로
+sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 판정 기준이 mtime 이라, 안 만들어진
+바이너리는 **낡은 채로 조용히 실행된다.**
+
+그래서 plugin 을 고친 뒤 GUI 로 확인하면 **직전 plugin 코드를 재고 있을 수 있다.**
+실패로도 성공으로도 오진할 수 있는 형태다 — 고친 것이 안 고쳐진 것처럼 보이거나,
+되돌린 것이 여전히 고쳐진 것처럼 보인다. 실제로 이 함정 때문에 "주입한 휠이 mesh
+surface 를 못 움직인다" 는 결함을 없는데 있다고 판단한 적이 있다(같은 절차가 낡은
+바이너리에서는 0px, 새 바이너리에서는 19275px 였다).
+
+기동 전에 다음 중 하나를 돌린다:
+
+```bash
+PROFILE=debug just build-plugins        # 정식 절차 — 빌드 + 스테이징까지
+cargo build --workspace                 # 최소한 이것 (스테이징은 부팅이 한다)
+```
+
+확인은 mtime·크기 비교가 제일 싸다:
+
+```bash
+ls -la target/debug/tasty-plugin-<name> \
+       target/debug/builtin-plugins/<manifest-id>/tasty-plugin-<name>
+```
+
+### Xvfb 에서 실제 입력(휠·클릭)을 굴릴 때
+
+전용 디스플레이를 띄우고 `xdotool` 로 진짜 X11 입력을 넣으면, IPC 주입이 닿지 않는 구간
+(winit → egui → plugin 까지의 실제 라우팅)을 끝까지 지날 수 있다. 다만 이 환경에는
+데스크톱과 다른 함정이 넷 있고, 넷 다 **조용히** 실패한다 — 하나만 놓쳐도 "화면이 비었다"
+같은 **거짓 관측**이 나온다.
+
+(이 넷은 *관측*의 함정이다. 그 앞에 *측정 대상*의 함정이 하나 더 있다 — 위 "측정 전에 —
+대상 바이너리가 최신인지 확인한다". plugin 을 고쳤다면 그것부터 확인하고 이 넷으로 넘어간다.)
+
+**1. `xdotool` 은 `xvfb-run` 이 만든 Xauthority 없이는 붙지 못한다.** `DISPLAY` 만 넘기면
+`Authorization required, but no authorization protocol specified` 뒤에
+`Can't open display: (null)` 로 죽는다. `xvfb-run` 은 임시 `Xauthority` 를 만들어 자식
+env 에만 넣으므로, 그 값을 프로세스에서 되읽어 함께 export 한다.
+
+```bash
+DISPLAY=$(tr '\0' '\n' < /proc/$HOST_PID/environ | grep '^DISPLAY=' | cut -d= -f2)
+XAUTHORITY=$(tr '\0' '\n' < /proc/$HOST_PID/environ | grep '^XAUTHORITY=' | cut -d= -f2)
+export DISPLAY XAUTHORITY
+```
+
+**2. 창 id 는 `tasty list windows` 에서 받는다 — `xdotool search --pid` 로 고르지 않는다.**
+그 검색은 winit 의 입력 전용 더미 창까지 뱉고(위 "모달 창의 ID"), 아무 것이나 집으면
+`getwindowgeometry` 가 **16x16** 을 돌려준다. 그 값으로 포인터 좌표를 계산하면 음수가 나와
+`mousemove: unrecognized option '-104'` 로 끝난다 — 창을 잘못 골랐다는 신호다. main 창은
+IPC 가 직접 알려주므로 추측할 이유가 없다(X11 에서 winit `WindowId` = X11 window id).
+
+**3. WM 이 없으므로 `windowactivate` 는 실패한다 — 그리고 필요도 없다.** 맨 Xvfb 에는 창
+관리자가 없어 `_NET_ACTIVE_WINDOW` 가 없고, `xdotool windowactivate` 는
+`Your windowmanager claims not to support _NET_ACTIVE_WINDOW` 로 거절된다. 여기서 멈추면 안
+된다 — X11 기본 포커스 모델(PointerRoot)에서는 **포인터가 얹힌 창이 입력을 받으므로**
+activate 없이 절대 좌표로 `mousemove` 한 뒤 `click` 하면 그대로 전달된다. (데스크톱 X 서버의
+재현 절차가 activate 를 요구하는 것은 그쪽에 WM 이 있기 때문이고, 그 단계를 Xvfb 에 그대로
+옮기면 실패를 오진하게 된다.)
+
+**4. 캡처 전에 포인터를 한 번 움직여 재렌더를 유발한다.** 부팅 동안에는 `about_to_wait` 가
+`WaitUntil(+16ms)` 로 스스로 프레임을 돌리지만(`src/app/boot_machine.rs`), **부팅이 끝나면
+재렌더는 이벤트 구동**이 된다 — 입력이나 PTY 출력 같은 무언가가 `request_redraw` 를 부를
+때만 다시 그린다. WM 이 없는 Xvfb 에는 그 이벤트를 만들어 줄 주체가 없어 **마지막으로
+그려진 프레임이 그대로 남는다.** 그 상태로 캡처하면 그 뒤에 바뀐 화면을 못 보고, 남아 있는
+것이 로딩 프레임이면 "아무것도 안 그려졌다" 로 오진한다. 캡처 직전에 `xdotool mousemove` 로
+포인터를 한 번 움직인 뒤 찍는다. (입력을 굴리는 검증은 `click` 이 포인터 이벤트를 동반해 이
+조건을 우연히 만족한다 — 하지만 **우연에 기대지 않는다.** "입력 전" 기준 화면을 찍는 순간이
+정확히 이 함정에 걸리는 구간이다.)
+
+그 밖에 이 조합에서 지키는 것:
+
+- **기동은 절대경로로**(`/abs/worktree/target/debug/tasty`). 프로세스 소유를 나중에 가릴 때
+  1차 기준이 cmdline 의 바이너리 경로인데, `./target/debug/tasty` 로 띄우면 그 경로가
+  남지 않아 기준 자체가 무력해진다.
+- **`xvfb-run` 의 `$!` 는 래퍼 PID 다.** 그것만 죽이면 안의 tasty 가 고아로 남는다 —
+  포트 파일이 생긴 뒤 위 1 번과 같은 방식으로 호스트 PID 를 따로 잡아 **둘 다** 정리한다.
+- 스크롤 결과 판정은 스크린샷 **픽셀 diff** 로 한다(`ImageChops.difference(...).getbbox()`).
+  "달라 보인다" 로 멈추지 말고, **수정을 되돌린 빌드로 같은 절차를 한 번 더 돌려** 그 쪽에서
+  `bbox=None` 이 나오는 것까지 확인하면 인과가 닫힌다.
 
 ## `tasty-gallery` 캡처 (`TASTY_GALLERY_SHOT`)
 
@@ -92,3 +268,18 @@ TASTY_GALLERY_SIZE=1360x1000 \
 
 - **macOS** `screencapture` — 해당 프로세스에 화면 녹화 권한 필요(없으면 `could not create image from display` 실패 → `ui.screenshot` 또는 갤러리는 `TASTY_GALLERY_SHOT` 사용).
 - **Windows** PowerShell `CopyFromScreen`. 윈도우가 가려져 있으면 `ShowWindow`+`SetForegroundWindow` 로 최대화 후 캡처. tasty.exe 실행 중이면 `cargo build` 가 exe 를 못 덮어쓰니 빌드 전 종료(`Stop-Process -Force`).
+
+## 픽셀 diff 판정 전 — 통제군으로 노이즈 바닥을 먼저 재라
+
+두 트리(before/after)의 스크린샷을 픽셀 diff 로 비교해 변화를 판정할 때, **diff 가 0 이 아니라는 것이 곧 코드 변화라는 뜻은 아니다.** llvmpipe(소프트웨어 GPU) 텍스트 안티앨리어싱은 같은 바이너리·같은 화면이라도 런마다 미세하게 다를 수 있다. 그 런-간 노이즈보다 작은 변화는 픽셀 diff 로 판별할 수 없고, 노이즈를 실제 변화로 오해하면 거짓 결함이 된다.
+
+**규칙: before/after 를 비교하기 전에, 동일 바이너리로 같은 화면을 2회 캡처해 그 둘의 diff(=노이즈 바닥)를 먼저 재라.** before/after diff 가 그 바닥보다 확실히 크고 변화가 예상 영역(bbox)에 국한될 때만 실제 변화로 판정한다.
+
+**노이즈 바닥은 화면 내용에 따라 다르다 — 반드시 측정하고 고정값을 가정하지 마라.**
+
+- 애니메이션이 있는 화면(예: 부팅 로딩 스피너)은 노이즈가 크다 — 한 측정에서 동일 바이너리 통제군 diff 가 ~548px 였다.
+- 정적 specimen(예: 갤러리 모달 dialog)은 노이즈가 **0px**(diff bbox `None`)이었다 — 이 경우 어떤 diff 든 실제 변화다.
+
+같은 llvmpipe 환경에서도 이렇게 갈리므로 수치를 재사용하지 말고 **매번** 통제군을 찍는다.
+
+**소스로 증명되는 더 강한 경로가 있으면 우선한다.** 픽셀 대조가 노이즈 바닥 근처라 애매할 때, 코드상 값 델타가 0(동일값 const 인라인)이거나 변경이 한 필드로 국한되는 등 소스로 자명한 경로가 있으면 그쪽이 픽셀 대조보다 강하다 — 픽셀 대조는 그 경우 보조 확인이다.
