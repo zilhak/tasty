@@ -1,6 +1,8 @@
 # 복잡도 게이트
 
-함수 cognitive 복잡도와 파일 SLOC 이 임계를 넘는 **신규/증가분**을 차단한다. 기존 초과분은 위치 단위 예외로 동결(grandfather)하고, 리팩터로 줄면 예외를 지워 래칫을 조인다. 결정 근거·대안은 [ADR-0037](../adr/0037-complexity-gate.md).
+함수 cognitive 복잡도와 파일 SLOC 이 임계를 넘는 **신규/증가분**을 차단한다. 기존 초과분은 위치 단위 예외로 동결(grandfather)하고, 리팩터로 줄면 예외를 지워 래칫을 조인다.
+
+**두 축의 강제 채널은 다르다** — cognitive 는 clippy `deny` 라 자동 잡에서 컴파일 자체가 막히고, 파일 SLOC 은 PR 전용 워크플로에 있어 실효 자동성이 없다(이 저장소는 PR 을 열지 않는다). 채널 정본은 [ci-gates](ci-gates.md). 결정 근거·대안은 [ADR-0037](../adr/0037-complexity-gate.md).
 
 ## 무엇을·도구·임계값
 
@@ -54,4 +56,4 @@ bash scripts/check-file-size.sh
 ## CI 배선
 
 - **cognitive**: 기존 `crossplatform-check.yml` 의 Windows clippy 잡이 `cargo clippy` 를 돌리므로, `cognitive_complexity = "deny"` 는 별도 배선 없이 `main` push 마다 자동 차단된다(`-D warnings` 불요 — deny 자체가 에러).
-- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. tokei 미설치 시 `cargo install tokei --locked` 가드가 선행한다. 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
+- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **다만 이 저장소는 PR 을 열지 않고 main 에 직접 push 하므로 그 트리거는 실효 자동성이 없다** — 지금 이 축을 실제로 돌리는 것은 사람이다([ci-gates](ci-gates.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행한다. 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.

@@ -7,7 +7,8 @@
 ## Context
 
 UI 디자인 규칙은 "폰트 크기는 `Theme` 에서 가져온다"이고, `tests/design_token_adherence.rs`
-가드가 `FontId::*`/`RichText::size` 의 숫자 리터럴을 CI 에서 막는다. 리터럴을 걷어내는
+가드가 `FontId::*`/`RichText::size` 의 숫자 리터럴을 막는다(통합 테스트라 자동 실행
+채널이 없다 — 컴파일만 자동 검사, [ci-gates](../dev-guide/ci-gates.md)). 리터럴을 걷어내는
 작업을 하다 보면 **대응 토큰이 없는 값**을 만난다 — 코드에서 자란 9.5 · 10.5 · 11.5 ·
 12.5 · 13.5, DTCG primitive 에는 있으나 semantic role 이 없어 `Theme` 필드가 없는 12 ·
 16, 어느 tier 에도 없는 30.
@@ -56,8 +57,9 @@ semantic 이 없는 primitive(12 · 16)를 쓰는 자리도 같게 다루되 con
 곁다리로 할 수 있는 일이 아니다.
 
 규칙이 서 있는 전제(UI 폰트 토큰은 늘 정수)는 `crates/tasty-type-appearance/src/theme.rs`
-의 `ui_font_size_tokens_are_integers_at_every_zoom` 가 `cargo test --workspace`(CI)로
-잡는다. 전제가 깨지는 길 둘 — `zoomed()` 가 반올림을 그만두는 것, 새 UI 폰트 필드가
+의 `ui_font_size_tokens_are_integers_at_every_zoom` 가 잡는다 — lib 유닛 테스트라
+`cargo test --workspace --lib --bins`(`crossplatform-check.yml`, main push·PR)로 자동으로
+돈다([ci-gates](../dev-guide/ci-gates.md)). 전제가 깨지는 길 둘 — `zoomed()` 가 반올림을 그만두는 것, 새 UI 폰트 필드가
 `zoomed()` 를 우회하는 것 — 이 그 테스트에 걸린다.
 
 ## Consequences

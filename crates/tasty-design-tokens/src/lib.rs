@@ -4,7 +4,10 @@
 //! 으로 vendor 하고(3-tier: primitive → semantic → component, 총 751 토큰),
 //! `src/bin/generate.rs` 가 치수 계열($type: dimension/duration/number/fontWeight)을
 //! `src/generated/` 의 Rust const 로 생성한다. **생성물은 커밋**되며, freshness
-//! 테스트(`tests/freshness.rs`)가 vendor json ↔ 생성물 텍스트 일치를 CI 에서 강제한다.
+//! 테스트(`tests/freshness.rs`)가 vendor json ↔ 생성물 텍스트 일치를 강제한다 — 통합
+//! 테스트라 자동 실행 채널이 없다 — 컴파일만 자동으로 검사된다
+//! (`docs/dev-guide/ci-gates.md`). 토큰을 다시 vendor 했으면
+//! 직접 돌려라.
 //!
 //! # Tier 규율 (컴파일 타임 강제)
 //!

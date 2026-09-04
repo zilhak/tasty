@@ -18,8 +18,9 @@
 //!
 //! release 빌드에서는 `DEBUG_METHODS` 가 설계상 비어 있어(`debug.*` 는 release
 //! IPC 표면에서 완전히 사라진다) 이 대조가 성립하지 않는다. 따라서 debug
-//! 빌드에서만 돈다 — `cargo test --workspace --locked` 가 debug 다(그 잡은 수동
-//! 전용이라 자동 채널은 아니다: `docs/dev-guide/ci-gates.md`).
+//! 빌드에서만 돈다 — `cargo test` 의 기본 프로필이 debug 다. 통합 테스트라 자동
+//! 실행 채널이 없고(컴파일만 자동으로 검사된다 — `docs/dev-guide/ci-gates.md`),
+//! 테스트를 `--release` 로 돌리면 이 파일은 통째로 컴파일에서 빠진다.
 #![cfg(debug_assertions)]
 
 use std::path::Path;

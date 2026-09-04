@@ -15,7 +15,7 @@ clippy 내장 threshold config(`type-complexity-threshold`, `too-many-arguments-
 
 ## 복잡도 게이트
 
-함수 cognitive 복잡도(clippy 내장 `cognitive_complexity` = `deny`, 임계 20)와 파일 SLOC(`tokei` + `scripts/check-file-size.sh`, 상한 1000)의 **신규/증가분**을 차단한다. 기존 초과분은 위치 단위로 동결한다 — 함수는 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: <사유>`, 파일은 `.complexity-file-allowlist`. 여기서 threshold 를 *조이는* 것(cognitive 게이트 신설)은 위 원칙 #3(threshold 를 *푸는* 것 금지)과 모순이 아니라 계층 분리다. 상세: [complexity-gate.md](complexity-gate.md), [ADR-0037](../adr/0037-complexity-gate.md).
+함수 cognitive 복잡도(clippy 내장 `cognitive_complexity` = `deny`, 임계 20)와 파일 SLOC(`tokei` + `scripts/check-file-size.sh`, 상한 1000)의 **신규/증가분**을 차단한다. **두 축은 강제 채널이 다르다** — cognitive 는 clippy `deny` 라 자동 잡의 컴파일 단계에서 막히고, 파일 SLOC 은 PR 전용 워크플로에 있어 이 저장소(PR 을 열지 않는다)에서는 실효 자동성이 없다([ci-gates](ci-gates.md)). 기존 초과분은 위치 단위로 동결한다 — 함수는 `#[allow(clippy::cognitive_complexity)] // complexity-exempt: <사유>`, 파일은 `.complexity-file-allowlist`. 여기서 threshold 를 *조이는* 것(cognitive 게이트 신설)은 위 원칙 #3(threshold 를 *푸는* 것 금지)과 모순이 아니라 계층 분리다. 상세: [complexity-gate.md](complexity-gate.md), [ADR-0037](../adr/0037-complexity-gate.md).
 
 ## 결정 원칙
 

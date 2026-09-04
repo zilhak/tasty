@@ -81,8 +81,8 @@ close 경로를 타므로, 원격 사용자의 정리가 로컬 사용자 화면
   양쪽에서 같은 헬퍼를 지난다. 오늘의 headless 는 `active_workspace` 가 0 을 벗어날 경로가
   없어(레이아웃 복원 미적용, `preset.apply` 의 focus 강제 off, 워크스페이스 전환은 gui 전용
   debug IPC) 결과가 옛 clamp 와 같지만, 한쪽만 고쳐 두면 같은 불변식이 실행 형태에 따라 다르게
-  성립한다. CI 가 headless 를 **컴파일만 하고 실행하지 않으므로** 그 어긋남은 테스트로 드러나지
-  않는다 — 그래서 두 cascade 가 모두 헬퍼를 지나는지 소스 수준 가드
+  성립한다. headless 는 오늘의 구조상 그 어긋남을 **행동으로 드러낼 수단이 없어**(위 세 조건) 실행
+  테스트로는 잡히지 않는다 — 그래서 두 cascade 가 모두 헬퍼를 지나는지 소스 수준 가드
   (`both_close_cascades_route_through_the_pointer_helper`)로 기본 빌드에서 고정한다.
 - **잃은 것**: `CoreEvent` 두 variant 의 필드 타입이 바뀌었다(그 이벤트를 구조분해하는 4 개
   호출부가 함께 변경). 인덱스 SoT 자체는 그대로라, 앞으로 workspace 를 제거하는 **새 경로**를

@@ -112,7 +112,7 @@ fn double_tap_detectors_reset_on_focus_change() {
 ///
 /// 위 두 테스트는 **배선 위치**만 고정한다. 그래서 `is_synthetic_key_event` 의 몸통을
 /// 상수 `false` 로 바꿔 게이트를 통째로 무력화해도 둘 다 통과한다 — 수정 전체가 죽은 채
-/// CI 가 초록인 구멍이 생긴다. 이 단정이 그 구멍을 막는다.
+/// 스위트가 초록인 구멍이 생긴다. 이 단정이 그 구멍을 막는다.
 ///
 /// 런타임으로 단정할 수 없어 소스 텍스트로 고정한다: winit `KeyEvent` 의
 /// `platform_specific` 필드가 `pub(crate)` 라 크레이트 밖에서는
