@@ -75,6 +75,25 @@ pub(crate) fn active_index_after_removal(
     }
 }
 
+/// 워크스페이스가 `from` 에서 `to` 로 옮겨진 뒤, **인덱스로 저장된 활성 포인터**가
+/// 계속 같은 워크스페이스를 가리키도록 보정한 값.
+///
+/// 세 갈래다. (1) 옮겨진 것을 보고 있었으면 따라간다(`active == from` → `to`).
+/// (2) 뒤로 옮겨(`from < to`) 그 구간을 자기 위치가 통과당하면 한 칸 당겨진다.
+/// (3) 앞으로 옮겨(`from > to`) 그 구간에 자기 위치가 들어가면 한 칸 밀린다.
+/// 구간 밖이면 그대로다. 제거 축의 [`active_index_after_removal`] 과 같은 역할이다.
+pub(crate) fn active_index_after_move(active: usize, from: usize, to: usize) -> usize {
+    if active == from {
+        to
+    } else if from < to && active > from && active <= to {
+        active - 1
+    } else if from > to && active >= to && active < from {
+        active + 1
+    } else {
+        active
+    }
+}
+
 impl AppState {
     /// 워크스페이스 제거 직후, 인덱스를 값으로 들고 있는 활성 포인터를 대상 기준으로
     /// 보정한다.
@@ -91,6 +110,22 @@ impl AppState {
     ) {
         self.active_workspace =
             active_index_after_removal(self.active_workspace, removed_idx, remaining);
+    }
+
+    /// 워크스페이스 재정렬 직후, 인덱스를 값으로 들고 있는 활성 포인터를 대상 기준으로
+    /// 보정한다 — 제거 축의
+    /// [`fix_workspace_pointers_after_removal`](Self::fix_workspace_pointers_after_removal)
+    /// 과 대칭이다.
+    ///
+    /// 재정렬은 **두 경로**로 들어온다(사이드바 드래그·컨텍스트 메뉴가 부르는
+    /// [`move_workspace`](Self::move_workspace), 그리고 `CoreEvent::WorkspaceMoved`
+    /// 의 `cascade_workspace_moved`). 같은 보정 규칙을 두 곳이 각자 인라인으로
+    /// 복제하고 있었고, 그 형태가 실제로 한쪽만 갱신되는 결함의 모양이다
+    /// (ADR-0113 이 제거 축에서 같은 진단을 했다). 규칙은 여기 하나뿐이어야 한다.
+    ///
+    /// 호출자는 `workspaces` 재배열 **직후**에 부른다.
+    pub(crate) fn fix_workspace_pointers_after_move(&mut self, from: usize, to: usize) {
+        self.active_workspace = active_index_after_move(self.active_workspace, from, to);
     }
 
     /// Switch to workspace by index (0-based).
@@ -318,14 +353,7 @@ impl AppState {
         }
         let ws = engine.workspaces.remove(from);
         engine.workspaces.insert(to, ws);
-        // Adjust active_workspace to follow the moved workspace or account for the shift
-        if self.active_workspace == from {
-            self.active_workspace = to;
-        } else if from < to && self.active_workspace > from && self.active_workspace <= to {
-            self.active_workspace -= 1;
-        } else if from > to && self.active_workspace >= to && self.active_workspace < from {
-            self.active_workspace += 1;
-        }
+        self.fix_workspace_pointers_after_move(from, to);
         true
     }
 
@@ -434,8 +462,10 @@ impl AppState {
 
 #[cfg(test)]
 mod workspace_pointer_tests {
-    //! workspace 제거 후 인덱스 활성 포인터 보정 규칙(`active_index_after_removal`)과
-    //! 그 적용(`fix_workspace_pointers_after_removal`)을 고정한다.
+    //! workspace **제거**·**재정렬** 후 인덱스 활성 포인터 보정 규칙
+    //! (`active_index_after_removal` · `active_index_after_move`)과 그 적용
+    //! (`fix_workspace_pointers_after_removal` · `fix_workspace_pointers_after_move`)
+    //! 을 고정한다.
     use super::*;
 
     #[test]
@@ -491,6 +521,100 @@ mod workspace_pointer_tests {
             assert!(
                 !src.contains("state.active_workspace = engine.workspaces.len() - 1"),
                 "{label} cascade 에 범위 초과 clamp 만 하는 옛 보정이 남아 있다"
+            );
+        }
+    }
+
+    #[test]
+    fn moving_a_workspace_forward_drags_a_passed_over_pointer_back() {
+        // [0,1,2,3] 에서 0 을 2 로 옮기면 1·2 가 한 칸씩 당겨진다.
+        assert_eq!(active_index_after_move(1, 0, 2), 0);
+        assert_eq!(active_index_after_move(2, 0, 2), 1);
+    }
+
+    #[test]
+    fn moving_a_workspace_backward_pushes_a_passed_over_pointer_up() {
+        // [0,1,2,3] 에서 3 을 1 로 옮기면 1·2 가 한 칸씩 밀린다.
+        assert_eq!(active_index_after_move(1, 3, 1), 2);
+        assert_eq!(active_index_after_move(2, 3, 1), 3);
+    }
+
+    #[test]
+    fn moving_the_active_workspace_takes_the_pointer_with_it() {
+        assert_eq!(active_index_after_move(1, 1, 3), 3);
+        assert_eq!(active_index_after_move(3, 3, 0), 0);
+    }
+
+    #[test]
+    fn a_move_outside_the_pointer_leaves_it_alone() {
+        // 이동 구간(0..=1)이 활성(3)을 지나가지 않는다.
+        assert_eq!(active_index_after_move(3, 0, 1), 3);
+        assert_eq!(active_index_after_move(0, 2, 3), 0);
+    }
+
+    /// 재정렬 경로가 **실제로** 활성 워크스페이스를 따라가는지 id 로 확인한다
+    /// (인덱스만 보면 규칙이 틀려도 우연히 맞을 수 있다).
+    #[test]
+    fn reordering_keeps_the_active_pointer_on_the_same_workspace() {
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        while engine.workspaces.len() < 4 {
+            crate::core::apply_create_workspace_inner(
+                &mut engine,
+                crate::core::WorkspaceCreationParams::terminal(),
+            )
+            .unwrap();
+        }
+        let ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+
+        // 사용자는 ids[2] 를 보는 중, 그 앞의 ids[0] 이 맨 뒤로 간다.
+        state.active_workspace = 2;
+        assert!(state.move_workspace(&mut engine, 0, 3));
+        assert_eq!(
+            engine.workspaces[state.active_workspace].id, ids[2],
+            "앞쪽 워크스페이스가 뒤로 가면 보고 있던 것은 한 칸 당겨진다"
+        );
+
+        // 보고 있던 것 자체를 맨 앞으로 옮기면 포인터가 따라간다.
+        let from = state.active_workspace;
+        assert!(state.move_workspace(&mut engine, from, 0));
+        assert_eq!(engine.workspaces[state.active_workspace].id, ids[2]);
+        assert_eq!(state.active_workspace, 0);
+    }
+
+    /// `CoreEvent::WorkspaceMoved` cascade 도 `move_workspace` 와 **같은 규칙**을
+    /// 써야 한다 — 두 경로가 갈리면 어느 쪽으로 재정렬했느냐에 따라 포커스가 달라진다.
+    #[test]
+    fn the_move_cascade_applies_the_same_rule_as_move_workspace() {
+        for (active, from, to) in [(2, 0, 3), (1, 3, 1), (1, 1, 3), (3, 0, 1)] {
+            let (mut state, _engine) = crate::state::tests::test_state();
+            state.active_workspace = active;
+            crate::app::dispatch_domain::cascade_workspace_moved(&mut state, from, to);
+            assert_eq!(
+                state.active_workspace,
+                active_index_after_move(active, from, to),
+                "cascade 가 헬퍼와 다른 답을 냈다 (active={active}, {from}->{to})"
+            );
+        }
+    }
+
+    /// 제거 축의 `both_close_cascades_route_through_the_pointer_helper` 와 같은 이유로
+    /// 재정렬 축도 소스 수준으로 고정한다 — headless 는 오늘 `active_workspace` 가 0 을
+    /// 벗어날 수단이 없어 **옳은 보정과 아무것도 안 하는 것의 결과가 같고**, 그래서
+    /// 어떤 실행 테스트도 headless 쪽 회귀를 못 잡는다. 실제로 headless stub 은 이
+    /// cascade 를 빈 함수로 두고 있었다.
+    #[test]
+    fn both_move_cascades_route_through_the_pointer_helper() {
+        for (label, src) in [
+            ("gui", include_str!("../app/dispatch_domain.rs")),
+            ("headless", include_str!("../app/dispatch_domain_stubs.rs")),
+        ] {
+            assert!(
+                src.contains("fix_workspace_pointers_after_move"),
+                "{label} cascade 가 재정렬 포인터 보정 헬퍼를 부르지 않는다"
+            );
+            assert!(
+                !src.contains("state.active_workspace = to_index"),
+                "{label} cascade 에 보정 규칙이 인라인으로 복제돼 있다"
             );
         }
     }

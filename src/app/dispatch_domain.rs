@@ -1931,10 +1931,10 @@ fn find_surface_location(
     None
 }
 
-/// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해
-/// active_workspace 인덱스를 보정한다.
-/// - 이동한 ws 가 active 였으면 따라간다 (`active = to`).
-/// - from 과 to 사이를 자기 위치가 통과하면 shift 보정.
+/// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해 인덱스로
+/// 저장된 활성 포인터를 보정한다 — 규칙 자체는
+/// `AppState::fix_workspace_pointers_after_move` 하나에만 있다(같은 규칙을 여기에
+/// 복제하면 `move_workspace` 와 갈린다).
 ///
 /// IPC handler 도 직접 호출 가능.
 pub(crate) fn cascade_workspace_moved(
@@ -1942,19 +1942,7 @@ pub(crate) fn cascade_workspace_moved(
     from_index: usize,
     to_index: usize,
 ) {
-    if state.active_workspace == from_index {
-        state.active_workspace = to_index;
-    } else if from_index < to_index
-        && state.active_workspace > from_index
-        && state.active_workspace <= to_index
-    {
-        state.active_workspace -= 1;
-    } else if from_index > to_index
-        && state.active_workspace >= to_index
-        && state.active_workspace < from_index
-    {
-        state.active_workspace += 1;
-    }
+    state.fix_workspace_pointers_after_move(from_index, to_index);
 }
 
 /// `CoreEvent::TabCreated` 의 외부 cascade. host events (`tab.created` +

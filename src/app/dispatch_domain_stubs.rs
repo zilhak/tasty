@@ -161,7 +161,12 @@ pub(crate) fn cascade_pane_split(
 ) {
 }
 
-pub(crate) fn cascade_workspace_moved(state: &mut AppState, from_index: usize, to_index: usize) {}
+/// 다른 stub 과 달리 no-op 이 아니다 — 이 cascade 는 view 가 아니라 `AppState` 의
+/// 인덱스 포인터를 고치는 일이라 headless 에도 그대로 필요하다. 제거 축
+/// (`cascade_surface_closed` 의 `fix_workspace_pointers_after_removal`)과 같은 이유다.
+pub(crate) fn cascade_workspace_moved(state: &mut AppState, from_index: usize, to_index: usize) {
+    state.fix_workspace_pointers_after_move(from_index, to_index);
+}
 
 pub(crate) fn cascade_workspace_meta_updated(
     state: &mut AppState,
