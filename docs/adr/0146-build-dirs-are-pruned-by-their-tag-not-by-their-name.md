@@ -36,7 +36,8 @@
 
 **목록을 합치지 않는다.** 가드마다 있는 제외 디렉토리 목록은 각각 "*이 가드가* 무엇을 안
 볼 것인가" 에 답하므로, 값이 서로 다른 것은 드리프트의 증거가 아니다. 합치면 틀린 결합이
-된다. 여기서 공유하는 것은 열거가 아니라 **판정 한 줄**이고, 각 목록은 자기 이름들을 그대로
+된다 — 판별 기준은 [ADR-0147](0147-multiple-carriers-are-joined-by-a-check-not-merged.md) 과
+[duplicated-sets.md](../dev-guide/duplicated-sets.md). 여기서 공유하는 것은 열거가 아니라 **판정 한 줄**이고, 각 목록은 자기 이름들을 그대로
 가진 채 그 판정을 함께 묻는다.
 
 ### 후속 — ⓑ 는 열거로 닫았다 (2026-09-05, 같은 lane)
@@ -156,3 +157,5 @@ CI 표면은 없다. 러너는 깨끗한 트리에서 시작하고 `cargo test` 
   수를 적은 방식의 근거
 - [ADR-0127](0127-e2e-harness-binary-selection.md) — 별도 target 디렉토리를 실제로 만드는
   절차
+- [ADR-0147](0147-multiple-carriers-are-joined-by-a-check-not-merged.md) — 같은 모양의 목록이 여러
+  가드에 있는 것이 왜 결함이 아닌가. 이 ADR 이 공유하는 것은 열거가 아니라 판정이다
