@@ -18,7 +18,60 @@ use super::MainView;
 pub(crate) enum InjectPointer {
     Move,
     Button { button: MouseButton, pressed: bool },
-    Scroll { dx: f32, dy: f32 },
+    Scroll { dx: f32, dy: f32, unit: ScrollUnit },
+}
+
+/// 주입할 휠 델타의 단위 — 어느 장치의 휠을 흉내 낼지 고른다.
+///
+/// 실제 입력에서 데스크톱 마우스 휠은 winit `LineDelta` → egui `Line` 로 오고,
+/// 트랙패드 같은 픽셀 장치는 `PixelDelta` → `Point` 로 온다. 두 갈래는 논리 포인트로
+/// 가는 배율이 다르고(`src/plugin_bridge/wire_scroll.rs`), 그 환산이 표면 종류마다
+/// 어긋나는 것이 실제로 있었던 결함이다. 한 단위만 합성할 수 있으면 다른 단위의
+/// 환산 경로는 주입으로 재현되지 않는다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ScrollUnit {
+    /// 줄 수. 데스크톱 마우스 휠 한 칸이 1.0.
+    Line,
+    /// 포인트. winit 레벨로 넣을 때는 **물리 픽셀**이다(`PixelDelta` 가 물리 px 이고
+    /// 수신 측이 scale factor 로 나눈다) — egui 레벨로 넣을 때는 논리 포인트다.
+    Point,
+    /// 페이지. egui 는 이 단위를 다루지만 egui-winit 이 데스크톱에서 만들지 않으므로
+    /// winit 레벨에는 대응하는 델타가 없다.
+    Page,
+}
+
+impl ScrollUnit {
+    /// IPC 파라미터 문자열 → 단위. 모르는 값은 `None` 이다 — 오타를 기본값으로
+    /// 삼키면 테스트가 의도한 것과 다른 경로를 재고도 통과한다.
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "line" => Some(Self::Line),
+            "point" => Some(Self::Point),
+            "page" => Some(Self::Page),
+            _ => None,
+        }
+    }
+
+    /// egui 입력 큐에 넣을 단위.
+    fn to_egui(self) -> egui::MouseWheelUnit {
+        match self {
+            Self::Line => egui::MouseWheelUnit::Line,
+            Self::Point => egui::MouseWheelUnit::Point,
+            Self::Page => egui::MouseWheelUnit::Page,
+        }
+    }
+
+    /// winit 핸들러에 넣을 델타. `Page` 는 winit 에 표현이 없어 `None` — 그 경우
+    /// 주입은 성공한 척하지 않고 거절된다.
+    fn to_winit_delta(self, dx: f32, dy: f32) -> Option<MouseScrollDelta> {
+        match self {
+            Self::Line => Some(MouseScrollDelta::LineDelta(dx, dy)),
+            Self::Point => Some(MouseScrollDelta::PixelDelta(PhysicalPosition::new(
+                dx as f64, dy as f64,
+            ))),
+            Self::Page => None,
+        }
+    }
 }
 
 impl MainView {
@@ -69,8 +122,11 @@ impl MainView {
                     self.debug_captured_menu = Some(menu);
                 }
             }
-            InjectPointer::Scroll { dx, dy } => {
-                self.handle_mouse_wheel(MouseScrollDelta::LineDelta(dx, dy), false);
+            InjectPointer::Scroll { dx, dy, unit } => {
+                let Some(delta) = unit.to_winit_delta(dx, dy) else {
+                    return false;
+                };
+                self.handle_mouse_wheel(delta, false);
             }
         }
         true
@@ -124,8 +180,8 @@ impl MainView {
                     modifiers: egui::Modifiers::default(),
                 },
             ],
-            InjectPointer::Scroll { dx, dy } => vec![egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
+            InjectPointer::Scroll { dx, dy, unit } => vec![egui::Event::MouseWheel {
+                unit: unit.to_egui(),
                 delta: egui::vec2(dx, dy),
                 modifiers: egui::Modifiers::default(),
             }],
@@ -156,5 +212,51 @@ fn map_egui_button(button: MouseButton) -> egui::PointerButton {
         MouseButton::Right => egui::PointerButton::Secondary,
         MouseButton::Middle => egui::PointerButton::Middle,
         _ => egui::PointerButton::Primary,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 주입기가 요청한 단위를 그대로 egui 에 넣어야 한다. 여기가 한 갈래라도 다른
+    /// 단위로 접히면, 그 단위를 재현하려던 검증이 **다른 환산 경로를 재고도** 통과한다.
+    #[test]
+    fn every_unit_reaches_egui_as_itself() {
+        assert_eq!(ScrollUnit::Line.to_egui(), egui::MouseWheelUnit::Line);
+        assert_eq!(ScrollUnit::Point.to_egui(), egui::MouseWheelUnit::Point);
+        assert_eq!(ScrollUnit::Page.to_egui(), egui::MouseWheelUnit::Page);
+    }
+
+    /// winit 레벨은 두 갈래뿐이다 — 줄은 `LineDelta`, 포인트는 `PixelDelta`.
+    #[test]
+    fn winit_level_maps_line_and_point_to_the_two_winit_deltas() {
+        assert!(matches!(
+            ScrollUnit::Line.to_winit_delta(1.0, -3.0),
+            Some(MouseScrollDelta::LineDelta(1.0, -3.0))
+        ));
+        let Some(MouseScrollDelta::PixelDelta(p)) = ScrollUnit::Point.to_winit_delta(1.0, -3.0)
+        else {
+            panic!("point 는 PixelDelta 여야 한다");
+        };
+        assert_eq!((p.x, p.y), (1.0, -3.0));
+    }
+
+    /// `Page` 는 winit 에 표현이 없다. 가장 가까운 것으로 접어 넣으면 주입은 성공했는데
+    /// 실제로는 다른 단위가 흐르므로, 거절해서 호출자가 알게 한다.
+    #[test]
+    fn winit_level_refuses_page_instead_of_folding_it_into_lines() {
+        assert!(ScrollUnit::Page.to_winit_delta(0.0, 1.0).is_none());
+    }
+
+    /// 모르는 이름을 기본값으로 삼키면 오타 난 검증이 조용히 통과한다.
+    #[test]
+    fn unknown_unit_names_are_rejected_not_defaulted() {
+        assert_eq!(ScrollUnit::from_name("line"), Some(ScrollUnit::Line));
+        assert_eq!(ScrollUnit::from_name("point"), Some(ScrollUnit::Point));
+        assert_eq!(ScrollUnit::from_name("page"), Some(ScrollUnit::Page));
+        assert_eq!(ScrollUnit::from_name("Line"), None);
+        assert_eq!(ScrollUnit::from_name("lines"), None);
+        assert_eq!(ScrollUnit::from_name(""), None);
     }
 }

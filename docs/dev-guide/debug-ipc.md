@@ -97,6 +97,29 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 `debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
 
+### 휠 주입의 단위 (`unit`)
+
+두 마우스 주입 메서드는 `event_type: "scroll"` 일 때 `unit` 을 받는다 — `"line"` ·
+`"point"` · `"page"`. 실제 입력에서 데스크톱 마우스 휠은 winit `LineDelta` → egui `Line`
+로 오고 트랙패드 같은 픽셀 장치는 `PixelDelta` → `Point` 로 오는데, 이 둘은 논리 포인트로
+가는 배율이 다르다(`src/plugin_bridge/wire_scroll.rs`). 단위를 고를 수 없으면 **가장 흔한
+입력인 마우스 휠의 환산 경로가 주입으로 재현되지 않는다.**
+
+기본값은 각 메서드가 종전에 합성하던 것이다 — 단위를 넘기지 않던 기존 호출자는 동작이
+바뀌지 않는다.
+
+| 메서드 | 기본 | 넣을 수 있는 단위 |
+|--------|------|-------------------|
+| `debug.inject_window_mouse` (winit 레벨) | `line` | `line` → `LineDelta`, `point` → `PixelDelta`. **`page` 는 거절된다** — winit 에 대응 델타가 없어, 줄로 접어 넣으면 주입은 성공했는데 다른 단위가 흐른다 |
+| `debug.inject_egui_mouse` (egui 레벨) | `point` | 셋 다. egui 는 `Page` 를 다루므로 그 갈래까지 재현할 수 있다 |
+
+`scroll_dx`/`scroll_dy` 의 뜻이 단위를 따라간다: `line` 은 줄 수(휠 한 칸이 1.0), egui
+레벨의 `point` 는 논리 포인트, **winit 레벨의 `point` 는 물리 픽셀**이다(`PixelDelta` 가
+물리 px 이고 수신 측이 scale factor 로 나눈다).
+
+모르는 `unit` 값은 기본값으로 삼키지 않고 `-32602` 로 거절한다 — 오타를 대신 재면 검증이
+의도한 것과 다른 경로를 재고도 통과한다.
+
 ## CLI 노출
 
 CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug.rs`)가 모듈째 `#![cfg(debug_assertions)]` — 실행부는 `crates/tasty-cli/src/local/debug.rs`(같은 cfg). 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key`(주입에 macOS 손쉬운 사용 권한 필요 — 미승인이면 `surface.raw_key` 가 `permission_denied` 에러를 돌려준다. [macOS 권한](../features/macos-permissions/index.md)) · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `modifier-hint` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
