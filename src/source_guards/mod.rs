@@ -73,6 +73,42 @@ fn strip_comments(src: &str) -> String {
     out
 }
 
+/// 시그니처로 함수를 찾아 그 **본문**을 중괄호 균형으로 잘라낸다.
+///
+/// 들여쓰기에 의존하지 않는다 — rustfmt 스타일이 바뀌어도 같은 것을 자른다.
+/// 문자열 안의 중괄호는 세지 않는다(`"{}"` 포맷 리터럴이 흔하다).
+fn fn_body(src: &str, signature: &str) -> Option<String> {
+    let at = src.find(signature)?;
+    let open = src[at..].find('{')? + at;
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, c) in src[open..].char_indices() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(src[open..open + i + 1].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -633,6 +669,7 @@ mod debug_gate_dagger;
 /// 같은 집합인지 본다. 자리가 여럿인 것이 아니라 잇는 것이 없는 것이 결함이다.
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
+mod headless_app_layer_coverage;
 
 /// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
 /// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.

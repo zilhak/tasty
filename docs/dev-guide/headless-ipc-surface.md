@@ -99,10 +99,49 @@ popup 을 보여 줄 창이 없으면 이 메서드가 하는 일 자체가 없�
 표현해야 한다. `handle_list` 만 빈 목록을 성공으로 돌려주던 이탈이 있었고, 지금은 넷이
 같다. `src/adapters/ipc/handler/plugin.rs` 의 단위 테스트가 넷을 한 자리에서 비교한다.
 
+## app 층 메서드 — 무엇이 답하고 무엇이 왜 없는가
+
+gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 메서드는
+17 개다(2026-09-05 실측). 그중 헤드리스가 답하는 것과 안 답하는 것을 여기 가른다.
+`src/source_guards/headless_app_layer_coverage.rs` 가 이 표와 소스의 정합을 강제한다 —
+**빈칸을 못 만들게 하는 것**이 그 가드의 목적이고, 초록은 "두 조합이 같다" 가 아니라
+"차이가 전부 사유와 함께 적혀 있다" 는 뜻이다.
+
+### 답한다 (6)
+
+창이 없어도 답이 정의되는 것들이다. 본체는 두 조합이 **같은 함수**를 쓴다
+(`src/core/app_surface.rs`) — `system.shutdown` 만 끊는 방식이 조합마다 달라 예외다.
+
+| 메서드 | 읽는 것 / 하는 일 |
+|--------|-------------------|
+| `timer.list` | `App` 의 TimerHub — 무엇이 인스턴스를 깨우는가 |
+| `clipboard.set_text` | `Core` 의 클립보드 포트. 없는 환경이면 포트가 실패를 돌려주고 그것이 사실이다 |
+| `remote.workspaces` | 인자만 읽는다. App 상태를 하나도 안 본다 |
+| `agent.task_await` | 이 engine 의 `task_waker_hub` + `agent_seq` |
+| `approval.await` | 이 engine 의 `approval_store` |
+| `system.shutdown` | 데몬을 멈춘다(debug 전용). 응답을 먼저 보내고 run loop 를 끊는다 |
+
+### 없는 것이 정답 (11)
+
+읽는 것이 `App.view` 인데 헤드리스에 그 필드가 없다(`src/app.rs` 에서 `gui` 게이트).
+사유를 메서드마다 적는 이유는, "이 표면은 GUI 가 필요하다" 같은 뭉뚱그림이 **어느
+것이 진짜 창을 요구하고 어느 것이 그냥 안 열린 것인지**를 지우기 때문이다.
+
+| 메서드 | 왜 |
+|--------|-----|
+| `window.create` / `view.create` | winit 이벤트루프에 창 생성을 맡긴다. 헤드리스엔 그 루프가 없다 |
+| `window.close` / `view.close` | `App.view.views` 에서 창을 닫는다. 그 레지스트리가 없다 |
+| `window.focus` / `view.focus` | 포커스 전환이라 애초에 debug 격리(ADR-0115)이고, 대상도 창이다 |
+| `window.list` / `view.list` | 빈 목록이 아니라 **개념이 없다** — `[]` 를 주면 "창이 0 개인 GUI" 로 읽혀 호출자가 `window.create` 를 시도한다 |
+| `ui.screenshot` | 창 표면을 읽어 파일로 쓴다. 그릴 창이 없으면 하는 일 자체가 없다 |
+| `remote.attach` | mirror workspace 를 띄울 창이 필요하다 |
+| `system.gpu_stats` | 창마다의 GpuState 와 wgpu 전역 리포트를 센다. GPU 컨텍스트가 없다 |
+
+`plugin.*` 의 12 건은 위 "`plugin.*` — 19 개 메서드의 판정" 절이 따로 가른다.
+
 ## 남은 표면
 
-`plugin.*` 밖에서도 헤드리스가 답하지 않는 app 층 메서드가 있다 —
-`view.*` / `window.*` / `ui.screenshot` / `clipboard.set_text` / `remote.*` /
-`system.gpu_stats` / `agent.task_await` / `approval.await`, 그리고 debug 빌드의
-`debug.*`. 이 중 창을 요구하는 것들은 위 `plugin.request_permission` 과 같은 판정이고,
-나머지는 `App` 이분과 함께 판단할 대상이다. 개별 판정은 아직 적히지 않았다.
+app 층 밖에서도 헤드리스가 답하지 않는 것이 있다 — `image.*` · `webview.set_url` ·
+`fs.pick_file` · `file_picker.trigger` · `theme.query`, 그리고 debug 빌드의 `debug.*`.
+이들은 `app_methods` step 이 아니라 `src/adapters/ipc/handler.rs` 의 dispatch arm 이
+`gui` feature 로 게이트된 경우라 위 가드의 대상이 아니다. 개별 판정은 아직 적히지 않았다.

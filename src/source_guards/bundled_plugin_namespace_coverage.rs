@@ -27,7 +27,7 @@ use std::path::PathBuf;
 
 use tasty_ipc::method_meta::METHOD_TABLE;
 
-use super::repo_root;
+use super::{fn_body, repo_root};
 
 const CRATES_DIR: &str = "crates";
 const PLUGIN_CRATE_PREFIX: &str = "tasty-plugin-";
@@ -81,42 +81,6 @@ fn declared_prefixes(dir: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
-/// `fn handle_ipc_method` 의 본문을 중괄호 균형으로 잘라낸다.
-///
-/// 들여쓰기에 의존하지 않는다 — rustfmt 스타일이 바뀌어도 같은 것을 자른다.
-/// 문자열 안의 중괄호는 세지 않는다(`"{}"` 포맷 리터럴이 흔하다).
-fn dispatch_body(src: &str) -> Option<String> {
-    let at = src.find(DISPATCH_FN)?;
-    let open = src[at..].find('{')? + at;
-    let mut depth = 0usize;
-    let mut in_str = false;
-    let mut escaped = false;
-    for (i, c) in src[open..].char_indices() {
-        if in_str {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_str = false;
-            }
-            continue;
-        }
-        match c {
-            '"' => in_str = true,
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(src[open..open + i + 1].to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
 /// plugin 크레이트의 `src/` 전체에서 inbound dispatch 본문들을 모은다.
 fn dispatch_bodies(dir: &std::path::Path) -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
@@ -131,7 +95,7 @@ fn dispatch_bodies(dir: &std::path::Path) -> Vec<(PathBuf, String)> {
             if path.is_dir() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "rs")
-                && let Some(body) = dispatch_body(&read(&path))
+                && let Some(body) = fn_body(&read(&path), DISPATCH_FN)
             {
                 out.push((path, body));
             }
@@ -241,7 +205,7 @@ fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> R {
 }
 fn other_after() { host.call(\"ns.after\", p); }
 ";
-    let body = dispatch_body(src).expect("본문을 잘라야 한다");
+    let body = fn_body(src, DISPATCH_FN).expect("본문을 잘라야 한다");
     let found = handled_methods(&body, "ns");
     assert!(found.contains("ns.inside"), "본문 안의 이름은 잡아야 한다");
     assert!(
@@ -265,7 +229,7 @@ fn handle_ipc_method(&mut self) -> R {
 }
 fn after() { emit(\"ns.after\"); }
 ";
-    let body = dispatch_body(src).expect("본문을 잘라야 한다");
+    let body = fn_body(src, DISPATCH_FN).expect("본문을 잘라야 한다");
     let found = handled_methods(&body, "ns");
     assert!(
         found.contains("ns.inside") && !found.contains("ns.after"),
