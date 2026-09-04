@@ -126,7 +126,14 @@ pub fn register_remote_kind(
         snapshot: Arc::new(|s: &dyn Surface| {
             let any = s.as_any();
             let rs = any.downcast_ref::<RemoteSurface>()?;
-            rs.snapshot_cache.lock().ok()?.clone()
+            // snapshot 은 세션 복원의 입력이라 조용히 `None` 이 되면 그 surface 가
+            // 다음 실행에서 빈 채로 살아난다 — 복구하고 한 번 보고한다.
+            crate::poison::recover_mutex(
+                rs.snapshot_cache.lock(),
+                super::remote_surface::SNAPSHOT_WHAT,
+                &super::remote_surface::SNAPSHOT_POISON_REPORTED,
+            )
+            .clone()
         }),
         preset_fields,
         param_aliases: decl.param_aliases.clone(),

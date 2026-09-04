@@ -23,9 +23,10 @@ use tasty_plugin_protocol::{
 
 use crate::adapters::ui::popup;
 use crate::adapters::ui::popup::occlusion::{Occluder, PointOwnership, point_ownership};
-use crate::model::{PhysicalPx, PhysicalRect};
+use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
+use crate::plugin_bridge::wire_scroll;
 use crate::state::AppState;
 
 const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
@@ -264,8 +265,9 @@ pub fn draw_plugin_popups(
         // bootstrap 은 1회만: paint frame 이 도착하기 전 매 frame 스팸하면 plugin 이 여러 번
         // paint 하고(첫 frame 의 폰트 atlas delta 가 후속 frame 엔 없음) host 가 최신 frame 만
         // 보관해 atlas 를 못 받는다("Missing texture Managed(0)"). 1회 보내고 frame 을 기다린다.
-        let w_px = (content_rect.width() * ppp).round().max(1.0) as u32;
-        let h_px = (content_rect.height() * ppp).round().max(1.0) as u32;
+        let physical = crate::plugin_bridge::mesh_region_of(content_rect, ppp);
+        let w_px = physical.width.value().round().max(1.0) as u32;
+        let h_px = physical.height.value().round().max(1.0) as u32;
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.popup_mesh_frame(snap.instance_id).is_some();
@@ -320,15 +322,9 @@ pub fn draw_plugin_popups(
 
         // 합성 영역(물리 px) 적재 — gpu.render 가 이 popup 의 z_seq 와 현재 열린 host popup
         // 최대 z_seq 를 비교해 host egui pass 전/후 중 알맞은 시점에 mesh 를 합성한다.
-        state.plugin_mesh_popup_regions.push((
-            snap.instance_id,
-            PhysicalRect {
-                x: PhysicalPx(content_rect.min.x * ppp),
-                y: PhysicalPx(content_rect.min.y * ppp),
-                width: PhysicalPx(content_rect.width() * ppp),
-                height: PhysicalPx(content_rect.height() * ppp),
-            },
-        ));
+        state
+            .plugin_mesh_popup_regions
+            .push((snap.instance_id, physical));
 
         // popup 내부 클릭 시 z-order 승격(규칙 7 "클릭된 것이 앞") — host popup 의
         // `bring_to_front`(click-to-front)와 동형. `mgr` 이 `&PluginManager` 불변
@@ -387,6 +383,9 @@ fn collect_mesh_popup_input(
     let origin = content_rect.min;
     let pointer_inside = !pointer_occluded && pointer_pos.is_some_and(|p| content_rect.contains(p));
     let accepts_pointer = |p: Pos2| !pointer_occluded && content_rect.contains(p);
+    // 노치 거리는 `ctx.input` 밖에서 읽는다 — 같은 컨텍스트의 다른 잠금이라
+    // 중첩을 만들 이유가 없다.
+    let line = wire_scroll::line_scroll(ctx);
     ctx.input(|i| {
         let modifiers = map_modifiers(&i.modifiers);
         let mut events: Vec<RawInputEventWire> = Vec::new();
@@ -414,10 +413,19 @@ fn collect_mesh_popup_input(
                         });
                     }
                 }
-                Event::MouseWheel { delta, .. } if pointer_inside => {
+                // 와이어 `Scroll` 은 논리 포인트 단위다 — 물리 마우스 휠이 싣고 오는
+                // `Line` 단위를 여기서 환산하지 않으면 notch 당 1pt 만 도착해 egui-mesh
+                // surface 와 이동량이 갈린다(`wire_scroll` 모듈 문서).
+                Event::MouseWheel { unit, delta, .. } if pointer_inside => {
+                    let (dx, dy) = wire_scroll::wheel_delta_to_points(
+                        *unit,
+                        *delta,
+                        LogicalPx(i.screen_rect().height()),
+                        line,
+                    );
                     events.push(RawInputEventWire::Scroll {
-                        x: delta.x,
-                        y: delta.y,
+                        x: dx.value(),
+                        y: dy.value(),
                     });
                 }
                 Event::Key {
@@ -553,5 +561,104 @@ fn anchor_pos(
         // ActiveSurfaceCenter는 현재 미구현 — 호스트 layout context 통합 필요.
         // 그동안은 ScreenCenter로 fallback.
         PopupAnchor::ActiveSurfaceCenter => centered,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// popup 콘텐츠 위에서 휠 이벤트 하나를 받았을 때 와이어에 실리는 `Scroll` 값을
+    /// **실제 수집 함수**로 재서 돌려준다(논리 포인트). 스크롤 이벤트가 없으면 `None`.
+    fn collected_scroll(unit: egui::MouseWheelUnit, delta: Vec2) -> Option<(f32, f32)> {
+        collected_scroll_with_notch(unit, delta, tasty_settings::DEFAULT_WHEEL_LINE_SCROLL)
+    }
+
+    /// 위와 같되 노치 거리(host 가 egui 옵션에 밀어 넣는 값)를 지정한다 — 그 값이
+    /// 실제로 와이어까지 흐르는지 재는 데 쓴다.
+    fn collected_scroll_with_notch(
+        unit: egui::MouseWheelUnit,
+        delta: Vec2,
+        notch: f32,
+    ) -> Option<(f32, f32)> {
+        let ctx = Context::default();
+        // host 가 창을 만들 때 하는 것과 같다 — 이 설정 없이는 egui 기본값(40)이 남는다.
+        ctx.options_mut(|o| o.line_scroll_speed = notch);
+        let content_rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(300.0, 200.0));
+        let pointer = Pos2::new(150.0, 150.0);
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1280.0, PAGE_HEIGHT),
+            )),
+            events: vec![Event::MouseWheel {
+                unit,
+                delta,
+                modifiers: egui::Modifiers::default(),
+            }],
+            ..Default::default()
+        };
+        let mut wire = None;
+        // 한 pass 를 실제로 돌려 `InputState` 를 채운다. 렌더 산출물(`FullOutput`)은
+        // 이 측정에 쓰지 않는다 — 필요한 것은 수집 함수가 만든 와이어 입력뿐이다.
+        let _full_output = ctx.run(input, |ctx| {
+            wire = Some(collect_mesh_popup_input(
+                ctx,
+                content_rect,
+                Some(pointer),
+                false,
+                true,
+            ));
+        });
+        wire?.events.iter().find_map(|e| match e {
+            RawInputEventWire::Scroll { x, y } => Some((*x, *y)),
+            _ => None,
+        })
+    }
+
+    /// 위 `collected_scroll` 이 쓰는 화면 높이 — `Page` 단위 기대값 계산에 쓴다.
+    const PAGE_HEIGHT: f32 = 800.0;
+
+    /// 물리 마우스 휠 1 notch(egui-winit 이 `Line` 단위로 싣는다)가 egui-mesh surface
+    /// 경로와 **같은 거리**로 와이어에 실린다.
+    #[test]
+    fn a_wheel_notch_reaches_the_wire_as_the_shared_line_scroll_distance() {
+        let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Line, Vec2::new(0.0, -1.0))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(dx, 0.0);
+        assert_eq!(dy, -tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
+        // 환산 전에는 델타(-1.0)가 그대로 실렸다 — 그 값과 다르다는 것이 이 수정의 요지다.
+        assert_ne!(dy, -1.0);
+    }
+
+    /// 노치 거리는 이제 상수가 아니라 **host egui 옵션**에서 온다 — 사용자가 설정을
+    /// 바꾸면 popup 이 받는 거리도 따라와야 한다. 상수로 되돌아가면 이 테스트가 죽는다.
+    #[test]
+    fn the_wire_distance_follows_the_host_option() {
+        let (_, slow) =
+            collected_scroll_with_notch(egui::MouseWheelUnit::Line, Vec2::new(0.0, -1.0), 20.0)
+                .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        let (_, fast) =
+            collected_scroll_with_notch(egui::MouseWheelUnit::Line, Vec2::new(0.0, -1.0), 120.0)
+                .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(slow, -20.0);
+        assert_eq!(fast, -120.0);
+    }
+
+    /// 트랙패드 델타는 이미 논리 포인트(`Point`)라 그대로 실린다 — 환산이 이 경로의
+    /// 값을 바꾸지 않는다(회귀 방지).
+    #[test]
+    fn a_trackpad_delta_reaches_the_wire_unchanged() {
+        let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Point, Vec2::new(2.0, -17.5))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!((dx, dy), (2.0, -17.5));
+    }
+
+    /// `Page` 는 화면 높이로 환산된다(egui 자신과 같은 규칙).
+    #[test]
+    fn a_page_delta_reaches_the_wire_scaled_by_the_screen_height() {
+        let (_, dy) = collected_scroll(egui::MouseWheelUnit::Page, Vec2::new(0.0, -1.0))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(dy, -PAGE_HEIGHT);
     }
 }

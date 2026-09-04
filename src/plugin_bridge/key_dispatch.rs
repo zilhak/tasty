@@ -96,6 +96,47 @@ pub fn match_global_shortcut(
     None
 }
 
+/// **활성** plugin command 의 effective binding 을 합쳐 돌려준다(중복 제거 없음).
+///
+/// 용도는 native webview 키 포워딩 정책 스냅샷 하나뿐이다
+/// (`docs/adr/0102-webview-key-forwarding.md`). 백엔드는 "host 가 가져갈 수 있는 키인가"
+/// 만 동기 판정하면 되고, 실제로 어떤 커맨드가 발화하는지는 host 가 큐를 비울 때
+/// `dispatch_plugin_shortcut_key` 가 focused surface 기준으로 다시 좁힌다 — 그래서 여기서
+/// 만드는 것은 (scope 기준으로는) **상위집합**이다. scope 로 미리 걸러내면 안 된다:
+/// 포워딩된 키가 도착하는 시점의 모델 포커스는 그 webview 일 수도(→ 그 plugin 의
+/// `Surface` scope 커맨드도 후보), 다른 surface 일 수도(→ 전체 plugin 의 `Global` 커맨드가
+/// 후보) 있다.
+///
+/// 반면 **비활성 plugin 은 제외**한다(`is_disabled`) — 발화할 수 없는 커맨드가 키를 claim
+/// 하면 그 키가 페이지에도 host 에도 가지 않고 사라진다. registry 가 비활성 plugin 까지
+/// 담는 것은 설정 UI 표시의 요구지 claim 의 근거가 아니다.
+///
+/// 매 프레임 호출하는 함수가 아니다 — 호출부는 `command_registry.revision()` +
+/// `config.shortcut_revision()` 이 바뀐 프레임에만 부른다.
+pub fn all_command_bindings(mgr: &PluginManager, host_kb: &KeybindingSettings) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for entry in mgr.command_registry.iter_all() {
+        // 비활성 plugin 의 콤보는 정책에 올리지 않는다 — 발화할 수 없는 명령이
+        // 키를 claim 하면 그 키는 페이지에도 host 에도 가지 않고 그냥 사라진다.
+        // registry 가 비활성 plugin 명령까지 담는 것은 설정 UI **표시**의 요구지
+        // claim 의 근거가 아니다(`manager::queries::plugin_palette_commands` 와 같은
+        // 필터).
+        if mgr.config.is_disabled(&entry.plugin_id) {
+            continue;
+        }
+        let ov = mgr
+            .config
+            .shortcut_override(&entry.plugin_id, &entry.command_id);
+        let keys = match effective_binding(entry, ov, host_kb) {
+            EffectiveBinding::Keys(k) => k,
+            EffectiveBinding::Inherit { keys, .. } => keys,
+            EffectiveBinding::None => continue,
+        };
+        out.extend(keys.into_iter().filter(|k| !k.is_empty()));
+    }
+    out
+}
+
 /// Event Bus 1.0 `command.invoked` owner-unicast 발사 (sub_id=0 sentinel — 다른
 /// plugin이 `command.invoked`를 구독해도 보이지 않는다).
 ///
@@ -416,5 +457,137 @@ mod tests {
         let mut m = mgr();
         // registry에 없는 command — scope는 CommandScope::default()(Global)로 폴백.
         emit_command_invoked(&mut m, "com.example.ghost", "ghost.cmd", None);
+    }
+
+    // ── all_command_bindings (webview 키 포워딩 정책 스냅샷) ──────────
+
+    /// 매니페스트 default 와 사용자 override 가 모두 정책 원천에 실린다. scope 로
+    /// 미리 걸러내지 않는다 — `Surface` scope 커맨드도 그 plugin surface 가 포커스된
+    /// 상태에서는 발화하므로 정책은 상위집합이어야 한다.
+    #[test]
+    fn all_command_bindings_collects_manifest_defaults_and_overrides() {
+        let mut m = mgr();
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![
+                cmd(
+                    "a.global",
+                    "ctrl+alt+z",
+                    tasty_plugin_manifest::CommandScope::Global,
+                ),
+                cmd(
+                    "a.surface",
+                    "ctrl+shift+r",
+                    tasty_plugin_manifest::CommandScope::Surface,
+                ),
+            ],
+        ));
+        m.config.set_shortcut_override(
+            "com.example.a",
+            "a.global",
+            crate::plugin::registry_state::ShortcutOverride::Key {
+                value: vec!["ctrl+shift+h".to_string()],
+            },
+        );
+        let kb = KeybindingSettings::preset_tasty();
+        let mut got = all_command_bindings(&m, &kb);
+        got.sort();
+        assert_eq!(
+            got,
+            vec!["ctrl+shift+h".to_string(), "ctrl+shift+r".to_string()],
+            "override 가 매니페스트 default 를 대체하고 Surface scope 도 포함돼야 한다"
+        );
+    }
+
+    /// 사용자가 단축키를 비워둔 커맨드는 정책에 실리지 않는다 — 실리면 그 콤보를
+    /// webview 위에서 host 가 claim 해 페이지가 못 받는다(키 소실).
+    #[test]
+    fn all_command_bindings_skips_cleared_bindings() {
+        let mut m = mgr();
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![cmd(
+                "a.open",
+                "ctrl+alt+z",
+                tasty_plugin_manifest::CommandScope::Global,
+            )],
+        ));
+        m.config.set_shortcut_override(
+            "com.example.a",
+            "a.open",
+            crate::plugin::registry_state::ShortcutOverride::None,
+        );
+        let kb = KeybindingSettings::preset_tasty();
+        assert!(all_command_bindings(&m, &kb).is_empty());
+    }
+
+    /// 비활성 plugin 의 콤보는 정책에 오르지 않는다 — 발화할 수 없는 명령이 키를
+    /// claim 하면 그 키가 페이지에도 host 에도 안 가고 사라진다(conductor 판정 A).
+    #[test]
+    fn all_command_bindings_skips_disabled_plugins() {
+        let mut m = mgr();
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![cmd(
+                "a.open",
+                "ctrl+alt+z",
+                tasty_plugin_manifest::CommandScope::Global,
+            )],
+        ));
+        let kb = KeybindingSettings::preset_tasty();
+        // 활성일 땐 실린다.
+        assert_eq!(
+            all_command_bindings(&m, &kb),
+            vec!["ctrl+alt+z".to_string()]
+        );
+        // 비활성으로 바꾸면 빠진다.
+        assert!(m.config.disable("com.example.a"));
+        assert!(all_command_bindings(&m, &kb).is_empty());
+    }
+
+    /// 정책 캐시의 무효화 키가 실제로 움직이는지 — registry 등록/해제와 override
+    /// 변경 모두 epoch 를 올려야 `sync_webviews` 가 스냅샷을 다시 만든다.
+    #[test]
+    fn shortcut_epochs_advance_on_every_binding_change() {
+        let mut m = mgr();
+        let r0 = m.command_registry.revision();
+        m.command_registry.register_plugin(&manifest_with_commands(
+            "com.example.a",
+            vec![cmd(
+                "a.open",
+                "ctrl+alt+z",
+                tasty_plugin_manifest::CommandScope::Global,
+            )],
+        ));
+        let r1 = m.command_registry.revision();
+        assert_ne!(
+            r0, r1,
+            "register_plugin 이 registry revision 을 올려야 한다"
+        );
+        m.command_registry.unregister_plugin("com.example.a");
+        assert_ne!(
+            r1,
+            m.command_registry.revision(),
+            "unregister_plugin 도 올려야 한다"
+        );
+        // 새로 만든 registry 도 이전 값과 겹치지 않는다(전역 단조 epoch).
+        assert_ne!(
+            m.command_registry.revision(),
+            crate::plugin::command_registry::PluginCommandRegistry::new().revision()
+        );
+
+        let c0 = m.config.shortcut_revision();
+        m.config.set_shortcut_override(
+            "com.example.a",
+            "a.open",
+            crate::plugin::registry_state::ShortcutOverride::None,
+        );
+        let c1 = m.config.shortcut_revision();
+        assert_ne!(
+            c0, c1,
+            "set_shortcut_override 가 config revision 을 올려야 한다"
+        );
+        assert!(m.config.clear_shortcut_override("com.example.a", "a.open"));
+        assert_ne!(c1, m.config.shortcut_revision(), "clear 도 올려야 한다");
     }
 }

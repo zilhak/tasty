@@ -18,8 +18,9 @@ use tasty_plugin_protocol::{
 };
 
 use crate::adapters::ui::PluginBannerCloseKind;
-use crate::model::{PhysicalPx, PhysicalRect};
+use crate::model::LogicalPx;
 use crate::plugin::PluginManager;
+use crate::plugin_bridge::wire_scroll;
 use crate::state::AppState;
 
 /// 매 egui frame, host banner draw *후* 호출. banner manager 가 기록한 plugin mesh 슬롯을
@@ -105,8 +106,9 @@ pub fn draw_plugin_banners(
 
         // set_context forward — geom 변경 / 입력 / bootstrap(미paint) / theme 변경 시만.
         // bootstrap 은 1회만 (popup 과 동일: 첫 frame 폰트 atlas delta 를 host 가 반드시 decode).
-        let w_px = (content_rect.width() * ppp).round().max(1.0) as u32;
-        let h_px = (content_rect.height() * ppp).round().max(1.0) as u32;
+        let physical = crate::plugin_bridge::mesh_region_of(content_rect, ppp);
+        let w_px = physical.width.value().round().max(1.0) as u32;
+        let h_px = physical.height.value().round().max(1.0) as u32;
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.banner_mesh_frame(slot.instance_id).is_some();
@@ -153,15 +155,9 @@ pub fn draw_plugin_banners(
         }
 
         // 합성 영역(물리 px) 적재 — gpu.render 가 host egui pass 후 mesh 를 그린다.
-        state.plugin_mesh_banner_regions.push((
-            slot.instance_id,
-            PhysicalRect {
-                x: PhysicalPx(content_rect.min.x * ppp),
-                y: PhysicalPx(content_rect.min.y * ppp),
-                width: PhysicalPx(content_rect.width() * ppp),
-                height: PhysicalPx(content_rect.height() * ppp),
-            },
-        ));
+        state
+            .plugin_mesh_banner_regions
+            .push((slot.instance_id, physical));
     }
 }
 
@@ -177,6 +173,9 @@ fn collect_mesh_banner_input(
 ) -> RawInputWire {
     let origin = content_rect.min;
     let pointer_inside = pointer_pos.is_some_and(|p| content_rect.contains(p));
+    // 노치 거리는 `ctx.input` 밖에서 읽는다 — 같은 컨텍스트의 다른 잠금이라
+    // 중첩을 만들 이유가 없다.
+    let line = wire_scroll::line_scroll(ctx);
     ctx.input(|i| {
         let modifiers = map_modifiers(&i.modifiers);
         let mut events: Vec<RawInputEventWire> = Vec::new();
@@ -204,10 +203,19 @@ fn collect_mesh_banner_input(
                         });
                     }
                 }
-                Event::MouseWheel { delta, .. } if pointer_inside => {
+                // 와이어 `Scroll` 은 논리 포인트 단위다 — 물리 마우스 휠이 싣고 오는
+                // `Line` 단위를 여기서 환산하지 않으면 notch 당 1pt 만 도착해 egui-mesh
+                // surface 와 이동량이 갈린다(`wire_scroll` 모듈 문서).
+                Event::MouseWheel { unit, delta, .. } if pointer_inside => {
+                    let (dx, dy) = wire_scroll::wheel_delta_to_points(
+                        *unit,
+                        *delta,
+                        LogicalPx(i.screen_rect().height()),
+                        line,
+                    );
                     events.push(RawInputEventWire::Scroll {
-                        x: delta.x,
-                        y: delta.y,
+                        x: dx.value(),
+                        y: dy.value(),
                     });
                 }
                 Event::PointerGone => events.push(RawInputEventWire::PointerGone),
@@ -241,5 +249,91 @@ fn map_button(b: egui::PointerButton) -> Option<PointerButtonWire> {
         egui::PointerButton::Secondary => Some(PointerButtonWire::Secondary),
         egui::PointerButton::Middle => Some(PointerButtonWire::Middle),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// banner content 위 휠 이벤트 하나가 와이어에 싣는 `Scroll` 값(논리 포인트)을
+    /// **실제 수집 함수**로 잰다.
+    fn collected_scroll(unit: egui::MouseWheelUnit, delta: egui::Vec2) -> Option<(f32, f32)> {
+        collected_scroll_with_notch(unit, delta, tasty_settings::DEFAULT_WHEEL_LINE_SCROLL)
+    }
+
+    /// 위와 같되 노치 거리(host 가 egui 옵션에 밀어 넣는 값)를 지정한다 — 그 값이
+    /// 실제로 와이어까지 흐르는지 재는 데 쓴다.
+    fn collected_scroll_with_notch(
+        unit: egui::MouseWheelUnit,
+        delta: egui::Vec2,
+        notch: f32,
+    ) -> Option<(f32, f32)> {
+        let ctx = Context::default();
+        // host 가 창을 만들 때 하는 것과 같다 — 이 설정 없이는 egui 기본값(40)이 남는다.
+        ctx.options_mut(|o| o.line_scroll_speed = notch);
+        let content_rect =
+            Rect::from_min_size(Pos2::new(40.0, 40.0), egui::Vec2::new(400.0, 120.0));
+        let pointer = Pos2::new(100.0, 80.0);
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                egui::Vec2::new(1280.0, 800.0),
+            )),
+            events: vec![Event::MouseWheel {
+                unit,
+                delta,
+                modifiers: egui::Modifiers::default(),
+            }],
+            ..Default::default()
+        };
+        let mut wire = None;
+        // 한 pass 를 실제로 돌려 `InputState` 를 채운다. 렌더 산출물(`FullOutput`)은
+        // 이 측정에 쓰지 않는다 — 필요한 것은 수집 함수가 만든 와이어 입력뿐이다.
+        let _full_output = ctx.run(input, |ctx| {
+            wire = Some(collect_mesh_banner_input(ctx, content_rect, Some(pointer)));
+        });
+        wire?.events.iter().find_map(|e| match e {
+            RawInputEventWire::Scroll { x, y } => Some((*x, *y)),
+            _ => None,
+        })
+    }
+
+    /// banner 도 popup·surface 와 같은 배율을 쓴다 — 세 표면이 갈리지 않아야 한다.
+    #[test]
+    fn a_wheel_notch_reaches_the_wire_as_the_shared_line_scroll_distance() {
+        let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Line, egui::Vec2::new(0.0, -1.0))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(dx, 0.0);
+        assert_eq!(dy, -tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
+        assert_ne!(dy, -1.0);
+    }
+
+    /// 노치 거리는 이제 상수가 아니라 **host egui 옵션**에서 온다 — 사용자가 설정을
+    /// 바꾸면 banner 가 받는 거리도 따라와야 한다. 상수로 되돌아가면 이 테스트가 죽는다.
+    #[test]
+    fn the_wire_distance_follows_the_host_option() {
+        let (_, slow) = collected_scroll_with_notch(
+            egui::MouseWheelUnit::Line,
+            egui::Vec2::new(0.0, -1.0),
+            20.0,
+        )
+        .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        let (_, fast) = collected_scroll_with_notch(
+            egui::MouseWheelUnit::Line,
+            egui::Vec2::new(0.0, -1.0),
+            120.0,
+        )
+        .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!(slow, -20.0);
+        assert_eq!(fast, -120.0);
+    }
+
+    /// 트랙패드 델타는 그대로 실린다(회귀 방지).
+    #[test]
+    fn a_trackpad_delta_reaches_the_wire_unchanged() {
+        let (dx, dy) = collected_scroll(egui::MouseWheelUnit::Point, egui::Vec2::new(1.5, -9.0))
+            .expect("휠 이벤트가 와이어 Scroll 로 수집돼야 한다");
+        assert_eq!((dx, dy), (1.5, -9.0));
     }
 }

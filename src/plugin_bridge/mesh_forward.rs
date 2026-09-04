@@ -205,7 +205,7 @@ mod tests {
     /// 상태와 동형 — 구독/hard-occupy 자체는 owning-engine 패턴으로 이미 parked
     /// engine 에도 정상 반영된다, `apply_mesh_context_on_owning_engine` 참조).
     fn make_parked_engine(client_id: AttachClientId) -> (CoreState, u32) {
-        let waker: crate::terminal::Waker = Arc::new(|| {});
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
         let mut engine = CoreState::new(80, 24, waker).expect("core state");
 
         let pane_id = engine.workspaces[0].pane_layout().all_pane_ids()[0];
