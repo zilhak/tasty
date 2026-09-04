@@ -50,7 +50,10 @@ impl GpuState {
                 .frame(
                     egui::Frame::new()
                         .fill(th.bg_sidebar().into())
-                        .stroke(egui::Stroke::new(1.0, th.border_default()))
+                        .stroke(egui::Stroke::new(
+                            th.border_width.value(),
+                            th.border_default(),
+                        ))
                         .corner_radius(egui::CornerRadius::same(8))
                         .inner_margin(tasty_ui_widgets::margin_all(th.spacing_lg)),
                 )
@@ -100,7 +103,7 @@ impl GpuState {
                                 )
                                 .min_size(btn_size)
                                 .fill(danger)
-                                .stroke(egui::Stroke::new(1.0, danger))
+                                .stroke(egui::Stroke::new(th.border_width.value(), danger))
                                 .corner_radius(egui::CornerRadius::same(6)),
                             )
                             .clicked()
