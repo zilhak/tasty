@@ -18,7 +18,7 @@ design-tokens 시리즈는 "UI 는 primitive 색(Catppuccin 원색: `crust`/`sur
 
 - 9곳 전부 값-보존(pixel diff 0) alias 로 이식: `subtext0 → text_muted()`, `crust → bg_app()`, `surface0(fill) → surface_raised()`·`surface0(stroke) → border_default()`, `surface1(stroke) → border_strong()`, `text → text_primary()`.
 - **대응 role 토큰이 없는 use** 는 primitive 로 되돌아가지 않는다. 의미가 가장 가까운 role 접근자로 alias 하고 `// divergence:` 주석으로 불일치를 문서화한다(향후 design-token request 후보로 표시). 예: status-dot idle·chip "+"·table active-header 는 대응 role 부재로 `text_muted()`/`text_primary()` 로 alias + divergence 주석.
-- **집행 채널 = 소스 스캔 가드 테스트**(`cargo test --workspace`, `.github/workflows/test.yml`). clippy 가 아니다 — clippy 는 `pub` 구조체 **필드 접근**을 검출하는 lint 이 없고(`disallowed-methods` 는 메서드 경로 전용), CI 에 `-D warnings` 도 없다. 필드 접근을 실제로 잡을 수 있는 건 정규식 소스 스캔뿐이므로 가드 테스트가 유일한 강제 장치다. 스캔 스코프에 `crates/tasty-ui-widgets/src` 를 편입한다.
+- **집행 채널 = 소스 스캔 가드 테스트**(`cargo test --workspace`. 그 잡은 수동 전용이라 자동으로 돌지 않는다 — [ci-gates](../dev-guide/ci-gates.md)). clippy 가 아니다 — clippy 는 `pub` 구조체 **필드 접근**을 검출하는 lint 이 없고(`disallowed-methods` 는 메서드 경로 전용), CI 에 `-D warnings` 도 없다. 필드 접근을 실제로 잡을 수 있는 건 정규식 소스 스캔뿐이므로 가드 테스트가 유일한 강제 장치다. 스캔 스코프에 `crates/tasty-ui-widgets/src` 를 편입한다.
 
 **금지에서 제외(primitive 접근이 본질인 곳)**: 테마 시스템 내부(`tasty-type-appearance`·`tasty-themes` 자신), 색상 픽커(46색 flat 편집 UI), ANSI 팔레트·터미널 색 경로(GPU 렌더러), 갤러리 팔레트 데모(raw primitive 를 의도적으로 노출).
 

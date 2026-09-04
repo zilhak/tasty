@@ -32,6 +32,8 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 - 안쪽 `|| true` — 오직 hook 명령 실패만 담당한다. 실패 처리 정책을 바꿀 때 손댈 지점이 한 군데로 좁혀진다.
 - 기록 — `tasty-cli` 의 `hook_failure::record` 가 포트 파일 부재 / connect 실패 / JSON-RPC 에러 **세 지점 모두**에서 `<tasty_home>/hook-failures.log` 에 `<UTC> method=… event=… surface=… reason=…` 한 줄을 남긴다. `event` 는 `params.event`(hook 이벤트 이름)에서 꺼낸다 — `method` 는 `claude.hook` 하나로 고정이라 이게 없으면 `stop` 실패와 `session-end` 실패를 구분할 수 없다. 이벤트 이름을 갖지 않는 hook(`claude.checklist_hook`)은 `event=-`. best-effort(기록 실패는 무시), 256 KiB 에서 `.log.1` 로 1 단 로테이션.
 
+- 언어 — `reason` 의 **값**은 사용자 로케일과 무관한 **영어 고정**이다. 같은 실패를 사용자에게 알리는 stderr 는 번역문을 그대로 쓴다. 대상이 다르기 때문이다: stderr 는 지금 화면 앞의 사람이 읽고, 이 파일은 사후에 — 사람이 아니라 에이전트가 — 알려진 실패 패턴과 대조하며 읽는다. 진단 문구가 설정에 따라 흔들리면 그 대조도 `grep` 도 성립하지 않는다. 집행은 타입으로 한다: `hook_failure::record` 는 `DiagnosticEnglish` 만 받으므로 번역 결과를 그냥 넘길 수 없고, 그 타입의 탈출구(`new_unchecked`)에 번역 호출이 들어가는 것은 `tests/hook_failure_reason_stays_english.rs` 가 소스 스캔으로 막는다. 진입점이 `run_dynamic_client` 하나뿐인데도 가드를 둔 이유는, 서로 모르는 두 변경이 각각 그 자리에 번역문을 흘려 넣은 전례가 있기 때문이다.
+
 기록 대상은 method 의 마지막 dot 세그먼트가 `hook` 이거나 `_hook` 으로 끝나는 요청으로 좁힌다(`claude.hook` / `codex.hook` / `claude.checklist_hook`). 대화형 CLI 실패는 사용자가 stderr 로 즉시 보므로 무흔적 문제가 없고, 파일만 시끄러워진다.
 
 기록 위치를 `tasty_home()`(=`TASTY_HOME` 또는 `~/.tasty{-debug}`)으로 잡은 이유는 **CLI 가 닿으려 했던 대상 인스턴스의 홈**이기 때문이다 — 접속 대상은 `tasty_home()/tasty.port` 가 정하므로, 기록이 다른 곳에 남으면 사후 대조가 어긋난다. 부모가 자식 셸에 브로드캐스트하는 `TASTY_PARENT_HOME` 은 접속 대상 결정에 관여하지 않으므로 쓰지 않는다.
