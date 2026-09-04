@@ -138,3 +138,4 @@
 | 0125 | [카테고리 착지점은 id 를 들고, 재정렬 축은 제거 축과 같은 초크포인트로 모은다](0125-category-landing-points-hold-ids.md) | Accepted | 2026-09-05 | focus, workspace, reorder, index-vs-id, cascade, invariant, adr-0113 |
 | 0126 | [스케일 밖 폰트 값은 토큰으로 스냅하지 않는다 — `.5` 값은 토큰이 될 수 없다](0126-off-scale-font-values-are-not-snapped-to-tokens.md) | Accepted | 2026-09-04 | theme, design-tokens, font-size, zoom, guards, adr-0033 |
 | 0127 | [e2e 하네스가 띄울 바이너리는 한 곳에서 정한다 — 기본 조합의 GPU 종속은 `App` 이분이 선행이다](0127-e2e-harness-binary-selection.md) | Accepted | 2026-09-04 | testing, e2e, headless, gpu, feature-flags, cargo, harness, adr-0090 |
+| 0128 | [DPI 변환 정합은 타입 봉인이 아니라 소스 스캔 가드로 지킨다](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) | Accepted | 2026-09-04 | typed-length, dpi, guard, scale-factor, geometry, drift-guard |
