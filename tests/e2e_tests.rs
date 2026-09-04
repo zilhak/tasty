@@ -1039,3 +1039,97 @@ fn multi_window_owner_routing() {
     let out2 = tasty.wait_for_output(new_sid, "W2_owner_route", Duration::from_secs(5));
     assert!(out2.contains("W2_owner_route"));
 }
+
+// ========== plugin 읽기 표면 — 창 없이 답하는가 ==========
+
+/// `plugin.list` 가 창 없이 답한다.
+///
+/// 이전에는 헤드리스에서 `-32601`(그런 메서드 없다)이었다. 그것은 `plugin.*`
+/// 관리 표면이 통째로 없다는 뜻이었고, CLI 전용 실행 형태인 헤드리스에서
+/// `docs/identity.md` 원칙 2(에이전트 기능은 IPC + CLI 양면)에 정면으로 걸렸다.
+///
+/// **왜 통합 테스트여야 하는가.** 이 경로의 단위 테스트
+/// (`src/adapters/ipc/handler/plugin.rs`)는 매니저가 **있을 때** 에러가 아니라는 것을
+/// 못 잰다 — `PluginManager` 는 waker 와 registry port 를 요구해 단위 테스트가 만들 수
+/// 없고, `tasty-host-plugin` 의 테스트용 생성자는 그 크레이트의 `#[cfg(test)]` 라 여기서
+/// 보이지 않는다. 그래서 단위 테스트만 두면 "모든 응답이 에러" 여도 통과한다. 라우팅
+/// 표(`READONLY_METHODS`)와 dispatch arm 이 실제로 이어져 있다는 것도 여기서만 잰다.
+///
+/// 헤드리스 조합에서는 테스트가 띄우는 바이너리 자체가 헤드리스라, 이 단언은 그
+/// 조합에서 **창이 없는 데몬**을 상대로 돈다. gui 조합에서도 성립해야 한다 — 두
+/// 라우터가 같은 함수를 쓰기 때문이다.
+#[test]
+fn plugin_list_answers_without_a_window() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw("plugin.list", json!({}));
+
+    assert!(
+        resp.get("error").is_none(),
+        "plugin.list 가 에러로 답했다: {resp}"
+    );
+    let plugins = resp
+        .get("result")
+        .and_then(|r| r.get("plugins"))
+        .and_then(|p| p.as_array())
+        .unwrap_or_else(|| panic!("plugin.list 응답에 plugins 배열이 없다: {resp}"));
+
+    // 개수는 홈 상태에 달렸으므로 세지 않는다. 배열이라는 것과, 있다면 각 항목이
+    // 매니페스트에서 나온 모양이라는 것만 본다.
+    for p in plugins {
+        assert!(
+            p.get("id").and_then(|v| v.as_str()).is_some(),
+            "plugin 항목에 id 가 없다: {p}"
+        );
+    }
+}
+
+/// `plugin.show` 는 매니저가 있어도 **없는 plugin 이름**에는 다른 에러를 준다.
+///
+/// 이것이 위 테스트의 대조다 — 위만 있으면 "모든 plugin.* 가 무조건 성공" 이어도
+/// 통과한다. 여기서 요구하는 것은 성공/실패가 **입력에 따라 갈린다**는 것이다.
+/// `-32000`(매니저 없음)이 아니라 `-32003`(그 plugin 이 설치돼 있지 않음)이어야
+/// 매니저가 실제로 세워져 조회가 수행됐다는 뜻이 된다.
+#[test]
+fn plugin_show_distinguishes_an_unknown_plugin_from_a_missing_manager() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw(
+        "plugin.show",
+        json!({"id": "no-such-plugin-in-any-installation"}),
+    );
+
+    let err = resp
+        .get("error")
+        .unwrap_or_else(|| panic!("없는 plugin 인데 성공으로 답했다: {resp}"));
+    let code = err.get("code").and_then(|c| c.as_i64());
+    assert_eq!(
+        code,
+        Some(-32003),
+        "없는 plugin 은 -32003 이어야 한다(-32000 이면 매니저 자체가 안 세워진 것): {resp}"
+    );
+}
+
+/// 수명주기 메서드는 **여전히 없다** — 이 축이 연 것은 읽기 표면뿐이다.
+///
+/// 이 단언이 없으면 위 둘은 "`plugin.*` 를 전부 열었다" 와 구별되지 않는다.
+/// 헤드리스에서 `plugin.enable` 이 답하려면 `App.plugin_manager` 만으로는 부족하고
+/// gui feature 로 게이트된 `app/plugin_glue` 와 `cascade_plugin_events` 가 필요하다.
+/// 그 경계를 여는 것은 별도 결정이므로, 지금은 없는 것이 현재 상태다.
+#[cfg(not(feature = "gui"))]
+#[test]
+fn lifecycle_methods_are_still_absent_in_a_headless_daemon() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw("plugin.enable", json!({"id": "anything"}));
+
+    let code = resp
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        code,
+        Some(-32601),
+        "헤드리스에서 plugin.enable 은 아직 없는 메서드여야 한다: {resp}"
+    );
+}

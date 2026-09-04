@@ -175,6 +175,19 @@ pub(crate) struct App {
     /// Plugin host manager. None until the first AppState is created
     /// (which provides the WakerFactory).
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
+    /// 매니저가 **기동까지** 끝났는가 — 번들 설치와 plugin 프로세스 spawn.
+    ///
+    /// `plugin_manager.is_some()` 로는 이것을 판정할 수 없다. 헤드리스는 조회
+    /// 메서드에 답하려고 매니저를 **디스크 읽기만으로** 세우는 경로가 따로 있어서
+    /// (`src/boot/headless_plugins.rs`), 매니저가 있어도 아직 아무 plugin 도 안 뜬
+    /// 상태가 정상이다. 이 값이 없으면 그 상태에서 기동 요청이 no-op 이 된다.
+    ///
+    /// 헤드리스 부트스트랩만의 상태라 feature 로 가둔다. gui 는 매니저를 만들 때
+    /// 곧바로 설치·기동까지 하므로(`src/app/window_lifecycle.rs` `build_plugin_manager`)
+    /// 두 상태가 갈리는 순간이 없다 — 거기에 이 필드를 두면 항상 참인 값을 유지하는
+    /// 비용만 남고, 유지를 빠뜨리면 거짓을 말한다.
+    #[cfg(not(feature = "gui"))]
+    pub(crate) plugin_started: bool,
     /// Sessionwide engine state — workspaces, settings, hooks, registries.
     /// None until the first MainView lifecycle initializes it; Some after.
     pub(crate) core_state: Option<crate::core::CoreState>,
@@ -349,6 +362,8 @@ impl App {
             #[cfg(debug_assertions)]
             input_simulation_enabled,
             plugin_manager: None,
+            #[cfg(not(feature = "gui"))]
+            plugin_started: false,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
@@ -402,6 +417,8 @@ impl App {
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             plugin_manager: None,
+            #[cfg(not(feature = "gui"))]
+            plugin_started: false,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),

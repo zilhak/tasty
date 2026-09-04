@@ -24,10 +24,24 @@ use crate::app::App;
 use crate::core::CoreState;
 use crate::state::AppState;
 
-/// attach 세션이 mesh mirror 후보를 mirror 하려 할 때 호출 — 이미 초기화돼 있으면
-/// no-op. `engine.waker_factory` 가 없으면(불변식 위반 — headless 는 부팅 시 항상
-/// 설정) 경고만 남기고 스킵한다.
-pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
+/// 매니저를 **디스크를 읽기만 해서** 세운다 — plugin 프로세스를 띄우지 않고,
+/// 번들 plugin 을 설치하지도 권한을 grant 하지도 않는다.
+///
+/// 조회 메서드(`plugin.list` 등)가 부르는 층이다. 조회가 자기 관측 대상을 바꾸면
+/// 에이전트가 상태를 **관찰하려고** 부른 명령이 그 상태를 만들어버린다. 그래서
+/// 여기서 하는 일은 `refresh_packages` 뿐이고, 그것은 `~/.tasty/plugins/` 를 스캔해
+/// `packages`/`rejected` 를 채우는 읽기 연산이다.
+///
+/// 특히 [`crate::plugin::install_builtins_if_needed`] 는 이 층에 **없다** — 그것은
+/// 번들에서 파일을 복사하고 매니페스트 권한을 `plugins.toml` 에 자동 grant 한다.
+/// 설치와 권한 부여는 조회의 부수효과일 수 없다.
+///
+/// 그 결과 아직 아무것도 설치되지 않은 홈에서는 목록이 빈다. 그것은 거짓이 아니라
+/// 그 시점의 사실이며, 매니저가 아예 없을 때의 `-32000` 응답과 **구분되는 답**이다.
+///
+/// `engine.waker_factory` 가 없으면(불변식 위반 — headless 는 부팅 시 항상 설정)
+/// 경고만 남기고 스킵한다. 이미 초기화돼 있으면 no-op.
+pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) {
     if app.plugin_manager.is_some() {
         return;
     }
@@ -50,11 +64,28 @@ pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
     mgr.set_completion_strategy_registry(std::sync::Arc::new(
         crate::completion_strategy::HostCompletionStrategyPort,
     ));
-    crate::plugin::install_builtins_if_needed(&mut mgr);
     mgr.refresh_packages();
-    mgr.discover_and_start();
-    tracing::info!("headless plugin manager bootstrapped (attach mesh mirror session)");
+    tracing::info!("headless plugin manager bootstrapped (metadata only — no plugin started)");
     app.plugin_manager = Some(mgr);
+}
+
+/// attach 세션이 mesh mirror 후보를 mirror 하려 할 때, 또는 plugin namespace 로
+/// forward 해야 할 때 호출 — 이미 **기동까지** 끝나 있으면 no-op.
+///
+/// [`ensure_plugin_manager_metadata`] 위에 번들 설치와 프로세스 기동을 얹는다.
+/// 조회 경로에서 부르지 않는다(위 함수의 주석 참조).
+pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
+    if app.plugin_started {
+        return;
+    }
+    ensure_plugin_manager_metadata(app, engine);
+    let Some(mgr) = app.plugin_manager.as_mut() else {
+        return;
+    };
+    crate::plugin::install_builtins_if_needed(mgr);
+    mgr.discover_and_start();
+    app.plugin_started = true;
+    tracing::info!("headless plugin manager started (attach mesh mirror session)");
 }
 
 /// GUI `about_to_wait()` plugin 블록의 헤드리스 등가. hello 마무리(surface_kind

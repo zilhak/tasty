@@ -62,6 +62,26 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
             send_response(&cmd.response_tx, resp);
             continue;
         }
+        // 2b) 읽기 전용 `plugin.*` 조회도 App 층에서 답한다 — `plugin_manager` 는 `App`
+        //     필드라 engine handler 가 닿지 않는다. gui 라우터와 **같은 함수**를 쓴다
+        //     (`handler::plugin::dispatch_readonly`), 두 벌로 두면 갈라지기 때문이다.
+        //
+        //     매니저는 여기서 **메타데이터 층까지만** 세운다. plugin 프로세스를 띄우거나
+        //     번들을 설치·권한 grant 하는 것은 조회의 부수효과일 수 없다
+        //     (`headless_plugins::ensure_plugin_manager_metadata` 주석).
+        if crate::ipc::handler::plugin::is_readonly_method(&cmd.request.method) {
+            super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+            if let Some(resp) = crate::ipc::handler::plugin::dispatch_readonly(
+                &app.core,
+                app.plugin_manager.as_ref(),
+                &cmd.request.method,
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                &cmd.request.params,
+            ) {
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
+        }
         // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
         //    handle_with_caller 내부가 자체 수행한다.
         let resp = crate::ipc::handler::handle_with_caller(

@@ -483,18 +483,20 @@ impl App {
         caller: &host_ipc::caller::CallerContext,
     ) -> IpcStep {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        // 읽기 전용 조회는 헤드리스와 **공유하는 한 함수**가 답한다. 여기에 같은 표를
+        // 다시 두면 한쪽만 고쳐지는 순간 갈라지므로, 라우팅 표는 그 함수에만 있다
+        // (`crate::adapters::ipc::handler::plugin::dispatch_readonly`).
+        if let Some(response) = host_ipc::handler::plugin::dispatch_readonly(
+            &self.core,
+            self.plugin_manager.as_ref(),
+            cmd.request.method.as_str(),
+            id.clone(),
+            &cmd.request.params,
+        ) {
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         let response = match cmd.request.method.as_str() {
-            "plugin.list" => {
-                host_ipc::handler::plugin::handle_list(self.plugin_manager.as_ref(), id)
-            }
-            "plugin.show" => host_ipc::handler::plugin::handle_show(
-                self.plugin_manager.as_ref(),
-                id,
-                &cmd.request.params,
-            ),
-            "plugin.extension.list" => {
-                host_ipc::handler::plugin::handle_extension_list(self.plugin_manager.as_ref(), id)
-            }
             "plugin.install" => {
                 let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
                     Some(p) => std::path::PathBuf::from(p),
@@ -617,11 +619,6 @@ impl App {
                     ),
                 }
             }
-            "plugin.permissions" => host_ipc::handler::plugin::handle_permissions(
-                self.plugin_manager.as_ref(),
-                id,
-                &cmd.request.params,
-            ),
             "plugin.grant" => {
                 let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
                     Some(s) => s.to_string(),
@@ -732,13 +729,6 @@ impl App {
                     &cmd.request.params,
                 )
             }
-            "plugin.list_agent_permissions" => {
-                host_ipc::handler::session::handle_list_agent_permissions(
-                    &self.core,
-                    id,
-                    &cmd.request.params,
-                )
-            }
             "plugin.upgrade_builtins" => {
                 let force = cmd
                     .request
@@ -788,12 +778,6 @@ impl App {
                     }
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
-            }
-            "plugin.audit_query" => {
-                host_ipc::handler::audit::handle_query(&self.core, id, &cmd.request.params)
-            }
-            "plugin.audit_summary" => {
-                host_ipc::handler::audit::handle_summary(&self.core, id, &cmd.request.params)
             }
             "plugin.audit_follow" => {
                 host_ipc::handler::audit::handle_follow(&self.core, id, &cmd.request.params)
