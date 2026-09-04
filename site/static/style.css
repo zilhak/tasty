@@ -706,6 +706,12 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   gap: var(--sp-12);
 }
 
+/* The intro column is centred over the full-width product window below it.
+   Left-aligned it filled only the left half while the window ran the whole
+   container, which read as lopsided. */
+.hero__intro { max-width: 960px; margin: 0 auto; text-align: center; }
+.hero__intro .cta-row { justify-content: center; }
+
 .hero__eyebrow {
   display: inline-flex;
   align-items: center;
@@ -753,8 +759,8 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   font-size: 18px;
   line-height: 1.65;
   color: var(--subtext0);
-  margin: 0 0 var(--sp-8);
-  max-width: 46ch;
+  margin: 0 auto var(--sp-8);
+  max-width: 60ch;
 }
 
 .cta-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }

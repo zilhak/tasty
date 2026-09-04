@@ -361,7 +361,7 @@ fn strip_emphasis(s: &str) -> String {
 fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     format!(
         r##"<section class="hero">
-  <div>
+  <div class="hero__intro">
     <span class="hero__eyebrow"><span class="dot"></span>{badge} · v{version}</span>
     <p class="hero__tagline"><span class="wordmark">Tasty<b>.</b></span> {tagline}</p>
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
@@ -372,7 +372,7 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
-    <p class="hero__lede" style="font-size:14px;margin:12px 0 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
+    <p class="hero__lede" style="font-size:14px;margin:12px auto 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
   </div>
   {mock}
 </section>"##,
