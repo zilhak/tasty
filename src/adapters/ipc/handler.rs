@@ -73,6 +73,20 @@ use crate::core::CoreState;
 use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+
+/// macOS GUI 빌드에서만 뜻이 있는 메서드를 다른 조합에서 불렀을 때의 답.
+///
+/// `-32601`("그런 메서드 없음")과 다른 코드를 쓰는 이유: 메서드는 **있다**. 표에
+/// 등재돼 있고 CLI 도 내놓는다 — 이 플랫폼이 못 할 뿐이다. 호출자가 "오타" 와
+/// "여기선 안 됨" 을 구별할 수 있어야 고칠 방법이 갈린다.
+///
+/// cfg 가 **쓰는 자리와 같아야 한다** — macOS gui 빌드에서는 그 arm 이 없어 이 상수도
+/// 안 쓰이고, 이 크레이트는 dead_code 를 deny 한다. 그 조합은 여기서 빌드할 수 없으므로
+/// (실측: macOS 크로스 체크가 libsqlite3-sys 에서 멈춘다) 컴파일러가 아니라 이 짝
+/// 맞춤이 유일한 방어다.
+#[cfg(not(all(target_os = "macos", feature = "gui")))]
+const PLATFORM_ONLY_MACOS_GUI: &str = "input reproduction over the OS event stream is macOS-only and needs the gui build \
+     (CGEventPost / TISSelectInputSource have no equivalent here)";
 use crate::state::AppState;
 
 /// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
@@ -1153,6 +1167,17 @@ fn route_debug_handler(
         }
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.raw_key" => input_source::handle_raw_key(state, engine, id, &request.params),
+        // 위 둘의 짝. 이 플랫폼·조합에서 **왜** 못 하는지를 말한다.
+        //
+        // 등재(`DEBUG_METHODS`)와 CLI 서브커맨드는 플랫폼 조건이 없다 — 이 저장소에서
+        // 그 두 층은 플랫폼 균일하고(실측: 두 파일에 `target_os` 게이트 0 건) 차이는
+        // 여기 dispatch 층에 둔다. 그래서 arm 이 없으면 `tasty debug raw-key` 가
+        // 도움말에 뜨는데 `-32601`("그런 메서드 없음")로 끝난다 — 메서드는 있고
+        // 이 플랫폼이 못 할 뿐이라 그 답은 거짓이다.
+        #[cfg(not(all(target_os = "macos", feature = "gui")))]
+        "surface.switch_input_source" | "surface.raw_key" => {
+            JsonRpcResponse::error(id.clone(), -32015, PLATFORM_ONLY_MACOS_GUI)
+        }
         // 아래 셋은 gui feature 게이트가 없다 — 핸들러 본체가 gui 전용 필드를
         // 하나도 안 만져서 headless debug 데몬에도 등록된다(`debug_nav` 모듈 doc).
         "debug.close_workspace" => {

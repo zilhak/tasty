@@ -673,6 +673,7 @@ mod headless_app_layer_coverage;
 
 /// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
 /// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.
+mod platform_gated_dispatch_complement;
 mod port_mode_roster;
 
 mod reserved_ipc_prefixes;

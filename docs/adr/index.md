@@ -164,3 +164,4 @@
 | 0150 | [차집합이 0 인 면제는 죽은 것이 아니다 — 죽음과 잠복은 사유가 가른다](0150-a-zero-difference-exemption-is-not-dead.md) | Accepted | 2026-09-05 | guards, exemptions, measurement, adr-0133, adr-0146 |
 | 0149 | [부류를 부른 것도 지목이다 — 이름만 세는 추출기는 그 서술을 아무 축도 판정하지 않는다](0149-a-class-citation-is-a-citation.md) | Accepted | 2026-09-05 | guards, ci-gates, docs, false-negative, census, adr-0139, adr-0142, adr-0144 |
 | 0153 | [번들 plugin 이 점유한 namespace 아래의 host 메서드는 그 plugin 이 되돌려 준다](0153-a-bundled-namespace-hands-host-methods-back.md) | Accepted | 2026-09-05 | plugin, ipc, namespace, routing, guards, identity-principle-2, adr-0140, adr-0143 |
+| 0154 | [플랫폼이 못 하는 메서드는 "없다" 가 아니라 "여기선 못 한다" 로 답한다](0154-a-platform-gated-dispatch-arm-answers-why-not-what.md) | Accepted | 2026-09-05 | ipc, debug, cross-platform, error-codes, cli, guards, adr-0115 |

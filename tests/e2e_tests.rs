@@ -1265,3 +1265,48 @@ fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
          `App.view` 없이 답하는 길이 생겼다는 뜻이니 판정을 다시 세워라: {resp}"
     );
 }
+
+/// 플랫폼이 못 하는 debug 메서드는 **"없다" 가 아니라 "여기선 못 한다" 로** 답한다.
+///
+/// `surface.raw_key` 는 `DEBUG_METHODS` 에도 CLI 서브커맨드에도 플랫폼 조건 없이 있다.
+/// 그런데 dispatch arm 만 macOS gui 게이트라, 상보 arm 이 없으면 다른 조합에서 `match` 의
+/// `_` 가 받아 `-32601`("그런 메서드 없음")로 끝난다 — 이름은 맞고 표에도 있으므로 그 답은
+/// 거짓이고, 그것을 받은 호출자는 오타를 의심하는 **틀린 수리**로 간다.
+///
+/// 소스 짝 맞춤은 `src/source_guards/platform_gated_dispatch_complement.rs` 가 본다.
+/// 여기서는 그 짝이 실제로 **응답을 바꾸는지**를 실행으로 못 박는다 — 소스에 arm 이
+/// 있다는 것과 그것이 라우터에 닿는다는 것은 다른 사실이다. 근거는 ADR-0154.
+#[test]
+fn a_platform_gated_debug_method_says_why_not_that_it_is_missing() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    for method in ["surface.raw_key", "surface.switch_input_source"] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+
+        #[cfg(all(target_os = "macos", feature = "gui"))]
+        assert_ne!(
+            code,
+            Some(-32601),
+            "macOS gui 에서는 실제 핸들러가 받는다: {resp}"
+        );
+
+        #[cfg(not(all(target_os = "macos", feature = "gui")))]
+        {
+            assert_eq!(
+                code,
+                Some(-32015),
+                "이 조합은 실행하지 못하지만 메서드는 **있다** — 상보 arm 이 사유와 함께 \
+                 `-32015` 로 답해야 한다. `-32601` 이 왔다면 상보 arm 이 사라진 것이고, \
+                 그러면 `tasty debug raw-key` 가 도움말에 뜨는데 '그런 메서드 없음' 으로 \
+                 끝난다: {resp}"
+            );
+            let msg = resp["error"]["message"].as_str().unwrap_or_default();
+            assert!(
+                msg.contains("macOS-only"),
+                "코드만으로는 무엇이 부족한지 알 수 없다 — 사유가 함께 와야 한다: {resp}"
+            );
+        }
+    }
+}
