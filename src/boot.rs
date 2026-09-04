@@ -405,9 +405,14 @@ fn handle_terminal_output(
 /// **`PendingHostEvent::HookFired` enqueue 는 일부러 하지 않는다.** 그 큐의
 /// 배수 주체는 `app/dispatch/host_events.rs` 하나뿐이고 `src/app.rs` 가 그
 /// 모듈을 `#[cfg(feature = "gui")]` 로 걸어, headless 에는 빼 가는 쪽이 없다.
-/// 여기서 enqueue 하면 관측 가능한 효과는 0 이면서 상시 구동 데몬의 가장 뜨거운
-/// 경로(매칭되는 라인마다 1 건)에서 무한히 자란다. headless 에 배수 주체가
-/// 생기면 그때 idle-timeout 배선과 함께 다시 본다.
+///
+/// 주의 — **그 큐는 headless 에서 이미 자라고 있다.** 같은 파일의 idle-timeout
+/// 경로가 훅 발화마다 넣는데 빼 가는 쪽이 없다(`intent/headless.rs` 모듈 주석도
+/// 같은 사실을 적는다). 그러니 여기서 넣지 않는 것은 "증가를 막는" 것이 아니라
+/// **증가율을 올리지 않는** 것이다 — 이쪽은 매칭되는 라인마다 1 건이라 상시 구동
+/// 데몬의 가장 뜨거운 경로가 된다. 그러면서 관측 가능한 효과는 여전히 0 이다.
+/// headless 에 배수 주체가 생기면 그때 idle-timeout 배선과 함께 다시 본다 —
+/// 그 조건이 성립하면 이 생략은 결함이 되고, 저쪽 누수는 정상 경로가 된다.
 #[cfg(not(feature = "gui"))]
 fn fire_output_match_hooks(
     app: &crate::app::App,
