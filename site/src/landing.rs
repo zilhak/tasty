@@ -11,7 +11,7 @@ struct Copy {
     title_lead: &'static str,
     title_accent: &'static str,
     title_tail: &'static str,
-    lede: &'static str,
+    meta_description: &'static str,
     cta_primary: &'static str,
     cta_secondary: &'static str,
     /// Sentence before the installation-guide link, and the link label.
@@ -52,10 +52,10 @@ struct Copy {
 const KO_COPY: Copy = Copy {
     badge: "Windows · macOS · Linux",
     tagline: "맛있는 터미널.",
-    title_lead: "AI 에이전트가",
-    title_accent: "직접 조작하는",
+    title_lead: "AI 에이전트와",
+    title_accent: "함께 조작하는",
     title_tail: "터미널",
-    lede: "에이전트에게 일을 맡겨두고, 나는 옆 탭에서 하던 일을 계속합니다. \
+    meta_description: "에이전트에게 일을 맡겨두고, 나는 옆 탭에서 하던 일을 계속합니다. \
            포커스도 스크롤도 그대로입니다.",
     cta_primary: "다운로드",
     cta_secondary: "가이드 보기",
@@ -198,10 +198,10 @@ const KO_COPY: Copy = Copy {
 const EN_COPY: Copy = Copy {
     badge: "Windows · macOS · Linux",
     tagline: "Tasty terminal.",
-    title_lead: "A terminal",
-    title_accent: "an AI agent",
-    title_tail: "can drive itself",
-    lede: "Hand a terminal to an agent and your own screen holds still. The agent works in \
+    title_lead: "A terminal you and",
+    title_accent: "your AI agent",
+    title_tail: "drive together",
+    meta_description: "Hand a terminal to an agent and your own screen holds still. The agent works in \
            its own tab through tasty commands and tells you when it lands. Drawn on the GPU, \
            so a wall of splits still feels immediate.",
     cta_primary: "Download",
@@ -371,7 +371,7 @@ pub fn render(strings: &Strings, root: &str, docs: &str) -> String {
     shell::document(&Shell {
         strings,
         title: String::new(),
-        description: strip_emphasis(copy.lede),
+        description: strip_emphasis(copy.meta_description),
         root: root.to_string(),
         body,
         active: "",
@@ -397,14 +397,13 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     <span class="hero__eyebrow"><span class="dot"></span>{badge} · v{version}</span>
     <p class="hero__tagline"><span class="wordmark">Tasty<b>.</b></span> {tagline}</p>
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
-    <p class="hero__lede">{lede}</p>
     <div class="cta-row">
       <a class="btn btn--primary" id="dl-primary" href="{releases}" data-label="{dl_for}"{primary_data}>{primary}</a>
       <a class="btn btn--ghost" href="{releases}">{other}</a>
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
-    <p class="hero__lede" style="font-size:14px;margin:12px auto 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
+    <p class="hero__note">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
   </div>
   {mock}
 </section>"##,
@@ -414,7 +413,6 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         lead = html_escape(copy.title_lead),
         accent = html_escape(copy.title_accent),
         tail = html_escape(copy.title_tail),
-        lede = html_escape(&strip_emphasis(copy.lede)),
         root = root,
         docs = docs,
         primary = html_escape(copy.cta_primary),
