@@ -7,14 +7,24 @@ pub(super) fn queue_scrollback_for_surface(
     surface_id: u32,
     persist_id: &str,
 ) {
+    use crate::scrollback_store::ScrollbackRead;
     match crate::scrollback_store::read(persist_id) {
-        Some(lines) if !lines.is_empty() => {
+        ScrollbackRead::Loaded(lines) if !lines.is_empty() => {
             engine.pending_scrollback_inject.insert(surface_id, lines);
         }
-        Some(_) => {}
-        None => {
+        ScrollbackRead::Loaded(_) => {}
+        // 저장된 적 없거나 이미 소비된 정상 분기 — 예상된 흐름이라 debug.
+        ScrollbackRead::Absent => {
             tracing::debug!(
-                "scrollback restore: file missing for surface {surface_id} ({persist_id})"
+                "scrollback restore: no saved content for surface {surface_id} ({persist_id})"
+            );
+        }
+        // 읽기·역직렬화 실패는 사용자 내용이 사라진 것이라 정상 분기가 아니다. 원인은
+        // 리더가 이미 warn 으로 남겼으므로 여기서는 어느 surface 인지만 잇는다.
+        ScrollbackRead::Unreadable => {
+            tracing::warn!(
+                "scrollback restore: unreadable content for surface {surface_id} ({persist_id}) \
+                 — the surface restores empty"
             );
         }
     }

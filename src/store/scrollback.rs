@@ -57,10 +57,50 @@ fn write_in(dir: &Path, persist_id: &str, lines: &[ScrollbackLine]) -> io::Resul
     fs::rename(&tmp, &path)
 }
 
-fn read_in(dir: &Path, persist_id: &str) -> Option<Vec<ScrollbackLine>> {
-    let path = file_path_in(dir, persist_id)?;
-    let bytes = fs::read(&path).ok()?;
-    deserialize_lines(&bytes)
+/// scrollback 파일 한 개를 읽은 결과.
+///
+/// "없음" 과 "못 읽음" 을 **구분한다.** 복원 경로는 읽은 뒤 원본을 지우는데
+/// (`core::restore_rebuild`), 둘을 같은 `None` 으로 뭉개면 일시적 IO 오류나 손상 파일에도
+/// 빈 값으로 폴백한 뒤 원본을 지워 복구 기회를 없앤다.
+pub enum ScrollbackRead {
+    /// 정상적으로 읽고 역직렬화했다(빈 목록일 수 있다).
+    Loaded(Vec<ScrollbackLine>),
+    /// 파일이 없다 — 저장된 적 없거나 이미 소비됐다. 정상.
+    Absent,
+    /// 파일이 있는데 읽거나 해석하지 못했다(또는 persist_id 가 무효). 원본을 지우면 안 된다.
+    Unreadable,
+}
+
+fn read_in(dir: &Path, persist_id: &str) -> ScrollbackRead {
+    let Some(path) = file_path_in(dir, persist_id) else {
+        tracing::warn!("scrollback read: invalid persist_id {persist_id:?}");
+        return ScrollbackRead::Unreadable;
+    };
+    match fs::read(&path) {
+        Ok(bytes) => decode_lines(&path, &bytes),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => ScrollbackRead::Absent,
+        Err(e) => {
+            tracing::warn!(
+                "scrollback read: {} failed: {e} — restoring without it and keeping the file",
+                path.display()
+            );
+            ScrollbackRead::Unreadable
+        }
+    }
+}
+
+/// 읽어온 바이트를 역직렬화한다. 실패는 손상이므로 원본을 지우지 않게 `Unreadable`.
+fn decode_lines(path: &Path, bytes: &[u8]) -> ScrollbackRead {
+    match deserialize_lines(bytes) {
+        Some(lines) => ScrollbackRead::Loaded(lines),
+        None => {
+            tracing::warn!(
+                "scrollback read: {} is corrupt — restoring without it and keeping the file",
+                path.display()
+            );
+            ScrollbackRead::Unreadable
+        }
+    }
 }
 
 fn delete_in(dir: &Path, persist_id: &str) {
@@ -114,9 +154,11 @@ pub fn write(persist_id: &str, lines: &[ScrollbackLine]) -> io::Result<()> {
     write_in(&dir, persist_id, lines)
 }
 
-pub fn read(persist_id: &str) -> Option<Vec<ScrollbackLine>> {
-    let dir = scrollback_dir()?;
-    read_in(&dir, persist_id)
+pub fn read(persist_id: &str) -> ScrollbackRead {
+    match scrollback_dir() {
+        Some(dir) => read_in(&dir, persist_id),
+        None => ScrollbackRead::Unreadable,
+    }
 }
 
 pub fn delete(persist_id: &str) {
@@ -151,6 +193,15 @@ mod tests {
     use super::*;
     use termwiz::cell::CellAttributes;
 
+    /// 정상 로드돼야 하는 자리.
+    fn expect_lines(dir: &Path, id: &str) -> Vec<ScrollbackLine> {
+        match read_in(dir, id) {
+            ScrollbackRead::Loaded(lines) => lines,
+            ScrollbackRead::Absent => panic!("scrollback {id} 이 없다"),
+            ScrollbackRead::Unreadable => panic!("scrollback {id} 을 읽지 못했다"),
+        }
+    }
+
     fn sample_lines() -> Vec<ScrollbackLine> {
         vec![
             ScrollbackLine::new(vec![("alpha".into(), CellAttributes::default())], false),
@@ -163,7 +214,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let id = new_persist_id();
         write_in(dir.path(), &id, &sample_lines()).expect("write");
-        let out = read_in(dir.path(), &id).expect("read");
+        let out = expect_lines(dir.path(), &id);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].to_cells()[0].0, "alpha");
         assert!(!out[0].wrapped);
@@ -240,7 +291,7 @@ mod tests {
         );
 
         // 2. 실제 왕복에서 라인 수 / 텍스트 / wrapped 가 보존된다.
-        let got = read_in(dir.path(), &id).expect("read");
+        let got = expect_lines(dir.path(), &id);
         assert_eq!(got.len(), total, "복원 라인 수가 원본과 다르다");
         for (i, line) in got.iter().enumerate() {
             let want_cells = t.scrollback_line_owned(i).unwrap_or_default();
@@ -267,9 +318,29 @@ mod tests {
     }
 
     #[test]
-    fn read_missing_returns_none() {
+    fn read_missing_reports_absent() {
         let dir = tempfile::tempdir().expect("tempdir");
-        assert!(read_in(dir.path(), "nonexistent").is_none());
+        assert!(matches!(
+            read_in(dir.path(), "nonexistent"),
+            ScrollbackRead::Absent
+        ));
+    }
+
+    /// 손상 파일은 "없음" 이 아니라 "못 읽음" 이다 — 복원 경로가 이 구분을 보고 원본을
+    /// 지울지 결정한다(`core::restore_rebuild`).
+    #[test]
+    fn corrupt_file_reports_unreadable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let id = new_persist_id();
+        write_in(dir.path(), &id, &sample_lines()).expect("write");
+        let path = dir.path().join(format!("{id}.{EXT}"));
+        fs::write(&path, b"not a scrollback dump").expect("corrupt");
+
+        assert!(matches!(
+            read_in(dir.path(), &id),
+            ScrollbackRead::Unreadable
+        ));
+        assert!(path.exists(), "못 읽은 파일을 리더가 지우지 않는다");
     }
 
     #[test]
@@ -279,7 +350,7 @@ mod tests {
         write_in(dir.path(), &id, &sample_lines()).expect("write");
         delete_in(dir.path(), &id);
         delete_in(dir.path(), &id);
-        assert!(read_in(dir.path(), &id).is_none());
+        assert!(matches!(read_in(dir.path(), &id), ScrollbackRead::Absent));
     }
 
     #[test]
@@ -294,8 +365,11 @@ mod tests {
         known.insert(keep.clone());
         gc_orphans_in(dir.path(), &known);
 
-        assert!(read_in(dir.path(), &keep).is_some());
-        assert!(read_in(dir.path(), &drop).is_none());
+        assert!(matches!(
+            read_in(dir.path(), &keep),
+            ScrollbackRead::Loaded(_)
+        ));
+        assert!(matches!(read_in(dir.path(), &drop), ScrollbackRead::Absent));
     }
 
     #[test]
@@ -306,8 +380,8 @@ mod tests {
         write_in(dir.path(), &a, &sample_lines()).expect("write a");
         write_in(dir.path(), &b, &sample_lines()).expect("write b");
         gc_orphans_in(dir.path(), &HashSet::new());
-        assert!(read_in(dir.path(), &a).is_none());
-        assert!(read_in(dir.path(), &b).is_none());
+        assert!(matches!(read_in(dir.path(), &a), ScrollbackRead::Absent));
+        assert!(matches!(read_in(dir.path(), &b), ScrollbackRead::Absent));
     }
 
     #[test]

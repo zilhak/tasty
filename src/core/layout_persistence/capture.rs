@@ -295,7 +295,9 @@ impl SavedSurface {
                 // 파일로 복사하고 새 ID 를 발급. 한쪽이 라이브 surface 였다면
                 // 그쪽은 이미 자기 데이터로 stale.bin 을 덮어쓴 후다.
                 let new_id = crate::scrollback_store::new_persist_id();
-                if let Some(lines) = crate::scrollback_store::read(&stale) {
+                if let crate::scrollback_store::ScrollbackRead::Loaded(lines) =
+                    crate::scrollback_store::read(&stale)
+                {
                     if let Err(e) = crate::scrollback_store::write(&new_id, &lines) {
                         tracing::warn!(
                             "scrollback capture(deferred): copy {stale} → {new_id} failed for surface {surface_id}: {e}"

@@ -124,12 +124,26 @@ pub(crate) fn rebuild_surface_node(
     // Scrollback is persisted to disk at close time (see `push_closed_item`),
     // so read it back by reference here. A restore consumes the closed item, so
     // the backing file is deleted after the one-time read to avoid orphans.
+    //
+    // 삭제는 **읽기에 성공했을 때만** 한다. 예전에는 실패를 빈 값으로 폴백한 뒤 곧바로
+    // 지워서, 일시적 IO 오류나 손상 파일 하나가 사용자 scrollback 의 영구 소실이 됐다.
+    // 못 읽은 파일을 남기면 orphan 이 될 수는 있으나, 그건 부팅 GC 가 정리하는 반면
+    // 지워진 내용은 되돌릴 방법이 없다.
     let scrollback_lines: Vec<tasty_terminal::ScrollbackLine> = match closed.scrollback {
-        ClosedScrollback::Persisted(id) => {
-            let lines = crate::scrollback_store::read(&id).unwrap_or_default();
-            crate::scrollback_store::delete(&id);
-            lines
-        }
+        ClosedScrollback::Persisted(id) => match crate::scrollback_store::read(&id) {
+            crate::scrollback_store::ScrollbackRead::Loaded(lines) => {
+                crate::scrollback_store::delete(&id);
+                lines
+            }
+            crate::scrollback_store::ScrollbackRead::Absent => Vec::new(),
+            crate::scrollback_store::ScrollbackRead::Unreadable => {
+                tracing::warn!(
+                    "restore: scrollback {id} could not be read — restoring the surface empty \
+                     and keeping the file for recovery"
+                );
+                Vec::new()
+            }
+        },
         ClosedScrollback::Inline(lines) => lines.into_iter().collect(),
         ClosedScrollback::Empty => Vec::new(),
     };

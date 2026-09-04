@@ -400,7 +400,8 @@ fn restore_terminal_immediate(
     // 새 TerminalSurface 의 필드에 직접 들어가 (surface_meta mirror 없이)
     // 다음 capture 가 같은 ID 를 재사용한다.
     if let Some(persist_id) = scrollback_ref.as_deref()
-        && let Some(lines) = crate::scrollback_store::read(persist_id)
+        && let crate::scrollback_store::ScrollbackRead::Loaded(lines) =
+            crate::scrollback_store::read(persist_id)
         && !lines.is_empty()
     {
         terminal.inject_scrollback(lines);
