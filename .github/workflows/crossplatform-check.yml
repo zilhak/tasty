@@ -153,11 +153,16 @@ jobs:
       # 적어 둔다 — 고치면 skip 을 지우는 것이 이 목록의 용도다.
       # **skip 은 커버리지를 영구히 깎는 장치라, 하나씩 정당화가 없으면 넣지 않는다.**
       #   1. all_e2e_tests
-      #      `markdown.recent` 에서 `Method not found` 로 멈춘다. headless 의 IPC dispatch 는
-      #      plugin namespace forward 를 의도적으로 생략한다(`boot/headless_dispatch.rs`
-      #      모듈 주석). 그 forward 를 headless 에 배선하면 풀린다. 이 파일은 33 개
-      #      시나리오를 `#[test]` 하나에 몰아넣어 인스턴스를 1 개만 쓰는 구조라(파일 doc),
-      #      `--skip` 입도로 더 좁힐 수 없다 — 배선을 고치는 것이 유일한 해제 경로다.
+      #      **"forward 를 배선하면 풀린다" 는 서술이 한때 여기 있었다. 틀렸다** —
+      #      배선하고 재 봤더니 벽이 세 번 더 나왔다. 지금까지 고친 것:
+      #      plugin namespace forward(`boot/headless_dispatch.rs`) · 터미널 그리드 debug
+      #      핸들러 넷(`handler/debug_terminal.rs`). 그 결과 이 테스트는 `markdown.recent`
+      #      (파일 74 행)에서 **749 행**(파일 842 행)까지 전진했다.
+      #      남은 벽은 `window.create` 하나이고 **그건 진짜 GUI 의존이다** — headless 에
+      #      창이 없다. 즉 이 skip 은 "고치면 풀리는" 부류가 아니라, 이 파일이 33 개
+      #      시나리오를 `#[test]` 하나에 몰아넣어(파일 doc) **GUI 필요 구간과 아닌 구간을
+      #      `--skip` 으로 가를 수 없는** 구조 문제로 남았다. 해제 경로는 그 구조를 쪼개는
+      #      것이고, 그 판단은 e2e 하네스 축이 소유한다.
       #
       # `output_match_hook_fires_on_real_pty_output` 은 한때 세 번째 skip 이었으나 **뺐다.**
       # 그 skip 의 근거였던 제품 결함(headless 가 `process_all_pty_output` 의 CoreEvent 를
