@@ -39,6 +39,9 @@ struct Inner {
 
 pub struct FileHandlerRegistry {
     inner: RwLock<Inner>,
+    /// poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트. `inner` 와
+    /// `detector_info` 가 공유한다(둘 다 같은 사고의 결과다).
+    poison_reported: std::sync::atomic::AtomicBool,
     /// `DetectorInfo` 주입 슬롯. 부팅 시 `attach_detector_info` 1회 호출.
     /// Settings UI 의 Extension Mapping 탭 등이 detector 의 확장자 광고를 조회할 때 사용.
     detector_info: RwLock<Option<Arc<dyn DetectorInfo>>>,
@@ -53,15 +56,43 @@ impl FileHandlerRegistry {
                 dirty: false,
             }),
             detector_info: RwLock::new(None),
+            poison_reported: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Poison 을 복구해 read guard 를 잡는다.
+    ///
+    /// 이전에는 `read().ok()?` / `Err(_) => return` 으로 **조용히** 빠져나갔다. 그
+    /// 결과는 "등록한 file handler 가 반영 안 됨" 인데 관측 지점이 0 이었다 — 왜
+    /// 확장자가 안 열리는지 알 방법이 없었다.
+    ///
+    /// `Inner` 는 `BTreeMap` 둘과 `bool` 하나뿐이고 임계구역은 자료구조 조작만 한다.
+    /// 패닉이 나도 불변식은 성립하므로 복구가 맞다
+    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
+        crate::poison::recover_read(
+            self.inner.read(),
+            "file handler registry",
+            &self.poison_reported,
+        )
+    }
+
+    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
+    fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
+        crate::poison::recover_write(
+            self.inner.write(),
+            "file handler registry",
+            &self.poison_reported,
+        )
     }
 
     /// `DetectorInfo` 주입. 부팅 시 1회만. 중복 호출은 warn + 무시.
     pub fn attach_detector_info(&self, info: Arc<dyn DetectorInfo>) {
-        let mut slot = match self.detector_info.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut slot = crate::poison::recover_write(
+            self.detector_info.write(),
+            "file handler detector_info",
+            &self.poison_reported,
+        );
         if slot.is_some() {
             warn!("FileHandlerRegistry: detector_info already attached, ignoring");
             return;
@@ -71,21 +102,23 @@ impl FileHandlerRegistry {
 
     /// 주입된 `DetectorInfo` 의 clone. `attach_detector_info` 호출 전이면 `None`.
     pub fn detector_info(&self) -> Option<Arc<dyn DetectorInfo>> {
-        self.detector_info.read().ok().and_then(|g| g.clone())
+        crate::poison::recover_read(
+            self.detector_info.read(),
+            "file handler detector_info",
+            &self.poison_reported,
+        )
+        .clone()
     }
 
     pub fn handler(&self, id: &HandlerId) -> Option<FileHandler> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
     pub fn list_handlers(&self) -> Vec<HandlerId> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         inner.finalized.keys().cloned().collect()
     }
 
@@ -93,10 +126,7 @@ impl FileHandlerRegistry {
     /// `user > plugin > host`, 그 후 handler id alphabetical.
     pub fn handlers_for(&self, detector: &DetectorId) -> Vec<FileHandler> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut v: Vec<FileHandler> = inner
             .finalized
             .values()
@@ -110,17 +140,14 @@ impl FileHandlerRegistry {
     /// id 로 단건 lookup. picker 가 선택 결과(`HandlerId`) 를 dispatch 할 때 사용.
     pub fn get(&self, id: &HandlerId) -> Option<FileHandler> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
     /// Picker modal 용 — 모든 enabled handler.
     pub fn all_handlers(&self) -> Vec<FileHandler> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut v: Vec<FileHandler> = inner
             .finalized
             .values()
@@ -141,10 +168,7 @@ impl FileHandlerRegistry {
                 return;
             }
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_host(&mut inner, decl);
         }
@@ -167,10 +191,7 @@ impl FileHandlerRegistry {
                 return;
             }
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_user(&mut inner, decl);
         }
@@ -182,10 +203,7 @@ impl FileHandlerRegistry {
         plugin_id: &str,
         decls: &[HandlerDecl<PluginHandlerActionDecl>],
     ) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_plugin(&mut inner, plugin_id, decl.clone());
         }
@@ -198,10 +216,7 @@ impl FileHandlerRegistry {
     /// id 는 contribution 의 전역 id 그대로 (host/plugin/user 어느 owner 의 base contribution
     /// 을 patch 하든 그 id 를 유지). 빈 결과는 빈 문자열.
     pub fn export_user_config(&self) -> String {
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return String::new(),
-        };
+        let inner = self.lock_read();
         let mut handlers = Vec::<toml::Value>::new();
         for (id, contribs) in inner.contributions.iter() {
             let user = contribs
@@ -268,10 +283,7 @@ impl FileHandlerRegistry {
     /// Settings UI 가 host/plugin handler 를 user-origin override 로 disable/enable.
     /// 명시적 user 의도 → 항상 `disabled_override = Some(value)`.
     pub fn set_user_handler_disabled(&self, id: &HandlerId, disabled: bool) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
             warn!(
                 handler = id.as_str(),
@@ -300,10 +312,7 @@ impl FileHandlerRegistry {
     /// User-origin contribution 의 `disabled_override` 만 None 으로 비운다. 다른 user 필드
     /// (priority/action/detector 등) 는 보존.
     pub fn clear_user_handler_override(&self, id: &HandlerId) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
             return;
         };
@@ -329,10 +338,7 @@ impl FileHandlerRegistry {
 
     /// Settings UI 가 user-origin contribution 전체를 제거. host/plugin 은 보존.
     pub fn remove_user_handler(&self, id: &HandlerId) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let Some(entry) = inner.contributions.get_mut(id) else {
             return;
         };
@@ -350,10 +356,10 @@ impl FileHandlerRegistry {
         if !decl.id.contains('/') {
             return Err(HandlerDeclError::InvalidShortName(decl.id.clone()));
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return Err(HandlerDeclError::InvalidShortName("lock poisoned".into())),
-        };
+        // poison 을 `InvalidShortName("lock poisoned")` 으로 보고하던 자리다 — 사용자에게
+        // "id 형식이 틀렸다" 고 말하면서 진짜 원인은 어디에도 안 남겼다. 이제 복구하고
+        // 실제 사유는 `lock_write` 가 로그로 남긴다.
+        let mut inner = self.lock_write();
         push_contribution(
             &mut inner,
             HandlerId(decl.id),
@@ -371,10 +377,7 @@ impl FileHandlerRegistry {
     }
 
     pub fn uninstall_plugin(&self, plugin_id: &str) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
             contribs.retain(|c| !matches!(&c.owner, HandlerOwner::Plugin(p) if p == plugin_id));
@@ -396,10 +399,7 @@ impl FileHandlerRegistry {
         let Some(decls) = Self::load_user_handler_decls(path) else {
             return;
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         Self::purge_user_owned(&mut inner);
         for decl in decls {
             install_user(&mut inner, decl);
@@ -451,14 +451,11 @@ impl FileHandlerRegistry {
     }
 
     fn ensure_finalized(&self) {
-        let needs = self.inner.read().map(|g| g.dirty).unwrap_or(false);
+        let needs = self.lock_read().dirty;
         if !needs {
             return;
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         if !inner.dirty {
             return;
         }

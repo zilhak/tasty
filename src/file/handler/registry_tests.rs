@@ -579,3 +579,36 @@ fn attach_detector_info_second_call_is_ignored() {
     let exts = info.advertised_extensions(&DetectorId("markdown".into()));
     assert!(!exts.is_empty(), "first registry should still be attached");
 }
+
+/// poison 된 레지스트리가 **조용히 아무것도 안 하는** 대신 계속 동작한다.
+///
+/// 이전에는 락 획득 19 곳이 전부 `read().ok()?` / `Err(_) => return` 이라, poison
+/// 이후 handler 설치는 무음 no-op 이 되고 조회는 빈 결과를 돌려줬다. 증상은
+/// "그 확장자가 안 열린다" 인데 관측 지점이 0 이었다. `upsert_user_handler` 는 한술 더
+/// 떠 poison 을 `InvalidShortName("lock poisoned")` 으로 보고해, 사용자에게 id 형식이
+/// 틀렸다고 말하면서 진짜 원인은 남기지 않았다.
+#[test]
+fn a_poisoned_registry_still_installs_and_resolves() {
+    let reg = std::sync::Arc::new(FileHandlerRegistry::new());
+
+    let held = std::sync::Arc::clone(&reg);
+    let joined = std::thread::spawn(move || {
+        let _guard = held.inner.write().expect("fresh rwlock");
+        panic!("a thread dies while holding the registry");
+    })
+    .join();
+    assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+    assert!(reg.inner.read().is_err(), "poison 됐어야 한다");
+
+    load_host(&reg);
+    install_markdown_plugin(&reg);
+
+    assert!(
+        reg.handler(&HandlerId(MD_VIEWER_ID.to_string())).is_some(),
+        "poison 이후에도 설치가 반영돼야 한다"
+    );
+    assert!(
+        !reg.all_handlers().is_empty(),
+        "poison 이후에도 조회가 빈 결과가 아니어야 한다"
+    );
+}

@@ -62,9 +62,38 @@ struct Inner {
 /// 완료 판정 전략 레지스트리 (3출처 병합 + patch semantics + lazy finalize).
 pub struct CompletionStrategyRegistry {
     inner: RwLock<Inner>,
+    /// poison 을 이미 보고했는가 — 로그 폭주 방지용 1 회 게이트.
+    poison_reported: std::sync::atomic::AtomicBool,
 }
 
 impl CompletionStrategyRegistry {
+    /// Poison 을 복구해 read guard 를 잡는다.
+    ///
+    /// 이전에는 `read().ok()?` / `Err(_) => return` 으로 **조용히** 빠져나갔다. 그
+    /// 결과는 "등록한 완료 전략이 반영 안 됨" 인데 관측 지점이 0 이라, 왜 전략이 안
+    /// 먹는지 알 방법이 없었다 — 이 저장소의 다른 registry 들이 같은 상황에
+    /// `tracing::error!` 를 남기는 것과도 갈렸다.
+    ///
+    /// `Inner` 는 `BTreeMap` 셋과 `bool` 하나뿐이고 임계구역은 자료구조 조작만 한다.
+    /// 패닉이 나도 불변식은 성립하므로 복구가 맞다
+    /// ([`error-handling.md`](../../docs/dev-guide/error-handling.md) "락 poison").
+    fn lock_read(&self) -> std::sync::RwLockReadGuard<'_, Inner> {
+        crate::poison::recover_read(
+            self.inner.read(),
+            "completion strategy registry",
+            &self.poison_reported,
+        )
+    }
+
+    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
+    fn lock_write(&self) -> std::sync::RwLockWriteGuard<'_, Inner> {
+        crate::poison::recover_write(
+            self.inner.write(),
+            "completion strategy registry",
+            &self.poison_reported,
+        )
+    }
+
     pub fn new() -> Self {
         Self {
             inner: RwLock::new(Inner {
@@ -73,6 +102,7 @@ impl CompletionStrategyRegistry {
                 default_for_method_index: BTreeMap::new(),
                 dirty: false,
             }),
+            poison_reported: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -81,7 +111,7 @@ impl CompletionStrategyRegistry {
     /// id 로 단건 lookup (owned, 비활성 포함). 없으면 `None`.
     pub fn get(&self, id: &CompletionStrategyId) -> Option<CompletionStrategy> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         inner.finalized.get(id).cloned()
     }
 
@@ -131,7 +161,7 @@ impl CompletionStrategyRegistry {
     /// `None`(기존 즉시-성공 동작 유지, 하위호환).
     pub fn resolve_default_for_method(&self, method: &str) -> Option<CompletionStrategy> {
         self.ensure_finalized();
-        let inner = self.inner.read().ok()?;
+        let inner = self.lock_read();
         let id = inner.default_for_method_index.get(method)?;
         inner.finalized.get(id).cloned()
     }
@@ -140,10 +170,7 @@ impl CompletionStrategyRegistry {
     /// `completion_strategy.list` IPC 조회가 사용.
     pub fn all_strategies_including_disabled(&self) -> Vec<CompletionStrategy> {
         self.ensure_finalized();
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return Vec::new(),
-        };
+        let inner = self.lock_read();
         let mut v: Vec<CompletionStrategy> = inner.finalized.values().cloned().collect();
         v.sort_by(|a, b| {
             let (pa, oa, ida) = strategy_sort_key(a);
@@ -165,10 +192,7 @@ impl CompletionStrategyRegistry {
                 return;
             }
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_owned(&mut inner, CompletionStrategyOwner::Host, decl);
         }
@@ -191,10 +215,7 @@ impl CompletionStrategyRegistry {
                 return;
             }
         };
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             install_user(&mut inner, decl);
         }
@@ -202,10 +223,7 @@ impl CompletionStrategyRegistry {
     }
 
     pub fn install_plugin_strategies(&self, plugin_id: &str, decls: &[CompletionStrategyDecl]) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         for decl in decls {
             if let Err(e) = validate_completion_strategy_decl(decl) {
                 warn!(plugin = plugin_id, error = %e, "completion_strategy: rejecting plugin decl");
@@ -223,10 +241,7 @@ impl CompletionStrategyRegistry {
     /// plugin uninstall/disable 시 그 plugin 이 기여한 전략을 집합에서 제거
     /// (훅 핸들러 `uninstall_plugin` 미러).
     pub fn uninstall_plugin(&self, plugin_id: &str) {
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         let mut empty_ids = Vec::new();
         for (id, contribs) in inner.contributions.iter_mut() {
             contribs.retain(
@@ -243,14 +258,11 @@ impl CompletionStrategyRegistry {
     }
 
     fn ensure_finalized(&self) {
-        let needs = self.inner.read().map(|g| g.dirty).unwrap_or(false);
+        let needs = self.lock_read().dirty;
         if !needs {
             return;
         }
-        let mut inner = match self.inner.write() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
+        let mut inner = self.lock_write();
         if !inner.dirty {
             return;
         }
