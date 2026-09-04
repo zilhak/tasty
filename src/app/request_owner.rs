@@ -28,12 +28,21 @@ pub(crate) enum Kind {
     /// headless pty(`PTY_ID_BASE` 이상). 창이 아니라 **engine 의 `pty_registry`** 에
     /// 산다 — 창마다 engine 이 따로이므로 창을 건너 찾아야 한다.
     HeadlessPty,
+    /// surface hook — `engine.hook_manager` 소유다. `global_hook.*` 의 훅은 여기가
+    /// 아니라 `global_hook_manager` 에 있어 이 kind 로 풀지 않는다(같은 `hook_id`
+    /// 키를 쓰지만 다른 저장소다 — 그래서 키가 아니라 메서드로 한정한다).
+    Hook,
+    /// output observer — `engine.observer_router` 소유.
+    Observer,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ResourceId {
     pub kind: Kind,
-    pub id: u32,
+    /// hook id 와 observer id 가 `u64` 라 여기서 좁히지 않는다. 창에 매인 리소스
+    /// (surface/pane/workspace/tab)는 `u32` 라 해석 시점에 `try_from` 으로 좁히고,
+    /// 안 들어가면 그런 리소스가 아니므로 주인이 없다.
+    pub id: u64,
 }
 
 /// params 에서 resource id 추출. 앞쪽 키일수록 우선(같은 request 에 여러 ID 가
@@ -66,7 +75,7 @@ pub(crate) fn params_resource_id(params: &serde_json::Value) -> Option<(&str, Re
                 "workspace_id" | "target_workspace_id" => Kind::Workspace,
                 _ => unreachable!(),
             };
-            return Some((key, ResourceId { kind, id: v as u32 }));
+            return Some((key, ResourceId { kind, id: v }));
         }
     }
     None
@@ -85,16 +94,43 @@ pub(crate) fn method_scoped_resource_id(
     method: &str,
     params: &serde_json::Value,
 ) -> Option<ResourceId> {
+    // surface hook 은 `engine.hook_manager` 에 있고 global hook 은 `global_hook_manager`
+    // 에 있다. 두 표면이 `hook_id` 라는 **같은 키**를 쓰므로 키로는 못 가른다.
+    if method == "hook.unset" {
+        return numeric(params, "hook_id").map(|id| ResourceId {
+            kind: Kind::Hook,
+            id,
+        });
+    }
+    // observer 를 **만드는** `output.observe_start` 는 대상 id 가 없다(그래서 지금도
+    // 포커스된 창의 engine 에 등록된다 — `pty.spawn` 과 같은 형태다). 나머지 둘만 대상이 있다.
+    if matches!(method, "output.observe_stop" | "output.observe_info") {
+        return numeric(params, "observer_id").map(|id| ResourceId {
+            kind: Kind::Observer,
+            id,
+        });
+    }
+    // `preset.capture` 의 `source_id` 는 `kind` 가 무엇을 가리키는지 정한다.
+    if method == "preset.capture" {
+        let kind = match params.get("kind").and_then(|v| v.as_str()) {
+            Some("workspace") => Kind::Workspace,
+            Some("tab") => Kind::Tab,
+            Some("pane") => Kind::Pane,
+            _ => return None,
+        };
+        return numeric(params, "source_id").map(|id| ResourceId { kind, id });
+    }
     if !matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
         return None;
     }
-    params
-        .get("id")
-        .and_then(|v| v.as_u64())
-        .map(|v| ResourceId {
-            kind: Kind::HeadlessPty,
-            id: v as u32,
-        })
+    numeric(params, "id").map(|id| ResourceId {
+        kind: Kind::HeadlessPty,
+        id,
+    })
+}
+
+fn numeric(params: &serde_json::Value, key: &str) -> Option<u64> {
+    params.get(key).and_then(|v| v.as_u64())
 }
 
 /// 이 engine 이 그 리소스를 갖고 있는가 — parked engine 탐색의 술어.
@@ -105,12 +141,19 @@ pub(crate) fn method_scoped_resource_id(
 /// 포커스 폴백으로 새는** 형태를 만든다. 창 쪽 대응물은
 /// [`App::find_main_with_resource`](crate::app::App::find_main_with_resource) 다.
 pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: ResourceId) -> bool {
+    let narrow = u32::try_from(rid.id).ok();
     match rid.kind {
-        Kind::Surface => engine.has_surface(rid.id),
-        Kind::Workspace => engine.has_workspace(rid.id),
-        Kind::Pane => engine.has_pane(rid.id),
-        Kind::Tab => engine.find_pane_for_tab(rid.id).is_some(),
-        Kind::HeadlessPty => engine.pty_registry.contains(rid.id),
+        Kind::Surface => narrow.is_some_and(|id| engine.has_surface(id)),
+        Kind::Workspace => narrow.is_some_and(|id| engine.has_workspace(id)),
+        Kind::Pane => narrow.is_some_and(|id| engine.has_pane(id)),
+        Kind::Tab => narrow.is_some_and(|id| engine.find_pane_for_tab(id).is_some()),
+        Kind::HeadlessPty => narrow.is_some_and(|id| engine.pty_registry.contains(id)),
+        Kind::Hook => engine
+            .hook_manager
+            .list_hooks(None)
+            .iter()
+            .any(|h| h.id == rid.id),
+        Kind::Observer => engine.observer_router.info(rid.id).is_some(),
     }
 }
 
@@ -187,7 +230,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn rid(params: &serde_json::Value) -> (&str, Kind, u32) {
+    fn rid(params: &serde_json::Value) -> (&str, Kind, u64) {
         let (key, r) = params_resource_id(params).expect("expected a resource id");
         (key, r.kind, r.id)
     }
@@ -304,6 +347,72 @@ mod tests {
         let params = json!({ "id": 0x8000_0002u32, "pane_id": 3 });
         assert!(matches!(rid(&params), ("pane_id", Kind::Pane, 3)));
         assert!(method_scoped_resource_id("pty.attach_surface", &params).is_none());
+    }
+
+    /// surface hook 은 창마다 따로인 `engine.hook_manager` 에 산다.
+    ///
+    /// `global_hook.unset` 은 **같은 `hook_id` 키**를 쓰지만 다른 저장소
+    /// (`global_hook_manager`)를 본다 — 그래서 키 목록이 아니라 메서드로 한정한다.
+    /// 두 번째 단언이 그 구분의 대조다.
+    #[test]
+    fn a_surface_hook_is_a_target_but_a_global_hook_is_not() {
+        let params = json!({ "hook_id": 12u64 });
+        let got =
+            method_scoped_resource_id("hook.unset", &params).expect("surface hook 은 대상이다");
+        assert!(matches!(got.kind, Kind::Hook));
+        assert_eq!(got.id, 12);
+
+        assert!(method_scoped_resource_id("global_hook.unset", &params).is_none());
+        assert!(params_resource_id(&params).is_none());
+    }
+
+    /// observer 를 **쓰는** 메서드만 대상이 있다 — **만드는** 쪽은 실을 id 가 없다.
+    #[test]
+    fn an_observer_is_a_target_only_once_it_exists() {
+        let params = json!({ "observer_id": 3u64 });
+        for method in ["output.observe_stop", "output.observe_info"] {
+            let got = method_scoped_resource_id(method, &params)
+                .unwrap_or_else(|| panic!("{method} 는 대상이 있다"));
+            assert!(matches!(got.kind, Kind::Observer));
+        }
+        assert!(method_scoped_resource_id("output.observe_start", &params).is_none());
+    }
+
+    /// `preset.capture` 의 `source_id` 가 무엇인지는 `kind` 가 정한다.
+    ///
+    /// 이 키 하나가 세 종류를 가리키므로 키 목록에 못 넣는다. `kind` 를 모르면 대상도
+    /// 모른다 — 마지막 단언이 그 경우 조용히 아무거나 고르지 않는다는 것을 못박는다.
+    #[test]
+    fn preset_capture_reads_its_source_kind_from_the_request() {
+        let cases = [
+            ("workspace", Kind::Workspace),
+            ("tab", Kind::Tab),
+            ("pane", Kind::Pane),
+        ];
+        for (kind_str, want) in cases {
+            let params = json!({ "kind": kind_str, "source_id": 11u64 });
+            let got = method_scoped_resource_id("preset.capture", &params)
+                .unwrap_or_else(|| panic!("kind={kind_str} 는 대상이 있다"));
+            assert!(
+                std::mem::discriminant(&got.kind) == std::mem::discriminant(&want),
+                "kind={kind_str} 가 {:?} 로 풀렸다",
+                got.kind
+            );
+        }
+        let unknown = json!({ "kind": "galaxy", "source_id": 11u64 });
+        assert!(method_scoped_resource_id("preset.capture", &unknown).is_none());
+    }
+
+    /// `u32` 에 안 들어가는 값은 창에 매인 리소스의 id 일 수 없다.
+    ///
+    /// hook·observer id 가 `u64` 라 [`ResourceId`] 가 `u64` 를 든다. 좁히면서 자르면
+    /// **다른 리소스의 id 로 둔갑**해 엉뚱한 창이 주인이 된다. 자르지 않고 판정한다.
+    #[test]
+    fn an_id_too_large_for_a_window_resource_has_no_owner() {
+        let big = json!({ "surface_id": u64::from(u32::MAX) + 1 });
+        let (_, rid) = params_resource_id(&big).expect("키는 인식된다");
+        assert!(matches!(rid.kind, Kind::Surface));
+        assert!(u32::try_from(rid.id).is_err(), "좁히기가 실패해야 한다");
     }
 
     /// `terminal.adopt` 가 쓰는 `"target"` 키(입양 대상 기존 surface) — Surface.

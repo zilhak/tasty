@@ -237,13 +237,36 @@ impl App {
         rid: crate::app::request_owner::ResourceId,
     ) -> Option<WindowId> {
         use crate::app::request_owner::Kind;
+        // 창에 매인 리소스 id 는 `u32` 다. 안 들어가는 값은 그 종류의 id 일 수 없으므로
+        // 주인이 없다 — 좁히면서 자르지 않고 여기서 판정한다.
+        let narrow = u32::try_from(rid.id).ok();
         match rid.kind {
-            Kind::Surface => self.find_main_with_surface(rid.id),
-            Kind::Workspace => self.find_main_with_workspace(rid.id),
-            Kind::Pane => self.find_main_with_pane(rid.id),
-            Kind::Tab => self.find_main_with_tab(rid.id),
-            Kind::HeadlessPty => self.find_main_with_headless_pty(rid.id),
+            Kind::Surface => narrow.and_then(|id| self.find_main_with_surface(id)),
+            Kind::Workspace => narrow.and_then(|id| self.find_main_with_workspace(id)),
+            Kind::Pane => narrow.and_then(|id| self.find_main_with_pane(id)),
+            Kind::Tab => narrow.and_then(|id| self.find_main_with_tab(id)),
+            Kind::HeadlessPty => narrow.and_then(|id| self.find_main_with_headless_pty(id)),
+            Kind::Hook | Kind::Observer => self.find_main_with_engine_resource(rid),
         }
+    }
+
+    /// engine 소유 리소스(hook · observer)를 가진 MainView.
+    ///
+    /// `find_main_with_*` 를 하나씩 더하지 않는 이유: 이 둘은 술어가
+    /// [`engine_has_resource`](crate::app::request_owner::engine_has_resource) 에 이미
+    /// 있고, 창 순회와 parked 순회가 **같은 술어**를 보는 것이 이 축의 요점이다.
+    fn find_main_with_engine_resource(
+        &self,
+        rid: crate::app::request_owner::ResourceId,
+    ) -> Option<WindowId> {
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && crate::app::request_owner::engine_has_resource(&m.core_state, rid)
+            {
+                return Some(*wid);
+            }
+        }
+        None
     }
 
     /// Workspace 를 (id 또는 표시 이름) 문자열로 여러 window 에 걸쳐 찾는다 —
