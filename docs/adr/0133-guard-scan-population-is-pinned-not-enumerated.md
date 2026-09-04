@@ -8,14 +8,14 @@
 
 레포에는 소스를 런타임에 읽어 금지 형태를 찾는 가드가 **많다.** 세었다 — 레포 루트를
 `env!("CARGO_MANIFEST_DIR")` 로 잡고 `read_to_string`/`read_dir` 로 소스를 읽는 추적
-파일이 **50 개**이고, 그중 **14 개**가 경로 목록 상수(`*_ROOTS` / `*_DIRS` / `SCANNED`)를
+파일이 **51 개**이고, 그중 **14 개**가 경로 목록 상수(`*_ROOTS` / `*_DIRS` / `SCANNED`)를
 선언한다.
 
 ```bash
-# 모수 = 추적 `.rs` 전체. base = 이 ADR 을 쓴 lane 의 베이스 `d7dc4079`.
+# 모수 = 추적 `.rs` 전체(1178). base = `32c71757`.
 for f in $(git ls-files '*.rs'); do
   grep -q CARGO_MANIFEST_DIR "$f" && grep -qE 'read_to_string|read_dir' "$f" && echo "$f"
-done | wc -l                                    # 50
+done | wc -l                                    # 51
 # 그중 경로 목록 상수를 가진 것
 ... grep -qE 'const [A-Z_]*(ROOTS|DIRS|SCAN)[A-Z_]*: &\[&str\]' ...   # 14
 ```
@@ -138,13 +138,21 @@ done | wc -l                                    # 50
   넣는 것보다 손이 더 간다 — 그것이 이 결정이 사려는 것이다(면제는 남고 미등재는 안 남는다).
 - **운영 비용**: 새 스캔 루트를 넣을 때 넓힌 비용을 한 번 재야 한다. 실제로는 명령 한 줄이고,
   그 값이 0이면 그대로 넣는다.
-- **강제 범위 — 두 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
-  안에서만 성립한다. 기계가 보는 것은 디자인 토큰 축의 둘뿐이다:
-  `the_gpu_scan_root_is_a_directory_not_a_file`(통합 타깃, 헤드리스 잡)과
-  `the_two_sister_guards_scan_the_same_roots`(본체 crate 의 lib 유닛이라
-  `cargo test --workspace --lib --bins` 로 **자동으로 돈다**). 그 둘 밖 —
-  **나머지 12 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체,
-  base = `d7dc4079`.** base 가 바뀌어 공통 검사가 생기면 이 문단은 만료된다.
+- **강제 범위 — 세 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
+  안에서만 성립한다. 기계가 보는 판정은 셋이다:
+  `the_gpu_scan_root_is_a_directory_not_a_file`(`tests/design_token_adherence.rs` —
+  통합 타깃이라 헤드리스 잡)과 `the_two_sister_guards_scan_the_same_roots`
+  (`src/design_token_guard.rs`), `every_scan_unit_contributes_at_least_one_file`
+  (`src/source_guards.rs`) — 뒤의 둘은 본체 crate 의 lib 유닛이라
+  `cargo test --workspace --lib --bins` 로 **자동으로 돈다**. 그 셋 밖 —
+  **나머지 11 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체(1178),
+  base = `32c71757`.** base 가 바뀌어 공통 검사가 더 생기면 이 문단은 다시 만료된다.
+  - **셋째 자리는 이 ADR 밖에서 왔다 — 그 사실이 근거다.**
+    `every_scan_unit_contributes_at_least_one_file` 은 디자인 토큰 축이 아니라 소스 가드
+    축에서, 이 ADR 과 독립적으로 같은 결론에 도달했다: 개수 하한이 **단위 하나가 통째로
+    빠져도 통과한다**(가장 큰 크레이트 108 개를 빼도 하한을 안 건드린다)는 것을 실측하고
+    집합 동등으로 올렸다. 두 축이 서로 모르고 같은 형태에 도달했다는 것은, ①②가 한
+    축의 취향이 아니라 **모수를 고정하려는 자리마다 필요한 형태**라는 뜻이다.
   - 공통 검사로 뽑는 것은 **지금도 가능하다** — 가드가 "더 늘면" 이 아니다. 14 개는 이미
     충분히 많다. 안 뽑은 이유는 목록마다 성격이 달라서다: 스캔 대상 목록 · 면제 목록 ·
     고정 소스 목록이 같은 `&[&str]` 형태로 섞여 있어, 형태만 보고 일률로 막으면
@@ -178,7 +186,7 @@ done | wc -l                                    # 50
 
 - **경로 목록의 용도가 타입이나 이름으로 갈린다** — 스캔 대상 / 면제 / 고정 소스가 형태로
   구별되면 위 "강제 범위" 의 공통 검사를 만들 수 있다. 그 선행이 끝나는 것이 트리거다.
-  (조건이 성립하면 달라지는 것: 12 개의 미보호 목록이 기계 판정 아래로 들어온다.)
+  (조건이 성립하면 달라지는 것: 11 개의 미보호 목록이 기계 판정 아래로 들어온다.)
 - **디렉토리 모수가 감당 못 할 오검출을 만든다** — 한 가드의 면제 항목 수가 그 가드의
   스캔 루트 수를 크게 넘어서면 대안 B 가 더 읽기 쉬운 형태일 수 있다.
   (조건이 성립하면 달라지는 것: 모수를 레포 전체로 두고 면제로만 좁히는 형태로 뒤집는다.)
@@ -196,6 +204,9 @@ done | wc -l                                    # 50
   이 ADR 의 발단이 된 반경 축 정리가 그 규약을 따랐다
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색 가드의 모수가 갤러리를 의도적으로
   빼는 근거. "계층마다 모수가 다르다" 의 실례
+- [`src/source_guards.rs`](../../src/source_guards.rs) `every_scan_unit_contributes_at_least_one_file`
+  — 이 ADR 과 **독립적으로** 같은 결론에 도달한 사례(커밋 `a37c310a`). 개수 하한을 집합
+  동등으로 올린 근거가 그 함수의 doc 주석에 실측으로 적혀 있다
 - [ADR-0128](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) — 타입 봉인
   대신 소스 스캔 가드를 고른 결정. **그 가드도 자기 모수를 갖는다** — 이 ADR 의 ①②가
   그쪽에도 그대로 걸린다
