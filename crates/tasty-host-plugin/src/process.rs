@@ -799,10 +799,20 @@ fn aux_reader_loop(
                 merge_dirty(&dirty, id, rect);
             }
             Ok((HandleChannelMessage::Ping { seq }, _)) => {
-                if let Ok(mut w) = writer.lock()
-                    && let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq })
-                {
-                    tracing::warn!("plugin '{plugin_id}' aux Pong send failed: {e}");
+                // poison 이면 보내지 않는다 — 임계구역이 소켓 쓰기라 반쯤 쓰인 메시지
+                // 위에 이어 쓰면 프레이밍이 깨진다(plugin SDK 쪽 pong 과 같은 판단).
+                // 다만 **조용히** 건너뛰지 않는다: pong 이 끊기면 상대가 이 채널을 죽은
+                // 것으로 보는데, 그 원인이 어디에도 안 남으면 추적이 불가능하다.
+                match writer.lock() {
+                    Ok(mut w) => {
+                        if let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq }) {
+                            tracing::warn!("plugin '{plugin_id}' aux Pong send failed: {e}");
+                        }
+                    }
+                    Err(_) => tracing::error!(
+                        "plugin '{plugin_id}' aux writer lock poisoned — skipping pong; the \
+                         plugin will see this channel go quiet"
+                    ),
                 }
             }
             Ok((HandleChannelMessage::Pong { .. }, _)) => {

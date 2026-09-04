@@ -190,11 +190,25 @@ mod forbidden_lock_guard {
     use std::path::{Path, PathBuf};
 
     /// 이 헬퍼로 복구하면 안 되는 락 식별자와 그 이유.
+    ///
+    /// **이유를 함께 적는 것이 목록의 절반이다.** "금지" 라는 사실만 있으면 다음 사람이
+    /// 이 목록을 정당하게 줄일 수도 부당하게 줄일 수도 없고, 근거 없는 금지 목록은
+    /// 언젠가 통째로 지워진다. 지금 이 락이 **어느 크레이트에서 무엇을 지키고 있는지**를
+    /// 함께 남긴다.
     const FORBIDDEN_LOCKS: &[(&str, &str)] = &[(
         "writer",
         "임계구역이 소켓/스트림에 프레임을 쓴다. 락을 든 채 죽은 스레드는 줄을 절반만 \
          남겼을 수 있고, 그 위에 이어 쓰면 한 줄 = 한 메시지 불변식이 깨져 상대가 \
-         쓰레기를 읽는다. 데이터를 신뢰할 수 없는 자리라 복구가 오답이다.",
+         쓰레기를 읽는다. 데이터를 신뢰할 수 없는 자리라 복구가 오답이다. \
+         현재 이 락을 잡는 자리와 각자의 선택: \
+         `tasty-plugin-sdk` 의 `runtime::send_event`/`send_response` 는 **패닉을 유지**한다 \
+         (폭발 반경이 그 plugin 프로세스 하나로 한정되고, 그 범위는 방침이 패닉을 허용하는 \
+         범위다). `tasty-plugin-sdk` 의 `HostHandle::notify`/`call` 은 **에러를 반환**한다 \
+         (plugin 코드가 호출자라 결과를 받아 처리할 수 있다). `tasty-cli` 의 \
+         `local::attach::run_raw_bridge` 는 **복구하지 않고 세션을 접되** \
+         `note_writer_poisoned` 로 이유를 남긴다(원인 없이 끊긴 attach 로 보이지 않게). \
+         `tasty-host-plugin` 의 `aux_reader_loop` 는 Pong 전송을 **건너뛰되 로그를 남긴다** \
+         (호스트가 채널을 죽은 것으로 판정하는 결과가 뒤따르므로 그 이유가 남아야 한다).",
     )];
 
     /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다 —
@@ -210,6 +224,12 @@ mod forbidden_lock_guard {
             .expect("crates/<name> 아래에 있어야 한다")
             .to_path_buf()
     }
+
+    /// 이 파일 자신은 스캔에서 뺀다 — 헬퍼 정의와 가드 본문이라 금지 패턴을 **예시로
+    /// 담는 것이 본질**이다(`tests/no_todo_file_citation.rs` 의 ALLOWLIST 와 같은 이유).
+    /// 파일 통째 면제라 여기서 진짜 위반이 생기면 못 보지만, 헬퍼 정의 파일이 writer
+    /// 락을 잡을 일은 없다.
+    const SELF_REL: &str = "crates/tasty-utils/src/poison.rs";
 
     fn rust_sources(root: &Path) -> Vec<PathBuf> {
         let mut out = Vec::new();
@@ -228,7 +248,12 @@ mod forbidden_lock_guard {
                 if p.is_dir() {
                     stack.push(p);
                 } else if p.extension().is_some_and(|x| x == "rs") {
-                    out.push(p);
+                    let is_self = p
+                        .strip_prefix(root)
+                        .is_ok_and(|rel| rel.to_string_lossy().replace('\\', "/") == SELF_REL);
+                    if !is_self {
+                        out.push(p);
+                    }
                 }
             }
         }
@@ -254,23 +279,32 @@ mod forbidden_lock_guard {
                 continue;
             };
             // 괄호 균형이 맞을 때까지 이어 붙인다(호출이 여러 줄에 걸친다).
+            // 인자 영역만 본다 — 괄호가 닫히는 지점에서 정확히 끊지 않으면 뒤따르는
+            // 무관한 코드가 섞여 거짓 양성이 난다(실제로 이 파일 자신에서 났다).
             let mut depth: i32 = 1;
-            let mut text = trimmed[pos..].to_string();
+            let mut text = String::new();
             let mut j = i;
-            while depth > 0 && j + 1 < lines.len() {
-                for c in text.chars() {
+            let mut rest = trimmed[pos..].to_string();
+            'outer: loop {
+                for c in rest.chars() {
                     match c {
                         '(' => depth += 1,
-                        ')' => depth -= 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break 'outer;
+                            }
+                        }
                         _ => {}
                     }
-                }
-                if depth <= 0 {
-                    break;
+                    text.push(c);
                 }
                 j += 1;
+                if j >= lines.len() {
+                    break;
+                }
                 text.push(' ');
-                text.push_str(lines[j].trim());
+                rest = lines[j].trim().to_string();
             }
             spans.push((i + 1, text));
         }
@@ -326,6 +360,62 @@ mod forbidden_lock_guard {
         assert!(
             violations.is_empty(),
             "복구가 오답인 락을 이 헬퍼로 복구한다:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    /// 금지 락을 **조용히 건너뛰는** 형태도 막는다.
+    ///
+    /// 앞 테스트는 "복구하지 마라" 만 본다. 그런데 `if let Ok(mut w) = writer.lock()` 은
+    /// 복구도 아니고 패닉도 아닌 **제3의 형태**이고, 락이 poison 이면 아무 일도 일어나지
+    /// 않은 채 로그도 남지 않는다 — 방침이 요구하는 "어느 선택을 하든 로그를 남긴다" 를
+    /// 정면으로 어긴다. 실제로 `tasty-host-plugin` 의 aux Pong 전송이 그 형태였고, 앞
+    /// 테스트만으로는 보이지 않았다(가드의 사각).
+    ///
+    /// 허용되는 형태는 셋이다: `expect`(패닉 유지) · `map_err`(에러 반환) ·
+    /// `match` 의 `Err` 팔(로그 후 접기). 셋 다 poison 을 **다룬다**.
+    #[test]
+    fn forbidden_locks_are_never_silently_skipped() {
+        let root = repo_root();
+        let files = rust_sources(&root);
+        assert!(
+            files.len() >= MIN_FILES_SCANNED,
+            "스캔 대상이 {}개뿐이다 — 레포 루트를 잘못 잡았을 가능성이 크다(하한 {})",
+            files.len(),
+            MIN_FILES_SCANNED
+        );
+
+        let mut violations = Vec::new();
+        for path in &files {
+            let Ok(text) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let normalized = text.replace('\r', "");
+            for (i, line) in normalized.lines().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                for (name, _) in FORBIDDEN_LOCKS {
+                    let silent_if = trimmed.contains(&format!("if let Ok("))
+                        && locks_named(trimmed, name)
+                        && !trimmed.contains("else");
+                    let silent_ok = locks_named(trimmed, name) && trimmed.contains(".ok()");
+                    if silent_if || silent_ok {
+                        let rel = path.strip_prefix(&root).unwrap_or(path);
+                        violations.push(format!(
+                            "{}:{} — `{name}` 락을 조용히 건너뛴다. poison 을 다루는 형태\
+                             (expect · map_err · match 의 Err 팔)로 바꿔라",
+                            rel.display(),
+                            i + 1
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "복구가 오답인 락을 무음으로 지나친다:\n{}",
             violations.join("\n")
         );
     }
