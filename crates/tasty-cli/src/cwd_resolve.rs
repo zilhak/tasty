@@ -97,6 +97,14 @@ pub fn normalize_file_arg(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// process cwd 는 프로세스 전역이라, `set_current_dir` 로 그것을 바꾸는 테스트가
+    /// cargo 기본 병렬 실행에서 서로를 덮어써 순서 의존 flake 가 난다(형태 A — cwd 는
+    /// 인스턴스가 하나뿐이라 자원을 테스트-로컬로 만들 수 없고, 직렬화가 유일한 처방이다).
+    /// cwd 를 바꾸는 이 크레이트 lib 테스트는 전부 이 락을 함수 끝까지 잡는다 —
+    /// 새로 cwd 를 만지는 lib 테스트를 추가하면 반드시 같은 락을 잡을 것.
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn absolute_existing_directory_is_returned_canonicalized() {
@@ -109,6 +117,7 @@ mod tests {
 
     #[test]
     fn relative_path_resolves_against_process_cwd() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
         // tempdir 안에 하위 디렉토리.
         let sub = tmp.path().join("sub");
@@ -154,6 +163,7 @@ mod tests {
 
     #[test]
     fn file_arg_relative_path_resolves_against_process_cwd() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
         let file = tmp.path().join("profile.json");
         std::fs::write(&file, "{}").unwrap();
