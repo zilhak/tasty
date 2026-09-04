@@ -167,13 +167,24 @@ define_class!(
         /// 그렇지 않으면 터미널 입력 중의 Command 조합까지 이 경로가 먼저 집어가
         /// winit 경로와 이중으로 디스패치된다. 쥐고 있지 않을 때는 키가 winit 뷰로
         /// 정상 도달하므로 포워딩이 필요하지도 않다.
+        ///
+        /// **이 본문에서 값을 돌려주는 `return` 을 쓰면 안 된다** — `define_class!` 는
+        /// 본문을 `let __objc2_result = { ...본문... };` 로 감싸 자기가 만든
+        /// `extern "C-unwind"` shim 안에 심고, 그 shim 의 반환 타입은 여기 적힌
+        /// `bool` 이 아니라 변환된 `<bool as ConvertReturn<_>>::Inner` =
+        /// `objc2::runtime::Bool` 이다. 그래서 `return` 은 이 함수가 아니라 shim 을
+        /// 빠져나가며 `Bool` 로 타입 검사돼 macOS 에서만 컴파일이 깨진다(꼬리
+        /// 표현식은 `__objc2_result` 에 묶여 `bool` 로 추론되므로 멀쩡하다 — 한
+        /// 함수 안에서 두 경로의 기대 타입이 다르다). 값은 전부 표현식으로 흘린다.
+        /// `src/source_guards.rs` 의 가드가 이 형태를 전 플랫폼에서 막는다.
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
             if view_holds_first_responder(self) && self.forward_key_to_host(event) {
-                return true;
+                true
+            } else {
+                // SAFETY: main thread AppKit responder chain. super 구현에 위임.
+                unsafe { msg_send![super(self), performKeyEquivalent: event] }
             }
-            // SAFETY: main thread AppKit responder chain. super 구현에 위임.
-            unsafe { msg_send![super(self), performKeyEquivalent: event] }
         }
 
         /// Control/Option 조합은 key equivalent 가 아니라 일반 keyDown 으로 온다.

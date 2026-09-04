@@ -27,6 +27,8 @@ mod platform;
 mod plugin_bridge;
 mod poison;
 mod ports;
+#[cfg(test)]
+mod source_guards;
 mod state;
 mod store;
 #[cfg(test)]
