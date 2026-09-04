@@ -373,19 +373,63 @@ fn handle_terminal_output(
         factory.note_drained(id);
     }
     // Targeted wake 는 해당 surface 만, default wake 는 전체 drain.
-    // 반환 CoreEvent (Notification/Bell/Title/Cwd/Exit) 는 cascade 주체
-    // (view/plugin)가 없으므로 단계 0 에선 무시한다 — 직접 부수효과
-    // (observer/command_index/OSC52) 는 process 함수 내부에서 이미 적용됨.
-    match id {
-        Some(sid) => {
-            let _ = app.core.process_pty_output(engine, sid); // targeted: 해당 surface 만 drain — CoreEvent 무시 사유는 위 주석 참조
-        }
+    // 반환 CoreEvent 중 소비하는 것은 `TerminalOutputMatch` 뿐이다 — 나머지
+    // (Notification/Bell/Title/Cwd/Exit)는 cascade 주체(view/plugin)가 없어
+    // 버린다. 직접 부수효과(observer/command_index/OSC52)는 process 함수
+    // 내부에서 이미 적용됐다. 하나만 소비하는 근거는
+    // `fire_output_match_hooks` 의 doc 참조.
+    let outcome = match id {
+        Some(sid) => app.core.process_pty_output(engine, sid), // targeted: 해당 surface 만 drain
         None => {
-            let _ = app.core.process_all_pty_output(engine); // default: 전체 drain — CoreEvent 무시 사유는 위 주석 참조
+            let outcome = app.core.process_all_pty_output(engine); // default: 전체 drain
             // plugin 프로세스 수신 스레드도 이 default waker 를 공유한다
             // (headless_plugins 모듈 주석 참조) — hello 응답/PaintFrame 등
             // plugin 이벤트도 이 wake 로 도착하므로 여기서 함께 pump.
             headless_plugins::pump_plugins(app, state, engine);
+            outcome
+        }
+    };
+    fire_output_match_hooks(app, engine, outcome.events);
+}
+
+/// PTY drain 이 돌려준 `CoreEvent` 에서 `output-match` 훅만 골라 발화한다.
+///
+/// gui 는 `App::cascade_terminal_output_match`(`app/dispatch_domain.rs`)가 하는
+/// 일이고, headless 에는 그 cascade 층이 없다(`app/dispatch_domain_stubs.rs`).
+/// stub 의 근거는 "cascade 는 View 의 모든 window 에 broadcast 하는 것" 인데
+/// **훅 실행은 view 와 무관한 부수효과**라 그 근거가 닿지 않는다 — 같은 stub
+/// 파일에 묶여 함께 죽어 있었다. `tasty set hook --event output-match:...` 는
+/// CLI 로 노출된 에이전트 기능이므로 headless 에서도 동작해야 한다
+/// (`docs/identity.md` 원칙 2).
+///
+/// **`PendingHostEvent::HookFired` enqueue 는 일부러 하지 않는다.** 그 큐의
+/// 배수 주체는 `app/dispatch/host_events.rs` 하나뿐이고 `src/app.rs` 가 그
+/// 모듈을 `#[cfg(feature = "gui")]` 로 걸어, headless 에는 빼 가는 쪽이 없다.
+/// 여기서 enqueue 하면 관측 가능한 효과는 0 이면서 상시 구동 데몬의 가장 뜨거운
+/// 경로(매칭되는 라인마다 1 건)에서 무한히 자란다. headless 에 배수 주체가
+/// 생기면 그때 idle-timeout 배선과 함께 다시 본다.
+#[cfg(not(feature = "gui"))]
+fn fire_output_match_hooks(
+    app: &crate::app::App,
+    engine: &mut crate::core::CoreState,
+    events: Vec<crate::core::intent::CoreEvent>,
+) {
+    let injector = app.core.host_ipc_injector.get().cloned();
+    for event in events {
+        let crate::core::intent::CoreEvent::TerminalOutputMatch { surface_id, text } = event else {
+            continue;
+        };
+        let fired = engine
+            .hook_manager
+            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::OutputMatch(text)]);
+        for f in fired {
+            crate::hook_handler::trigger::execute_binding(
+                &f.binding,
+                injector.as_ref(),
+                &f.event,
+                &f.received,
+                surface_id,
+            );
         }
     }
 }
