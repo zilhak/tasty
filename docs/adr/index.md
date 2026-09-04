@@ -157,3 +157,4 @@
 | 0144 | [면제는 모호하면 성립하지 않는다 — 한 서술이 자동 실행과 부재를 함께 말하면 모순이다](0144-an-exemption-must-be-unambiguous-to-hold.md) | Accepted | 2026-09-05 | guards, ci-gates, docs, false-negative, mutation-testing, adr-0139, adr-0142 |
 | 0145 | [길이 newtype 의 생성자는 당분간 열어 둔다 — 봉인의 이득이 정확성이 아니라 판정기의 정밀도이기 때문](0145-typed-length-constructors-stay-open-for-now.md) | Accepted | 2026-09-05 | typed-length, dpi, guard, tooling-cost |
 | 0147 | [같은 집합이 여러 곳에 적혀 있으면 합치지 않고 판정기로 잇는다](0147-multiple-carriers-are-joined-by-a-check-not-merged.md) | Accepted | 2026-09-05 | docs, guards, single-source-of-truth, drift |
+| 0146 | [스캔 가드는 빌드 디렉토리를 표식으로 가지치기한다 — 이름은 성질이 아니다](0146-build-dirs-are-pruned-by-their-tag-not-by-their-name.md) | Accepted | 2026-09-05 | guards, scan-population, build-artifacts, measurement, adr-0133, adr-0138, adr-0139 |
