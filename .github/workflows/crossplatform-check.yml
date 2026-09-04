@@ -91,9 +91,16 @@ jobs:
       # 전례). `--lib --bins` 만 — e2e/integration 은 GUI spawn·plugin 빌드 오케스트레이션이
       # 필요해 러너 가드로 부적합. clippy --all-targets 가 테스트 타깃을 이미 컴파일해
       # 추가 비용은 실행 시간뿐이다.
+      #
+      # `--no-fail-fast` 는 필수다. 이것이 없으면 cargo 는 **처음 실패한 테스트
+      # 바이너리에서 러너를 멈춰**, 알파벳 순으로 그 뒤에 오는 크레이트가 한 번도
+      # 실행되지 않는다. 실제로 `tasty-plugin-claude` 의 실패가 뒤따르는 크레이트
+      # 전부를 가렸고, 그중 하나에는 글자 그대로 같은 결함이 있었다 — 앞을 고치면
+      # 다음 실행에서 뒤가 새로 빨개지는 형태다. 잡이 초록일 때 추가 비용은 0 이고
+      # (실패가 없으면 어차피 전부 돈다), 빨갈 때만 더 도는 것이 이 플래그의 목적이다.
       - name: cargo test (unit)
         shell: pwsh
-        run: cargo test --workspace --lib --bins --locked
+        run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
   # headless(`--no-default-features`) 컴파일 가드. gui feature 를 끈 상태로만 드러나는
   # gui-gating 누락(headless-build-01 회귀)을 `main` push 마다 자동 검출한다(문서만
