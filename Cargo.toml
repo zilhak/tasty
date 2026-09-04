@@ -438,6 +438,9 @@ dhat-heap = ["dep:dhat"]
 
 [dev-dependencies]
 serde_json = "1"
+# 스캔 가드가 공유하는 판정(레포 루트, 빌드 캐시 디렉토리 식별). 이 크레이트는 의존이
+# 0 이라(ADR-0138) 여기에 dev-dep 로 들여도 루트 테스트 빌드가 무거워지지 않는다.
+tasty-doc-guards = { path = "crates/tasty-doc-guards" }
 enigo = "0.6"
 tempfile = "3"
 # 메모리 누수 soak 하네스(tests/soak_memory.rs)의 외부 측정용 — 프로세스 트리

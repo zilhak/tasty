@@ -206,7 +206,13 @@ fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if path.is_dir() {
-            if SKIP_DIRS.contains(&name.as_ref()) || (name.starts_with('.') && name != ".githooks")
+            // 이름으로 걸리거나, **디렉토리 자신이 빌드 캐시라고 밝히거나**. 이름만 볼 때는
+            // `CARGO_TARGET_DIR` 로 만든 다른 이름의 빌드 디렉토리가 통째로 모수에 들어왔고,
+            // 이 가드는 아래 `read_to_string` 을 **모든 파일에** 걸기 때문에 그 대가가 가장
+            // 컸다 — 실측(2026-09-05) 0.05s → 89.17s (1783 배).
+            if SKIP_DIRS.contains(&name.as_ref())
+                || (name.starts_with('.') && name != ".githooks")
+                || tasty_doc_guards::is_build_cache_dir(&path)
             {
                 continue;
             }
@@ -557,6 +563,40 @@ jobs:
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].1.trim(), "echo one");
     assert!(violations(&blocks[0].1).is_empty());
+}
+
+/// **빌드 디렉토리는 이름이 아니라 표식으로 걸러진다.** 이 가드는 shebang 을 보려고
+/// 모든 파일을 읽으므로, 산출물이 모수에 들어오면 대가가 가장 크다 — 실측(2026-09-05)
+/// 다른 이름의 빌드 디렉토리를 두었을 때 0.05s 가 89.17s 가 됐다.
+///
+/// 양극성으로 잡는다. 이 절이 없으면 판정이 이름으로 되돌아가도 나머지 테스트가 전부
+/// 초록이라, 모수가 다시 새는 것을 아무도 못 본다.
+#[test]
+fn a_build_dir_is_recognised_by_its_tag_not_its_name() {
+    let dir = std::env::temp_dir().join(format!("tasty-shellprune-{}", std::process::id()));
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서
+    // 죽으면 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리");
+
+    assert!(
+        !tasty_doc_guards::is_build_cache_dir(&dir),
+        "표식이 없으면 빌드 캐시가 아니다"
+    );
+
+    std::fs::write(
+        dir.join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n",
+    )
+    .expect("표식 쓰기");
+    assert!(
+        tasty_doc_guards::is_build_cache_dir(&dir),
+        "표식이 있으면 이름과 무관하게 빌드 캐시다"
+    );
+
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서
+    // 죽으면 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

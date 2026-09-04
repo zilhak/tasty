@@ -162,6 +162,15 @@ fn is_pruned(name: &str) -> bool {
             .is_some_and(|rest| rest == LOCAL_HEAD || rest == ws_dir())
 }
 
+/// 이름으로 걸리거나, **디렉토리 자신이 빌드 캐시라고 밝히거나**.
+///
+/// 이름만 볼 때는 `CARGO_TARGET_DIR` 로 만든 다른 이름의 빌드 디렉토리가 통째로
+/// 모수에 들어왔다 — 실측(2026-09-05) 이 가드가 1.30s → 86.30s 가 됐다.
+/// 판정 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+fn is_pruned_dir(path: &Path, name: &str) -> bool {
+    is_pruned(name) || tasty_doc_guards::is_build_cache_dir(path)
+}
+
 /// 금지되는 하위 디렉토리 — 이 넷 뒤에 오는 경로만 P3 가 잡는다.
 const FORBIDDEN_SUBDIRS: &[&str] = &["todo-conductor", "todo", "plans", "conductor"];
 
@@ -485,7 +494,7 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if is_pruned(name) {
+            if is_pruned_dir(&p, name) {
                 continue;
             }
         }
@@ -801,6 +810,38 @@ fn scan_target_covers_scripts_ci_and_root_docs() {
     assert!(!is_scan_target(
         "crates/tasty-plugin-claude/tasty-plugin.toml.sig"
     ));
+}
+
+/// **이름이 아닌 근거로도 가지치기된다.** 이 절이 없으면 `is_pruned_dir` 이 이름
+/// 판정으로 퇴화해도 위 테스트가 전부 초록이라 — 다른 이름의 빌드 디렉토리가 모수에
+/// 다시 들어온 것을 아무도 못 본다. 양극성으로 잡는다: 표식이 있으면 걸리고, 이름이
+/// 같아 보여도 표식이 없으면 안 걸린다.
+#[test]
+fn a_build_dir_under_another_name_is_still_pruned() {
+    let dir = std::env::temp_dir().join(format!("tasty-prune-{}", std::process::id()));
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서
+    // 죽으면 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리");
+
+    assert!(
+        !is_pruned_dir(&dir, "target-e2e-headless"),
+        "표식이 없으면 이름이 빌드 디렉토리처럼 보여도 가지치기하지 않는다"
+    );
+
+    std::fs::write(
+        dir.join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n",
+    )
+    .expect("표식 쓰기");
+    assert!(
+        is_pruned_dir(&dir, "target-e2e-headless"),
+        "표식이 있으면 이름과 무관하게 가지치기한다"
+    );
+
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서
+    // 죽으면 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
