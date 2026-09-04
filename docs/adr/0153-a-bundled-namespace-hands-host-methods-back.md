@@ -1,4 +1,4 @@
-# ADR-0149: 번들 plugin 이 점유한 namespace 아래의 host 메서드는 그 plugin 이 되돌려 준다
+# ADR-0153: 번들 plugin 이 점유한 namespace 아래의 host 메서드는 그 plugin 이 되돌려 준다
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
