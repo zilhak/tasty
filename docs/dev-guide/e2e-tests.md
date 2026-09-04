@@ -86,7 +86,7 @@
 | `SHELL` | 제거 | host login shell 누수 차단(`detect_bash` 의 `$SHELL` 경로) |
 | `OH_MY_ZSH` / `ZSH` | 제거 | oh-my-zsh customization 누수 차단 |
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
-| `RUST_LOG` | `tasty=info` | child stderr 폭주에 의한 OS pipe backpressure 회피 |
+| `TASTY_LOG` | `warn` (웹훅 하네스는 `warn,tasty::webhook::listener=info`) | child stderr 폭주에 의한 OS pipe backpressure 회피. 본체가 읽는 변수는 `TASTY_LOG` 다 — `RUST_LOG` 는 무시된다([crash-diagnostics](crash-diagnostics.md)) |
 
 격리 HOME 에 사전 작성하는 파일:
 
@@ -108,7 +108,7 @@
 
 ## 5. stderr tail 진단
 
-spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `RUST_LOG=tasty=info` 로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어).
+spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `TASTY_LOG=warn` 으로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어).
 
 ## 6. Flaky 대응 절차
 

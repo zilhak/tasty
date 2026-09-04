@@ -307,10 +307,14 @@ impl TastyInstance {
             // child 가 augmented help 만 출력하고 종료한다 (boot/cli_routing.rs:55).
             // 자식은 항상 본 GUI 로 부팅해야 하므로 명시 제거.
             .env_remove("TASTY_SURFACE_ID")
-            // host 의 RUST_LOG=debug/trace 가 새어들어와 child 가 polled stderr
-            // 보다 빠르게 write 하면 OS pipe buffer 가 가득 차서 child 가 block
-            // 될 위험이 있다. drain thread 가 1차 방어, verbosity cap 이 2차.
-            .env("RUST_LOG", "tasty=info")
+            // host 의 로그 레벨이 새어들어와 child 가 polled stderr 보다 빠르게
+            // write 하면 OS pipe buffer 가 가득 차서 child 가 block 될 위험이 있다.
+            // drain thread 가 1차 방어, verbosity cap 이 2차.
+            //
+            // 본체가 읽는 변수는 **`TASTY_LOG`** 다(`RUST_LOG` 아님 —
+            // `docs/dev-guide/crash-diagnostics.md`). 여기서 `warn` 으로 고정하면
+            // 기본 필터와 같은 수준이면서 host 의 `TASTY_LOG=trace` 누수까지 막는다.
+            .env("TASTY_LOG", "warn")
             .stderr(Stdio::piped());
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
         // 자식을 대신 죽여준다. 아래 Drop 은 부모가 살아서 unwind 될 때만 자식을
