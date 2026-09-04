@@ -342,10 +342,77 @@ mod forbidden_lock_guard {
     }
 
     /// `<name>.lock()` / `.write()` / `.read()` / `.try_write()` 형태로 그 락을 잠그는가.
+    /// 점 주변 공백을 걷어 `self .writer .lock()` 을 `self.writer.lock()` 로 만든다.
+    ///
+    /// rustfmt 는 한 줄이 100 자를 넘으면 메서드 체인을 **수신자에서** 쪼갠다
+    /// (`self` / `.writer` / `.lock()`). 아래 매칭은 이름과 동사가 붙어 있어야 하므로,
+    /// 쪼개진 순간 같은 코드가 가드 밖으로 나간다 — 사람의 실수가 아니라 **서식 변경만으로**
+    /// 뚫린다. 문자열 리터럴 안의 `" . "` 도 함께 붙지만, 그 방향의 오탐은 가드가 더 많이
+    /// 잡는 쪽이라 안전하다.
+    fn tighten_dot_chains(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut pending_ws = false;
+        for c in text.chars() {
+            if c.is_whitespace() {
+                pending_ws = true;
+                continue;
+            }
+            if pending_ws && c != '.' && !out.ends_with('.') {
+                out.push(' ');
+            }
+            pending_ws = false;
+            out.push(c);
+        }
+        if pending_ws {
+            out.push(' ');
+        }
+        out
+    }
+
+    /// 한 문(statement) 단위로 잇는다 — 축 2 가 줄 단위면 쪼개진 체인을 원리적으로 못 본다.
+    ///
+    /// 괄호 깊이가 0 으로 돌아오고 `;` · `{` · `}` 로 끝나면 한 문으로 본다. 줄 번호는
+    /// **시작 줄**을 쓴다(신고 좌표가 위쪽을 가리켜야 사람이 찾는다).
+    fn statement_spans(masked: &str) -> Vec<(usize, String)> {
+        let mut out = Vec::new();
+        let mut buf = String::new();
+        let mut start = 0usize;
+        let mut depth: i32 = 0;
+        for (i, line) in masked.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            if buf.is_empty() {
+                start = i + 1;
+            } else {
+                buf.push(' ');
+            }
+            buf.push_str(trimmed);
+            for c in trimmed.chars() {
+                match c {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' => depth -= 1,
+                    _ => {}
+                }
+            }
+            let ends = trimmed.ends_with(';') || trimmed.ends_with('{') || trimmed.ends_with('}');
+            if depth <= 0 && ends {
+                out.push((start, std::mem::take(&mut buf)));
+                depth = 0;
+            }
+        }
+        if !buf.is_empty() {
+            out.push((start, buf));
+        }
+        out
+    }
+
     fn locks_named(text: &str, name: &str) -> bool {
+        let tightened = tighten_dot_chains(text);
         [".lock()", ".write()", ".read()", ".try_write()"]
             .iter()
-            .any(|verb| text.contains(&format!("{name}{verb}")))
+            .any(|verb| tightened.contains(&format!("{name}{verb}")))
     }
 
     /// 축 1 — 금지 락을 이 헬퍼로 복구하는 줄.
@@ -364,19 +431,15 @@ mod forbidden_lock_guard {
     /// `.ok()` 는 아무것도 하지 않고 로그도 남기지 않는다.
     fn silently_skipped_forbidden_lines(masked: &str) -> Vec<usize> {
         let mut hits = Vec::new();
-        for (i, line) in masked.lines().enumerate() {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
-                continue;
-            }
+        for (line_no, stmt) in statement_spans(masked) {
             for (name, _) in FORBIDDEN_LOCKS {
-                if !locks_named(trimmed, name) {
+                if !locks_named(&stmt, name) {
                     continue;
                 }
-                let silent_if = trimmed.contains("if let Ok(") && !trimmed.contains("else");
-                let silent_ok = trimmed.contains(".ok()");
+                let silent_if = stmt.contains("if let Ok(") && !stmt.contains("else");
+                let silent_ok = tighten_dot_chains(&stmt).contains(".ok()");
                 if silent_if || silent_ok {
-                    hits.push(i + 1);
+                    hits.push(line_no);
                 }
             }
         }
@@ -526,6 +589,49 @@ mod forbidden_lock_guard {
     }
 
     /// 금지 목록에 없는 락은 두 축 모두 건드리지 않는다(의도된 false negative).
+    /// rustfmt 가 체인을 **수신자에서** 쪼개도 두 축이 그대로 본다.
+    ///
+    /// 여섯 입력을 한 실행에 넣는다 — 셋은 사각이었던 형태(D·C·F), 셋은 대조군(A·E·B)이다.
+    /// 대조군이 없으면 "추출이 통째로 망가져 전부 빈 것" 과 구분되지 않는다.
+    #[test]
+    fn a_receiver_split_across_lines_is_still_seen() {
+        // A — 한 줄 복구 (대조군, 축 1)
+        let a = "fn p() {\n    let w = recover_mutex(writer.lock(), W, &R);\n}\n";
+        // E — 인자만 쪼갬 (대조군, 축 1)
+        let e = "fn p() {\n    let w = recover_mutex(\n        writer.lock(),\n        W,\n        &R,\n    );\n}\n";
+        // D — 수신자 쪼갬 (사각이었다, 축 1)
+        let d = "fn p() {\n    let w = recover_mutex(\n        self\n            .writer\n            .lock(),\n        W,\n        &R,\n    );\n}\n";
+        // B — 한 줄 무음 지나침 (대조군, 축 2)
+        let b = "fn p() {\n    if let Ok(mut w) = writer.lock() {\n        w.send();\n    }\n}\n";
+        // C — 수신자 쪼갠 무음 지나침 (사각이었다, 축 2)
+        let c = "fn p() {\n    if let Ok(mut w) = self\n        .writer\n        .lock()\n    {\n        w.send();\n    }\n}\n";
+        // F — 수신자 쪼갠 `.ok()` (사각이었다, 축 2)
+        let f =
+            "fn p() {\n    let w = self\n        .writer\n        .lock()\n        .ok()?;\n}\n";
+
+        assert!(
+            !recovered_forbidden_lines(a).is_empty(),
+            "A 대조군이 안 발화하면 이 회차의 다른 0 은 아무것도 뜻하지 않는다"
+        );
+        assert!(!recovered_forbidden_lines(e).is_empty(), "E 대조군");
+        assert!(
+            !recovered_forbidden_lines(d).is_empty(),
+            "D: 수신자가 쪼개져도 축 1 이 봐야 한다"
+        );
+        assert!(
+            !silently_skipped_forbidden_lines(b).is_empty(),
+            "B 대조군이 안 발화하면 아래 둘의 판정이 성립하지 않는다"
+        );
+        assert!(
+            !silently_skipped_forbidden_lines(c).is_empty(),
+            "C: 쪼개진 `if let Ok(` 도 축 2 가 봐야 한다"
+        );
+        assert!(
+            !silently_skipped_forbidden_lines(f).is_empty(),
+            "F: 쪼개진 `.ok()` 도 축 2 가 봐야 한다"
+        );
+    }
+
     #[test]
     fn locks_outside_the_list_are_untouched() {
         let recovered = "let g = poison::recover_mutex(self.pending.lock(), W, &P);";
