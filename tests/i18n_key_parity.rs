@@ -642,3 +642,45 @@ fn literal_translation_keys_exist_in_catalog() {
         stale.join("\n")
     );
 }
+
+/// 면제가 가리키는 **번역 키가 실재하는가** — 참조 무결성.
+///
+/// 가리키는 것의 갈래가 경로 겹과 달라서 판정도 다르다. 경로 면제는 파일시스템을 묻지만
+/// 이 겹은 카탈로그를 묻는다 — `tasty_doc_guards::missing_referents` 로 덮을 수 없는
+/// 자리다. 한 검사로 뭉개면 어느 쪽도 제대로 안 본다.
+///
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 키가 실재해도 그 번역이
+/// 더 이상 영어와 같지 않아 면제가 놀고 있을 수 있고, 그것은 결함이 아니다.
+///
+/// 키가 썩으면(오탈자·키 개명) 면제가 조용히 아무것도 안 가리키게 되고, 정작 그 키의
+/// 번역이 영어와 같아지면 사유가 등록돼 있는데도 빨개진다.
+#[test]
+fn same_as_english_allowlist_points_at_keys_that_exist() {
+    let cats = catalogs();
+    let mut known: BTreeSet<&String> = BTreeSet::new();
+    for cat in &cats {
+        known.extend(cat.by_lang["en"].keys());
+    }
+    assert!(
+        !known.is_empty(),
+        "카탈로그가 비었다 — 모수가 0 이면 아래 단정이 언제나 통과한다"
+    );
+
+    let mut problems = Vec::new();
+    for (key, langs, _) in SAME_AS_ENGLISH_ALLOWLIST {
+        if !known.iter().any(|k| k.as_str() == *key) {
+            problems.push(format!("  없는 키: `{key}`"));
+        }
+        for lang in *langs {
+            if !LANGS.contains(lang) {
+                problems.push(format!("  없는 언어: `{key}` → `{lang}`"));
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "면제가 실재하지 않는 것을 가리킨다 — 키가 개명됐으면 항목도 고치고, 사라졌으면 \
+         지워라:\n{}",
+        problems.join("\n")
+    );
+}
