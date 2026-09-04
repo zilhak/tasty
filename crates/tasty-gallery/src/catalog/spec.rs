@@ -214,12 +214,35 @@ fn meta_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 }
 
 /// 보조 산문 — muted 작은 문단 (research `.note`).
+/// `note`/host_shell 이 공유하는 본문 컬럼 폭 temp-data 키.
+pub(crate) fn body_column_width_id() -> egui::Id {
+    egui::Id::new("g_body_column_width")
+}
+
 pub fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.add_space(theme.spacing_md.value());
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_term_sm.value())
-            .color(col(theme.text_muted())),
+    // note 는 여러 문장이 이어지는 본문 컬럼 폭 문단이다. specimen 이 컬럼보다 넓은
+    // 무대를 그리면 top_down ui 의 max_rect 가 그만큼 늘어나(available_width 팽창) 그
+    // 뒤의 note 가 줄바꿈되지 않고 창 우측에서 잘렸다 — `.wrap()` 만으로는 팽창한 폭에
+    // 맞춰져 소용이 없다. host_shell 이 심어둔 본문 컬럼 폭으로 새 하위 ui 를 할당해
+    // 그 폭에서 확실히 줄바꿈한다(없으면 available_width 로 폴백).
+    let wrap_w = ui
+        .data(|d| d.get_temp::<f32>(body_column_width_id()))
+        .filter(|w| *w > 0.0)
+        .unwrap_or_else(|| ui.available_width());
+    ui.allocate_ui_with_layout(
+        egui::vec2(wrap_w, 0.0),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(text)
+                        .size(theme.font_size_term_sm.value())
+                        .color(col(theme.text_muted())),
+                )
+                .wrap(),
+            );
+        },
     );
 }
 
