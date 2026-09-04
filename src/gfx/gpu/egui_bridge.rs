@@ -180,6 +180,11 @@ impl GpuState {
         host_popup_on_top: bool,
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
+        // 설정이 바뀌면 다음 프레임부터 따라오게 한다 — 생성 시점 값만 쓰면 설정 모달에서
+        // 슬라이더를 옮겨도 이미 열려 있는 창은 옛 거리로 스크롤한다(ADR-0130).
+        self.egui_ctx.options_mut(|o| {
+            o.line_scroll_speed = engine.settings.general.wheel_line_scroll;
+        });
         let scale_factor = self.scale_factor;
         let proxy = &self.proxy;
 
@@ -405,11 +410,22 @@ impl GpuState {
             self.egui_renderer.free_texture(id);
         }
 
+        // `ui.screenshot`(window) 이 모달·preset 창을 대상으로 삼을 수 있으므로 이
+        // 경로에도 present 직전 readback 이 있어야 한다 — 없으면 요청이 큐에 남아
+        // 영구 대기한다. main 창 경로(`Gpu::render` / `render_fullscreen_stage`)의
+        // 같은 지점과 동형이다.
+        if let Some(path) = self.pending_screenshot.take() {
+            self.capture_frame_to_png(&output.texture, self.size.width, self.size.height, &path);
+        }
+
         output.present();
     }
 }
 
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
     use tasty_type_geometry::length::PhysicalPx;

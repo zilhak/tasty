@@ -550,10 +550,11 @@ fn composite_mesh_target(
     ];
     let key = (target.generation, rect_bits);
     if target.translated_key != Some(key) {
-        let offset = egui::vec2(rect.x.value() / ppp, rect.y.value() / ppp);
+        let logical = rect.to_logical(ppp);
+        let offset = egui::vec2(logical.x.value(), logical.y.value());
         let bounds = egui::Rect::from_min_size(
-            egui::pos2(rect.x.value() / ppp, rect.y.value() / ppp),
-            egui::vec2(rect.width.value() / ppp, rect.height.value() / ppp),
+            egui::pos2(logical.x.value(), logical.y.value()),
+            egui::vec2(logical.width.value(), logical.height.value()),
         );
         target.translated = offset_and_clip(&target.primitives, offset, bounds);
         target.translated_key = Some(key);

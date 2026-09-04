@@ -1,5 +1,22 @@
 use winit::window::Window;
 
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body 13 · max 14)에도, DTCG
+// primitive(10·11·12·13·14·16·17·20)에도 없는 값들이다. 토큰으로 스냅하면 픽셀이
+// 바뀌므로 조용히 반올림하지 않고 이름만 붙인다(스냅 여부는 디자인 판단 항목).
+// 토큰이 아니라 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+
+/// 첫 실행 셸 설정 카드의 "Tasty" 브랜드 타이틀. 스케일 밖(30) — primitive 최댓값
+/// 20 보다도 크고, brand-wordmark semantic 은 17 이다.
+const SETUP_BRAND_TITLE_SIZE: f32 = 30.0;
+/// "셸을 찾을 수 없음" 경고 본문. 스케일 밖(12.5).
+const SETUP_WARNING_SIZE: f32 = 12.5;
+/// 입력 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
+/// `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**. 호출 자리에서
+/// "토큰인가 미배정 primitive 인가" 가 이름만으로 갈리도록 하는 것이 규칙의 목적이다.
+const SETUP_INPUT_LABEL_PRIMITIVE_12: f32 = 12.0;
+
 use crate::i18n::t;
 use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
 
@@ -73,29 +90,24 @@ impl GpuState {
                 .frame(
                     egui::Frame::new()
                         .fill(bg_card.into())
-                        .stroke(egui::Stroke::new(1.0, border))
-                        .corner_radius(egui::CornerRadius::same(12))
+                        .stroke(egui::Stroke::new(th.border_width.value(), border))
+                        .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)
                         .inner_margin(margin_all(th.spacing_xl))
-                        .shadow(egui::Shadow {
-                            offset: [0, 8],
-                            blur: 24,
-                            spread: 0,
-                            color: th.bg_app().into(),
-                        }),
+                        .shadow(th.shadow_popover().to_egui()),
                 )
                 .show(ctx, |ui| {
                     // ── Title ──────────────────────────────────────
                     ui.vertical_centered(|ui| {
                         ui.label(
                             egui::RichText::new("Tasty")
-                                .size(30.0)
+                                .size(SETUP_BRAND_TITLE_SIZE)
                                 .strong()
                                 .color(th.text_primary()),
                         );
                         vspace(ui, STRUCT_GAP_2);
                         ui.label(
                             egui::RichText::new(t("settings.general.setup_subtitle"))
-                                .size(11.0)
+                                .size(th.font_size_caption.value())
                                 .color(text_dim),
                         );
                     });
@@ -107,14 +119,17 @@ impl GpuState {
                     // ── Warning ────────────────────────────────────
                     egui::Frame::new()
                         .fill(th.surface_raised().into())
-                        .stroke(egui::Stroke::new(1.0, th.border_strong()))
-                        .corner_radius(egui::CornerRadius::same(6))
+                        .stroke(egui::Stroke::new(
+                            th.border_width.value(),
+                            th.border_strong(),
+                        ))
+                        .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS)
                         .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
                         .show(ui, |ui| {
                             ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(t("settings.general.shell_not_found"))
-                                        .size(12.5)
+                                        .size(SETUP_WARNING_SIZE)
                                         .color(amber),
                                 )
                                 .wrap(),
@@ -126,7 +141,7 @@ impl GpuState {
                     // ── Input ──────────────────────────────────────
                     ui.label(
                         egui::RichText::new(t("settings.general.shell_label"))
-                            .size(12.0)
+                            .size(SETUP_INPUT_LABEL_PRIMITIVE_12)
                             .color(text_dim),
                     );
                     vspace(ui, th.spacing_xs);
@@ -171,13 +186,15 @@ impl GpuState {
                                 .add(
                                     egui::Button::new(
                                         egui::RichText::new(t("button.cancel"))
-                                            .size(13.0)
+                                            .size(th.button_font_size().value())
                                             .color(text_dim),
                                     )
                                     .min_size(btn_size)
                                     .fill(th.bg_panel())
-                                    .stroke(egui::Stroke::new(1.0, border))
-                                    .corner_radius(egui::CornerRadius::same(6)),
+                                    .stroke(egui::Stroke::new(th.border_width.value(), border))
+                                    .corner_radius(
+                                        tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS,
+                                    ),
                                 )
                                 .clicked()
                             {
@@ -192,7 +209,7 @@ impl GpuState {
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {
                                 (
                                     th.accent_success(),
-                                    egui::Stroke::new(1.0, th.accent_success()),
+                                    egui::Stroke::new(th.border_width.value(), th.accent_success()),
                                     // accent 위 텍스트 — 값-동일 bg_panel()(=base). text_on_accent()=crust 와 값 달라 값-보존 유지.
                                     th.bg_panel(),
                                 )
@@ -201,7 +218,7 @@ impl GpuState {
                                 // overlay0 dim 텍스트 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
                                 (
                                     accent_dis,
-                                    egui::Stroke::new(1.0, th.surface_active()),
+                                    egui::Stroke::new(th.border_width.value(), th.surface_active()),
                                     th.text_placeholder(),
                                 )
                             };
@@ -209,12 +226,15 @@ impl GpuState {
                             let ok_resp = ui.add_enabled(
                                 is_valid,
                                 egui::Button::new(
-                                    egui::RichText::new("OK").size(13.0).strong().color(ok_text),
+                                    egui::RichText::new("OK")
+                                        .size(th.button_font_size().value())
+                                        .strong()
+                                        .color(ok_text),
                                 )
                                 .min_size(btn_size)
                                 .fill(ok_fill)
                                 .stroke(ok_stroke)
-                                .corner_radius(egui::CornerRadius::same(6)),
+                                .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS),
                             );
                             if ok_resp.clicked()
                                 || (response.lost_focus()

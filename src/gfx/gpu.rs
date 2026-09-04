@@ -1,3 +1,4 @@
+mod boot_error;
 mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
@@ -36,6 +37,17 @@ pub enum ShellSetupAction {
     None,
     Confirmed,
     Exit,
+}
+
+/// 부팅 실패 화면에 그릴 진단(제목/본문/힌트). GPU 는 살아있으나 엔진 생성이 실패했을
+/// 때, 런처(dock/시작 메뉴)로 실행한 사용자는 stderr 를 못 봐 "창이 깜빡이고 사라지는
+/// 것" 이 전부다 — 그 진단을 창에 그려 보인다. i18n 해석은 App 층에서 하고 여기엔 해석된
+/// 문자열만 담는다(gpu 층은 i18n 을 모른다). 근거:
+/// `docs/adr/0117-window-and-modal-creation-failure-policy.md` 재검토 트리거.
+pub struct BootErrorInfo {
+    pub title: String,
+    pub body: String,
+    pub hint: String,
 }
 
 /// surface configure 치수를 물리 유효 범위로 clamp 한다.
@@ -109,7 +121,7 @@ pub struct GpuState {
     /// tab, and focus (the surface is rendered at its own grid size). See
     /// [`Self::capture_surface_to_png`].
     pub pending_surface_screenshot: Option<(u32, std::path::PathBuf)>,
-    /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
+    /// Frame timing 집계기. `TASTY_LOG=tasty::gfx::perf=info` 일 때만 출력.
     pub(super) perf: PerfAggregator,
     /// Set when a frame hid the focused terminal cursor during an output burst.
     /// The view consumes this to request one follow-up redraw so the cursor
@@ -135,6 +147,7 @@ impl GpuState {
         adapter: &Arc<wgpu::Adapter>,
         window: Arc<Window>,
         appearance: &AppearanceSettings,
+        wheel_line_scroll: f32,
         proxy: EventLoopProxy<AppEvent>,
     ) -> Result<Self> {
         let size = window.inner_size();
@@ -224,6 +237,10 @@ impl GpuState {
         // but not the terminal renderer, causing inconsistent scaling.
         egui_ctx.options_mut(|opts| {
             opts.zoom_with_keyboard = false;
+            // 휠 1노치 거리는 tasty 가 정한다 — egui 는 이 값을 native 40 / web 8 로
+            // 갈라 두고 왜 달라야 하는지 자기 소스에 TODO 로 남겼다. 이 컨텍스트를 쓰는
+            // 모든 `ScrollArea` 와 plugin 표면이 이 한 값을 공유한다(ADR-0130).
+            opts.line_scroll_speed = wheel_line_scroll;
         });
 
         // egui_extras image loaders (SVG / PNG / ...). 정적 SVG 아이콘 (chevron 등) 을
@@ -454,10 +471,13 @@ impl GpuState {
         // Clear surface attention on the currently focused surface. `focused_surface_id`
         // 는 실제 렌더 시점 포커스(에이전트 주입 아님)라 불가침 원칙 1 에 안전하다.
         if let Some(sid) = focused_surface_id {
-            engine.clear_attention(sid);
+            // `clear_attention` 이 아니라 로컬 축 진입점을 쓴다 — 하드 점유(attach) 중인
+            // surface 는 홀더만 해제할 수 있으므로 이 로컬 포커스는 건너뛴다(ADR-0109).
+            engine.clear_attention_local(sid);
             // soft 점유 지연 청소(ADR-0040 §수명): 실-포커스 surface 의 soft 주체(parent)가
             // 사라졌으면 이 시점에 점유 해제. attention clear 와 같은 실-포커스 블록이라
-            // 원칙1 안전.
+            // 원칙1 안전. **위 게이트와 무관하다** — soft 점유 청소는 attention 해제 권한과
+            // 별개 동작이고, hard 점유 surface 는 이 함수가 자체적으로 조기 반환한다.
             engine.reconcile_soft_occupancy_on_focus(sid);
         }
 
@@ -704,8 +724,9 @@ impl GpuState {
             && !state.modifier_hint_hovered
             && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
         {
-            let px = pos.x * self.scale_factor;
-            let py = pos.y * self.scale_factor;
+            // egui 가 준 hover 좌표는 논리, `winit_cursor_icon_at` 은 물리를 받는다.
+            let px = LogicalPx(pos.x).to_physical(self.scale_factor).value();
+            let py = LogicalPx(pos.y).to_physical(self.scale_factor).value();
             icon = state.winit_cursor_icon_at(
                 engine,
                 px,

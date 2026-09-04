@@ -4,7 +4,8 @@
 //! `gpu_total_ms` 와 `CellRenderer::draw_call_count()` 의 total. 매 N=`DUMP_EVERY`
 //! 프레임마다 p50/p99/max 를 `tracing::info!` 로 한 줄 dump 한다.
 //!
-//! Enable: `RUST_LOG=tasty::gfx::perf=info`. 기본 RUST_LOG 비활성.
+//! Enable: `TASTY_LOG=tasty::gfx::perf=info`. 본체 기본 필터에서는 비활성이다.
+//! 변수 이름은 `RUST_LOG` 가 아니라 `TASTY_LOG` 다(`docs/dev-guide/crash-diagnostics.md`).
 
 use std::collections::VecDeque;
 
