@@ -78,16 +78,18 @@ use crate::state::AppState;
 /// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
 ///
 /// 라우터 구조:
-/// 1. **engine 핸들러** (`route_engine_handler`): AppState UI 필드를 만지지 않는
-///    핸들러 60+개. `&mut AppState`를 받지만 본문이 `state.engine`만 접근하거나
-///    AppState 메서드(현재는 engine-only)만 호출한다. 단계 07에서 plugin 권한
-///    게이트가 이 진입점에서 동작한다.
-/// 2. **GUI 의존 핸들러** (`route_gui_handler`): UI state(popups/dialogs/active_workspace)
-///    를 만져야 하는 소수 핸들러. 권한 게이트 대상 외부.
-/// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release에서는 정의 안 됨.
+/// 1. **engine 핸들러** (`route_engine_handler`): 등록된 핸들러 전부. `&mut AppState`
+///    를 받지만 본문이 `state.engine` 만 접근하거나 AppState 메서드만 호출한다.
+/// 2. **debug 핸들러** (`route_debug_handler`): debug build 전용. release 에서는 정의 안 됨.
 ///
-/// 권한 게이트는 라우터의 가장 바깥에서 한 번만 실행된다. plugin이 호출한
-/// 명령이 권한을 통과하지 못하면 `permission_denied` 에러로 즉시 회신.
+/// 게이트 3종(권한 / telemetry cap / rate limit)은 라우팅보다 **먼저** 돈다. plugin 이
+/// 호출한 명령이 권한을 통과하지 못하면 `permission_denied` 로 즉시 회신한다.
+///
+/// 이 함수에 **도달하기 전에** 끝나는 경로도 있다 — GUI 앱의
+/// `App::dispatch_with_caller` 는 list 합산 응답 등을 여기 오기 전에 돌려준다. 그래서
+/// 같은 게이트가 그쪽 진입부에서도 돈다. 중복이 아니라 **경계가 둘**인 것이고, 거부는
+/// 바깥에서 단락되므로 안쪽 게이트가 다시 돌지 않는다. 그 순서를 지키는 계약은 가드
+/// `every_routing_entry_gates_before_it_answers` 가 소유한다.
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -162,7 +164,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 }
 
 /// 권한 게이트: caller 가 `canonical` 을 호출할 권한이 없으면 거부 응답 + audit Deny.
-fn check_permission_gate(
+pub(crate) fn check_permission_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -194,7 +196,7 @@ fn check_permission_gate(
 /// 텔레메트리 cap 차단 게이트: triggered + (Pause|RequireApproval) 인 cap 이 있는
 /// plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
 /// `telemetry.cap.reset` 으로 해제 가능.
-fn check_cap_gate(
+pub(crate) fn check_cap_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -228,7 +230,7 @@ fn check_cap_gate(
 /// 자체는 제외 (영구 차단 방지). throttled 호출은 `record_ipc_call` 을 건너
 /// 뛰므로 `ipc_calls` telemetry 이벤트로 카운트되지 않는다 — throttle 추적은
 /// `RateLimit.throttled_count` 가 담당.
-fn check_rate_limit_gate(
+pub(crate) fn check_rate_limit_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
