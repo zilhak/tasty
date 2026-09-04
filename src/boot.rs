@@ -351,6 +351,8 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         // 완료 판정 전략 레지스트리 시드 — 훅 핸들러와 대칭 위치.
         // notify_via 참조 무결성 검증이 훅 핸들러 레지스트리를 보므로 그 뒤에 둔다.
         crate::completion_strategy::install_default_sources();
+        // 반환 report 는 여기서 소비하지 않는다 — headless 엔 toast UI 가 없어
+        // 포트 미설정/bind 실패는 리스너 내부 `tracing::warn!` 로만 노출된다.
         let _ = crate::webhook::init_from_config(injector.clone());
         app.core.set_host_ipc_injector(injector);
     }

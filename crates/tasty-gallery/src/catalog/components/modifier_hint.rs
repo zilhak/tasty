@@ -203,6 +203,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
     );
 
+    // 아래 설명 문구가 아직 값을 문자열에 박아 두고 있어 theme 에서 읽은 두
+    // 타이밍 값은 이 specimen 에서 쓰이지 않는다 — 미사용 경고만 억제한다.
     let _ = (held, fade);
     spec::note(
         ui,
@@ -324,6 +326,7 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
                 .color(theme.modhint_held_fg().to_egui()),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // specimen 은 상태가 없다 — 클릭 응답을 받아 처리할 곳이 없다.
             let _ = IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .size(ControlSize::Sm)

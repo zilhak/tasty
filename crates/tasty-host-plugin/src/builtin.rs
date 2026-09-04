@@ -990,6 +990,8 @@ fn verify_builtin_bundle_trust(
     }
     #[cfg(debug_assertions)]
     {
+        // debug 빌드는 서명 검증 결과를 로그로만 남기고 설치를 건너뛰지 않으므로
+        // 설치 대상 경로를 읽을 일이 없다 — release 갈래에서만 쓰인다.
         let _ = dest;
         match crate::bundle_sig::verify_bundle_signature(src) {
             Ok(_) => {}

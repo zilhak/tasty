@@ -81,6 +81,7 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                     ui.horizontal(|ui| {
                         mono_head(ui, theme, "Extension → handler");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // specimen 은 상태가 없다 — 클릭 응답을 받아 처리할 곳이 없다.
                             let _ = Button::new("Add mapping")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)

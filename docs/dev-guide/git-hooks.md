@@ -16,7 +16,7 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 |----|------|------|
 | A.1 | top-level 선언 영역에서 `mod` 가 `use` 뒤에 나오는지 | 선언 순서 |
 | A.2 | `cargo fmt --check` | rustfmt 강제 |
-| C.6 | 주석 없는 `let _ =` | 왜 무시하는지 흔적 강제 |
+| C.6 | 주석 없는 `let _ =` | 왜 무시하는지 흔적 강제 (전수판은 CI `tests/let_underscore_documented.rs`) |
 | C.9 | `egui::Window::` 직접 사용 | PopupManager 강제 ([popup-implementation](popup-implementation.md)) |
 | C.11 | `println!`/`eprintln!` | `tracing::*` 강제 (예외: CLI 출력 — `crates/tasty-cli/*`, `src/boot/cli_routing.rs`) |
 | C.12 | `dbg!` | release leak 방지 |
@@ -25,6 +25,11 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 > W.1 이 경고에 그치는 이유: 그 파일을 만졌다고 반드시 사용자 표면이 바뀌는 것은 아니다(내부 refactor, 도움말 오타, 매니페스트 버전 bump). 하드 실패로 만들면 무해한 커밋마다 `--no-verify` 를 쓰게 되고 훅 전체가 무력화된다 — 판단은 사람이 한다.
 >
 > 색상 하드코딩(옛 C.8)은 pre-commit 에서 빠지고 **clippy `disallowed-methods`** 로 이관됐다 — `#[allow]` 와 path 예외를 정확히 인식한다([color-policy](color-policy.md), [clippy-policy](clippy-policy.md)).
+>
+> C.6 은 staged diff 만 보므로 **기존 코드의 위반은 못 잡는다**. 전수 검사는 CI 의
+> `tests/let_underscore_documented.rs` 가 한다 — 훅이 인정하는 세 형태(같은 줄·윗줄·다음 줄)를
+> 모두 포함하고 조금 더 넓어(빈 줄·속성 건너뛰기, 멀티라인 문장 내부), 훅이 통과시킨 코드를 CI 가
+> 떨어뜨리는 방향은 생기지 않는다. 판정 규약은 [error-handling](error-handling.md) "주석 위치".
 >
 > i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. CI `cargo test --workspace` 의 `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하고, 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
 

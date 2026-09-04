@@ -371,22 +371,22 @@ fn handle_command(out: &mut io::Stdout, cmd: &str, args: &str) -> io::Result<()>
         // ── Termination ── (process exits unconditionally — no caller left
         // to propagate an error to, so these writes are best-effort.)
         "quit" | "exit" => {
-            let _ = write!(out, "BYE\r\n");
-            let _ = out.flush();
+            let _ = write!(out, "BYE\r\n"); // 직후 exit — 전달할 호출자가 없다.
+            let _ = out.flush(); // 위와 같음.
             std::process::exit(0);
         }
         "exit-code" => {
             // exit-code <N>
             let code = args.parse::<i32>().unwrap_or(1);
-            let _ = out.flush();
+            let _ = out.flush(); // 직후 exit — 전달할 호출자가 없다.
             std::process::exit(code);
         }
         "crash" => {
-            let _ = out.flush();
+            let _ = out.flush(); // 직후 abort — 전달할 호출자가 없다.
             std::process::abort();
         }
         "panic" => {
-            let _ = out.flush();
+            let _ = out.flush(); // 직후 panic — 전달할 호출자가 없다.
             panic!("tasty-tui-sim: panic requested");
         }
 
