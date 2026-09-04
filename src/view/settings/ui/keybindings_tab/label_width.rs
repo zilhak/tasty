@@ -17,6 +17,12 @@
 //! 프로세스에서 돌리므로 `OnceLock` 기반 전역 초기화는 테스트 실행 순서에 따라
 //! 다른 언어를 덮어써 버릴 수 있어 재현성이 없다.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::HashMap;
 
 /// entries.rs 의 `(?)` 아이콘 슬롯 예약폭(HELP_HINT_GAP 4px + icon_glyph_size_sm 14px).

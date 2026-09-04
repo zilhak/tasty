@@ -79,6 +79,12 @@
 //!   실행으로 판정할 수 없다. 목록에 없는 정확한 표현은 **거짓 위반**으로 나타나며, 그때
 //!   목록을 넓히는 것이 처방이다 — 이 방향의 오류는 조용하지 않다.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
