@@ -2169,6 +2169,39 @@ fn closing_a_workspace_emits_the_host_event_for_both_origins() {
     }
 }
 
+/// `save_snapshot` 과 `is_user_close` 는 **독립 축**이다 — 인라인 cascade 경로에서
+/// 한 값으로 접으면 안 된다.
+///
+/// PTY 프로세스가 스스로 종료돼 도는 cleanup(`cascade_terminal_process_exited`)은
+/// `save_snapshot=false, is_user_close=true` 로 부른다: 셸이 이미 끝나 되살릴 것이
+/// 없으니 되돌리기 스택에는 안 넣지만, 그 종료를 일으킨 것은 에이전트가 아니라
+/// 사람이므로 plugin 에는 사용자 close 로 나가야 한다. 워크스페이스 close 쪽
+/// (`WorkspaceCloseOrigin`)처럼 하나로 접으면 이 조합에서 둘 중 하나가 반드시
+/// 틀린 값이 된다.
+#[test]
+fn pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+    let ws_idx = state.active_workspace;
+    let surface = engine.workspaces[ws_idx].all_surface_ids()[0];
+    let closed_before = engine.closed_items.len();
+
+    // PTY 종료 cleanup 과 같은 조합: 스냅샷 없음 + 사용자 close.
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface, true));
+
+    assert_eq!(
+        engine.closed_items.len(),
+        closed_before,
+        "스스로 끝난 셸은 되돌리기 스택에 쌓이지 않는다(save_snapshot=false)"
+    );
+    let events = state.take_pending_lifecycle_events();
+    assert!(!events.is_empty(), "close 는 lifecycle 이벤트를 낸다");
+    assert!(
+        events.iter().all(|e| e.is_user_close),
+        "같은 호출이 plugin 에는 사용자 close 로 나가야 한다(is_user_close=true)"
+    );
+}
+
 /// 워크스페이스의 **마지막 surface 가 스스로 닫혀** 워크스페이스까지 사라지는
 /// 인라인 cascade(`AppState::close_case_workspace`)에서도 `workspace.closed` 가
 /// 나간다.

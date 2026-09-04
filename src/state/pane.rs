@@ -344,6 +344,25 @@ impl AppState {
     /// 순차 위임한다. C2(`Core::apply_close_surface`)가 CoreEvent 를 *반환*해
     /// caller 가 cleanup 을 실행하는 것과 달리, 여기서는 각 case 메서드가
     /// cleanup/enqueue 를 *직접 실행*한다.
+    ///
+    /// # `save_snapshot` 과 `is_user_close` 를 왜 따로 받나
+    ///
+    /// [`AppState::close_workspace_at`] 은 같은 두 축을
+    /// [`WorkspaceCloseOrigin`](crate::state::WorkspaceCloseOrigin) 하나로 접었다 —
+    /// 그 경로에서는 두 값이 **항상 같이 움직이는데** 인자가 하나뿐이라 둘 중
+    /// 하나만 갈리는 사고가 실제로 났기 때문이다. **여기서 같은 일을 하면 안 된다.**
+    /// 이 경로는 두 축이 실제로 독립이고, 프로덕션에 서로 다른 조합이 둘 다 있다:
+    ///
+    /// | 호출자 | `save_snapshot` | `is_user_close` |
+    /// |---|---|---|
+    /// | egui 닫기([`AppState::close_active_surface`]) | `true` | `true` |
+    /// | PTY 프로세스 종료 cleanup(`app::dispatch_domain` 의 `cascade_terminal_process_exited`) | **`false`** | `true` |
+    ///
+    /// 셸이 스스로 끝난 경우 되살릴 것이 없어 스냅샷을 남기지 않지만, 그 종료를
+    /// 일으킨 것은 에이전트가 아니라 사람이므로 plugin 에는 사용자 close 로 나간다.
+    /// 두 값을 하나로 접으면 이 조합에서 둘 중 하나가 반드시 틀린 값이 된다.
+    /// 독립성은 `pty_exit_close_skips_the_snapshot_but_still_reports_a_user_close`
+    /// 가 고정한다.
     fn close_surface_by_id_inner(
         &mut self,
         engine: &mut CoreState,
@@ -538,6 +557,9 @@ impl AppState {
     /// Case 4 & 5: workspace 의 마지막 pane — workspace close. 항상 true.
     /// `target_kinds` 를 `workspaces.remove` **전에** 선캡처하고(remove 후
     /// surface_kind 조회 불가), memory purge + active_workspace 보정을 포함한다.
+    ///
+    /// 두 bool 을 각각 받는 이유는 [`AppState::close_surface_by_id_inner`] 의
+    /// "왜 따로 받나" 참조 — 이 경로에서는 두 축이 독립이다.
     fn close_case_workspace(
         &mut self,
         engine: &mut CoreState,
