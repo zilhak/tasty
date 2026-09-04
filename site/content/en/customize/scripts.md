@@ -1,4 +1,4 @@
-<!-- source-hash: 8190a1e44fbf -->
+<!-- source-hash: 9cdf9a99c782 -->
 # Lua scripts
 
 Register a small Lua script and run it from a keybinding, or have it run automatically the moment a window, Workspace or Tab is created or destroyed. A script touches Tasty only through a fixed set of entry points and runs on its own thread, so a stuck script does not freeze the window.

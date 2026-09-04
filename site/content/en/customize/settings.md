@@ -1,4 +1,4 @@
-<!-- source-hash: 8bd918dcf95d -->
+<!-- source-hash: 005bf85448ee -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).

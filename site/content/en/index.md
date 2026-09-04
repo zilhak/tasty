@@ -1,4 +1,4 @@
-<!-- source-hash: 073d256a574f -->
+<!-- source-hash: 7f43fd67c0a8 -->
 # Tasty guide
 
 Tasty is a GPU-accelerated terminal that works the same on Windows · macOS · Linux. You keep several Workspaces in one window and divide each Workspace into Panes · Tabs · splits. Almost everything a person does with the keyboard can also be done with the `tasty` CLI, so AI coding agents such as Claude Code · Codex can drive the terminal directly.

@@ -1,4 +1,4 @@
-<!-- source-hash: 9cfd3f28725a -->
+<!-- source-hash: 2e7f7d1030d3 -->
 # Working with Claude and Codex
 
 This page explains how to run Claude Code and Codex CLI inside Tasty, and how one agent drives another as a child to parallelise work. Install the hooks once, and the parent is notified automatically when a child finishes its work.

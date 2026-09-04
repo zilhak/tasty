@@ -1,4 +1,4 @@
-<!-- source-hash: cd675c38778f -->
+<!-- source-hash: fb80f411107d -->
 # Panes · Tabs · splits
 
 After reading this page you will know how to divide the screen, work with Tabs, move Surfaces or change them to another kind, and save layouts you use often as presets. The terms follow [A first look](../getting-started/first-look.md).
