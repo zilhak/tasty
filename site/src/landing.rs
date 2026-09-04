@@ -55,9 +55,8 @@ const KO_COPY: Copy = Copy {
     title_lead: "AI 에이전트가",
     title_accent: "직접 조작하는",
     title_tail: "터미널",
-    lede: "GPU 로 그리는 네이티브 터미널이다. 내가 쓰는 키보드·마우스와 에이전트가 쓰는 \
-           tasty 명령이 같은 화면을 함께 다룬다. 에이전트가 탭을 열고, 명령을 보내고, \
-           결과를 읽고, 끝나면 알려준다.",
+    lede: "에이전트에게 터미널을 맡겨도 내 화면은 흔들리지 않는다. 에이전트는 tasty 명령으로 \
+           자기 탭에서 일하고, 끝나면 알려준다. GPU 로 그리니 분할을 잔뜩 띄워도 매끄럽다.",
     cta_primary: "다운로드",
     cta_secondary: "가이드 보기",
     install_note: "OS 별 설치 절차와 첫 실행은",
@@ -67,8 +66,8 @@ const KO_COPY: Copy = Copy {
 
     why_kicker: "왜 Tasty 인가",
     why_title: "에이전트가 일해도 내 자리는 그대로다",
-    why_body: "에이전트가 탭을 만들고 명령을 보내도 내가 보고 있던 화면, 선택한 텍스트, \
-               스크롤 위치는 움직이지 않는다. 사용자 입력을 흉내 내는 기능은 제품에 없다.",
+    why_body: "에이전트가 탭을 만들고 명령을 보내도 내가 보던 화면, 잡아둔 선택, 스크롤 위치는 \
+               움직이지 않는다. 사용자 입력을 흉내 내는 기능은 아예 없다.",
     why_points: &[
         (
             "01",
@@ -97,7 +96,7 @@ const KO_COPY: Copy = Copy {
 
     features_kicker: "기능",
     features_title: "터미널이 해야 할 일과, 에이전트가 필요로 하는 일",
-    features_body: "자주 쓰는 것만 골랐다. 전체는 가이드에 순서대로 정리되어 있다.",
+    features_body: "자주 손이 가는 것만 골랐다. 나머지는 가이드가 순서대로 다룬다.",
     cards: &[
         (
             "grid",
@@ -126,7 +125,7 @@ const KO_COPY: Copy = Copy {
         (
             "graph",
             "작업 DAG",
-            "할 일을 의존 관계로 묶으면 순서대로 실행되고, 진행 상황을 그래프로 본다.",
+            "할 일을 의존 관계로 묶어 두면 순서대로 돈다. 어디까지 갔는지는 그래프로 본다.",
             "agents/tasks.html",
         ),
         (
@@ -175,14 +174,14 @@ const KO_COPY: Copy = Copy {
 
     agents_kicker: "다중 에이전트",
     agents_title: "여러 에이전트를 띄우고, 끝나는 대로 통지받는다",
-    agents_body: "자식 에이전트를 띄우면 명령은 즉시 돌아오고 완료 알림이 자동으로 걸린다. \
-                  각 자식이 쉬거나, 입력을 기다리거나, 종료되면 띄운 쪽 터미널로 통지가 온다.",
+    agents_body: "자식을 띄우는 명령은 기다리지 않고 바로 끝난다. 완료 훅은 알아서 걸린다. \
+                  자식이 멈추거나 입력을 기다리면 띄운 쪽 터미널이 먼저 안다.",
     agents_caption: "사람이 GUI 에서 하는 일은 에이전트가 CLI 로 똑같이 할 수 있다.",
 
     platform_kicker: "플랫폼",
     platform_title: "세 OS 모두 1 급",
-    platform_body: "Windows · macOS · Linux 에서 같은 기능, 같은 단축키 체계, 같은 CLI. \
-                    dmg · msi · deb · rpm · AppImage 로 설치한다.",
+    platform_body: "세 OS 에서 기능도 단축키도 CLI 도 다르지 않다. 설치 파일은 dmg · msi · deb · \
+                    rpm · AppImage 로 낸다.",
     stats: &[
         ("3", "운영체제"),
         ("7", "번들 플러그인"),
@@ -191,7 +190,7 @@ const KO_COPY: Copy = Copy {
     ],
 
     cta_title: "가이드부터 읽어도 되고, 바로 설치해도 된다",
-    cta_body: "설치부터 에이전트 연동, 원격 attach 까지 가이드에 순서대로 정리했다.",
+    cta_body: "설치부터 에이전트 연동과 원격 attach 까지, 가이드가 순서대로 짚는다.",
     cta_docs: "가이드 읽기",
     cta_download: "다운로드",
 };
@@ -202,9 +201,9 @@ const EN_COPY: Copy = Copy {
     title_lead: "A terminal",
     title_accent: "an AI agent",
     title_tail: "can drive itself",
-    lede: "A native terminal drawn on the GPU. Your keyboard and mouse and an agent's \
-           tasty commands work the same screen together: the agent opens tabs, sends \
-           commands, reads the results, and tells you when it is done.",
+    lede: "Hand a terminal to an agent and your own screen holds still. The agent works in \
+           its own tab through tasty commands and tells you when it lands. Drawn on the GPU, \
+           so a wall of splits still feels immediate.",
     cta_primary: "Download",
     cta_secondary: "Read the guide",
     install_note: "Per-OS install steps and the first launch:",
@@ -246,7 +245,7 @@ const EN_COPY: Copy = Copy {
 
     features_kicker: "Features",
     features_title: "What a terminal owes you, and what an agent needs from one",
-    features_body: "The ones people reach for most. The guide walks through all of them in order.",
+    features_body: "The ones people reach for most. The guide takes the rest in order.",
     cards: &[
         (
             "grid",
@@ -275,7 +274,7 @@ const EN_COPY: Copy = Copy {
         (
             "graph",
             "Task DAG",
-            "Tie work together by dependency and it runs in order, with the progress drawn as a graph.",
+            "Tie work together by dependency and it runs in order. Watch how far it got as a graph.",
             "agents/tasks.html",
         ),
         (
@@ -324,15 +323,15 @@ const EN_COPY: Copy = Copy {
 
     agents_kicker: "Multi-agent",
     agents_title: "Spawn several agents, hear back as each one lands",
-    agents_body: "Spawning a child agent returns immediately and arms its completion notice for \
-                  you. When a child goes idle, waits for input, or exits, the terminal that \
-                  spawned it is notified.",
+    agents_body: "The command that spawns a child does not wait around — it returns at once, and \
+                  the completion hook arms itself. When a child stalls or wants input, the \
+                  terminal that spawned it hears about it first.",
     agents_caption: "Whatever a person does in the GUI, an agent can do from the CLI.",
 
     platform_kicker: "Platforms",
     platform_title: "All three, first class",
-    platform_body: "The same features, the same shortcut scheme, and the same CLI on Windows, \
-                    macOS, and Linux. Installs as dmg, msi, deb, rpm, or AppImage.",
+    platform_body: "Nothing differs across the three: not the features, not the shortcuts, not \
+                    the CLI. Ships as dmg, msi, deb, rpm, or AppImage.",
     stats: &[
         ("3", "operating systems"),
         ("7", "bundled plugins"),
@@ -341,7 +340,7 @@ const EN_COPY: Copy = Copy {
     ],
 
     cta_title: "Start with the guide, or just install it",
-    cta_body: "From installation to agent integration and remote attach, the guide covers it in order.",
+    cta_body: "From installing it to wiring up an agent to attaching a remote, the guide walks it in order.",
     cta_docs: "Read the guide",
     cta_download: "Download",
 };
