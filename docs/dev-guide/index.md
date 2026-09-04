@@ -9,6 +9,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | 문서 | 내용 |
 |------|------|
 | [git-hooks](git-hooks.md) | clone 직후 `./scripts/dev-setup.sh` + pre-commit/pre-push 검사 |
+| [shell-scripts](shell-scripts.md) | `scripts/`·`.githooks/` 규약 — 조기에 끝나는 소비자를 파이프 오른쪽에 두지 않는다(SIGPIPE) |
 | [ci-gates](ci-gates.md) | CI·훅 게이트 매트릭스 — 어떤 검증 명령이 어디서(자동/수동/훅) 실제로 도는지, 자동 채널이 없는 검사는 없다고 명시 |
 | [self-verification](self-verification.md) | 커밋 전 직접 검증(사용자에게 떠넘기지 않기) |
 | [independent-verification](independent-verification.md) | dogfooding · debug↔release 격리 |
