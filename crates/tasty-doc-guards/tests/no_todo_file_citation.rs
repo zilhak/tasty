@@ -527,7 +527,7 @@ fn rel_of(file: &Path, root: &Path) -> String {
 
 #[test]
 fn no_todo_file_citation() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = &tasty_doc_guards::repo_root();
     let mut files = Vec::new();
     gather(root, root, &mut files);
     files.sort();
@@ -869,7 +869,7 @@ fn allowlist_paths_match_exactly_not_by_prefix_or_suffix() {
 fn allowlist_entries_are_live() {
     // 경로가 썩으면 가드가 그 파일을 다시 잡아 **시끄럽게** 실패하지만, 패턴 id 가 썩으면
     // (오탈자·패턴 개명) 의도한 면제가 조용히 사라진 채 아무도 모른다. 뒤쪽을 여기서 잡는다.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = &tasty_doc_guards::repo_root();
     let ids: Vec<&str> = PATTERNS.iter().map(|(id, _, _)| *id).collect();
     for (rel, pats) in ALLOWLIST {
         assert!(

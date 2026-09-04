@@ -121,7 +121,7 @@ done | wc -l                                    # 51
   | `src/dpi_conversion_guard.rs` | 800 | 1109 |
   | `src/source_guards/mod.rs` | 900 | "1100 남짓" |
   | `crates/tasty-host-plugin/src/test_support.rs` | 20 | 37 |
-  | `tests/ci_channel_claims_match_workflows.rs` | 400 | 미기록 |
+  | `crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` | 400 | 미기록 |
   | `tests/let_underscore_documented.rs` | 700 | 1180 |
   | `tests/no_emoji_in_source.rs` | 700 | 1120 |
 

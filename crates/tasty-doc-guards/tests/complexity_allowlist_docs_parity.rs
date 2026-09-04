@@ -39,8 +39,10 @@ const ADR: &str = "docs/adr/0037-complexity-gate.md";
 /// 부채 블록의 시작을 가르는 표식. allowlist 안의 주석 한 줄이다.
 const DEBT_MARKER: &str = "# ──";
 
+/// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
+/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    tasty_doc_guards::repo_root()
 }
 
 fn read(rel: &str) -> String {
@@ -252,7 +254,7 @@ mod exemption_mutations {
     /// 자기 참조가 된다. 위 `needle()` 의 쪼갬이 살아 있다는 증거다.
     #[test]
     fn the_needle_is_not_written_whole_in_this_file() {
-        let me = read("tests/complexity_allowlist_docs_parity.rs");
+        let me = read("crates/tasty-doc-guards/tests/complexity_allowlist_docs_parity.rs");
         assert!(
             !me.contains(&needle()),
             "이 파일이 바늘을 통째로 갖고 있다 — 세는 대상에 자기가 들어간다. \

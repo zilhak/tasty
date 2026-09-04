@@ -99,5 +99,5 @@
 ## References
 
 - `tests/layering.rs` — 가드 본체(세 목록과 두 방향 검사).
-- `tests/no_todo_file_citation.rs` — `(경로, 사유)` 쌍 면제 목록의 선례.
+- `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` — `(경로, 사유)` 쌍 면제 목록의 선례.
 - [ADR-0105](0105-no-nongit-path-refs-in-tracked-sources.md) — 추적 소스의 참조 규칙.

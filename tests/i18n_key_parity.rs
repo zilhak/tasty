@@ -24,7 +24,7 @@
 //! 등록 방법과 예외의 근거는 `docs/dev-guide/i18n.md` "강제 테스트" 절.
 //! 선례: `tests/native_surface_labels_i18n.rs`(키 존재) ·
 //! `tests/plugin_manifest_version_parity.rs`(디렉토리 순회 parity) ·
-//! `tests/no_todo_file_citation.rs`(소스 스캔 + allowlist).
+//! `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(소스 스캔 + allowlist).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -184,7 +184,7 @@ const PENDING_FIX_MISSING_KEYS: &[(&str, &str)] = &[
     ),
 ];
 
-/// 소스 순회에서 통째로 가지치기할 디렉토리명(`tests/no_todo_file_citation.rs` 와 동일).
+/// 소스 순회에서 통째로 가지치기할 디렉토리명(`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와 동일).
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지

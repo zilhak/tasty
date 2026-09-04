@@ -11,7 +11,7 @@
 //! **하나도 깨지지 않는 것**을 확인했다. 그래서 행동 테스트 대신 소스 형태를 고정한다 —
 //! 이 파일들에서 `panic!` / `.expect(` / `.unwrap()` 이 보이면 fail 한다.
 //!
-//! 선례: `tests/no_todo_file_citation.rs` · `tests/no_checkbox_in_docs.rs`(소스/문서 스캔
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` · `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs`(소스/문서 스캔
 //! + allowlist 구조).
 
 use std::path::{Path, PathBuf};

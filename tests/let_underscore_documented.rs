@@ -68,7 +68,7 @@ use std::path::{Path, PathBuf};
 /// 금지 형태를 담는 것이 본질인 자리의 **면제 조각**. 파일 통째가 아니라
 /// `(경로, 그 파일에서 면제할 코드 조각)` 쌍이다 — 등록한 조각을 담은 줄만 넘어가고,
 /// 같은 파일이 **다른 형태의 위반을 새로 들이면 그건 잡힌다.** 조립도 근거도
-/// `tests/no_todo_file_citation.rs` 의 ALLOWLIST 와 같다(루트 `CLAUDE.md` 가 그
+/// `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 의 ALLOWLIST 와 같다(루트 `CLAUDE.md` 가 그
 /// 이유를 적어놨다 — "파일 통째가 아니라 패턴 단위로 면제해, 그 파일이 다른 형태의
 /// 위반을 새로 들이면 그건 잡히게 한다").
 ///

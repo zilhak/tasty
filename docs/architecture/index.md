@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 48 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
+tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 49 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
 
 ## 기술 스택
 
@@ -32,9 +32,9 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 > 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. `src/engine/` 모듈명은 일부 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)의 전환기 컨테이너로 잠시 남아 있다.
 
-## 워크스페이스 크레이트 (48)
+## 워크스페이스 크레이트 (49)
 
-의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — 통합 테스트라 **자동 실행은 `check-headless` 잡뿐**이다(기본 조합 잡은 `--lib --bins` 라 못 본다 — [ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 직접 돌려라.
+의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — 통합 테스트라 **자동 실행은 `check-headless` 잡뿐**이다(기본 조합 잡은 `--lib --bins` 라 못 본다 — [ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 직접 돌려라.
 
 ### type-\* / primitive (leaf)
 `tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf) · `tasty-timer`(중앙 타이머 허브 — 메인 루프의 주기 작업을 키로 등록하고 매 프레임 `drain_due` 로 소비, 고정 주기 ticker 스레드 대신 다음 데드라인까지만 자는 waker 스레드 1개, 의존 0)
@@ -62,6 +62,9 @@ type-\* + 다른 도메인-IO 만 의존 가능.
 
 ### CLI client
 `tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/remote-profiles)
+
+### 가드 전용 (의존 0)
+`tasty-doc-guards`(문서를 읽는 통합 가드 일곱의 집 — `docs/` · `site/` · `*.md` 를 소스·워크플로 텍스트와 대조한다. **의존이 0 인 것이 존재 이유다**: 잡이 싸야 CI 에서 경로 필터 없이 매 push 돌릴 수 있고, 그래야 문서만 바뀐 push 에서도 돈다 — [ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md))
 
 ### 도구 / standalone
 `tasty-tui-simulator`(E2E TUI 시뮬레이터, lib + `tasty-tui-sim` binary — 로직은 lib 공유, debug 빌드에선 `tasty debug sim` 으로도 노출) · `tasty-gallery`(ui-widgets 데모 바이너리, `cargo run -p tasty-gallery` — 본체 빌드와 분리)

@@ -51,7 +51,7 @@ Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs
 - **사용자에게 보이는 동작**(메뉴·단축키·설정 키·CLI 명령·설치 절차)이 바뀌면 공개 사이트의 사용자 가이드 [`site/content/`](site/content/index.md) 도 같은 커밋에서 갱신한다. 가이드는 `docs/` 명세와 독자가 다르다(설치해서 쓰는 사람) — 소스 경로·ADR·IPC 메서드명을 넣지 않는다. 영어 번역(`site/content/en/`)을 손봤으면 `--stamp` 한다 ([`docs/dev-guide/site.md`](docs/dev-guide/site.md)).
 - 해당 카테고리의 인덱스(예: [`docs/features/index.md`](docs/features/index.md), [`docs/dev-guide/index.md`](docs/dev-guide/index.md))를 갱신. [`docs/index.md`](docs/index.md) 는 카테고리 진입점 표라, 카테고리 자체가 신설/폐지될 때만 손댄다.
 - 구현 히스토리는 남기지 않는다. **현재 상태만** 기술한다.
-- docs 문서에 마크다운 체크박스(task list)를 넣지 않는다 — 체크 상태는 진행 추적이라 transient 다. Acceptance Criteria 는 평문 Given/When/Then 불릿, 검증·절차 항목은 평문 불릿이나 번호 목록 ([`docs/documentation-model.md`](docs/documentation-model.md) §6). `tests/no_checkbox_in_docs.rs` 가 강제한다.
+- docs 문서에 마크다운 체크박스(task list)를 넣지 않는다 — 체크 상태는 진행 추적이라 transient 다. Acceptance Criteria 는 평문 Given/When/Then 불릿, 검증·절차 항목은 평문 불릿이나 번호 목록 ([`docs/documentation-model.md`](docs/documentation-model.md) §6). `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` 가 강제한다.
 - 결정의 *근거 / 대안 / 재검토 조건* 은 `docs/adr/` 에 ADR 로 박는다. design/ 본문은 결정의 *현재 운영 상태* 만 기술. ADR 작성/수정 시 [`docs/adr/template.md`](docs/adr/template.md) 의 작성규칙을 먼저 읽는다.
 
 ## 커밋 정책
@@ -67,7 +67,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 ### 본체 (`Cargo.toml` 루트)
 
 - **패치 버전**: 사용자가 빌드를 요청했을 때, 마지막 빌드 이후 새 커밋이 있고 사용자가 막지 않았다면 AI 가 자동으로 +1 한다.
-- **README 배지 lockstep (필수)**: 위 patch +1 과 함께 `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 **동일 값**으로 맞춰 **같은 커밋**에 포함한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 빠뜨리면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. `tests/readme_badge_parity.rs` 가 정합을 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동). 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌려야 그 자리에서 잡힌다**([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)).
+- **README 배지 lockstep (필수)**: 위 patch +1 과 함께 `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 **동일 값**으로 맞춰 **같은 커밋**에 포함한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 빠뜨리면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. `crates/tasty-doc-guards/tests/readme_badge_parity.rs` 가 정합을 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동). 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌려야 그 자리에서 잡힌다**([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)).
 - **마이너 / 메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 - **AI 자체 검증용 빌드** (`cargo build` / `cargo test`): 버전을 올리지 않는다.
 
@@ -89,7 +89,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 ## 빌드
 
-Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 48 개 — 그중 `tasty-plugin-sdk-wasm` 은 workspace `exclude`). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
+Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 49 개 — 그중 `tasty-plugin-sdk-wasm` 은 workspace `exclude`). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
 
 - **일상 개발**: `cargo build` 또는 `cargo build --release`.
 - **배포 산출물 빌드 (DMG / MSIX / AppImage 등)**: `cargo build --profile dist`. 일상 빌드에는 사용하지 않는다 (3.5 배 느림).
@@ -195,7 +195,7 @@ Claude Design(claude.ai/design) 프로젝트의 **changelog**도 동일하게 �
 - **설계 결정이 크면**: 커밋되는 [`docs/adr/`](docs/adr/) ADR을 작성하고 그 경로를 인용한다.
 - **기능 동작을 설명해야 하면**: 커밋되는 [`docs/`](docs/) 문서(예: `docs/dev-guide/`, `docs/features/`, `docs/plugins/`)를 참조하거나 신설해 그 경로를 인용한다.
 
-상위 규칙과 위 두 형태를 함께 `tests/no_todo_file_citation.rs` 가 강제한다 — 그 타깃은 main push 마다 `check-headless` 의 전체 스위트에서 **자동으로 실행된다**(기본 조합 전용 잡은 `--lib --bins` 라 못 본다). 다만 자동 잡은 push 된 커밋만 본다([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)). 즉 커밋 전에 직접 돌려야 잡힌다. 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4)·앵커 슬러그 번호(P5)·로컬 작업 폴더 언급(P6) 여섯 형태를 모두 잡는다. 스캔 대상은 레포 전체 파일이다(스크립트·CI 설정·루트 문서 포함) — 바이너리 확장자, 빌드 산출물, gitignored 로컬 폴더, vendored `assets/` 만 뺀다. 금지 형태를 담는 것이 본질인 파일(규칙 본문 등)은 그 테스트의 `ALLOWLIST` 에 **(경로, 허용 패턴)** 으로 등록한다 — 파일 통째가 아니라 패턴 단위로 면제해, 그 파일이 다른 형태의 위반을 새로 들이면 그건 잡히게 한다.
+상위 규칙과 위 두 형태를 함께 `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 가 강제한다 — 그 타깃은 main push 마다 `check-headless` 의 전체 스위트에서 **자동으로 실행된다**(기본 조합 전용 잡은 `--lib --bins` 라 못 본다). 다만 자동 잡은 push 된 커밋만 본다([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)). 즉 커밋 전에 직접 돌려야 잡힌다. 번호 인용(P1)·conductor 번호(P2)·경로 인용(P3)·changelog slug(P4)·앵커 슬러그 번호(P5)·로컬 작업 폴더 언급(P6) 여섯 형태를 모두 잡는다. 스캔 대상은 레포 전체 파일이다(스크립트·CI 설정·루트 문서 포함) — 바이너리 확장자, 빌드 산출물, gitignored 로컬 폴더, vendored `assets/` 만 뺀다. 금지 형태를 담는 것이 본질인 파일(규칙 본문 등)은 그 테스트의 `ALLOWLIST` 에 **(경로, 허용 패턴)** 으로 등록한다 — 파일 통째가 아니라 패턴 단위로 면제해, 그 파일이 다른 형태의 위반을 새로 들이면 그건 잡히게 한다.
 
 로컬 작업을 추적할 목적 자체는 유효하다 — 로컬 작업 폴더에 번호 붙은 TODO 파일을 쓰는 관례는 그대로 유지한다(폴더 위치는 위 "임시 파일·계획 위치" 와 같이 로컬 전용 지침이 정한다). 다만 그 번호는 **작업 티켓**일 뿐 **영구 코드 근거 좌표**가 아니므로, 소스에 스며들게 하지 않는다.
 

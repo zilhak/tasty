@@ -6,7 +6,7 @@
 //! 유지된 적이 있다). 매니페스트 작성자에게는 그 표가 정본이라, 표에 없는 게이트는
 //! **거부는 되는데 왜 거부되는지 문서에 없는 권한**이 된다.
 //!
-//! 선례인 `tests/permission_token_docs_parity.rs` 는 소스를 텍스트로 파싱해 토큰을 뽑지만,
+//! 선례인 `crates/tasty-doc-guards/tests/permission_token_docs_parity.rs` 는 소스를 텍스트로 파싱해 토큰을 뽑지만,
 //! 여기서는 그럴 필요가 없다 — 본 크레이트가 `tasty-plugin-manifest` 를 의존하므로
 //! [`ContributesGate::ALL`] 을 **런타임에 열거**한다. 파서가 없으니 파서가 틀릴 일도 없다.
 //!

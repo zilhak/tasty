@@ -196,7 +196,7 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 열여덟 자리에 쌓여 있었다. 컴파일도 통과하고, 틀렸다는 사실은 워크플로 파일을 직접
 열어야만 보인다 — 그래서 리뷰로는 걸러지지 않는다.
 
-`tests/ci_channel_claims_match_workflows.rs` 가 그 형태를 막는다(이 가드 자신도 통합
+`crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` 가 그 형태를 막는다(이 가드 자신도 통합
 테스트라 자동 실행은 `check-headless` 잡에서만 일어난다 — 위 규칙이 자기에게도 그대로
 적용된다). 문서를 문서로 검사하지 않고 **워크플로에서 자동 트리거를 가진 잡을 읽는다.**
 네 축이 있다.

@@ -14,9 +14,9 @@
 //! `surface.read` 같은 토큰과 `surface.list` 같은 IPC 메서드명이 섞여 있어, 구조적으로
 //! 구분할 방법이 없으면 오탐만 늘어난다.
 //!
-//! 선례: `tests/architecture_crate_list_complete.rs` · `tests/plugin_manifest_version_parity.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` · `tests/plugin_manifest_version_parity.rs`.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 /// 토큰 문자열의 단일 출처.
 const SOURCE: &str = "crates/tasty-plugin-manifest/src/types.rs";
@@ -27,8 +27,10 @@ const DOCS: &[&str] = &[
     "docs/concepts/plugins.md",
 ];
 
-fn root() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+/// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
+/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
+fn root() -> PathBuf {
+    tasty_doc_guards::repo_root()
 }
 
 fn read(rel: &str) -> String {

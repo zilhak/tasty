@@ -28,7 +28,7 @@
 //! 주석 안의 언급도 위반으로 본다 — 주석이 옛 경로를 가리키면 그것도 실제
 //! 오정보이므로 코드와 같이 갱신되어야 한다.
 //!
-//! 선례: `tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -60,7 +60,7 @@ const ALLOWED_PATHS: &[&str] = &[
 const BASELINE_FILES: &[&str] = &[];
 
 /// **범위 밖** — `#[cfg(test)]` 전용 모듈. `(경로, 사유)` 쌍으로 적는다
-/// (`tests/no_todo_file_citation.rs` 의 `ALLOWLIST` 규약).
+/// (`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 의 `ALLOWLIST` 규약).
 ///
 /// 여기 이름을 올리는 것은 위반을 눈감아 주는 것이 아니라 **그 파일이 프로덕션
 /// 빌드에 존재하지 않음**을 주장하는 것이다. 그래서 가드는 그 주장을 검사한다 —

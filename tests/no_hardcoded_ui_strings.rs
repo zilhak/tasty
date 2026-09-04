@@ -39,7 +39,7 @@
 //! 잔존 위반은 [`PENDING_FIX_LITERALS`] 에 파일·리터럴·고칠 방법과 함께 둔다 — 고쳐지면
 //! 항목을 지우라고 fail 하므로 빚이 조용히 남지 않는다.
 //!
-//! 선례: `tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -159,7 +159,7 @@ const CLAP_DOC_ROOTS: &[&str] = &[
     "crates/tasty-cli/src/lib.rs",
 ];
 
-/// 순회에서 통째로 가지치기할 디렉토리명(`tests/no_todo_file_citation.rs` 와 동일).
+/// 순회에서 통째로 가지치기할 디렉토리명(`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와 동일).
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지

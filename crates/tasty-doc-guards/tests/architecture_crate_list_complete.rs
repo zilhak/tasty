@@ -19,14 +19,16 @@
 //!
 //! 선례: `tests/changelog_unreleased.rs` · `tests/plugin_manifest_version_parity.rs`.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 const DOC: &str = "docs/architecture/index.md";
 const CRATES_DIR: &str = "crates";
 const SECTION_HEADER: &str = "## 워크스페이스 크레이트 (";
 
-fn root() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+/// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
+/// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
+fn root() -> PathBuf {
+    tasty_doc_guards::repo_root()
 }
 
 fn read(rel: &str) -> String {

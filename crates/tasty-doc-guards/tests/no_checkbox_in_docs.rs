@@ -17,7 +17,7 @@
 //! **코드 펜스 안팎을 구분하지 않는다.** 규칙이 "docs 문서에 체크리스트를 넣지
 //! 않는다" 이므로 펜스 안의 예시도 금지 대상이다.
 //!
-//! 선례: `tests/no_todo_file_citation.rs`(docs 스캔 구조) · `tests/no_emoji_in_source.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(docs 스캔 구조) · `tests/no_emoji_in_source.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -104,7 +104,7 @@ fn rel_of(file: &Path, root: &Path) -> String {
 
 #[test]
 fn no_checkbox_in_docs() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = &tasty_doc_guards::repo_root();
     let mut files = Vec::new();
     gather(&root.join("docs"), root, &mut files);
     files.sort();

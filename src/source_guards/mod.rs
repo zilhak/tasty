@@ -505,7 +505,7 @@ mod read_only_handle_mtime;
 // 52 개(4551 passed)가 돌았다 — 51 개 크레이트가 조용히 가려져 있었다.
 //
 // 이 결함은 **문서 주장이 아니라 워크플로 내부의 비대칭**이라, 문서와 워크플로를 대조하는
-// `tests/ci_channel_claims_match_workflows.rs` 가 보지 못한다. 한 잡에 플래그를 넣으면서
+// `crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` 가 보지 못한다. 한 잡에 플래그를 넣으면서
 // 같은 파일의 다른 잡을 놓치는 형태가 실제로 있었고, 그것을 막는 것이 이 가드다.
 
 /// 워크플로 디렉토리(레포 루트 기준).

@@ -137,7 +137,7 @@ owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게
 2. `from_token`/`as_token` 매핑(scoped 면 `strip_prefix` + scope 검증 함수).
 3. `is_valid_<x>` 검증 함수 — **형식만**, owner 존재는 검증 안 함.
 4. runtime 게이트(`method_meta` 또는 manager) 배선.
-5. 이 문서의 [토큰 전체](#토큰-전체--무엇을-여나) 표 + [concepts/plugins](../concepts/plugins.md#권한-permissions) 나열 갱신 — `tests/permission_token_docs_parity.rs` 가 둘 다 강제한다. `tests/*.rs` 라 **컴파일은 CI 가 자동으로 보지만 실행 채널은 자동이 아니다**(스캔 가드라 컴파일 검사는 이 가드에 대해 아무것도 보장하지 않는다) — 판정이 나는 곳은 작업 lane 의 로컬 `cargo test --workspace --locked` 와 병합 후 main 에서의 1 회 실행이다([ci-gates](ci-gates.md)).
+5. 이 문서의 [토큰 전체](#토큰-전체--무엇을-여나) 표 + [concepts/plugins](../concepts/plugins.md#권한-permissions) 나열 갱신 — `crates/tasty-doc-guards/tests/permission_token_docs_parity.rs` 가 둘 다 강제한다. `tests/*.rs` 라 **컴파일은 CI 가 자동으로 보지만 실행 채널은 자동이 아니다**(스캔 가드라 컴파일 검사는 이 가드에 대해 아무것도 보장하지 않는다) — 판정이 나는 곳은 작업 lane 의 로컬 `cargo test --workspace --locked` 와 병합 후 main 에서의 1 회 실행이다([ci-gates](ci-gates.md)).
 
 `ipc.invoke`/`ext` 두 사례가 reference.
 
