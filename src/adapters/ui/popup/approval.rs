@@ -124,12 +124,12 @@ pub fn draw_approval_view(
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(&props.severity_label)
-                .size(11.0)
+                .size(theme.font_size_caption.value())
                 .color(sev_color),
         );
         ui.label(
             egui::RichText::new(format!("· {}", props.id))
-                .size(11.0)
+                .size(theme.font_size_caption.value())
                 .color(theme.text_muted().to_egui()),
         );
     });
@@ -147,7 +147,7 @@ pub fn draw_approval_view(
 
     ui.label(
         egui::RichText::new(&props.comment_label)
-            .size(11.0)
+            .size(theme.font_size_caption.value())
             .color(theme.text_muted().to_egui()),
     );
     ui.add(
@@ -165,7 +165,9 @@ pub fn draw_approval_view(
             } else {
                 choice.label.clone()
             };
-            let mut btn = egui::Button::new(egui::RichText::new(label_text).size(13.0));
+            let mut btn = egui::Button::new(
+                egui::RichText::new(label_text).size(theme.button_font_size().value()),
+            );
             if choice.destructive {
                 btn = btn.fill(theme.accent_danger().to_egui().linear_multiply(0.18));
             }

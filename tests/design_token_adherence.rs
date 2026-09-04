@@ -89,7 +89,22 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
     "FontId::proportional(",
     "FontId::monospace(",
     "Stroke::new(",
+    // `RichText::new(..).size(13.5)` — `FontId::*` 와 **같은 결함의 다른 표기**다.
+    // egui 에서 폰트 크기를 지정하는 두 경로가 이 둘이라 한쪽만 막으면 다른 쪽으로
+    // 그대로 재유입된다. `Spinner::size()`(위젯 지름)도 같은 이름이라 함께 걸리는데,
+    // 그건 폰트가 아니므로 아래 allowlist 로 그 자리만 면제한다.
+    ".size(",
 ];
+
+/// 숫자 인자 검사로는 잡히지 않는 **금지 형태**. 접두 규칙은 "접두 뒤 첫 문자가
+/// 숫자인가" 를 보는데, 구조체 리터럴은 필드명이 먼저 와서 그 검사를 그대로
+/// 빠져나간다(`egui::Stroke { width: 2.0, color }`). 실제 회피 변형 검증에서 이
+/// 형태로 한 번 뚫렸다.
+///
+/// 여기 있는 형태는 **값과 무관하게** 금지다 — 토큰을 넣든 리터럴을 넣든 쓰지 말고
+/// `Stroke::new(<토큰>, ..)` 를 쓴다. 그래야 접두 규칙이 계속 유효하다. 현재 스캔
+/// 범위 안 출현 0 이라 allowlist 가 필요 없다.
+const FORBIDDEN_FORMS: &[&str] = &["Stroke {"];
 
 /// 스캔 예외 — **파일 통째가 아니라 (경로, 접두) 쌍**이다. 파일 하나를 통째로 빼면
 /// 그 파일이 *다른* 형태의 위반을 새로 들여도 잡히지 않으므로, 정당한 그 한 형태만
@@ -104,20 +119,41 @@ const ALLOWLIST_PREFIXES: &[(&str, &str)] = &[
         "Margin::symmetric(",
     ),
     ("crates/tasty-ui-widgets/src/spacing.rs", "inner_margin("),
+    // spinner 크기 카탈로그 — 이 specimen 의 **내용 자체가** 여러 지름을 나란히
+    // 보이는 것이다. `.size()` 는 여기서 폰트가 아니라 위젯 지름이고, 값이 하나로
+    // 수렴하면 specimen 이 성립하지 않는다. 폰트·간격·선굵기는 면제 대상이 아니다.
+    (
+        "crates/tasty-gallery/src/catalog/components/prim_spinner.rs",
+        ".size(",
+    ),
 ];
 
 /// `line` 에 금지 prefix + 숫자 인자가 있으면 매칭된 prefix 를 돌려준다.
 /// `rel` 파일에 대해 그 접두가 [`ALLOWLIST_PREFIXES`] 에 있으면 건너뛴다.
-fn violating_prefix(rel: &str, line: &str) -> Option<&'static str> {
+fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static str> {
+    for &form in FORBIDDEN_FORMS {
+        if !ALLOWLIST_PREFIXES.contains(&(rel, form)) && line.contains(form) {
+            return Some(form);
+        }
+    }
     for &prefix in FORBIDDEN_PREFIXES {
         if ALLOWLIST_PREFIXES.contains(&(rel, prefix)) {
             continue;
         }
         let mut from = 0;
         while let Some(idx) = line[from..].find(prefix) {
-            let after = &line[from + idx + prefix.len()..];
-            let next = after.trim_start().chars().next();
-            if matches!(next, Some(c) if c.is_ascii_digit()) {
+            let after = &line[from + idx + prefix.len()..].trim_start();
+            // 접두가 줄 끝에서 열린 채 끝나면(`.size(` 뒤에 아무것도 없음) 인자는 다음
+            // 줄에 있다. 한 줄만 보면 `.size(\n    13.0)` 형태로 그냥 빠져나간다 —
+            // 실제로 이 회피 변형에 한 번 뚫렸다. `rustfmt` 가 짧은 호출은 한 줄로
+            // 되돌리므로 레포에 들어오긴 어렵지만, 가드의 회피 난이도를 포매터
+            // 하나에만 의존시키지 않는다.
+            let probe = if after.is_empty() {
+                next_line.trim_start()
+            } else {
+                after
+            };
+            if matches!(probe.chars().next(), Some(c) if c.is_ascii_digit()) {
                 return Some(prefix);
             }
             from += idx + prefix.len();
@@ -132,7 +168,7 @@ fn is_word_char(c: char) -> bool {
 
 /// `line` 에 `th.<primitive>` / `theme.<primitive>` 평면 필드 접근이 있으면 그 표현을 돌려준다.
 /// 앞뒤 경계를 검사해 `th.text_primary()`(semantic) 나 `mytheme.blue` 오검출을 배제한다.
-fn violating_color(_rel: &str, line: &str) -> Option<String> {
+fn violating_color(_rel: &str, line: &str, _next: &str) -> Option<String> {
     for receiver in ["th.", "theme."] {
         let mut from = 0;
         while let Some(idx) = line[from..].find(receiver) {
@@ -163,7 +199,7 @@ fn violating_color(_rel: &str, line: &str) -> Option<String> {
 fn collect_violations(
     root: &Path,
     target: &str,
-    detect: &dyn Fn(&str, &str) -> Option<String>,
+    detect: &dyn Fn(&str, &str, &str) -> Option<String>,
     out: &mut Vec<String>,
 ) {
     let path = root.join(target);
@@ -181,12 +217,16 @@ fn collect_violations(
             .to_string_lossy()
             .replace('\\', "/");
         let contents = std::fs::read_to_string(&file).expect("소스 파일 read 실패");
-        for (i, line) in contents.lines().enumerate() {
+        // 판정기가 "다음 줄" 을 볼 수 있어야 한다 — 호출 인자가 줄바꿈으로 넘어간
+        // 형태(`.size(` 개행 `13.0)`)를 한 줄만 보고는 잡지 못한다.
+        let lines: Vec<&str> = contents.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
             // 주석 라인(// 로 시작)은 스킵 — doc/설명의 예시 리터럴 false positive 방지.
             if line.trim_start().starts_with("//") {
                 continue;
             }
-            if let Some(hit) = detect(&rel, line) {
+            let next = lines.get(i + 1).copied().unwrap_or("");
+            if let Some(hit) = detect(&rel, line, next) {
                 out.push(format!("  {}:{} — `{}`", rel, i + 1, hit));
             }
         }
@@ -215,7 +255,17 @@ fn gather_rs_files(path: &Path, out: &mut Vec<PathBuf>) {
 #[test]
 fn no_inline_visual_token_literals() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let detect = |rel: &str, line: &str| violating_prefix(rel, line).map(|p| format!("{p}<숫자>"));
+    // 형태 규칙(`FORBIDDEN_FORMS`)은 숫자 인자와 무관하게 금지라 `<숫자>` 를 붙이지
+    // 않는다 — 붙이면 "숫자만 빼면 통과" 로 잘못 읽힌다.
+    let detect = |rel: &str, line: &str, next: &str| {
+        violating_prefix(rel, line, next).map(|p| {
+            if FORBIDDEN_FORMS.contains(&p) {
+                format!("{p}` — 구조체 리터럴 형태 자체가 금지(`Stroke::new(<토큰>, ..)` 를 쓴다)`")
+            } else {
+                format!("{p}<숫자>")
+            }
+        })
+    };
     let mut violations = Vec::new();
     for target in SCAN_ROOTS {
         collect_violations(root, target, &detect, &mut violations);
@@ -246,7 +296,7 @@ fn is_forbidden_pictographic(cp: u32) -> bool {
 /// `line` 에서 픽토그래픽 글리프를 찾으면 그 표현을 돌려준다. **두 형태 모두** 검사:
 /// ① 리터럴 코드포인트(누가 📂 를 그대로 붙여넣음) ② `\u{HEX}` 이스케이프 파싱 후 범위검사.
 /// 주석 라인 skip 은 상위 `collect_violations` 가 처리한다.
-fn violating_glyph(_rel: &str, line: &str) -> Option<String> {
+fn violating_glyph(_rel: &str, line: &str, _next: &str) -> Option<String> {
     // ① 리터럴 char.
     for ch in line.chars() {
         let cp = ch as u32;

@@ -133,11 +133,12 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | 간격 API | **`add_space`/`inner_margin`/`Margin::same|symmetric` 에 숫자 리터럴 직접 전달 금지** — `tasty-ui-widgets` 의 typed 헬퍼(`vspace`/`hspace`/`margin_all`/`margin_sym`)에 `th.spacing_*`(LogicalPx)를 넘긴다. 그리드 밖 미세 구조 간격(1~4px)은 `tasty_ui_widgets::tokens::STRUCT_GAP_1/2/3/4` (DTCG `primitive.size-1/2/3/4` 대응). **`tests/design_token_adherence.rs` 가드가 인라인 리터럴 재유입을 `cargo test --workspace`(CI)로 강제**한다. 명명 구조 상수(`const NAME: LogicalPx = LogicalPx(N)`, 예: 사이드바 폭·카드 크기·control nudge)는 스코프 밖(권장 해결책이라 금지 아님) |
 | UI 폰트 스케일 | **`font_size_micro`(10) · `caption`(11) · `body`(13) · `heading`(13) · `max`(14) 만.** 이 다섯이 UI 스케일 전부이고 `ui_scale` zoom 을 받는다. 역할이 이름에 있으면 component 접근자(`badge_font_size()` · `tag_font_size()` · `kbd_font_size()` 등)를 우선한다. `font_size_term*`/`prose_h1` 은 **콘텐츠** 폰트라 UI 에 쓰지 않는다 |
 | UI 폰트 최대 | **14px**(`font_size_max`) |
-| 폰트 크기 API | **`FontId::proportional`/`monospace` 에 숫자 리터럴 직접 전달 금지** — 위 토큰의 `.value()` 를 넘긴다. **`tests/design_token_adherence.rs` 가드가 인라인 리터럴을 `cargo test --workspace`(CI)로 강제**한다 |
+| 폰트 크기 API | **`FontId::proportional`/`monospace` 와 `RichText::size` 에 숫자 리터럴 직접 전달 금지** — 위 토큰의 `.value()` 를 넘긴다. egui 에서 폰트 크기를 정하는 경로가 이 둘이라 한쪽만 막으면 다른 쪽으로 재유입된다. **`tests/design_token_adherence.rs` 가드가 둘 다 `cargo test --workspace`(CI)로 강제**한다. `Spinner::size()` 는 이름이 같지만 위젯 지름이라 폰트 축이 아니다 |
+| 스케일 밖 폰트 값 | DTCG primitive 는 10·11·12·13·14·16·17·20 이고 그중 semantic 이 붙은 것만 `Theme` 필드가 된다. **어느 tier 에도 없는 값(13.5 · 12.5 · 11.5 · 30 등)은 토큰으로 조용히 반올림하지 않는다** — 픽셀이 실제로 바뀌기 때문이다. 사유를 적은 명명 const 로 올려 드리프트를 눈에 보이게 두고, 어느 토큰으로 스냅할지는 디자인 판단으로 넘긴다. semantic 이 없는 primitive(12·16)를 쓰는 자리도 같다 — const 이름에 primitive 임을 남긴다. **명명 const 는 `ui_scale` 줌을 타지 않는다**(토큰만 `zoomed()` 경로에 있다) |
 | 보더 | 항상 **1px**(`border_width`) |
 | 포커스 링 | 2px(`focus_ring_width`) — 키보드 포커스뿐 아니라 **대상을 감싸 지목하는 2px 링 전반**의 굵기 토큰이다(우클릭 대상 표시, DAG 노드 선택 링). 색은 별개 축이라 `accent_success` 등 다른 semantic 색과 조합해도 이 토큰을 쓴다 |
 | painter 전사 글리프 | 선 굵기는 **`icon_stroke_width`**(1.5px) — `Ui` 가 없어 SVG 아이콘 대신 `Painter::line_segment` 로 형상을 옮기는 구간(popup 타이틀바의 close X · 전체화면 브래킷 · chevron · tree 가지) 전용. `border_width`(1)/`focus_ring_width`(2) 어느 쪽도 아니라 별도 필드이고, DTCG dim 토큰에 대응은 없다 |
-| 선 굵기 API | **`Stroke::new` 에 숫자 리터럴 직접 전달 금지** — 위 세 필드의 `.value()` 를 넘긴다. 같은 가드가 강제한다. 세 필드 어디에도 해당하지 않는 값(예: 체크마크 꺾은선, attached outline)은 명명 const 로 승격하고 사유를 주석에 남긴다 |
+| 선 굵기 API | **`Stroke::new` 에 숫자 리터럴 직접 전달 금지** — 위 세 필드의 `.value()` 를 넘긴다. `egui::Stroke { width: .. }` **구조체 리터럴 형태도 금지**다(값과 무관하게) — 필드명이 먼저 와서 숫자 인자 검사를 그대로 빠져나가기 때문이며, 같은 가드가 그 형태를 따로 막는다. 세 필드 어디에도 해당하지 않는 값(예: 체크마크 꺾은선, attached outline)은 명명 const 로 승격하고 사유를 주석에 남긴다 |
 | 호버 오버레이 | `hover_overlay`(라이트 검정 8% / 다크 흰색 8% 자동 도출) — 직접 값 금지 |
 | 활성 오버레이 | `active_overlay`(12%) — 선택/active 행, hover(8%)와 구분 |
 | 텍스트 대비 | 최소 **4.5:1**. 위반 시 [`ai-verification/visual-verification`](../../ai-verification/visual-verification.md) 체크리스트 |

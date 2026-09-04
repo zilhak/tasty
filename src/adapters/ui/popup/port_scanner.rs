@@ -1596,6 +1596,10 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
 /// 확정값이라 `column_layout` 의 다른 컬럼 최소폭들과 같은 방식으로 리터럴 유지.
 const FAV_COL_WIDTH: f32 = 28.0;
 
+/// 로딩 줄 스피너의 한 변. 값은 아이콘 스케일 md(16)와 같지만 아이콘 글리프가 아니라
+/// 스피너 지름이라 그 토큰을 쓰지 않고 이름을 따로 둔다.
+const LOADING_SPINNER_SIZE: f32 = 16.0;
+
 /// 즐겨찾기 리스트 스크롤 cap(design "5행 × 22px = 110 ≤ 112 cap") — 5행이 꽉 채워도
 /// 스크롤 시작 전 여유 2px 를 남겨 스크롤 가능함을 암시한다.
 const FAVORITES_LIST_MAX_H: f32 = 112.0;
@@ -1825,7 +1829,11 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         // 않게 한다(세 상태 모두 같은 위치에 뜨는 게 사용자가 기대하는 동작).
         vspace(ui, th.spacing_xl * 2.0);
         ui.horizontal(|ui| {
-            ui.add(egui::Spinner::new().size(16.0).color(th.text_muted()));
+            ui.add(
+                egui::Spinner::new()
+                    .size(LOADING_SPINNER_SIZE)
+                    .color(th.text_muted()),
+            );
             ui.label(
                 egui::RichText::new(props.label_loading)
                     .color(th.text_muted())

@@ -5,6 +5,27 @@
 use crate::i18n::t;
 use crate::theme;
 
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// `Theme` 의 UI 폰트 스케일은 micro 10 · caption 11 · body/heading 13 · max 14 이고,
+// DTCG primitive 에는 12 · 16 · 17 · 20 이 더 있다. 아래 값들은 **어느 tier 에도
+// 없다** — 코드에서 자란 값이라 토큰으로 스냅하면 실제로 픽셀이 바뀐다. 조용히
+// 반올림하지 않고 이름만 붙여 한곳에 모아 둔다(스냅 여부는 디자인 판단 항목).
+//
+// 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다.
+
+/// 알림 비어있음 상태의 제목. 스케일 밖(13.5).
+const ATTN_EMPTY_TITLE_SIZE: f32 = 13.5;
+/// 사유 카드 본문. 스케일 밖(12.5).
+const ATTN_REASON_BLURB_SIZE: f32 = 12.5;
+/// 서명 지문 라벨/값. 스케일 밖(11.5).
+const ATTN_FINGERPRINT_SIZE: f32 = 11.5;
+
+/// DTCG primitive `font-size-12` 를 직접 쓰는 자리. 12px 는 primitive 에는 있지만
+/// **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다 — 어느 semantic 에
+/// 묶을지가 판단 항목이라 primitive 값을 그대로 이름 붙여 둔다.
+const ATTN_PRIMITIVE_12: f32 = 12.0;
+
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
@@ -136,14 +157,14 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
     ui.vertical_centered(|ui| {
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_title"))
-                .size(13.5)
+                .size(ATTN_EMPTY_TITLE_SIZE)
                 .color(egui::Color32::from(th.text_secondary())),
         );
         // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
         vspace(ui, th.spacing_xs);
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_body"))
-                .size(12.0)
+                .size(ATTN_PRIMITIVE_12)
                 .color(egui::Color32::from(th.text_muted())),
         );
     });
@@ -195,13 +216,13 @@ fn draw_detail(
                 ui.label(
                     egui::RichText::new(t(label_key))
                         .strong()
-                        .size(13.0)
+                        .size(th.font_size_body.value())
                         .color(color),
                 );
                 vspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t(blurb_key))
-                        .size(12.5)
+                        .size(ATTN_REASON_BLURB_SIZE)
                         .color(egui::Color32::from(th.text_secondary())),
                 );
             });
@@ -221,7 +242,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
     let mono_header = |ui: &mut egui::Ui, key: &str| {
         ui.label(
             egui::RichText::new(t(key))
-                .size(10.0)
+                .size(th.font_size_micro.value())
                 .color(egui::Color32::from(th.text_muted())),
         );
     };
@@ -238,10 +259,10 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                             .strong()
                             .color(egui::Color32::from(th.accent_success())),
                     );
-                    ui.label(egui::RichText::new(p).monospace().size(12.0));
+                    ui.label(egui::RichText::new(p).monospace().size(ATTN_PRIMITIVE_12));
                     ui.label(
                         egui::RichText::new(t("plugins.attn_newly_requested"))
-                            .size(11.0)
+                            .size(th.font_size_caption.value())
                             .color(egui::Color32::from(th.text_muted())),
                     );
                 });
@@ -257,13 +278,13 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                     ui.label(
                         egui::RichText::new(p)
                             .monospace()
-                            .size(12.0)
+                            .size(ATTN_PRIMITIVE_12)
                             .strikethrough()
                             .color(egui::Color32::from(th.text_muted())),
                     );
                     ui.label(
                         egui::RichText::new(t("plugins.attn_no_longer_used"))
-                            .size(11.0)
+                            .size(th.font_size_caption.value())
                             .color(egui::Color32::from(th.text_muted())),
                     );
                 });
@@ -277,13 +298,13 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(t("plugins.attn_fingerprint"))
-                            .size(11.5)
+                            .size(ATTN_FINGERPRINT_SIZE)
                             .color(egui::Color32::from(th.text_secondary())),
                     );
                     ui.label(
                         egui::RichText::new(fp)
                             .monospace()
-                            .size(11.5)
+                            .size(ATTN_FINGERPRINT_SIZE)
                             .color(egui::Color32::from(th.text_muted())),
                     );
                 });
@@ -306,7 +327,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                         ui.label(
                             egui::RichText::new(detail)
                                 .monospace()
-                                .size(12.0)
+                                .size(ATTN_PRIMITIVE_12)
                                 .color(egui::Color32::from(th.accent_danger())),
                         );
                     });
@@ -336,7 +357,11 @@ fn draw_action_bar(
         );
         // 디자인 값 11px 은 off-grid — 4px 그리드의 가장 가까운 값인 spacing_md(12)로 snap.
         hspace(ui, th.spacing_md);
-        ui.label(egui::RichText::new(t(status_key)).size(12.0).color(color));
+        ui.label(
+            egui::RichText::new(t(status_key))
+                .size(ATTN_PRIMITIVE_12)
+                .color(color),
+        );
 
         ui.with_layout(
             egui::Layout::right_to_left(egui::Align::Center),

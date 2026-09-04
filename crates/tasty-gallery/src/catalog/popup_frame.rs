@@ -205,3 +205,21 @@ pub fn draw(
     );
     paint(&mut child);
 }
+
+/// 모달 specimen 의 lift 그림자. `widgets::dialog` · `components::{file_picker,
+/// remote_attach, transfer}` 넷이 각자 같은 값을 인라인 중복하던 것을 한곳으로 모은다.
+///
+/// **값은 그대로 둔다.** 이 값(offset 0/10 · blur 28 · black alpha 120)이
+/// `Theme::shadow_popover()`(offset 0/8 · blur 24 · alpha 90 — 디자인이 승인한 단
+/// 하나의 popover 그림자)와 다른 것은 **별개 판단 항목**이라 여기서 조용히 맞추지
+/// 않는다. 본체 모달 렌더 경로에는 대응하는 그림자가 없어 "본체와 맞춘다" 로도
+/// 결정되지 않는다. 이 헬퍼의 목적은 판단이 내려졌을 때 **고칠 자리를 한 곳으로**
+/// 만들어 두는 것이다.
+pub fn modal_shadow() -> egui::epaint::Shadow {
+    egui::epaint::Shadow {
+        offset: [0, 10],
+        blur: 28,
+        spread: 0,
+        color: egui::Color32::from_black_alpha(120),
+    }
+}

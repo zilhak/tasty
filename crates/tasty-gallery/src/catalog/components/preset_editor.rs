@@ -59,6 +59,34 @@ const LEAF_SUMMARY_MIN_H: f32 = 72.0;
 /// 짧은 축이 이 값 미만이면 kind명까지 숨기고 아이콘만 남긴다(icon-only degrade).
 const LEAF_ICON_ONLY_MIN: f32 = 46.0;
 
+// ── specimen 박스 치수 ───────────────────────────────────────────────────────
+//
+// 데모 박스의 가로·세로다. 디자인 토큰이 아니라 **무대 크기**라 Theme 에서 오지
+// 않는다 — 값이 케이스마다 다른 이유는 그 케이스가 무엇을 보여야 하는지에 있고,
+// leaf 쪽 값들은 위 degrade 임계(96×72 · 46)의 위/아래를 각각 밟도록 고른 것이다.
+// 임계를 바꾸면 이 박스들도 함께 봐야 한다.
+
+/// Workspace scope — pane split 이 가로로 자라 다른 둘보다 넓다.
+const SCOPE_BOX_W_WIDE: f32 = 320.0;
+/// Tab / Pane scope 공통 가로.
+const SCOPE_BOX_W: f32 = 210.0;
+/// scope 3 종 공통 세로 — 나란히 세우므로 같아야 한다.
+const SCOPE_BOX_H: f32 = 220.0;
+
+/// 요약 2 줄이 다 보이는 박스(96×72 초과).
+const LEAF_BOX_FULL: (f32, f32) = (176.0, 120.0);
+/// 요약 1 줄 박스(여전히 96×72 초과).
+const LEAF_BOX_ONE_ROW: (f32, f32) = (150.0, 104.0);
+/// 요약이 숨는 박스 — 가로·세로 모두 96×72 미만.
+const LEAF_BOX_SUMMARY_HIDDEN: (f32, f32) = (90.0, 64.0);
+/// 아이콘만 남는 박스 — 짧은 축이 46 미만.
+const LEAF_BOX_ICON_ONLY: (f32, f32) = (40.0, 40.0);
+
+/// 편집 모드 박스 — 선택 outline + handle + inline form 이 함께 들어간다.
+const EDIT_BOX: (f32, f32) = (300.0, 240.0);
+/// 직접조작 박스 — 경계 split 존 + mini tab strip 을 함께 보인다.
+const DIRECT_BOX: (f32, f32) = (320.0, 200.0);
+
 // ── 정적 preview 모델 (디자인 build* 트리 전사) ──────────────────────
 
 #[derive(Clone, Copy)]
@@ -1100,8 +1128,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Workspace",
             "pane split + tabs + surface split",
             &workspace,
-            320.0,
-            220.0,
+            SCOPE_BOX_W_WIDE,
+            SCOPE_BOX_H,
         );
         scope_demo(
             ui,
@@ -1109,8 +1137,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Tab",
             "surface split tree only",
             &tab_scope,
-            210.0,
-            220.0,
+            SCOPE_BOX_W,
+            SCOPE_BOX_H,
         );
         scope_demo(
             ui,
@@ -1118,8 +1146,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Pane",
             "tab strip + active tab",
             &pane_scope,
-            210.0,
-            220.0,
+            SCOPE_BOX_W,
+            SCOPE_BOX_H,
         );
     });
 
@@ -1139,8 +1167,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "terminal · cwd (front-elide) + startup",
             &term,
-            176.0,
-            120.0,
+            LEAF_BOX_FULL.0,
+            LEAF_BOX_FULL.1,
         );
 
         let md = DemoLeaf {
@@ -1152,8 +1180,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "markdown · file (front-elide)",
             &md,
-            150.0,
-            104.0,
+            LEAF_BOX_ONE_ROW.0,
+            LEAF_BOX_ONE_ROW.1,
         );
 
         let degraded = DemoLeaf {
@@ -1165,15 +1193,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "degrade <96×72 · summary hidden",
             &degraded,
-            90.0,
-            64.0,
+            LEAF_BOX_SUMMARY_HIDDEN.0,
+            LEAF_BOX_SUMMARY_HIDDEN.1,
         );
 
         let icon_only = DemoLeaf {
             kind: Kind::Terminal,
             summary: vec![cell("cwd", "~/tasty", true)],
         };
-        leaf_summary_demo(ui, theme, "degrade <46 · icon only", &icon_only, 40.0, 40.0);
+        leaf_summary_demo(
+            ui,
+            theme,
+            "degrade <46 · icon only",
+            &icon_only,
+            LEAF_BOX_ICON_ONLY.0,
+            LEAF_BOX_ICON_ONLY.1,
+        );
     });
 
     // 편집 상태: selected surface 2px accent outline + handle
@@ -1191,8 +1226,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "selected surface + handle + form",
             edit_surf,
             1,
-            300.0,
-            240.0,
+            EDIT_BOX.0,
+            EDIT_BOX.1,
         );
     });
 
@@ -1204,8 +1239,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             theme,
             "Edit — direct manipulation",
             "boundary split zone · tab × · add-tab",
-            320.0,
-            200.0,
+            DIRECT_BOX.0,
+            DIRECT_BOX.1,
         );
     });
 

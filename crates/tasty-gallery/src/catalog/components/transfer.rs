@@ -123,12 +123,7 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
+        .shadow(crate::catalog::popup_frame::modal_shadow())
         .show(ui, |ui| {
             ui.set_width(FRAME_W);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);

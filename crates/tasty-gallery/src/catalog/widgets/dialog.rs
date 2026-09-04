@@ -34,12 +34,7 @@ pub fn frame_card(
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
+        .shadow(crate::catalog::popup_frame::modal_shadow())
         .show(ui, |ui| {
             // 부모 stage 가 `horizontal_wrapped`(`StageVariant::Wrap`) 여도 모달
             // 콘텐츠는 항상 세로(top_down)로 적층 + 폭을 `width` 로 bound 한다.

@@ -1,5 +1,21 @@
 use winit::window::Window;
 
+// ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
+//
+// `Theme` 의 UI 폰트 스케일(micro 10 · caption 11 · body 13 · max 14)에도, DTCG
+// primitive(10·11·12·13·14·16·17·20)에도 없는 값들이다. 토큰으로 스냅하면 픽셀이
+// 바뀌므로 조용히 반올림하지 않고 이름만 붙인다(스냅 여부는 디자인 판단 항목).
+// 토큰이 아니라 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
+
+/// 첫 실행 셸 설정 카드의 "Tasty" 브랜드 타이틀. 스케일 밖(30) — primitive 최댓값
+/// 20 보다도 크고, brand-wordmark semantic 은 17 이다.
+const SETUP_BRAND_TITLE_SIZE: f32 = 30.0;
+/// "셸을 찾을 수 없음" 경고 본문. 스케일 밖(12.5).
+const SETUP_WARNING_SIZE: f32 = 12.5;
+/// 입력 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
+/// `Theme` 필드가 없다 — primitive 값을 그대로 이름 붙여 둔다.
+const SETUP_INPUT_LABEL_SIZE: f32 = 12.0;
+
 use crate::i18n::t;
 use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
 
@@ -88,14 +104,14 @@ impl GpuState {
                     ui.vertical_centered(|ui| {
                         ui.label(
                             egui::RichText::new("Tasty")
-                                .size(30.0)
+                                .size(SETUP_BRAND_TITLE_SIZE)
                                 .strong()
                                 .color(th.text_primary()),
                         );
                         vspace(ui, STRUCT_GAP_2);
                         ui.label(
                             egui::RichText::new(t("settings.general.setup_subtitle"))
-                                .size(11.0)
+                                .size(th.font_size_caption.value())
                                 .color(text_dim),
                         );
                     });
@@ -117,7 +133,7 @@ impl GpuState {
                             ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(t("settings.general.shell_not_found"))
-                                        .size(12.5)
+                                        .size(SETUP_WARNING_SIZE)
                                         .color(amber),
                                 )
                                 .wrap(),
@@ -129,7 +145,7 @@ impl GpuState {
                     // ── Input ──────────────────────────────────────
                     ui.label(
                         egui::RichText::new(t("settings.general.shell_label"))
-                            .size(12.0)
+                            .size(SETUP_INPUT_LABEL_SIZE)
                             .color(text_dim),
                     );
                     vspace(ui, th.spacing_xs);
@@ -174,7 +190,7 @@ impl GpuState {
                                 .add(
                                     egui::Button::new(
                                         egui::RichText::new(t("button.cancel"))
-                                            .size(13.0)
+                                            .size(th.button_font_size().value())
                                             .color(text_dim),
                                     )
                                     .min_size(btn_size)
@@ -212,7 +228,10 @@ impl GpuState {
                             let ok_resp = ui.add_enabled(
                                 is_valid,
                                 egui::Button::new(
-                                    egui::RichText::new("OK").size(13.0).strong().color(ok_text),
+                                    egui::RichText::new("OK")
+                                        .size(th.button_font_size().value())
+                                        .strong()
+                                        .color(ok_text),
                                 )
                                 .min_size(btn_size)
                                 .fill(ok_fill)

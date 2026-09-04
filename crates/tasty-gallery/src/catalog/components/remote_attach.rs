@@ -15,6 +15,7 @@
 //! 막다른 center-state 가 아니라 "행이 정확히 하나인 목록"으로 degrade 한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Spinner, StatusKind,
     status_dot,
@@ -36,6 +37,17 @@ const PROFILE_ROW_H: f32 = 50.0; // name(2 lines) + padding sm
 const WS_ROW_H: f32 = 34.0;
 const BADGE_H: f32 = 16.0; // design size-16
 const STRIP_W: f32 = 440.0; // 새 행 상태 specimen 의 pane 폭
+
+/// 두 열의 caps 헤더("ATTACH PROFILES" / "REMOTE WORKSPACES") 행 높이 —
+/// padding 12/12 + micro caps 한 줄. 4px 그리드 밖이고 대응 Theme 토큰이 없다.
+const CAPS_HEADER_H: f32 = 30.0;
+
+/// 빈/로딩/오류 상태 블록의 공칭 높이 — pane 안에서 세로 가운데로 띄우는 기준이다.
+/// `file_picker` specimen 의 같은 이름 상수와 값이 같다(두 모달의 같은 이디엄).
+const EMPTY_BLOCK_H: f32 = 120.0;
+
+/// 그 블록 맨 위 스피너·글리프의 한 변.
+const EMPTY_GLYPH: f32 = 22.0;
 
 /// 우측 pane 상태. `Loaded` / `Empty` 는 같은 목록 렌더 경로를 타고 ws 목록의
 /// 길이만 다르다.
@@ -411,12 +423,7 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 28,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(120),
-        })
+        .shadow(crate::catalog::popup_frame::modal_shadow())
         .show(ui, |ui| {
             ui.set_width(FRAME_W);
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -495,8 +502,8 @@ fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState)
     );
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더 — padding 10/12/4.
-    let hdr = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, 30.0));
-    let (_, _) = col.allocate_exact_size(egui::vec2(LEFT_W, 30.0), egui::Sense::hover());
+    let hdr = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, CAPS_HEADER_H));
+    let (_, _) = col.allocate_exact_size(egui::vec2(LEFT_W, CAPS_HEADER_H), egui::Sense::hover());
     col.painter().text(
         egui::pos2(
             hdr.left() + theme.spacing_md.value(),
@@ -542,7 +549,7 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
             .max_rect(inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    child.spacing_mut().item_spacing.y = 2.0;
+    child.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
     child.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         let name_c = if selected {
@@ -663,12 +670,12 @@ fn center_state(
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
     // 세로 중앙 정렬 — 위쪽 여백을 대략 반으로.
-    col.add_space((rect.height() - 120.0).max(0.0) * 0.5);
+    col.add_space((rect.height() - EMPTY_BLOCK_H).max(0.0) * 0.5);
     col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
     if spinner {
-        Spinner::new().size(22.0).show(&mut col, theme);
+        Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
     } else {
-        kit::icon(&mut col, glyph, 22.0, glyph_color);
+        kit::icon(&mut col, glyph, EMPTY_GLYPH, glyph_color);
     }
     col.label(
         egui::RichText::new(heading)
@@ -711,7 +718,10 @@ fn loaded_pane(
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더 — "REMOTE WORKSPACES · {profile}". 생성이라는 사실은 행 라벨이 말하므로
     // 그룹을 설명하는 이 문구는 새 행이 생겨도 그대로다.
-    let (hdr, _) = col.allocate_exact_size(egui::vec2(rect.width(), 30.0), egui::Sense::hover());
+    let (hdr, _) = col.allocate_exact_size(
+        egui::vec2(rect.width(), CAPS_HEADER_H),
+        egui::Sense::hover(),
+    );
     let base_x = hdr.left() + theme.spacing_md.value();
     let y = hdr.top() + theme.spacing_md.value();
     let caps = col.painter().layout_no_wrap(
@@ -1021,7 +1031,14 @@ fn badge(
         .painter()
         .layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER);
     let pad_x = theme.spacing_sm.value();
-    let icon_w = if warn_icon { 12.0 + 4.0 } else { 0.0 };
+    // 경고 글리프는 아이콘 스케일 xs(12), 글리프↔라벨 간격은 spacing_xs(4).
+    let warn_glyph = theme.icon_glyph_size_xs.value();
+    let warn_gap = theme.spacing_xs.value();
+    let icon_w = if warn_icon {
+        warn_glyph + warn_gap
+    } else {
+        0.0
+    };
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
     let radius = theme.corner_radius_sm.value();
@@ -1036,11 +1053,13 @@ fn badge(
     let mut tx = rect.left() + pad_x;
     if warn_icon {
         let ir = egui::Rect::from_min_size(
-            egui::pos2(tx, rect.center().y - 6.0),
-            egui::vec2(12.0, 12.0),
+            egui::pos2(tx, rect.center().y - warn_glyph * 0.5),
+            egui::vec2(warn_glyph, warn_glyph),
         );
-        icons::ALERT_TRIANGLE.image(12.0, color).paint_at(ui, ir);
-        tx += 12.0 + 4.0;
+        icons::ALERT_TRIANGLE
+            .image(warn_glyph, color)
+            .paint_at(ui, ir);
+        tx += warn_glyph + warn_gap;
     }
     ui.painter().galley(
         egui::pos2(tx, rect.center().y - galley.rect.height() * 0.5),

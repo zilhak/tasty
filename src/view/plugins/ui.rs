@@ -237,7 +237,7 @@ pub fn draw_plugins_panel(
                 hspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t("plugins.title"))
-                        .size(14.0)
+                        .size(th.font_size_max.value())
                         .strong()
                         .color(egui::Color32::from(th.text_primary())),
                 );
