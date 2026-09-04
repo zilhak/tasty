@@ -50,7 +50,7 @@ transitive `require` 의존 파일은 커버하지 않는다.
 
 ## 인터페이스
 
-- **사용자**: 설정 modal 에서 스크립트 등록·단축키 바인딩. 디버깅은 `RUST_LOG=tasty_lua=debug`.
+- **사용자**: 설정 modal 에서 스크립트 등록·단축키 바인딩. 디버깅은 `TASTY_LOG=tasty_lua=debug`.
 
 ## 관련
 

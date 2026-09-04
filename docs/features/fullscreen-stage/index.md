@@ -105,17 +105,17 @@ maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었
 
 단위 테스트로 상시 검증되는 것:
 
-- [x] Given 정의 테이블에 없는 id When 무대 진입 Then 거부되고 무대가 서지 않는다
-- [x] Given 무대 활성 When `has_egui_overlay_open()` 조회 Then true (WebView 숨김 게이트)
-- [x] Given 무대 종료 When 다음 프레임 Then 닫힘 훅이 정확히 1 회 발화한다(무대/일반 프레임 양쪽)
-- [x] Given 무대 A 활성 When 무대 B 진입 Then A 의 닫힘 훅이 1 회 발화하고 B 만 남는다
-- [x] Given 진입 시점 창 상태 When 종료 시 복원 동작 결정 Then 일반/maximize 는 되돌리고 사용자 fullscreen 은 유지한다
-- [x] Given fullscreen 단독 When 리사이즈 엣지 판정 Then 잠긴 것으로 본다(maximize 만 보지 않는다)
-- [x] Given 무대를 선언한 popup When 타이틀바 전체화면 버튼 클릭 Then 그 무대가 뜨고 popup 은
+- Given 정의 테이블에 없는 id When 무대 진입 Then 거부되고 무대가 서지 않는다
+- Given 무대 활성 When `has_egui_overlay_open()` 조회 Then true (WebView 숨김 게이트)
+- Given 무대 종료 When 다음 프레임 Then 닫힘 훅이 정확히 1 회 발화한다(무대/일반 프레임 양쪽)
+- Given 무대 A 활성 When 무대 B 진입 Then A 의 닫힘 훅이 1 회 발화하고 B 만 남는다
+- Given 진입 시점 창 상태 When 종료 시 복원 동작 결정 Then 일반/maximize 는 되돌리고 사용자 fullscreen 은 유지한다
+- Given fullscreen 단독 When 리사이즈 엣지 판정 Then 잠긴 것으로 본다(maximize 만 보지 않는다)
+- Given 무대를 선언한 popup When 타이틀바 전체화면 버튼 클릭 Then 그 무대가 뜨고 popup 은
       열린 채 남는다
-- [x] Given 무대를 선언하지 않은 popup When 같은 좌표 클릭 Then 아무 무대도 뜨지 않는다
-- [x] Given 알림 무대 활성 When 무대 종료 Then 무대 자체 상태(목록 스크롤)가 지워진다
-- [x] Given popup 이 선언한 무대 id When 무대 테이블 조회 Then 반드시 존재하고, 그 popup 은
+- Given 무대를 선언하지 않은 popup When 같은 좌표 클릭 Then 아무 무대도 뜨지 않는다
+- Given 알림 무대 활성 When 무대 종료 Then 무대 자체 상태(목록 스크롤)가 지워진다
+- Given popup 이 선언한 무대 id When 무대 테이블 조회 Then 반드시 존재하고, 그 popup 은
       headless 가 아니다
 
 **미검증 — 살아 있는 GUI 가 필요해 자동 회귀가 없다.** 아래는 실제 창·PTY·GPU 가 있어야
@@ -123,33 +123,33 @@ maximize 였으면 maximize 로, **사용자가 직접 만든 전체화면이었
 상시화되어 실측 재현 자체는 언제든 가능하며, 표시된 항목은 실측으로 1 회 확인했다(회귀를
 잡지는 못한다).
 
-- [ ] Given 무대 활성 When PTY 로 출력 발생 Then 무대를 나온 뒤 그 출력이 스크롤백에 있다
-- [ ] Given 무대 진입 전후 When 터미널 grid 조회 Then cols/rows 가 동일하다(무대 중 창
+- Given 무대 활성 When PTY 로 출력 발생 Then 무대를 나온 뒤 그 출력이 스크롤백에 있다
+- Given 무대 진입 전후 When 터미널 grid 조회 Then cols/rows 가 동일하다(무대 중 창
       크기가 바뀌어도)
-- [x] Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
+- Given 무대 활성 When `ui.screenshot`(window) Then 응답하고 결과에 무대만 찍힌다
       <!-- 실측 확인: debug.fullscreen.open 후 window 캡처에 무대 셸(제목 띠 + 종료 버튼)과
            콘텐츠만 있고 사이드바/탭바/상태바가 없음 -->
-- [ ] Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널
+- Given 무대 활성 When `ui.screenshot --surface <id>` Then 응답하고 그 surface 의 터미널
       내용이 찍힌다
-- [x] Given 일반 창에서 무대 진입 When 무대 종료 Then 진입 전 크기·위치의 일반 창으로 복귀
+- Given 일반 창에서 무대 진입 When 무대 종료 Then 진입 전 크기·위치의 일반 창으로 복귀
       <!-- 실측 확인: debug.fullscreen.state 의 inner_size 가 1280x720 → 1920x1080 →
            1280x720, os_fullscreen 이 false → true → false -->
-- [ ] Given maximize 창에서 무대 진입 When 무대 종료 Then maximize 로 복귀
-- [ ] Given 이미 OS fullscreen 인 창에서 무대 진입 When 무대 종료 Then fullscreen 유지
-- [x] Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
+- Given maximize 창에서 무대 진입 When 무대 종료 Then maximize 로 복귀
+- Given 이미 OS fullscreen 인 창에서 무대 진입 When 무대 종료 Then fullscreen 유지
+- Given 창 2 개가 각각 무대 활성 When 한쪽만 종료 Then 다른 쪽 전체화면 유지
       <!-- 실측 확인: 창 A=blank / B=notifications 로 각각 진입 후 A 만 close →
            A 는 stage_id null·os_fullscreen false, B 는 notifications·true 유지 -->
-- [x] Given 무대 활성 + notifications 팝업 열림 When ESC Then 무대만 닫히고 팝업은 남는다
+- Given 무대 활성 + notifications 팝업 열림 When ESC Then 무대만 닫히고 팝업은 남는다
       <!-- 실측 확인: X11 + xdotool 로 winit 키 경로 재현 — ESC 후 창이 무대 크기에서
            원래 크기로 돌아오고 `ui.state` 의 notification_panel_open 은 true 유지 -->
-- [x] Given `fullscreen_stage_exit` 를 다른 키로 변경 When 무대 활성 + ESC Then 닫히지 않고,
+- Given `fullscreen_stage_exit` 를 다른 키로 변경 When 무대 활성 + ESC Then 닫히지 않고,
       그 새 키를 주입하면 닫힌다
       <!-- 실측 확인: debug.settings.apply 로 ctrl+alt+q 재바인딩 후 ESC 는 무대 유지,
            ctrl+alt+q 로 종료. 빈 vec 이면 둘 다 무효고 셸 종료 버튼으로만 닫힘 -->
-- [ ] Given 무대 활성 When 문자 키 주입 Then 뒤 터미널에 그 문자가 들어가지 않는다
-- [ ] Given 무대 활성 When 등록 단축키(사이드바 토글 등) 주입 Then 발화하지 않는다
-- [ ] Given 무대 활성 When 뒤 surface 좌표 클릭 주입 Then 포커스가 이동하지 않는다
-- [ ] Given 무대 활성 When `debug.pending_menu` 조회 Then 대기 중 네이티브 메뉴가 없다
+- Given 무대 활성 When 문자 키 주입 Then 뒤 터미널에 그 문자가 들어가지 않는다
+- Given 무대 활성 When 등록 단축키(사이드바 토글 등) 주입 Then 발화하지 않는다
+- Given 무대 활성 When 뒤 surface 좌표 클릭 주입 Then 포커스가 이동하지 않는다
+- Given 무대 활성 When `debug.pending_menu` 조회 Then 대기 중 네이티브 메뉴가 없다
 
 **수동 확인 대상** — IPC 로 재현할 수 없다:
 

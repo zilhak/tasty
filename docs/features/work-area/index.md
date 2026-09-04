@@ -39,7 +39,7 @@ MainView 의 최상위 컨테이너. 한 MainView 가 **여러 개**를 갖고 �
 Pane 은 **독립적인 탭 바를 가진 화면 영역**이다. Workspace 안에서 Pane 들의 배치는 `PaneNode` 이진 트리(`Leaf(Pane)` | `Split { direction, ratio, first, second }`)로 결정되고, **탭 전환과 무관하게 고정**된다 — tmux 의 "분할이 window 에 고정" 에 대응.
 
 - 필드: `id` · `tabs: Vec<Tab>` · `active_tab`(인덱스) · `tab_scroll_offset`(탭 바 가로 스크롤).
-- 탭 동작: 추가(`add_*_tab`, 활성/백그라운드) · 닫기(`close_tab`/`close_tab_by_id` — **마지막 탭은 못 닫음**) · 전환(`goto_tab`/`next_tab`/`prev_tab`) · 이동(`move_tab`, `active_tab` 자동 보정).
+- 탭 동작: 추가(`add_*_tab`, 활성/백그라운드) · 닫기(`close_tab`/`close_tab_by_id` — **마지막 탭은 못 닫음**, `active_tab` 은 제거 위치 기준으로 자동 보정돼 보던 탭을 계속 가리킨다) · 전환(`goto_tab`/`next_tab`/`prev_tab`) · 이동(`move_tab`, `active_tab` 자동 보정).
 - **활성 탭 추종 스크롤**: 탭이 많아 탭 바에 좌우 화살표가 뜬 상태에서 전환(단축키·클릭 공통)하거나 pane 이 리사이즈돼 활성 탭이 뷰포트 밖으로 밀려나면 `tab_scroll_offset` 을 자동 보정해 다시 보이게 한다(`src/adapters/ui/tab_bar.rs` `TabBarAction::AutoScrollToActiveTab`). 활성 인덱스/지오메트리가 실제로 바뀐 시점에만 보정하므로, 사용자가 화살표로 수동 스크롤해 둔 상태(활성 탭 불변)는 덮어쓰지 않는다.
 - 분할(상위): `PaneNode::split_pane_in_place` 로 Pane 을 좌우/상하로 쪼갠다. 새 Pane 의 PTY 는 구조 변경 *전에* 미리 생성(트리가 빈 store 상태를 보지 않도록).
 
@@ -95,7 +95,9 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - **AI Agent (IPC/CLI)**: 작업 영역의 도메인을 ID 로 직접 조작.
   - 생성: `tasty new workspace` · `tasty new tab --pane <P> [--type terminal|markdown|explorer|html|image]`.
   - 분할: `tasty split --level pane|surface --target <ID> [--direction …]` (상위/하위 레이아웃 각각).
-  - 닫기: `tasty close tab|pane|surface --… <ID>`.
+  - 닫기: `tasty close tab|pane|surface --… <ID>` · `tasty close workspace --id <W>`(안의 모든 pane/tab/surface 포함) · `tasty close window --id <N>`.
+    워크스페이스 닫기는 마지막 하나, mirror 워크스페이스, **원격 attach 가 하드 점유 중인 surface 를 든 워크스페이스**를 거부한다 — 창까지 없앨지는 별개의 결정이라 `close window` 로 명시하고, mirror 는 attach 세션 쪽에서 거두며, 점유 중인 터미널은 그것을 쓰고 있는 원격 세션이 놓아야 닫힌다. **되돌릴 수 없다**(안의 터미널이 죽고 되돌리기 스택·스크롤백에 남지 않는다). 경계와 근거는 [ADR-0120](../../adr/0120-agent-workspace-close-boundaries.md).
+    사용자가 보고 있지 않은 워크스페이스를 닫아도 화면에 있는 워크스페이스는 그대로다([포커스 독립성](../../design/policies/focus.md)).
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
 - **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 원본 kind(terminal)를 그대로 유지하고, 점유는 `OccupancyRegistry`(`is_hard_occupied`)가 추적하며 서버측은 readonly mirror 오버레이(`src/core/attach_readonly.rs`)로 렌더 + 로컬 입력을 차단한다(전용 트리 marker kind 없음). 점유된 워크스페이스는 mirror 면 사이드바 이름 앞 하늘색 glyph(레일=우하단 corner chip)로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
@@ -110,12 +112,13 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 
 ## Acceptance Criteria
 
-- [ ] Given 빈 워크스페이스 When `tasty new tab --pane <P>` Then 새 탭이 추가되고 `tasty list tabs --pane <P>` 에 보인다.
-- [ ] Given Pane 하나 When `tasty split --level pane --target <P>` Then 워크스페이스에 Pane 이 둘이 되고 탭 전환과 무관하게 분할이 유지된다.
-- [ ] Given 탭 안 Surface 하나 When `tasty split --level surface --target <S>` Then 그 탭에서만 Surface 가 둘이 되고, 다른 탭으로 전환하면 분할이 사라졌다 돌아온다.
-- [ ] Given 마지막 탭 하나 When 닫기 Then 닫히지 않는다.
-- [ ] Given deferred 탭 When `tasty list surfaces` Then `Terminal` / `pty_ready:false` 로 보고되고, 활성화하면 `pty_ready:true` 로 바뀐다.
-- [ ] Given `--type markdown` 으로 만든 surface When `tasty list surfaces` Then `kind:"markdown"` 으로 보고된다.
+- Given 빈 워크스페이스 When `tasty new tab --pane <P>` Then 새 탭이 추가되고 `tasty list tabs --pane <P>` 에 보인다.
+- Given Pane 하나 When `tasty split --level pane --target <P>` Then 워크스페이스에 Pane 이 둘이 되고 탭 전환과 무관하게 분할이 유지된다.
+- Given 탭 안 Surface 하나 When `tasty split --level surface --target <S>` Then 그 탭에서만 Surface 가 둘이 되고, 다른 탭으로 전환하면 분할이 사라졌다 돌아온다.
+- Given 마지막 탭 하나 When 닫기 Then 닫히지 않는다.
+- Given 사용자가 보고 있지 않은 탭 · Pane · 워크스페이스 When 그것이 닫힌다(에이전트 `tasty close`/`surface.close` 포함) Then 사용자가 보고 있던 대상은 그대로다 — 시야는 보던 대상 **자체**가 사라졌을 때만 움직인다 ([focus 정책](../../design/policies/focus.md) "삭제로 인한 인덱스 이동").
+- Given deferred 탭 When `tasty list surfaces` Then `Terminal` / `pty_ready:false` 로 보고되고, 활성화하면 `pty_ready:true` 로 바뀐다.
+- Given `--type markdown` 으로 만든 surface When `tasty list surfaces` Then `kind:"markdown"` 으로 보고된다.
 
 > 전부 headless(IPC/CLI)로 검증 가능 — 트리 조작·분할·닫기·종류는 `tasty list/new/split/close` 시나리오로 확인.
 

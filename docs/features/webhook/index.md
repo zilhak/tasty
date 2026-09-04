@@ -114,13 +114,13 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 
 ## Acceptance Criteria
 
-- [ ] Given 포트 설정됨 When `webhook.register --method POST --sequence '<ipc-seq>'` Then 발급 URL 반환, `curl -XPOST` 시 IpcSequence 가 실행되고 응답은 고정 ACK 바디만.
-- [ ] Given 등록된 웹훅 When `webhook.unregister` 후 그 path 호출 Then `404`.
-- [ ] Given `CountLimit{remaining:N}` When N+1 회 호출 Then N 회 후 소멸(다음 호출 `410`/`404`).
-- [ ] Given `TimeLimit` deadline 경과 When 호출 또는 `webhook.sweep` Then `410` + 삭제.
-- [ ] Given 인증 설정된 웹훅 When 토큰 불일치 Then `401`; 미설정 웹훅은 무인증 통과.
-- [ ] Given 없는 path 를 임계치 초과 반복 When 같은 출처 재요청 Then 쿨다운 동안 `429`(정상 웹훅 무영향).
-- [ ] Given `ShellCommand` 핸들러 When 웹훅 바인딩 시도 Then source 게이트로 거부.
+- Given 포트 설정됨 When `webhook.register --method POST --sequence '<ipc-seq>'` Then 발급 URL 반환, `curl -XPOST` 시 IpcSequence 가 실행되고 응답은 고정 ACK 바디만.
+- Given 등록된 웹훅 When `webhook.unregister` 후 그 path 호출 Then `404`.
+- Given `CountLimit{remaining:N}` When N+1 회 호출 Then N 회 후 소멸(다음 호출 `410`/`404`).
+- Given `TimeLimit` deadline 경과 When 호출 또는 `webhook.sweep` Then `410` + 삭제.
+- Given 인증 설정된 웹훅 When 토큰 불일치 Then `401`; 미설정 웹훅은 무인증 통과.
+- Given 없는 path 를 임계치 초과 반복 When 같은 출처 재요청 Then 쿨다운 동안 `429`(정상 웹훅 무영향).
+- Given `ShellCommand` 핸들러 When 웹훅 바인딩 시도 Then source 게이트로 거부.
 
 ## 관련
 

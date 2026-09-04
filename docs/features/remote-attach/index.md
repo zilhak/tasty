@@ -18,7 +18,10 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 
 - **배타 lock**: 한 surface 는 한 client 만 점유한다(`OccupancyRegistry`). 점유는 `stream.open{target}` 핸드셰이크의 `attach.acquire` 로 잡고, 동시 attach 는 holder 정보를 담아 `already_attached` 로 거부.
 - **점유 중 격리**: 점유된 surface 의 서버 로컬 입력(GUI 키 / `surface.send`)은 차단되고, **점유 client 입력만** PTY 에 도달한다. 로컬 사용자·AI Agent 는 그 대상에 대해 **readonly** — 내용은 보이되 조작은 막힌다. readonly 는 PTY/TUI 조작(키 입력·마우스 트래킹 보고·휠 스크롤·Ctrl+click 링크 열기)만 차단하는 것이고, **드래그로 텍스트를 선택해 클립보드로 복사하는 tasty 자체 기능은 예외적으로 계속 동작**한다 — PTY 에 아무것도 보내지 않는 순수 로컬 UI 동작이기 때문이다(좌표·복사 텍스트는 실제 렌더되는 mirror 기준). 근거: [ADR-0049](../../adr/0049-hard-occupancy-selection-exception.md).
+- **점유 중 attention 해제 권한**: 점유된 surface 의 **주의 환기(attention) 해제도 홀더만** 할 수 있다 — 서버 로컬 사건(그 surface 의 실 렌더 포커스 · 알림 패널의 읽음 처리·"모두 읽음")은 attention 을 지우지 못한다. 확인의 주체가 곧 그 surface 의 주체이기 때문이다. 홀더의 확인은 `ClientAttentionClear`(client→server) 로 들어와 holder 검증 후 적용된다([ADR-0104](../../adr/0104-mirror-attention-clear-forwarded-to-owner.md)). 게이트 범위는 좁다 — **알림 자체는 점유와 무관하게 읽음 처리되고**(읽음은 이 인스턴스 사용자의 패널 상태), soft 점유에는 걸리지 않으며, 점유가 풀리면 서버 로컬 포커스가 자동으로 해제 주체로 복귀해 stale 배지를 회수한다. 근거: [ADR-0109](../../adr/0109-hard-occupancy-attention-clear-holder-only.md). 이 게이트는 위 selection 예외(ADR-0049)와 **다른 축**이다 — selection 은 로컬 사용자 화면·클립보드에만 존재해 홀더가 보는 것을 바꾸지 않지만, attention 레코드는 push 채널로 홀더에게 그대로 전달되는 공유 상태다.
 - **자동 해제**: client 연결 종료(EOF) 또는 attach heartbeat TTL 만료(FIN/RST 없는 silent disconnect 감지) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
+- **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [ADR-0116](../../adr/0116-attach-handshake-validated-before-occupancy.md).
+- **self-attach(자기 인스턴스 포트로 attach)는 거절된다** — debug/release 공통. GUI attach 핸드셰이크는 메인 스레드에서 동기 대기하는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 반드시 실패하고, 실패하는 동안 대상 workspace 점유만 남는다. 로컬 self-mirror 가 필요하면 별도 프로세스인 `tasty debug attach` 를 쓴다(같은 이유로 교착이 없다).
 - **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한). 끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**.
 
 ### surface 단위 vs workspace 단위
@@ -169,6 +172,8 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
 - **사용자가 mirror 워크스페이스를 직접 닫으면** 어느 engine 에도 그 워크스페이스가 없으므로 고아로 판정되어 기존대로 정리된다 — `Detach` 통지 → 원격 점유 해제 + anchor 게이트 해제 + 터널 kill. 두 상황(창이 없어졌을 뿐 vs 워크스페이스가 없어짐)은 이 판정으로 구분된다.
 - **정리는 parked engine 에도 동일하게 적용된다.** mirror 워크스페이스 행뿐 아니라 mirror 터미널·mirror busy 엔트리·mesh 프레임 캐시를 함께 걷어내고 `active_workspace` 인덱스를 클램프한다. 판정과 정리의 순회 범위는 **같아야** 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면, 그 engine 이 나중에 창에 다시 실릴 때 아무 데도 연결되지 않은 mirror 워크스페이스가 되살아난다.
 - parked engine 에는 창이 없으므로 정리 시 toast 를 쌓지 않는다(토스트 수명이 wall-clock 기준이라 창 복원 시점엔 이미 만료된다).
+- **도착하는 mirror 이벤트도 parked engine 에 즉시 적용된다**([ADR-0110](../../adr/0110-mirror-events-apply-to-parked-engines.md)). `apply_attach_client_output` 은 적용 대상을 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`), 대상을 찾은 **뒤에야** reader 버퍼를 drain 한다. 창이 없는 동안 도착한 `Data`/`Resize`/`StructuralDelta`/`Activity`/`Attention`/`Mesh` 는 그 engine 의 mirror 터미널·매핑·트리에 도착 순서대로 반영되므로, 창 복원 시 mirror 는 이미 최신이고 `remote_to_local` 매핑도 desync 되지 않는다 — 로컬 PTY 출력이 parked engine 에서도 파싱되는 것과 같은 대칭이다. 판정·정리·적용 세 순회의 범위는 **같다**. 어느 engine 에도 워크스페이스가 없으면(고아) drain 하지 않고 두며, 같은 프레임의 고아 정리가 세션째 걷어낸다.
+- parked engine 에 적용될 때는 창 표면이 필요한 부수효과만 생략한다 — toast 는 로그로 대체(위와 같은 이유), repaint 요청은 없음(복원 시 새 창이 그 engine 을 그대로 그린다). 상태 변경(터미널 grid·트리·매핑)은 창 유무와 무관하게 항상 적용된다.
 
 ## 인터페이스
 
@@ -221,20 +226,20 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 
 ## Acceptance Criteria
 
-- [ ] Given 동일 머신 두 인스턴스 When 한쪽이 다른 쪽 surface 를 attach Then mirror grid 가 원본과 일치한다(`--dump-after` 로 검증).
-- [ ] Given surface 가 이미 점유됨 When 다른 client 가 attach 시도 Then holder 정보를 담아 거부된다.
-- [ ] Given 점유된 surface When 서버측 GUI 키/`surface.send` Then 입력이 차단되고 client 입력만 도달한다.
-- [ ] Given 점유 상태 When 로컬 사용자가 `--force-detach` Then holder 가 종료되고 대상이 일반 surface 로 복귀한다.
-- [ ] Given client 연결 종료(EOF) Then 점유 lock 이 자동 free 된다.
-- [ ] Given client 가 FIN/RST 없이 조용히 끊김(silent disconnect) When attach heartbeat TTL 이 만료 Then 점유 lock 이 EOF 와 동일하게 자동 free 되고, 같은 surface/workspace 로 새 client 의 재attach 가 성공한다.
-- [ ] Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
-- [ ] Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
-- [ ] Given workspace attach 대상에 bundled egui-mesh surface(image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서 빠져 이 mesh-mirror 채널을 더 이상 쓰지 않는다 — attach 시 다른 webview/remote kind 와 동일하게 placeholder 로 내려간다(과거 `tests/attach_markdown_mesh_mirror_loopback.rs` 로 프로토콜 레벨 검증했으나, markdown 이 이 채널을 벗어나며 삭제).
-  - [ ] image — 미검증.
-  - [ ] mesh_demo — 미검증.
-  - [ ] 2종 공통 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.
-- [ ] Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
-- [ ] Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
+- Given 동일 머신 두 인스턴스 When 한쪽이 다른 쪽 surface 를 attach Then mirror grid 가 원본과 일치한다(`--dump-after` 로 검증).
+- Given surface 가 이미 점유됨 When 다른 client 가 attach 시도 Then holder 정보를 담아 거부된다.
+- Given 점유된 surface When 서버측 GUI 키/`surface.send` Then 입력이 차단되고 client 입력만 도달한다.
+- Given 점유 상태 When 로컬 사용자가 `--force-detach` Then holder 가 종료되고 대상이 일반 surface 로 복귀한다.
+- Given client 연결 종료(EOF) Then 점유 lock 이 자동 free 된다.
+- Given client 가 FIN/RST 없이 조용히 끊김(silent disconnect) When attach heartbeat TTL 이 만료 Then 점유 lock 이 EOF 와 동일하게 자동 free 되고, 같은 surface/workspace 로 새 client 의 재attach 가 성공한다.
+- Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.
+- Given stale 포트 파일만 있는 죽은 인스턴스 When `tasty remote check` Then dead(exit≠0)로 판정한다.
+- Given workspace attach 대상에 bundled egui-mesh surface(image/mesh_demo) 가 있음 When client 가 GUI mirror 로 attach Then 그 surface 의 실제 렌더 콘텐츠가 mirror pane 에 표시된다(placeholder 아님). markdown 은 Stage B(webview 전환)로 egui-mesh 화이트리스트에서 빠져 이 mesh-mirror 채널을 더 이상 쓰지 않는다 — attach 시 다른 webview/remote kind 와 동일하게 placeholder 로 내려간다(과거 `tests/attach_markdown_mesh_mirror_loopback.rs` 로 프로토콜 레벨 검증했으나, markdown 이 이 채널을 벗어나며 삭제).
+  - image — 미검증.
+  - mesh_demo — 미검증.
+  - 2종 공통 시각적 렌더 확인(실제 GUI attach client 로 mirror pane 화면 비교) — 미검증.
+- Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
+- Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 
 > 전부 headless 검증 가능 — 동일 머신 다중 인스턴스 + loopback 직결(`127.0.0.1:PORT`)로 SSH 없이도 attach 파이프라인을 재현, `--dump-after` 로 grid 일치 확인.
 

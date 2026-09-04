@@ -43,19 +43,19 @@
 
 ## Acceptance Criteria
 
-- [x] Given 토글 off When 구버전 레이아웃 스냅샷 로드 Then 모든 워크스페이스가 `normal` 로 귀속(무손실).
-- [x] Given `workspace_category.create {name:"normal"}` Then 예약어 거부.
-- [x] Given 카테고리 A 에 워크스페이스 존재 When `workspace_category.delete A` Then 워크스페이스는 normal 로 이동, active 전역 인덱스 불변.
-- [x] Given `workspace_category.move {from:0}` 또는 `{to:0}` Then 거부(normal 0번 고정).
-- [x] Given 토글 on Then 사이드바가 카테고리 섹션(chevron 헤더 + 소속 행)으로 그룹 렌더, 토글 off 면 평면 렌더(회귀 없음).
-- [x] Given 카테고리 헤더 클릭 When 접힘 토글 Then 접힘 상태가 슬롯 파일에 영속되고 확장↔레일이 공유.
-- [x] Given `toggle_categories_collapsed` 바인딩 When 하나라도 펼쳐진 상태에서 누름 Then 전부 접힘, 다시 누르면 전부 펴짐(normal 포함). 카테고리 토글 off 면 no-op(키 흐름).
-- [x] Given 워크스페이스를 다른 카테고리 섹션으로 드래그 Then 소속이 그 카테고리로 변경(전역 인덱스 불변).
-- [x] Given 카테고리 생성/이름변경 다이얼로그 When 빈/normal/중복 입력 Then 인라인 danger 에러 + 확인 비활성.
-- [x] Given 카테고리 삭제 When destructive confirm 확인 Then 카테고리 제거 + 워크스페이스 normal 귀속.
-- [x] Given 토글 on When 카테고리 조합(기본 Ctrl+Shift) 홀드 Then 카테고리 헤더(확장)·`---` 경계(레일)에 숫자 키캡, 워크스페이스 행은 status dot 유지(modifier-exclusive). 토글 off 면 키캡·역할 없음.
-- [x] Given 카테고리 조합+숫자 When 대상 카테고리가 접힘 Then 자동 확장(슬롯 파일 영속) 후 그 카테고리 last-active 워크스페이스로 전환, 방문 이력 없으면 첫 워크스페이스.
-- [x] Given folders on When modifier-hint 패널에서 카테고리 조합 홀드 Then "카테고리 전환" 역할 행(폴더 글리프) 노출, off 면 없음.
-- [x] Given `workspace_switch_crosses_category` off(기본) Then 워크스페이스 next/prev 는 카테고리 로컬 wrap 유지(회귀 없음).
-- [x] Given `workspace_switch_crosses_category` on Then 카테고리 마지막 워크스페이스에서 next → 다음 카테고리 첫 워크스페이스, 첫 워크스페이스에서 prev → 이전 카테고리 마지막 워크스페이스로 이동하며 카테고리 목록도 wrap.
-- [x] Given `workspace_switch_crosses_category` on When 카테고리가 1개뿐(`workspace_categories_enabled` off 포함) Then off 일 때와 동일하게 로컬 wrap.
+- Given 토글 off When 구버전 레이아웃 스냅샷 로드 Then 모든 워크스페이스가 `normal` 로 귀속(무손실).
+- Given `workspace_category.create {name:"normal"}` Then 예약어 거부.
+- Given 카테고리 A 에 워크스페이스 존재 When `workspace_category.delete A` Then 워크스페이스는 normal 로 이동, active 전역 인덱스 불변.
+- Given `workspace_category.move {from:0}` 또는 `{to:0}` Then 거부(normal 0번 고정).
+- Given 토글 on Then 사이드바가 카테고리 섹션(chevron 헤더 + 소속 행)으로 그룹 렌더, 토글 off 면 평면 렌더(회귀 없음).
+- Given 카테고리 헤더 클릭 When 접힘 토글 Then 접힘 상태가 슬롯 파일에 영속되고 확장↔레일이 공유.
+- Given `toggle_categories_collapsed` 바인딩 When 하나라도 펼쳐진 상태에서 누름 Then 전부 접힘, 다시 누르면 전부 펴짐(normal 포함). 카테고리 토글 off 면 no-op(키 흐름).
+- Given 워크스페이스를 다른 카테고리 섹션으로 드래그 Then 소속이 그 카테고리로 변경(전역 인덱스 불변).
+- Given 카테고리 생성/이름변경 다이얼로그 When 빈/normal/중복 입력 Then 인라인 danger 에러 + 확인 비활성.
+- Given 카테고리 삭제 When destructive confirm 확인 Then 카테고리 제거 + 워크스페이스 normal 귀속.
+- Given 토글 on When 카테고리 조합(기본 Ctrl+Shift) 홀드 Then 카테고리 헤더(확장)·`---` 경계(레일)에 숫자 키캡, 워크스페이스 행은 status dot 유지(modifier-exclusive). 토글 off 면 키캡·역할 없음.
+- Given 카테고리 조합+숫자 When 대상 카테고리가 접힘 Then 자동 확장(슬롯 파일 영속) 후 그 카테고리 last-active 워크스페이스로 전환, 방문 이력 없으면 첫 워크스페이스.
+- Given folders on When modifier-hint 패널에서 카테고리 조합 홀드 Then "카테고리 전환" 역할 행(폴더 글리프) 노출, off 면 없음.
+- Given `workspace_switch_crosses_category` off(기본) Then 워크스페이스 next/prev 는 카테고리 로컬 wrap 유지(회귀 없음).
+- Given `workspace_switch_crosses_category` on Then 카테고리 마지막 워크스페이스에서 next → 다음 카테고리 첫 워크스페이스, 첫 워크스페이스에서 prev → 이전 카테고리 마지막 워크스페이스로 이동하며 카테고리 목록도 wrap.
+- Given `workspace_switch_crosses_category` on When 카테고리가 1개뿐(`workspace_categories_enabled` off 포함) Then off 일 때와 동일하게 로컬 wrap.

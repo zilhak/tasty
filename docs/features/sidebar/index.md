@@ -54,12 +54,12 @@
 
 ## Acceptance Criteria
 
-- [ ] 접기 버튼 클릭 시 full ↔ collapsed 가 토글된다.
-- [ ] 워크스페이스 카드 클릭 시 해당 Workspace 로 전환된다.
-- [ ] 카테고리 토글 off: New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
-- [ ] 카테고리 토글 on: New workspace 버튼이 full/collapsed 모두에서 숨고, 워크스페이스 영역이 카테고리 섹션으로 그룹 렌더된다 (섹션·생성 경로의 세부 AC 는 [`features/workspace-category/`](../workspace-category/index.md)).
-- [ ] 다른 client 가 점유 중인 Workspace 카드에 점유 인디케이터가 표시된다.
-- [ ] 도구/플러그인/설정 버튼이 각각 도구 메뉴 / 플러그인 창 / 설정 창을 연다.
+- 접기 버튼 클릭 시 full ↔ collapsed 가 토글된다.
+- 워크스페이스 카드 클릭 시 해당 Workspace 로 전환된다.
+- 카테고리 토글 off: New workspace 버튼으로 새 Workspace 가 생성된다 (우클릭 시 프리셋).
+- 카테고리 토글 on: New workspace 버튼이 full/collapsed 모두에서 숨고, 워크스페이스 영역이 카테고리 섹션으로 그룹 렌더된다 (섹션·생성 경로의 세부 AC 는 [`features/workspace-category/`](../workspace-category/index.md)).
+- 다른 client 가 점유 중인 Workspace 카드에 점유 인디케이터가 표시된다.
+- 도구/플러그인/설정 버튼이 각각 도구 메뉴 / 플러그인 창 / 설정 창을 연다.
 
 > GUI 컴포넌트라 시각 검증은 스크린샷, 전환/생성 동작은 IPC/CLI(workspace 조작) + 스크린샷 병행.
 

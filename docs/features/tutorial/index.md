@@ -59,8 +59,8 @@
 
 ## Acceptance Criteria
 
-- [x] 도구 메뉴 "튜토리얼" → 주제 목록 팝업이 열린다.
-- [x] 주제 선택 + 진행 → 팝업 닫힘 → step0 마커+말풍선 진행.
-- [x] Next/Back 으로 step 이동, 각 step 마커 위치·말풍선 내용 갱신.
-- [x] Skip/Esc → 주제 목록 팝업 복귀, 마지막 step Next → 목록 재open.
-- [x] 마커/scrim 은 hit-transparent(클릭 통과), 말풍선만 마우스 소비.
+- 도구 메뉴 "튜토리얼" → 주제 목록 팝업이 열린다.
+- 주제 선택 + 진행 → 팝업 닫힘 → step0 마커+말풍선 진행.
+- Next/Back 으로 step 이동, 각 step 마커 위치·말풍선 내용 갱신.
+- Skip/Esc → 주제 목록 팝업 복귀, 마지막 step Next → 목록 재open.
+- 마커/scrim 은 hit-transparent(클릭 통과), 말풍선만 마우스 소비.

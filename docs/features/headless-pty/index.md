@@ -47,11 +47,11 @@
 
 ## Acceptance Criteria
 
-- [x] Given 상한 미만 When `pty.spawn{command}` Then disjoint 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
-- [x] Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then watcher 가 잡은 실제 exit_code 반환.
-- [x] Given 상한 도달 When `pty.spawn` Then `LimitReached` 에러(자원 미생성) — panic 없음.
-- [x] Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 두 store 에서 함께 회수.
-- [x] Given idle 이 TTL 초과 When `pty.*` 를 **한 번도 부르지 않음** Then 주기 타이머가 최대 90초 안에 두 store 에서 함께 회수.
-- [x] Given 상한이 꽉 찼고 그 항목들이 idle 만료 When `pty.spawn` Then lazy sweep 이 먼저 돌아 spawn 이 성공(주기 타이머를 기다리지 않는다).
-- [x] Given 살아있는 headless pty When `pty.attach_surface{pane}` Then Terminal 이 surface_id 로 re-key(상태 보존) + pane tab 등장 + `pty.list` 에서 제거 + `tab.created` cascade.
-- [x] kill/idle-sweep/adopt 각각이 회수/재배선하는 pty_id 의 waker dedup 게이트를 정리(`forget_surface`) — 누수 없음.
+- Given 상한 미만 When `pty.spawn{command}` Then disjoint 고범위 pty id 반환 + `pty.list` 에 등장, command 즉시 실행.
+- Given 실행 중 pty When `pty.write` → 종료 유발 → `pty.wait` Then watcher 가 잡은 실제 exit_code 반환.
+- Given 상한 도달 When `pty.spawn` Then `LimitReached` 에러(자원 미생성) — panic 없음.
+- Given idle 이 TTL 초과 When `pty.spawn`/`pty.list` 접근 Then 두 store 에서 함께 회수.
+- Given idle 이 TTL 초과 When `pty.*` 를 **한 번도 부르지 않음** Then 주기 타이머가 최대 90초 안에 두 store 에서 함께 회수.
+- Given 상한이 꽉 찼고 그 항목들이 idle 만료 When `pty.spawn` Then lazy sweep 이 먼저 돌아 spawn 이 성공(주기 타이머를 기다리지 않는다).
+- Given 살아있는 headless pty When `pty.attach_surface{pane}` Then Terminal 이 surface_id 로 re-key(상태 보존) + pane tab 등장 + `pty.list` 에서 제거 + `tab.created` cascade.
+- kill/idle-sweep/adopt 각각이 회수/재배선하는 pty_id 의 waker dedup 게이트를 정리(`forget_surface`) — 누수 없음.

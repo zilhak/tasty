@@ -79,12 +79,12 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 
 ## Acceptance Criteria
 
-- [x] Given 로컬(비-mirror) surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then OS 인터랙티브 캡처 후 캡처 파일 경로가 로컬 클립보드에 쓰인다.
-- [ ] Given mirror 워크스페이스의 surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then 캡처 파일이 attach 채널로 원격에 전송되고, 원격 인스턴스의 클립보드에 그 원격 경로가 쓰인다(로컬 클립보드는 바뀌지 않는다).
-- [x] Given 캡처가 사용자에 의해 취소됨(Esc 등) Then 로컬/원격 어느 클립보드도 바뀌지 않는다.
-- [ ] Given macOS 에서 화면 기록 권한이 미승인 When 캡처 트리거 Then 취소와 구분되는 권한 안내 토스트가 뜬다(클립보드는 바뀌지 않는다).
-- [x] Given `clipboard.set_text` IPC 호출(text 파라미터 포함) Then 로컬 클립보드가 그 텍스트로 바뀐다.
-- [x] Given plugin 이 `ClipboardWrite` 권한 없이 `clipboard.set_text` 호출 Then permission_denied.
+- Given 로컬(비-mirror) surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then OS 인터랙티브 캡처 후 캡처 파일 경로가 로컬 클립보드에 쓰인다.
+- Given mirror 워크스페이스의 surface 에 포커스 When `screenshot_to_clipboard` 트리거 Then 캡처 파일이 attach 채널로 원격에 전송되고, 원격 인스턴스의 클립보드에 그 원격 경로가 쓰인다(로컬 클립보드는 바뀌지 않는다).
+- Given 캡처가 사용자에 의해 취소됨(Esc 등) Then 로컬/원격 어느 클립보드도 바뀌지 않는다.
+- Given macOS 에서 화면 기록 권한이 미승인 When 캡처 트리거 Then 취소와 구분되는 권한 안내 토스트가 뜬다(클립보드는 바뀌지 않는다).
+- Given `clipboard.set_text` IPC 호출(text 파라미터 포함) Then 로컬 클립보드가 그 텍스트로 바뀐다.
+- Given plugin 이 `ClipboardWrite` 권한 없이 `clipboard.set_text` 호출 Then permission_denied.
 
 > **검증 한계(문서화)**: mirror 원격 반영 e2e 는 이 작업 환경에서 물리적으로 분리된 두 머신을 준비할 수 없어, `--ssh 127.0.0.1:<port>` loopback 2-인스턴스 구성(같은 머신, 별도 `TASTY_HOME`)으로 attach 파이프라인·미니 프로토콜 분류·`finalize_capture_upload` 저장/clipboard 반영까지는 검증했으나, **실제 원격 OS 클립보드에 물리적으로 다른 사용자가 붙여넣기를 시도하는 최종 확인**은 코드/로직 리뷰로 대체했다(`docs/features/remote-attach/index.md` 의 기존 loopback e2e 관례와 동일한 한계). 위 로컬 케이스 4개는 `cargo build` debug 인스턴스를 실제로 띄우고(Xvfb, `DISPLAY=:10.0`) `xdotool` 로 실제 `ctrl+alt+s` 키 입력을 주입해 검증했다 — GNOME Shell 스크린샷 포털이 없는 이 sandbox 에서는 실제 `gnome-screenshot` 가 DBus 응답을 무한 대기하므로, 검증 세션에 한해 PATH 상 `gnome-screenshot` 를 논-인터랙티브 `scrot` 로 forward 하는 셸 shim 을 앞에 둬 성공 캡처(1920×1080 PNG 생성 확인)를, shim 을 즉시 `exit 1` 하도록 바꿔 취소(파일 미생성) 케이스를 각각 재현했다. 두 경우 모두 X11 `CLIPBOARD` selection(`xclip -selection clipboard -o`)으로 결과를 직접 읽어 확인. `clipboard.set_text` 는 CLI(`tasty clipboard set-text`)로 직접 호출해 같은 방식으로 확인. permission_denied 는 라이브 인스턴스 대신 실제 게이트 코드를 결정론적으로 행사하는 단위테스트로 검증(`crates/tasty-ipc/src/caller.rs` `plugin_missing_clipboard_write_denied_for_clipboard_set_text`) — 이쪽이 가짜 plugin 프로세스를 띄우는 것보다 프로덕션 코드 경로(`CallerContext::ensure_allowed`)를 더 정확히 행사한다.
 
@@ -95,6 +95,6 @@ client 는 `capture_result` 를 받아 성공/실패 토스트(`attach.toast.mir
 - 큐: `src/core/state.rs`(`CoreState.pending_screenshot_captures: Vec<Option<u32>>`).
 - 키바인딩: `crates/tasty-settings/src/keybindings.rs`(`screenshot_to_clipboard` 필드 + `default_screenshot_to_clipboard`), `presets.rs`(4 프리셋 공통값), `crud.rs`(`GENERAL_BINDING_FIELDS`/`get_bindings(_mut)`), 매치는 `src/adapters/ui/input/shortcuts/keybinding.rs`(`match_capture_bindings`). Settings UI: `src/view/settings/ui/keybindings_tab.rs`(Clipboard 서브탭).
 - 원격 전송(client): `src/app/attach_client.rs` 하단 독립 블록(`forward_capture_to_remote_clipboard`, `send_capture_control_frame`, `parse_capture_result`, `MirrorEvent::CaptureResult`) — `apply_mirror_structural_delta`(별도 병행 작업)와 분리된 별도 함수/블록으로 작성.
-- 원격 수신(server): `src/adapters/production/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/core/capture_upload.rs`(`CaptureUploadRegistry`), `src/core/attach_runtime.rs`(`finalize_capture_upload`, `save_capture_and_set_clipboard`). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot.rs`) 양쪽 진입점에서 동일 서버 로직을 호출.
+- 원격 수신(server): `src/adapters/production/stream_hub.rs`(`CaptureUploadMsg`, `pump_inbound` 분류), `src/core/capture_upload.rs`(`CaptureUploadRegistry`), `src/core/attach_runtime.rs`(`finalize_capture_upload`, `save_capture_and_set_clipboard`). GUI(`src/app/event_handler.rs::apply_capture_upload_msg`)와 headless(`src/boot/headless_stream.rs::apply_capture_uploads`) 양쪽 진입점에서 동일 서버 로직을 호출.
 - IPC/CLI: `crates/tasty-ipc/src/method_meta.rs`(`clipboard.set_text` → `Permission::ClipboardWrite`), `src/app/ipc/app_methods.rs`(`ipc_handle_clipboard_set_text`), `crates/tasty-cli/src/commands/clipboard.rs`(`ClipboardCommands::SetText`), `crates/tasty-cli/src/request/clipboard.rs`.
 - 테스트: `crates/tasty-ipc/src/method_meta_tests.rs`(`clipboard_set_text_is_release`), `src/adapters/production/stream_hub.rs`(`pump_inbound_classifies_capture_chunk_and_commit`), `src/core/capture_upload.rs`(누적/격리 단위 테스트), `src/platform/screen_capture.rs`(경로/폴백 단위 테스트).

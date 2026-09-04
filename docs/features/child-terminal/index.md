@@ -189,13 +189,13 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 
 ## Acceptance Criteria
 
-- [x] Given workspace `<ws>` When `terminal.spawn{parent=P, command}` Then 자식 터미널이 생성·registry 등록되고 `occupancy_of(child)==Soft`·`holder.parent==P`·`attached=false`.
-- [x] Given 점유된 child C When `terminal.kill` Then `occupancy_of(C)==None` + surface 닫힘.
-- [x] Given 죽은 자식이 남은 registry When `terminal.children` Then reconcile 로 목록에서 제거.
-- [x] Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
-- [x] Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.
-- [x] Given 점유된 child C When `terminal.release` Then `occupancy_of(C)==None` + `terminal.children` 목록에서 사라짐 + surface(탭)는 여전히 열려있음(닫히지 않음).
-- [x] Given 등록되지 않은 child index When `terminal.release` Then 에러 반환.
-- [x] Given C 와 무관한 다른 surface 가 hard 점유 중 When `terminal.release{child=C}` Then 그 hard 점유는 영향받지 않음.
-- [x] Given 실행 중인 child C When `terminal.state{surface=C}` Then `{"state":"active","surface_id":C}`.
-- [x] Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `{"state":"exited","surface_id":C}` (`"active"`가 아님).
+- Given workspace `<ws>` When `terminal.spawn{parent=P, command}` Then 자식 터미널이 생성·registry 등록되고 `occupancy_of(child)==Soft`·`holder.parent==P`·`attached=false`.
+- Given 점유된 child C When `terminal.kill` Then `occupancy_of(C)==None` + surface 닫힘.
+- Given 죽은 자식이 남은 registry When `terminal.children` Then reconcile 로 목록에서 제거.
+- Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
+- Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.
+- Given 점유된 child C When `terminal.release` Then `occupancy_of(C)==None` + `terminal.children` 목록에서 사라짐 + surface(탭)는 여전히 열려있음(닫히지 않음).
+- Given 등록되지 않은 child index When `terminal.release` Then 에러 반환.
+- Given C 와 무관한 다른 surface 가 hard 점유 중 When `terminal.release{child=C}` Then 그 hard 점유는 영향받지 않음.
+- Given 실행 중인 child C When `terminal.state{surface=C}` Then `{"state":"active","surface_id":C}`.
+- Given `terminal.kill`로 종료된 child C When `terminal.state{surface=C}` Then `{"state":"exited","surface_id":C}` (`"active"`가 아님).
