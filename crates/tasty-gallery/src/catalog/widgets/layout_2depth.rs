@@ -1,8 +1,15 @@
-//! `twodepth` specimen — 2-depth tabs → sections (research §2.5 Layouts).
+//! `twodepth` specimen — 2-depth 레이아웃 idiom (L1 탭 → L2 섹션 → content).
+//! Layouts 페이지 "List → detail" 섹션의 **일반(general) 2-depth 셸** 데모다.
 //!
-//! Settings 창 idiom. 상단 L1 탭 바(40, bg-sidebar, 활성 2px accent underline) +
-//! 좌측 L2 섹션 리스트(168, filter + 섹션, selected surface-active) +
-//! 우측 content(flex, padding 18, Theme preset grid).
+//! 상단 L1 탭 바(`item_height_interactive + spacing_md` = 40, bg-sidebar, 활성 2px accent
+//! underline) + 좌측 L2 섹션 리스트(`field_width_md + spacing_sm` = 168, filter + 섹션,
+//! selected surface-active) + 우측 content(flex, padding `spacing_lg`, Theme preset grid).
+//!
+//! **Settings 창의 미러가 아니다.** 그 미러는 별도 `settings` specimen
+//! (`components/settings.rs`, L2 200 · L1 44 = 본체 `SETTINGS_SIDEBAR_WIDTH`/`HEIGHT`)이다.
+//! 이쪽은 특정 창에 매이지 않는 일반 idiom 이라 치수를 어느 창 상수도 아닌 토큰에서 직접
+//! 도출한다. (예전 모듈 문서가 "Settings 창 idiom" 이라 적어 두 specimen 이 같은 것을 다른
+//! 값[168/40 vs 200/44]으로 그리는 것처럼 보였다 — 실제로는 서로 다른 대상이다.)
 //!
 //! Theme 토큰만으로 정적 재현 (binary 미의존).
 
