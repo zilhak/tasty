@@ -6,7 +6,7 @@
 
 ## Context
 
-`claude-design` 플러그인(`com.tasty.claude-design`, `crates/tasty-plugin-claude-design/`)은 `claude.ai/design` 캔버스를 off-screen headful Playwright 브라우저로 자동화하는 번들 plugin이었다. 구성:
+`claude-design` 플러그인(`com.tasty.claude-design`, 당시 `tasty-plugin-claude-design` 크레이트)은 `claude.ai/design` 캔버스를 off-screen headful Playwright 브라우저로 자동화하는 번들 plugin이었다. 구성:
 
 - **CLI**: `tasty design *` 서브커맨드 11종 — `login`/`logout`/`import-session`/`status`/`projects`/`detect`/`probe`/`chat`/`chat-status`/`turn-status`/`protocol`. 각각 plugin 자신의 IPC 네임스페이스(`design.login`~`design.protocol`)에 매핑됐다.
 - **런타임**: Node.js + system Playwright + Chromium 감지·기동 로직(`detect.rs` 452줄, `runner.js` 457줄), Chrome/Firefox 로컬 세션 import(`chrome_import.rs` 299줄, `firefox_import.rs` 307줄), 세션 저장(`auth.rs`, ADR-0018 평문 저장 결정의 대상).

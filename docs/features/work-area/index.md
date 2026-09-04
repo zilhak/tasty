@@ -127,7 +127,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `Surface` trait(`surface_trait.rs`) · 타입(`terminal_surface.rs`/`empty_surface.rs`/`explorer_panel.rs`/`attach_mesh_surface.rs`). markdown/image 는 별도 domain 타입이 아니라 host `src/plugin_bridge/egui_mesh_surface.rs`의 `EguiMeshSurface`(plugin 공용 mesh surface)로 구현된다.
 - 이진 트리 공통: `binary_tree.rs` (`BinaryTree` trait — Pane/Surface 양쪽이 구현).
 - 보유/동작: `src/core/state.rs` `CoreState`(`workspaces`, `surface_registry`, `terminals`, `attach`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs`).
-- 종류 레지스트리: `src/engine/surface_registry/` (`register_builtin_kinds`, egui-mesh whitelist `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
+- 종류 레지스트리: `src/core/surface_registry/` (`register_builtin_kinds`, egui-mesh whitelist `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
 
 ## 화면
 

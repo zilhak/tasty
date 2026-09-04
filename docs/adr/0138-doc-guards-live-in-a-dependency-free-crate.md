@@ -82,7 +82,7 @@ GitHub 은 바뀐 파일이 **전부** 이 목록에 걸리면 워크플로를 �
 *입력이 전부 무시 대상* 인 것이 셋이었는데(`architecture_crate_list_complete` ·
 `contributes_gate_docs_parity` · `permission_free_methods_docs_parity`), 그중 옮긴 것은
 첫째뿐이다. 다음 수단은 뒤의 둘을 각자의 소유 크레이트(`crates/tasty-ipc/tests/` ·
-`crates/tasty-plugin-manifest/tests/`)로 옮기고 `-p <그 크레이트>` 잡을 붙이는 것이다 —
+`tasty-plugin-manifest` 의 `tests/` — 후자는 아직 없어 신설이 필요하다)로 옮기고 `-p <그 크레이트>` 잡을 붙이는 것이다 —
 385 가 아니라 86 / 56 이 된다. 의존 0 은 아니므로 이 ADR 의 결정이 아니라 그 절충을 따로
 재는 후속이다.
 

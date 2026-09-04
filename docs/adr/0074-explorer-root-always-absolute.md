@@ -12,7 +12,7 @@ Explorer surface 의 root 는 `params["path"]` → `SurfaceKindDef::create` 의 
 
 이는 [surface cwd 불변식](../architecture/invariants/surface-cwd.md) 의 취지("호스트 시작 cwd 가 root 행세 못 하게 — `std::env::current_dir()` 폴백 제거")에 정면으로 어긋난다. `"."` 를 root 로 두는 것은 `current_dir()` 을 **지연 평가**하는 것과 동작상 같으면서, 그 문자열이 UI·wire·클립보드로 새어나가므로 오히려 더 나쁘다.
 
-동시에 그 불변식 문서의 해당 절은 존재하지 않는 `crates/tasty-plugin-explorer/` 를 전제로 서술돼 있었다 — explorer 는 본체 builtin surface 로 승격된 지 오래다. 즉 문서에는 `$HOME` 단계가 있는데 구현에는 없었고, 문서가 가리키는 코드 위치도 죽어 있었다.
+동시에 그 불변식 문서의 해당 절은 존재하지 않는 `tasty-plugin-explorer` 크레이트를 전제로 서술돼 있었다 — explorer 는 본체 builtin surface 로 승격된 지 오래다. 즉 문서에는 `$HOME` 단계가 있는데 구현에는 없었고, 문서가 가리키는 코드 위치도 죽어 있었다.
 
 cwd 를 상속하지 않는 생성 경로(비-terminal split, `workspace.create`, mirror convert)는 각자 별도의 결함이지만, 그 조합이 무엇이든 **root 만은 절대경로로 확정**되는 방어선이 필요하다.
 

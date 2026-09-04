@@ -30,7 +30,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 | `hub: Hub` | **외부 통신** — IPC 서버(`Option<Box<dyn IpcServerPort>>`), 포트 파일 | 항상 |
 | `view: ViewRegistry` | **GUI 어댑터** — winit proxy, `views: HashMap<WindowId, Box<dyn View>>`, `active_modal_id`/`focused_view_id` | `#[cfg(feature = "gui")]` |
 
-> 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. `src/engine/` 모듈명은 일부 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)의 전환기 컨테이너로 잠시 남아 있다.
+> 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. 전환기 컨테이너로 남아 있던 `engine` 모듈도 사라졌고, 그 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)은 `src/core/` 아래로 옮겨졌다.
 
 ## 워크스페이스 크레이트 (49)
 
