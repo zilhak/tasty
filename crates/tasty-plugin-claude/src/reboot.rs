@@ -41,6 +41,18 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::require_surface_id;
 
+/// in-flight 집합의 락. 임계구역이 `HashSet<u32>` 의 insert/remove 뿐이라 패닉이 지나가도
+/// 남는 값이 성립한다 — 복구가 답이다.
+///
+/// **획득과 해제의 답이 다르다.** 획득(`insert`)은 실패를 호출자에게 에러로 돌려주면
+/// 그만이고 전용 문구(`claude.reboot.lock_poisoned`)까지 있다. 반면 해제(`remove`)를
+/// 조용히 건너뛰면 그 `surface_id` 가 집합에 **영구히 남아** 이후 모든 reboot 이
+/// `already_in_progress` 로 거절된다. poison 은 sticky 라 한 번 걸리면 모든 surface 의
+/// 해제가 같이 막혀 기능 전체가 잠기고, 되돌릴 경로가 plugin 재시작뿐이다.
+const INFLIGHT_WHAT: &str = "the claude reboot in-flight set";
+static INFLIGHT_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
 const DEFAULT_DELAY_SECS: u64 = 5;
 /// Ctrl+C 전송 횟수 / 간격.
@@ -178,14 +190,20 @@ pub(crate) fn reboot_surface(
                 profile_file.as_deref(),
                 &notice_base,
             );
-            if let Ok(mut set) = thread_inflight.lock() {
-                set.remove(&surface_id);
-            }
+            tasty_utils::poison::recover_mutex(
+                thread_inflight.lock(),
+                INFLIGHT_WHAT,
+                &INFLIGHT_POISON_REPORTED,
+            )
+            .remove(&surface_id);
         });
     if let Err(e) = spawned {
-        if let Ok(mut set) = inflight.lock() {
-            set.remove(&surface_id);
-        }
+        tasty_utils::poison::recover_mutex(
+            inflight.lock(),
+            INFLIGHT_WHAT,
+            &INFLIGHT_POISON_REPORTED,
+        )
+        .remove(&surface_id);
         return Err(IpcMethodError::new(
             tr.t_fmt("claude.reboot.spawn_thread_failed", &e.to_string()),
         ));

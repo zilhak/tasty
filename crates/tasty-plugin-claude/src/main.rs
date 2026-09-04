@@ -260,6 +260,10 @@ impl Plugin for ClaudePlugin {
         // enable 되며, 추적 대상이 사라지면 이 스레드 자신이 매 tick 생존을 확인해
         // disable 한다(`error_scan_loop` / `error_scan::scan_target_is_alive` 참조).
         let scanner = self.scanner.clone();
+        // spawn 실패 시 패닉을 유지한다 — 호스트(tasty)가 아니라 **이 plugin
+        // 프로세스만** 죽고, 호스트는 plugin 사망을 이미 감지·복구한다. 호스트 쪽
+        // 스레드 spawn 이 에러 반환으로 바뀐 것과 대칭이 아닌 이유가 이것이다:
+        // 실패 폭발 반경이 다르다(`docs/dev-guide/error-handling.md`).
         std::thread::Builder::new()
             .name("claude-error-scan".into())
             .spawn(move || error_scan_loop(scanner, host))
@@ -272,28 +276,21 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
         std::thread::sleep(ERROR_SCAN_INTERVAL);
         // lock을 짧게 잡고 snapshot만 떠서 IPC 호출 동안 다른 메서드(enable/disable)가
         // 끼어들 수 있게 한다.
-        let surfaces = match scanner.lock() {
-            Ok(s) => s.enabled_snapshot(),
-            Err(e) => {
-                tracing::error!("claude scanner mutex poisoned: {e}");
-                return;
-            }
-        };
+        // poison 이어도 루프를 접지 않는다 — 여기서 `return` 하면 스캐너가 sticky poison
+        // 하나로 프로세스가 끝날 때까지 죽고, 그 사실이 로그 한 줄로만 남는다. 지키는
+        // 자료구조가 복구 가능하므로 계속 돈다(보고는 첫 1 회, `lock_scanner` 안에서).
+        let surfaces = crate::error_scan::lock_scanner(&scanner).enabled_snapshot();
         for (sid, target) in surfaces {
             // surface.closed 구독(ef57061d 로 제거됨) 대신, 이미 도는 폴링 주기에
             // 편승해 생존을 확인한다 — 사라진 대상은 disable 해 enabled/dedupe
             // 상태를 정리한다(최대 800ms 지연, 추가 구독 배선 없음). 판정 기준은
             // 등록 경로에 따라 다르다(`ScanTarget` 문서 참조).
             if !scan_target_is_alive(&host, sid, target) {
-                if let Ok(mut s) = scanner.lock() {
-                    s.disable(sid);
-                }
+                crate::error_scan::lock_scanner(&scanner).disable(sid);
                 continue;
             }
-            if let Ok(mut s) = scanner.lock() {
-                // 반환값(매치된 snippet)은 단위 테스트용. polling 루프에서는 무시.
-                s.scan_one(&host, sid);
-            }
+            // 반환값(매치된 snippet)은 단위 테스트용. polling 루프에서는 무시.
+            crate::error_scan::lock_scanner(&scanner).scan_one(&host, sid);
         }
     }
 }

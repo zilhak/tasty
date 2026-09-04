@@ -24,6 +24,7 @@ io_error = "checklist marker I/O failed: {}"
 [claude.params]
 missing_surface_id = "Missing required 'surface' (or 'surface_id') parameter"
 missing_surface_no_env = "Missing required 'surface_id' parameter (and TASTY_SURFACE_ID is not set in the environment)"
+surface_not_a_number = "'surface' was given as {} — it must be a number. Refusing rather than ignoring it: an ignored value falls back to TASTY_SURFACE_ID, which is the caller's own surface"
 missing_child_index = "Missing required 'child' (or 'child_index') parameter"
 missing_text = "Missing required 'text' parameter"
 missing_message = "Missing required 'message' parameter"
