@@ -272,3 +272,99 @@ match m {
         assert_eq!(found.platform.len(), 2, "`|` 로 묶인 이름을 하나로 셌다");
     }
 }
+
+/// ADR-0154 의 **전제**를 못 박는다 — 등재와 CLI 는 플랫폼 균일하다.
+///
+/// 이 결정은 "dispatch 층에서만 플랫폼을 본다" 인데, 그 근거가 취향이 아니라 실측이었다:
+/// 2026-09-05 기준 CLI 서브커맨드 정의와 메서드 등재표에 `target_os` 게이트가 **0 건**이다.
+/// 그래서 위 상보 arm 규칙이 "차이를 한 곳에 모은다" 는 뜻을 가진다.
+///
+/// 어느 한쪽에 플랫폼 조건이 처음 들어오면 그 뜻이 깨진다 — 그때는 이 가드를 지우는 것이
+/// 아니라 ADR 을 다시 여는 것이 맞다(ADR-0154 의 재검토 트리거가 이것이다). 그래서
+/// 실패 메시지가 "하지 마라" 가 아니라 "결정을 다시 열어라" 라고 말한다.
+mod platform_uniform_layers {
+    use super::*;
+
+    /// 검사 대상. 앞은 CLI 서브커맨드 정의 트리, 뒤는 메서드 등재표.
+    const UNIFORM_TREES: &[&str] = &["crates/tasty-cli/src"];
+    const UNIFORM_FILES: &[&str] = &["crates/tasty-ipc/src/method_meta.rs"];
+
+    /// 스캔한 `.rs` 파일 수의 하한 — **연기 검사**다. 워커가 죽어 0 개를 읽으면
+    /// "게이트 0 건" 이 언제나 참이 된다. 값의 근거: 2026-09-05 실측 84 개.
+    const MIN_SCANNED: usize = 40;
+
+    fn rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.filter_map(Result::ok) {
+            let p = e.path();
+            if p.is_dir() {
+                rs_files(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+
+    #[test]
+    fn registration_and_cli_do_not_branch_on_the_platform() {
+        let root = repo_root();
+        let mut files = Vec::new();
+        for t in UNIFORM_TREES {
+            rs_files(&root.join(t), &mut files);
+        }
+        for f in UNIFORM_FILES {
+            files.push(root.join(f));
+        }
+        files.sort();
+        assert!(
+            files.len() >= MIN_SCANNED,
+            "`.rs` 를 {} 개밖에 못 읽었다(하한 {MIN_SCANNED}, 2026-09-05 실측 84). \
+             파일을 못 읽으면 아래 판정은 언제나 통과한다 — 대조군이 죽었다",
+            files.len()
+        );
+
+        let mut hits: Vec<String> = Vec::new();
+        for f in &files {
+            let Ok(raw) = std::fs::read_to_string(f) else {
+                continue;
+            };
+            // 주석·문자열은 지운 사본에서만 본다 — 이 규칙을 **설명하는** 문장이
+            // 스스로를 위반으로 잡지 않게 한다.
+            let masked = crate::source_guards::mask_non_code(&raw);
+            for (i, line) in masked.lines().enumerate() {
+                if line.contains("target_os") {
+                    let rel = f.strip_prefix(&root).unwrap_or(f).display();
+                    hits.push(format!("{rel}:{}", i + 1));
+                }
+            }
+        }
+        assert!(
+            hits.is_empty(),
+            "메서드 등재표나 CLI 서브커맨드가 플랫폼으로 갈린다. \
+             [ADR-0154](docs/adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md) \
+             는 **그 두 층이 플랫폼 균일하다는 실측** 위에서 \"차이는 dispatch 층에만 \
+             둔다\" 를 골랐다. 여기에 조건이 생기면 그 전제가 깨지므로, 이 가드를 지우는 \
+             것이 아니라 ADR 을 다시 여는 것이 맞다(그 ADR 의 재검토 트리거다):\n  {}",
+            hits.join("\n  ")
+        );
+    }
+
+    /// 판정기가 살아 있는가 — 합성 입력에 위반을 심으면 본다.
+    #[test]
+    fn the_scan_would_see_a_platform_branch() {
+        let masked = crate::source_guards::mask_non_code(
+            "#[cfg(target_os = \"macos\")]\nfn only_here() {}\n",
+        );
+        assert!(
+            masked.contains("target_os"),
+            "마스킹이 cfg 속성까지 지운다 — 그러면 이 가드는 아무것도 못 본다"
+        );
+        let commented = crate::source_guards::mask_non_code("// target_os 는 여기서 안 쓴다\n");
+        assert!(
+            !commented.contains("target_os"),
+            "주석 안의 이름을 위반으로 집는다 — 규칙을 설명하는 문장마다 빨개진다"
+        );
+    }
+}

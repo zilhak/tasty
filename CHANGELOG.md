@@ -41,6 +41,7 @@
 
 ### Changed
 
+- `tasty debug raw-key` · `tasty debug switch-input-source` 의 도움말이 **macOS GUI 빌드 전용**임을 첫 줄에서 밝힌다. 두 명령은 앞으로도 모든 플랫폼에서 도움말에 뜨고 요청을 받는다 — 숨기면 "그런 명령 없음" 이 되어 이름을 의심하게 만드는데 이름은 맞기 때문이다. 다른 조합에서는 `-32015` 와 사유가 즉시 돌아오고 CLI 가 그 메시지를 그대로 출력한다.
 - `markdown.navigate` 가 **번들 markdown plugin 이 설치된 상태에서도** 외부 IPC 호출에 답한다. 이 이름은 host 가 구현하는데 plugin 이 `markdown` namespace 를 점유하고 있어서, 외부 호출이 plugin 으로 forward 된 뒤 거기 arm 이 없어 `-32601` 로 끝나고 있었다 — plugin 을 빼면 같은 호출이 host 구현에 닿았으므로, **같은 호출의 결과가 plugin 설치 여부에 따라 갈렸다.** 이제 plugin 이 host 로 되돌려 준다(`image.open`/`image.list` 와 같은 방식). 응답이 한 겹 감싸져 오류 형태가 `-32601` 에서 `-32000 host call '…' failed: <host 의 사유>` 로 바뀐다.
 - **휠 한 칸이 옮기는 거리가 창 안에서 하나로 통일됐다.** 종전에는 같은 창인데도 표면에 따라 달랐다 — plugin 표면(egui-mesh surface·popup·banner·attach mirror)이 50pt, host egui 위젯(설정 모달·사이드바 등 `ScrollArea`)과 modifier hint 오버레이가 40pt 로 **25% 차이**였다. 선을 가르던 것은 표면의 성격이 아니라 그 코드가 어느 변환 경로를 지나는가였고(chrome 도 콘텐츠도 양쪽에 다 있었다), 두 값 중 어느 쪽도 측정이나 원리에서 나온 것이 아니다. **기존 사용자에게는 host UI 쪽 스크롤이 40 → 50 으로 빨라진 것으로 체감된다** — 되돌리려면 `general.wheel_line_scroll` 을 40 으로 두면 되고, 그 조정 수단이 같은 변경에 함께 들어갔다. 근거·대안·재검토 조건은 [ADR-0130](docs/adr/0130-wheel-notch-distance-is-uniform-and-user-set.md).
 - 첫 실행 셋업 카드의 lift 그림자가 앱 배경색으로 번지던 halo 대신 승인된 popover 그림자(검정 반투명 단차)로 그려진다. 내부 리팩터링이 그림자 색을 배경색 토큰으로 바꾸며 단차가 halo 로 무너졌던 것을 되돌린다.

@@ -104,13 +104,22 @@ pub enum DebugCommands {
         #[arg(long, default_value = "focused")]
         bg_mode: String,
     },
-    /// Switch macOS input source (e.g. Korean IME)
+    /// Switch macOS input source (e.g. Korean IME) — macOS GUI builds only
+    ///
+    /// The subcommand is offered on every platform on purpose: the method is
+    /// registered everywhere, so hiding it here would answer "no such command"
+    /// and send you looking for a typo. Elsewhere it fails fast with -32015 and
+    /// says why (TISSelectInputSource has no equivalent).
     SwitchInputSource {
         /// Input source ID (e.g. "com.apple.inputmethod.Korean.2SetKorean")
         #[arg()]
         source_id: String,
     },
-    /// Send a raw physical key code via CGEvent (goes through IME pipeline)
+    /// Send a raw physical key code via CGEvent — macOS GUI builds only
+    ///
+    /// Goes through the OS IME pipeline. Offered on every platform for the same
+    /// reason as switch-input-source; elsewhere it fails fast with -32015 and
+    /// says why (CGEventPost has no equivalent).
     RawKey {
         /// macOS virtual key code (e.g. 7=KeyX, 35=KeyP, 49=Space)
         #[arg()]
