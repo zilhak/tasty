@@ -417,10 +417,11 @@ pub fn load_pack_head(path: &Path) -> Result<PackHead, PackError> {
 /// A **blank value counts as "not translated"** and is dropped, so the English
 /// base shows through instead of a label-less button. A pack author leaving a key
 /// empty is the common case and a blank string on screen is hard to trace back to
-/// a key; deliberately blank text is rare and can still be written as whitespace
-/// that the trim does not eat (e.g. a non-breaking space). Same rule as
-/// [`meta_name`] and [`non_empty_str`], which already reject blanks, and as the
-/// user override in [`Translations::apply_user_override`].
+/// a key; deliberately blank text is rare and can still be written with a
+/// zero-width character (U+200B), which the trim does not eat — a no-break space
+/// would not do, since `str::trim` takes every Unicode `White_Space` char
+/// including U+00A0. Same rule as [`meta_name`] and [`non_empty_str`], which
+/// already reject blanks, and as the user override in [`Translations::apply_user_override`].
 pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
     let mut table = parse_manifest(path)?;
     let font = match table.get("font") {
@@ -1528,6 +1529,25 @@ mod tests {
         assert_eq!(ovr_tr.get("button.cancel"), "취소");
         assert_eq!(ovr_tr.get("button.save"), "저장");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 문서가 안내하는 탈출구가 **실제로 trim 을 통과하는지.**
+    ///
+    /// `str::trim` 은 유니코드 `White_Space` 를 먹는다. NBSP(U+00A0)와 FIGURE
+    /// SPACE(U+2007)는 그 속성을 가지므로 "공백처럼 보이지만 안 먹힌다" 가 아니다 —
+    /// 예전 문서가 NBSP 를 예로 들었는데 그대로 따라 하면 값이 그냥 사라진다.
+    /// 실제로 남는 것은 `White_Space` 가 아닌 zero-width 계열이다.
+    #[test]
+    fn the_documented_escape_hatch_survives_the_trim() {
+        for eaten in ["", " ", "\t", "\u{00A0}", "\u{2007}", "\u{3000}"] {
+            let mut m = HashMap::from([("k".to_string(), eaten.to_string())]);
+            assert_eq!(drop_blank_values(&mut m), 1, "{eaten:?} 는 걷힌다");
+        }
+        for kept in ["\u{200B}", "\u{2060}"] {
+            let mut m = HashMap::from([("k".to_string(), kept.to_string())]);
+            assert_eq!(drop_blank_values(&mut m), 0, "{kept:?} 는 남아야 한다");
+            assert_eq!(m.get("k").map(String::as_str), Some(kept));
+        }
     }
 
     #[test]
