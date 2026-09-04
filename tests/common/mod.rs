@@ -657,9 +657,48 @@ impl TastyInstance {
         self.port
     }
 
-    /// Shutdown the instance gracefully.
+    /// graceful shutdown 을 **best-effort 로** 요청한다 — 실패가 정상인 경로다.
+    ///
+    /// [`Self::call`] 을 쓰지 않는다. `call` 이 error 응답을 panic 으로 올리는 것은
+    /// 다른 호출부에서는 옳다(거기서는 error 가 곧 테스트 실패다). 여기서는 실패가
+    /// 두 가지 정상 사유로 일어난다:
+    ///
+    /// 1. **헤드리스 빌드에는 `system.shutdown` 핸들러가 없다.** `src/app.rs` 가
+    ///    `app/ipc` 를 `gui` feature 로 게이트하고, `src/boot/headless_dispatch.rs`
+    ///    가 그 생략을 설계로 명시한다. 그래서 `-32601` 이 돌아온다.
+    /// 2. 이미 죽은 인스턴스는 연결부터 실패한다.
+    ///
+    /// 어느 쪽이든 뒤이은 force kill 이 회수를 완수하므로 실패가 문제되지 않는다.
+    /// 호출부에서 `catch_unwind` 로 삼키는 것으로는 부족했다 — 기본 panic hook 이
+    /// unwind **전에** stderr 로 찍어서, 헤드리스 회차마다 인스턴스를 띄우는 타깃
+    /// 수만큼 실패처럼 보이는 줄이 산출물에 남는다(실측 8 건). 그래서 여기서는
+    /// 애초에 panic 하지 않는 경로로 보낸다.
+    ///
+    /// [`Self::call_raw`] 로도 부족하다 — 그것은 error 응답은 돌려주지만 연결
+    /// 실패에서 `.expect` 로 panic 한다. 위 2번이 정확히 그 경우다.
     pub fn shutdown(&self) {
-        let _ = self.call("system.shutdown", serde_json::json!({}));
+        let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", self.port)) else {
+            return;
+        };
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "system.shutdown",
+            "params": {},
+            "id": 1
+        });
+        let Ok(mut msg) = serde_json::to_string(&request) else {
+            return;
+        };
+        msg.push('\n');
+        if stream.write_all(msg.as_bytes()).is_err() {
+            return;
+        }
+        let mut line = String::new();
+        // 응답은 읽되 내용도 성패도 보지 않는다 — 성공이든 `-32601` 이든 이 경로의
+        // 행동은 같고, 읽는 것은 서버가 처리를 마칠 시간을 주기 위해서다. 읽기가
+        // 실패했다면 인스턴스가 이미 죽은 것이고, 그것도 이 자리에서는 정상이다.
+        let _ = BufReader::new(&stream).read_line(&mut line);
     }
 
     /// 공유 인스턴스 정리 경로 — atexit 에서 호출한다.
@@ -668,11 +707,9 @@ impl TastyInstance {
     /// 그래서 `Child::kill`/`wait` 대신 pid 기반 kill 을 쓴다 — 어차피 test
     /// 프로세스가 종료하는 중이라 reap 은 init 이 대신한다.
     fn terminate(&self) {
-        // graceful shutdown 은 best-effort — 이미 죽었거나 응답이 없으면 `call` 이
-        // panic 하는데, 뒤이은 force kill 이 어차피 회수하므로 삼킨다.
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.shutdown();
-        }));
+        // graceful shutdown 은 best-effort — `shutdown` 자체가 실패를 삼키므로
+        // 여기서 감쌀 것이 없다. 회수는 뒤이은 force kill 이 완수한다.
+        self.shutdown();
         std::thread::sleep(Duration::from_millis(200));
         force_kill(self.process.id());
         // atexit 안이라 로깅 대상(테스트 출력)이 이미 닫혀 있을 수 있다 — 회수
@@ -687,10 +724,8 @@ impl TastyInstance {
 /// 살아 `Drop` 이 돌지 않고, 대신 atexit 가 [`TastyInstance::terminate`] 를 호출한다.
 impl Drop for TastyInstance {
     fn drop(&mut self) {
-        // Try graceful shutdown
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.shutdown();
-        }));
+        // Try graceful shutdown — `shutdown` 이 실패를 삼키므로 감싸지 않는다.
+        self.shutdown();
         // Wait briefly, then force kill the entire process tree.
         std::thread::sleep(Duration::from_millis(200));
         force_kill(self.process.id());
