@@ -148,3 +148,4 @@
 | 0135 | [본체의 UI 길이 리터럴은 배율을 안 탄다 — 갤러리는 탄다](0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md) | Accepted | 2026-09-05 | theme, design-tokens, ui-scale, zoom, egui, gallery, guards, adr-0126, adr-0033 |
 | 0136 | [조회는 자기가 관측하는 것을 만들지 않는다 — headless plugin 조회 표면](0136-a-query-does-not-create-what-it-observes.md) | Accepted | 2026-09-05 | headless, plugin, ipc, identity-principle-2, agent-surface, observability |
 | 0137 | [plugin 패치 bump 의무는 파일 수 문턱이 아니라 정규화된 내용으로 판정하고, 자동 채널을 세운다](0137-plugin-version-bump-is-judged-by-content-not-file-count.md) | Accepted | 2026-09-05 | plugin, versioning, ci-gates, guard, measurement, adr-0037 |
+| 0138 | [문서를 읽는 가드는 의존 0 크레이트에 산다 — 잡이 싸야 경로 필터를 뗄 수 있다](0138-doc-guards-live-in-a-dependency-free-crate.md) | Accepted | 2026-09-05 | ci, guards, docs, workspace, paths-ignore, build-cost, adr-0133 |
