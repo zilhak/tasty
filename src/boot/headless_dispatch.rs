@@ -82,6 +82,32 @@ pub(crate) fn pump_ipc(app: &mut App, state: &mut AppState, engine: &mut CoreSta
                 continue;
             }
         }
+        // 2c) 지목한 대상을 이 engine 이 안 가졌으면 거절한다 — gui 와 같은 판정
+        //     (`app/ipc/routing.rs`). 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만,
+        //     **판정은 있어야 한다**: 없으면 대상을 잘못 적은 요청이 그대로 실행된다.
+        //     실측(2026-09-05): `workspace.create {workspace_id: <없는 id>}` 가 성공을
+        //     돌려주고 워크스페이스를 만들었다 — 핸들러가 그 키를 안 읽기 때문이다.
+        //
+        //     예약 prefix 로 한정하는 이유는 아래 5) 와의 순서다. 예약되지 않은
+        //     prefix 는 plugin 이 점유할 수 있어서, 여기서 자르면 forward 될 호출을
+        //     불러 보기도 전에 죽인다. 예약된 것은 어떤 plugin 도 못 가지므로
+        //     (매니페스트 검증이 거절한다) 그런 위험이 없다.
+        if let Some(rid) = crate::core::request_target::request_resource_id(
+            &cmd.request.method,
+            &cmd.request.params,
+        ) && crate::core::request_target::prefix_is_host_reserved(&cmd.request.method)
+            && !crate::core::request_target::engine_has_resource(engine, rid)
+        {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            send_response(
+                &cmd.response_tx,
+                crate::ipc::protocol::JsonRpcResponse::invalid_params(
+                    id,
+                    crate::core::request_target::unowned_target_message(rid, &cmd.request.method),
+                ),
+            );
+            continue;
+        }
         // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
         //    handle_with_caller 내부가 자체 수행한다.
         let resp = crate::ipc::handler::handle_with_caller(

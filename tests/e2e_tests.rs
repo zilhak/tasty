@@ -1152,9 +1152,8 @@ fn lifecycle_methods_are_still_absent_in_a_headless_daemon() {
 /// 포커스된 창에 워크스페이스를 만들고 그 id 를 돌려줬다). 호출자는 자기가 지목한
 /// 곳에 만들어진 줄 안다. `docs/design/policies/focus.md` 의 "silent fallback 금지".
 ///
-/// gui 전용인 이유: 헤드리스 pump 는 이 라우터를 타지 않는다(engine 이 하나뿐이라
-/// 라우팅 자체가 없다). 그쪽의 같은 증상은 별도 축이다.
-#[cfg(feature = "gui")]
+/// **두 조합 모두**에서 돈다. 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만
+/// 판정은 같아야 한다 — 한쪽만 거절하면 같은 요청이 조합에 따라 다르게 끝난다.
 #[test]
 fn a_request_naming_an_unowned_target_is_rejected() {
     let _lane = lane();
@@ -1181,19 +1180,37 @@ fn a_request_naming_an_unowned_target_is_rejected() {
     // `image.*` 는 image plugin 의 namespace 이고 그 plugin 이 `image.open` 을 호스트로
     // 되던지므로, 이 호출이 그 사본을 탄다 — 응답의 `host call ... failed` 감싸기가
     // 경로를 드러낸다.
-    let via_plugin = tasty.call_raw(
-        "image.open",
-        json!({ "surface_id": 999_999, "path": "/tmp/does-not-exist.png" }),
-    );
-    let via_msg = via_plugin
-        .get("error")
-        .and_then(|e| e.get("message"))
-        .and_then(|m| m.as_str())
-        .unwrap_or_default();
+    //
+    // 이 단언만 gui 인 이유는 이 축과 무관하다: 헤드리스에는 `image.open` 의 호스트
+    // arm 자체가 없어서(`#[cfg(feature = "gui")]`) 되던진 호출이 소유 검사에 닿기 전에
+    // "Method not found" 로 끝난다. 그건 headless 가 app 층 메서드를 떨어뜨리는
+    // 별개 축이고, 그쪽이 닫히면 이 게이트도 없어진다.
+    #[cfg(feature = "gui")]
+    {
+        let via_plugin = tasty.call_raw(
+            "image.open",
+            json!({ "surface_id": 999_999, "path": "/tmp/does-not-exist.png" }),
+        );
+        let via_msg = via_plugin
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        assert!(
+            via_msg.contains("surface 999999"),
+            "plugin 을 경유한 호출도 지목한 대상이 없으면 같은 이유로 거절돼야 한다: \
+             {via_plugin}"
+        );
+    }
+
+    // plugin 이 점유한 namespace 의 메서드는 id 를 실었어도 **안 잘린다.**
+    // 그 prefix 는 호스트 예약이 아니라서(번들 plugin 이 갖고 있다) plugin 이 답할 수
+    // 있고, 헤드리스는 소유 검사가 engine handler 앞이라 여기서 자르면 forward 될
+    // 호출을 불러 보기도 전에 죽인다. 이 단언이 그 경계를 지킨다.
+    let forwarded = tasty.call_raw("markdown.recent", json!({ "surface_id": 999_999 }));
     assert!(
-        via_msg.contains("no window owns surface 999999"),
-        "plugin 을 경유한 호출도 지목한 대상이 없으면 같은 이유로 거절돼야 한다: \
-         {via_plugin}"
+        forwarded.get("result").is_some(),
+        "plugin namespace 의 메서드는 id 를 실어도 forward 돼야 한다: {forwarded}"
     );
 
     // 지목 안 한 같은 메서드는 그대로 동작한다 — 폴백을 통째로 없앤 것이 아니다.

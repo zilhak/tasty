@@ -15,6 +15,13 @@ gui 는 5-step 라우터(`src/app/ipc.rs`)를 쓴다. 헤드리스 pump(`src/boo
 - `timer.list` — `App` 의 TimerHub 를 읽는다.
 - 읽기 전용 `plugin.*` 조회 — `App.plugin_manager` 를 읽는다.
 
+그리고 engine handler 앞에 판정이 하나 더 있다 — **요청이 지목한 대상을 이 engine 이
+가졌는가.** 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만, 그 판정이 없으면 대상을
+잘못 적은 요청이 그대로 실행된다(핸들러가 그 키를 안 읽으면 성공까지 돌아온다). gui 와
+같은 코드를 쓰고, **호스트 예약 prefix 에 한정한다** — 예약되지 않은 prefix 는 plugin 이
+답할 수 있어서 자르면 아래 forward 가 죽는다. 근거는
+[ADR-0143](../adr/0143-a-named-target-is-checked-before-the-engine-in-headless.md).
+
 두 가로채기 모두 **gui 와 같은 함수**를 부른다. 읽기 전용 plugin 조회의 라우팅 표는
 `crate::adapters::ipc::handler::plugin::READONLY_METHODS` 하나뿐이고, gui 라우터도 헤드리스
 pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 한쪽만 고쳐지는 순간

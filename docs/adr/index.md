@@ -153,5 +153,6 @@
 | 0140 | [호스트 IPC prefix 는 집행할 수 있는 자리에서 예약한다 — 파생이 아니라 고정으로](0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md) | Accepted | 2026-09-05 | plugin, ipc, manifest, namespace, guards, compatibility, adr-0133 |
 | 0141 | [호스트 키 namespace `tasty.` 는 raw `memory.*` kv 표면에서 예약한다](0141-host-key-namespace-is-reserved-in-raw-memory-kv.md) | Accepted | 2026-09-05 | security, permissions, memory, ipc, plugin, audit |
 | 0142 | [채널 주장은 작업 트리 기준으로 쓴다 — 원격 층은 오프라인으로 못 고정한다](0142-channel-claims-are-written-against-the-working-tree.md) | Accepted | 2026-09-05 | ci, docs, guards, remote, push, observability, adr-0133, adr-0138, adr-0139 |
+| 0143 | [헤드리스도 지목한 대상을 확인한다 — 예약 prefix 에 한정해 engine handler 앞에서](0143-a-named-target-is-checked-before-the-engine-in-headless.md) | Accepted | 2026-09-05 | headless, ipc, routing, plugin-namespace, identity-principle-3, adr-0140, adr-0136 |
 | 0144 | [면제는 모호하면 성립하지 않는다 — 한 서술이 자동 실행과 부재를 함께 말하면 모순이다](0144-an-exemption-must-be-unambiguous-to-hold.md) | Accepted | 2026-09-05 | guards, ci-gates, docs, false-negative, mutation-testing, adr-0139, adr-0142 |
 | 0145 | [길이 newtype 의 생성자는 당분간 열어 둔다 — 봉인의 이득이 정확성이 아니라 판정기의 정밀도이기 때문](0145-typed-length-constructors-stay-open-for-now.md) | Accepted | 2026-09-05 | typed-length, dpi, guard, tooling-cost |

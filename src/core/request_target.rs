@@ -170,6 +170,25 @@ pub(crate) fn request_resource_id(method: &str, params: &serde_json::Value) -> O
         .or_else(|| method_scoped_resource_id(method, params))
 }
 
+/// 이 메서드의 prefix 를 plugin 이 점유할 수 있는가 — **없으면** 호스트 전용이다.
+///
+/// 예약 목록은 매니페스트 검증이 `[[contributes.ipc_namespace]]` 를 거절하는 데 쓰는
+/// 그것이고([ADR-0140](../../docs/adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md)),
+/// 그래서 예약된 prefix 의 메서드는 **어떤 plugin 에게도 forward 되지 않는다.**
+/// 그 사실이 헤드리스에서 소유 검사를 engine handler **앞**에 둘 수 있게 한다 —
+/// forward 될 수 있는 메서드였다면 검사가 그 경로를 먼저 잘라 버렸을 것이다.
+///
+/// 점 없는 메서드(`split` · `tree`)는 이름 전체가 prefix 자리이고 둘 다 예약이다.
+///
+/// gui 에는 필요 없다 — 거기서는 namespace forward 가 engine handler **앞**이라
+/// plugin 이 가져갈 호출이 소유 검사에 닿지 않는다. 순서가 반대인 헤드리스에서만
+/// 이 판별이 그 역할을 대신한다.
+#[cfg(not(feature = "gui"))]
+pub(crate) fn prefix_is_host_reserved(method: &str) -> bool {
+    let prefix = method.split('.').next().unwrap_or(method);
+    tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES.contains(&prefix)
+}
+
 /// 요청이 지목한 대상을 **아무 engine 도 안 가졌을 때** 돌려줄 메시지.
 ///
 /// 예전에는 이 자리에서 포커스된 창으로 넘겼다. 그러면 대상을 잘못 적은 요청이
@@ -435,5 +454,25 @@ mod tests {
     #[test]
     fn no_recognized_key_returns_none() {
         assert!(params_resource_id(&json!({ "text": "hello" })).is_none());
+    }
+}
+
+#[cfg(all(test, not(feature = "gui")))]
+mod headless_prefix_tests {
+    use super::prefix_is_host_reserved;
+
+    /// 판별식이 서는 자리 — 예약된 prefix 는 forward 되지 않고, 안 된 prefix 는 된다.
+    #[test]
+    fn a_reserved_prefix_is_host_only_and_an_unreserved_one_is_not() {
+        assert!(prefix_is_host_reserved("workspace.create"));
+        assert!(prefix_is_host_reserved("surface.close"));
+        // 점 없는 메서드도 이름 전체가 prefix 자리다.
+        assert!(prefix_is_host_reserved("split"));
+        assert!(prefix_is_host_reserved("tree"));
+        // 번들 plugin 이 점유해서 예약할 수 없는 둘 — 여기서 잘리면 forward 가 죽는다.
+        assert!(!prefix_is_host_reserved("image.open"));
+        assert!(!prefix_is_host_reserved("markdown.recent"));
+        // 아무도 안 쓰는 이름도 예약이 아니다(plugin 이 가질 수 있다).
+        assert!(!prefix_is_host_reserved("codex.spawn"));
     }
 }
