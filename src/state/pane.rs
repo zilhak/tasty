@@ -453,10 +453,7 @@ impl AppState {
         let ws = &mut engine.workspaces[loc.ws_idx];
         let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
         if pane.tabs.len() > 1 {
-            pane.tabs.remove(loc.tab_idx);
-            if pane.active_tab >= pane.tabs.len() {
-                pane.active_tab = pane.tabs.len() - 1;
-            }
+            pane.remove_tab_preserving_active(loc.tab_idx);
             for (sid, pid) in targets {
                 let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
@@ -519,8 +516,12 @@ impl AppState {
         }
         let ws = &mut engine.workspaces[loc.ws_idx];
         if ws.pane_layout().all_pane_ids().len() > 1 {
+            let was_focused = ws.focused_pane == loc.pane_id;
             ws.pane_layout_mut().close_pane(loc.pane_id);
-            if let Some(first) = ws.pane_layout().first_pane() {
+            // 닫힌 pane 이 포커스 pane 이었을 때만 포커스를 옮긴다 — 사용자가 보고
+            // 있지 않은 pane 을 닫았는데 시야가 움직이면 불가침 원칙 1 위반이다
+            // (`Core::apply_close_pane` 의 `was_focused` 가드와 같은 규칙).
+            if was_focused && let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
             for (sid, pid) in targets {
@@ -572,9 +573,7 @@ impl AppState {
             .collect();
         let workspace_id = engine.workspaces[loc.ws_idx].id;
         engine.workspaces.remove(loc.ws_idx);
-        if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
-            self.active_workspace = engine.workspaces.len() - 1;
-        }
+        self.fix_workspace_pointers_after_removal(loc.ws_idx, engine.workspaces.len());
         // C4 — Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀
         // workspace 도 사라지는 경로).
         let t = Instant::now();

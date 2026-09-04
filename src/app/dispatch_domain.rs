@@ -32,7 +32,8 @@ pub(crate) struct SurfaceCloseCascade {
     pub(crate) cleanup_targets: Vec<(u32, Option<String>)>,
     pub(crate) closed_tab_ids: Vec<u32>,
     pub(crate) closed_pane_ids: Vec<u32>,
-    pub(crate) workspace_id_purged: Option<u32>,
+    /// workspace 째 사라졌다면 그 **(인덱스, id)** — 짝을 타입이 강제한다.
+    pub(crate) workspace_purged: Option<(usize, u32)>,
     pub(crate) workspaces_now_empty: bool,
     pub(crate) is_user_close: bool,
 }
@@ -276,7 +277,7 @@ impl App {
                 cleanup_targets,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
             } => {
                 if closed {
@@ -288,7 +289,7 @@ impl App {
                             cleanup_targets,
                             closed_tab_ids,
                             closed_pane_ids,
-                            workspace_id_purged,
+                            workspace_purged,
                             workspaces_now_empty,
                             is_user_close,
                         },
@@ -321,7 +322,7 @@ impl App {
                 cascade_level,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
             } => {
                 // 이동(replace) 완료. 의미상 "B 닫힘 + A 옛자리 구조 cascade" 라
@@ -340,7 +341,7 @@ impl App {
                             cleanup_targets,
                             closed_tab_ids,
                             closed_pane_ids,
-                            workspace_id_purged,
+                            workspace_purged,
                             workspaces_now_empty,
                             is_user_close,
                         },
@@ -1680,8 +1681,10 @@ pub(crate) fn cascade_closed_item_restored(
 /// 2. cascade_level 별 host event (`tab.closed` / `pane.closed` / `workspace.closed`)
 ///    enqueue + baseline 동기화. `surface.closed` 자체는 별 큐
 ///    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
-/// 3. workspace_id_purged 가 Some 이면 memory scope purge
-/// 4. cascade_level == Workspace 면 active_workspace 보정
+/// 3. workspace_purged 가 Some 이면 memory scope purge
+/// 4. 같은 경우 활성 포인터(`active_workspace` · 카테고리 last-active)를 제거 위치
+///    기준으로 보정 — 범위 초과 clamp 만으로는 사용자가 보던 것보다 **앞쪽**
+///    workspace 가 빠질 때 인덱스가 유효한 채 다른 workspace 를 가리킨다(원칙 1)
 pub(crate) fn cascade_surface_closed(
     core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
@@ -1698,11 +1701,24 @@ pub(crate) fn cascade_surface_closed(
     enqueue_closed_tab_events(state, &c.closed_tab_ids, &c.closed_pane_ids);
     enqueue_closed_pane_events(state, &c.closed_pane_ids);
 
-    // C4 — 3. workspace_id_purged 가 Some 이면 memory scope purge
-    purge_closed_workspace_memory(state, c.workspace_id_purged);
-
-    // 4. cascade_level == Workspace 면 active_workspace 보정
-    fix_active_workspace_after_cascade(state, engine, c.cascade_level);
+    // workspace 가 통째로 사라진 경우에만 도는 두 단계. 하나의 `Option<(usize, u32)>`
+    // 라 "purge 는 했는데 포인터 보정은 안 했다" 가 성립하지 않는다.
+    //    C4 — 3. memory scope purge + `workspace.closed` host event
+    //    4. 인덱스 SoT 인 활성 포인터를 제거 위치 기준으로 보정
+    // `workspace_purged` 는 Workspace level cascade 에서만 실린다 — 둘이 어긋나면
+    // 보정이 조용히 건너뛰어져 사용자 화면이 밀리므로 debug 에서 고정한다.
+    debug_assert_eq!(
+        matches!(
+            c.cascade_level,
+            crate::core::intent::CascadeLevel::Workspace
+        ),
+        c.workspace_purged.is_some(),
+        "workspace level cascade 와 제거 위치는 함께 실려야 한다"
+    );
+    if let Some((removed_idx, workspace_id)) = c.workspace_purged {
+        purge_closed_workspace_memory(state, workspace_id);
+        state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
+    }
 
     recreate_workspace_if_now_empty(core, state, engine, c.workspaces_now_empty);
 
@@ -1769,15 +1785,10 @@ fn enqueue_closed_pane_events(state: &mut crate::state::AppState, closed_pane_id
     }
 }
 
-/// `cascade_surface_closed` 3 단계: `workspace_id_purged` 가 Some 이면
-/// `workspace.closed` host event enqueue + memory scope purge.
-fn purge_closed_workspace_memory(
-    state: &mut crate::state::AppState,
-    workspace_id_purged: Option<u32>,
-) {
-    let Some(workspace_id) = workspace_id_purged else {
-        return;
-    };
+/// `cascade_surface_closed` 3 단계: 사라진 workspace 의 `workspace.closed` host
+/// event enqueue + memory scope purge. 호출자가 `workspace_purged` 를 이미
+/// 풀어놨으므로 여기선 Option 을 다루지 않는다.
+fn purge_closed_workspace_memory(state: &mut crate::state::AppState, workspace_id: u32) {
     state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
     let t = std::time::Instant::now();
     let scope = tasty_memory::Scope::Workspace(workspace_id);
@@ -1798,21 +1809,6 @@ fn purge_closed_workspace_memory(
         ),
         Ok(_) => {}
         Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-    }
-}
-
-/// `cascade_surface_closed` 4 단계: `cascade_level == Workspace` 면
-/// `active_workspace` 가 범위를 벗어났을 때 마지막 workspace 로 보정.
-fn fix_active_workspace_after_cascade(
-    state: &mut crate::state::AppState,
-    engine: &crate::core::CoreState,
-    cascade_level: crate::core::intent::CascadeLevel,
-) {
-    if matches!(cascade_level, crate::core::intent::CascadeLevel::Workspace)
-        && state.active_workspace >= engine.workspaces.len()
-        && !engine.workspaces.is_empty()
-    {
-        state.active_workspace = engine.workspaces.len() - 1;
     }
 }
 

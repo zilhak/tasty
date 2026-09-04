@@ -27,7 +27,7 @@ pub(crate) struct SurfaceCloseCascade {
     pub(crate) cleanup_targets: Vec<(u32, Option<String>)>,
     pub(crate) closed_tab_ids: Vec<u32>,
     pub(crate) closed_pane_ids: Vec<u32>,
-    pub(crate) workspace_id_purged: Option<u32>,
+    pub(crate) workspace_purged: Option<(usize, u32)>,
     pub(crate) workspaces_now_empty: bool,
     pub(crate) is_user_close: bool,
 }
@@ -76,18 +76,22 @@ pub(crate) fn cascade_surface_closed(
     // headless: PTY/scrollback/메모리 scope 등 *자원* 만 실제 해제. host event /
     // surface.closed lifecycle 통지는 drain 주체(plugin manager / view)가 없으므로
     // 생략 — 통지를 enqueue 하면 pending 큐가 무한 적재된다.
-    // c.closed_tab_ids / c.closed_pane_ids / c.workspace_id_purged / c.is_user_close:
-    // lifecycle 통지용 필드 — drain 주체가 없어 미사용.
+    // c.closed_tab_ids / c.closed_pane_ids / c.is_user_close: lifecycle 통지용 필드 —
+    // drain 주체가 없어 미사용.
     for (sid, pid) in c.cleanup_targets {
         state.cleanup_surface(engine, sid, pid);
     }
-    // workspaces 가 비지 않도록 invariant 복구 (gui cascade 와 동일). 빈 engine 은
-    // 이후 IPC 명령이 active_workspace 를 index out-of-range 로 만들 수 있다.
-    if matches!(c.cascade_level, CascadeLevel::Workspace)
-        && state.active_workspace >= engine.workspaces.len()
-        && !engine.workspaces.is_empty()
-    {
-        state.active_workspace = engine.workspaces.len() - 1;
+    // 활성 포인터 보정은 **gui cascade 와 같은 헬퍼로** 한다. 범위 초과 clamp 만으로는
+    // 앞쪽 workspace 가 빠졌을 때 인덱스가 유효한 채 다른 workspace 를 가리킨다.
+    //
+    // 오늘의 headless 는 `active_workspace` 가 0 을 벗어나지 못해(레이아웃 복원 미적용,
+    // `preset.apply` 는 focus 를 강제로 끄고, 워크스페이스 전환은 gui 전용 debug IPC 뿐)
+    // 이 분기의 결과가 옛 clamp 와 같다. 그래도 헬퍼를 지나게 두는 이유는, 포인터를
+    // 움직이는 headless 경로가 하나라도 생기는 순간 같은 불변식이 빌드 형태에 따라
+    // 다르게 성립하기 때문이다 — 그때 여기를 고쳐야 한다는 걸 아무도 기억하지 못한다.
+    // 근거 `docs/adr/0113-close-preserves-the-focused-target.md`.
+    if let Some((removed_idx, _workspace_id)) = c.workspace_purged {
+        state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
     }
     if c.workspaces_now_empty {
         match core.create_default_workspace(engine) {

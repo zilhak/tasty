@@ -21,6 +21,12 @@ surface 정리)와 그 상시 tracing 계측(`tasty::close`)을 기술한다. �
 workspace 까지 무너지는 경우라 cleanup 대상이 사실상 항상 1개다. UI 멈춤이
 보고되는 조건(탭 많은 워크스페이스 닫기)은 `gui` 경로에서만 재현된다.
 
+**세 경로 모두 workspace 벡터에서 원소를 제거한 뒤 활성 포인터를 대상 기준으로 보정해야
+한다** — 인덱스 SoT(`AppState::active_workspace`)는 앞쪽 원소가 빠지면 가리키는 대상이
+바뀌기 때문이다. 규칙과 헬퍼는 [design/policies/focus.md](../design/policies/focus.md)
+"삭제로 인한 인덱스 이동에서도 포커스 대상은 보존된다". 네 번째 경로를 추가하면 같은 보정을
+함께 태운다(계측 단계에는 포함되지 않는 O(1) 작업이다).
+
 `cascade` 경로만 단계가 두 함수로 갈린다 — C1~C3 은 도메인(`Core`) 쪽, C4/C5 는
 앱(`cascade_surface_closed`) 쪽이다. 그래서 이 경로의 로그 순서는 **C5 가 C4 보다
 먼저** 나온다(앱 쪽 1단계가 cleanup, 3단계가 workspace purge). `gui`/`inline` 은

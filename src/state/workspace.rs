@@ -2,7 +2,57 @@ use crate::core::CoreState;
 
 use super::AppState;
 
+/// 워크스페이스 하나가 `removed_idx` 에서 제거된 뒤, **인덱스로 저장된 활성 포인터**가
+/// 계속 같은 워크스페이스를 가리키도록 보정한 값.
+///
+/// `active_workspace` 는 인덱스가 진실 소스라, 앞쪽 워크스페이스가 빠지면 뒤 워크스페이스
+/// 들이 한 칸씩 당겨지면서 손대지 않은 인덱스가 **다른 워크스페이스**를 가리키게 된다.
+/// 사용자가 보고 있던 것을 닫은 경우(`active == removed_idx`)에만 시야가 움직이고, 그때는
+/// 그 자리로 밀려 들어온 워크스페이스(마지막이었다면 직전 것)로 착지한다.
+/// 근거: [`docs/design/policies/focus.md`] "삭제로 인한 인덱스 이동".
+///
+/// `remaining` 은 제거 **후** 남은 워크스페이스 수다. 0 이면 호출자가 곧 workspace 를
+/// 자동 재생성하므로(빈 화면 invariant) 0 을 돌려준다.
+pub(crate) fn active_index_after_removal(
+    active: usize,
+    removed_idx: usize,
+    remaining: usize,
+) -> usize {
+    if remaining == 0 {
+        return 0;
+    }
+    if active > removed_idx {
+        active - 1
+    } else if active == removed_idx {
+        active.min(remaining - 1)
+    } else {
+        active
+    }
+}
+
 impl AppState {
+    /// 워크스페이스 제거 직후, 인덱스를 값으로 들고 있는 **모든** 활성 포인터를 대상
+    /// 기준으로 보정한다 — `active_workspace` 와 카테고리별 last-active 착지점.
+    ///
+    /// 호출자는 `engine.workspaces.remove(removed_idx)` **직후**에 부른다.
+    pub(crate) fn fix_workspace_pointers_after_removal(
+        &mut self,
+        removed_idx: usize,
+        remaining: usize,
+    ) {
+        self.active_workspace =
+            active_index_after_removal(self.active_workspace, removed_idx, remaining);
+        // 카테고리 quick-switch 착지점도 같은 밀림을 겪는다. 제거된 워크스페이스를
+        // 가리키던 항목은 착지 대상이 사라진 것이라 지운다(사용 시점에 first 로 폴백).
+        self.category_last_active
+            .retain(|_, idx| *idx != removed_idx);
+        for idx in self.category_last_active.values_mut() {
+            if *idx > removed_idx {
+                *idx -= 1;
+            }
+        }
+    }
+
     /// Switch to workspace by index (0-based).
     pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
@@ -295,10 +345,9 @@ impl AppState {
         let t = Instant::now();
         self.purge_workspace_memory_scope(workspace_id);
         close_trace::log_ws_purge(t, PATH);
-        // Adjust active workspace index
-        if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
-            self.active_workspace = engine.workspaces.len() - 1;
-        }
+        // 활성 포인터를 대상 기준으로 보정 — 앞쪽 워크스페이스를 닫아도 보고 있던
+        // 워크스페이스가 그대로 남는다.
+        self.fix_workspace_pointers_after_removal(ws_idx, engine.workspaces.len());
         // Cleanup
         // workspace.remove 후엔 surface_kind 가 None 을 반환할 수 있으나, plugin
         // lifecycle 구독자는 surface_id 만으로 cleanup 가능 (R1 분석).
@@ -314,5 +363,89 @@ impl AppState {
         engine.mark_layout_dirty();
         close_trace::log_total(t_close, surfaces, true, PATH);
         true
+    }
+}
+
+#[cfg(test)]
+mod workspace_pointer_tests {
+    //! workspace 제거 후 인덱스 활성 포인터 보정 규칙(`active_index_after_removal`)과
+    //! 그 적용(`fix_workspace_pointers_after_removal`)을 고정한다.
+    use super::*;
+
+    #[test]
+    fn removing_an_earlier_workspace_shifts_the_active_pointer_down() {
+        // [0,1,2,3] 에서 사용자는 2 를 보는 중, 0 이 제거됨 → 같은 대상은 이제 1.
+        assert_eq!(active_index_after_removal(2, 0, 3), 1);
+    }
+
+    #[test]
+    fn removing_a_later_workspace_leaves_the_active_pointer_alone() {
+        assert_eq!(active_index_after_removal(2, 3, 3), 2);
+    }
+
+    #[test]
+    fn removing_the_active_workspace_lands_on_the_one_that_slid_in() {
+        assert_eq!(active_index_after_removal(1, 1, 3), 1);
+    }
+
+    #[test]
+    fn removing_the_active_last_workspace_falls_back_to_the_previous_one() {
+        assert_eq!(active_index_after_removal(3, 3, 3), 2);
+    }
+
+    #[test]
+    fn removing_the_only_workspace_yields_zero() {
+        // 호출자가 곧 workspace 를 자동 재생성한다(빈 화면 invariant).
+        assert_eq!(active_index_after_removal(0, 0, 0), 0);
+    }
+
+    /// **두 실행 형태 모두** close cascade 가 이 헬퍼를 지나는지 소스 수준으로 고정한다.
+    ///
+    /// cascade 는 gui(`app/dispatch_domain.rs`)와 headless(`app/dispatch_domain_stubs.rs`)
+    /// 로 `#[cfg(feature = "gui")]` 분기되어 있고, **CI 는 headless 를 컴파일만 하고
+    /// 실행하지 않는다**(`.github/workflows/crossplatform-check.yml` 의
+    /// `cargo check --workspace --no-default-features`). 그래서 headless 쪽만 옛 범위
+    /// 초과 clamp 로 남아도 어떤 테스트도 실패하지 않는다 — 실제로 그렇게 한 번
+    /// 놓쳤다. 기본 빌드에서 도는 이 소스 가드가 그 사각을 덮는다.
+    /// 근거 [ADR-0113](../../docs/adr/0113-close-preserves-the-focused-target.md).
+    #[test]
+    fn both_close_cascades_route_through_the_pointer_helper() {
+        for (label, src) in [
+            ("gui", include_str!("../app/dispatch_domain.rs")),
+            ("headless", include_str!("../app/dispatch_domain_stubs.rs")),
+        ] {
+            assert!(
+                src.contains("fix_workspace_pointers_after_removal"),
+                "{label} cascade 가 활성 포인터 보정 헬퍼를 부르지 않는다"
+            );
+            assert!(
+                !src.contains("state.active_workspace = engine.workspaces.len() - 1"),
+                "{label} cascade 에 범위 초과 clamp 만 하는 옛 보정이 남아 있다"
+            );
+        }
+    }
+
+    #[test]
+    fn category_landing_points_follow_the_same_shift() {
+        let (mut state, _engine) = crate::state::tests::test_state();
+        let cat_a = tasty_utils::id::WorkspaceCategoryId::from(7u32);
+        let cat_b = tasty_utils::id::WorkspaceCategoryId::from(8u32);
+        state.active_workspace = 2;
+        state.category_last_active.insert(cat_a, 3);
+        state.category_last_active.insert(cat_b, 0);
+
+        state.fix_workspace_pointers_after_removal(0, 3);
+
+        assert_eq!(state.active_workspace, 1);
+        assert_eq!(
+            state.category_last_active.get(&cat_a).copied(),
+            Some(2),
+            "뒤쪽 착지점은 한 칸 당겨져 같은 워크스페이스를 가리켜야 한다"
+        );
+        assert_eq!(
+            state.category_last_active.get(&cat_b),
+            None,
+            "제거된 워크스페이스를 가리키던 착지점은 지워져 first 로 폴백한다"
+        );
     }
 }

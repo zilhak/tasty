@@ -54,7 +54,8 @@
 ## Acceptance Criteria
 
 - Given Pane 에 탭 여럿 When 탭 클릭 Then 그 탭으로 전환되고 하위 레이아웃이 바뀐다.
-- Given 활성 탭 When close 버튼 클릭 Then 탭이 닫힌다(마지막 탭이면 안 닫힘).
+- Given 활성 탭 When close 버튼 클릭 Then 탭이 닫힌다(마지막 탭이면 안 닫힘) — 시야는 그 자리로 밀려 들어온 탭(마지막이었으면 직전 탭)으로 간다.
+- Given 사용자가 보고 있지 않은 탭 When 그 탭이 닫힌다(에이전트 `surface.close` 포함) Then 보던 탭이 그대로 유지된다 — 닫힌 탭이 앞쪽이어서 인덱스가 밀려도 마찬가지다 ([focus 정책](../../design/policies/focus.md) "삭제로 인한 인덱스 이동").
 - Given 탭이 스트립 폭을 넘침 When 스크롤 화살표 Then 가로 스크롤된다.
 - Given 탭 드래그 Then drop 위치(`compute_drop_index`)대로 순서가 바뀐다.
 - Given busy/알림 상태 Then 녹색 점 / 노란 라벨이 표시된다.

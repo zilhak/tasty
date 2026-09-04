@@ -1435,13 +1435,8 @@ fn remove_mirror_workspace_from_engine(
         engine.attach_mesh_frames.remove(local);
     }
     engine.workspaces.remove(pos);
-    // active_workspace 인덱스 클램프(제거로 out-of-range 방지).
-    let len = engine.workspaces.len().max(1);
-    if state.active_workspace >= len {
-        state.active_workspace = len - 1;
-    } else if pos < state.active_workspace {
-        state.active_workspace -= 1;
-    }
+    // 활성 포인터를 대상 기준으로 보정(제거로 인한 밀림 + out-of-range 방지).
+    state.fix_workspace_pointers_after_removal(pos, engine.workspaces.len());
     true
 }
 

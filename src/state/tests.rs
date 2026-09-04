@@ -1929,3 +1929,137 @@ fn workspace_close_purges_each_surface_scope_once() {
         "surface 수만큼만 purge 해야 한다 (2N 이면 중복 회귀)"
     );
 }
+
+// ---- 에이전트 close 가 사용자 포커스를 옮기지 않는다 (workspace/tab/pane 3계층) ----
+//
+// 세 계층 모두 인덱스(`active_workspace` / `active_tab`) 또는 무조건 대입
+// (`focused_pane`)을 쓰고 있어, 사용자가 **보고 있지 않은** 대상을 닫아도 시야가
+// 밀렸다(불가침 원칙 1 위반). 단정은 인덱스가 아니라 **id** 로 한다 — 인덱스는
+// 보존돼도 가리키는 대상이 바뀔 수 있기 때문이다.
+//
+// 규칙: 닫힌 것이 사용자가 보던 대상 **자체**일 때만 시야가 움직인다.
+
+/// workspace 계층 — 앞쪽 워크스페이스가 통째로 닫혀도 보던 워크스페이스가 유지된다.
+#[test]
+fn closing_an_earlier_workspace_keeps_the_viewed_workspace() {
+    let (mut state, mut engine) = test_state();
+    let victim_sid = engine.workspaces[0].all_surface_ids()[0];
+    for _ in 0..3 {
+        add_test_workspace(&mut state, &mut engine);
+    }
+    state.switch_workspace(&mut engine, 2);
+    let viewed_id = engine.workspaces[2].id;
+
+    // 에이전트가 index 0 워크스페이스의 마지막 surface 를 닫는다 → workspace 째 cascade.
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, victim_sid, false));
+
+    assert_eq!(engine.workspaces.len(), 3);
+    assert_eq!(
+        engine.workspaces[state.active_workspace].id, viewed_id,
+        "앞쪽 워크스페이스가 닫혀도 사용자가 보던 워크스페이스는 그대로여야 한다"
+    );
+}
+
+/// workspace 계층 — 보던 워크스페이스 **자체**를 닫으면 이동은 정상이다(대상 소멸).
+#[test]
+fn closing_the_viewed_workspace_moves_to_a_neighbour() {
+    let (mut state, mut engine) = test_state();
+    for _ in 0..2 {
+        add_test_workspace(&mut state, &mut engine);
+    }
+    state.switch_workspace(&mut engine, 1);
+    let viewed_sid = engine.workspaces[1].all_surface_ids()[0];
+    let survivors: Vec<u32> = [engine.workspaces[0].id, engine.workspaces[2].id].into();
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, viewed_sid, false));
+
+    assert_eq!(engine.workspaces.len(), 2);
+    assert!(
+        survivors.contains(&engine.workspaces[state.active_workspace].id),
+        "닫힌 대상이 보던 워크스페이스였으면 생존 워크스페이스로 이동한다"
+    );
+}
+
+/// tab 계층 — 앞쪽 탭이 닫혀도 보던 탭(=focused surface)이 유지된다.
+#[test]
+fn closing_an_earlier_tab_keeps_the_viewed_tab() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state.add_tab(&mut engine).unwrap();
+    state.add_tab(&mut engine).unwrap();
+    let pane_id = state.active_workspace(&engine).focused_pane;
+    // 사용자는 가운데 탭(index 1)을 본다.
+    engine.workspaces[state.active_workspace]
+        .pane_layout_mut()
+        .find_pane_mut(pane_id)
+        .unwrap()
+        .active_tab = 1;
+    let viewed_tab_id = {
+        let pane = state
+            .active_workspace(&engine)
+            .pane_layout()
+            .find_pane(pane_id)
+            .unwrap();
+        pane.tabs[1].id
+    };
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
+
+    let pane = state
+        .active_workspace(&engine)
+        .pane_layout()
+        .find_pane(pane_id)
+        .unwrap();
+    assert_eq!(pane.tabs.len(), 2);
+    assert_eq!(
+        pane.tabs[pane.active_tab].id, viewed_tab_id,
+        "앞쪽 탭이 닫혀도 사용자가 보던 탭은 그대로여야 한다"
+    );
+}
+
+/// pane 계층 — 포커스와 무관한 pane 이 닫혀도 `focused_pane` 이 유지된다.
+#[test]
+fn closing_an_unfocused_pane_keeps_the_focused_pane() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    let pane_ids = state.active_workspace(&engine).pane_layout().all_pane_ids();
+    assert_eq!(pane_ids.len(), 3);
+    // 사용자는 마지막 pane 에 포커스를 두고 있다. sid0 은 첫 pane 소속.
+    let focused_pane = *pane_ids.last().unwrap();
+    engine.workspaces[state.active_workspace].focused_pane = focused_pane;
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
+
+    assert_eq!(
+        state.active_workspace(&engine).focused_pane,
+        focused_pane,
+        "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
+    );
+}
+
+/// pane 계층 — 포커스 pane 자체를 닫으면 생존 pane 으로 재배정된다(대상 소멸).
+#[test]
+fn closing_the_focused_pane_reassigns_focus() {
+    let (mut state, mut engine) = test_state();
+    let sid0 = collect_surface_ids(&mut state, &mut engine)[0];
+    state
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
+        .unwrap();
+    let (_, sid0_pane) = engine.find_workspace_index_for_surface(sid0).unwrap();
+    engine.workspaces[state.active_workspace].focused_pane = sid0_pane;
+
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid0, false));
+
+    let ws = state.active_workspace(&engine);
+    assert_ne!(ws.focused_pane, sid0_pane);
+    assert!(
+        ws.pane_layout().find_pane(ws.focused_pane).is_some(),
+        "포커스 pane 을 닫았으면 생존 pane 으로 재배정돼야 한다"
+    );
+}

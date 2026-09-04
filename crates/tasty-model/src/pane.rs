@@ -184,6 +184,26 @@ impl Pane {
         anyhow::bail!("surface {} not found in this pane", target_surface_id)
     }
 
+    /// Remove the tab at `tab_index`, keeping `active_tab` pointed at the **same
+    /// tab** it pointed at before.
+    ///
+    /// `active_tab` is an index, so removing an earlier tab shifts every later
+    /// tab down one slot and the untouched index silently starts naming a
+    /// different tab. Only closing the active tab itself may move the view, and
+    /// then it lands on the tab that slid into the slot (or the last one).
+    /// See `docs/design/policies/focus.md`.
+    pub fn remove_tab_preserving_active(&mut self, tab_index: usize) {
+        if tab_index >= self.tabs.len() {
+            return;
+        }
+        self.tabs.remove(tab_index);
+        if tab_index < self.active_tab {
+            self.active_tab -= 1;
+        } else if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len().saturating_sub(1);
+        }
+    }
+
     /// Close the tab at the given index. Returns false if the tab can't be closed
     /// (e.g., it's the last tab).
     pub fn close_tab(&mut self, tab_index: usize) -> bool {
@@ -191,10 +211,7 @@ impl Pane {
             return false; // Can't close last tab
         }
         if tab_index < self.tabs.len() {
-            self.tabs.remove(tab_index);
-            if self.active_tab >= self.tabs.len() {
-                self.active_tab = self.tabs.len() - 1;
-            }
+            self.remove_tab_preserving_active(tab_index);
             true
         } else {
             false
@@ -212,10 +229,7 @@ impl Pane {
             return false;
         }
         if let Some(idx) = self.tabs.iter().position(|t| t.id == tab_id) {
-            self.tabs.remove(idx);
-            if self.active_tab >= self.tabs.len() {
-                self.active_tab = self.tabs.len() - 1;
-            }
+            self.remove_tab_preserving_active(idx);
             true
         } else {
             false
@@ -337,5 +351,88 @@ impl Pane {
             "id": self.id,
             "tabs": tabs,
         })
+    }
+}
+
+#[cfg(test)]
+mod tab_removal_focus_tests {
+    //! 탭 제거가 `active_tab` 을 **대상 기준으로** 보존하는지 고정한다.
+    //!
+    //! `active_tab` 은 인덱스가 진실 소스라, 앞쪽 탭이 빠지면 손대지 않은 인덱스가
+    //! 다른 탭을 가리키게 된다 — 사용자가 아무 조작도 하지 않았는데 보던 탭이
+    //! 바뀌는 것이라 불가침 원칙 1 위반이다. 단정은 인덱스가 아니라 **탭 id** 로 한다.
+    use super::*;
+
+    /// 탭 3 개(id 10/11/12)를 가진 pane. `active_tab` 은 호출자가 정한다.
+    fn pane_with_three_tabs(active: usize) -> Pane {
+        let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
+        pane.add_terminal_marker_tab(11, 101);
+        pane.add_terminal_marker_tab(12, 102);
+        pane.active_tab = active;
+        pane
+    }
+
+    fn active_tab_id(pane: &Pane) -> TabId {
+        pane.tabs[pane.active_tab].id
+    }
+
+    #[test]
+    fn removing_an_earlier_tab_keeps_the_same_tab_active() {
+        let mut pane = pane_with_three_tabs(1); // 사용자는 tab 11 을 본다
+        pane.remove_tab_preserving_active(0);
+        assert_eq!(
+            active_tab_id(&pane),
+            11,
+            "앞쪽 탭 제거가 보던 탭을 바꾸면 안 된다"
+        );
+    }
+
+    #[test]
+    fn removing_a_later_tab_keeps_the_same_tab_active() {
+        let mut pane = pane_with_three_tabs(1);
+        pane.remove_tab_preserving_active(2);
+        assert_eq!(active_tab_id(&pane), 11);
+    }
+
+    #[test]
+    fn removing_the_active_tab_lands_on_the_tab_that_slid_in() {
+        let mut pane = pane_with_three_tabs(1);
+        pane.remove_tab_preserving_active(1);
+        assert_eq!(
+            active_tab_id(&pane),
+            12,
+            "보던 탭 자체를 닫으면 그 자리로 밀려 들어온 탭으로 간다"
+        );
+    }
+
+    #[test]
+    fn removing_the_active_last_tab_falls_back_to_the_previous_one() {
+        let mut pane = pane_with_three_tabs(2);
+        pane.remove_tab_preserving_active(2);
+        assert_eq!(active_tab_id(&pane), 11);
+    }
+
+    #[test]
+    fn close_tab_by_index_preserves_the_active_tab() {
+        // active 는 **가운데**(1)여야 한다. 마지막(2)이면 수정 전의 범위 초과 clamp
+        // 로도 우연히 같은 탭에 착지해 이 wrapper 가 헬퍼를 타는지 판별하지 못한다.
+        let mut pane = pane_with_three_tabs(1); // 사용자는 tab 11 을 본다
+        assert!(pane.close_tab(0));
+        assert_eq!(active_tab_id(&pane), 11);
+    }
+
+    #[test]
+    fn close_tab_by_id_preserves_the_active_tab() {
+        let mut pane = pane_with_three_tabs(1);
+        assert!(pane.close_tab_by_id(10));
+        assert_eq!(active_tab_id(&pane), 11);
+    }
+
+    #[test]
+    fn removing_an_out_of_range_index_is_a_noop() {
+        let mut pane = pane_with_three_tabs(1);
+        pane.remove_tab_preserving_active(9);
+        assert_eq!(pane.tabs.len(), 3);
+        assert_eq!(active_tab_id(&pane), 11);
     }
 }

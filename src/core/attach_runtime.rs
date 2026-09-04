@@ -900,7 +900,7 @@ pub(crate) fn execute_forwarded_structural_op(
                         cascade_level,
                         closed_tab_ids,
                         closed_pane_ids,
-                        workspace_id_purged,
+                        workspace_purged,
                         workspaces_now_empty,
                     }) = events.into_iter().next()
                     else {
@@ -918,7 +918,7 @@ pub(crate) fn execute_forwarded_structural_op(
                                 cleanup_targets: b_cleanup.into_iter().collect(),
                                 closed_tab_ids,
                                 closed_pane_ids,
-                                workspace_id_purged,
+                                workspace_purged,
                                 workspaces_now_empty,
                                 is_user_close: false,
                             },
