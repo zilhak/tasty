@@ -145,7 +145,7 @@ pub fn draw_command_palette_view(
         .inner_margin(margin_all(theme.spacing_sm))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.set_min_height(28.0); // 디자인 Input control-height
+                ui.set_min_height(theme.input_height().value()); // 디자인 Input control-height
                 let icon_size = 16.0;
                 let (icon_rect, _) =
                     ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());

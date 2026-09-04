@@ -221,7 +221,7 @@ pub fn draw_apply_preset_view(
             );
         } else {
             egui::ScrollArea::vertical()
-                .max_height(220.0)
+                .max_height(th.autocomplete_max_height().value())
                 .show(ui, |ui| {
                     for name in names {
                         let is_selected = effective_selected == Some(name.as_str());
