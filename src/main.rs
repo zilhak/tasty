@@ -14,6 +14,8 @@ mod core;
 mod db;
 #[cfg(test)]
 mod design_token_guard;
+#[cfg(test)]
+mod dpi_conversion_guard;
 mod file;
 #[cfg(feature = "gui")]
 mod gfx;
