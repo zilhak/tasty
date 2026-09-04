@@ -25,6 +25,7 @@
 //! 대신 두 상수가 **정말 그 두 크레이트의 것**인지는 링크가 보증한다.
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 use tasty_ipc::method_meta::{DEBUG_METHODS, METHOD_TABLE, PREFIX_RULES};
 use tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES;
@@ -188,5 +189,132 @@ fn the_reserved_list_is_sorted_and_free_of_duplicates() {
         sorted.as_slice(),
         RESERVED_IPC_PREFIXES,
         "RESERVED_IPC_PREFIXES 는 사전순 · 중복 없이 유지한다"
+    );
+}
+
+// ─── 예약에서 뺀 prefix 가 만드는 두 번째 결과 ────────────────────────────────
+
+/// 호스트가 dispatch 하는 메서드 표. `plugin` 이 아니라 **본체**의 match arm 이라
+/// 링크 가능한 값이 아니다 — 그래서 여기만 텍스트로 읽는다(R96 의 반대편 조건).
+const DISPATCH_ROOT: &str = "src/adapters/ipc/handler.rs";
+
+/// 그 파일에서 걷은 `"<a>.<b>"` 리터럴 수의 하한 — **연기 검사**.
+/// 값의 근거: 2026-09-05 실측 213 개.
+const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
+
+/// 번들 plugin 이 점유한 prefix 안에서 **호스트도 핸들러를 가진** 메서드.
+///
+/// 이 셋은 구현이 둘이고, 어느 쪽이 답하는지가 **조합마다 다르다.**
+///
+/// - gui — `ipc_step_routing`(step 5)이 namespace forward 를 engine handler보다 **먼저**
+///   본다. `IpcNamespaceRegistry::resolve` 는 **prefix 만** 보므로, image plugin 이 떠
+///   있으면 `image.*` 가 전부 plugin 으로 간다. 호스트의 `handle_open`/`handle_list` 는
+///   그동안 닿지 않는다.
+/// - headless — `pump_ipc` 는 engine handler 를 먼저 부르고 `-32601` 일 때만 forward
+///   한다. 그래서 이 셋은 **호스트가** 답하고, plugin 은 나머지만 받는다.
+///
+/// 즉 같은 이름이 조합에 따라 다른 구현으로 간다. 어느 쪽이 옳은지는 이 가드가 정하지
+/// 않는다 — 그 셋이 **조용히 늘지 않는 것**만 지킨다. 여기에 이름이 하나 더 붙는다는
+/// 것은 조합 간 발산이 하나 더 생겼다는 뜻이다.
+const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
+    (
+        "image.list",
+        "호스트는 surface 순회, plugin 도 같은 이름을 구현한다",
+    ),
+    (
+        "image.open",
+        "호스트는 ConvertSurface, plugin 도 같은 이름을 구현한다",
+    ),
+    (
+        "markdown.navigate",
+        "호스트는 제자리 변환, plugin 도 같은 이름을 구현한다",
+    ),
+];
+
+/// 주석을 걷어낸 dispatch 소스에서 `"<a>.<b>"` 메서드 리터럴을 뽑는다.
+///
+/// 주석 제거는 **이 파일에서는 판정을 바꾸지 않는다** — 켜고 끄고 결과가 같다(실측).
+/// `handler.rs` 의 주석이 번들 plugin 의 두 prefix 를 인용하지 않기 때문이고, 다른
+/// 파일이었으면 갈렸을 자리라 방어로 남긴다. 이 사실을 적어 두는 이유는 "변이가
+/// 안 죽였다" 를 나중에 결함으로 오인하지 않게 하기 위해서다.
+fn dispatch_method_literals(src: &str) -> BTreeSet<String> {
+    let body = super::strip_comments(src);
+    let mut out = BTreeSet::new();
+    let mut rest = body.as_str();
+    while let Some(at) = rest.find('"') {
+        let after = &rest[at + 1..];
+        match after.find('"') {
+            Some(end) => {
+                let lit = &after[..end];
+                let ok = lit.split_once('.').is_some_and(|(a, b)| {
+                    !a.is_empty()
+                        && !b.is_empty()
+                        && a.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                        && b.chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                });
+                if ok {
+                    out.insert(lit.to_string());
+                }
+                rest = &after[end + 1..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+fn dispatch_root() -> PathBuf {
+    super::repo_root().join(DISPATCH_ROOT)
+}
+
+/// 번들 plugin 과 이름이 겹치는 호스트 메서드는 **동결돼 있다.**
+#[test]
+fn the_methods_a_bundled_plugin_can_shadow_are_pinned() {
+    let src = std::fs::read_to_string(dispatch_root())
+        .unwrap_or_else(|e| panic!("{DISPATCH_ROOT} 읽기 실패: {e}"));
+    let literals = dispatch_method_literals(&src);
+    assert!(
+        literals.len() >= MIN_DISPATCH_METHOD_LITERALS,
+        "dispatch 리터럴을 {} 개만 걷었다(하한 {MIN_DISPATCH_METHOD_LITERALS},          2026-09-05 실측 213). 추출이 죽으면 아래 집합 동등은 양쪽이 빈 집합이라 통과한다",
+        literals.len()
+    );
+
+    let claimed: BTreeSet<&str> = CLAIMED_BY_A_BUNDLED_PLUGIN
+        .iter()
+        .map(|(p, _)| *p)
+        .collect();
+    let found: BTreeSet<&str> = literals
+        .iter()
+        .filter(|m| m.split_once('.').is_some_and(|(p, _)| claimed.contains(p)))
+        .map(|m| m.as_str())
+        .collect();
+    let pinned: BTreeSet<&str> = SHARED_WITH_A_BUNDLED_PLUGIN
+        .iter()
+        .map(|(m, _)| *m)
+        .collect();
+
+    assert_eq!(
+        found, pinned,
+        "번들 plugin 의 namespace 안에서 호스트가 dispatch 하는 메서드 집합이 달라졌다.\n\
+         늘었다면 조합 간 발산이 하나 더 생긴 것이다 — gui 는 plugin 이, headless 는 \
+         호스트가 답한다. 줄었다면 SHARED_WITH_A_BUNDLED_PLUGIN 에서 빼라"
+    );
+}
+
+/// 스캔 루트가 이 가드 자신을 포함하지 않는다.
+///
+/// 이 파일은 자기가 찾는 형태(`"image.open"` 같은 메서드 리터럴)를 동결 목록으로 담고
+/// 있다. 루트가 넓어져 이 파일을 삼키면 자기 목록을 "호스트가 dispatch 하는 메서드" 로
+/// 세고, 집합 동등이 자기 자신을 상대로 성립한다.
+#[test]
+fn the_dispatch_scan_root_is_a_single_file_that_is_not_this_one() {
+    assert!(
+        !DISPATCH_ROOT.contains("source_guards"),
+        "스캔 루트({DISPATCH_ROOT})가 이 가드가 사는 곳을 포함한다"
+    );
+    assert!(
+        dispatch_root().is_file(),
+        "{DISPATCH_ROOT} 가 파일이 아니다 — 디렉터리로 넓어지면 이 가드도 삼켜진다"
     );
 }

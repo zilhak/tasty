@@ -52,6 +52,27 @@ const MIN_SCANNED_FILES: usize = 900;
 /// 스캔 루트. 워크스페이스의 Rust 소스 전부(본체 + 모든 크레이트).
 const SCAN_ROOTS: &[&str] = &["src", "crates"];
 
+/// 주석을 걷어낸다.
+///
+/// 소스에서 문자열 리터럴을 뽑는 가드가 공통으로 필요로 한다. 판정이 "리터럴이 있는가"
+/// 인데 주석이 그 이름을 **설명하려고** 인용하는 일이 잦고, 그러면 설명이 대상으로
+/// 오인된다 — 문서를 잘 쓸수록 가드가 나빠진다.
+fn strip_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        // 줄 끝 주석: 앞의 따옴표 수가 짝수여야 문자열 밖의 `//` 다.
+        let cut = line
+            .match_indices("//")
+            .find(|(at, _)| line[..*at].matches('"').count() % 2 == 0);
+        out.push_str(cut.map_or(line, |(at, _)| &line[..at]));
+        out.push('\n');
+    }
+    out
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }

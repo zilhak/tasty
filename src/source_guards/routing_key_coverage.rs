@@ -141,29 +141,9 @@ fn collect_between(flat: &str, open: &str, close: &str, out: &mut BTreeSet<Strin
 /// 테스트 모듈을 자르는 것이 핵심이다. 그 안에는 `json!({ "hook_id": … })` 같은
 /// 픽스처가 있어서, 통째로 읽으면 **테스트가 언급하기만 한 키가 인식된 것으로 잡힌다.**
 /// 그러면 이 가드는 자기 대조군을 스스로 부풀려 언제나 초록이 된다.
-/// 주석을 걷어낸다.
-///
-/// 인식 판정이 "문자열 리터럴이 있는가" 라서, 주석이 키를 인용하기만 해도 인식된 것이
-/// 된다. 이 파일의 산문은 `from_surface_id` 로 라우팅하면 안 되는 이유처럼 **면제 쪽**
-/// 키를 설명하는 자리라, 그대로 두면 설명이 그 키를 라우팅 대상으로 승격시킨다.
-fn strip_comments(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    for line in src.lines() {
-        if line.trim_start().starts_with("//") {
-            continue;
-        }
-        // 줄 끝 주석: 앞의 따옴표 수가 짝수여야 문자열 밖의 `//` 다.
-        let cut = line
-            .match_indices("//")
-            .find(|(at, _)| line[..*at].matches('"').count() % 2 == 0);
-        out.push_str(cut.map_or(line, |(at, _)| &line[..at]));
-        out.push('\n');
-    }
-    out
-}
 
 fn recognised_routing_keys(src: &str) -> BTreeSet<String> {
-    let production = strip_comments(src.split("#[cfg(test)]").next().unwrap_or(src));
+    let production = super::strip_comments(src.split("#[cfg(test)]").next().unwrap_or(src));
     let mut out = BTreeSet::new();
     let mut rest = production.as_str();
     while let Some(at) = rest.find('"') {
