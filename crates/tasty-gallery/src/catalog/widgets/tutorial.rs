@@ -745,11 +745,13 @@ fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
 // ── Spec: Topic-list popup ──────────────────────────────────────────────────
 pub fn draw_topics(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        // 두 topic_stage 가 같은 소스 위치의 auto-id ScrollArea(topic_popup 내부)를 써서
+        // id 가 충돌했다(egui 중복 마커). 인스턴스별 push_id 로 내부 auto-id 를 분기한다.
         spec::cluster(ui, theme, "default — one topic", |ui| {
-            topic_stage(ui, theme, false);
+            ui.push_id("topic_default", |ui| topic_stage(ui, theme, false));
         });
         spec::cluster(ui, theme, "scaled — scrollable + done ✓", |ui| {
-            topic_stage(ui, theme, true);
+            ui.push_id("topic_scaled", |ui| topic_stage(ui, theme, true));
         });
     });
 
