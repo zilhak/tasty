@@ -1203,6 +1203,87 @@ mod tests {
         );
     }
 
+    /// 응답 계약에 실린 `list_failures` 가 **실제 러너 스레드의 카운터를 따라가는지**.
+    ///
+    /// `tick_snapshot_counts_consecutive_failures_and_resets_on_recovery` 는 정책 함수만
+    /// 보고 `status_reports_unknown_counts_when_the_task_store_is_unreadable` 는 러너를
+    /// 띄우지 않는다 — 그래서 `status()` 가 이 필드를 항상 0 으로 내는 변이가 잡히지
+    /// 않았다(Gate4 A3′). 이 필드는 "러너가 살아는 있는데 아무것도 못 읽고 있다" 를
+    /// 조회로 드러내는 유일한 신호라, 배선이 비면 계약이 거짓이 된다.
+    #[test]
+    fn status_reports_the_running_runner_consecutive_list_failures() {
+        let (_td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+        });
+        // 기록된 task 자리에 Task 로 역직렬화되지 않는 값을 덮어 store.list 를 깨뜨린다
+        // (`status_reports_unknown_counts_…` 와 같은 기법 — 키를 하드코딩하지 않는다).
+        ctx.with_memory(|mem| {
+            let entries = mem
+                .list(&Scope::Workspace(1), &ListOpts::default())
+                .expect("list");
+            let key = entries
+                .iter()
+                .map(|e| e.key.clone())
+                .find(|k| k.contains("task"))
+                .expect("task key");
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &key,
+                &MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+                &PutOpts::default(),
+            )
+            .expect("put");
+        });
+
+        let registry = RunnerRegistry::new();
+        assert!(registry.start(ctx.clone(), 1), "러너가 새로 떠야 한다");
+
+        // 첫 tick 은 recv_timeout 앞에서 즉시 돈다 — 넉넉히 기다리되(러너 스레드
+        // 스케줄링) 무한 대기는 하지 않는다.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut observed = 0;
+        while std::time::Instant::now() < deadline {
+            let st = registry.status(&ctx, 1);
+            if st.list_failures > 0 {
+                observed = st.list_failures;
+                break;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let final_status = registry.status(&ctx, 1);
+        registry.stop(1);
+
+        assert!(
+            observed > 0,
+            "러너가 store 를 못 읽고 있으면 status 가 그 횟수를 드러내야 한다 \
+             (running={}, store_error={:?})",
+            final_status.running,
+            final_status.store_error
+        );
+        assert!(
+            final_status.running,
+            "스레드는 살아 있는데 아무것도 못 읽는 상태 — 그게 이 필드가 드러내는 것이다"
+        );
+    }
+
     #[test]
     fn reload_persistent_handles_restores_alive_shell_process() {
         let (_td, ctx) = fresh_ctx();
