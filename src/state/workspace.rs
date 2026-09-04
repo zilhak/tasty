@@ -369,8 +369,10 @@ impl AppState {
     /// 포커스는 어느 경로든 `fix_workspace_pointers_after_removal` 이 제거 직후
     /// 보정한다 — 보던 워크스페이스가 아닌 것을 닫으면 화면은 그대로다.
     /// `workspace.closed` host event 는 origin 과 무관하게 발화한다: 워크스페이스가
-    /// 사라졌다는 사실 자체는 누가 닫았든 동일하고, cascade 경로
-    /// (`app::dispatch_domain` 의 `purge_closed_workspace_memory`)도 그렇게 한다.
+    /// 사라졌다는 사실 자체는 누가 닫았든 동일하다. 발화는 이 함수가 직접 하지 않고
+    /// 제거 경로 셋이 공유하는 초크포인트
+    /// [`AppState::after_workspace_removed`] 가 한다 — cascade 경로 둘(Core cascade ·
+    /// `state/pane.rs` 의 인라인 cascade)도 같은 자리를 지난다.
     pub fn close_workspace_at(
         &mut self,
         engine: &mut CoreState,
@@ -404,10 +406,7 @@ impl AppState {
         engine.workspaces.remove(ws_idx);
         // C4 — Workspace scope 의 memory entry 정리. 안의 surface 들은 아래
         // cleanup_surface 에서 각자 자기 scope 를 purge 한다.
-        let t = Instant::now();
-        self.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
-        self.purge_workspace_memory_scope(workspace_id);
-        close_trace::log_ws_purge(t, path);
+        self.after_workspace_removed(workspace_id, path);
         // 활성 포인터를 대상 기준으로 보정 — 앞쪽 워크스페이스를 닫아도 보고 있던
         // 워크스페이스가 그대로 남는다.
         self.fix_workspace_pointers_after_removal(ws_idx, engine.workspaces.len());

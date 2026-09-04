@@ -2147,9 +2147,8 @@ fn user_close_reports_user_origin_to_plugins() {
 
 /// `workspace.closed` host event 는 **origin 과 무관하게** 나간다.
 ///
-/// surface 를 하나씩 닫아 워크스페이스가 사라지는 cascade 경로는 이미 그렇게
-/// 한다(`app::dispatch_domain` 의 `purge_closed_workspace_memory`). 어느 명령을
-/// 썼느냐에 따라 plugin 이 받는 이벤트가 달라지면 안 된다.
+/// 어느 명령을 썼느냐에 따라 plugin 이 받는 이벤트가 달라지면 안 된다. 제거 경로별
+/// 발화는 아래 `inline_cascade_...` 가 따로 고정한다.
 #[test]
 fn closing_a_workspace_emits_the_host_event_for_both_origins() {
     for origin in [WorkspaceCloseOrigin::Agent, WorkspaceCloseOrigin::User] {
@@ -2168,4 +2167,48 @@ fn closing_a_workspace_emits_the_host_event_for_both_origins() {
         });
         assert!(emitted, "{origin:?}: workspace.closed host event 가 없다");
     }
+}
+
+/// 워크스페이스의 **마지막 surface 가 스스로 닫혀** 워크스페이스까지 사라지는
+/// 인라인 cascade(`AppState::close_case_workspace`)에서도 `workspace.closed` 가
+/// 나간다.
+///
+/// 이 경로는 PTY 프로세스 종료 cleanup 과 egui close 가 쓴다. 한때 여기만 발화를
+/// 빠뜨려서, 같은 소멸이라도 `workspace.close` 로 일으키면 plugin 이 이벤트를 받고
+/// 터미널이 스스로 죽어 사라지면 못 받았다 — 무엇으로 사라졌느냐가 plugin 이 보는
+/// 사실을 갈랐다. 발화를 초크포인트([`AppState::after_workspace_removed`])로 모아
+/// 고쳤고, 이 테스트가 그 경로를 고정한다.
+#[test]
+fn inline_cascade_emits_the_workspace_closed_host_event() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine);
+    let ws_idx = state.active_workspace;
+    let workspace_id = engine.workspaces[ws_idx].id;
+    let surface_ids = engine.workspaces[ws_idx].all_surface_ids();
+    assert_eq!(
+        surface_ids.len(),
+        1,
+        "워크스페이스에 surface 가 하나여야 한다"
+    );
+    let before = engine.workspaces.len();
+
+    // 마지막 surface 를 닫으면 워크스페이스까지 사라진다(Case 4/5).
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, surface_ids[0], false));
+    assert_eq!(
+        engine.workspaces.len(),
+        before - 1,
+        "워크스페이스가 실제로 사라져야 이 경로를 지난 것이다"
+    );
+
+    let emitted = state.take_pending_host_events().iter().any(|e| {
+        matches!(
+            e,
+            crate::state::PendingHostEvent::WorkspaceClosed { workspace_id: id }
+                if *id == workspace_id
+        )
+    });
+    assert!(
+        emitted,
+        "인라인 cascade 로 사라진 워크스페이스에 workspace.closed 가 없다"
+    );
 }

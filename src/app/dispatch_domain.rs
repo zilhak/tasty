@@ -1716,7 +1716,9 @@ pub(crate) fn cascade_surface_closed(
         "workspace level cascade 와 제거 위치는 함께 실려야 한다"
     );
     if let Some((removed_idx, workspace_id)) = c.workspace_purged {
-        purge_closed_workspace_memory(state, workspace_id);
+        // 제거 후 공통 뒷정리는 초크포인트 하나가 한다 — 제거 경로 셋이 각자 쏘던
+        // 때 인라인 cascade 가 `workspace.closed` 를 빠뜨렸다.
+        state.after_workspace_removed(workspace_id, "cascade");
         state.fix_workspace_pointers_after_removal(removed_idx, engine.workspaces.len());
     }
 
@@ -1782,33 +1784,6 @@ fn enqueue_closed_tab_events(
 fn enqueue_closed_pane_events(state: &mut crate::state::AppState, closed_pane_ids: &[u32]) {
     for pane_id in closed_pane_ids {
         state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id: *pane_id });
-    }
-}
-
-/// `cascade_surface_closed` 3 단계: 사라진 workspace 의 `workspace.closed` host
-/// event enqueue + memory scope purge. 호출자가 `workspace_purged` 를 이미
-/// 풀어놨으므로 여기선 Option 을 다루지 않는다.
-fn purge_closed_workspace_memory(state: &mut crate::state::AppState, workspace_id: u32) {
-    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
-    let t = std::time::Instant::now();
-    let scope = tasty_memory::Scope::Workspace(workspace_id);
-    let purged = {
-        let mut guard = match state.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        guard.purge_scope(&scope)
-    };
-    crate::close_trace::log_ws_purge(t, "cascade");
-    match purged {
-        Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-            workspace_id,
-            regular = stats.regular,
-            secret = stats.secret,
-            "memory: purged closed-workspace scope",
-        ),
-        Ok(_) => {}
-        Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
     }
 }
 

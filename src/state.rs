@@ -1528,8 +1528,29 @@ impl AppState {
         targets
     }
 
+    /// 워크스페이스가 `engine.workspaces` 에서 **제거된 직후** 반드시 도는 뒷정리 —
+    /// plugin 에 나가는 `workspace.closed` 발화 + workspace scope memory purge.
+    ///
+    /// **제거 경로가 셋이라 초크포인트로 모았다.** 각자 쏘던 때 실제로 하나가
+    /// 빠져 있었다(인라인 cascade — 마지막 터미널이 스스로 종료돼 워크스페이스가
+    /// 사라지는 경로에서 `workspace.closed` 가 안 나갔다). 넷째 경로가 생겨도
+    /// 여기를 지나기만 하면 같은 누락이 반복되지 않는다. 현재 호출자:
+    ///
+    /// - [`AppState::close_workspace_at`] — GUI 닫기 · `workspace.close` IPC
+    /// - `AppState::close_case_workspace`(`state/pane.rs`) — 인라인 cascade
+    /// - `app::dispatch_domain::cascade_surface_closed` — Core cascade
+    ///
+    /// `path` 는 close 계측의 경로 구분값(`"gui"`/`"ipc"`/`"inline"`/`"cascade"`)이다.
+    pub(crate) fn after_workspace_removed(&mut self, workspace_id: u32, path: &'static str) {
+        self.enqueue_host_event(PendingHostEvent::WorkspaceClosed { workspace_id });
+        let t = std::time::Instant::now();
+        self.purge_workspace_memory_scope(workspace_id);
+        crate::close_trace::log_ws_purge(t, path);
+    }
+
     /// workspace scope 의 memory entry 정리(안의 surface 들은 각자
-    /// `cleanup_surface` 가 자기 scope 를 purge).
+    /// `cleanup_surface` 가 자기 scope 를 purge). 발화와 짝지어 돌아야 하므로
+    /// 직접 부르지 말고 [`AppState::after_workspace_removed`] 를 쓴다.
     fn purge_workspace_memory_scope(&mut self, workspace_id: u32) {
         let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
         match self.with_memory(|m| m.purge_scope(&ws_scope)) {

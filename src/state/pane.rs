@@ -574,11 +574,10 @@ impl AppState {
         let workspace_id = engine.workspaces[loc.ws_idx].id;
         engine.workspaces.remove(loc.ws_idx);
         self.fix_workspace_pointers_after_removal(loc.ws_idx, engine.workspaces.len());
-        // C4 — Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀
-        // workspace 도 사라지는 경로).
-        let t = Instant::now();
-        self.purge_workspace_memory_scope(workspace_id);
-        close_trace::log_ws_purge(t, PATH);
+        // C4 — 제거 후 공통 뒷정리(`workspace.closed` 발화 + workspace scope memory
+        // purge). 이 경로가 이 호출을 빠뜨렸던 탓에, 워크스페이스의 마지막 터미널이
+        // 스스로 종료돼 사라질 때만 plugin 이 `workspace.closed` 를 못 받았다.
+        self.after_workspace_removed(workspace_id, PATH);
         let zipped: Vec<(u32, Option<String>, Option<&'static str>)> = targets
             .into_iter()
             .zip(target_kinds)
