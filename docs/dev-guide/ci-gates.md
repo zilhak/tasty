@@ -14,7 +14,7 @@
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 |
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
-| headless 컴파일 · 단위테스트 · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --lib --bins --no-default-features --locked` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
+| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <3 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 → **실효 없음** |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
@@ -69,20 +69,24 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 
 ## 테스트는 **어디 있느냐**로 채널이 갈린다
 
-위 표에서 가장 자주 오해되는 줄이다. 자동 잡이 돌리는 테스트 명령은 전부 좁혀져 있다
-(`--lib --bins`, 또는 `--test <이름>` 으로 이름 지목). 그래서 **같은 주제의 두 가드라도
-파일이 어디 있느냐에 따라 채널이 정반대**가 된다.
+위 표에서 가장 자주 오해되는 줄이다. 자동 잡이 돌리는 테스트 명령은 **조합마다 다르다** —
+기본 조합은 좁혀져 있고(`--lib --bins`, 또는 `--test <이름>` 으로 이름 지목), 헤드리스
+조합만 전체 스위트를 돌린다. 그래서 **같은 주제의 두 가드라도 파일이 어디 있느냐에 따라,
+그리고 같은 파일이라도 조합에 따라 채널이 갈린다.**
 
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
 | lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — `--lib --bins` 가 **두 조합**(기본 / `--no-default-features`)에서 돈다 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
-| 통합 테스트 (`tests/*.rs`) | **없다** — 전체 스위트는 `workflow_dispatch` 전용 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
+| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 3 건 제외). **기본 조합에는 없다** — Windows 잡은 `--lib --bins` 이고 `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
 **소스를 런타임에 스캔하는 드리프트 가드에게 "컴파일만 자동" 은 0 이다** — 스캔 로직이
-컴파일돼도 실행되지 않으면 아무것도 보지 않는다. 그래서 `tests/*.rs` 에 있는 가드는
-사람이 기억할 때만 도는 상태다.
+컴파일돼도 실행되지 않으면 아무것도 보지 않는다. `tests/*.rs` 에 있는 가드는 이제
+`check-headless` 에서 돌지만, 그 잡은 `paths-ignore` 로 **문서·site 만 담은 push 에서는
+발사되지 않는다.** 레포 전체를 훑는 문서 가드는 하필 그 push 에서 위반을 가장 잘
+들이므로, 그 구멍은 남아 있다. 그리고 그 잡은 러너 한 대에 묶여 있어(위 §러너 참고)
+채널의 존재가 곧 즉시성은 아니다.
 
 **두 방향 모두 틀릴 수 있다.** 통합 테스트에 "CI 가 강제한다" 를 붙이면 사실보다 강하고,
 lib 유닛 테스트에서 그 서술을 지우면 사실보다 약하다. 어느 쪽이든 다음 사람의 판단을
