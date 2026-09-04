@@ -56,6 +56,16 @@ pub fn is_webview_kind(kind: &str) -> bool {
         .is_some_and(|s| s.contains(kind))
 }
 
+/// test only — `WEBVIEW_KINDS` 는 프로세스 전역이고, 이 크레이트의 여러 테스트가 그것을
+/// 병렬로 등록/reset 한다. 특히 `state::tests::test_state_with_memory`(176 곳이 호출)가
+/// markdown kind 를 등록하는데, 그 register 가 `register_and_is_webview_kind_survive_poison`
+/// 의 `!is_webview_kind("markdown")` 단언 중에 끼어들면 단언이 깨진다(형태 A). 이 전역을
+/// 만지는 테스트는 전부 이 락을 잡아 직렬화한다 — 락을 잡지 않는 접근이 하나라도 있으면
+/// 직렬화가 무효가 된다(락은 잡는 쪽끼리만 막는다). register 만 하는 헬퍼는 그 호출을 이
+/// 락으로 감싸고, 전역을 reset/read 하는 테스트는 함수 끝까지 잡는다.
+#[cfg(test)]
+pub static WEBVIEW_KIND_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// test only — 등록된 kind 모두 제거.
 #[cfg(test)]
 pub fn reset_for_test() {
@@ -71,6 +81,9 @@ mod tests {
 
     #[test]
     fn register_and_query() {
+        let _guard = WEBVIEW_KIND_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         reset_for_test();
         assert!(!is_webview_kind("foo"));
         register_webview_kind("com.example", "foo");
@@ -80,6 +93,9 @@ mod tests {
 
     #[test]
     fn register_and_is_webview_kind_survive_poison() {
+        let _guard = WEBVIEW_KIND_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         reset_for_test();
 
         // 의도적으로 poison 유발

@@ -44,10 +44,18 @@ pub(crate) fn test_state_with_memory(
         }],
     }))
     .expect("test SurfaceKindDecl");
-    crate::core::surface_registry::webview_kind::register_webview_kind(
-        "com.tasty.markdown",
-        &decl.kind,
-    );
+    // WEBVIEW_KINDS 는 프로세스 전역이라, 이 register 가 webview_kind 의 poison/query
+    // 테스트와 병렬로 끼어들면 그쪽의 `!is_webview_kind("markdown")` 단언을 깨뜨린다.
+    // 그 전역을 만지는 테스트가 공유하는 락으로 이 register 를 감싼다.
+    {
+        let _g = crate::core::surface_registry::webview_kind::WEBVIEW_KIND_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        crate::core::surface_registry::webview_kind::register_webview_kind(
+            "com.tasty.markdown",
+            &decl.kind,
+        );
+    }
     // remote kind 등록은 gui 전용 모듈(`plugin_bridge::remote_kind`)이라 headless
     // 테스트 빌드에는 없다. 이 픽스처를 쓰는 headless 테스트(intent drain 등)는
     // markdown surface 생성 경로를 타지 않으므로 등록만 건너뛴다.
