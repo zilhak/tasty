@@ -107,7 +107,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 > 명제보다 커지기 때문이다. 메서드를 더하면 **여기도 같이 고쳐야 한다.** 판정 기준은
 > [duplicated-sets](duplicated-sets.md).
 
-† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 `surface.ime_*` 는 창 내부 상태만 바꾸는 in-process 시뮬레이션이라 이 게이트가 없다 — cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
+† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 **게이트 없이 cfg 격리만 받는 입력 재현이 넷 있다** — `surface.ime_*` 와 `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key`. 넷 다 tasty 프로세스 **안**의 창 상태(IME 조합 / winit·egui 입력 큐)만 바꾸는 in-process 시뮬레이션이라, 인스턴스를 debug 로 띄운 사람 밖으로 효과가 나가지 않는다. 위 넷과 갈리는 기준이 PTY·OS 전역이냐 in-process 냐이므로 이쪽은 cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
