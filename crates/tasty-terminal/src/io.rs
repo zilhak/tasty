@@ -42,8 +42,18 @@ impl WriteAck {
             // condvar 는 깨어나며 락을 다시 잡으므로 poison 을 한 번 더 만난다. 위
             // `lock_write_progress` 와 같은 이유로 여기서도 복구한다 — 여기서만 `false`
             // 로 떨어지면 이미 flush 가 끝난 write 를 "미완료" 로 보고하게 된다.
-            // 보고는 그 헬퍼가 이미 했다(첫 1 회만).
-            Err(poisoned) => !poisoned.into_inner().1.timed_out(),
+            //
+            // **보고를 여기서도 태운다.** 진입할 때의 `lock_write_progress` 가 이미
+            // 보고했다고 가정할 수 없다 — 그 시점에 락이 성했다면 아무것도 안 남았고,
+            // poison 이 **대기 중에** 생기는 순서가 정확히 그 경우다. 그 회차를 조용히
+            // 복구하면 "복구했다" 와 "유실했다" 가 구분되지 않는다.
+            Err(poisoned) => !tasty_utils::poison::recover_poisoned(
+                poisoned,
+                crate::WRITE_PROGRESS_WHAT,
+                &crate::WRITE_PROGRESS_POISON_REPORTED,
+            )
+            .1
+            .timed_out(),
         }
     }
 }
@@ -205,6 +215,56 @@ mod tests {
 
     use super::*;
     use crate::WriteProgress;
+
+    /// poison 이 **대기 중에** 생겨도 그 복구가 흔적을 남기는가.
+    ///
+    /// [`WriteAck::wait`] 는 진입할 때 한 번만 복구 헬퍼를 거친다. 그때 락이 성했다면
+    /// 아무 보고도 없고, 그 뒤 `wait_timeout_while` 안에서 락을 놓고 자는 동안 다른
+    /// 스레드가 poison 을 만들면 깨어나며 만나는 `Err` 는 헬퍼 **밖**이다 — 예전에는
+    /// 그 자리가 `into_inner()` 로 조용히 복구했다. 위의 다른 테스트는 `wait()` **전에**
+    /// poison 을 만들어 이 순서를 안 만든다.
+    ///
+    /// 한계: 보고 플래그는 프로세스 전역이라 같은 바이너리의 다른 테스트가 먼저 true 로
+    /// 만들 수 있다. 그 오염은 이 단언을 **거짓 초록**으로만 만들 수 있고 거짓 빨강으로는
+    /// 못 만든다. 보고 축 자체는 `tasty_utils::poison` 의 단위 테스트가 국소 플래그로
+    /// 결정적으로 고정한다.
+    #[test]
+    fn a_poison_that_arrives_while_waiting_is_still_reported() {
+        use std::sync::atomic::Ordering;
+
+        let progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
+        crate::WRITE_PROGRESS_POISON_REPORTED.store(false, Ordering::Relaxed);
+
+        let for_waiter = Arc::clone(&progress);
+        let waiter = std::thread::spawn(move || {
+            let ack = WriteAck {
+                progress: for_waiter,
+                target: 1,
+            };
+            // 카운터를 올리지 않으므로 타임아웃으로 끝난다 — 이 테스트가 보는 것은
+            // 반환값이 아니라 깨어나며 만난 poison 이 남긴 흔적이다.
+            ack.wait(Duration::from_millis(600))
+        });
+
+        // 대기자가 `wait_timeout_while` 안에서 락을 놓고 잠들 시간을 준다.
+        std::thread::sleep(Duration::from_millis(100));
+
+        let poisoner = Arc::clone(&progress);
+        std::thread::spawn(move || {
+            let _guard = poisoner.0.lock().expect("아직 성한 락");
+            panic!("대기자가 자는 동안 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(progress.0.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        let timed_out = !waiter.join().expect("대기 스레드는 패닉하지 않는다");
+        assert!(timed_out, "카운터를 안 올렸으므로 타임아웃이 정상이다");
+        assert!(
+            crate::WRITE_PROGRESS_POISON_REPORTED.load(Ordering::Relaxed),
+            "헬퍼 밖에서 만난 poison 도 한 번은 보고돼야 한다"
+        );
+    }
 
     /// poison 이 걸린 뒤에도 write 완료가 보고되고 확인되는가.
     ///

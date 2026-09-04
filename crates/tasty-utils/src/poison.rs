@@ -107,6 +107,22 @@ pub fn recover_try_write<'a, T: ?Sized>(
     }
 }
 
+/// 이미 손에 쥔 `PoisonError` 를 **첫 1 회 보고**하고 안쪽 값을 돌려준다.
+///
+/// `Condvar::wait_timeout_while` 처럼 같은 락을 이 모듈 **밖에서 다시 만나는** 경로가
+/// 쓴다. 그 재획득의 `Err` 는 [`recover_mutex`] 를 거치지 않으므로, 진입할 때 아직
+/// poison 이 아니었다면 그 회차는 **한 줄도 남기지 않고** 복구된다 — 대기 중에 poison 이
+/// 생기는 순서가 정확히 그렇다. 조용한 복구는 조용한 유실과 구분되지 않으므로 여기서
+/// 같은 첫-1 회 보고를 태운다.
+pub fn recover_poisoned<T>(
+    poisoned: std::sync::PoisonError<T>,
+    what: &str,
+    reported: &AtomicBool,
+) -> T {
+    report(what, reported);
+    poisoned.into_inner()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +158,25 @@ mod tests {
         assert!(reported.load(Ordering::Relaxed), "첫 회는 보고한다");
         // 두 번째부터는 보고 분기를 건너뛴다 — `swap` 이 이미 true 를 돌려준다.
         assert!(reported.swap(true, Ordering::Relaxed));
+    }
+
+    /// 헬퍼 밖에서 만난 poison 도 첫 1 회 보고되고 값은 보존된다.
+    #[test]
+    fn a_poison_met_outside_the_helper_is_still_reported_once() {
+        let flag = AtomicBool::new(false);
+        let m = Mutex::new(7u8);
+        let err = std::sync::PoisonError::new(m.lock().expect("아직 성한 락"));
+        let guard = recover_poisoned(err, "테스트 락", &flag);
+        assert_eq!(*guard, 7, "복구는 지키던 값을 그대로 돌려줘야 한다");
+        assert!(flag.load(Ordering::Relaxed), "첫 만남은 보고돼야 한다");
+        drop(guard);
+
+        // 두 번째부터는 조용하다 — poison 은 sticky 라 매번 찍으면 그 로그가
+        // 다른 진단을 덮는다. 플래그가 이미 true 인 것으로 확인한다.
+        let err2 = std::sync::PoisonError::new(m.lock().expect("성한 락"));
+        let g2 = recover_poisoned(err2, "테스트 락", &flag);
+        drop(g2);
+        assert!(flag.load(Ordering::Relaxed));
     }
 
     #[test]
