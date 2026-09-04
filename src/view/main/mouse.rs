@@ -799,7 +799,8 @@ impl MainView {
 
     /// 좌클릭 press: divider 히트 시 드래그 시작, 아니면 selection 시작으로 위임.
     fn handle_left_press(&mut self, x: f32, y: f32, terminal_rect: &crate::model::PhysicalRect) {
-        let threshold = crate::state::mouse::DIVIDER_HIT_THRESHOLD;
+        let threshold =
+            crate::state::mouse::divider_hit_threshold_physical(self.base.gpu.scale_factor());
         let engine = &mut self.core_state;
         let pane_div = self
             .state
@@ -1058,7 +1059,8 @@ impl MainView {
             // 여기서 끊어야 아래 hit-test 들이 매 프레임 헛돌지 않는다.
             return;
         }
-        let threshold = crate::state::mouse::DIVIDER_HIT_THRESHOLD;
+        let threshold =
+            crate::state::mouse::divider_hit_threshold_physical(self.base.gpu.scale_factor());
         let on_divider_band = self
             .state
             .find_pane_divider_at(&self.core_state, x, y, *terminal_rect, threshold)

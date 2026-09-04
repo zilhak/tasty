@@ -1,12 +1,26 @@
-use crate::model::{DividerInfo, PhysicalPx, PhysicalRect, SplitDirection};
+use crate::model::{DividerInfo, LogicalPx, PhysicalPx, PhysicalRect, SplitDirection};
 
 use super::AppState;
 use crate::core::CoreState;
 
-/// divider 히트 판정 밴드의 반폭(px). press 로 드래그를 시작하는 경로, 커서 아이콘
-/// 경로, 트래킹 앱 hover 보고 가드가 **같은 값**을 봐야 "커서는 ↔ 인데 TUI 는 hover 를
-/// 받는" 식의 어긋남이 생기지 않는다. 세 곳에 리터럴로 흩어두면 드리프트한다.
-pub const DIVIDER_HIT_THRESHOLD: f32 = 4.0;
+/// divider 히트 판정 밴드의 반폭. press 로 드래그를 시작하는 경로, 커서 아이콘 경로,
+/// 트래킹 앱 hover 보고 가드가 **같은 값**을 봐야 "커서는 ↔ 인데 TUI 는 hover 를 받는"
+/// 식의 어긋남이 생기지 않는다. 여러 곳에 리터럴로 흩어두면 드리프트한다.
+///
+/// **논리 길이다.** 이 값이 물리였을 때는 DPI 배율 2 화면에서 드래그 표적의 실제
+/// 크기가 절반이 됐다 — 물리 픽셀은 배율이 오를수록 작아지므로, 조작 표적을 물리로
+/// 고정하면 고배율일수록 집기 어려워진다. 배율 1 에서는 논리=물리라 그 회귀가
+/// 드러나지 않는다. 비교 좌표계로 내리는 것은 [`divider_hit_threshold_physical`].
+pub const DIVIDER_HIT_THRESHOLD: LogicalPx = LogicalPx(4.0);
+
+/// 히트 밴드를 비교 좌표계(물리)로 내린다.
+///
+/// 마우스 좌표가 물리라 비교 직전에 한 번만 변환한다. 호출부마다 `to_physical` 을
+/// 적으면 그것이 곧 위 doc 이 경고하는 드리프트의 다음 형태이므로, 변환도 이 한
+/// 곳에만 둔다.
+pub fn divider_hit_threshold_physical(scale_factor: f32) -> f32 {
+    DIVIDER_HIT_THRESHOLD.to_physical(scale_factor).value()
+}
 
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.

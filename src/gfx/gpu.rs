@@ -732,7 +732,7 @@ impl GpuState {
                 px,
                 py,
                 terminal_rect,
-                crate::state::mouse::DIVIDER_HIT_THRESHOLD,
+                crate::state::mouse::divider_hit_threshold_physical(self.scale_factor),
             );
         }
         // Link hover overrides cursor to pointing-hand (unless on a resize border).

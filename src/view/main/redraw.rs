@@ -439,7 +439,13 @@ impl MainView {
                                 // 간격으로 보이게 하고 화면 공간을 낭비하지 않기 위함.
                                 // 위쪽 변은 tab bar 가 있어 원래부터 inset 이 없다.
                                 // 단독 leaf 이면 네 변이 모두 외곽이라 기존 동작 그대로다.
-                                let inset = 4.0_f64;
+                                //
+                                // 히트 밴드와 **같은 값**이어야 한다 — 여백이 밴드보다
+                                // 좁으면 native webview 가 드래그 영역을 덮는다. 그래서
+                                // 리터럴을 다시 적지 않고 그 상수를 물리로 내려 쓴다.
+                                let inset = crate::state::mouse::divider_hit_threshold_physical(
+                                    scale_factor as f32,
+                                ) as f64;
                                 let on_edge =
                                     |a: crate::model::PhysicalPx, b: crate::model::PhysicalPx| {
                                         (a - b).abs() < crate::model::PhysicalPx(0.5)
