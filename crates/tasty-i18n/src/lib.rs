@@ -419,7 +419,8 @@ pub fn load_pack_head(path: &Path) -> Result<PackHead, PackError> {
 /// empty is the common case and a blank string on screen is hard to trace back to
 /// a key; deliberately blank text is rare and can still be written as whitespace
 /// that the trim does not eat (e.g. a non-breaking space). Same rule as
-/// [`meta_name`] and [`non_empty_str`], which already reject blanks.
+/// [`meta_name`] and [`non_empty_str`], which already reject blanks, and as the
+/// user override in [`Translations::apply_user_override`].
 pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
     let mut table = parse_manifest(path)?;
     let font = match table.get("font") {
@@ -432,13 +433,11 @@ pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
     table.remove("font");
     let mut strings = HashMap::new();
     Translations::flatten_toml("", &toml::Value::Table(table), &mut strings);
-    let blank = drop_blank_values(&mut strings);
-    if blank > 0 {
-        tracing::warn!(
-            "i18n: language pack '{code}' at {} has {blank} blank value(s) — those keys fall back to English",
-            path.display()
-        );
-    }
+    drop_blank_values_warned(
+        &mut strings,
+        &format!("language pack '{code}' at {}", path.display()),
+        "fall back to English",
+    );
     Ok(LanguagePack {
         code: code.to_string(),
         path: path.to_path_buf(),
@@ -449,12 +448,28 @@ pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
 }
 
 /// Remove keys whose value is blank (empty or whitespace only) and return how many
-/// were dropped. Those keys then miss the pack overlay and resolve on the English
-/// base — see [`load_pack`] for why blank means "not translated".
+/// were dropped. Used by **both** user-authored overlays — a pack ([`load_pack`])
+/// and a built-in override ([`Translations::builtin_strings`]) — so the same input
+/// means the same thing whichever file it was written in. The dropped key then
+/// resolves on the layer below: the English base for a pack, the built-in language
+/// for an override. See [`load_pack`] for why blank means "not translated".
 fn drop_blank_values(strings: &mut HashMap<String, String>) -> usize {
     let before = strings.len();
     strings.retain(|_, v| !v.trim().is_empty());
     before - strings.len()
+}
+
+/// [`drop_blank_values`] plus the one warn line the two load paths owe the user.
+///
+/// `origin` names the file, `fallback` what shows through instead — that is the
+/// only thing that differs between a pack (English base) and a user override (the
+/// built-in language). Keeping both callers on one helper is why the rule cannot
+/// drift apart again the way it did once.
+fn drop_blank_values_warned(map: &mut HashMap<String, String>, origin: &str, fallback: &str) {
+    let blank = drop_blank_values(map);
+    if blank > 0 {
+        tracing::warn!("i18n: {origin} has {blank} blank value(s) — those keys {fallback}");
+    }
 }
 
 /// `[meta] name`, trimmed; `None` when absent, not a string, or blank.
@@ -680,23 +695,53 @@ impl Translations {
         {
             Self::parse_toml_into(&mut strings, toml_str);
         }
-        let mut outcome = LoadOutcome::Builtin;
-        if let Some(dir) = lang_dir {
-            let path = dir.join(format!("{code}.toml"));
-            match read_user_toml(&path) {
-                Ok(Some(value)) => {
-                    Self::flatten_toml("", &value, &mut strings);
-                    tracing::info!("loaded user translations from {}", path.display());
-                    outcome = LoadOutcome::BuiltinOverridden { path };
-                }
-                Ok(None) => {}
-                Err(e) => tracing::warn!(
+        let outcome =
+            match lang_dir.and_then(|dir| Self::apply_user_override(&mut strings, dir, code)) {
+                Some(path) => LoadOutcome::BuiltinOverridden { path },
+                None => LoadOutcome::Builtin,
+            };
+        (strings, outcome)
+    }
+
+    /// Overlay `<dir>/<code>.toml` onto `strings`. Returns the path when the file
+    /// was there and parsed — a missing or broken file leaves `strings` untouched.
+    ///
+    /// The overlay obeys the same **blank means "not translated"** rule as a pack
+    /// ([`load_pack`]) — the reason is the layer below, not the file shape: a blank
+    /// value that reaches the table paints a label-less button, and nothing on
+    /// screen says which key emptied it. What shows through differs, though. A pack
+    /// sits on the English base, so a dropped key falls back to English; an
+    /// override sits on the built-in `code` overlay, so a dropped key keeps **that
+    /// language's** own text.
+    fn apply_user_override(
+        strings: &mut HashMap<String, String>,
+        dir: &Path,
+        code: &str,
+    ) -> Option<PathBuf> {
+        let path = dir.join(format!("{code}.toml"));
+        let value = match read_user_toml(&path) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(e) => {
+                tracing::warn!(
                     "i18n: user override {} ignored — {e} (built-in '{code}' strings stay active)",
                     path.display()
-                ),
+                );
+                return None;
             }
-        }
-        (strings, outcome)
+        };
+        // 오버레이를 따로 모아 빈 값을 걷어낸 뒤 합친다 — `strings` 에 바로 flatten
+        // 하면 빈 값이 내장 문자열을 이미 덮어써서 되돌릴 수 없다.
+        let mut overlay = HashMap::new();
+        Self::flatten_toml("", &value, &mut overlay);
+        drop_blank_values_warned(
+            &mut overlay,
+            &format!("user override {}", path.display()),
+            &format!("keep the built-in '{code}' text"),
+        );
+        strings.extend(overlay);
+        tracing::info!("loaded user translations from {}", path.display());
+        Some(path)
     }
 
     /// English base → pack strings. `Err` carries the fallback reason.
@@ -1435,6 +1480,53 @@ mod tests {
             }
         );
         assert_eq!(report.user_warning(), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 같은 입력을 **두 로드 경로에 각각** 넣어 결과가 갈리지 않는지 본다.
+    ///
+    /// 한쪽만 검사하면 이 결함을 못 잡는다 — 실제로 팩 쪽에는 가드가 있었는데
+    /// override 쪽에는 없어서 같은 `key = ""` 가 한쪽에선 폴백, 다른 쪽에선 화면의
+    /// 빈칸이 됐다. 두 경로의 **폴백 대상은 다르다**(팩=영어 베이스, override=그 내장
+    /// 언어). 같아야 하는 것은 "빈 값이 문자열 테이블에 도달하지 않는다" 쪽이다.
+    #[test]
+    fn a_blank_value_means_the_same_thing_in_a_pack_and_in_an_override() {
+        let dir = temp_dir("blank-symmetry");
+        // 같은 본문: ok 는 채우고, cancel·save 는 비운다.
+        let body = "[button]\nok = \"OK-EDIT\"\ncancel = \"\"\nsave = \"   \"\n";
+        write(
+            pack_path(&dir, "bl"),
+            &format!("[font]\nbuiltin = true\n\n{body}"),
+        );
+        write(dir.join("ko.toml"), body);
+
+        let (pack_tr, _) = Translations::load_from("bl", Some(&dir));
+        let (ovr_tr, ovr_report) = Translations::load_from("ko", Some(&dir));
+        assert_eq!(
+            ovr_report.outcome,
+            LoadOutcome::BuiltinOverridden {
+                path: dir.join("ko.toml"),
+            },
+            "override 경로를 실제로 지나야 이 테스트가 의미가 있다"
+        );
+
+        // 채운 값은 양쪽 다 그대로 반영된다(가드가 멀쩡한 값까지 걷어내지 않는다).
+        for (label, tr) in [("pack", &pack_tr), ("override", &ovr_tr)] {
+            assert_eq!(tr.get("button.ok"), "OK-EDIT", "{label}");
+        }
+        // 비운 값은 양쪽 다 화면에 도달하지 않는다 — 이것이 통일된 규칙이다.
+        for (label, tr) in [("pack", &pack_tr), ("override", &ovr_tr)] {
+            for key in ["button.cancel", "button.save"] {
+                assert!(
+                    !tr.get(key).trim().is_empty(),
+                    "{label} 경로에서 {key} 가 빈 문자열로 나왔다 — 라벨 없는 UI 가 된다"
+                );
+            }
+        }
+        // 아래 층이 다르므로 보이는 문자열도 다르다: 팩은 영어, override 는 그 내장 언어.
+        assert_eq!(pack_tr.get("button.cancel"), "Cancel");
+        assert_eq!(ovr_tr.get("button.cancel"), "취소");
+        assert_eq!(ovr_tr.get("button.save"), "저장");
         std::fs::remove_dir_all(&dir).ok();
     }
 
