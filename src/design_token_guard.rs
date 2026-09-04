@@ -98,8 +98,9 @@ fn sister_scan_roots(src: &str) -> Vec<String> {
         }
         if let Some(close) = rest[i + 1..end].find('"') {
             out.push(rest[i + 1..i + 1 + close].to_string());
-            // 닫는 따옴표 뒤로 건너뛴다.
-            while let Some((j, _)) = chars.next() {
+            // 닫는 따옴표 뒤로 건너뛴다. `by_ref()` 로 빌려 써야 바깥 루프가 같은
+            // 반복자를 이어 받는다 — `chars` 를 통째로 넘기면 소비돼서 못 돌아온다.
+            for (j, _) in chars.by_ref() {
                 if j >= i + 1 + close {
                     break;
                 }
