@@ -36,8 +36,10 @@ const DEDICATED_SPAWN_MARKERS: &[&str] = &[
     "TastyInstance::spawn(",
     "TastyInstance::spawn_with_inherit_cwd(",
     // tests/webhook_common 하네스. 같은 `CARGO_BIN_EXE_tasty` 를 띄우므로 창 비용이 같다.
-    // 이쪽은 공유 진입점이 없어 builder 호출 하나가 곧 인스턴스 하나다.
+    // 이쪽은 공유 진입점이 없어 builder 호출 하나가 곧 인스턴스 하나다. 재시작 전용
+    // 진입점도 같은 비용이라 함께 센다 — 빠뜨리면 인스턴스가 가드 밖에서 늘어난다.
     "WebhookInstance::builder(",
+    "WebhookInstance::builder_for_restart(",
 ];
 
 /// 인스턴스를 띄우는 파일인지 판정하는 마커 — 전용/공유를 가리지 않는다.

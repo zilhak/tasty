@@ -582,7 +582,9 @@ fn list_ids(inst: &WebhookInstance) -> Vec<String> {
 /// - 2차 인스턴스는 새 프로세스라 쿨다운(in-memory) 이 소멸
 #[test]
 fn webhook_family() {
-    let port = webhook_common::free_port();
+    // 예약을 붙든 채 빌더로 넘긴다 — 번호만 빼내 버리면 그 순간부터 spawn 까지
+    // 아무도 이 포트를 지키지 않는다(TOCTOU).
+    let lease = webhook_common::free_port();
     let home = unique_home();
     let hook_env = hook_env_setup();
     // integration 용 정적 핸들러 + hook env 용 동적 핸들러를 한 파일로 결합 주입.
@@ -595,7 +597,7 @@ fn webhook_family() {
 
     // ── 1차 인스턴스 ──
     {
-        let inst = WebhookInstance::builder(port)
+        let inst = WebhookInstance::builder(lease)
             .home(home.clone())
             .env(
                 "TASTY_WEBHOOK_ABUSE_THRESHOLD",
@@ -630,7 +632,11 @@ fn webhook_family() {
 
     // ── 2차 인스턴스: 같은 TASTY_HOME + 같은 포트로 재시작 ──
     {
-        let inst2 = WebhookInstance::builder(port).home(home.clone()).spawn();
+        // 같은 홈의 webhooks.toml 에 박힌 포트를 그대로 쓴다(URL 고정 검증이 목적이라
+        // 하네스가 번호를 바꿀 수 없다) — 그래서 예약도 재시도도 없는 전용 진입점이다.
+        let inst2 = WebhookInstance::builder_for_restart()
+            .home(home.clone())
+            .spawn();
         inst2.wait_webhook_ready();
 
         let ids = list_ids(&inst2);

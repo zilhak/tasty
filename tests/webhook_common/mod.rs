@@ -3,6 +3,9 @@
 //! `tests/common` 을 미러링하되 웹훅 E2E 가 필요로 하는 것을 추가한다:
 //! - **웹훅 포트 시딩** — `TASTY_HOME/webhooks.toml` 에 미리 `port = N` 을 써
 //!   리스너가 결정적으로 그 포트에 bind 하게 한다(테스트마다 free port 로 격리).
+//!   포트는 [`PortLease`] 로 잡아 spawn 직전까지 예약을 유지하고, 그래도 남는
+//!   경합 구간(자식이 부팅을 마치고 bind 하기까지)은 [`WebhookInstance`] 의
+//!   재시도가 처리한다 — 아래 "포트 경합" 참조.
 //! - **TASTY_HOME 제어** — `webhooks.toml`/`hook-handlers.toml` 위치를 잡고,
 //!   재시작 테스트가 두 인스턴스 간 같은 홈을 공유할 수 있게 한다.
 //! - **실 HTTP 클라이언트** — 리스너에 실제 요청을 쏴 ACK/상태변화를 관측한다
@@ -32,11 +35,59 @@ const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(40);
 const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(20);
 const WEBHOOK_READY_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// OS 가 배정하는 free TCP 포트를 하나 잡아 반환한다(즉시 해제). 리스너가 곧 이
-/// 포트에 bind 하므로 race 창은 짧다. 테스트마다 고유 포트로 격리하기 위한 것.
-pub fn free_port() -> u16 {
+/// 포트를 뺏겼을 때 새 포트로 다시 띄우는 횟수 상한. 경합은 드물고(제3자가 하필 그
+/// 순간 같은 번호를 받아야 한다) 한 번의 재시도가 곧 한 번의 전체 부팅(수 초)이라,
+/// 무한 재시도로 실패를 늘어뜨리는 대신 두 번으로 끊고 원인을 명시해 실패시킨다.
+const PORT_STEAL_RETRIES: usize = 2;
+
+/// 웹훅 리스너 bind 실패 경고의 고정 어구 (`src/webhook/listener.rs` 의 `on_bind_failed`).
+/// 이 줄이 stderr 에 있으면 "안 떴다" 가 아니라 "포트를 가져갔다" 가 확정된다.
+const BIND_FAILED_MARKER: &str = "webhook listener bind";
+
+/// OS 가 배정한 free TCP 포트의 **예약**. 리스너를 살려 둔 채 번호만 알려주므로,
+/// 이 값이 살아 있는 동안에는 제3자가 같은 포트를 가져갈 수 없다.
+///
+/// 예약만으로 경합이 사라지지는 않는다 — 자식 프로세스는 부팅을 마친 뒤에야 웹훅
+/// 포트에 bind 하고, 그 시점엔 이 리스너가 이미 풀려 있어야 한다(같은 포트를 두
+/// 소켓이 동시에 listen 할 수 없다). 즉 예약은 "시딩~spawn" 구간만 닫고, 남는
+/// 구간(=자식 부팅 시간, 수 초)은 [`WebhookInstance::spawn_inner`] 의 재시도가 맡는다.
+/// 두 장치가 함께 있어야 이 하네스가 포트 경합에서 자유롭다.
+pub struct PortLease {
+    /// `None` 이 되면 예약이 풀린 것. spawn 직전에만 푼다.
+    listener: Option<std::net::TcpListener>,
+    port: u16,
+}
+
+impl PortLease {
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// 자식이 이 포트에 bind 할 수 있도록 예약을 푼다. `Command::spawn` 직전에만 부른다.
+    fn release(&mut self) {
+        self.listener = None;
+    }
+}
+
+/// OS 에서 free 포트를 하나 받아 **예약한 채로** 돌려준다. 반환값을 살려 두는 동안
+/// 그 포트는 이 프로세스 것이다 — 번호만 받고 버리는 형태(TOCTOU)를 타입으로 막는다.
+pub fn free_port() -> PortLease {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind free port");
-    listener.local_addr().expect("local_addr").port()
+    let port = listener.local_addr().expect("local_addr").port();
+    PortLease {
+        listener: Some(listener),
+        port,
+    }
+}
+
+/// 웹훅 리스너가 accept 를 시작했는지 판정한 결과.
+enum BindOutcome {
+    /// 실제로 connect 가 됐다.
+    Bound,
+    /// stderr 에 bind 실패 경고가 찍혔다 — 포트를 제3자가 가져갔다는 직접 증거.
+    Stolen(String),
+    /// 상한 시간 안에 accept 도, bind 실패 경고도 없었다.
+    Silent,
 }
 
 fn config_toml() -> String {
@@ -67,7 +118,12 @@ link_click_modifier = "ctrl"
 
 /// 웹훅 인스턴스 빌더.
 pub struct Builder {
-    webhook_port: u16,
+    /// 우리가 고른 포트의 예약. 재시작 시나리오([`WebhookInstance::builder_for_restart`])는
+    /// 이미 있는 `webhooks.toml` 의 값을 그대로 써야 하므로 예약이 없다.
+    lease: Option<PortLease>,
+    /// 이 하네스가 고른 포트. `None` 이면 "홈의 `webhooks.toml` 에 적힌 값을 쓴다" 는 뜻
+    /// (재시작 시나리오) — 그 파일이 곧 SoT 라 하네스가 번호를 되풀이해 들고 다니지 않는다.
+    webhook_port: Option<u16>,
     /// TASTY_HOME 로 쓸 디렉토리. `None` 이면 고유 temp 를 만들고 Drop 시 삭제.
     /// `Some` 이면 caller 소유(Drop 삭제 안 함) — 재시작 테스트용.
     home: Option<PathBuf>,
@@ -148,6 +204,16 @@ fn spawn_with_stable_pdeathsig_anchor(mut command: Command) -> std::io::Result<C
     rx.recv().expect("fork-anchor thread died before replying")
 }
 
+/// 한 번의 spawn 에 필요한 입력. [`Builder`] 를 그대로 넘기면 재시도 때마다 소비돼
+/// 버려서(홈/파일 목록이 move 된다) 스펙만 빌려 주는 형태로 분리한다.
+struct SpawnSpec<'a> {
+    /// `None` = 홈의 `webhooks.toml` 에 적힌 값을 쓴다.
+    webhook_port: Option<u16>,
+    home: Option<PathBuf>,
+    env: &'a [(String, String)],
+    files: &'a [(String, String)],
+}
+
 pub struct WebhookInstance {
     process: Child,
     port: u16,
@@ -164,16 +230,98 @@ pub struct WebhookInstance {
 }
 
 impl WebhookInstance {
-    pub fn builder(webhook_port: u16) -> Builder {
+    /// 새 포트로 인스턴스를 띄운다. 예약([`free_port`])을 그대로 넘겨받아 spawn 직전까지
+    /// 붙들고, 그래도 포트를 뺏기면 새 포트로 다시 띄운다.
+    pub fn builder(lease: PortLease) -> Builder {
         Builder {
-            webhook_port,
+            webhook_port: Some(lease.port()),
+            lease: Some(lease),
             home: None,
             env: Vec::new(),
             files: Vec::new(),
         }
     }
 
+    /// 이미 `webhooks.toml` 이 있는 홈으로 **다시** 띄운다(재시작 시나리오).
+    ///
+    /// 포트를 인자로 받지 않는다 — 그 값은 홈의 `webhooks.toml` 에 이미 박혀 있고, 웹훅
+    /// URL 이 재시작 간 고정이어야 하므로 하네스가 다른 번호를 고를 수도 없다. 호출부가
+    /// 번호를 따로 들고 다니면 1 차 인스턴스가 포트를 재시도로 바꿨을 때 그 값이 조용히
+    /// 낡는다(실제로 그렇게 한 번 어긋났다). 파일을 SoT 로 두어 그 형태를 없앤다.
+    /// [`Builder::home`] 지정이 필수다.
+    pub fn builder_for_restart() -> Builder {
+        Builder {
+            lease: None,
+            webhook_port: None,
+            home: None,
+            env: Vec::new(),
+            files: Vec::new(),
+        }
+    }
+
+    /// 포트를 뺏기면 새 포트로 다시 띄운다. 재시도가 가능한 것은 **우리가 포트를
+    /// 골라 시딩했을 때뿐**이다 — 재시작 시나리오는 `webhooks.toml` 의 값이 곧 계약이라
+    /// (웹훅 URL 이 재시작 간 고정) 하네스가 번호를 바꿀 수 없다.
     fn spawn_inner(builder: Builder) -> Self {
+        let Builder {
+            mut lease,
+            mut webhook_port,
+            home,
+            env,
+            files,
+        } = builder;
+        assert!(
+            webhook_port.is_some() || home.is_some(),
+            "builder_for_restart 는 기존 webhooks.toml 이 있는 홈(.home(..))이 필요하다"
+        );
+        for attempt in 0..=PORT_STEAL_RETRIES {
+            let seeded;
+            let instance = {
+                let spec = SpawnSpec {
+                    webhook_port,
+                    home: home.clone(),
+                    env: &env,
+                    files: &files,
+                };
+                let (inst, did_seed) = Self::spawn_once(spec, lease.as_mut());
+                seeded = did_seed;
+                inst
+            };
+            match instance.wait_webhook_bound() {
+                BindOutcome::Bound => return instance,
+                BindOutcome::Stolen(line) if seeded && attempt < PORT_STEAL_RETRIES => {
+                    // 우리가 고른 포트를 남이 가져갔다. 우리가 시딩한 값이므로 다시 고를
+                    // 수 있다 — 인스턴스를 접고(Drop 이 자식을 회수한다) 새 포트로 재시도.
+                    eprintln!(
+                        "[webhook_common] webhook port {} was taken; retrying with a new port ({line})",
+                        instance.webhook_port
+                    );
+                    let seeded_file = instance.home.join("webhooks.toml");
+                    drop(instance);
+                    // 지우지 못하면 다음 시도가 같은 포트를 다시 쓴다 — 그 경우에도
+                    // 재시도가 무해하고(같은 실패로 끝난다) 아래 panic 이 원인을 알린다.
+                    if let Err(e) = std::fs::remove_file(&seeded_file) {
+                        eprintln!("[webhook_common] could not reset {seeded_file:?}: {e}");
+                    }
+                    let fresh = free_port();
+                    webhook_port = Some(fresh.port());
+                    lease = Some(fresh);
+                }
+                outcome => panic!("{}", instance.bind_failure_report(&outcome, seeded)),
+            }
+        }
+        unreachable!("재시도 루프는 return 또는 panic 으로만 빠져나간다");
+    }
+
+    /// 한 번의 spawn. 반환값의 `bool` 은 **이 호출이 `webhooks.toml` 을 새로 썼는지**다
+    /// (= 포트를 우리가 정했는지). 재시도 가능 여부의 판정 근거가 된다.
+    fn spawn_once(spec: SpawnSpec<'_>, lease: Option<&mut PortLease>) -> (Self, bool) {
+        let SpawnSpec {
+            webhook_port,
+            home: home_arg,
+            env: env_args,
+            files,
+        } = spec;
         let unique = format!(
             "{}-{}",
             std::process::id(),
@@ -184,7 +332,7 @@ impl WebhookInstance {
         );
         let port_file = std::env::temp_dir().join(format!("tasty-wh-test-{unique}.port"));
 
-        let (home, own_home) = match builder.home {
+        let (home, own_home) = match home_arg {
             Some(h) => (h, false),
             None => (
                 std::env::temp_dir().join(format!("tasty-wh-home-{unique}")),
@@ -202,12 +350,18 @@ impl WebhookInstance {
         // TASTY_HOME 아래 config.toml(shell auto-detect 차단) + webhooks.toml(포트 시딩).
         std::fs::write(home.join("config.toml"), config_toml()).expect("write config.toml");
         // webhooks.toml 가 이미 있으면(재시작 2회차) 덮지 않는다 — 영속 엔트리 보존.
+        // `webhooks.toml` 가 이미 있으면 그 파일이 포트의 SoT 다 — 덮지 않고(영속 엔트리
+        // 보존) 적힌 값을 읽어 쓴다. 없을 때만 우리가 고른 포트를 시딩한다.
         let webhooks_toml = home.join("webhooks.toml");
-        if !webhooks_toml.exists() {
-            std::fs::write(&webhooks_toml, format!("port = {}\n", builder.webhook_port))
-                .expect("seed webhooks.toml");
-        }
-        for (name, content) in &builder.files {
+        let seeded = !webhooks_toml.exists();
+        let webhook_port = if seeded {
+            let port = webhook_port.expect("빈 홈에는 하네스가 포트를 골라 주어야 한다");
+            std::fs::write(&webhooks_toml, format!("port = {port}\n")).expect("seed webhooks.toml");
+            port
+        } else {
+            read_seeded_port(&webhooks_toml)
+        };
+        for (name, content) in files {
             std::fs::write(home.join(name), content).expect("write extra tasty file");
         }
 
@@ -222,10 +376,19 @@ impl WebhookInstance {
             .env_remove("ZSH")
             .env_remove("SHELL")
             .env_remove("TASTY_SURFACE_ID")
-            .env("RUST_LOG", "tasty=info")
+            // 본체 필터는 `TASTY_LOG` 를 읽는다(`src/platform/crash_report.rs`).
+            // 리스너 bind 성공/실패 판정에 필요한 두 줄만 켜고 나머지는 기본 warn 으로
+            // 둔다 — stderr ring 이 유한해서 전체 info 를 켜면 진단 줄이 밀려난다.
+            .env("TASTY_LOG", "warn,tasty::webhook::listener=info")
             .stderr(Stdio::piped());
-        for (k, v) in &builder.env {
+        for (k, v) in env_args {
             command.env(k, v);
+        }
+
+        // 예약을 여기서 푼다 — 자식이 같은 포트에 bind 해야 하므로 spawn 전에 반드시
+        // 놓아야 하고, 그 전까지는 붙들고 있어야 시딩 구간에서 뺏기지 않는다.
+        if let Some(lease) = lease {
+            lease.release();
         }
 
         // 부모(이 test binary)가 어떤 이유로든(SIGKILL 포함) 즉사하면 커널이 이
@@ -275,7 +438,7 @@ impl WebhookInstance {
         let instance = Self {
             process,
             port,
-            webhook_port: builder.webhook_port,
+            webhook_port,
             port_file,
             home,
             shell_home,
@@ -300,7 +463,7 @@ impl WebhookInstance {
             std::thread::sleep(Duration::from_millis(50));
         }
 
-        instance
+        (instance, seeded)
     }
 
     pub fn webhook_port(&self) -> u16 {
@@ -324,21 +487,69 @@ impl WebhookInstance {
         &self.home
     }
 
+    /// 리스너가 accept 를 시작할 때까지 기다린다. spawn 이 이미 같은 대기를 마쳤으므로
+    /// 보통 즉시 돌아온다 — 호출부 가독성(무엇을 전제하는지)을 위해 남긴 진입점이다.
     pub fn wait_webhook_ready(&self) {
+        match self.wait_webhook_bound() {
+            BindOutcome::Bound => {}
+            outcome => panic!("{}", self.bind_failure_report(&outcome, false)),
+        }
+    }
+
+    /// accept 시작 / 포트 도난 / 무응답 셋 중 하나로 판정한다. 도난은 **추측이 아니라**
+    /// 리스너가 남긴 bind 실패 경고로 확정한다 — 이 구분이 없으면 두 원인이 똑같이
+    /// "웹훅이 안 떴다" 로만 보인다.
+    fn wait_webhook_bound(&self) -> BindOutcome {
         let start = Instant::now();
         let addr = format!("127.0.0.1:{}", self.webhook_port);
         loop {
             if TcpStream::connect(&addr).is_ok() {
-                return;
+                return BindOutcome::Bound;
+            }
+            if let Some(line) = self.stderr_bind_failure() {
+                return BindOutcome::Stolen(line);
             }
             if start.elapsed() > WEBHOOK_READY_TIMEOUT {
-                panic!(
-                    "webhook listener not accepting on {addr} within {WEBHOOK_READY_TIMEOUT:?}.\n--- stderr ---\n{}",
-                    stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES)
-                );
+                return BindOutcome::Silent;
             }
             std::thread::sleep(Duration::from_millis(50));
         }
+    }
+
+    /// stderr 링에서 리스너 bind 실패 경고 한 줄을 찾는다.
+    fn stderr_bind_failure(&self) -> Option<String> {
+        let ring = self.stderr_ring.lock().unwrap();
+        ring.iter()
+            .find(|line| line.contains(BIND_FAILED_MARKER) && line.contains("failed"))
+            .cloned()
+    }
+
+    /// 실패 원인을 사람이 바로 읽을 수 있게 조립한다. `seeded` 는 이 인스턴스의 포트를
+    /// 하네스가 골랐는지 — 재시도가 가능했는지 여부라 메시지의 결론이 달라진다.
+    fn bind_failure_report(&self, outcome: &BindOutcome, seeded: bool) -> String {
+        let port = self.webhook_port;
+        let head = match outcome {
+            BindOutcome::Bound => {
+                "웹훅 리스너는 정상 bind 됐다(진단 조립이 잘못 불렸다)".to_string()
+            }
+            BindOutcome::Stolen(line) if seeded => format!(
+                "웹훅 포트 {port} 를 제3자가 가져갔다 — 재시도 {PORT_STEAL_RETRIES} 회를 모두 소진했다. \
+                 다른 워크트리/테스트가 같은 순간 같은 번호를 받은 경우다. 리스너 경고: {line}"
+            ),
+            BindOutcome::Stolen(line) => format!(
+                "웹훅 포트 {port} 에 bind 하지 못했다. 이 인스턴스는 이미 있는 webhooks.toml 의 \
+                 포트를 그대로 쓰므로(재시작 시나리오 — URL 이 재시작 간 고정이어야 한다) \
+                 하네스가 다른 번호를 고를 수 없다. 리스너 경고: {line}"
+            ),
+            BindOutcome::Silent => format!(
+                "웹훅 리스너가 {WEBHOOK_READY_TIMEOUT:?} 안에 포트 {port} 에서 accept 하지 않았다. \
+                 bind 실패 경고는 없다 — 포트 경합이 아니라 부팅 지연이나 리스너 init 미호출 쪽이다."
+            ),
+        };
+        format!(
+            "{head}\n--- stderr (last {STDERR_TAIL_LINES} lines) ---\n{}",
+            stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES)
+        )
     }
 
     // ── IPC ─────────────────────────────────────────────────────────────
@@ -498,6 +709,17 @@ impl Drop for WebhookInstance {
             let _ = std::fs::remove_dir_all(&self.home);
         }
     }
+}
+
+/// 기존 `webhooks.toml` 에서 `port = N` 을 읽는다. 이 파일이 있는 홈에서는 이 값이
+/// 리스너가 실제로 bind 할 포트이므로, 하네스도 반드시 같은 값을 봐야 한다.
+fn read_seeded_port(path: &Path) -> u16 {
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    text.lines()
+        .find_map(|line| line.split_once('=').filter(|(k, _)| k.trim() == "port"))
+        .and_then(|(_, v)| v.trim().parse::<u16>().ok())
+        .unwrap_or_else(|| panic!("{} 에 `port = N` 이 없다:\n{text}", path.display()))
 }
 
 fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, n: usize) -> String {
