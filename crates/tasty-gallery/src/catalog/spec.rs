@@ -150,58 +150,64 @@ pub fn cluster(
 /// 치수표 + 토큰칩 — 좌 "Layout spec" dl / 우 "Tokens used" 칩 (research `.meta`).
 /// `tokens` 가 비면 1컬럼(Layout spec)만 그린다.
 pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[TokenChip]) {
-    egui::Frame::new()
-        .fill(col(theme.bg_panel()))
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            col(theme.separator),
-        ))
-        .corner_radius(theme.corner_radius_sm.value())
-        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
-        .show(ui, |ui| {
-            let n = if tokens.is_empty() { 1 } else { 2 };
-            ui.columns(n, |cols| {
-                meta_head(&mut cols[0], theme, "Layout spec");
-                for (k, v) in specs {
-                    cols[0].horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                        ui.label(
-                            egui::RichText::new(*k)
-                                .size(theme.font_size_term_sm.value())
-                                .color(col(theme.text_muted())),
-                        );
-                        ui.label(
-                            egui::RichText::new(*v)
-                                .size(theme.font_size_term_sm.value())
-                                .color(col(theme.text_primary())),
-                        );
-                    });
-                }
-                if !tokens.is_empty() {
-                    meta_head(&mut cols[1], theme, "Tokens used");
-                    for t in tokens {
-                        cols[1].horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                            let sz = theme.font_size_caption.value();
-                            let (r, _) =
-                                ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                            ui.painter()
-                                .rect_filled(r, theme.corner_radius_sm.value(), t.color);
+    // 본문 컬럼 폭 제약 — 무대 팽창 시 상자가 컬럼 밖으로 넘치지 않게(note 와 같은 근본).
+    body_column(ui, |ui| {
+        egui::Frame::new()
+            .fill(col(theme.bg_panel()))
+            .stroke(egui::Stroke::new(
+                theme.border_width.value(),
+                col(theme.separator),
+            ))
+            .corner_radius(theme.corner_radius_sm.value())
+            .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+            .show(ui, |ui| {
+                let n = if tokens.is_empty() { 1 } else { 2 };
+                ui.columns(n, |cols| {
+                    meta_head(&mut cols[0], theme, "Layout spec");
+                    for (k, v) in specs {
+                        cols[0].horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
                             ui.label(
-                                egui::RichText::new(t.tok)
-                                    .size(theme.font_size_caption.value())
-                                    .color(col(theme.text_secondary())),
+                                egui::RichText::new(*k)
+                                    .size(theme.font_size_term_sm.value())
+                                    .color(col(theme.text_muted())),
                             );
                             ui.label(
-                                egui::RichText::new(t.use_)
-                                    .size(theme.font_size_caption.value())
-                                    .color(col(theme.text_muted())),
+                                egui::RichText::new(*v)
+                                    .size(theme.font_size_term_sm.value())
+                                    .color(col(theme.text_primary())),
                             );
                         });
                     }
-                }
+                    if !tokens.is_empty() {
+                        meta_head(&mut cols[1], theme, "Tokens used");
+                        for t in tokens {
+                            cols[1].horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                                let sz = theme.font_size_caption.value();
+                                let (r, _) = ui
+                                    .allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                                ui.painter().rect_filled(
+                                    r,
+                                    theme.corner_radius_sm.value(),
+                                    t.color,
+                                );
+                                ui.label(
+                                    egui::RichText::new(t.tok)
+                                        .size(theme.font_size_caption.value())
+                                        .color(col(theme.text_secondary())),
+                                );
+                                ui.label(
+                                    egui::RichText::new(t.use_)
+                                        .size(theme.font_size_caption.value())
+                                        .color(col(theme.text_muted())),
+                                );
+                            });
+                        }
+                    }
+                });
             });
-        });
+    });
 }
 
 fn meta_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
@@ -213,19 +219,20 @@ fn meta_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.add_space(theme.spacing_sm.value());
 }
 
-/// 보조 산문 — muted 작은 문단 (research `.note`).
-/// `note`/host_shell 이 공유하는 본문 컬럼 폭 temp-data 키.
+/// `note`/`meta`/`do_`·`dont` 와 host_shell 이 공유하는 본문 컬럼 폭 temp-data 키.
 pub(crate) fn body_column_width_id() -> egui::Id {
     egui::Id::new("g_body_column_width")
 }
 
-pub fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.add_space(theme.spacing_md.value());
-    // note 는 여러 문장이 이어지는 본문 컬럼 폭 문단이다. specimen 이 컬럼보다 넓은
-    // 무대를 그리면 top_down ui 의 max_rect 가 그만큼 늘어나(available_width 팽창) 그
-    // 뒤의 note 가 줄바꿈되지 않고 창 우측에서 잘렸다 — `.wrap()` 만으로는 팽창한 폭에
-    // 맞춰져 소용이 없다. host_shell 이 심어둔 본문 컬럼 폭으로 새 하위 ui 를 할당해
-    // 그 폭에서 확실히 줄바꿈한다(없으면 available_width 로 폴백).
+/// 본문 컬럼 폭으로 제약된 하위 ui 를 할당해 `add` 를 그린다.
+///
+/// specimen 무대(`stage`)가 컬럼보다 넓게 그리면 그 뒤 본문 top_down ui 의 max_rect 가
+/// 그만큼 늘어나(available_width 팽창), **본문 컬럼 레벨 헬퍼가 줄바꿈/배치되지 않고
+/// 창 우측에서 잘린다** — `.wrap()` 만으로는 팽창한 폭에 맞춰져 소용이 없다. host_shell 이
+/// 매 프레임 심어두는 본문 컬럼 폭으로 폭을 고정해 그 안에서 확실히 배치한다(없으면
+/// available_width 폴백). 본문 산문 헬퍼는 전부 이걸 통과하므로 새 헬퍼가 생겨도 같은
+/// 팽창에 자동으로 안전하다 — 소비자마다 폭을 다시 심지 않는다.
+fn body_column<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let wrap_w = ui
         .data(|d| d.get_temp::<f32>(body_column_width_id()))
         .filter(|w| *w > 0.0)
@@ -233,17 +240,24 @@ pub fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.allocate_ui_with_layout(
         egui::vec2(wrap_w, 0.0),
         egui::Layout::top_down(egui::Align::Min),
-        |ui| {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(text)
-                        .size(theme.font_size_term_sm.value())
-                        .color(col(theme.text_muted())),
-                )
-                .wrap(),
-            );
-        },
-    );
+        |ui| add(ui),
+    )
+    .inner
+}
+
+/// 보조 산문 — muted 작은 문단 (research `.note`).
+pub fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.add_space(theme.spacing_md.value());
+    body_column(ui, |ui| {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(text)
+                    .size(theme.font_size_term_sm.value())
+                    .color(col(theme.text_muted())),
+            )
+            .wrap(),
+        );
+    });
 }
 
 /// 권장(Do) — success 좌측바 + tint 배경 (research `.do`).
@@ -258,32 +272,36 @@ pub fn dont(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 
 fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color32) {
     ui.add_space(theme.spacing_sm.value());
-    // accent 12% tint (research: success/danger 12% bg). 기존 theme accent 에서
-    // gamma_multiply 로 도출 — git_viewer specimen 의 9~10% tint 와 동일 관행
-    // (raw from_rgba_* 는 disallowed-methods 로 금지).
-    let tint = accent.gamma_multiply(0.12);
-    let resp = egui::Frame::new()
-        .fill(tint)
-        .corner_radius(theme.corner_radius_sm.value())
-        .inner_margin(egui::Margin {
-            left: theme.spacing_md.value() as i8,
-            right: theme.spacing_md.value() as i8,
-            top: theme.spacing_sm.value() as i8,
-            bottom: theme.spacing_sm.value() as i8,
-        })
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(theme.font_size_term_sm.value())
-                    .color(col(theme.text_secondary())),
-            );
-        });
-    let r = resp.response.rect;
-    let bar = egui::Rect::from_min_size(
-        r.min,
-        egui::vec2(theme.focus_ring_width.value(), r.height()),
-    );
-    ui.painter().rect_filled(bar, 0.0, accent);
+    // 본문 컬럼 폭 제약 — 무대 팽창 시 do_/dont tint 상자가 컬럼 밖으로 넘쳐 텍스트가
+    // 창 우측에서 잘리지 않게(note/meta 와 같은 근본).
+    body_column(ui, |ui| {
+        // accent 12% tint (research: success/danger 12% bg). 기존 theme accent 에서
+        // gamma_multiply 로 도출 — git_viewer specimen 의 9~10% tint 와 동일 관행
+        // (raw from_rgba_* 는 disallowed-methods 로 금지).
+        let tint = accent.gamma_multiply(0.12);
+        let resp = egui::Frame::new()
+            .fill(tint)
+            .corner_radius(theme.corner_radius_sm.value())
+            .inner_margin(egui::Margin {
+                left: theme.spacing_md.value() as i8,
+                right: theme.spacing_md.value() as i8,
+                top: theme.spacing_sm.value() as i8,
+                bottom: theme.spacing_sm.value() as i8,
+            })
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(text)
+                        .size(theme.font_size_term_sm.value())
+                        .color(col(theme.text_secondary())),
+                );
+            });
+        let r = resp.response.rect;
+        let bar = egui::Rect::from_min_size(
+            r.min,
+            egui::vec2(theme.focus_ring_width.value(), r.height()),
+        );
+        ui.painter().rect_filled(bar, 0.0, accent);
+    });
 }
 
 /// 현재 ui 폭 전체에 1px separator 라인을 그린다 (세로 공간도 예약).
