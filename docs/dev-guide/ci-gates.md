@@ -18,6 +18,12 @@
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` | **PR 전용** · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | **PR 전용** · 매주 월 09:00 UTC · 수동 |
 
+**포맷 잡만 PR 을 함께 받는 이유**: `format-check.yml` 은 공용 `ubuntu-latest` 에서 돌아
+러너 줄서기가 없다. 나머지 자동 잡은 self-hosted 러너를 쓰고, 특히 Linux X64 는 **한 대**를
+`check-headless` · complexity-check · supply-chain-check · release/dist 빌드가 함께 쓴다 —
+그래서 semver 가드는 PR 트리거를 붙이지 않았다(트리거가 잡마다 다른 것은 러너가 다르기
+때문이지 중요도가 달라서가 아니다).
+
 이 저장소는 PR 을 거의 열지 않고 main 에 직접 push 한다. 그래서 **PR 전용 트리거인
 두 워크플로**(`complexity-check` · `supply-chain-check`)는 사실상 수동/주간 채널만
 살아 있다고 보는 편이 맞다 — `supply-chain-check` 는 주간 cron 이 있어 자동으로
