@@ -42,8 +42,9 @@ flake 를 어느 형태로 분류할지 정할 때, 실패 회차에서 눈에 �
 
 실측 사례(`output_match_hook_fires_on_real_pty_output`): 실패 회차에 `IPC error for
 'system.shutdown': Method not found` 패닉이 찍혀 "헤드리스 dispatch 결함"으로 오독될 뻔했다.
-그 패닉은 **초록 회차에도 동일하게** 있었다(teardown 이 매 회차 찍는 무해 잡음 — 별도 티켓
-참조). 실패 사유는 15 초 마커 대기 타임아웃 하나(형태 C)였다. 두 극에 다 있는 증거를 실패
+그 패닉은 **초록 회차에도 동일하게** 있었다(headless teardown 의 `shutdown` 이 `system.shutdown`
+핸들러 없는 빌드에서 매 회차 찍던 무해 잡음 — `441a0793` 이 teardown 을 직접 소켓 경로로 바꿔
+해소했다). 실패 사유는 15 초 마커 대기 타임아웃 하나(형태 C)였다. 두 극에 다 있는 증거를 실패
 사유로 읽으면 triage 가 엉뚱한 형태(A/B)로 끌린다. 이 잡음이 매 회차 상수로 찍히는 것 자체가
 아래 '적용 강제' 가 겨냥하는 신호-죽이기의 한 형태다(정상 잡음이 이상을 가린다).
 
