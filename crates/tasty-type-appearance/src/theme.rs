@@ -2312,7 +2312,9 @@ mod tests {
     fn component_dimensions_without_design_tokens_follow_ui_zoom() {
         let at = |z: f32| Theme::with_colors_and_zoom(dummy_colors(), false, z);
         // (접근자, zoom 1 값) — 값은 이식 전 호출부 리터럴이다.
-        let probes: &[(fn(&Theme) -> LogicalPx, f32, &str)] = &[
+        /// (접근자, zoom 1 값, 이름). clippy `type_complexity` 회피용 별칭.
+        type ZoomProbe = (fn(&Theme) -> LogicalPx, f32, &'static str);
+        let probes: &[ZoomProbe] = &[
             (
                 Theme::port_columns_menu_min_width,
                 180.0,
