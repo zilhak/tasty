@@ -73,7 +73,11 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 ### Plugin (`crates/tasty-plugin-*/Cargo.toml`)
 
-- **패치 버전 자동 +1 (무조건)**: 한 커밋에 특정 plugin 디렉토리(`crates/tasty-plugin-<name>/` 중 **`tasty-plugin.toml` 을 가진 것** — 이름만 같고 매니페스트가 없는 라이브러리 크레이트는 대상이 아니다) 의 파일이 하나라도 staged 되어 있으면, 그 plugin 의 `Cargo.toml.version` 의 패치를 +1 하고 **같은 커밋**에 포함한다. 사용자가 명시적으로 막지 않는 한 적용.
+- **패치 버전 자동 +1**: 특정 plugin 디렉토리(`crates/tasty-plugin-<name>/` 중 **`tasty-plugin.toml` 을 가진 것** — 이름만 같고 매니페스트가 없는 라이브러리 크레이트는 대상이 아니다) 의 **빌드 산출물이 달라지면** 그 plugin 의 `Cargo.toml.version` 의 패치를 +1 하고 **같은 커밋**에 포함한다. 사용자가 명시적으로 막지 않는 한 적용.
+  - **판정 기준은 파일이 staged 되었는가가 아니라 내용이 달라졌는가다.** 대상 경로는 `src/`·`lang/`·`assets/`·`Cargo.toml`·`tasty-plugin.toml`·`build.rs` 이고, 그중 `.rs` 는 **rustfmt 로 정규화한 뒤** 비교한다. 그래서 워크스페이스 전역 `cargo fmt` 정리는 plugin bump 를 요구하지 않는다. 문서(`*.md`)·러너 스크립트 등 산출물 밖 파일도 마찬가지다. 근거·측정·대안·재검토 조건은 [`docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md`](docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md). **파일 수 문턱("큰 커밋은 sweep 이니 봐준다")은 쓰지 않는다** — 그 수는 문턱값과 세는 대상에 따라 2 배 흔들려 재현되지 않는다.
+  - **주석만 바뀐 변경은 이 판정에 걸린다**(rustfmt 는 주석을 지우지 않는다). 알려진 오탐이고, 그때는 patch 를 올리거나 사유를 밝히고 넘어간다 — 자동으로 봐주지 않는 이유는 정규식 주석 제거가 raw string 안의 `//` 를 잘못 지워 **거짓 음성**을 만들기 때문이다.
+  - **한 lane 에서 한 번 올리면 된다.** 판정은 커밋마다가 아니라 `main` 대비 두 끝점으로 한다 — 목적이 라이브 반영이라 재sync 는 한 번 올라가면 동작하고, 이 기준은 `--amend`·rebase 에도 흔들리지 않는다.
+  - **자동 채널이 있다**: `scripts/check-plugin-version-bump.sh` 를 pre-commit(P.1)과 `plugin-version-check.yml`(main push · PR, `crates/tasty-plugin-*/**` 변경 시)이 함께 부른다. 판정 불가(비-git · 없는 rev · rustfmt 부재)는 통과가 아니라 실패다.
 - **매니페스트 lockstep (필수)**: 그 plugin 의 매니페스트(`crates/tasty-plugin-<name>/tasty-plugin.toml`) 의 `version` 을 **Cargo.toml 과 동일 값**으로 맞춰 **같은 커밋**에 포함한다. Cargo.toml 만 올리고 매니페스트를 방치하면 `plugin.list`·업그레이드 판정이 노출·비교하는 값이 어긋난다(version drift). 정합은 `tests/plugin_manifest_version_parity.rs` 가 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동). 자동 잡은 push 된 커밋만 보므로 **커밋 전에 직접 돌려야 그 자리에서 잡힌다**([`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)). **`.sig` 는 커밋 대상이 아니다** — `.gitignore` 로 제외된 빌드 산출물이며, dev/debug 빌드는 서명을 검증하지 않고 release/dist 빌드가 `scripts/sign-bundle.sh` 로 자동 재생성한다. 따라서 매니페스트 version bump 시 커밋되는 건 매니페스트 `version` 한 줄뿐이고, 재서명은 커밋 절차가 아니다(로컬 release 빌드 확인이 필요할 때만 `scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --manifest <경로>`).
 - 여러 plugin 이 함께 변경된 커밋은 각 plugin 에 독립 적용 (각각의 Cargo.toml + 매니페스트 모두 갱신).
 - **마이너 / 메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
