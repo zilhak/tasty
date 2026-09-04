@@ -372,7 +372,8 @@ fn no_literal_margin_fields_or_item_spacing() {
          `.value()`(item_spacing)\n\
          · 1~4px 미세 간격 → `tasty_ui_widgets::tokens::STRUCT_GAP_1..4`\n\
          · 그리드 밖 값(9·10·11·14 등) → 사유를 적은 명명 const\n\
-         · 0 은 위반이 아니다(값의 부재)\n\
+         · 0 은 그리드의 원점이라 규칙 안에 있다 — 다만 네 변이 전부 0 이면 \
+         `Margin::ZERO`\n\
          · 링 토큰을 바에 쓰지 말 것 — 감싸는 획은 `focus_ring_width`, 한쪽 변에 \
          붙는 띠는 `tab_indicator_width`(둘 다 2 지만 zoom 거동이 다르다)\n{}",
         violations.join("\n")
@@ -424,10 +425,15 @@ fn numeric_literal(tok: &str) -> Option<f32> {
     t.parse::<f32>().ok()
 }
 
-/// **0 은 위반이 아니다.** "여백 없음" · "간격 없음" 은 디자인 값이 아니라 값의
-/// *부재*이고, 대응 토큰이 있을 수도 없다(4px 그리드에 0 은 없다). 레포에서
-/// `top: 0` · `item_spacing = vec2(0.0, 0.0)` 은 egui 기본 간격을 끄는 관용구로
-/// 60 자리 넘게 쓰이는데, 이걸 위반으로 세면 가드가 값이 아니라 관용구를 막게 된다.
+/// **0 은 4px 그리드의 원점이지 예외가 아니다.** 그리드는 0 · 4 · 8 · 12 … 이고 0 은
+/// 그 첫 항이다 — "여백 없음" 은 규칙을 벗어난 값이 아니라 규칙 안의 값이다. 그래서
+/// 이 가드의 규칙은 처음부터 0 을 포함한다(면제 목록에 얹은 예외가 아니다). 레포에서
+/// `top: 0` · `item_spacing = vec2(0.0, 0.0)` 은 egui 기본 간격을 끄는 관용구로 60
+/// 자리 넘게 쓰이는데, 이걸 위반으로 세면 가드가 값이 아니라 관용구를 막게 된다.
+///
+/// **가드가 가르지 못하는 것**: `Margin { left: 0, right: 8, .. }` 같은 **부분 0** 이
+/// "왼쪽은 붙인다" 는 의도인지 아직 안 채운 미완성인지는 소스에 신호가 없다. 네 변이
+/// 전부 0 인 것은 가른다 — 그건 `Margin::ZERO` 라고 쓰면 되기 때문이다.
 fn is_zero(v: f32) -> bool {
     v == 0.0
 }
@@ -441,6 +447,11 @@ fn is_zero(v: f32) -> bool {
 /// 이 형태로 뚫렸고, 레포에 이미 열 자리가 있었다.
 fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
     let mut depth = 0usize;
+    // 여러 줄 블록의 시작 줄과, 그 블록이 지금까지 본 필드 종류. 네 변이 전부 리터럴
+    // 0 이면 `Margin::ZERO` 로 쓸 자리다.
+    let mut block_start = 0usize;
+    let mut zero_fields = 0usize;
+    let mut other_fields = 0usize;
     for (i, line) in lines.iter().enumerate() {
         let t = line.trim_start();
         if t.starts_with("//") {
@@ -449,17 +460,29 @@ fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
         if depth > 0 {
             if let Some((name, rest)) = t.split_once(':')
                 && matches!(name.trim(), "left" | "right" | "top" | "bottom")
-                && let Some(v) = numeric_literal(rest.trim().trim_end_matches(','))
-                && !is_zero(v)
             {
-                out.push(format!(
-                    "  {}:{} — `Margin {{ {}: {v} }}`",
-                    rel,
-                    i + 1,
-                    name.trim()
-                ));
+                match numeric_literal(rest.trim().trim_end_matches(',')) {
+                    Some(v) if is_zero(v) => zero_fields += 1,
+                    Some(v) => {
+                        other_fields += 1;
+                        out.push(format!(
+                            "  {}:{} — `Margin {{ {}: {v} }}`",
+                            rel,
+                            i + 1,
+                            name.trim()
+                        ));
+                    }
+                    None => other_fields += 1,
+                }
             }
             if line.contains('}') {
+                if zero_fields == 4 && other_fields == 0 {
+                    out.push(format!(
+                        "  {}:{} — 네 변이 전부 0 인 `Margin` 리터럴이다. `Margin::ZERO` 를 쓸 것",
+                        rel,
+                        block_start + 1
+                    ));
+                }
                 depth = 0;
             }
             continue;
@@ -482,6 +505,9 @@ fn margin_field_violations(rel: &str, lines: &[&str], out: &mut Vec<String>) {
             }
         } else if line.contains("Margin {") {
             depth = 1;
+            block_start = i;
+            zero_fields = 0;
+            other_fields = 0;
         }
     }
 }
