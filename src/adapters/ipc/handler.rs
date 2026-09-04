@@ -4,6 +4,8 @@
 // unused_imports 침묵 — gui 빌드에선 검사 그대로.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
+#[cfg(test)]
+mod cli_entry_tests;
 mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
