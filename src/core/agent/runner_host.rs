@@ -102,12 +102,33 @@ pub struct RunnerContext {
     pub hook_task_waits: Arc<crate::core::agent::hook_wait::HookTaskWaits>,
 }
 
+/// memory 락 poison 을 보고했는가(첫 1 회만). `with_memory` 는 task 폴링마다 도는
+/// 경로라 매번 남기면 폭주한다.
+static MEMORY_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// shell 자식의 결과 cell poison 을 보고했는가(첫 1 회만).
+static RUN_RESULT_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl RunnerContext {
+    /// memory 스토리지 임계구역.
+    ///
+    /// 복구 자체는 원래도 맞았다 — 이 함수는 runner 스레드뿐 아니라 IPC 핸들러(메인
+    /// 스레드)에서도 불리므로 패닉하면 실행 중인 모든 창이 죽는다. 다만 **조용했다**:
+    /// poison 은 "어딘가에서 이미 패닉이 있었다" 는 신호인데 조용한 복구가 그 신호를
+    /// 지운다(`error-handling.md` "락 poison" — 어느 선택을 하든 로그를 남긴다).
+    ///
+    /// 임계구역이 `dyn MemoryStorage` 라는 임의 코드를 부르므로 방침표만 보면 "데이터를
+    /// 신뢰하지 않는다" 쪽이지만, 그 선택은 스토리지를 못 쓰게 된 runner 가 무엇을
+    /// 해야 하는지까지 정해야 하는 **별개 결정**이다. 여기서는 기존 선택(복구)을 유지하고
+    /// 관측만 붙인다 — 선택을 바꾸는 것은 이 축의 작업이 아니다.
     pub fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
-        let mut guard = match self.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            self.memory.lock(),
+            "agent runner memory",
+            &MEMORY_POISON_REPORTED,
+        );
         f(&mut *guard)
     }
 
@@ -666,9 +687,13 @@ impl HostExecutor {
                             Err(e) => PollOutcome::Failed(format!("Run wait: {e}")),
                         };
                         persist_run_result(&mem_clone, ws, &task_id_clone, &outcome);
-                        if let Ok(mut g) = cell_clone.lock() {
-                            *g = Some(outcome);
-                        }
+                        // 조용히 버리면 아래 폴링이 cell 을 영원히 비어 있다고 보고
+                        // `PollOutcome::Active` 를 계속 돌려준다 — task 가 영구 대기한다.
+                        *crate::poison::recover_mutex(
+                            cell_clone.lock(),
+                            "agent run result cell",
+                            &RUN_RESULT_POISON_REPORTED,
+                        ) = Some(outcome);
                     })
                     .map_err(|e| format!("Run watcher spawn '{program}': {e}"))?;
                 self.shell_children.insert(
@@ -924,7 +949,13 @@ impl HostExecutor {
             DispatchHandle::ShellProcess { pid } => {
                 // K.A-1: watcher cell 우선 조회. 채워졌으면 즉시 종결, 비어있으면 Active.
                 if let Some(entry) = self.shell_children.get(pid) {
-                    let taken = entry.result.lock().ok().and_then(|mut g| g.take());
+                    // watcher 가 채운 결과를 조용히 못 읽으면 task 가 영구 Active 다.
+                    let taken = crate::poison::recover_mutex(
+                        entry.result.lock(),
+                        "agent run result cell",
+                        &RUN_RESULT_POISON_REPORTED,
+                    )
+                    .take();
                     if let Some(outcome) = taken {
                         self.shell_children.remove(pid);
                         return outcome;
@@ -1312,10 +1343,12 @@ pub(crate) fn persist_run_result(
 ) {
     let value = MemoryValue::Json(run_outcome_to_value(outcome));
     let res = {
-        let mut guard = match memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        // 근거는 `RunnerContext::with_memory` 와 같다 — 복구는 유지하고 관측만 붙인다.
+        let mut guard = crate::poison::recover_mutex(
+            memory.lock(),
+            "agent runner memory",
+            &MEMORY_POISON_REPORTED,
+        );
         guard.put(
             HOST_OWNER,
             &Scope::Workspace(workspace_id),
@@ -1592,6 +1625,50 @@ mod tests {
             other => panic!("expected persisted Done, got {other:?}"),
         }
         // shell_children 에서도 제거됐는지.
+        assert!(!exec.shell_children.contains_key(&pid));
+    }
+
+    /// poison 된 결과 cell 에서도 poll 이 결과를 꺼내오는가.
+    ///
+    /// 쓰기(watcher)까지 한 테스트로 묶지 않은 이유: 그쪽은 실제 자식이 죽는 시점에
+    /// 걸려 있어 poison 을 그 사이에 끼워 넣는 순간부터 타이밍 의존이 된다. 같은 형태의
+    /// watcher cell 쓰기는 `core::pty_registry` 의 poison 테스트가 결정론적으로 고정한다.
+    #[test]
+    fn a_poisoned_run_result_cell_still_delivers_the_outcome() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+
+        let cell = Arc::new(Mutex::new(Some(PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        }))));
+        let poisoner = cell.clone();
+        // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
+        let _ = thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh lock");
+            panic!("poison the run result cell on purpose");
+        })
+        .join();
+        assert!(
+            cell.is_poisoned(),
+            "락이 실제로 poison 됐어야 전제가 성립한다"
+        );
+
+        let pid = 424242;
+        exec.shell_children.insert(
+            pid,
+            ShellChildEntry {
+                result: cell,
+                _watcher: thread::spawn(|| {}),
+            },
+        );
+
+        let handle = DispatchHandle::ShellProcess { pid };
+        match exec.poll(&handle) {
+            PollOutcome::Done(r) => assert_eq!(r.exit_code, Some(0)),
+            other => panic!("poison 된 cell 에서도 결과를 꺼내야 한다, got {other:?}"),
+        }
         assert!(!exec.shell_children.contains_key(&pid));
     }
 

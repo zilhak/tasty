@@ -9,7 +9,10 @@
 //! 쓰는 복구 경로만 제공한다. 데이터를 신뢰할 수 없는 지점은 복구하면 안 되므로 여기를
 //! 쓰지 않고 각자 에러를 반환한다(예: `tasty-approval` 의 `StorePoisoned`).
 //!
-//! 세 함수 모두 **첫 1 회만** 로그를 남긴다. poison 은 sticky 라 한 번 걸리면 이후 모든
+//! 보호 대상 타입은 `?Sized` 다 — `Mutex<dyn MemoryStorage>` 처럼 trait object 를
+//! 감싼 락도 같은 헬퍼를 지나야 관측이 한 곳에 모인다.
+//!
+//! 여기 있는 함수는 모두 **첫 1 회만** 로그를 남긴다. poison 은 sticky 라 한 번 걸리면 이후 모든
 //! 호출이 이 경로를 타는데, 여기 오는 지점은 프레임·PTY 출력 단위로 도는 hot path 가
 //! 많아 매번 남기면 정작 그 로그를 묻어 버린다.
 
@@ -28,7 +31,7 @@ fn report(what: &str, reported: &AtomicBool) {
 }
 
 /// Poison 된 `Mutex` 를 복구해 guard 를 돌려준다.
-pub(crate) fn recover_mutex<'a, T>(
+pub(crate) fn recover_mutex<'a, T: ?Sized>(
     acquired: LockResult<MutexGuard<'a, T>>,
     what: &str,
     reported: &AtomicBool,
@@ -40,7 +43,7 @@ pub(crate) fn recover_mutex<'a, T>(
 }
 
 /// Poison 된 `RwLock` 의 read guard 를 복구한다.
-pub(crate) fn recover_read<'a, T>(
+pub(crate) fn recover_read<'a, T: ?Sized>(
     acquired: LockResult<RwLockReadGuard<'a, T>>,
     what: &str,
     reported: &AtomicBool,
@@ -52,7 +55,7 @@ pub(crate) fn recover_read<'a, T>(
 }
 
 /// Poison 된 `RwLock` 의 write guard 를 복구한다.
-pub(crate) fn recover_write<'a, T>(
+pub(crate) fn recover_write<'a, T: ?Sized>(
     acquired: LockResult<RwLockWriteGuard<'a, T>>,
     what: &str,
     reported: &AtomicBool,
@@ -66,7 +69,7 @@ pub(crate) fn recover_write<'a, T>(
 /// `try_write` 처럼 "지금 못 잡음" 과 "poison" 을 함께 돌려주는 자리용.
 /// poison 은 복구하고, 경합(`WouldBlock`)은 `None` 으로 넘긴다.
 #[allow(dead_code)]
-pub(crate) fn recover_try_write<'a, T>(
+pub(crate) fn recover_try_write<'a, T: ?Sized>(
     attempted: Result<RwLockWriteGuard<'a, T>, TryLockError<RwLockWriteGuard<'a, T>>>,
     what: &str,
     reported: &AtomicBool,
