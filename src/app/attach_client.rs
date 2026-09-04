@@ -174,6 +174,9 @@ impl MirrorOutbox {
 
     /// 테스트에서 버퍼를 채우고 들여다보는 유일한 창구 — 프로덕션 경로는
     /// [`MirrorOutbox::push`] 와 [`MirrorOutbox::take_for`] 뿐이다.
+    ///
+    /// 즉 위 "host 없이는 비울 수 없다" 는 봉인의 범위는 프로덕션 빌드다. 테스트에서는
+    /// 이 창구로 버퍼를 직접 만질 수 있다(ADR-0110 "무엇이 무엇을 지탱하는가").
     #[cfg(test)]
     fn peek(&self) -> std::sync::MutexGuard<'_, Vec<MirrorEvent>> {
         self.events.lock().unwrap_or_else(|p| p.into_inner())
