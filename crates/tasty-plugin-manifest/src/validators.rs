@@ -63,31 +63,37 @@ pub(super) fn is_valid_ipc_prefix(s: &str) -> bool {
 }
 
 /// 호스트가 자기 IPC 메서드에 쓰는 prefix들. plugin이 점유하면 호스트 메서드가 가려진다.
+///
+/// 호스트 메서드 표(`tasty_ipc::method_meta::METHOD_TABLE`)와 **집합으로 맞물려 있다** —
+/// 본체의 `source_guards::reserved_ipc_prefixes` 가 양방향으로 대조하므로, 새 호스트
+/// prefix 가 생기면 여기에 넣거나 왜 넣지 않는지를 그 가드에 적어야 한다. 이 크레이트가
+/// 표를 직접 읽지 못하는 이유는 의존 방향이다 — `tasty-ipc` 가 이 크레이트를 쓴다.
+pub const RESERVED_IPC_PREFIXES: &[&str] = &[
+    "approval",
+    "debug",
+    "global_hook",
+    "hook",
+    "ime",
+    "ipc",
+    "memory",
+    "message",
+    "notification",
+    "output",
+    "pane",
+    "plugin",
+    "split",
+    "surface",
+    "system",
+    "tab",
+    "tool",
+    "tree",
+    "ui",
+    "window",
+    "workspace",
+];
+
 pub(super) fn is_reserved_ipc_prefix(s: &str) -> bool {
-    matches!(
-        s,
-        "plugin"
-            | "system"
-            | "surface"
-            | "tab"
-            | "pane"
-            | "workspace"
-            | "split"
-            | "tree"
-            | "hook"
-            | "global_hook"
-            | "message"
-            | "tool"
-            | "notification"
-            | "window"
-            | "debug"
-            | "ui"
-            | "ime"
-            | "ipc"
-            | "memory"
-            | "output"
-            | "approval"
-    )
+    RESERVED_IPC_PREFIXES.contains(&s)
 }
 
 /// CLI 명령 이름 형식 검증.

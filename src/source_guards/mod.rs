@@ -604,6 +604,7 @@ fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
         .collect()
 }
 
+mod reserved_ipc_prefixes;
 mod routing_key_coverage;
 
 #[cfg(test)]
