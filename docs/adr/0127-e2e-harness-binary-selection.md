@@ -23,7 +23,7 @@ e2e 하네스(`tests/common`·`tests/webhook_common`)는 `CARGO_BIN_EXE_tasty` �
 
 **반면 `--no-default-features` 조합에서는 전환이 이미 일어나 있다.** 같은 `CARGO_BIN_EXE_tasty` 가 그 조합에서는 곧 headless 데몬이고, 실측(`DISPLAY`·`WAYLAND_DISPLAY` 둘 다 없는 상태)으로 port file 까지 **54 ms** 다 — 기본 조합이 GPU 경합에서 30~56 초 만에 실패하던 그 단계다. `TASTY_E2E_BIN` 은 이 사실을 기본 조합에서도 쓸 수 있게 하는 로컬 탈출구다.
 
-**GUI 가 실제로 필요한 스위트는 두 개로 확정한다** — `tests/attach_attention_loopback.rs`(매 프레임 실-포커스 해제가 검증 대상 그 자체)와 `tests/e2e_tests.rs`(`window.create` + gui cfg 로 묶인 debug 메서드). 이 판정은 **세 독립적인 방법이 같은 경계선을 그린 것**에 근거한다: ① 파일별 코드 독해로 얻은 목록, ② 헤드리스 조합 전수 실행에서 실제로 실패한 목록, ③ 아래 `TASTY_E2E_BIN` 으로 headless 인스턴스를 띄워 돌린 IPC 전용 9 개가 통과한다는 반대편 확인. ①②는 "GUI 가 필요한 쪽" 을, ③은 "필요 없는 쪽" 을 봤다 — 본 방향이 서로 달랐는데 같은 선이 나왔다. 한 방법만 쓰면 "소스만 보고 실행을 오판" 하거나 "실행 결과만 보고 원인을 오판" 하는데, 이 세션의 오판이 모두 그 형태였다.
+**GUI 가 실제로 필요한 스위트는 두 개로 확정한다** — `tests/attach_attention_loopback.rs`(매 프레임 실-포커스 해제가 검증 대상 그 자체)와 `tests/e2e_tests.rs`(`window.create` + gui cfg 로 묶인 debug 메서드). (**이 목록은 그 뒤 하나로 줄었다 — 아래 「갱신」 절.** 아래 문단들은 작성 시점의 근거를 그대로 보존한 것이다.) 이 판정은 **세 독립적인 방법이 같은 경계선을 그린 것**에 근거한다: ① 파일별 코드 독해로 얻은 목록, ② 헤드리스 조합 전수 실행에서 실제로 실패한 목록, ③ 아래 `TASTY_E2E_BIN` 으로 headless 인스턴스를 띄워 돌린 IPC 전용 9 개가 통과한다는 반대편 확인. ①②는 "GUI 가 필요한 쪽" 을, ③은 "필요 없는 쪽" 을 봤다 — 본 방향이 서로 달랐는데 같은 선이 나왔다. 한 방법만 쓰면 "소스만 보고 실행을 오판" 하거나 "실행 결과만 보고 원인을 오판" 하는데, 이 세션의 오판이 모두 그 형태였다.
 
 ## 발화한 트리거 — `check-headless` 가 전체 스위트로 올라갔다 (병합됨)
 
@@ -37,12 +37,44 @@ e2e 하네스(`tests/common`·`tests/webhook_common`)는 `CARGO_BIN_EXE_tasty` �
   이유(`App` 이분 선행 / cargo 구조)도 그대로다. 바뀐 것은 *어느 조합이 그 검증을 자동으로
   보는가* 이지 *기본 조합을 어떻게 부팅하는가* 가 아니다.
 
-**부수 확인 하나 — GUI 필수 스위트 2 개 판정이 독립적으로 재확인됐다.** 그 잡의 명명 skip
+**부수 확인 하나 — GUI 필수 스위트 2 개 판정이 독립적으로 재확인됐다.** (**이 네 번째 근거는 그 뒤 사라졌다 — 아래 「갱신」 절.**) 그 잡의 명명 skip
 3 건 중 둘(`hard_occupied_attention_survives_the_servers_local_focus` ·
 `all_e2e_tests`)이 본 ADR 이 "GUI 가 실제로 필요하다" 고 지목한 두 스위트
 (`tests/attach_attention_loopback.rs` · `tests/e2e_tests.rs`)의 테스트다. 헤드리스 잡을
 넓힌 쪽은 본 조사와 다른 경로로 같은 경계선에 도달했다 — Decision 이 근거로 든 "세 방법의
 수렴" 에 네 번째가 붙은 셈이다. (세 번째 skip 은 GUI 요구가 아니라 headless 배선 결함이다.)
+
+## 갱신 — GUI 를 요구하는 것은 스위트 하나가 아니라 테스트 하나다
+
+위 Decision 이 "GUI 가 실제로 필요하다" 고 지목한 두 스위트 중 하나가 그 뒤 헤드리스에서
+전수 통과하게 됐다. `check-headless` 의 명명 skip 세 건 중 둘이 닫혔기 때문이다 — 하나는
+output-match 훅이 헤드리스에 배선되지 않은 결함이었고(위 괄호가 "GUI 요구가 아니라 배선
+결함" 이라고 적어둔 그 세 번째 skip), 다른 하나가
+`hard_occupied_attention_survives_the_servers_local_focus` 다. 후자는 그 테스트가 쓰는 debug
+nav 핸들러가 `gui` feature 게이트 아래 있어서 헤드리스에 존재하지 않았던 것이고, 핸들러를
+`debug_assertions` 게이트의 별도 모듈로 옮기자 풀렸다. **그 스위트가 GUI 를 요구한 것이
+아니라 핸들러가 `gui` feature 에 묶여 있었을 뿐**이라는 것이 사후에 드러났다.
+
+실측(헤드리스 조합, 명명 skip 은 `all_e2e_tests` 하나):
+
+- `tests/attach_attention_loopback.rs` — 15 passed / 0 failed / 0 ignored / 0 filtered out
+- `tests/e2e_tests.rs` — 8 passed / 0 failed / 0 ignored / 1 filtered out
+
+따라서 현재 상태는 이렇다.
+
+- **GUI 를 실제로 요구하는 것은 `tests/e2e_tests.rs` 의 `all_e2e_tests` 하나다.** 경계는
+  스위트가 아니라 테스트 단위로 그어진다.
+- 워크플로의 명명 skip 은 **1 건**이다(위 "발화한 트리거" 절이 3 건이라고 적은 그 목록).
+- 위 "부수 확인" 의 네 번째 수렴은 **근거가 사라졌다** — 그 근거로 든 skip 두 건 중 하나가
+  없어졌다. Decision 이 든 세 방법의 수렴은 그대로다.
+
+**Decision 자체는 열지 않는다.** 띄울 바이너리를 한 곳에서 정한다는 것도, 기본(gui) 조합의
+GPU 종속을 당분간 유지한다는 것도 그대로이며, 대안 A·B 를 막고 있던 이유도 변하지 않았다.
+바뀐 것은 *그 결정의 영향 범위를 서술한 사실* 뿐이다.
+
+**다만 재검토 트리거 하나가 이 갱신으로 강해진다.** 대안 A(`App` 이분 선행)가 열리면 기본
+조합도 헤드리스로 띄울 수 있게 되는데, 그때 GUI 를 요구하는 표면이 스위트 두 개가 아니라
+테스트 하나라면 옮겨야 할 범위도 그만큼 작다.
 
 ## Consequences
 
