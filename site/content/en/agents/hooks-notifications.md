@@ -1,4 +1,4 @@
-<!-- source-hash: 2781b25b2e6c -->
+<!-- source-hash: ca43f0a19b0b -->
 # Hooks, notifications and webhooks
 
 This page covers **hooks**, which run a command automatically when something happens in a terminal (process exit, specific output, bell); **notifications**, which tell a person; and **webhooks**, which wake Tasty over HTTP from outside. Combining the three lets you build automations like "notify me when the build finishes" with the CLI alone.

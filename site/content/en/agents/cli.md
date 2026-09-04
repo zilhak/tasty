@@ -1,4 +1,4 @@
-<!-- source-hash: 6fdcb706b293 -->
+<!-- source-hash: 733e0f351f26 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -102,10 +102,55 @@ tasty split --level pane --target-pane 3 --direction horizontal          # split
 tasty new tab --pane 3 --cwd ~/proj                     # new Tab in a Pane
 tasty close surface --surface 99                        # close a Surface
 tasty close tab --tab 12
+tasty close workspace --id 3                            # a whole Workspace, tabs and surfaces included
+tasty close window --id 1                               # close a window
 tasty close self                                        # close this very Surface
 ```
 
 `--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)).
+
+The last remaining workspace and the last remaining window cannot be closed. Closing a workspace
+never takes the window down with it; it is refused instead, so reach for `tasty close window` when
+that is what you mean. A target holding your own terminal is refused too - use `tasty close self`
+there. A workspace mirroring a remote connection is refused as well - end that connection instead.
+The other way round, a workspace holding **a terminal someone is using over a remote connection**
+is refused too - it closes once that person lets go of it.
+Closing a workspace you are not looking at leaves the one on screen where it was.
+
+**Closing a workspace cannot be undone.** Every terminal running inside it ends, it does not come
+back from "recently closed", and its scrollback is gone. Only what a person closed by hand can be
+restored. Check with `tasty list workspaces` before you close.
+
+## Looking into a surface
+
+```sh
+tasty surface cursor-position --surface 42     # which row and column the cursor sits at
+tasty surface foreground-process --surface 42  # what is running in front (a shell means idle)
+tasty surface locate --surface 42              # the pane it belongs to, and whether it still exists
+tasty surface respawn-terminal --surface 42    # restart the shell, keeping the surface in place
+tasty surface fire-hook --surface 42 --event process-exit    # fire a hook yourself
+tasty surface fire-hook --surface 42 --event idle-timeout:300 # some events carry a number
+```
+
+## Not sending while a person is typing
+
+```sh
+tasty send text "make test\r" --surface 42 --wait-idle
+```
+
+`--wait-idle` decides and sends in one step. Checking with `tasty is-typing` first leaves a gap in
+which the person may start typing; this flag closes it. When they are typing nothing is sent and you
+get `"sent": false` with the reason.
+
+## Granting permissions to a child agent
+
+```sh
+tasty session issue --agent-id build-bot --permission surface.read --permission terminal.write
+tasty session list
+tasty session revoke --token <token>
+```
+
+A child holding the issued token in `TASTY_SESSION_TOKEN` may use exactly the permissions named on it.
 
 ## Sending notifications
 
@@ -153,11 +198,18 @@ tasty read queue --surface 42 --clear    # empty everything
 | Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
 | Read the screen | `tasty read screen --surface ID --lines N` |
 | Notification | `tasty notify "body" --title "title"` |
-| Screenshot | `tasty screenshot --path out.png [--surface ID]` |
+| Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
 | Help | `tasty --help`, `tasty <command> --help`, `tasty -a -h` (full tree) |
 
 ## Troubleshooting
 
 - **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
-- **Calling without `--surface` hits the wrong terminal** — in a shell without `TASTY_SURFACE_ID` (outside Tasty), the focused Surface becomes the target. Always write `--surface` in scripts.
+- **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
+- **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
+
+## What to read next
+
+- [Claude · Codex](claude-codex.md) — Spawning child agents and being told when they land.
+- [Task DAG](tasks.md) — Tying several pieces of work together by dependency.
+- [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.

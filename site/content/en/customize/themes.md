@@ -1,4 +1,4 @@
-<!-- source-hash: 0db4a11efd03 -->
+<!-- source-hash: 635c3e0b4a2d -->
 # Themes
 
 After reading this page you will be able to switch between the two bundled themes, override just a few colours, and, if you want, make your own theme from a single TOML file. All theme files live in `~/.tasty/themes/`.

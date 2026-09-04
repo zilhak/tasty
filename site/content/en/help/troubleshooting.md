@@ -1,4 +1,4 @@
-<!-- source-hash: 8368ea741430 -->
+<!-- source-hash: 922186956109 -->
 # Troubleshooting
 
 This page is where you look up the cause and the fix by symptom when you get stuck using Tasty. Once you know what gets written where, most problems narrow down to opening a single file.
@@ -40,7 +40,7 @@ The install procedure itself is in [Install](../getting-started/install.md).
 
 ## macOS permission prompts
 
-**Symptom** — a series of permission prompts appears right after the first launch. The order is the Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording → accessibility. The window works normally while the prompts are up.
+**Symptom** — a series of permission prompts appears right after the first launch. The order is the Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording. The window works normally while the prompts are up.
 
 **Cause** — when a command run inside the terminal reads a file, macOS attributes that access to Tasty (Terminal.app · iTerm2 behave the same). Left alone, a prompt would pop up mid-task the first time a new folder is touched and stall the agent, so Tasty asks up front right after startup. Items already allowed · denied are not asked again; only newly mounted volumes get an extra prompt. There is no setting to turn this off — turning it off would not make the prompts disappear, they would just appear sporadically during your work instead.
 
@@ -50,11 +50,10 @@ The install procedure itself is in [Install](../getting-started/install.md).
 |---|---|---|
 | Folder access (Downloads · Documents · Desktop · volumes) | The prompt appears again, at that moment, from the command that uses the folder | System Settings > Privacy & Security > Files and Folders |
 | Screen recording | The `Ctrl+Alt+S` screenshot-to-clipboard feature only shows a "Screen recording permission is required" notice. Once denied, it is not asked again | System Settings > Privacy & Security > Screen & System Audio Recording |
-| Accessibility | Features where the agent injects keys directly into the system are refused with `permission_denied` | System Settings > Privacy & Security > Accessibility. Restart Tasty after turning it on |
 
 You can see the current state in the **Settings** > **General** > **Permissions** tab (only shown on macOS).
 
-- **A "Grant Tasty Full Disk Access" notice appeared** — it appears once, when Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away. Controlling other apps (Automation) · screen recording · accessibility are separate permissions, though, and remain. To see the notice again, turn on **Show the Full Disk Access notice at startup** under **Settings** > **General** > **Permissions**. The Full Disk Access state shown in the same tab is an estimate and can be wrong; no feature is blocked by this value.
+- **A "Grant Tasty Full Disk Access" notice appeared** — it appears once, when Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. To see the notice again, turn on **Show the Full Disk Access notice at startup** under **Settings** > **General** > **Permissions**. The Full Disk Access state shown in the same tab is an estimate and can be wrong; no feature is blocked by this value.
 - **"Tasty would like to access data from other apps" keeps appearing for every app folder** — paths like `~/Library/Application Support/<app>` are asked per app, so they cannot be asked up front. Granting Full Disk Access as above makes them go away.
 - **"wants to control another app" appears when you use `osascript`** — the Automation permission must be approved per target app, and Full Disk Access does not cover it. There is nothing Tasty can do in advance.
 
@@ -63,9 +62,20 @@ You can see the current state in the **Settings** > **General** > **Permissions*
 - **The window does not respond to clicks · key input · the CLI at all** — when it freezes for more than 5 seconds, `~/.tasty/crash-reports/hang-*.log` is written automatically. If the file's `Render phase` is `acquire` / `submit` / `present`, the problem is on the GPU driver side — update the driver. Tasty does not recover on its own, so force-quit it and start it again.
 - **It exited suddenly** — look at `~/.tasty/crash-reports/crash-*.log`. Attach this file when you report the problem.
 
+## My settings or window layout look like they were reset
+
+- **The settings went back to their defaults** — if `~/.tasty/config.toml` cannot be parsed as TOML, Tasty starts from the defaults. Your original file is not deleted. It is left where it is, and moved next to it as `config.toml.bak` the moment settings are saved over it. Fix that file and rename it back to `config.toml` and your settings come back as they were. Which line failed is written to `~/.tasty/debug.log`.
+- **A saved window layout was not restored** — the same applies to a damaged slot file under `~/.tasty/layouts/`. The original is kept beside it as `01.json.bak`.
+- **A notification said saving is blocked until you move or delete the `.bak` files** — Tasty tried to move your original aside but all nine slots (`.bak` through `.bak.9`) are already taken, so there is nowhere to put it. It stops saving rather than delete your file, and it stays that way for the whole session. Move or delete the backups you no longer need, then start Tasty again.
+- **A notification said the settings file could not be read** — the file is there but Tasty could **not read** it (a permission problem or a disk error). In that case Tasty leaves the file alone and does not save over it, so the defaults on screen never replace your real settings. Fix the permissions or move the file aside, then start Tasty again.
+
+  ```sh
+  ls -l ~/.tasty/config.toml ~/.tasty/layouts/
+  ```
+
 ## The `tasty` command cannot connect
 
-- **`No running tasty instance found (port file not found at …)`** — no Tasty window is running. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`).
+- **`No running tasty instance found (port file not found at …)`** — no Tasty window is running. If the path in the message is not `~/.tasty/tasty.port`, the command is looking at a different home directory (`TASTY_HOME`). The message follows your configured language (`general.language`, English by default), so it is worded differently if you set another one.
 - **The port file exists but it cannot connect** — a previous Tasty exited abnormally and left only the port file behind. Make sure Tasty is not running, then delete the file and start it again.
 
   ```sh

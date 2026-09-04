@@ -1,4 +1,4 @@
-<!-- source-hash: cf0675129fef -->
+<!-- source-hash: 68e90b6c016e -->
 # Workspaces
 
 After reading this page you will know how to create Workspaces, name them, group them into categories, switch between them, and close and restore them. What a Workspace is is explained in [A first look](../getting-started/first-look.md).
