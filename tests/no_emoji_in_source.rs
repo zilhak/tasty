@@ -4,8 +4,8 @@
 //! (📝🌐🖼️ 등)가 손으로 박혀 있었다. 프로젝트 원칙은 "아이콘은 디자인 폴더
 //! (`icons.json`)의 SVG 라인아이콘에서 추출해 쓴다" 이므로 이모지 플레이스홀더는
 //! 위반이다. 이 가드는 정리 결과를 유지한다 — 누가 `.rs`/`tasty-plugin.toml` 에 이모지를
-//! 다시 넣으면 `cargo test --workspace` 에서 fail 하고 (그 잡은 수동 전용이라
-//! 자동으로 돌지 않는다 — `docs/dev-guide/ci-gates.md`)
+//! 다시 넣으면 `cargo test --workspace` 에서 fail 하고 (기본 조합의 그 잡은 수동 전용이고
+//! 자동 실행은 `check-headless` 잡에서만 일어난다 — `docs/dev-guide/ci-gates.md`)
 //! `파일:라인 + 코드포인트(U+XXXX) + 문자` 를 출력한다. 선례: `tests/design_token_adherence.rs`.
 //!
 //! **금지 범위(false positive 0 으로 좁힘)**: 픽토그래픽 이모지 대부분

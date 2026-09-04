@@ -31,11 +31,12 @@ A.1/A.2 는 파일 전체, C.* 는 **staged diff 의 추가 라인만** 검사(�
 > C.6 은 staged diff 만 보므로 **기존 코드의 위반은 못 잡는다**. 전수 검사는
 > `tests/let_underscore_documented.rs` 가 한다 — 훅이 인정하는 세 형태(같은 줄·윗줄·다음 줄)를
 > 모두 포함하고 조금 더 넓어(빈 줄·속성 건너뛰기, 멀티라인 문장 내부), 훅이 통과시킨 코드를 전수
-> 검사가 떨어뜨리는 방향은 생기지 않는다. 다만 그 전수판이 도는 `cargo test --workspace` 는
-> **자동 채널이 없다**(병합 후 main 에서 사람이 돌린다 — [ci-gates](ci-gates.md)). 판정 규약은
+> 검사가 떨어뜨리는 방향은 생기지 않는다. 다만 기본 조합의 `cargo test --workspace` 에는
+> **자동 채널이 없다** — 자동 실행은 `check-headless` 잡에서만 일어나고, 기본 조합의 전체
+> 스위트는 병합 후 main 에서 사람이 돌린다([ci-gates](ci-gates.md)). 판정 규약은
 > [error-handling](error-handling.md) "주석 위치".
 >
-> i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하는데, 그 둘이 도는 `cargo test --workspace` 는 **자동 채널이 없다**(병합 후 main 에서 사람이 돌린다 — [ci-gates](ci-gates.md)). 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
+> i18n(번역 키 정합·자연어 하드코딩)은 pre-commit 검사가 아니다 — 소스 전체를 읽어야 해서 hook 예산(1–3초)을 넘는다. `tests/i18n_key_parity.rs`·`tests/no_hardcoded_ui_strings.rs` 가 집행하는데, 기본 조합의 `cargo test --workspace` 에는 **자동 채널이 없다** — 자동 실행은 `check-headless` 잡에서만 일어나고, 기본 조합의 전체 스위트는 병합 후 main 에서 사람이 돌린다([ci-gates](ci-gates.md)). 로컬 확인 명령은 [i18n](i18n.md) "강제 테스트" 절.
 
 ## pre-push (수십초)
 

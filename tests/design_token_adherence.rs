@@ -10,8 +10,9 @@
 //! (`vspace`/`hspace`/`margin_all`/`margin_sym` + `th.spacing_*` / `STRUCT_GAP_*`)로
 //! 이식했다. 이 가드는 그 결과를 되돌림 없이 유지한다 — 소스에 `add_space(8.0)` 이나
 //! `Margin::same(12)` 같은 **인라인 숫자 리터럴**을 다시 넣으면 `cargo test --workspace`
-//! 에서 fail 한다. 통합 테스트라 **자동 실행 채널이 없고**(컴파일은 자동 잡의 clippy
-//! `--all-targets` 가 본다 — `docs/dev-guide/ci-gates.md`) 소스를 런타임에 스캔하는
+//! 에서 fail 한다. 통합 테스트라 **자동 실행은 `check-headless` 잡에서만** 일어나고 기본
+//! 조합에는 채널이 없다(컴파일은 자동 잡의 clippy `--all-targets` 가 본다 —
+//! `docs/dev-guide/ci-gates.md`). 소스를 런타임에 스캔하는
 //! 가드에게 컴파일만으로는 아무것도 검사되지 않으므로, 리터럴을 건드렸으면 직접
 //! 돌려야 한다. 선례: `tests/cli_naming_count_drift.rs`.
 //!

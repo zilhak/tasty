@@ -22,18 +22,27 @@
 //!
 //! **두 번째 축 — 명령을 적지 않는 형태.** 위 검사는 명령 리터럴 주변만 본다. 그런데
 //! 같은 거짓말이 명령 없이, 테스트 파일 이름과 집행 주장만으로도 쓰인다. 이 축이 보는
-//! 구분은 "CI 가 도는가" 가 아니라 **그 테스트가 자동 잡의 사정거리 안에 있는가** 다:
-//! 자동 잡은 `--lib --bins`(= `src/` 안의 유닛 테스트)와 `--test <이름>` 으로 이름을
-//! 지목한 것만 돌린다. 그러므로 **`tests/*.rs` 통합 테스트**를 자동 집행 장치로 부르는
-//! 서술은 그 열거에 이름이 없는 한 거짓이고, 반대로 **lib 유닛 테스트**에 붙은 같은
-//! 서술은 참이다 — 이 가드는 후자를 건드리지 않는다.
+//! 구분은 "CI 가 도는가" 가 아니라 **그 테스트가 자동 잡의 사정거리 안에 있는가** 다.
+//! 자동 잡이 `--lib`/`--bins`/`--test <이름>` 으로 좁혀져 있으면 그 사정거리는 좁고, 그
+//! 열거에 없는 `tests/*.rs` 통합 테스트를 자동 집행 장치로 부르는 서술은 거짓이다.
+//! 좁히지 않은 자동 잡이 하나라도 있으면 이 축은 스스로 잠잠해진다.
 //!
 //! 열거는 이 파일이 복사해 갖고 있지 않고 워크플로에서 **런타임에** 읽는다. 복사본을
 //! 들면 워크플로가 바뀐 날 가드가 조용히 낡는다.
 //!
-//! **세 번째 축 — 반대 방향.** `--lib --bins` 잡은 자동으로 돈다. 그러므로 `src/` 안의
-//! 유닛 테스트를 두고 부재를 적으면 그것도 거짓이다(사실보다 약하다). 강한 부정은 강한
-//! 긍정만큼 검증이 필요하다 — 한 방향만 잡는 가드는 틀린 방향 하나를 굳힌다.
+//! **세 번째 축 — 반대 방향.** 자동 잡이 lib 유닛 테스트를 돌리는 동안에는, `src/` 안의
+//! 유닛 테스트를 두고 부재를 적는 것도 거짓이다(사실보다 약하다). 강한 부정은 강한
+//! 긍정만큼 검증이 필요하다 — 한 방향만 잡는 가드는 틀린 방향 하나를 굳힌다. 이 축도
+//! **"lib 은 자동으로 돈다" 를 상수로 들지 않고** 워크플로에서 읽는다. 상수로 들면
+//! Windows 잡의 `--lib --bins` 가 사라지는 날 없는 채널을 근거로 고발한다.
+//!
+//! **네 번째 축 — 조합.** "통합 테스트에는 자동 실행 채널이 없다" 는 한동안 구성상
+//! 참이어서 그 방향은 판정할 것이 없었다. 헤드리스 잡이 `--lib --bins` 에서 전체
+//! 스위트로 넓어지면서 전제가 깨졌다 — 같은 문장이 이제 **조합마다** 갈린다(기본
+//! 조합에는 여전히 없고, 헤드리스에는 있다). 단일 참·거짓으로 판정하면 어느 쪽으로
+//! 고쳐도 반쪽이 거짓이 되므로, 판정 단위를 **그 테스트가 자동으로 도는 조합의 수**로
+//! 둔다: 0 이면 부재 서술이 참, 1 이면 어느 조합인지 함께 적어야 참, 2 면 어떻게 적어도
+//! 거짓이다.
 //!
 //! **가드가 막지 못하는 것** — 조용히 통과하는 형태를 적어 둔다. 여기 적힌 것은 사각인
 //! 줄 알고 남긴 것이고, 적히지 않은 형태가 새 사각이다.
@@ -53,6 +62,22 @@
 //!   시스템은 워크플로를 읽어서는 보이지 않는다. 그래서 이 가드의 "자동으로 돌지
 //!   않는다" 는 **워크플로 채널에 한한 말**이고, "아무도 안 막는다" 는 뜻이 아니다.
 //! - **문서 밖의 주장** — 커밋 메시지·PR 본문·티켓은 스캔 대상이 아니다.
+//!
+//! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**(R16). 아래 셋은 이 가드의 채널
+//! 모델이 딛고 선 사실인데, 이 레포에서 실행으로 확인할 방법이 없다. 변이를 지어내지도
+//! 침묵하지도 않고 부재를 명시한다. 좌표는 base `0fb11bd4` — base 가 옮겨가 확인 수단이
+//! 생기면 이 선언은 만료되고, 그때는 선언을 지우고 검사를 넣는다(R16-b).
+//!
+//! - **libtest 의 `--skip` 은 부분일치다.** 그래서 한 타깃의 모든 테스트 이름이 skip
+//!   문자열을 포함할 때만 그 타깃이 통째로 빠진다고 본다. libtest 의 매칭 규칙 자체를
+//!   이 레포의 테스트로 확인할 수는 없다.
+//! - **`--no-default-features` 는 워크스페이스 전 멤버의 default feature 를 끈다.** 그래서
+//!   `required-features` 가 걸린 타깃은 헤드리스 조합에서 아예 만들어지지 않는다고 본다.
+//!   cargo 의 feature 해석을 여기서 재현해 확인하지 않는다.
+//! - **조합 한정 표지 목록의 완전성.** "어느 조합인지 함께 적었다" 를 판정하는 문자열
+//!   목록이 정확히 쓴 문장을 빠짐없이 덮는지는, 아직 쓰이지 않은 문장을 대상으로 하므로
+//!   실행으로 판정할 수 없다. 목록에 없는 정확한 표현은 **거짓 위반**으로 나타나며, 그때
+//!   목록을 넓히는 것이 처방이다 — 이 방향의 오류는 조용하지 않다.
 
 use std::path::{Path, PathBuf};
 
@@ -322,16 +347,29 @@ fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
 /// 가드의 첫 번째 축이 통째로 잠잠해진다. 판정 하나를 두 자리에서 서로 다른 규칙으로
 /// 하고 있었던 것이 결함이다.
 fn a_job_body_runs_the_full_suite(body: &str) -> bool {
-    body.split("cargo test --workspace")
-        .skip(1)
-        .any(|tail| !is_narrowed(tail))
+    cargo_test_tails(body)
+        .iter()
+        .any(|tail| a_full_suite_invocation(tail))
 }
 
-/// 자동으로 도는 잡이 전체 스위트를 돌리는가.
+/// 한 `cargo test` 호출이 전체 스위트인가 — 인자 꼬리만 보는 형태.
+///
+/// `cargo clippy --workspace` 처럼 `cargo test` 가 아닌 명령은 [`cargo_test_tails`] 에서
+/// 이미 걸러진다. 여기까지 온 것은 전부 테스트 호출이다.
+fn a_full_suite_invocation(tail: &str) -> bool {
+    tail.contains("--workspace") && !is_narrowed(tail)
+}
+
+/// **기본 조합**의 자동 잡이 전체 스위트를 돌리는가.
+///
+/// 조합을 구별해야 한다. 문서가 인용하는 `cargo test --workspace` 는 기본 조합의
+/// 명령이고, 헤드리스 잡이 도는 것은 `--no-default-features` 조합이다. 둘을 하나로 보면
+/// **헤드리스가 전체 스위트를 돌리기 시작한 날 이 축이 통째로 침묵한다** — 실제로 그랬다.
+/// 조합을 안 보는 판정은 "주장이 참이 됐다" 와 "다른 조합에서만 참이다" 를 못 가른다.
 fn ci_actually_runs_the_full_suite(root: &Path) -> bool {
-    automatic_job_bodies(&root.join(".github/workflows"))
+    automatic_test_invocations(root)
         .iter()
-        .any(|body| a_job_body_runs_the_full_suite(body))
+        .any(|(combo, tail)| *combo == Combo::Default && a_full_suite_invocation(tail))
 }
 
 fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -361,18 +399,122 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
 ///
 /// 스텝 경계(`- name:`)까지를 한 호출로 본다 — 워크플로가 `run: >` 접힘 문법으로 한
 /// 명령을 여러 줄에 걸쳐 쓰기 때문에 줄 단위로 끊으면 `--test` 열거가 잘려 나간다.
-fn cargo_test_tails(body: &str) -> Vec<String> {
-    let mut tails = Vec::new();
-    let mut from = 0;
-    while let Some(rel) = body[from..].find("cargo test") {
-        let at = from + rel + "cargo test".len();
-        from = at;
-        let end = body[at..]
-            .find("- name:")
-            .map_or(body.len(), |off| at + off);
-        tails.push(body[at..end].to_string());
+/// 한 잡 본문의 `run:` 블록을 **논리적 명령 목록**으로 편다.
+///
+/// 앞 형태는 본문에서 `"cargo test"` 를 문자열로 찾았는데, 그 문자열은 명령에만 있는
+/// 것이 아니다 — **스텝 이름**(`- name: cargo test (unit)`)에도 있다. 사람이 읽으라고
+/// 붙인 라벨이 명령으로 파싱됐고, 라벨에는 좁힘 플래그가 없으니 "안 좁혀진 호출" 로
+/// 읽혔다. 그 하나 때문에 [`integration_tests_run_automatically`] 가 즉시 `None` 을 냈고
+/// **두 번째 축이 통째로 침묵**했다 — 침묵의 이유가 사실이 아니라 파싱이었다.
+///
+/// 그리고 YAML 스칼라 방식을 봐야 한다. `run: >`(folded)는 줄바꿈이 공백이 되어 여러
+/// 줄이 **한 명령**이고, `run: |`(literal)은 줄이 그대로 남아 셸의 `\` 규칙이 적용된다.
+/// 접힘을 모르면 `test.yml` 의 semver 가드처럼 `--test` 셋이 다음 줄에 놓인 명령을
+/// "안 좁혀진 전체 스위트" 로 읽는다. 스칼라 방식은 구조에서 읽으므로 상수가 없다.
+fn run_commands(body: &str) -> Vec<String> {
+    let indent_of = |l: &str| l.len() - l.trim_start().len();
+    let lines: Vec<&str> = body.lines().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let bare = line.trim_start();
+        let bare = bare.strip_prefix("- ").unwrap_or(bare);
+        let Some(rest) = bare.strip_prefix("run:") else {
+            i += 1;
+            continue;
+        };
+        let base = indent_of(line);
+        let head = rest.trim();
+        // 블록 지시자(`|`/`>`, chomping 접미사 포함)인가, 아니면 명령이 그 자리에서
+        // 시작하는가. 지시자가 없는 평문 스칼라도 이어지는 줄은 접힌다.
+        let literal = head.starts_with('|');
+        let block = literal || head.starts_with('>');
+        let mut collected: Vec<String> = Vec::new();
+        if !block && !head.is_empty() {
+            collected.push(head.to_string());
+        }
+        i += 1;
+        while i < lines.len() {
+            let l = lines[i];
+            if l.trim().is_empty() {
+                collected.push(String::new());
+                i += 1;
+                continue;
+            }
+            if indent_of(l) <= base {
+                break;
+            }
+            collected.push(l.trim().to_string());
+            i += 1;
+        }
+        let mut cur = String::new();
+        for l in &collected {
+            if l.is_empty() {
+                if !cur.trim().is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+                cur.clear();
+                continue;
+            }
+            let continues = !literal || l.ends_with('\\');
+            cur.push_str(l.trim_end_matches('\\'));
+            cur.push(' ');
+            if !continues {
+                out.push(std::mem::take(&mut cur));
+            }
+        }
+        if !cur.trim().is_empty() {
+            out.push(cur);
+        }
     }
-    tails
+    out
+}
+
+/// `run:` 안의 `cargo test` 호출들 — 명령 이름 뒤의 인자 꼬리로 돌려준다.
+fn cargo_test_tails(body: &str) -> Vec<String> {
+    run_commands(body)
+        .iter()
+        .filter_map(|cmd| cmd.split_once("cargo test").map(|(_, t)| t.to_string()))
+        .collect()
+}
+
+/// 자동 잡이 테스트를 돌릴 때 쓰는 **feature 조합**.
+///
+/// "자동 실행 채널이 있는가" 는 더 이상 단일 참·거짓이 아니다. 기본 조합의 자동 잡은
+/// `--lib --bins` 라 통합 테스트를 하나도 안 돌리고, 헤드리스 조합의 자동 잡은 전체
+/// 스위트를 돌린다. 하나로 뭉개면 어느 쪽으로 적어도 반쪽이 거짓이 된다.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum Combo {
+    /// 기본 feature 조합 — 문서가 인용하는 `cargo test --workspace` 가 이것이다.
+    Default,
+    /// `--no-default-features`.
+    Headless,
+}
+
+impl Combo {
+    fn label(self) -> &'static str {
+        match self {
+            Combo::Default => "기본 조합",
+            Combo::Headless => "헤드리스 조합",
+        }
+    }
+}
+
+/// 자동 잡의 `cargo test` 호출들 — (조합, 인자 꼬리).
+fn automatic_test_invocations(root: &Path) -> Vec<(Combo, String)> {
+    let mut out = Vec::new();
+    for body in automatic_job_bodies(&root.join(".github/workflows")) {
+        for tail in cargo_test_tails(&body) {
+            let combo = if tail.contains("--no-default-features") {
+                Combo::Headless
+            } else {
+                Combo::Default
+            };
+            out.push((combo, tail));
+        }
+    }
+    out
 }
 
 /// 자동 잡이 **이름을 지목해** 돌리는 통합 테스트 이름들.
@@ -382,8 +524,8 @@ fn cargo_test_tails(body: &str) -> Vec<String> {
 /// 아니다. 그때 이 가드는 첫 번째 축과 같은 방식으로 스스로 잠잠해진다.
 fn integration_tests_run_automatically(root: &Path) -> Option<std::collections::BTreeSet<String>> {
     let mut named = std::collections::BTreeSet::new();
-    for body in automatic_job_bodies(&root.join(".github/workflows")) {
-        for tail in cargo_test_tails(&body) {
+    {
+        for (_combo, tail) in automatic_test_invocations(root) {
             let words: Vec<&str> = tail.split_whitespace().collect();
             let narrowed = words
                 .iter()
@@ -399,6 +541,291 @@ fn integration_tests_run_automatically(root: &Path) -> Option<std::collections::
         }
     }
     Some(named)
+}
+
+/// 자동 잡이 쓰는 플래그 중 **이 모델이 다루지 못하는** 것.
+///
+/// feature 를 명시적으로 켜는 형태가 들어오면 "조합은 둘" 이라는 전제가 깨진다. 그때
+/// 조용히 기본값으로 읽으면 채널 수가 틀리고, 채널 수가 틀린 가드는 **틀린 근거로 남의
+/// 서술을 고발한다.** 그래서 모델을 못 세우면 초록이 아니라 빨강이다 — 계측기의 고장이
+/// "이상 없음" 으로 읽히면 그건 계측기가 아니다.
+const UNMODELLED_TEST_FLAGS: &[&str] = &["--features", "--all-features"];
+
+/// 그 자리가 **조합을 한정해서** 채널을 말하고 있는가.
+///
+/// 채널이 한 조합에만 있을 때 "자동 채널이 없다" 는 반쪽만 참이고 "자동으로 돈다" 도
+/// 반쪽만 참이다. 정확히 쓰려면 어느 조합인지를 함께 적어야 하고, 그 형태를 적은 서술은
+/// 이 축에서 정당하다.
+const COMBO_QUALIFIED_MARKERS: &[&str] = &[
+    "check-headless",
+    "헤드리스 조합에서만",
+    "헤드리스에서만",
+    "기본 조합에는",
+    "기본 조합 전용",
+    "조합에서만",
+];
+
+/// `key = "value"` 한 줄.
+fn toml_string(block: &str, key: &str) -> Option<String> {
+    for line in block.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix(key) else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('=') else {
+            continue;
+        };
+        return Some(rest.trim().trim_matches('"').to_string());
+    }
+    None
+}
+
+/// `key = ["a", "b"]` 한 줄.
+fn toml_array(block: &str, key: &str) -> Vec<String> {
+    for line in block.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix(key) else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('=') else {
+            continue;
+        };
+        let rest = rest.trim().trim_start_matches('[').trim_end_matches(']');
+        return rest
+            .split(',')
+            .map(|w| w.trim().trim_matches('"').to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+    }
+    Vec::new()
+}
+
+/// 워크스페이스의 매니페스트 경로들 — 루트 + `crates/*`.
+fn manifests(root: &Path) -> Vec<PathBuf> {
+    let mut out = vec![root.join("Cargo.toml")];
+    if let Ok(entries) = std::fs::read_dir(root.join("crates")) {
+        let mut found: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path().join("Cargo.toml"))
+            .filter(|m| m.is_file())
+            .collect();
+        found.sort();
+        out.extend(found);
+    }
+    out
+}
+
+/// `[[test]]` 타깃 이름 -> (요구 feature, 그 패키지의 default feature).
+///
+/// 조합별로 **빌드되는지**가 여기서 갈린다. `required-features` 가 걸린 타깃은 헤드리스
+/// 조합(`--no-default-features`)에서 아예 만들어지지 않으므로 실행 채널도 없다.
+fn test_target_features(
+    root: &Path,
+) -> std::collections::BTreeMap<String, (Vec<String>, Vec<String>)> {
+    let mut out = std::collections::BTreeMap::new();
+    for manifest in manifests(root) {
+        let Ok(text) = std::fs::read_to_string(&manifest) else {
+            continue;
+        };
+        let defaults = text
+            .split_once("\n[features]")
+            .map(|(_, rest)| toml_array(rest.split("\n[").next().unwrap_or(rest), "default"))
+            .unwrap_or_default();
+        for block in text.split("[[test]]").skip(1) {
+            let block = block.split("\n[").next().unwrap_or(block);
+            let required = toml_array(block, "required-features");
+            if required.is_empty() {
+                continue;
+            }
+            if let Some(name) = toml_string(block, "name") {
+                out.insert(name, (required, defaults.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// `--skip` 인자로 지목된 이름들.
+fn skip_names(tail: &str) -> Vec<String> {
+    let words: Vec<&str> = tail.split_whitespace().collect();
+    words
+        .windows(2)
+        .filter(|p| p[0] == "--skip")
+        .map(|p| p[1].to_string())
+        .collect()
+}
+
+/// 한 파일에서 `#[test]` 가 붙은 함수 이름들.
+fn test_fn_names(text: &str) -> Vec<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut names = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim() != "#[test]" {
+            continue;
+        }
+        for next in lines.iter().skip(i + 1).take(4) {
+            let t = next.trim_start();
+            let t = t.strip_prefix("async ").unwrap_or(t);
+            if let Some(rest) = t.strip_prefix("fn ")
+                && let Some(name) = rest.split(['(', '<']).next()
+                && !name.is_empty()
+            {
+                names.push(name.to_string());
+                break;
+            }
+        }
+    }
+    names
+}
+
+/// 통합 테스트 타깃 이름 -> 그 소스 경로.
+fn integration_target_path(root: &Path, name: &str) -> Option<PathBuf> {
+    let direct = root.join("tests").join(format!("{name}.rs"));
+    if direct.is_file() {
+        return Some(direct);
+    }
+    for entry in std::fs::read_dir(root.join("crates")).ok()?.flatten() {
+        let path = entry.path().join("tests").join(format!("{name}.rs"));
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// 그 통합 테스트가 **자동으로 도는 조합들.**
+///
+/// 판정의 단위가 조합인 이유는 [`Combo`] 에 적었다. 여기서 세 가지를 함께 본다:
+/// 조합에서 그 타깃이 **빌드되는가**(`required-features`), 그 호출이 통합 테스트를
+/// **돌리는가**(`--lib --bins` 로 좁혀졌으면 안 돌린다), `--skip` 이 그 타깃을 **통째로
+/// 걷어내는가**(그 타깃의 모든 테스트 이름이 skip 에 걸리면 실행 채널이 아니다).
+fn integration_target_channels(
+    root: &Path,
+    target: &str,
+    invocations: &[(Combo, String)],
+    features: &std::collections::BTreeMap<String, (Vec<String>, Vec<String>)>,
+) -> std::collections::BTreeSet<Combo> {
+    let mut out = std::collections::BTreeSet::new();
+    // 그런 타깃이 없으면 채널도 없다. 자리표시자(`tests/X.rs`)를 실재하는 타깃으로 읽으면
+    // 가드가 **존재하지 않는 테스트의 채널**을 근거로 고발한다 — 실측으로 이 파일 자신의
+    // 모듈 doc 이 그렇게 잡혔다.
+    let Some(source) = integration_target_path(root, target) else {
+        return out;
+    };
+    for (combo, tail) in invocations {
+        if let Some((required, defaults)) = features.get(target) {
+            let enabled: &[String] = match combo {
+                Combo::Default => defaults,
+                Combo::Headless => &[],
+            };
+            if !required.iter().all(|r| enabled.contains(r)) {
+                continue;
+            }
+        }
+        let words: Vec<&str> = tail.split_whitespace().collect();
+        let named: Vec<&str> = words
+            .windows(2)
+            .filter(|p| p[0] == "--test")
+            .map(|p| p[1])
+            .collect();
+        if named.is_empty() {
+            // `--lib`/`--bins` 로 좁힌 호출은 통합 타깃을 하나도 만들지 않는다.
+            if words.iter().any(|w| *w == "--lib" || *w == "--bins") {
+                continue;
+            }
+        } else if !named.contains(&target) {
+            continue;
+        }
+        let skips = skip_names(tail);
+        if !skips.is_empty()
+            && let Ok(text) = std::fs::read_to_string(&source)
+        {
+            let names = test_fn_names(&text);
+            if !names.is_empty() && names.iter().all(|n| skips.iter().any(|s| n.contains(s))) {
+                continue;
+            }
+        }
+        out.insert(*combo);
+    }
+    out
+}
+
+/// 자동 잡 중 **lib 유닛 테스트를 실제로 돌리는** 것이 있는가.
+///
+/// 역방향 축은 "lib 테스트는 자동으로 돈다" 를 상수처럼 들고 있었다 — 그 사실은 소스가
+/// 아니라 워크플로에 산다. 다른 두 축은 워크플로를 읽는데 이 축만 안 읽으면, Windows 잡의
+/// `--lib --bins` 가 사라지는 날 이 축은 **없는 채널을 근거로 고발한다.**
+fn lib_tests_run_automatically(root: &Path) -> bool {
+    automatic_test_invocations(root).iter().any(|(_, tail)| {
+        let words: Vec<&str> = tail.split_whitespace().collect();
+        if words.iter().any(|w| *w == "--lib") {
+            return true;
+        }
+        // `--test`/`--bins` 로만 좁힌 호출은 lib 유닛 테스트를 돌리지 않는다.
+        !words.iter().any(|w| *w == "--test" || *w == "--bins")
+    })
+}
+
+/// 통합 테스트를 지목하면서 **그 테스트가 실제로 가진 채널보다 약하게** 적은 자리.
+///
+/// 판정은 **부재를 주장한 자리에서만** 출발한다. 채널을 언급하지 않는 서술이나 "여기서는
+/// 판단하지 않는다" 고 적은 서술은 애초에 이 축에 들어오지 않는다 — 정직하게 유보한
+/// 문장에 벌을 주면 가드가 사람을 침묵시키는 쪽으로 작동한다.
+fn overstated_absence(
+    text: &str,
+    path: &str,
+    channels_of: &dyn Fn(&str) -> std::collections::BTreeSet<Combo>,
+) -> Vec<(usize, String)> {
+    // 정의 파일 자신은 대상이 아니다 — 거기 이름이 있는 것은 서술이 아니라 정의다.
+    if path.starts_with("src/") || path.contains("/src/") {
+        return Vec::new();
+    }
+    let mut found = Vec::new();
+    for at in absence_offsets(text) {
+        if !is_prose_line(text, at, path) {
+            continue;
+        }
+        let scope = claim_scope(text, at);
+        // 한 서술이 여러 테스트를 지목하면 위반은 **하나**다. 지목마다 한 줄을 내면
+        // 같은 문장이 세 번 고발되고, 읽는 사람은 고칠 자리가 셋이라고 오해한다.
+        //
+        // 어느 지목이 이 문장의 **주어**인지는 이 판정기가 알 수 없다 — 뒤에 붙은
+        // "선례: tests/X.rs" 도 같은 범위에 들어온다. 그래서 주어를 단정하지 않고, 이
+        // 범위 안에 자동으로 도는 통합 테스트가 있다는 사실만 말한다.
+        let mut running: Vec<(String, Vec<&str>)> = Vec::new();
+        for (_, target) in cited_tests(scope) {
+            let channels = channels_of(&target);
+            if channels.is_empty() {
+                continue;
+            }
+            let labels: Vec<&str> = channels.iter().map(|c| c.label()).collect();
+            if running.iter().all(|(name, _)| *name != target) {
+                running.push((target, labels));
+            }
+        }
+        if running.is_empty() {
+            continue;
+        }
+        let both = running.iter().any(|(_, labels)| labels.len() >= 2);
+        if !both && COMBO_QUALIFIED_MARKERS.iter().any(|m| scope.contains(m)) {
+            continue;
+        }
+        let listed: Vec<String> = running
+            .iter()
+            .map(|(name, labels)| format!("tests/{name}.rs({})", labels.join(" · ")))
+            .collect();
+        found.push((
+            at,
+            if both {
+                format!("{} — 두 조합 모두에서 돈다", listed.join(", "))
+            } else {
+                format!("{} — 조합을 한정해서 적어라", listed.join(", "))
+            },
+        ));
+    }
+    found.sort();
+    found.dedup();
+    found
 }
 
 /// 경로가 통합 테스트면 그 테스트 이름 — `tests/X.rs` 와 `crates/<c>/tests/X.rs` 둘 다.
@@ -446,23 +873,7 @@ fn lib_test_names(root: &Path) -> std::collections::BTreeSet<String> {
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
-        let lines: Vec<&str> = text.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            if line.trim() != "#[test]" {
-                continue;
-            }
-            for next in lines.iter().skip(i + 1).take(4) {
-                let t = next.trim_start();
-                let t = t.strip_prefix("async ").unwrap_or(t);
-                if let Some(rest) = t.strip_prefix("fn ")
-                    && let Some(name) = rest.split(['(', '<']).next()
-                    && !name.is_empty()
-                {
-                    names.insert(name.to_string());
-                    break;
-                }
-            }
-        }
+        names.extend(test_fn_names(&text));
     }
     names
 }
@@ -772,6 +1183,11 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
 #[test]
 fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
     let root = repo_root();
+    if !lib_tests_run_automatically(&root) {
+        // 자동 잡이 lib 유닛 테스트를 하나도 안 돌린다 — 그 채널이 없으므로 "없다" 고
+        // 적은 서술이 참이 됐고, 이 축은 다른 두 축과 같은 방식으로 스스로 잠잠해진다.
+        return;
+    }
     let lib_tests = lib_test_names(&root);
     assert!(
         lib_tests.len() >= MIN_LIB_TESTS,
@@ -806,12 +1222,80 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
     );
 }
 
+/// 통합 테스트를 지목하면서 그 테스트가 **실제로 가진 채널을 부정**하면 잡는다.
+///
+/// 한동안 "통합 테스트에는 자동 실행 채널이 없다" 가 구성상 참이었고, 그래서 이 방향은
+/// 판정할 것이 없었다. 헤드리스 잡이 `--lib --bins` 에서 전체 스위트로 넓어지면서 그
+/// 전제가 깨졌다 — 이제 같은 문장이 조합마다 갈린다. 조합 수로 셋으로 나눈다:
+/// 0 이면 부재 서술이 참이고, 1 이면 **어느 조합인지 함께 적어야** 참이며, 2 면 어떻게
+/// 적어도 부재 서술은 거짓이다.
+#[test]
+fn no_file_denies_a_channel_an_integration_test_actually_has() {
+    let root = repo_root();
+    let invocations = automatic_test_invocations(&root);
+    let unmodelled: Vec<String> = invocations
+        .iter()
+        .flat_map(|(_, tail)| {
+            UNMODELLED_TEST_FLAGS
+                .iter()
+                .filter(|f| tail.split_whitespace().any(|w| w == **f))
+                .map(|f| format!("{f} in `cargo test{tail}`"))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(
+        unmodelled.is_empty(),
+        "자동 잡이 feature 를 명시적으로 켠다 — 조합이 둘이라는 이 가드의 모델이 더 이상 \
+         워크플로를 설명하지 못한다. 모델을 넓히기 전에는 채널 수가 틀리고, 틀린 채널 \
+         수로 남의 서술을 고발하게 된다:\n  {}",
+        unmodelled.join("\n  ")
+    );
+
+    let features = test_target_features(&root);
+    let channels_of =
+        |target: &str| integration_target_channels(&root, target, &invocations, &features);
+
+    let mut files = Vec::new();
+    collect_files(&root, &mut files);
+    assert!(
+        files.len() >= MIN_SCANNED_FILES,
+        "스캔한 파일이 {}개다(하한 {MIN_SCANNED_FILES}) — 수집이 조용히 줄었다",
+        files.len()
+    );
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        for (at, why) in overstated_absence(&text, &rel_str, &channels_of) {
+            violations.push(format!("{rel_str}:{} — {why}", line_of(&text, at)));
+        }
+    }
+    violations.sort();
+    violations.dedup();
+    assert!(
+        violations.is_empty(),
+        "아래는 통합 테스트를 두고 자동 채널의 부재를 적었지만, 그 테스트가 실제로는 \
+         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}",
+        violations.join("\n  ")
+    );
+}
+
 /// 회귀 케이스 — **한 표 안에서 채널이 갈리는 행들.**
 ///
 /// `docs/design/systems/theme.md` 의 토큰 규칙 표는 네 자리에서 가드를 인용하는데, 셋은
 /// 통합 테스트(`tests/design_token_adherence.rs`)이고 하나는 lib 유닛 테스트다. 문자열만
 /// 보고 일괄 처리하면 넷이 같아 보여서 **맞게 적힌 행까지 함께 지워진다.** 이 테스트는
 /// 그 표가 대상별로 갈린 상태를 유지하는지 고정한다.
+///
+/// 갈리는 **지점**은 바뀌었다. 통합 테스트 행이 요구하던 것은 한때 부재 표지였는데,
+/// 헤드리스 잡이 전체 스위트로 넓어지면서 그 서술이 거짓이 됐다 — 즉 이 테스트가 거짓인
+/// 문장을 요구하고 있었다. 이제 요구하는 것은 **조합 한정 표지**다. 두 행의 차이는
+/// 여전히 남는다: lib 유닛 테스트는 두 조합 모두에서 돌고, 통합 테스트는 헤드리스
+/// 조합에서만 돈다.
 #[test]
 fn the_theme_table_keeps_the_two_channels_apart() {
     let path = repo_root().join("docs/design/systems/theme.md");
@@ -825,8 +1309,8 @@ fn the_theme_table_keeps_the_two_channels_apart() {
     for at in integration {
         let window = window_around(&text, at);
         assert!(
-            ABSENCE_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — 통합 테스트인데 자동 채널의 부재가 함께 적혀 있지 않다",
+            COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m)),
+            "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다",
             path.display(),
             line_of(&text, at)
         );
@@ -1085,6 +1569,278 @@ fn workflow_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
         std::fs::write(dir.join(file), body).expect("합성 워크플로를 쓰지 못했다");
     }
     dir
+}
+
+/// 합성 레포 — `tests/<이름>.rs` 와 `.github/workflows/` 를 갖춘 최소 트리.
+///
+/// 채널 계산은 워크플로(무엇을 돌리나)와 트리(그 타깃이 있나)를 함께 읽으므로, 둘 중
+/// 하나만 합성하면 판정의 절반이 실물에 걸린 채로 남는다.
+fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "tasty-ci-repo-{}-{}-{:?}",
+        name,
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    // 이전 실행 잔여물 제거 — 없으면 NotFound 라 실패가 정상 경로다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("tests")).expect("합성 tests/ 를 만들지 못했다");
+    std::fs::create_dir_all(dir.join(".github/workflows")).expect("합성 워크플로를 만들지 못했다");
+    for (file, body) in targets {
+        std::fs::write(dir.join("tests").join(file), body).expect("합성 타깃을 쓰지 못했다");
+    }
+    for (file, body) in workflows {
+        std::fs::write(dir.join(".github/workflows").join(file), body)
+            .expect("합성 워크플로를 쓰지 못했다");
+    }
+    dir
+}
+
+fn one_test(name: &str) -> String {
+    format!("#[test]\nfn {name}() {{}}\n")
+}
+
+fn combos(list: &[Combo]) -> std::collections::BTreeSet<Combo> {
+    list.iter().copied().collect()
+}
+
+/// 스텝 **이름**은 명령이 아니다.
+///
+/// 앞 형태는 잡 본문에서 `"cargo test"` 를 문자열로 찾았고, 그 문자열은 사람이 읽으라고
+/// 붙인 `- name: cargo test (unit)` 에도 있다. 라벨에는 좁힘 플래그가 없으니 "안 좁혀진
+/// 호출" 로 읽혔고, 그 하나 때문에 두 번째 축이 통째로 침묵했다.
+#[test]
+fn a_step_name_is_not_a_command() {
+    let body = "  j:\n    steps:\n      - name: cargo test (unit)\n        shell: pwsh\n        run: cargo test --workspace --lib --bins --locked\n";
+    let tails = cargo_test_tails(body);
+    assert_eq!(tails.len(), 1, "스텝 이름을 명령으로 읽었다: {tails:?}");
+    assert!(is_narrowed(&tails[0]), "좁힘을 못 봤다: {tails:?}");
+}
+
+/// YAML 접힘 스칼라(`run: >`)의 여러 줄은 **한 명령**이다.
+#[test]
+fn a_folded_scalar_is_one_command() {
+    let body = "  j:\n    steps:\n      - name: t\n        run: >\n          cargo test --locked --no-default-features\n          --test alpha\n          --test beta\n";
+    let tails = cargo_test_tails(body);
+    assert_eq!(tails.len(), 1, "접힌 명령을 쪼갰다: {tails:?}");
+    assert!(
+        is_narrowed(&tails[0]),
+        "접힌 줄에 놓인 --test 를 못 봤다: {tails:?}"
+    );
+    // 꼬리가 아니라 **명령 전체**를 본다. 지시자는 `cargo test` 앞에 붙으므로 꼬리만
+    // 보는 단언은 그것을 못 본다 — 첫 형태가 그랬고 변이가 살아남았다.
+    let commands = run_commands(body);
+    assert_eq!(commands.len(), 1, "접힌 블록을 쪼갰다: {commands:?}");
+    assert!(
+        commands[0].trim_start().starts_with("cargo"),
+        "블록 지시자를 명령 내용으로 읽었다: {commands:?}"
+    );
+}
+
+/// 리터럴 스칼라(`run: |`)는 셸의 `\` 규칙을 그대로 따른다 — 그리고 줄이 여럿이면 명령도
+/// 여럿이다.
+#[test]
+fn a_literal_scalar_keeps_the_shell_continuation_rule() {
+    let body = "  j:\n    steps:\n      - name: t\n        run: |\n          cargo test --workspace --locked -- \\\n            --skip only_this\n          cargo test --lib\n";
+    let tails = cargo_test_tails(body);
+    // 두 줄은 두 명령이다. 접힘으로 읽으면 하나로 붙고, 그러면 둘째 줄의 `--lib` 가
+    // 첫째 명령의 좁힘으로 읽혀 전체 스위트 판정이 뒤집힌다.
+    assert_eq!(
+        tails.len(),
+        2,
+        "리터럴 블록의 두 명령을 하나로 붙였다: {tails:?}"
+    );
+    assert!(
+        !is_narrowed(&tails[0]),
+        "다음 줄의 --lib 를 첫 명령의 좁힘으로 읽었다: {tails:?}"
+    );
+    assert_eq!(skip_names(&tails[0]), vec!["only_this".to_string()]);
+}
+
+/// `required-features` 가 걸린 타깃은 헤드리스 조합에서 만들어지지 않는다.
+#[test]
+fn a_required_feature_keeps_a_target_off_the_headless_channel() {
+    let root = fake_repo(
+        "reqfeat",
+        &[("guarded.rs", &one_test("t"))],
+        &[("w.yml", AUTOMATIC_FULL)],
+    );
+    let invocations = vec![(
+        Combo::Headless,
+        " --workspace --no-default-features".to_string(),
+    )];
+    let mut features = std::collections::BTreeMap::new();
+    features.insert(
+        "guarded".to_string(),
+        (vec!["gui".to_string()], vec!["gui".to_string()]),
+    );
+    assert!(
+        integration_target_channels(&root, "guarded", &invocations, &features).is_empty(),
+        "gui 를 요구하는 타깃이 헤드리스 조합에서 돈다고 판정했다"
+    );
+    let default_only = vec![(Combo::Default, " --workspace".to_string())];
+    assert_eq!(
+        integration_target_channels(&root, "guarded", &default_only, &features),
+        combos(&[Combo::Default]),
+        "기본 조합에서는 그 타깃이 만들어지는데 채널이 없다고 판정했다"
+    );
+    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// `--skip` 이 그 타깃의 **모든** 테스트를 덮으면 실행 채널이 아니다. 하나라도 남으면
+/// 채널이다 — 부분 skip 을 전면 부재로 읽으면 참인 채널을 지운다.
+#[test]
+fn a_skip_that_covers_every_test_removes_the_targets_channel() {
+    let root = fake_repo(
+        "skips",
+        &[
+            ("whole.rs", &one_test("all_of_it")),
+            (
+                "partial.rs",
+                &format!("{}{}", one_test("all_of_it"), one_test("survivor")),
+            ),
+        ],
+        &[("w.yml", AUTOMATIC_FULL)],
+    );
+    let invocations = vec![(
+        Combo::Headless,
+        " --workspace --no-default-features -- --skip all_of_it".to_string(),
+    )];
+    let features = std::collections::BTreeMap::new();
+    assert!(
+        integration_target_channels(&root, "whole", &invocations, &features).is_empty(),
+        "모든 테스트가 skip 된 타깃을 실행 채널로 셌다"
+    );
+    assert_eq!(
+        integration_target_channels(&root, "partial", &invocations, &features),
+        combos(&[Combo::Headless]),
+        "일부만 skip 된 타깃의 채널을 지웠다"
+    );
+    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// `--test <이름>` 으로 지목한 호출은 **그 이름에만** 채널을 준다. 그리고 존재하지 않는
+/// 타깃에는 채널이 없다 — 자리표시자(`tests/X.rs`)를 실재하는 타깃으로 읽으면 없는
+/// 테스트의 채널을 근거로 고발하게 된다.
+#[test]
+fn a_named_target_gets_the_channel_only_for_itself() {
+    let root = fake_repo(
+        "named",
+        &[("alpha.rs", &one_test("a")), ("beta.rs", &one_test("b"))],
+        &[("w.yml", AUTOMATIC_FULL)],
+    );
+    let invocations = vec![(
+        Combo::Headless,
+        " --locked --no-default-features --test alpha".to_string(),
+    )];
+    let features = std::collections::BTreeMap::new();
+    assert_eq!(
+        integration_target_channels(&root, "alpha", &invocations, &features),
+        combos(&[Combo::Headless])
+    );
+    assert!(
+        integration_target_channels(&root, "beta", &invocations, &features).is_empty(),
+        "지목되지 않은 타깃에 채널을 줬다"
+    );
+    assert!(
+        integration_target_channels(&root, "nonexistent", &invocations, &features).is_empty(),
+        "존재하지 않는 타깃에 채널을 줬다"
+    );
+    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 역방향 축의 전제("lib 은 자동으로 돈다")도 **워크플로에서** 읽는다.
+#[test]
+fn the_lib_axis_reads_the_workflow_instead_of_assuming() {
+    let with_lib = fake_repo(
+        "libyes",
+        &[],
+        &[(
+            "w.yml",
+            "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --workspace --lib --bins --locked\n",
+        )],
+    );
+    assert!(lib_tests_run_automatically(&with_lib));
+    let named_only = fake_repo(
+        "libno",
+        &[],
+        &[(
+            "w.yml",
+            "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --locked --test alpha\n",
+        )],
+    );
+    assert!(
+        !lib_tests_run_automatically(&named_only),
+        "`--test` 로만 좁힌 자동 잡을 lib 채널로 읽었다"
+    );
+    for dir in [&with_lib, &named_only] {
+        // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// 도는 통합 테스트를 두고 부재를 적으면 위반이고, **조합을 한정하면** 참이다.
+#[test]
+fn an_absence_claim_about_a_running_integration_test_needs_the_combination() {
+    let bare = "`tests/alpha.rs` 가 강제한다 — 자동 채널이 없다.\n";
+    let violations = overstated_absence(bare, "docs/x.md", &|_| combos(&[Combo::Headless]));
+    assert_eq!(violations.len(), 1, "도는 테스트의 부재 주장을 놓쳤다");
+
+    let qualified = "`tests/alpha.rs` 가 강제한다 — 기본 조합에는 자동 채널이 없다(자동 실행은 헤드리스에서만).\n";
+    assert!(
+        overstated_absence(qualified, "docs/x.md", &|_| combos(&[Combo::Headless])).is_empty(),
+        "조합을 한정해 정확히 쓴 문장을 위반으로 짚었다"
+    );
+}
+
+/// 채널이 없는 테스트의 부재 주장은 그대로 참이다 — 이 축이 **참인 문장을 지우지 않는다.**
+#[test]
+fn a_test_with_no_channel_keeps_its_absence_claim() {
+    let text = "`tests/alpha.rs` 는 자동 채널이 없다.\n";
+    assert!(
+        overstated_absence(text, "docs/x.md", &|_| combos(&[])).is_empty(),
+        "채널이 0 인데 위반으로 짚었다"
+    );
+}
+
+/// 두 조합 모두에서 도는 테스트는 **어떻게 한정해도** 부재 서술이 거짓이다.
+#[test]
+fn two_channels_cannot_be_qualified_away() {
+    let text = "`tests/alpha.rs` 는 기본 조합에는 자동 채널이 없다(헤드리스에서만 돈다).\n";
+    let violations = overstated_absence(text, "docs/x.md", &|_| {
+        combos(&[Combo::Default, Combo::Headless])
+    });
+    assert_eq!(
+        violations.len(),
+        1,
+        "두 조합에서 도는데 한정 표지 하나로 면제됐다"
+    );
+}
+
+/// 부재를 **주장하지 않은** 서술은 이 축에 들어오지 않는다.
+///
+/// 판단을 유보하고 이유를 적은 문장에 벌을 주면 가드가 사람을 침묵시키는 쪽으로
+/// 작동한다 — 정확히 쓰는 것보다 아무 말도 안 하는 것이 싸지면 안 된다.
+#[test]
+fn a_statement_that_asserts_no_absence_is_not_judged() {
+    let text = "`tests/alpha.rs` 의 채널은 여기서 단정하지 않는다 — 정본은 ci-gates 다.\n";
+    assert!(
+        overstated_absence(text, "docs/x.md", &|_| combos(&[Combo::Headless])).is_empty(),
+        "부재를 주장하지 않은 문장을 짚었다"
+    );
+}
+
+/// 정의 파일(`src/`)은 이 축의 대상이 아니다.
+#[test]
+fn a_source_file_is_not_judged_by_the_combination_axis() {
+    let text = "// `tests/alpha.rs` 는 자동 채널이 없다.\n";
+    assert!(
+        overstated_absence(text, "src/x.rs", &|_| combos(&[Combo::Headless])).is_empty(),
+        "정의 파일을 서술로 읽었다"
+    );
 }
 
 const AUTOMATIC_FULL: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --workspace --locked\n";

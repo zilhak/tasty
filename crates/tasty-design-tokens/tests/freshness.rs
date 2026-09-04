@@ -2,7 +2,8 @@
 //! `tasty-type-appearance/src/generated_component.rs` 텍스트 일치 강제.
 //!
 //! vendor json 을 갱신하고 생성기 재실행을 잊으면 여기서 fail 한다 — 통합 테스트라
-//! 자동 실행 채널이 없으니(컴파일만 자동 검사: `docs/dev-guide/ci-gates.md`) 직접 돌려라
+//! 자동 실행은 `check-headless` 잡에서만 일어나니(기본 조합에는 채널이 없고 컴파일만
+//! 자동 검사: `docs/dev-guide/ci-gates.md`) 커밋 전에는 직접 돌려라
 //! (`tests/cli_naming_count_drift.rs` 의 스냅샷 가드 패턴).
 
 use tasty_design_tokens::{DTCG_JSON, dtcg};
