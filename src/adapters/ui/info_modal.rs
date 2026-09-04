@@ -62,7 +62,6 @@ pub const INFO_MODAL_ID: &str = "info_modal";
 const DEFAULT_WIDTH: f32 = 440.0;
 const MIN_HEIGHT: f32 = 140.0;
 const MAX_HEIGHT: f32 = 360.0;
-const BODY_FONT_SIZE: f32 = 13.0;
 
 /// 큐에 modal 한 건을 추가하고 popup을 연다. 이미 열려 있으면 큐만 추가.
 ///
@@ -100,7 +99,7 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
         .unwrap_or(0);
     // 대략 char당 1.6 line으로 가정 (한글/영문 혼합). 70 chars per line 기준.
     let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
-    let line_h = BODY_FONT_SIZE * 1.5;
+    let line_h = theme::theme().font_size_body.value() * 1.5;
     let body_h = approx_lines * line_h;
     let total_h = (popup::title_bar_height() + popup::content_margin() * 2.0 + body_h + 48.0)
         .clamp(MIN_HEIGHT, MAX_HEIGHT);
@@ -153,7 +152,7 @@ pub fn draw_info_modal(
     ui.label(
         egui::RichText::new(&current.body)
             .color(th.text_primary())
-            .size(BODY_FONT_SIZE),
+            .size(th.font_size_body.value()),
     );
 
     let mut confirm =

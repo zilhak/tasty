@@ -22,7 +22,6 @@ pub const APPROVAL_POPUP_ID: &str = "approval";
 const DEFAULT_WIDTH: f32 = 480.0;
 const MIN_HEIGHT: f32 = 180.0;
 const MAX_HEIGHT: f32 = 480.0;
-const BODY_FONT_SIZE: f32 = 13.0;
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
 pub fn approval_popup_title(state: &AppState, engine: &crate::core::CoreState) -> String {
@@ -52,7 +51,7 @@ pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -
         .map(|r| r.request.choices.len())
         .unwrap_or(2);
     let approx_lines = (body_len as f32 / 60.0).ceil().max(1.0);
-    let body_h = approx_lines * BODY_FONT_SIZE * 1.5;
+    let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     let buttons_h = (choice_count as f32 / 3.0).ceil() * 32.0;
     let total_h = (popup::title_bar_height()
         + popup::content_margin() * 2.0
@@ -140,7 +139,7 @@ pub fn draw_approval_view(
         ui.label(
             egui::RichText::new(body)
                 .color(theme.text_primary().to_egui())
-                .size(BODY_FONT_SIZE),
+                .size(theme.font_size_body.value()),
         );
         vspace(ui, theme.spacing_sm);
     }

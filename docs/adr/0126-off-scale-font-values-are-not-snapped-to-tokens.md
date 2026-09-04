@@ -37,6 +37,19 @@ let zoomed = |px: LogicalPx| LogicalPx((px.value() * ui_zoom).round());
 semantic 이 없는 primitive(12 · 16)를 쓰는 자리도 같게 다루되 const 이름에 primitive
 임을 남긴다.
 
+**단, 명명 const 가 허용되는 것은 값이 스케일 *밖*일 때뿐이다.** 값이 UI 폰트 토큰과
+같은 const 는 토큰의 복사본이고, 복사본은 `zoomed()` 경로 밖이라 `ui_scale` 을 타지
+않는다 — 그 자리는 zoom 1 에서만 같고 나머지 배율에서 갈라진다. 이 ADR 은 그런 자리를
+허용하지 않는다.
+
+이 경계는 처음부터 의도였지만 본문에 적혀 있지 않았고, 그 사이에 세 자리가
+**0126 이 감싸던 자리**로 남아 있었다 — `src/adapters/ui/info_modal.rs` ·
+`src/adapters/ui/popup/confirm_delete_category.rs` · `src/adapters/ui/popup/approval.rs`
+의 `const BODY_FONT_SIZE: f32 = 13.0` 이다. 값이 `font_size_body`(13)와 같았으므로
+"스케일 밖 값의 명명 const" 가 아니라 토큰의 복사본이었고, 셋 다 `font_size_body` 로
+보냈다(const 는 제거). 같은 const 를 쓰던 popup sizer 의 높이 추정도 함께 토큰으로
+보냈다 — 라벨만 zoom 을 타고 상자는 안 타면 배율에서 본문이 잘린다.
+
 **`.5` 로 끝나는 값은 그중에서도 결론이 더 강하다 — 토큰이 될 수 없다.** 위 반올림
 때문에 어떤 설정에서도 값이 달라지므로, 스냅은 언제나 픽셀 변경이다. 스냅하려면 그것을
 "값을 바꾸는 디자인 결정" 으로 명시적으로 승인받아야 하고, 리터럴 정리 작업이 조용히
@@ -56,7 +69,14 @@ semantic 이 없는 primitive(12 · 16)를 쓰는 자리도 같게 다루되 con
 - **잃은 것**: 명명 const 자리는 `ui_scale` 줌을 타지 않는다. 배율 0.85 / 1.2 에서 그
   자리들만 고정 크기로 남는다 — 스냅 승인 전까지 그대로다.
 - **운영 비용 / 유지 부담**: 스케일 밖 값이 나올 때마다 const 이름과 사유를 적어야 한다.
-  가드는 이 형태를 막지 않으므로(명명 const 는 의도적으로 스코프 밖) 강제는 리뷰가 한다.
+- **강제는 절반만 기계가 한다 — 어느 절반인지가 중요하다.** 기계가 가르는 것은
+  **경계 위반**이다: 값이 UI 폰트 토큰과 같은 명명 const 가 폰트 자리에 오면
+  `src/design_token_guard.rs` 의 `no_named_const_copies_a_ui_font_token` 이 잡는다
+  (판별 축은 이름이 아니라 **값 + 위치**다 — `SOMETHING_ELSE = 13.0` 도 잡히고
+  `PALETTE_HINT_FONT_SIZE = 10.5` 는 안 잡힌다).
+  기계가 **못** 가르는 것은 그 다음 질문이다: 스케일 밖 값 하나하나가 *어느* 토큰으로
+  수렴해야 하는지, 애초에 수렴해야 하는지는 디자인 판단이라 소스에 신호가 없다.
+  그 절반은 사람이 지키는 규약이고, 이 ADR 이 그 규약의 본문이다.
 
 ## Alternatives Considered
 
@@ -89,3 +109,8 @@ semantic 이 없는 primitive(12 · 16)를 쓰는 자리도 같게 다루되 con
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색은 semantic role 접근자로만
   읽는다. 같은 축(값이 아니라 토큰을 경유한다)의 색 쪽 결정
 - `tests/design_token_adherence.rs` — 폰트/선굵기/간격 리터럴 재유입 가드와 그 한계 목록
+- `src/design_token_guard.rs` — 토큰 값을 복사한 명명 const 를 폰트 자리에서 막는 가드.
+  관례(`tests/*.rs`)를 깨고 본체 crate 의 `#[cfg(test)]` 모듈에 둔 이유가 그 모듈 doc 에
+  있다 — 통합 테스트는 컴파일만 자동으로 검사되고 실행은 수동 트리거라, 런타임에 소스를
+  읽는 스캔 가드에게는 그 채널이 무의미하기 때문이다(채널 정본은
+  [`docs/dev-guide/ci-gates.md`](../dev-guide/ci-gates.md))

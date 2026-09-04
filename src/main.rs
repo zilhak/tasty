@@ -12,6 +12,8 @@ mod close_trace;
 mod completion_strategy;
 mod core;
 mod db;
+#[cfg(test)]
+mod design_token_guard;
 mod file;
 #[cfg(feature = "gui")]
 mod gfx;
