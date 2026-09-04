@@ -625,6 +625,10 @@ fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
         .collect()
 }
 
+/// `debug-ipc.md` 의 † 표시가 런타임 게이트라는 **코드의 성질**과 어긋나지 않는지 본다.
+/// 표식은 사람이 손으로 붙이고, 성질은 소스에 있다 — 갈라져도 아무 데서도 안 터진다.
+mod debug_gate_dagger;
+
 mod reserved_ipc_prefixes;
 mod routing_key_coverage;
 
