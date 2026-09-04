@@ -30,6 +30,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
 - 입력: `surface.{send,send_key,send_combo,send_to,send_wait_idle,wake,respawn_terminal}`
 - 읽기/마크: `surface.{set_mark,read_since_mark,parse_since_mark,screen_text,cursor_position,foreground_process,is_typing,locate}`. `screen_text`(및 `pty.read`)는 dim(ghost-suggestion, 예: Claude Code 자동완성 제안) 셀을 기본 제외 — `show_dim:true`(CLI `--show-dim`)로 포함.
   - `lines:N`(CLI `--lines N`) 생략 시 보이는 화면 전체. 지정하면 **내용 기준 마지막 N 줄** — 내용 아래의 공백 행은 건너뛰고, 화면 내용이 N 에 모자라면 스크롤백에서 채운다(합쳐도 모자라면 있는 만큼). 내용 *중간* 의 빈 줄은 출력의 일부이므로 보존하고 줄 수에도 포함한다. 빈 행 판정은 `show_dim` 과 같은 값으로 하므로 `--show-dim` 유무가 반환 줄 수를 바꾸지 않는다. alternate screen(TUI)이 떠 있을 때도 부족분은 primary 스크롤백으로 채운다 — alt screen 은 자체 스크롤백이 없기 때문이다.
+  - **N 보다 적게 왔을 때 왜인지 물을 수 있다.** 응답에 `is_terminal`(그 surface 뒤에 터미널이 있는가) · `scrollback_len`(현재 스크롤백 줄 수) · `alt_screen`(대체 화면인가)이 함께 실린다. `scrollback_len: 0` 이면 **받은 것이 가진 전부**이고(정상 포화), 0 이 아닌데 N 보다 적게 왔다면 그건 결함이다. 터미널이 아닌 surface(markdown/html/explorer/image)나 없는 surface 는 `is_terminal: false` 와 두 필드 `null` 로 나온다 — **`0` 이 아니다**(0 은 "스크롤백이 비었다" 라는 다른 사실이다). 같은 필드가 `pty.read` 응답에도 실린다.
 - 명령(OSC 133): `surface.{commands,last_command,command_at}`
 - 메타: `surface.meta.{set,get,unset,list}` · `surface.set_cwd`
 - 주의 환기(attention): `surface.completion`(발동) · `surface.attention.{get,clear}`(조회·해제). 해제는 `kind` 선택 필터를 받고, 하드 점유 중인 surface 와 mirror surface 는 거절한다(그 상태의 소유자가 다른 인스턴스다) — [surface-highlight](../features/surface-highlight/index.md)

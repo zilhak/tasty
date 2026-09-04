@@ -18,6 +18,8 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
+use super::surface::query::{ScreenDiag, with_screen_diagnostics};
+
 use crate::core::CoreState;
 use crate::core::pty_registry::{PtySpawnError, PtySpawnSpec};
 use crate::ipc::caller::CallerContext;
@@ -222,15 +224,28 @@ pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> 
         .get("show_dim")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let text = engine
-        .find_terminal_by_id(pty_id)
-        .map(|t| match lines {
-            Some(n) => t.screen_text_lines(n, show_dim),
-            None => t.screen_text(show_dim),
-        })
-        .unwrap_or_default();
+    // `surface.screen_text` 와 **같은 추출**이므로 진단 필드도 같이 낸다. 한쪽 문에만
+    // 달면 같은 질문("왜 N 보다 적게 왔나")이 어느 문으로 물었느냐에 따라 답이 있기도
+    // 없기도 하다.
+    let found = engine.find_terminal_by_id(pty_id);
+    let (text, diag) = match found {
+        Some(t) => (
+            match lines {
+                Some(n) => t.screen_text_lines(n, show_dim),
+                None => t.screen_text(show_dim),
+            },
+            Some(ScreenDiag {
+                scrollback_len: t.scrollback_len(),
+                alt_screen: t.is_alternate_screen(),
+            }),
+        ),
+        None => (String::new(), None),
+    };
     engine.pty_registry.touch(pty_id, Instant::now());
-    JsonRpcResponse::success(id, json!({ "id": pty_id, "text": text }))
+    JsonRpcResponse::success(
+        id,
+        with_screen_diagnostics(json!({ "id": pty_id, "text": text }), diag),
+    )
 }
 
 /// `pty.wait` — 폴링(즉시 반환, blocking 아님). exit-watcher 가 채운 exit cell 을

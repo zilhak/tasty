@@ -7,7 +7,7 @@ mod completion;
 pub(crate) mod cwd;
 mod list;
 mod mark;
-mod query;
+pub(crate) mod query;
 mod send;
 
 pub(crate) use attention::{handle_attention_clear, handle_attention_get};
