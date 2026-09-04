@@ -60,6 +60,9 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 /// 경로가 어긋나 0 을 내는 것을 막는 하한이다.
 const MIN_SHELL_SCRIPTS: usize = 15;
 
+/// 워크플로 수집 하한 — 같은 이유로, 경로가 어긋나 0 을 내는 것을 막는다.
+const MIN_WORKFLOWS: usize = 8;
+
 /// 수집 결과가 **믿을 만한가** — 판정을 순수 함수로 뽑아 합성 입력으로 찌를 수 있게 한다.
 ///
 /// 하한 검사를 본 테스트 안에 인라인으로 두면 그 검사 자체는 아무 변이로도 고정되지
@@ -222,6 +225,115 @@ fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+// ─── 셸을 담지만 셸 스크립트 파일이 아닌 자리 ────────────────────────────────
+//
+// 위 수집기는 **파일 첫 줄의 shebang** 으로 고른다. 그 규칙이 통째로 못 보는 자리가 둘
+// 있고, 둘 다 이 레포에 실재했다:
+//
+//   Justfile              첫 줄이 주석이고 `#!/bin/bash` 는 레시피 **안쪽** 11 곳에 있다.
+//                         그 레시피들은 `set -euo pipefail` 을 켠다 — 실현 조건이 성립한다.
+//   .github/workflows/    `run:` 블록이 셸인데, `.github` 이 dot 디렉토리라 순회에서 빠진다.
+//
+// 모수를 확장자로도, 첫 줄로도 고르면 안 된다는 뜻이다. **셸을 담는 자리**를 이름으로
+// 지목하고, 새 자리가 생겼을 때 조용히 빠지지 않도록 개수를 함께 고정한다.
+
+/// 워크플로 YAML 의 `run:` 블록 본문 — (파일 안 시작 줄, 본문).
+///
+/// 블록 스칼라(`run: |`)와 한 줄 형태(`run: cmd`)를 모두 본다. YAML 파서를 붙이지 않는
+/// 근사다 — 판정이 보수적인 쪽(더 많이 보는 쪽)으로만 틀리도록 들여쓰기로 끊는다.
+fn workflow_run_blocks(text: &str) -> Vec<(usize, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let body_after_key = trimmed
+            .strip_prefix("- ")
+            .unwrap_or(trimmed)
+            .strip_prefix("run:")
+            .map(str::trim);
+        let Some(rest) = body_after_key else {
+            i += 1;
+            continue;
+        };
+        // 키의 들여쓰기는 대시가 아니라 **`run` 낱말의 위치**다. `- run: |` 에서 대시를
+        // 기준으로 재면 같은 step 의 `env:`(더 깊이 들여쓴다)까지 본문으로 삼킨다.
+        let key_indent = line.find("run:").unwrap_or(line.len() - trimmed.len());
+        if rest.starts_with('|') || rest.starts_with('>') {
+            // 블록 스칼라 — 키보다 깊이 들여쓴 줄이 본문이다.
+            let mut body = Vec::new();
+            let mut base: Option<usize> = None;
+            let mut j = i + 1;
+            while j < lines.len() {
+                let l = lines[j];
+                if l.trim().is_empty() {
+                    body.push(String::new());
+                    j += 1;
+                    continue;
+                }
+                let ind = l.len() - l.trim_start().len();
+                if ind <= key_indent {
+                    break;
+                }
+                let base = *base.get_or_insert(ind);
+                body.push(l.chars().skip(base).collect());
+                j += 1;
+            }
+            out.push((i + 2, body.join("\n")));
+            i = j;
+        } else {
+            if !rest.is_empty() {
+                out.push((i + 1, rest.to_string()));
+            }
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 이 레포에서 셸을 담는 **비-스크립트 파일**. 새 자리가 생기면 여기 더한다.
+fn shell_carriers(root: &Path) -> Vec<(String, Vec<(usize, String)>)> {
+    let mut out: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+
+    // Justfile 은 통째로 셸로 읽는다 — 과대근사이지만 **더 많이 보는 쪽**이라 안전하다.
+    // 레시피 헤더(`name:`)나 `:=` 대입에는 파이프가 없어서 실측 오탐이 0 이다.
+    if let Ok(text) = std::fs::read_to_string(root.join("Justfile")) {
+        out.push(("Justfile".to_string(), violations(&text)));
+    }
+
+    let wf_dir = root.join(".github").join("workflows");
+    let mut wf_files: Vec<PathBuf> = std::fs::read_dir(&wf_dir)
+        .unwrap_or_else(|e| panic!("워크플로 디렉토리를 못 읽었다: {} ({e})", wf_dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
+        .collect();
+    wf_files.sort();
+    assert!(
+        wf_files.len() >= MIN_WORKFLOWS,
+        "워크플로를 {}개밖에 못 찾았다(하한 {MIN_WORKFLOWS}) — 수집이 깨졌다",
+        wf_files.len()
+    );
+    for path in wf_files {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = format!(
+            ".github/workflows/{}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        );
+        let mut hits = Vec::new();
+        for (start, body) in workflow_run_blocks(&text) {
+            for (line, cmd) in violations(&body) {
+                hits.push((start + line - 1, cmd));
+            }
+        }
+        out.push((rel, hits));
+    }
+    out
+}
+
 #[test]
 fn no_shell_script_pipes_into_an_early_exit_consumer() {
     let root = repo_root();
@@ -358,4 +470,114 @@ fn the_scan_refuses_to_report_zero_from_an_empty_input() {
     assert!(!scan_is_credible(0));
     assert!(!scan_is_credible(MIN_SHELL_SCRIPTS - 1));
     assert!(scan_is_credible(MIN_SHELL_SCRIPTS));
+}
+
+#[test]
+fn no_shell_carrier_pipes_into_an_early_exit_consumer() {
+    let root = repo_root();
+    let carriers = shell_carriers(&root);
+    assert!(
+        carriers.len() > MIN_WORKFLOWS,
+        "셸을 담는 자리를 {}개밖에 못 찾았다 — 수집이 깨졌다",
+        carriers.len()
+    );
+
+    let hits: Vec<String> = carriers
+        .iter()
+        .flat_map(|(name, found)| {
+            found
+                .iter()
+                .map(move |(line, cmd)| format!("{name}:{line}  {}", cmd.trim()))
+        })
+        .collect();
+
+    assert!(
+        hits.is_empty(),
+        "셸 스크립트가 아니지만 셸을 담는 자리에서 조기 종료 소비자가 파이프의 오른쪽에 \
+         있다. 처방은 스크립트와 같다 — `grep -m1 PAT FILE` 로 파이프를 없애거나 producer 를 \
+         변수로 받아 히어스트링으로 넘긴다:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+// ─── carrier 추출기를 겨냥한 변이 (합성 입력) ───────────────────────────────
+
+#[test]
+fn a_workflow_run_block_is_extracted_as_shell() {
+    let yaml = "\
+jobs:
+  a:
+    steps:
+      - name: x
+        run: |
+          set -e
+          v=$(producer | head -1)
+      - name: y
+        run: echo ok
+";
+    let blocks = workflow_run_blocks(yaml);
+    assert_eq!(blocks.len(), 2, "블록 두 개를 못 뽑았다: {blocks:?}");
+    // 블록 스칼라 본문은 들여쓰기가 벗겨진 채로 나온다.
+    assert!(blocks[0].1.starts_with("set -e\n"), "{:?}", blocks[0].1);
+    assert_eq!(blocks[1].1, "echo ok");
+    // 그리고 그 본문에서 위반이 잡힌다 — 줄 번호는 파일 기준이다.
+    let hit = &violations(&blocks[0].1)[0];
+    assert_eq!(blocks[0].0 + hit.0 - 1, 7, "줄 번호가 어긋난다");
+}
+
+#[test]
+fn a_workflow_key_that_merely_ends_in_run_is_not_a_run_block() {
+    // `dry-run:` · `should_run:` 를 `run:` 으로 읽으면 엉뚱한 값이 셸로 들어온다.
+    let yaml = "\
+jobs:
+  a:
+    steps:
+      - with:
+          dry-run: producer | head -1
+        run: echo ok
+";
+    let blocks = workflow_run_blocks(yaml);
+    assert_eq!(blocks.len(), 1, "{blocks:?}");
+    assert_eq!(blocks[0].1, "echo ok");
+}
+
+#[test]
+fn a_workflow_block_ends_at_the_next_key() {
+    // 본문이 다음 키를 삼키면, 그 키의 값이 셸로 판정된다.
+    let yaml = "\
+jobs:
+  a:
+    steps:
+      - run: |
+          echo one
+        env:
+          X: producer | head -1
+";
+    let blocks = workflow_run_blocks(yaml);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].1.trim(), "echo one");
+    assert!(violations(&blocks[0].1).is_empty());
+}
+
+#[test]
+fn the_carrier_set_covers_the_justfile_and_every_workflow() {
+    let root = repo_root();
+    let carriers = shell_carriers(&root);
+    let names: Vec<&str> = carriers.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(names.contains(&"Justfile"), "Justfile 이 빠졌다: {names:?}");
+    // 워크플로는 디렉토리에 있는 만큼 전부 들어와야 한다 — 새 워크플로가 조용히
+    // 모수 밖에 남는 것이 이 가드가 늦게 선 이유다.
+    let on_disk = std::fs::read_dir(root.join(".github").join("workflows"))
+        .expect("워크플로 디렉토리")
+        .flatten()
+        .filter(|e| {
+            let p = e.path();
+            p.extension().is_some_and(|x| x == "yml" || x == "yaml")
+        })
+        .count();
+    assert_eq!(
+        names.iter().filter(|n| n.starts_with(".github/")).count(),
+        on_disk,
+        "워크플로 수집이 디스크와 어긋난다: {names:?}"
+    );
 }
