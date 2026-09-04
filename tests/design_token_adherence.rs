@@ -143,33 +143,116 @@ const FORBIDDEN_PREFIXES: &[&str] = &[
 /// allowlist 항목은 필요 없다.
 const FORBIDDEN_FORMS: &[&str] = &["Stroke {", "FontId {"];
 
-/// 스캔 예외 — **파일 통째가 아니라 (경로, 접두) 쌍**이다. 파일 하나를 통째로 빼면
-/// 그 파일이 *다른* 형태의 위반을 새로 들여도 잡히지 않으므로, 정당한 그 한 형태만
-/// 면제한다. 새 항목에는 왜 그 파일에서 그 접두가 정당한지 사유를 남긴다.
-const ALLOWLIST_PREFIXES: &[(&str, &str)] = &[
+/// 스캔 예외 — **(경로, 접두, 구조 술어)** 셋이다.
+///
+/// 파일 통째로 빼면 그 파일이 *다른* 형태의 위반을 새로 들여도 잡히지 않는다. 그래서
+/// 예전부터 (경로, 접두) 쌍이었는데, **접두는 이름이지 구조가 아니라서** 그것만으로는
+/// 여전히 넓다 — `prim_spinner.rs` 의 `.size(` 면제는 위젯 지름을 빼주려던 것인데
+/// 같은 파일의 **폰트** `.size()` 까지 덮고 있었다(Gate4 J5).
+///
+/// 세 번째 칸이 그 구조다: `Some(marker)` 면 **같은 줄에서 접두 앞에 그 문자열이
+/// 있을 때만** 면제한다. 지름 면제는 `Some("Spinner::new()")` 라, 수신자가 스피너가
+/// 아닌 `.size(` 는 같은 파일에서도 그대로 잡힌다. `None` 은 그 파일 전체에서 그
+/// 접두를 면제한다 — 파일의 존재 이유 자체가 그 접두일 때만 쓴다(typed 헬퍼의 구현).
+///
+/// 면제의 **전제가 무너지면 가드가 알아채야** 한다:
+/// [`the_spinner_exemption_discriminates_receiver`] 가 그것을 변이로 확인한다.
+const ALLOWLIST_PREFIXES: &[(&str, &str, Option<&str>)] = &[
     // typed 간격 헬퍼의 구현 자체 — 내부에서 raw `add_space`/`Margin` 을 호출하고
     // doc 주석에 예시 리터럴을 담는다. 폰트·선굵기는 면제 대상이 아니다.
-    ("crates/tasty-ui-widgets/src/spacing.rs", "add_space("),
-    ("crates/tasty-ui-widgets/src/spacing.rs", "Margin::same("),
+    ("crates/tasty-ui-widgets/src/spacing.rs", "add_space(", None),
+    (
+        "crates/tasty-ui-widgets/src/spacing.rs",
+        "Margin::same(",
+        None,
+    ),
     (
         "crates/tasty-ui-widgets/src/spacing.rs",
         "Margin::symmetric(",
+        None,
     ),
-    ("crates/tasty-ui-widgets/src/spacing.rs", "inner_margin("),
+    (
+        "crates/tasty-ui-widgets/src/spacing.rs",
+        "inner_margin(",
+        None,
+    ),
     // spinner 크기 카탈로그 — 이 specimen 의 **내용 자체가** 여러 지름을 나란히
     // 보이는 것이다. `.size()` 는 여기서 폰트가 아니라 위젯 지름이고, 값이 하나로
-    // 수렴하면 specimen 이 성립하지 않는다. 폰트·간격·선굵기는 면제 대상이 아니다.
+    // 수렴하면 specimen 이 성립하지 않는다.
+    //
+    // 면제는 **수신자가 스피너인 줄에만** 걸린다 — 같은 파일이 `RichText` 라벨에도
+    // `.size()` 를 쓰기 때문이다(`:25`·`:43`). 파일만 보고 빼면 그 폰트 자리가 함께
+    // 빠져나간다.
     (
         "crates/tasty-gallery/src/catalog/components/prim_spinner.rs",
         ".size(",
+        Some("Spinner::new()"),
     ),
 ];
+
+/// 면제의 **전제 검사** — 면제가 "이 파일" 이 아니라 "이 파일의 이 구조" 에 걸려
+/// 있는지 가른다. 전제가 무너진 줄(수신자가 스피너가 아닌 `.size(`)에서 면제가
+/// 풀리지 않으면 이 테스트가 죽는다.
+///
+/// 실제 소스에 변이를 주입해 확인한 판정 셋을 그대로 고정한 것이다: 스피너 지름은
+/// 통과, 같은 파일의 `RichText` 폰트는 적발, 다른 파일의 스피너도 적발.
+#[test]
+fn the_spinner_exemption_discriminates_receiver() {
+    const SPIN: &str = "crates/tasty-gallery/src/catalog/components/prim_spinner.rs";
+
+    // 지름 — 면제된다.
+    assert!(exempt(
+        SPIN,
+        ".size(",
+        "            Spinner::new().size(12.0).show(ui, theme);"
+    ));
+    // 같은 파일의 폰트 — 수신자가 다르므로 면제되지 않는다.
+    assert!(!exempt(
+        SPIN,
+        ".size(",
+        "            ui.label(RichText::new(\"x\").size(13.0));"
+    ));
+    // 다른 파일의 스피너 — 면제는 파일 한정이므로 걸린다.
+    assert!(!exempt(
+        "crates/tasty-gallery/src/catalog/components/empty_surface.rs",
+        ".size(",
+        "    Spinner::new().size(30.0);"
+    ));
+    // 마커가 접두 **뒤**에 있으면 수신자가 아니다 — 주석으로 면제를 살 수 없다.
+    assert!(!exempt(
+        SPIN,
+        ".size(",
+        "    x.size(13.0); // Spinner::new()"
+    ));
+    // 구조 술어가 없는 면제(typed 헬퍼의 구현)는 그 파일 전체에서 걸린다.
+    assert!(exempt(
+        "crates/tasty-ui-widgets/src/spacing.rs",
+        "add_space(",
+        "    ui.add_space(8.0);"
+    ));
+}
+
+/// `rel` 파일의 `line` 에서 `form` 이 면제되는가. 구조 술어가 있으면 **그 줄에서
+/// 접두보다 앞에** 마커가 있어야 한다.
+fn exempt(rel: &str, form: &str, line: &str) -> bool {
+    ALLOWLIST_PREFIXES.iter().any(|(path, prefix, marker)| {
+        *path == rel
+            && *prefix == form
+            && match marker {
+                None => true,
+                Some(m) => match (line.find(m), line.find(form)) {
+                    (Some(mi), Some(fi)) => mi < fi,
+                    _ => false,
+                },
+            }
+    })
+}
 
 /// `line` 에 금지 prefix + 숫자 인자가 있으면 매칭된 prefix 를 돌려준다.
 /// `rel` 파일에 대해 그 접두가 [`ALLOWLIST_PREFIXES`] 에 있으면 건너뛴다.
 fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static str> {
     for &form in FORBIDDEN_FORMS {
-        if ALLOWLIST_PREFIXES.contains(&(rel, form)) {
+        if exempt(rel, form, line) {
             continue;
         }
         let mut from = 0;
@@ -189,7 +272,7 @@ fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static s
         }
     }
     for &prefix in FORBIDDEN_PREFIXES {
-        if ALLOWLIST_PREFIXES.contains(&(rel, prefix)) {
+        if exempt(rel, prefix, line) {
             continue;
         }
         let mut from = 0;
