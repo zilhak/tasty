@@ -1,4 +1,4 @@
-<!-- source-hash: 3ce1c09e3228 -->
+<!-- source-hash: 1cf94625f4d9 -->
 # Install
 
 Follow this page to download and install the Tasty build for your OS, launch it for the first time, and confirm it works. How to update and uninstall is here too.
@@ -57,7 +57,7 @@ To clear the warning directly from the terminal:
 xattr -dr com.apple.quarantine /Applications/Tasty.app
 ```
 
-Right after the first launch, macOS permission prompts (Downloads · Documents · Desktop folders, Screen Recording, Accessibility) appear one after another. Why they appear and how to answer them is in [Troubleshooting](../help/troubleshooting.md#macos-permission-prompts).
+Right after the first launch, macOS permission prompts (Downloads · Documents · Desktop folders, Screen Recording) appear one after another. Why they appear and how to answer them is in [Troubleshooting](../help/troubleshooting.md#macos-permission-prompts).
 
 ## Windows
 

@@ -90,8 +90,11 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.fullscreen.close` | `window_id?` | 그 창의 활성 무대를 내린다. 응답 `closed` 는 실제로 내린 무대가 있었는지(없었으면 `false`), `stage_id` 는 내려간 무대 id |
 | `debug.fullscreen.state` | `window_id?` | 활성 무대 id(없으면 `null`) + 창 상태 덤프: `stage_active`·`os_fullscreen`·`maximized`·`inner_size{width,height}`·`monitor{name,position,size,scale_factor}`. **무대 상태와 OS 창 전환은 별개** — `open` 직후 `stage_id` 는 즉시 서지만 `os_fullscreen` 은 다음 프레임의 `sync_window_fullscreen` 이 반영한다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
+| `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS 전용.** `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |
+| `surface.switch_input_source` | `source_id` | **macOS 전용.** `TISSelectInputSource` 로 시스템 입력 소스(키보드 레이아웃·입력기)를 바꾼다 — 사용자가 입력기 메뉴로 하는 조작의 재현. 위 `raw_key` 로 한글/CJK 경로를 검증하기 전 입력기를 맞추는 데 쓴다 † |
+| `surface.ime_enable` / `ime_disable` / `ime_preedit` / `ime_commit` / `ime_status` | `text`/`cursor`(preedit·commit) | 포커스된 창의 IME 조합 상태(`ime_active`/`ime_preedit`)를 강제로 세팅·조회한다 — 사용자 입력기 조합의 재현. 대상을 ID 로 받지 못하고 포커스된 창에 작용하므로 포커스 독립성도 만족하지 않는다. 개별 등재가 아니라 `PREFIX_RULES` 의 `surface.ime_` 로 해소되며, 그 규칙 자체가 `#[cfg(debug_assertions)]` 다. 사용법은 [ime-testing](../ai-verification/ime-testing.md) |
 
-† **`debug.inject_mouse` / `debug.inject_key` 는 런타임 추가 게이트가 있다** — `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부.
+† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 `surface.ime_*` 는 창 내부 상태만 바꾸는 in-process 시뮬레이션이라 이 게이트가 없다 — cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
@@ -122,7 +125,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug.rs`)가 모듈째 `#![cfg(debug_assertions)]` — 실행부는 `crates/tasty-cli/src/local/debug.rs`(같은 cfg). 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key`(주입에 macOS 손쉬운 사용 권한 필요 — 미승인이면 `surface.raw_key` 가 `permission_denied` 에러를 돌려준다. [macOS 권한](../features/macos-permissions/index.md)) · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `modifier-hint` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
+CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug.rs`)가 모듈째 `#![cfg(debug_assertions)]` — 실행부는 `crates/tasty-cli/src/local/debug.rs`(같은 cfg). 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key`(주입에 macOS 손쉬운 사용 권한 필요 — 미승인이면 `surface.raw_key` 가 `permission_denied` 에러를 돌려준다. [macOS 권한](../features/macos-permissions/index.md). `ime-*`/`switch-input-source`/`raw-key` 는 IPC 쪽도 debug 전용이다 — [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md)) · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `modifier-hint` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 
@@ -151,7 +154,7 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 기준 한 줄: *"이 코드를 통째로 지우고 컴파일 에러 몇 줄만 정리하면 디버그 기능이 깨끗이 사라지는가?"* 그게 되면 격리 OK.
 
-- **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(cell/screen/glyph/feed/inject) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` 가 각각 `#[cfg(...)]` 로 모듈 선언된다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
+- **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(cell/screen/glyph/feed/inject) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` · `input_source.rs`(macOS raw_key/switch_input_source) · `ime.rs`(surface.ime_*) 가 각각 `#[cfg(...)]` 로 모듈 선언된다. **파일 이름에 `debug` 가 들어갈 필요는 없다** — 기준은 "그 파일이 debug 핸들러만 담고 모듈 선언에 cfg 가 붙어 있는가" 다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
   - **예외 — gui 게이트 없는 debug 핸들러**: `debug.rs` 모듈은 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 선언돼 headless 빌드에서 통째로 사라진다. 따라서 **gui 무관하게 headless 에서도 동작해야 하는 비-gui debug 핸들러**(`ui.state` 의 `handle_ui_state`, `debug.settings.apply` 의 `handle_debug_settings_apply`)는 `debug.rs` 가 아니라 `handler.rs` 안에 `#[cfg(debug_assertions)]` 로 직접 둔다. 삭제 가능성(핸들러 fn + route 한 줄 + `DEBUG_METHODS` 한 줄 + CLI variant)은 그대로 유지된다.
 - **외부 표면에 남는 cfg 가드는 router 분기 한 줄** (위 라우팅 코드의 `#[cfg(debug_assertions)] route_debug_handler(...)`).
 - **삭제 가능성 테스트**: debug 파일을 지웠을 때 cfg-guard 호출처 몇 줄 제거 외에 다른 변경이 필요하면 격리가 깨진 것이다.
@@ -164,5 +167,6 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 - [identity.md](../identity.md) — 원칙 1 ②(사용자 입력 재현 격리), 포커스 독립성
 - [ADR-0007](../adr/0007-attach-targets-remote.md) — 로컬 attach 를 debug 로 격리한 결정
+- [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md) — OS 전역 입력 조작(`raw_key`/`switch_input_source`/`ime_*`)을 debug 로 격리한 결정 + `tests/ipc_release_table_excludes_input_reproduction.rs` 회귀 가드
 - [attach-behavior.md](attach-behavior.md) — attach 메커니즘
 - [independent-verification.md](independent-verification.md) — debug IPC 를 쓴 자체 검증

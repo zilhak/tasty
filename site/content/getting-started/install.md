@@ -56,7 +56,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 xattr -dr com.apple.quarantine /Applications/Tasty.app
 ```
 
-첫 실행 직후에는 macOS 권한 프롬프트(다운로드 · 문서 · 데스크탑 폴더, 화면 기록, 손쉬운 사용)가 차례로 뜬다. 왜 뜨는지와 어떻게 답할지는 [문제 해결](../help/troubleshooting.md#macos-권한-프롬프트) 에 있다.
+첫 실행 직후에는 macOS 권한 프롬프트(다운로드 · 문서 · 데스크탑 폴더, 화면 기록)가 차례로 뜬다. 왜 뜨는지와 어떻게 답할지는 [문제 해결](../help/troubleshooting.md#macos-권한-프롬프트) 에 있다.
 
 ## Windows
 

@@ -1,6 +1,6 @@
 # IME 시뮬레이션 검증
 
-`surface.ime_*` IPC(window-local, **local-only** — 로컬 caller 만, `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`)로 IME 입력을 프로그래밍 방식으로 시뮬레이션해 한글/CJK 입력 파이프라인 버그를 재현·검증한다. 핸들러는 `src/adapters/ipc/handler/ime.rs`. (정상 모드 포트 `~/.tasty/tasty.port`.)
+`surface.ime_*` IPC(**debug 빌드 전용** — 사용자 입력기 조합의 재현이라 release 표면에 없다, [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md). window-local, **local-only** — 로컬 caller 만, `crates/tasty-ipc/src/method_meta.rs::PREFIX_RULES`)로 IME 입력을 프로그래밍 방식으로 시뮬레이션해 한글/CJK 입력 파이프라인 버그를 재현·검증한다. 핸들러는 `src/adapters/ipc/handler/ime.rs`. (정상 모드 포트 `~/.tasty/tasty.port`.)
 
 메서드: `surface.ime_enable` · `surface.ime_preedit {text}` · `surface.ime_commit {text}` · `surface.ime_status` · `surface.ime_disable`.
 

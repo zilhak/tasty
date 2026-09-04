@@ -21,7 +21,7 @@ mod hook_handler;
 mod hooks;
 #[cfg(feature = "gui")]
 mod image;
-#[cfg(all(target_os = "macos", feature = "gui"))]
+#[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
 mod input_source;
 #[cfg(feature = "gui")]
 mod markdown;
@@ -53,7 +53,7 @@ pub mod agent;
 pub mod approval;
 pub(crate) mod attach;
 pub mod audit;
-#[cfg(feature = "gui")]
+#[cfg(all(debug_assertions, feature = "gui"))]
 pub mod ime;
 pub mod plugin;
 #[cfg(all(debug_assertions, feature = "gui"))]
@@ -697,13 +697,6 @@ fn route_engine_handler(
         "message.read" => message::handle_message_read(core, state, engine, id, &request.params),
         "message.count" => message::handle_message_count(state, engine, id, &request.params),
         "message.clear" => message::handle_message_clear(core, state, engine, id, &request.params),
-        // input source (macOS)
-        #[cfg(all(target_os = "macos", feature = "gui"))]
-        "surface.switch_input_source" => {
-            input_source::handle_switch_input_source(id, &request.params)
-        }
-        #[cfg(all(target_os = "macos", feature = "gui"))]
-        "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
         // notification (focus-independent — workspace_id/surface_id로 라우팅)
         "notification.list" => notification::handle_notification_list(state, engine, id),
         "notification.create" => {
@@ -1140,6 +1133,15 @@ fn route_debug_handler(
         }
         #[cfg(feature = "gui")]
         "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
+        // OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현이라 debug 격리.
+        // 이름은 `surface.*` 이지만 대상 surface 를 받지 못한다(CGEvent/TIS 가
+        // OS 전역에 나간다). 자세한 근거는 docs/adr/0115-input-reproduction-ipc-debug-isolation.md.
+        #[cfg(all(target_os = "macos", feature = "gui"))]
+        "surface.switch_input_source" => {
+            input_source::handle_switch_input_source(state, engine, id, &request.params)
+        }
+        #[cfg(all(target_os = "macos", feature = "gui"))]
+        "surface.raw_key" => input_source::handle_raw_key(state, engine, id, &request.params),
         #[cfg(feature = "gui")]
         "debug.close_workspace" => {
             debug::handle_debug_close_workspace(state, engine, id, &request.params)

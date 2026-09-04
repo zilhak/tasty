@@ -496,9 +496,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("banner.open", plugin(&[UiBanner])),
         // 자기 배너 인스턴스를 명시적으로 닫는다.
         ("banner.close", plugin(&[UiBanner])),
-        // ── input source (macOS) ──────────────────────────────────────
-        ("surface.switch_input_source", plugin(&[TerminalWrite])),
-        ("surface.raw_key", plugin(&[TerminalWrite])),
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
         ("plugin.list", local_only()),
         ("plugin.show", local_only()),
@@ -626,18 +623,37 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     // view.focus 는 window.focus 의 alias (E.C.e, D1=b). debug 빌드 only.
     ("window.focus", local_only()),
     ("view.focus", local_only()),
+    // ── OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현 ──────────
+    // `surface.raw_key` 는 CGEventPost 로 **OS 이벤트 스트림에** 키를 주입한다.
+    // 대상 surface 를 받을 수단이 없고(그 순간 OS 포커스를 가진 무엇이든 받는다),
+    // `surface.switch_input_source` 는 TISSelectInputSource 로 **시스템 입력 소스**
+    // 를 바꾼다 — 둘 다 사용자가 키보드/입력기 메뉴로 하는 조작의 재현이라
+    // release 표면에 두지 않는다. 에이전트가 자기 작업으로 터미널에 키를 넣는
+    // 경로는 대상 ID 를 받는 `surface.send_key`(release) 다.
+    // 런타임 `--enable-input-simulation` 게이트가 추가로 걸린다(inject_* 와 동일).
+    ("surface.switch_input_source", local_only()),
+    ("surface.raw_key", local_only()),
+    // `surface.ime_*` 도 같은 계열(창 IME 조합 상태 강제 세팅 — 사용자 입력기
+    // 조합 재현)이지만 개별 등재가 아니라 prefix 로 해소되므로 아래
+    // [`PREFIX_RULES`] 쪽에 같은 cfg 격리를 걸어 뒀다.
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 
 /// prefix 기반 fallback. METHOD_TABLE에 없는 메서드를 prefix로 매칭한다.
-/// - `surface.ime_*` — IME 메서드 (window 의존, 사용자 입력 영역).
+/// - `surface.ime_*` — 창 IME 조합 상태를 강제로 세팅/조회하는 시뮬레이션
+///   메서드. 사용자 입력기 조합의 재현이고 대상을 ID 로 받지 못한 채 포커스된
+///   창에 작용하므로 [`DEBUG_METHODS`] 와 같은 `#[cfg(debug_assertions)]` 격리
+///   대상이다 — release 에서는 이 규칙 자체가 사라져 빈 슬라이스가 된다.
 ///
 /// plugin 이 매니페스트 `[[contributes.ipc_namespace]]` 로 점유한 prefix 는
 /// [`register_plugin_prefix`] 로 *runtime* 등록되어 `method_meta()` 의 마지막
 /// fallback 단계에서 해소된다. 정적 `PREFIX_RULES` 는 host 자체 메서드의
 /// prefix-fallback 전용.
+#[cfg(debug_assertions)]
 pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())];
+#[cfg(not(debug_assertions))]
+pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
 /// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.

@@ -1,4 +1,4 @@
-<!-- source-hash: c54374c160db -->
+<!-- source-hash: f61f066379e7 -->
 # Troubleshooting
 
 This page is where you look up the cause and the fix by symptom when you get stuck using Tasty. Once you know what gets written where, most problems narrow down to opening a single file.
@@ -40,7 +40,7 @@ The install procedure itself is in [Install](../getting-started/install.md).
 
 ## macOS permission prompts
 
-**Symptom** — a series of permission prompts appears right after the first launch. The order is the Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording → accessibility. The window works normally while the prompts are up.
+**Symptom** — a series of permission prompts appears right after the first launch. The order is the Downloads · Documents · Desktop folders → (if connected) external · network volumes → screen recording. The window works normally while the prompts are up.
 
 **Cause** — when a command run inside the terminal reads a file, macOS attributes that access to Tasty (Terminal.app · iTerm2 behave the same). Left alone, a prompt would pop up mid-task the first time a new folder is touched and stall the agent, so Tasty asks up front right after startup. Items already allowed · denied are not asked again; only newly mounted volumes get an extra prompt. There is no setting to turn this off — turning it off would not make the prompts disappear, they would just appear sporadically during your work instead.
 
@@ -50,11 +50,10 @@ The install procedure itself is in [Install](../getting-started/install.md).
 |---|---|---|
 | Folder access (Downloads · Documents · Desktop · volumes) | The prompt appears again, at that moment, from the command that uses the folder | System Settings > Privacy & Security > Files and Folders |
 | Screen recording | The `Ctrl+Alt+S` screenshot-to-clipboard feature only shows a "Screen recording permission is required" notice. Once denied, it is not asked again | System Settings > Privacy & Security > Screen & System Audio Recording |
-| Accessibility | Features where the agent injects keys directly into the system are refused with `permission_denied` | System Settings > Privacy & Security > Accessibility. Restart Tasty after turning it on |
 
 You can see the current state in the **Settings** > **General** > **Permissions** tab (only shown on macOS).
 
-- **A "Grant Tasty Full Disk Access" notice appeared** — it appears once, when Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away. Controlling other apps (Automation) · screen recording · accessibility are separate permissions, though, and remain. To see the notice again, turn on **Show the Full Disk Access notice at startup** under **Settings** > **General** > **Permissions**. The Full Disk Access state shown in the same tab is an estimate and can be wrong; no feature is blocked by this value.
+- **A "Grant Tasty Full Disk Access" notice appeared** — it appears once, when Tasty does not seem to have Full Disk Access. The app cannot request this permission itself, so click **Open settings** to open System Settings and add Tasty to the list yourself. Granting it makes the file access prompts (other apps' data · Downloads · Documents · Desktop · volumes) go away. Controlling other apps (Automation) · screen recording are separate permissions, though, and remain. To see the notice again, turn on **Show the Full Disk Access notice at startup** under **Settings** > **General** > **Permissions**. The Full Disk Access state shown in the same tab is an estimate and can be wrong; no feature is blocked by this value.
 - **"Tasty would like to access data from other apps" keeps appearing for every app folder** — paths like `~/Library/Application Support/<app>` are asked per app, so they cannot be asked up front. Granting Full Disk Access as above makes them go away.
 - **"wants to control another app" appears when you use `osascript`** — the Automation permission must be approved per target app, and Full Disk Access does not cover it. There is nothing Tasty can do in advance.
 

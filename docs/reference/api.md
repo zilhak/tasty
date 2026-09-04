@@ -34,7 +34,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
 - 메타: `surface.meta.{set,get,unset,list}` · `surface.set_cwd`
 - 주의 환기(attention): `surface.completion`(발동) · `surface.attention.{get,clear}`(조회·해제). 해제는 `kind` 선택 필터를 받고, 하드 점유 중인 surface 와 mirror surface 는 거절한다(그 상태의 소유자가 다른 인스턴스다) — [surface-highlight](../features/surface-highlight/index.md)
 - 출력 옵저버: `output.observe_{start,stop,list,info}`
-- 동작·파서는 [terminal-output](../features/terminal-output/index.md), 파서 카탈로그 [output-parsers](output-parsers.md). (IME `surface.ime_*` 는 local-only.)
+- 동작·파서는 [terminal-output](../features/terminal-output/index.md), 파서 카탈로그 [output-parsers](output-parsers.md). (IME `surface.ime_*` 는 debug 빌드 전용 local-only — release 표면에 없다.)
 
 ### 메모리 (`memory.*` / `memory.secret.*`)
 regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · secret(동일 verb) · `gc` · blackboard(`bb_*`) · plan(`plan_*`) · cache(`cache_*`) · goal(`goal_*` — surface 스코프 단일 목표 문장, `surface_id` 명시 필수). 모델·권한은 [design/systems/memory](../design/systems/memory.md).

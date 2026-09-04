@@ -1,6 +1,6 @@
 # macOS 권한 (TCC)
 
-- **Status**: Partial — 파일 계열 + 화면 기록 + 손쉬운 사용 pre-warm, Full Disk Access 추정·안내 구현
+- **Status**: Partial — 파일 계열 + 화면 기록 pre-warm(+ debug 빌드 한정 손쉬운 사용 pre-warm), Full Disk Access 추정·안내 구현
 - **주체**: 로컬 사용자 (AI Agent 가 간접 수혜 — 작업 도중 프롬프트로 멈추지 않는다)
 - **ADR**: 없음
 - **코드**: `src/platform/macos_permissions.rs` (목록 결정 + 워커 + CoreGraphics/ApplicationServices FFI + FDA 추정), 호출부 `src/app/boot_machine.rs::finish_boot`, 캡처측 소비처 `src/platform/screen_capture.rs`, 키 주입측 소비처 `src/adapters/ipc/handler/input_source.rs`, 설정 탭 `src/view/settings/ui/tabs/macos_permissions.rs`, 번들 usage description 은 `scripts/build-macos-dmg.sh` 의 Info.plist heredoc
@@ -68,17 +68,21 @@ PTY 로 띄운 자식 프로세스(zsh, 그 안의 에이전트)가 보호 리�
 
 ### 손쉬운 사용 (Accessibility)
 
-`surface.raw_key` 는 `CGEventPost` 로 시스템에 키 이벤트를 주입한다. 이 API 는 손쉬운 사용(`kTCCServiceAccessibility`) 권한을 요구하며, 권한이 없으면 **이벤트가 조용히 버려진다** — 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다. 이 기능이 release IPC 표면에 있으므로 권한도 release 에서 필요하다.
+`surface.raw_key` 는 `CGEventPost` 로 시스템에 키 이벤트를 주입한다. 이 API 는 손쉬운 사용(`kTCCServiceAccessibility`) 권한을 요구하며, 권한이 없으면 **이벤트가 조용히 버려진다** — 호출자는 성공 응답을 받고도 아무 일도 일어나지 않는 것을 본다.
+
+**이 기능은 debug 빌드 전용이다** — OS 전역 키 주입은 사용자 입력 재현이라 release IPC/CLI 표면에 없다([ADR-0115](../../adr/0115-input-reproduction-ipc-debug-isolation.md), [debug-ipc](../../dev-guide/debug-ipc.md)). 따라서 **손쉬운 사용 권한을 소비하는 코드가 release 빌드에는 하나도 없다.**
+
+**요청 시퀀스도 debug 빌드에서만 돈다.** 소비자가 0 인데 첫 실행에 "이 앱이 내 모든 입력을 볼 수 있게 해달라" 로 읽히는 프롬프트를 띄우는 것은 최소권한 원칙에 어긋난다. release 사용자에게 손쉬운 사용은 **켜라고 안내하지도, 프롬프트를 띄우지도 않는 항목**이다. 자기검증용 debug 빌드에서만 아래 시퀀스가 돌고, 권한을 켠 뒤 재시작이 필요한 것도 그 빌드에서의 이야기다.
 
 화면 기록과 마찬가지로 **정식 요청 API 가 있다** — ApplicationServices 의 `AXIsProcessTrusted()`(프롬프트 없는 상태 조회)와 `AXIsProcessTrustedWithOptions()`(`kAXTrustedCheckOptionPrompt: kCFBooleanTrue` 를 넘기면 프롬프트). 새 크레이트 없이 `#[link(name = "ApplicationServices", kind = "framework")]` 로 선언한다. 옵션 딕셔너리는 `CFDictionaryCreate` 에 `kCFTypeDictionaryKeyCallBacks`/`ValueCallBacks` 를 함께 넘겨 만든다 — 콜백을 생략하면 키가 `CFEqual` 이 아니라 포인터 동일성으로 비교돼 옵션이 무시된다.
 
-**시퀀스에서 맨 마지막.** 파일 폴더 → 화면 기록 → 손쉬운 사용 순으로 같은 워커 스레드에서 이어 부른다. 앞의 둘은 그 자리에서 허용/거부가 끝나지만, 손쉬운 사용 프롬프트는 "시스템 설정을 열겠느냐"는 안내여서 **그 자리에서 권한이 켜지지 않고** 사용자를 시스템 설정으로 내보낸다. 그 이탈을 시퀀스 맨 끝에 둬야 앞의 프롬프트들이 묻히지 않는다.
+**시퀀스에서 맨 마지막**(debug 빌드). 파일 폴더 → 화면 기록 → 손쉬운 사용 순으로 같은 워커 스레드에서 이어 부른다. 앞의 둘은 그 자리에서 허용/거부가 끝나지만, 손쉬운 사용 프롬프트는 "시스템 설정을 열겠느냐"는 안내여서 **그 자리에서 권한이 켜지지 않고** 사용자를 시스템 설정으로 내보낸다. 그 이탈을 시퀀스 맨 끝에 둬야 앞의 프롬프트들이 묻히지 않는다. release 빌드의 시퀀스는 화면 기록에서 끝난다.
 
 - 이미 승인돼 있으면(`AXIsProcessTrusted()`) 요청하지 않는다.
 - 요청은 **부팅당 1 회**다. 미설정·거부 상태에서 반복 호출하면 프롬프트가 계속 뜬다.
 - 권한을 켜면 실행 중인 프로세스에 즉시 반영되지 않아 **앱 재시작이 필요한 경우가 많다.**
 
-**주입 시점의 소비** — `handle_raw_key` 는 주입 직전에 `AXIsProcessTrusted()` 를 부르고, 미승인이면 `-32001 permission_denied: …` 에러를 돌려준다(권한 계열 거부의 기존 코드·접두사와 같다). 이 조회는 **호출 시점마다** 한다 — 부팅 값을 캐시하면 사용자가 그 사이 시스템 설정에서 켠 것을 반영하지 못한다. 판정 자체(`raw_key_decision`)는 cfg 없는 순수 함수라 전 플랫폼에서 유닛테스트된다.
+**주입 시점의 소비** (debug 빌드) — `handle_raw_key` 는 주입 직전에 `AXIsProcessTrusted()` 를 부르고, 미승인이면 `-32001 permission_denied: …` 에러를 돌려준다(권한 계열 거부의 기존 코드·접두사와 같다). 이 조회는 **호출 시점마다** 한다 — 부팅 값을 캐시하면 사용자가 그 사이 시스템 설정에서 켠 것을 반영하지 못한다. 판정 자체(`raw_key_decision`)는 cfg 없는 순수 함수라 전 플랫폼에서, release 빌드에서도 유닛테스트된다. 주입 경로에는 `--enable-input-simulation` 런타임 게이트가 손쉬운 사용 권한 확인보다 **먼저** 걸린다 — 플래그 없이 띄운 debug 인스턴스에서는 권한 여부와 무관하게 `-32001` 로 거부된다.
 
 ### Full Disk Access — 추정과 안내
 
@@ -126,7 +130,10 @@ macOS 에서만 노출된다. FDA(추정)·화면 기록·손쉬운 사용의 �
 - Given 아직 안내 안 함 + FDA 가 있어 보임 When 부팅 Then FDA 안내를 띄우지 않는다
 - Given 아직 안내 안 함 + FDA 가 없어 보임 When 부팅 Then FDA 안내를 1 회 띄우고 표시 기록을 남긴다
 - Given FDA 안내가 떠 있음 When 설정 열기 버튼 클릭 Then 전체 디스크 접근 권한 패널이 열린다
-- Given 손쉬운 사용 권한 미결정 When Tasty 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
-- Given 손쉬운 사용 권한이 이미 승인됨 When Tasty 실행 Then 프롬프트가 뜨지 않는다
-- Given 손쉬운 사용 권한 미승인 When `surface.raw_key` 호출 Then 성공이 아니라 `permission_denied` 에러가 돌아온다
-- Given 손쉬운 사용 권한 승인 후 재시작 When `surface.raw_key` 호출 Then 대상에 키가 실제로 입력된다
+- Given 손쉬운 사용 권한 미결정 When debug 빌드 실행 Then 화면 기록 프롬프트 **뒤에** 손쉬운 사용 프롬프트가 뜬다
+- Given 손쉬운 사용 권한 미결정 When release 빌드 실행 Then 손쉬운 사용 프롬프트가 뜨지 않는다(요청 자체가 없다)
+- Given 손쉬운 사용 권한이 이미 승인됨 When debug 빌드 실행 Then 프롬프트가 뜨지 않는다
+- Given 손쉬운 사용 권한 미승인 + `--enable-input-simulation` 으로 띄운 debug 빌드 When `surface.raw_key` 호출 Then 성공이 아니라 `permission_denied` 에러가 돌아온다
+- Given 손쉬운 사용 권한 승인 후 재시작 + `--enable-input-simulation` 으로 띄운 debug 빌드 When `surface.raw_key` 호출 Then OS 포커스를 가진 대상에 키가 실제로 입력된다
+- Given `--enable-input-simulation` 없이 띄운 debug 빌드 When `surface.raw_key` 호출 Then 손쉬운 사용 권한 여부와 무관하게 `-32001` 로 거부된다
+- Given release 빌드 When `surface.raw_key` 호출 Then `method_not_found` 로 떨어진다(메서드가 표에도 라우터에도 없다)

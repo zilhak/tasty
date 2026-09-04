@@ -41,7 +41,11 @@ const EXPECTED: &[(&str, usize)] = &[
     ("remote", 13),
     ("session", 3),
     ("settings", 3),
-    ("surface", 32),
+    // 32 → 30: `surface.raw_key` / `surface.switch_input_source` 가 debug 표
+    // (`DEBUG_METHODS`)로 이동. 사용자 입력 재현을 release 표면에서 뺀 보안
+    // 목적 제거라 major bump 없이 처리된다(ADR-0115 · api-conventions.md
+    // "안정성 정책" 의 보안 예외).
+    ("surface", 30),
     ("system", 2),
     ("tab", 4),
     ("telemetry", 12),

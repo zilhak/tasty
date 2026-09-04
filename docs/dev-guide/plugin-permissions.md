@@ -129,6 +129,8 @@ owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게
 | `pty.read` / `pty.wait` / `pty.list` | `TerminalRead` | 아니오 |
 | `pty.attach_surface` | `SurfaceWrite, TerminalSpawn` | **예** (실제 Tab 생성 — `terminal.spawn` 과 동일 이유로 `SurfaceWrite` 추가) |
 
+**`TerminalWrite` 의 범위는 "지정한 대상에 바이트를 쓴다" 까지다.** 이 토큰으로 열리는 것은 PTY 쓰기(`pty.write`/`pty.kill`)와 대상 surface ID 를 필수로 받는 `surface.send_key` 같은 메서드이며, **OS 전역 입력 조작은 포함하지 않는다.** 한때 macOS `surface.raw_key`(`CGEventPost` 로 시스템 전역 키 주입)와 `surface.switch_input_source` 가 같은 토큰으로 열려 있어 토큰 이름이 함의하는 것보다 능력이 넓었으나, 두 메서드는 debug 전용 `local_only()` 로 옮겨져 plugin 에서 호출 자체가 불가능하다([ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md)). 새 메서드에 `TerminalWrite` 를 붙일 때는 그 동작이 **대상을 ID 로 받는 쓰기** 인지 확인한다 — 아니면 토큰이 아니라 표(release/debug) 선택이 잘못된 것이다.
+
 ## 새 권한 토큰 추가
 
 1. `Permission` enum 에 variant 추가(scoped 면 `<Name>(String)`).
