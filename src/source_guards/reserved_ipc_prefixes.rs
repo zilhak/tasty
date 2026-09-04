@@ -7,6 +7,10 @@
 //! **표에 없는 `<prefix>.*` 가 plugin 으로 forward 된다.** 실패가 그 자리에서 안 나고
 //! 나중에 이름이 겹칠 때 나므로, 목록을 눈으로 유지하는 것으로는 못 막는다.
 //!
+//! 지금은 호스트 prefix 45 개 중 **번들 plugin 이 점유한 둘을 뺀 전부**가 예약돼 있다.
+//! 그 결정과 감수한 비용은
+//! [ADR-0140](../../docs/adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md).
+//!
 //! ## 왜 A5 와 추출 방식이 다른가
 //!
 //! 판단의 형태는 라우팅 키 가드(`routing_key_coverage`)와 같다 — **양방향 집합 동등 +
@@ -44,45 +48,6 @@ const MIN_HOST_PREFIXES: usize = 35;
 const CLAIMED_BY_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     ("image", "tasty-plugin-image 의 ipc_namespace"),
     ("markdown", "tasty-plugin-markdown 의 ipc_namespace"),
-];
-
-/// 호스트 메서드가 있는데 예약되지 않은 prefix 중, **왜 예약하지 않았는지 기록이 없는**
-/// 것들. 이 가드가 생기기 전부터 그랬다.
-///
-/// 사유를 지어내지 않고 있는 그대로 동결한다. 이 목록의 값어치는 **크기가 늘지 않는
-/// 것**이다 — 새 호스트 prefix 는 예약 쪽으로 가거나, 안 간다면 위
-/// [`CLAIMED_BY_A_BUNDLED_PLUGIN`] 처럼 사유가 붙은 자리에 들어가야 한다. 여기에
-/// 이름을 더하는 변경은 "기록 없음" 을 하나 더 만드는 것이므로 리뷰에서 보인다.
-///
-/// 이 상태 자체(호스트 prefix 25 개를 plugin 이 점유할 수 있다)는 이 가드가 고치는
-/// 대상이 아니다. 고치려면 매니페스트 검증의 거절 범위가 넓어지는 동작 변경이라 별도
-/// 판단이 필요하다.
-const UNRESERVED_WITHOUT_A_RECORDED_REASON: &[&str] = &[
-    "agent",
-    "attach",
-    "banner",
-    "clipboard",
-    "completion_strategy",
-    "file_handler",
-    "file_picker",
-    "fs",
-    "git_viewer",
-    "hook_handler",
-    "popup",
-    "preset",
-    "pty",
-    "recent",
-    "remote",
-    "session",
-    "settings",
-    "telemetry",
-    "terminal",
-    "theme",
-    "timer",
-    "view",
-    "webhook",
-    "webview",
-    "workspace_category",
 ];
 
 /// 예약돼 있으나 호스트 메서드 표에는 그 prefix 의 메서드가 없는 것들.
@@ -144,7 +109,6 @@ fn every_host_method_prefix_is_reserved_or_carries_a_reason() {
     let excused: BTreeSet<&str> = CLAIMED_BY_A_BUNDLED_PLUGIN
         .iter()
         .map(|(p, _)| *p)
-        .chain(UNRESERVED_WITHOUT_A_RECORDED_REASON.iter().copied())
         .collect();
 
     let both: Vec<&str> = excused

@@ -124,7 +124,7 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 
 ### CLI + IPC namespace
 
-`[[contributes.ipc_namespace]]`(prefix) + `[[contributes.cli]]`(`tasty <name> …`). 플러그인은 `handle_ipc_method` 로 `<prefix>.*` 메서드를 받는다. prefix 는 소문자+숫자+`_`, 호스트 예약어 금지 — 목록은 `tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES` 하나뿐이고 (`system`/`surface`/`tab`/`pane`/`workspace`/`window` 등 21 개), 매니페스트 검증이 여기 걸리면 plugin 이 뜨지 않는다. 이 목록은 호스트 메서드 표보다 **좁다** — 호스트가 쓰는 prefix 45 개 중 25 개는 예약돼 있지 않아 plugin 이 점유할 수 있다. 그 상태는 동결돼 있고, 새 호스트 prefix 가 그 틈으로 조용히 늘지 않도록 `every_host_method_prefix_is_reserved_or_carries_a_reason` 이 양방향으로 대조한다. `image`·`markdown` 처럼 번들 plugin 이 이미 같은 이름을 점유한 prefix 는 예약할 수 없다 — 예약하면 그 plugin 의 매니페스트가 거절된다. CLI 서브커맨드의 `ipc_method` 는 자기 prefix 와 매칭돼야 한다. 예: [codex](../plugins/codex/index.md)·[claude](../plugins/claude/index.md).
+`[[contributes.ipc_namespace]]`(prefix) + `[[contributes.cli]]`(`tasty <name> …`). 플러그인은 `handle_ipc_method` 로 `<prefix>.*` 메서드를 받는다. prefix 는 소문자+숫자+`_`, 호스트 예약어 금지 — 목록은 `tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES` 하나뿐이고 46 개다. 매니페스트 검증이 여기 걸리면 plugin 이 뜨지 않는다. **호스트가 자기 메서드에 쓰는 prefix 는 전부 예약이라고 보면 된다** — 유일한 예외가 `image`·`markdown` 이고, 번들 plugin 이 이미 같은 이름의 namespace 를 갖고 있어서 예약할 수 없다(예약하면 그 plugin 의 매니페스트가 거절된다). 그래서 이름은 자기 plugin 고유어로 짓는다 — `theme`·`session`·`preset` 처럼 호스트가 쓰는 일반 명사는 거절된다. 목록과 호스트 메서드 표의 정합은 `every_host_method_prefix_is_reserved_or_carries_a_reason` 이 양방향으로 지킨다. 결정과 감수한 비용은 [ADR-0140](../adr/0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md). CLI 서브커맨드의 `ipc_method` 는 자기 prefix 와 매칭돼야 한다. 예: [codex](../plugins/codex/index.md)·[claude](../plugins/claude/index.md).
 
 ### 단축키 (commands)
 
