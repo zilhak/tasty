@@ -26,6 +26,10 @@ const SCAN_ROOTS: &[&str] = &[
     "src/gfx/gpu/shell_setup.rs",
     "crates/tasty-gallery/src",
     "crates/tasty-ui-widgets/src",
+    // Theme 를 egui 로 잇는 어댑터 크레이트. `stroke1()` 같은 헬퍼가 여기 살아서
+    // 리터럴이 들어오면 호출부 전체로 전파된다. 편입 시점 위반 0 이라 allowlist
+    // 없이 그대로 넣었다 — 공짜 커버리지다.
+    "crates/tasty-egui-theme/src",
 ];
 
 /// primitive 색 필드 접근 스캔 대상 — host UI 계층 + 위젯 크레이트. design-tokens-05 의
@@ -132,8 +136,22 @@ const ALLOWLIST_PREFIXES: &[(&str, &str)] = &[
 /// `rel` 파일에 대해 그 접두가 [`ALLOWLIST_PREFIXES`] 에 있으면 건너뛴다.
 fn violating_prefix(rel: &str, line: &str, next_line: &str) -> Option<&'static str> {
     for &form in FORBIDDEN_FORMS {
-        if !ALLOWLIST_PREFIXES.contains(&(rel, form)) && line.contains(form) {
-            return Some(form);
+        if ALLOWLIST_PREFIXES.contains(&(rel, form)) {
+            continue;
+        }
+        let mut from = 0;
+        while let Some(idx) = line[from..].find(form) {
+            let start = from + idx;
+            // `fn stroke1(..) -> egui::Stroke {` 같은 **반환 타입**은 구조체 리터럴이
+            // 아니다. 형태 앞의 경로 한정자(`egui::`)를 걷어낸 뒤 `->` 로 끝나면
+            // 시그니처이므로 넘긴다 — `crates/tasty-egui-theme` 를 스캔에 넣을 때
+            // 실제로 이 위양성이 났다(그때는 `egui::` 때문에 `->` 검사가 빗나갔다).
+            let head = line[..start]
+                .trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == ':');
+            if !head.trim_end().ends_with("->") {
+                return Some(form);
+            }
+            from = start + form.len();
         }
     }
     for &prefix in FORBIDDEN_PREFIXES {
