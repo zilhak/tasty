@@ -267,7 +267,7 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 |---|---|---|
 | `PluginsWindow`(container) | `src/view/plugins/ui.rs` `draw_plugins_panel` | `window` + `stage_size` — 탭 상태 `Tab`(Installed / Attention / Add{preview}) 로 본문이 갈린다 |
 | header + `Seg` 세그먼트 | 같음(헤더 밴드) | `header` / `segment_tab` — Installed \| Attention(danger 배지) \| Add plugin. 필터 입력은 Installed 탭에서만 |
-| installed list+detail | `src/view/plugins/ui/list.rs` `draw_list_tab` | `list_pane` / `detail_pane` — 목록은 전부, **상세는 identity + 설명까지만**. 본체 상세의 Status/Configure · Surface kinds · Permissions · Install path · Log · Uninstall 블록은 아직 specimen 에 없다 |
+| installed list+detail | `src/view/plugins/ui/list.rs` `draw_list_tab` | `plugins_window/installed.rs`: `list_pane` / `detail_pane` — 상세 블록 열셋 전량(빈 상태 · health error 박스 · Status/Configure · Surface kinds · Permissions · Commands · Install path/Log · Uninstall 2 분기 포함) |
 | `AttentionPanel` (4케이스) | `src/view/plugins/ui/attention.rs` `draw_attention_tab` | `plugins_window/attention.rs`: `list_pane` / `detail_pane` / `banner` / `reason_detail` / `action_bar` / `reason_cards` |
 | `AddPluginForm` (trust 흐름) | `src/view/plugins/ui/add.rs` `draw_add_tab` | `plugins_window/add.rs`: `input_pane` / `preview_pane` / `untrusted_warning` |
 | `PluginAvatar` | (없음) | (없음) — 디자인에만 있는 컴포넌트다 |
@@ -276,13 +276,15 @@ severity 는 본체 `src/view/plugins/ui.rs` `is_danger` 를 따른다 — 서�
 변경·런타임 오류는 warning. Installed 목록의 health dot 과는 다른 축이다(health dot 은 실행 중
 실패 하나만 본다).
 
-검증: specimen 이 다섯 상태(Installed · Attention · Attention 빈 상태 · Add 경로입력 ·
-Add 매니페스트 프리뷰)를 세로로 모두 그리므로 탭 전환 없이 대조한다. 페이지는 Overlays(idx 3)
+검증: specimen 이 여덟 상태(Installed 넷 — 선택 · health error · 무선택 · uninstall 확인,
+Attention 둘 — 목록 있음 · 빈 상태, Add 둘 — 경로입력 · 매니페스트 프리뷰)를 세로로 모두
+그리므로 탭 전환 없이 대조한다. Installed 무대만 상세가 길어 `measure_xl` 로 높다 — 본체는
+그 자리를 `ScrollArea` 로 접지만 갤러리는 접으면 캡처에서 사라진다. 페이지는 Overlays(idx 3)
 이고 이 섹션은 그 페이지 맨 아래라 스크롤 오프셋을 준다 — 정확한 y 는 위에 섹션이 늘면 밀리므로
 오프셋 몇 개를 한 배치로 훑어 고른다([screenshot-methods](../../ai-verification/screenshot-methods.md)).
 
 ```bash
-TASTY_GALLERY_SIZE=1400x2500 TASTY_GALLERY_SHOT="3@37000:/abs/a.png,3@38200:/abs/b.png" \
+TASTY_GALLERY_SIZE=1400x2500 TASTY_GALLERY_SHOT="3@36500:/abs/a.png,3@39000:/abs/b.png,3@41500:/abs/c.png" \
   ./target/debug/tasty-gallery
 ```
 

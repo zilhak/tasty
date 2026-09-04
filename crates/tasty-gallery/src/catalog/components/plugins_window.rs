@@ -26,10 +26,10 @@
 
 mod add;
 mod attention;
+mod installed;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{TagVariant, tag};
 
 use crate::catalog::icons::{CLOSE, PLUG};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -37,15 +37,12 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 세그먼트 탭 셋 — 본체 `PluginsUiState.tab`. 세 탭은 서로 다른 본문을 그린다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
-    Installed,
+    /// Installed 는 상세가 세 갈래다 — 무선택 / 선택 / uninstall 확인.
+    Installed { detail: installed::Detail },
     /// Attention 은 대상이 0 이면 본문이 통째로 안내로 바뀌고 세그먼트 배지도 사라진다.
-    Attention {
-        empty: bool,
-    },
+    Attention { empty: bool },
     /// `Add plugin` 은 상태가 둘이라 어느 쪽을 그릴지 함께 든다.
-    Add {
-        preview: bool,
-    },
+    Add { preview: bool },
 }
 
 /// 본체 `SidePanel::left("plugins_list").exact_width` 와 같은 값을 같은 곳에서 읽는다 —
@@ -62,49 +59,15 @@ fn list_w(theme: &Theme) -> f32 {
 /// - 폭 = `list_w`(본체 목록 폭) + `measure_md` — 상세 컬럼을 본문 측정 토큰 하나로
 ///   잡으면 목록/상세 경계가 무대 폭에 종속되지 않는다.
 /// - 높이 = `measure_sm` — 헤더(48) + 40px 행 3개가 잘리지 않는 가장 작은 측정 토큰.
-fn stage_size(theme: &Theme) -> egui::Vec2 {
-    egui::vec2(
-        list_w(theme) + theme.measure_md.value(),
-        theme.measure_sm.value(),
-    )
+///   단 Installed 는 상세 블록이 열셋이라 그 높이에 안 들어간다. 본체는 그때
+///   `ScrollArea` 로 접지만 갤러리는 접으면 캡처에서 사라지므로 `measure_xl` 로 늘린다.
+fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
+    let h = match tab {
+        Tab::Installed { .. } => theme.measure_xl,
+        _ => theme.measure_sm,
+    };
+    egui::vec2(list_w(theme) + theme.measure_md.value(), h.value())
 }
-
-/// 목록 행 하나의 표시 데이터 — 본체 `PluginsSnapshot.plugins` 항목과 동형.
-struct Row {
-    name: &'static str,
-    version: &'static str,
-    builtin: bool,
-    enabled: bool,
-    running: bool,
-    health_error: bool,
-}
-
-const ROWS: &[Row] = &[
-    Row {
-        name: "Clipboard viewer",
-        version: "0.4.2",
-        builtin: true,
-        enabled: true,
-        running: true,
-        health_error: false,
-    },
-    Row {
-        name: "Git viewer",
-        version: "0.3.1",
-        builtin: true,
-        enabled: true,
-        running: false,
-        health_error: true,
-    },
-    Row {
-        name: "Markdown",
-        version: "0.9.0",
-        builtin: false,
-        enabled: false,
-        running: false,
-        health_error: false,
-    },
-];
 
 /// 한 세그먼트 탭의 표시 상태 — 본체 `segment_tab` 의 뒤쪽 인자 4개를 묶은 것.
 struct Segment<'a> {
@@ -285,9 +248,9 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
         egui::pos2(x, tab_y),
         &Segment {
             label: "Installed",
-            count: Some(ROWS.len()),
+            count: Some(installed::ROWS.len()),
             danger: false,
-            selected: tab == Tab::Installed,
+            selected: matches!(tab, Tab::Installed { .. }),
         },
     ) + STRUCT_GAP_2.value();
     x += segment_tab(
@@ -344,7 +307,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
         );
 
     // 목록이 있는 Installed 탭에서만 필터가 나타난다 — 본체와 같다.
-    if tab != Tab::Installed {
+    if !matches!(tab, Tab::Installed { .. }) {
         return;
     }
 
@@ -376,108 +339,8 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     );
 }
 
-/// 좌측 목록 (폭 `plugins_side_panel_width`) — 40px 2줄 행.
-fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
-    let p = ui.painter_at(rect);
-    p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
-
-    let row_h = theme.item_height_interactive.value() + theme.spacing_md.value();
-    let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value() * 0.75);
-    let mut y = rect.min.y + theme.spacing_sm.value();
-
-    for (i, row) in ROWS.iter().enumerate() {
-        let r =
-            egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(rect.width(), row_h));
-        let selected = i == 0;
-        if selected {
-            p.rect(
-                r,
-                theme.corner_radius.value(),
-                theme.surface_active().to_egui(),
-                egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-                egui::StrokeKind::Inside,
-            );
-        }
-
-        let name = if row.builtin {
-            format!("{}  •", row.name)
-        } else {
-            row.name.to_string()
-        };
-        let name_pos = r.min + pad;
-        p.text(
-            name_pos,
-            egui::Align2::LEFT_TOP,
-            &name,
-            egui::FontId::proportional(theme.font_size_body.value()),
-            theme.text_primary().to_egui(),
-        );
-
-        let mut sub = format!("v{}", row.version);
-        if !row.enabled {
-            sub.push_str("  ·  Disabled");
-        } else if row.running {
-            sub.push_str("  ·  Running");
-        }
-        p.text(
-            name_pos + egui::vec2(0.0, theme.spacing_lg.value() + STRUCT_GAP_2.value()),
-            egui::Align2::LEFT_TOP,
-            &sub,
-            egui::FontId::proportional(theme.font_size_micro.value()),
-            theme.text_muted().to_egui(),
-        );
-
-        if row.health_error && row.enabled {
-            p.circle_filled(
-                egui::pos2(r.max.x - theme.spacing_md.value(), r.center().y),
-                theme.status_dot_size.value() * 0.5,
-                theme.accent_danger().to_egui(),
-            );
-        }
-        y += row_h + STRUCT_GAP_2.value();
-    }
-}
-
-/// 우측 상세 — 선택된 행의 메타.
-fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
-    ui.painter_at(rect)
-        .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let inner = rect.shrink(theme.spacing_md.value());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-    child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-    child.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(ROWS[0].name)
-                .size(theme.font_size_max.value())
-                .strong()
-                .color(theme.text_primary().to_egui()),
-        );
-        tag(ui, theme, "v0.4.2", TagVariant::Default, false);
-        ui.label(
-            egui::RichText::new("built-in")
-                .size(theme.font_size_caption.value())
-                .color(theme.accent_agent().to_egui()),
-        );
-    });
-    child.label(
-        egui::RichText::new("com.tasty.clipboard-viewer")
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
-    child.label(
-        egui::RichText::new("Shows the clipboard history in a popup, grouped by content type.")
-            .size(theme.font_size_body.value())
-            .color(theme.text_primary().to_egui()),
-    );
-    child.label(
-        egui::RichText::new("Authors: tasty")
-            .size(theme.font_size_body.value())
-            .color(theme.text_secondary().to_egui()),
-    );
-}
-
 fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
-    let (rect, _) = ui.allocate_exact_size(stage_size(theme), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(stage_size(theme, tab), egui::Sense::hover());
     ui.painter().rect_filled(
         rect,
         theme.corner_radius.value(),
@@ -493,29 +356,37 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, body_top), rect.max);
 
     // Installed·Attention 은 목록+상세 2열, Add 는 단일 열 — 본체와 같은 갈래다.
-    let split = |ui: &mut egui::Ui,
-                 list: fn(&mut egui::Ui, &Theme, egui::Rect),
-                 detail: fn(&mut egui::Ui, &Theme, egui::Rect)| {
+    let panes = |body: egui::Rect| {
         let list_rect =
             egui::Rect::from_min_max(body.min, egui::pos2(body.min.x + list_w(theme), body.max.y));
-        list(ui, theme, list_rect);
-        detail(
-            ui,
-            theme,
-            egui::Rect::from_min_max(egui::pos2(list_rect.max.x, body_top), body.max),
-        );
+        let detail_rect = egui::Rect::from_min_max(egui::pos2(list_rect.max.x, body_top), body.max);
+        (list_rect, detail_rect)
+    };
+    let divider = |ui: &mut egui::Ui, x: f32| {
         ui.painter().vline(
-            list_rect.max.x,
+            x,
             egui::Rangef::new(body_top, body.max.y),
             egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
         );
     };
 
     match tab {
-        Tab::Installed => split(ui, list_pane, detail_pane),
-        Tab::Attention { empty: false } => split(ui, attention::list_pane, attention::detail_pane),
-        Tab::Attention { empty: true } => {
-            split(ui, attention::empty_list_pane, attention::empty_detail_pane)
+        Tab::Installed { detail } => {
+            let (l, d) = panes(body);
+            installed::list_pane(ui, theme, l, detail);
+            installed::detail_pane(ui, theme, d, detail);
+            divider(ui, l.max.x);
+        }
+        Tab::Attention { empty } => {
+            let (l, d) = panes(body);
+            if empty {
+                attention::empty_list_pane(ui, theme, l);
+                attention::empty_detail_pane(ui, theme, d);
+            } else {
+                attention::list_pane(ui, theme, l);
+                attention::detail_pane(ui, theme, d);
+            }
+            divider(ui, l.max.x);
         }
         Tab::Add { preview: false } => add::input_pane(ui, theme, body),
         Tab::Add { preview: true } => add::preview_pane(ui, theme, body),
@@ -523,9 +394,32 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 네 화면을 다 전시한다 — 본체는 한 번에 하나만 그리지만 갤러리는 cut 하지 않는다.
+    // 본체는 한 번에 한 상태만 그리지만 갤러리는 cut 하지 않는다 — 전부 전시한다.
     for (label, tab) in [
-        ("Installed", Tab::Installed),
+        (
+            "Installed",
+            Tab::Installed {
+                detail: installed::Detail::Selected(0),
+            },
+        ),
+        (
+            "Installed — health error",
+            Tab::Installed {
+                detail: installed::Detail::Selected(1),
+            },
+        ),
+        (
+            "Installed — no selection",
+            Tab::Installed {
+                detail: installed::Detail::None,
+            },
+        ),
+        (
+            "Installed — uninstall confirm",
+            Tab::Installed {
+                detail: installed::Detail::ConfirmUninstall(0),
+            },
+        ),
         ("Attention", Tab::Attention { empty: false }),
         ("Attention — empty", Tab::Attention { empty: true }),
         ("Add plugin — path input", Tab::Add { preview: false }),
@@ -559,6 +453,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "폭 `plugins_side_panel_width` · 행 40 · 이름 13 + 부제 10 muted",
             ),
             ("builtin", "이름 뒤 `•` · 상세는 accent-agent 배지"),
+            (
+                "installed detail",
+                "identity → 설명 → (health 박스) → authors/homepage → Status/Configure → surface kinds → permissions → commands → 경로 → uninstall",
+            ),
             ("health error", "enabled + error 인 행만 우측 danger dot"),
             (
                 "attention",

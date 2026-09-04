@@ -1242,7 +1242,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "plugins-window",
                         "Installed / Attention / Add plugin",
-                        Some("탭 5 상태 · 헤더 48 + 목록 + 상세 · builtin 점 · health danger dot"),
+                        Some(
+                            "상태 8 · 헤더 48 + 목록 + 상세 전량 · builtin 점 · health danger dot",
+                        ),
                         components::plugins_window::draw,
                     )],
                 ),
