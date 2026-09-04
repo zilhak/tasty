@@ -109,7 +109,6 @@ fn forward_mesh_frames(app: &mut App, engine: &mut CoreState) {
 /// 전용 CoreEvent cascade(toast/이벤트버스 브로드캐스트)는 생략한다 — 그 브로드캐스트는
 /// PluginLoaded 등을 구독하는 *다른* plugin/UI 통지용이며, hello 를 마친 plugin 자신의
 /// 렌더링에는 영향이 없다(레지스트리 mutation 은 이 함수 안에서 이미 동기 반영됨).
-#[allow(clippy::cognitive_complexity)] // complexity-exempt: hello 쌍마다 surface_kind 등록 · egui-mesh 분기 · hook_event 등록을 순차로 도는 평평한 루프라 중첩이 얕고, 쪼개면 세 함수가 같은 레지스트리 핸들 두 개를 계속 주고받게 된다. gui 등가(`plugin_glue/lifecycle.rs::finalize_plugin_hello`)와 나란히 읽히는 편이 유지에 유리하다.
 fn finalize_plugin_hello_headless(
     app: &mut App,
     engine: &CoreState,
@@ -121,20 +120,7 @@ fn finalize_plugin_hello_headless(
         return;
     };
 
-    for (plugin_id, _) in &hello_pairs {
-        if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
-            let keys: Vec<String> = pkg
-                .manifest
-                .contributes
-                .hook_events
-                .iter()
-                .map(|h| h.key.clone())
-                .collect();
-            if !keys.is_empty() {
-                hook_event_registry.register(plugin_id, keys);
-            }
-        }
-    }
+    register_hook_events(mgr, &hook_event_registry, &hello_pairs);
 
     let host_registry = mgr.surface_registry.is_some().then_some(core_registry);
     let Some(registry) = host_registry else {
@@ -148,7 +134,42 @@ fn finalize_plugin_hello_headless(
         return;
     };
 
-    for (plugin_id, _version) in &hello_pairs {
+    register_surface_kinds(mgr, &registry, &hello_pairs);
+}
+
+/// hello 를 마친 plugin 이 선언한 `contributes.hook_events` 키를 공유 레지스트리에
+/// 등록한다. 이 단계가 보는 것은 hook 레지스트리 하나뿐이라 surface_kind 등록과
+/// 자원이 겹치지 않는다.
+fn register_hook_events(
+    mgr: &crate::plugin::PluginManager,
+    hook_event_registry: &std::sync::Arc<crate::core::hook_event_registry::PluginHookEventRegistry>,
+    hello_pairs: &[(String, String)],
+) {
+    for (plugin_id, _) in hello_pairs {
+        if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+            let keys: Vec<String> = pkg
+                .manifest
+                .contributes
+                .hook_events
+                .iter()
+                .map(|h| h.key.clone())
+                .collect();
+            if !keys.is_empty() {
+                hook_event_registry.register(plugin_id, keys);
+            }
+        }
+    }
+}
+
+/// 선언된 surface_kind 를 등록하고 plugin 을 등록 완료로 표시한다.
+/// egui-mesh 만 실제로 등록된다 — 나머지 rendering 종류는 창을 전제해 headless 에
+/// 재현 대상이 없다(아래 arm 주석).
+fn register_surface_kinds(
+    mgr: &mut crate::plugin::PluginManager,
+    registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
+    hello_pairs: &[(String, String)],
+) {
+    for (plugin_id, _version) in hello_pairs {
         if let Some(pkg) = mgr
             .packages
             .iter()
@@ -159,34 +180,44 @@ fn finalize_plugin_hello_headless(
                 if let Some(default) = &decl.default_colors {
                     tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
                 }
-                match decl.rendering {
-                    crate::plugin::manifest::SurfaceKindRendering::Remote
-                    | crate::plugin::manifest::SurfaceKindRendering::Webview => {
-                        // `plugin_bridge::remote_kind`/webview surface stand-in은
-                        // GUI 전용(`#[cfg(feature = "gui")]`) — 실제 렌더가 창을
-                        // 전제하는 surface 라 headless 에 재현할 대상이 없다. attach
-                        // mesh mirror 스코프(markdown/image/mesh_demo=egui-mesh) 밖이라
-                        // 등록을 skip 한다(기존 headless 동작과 동일 — 회귀 아님).
-                        tracing::debug!(
-                            "plugin '{}' declared non-egui-mesh surface kind '{}' \
-                             (rendering={:?}); skipped in headless (gui-only registration)",
-                            plugin_id,
-                            decl.kind,
-                            decl.rendering
-                        );
-                    }
-                    crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
-                        crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
-                            &registry,
-                            plugin_id,
-                            decl,
-                            &pkg.manifest.api_version,
-                        );
-                    }
-                }
+                register_one_surface_kind(registry, plugin_id, &pkg.manifest.api_version, decl);
             }
         }
         mgr.registered_plugins.insert(plugin_id.clone());
+    }
+}
+
+/// surface_kind 선언 하나를 rendering 종류에 따라 등록하거나 건너뛴다.
+fn register_one_surface_kind(
+    registry: &std::sync::Arc<crate::core::surface_registry::SurfaceKindRegistry>,
+    plugin_id: &str,
+    api_version: &str,
+    decl: &crate::plugin::manifest::SurfaceKindDecl,
+) {
+    match decl.rendering {
+        crate::plugin::manifest::SurfaceKindRendering::Remote
+        | crate::plugin::manifest::SurfaceKindRendering::Webview => {
+            // `plugin_bridge::remote_kind`/webview surface stand-in은
+            // GUI 전용(`#[cfg(feature = "gui")]`) — 실제 렌더가 창을
+            // 전제하는 surface 라 headless 에 재현할 대상이 없다. attach
+            // mesh mirror 스코프(markdown/image/mesh_demo=egui-mesh) 밖이라
+            // 등록을 skip 한다(기존 headless 동작과 동일 — 회귀 아님).
+            tracing::debug!(
+                "plugin '{}' declared non-egui-mesh surface kind '{}' \
+                 (rendering={:?}); skipped in headless (gui-only registration)",
+                plugin_id,
+                decl.kind,
+                decl.rendering
+            );
+        }
+        crate::plugin::manifest::SurfaceKindRendering::EguiMesh => {
+            crate::core::surface_registry::egui_mesh::register_egui_mesh_kind(
+                registry,
+                plugin_id,
+                decl,
+                api_version,
+            );
+        }
     }
 }
 
