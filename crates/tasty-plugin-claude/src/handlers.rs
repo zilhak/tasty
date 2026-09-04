@@ -1228,19 +1228,21 @@ mod tests {
     #[test]
     fn write_prompt_file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
-        let path = std::env::temp_dir().join("tasty-claude-test-write-prompt-file-perms.txt");
+        // 유니크 tempdir 로 격리한다 — 고정 이름은 같은 머신의 다른 완주와 충돌해 확률적 red 가
+        // 난다(ADR-0129 형태 B 고정 경로). tempdir 의 Drop 이 정리하므로 수동 remove 는 불필요.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
         write_prompt_file(&path, "secret").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "got mode {mode:o}");
-        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn write_prompt_file_narrows_permissions_on_reuse() {
         // 이전 실행이 넓은 권한으로 만든 파일이 같은 경로에 이미 있어도, 다시 쓸 때
         // 0600 으로 좁혀져야 한다(재사용 시 구멍 방지 회귀 가드).
-        let path = std::env::temp_dir().join("tasty-claude-test-write-prompt-file-reuse.txt");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
         std::fs::write(&path, "old").unwrap();
         #[cfg(unix)]
         {
@@ -1255,14 +1257,12 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600, "got mode {mode:o}");
         }
-        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn sweep_stale_prompt_files_removes_files_past_ttl() {
-        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-removes-stale");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         let stale = dir.join(format!("{PROMPT_FILE_PREFIX}old{PROMPT_FILE_SUFFIX}"));
         std::fs::write(&stale, "x").unwrap();
         let old_mtime =
@@ -1280,28 +1280,24 @@ mod tests {
         sweep_stale_prompt_files(&dir);
 
         assert!(!stale.exists(), "stale prompt file should have been swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn sweep_stale_prompt_files_keeps_files_within_ttl() {
-        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-keeps-fresh");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         let fresh = dir.join(format!("{PROMPT_FILE_PREFIX}new{PROMPT_FILE_SUFFIX}"));
         std::fs::write(&fresh, "x").unwrap();
 
         sweep_stale_prompt_files(&dir);
 
         assert!(fresh.exists(), "fresh prompt file should not be swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn sweep_stale_prompt_files_ignores_non_matching_names() {
-        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-ignores-unrelated");
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         let unrelated = dir.join("some-other-file.txt");
         std::fs::write(&unrelated, "x").unwrap();
         let old_mtime =
@@ -1319,8 +1315,6 @@ mod tests {
         sweep_stale_prompt_files(&dir);
 
         assert!(unrelated.exists(), "non-matching file must not be swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
