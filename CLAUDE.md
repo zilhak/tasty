@@ -130,7 +130,8 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 48 개 — 그중 `
 
 - `PhysicalPx`: GPU, wgpu, winit 마우스 좌표, `Rect` 필드
 - `LogicalPx`: egui UI, Theme 상수, 사이드바 너비
-- 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수.
+- 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수. 사각형은 `PhysicalRect` / `LogicalRect` 짝으로 네 변을 한 번에 변환한다.
+- **강제 수단이 둘이다**: 두 좌표계를 *섞는* 것은 컴파일러가 막고, 변환을 *빠뜨리는* 것(`.value()` 로 벗겨서 `× ppp` / `÷ scale_factor`)은 `src/dpi_conversion_guard.rs` 가 막는다. 타입만으로는 후자가 안 잡힌다.
 
 상세: [`docs/concepts/typed-length.md`](docs/concepts/typed-length.md).
 
