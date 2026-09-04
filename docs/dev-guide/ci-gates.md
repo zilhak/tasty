@@ -194,6 +194,39 @@ gh run list --workflow=<이름>.yml --limit 20
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
+### "헤드리스 커버리지" 는 두 가지를 섞어 부른다
+
+위 표의 통합 테스트 줄은 **헤드리스 잡이 유일 채널이다** 까지만 말한다. 그런데 그 타깃들이
+거기 있는 이유는 둘이고, **둘은 서로 다른 것을 뜻한다.**
+
+- **헤드리스 고유** — 그 타깃이 `CARGO_BIN_EXE_tasty` 로 자기 바이너리를 띄운다.
+  `--no-default-features` 로 빌드된 그 바이너리는 곧 headless 데몬이라, 이 타깃은
+  `src/boot.rs` 의 `run_headless` 진입점과 그 아래 IPC · attach · PTY 경로를 **실제로**
+  돈다. 이 판정은 기본 조합에서 재현되지 않는다 — 같은 테스트를 돌려도 재는 바이너리가
+  다른 코드다.
+- **통합 타깃이라 여기 있는 것** — 레포 파일을 읽어 정합을 보는 가드류와, 프로세스도
+  파일도 안 쓰는 순수 로직·파싱. 판정이 조합과 무관해서 gui 빌드로 돌려도 같은 답이
+  나온다. 이것들에게 헤드리스 잡은 **헤드리스라서가 아니라 통합 타깃을 자동으로 도는
+  유일한 잡이라서** 유일 채널이다.
+
+**섞어 부르면 잘못된 추론이 선다.** "헤드리스 잡을 줄이면 헤드리스 커버리지가 준다" 는
+뒤쪽에는 성립하지 않는다 — 뒤쪽은 **기본 조합 잡이 통합 타깃을 돌게 하는 것만으로도**
+덮인다. 반대로 앞쪽은 어떤 기본 조합 잡으로도 못 덮는다. 그러니 헤드리스 잡의 범위를
+논할 때는 두 몫을 갈라서 세야 한다.
+
+어느 쪽인지 가르는 법 — 수를 적지 말고 그 자리에서 세라(타깃이 늘면 바뀌는 값이다,
+[ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)):
+
+```bash
+# 헤드리스 고유 — 자기 바이너리를 띄우는 타깃. 공용 하네스가 대신 띄우는 경우가 있어
+# `CARGO_BIN_EXE` 만 보면 놓친다(`tests/common/mod.rs` 가 spawn_diag 로 띄운다).
+grep -rl -e CARGO_BIN_EXE -e spawn_diag -e 'mod common' tests/ crates/*/tests/
+
+# 그 잡이 실제로 무엇을 돌렸나 — 잡 로그가 정본이다
+gh run view --job <check-headless 잡 id> --log \
+  | grep -E 'Running tests/|test result:'
+```
+
 ### 조합에서 사라지는 이유는 대개 **파일 위치**다 (실측)
 
 같은 파일이라도 조합에 따라 채널이 갈리는데, 그 갈림의 원인이 대부분 그 테스트 자신에게
