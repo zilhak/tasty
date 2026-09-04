@@ -18,19 +18,22 @@
   - `[meta] name` — 표시 이름(선택, 없으면 코드가 라벨).
   - `[font]` — **필수**. `builtin = true` / `file = "<팩 기준 상대경로>"` / `family = "<패밀리명>"` / `candidates = [...]` 중 하나(우선순위 그 순서). 섹션이 없거나 넷 다 없으면 형상 위반.
   - 나머지 문자열 키 — 내장 lang 파일과 같은 트리. 영어 베이스 위에 overlay.
+  - **크기 상한 2 MiB** — 넘으면 파싱 전에 거부하고 warn 후 목록에서 뺀다. 가장 큰 내장 파일(`lang/ja.toml`, 89 KiB / 약 1,300 키)의 23 배로, 장황한 언어·주석·키 증가를 모두 곱해도(약 12 배) 여유가 남는다. 상한이 있는 이유는 팩을 읽는 비용이 **사용자가 놓은 파일 크기에 비례**하고 그 비용을 설정 창 첫 오픈 때 렌더 스레드가 물기 때문이다.
   - **빈 값은 "번역 없음"** — 값이 비었거나 공백뿐인 키는 overlay 에서 빠져 영어가 그대로 보인다(라벨 없는 버튼이 생기지 않는다). 로드 시 몇 개가 빠졌는지 `tracing::warn!` 한 줄. 일부러 비운 텍스트가 필요하면 trim 이 먹지 않는 공백 문자(예: NBSP)를 쓴다.
-- **오버라이드** = `~/.tasty/lang/<builtin>.toml` 단일 파일. 내장 코드 전용, `[font]` 불필요. 내장이 아닌 코드의 단일 파일은 팩이 아니다(경고 후 무시).
+- **오버라이드** = `~/.tasty/lang/<builtin>.toml` 단일 파일. 내장 코드 전용, `[font]` 불필요. 내장이 아닌 코드의 단일 파일은 팩이 아니다(경고 후 무시). 크기 상한은 팩과 같다.
 - 내장 `lang/{en,ko,ja}.toml` 도 `[meta] name` 을 갖는다(`English` / `한국어` / `日本語`).
 
 ### 발견 (`available_languages`)
 
-내장 3 개(고정 순서) + `~/.tasty/lang/` 의 유효한 팩(코드순). 항목마다 코드 · 표시 이름 · 출처(`Builtin` / `BuiltinOverridden` / `Pack`) · `[font]` 선언 종류 · 경로. 파싱 실패, `[font]` 부재/무효, 내장 코드 이름의 디렉토리, 새 코드의 단일 파일은 전부 `tracing::warn!` + 제외. 규칙 표는 [dev-guide/i18n](../../dev-guide/i18n.md) "언어팩".
+내장 3 개(고정 순서) + `~/.tasty/lang/` 의 유효한 팩(코드순). 항목마다 코드 · 표시 이름 · 출처(`Builtin` / `BuiltinOverridden` / `Pack`) · `[font]` 선언 종류 · 경로. 파싱 실패, `[font]` 부재/무효, 크기 상한 초과, 내장 코드 이름의 디렉토리, 새 코드의 단일 파일은 전부 `tracing::warn!` + 제외. 규칙 표는 [dev-guide/i18n](../../dev-guide/i18n.md) "언어팩".
+
+발견은 목록에 필요한 `[meta] name` 과 `[font]` **둘만** 읽는다 — 문자열 키를 flatten 하지 않는다. 이 스캔은 설정 창 첫 오픈 때 렌더 스레드에서 동기로 돌기 때문이다. 수락/거절 판정은 실제 로드와 동일해 "목록에 오르면 로드된다" 가 성립한다.
 
 ### 부팅 적용과 폴백
 
 1. `general.language` 를 정규화(공백 → `en`)해 `tasty_i18n::init` 에 넘긴다.
 2. 내장 코드면 내장 + 오버라이드. 아니면 `<code>/pack.toml` 을 읽는다.
-3. 팩이 **없거나 거부되면 영어로 폴백** — 테이블은 en(+ en 오버라이드), `current_language()` 와 자식 env `TASTY_LOCALE` 은 `en`. `LoadReport { requested, effective, outcome }` 가 이유(`PackMissing { expected }` / `PackInvalid { path, error }`)를 담는다.
+3. 팩이 **없거나 거부되면(크기 상한 초과 포함) 영어로 폴백** — 테이블은 en(+ en 오버라이드), `current_language()` 와 자식 env `TASTY_LOCALE` 은 `en`. `LoadReport { requested, effective, outcome }` 가 이유(`PackMissing { expected }` / `PackInvalid { path, error }`)를 담는다.
 4. 알림: 로드 시점 `tracing::warn!` 한 줄(요청 코드 + 기대 경로, **경로는 온전한 값**) — headless/CLI 는 이것이 전부. GUI 는 부팅 후 **경고 토스트 1회**(`i18n.warn.pack_missing` / `pack_invalid`, 창 스코프). 토스트는 본문 200자 캡이 있어, 메시지가 캡을 넘기면 **경로만 가운데를 생략**해(`…`) 캡 안에 맞춘다 — 머리(어느 루트)와 꼬리(`<code>/pack.toml`)는 남는다. 잘려서 안내가 사라지는 것보다 경로를 줄이는 쪽이 낫다.
 5. **설정값은 어느 경로에서도 고쳐 쓰지 않는다.** 팩을 넣고 재시작하면 그 언어가 뜬다.
 
@@ -60,6 +63,7 @@
 - Given `general.language = "zz"` 이고 팩 없음 When 부팅 Then 영어 UI + 경고 토스트 1회(코드 · 기대 경로), headless/CLI 는 warn 1줄, `config.toml` 의 값은 `zz` 그대로.
 - Given 콤보의 현재 값이 목록에 없음 When 콤보를 열고 닫음 Then 값이 바뀌지 않는다.
 - Given 팩이 어떤 키의 값을 `""` 로 두었음 When 그 팩으로 부팅 Then 그 키는 영어로 보이고 화면에 빈 라벨이 없다.
+- Given `~/.tasty/lang/big/pack.toml` 이 2 MiB 를 넘음 When `available_languages()` Then `big` 은 목록에 없고 warn 이 남는다. And `general.language = "big"` 으로 부팅하면 영어로 폴백하고 `config.toml` 의 값은 `big` 그대로다.
 - Given 데이터 루트가 길어 경고 메시지가 200자를 넘김 When 폴백 토스트 Then 경로 가운데가 `…` 로 줄고 `(200자 제한)` 접미가 붙지 않는다.
 
 ## 화면

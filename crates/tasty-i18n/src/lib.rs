@@ -24,8 +24,10 @@
 //!
 //! Plugins can dynamically register/unregister translation namespaces via
 //! [`register_namespace`] / [`unregister_namespace`]. Namespace strings are
-//! `Box::leak`ed to satisfy `&'static str` lookup contract — the per-plugin
-//! string set is small and bounded so the leak is acceptable.
+//! `Box::leak`ed to satisfy the `&'static str` lookup contract. The leak is
+//! acceptable because the string set is bounded: a plugin's namespace is shipped
+//! with the plugin, and a user language pack — whose size is chosen by the user,
+//! not by tasty — is capped at [`MAX_PACK_BYTES`] before it is ever parsed.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -149,6 +151,12 @@ pub enum PackError {
     /// `[font]` present but none of `builtin` / `file` / `family` / `candidates`
     /// is usable.
     InvalidFont(String),
+    /// The manifest is bigger than [`MAX_PACK_BYTES`]. Rejected before parsing —
+    /// see that constant for how the limit is set.
+    TooLarge {
+        bytes: u64,
+        max: u64,
+    },
 }
 
 impl fmt::Display for PackError {
@@ -158,6 +166,12 @@ impl fmt::Display for PackError {
             Self::Parse(e) => write!(f, "invalid TOML: {e}"),
             Self::MissingFont => write!(f, "missing [font] section"),
             Self::InvalidFont(e) => write!(f, "invalid [font]: {e}"),
+            Self::TooLarge { bytes, max } => write!(
+                f,
+                "too large: {} KiB (limit {} KiB)",
+                bytes / 1024,
+                max / 1024
+            ),
         }
     }
 }
@@ -239,9 +253,139 @@ pub struct LanguagePack {
     strings: HashMap<String, String>,
 }
 
+/// `flatten_toml` 호출 계수기 — **테스트 전용**.
+///
+/// 발견 경로가 문자열 키를 flatten 하지 않는다는 것을 시간이 아니라 사실로 확인한다.
+/// 시간 비교는 부하에 따라 흔들려 회귀 신호가 되지 못한다. 스레드 로컬이라 테스트
+/// 하네스가 테스트마다 다른 스레드에서 돌려도 다른 테스트의 flatten 이 섞이지 않는다.
+#[cfg(test)]
+mod flatten_probe {
+    use std::cell::Cell;
+
+    thread_local! {
+        static CALLS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(super) fn note() {
+        CALLS.with(|c| c.set(c.get() + 1));
+    }
+
+    pub(super) fn reset() {
+        CALLS.with(|c| c.set(0));
+    }
+
+    pub(super) fn count() -> usize {
+        CALLS.with(Cell::get)
+    }
+}
+
+/// Largest a language file may be. Anything bigger is rejected unparsed, with a
+/// `tracing::warn!`, and does not appear in the settings combo.
+///
+/// **Why 2 MiB.** The largest built-in file is `lang/ja.toml` — 89 KiB for ~1,300
+/// keys — and a pack is a translation of that same key set, so a real pack sits in
+/// that order of magnitude. This limit is ~23× that. The three things that
+/// legitimately inflate a pack compound to roughly 12×, still under the limit: a
+/// verbose language (~1.5×), heavy author comments (~2×), and the key set growing
+/// several-fold over the app's life (~4×).
+///
+/// The ceiling is also chosen so that hitting it stays cheap: a pack exactly at
+/// the limit costs ~20 ms to discover (release build), the same order as scanning
+/// twenty ordinary packs. So even a deliberately maximal pack cannot make the
+/// first open of the settings window noticeably slower.
+///
+/// The limit exists because the cost of reading a pack is proportional to a file
+/// the *user* placed. Without it a 200 MB file is accepted, read whole into
+/// memory, and parsed on the render thread the first time the settings window
+/// opens. If a real pack ever legitimately approaches this, raise the number here
+/// — the point is that the cost is bounded by something tasty chooses, not by
+/// whatever happens to be in `~/.tasty/lang/`.
+pub const MAX_PACK_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Read a language file, refusing anything over [`MAX_PACK_BYTES`].
+///
+/// Enforced with `Read::take` rather than a `metadata()` size check, so an
+/// oversized file is never read past the limit and the decision cannot race a
+/// file that grows between the check and the read. The size in the error is
+/// best-effort (`metadata`, for the message only) — the rejection already stands.
+fn read_capped(path: &Path) -> Result<String, PackError> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|e| PackError::Read(e.to_string()))?;
+    // 빠른 거부 — 100 MB 짜리를 상한만큼 읽고 나서 버리지 않는다. 판정의 근거는
+    // 아래 `take` 이고 이건 순수 최적화다: 파일이 커진 뒤 줄어드는 경합에서
+    // 이 검사를 통과하더라도 `take` 가 다시 잡는다.
+    if let Ok(meta) = file.metadata()
+        && meta.len() > MAX_PACK_BYTES
+    {
+        return Err(PackError::TooLarge {
+            bytes: meta.len(),
+            max: MAX_PACK_BYTES,
+        });
+    }
+    let mut text = String::new();
+    // 판정 본체 — `metadata()` 크기를 믿지 않고 실제로 읽은 바이트로 자른다.
+    // 검사와 읽기 사이에 자라는 파일에도 상한이 성립하고, 크기를 보고하지 않는
+    // 파일(procfs 류)도 여기서 걸린다.
+    let read = file
+        .take(MAX_PACK_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| PackError::Read(e.to_string()))?;
+    if read as u64 > MAX_PACK_BYTES {
+        return Err(PackError::TooLarge {
+            bytes: read as u64,
+            max: MAX_PACK_BYTES,
+        });
+    }
+    Ok(text)
+}
+
+/// Read `path` and parse it as a TOML table, within [`MAX_PACK_BYTES`].
+fn parse_manifest(path: &Path) -> Result<toml::Table, PackError> {
+    let text = read_capped(path)?;
+    let value: toml::Value = text
+        .parse()
+        .map_err(|e: toml::de::Error| PackError::Parse(e.to_string()))?;
+    match value {
+        toml::Value::Table(table) => Ok(table),
+        _ => Err(PackError::Parse("root is not a table".to_string())),
+    }
+}
+
+/// What discovery needs from a pack manifest: the combo label and the font.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackHead {
+    /// `[meta] name`, if present and non-empty.
+    pub display_name: Option<String>,
+    pub font: FontDecl,
+}
+
+/// Read only the parts of a pack manifest that **discovery** needs — `[meta] name`
+/// and `[font]`. Validation is identical to [`load_pack`], so "listed in the combo"
+/// still means "will load".
+///
+/// Kept separate from [`load_pack`] because the settings combo scans every pack in
+/// `~/.tasty/lang/` synchronously on the render thread the first time the window
+/// opens, and it needs two values out of a file that may hold thousands of keys.
+/// Going through `load_pack` there flattened every string leaf into an owned
+/// `HashMap` and then dropped it — work proportional to the pack, thrown away.
+pub fn load_pack_head(path: &Path) -> Result<PackHead, PackError> {
+    let table = parse_manifest(path)?;
+    let font = match table.get("font") {
+        None => return Err(PackError::MissingFont),
+        Some(font) => parse_font_decl(font)?,
+    };
+    Ok(PackHead {
+        display_name: meta_name(&table),
+        font,
+    })
+}
+
 /// Read and validate `path` as the pack manifest of `code`. The `[font]` section
 /// is mandatory; `[meta] name` is optional. Every other string leaf becomes a
 /// translation key, overlaid on the English base at load time.
+///
+/// This is the **load** path — it produces the string table. Discovery wants only
+/// the header and must use [`load_pack_head`] instead.
 ///
 /// A **blank value counts as "not translated"** and is dropped, so the English
 /// base shows through instead of a label-less button. A pack author leaving a key
@@ -250,22 +394,17 @@ pub struct LanguagePack {
 /// that the trim does not eat (e.g. a non-breaking space). Same rule as
 /// [`meta_name`] and [`non_empty_str`], which already reject blanks.
 pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
-    let text = std::fs::read_to_string(path).map_err(|e| PackError::Read(e.to_string()))?;
-    let value: toml::Value = text
-        .parse()
-        .map_err(|e: toml::de::Error| PackError::Parse(e.to_string()))?;
-    let Some(table) = value.as_table() else {
-        return Err(PackError::Parse("root is not a table".to_string()));
-    };
+    let mut table = parse_manifest(path)?;
     let font = match table.get("font") {
         None => return Err(PackError::MissingFont),
         Some(font) => parse_font_decl(font)?,
     };
-    let display_name = meta_name(table);
-    let mut body = table.clone();
-    body.remove("font");
+    let display_name = meta_name(&table);
+    // 파싱한 테이블을 그대로 소비한다 — 예전에는 `table.clone()` 으로 문서 전체를
+    // 한 번 더 복제한 뒤 그 사본에서 `font` 만 지웠다.
+    table.remove("font");
     let mut strings = HashMap::new();
-    Translations::flatten_toml("", &toml::Value::Table(body), &mut strings);
+    Translations::flatten_toml("", &toml::Value::Table(table), &mut strings);
     let blank = drop_blank_values(&mut strings);
     if blank > 0 {
         tracing::warn!(
@@ -603,6 +742,8 @@ impl Translations {
     }
 
     fn flatten_toml(prefix: &str, value: &toml::Value, map: &mut HashMap<String, String>) {
+        #[cfg(test)]
+        flatten_probe::note();
         match value {
             toml::Value::Table(table) => {
                 for (key, val) in table {
@@ -711,15 +852,23 @@ impl Translations {
 
 /// Read a user TOML file. `Ok(None)` when it does not exist; `Err` for any
 /// other I/O failure or a parse error (the caller decides how loud to be).
+///
+/// Subject to the same [`MAX_PACK_BYTES`] limit as a pack — a built-in override
+/// (`~/.tasty/lang/<builtin>.toml`) is a user-placed file of the same shape, so
+/// leaving it uncapped would just move the unbounded read one path over.
 fn read_user_toml(path: &Path) -> Result<Option<toml::Value>, String> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => text
-            .parse::<toml::Value>()
-            .map(Some)
-            .map_err(|e| format!("invalid TOML: {e}")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("cannot read: {e}")),
+    if !path.exists() {
+        return Ok(None);
     }
+    let text = match read_capped(path) {
+        Ok(text) => text,
+        // `exists()` 와 열기 사이에 사라졌다면 없는 것과 같게 다룬다.
+        Err(PackError::Read(_)) if !path.exists() => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    text.parse::<toml::Value>()
+        .map(Some)
+        .map_err(|e| format!("invalid TOML: {e}"))
 }
 
 fn leak_str(s: String) -> &'static str {
@@ -859,12 +1008,13 @@ fn pack_entry(dir: &Path, code: &str) -> Option<LanguageEntry> {
         tracing::warn!("i18n: {} ignored — {reason}", path.display());
         return None;
     }
-    match load_pack(&path, code) {
-        Ok(pack) => Some(LanguageEntry {
+    // 발견은 `[meta]`/`[font]` 만 필요하다 — 문자열 키를 flatten 하지 않는다.
+    match load_pack_head(&path) {
+        Ok(head) => Some(LanguageEntry {
             code: code.to_string(),
-            display_name: pack.display_name,
+            display_name: head.display_name,
             source: LanguageSource::Pack,
-            font: Some(pack.font),
+            font: Some(head.font),
             path: Some(path),
         }),
         Err(e) => {
@@ -1449,5 +1599,214 @@ mod tests {
         assert_eq!(tr.get("plugin.x.body"), "OnlyEn");
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+}
+
+#[cfg(test)]
+mod pack_size_and_discovery_tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tasty-i18n-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write(path: PathBuf, content: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+
+    const HEADER: &str = "[meta]\nname = \"Big\"\n\n[font]\nbuiltin = true\n\n[filler]\n";
+
+    /// `[font]`/`[meta]` 를 갖춘 유효한 팩을 만들되 본문을 `bytes` 근처까지 채운다.
+    fn pack_of_size(bytes: usize) -> String {
+        let mut s = String::from(HEADER);
+        let mut i = 0usize;
+        while s.len() < bytes {
+            s.push_str(&format!("k{i} = \"{}\"\n", "x".repeat(64)));
+            i += 1;
+        }
+        s
+    }
+
+    #[test]
+    fn a_pack_over_the_limit_is_rejected_before_it_is_parsed() {
+        let dir = temp_dir("toobig");
+        let path = dir.join("big").join("pack.toml");
+        write(path.clone(), &pack_of_size(MAX_PACK_BYTES as usize + 4096));
+
+        match load_pack(&path, "big") {
+            Err(PackError::TooLarge { bytes, max }) => {
+                assert_eq!(max, MAX_PACK_BYTES);
+                assert!(bytes > MAX_PACK_BYTES, "실제 크기를 보고해야 한다: {bytes}");
+            }
+            other => panic!("expected TooLarge, got {other:?}"),
+        }
+        assert!(matches!(
+            load_pack_head(&path),
+            Err(PackError::TooLarge { .. })
+        ));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_oversized_pack_does_not_appear_in_the_language_list() {
+        let dir = temp_dir("toobig-scan");
+        write(
+            dir.join("big").join("pack.toml"),
+            &pack_of_size(MAX_PACK_BYTES as usize + 4096),
+        );
+        write(
+            dir.join("ok").join("pack.toml"),
+            "[meta]\nname = \"Ok\"\n\n[font]\nbuiltin = true\n",
+        );
+        let codes: Vec<String> = scan_languages(Some(&dir))
+            .into_iter()
+            .map(|e| e.code)
+            .collect();
+        assert!(codes.contains(&"ok".to_string()));
+        assert!(
+            !codes.contains(&"big".to_string()),
+            "상한 초과 팩이 목록에 올랐다: {codes:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn selecting_an_oversized_pack_falls_back_to_english_without_touching_the_setting() {
+        let dir = temp_dir("toobig-load");
+        write(
+            dir.join("big").join("pack.toml"),
+            &pack_of_size(MAX_PACK_BYTES as usize + 4096),
+        );
+        let (tr, report) = Translations::load_from("big", Some(&dir));
+        assert_eq!(tr.language, "en");
+        assert_eq!(tr.get("button.ok"), "OK");
+        // 요청 코드는 그대로 보고된다 — 설정값을 덮어쓰지 않는다는 계약의 관측점.
+        assert_eq!(report.requested, "big");
+        assert_eq!(report.effective, "en");
+        assert!(report.fell_back());
+        assert!(matches!(
+            report.outcome,
+            LoadOutcome::PackInvalid {
+                error: PackError::TooLarge { .. },
+                ..
+            }
+        ));
+        assert!(report.user_warning().is_some());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_pack_just_under_the_limit_still_loads() {
+        // 상한이 정상 팩을 자르지 않는다는 반대편 — 가장 큰 내장 파일의 23 배까지 통과.
+        let dir = temp_dir("justunder");
+        let path = dir.join("ok").join("pack.toml");
+        write(
+            path.clone(),
+            &pack_of_size(MAX_PACK_BYTES as usize - 65_536),
+        );
+        let pack = load_pack(&path, "ok").expect("상한 아래 팩은 통과해야 한다");
+        assert_eq!(pack.font, FontDecl::Builtin);
+        assert_eq!(pack.display_name.as_deref(), Some("Big"));
+        assert!(!pack.strings.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_builtin_override_file_is_capped_too() {
+        let dir = temp_dir("override-big");
+        // `<builtin>.toml` 도 사용자가 놓는 파일이다 — 여기만 열어두면 상한이 무의미하다.
+        write(
+            dir.join("ko.toml"),
+            &pack_of_size(MAX_PACK_BYTES as usize + 4096),
+        );
+        let ko = scan_languages(Some(&dir))
+            .into_iter()
+            .find(|e| e.code == "ko")
+            .expect("내장 ko 는 항상 목록에 있다");
+        assert_eq!(
+            ko.source,
+            LanguageSource::Builtin,
+            "상한 초과 오버라이드는 적용된 것으로 표시되면 안 된다"
+        );
+        let (tr, _) = Translations::load_from("ko", Some(&dir));
+        assert_eq!(tr.language, "ko");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// "목록에 오르면 로드된다" — 발견(head)과 로드(full)의 수락/거절 판정이 같아야 한다.
+    /// 경량 경로를 따로 두면서 이 등가성이 깨지는 것이 가장 실질적인 회귀다.
+    #[test]
+    fn the_discovery_path_accepts_and_rejects_exactly_what_the_load_path_does() {
+        let dir = temp_dir("parity");
+        let cases: &[(&str, &str)] = &[
+            (
+                "good",
+                "[meta]\nname = \"G\"\n\n[font]\nbuiltin = true\n\n[a]\nb = \"c\"\n",
+            ),
+            ("nofont", "[meta]\nname = \"N\"\n\n[a]\nb = \"c\"\n"),
+            ("badfont", "[font]\nfile = \"\"\n"),
+            ("badtoml", "[font\nbuiltin = true\n"),
+            ("notatable", "42\n"),
+        ];
+        for (code, body) in cases {
+            let path = dir.join(code).join("pack.toml");
+            write(path.clone(), body);
+            let full = load_pack(&path, code);
+            let head = load_pack_head(&path);
+            assert_eq!(
+                full.is_ok(),
+                head.is_ok(),
+                "'{code}' 에서 발견과 로드의 판정이 갈렸다: full={full:?} head={head:?}"
+            );
+            if let (Ok(full), Ok(head)) = (full, head) {
+                assert_eq!(full.font, head.font);
+                assert_eq!(full.display_name, head.display_name);
+            }
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 발견이 문자열 키를 **하나도** flatten 하지 않는다 — 이 티켓의 비용 축 자체.
+    /// 시간이 아니라 호출 사실로 본다(시간 비교는 부하에 흔들려 회귀 신호가 못 된다).
+    #[test]
+    fn discovery_never_flattens_the_string_table() {
+        let dir = temp_dir("cost");
+        // 팩 3 개 — 스캔이 전부를 훑는데도 flatten 이 0 이어야 한다.
+        for code in ["aa", "bb", "cc"] {
+            write(dir.join(code).join("pack.toml"), &pack_of_size(256 * 1024));
+        }
+
+        flatten_probe::reset();
+        let listed = scan_languages(Some(&dir));
+        let scan_flattens = flatten_probe::count();
+        assert!(
+            listed.iter().any(|e| e.code == "aa"),
+            "팩이 목록에 올라야 이 측정이 의미가 있다"
+        );
+        assert_eq!(
+            scan_flattens, 0,
+            "발견이 문자열을 flatten 했다 — `pack_entry` 가 `load_pack` 으로 되돌아갔다"
+        );
+
+        // 반대편: 실제 로드는 flatten 한다(계수기가 살아 있다는 것도 함께 확인).
+        flatten_probe::reset();
+        load_pack(&dir.join("aa").join("pack.toml"), "aa").unwrap();
+        assert!(flatten_probe::count() > 0);
+
+        flatten_probe::reset();
+        load_pack_head(&dir.join("aa").join("pack.toml")).unwrap();
+        assert_eq!(flatten_probe::count(), 0);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1,4 +1,4 @@
-<!-- source-hash: 728ff9ae34ed -->
+<!-- source-hash: 0ed2d8dd79bc -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -143,7 +143,8 @@ the list.
 - **It does not appear in the list** — check that the folder is named after the
   language code, that the file inside is called exactly `pack.toml`, and that
   `[font]` is present. Close and reopen the settings window (the list is read once
-  when the window opens).
+  when the window opens). A `pack.toml` may not exceed **2 MiB** — the built-in
+  language files are under 100 KiB, so a normal translation never runs into this.
 - **English shows up with a warning** — the pack for the selected language was not
   found, or the file is invalid. The warning names the path that was looked for.
   **Your setting is kept**, so fixing the pack and restarting brings that language
