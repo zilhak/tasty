@@ -98,8 +98,9 @@ check_mod_use_order() {
 # ────────────────────────────────────────────────────────────
 # 루트 `cargo fmt` 는 workspace `exclude` 크레이트(site/, crates/tasty-plugin-sdk-wasm/)
 # 를 보지 않는다 — 그 디렉토리의 .rs 가 staged 됐을 때만 manifest 를 따로 지정해
-# 검사한다 (docs/dev-guide/site.md "왜 workspace 밖인가"). CI 에는 fmt 게이트가
-# 없으므로 이 훅이 유일한 집행 지점이다.
+# 검사한다 (docs/dev-guide/site.md "왜 workspace 밖인가"). CI 에도 같은 게이트가
+# 있다(.github/workflows/format-check.yml, main push + PR) — 이 훅은 그것을 커밋
+# 시점으로 당겨 빠른 피드백을 주는 역할이고, 우회(`--no-verify`)해도 CI 가 잡는다.
 EXCLUDED_CRATES="site crates/tasty-plugin-sdk-wasm"
 
 check_cargo_fmt() {
