@@ -106,5 +106,9 @@ regular memory 는 **설계상 공유 네임스페이스**다 — `tasty_memory`
 - [plugin-permissions](../dev-guide/plugin-permissions.md) — 권한 토큰과 그 토큰이 여는 메서드
 - [ADR-0094](0094-surface-id-space-bounded-below-pty-base.md) — 같은 핸들러가 scope 파라미터에
   거는 다른 경계
+- [ADR-0140](0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md) — 같은 형태의
+  결정을 **IPC 메서드 prefix** 에 내린 것. 그쪽은 예약 목록을 파생하지 않고 가드로 고정했고
+  (집행 지점이 매니페스트 검증이라 목록이 필요했다), 이쪽은 집행 지점이 핸들러라 접두 하나로
+  줄일 수 있었다 — 두 결정이 갈린 이유가 집행 지점이다
 - `src/adapters/ipc/handler/memory.rs` (`HOST_KEY_NAMESPACE`) · `src/adapters/ipc/audit.rs`
   (`AUDIT_KEY_PREFIX`) · `crates/tasty-memory/src/lib.rs` (owner 모델)

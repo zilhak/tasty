@@ -692,28 +692,114 @@ mod tests {
         );
     }
 
-    /// 예약은 접두 하나이므로 호스트 namespace 열한 개가 한꺼번에 덮인다 —
-    /// 새 namespace 가 생겨도 목록을 고칠 필요가 없다.
-    #[test]
-    fn one_prefix_covers_every_host_namespace() {
-        for key in [
-            "tasty.audit.0001",
-            "tasty.telemetry.event.1",
-            "tasty.agent.lease.x",
-            "tasty.approval.a",
-            "tasty.commands.c",
-            "tasty.session.s",
-            "tasty.startup.s",
-            "tasty.bb.b",
-            "tasty.plan.p",
-            "tasty.cache.c",
-            "tasty.observer.o",
-        ] {
-            assert!(is_host_key(key), "{key} 가 예약 namespace 밖으로 샌다");
+    /// 디렉토리 순회. 실패를 삼키지 않는다 — 못 읽은 디렉토리는 위반이 없는 디렉토리와
+    /// 구분되지 않으므로, 조용히 건너뛰면 가드가 초록인 채로 눈이 먼다.
+    fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let entries = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("스캔 디렉토리 `{}` 를 열지 못했다: {e}", dir.display()));
+        for entry in entries {
+            let entry =
+                entry.unwrap_or_else(|e| panic!("`{}` 의 항목을 읽지 못했다: {e}", dir.display()));
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "target") {
+                    continue;
+                }
+                collect_rs(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
         }
-        // plugin 자기 키는 걸리지 않는다. `tasty-` 는 점이 없어 namespace 가 아니다.
-        for key in ["my.state", "tasty-thing.state", "tastyx.y", ""] {
+    }
+
+    /// plugin 자기 키는 예약에 걸리지 않는다. `tasty-` 는 점이 없어 namespace 가 아니고,
+    /// `tastyx.` 도 마찬가지다 — 예약은 `tasty` 로 시작하는 이름이 아니라 `tasty.`
+    /// namespace 다.
+    #[test]
+    fn the_reservation_does_not_catch_plugin_keys() {
+        for key in ["my.state", "tasty-thing.state", "tastyx.y", "", "tast"] {
             assert!(!is_host_key(key), "{key} 가 잘못 예약에 걸린다");
+        }
+    }
+
+    /// 접두 하나로 예약하는 것의 값은 **호스트 키 공간을 목록으로 들지 않아도 된다**
+    /// 는 데 있다. 그 값이 실제로 있는지 손목록 대신 레포에서 직접 센다 — 선언된
+    /// 키 상수를 전부 긁어, `tasty.` 로 시작하는 것이 하나도 빠짐없이 예약에 걸리는지
+    /// 본다.
+    ///
+    /// 개수를 함께 고정하는 이유: 스캐너가 조용히 0 건을 세면 이 테스트는 초록인 채로
+    /// 눈이 먼다. 호스트 키 공간이 늘거나 줄면 그 자리에서 걸리고, 그때 사람이
+    /// "새로 생긴 것이 정말 `tasty.` 안인가" 를 한 번 본다.
+    #[test]
+    fn every_declared_host_key_space_is_inside_the_reservation() {
+        const EXPECTED: usize = 20;
+        /// `tasty` 로 시작하지만 memory store 키가 아닌 상수. 이름만 보고는 가를 수 없어
+        /// (스캐너에 그 오라클이 없다) 여기 이유와 함께 적는다.
+        const NOT_MEMORY_KEYS: &[(&str, &str)] = &[(
+            "HOOKS_REGISTRY_KEY",
+            "mlua 의 named registry 키 — memory store 가 아니다",
+        )];
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        for dir in ["src", "crates"] {
+            collect_rs(&root.join(dir), &mut files);
+        }
+        assert!(files.len() > 500, "스캔 파일이 {}개뿐이다", files.len());
+
+        let mut found: Vec<(String, String)> = Vec::new();
+        for f in &files {
+            let src = std::fs::read_to_string(f)
+                .unwrap_or_else(|e| panic!("`{}` 를 읽지 못했다: {e}", f.display()));
+            for line in src.lines() {
+                let Some(rest) = line.split_once("const ").map(|(_, r)| r) else {
+                    continue;
+                };
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_')
+                    .collect();
+                if !(name.ends_with("_KEY") || name.ends_with("_KEY_PREFIX")) {
+                    continue;
+                }
+                let Some((_, tail)) = rest.split_once("&str = \"") else {
+                    continue;
+                };
+                let Some((value, _)) = tail.split_once('"') else {
+                    continue;
+                };
+                if value.starts_with("tasty") {
+                    found.push((name, value.to_string()));
+                }
+            }
+        }
+        found.sort();
+        found.dedup();
+
+        let escaping: Vec<&(String, String)> = found
+            .iter()
+            .filter(|(n, v)| !is_host_key(v) && !NOT_MEMORY_KEYS.iter().any(|(e, _)| e == n))
+            .collect();
+        assert!(
+            escaping.is_empty(),
+            "`tasty` 로 시작하는 키 공간인데 예약(`{}`) 밖이다: {escaping:?}\n\
+             예약은 접두 하나뿐이므로, 여기 걸리면 그 키는 권한 caller 의 raw kv 에서 \
+             그대로 열려 있다. memory store 키가 아니라면 NOT_MEMORY_KEYS 에 이유와 \
+             함께 적는다 — 그 목록이 이 스캔이 이름만으로 못 가르는 자리의 전부다.",
+            super::HOST_KEY_NAMESPACE
+        );
+        assert_eq!(
+            found.len(),
+            EXPECTED,
+            "호스트 키 상수가 {}개다(고정값 {EXPECTED}): {found:#?}\n\n\
+             늘었다면 새 키 공간이 생긴 것이다 — 위 목록에서 그것이 `tasty.` 안인지 \
+             확인하고 이 상수를 올린다. 줄었다면 없어진 것을 확인하고 내린다.",
+            found.len()
+        );
+        for (name, _) in NOT_MEMORY_KEYS {
+            assert!(
+                found.iter().any(|(n, _)| n == name),
+                "면제 목록의 `{name}` 이 더 이상 없다 — 면제가 낡았다"
+            );
         }
     }
 
