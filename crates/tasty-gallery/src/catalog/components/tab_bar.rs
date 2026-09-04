@@ -29,7 +29,7 @@ enum Kind {
 }
 
 fn strip(ui: &mut egui::Ui, theme: &Theme) {
-    let bar_h = theme.item_height_tab.value(); // 24
+    let bar_h = theme.tab_bar_height.value(); // 24 — 본체와 같은 토큰(zoom 비적용)
     let tab_w = theme.tab_width.value(); // 150
     let w = ui.available_width().min(theme.measure_xl.value());
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, bar_h), egui::Sense::hover());
@@ -129,7 +129,7 @@ fn paint_icon(
 /// 탭 제목 색 위계 데모 — 본체 `tab_bar.rs` 의 `text_color` 분기(NeedsInput → \
 /// Completion → active → 평상시)를 3탭으로 재현.
 fn attention_strip(ui: &mut egui::Ui, theme: &Theme) {
-    let bar_h = theme.item_height_tab.value();
+    let bar_h = theme.tab_bar_height.value();
     let tab_w = theme.tab_width.value();
     let w = ui.available_width().min(theme.measure_xl.value());
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, bar_h), egui::Sense::hover());
