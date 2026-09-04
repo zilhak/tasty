@@ -77,6 +77,10 @@ pub(crate) struct BootState {
     pub(crate) window: Arc<Window>,
     pub(crate) gpu: GpuState,
     settings: crate::settings::Settings,
+    /// 부팅이 **설정 파일을 처음 읽었을 때** 본 상태. T2.5 의 theme 저장이 이미
+    /// 손상 원본을 백업으로 옮기고 정상 파일을 써 놓으므로, 나중에 만들어지는 engine 의
+    /// `settings.origin` 은 늘 `Clean` 이다 — 사용자에게 알리려면 여기서 붙잡아 둬야 한다.
+    settings_origin: tasty_settings::SettingsOrigin,
     pub(crate) phase: BootPhase,
     /// 부팅 시작 시각 (`boot_total` 계측 기준). 일반 경로는 `resumed()` 진입 시각,
     /// shell setup 경로는 Confirmed 시각.
@@ -118,6 +122,7 @@ impl App {
         boot_t0: Instant,
         window_hidden: bool,
     ) {
+        let settings_origin = settings.origin;
         let (db_init_error, invalid_theme_name) = Self::init_boot_db_and_theme(&mut settings);
 
         // 레거시 `layout.json` → `layouts/01.json` 마이그레이션 + 전 슬롯 union
@@ -129,6 +134,7 @@ impl App {
             window,
             gpu,
             settings,
+            settings_origin,
             phase: BootPhase::GpuInit,
             boot_t0,
             db_init_error,
@@ -479,6 +485,7 @@ impl App {
             window,
             gpu,
             settings: _,
+            settings_origin,
             phase: _,
             boot_t0,
             db_init_error,
@@ -498,6 +505,7 @@ impl App {
         Self::report_boot_init_errors(&mut state, db_init_error, invalid_theme_name);
         Self::report_locale_fallback(&mut state);
         self.start_boot_ipc_and_webhooks(&mut state);
+        Self::report_persistence_incidents(settings_origin, self.core_state(), &mut state);
 
         let mut core_state = self
             .core_state
@@ -638,6 +646,57 @@ impl App {
 
     /// IPC/stream 서버 시작 + 웹훅 리스너 init — `finish_boot` 의 첫 윈도우 등록
     /// 직전 1회 지점. 웹훅 bind 실패는 `state` 에 Warning 토스트로 반영한다.
+    /// 부팅 때 사용자 파일(설정·레이아웃)을 읽지 못한 사실을 한 번 알린다.
+    ///
+    /// 로그만으로는 부족하다 — 사용자가 보는 것은 "설정이 초기화됐다" / "탭이 사라졌다"
+    /// 이고, 원본이 어디로 갔는지(백업 경로)와 왜 저장이 멈췄는지를 알아야 복구할 수
+    /// 있다. 웹훅 미기동과 같은 Warning 토스트 인프라를 재사용한다.
+    fn report_persistence_incidents(
+        settings_origin: tasty_settings::SettingsOrigin,
+        engine: &crate::core::CoreState,
+        state: &mut crate::state::AppState,
+    ) {
+        use crate::adapters::ui::{ToastKind, ToastScope};
+        use tasty_settings::SettingsOrigin;
+
+        let mut warn = |msg: String| {
+            state
+                .toasts
+                .push(msg, ToastKind::Warning, ToastScope::Window);
+        };
+        // `engine.settings.origin` 이 아니라 부팅이 처음 읽었을 때의 값을 본다 — 그 사이
+        // T2.5 의 theme 저장이 원본을 백업으로 옮기고 정상 파일을 써 놓기 때문이다.
+        match settings_origin {
+            SettingsOrigin::Clean => {}
+            SettingsOrigin::Unparsable => {
+                let path = tasty_settings::Settings::config_path().unwrap_or_default();
+                let shown = tasty_utils::path::tilde_abbreviate(&path);
+                // 위 T2.5 저장이 원본을 옮겼으면 그 자리는 이제 정상 파일이다. 아직도
+                // 해석되지 않는다면 보존이 실패한 것(백업 자리 소진 등)이고 저장은 계속
+                // 거부된다 — 그때 "보관했다" 고 말하면 사용자가 없는 파일을 찾는다.
+                let key = if tasty_settings::Settings::file_is_unparsable(&path) {
+                    "persistence.warn.settings_unparsable_blocked"
+                } else {
+                    "persistence.warn.settings_unparsable"
+                };
+                // `t_fmt` 가 아니라 `t_fmt_fit` 이다 — 긴 경로가 문구를 토스트 캡 밖으로
+                // 밀어내면 잘려나가는 것이 문장 끝의 조치 안내다. 경로만 줄인다.
+                warn(crate::i18n::t_fmt_fit(key, &shown));
+            }
+            SettingsOrigin::ProtectedUnreadable => {
+                warn(crate::i18n::t("persistence.warn.settings_locked").to_string());
+            }
+        }
+        if engine.layout_slot_preserve_failed {
+            warn(crate::i18n::t("persistence.warn.layout_unparsable_blocked").to_string());
+        } else if engine.layout_slot_unparsable {
+            warn(crate::i18n::t("persistence.warn.layout_unparsable").to_string());
+        }
+        if engine.layout_slot_protected {
+            warn(crate::i18n::t("persistence.warn.layout_locked").to_string());
+        }
+    }
+
     fn start_boot_ipc_and_webhooks(&mut self, state: &mut crate::state::AppState) {
         let ipc_proxy = self.view.proxy.clone();
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {

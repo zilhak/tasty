@@ -862,6 +862,14 @@ bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and c
 pack_missing = "Language '{}' is not installed — showing English. Put a language pack at {}, then restart."
 pack_invalid = "Language pack '{}' could not be loaded — showing English. Fix {} and restart ({})."
 
+[persistence.warn]
+settings_unparsable = "Tasty could not read {} and started with default settings. The original is preserved beside it as a .bak file."
+settings_locked = "Your settings file could not be read. Saving settings is disabled so the file is not overwritten — fix or move it, then restart."
+layout_unparsable = "Tasty could not read your saved window layout and started with a fresh one. The saved file is preserved beside it as a .bak file."
+layout_locked = "Your saved window layout could not be read, so Tasty started with a fresh one. The saved layout will not be overwritten."
+settings_unparsable_blocked = "Settings will not be saved until you move or delete the .bak files next to {}, then restart. Tasty could not read that file, could not move it aside either, and started with defaults."
+layout_unparsable_blocked = "This window layout will not be saved until you move or delete the .bak files in the layouts folder, then restart. Tasty could not read the saved layout or move it aside."
+
 [banner.mouse_capture]
 title = "Mouse input captured"
 body = "This app is capturing the mouse. Use Shift+drag to select text, Shift+Right-click for the tasty menu."
