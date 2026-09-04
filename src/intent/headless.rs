@@ -15,9 +15,21 @@
 //! cascade 범위는 gui 의 `handle_core_event`(`src/app/dispatch_domain.rs`)에서
 //! **engine 상태로 완결되는 부분만** 가져온다. view redraw·toast·NSMenu 재구성처럼
 //! 소비처가 GUI 인 것은 headless 에 소비자가 없어 생략한다. host event 발화도
-//! 생략한다 — headless 는 `pending_host_events` 를 drain 하는 주체가 없어
-//! (`src/app/dispatch/host_events.rs` 가 gui 전용) enqueue 하면 지금 고치는 것과
-//! 똑같은 무한 적재를 새로 만든다.
+//! 생략하는데, 그 근거는 "drain 주체가 없다" 가 아니다 — 그 사실은 headless 의
+//! 모든 enqueue 지점에 똑같이 참이라 무엇을 생략하고 무엇을 넣을지 가르지
+//! 못한다. **가르는 것은 이벤트 종류의 소비자 집합이다.**
+//!
+//! `dispatch_pending_host_events`(`src/app/dispatch/host_events.rs`, gui 전용)의
+//! 소비자는 세 갈래다 — ① 모든 종류를 plugin event bus 로 내보내는 `emit_*`,
+//! ② `HookFired` 만 받는 `resolve_hook_fired_task_waits`(`agent.task_await`
+//! 대기자를 깨운다), ③ `SurfaceFocused` 만 받는 OSC 제목 재투영. 여기서
+//! 생략하는 `NotificationCreated` 의 소비자는 ① 하나뿐이라, 생략으로 잃는 것은
+//! bus 전달 하나다. 반대로 ②를 가진 종류는 생략이 곧 기능 정지가 된다.
+//!
+//! 큐 적재는 별개 축이다 — `pending_host_events` 는 headless 에서 **이미**
+//! 자라고 있다(`src/boot.rs` 의 idle-timeout 경로,
+//! `src/adapters/ipc/handler/hooks.rs` 의 `surface.fire_hook`). 그러니 여기서
+//! 넣지 않는 것은 적재를 막는 것이 아니라 적재율을 올리지 않는 것이다.
 
 // gui 빌드에서는 호출부가 없다(headless boot 전용) — 테스트만 쓴다. 모듈을 cfg 로
 // 가리지 않는 이유는 위 모듈 주석 참조.
