@@ -4,7 +4,7 @@
 
 판단 기준(원칙 1):
 
-- **에이전트 기능 → release IPC**: surface/tab/workspace 생성·조회·닫기, 클립보드, 알림, 메타데이터 등 — 에이전트가 *자기 작업* 을 하려고 필요한 동작. 예: **`surface.completion`**(surface highlight 발동) — 에이전트가 "이 surface 확인 필요" 라고 *자기 작업 결과를 보고* 하는 것이라 PushNotification 과 동류 → **release 정식**. 반면 그 highlight 를 *포커스를 주입해* 해제하는 경로는 사용자 입력 재현이라 debug 격리 대상(현 해제는 실 렌더 포커스 기준이라 애초에 IPC 아님).
+- **에이전트 기능 → release IPC**: surface/tab/workspace 생성·조회·닫기, 클립보드, 알림, 메타데이터 등 — 에이전트가 *자기 작업* 을 하려고 필요한 동작. 예: **`surface.completion`**(surface highlight 발동) — 에이전트가 "이 surface 확인 필요" 라고 *자기 작업 결과를 보고* 하는 것이라 PushNotification 과 동류 → **release 정식**. 반면 그 highlight 를 *포커스를 주입해* 해제하는 경로는 사용자 입력 재현이라 debug 격리 대상(상태 해제 자체는 `surface.attention.clear` 로 release 에 있다 — 포커스를 옮겨서 해제하는 방식만 debug 격리 대상이다).
 - **디버그 기능 → debug 전용**: 사용자 단축키/마우스로 트리거되는 동작의 자동 재현(키/마우스 주입, 단축키로만 여는 popup/도구 메뉴의 IPC 트리거), 그리고 렌더러·파서 검증용 저수준 덤프.
 
 ## 라우팅
@@ -90,16 +90,42 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.fullscreen.close` | `window_id?` | 그 창의 활성 무대를 내린다. 응답 `closed` 는 실제로 내린 무대가 있었는지(없었으면 `false`), `stage_id` 는 내려간 무대 id |
 | `debug.fullscreen.state` | `window_id?` | 활성 무대 id(없으면 `null`) + 창 상태 덤프: `stage_active`·`os_fullscreen`·`maximized`·`inner_size{width,height}`·`monitor{name,position,size,scale_factor}`. **무대 상태와 OS 창 전환은 별개** — `open` 직후 `stage_id` 는 즉시 서지만 `os_fullscreen` 은 다음 프레임의 `sync_window_fullscreen` 이 반영한다 |
 | `window.focus` / `view.focus` | — | 프로그래밍적 포커스 전환(사용자 단축키/마우스 영역이라 debug 전용) |
+| `surface.raw_key` | `keycode`, `direction?`(press/release/click) | **macOS 전용.** `CGEventPost` 로 OS 이벤트 스트림에 키를 주입한다 — 대상 surface 를 받을 수단이 없어 **그 순간 OS 포커스를 가진 무엇이든** 받는다(tasty 창이 아닐 수도 있다). PTY 바이트 쓰기로는 구동되지 않는 macOS IME 파이프라인(`interpretKeyEvents` → `setMarkedText`/`insertText`) 자동 검증용. 손쉬운 사용(Accessibility) 권한 미승인이면 `-32001 permission_denied` ([macOS 권한](../features/macos-permissions/index.md)) † |
+| `surface.switch_input_source` | `source_id` | **macOS 전용.** `TISSelectInputSource` 로 시스템 입력 소스(키보드 레이아웃·입력기)를 바꾼다 — 사용자가 입력기 메뉴로 하는 조작의 재현. 위 `raw_key` 로 한글/CJK 경로를 검증하기 전 입력기를 맞추는 데 쓴다 † |
+| `surface.ime_enable` / `ime_disable` / `ime_preedit` / `ime_commit` / `ime_status` | `text`/`cursor`(preedit·commit) | 포커스된 창의 IME 조합 상태(`ime_active`/`ime_preedit`)를 강제로 세팅·조회한다 — 사용자 입력기 조합의 재현. 대상을 ID 로 받지 못하고 포커스된 창에 작용하므로 포커스 독립성도 만족하지 않는다. 개별 등재가 아니라 `PREFIX_RULES` 의 `surface.ime_` 로 해소되며, 그 규칙 자체가 `#[cfg(debug_assertions)]` 다. 사용법은 [ime-testing](../ai-verification/ime-testing.md) |
 
-† **`debug.inject_mouse` / `debug.inject_key` 는 런타임 추가 게이트가 있다** — `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부.
+† **런타임 추가 게이트** — `debug.inject_mouse` · `debug.inject_key` · `surface.raw_key` · `surface.switch_input_source` 는 `--enable-input-simulation` 으로 띄운 인스턴스에서만 동작한다(`engine.input_simulation_enabled`). 안 켜져 있으면 `-32001` 로 거부. 앞의 둘은 대상 surface 의 PTY 에, 뒤의 둘은 **tasty 프로세스 밖 OS 전역 입력 상태**에 작용해 cfg 격리만으로는 부족하다고 봤다. 반면 `surface.ime_*` 는 창 내부 상태만 바꾸는 in-process 시뮬레이션이라 이 게이트가 없다 — cfg 격리로 충분하다. 근거는 [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md).
 
 ### egui 프레임이 세우는 컨텍스트 메뉴 관찰 (`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`)
 
 `debug.inject_egui_mouse`(winit 우회, egui 입력 큐에 직접 주입 — `event_type` ∈ move/press/release, `button` 0/1/2; `surface_id` 지정 시 `(fx,fy)` 를 그 surface rect 안 정규화 좌표로 해석해 창 크기 무관하게 조준)는 explorer 그리드/컨텍스트 메뉴처럼 egui 위젯 `secondary_clicked` 로 생산되는 메뉴를 탄다. 이 메뉴는 `MainView::process_pending_native_menu` 가 실제 OS native 팝업으로 소비한다(macOS/Windows 는 **블로킹** 모달, Linux 는 비블로킹이지만 팝업이 실제로 뜨는 건 같다) — 어느 쪽이든 headless 관찰이 막힌다. `TASTY_DEBUG_SUPPRESS_NATIVE_MENU=1` 로 띄우면 그 지점에서 메뉴를 표시하지 않고 `debug_captured_menu` 로 포획만 해, `debug.pending_menu` 로 종류를 단언할 수 있다(winit 경로 `debug.inject_window_mouse` 는 핸들러가 즉시 세워 이미 포획됨 — 이 env 는 egui 경로용). GUI 테스트 하네스(`tests/gui_common`)가 이 env 를 켠다. debug 격리, release 미노출.
 
+### 휠 주입의 단위 (`unit`)
+
+두 마우스 주입 메서드는 `event_type: "scroll"` 일 때 `unit` 을 받는다 — `"line"` ·
+`"point"` · `"page"`. 실제 입력에서 데스크톱 마우스 휠은 winit `LineDelta` → egui `Line`
+로 오고 트랙패드 같은 픽셀 장치는 `PixelDelta` → `Point` 로 오는데, 이 둘은 논리 포인트로
+가는 배율이 다르다(`src/plugin_bridge/wire_scroll.rs`). 단위를 고를 수 없으면 **가장 흔한
+입력인 마우스 휠의 환산 경로가 주입으로 재현되지 않는다.**
+
+기본값은 각 메서드가 종전에 합성하던 것이다 — 단위를 넘기지 않던 기존 호출자는 동작이
+바뀌지 않는다.
+
+| 메서드 | 기본 | 넣을 수 있는 단위 |
+|--------|------|-------------------|
+| `debug.inject_window_mouse` (winit 레벨) | `line` | `line` → `LineDelta`, `point` → `PixelDelta`. **`page` 는 거절된다** — winit 에 대응 델타가 없어, 줄로 접어 넣으면 주입은 성공했는데 다른 단위가 흐른다 |
+| `debug.inject_egui_mouse` (egui 레벨) | `point` | 셋 다. egui 는 `Page` 를 다루므로 그 갈래까지 재현할 수 있다 |
+
+`scroll_dx`/`scroll_dy` 의 뜻이 단위를 따라간다: `line` 은 줄 수(휠 한 칸이 1.0), egui
+레벨의 `point` 는 논리 포인트, **winit 레벨의 `point` 는 물리 픽셀**이다(`PixelDelta` 가
+물리 px 이고 수신 측이 scale factor 로 나눈다).
+
+모르는 `unit` 값은 기본값으로 삼키지 않고 `-32602` 로 거절한다 — 오타를 대신 재면 검증이
+의도한 것과 다른 경로를 재고도 통과한다.
+
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug.rs`)가 모듈째 `#![cfg(debug_assertions)]` — 실행부는 `crates/tasty-cli/src/local/debug.rs`(같은 cfg). 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key`(주입에 macOS 손쉬운 사용 권한 필요 — 미승인이면 `surface.raw_key` 가 `permission_denied` 에러를 돌려준다. [macOS 권한](../features/macos-permissions/index.md)) · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `modifier-hint` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
+CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug.rs`)가 모듈째 `#![cfg(debug_assertions)]` — 실행부는 `crates/tasty-cli/src/local/debug.rs`(같은 cfg). 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key`(주입에 macOS 손쉬운 사용 권한 필요 — 미승인이면 `surface.raw_key` 가 `permission_denied` 에러를 돌려준다. [macOS 권한](../features/macos-permissions/index.md). `ime-*`/`switch-input-source`/`raw-key` 는 IPC 쪽도 debug 전용이다 — [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md)) · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `modifier-hint` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 
@@ -128,8 +154,8 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 기준 한 줄: *"이 코드를 통째로 지우고 컴파일 에러 몇 줄만 정리하면 디버그 기능이 깨끗이 사라지는가?"* 그게 되면 격리 OK.
 
-- **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(cell/screen/glyph/feed/inject) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` 가 각각 `#[cfg(...)]` 로 모듈 선언된다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
-  - **예외 — gui 게이트 없는 debug 핸들러**: `debug.rs` 모듈은 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 선언돼 headless 빌드에서 통째로 사라진다. 따라서 **gui 무관하게 headless 에서도 동작해야 하는 비-gui debug 핸들러**(`ui.state` 의 `handle_ui_state`, `debug.settings.apply` 의 `handle_debug_settings_apply`)는 `debug.rs` 가 아니라 `handler.rs` 안에 `#[cfg(debug_assertions)]` 로 직접 둔다. 삭제 가능성(핸들러 fn + route 한 줄 + `DEBUG_METHODS` 한 줄 + CLI variant)은 그대로 유지된다.
+- **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(cell/screen/glyph/feed/inject) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` · `input_source.rs`(macOS raw_key/switch_input_source) · `ime.rs`(surface.ime_*) 가 각각 `#[cfg(...)]` 로 모듈 선언된다. **파일 이름에 `debug` 가 들어갈 필요는 없다** — 기준은 "그 파일이 debug 핸들러만 담고 모듈 선언에 cfg 가 붙어 있는가" 다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
+  - **예외 — gui 게이트 없는 debug 핸들러**: `debug.rs` 모듈은 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 선언돼 headless 빌드에서 통째로 사라진다(그 모듈의 핸들러 다수가 `state.popups` / `state.banners` / `state.modifier_hint` 처럼 gui 에만 존재하는 필드를 만진다). 따라서 **gui 무관하게 headless 에서도 동작해야 하는 비-gui debug 핸들러**는 `debug.rs` 에 두지 않는다 — 한두 개면 `handler.rs` 안에 `#[cfg(debug_assertions)]` 로 직접 두고(`ui.state` 의 `handle_ui_state`, `debug.settings.apply` 의 `handle_debug_settings_apply`), 묶음이면 `#![cfg(debug_assertions)]` 만 건 형제 모듈로 뺀다 — 지금 둘이다: `debug_nav.rs`(워크스페이스/탭 전환 3 종) · `debug_terminal.rs`(터미널 그리드 4 종 — `cell_info` / `screen_attrs` / `feed_bytes` / `glyph_color`). **판정 기준은 핸들러 본체가 gui 게이트된 심볼을 실제로 만지는가**이지, 그 메서드가 사용자 조작 재현인가가 아니다 — 사용자 조작 재현 여부는 debug/release 축이고 이미 `debug_assertions` 가 가른다. 그리고 "만진다" 의 판정은 **심볼이 하는 일**이지 심볼이 놓인 자리가 아니다: `debug.glyph_color` 가 부르는 색 해석 함수는 `CellAttributes` 와 색 타입만 쓰는 순수 함수인데 한동안 `#[cfg(feature = "gui")] mod gfx;` 아래 있었을 뿐이라, 함수를 복제하지 않고 그 파일을 게이트 밖(`src/cell_palette.rs`)으로 올렸다 — 렌더러와 **같은 함수**를 부르는 것이 그 메서드의 정의라 복제는 답이 아니다. 삭제 가능성(핸들러 fn + route 한 줄 + `DEBUG_METHODS` 한 줄 + CLI variant)은 그대로 유지된다.
 - **외부 표면에 남는 cfg 가드는 router 분기 한 줄** (위 라우팅 코드의 `#[cfg(debug_assertions)] route_debug_handler(...)`).
 - **삭제 가능성 테스트**: debug 파일을 지웠을 때 cfg-guard 호출처 몇 줄 제거 외에 다른 변경이 필요하면 격리가 깨진 것이다.
 
@@ -141,5 +167,6 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 
 - [identity.md](../identity.md) — 원칙 1 ②(사용자 입력 재현 격리), 포커스 독립성
 - [ADR-0007](../adr/0007-attach-targets-remote.md) — 로컬 attach 를 debug 로 격리한 결정
+- [ADR-0115](../adr/0115-input-reproduction-ipc-debug-isolation.md) — OS 전역 입력 조작(`raw_key`/`switch_input_source`/`ime_*`)을 debug 로 격리한 결정 + `tests/ipc_release_table_excludes_input_reproduction.rs` 회귀 가드
 - [attach-behavior.md](attach-behavior.md) — attach 메커니즘
 - [independent-verification.md](independent-verification.md) — debug IPC 를 쓴 자체 검증

@@ -8,10 +8,10 @@ CLAUDE.md 정책의 운영 형태:
 
 - **본체** (`Cargo.toml` 루트): 사용자가 *빌드를 요청* 했고, 마지막 빌드 이후 새 커밋이 있으며, 사용자가 막지 않았으면 **patch +1**. AI 자체 검증 빌드(`cargo build`/`test`)는 올리지 않는다.
 - **Plugin** (`crates/tasty-plugin-*/Cargo.toml`): 한 커밋에 특정 plugin 디렉토리 파일이 하나라도 staged 되면 그 plugin 의 **patch +1 을 같은 커밋에** 포함(무조건, 명시적 거부 없는 한). 여러 plugin 변경 시 각각 독립 적용. 본체 규칙과 독립.
-- **Plugin 매니페스트 lockstep** (`crates/tasty-plugin-*/tasty-plugin.toml`): 위 patch +1 과 함께 매니페스트 `version` 을 **동일 값**으로 맞추고 `.sig` 를 재서명(`scripts/sign-bundle.sh`)해 같은 커밋에 포함. Cargo.toml 만 올리면 `plugin.list`·업그레이드 판정이 노출·비교하는 매니페스트 version 이 어긋난다(version drift). `tests/plugin_manifest_version_parity.rs` 가 정합을 CI 강제한다.
+- **Plugin 매니페스트 lockstep** (`crates/tasty-plugin-*/tasty-plugin.toml`): 위 patch +1 과 함께 매니페스트 `version` 을 **동일 값**으로 맞추고 `.sig` 를 재서명(`scripts/sign-bundle.sh`)해 같은 커밋에 포함. Cargo.toml 만 올리면 `plugin.list`·업그레이드 판정이 노출·비교하는 매니페스트 version 이 어긋난다(version drift). `tests/plugin_manifest_version_parity.rs` 가 정합을 강제한다 — 통합 테스트라 **자동 실행은 push 후 `check-headless` 잡에서만** 일어난다(컴파일은 두 조합 모두 자동 — [ci-gates](ci-gates.md)). 자동 잡은 push 된 커밋만 보므로 커밋 전에는 직접 돌린다.
 - **minor / major**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 
-본체 patch bump 절차: `Cargo.toml` patch +1 → `cargo build`(Cargo.lock 갱신) → `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 같은 값으로 갱신 → `Cargo.toml` + `Cargo.lock` + 두 README 를 **함께** 커밋(`chore: bump version to X.Y.Z`) → 아래 릴리스 절차로 이어감. 배지를 빠뜨리면 `tests/readme_badge_parity.rs` 가 `cargo test --workspace`(CI)에서 실패시킨다 — 릴리스뿐 아니라 이 자동 patch +1 커밋에도 적용된다.
+본체 patch bump 절차: `Cargo.toml` patch +1 → `cargo build`(Cargo.lock 갱신) → `README.md`·`README.ko.md` 의 Version 배지(`badge/version-X.Y.Z-blue`)를 같은 값으로 갱신 → `Cargo.toml` + `Cargo.lock` + 두 README 를 **함께** 커밋(`chore: bump version to X.Y.Z`) → 아래 릴리스 절차로 이어감. 배지를 빠뜨리면 `tests/readme_badge_parity.rs` 가 실패시킨다 — 단 기본 조합의 `cargo test --workspace` 잡은 수동 전용이고 자동 실행은 `check-headless` 잡에서만 일어나므로([ci-gates](ci-gates.md)) **커밋 전에는 직접 돌려야 그 자리에서 잡힌다** — 릴리스뿐 아니라 이 자동 patch +1 커밋에도 적용된다.
 
 ## 릴리스 단계
 
@@ -26,7 +26,7 @@ CLAUDE.md 정책의 운영 형태:
    ### Fixed
    - `fix(...)`: ...
    ```
-3. `README.md`·`README.ko.md` 의 Version 배지(`img.shields.io/badge/version-X.Y.Z-blue`, `CHANGELOG.md` 로 링크)를 `Cargo.toml` 과 같은 값으로 갱신한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 이 단계가 빠지면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. 배지 변경은 §3 의 bump 커밋에 함께 넣는다. **`tests/readme_badge_parity.rs` 가 `cargo test --workspace`(CI)로 이 정합을 강제하므로, 배지를 빠뜨린 bump 커밋은 CI 에서 실패한다.** 로컬 확인:
+3. `README.md`·`README.ko.md` 의 Version 배지(`img.shields.io/badge/version-X.Y.Z-blue`, `CHANGELOG.md` 로 링크)를 `Cargo.toml` 과 같은 값으로 갱신한다. shields.io static badge 라 URL 에 값이 박혀 있어 어디서도 파생되지 않는다 — 이 단계가 빠지면 배지가 `CHANGELOG.md` 에 없는 버전을 가리킨 채 남는다. 배지 변경은 §3 의 bump 커밋에 함께 넣는다. **`tests/readme_badge_parity.rs` 가 이 정합을 강제한다. 다만 그 테스트에는 자동 채널이 없으므로**([ci-gates](ci-gates.md)) **배지를 빠뜨린 bump 커밋은 누군가 `cargo test --workspace` 를 돌릴 때까지 통과한 것처럼 보인다 — 아래 로컬 확인을 거르지 마라.** 로컬 확인:
    ```bash
    cargo test --test readme_badge_parity
    ```
@@ -40,7 +40,7 @@ CLAUDE.md 정책의 운영 형태:
 ./scripts/sign-bundle.sh --key secrets/dev-private.pem --all-builtins
 ```
 
-생성/갱신되는 `*.toml.sig`(현재 8개)는 **`.gitignore` 로 제외된 빌드 산출물**이라 커밋되지 않는다 — 로컬 release 빌드·dev 검증용이며, CI 정식 release 는 각 self-hosted 러너가 그 자리에서 로컬 자동생성한 키로 재서명한다(영구 보관 안 함, dev/debug 빌드는 서명을 검증하지 않음). 따라서 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이고 `.sig` 재생성은 커밋 절차 밖이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
+생성/갱신되는 `*.toml.sig`(번들 plugin 매니페스트 전부 — `--all-builtins` 가 `crates/tasty-plugin-*/tasty-plugin.toml` 을 자동 검색한다)는 **`.gitignore` 로 제외된 빌드 산출물**이라 커밋되지 않는다 — 로컬 release 빌드·dev 검증용이며, CI 정식 release 는 각 self-hosted 러너가 그 자리에서 로컬 자동생성한 키로 재서명한다(영구 보관 안 함, dev/debug 빌드는 서명을 검증하지 않음). 따라서 매니페스트 version bump 시 커밋되는 건 `tasty-plugin.toml` 자체뿐이고 `.sig` 재생성은 커밋 절차 밖이다. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
 
 ### 3. 커밋 — body 가 곧 릴리스 노트
 

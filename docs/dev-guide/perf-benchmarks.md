@@ -21,8 +21,8 @@ GPU 렌더 파이프라인(단일 render pass batching + multi-page atlas — [g
 
 `src/gfx/perf.rs::PerfAggregator` 가 `WINDOW = 300` 프레임 ring buffer 를 모아 `DUMP_EVERY = 300` 마다 p50/p99/max 한 줄을 dump 한다.
 
-- log target: `tasty::gfx::perf` (기본 `RUST_LOG` 에서 비활성).
-- 활성: `RUST_LOG=tasty::gfx::perf=info`.
+- log target: `tasty::gfx::perf` (본체 기본 필터에서 비활성).
+- 활성: `TASTY_LOG=tasty::gfx::perf=info` — 본체가 읽는 변수는 `TASTY_LOG` 다([crash-diagnostics](crash-diagnostics.md)).
 - 한 줄: `perf n=300 surfaces=10 draws=20 terminals_ms p50=… p99=… max=… gpu_total_ms p50=… p99=… max=… atlas_evictions=… atlas_pages=… atlas_entries=…`
 
 ## 재현 시나리오 (`scripts/bench/`)

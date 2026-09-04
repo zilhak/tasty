@@ -196,8 +196,10 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
    (`SurfaceInvalidated`/`PopupInvalidated`)로 host 에 재-forward 를 요청한다. 이 지연
    알림은 **plugin 프로세스당 상주 타이머 스레드 1 개**(`SelfRepaintTimer`, 첫 요청 때
    lazily 기동 후 재사용)가 발사한다 — 요청마다 스레드를 만들지 않는다([ADR-0097](../adr/0097-plugin-self-repaint-resident-timer.md)).
-   `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(스크롤 스무딩이
-   대표적) 요청당 스레드 방식은 애니메이션 중 프레임마다 생성·소멸을 반복한다.
+   `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(`Context::request_repaint`
+   를 부르는 위젯 애니메이션이 대표적) 요청당 스레드 방식은 애니메이션 중 프레임마다 생성·소멸을
+   반복한다. 휠 스크롤은 아래 "스크롤은 한 pass 에 전량 전달된다" 대로 도착 프레임에서 소진되므로
+   이 경로를 타지 않는다 — 조각 수 상한(64)을 넘겨 분할을 포기한 극단적 델타만 예외다.
    `self_repaint_armed`(`AtomicBool`) 로 대기 요청을 인스턴스당 최대 1 건으로 묶고, 타이머가
    fire 하면(가드 해제 → 알림 순) 풀려 다음 `render()` 가 여전히 필요하면 재-arm 한다
    (자연 수렴, idle 상태에서 요청이 쌓이지 않음). 스레드가 하나라 그것이 죽으면 self-repaint
@@ -325,6 +327,38 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
 | IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
 | 복사 단축키(`egui_copy` capability 를 가진 kind 한정) | `Copy` | `egui_mesh_push_copy` ← `copy_paste.rs` `handle_copy_shortcut` |
+
+**스크롤은 한 pass 에 전량 전달된다.** SDK 의 와이어→egui 매핑(`egui_surface.rs` 의
+`push_scroll_events`)이 `Scroll` 한 건을 egui 의 "이미 부드러운 입력" 판정선(8pt) 아래
+조각들로 쪼개 **같은 프레임의 이벤트 목록**에 넣는다. 쪼개지 않으면 egui 가 델타를
+`unprocessed_scroll_delta` 에 적립해 여러 프레임에 걸쳐 소진하고, egui-mesh 에서는 그
+프레임 하나하나가 `*Invalidated` → `set_context` → 전체 egui pass 라는 프로세스 간 왕복이
+된다([ADR-0108](../adr/0108-egui-mesh-scroll-delivered-in-one-pass.md)). 조각 합은 원본
+델타와 같아 이동량이 보존되고, 잔여 델타가 남지 않아 위 "유휴 상태 방치" 경로도 타지 않는다.
+조각 수 상한(64)을 넘는 극단적 델타만 쪼개지 않고 그대로 넘긴다. 같은 이유로 모든 egui-mesh
+Context 는 생성 시 프로그램적 스크롤 애니메이션(`Style::scroll_animation`)을 꺼 둔다.
+
+**와이어 `Scroll` 은 언제나 논리 포인트다.** SDK 가 받은 값을 `MouseWheelUnit::Point` 인
+`MouseWheel` 로 egui 에 넣으므로, host 의 수집 지점이 자기 입력 소스의 단위를 포인트로 맞춰
+보낸다. 배율의 런타임 단일 출처는 egui `Options::line_scroll_speed` 이고
+`src/plugin_bridge/wire_scroll.rs` 의 `line_scroll(ctx)` 로 읽는다 — 세 수집 지점이 모두
+그것을 읽으므로 값이 갈리지 않는다. host 는 그 옵션을 사용자 설정
+(`GeneralSettings::wheel_line_scroll`, 기본 50pt)으로 채운다. 같은 옵션을 host egui 의
+`ScrollArea` 전반도 쓰므로 **plugin 표면과 host UI 가 한 값을 공유한다**
+([ADR-0130](../adr/0130-wheel-notch-distance-is-uniform-and-user-set.md)).
+
+| 수집 지점 | 입력 소스 | 환산 |
+|-----------|-----------|------|
+| egui-mesh surface (`view/main/mouse.rs`) | winit `MouseScrollDelta` | `LineDelta` × 노치 거리 · `PixelDelta` ÷ ppp |
+| popup (`plugin_bridge/popup_render.rs`) | host egui `Event::MouseWheel` | `wire_scroll::wheel_delta_to_points` — `Line` × 노치 거리 · `Point` 그대로 · `Page` × 화면 높이 |
+| banner (`plugin_bridge/banner_render.rs`) | host egui `Event::MouseWheel` | 위와 동일 |
+
+두 소스는 같은 물리 입력의 다른 표현이다 — egui-winit 이 winit `LineDelta` 를 `Line`(줄 수
+보존), `PixelDelta` 를 `Point`(÷ pixels_per_point) 로 옮긴다. 그래서 세 경로 모두 마우스 휠
+1 notch 가 설정된 노치 거리(기본 50pt)만큼, 트랙패드는 포인트 델타 그대로다. 기본값에서는
+물리 휠도 판정선(8pt)을 넘으므로 위 분할이 세 경로 모두에 관여한다 — 사용자가 노치 거리를
+8pt 아래로 낮추면 물리 휠은 분할 없이 1:1 로 전달된다. 설정 창의 하한은 10pt 라 UI 로는
+그 아래로 못 내려가고, `config.toml` 을 직접 고친 경우에만 도달한다.
 
 `MainView.mesh_pointer_hover`(`Option<MeshHoverTarget>`, `Local(surface_id)`/`Attach(surface_id)`)가
 마지막으로 `PointerMoved` 를 받은 mesh surface 1개를 추적한다. `handle_cursor_moved`
@@ -526,8 +560,9 @@ glyph 의 vertex 생성을 건너뛰므로 mesh 바이트는 보이는 만큼이
 Shape 생성 · Vec 할당 · 레이아웃 계산은 전 행에서 발생한다.
 
 plugin 콘텐츠는 **`set_context` 를 받을 때마다 egui pass 를 통째로 다시 돈다.** 스크롤 중에는 휠
-이벤트마다, 그리고 egui 스크롤 스무딩의 self-repaint 마다 set_context 가 오므로 이 비용이 "한 번
-무거운" 것이 아니라 스크롤이 진행되는 동안 매 프레임 반복된다. 목록이 길수록 스크롤이 버벅인다.
+이벤트마다 set_context 가 오므로, 이 비용은 "한 번 무거운" 것이 아니라 휠을 굴리는 동안 입력마다
+반복된다. 목록이 길수록 스크롤이 버벅인다. (휠 델타 하나가 여러 프레임의 스무딩으로 증폭되는
+경로는 위 "스크롤은 한 pass 에 전량 전달된다" 로 닫혀 있다 — 조각 수 상한을 넘긴 델타만 예외.)
 
 ```rust
 egui::ScrollArea::vertical()
@@ -571,6 +606,30 @@ egui::ScrollArea::vertical()
 
 > 갤러리 specimen 은 보통 `ScrollArea` 없이 고정 목록을 그려 이 결함을 재현하지 못한다 —
 > virtualization 회귀는 clip 회귀와 마찬가지로 본체 popup 에서 스크롤시켜 확인한다.
+
+## `ScrollArea` 의 휠 판정 영역 (surface·popup·banner 공통)
+
+**`auto_shrink` 를 끄지 않으면 목록이 전폭으로 보여도 그 위 대부분에서 휠이 먹지 않는다.**
+기본값은 두 축 모두 `true` 라, egui 는 **스크롤하지 않는 축**의 크기를 콘텐츠 크기로 줄인다
+(`ScrollArea::vertical()` 이면 가로). 휠 hover 판정은 그렇게 줄어든 사각형으로 하므로,
+짧은 라벨 몇 십 pt 폭 밖 — 즉 표면의 대부분 — 에서 굴린 휠은 아무 데도 닿지 않는다.
+
+이것이 egui-mesh 에서 특히 눈에 띄는 이유가 있다. host 는 **휠 이벤트에 좌표를 싣지
+않는다**(`egui_mesh_push_scroll`) — 좌표는 커서가 움직일 때 `PointerMoved` 로만 간다.
+그래서 plugin 쪽 hover 판정이 스크롤 여부를 단독으로 결정하고, 실패해도 host 로그에는
+"델타를 보냈다" 만 남아 **와이어는 정상인데 화면만 안 움직이는** 모양이 된다.
+
+```rust
+egui::ScrollArea::vertical()
+    .auto_shrink([false, false])   // 판정 사각형 = 보이는 영역
+    .show(ui, |ui| { … });
+```
+
+가로 축 하나만 켜져 있어도(`[true, false]`) 같은 증상이 난다 — 문제를 만드는 것은
+스크롤하지 **않는** 축의 shrink 다. 회귀는 표면 **오른쪽 끝 근처**에서 굴려야 잡힌다.
+가운데는 좁아진 사각형 안에 들어가 버려 통과한다
+(`crates/tasty-plugin-mesh-demo/src/main.rs` 의
+`the_wheel_scrolls_the_list_from_anywhere_on_the_surface`).
 
 ## egui-mesh popup 채널 (A2)
 

@@ -88,7 +88,27 @@ assert!(path.starts_with(home.path().join("screenshots")));
 (`tasty-host-plugin` 의 `HomeEnvGuard::derived_from_home()` 이 그렇게 한다. 반대로 임시 루트를
 직접 지정하면 되는 경우는 `HomeEnvGuard::tasty_home()`).
 
-## 4. 확인 방법
+## 4. 파일시스템 픽스처는 테스트가 직접 만든다
+
+경로 해석처럼 `exists()` 로 실존을 검사하는 함수의 테스트는 **git 에 있는 경로**(`Cargo.toml`,
+`src/adapters/ui` 등 `CARGO_MANIFEST_DIR` 기준)나 **테스트가 임시 디렉토리에 스스로 만든 경로**만
+입력으로 쓴다. gitignored 로컬 작업 폴더나 사용자 홈처럼 *이 머신에만 있는* 경로의 실존에
+기대면 clone 직후·CI 러너에서 결과가 달라진다 — 로컬 상태 의존이라는 점에서 설정·env 와 같은
+축이다. 워크스페이스 dev-dependency 인 `tempfile` 로 만들고 `TempDir` 의 Drop 에 정리를 맡긴다.
+
+```rust
+let tmp = tempfile::tempdir().expect("tempdir");
+std::fs::create_dir(tmp.path().join("notes")).expect("fixture dir");
+let result = longest_existing_selection_path("notes/에", Some(tmp.path()), false);
+assert_eq!(result, Some(tmp.path().join("notes")));
+```
+
+이 규칙은 `tests/no_todo_file_citation.rs` 와도 맞물린다 — 로컬 작업 폴더를 언급하면 하위
+경로가 무엇이든, 아예 없든 그 테스트가 잡으므로(P6) 픽스처 때문에 allowlist 에 예외를 두지
+않는다. 금지 범위와 범위 밖 항목은
+[ADR-0105](../adr/0105-no-nongit-path-refs-in-tracked-sources.md) 가 정본이다.
+
+## 5. 확인 방법
 
 격리가 실제로 됐는지는 **같은 명령을 서로 다른 환경에서 돌려 결과가 같은지**로 본다.
 
@@ -99,3 +119,74 @@ cargo test --workspace --locked -- --test-threads=1  # 실행 순서 고정
 ```
 
 세 결과가 갈리면 어딘가에서 사용자 환경이 새고 있다는 뜻이다.
+
+## 6. feature 별 테스트 게이팅
+
+본 바이너리는 `gui` feature 로 갈린다(`--no-default-features` = headless). **gui 전용 타입·모듈을
+단정하는 테스트 모듈에는 `#[cfg(test)]` 가 아니라 `#[cfg(all(test, feature = "gui"))]` 를 건다.**
+`#[cfg(test)]` 만 걸면 headless 테스트 **바이너리 자체가 컴파일되지 않는다** — 프로덕션 코드는
+멀쩡히 `cargo check --no-default-features` 를 통과하는데도 그 feature 조합의 테스트가 한 줄도
+실행되지 않는 사각이 생긴다. 개별 테스트 함수만 gui 전용이면 함수에 `#[cfg(feature = "gui")]` 를
+건다.
+
+같은 이유로 프로덕션 코드에서도 **gui 게이트된 재export 를 경유하지 않는다** — 예를 들어
+`crate::terminal::*` 가 gui 전용 재export 라면 headless 에서도 도는 코드는 원본 크레이트를
+직접 가리킨다(`tasty_terminal::*`).
+
+CI 는 `cargo test --workspace --lib --bins --no-default-features --locked` 로 이 조합을 강제한다
+(`.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡). e2e/통합 테스트는 GUI
+기동이 필요해 이 잡에서 제외한다.
+
+## 7. 병렬 실행 경합(flake) — 공유 상태는 직렬화, 외부 자원은 소유
+
+위 1~4 는 테스트가 **사용자 환경**을 읽어 로컬 상태에 좌우되는 축이다. 이 절은 다른 축 —
+테스트끼리 **같은 프로세스에서 병렬로** 공유 상태를 밟아 스케줄링에 따라 나타났다 사라지는
+실패다. 부류별 표준 처방과 근거·대안·재검토 조건은
+[ADR-0129](../adr/0129-flaky-test-classes-and-standard-fixes.md).
+
+### 형태 A — 프로세스 내 전역 공유 상태
+
+`static` 락/셀, 프로세스 env, 프로세스 cwd 처럼 인스턴스가 하나뿐인 상태를 테스트가
+바꾼다. 처방은 **그 상태를 만지는 모든 테스트를 하나의 락으로 직렬화**하는 것이다.
+
+- cwd: `set_current_dir` 는 프로세스에 하나뿐이라 자원을 테스트-로컬로 만들 수 없다 —
+  직렬화가 유일하다(`tasty-cli` 의 `cwd_resolve` 테스트가 `CWD_LOCK` 을 함수 끝까지 잡는다).
+- `static` 전역: 그 전역을 reset/read 하는 테스트는 락을 함수 끝까지, register 만 하는
+  헬퍼는 그 호출을 감싼다(`surface_registry::webview_kind` 의 `WEBVIEW_KIND_TEST_LOCK`).
+- env: §2 의 RAII 가드가 같은 처방의 특수형이다(획득 시 락, Drop 시 복원).
+
+**락은 그 락을 잡는 코드끼리만 막는다(§2 "락은 키 단위" 함정의 하위형태).** 어떤 테스트가
+락을 안 잡고 같은 자원을 만지거나 — 특히 그 자원을 읽는 **프로덕션 경로**를 간접 호출하면
+— 락은 아무것도 막지 못한다. 그래서 처방을 적용하기 전에 "그 자원을 만지는 테스트가
+이것뿐인가" 를 먼저 전수로 확인한다. 다른 크레이트의 같은 종류 접근은 별도 테스트
+바이너리(별도 프로세스)라 경합이 아니다.
+
+### 형태 B — 프로세스 밖 OS 자원 (포트·경로·소켓 TOCTOU)
+
+`TcpListener::bind(":0")` 로 포트를 얻고 놓았다가 다시 bind 하는 사이, 고정 이름의 임시
+파일을 공유하는 사이 다른 프로세스·테스트가 끼어든다. 처방은 **자원을 놓지 않거나**(리스너를
+잡은 채 검증), 놓아야 하면 **lease + 재시도**, 고정 경로면 **유니크 이름**이다.
+
+- 포트: `tasty-ssh` 의 `reserve_local_port` 는 포트를 점유하는 리스너를 함께 반환한다 —
+  리스너를 잡고 있는 한 그 포트는 이 프로세스 소유라 rebind 레이스가 없다. 프로덕션에서
+  ssh 가 rebind 해야 하는 경우만 명시적으로 drop 하고, 그 창은 ready-probe 재시도가 흡수한다.
+
+### 가드가 실제로 도는지는 "이름" 으로, 스캔은 "집합 동등" 으로 확인한다
+
+재진입을 막는 소스 스캔 가드는 자기 모수를 함께 낸다. 스캔한 파일 수를 **하한**으로만
+두면 하한 위로 빠지는 부분 누락을 못 잡는다 — **스캔 모집단을 집합으로 못박아** 추가·삭제를
+양방향으로 잡는다(하한 < 정확 건수 < 집합 동등).
+
+가드가 두 CI 채널(check-windows=기본, check-headless=`--no-default-features`)에서 **실제로
+실행되는지**는 잡 초록이 아니라 두 조합의 실행 목록에 그 가드 이름이 뜨는지로 본다:
+
+```bash
+cargo test --workspace --lib --bins --locked -- --list | grep <가드 이름>
+cargo test --workspace --lib --bins --no-default-features --locked -- --list | grep <가드 이름>
+```
+
+둘 다에서 이름이 나와야 두 채널 모두 그 가드를 본다(§6 cfg 게이팅 함정의 실측판). 한쪽에만
+뜨면 반대 채널은 그 가드를 영영 못 본다. `--list` 의 stdout 에는 타깃 경계가 없어 workspace
+목록은 동명 타깃이 dedup 된다 — 타깃별로 가르려면 `2>&1` 로 stderr 의 `Running` 줄을 함께
+받는다. 그리고 검사가 "위반 0" 을 냈을 때는 그것이 "위반 없음" 인지 "그 검사가 대상을 스캔
+범위에 안 넣어 아무것도 안 본 것" 인지 — 검사가 실제로 본 모수를 함께 확인해 가른다.

@@ -7,7 +7,7 @@
 - 크레이트: [`crates/tasty-timer`](../../crates/tasty-timer/src/lib.rs)
 - 호스트측 키/등록: [`src/app/timers.rs`](../../src/app/timers.rs)
 - gui 실행부: `src/app/event_handler.rs` `about_to_wait`
-- headless 실행부: `src/boot.rs` `run_headless` 의 `recv_timeout` 루프
+- headless 실행부: `src/boot.rs` `run_headless` 의 루프 — 대기는 `wait_for_event`(`recv_timeout`), 실행은 `run_due_timers`
 
 ## 두 축을 섞지 않는다
 
@@ -165,17 +165,19 @@ self.sync_timer_control_flow(event_loop);   // waker + ControlFlow 를 한 번�
 ### headless — `run_headless`
 
 ```rust
-let ev = match app.timers.next_deadline() {
-    Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
-        Ok(ev) => Some(ev),
-        Err(Timeout) => None,          // 타이머만 돌린다
-        Err(Disconnected) => break,
-    },
-    None => match rx.recv() { Ok(ev) => Some(ev), Err(_) => break },
+// wait_for_event: 데드라인까지만 블로킹. 세 결과를 `Wait` 로 이름 붙인다.
+let pending = match wait_for_event(&rx, app.timers.next_deadline()) {
+    Wait::Event(ev) => Some(ev),
+    Wait::Deadline => None,          // 타이머만 돌린다
+    Wait::Disconnected => break,
 };
-for key in app.timers.drain_due(Instant::now()) { /* headless 실행부 */ }
-let Some(event) = ev else { continue };
+run_due_timers(&mut app, &mut state, &mut engine);  // drain_due + headless 실행부
+let Some(event) = pending else { continue };
 ```
+
+`Wait` 가 필요한 이유는 `Option<AppEvent>` 하나로는 "타이머만 돌린다"(계속)와
+"송신단이 사라졌다"(종료)가 구분되지 않기 때문이다 — 대기를 함수로 빼려면 그 셋이
+값이어야 한다.
 
 gui/headless 는 **같은 키 집합을 같은 주기로** 굴린다. `Tick::Busy` 가 headless 에서
 하는 일은 넷이다 — busy 재평가 + attach forward / 글로벌 훅 / idle-timeout 훅(바인딩
@@ -298,7 +300,8 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 정의상 과거가 될 수 없기 때문이다. 새 키가 절대시각을 쓴다면 예외가 아니다.
 
 이 규칙은 `tests/timer_deadline_hygiene.rs` 가 소스 수준에서 강제한다 — `timers.rs`
-에서 `hub.once_at` 을 직접 부르면 CI 가 fail 한다. 실패 지점이 단위 테스트가 닿지
+에서 `hub.once_at` 을 직접 부르면 그 테스트가 fail 한다(통합 테스트라 자동 실행 채널이
+없다 — 컴파일만 자동 검사, [ci-gates](ci-gates.md)). 실패 지점이 단위 테스트가 닿지
 않는 **호출부 한 줄**이라 같은 클래스가 두 번 재발했기 때문이다.
 
 ### 바닥치기는 2차 방어다 — 스케줄 대상 자체를 좁혀라

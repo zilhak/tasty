@@ -6,6 +6,30 @@
 
 **e2e 는 `cargo test --test e2e_tests` 단독 실행 전에 `cargo build --workspace` 가 선행돼야 한다** (또는 처음부터 `cargo test --workspace` 사용). package 한정 test 는 본체(tasty.exe)만 빌드하고 plugin bin crate 들을 빌드하지 않는데, dev bundle(`target/debug/builtin-plugins/`)은 **매니페스트는 소스에서, 바이너리는 target exe 에서 독립적으로** `copy_if_newer` 하므로 stale plugin exe 가 최신 매니페스트를 달고 격리 TASTY_HOME 에 설치된다. 이 drift 는 plugin↔host 계약이 바뀐 직후(예: `markdown.recent` 의 host adapter 이관) namespace 호출을 "Method not found" 로 깨뜨린다. 호스트는 hello 시 바이너리 보고 버전 ≠ 매니페스트 버전이면 `version drift` warn 을 남긴다 — spawn 실패 진단 시 stderr tail 에서 이 경고를 먼저 확인.
 
+## 0-1. 어느 바이너리를 띄우는가
+
+하네스가 띄우는 것은 `CARGO_BIN_EXE_tasty` — **테스트 자신과 같은 feature 로 빌드된 자기 바이너리**다. 이 한 줄이 조합별 성질을 전부 결정한다.
+
+| 조합 | 하네스가 띄우는 것 | 성질 |
+|---|---|---|
+| 기본 (`gui`) | GUI 바이너리 | 창 + wgpu 디바이스를 반드시 만든다. IPC 는 GPU 부팅이 끝난 뒤에야 시작되므로, GPU 를 못 잡으면 **port file 이 아예 안 써진다** |
+| `--no-default-features` | headless 데몬 | 창도 GPU 도 없다. 실측(2026-09-04, `DISPLAY`·`WAYLAND_DISPLAY` 둘 다 없는 상태): port file 까지 **54 ms** |
+
+즉 IPC 만 쓰는 스위트가 GPU 를 통과해야 하는 이유는 검증 내용이 아니라 **빌드 조합**에 있다. 방향 결정과 대안은 [ADR-0127](../adr/0127-e2e-harness-binary-selection.md).
+
+**바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
+
+**로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.
+
+```
+CARGO_TARGET_DIR=/tmp/tasty-headless cargo build --no-default-features
+TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_harness
+```
+
+**함정 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
+
+**override 로도 통과하지 않는 스위트가 있다.** headless 데몬은 GUI 바이너리와 IPC 표면이 다르다 — 실제 창이 검증 대상인 스위트, 그리고 headless 에 아직 배선되지 않은 경로에 의존하는 스위트가 그렇다. 어느 것이 왜 빠지는지는 `.github/workflows/crossplatform-check.yml` 의 headless 스텝 주석이 `--skip` 목록과 함께 사유를 적어 둔다 — **여기 복제하지 않는다**(사유가 갈리면 어느 쪽이 정본인지 알 수 없게 된다).
+
 ## 1. 인스턴스 공유 원칙 (필수)
 
 **tasty 인스턴스는 test binary 당 1 개가 기본이고, 격리는 프로세스가 아니라 workspace 단위로 한다.** 새 e2e 테스트를 쓸 때 인스턴스를 새로 띄우지 말고 `common::shared()` 를 받아 `create_workspace()` 로 자기 workspace 를 만들어라. 결정의 근거·대안·재검토 조건은 [ADR-0090](../adr/0090-test-isolation-by-workspace-not-process.md).
@@ -32,9 +56,27 @@
 
 웹훅 하네스(`tests/webhook_common/mod.rs`)는 인스턴스마다 `TASTY_HOME`/`webhooks.toml` 을 시딩해야 해서 공유 진입점이 없고, 재시작 영속성 테스트는 같은 HOME 을 물려받는 두 번째 인스턴스가 검증 대상 그 자체다.
 
-**선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 일반 `cargo test --workspace` 에서 실행되지 않는다 — 그래서 CI 경로에는 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
+### 1-1. 시나리오 하나에 `#[test]` 하나
 
-**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 `cargo test --workspace`(CI)로 강제한다. 두 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
+**한 `#[test]` 에 시나리오를 직렬로 쌓지 않는다.** 앞에서 하나가 죽으면 뒤의 전부가 실행되지
+않고, 그 하나 때문에 CI 가 파일 전체를 `--skip` 하게 된다 — GUI 를 요구하지 않는 시나리오까지
+같이 사라진다. `tests/e2e_tests.rs` 가 실제로 그 형태였고(33 개 시나리오 / `#[test]` 1 개),
+헤드리스 조합에서 파일이 통째로 빠져 있었다. 벽은 마지막 시나리오의 `window.create` 하나였다.
+
+지금은 시나리오마다 `#[test]` 가 하나고, 각 테스트는 `common::shared()` + `create_workspace()`
+로 자기 workspace 안에서만 움직인다. 창을 요구하는 단언은 한 테스트에 모아 두어 `--skip` 이
+**파일이 아니라 테스트**를 가리킨다. 판정 단위의 근거는 [ADR-0127](../adr/0127-e2e-harness-binary-selection.md)
+의 「경계는 테스트 단위로 긋는다」 절.
+
+**따라오는 제약 — 전역 목록 위에서는 길이 산술을 쓰지 않는다.** 테스트는 병렬로 도는데
+`pane.list` / `workspace.list` / `hook.list` / `pty.list` / notification 은 workspace 로
+격리되지 않는 전역 목록이라, `before + 1` 같은 델타는 다른 테스트가 동시에 만들고 지우면
+깨진다. **"내 것이 있는가/없는가"**(`any` / `all`) 로 쓰거나, 세야 한다면 자기 workspace 로
+필터한 뒤 센다.
+
+**선례**: `tests/gui_common/mod.rs` 는 `OnceLock` + `atexit` 기반 공유 인스턴스와 "테스트마다 자기 workspace" 전략을 이미 구현해 둔 참조 구현이다. 다만 그것을 쓰는 `gui_tests.rs` 는 전수 `#[ignore]` 라 `cargo test --workspace` 에서도 실행되지 않는다 — 어느 채널에도 한 번도 걸리지 않았고, 선례로 보이지도 않았다.
+
+**집행**: 이 원칙은 `tests/e2e_single_instance_guard.rs` 가 강제한다 — 통합 테스트라 **컴파일은 두 조합 모두 자동, 실행은 헤드리스 조합에서만 자동**이다(기본 조합의 전체 스위트는 자동 채널이 없다). 조합별 실태와 단서(`paths-ignore` 등)는 [ci-gates](ci-gates.md) 가 정본이고 여기 복제하지 않는다. 세 축을 본다 — ① 파일당 전용 spawn 호출 수(미등록 파일은 0 회, 예외는 `ALLOWLIST_FILES` 에 이유와 함께 등록), ② 인스턴스를 띄우는 test 파일 목록 고정(`EXPECTED_INSTANCE_TESTS`), ③ 바이너리 선택이 §0-1 의 한 곳을 거치는지(`BIN_SELECTION_ALLOWLIST` — **면제는 파일 통째가 아니라 횟수까지 묶는다**). ②가 필요한 이유는 파일당 spawn 을 아무리 조여도 binary 가 늘면 총량이 다시 증가하기 때문이다. 실행 중 tasty PID 개수를 세는 **동적 가드는 일부러 쓰지 않는다** — 근거는 ADR-0090 의 대안 D.
 
 ## 2. 공유 하네스 (`common::shared()`)
 
@@ -64,6 +106,17 @@
 
 **함정 — PDEATHSIG 는 프로세스가 아니라 스레드에 묶인다** (`man 2 prctl` 경고: "the parent ... is considered to be the thread that created this process"). `common::shared()` 의 최초 호출자는 자기 테스트가 끝나면 죽는 cargo test 워커 스레드라, naive 하게 호출 스레드에서 그대로 fork 하면 **그 스레드가 죽는 순간 공유 인스턴스까지 죽어** 이후 다른 스레드에서 도는 나머지 테스트가 전부 "Connection reset" 으로 깨진다(실측: 최초 구현이 정확히 이 증상으로 `attach_git_query_loopback`/`shared_instance_harness` 를 깨뜨렸다). 그래서 실제 fork 는 **프로세스 수명 동안 파킹만 하는 전용 스레드**에서 수행한다 — 커널이 추적하는 "부모 스레드" 를 프로세스 수명과 맞추는 것이 핵심이다. 이 하네스를 고칠 때 fork 지점을 다시 호출 스레드로 되돌리지 말 것.
 
+### 2-2. 웹훅 포트 선택 (`webhook_common`)
+
+웹훅 리스너의 포트는 **기동 시점 설정값**이라(`TASTY_HOME/webhooks.toml` 의 `port = N`) 하네스가 미리 정해 시딩해야 한다. 그 순간부터 자식이 실제로 bind 할 때까지 아무도 그 번호를 지키지 않으면, 같은 실행의 다른 테스트·다른 워크트리·무관한 프로세스가 가져갈 수 있다. 두 장치로 막는다.
+
+- **예약(`PortLease`)** — `free_port()` 는 번호만 주지 않고 `TcpListener` 를 살린 채 돌려준다. 예약은 `Command::spawn` 직전에만 풀린다. 번호만 빼내 버리는 형태를 타입이 막는다.
+- **재시도** — 예약을 풀고 자식이 부팅을 마칠 때까지의 구간(수 초)은 예약으로 닫을 수 없다(같은 포트를 두 소켓이 동시에 listen 할 수 없다). 이 구간에서 뺏기면 리스너가 남긴 bind 실패 경고를 근거로 **도난을 확정**하고, 새 포트로 다시 띄운다(최대 2 회).
+
+재시작 시나리오(같은 홈의 두 번째 인스턴스)는 재시도 대상이 아니다 — 웹훅 URL 이 재시작 간 고정이어야 해서 하네스가 번호를 바꿀 수 없다. 그래서 전용 진입점 `WebhookInstance::builder_for_restart()` 는 포트를 인자로 받지 않고 홈의 `webhooks.toml` 을 SoT 로 읽는다. 호출부가 번호를 따로 들고 다니면 1 차 인스턴스가 재시도로 포트를 바꿨을 때 그 값이 조용히 낡는다.
+
+포트를 뺏겨 실패할 때의 메시지는 "웹훅이 안 떴다" 가 아니라 어느 포트를 누가 가져갔는지와 리스너 경고 원문을 싣는다. bind 실패 경고가 없는 경우(부팅 지연·리스너 init 미호출)와 문구로 구분된다.
+
 ## 3. 환경 격리
 
 인스턴스마다 `$TMPDIR/tasty-test-home-{pid}-{nanos}/` 를 새 HOME 으로 만들고, host 환경 누수를 spawn 직전에 차단한다. ("인스턴스마다" 이지 "테스트마다" 가 아니다 — §1 참조.)
@@ -75,7 +128,7 @@
 | `SHELL` | 제거 | host login shell 누수 차단(`detect_bash` 의 `$SHELL` 경로) |
 | `OH_MY_ZSH` / `ZSH` | 제거 | oh-my-zsh customization 누수 차단 |
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
-| `RUST_LOG` | `tasty=info` | child stderr 폭주에 의한 OS pipe backpressure 회피 |
+| `TASTY_LOG` | 본체 기본 필터와 **같은 모양** (`warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off`, 웹훅 하네스는 뒤에 `,tasty::webhook::listener=info`). 정의 자리는 `tests/spawn_diag` 의 `LOG_ENV`/`LOG_FILTER` 하나다 | child stderr 폭주에 의한 OS pipe backpressure 회피 + host 의 `TASTY_LOG` 누수 차단. 본체가 읽는 변수는 `TASTY_LOG` 다 — `RUST_LOG` 는 무시된다([crash-diagnostics](crash-diagnostics.md)). **`warn` 한 단어만 주면 안 된다** — 지정하는 순간 본체 기본 필터가 통째로 대체돼 `wgpu_hal=error` 등 억제가 풀리고 로그가 오히려 늘어난다(실측: 미지정 7줄 · `warn` 12줄 · 이 값 7줄) |
 
 격리 HOME 에 사전 작성하는 파일:
 
@@ -90,21 +143,42 @@
 
 | 단계 | 상수 | 값 | 조건 |
 |------|------|-----|------|
-| S1 | `SPAWN_PORT_TIMEOUT` | 30 s | `--port-file` 에 port 가 쓰여짐 |
-| S2 | `SPAWN_SHELL_TIMEOUT` | 15 s | first surface `screen_text` 가 non-empty (첫 PTY prompt) |
+| S1 | `SPAWN_PORT_TIMEOUT` | 40 s | `--port-file` 에 port 가 쓰여짐 |
+| S2 | `SPAWN_SHELL_TIMEOUT` | 20 s | first surface `screen_text` 가 non-empty (첫 PTY prompt) |
 
 값은 단순 증가가 아니라 **결정적 fix(config.toml 사전 작성) 위의 마진**이다 — dev cold path worst-case(GPU init + plugin discover/extract + theme/db init, dev 프로필 ~3.5× 느림) + self-hosted runner 변동 폭 흡수.
 
+두 상수는 **`tests/spawn_diag`** 한 곳에만 있고 `tests/common`·`tests/webhook_common` 이 그것을 쓴다. 두 하네스는 같은 바이너리를 같은 방식으로 띄우므로 같은 단계에 다른 잣대를 댈 근거가 없다(이전에는 30/15 와 40/20 으로 갈려 있었고 그 차이의 근거가 어디에도 없었다). 통합값은 둘 중 큰 쪽이다 — 낮추는 쪽은 근거 없는 동작 축소이고, 올리는 쪽이 늘리는 것은 *이미 실패할 spawn* 이 보고되기까지의 시간뿐인데 그 시간은 아래 조기 종료 감지가 대부분 없앤다.
+
+**상한을 다 기다리지 않는 경우**: port file 대기 루프가 매 바퀴 자식의 종료를 확인한다. 자식이 이미 죽었으면(디스플레이 부재·설정 오류 등 즉사 계열) 그 자리에서 실패시킨다 — 죽은 프로세스를 40 초 더 기다릴 이유가 없다.
+
 ## 5. stderr tail 진단
 
-spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `RUST_LOG=tasty=info` 로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어).
+spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `TASTY_LOG` 로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어) — 값은 §4 의 env 표대로 **본체 기본 필터와 같은 모양**이어야 한다. 30 줄짜리 tail 은 노이즈 몇 줄에도 밀려나므로, 필터를 느슨하게 주는 것이 곧 진단 손실이다.
 
 ## 6. Flaky 대응 절차
 
+0. **panic 메시지 두 번째 줄의 판정문을 먼저 읽는다.** 하네스가 stderr 시그니처로 단서를 미리 갈라 놓는다. 단서마다 **확신 수준이 다르다** — 문장이 단정하는 것만 원인으로 받아들인다.
+   - "디스플레이 서버가 없다 — 코드 인과가 아니다" → **단정.** 이 시그니처는 정상 부팅 stderr 에 나오지 않는다. `xvfb-run -a` 위에서 다시 돌린다.
+   - "GPU 가속 경로 폴백 흔적이 있다 — 이것만으로는 원인 판정이 되지 않는다" → **단정이 아니다.** 아래 6-1 로 가되, 거기서 GPU 경합이 아니라고 판명되면 1~4 의 일반 절차를 그대로 밟는다. 이 줄을 봤다고 코드를 건너뛰지 않는다.
+   - "부팅 차단 시그니처는 없다" → 아래 1~4 의 일반 절차로.
 1. panic 의 `--- stderr (last 30 lines) ---` 확인.
 2. 마지막 `tracing::info!` 단계 식별: `IPC server listening on 127.0.0.1:{port}` 가 보이면 **S2**(PTY prompt) timeout → shell path/rc 점검. 안 보이면 **S1** → config.toml shell 유효성·plugin·theme init 점검.
 3. 재현: `cargo test --test e2e_tests -- --nocapture`.
 4. 결정적 차단이 깨졌으면 `TastyInstance::spawn` 의 env/config 보강.
+
+### 6-1. GPU 분기
+
+**시그니처만으로 원인이 정해지지 않는다.** `renderD128` · `VK_ERROR_` · `DRI3` · `libEGL` · `tu_knl` · `failed to open device` 는 드라이버가 **가속 경로를 포기하고 폴백할 때** 나오는 줄이고, 폴백한 뒤 부팅은 대개 성공한다 — 실측(2026-09-04) 결과 이 개발 머신에서는 **정상적으로 부팅해 port file 을 쓴 인스턴스의 stderr 에 여섯 개가 전부** 들어 있었다. 즉 이 줄들은 "GPU 가 없어서 못 떴다" 의 증거가 아니라 "이 머신은 원래 소프트웨어 렌더로 돈다" 는 배경 소음이다.
+
+그래서 이 분기는 **경합 여부를 직접 확인하는 절차**다.
+
+- 같은 머신에서 다른 워크트리·인스턴스가 GPU 를 쓰고 있는지 먼저 본다. 여러 에이전트가 병렬로 작업하는 환경에서는 GUI 를 띄우는 검증을 세마포어로 직렬화한다.
+- 같은 실행에서 **깨지는 스위트가 매번 다르면** 코드 인과가 아니라 자원 경합의 무작위 희생자라는 신호다.
+- 다른 GUI 사용자가 없는데도 재현되면 **경합이 아니다** — 6 의 1~4 로 돌아가 코드 쪽(부팅 지연·plugin·셸 설정)을 본다.
+- 단독 재실행으로 통과하면 경합 판정이 확정된다.
+
+정상 부팅에 나오지 않는 GPU 시그니처를 관측하게 되면 `tests/spawn_diag` 의 `GPU_FALLBACK_MARKERS` 를 그것으로 바꾸고 판정문의 단정을 되살릴 수 있다. 지금 그렇게 하지 않은 이유는 이 머신에서 GPU 초기화가 **항상** 소프트웨어 폴백으로 성공해 그런 로그를 채집할 수 없었기 때문이다.
 
 ## VTE 시뮬레이터 (`tasty-tui-simulator`)
 
