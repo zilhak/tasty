@@ -123,7 +123,7 @@ README 가 자기 `src/…` 를 적는 것은 정당한 관례라, 예외 목록
   그 잡에 경로 필터가 없는 이유
 - [ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) — 이 ADR 이
   적은 수(1841 · 35 · 8 · 885/146 · 57 · 377)는 전부 그 시점의 과거형 사실이다
-- [ADR-0133](0133-scan-guards-assert-their-population.md) — 0 인 모수는 언제나 초록이라
+- [ADR-0133](0133-guard-scan-population-is-pinned-not-enumerated.md) — 0 인 모수는 언제나 초록이라
   두 축 모두 판정 회수를 함께 단정한다
 - [ADR-0105](0105-no-nongit-path-refs-in-tracked-sources.md) — 추적 소스가 적을 수 있는
   경로의 범위
