@@ -128,8 +128,57 @@ pub(crate) enum MirrorEvent {
     },
 }
 
-/// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 mirror 이벤트 버퍼.
-pub(crate) type RemoteOutputBuffer = Arc<Mutex<Vec<MirrorEvent>>>;
+/// reader thread 가 누적하고 메인 스레드의 apply 가 비우는 원격 mirror 이벤트 버퍼.
+///
+/// 내부 `Mutex` 를 밖에 노출하지 않는 것이 이 타입의 존재 이유다 — 버퍼를 비우는 경로가
+/// [`MirrorOutbox::take_for`] 하나뿐이고 그것이 적용 대상([`MirrorHost`])을 인자로
+/// 요구하므로, "꺼냈는데 적용 대상이 없다" 는 상태를 **쓸 수가 없다**. 자유 함수와
+/// 노출된 `Mutex` 였을 때는 같은 유실을 인라인 `mem::take` 로 한 칸 옆에서 다시 만들 수
+/// 있었다(ADR-0110 "무엇이 무엇을 지탱하는가").
+#[derive(Clone)]
+pub(crate) struct MirrorOutbox {
+    events: Arc<Mutex<Vec<MirrorEvent>>>,
+}
+
+impl MirrorOutbox {
+    fn new() -> Self {
+        Self {
+            events: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// reader thread 전용 — 도착 순서대로 쌓는다. 쌓았으면 `true`(메인 루프를 깨울지
+    /// 판단하는 데 쓴다). lock 이 오염됐으면 쌓지 않고 `false` — 오염은 메인 스레드가
+    /// 적용 중 패닉했다는 뜻이라 어차피 그 세션은 정리된다.
+    fn push(&self, ev: MirrorEvent) -> bool {
+        match self.events.lock() {
+            Ok(mut buf) => {
+                buf.push(ev);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// 쌓인 이벤트를 **도착 순서대로** 통째로 꺼낸다.
+    ///
+    /// 적용 대상을 **인자로 요구**하는 것이 요점이다 — host 없이 비울 방법이 타입 수준에
+    /// 없다. mutex 오염(reader thread panic)은 lock 을 무효화할 이유가 없어 안쪽 값을
+    /// 그대로 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지 않는다.
+    fn take_for(&self, _host: &MirrorHost<'_>) -> Vec<MirrorEvent> {
+        match self.events.lock() {
+            Ok(mut b) => std::mem::take(&mut *b),
+            Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+        }
+    }
+
+    /// 테스트에서 버퍼를 채우고 들여다보는 유일한 창구 — 프로덕션 경로는
+    /// [`MirrorOutbox::push`] 와 [`MirrorOutbox::take_for`] 뿐이다.
+    #[cfg(test)]
+    fn peek(&self) -> std::sync::MutexGuard<'_, Vec<MirrorEvent>> {
+        self.events.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
 
 /// write 전용 스레드로 보내는 한 프레임. forwarder(Data)/heartbeat(Ping)/
 /// resize·structural(Control)/detach(Detach)가 모두 이 큐에 push 만 하고, 단일 write
@@ -181,7 +230,7 @@ pub(crate) struct AttachClientSession {
     /// 원격 surface_id → 로컬 mirror surface_id. 출력 demux 적용에 사용.
     remote_to_local: HashMap<u32, u32>,
     /// reader thread 가 누적하는 원격 출력 `(remote_surface_id, bytes)`.
-    output: RemoteOutputBuffer,
+    output: MirrorOutbox,
     /// reader thread 가 EOF/force-detach 를 만나면 set. apply 가 보고 mirror 정리.
     disconnected: Arc<AtomicBool>,
     /// 원격으로 나가는 모든 프레임(입력 Data / resize·structural Control / Detach)을
@@ -431,7 +480,7 @@ impl App {
         }
 
         // 3. reader thread: 원격 출력 → 버퍼(remote_id 키). EOF/force → disconnected.
-        let output: RemoteOutputBuffer = Arc::new(Mutex::new(Vec::new()));
+        let output = MirrorOutbox::new();
         let disconnected = Arc::new(AtomicBool::new(false));
 
         // 3.5. write 전용 스레드: frame_rx 를 순차 소비해 소켓에 write_frame.
@@ -587,7 +636,7 @@ impl App {
         }
 
         // 3. reader thread — 신규 attach 와 동일 계약(새 output 버퍼/disconnected).
-        let output: RemoteOutputBuffer = Arc::new(Mutex::new(Vec::new()));
+        let output = MirrorOutbox::new();
         let disconnected = Arc::new(AtomicBool::new(false));
 
         // 3.5. write 전용 스레드 — 이 연결 1 회 수명.
@@ -661,15 +710,14 @@ impl App {
     /// (로컬 워크스페이스와 동일한 반응성). `Tick::AttachView` 3초 tick 도 backstop 으로 호출.
     ///
     /// 적용 대상은 **창 있는 engine → parked engine** 순으로 찾고(`mirror_output_host`),
-    /// 대상을 찾은 **뒤에야** 버퍼를 drain 한다 — drain 은 이 함수가 아니라
-    /// [`apply_pending_mirror_output`] 이 하며, 그 함수는 host 가 `None` 이면 꺼내지
-    /// 않는다(2차 조회 실패까지 포함해 유실 분기가 남지 않는다). 창이 없는 parked 상태에서도 mirror
+    /// 대상을 찾은 **뒤에야** 버퍼를 비운다 — 비우는 경로가 [`MirrorOutbox::take_for`]
+    /// 하나뿐이고 그것이 `MirrorHost` 를 인자로 요구하므로, 이 함수가 순서를 지키는지와
+    /// 무관하게 host 없이 꺼내는 코드는 **쓸 수가 없다**. 창이 없는 parked 상태에서도 mirror
     /// 터미널·매핑은 그 engine 안에 그대로 살아 있으므로 로컬 PTY 출력
     /// (`handle_terminal_output` 의 parked 순회)과 똑같이 즉시 적용한다 — 창 복원 시
     /// 새 창이 그 engine 을 그대로 그리므로 최소화 동안의 출력이 남아 있다. 어느
     /// engine 에도 없으면(= 고아, 같은 프레임의 `detach_orphaned_mirror_sessions` 가
-    /// 세션째 정리) drain 하지 않고 버퍼를 그대로 둔다 — drain 을 먼저 하면 적용
-    /// 대상이 없을 때 되돌릴 수 없다. 순회 범위는 고아 판정
+    /// 세션째 정리) 버퍼를 그대로 둔다 — 먼저 꺼내면 적용 대상이 없을 때 되돌릴 수 없다. 순회 범위는 고아 판정
     /// (`mirror_workspace_engine_alive`)·정리(`cleanup_mirror_workspace`)와 같아야 한다
     /// (ADR-0110).
     pub(crate) fn apply_attach_client_output(&mut self) {
@@ -689,7 +737,7 @@ impl App {
                 )
             };
 
-            // 적용 대상 탐색이 drain 보다 **앞** — 대상이 없으면 버퍼를 건드리지 않는다.
+            // 적용 대상 탐색이 버퍼를 비우는 것보다 **앞** — 대상이 없으면 건드리지 않는다.
             let host = mirror_output_host(
                 self.find_main_with_workspace(local_ws),
                 &self.parked_states,
@@ -700,10 +748,9 @@ impl App {
             // 갱신하므로 clone 이 아닌 **라이브 매핑**을 써야 같은 drain 안의 이후
             // Data 가 새 surface 로 라우팅된다.
             //
-            // drain 은 이 함수가 직접 하지 않는다 — `apply_pending_mirror_output` 이
-            // `Option<MirrorHost>` 를 받아 **`Some` 일 때만** 꺼낸다. 그래서 아래
-            // `as_main_mut()` 같은 2차 조회가 실패해도 이미 꺼낸 이벤트가 버려지는 일이
-            // 구조적으로 없다(ADR-0110 — 유실이 생기면 조용히 생긴다).
+            // 아래 `as_main_mut()` 같은 2차 조회가 실패해도 이미 꺼낸 이벤트가 버려지는
+            // 일은 없다 — 그 시점엔 아직 꺼내지 않았고, 꺼내려면 host 값이 있어야 하기
+            // 때문이다(`MirrorOutbox::take_for`). 유실이 생기면 조용히 생긴다(ADR-0110).
             match host {
                 Some(MirrorOutputHost::Window(wid)) => {
                     let sess = &mut self.attach_client_sessions[idx];
@@ -1500,19 +1547,6 @@ fn find_parked_with_workspace(
         .position(|(_, engine)| engine.has_workspace(local_workspace))
 }
 
-/// reader thread 가 쌓아둔 mirror 이벤트를 **도착 순서대로** 통째로 꺼낸다. 호출자는
-/// [`apply_pending_mirror_output`] 하나뿐이고, 그 함수가 적용 대상을 확보한 뒤에만
-/// 부른다 — 대상이 없는데 꺼내면 되돌릴 수 없다. `apply_attach_client_output` 이
-/// 이걸 직접 부르지 않는다는 것을 `apply_output_never_drains_without_a_host` 가 고정한다.
-/// mutex 오염(reader thread panic)은 lock 을 무효화할 이유가 없어 안쪽 값을 그대로
-/// 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지 않는다.
-fn drain_mirror_output(output: &RemoteOutputBuffer) -> Vec<MirrorEvent> {
-    match output.lock() {
-        Ok(mut b) => std::mem::take(&mut *b),
-        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
-    }
-}
-
 /// mirror 이벤트를 적용할 대상 engine — 창이 있든(`MainView` 의 `state`/`core_state`)
 /// 없든(parked 튜플) 같은 `(AppState, CoreState)` 쌍이다. 창 유무는 상태 적용에는
 /// 영향이 없고, toast 처럼 **창 표면이 있어야 의미 있는 부수효과**만 게이트한다.
@@ -1551,6 +1585,25 @@ impl<'a> MirrorHost<'a> {
     /// 시점엔 이미 만료돼 보이지도 않으므로 쌓지 않는다(`cleanup_mirror_workspace`
     /// 의 parked 분기와 같은 이유). 상태 변경(터미널·매핑·트리)은 이 게이트와 무관하게
     /// 항상 적용된다.
+    /// 이 host 로 갈 이벤트를 버퍼에서 꺼내 **그 자리에서** 적용한다. 적용한 이벤트가
+    /// 있었으면 `true`(호출부의 repaint 판단용).
+    ///
+    /// 꺼내는 일과 적용하는 일을 한 메서드가 쥐고, 그 메서드를 부르려면 `MirrorHost`
+    /// 값이 있어야 한다 — "적용 대상 없이 꺼낸다" 가 호출 순서 약속이 아니라 **타입**
+    /// 으로 불가능해지는 지점이다(ADR-0110).
+    fn drain_and_apply(
+        &mut self,
+        sess: &mut AttachClientSession,
+        plugin_manager: &mut Option<crate::plugin::PluginManager>,
+    ) -> bool {
+        let drained = sess.output.take_for(self);
+        if drained.is_empty() {
+            return false;
+        }
+        apply_mirror_events(sess, self, plugin_manager, drained);
+        true
+    }
+
     fn toast(&mut self, message: String, kind: crate::adapters::ui::ToastKind) {
         if self.windowed {
             self.state
@@ -1567,10 +1620,12 @@ impl<'a> MirrorHost<'a> {
 ///
 /// `host` 가 `None` 이면 **아무것도 꺼내지 않는다** — 꺼낸 뒤 적용에 실패하면 되돌릴
 /// 방법이 없고, mirror 이벤트의 유실은 조용히 일어난다(`Data` 는 복원 뒤 화면 결손,
-/// `StructuralDelta` 는 매핑 desync). ADR-0110 이 "적용 대상이 없는데 꺼내는 일이
-/// 구조적으로 사라진다" 고 단언하는 지점이 여기다 — 호출부가 drain 을 직접 하지 않고
-/// 이 함수에 `Option` 을 넘기는 배선이 그 단언을 타입으로 지탱한다. 버퍼를 그대로
-/// 두면 다음 호출(`AttachClientData` wake 또는 `Tick::AttachView`)이 다시 시도한다.
+/// `StructuralDelta` 는 매핑 desync). 버퍼를 그대로 두면 다음 호출(`AttachClientData`
+/// wake 또는 `Tick::AttachView`)이 다시 시도한다.
+///
+/// 이 함수는 `Option` 을 [`MirrorHost::drain_and_apply`] 로 넘기는 얇은 어댑터일 뿐이다 —
+/// 유실을 막는 것은 이 함수의 순서가 아니라 버퍼를 비우는 유일한 경로
+/// ([`MirrorOutbox::take_for`])가 host 를 요구한다는 사실이다(ADR-0110).
 fn apply_pending_mirror_output(
     sess: &mut AttachClientSession,
     host: Option<MirrorHost<'_>>,
@@ -1579,12 +1634,7 @@ fn apply_pending_mirror_output(
     let Some(mut host) = host else {
         return false;
     };
-    let drained = drain_mirror_output(&sess.output);
-    if drained.is_empty() {
-        return false;
-    }
-    apply_mirror_events(sess, &mut host, plugin_manager, drained);
-    true
+    host.drain_and_apply(sess, plugin_manager)
 }
 
 /// drain 한 mirror 이벤트들을 **도착 순서대로** 한 engine 에 적용한다. 창 있는 engine 과
@@ -1662,7 +1712,7 @@ fn spawn_attach_write_thread(
 /// 흡수(write 스레드와 동일 패턴: "" vs "(재연결)").
 fn spawn_attach_reader_thread(
     mut conn: StreamConnection,
-    output: RemoteOutputBuffer,
+    output: MirrorOutbox,
     disconnected: Arc<AtomicBool>,
     proxy: EventLoopProxy<AppEvent>,
     local_workspace: u32,
@@ -1674,10 +1724,8 @@ fn spawn_attach_reader_thread(
             match conn.recv() {
                 Ok(frame) => match frame.tag {
                     StreamTag::Data => {
-                        if let Some((sid, payload)) = stream::decode_mux(&frame.payload)
-                            && let Ok(mut buf) = output.lock()
-                        {
-                            buf.push(MirrorEvent::Data(sid, payload.to_vec()));
+                        if let Some((sid, payload)) = stream::decode_mux(&frame.payload) {
+                            output.push(MirrorEvent::Data(sid, payload.to_vec()));
                         }
                         // 실시간 갱신: 데이터가 오는 즉시 메인 루프를 깨워 mirror 에
                         // 적용한다(로컬 PTY 의 TerminalOutput wake 와 동형).
@@ -1740,10 +1788,8 @@ fn spawn_attach_reader_thread(
                                     .or_else(|| parse_git_query_result(&frame.payload)),
                             };
                         if let Some(ev) = mirror_ev
-                            && let Ok(mut buf) = output.lock()
+                            && output.push(ev)
                         {
-                            buf.push(ev);
-                            drop(buf);
                             let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                         }
                     }
@@ -1756,16 +1802,14 @@ fn spawn_attach_reader_thread(
                     // 이런 유실을 전제로 설계됨).
                     StreamTag::MeshData => {
                         if let Ok(Some((meta, bytes))) = mesh_assembler.push_chunk(&frame.payload)
-                            && let Ok(mut buf) = output.lock()
-                        {
-                            buf.push(MirrorEvent::Mesh(
+                            && output.push(MirrorEvent::Mesh(
                                 meta.surface_id,
                                 meta.generation,
                                 meta.frame_seq,
                                 meta.full_textures,
                                 bytes,
-                            ));
-                            drop(buf);
+                            ))
+                        {
                             let _ = proxy.send_event(AppEvent::AttachClientData); // event loop 종료 시에만 실패 — 무시
                         }
                     }
@@ -4325,7 +4369,7 @@ mod tests {
         AttachClientSession {
             local_workspace,
             remote_to_local,
-            output: Arc::new(Mutex::new(Vec::new())),
+            output: MirrorOutbox::new(),
             disconnected: Arc::new(AtomicBool::new(false)),
             frame_tx: Arc::new(Mutex::new(tx)),
             state: SessionState::Connected,
@@ -4489,7 +4533,7 @@ mod tests {
     fn no_host_leaves_the_mirror_buffer_untouched() {
         let ws_id = 9_000u32;
         let mut sess = test_session(ws_id, HashMap::new());
-        sess.output.lock().unwrap().extend([
+        sess.output.peek().extend([
             MirrorEvent::Data(1, b"a".to_vec()),
             MirrorEvent::Resize(1, 10, 5),
         ]);
@@ -4498,7 +4542,7 @@ mod tests {
         let applied = apply_pending_mirror_output(&mut sess, None, &mut plugin_manager);
 
         assert!(!applied, "적용 대상이 없으면 적용했다고 보고하지 않는다");
-        let buf = sess.output.lock().unwrap();
+        let buf = sess.output.peek();
         assert_eq!(
             buf.len(),
             2,
@@ -4518,8 +4562,7 @@ mod tests {
         let mut parked = parked_with_mirror(ws_id, local_surface);
         let mut sess = test_session(ws_id, HashMap::from([(remote_surface, local_surface)]));
         sess.output
-            .lock()
-            .unwrap()
+            .peek()
             .push(MirrorEvent::Data(remote_surface, b"applied-here".to_vec()));
         let mut plugin_manager: Option<crate::plugin::PluginManager> = None;
 
@@ -4534,39 +4577,13 @@ mod tests {
         };
 
         assert!(applied);
-        assert!(
-            sess.output.lock().unwrap().is_empty(),
-            "적용했으면 버퍼는 비워진다"
-        );
+        assert!(sess.output.peek().is_empty(), "적용했으면 버퍼는 비워진다");
         let term = parked[pidx]
             .1
             .terminals
             .get(local_surface)
             .expect("mirror 터미널");
         assert!(term.screen_text(false).contains("applied-here"));
-    }
-
-    /// `apply_attach_client_output` 이 drain 을 **직접** 하지 않는다는 배선 자체를
-    /// 고정한다. 순수 함수 테스트는 `apply_pending_mirror_output` 안의 순서만 잡고,
-    /// 호출부에서 drain 을 host 탐색보다 앞으로 되돌리는 변이는 잡지 못한다 —
-    /// 그게 이 결함의 원래 형태(ADR-0110 Context 2)라 소스 배선으로 막는다.
-    #[test]
-    fn apply_output_never_drains_without_a_host() {
-        let src = include_str!("attach_client.rs");
-        let start = src
-            .find("pub(crate) fn apply_attach_client_output(&mut self)")
-            .expect("apply_attach_client_output 정의");
-        let body = &src[start..];
-        let end = body
-            .find("\n    /// attach-behavior.md#gui-자동-재연결-스코프")
-            .expect("다음 항목의 시작");
-        let body = &body[..end];
-        assert!(
-            !body.contains("drain_mirror_output("),
-            "apply_attach_client_output 은 drain 을 직접 부르지 않는다 — \
-             `apply_pending_mirror_output` 에 `Option<MirrorHost>` 를 넘겨, host 를 \
-             확보하지 못하면 꺼내지 않게 한다"
-        );
     }
 
     /// 창 유무는 **부수효과만** 게이트한다(ADR-0110). parked engine 에는 toast 를
@@ -4606,18 +4623,24 @@ mod tests {
 
     /// 버퍼는 도착 순서대로 통째로 꺼내지고 비워진다 — resize 앞뒤 출력이 올바른
     /// grid 에서 재생되려면 순서가 보존돼야 한다.
+    ///
+    /// 꺼내려면 `MirrorHost` 가 있어야 한다는 것 자체가 이 테스트의 형태에 드러난다 —
+    /// host 없이 부르는 판은 컴파일되지 않는다.
     #[test]
-    fn drain_mirror_output_takes_everything_in_arrival_order() {
-        let buf: RemoteOutputBuffer = Arc::new(Mutex::new(vec![
+    fn take_for_takes_everything_in_arrival_order() {
+        let buf = MirrorOutbox::new();
+        buf.peek().extend([
             MirrorEvent::Data(1, b"a".to_vec()),
             MirrorEvent::Resize(1, 10, 5),
             MirrorEvent::Data(1, b"b".to_vec()),
-        ]));
-        let drained = drain_mirror_output(&buf);
+        ]);
+        let (mut state, mut engine) = crate::state::tests::test_state();
+        let host = MirrorHost::parked(&mut state, &mut engine);
+        let drained = buf.take_for(&host);
         assert!(matches!(drained[0], MirrorEvent::Data(1, ref b) if b == b"a"));
         assert!(matches!(drained[1], MirrorEvent::Resize(1, 10, 5)));
         assert!(matches!(drained[2], MirrorEvent::Data(1, ref b) if b == b"b"));
         assert_eq!(drained.len(), 3);
-        assert!(buf.lock().unwrap().is_empty(), "drain 뒤 버퍼는 비어 있다");
+        assert!(buf.peek().is_empty(), "꺼낸 뒤 버퍼는 비어 있다");
     }
 }
