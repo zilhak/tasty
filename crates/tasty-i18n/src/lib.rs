@@ -289,10 +289,12 @@ mod flatten_probe {
 /// verbose language (~1.5×), heavy author comments (~2×), and the key set growing
 /// several-fold over the app's life (~4×).
 ///
-/// The ceiling is also chosen so that hitting it stays cheap: a pack exactly at
-/// the limit costs ~20 ms to discover (release build), the same order as scanning
-/// twenty ordinary packs. So even a deliberately maximal pack cannot make the
-/// first open of the settings window noticeably slower.
+/// The ceiling is also chosen so that hitting it stays cheap. Discovery cost is
+/// proportional to file size, so a pack sitting exactly at the limit costs about
+/// what scanning twenty ordinary packs costs — tens of milliseconds, not seconds.
+/// So even a deliberately maximal pack cannot make the first open of the settings
+/// window noticeably slower. (Order of magnitude on purpose: the absolute number
+/// is machine- and profile-dependent, and nothing here depends on its precision.)
 ///
 /// The limit exists because the cost of reading a pack is proportional to a file
 /// the *user* placed. Without it a 200 MB file is accepted, read whole into
