@@ -1,4 +1,4 @@
-<!-- source-hash: 0ed2d8dd79bc -->
+<!-- source-hash: e41a428d26c6 -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -137,6 +137,9 @@ Place a **single file** instead of a folder — `~/.tasty/lang/ko.toml`, for exa
 It overrides just the entries you write, and needs no `[font]`. This works for
 English, 한국어 and 日本語 only; a new language placed this way does not show up in
 the list.
+
+Leaving a value empty (`""`) counts as "not changed" here too, just as in a pack —
+the text that language ships with stays on screen, and you never get a blank spot.
 
 ### When it does not work
 
