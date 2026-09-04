@@ -1983,13 +1983,31 @@ mod tests {
     /// 이 테스트가 잡는 것은 셋이다.
     /// 1. 반경 기본·lg 가 배율 가변성을 잃는다(스케일 값이 바뀌거나 반올림이 바뀐다).
     /// 2. `icon_stroke_width` 가 `zoomed()` 를 타게 된다 — 이건 값이 변하므로 관측된다.
-    /// 3. **불변 셋의 전제가 깨진다** — 지원 배율에 예컨대 1.5 가 추가되면
-    ///    `1.0 * 1.5 = 1.5 → 2` 라 `border_width` 가 배율 가변이 되고, 그때는 굵기 축에도
-    ///    대가가 생긴다. 그 전제를 여기서 직접 잰다(배율 집합을 소스에서 읽지는 못한다 —
-    ///    `tasty-settings` 는 이 크레이트의 의존이 아니다. 값이 어긋나면 3번이 운다).
+    /// 3. **불변 셋의 전제 위에서 값이 어긋난다** — 아래 세 배율에서 `border_width` ·
+    ///    `focus_ring_width` · `corner_radius_sm` 이 반올림 불변성을 잃는 경우(예:
+    ///    `border_width` 가 1.0 → 1.5 로 바뀌면 1.2 배에서 2 가 된다).
+    ///
+    /// **3번이 잡지 *못하는* 것을 분명히 적는다 — 여기서 한 번 틀렸다.**
+    /// 지원 배율 **집합 자체**가 바뀌는 것(예: 1.5 가 추가되는 것)은 이 테스트가
+    /// 감지하지 못한다. 아래 `SUPPORTED_ZOOMS` 는 **하드코딩 사본**이라 원본
+    /// (`AppearanceSettings::ui_scale_factor_for`)에 배율이 늘어도 그대로 있고,
+    /// 이 테스트는 초록으로 남는다. 의존 방향이 반대라(그 크레이트가 이 크레이트에
+    /// 의존한다) 여기서 원본을 읽을 방법이 없다.
+    ///
+    /// 그래서 **집합의 핀은 원본 쪽에 있다**:
+    /// `tasty-settings` 의 `the_supported_ui_scale_set_is_pinned`. 배율이 늘면
+    /// 그 핀이 울고, 그 메시지가 이 사본을 좌표로 지목한다.
+    ///
+    /// (원래 이 자리에는 "값이 어긋나면 3번이 운다" 고 적혀 있었는데, **토큰 '값'과
+    /// 배율 '집합' 이 한 문장에서 섞여** 집합 변화까지 잡는 것처럼 읽혔다. 값 쪽은
+    /// 참이고 집합 쪽은 거짓이었다.)
     #[test]
     fn zoom_cost_differs_by_axis() {
         /// `AppearanceSettings::ui_scale_factor_for` 의 값. 의존 방향이 반대라 복사한다.
+        ///
+        /// **사본이라 원본을 따라가지 않는다.** 원본에 배율이 추가돼도 여기는 그대로다 —
+        /// 그 어긋남을 잡는 것은 이 파일이 아니라 원본 크레이트의
+        /// `the_supported_ui_scale_set_is_pinned` 다.
         const SUPPORTED_ZOOMS: [f32; 3] = [0.85, 1.0, 1.2];
 
         let base = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
@@ -2018,7 +2036,9 @@ mod tests {
             );
 
             // ③ 불변 셋의 전제 — 이 값들은 경유하든 안 하든 배율에서 그대로다.
-            //    지원 배율이 바뀌면 여기가 먼저 운다.
+            //    **토큰 값이 바뀌면** 여기가 운다(예: border_width 1.0 → 1.5).
+            //    지원 배율 집합이 바뀌는 것은 여기가 아니라 `tasty-settings` 의
+            //    `the_supported_ui_scale_set_is_pinned` 가 잡는다 — 위 사본 참조.
             for (name, v) in [
                 ("border_width", base.border_width),
                 ("focus_ring_width", base.focus_ring_width),

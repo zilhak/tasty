@@ -18,7 +18,7 @@ use tasty_utils::path::tasty_home;
 
 pub use appearance::{
     ActiveTabIndicator, AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor,
-    PluginSettingValue,
+    PluginSettingValue, UI_SCALE_CHOICES,
 };
 pub use general::{DEFAULT_WHEEL_LINE_SCROLL, GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
@@ -331,9 +331,11 @@ impl Settings {
         }
 
         // appearance.ui_scale
+        // 목록을 여기 다시 쓰지 않는다 — 배율 집합의 모수는 `UI_SCALE_CHOICES` 하나이고
+        // 그 집합은 `the_supported_ui_scale_set_is_pinned` 가 못박는다.
         normalize_choice(
             &mut self.appearance.ui_scale,
-            &["small", "medium", "large"],
+            UI_SCALE_CHOICES,
             "medium",
             "ui_scale",
             &mut report.changed,
