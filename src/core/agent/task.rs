@@ -673,7 +673,7 @@ mod task_delete_tests {
         core.with_memory(|mem| {
             let mut sem = SemaphoreStore::new(mem, HOST_OWNER);
             sem.create(ws, "gate", 1, 1)?;
-            sem.acquire(ws, "gate", &task_id)?;
+            sem.acquire(ws, "gate", &task_id, None, 1000)?;
             Ok::<_, AgentError>(())
         })
         .expect("acquire permit");
@@ -691,7 +691,11 @@ mod task_delete_tests {
             .expect("get semaphore")
             .expect("semaphore exists");
         assert_eq!(
-            sem_after.holders,
+            sem_after
+                .holders
+                .iter()
+                .map(|h| h.id.clone())
+                .collect::<Vec<_>>(),
             vec![task_id.clone()],
             "rejected delete must not touch the held permit"
         );

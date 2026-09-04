@@ -101,33 +101,111 @@ pub(crate) fn list_slots() -> Vec<LayoutSlotId> {
 
 // ── 로드 ──
 
-/// 슬롯 하나를 읽는다. 파일이 없거나 파싱 실패거나 지원 범위 밖 version 이면 `None`.
-fn load_slot_in(dir: &Path, slot: LayoutSlotId) -> Option<SavedLayout> {
+/// 슬롯 하나를 읽은 결과.
+///
+/// "없음" 과 "못 읽음" 을 **구분한다.** 둘을 같은 `None` 으로 뭉개면 권한 오류나 손상
+/// JSON 이 "이 슬롯을 쓴 적 없음" 과 같아지고, 그 뒤 [`save_slot`] 이 같은 슬롯에 현재
+/// 상태를 써서 사용자의 창 구성을 대체한다. 읽지 못한 슬롯은 덮어쓰지 않는 것이 유일한
+/// 보호 수단이다.
+pub(crate) enum SlotLoad {
+    /// 정상적으로 읽고 파싱했다.
+    Loaded(SavedLayout),
+    /// 슬롯 파일이 없다 — 첫 실행이거나 그 슬롯을 쓴 적이 없다. 새로 써도 잃을 것이 없다.
+    Absent,
+    /// 파일이 있는데 **읽지** 못했다(권한 · IO), 또는 이 빌드가 모르는 미래 version 이다.
+    /// 사용자 레이아웃이 디스크에 남아 있고 옮길 수도 없으므로 **저장하면 안 된다.**
+    Unreadable,
+    /// 파일을 읽었지만 해석하지 못했다. 원본은 그 자리에 그대로 있다 — 저장 직전에
+    /// `NN.json.bak` 으로 옮긴 뒤 쓴다.
+    Unparsable,
+}
+
+/// 슬롯 하나를 읽는다.
+///
+/// **읽기는 파일을 건드리지 않는다.** 해석 실패는 [`SlotLoad::Unparsable`] 로만 알리고,
+/// 보존(백업으로 이동)은 실제로 덮어쓰려는 순간([`save_slot`])에 한다 — 부팅 중 이 슬롯을
+/// 읽는 곳이 하나가 아니라서(GC 와 engine), 읽는 쪽이 옮기면 나중에 읽는 쪽은 사건 자체를
+/// 못 본다.
+///
+/// 읽기 자체가 실패한 경우(권한·IO)도 파일을 건드리지 않는다. 내용을 확인하지 못한
+/// 파일은 옮길 수조차 없으므로 저장을 막는 것이 유일한 보호 수단이다.
+///
+/// 지원 범위 밖 version 도 [`SlotLoad::Unreadable`] 이다. 파일 자체는 멀쩡하고 새 버전의
+/// tasty 가 읽을 수 있으므로 백업하지 않고 그대로 둔다 — 구버전으로 한 번 켰다고 신버전이
+/// 저장한 레이아웃이 사라져서는 안 된다.
+fn load_slot_in(dir: &Path, slot: LayoutSlotId) -> SlotLoad {
     let path = slot_path_in(dir, slot);
-    let json = std::fs::read_to_string(&path).ok()?;
-    match serde_json::from_str::<SavedLayout>(&json) {
-        Ok(layout) => {
-            if layout.version > LAYOUT_VERSION {
-                tracing::warn!(
-                    "{} version {} is newer than supported {}",
-                    path.display(),
-                    layout.version,
-                    LAYOUT_VERSION
-                );
-                return None;
-            }
-            Some(layout)
-        }
+    match std::fs::read_to_string(&path) {
+        Ok(json) => parse_slot_json(&path, &json),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => SlotLoad::Absent,
         Err(e) => {
-            tracing::warn!("Failed to parse {}: {e}", path.display());
-            None
+            tracing::error!(
+                "failed to read layout slot {}: {e} — starting without it and refusing to \
+                 overwrite it (fix permissions or move the file to start fresh)",
+                path.display()
+            );
+            SlotLoad::Unreadable
         }
     }
 }
 
-/// 슬롯 하나를 읽는다. 파일이 없거나 무효면 `None`.
-pub(crate) fn load_slot(slot: LayoutSlotId) -> Option<SavedLayout> {
-    load_slot_in(&layouts_dir()?, slot)
+/// 슬롯 JSON 의 판정만 한다 — **로그를 남기지 않는다.**
+///
+/// 로드 시점(`parse_slot_json`)과 저장 직전 재확인(`preserve_unparsable_slot`)이 같은
+/// 기준을 쓴다. 두 곳이 어긋나면 "로드는 손상이라 했는데 저장은 정상이라 한다" 같은
+/// 모순이 생기므로, 판정은 **이 함수 하나뿐이고** 나머지는 그 결과에 로그만 얹는다.
+fn classify_slot_json(json: &str) -> SlotLoad {
+    match serde_json::from_str::<SavedLayout>(json) {
+        Ok(layout) if layout.version > LAYOUT_VERSION => SlotLoad::Unreadable,
+        Ok(layout) => SlotLoad::Loaded(layout),
+        Err(_) => SlotLoad::Unparsable,
+    }
+}
+
+/// 읽어온 슬롯 JSON 을 해석한다. 지원 범위 밖 version 은 파일을 그대로 두고 잠근다.
+/// 판정은 [`classify_slot_json`] 에 맡기고 여기서는 사용자에게 필요한 로그만 남긴다.
+fn parse_slot_json(path: &Path, json: &str) -> SlotLoad {
+    let load = classify_slot_json(json);
+    match &load {
+        SlotLoad::Unreadable => tracing::error!(
+            "layout slot {} holds a version this build does not support ({} or lower) — \
+             starting without it and leaving it untouched so a newer build can still read it",
+            path.display(),
+            LAYOUT_VERSION
+        ),
+        SlotLoad::Unparsable => tracing::error!(
+            "failed to parse layout slot {} — starting fresh; the file is left as it \
+             is and will be moved aside to a .bak before anything overwrites it",
+            path.display()
+        ),
+        SlotLoad::Loaded(_) | SlotLoad::Absent => {}
+    }
+    load
+}
+
+/// 슬롯 하나를 읽는다. 홈을 못 찾으면 [`SlotLoad::Unreadable`] — 경로를 모르는 채
+/// 저장하면 엉뚱한 자리에 쓰게 되므로 "없음" 으로 낙관하지 않는다.
+pub(crate) fn load_slot(slot: LayoutSlotId) -> SlotLoad {
+    match layouts_dir() {
+        Some(dir) => load_slot_in(&dir, slot),
+        None => SlotLoad::Unreadable,
+    }
+}
+
+/// 이 슬롯을 옆으로 옮길 백업 자리가 **이미** 소진됐는가 — 파일을 건드리지 않는다.
+///
+/// 보존은 첫 저장(= `finish_boot` 이후)에 일어나는데, 부팅 알림은 그보다 먼저 뜬다.
+/// 그래서 알림이 "옆에 `.bak` 으로 보관합니다" 와 "옮기지 못해 저장이 막힙니다" 중
+/// 무엇을 말할지는 여기서 미리 갈라야 한다. 예산 계산은 복제하지 않고
+/// `tasty_utils::path::backup_budget_is_exhausted` 하나를 쓴다.
+pub(crate) fn slot_preservation_is_blocked_in(dir: &Path, slot: LayoutSlotId) -> bool {
+    tasty_utils::path::backup_budget_is_exhausted(&slot_path_in(dir, slot))
+}
+
+/// [`slot_preservation_is_blocked_in`] 의 실제 홈 판. layouts 디렉터리를 못 찾으면
+/// 저장 자체가 일어나지 않으므로 "막혔다" 고 하지 않는다.
+pub(crate) fn slot_preservation_is_blocked(slot: LayoutSlotId) -> bool {
+    layouts_dir().is_some_and(|dir| slot_preservation_is_blocked_in(&dir, slot))
 }
 
 // ── 저장 ──
@@ -141,17 +219,142 @@ pub(crate) fn load_slot(slot: LayoutSlotId) -> Option<SavedLayout> {
 /// 호출자는 항상 `DomainIntent::SaveLayoutNow` (Core::apply 내부) 를 경유한다 —
 /// module 외부에서 본 fn 을 직접 부르지 않도록 `pub(crate)` 로 제한.
 pub(crate) fn save_slot(engine: &mut CoreState, active_workspace: usize, slot: LayoutSlotId) {
-    let dir = match layouts_dir() {
+    // 테스트는 engine 에 심어 둔 임시 경로를 쓴다 — 저장 경로 전체
+    // (`apply_save_layout_now` → `save_slot` → 보존 → 쓰기)를 사용자의 실제 홈을
+    // 건드리지 않고 지나가려면 이 지점 하나만 갈아끼우면 된다.
+    #[cfg(test)]
+    let resolved = engine.layouts_dir_override.clone().or_else(layouts_dir);
+    #[cfg(not(test))]
+    let resolved = layouts_dir();
+    let dir = match resolved {
         Some(d) => d,
         None => {
-            tracing::warn!("Cannot determine ~/.tasty path for layout save");
+            tracing::error!(
+                "cannot determine the tasty home directory for layout save — this session's \
+                 window layout will not be restored next time"
+            );
             return;
         }
     };
+    save_slot_in_dir(engine, active_workspace, slot, &dir);
+}
+
+/// `save_slot` 의 본체 — layouts 디렉터리를 인자로 받는다.
+///
+/// 보존 판정과 쓰기가 **한 함수 안에서 이어져** 있어야 "백업하지 않고 덮어썼다" 를
+/// 테스트가 잡을 수 있다. 분리하면 각각은 통과하는데 배선만 빠진 상태를 놓친다.
+///
+/// `save_slot` 과 마찬가지로 프로덕션 호출자는 `DomainIntent::SaveLayoutNow`(`Core::apply`
+/// 내부) 하나뿐이다 — 여기를 직접 부르면 `layout_slot_protected` 가드(`apply_save_layout_now`)
+/// 를 건너뛰어 **읽지 못한 슬롯에 써 버린다.** 디렉터리를 지정해야 하는 테스트 외에는
+/// `save_slot` 을 쓴다.
+pub(crate) fn save_slot_in_dir(
+    engine: &mut CoreState,
+    active_workspace: usize,
+    slot: LayoutSlotId,
+    dir: &Path,
+) {
     let Some(json) = serialize_layout(engine, active_workspace) else {
         return;
     };
-    save_slot_in(&dir, slot, &json);
+    // 부팅 때 해석하지 못한 슬롯이면, 덮어쓰기 전에 원본을 옆으로 옮긴다. 옮기지 못하면
+    // 쓰지 않는다 — 사용자의 창 구성이 남아 있는 자리를 지우게 된다.
+    if engine.layout_slot_unparsable {
+        if !preserve_unparsable_slot(dir, slot) {
+            engine.layout_slot_preserve_failed = true;
+            return;
+        }
+        engine.layout_slot_unparsable = false;
+        engine.layout_slot_preserve_failed = false;
+    }
+    save_slot_in(dir, slot, &json);
+}
+
+/// 저장 직전 재확인의 결론.
+enum SlotReplace {
+    /// 원본을 옆으로 옮긴 뒤 써야 한다 — 여전히 해석되지 않는다.
+    MoveAside,
+    /// 그대로 써도 된다 — 지금은 해석되거나, 파일이 이미 없다.
+    WriteOver,
+    /// 쓰면 안 된다 — 내용을 모르거나, 신버전이 써 놓은 것이다.
+    Refuse,
+}
+
+/// 부팅 때 세운 플래그와 이 호출 사이에 파일이 바뀌었을 수 있으므로 다시 읽어 본다.
+/// 같은 `TASTY_HOME` 을 쓰는 다른 인스턴스가 같은 슬롯에 써 넣는 경우다(슬롯 점유는
+/// 프로세스 안에서만 본다). 설정 경로(`Settings::protect_existing_file`)가 하는
+/// 재확인과 같은 것이고, 판정 기준도 `classify_slot_json` 으로 공유한다.
+///
+/// **경합을 없애지는 못한다 — 좁힐 뿐이다.** 여기의 read 와 호출자의 rename 은 별개
+/// syscall 이고 사이에 잠금이 없어서, 그 틈에 끼어든 write 는 여전히 정상 파일을
+/// `.bak` 으로 흘린다. 닫히는 것은 "부팅 판정 → 첫 저장"(수 분) 창이고 남는 것은
+/// 두 syscall 사이다. 잠금을 도입하지 않은 근거는 `docs/design/systems/storage.md`.
+fn recheck_slot_before_replacing(path: &Path) -> SlotReplace {
+    let json = match std::fs::read_to_string(path) {
+        Ok(json) => json,
+        // 이미 사라졌다면 지킬 것이 없다.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SlotReplace::WriteOver,
+        // 내용을 확인하지 못한 파일은 옮길 수도, 덮어쓸 수도 없다.
+        Err(e) => {
+            tracing::error!(
+                "refusing to overwrite the layout slot {}: it could not be re-read before being \
+                 replaced ({e}) — this session's window layout will not be saved",
+                path.display()
+            );
+            return SlotReplace::Refuse;
+        }
+    };
+    match classify_slot_json(&json) {
+        // 지금은 해석된다 — 옮길 이유가 없다. 이 슬롯은 이 engine 것이므로 현재
+        // 상태로 덮어쓰는 것이 정상 동작이다. 멀쩡한 파일을 `.bak` 으로 흘리면
+        // 9 개뿐인 백업 예산을 정상 파일이 깎는다.
+        SlotLoad::Loaded(_) => SlotReplace::WriteOver,
+        // 그 사이 이 빌드가 모르는 version 이 됐다(신버전이 써 놓았다). 백업하지도
+        // 덮어쓰지도 않는다 — 구버전으로 한 번 켰다고 신버전 레이아웃이 사라지면 안 된다.
+        SlotLoad::Unreadable => {
+            tracing::error!(
+                "refusing to overwrite the layout slot {}: it now holds a layout from a newer \
+                 build — this session's window layout will not be saved",
+                path.display()
+            );
+            SlotReplace::Refuse
+        }
+        SlotLoad::Unparsable | SlotLoad::Absent => SlotReplace::MoveAside,
+    }
+}
+
+/// 해석하지 못한 슬롯 파일을 `NN.json.bak` 으로 옮긴다. 덮어써도 되면 `true`.
+///
+/// **옮기기 전에 `recheck_slot_before_replacing` 으로 다시 확인한다** — 부팅 때의 판정과
+/// 이 호출 사이에 파일이 바뀌어 있을 수 있다.
+fn preserve_unparsable_slot(dir: &Path, slot: LayoutSlotId) -> bool {
+    let path = slot_path_in(dir, slot);
+    match recheck_slot_before_replacing(&path) {
+        SlotReplace::WriteOver => return true,
+        SlotReplace::Refuse => return false,
+        SlotReplace::MoveAside => {}
+    }
+    match tasty_utils::path::preserve_corrupt_file(&path) {
+        Ok(Some(backup)) => {
+            tracing::error!(
+                "the layout slot {} could not be parsed at startup; it was moved to {} before \
+                 being replaced",
+                path.display(),
+                backup.display()
+            );
+            true
+        }
+        Ok(None) => true,
+        Err(e) => {
+            tracing::error!(
+                "refusing to overwrite the layout slot {}: the unparsable original could not be \
+                 preserved ({e}) — this session's window layout will not be saved; move the \
+                 file aside first",
+                path.display()
+            );
+            false
+        }
+    }
 }
 
 fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<String> {
@@ -159,7 +362,10 @@ fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<S
     match serde_json::to_string_pretty(&saved) {
         Ok(j) => Some(j),
         Err(e) => {
-            tracing::warn!("Failed to serialize layout: {e}");
+            tracing::error!(
+                "failed to serialize layout: {e} — this session's window layout will not be \
+                 restored next time"
+            );
             None
         }
     }
@@ -172,7 +378,11 @@ fn serialize_layout(engine: &mut CoreState, active_workspace: usize) -> Option<S
 fn save_slot_in(dir: &Path, slot: LayoutSlotId, json: &str) {
     let path = slot_path_in(dir, slot);
     if let Err(e) = write_slot_atomic(dir, &path, json) {
-        tracing::warn!("Failed to write {}: {e}", path.display());
+        tracing::error!(
+            "failed to write layout slot {}: {e} — this session's window layout will not be \
+             restored next time",
+            path.display()
+        );
     }
 }
 
@@ -266,10 +476,14 @@ fn gc_scrollback_orphans_all_slots_in(layouts: &Path, scrollback: &Path) {
     let mut union = std::collections::HashSet::new();
     for slot in list_slots_in(layouts) {
         match load_slot_in(layouts, slot) {
-            Some(layout) => union.extend(layout.collect_scrollback_refs()),
-            None => {
+            SlotLoad::Loaded(layout) => union.extend(layout.collect_scrollback_refs()),
+            // `list_slots_in` 이 잡은 번호라 파일은 있었다. `Absent` 는 방금 손상 파일을
+            // 백업으로 옮긴 경우 — 그 슬롯이 무엇을 참조했는지 여전히 모르므로 아래
+            // `Unreadable` 과 똑같이 전면 스킵한다("모르면 지우지 않는다").
+            SlotLoad::Absent | SlotLoad::Unreadable | SlotLoad::Unparsable => {
                 tracing::warn!(
-                    "scrollback GC skipped: layout slot {slot} in {} is unreadable",
+                    "scrollback GC skipped: layout slot {slot} in {} could not be read — \
+                     keeping every scrollback file",
                     layouts.display()
                 );
                 return;

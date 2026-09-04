@@ -41,6 +41,28 @@ impl TaskWakerHub {
         Self::default()
     }
 
+    /// Poison 된 waiter 맵을 복구한다.
+    ///
+    /// 맵이 담는 것은 `SyncSender` 목록뿐이고 임계구역은 `entry`/`push`/`remove` 밖에
+    /// 하지 않는다 — 패닉이 나도 맵은 유효하다. 반면 [`Self::fire`] 가 패닉하면 그
+    /// task 를 기다리는 `agent.task_await` 호출자 전원이 **영원히** 깨어나지 못한다
+    /// (timeout 을 안 준 호출자는 무한 대기다). 복구가 맞다
+    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    ///
+    /// 여기는 프레임·출력 단위가 아니라 task 종결 단위라 호출 빈도가 낮다 — 매 발생을
+    /// 로그로 남긴다(1 회 제한은 초당 여러 번 도는 경로에만 쓴다).
+    fn lock_recovering(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>> {
+        self.waiters.lock().unwrap_or_else(|poisoned| {
+            tracing::error!(
+                "task waker hub mutex poisoned — a thread panicked while holding it; recovering \
+                 so pending task_await callers can still be woken"
+            );
+            poisoned.into_inner()
+        })
+    }
+
     /// `current` 가 이미 종결이면 즉시 반환. 아니면 등록 후 timeout 동안 대기.
     /// `timeout_ms == None` 또는 `Some(0)` = 무한 대기.
     pub fn await_terminal(
@@ -55,7 +77,7 @@ impl TaskWakerHub {
         }
         let rx = {
             let (tx, rx) = sync_channel::<TerminalSnapshot>(1);
-            let mut g = self.waiters.lock().expect("task waker hub mutex");
+            let mut g = self.lock_recovering();
             g.entry((workspace_id, task_id.clone()))
                 .or_default()
                 .push(tx);
@@ -85,7 +107,7 @@ impl TaskWakerHub {
 
     /// `(workspace_id, task_id)` 의 모든 waiter 에 snapshot 전달 + map 에서 제거.
     pub fn fire(&self, workspace_id: u32, task_id: &TaskId, snapshot: TerminalSnapshot) {
-        let mut g = self.waiters.lock().expect("task waker hub mutex");
+        let mut g = self.lock_recovering();
         let Some(senders) = g.remove(&(workspace_id, task_id.clone())) else {
             return;
         };
@@ -163,5 +185,62 @@ mod tests {
         let hub = TaskWakerHub::new();
         hub.fire(1, &"t-none".to_string(), snap(TaskState::Succeeded));
         // assertion: no panic
+    }
+}
+
+#[cfg(test)]
+mod poison_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// waiter 맵이 poison 돼도 `fire` 는 대기자를 깨운다.
+    ///
+    /// `.expect()` 이던 시절에는 여기서 패닉해, 그 task 를 기다리던
+    /// `agent.task_await` 호출자가 **영원히** 깨어나지 못했다 — timeout 없이 부른
+    /// 호출자에게는 무한 대기다.
+    #[test]
+    fn a_poisoned_hub_still_wakes_pending_waiters() {
+        let hub = Arc::new(TaskWakerHub::new());
+        let held = Arc::clone(&hub);
+        let joined = std::thread::spawn(move || {
+            let _guard = held.waiters.lock().expect("fresh mutex");
+            panic!("a thread dies while holding the waker hub");
+        })
+        .join();
+        assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+        assert!(hub.waiters.lock().is_err(), "poison 됐어야 한다");
+
+        let waiting = Arc::clone(&hub);
+        let awaiting = std::thread::spawn(move || {
+            waiting.await_terminal(
+                1,
+                &"t1".to_string(),
+                Some(5_000),
+                TerminalSnapshot {
+                    state: TaskState::Running,
+                    result: None,
+                },
+            )
+        });
+
+        // 등록이 보이도록 잠깐 양보한 뒤 fire.
+        let snapshot = TerminalSnapshot {
+            state: TaskState::Succeeded,
+            result: None,
+        };
+        for _ in 0..200 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let registered = !hub.lock_recovering().is_empty();
+            if registered {
+                break;
+            }
+        }
+        hub.fire(1, &"t1".to_string(), snapshot);
+
+        let outcome = awaiting.join().expect("await thread must not panic");
+        assert!(
+            matches!(outcome, AwaitOutcome::Terminal(s) if s.state == TaskState::Succeeded),
+            "poison 이후에도 종결이 전달돼야 한다"
+        );
     }
 }

@@ -21,16 +21,32 @@ impl Core {
         })
     }
 
-    /// Semaphore permit 점유 시도.
+    /// 한도 조정. 축소는 drain — 기존 홀더를 강제 회수하지 않는다.
+    pub(crate) fn semaphore_set_permits(
+        &self,
+        workspace_id: u32,
+        name: &str,
+        permits: u32,
+        now_ms: u64,
+    ) -> Result<Semaphore, AgentError> {
+        self.with_memory(|mem| {
+            let mut store = SemaphoreStore::new(mem, HOST_OWNER);
+            store.set_permits(workspace_id, name, permits, now_ms)
+        })
+    }
+
+    /// Semaphore permit 점유 시도. `ttl_ms` 를 주면 그 홀더는 만료 후 회수된다.
     pub(crate) fn semaphore_acquire(
         &self,
         workspace_id: u32,
         name: &str,
         holder: &str,
+        ttl_ms: Option<u64>,
+        now_ms: u64,
     ) -> Result<AcquireOutcome, AgentError> {
         self.with_memory(|mem| {
             let mut store = SemaphoreStore::new(mem, HOST_OWNER);
-            store.acquire(workspace_id, name, holder)
+            store.acquire(workspace_id, name, holder, ttl_ms, now_ms)
         })
     }
 
@@ -47,11 +63,15 @@ impl Core {
         })
     }
 
-    /// Workspace 내 모든 Semaphore 나열.
-    pub(crate) fn semaphore_list(&self, workspace_id: u32) -> Result<Vec<Semaphore>, AgentError> {
+    /// Workspace 내 모든 Semaphore 나열. 조회 시점에 만료된 홀더를 회수한다.
+    pub(crate) fn semaphore_list(
+        &self,
+        workspace_id: u32,
+        now_ms: u64,
+    ) -> Result<Vec<Semaphore>, AgentError> {
         self.with_memory(|mem| {
-            let store = SemaphoreStore::new(mem, HOST_OWNER);
-            store.list(workspace_id)
+            let mut store = SemaphoreStore::new(mem, HOST_OWNER);
+            store.list(workspace_id, Some(now_ms))
         })
     }
 

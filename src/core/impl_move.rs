@@ -24,7 +24,7 @@ impl Core {
             cascade_level: CascadeLevel::Surface,
             closed_tab_ids: vec![],
             closed_pane_ids: vec![],
-            workspace_id_purged: None,
+            workspace_purged: None,
             workspaces_now_empty: false,
         };
 
@@ -46,7 +46,7 @@ impl Core {
             cascade_level,
             closed_tab_ids,
             closed_pane_ids,
-            workspace_id_purged,
+            workspace_purged,
             workspaces_now_empty,
         ) = match Self::detach_surface_for_move(engine, source_id) {
             Some(v) => v,
@@ -61,7 +61,7 @@ impl Core {
             cascade_level,
             closed_tab_ids,
             closed_pane_ids,
-            workspace_id_purged,
+            workspace_purged,
             workspaces_now_empty,
         )
     }
@@ -79,9 +79,15 @@ impl Core {
         cascade_level: crate::core::intent::CascadeLevel,
         closed_tab_ids: Vec<u32>,
         closed_pane_ids: Vec<u32>,
-        workspace_id_purged: Option<u32>,
+        workspace_purged: Option<(usize, u32)>,
         workspaces_now_empty: bool,
     ) -> CoreEvent {
+        // `moved: false` 이벤트도 1 단계가 실제로 지운 것(탭/pane/workspace)을 그대로
+        // 싣는다. 소비자(`App::dispatch_core_event`)가 `moved` 로 cascade 를 막으므로
+        // `workspace_purged` 는 이 분기에서 **쓰이지 않는다** — 그래도 비우지 않는 것은,
+        // 이벤트가 "무슨 일이 일어났는가" 를 기술해야지 "소비자가 무엇을 쓸 것인가" 를
+        // 미리 판단하면 안 되기 때문이다. 세 실패 분기 모두 구조적으로 unreachable 인
+        // 방어 코드라(아래 각 주석) 실제로 여기 실린 값이 버려지는 일은 없다.
         let fail =
             |closed_tab_ids: &[u32], closed_pane_ids: &[u32]| CoreEvent::MoveSurfaceApplied {
                 moved: false,
@@ -89,7 +95,7 @@ impl Core {
                 cascade_level,
                 closed_tab_ids: closed_tab_ids.to_vec(),
                 closed_pane_ids: closed_pane_ids.to_vec(),
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
             };
 
@@ -126,7 +132,7 @@ impl Core {
             cascade_level,
             closed_tab_ids,
             closed_pane_ids,
-            workspace_id_purged,
+            workspace_purged,
             workspaces_now_empty,
         }
     }
@@ -234,7 +240,9 @@ impl Core {
         crate::core::intent::CascadeLevel,
         Vec<u32>,
         Vec<u32>,
-        Option<u32>,
+        // A 의 옛 자리가 workspace 째 사라졌다면 그 **(인덱스, id)**. 인덱스는
+        // cascade 가 `active_workspace` 를 대상 기준으로 보정하는 데 쓴다.
+        Option<(usize, u32)>,
         bool,
     )> {
         use crate::core::intent::CascadeLevel;
@@ -311,10 +319,7 @@ impl Core {
             // Case 2: tab close (pane/workspace 유지).
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
-            pane.tabs.remove(tab_idx);
-            if pane.active_tab >= pane.tabs.len() {
-                pane.active_tab = pane.tabs.len().saturating_sub(1);
-            }
+            pane.remove_tab_preserving_active(tab_idx);
             engine.mark_layout_dirty();
             return Some((a_box, CascadeLevel::Tab, vec![tab_id], vec![], None, false));
         }
@@ -322,8 +327,12 @@ impl Core {
         if panes_len > 1 {
             // Case 3: pane close (workspace 유지).
             let ws = &mut engine.workspaces[ws_idx];
+            let was_focused = ws.focused_pane == pane_id;
             ws.pane_layout_mut().close_pane(pane_id);
-            if let Some(first) = ws.pane_layout().first_pane() {
+            // 닫힌 pane 이 포커스 pane 이었을 때만 포커스를 옮긴다 — 사용자가 보고
+            // 있지 않은 pane 을 닫았는데 시야가 움직이면 불가침 원칙 1 위반이다
+            // (`Core::apply_close_pane` 의 `was_focused` 가드와 같은 규칙).
+            if was_focused && let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
             engine.mark_layout_dirty();
@@ -348,7 +357,7 @@ impl Core {
             CascadeLevel::Workspace,
             vec![tab_id],
             vec![pane_id],
-            Some(workspace_id),
+            Some((ws_idx, workspace_id)),
             workspaces_now_empty,
         ))
     }

@@ -71,7 +71,7 @@ pub(crate) fn surface_close_not_found(surface_id: u32) -> CoreEvent {
         cleanup_targets: vec![],
         closed_tab_ids: vec![],
         closed_pane_ids: vec![],
-        workspace_id_purged: None,
+        workspace_purged: None,
         workspaces_now_empty: false,
     }
 }
@@ -195,7 +195,7 @@ impl Core {
                 cleanup_targets: vec![(surface_id, persist_id)],
                 closed_tab_ids: vec![],
                 closed_pane_ids: vec![],
-                workspace_id_purged: None,
+                workspace_purged: None,
                 workspaces_now_empty: false,
             });
         }
@@ -245,10 +245,7 @@ impl Core {
         let pane = ws.pane_layout_mut().find_pane_mut(loc.pane_id).unwrap();
         if pane.tabs.len() > 1 {
             let closed_tab_id = pane.tabs[loc.tab_idx].id;
-            pane.tabs.remove(loc.tab_idx);
-            if pane.active_tab >= pane.tabs.len() {
-                pane.active_tab = pane.tabs.len() - 1;
-            }
+            pane.remove_tab_preserving_active(loc.tab_idx);
             engine.mark_layout_dirty();
             return Some(CoreEvent::SurfaceClosed {
                 surface_id,
@@ -257,7 +254,7 @@ impl Core {
                 cleanup_targets: targets,
                 closed_tab_ids: vec![closed_tab_id],
                 closed_pane_ids: vec![],
-                workspace_id_purged: None,
+                workspace_purged: None,
                 workspaces_now_empty: false,
             });
         }
@@ -315,8 +312,12 @@ impl Core {
         }
         let ws = &mut engine.workspaces[loc.ws_idx];
         if ws.pane_layout().all_pane_ids().len() > 1 {
+            let was_focused = ws.focused_pane == loc.pane_id;
             ws.pane_layout_mut().close_pane(loc.pane_id);
-            if let Some(first) = ws.pane_layout().first_pane() {
+            // 닫힌 pane 이 포커스 pane 이었을 때만 포커스를 옮긴다 — 사용자가 보고
+            // 있지 않은 pane 을 닫았는데 시야가 움직이면 불가침 원칙 1 위반이다
+            // (`Core::apply_close_pane` 의 `was_focused` 가드와 같은 규칙).
+            if was_focused && let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
             engine.mark_layout_dirty();
@@ -327,7 +328,7 @@ impl Core {
                 cleanup_targets: targets,
                 closed_tab_ids,
                 closed_pane_ids: vec![loc.pane_id],
-                workspace_id_purged: None,
+                workspace_purged: None,
                 workspaces_now_empty: false,
             });
         }
@@ -393,7 +394,7 @@ impl Core {
             cleanup_targets: targets,
             closed_tab_ids,
             closed_pane_ids,
-            workspace_id_purged: Some(workspace_id),
+            workspace_purged: Some((loc.ws_idx, workspace_id)),
             workspaces_now_empty,
         }
     }
@@ -451,7 +452,7 @@ impl Core {
 mod close_surface_cascade_tests {
     //! `apply_close_surface` (C2) 의 반환 `CoreEvent::SurfaceClosed` 필드
     //! characterization. Case2(tab)/Case3(pane)/Case4(workspace) cascade 의
-    //! `cleanup_targets`·`closed_tab_ids`·`closed_pane_ids`·`workspace_id_purged`·
+    //! `cleanup_targets`·`closed_tab_ids`·`closed_pane_ids`·`workspace_purged`·
     //! `workspaces_now_empty`·`cascade_level` 을 고정한다. 필드 하나라도 누락되면
     //! caller `cascade_surface_closed` 가 plugin lifecycle 큐·host TabClosed·
     //! memory purge 를 건너뛰어 런타임에서만 드러나는 leak 이 되므로, case별 헬퍼
@@ -494,7 +495,7 @@ mod close_surface_cascade_tests {
                 cleanup_targets,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
                 ..
             } => {
@@ -503,7 +504,7 @@ mod close_surface_cascade_tests {
                 assert_eq!(closed_tab_ids, vec![tab1_id]);
                 assert_eq!(cleanup_targets, vec![(sid1, None)]);
                 assert!(closed_pane_ids.is_empty());
-                assert_eq!(workspace_id_purged, None);
+                assert_eq!(workspace_purged, None);
                 assert!(!workspaces_now_empty);
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
@@ -543,7 +544,7 @@ mod close_surface_cascade_tests {
                 cleanup_targets,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
                 ..
             } => {
@@ -552,7 +553,7 @@ mod close_surface_cascade_tests {
                 assert_eq!(closed_pane_ids, vec![pane1_id]);
                 assert_eq!(closed_tab_ids, vec![tab1_id]);
                 assert_eq!(cleanup_targets, vec![(sid1, None)]);
-                assert_eq!(workspace_id_purged, None);
+                assert_eq!(workspace_purged, None);
                 assert!(!workspaces_now_empty);
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
@@ -590,13 +591,13 @@ mod close_surface_cascade_tests {
                 cleanup_targets,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
                 ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Workspace);
-                assert_eq!(workspace_id_purged, Some(ws1_id));
+                assert_eq!(workspace_purged.map(|(_, id)| id), Some(ws1_id));
                 assert_eq!(closed_pane_ids, vec![pane1_id]);
                 assert_eq!(closed_tab_ids, vec![tab1_id]);
                 assert_eq!(cleanup_targets, vec![(sid1, None)]);
@@ -605,6 +606,124 @@ mod close_surface_cascade_tests {
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }
         assert_eq!(engine.workspaces.len(), 1);
+    }
+
+    /// Case 2 회귀: 앞쪽 탭이 닫혀도 pane 이 **보고 있던 탭**을 계속 가리킨다.
+    /// `active_tab` 은 인덱스 SoT 라 앞 원소가 빠지면 같은 인덱스가 다른 탭을
+    /// 가리킨다 — 에이전트 close 가 사용자 시야를 옮기는 원칙 1 위반이었다.
+    #[test]
+    fn case2_tab_close_preserves_the_viewed_tab() {
+        let mut engine = test_engine();
+        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(sid0).unwrap();
+        let mut tab_ids = vec![];
+        for _ in 0..2 {
+            let tab_id = engine.next_ids.next_tab();
+            let sid = engine.next_ids.next_surface();
+            insert_detached(&mut engine, sid);
+            engine.workspaces[ws_idx]
+                .pane_layout_mut()
+                .find_pane_mut(pane_id)
+                .unwrap()
+                .add_terminal_marker_tab(tab_id, sid);
+            tab_ids.push(tab_id);
+        }
+        // 사용자는 가운데 탭(index 1)을 본다.
+        let pane = engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap();
+        pane.active_tab = 1;
+        let viewed_tab_id = pane.tabs[1].id;
+
+        // 에이전트가 **앞쪽** 탭(index 0)의 surface 를 닫는다.
+        let ev = Core::apply_close_surface(&mut engine, sid0, false);
+        assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
+
+        let pane = engine.workspaces[ws_idx]
+            .pane_layout()
+            .find_pane(pane_id)
+            .unwrap();
+        assert_eq!(pane.tabs.len(), 2);
+        assert_eq!(
+            pane.tabs[pane.active_tab].id, viewed_tab_id,
+            "앞쪽 탭이 닫혀도 보던 탭이 유지돼야 한다"
+        );
+    }
+
+    /// Case 3 회귀: 포커스와 무관한 pane 이 닫히면 `focused_pane` 은 그대로다.
+    /// (닫힌 pane 이 포커스였을 때만 재배정 — `apply_close_pane` 과 같은 규칙.)
+    #[test]
+    fn case3_pane_close_keeps_focus_on_an_untouched_pane() {
+        let mut engine = test_engine();
+        let sid0 = engine.workspaces[0].all_surface_ids()[0];
+        let (ws_idx, pane0) = engine.find_workspace_index_for_surface(sid0).unwrap();
+        let pane1_id = engine.next_ids.next_pane();
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        insert_detached(&mut engine, sid1);
+        let new_pane = crate::model::Pane::new_with_terminal_marker(pane1_id, tab1_id, sid1);
+        let leftover = engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .split_pane_in_place(pane0, crate::model::SplitDirection::Horizontal, new_pane);
+        assert!(leftover.is_none());
+        // pane 을 하나 더 만든다 — 포커스를 **첫 pane 이 아닌** 곳에 두어야 "무조건
+        // first_pane 재배정" 과 "가드가 있어 그대로" 를 구분할 수 있다.
+        let pane2_id = engine.next_ids.next_pane();
+        let tab2_id = engine.next_ids.next_tab();
+        let sid2 = engine.next_ids.next_surface();
+        insert_detached(&mut engine, sid2);
+        let third = crate::model::Pane::new_with_terminal_marker(pane2_id, tab2_id, sid2);
+        let leftover = engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .split_pane_in_place(pane1_id, crate::model::SplitDirection::Horizontal, third);
+        assert!(leftover.is_none());
+        assert_eq!(
+            engine.workspaces[ws_idx].pane_layout().all_pane_ids().len(),
+            3
+        );
+        // 사용자는 마지막 pane 에 포커스를 두고 있다. 닫는 대상은 첫 pane 이다.
+        engine.workspaces[ws_idx].focused_pane = pane2_id;
+
+        let ev = Core::apply_close_surface(&mut engine, sid0, false);
+        assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
+
+        assert_eq!(
+            engine.workspaces[ws_idx].focused_pane, pane2_id,
+            "포커스와 무관한 pane 이 닫혔는데 포커스가 움직이면 안 된다"
+        );
+    }
+
+    /// Case 4 회귀: 제거된 workspace 의 **인덱스**가 이벤트에 실려야 cascade 가
+    /// `active_workspace` 를 대상 기준으로 보정할 수 있다(Core 는 AppState 를 모른다).
+    #[test]
+    fn case4_workspace_close_reports_the_removed_index() {
+        let mut engine = test_engine();
+        let ws1_id = engine.next_ids.next_workspace();
+        let pane1_id = engine.next_ids.next_pane();
+        let tab1_id = engine.next_ids.next_tab();
+        let sid1 = engine.next_ids.next_surface();
+        insert_detached(&mut engine, sid1);
+        engine.workspaces.insert(
+            0,
+            crate::model::Workspace::new_with_terminal_marker(
+                ws1_id,
+                "ws1".to_string(),
+                pane1_id,
+                tab1_id,
+                sid1,
+            ),
+        );
+
+        let ev = Core::apply_close_surface(&mut engine, sid1, false);
+        match ev {
+            CoreEvent::SurfaceClosed {
+                workspace_purged, ..
+            } => {
+                assert_eq!(workspace_purged, Some((0, ws1_id)));
+            }
+            other => panic!("expected SurfaceClosed, got {other:?}"),
+        }
     }
 
     /// Case 4 변형: 마지막 workspace 를 닫으면 `workspaces_now_empty==true`.
@@ -620,13 +739,13 @@ mod close_surface_cascade_tests {
             CoreEvent::SurfaceClosed {
                 closed,
                 cascade_level,
-                workspace_id_purged,
+                workspace_purged,
                 workspaces_now_empty,
                 ..
             } => {
                 assert!(closed);
                 assert_eq!(cascade_level, CascadeLevel::Workspace);
-                assert_eq!(workspace_id_purged, Some(ws0_id));
+                assert_eq!(workspace_purged.map(|(_, id)| id), Some(ws0_id));
                 assert!(workspaces_now_empty);
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
@@ -658,7 +777,7 @@ mod close_surface_cascade_tests {
                 cleanup_targets,
                 closed_tab_ids,
                 closed_pane_ids,
-                workspace_id_purged,
+                workspace_purged,
                 ..
             } => {
                 assert!(closed);
@@ -666,7 +785,7 @@ mod close_surface_cascade_tests {
                 assert_eq!(cleanup_targets, vec![(sid_a, None)]);
                 assert!(closed_tab_ids.is_empty());
                 assert!(closed_pane_ids.is_empty());
-                assert_eq!(workspace_id_purged, None);
+                assert_eq!(workspace_purged, None);
             }
             other => panic!("expected SurfaceClosed, got {other:?}"),
         }

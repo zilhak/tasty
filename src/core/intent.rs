@@ -218,6 +218,22 @@ pub(crate) enum DomainIntent {
         kind: super::AttentionKind,
     },
 
+    // ─── Surface attention 해제 (clear producer) ───
+    /// "이 surface 의 attention 을 지운다" 신호. `SurfaceCompletion` 의 역방향으로,
+    /// 실 렌더 포커스(`gpu.rs`)·알림 읽음에 이은 세 번째 clear producer 다 — 그 둘은
+    /// 모두 GUI 로컬 사건이라 headless 인스턴스에는 clear producer 가 하나도 없었다.
+    /// cascade 가 surface 보유 engine 의 `clear_attention(surface_id)` + redraw.
+    /// surface_id 필수(포커스 독립 — 불가침 원칙 1).
+    ///
+    /// `kind` 는 **선택적 필터**다. `None` 이면 현재 kind 와 무관하게 지우고,
+    /// `Some(k)` 면 현재 기록된 kind 가 `k` 일 때만 지운다 — 지운 뒤 다른 producer 가
+    /// 더 급한 kind(`NeedsInput`)로 다시 발동한 것을 뒤늦게 도착한 해제가 덮어쓰는
+    /// 것을 호출자가 막을 수 있게 한다.
+    SurfaceAttentionClear {
+        surface_id: u32,
+        kind: Option<super::AttentionKind>,
+    },
+
     // ─── Closed items (D.3.C.D.5) ───
     /// closed_items stack top 을 pop 해 복원. `target_pane_id` 는 *호출자가
     /// 결정한* attach 대상 (focused pane). Workspace 복원 시에는 사용 안 함.
@@ -359,7 +375,7 @@ pub(crate) enum CoreEvent {
         cleanup_targets: Vec<(u32, Option<String>)>,
     },
     /// surface close 완료 (cascading). `cascade_level` 은 어디까지 닫혔는지
-    /// (Surface/Tab/Pane/Workspace). `workspace_id_purged` 는 Case 4 (workspace
+    /// (Surface/Tab/Pane/Workspace). `workspace_purged` 는 Case 4 (workspace
     /// 자체 닫힘) 시 cascade 가 memory scope purge 할 workspace_id.
     /// `workspaces_now_empty` 가 true 면 caller 가 auto-recreate.
     /// `closed_tab_ids` / `closed_pane_ids` 는 cascade 가 host event
@@ -373,7 +389,15 @@ pub(crate) enum CoreEvent {
         cleanup_targets: Vec<(u32, Option<String>)>,
         closed_tab_ids: Vec<u32>,
         closed_pane_ids: Vec<u32>,
-        workspace_id_purged: Option<u32>,
+        /// 마지막 surface 가 닫혀 workspace 째 사라졌다면 그 **(인덱스, id)**.
+        ///
+        /// 둘을 한 필드로 묶어 "id 는 실렸는데 인덱스는 빠졌다" 를 타입이 막는다 —
+        /// 인덱스가 빠지면 활성 포인터 보정이 조용히 건너뛰어져 사용자 화면이 밀린다.
+        /// id 는 memory scope purge 와 `workspace.closed` host event 에, 인덱스는
+        /// 활성 포인터 보정에 쓴다. Core 는 `AppState::active_workspace` 를 모르므로
+        /// 보정 자체는 cascade 몫이고(`AppState::fix_workspace_pointers_after_removal`),
+        /// cascade 시점엔 workspace 가 이미 사라져 위치를 알 수 없어 여기 싣는다.
+        workspace_purged: Option<(usize, u32)>,
         workspaces_now_empty: bool,
     },
     /// surface 변환 완료. `replaced=false` 면 surface 못 찾음 또는 변환 실패.
@@ -393,7 +417,9 @@ pub(crate) enum CoreEvent {
         cascade_level: CascadeLevel,
         closed_tab_ids: Vec<u32>,
         closed_pane_ids: Vec<u32>,
-        workspace_id_purged: Option<u32>,
+        /// `SurfaceClosed::workspace_purged` 와 같은 의미 — A 의 옛 자리가 workspace
+        /// 째 사라진 경우 그 **(인덱스, id)**.
+        workspace_purged: Option<(usize, u32)>,
         workspaces_now_empty: bool,
     },
     /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나, 없거나,
@@ -437,6 +463,15 @@ pub(crate) enum CoreEvent {
     SurfaceCompletionRequested {
         surface_id: u32,
         kind: super::AttentionKind,
+    },
+
+    // ─── Surface attention 해제 (clear producer) ───
+    /// Surface attention 해제 요청. cascade 가 surface 보유 engine 의
+    /// `clear_attention(surface_id)` + redraw. `kind` 가 `Some` 이면 현재 기록된
+    /// kind 가 일치할 때만 지운다(선택적 필터).
+    SurfaceAttentionClearRequested {
+        surface_id: u32,
+        kind: Option<super::AttentionKind>,
     },
 
     // ─── Closed items (D.3.C.D.5) ───

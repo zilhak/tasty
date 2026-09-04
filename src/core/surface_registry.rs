@@ -298,60 +298,88 @@ impl SurfaceKindDef {
 #[derive(Default)]
 pub struct SurfaceKindRegistry {
     kinds: RwLock<HashMap<&'static str, Arc<SurfaceKindDef>>>,
+    /// poison 을 보고했는가(첫 1 회만). poison 은 sticky 인데 조회가 매 프레임
+    /// dispatch 에서 도는 hot path 라, 매번 남기면 그 로그가 자기 자신에 묻힌다.
+    poison_reported: std::sync::atomic::AtomicBool,
 }
 
 impl SurfaceKindRegistry {
     pub fn new() -> Self {
         Self {
             kinds: RwLock::new(HashMap::new()),
+            poison_reported: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Poison 을 복구해 read guard 를 잡는다.
+    ///
+    /// 이전에는 `read().ok()?` · `map(...).unwrap_or_default()` 로 **조용히** 빈 결과를
+    /// 돌려줬다. 그러면 등록된 kind 가 통째로 사라진 것처럼 보이는데 — surface 생성이
+    /// "알 수 없는 kind" 로 실패하고, `sync_webviews` 가 overlay 를 안 붙인다 — 관측
+    /// 지점이 0 이라 왜 그런지 알 방법이 없다. registry 4 종이 같은 이유로 복구로 바뀐
+    /// 것과 같은 형태다.
+    ///
+    /// 임계구역은 `HashMap` 의 삽입·조회·순회뿐이라 패닉이 나도 불변식이 성립한다.
+    /// 조회는 **메인 스레드의 매 프레임 dispatch** 가 부르므로 패닉은 프로세스 전체를
+    /// 죽인다 — 두 질문 모두 복구를 가리킨다
+    /// ([`error-handling.md`](../../docs/dev-guide/error-handling.md) "락 poison").
+    fn lock_read(
+        &self,
+    ) -> std::sync::RwLockReadGuard<'_, HashMap<&'static str, Arc<SurfaceKindDef>>> {
+        crate::poison::recover_read(
+            self.kinds.read(),
+            "surface kind registry",
+            &self.poison_reported,
+        )
+    }
+
+    /// Poison 을 복구해 write guard 를 잡는다. 근거는 [`Self::lock_read`] 와 같다.
+    fn lock_write(
+        &self,
+    ) -> std::sync::RwLockWriteGuard<'_, HashMap<&'static str, Arc<SurfaceKindDef>>> {
+        crate::poison::recover_write(
+            self.kinds.write(),
+            "surface kind registry",
+            &self.poison_reported,
+        )
     }
 
     /// `&self`만 받으므로 `Arc<SurfaceKindRegistry>` 너머에서도 호출 가능.
     /// plugin 매니저가 hello 받은 후 호출.
     pub fn register(&self, def: SurfaceKindDef) {
         let kind = def.kind;
-        let mut map = match self.kinds.write() {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::error!("SurfaceKindRegistry write lock poisoned: {e}");
-                return;
-            }
-        };
+        let mut map = self.lock_write();
         if map.insert(kind, Arc::new(def)).is_some() {
             tracing::warn!("SurfaceKindRegistry: kind '{}' overwritten", kind);
         }
     }
 
     pub fn get(&self, kind: &str) -> Option<Arc<SurfaceKindDef>> {
-        self.kinds.read().ok()?.get(kind).cloned()
+        self.lock_read().get(kind).cloned()
     }
 
     pub fn contains(&self, kind: &str) -> bool {
-        self.kinds
-            .read()
-            .map(|m| m.contains_key(kind))
-            .unwrap_or(false)
+        self.lock_read().contains_key(kind)
     }
 
     /// 등록된 kind 목록을 스냅샷으로 반환 (lock 해제 후 안전히 사용).
     pub fn kinds_snapshot(&self) -> Vec<(&'static str, Arc<SurfaceKindDef>)> {
-        self.kinds
-            .read()
-            .map(|m| m.iter().map(|(k, v)| (*k, v.clone())).collect())
-            .unwrap_or_default()
+        self.lock_read()
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
     }
 
     // 이유: 현재 실제 호출처 없음(clippy len_without_is_empty 대응용 pair) — 과거
     // engine.rs → core/ 재배치로 core 가 pub(crate) 로 캡슐화되며 드러남.
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
-        self.kinds.read().map(|m| m.len()).unwrap_or(0)
+        self.lock_read().len()
     }
 
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
-        self.kinds.read().map(|m| m.is_empty()).unwrap_or(true)
+        self.lock_read().is_empty()
     }
 }
 
@@ -364,6 +392,32 @@ impl tasty_plugin_protocol::host_port::SurfaceRegistry for SurfaceKindRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 등록·조회가 poison 후에도 **살아남는다**.
+    ///
+    /// 이전에는 write 가 no-op 으로 빠지고 read 가 빈 결과를 돌려줘서, 등록된 kind 가
+    /// 통째로 사라진 것처럼 보였다 — 그리고 그게 왜인지 알 관측 지점이 없었다.
+    #[test]
+    fn registry_survives_a_poisoned_lock() {
+        let reg = std::sync::Arc::new(SurfaceKindRegistry::new());
+
+        // 다른 스레드가 write guard 를 든 채 패닉 → poison.
+        let held = std::sync::Arc::clone(&reg);
+        let joined = std::thread::spawn(move || {
+            let _g = held.kinds.write().expect("fresh lock");
+            panic!("poison the registry");
+        })
+        .join();
+        assert!(joined.is_err());
+
+        // 실제 등록 경로(builtin 등록)를 그대로 태운다.
+        crate::core::surface_registry::builtins::register_builtin_kinds(&reg);
+        assert!(reg.contains("terminal"), "poison 후에도 등록이 반영된다");
+        assert!(reg.get("terminal").is_some());
+        assert!(!reg.kinds_snapshot().is_empty());
+        assert!(reg.len() > 0);
+        assert!(!reg.is_empty());
+    }
 
     fn dummy_def(kind: &'static str) -> SurfaceKindDef {
         SurfaceKindDef {

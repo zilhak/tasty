@@ -49,9 +49,9 @@ impl Core {
     /// observer_router (OutputAppended) / command_index (PromptBoundary) /
     /// 시스템 clipboard (OSC 52) 의 부수효과는 본 함수가 직접 처리. 나머지
     /// terminal event 는 outcome.events 로 cascade dispatcher 에 전달.
-    // headless 메인 루프는 `process_all_pty_output` 만 사용한다 — 단일 surface 변형은
-    // gui event_handler 의 targeted polling 전용이라 headless 에선 dead.
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    // headless 도 이 함수를 쓴다 — `boot::handle_terminal_output` 이 targeted wake
+    // (`AppEvent::TerminalOutput(Some(sid))`)를 이 경로로 보낸다. gui 의 targeted
+    // polling 전용이라는 서술이 한동안 붙어 있었으나 사실이 아니었다.
     pub(crate) fn process_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,

@@ -11,7 +11,7 @@
 //! 닫고 thread 종료 — registry 의 status 는 자동으로 false 가 된다.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -29,9 +29,50 @@ use tasty_agent::runner::PollOutcome;
 
 const TICK_INTERVAL: Duration = Duration::from_millis(500);
 
+/// task snapshot 조회가 연속 실패했을 때 몇 번째 실패를 `error!` 로 올릴지.
+/// `TICK_INTERVAL` 이 500ms 라 6 은 약 3 초 — 일시적 lock 경합 한두 번과
+/// "store 가 계속 안 읽힌다" 를 가른다.
+const STORE_LIST_ERROR_AFTER: u32 = 6;
+/// 그 뒤로는 이 주기(약 60 초)로만 다시 남긴다 — tick 마다 찍으면 초당 2 줄이라
+/// 로그가 쓸모없어진다.
+const STORE_LIST_REPEAT_EVERY: u32 = 120;
+
+/// 연속 `n` 번째 task snapshot 조회 실패를 어떻게 남길지.
+///
+/// 첫 실패는 `warn!`(일시적일 수 있다), [`STORE_LIST_ERROR_AFTER`] 번째부터는
+/// `error!` — 그 시점이면 runner 가 Ready/Running task 를 하나도 진행시키지
+/// 못하는 상태가 지속된다는 뜻이고, UI 는 여전히 진행 중으로 보인다
+/// (`docs/dev-guide/error-handling.md` 의 "복구 불가, 사용자 작업이 의미를 잃음").
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum StoreListFailureLog {
+    Silent,
+    Warn,
+    Error,
+}
+
+fn store_list_failure_log(consecutive: u32) -> StoreListFailureLog {
+    if consecutive == 1 {
+        return StoreListFailureLog::Warn;
+    }
+    if consecutive < STORE_LIST_ERROR_AFTER {
+        return StoreListFailureLog::Silent;
+    }
+    if consecutive == STORE_LIST_ERROR_AFTER
+        || (consecutive - STORE_LIST_ERROR_AFTER).is_multiple_of(STORE_LIST_REPEAT_EVERY)
+    {
+        StoreListFailureLog::Error
+    } else {
+        StoreListFailureLog::Silent
+    }
+}
+
 struct RunnerControl {
     stop_tx: mpsc::Sender<()>,
     crashed: Arc<AtomicBool>,
+    /// tick 머리의 task snapshot 조회가 **연속** 실패한 횟수(성공하면 0). 조회로
+    /// "러너가 살아는 있는데 아무것도 못 읽고 있다" 를 드러내기 위해 스레드와
+    /// 공유한다 — `running: true` 인데 이 값이 크면 DAG 는 정지 상태다.
+    list_failures: Arc<AtomicU32>,
     /// `Option` — `Drop` / `stop_workspace` 에서 `take()` 후 join.
     join: Option<thread::JoinHandle<()>>,
 }
@@ -40,24 +81,66 @@ struct RunnerControl {
 pub struct RunnerStatus {
     pub running: bool,
     pub crashed: bool,
-    pub ready_count: u32,
-    pub running_count: u32,
+    /// `None` = **셀 수 없었다**(store 조회 실패). 0 과 구분한다 — 조회가 실패했는데
+    /// 0 을 돌려주면 "task 가 없다" 와 같은 값이 되어, 이 응답이 계약대로
+    /// "정지 상태를 드러내는" 대신 정상으로 보이게 만든다.
+    pub ready_count: Option<u32>,
+    pub running_count: Option<u32>,
+    /// 위 카운트가 `None` 인 이유. 조회에 성공했으면 `None`.
+    pub store_error: Option<String>,
+    /// 러너 스레드의 연속 조회 실패 횟수(러너가 없으면 0).
+    pub list_failures: u32,
 }
 
 pub struct RunnerRegistry {
     threads: Mutex<HashMap<u32, RunnerControl>>,
+    /// poison 을 이미 보고했는가. `liveness` 는 렌더 경로가 프레임마다 부르므로
+    /// 매번 로그를 내면 폭주한다.
+    poison_reported: AtomicBool,
 }
 
 impl RunnerRegistry {
+    /// Poison 된 스레드 맵을 복구한다.
+    ///
+    /// 맵이 담는 것은 `RunnerControl`(mpsc `Sender` · `Arc<AtomicBool>` ·
+    /// `JoinHandle`)뿐이고 임계구역은 조회·삽입·제거밖에 하지 않는다 — 패닉이 나도
+    /// 맵의 불변식은 성립한다.
+    ///
+    /// 사망 범위가 두 겹이라 패닉이 특히 나쁘다.
+    ///
+    /// - [`Self::liveness`] 는 **렌더 경로**가 프레임마다 부른다(DAG surface 의 러너
+    ///   배지). 메인 스레드라 여기서 패닉하면 모든 창의 터미널 세션이 사라진다.
+    /// - [`Self::start`] 는 crashed 러너의 **재시작 경로**다. 그 경로가 패닉하면
+    ///   `catch_unwind` + `crashed` 플래그로 만들어 둔 자기 복구 설계가 무력해진다.
+    ///
+    /// 근거 전문은 [`error-handling.md`](../../../docs/dev-guide/error-handling.md)
+    /// "락 poison".
+    fn lock_recovering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, RunnerControl>> {
+        self.threads.lock().unwrap_or_else(|poisoned| {
+            if !self.poison_reported.swap(true, Ordering::Relaxed) {
+                tracing::error!(
+                    "RunnerRegistry mutex poisoned — a thread panicked while holding it. \
+                     Recovering the thread map so the render path and the runner restart path \
+                     keep working; later occurrences are not logged."
+                );
+            }
+            poisoned.into_inner()
+        })
+    }
+
     pub fn new() -> Self {
         Self {
             threads: Mutex::new(HashMap::new()),
+            poison_reported: AtomicBool::new(false),
         }
     }
 
-    /// 이미 실행 중이면 false (idempotent — 중복 start 는 no-op).
+    /// `true` = 이 호출이 러너를 새로 띄웠다. `false` 는 두 경우를 함께 뜻한다 —
+    /// **이미 실행 중**(idempotent, 중복 start 는 no-op)이거나 **스레드 spawn 이
+    /// 실패**했거나. 둘을 구분해야 하는 소비자는 이 반환값이 아니라 [`Self::status`]
+    /// 를 읽는다(spawn 실패면 등록되지 않으므로 `running: false` 로 드러난다).
     pub fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
-        let mut threads = self.threads.lock().expect("RunnerRegistry poisoned");
+        let mut threads = self.lock_recovering();
         if let Some(ctrl) = threads.get(&workspace_id)
             && !ctrl.crashed.load(Ordering::Relaxed)
         {
@@ -67,12 +150,14 @@ impl RunnerRegistry {
         let (tx, rx) = mpsc::channel::<()>();
         let crashed = Arc::new(AtomicBool::new(false));
         let crashed_thread = crashed.clone();
+        let list_failures = Arc::new(AtomicU32::new(0));
+        let list_failures_thread = list_failures.clone();
         let ctx_thread = ctx.clone();
-        let join = thread::Builder::new()
+        let spawned = thread::Builder::new()
             .name(format!("agent-runner-ws{workspace_id}"))
             .spawn(move || {
                 let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    run_loop(ctx_thread, workspace_id, rx);
+                    run_loop(ctx_thread, workspace_id, rx, &list_failures_thread);
                 }));
                 if panicked.is_err() {
                     crashed_thread.store(true, Ordering::Relaxed);
@@ -81,13 +166,25 @@ impl RunnerRegistry {
                          marked crashed. Restart via agent.task_run start."
                     );
                 }
-            })
-            .expect("spawn agent-runner thread");
+            });
+        // 스레드 한계·EAGAIN 으로 spawn 이 실패해도 호스트를 죽이지 않는다. 시작하지
+        // 못한 것으로 보고(false)하고, crashed 재시작과 같은 경로로 다시 시도할 수 있게
+        // 한다 — 등록하지 않으므로 다음 start 가 새로 만든다.
+        let join = match spawned {
+            Ok(j) => j,
+            Err(e) => {
+                tracing::error!(
+                    "failed to spawn agent-runner thread for workspace {workspace_id}: {e}"
+                );
+                return false;
+            }
+        };
         threads.insert(
             workspace_id,
             RunnerControl {
                 stop_tx: tx,
                 crashed,
+                list_failures,
                 join: Some(join),
             },
         );
@@ -96,7 +193,7 @@ impl RunnerRegistry {
 
     /// 정지 신호를 보내고 join. 이미 멈춰있으면 false.
     pub fn stop(&self, workspace_id: u32) -> bool {
-        let mut threads = self.threads.lock().expect("RunnerRegistry poisoned");
+        let mut threads = self.lock_recovering();
         if let Some(mut ctrl) = threads.remove(&workspace_id) {
             let _ = ctrl.stop_tx.send(()); // thread 가 panic 후 종료 시 Err — 의도적 무시
             if let Some(j) = ctrl.join.take() {
@@ -112,7 +209,7 @@ impl RunnerRegistry {
     /// [`Self::status`] 가 workspace 전체를 세는 것과 달리, 부분집합(예: DAG 하나)만
     /// 세야 하는 호출자는 카운트를 스스로 만들고 생사만 여기서 물어온다.
     pub fn liveness(&self, workspace_id: u32) -> (bool, bool) {
-        let threads = self.threads.lock().expect("RunnerRegistry poisoned");
+        let threads = self.lock_recovering();
         match threads.get(&workspace_id) {
             Some(ctrl) => (
                 !ctrl.crashed.load(Ordering::Relaxed),
@@ -126,12 +223,29 @@ impl RunnerRegistry {
     /// (Core 측에 의존성 없음).
     pub fn status(&self, ctx: &RunnerContext, workspace_id: u32) -> RunnerStatus {
         let (running, crashed) = self.liveness(workspace_id);
-        let (ready_count, running_count) = count_ready_running(ctx, workspace_id);
-        RunnerStatus {
-            running,
-            crashed,
-            ready_count,
-            running_count,
+        let list_failures = {
+            let threads = self.threads.lock().expect("RunnerRegistry poisoned");
+            threads
+                .get(&workspace_id)
+                .map_or(0, |c| c.list_failures.load(Ordering::Relaxed))
+        };
+        match count_ready_running(ctx, workspace_id) {
+            Ok((ready_count, running_count)) => RunnerStatus {
+                running,
+                crashed,
+                ready_count: Some(ready_count),
+                running_count: Some(running_count),
+                store_error: None,
+                list_failures,
+            },
+            Err(e) => RunnerStatus {
+                running,
+                crashed,
+                ready_count: None,
+                running_count: None,
+                store_error: Some(e),
+                list_failures,
+            },
         }
     }
 }
@@ -142,24 +256,24 @@ impl Default for RunnerRegistry {
     }
 }
 
-fn count_ready_running(ctx: &RunnerContext, workspace_id: u32) -> (u32, u32) {
+/// `(ready, running)` 카운트. **조회 실패를 `(0, 0)` 으로 흡수하지 않는다** —
+/// 이 값이 `task_list`/`task_graph`/`task_run` 응답의 "정지 상태는 조회로
+/// 드러난다" 계약(`docs/dev-guide/agent-runner.md`)을 지탱하므로, 못 읽었을 때
+/// 0 을 돌려주면 그 계약이 거짓이 된다.
+fn count_ready_running(ctx: &RunnerContext, workspace_id: u32) -> Result<(u32, u32), String> {
     ctx.with_memory(|mem| {
         let seq = ctx.agent_seq.clone();
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        match store.list(workspace_id) {
-            Ok(tasks) => {
-                let r = tasks
-                    .iter()
-                    .filter(|t| matches!(t.state, TaskState::Ready))
-                    .count() as u32;
-                let g = tasks
-                    .iter()
-                    .filter(|t| matches!(t.state, TaskState::Running))
-                    .count() as u32;
-                (r, g)
-            }
-            Err(_) => (0, 0),
-        }
+        let tasks = store.list(workspace_id).map_err(|e| e.to_string())?;
+        let r = tasks
+            .iter()
+            .filter(|t| matches!(t.state, TaskState::Ready))
+            .count() as u32;
+        let g = tasks
+            .iter()
+            .filter(|t| matches!(t.state, TaskState::Running))
+            .count() as u32;
+        Ok((r, g))
     })
 }
 
@@ -779,7 +893,68 @@ fn gc_apply_sweep_plan(
     }
 }
 
-fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
+/// tick 머리의 task snapshot 조회. 조회 실패를 **빈 목록으로 흡수하지 않고** 로그로
+/// 남긴다(`store_list_failures` 는 연속 실패 카운터 — rate-limit 판정에 쓰인다).
+///
+/// `tick` 은 넘겨받은 슬라이스만 순회하므로(terminal 흡수 · Running poll · Ready
+/// dispatch 전부) 빈 목록으로 진행하는 것과 이번 tick 을 건너뛰는 것의 **동작은
+/// 완전히 같다** — permit 회수도 snapshot 에서 terminal 로 바뀐 task 를 봤을 때만
+/// 일어난다. 그래서 여기서 바꾸는 것은 관측 가능성뿐이고, 흐름은 종전대로 빈
+/// snapshot 으로 tick 을 돌린다(다음 tick 에 회복되면 밀린 전이를 한꺼번에 흡수).
+fn tick_snapshot(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    store_list_failures: &AtomicU32,
+) -> Vec<tasty_agent::Task> {
+    let listed = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store.list(workspace_id)
+    });
+    let e = match listed {
+        Ok(tasks) => {
+            let prev = store_list_failures.swap(0, Ordering::Relaxed);
+            if prev > 0 {
+                tracing::info!(
+                    "agent runner ws{workspace_id}: task store recovered after {prev} \
+                     consecutive list failures"
+                );
+            }
+            return tasks;
+        }
+        Err(e) => e,
+    };
+    let n = store_list_failures
+        .load(Ordering::Relaxed)
+        .saturating_add(1);
+    store_list_failures.store(n, Ordering::Relaxed);
+    log_store_list_failure(workspace_id, n, &e);
+    Vec::new()
+}
+
+/// [`tick_snapshot`] 의 실패 로그 — 레벨 판정은 [`store_list_failure_log`], 여기서는
+/// 실제 기록만 한다(호출부의 인지 복잡도 상한 때문에 분리).
+fn log_store_list_failure(workspace_id: u32, n: u32, e: &dyn std::fmt::Display) {
+    match store_list_failure_log(n) {
+        StoreListFailureLog::Warn => tracing::warn!(
+            "agent runner ws{workspace_id}: task store list failed: {e} \
+             — this tick advances no task"
+        ),
+        StoreListFailureLog::Error => tracing::error!(
+            "agent runner ws{workspace_id}: task store list failed {n} times in a row: {e} \
+             — the task DAG is stalled (no dispatch, no poll, no permit release) while the UI \
+             still shows Ready/Running"
+        ),
+        StoreListFailureLog::Silent => {}
+    }
+}
+
+fn run_loop(
+    ctx: RunnerContext,
+    workspace_id: u32,
+    stop_rx: mpsc::Receiver<()>,
+    list_failures: &AtomicU32,
+) {
     let reloaded = purge_and_reload_on_restart(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
@@ -794,11 +969,7 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
         expire_overdue_hook_waits(&ctx, now);
 
         // 1. tick 본문.
-        let snapshot = ctx.with_memory(|mem| {
-            let seq = ctx.agent_seq.clone();
-            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            store.list(workspace_id).unwrap_or_default()
-        });
+        let snapshot = tick_snapshot(&ctx, workspace_id, list_failures);
 
         let ctx_for_set = ctx.clone();
         let ctx_for_res = ctx.clone();
@@ -859,6 +1030,41 @@ mod tests {
     use tasty_agent::{OnFailure, TaskCommand};
     use tasty_memory::{MemoryStore, PutOpts};
 
+    // 조회 실패 로그가 tick 마다 쏟아지지 않는지(첫 실패 warn → 임계에서 error →
+    // 이후 주기적으로만 error). TICK_INTERVAL 이 500ms 라 정책이 무너지면 초당
+    // 2 줄이 무한히 쌓인다.
+    #[test]
+    fn store_list_failure_log_is_rate_limited() {
+        assert_eq!(store_list_failure_log(1), StoreListFailureLog::Warn);
+        for n in 2..STORE_LIST_ERROR_AFTER {
+            assert_eq!(
+                store_list_failure_log(n),
+                StoreListFailureLog::Silent,
+                "{n} 번째 실패는 첫 warn 과 error 임계 사이라 조용해야 한다"
+            );
+        }
+        assert_eq!(
+            store_list_failure_log(STORE_LIST_ERROR_AFTER),
+            StoreListFailureLog::Error
+        );
+        // 임계 직후부터 다음 주기 직전까지는 다시 조용하다.
+        for n in (STORE_LIST_ERROR_AFTER + 1)..(STORE_LIST_ERROR_AFTER + STORE_LIST_REPEAT_EVERY) {
+            assert_eq!(
+                store_list_failure_log(n),
+                StoreListFailureLog::Silent,
+                "{n}"
+            );
+        }
+        assert_eq!(
+            store_list_failure_log(STORE_LIST_ERROR_AFTER + STORE_LIST_REPEAT_EVERY),
+            StoreListFailureLog::Error
+        );
+        assert_eq!(
+            store_list_failure_log(STORE_LIST_ERROR_AFTER + 2 * STORE_LIST_REPEAT_EVERY),
+            StoreListFailureLog::Error
+        );
+    }
+
     fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
         let td = tempfile::tempdir().unwrap();
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
@@ -887,6 +1093,229 @@ mod tests {
     }
 
     /// J.A.S3: 현 프로세스 pid 로 ShellProcess handle 영속 + reload → 복원.
+    /// **배선 테스트** — 정책 함수(`store_list_failure_log`)가 tick 루프에 실제로
+    /// 연결돼 있는지. 순수 정책만 검증하면 카운터를 올리지 않는 배선(그래서 `error`
+    /// 승격이 영원히 일어나지 않고 회복 로그도 사라지는 상태)이 그대로 통과한다.
+    /// 호출부를 옛 `unwrap_or_default()` 로 되돌리는 변이는 dead-code 린트가 잡지만
+    /// **컴파일러가 잡는 것은 테스트가 아니다** — 함수를 전부 살려둔 채 배선만
+    /// 망가뜨리는 변이(카운터 미증가 · 회복 리셋 제거)에서 이 테스트가 실패해야 한다.
+    #[test]
+    fn tick_snapshot_counts_consecutive_failures_and_resets_on_recovery() {
+        let (_td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+        });
+        let failures = AtomicU32::new(0);
+
+        // 정상 경로에서는 카운터가 0 을 유지하고 snapshot 이 실제로 온다.
+        assert_eq!(tick_snapshot(&ctx, 1, &failures).len(), 1);
+        assert_eq!(failures.load(Ordering::Relaxed), 0);
+
+        // 실제 기록된 task 키 자리에 Task 로 역직렬화되지 않는 값을 덮어 조회를
+        // 실패시킨다(키 접두사를 테스트에 하드코딩하지 않으려고 런타임에 찾는다).
+        let corrupt_key = ctx.with_memory(|mem| {
+            let entries = mem
+                .list(&Scope::Workspace(1), &ListOpts::default())
+                .expect("list");
+            let key = entries
+                .iter()
+                .map(|e| e.key.clone())
+                .find(|k| k.contains("task"))
+                .expect("task key");
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &key,
+                &MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+                &PutOpts::default(),
+            )
+            .expect("put");
+            key
+        });
+
+        // 연속 실패는 **누적**돼야 한다 — 이 값이 `error` 승격 임계를 결정한다.
+        for expected in 1..=3u32 {
+            assert!(
+                tick_snapshot(&ctx, 1, &failures).is_empty(),
+                "조회 실패면 빈 snapshot"
+            );
+            assert_eq!(
+                failures.load(Ordering::Relaxed),
+                expected,
+                "연속 실패가 누적되지 않으면 error 승격이 영원히 일어나지 않는다"
+            );
+        }
+
+        // 회복하면 0 으로 리셋 — 다음 실패가 다시 1 회째부터 세어진다.
+        ctx.with_memory(|mem| {
+            mem.delete(HOST_OWNER, &Scope::Workspace(1), &corrupt_key, None)
+                .expect("delete");
+        });
+        assert!(tick_snapshot(&ctx, 1, &failures).is_empty());
+        assert_eq!(
+            failures.load(Ordering::Relaxed),
+            0,
+            "회복하면 카운터가 리셋돼야 한다"
+        );
+    }
+
+    /// store 를 못 읽으면 `status` 는 카운트를 **0 이 아니라 `None`** 으로 낸다.
+    /// 0 은 "task 가 없다" 와 값이 같아, `agent-runner.md` 가 계약으로 못박은
+    /// "정지 상태는 조회로 드러난다" 가 거짓이 된다.
+    #[test]
+    fn status_reports_unknown_counts_when_the_task_store_is_unreadable() {
+        let (_td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+        });
+        let registry = RunnerRegistry::new();
+        let healthy = registry.status(&ctx, 1);
+        assert_eq!(healthy.ready_count, Some(1));
+        assert!(healthy.store_error.is_none());
+
+        // 실제로 기록된 task 키를 읽어와 그 자리에 Task 로 역직렬화되지 않는 값을
+        // 덮는다 — 키 접두사를 테스트에 하드코딩하지 않으려고 런타임에 찾는다.
+        ctx.with_memory(|mem| {
+            let entries = mem
+                .list(&Scope::Workspace(1), &ListOpts::default())
+                .expect("list");
+            let key = entries
+                .iter()
+                .map(|e| e.key.clone())
+                .find(|k| k.contains("task"))
+                .expect("task key");
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &key,
+                &MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+                &PutOpts::default(),
+            )
+            .expect("put");
+        });
+
+        let broken = registry.status(&ctx, 1);
+        assert_eq!(broken.ready_count, None, "못 읽었으면 0 이 아니라 unknown");
+        assert_eq!(broken.running_count, None);
+        assert!(
+            broken.store_error.is_some(),
+            "카운트가 없는 이유가 응답에 실려야 한다"
+        );
+    }
+
+    /// 응답 계약에 실린 `list_failures` 가 **실제 러너 스레드의 카운터를 따라가는지**.
+    ///
+    /// `tick_snapshot_counts_consecutive_failures_and_resets_on_recovery` 는 정책 함수만
+    /// 보고 `status_reports_unknown_counts_when_the_task_store_is_unreadable` 는 러너를
+    /// 띄우지 않는다 — 그래서 `status()` 가 이 필드를 항상 0 으로 내는 변이가 잡히지
+    /// 않았다(Gate4 A3′). 이 필드는 "러너가 살아는 있는데 아무것도 못 읽고 있다" 를
+    /// 조회로 드러내는 유일한 신호라, 배선이 비면 계약이 거짓이 된다.
+    #[test]
+    fn status_reports_the_running_runner_consecutive_list_failures() {
+        let (_td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+        });
+        // 기록된 task 자리에 Task 로 역직렬화되지 않는 값을 덮어 store.list 를 깨뜨린다
+        // (`status_reports_unknown_counts_…` 와 같은 기법 — 키를 하드코딩하지 않는다).
+        ctx.with_memory(|mem| {
+            let entries = mem
+                .list(&Scope::Workspace(1), &ListOpts::default())
+                .expect("list");
+            let key = entries
+                .iter()
+                .map(|e| e.key.clone())
+                .find(|k| k.contains("task"))
+                .expect("task key");
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(1),
+                &key,
+                &MemoryValue::Json(serde_json::json!({ "not": "a task" })),
+                &PutOpts::default(),
+            )
+            .expect("put");
+        });
+
+        let registry = RunnerRegistry::new();
+        assert!(registry.start(ctx.clone(), 1), "러너가 새로 떠야 한다");
+
+        // 첫 tick 은 recv_timeout 앞에서 즉시 돈다 — 넉넉히 기다리되(러너 스레드
+        // 스케줄링) 무한 대기는 하지 않는다.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut observed = 0;
+        while std::time::Instant::now() < deadline {
+            let st = registry.status(&ctx, 1);
+            if st.list_failures > 0 {
+                observed = st.list_failures;
+                break;
+            }
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let final_status = registry.status(&ctx, 1);
+        registry.stop(1);
+
+        assert!(
+            observed > 0,
+            "러너가 store 를 못 읽고 있으면 status 가 그 횟수를 드러내야 한다 \
+             (running={}, store_error={:?})",
+            final_status.running,
+            final_status.store_error
+        );
+        assert!(
+            final_status.running,
+            "스레드는 살아 있는데 아무것도 못 읽는 상태 — 그게 이 필드가 드러내는 것이다"
+        );
+    }
+
     #[test]
     fn reload_persistent_handles_restores_alive_shell_process() {
         let (_td, ctx) = fresh_ctx();
@@ -1398,5 +1827,40 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap()
         });
         assert!(matches!(task.state, TaskState::Running));
+    }
+}
+
+#[cfg(test)]
+mod poison_tests {
+    use super::*;
+
+    /// 스레드 맵이 poison 돼도 레지스트리는 계속 답한다.
+    ///
+    /// `.expect()` 이던 시절에는 `liveness` 가 패닉했다 — 그 호출자가 DAG surface 의
+    /// 러너 배지를 그리는 **렌더 경로**(메인 스레드, 프레임마다)라 패닉 하나가 모든 창의
+    /// 터미널 세션을 함께 죽였다. `start` 는 crashed 러너의 재시작 경로라, 거기서
+    /// 패닉하면 `catch_unwind` + `crashed` 로 만들어 둔 자기 복구가 무력해진다.
+    #[test]
+    fn a_poisoned_thread_map_still_answers_liveness_and_stop() {
+        let registry = Arc::new(RunnerRegistry::new());
+
+        let held = Arc::clone(&registry);
+        // 패닉시키는 것이 목적이라 join 결과를 아래에서 따로 검사한다.
+        let joined = thread::spawn(move || {
+            let _guard = held.threads.lock().expect("fresh mutex");
+            panic!("a thread dies while holding the runner registry");
+        })
+        .join();
+        assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+        assert!(registry.threads.lock().is_err(), "poison 됐어야 한다");
+
+        // 렌더 경로가 묻는 질문 — 패닉 없이 "러너 없음" 을 답한다.
+        assert_eq!(registry.liveness(1), (false, false));
+        // 정지 요청도 패닉하지 않는다(등록된 것이 없으니 false).
+        assert!(!registry.stop(1));
+        assert!(
+            registry.poison_reported.load(Ordering::Relaxed),
+            "poison 은 보고돼야 한다"
+        );
     }
 }
