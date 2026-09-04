@@ -13,6 +13,11 @@
 //! [`docs/dev-guide/e2e-tests.md`], 그 결정 근거는 ADR-0090. 원칙 위반은
 //! `tests/e2e_single_instance_guard.rs` 가 CI 에서 잡는다.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
 // 다중 test binary 가 공유하는 test-support 모듈 — binary 마다 사용하는 부분집합이
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).
 #![allow(dead_code)]

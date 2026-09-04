@@ -15,6 +15,12 @@
 //! frame/handshake 헬퍼는 `tests/attach_common/mod.rs` 를 공유한다 — attach client 는
 //! 실제 GUI 앱이 아니라 raw `TcpStream` 으로 직접 핸드셰이크한다.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 mod attach_common;
 mod common;
 

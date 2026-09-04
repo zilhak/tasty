@@ -130,6 +130,9 @@ fn poll_changed(watched: &mut HashMap<u32, WatchEntry>) -> Vec<u32> {
 }
 
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
 

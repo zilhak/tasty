@@ -36,10 +36,14 @@ result_large_err = "allow"
 #   warn 가 그대로 남지만, 리뷰에서 "주석 유무"로 판정한다). reference/단순 값 drop 은
 #   must_use 가 아니라 걸리지 않는다 — 정확히 Result/must_use 누락만 표면화한다.
 #   CI 에 `-D warnings` 가 없어 빌드를 막지 않는다.
-#   **주의 — 이 lint 는 정책의 절반만 본다.** 주석을 읽지 못하므로 사유가 제대로 달린
-#   정상 코드까지 경고한다(현재 183 건 중 대부분이 그것이다). 따라서 "clippy 에 뜨면
-#   처리" 로는 신규 위반이 드러나지 않는다 — 전수 + 주석 유무 판정은 CI 의
-#   `tests/let_underscore_documented.rs` 가 한다. 이 lint 는 타입 정확한 보조 신호다.
+#   **주의 — 이 lint 는 정책을 집행하지 않는다.** 주석을 읽지 못하므로 사유가 제대로
+#   달린 정상 코드까지 경고한다. 따라서 "clippy 에 뜨면 처리" 로는 신규 위반이 드러나지
+#   않는다 — 전수 + 주석 유무 판정은 `tests/let_underscore_documented.rs` 가 한다.
+#   이 lint 의 출력은 위반 목록이 아니라 **의도적 무시 자리의 명부**이고, 타입을 아는
+#   층이라 텍스트 스캔이 못 보는 것을 본다. 정책이 사유를 요구하지 않는 범위(테스트
+#   본문)는 위치 단위 allow 로 빼 두었다 — 조치 불가능한 경고가 명부를 흔들지 않게.
+#   근거·실측: docs/dev-guide/error-handling.md "clippy::let_underscore_must_use 는
+#   무엇을 세는가".
 let_underscore_must_use = "warn"
 # 색을 "디자인"하는 raw 생성자 호출 차단(color-policy 의 집행 수단). warn 이던 시절
 # 위반 6건이 조용히 유입됐던 전례 → deny 로 승격. 예외는 위치 단위

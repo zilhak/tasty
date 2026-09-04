@@ -948,6 +948,9 @@ mod tests {
 /// 백오프 재연결이 발동하지 않는" 것이었다 — 아래 `server_recv_err_reports_disconnected`
 /// 가 바로 그 회귀를 잡는다.
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod raw_bridge_tests {
     use std::io::Read;
     use std::net::{TcpListener, TcpStream};

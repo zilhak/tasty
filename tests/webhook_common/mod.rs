@@ -16,6 +16,11 @@
 //! 기존 `tests/common` 을 건드리지 않으려고 별도 모듈로 둔다(격리).
 
 #![allow(dead_code)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
 
 #[path = "../spawn_diag/mod.rs"]
 mod spawn_diag;

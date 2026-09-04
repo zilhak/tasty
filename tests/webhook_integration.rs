@@ -17,6 +17,12 @@
 //! 4. 재시작: 같은 TASTY_HOME/포트로 2차 인스턴스 → 영속 복원/임시 소멸 검증
 //!    (새 프로세스라 abuse 쿨다운은 소멸 — in-memory)
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 mod webhook_common;
 
 use std::time::{Duration, Instant};

@@ -2,6 +2,12 @@
 //! 패닉(RefCell 이중 borrow·레이아웃 위반) 없이 렌더되는지 회귀 격리한다.
 //! 픽셀 판정은 하지 않는다 — 시각 정합은 갤러리 육안 몫.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use tasty_gallery::catalog::chrome_loading;
 use tasty_gallery::catalog::components::{dag, prim_drilldown, prim_listctrl};
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, DrillDown, DrillDownView};

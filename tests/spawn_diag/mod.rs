@@ -11,7 +11,14 @@
 //! 후자는 기다려도 안 된다). 디스플레이 서버 부재는 stderr 시그니처로 갈리고,
 //! 자식이 이미 죽은 경우는 조기 종료 감지로 갈린다.
 
-#![allow(dead_code)] // 두 하네스가 각자 일부만 쓴다
+#![allow(dead_code)]
+// 두 하네스가 각자 일부만 쓴다
+
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
 
 use std::time::Duration;
 
