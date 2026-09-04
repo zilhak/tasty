@@ -179,3 +179,50 @@ fn invalid_choice_rejected() {
         .unwrap_err();
     assert!(matches!(e, ApprovalError::InvalidChoice(_)));
 }
+
+/// 락이 poison 되면 **상태 변경은 거절**하고 **읽기는 계속 된다**.
+///
+/// 두 갈래인 이유는 `error-handling.md` "락 poison" 의 두 질문에 답이 다르기 때문이다.
+/// `respond` 의 임계구역은 `state` → `history` → `waiters` 를 순서대로 갱신하므로
+/// 중간 상태가 남을 수 있고, 승인은 에이전트 행동의 관문이라 그 위에서 진행하면 안 된다.
+/// 반면 `get`/`list` 는 표시용 읽기이고 호출자에게 에러 채널도 없다.
+///
+/// 어느 쪽이든 **패닉하지 않는 것**이 핵심이다 — 이 store 는 승인 popup(메인 스레드)이
+/// 함께 쓰므로, 패닉하면 실행 중인 모든 창의 터미널 세션이 사라진다.
+#[test]
+fn a_poisoned_store_refuses_writes_but_still_answers_reads() {
+    let store = ApprovalStore::new();
+    store
+        .request(req("a1", Requester::User))
+        .expect("fresh store accepts the request");
+
+    // 락을 든 채 패닉시켜 poison 을 만든다.
+    let inner = Arc::clone(&store.inner);
+    let joined = thread::spawn(move || {
+        let _guard = inner.lock().expect("fresh mutex");
+        panic!("a thread dies while holding the approval store");
+    })
+    .join();
+    assert!(joined.is_err(), "그 스레드는 패닉했어야 한다");
+
+    // 읽기 — 복구해서 답한다.
+    assert!(store.get(&ApprovalId("a1".to_string())).is_some());
+    assert_eq!(store.list().len(), 1);
+
+    // 상태 변경 — 거절한다(패닉이 아니라 에러로).
+    let e = store
+        .respond(
+            &ApprovalId("a1".to_string()),
+            "approve".to_string(),
+            Responder::User,
+            None,
+        )
+        .unwrap_err();
+    assert!(matches!(e, ApprovalError::StorePoisoned), "got {e:?}");
+
+    let e = store.cancel(&ApprovalId("a1".to_string())).unwrap_err();
+    assert!(matches!(e, ApprovalError::StorePoisoned), "got {e:?}");
+
+    let e = store.request(req("a2", Requester::User)).unwrap_err();
+    assert!(matches!(e, ApprovalError::StorePoisoned), "got {e:?}");
+}

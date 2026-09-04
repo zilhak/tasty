@@ -271,7 +271,13 @@ pub struct ThemeSizing {
     /// terminal cell 스케일 — large (16px).
     pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
-    /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
+    /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
+    /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
+    /// 선택 카드 테두리처럼 "이것" 을 가리키는 링 전반이 같은 굵기를 쓴다. 색은
+    /// 별개 축이라 `accent_success` 등과 조합해도 이 토큰이다.
+    ///
+    /// **한쪽 변에 붙는 띠(활성 행 좌측 바·탭 밑줄)는 이 토큰이 아니다** —
+    /// `tab_indicator_width` 다. 값은 같은 2 지만 이쪽만 `zoomed()` 를 탄다.
     pub focus_ring_width: LogicalPx,
     /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
     /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
@@ -379,7 +385,9 @@ pub struct ThemeSizing {
     pub spinner_size: LogicalPx,
     /// 토스트 좌측 accent 바 두께 (3px).
     pub toast_accent_width: LogicalPx,
-    /// 탭 active indicator 두께 (2px).
+    /// 탭 active indicator 두께 (2px). 대상을 감싸지 않고 **한쪽 변에 붙는 띠**
+    /// 전반 — 탭 밑줄, 활성 행의 좌측 accent 바. 감싸는 링은
+    /// `focus_ring_width`(같은 2 지만 그쪽만 `zoomed()` 를 탄다).
     pub tab_indicator_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
@@ -889,7 +897,13 @@ pub struct Theme {
     /// terminal cell 스케일 — large (16px).
     pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
-    /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
+    /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
+    /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
+    /// 선택 카드 테두리처럼 "이것" 을 가리키는 링 전반이 같은 굵기를 쓴다. 색은
+    /// 별개 축이라 `accent_success` 등과 조합해도 이 토큰이다.
+    ///
+    /// **한쪽 변에 붙는 띠(활성 행 좌측 바·탭 밑줄)는 이 토큰이 아니다** —
+    /// `tab_indicator_width` 다. 값은 같은 2 지만 이쪽만 `zoomed()` 를 탄다.
     pub focus_ring_width: LogicalPx,
     /// painter 로 직접 전사한 chrome 글리프(popup 타이틀바의 close X · 전체화면
     /// 브래킷)의 선 굵기. SVG 아이콘은 `Icon::image` 가 24 viewBox·2px stroke 를
@@ -962,6 +976,8 @@ pub struct Theme {
     pub status_dot_size: LogicalPx,
     pub spinner_size: LogicalPx,
     pub toast_accent_width: LogicalPx,
+    /// 한쪽 변에 붙는 띠(탭 밑줄·활성 행 좌측 accent 바). 감싸는 링은
+    /// `focus_ring_width` — 값은 같은 2 지만 그쪽만 zoom 을 탄다.
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
 
@@ -1939,6 +1955,111 @@ mod tests {
         assert!(!t.is_light);
     }
 
+    /// 명명 const 로 값을 빼는 **대가가 축마다 다르다**는 것을 배율 ≠ 1 에서 고정한다.
+    ///
+    /// [`zoom_one_preserves_sizing`] 은 배율 1.0 에서만 재므로 `zoomed()` 를 타는 필드와
+    /// 안 타는 필드를 **원리적으로 가르지 못한다**. 이 테스트는 그것이 못 보는 조건에서 잰다.
+    ///
+    /// **처음에 "반경은 zoom 을 타고 굵기는 안 탄다" 로 적었다가 변이로 고쳤다.**
+    /// `border_width` 를 `zoomed()` 에 태우는 변이가 **살아남았고, 살아남는 것이 옳았다**:
+    /// `zoomed()` 는 `(px * z).round()` 이고 지원 배율은 0.85 · 1.0 · 1.2 뿐이라
+    /// (`AppearanceSettings::ui_scale_factor_for`), **1.0 과 2.0 은 셋 다 자기 자신으로
+    /// 되돌아온다.** 즉 그 값들에 대해서는 `zoomed()` 경유 여부가 **값에서 관측되지 않는다.**
+    ///
+    /// ```text
+    /// border_width      1.0 → 1 / 1 / 1     반올림 아래 배율 불변  → 경유 여부 관측 불가
+    /// focus_ring_width  2.0 → 2 / 2 / 2     (경유하는데도 값은 그대로)
+    /// corner_radius_sm  2.0 → 2 / 2 / 2
+    /// icon_stroke_width 1.5 → 1 / 2 / 2     경유하면 값이 변한다   → 관측 가능
+    /// corner_radius     4.0 → 3 / 4 / 5     경유하므로 값이 변한다
+    /// corner_radius_lg  8.0 → 7 / 8 / 10
+    /// ```
+    ///
+    /// 그래서 `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 의
+    /// "축 확장" 절이 드는 근거는 **경유 여부가 아니라 값의 배율 가변성**이다 — 명명
+    /// const 로 빼는 대가는 값이 배율에 따라 변하는 자리에서만 실재한다. 반경 기본·lg 는
+    /// 변하고, 1px 보더는 어차피 안 변한다.
+    ///
+    /// 이 테스트가 잡는 것은 셋이다.
+    /// 1. 반경 기본·lg 가 배율 가변성을 잃는다(스케일 값이 바뀌거나 반올림이 바뀐다).
+    /// 2. `icon_stroke_width` 가 `zoomed()` 를 타게 된다 — 이건 값이 변하므로 관측된다.
+    /// 3. **불변 셋의 전제 위에서 값이 어긋난다** — 아래 세 배율에서 `border_width` ·
+    ///    `focus_ring_width` · `corner_radius_sm` 이 반올림 불변성을 잃는 경우(예:
+    ///    `border_width` 가 1.0 → 1.5 로 바뀌면 1.2 배에서 2 가 된다).
+    ///
+    /// **3번이 잡지 *못하는* 것을 분명히 적는다 — 여기서 한 번 틀렸다.**
+    /// 지원 배율 **집합 자체**가 바뀌는 것(예: 1.5 가 추가되는 것)은 이 테스트가
+    /// 감지하지 못한다. 아래 `SUPPORTED_ZOOMS` 는 **하드코딩 사본**이라 원본
+    /// (`AppearanceSettings::ui_scale_factor_for`)에 배율이 늘어도 그대로 있고,
+    /// 이 테스트는 초록으로 남는다. 의존 방향이 반대라(그 크레이트가 이 크레이트에
+    /// 의존한다) 여기서 원본을 읽을 방법이 없다.
+    ///
+    /// 그래서 **집합의 핀은 원본 쪽에 있다**:
+    /// `tasty-settings` 의 `the_supported_ui_scale_set_is_pinned`. 배율이 늘면
+    /// 그 핀이 울고, 그 메시지가 이 사본을 좌표로 지목한다.
+    ///
+    /// (원래 이 자리에는 "값이 어긋나면 3번이 운다" 고 적혀 있었는데, **토큰 '값'과
+    /// 배율 '집합' 이 한 문장에서 섞여** 집합 변화까지 잡는 것처럼 읽혔다. 값 쪽은
+    /// 참이고 집합 쪽은 거짓이었다.)
+    #[test]
+    fn zoom_cost_differs_by_axis() {
+        /// `AppearanceSettings::ui_scale_factor_for` 의 값. 의존 방향이 반대라 복사한다.
+        ///
+        /// **사본이라 원본을 따라가지 않는다.** 원본에 배율이 추가돼도 여기는 그대로다 —
+        /// 그 어긋남을 잡는 것은 이 파일이 아니라 원본 크레이트의
+        /// `the_supported_ui_scale_set_is_pinned` 다.
+        const SUPPORTED_ZOOMS: [f32; 3] = [0.85, 1.0, 1.2];
+
+        let base = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
+
+        for z in SUPPORTED_ZOOMS {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+
+            // ① 대가가 실재하는 축 — 배율에서 값이 `zoomed()` 결과와 같아야 한다.
+            for (name, b, v) in [
+                ("corner_radius", base.corner_radius, t.corner_radius),
+                (
+                    "corner_radius_lg",
+                    base.corner_radius_lg,
+                    t.corner_radius_lg,
+                ),
+            ] {
+                let want = LogicalPx((b.value() * z).round());
+                assert_eq!(v, want, "{name} 이 배율 {z} 에서 `zoomed()` 결과와 다르다");
+            }
+
+            // ② 굵기 hairline 은 `zoomed()` 밖이다. 1.5 라 경유하면 값이 변하므로
+            //    이 등식이 실제로 판별력을 갖는다(변이로 확인했다).
+            assert_eq!(
+                t.icon_stroke_width, base.icon_stroke_width,
+                "icon_stroke_width 가 배율 {z} 에서 변했다 — `zoomed()` 를 타게 됐다"
+            );
+
+            // ③ 불변 셋의 전제 — 이 값들은 경유하든 안 하든 배율에서 그대로다.
+            //    **토큰 값이 바뀌면** 여기가 운다(예: border_width 1.0 → 1.5).
+            //    지원 배율 집합이 바뀌는 것은 여기가 아니라 `tasty-settings` 의
+            //    `the_supported_ui_scale_set_is_pinned` 가 잡는다 — 위 사본 참조.
+            for (name, v) in [
+                ("border_width", base.border_width),
+                ("focus_ring_width", base.focus_ring_width),
+                ("corner_radius_sm", base.corner_radius_sm),
+            ] {
+                assert_eq!(
+                    LogicalPx((v.value() * z).round()),
+                    v,
+                    "{name}({v:?}) 이 배율 {z} 에서 더 이상 반올림 불변이 아니다 — \
+                     굵기 축에 zoom 대가가 없다는 전제가 깨졌다"
+                );
+            }
+        }
+
+        // ①의 실물: 기본 반경은 지원 배율 양끝에서 실제로 다른 값이 된다.
+        let small = Theme::with_colors_and_zoom(dummy_colors(), false, 0.85);
+        let large = Theme::with_colors_and_zoom(dummy_colors(), false, 1.2);
+        assert_ne!(small.corner_radius, base.corner_radius);
+        assert_ne!(large.corner_radius, base.corner_radius);
+    }
+
     #[test]
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 반복 assert_eq 테스트 — clippy 과대계상, rca cognitive 0
     fn zoom_one_preserves_sizing() {
@@ -2328,5 +2449,35 @@ mod tests {
         assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // 12
         assert_eq!(t.tree_row_height().value(), t.item_height_tree.value()); // 33
         assert_eq!(t.input_height().value(), 42.0); // control-height 28 * 1.5
+    }
+
+    /// UI 폰트 토큰은 **어떤 zoom 에서도 정수**다 — `zoomed()` 가 `.round()` 하기
+    /// 때문이다. 이건 편의 성질이 아니라 `docs/design/systems/theme.md` "스케일 밖
+    /// 폰트 값" 규칙("`.5` 로 끝나는 값은 토큰이 될 수 없다")이 서 있는 전제다.
+    /// 그 전제가 깨지는 길은 둘이다 — `zoomed()` 가 반올림을 그만두거나, 새 UI 폰트
+    /// 필드가 `zoomed()` 를 우회해 `SIZING` 값을 그대로 받거나. 어느 쪽이든 규칙
+    /// 문장이 먼저 거짓이 되므로 여기서 잡는다. (`SIZING` 리터럴 자체가 `.5` 가
+    /// 되는 것은 여기 걸리지 않는다 — 그래도 `zoomed()` 가 정수로 만들기 때문이고,
+    /// 규칙이 말하는 "토큰 값" 은 zoom 을 거친 뒤의 값이다.)
+    #[test]
+    fn ui_font_size_tokens_are_integers_at_every_zoom() {
+        for zoom in [0.5, 0.85, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 3.0] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, zoom);
+            for (name, px) in [
+                ("font_size_micro", t.font_size_micro),
+                ("font_size_caption", t.font_size_caption),
+                ("font_size_body", t.font_size_body),
+                ("font_size_heading", t.font_size_heading),
+                ("font_size_max", t.font_size_max),
+            ] {
+                let v = px.value();
+                assert_eq!(
+                    v,
+                    v.round(),
+                    "{name} 이 zoom {zoom} 에서 정수가 아니다({v}) — theme.md 의 \
+                     \"`.5` 값은 토큰이 될 수 없다\" 규칙이 이 성질 위에 서 있다"
+                );
+            }
+        }
     }
 }

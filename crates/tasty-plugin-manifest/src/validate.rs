@@ -6,6 +6,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use super::gates::ContributesGate;
 use super::types::{
     AutoWaitDecl, BindingMode, CliCommandDecl, CliSubcommandDecl, CommandDecl, CommandScope,
     HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest, Permission,
@@ -187,7 +188,7 @@ impl Manifest {
                 HOST_API_VERSION
             );
         }
-        let required_token = format!("ext:{}", decl.plugin_id);
+        let required_token = ContributesGate::Extends.required(&decl.plugin_id);
         if !self.permissions.iter().any(|p| p == &required_token) {
             anyhow::bail!(
                 "[extends] requires permission '{required_token}' to be declared in manifest permissions[]"
@@ -566,9 +567,10 @@ impl Manifest {
     fn validate_contributed_tools(&self) -> anyhow::Result<()> {
         // [[contributes.tool]] 검증.
         if !self.contributes.tool.is_empty() {
-            if !self.permissions.iter().any(|p| p == "ui.tool_item") {
+            let token = ContributesGate::Tool.required("");
+            if !self.permissions.iter().any(|p| p == &token) {
                 anyhow::bail!(
-                    "[[contributes.tool]] requires permission 'ui.tool_item' to be declared in manifest permissions[]"
+                    "[[contributes.tool]] requires permission '{token}' to be declared in manifest permissions[]"
                 );
             }
             let mut seen_tool_ids = HashSet::new();
@@ -663,10 +665,11 @@ impl Manifest {
             .commands
             .iter()
             .any(|c| matches!(&c.action, Some(ToolAction::OpenPopup { .. })));
-        if has_popup_action && !self.permissions.iter().any(|p| p == "ui.popup") {
+        let popup_token = ContributesGate::CommandOpenPopup.required("");
+        if has_popup_action && !self.permissions.iter().any(|p| p == &popup_token) {
             anyhow::bail!(
                 "[[contributes.commands]] with action.kind = 'open_popup' requires permission \
-                 'ui.popup' to be declared in manifest permissions[]"
+                 '{popup_token}' to be declared in manifest permissions[]"
             );
         }
         let surface_kinds: HashSet<&str> =
@@ -729,9 +732,10 @@ impl Manifest {
     fn validate_contributed_popups(&self) -> anyhow::Result<()> {
         // [[contributes.popup]] 검증.
         if !self.contributes.popup.is_empty() {
-            if !self.permissions.iter().any(|p| p == "ui.popup") {
+            let token = ContributesGate::Popup.required("");
+            if !self.permissions.iter().any(|p| p == &token) {
                 anyhow::bail!(
-                    "[[contributes.popup]] requires permission 'ui.popup' to be declared in manifest permissions[]"
+                    "[[contributes.popup]] requires permission '{token}' to be declared in manifest permissions[]"
                 );
             }
             self.validate_popup_defs()?;
@@ -833,9 +837,10 @@ impl Manifest {
     fn validate_contributed_banners(&self) -> anyhow::Result<()> {
         // [[contributes.banner]] 검증 (A3).
         if !self.contributes.banner.is_empty() {
-            if !self.permissions.iter().any(|p| p == "ui.banner") {
+            let token = ContributesGate::Banner.required("");
+            if !self.permissions.iter().any(|p| p == &token) {
                 anyhow::bail!(
-                    "[[contributes.banner]] requires permission 'ui.banner' to be declared in manifest permissions[]"
+                    "[[contributes.banner]] requires permission '{token}' to be declared in manifest permissions[]"
                 );
             }
             let mut seen_banner_ids = HashSet::new();
@@ -877,9 +882,10 @@ impl Manifest {
     fn validate_contributed_windows(&self) -> anyhow::Result<()> {
         // [[contributes.window]] 검증.
         if !self.contributes.window.is_empty() {
-            if !self.permissions.iter().any(|p| p == "window.spawn") {
+            let token = ContributesGate::Window.required("");
+            if !self.permissions.iter().any(|p| p == &token) {
                 anyhow::bail!(
-                    "[[contributes.window]] requires permission 'window.spawn' to be declared in manifest permissions[]"
+                    "[[contributes.window]] requires permission '{token}' to be declared in manifest permissions[]"
                 );
             }
             let mut seen_window_ids = HashSet::new();
@@ -918,10 +924,9 @@ impl Manifest {
     fn validate_contributed_settings_pages(&self) -> anyhow::Result<()> {
         // [[contributes.settings_pages]] 검증.
         if !self.contributes.settings_pages.is_empty() {
-            if !self.permissions.iter().any(|p| p == "ui.settings_page") {
-                anyhow::bail!(
-                    "contributes.settings_pages requires the 'ui.settings_page' permission"
-                );
+            let token = ContributesGate::SettingsPage.required("");
+            if !self.permissions.iter().any(|p| p == &token) {
+                anyhow::bail!("contributes.settings_pages requires the '{token}' permission");
             }
             let mut seen_page_ids = HashSet::new();
             for page in &self.contributes.settings_pages {
@@ -1098,7 +1103,7 @@ impl Manifest {
                     "contributes.handler '{id}' missing required 'detector' string field"
                 );
             }
-            let needs = format!("file_handler.handle:{detector}");
+            let needs = ContributesGate::Handler.required(detector);
             if !self.permissions.iter().any(|p| p == &needs) {
                 anyhow::bail!(
                     "contributes.handler '{id}' on detector '{detector}' requires permission '{needs}'"
@@ -1113,10 +1118,11 @@ impl Manifest {
         // host/다른 plugin 의 detector 목록은 manifest 만으로는 모른다. install 시점에
         // 더 엄격하게 확인하되, manifest 차원에서는 최소한 둘 중 하나는 가져야 한다고
         // 강제한다 — 사용자가 plugin install 시 권한 부여 UI 가 의미를 가지도록.
+        let define = ContributesGate::DetectorDefine.required("");
         for v in &self.contributes.detector {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
-            let has_define = self.permissions.iter().any(|p| p == "file_handler.define");
-            let needs_extend = format!("file_handler.extend:{id}");
+            let has_define = self.permissions.iter().any(|p| p == &define);
+            let needs_extend = ContributesGate::DetectorExtend.required(id);
             let has_extend = self.permissions.iter().any(|p| p == &needs_extend);
             if !has_define && !has_extend {
                 anyhow::bail!(
@@ -1135,7 +1141,8 @@ impl Manifest {
         // 가 install 시점에 deserialize·검증한다. plugin 은 셸(`ShellCommand`) 을
         // 타입 레벨에서 쓸 수 없으므로(PluginHookHandlerActionDecl) 여기선 id 형식 +
         // 유일성 + define 권한만 확인한다.
-        let has_define = self.permissions.iter().any(|p| p == "hook_handler.define");
+        let hook_define = ContributesGate::HookHandler.required("");
+        let has_define = self.permissions.iter().any(|p| p == &hook_define);
         let mut seen_ids = HashSet::new();
         for v in &self.contributes.hook_handler {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
@@ -1155,7 +1162,7 @@ impl Manifest {
             // plugin install 시 이 권한을 grant 해야 훅 핸들러가 설치된다.
             if !has_define {
                 anyhow::bail!(
-                    "contributes.hook_handler '{id}' requires permission 'hook_handler.define'"
+                    "contributes.hook_handler '{id}' requires permission '{hook_define}'"
                 );
             }
         }
@@ -1178,10 +1185,8 @@ impl Manifest {
         // method 도 `self.id` 를 dot-prefix 로 쓰지 않으므로 그걸 기준으로
         // 비교하면 실제로 유효한 poll_method 를 전부 거부하게 된다
         // (`validate_cli_subcommands` 의 ipc_method 검증과 동일 패턴 재사용).
-        let has_define = self
-            .permissions
-            .iter()
-            .any(|p| p == "completion_strategy.define");
+        let strategy_define = ContributesGate::CompletionStrategy.required("");
+        let has_define = self.permissions.iter().any(|p| p == &strategy_define);
         let mut seen_ids = HashSet::new();
         for v in &self.contributes.completion_strategy {
             let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
@@ -1202,7 +1207,7 @@ impl Manifest {
             }
             if !has_define {
                 anyhow::bail!(
-                    "contributes.completion_strategy '{id}' requires permission 'completion_strategy.define'"
+                    "contributes.completion_strategy '{id}' requires permission '{strategy_define}'"
                 );
             }
             // 결정 2 — poll 형의 poll_method 는 plugin 자기 namespace 로 제한한다

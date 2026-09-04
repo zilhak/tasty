@@ -78,12 +78,60 @@ impl OutputBuffer {
     }
 }
 
+/// CSI 파라미터 바이트는 `0-9;` 만이 아니다 — private mode 를 여는 `?` 가 들어가고
+/// (`\x1b[?25l` 커서 숨김, `\x1b[?1049h` alt 스크린, `\x1b[?2004h` bracketed paste),
+/// 종결 바이트도 알파벳만이 아니다(`@-~`). 좁은 문자군을 쓰면 그 시퀀스들이 **그대로
+/// 남아**, `strip_ansi` 를 켠 호출자가 여전히 escape 가 섞인 텍스트를 받는다.
+///
+/// 같은 정규식이 `tasty-output` 의 `strip_ansi` 에도 있고 그쪽은 처음부터 넓었다 —
+/// 두 사본이 갈라져 있었다. 여기서 **문자 단위로 같게** 맞춰 둔다. 한쪽만 고치면
+/// 다음에 또 갈라지므로, 하나로 합치는 것은 따로 다룬다.
 static ANSI_ESCAPE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\][^\x1b]*\x1b\\")
+    regex::Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
         .expect("static regex is valid")
 });
 
 /// Strip ANSI escape sequences from a string using regex.
 fn strip_ansi_escapes(s: &str) -> String {
     ANSI_ESCAPE_RE.replace_all(s, "").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `strip_ansi` 를 켜고도 escape 가 남아 있던 형태들. 전부 **private mode**(`?`)라
+    /// 예전 문자군 `[0-9;]` 에 걸리지 않았다. 에이전트가 화면을 되읽어 문구를 찾을 때
+    /// 이 잔재가 섞이면 매칭이 어긋난다 — 실제로 그렇게 잃은 적이 있다.
+    #[test]
+    fn private_mode_sequences_are_stripped() {
+        assert_eq!(strip_ansi_escapes("\x1b[?25lhidden\x1b[?25h"), "hidden");
+        assert_eq!(strip_ansi_escapes("\x1b[?1049halt"), "alt");
+        assert_eq!(strip_ansi_escapes("\x1b[?2004hpaste\x1b[?2004l"), "paste");
+    }
+
+    /// 종결 바이트가 알파벳이 아닌 CSI 도 있다(`@-~`). 예전 `[a-zA-Z]` 는 못 잡았다.
+    #[test]
+    fn a_csi_with_a_non_alphabetic_final_byte_is_stripped() {
+        assert_eq!(strip_ansi_escapes("\x1b[1@x"), "x");
+        assert_eq!(strip_ansi_escapes("\x1b[2`y"), "y");
+    }
+
+    /// 원래 잡던 것들은 그대로 잡는다 — 넓힌 것이 좁힌 것이 되지 않게.
+    #[test]
+    fn sgr_and_osc_are_still_stripped() {
+        assert_eq!(strip_ansi_escapes("\x1b[31mred\x1b[0m"), "red");
+        assert_eq!(strip_ansi_escapes("\x1b]0;title\x07after"), "after");
+        assert_eq!(strip_ansi_escapes("\x1b]8;;http://x\x1b\\link"), "link");
+    }
+
+    /// escape 가 없는 텍스트는 그대로 통과한다. `?` 를 파라미터로 받아들이게 했다고
+    /// 본문의 물음표가 지워지면 안 된다.
+    #[test]
+    fn plain_text_including_question_marks_is_untouched() {
+        assert_eq!(
+            strip_ansi_escapes("really? yes [0-9] ok"),
+            "really? yes [0-9] ok"
+        );
+    }
 }

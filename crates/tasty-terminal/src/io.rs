@@ -33,16 +33,42 @@ impl WriteAck {
     /// 이 경우도 최선 노력으로 다음 단계를 진행해야 한다(무한 대기 금지).
     pub fn wait(&self, timeout: Duration) -> bool {
         let (lock, cvar) = &*self.progress;
-        let Ok(guard) = lock.lock() else {
-            return false;
-        };
+        let guard = crate::lock_write_progress(lock);
         if *guard >= self.target {
             return true;
         }
-        match cvar.wait_timeout_while(guard, timeout, |n| *n < self.target) {
-            Ok((_, wait_result)) => !wait_result.timed_out(),
-            Err(_) => false,
-        }
+        resolve_wait(
+            cvar.wait_timeout_while(guard, timeout, |n| *n < self.target),
+            crate::WRITE_PROGRESS_WHAT,
+            &crate::WRITE_PROGRESS_POISON_REPORTED,
+        )
+    }
+}
+
+/// `wait_timeout_while` 의 결과를 판정한다 — poison 은 복구하되 **첫 1 회 보고**한다.
+///
+/// condvar 는 깨어나며 락을 다시 잡으므로 poison 을 한 번 더 만난다. 여기서 `false` 로
+/// 떨어지면 이미 flush 가 끝난 write 를 "미완료" 로 보고하게 되므로 복구가 답이다.
+/// 다만 **진입 시점의 `lock_write_progress` 가 이미 보고했다고 가정할 수 없다** — 그때
+/// 락이 성했다면 아무것도 안 남았고, poison 이 **대기 중에** 생기는 순서가 정확히 그
+/// 경우다. 조용한 복구는 조용한 유실과 구분되지 않는다.
+///
+/// 보고 대상을 전역 static 이 아니라 **인자로** 받는 이유는 테스트다. 전역 플래그로
+/// 단언하면 같은 바이너리의 다른 테스트가 먼저 true 로 만들어 **거짓 초록**이 된다 —
+/// 실제로 이 판정을 `into_inner()` 로 되돌린 변이가 그 형태로 살아남았다.
+fn resolve_wait<T>(
+    outcome: Result<
+        (T, std::sync::WaitTimeoutResult),
+        std::sync::PoisonError<(T, std::sync::WaitTimeoutResult)>,
+    >,
+    what: &str,
+    reported: &std::sync::atomic::AtomicBool,
+) -> bool {
+    match outcome {
+        Ok((_, wait_result)) => !wait_result.timed_out(),
+        Err(poisoned) => !tasty_utils::poison::recover_poisoned(poisoned, what, reported)
+            .1
+            .timed_out(),
     }
 }
 
@@ -194,5 +220,142 @@ impl Terminal {
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).
     pub fn send_bytes(&mut self, bytes: &[u8]) {
         self.lock_state().write_input(bytes.to_vec());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Condvar, Mutex};
+
+    use super::*;
+    use crate::WriteProgress;
+
+    /// poison 이 **대기 중에** 생겨도 그 복구가 흔적을 남기는가.
+    ///
+    /// [`WriteAck::wait`] 는 진입할 때 한 번만 복구 헬퍼를 거친다. 그때 락이 성했다면
+    /// 아무 보고도 없고, 그 뒤 `wait_timeout_while` 안에서 락을 놓고 자는 동안 다른
+    /// 스레드가 poison 을 만들면 깨어나며 만나는 `Err` 는 헬퍼 **밖**이다 — 예전에는
+    /// 그 자리가 `into_inner()` 로 조용히 복구했다. 위의 다른 테스트는 `wait()` **전에**
+    /// poison 을 만들어 이 순서를 안 만든다.
+    ///
+    /// 헬퍼 **밖**에서 만난 poison 을 복구할 때 첫 1 회 보고가 나는가.
+    ///
+    /// 국소 `AtomicBool` 을 쓰므로 결정적이다 — 전역 플래그로 같은 단언을 했더니
+    /// `into_inner()` 로 되돌린 변이가 **살아남았다**(다른 테스트가 먼저 플래그를
+    /// 올린다). 그래서 판정기를 인자 받는 형태로 뺐다.
+    #[test]
+    fn resolve_wait_reports_the_poison_it_recovers() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let m = Arc::new(Mutex::new(0u64));
+        let cv = Condvar::new();
+
+        let poisoner = Arc::clone(&m);
+        std::thread::spawn(move || {
+            let _g = poisoner.lock().expect("아직 성한 락");
+            panic!("락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+
+        // 이미 poison 된 락을 복구해 들어가 재획득에서 `Err` 를 받는다 —
+        // `wait_timeout_while` 이 대기 중 poison 을 만났을 때와 같은 모양이다.
+        let guard = m.lock().unwrap_or_else(|e| e.into_inner());
+        let outcome = cv.wait_timeout_while(guard, Duration::from_millis(10), |_| true);
+        assert!(
+            outcome.is_err(),
+            "재획득이 poison 을 만나야 이 축이 성립한다"
+        );
+
+        let flag = AtomicBool::new(false);
+        let reached = resolve_wait(outcome, "테스트 카운터", &flag);
+        assert!(!reached, "조건이 안 맞아 타임아웃이므로 false 다");
+        assert!(
+            flag.load(Ordering::Relaxed),
+            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+        );
+    }
+
+    /// 이 테스트가 보는 것은 **그 순서가 실제로 만들어진다**는 것뿐이다 — 그 순서에서
+    /// 보고가 나는지는 아래 `resolve_wait` 테스트가 국소 플래그로 결정적으로 본다.
+    #[test]
+    fn a_poison_can_arrive_while_the_waiter_is_parked() {
+        let progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
+
+        let for_waiter = Arc::clone(&progress);
+        let waiter = std::thread::spawn(move || {
+            let ack = WriteAck {
+                progress: for_waiter,
+                target: 1,
+            };
+            // 카운터를 올리지 않으므로 타임아웃으로 끝난다 — 이 테스트가 보는 것은
+            // 반환값이 아니라 깨어나며 만난 poison 이 남긴 흔적이다.
+            ack.wait(Duration::from_millis(600))
+        });
+
+        // 대기자가 `wait_timeout_while` 안에서 락을 놓고 잠들 시간을 준다.
+        std::thread::sleep(Duration::from_millis(100));
+
+        let poisoner = Arc::clone(&progress);
+        std::thread::spawn(move || {
+            let _guard = poisoner.0.lock().expect("아직 성한 락");
+            panic!("대기자가 자는 동안 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(progress.0.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        let timed_out = !waiter.join().expect("대기 스레드는 패닉하지 않는다");
+        assert!(timed_out, "카운터를 안 올렸으므로 타임아웃이 정상이다");
+    }
+
+    /// poison 이 걸린 뒤에도 write 완료가 보고되고 확인되는가.
+    ///
+    /// 겨냥하는 곳은 두 자리다. writer 스레드는 카운터 증가를 조용히 건너뛰었고,
+    /// [`WriteAck::wait`] 는 곧바로 `false` 를 돌려줬다. poison 은 sticky 라 둘 다
+    /// 영구다 — PTY 쓰기 자체는 계속 되므로 겉으로는 멀쩡하고, `wait` 를 부르는
+    /// 경로만 매번 타임아웃까지 기다렸다가 "완료 못 함" 으로 떨어진다.
+    #[test]
+    fn a_poisoned_write_counter_still_acks_completed_writes() {
+        let progress: WriteProgress = Arc::new((Mutex::new(0), Condvar::new()));
+
+        let poisoner = Arc::clone(&progress);
+        std::thread::spawn(move || {
+            let _guard = poisoner.0.lock().expect("아직 성한 락");
+            panic!("이 스레드가 락을 쥔 채 죽는다");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(progress.0.lock().is_err(), "poison 이 실제로 걸려야 한다");
+
+        // writer 스레드는 poison 뒤에도 flush 카운터를 올린다.
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let for_writer = Arc::clone(&progress);
+        let writer = std::thread::spawn(move || {
+            crate::run_writer_loop(Box::new(std::io::sink()), rx, for_writer);
+        });
+        tx.send(b"hello".to_vec())
+            .expect("writer 스레드가 살아 있어야 한다");
+
+        // 그리고 그 완료를 `wait` 가 실제로 확인해 준다. 타임아웃을 넉넉히 주므로
+        // `false` 는 "느렸다" 가 아니라 "poison 경로로 떨어졌다" 는 뜻이다.
+        let ack = WriteAck {
+            progress: Arc::clone(&progress),
+            target: 1,
+        };
+        assert!(
+            ack.wait(Duration::from_secs(5)),
+            "poison 뒤에도 flush 완료가 확인돼야 한다"
+        );
+
+        drop(tx);
+        writer
+            .join()
+            .expect("writer 스레드가 패닉 없이 끝나야 한다");
+
+        assert!(
+            crate::WRITE_PROGRESS_POISON_REPORTED.load(std::sync::atomic::Ordering::Relaxed),
+            "복구했으면 한 번은 보고해야 한다 — 조용한 복구는 조용한 유실과 구분되지 않는다"
+        );
     }
 }

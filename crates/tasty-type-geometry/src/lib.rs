@@ -9,7 +9,7 @@
 //! 제공 타입:
 //! - [`length::LogicalPx`] — DPI-independent pixels (egui, Theme 상수)
 //! - [`length::PhysicalPx`] — actual device pixels (GPU/wgpu/winit 마우스 좌표)
-//! - [`rect::PhysicalRect`] — 픽셀 좌표 사각형
+//! - [`rect::PhysicalRect`] / [`rect::LogicalRect`] — 픽셀 좌표 사각형 (짝 타입)
 //! - [`rect::DividerInfo`] — 분할 보더 정보 (geometry + direction 묶음)
 //! - [`direction::SplitDirection`] / [`direction::FocusDirection`] — 방향 enum
 //!

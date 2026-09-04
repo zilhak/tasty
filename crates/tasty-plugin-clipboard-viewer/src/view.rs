@@ -41,9 +41,9 @@ fn row_pad_x(theme: &Theme) -> f32 {
 /// 비율(`tasty-plugin-image` 정본 튜닝값 재사용).
 const ICON_DRAW_RATIO: f32 = 0.7;
 
-/// CenterState 아이콘 크기(design 고정값 28 — Theme 아이콘 글리프 토큰은 16 상한이라
-/// 화면 전용 고정값으로 둔다, 기존 gallery specimen 의 480×360 선례와 동일 정책).
-const CENTER_ICON_SIZE: f32 = 28.0;
+// CenterState 아이콘 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
+// specimen(`components/clipboard_viewer.rs`)이 같은 상수를 읽는다.
+use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
 
 /// image body 아이콘 크기(design 고정값 30 — `CENTER_ICON_SIZE` 와 동일 정책).
 const IMAGE_BODY_ICON_SIZE: f32 = 30.0;

@@ -10,7 +10,7 @@ pub struct ScriptBinding {
     pub combo: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeybindingSettings {
     pub new_workspace: Vec<String>,

@@ -29,8 +29,9 @@
 //! 모두 자연스러운 cancel/timeout 시그널이 된다.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -288,6 +289,11 @@ pub enum ApprovalError {
     TimedOut,
     #[error("cancelled")]
     Cancelled,
+    /// 다른 스레드가 store 락을 든 채 패닉했다. 기록과 waiter 목록이 서로 어긋난
+    /// 중간 상태일 수 있어 **상태를 바꾸는 연산은 거절한다** —
+    /// [`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison".
+    #[error("approval store lock poisoned")]
+    StorePoisoned,
 }
 
 // ============================================================
@@ -298,6 +304,9 @@ pub enum ApprovalError {
 /// 들고 모든 IPC handler 가 공유한다. 내부 `Mutex` 로 thread-safe.
 pub struct ApprovalStore {
     inner: Arc<Mutex<Inner>>,
+    /// poison 을 이미 보고했는가. poison 은 sticky 라 이후 모든 호출이 같은 로그를
+    /// 내게 되므로 첫 1 회만 남긴다(`approval.list` 를 폴링하는 에이전트가 있다).
+    poison_reported: Arc<AtomicBool>,
 }
 
 struct Inner {
@@ -355,12 +364,50 @@ impl Default for ApprovalStore {
 }
 
 impl ApprovalStore {
+    /// 상태를 **바꾸는** 연산의 락 획득. poison 이면 [`ApprovalError::StorePoisoned`].
+    ///
+    /// `respond`/`cancel` 의 임계구역은 `record.state` → `record.history` →
+    /// `waiters` 를 **순서대로** 갱신한다. 중간에 패닉이 나면 "응답됨으로 표시됐지만
+    /// 대기자에게 통지되지 않은" 기록이 남을 수 있다 — 승인은 에이전트 행동을 막는
+    /// 관문이라 그 중간 상태를 신뢰하고 진행하면 안 된다. 그래서 복구하지 않고 거절한다.
+    ///
+    /// 반대로 **패닉하지도** 않는다: 이 store 는 승인 popup(메인 스레드)에서도
+    /// 호출되므로 패닉은 모든 창의 터미널 세션을 함께 죽인다
+    /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
+    fn lock_for_write(&self) -> Result<MutexGuard<'_, Inner>, ApprovalError> {
+        self.inner.lock().map_err(|_| {
+            self.report_poison("refusing the state change");
+            ApprovalError::StorePoisoned
+        })
+    }
+
+    /// 읽기·덮어쓰기 전용 락 획득. 호출자에게 에러 채널이 없고(`get`/`list`/`insert`),
+    /// 부분 갱신된 기록을 **읽는** 것은 판단이 아니라 표시라 복구해서 진행한다.
+    fn lock_recovering(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|poisoned| {
+            self.report_poison("recovering for a read");
+            poisoned.into_inner()
+        })
+    }
+
+    fn report_poison(&self, action: &str) {
+        if !self.poison_reported.swap(true, Ordering::Relaxed) {
+            tracing::error!(
+                "approval store mutex poisoned — a thread panicked while holding it; {action}. \
+                 Later occurrences are not logged."
+            );
+        }
+    }
+}
+
+impl ApprovalStore {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 records: HashMap::new(),
                 waiters: HashMap::new(),
             })),
+            poison_reported: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -385,7 +432,7 @@ impl ApprovalStore {
         }
         let id = request.id.clone();
         let record = ApprovalRecord::new(request);
-        let mut g = self.inner.lock().expect("approval store mutex");
+        let mut g = self.lock_for_write()?;
         if g.records.contains_key(&id) {
             return Err(ApprovalError::InvalidRequest(format!("duplicate id: {id}")));
         }
@@ -404,7 +451,7 @@ impl ApprovalStore {
         by: Responder,
         comment: Option<String>,
     ) -> Result<StateChange, ApprovalError> {
-        let mut g = self.inner.lock().expect("approval store mutex");
+        let mut g = self.lock_for_write()?;
         let record = g
             .records
             .get_mut(id)
@@ -452,7 +499,7 @@ impl ApprovalStore {
     /// 요청 취소. self-cancel 검증 없음 — 어느 caller 든 가능. (사용자 / 권한
     /// 검증은 IPC handler 단에서 처리.)
     pub fn cancel(&self, id: &ApprovalId) -> Result<StateChange, ApprovalError> {
-        let mut g = self.inner.lock().expect("approval store mutex");
+        let mut g = self.lock_for_write()?;
         let record = g
             .records
             .get_mut(id)
@@ -490,7 +537,7 @@ impl ApprovalStore {
         timeout_ms: Option<u64>,
     ) -> Result<WaitOutcome, ApprovalError> {
         let rx = {
-            let mut g = self.inner.lock().expect("approval store mutex");
+            let mut g = self.lock_for_write()?;
             let record = g
                 .records
                 .get(id)
@@ -535,7 +582,14 @@ impl ApprovalStore {
             Ok(r) => r,
             Err(RecvTimeoutError::Timeout) => {
                 // store 상태 전이. 이미 누군가 응답했으면 (race) 그 결과를 받아 사용.
-                let mut g = self.inner.lock().expect("approval store mutex");
+                //
+                // poison 이면 `Cancelled` 로 접는다 — 이 함수는 `WaitResult` 만 돌려줄 수
+                // 있고, record 가 사라졌을 때와 같은 처리다. 여기서 타임아웃 전이를 강행하면
+                // 신뢰할 수 없는 중간 상태 위에 또 한 번 상태를 얹게 된다.
+                let Ok(mut g) = self.inner.lock() else {
+                    self.report_poison("cancelling the wait instead of applying the timeout");
+                    return WaitResult::Cancelled;
+                };
                 let Some(record) = g.records.get_mut(id) else {
                     return WaitResult::Cancelled;
                 };
@@ -586,20 +640,20 @@ impl ApprovalStore {
 
     /// 단일 record 조회.
     pub fn get(&self, id: &ApprovalId) -> Option<ApprovalRecord> {
-        let g = self.inner.lock().expect("approval store mutex");
+        let g = self.lock_recovering();
         g.records.get(id).cloned()
     }
 
     /// 모든 record. 필터는 호출자가 적용.
     pub fn list(&self) -> Vec<ApprovalRecord> {
-        let g = self.inner.lock().expect("approval store mutex");
+        let g = self.lock_recovering();
         g.records.values().cloned().collect()
     }
 
     /// 외부 (e.g. memory rehydrate) 가 record 를 강제 주입. 이미 같은 id 있으면 덮어쓴다.
     /// 호스트 부팅 시 memory 에서 복원하는 시나리오용.
     pub fn insert(&self, record: ApprovalRecord) {
-        let mut g = self.inner.lock().expect("approval store mutex");
+        let mut g = self.lock_recovering();
         g.records.insert(record.request.id.clone(), record);
     }
 }

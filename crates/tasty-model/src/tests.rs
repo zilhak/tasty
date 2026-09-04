@@ -953,3 +953,30 @@ fn source_cwd_empty_surface_is_none() {
     let e = EmptySurface::new(1);
     assert_eq!(e.source_cwd(), None);
 }
+
+// ---- Pane::spawn_terminal — 셸 spawn 실패는 패닉이 아니라 Err ----
+
+#[test]
+fn spawn_terminal_with_a_missing_shell_returns_err_not_panic() {
+    // 사용자 `config.toml` 의 shell 경로 오타(존재하지 않는 셸)는 회복 가능한 `Err`
+    // 로 표면화돼야 한다 — 이게 `CoreState::new_with_ids` 의 `?` → 창 생성 경로의
+    // Result 전파(새 창 실패 시 앱 생존)의 토대다. 여기가 panic 하면 그 위의 모든
+    // graceful 처리가 무의미해지므로 그 불변식을 고정한다.
+    let bogus = "/nonexistent/definitely/not/a/real/shell-xyzzy";
+    let result = Pane::spawn_terminal(
+        1,
+        ShellSpawnOpts {
+            cols: 80,
+            rows: 24,
+            shell: Some(bogus),
+            shell_args: &[],
+            waker: noop_waker(),
+            working_dir: None,
+            extra_env: &[],
+        },
+    );
+    assert!(
+        result.is_err(),
+        "a missing shell path must return Err, not Ok or panic"
+    );
+}

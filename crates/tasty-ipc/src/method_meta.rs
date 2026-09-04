@@ -8,7 +8,8 @@
 //! 호출했을 때**의 권한 요구사항이다.
 
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use tasty_plugin_manifest::Permission;
 
@@ -58,6 +59,10 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("workspace.create", plugin(&[SurfaceWrite])),
         ("workspace.update", plugin(&[SurfaceWrite])),
         ("workspace.move", plugin(&[SurfaceWrite])),
+        // workspace.create 와 대칭 — 만들 수 있는 주체는 닫을 수도 있어야 한다(원칙 2).
+        // 새 권한 토큰을 만들지 않는 이유: pane.close / tab.close 도 같은 SurfaceWrite
+        // 이고, 닫기만 따로 승인받게 하면 기존 plugin 이 전부 재승인 대상이 된다.
+        ("workspace.close", plugin(&[SurfaceWrite])),
         // ── workspace category (사이드바 폴더 CRUD) ──────────────────
         ("workspace_category.list", plugin(&[SurfaceRead])),
         ("workspace_category.create", plugin(&[SurfaceWrite])),
@@ -112,6 +117,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // completion 은 read 가 아니라 attention(주의 환기) 발동 — PushNotification
         // 계열이므로 notification.* 와 동일한 Notification 권한.
         ("surface.completion", plugin(&[Notification])),
+        // attention 조회/해제 — completion 의 역방향(해제)과 그 관측 표면.
+        // raise 와 같은 상태를 읽고 되돌리는 것이라 같은 `Notification` 버킷에 둔다:
+        // 발동 권한만 주고 해제 권한을 빼면 자기가 켠 신호를 못 끄는 비대칭이 된다.
+        ("surface.attention.get", plugin(&[Notification])),
+        ("surface.attention.clear", plugin(&[Notification])),
         ("surface.read_since_mark", plugin(&[TerminalRead])),
         ("surface.parse_since_mark", plugin(&[TerminalRead])),
         ("surface.commands", plugin(&[TerminalRead])),
@@ -332,6 +342,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.barrier_await", plugin(&[AgentManage])),
         ("agent.barrier_state", plugin(&[AgentManage])),
         ("agent.semaphore_create", plugin(&[AgentManage])),
+        ("agent.semaphore_set_permits", plugin(&[AgentManage])),
         ("agent.semaphore_acquire", plugin(&[AgentManage])),
         ("agent.semaphore_release", plugin(&[AgentManage])),
         ("agent.barrier_list", plugin(&[AgentManage])),
@@ -382,6 +393,25 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // FS read 는 신뢰모델 범위 밖이라 프로필 CRUD 와 같은 메타를 쓴다.
         ("remote.profile.list_local", plugin(&[])),
         ("remote.profile.import", plugin(&[])),
+        // ── remote.workspaces (원격 ws 브라우징) ──────────────────────────
+        // profile CRUD 와 같은 `tasty_remote` 코어를 공유하는 release 경로다
+        // (`app/ipc/app_methods.rs`, 원칙 2: 에이전트가 CLI 없이 소켓으로도 수행 가능).
+        // 조회(browse)라 remote.profile.* 와 같은 신뢰경계 — 연결 경계(소켓 도달 + SSH)에
+        // 위임하고 추가 Permission 을 두지 않는다. CLI `remote workspaces` 와 대칭.
+        // 주의(호출자별로 의미가 다르다): 표는 Local 호출자에게 게이트가 아니다
+        // (`caller.rs` Local => Ok). Local(세션 토큰 없는 tasty CLI·로컬 스크립트)은 라우터
+        // 팔만 있으면 표와 무관하게 이미 도달 가능했다 — 이쪽은 재등재. 반면 plugin/agent
+        // 세션 토큰 호출자는 표에 없으면 UnknownMethod 로 거부됐고, 이 항목이 그들에게
+        // 처음 연다 — 이쪽은 **release 표면 확장**이다.
+        ("remote.workspaces", plugin(&[])),
+        // remote.attach 는 조회가 아니라 로컬에 mirror 워크스페이스를 만드는 구조 op 라
+        // 사용자 상태(불가침 원칙 1)에 닿는다. SSH 신뢰경계는 원격 셸 접근만 주고 그
+        // 사용자의 로컬 tasty 창에 워크스페이스를 만들 권한은 주지 않으므로, 다른
+        // remote.* 조회와 달리 연결경계 위임만으로 plugin 에 열 근거가 서지 않는다 —
+        // local caller 전용으로 등재한다(CLI `tool attach` 는 그대로 동작). 위 조회는 열고
+        // 이건 안 여는 비대칭은 의도된 것이다("일관성 정리" 로 지우지 말 것). 근거·재검토
+        // 트리거는 ADR-0121(docs/adr/0121-attach-trust-boundary-covers-remote-queries-not-local-structural-ops.md).
+        ("remote.attach", local_only()),
         // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
         // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
         // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).
@@ -467,9 +497,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("banner.open", plugin(&[UiBanner])),
         // 자기 배너 인스턴스를 명시적으로 닫는다.
         ("banner.close", plugin(&[UiBanner])),
-        // ── input source (macOS) ──────────────────────────────────────
-        ("surface.switch_input_source", plugin(&[TerminalWrite])),
-        ("surface.raw_key", plugin(&[TerminalWrite])),
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
         ("plugin.list", local_only()),
         ("plugin.show", local_only()),
@@ -545,6 +572,13 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.gpu.stall", local_only()),
     ("debug.inject_mouse", local_only()),
     ("debug.inject_key", local_only()),
+    // window/egui 입력 주입(마우스·키) — 위 inject_* 와 같은 사용자 입력 재현 계열이라
+    // 같은 debug 격리(원칙 1·3). release 미노출.
+    ("debug.inject_window_mouse", local_only()),
+    ("debug.inject_egui_mouse", local_only()),
+    ("debug.inject_egui_key", local_only()),
+    // 임의 Lua 주입(ADR-0031) — release 에는 이 경로가 없다(원칙 1). local 전용.
+    ("debug.lua.eval", local_only()),
     // 사용자 조작 재현(워크스페이스 닫기 / 워크스페이스·탭 전환) — 위 inject_*
     // 와 같은 계열이라 같은 debug 격리.
     ("debug.close_workspace", local_only()),
@@ -590,18 +624,37 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     // view.focus 는 window.focus 의 alias (E.C.e, D1=b). debug 빌드 only.
     ("window.focus", local_only()),
     ("view.focus", local_only()),
+    // ── OS 전역 입력 상태 조작 (macOS) — 사용자 입력 재현 ──────────
+    // `surface.raw_key` 는 CGEventPost 로 **OS 이벤트 스트림에** 키를 주입한다.
+    // 대상 surface 를 받을 수단이 없고(그 순간 OS 포커스를 가진 무엇이든 받는다),
+    // `surface.switch_input_source` 는 TISSelectInputSource 로 **시스템 입력 소스**
+    // 를 바꾼다 — 둘 다 사용자가 키보드/입력기 메뉴로 하는 조작의 재현이라
+    // release 표면에 두지 않는다. 에이전트가 자기 작업으로 터미널에 키를 넣는
+    // 경로는 대상 ID 를 받는 `surface.send_key`(release) 다.
+    // 런타임 `--enable-input-simulation` 게이트가 추가로 걸린다(inject_* 와 동일).
+    ("surface.switch_input_source", local_only()),
+    ("surface.raw_key", local_only()),
+    // `surface.ime_*` 도 같은 계열(창 IME 조합 상태 강제 세팅 — 사용자 입력기
+    // 조합 재현)이지만 개별 등재가 아니라 prefix 로 해소되므로 아래
+    // [`PREFIX_RULES`] 쪽에 같은 cfg 격리를 걸어 뒀다.
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 
 /// prefix 기반 fallback. METHOD_TABLE에 없는 메서드를 prefix로 매칭한다.
-/// - `surface.ime_*` — IME 메서드 (window 의존, 사용자 입력 영역).
+/// - `surface.ime_*` — 창 IME 조합 상태를 강제로 세팅/조회하는 시뮬레이션
+///   메서드. 사용자 입력기 조합의 재현이고 대상을 ID 로 받지 못한 채 포커스된
+///   창에 작용하므로 [`DEBUG_METHODS`] 와 같은 `#[cfg(debug_assertions)]` 격리
+///   대상이다 — release 에서는 이 규칙 자체가 사라져 빈 슬라이스가 된다.
 ///
 /// plugin 이 매니페스트 `[[contributes.ipc_namespace]]` 로 점유한 prefix 는
 /// [`register_plugin_prefix`] 로 *runtime* 등록되어 `method_meta()` 의 마지막
 /// fallback 단계에서 해소된다. 정적 `PREFIX_RULES` 는 host 자체 메서드의
 /// prefix-fallback 전용.
+#[cfg(debug_assertions)]
 pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())];
+#[cfg(not(debug_assertions))]
+pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
 /// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.
@@ -615,6 +668,30 @@ fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
     PLUGIN_PREFIXES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
+/// 이 락의 임계구역은 전부 `HashMap` 조작뿐이라 패닉이 지나가도 남는 값이 성립한다
+/// — 그래서 복구가 답이다. 반대로 조용히 건너뛰면 poison 이 sticky 인 탓에 registry 가
+/// **영구히 얼어붙고**, 그 결과가 방향별로 다르게 나쁘다: 등록이 얼면 plugin 이 뜬 채
+/// 자기 namespace 만 벙어리가 되고, 해제가 얼면 죽은 plugin 의 prefix 가 남아
+/// `plugin_callable=true, required=[]` 로 계속 통과한다.
+const PREFIXES_WHAT: &str = "the plugin IPC namespace registry";
+static PREFIXES_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+fn prefixes_write() -> RwLockWriteGuard<'static, HashMap<String, MethodMeta>> {
+    tasty_utils::poison::recover_write(
+        plugin_prefixes().write(),
+        PREFIXES_WHAT,
+        &PREFIXES_POISON_REPORTED,
+    )
+}
+
+fn prefixes_read() -> RwLockReadGuard<'static, HashMap<String, MethodMeta>> {
+    tasty_utils::poison::recover_read(
+        plugin_prefixes().read(),
+        PREFIXES_WHAT,
+        &PREFIXES_POISON_REPORTED,
+    )
+}
+
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` prefix 를 runtime 등록.
 /// 등록 후 `<prefix>.<method>` 형식의 모든 IPC 메서드가 plugin/agent caller 에게
 /// `plugin_callable=true, required=[]` 메타로 노출된다. 세부 권한은 host-plugin
@@ -623,19 +700,17 @@ fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
 /// 동일 prefix 재등록은 silent no-op (entry().or_insert(...) 시맨틱 — 첫
 /// 등록자 유지). 한 번 unregister 로 완전 제거.
 pub fn register_plugin_prefix(prefix: &str) {
-    if let Ok(mut map) = plugin_prefixes().write() {
-        map.entry(prefix.to_string()).or_insert(MethodMeta {
+    prefixes_write()
+        .entry(prefix.to_string())
+        .or_insert(MethodMeta {
             plugin_callable: true,
             required: &[],
         });
-    }
 }
 
 /// plugin unload / disable / restart 시 호출. 미등록 prefix 입력은 noop.
 pub fn unregister_plugin_prefix(prefix: &str) {
-    if let Ok(mut map) = plugin_prefixes().write() {
-        map.remove(prefix);
-    }
+    prefixes_write().remove(prefix);
 }
 
 /// **WARNING**: runtime invariant 를 강제로 비움. 운영 호출 금지 — tests-only.
@@ -643,20 +718,19 @@ pub fn unregister_plugin_prefix(prefix: &str) {
 /// `doc(hidden) pub` 으로 노출.
 #[doc(hidden)]
 pub fn clear_plugin_prefixes_for_tests() {
-    if let Ok(mut map) = plugin_prefixes().write() {
-        map.clear();
-    }
+    prefixes_write().clear();
 }
 
 /// `prefix` 가 어떤 plugin 의 `[[contributes.ipc_namespace]]` 로 runtime 등록돼
 /// 있는지 조회. host/user 소유 완료 판정 전략이 `_host` 권한으로 남의
 /// plugin namespace 를 호출하는 권한 우회를 막는 데 쓰인다 — register/unregister
 /// 는 기존에 있었으나 read 전용 조회가 없어 추가.
+///
+/// 호출부가 이 값을 `!` 로 뒤집어 쓰므로 **여기서 `false` 로 물러나면 차단이 뚫린다**
+/// — registry 를 못 읽었다는 사정이 "등록된 적 없는 prefix" 와 같은 답이 되어, 막으려던
+/// 우회가 그대로 열린다. 그래서 락이 poison 이어도 복구해서 실제 값을 본다.
 pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
-    plugin_prefixes()
-        .read()
-        .map(|map| map.contains_key(prefix))
-        .unwrap_or(false)
+    prefixes_read().contains_key(prefix)
 }
 
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
@@ -678,9 +752,7 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     }
     if let Some(dot) = method.find('.') {
         let prefix = &method[..dot];
-        if let Ok(map) = plugin_prefixes().read()
-            && let Some(meta) = map.get(prefix)
-        {
+        if let Some(meta) = prefixes_read().get(prefix) {
             return Some(*meta);
         }
     }

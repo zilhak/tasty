@@ -291,10 +291,20 @@ fn handle_reader_loop(
                 }
                 HandleChannelMessage::Ping { seq } => {
                     let pong = HandleChannelMessage::Pong { seq };
-                    if let Ok(mut w) = writer.lock()
-                        && let Err(e) = w.send_message(&pong)
-                    {
-                        tracing::warn!("handle channel: pong send failed: {e}");
+                    // poison 이면 보내지 않는다 — 이 임계구역도 소켓 쓰기라
+                    // 반쯤 쓰인 메시지 위에 이어 쓰면 안 된다(`send_event` 주석 참조).
+                    // 다만 **조용히** 건너뛰지는 않는다: pong 이 끊기면 호스트가 채널을
+                    // 죽은 것으로 보는데, 그 원인이 어디에도 안 남으면 추적이 불가능하다.
+                    match writer.lock() {
+                        Ok(mut w) => {
+                            if let Err(e) = w.send_message(&pong) {
+                                tracing::warn!("handle channel: pong send failed: {e}");
+                            }
+                        }
+                        Err(_) => tracing::error!(
+                            "handle channel: writer lock poisoned — skipping pong; the host will \
+                             see this channel go quiet"
+                        ),
                     }
                 }
                 HandleChannelMessage::Pong { .. } => {
@@ -324,10 +334,19 @@ fn deliver_buffer_handle(
         tracing::warn!("handle channel: HandleAttach without fd (request_id={request_id})");
         return;
     };
+    // poison 을 `.ok()` 로 버리면 대기 중인 waiter 를 못 찾아 "미매칭" 으로 흘러가고,
+    // 그 waiter 는 영영 fd 를 못 받는다. 이 맵은 `HashMap<u64, Sender<_>>` 뿐이고
+    // 임계구역은 `remove` 하나라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
     let sender = fd_pending
         .lock()
-        .ok()
-        .and_then(|mut m| m.remove(&request_id));
+        .unwrap_or_else(|poisoned| {
+            tracing::error!(
+                "handle channel: fd_pending mutex poisoned — a thread panicked while holding it; \
+                 recovering so the pending waiter still gets its handle"
+            );
+            poisoned.into_inner()
+        })
+        .remove(&request_id);
     match sender {
         Some(tx) => {
             if tx.send(fd).is_err() {
@@ -354,10 +373,19 @@ fn deliver_buffer_handle(fd_pending: &SharedBufferFdPending, request_id: u64, au
         tracing::warn!("handle channel: HandleAttach without handle (request_id={request_id})");
         return;
     };
+    // poison 을 `.ok()` 로 버리면 대기 중인 waiter 를 못 찾아 "미매칭" 으로 흘러가고,
+    // 그 waiter 는 영영 fd 를 못 받는다. 이 맵은 `HashMap<u64, Sender<_>>` 뿐이고
+    // 임계구역은 `remove` 하나라 패닉이 나도 불변식이 성립한다 — 복구가 맞다.
     let sender = fd_pending
         .lock()
-        .ok()
-        .and_then(|mut m| m.remove(&request_id));
+        .unwrap_or_else(|poisoned| {
+            tracing::error!(
+                "handle channel: fd_pending mutex poisoned — a thread panicked while holding it; \
+                 recovering so the pending waiter still gets its handle"
+            );
+            poisoned.into_inner()
+        })
+        .remove(&request_id);
     match sender {
         Some(tx) => {
             if tx.send(handle).is_err() {
@@ -446,6 +474,12 @@ fn handle_ipc_result_request(
     }
 }
 
+/// **poison 시 패닉을 유지하는 자리다.** 임계구역이 소켓에 줄을 쓰고 flush 하므로,
+/// 락을 든 채 죽은 스레드는 **줄이 끊긴 채로** 남겨 뒀을 수 있다. 그 위에 이어 쓰면
+/// 프로토콜의 "한 메시지 = 한 줄" 불변식이 깨져 호스트 파서가 어긋난다 — 여기서는
+/// 데이터를 신뢰할 수 없으므로 복구가 오답이다. 폭발 반경도 이 plugin 프로세스 하나로
+/// 한정된다(plugin 스레드 spawn 정책과 같은 근거,
+/// [`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
 pub(crate) fn send_event(writer: &Arc<Mutex<TcpStream>>, event: &PluginEvent) -> Result<()> {
     let payload = serde_json::json!({ "event": event });
     let line = serde_json::to_string(&payload)?;
@@ -455,6 +489,8 @@ pub(crate) fn send_event(writer: &Arc<Mutex<TcpStream>>, event: &PluginEvent) ->
     Ok(())
 }
 
+/// poison 시 패닉을 유지하는 이유는 [`send_event`] 와 같다 — 반쯤 쓰인 줄 위에
+/// 이어 쓰지 않는다.
 pub(crate) fn send_response(
     writer: &Arc<Mutex<TcpStream>>,
     response: &PluginResponse,

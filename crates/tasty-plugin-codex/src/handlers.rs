@@ -1104,6 +1104,9 @@ fn remove_install(mut value: toml::Value) -> toml::Value {
 }
 
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
 
@@ -1220,7 +1223,12 @@ mod tests {
         std::fs::write(&stale, "x").unwrap();
         let old_mtime =
             std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        std::fs::File::open(&stale)
+        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
+        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
+        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&stale)
             .unwrap()
             .set_modified(old_mtime)
             .unwrap();
@@ -1254,7 +1262,12 @@ mod tests {
         std::fs::write(&unrelated, "x").unwrap();
         let old_mtime =
             std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        std::fs::File::open(&unrelated)
+        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
+        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
+        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&unrelated)
             .unwrap()
             .set_modified(old_mtime)
             .unwrap();

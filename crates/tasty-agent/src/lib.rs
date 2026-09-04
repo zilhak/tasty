@@ -26,7 +26,7 @@ pub use lease::{AcquireAnyOutcome, ElasticSpec, Lease, LeaseMode, LeaseStore};
 pub use rate_limit::{ConsumeOutcome, RateLimit, RateLimitStore};
 pub use reducer::{ReducerInput, extract_paths, reduce_in_process, reduce_with_custom};
 pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
-pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
+pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreHolder, SemaphoreStore};
 pub use task::{
     DagStateCounts, DagSummary, InlineFallbackSpec, OnFailure, PollSpec, PollSpecRef,
     ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState, TaskStore,

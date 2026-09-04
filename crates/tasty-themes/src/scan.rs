@@ -3,6 +3,7 @@
 //! 파일명 stem = 테마 id. 잘못된 파일은 `warn!` 후 스킵.
 
 use std::fs;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, OnceLock};
 
 use crate::file::ThemeFile;
@@ -26,11 +27,17 @@ fn cache() -> &'static Mutex<Vec<ThemeEntry>> {
     CACHE.get_or_init(|| Mutex::new(do_scan().unwrap_or_default()))
 }
 
+/// 임계구역이 `Vec` 통째 교체와 복제뿐이라 복구가 맞다. 조용히 두면 목록이 낡거나 빈
+/// 채로 굳는 것이 **설정 화면에 테마가 안 보인다** 로만 드러나 원인을 되짚을 수 없다.
+pub(crate) const CACHE_WHAT: &str = "the theme scan cache";
+pub(crate) static CACHE_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 /// 디스크에서 다시 스캔하여 캐시 갱신.
 pub fn rescan() -> Result<Vec<ThemeEntry>, ThemeStoreError> {
     let entries = do_scan()?;
     let lock = cache();
-    let mut guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+    let mut guard =
+        tasty_utils::poison::recover_mutex(lock.lock(), CACHE_WHAT, &CACHE_POISON_REPORTED);
     *guard = entries.clone();
     Ok(entries)
 }
@@ -38,7 +45,7 @@ pub fn rescan() -> Result<Vec<ThemeEntry>, ThemeStoreError> {
 /// 현재 캐시된 테마 목록. 없으면 디스크 스캔하여 캐시한다.
 pub fn scan_themes() -> Vec<ThemeEntry> {
     let lock = cache();
-    let guard = lock.lock().unwrap_or_else(|p| p.into_inner());
+    let guard = tasty_utils::poison::recover_mutex(lock.lock(), CACHE_WHAT, &CACHE_POISON_REPORTED);
     guard.clone()
 }
 
@@ -90,4 +97,36 @@ fn do_scan() -> Result<Vec<ThemeEntry>, ThemeStoreError> {
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+#[cfg(test)]
+mod poison_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// 복구는 이 자리에 **이미** 있었다 — 이번에 더한 것은 관측뿐이라, "poison 이어도 값이
+    /// 나온다" 만 보는 테스트는 헬퍼를 되돌려도 그대로 통과한다(변이가 안 죽는다). 그래서
+    /// 보고 플래그가 실제로 뒤집혔는지를 함께 본다. 그 플래그가 곧 `tracing::error!` 가
+    /// 나갔다는 증거이고, `unwrap_or_else(into_inner)` 로 되돌리면 `false` 로 남는다.
+    #[test]
+    fn a_poisoned_scan_cache_still_lists_and_says_so() {
+        let before = scan_themes().len();
+
+        let panicked = std::thread::spawn(|| {
+            let _held = cache().lock().expect("not poisoned yet");
+            panic!("poison the scan cache");
+        })
+        .join();
+        assert!(panicked.is_err());
+        assert!(
+            cache().lock().is_err(),
+            "the cache lock must be poisoned now"
+        );
+
+        assert_eq!(scan_themes().len(), before, "the cached list must survive");
+        assert!(
+            CACHE_POISON_REPORTED.load(Ordering::Relaxed),
+            "the poison must have been reported once"
+        );
+    }
 }

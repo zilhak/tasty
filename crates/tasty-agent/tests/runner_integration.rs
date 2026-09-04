@@ -1,5 +1,10 @@
 //! Runner 통합 테스트 — Real TaskStore + Mock executor 로 ready → running →
 //! succeeded → downstream ready 까지 검증.
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
 // 테스트 fixture 의 mock 채널/큐 타입이 깊게 중첩되지만 테스트 한정
 // 가독성 문제라 alias 도입 가치가 낮다 — 파일 단위 허용
 // (`docs/dev-guide/clippy-policy.md` 참고).
@@ -534,7 +539,8 @@ impl TaskExecutor for SemaphoreAwareExec {
                 .to_string();
             let mut mem = self.mem.borrow_mut();
             let mut store = SemaphoreStore::new(&mut *mem, "_host");
-            let outcome = match store.acquire(task.workspace_id, &name, &holder) {
+            // 이 test executor 에는 시계가 없고 TTL 도 쓰지 않는다 — 만료 없는 점유.
+            let outcome = match store.acquire(task.workspace_id, &name, &holder, None, 0) {
                 Ok(o) => o,
                 Err(e) => return DispatchOutcome::PermanentFail(format!("semaphore: {e}")),
             };

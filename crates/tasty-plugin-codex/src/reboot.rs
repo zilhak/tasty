@@ -38,6 +38,18 @@ use tasty_plugin_sdk::{HostHandle, IpcMethodError};
 
 use crate::handlers::resolve_policy_args;
 
+/// in-flight 집합의 락. 임계구역이 `HashSet<u32>` 의 insert/remove 뿐이라 패닉이
+/// 지나가도 남는 값이 성립한다 — 복구가 답이다.
+///
+/// **획득과 해제의 답이 다르다는 점이 이 락의 요점이다.** 획득(`insert`)은 실패를
+/// 호출자에게 에러로 돌려주면 그만이지만, 해제(`remove`)를 조용히 건너뛰면 그
+/// `surface_id` 가 집합에 **영구히 남아** 이후 모든 reboot 이 "already in progress" 로
+/// 거절된다. poison 은 sticky 라 한 번 걸리면 모든 surface 의 해제가 같이 막혀
+/// 기능 전체가 잠긴다. 그래서 해제 쪽은 복구하고 이유를 남긴다.
+const INFLIGHT_WHAT: &str = "the codex reboot in-flight set";
+static INFLIGHT_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
 const DEFAULT_DELAY_SECS: u64 = 5;
 /// Ctrl+C 전송 횟수 / 간격.
@@ -129,14 +141,20 @@ pub(crate) fn handle_reboot(
                 extra_prompt.as_deref(),
                 &thread_policy_args,
             );
-            if let Ok(mut set) = thread_inflight.lock() {
-                set.remove(&surface_id);
-            }
+            tasty_utils::poison::recover_mutex(
+                thread_inflight.lock(),
+                INFLIGHT_WHAT,
+                &INFLIGHT_POISON_REPORTED,
+            )
+            .remove(&surface_id);
         });
     if let Err(e) = spawned {
-        if let Ok(mut set) = inflight.lock() {
-            set.remove(&surface_id);
-        }
+        tasty_utils::poison::recover_mutex(
+            inflight.lock(),
+            INFLIGHT_WHAT,
+            &INFLIGHT_POISON_REPORTED,
+        )
+        .remove(&surface_id);
         return Err(IpcMethodError::new(format!(
             "failed to spawn reboot thread: {e}"
         )));

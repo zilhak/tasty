@@ -43,3 +43,8 @@ mod semantic_color_generated;
 /// `tasty-design-tokens` 생성기가 산출하는 component 접근자 (`impl Theme`).
 /// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
 mod generated_component;
+
+/// 그림자 정책 집행 가드(소스 스캔). lib 유닛 테스트로 두는 이유는 그 모듈 doc 참고
+/// (`tests/` 로 옮기면 자동 실행 채널을 잃는다 — 되돌리지 마라).
+#[cfg(test)]
+mod shadow_policy_guard;

@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+/// 휠 1노치가 스크롤하는 논리 포인트의 기본값 — [`GeneralSettings::wheel_line_scroll`]
+/// 의 유일한 정의처다.
+///
+/// 50 인 이유는 egui 기본값(native 40 / web 8)과 견주어 고른 것이 아니라 이 코드베이스가
+/// plugin 표면에 이미 쓰던 값을 보존하는 것이다. egui 는 그 두 값이 왜 달라야 하는지
+/// 자기 소스에 `TODO` 로 남겨 두었으므로 기준이 될 수 없다. 근거 전문은 ADR-0130.
+pub const DEFAULT_WHEEL_LINE_SCROLL: f32 = 50.0;
+
 /// 빌트인 bashrc 의 *전반부* — LANG/LC_ALL, MSYS PATH, `__tasty_osc7` 함수 정의.
 /// 모드와 무관하게 합성 rc 의 *맨 앞* 에 prepend 된다. 사용자 rc 가 이후에 source 된다.
 pub const BUILTIN_BASHRC_PRE: &str = r#"# === tasty built-in (auto-generated, do not edit) ===
@@ -155,6 +163,13 @@ pub struct GeneralSettings {
     /// `alias`: 구버전 settings.toml 의 `restore_terminal_content` 키를 계속 읽는다.
     #[serde(alias = "restore_terminal_content")]
     pub restore_surface_content: bool,
+    /// 휠 1노치(= 데스크톱 마우스 휠 한 칸)가 스크롤하는 논리 포인트. 이 값 하나가
+    /// host UI 위젯과 plugin 표면 **양쪽**에 걸린다 — egui `Options::line_scroll_speed`
+    /// 로 밀어 넣으면 host 의 `ScrollArea` 가 그것으로 스크롤하고, 휠을 포인트로 바꾸는
+    /// plugin 경로도 같은 옵션을 읽는다(ADR-0130). 기본값
+    /// [`DEFAULT_WHEEL_LINE_SCROLL`]. 스크롤 속도가 접근성 축의 조정 요구가 잦은 값이라
+    /// 노출하지만, 접근성 전용이 아니라 마우스 동작 설정이므로 이 절에 둔다.
+    pub wheel_line_scroll: f32,
     /// 터미널 내 링크 클릭 시 요구되는 수식키. "ctrl" | "alt" | "none".
     /// "none"이면 평범한 클릭으로 링크가 열리므로 텍스트 선택과 구분되지 않는 점에 유의.
     pub link_click_modifier: String,
@@ -289,6 +304,7 @@ impl Default for GeneralSettings {
             close_behavior: "ask".to_string(),
             restore_layout: true,
             restore_surface_content: true,
+            wheel_line_scroll: DEFAULT_WHEEL_LINE_SCROLL,
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
             reverse_screen_enabled: true,
@@ -510,21 +526,31 @@ impl GeneralSettings {
         {
             return Vec::new();
         }
-        ensure_compiled_zshenv();
-        let mut envs = vec![(
-            "ZDOTDIR".to_string(),
-            tasty_zsh_integration_dir().to_string_lossy().to_string(),
-        )];
-        // wrapper `.zshenv` 가 원래 ZDOTDIR 로 정확히 복원할 수 있도록 원래 값을
-        // 함께 넘긴다(설계결정 3). "미설정"과 "빈 문자열"을 구분해야 하므로(Codex
-        // 지적) 마커 env 로 분리한다 — 마커가 없으면 원래 미설정이었다는 뜻이라
-        // wrapper 가 unset 으로 복원한다.
-        if let Ok(orig) = std::env::var("ZDOTDIR") {
-            envs.push(("__TASTY_ORIG_ZDOTDIR_SET".to_string(), "1".to_string()));
-            envs.push(("__TASTY_ORIG_ZDOTDIR".to_string(), orig));
-        }
-        envs
+        zsh_shell_envs_in(tasty_dir().as_deref())
     }
+}
+
+/// [`GeneralSettings::effective_shell_envs`] 의 zsh 본문 — 루트를 인자로 받아
+/// "홈 미해석(`None`)이면 `ZDOTDIR` 을 주입하지 않는다" 를 환경 없이 단정할 수 있게
+/// 한다. 셸 종류 판정은 호출부에 남는다.
+fn zsh_shell_envs_in(dir: Option<&std::path::Path>) -> Vec<(String, String)> {
+    // 홈 미해석이면 wrapper 디렉토리를 만들 수도 가리킬 수도 없다 — 상대
+    // `ZDOTDIR` 을 넘기면 zsh 가 자기 CWD 기준으로 읽어 통합이 무음으로 죽는다.
+    // 통합 없이 평소 zsh 로 뜨는 편이 옳다(`tasty_dir` 참고).
+    let Some(zdotdir) = tasty_zsh_integration_dir_in(dir) else {
+        return Vec::new();
+    };
+    ensure_compiled_zshenv_in(dir);
+    let mut envs = vec![("ZDOTDIR".to_string(), zdotdir.to_string_lossy().to_string())];
+    // wrapper `.zshenv` 가 원래 ZDOTDIR 로 정확히 복원할 수 있도록 원래 값을
+    // 함께 넘긴다(설계결정 3). "미설정"과 "빈 문자열"을 구분해야 하므로(Codex
+    // 지적) 마커 env 로 분리한다 — 마커가 없으면 원래 미설정이었다는 뜻이라
+    // wrapper 가 unset 으로 복원한다.
+    if let Ok(orig) = std::env::var("ZDOTDIR") {
+        envs.push(("__TASTY_ORIG_ZDOTDIR_SET".to_string(), "1".to_string()));
+        envs.push(("__TASTY_ORIG_ZDOTDIR".to_string(), orig));
+    }
+    envs
 }
 
 // bash 의 `--rcfile` 주입 인자 조립 — 기존
@@ -553,16 +579,29 @@ impl GeneralSettings {
 //   함수(`bash_rcfile_args`)가 그 분리 지점이다.
 #[cfg(windows)]
 fn bash_rcfile_args(settings: &GeneralSettings) -> Vec<String> {
+    bash_rcfile_args_in(settings, tasty_dir().as_deref())
+}
+
+/// [`bash_rcfile_args`] 의 본문 — 루트를 인자로 받아 "홈 미해석(`None`)이면 무엇을
+/// 내는가" 를 환경 없이 단정할 수 있게 한다.
+#[cfg(windows)]
+fn bash_rcfile_args_in(settings: &GeneralSettings, dir: Option<&std::path::Path>) -> Vec<String> {
     // OSC7/OSC133 빌트인은 셸 모드와 무관하게 강제 주입한다 — Windows 는 다른
     // 프로세스 cwd 조회 API 가 없어 새 탭 cwd 상속이 OSC7 emit 에만 의존하기
     // 때문. 모드는 "어떤 사용자 rc 를 source 하느냐" 만 결정한다:
     //   - tasty: ~/.tasty/bashrc          (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT)
     //   - default (or unknown): ~/.tasty/bashrc.default (BUILTIN_PRE + source ~/.bashrc + BUILTIN_PROMPT)
+    // 홈 미해석이면 인자를 아예 내지 않는다 — 상대 `--rcfile bashrc.default` 는
+    // 셸이 자기 CWD 기준으로 해석해 조용히 실패한다(`tasty_dir` 참고). 빈 벡터를
+    // 돌려주면 `build_shell_command` 가 평소대로 로그인 셸(`-li`)로 띄운다.
     let rcfile = match settings.shell_mode.as_str() {
-        "tasty" => tasty_bashrc_path().replace('\\', "/"),
-        _ => tasty_bashrc_default_path().replace('\\', "/"),
+        "tasty" => tasty_bashrc_path_in(dir),
+        _ => tasty_bashrc_default_path_in(dir),
     };
-    vec!["--rcfile".to_string(), rcfile]
+    let Some(rcfile) = rcfile else {
+        return Vec::new();
+    };
+    vec!["--rcfile".to_string(), rcfile.replace('\\', "/")]
 }
 
 /// 비-Windows bash 전용 경로(위 rationale 참고). `shell_mode` UI
@@ -570,42 +609,61 @@ fn bash_rcfile_args(settings: &GeneralSettings) -> Vec<String> {
 /// 소싱, `default_mode_user_source` 참고) 하나만 쓴다.
 #[cfg(not(windows))]
 fn bash_rcfile_args(_settings: &GeneralSettings) -> Vec<String> {
-    vec![
-        "--rcfile".to_string(),
-        tasty_bashrc_default_path(),
-        "-i".to_string(),
-    ]
+    bash_rcfile_args_in(_settings, tasty_dir().as_deref())
+}
+
+/// [`bash_rcfile_args`] 의 본문(위 Windows 변형과 같은 이유로 루트를 인자로 받는다).
+#[cfg(not(windows))]
+fn bash_rcfile_args_in(_settings: &GeneralSettings, dir: Option<&std::path::Path>) -> Vec<String> {
+    // 위 Windows 분기와 같은 이유로 홈 미해석이면 빈 벡터 — `-i` 도 함께 뺀다.
+    // `-i` 는 `--rcfile` 이 로그인 셸에서 무시되기 때문에 로그인 모드를 포기하며
+    // 붙이는 짝이라, `--rcfile` 이 없으면 붙일 이유가 없다. 빈 벡터면
+    // `build_shell_command` 가 종전대로 `-li`(대화형 로그인 셸)로 띄운다.
+    let Some(rcfile) = tasty_bashrc_default_path_in(dir) else {
+        return Vec::new();
+    };
+    vec!["--rcfile".to_string(), rcfile, "-i".to_string()]
 }
 
 /// Path to Tasty's compiled bashrc for **tasty 모드** (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT).
 /// Windows 전용 개념(`shell_mode` UI 토글) — 비-Windows 는 이 파일을 만들지 않는다.
-pub fn tasty_bashrc_path() -> String {
-    tasty_dir().join("bashrc").to_string_lossy().to_string()
+pub fn tasty_bashrc_path() -> Option<String> {
+    tasty_bashrc_path_in(tasty_dir().as_deref())
+}
+
+fn tasty_bashrc_path_in(dir: Option<&std::path::Path>) -> Option<String> {
+    Some(dir?.join("bashrc").to_string_lossy().to_string())
 }
 
 /// Path to Tasty's compiled bashrc for **default 모드**
 /// (BUILTIN_PRE + [`default_mode_user_source`] + BUILTIN_PROMPT). 비-Windows 는
 /// 유일하게 쓰는 합성 rc 파일이다(셸 모드 토글이 없어 이거 하나뿐).
-pub fn tasty_bashrc_default_path() -> String {
-    tasty_dir()
-        .join("bashrc.default")
-        .to_string_lossy()
-        .to_string()
+pub fn tasty_bashrc_default_path() -> Option<String> {
+    tasty_bashrc_default_path_in(tasty_dir().as_deref())
+}
+
+fn tasty_bashrc_default_path_in(dir: Option<&std::path::Path>) -> Option<String> {
+    Some(dir?.join("bashrc.default").to_string_lossy().to_string())
 }
 
 /// Path to the user-editable bashrc fragment. Windows 전용(tasty 모드에서만 쓰임).
-pub fn tasty_bashrc_user_path() -> String {
-    tasty_dir()
-        .join("bashrc.user")
-        .to_string_lossy()
-        .to_string()
+pub fn tasty_bashrc_user_path() -> Option<String> {
+    tasty_bashrc_user_path_in(tasty_dir().as_deref())
+}
+
+fn tasty_bashrc_user_path_in(dir: Option<&std::path::Path>) -> Option<String> {
+    Some(dir?.join("bashrc.user").to_string_lossy().to_string())
 }
 
 /// `~/.tasty/zsh-integration/` — zsh `ZDOTDIR` 스왑 대상 디렉토리(docs/features/terminal-output/index.md#명령-인덱싱-osc-133 참고).
 /// 이 안의 `.zshenv` 가 zsh 가 셸 인스턴스당 정확히 한 번, 가장 먼저 읽는 파일이라
 /// 셸 통합 진입점이 된다.
-pub fn tasty_zsh_integration_dir() -> std::path::PathBuf {
-    tasty_dir().join("zsh-integration")
+pub fn tasty_zsh_integration_dir() -> Option<std::path::PathBuf> {
+    tasty_zsh_integration_dir_in(tasty_dir().as_deref())
+}
+
+fn tasty_zsh_integration_dir_in(dir: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    Some(dir?.join("zsh-integration"))
 }
 
 /// default 모드 합성 rc 에서 사용자 커스터마이즈를 로드하는 스니펫. Windows(Git
@@ -649,15 +707,75 @@ pub fn compose_tasty_mode_bashrc(user_content: &str) -> String {
     )
 }
 
-fn tasty_dir() -> std::path::PathBuf {
-    // 루트는 SoT 인 tasty_home() 으로 통일 (debug/release 격리 + TASTY_HOME override).
-    // 홈 해석 실패 시 기존 동작과 동일하게 빈 경로로 폴백.
-    tasty_utils::path::tasty_home().unwrap_or_default()
+/// 셸 통합 파일들이 사는 루트. SoT 는 `tasty_home()` (debug/release 격리 +
+/// `TASTY_HOME` override). 판단은 순수부 [`resolve_tasty_dir`] 가 하고 여기서는
+/// 환경 조회와 경고만 담당한다 — 경고는 프로세스당 한 번씩만 낸다(경로 헬퍼가
+/// 셸을 띄울 때마다 불리므로 매번 찍으면 로그가 쓸모없어진다).
+fn tasty_dir() -> Option<std::path::PathBuf> {
+    let home = tasty_utils::path::tasty_home();
+    if home.is_none() {
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        WARNED.call_once(|| {
+            tracing::warn!(
+                "tasty home directory unresolved (TASTY_HOME empty and base dirs unavailable) \
+                 — shell integration is disabled: bashrc / zsh-integration paths cannot be derived"
+            );
+        });
+        return None;
+    }
+    let cwd = std::env::current_dir();
+    if let Err(e) = &cwd
+        && home.as_ref().is_some_and(|h| !h.is_absolute())
+    {
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        WARNED.call_once(|| {
+            tracing::warn!(
+                "tasty home is a relative path but the current directory is unreadable ({e}) \
+                 — shell integration is disabled: relative bashrc / ZDOTDIR paths would be \
+                 re-resolved against the child shell's own directory"
+            );
+        });
+    }
+    resolve_tasty_dir(home, cwd.ok())
+}
+
+/// [`tasty_dir`] 의 **순수부** — 환경을 읽지 않고 후보만으로 최종 루트를 정한다.
+/// 로그는 래퍼가 소유한다(경로 헬퍼가 셸을 띄울 때마다 불리므로 프로세스당 1회).
+///
+/// `home` 이 `None`(= `TASTY_HOME` 이 비었고 `BaseDirs::new()` 도 실패, HOME 없는
+/// 데몬/컨테이너)이면 **빈 경로로 폴백하지 않고** `None` 을 그대로 돌린다.
+/// `PathBuf::default()` 는 `""` 라 파생 경로가 전부 상대가 되고, 그러면 (a) 설정
+/// 화면의 저장이 프로세스 CWD 에 파일을 만들면서 성공한 것처럼 끝나고 (b)
+/// `--rcfile bashrc.default` 가 그대로 셸에 넘어가 셸이 자기 CWD 기준으로 해석한다
+/// — OSC7/OSC133 이 무음으로 죽는다.
+///
+/// 상대 루트(`TASTY_HOME=tmp` 같은 격리 실행)는 거부하지 않고 **`cwd` 기준으로
+/// 절대화**한다 — 우리가 파일을 쓰는 위치는 그대로 두면서, 자식 셸에 넘어간 뒤
+/// 셸의 CWD 로 다시 해석되는 (b) 를 막는다. `cwd` 마저 없으면 절대화할 수 없으므로
+/// `None`.
+fn resolve_tasty_dir(
+    home: Option<std::path::PathBuf>,
+    cwd: Option<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    let dir = home?;
+    if dir.is_absolute() {
+        return Some(dir);
+    }
+    Some(cwd?.join(dir))
 }
 
 /// 사용자 편집 파일을 로드. 파일이 없으면 `INITIAL_USER_BASHRC`를 반환(파일은 생성하지 않음).
 pub fn load_user_bashrc() -> String {
-    let path = tasty_bashrc_user_path();
+    load_user_bashrc_in(tasty_dir().as_deref())
+}
+
+/// [`load_user_bashrc`] 의 본문 — 루트를 인자로 받는다(위 `_in` 들과 같은 이유).
+fn load_user_bashrc_in(dir: Option<&std::path::Path>) -> String {
+    // 홈 미해석이면 상대 `bashrc.user` 를 CWD 에서 읽지 않는다 — 남의 파일을 사용자
+    // 편집 내용으로 오인할 수 있다(`tasty_dir` 참고).
+    let Some(path) = tasty_bashrc_user_path_in(dir) else {
+        return INITIAL_USER_BASHRC.to_string();
+    };
     match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(_) => INITIAL_USER_BASHRC.to_string(),
@@ -665,18 +783,37 @@ pub fn load_user_bashrc() -> String {
 }
 
 /// 사용자 편집 내용을 디스크에 쓰고, 파생 bashrc(builtin + user)를 재생성한다.
-pub fn save_user_bashrc(user_content: &str) {
-    let user_path = tasty_bashrc_user_path();
+///
+/// **실패 사유를 호출자에게 올린다** — 설정 화면의 저장이라 실패는 사용자 작업이
+/// 의미를 잃는 사건이고(`docs/dev-guide/error-handling.md` 의 레벨 표가 "설정 저장
+/// 실패" 를 `error` 의 대표 사례로 든다), 이 크레이트 안에서 로그로 삼켜버리면
+/// 호출자가 사용자에게 알릴 방법 자체가 없어진다. 합성 rc 쓰기 실패도 같은 등급이다:
+/// 사용자 본문은 남았는데 셸이 읽는 파일이 옛 내용이면 편집이 반영되지 않은 것과 같다.
+pub fn save_user_bashrc(user_content: &str) -> Result<(), String> {
+    save_user_bashrc_in(tasty_dir().as_deref(), user_content)
+}
+
+/// [`save_user_bashrc`] 의 본문 — 루트를 인자로 받는다(위 `_in` 들과 같은 이유).
+fn save_user_bashrc_in(dir: Option<&std::path::Path>, user_content: &str) -> Result<(), String> {
+    // 홈 미해석이면 **쓰지 않는다.** 빈 경로로 폴백하면 `create_dir_all("")` 이
+    // `Ok` 라 경고 하나 없이 프로세스 CWD 에 `bashrc.user` 를 만들고 성공한 것처럼
+    // 끝난다(`tasty_dir` 참고).
+    let (Some(user_path), Some(compiled_path)) =
+        (tasty_bashrc_user_path_in(dir), tasty_bashrc_path_in(dir))
+    else {
+        return Err("tasty home directory unresolved — the edit was not persisted".to_string());
+    };
     if !ensure_bashrc_parent_dir(&user_path) {
-        return;
+        return Err(format!("parent directory unavailable ({user_path})"));
     }
-    if let Err(e) = std::fs::write(&user_path, user_content) {
-        tracing::warn!("write bashrc.user failed: {e}");
-        return;
-    }
-    let compiled_path = tasty_bashrc_path();
+    std::fs::write(&user_path, user_content).map_err(|e| format!("write {user_path}: {e}"))?;
     let compiled = compose_tasty_mode_bashrc(user_content);
-    write_generated_file(std::path::Path::new(&compiled_path), &compiled);
+    if !write_generated_file(std::path::Path::new(&compiled_path), &compiled) {
+        return Err(format!(
+            "compiled rc {compiled_path} not written — the saved edit is not in effect"
+        ));
+    }
+    Ok(())
 }
 
 /// `user_path` 의 부모 디렉토리를 보장한다. 생성 실패 시 `false`(호출자는 이후 쓰기
@@ -697,18 +834,23 @@ fn ensure_bashrc_parent_dir(user_path: &str) -> bool {
 /// 읽는 상황을 막는다(Codex 지적). 부모 디렉토리는 호출자가 이미 보장한
 /// 상태여야 한다. Unix 는 권한을 0o644 로 명시 — 비밀은 없는 평범한 셸 스크립트라
 /// 다른 사용자도 읽을 수 있으면 충분하고, 소유자만 쓰기 가능하면 된다.
-fn write_generated_file(path: &std::path::Path, content: &str) {
+/// 성공 여부를 돌려준다 — 호출자가 부팅 시 재생성(실패해도 다음 부팅에 다시
+/// 시도하므로 `warn`)과 사용자 저장(편집이 반영되지 않으므로 `error`)을 구분해
+/// 레벨을 고를 수 있어야 한다.
+fn write_generated_file(path: &std::path::Path, content: &str) -> bool {
     let Some(file_name) = path.file_name().and_then(|f| f.to_str()) else {
         tracing::warn!("write_generated_file: path has no file name: {path:?}");
-        return;
+        return false;
     };
     let tmp_path = path.with_file_name(format!("{file_name}.tmp"));
     if !write_tmp_file(&tmp_path, content) {
-        return;
+        return false;
     }
     if let Err(e) = std::fs::rename(&tmp_path, path) {
         tracing::warn!("rename {tmp_path:?} -> {path:?} failed: {e}");
+        return false;
     }
+    true
 }
 
 /// [`write_generated_file`]의 tmp-write + 권한설정 단계만 분리 — 인지 복잡도
@@ -746,22 +888,37 @@ fn generated_file_stamp_current(path: &str, stamp: &str) -> bool {
 /// 하고, "tasty 모드"(shell_mode UI 토글) 재생성만 Windows 전용으로 남긴다(그
 /// 개념 자체가 Windows 전용이므로).
 fn ensure_compiled_bashrc() {
+    ensure_compiled_bashrc_in(tasty_dir().as_deref());
+}
+
+/// [`ensure_compiled_bashrc`] 의 본문 — 루트를 인자로 받는다(위 `_in` 들과 같은 이유).
+fn ensure_compiled_bashrc_in(dir: Option<&std::path::Path>) {
     // tasty 모드 합성 rc — Windows 전용(shell_mode UI 토글이 있어야 의미 있음).
     #[cfg(windows)]
+    if let Some(tasty_path) = tasty_bashrc_path_in(dir)
+        && !generated_file_stamp_current(&tasty_path, BUILTIN_BASHRC_STAMP)
     {
-        let tasty_path = tasty_bashrc_path();
-        if !generated_file_stamp_current(&tasty_path, BUILTIN_BASHRC_STAMP) {
-            let user = load_user_bashrc();
-            save_user_bashrc(&user);
+        let user = load_user_bashrc_in(dir);
+        // 부팅 시 재생성이라 실패는 `warn` — 다음 부팅에 다시 시도한다(사용자
+        // 저장 경로의 `error` 와 구분).
+        if let Err(reason) = save_user_bashrc_in(dir, &user) {
+            tracing::warn!("regenerate tasty-mode bashrc failed: {reason}");
         }
     }
     // default 모드 합성 rc — 양쪽 플랫폼 공통(비-Windows 는 이거 하나만 쓴다).
-    let default_path = tasty_bashrc_default_path();
+    // 홈 미해석이면 CWD 에 만들지 않고 그냥 만들지 않는다 — 호출자
+    // (`bash_rcfile_args`)도 같은 조건에서 `--rcfile` 을 내지 않으므로 셸은 통합
+    // 없이 평소대로 뜬다(`tasty_dir` 참고).
+    let Some(default_path) = tasty_bashrc_default_path_in(dir) else {
+        return;
+    };
     if !generated_file_stamp_current(&default_path, BUILTIN_BASHRC_STAMP) {
         let compiled = compose_default_mode_bashrc();
         if !ensure_bashrc_parent_dir(&default_path) {
             return;
         }
+        // 부팅 시 재생성이라 실패해도 다음 부팅에 다시 시도한다 — 레벨은 writer
+        // 내부의 `warn` 그대로 두고 여기서 승격하지 않는다.
         write_generated_file(std::path::Path::new(&default_path), &compiled);
     }
 }
@@ -811,14 +968,18 @@ unset __tasty_real_zdotdir
 "#;
 
 /// 합성 zshenv 버전 스탬프. [`compose_zsh_zshenv`] 가 출력 맨 앞에 심고,
-/// [`ensure_compiled_zshenv`] 가 기존 파일에서 이 줄이 일치하지 않으면 강제
+/// [`ensure_compiled_zshenv_in`] 이 기존 파일에서 이 줄이 일치하지 않으면 강제
 /// 재생성한다(bash 스탬프와 동일한 이유 — `BUILTIN_BASHRC_STAMP` 참고).
 /// **`BUILTIN_ZSHENV_BODY` 내용을 바꿀 때마다 숫자를 +1 할 것.**
 pub const BUILTIN_ZSHENV_STAMP: &str = "# tasty-zshenv-v1";
 
 /// Path to Tasty's compiled zsh wrapper `.zshenv` (`~/.tasty/zsh-integration/.zshenv`).
-pub fn tasty_zshenv_path() -> std::path::PathBuf {
-    tasty_zsh_integration_dir().join(".zshenv")
+pub fn tasty_zshenv_path() -> Option<std::path::PathBuf> {
+    tasty_zshenv_path_in(tasty_dir().as_deref())
+}
+
+fn tasty_zshenv_path_in(dir: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    Some(tasty_zsh_integration_dir_in(dir)?.join(".zshenv"))
 }
 
 /// 합성 `.zshenv` 본문. 스탬프 + [`BUILTIN_ZSHENV_BODY`].
@@ -831,13 +992,18 @@ pub fn compose_zsh_zshenv() -> String {
 /// 동형 — 사용자 편집 영역이 없어 훨씬 단순하다: zsh 는 wrapper 가 사용자 콘텐츠를
 /// 감싸지 않고 그대로 원본 `.zshenv` 로 넘기므로 재생성이 사용자 데이터를 건드릴
 /// 위험 자체가 없다).
-fn ensure_compiled_zshenv() {
-    let dir = tasty_zsh_integration_dir();
-    if let Err(e) = std::fs::create_dir_all(&dir) {
+/// 루트를 인자로 받는다 — 유일한 프로덕션 호출부([`zsh_shell_envs_in`])가 이미
+/// 한 번 해석한 값을 그대로 넘기므로 얇은 래퍼를 따로 두지 않는다.
+fn ensure_compiled_zshenv_in(dir: Option<&std::path::Path>) {
+    // 홈 미해석이면 CWD 에 `zsh-integration/` 을 만들지 않는다(`tasty_dir` 참고).
+    let (Some(zdir), Some(path)) = (tasty_zsh_integration_dir_in(dir), tasty_zshenv_path_in(dir))
+    else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(&zdir) {
         tracing::warn!("create_dir_all for zsh-integration failed: {e}");
         return;
     }
-    let path = tasty_zshenv_path();
     let path_str = path.to_string_lossy().to_string();
     if generated_file_stamp_current(&path_str, BUILTIN_ZSHENV_STAMP) {
         return;
@@ -846,6 +1012,27 @@ fn ensure_compiled_zshenv() {
     write_generated_file(&path, &compiled);
 }
 
+/// # 이 모듈이 아직 덮지 못하는 것
+///
+/// 홈 **미해석**(`tasty_home() == None`) 축은 **판단과 다섯 호출부의 반응을 전부**
+/// 덮는다 — [`resolve_tasty_dir`] 와 각 `_in` 함수에 `None` 을 그대로 넣어 단정한다
+/// (`unresolved_home_*` 테스트들).
+///
+/// 덮지 못하는 것은 **`None` 을 만드는 축 하나**다: `tasty_dir()` 이
+/// `tasty_utils::path::tasty_home()` 에서 실제로 `None` 을 받는 경우. `directories` 가
+/// `HOME` 없이도 passwd 엔트리로 홈을 찾아내므로 `env -u HOME` 만으로는 `None` 을 만들
+/// 수 없고, 재현하려면 passwd 엔트리가 없는 환경(컨테이너/`unshare`)이 필요하다. 그
+/// 한 줄은 리뷰로만 보장된다 — 프로덕션에 테스트 전용 주입 지점을 만드는 비용보다
+/// 낫다고 판단했다.
+///
+/// **각 `pub fn` 의 `tasty_dir().as_deref()` 위임은 덮는다** — `None` 이 필요 없고
+/// 상대 `TASTY_HOME` 이면 갈리기 때문이다(절대 경로는 해석 전후가 같아 구분되지
+/// 않는다). 출력 경로 둘(`bash_rcfile_args`·`effective_shell_envs`)을
+/// `*_uses_the_resolved_root` 가 각각 고정한다.
+///
+/// 상대 경로 축(`TASTY_HOME` 이 상대일 때 파생 경로가 자식 셸의 CWD 로 재해석되는 것)
+/// 은 환경만으로 재현 가능해 `relative_tasty_home_is_absolutized_for_child_processes`
+/// 가 실제 env 로 끝까지 고정한다.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1032,7 +1219,9 @@ mod tests {
         }
     }
 
-    #[cfg(not(windows))]
+    /// 플랫폼 무관 — Windows 에서도 `unresolved_home_emits_no_bash_rcfile_args` 와
+    /// `bash_rcfile_args_uses_the_resolved_root` 가 쓴다(그 둘은 홈 해석 축이라
+    /// 플랫폼별로 갈리지 않는다).
     fn settings_with_shell(shell: &str) -> GeneralSettings {
         GeneralSettings {
             shell: shell.to_string(),
@@ -1207,12 +1396,14 @@ mod tests {
     fn ensure_compiled_bashrc_regenerates_stale_files() {
         let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let _home = HomeGuard::new();
-        let default_path = tasty_bashrc_default_path();
+        let default_path = tasty_bashrc_default_path()
+            .expect("HomeGuard sets TASTY_HOME so the path always resolves");
         std::fs::create_dir_all(std::path::Path::new(&default_path).parent().unwrap()).unwrap();
         std::fs::write(&default_path, "# old builtin without stamp\n").unwrap();
         #[cfg(windows)]
         let tasty_path = {
-            let p = tasty_bashrc_path();
+            let p =
+                tasty_bashrc_path().expect("HomeGuard sets TASTY_HOME so the path always resolves");
             std::fs::write(&p, "# old builtin without stamp\n").unwrap();
             p
         };
@@ -1244,7 +1435,8 @@ mod tests {
     fn ensure_compiled_bashrc_keeps_current_files() {
         let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let _home = HomeGuard::new();
-        let tasty_path = tasty_bashrc_path();
+        let tasty_path =
+            tasty_bashrc_path().expect("HomeGuard sets TASTY_HOME so the path always resolves");
         std::fs::create_dir_all(std::path::Path::new(&tasty_path).parent().unwrap()).unwrap();
         let current = compose_tasty_mode_bashrc("# SENTINEL-user-content\n");
         std::fs::write(&tasty_path, &current).unwrap();
@@ -1343,15 +1535,282 @@ mod tests {
     fn ensure_compiled_zshenv_regenerates_stale_file() {
         let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let _home = HomeGuard::new();
-        let path = tasty_zshenv_path();
+        let path =
+            tasty_zshenv_path().expect("HomeGuard sets TASTY_HOME so the path always resolves");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "# old wrapper without stamp\n").unwrap();
 
-        ensure_compiled_zshenv();
+        ensure_compiled_zshenv_in(tasty_dir().as_deref());
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.lines().any(|l| l.trim() == BUILTIN_ZSHENV_STAMP));
         assert!(content.contains("__tasty_osc133_precmd()"));
+    }
+
+    /// 홈 미해석은 **빈 경로로 폴백하지 않는다.** `PathBuf::default()` 는 `""` 라
+    /// 파생 경로가 전부 상대가 되고, 그게 CHANGELOG 가 헤드라인으로 내건 결함
+    /// (셸 통합이 상대 경로로 새어 나감)의 정확한 원인이다. `home?` 를
+    /// `home.unwrap_or_default()` 로 되살리면 이 테스트가 실패한다.
+    #[test]
+    fn unresolved_home_resolves_to_none_not_an_empty_path() {
+        let cwd = std::path::PathBuf::from("/some/cwd");
+        assert_eq!(resolve_tasty_dir(None, Some(cwd.clone())), None);
+        // 대조군 — 절대 루트는 그대로, 상대 루트는 cwd 기준 절대화.
+        assert_eq!(
+            resolve_tasty_dir(Some("/abs/root".into()), Some(cwd.clone())),
+            Some(std::path::PathBuf::from("/abs/root"))
+        );
+        assert_eq!(
+            resolve_tasty_dir(Some("rel".into()), Some(cwd.clone())),
+            Some(cwd.join("rel"))
+        );
+        // cwd 마저 없으면 상대 루트를 절대화할 수 없다.
+        assert_eq!(resolve_tasty_dir(Some("rel".into()), None), None);
+    }
+
+    /// 홈 미해석이면 **셸에 `--rcfile` 을 넘기지 않는다.** 넘기면 상대 경로가 되어
+    /// 셸이 자기 CWD 기준으로 해석하고 OSC7/OSC133 이 무음으로 죽는다. 빈 벡터면
+    /// `build_shell_command` 가 평소대로 로그인 셸(`-li`)로 띄운다.
+    #[test]
+    fn unresolved_home_emits_no_bash_rcfile_args() {
+        let settings = settings_with_shell("/bin/bash");
+        assert!(
+            bash_rcfile_args_in(&settings, None).is_empty(),
+            "홈 미해석이면 --rcfile 인자를 내지 않는다"
+        );
+        #[cfg(windows)]
+        assert!(
+            bash_rcfile_args_in(&settings_with_mode("tasty"), None).is_empty(),
+            "tasty 모드도 마찬가지"
+        );
+    }
+
+    /// 홈 미해석이면 **`ZDOTDIR` 을 주입하지 않는다.** 상대 `ZDOTDIR` 을 넘기면 zsh 가
+    /// 자기 CWD 기준으로 읽어 통합이 무음으로 죽는다.
+    #[test]
+    fn unresolved_home_injects_no_zdotdir() {
+        assert!(zsh_shell_envs_in(None).is_empty());
+    }
+
+    /// 홈 미해석이면 **CWD 의 `bashrc.user` 를 읽지 않는다** — 남의 파일을 사용자
+    /// 편집 내용으로 오인하면 그걸 그대로 합성 rc 에 실어 저장한다.
+    #[test]
+    fn unresolved_home_loads_the_initial_user_bashrc_not_a_cwd_file() {
+        assert_eq!(load_user_bashrc_in(None), INITIAL_USER_BASHRC);
+    }
+
+    /// 홈 미해석이면 **저장을 거절한다.** 빈 경로로 폴백하면 `create_dir_all("")` 이
+    /// `Ok` 라 경고 하나 없이 프로세스 CWD 에 파일을 만들고 성공한 것처럼 끝난다.
+    #[test]
+    fn unresolved_home_refuses_to_save_user_bashrc() {
+        let err = save_user_bashrc_in(None, "# user\n").expect_err("저장을 거절해야 한다");
+        assert!(
+            err.contains("unresolved"),
+            "실패 사유가 호출자에게 전달돼야 한다: {err}"
+        );
+    }
+
+    /// 홈 미해석이면 **합성 rc 파일을 아무 데도 만들지 않는다.** 빈 경로로 폴백하면
+    /// 파생 경로가 상대가 되어 프로세스 CWD(= 이 크레이트 디렉토리)에 생긴다.
+    ///
+    /// 사전에 **지우지 않고 단정하는** 이유: 앞선 실패/변이 실험이 그 파일을 남기면
+    /// "이미 있었으니 변화 없음" 으로 **거짓 통과**한다(실제로 변이 실험 중
+    /// `bashrc.default` 가 남아 그 위험을 확인했다). 그렇다고 조용히 지우면 그 오염
+    /// 자체가 감춰진다 — 이 이름들은 크레이트 소스 디렉토리에 정당하게 존재할 수 없으므로
+    /// 있으면 그 사실을 실패로 드러내고, 정리는 사람이 한다.
+    #[test]
+    fn unresolved_home_writes_no_generated_files() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let cwd = std::env::current_dir().expect("cwd");
+        let names = ["bashrc", "bashrc.default", "bashrc.user", "zsh-integration"];
+        for n in names {
+            assert!(
+                !cwd.join(n).exists(),
+                "{n} 이 이미 CWD 에 있다 — 앞선 실험이 남긴 오염이다. 이 테스트가 \
+                 무엇을 단정하는지 무의미해지므로 지우고 다시 돌려라"
+            );
+        }
+
+        ensure_compiled_bashrc_in(None);
+        ensure_compiled_zshenv_in(None);
+
+        for n in names {
+            assert!(
+                !cwd.join(n).exists(),
+                "홈 미해석이면 프로세스 CWD 에 {n} 을 만들지 않는다"
+            );
+        }
+    }
+
+    // 상대 `TASTY_HOME`(격리 실행 관례)에서 파생 경로가 절대 경로로 나오는지.
+    // 상대인 채로 자식 셸의 `--rcfile` / `ZDOTDIR` 로 나가면 셸이 자기 CWD 기준으로
+    // 다시 해석해 통합이 무음으로 죽는다. 경로 헬퍼만 부른다 — `effective_shell_*`
+    // 는 합성 rc 를 실제로 만들기 때문에 CWD 를 더럽힌다.
+    #[test]
+    fn relative_tasty_home_is_absolutized_for_child_processes() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let prev = std::env::var("TASTY_HOME").ok();
+        // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+        unsafe { std::env::set_var("TASTY_HOME", "relative-tasty-home") };
+
+        let rc = tasty_bashrc_default_path().expect("relative home still resolves");
+        let zdotdir = tasty_zsh_integration_dir().expect("relative home still resolves");
+
+        match &prev {
+            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+            Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
+            // SAFETY: 상동.
+            None => unsafe { std::env::remove_var("TASTY_HOME") },
+        }
+
+        let cwd = std::env::current_dir().expect("cwd");
+        assert!(
+            std::path::Path::new(&rc).is_absolute(),
+            "--rcfile path must be absolute, got {rc}"
+        );
+        assert_eq!(
+            std::path::Path::new(&rc),
+            cwd.join("relative-tasty-home").join("bashrc.default")
+        );
+        assert!(
+            zdotdir.is_absolute(),
+            "ZDOTDIR must be absolute, got {}",
+            zdotdir.display()
+        );
+        assert_eq!(
+            zdotdir,
+            cwd.join("relative-tasty-home").join("zsh-integration")
+        );
+    }
+
+    /// 상대 `TASTY_HOME` 을 세팅하고 복원하는 가드.
+    ///
+    /// [`HomeGuard`] 는 임시 디렉토리의 **절대** 경로를 넣으므로 "래퍼가 해석된 루트를
+    /// 넘기는가" 를 구분하지 못한다 — 절대 경로는 해석 전후가 같기 때문이다. 상대
+    /// 경로여야 `tasty_dir()`(CWD 기준 절대화)과 미해석 `tasty_home()` 이 갈린다.
+    struct RelativeHomeGuard {
+        prev: Option<String>,
+        /// 실제로 파일이 떨어질 임시 디렉토리(파일을 만드는 경로에서만 쓴다).
+        _dir: Option<tempfile::TempDir>,
+    }
+
+    impl RelativeHomeGuard {
+        fn set(rel: &std::path::Path, dir: Option<tempfile::TempDir>) -> Self {
+            let prev = std::env::var("TASTY_HOME").ok();
+            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+            unsafe { std::env::set_var("TASTY_HOME", rel) };
+            Self { prev, _dir: dir }
+        }
+
+        /// CWD 아래의 상대 이름. **파일을 만들지 않는 경로에서만** 쓴다 — 만들면
+        /// 레포 워킹트리가 더러워진다.
+        fn name(rel: &str) -> Self {
+            Self::set(std::path::Path::new(rel), None)
+        }
+
+        /// 임시 디렉토리를 가리키는 **상대** 경로(CWD 에서 `..` 로 거슬러 올라간다).
+        /// 상대성은 유지하면서 생성 파일은 임시 디렉토리에 떨어뜨린다.
+        fn temp() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cwd = std::env::current_dir().expect("cwd");
+            let mut rel = std::path::PathBuf::new();
+            for c in cwd.components() {
+                if matches!(c, std::path::Component::Normal(_)) {
+                    rel.push("..");
+                }
+            }
+            for c in dir.path().components() {
+                if let std::path::Component::Normal(seg) = c {
+                    rel.push(seg);
+                }
+            }
+            assert!(rel.is_relative(), "가드가 상대 경로를 만들어야 의미가 있다");
+            Self::set(&rel, Some(dir))
+        }
+    }
+
+    impl Drop for RelativeHomeGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
+                Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
+                // SAFETY: 상동.
+                None => unsafe { std::env::remove_var("TASTY_HOME") },
+            }
+        }
+    }
+
+    fn bash_shell_path() -> String {
+        if cfg!(windows) {
+            "bash.exe"
+        } else {
+            "/bin/bash"
+        }
+        .to_string()
+    }
+
+    /// `bash_rcfile_args` 가 **해석된** 루트를 쓰는지.
+    ///
+    /// `relative_tasty_home_is_absolutized_for_child_processes` 는 경로 헬퍼만 부르므로
+    /// 이 함수의 래퍼 한 줄(`tasty_dir().as_deref()`)을 지나지 않는다 — 그 한 줄을
+    /// 미해석 홈으로 되돌리는 변이가 잡히지 않는다. `--rcfile` 은 자식 셸이 **자기 CWD**
+    /// 기준으로 다시 해석하므로 상대 경로가 나가면 통합이 무음으로 죽는다.
+    #[test]
+    fn bash_rcfile_args_uses_the_resolved_root() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        // 이 함수는 문자열만 조립하고 파일을 만들지 않는다 — 그래서 CWD 아래를
+        // 가리키는 상대 이름을 그대로 써도 워킹트리가 더러워지지 않는다.
+        let _home = RelativeHomeGuard::name("relative-tasty-home");
+
+        let settings = GeneralSettings {
+            shell: bash_shell_path(),
+            ..GeneralSettings::default()
+        };
+        let args = bash_rcfile_args(&settings);
+
+        let rc = args
+            .iter()
+            .position(|a| a == "--rcfile")
+            .and_then(|i| args.get(i + 1))
+            .expect("--rcfile 인자");
+        assert!(
+            std::path::Path::new(rc).is_absolute(),
+            "래퍼가 해석된 루트를 넘겨야 한다 — 상대 --rcfile 은 자식 셸의 CWD 로 \
+             재해석된다, got {rc}"
+        );
+        assert!(
+            rc.contains("relative-tasty-home"),
+            "설정한 TASTY_HOME 아래를 가리켜야 한다, got {rc}"
+        );
+    }
+
+    /// `effective_shell_envs`(zsh `ZDOTDIR`)도 같은 래퍼 한 줄을 지난다 — 위 bash
+    /// 테스트와 같은 이유로 별도 단정이 필요하다. 상대 `ZDOTDIR` 이 나가면 zsh 가
+    /// 자기 CWD 기준으로 wrapper 를 찾아 통합이 무음으로 죽는다.
+    ///
+    /// 이 경로는 wrapper `.zshenv` 를 **실제로 만든다** — 그래서 상대성을 유지하되
+    /// 임시 디렉토리를 가리키는 가드를 쓴다(CWD 를 더럽히지 않는다).
+    #[test]
+    fn effective_shell_envs_uses_the_resolved_root() {
+        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let _home = RelativeHomeGuard::temp();
+
+        let settings = GeneralSettings {
+            shell: "zsh".to_string(),
+            ..GeneralSettings::default()
+        };
+        let envs = settings.effective_shell_envs();
+
+        let zdotdir = envs
+            .iter()
+            .find(|(k, _)| k == "ZDOTDIR")
+            .map(|(_, v)| v.as_str())
+            .expect("ZDOTDIR");
+        assert!(
+            std::path::Path::new(zdotdir).is_absolute(),
+            "래퍼가 해석된 루트를 넘겨야 한다 — 상대 ZDOTDIR 은 zsh 의 CWD 로 \
+             재해석된다, got {zdotdir}"
+        );
     }
 
     // 현재 스탬프를 담은 wrapper .zshenv 는 재생성하지 않는다.
@@ -1359,13 +1818,14 @@ mod tests {
     fn ensure_compiled_zshenv_keeps_current_file() {
         let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let _home = HomeGuard::new();
-        let path = tasty_zshenv_path();
+        let path =
+            tasty_zshenv_path().expect("HomeGuard sets TASTY_HOME so the path always resolves");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         // 스탬프는 있지만 임의로 조작해 재생성되면 바로 드러나는 sentinel 을 심는다.
         let current = format!("{}\n# SENTINEL\n", BUILTIN_ZSHENV_STAMP);
         std::fs::write(&path, &current).unwrap();
 
-        ensure_compiled_zshenv();
+        ensure_compiled_zshenv_in(tasty_dir().as_deref());
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(
