@@ -155,6 +155,48 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
 
+### Xvfb 에서 실제 입력(휠·클릭)을 굴릴 때
+
+전용 디스플레이를 띄우고 `xdotool` 로 진짜 X11 입력을 넣으면, IPC 주입이 닿지 않는 구간
+(winit → egui → plugin 까지의 실제 라우팅)을 끝까지 지날 수 있다. 다만 이 환경에는
+데스크톱과 다른 함정이 셋 있고, 셋 다 **조용히** 실패한다.
+
+**1. `xdotool` 은 `xvfb-run` 이 만든 Xauthority 없이는 붙지 못한다.** `DISPLAY` 만 넘기면
+`Authorization required, but no authorization protocol specified` 뒤에
+`Can't open display: (null)` 로 죽는다. `xvfb-run` 은 임시 `Xauthority` 를 만들어 자식
+env 에만 넣으므로, 그 값을 프로세스에서 되읽어 함께 export 한다.
+
+```bash
+DISPLAY=$(tr '\0' '\n' < /proc/$HOST_PID/environ | grep '^DISPLAY=' | cut -d= -f2)
+XAUTHORITY=$(tr '\0' '\n' < /proc/$HOST_PID/environ | grep '^XAUTHORITY=' | cut -d= -f2)
+export DISPLAY XAUTHORITY
+```
+
+**2. 창 id 는 `tasty list windows` 에서 받는다 — `xdotool search --pid` 로 고르지 않는다.**
+그 검색은 winit 의 입력 전용 더미 창까지 뱉고(위 "모달 창의 ID"), 아무 것이나 집으면
+`getwindowgeometry` 가 **16x16** 을 돌려준다. 그 값으로 포인터 좌표를 계산하면 음수가 나와
+`mousemove: unrecognized option '-104'` 로 끝난다 — 창을 잘못 골랐다는 신호다. main 창은
+IPC 가 직접 알려주므로 추측할 이유가 없다(X11 에서 winit `WindowId` = X11 window id).
+
+**3. WM 이 없으므로 `windowactivate` 는 실패한다 — 그리고 필요도 없다.** 맨 Xvfb 에는 창
+관리자가 없어 `_NET_ACTIVE_WINDOW` 가 없고, `xdotool windowactivate` 는
+`Your windowmanager claims not to support _NET_ACTIVE_WINDOW` 로 거절된다. 여기서 멈추면 안
+된다 — X11 기본 포커스 모델(PointerRoot)에서는 **포인터가 얹힌 창이 입력을 받으므로**
+activate 없이 절대 좌표로 `mousemove` 한 뒤 `click` 하면 그대로 전달된다. (데스크톱 X 서버의
+재현 절차가 activate 를 요구하는 것은 그쪽에 WM 이 있기 때문이고, 그 단계를 Xvfb 에 그대로
+옮기면 실패를 오진하게 된다.)
+
+그 밖에 이 조합에서 지키는 것:
+
+- **기동은 절대경로로**(`/abs/worktree/target/debug/tasty`). 프로세스 소유를 나중에 가릴 때
+  1차 기준이 cmdline 의 바이너리 경로인데, `./target/debug/tasty` 로 띄우면 그 경로가
+  남지 않아 기준 자체가 무력해진다.
+- **`xvfb-run` 의 `$!` 는 래퍼 PID 다.** 그것만 죽이면 안의 tasty 가 고아로 남는다 —
+  포트 파일이 생긴 뒤 위 1 번과 같은 방식으로 호스트 PID 를 따로 잡아 **둘 다** 정리한다.
+- 스크롤 결과 판정은 스크린샷 **픽셀 diff** 로 한다(`ImageChops.difference(...).getbbox()`).
+  "달라 보인다" 로 멈추지 말고, **수정을 되돌린 빌드로 같은 절차를 한 번 더 돌려** 그 쪽에서
+  `bbox=None` 이 나오는 것까지 확인하면 인과가 닫힌다.
+
 ## `tasty-gallery` 캡처 (`TASTY_GALLERY_SHOT`)
 
 갤러리(`tasty-gallery`)는 **별도 바이너리라 `ui.screenshot` IPC 가 없다.** 그렇다고 OS 캡처로 가면 권한 벽에 막힌다(아래). 대신 갤러리에 내장된 **env 트리거 일회성 GPU readback 캡처**를 쓴다 — 본체 `ui.screenshot` 과 동일한 swapchain readback(BGRA→RGB, 256B row 정렬)이라 권한 불요·결정적.
