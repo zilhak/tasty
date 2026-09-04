@@ -297,17 +297,24 @@ fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
         .collect()
 }
 
+/// 한 잡 본문이 **좁혀지지 않은** `cargo test --workspace` 를 돌리는가.
+///
+/// 판정을 [`is_narrowed`] 에 넘긴다 — 이 함수가 들고 있던 `take(4)` 는 [`logical_command`]
+/// 가 지운 것과 **같은 종류의 고정 범위**였다. 좁힘 플래그가 다섯 번째 이후에 오거나
+/// 백슬래시 연속행에 놓이면 못 봤고, 그러면 좁혀진 스텝을 "전체 스위트" 로 읽어 이
+/// 가드의 첫 번째 축이 통째로 잠잠해진다. 판정 하나를 두 자리에서 서로 다른 규칙으로
+/// 하고 있었던 것이 결함이다.
+fn a_job_body_runs_the_full_suite(body: &str) -> bool {
+    body.split("cargo test --workspace")
+        .skip(1)
+        .any(|tail| !is_narrowed(tail))
+}
+
 /// 자동으로 도는 잡이 전체 스위트를 돌리는가.
 fn ci_actually_runs_the_full_suite(root: &Path) -> bool {
     automatic_job_bodies(&root.join(".github/workflows"))
         .iter()
-        .any(|body| {
-            body.split("cargo test --workspace").skip(1).any(|tail| {
-                !tail.split_whitespace().take(4).any(|w| {
-                    w.starts_with("--lib") || w.starts_with("--bins") || w.starts_with("--test")
-                })
-            })
-        })
+        .any(|body| a_job_body_runs_the_full_suite(body))
 }
 
 fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -1008,6 +1015,39 @@ fn narrowing_is_seen_on_a_continuation_line() {
     // 연속 표시가 끝난 **다음** 줄의 플래그는 이 명령의 것이 아니다.
     assert!(!is_narrowed(
         " --workspace \\\n      --locked\n      --lib --bins\n"
+    ));
+}
+
+/// 첫 번째 축의 판정도 **고정 범위를 갖지 않는다.**
+///
+/// 이 단언들이 [`a_job_body_runs_the_full_suite`] 의 범위를 붙박는 변이다. 그 판정을
+/// 다시 `take(N)` 으로 되돌리면 앞 두 단언이 죽고, 연속행을 안 잇는 형태로 되돌리면
+/// 세 번째가 죽는다. **`is_narrowed` 와 같은 규칙을 쓰는 것**이 이 함수의 계약이다 —
+/// 한 판정을 두 자리에서 다른 규칙으로 하면 그중 하나가 조용히 낡는다.
+#[test]
+fn the_full_suite_judgement_uses_the_same_narrowing_rule() {
+    // 좁힘이 다섯 번째 이후에 와도 좁혀진 것으로 본다(전체 스위트가 아니다).
+    assert!(!a_job_body_runs_the_full_suite(
+        "        run: cargo test --workspace --locked --no-fail-fast --frozen --offline --lib --bins\n"
+    ));
+    assert!(!a_job_body_runs_the_full_suite(
+        "        run: cargo test --workspace --locked --no-fail-fast --frozen --test api_baseline_0_7\n"
+    ));
+    // 좁힘이 백슬래시 연속행에 놓여도 본다.
+    assert!(!a_job_body_runs_the_full_suite(
+        "        run: |\n          cargo test --workspace --locked \\\n            --lib --bins\n"
+    ));
+    // 좁혀지지 않은 전체 스위트는 그대로 잡힌다 — 이 방향이 죽으면 축이 통째로 잠잠해진다.
+    assert!(a_job_body_runs_the_full_suite(
+        "        run: cargo test --workspace --no-default-features --locked --no-fail-fast\n"
+    ));
+    // `--skip` 은 좁힘이 아니다. 연속행으로 이어져 있어도 전체 스위트 그대로다.
+    assert!(a_job_body_runs_the_full_suite(
+        "        run: |\n          cargo test --workspace --locked --no-fail-fast -- \\\n            --skip all_e2e_tests\n"
+    ));
+    // `cargo test --workspace` 가 없는 본문은 이 축의 대상이 아니다.
+    assert!(!a_job_body_runs_the_full_suite(
+        "        run: cargo clippy --workspace --all-targets\n"
     ));
 }
 
