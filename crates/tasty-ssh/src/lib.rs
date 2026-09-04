@@ -2019,12 +2019,11 @@ mod tests {
             std::net::TcpListener::bind(("127.0.0.1", p)).is_err(),
             "reserved port {p} must be held while the listener is alive"
         );
-        // 대조군: 놓으면 usable — drop 후엔 같은 포트로 bind 가능해야 한다.
+        // drop 후 재bind 가능 여부는 OS 정책에 대한 단언이지 `reserve_local_port` 의 계약이
+        // 아니다 — 커널은 방금 푼 포트를 이 프로세스에 예약하지 않으므로, 여러 워크트리가
+        // 병렬로 도는 머신에서는 그 창에 남이 들어와 확률적으로 깨진다(대조군이 창을 옮겼을
+        // 뿐 없애지 못했다). 앞 단언(점유 중 재bind 실패)이 계약을 결정적으로 세운다.
         drop(listener);
-        assert!(
-            std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
-            "port {p} must be rebindable after the reservation is dropped"
-        );
     }
 
     /// 등록된 자식은 `cancel()` 로 kill + reaping 된다 — 실제 ssh 없이 오래 사는 더미
