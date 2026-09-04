@@ -31,6 +31,8 @@ popup 은 `pending_approval_ids` 큐의 head 를 그리고, 응답 시 pop 하�
 
 self-response(같은 plugin 이 자기 요청에 응답)는 `-32011`, 이미 종료된 요청은 `-32010`. `approval.await` 는 local-only(plugin 호출 deadlock 방지) — `outcome ∈ {responded, timed_out, cancelled}`.
 
+store 락이 poison 된 뒤(다른 스레드가 락을 든 채 패닉)의 `request`/`respond`/`cancel` 은 `-32014`(`store_poisoned`) 로 **거절**한다. 그 임계구역은 `state` → `history` → `waiters` 를 순서대로 갱신하므로 중간 상태가 남을 수 있고, 승인은 에이전트 행동의 관문이라 신뢰할 수 없는 기록 위에서 전이를 이어가지 않는다. 반면 `get`/`list` 는 표시용 읽기라 복구해서 계속 답한다. 어느 쪽도 패닉하지 않는다 — 이 store 는 승인 popup(메인 스레드)이 함께 쓰므로 패닉이 모든 창의 터미널 세션을 죽인다([error-handling](../../dev-guide/error-handling.md) "락 poison").
+
 ### 영속
 
 매 상태 전이마다 `tasty.approval.<id>` 키로 직렬화(workspace_id 있으면 `workspace:<id>`, 없으면 `global`). 응답/타임아웃/취소 후에도 보존 → `approval.history` 로 재시작 후 조회. 세션 요약은 별도 키(`approval.summary.set/get`, markdown).

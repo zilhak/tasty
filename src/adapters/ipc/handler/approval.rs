@@ -68,6 +68,9 @@ pub(super) fn map_error(id: Value, err: ApprovalError) -> JsonRpcResponse {
         InvalidRequest(m) => JsonRpcResponse::invalid_params(id, format!("invalid_request: {m}")),
         TimedOut => JsonRpcResponse::error(id, -32012, "timed_out"),
         Cancelled => JsonRpcResponse::error(id, -32013, "cancelled"),
+        // 상태 변경을 거절한 것이지 요청이 잘못된 것이 아니다 — invalid_params 가 아닌
+        // 서버측 에러 코드로 낸다. 원인 로그는 store 가 남긴다.
+        StorePoisoned => JsonRpcResponse::error(id, -32014, "store_poisoned"),
     }
 }
 
