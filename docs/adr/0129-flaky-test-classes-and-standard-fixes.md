@@ -152,7 +152,7 @@ check-macos 의 `cargo check --workspace` 가 이들을 컴파일하므로 컴�
 함수로 뽑고, 면제마다 그것을 겨냥한 변이와 의도된 false negative 를 유닛 테스트로
 고정하며, `crates/*/src/` 또는 루트 `src/` 의 `#[cfg(test)] mod` 로 두어 양 자동 채널
 (check-windows·check-headless)에서 실행되게 한다. 상세는
-[test-isolation](../dev-guide/test-isolation.md).
+[unit-test-isolation](../dev-guide/unit-test-isolation.md) §7.
 
 **배치만으로 "양 자동 채널"은 성립하지 않는다 — 이름으로 확인한다(양방향).** `#[cfg(test)]
 mod` 에 둔 사실은 가드가 두 채널 모두에서 돈다는 보장이 아니다. 가드가 `#[cfg(feature =
@@ -212,7 +212,7 @@ check-headless 가, 둘째에만 나오면 `gui` 쪽에 걸려 check-windows 가
 
 - [ci-gates](../dev-guide/ci-gates.md) — 어느 검사가 어느 채널에서 도는가(부류별
   우선순위의 근거)
-- [test-isolation](../dev-guide/test-isolation.md) — 부류별 처방의 적용 방법과 가드
+- [unit-test-isolation](../dev-guide/unit-test-isolation.md) §7 — 부류별 처방의 적용 방법과 가드
 - [ADR-0128](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) — 소스 스캔
   가드를 `tests/` 가 아니라 루트 패키지 `#[cfg(test)]` 로 두는 이유(자동 실행 축 확보).
   본 ADR 의 가드도 같은 이유로 그렇게 배치한다. 0128 은 `tests/*.rs` 채널 방침 자체를
