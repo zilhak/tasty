@@ -140,10 +140,13 @@ jobs:
       # 그쪽 담당이고, 그 이유는 그 테스트 doc 에 적혀 있다.
       #
       # **통합 테스트까지 포함한다.** 한때 `--lib --bins` 로 좁혀 놓고 "e2e/integration 은
-      # 실행에 GUI spawn 이 필요하다" 고 적었는데, 실측해 보니 루트 `tests/*.rs` 48 개 중
-      # GUI 를 실제로 요구하는 것은 `tests/gui_tests.rs` 하나뿐이고 그것은 Cargo.toml 의
-      # `required-features = ["gui"]` 가 이미 빌드 대상에서 뺀다. 나머지 47 개는 워크스페이스
-      # 크레이트의 통합 타깃과 함께 headless 로 그대로 서고 돈다(통합 타깃 70 개 / 367 테스트).
+      # 실행에 GUI spawn 이 필요하다" 고 적었는데, 실측해 보니 루트 `tests/*.rs` 중 GUI 를
+      # 실제로 요구하는 것은 `tests/gui_tests.rs` 하나뿐이고 그것은 Cargo.toml 의
+      # `required-features = ["gui"]` 가 이미 빌드 대상에서 뺀다. 나머지는 워크스페이스
+      # 크레이트의 통합 타깃과 함께 headless 로 그대로 서고 돈다. 지금 몇이 서는지는 세지
+      # 말고 재라 — 이 잡의 로그에서 `Running tests/` 줄과 `test result:` 줄을 세면 되고,
+      # 로컬에서는 `cargo test --workspace --no-default-features --locked --no-run` 뒤
+      # 각 테스트 바이너리를 `--list` 로 부르면 된다(커밋마다 바뀌는 수라 여기 안 적는다).
       # e2e 하네스가 띄우는 `CARGO_BIN_EXE_tasty` 는 **같은 feature 로 빌드된 자기 바이너리**
       # 라, `--no-default-features` 에서는 그것이 곧 headless 데몬이다 — 즉 이 스텝이 headless
       # 부팅 진입점(`src/boot.rs` 의 `run_headless`)을 실제로 부팅해 IPC/attach/PTY 경로를
@@ -161,18 +164,19 @@ jobs:
       #      **skip 이 한 스위트 통째에서 테스트 하나로 좁아진 경위**: `tests/e2e_tests.rs`
       #      가 33 개 시나리오를 `#[test]` 하나(`all_e2e_tests`)에 몰아 두어 GUI 필요
       #      구간과 아닌 구간을 `--skip` 으로 가를 수 없었다. 시나리오 단위로 쪼갠 지금은
-      #      창을 요구하는 단언이 이 테스트 하나에 모여 있고, 나머지 18 개는 헤드리스에서
-      #      실제로 돈다(실측: 26 passed / 1 filtered). 경계는 **파일이 아니라 테스트**다.
+      #      창을 요구하는 단언이 이 테스트 하나에 모여 있고, 나머지 시나리오는 헤드리스에서
+      #      실제로 돈다 — 이 잡의 로그에서 그 파일의 `test result:` 줄이 `1 filtered out`
+      #      하나만 빼고 전부 통과인 것으로 확인한다. 경계는 **파일이 아니라 테스트**다.
       #
       # `output_match_hook_fires_on_real_pty_output` 은 한때 세 번째 skip 이었으나 **뺐다.**
       # 그 skip 의 근거였던 제품 결함(headless 가 `process_all_pty_output` 의 CoreEvent 를
       # 버려 `output-match` 훅이 영영 fire 되지 않던 것)을 고쳤다 — `boot.rs` 의
-      # `fire_output_match_hooks`. 이제 헤드리스에서도 7 passed / 0 failed 다.
+      # `fire_output_match_hooks`. 그 뒤로 헤드리스에서 통과한다(`tests/hooks_detection_e2e.rs`).
       #
       # `hard_occupied_attention_survives_the_servers_local_focus` 는 한때 첫 번째 skip
       # 이었으나 **뺐다.** `debug.switch_workspace` 등 gui 비의존 debug 핸들러 셋이
       # `debug.rs` 의 gui 게이트에 묶여 헤드리스 라우터에 없던 것이 원인이었고,
-      # `adapters/ipc/handler/debug_nav.rs` 로 갈라 해결했다(12 passed / 0 failed).
+      # `adapters/ipc/handler/debug_nav.rs` 로 갈라 해결했다(`tests/attach_attention_loopback.rs`).
       #
       # `closing_before_the_descriptor_releases_occupancy_promptly` 는 한때 네 번째 skip 이었으나
       # **뺐다.** 재판정에서 전체 스위트 3 회 연속 통과했고(각 회차 `test result 162`), 다른
@@ -180,7 +184,7 @@ jobs:
       # 통과했다. 관측된 실패는 부하가 높던 이전 베이스의 1 회뿐이라 skip 근거로 약하다 —
       # 재현 조건이 좁혀지지 않은 간헐 실패는 커버리지를 영구히 깎는 대신 티켓으로 남긴다.
       # `--no-fail-fast` 를 붙이는 근거는 위 Windows 단위테스트 스텝에 적힌 것과 같다 —
-      # 여기서는 타깃이 123 개라 첫 실패가 가리는 범위가 그쪽보다 넓다.
+      # 여기서는 타깃이 100 개 단위라 첫 실패가 가리는 범위가 그쪽보다 훨씬 넓다.
       - name: cargo test (headless)
         run: |
           cargo test --workspace --no-default-features --locked --no-fail-fast -- \
