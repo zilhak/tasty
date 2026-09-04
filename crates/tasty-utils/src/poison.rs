@@ -182,6 +182,12 @@ mod tests {
 /// 한 함수 안에서 writer 락(에러 반환)과 pending 맵(복구)을 함께 잡는다 — 크레이트나
 /// 함수 단위로 금지하면 정당한 복구까지 걸린다.
 ///
+/// **판정은 순수 함수로 뽑아 두었다**([`recovered_forbidden_lines`] ·
+/// [`silently_skipped_forbidden_lines`]). 파일 순회 안에 인라인으로 두면 면제를 겨냥한
+/// 변이를 합성 입력으로 찌를 수 없어, 변이가 "레포에 진짜 위반을 심는" 방식으로만
+/// 가능해진다 — 느리고 트리를 더럽힌다. 아래 합성 입력 테스트가 그 변이를 영구히
+/// 붙박은 것이다.
+///
 /// **이 테스트는 `tests/` 가 아니라 lib 유닛 테스트다** — `tests/*.rs` 는 컴파일만
 /// 자동으로 검사되고 실행 채널이 수동뿐이라, 소스를 런타임에 읽는 가드에게는 그
 /// 안전망이 0 이다. 관례(`tests/*_chokepoint.rs`)를 깨는 것이니 되돌리지 마라.
@@ -208,7 +214,7 @@ mod forbidden_lock_guard {
          `local::attach::run_raw_bridge` 는 **복구하지 않고 세션을 접되** \
          `note_writer_poisoned` 로 이유를 남긴다(원인 없이 끊긴 attach 로 보이지 않게). \
          `tasty-host-plugin` 의 `aux_reader_loop` 는 Pong 전송을 **건너뛰되 로그를 남긴다** \
-         (호스트가 채널을 죽은 것으로 판정하는 결과가 뒤따르므로 그 이유가 남아야 한다).",
+         (상대가 채널을 죽은 것으로 판정하는 결과가 뒤따르므로 그 이유가 남아야 한다).",
     )];
 
     /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다 —
@@ -216,71 +222,91 @@ mod forbidden_lock_guard {
     const MIN_FILES_SCANNED: usize = 200;
     const MIN_RECOVER_CALLS: usize = 30;
 
-    fn repo_root() -> PathBuf {
-        // crates/tasty-utils → 레포 루트
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .expect("crates/<name> 아래에 있어야 한다")
-            .to_path_buf()
+    /// `recover_*(` 를 찾을 때 쓰는 needle. **조각을 붙여 만든다** — 이 파일 안에
+    /// 완성된 리터럴이 나타나면 스캐너가 자기 자신을 위반으로 집는다. 파일 통째
+    /// 면제(`SELF_PATH`)를 두는 대신 needle 쪽에서 없앤 것이라, 면제가 하나 줄었다.
+    fn recover_needles() -> [String; 4] {
+        let stem = "recover_";
+        [
+            format!("{stem}mutex("),
+            format!("{stem}read("),
+            format!("{stem}write("),
+            format!("{stem}try_write("),
+        ]
     }
 
-    /// 이 파일 자신은 스캔에서 뺀다 — 헬퍼 정의와 가드 본문이라 금지 패턴을 **예시로
-    /// 담는 것이 본질**이다(`tests/no_todo_file_citation.rs` 의 ALLOWLIST 와 같은 이유).
-    /// 파일 통째 면제라 여기서 진짜 위반이 생기면 못 보지만, 헬퍼 정의 파일이 writer
-    /// 락을 잡을 일은 없다.
-    const SELF_REL: &str = "crates/tasty-utils/src/poison.rs";
+    // ── 순수 판정기 ──────────────────────────────────────────────────────
+    //
+    // 파일 순회·경로 처리와 분리해 두어 합성 입력으로 찌를 수 있다.
 
-    fn rust_sources(root: &Path) -> Vec<PathBuf> {
-        let mut out = Vec::new();
-        let mut stack = vec![root.join("src")];
-        if let Ok(entries) = std::fs::read_dir(root.join("crates")) {
-            for e in entries.flatten() {
-                stack.push(e.path().join("src"));
-            }
-        }
-        while let Some(dir) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir) else {
+    /// `#[cfg(test)]` 모듈 구간을 빈 줄로 지운다(줄 번호는 보존).
+    ///
+    /// **왜 파일이 아니라 이 단위로 면제하는가**: 락 방침은 프로덕션 경로의 것이고,
+    /// 테스트는 poison 을 **일부러** 만들어 확인하는 자리라 금지 형태가 정당하게
+    /// 나타난다. 이 파일 자신의 스캐너 코드와 합성 입력도 같은 이유로 여기에 걸린다 —
+    /// 즉 자기 제외를 따로 두지 않아도 된다.
+    fn mask_test_modules(src: &str) -> String {
+        let lines: Vec<&str> = src.lines().collect();
+        let mut masked: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
+        let mut i = 0;
+        while i < lines.len() {
+            if lines[i].trim() != "#[cfg(test)]" {
+                i += 1;
                 continue;
-            };
-            for e in entries.flatten() {
-                let p = e.path();
-                if p.is_dir() {
-                    stack.push(p);
-                } else if p.extension().is_some_and(|x| x == "rs") {
-                    let is_self = p
-                        .strip_prefix(root)
-                        .is_ok_and(|rel| rel.to_string_lossy().replace('\\', "/") == SELF_REL);
-                    if !is_self {
-                        out.push(p);
-                    }
-                }
             }
+            // `#[cfg(test)]` 가 붙는 항목은 `mod` 만이 아니다 — `impl` · `fn` · `use` 에도
+            // 붙는다. 뒤따르는 속성 줄을 건너뛴 다음 **그 항목 하나**의 범위를 잡는다.
+            // (여기서 "다음 `mod`" 를 찾으면 사이에 낀 프로덕션 코드까지 통째로 지워
+            // 진짜 위반이 가려진다 — 실제로 그 형태로 변이가 살아남았다.)
+            let mut j = i + 1;
+            while j < lines.len() && lines[j].trim_start().starts_with("#[") {
+                j += 1;
+            }
+            if j >= lines.len() {
+                break;
+            }
+            let end = if lines[j].contains('{') {
+                let mut depth = 0i32;
+                let mut k = j;
+                loop {
+                    depth += lines[k].matches('{').count() as i32;
+                    depth -= lines[k].matches('}').count() as i32;
+                    if depth <= 0 || k + 1 >= lines.len() {
+                        break k;
+                    }
+                    k += 1;
+                }
+            } else {
+                // `mod tests;` · `use ...;` 처럼 한 줄로 끝나는 항목.
+                j
+            };
+            for m in masked.iter_mut().take(end + 1).skip(i) {
+                *m = String::new();
+            }
+            i = end + 1;
         }
-        out
+        masked.join("\n")
     }
 
-    /// `recover_*(` 호출과 그 인자 영역(괄호가 닫힐 때까지)을 돌려준다.
-    fn recover_call_spans(lines: &[&str]) -> Vec<(usize, String)> {
+    /// `recover_*(` 호출의 **인자 영역만** 돌려준다(1-based 줄번호, 텍스트).
+    ///
+    /// 괄호가 닫히는 지점에서 정확히 끊는다 — 안 끊으면 뒤따르는 무관한 코드가 섞여
+    /// 거짓 양성이 난다.
+    fn recover_call_spans(masked: &str) -> Vec<(usize, String)> {
+        let lines: Vec<&str> = masked.lines().collect();
+        let needles = recover_needles();
         let mut spans = Vec::new();
         for (i, line) in lines.iter().enumerate() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("//") {
                 continue;
             }
-            let Some(pos) = [
-                "recover_mutex(",
-                "recover_read(",
-                "recover_write(",
-                "recover_try_write(",
-            ]
-            .iter()
-            .find_map(|k| trimmed.find(k).map(|p| p + k.len())) else {
+            let Some(pos) = needles
+                .iter()
+                .find_map(|k| trimmed.find(k.as_str()).map(|p| p + k.len()))
+            else {
                 continue;
             };
-            // 괄호 균형이 맞을 때까지 이어 붙인다(호출이 여러 줄에 걸친다).
-            // 인자 영역만 본다 — 괄호가 닫히는 지점에서 정확히 끊지 않으면 뒤따르는
-            // 무관한 코드가 섞여 거짓 양성이 난다(실제로 이 파일 자신에서 났다).
             let mut depth: i32 = 1;
             let mut text = String::new();
             let mut j = i;
@@ -311,12 +337,199 @@ mod forbidden_lock_guard {
         spans
     }
 
-    /// `<name>.lock()` / `<name>.write()` / `<name>.read()` 형태로 그 락을 잠그는가.
-    fn locks_named(span: &str, name: &str) -> bool {
+    /// `<name>.lock()` / `.write()` / `.read()` / `.try_write()` 형태로 그 락을 잠그는가.
+    fn locks_named(text: &str, name: &str) -> bool {
         [".lock()", ".write()", ".read()", ".try_write()"]
             .iter()
-            .any(|verb| span.contains(&format!("{name}{verb}")))
+            .any(|verb| text.contains(&format!("{name}{verb}")))
     }
+
+    /// 축 1 — 금지 락을 이 헬퍼로 복구하는 줄.
+    fn recovered_forbidden_lines(masked: &str) -> Vec<usize> {
+        recover_call_spans(masked)
+            .into_iter()
+            .filter(|(_, span)| FORBIDDEN_LOCKS.iter().any(|(n, _)| locks_named(span, n)))
+            .map(|(line, _)| line)
+            .collect()
+    }
+
+    /// 축 2 — 금지 락을 **조용히 지나치는** 줄.
+    ///
+    /// 복구도 패닉도 아닌 제3의 형태다. 허용되는 셋(`expect` · `map_err` · `match` 의
+    /// `Err` 팔)은 poison 을 다루지만, `if let Ok(..) = writer.lock()`(else 없음)과
+    /// `.ok()` 는 아무것도 하지 않고 로그도 남기지 않는다.
+    fn silently_skipped_forbidden_lines(masked: &str) -> Vec<usize> {
+        let mut hits = Vec::new();
+        for (i, line) in masked.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            for (name, _) in FORBIDDEN_LOCKS {
+                if !locks_named(trimmed, name) {
+                    continue;
+                }
+                let silent_if = trimmed.contains("if let Ok(") && !trimmed.contains("else");
+                let silent_ok = trimmed.contains(".ok()");
+                if silent_if || silent_ok {
+                    hits.push(i + 1);
+                }
+            }
+        }
+        hits
+    }
+
+    // ── 파일 순회 ────────────────────────────────────────────────────────
+
+    fn repo_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("crates/<name> 아래에 있어야 한다")
+            .to_path_buf()
+    }
+
+    fn rust_sources(root: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![root.join("src")];
+        if let Ok(entries) = std::fs::read_dir(root.join("crates")) {
+            for e in entries.flatten() {
+                stack.push(e.path().join("src"));
+            }
+        }
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// Windows 잡에서도 도는 테스트라 CRLF 를 먼저 벗긴다.
+    fn normalized(path: &Path) -> Option<String> {
+        std::fs::read_to_string(path)
+            .ok()
+            .map(|t| mask_test_modules(&t.replace('\r', "")))
+    }
+
+    // ── 합성 입력 판정기 테스트 (면제를 겨냥한 변이가 여기 붙박여 있다) ──
+
+    #[test]
+    fn detects_a_forbidden_recovery_on_one_line_and_across_lines() {
+        let one = r#"let mut w = poison::recover_mutex(self.writer.lock(), W, &P);"#;
+        assert_eq!(recovered_forbidden_lines(one), vec![1]);
+
+        let many =
+            "let mut w = poison::recover_mutex(\n    self.writer.lock(),\n    W,\n    &P,\n);";
+        assert_eq!(
+            recovered_forbidden_lines(many),
+            vec![1],
+            "인자가 여러 줄에 걸쳐도 잡아야 한다"
+        );
+    }
+
+    /// 면제 ①(주석 줄)을 겨냥한 변이 — 면제 창 **안쪽**과 **바깥쪽**을 함께 고정한다.
+    #[test]
+    fn the_comment_exemption_does_not_swallow_real_code() {
+        let commented = "// poison::recover_mutex(self.writer.lock(), W, &P);";
+        assert!(
+            recovered_forbidden_lines(commented).is_empty(),
+            "주석은 코드가 아니다(의도된 false negative)"
+        );
+
+        // 주석처럼 **보이지만** 코드인 줄은 잡혀야 한다 — 면제가 줄 단위라 여기서 갈린다.
+        let looks_commented =
+            r#"let s = "// nope"; let w = poison::recover_mutex(self.writer.lock(), W, &P);"#;
+        assert_eq!(
+            recovered_forbidden_lines(looks_commented),
+            vec![1],
+            "면제는 '`//` 로 시작하는 줄' 이지 '`//` 를 포함한 줄' 이 아니다"
+        );
+    }
+
+    /// 면제 ②(`#[cfg(test)]` 모듈)를 겨냥한 변이.
+    #[test]
+    fn the_test_module_exemption_covers_only_the_test_module() {
+        let src = "fn prod() {\n    let w = poison::recover_mutex(self.writer.lock(), W, &P);\n}\n\
+                   #[cfg(test)]\nmod t {\n    fn helper() {\n        \
+                   let w = poison::recover_mutex(self.writer.lock(), W, &P);\n    }\n}\n";
+        let masked = mask_test_modules(src);
+        assert_eq!(
+            recovered_forbidden_lines(&masked),
+            vec![2],
+            "프로덕션 줄만 잡고 테스트 모듈 안은 면제한다"
+        );
+    }
+
+    /// 면제 ②의 **범위**를 겨냥한 변이 — `#[cfg(test)]` 는 `mod` 에만 붙지 않는다.
+    ///
+    /// 이 케이스가 실제로 위반 하나를 가렸다: 판정기가 "`#[cfg(test)]` 다음의 `mod`"
+    /// 를 찾는 바람에 `#[cfg(test)] impl` 과 한참 뒤의 `mod tests` **사이의 프로덕션
+    /// 코드 전체**를 마스킹했고, 그 안의 진짜 위반이 사라져 변이가 살아남았다.
+    #[test]
+    fn the_test_module_exemption_does_not_swallow_code_between_items() {
+        let src = "#[cfg(test)]\nimpl Foo {\n    fn helper() {}\n}\n\
+                   fn prod() {\n    if let Ok(mut w) = writer.lock() {\n        w.send();\n    }\n}\n\
+                   #[cfg(test)]\nmod tests {\n    fn t() {\n        \
+                   if let Ok(mut w) = writer.lock() { w.send(); }\n    }\n}\n";
+        let masked = mask_test_modules(src);
+        assert_eq!(
+            silently_skipped_forbidden_lines(&masked),
+            vec![6],
+            "테스트 항목 둘 사이에 낀 프로덕션 줄은 살아 있어야 한다"
+        );
+    }
+
+    /// 세미콜론으로 끝나는 테스트 항목(`#[cfg(test)] mod tests;`)도 한 줄만 먹는다.
+    #[test]
+    fn a_semicolon_test_item_masks_only_its_own_line() {
+        let src = "#[cfg(test)]\nmod tests;\n\
+                   fn prod() {\n    if let Ok(mut w) = writer.lock() { w.send(); }\n}\n";
+        let masked = mask_test_modules(src);
+        assert_eq!(silently_skipped_forbidden_lines(&masked), vec![4]);
+    }
+
+    #[test]
+    fn detects_and_spares_the_three_forms_of_silent_skip() {
+        assert_eq!(
+            silently_skipped_forbidden_lines("if let Ok(mut w) = writer.lock() {"),
+            vec![1]
+        );
+        assert_eq!(
+            silently_skipped_forbidden_lines("let tx = writer.lock().ok().and_then(|w| w.take());"),
+            vec![1]
+        );
+        // 허용 형태 셋 — 못 잡는 것이 의도다. 나중에 판정기를 넓히면 여기서 드러난다.
+        for allowed in [
+            r#"let mut w = writer.lock().expect("writer lock");"#,
+            r#"let mut w = writer.lock().map_err(|_| Poisoned)?;"#,
+            "match writer.lock() {",
+            "let Ok(mut w) = writer.lock() else { return; };",
+        ] {
+            assert!(
+                silently_skipped_forbidden_lines(allowed).is_empty(),
+                "poison 을 다루는 형태다: {allowed}"
+            );
+        }
+    }
+
+    /// 금지 목록에 없는 락은 두 축 모두 건드리지 않는다(의도된 false negative).
+    #[test]
+    fn locks_outside_the_list_are_untouched() {
+        let recovered = "let g = poison::recover_mutex(self.pending.lock(), W, &P);";
+        assert!(recovered_forbidden_lines(recovered).is_empty());
+        assert!(silently_skipped_forbidden_lines("if let Ok(mut p) = pending.lock() {").is_empty());
+    }
+
+    // ── 트리 스캔 테스트 ─────────────────────────────────────────────────
 
     #[test]
     fn forbidden_locks_are_never_recovered() {
@@ -332,23 +545,13 @@ mod forbidden_lock_guard {
         let mut recover_calls = 0usize;
         let mut violations = Vec::new();
         for path in &files {
-            let Ok(text) = std::fs::read_to_string(path) else {
+            let Some(masked) = normalized(path) else {
                 continue;
             };
-            // Windows 잡에서도 도는 테스트라 CRLF 를 먼저 벗긴다.
-            let normalized = text.replace('\r', "");
-            let lines: Vec<&str> = normalized.lines().collect();
-            for (lineno, span) in recover_call_spans(&lines) {
-                recover_calls += 1;
-                for (name, reason) in FORBIDDEN_LOCKS {
-                    if locks_named(&span, name) {
-                        let rel = path.strip_prefix(&root).unwrap_or(path);
-                        violations.push(format!(
-                            "{}:{lineno} — `{name}` 락: {reason}",
-                            rel.display()
-                        ));
-                    }
-                }
+            recover_calls += recover_call_spans(&masked).len();
+            for line in recovered_forbidden_lines(&masked) {
+                let rel = path.strip_prefix(&root).unwrap_or(path);
+                violations.push(format!("{}:{line}", rel.display()));
             }
         }
 
@@ -359,83 +562,49 @@ mod forbidden_lock_guard {
         );
         assert!(
             violations.is_empty(),
-            "복구가 오답인 락을 이 헬퍼로 복구한다:\n{}",
+            "복구가 오답인 락을 이 헬퍼로 복구한다 — 이유는 `FORBIDDEN_LOCKS` 에 있다:\n{}",
             violations.join("\n")
         );
     }
 
-    /// 금지 락을 **조용히 건너뛰는** 형태도 막는다.
-    ///
-    /// 앞 테스트는 "복구하지 마라" 만 본다. 그런데 `if let Ok(mut w) = writer.lock()` 은
-    /// 복구도 아니고 패닉도 아닌 **제3의 형태**이고, 락이 poison 이면 아무 일도 일어나지
-    /// 않은 채 로그도 남지 않는다 — 방침이 요구하는 "어느 선택을 하든 로그를 남긴다" 를
-    /// 정면으로 어긴다. 실제로 `tasty-host-plugin` 의 aux Pong 전송이 그 형태였고, 앞
-    /// 테스트만으로는 보이지 않았다(가드의 사각).
-    ///
-    /// 허용되는 형태는 셋이다: `expect`(패닉 유지) · `map_err`(에러 반환) ·
-    /// `match` 의 `Err` 팔(로그 후 접기). 셋 다 poison 을 **다룬다**.
     #[test]
     fn forbidden_locks_are_never_silently_skipped() {
         let root = repo_root();
         let files = rust_sources(&root);
-        assert!(
-            files.len() >= MIN_FILES_SCANNED,
-            "스캔 대상이 {}개뿐이다 — 레포 루트를 잘못 잡았을 가능성이 크다(하한 {})",
-            files.len(),
-            MIN_FILES_SCANNED
-        );
+        assert!(files.len() >= MIN_FILES_SCANNED, "스캔 대상이 너무 적다");
 
         let mut violations = Vec::new();
         for path in &files {
-            let Ok(text) = std::fs::read_to_string(path) else {
+            let Some(masked) = normalized(path) else {
                 continue;
             };
-            let normalized = text.replace('\r', "");
-            for (i, line) in normalized.lines().enumerate() {
-                let trimmed = line.trim_start();
-                if trimmed.starts_with("//") {
-                    continue;
-                }
-                for (name, _) in FORBIDDEN_LOCKS {
-                    let silent_if = trimmed.contains(&format!("if let Ok("))
-                        && locks_named(trimmed, name)
-                        && !trimmed.contains("else");
-                    let silent_ok = locks_named(trimmed, name) && trimmed.contains(".ok()");
-                    if silent_if || silent_ok {
-                        let rel = path.strip_prefix(&root).unwrap_or(path);
-                        violations.push(format!(
-                            "{}:{} — `{name}` 락을 조용히 건너뛴다. poison 을 다루는 형태\
-                             (expect · map_err · match 의 Err 팔)로 바꿔라",
-                            rel.display(),
-                            i + 1
-                        ));
-                    }
-                }
+            for line in silently_skipped_forbidden_lines(&masked) {
+                let rel = path.strip_prefix(&root).unwrap_or(path);
+                violations.push(format!("{}:{line}", rel.display()));
             }
         }
         assert!(
             violations.is_empty(),
-            "복구가 오답인 락을 무음으로 지나친다:\n{}",
+            "복구가 오답인 락을 무음으로 지나친다 — poison 을 다루는 형태(expect · \
+             map_err · match 의 Err 팔)로 바꿔라:\n{}",
             violations.join("\n")
         );
     }
 
-    /// 금지 목록이 낡지 않았는가 — 각 락이 **여전히** 복구 아닌 형태로 잠기는 자리가
-    /// 남아 있어야 한다. 그 자리가 사라졌다면 목록에서 빼야 하고, 그대로 두면 아무것도
-    /// 지키지 않는 항목이 남는다.
+    /// 금지 목록이 낡지 않았는가 — 각 락이 **여전히** 트리에 있어야 한다. 사라졌다면
+    /// 목록에서 빼야 하고, 그대로 두면 아무것도 지키지 않는 항목이 남는다.
     #[test]
     fn every_forbidden_lock_still_exists_in_the_tree() {
         let root = repo_root();
         let files = rust_sources(&root);
         for (name, _) in FORBIDDEN_LOCKS {
             let found = files.iter().any(|path| {
-                let Ok(text) = std::fs::read_to_string(path) else {
-                    return false;
-                };
-                text.replace('\r', "")
-                    .lines()
-                    .filter(|l| !l.trim_start().starts_with("//"))
-                    .any(|l| locks_named(l, name))
+                normalized(path).is_some_and(|masked| {
+                    masked
+                        .lines()
+                        .filter(|l| !l.trim_start().starts_with("//"))
+                        .any(|l| locks_named(l, name))
+                })
             });
             assert!(
                 found,
