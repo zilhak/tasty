@@ -55,8 +55,32 @@ pub(crate) fn latte_theme() -> Theme {
     ThemeStruct::with_colors(colors, is_light.unwrap_or(true))
 }
 
-/// UI scale 세그 stops (Appearance›Display 매핑과 동일).
-const UI_SCALE_STOPS: [(&str, f32); 3] = [("0.8", 0.8), ("1.0", 1.0), ("1.2", 1.2)];
+/// UI scale 세그 stops — 배율을 [`AppearanceSettings::ui_scale_factor_for`] 에서 **읽는다**.
+///
+/// 종전에는 `[("0.8", 0.8), ("1.0", 1.0), ("1.2", 1.2)]` 하드코딩 사본이었고, 주석은
+/// "Appearance›Display 매핑과 동일" 이라고 적고 있었는데 **동일하지 않았다** — 본체의
+/// small 은 0.85 다. 사본이 조용히 갈라진 자리다.
+///
+/// 그 사본을 없앨 수 있는 이유는 **의존 방향이 맞기 때문**이다. 배율 집합의 정본
+/// (`tasty-settings`)에 달린 핀(`the_supported_ui_scale_set_is_pinned`)은 자기를 읽지
+/// **못하는** 소비자(`tasty-type-appearance`)의 사본만 겨냥해 두었고, 갤러리는 그 소비자가
+/// 아니다 — `tasty-settings` 를 이미 의존하므로 부르면 된다. 이름이 있고 부를 수도 있는데
+/// 그 자리만 안 부른 형태이고, 드리프트가 그 대가였다(ADR-0126 "이름이 있는데 그 자리만
+/// 안 부른다").
+fn ui_scale_stops() -> Vec<(String, f32)> {
+    tasty_settings::UI_SCALE_CHOICES
+        .iter()
+        .map(|key| {
+            let factor = tasty_settings::AppearanceSettings::ui_scale_factor_for(key);
+            // `{factor}` 는 1.0 을 `"1"` 로 찍는다. 세그는 배율 숫자를 나란히 읽는
+            // 자리라 소수 자리가 들쭉날쭉하면 안 된다 — 두 자리로 찍고 남는 0 하나만
+            // 떼어 `0.85` / `1.0` / `1.2` 로 맞춘다.
+            let padded = format!("{factor:.2}");
+            let label = padded.strip_suffix('0').unwrap_or(&padded).to_string();
+            (label, factor)
+        })
+        .collect()
+}
 
 /// 갤러리 전역 상태.
 pub struct GalleryState {
@@ -258,12 +282,13 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             }
             ui.add_space(pad_lg);
             // UI scale 세그.
-            let scale_items: Vec<(&str, bool)> = UI_SCALE_STOPS
+            let stops = ui_scale_stops();
+            let scale_items: Vec<(&str, bool)> = stops
                 .iter()
-                .map(|(l, s)| (*l, (ui_scale - s).abs() < 0.001))
+                .map(|(l, s)| (l.as_str(), (ui_scale - s).abs() < 0.001))
                 .collect();
             if let Some(i) = seg_with_label(ui, &seg, f_micro, "Scale", &scale_items) {
-                act_scale = Some(UI_SCALE_STOPS[i].1);
+                act_scale = Some(stops[i].1);
             }
             ui.add_space(pad_lg);
             // Specs 세그 (Off / On).
