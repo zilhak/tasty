@@ -33,6 +33,16 @@ const ALERT_BADGE_FONT_SIZE: LogicalPx = LogicalPx(9.5);
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
 const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
+/// 접힌 사이드바 rail 의 상태 점 지름. 스케일 밖(6) — 점 치수 토큰은
+/// `status-dot-size`(8) 하나뿐이라 그리로 보내면 배율 1 에서 픽셀이 바뀐다
+/// (`docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다).
+/// 같은 파일의 확장 사이드바 점(`badge_dot_size`, 8)과 값이 다른 것은 rail 이 52px 폭이라
+/// 같은 크기를 못 쓰기 때문이다.
+///
+/// **같은 6 을 `src/adapters/ui/tab_bar.rs` 의 busy 점도 쓴다** — 무관한 두 화면이
+/// 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
+const RAIL_STATUS_DOT_SIZE: LogicalPx = LogicalPx(6.0);
+
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
 #[derive(Debug, Clone)]
@@ -1397,7 +1407,7 @@ fn draw_collapsed_avatar(
     // 우상단 dot — notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring,
     // mirror 는 우하단 corner chip(아래) 로 분리 — dot 은 실행상태 전용
     // (디자인 2026-07-02 workspace-mirror-indicator: sky "remote" fill 제거).
-    let dot_radius = 3.0;
+    let dot_radius = RAIL_STATUS_DOT_SIZE.value() * 0.5;
     let dot_pad = 4.0;
     let dot_center = egui::pos2(
         rect.max.x - dot_pad - dot_radius,
