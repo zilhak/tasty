@@ -162,6 +162,7 @@
 | 0151 | [문서의 좌표 인용은 리터럴로만 판정하고, 오탐은 예외 목록이 아니라 인용 형태를 고쳐 없앤다](0151-cited-coordinates-are-judged-as-literals-not-by-context.md) | Accepted | 2026-09-05 | documentation, guards, citation, false-positive, allowlist, detector-design, adr-0105, adr-0133, adr-0138, adr-0139 |
 | 0152 | [게이트는 라우팅보다 먼저 돈다 — 조기 응답이 검사 자리를 건너뛴다](0152-gates-run-before-routing-not-inside-it.md) | Accepted | 2026-09-05 | security, permissions, ipc, plugin, routing, guards, telemetry, audit |
 | 0150 | [차집합이 0 인 면제는 죽은 것이 아니다 — 죽음과 잠복은 사유가 가른다](0150-a-zero-difference-exemption-is-not-dead.md) | Accepted | 2026-09-05 | guards, exemptions, measurement, adr-0133, adr-0146 |
+| 0157 | [끊긴 holder 는 재attach 를 막지 못한다](0157-a-disconnected-holder-does-not-block-a-reattach.md) | Accepted | 2026-09-05 | attach, occupancy, stream, ordering, headless, adr-0040, adr-0052 |
 | 0156 | [닫기 **요청**은 원격이 점유한 surface 를 파괴하지 않는다 — 사후 정리는 예외다](0156-a-close-request-does-not-destroy-an-occupied-surface.md) | Accepted | 2026-09-05 | attach, occupancy, close, data-loss, ipc, gui, symmetry, adr-0040, adr-0120 |
 | 0149 | [부류를 부른 것도 지목이다 — 이름만 세는 추출기는 그 서술을 아무 축도 판정하지 않는다](0149-a-class-citation-is-a-citation.md) | Accepted | 2026-09-05 | guards, ci-gates, docs, false-negative, census, adr-0139, adr-0142, adr-0144 |
 | 0153 | [번들 plugin 이 점유한 namespace 아래의 host 메서드는 그 plugin 이 되돌려 준다](0153-a-bundled-namespace-hands-host-methods-back.md) | Accepted | 2026-09-05 | plugin, ipc, namespace, routing, guards, identity-principle-2, adr-0140, adr-0143 |
