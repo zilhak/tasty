@@ -816,7 +816,10 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
     drop(tx); // 남은 건 stdin 슬롯과 server 스레드가 쥔 clone 뿐 — 원본은 더 필요 없음.
 
     // main: 채널 이벤트를 기다린다(더 이상 stdin syscall 에 직접 블록하지 않음).
-    raw_bridge_main_loop(rx, writer)
+    // `Stdout` 은 쓸 때마다 잠근다 — 이전 코드가 프레임마다 `lock()` 하던 것과 같다.
+    // `StdoutLock` 을 넘기면 루프가 도는 내내 잠금을 붙들어 다른 스레드가 막힌다.
+    let mut out = std::io::stdout();
+    raw_bridge_main_loop(rx, writer, &mut out)
 }
 
 /// `run_raw_bridge` 의 이벤트 디스패치 루프 — stdin/server 스레드가 실제 OS 자원에
@@ -826,8 +829,8 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
 fn raw_bridge_main_loop(
     rx: mpsc::Receiver<RawEvent>,
     writer: Arc<Mutex<TcpStream>>,
+    out: &mut impl Write,
 ) -> Result<AttachExit> {
-    let stdout = std::io::stdout();
     loop {
         match rx.recv() {
             Ok(RawEvent::Stdin(data)) => {
@@ -863,9 +866,8 @@ fn raw_bridge_main_loop(
             Ok(RawEvent::StdinEof) => return Ok(AttachExit::Completed),
             Ok(RawEvent::Server(frame)) => match frame.tag {
                 StreamTag::Data => {
-                    let mut h = stdout.lock();
-                    let _ = h.write_all(&frame.payload); // best-effort stdout 미러 — 무시
-                    let _ = h.flush(); // best-effort flush — 무시
+                    let _ = out.write_all(&frame.payload); // best-effort 미러 — 무시
+                    let _ = out.flush(); // best-effort flush — 무시
                 }
                 StreamTag::Detach => return Ok(AttachExit::Completed),
                 StreamTag::Control => {
@@ -1015,7 +1017,7 @@ mod raw_bridge_tests {
         tx.send(RawEvent::ServerRecvErr).unwrap();
         drop(tx);
 
-        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
         assert!(matches!(exit, AttachExit::Disconnected));
     }
 
@@ -1029,7 +1031,7 @@ mod raw_bridge_tests {
         .unwrap();
         drop(tx);
 
-        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
         assert!(matches!(exit, AttachExit::Completed));
     }
 
@@ -1044,7 +1046,7 @@ mod raw_bridge_tests {
         .unwrap();
         drop(tx);
 
-        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
         assert!(matches!(exit, AttachExit::Completed));
     }
 
@@ -1054,7 +1056,7 @@ mod raw_bridge_tests {
         tx.send(RawEvent::StdinEof).unwrap();
         drop(tx);
 
-        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
         assert!(matches!(exit, AttachExit::Completed));
     }
 
@@ -1064,7 +1066,7 @@ mod raw_bridge_tests {
         tx.send(RawEvent::Stdin(vec![b'a', 0x1c, b'b'])).unwrap(); // Ctrl+\ 포함
         drop(tx);
 
-        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
         assert!(matches!(exit, AttachExit::Completed));
     }
 
@@ -1083,7 +1085,7 @@ mod raw_bridge_tests {
         tx.send(RawEvent::ServerRecvErr).unwrap();
         drop(tx);
 
-        let exit = raw_bridge_main_loop(rx, dummy_writer()).unwrap();
+        let exit = raw_bridge_main_loop(rx, dummy_writer(), &mut Vec::<u8>::new()).unwrap();
         assert!(matches!(exit, AttachExit::Disconnected));
     }
 
