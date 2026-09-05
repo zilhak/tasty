@@ -515,10 +515,12 @@ fn read_stamp(source: &str) -> Option<String> {
 /// renders the new markup unstyled).
 static ASSET_TAG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-/// The latest GitHub release, resolved by the Pages workflow into
-/// `site/release.json` (`gh release view --json tagName,assets`) before the
-/// generator runs. Absent in a plain local build — the landing then links the
-/// downloads to the releases page instead of to the assets.
+/// The latest GitHub release, resolved by the Pages workflow into a
+/// `release.json` at this crate root (`gh release view --json tagName,assets`)
+/// before the generator runs. It is a generated file the repo does not track, so
+/// it is named here rather than cited as a repo path. Absent in a plain local
+/// build — the landing then links the downloads to the releases page instead of
+/// to the assets.
 pub struct Release {
     pub tag: String,
     /// (asset file name, browser download URL)

@@ -3,7 +3,9 @@
 #
 # 결과:
 #   ~/.tasty-keys/dev.pem                        — Ed25519 private key (chmod 600)
-#   crates/tasty-host-plugin/keys/dev-pubkey.bin — raw 32 byte public key
+#   host-plugin 크레이트의 keys/ 아래 dev-pubkey.bin — raw 32 byte public key.
+#   추적하지 않는 로컬 산출물이라 레포 경로로 적지 않는다 —
+#   `crates/tasty-host-plugin/keys/README.md` 가 그 파일을 설명한다.
 #
 # 본 스크립트는 한 번만 실행. private key 가 이미 있으면 덮어쓰지 않고 종료
 # (실수로 키 분실 방지). 강제 재생성은 `--force` 플래그.
