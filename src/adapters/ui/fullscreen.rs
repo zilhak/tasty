@@ -198,15 +198,14 @@ fn content_rect(screen: egui::Rect) -> egui::Rect {
 ///
 /// 눌렸으면 `true`.
 fn draw_exit_button(ui: &mut egui::Ui, screen: egui::Rect) -> bool {
-    use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
+    use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, top_right_inset_square};
 
     let th = crate::theme::theme();
     let pad = th.spacing_xl.value();
     let side = ControlSize::Md.height(&th);
-    let rect = egui::Rect::from_min_size(
-        egui::pos2(screen.right() - pad - side, screen.top() + pad),
-        egui::vec2(side, side),
-    );
+    // 위치 공식은 공유한다 — 갤러리 specimen 이 같은 자리를 그리므로 여기 식을 손으로
+    // 되풀이하면 갈라져도 화면 말고는 신호가 없다.
+    let rect = top_right_inset_square(screen, pad, side);
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         IconButton::new()
             .variant(IconButtonVariant::Ghost)

@@ -29,6 +29,7 @@ mod autocomplete;
 pub mod brand;
 mod button;
 mod chip;
+mod chrome_slot;
 mod control;
 mod drilldown;
 mod help_hint;
@@ -63,6 +64,7 @@ pub use chip::{
     BadgeVariant, KbdKey, TagVariant, badge, badge_dot, kbd, kbd_parts, num_keycap,
     paint_badge_dot, paint_num_keycap, tag, tag_width,
 };
+pub use chrome_slot::top_right_inset_square;
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;
