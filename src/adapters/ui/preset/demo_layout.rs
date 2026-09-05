@@ -1806,7 +1806,7 @@ fn draw_leaf_preview(
         ui,
         catalog.kind_icon(&leaf.kind),
         egui::pos2(cx_x, y + icon * 0.5),
-        icon,
+        LogicalPx(icon),
         kind_accent(theme, &leaf.kind),
     );
     y += icon;
@@ -2065,7 +2065,7 @@ fn mini_handle(
         theme.text_secondary().to_egui()
     };
     let glyph = HANDLE_SZ * 0.62;
-    paint_icon(ui, icon, rect.center(), glyph, color);
+    paint_icon(ui, icon, rect.center(), LogicalPx(glyph), color);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -2315,7 +2315,13 @@ fn draw_pane_card(
         } else {
             theme.text_muted().to_egui()
         };
-        paint_icon(ui, cx.catalog.kind_icon(rep), icon_c, icon_sz, icon_color);
+        paint_icon(
+            ui,
+            cx.catalog.kind_icon(rep),
+            icon_c,
+            LogicalPx(icon_sz),
+            icon_color,
+        );
         ui.painter_at(strip).text(
             egui::pos2(
                 tab_rect.min.x + TAB_PAD_X + icon_sz + TAB_GAP,
@@ -2362,7 +2368,13 @@ fn draw_pane_card(
                 } else {
                     theme.text_muted().to_egui()
                 };
-                paint_icon(ui, icons::CLOSE, close_rect.center(), CLOSE_HIT * 0.5, col);
+                paint_icon(
+                    ui,
+                    icons::CLOSE,
+                    close_rect.center(),
+                    LogicalPx(CLOSE_HIT * 0.5),
+                    col,
+                );
             }
             close_clicked = close_resp.clicked();
         }
@@ -2405,7 +2417,7 @@ fn draw_pane_card(
         } else {
             theme.text_muted().to_egui()
         };
-        paint_icon(ui, icons::PLUS, add.center(), icon_sz, col);
+        paint_icon(ui, icons::PLUS, add.center(), LogicalPx(icon_sz), col);
         if resp.clicked() {
             cx.act = Some(Act::AddTab { pane: pane.id });
         }
@@ -2452,9 +2464,18 @@ fn draw_tab_frame(
     );
 }
 
-fn paint_icon(ui: &mut egui::Ui, icon: Icon, center: egui::Pos2, size: f32, color: egui::Color32) {
-    let r = egui::Rect::from_center_size(center, egui::vec2(size, size));
-    icon.image(size, color).paint_at(ui, r);
+/// 아이콘 한 변을 `LogicalPx` 로 받는다. 호출 다섯 자리가 전부 이 파일 안이고,
+/// f32 로 받으면 그 다섯이 각자 벗겨서 넘겨야 한다 — 벗기는 자리를 egui 로 나가는
+/// 이 본문 두 줄로 모은다.
+fn paint_icon(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    center: egui::Pos2,
+    size: LogicalPx,
+    color: egui::Color32,
+) {
+    let r = egui::Rect::from_center_size(center, egui::vec2(size.value(), size.value()));
+    icon.image(size.value(), color).paint_at(ui, r);
 }
 
 fn text_width(ui: &egui::Ui, text: &str, font: egui::FontId) -> f32 {
