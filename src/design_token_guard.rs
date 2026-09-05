@@ -1170,13 +1170,16 @@ const OVER_CAP_PENDING_BUDGET: usize = 1;
 /// **비교 전용 문턱이다 — 렌더되는 자리가 없다.** 쓰이는 곳은 비교 하나와 실패 메시지
 /// 둘뿐이라, 이 값을 그리는 코드를 찾지 마라.
 ///
-/// 그래도 `LogicalPx` 로 선언한다. 이유 둘:
-/// - 견주는 값들이 소스에서 뽑은 **길이 상수의 값**이라 문턱은 같은 단위로 적히는 것이
-///   맞다. 개념적 짝인 `Theme::font_size_max` 도 `LogicalPx(14.0)` 다.
-/// - `f32` 로 두면 `src/source_guards/length_constant_frontier` 가 잡는다(그리고 잡았다).
-///   그 가드에는 면제 목록이 없고 `FRONTIER` 영역 한 줄뿐이라, 빠져나가려면 전선을
-///   면제 목록으로 바꿔야 한다 — 그 대가가 `.value()` 세 번보다 크다.
-const UI_FONT_SIZE_CAP: LogicalPx = LogicalPx(14.0);
+/// **토큰을 링크한다 — 값을 손으로 옮겨 적지 않는다.** theme.md 의 그 행이 상한을
+/// `font_size_max` 라고 이름으로 못박고 있으므로 정본은 그 토큰이고, 여기 숫자를 다시
+/// 적으면 두 벌이 되어 **갈라져도 아무도 모른다.** 실측: 링크 전에는 토큰만 14 → 16 으로
+/// 바꿔도 이 가드가 초록이었다(가드는 계속 14 를 강제하고, 토큰은 16 이라고 말한다).
+///
+/// 그래서 `LogicalPx` 인 것도 저절로 따라온다 — `SIZING.font_size_max` 가 그 타입이다.
+/// (`f32` 로 두면 `src/source_guards/length_constant_frontier` 가 잡는다. 그 가드에는
+/// 면제 목록이 없고 `FRONTIER` 영역 한 줄뿐이라, 빠져나가려면 전선을 면제 목록으로
+/// 바꿔야 한다 — 그 대가가 `.value()` 세 번보다 크다.)
+const UI_FONT_SIZE_CAP: LogicalPx = tasty_type_appearance::theme::SIZING.font_size_max;
 
 /// 상수 표 하한 — 표가 비면 "상한 초과 0" 이 조용히 참이 된다.
 const MIN_SCANNED_CONSTS: usize = 100;
