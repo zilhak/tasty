@@ -254,6 +254,14 @@ done | sort | uniq -c
 `DEBUG_METHODS` 를 런타임 값으로 읽는다) — 옮기려면 그 링크를 텍스트 판독으로 바꾸는
 선행 작업이 필요하다.
 
+★ **그 부류는 비어 가는 중이고, 되감기지 않게 래칫이 걸려 있다.** 한때 셋이었다
+(`cli_method_table_parity` · `permission_free_methods_docs_parity` ·
+`contributes_gate_docs_parity`). 나머지 둘은 상수를 **소스 텍스트로 읽고** 판독이 진짜 값과
+갈리는 위험을 본체 패키지의 교차 대조 가드가 받는 길로 옮겨졌다. 관측자의 `DEP_BEARING`
+명부가 그 방향을 양방향으로 고정한다 — 문서를 읽으면서 크레이트를 링크하는 가드가 필터 뒤에
+새로 생기면 실패하고, 링크를 끊었는데 명부에 남아 있어도 실패한다. 크레이트 이름 목록은
+`crates/` 디렉토리에서 읽으므로 손으로 갱신하지 않는다.
+
 ★ **이 분류는 이제 손으로 세지 않는다.** `crates/tasty-doc-guards/tests/filtered_guards_are_not_totally_blind.rs`
 가 워크플로에서 `paths-ignore` 를 읽어 필터 뒤 스캔 가드를 매번 다시 분류하고, **읽는 경로가
 전부 무시 대상인 것이 생기면 실패한다.** 일부만 무시 대상인 것은 그 파일의

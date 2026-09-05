@@ -47,6 +47,28 @@ const PARTIALLY_FILTERED: &[(&str, &str)] = &[(
 /// 한참 낮으면 술어가 절반 죽어도 통과한다.
 const MIN_SCANNED: usize = 30;
 
+/// 필터 뒤에서 문서를 읽으면서 **워크스페이스 크레이트를 링크하는** 가드와 그 사유.
+///
+/// 이 부류가 따로 있는 이유는 이동 비용이 다르기 때문이다. 의존 0 인 가드는 그냥
+/// [`FILTER_FREE_DIR`] 로 옮기면 되지만, 크레이트 상수를 **런타임 값으로** 읽는 가드는
+/// 그 크레이트를 링크해야 해서 의존 0 인 그 자리에 못 들어간다(ADR-0138 이 그 크레이트를
+/// 의존 0 으로 유지하는 것이 결정의 전제다).
+///
+/// **그 부류는 비어 가는 중이다.** 한때 셋이었고(`cli_method_table_parity` ·
+/// `permission_free_methods_docs_parity` · `contributes_gate_docs_parity`) 지금 하나다 —
+/// 나머지 둘은 상수를 **소스 텍스트로 읽고** 판독이 진짜 값과 갈리는 위험을 본체 패키지의
+/// 교차 대조 가드가 받는 길로 옮겨졌다. 이 명부는 그 방향이 **되감기지 않게** 하는 래칫이다:
+/// 새로 생기면 실패하고, 없어졌는데 남아 있어도 실패한다.
+///
+/// [`PARTIALLY_FILTERED`] 와 겹칠 수 있지만 묻는 것이 다르다 — 저쪽은 "필터에 얼마나
+/// 노출됐나", 이쪽은 "옮기려면 무엇을 먼저 해야 하나" 다.
+const DEP_BEARING: &[(&str, &str)] = &[(
+    "tests/cli_method_table_parity.rs",
+    "tasty_ipc 의 METHOD_TABLE·method_meta·DEBUG_METHODS 를 런타임 값으로 읽는다. \
+     앞의 둘은 tasty_doc_guards::method_table 판독으로 대체되지만 DEBUG_METHODS \
+     판독기는 아직 없다 — 그것이 이 가드의 이동 선행 작업이다.",
+)];
+
 const WORKFLOW: &str = ".github/workflows/crossplatform-check.yml";
 
 /// 필터 없는 채널을 가진 자리 — 여기 사는 가드는 이 판정의 대상이 아니다.
@@ -190,6 +212,42 @@ fn is_pure_source_scan(src: &str) -> bool {
     reads && !spawns
 }
 
+/// `crates/` 의 디렉토리 이름에서 워크스페이스 크레이트의 **crate 이름**을 만든다
+/// (하이픈이 언더스코어가 된다). 손 명부를 두지 않으려는 것이다 — 크레이트가 늘면
+/// 이 목록도 같이 는다.
+fn workspace_crate_idents(root: &Path) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let Ok(entries) = std::fs::read_dir(root.join("crates")) else {
+        panic!("read crates/: 워크스페이스 크레이트 목록을 못 읽었다");
+    };
+    for e in entries.flatten() {
+        if e.path().join("Cargo.toml").is_file() {
+            out.insert(e.file_name().to_string_lossy().replace('-', "_"));
+        }
+    }
+    out
+}
+
+/// 이 타깃이 링크하는 워크스페이스 크레이트. `tasty_doc_guards` 자신은 세지 않는다 —
+/// 그것이 의존 0 인 자리라 이동을 막지 않는다.
+fn linked_crates(src: &str, idents: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        let Some(rest) = t.strip_prefix("use ") else {
+            continue;
+        };
+        let head: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+            .collect();
+        if head != "tasty_doc_guards" && idents.contains(&head) {
+            out.insert(head);
+        }
+    }
+    out
+}
+
 fn integration_targets(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut dirs = vec![root.join("tests")];
@@ -231,9 +289,11 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
          판독이 깨졌다. 그대로 두면 이미 덮인 가드를 '옮겨라' 로 잡는다"
     );
 
+    let idents = workspace_crate_idents(&root);
     let mut scanned = 0usize;
     let mut blind: Vec<String> = Vec::new();
     let mut partial: BTreeSet<String> = BTreeSet::new();
+    let mut dep_bearing: BTreeSet<String> = BTreeSet::new();
 
     for file in integration_targets(&root) {
         let r = rel(&file, &root);
@@ -248,6 +308,14 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
         let paths = path_literals(&root, &src);
         if paths.is_empty() {
             continue;
+        }
+        // 문서를 읽으면서 크레이트를 링크하면 의존 0 인 자리로 그냥 못 옮긴다.
+        if paths
+            .iter()
+            .any(|p| p.starts_with("docs/") || p.ends_with(".md"))
+            && !linked_crates(&src, &idents).is_empty()
+        {
+            dep_bearing.insert(r.clone());
         }
         let ignored: Vec<&String> = paths.iter().filter(|p| is_ignored(p, &globs)).collect();
         if ignored.is_empty() {
@@ -305,6 +373,35 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
             .collect::<Vec<_>>()
             .join("\n  ")
     );
+    let dep_declared: BTreeSet<String> =
+        DEP_BEARING.iter().map(|(p, _)| (*p).to_string()).collect();
+    let dep_added: Vec<&String> = dep_bearing.difference(&dep_declared).collect();
+    let dep_stale: Vec<&String> = dep_declared.difference(&dep_bearing).collect();
+    assert!(
+        dep_added.is_empty(),
+        "필터 뒤에서 문서를 읽으면서 워크스페이스 크레이트를 링크하는 가드가 새로 생겼다. \
+         그 형태는 의존 0 인 `{FILTER_FREE_DIR}` 로 옮길 수 없어 필터 뒤에 갇힌다. \
+         상수를 **소스 텍스트로 읽고** 판독을 런타임 열거와 대조하는 길이 이미 있다 \
+         (`tasty_doc_guards::method_table` + `tests/method_table_readings_agree.rs`) — \
+         그 길로 가거나, 못 가는 이유를 `DEP_BEARING` 에 사유와 함께 등재해라:\n  {}",
+        dep_added
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+    assert!(
+        dep_stale.is_empty(),
+        "`DEP_BEARING` 에 있는데 실제로는 그 형태가 아니다 — 링크를 끊었으면 명부에서 \
+         지워라. 이 명부는 그 부류가 다시 커지는 것을 막는 래칫이라, 실제보다 넓으면 \
+         다음에 진짜가 생겨도 이미 등재된 것으로 읽힌다:\n  {}",
+        dep_stale
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+
     assert!(
         stale.is_empty(),
         "`PARTIALLY_FILTERED` 에 있는데 실제로는 그 형태가 아니다 — 옮겼거나 입력이 \
