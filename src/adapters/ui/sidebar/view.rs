@@ -1251,11 +1251,16 @@ fn draw_ws_row(
 /// `margin-left:32px`). `separator` 는 premultiplied 반투명 바이트로 저장돼 있어
 /// `to_egui_premultiplied()` 로 변환한다.
 fn draw_list_separator(ui: &mut egui::Ui, th: &Theme, left_inset: f32) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), th.border_width.value()),
+        egui::Sense::hover(),
+    );
     let line = egui::Rect::from_min_size(
         egui::pos2(rect.min.x + left_inset, rect.min.y),
-        egui::vec2((rect.width() - left_inset).max(0.0), 1.0),
+        egui::vec2(
+            (rect.width() - left_inset).max(0.0),
+            th.border_width.value(),
+        ),
     );
     ui.painter()
         .rect_filled(line, 0.0, th.separator.to_egui_premultiplied());

@@ -102,8 +102,10 @@ pub fn draw_header(
 
     // 헤더 ↔ 캔버스 구분선. `separator` 는 알파가 이미 곱해진 색이라
     // premultiplied 로 읽는다 — `to_egui()` 로 읽으면 한 번 더 곱해져 옅어진다.
-    let (sep, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    let (sep, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), theme.border_width.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         sep.x_range(),
         sep.center().y,
