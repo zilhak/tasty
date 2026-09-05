@@ -113,7 +113,7 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        62,
+        58,
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (
@@ -363,6 +363,15 @@ fn every_area_holds_exactly_the_count_it_records() {
             .count();
         if n != *budget {
             lines.push(format!("  {area}  기록 {budget} → 실측 {n}  ({why})"));
+            // 남은 자리를 함께 낸다. 슬라이스는 "무엇이 남았나" 를 보고 고르는 작업이라,
+            // 그 목록을 다른 도구로 다시 내면 두 도구의 수가 갈린다 — 이 축에서 이미
+            // 한 번 겪었다(임시 스캐너의 수가 재현되지 않았다).
+            for h in hits.iter().filter(|h| area_of(&h.rel) == Some(*area)) {
+                lines.push(format!(
+                    "      {}:{}  {}({})",
+                    h.rel, h.line, h.head, h.value
+                ));
+            }
         }
     }
     assert!(
