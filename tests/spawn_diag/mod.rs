@@ -788,6 +788,132 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
         // dead_code 로 드러난다. 상한 순서(S1 > S2)만 여기서 고정한다.
         assert!(SPAWN_PORT_TIMEOUT > SPAWN_SHELL_TIMEOUT);
     }
+
+    /// 줄을 많이 뱉는 자식. 링 용량을 넘겨야 링이 도는지 볼 수 있다.
+    fn child_that_prints_stderr_lines(n: usize) -> std::process::Child {
+        #[cfg(windows)]
+        let mut cmd = {
+            let mut c = std::process::Command::new("cmd");
+            c.arg("/C")
+                .arg(format!("for /L %i in (1,1,{n}) do @echo line %i 1>&2"));
+            c
+        };
+        #[cfg(not(windows))]
+        let mut cmd = {
+            let mut c = std::process::Command::new("sh");
+            c.arg("-c").arg(format!(
+                "i=1; while [ $i -le {n} ]; do echo \"line $i\" 1>&2; i=$((i+1)); done"
+            ));
+            c
+        };
+        cmd.stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("stderr 를 뱉는 자식을 못 띄웠다")
+    }
+
+    /// ★ 이 타입은 세 하네스가 그 위로 옮겨 탈 자리인데 **한 번도 안 돌았다.**
+    /// 링이 실제로 돌고, 꼬리가 `tail_lines` 로 잘리고, 시각이 찍히는지를 잰다.
+    #[test]
+    fn the_capture_rings_at_capacity_and_shows_only_the_tail_it_promises() {
+        let emitted = STDERR_RING_CAPACITY + 44;
+        let mut child = child_that_prints_stderr_lines(emitted);
+        let mut cap = StderrCapture::start(child.stderr.take(), 7);
+        child.wait().expect("자식을 못 거뒀다");
+        cap.join();
+
+        let tail = cap.tail();
+        let lines: Vec<&str> = tail.lines().collect();
+
+        // ① 약속한 줄 수만 보여준다 — 링 용량(256)이 아니라 tail_lines(7).
+        assert_eq!(
+            lines.len(),
+            cap.tail_lines(),
+            "꼬리 줄 수가 약속과 다르다: {tail}"
+        );
+
+        // ② 링이 **돌았다** — 마지막 줄이 남고 첫 줄은 밀려났다. 이것이 없으면
+        //    용량을 넘겼을 때 오래된 줄이 남는지 새 줄이 남는지 아무도 모른다.
+        assert_eq!(
+            lines.last().copied(),
+            Some(format!("line {emitted}").as_str())
+        );
+        assert!(
+            cap.find(|l| l == "line 1").is_none(),
+            "용량을 {STDERR_RING_CAPACITY} 넘겨 {emitted} 줄을 넣었는데 첫 줄이 남아 있다"
+        );
+        // ③ 양성 대조 — `find` 가 늘 `None` 이라서 ②가 통과한 것이 아니다.
+        assert!(cap.find(|l| l == format!("line {emitted}")).is_some());
+
+        // ④ 시각이 찍힌다. 이 값이 없으면 침묵 판정이 통째로 무정보다.
+        assert!(cap.last_line_age().is_some());
+    }
+
+    /// stderr 를 안 준 자식에서도 살아야 한다 — 실패 경로가 그대로 돌아야 하기 때문이다.
+    #[test]
+    fn a_capture_without_a_pipe_stays_empty_instead_of_dying() {
+        let mut cap = StderrCapture::start(None, 9);
+        assert_eq!(cap.tail(), "");
+        assert_eq!(cap.last_line_age(), None);
+        assert!(cap.find(|_| true).is_none());
+        cap.join(); // 거둘 스레드가 없어도 막히지 않는다
+    }
+
+    /// ★★ [`StderrCapture::last_line_age`] 가 **메서드인 이유**를 여기서 잰다.
+    ///
+    /// 타입 doc 이 "가드를 `panic!` 인자 안에서 만들면 오염된다" 를 주장하는데, 그 주장은
+    /// 지금까지 이 레포 **밖**에서만 측정됐다. 기전이 바뀌면(에디션·컴파일러) 주장만 남고
+    /// 아무도 모른다. 그래서 두 형태를 여기서 **양방향으로** 고정한다.
+    ///
+    /// `StderrCapture` 자신으로는 못 잰다 — 내부 `lock()` 이 오염을 복구하므로 밖에서
+    /// 관측되지 않는다. 그것이 이 시험이 지역 뮤텍스로 기전을 잡는 이유다.
+    #[test]
+    fn a_guard_born_inside_a_panic_argument_poisons_and_one_dropped_before_it_does_not() {
+        // ① 인자 안에서 만든 가드 — statement 끝까지 살아 되감기 중에 Drop 된다.
+        let inside = std::sync::Mutex::new(7u32);
+        let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            panic!("나이 {:?}", *inside.lock().expect("첫 lock 은 성해야 한다"));
+        }));
+        assert!(hit.is_err(), "패닉이 안 났으면 아래 판정이 무정보다");
+        assert!(
+            inside.lock().is_err(),
+            "인자 안의 가드가 오염을 안 만든다 — 그러면 last_line_age 를 메서드로 둔 근거가 사라진다"
+        );
+
+        // ② 값을 먼저 꺼내고 가드를 statement 밖에서 떨어뜨린다 = 메서드가 하는 일.
+        let outside = std::sync::Mutex::new(7u32);
+        let hit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let v = *outside.lock().expect("첫 lock 은 성해야 한다");
+            panic!("나이 {v:?}");
+        }));
+        assert!(hit.is_err());
+        assert!(
+            outside.lock().is_ok(),
+            "가드를 먼저 떨어뜨렸는데도 오염됐다 — 처방이 안 듣는다는 뜻이다"
+        );
+    }
+
+    /// 래치가 **실제로 두 번째를 막는가.** 막는 것이 이 타입의 전부인데 안 재고 있었다.
+    #[test]
+    fn the_latch_blocks_the_second_spawn_and_a_success_releases_it() {
+        let latch = SpawnOnceLatch::new();
+
+        // ① 첫 진입은 통과한다.
+        latch.entering("시험용 하네스");
+        // ② 성공을 안 알리면 두 번째 진입에서 죽는다 — 프로세스를 띄우기 **전에** 막는다.
+        let blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            latch.entering("시험용 하네스");
+        }));
+        assert!(blocked.is_err(), "래치가 두 번째 진입을 안 막았다");
+
+        // ③ 양성 대조 — 래치가 **늘** 막는 것이 아니다. 성공을 알리면 다시 열린다.
+        //    이것이 없으면 ②는 "두 번째는 무조건 죽는다" 로도 설명되고, 그러면 성공한
+        //    인스턴스를 쓰는 다음 호출까지 잘못 막힌다.
+        let opened = SpawnOnceLatch::new();
+        opened.entering("시험용 하네스");
+        opened.succeeded();
+        opened.entering("시험용 하네스"); // 안 죽어야 한다
+    }
 }
 
 /// 번들 plugin 을 **실제로 호출하는** 테스트 바이너리.
