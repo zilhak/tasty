@@ -344,7 +344,11 @@ impl PtyRegistry {
             // 유실되지 않는다. poison 은 값을 잃지 않고 그대로 복구한다(exit cell 은 한 칸뿐).
             guard = match cvar.wait_timeout(guard, remaining) {
                 Ok((g, _)) => g,
-                Err(p) => p.into_inner().0,
+                // 이 락은 헬퍼 밖(`Condvar::wait_timeout` 재획득)에서 poison 을 만난다 —
+                // `recover_poisoned` 로 같은 exit cell 좌표에 첫-1 회 보고를 모은다.
+                Err(p) => {
+                    crate::poison::recover_poisoned(p, EXIT_CELL_WHAT, &EXIT_CELL_POISON_REPORTED).0
+                }
             };
         }
         guard.clone()
