@@ -6,6 +6,8 @@
 # 전사 코드는 스크립트 skip() 이 제외하고, 파일 **안**의 인라인 `#[cfg(test)] mod` 는 애초에
 # 계수되지 않는다(게이트가 재는 것은 그 범위를 지운 사본이다 — ADR-0165).
 # 리팩터로 1000 이하로 줄면 해당 줄을 삭제해 래칫을 한 칸 조인다.
+# 이 목록은 **경로만** 담는다 — 값이 없으므로 등재된 파일이 얼마나 자라든 게이트가
+# 아무 신호도 내지 않는다. 그 비대칭과 재검토 트리거는 docs/adr/0167-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md
 # 상세: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
 crates/tasty-gallery/src/catalog.rs
 crates/tasty-host-plugin/src/builtin.rs

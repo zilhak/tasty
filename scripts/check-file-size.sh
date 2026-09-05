@@ -2,11 +2,16 @@
 # 파일 SLOC 게이트 (복잡도 게이트 파트 B) — Rust 파일의 **출하** code SLOC 상한을 강제.
 # code SLOC(주석·공백 제외) > 1000 인 Rust 파일 중 allowlist 에 없고 skip 대상도
 # 아닌 것이 있으면 목록을 출력하고 exit 1. 기존 대형 파일은 .complexity-file-allowlist
-# 로 동결(grandfather)하고, 신규 대형 파일만 차단한다.
+# 로 동결(grandfather)하고, 새로 임계를 넘는 것만 차단한다.
 #
 # **재는 것은 원본이 아니라 인라인 `#[cfg(test)]` 를 지운 사본이다.** 판정(무엇이
 # 출하되는가)은 strip-cfg-test 가 하고 계측(몇 줄인가)은 tokei 가 그대로 한다 —
 # 계측기를 둘로 늘리지 않는다. 근거: docs/adr/ 의 "출하 SLOC" ADR.
+#
+# **이것은 신규 파일 필터가 아니라 성장 래칫이다.** 실측(2026-07-06 → 09-05): 새로 생긴
+# .rs 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던
+# 파일이 자란 것이었다. 재는 사건은 "큰 파일이 생겼다" 가 아니라 "파일이 자라 임계를
+# 넘었다" 다. 임계 1000 의 유도와 그 근거: docs/adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md
 #
 # 예외 등록: 정당하게 큰 파일은 .complexity-file-allowlist 에 레포 상대경로(슬래시)를 추가.
 # skip(게이트 미적용): 테스트 모듈·생성/전사 코드는 아래 skip() 에서 제외.

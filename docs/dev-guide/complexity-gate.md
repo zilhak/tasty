@@ -16,6 +16,9 @@
 - cognitive 임계 20 은 외부 도구 rca cognitive ≈ 50 등가다. clippy 는 egui 즉시모드 draw 의 `ui.horizontal(|ui|{…})` 클로저를 부모에 합산하지 않아 구조적 draw 를 자동 배제 → 임계 초과 baseline 이 거의 순수 로직 함수라 신호가 깨끗하다.
 - clippy 에는 파일 SLOC lint 가 없어 파일 축은 `scripts/check-file-size.sh` 가 tokei 로
   별도 강제한다(채널은 [ci-gates](ci-gates.md)).
+- **파일 임계 1000 에는 등가가 없다 — 유도되지 않는다.** cognitive 축이 쓴 "다른 도구와의 등가" 를 파일 축은 쓸 수 없고(clippy 에 파일 길이 린트가 없다), 이 레포의 분위수로 유도하는 것은 순환이다(도입 시 동결 목록이 임계 초과 집합 그대로였다). 유지의 근거는 **발화율 곡선**이다 — 1000 은 950 → 1000 에서 요구가 38% 떨어지는 계단의 바닥이고 1250 까지 평평하다(올려도 요구가 안 줄면서 25% 큰 파일을 허용한다). 측정·대안·트리거는 [ADR-0168](../adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md).
+- **파일 축은 신규 파일 필터가 아니라 성장 래칫이다.** 두 달(2026-07-06 → 09-05) 실측에서 새로 생긴 `.rs` 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던 파일이 자란 것이었다.
+- **동결은 조이는 방향만 잠겨 있다.** `.complexity-file-allowlist` 는 경로만 담아 값이 없으므로, 목록에 오른 파일이 얼마나 자라든 신호가 없다 — 같은 두 달에 도입 시 동결분 18 중 **15 가 자랐고 합계 +2406 줄**이다(그 사이 목록에서 빠져나간 것은 1946 줄). 이 방향을 보는 재검토 트리거는 [ADR-0168](../adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md) 에 있다.
 - **재는 것은 원본이 아니라 인라인 `#[cfg(test)]` 를 지운 사본이다.** 판정(무엇이
   출하되는가)은 `crates/tasty-doc-guards` 의 `strip-cfg-test` 가 하고 계측(몇 줄인가)은
   tokei 가 그대로 한다 — 계측기를 둘로 늘리지 않는다. 지운 줄은 빈 줄로 남아 줄 번호가

@@ -53,4 +53,5 @@
 
 - 정책: [`docs/dev-guide/clippy-policy.md`](../dev-guide/clippy-policy.md)(본 ADR 로 「복잡도 게이트」 재맥락화), [`docs/dev-guide/complexity-gate.md`](../dev-guide/complexity-gate.md)(게이트 운영 상세), [`docs/dev-guide/error-handling.md`](../dev-guide/error-handling.md)(위치 단위 정당화 관행).
 - 선례: `scripts/check-intent-discipline.sh`(소스 파싱 게이트 + `// intent-exempt:` 예외 컨벤션의 원형), `deny.toml`+`supply-chain-check.yml`(외부 도구 게이트 선례).
+- 파일 축 후속: [ADR-0131](0131-file-sloc-gate-needs-a-firing-trigger.md)(발사되는 트리거) · [ADR-0165](0165-the-file-sloc-gate-measures-shipped-lines.md)(출하 줄을 잰다) · [ADR-0168](0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md)(임계 1000 의 유도 없음 · 동결의 성장 방향 트리거).
 - 설정: `Cargo.toml [workspace.lints.clippy]`(`cognitive_complexity = "deny"`), `clippy.toml`(`cognitive-complexity-threshold`), `scripts/check-file-size.sh`, `.complexity-file-allowlist`.
