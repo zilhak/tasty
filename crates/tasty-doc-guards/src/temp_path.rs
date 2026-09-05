@@ -471,6 +471,24 @@ mod tests {
         assert!(fc.silent.is_empty());
     }
 
+    /// `사유:` 도 마커다. 실측 2026-09-06: 이 테스트가 없을 때 [`REASON_TOKENS`] 에서
+    /// `사유:` 를 빼도 레포 스캔의 수(reasoned=7)가 안 움직이고 유닛 열셋도 전부
+    /// 초록이었다 — 오늘 레포에 `사유:` 만으로 통과하는 자리가 없기 때문이다.
+    /// 나머지 둘은 잡힌다(`이유:` 는 코퍼스와 유닛 둘 다, `reason:` 은 유닛이).
+    /// 이 마커가 목록에 있다는 것은 문서가 **주장**하는 것이므로 그 주장을 여기서 건다.
+    #[test]
+    fn a_korean_sayu_marker_also_passes() {
+        let fc = classify_src(
+            "fn f() {\n    // 사유: 프로필 사이에 일부러 공유한다.\n    let p = std::env::temp_dir().join(\"tasty-shared\");\n}",
+        );
+        assert!(
+            fc.silent.is_empty(),
+            "`사유:` 를 사유 마커로 인정하지 않는다 — 목록에서 뺐으면 모듈 문서의 \
+             마커 목록도 함께 고쳐라"
+        );
+        assert_eq!(fc.reasoned.len(), 1);
+    }
+
     /// 경로를 안 짓는 `temp_dir()`(읽기 전용·전달)은 보지 않는다.
     #[test]
     fn a_bare_temp_dir_without_join_is_ignored() {
