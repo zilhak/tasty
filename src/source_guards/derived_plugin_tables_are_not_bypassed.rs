@@ -72,6 +72,34 @@
 //! 겹칠 수 있다(재진입). 데이터면 `method_meta()` 안에서 도는 host 코드가 없다.
 //! 결정·대안·경계는 [ADR-0179](../../docs/adr/0179-the-resolver-is-handed-the-table-not-a-callback.md).
 //!
+//! ## 이 좁힘이 언제 깨지는가 — 지금 안전한 조건
+//!
+//! 필드 항목은 **소유 크레이트 안에서만** 본다. 근거는 하나다: 밖에서는 필드가 안
+//! 보여 컴파일러가 먼저 막는다. 그 전제는 위 `the_narrowed_scan_rests_on_the_fields_
+//! being_private` 가 매번 읽는다.
+//!
+//! namespace 항목은 사정이 다르다 — 바늘이 필드가 아니라 **창구 함수**
+//! (`namespaces_write`)이고, [ADR-0179] 로 표의 `Arc` 가 `tasty-ipc` 로 건너간다.
+//! 그래서 이 항목이 지금 안 새는 조건은 셋이고, **그중 둘은 아직 못박혀 있지 않다**:
+//!
+//! - (가) `PluginManager.ipc_namespaces` 가 private
+//!   — `the_narrowed_scan_rests_on_the_fields_being_private`.
+//! - (나) `tasty-ipc` 가 보관 중인 `Arc` 를 release 에서 되돌려주지 않는다
+//!   — `the_custody_crate_does_not_hand_the_handle_back_out_in_release`.
+//! - (다) 소유 크레이트 **밖의 출하 코드**가 그 타입을 이름짓지 않는다
+//!   — `the_shared_table_type_is_named_only_where_it_is_owned`.
+//!
+//! 셋 중 하나라도 깨지면 이 가드는 **빨개지지 않고 조용해진다.** 다른 크레이트가 `Arc` 를
+//! 쥐면 쓰기는 `table.write().unwrap().register(…)` 형태가 되는데, 그 줄에는
+//! `namespaces_write` 가 없다 — **창구는 이름이고 타입은 성질이다.** 그래서 (나)·(다)는
+//! 이름이 아니라 **타입**을 바늘로 쓴다. 조건을 산문으로만 적어 두면 조건이 깨져도
+//! 아무것도 빨개지지 않으므로, 셋 다 검사가 말하게 했다.
+//!
+//! 위 명부의 namespace 항목이 창구 **이름**을 바늘로 쓰는 것은 그대로다 — 그 이름을 안
+//! 거치는 경로가 (나)·(다)이고, 그 둘을 세어 못박은 것이 위 두 검사다. 오늘 그 경로의
+//! 출하 자리는 0 이고, 0 이 "안 본다" 가 아님은 같은 바늘이 테스트 자리를 집는 것으로
+//! 보인다(양성 대조).
+//!
 //! 그리고 **순서 결함((ㄴ) 부류)은 텍스트로 못 잡는다** — "유도 호출이 원본의 마지막
 //! 쓰기 뒤에 오는가" 는 흐름 판정이다. 그 부류는 실행 시점으로 옮겼다:
 //! `PluginManager::debug_assert_extensions_fresh` 가 lifecycle 조작 끝에서 유도를
@@ -152,6 +180,16 @@ const MIN_TEST_ONLY: usize = 60;
 
 /// 필드 선언이 있는 파일 — 전제 검사가 읽는다.
 const FIELD_DECL_FILE: &str = "crates/tasty-host-plugin/src/manager.rs";
+
+/// 공유 namespace 표의 타입 이름 — **타입 바늘**이다. 이 이름을 쓸 수 있는 코드는
+/// 표를 만들거나 쥐거나 바꿀 수 있다.
+const TABLE_TYPE: &str = "IpcNamespaceRegistry";
+
+/// 그 타입을 이름지어도 되는 크레이트: 정의하는 곳과 인스턴스를 소유하는 곳.
+const TABLE_TYPE_HOMES: &[&str] = &["crates/tasty-ipc/", "crates/tasty-host-plugin/"];
+
+/// 설치된 표를 보관하는 파일 — 손잡이를 되돌려주는 함수가 생기는지 여기서 본다.
+const TABLE_CUSTODY_FILE: &str = "crates/tasty-ipc/src/method_meta.rs";
 
 /// 이름에는 `tests` 가 없는데 선언상 출하되지 않는 실물 파일 — 면제 판정의 한쪽 팔.
 const NAME_BLIND_TEST_ONLY_FILE: &str =
@@ -260,6 +298,113 @@ fn the_exemption_is_pinned_on_both_sides_by_real_files() {
     assert!(
         test_only.contains(&by_name_not_exempt),
         "{NAME_BLIND_TEST_ONLY_FILE} 이 면제 밖이다 — 선언 판정이 이 형태를 놓쳤다"
+    );
+}
+
+/// 공유 표의 타입을 **이름짓는 출하 자리**는 두 크레이트뿐이다.
+///
+/// 위 명부의 namespace 항목은 바늘이 **창구 이름**(`namespaces_write`)이다. 이름 바늘은
+/// 언제나 "그 이름을 안 거치는 경로" 를 남긴다 — 표의 `Arc` 를 쥔 코드는
+/// `table.write().unwrap().register(…)` 로 쓸 수 있고 그 줄에 창구 이름은 없다. 그래서
+/// 그 경로를 여기서 **타입으로** 센다(타입 > 경로 > 이름).
+///
+/// 오늘 그런 출하 자리는 두 크레이트 밖에 **0** 이다. 0 은 "없다" 와 "안 본다" 를 안
+/// 가르므로, 같은 바늘이 **테스트 자리는 실제로 집는지**를 같은 판정 안에서 함께 센다 —
+/// 그것이 이 검사의 양성 대조다. 두 팔이 같은 needle 을 쓰고 **다른 답**을 낸다.
+///
+/// 이것이 모듈 문서의 (나)·(다) 를 코드가 말하게 한 것이다. 산문으로만 적어 두면
+/// 그 조건이 깨져도 아무것도 빨개지지 않는다.
+#[test]
+fn the_shared_table_type_is_named_only_where_it_is_owned() {
+    let root = repo_root();
+    let sources = super::rust_sources();
+    let test_only = shipping_scope::test_only_files(&root, &sources);
+
+    let mut shipping_outside: Vec<String> = Vec::new();
+    let mut test_only_outside: Vec<String> = Vec::new();
+    for (path, src) in &sources {
+        let rel = path.to_string_lossy().replace('\\', "/");
+        if TABLE_TYPE_HOMES.iter().any(|h| rel.starts_with(h)) {
+            continue;
+        }
+        // 주석과 **문자열 리터럴** 둘 다 가린다. 주석만 걷으면 바로 아래 `TABLE_TYPE`
+        // 상수의 리터럴이 이 파일 자신을 집는다 — 그러면 바늘을 죽여도 자기 자신이
+        // 계속 잡혀 양성 대조가 **영영 안 터진다**(동어반복). 실제로 그렇게 짰다가
+        // 계측에서 잡았다.
+        if !super::mask_non_code(src).contains(TABLE_TYPE) {
+            continue;
+        }
+        if test_only.contains(path) {
+            test_only_outside.push(rel);
+        } else {
+            shipping_outside.push(rel);
+        }
+    }
+
+    assert!(
+        !test_only_outside.is_empty(),
+        "두 크레이트 밖에서 `{TABLE_TYPE}` 을 이름짓는 자리를 **하나도** 못 찾았다 — \
+         테스트 자리조차 안 잡혔다는 뜻이라 아래의 0 은 판정이 아니다. 타입 이름이 \
+         바뀌었는지 확인해라"
+    );
+    assert!(
+        shipping_outside.is_empty(),
+        "출하되는 코드가 소유 크레이트 밖에서 `{TABLE_TYPE}` 을 이름짓는다. 그러면 그 \
+         코드는 표의 손잡이를 쥘 수 있고, 쓰기가 창구(`namespaces_write`)를 안 거치는 \
+         형태가 되어 위 판정이 **빨개지지 않고 조용해진다**. 창구를 지나게 하거나, \
+         이 판정의 바늘을 타입으로 옮겨라:\n  {}",
+        shipping_outside.join("\n  ")
+    );
+}
+
+/// 보관하는 크레이트가 손잡이를 **release 에서 되돌려주지 않는다.**
+///
+/// 앞 검사는 두 소유 크레이트 **밖**만 본다. 안쪽에서 새는 형태가 하나 남는데,
+/// `tasty-ipc` 가 보관 중인 `Arc` 를 꺼내주는 `pub fn` 이 생기는 것이다. 그러면 그
+/// 크레이트를 링크한 누구나 손잡이를 쥐고, 쓰기가 창구를 안 거치게 된다.
+///
+/// 지금 꺼내는 함수는 하나뿐이고 `#[cfg(test)]` 뒤에 있다. "뒤에 있는가" 는 줄 단위
+/// cfg 판정이라 [ADR-0180] 의 판정기를 **부른다** — 속성 문자열을 눈으로 세면
+/// `not(test)` 와 `any(test, …)` 두 방향으로 틀린다.
+///
+/// [ADR-0180]: ../../docs/adr/0180-test-only-files-is-the-canonical-shipping-judge.md
+#[test]
+fn the_custody_crate_does_not_hand_the_handle_back_out_in_release() {
+    let src = std::fs::read_to_string(repo_root().join(TABLE_CUSTODY_FILE))
+        .expect("보관 파일을 읽지 못했다 — 옮겼으면 이 상수도 함께 고쳐라");
+    let masked = super::mask_non_code(&src).replace("\r\n", "\n");
+    let lines: Vec<&str> = masked.lines().collect();
+    let gated = tasty_doc_guards::cfg_predicate::cfg_gated_lines(&lines, "test");
+
+    let mut returning: Vec<(usize, bool)> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim_start();
+        if t.starts_with("fn ") || t.contains(" fn ") {
+            if let Some(at) = line.find("->")
+                && line[at..].contains(TABLE_TYPE)
+            {
+                returning.push((i, gated[i]));
+            }
+        }
+    }
+
+    assert!(
+        !returning.is_empty(),
+        "{TABLE_CUSTODY_FILE} 에서 `{TABLE_TYPE}` 을 돌려주는 함수를 하나도 못 찾았다 — \
+         지금 하나 있어야 한다(`test_namespace_table`). 못 찾았다면 아래 판정은 빈 \
+         순회라 그냥 통과한다"
+    );
+    let ungated: Vec<String> = returning
+        .iter()
+        .filter(|(_, g)| !g)
+        .map(|(i, _)| format!("{TABLE_CUSTODY_FILE}:{} — {}", i + 1, lines[*i].trim()))
+        .collect();
+    assert!(
+        ungated.is_empty(),
+        "보관 중인 표의 손잡이를 release 에서도 꺼낼 수 있다. 그러면 이 크레이트를 \
+         링크한 누구나 창구를 안 거치고 표를 바꿀 수 있고, 위 판정은 조용해진다 — \
+         `#[cfg(test)]` 뒤로 넣거나, 꺼낼 필요가 없게 만들어라:\n  {}",
+        ungated.join("\n  ")
     );
 }
 
