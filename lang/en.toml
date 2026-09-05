@@ -1231,6 +1231,10 @@ mirror_structural_blocked = "Can't change structure in a mirrored remote workspa
 # Shown when a structural change forwarded to the remote instance fails there —
 # most often because the requested surface kind isn't available on the remote.
 mirror_structural_forward_failed = "The remote workspace couldn't apply that change."
+# Shown when a close would destroy a surface a remote attach session hard-occupies.
+# Occupancy means someone is working in that terminal right now, so closing would kill
+# their session without warning. Reclaim it with the force-detach button, then close.
+close_blocked_hard_occupied = "Not closed — a remote session is using one of these terminals. Force-detach it first, then try again."
 # Shown after an interactive screenshot taken while focused on a mirror
 # workspace was uploaded and set as the remote instance's clipboard content.
 mirror_capture_saved = "Screenshot copied to the remote clipboard."
@@ -1431,6 +1435,7 @@ metadata_semaphore_conflict = "Error: --metadata already sets 'semaphore' — re
 
 [cli.telemetry]
 tags_not_object = "Error: --tags must be valid JSON object: {}"
+events_not_array = "Error: --events must be a JSON array of event objects: {}"
 cap_reset_target_required = "Error: telemetry cap reset requires --id or --agent"
 
 [cli.approval]
@@ -1453,12 +1458,14 @@ frame_echo_mismatch = "frame {}: echo mismatch — sent {}, got {}"
 
 [cli.plugin_cli]
 manifest_skipped = "warning: plugin manifest at {} skipped: {}"
+name_shadows_host_command = "warning: plugin cli command '{}' was not registered — a built-in tasty command already uses that name, so the plugin command was unreachable anyway"
 no_subcommand = "no subcommand supplied"
 not_plugin_command = "'{}' is not a plugin-contributed cli command"
 subcommand_required = "'{}' requires a subcommand"
 unknown_subcommand = "unknown subcommand '{} {}'"
 flag_repeated = "--{} was specified {} times — it accepts only one value (earlier values would otherwise be silently discarded)"
 flag_not_a_number = "--{} got '{}', which is not a number — rejected rather than ignored: an ignored value is indistinguishable from the flag being absent, so the command would silently fall back to its default target"
+flag_number_out_of_range = "--{} got '{}', which is a number but outside the range this flag accepts — rejected rather than truncated: a truncated id names a different, possibly real, target"
 auto_wait_no_mode = "auto_wait '{}' declares neither 'polling' nor 'strategy'"
 auto_wait_unknown_strategy = "auto_wait '{}' references unknown strategy '{}'"
 arg_invalid = "--{}: {}"

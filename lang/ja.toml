@@ -1213,6 +1213,10 @@ tab_title_fallback = "シェル"
 # インスタンスで実行される必要がある(リモート転送は後続ステップで対応)。
 mirror_structural_blocked = "ミラーされたリモートワークスペースではまだ構造を変更できません。"
 mirror_structural_forward_failed = "リモートワークスペースがその変更を適用できませんでした。"
+# リモート attach がハード占有中の surface を閉じようとしたときに表示。占有は「今
+# リモートユーザーがこの端末を使っている」という宣言であり、閉じるとそのセッション
+# が予告なく終了する。強制切断ボタンで回収してから閉じる。
+close_blocked_hard_occupied = "リモートセッションが使用中の端末があるため閉じませんでした。強制切断で回収してから再試行してください。"
 # ミラーワークスペースにフォーカスした状態で撮ったインタラクティブスクリーンショットが
 # アップロードされ、リモートインスタンスのクリップボードに反映された時に表示。
 mirror_capture_saved = "スクリーンショットをリモートのクリップボードにコピーしました。"
@@ -1407,6 +1411,7 @@ metadata_semaphore_conflict = "エラー: --metadata に既に 'semaphore' が�
 
 [cli.telemetry]
 tags_not_object = "エラー: --tags は有効な JSON オブジェクトである必要があります: {}"
+events_not_array = "エラー: --events はイベントオブジェクトの JSON 配列である必要があります: {}"
 cap_reset_target_required = "エラー: telemetry cap reset には --id または --agent が必要です"
 
 [cli.approval]
@@ -1429,12 +1434,14 @@ frame_echo_mismatch = "frame {}: echo 不一致 — 送信 {}、受信 {}"
 
 [cli.plugin_cli]
 manifest_skipped = "警告: {} の plugin マニフェストをスキップしました: {}"
+name_shadows_host_command = "警告: plugin cli コマンド '{}' を登録しませんでした — 同名の tasty 組み込みコマンドが既にあり、どのみち到達できないためです"
 no_subcommand = "サブコマンドが指定されていません"
 not_plugin_command = "'{}' は plugin が提供する cli コマンドではありません"
 subcommand_required = "'{}' にはサブコマンドが必要です"
 unknown_subcommand = "不明なサブコマンド '{} {}'"
 flag_repeated = "--{} が {} 回指定されました — 値は 1 つだけ受け付けます (先の値が黙って破棄されるのを防ぐため拒否します)"
 flag_not_a_number = "--{} に数値でない '{}' が渡されました — 無視せず拒否します: 無視された値はフラグ自体が無いのと区別できず、コマンドが黙って既定の対象で実行されてしまいます"
+flag_number_out_of_range = "--{} に '{}' が渡されました — 数値ですがこのフラグが受け付ける範囲外です。切り捨てずに拒否します: 切り捨てられた id は実在しうる別の対象を指します"
 auto_wait_no_mode = "auto_wait '{}' に 'polling' も 'strategy' もありません"
 auto_wait_unknown_strategy = "auto_wait '{}' が不明な strategy '{}' を参照しています"
 arg_invalid = "--{}: {}"
