@@ -32,6 +32,12 @@ use tasty_doc_guards::source_text::{mask_literals, mask_non_code, rust_sources};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--check-fresh") {
+        let root = args
+            .get(1)
+            .map_or_else(|| PathBuf::from("."), PathBuf::from);
+        check_fresh(&root);
+    }
     let keep_comments = args.iter().any(|a| a == "--keep-comments");
     args.retain(|a| a != "--keep-comments");
     if args.len() < 3 {
@@ -81,4 +87,24 @@ fn main() {
         }
     }
     println!("{}", files.len());
+}
+
+/// 이 파일의 내용. 게이트가 "이 판정기가 지금 소스로 지어졌나" 를 물을 때 라이브러리
+/// 지문과 함께 대조한다 — 자세한 이유는 [`tasty_doc_guards::freshness`].
+const OWN_SOURCE: &str = include_str!("mask-source.rs");
+const OWN_REL: &str = "crates/tasty-doc-guards/src/bin/mask-source.rs";
+
+/// `--check-fresh <repo-root>`: 0 = 지금 소스로 지어졌다, 1 = 낡았다, 3 = 물을 수 없다.
+/// **1 과 3 을 가른다** — 소스가 없는 트리(배포 tarball · 합성 픽스처)에서 정상 상황이
+/// 경고가 되면 안 된다.
+fn check_fresh(root: &std::path::Path) -> ! {
+    use tasty_doc_guards::freshness::{Freshness, check};
+    match check(root, OWN_REL, OWN_SOURCE) {
+        Freshness::Fresh => std::process::exit(0),
+        Freshness::Stale(why) => {
+            eprintln!("{why}");
+            std::process::exit(1)
+        }
+        Freshness::Undecidable => std::process::exit(3),
+    }
 }
