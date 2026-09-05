@@ -27,24 +27,6 @@ use std::path::{Path, PathBuf};
 /// 생기면 여기에 등록한다.
 const ALLOWLIST_FILES: &[&str] = &[];
 
-/// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성 +
-/// gitignored 로컬 작업 폴더(worktree 에서는 레포 밖으로 향하는 심볼릭 링크일 수 있다).
-const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
-
-/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
-/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
-const LOCAL_HEAD: &str = "claude";
-const LOCAL_TAIL: &str = "-workspace";
-
-/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
-fn is_pruned(name: &str) -> bool {
-    PRUNE_DIRS.contains(&name)
-        || name
-            .strip_prefix('.')
-            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
-}
-
 /// 행이 마크다운 체크박스 목록 항목으로 시작하는지.
 /// 선행 공백 · 목록 마커 · 공백(1 개 이상) · `[` · (공백|x|X) · `]` 순서만 본다. `]` 뒤는 보지 않는다.
 fn is_checkbox_item(line: &str) -> bool {
@@ -75,7 +57,19 @@ fn is_checkbox_doc(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. `is_pruned` 는 가지치기.
+/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다.
+///
+/// **가지치기가 없다 — 이 자리에는 가지칠 것이 원리적으로 없다.** 순회 루트가
+/// `docs/` 하나이고 빌드 산출물도 gitignored 로컬 폴더도 전부 그 밖에 있다.
+/// 한때 이름 기반 가지치기가 여기에도 있었으나 **한 번도 참이 된 적이 없었다**
+/// (2026-09-06 실측: 순회 중 가지쳐진 디렉토리 0 개). 죽은 가지는 코드가 없는
+/// 것보다 나쁘다 — 읽는 사람에게 "이 가드는 그 경우를 고려했다" 는 거짓 안심을
+/// 주면서 그 판정은 한 번도 돌지 않는다.
+///
+/// **이 단정이 깨지는 날: `docs/` 아래에 빌드 산출물이나 gitignored 폴더가 처음
+/// 생기는 날.** 그날 이 순회는 그것을 그대로 들여다본다. 그때 가지치기를 되살릴지
+/// 아니면 그 안의 `.md` 도 검사 대상이 맞는지를 그 자리에서 다시 판단한다 —
+/// 지금 미리 넣어두면 그날까지 또 죽어 있다.
 fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         let rel = rel_of(path, root);
@@ -88,17 +82,7 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         return;
     };
     for entry in entries.flatten() {
-        let p = entry.path();
-        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        // ★ **이름으로 하는 가지치기는 종류를 묻지 않는다.** worktree 에서 `.git` 은
-        // 디렉토리가 아니라 `gitdir:` 한 줄이 든 **파일**이다 — 종류를 먼저 물으면
-        // 그 파일이 가지치기를 빠져나가 모집단에 들고, 같은 커밋이 worktree 와 메인
-        // 체크아웃에서 서로 다른 파일을 보게 된다. 모집단이 환경을 읽으면 답도
-        // 언젠가 환경을 읽는다.
-        if is_pruned(name) {
-            continue;
-        }
-        gather(&p, root, out);
+        gather(&entry.path(), root, out);
     }
 }
 
