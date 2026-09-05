@@ -25,12 +25,26 @@
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
 
 /// 스캔에서 제외할 파일(repo-relative). 현재 비어 있다 — 규칙 본문은 금지 형태를
 /// 행 시작 목록으로 쓰지 않는 방식으로 이 가드를 통과하므로 등록할 파일이 없다.
 /// 체크박스를 **담는 것이 본질** 인 파일(마크다운 렌더 테스트 픽스처 등)이 docs 에
 /// 생기면 여기에 등록한다.
 const ALLOWLIST_FILES: &[&str] = &[];
+
+/// 순회가 실제로 `docs/` 를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
+/// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
+const DOCS_FLOOR: Floor = Floor {
+    min: 250,
+    measured: 380,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 `docs/` 아래 `.md` 문서의 수다. 문서는 ADR 이 쌓이면서 단조 \
+                   증가해 왔고, 한 번에 수십 개가 사라지는 변경은 없었다 — 그래서 여유를 \
+                   좁게 둔다. 넓게 두면 순회가 절반 죽어도 통과하는데, 이 가드가 겨냥하는 \
+                   사고가 정확히 그것(순회 루트 오타 · 재귀 중단)이라 넓은 여유는 가드를 \
+                   자기 목적에서 멀어지게 한다.",
+};
 
 /// 행이 마크다운 체크박스 목록 항목으로 시작하는지.
 /// 선행 공백 · 목록 마커 · 공백(1 개 이상) · `[` · (공백|x|X) · `]` 순서만 본다. `]` 뒤는 보지 않는다.
@@ -62,7 +76,7 @@ fn is_checkbox_doc(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다.
+/// `docs/` 아래 스캔 대상을 모은다.
 ///
 /// **가지치기가 없다.** 순회 루트가 `docs/` 하나이고 빌드 산출물도 로컬 작업 폴더도
 /// 전부 그 밖에 있다. 죽은 가지는 코드가 없는 것보다 나쁘다 — 읽는 사람에게 "이
@@ -74,20 +88,12 @@ fn is_checkbox_doc(rel: &str) -> bool {
 /// 문장으로 남기지 않고 재는 법을 테스트로 남긴다: `docs/` 아래에 가지쳐야 할
 /// 디렉토리가 처음 생기는 날 이 순회는 그것을 그대로 들여다보고 그 아래 `.md` 까지
 /// 검사 대상으로 삼는데, 그날 빨개지는 것은 이 주석이 아니라 그 테스트다.
-fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
-    if path.is_file() {
-        let rel = rel_of(path, root);
-        if is_checkbox_doc(&rel) {
-            out.push(path.to_path_buf());
-        }
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        gather(&entry.path(), root, out);
-    }
+///
+/// 하한은 공용 순회가 강제한다 — 여기서 빠뜨릴 수 없고, 실패문도 거기서 나온다.
+fn gather_docs(root: &Path) -> Result<Vec<PathBuf>, String> {
+    walk_with_floor(&root.join("docs"), &DOCS_FLOOR, Descend::Everything, &|p| {
+        is_checkbox_doc(&rel_of(p, root))
+    })
 }
 
 fn rel_of(file: &Path, root: &Path) -> String {
@@ -100,13 +106,7 @@ fn rel_of(file: &Path, root: &Path) -> String {
 #[test]
 fn no_checkbox_in_docs() {
     let root = &tasty_doc_guards::repo_root();
-    let mut files = Vec::new();
-    gather(&root.join("docs"), root, &mut files);
-    files.sort();
-    assert!(
-        !files.is_empty(),
-        "docs/ 아래 스캔 대상 .md 가 하나도 없다 — 순회 경로가 잘못됐다"
-    );
+    let files = gather_docs(root).unwrap_or_else(|why| panic!("{why}"));
 
     let mut violations = Vec::new();
     for file in files {
