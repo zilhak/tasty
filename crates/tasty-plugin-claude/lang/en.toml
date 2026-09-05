@@ -24,7 +24,6 @@ io_error = "checklist marker I/O failed: {}"
 [claude.params]
 missing_surface_id = "Missing required 'surface' (or 'surface_id') parameter"
 missing_surface_no_env = "Missing required 'surface_id' parameter (and TASTY_SURFACE_ID is not set in the environment)"
-surface_id_not_a_number = "'surface_id' was given as {} — it must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated id names a different, possibly real, surface"
 target_surface_not_a_number = "the target surface was given as {} — 'surface'/'surface_id' must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated id names a different, possibly real, surface"
 surface_conflict = "'surface' and 'surface_id' name different targets ({}) — send one of them, or the same value in both"
 surface_not_a_number = "'surface' was given as {} — it must be a number. Refusing rather than ignoring it: an ignored value falls back to TASTY_SURFACE_ID, which is the caller's own surface"

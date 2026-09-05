@@ -24,7 +24,6 @@ io_error = "checklist marker 파일 입출력 실패: {}"
 [claude.params]
 missing_surface_id = "필수 파라미터 'surface'(또는 'surface_id') 누락"
 missing_surface_no_env = "필수 파라미터 'surface_id' 누락(환경변수 TASTY_SURFACE_ID 도 설정돼 있지 않음)"
-surface_id_not_a_number = "'surface_id' 에 {} 가 왔다 — 32 비트에 들어가는 정수여야 한다. 자르지 않고 거부한다: 잘린 id 는 실재할 수 있는 다른 surface 를 가리킨다"
 target_surface_not_a_number = "대상 surface 에 {} 가 왔다 — 'surface'/'surface_id' 는 32 비트에 들어가는 정수여야 한다. 자르지 않고 거부한다: 잘린 id 는 실재할 수 있는 다른 surface 를 가리킨다"
 surface_conflict = "'surface' 와 'surface_id' 가 서로 다른 대상을 가리킨다 ({}) — 하나만 보내거나 같은 값을 보내라"
 surface_not_a_number = "'surface' 에 숫자가 아닌 {} 이(가) 왔습니다 — 무시하지 않고 거부합니다: 무시하면 TASTY_SURFACE_ID, 즉 호출자 자신의 surface 로 폴백합니다"
