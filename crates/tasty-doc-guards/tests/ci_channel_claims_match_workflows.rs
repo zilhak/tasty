@@ -1775,6 +1775,25 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
 /// `multi_window_owner_routing` 은 무시 표시가 없는데도 창이 없어 못 돌던 테스트다.
 /// 지금 그것을 살리는 자동 채널은 이름을 지목한 스텝 하나뿐이라, 그 스텝이 사라지면
 /// 이 층의 값은 1 이 아니라 0 이 된다.
+///
+/// ## 이 층만 **워크플로 파서에 기댄다** — 그 파서의 잡 분할은 아직 안 검증됐다
+///
+/// 뒤의 두 층은 소스와 문서만 읽는데, 이 층은 `automatic_test_invocations` 를 거쳐
+/// `automatic_job_bodies` 의 **2 칸 들여쓰기 = 잡 헤더** 규칙에 기댄다. 그 규칙을
+/// 3 칸으로 깨뜨리는 변이를 실제로 쏴 봤다:
+///
+/// ```text
+/// 원본(2칸)   bodies 16   invocations 6
+/// 변이(3칸)   bodies  8   invocations 5   ← 잡 절반과 호출 하나가 사라진다
+/// ```
+///
+/// 그런데도 이 파일의 테스트는 **하나도 안 죽었다.** 이 층이 초록이었던 것은 사라진
+/// 호출이 마침 이 층이 지목하는 것이 아니었기 때문이지, 파서가 맞아서가 아니다.
+/// 그러니 지금 이 층이 말할 수 있는 것은 "가드가 본다" 가 아니라 **"가드가 본다고
+/// 되어 있다"** 다 — 초록은 "덮였다" 와 "안 덮여서 볼 수 없다" 둘 다와 양립한다.
+///
+/// 잡 분할 자체를 고정하는 단정은 다른 레인이 만들고 있다. 그것이 서면 이 주석의
+/// 유보를 걷고 두 문장을 하나로 되돌린다.
 #[test]
 fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
     const THE_ONE: &str = "multi_window_owner_routing";
