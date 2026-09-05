@@ -875,6 +875,75 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
         assert!(!gpu_only.contains("디스플레이 서버가 없다"), "{gpu_only}");
     }
 
+    /// ★★ **죽은 자식과 멈춘 자식의 처방은 반대다** — 그런데 그것을 지키는 단정이
+    /// 하나도 없었다. `early_exit_message` 를 부르는 시험이 이 모듈에 **0 건**이었고,
+    /// 실측으로 확인했다: 이 함수의 폴백을 `spawn_timeout_message` 의 폴백으로 바꾸는
+    /// 변이가 **20/0 으로 살아남았다.** 그 변이의 결과는 이미 죽은 프로세스에게
+    /// "부팅 지연이나 설정 경로를 본다" 고 말하는 것이다 — 기다릴 부팅이 없는데
+    /// 기다리는 쪽을 보라고 한다.
+    ///
+    /// 두 함수가 `verdict_or_default` 를 공유해서 **덮인 것처럼 보였던 것**이 이 구멍의
+    /// 생김새다. 공유 부분은 세 시험이 찌르고 있었고, 각자 고르는 **폴백**만 아무도
+    /// 안 봤다. 그런데 두 세계를 가르는 것이 정확히 그 폴백이다.
+    #[test]
+    fn a_dead_child_and_a_stalled_one_do_not_get_the_same_prescription() {
+        // 내용은 있는데 차단 시그니처는 없는 tail — 폴백이 실제로 선택되는 국면이다.
+        let unremarkable = "INFO tasty: plugin discovery finished";
+
+        let died = early_exit_message("exit status: 1", 30, unremarkable);
+        assert!(died.contains("부팅 중 종료했다"), "{died}");
+        assert!(died.contains("상한을 기다리지 않고"), "{died}");
+        assert!(
+            died.contains("마지막 오류를 그대로 읽는다"),
+            "죽은 자식에게는 남은 stderr 을 읽으라고 해야 한다: {died}"
+        );
+        assert!(
+            !died.contains("부팅 지연"),
+            "이미 끝난 프로세스에게 지연을 보라고 한다 — 기다릴 부팅이 없다: {died}"
+        );
+
+        // ★ 반대 방향 — 같은 tail 로 상한을 넘긴 쪽은 정확히 반대 문장을 내야 한다.
+        // 이 짝이 없으면 위 초록은 "두 문장을 다 지웠다" 로도 통과한다.
+        let stalled = spawn_timeout_message(
+            "tasty failed to start",
+            SPAWN_PORT_TIMEOUT,
+            30,
+            unremarkable,
+            Some(Duration::from_millis(200)),
+        );
+        assert!(
+            stalled.contains("부팅 지연이나 설정 경로를 본다"),
+            "{stalled}"
+        );
+        assert!(
+            !stalled.contains("마지막 오류를 그대로 읽는다"),
+            "아직 살아 있는 자식인데 유언을 읽으라고 한다: {stalled}"
+        );
+
+        // 빈 tail 은 죽은 쪽에서도 "시그니처가 없다" 가 아니다 — 볼 것이 없는 것이다.
+        let died_silent = early_exit_message("signal: 9", 30, "   \n  ");
+        assert!(died_silent.contains("볼 것이 없다"), "{died_silent}");
+        assert!(
+            !died_silent.contains("마지막 오류를 그대로 읽는다"),
+            "읽을 stderr 이 없는데 읽으라고 한다: {died_silent}"
+        );
+
+        // ★ 폴백이 항상 이기지는 않는다 — 시그니처가 있으면 그 판정이 실린다.
+        let died_with_signature = early_exit_message(
+            "exit status: 1",
+            30,
+            "Error: neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set.",
+        );
+        assert!(
+            died_with_signature.contains("디스플레이 서버가 없다"),
+            "{died_with_signature}"
+        );
+        assert!(
+            !died_with_signature.contains("마지막 오류를 그대로 읽는다"),
+            "판정이 있는데 폴백이 덮었다: {died_with_signature}"
+        );
+    }
+
     /// 세 갈래가 서로 다른 문장을 내고, **남의 문장을 안 낸다**(양방향).
     #[test]
     fn the_silence_verdict_separates_stalled_from_merely_slow() {
