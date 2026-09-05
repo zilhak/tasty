@@ -176,7 +176,9 @@ impl PluginManager {
             pending_plugin_calls: Vec::new(),
             command_registry: crate::command_registry::PluginCommandRegistry::new(),
             settings_pages: crate::settings_registry::SettingsPageRegistry::new(),
-            ipc_namespaces: IpcNamespaceRegistry::new(),
+            ipc_namespaces: std::sync::Arc::new(
+                std::sync::RwLock::new(IpcNamespaceRegistry::new()),
+            ),
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
             egui_mesh_frames: HashMap::new(),
@@ -266,49 +268,65 @@ impl PluginManager {
     /// 1.2 초였고, 그 프로세스는 데몬 수명 내내 남았다. 근거·수·대안은
     /// [ADR-0173](../../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
     fn sync_ipc_namespaces_from_packages(&mut self) {
-        let installed: std::collections::HashSet<String> = self
-            .packages
-            .iter()
-            .map(|p| p.manifest.id.clone())
-            .collect();
-        let stale: Vec<String> = self
-            .ipc_namespaces
-            .plugin_ids()
-            .into_iter()
-            .filter(|id| !installed.contains(id))
-            .collect();
-        for id in stale {
-            for prefix in self.ipc_namespaces.prefixes_of(&id).to_vec() {
-                tasty_ipc::method_meta::unregister_plugin_prefix(&prefix);
-            }
-            self.ipc_namespaces.unregister_plugin(&id);
-        }
-        let declared: Vec<(String, Vec<String>)> = self
-            .packages
-            .iter()
-            .map(|p| {
-                (
-                    p.manifest.id.clone(),
-                    p.manifest
-                        .contributes
-                        .ipc_namespace
-                        .iter()
-                        .map(|ns| ns.prefix.clone())
-                        .collect(),
-                )
-            })
-            .collect();
-        for (id, prefixes) in declared {
-            for prefix in prefixes {
-                if let Err(e) = self.ipc_namespaces.register(&id, &prefix) {
+        let fresh = self.freshly_computed_namespaces();
+        // **계산은 락 밖에서 끝났다.** 임계구역은 대입 한 줄뿐이라 그 안에서 도는
+        // 코드가 없다 — 표를 읽는 쪽(`method_meta`)이 이 락을 다시 잡으러 들어올
+        // 자리가 없다는 뜻이다. 항목을 하나씩 등록/해제하면 그 사이사이가 전부
+        // 임계구역이 되고, 그때는 재진입이 가능해진다.
+        *self.namespaces_write() = fresh;
+    }
+
+    /// 설치된 매니페스트만으로 소유 표를 **처음부터** 만든다.
+    ///
+    /// 낡은 것을 골라 지우고 새 것을 더하는 대신 통째로 다시 만드는 이유는 그것이
+    /// 유도의 정의이기 때문이다 — 이 표는 `packages` 의 함수이고 그 밖의 재료가 없다
+    /// (ADR-0173). 차분으로 만들면 "어디서 왔는지 모르는 항목" 이 남을 수 있고, 그것이
+    /// 바로 제거된 plugin 의 prefix 가 표에 남아 있던 결함의 형태였다.
+    fn freshly_computed_namespaces(&self) -> IpcNamespaceRegistry {
+        let mut fresh = IpcNamespaceRegistry::new();
+        for package in &self.packages {
+            let id = &package.manifest.id;
+            for ns in &package.manifest.contributes.ipc_namespace {
+                if let Err(e) = fresh.register(id, &ns.prefix) {
                     tracing::warn!("plugin '{id}' ipc namespace registration failed: {e}");
-                    continue;
                 }
-                // `tasty-ipc::method_meta` runtime registry 도 mirror 등록. host
-                // registry 가 거절한 prefix 는 mirror 도 건너뛰어 **항상 동조** 불변식
-                // 을 지킨다.
-                tasty_ipc::method_meta::register_plugin_prefix(&prefix);
             }
+        }
+        fresh
+    }
+
+    /// 설치 목록을 놓고 **유도까지** 돌린다 — 운영에서 `refresh_packages` 가 하는 것과
+    /// 같은 순서다. 디스크 스캔만 건너뛴다.
+    #[cfg(test)]
+    pub(crate) fn set_packages_for_tests(&mut self, packages: Vec<crate::PluginPackage>) {
+        self.packages = packages;
+        self.sync_ipc_namespaces_from_packages();
+    }
+
+    /// 설치 목록만 바꾸고 **유도를 안 돌린다** — 신선도 단정의 대조군 전용이다.
+    /// 운영 경로에 이런 자리가 있으면 그것이 곧 이 단정이 잡으려는 결함이다.
+    #[cfg(test)]
+    pub(crate) fn overwrite_packages_without_deriving_for_tests(
+        &mut self,
+        packages: Vec<crate::PluginPackage>,
+    ) {
+        self.packages = packages;
+    }
+
+    /// 소유 표가 지금 `packages` 로 다시 계산한 것과 같은가 — **debug 빌드 전용.**
+    ///
+    /// 텍스트 가드가 못 보는 것이 순서다. "유도를 부르는가" 는 소스에서 보이지만
+    /// "유도 **뒤에** 원본을 또 쓰지 않았는가" 는 안 보인다. 그 형태의 결함이 이
+    /// 저장소에서 실제로 났다(확장 집합에서 `config.save()` 가 유도 뒤에 있던 것).
+    pub fn debug_assert_namespaces_fresh(&self) {
+        #[cfg(debug_assertions)]
+        {
+            let fresh = self.freshly_computed_namespaces();
+            assert!(
+                fresh == *self.namespaces_read(),
+                "namespace 소유 표가 낡았다 — 유도(`refresh_packages`) 뒤에 원본(`packages`)이 \
+                 또 바뀌었다. 유도를 원본의 마지막 쓰기 뒤로 옮겨라"
+            );
         }
     }
 

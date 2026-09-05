@@ -35,16 +35,22 @@
 //! | 상태 | 밖에서 필요한 것 | 지금 |
 //! |------|------------------|------|
 //! | `extensions` | 읽기 2 | private + `extension_state` · `extensions_iter` |
-//! | `ipc_namespaces` | 읽기 3(전부 `resolve`) | private + `namespace_owner` |
+//! | `ipc_namespaces` | 읽기 3(전부 `resolve`) | private + `owns_namespace` · `namespace_belongs_to_other` |
 //! | `packages` | 읽기 14 | private + `packages()` |
 //! | `plugin_permissions` | 없음 | private (원래 `pub(super)` 였다) |
 //!
-//! **못 닫은 것 하나: `method_meta` 의 prefix 미러.** 그것은 필드가 아니라 다른
-//! 크레이트(`tasty-ipc`)의 프로세스 전역이고, 쓰기 함수는 `tasty-host-plugin` 이
-//! 불러야 해서 `pub` 이어야 한다. **러스트에는 "이 크레이트에만 공개" 가 없다.**
-//! 닫으려면 미러를 없애야 한다 — `tasty-ipc` 가 부팅 때 해소 함수를 주입받게 하는
-//! 형태인데, 전역 가변 상태를 옮기는 별개 결정이라 여기서 하지 않았다. 그래서 이
-//! 항목만은 가드가 유일한 채널이다.
+//! **못 닫았던 하나(`method_meta` 의 prefix 미러)는 이제 없다.** 그것은 필드가 아니라
+//! 다른 크레이트(`tasty-ipc`)의 프로세스 전역 **사본**이었고, 쓰기 함수가
+//! `tasty-host-plugin` 에서 불려야 해서 `pub` 일 수밖에 없었다(러스트에는 "이 크레이트에만
+//! 공개" 가 없다). 닫는 방법은 가시성이 아니라 **사본을 없애는 것**이었다 — `tasty-ipc` 가
+//! host 가 든 표의 `Arc` 를 부팅 때 그대로 받는다. 표가 하나면 "두 표가 어긋난다" 는
+//! 결함이 존재할 자리가 없고, 미러 쓰기 함수 셋(`register_plugin_prefix` ·
+//! `unregister_plugin_prefix` · `doc(hidden) pub clear_plugin_prefixes_for_tests`)이
+//! 함께 사라졌다.
+//!
+//! 주입할 것을 **함수(resolver 클로저)가 아니라 데이터(표 핸들)** 로 고른 것이 핵심이다.
+//! 함수를 주입하면 `method_meta()` 안에서 host 코드가 돌아 유도 자리의 `&mut self` 와
+//! 겹칠 수 있다(재진입). 데이터면 `method_meta()` 안에서 도는 host 코드가 없다.
 //!
 //! 그리고 **순서 결함((ㄴ) 부류)은 텍스트로 못 잡는다** — "유도 호출이 원본의 마지막
 //! 쓰기 뒤에 오는가" 는 흐름 판정이다. 그 부류는 실행 시점으로 옮겼다:
@@ -92,11 +98,13 @@ const DERIVED: &[Derived] = &[
         home: HOST_PLUGIN_LIFECYCLE,
     },
     Derived {
-        // `extensions` 와 같이 **구조로 닫혔다** — 크레이트 밖에서는 안 보이고, 밖이
-        // 묻던 하나(`resolve`)는 `namespace_owner` 로 나간다. 남은 범위는 안쪽뿐이다.
+        // **구조로 닫혔다** — 크레이트 밖에서는 필드가 안 보이고, 밖이 묻던 것은
+        // `owns_namespace` · `namespace_belongs_to_other` 두 물음으로 나간다.
+        // 표가 락 뒤로 들어가면서 쓰기는 `namespaces_write()` 하나를 지나야 한다 —
+        // 그래서 바늘이 필드 이름이 아니라 **그 창구**다.
         what: "namespace 소유 표(packages 에서 유도)",
-        field: ".ipc_namespaces",
-        verbs: &[".register(", ".unregister(", ".unregister_plugin(", " ="],
+        field: "namespaces_write",
+        verbs: &["("],
         home: HOST_PLUGIN_LIFECYCLE,
     },
     Derived {
@@ -107,17 +115,6 @@ const DERIVED: &[Derived] = &[
         field: ".extensions",
         verbs: &[".recompute(", " ="],
         home: "crates/tasty-host-plugin/src/manager/queries.rs",
-    },
-    Derived {
-        // 필드가 아니라 프로세스 전역 미러다. 자유 함수라 어디서든 부를 수 있어
-        // 오히려 새기 쉽다 — namespace 표와 **같은 자리에서** 움직여야 한다.
-        what: "method_meta 의 prefix 미러(namespace 표와 짝)",
-        // 바늘 하나가 둘을 덮는다 — `unregister_plugin_prefix` 는 이 문자열을
-        // 부분으로 포함한다. 읽기(`is_registered_plugin_prefix`)는 `registered_`
-        // 라서 안 걸린다. 이 줄 자신도 뒤에 `(` 가 없어 안 걸린다.
-        field: "register_plugin_prefix",
-        verbs: &["("],
-        home: HOST_PLUGIN_LIFECYCLE,
     },
 ];
 
@@ -294,35 +291,6 @@ fn the_mutation_shapes_are_recognised_and_reads_are_not() {
             d.what
         );
     }
-
-    // 자유 함수 형태(미러)는 이름 자체가 바늘이다.
-    let mirror = DERIVED
-        .iter()
-        .find(|d| d.what.contains("method_meta"))
-        .expect("미러 항목");
-    assert!(mutates(
-        mirror,
-        &format!("    method_meta::{}{}&p);", mirror.field, mirror.verbs[0])
-    ));
-    assert!(
-        mutates(
-            mirror,
-            &format!("    method_meta::un{}{}&p);", mirror.field, mirror.verbs[0])
-        ),
-        "un- 붙은 짝을 같은 바늘이 덮어야 한다"
-    );
-    assert!(
-        !mutates(mirror, "    if is_registered_plugin_prefix(p) {"),
-        "읽기를 쓰기로 셌다"
-    );
-    assert!(
-        !mutates(
-            mirror,
-            &format!("pub fn {}{}p: &str) {{", mirror.field, mirror.verbs[0])
-        ),
-        "정의를 호출로 셌다"
-    );
-    assert!(!mutates(mirror, "    let x = 1;"));
 }
 
 /// 주석 안의 같은 형태는 위반이 아니다.

@@ -1,6 +1,12 @@
 //! Plugin 메타데이터 조회: extension 재집계, tool / popup contribute 평탄 뷰.
 
+use tasty_ipc::ipc_namespace::IpcNamespaceRegistry;
+
 use super::{PluginManager, PluginPackage, PluginPopupEntry};
+
+const NAMESPACES_WHAT: &str = "the plugin IPC namespace table";
+static NAMESPACES_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 impl PluginManager {
     /// spawn 이 윈도우 내 반복 실패하여 자동 비활성화된 plugin 인지.
@@ -41,8 +47,64 @@ impl PluginManager {
     /// 바뀌면 낡는다(ADR-0173). 그래서 표 자체는 크레이트 밖으로 안 열고, 밖이
     /// 실제로 묻는 것 하나만 창구로 낸다 — 이 물음은 **소유**만 답한다. "지금 떠
     /// 있는가" 는 다른 물음이고 `is_running` 이 답한다.
-    pub fn namespace_owner(&self, method: &str) -> Option<&str> {
-        self.ipc_namespaces.resolve(method)
+    /// 이 이름을 **어느 plugin이 소유하는가** — 있다/없다 하나만 답한다.
+    ///
+    /// 소유자 문자열을 그대로 내주지 않는 것은 표가 락 뒤에 있기 때문이다. guard 에서
+    /// 빌린 `&str` 은 밖으로 못 나가고, 그렇다고 매번 `String` 을 지어 내주면 호출부
+    /// 셋 중 둘이 쓰지도 않을 값을 할당하게 된다 — 그 둘은 이미 `.is_some()` 만 물었다.
+    pub fn owns_namespace(&self, method: &str) -> bool {
+        self.namespaces_read().resolve(method).is_some()
+    }
+
+    /// 이 이름의 주인이 **`plugin_id` 가 아닌 다른 plugin** 인가.
+    ///
+    /// plugin 이 자기 namespace 를 자기가 부르는 것은 forward 대상이 아니다(그건
+    /// trampoline 이고 host 가 답한다). 그 판정을 호출부에서 `owner != caller` 로 쓰던
+    /// 것을 여기로 옮겼다 — 표를 두 번 잠그지 않고 한 번에 답한다.
+    pub fn namespace_belongs_to_other(&self, method: &str, plugin_id: &str) -> bool {
+        self.namespaces_read()
+            .resolve(method)
+            .is_some_and(|owner| owner != plugin_id)
+    }
+
+    /// 내 소유 표를 **해소하는 곳**(`tasty-ipc`)에 넘긴다 — 부팅 때 1 회.
+    ///
+    /// 넘기는 것은 사본이 아니라 같은 `Arc` 다. 그래서 이 뒤로 표를 채우고 비우는 것은
+    /// 여기 한 곳(`refresh_packages` 의 유도)뿐이고, 해소는 그 결과를 그대로 본다.
+    /// 이 호출이 없으면 `method_meta` 는 어떤 plugin prefix 도 모르는 채로 남아
+    /// plugin namespace 메서드가 권한 검사에서 "모르는 메서드" 가 된다.
+    ///
+    /// 설치는 덮어쓰지 않는다(표를 갈아 끼우면 진행 중인 라우팅이 어느 표를 봤는지가
+    /// 호출 시점에 달린다). 한 프로세스에 매니저가 하나이므로 두 번째 설치는 사고이고,
+    /// 조용히 넘기면 **그 매니저의 표는 아무도 안 보는 표**가 되므로 로그를 남긴다.
+    pub fn install_namespace_table_once(&self) {
+        if !tasty_ipc::method_meta::install_namespace_table(std::sync::Arc::clone(
+            &self.ipc_namespaces,
+        )) {
+            tracing::warn!(
+                "namespace 소유 표가 이미 설치돼 있다 — 이 매니저의 표는 해소에 안 쓰인다"
+            );
+        }
+    }
+
+    /// 표 읽기 — poison 은 복구한다. 임계구역이 표 조회뿐이라 패닉이 지나가도 남는
+    /// 값이 성립하고, 반대로 조용히 물러나면 소유 판정이 영구히 "주인 없음" 이 되어
+    /// plugin 으로 갈 호출이 전부 host 로 샌다.
+    pub(crate) fn namespaces_read(&self) -> std::sync::RwLockReadGuard<'_, IpcNamespaceRegistry> {
+        tasty_utils::poison::recover_read(
+            self.ipc_namespaces.read(),
+            NAMESPACES_WHAT,
+            &NAMESPACES_POISON_REPORTED,
+        )
+    }
+
+    /// 표 쓰기 — 같은 이유로 복구한다.
+    pub(crate) fn namespaces_write(&self) -> std::sync::RwLockWriteGuard<'_, IpcNamespaceRegistry> {
+        tasty_utils::poison::recover_write(
+            self.ipc_namespaces.write(),
+            NAMESPACES_WHAT,
+            &NAMESPACES_POISON_REPORTED,
+        )
     }
 
     /// 한 extension 의 상태 — 밖에서 `extensions` 를 직접 만지지 않게 하는 읽기 창구.

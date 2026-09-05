@@ -664,6 +664,11 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     headless_plugins::ensure_plugin_manager_metadata(&mut app, &engine);
     if let Some(mgr) = app.plugin_manager.as_mut() {
         crate::plugin::install_builtins_if_needed(mgr);
+        // 소유 표를 해소하는 crate 에 **같은 표**를 넘긴다 — 사본이 아니다.
+        // 이 설치가 없으면 `method_meta` 는 어떤 plugin prefix 도 모르는 상태로 남고,
+        // 그러면 plugin namespace 메서드가 권한 검사에서 "모르는 메서드" 가 된다.
+        // 설치 자체는 1 회이고, 표의 내용은 그 뒤 `refresh_packages` 가 채운다.
+        mgr.install_namespace_table_once();
         mgr.refresh_packages();
     }
 

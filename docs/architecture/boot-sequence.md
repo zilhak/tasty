@@ -105,7 +105,12 @@ finish_boot (Ready):
 | 일 | headless | gui |
 |----|----------|-----|
 | 번들 plugin 설치 (`install_builtins_if_needed`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
+| namespace 소유 표 설치 (`install_namespace_table`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
 | agent 재시작 정화·핸들 재적재 (`purge_stale_agent_state_on_boot`) | `bootstrap_engine` (`src/boot.rs`) | `finish_boot` (`src/app/boot_machine.rs`) |
+
+소유 표 설치는 `PluginManager` 가 든 표의 핸들을 그것을 **해소하는** 크레이트
+(`tasty-ipc`)에 넘기는 일이다 — 사본을 만드는 것이 아니라 같은 표를 가리키게 한다.
+표의 *내용*은 그 뒤 `refresh_packages` 가 설치된 매니페스트에서 유도한다.
 
 **여기서 프로세스는 하나도 안 뜬다** — 설치는 디스크에 놓는 것까지고, plugin 기동은
 첫 호출까지 지연된다. agent 러너 스레드도 수동 `agent.task_run --action start` 전까지

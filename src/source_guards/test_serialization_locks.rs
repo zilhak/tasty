@@ -105,28 +105,20 @@ const SERIALIZED: &[Serialized] = &[
         lock: "TEST_LOCK",
         acquire: &["TEST_LOCK", "test_lock()"],
         guarded: &[
-            "register_plugin_prefix",
-            "unregister_plugin_prefix",
-            "clear_plugin_prefixes_for_tests",
-            "plugin_prefixes",
+            "test_namespace_table",
+            "ns_clear",
+            "ns_register",
+            "ns_unregister",
         ],
         scope: Scope::Crate,
-        why: "plugin prefix 레지스트리가 런타임 전역이라, 등록과 해제가 겹치면 다른 \
-              테스트가 보는 표가 달라진다",
+        why: "namespace 소유 표가 프로세스 전역으로 **설치**되고 설치는 1 회뿐이라, 이 \
+              바이너리의 테스트들이 같은 표를 함께 쓴다 — 내용을 비우고 채우는 것이 \
+              겹치면 다른 테스트가 보는 표가 달라진다",
     },
-    Serialized {
-        file: "crates/tasty-host-plugin/src/manager/tests_namespace_mirror.rs",
-        lock: "TEST_LOCK",
-        acquire: &["TEST_LOCK", "test_lock()"],
-        guarded: &[
-            "register_plugin_prefix",
-            "unregister_plugin_prefix",
-            "clear_plugin_prefixes_for_tests",
-        ],
-        scope: Scope::Crate,
-        why: "위와 **같은 전역**을 다른 크레이트의 테스트 바이너리에서 만진다. 프로세스가 \
-              다르므로 락도 따로다 — 한쪽만 잡아서는 이쪽 바이너리가 안 지켜진다",
-    },
+    // `tasty-host-plugin` 쪽에는 짝이 **없다.** 예전에는 같은 전역 미러를 그 크레이트의
+    // 테스트도 만져서 락이 하나 더 필요했는데, 표가 `PluginManager` 에 매이면서 그
+    // 크레이트의 테스트는 각자 자기 매니저의 표만 만진다 — 공유하는 것이 없으면 직렬화할
+    // 것도 없다. 락을 지우는 것이 아니라 **경합을 없앤 것**이다.
     Serialized {
         file: "crates/tasty-themes/src/plugin_defaults.rs",
         lock: "TEST_LOCK",

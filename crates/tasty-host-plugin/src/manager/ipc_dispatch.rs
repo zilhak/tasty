@@ -453,7 +453,7 @@ impl PluginManager {
         caller_plugin_id: Option<&str>,
     ) -> Result<String, (i32, String)> {
         let plugin_id = self
-            .ipc_namespaces
+            .namespaces_read()
             .resolve(method)
             .map(str::to_string)
             .ok_or_else(|| (-32601, format!("method '{method}' not found")))?;

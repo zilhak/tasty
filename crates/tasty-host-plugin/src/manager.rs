@@ -7,9 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 
 use tasty_plugin_protocol::SharedBufferId;
@@ -338,7 +338,11 @@ pub struct PluginManager {
     /// 와 "지금 떠 있는가" 는 다른 물음이고, 뒤엣것은 `processes` 가 답한다(안 떠 있으면
     /// `-32002`). 이 표는 `packages` 에서 유도되므로 `packages` 를 바꾸는 자리는
     /// [`PluginManager::refresh_packages`] 를 거쳐야 한다.
-    ipc_namespaces: IpcNamespaceRegistry,
+    ///
+    /// **`tasty-ipc` 가 부팅 때 이 `Arc` 를 그대로 받는다** — 사본이 아니라 같은 표다.
+    /// 예전에는 `method_meta` 가 자기 `HashMap` 미러를 따로 들었고, 갱신을 한쪽만 하는
+    /// 결함이 실제로 났다. 표가 하나면 그 결함이 존재할 자리가 없다.
+    ipc_namespaces: Arc<RwLock<IpcNamespaceRegistry>>,
     /// plugin id → (buffer id → 매핑 영역). 호스트가 `host.shared_buffer.create`로
     /// 발급한 영역의 매핑 유지(=OS region keep-alive)와 dirty 수신 시 lookup용.
     /// plugin process가 종료/재시작되면 해당 plugin 슬롯이 통째로 drop되어
@@ -471,15 +475,17 @@ mod pump;
 mod queries;
 mod response;
 
-// G.D.c — IpcNamespaceRegistry ↔ tasty-ipc runtime registry mirror 통합 테스트.
+// 유도 상태(확장 집합)의 신선도 단정 — 텍스트가 못 보는 "순서" 를 런타임이 본다.
 #[cfg(test)]
 mod tests_derived_freshness;
-#[cfg(test)]
-mod tests_namespace_mirror;
 
 // H — plugin 자동 reload (baseline / check_for_updates / auto_reload_one) 테스트.
 #[cfg(test)]
 mod tests_auto_reload;
+
+// namespace 소유 표가 설치된 매니페스트에서 유도되는가 (옛 mirror 테스트의 새 자리).
+#[cfg(test)]
+mod tests_namespace_table;
 
 // plugin 주기 작업(PluginTick) 스케줄 — pump(now) 시간 주입 검증.
 #[cfg(test)]
@@ -496,12 +502,37 @@ mod tests {
     }
 
     /// validate_namespace_call의 분기를 직접 검증하기 위한 mgr 초기화.
-    /// process는 spawn하지 않고 ipc_namespaces와 plugin_permissions만 직접 채운다.
+    /// process는 spawn하지 않는다.
+    ///
+    /// 소유 표를 손으로 채우지 않고 **매니페스트를 놓고 유도를 돌린다** — 그것이
+    /// 운영에서 소유가 생기는 유일한 경로이기 때문이다(ADR-0173). 표를 직접 쓰면
+    /// 픽스처가 운영에 없는 상태를 만들 수 있고, 그러면 이 테스트가 지키는 것이
+    /// 실제 경로와 어긋난다.
     fn mgr_with_namespace_owner(owner: &str, prefix: &str) -> PluginManager {
+        let manifest_toml = format!(
+            r#"
+manifest_version = 1
+id = "{owner}"
+name = "Namespace Owner Fixture"
+version = "0.0.1"
+api_version = "1.0"
+
+[entry]
+type = "process"
+command = "echo"
+args = []
+
+[[contributes.ipc_namespace]]
+prefix = "{prefix}"
+"#
+        );
+        let manifest: tasty_plugin_manifest::Manifest =
+            toml::from_str(&manifest_toml).expect("fixture manifest should parse");
         let mut mgr = PluginManager::new(empty_waker());
-        mgr.ipc_namespaces
-            .register(owner, prefix)
-            .expect("test prefix should be unique");
+        mgr.set_packages_for_tests(vec![PluginPackage {
+            dir: PathBuf::from("/nonexistent/namespace_owner_fixture"),
+            manifest,
+        }]);
         mgr
     }
 

@@ -7,11 +7,12 @@
 //! Local caller(CLI/사용자)는 권한 검사를 거치지 않는다. 이 테이블은 **plugin이
 //! 호출했을 때**의 권한 요구사항이다.
 
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
-use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use tasty_plugin_manifest::Permission;
+
+use crate::ipc_namespace::IpcNamespaceRegistry;
 
 /// 한 IPC 메서드에 대한 권한 메타.
 #[derive(Debug, Clone, Copy)]
@@ -684,84 +685,58 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())
 #[cfg(not(debug_assertions))]
 pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 
-/// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
-/// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.
+/// plugin 이 `[[contributes.ipc_namespace]]` 로 점유한 prefix 의 **소유 표**.
 ///
-/// host-plugin 이 **설치된 매니페스트에서 소유 표를 다시 만들 때** 이 미러도 같은
-/// 자리에서 함께 갱신한다(`PluginManager::refresh_packages` 안). plugin 의 기동·종료가
-/// 아니라 **설치 상태**가 재료라, plugin 이 안 떠 있어도 소유는 유지된다 — 실행 여부는
-/// 다른 물음이고 라우터가 `-32002` 로 따로 답한다. 근거는
-/// `docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md`.
-static PLUGIN_PREFIXES: OnceLock<RwLock<HashMap<String, MethodMeta>>> = OnceLock::new();
-
-fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
-    PLUGIN_PREFIXES.get_or_init(|| RwLock::new(HashMap::new()))
-}
-
-/// 이 락의 임계구역은 전부 `HashMap` 조작뿐이라 패닉이 지나가도 남는 값이 성립한다
-/// — 그래서 복구가 답이다. 반대로 조용히 건너뛰면 poison 이 sticky 인 탓에 registry 가
-/// **영구히 얼어붙고**, 그 결과가 방향별로 다르게 나쁘다: 등록이 얼면 plugin 이 뜬 채
-/// 자기 namespace 만 벙어리가 되고, 해제가 얼면 죽은 plugin 의 prefix 가 남아
-/// `plugin_callable=true, required=[]` 로 계속 통과한다.
-const PREFIXES_WHAT: &str = "the plugin IPC namespace registry";
-static PREFIXES_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
-
-fn prefixes_write() -> RwLockWriteGuard<'static, HashMap<String, MethodMeta>> {
-    tasty_utils::poison::recover_write(
-        plugin_prefixes().write(),
-        PREFIXES_WHAT,
-        &PREFIXES_POISON_REPORTED,
-    )
-}
-
-fn prefixes_read() -> RwLockReadGuard<'static, HashMap<String, MethodMeta>> {
-    tasty_utils::poison::recover_read(
-        plugin_prefixes().read(),
-        PREFIXES_WHAT,
-        &PREFIXES_POISON_REPORTED,
-    )
-}
-
-/// plugin 매니페스트의 `[[contributes.ipc_namespace]]` prefix 를 runtime 등록.
-/// 등록 후 `<prefix>.<method>` 형식의 모든 IPC 메서드가 plugin/agent caller 에게
-/// `plugin_callable=true, required=[]` 메타로 노출된다. 세부 권한은 host-plugin
-/// 의 `validate_namespace_call` (`IpcInvoke(prefix)`) 가 분배.
+/// **사본이 아니라 원본이다.** 예전에는 이 자리에 `HashMap` 미러가 따로 있었고
+/// host 가 자기 표를 고칠 때마다 같은 값을 여기에 한 번 더 썼다 — 표가 둘이면
+/// 갱신을 한쪽만 하는 결함이 생기고, 실제로 났다(제거된 plugin 의 prefix 가 남아
+/// `-32002` 로 거절하던 것). 지금은 host 가 든 것과 **같은 `Arc`** 를 부팅 때 한 번
+/// 받는다. 쓰는 쪽은 하나뿐이고 여기는 읽기만 한다.
 ///
-/// 동일 prefix 재등록은 silent no-op (entry().or_insert(...) 시맨틱 — 첫
-/// 등록자 유지). 한 번 unregister 로 완전 제거.
-pub fn register_plugin_prefix(prefix: &str) {
-    prefixes_write()
-        .entry(prefix.to_string())
-        .or_insert(MethodMeta {
-            plugin_callable: true,
-            plugin_only: false,
-            required: &[],
-        });
+/// 설치 전에는 "등록된 prefix 가 없다" 로 답한다 — 옛 미러가 그 시점에 비어 있던 것과
+/// 같은 답이다. 부팅 전 의미를 바꾸지 않는다.
+static NAMESPACE_TABLE: OnceLock<Arc<RwLock<IpcNamespaceRegistry>>> = OnceLock::new();
+
+/// 부팅 때 **1 회** 설치한다. 이미 설치돼 있으면 아무것도 안 하고 `false`.
+///
+/// 덮어쓰기를 허용하지 않는 이유: 표를 바꿔 끼우는 것은 소유 관계를 통째로 갈아치우는
+/// 일이라 진행 중인 라우팅이 어느 표를 봤는지가 호출 시점에 달리게 된다. 한 프로세스에
+/// `PluginManager` 는 하나이므로 설치도 한 번이면 된다.
+pub fn install_namespace_table(table: Arc<RwLock<IpcNamespaceRegistry>>) -> bool {
+    NAMESPACE_TABLE.set(table).is_ok()
 }
 
-/// plugin unload / disable / restart 시 호출. 미등록 prefix 입력은 noop.
-pub fn unregister_plugin_prefix(prefix: &str) {
-    prefixes_write().remove(prefix);
+/// 테스트가 쓰는 표. 설치는 1 회뿐이라 **바꿔 끼울 수 없고**, 그래서 테스트는 첫 번째가
+/// 설치한 표를 함께 쓰고 내용만 직렬화해서 비운다(`test_lock`). 운영 코드에는 이 경로가
+/// 없다 — 예전의 `clear_plugin_prefixes_for_tests` 가 `doc(hidden) pub` 으로 운영 표면에
+/// 뚫려 있던 것을 `cfg(test)` 로 닫은 것이다.
+#[cfg(test)]
+pub(crate) fn test_namespace_table() -> &'static Arc<RwLock<IpcNamespaceRegistry>> {
+    NAMESPACE_TABLE.get_or_init(|| Arc::new(RwLock::new(IpcNamespaceRegistry::new())))
 }
 
-/// **WARNING**: runtime invariant 를 강제로 비움. 운영 호출 금지 — tests-only.
-/// 외부 crate (host-plugin) 의 integration test 가 호출할 수 있도록
-/// `doc(hidden) pub` 으로 노출.
-#[doc(hidden)]
-pub fn clear_plugin_prefixes_for_tests() {
-    prefixes_write().clear();
-}
+/// 이 락의 임계구역은 표 조회뿐이라 패닉이 지나가도 남는 값이 성립한다 — 그래서 복구가
+/// 답이다. 조용히 건너뛰면 poison 이 sticky 인 탓에 소유 판정이 **영구히 "아무도 소유하지
+/// 않는다"** 가 되고, 그러면 plugin namespace 로 갈 호출이 전부 host 로 샌다.
+const NAMESPACES_WHAT: &str = "the plugin IPC namespace table";
+static NAMESPACES_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
-/// `prefix` 가 어떤 plugin 의 `[[contributes.ipc_namespace]]` 로 runtime 등록돼
-/// 있는지 조회. host/user 소유 완료 판정 전략이 `_host` 권한으로 남의
-/// plugin namespace 를 호출하는 권한 우회를 막는 데 쓰인다 — register/unregister
-/// 는 기존에 있었으나 read 전용 조회가 없어 추가.
+/// `prefix` 를 어떤 plugin 이 `[[contributes.ipc_namespace]]` 로 점유하고 있는지 조회.
 ///
 /// 호출부가 이 값을 `!` 로 뒤집어 쓰므로 **여기서 `false` 로 물러나면 차단이 뚫린다**
-/// — registry 를 못 읽었다는 사정이 "등록된 적 없는 prefix" 와 같은 답이 되어, 막으려던
+/// — 표를 못 읽었다는 사정이 "등록된 적 없는 prefix" 와 같은 답이 되어, 막으려던
 /// 우회가 그대로 열린다. 그래서 락이 poison 이어도 복구해서 실제 값을 본다.
+/// 표가 아직 설치되지 않은 것은 다른 사실이고(부팅 전), 그때는 `false` 가 참이다.
 pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
-    prefixes_read().contains_key(prefix)
+    let Some(table) = NAMESPACE_TABLE.get() else {
+        return false;
+    };
+    let guard = tasty_utils::poison::recover_read(
+        table.read(),
+        NAMESPACES_WHAT,
+        &NAMESPACES_POISON_REPORTED,
+    );
+    guard.owns_prefix(prefix)
 }
 
 /// 이 이름이 **표에 그 이름 그대로 적혀 있는가**. prefix fallback 은 보지 않는다.
@@ -797,11 +772,16 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
             return Some(*meta);
         }
     }
-    if let Some(dot) = method.find('.') {
-        let prefix = &method[..dot];
-        if let Some(meta) = prefixes_read().get(prefix) {
-            return Some(*meta);
-        }
+    if let Some(dot) = method.find('.')
+        && is_registered_plugin_prefix(&method[..dot])
+    {
+        // plugin namespace 아래의 이름은 **무엇이든** plugin 이 받는다. 세부 권한은
+        // host-plugin 의 `validate_namespace_call`(`IpcInvoke(prefix)`)이 분배한다.
+        return Some(MethodMeta {
+            plugin_callable: true,
+            plugin_only: false,
+            required: &[],
+        });
     }
     None
 }

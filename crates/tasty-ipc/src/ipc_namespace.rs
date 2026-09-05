@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 /// prefix → plugin_id 매핑. 단일 plugin이 여러 prefix를 점유할 수 있다.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct IpcNamespaceRegistry {
     prefix_to_plugin: HashMap<String, String>,
     plugin_to_prefixes: HashMap<String, Vec<String>>,
@@ -66,6 +66,23 @@ impl IpcNamespaceRegistry {
             .get(plugin_id)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// 표를 통째로 비운다. 소유를 **다시 계산해** 갈아끼우는 쪽이 쓰는 자리다 —
+    /// 항목을 하나씩 지우는 것과 결과가 같지만, 계산을 락 밖에서 끝내고 여기서 한 번에
+    /// 대입하면 임계구역에 다른 코드가 끼지 않는다.
+    pub fn clear(&mut self) {
+        self.prefix_to_plugin.clear();
+        self.plugin_to_prefixes.clear();
+    }
+
+    /// 이 prefix 를 누가 점유하고 있는가 — **있다/없다** 하나만 묻는다.
+    ///
+    /// `resolve` 와 물음이 다르다: 저쪽은 메서드명을 받아 소유자를 돌려주고, 여기는
+    /// prefix 자체를 받아 참/거짓만 낸다. 락 뒤에서 조회할 때 소유자 문자열을 빌려
+    /// 나올 수 없기 때문에(guard 수명) 참/거짓으로 답하는 물음이 따로 필요하다.
+    pub fn owns_prefix(&self, prefix: &str) -> bool {
+        self.prefix_to_plugin.contains_key(prefix)
     }
 
     /// 메서드명(`"codex.spawn"`)을 보고 어느 plugin이 처리할지 해결.
