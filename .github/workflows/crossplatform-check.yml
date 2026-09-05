@@ -202,6 +202,35 @@ jobs:
 
       # 이 러너의 디스크는 아무 데도 안 보인다. 자기 머신에서 잰 값은 대신 못 쓴다 —
       # 이 잡이 그 러너에서 가장 큰 `target/` 을 소유하므로 여기서 재는 것이 맞다.
+      # Linux × default(gui) × **debug** 의 유일한 자동 채널. 이 스텝 전까지 그 칸은
+      # 비어 있었다 — check-macos/check-windows 는 각 OS 의 gui 를, 위 스텝들은
+      # --no-default-features 를, check-release 는 같은 gui 를 **release** 로 본다.
+      # 마지막 것과 이 스텝은 겹치지 않는다: `debug_assertions` 이 서로 반대라 한쪽에서
+      # 사라지는 코드가 다른 쪽에 있다(그 축이 실제로 release bin 을 깨뜨린 전례가
+      # check-release 의 주석에 있다).
+      #
+      # 사는 것은 두 줄로 적는다 — 실행과 컴파일은 다른 채널이다:
+      #   실행    — Linux 에서만 도는 유닛 8 건이 자동으로 돌기 시작한다(#[ignore] 로
+      #             X11 을 요구하는 1 건은 여전히 안 돈다).
+      #   컴파일  — Linux+gui+debug 조합 전체가 컴파일된다. `#[ignore]` 는 실행만 막고
+      #             컴파일은 안 막으므로, 이쪽이 사는 것은 8 이 아니라 조합 하나다.
+      #
+      # 안 사는 것: `tests/` 통합 테스트. `--lib --bins` 는 그것을 담지 않는다
+      # (gui_tests.rs 의 33 건 포함 — 그건 GUI spawn 이 필요해 러너 가드로 부적합하다).
+      # 통합 테스트의 채널은 위 headless 스텝 하나로 남는다.
+      #
+      # **잡 이름이 이 스텝을 안 덮는다.** 이 잡은 headless 가드로 태어났고 이름도 그렇다.
+      # 여기가 빨가면 원인은 headless 가 아니라 gui 일 수 있으므로 스텝 이름에 조합을
+      # 적어 둔다. 잡 이름을 안 바꾸는 이유는 required status check 로 참조될 수 있어서고,
+      # 채널 매트릭스의 정본은 docs/dev-guide/ci-gates.md 다.
+      #
+      # 왜 새 잡이 아니라 스텝인가: self-hosted Linux X64 러너는 한 대라 잡이 늘면
+      # 큐가 직렬로 길어진다. 스텝이면 checkout 과 레지스트리 페치를 재사용한다.
+      # (그 재사용은 target 재사용이 아니다 — checkout 이 매 회차 `git clean -ffdx` 로
+      # target 을 지우므로 이 스텝의 gui 빌드는 언제나 콜드다.)
+      - name: cargo test (linux, gui, unit)
+        run: cargo test --workspace --lib --bins --locked --no-fail-fast
+
       # `continue-on-error` 로 두는 이유: 이 줄은 진단이지 게이트가 아니다. 여기서
       # 실패해 잡을 빨갛게 만들면 그 빨강이 컴파일·테스트의 빨강을 가린다.
       - name: disk (diagnostic)

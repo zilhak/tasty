@@ -57,6 +57,25 @@ push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 
 그래서 semver 가드는 PR 트리거를 붙이지 않았다(트리거가 잡마다 다른 것은 러너가 다르기
 때문이지 중요도가 달라서가 아니다).
 
+**self-hosted 잡은 매 회차 콜드로 짓는다 — 캐시가 없다.** `actions/checkout@v4` 는
+`clean: true` 가 기본이라 `git clean -ffdx` 를 돌리고, `target/` 은 `.gitignore` 대상이라
+**그 명령이 지운다**(로그에 `Removing target/` 이 찍힌다). 그래서 같은 러너의 두 Linux 잡이
+같은 작업 디렉토리를 쓰면서도 서로의 산출물을 못 물려받고, 둘 다 `proc-macro2` 부터 다시
+짓는다. 이것이 뜻하는 바 둘:
+
+- **디스크는 누적되지 않는다.** 한 회차의 최댓값이 상한이고 급수가 아니다. 그래서 스텝을
+  더할 때 재야 할 것은 "몇 회차 뒤에 찬다" 가 아니라 "한 회차 최댓값이 여유 안인가" 다.
+- **시간 견적에 warm 수를 쓰면 안 된다.** 로컬에서 잰 증분 빌드 시간은 이 러너에 적용되지
+  않는다 — 여기서는 언제나 콜드다.
+
+재는 명령(잡 로그에 `df`/`du` 를 한 줄 넣어두면 회차마다 나온다):
+
+```bash
+job=$(gh run view <run-id> --json jobs --jq '.jobs[]|select(.name=="check-headless").databaseId')
+gh api "repos/zilhak/tasty/actions/jobs/$job/logs" | grep -A3 'Filesystem'
+gh api "repos/zilhak/tasty/actions/jobs/$job/logs" | grep -c 'Compiling '   # 콜드면 700+
+```
+
 이 저장소는 PR 을 열지 않고 main 에 직접 push 한다. **"거의" 가 아니라 실측 0 이다** —
 최근 200 run 의 이벤트 분포가 `push 48 · schedule 8 · workflow_dispatch 1`, `pull_request`
 **0** 이다(2026-09-04 측정). 그래서 PR 전용 트리거는 이 저장소에서 장식이다.
@@ -340,18 +359,23 @@ done | wc -l
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
-### 조합 격자의 빈 칸 — Linux + gui + debug
+### 조합 격자의 빈 칸 — Linux + gui + debug (지금은 채워져 있다)
 
 유닛 테스트가 "두 조합 모두" 라고 말할 때 그 둘은 **Windows + gui + debug** 와
-**Linux + headless + debug** 다. 그래서 **Linux 이면서 gui feature 뒤에 있는** 유닛
-테스트는 앞쪽에서 `cfg` 로 사라지고 뒤쪽에서 feature 로 사라진다 — 양쪽 다 안 돈다.
+**Linux + headless + debug** 였다. 그래서 **Linux 이면서 gui feature 뒤에 있는** 유닛
+테스트는 앞쪽에서 `cfg` 로 사라지고 뒤쪽에서 feature 로 사라져 양쪽 다 안 돌았다.
+
+지금은 `check-headless` 에 `cargo test (linux, gui, unit)` 스텝이 붙어 그 칸을 덮는다
+(`--lib --bins`, 기본 feature). **새 잡이 아니라 스텝인 이유**는 self-hosted Linux X64
+러너가 한 대뿐이라 잡이 늘면 큐가 직렬로 길어져서다. 아래 표와 절차는 그 칸이 왜
+비어 있었는지와 **다시 비었을 때 어떻게 재는지**를 위해 남긴다.
 
 | | debug | release |
 |---|---|---|
 | macOS + gui | `check-macos`(컴파일) | — |
 | Windows + gui | `check-windows`(컴파일 + 유닛) | — |
 | Linux + headless | `check-headless`(컴파일 + 전체) | — |
-| **Linux + gui** | **없다** | `check-release`(컴파일) |
+| **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) | `check-release`(컴파일) |
 
 빈 칸은 테스트만이 아니라 **컴파일**도 비어 있다. 그 칸에만 있는 코드가 실재한다 —
 `src/platform/native_menu/linux.rs` 는 `#[cfg(feature = "gui")]` 아래 Linux 전용이면서
@@ -381,6 +405,28 @@ while read n; do grep -qaF "$n" "$win" || echo "빈 칸: $n"; done < /tmp/gui.tx
 빈 칸을 **과대**로 센다(실측: `strings` 28 · `grep -aF` 9). 그리고 반대 방향도 봐라 —
 `grep -F` 는 부분문자열도 맞히므로, 어떤 이름이 다른 이름의 진부분문자열이면 "있다" 가
 거짓 통과한다(실측 0 건).
+
+#### 크로스 빌드 없이 재는 길 — Windows 잡의 **로그**에 물어본다
+
+위 절차는 mingw 링커를 요구한다. 그것 없이 같은 답을 얻는 길이 있다: `check-windows` 의
+`cargo test (unit)` 은 실행한 이름을 **한 줄씩 찍으므로**, 그 잡 로그가 곧 "Windows 조합이
+실제로 도는 이름의 전수" 다. 크로스 빌드보다 정확하다 — 컴파일되는 것이 아니라 **도는
+것**을 세기 때문이다.
+
+```bash
+run=$(gh run list --workflow crossplatform-check.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+job=$(gh run view "$run" --json jobs --jq '.jobs[]|select(.name=="check-windows").databaseId')
+gh api "repos/zilhak/tasty/actions/jobs/$job/logs" \
+  | grep -oE " test [A-Za-z0-9_:가-힣]+ \.\.\. (ok|ignored)" \
+  | sed -E 's/ test ([^ ]+) \.\.\..*/\1/' | sort -u > /tmp/win.txt
+# /tmp/gui.txt(위에서 만든 gui 게이트 본체 유닛)와 차집합
+comm -23 /tmp/gui.txt /tmp/win.txt
+```
+
+**모듈 경로를 벗기고 비교하지 마라.** 마지막 세그먼트만 남기면 다른 크레이트의 동명
+테스트와 충돌해 빈 칸을 **과소**로 센다 — 실측으로 9 건이 8 건이 됐다(사라진 것은
+`platform::x11_gdk_window::tests::the_scan_separates_code_from_comments_and_literals`,
+같은 이름이 다른 크레이트에 있었다).
 
 ### "헤드리스 커버리지" 는 두 가지를 섞어 부른다
 
