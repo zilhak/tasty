@@ -1145,8 +1145,15 @@ const OVER_CAP_PENDING: &[(&str, &str)] = &[(
 
 /// UI 폰트 상한. `docs/design/systems/theme.md` "UI 폰트 최대" 행이 정본이다.
 ///
-/// 길이라 `LogicalPx` 로 선언한다 — `f32` 로 두면 `src/source_guards/`
-/// `length_constant_frontier` 가 잡는다(그리고 잡았다).
+/// **비교 전용 문턱이다 — 렌더되는 자리가 없다.** 쓰이는 곳은 비교 하나와 실패 메시지
+/// 둘뿐이라, 이 값을 그리는 코드를 찾지 마라.
+///
+/// 그래도 `LogicalPx` 로 선언한다. 이유 둘:
+/// - 견주는 값들이 소스에서 뽑은 **길이 상수의 값**이라 문턱은 같은 단위로 적히는 것이
+///   맞다. 개념적 짝인 `Theme::font_size_max` 도 `LogicalPx(14.0)` 다.
+/// - `f32` 로 두면 `src/source_guards/length_constant_frontier` 가 잡는다(그리고 잡았다).
+///   그 가드에는 면제 목록이 없고 `FRONTIER` 영역 한 줄뿐이라, 빠져나가려면 전선을
+///   면제 목록으로 바꿔야 한다 — 그 대가가 `.value()` 세 번보다 크다.
 const UI_FONT_SIZE_CAP: LogicalPx = LogicalPx(14.0);
 
 /// 상수 표 하한 — 표가 비면 "상한 초과 0" 이 조용히 참이 된다.
