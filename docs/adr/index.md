@@ -193,3 +193,4 @@
 | 0180 | [소스 스캔 가드의 세 판정 물음에 이름과 집을 준다 — "출하되는가" 의 정본은 `shipping_scope` 다](0180-test-only-files-is-the-canonical-shipping-judge.md) | Accepted | 2026-09-05 | guards, shipping-scope, cfg-predicate, test-gate, canonical-judge, layering, r414, r451, r453, adr-0129, adr-0165, adr-0166 |
 | 0179 | [해소하는 crate 에 표를 넘긴다 — 주입하는 것은 함수가 아니라 데이터다](0179-the-resolver-is-handed-the-table-not-a-callback.md) | Accepted | 2026-09-06 | plugins, ipc, derived-state, encapsulation, global-state, adr-0173, adr-0178 |
 | 0182 | [테스트 인스턴스는 기본적으로 번들 plugin 을 스테이징하지 않는다](0182-test-instances-do-not-stage-bundled-plugins-by-default.md) | Accepted | 2026-09-06 | testing, harness, plugin, performance, disk-io |
+| 0183 | [가드·측정의 초록은 증거가 아니다 — 대조가 있어야 측정이다](0183-a-green-check-is-not-evidence-without-a-control.md) | Accepted | 2026-09-06 | guards, measurement, control, testing, mutation, false-green, r433, r453, r459, r461, r462, adr-0129, adr-0139, adr-0180, adr-0181 |
