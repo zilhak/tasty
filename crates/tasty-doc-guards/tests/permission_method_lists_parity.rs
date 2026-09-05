@@ -124,10 +124,49 @@ fn variant_tokens(src: &str) -> BTreeMap<String, String> {
     out
 }
 
-/// `METHOD_TABLE` 을 메서드 → 필요 variant 로 읽는다. `None` 은 `local_only`.
+/// 이 파서가 **해석할 줄 아는** 생성자와 그 뜻.
+///
+/// `true` = plugin 이 부를 수 있다(권한 목록을 `&[..]` 에서 읽는다), `false` = 못 부른다.
+/// 이 목록은 아래 [`constructors_in_source`] 가 소스에서 뽑은 집합과 **대조된다** —
+/// 손으로 적은 목록은 진짜 집합과 따로 늙기 때문이다.
+const KNOWN_CTORS: &[(&str, bool)] = &[
+    ("plugin", true),
+    // 권한 축에서 `plugin` 과 같다. 다른 것은 외부 호출자에게 dispatch arm 이 없다는
+    // 것뿐이고, 그건 이 문서(권한 표)의 관심사가 아니다.
+    ("plugin_only", true),
+    ("local_only", false),
+];
+
+/// `method_meta.rs` 가 실제로 정의한 `MethodMeta` 생성자 이름.
+///
+/// 손으로 유지하는 목록 대신 **소스에서 도출**한다. 도출한 것과 [`KNOWN_CTORS`] 가
+/// 갈라지면 그 자리에서 실패한다 — 파서가 모르는 생성자를 조용히 건너뛰면 그 항목들이
+/// 표에서 사라지고, 그때 이 가드는 "문서가 없는 메서드를 적었다" 는 **거짓 결함**을
+/// 보고한다(2026-09-05 실제로 그렇게 났다: `plugin_only` 를 추가하자 넷이 사라졌다).
+fn constructors_in_source(src: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in src.lines() {
+        let t = line.trim();
+        let Some(rest) = t.strip_prefix("const fn ") else {
+            continue;
+        };
+        if !t.contains("-> MethodMeta") {
+            continue;
+        }
+        if let Some((name, _)) = rest.split_once('(') {
+            out.insert(name.trim().to_string());
+        }
+    }
+    out
+}
+
+/// `METHOD_TABLE` 을 메서드 → 필요 variant 로 읽는다. `None` 은 plugin 이 못 부르는 것.
 ///
 /// 항목이 여러 줄에 걸치고 후행 쉼표가 붙는 형태(`(\n "x",\n plugin(&[..]),\n)`)가 실제로
 /// 있으므로 줄 단위로 읽지 않는다 — 그렇게 읽으면 그 항목들이 **조용히 빠진다.**
+///
+/// 모르는 생성자를 만나면 **실패한다.** 건너뛰면 검사가 조용히 꺼지고, 검사가 있다는
+/// 사실 자체가 거짓이 된다.
 fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
     let start = src
         .find("pub const METHOD_TABLE")
@@ -138,6 +177,7 @@ fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
     let flat = strip_line_comments(&src[start..start + end]);
     let b = flat.as_bytes();
     let mut out = BTreeMap::new();
+    let mut unknown: Vec<String> = Vec::new();
     let mut i = 0;
     while i < b.len() {
         if b[i] != b'"' {
@@ -157,29 +197,42 @@ fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
             && trimmed.starts_with(',')
         {
             let tail = trimmed[1..].trim_start();
-            // `plugin_only(&[..])` 는 권한 축에서 `plugin(&[..])` 과 같다 — plugin 이
-            // 부를 수 있고 같은 권한을 요구한다. 다른 것은 **외부** 호출자에게
-            // dispatch arm 이 없다는 것뿐이라 이 문서(권한 표)의 관심사가 아니다.
-            // 이 갈래가 없으면 그 항목들이 조용히 빠져 "표에 없다" 로 오보된다.
-            if let Some(rest) = tail
-                .strip_prefix("plugin(")
-                .or_else(|| tail.strip_prefix("plugin_only("))
-            {
-                let open = rest.find('[').expect("plugin(&[..]) 형태가 아니다");
-                let close2 = rest[open..].find(']').expect("plugin(&[..]) 가 안 닫혔다");
-                let inner = &rest[open + 1..open + close2];
-                let vs: Vec<String> = inner
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                out.insert(name.to_string(), Some(vs));
-            } else if tail.starts_with("local_only(") {
-                out.insert(name.to_string(), None);
+            let ctor: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+                .collect();
+            if tail[ctor.len()..].starts_with('(') {
+                let Some((_, plugin_callable)) =
+                    KNOWN_CTORS.iter().find(|(n, _)| *n == ctor.as_str())
+                else {
+                    unknown.push(format!("{name} → {ctor}(…)"));
+                    i += 1 + close + 1;
+                    continue;
+                };
+                if *plugin_callable {
+                    let rest = &tail[ctor.len() + 1..];
+                    let open = rest.find('[').expect("plugin 계열은 &[..] 형태다");
+                    let close2 = rest[open..].find(']').expect("&[..] 가 안 닫혔다");
+                    let inner = &rest[open + 1..open + close2];
+                    let vs: Vec<String> = inner
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    out.insert(name.to_string(), Some(vs));
+                } else {
+                    out.insert(name.to_string(), None);
+                }
             }
         }
         i += 1 + close + 1;
     }
+    assert!(
+        unknown.is_empty(),
+        "METHOD_TABLE 에 이 파서가 모르는 생성자가 있다 — 건너뛰면 그 항목들이 표에서 \
+         사라져 이 가드가 거짓 결함을 보고한다. `KNOWN_CTORS` 에 해석을 더해라:\n  {}",
+        unknown.join("\n  ")
+    );
     out
 }
 
@@ -293,6 +346,39 @@ fn model() -> Model {
         rows,
         by_tok,
     }
+}
+
+/// 소스가 정의한 생성자를 이 파서가 **전부** 해석할 줄 안다.
+///
+/// 이 단정이 이 파일에서 제일 오래 살 부류를 막는다 — 스캐너가 **자기가 아는 모양만**
+/// 보는 형태다. 생성자를 하나 더 만드는 커밋은 이 파서를 조용히 눈멀게 하는데, 그때
+/// 나오는 것은 "파서가 못 읽었다" 가 아니라 "문서가 없는 메서드를 적었다" 라는 **엉뚱한
+/// 방향의 결함**이라 읽는 사람이 문서를 고치러 간다. 그래서 목록을 손으로 두지 않고
+/// 소스에서 도출해 대조한다.
+#[test]
+fn the_known_constructors_cover_what_the_source_defines() {
+    let src = read(METHOD_SOURCE);
+    let defined = constructors_in_source(&src);
+    assert!(
+        defined.len() >= 3,
+        "생성자를 {}개밖에 못 뽑았다 — 도출이 죽었다(2026-09-05 실측 3: plugin · \
+         plugin_only · local_only). `const fn …() -> MethodMeta` 형태가 바뀌었는지 봐라",
+        defined.len()
+    );
+    let known: BTreeSet<String> = KNOWN_CTORS.iter().map(|(n, _)| (*n).to_string()).collect();
+    let unhandled: Vec<&String> = defined.difference(&known).collect();
+    assert!(
+        unhandled.is_empty(),
+        "`method_meta.rs` 가 정의한 생성자를 이 파서가 해석할 줄 모른다 — 그 생성자로 적힌 \
+         항목은 표에서 조용히 사라진다. `KNOWN_CTORS` 에 (이름, plugin 이 부를 수 있는가) \
+         를 더해라: {unhandled:?}"
+    );
+    let stale: Vec<&String> = known.difference(&defined).collect();
+    assert!(
+        stale.is_empty(),
+        "`KNOWN_CTORS` 에 있는데 소스에 없는 생성자다 — 지워진 것을 계속 해석하고 있다: \
+         {stale:?}"
+    );
 }
 
 /// 파서가 조용히 빈 결과를 내면 아래 전부가 무력해진다. 특히 **여러 줄 항목**은
