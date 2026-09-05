@@ -24,10 +24,13 @@ pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
 /// 거치지 않으므로(스케일 세그는 egui `set_zoom_factor` 쪽이다) 두 경로의 값이 같고,
 /// 리터럴 사본을 둘 이유가 없다.
 pub const CONTENT_MARGIN: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
-/// 본체 popup 상수 — 타이틀바 우측 버튼 한 변.
-pub const TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
-/// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백.
-pub const TITLE_BTN_EDGE_PAD: LogicalPx = LogicalPx(4.0);
+/// 본체 popup 상수 — 타이틀바 우측 버튼 한 변. 사본이 아니라 공유 상수를 읽는다
+/// (종전에는 이 파일이 정의를 들고 본체가 리터럴을 썼다 — 방향이 반대였다).
+pub const TITLE_BTN_SIZE: LogicalPx = tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE;
+/// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백. 본체는 이 자리에
+/// `Theme.spacing_xs` 를 쓴다(간격이라 배율을 탄다). 갤러리는 egui 전역 zoom 이라
+/// 같은 토큰을 여기서 상수로 읽어도 값이 같다.
+pub const TITLE_BTN_EDGE_PAD: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
 
 /// 타이틀바 우측 버튼 세트. 본체 `PopupManager` 구성과 같다 — close(X) 는 타이틀바가
 /// 있는 모든 popup 에, fullscreen 은 **전체화면 무대를 선언한 popup** 에만 붙는다

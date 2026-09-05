@@ -480,8 +480,13 @@ impl PopupState {
 
     fn close_btn_rect(&self) -> egui::Rect {
         let title = self.title_rect();
-        let size = 20.0;
-        let center = egui::pos2(title.max.x - size * 0.5 - 4.0, title.center().y);
+        // 버튼 한 변과 우측 끝 여백. 종전에는 둘 다 이 함수 안의 리터럴(20.0 · 4.0)
+        // 이었다 — 갤러리에는 이미 이름이 있었는데 본체가 그것을 모르고 있었다.
+        // 배율을 먹이는 이유는 `POPUP_TITLE_BTN_SIZE` 의 doc 에 있다(그릇과 내용).
+        let th = crate::theme::theme();
+        let size = super::zoomed_px(&th, tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE).value();
+        let edge_pad = th.spacing_xs.value();
+        let center = egui::pos2(title.max.x - size * 0.5 - edge_pad, title.center().y);
         egui::Rect::from_center_size(center, egui::vec2(size, size))
     }
 
