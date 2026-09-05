@@ -45,7 +45,9 @@ use super::{
 /// 락이 지키는 것을 만지는 테스트를 어디까지 찾는가.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Scope {
-    /// 락이 선언된 파일 안만. 락이 모듈 밖으로 안 보이는 경우다.
+    /// 락이 선언된 파일 안만. **그 항목이 지키는 이름들이 파일 밖에서 안 보이는**
+    /// 경우다 — "지금 다른 파일이 안 만진다" 가 아니라 "만질 수 없다" 여야 한다.
+    /// 그 전제는 [`a_file_scoped_entry_guards_only_names_invisible_outside_it`] 가 본다.
     File,
     /// 크레이트 전체. 락이나 접근면이 `pub`/`pub(crate)` 이라 다른 파일의 테스트도 닿는다.
     Crate,
@@ -96,9 +98,14 @@ const SERIALIZED: &[Serialized] = &[
         lock: "TEST_SERIAL",
         acquire: &["TEST_SERIAL", "serial()"],
         guarded: &["STATE", "sweep"],
-        scope: Scope::File,
+        // `sweep` 이 `pub fn` 이다 — 다른 파일의 테스트가 락 없이 부를 수 있다.
+        // 종전 `Scope::File` 은 "지금 아무도 안 부른다" 에 기대고 있었다. 픽스처로
+        // 두 팔을 재서 확인했다: 다른 파일의 테스트가 `webhook::sweep()` 을 락 없이
+        // 부를 때 File 은 초록, Crate 는 빨강이었다 — 구멍이 실재했다.
+        scope: Scope::Crate,
         why: "웹훅 레지스트리가 프로세스 싱글턴이고 `sweep` 이 만료 엔트리를 **전부** \
-              지운다 — 한 테스트의 sweep 이 다른 테스트의 엔트리를 먼저 지운다",
+              지운다 — 한 테스트의 sweep 이 다른 테스트의 엔트리를 먼저 지운다. \
+              그 `sweep` 이 `pub` 이라 다른 파일에서도 닿는다",
     },
     Serialized {
         file: "crates/tasty-ipc/src/method_meta_tests.rs",
@@ -376,4 +383,56 @@ fn each_entry_names_something_that_exists() {
         );
         assert!(why.chars().count() >= 10, "`{lock}` 의 사유가 비었다");
     }
+}
+
+/// `Scope::File` 이 기대는 **전제**: 그 항목이 지키는 이름이 파일 밖에서 안 보인다.
+///
+/// File 로 두면 다른 파일의 테스트는 **아예 안 본다.** 그 좁힘이 옳으려면 "다른 파일이
+/// 만질 수 없다" 가 참이어야 한다 — "지금 아무도 안 만진다" 로는 부족하다. 오늘의
+/// 인구에 맞춰 판정 범위를 좁히면 그 인구가 늘 때 조용해진다.
+///
+/// 실측(2026-09-06): webhook 항목이 그 형태였다. `sweep` 이 `pub fn` 인데 scope 가
+/// `File` 이었고, 다른 파일의 테스트가 락 없이 그것을 불러도 판정이 안 봤다. 픽스처로
+/// 두 팔을 재서(File 초록 / Crate 빨강) 구멍이 실재함을 확인하고 `Crate` 로 옮겼다.
+#[test]
+fn a_file_scoped_entry_guards_only_names_invisible_outside_it() {
+    let root = repo_root();
+    let mut checked = 0usize;
+    for e in SERIALIZED.iter().filter(|e| e.scope == Scope::File) {
+        let src = std::fs::read_to_string(root.join(e.file))
+            .unwrap_or_else(|err| panic!("{} 을 읽지 못했다: {err}", e.file));
+        let masked = mask_non_code(&src);
+        let mut found_any = false;
+        for name in e.guarded {
+            for line in masked.lines() {
+                let t = line.trim_start();
+                let decl = t.contains(&format!("static {name}"))
+                    || t.contains(&format!("fn {name}("))
+                    || t.contains(&format!("struct {name}"));
+                if !decl {
+                    continue;
+                }
+                found_any = true;
+                checked += 1;
+                assert!(
+                    !t.starts_with("pub"),
+                    "`{}` 의 `{name}` 이 파일 밖에서 보이는데 scope 가 File 이다. 그러면 \
+                     다른 파일의 테스트가 락 없이 만져도 판정이 **안 본다** — scope 를 \
+                     Crate 로 올리거나 그 이름을 닫아라: {}",
+                    e.file,
+                    t.trim()
+                );
+            }
+        }
+        assert!(
+            found_any,
+            "`{}` 에서 지키는 이름의 선언을 하나도 못 찾았다 — 이 검사가 아무것도 안 보고 \
+             통과한다. 이름이 다른 파일로 옮겨졌으면 scope 도 다시 정해라",
+            e.file
+        );
+    }
+    assert!(
+        checked > 0,
+        "File scope 항목이 하나도 없다 — 검사가 빈 채로 통과한다. 명부가 비었는지 확인해라"
+    );
 }
