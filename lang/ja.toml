@@ -1434,6 +1434,7 @@ frame_echo_mismatch = "frame {}: echo 不一致 — 送信 {}、受信 {}"
 
 [cli.plugin_cli]
 manifest_skipped = "警告: {} の plugin マニフェストをスキップしました: {}"
+name_shadows_host_command = "警告: plugin cli コマンド '{}' を登録しませんでした — 同名の tasty 組み込みコマンドが既にあり、どのみち到達できないためです"
 no_subcommand = "サブコマンドが指定されていません"
 not_plugin_command = "'{}' は plugin が提供する cli コマンドではありません"
 subcommand_required = "'{}' にはサブコマンドが必要です"

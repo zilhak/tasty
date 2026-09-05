@@ -2,9 +2,18 @@
 //! 매칭된 결과를 JSON-RPC 메서드+params로 변환한다.
 //!
 //! 호스트 정적 `Cli` 파싱이 `InvalidSubcommand`로 실패할 때 진입한다 — 정적 우선,
-//! 정적이 모르는 이름만 plugin CLI에서 찾는다. plugin이 호스트 명령을 가릴 수 없다.
+//! 정적이 모르는 이름만 plugin CLI에서 찾는다.
+//!
+//! 그 "정적 우선"은 **파싱 순서**의 성질이지 등록의 성질이 아니었다. 호스트와 같은
+//! 이름을 선언한 plugin 도 clap 트리에는 그대로 들어갔고, 그러면 release 에서는
+//! 도달 불가능한 중복 서브커맨드가 조용히 얹혔고 debug 에서는 clap 의 `assert_app`
+//! 이 `command name '<이름>' is duplicated` 로 **CLI 전체를 패닉시켰다** —
+//! `--help` 와 다른 모든 plugin 명령까지 함께 죽었다. 그래서 지금은
+//! [`build_augmented_cli`] 가 등록 시점에 정적 명령 집합과 대조해 겹치는 이름을
+//! 등록하지 않고 경고한다. 막히는 것은 release 에서 이미 도달 불가였던 이름뿐이라
+//! 서드파티가 잃는 기능은 없다.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Result, anyhow};
@@ -78,10 +87,33 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
 /// 통합과 동적 파싱에 공통 사용.
 pub fn build_augmented_cli(entries: &[PluginCliEntry]) -> Command {
     let mut cmd = <super::Cli as CommandFactory>::command();
+    let host = host_command_names(&cmd);
     for entry in entries {
+        if host.contains(&entry.cli.name) {
+            eprintln!(
+                "{}",
+                tasty_i18n::t_fmt("cli.plugin_cli.name_shadows_host_command", &entry.cli.name)
+            );
+            continue;
+        }
         cmd = cmd.subcommand(build_cli_subcommand(&entry.cli));
     }
     cmd
+}
+
+/// 정적 `Cli` 가 이미 쓰고 있는 top-level 이름 — 명령 이름과 그 모든 alias.
+///
+/// 손으로 적은 목록을 참조하지 않고 clap 명령 트리에서 그때그때 도출한다. 호스트
+/// 명령이 늘거나 이름이 바뀌어도 따라 고칠 두 번째 자리가 생기지 않는다.
+fn host_command_names(cmd: &Command) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for sub in cmd.get_subcommands() {
+        names.insert(sub.get_name().to_string());
+        for alias in sub.get_all_aliases() {
+            names.insert(alias.to_string());
+        }
+    }
+    names
 }
 
 /// clap 4의 빌더 API는 `&'static str`을 기대하는 곳이 있어, 매니페스트에서 읽은
@@ -955,6 +987,53 @@ mod tests {
         let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["force"], Value::Bool(true));
+    }
+
+    /// 정적 명령 이름을 하나씩 다 흉내 내 본다 — 손목록에 우연히 들어 있는 이름
+    /// 몇 개가 아니라 **실제 명령 집합 전체**가 대상이다. 어느 하나라도 등록을
+    /// 통과하면 release 에서는 도달 불가능한 중복이 얹히고 debug 에서는 clap 의
+    /// `assert_app` 이 CLI 전체를 패닉시킨다.
+    #[test]
+    fn no_host_command_name_can_be_shadowed_by_a_plugin() {
+        let host = host_command_names(&<crate::Cli as CommandFactory>::command());
+        assert!(
+            host.len() > 20,
+            "정적 명령 집합이 {} 개다 — 도출이 깨졌으면 이 테스트는 아무것도 재지 않는다",
+            host.len()
+        );
+        for name in &host {
+            let mut entry = sample_entry();
+            entry.cli.name = name.clone();
+            let augmented = build_augmented_cli(&[entry]);
+            let hits = augmented
+                .get_subcommands()
+                .filter(|c| c.get_name() == name)
+                .count();
+            assert_eq!(hits, 1, "'{name}' 이 중복 등록됐다");
+            // clap 이 debug 빌드에서 실제로 패닉하던 그 경로를 직접 밟는다.
+            augmented.debug_assert();
+        }
+    }
+
+    /// 겹치지 않는 이름은 그대로 등록된다 — 위 필터가 전부를 막아 버리는
+    /// 형태였다면 이쪽이 빨개진다.
+    #[test]
+    fn a_plugin_name_that_does_not_collide_is_still_registered() {
+        let entry = sample_entry();
+        let name = entry.cli.name.clone();
+        let host = host_command_names(&<crate::Cli as CommandFactory>::command());
+        assert!(
+            !host.contains(&name),
+            "표본이 이미 호스트 명령이면 대조가 안 된다"
+        );
+        let augmented = build_augmented_cli(&[entry]);
+        assert_eq!(
+            augmented
+                .get_subcommands()
+                .filter(|c| c.get_name() == name)
+                .count(),
+            1
+        );
     }
 
     #[test]

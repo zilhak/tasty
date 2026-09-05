@@ -1432,6 +1432,7 @@ frame_echo_mismatch = "frame {}: echo 불일치 — 보낸 값 {}, 받은 값 {}
 
 [cli.plugin_cli]
 manifest_skipped = "경고: {} 의 plugin 매니페스트를 건너뜁니다: {}"
+name_shadows_host_command = "경고: plugin cli 명령 '{}' 을 등록하지 않았습니다 — 같은 이름의 tasty 기본 명령이 이미 있어 어차피 도달할 수 없는 명령입니다"
 no_subcommand = "서브커맨드가 없습니다"
 not_plugin_command = "'{}' 은(는) plugin 이 제공하는 cli 명령이 아닙니다"
 subcommand_required = "'{}' 에는 서브커맨드가 필요합니다"

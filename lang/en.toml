@@ -1458,6 +1458,7 @@ frame_echo_mismatch = "frame {}: echo mismatch — sent {}, got {}"
 
 [cli.plugin_cli]
 manifest_skipped = "warning: plugin manifest at {} skipped: {}"
+name_shadows_host_command = "warning: plugin cli command '{}' was not registered — a built-in tasty command already uses that name, so the plugin command was unreachable anyway"
 no_subcommand = "no subcommand supplied"
 not_plugin_command = "'{}' is not a plugin-contributed cli command"
 subcommand_required = "'{}' requires a subcommand"
