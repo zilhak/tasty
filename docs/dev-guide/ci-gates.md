@@ -30,7 +30,7 @@
 | Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다 | [실측] |
-| 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동 | 등급 미정 |
+| 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동 | [실측] |
 | 사이트 생성 — 가이드 링크 · `ORDER` 누락 | `cargo run --release --manifest-path site/Cargo.toml -- --strict` | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
 
 ### 등급 — 이 표의 각 행이 무엇까지 말하는가
@@ -40,10 +40,15 @@
 
 - **[배선]** — `.github/workflows/` 의 작업 트리 파일이 그 조합을 배선했다. 그뿐이다.
   초록인지는 이 등급이 말하지 않는다.
-- **[실측]** — 그 채널이 **실제로 초록인 것을 본 적이 있다.** 존재 주장이라 한 번 참이면
-  계속 참이고(그래서 낡지 않는다), "지금 초록이다" 와는 다른 말이다. 현재 붙어 있는
-  [실측]의 출처는 2026-09-06 회차에서 conductor 가 확인한 여섯 워크플로다
-  (Test · Format · Complexity · Script Gates · Plugin Version · Doc Guards).
+- **[실측]** — 그 채널이 **실제로 초록인 것을 본 적이 있다.** ★ **과거형 사실이지 현재
+  상태가 아니다.** 관측은 언제나 **어느 한 회차의 값**이고, 이 등급이 말하는 것은 "그때
+  초록이었다" 뿐이다. 그래서 낡지 않는다(한 번 참이면 계속 참이다) — 그리고 같은 이유로
+  **지금 초록이라는 근거로 쓸 수 없다.** 지금이 궁금하면 아래 [미측정] 의 명령으로 그
+  자리에서 재라. 출처는 둘이다:
+  - 2026-09-06 회차에서 conductor 가 확인한 여섯 워크플로
+    (Test · Format · Complexity · Script Gates · Plugin Version · Doc Guards).
+  - 공급망: 같은 날 `7695667a9` 에서 두 워크스페이스 크레이트에 `license` 필드를 넣어
+    통과한 것을 conductor 가 확인했다(그 전에는 `error[unlicensed]` 로 빨갰다).
 - **[미측정]** — 그 행의 잡이 **빨간 동안**의 등급이다. 잡이 빨간 동안 그 잡이 배선한
   커버리지는 실패가 아니라 **안 본 것**이다. 이것만 칸에 안 찍는 이유는 커밋마다 바뀌는
   값이기 때문이다([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)) —
