@@ -45,19 +45,15 @@ const BODY_PAD: LogicalPx = LogicalPx(3.0);
 /// surface leaf 아이콘↔라벨 gap.
 const LEAF_GAP: f32 = 6.0;
 /// mini tab 좌우 padding.
-const TAB_PAD_X: f32 = 9.0;
+const TAB_PAD_X: LogicalPx = LogicalPx(9.0);
 /// mini tab 아이콘↔라벨 gap.
-const TAB_GAP: f32 = 5.0;
+const TAB_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab close `×` 히트영역 한 변(14×14).
-// 이 탭 치수 다섯(`TAB_PAD_X`·`TAB_GAP`·`CLOSE_MARGIN`·`CLOSE_HIT`·`CLOSE_TAB_PAD`)은
-// 한 식으로 더해져 탭 폭을 만든다. 하나만 `LogicalPx` 로 바꾸면 그 덧셈 한복판에서
-// `.value()` 로 벗겨야 해서, 타입을 넓히는 대신 타입을 버리는 자리를 만든다.
-// 다섯을 함께 옮길 때 같이 옮긴다.
-const CLOSE_HIT: f32 = 14.0;
+const CLOSE_HIT: LogicalPx = LogicalPx(14.0);
 /// close `×` 왼쪽 margin(라벨과의 간격).
-const CLOSE_MARGIN: f32 = 1.0;
+const CLOSE_MARGIN: LogicalPx = LogicalPx(1.0);
 /// close `×` 노출 시 탭 우측 패딩(9→3 축소).
-const CLOSE_TAB_PAD: f32 = 3.0;
+const CLOSE_TAB_PAD: LogicalPx = LogicalPx(3.0);
 /// 편집 모드 선택 핸들(remove) 한 변 크기.
 const HANDLE_SZ: f32 = 18.0;
 /// 핸들 클러스터 모서리 inset.
@@ -2262,11 +2258,11 @@ fn draw_pane_card(
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
-    let icon_sz = theme.icon_glyph_size_sm.value();
-    let mut x = strip.min.x;
+    let icon_sz = theme.icon_glyph_size_sm;
+    let mut x = LogicalPx(strip.min.x);
     for (i, t) in pane.tabs.iter().enumerate() {
         let on = i == pane.active;
-        let lw = text_width(ui, &t.name, tab_font.clone());
+        let lw = LogicalPx(text_width(ui, &t.name, tab_font.clone()));
         // 편집 && 탭>1 → close × 영역 예약(우측 패딩 9→3 + marginLeft 1 + 14 히트).
         // 탭 1개면 × 숨김(pane 은 항상 탭 ≥1) → 폭도 rest 그대로.
         let show_close = cx.edit && pane.tabs.len() > 1;
@@ -2275,8 +2271,10 @@ fn draw_pane_card(
         } else {
             TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X
         };
-        let tab_rect =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H.value()));
+        let tab_rect = egui::Rect::from_min_size(
+            egui::pos2(x.value(), strip.min.y),
+            egui::vec2(tw.value(), STRIP_H.value()),
+        );
 
         // 클릭 상호작용 — active 가 아닌 탭만 pointer + 클릭(SetActive, 아래에서 판정).
         let resp = ui.interact(
@@ -2298,16 +2296,16 @@ fn draw_pane_card(
                     tab_rect.min.x,
                     tab_rect.max.y - theme.tab_indicator_width.value(),
                 ),
-                egui::vec2(tw, theme.tab_indicator_width.value()),
+                egui::vec2(tw.value(), theme.tab_indicator_width.value()),
             );
             p.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
         }
         if i > 0 {
             // 탭 사이 separator(borderRight).
-            p.vline(x, strip.y_range(), egui::Stroke::new(bw, sep));
+            p.vline(x.value(), strip.y_range(), egui::Stroke::new(bw, sep));
         }
         let icon_c = egui::pos2(
-            tab_rect.min.x + TAB_PAD_X + icon_sz * 0.5,
+            tab_rect.min.x + (TAB_PAD_X + icon_sz.scaled(0.5)).value(),
             tab_rect.center().y,
         );
         let icon_color = if on {
@@ -2315,16 +2313,10 @@ fn draw_pane_card(
         } else {
             theme.text_muted().to_egui()
         };
-        paint_icon(
-            ui,
-            cx.catalog.kind_icon(rep),
-            icon_c,
-            LogicalPx(icon_sz),
-            icon_color,
-        );
+        paint_icon(ui, cx.catalog.kind_icon(rep), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + TAB_PAD_X + icon_sz + TAB_GAP,
+                tab_rect.min.x + (TAB_PAD_X + icon_sz + TAB_GAP).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -2343,10 +2335,10 @@ fn draw_pane_card(
         if show_close {
             let close_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    tab_rect.max.x - CLOSE_TAB_PAD - CLOSE_HIT,
-                    tab_rect.center().y - CLOSE_HIT * 0.5,
+                    tab_rect.max.x - (CLOSE_TAB_PAD + CLOSE_HIT).value(),
+                    tab_rect.center().y - CLOSE_HIT.scaled(0.5).value(),
                 ),
-                egui::vec2(CLOSE_HIT, CLOSE_HIT),
+                egui::vec2(CLOSE_HIT.value(), CLOSE_HIT.value()),
             );
             let close_resp = ui.interact(
                 close_rect,
@@ -2372,7 +2364,7 @@ fn draw_pane_card(
                     ui,
                     icons::CLOSE,
                     close_rect.center(),
-                    LogicalPx(CLOSE_HIT * 0.5),
+                    CLOSE_HIT.scaled(0.5),
                     col,
                 );
             }
@@ -2398,7 +2390,7 @@ fn draw_pane_card(
     // 편집 모드: strip 끝에 add-tab "+" 버튼(디자인 22×20 — strip 높이보다 2px 넓다).
     if cx.edit {
         let add = egui::Rect::from_min_size(
-            egui::pos2(x, strip.min.y),
+            egui::pos2(x.value(), strip.min.y),
             egui::vec2(ADD_TAB_W.value(), STRIP_H.value()),
         );
         let resp = ui.interact(
@@ -2417,7 +2409,7 @@ fn draw_pane_card(
         } else {
             theme.text_muted().to_egui()
         };
-        paint_icon(ui, icons::PLUS, add.center(), LogicalPx(icon_sz), col);
+        paint_icon(ui, icons::PLUS, add.center(), icon_sz, col);
         if resp.clicked() {
             cx.act = Some(Act::AddTab { pane: pane.id });
         }
