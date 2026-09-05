@@ -190,3 +190,4 @@
 | 0178 | [필요성이 트리거와 무관한 일은 부팅에 걸고, 기동만 지연에 둔다](0178-a-job-whose-need-is-independent-of-the-trigger-is-anchored-at-boot.md) | Accepted | 2026-09-05 | lifecycle, boot, plugin, lazy-init, source-guard, adr-0050, adr-0136, adr-0173 |
 | 0177 | [poison 복구가 금지되는 락은 이름이 아니라 프레임 경계 타입으로 판정한다](0177-recovery-forbidden-locks-are-judged-by-frame-boundary-type.md) | Accepted | 2026-09-05 | poison, locks, error-handling, guards, measurement, false-negative, adr-0129, adr-0155 |
 | 0181 | [지연 단정은 부하에는 반응하고 코드에는 반응하지 않는 대조군을 함께 싣는다](0181-a-latency-assertion-must-carry-a-control-that-load-moves-and-code-does-not.md) | Proposed | 2026-09-06 | testing, flake, harness, assertions, diagnostics, adr-0129, adr-0139 |
+| 0180 | [`test_only_files` 가 "출하되는가" 의 정본이다 — cargo 통합테스트 타깃은 안 나가고, 미러는 위임한다](0180-test-only-files-is-the-canonical-shipping-judge.md) | Accepted | 2026-09-05 | guards, shipping-scope, test-isolation, canonical-judge, cargo-layout, r414, adr-0129, adr-0165 |
