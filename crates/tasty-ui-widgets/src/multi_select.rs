@@ -26,6 +26,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::keyboard_cursor::{edge_enabled, row_enabled, step_active};
 use crate::select::paint_chevron;
 
 /// 트리거 요약 라벨 3갈래. 문구는 호출자(=i18n 을 가진 쪽)가 주입한다.
@@ -94,12 +95,6 @@ fn popup_chrome_width(ui: &egui::Ui) -> f32 {
     frame.total_margin().sum().x + 2.0 * frame.stroke.width
 }
 
-/// 행 `i` 가 토글 가능한가 — 마스크가 없거나 짧으면 그 행은 활성이다(호출부가
-/// 마스크를 안 주는 흔한 경우가 곧 "전부 활성").
-fn row_enabled(disabled: Option<&[bool]>, i: usize) -> bool {
-    !disabled.and_then(|d| d.get(i)).copied().unwrap_or(false)
-}
-
 /// 키보드 커서(active 행)의 저장 키 — 팝업 id 에서 파생해 인스턴스마다 독립이다.
 ///
 /// 위젯 함수는 상태를 소유하지 않으므로 값은 `Memory::data` 에 둔다(팝업 열림 여부를
@@ -144,44 +139,6 @@ fn take_nav_keys(ui: &egui::Ui) -> NavKeys {
         close: i.consume_key(none, egui::Key::Escape),
         tab: i.key_pressed(egui::Key::Tab),
     })
-}
-
-/// 진행 방향의 첫 **토글 가능한** 행. 전부 비활성이거나 목록이 비면 `None`.
-///
-/// `Home`/`End` 의 종착이자, 아직 커서가 없을 때 방향키가 들어오는 자리다.
-fn edge_enabled(n: usize, disabled: Option<&[bool]>, forward: bool) -> Option<usize> {
-    if forward {
-        (0..n).find(|i| row_enabled(disabled, *i))
-    } else {
-        (0..n).rev().find(|i| row_enabled(disabled, *i))
-    }
-}
-
-/// 방향키 한 번의 active 이동 — 비활성 행은 건너뛰고 목록 끝에서 순환한다
-/// ([`crate::AutoComplete`] 키보드 커서와 같은 규약). 짚을 행이 없으면 `None`.
-fn step_active(
-    active: Option<usize>,
-    n: usize,
-    disabled: Option<&[bool]>,
-    forward: bool,
-) -> Option<usize> {
-    if n == 0 {
-        return None;
-    }
-    let Some(start) = active else {
-        return edge_enabled(n, disabled, forward);
-    };
-    let start = start.min(n - 1);
-    // k = n 이면 제자리로 돌아온다 — "활성 행이 자기 하나뿐" 인 경우까지 덮는다.
-    (1..=n)
-        .map(|k| {
-            if forward {
-                (start + k) % n
-            } else {
-                (start + n - k) % n
-            }
-        })
-        .find(|i| row_enabled(disabled, *i))
 }
 
 /// 이번 프레임에 팝업 상자 **안쪽**에서 포인터 press 가 났는가.
@@ -592,55 +549,4 @@ pub fn multi_select(
     }
     ui.data_mut(|d| d.insert_temp(active_id, active));
     changed
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn step_active_wraps_and_skips_disabled() {
-        // 마스크 없음 — 끝에서 순환.
-        assert_eq!(step_active(None, 3, None, true), Some(0));
-        assert_eq!(step_active(None, 3, None, false), Some(2));
-        assert_eq!(step_active(Some(2), 3, None, true), Some(0));
-        assert_eq!(step_active(Some(0), 3, None, false), Some(2));
-        // 가운데가 비활성이면 건너뛴다(양방향).
-        let d = [false, true, false];
-        assert_eq!(step_active(Some(0), 3, Some(&d), true), Some(2));
-        assert_eq!(step_active(Some(2), 3, Some(&d), false), Some(0));
-        // 아직 커서가 없을 때도 비활성 끝은 피한다.
-        let edges = [true, false, true];
-        assert_eq!(step_active(None, 3, Some(&edges), true), Some(1));
-        assert_eq!(step_active(None, 3, Some(&edges), false), Some(1));
-    }
-
-    #[test]
-    fn step_active_degenerate() {
-        // 목록이 비면 짚을 곳이 없다.
-        assert_eq!(step_active(None, 0, None, true), None);
-        assert_eq!(step_active(Some(0), 0, None, false), None);
-        // 전부 비활성도 마찬가지.
-        let all = [true, true];
-        assert_eq!(step_active(None, 2, Some(&all), true), None);
-        assert_eq!(step_active(Some(0), 2, Some(&all), true), None);
-        // 활성 행이 자기 하나뿐이면 제자리.
-        let one = [false, true];
-        assert_eq!(step_active(Some(0), 2, Some(&one), true), Some(0));
-        assert_eq!(step_active(Some(0), 2, Some(&one), false), Some(0));
-        // 목록이 줄어들어 범위를 벗어난 커서도 마지막 행 기준으로 이어진다.
-        assert_eq!(step_active(Some(9), 2, None, true), Some(0));
-    }
-
-    #[test]
-    fn edge_enabled_finds_the_outermost_toggleable_row() {
-        let d = [true, false, false, true];
-        assert_eq!(edge_enabled(4, Some(&d), true), Some(1));
-        assert_eq!(edge_enabled(4, Some(&d), false), Some(2));
-        assert_eq!(edge_enabled(4, None, true), Some(0));
-        assert_eq!(edge_enabled(4, None, false), Some(3));
-        assert_eq!(edge_enabled(0, None, true), None);
-        let all = [true, true];
-        assert_eq!(edge_enabled(2, Some(&all), false), None);
-    }
 }

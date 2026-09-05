@@ -35,6 +35,7 @@ mod help_hint;
 mod horizontal_tab_bar;
 mod icon_button;
 mod input;
+mod keyboard_cursor;
 mod language_select;
 mod listctrl;
 mod menu_item;
