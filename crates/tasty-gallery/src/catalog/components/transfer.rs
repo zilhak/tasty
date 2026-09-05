@@ -31,13 +31,13 @@ use crate::catalog::widgets::dialog as kit;
 /// `--tasty-transfer-popup-width` (size-400).
 const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
-const PAD_X: f32 = 14.0;
+const PAD_X: LogicalPx = LogicalPx(14.0);
 /// 헤더 세로 패딩 (디자인 12 = space-md).
-const HEADER_PAD_Y: f32 = 12.0;
+const HEADER_PAD_Y: LogicalPx = LogicalPx(12.0);
 /// 바디 패딩 (디자인 14 — raw).
 const BODY_PAD: LogicalPx = LogicalPx(14.0);
 /// 푸터 세로 패딩 (디자인 10 — raw).
-const FOOTER_PAD_Y: f32 = 10.0;
+const FOOTER_PAD_Y: LogicalPx = LogicalPx(10.0);
 /// 바디 내부 요소 gap (디자인 10 — raw).
 const BODY_GAP: LogicalPx = LogicalPx(10.0);
 
@@ -146,18 +146,26 @@ fn header_band(
     trailing: Option<&str>,
 ) {
     // 콘텐츠 높이 = max(glyph 16, 제목 14 line) ≈ 20; 패딩 12/12.
-    let content_h = 20.0;
-    let band_h = HEADER_PAD_Y * 2.0 + content_h;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), band_h), egui::Sense::hover());
+    let content_h = LogicalPx(20.0);
+    let band_h = HEADER_PAD_Y.scaled(2.0) + content_h;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + PAD_X, rect.top() + HEADER_PAD_Y),
-        egui::pos2(rect.right() - PAD_X, rect.bottom() - HEADER_PAD_Y),
+        egui::pos2(
+            rect.left() + PAD_X.value(),
+            rect.top() + HEADER_PAD_Y.value(),
+        ),
+        egui::pos2(
+            rect.right() - PAD_X.value(),
+            rect.bottom() - HEADER_PAD_Y.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -360,18 +368,26 @@ fn body_region(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 /// 푸터 (padding 10/14, borderTop separator, 우측정렬). `add` 는 우→좌 순서로
 /// 위젯을 넣는다(먼저 넣은 것이 우측 끝).
 fn footer_buttons(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
-    let btn_h = ControlSize::Sm.height(theme);
-    let band_h = FOOTER_PAD_Y * 2.0 + btn_h;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), band_h), egui::Sense::hover());
+    let btn_h = LogicalPx(ControlSize::Sm.height(theme));
+    let band_h = FOOTER_PAD_Y.scaled(2.0) + btn_h;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + PAD_X, rect.top() + FOOTER_PAD_Y),
-        egui::pos2(rect.right() - PAD_X, rect.bottom() - FOOTER_PAD_Y),
+        egui::pos2(
+            rect.left() + PAD_X.value(),
+            rect.top() + FOOTER_PAD_Y.value(),
+        ),
+        egui::pos2(
+            rect.right() - PAD_X.value(),
+            rect.bottom() - FOOTER_PAD_Y.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
