@@ -110,7 +110,8 @@ finish_boot (Ready):
 
 소유 표 설치는 `PluginManager` 가 든 표의 핸들을 그것을 **해소하는** 크레이트
 (`tasty-ipc`)에 넘기는 일이다 — 사본을 만드는 것이 아니라 같은 표를 가리키게 한다.
-표의 *내용*은 그 뒤 `refresh_packages` 가 설치된 매니페스트에서 유도한다.
+표의 *내용*은 그 뒤 `refresh_packages` 가 설치된 매니페스트에서 유도한다. 왜 사본이
+아니라 핸들인지는 [ADR-0179](../adr/0179-the-resolver-is-handed-the-table-not-a-callback.md).
 
 **여기서 프로세스는 하나도 안 뜬다** — 설치는 디스크에 놓는 것까지고, plugin 기동은
 첫 호출까지 지연된다. agent 러너 스레드도 수동 `agent.task_run --action start` 전까지

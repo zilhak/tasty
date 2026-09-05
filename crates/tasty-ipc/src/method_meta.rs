@@ -693,6 +693,9 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 /// `-32002` 로 거절하던 것). 지금은 host 가 든 것과 **같은 `Arc`** 를 부팅 때 한 번
 /// 받는다. 쓰는 쪽은 하나뿐이고 여기는 읽기만 한다.
 ///
+/// 결정·대안·경계는
+/// [ADR-0179](../../../docs/adr/0179-the-resolver-is-handed-the-table-not-a-callback.md).
+///
 /// 설치 전에는 "등록된 prefix 가 없다" 로 답한다 — 옛 미러가 그 시점에 비어 있던 것과
 /// 같은 답이다. 부팅 전 의미를 바꾸지 않는다.
 static NAMESPACE_TABLE: OnceLock<Arc<RwLock<IpcNamespaceRegistry>>> = OnceLock::new();
