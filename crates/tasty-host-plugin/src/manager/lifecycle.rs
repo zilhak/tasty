@@ -11,10 +11,10 @@ use std::time::Instant;
 use tasty_plugin_protocol::host_port::SurfaceRegistry;
 
 use crate::handle_channel::HandleListener;
-use crate::ipc_namespace::IpcNamespaceRegistry;
 use crate::listener::HostListener;
 use crate::process::{CHILD_EXIT_POLL_INTERVAL, PluginProcess, ShutdownBatch};
 use crate::registry_state::PluginsConfig;
+use tasty_ipc::ipc_namespace::IpcNamespaceRegistry;
 use tasty_plugin_manifest::{Permission, PluginPackage};
 
 use super::{

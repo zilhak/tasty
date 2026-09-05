@@ -19,11 +19,11 @@ use tasty_plugin_protocol::host_port::SurfaceRegistry;
 
 use crate::handle_channel::HandleListener;
 use crate::host_cmd::{HostCmd, SurfaceHandles};
-use crate::ipc_namespace::IpcNamespaceRegistry;
 use crate::listener::HostListener;
 use crate::process::{PluginProcess, ShutdownBatch};
 use crate::protocol::PluginResponse;
 use crate::registry_state::PluginsConfig;
+use tasty_ipc::ipc_namespace::IpcNamespaceRegistry;
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission, PluginPackage};
 
