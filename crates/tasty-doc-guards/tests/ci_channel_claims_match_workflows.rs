@@ -821,6 +821,122 @@ fn test_fn_names(text: &str) -> Vec<String> {
     names
 }
 
+/// `#[test]` 이름과 그 자리에 `#[ignore]` 가 붙었는지.
+///
+/// [`test_fn_names`] 와 갈라 두는 이유: 저쪽은 "이 타깃에 어떤 테스트가 있나" 를 묻고
+/// 이쪽은 "그 테스트가 **평범한 `cargo test` 로 도는가**" 를 묻는다. 두 물음의 답이
+/// 다르고, 뒤쪽을 앞쪽으로 대신하면 `#[ignore]` 33 건이 "돈다" 로 세어진다 —
+/// **모수를 줄이는 방향의 어긋남은 언제나 초록으로 나오므로** 아무도 안 본다.
+fn test_fns_with_ignore(text: &str) -> Vec<(String, bool)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim() != "#[test]" {
+            continue;
+        }
+        let mut ignored = false;
+        for next in lines.iter().skip(i + 1).take(4) {
+            let t = next.trim_start();
+            if t.starts_with("#[ignore") {
+                ignored = true;
+                continue;
+            }
+            let t = t.strip_prefix("async ").unwrap_or(t);
+            if let Some(rest) = t.strip_prefix("fn ")
+                && let Some(name) = rest.split(['(', '<']).next()
+                && !name.is_empty()
+            {
+                out.push((name.to_string(), ignored));
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// 줄바꿈·연속 공백을 한 칸으로 접은 사본. 마크다운 본문은 문장이 여러 줄에 걸쳐
+/// 접히므로, 문구를 원문에서 그대로 찾으면 **있는 것을 없다고** 판정한다(실측으로 밟았다).
+fn unwrapped(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// "N 통과" 꼴 — 숫자와 통과/passed 가 붙어 있는 자리.
+fn states_a_pass_count(flat: &str) -> bool {
+    let bytes: Vec<char> = flat.chars().collect();
+    for marker in ["통과", "passed"] {
+        let mut from = 0;
+        while let Some(pos) = flat[from..].find(marker) {
+            let at = from + pos;
+            from = at + marker.len();
+            let head = flat[..at].chars().count();
+            let lo = head.saturating_sub(6);
+            if bytes[lo..head].iter().any(|c| c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 마크다운 **절** 단위로 "gui 스위트의 통과 수를 적었다" 를 찾는다. 반환은 1-기반 줄 번호.
+///
+/// ## 왜 파일 단위가 아니라 절 단위인가
+///
+/// 파일 단위로 물으면 한 문서 안의 **무관한 두 문장**이 서로를 위반으로 만든다. 실측으로
+/// 밟았다 — `docs/dev-guide/e2e-tests.md` 는 스위트 단위 통과 수를 앞 절에 적고
+/// `gui_tests` 는 3.5k 자 뒤의 다른 절에서 언급하는데, 둘은 같은 것을 말하지 않는다.
+/// 반대로 "N 자 이내" 같은 문자 창을 쓰면 그 N 이 곧 마법의 수가 된다. 문서의 heading
+/// 구조가 이미 범위를 주고 있으므로 그것을 쓴다.
+///
+/// ## 두 범위를 다르게 잡는다 — 위반은 좁게, 면제는 넓게
+///
+/// 위반은 **고유 범위**(다음 heading 직전까지, 하위 절 제외)에서 찾고, 표지는
+/// **포함 범위**(같거나 얕은 다음 heading 직전까지, 하위 절 포함)에서 찾는다. 수를 적은
+/// 절 바로 아래에 "그 수가 왜 단일 값이 아닌가" 를 푸는 하위 절을 두는 것은 정상적인
+/// 문서 구조다 — 그것을 위반으로 세면 규칙이 잘 쓴 글을 벌한다. 반대로 **옆 절**의 표지는
+/// 끌어오지 않는다(그 함정은 이 파일의 다른 가드에서 실측으로 두 번 샜다).
+fn gui_pass_counts_missing_marker(text: &str, marker: &str) -> Vec<usize> {
+    let lines: Vec<&str> = text.lines().collect();
+    // (시작 줄, heading 레벨). 첫 heading 앞의 머리말은 자식을 가질 수 없으므로 가장 깊은
+    // 레벨로 두어 고유 범위와 포함 범위가 같아지게 한다.
+    let mut heads: Vec<(usize, usize)> = vec![(0, usize::MAX)];
+    let mut fence = false;
+    for (i, ln) in lines.iter().enumerate() {
+        if ln.trim_start().starts_with("```") {
+            fence = !fence;
+            continue;
+        }
+        if fence {
+            continue;
+        }
+        // 마크다운은 들여쓰기 3칸까지를 heading 으로 보고 4칸부터는 코드 블록으로 본다.
+        let indent = ln.len() - ln.trim_start_matches(' ').len();
+        let body = &ln[indent..];
+        let hashes = body.chars().take_while(|c| *c == '#').count();
+        if indent <= 3 && (1..=6).contains(&hashes) && body.chars().nth(hashes) == Some(' ') {
+            heads.push((i, hashes));
+        }
+    }
+
+    let mut out = Vec::new();
+    for (k, &(start, level)) in heads.iter().enumerate() {
+        let own_end = heads.get(k + 1).map_or(lines.len(), |&(i, _)| i);
+        let own = unwrapped(&lines[start..own_end].join("\n"));
+        if !own.contains("gui_tests") || !states_a_pass_count(&own) {
+            continue;
+        }
+        let scope_end = heads[k + 1..]
+            .iter()
+            .find(|&&(_, l)| l <= level)
+            .map_or(lines.len(), |&(i, _)| i);
+        let scope = unwrapped(&lines[start..scope_end].join("\n"));
+        if !scope.contains(marker) {
+            out.push(start + 1);
+        }
+    }
+    out
+}
+
 /// 통합 테스트 타깃 이름 -> 그 소스 경로.
 fn integration_target_path(root: &Path, name: &str) -> Option<PathBuf> {
     let direct = root.join("tests").join(format!("{name}.rs"));
@@ -1640,6 +1756,171 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     );
 }
 
+// ─── gui 칸의 채널 주장 — 세 층, 세 테스트 ─────────────────────────────────────
+//
+// 셋을 **한 테스트 안의 세 단정**으로 두지 않는다. 그러면 앞 단정이 죽는 순간 뒤 단정은
+// 아예 안 돌아서, 한 번에 하나씩만 판정된다 — 뭉친 주장의 다른 얼굴이다. 함수를 갈라야
+// 세 층이 서로를 가리지 않는다.
+//
+// 뭉치면 왜 나쁜가: 한 주장으로 두면 셋 중 하나만 참이어도 통과하고, 그 통과가 칸의
+// 크기를 부풀린다. 실측으로 그 형태가 났다 — 셋을 뭉쳐 세면 "디스플레이가 사는 것" 이
+// 1 이 아니라 11 로 보인다. 그리고 **모수를 줄이는 방향의 어긋남은 언제나 초록**이라
+// (`#[ignore]` 33 건을 "돈다" 로 세는 쪽), 뭉친 주장은 틀린 채로 조용히 산다.
+//
+// 세 층은 답의 **종류**가 서로 다르다 — 그래서 셋을 같은 단위로 셀 수 없다:
+//   층 1 은 이름 하나(값이 1), 층 2 는 전수 성질(값이 0), 층 3 은 **값이 없다**.
+
+/// 층 1 — 디스플레이가 살리는 것은 `#[ignore]` 가 **아닌** 그 하나다.
+///
+/// `multi_window_owner_routing` 은 무시 표시가 없는데도 창이 없어 못 돌던 테스트다.
+/// 지금 그것을 살리는 자동 채널은 이름을 지목한 스텝 하나뿐이라, 그 스텝이 사라지면
+/// 이 층의 값은 1 이 아니라 0 이 된다.
+#[test]
+fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
+    const THE_ONE: &str = "multi_window_owner_routing";
+    let root = repo_root();
+
+    let e2e = integration_target_path(&root, "e2e_tests").expect("tests/e2e_tests.rs 가 없다");
+    let e2e_text = std::fs::read_to_string(&e2e).expect("e2e_tests.rs 를 읽지 못했다");
+    let e2e_fns = test_fns_with_ignore(&e2e_text);
+    assert!(
+        e2e_fns.len() > 10,
+        "e2e_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽으면 아래 판정이 \
+         언제나 참이 된다(R435)",
+        e2e_fns.len()
+    );
+    let one = e2e_fns
+        .iter()
+        .find(|(n, _)| n == THE_ONE)
+        .expect("층 1 의 그 하나가 사라졌다 — 이름이 바뀌었으면 이 층의 값을 다시 세라");
+    assert!(
+        !one.1,
+        "`{THE_ONE}` 에 `#[ignore]` 가 붙었다. 그러면 이 층이 사는 것은 1 이 아니라 0 이고, \
+         그 잡의 스텝은 아무것도 안 돌린다"
+    );
+
+    let invocations = automatic_test_invocations(&root);
+    assert!(
+        !invocations.is_empty(),
+        "자동 잡의 `cargo test` 호출을 하나도 못 뽑았다 — 추출이 죽었다(R435)"
+    );
+    let selected = invocations.iter().any(|(_, tail)| {
+        let (filters, exact) = positive_filters(tail);
+        filters.iter().any(|f| {
+            if exact {
+                f == THE_ONE
+            } else {
+                THE_ONE.contains(f.as_str())
+            }
+        })
+    });
+    assert!(
+        selected,
+        "층 1 의 그 하나를 이름으로 지목해 돌리는 자동 스텝이 없다. 그것이 이 층의 \
+         **유일한** 채널이라(다른 잡은 `--skip` 하거나 창이 없다) 스텝이 사라지면 값은 0 이다"
+    );
+}
+
+/// 층 2 — gui 스위트가 요구하는 것은 디스플레이가 아니라 **플래그**다.
+///
+/// `gui_tests` 는 전수 `#[ignore]` 라, 창이 있어도 평범한 `cargo test` 는 한 건도 안
+/// 돌린다(R417: `#[ignore]` 는 실행만 막고 컴파일은 막지 않는다). 여기서 무시 표시가
+/// 하나라도 빠지면 그 테스트는 **어느 자동 잡도 안 보는데** 아무도 그 사실을 모른다.
+#[test]
+fn the_gui_suite_needs_a_flag_not_a_display() {
+    let root = repo_root();
+    let gui = integration_target_path(&root, "gui_tests").expect("tests/gui_tests.rs 가 없다");
+    let gui_text = std::fs::read_to_string(&gui).expect("gui_tests.rs 를 읽지 못했다");
+    let gui_fns = test_fns_with_ignore(&gui_text);
+    assert!(
+        gui_fns.len() > 10,
+        "gui_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽었다(R435)",
+        gui_fns.len()
+    );
+    let running: Vec<&String> = gui_fns
+        .iter()
+        .filter(|(_, ig)| !ig)
+        .map(|(n, _)| n)
+        .collect();
+    assert!(
+        running.is_empty(),
+        "`gui_tests` 에 `#[ignore]` 없는 테스트가 생겼다: {running:?}\n\
+         그러면 이 층의 서술('디스플레이가 있어도 한 건도 안 돈다')이 거짓이 되고, \
+         그 테스트는 **어느 자동 잡도 안 보는데** 아무도 그 사실을 모른다"
+    );
+}
+
+/// 층 3 — `--ignored` 를 줘도 나오는 수에는 **단일 값이 없다.** 값 대신 그 단정을 지킨다.
+///
+/// 이 칸에는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
+/// 나쁘다(ADR-0139). 실제로 계기마다 답이 다르고 **서로 반대 방향으로** 흔들린다:
+/// 한 프로세스로 돌리면 한 panic 이 공유 인스턴스를 오염시켜 뒤를 다 죽이고, 프로세스를
+/// 가르면 그 오염은 사라지지만 순서·상태에 기대던 것들이 대신 죽는다.
+///
+/// 그래서 지키는 것은 수가 아니라 **"단일 값이 없다" 는 단정 자체**다. 통과 수를 적은
+/// 절은 그 절이나 그 하위 절에 단정을 함께 담아야 한다 — 누가 수만 채워 넣으면 빨개진다.
+///
+/// **은퇴 조건**을 함께 박는다. 수가 흔들리는 원인(lock 뒤의 단일 공유 인스턴스)이
+/// 사라지면 수가 안정될 수 있고, 그때까지 이 규칙이 남으면 없는 병을 지키게 된다.
+#[test]
+fn the_gui_ignored_layer_has_no_single_value() {
+    const MARKER: &str = "단일 값이 없다";
+    const CLAIM_DOC: &str = "docs/dev-guide/ci-gates.md";
+    let root = repo_root();
+
+    let common = root.join("tests/gui_common/mod.rs");
+    let common_text = std::fs::read_to_string(&common).expect("tests/gui_common/mod.rs 가 없다");
+    assert!(
+        common_text.contains("Mutex") && common_text.contains(".lock()"),
+        "gui 하네스의 공유 인스턴스(lock 뒤의 단일 인스턴스)가 사라졌다. 그것이 수를 \
+         흔들던 원인이므로, 이 층의 '{MARKER}' 가 아직 참인지 다시 재라 — 참이 아니게 \
+         됐으면 이 층 규칙과 문서의 표기를 함께 걷어라"
+    );
+
+    let mut files = Vec::new();
+    collect_files(&root, &mut files);
+    let mut scanned = 0usize;
+    let mut carries_marker = false;
+    let mut violations = Vec::new();
+    for file in &files {
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        if !rel_str.ends_with(".md") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        if !unwrapped(&text).contains("gui_tests") {
+            continue;
+        }
+        scanned += 1;
+        if rel_str == CLAIM_DOC {
+            carries_marker = unwrapped(&text).contains(MARKER);
+        }
+        for line in gui_pass_counts_missing_marker(&text, MARKER) {
+            violations.push(format!("{rel_str}:{line}"));
+        }
+    }
+    assert!(
+        scanned > 0,
+        "`gui_tests` 를 언급하는 문서를 하나도 못 찾았다 — 수집이 죽었다(R435)"
+    );
+    assert!(
+        carries_marker,
+        "{CLAIM_DOC} 에서 '{MARKER}' 가 사라졌다. 그 단정이 이 층의 **값 자리**라, \
+         없어지면 이 판정은 지킬 것이 없는 채로 언제나 초록이 된다(R435)"
+    );
+    assert!(
+        violations.is_empty(),
+        "아래 절이 gui 스위트의 통과 수를 적으면서 '{MARKER}' 는 안 적었다. 그 수는 \
+         계기(한 프로세스인가 갈랐는가)마다 다르고 서로 반대 방향으로 흔들리므로, \
+         수만 남으면 읽는 쪽이 그것을 커버리지로 읽는다. 그 절이나 그 하위 절에 \
+         단정을 함께 담아라:\n  {}",
+        violations.join("\n  ")
+    );
+}
+
 /// 회귀 케이스 — **한 표 안에서 채널이 갈리는 행들.**
 ///
 /// `docs/design/systems/theme.md` 의 토큰 규칙 표는 네 자리에서 가드를 인용하는데, 셋은
@@ -1771,6 +2052,71 @@ fn no_named_tests() -> std::collections::BTreeSet<String> {
 
 fn named(names: &[&str]) -> std::collections::BTreeSet<String> {
     names.iter().map(|s| (*s).to_string()).collect()
+}
+
+/// 층 3 의 판정기를 겨냥한 변이 — 절 범위가 맞게 잘리는가.
+///
+/// 표지를 조각으로 조립하지 않고 그대로 적는다: 이 판정기는 `.md` 만 훑으므로 `.rs` 인
+/// 이 파일 자신은 대상이 아니다.
+const NO_SINGLE_VALUE: &str = "단일 값이 없다";
+
+#[test]
+fn a_pass_count_in_an_unrelated_section_is_not_a_gui_claim() {
+    // 실측한 오탐의 축소판 — 통과 수와 `gui_tests` 가 서로 다른 절에 있다.
+    let text = concat!(
+        "## 어느 바이너리를 띄우는가\n\n스위트 단위 10 / 11 통과.\n\n",
+        "## 시나리오 하나에 테스트 하나\n\n`gui_tests` 는 전수 무시다.\n"
+    );
+    assert!(
+        gui_pass_counts_missing_marker(text, NO_SINGLE_VALUE).is_empty(),
+        "무관한 두 절이 서로를 위반으로 만들었다"
+    );
+}
+
+#[test]
+fn a_pass_count_beside_gui_tests_without_the_marker_is_caught() {
+    let text = "# 머리\n\n## 남은 칸\n\n`gui_tests` 는 11 통과다.\n";
+    assert_eq!(
+        gui_pass_counts_missing_marker(text, NO_SINGLE_VALUE),
+        vec![3],
+        "같은 절에서 수만 적은 자리를 못 잡았다"
+    );
+}
+
+#[test]
+fn a_marker_in_a_child_section_qualifies_the_parent() {
+    // 수를 적은 절 **아래**에 그 수가 왜 단일 값이 아닌지를 푸는 하위 절을 두는 것은
+    // 정상적인 문서 구조다. 이것을 위반으로 세면 규칙이 잘 쓴 글을 벌한다.
+    let text = format!(
+        "## 남은 칸\n\n`gui_tests` 는 11 통과다.\n\n### 왜 그 수가 흔들리나\n\n이 칸에는 {NO_SINGLE_VALUE}.\n"
+    );
+    assert!(
+        gui_pass_counts_missing_marker(&text, NO_SINGLE_VALUE).is_empty(),
+        "하위 절의 단정이 부모 절을 못 덮었다"
+    );
+}
+
+#[test]
+fn a_marker_in_a_sibling_section_does_not_exempt() {
+    let text = format!(
+        "## 남은 칸\n\n`gui_tests` 는 11 통과다.\n\n## 다른 칸\n\n이 칸에는 {NO_SINGLE_VALUE}.\n"
+    );
+    assert_eq!(
+        gui_pass_counts_missing_marker(&text, NO_SINGLE_VALUE),
+        vec![1],
+        "옆 절의 단정이 면제로 작동했다"
+    );
+}
+
+#[test]
+fn a_heading_inside_a_fence_does_not_split_a_section() {
+    let text = format!(
+        "## 남은 칸\n\n```sh\n# gui_tests 를 이렇게 돈다\n```\n\n`gui_tests` 는 11 통과이고 이 칸에는 {NO_SINGLE_VALUE}.\n"
+    );
+    assert!(
+        gui_pass_counts_missing_marker(&text, NO_SINGLE_VALUE).is_empty(),
+        "코드 펜스 안의 `#` 주석을 heading 으로 읽어 절을 갈랐다"
+    );
 }
 
 #[test]
