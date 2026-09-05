@@ -400,6 +400,15 @@ positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡�
 | 기본 조합 clippy (Linux) | `cargo clippy --workspace --all-targets --locked` | 각 작업 lane. CI 에서 이 조합을 보는 것은 Windows 잡뿐이다 |
 | dist 산출물 빌드 | `scripts/build-*.sh` | `build-check.yml` 수동 실행 |
 
+### 자동 채널이 없는 것이 **결함이 아닌** 갈래
+
+위 표는 "기계가 판정할 수 있는데 아직 자동으로 안 도는 것" 이다. 그것과 섞으면 안 되는
+갈래가 하나 더 있다 — **결론이 사람·에이전트의 판단인 절차.** `docs/ai-verification/` 의
+시각 검증·DPI 배율·IME 조합이 그것이고, 이쪽은 명령의 종료 코드가 답을 주지 않으므로
+"채널이 없다" 가 결함이 아니라 **성질**이다. 자동화할 수 있는 것은 그 절차의 *입력*
+(스크린샷을 찍는 것, 배율을 거는 것)까지이고 판정은 아니다. 그래서 이 두 갈래는 모수를
+함께 세지 않는다 — 섞으면 "자동 채널 없음" 의 개수가 고칠 수 있는 것보다 커 보인다.
+
 ### `script-gates.yml` — 배선한 날의 상태
 
 이 워크플로는 **배선했다는 것과 초록이라는 것을 갈라 적어야 하는 실례**다.
@@ -511,6 +520,25 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
 | pre-push | `cargo test -p tasty-doc-guards` | ✅ `doc-guards.yml` — **같은 크레이트를 부른다**. 훅은 push 하는 머신에서만 돌아 worker 머신엔 이 채널이 없다(아래 R142) |
+
+**"훅에만 있다" 는 줄이 실제로 새는지는 재봐야 안다.** 훅은 우회 가능하고(`--no-verify`)
+설치도 옵트인이라 그 줄은 원리적으로 샐 수 있는데, 그것이 *샜는가* 는 별개 물음이다.
+main 에 들어온 추가 라인을 훅과 같은 술어로 다시 훑으면 그 자리에서 답이 나온다.
+
+```bash
+# 창의 양 끝(원하는 두 커밋). 훅의 면제 경로를 그대로 적용한다.
+base=<older>; tip=<newer>
+git diff --name-only $base $tip -- '*.rs' | while IFS= read -r f; do
+  case "$f" in src/main.rs|src/boot/cli_routing.rs|crates/tasty-cli/*|\
+               crates/tasty-tui-simulator/*|site/*|*build.rs|\
+               crates/tasty-doc-guards/src/bin/*) continue ;; esac
+  git diff -U0 $base $tip -- "$f" | grep -E '^\+' | grep -v '^+++' \
+    | grep -E '\b(println|eprintln|dbg)!|egui::Window::' | sed "s|^|$f: |"
+done
+```
+
+면제를 걸기 전 수도 함께 세라 — 그것이 0 이면 새지 않은 것이 아니라 **계측기가 0 만 내는
+형태**다.
 
 즉 **훅에만 있는 검사가 셋**이다(mod/use 순서 · `egui::Window` · `println!`/`dbg!`).
 훅을 설치하지 않은 체크아웃이나 `--no-verify` 커밋은 그 셋을 통과한다 — 이것들은 diff
