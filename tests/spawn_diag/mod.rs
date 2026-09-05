@@ -378,18 +378,43 @@ pub fn early_exit_message(status: &str, tail_lines: usize, tail: &str) -> String
 
 /// spawn timeout panic 메시지. 단계 이름·상한·판정·stderr tail 을 한 형식으로 묶어
 /// 두 하네스가 같은 모양으로 실패하게 한다.
+/// **느린 것과 멈춘 것을 가른다.** 상한을 넘긴 부팅은 두 사건일 수 있다: 자식이 마감
+/// 직전까지 진행 중이었거나(예산 부족 — 상한이 얇다), 한참 전부터 아무 말도 없었거나
+/// (멈춤 — 상한을 올려도 그대로다). 종전 문구는 둘 다 `failed to start within 40s` 였다.
+///
+/// 가르는 값은 **마지막 stderr 이후 경과**다. 문턱은 상한의 절반 — 그 정도 침묵이면
+/// 남은 예산을 더 줘도 같은 자리에 서 있을 것이라는 뜻이다. 순수 함수라 아래 단위
+/// 테스트가 세 방향을 다 찌른다.
+pub fn stderr_silence_verdict(last_line_age: Option<Duration>, limit: Duration) -> String {
+    match last_line_age {
+        None => "자식이 stderr 에 한 줄도 내지 않았다 — 부팅에 들어가지도 못한 쪽을 먼저 본다."
+            .to_string(),
+        Some(age) if age * 2 >= limit => format!(
+            "마지막 stderr 이후 {age:?} 조용했다 — 느린 것이 아니라 멈춘 쪽이다. \
+             상한 인상은 이 사건의 처방이 아니다."
+        ),
+        Some(age) => format!(
+            "마지막 stderr 이 {age:?} 전이다 — 마감 직전까지 진행 중이었다. \
+             예산 부족 쪽이라, 무엇이 그 시간을 쓰는지를 재라."
+        ),
+    }
+}
+
 pub fn spawn_timeout_message(
     stage: &str,
     limit: Duration,
     tail_lines: usize,
     tail: &str,
+    last_line_age: Option<Duration>,
 ) -> String {
     let verdict = verdict_or_default(
         tail,
         "부팅 차단 시그니처는 없다 — 부팅 지연이나 설정 경로를 본다.",
     );
+    let silence = stderr_silence_verdict(last_line_age, limit);
     format!(
-        "{stage} within {limit:?}.\n{verdict}\n--- stderr (last {tail_lines} lines) ---\n{tail}"
+        "{stage} within {limit:?}.\n{verdict}\n{silence}\n\
+         --- stderr (last {tail_lines} lines) ---\n{tail}"
     )
 }
 
@@ -549,8 +574,41 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
     fn an_ordinary_slow_boot_gets_no_false_verdict() {
         let tail = "INFO tasty: plugin discovery finished\nINFO tasty: theme loaded";
         assert!(boot_blocker_verdict(tail).is_none());
-        let msg = spawn_timeout_message("tasty failed to start", SPAWN_PORT_TIMEOUT, 30, tail);
+        let msg = spawn_timeout_message(
+            "tasty failed to start",
+            SPAWN_PORT_TIMEOUT,
+            30,
+            tail,
+            Some(Duration::from_millis(200)),
+        );
         assert!(msg.contains("부팅 차단 시그니처는 없다"), "{msg}");
+    }
+
+    /// 세 갈래가 서로 다른 문장을 내고, **남의 문장을 안 낸다**(양방향).
+    #[test]
+    fn the_silence_verdict_separates_stalled_from_merely_slow() {
+        let limit = Duration::from_secs(40);
+
+        let none = stderr_silence_verdict(None, limit);
+        assert!(none.contains("한 줄도 내지 않았다"), "{none}");
+
+        let stalled = stderr_silence_verdict(Some(Duration::from_secs(30)), limit);
+        assert!(stalled.contains("멈춘 쪽"), "{stalled}");
+        assert!(stalled.contains("처방이 아니다"), "{stalled}");
+
+        let slow = stderr_silence_verdict(Some(Duration::from_millis(200)), limit);
+        assert!(slow.contains("예산 부족"), "{slow}");
+        assert!(
+            !slow.contains("멈춘 쪽") && !slow.contains("한 줄도"),
+            "갈래가 안 갈렸다: {slow}"
+        );
+
+        // 문턱은 상한의 절반이다 — 경계 양쪽을 함께 박는다.
+        assert!(stderr_silence_verdict(Some(limit / 2), limit).contains("멈춘 쪽"));
+        assert!(
+            stderr_silence_verdict(Some(limit / 2 - Duration::from_millis(1)), limit)
+                .contains("예산 부족")
+        );
     }
 
     #[test]

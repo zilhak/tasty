@@ -150,6 +150,8 @@ pub struct TastyInstance {
     port_file: PathBuf,
     isolated_home: PathBuf,
     stderr_ring: Arc<Mutex<VecDeque<String>>>,
+    /// 마지막 stderr 줄의 시각 — 상한을 넘겼을 때 "느리다" 와 "멈췄다" 를 가른다.
+    stderr_last_at: Arc<Mutex<Option<Instant>>>,
     stderr_drain: Option<JoinHandle<()>>,
 }
 
@@ -340,11 +342,16 @@ impl TastyInstance {
         // (Linux 64 KB / macOS 16 KB default).
         let stderr_ring: Arc<Mutex<VecDeque<String>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
+        // 마지막 줄이 **언제** 왔는지가 "느리다" 와 "멈췄다" 를 가르는 값이다
+        // (`spawn_diag::stderr_silence_verdict`). 줄 자체는 링에, 시각은 여기에 남는다.
+        let stderr_last_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
         let stderr_drain = process.stderr.take().map(|stderr| {
             let ring = Arc::clone(&stderr_ring);
+            let last_at = Arc::clone(&stderr_last_at);
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
+                    *last_at.lock().unwrap() = Some(Instant::now());
                     let mut ring = ring.lock().unwrap();
                     if ring.len() == STDERR_RING_CAPACITY {
                         ring.pop_front();
@@ -376,6 +383,7 @@ impl TastyInstance {
                         SPAWN_PORT_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
                     )
                 );
             }
@@ -409,6 +417,7 @@ impl TastyInstance {
             port_file,
             isolated_home,
             stderr_ring: Arc::clone(&stderr_ring),
+            stderr_last_at: Arc::clone(&stderr_last_at),
             stderr_drain,
         };
 
@@ -436,6 +445,7 @@ impl TastyInstance {
                         SPAWN_SHELL_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES),
+                        self.stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
                     )
                 );
             }
