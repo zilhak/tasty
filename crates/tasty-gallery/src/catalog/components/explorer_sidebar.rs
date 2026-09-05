@@ -354,9 +354,11 @@ fn favorites_empty(ui: &mut egui::Ui, theme: &Theme) {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
         let sz = theme.icon_glyph_size_sm.value();
         let (r, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+        // 즐겨찾기 별 아이콘 톤. 대응 토큰 없음 — 본체와 같은 값을 여기 다시 적는다.
+        const FAV_STAR_ICON_OPACITY: f32 = 0.55;
         STAR.image(
             sz,
-            egui::Color32::from(theme.text_muted()).gamma_multiply(0.55),
+            egui::Color32::from(theme.text_muted()).gamma_multiply(FAV_STAR_ICON_OPACITY),
         )
         .paint_at(ui, r);
         ui.label(

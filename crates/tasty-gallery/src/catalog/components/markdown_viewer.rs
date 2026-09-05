@@ -872,8 +872,10 @@ fn alert_box(
     label: &str,
     body: &str,
 ) {
+    // callout 배경 — accent 저알파. 대응 토큰 없음.
+    const CALLOUT_BG_ALPHA: u8 = 31;
     egui::Frame::new()
-        .fill(color.with_alpha(31).to_egui())
+        .fill(color.with_alpha(CALLOUT_BG_ALPHA).to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
             color.to_egui(),

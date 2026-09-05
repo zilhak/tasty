@@ -941,10 +941,19 @@ fn center_popup(
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
             |ui| {
                 ui.vertical_centered(|ui| {
+                    // 빈 상태 아이콘 톤 — 디자인 opacity 0.9(danger)/0.5(muted). 대응 토큰 없음.
+                    const EMPTY_ICON_DANGER_OPACITY: f32 = 0.9;
+                    const EMPTY_ICON_MUTED_OPACITY: f32 = 0.5;
                     let tint = if danger {
-                        theme.accent_danger().to_egui().gamma_multiply(0.9)
+                        theme
+                            .accent_danger()
+                            .to_egui()
+                            .gamma_multiply(EMPTY_ICON_DANGER_OPACITY)
                     } else {
-                        theme.text_muted().to_egui().gamma_multiply(0.5)
+                        theme
+                            .text_muted()
+                            .to_egui()
+                            .gamma_multiply(EMPTY_ICON_MUTED_OPACITY)
                     };
                     kit::icon(ui, glyph, LogicalPx(CENTER_ICON_SIZE), tint);
                     ui.add_space(theme.spacing_sm.value());

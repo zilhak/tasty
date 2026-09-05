@@ -34,9 +34,13 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
     let p = ui.painter_at(rect);
 
     // 배경: focused/agent = focused_bg(#000), unfocused = unfocused_bg + 0.92 dim.
+    // unfocused 표면 배경 디밍. 대응 토큰 없음.
+    const UNFOCUSED_DIM_OPACITY: f32 = 0.92;
     let bg = match state {
         State::Focused | State::Agent => egui::Color32::from(term.focused_bg),
-        State::Unfocused => egui::Color32::from(term.unfocused_bg).gamma_multiply(0.92),
+        State::Unfocused => {
+            egui::Color32::from(term.unfocused_bg).gamma_multiply(UNFOCUSED_DIM_OPACITY)
+        }
     };
     let fg = match state {
         State::Unfocused => egui::Color32::from(term.unfocused_fg),

@@ -18,6 +18,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 const NOTICE: &str = "Turning this on lets programs running in the terminal read your \
      system clipboard via OSC 52. Leave it off unless you trust everything that runs here.";
 
+/// 경고 callout 배경 tint. 대응 토큰 없음 — 값에 이름만 둔다.
+const WARNING_BG_TINT_OPACITY: f32 = 0.12;
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         ui.scope(|ui| {
@@ -65,7 +68,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "warning-bg",
                 "12% tint fill",
-                theme.accent_warning().to_egui().gamma_multiply(0.12),
+                theme
+                    .accent_warning()
+                    .to_egui()
+                    .gamma_multiply(WARNING_BG_TINT_OPACITY),
             ),
             TokenChip::new(
                 "text-secondary",

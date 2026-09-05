@@ -391,8 +391,13 @@ fn topic_row(
     sel: bool,
     done: bool,
 ) {
+    // 선택된 토픽 테두리 — accent 의 40% alpha. 대응 토큰 없음.
+    const SELECTED_BORDER_ALPHA: u8 = 102;
     let border = if sel {
-        theme.accent_primary().with_alpha(102).to_egui() // 40%
+        theme
+            .accent_primary()
+            .with_alpha(SELECTED_BORDER_ALPHA)
+            .to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };
