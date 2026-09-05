@@ -160,14 +160,18 @@ fn capture_surface_layout(
 ///
 /// 분기 흐름 (`SavedSurface::capture_surface` 모범 답안과 동일 패턴):
 ///
-/// 1. deferred `EmptySurface` (PTY 미복원 터미널 placeholder) → `kind =
+/// 1. Plugin deferred `EmptySurface`(hello 전 placeholder) → 원래 `kind` +
+///    `snapshot` 을 `params` 로 그대로 보존. `is_deferred()`(bool) 로만 가드하고
+///    terminal 로 저장하면 plugin 탭이 apply 때 빈 terminal 로 변질되므로,
+///    `deferred_plugin()` 을 먼저 잡는다(layout 영속화 `capture.rs` 와 동형).
+/// 2. Terminal deferred `EmptySurface` (PTY 미복원 터미널 placeholder) → `kind =
 ///    "terminal"` + `DeferredSpawn.working_dir` 를 cwd 로. `kind()` 는 항상
 ///    `"empty"` 라 registry 분기에 먹히므로, 그 앞에서 downcast +
-///    `is_deferred()` 가드로 가로챈다. (비-deferred empty 는 통과.)
-/// 2. terminal → `kind = "terminal"` + `cwd` 추출 + 빈 params.
-/// 3. 그 외 registry 등록 kind → snapshot 호출. snapshot 이 `None` 이면 빈
+///    `deferred_spawn()` 가드로 가로챈다. (비-deferred empty 는 통과.)
+/// 3. terminal → `kind = "terminal"` + `cwd` 추출 + 빈 params.
+/// 4. 그 외 registry 등록 kind → snapshot 호출. snapshot 이 `None` 이면 빈
 ///    객체로 fallback (kind 는 그대로 보존).
-/// 4. registry 에 없는 kind → `kind = "empty"` 로 치환 (leaf 자체가 사라지면
+/// 5. registry 에 없는 kind → `kind = "empty"` 로 치환 (leaf 자체가 사라지면
 ///    split 구조가 어색해지므로).
 fn capture_surface(
     engine: &CoreState,
@@ -177,24 +181,36 @@ fn capture_surface(
     let kind_str = surface.kind();
 
     // deferred EmptySurface 는 `kind()` 가 "empty" 라 아래 registry 분기에 먹혀
-    // cwd 를 잃는다. layout 영속화(`SavedSurface::capture_surface`)와 동일하게
-    // generic 분기보다 앞에서 downcast + is_deferred 가드로 terminal+cwd 캡처.
-    if let Some(es) = surface.as_any().downcast_ref::<EmptySurface>()
-        && es.is_deferred()
-    {
-        let cwd = es
-            .deferred_spawn()
-            .and_then(|s| s.working_dir.as_ref())
-            .map(|p| p.to_string_lossy().to_string());
-        return PresetSurface {
-            // preset-local id 는 저장 시 PresetStore 정규화가 부여한다(라이브 surface_id
-            // 복사 금지 — 런타임 id 와 결합하지 않는다).
-            id: None,
-            kind: "terminal".into(),
-            cwd,
-            startup_command: None,
-            params: Value::Object(Default::default()),
-        };
+    // cwd/kind 를 잃는다. layout 영속화(`SavedSurface::capture_surface`)와 동일하게
+    // generic 분기보다 앞에서 downcast 로 가로챈다. Plugin 을 먼저 — Terminal 전용
+    // `deferred_spawn()` 가드는 Plugin placeholder 를 그냥 통과시켜 "empty" 로 잃는다.
+    if let Some(es) = surface.as_any().downcast_ref::<EmptySurface>() {
+        // 1. Plugin deferred → kind/snapshot 보존.
+        if let Some(p) = es.deferred_plugin() {
+            return PresetSurface {
+                id: None,
+                kind: p.kind.clone(),
+                cwd: None,
+                startup_command: None,
+                params: p.snapshot.clone(),
+            };
+        }
+        // 2. Terminal deferred → kind:"terminal" + working_dir 를 cwd 로.
+        if let Some(spawn) = es.deferred_spawn() {
+            let cwd = spawn
+                .working_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string());
+            return PresetSurface {
+                // preset-local id 는 저장 시 PresetStore 정규화가 부여한다(라이브 surface_id
+                // 복사 금지 — 런타임 id 와 결합하지 않는다).
+                id: None,
+                kind: "terminal".into(),
+                cwd,
+                startup_command: None,
+                params: Value::Object(Default::default()),
+            };
+        }
     }
 
     if kind_str == "terminal" {
@@ -328,6 +344,39 @@ mod tests {
         let leaf = leaf_surface(&preset);
 
         assert_eq!(leaf.kind, "empty");
+        assert_eq!(leaf.cwd, None);
+    }
+
+    /// 회귀(부류 결함): Plugin deferred placeholder(hello 전)는 terminal 로 오변환되지
+    /// 않고 원래 kind + snapshot(params)을 보존해야 한다. is_deferred() bool 로만
+    /// 가드하던 시절엔 kind="terminal" 로 저장돼 apply 때 빈 terminal 로 변질됐다.
+    #[test]
+    fn plugin_deferred_captured_as_its_kind_with_snapshot() {
+        use crate::model::DeferredPlugin;
+        let engine = engine();
+        let registry = registry();
+        let sid = 10;
+        let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred_plugin(
+            sid,
+            DeferredPlugin {
+                kind: "myplugin".into(),
+                snapshot: serde_json::json!({ "state": 42 }),
+            },
+        ));
+        let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
+
+        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let leaf = leaf_surface(&preset);
+
+        assert_eq!(
+            leaf.kind, "myplugin",
+            "plugin kind 보존 (terminal 오변환 금지)"
+        );
+        assert_eq!(
+            leaf.params,
+            serde_json::json!({ "state": 42 }),
+            "snapshot 보존"
+        );
         assert_eq!(leaf.cwd, None);
     }
 }
