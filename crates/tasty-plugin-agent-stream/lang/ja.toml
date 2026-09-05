@@ -3,6 +3,8 @@ desc = "AI エージェントのセッション transcript を tail し、構造
 
 [agent_stream.error]
 missing_surface = "対象 surface がありません: --surface <id> を渡すか、(TASTY_SURFACE_ID が設定される) tasty ターミナル内で実行してください"
+invalid_surface = "対象の値 {value} は surface id になりえない — u32 範囲の整数を渡すこと（値を渡していないのとは違う）"
+no_live_surface = "no live surface {surface} (named by 'surface'); list the resource to get a live id — a named target is never resolved by focus"
 no_session_meta = "surface {surface} に '{key}' meta がありません — エージェントのセッション id が不明なため transcript のパスを決定できません。その surface でエージェントを(再)起動し、session-start フックに id を記録させてください。"
 transcript_root_missing = "エージェント transcript のルートディレクトリが見つかりません (~/.claude/projects、または $CLAUDE_CONFIG_DIR 設定時は $CLAUDE_CONFIG_DIR/projects)"
 transcript_not_found = "transcript ルート配下にセッション {session} の transcript ファイルが見つかりません — まだディスクに書き出されていない可能性があります"

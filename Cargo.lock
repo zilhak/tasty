@@ -5985,7 +5985,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-agent-stream"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "directories",

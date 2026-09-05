@@ -3,6 +3,8 @@ desc = "Tail AI agent session transcripts and read structured stream events"
 
 [agent_stream.error]
 missing_surface = "no target surface: pass --surface <id> (or run this from inside a tasty terminal so TASTY_SURFACE_ID is set)"
+invalid_surface = "the target value {value} cannot be a surface id — pass an integer in u32 range (this is not the same as passing nothing)"
+no_live_surface = "no live surface {surface} (named by 'surface'); list the resource to get a live id — a named target is never resolved by focus"
 no_session_meta = "surface {surface} has no '{key}' meta — the agent session id is unknown, so its transcript cannot be located. Start (or restart) the agent in that surface so its session-start hook records the id."
 transcript_root_missing = "cannot locate the agent transcript root directory (~/.claude/projects, or $CLAUDE_CONFIG_DIR/projects when set)"
 transcript_not_found = "no transcript file found for session {session} under the transcript root — the session may not have been written to disk yet"

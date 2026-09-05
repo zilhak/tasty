@@ -71,11 +71,45 @@ pub fn session_id_for_surface<H: HostCall>(
 
 /// 대상 surface 가 아직 존재하는지. 판정할 수 없으면 `true`(살아있다고 보수적으로 본다)
 /// — 일시적인 IPC 실패로 watch 를 걷어내지 않기 위해서다.
+/// 그 surface 가 살아 있는가.
+///
+/// **호스트는 없는 대상에 `{exists:false}` 로 답하지 않는다 — 요청 자체를 거절한다.**
+/// 실측(2026-09-05, 격리 헤드리스 인스턴스):
+///
+/// ```text
+/// surface.locate surface_id=1        → {"exists": true, "pane_id": 1, "surface_id": 1}
+/// surface.locate surface_id=424242   → error -32602 "no live surface 424242 (named by
+///                                       'surface.locate'); list the resource to get a live id …"
+/// ```
+///
+/// 그래서 `Err` 를 통째로 "모름 → 살아 있다고 보자" 로 접으면 **이 함수는 false 를
+/// 돌려줄 길이 없다.** 예전 구현이 그랬고, 그 결과 [`crate::pump::verify_one`] 의
+/// "사라진 대상의 턴을 닫는다" 가 한 번도 발화하지 못했다 — 그 doc 이 약속하는 정리가
+/// 코드에 없었던 것과 같다.
+///
+/// **두 종류의 `Err` 를 가른다.** 대상을 지목했는데 그런 대상이 없다는 거절은 **답**이다
+/// (→ `false`). 그 외(연결 끊김·timeout·호스트 내부 오류)는 여전히 **모름**이라
+/// `true` 로 떨어진다 — 살아 있는 대상을 없다고 말하지 않는 쪽으로 틀린다.
+///
+/// 판정을 문자열로 하는 이유: 이 규약의 소유자는 본체의
+/// `src/core/request_target.rs::unowned_target_message` 인데, plugin 은 별도 프로세스이고
+/// SDK 의 [`tasty_plugin_sdk::PluginError::HostCall`] 은 **코드 없이 메시지만** 실어
+/// 온다. 즉 지금은 문자열이 유일한 채널이다. 본체가 문구를 바꾸면 이 판정은 조용히
+/// "모름" 쪽으로 떨어진다(살아 있다고 답한다) — 좁게 틀리는 방향이라 안전하지만,
+/// 근본 해법은 그 거절을 SDK 가 형태로 노출하는 것이다.
 pub fn surface_exists<H: HostCall>(host: &H, surface_id: u32) -> bool {
-    host.call("surface.locate", json!({ "surface_id": surface_id }))
-        .ok()
-        .and_then(|r| r.get("exists").and_then(Value::as_bool))
-        .unwrap_or(true)
+    match host.call("surface.locate", json!({ "surface_id": surface_id })) {
+        Ok(r) => r.get("exists").and_then(Value::as_bool).unwrap_or(true),
+        Err(e) => !rejects_as_no_live_surface(&e.to_string(), surface_id),
+    }
+}
+
+/// 호스트가 "그런 surface 는 없다" 고 거절했는가. [`surface_exists`] 참조.
+///
+/// 순수 함수로 뽑아 두어 합성 문자열로 찌를 수 있다 — 호스트를 세우지 않고도 이
+/// 판정의 두 방향을 고정할 수 있다.
+fn rejects_as_no_live_surface(message: &str, surface_id: u32) -> bool {
+    message.contains(&format!("no live surface {surface_id}"))
 }
 
 /// transcript 루트 디렉토리. `CLAUDE_CONFIG_DIR` 이 설정돼 있으면 그 아래 `projects`,
@@ -241,5 +275,39 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("-proj").join("sess-3.jsonl")).expect("mkdir");
         assert_eq!(find_transcript(dir.path(), "sess-3"), None);
+    }
+    // ─── 호스트의 "그런 대상 없다" 거절을 답으로 읽는가 ────────────────────
+
+    /// 실측한 호스트 문구를 그대로 쓴다(2026-09-05, `surface.locate surface_id=424242`).
+    const HOST_REJECTION: &str = "host call 'surface.locate' failed: no live surface 424242 \
+         (named by 'surface.locate'); list the resource to get a live id — a named target is \
+         never resolved by focus";
+
+    /// 지목한 대상이 없다는 거절은 **답**이다 — "모름" 이 아니다.
+    #[test]
+    fn a_no_live_surface_rejection_is_read_as_absence() {
+        assert!(
+            rejects_as_no_live_surface(HOST_REJECTION, 424_242),
+            "이 문구를 못 읽으면 `surface_exists` 는 false 를 돌려줄 길이 없다"
+        );
+    }
+
+    /// **양방향** — 그 외의 실패는 여전히 "모름" 이라 살아 있다고 본다.
+    ///
+    /// 이쪽이 무너지면 연결이 한 번 끊긴 것만으로 살아 있는 대상을 없다고 답하게 된다.
+    #[test]
+    fn other_host_failures_are_not_read_as_absence() {
+        for msg in [
+            "host call 'surface.locate' timed out after 5s",
+            "io: connection reset by peer",
+            "host call 'surface.locate' failed: internal error",
+            // 다른 surface 를 지목한 거절은 이 surface 의 답이 아니다.
+            "host call 'surface.locate' failed: no live surface 999 (named by 'surface.locate')",
+        ] {
+            assert!(
+                !rejects_as_no_live_surface(msg, 424_242),
+                "모름을 부재로 읽으면 안 된다: {msg}"
+            );
+        }
     }
 }

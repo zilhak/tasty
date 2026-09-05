@@ -281,6 +281,31 @@ mod tests {
         session: Option<String>,
     }
 
+    /// **호스트가 실제로 없는 대상에 답하는 방식** — `{exists:false}` 가 아니라 거절이다.
+    /// 실측(2026-09-05, 격리 헤드리스 인스턴스에 `surface.locate surface_id=424242`).
+    /// 위 `StubHost { exists: false }` 는 호스트가 만들지 않는 모양이라, 그 스텁만으로는
+    /// 이 경로가 프로덕션에서 도는지 알 수 없다.
+    struct RejectingHost;
+
+    impl HostCall for RejectingHost {
+        fn call(&self, method: &str, params: Value) -> Result<Value, PluginError> {
+            let sid = params
+                .get("surface_id")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            match method {
+                "surface.locate" => Err(PluginError::HostCall {
+                    method: method.to_string(),
+                    message: format!(
+                        "no live surface {sid} (named by 'surface.locate'); list the resource \
+                         to get a live id — a named target is never resolved by focus"
+                    ),
+                }),
+                other => panic!("unexpected host call {other}"),
+            }
+        }
+    }
+
     impl HostCall for StubHost {
         fn call(&self, method: &str, _params: Value) -> Result<Value, PluginError> {
             match method {
@@ -552,6 +577,34 @@ mod tests {
         let collected = events(&registry);
         assert_eq!(collected.len(), 1);
         assert_eq!(collected[0]["kind"], "turn_end");
+        assert_eq!(collected[0]["reason"], record::REASON_SESSION_ENDED);
+    }
+
+    /// 호스트가 **거절로** 답해도 사라진 대상의 턴이 닫힌다.
+    ///
+    /// 위 테스트는 `{exists:false}` 를 흉내 냈는데 호스트는 그런 답을 만들지 않는다 —
+    /// 없는 대상은 요청 자체를 거절한다. 그 거절을 "모름" 으로 접던 동안
+    /// `verify_one` 의 정리는 **한 번도 발화하지 못했다**: 닫힌 surface 의 턴이 영영
+    /// 안 닫혔고, 그동안 위 테스트는 초록이었다.
+    #[test]
+    fn a_surface_the_host_rejects_as_absent_is_also_dropped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, b"").expect("create");
+        let registry = shared_with(&path);
+        assert!(
+            registry.lock().expect("lock").is_watched(1),
+            "전제: 대상이 등록돼 있다"
+        );
+
+        verify_targets(&registry, &RejectingHost, None);
+
+        assert!(
+            !registry.lock().expect("lock").is_watched(1),
+            "호스트가 없다고 거절했으면 대상을 놓아야 한다"
+        );
+        let collected = events(&registry);
+        assert_eq!(collected.len(), 1);
         assert_eq!(collected[0]["reason"], record::REASON_SESSION_ENDED);
     }
 
