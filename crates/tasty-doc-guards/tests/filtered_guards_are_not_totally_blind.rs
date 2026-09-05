@@ -34,6 +34,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::workflow_triggers::push_trigger;
 
 /// 필터 뒤에 남는 것이 승인된 가드와 그 사유. **일부만** 무시 대상인 것만 온다.
 const PARTIALLY_FILTERED: &[(&str, &str)] = &[(
@@ -128,7 +129,20 @@ fn targets_covered_by_unfiltered_workflows(root: &Path) -> BTreeSet<String> {
             continue;
         };
         // push 트리거가 있고 경로 필터가 없어야 "필터 없는 채널" 이다.
-        if !text.contains("push:") || text.contains("paths-ignore:") || text.contains("paths:") {
+        //
+        // 판정을 `text.contains(..)` 로 하면 **다른 워크플로의 필터를 설명하는 주석**을
+        // 가진 파일이 필터를 가진 파일로 읽힌다. 실측(2026-09-05): 그 형태가 정확히
+        // 하나 있었고 하필 `doc-guards.yml` — 필터가 없다는 것 자체가 존재 이유인
+        // 그 파일이다(ADR-0138). 지금은 `-p` 로 부르고 `--test` 이름을 안 써서 아래
+        // 수집에 영향이 없지만, 이름을 쓰기 시작하면 그 순간 조용히 빠진다.
+        let Some(trigger) = push_trigger(&text) else {
+            panic!(
+                "{}: `on:` 을 못 읽었다 — 판정 불가는 통과가 아니다. 그대로 두면 \
+                 덮는 채널을 놓쳐 이미 덮인 가드를 '옮겨라' 로 잡는다",
+                p.display()
+            );
+        };
+        if !trigger.present || trigger.path_filtered || trigger.tags_only {
             continue;
         }
         let mut dispatch_only = false;

@@ -43,6 +43,9 @@ pub mod temp_path;
 /// env·cwd 를 직렬화 없이 만지는 테스트를 집는다(ADR-0129 형태 A).
 pub mod env_isolation;
 
+/// 워크플로의 `on:` 트리거를 구조로 읽는다 — 주석과 트리거 키를 가른다.
+pub mod workflow_triggers;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
