@@ -196,13 +196,27 @@ mod tests {
     }
 
     /// 서버 없는 포트: 연결 거부 → 에러(dead). 포트 발견만으로 alive 단정 금지의 핵심.
+    ///
+    /// **놓고 쓰는 형태라 재시도로 감싼다.** "닫힌 포트" 를 만드는 방법이 bind 했다 놓는
+    /// 것뿐인데, 놓은 순간부터 probe 까지 사이에 같은 머신의 다른 완주가 그 포트를 집어갈
+    /// 수 있다. 집어간 것이 하필 tasty 면 probe 가 성공해 이 단언이 뒤집힌다 — 확률적
+    /// red 다(`docs/adr/0129-flaky-test-classes-and-standard-fixes.md` 형태 B 역방향:
+    /// 자원을 쥐는 처방이 안 맞으므로 재시도 + 약한 단언이 정본이다).
+    ///
+    /// 한 번 성공하면 우연일 수 있으니 **다른 포트로 다시 잰다.** 세 포트가 전부 성공하면
+    /// 그때는 우연이 아니라 판정 대상의 결함이다.
     #[test]
     fn probe_connection_refused_is_error() {
-        // 바인드했다 즉시 해제해 "닫힌 포트" 를 확보(표준 관행, 짧은 TOCTOU 허용).
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let r = probe_system_info(port);
-        assert!(r.is_err(), "연결 거부는 dead(에러)여야 한다: {r:?}");
+        let mut answered = Vec::new();
+        for _ in 0..3 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            match probe_system_info(port) {
+                Err(_) => return,
+                Ok(v) => answered.push((port, v)),
+            }
+        }
+        panic!("연결 거부는 dead(에러)여야 한다 — 세 포트가 전부 응답했다: {answered:?}");
     }
 }

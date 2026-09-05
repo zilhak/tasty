@@ -17,10 +17,17 @@ pub enum MoveCommands {
         to: u64,
     },
     /// Move a workspace to a different position
+    ///
+    /// Prefer `--id`: a workspace ID names the window that owns it, so the command
+    /// means the same thing no matter which window is focused. `--from` is an index
+    /// inside one window, so it lands on whichever window has focus.
     Workspace {
-        /// Source workspace index (0-based)
+        /// Workspace ID to move (preferred; mutually exclusive with --from)
+        #[arg(long, conflicts_with = "from")]
+        id: Option<u64>,
+        /// Source workspace index (0-based, focus-dependent)
         #[arg(long)]
-        from: u64,
+        from: Option<u64>,
         /// Destination workspace index (0-based)
         #[arg(long)]
         to: u64,

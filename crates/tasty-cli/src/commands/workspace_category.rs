@@ -31,10 +31,17 @@ pub enum WorkspaceCategoryCommands {
         id: u32,
     },
     /// Reorder categories ('normal' is fixed at index 0; from/to must be ≥ 1)
+    ///
+    /// Prefer `--id`: a category ID names the window that owns it, so the command
+    /// means the same thing no matter which window is focused. `--from` is an index
+    /// inside one window, so it lands on whichever window has focus.
     Move {
-        /// Source index (≥ 1)
+        /// Category ID to move (preferred; mutually exclusive with --from)
+        #[arg(long, conflicts_with = "from")]
+        id: Option<u32>,
+        /// Source index (≥ 1, focus-dependent)
         #[arg(long)]
-        from: usize,
+        from: Option<usize>,
         /// Destination index (≥ 1)
         #[arg(long)]
         to: usize,

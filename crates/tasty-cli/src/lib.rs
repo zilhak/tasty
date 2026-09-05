@@ -5,6 +5,13 @@
 //!
 //! 본 바이너리 src/adapters/cli/ 의 전 내용을 흡수했다.
 
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
+
 pub mod commands;
 pub mod cwd_resolve;
 pub mod dispatch;
@@ -773,6 +780,34 @@ mod workspace_category_tests {
         assert_eq!(r.method, "workspace_category.move");
         assert_eq!(r.params["from_index"], 2);
         assert_eq!(r.params["to_index"], 1);
+        assert!(
+            r.params.get("id").is_none(),
+            "안 준 키를 null 로 실으면 안 된다"
+        );
+    }
+
+    /// `--id` 는 주인 창을 짚는다 — `--from` 과 달리 포커스에 안 걸린다.
+    #[test]
+    fn move_by_id_sends_id_and_omits_the_index() {
+        let r = req(&[
+            "tasty",
+            "workspace-category",
+            "move",
+            "--id",
+            "3",
+            "--to",
+            "1",
+        ]);
+        assert_eq!(r.method, "workspace_category.move");
+        assert_eq!(r.params["id"], 3);
+        assert_eq!(r.params["to_index"], 1);
+        assert!(r.params.get("from_index").is_none());
+
+        let r = req(&["tasty", "move", "workspace", "--id", "7", "--to", "0"]);
+        assert_eq!(r.method, "workspace.move");
+        assert_eq!(r.params["id"], 7);
+        assert_eq!(r.params["to_index"], 0);
+        assert!(r.params.get("from_index").is_none());
     }
 
     #[test]

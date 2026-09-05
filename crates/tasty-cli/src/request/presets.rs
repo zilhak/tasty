@@ -11,6 +11,20 @@ pub(super) fn file_handler_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     match command {
         FileHandlerCommands::Reload => ("file_handler.reload", serde_json::Value::Null),
+        FileHandlerCommands::Dispatch {
+            path,
+            depth,
+            origin_surface,
+            ignore_size_limit,
+        } => (
+            "file_handler.dispatch",
+            serde_json::json!({
+                "path": path,
+                "depth": depth,
+                "origin_surface_id": origin_surface,
+                "ignore_size_limit": ignore_size_limit,
+            }),
+        ),
     }
 }
 

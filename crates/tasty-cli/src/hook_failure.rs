@@ -100,11 +100,16 @@ fn event_token(params: &serde_json::Value) -> String {
     }
 }
 
-/// `reason` 에 실을 수 있는 값 — **로케일과 무관한 영어 진단 문장**.
+/// `reason` 에 실을 수 있는 값 — **CLI 가 만든, 로케일과 무관한 영어 진단 문장**.
 ///
-/// 이 파일을 읽는 주체는 사람이 아니라 에이전트일 수 있다. 알려진 실패 패턴과 대조하고
-/// `grep` 으로 찾으려면 문구가 사용자 언어 설정에 따라 흔들리면 안 된다. 반면 stderr 는
-/// 사용자 표면이라 번역문이 맞다 — **같은 실패의 두 산출물이 언어를 달리한다.**
+/// 이 파일을 읽는 주체는 사람일 수도 에이전트일 수도 있다. 알려진 실패 패턴과 대조하고
+/// `grep` 으로 찾으려면 흔들리지 않는 조각이 있어야 한다. 반면 stderr 는 사용자 표면이라
+/// 번역문이 맞다 — **같은 실패의 두 산출물이 언어를 달리한다.**
+///
+/// **이 타입이 덮는 것은 CLI 가 문구를 만드는 갈래뿐이다.** 요청이 호스트에 닿았는데
+/// 오류 응답이 온 갈래는 문구를 답한 쪽이 만들고, plugin 이 답하면 그 문구는 앱 언어를
+/// 탄다 — CLI 에 영어 원본이 없으므로 갈라 놓을 것도 없다. 그 갈래의 로케일 무관성은
+/// 산문이 아니라 `code=` 필드가 진다([`format_line`]).
 ///
 /// 그 분리를 주석이 아니라 **타입**으로 세운 이유: [`record`] 가 `&str` 을 받으면 다음에
 /// 손대는 사람이 `t(...)` 결과를 그대로 넘기는 것을 막을 방법이 없고, 실제로 두 lane 이
@@ -117,8 +122,10 @@ impl DiagnosticEnglish {
     /// 로케일 무관 영어임을 **호출자가 보증**하고 만든다.
     ///
     /// 쓸 수 있는 값: 크레이트가 `Display` 로 내는 영어 기본 렌더링(`PortFileError` 등),
-    /// 호스트가 돌려준 JSON-RPC 에러 문자열, 코드에 리터럴로 박은 영어 포맷.
-    /// **쓰면 안 되는 값**: `t()` / `t_fmt()` 로 만든 문구.
+    /// 코드에 리터럴로 박은 영어 포맷, 그리고 **답한 쪽이 만들어 보낸 오류 문구**.
+    /// 마지막 것은 CLI 가 언어를 고를 수 없는 값이라 보증의 대상이 아니다 — 그 갈래에서
+    /// 흔들리지 않는 것은 함께 기록하는 `code` 다.
+    /// **쓰면 안 되는 값**: CLI 자신이 `t()` / `t_fmt()` 로 만든 문구.
     pub fn new_unchecked(text: impl Into<String>) -> Self {
         Self(text.into())
     }
@@ -138,13 +145,28 @@ impl std::fmt::Display for DiagnosticEnglish {
 /// `reason` 은 CLI 가 이미 만들어 둔 실패 메시지를 그대로 싣는다 — 없는 정보를 새로
 /// 만드는 게 아니라, 버려지던 정보를 붙잡아 두는 것이 이 모듈의 전부다. `event` 도
 /// 같은 성격이다: 요청에 이미 있던 값을 흘려보내지 않고 붙잡아 둘 뿐이다.
-fn format_line(method: &str, params: &serde_json::Value, reason: &str) -> String {
+///
+/// `code` 는 JSON-RPC 오류 코드다. **좌표는 필드로, 산문은 `reason` 으로** 가른다 —
+/// 코드는 프로토콜 값이라 로케일을 안 타는 반면 `reason` 은 답한 쪽이 만든 문장이라
+/// 탈 수 있다. 그 값이 `reason` 앞머리에 묻혀 있으면 읽는 쪽이 산문을 파싱해야 하고,
+/// 그건 이 파일이 피하려던 바로 그 형태다. 코드가 없는 실패(호스트에 닿지도 못한
+/// 경우)는 `-` 다 — `event` 와 같은 부재 표기다.
+///
+/// **`reason` 은 계속 마지막이다.** 한 줄에서 공백을 담을 수 있는 값이 그것뿐이라,
+/// 읽는 쪽이 `reason=` 뒤를 줄 끝까지로 자를 수 있다는 성질을 깨지 않는다.
+fn format_line(
+    method: &str,
+    params: &serde_json::Value,
+    code: Option<i32>,
+    reason: &str,
+) -> String {
     let surface = std::env::var("TASTY_SURFACE_ID").unwrap_or_else(|_| "-".into());
     let event = event_token(params);
+    let code = code.map_or_else(|| "-".to_string(), |c| c.to_string());
     // 줄 단위 레코드이므로 개행은 공백으로 접는다(한 실패 = 한 줄 불변식).
     let reason = reason.replace(['\n', '\r'], " ");
     format!(
-        "{ts} method={method} event={event} surface={surface} reason={reason}\n",
+        "{ts} method={method} event={event} surface={surface} code={code} reason={reason}\n",
         ts = utc_timestamp()
     )
 }
@@ -155,14 +177,25 @@ fn format_line(method: &str, params: &serde_json::Value, reason: &str) -> String
 /// 따라가지 않는다. 사용자에게 보여줄 번역문은 호출자가 stderr 로 따로 낸다.
 ///
 /// 실패해도 조용히 넘어간다(best-effort) — 호출자는 반환값을 볼 필요가 없다.
-pub fn record(method: &str, params: &serde_json::Value, reason: &DiagnosticEnglish) {
+pub fn record(
+    method: &str,
+    params: &serde_json::Value,
+    code: Option<i32>,
+    reason: &DiagnosticEnglish,
+) {
     let Some(path) = log_path() else { return };
-    record_at(&path, method, params, reason.as_str());
+    record_at(&path, method, params, code, reason.as_str());
 }
 
 /// 경로를 주입받는 실제 구현 — 테스트가 프로세스 전역 env(`TASTY_HOME`)를 건드리지
 /// 않고 검증할 수 있게 분리했다(같은 프로세스에서 병렬로 도는 다른 테스트와의 경쟁 방지).
-fn record_at(path: &std::path::Path, method: &str, params: &serde_json::Value, reason: &str) {
+fn record_at(
+    path: &std::path::Path,
+    method: &str,
+    params: &serde_json::Value,
+    code: Option<i32>,
+    reason: &str,
+) {
     if !is_hook_method(method) {
         return;
     }
@@ -178,7 +211,7 @@ fn record_at(path: &std::path::Path, method: &str, params: &serde_json::Value, r
         .append(true)
         .open(path)
     {
-        let _ = f.write_all(format_line(method, params, reason).as_bytes()); // best-effort
+        let _ = f.write_all(format_line(method, params, code, reason).as_bytes()); // best-effort
     }
 }
 
@@ -221,6 +254,7 @@ mod tests {
         let line = format_line(
             "claude.hook",
             &serde_json::json!({ "event": "stop" }),
+            Some(-32602),
             "boom\nsecond line",
         );
         assert_eq!(line.matches('\n').count(), 1, "한 실패 = 한 줄");
@@ -238,6 +272,7 @@ mod tests {
             let line = format_line(
                 "claude.hook",
                 &serde_json::json!({ "event": event }),
+                None,
                 "could not connect",
             );
             assert!(line.contains(&format!("event={event}")), "{line}");
@@ -256,7 +291,7 @@ mod tests {
             serde_json::json!({ "event": 3 }),
             serde_json::Value::Null,
         ] {
-            let line = format_line("claude.checklist_hook", &params, "no port file");
+            let line = format_line("claude.checklist_hook", &params, None, "no port file");
             assert!(line.contains("event=-"), "{line}");
         }
     }
@@ -267,6 +302,7 @@ mod tests {
         let line = format_line(
             "claude.hook",
             &serde_json::json!({ "event": "we ird\nname" }),
+            None,
             "boom",
         );
         assert_eq!(line.matches('\n').count(), 1, "한 실패 = 한 줄");
@@ -294,8 +330,8 @@ mod tests {
         let path = dir.path().join(LOG_FILE);
 
         let stop = serde_json::json!({ "event": "stop" });
-        record_at(&path, "claude.hook", &stop, "could not connect");
-        record_at(&path, "claude.children", &stop, "ignored");
+        record_at(&path, "claude.hook", &stop, None, "could not connect");
+        record_at(&path, "claude.children", &stop, None, "ignored");
         let body = std::fs::read_to_string(&path).expect("log written");
         assert_eq!(body.lines().count(), 1, "hook 실패만 기록된다");
         assert!(body.contains("method=claude.hook"));
@@ -307,11 +343,57 @@ mod tests {
             &path,
             "codex.hook",
             &serde_json::json!({ "event": "session-end" }),
+            None,
             "timed out",
         );
         assert!(dir.path().join("hook-failures.log.1").exists(), "로테이션");
         let body = std::fs::read_to_string(&path).expect("new log");
         assert_eq!(body.lines().count(), 1, "새 파일은 새 줄만");
+    }
+
+    /// **좌표는 필드로, 산문은 `reason` 으로.**
+    ///
+    /// 이 줄에서 로케일을 안 타는 것이 무엇인지가 이 파일의 계약이다. 산문은 답한 쪽이
+    /// 만들어 보내므로 plugin 이 답하면 앱 언어를 탄다 — 그때도 `code` 는 안 흔들린다.
+    #[test]
+    fn the_code_is_a_field_not_something_to_parse_out_of_the_prose() {
+        let line = format_line(
+            "codex.hook",
+            &serde_json::json!({ "event": "stop" }),
+            Some(-32602),
+            "invalid params: 알 수 없는 hook 이벤트",
+        );
+        assert!(line.contains(" code=-32602 "), "{line}");
+
+        // 산문이 어느 언어든 좌표 넷은 공백 구분으로 그대로 읽힌다.
+        let fields: Vec<&str> = line.trim_end().split(' ').take(5).collect();
+        assert_eq!(fields[1], "method=codex.hook");
+        assert_eq!(fields[2], "event=stop");
+        assert_eq!(fields[4], "code=-32602");
+
+        // `reason` 은 마지막이다 — 공백을 담을 수 있는 값이 그것뿐이므로, 읽는 쪽이
+        // `reason=` 뒤를 줄 끝까지로 자를 수 있다. 필드를 그 뒤에 더하면 깨진다.
+        let at = line.find("reason=").expect("reason 필드");
+        assert!(
+            !line[at..].trim_end().contains(' ') || line[at..].starts_with("reason="),
+            "reason 이 마지막이 아니다: {line}"
+        );
+        assert!(
+            line.trim_end().ends_with("알 수 없는 hook 이벤트"),
+            "{line}"
+        );
+    }
+
+    /// 코드가 없는 실패(호스트에 닿지도 못했다)는 `-` 다 — 있는 척하지 않는다.
+    #[test]
+    fn a_failure_without_a_code_keeps_the_column() {
+        let line = format_line(
+            "claude.hook",
+            &serde_json::json!({ "event": "stop" }),
+            None,
+            "no port file",
+        );
+        assert!(line.contains(" code=- "), "{line}");
     }
 
     /// 홈 아래 디렉터리가 없어도 만들어 기록한다(첫 실행 환경).
@@ -323,6 +405,7 @@ mod tests {
             &path,
             "claude.hook",
             &serde_json::json!({ "event": "session-start" }),
+            None,
             "no port file",
         );
         assert!(path.exists(), "부모 디렉터리를 만들어 기록해야 한다");

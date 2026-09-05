@@ -456,6 +456,8 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
             ("hook.list", serde_json::json!({ "surface_id": surface }))
         }
         ListCommands::GlobalHooks => ("global_hook.list", serde_json::json!({})),
+        ListCommands::Theme => ("theme.query", serde_json::json!({})),
+        ListCommands::Recent { kind } => ("recent.query", serde_json::json!({ "kind": kind })),
         ListCommands::Queue { surface } => (
             "message.count",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
@@ -631,6 +633,14 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "category": category,
             }),
         ),
+        SetCommands::Cwd { surface, path } => (
+            "surface.set_cwd",
+            serde_json::json!({ "surface_id": surface, "cwd": path }),
+        ),
+        SetCommands::Url { surface, url } => (
+            "webview.set_url",
+            serde_json::json!({ "surface_id": surface, "url": url }),
+        ),
         SetCommands::GlobalHook {
             condition,
             command,
@@ -662,10 +672,16 @@ fn workspace_category_command_to_method_params(
         WorkspaceCategoryCommands::Delete { id } => {
             ("workspace_category.delete", serde_json::json!({ "id": id }))
         }
-        WorkspaceCategoryCommands::Move { from, to } => (
-            "workspace_category.move",
-            serde_json::json!({ "from_index": from, "to_index": to }),
-        ),
+        WorkspaceCategoryCommands::Move { id, from, to } => {
+            let mut p = serde_json::json!({ "to_index": to });
+            if let Some(id) = id {
+                p["id"] = serde_json::json!(id);
+            }
+            if let Some(from) = from {
+                p["from_index"] = serde_json::json!(from);
+            }
+            ("workspace_category.move", p)
+        }
     }
 }
 
@@ -891,13 +907,18 @@ fn move_command_to_method_params(command: &MoveCommands) -> (&'static str, serde
                 "to_index": to,
             }),
         ),
-        MoveCommands::Workspace { from, to } => (
-            "workspace.move",
-            serde_json::json!({
-                "from_index": from,
-                "to_index": to,
-            }),
-        ),
+        MoveCommands::Workspace { id, from, to } => {
+            let mut p = serde_json::json!({ "to_index": to });
+            // 둘 중 **있는 쪽만** 싣는다. 없는 키를 null 로 실으면 핸들러의
+            // "둘 다 줬다" 거절과 "안 줬다" 거절이 구분되지 않는다.
+            if let Some(id) = id {
+                p["id"] = serde_json::json!(id);
+            }
+            if let Some(from) = from {
+                p["from_index"] = serde_json::json!(from);
+            }
+            ("workspace.move", p)
+        }
     }
 }
 
@@ -989,7 +1010,7 @@ mod tests {
             unsafe { std::env::set_var(Self::KEY, v) };
         }
         fn unset(&self) {
-            // SAFETY: 상동.
+            // SAFETY: set 과 동일 — 단일 #[test] 안에 격리해 직렬화된다.
             unsafe { std::env::remove_var(Self::KEY) };
         }
     }
@@ -997,7 +1018,7 @@ mod tests {
     impl Drop for SurfaceIdEnvGuard {
         fn drop(&mut self) {
             match &self.0 {
-                // SAFETY: 상동.
+                // SAFETY: set 과 동일 — 단일 #[test] 안에 격리해 직렬화된다.
                 Some(v) => unsafe { std::env::set_var(Self::KEY, v) },
                 // SAFETY: 상동.
                 None => unsafe { std::env::remove_var(Self::KEY) },

@@ -37,6 +37,15 @@ pub enum ListCommands {
     /// List all global hooks
     GlobalHooks,
     /// Show queue status (count + preview of pending messages)
+    /// Show the resolved global theme snapshot (colors, font sizes, ui scale).
+    Theme,
+    /// List the recently opened files of one surface kind.
+    Recent {
+        /// Surface kind to query (e.g. `markdown`). The host does not know the
+        /// kind names — the caller supplies one.
+        #[arg(long)]
+        kind: String,
+    },
     Queue {
         /// Surface ID (default: focused)
         #[arg(long)]
@@ -103,6 +112,24 @@ pub enum SetCommands {
         category: Option<String>,
     },
     /// Set a global hook (timer-based)
+    /// Set the working directory a remote surface reports to the host.
+    Cwd {
+        /// Target surface id.
+        #[arg(long)]
+        surface: u32,
+        /// Directory path. Omit to clear it.
+        #[arg(long)]
+        path: Option<String>,
+    },
+    /// Set the URL of a webview-kind surface.
+    Url {
+        /// Target surface id.
+        #[arg(long)]
+        surface: u32,
+        /// URL to load.
+        #[arg(long)]
+        url: String,
+    },
     GlobalHook {
         /// Condition: interval:SECS, once:SECS
         #[arg(long)]

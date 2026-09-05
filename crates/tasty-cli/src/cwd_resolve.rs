@@ -210,14 +210,20 @@ mod tests {
     // §7 형태 A). 이 레포에서 그것을 만지는 소스는 아래 EXPECTED 집합뿐이어야 하고, 그
     // 파일은 CWD_LOCK 으로 직렬화돼 있다.
 
-    /// 코드 줄(주석 제외)에서 `set_current_dir(` **호출** 횟수. 주석·문자열 속 언급은
-    /// 여는 괄호가 없으면 세지 않는다 — 이 가드 자신의 설명 문자열이 자기를 잡지 않게.
+    /// **코드**에서 `set_current_dir(` **호출**이 있는 줄 수.
+    ///
+    /// 판정을 손으로 하지 않고 `tasty_doc_guards::source_text::mask_non_code` 에 맡긴다. 이전에는
+    /// `split("//")` 로 주석만 뗐는데, 그것은 **다른 물음의 도구**다 — "이 줄이 산문인가"
+    /// 는 주석 줄만 보면 되지만 "코드에 X 가 있나" 는 **문자열 리터럴도 코드가 아니다.**
+    /// 리터럴을 안 가리면 이 바늘을 문자열로 들고 있는 다른 가드가 호출로 세어진다.
+    ///
+    /// 그때 여기 적혀 있던 회피책("여는 괄호가 없으면 안 센다")은 기전이 아니라
+    /// **작명 금기**였다 — 그 토큰을 괄호까지 붙여 정당하게 필요로 하는 두 번째 가드가
+    /// 나타나는 순간 깨진다. 마스킹은 그 사람이 무엇을 쓰든 성립한다.
     fn cwd_mutation_call_lines(text: &str) -> usize {
-        text.lines()
-            .filter(|l| {
-                let code = l.split("//").next().unwrap_or("");
-                code.contains("set_current_dir(")
-            })
+        tasty_doc_guards::source_text::mask_non_code(text)
+            .lines()
+            .filter(|l| l.contains("set_current_dir("))
             .count()
     }
 
@@ -290,10 +296,21 @@ mod tests {
 
     #[test]
     fn cwd_guard_detector_counts_calls_not_mentions() {
-        // 의도된 false negative — 주석·문자열의 언급(괄호 없음)은 세지 않는다.
+        // 언급은 세지 않는다 — 주석이든 문자열이든, 괄호가 붙어 있든.
         assert_eq!(cwd_mutation_call_lines("// set_current_dir 를 조심"), 0);
         assert_eq!(
             cwd_mutation_call_lines("let s = \"set_current_dir call\";"),
+            0
+        );
+        // ★ 이 줄이 이 고침의 경계다. 옛 판정(주석만 뗀다)은 여기서 1 을 냈다 —
+        // 같은 바늘을 검색어로 들고 있는 다른 가드가 그것을 호출로 세게 만든 형태다.
+        assert_eq!(
+            cwd_mutation_call_lines("const NEEDLE: &str = \"set_current_dir(\";"),
+            0
+        );
+        // 여러 줄 문자열 안에서도 같다.
+        assert_eq!(
+            cwd_mutation_call_lines("let s = r#\"call set_current_dir(p) here\"#;"),
             0
         );
         assert_eq!(

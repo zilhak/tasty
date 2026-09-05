@@ -35,8 +35,9 @@ pub use completion_strategy::CompletionStrategyCommands;
 #[cfg(debug_assertions)]
 pub use debug::{
     BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,
-    FullscreenDebugCommands, HostPopupDebugCommands, LuaDebugCommands, ModifierHintDebugCommands,
-    PopupDebugCommands, SettingsDebugCommands, ToolDebugCommands,
+    FullscreenDebugCommands, HostPopupDebugCommands, InjectDebugCommands, LuaDebugCommands,
+    ModifierHintDebugCommands, PluginBannerDebugCommands, PopupDebugCommands,
+    SettingsDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::FileHandlerCommands;
 pub use hook_handler::HookHandlerCommands;

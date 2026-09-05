@@ -5,6 +5,15 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum TelemetryCommands {
     /// Record a single metric event.
+    /// Record several events in one call — they share one timestamp, so their
+    /// order is preserved. Use this instead of a loop of `record` when the
+    /// ordering between the events matters.
+    RecordBatch {
+        /// Events as a JSON array; each element takes the same fields as
+        /// `record` (`metric`, `value`, `op`, `tags`, ...).
+        #[arg(long)]
+        events: String,
+    },
     Record {
         /// Metric name (lowercase `[a-z][a-z0-9_]*`, max 64).
         #[arg(long)]
