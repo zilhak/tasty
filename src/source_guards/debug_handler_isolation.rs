@@ -62,6 +62,8 @@
 
 use std::collections::BTreeMap;
 
+use tasty_doc_guards::cfg_predicate::implies;
+
 use super::{mask_non_code, repo_root};
 
 const DISPATCH: &str = "src/adapters/ipc/handler.rs";
@@ -79,7 +81,7 @@ fn declared_debug_gated(dispatch: &str) -> BTreeMap<String, bool> {
         let t = line.trim();
         if t.starts_with("#[cfg(") {
             // 같은 선언에 여러 줄로 붙은 속성은 하나라도 debug 면 debug 다.
-            let gated = t.contains("debug_assertions") && !t.contains("not(debug_assertions)");
+            let gated = cfg_pred(t).is_some_and(|pred| implies(pred, "debug_assertions"));
             pending = Some(pending.unwrap_or(false) || gated);
             continue;
         }
@@ -120,8 +122,7 @@ fn debug_only_items(masked: &str) -> Vec<usize> {
         .filter(|(_, l)| {
             let t = l.trim();
             t.starts_with("#[cfg(")
-                && t.contains("debug_assertions")
-                && !t.contains("not(debug_assertions)")
+                && cfg_pred(t).is_some_and(|pred| implies(pred, "debug_assertions"))
         })
         .map(|(i, _)| i + 1)
         .collect()
@@ -129,9 +130,22 @@ fn debug_only_items(masked: &str) -> Vec<usize> {
 
 /// 파일 자신이 통째로 debug 인가(`#![cfg(debug_assertions)]`).
 fn file_level_debug(masked: &str) -> bool {
-    masked
-        .lines()
-        .any(|l| l.trim().starts_with("#![cfg(") && l.contains("debug_assertions"))
+    masked.lines().any(|l| {
+        let t = l.trim();
+        t.starts_with("#![cfg(")
+            && cfg_pred(t).is_some_and(|pred| implies(pred, "debug_assertions"))
+    })
+}
+
+/// `#[cfg(P)]` 또는 `#![cfg(P)]` 에서 술어 `P` 만 떼어낸다. 함의 판정(`P` 가
+/// `debug_assertions` 를 함의하는가)은 정본 [`implies`] 가 한다 — 손으로
+/// `contains("debug_assertions")` 를 세면 `any(debug_assertions, …)`(gui 만으로도 켜짐)나
+/// `not(all(debug_assertions, …))` 에서 갈린다. 여기 슬라이싱은 판정이 아니라 배관이다.
+fn cfg_pred(attr: &str) -> Option<&str> {
+    let t = attr.trim();
+    t.strip_prefix("#[cfg(")
+        .or_else(|| t.strip_prefix("#![cfg("))
+        .and_then(|s| s.strip_suffix(")]"))
 }
 
 #[test]
@@ -201,6 +215,21 @@ mod detector {
         assert_eq!(d.get("dbg"), Some(&true));
         assert_eq!(d.get("dbg_gui"), Some(&true));
         assert_eq!(d.get("gui_only"), Some(&false));
+    }
+
+    /// `any(debug_assertions, …)` 는 debug 를 **함의하지 않는다**(gui 만으로도 켜지므로
+    /// release+gui 빌드에 남는다) — 정본 위임의 teeth. 손으로 `contains("debug_assertions")`
+    /// 를 세던 사본은 이 모듈을 debug 게이트로 오판했다.
+    #[test]
+    fn an_any_cfg_does_not_imply_debug() {
+        let d = declared_debug_gated(
+            "#[cfg(any(debug_assertions, feature = \"gui\"))]\npub mod maybe;\n",
+        );
+        assert_eq!(d.get("maybe"), Some(&false));
+        assert!(
+            debug_only_items("#[cfg(any(debug_assertions, feature = \"gui\"))]\nfn f() {}")
+                .is_empty()
+        );
     }
 
     #[test]
