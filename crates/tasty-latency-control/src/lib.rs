@@ -13,6 +13,10 @@
 //! 이라고 **잘못 증언한다**. IPC 왕복처럼 채널 뒤에 줄 서는 값의 대조군은 이 크레이트가
 //! 아직 안 준다; 같은 채널의 값싼 왕복이어야 하고 그건 호출자 쪽 물건이다.
 
+// 이 lint 의 출력은 위반 목록이 아니라 **프로덕션 명부**다
+// (docs/dev-guide/error-handling.md). 테스트 자리가 섞이면 새 프로덕션 자리가
+// 묻히므로, 자리마다가 아니라 크레이트 루트에서 test 범위를 통째로 덮는다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 use std::time::{Duration, Instant};
 
 /// 대조군이 자기 기준선의 이 배수 이상이면 러너가 굶은 것으로 본다.

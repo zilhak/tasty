@@ -16,6 +16,9 @@
 //! (`src/core/attach.rs` 의 `OccupancyRegistry`) 서로 다른 workspace 를 잡는 테스트끼리는
 //! 한 인스턴스 위에서 병렬 공존한다. 전부 `workspace.list[0]` 을 집으면 그 성질이 깨진다.
 
+// 이 파일 전체가 테스트 하네스다 — 위 lint 의 프로덕션 명부에 섞이면
+// 새 프로덕션 자리가 묻힌다 (docs/dev-guide/error-handling.md).
+#![allow(clippy::let_underscore_must_use)]
 // test binary 마다 쓰는 부분집합이 달라 개별 binary 기준 dead_code 판정이 무의미하다
 // (의도된 superset API) — `tests/common/mod.rs` 와 같은 이유.
 #![allow(dead_code)]
