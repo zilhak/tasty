@@ -48,7 +48,7 @@ const SPECIMEN_H_STACK: LogicalPx = LogicalPx(280.0);
 
 /// 데모 프레임 좌상단 "scope (frame)" 라벨의 세로 인셋. 4px 그리드 밖(6px)이라
 /// spacing 토큰에 대응이 없다 — 프레임 border 와 캡 높이 사이를 눈으로 맞춘 값이다.
-const SCOPE_LABEL_INSET_Y: f32 = 6.0;
+const SCOPE_LABEL_INSET_Y: LogicalPx = LogicalPx(6.0);
 
 #[derive(Clone, Debug)]
 struct ToastEntryView {
@@ -173,7 +173,7 @@ fn frame_case(
     painter.text(
         egui::pos2(
             rect.min.x + theme.spacing_sm.value(),
-            rect.min.y + SCOPE_LABEL_INSET_Y,
+            rect.min.y + SCOPE_LABEL_INSET_Y.value(),
         ),
         egui::Align2::LEFT_TOP,
         "scope (frame)",
