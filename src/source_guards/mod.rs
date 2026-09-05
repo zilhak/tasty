@@ -719,6 +719,11 @@ mod derived_plugin_tables_are_not_bypassed;
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
 
+/// 갤러리 specimen 이 **되풀이한 본체 치수**가 아직 같은지 본다. 위 가드가 "specimen 이
+/// 있는가" 라면 이쪽은 "그 specimen 이 적어 놓은 수가 본체 값과 같은가" 다.
+#[cfg(test)]
+mod gallery_copied_dimensions;
+
 /// 본체 등록처(popup `all_defs` · 무대 `all_metas`)에 있는 것이 갤러리 카탈로그에도
 /// 있는지 본다. gallery-first 는 불가침 원칙인데 그것을 어겼을 때 빨개지는 것이 0 이었다.
 #[cfg(test)]

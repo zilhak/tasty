@@ -64,6 +64,10 @@ pub const INFO_MODAL_ID: &str = "info_modal";
 const DEFAULT_WIDTH: LogicalPx = LogicalPx(440.0);
 const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
 const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
+/// 본문 아래 버튼행이 차지하는 높이. **고정값**이다 — 갤러리 specimen 은 같은 자리를
+/// 테마 파생(`item_height_interactive + spacing_lg + spacing_xs`)으로 낸다. 오늘 두 값이
+/// 같을 뿐이고, 갈라지면 `gallery_copied_dimensions` 가 그 자리에서 결정을 요구한다.
+const FOOTER_ROOM: LogicalPx = LogicalPx(48.0);
 
 /// 큐에 modal 한 건을 추가하고 popup을 연다. 이미 열려 있으면 큐만 추가.
 ///
@@ -106,9 +110,9 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     let total_h = (popup::title_bar_height()
         + popup::content_margin().scaled(2.0)
         + LogicalPx(body_h)
-        + LogicalPx(48.0))
-    .min(MAX_HEIGHT)
-    .max(MIN_HEIGHT);
+        + FOOTER_ROOM)
+        .min(MAX_HEIGHT)
+        .max(MIN_HEIGHT);
     egui::vec2(DEFAULT_WIDTH.value(), total_h.value())
 }
 
