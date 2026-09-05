@@ -11,8 +11,9 @@
 //! "이 이름은 유일해야 하는가?" 는 **의도**를 읽어야 답한다 — 소스만 보고 못 푼다
 //! (사용자 config 는 일부러 공유한다). 그래서 방향을 뒤집는다: **기본값은 "유니크화돼야
 //! 한다"** 이고, 의도된 공유는 **예외**다. 예외는 명부가 아니라 **그 자리에 사유**로
-//! 적는다(`이유:`/`reason:`, [`crate::…`] 가 아니라 `check-allow-reason` 이 쓰는 마커
-//! 관례를 그대로 빌린다). 의미 판단이 가드에서 소스로 옮겨가고, 그 자리가 그 판단을 할
+//! 적는다(`이유:`/`reason:`/`사유:` — 마커를 쓰는 발상은 `check-allow-reason` 에서
+//! 왔지만, **그 가드와 같다고 주장하지 않는다**. 아래 [`REASON_TOKENS`] 참조).
+//! 의미 판단이 가드에서 소스로 옮겨가고, 그 자리가 그 판단을 할
 //! 수 있는 유일한 자리다. 명부를 안 쓰는 이유: 명부는 자기 대상을 이름으로 지목해
 //! "쓰이는 것" 으로 만들고(R395), 정당한 예외가 구조적인 곳에서는 지키려는 표보다 빨리
 //! 썩는다(R380).
@@ -60,13 +61,49 @@ const UNIQ_TOKENS: &[&str] = &[
     "SystemTime",
 ];
 
-/// 의도된 공유임을 그 자리에 밝히는 사유 마커(`check-allow-reason` 과 같은 관례).
+/// 의도된 공유임을 그 자리에 밝히는 사유 마커.
+///
+/// ★ **여기는 한때 "`check-allow-reason` 과 같은 관례" 라고 적혀 있었고, 그 문장은
+/// 틀렸다.** 실측: 그 셸 게이트의 마커는 `reason:|이유:|complexity-exempt:|SAFETY` 라
+/// `사유:` 가 없고, 이쪽에는 뒤의 둘이 없다. 사유의 **위치** 규칙도 갈려 있었다(아래
+/// [`reason_is_attached`]). 즉 두 축 모두에서 달랐는데 문서만 같다고 말했다.
+///
+/// ★ **무엇이 그 동일성을 지키는가 — 아무것도 지키지 않는다.** 한쪽은 awk, 한쪽은
+/// Rust 이고 둘을 맞대는 가드가 없다. 그래서 이 문서는 동일성을 **다시 주장하지
+/// 않는다** — 검증되지 않는 동일성 주장이 바로 그 표류를 만든 원인이다. 각 가드는
+/// 자기 규칙을 자기 자리에 적고, 저자는 자기가 걸린 가드의 실패 메시지를 읽는다.
 const REASON_TOKENS: &[&str] = &["이유:", "reason:", "사유:"];
 
 /// `temp_dir()` 호출 줄에서 경로를 짓는 `.join(` 을 찾을 때 보는 창.
 const JOIN_WINDOW: usize = 6;
-/// 사유 마커를 찾을 때 그 자리 위로 보는 창(붙은 주석 블록).
-const REASON_LOOKBACK: usize = 4;
+/// 사유가 그 자리에 **붙어 있는지**를 정하는 규칙: 그 자리 줄 자신과, 위로 이어지는
+/// 주석 줄 전부. 빈 줄이나 코드 줄에서 끊긴다.
+///
+/// 한때 이 자리는 고정 4 줄 창이었다. 그것은 "붙었다" 의 좁은 판이 아니라 **다른
+/// 술어**였다 — 붙어 있어도 5 줄 위면 거부하고, 빈 줄과 코드 줄로 끊겨 있어도 3 줄
+/// 위면 인정했다. 부분집합 관계가 아니라 서로 어긋난 집합이라, 저자가 어느 관례를
+/// 배웠든 틀릴 수 있었다.
+fn reason_is_attached(
+    raw: &[&str],
+    comments: &[&str],
+    idx: usize,
+    has_token: impl Fn(&str) -> bool,
+) -> bool {
+    if has_token(comments[idx]) {
+        return true;
+    }
+    let mut j = idx;
+    while j > 0 {
+        j -= 1;
+        if !raw[j].trim_start().starts_with("//") {
+            return false;
+        }
+        if has_token(comments[j]) {
+            return true;
+        }
+    }
+    false
+}
 
 /// 한 파일을 분류한 결과. 줄 번호는 0 기반(`temp_dir()` 이 있는 줄).
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -113,9 +150,10 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
             out.uniquified.push(idx);
             continue;
         }
-        // 사유는 붙은 주석 블록(위) + 경로 짓는 창(아래)에서 찾는다.
-        let lo = idx.saturating_sub(REASON_LOOKBACK);
-        let reasoned = (lo..=hi).any(|j| REASON_TOKENS.iter().any(|t| comments[j].contains(t)));
+        // 사유는 그 자리에 붙어 있어야 한다 — 같은 줄이거나, 위로 이어지는 주석 블록 안.
+        let reasoned = reason_is_attached(&raw, &comments, idx, |line| {
+            REASON_TOKENS.iter().any(|t| line.contains(t))
+        });
         if reasoned {
             out.reasoned.push(idx);
         } else {
@@ -331,6 +369,26 @@ mod tests {
         let fc =
             classify_src("fn f() {\n    let dir = std::env::temp_dir();\n    read_only(dir);\n}");
         assert!(fc.sites.is_empty(), "join 이 없으면 자리로 세지 않는다");
+    }
+
+    /// 사유는 붙은 주석 블록 **어디에 있어도** 인정된다 — 줄 수 제한이 없다.
+    /// 한때 고정 4 줄 창이라 이 배치(첫 줄, 거리 8)가 거부됐다.
+    #[test]
+    fn a_reason_at_the_top_of_the_attached_block_counts() {
+        let fc = classify_src(
+            "fn f() {\n    // 이유: 공유가 의도다.\n    // 둘\n    // 셋\n    // 넷\n    // 다섯\n    // 여섯\n    // 일곱\n    let p = std::env::temp_dir().join(\"fixed-a\");\n}",
+        );
+        assert!(fc.silent.is_empty(), "붙은 블록의 첫 줄에 있는 사유");
+    }
+
+    /// 빈 줄이나 코드 줄에서 끊긴 **블록 밖**의 사유는 인정하지 않는다. 고정 4 줄
+    /// 창은 이것을 인정했다 — 창이 "붙었다" 를 재지 않았다는 증거다.
+    #[test]
+    fn a_reason_outside_the_attached_block_does_not_count() {
+        let fc = classify_src(
+            "fn f() {\n    // 이유: 공유가 의도다.\n\n    let q = 1;\n    let p = std::env::temp_dir().join(\"fixed-b\");\n}",
+        );
+        assert_eq!(fc.silent.len(), 1, "블록 밖의 사유는 안 센다");
     }
 
     /// 사유가 문자열 안에만 있으면 인정하지 않는다(주석 마스크가 문자열을 덮는다).
