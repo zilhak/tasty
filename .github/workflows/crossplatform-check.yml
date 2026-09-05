@@ -75,6 +75,15 @@ jobs:
       - name: cargo check
         run: cargo check --workspace --locked
 
+      # macOS 로 게이트된 유닛 테스트는 이 스텝이 생기기 전까지 **어느 채널도 안 돌렸다** —
+      # 컴파일만 되고 실행은 아무도 안 했다. 명령은 check-windows 의 `cargo test (unit)` ·
+      # check-headless 의 `cargo test (linux, gui, unit)` 과 **글자 그대로 같다**(새 형태를
+      # 만들지 않는다). 비용의 단위는 이 잡의 시간이 아니라 **워크플로 벽시계**이고,
+      # 잡들이 병렬이라 이 잡이 임계경로(헤드리스 잡)를 넘지 않는 동안 그 비용은 0 이다.
+      # 재는 법과 그것이 뒤집히는 조건은 docs/dev-guide/ci-gates.md 에 있다.
+      - name: cargo test (macos, gui, unit)
+        run: cargo test --workspace --lib --bins --locked --no-fail-fast
+
   check-windows:
     runs-on: [self-hosted, Windows]
     steps:

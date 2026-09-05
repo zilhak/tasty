@@ -20,7 +20,7 @@
 |---|---|---|---|---|
 | 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
-| macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 | [배선] |
+| macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [배선] |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [배선] |
 | headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
@@ -485,6 +485,36 @@ done | wc -l
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
+### macOS 유닛 테스트의 비용은 이 잡의 시간이 아니다
+
+`check-macos` 는 오래 `cargo check` 하나뿐이었고, 그래서 **macOS 로 게이트된 유닛 테스트는
+컴파일만 되고 아무도 안 돌렸다.** 지금은 같은 잡에 `--lib --bins` 스텝이 붙어 있다.
+
+**비용을 그 잡의 시간으로 재면 틀린다.** 잡들은 병렬이고 워크플로 벽시계는 **최댓값**이다.
+그러므로 이 스텝이 사람을 기다리게 하는 시간은 **macOS 잡이 임계경로 잡을 넘는지**로만
+정해진다 — 넘지 않는 동안은 **0** 이다. 수를 여기 적지 않는다
+([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)) — 잡 시간은
+커밋마다 바뀐다. 적을 것은 관계와 **재는 법**이다:
+
+```bash
+# 회차 하나의 잡별 시간 — 최댓값이 임계경로다
+gh run list --workflow=crossplatform-check.yml --limit 5 --json databaseId,conclusion
+gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs \
+  --jq '.jobs[] | "\(.name) \(.started_at) \(.completed_at)"'
+# 한 잡 안의 스텝별 시간
+gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
+  --jq '.steps[] | "\(.name) \(.started_at) \(.completed_at)"'
+```
+
+★ **러너를 새로 점유하지 않고 잰다.** 이 두 수는 과거 실행에 이미 들어 있다 —
+`workflow_dispatch` 로 새로 돌리면 재는 행위 자체가 그 비용을 한 번 치른다.
+
+★ **이 판단이 뒤집히는 조건**(재검토 트리거): self-hosted macOS 러너는 **한 대**다.
+`concurrency` + `cancel-in-progress` 가 **같은 ref** 의 연속 push 를 취소해 주므로 지금은
+직렬화가 안 일어난다. 그러나 **서로 다른 ref 둘이 동시에 밀리면** 그 취소가 안 걸려 macOS
+잡이 직렬로 쌓이고, 그때 macOS 가 새 임계경로가 될 수 있다. 레인이 각자 push 하기 시작하면
+그 조건이 성립한다 — 그때 위 명령으로 다시 재고 이 스텝을 유지할지 판단한다.
+
 ### 조합 격자의 빈 칸 — Linux + gui + debug (지금은 채워져 있다)
 
 유닛 테스트가 "두 조합 모두" 라고 말할 때 그 둘은 **Windows + gui + debug** 와
@@ -498,7 +528,7 @@ done | wc -l
 
 | | debug | release |
 |---|---|---|
-| macOS + gui | `check-macos`(컴파일) | — |
+| macOS + gui | `check-macos`(컴파일 + `--lib --bins` 유닛) | — |
 | Windows + gui | `check-windows`(컴파일 + 유닛) | — |
 | Linux + headless | `check-headless`(컴파일 + 전체) | — |
 | **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) | `check-release`(컴파일) |

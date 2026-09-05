@@ -632,11 +632,15 @@ const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
 /// 호출이 하나 늘었고, 이 표가 **파일별**이라 그 사실이 "어느 파일에 생겼는가" 로 드러났다
 /// — 총계였으면 다른 파일에서 하나 줄어든 것과 구별되지 않았다.
 const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
-    // 4 = Windows 유닛 · headless 전체 스위트 · Linux gui 유닛 · Linux gui e2e 1 건.
-    // 뒤의 둘이 조합 격자의 Linux×gui×debug 칸을 덮는다. 마지막 것은 아직 게이트가
-    // 아니라 관측용(`continue-on-error`)이고, 승격 조건은 그 스텝 주석에 있다
+    // 5 = macOS 유닛 · Windows 유닛 · headless 전체 스위트 · Linux gui 유닛 · Linux gui
+    // e2e 1 건. 가운데 둘이 조합 격자의 Linux×gui×debug 칸을 덮는다. 마지막 것은 아직
+    // 게이트가 아니라 관측용(`continue-on-error`)이고, 승격 조건은 그 스텝 주석에 있다
     // (docs/dev-guide/ci-gates.md).
-    ("crossplatform-check.yml", 4),
+    //
+    // macOS 것이 다섯 번째다. 그 전까지 그 잡은 `cargo check` 하나뿐이라 macOS 로 게이트된
+    // 유닛 테스트는 **컴파일만 되고 아무도 안 돌렸다**. 비용이 이 잡의 시간이 아니라
+    // 워크플로 벽시계(= 잡 최댓값)라는 판단과 그것이 뒤집히는 조건은 ci-gates.md 에 있다.
+    ("crossplatform-check.yml", 5),
     ("doc-guards.yml", 1),
     ("test.yml", 3),
 ];
