@@ -175,7 +175,7 @@ zoom 을 타고 있었고 반경만 고정이었다.
 
 ### 축 확장 — 색 파생 계수 축도 같은 결정이다
 
-세 번째 축이다. `.gamma_multiply(0.12)` · `.with_alpha(180)` 처럼 **색을 약하게 만드는
+네 번째 축이다. `.gamma_multiply(0.12)` · `.with_alpha(180)` 처럼 **색을 약하게 만드는
 계수**가 소스에 61 자리 있었다(측정: `src` · `crates` 추적 `.rs` 전량, 주석 제외 —
 `gamma_multiply` 42 · `with_alpha` 19). 값 공간이 둘로 갈려 보이지만 의도가 같고, 레포
 안에 그 둘이 **같은 비율의 두 표현**임을 적은 자리가 이미 있었다(`tasty-plugin-markdown`
@@ -213,6 +213,32 @@ tier 는 존재한다 — DTCG `primitive.opacity-disabled`(0.5) · `-recessed`(
 모수 안이다: [ADR-0135](0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md) 의
 갤러리 예외는 **배율 축**의 예외라 무차원 계수에는 걸리지 않고, specimen 의 계수는 본체
 값의 사본이라 빼면 그쪽이 조용히 갈린다.
+
+### 네 번째 형태 — **이름이 있는데 그 자리만 안 부른다** (점 치수 축에서 드러남)
+
+앞의 세 형태는 "값이 스케일 밖" · "토큰의 사본" · "이름이 있는데 코드가 도달하지 못함"
+이었다. 마지막 것을 실물 셋으로 확인하면서 **부류로 선다.** 리터럴이 남는 이유가 이름의
+부재가 아니라 **호출의 부재**인 자리다.
+
+| 자리 | 겨냥할 이름 | 값 | 결과 |
+|---|---|---|---|
+| `src/adapters/ui/tab_bar.rs` 활성 탭 밑줄 두께 | `component.tab-indicator-width` | 2 = 2 | **불렀다** — 픽셀 0 |
+| `src/adapters/ui/popup/remote_attach.rs` 선택 행 좌측 바 | 같은 토큰 | 2 = 2 | **불렀다** — 픽셀 0 |
+| `src/adapters/ui/tab_bar.rs` busy 점 | `component.tab-dot-size` | 8 ≠ 6 | **못 부른다** |
+
+**셋째가 이 부류의 경계다.** 이름이 있다는 것이 부르라는 뜻은 아니다 — 값이 다르면 부르는
+것은 정정이 아니라 **값 변경**이고, 이 ADR 의 본 결정이 그대로 적용된다(스냅하지 말고
+사유를 적은 명명 const 로 두고 디자인 판단으로 넘긴다).
+
+앞의 둘이 픽셀 0 이었던 이유도 값이 같아서만은 아니다 — `tab_indicator_width` 는
+`zoom_exempt_fields_guard` 에 Hairline 사유로 등재된 **zoom 면제** 필드라 `zoomed()` 를
+안 거친다. **일반적으로는 값이 같아도 토큰은 zoom 을 타고 명명 const 는 안 타므로 픽셀 0 이
+아니다**(위 반경 축 절의 표). 부르기 전에 그 필드가 zoom 을 타는지부터 본다.
+
+**찾는 법**: 값을 먼저 보지 말고 [`theme.md`](../design/systems/theme.md) 의 규칙 표에서
+그 역할의 행을 찾아라 — 위 둘은 "accent 바 · 인디케이터" 행이 **"활성 행의 좌측 바, 탭
+밑줄"** 이라고 자리 이름까지 적어 두고 있었다. 이름이 문서에 있는데 코드가 안 부르는 것은
+검색으로 안 잡히고 **역할로 읽어야 잡힌다.**
 
 ## Consequences
 
