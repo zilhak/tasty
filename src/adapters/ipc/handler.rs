@@ -85,7 +85,12 @@ use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 /// 안 쓰이고, 이 크레이트는 dead_code 를 deny 한다. 그 조합은 여기서 빌드할 수 없으므로
 /// (실측: macOS 크로스 체크가 libsqlite3-sys 에서 멈춘다) 컴파일러가 아니라 이 짝
 /// 맞춤이 유일한 방어다.
-#[cfg(not(all(target_os = "macos", feature = "gui")))]
+///
+/// **축이 둘이다.** 쓰는 자리는 `debug_assertions` 로 게이트된 debug 라우터 안에 있으므로
+/// 플랫폼 축만 맞추면 release 에서 상수만 남아 `cargo build --release` 가 통째로 깨진다
+/// (실측). 그 조합은 자동 채널이 없어서 — `docs/dev-guide/ci-gates.md` 가 release bin 을
+/// 보는 잡이 없다고 적는다 — 여기서 안 맞추면 아무 데서도 안 잡힌다.
+#[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
 const PLATFORM_ONLY_MACOS_GUI: &str = "input reproduction over the OS event stream is macOS-only and needs the gui build \
      (CGEventPost / TISSelectInputSource have no equivalent here)";
 use crate::state::AppState;
