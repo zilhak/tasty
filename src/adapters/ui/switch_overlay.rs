@@ -194,6 +194,10 @@ pub fn paint_keycap(
 /// `motion-ui-fast`(90ms) 동안 0→1 로 올라오고, 놓으면 같은 시간으로 0 으로 내려간다.
 /// egui 애니메이션 상태를 양방향으로 갱신하려면 **프레임마다**(키캡을 그리지 않는
 /// 프레임 포함) 호출해야 한다. `id_salt` 로 오버레이 인스턴스(pane / sidebar)를 구분한다.
+///
+/// 접근성 "모션 감소"(`theme.reduced_motion`)면 지속시간이 0 이 되어 페이드 없이
+/// 즉시 나타났다 사라진다 — 설정 설명이 약속하는 "모든 UI 페이드/슬라이드를 즉시
+/// 끝낸다" 가 이 자리에도 걸린다. 값을 `Theme` 에서 읽는 이유는 ADR-0174.
 pub fn appear_fade(
     ctx: &egui::Context,
     theme: &Theme,
@@ -203,7 +207,11 @@ pub fn appear_fade(
     ctx.animate_bool_with_time(
         egui::Id::new("switch_overlay_fade").with(id_salt),
         visible,
-        theme.motion_ui_fast_ms() / 1000.0,
+        if theme.reduced_motion {
+            0.0
+        } else {
+            theme.motion_ui_fast_ms() / 1000.0
+        },
     )
 }
 

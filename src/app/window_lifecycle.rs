@@ -34,9 +34,8 @@ fn warn_on_theme_err<T, E: std::fmt::Display>(step: &str, result: Result<T, E>) 
     }
 }
 
-pub(super) fn boot_apply_theme(
-    appearance: &mut tasty_settings::AppearanceSettings,
-) -> Option<String> {
+pub(super) fn boot_apply_theme(settings: &mut tasty_settings::Settings) -> Option<String> {
+    let appearance = &mut settings.appearance;
     warn_on_theme_err("themes first_run_init", tasty_themes::first_run_init());
     // 빌트인 테마(앱 소유)를 임베드 정본과 동기화 — 옛 스키마/색의 디스크 복사본을
     // 갱신한다. mocha 정본 보장도 겸한다(ensure_mocha_exists 의 상위 집합).
@@ -44,10 +43,10 @@ pub(super) fn boot_apply_theme(
     warn_on_theme_err("themes rescan", tasty_themes::rescan());
     let requested = appearance.theme.clone();
     tasty_themes::apply_theme(appearance, &requested);
-    // host UI zoom 을 항상 실어 부팅 직후 steady state 도 올바른 배율로 설치한다.
-    let ui_zoom = appearance.ui_scale_factor();
-    tasty_themes::install_global_with_zoom(appearance, ui_zoom);
-    if appearance.theme != requested {
+    // 설정에서 오는 런타임 값(배율·모션 감소)을 실어 부팅 직후 steady state 도
+    // 올바른 상태로 설치한다.
+    tasty_themes::install_global_with_runtime(&settings.appearance, settings.theme_runtime());
+    if settings.appearance.theme != requested {
         Some(requested)
     } else {
         None
@@ -833,7 +832,7 @@ fn boot_load_and_normalize_settings() -> (crate::settings::Settings, Option<Stri
     // memory.db 는 boot 가 App::new 이전에 초기화함 (D.3.C.M.1).
 
     // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
-    let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
+    let invalid_theme_name = boot_apply_theme(&mut settings);
     if (invalid_theme_name.is_some() || normalize_report.changed)
         && let Err(e) = settings.save()
     {

@@ -184,31 +184,29 @@ impl App {
     /// 윈도우로 fan-out 한다. settings 변경 cascade 와 단축키 발화 (Z-7) 가 같은
     /// entry point 로 모인다.
     ///
-    /// 1. 전역 `Theme` 인스턴스를 `install_global_with_zoom` 으로 재빌드.
+    /// 1. 전역 `Theme` 인스턴스를 `install_global_with_runtime` 으로 재빌드.
     /// 2. main + modal (settings / plugins / preset / quit) 의 GpuState 모두
     ///    `refresh_theme()` 호출 + mark_dirty.
     pub(crate) fn cascade_appearance_changed(&mut self) {
-        // appearance 의 single source — focused main 의 core_state.settings.appearance.
+        // appearance 의 single source — focused main 의 core_state.settings.
         // focused 가 없으면 어떤 main 이든 (clone 으로 settings 동기화돼 있음).
-        let appearance = self
+        // 색 레이어(appearance)와 런타임 값(배율·모션 감소)을 **같은 settings 에서**
+        // 함께 꺼낸다 — 따로 꺼내면 한쪽만 갱신된 조합이 설치될 수 있다.
+        let picked = self
             .focused_window()
-            .map(|w| w.core_state.settings.appearance.clone())
+            .map(|w| &w.core_state.settings)
             .or_else(|| {
-                self.view.views.values().find_map(|w| {
-                    w.as_main()
-                        .map(|m| m.core_state.settings.appearance.clone())
-                })
+                self.view
+                    .views
+                    .values()
+                    .find_map(|w| w.as_main().map(|m| &m.core_state.settings))
             })
-            .or_else(|| {
-                self.parked_states
-                    .first()
-                    .map(|(_, e)| e.settings.appearance.clone())
-            });
-        let Some(appearance) = appearance else {
+            .or_else(|| self.parked_states.first().map(|(_, e)| &e.settings))
+            .map(|s| (s.appearance.clone(), s.theme_runtime()));
+        let Some((appearance, runtime)) = picked else {
             return;
         };
-        let ui_zoom = appearance.ui_scale_factor();
-        tasty_themes::install_global_with_zoom(&appearance, ui_zoom);
+        tasty_themes::install_global_with_runtime(&appearance, runtime);
 
         // Broadcast: 모든 윈도우의 GpuState 가 새 Theme 을 egui ctx 에 reapply.
         for w in self.view.views.values_mut() {

@@ -236,12 +236,16 @@ State 컬럼 `Column::exact(140)` + `.clip(true)` 미적용. tasty 폰트가 디
 LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 flex(addr/proc)에서
 양보해야 하며, 이는 폰트 메트릭 보정(디자인 변경 아님). 현재는 디자인 140 유지 + 클립.
 
-## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → 파라미터로 받음
+## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → `Theme` 이 실어 나름
 
 - **증상**: 디자인 Spinner 는 `prefers-reduced-motion` 에서 회전을 멈추고 3-dot fallback 을
   쓰는데, egui 엔 그 매체 질의가 없다.
-- **처방**: `Spinner` 가 `reduced_motion: bool` 을 호출부 파라미터(빌더)로 받는다(StatusDot
-  의 pulse 와 동일 패턴 — 모션 결정을 호출측이 소유). true 면 정지 3-dot.
+- **처방**: 설정값(`accessibility.reduced_motion`)을 `Theme.reduced_motion` 에 실어 나르고,
+  `Spinner` 의 **기본 동작이 그것을 읽는다**. true 면 정지 3-dot. 빌더
+  `Spinner::reduced_motion(bool)` 은 남아 있지만 이제 **설정을 무시하는 override** 이며,
+  두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
+- **왜 파라미터가 아닌가**: 종전엔 호출부 파라미터였고, 그러자 실제로 넘기는 자리가 레포
+  전체에 하나도 없어 설정을 켜도 스피너가 돌았다([ADR-0174](../../adr/0174-theme-carries-reduced-motion.md)).
 - **근거**: `crates/tasty-ui-widgets/src/spinner.rs`.
 
 ## Button variant — egui 엔 CSS variant 없음 → fill/stroke 수동 조합

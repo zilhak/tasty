@@ -1012,6 +1012,18 @@ pub struct Theme {
     /// 로 resolve 된 필드에는 재적용하지 않는다.
     pub ui_zoom: f32,
 
+    /// 접근성 "모션 감소" 설정(`accessibility.reduced_motion`)이 켜져 있는가.
+    ///
+    /// **색·치수가 아닌데 `Theme` 이 드는 이유는 위젯이 잊을 수 없게 하기 위해서다.**
+    /// 종전에는 위젯이 이 값을 호출부 인자로 받았고, 그 인자를 실제로 넘기는 자리가
+    /// 레포 전체에 0 이었다 — 설정을 켜도 스피너가 계속 돌았다. 그리는 코드는 `Theme`
+    /// 없이는 그릴 수 없으므로, 여기 실으면 새 자리가 생겨도 빠뜨릴 수 없다.
+    /// 결정과 대안은 ADR-0174.
+    ///
+    /// 기본은 `false` — `with_colors*` 로 직접 만든 `Theme`(테스트·갤러리·plugin 프로세스)
+    /// 은 이 설정을 모른다. host 는 전역 설치 경로가 값을 실어 나른다.
+    pub reduced_motion: bool,
+
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
 
@@ -1176,6 +1188,7 @@ impl Theme {
             tab_indicator_width: SIZING.tab_indicator_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             ui_zoom,
+            reduced_motion: false,
             is_light,
             surface_themes: c.surface_themes,
         }

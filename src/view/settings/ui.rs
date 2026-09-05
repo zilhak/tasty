@@ -1441,7 +1441,7 @@ fn draw_settings_footer(
 /// HookHandler 탭 draft 를 각 레지스트리에 commit + 디스크 저장까지 수행한다.
 /// 테마 install 은 여기서 하지 않는다. Save → 모달 close 시 `close_active_modal`
 /// 이 `UpdateSettings` 인텐트를 큐잉하고, `cascade_settings_updated`(about_to_wait,
-/// 렌더 밖)가 `install_global_with_zoom` 으로 전역 Theme 를 적용한다. 렌더 클로저는
+/// 렌더 밖)가 `install_global_with_runtime` 으로 전역 Theme 를 적용한다. 렌더 클로저는
 /// `draw_settings_panel` 의 `THEME.read()` guard 를 보유 중이므로, 여기서
 /// `set_theme`(=`THEME.write()`)을 호출하면 std RwLock self-deadlock 으로
 /// hang 한다. install 은 렌더 밖에서만.

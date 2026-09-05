@@ -178,8 +178,7 @@ impl App {
     ) -> (Option<crate::db::DbInitError>, Option<String>) {
         let t_db_theme = Instant::now();
         let db_init_error = crate::db::init().err();
-        let invalid_theme_name =
-            crate::app::window_lifecycle::boot_apply_theme(&mut settings.appearance);
+        let invalid_theme_name = crate::app::window_lifecycle::boot_apply_theme(settings);
         if let Err(e) = settings.save() {
             tracing::warn!("failed to persist settings after theme apply: {e}");
         }

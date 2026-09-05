@@ -497,6 +497,26 @@ impl App {
                 })
             })
             .unwrap_or(tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
+        // 전역 Theme 에 실을 런타임 값(배율·모션 감소). `wheel_line_scroll` 과 같은
+        // 자리에서 같은 방식으로 찾는다 — 호출부 6 곳이 이 값을 따로 넘기지 않아도
+        // 되게 하려는 것이고, 그게 이 값을 빠뜨릴 수 없게 하는 형태다.
+        // 배율만은 인자로 받은 `appearance` 에서 온다: 모달 창은 아직 자기 settings
+        // 를 CoreState 에 갖고 있지 않은 시점에도 열리는데, 그때 넘어온 appearance 가
+        // 그 창이 그릴 배율의 정본이다.
+        let theme_runtime = tasty_themes::ThemeRuntime {
+            ui_zoom: appearance.ui_scale_factor(),
+            ..self
+                .core_state
+                .as_ref()
+                .map(|cs| cs.settings.theme_runtime())
+                .or_else(|| {
+                    self.view
+                        .views
+                        .values()
+                        .find_map(|w| w.as_main().map(|m| m.core_state.settings.theme_runtime()))
+                })
+                .unwrap_or_default()
+        };
         let proxy = self.view.proxy.clone();
         pollster::block_on(async move {
             if self.gpu_adapter.is_none() {
@@ -537,6 +557,7 @@ impl App {
                 &adapter,
                 window,
                 appearance,
+                theme_runtime,
                 wheel_line_scroll,
                 proxy,
             )

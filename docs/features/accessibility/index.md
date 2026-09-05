@@ -2,8 +2,8 @@
 
 - **Status**: Implemented (Phase 1 — 수동 토글)
 - **주체**: 로컬 사용자
-- **ADR**: 없음
-- **코드**: `AccessibilitySettings` · `ModifierHintSettings`(`tasty-settings`), 토스트 알파 분기(`src/adapters/ui/toast.rs`), modifier-hint 콘텐츠 모델(`src/adapters/ui/input/shortcuts/modifier_hint.rs`) · 오버레이 본체(`src/adapters/ui/modifier_hint_overlay.rs`)
+- **ADR**: [ADR-0174](../../adr/0174-theme-carries-reduced-motion.md)(모션 감소를 `Theme` 이 실어 나른다)
+- **코드**: `AccessibilitySettings` · `ModifierHintSettings` · `Settings::theme_runtime()`(`tasty-settings`), `ThemeRuntime`(`tasty-themes`), `Theme.reduced_motion`(`tasty-type-appearance`), 토스트 알파 분기(`src/adapters/ui/toast.rs`), 스피너(`crates/tasty-ui-widgets/src/spinner.rs`), switch 오버레이 페이드(`src/adapters/ui/switch_overlay.rs`), 모달 흔들기(`src/app/modal/shake.rs`), modifier-hint 콘텐츠 모델(`src/adapters/ui/input/shortcuts/modifier_hint.rs`) · 오버레이 본체(`src/adapters/ui/modifier_hint_overlay.rs`)
 - **화면**: [설정 창](../settings/screens/settings.md) Accessibility 탭
 
 ## 목적
@@ -14,7 +14,18 @@
 
 ### Reduced motion
 
-`accessibility.reduced_motion: bool`(기본 false). 활성 시 토스트 페이드인/아웃이 0ms — lifetime 동안 100%, 만료 즉시 0%. 터미널 콘텐츠는 영향 없음([theme](../../design/systems/theme.md) "터미널 콘텐츠 애니메이션 0ms" 원칙상 이미 모션 없음).
+`accessibility.reduced_motion: bool`(기본 false). 활성 시:
+
+- **토스트** 페이드인/아웃 0ms — lifetime 동안 100%, 만료 즉시 0%.
+- **스피너**(`tasty-ui-widgets`) 회전 정지 → 3-dot 정적 표시.
+- **switch-number 오버레이** 등장/퇴장 페이드 0ms(즉시 표시/소거).
+- **모달 흔들기**(닫기 거부 피드백)는 아예 시작하지 않는다 — 창 자체를 움직이는 물리적 모션이라 모션 감소가 막으려는 것 그 자체다.
+- **modifier 힌트** 페이드는 생략하되 표시 지연은 유지(위 Modifier key hints 항 참조).
+- **터미널 콘텐츠**는 영향 없음([theme](../../design/systems/theme.md) "터미널 콘텐츠 애니메이션 0ms" 원칙상 이미 모션 없음).
+
+값은 `Theme.reduced_motion` 이 실어 나르고 **위젯의 기본 동작이 그것을 읽는다** — 호출부가 넘기는 형태였을 때 실제로 넘기는 자리가 하나도 없어 설정이 무력했기 때문이다([ADR-0174](../../adr/0174-theme-carries-reduced-motion.md)). 채우는 자리는 `Settings::theme_runtime()` 하나이고, 전역 `Theme` 설치 경로가 그것을 그대로 나른다. 위젯 쪽 override(`Spinner::reduced_motion`)는 실행 중 설정과 무관하게 두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
+
+plugin 프로세스는 아직 이 값을 모른다(`ThemeWire` 에 필드 없음) — 현재 plugin 이 그리는 모션 위젯이 없어 잠재 구멍이다.
 
 ### Modifier key hints
 

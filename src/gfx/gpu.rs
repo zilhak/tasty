@@ -147,6 +147,7 @@ impl GpuState {
         adapter: &Arc<wgpu::Adapter>,
         window: Arc<Window>,
         appearance: &AppearanceSettings,
+        theme_runtime: tasty_themes::ThemeRuntime,
         wheel_line_scroll: f32,
         proxy: EventLoopProxy<AppEvent>,
     ) -> Result<Self> {
@@ -275,8 +276,7 @@ impl GpuState {
         });
 
         // Apply theme from settings
-        let ui_zoom = appearance.ui_scale_factor();
-        tasty_themes::install_global_with_zoom(appearance, ui_zoom);
+        tasty_themes::install_global_with_runtime(appearance, theme_runtime);
         Self::apply_theme(&egui_ctx, &appearance.theme);
 
         let egui_state = egui_winit::State::new(
