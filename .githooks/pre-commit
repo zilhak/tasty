@@ -405,8 +405,12 @@ suggest_target() {
     fi
 }
 
+# 알려진 종류의 경로 모양. **분류와 미분류가 같은 목록을 봐야** 둘이 갈리지 않는다 —
+# 목록이 둘이면 하나만 움직이고, 움직이지 않은 쪽이 조용해진다.
+KNOWN_KIND_RE='^(tests/[^/]+\.rs|crates/[^/]+/tests/[^/]+\.rs|crates/[^/]+/Cargo\.toml|src/.*\.rs|crates/[^/]+/src/.*\.rs|docs/.*\.md|scripts/.*\.sh|\.githooks/[^/]+)$'
+
 check_new_file_judges() {
-    local added new_int_test new_crate new_src new_doc
+    local added new_int_test new_crate new_src new_doc new_shell unknown
     added=$(git diff --cached --name-only --diff-filter=A || true)
     if [ -z "$added" ]; then return; fi
 
@@ -414,8 +418,10 @@ check_new_file_judges() {
     new_crate=$(echo "$added" | /usr/bin/grep -E '^crates/[^/]+/Cargo\.toml$' || true)
     new_src=$(echo "$added" | /usr/bin/grep -E '^(src/|crates/[^/]+/src/).*\.rs$' || true)
     new_doc=$(echo "$added" | /usr/bin/grep -E '^docs/.*\.md$' || true)
+    new_shell=$(echo "$added" | /usr/bin/grep -E '^(scripts/.*\.sh|\.githooks/[^/]+)$' || true)
+    unknown=$(echo "$added" | /usr/bin/grep -vE "$KNOWN_KIND_RE" || true)
 
-    if [ -z "$new_int_test$new_crate$new_src$new_doc" ]; then return; fi
+    if [ -z "$new_int_test$new_crate$new_src$new_doc$new_shell$unknown" ]; then return; fi
 
     yellow "▸ [W.2] 새 파일이 추가됐다. 그것을 처음 보는 타깃은 이 커밋을 만든 명령에"
     yellow "  안 들어갔을 수 있다 (-p <크레이트> 는 루트 패키지 타깃을 안 돌린다)."
@@ -449,6 +455,19 @@ check_new_file_judges() {
         suggest_target "crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs" \
             "cargo test --locked -p tasty-doc-guards" \
             "체크박스·표 정합·인용 좌표를 이 크레이트가 처음 본다"
+    fi
+    if [ -n "$new_shell" ]; then
+        yellow "  새 셸 스크립트:"
+        echo "$new_shell" | sed 's/^/      /' >&2
+        suggest_target "tests/no_early_exit_consumer_in_shell_pipes.rs" \
+            "cargo test --locked --test no_early_exit_consumer_in_shell_pipes" \
+            "셸은 루트의 통합 타깃이 본다 — 그 타깃은 확장자가 아니라 shebang 으로 고르므로 확장자 없는 훅도 대상이다"
+    fi
+    if [ -n "$unknown" ]; then
+        yellow "  ▸ 이 훅이 **종류를 모르는** 새 파일:"
+        echo "$unknown" | sed 's/^/      /' >&2
+        yellow "        ↳ 위 목록에 행이 없는 경로 모양이다. 이것을 보는 타깃이 있는지"
+        yellow "          확인하고, 있으면 이 훅에 행을 더해라. 자산 파일이면 무시해도 된다."
     fi
     yellow "  (경고일 뿐 커밋은 진행된다 — 이미 돌렸으면 무시해라.)"
 }
