@@ -24,6 +24,25 @@ impl PluginManager {
         self.rejected.len() + health
     }
 
+    /// 한 extension 의 상태 — 밖에서 `extensions` 를 직접 만지지 않게 하는 읽기 창구.
+    ///
+    /// 이 필드는 packages + config 에서 **유도되는 값**이라 밖에서 바뀌면 낡는다.
+    /// 그래서 필드를 크레이트 밖으로 열지 않고, 읽기만 이렇게 내보낸다 — 잊을 수 있는
+    /// 규율을 가드로 지키는 것보다 애초에 못 하게 하는 쪽이 싸다.
+    pub fn extension_state(
+        &self,
+        extension_id: &str,
+    ) -> Option<&crate::extension_registry::ExtensionState> {
+        self.extensions.state(extension_id)
+    }
+
+    /// 전체 extension 상태 순회. [`Self::extension_state`] 와 같은 이유로 존재한다.
+    pub fn extensions_iter(
+        &self,
+    ) -> impl Iterator<Item = (&str, &crate::extension_registry::ExtensionState)> {
+        self.extensions.iter()
+    }
+
     pub fn recompute_extensions(&mut self) {
         let fresh = self.freshly_computed_extensions();
         self.extensions = fresh;

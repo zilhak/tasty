@@ -148,10 +148,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
         .map(|n| json!({ "prefix": n.prefix }))
         .collect();
 
-    let extension_state = mgr
-        .extensions
-        .state(&plugin_id)
-        .map(extension_state_to_json);
+    let extension_state = mgr.extension_state(&plugin_id).map(extension_state_to_json);
 
     let extends = manifest.extends.as_ref().map(|d| {
         let to_event_hook = |h: &crate::plugin::manifest::EventHookDecl| {
@@ -238,8 +235,7 @@ pub fn handle_extension_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcR
         None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
     };
     let mut entries: Vec<Value> = mgr
-        .extensions
-        .iter()
+        .extensions_iter()
         .map(|(ext_id, state)| {
             let target_id = mgr
                 .packages

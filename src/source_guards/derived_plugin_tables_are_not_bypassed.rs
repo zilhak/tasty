@@ -95,6 +95,9 @@ const DERIVED: &[Derived] = &[
         home: HOST_PLUGIN_LIFECYCLE,
     },
     Derived {
+        // 이 필드는 **구조로 닫혔다** — `manager` 모듈 밖에서는 아예 안 보인다(읽기는
+        // `extension_state` · `extensions_iter` 로 나간다). 그래서 이 항목이 지키는
+        // 범위는 크레이트 **안**뿐이다. 닫을 수 있는 것은 닫고, 가드는 남는 것만 본다.
         what: "확장 집합(packages + config 에서 유도)",
         field: ".extensions",
         verbs: &[".recompute(", " ="],

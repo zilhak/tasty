@@ -358,7 +358,7 @@ pub struct PluginManager {
     /// Plugin extension 상태 추적. `[extends]` 블록을 선언한 plugin들의
     /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
     /// hook dispatch 시 `active_extension_for_target`을 조회한다.
-    pub extensions: super::extension_registry::ExtensionRegistry,
+    extensions: super::extension_registry::ExtensionRegistry,
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
