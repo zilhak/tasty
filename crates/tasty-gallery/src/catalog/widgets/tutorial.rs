@@ -56,12 +56,12 @@ const TAIL_OFFSET_Y: f32 = 24.0;
 // marker 데모 박스 — ring 변형과 glow 변형이 같은 무대를 쓴다. 두 specimen 이
 // 같은 비율을 보여야 비교가 성립하므로 값을 공유한다. `FAUX_ROW_H` 와 아래
 // `MARKER_DEMO_INSET_B` 가 둘 다 22 인 것은 우연이라 서로 참조하지 않는다.
-const MARKER_DEMO_W: f32 = 260.0;
-const MARKER_DEMO_H: f32 = 150.0;
-const MARKER_DEMO_INSET_L: f32 = 34.0;
-const MARKER_DEMO_INSET_T: f32 = 38.0;
-const MARKER_DEMO_INSET_R: f32 = 16.0;
-const MARKER_DEMO_INSET_B: f32 = 22.0;
+const MARKER_DEMO_W: LogicalPx = LogicalPx(260.0);
+const MARKER_DEMO_H: LogicalPx = LogicalPx(150.0);
+const MARKER_DEMO_INSET_L: LogicalPx = LogicalPx(34.0);
+const MARKER_DEMO_INSET_T: LogicalPx = LogicalPx(38.0);
+const MARKER_DEMO_INSET_R: LogicalPx = LogicalPx(16.0);
+const MARKER_DEMO_INSET_B: LogicalPx = LogicalPx(22.0);
 
 // ── faux app 셸 (jsx `App`) ────────────────────────────────────────────────
 /// 마커가 그 위에 뜨는 가짜 앱 무대. jsx `App` 의 사이드바(116) + 탭바(24) +
@@ -590,11 +590,11 @@ fn hsep(ui: &mut egui::Ui, theme: &Theme) {
 fn demo_box(
     ui: &mut egui::Ui,
     theme: &Theme,
-    w: f32,
-    h: f32,
+    w: LogicalPx,
+    h: LogicalPx,
     add: impl FnOnce(&egui::Painter, egui::Rect),
 ) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
     add(&p, rect);
@@ -613,8 +613,14 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
             demo_box(ui, theme, MARKER_DEMO_W, MARKER_DEMO_H, |p, r| {
                 paint_faux_app(p, r, theme);
                 let m = egui::Rect::from_min_max(
-                    egui::pos2(r.min.x + MARKER_DEMO_INSET_L, r.min.y + MARKER_DEMO_INSET_T),
-                    egui::pos2(r.max.x - MARKER_DEMO_INSET_R, r.max.y - MARKER_DEMO_INSET_B),
+                    egui::pos2(
+                        r.min.x + MARKER_DEMO_INSET_L.value(),
+                        r.min.y + MARKER_DEMO_INSET_T.value(),
+                    ),
+                    egui::pos2(
+                        r.max.x - MARKER_DEMO_INSET_R.value(),
+                        r.max.y - MARKER_DEMO_INSET_B.value(),
+                    ),
                 );
                 paint_marker(p, m, theme, false);
             });
@@ -624,8 +630,14 @@ pub fn draw_marker(ui: &mut egui::Ui, theme: &Theme) {
                 paint_faux_app(p, r, theme);
                 paint_scrim(p, r, theme);
                 let m = egui::Rect::from_min_max(
-                    egui::pos2(r.min.x + MARKER_DEMO_INSET_L, r.min.y + MARKER_DEMO_INSET_T),
-                    egui::pos2(r.max.x - MARKER_DEMO_INSET_R, r.max.y - MARKER_DEMO_INSET_B),
+                    egui::pos2(
+                        r.min.x + MARKER_DEMO_INSET_L.value(),
+                        r.min.y + MARKER_DEMO_INSET_T.value(),
+                    ),
+                    egui::pos2(
+                        r.max.x - MARKER_DEMO_INSET_R.value(),
+                        r.max.y - MARKER_DEMO_INSET_B.value(),
+                    ),
                 );
                 paint_marker(p, m, theme, true);
             });
@@ -832,8 +844,8 @@ pub fn draw_topics(ui: &mut egui::Ui, theme: &Theme) {
 // ── Spec: Composite step in place ───────────────────────────────────────────
 pub fn draw_composite(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        let w = ui.available_width().min(520.0);
-        demo_box(ui, theme, w, 340.0, |p, r| {
+        let w = LogicalPx(ui.available_width()).min(LogicalPx(520.0));
+        demo_box(ui, theme, w, LogicalPx(340.0), |p, r| {
             paint_faux_app(p, r, theme);
             paint_scrim(p, r, theme);
             // step 1 마커 = 콘텐츠 전체영역(사이드바 제외).
