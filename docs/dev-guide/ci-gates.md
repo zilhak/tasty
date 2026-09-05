@@ -720,6 +720,30 @@ Linux gui 유닛 스텝이 붙은 뒤 모수를 다시 잡았다 — 술어가 �
 | 디스플레이가 못 사는 것 | `the_gui_suite_needs_a_flag_not_a_display` |
 | `--ignored` 를 줘도 나오는 수 | `the_gui_ignored_layer_has_no_single_value` |
 
+#### ★ 스텝은 앞 스텝이 죽으면 **안 돈다** — 배선돼 있는데 채널이 없는 회차
+
+잡 단위로 읽는 것만으로는 부족하다. **한 잡 안에서도** 앞 스텝이 실패하면 뒤 스텝은
+`skipped` 가 되고, 그 회차에 그 스텝이 배선한 조합은 **존재하지 않는다.** 그런데 로그에는
+실패로도 안 남는다 — 줄 자체가 없다.
+
+실측(run 33982090607, `check-headless`):
+
+    success  cargo check (headless)
+    failure  cargo test (headless)          ← 여기서 죽고
+    skipped  cargo clippy (headless)
+    skipped  cargo test (linux, gui, unit)
+    skipped  cargo test (linux, gui, e2e)
+    skipped  disk (diagnostic)
+
+`continue-on-error` 로는 이것을 못 막는다. 그 플래그는 **자기 실패**를 무해하게 만들 뿐,
+앞 스텝의 실패로 건너뛰어지는 것은 막지 못한다. 건너뛰지 않게 하려면 `if: !cancelled()`
+가 필요하다.
+
+★ 그래서 **없음을 두 갈래로 갈라라**: "그 스텝이 안 돌았다" 와 "돌았는데 결과가 없다"
+는 다른 판정이다. 위 회차에서 `command -v xvfb-run` 줄이 없는 것은 러너에 `xvfb-run` 이
+없다는 증거가 **아니다** — 그 줄이 있는 스텝이 안 돌았을 뿐이고, 그 물음은 여전히
+미측정이다. 진단 줄은 **빨간 회차에서 가장 필요한데**, 건너뛰면 정확히 그때만 없다.
+
 #### 세 층 중 하나만 **워크플로 파서에 기댄다** — 그 층의 문장은 아직 약하다
 
 층 2·3 은 소스(`tests/gui_tests.rs`)와 문서만 읽어서, 워크플로를 어떻게 읽든 답이

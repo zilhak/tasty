@@ -228,7 +228,16 @@ jobs:
       # 큐가 직렬로 길어진다. 스텝이면 checkout 과 레지스트리 페치를 재사용한다.
       # (그 재사용은 target 재사용이 아니다 — checkout 이 매 회차 `git clean -ffdx` 로
       # target 을 지우므로 이 스텝의 gui 빌드는 언제나 콜드다.)
+      # `if: !cancelled()` 인 이유는 실측이다 — **앞 스텝이 죽으면 이 스텝은 아예 안 돈다.**
+      # run 33982090607 에서 `cargo test (headless)` 하나가 빨개지자 이 스텝과 아래 둘이
+      # 통째로 `skipped` 였다. 그러면 이 잡이 배선한 조합(Linux·debug·gui)은 **그 회차에
+      # 존재하지 않는데**, 로그에는 실패로도 안 남는다 — 줄 자체가 없다. 배선은 그대로인데
+      # 채널만 사라지는 형태라 조용하다.
+      #
+      # `continue-on-error` 로는 이것을 못 막는다. 그 플래그는 **자기 실패**를 무해하게
+      # 만들 뿐, 앞 스텝의 실패로 건너뛰어지는 것은 막지 못한다.
       - name: cargo test (linux, gui, unit)
+        if: ${{ !cancelled() }}
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
       # 조합 격자의 **마지막 칸** — 이 저장소의 어떤 자동 채널도 안 보는 테스트 1 건.
@@ -258,6 +267,7 @@ jobs:
       # CI 에서 연속 N 회 초록인 것을 본 뒤 — 그 수를 ci-gates.md 에 적는다. flake 를
       # 차단성으로 넣으면 "빨강은 정보다" 라는 이 저장소의 규정이 무의미해진다.
       - name: cargo test (linux, gui, e2e — 관측용)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
           command -v xvfb-run || { echo "xvfb-run 이 이 러너에 없다 — 이 스텝은 아직 못 돈다"; exit 1; }
@@ -267,7 +277,12 @@ jobs:
 
       # `continue-on-error` 로 두는 이유: 이 줄은 진단이지 게이트가 아니다. 여기서
       # 실패해 잡을 빨갛게 만들면 그 빨강이 컴파일·테스트의 빨강을 가린다.
+      # 진단은 **빨간 회차에서 가장 필요하다.** 앞 스텝이 죽었을 때 건너뛰면, 왜 죽었는지
+      # 물으려고 만든 줄이 정확히 그때만 없다. run 33982090607 이 그 형태였다 —
+      # 러너에 `xvfb-run` 이 있는지 묻던 줄이 skipped 라, 없음을 "없다" 로도 "있다" 로도
+      # 못 읽는 상태가 됐다(그냥 미측정이다).
       - name: disk (diagnostic)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
           df -h .
