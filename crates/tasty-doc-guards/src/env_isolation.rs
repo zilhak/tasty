@@ -47,17 +47,7 @@ use crate::source_text::{mask_literals, mask_non_code, rust_sources};
 
 /// 프로세스 전역을 바꾸는 호출. 여는 괄호까지 넣어 동명 식별자(`set_current_dir_is_…`
 /// 같은 테스트 함수명)에 오탐하지 않게 한다.
-///
-/// 마지막 바늘은 통째로 적지 않는다. `tasty-cli` 의 cwd 재진입 가드
-/// (`cwd_resolve.rs` 의 `set_current_dir_is_confined_to_serialized_tests`)가
-/// 같은 토큰을 찾는데 **문자열 리터럴을 안 가리므로**, 여기 통째로 적으면 이 파일이
-/// 그 가드에 "직렬화 없이 cwd 를 바꾸는 소스" 로 잡힌다 — 언급을 사용으로 세는 것이다.
-/// 쪼개면 동작은 같고(`concat!` 은 컴파일 타임) 그 오탐만 사라진다.
-const MUTATION_TOKENS: &[&str] = &[
-    "env::set_var(",
-    "env::remove_var(",
-    concat!("set_current_dir", "("),
-];
+const MUTATION_TOKENS: &[&str] = &["env::set_var(", "env::remove_var(", "set_current_dir("];
 
 /// 그 변형이 직렬화됨을 밝히는 증거(코드의 락 참조 + 주석 마커).
 const SERIAL_TOKENS: &[&str] = &[
@@ -240,10 +230,7 @@ mod tests {
     #[test]
     fn set_current_dir_is_also_covered() {
         let fc = classify_src(
-            concat!(
-                "#[cfg(test)]\nmod t {\n    #[test]\n    fn x() {\n        std::env::set_current_dir",
-                "(\"/tmp\").unwrap();\n    }\n}"
-            ),
+            "#[cfg(test)]\nmod t {\n    #[test]\n    fn x() {\n        std::env::set_current_dir(\"/tmp\").unwrap();\n    }\n}",
             false,
         );
         assert_eq!(fc.bare.len(), 1);
