@@ -32,10 +32,17 @@
 use tasty_doc_guards::env_isolation::census;
 use tasty_doc_guards::repo_root;
 
-const SCAN_ROOTS: &[&str] = &["src", "crates"];
+// 스캔 범위. `src`·`crates` 에 더해 **레포 루트 `tests/`(통합 테스트)** 를 본다 — 이
+// 가드가 겨냥하는 "테스트가 프로세스 전역(env/cwd)을 직렬화 없이 만짐" 이 가장 잘 나는
+// 곳이 통합 테스트다(공유 인스턴스·격리 HOME·포트 파일). `crates/*/tests/` 는 `crates`
+// 순회에 이미 들어왔고, [`tasty_doc_guards::shipping_scope::test_only_files`] 가 그 둘을
+// cargo 통합테스트 타깃으로 test 맥락에 넣는다(정본 판정기) — 그전엔 루트 `tests/*.rs` 가
+// `mod` 선언 없는 루트 파일이라 test 맥락 밖으로 조용히 새던 사각이었다. 이 셋 밖
+// (`benches`·`examples`)은 이 레포에 없어 제외한다 — 누락이 아니라 범위 결정이다.
+const SCAN_ROOTS: &[&str] = &["src", "crates", "tests"];
 
-// 실측(2026-09-05): files=1196 · mutations=25 · serialized=25 · bare=0.
-const MIN_FILES: usize = 1000;
+// 실측(2026-09-05, 루트 tests/ 편입 후): files=1257 · mutations=25 · serialized=25 · bare=0.
+const MIN_FILES: usize = 1100;
 const MIN_MUTATIONS: usize = 15;
 const MIN_SERIALIZED: usize = 15;
 
