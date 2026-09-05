@@ -18,7 +18,7 @@
 //! 그러니 판정기를 하나로 모으는 회차가 와도 **여기는 대상이 아니다.** 누락이 아니라
 //! 판단이다.
 //!
-//! 검사 5 종:
+//! 검사 6 종:
 //! - **키 집합** — ko/ja 가 en 과 정확히 같은 키 집합을 가진다(누락·잉여 0).
 //! - **placeholder** — 키마다 `{}` 개수와 `{name}` 이름 집합이 en 과 같다. `t_fmt` 계열은
 //!   `{}` 를 순서대로 치환하므로 개수가 다르면 인자가 새거나 남고, 이름 있는 placeholder
@@ -34,6 +34,15 @@
 //!   **코드(`.rs`)나 매니페스트(`.toml`)의 코드 줄**에 있다. 없으면 [`ORPHAN_KEYS`]
 //!   명부와 정확히 대조한다. **산문(문서·주석)은 소비자가 아니다** — 근거는
 //!   [`consumer_files`] 와 [`code_lines`].
+//! - **하한** — 카탈로그가 실제로 키를 담고 있다. 앞의 세 검사(키 집합·placeholder·
+//!   en 과 같은 값)는 카탈로그를 카탈로그끼리만 견주므로 **다 비면 다 같아서** 통과한다.
+//!   근거 실측은 [`every_catalog_carries_more_than_a_handful_of_keys`].
+//!
+//! **평탄화 규칙은 로더 자신의 것을 부른다** — [`tasty_i18n::flatten_catalog_toml`].
+//! 이 파일에 사본을 두지 않는다. 사본이 있던 동안 그 둘을 같게 잡아 주는 것은 "로더와
+//! 같은 규칙" 이라는 주석 한 줄뿐이었고, 실측으로 그 상태에서는 **로더의 평탄화를 통째로
+//! 망가뜨려도 이 파일 전체가 초록**이었다(2026-09-06, 13 통과 0 실패). 지금은 같은 변이가
+//! 5 개를 빨갛게 한다.
 //!
 //! **두 방향은 검사 둘이다 — 심각도가 다르기 때문이다.** 누락(소스가 드는데 카탈로그에
 //! 없다)은 화면에 raw 키가 뜨는 **시끄러운** 결함이고, 고아(카탈로그에 있는데 아무도
@@ -242,27 +251,20 @@ fn lang_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// `[a.b] c = "v"` 를 `a.b.c` 점 키로 평탄화한다(`tasty-i18n` 로더와 같은 규칙 —
-/// 문자열 leaf 만 카탈로그 항목이다).
-fn flatten(prefix: &str, value: &toml::Value, out: &mut BTreeMap<String, String>) {
-    match value {
-        toml::Value::Table(table) => {
-            for (k, v) in table {
-                let full = if prefix.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{prefix}.{k}")
-                };
-                flatten(&full, v, out);
-            }
-        }
-        toml::Value::String(s) => {
-            out.insert(prefix.to_string(), s.clone());
-        }
-        _ => {}
-    }
-}
-
+/// 한 언어 파일을 점 키 맵으로 읽는다.
+///
+/// **평탄화는 로더 자신의 함수([`tasty_i18n::flatten_catalog_toml`])를 부른다 — 여기에
+/// 사본을 두지 않는다.** 예전에는 같은 재귀가 이 파일에 복사돼 있었고 주석이 "로더와
+/// 같은 규칙" 이라고 주장했는데, 둘을 같게 잡아 주는 것이 그 주석뿐이었다. 로더가 leaf
+/// 취급을 바꾸면(예: 정수 leaf 도 키로 세면) 이 가드는 옛 규칙으로 펴고, **어긋남은
+/// 이 가드가 초록인 채로** 생긴다 — 가드가 안 펴는 키는 아래 어느 검사에도 안 올라온다.
+/// 규칙이 하나면 갈라질 수 없다(R484 ①).
+///
+/// **파싱은 로더와 일부러 다르다.** 로더의 `parse_toml_into` 는 `if let Ok(..)` 로
+/// 파싱 실패를 삼켜 그 언어를 0 키로 만든다 — 실행 중이라면 영어로 떨어지는 것이 맞다.
+/// 가드에서는 그 삼킴이 **공허한 초록**이 된다(세 파일이 다 비면 키 집합이 서로 같다).
+/// 그래서 여기서는 파싱 실패에 panic 한다. 그 방어가 실제로 서 있는지는
+/// [`every_catalog_carries_more_than_a_handful_of_keys`] 가 값으로 다시 잡는다.
 fn load(dir: &Path, lang: &str) -> BTreeMap<String, String> {
     let path = dir.join(format!("{lang}.toml"));
     let text =
@@ -270,9 +272,9 @@ fn load(dir: &Path, lang: &str) -> BTreeMap<String, String> {
     let value: toml::Value = text
         .parse()
         .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
-    let mut out = BTreeMap::new();
-    flatten("", &value, &mut out);
-    out
+    let mut flat = std::collections::HashMap::new();
+    tasty_i18n::flatten_catalog_toml("", &value, &mut flat);
+    flat.into_iter().collect()
 }
 
 /// 카탈로그 한 세트 — 디렉토리 + 언어별 평탄 맵.
@@ -289,6 +291,78 @@ fn catalogs() -> Vec<Catalog> {
             by_lang: LANGS.iter().map(|lang| (*lang, load(&dir, lang))).collect(),
         })
         .collect()
+}
+
+/// 카탈로그 개수의 하한 — 2026-09-06 실측 10(루트 1 + plugin 9).
+///
+/// 6 으로 둔 것은 plugin 이 몇 개 빠져도 버티되 **목록이 통째로 비는 것**은 못 넘기게
+/// 하려는 것이다. 하한이 없으면 [`lang_dirs`] 가 0 개를 돌려줘도 아래 검사들이 전부
+/// 초록이다 — 순회할 것이 없으면 어긋날 것도 없다.
+const MIN_CATALOGS: usize = 6;
+
+/// 루트 카탈로그 키 수의 하한 — 2026-09-06 실측 1311.
+///
+/// 자릿수만 지킨다. 이 값은 "번역이 몇 개여야 한다" 는 요구가 아니라 **평탄화가 여전히
+/// 키를 만들고 있는가** 의 하한이다.
+const MIN_ROOT_KEYS: usize = 400;
+
+/// 평탄화가 살아 있다는 것을 값으로 잡는다 — 세 파일이 **다 비어도** 키 집합은 서로
+/// 같다. 그 국면을 만드는 길이 둘 있다: [`lang_dirs`] 가 빈 목록을 돌려주는 것과,
+/// [`load`] 의 평탄화가 0 키를 내는 것. 여기서 둘 다 값으로 막는다.
+///
+/// **실측 (2026-09-06).** 로더의 평탄화를 "깊이 1 이하만 키로 센다" 로 바꾸면 루트
+/// `lang/*.toml` 의 최상위 문자열 키가 0 개라 **모든 카탈로그가 통째로 빈다.** 그
+/// 국면에서 이 파일의 14 개 시험이 어떻게 갈렸는가:
+///
+/// - **공허하게 초록 3** — [`key_sets_match_english`] · [`placeholders_match_english`] ·
+///   [`same_as_english_values_are_allowlisted`]. **이 파일의 이름값을 하는 검사 셋이
+///   전부 여기 있다.** 셋 다 카탈로그를 카탈로그끼리만 견주므로, 다 비면 다 같다.
+/// - **빨강 5** — 이 시험 + [`literal_translation_keys_exist_in_catalog`] ·
+///   [`every_catalog_key_has_a_consumer`] · [`same_as_english_allowlist_points_at_keys_that_exist`] ·
+///   [`every_orphan_entry_names_a_catalog_key`]. 뒤 넷은 **카탈로그 밖**(소스·명부)과
+///   대조하는 검사라 비는 것을 자연히 본다.
+///
+/// ⇒ **총-비움에서 이 시험이 유일한 탐지기는 아니다.** 그렇게 적으면 과장이다. 이 시험이
+/// 혼자 잡는 것은 뒤 넷이 안 보는 두 형태다 — 카탈로그 **일부**만 비는 것(루트는 멀쩡한데
+/// 어느 plugin 하나가 0 키가 되는 것)과, 발견 자체가 끊겨 순회할 카탈로그가 없는 것.
+/// 그리고 총-비움에서도 이 시험은 **원인을 이름으로 말하는** 유일한 빨강이다. 나머지 넷은
+/// "이 키가 없다" 로 신고해 카탈로그 쪽 결함처럼 읽힌다.
+///
+/// **이 시험이 빨개졌을 때 가장 싼 초록화 경로는 아래 상수를 내리는 것이다.** 그것이
+/// 답인 경우는 하나뿐이다 — 번역을 실제로 줄이기로 한 회차. 그 밖의 경우에 상수를
+/// 내리면 이 시험은 그 자리에서 죽는다. **왜 키가 사라졌는지를 먼저 답하고 나서**
+/// 상수를 만져라.
+#[test]
+fn every_catalog_carries_more_than_a_handful_of_keys() {
+    let cats = catalogs();
+    assert!(
+        cats.len() >= MIN_CATALOGS,
+        "카탈로그를 {} 개밖에 못 찾았다(하한 {MIN_CATALOGS}, 2026-09-06 실측 10) — \
+         `lang_dirs` 의 발견이 끊겼다면 아래 정합 검사들은 순회할 것이 없어 전부 초록이다",
+        cats.len()
+    );
+    for cat in &cats {
+        for lang in LANGS {
+            let n = cat.by_lang[lang].len();
+            assert!(
+                n > 0,
+                "{}/{lang}.toml 이 0 키로 평탄화됐다 — 세 언어가 다 비면 키 집합은 서로 \
+                 같아서 parity 는 통과한다. 파일이 비었거나 평탄화 규칙이 이 파일의 \
+                 모양을 더는 항목으로 안 세는 것이다",
+                cat.rel
+            );
+        }
+        if cat.rel == "lang" {
+            for lang in LANGS {
+                let n = cat.by_lang[lang].len();
+                assert!(
+                    n >= MIN_ROOT_KEYS,
+                    "lang/{lang}.toml 의 키가 {n} 개다(하한 {MIN_ROOT_KEYS}, \
+                     2026-09-06 실측 1311)",
+                );
+            }
+        }
+    }
 }
 
 /// `{}` 개수와 `{name}` 이름 집합. 이름은 `[A-Za-z_][A-Za-z0-9_]*` 만 인정한다 —
