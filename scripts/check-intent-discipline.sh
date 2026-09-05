@@ -10,7 +10,11 @@
 # 나눠 각각 다르게 막는다. 셋을 하나로 합치면(예: 파일 통째 제외) 그 파일의 다른
 # 위반까지 같이 사라진다.
 #
-#   ① 코드가 아닌 것        → 줄 주석·블록 주석·문자열 리터럴을 **지우고** 찾는다.
+#   ① 코드가 아닌 것        → 줄 주석·블록 주석·문자열·문자 리터럴을 덮은 **사본**에서
+#                             찾는다. 그 마스킹은 이 스크립트가 아니라 판정기
+#                             (`mask-source`)가 한다 — 같은 물음에 답을 둘로 만들지
+#                             않으려는 것이다. 사유 주석은 원본에서 읽는다(주석은
+#                             사본에 없다).
 #   ② 도메인이 피험자인 것  → `#[cfg(test)] mod` 본문과 `*_tests.rs` 는 대상이 아니다.
 #                             테스트가 popup 을 직접 열고 닫는 것은 popup 이 **피험자**
 #                             이기 때문이다. 규율은 "도메인을 도구로 쓸 때" 의 규칙이다.
@@ -88,32 +92,47 @@ fi
 exempt_all_re=$(printf '%s|' "${EXEMPT_ALL[@]}"); exempt_all_re=${exempt_all_re%|}
 exempt_pane_re=$(printf '%s|' "${EXEMPT_PANE[@]}"); exempt_pane_re=${exempt_pane_re%|}
 
-matches=$(find src -name '*.rs' -type f -print0 \
-  | xargs -0 awk -v exempt_all="$exempt_all_re" -v exempt_pane="$exempt_pane_re" '
-# ── 코드가 아닌 부분을 지운다. 블록 주석 상태는 파일을 가로질러 들고 간다. ──
-function mask(s,   out, i, c, n, instr) {
-    out = ""; n = length(s); i = 1; instr = 0
-    while (i <= n) {
-        c = substr(s, i, 1)
-        if (inblock) {
-            if (c == "*" && substr(s, i+1, 1) == "/") { inblock = 0; i += 2; continue }
-            i++; continue
-        }
-        if (!instr && c == "/" && substr(s, i+1, 1) == "/") break
-        if (!instr && c == "/" && substr(s, i+1, 1) == "*") { inblock = 1; i += 2; continue }
-        if (c == "\"") { instr = !instr; i++; continue }
-        if (instr && c == "\\") { i += 2; continue }
-        if (!instr) out = out c
-        i++
-    }
-    return out
-}
+# ── 코드가 아닌 부분을 덮는 일은 **판정기가 한다** ────────────────────────────
+# 이 스크립트는 한때 awk 로 자기 렉서를 갖고 있었다. 같은 물음("이 자리가 코드인가")에
+# 답이 둘이면 둘이 따로 틀린다 — 실측: awk 판은 문자 리터럴과 raw string 을 몰라
+# src 585 파일 중 166 에서 러스트 판정기와 다른 답을 냈다.
+#
+# 판정기가 없으면 **원문을 그대로 본다.** 그쪽은 문자열·주석 안의 언급까지 세는 방향,
+# 즉 더 많이 잡는 쪽이라 조용한 통과를 안 만든다. 자동 채널은 판정기를 먼저 짓는다.
+. "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
+MASK_BIN="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT")"
+SCAN_ROOT="$ROOT"
+if [ -n "$MASK_BIN" ]; then
+    MASKED="$(mktemp -d)"
+    trap 'rm -rf "$MASKED"' EXIT
+    if "$MASK_BIN" "$MASKED" "$ROOT" src >/dev/null; then
+        SCAN_ROOT="$MASKED"
+    else
+        echo "[intent-discipline] 마스킹 실패 — 원문에서 본다(문자열·주석 안의 호출까지 세어진다)." >&2
+    fi
+else
+    echo "[intent-discipline] 원문에서 본다 — 문자열·주석 안의 호출까지 세어진다." >&2
+fi
+
+matches=$(find "$SCAN_ROOT/src" -name '*.rs' -type f -print0 \
+  | xargs -0 awk -v exempt_all="$exempt_all_re" -v exempt_pane="$exempt_pane_re" \
+        -v scan_root="$SCAN_ROOT/" -v root="$ROOT/" '
+# 훑는 것은 **마스킹 사본**이다(M). 보고 좌표와 사유 주석은 원본에서 읽는다(L) —
+# 사유는 주석에 적히므로 마스킹된 쪽에는 없다. 줄 번호는 사본이 보존한다.
 FNR == 1 {
     if (NR > 1) flush()
-    file = FILENAME; nl = 0; inblock = 0
+    file = FILENAME
+    sub("^" scan_root, "", file)      # 면제 경로 매칭과 보고 좌표는 레포 기준이다
+    nl = 0
     is_test_file = (file ~ /_tests\.rs$/)
+    # 원본을 같은 줄 번호로 들여온다. 못 읽으면 사본으로 대신한다 — 사유를 못 찾아
+    # 더 많이 잡는 방향이라 조용한 통과가 안 된다.
+    orig = root file
+    no = 0
+    while ((getline oline < orig) > 0) { no++; O[no] = oline }
+    close(orig)
 }
-{ nl++; L[nl] = $0; M[nl] = mask($0) }
+{ nl++; M[nl] = $0; L[nl] = (nl <= no ? O[nl] : $0) }
 END { flush() }
 
 function flush(   i, j, depth, k, hay, exA, exP) {
