@@ -81,23 +81,36 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 **전환 전에 값 대조부터 한다.** 접근자를 부르기 전에 그 자리가 지금 그리는 값을 재고,
 토큰 값과 다르면 연결하지 말고 디자인 판단을 받는다.
 
-실측(2026-09-05, 치수 접근자 208): **도달 125 · 별칭 필드로 도달 53 · 자체 계산이면서
-미도달 30.** "안 불리는 접근자 83" 이라는 수는 오해를 부른다 — 그중 53 은 같은 값을
-**base 필드 이름으로 이미 부르고 있다**(예: `titlebar-caption-width` ↔ `caption_width`).
+실측(2026-09-05, 치수 접근자 208): 접근자 이름으로 불리는 것 125 · **base 필드 이름으로
+불리는 것 53** · 자체 계산이면서 아무 이름으로도 안 불리는 것 30.
 
-값이 어긋나는 것으로 **확인된** 자리는 셋이고 셋 다 상태 점 계열이다.
+★ **"안 불리는 접근자" 를 세는 것으로는 이 위험을 못 잰다.** 접근자가 안 불려도 같은 값이
+base 필드 이름으로 이미 불리고 있을 수 있고(예: `titlebar-caption-width` ↔ `caption_width`),
+반대로 **base 이름으로 불리고 있어도 그 컴포넌트 자리는 다른 값을 그리고 있을 수 있다.**
+아래 표의 `tab-dot-size` 와 `toast-gap` 이 정확히 뒤쪽이다 — 둘 다 "불리는" 쪽에 있는데
+자리는 어긋난다. **호출 여부와 값 일치는 독립이다.**
+
+값이 어긋나는 것으로 **확인된** 자리는 다섯이다.
 
 | 토큰 | 토큰 값 | 지금 그리는 값 | 자리 |
 |---|---|---|---|
 | `component.tab-dot-size` | 8 | **6** | `src/adapters/ui/tab_bar.rs` (`TAB_BUSY_DOT_SIZE`) |
+| `component.status-dot-size` (+ `badge-`/`tag-`/`tab-` 별칭) | 8 | **7** | `crates/tasty-ui-widgets/src/status_bar.rs` (`DOT_SIZE`) |
 | `component.status-dot-attached-ring-width` | 2 | **1.5** | `src/adapters/ui/sidebar/view.rs` (`ATTACHED_OUTLINE_WIDTH`) |
 | `component.status-dot-attached-ring-offset` | 2 | **1.5** | 같은 자리 (ring 반경 계산) |
+| `component.toast-gap` | 8 | **6** | `crates/tasty-ui-widgets/src/tokens.rs` (`TOAST_GAP`) |
 
-나머지 27 은 **미측정**이다 — 값이 2 · 4 · 8 · 12 · 16 · 24 · 28 처럼 어디에나 있는 수라
-"그 파일에 그 값이 있다" 가 "그 자리가 그 값을 그린다" 를 뜻하지 않는다. 0 이 아니라
-안 잰 것이다.
+**마지막 줄은 소스가 반대로 적고 있다** — `TOAST_GAP` 의 doc 은 "4px 그리드 밖(6)이라
+**대응 토큰이 없다**" 인데, `component.toast-gap` 이 `{semantic.space-sm}` = 8 로 존재한다.
+그리드 스텝에서 6 을 못 찾은 것이 "토큰이 없다" 로 적힌 것이다. **그리드 스케일에 없는
+것과 컴포넌트 토큰이 없는 것은 다른 물음이다.**
 
-**세 건 다 소스에는 이미 기록돼 있었다 — 각 상수의 doc 주석에.** 그런데 전환을 하는 쪽은
+나머지는 **미측정**이다 — 0 이 아니라 안 잰 것이다. 이름이 같은 const 를 기계로 대조해
+봤지만 `GAP` · `POPUP_WIDTH` · `MIN_HEIGHT` 같은 흔한 이름이 무관한 토큰에 무더기로 걸려
+(예: `component.transfer-popup-width` ↔ 파일 피커의 `POPUP_WIDTH`) 그 수는 위험의 크기가
+아니라 이름 충돌의 크기였다. **이 축의 판정은 이름이 아니라 정의를 열어야 선다.**
+
+**다섯 중 넷은 소스에 이미 기록돼 있었다 — 각 상수의 doc 주석에.** 그런데 전환을 하는 쪽은
 상수 주석이 아니라 이 문서를 읽는다. 그래서 여기 옮겨 적는다.
 
 ## 관련
