@@ -82,6 +82,7 @@ PNG · JPEG 등을 보고, 간단히 그립니다. **새 이미지** 는 빈 캔
 - 툴바 — **이전 이미지** <!-- en: Previous image --> / **다음 이미지** <!-- en: Next image --> (같은 폴더 안), **새로고침** <!-- en: Refresh -->, **편집** <!-- en: Edit -->, **새 이미지** <!-- en: New image -->, 확대 **Fit** / `+` / `-`.
 - **편집** 을 누르면 **굵기** <!-- en: Brush --> · **색상** <!-- en: Color --> 을 고르고 위에 그립니다. `Ctrl+Z` / `Ctrl+Shift+Z` 로 되돌리고 다시 합니다. **저장** <!-- en: Save --> 은 PNG 로 씁니다.
 - `tasty image paste --surface <ID>` 로 클립보드의 이미지를 떠 있는 선택 영역으로 붙여넣습니다.
+- `tasty image list` 는 **창이 여러 개여도** 열려 있는 이미지를 전부 보여줍니다.
 
 ```sh
 tasty image list

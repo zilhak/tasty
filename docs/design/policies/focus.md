@@ -54,6 +54,12 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
       카운터에 hook 과 global hook 이 없어 두 창의 hook 이 같은 id 를 받는다. 실측:
       비포커스 창의 global hook 은 존재하는데 `unset --hook <id>` 가 포커스된 창의 것을
       지우고, 두 번째 호출은 `removed: false` 다 — **어떤 요청으로도 닿지 않는다.**
+  - **번들 plugin 이 점유한 namespace 아래의 host `list` 도 합산 대상이다.** `image.list` 가
+    그 형태다 — 외부 호출은 step 5 의 plugin namespace forward 가 먼저 집지만, plugin 이
+    그 메서드를 자기가 답하지 않고 trampoline 으로 host 에 되돌리고(`host.call`) 그
+    되돌림은 forward 단계가 없는 경로로 들어와 합산 지점을 지난다. **plugin 이 앞에
+    선다는 것은 합산 면제의 근거가 아니다** — 면제 여부는 그 host 핸들러가 창 소유
+    컬렉션을 순회하는가로만 정해진다.
   - **모든 창에 상수로 존재하는 예약 항목은 합산에서 한 줄로 접는다.** `workspace_category` 의 `normal`(id 0)이 그 형태다 — 창마다 하나씩 있어 합치면 같은 id 가 창 수만큼 나온다. 접은 줄은 "어느 창의 것인가" 에 답할 수 없지만(창을 안 적으면 지목이 안 되고, 하나를 고르면 거짓이다) **그 물음이 생기지 않는 항목일 때만** 접어도 된다: `normal` 은 rename·delete·move 가 전부 거부해 어떤 요청의 대상도 아니다. 대상이 될 수 있는 항목이라면 접지 말고 id 공간을 고쳐야 한다. 접은 줄의 집계 필드는 뜻을 명시한다 — 개수는 전 창 합, 위치는 고정 불변량, 접힘은 **모든** 창에서 접혀 있을 때만 참.
   - **순서를 바꾸는 명령은 대상을 id 로 받는다 — index 는 목적지에만 쓴다.** index 는 창 안의 위치라 그것만으로는 창이 정해지지 않는다. `tab.move` 가 `pane_id` + `from_index`/`to_index` 로 주인을 먼저 짚는 형태이고, `workspace.move`·`workspace_category.move` 도 `id` + `to_index` 를 받는다. 주인이 정해진 뒤의 `to_index` 는 그 창 안의 자리라 뜻이 분명하다. 종전의 index-only 형태는 호환을 위해 남아 있고 그때는 포커스된 창에 떨어진다 — 둘을 함께 주면 거절한다(어긋났을 때 조용히 한쪽을 고르지 않는다).
   - 합산이 옳으려면 그 자원의 **id 가 창을 건너 유일해야** 한다. 안 그러면 합친 목록에 같은 id 가 둘 들어가 호출자가 어느 쪽도 지목할 수 없다. 유일성은 `IdGenerator` 가 카운터를 engine 간에 공유해 보장한다 — 그 공유가 빠져 있던 동안 두 창의 pty 가 같은 id 를 받았고, **먼저 만든 쪽은 어떤 요청으로도 닿을 수 없었다**(라우팅이 먼저 찾힌 engine 을 고른다).

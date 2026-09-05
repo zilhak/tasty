@@ -1,4 +1,4 @@
-<!-- source-hash: 5067f8f18b6f -->
+<!-- source-hash: d84f62199b87 -->
 # Opening files
 
 After reading this page you will know how to open and work with files in non-terminal Surfaces — Explorer · Markdown · image · HTML — and how to open the window that shows git status.
@@ -83,6 +83,7 @@ View PNG · JPEG and so on, and draw simply. **New Image** starts with an empty 
 - Toolbar — **Previous image** / **Next image** (within the same folder), **Refresh**, **Edit**, **New image**, zoom **Fit** / `+` / `-`.
 - Press **Edit** to choose **Brush** · **Color** and draw on top. Undo and redo with `Ctrl+Z` / `Ctrl+Shift+Z`. **Save** writes a PNG.
 - `tasty image paste --surface <ID>` pastes the clipboard image as a floating selection.
+- `tasty image list` shows every open image **across all windows**.
 
 ```sh
 tasty image list
