@@ -330,7 +330,13 @@ pub struct AppState {
     pub(crate) tutorial: crate::adapters::ui::tutorial::TutorialRuntime,
     /// All transient dialog/popup state.
     pub(crate) dialogs: DialogState,
-    /// Measured tab bar height in physical pixels, updated each frame by egui.
+    /// 측정된 탭바 높이(물리 픽셀). 매 프레임 `adapters::ui::tab_bar` 가 실측값으로
+    /// 덮는다 — 여기 있는 것은 **아직 안 쟀다**는 뜻의 자리표시자다.
+    ///
+    /// 그래서 0 으로 시작한다. 논리 토큰(`SIZING.tab_bar_height`)과 같은 수를 넣으면
+    /// **배율 1 에서만 우연히 맞는 값**이 되어, 덮는 자리가 조건부가 되거나 첫 프레임
+    /// 전에 읽는 경로가 생겼을 때 배율 2 에서 정확히 절반인 그럴듯한 수로 조용히
+    /// 지나간다. 0 은 그 상황에서 탭바가 사라져 눈에 띈다.
     pub(crate) tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
     #[cfg(feature = "gui")]
@@ -1095,7 +1101,7 @@ impl AppState {
             #[cfg(feature = "gui")]
             tutorial: crate::adapters::ui::tutorial::TutorialRuntime::default(),
             dialogs: DialogState::new(),
-            tab_bar_height: PhysicalPx(24.0),
+            tab_bar_height: PhysicalPx(0.0),
             captured_double_tap: None,
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
@@ -1763,5 +1769,28 @@ mod keyboard_overlay_tests {
         assert!(keyboard_overlay_open(true, false, false, false));
         assert!(keyboard_overlay_open(false, true, false, false));
         assert!(keyboard_overlay_open(false, false, true, false));
+    }
+}
+
+#[cfg(test)]
+mod tab_bar_height_seed_tests {
+    use super::*;
+
+    /// 논리 토큰과 같은 수로 씨앗을 주면 배율 1 에서만 맞는 값이 된다. 이 필드는
+    /// 실측이 채우는 자리이므로 씨앗은 "안 쟀다" 여야 한다.
+    #[test]
+    fn the_seed_is_not_the_logical_token() {
+        let (state, _engine) = super::tests::test_state();
+        let seeded = state.tab_bar_height;
+        assert_eq!(
+            seeded,
+            PhysicalPx(0.0),
+            "씨앗은 '안 쟀다' 를 뜻하는 0 이어야 한다"
+        );
+        assert_ne!(
+            seeded.value(),
+            tasty_type_appearance::theme::SIZING.tab_bar_height.value(),
+            "씨앗이 논리 토큰과 같은 수다 — 배율 1 에서만 맞는 값이라 배율 2 에서 절반으로 조용히 지나간다"
+        );
     }
 }
