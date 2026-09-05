@@ -180,7 +180,10 @@ fn draw_theme_swatch(
 
     let pad = th.spacing_sm.value();
     let stripe_h = THEME_SWATCH_STRIPE_HEIGHT.value();
-    let label_h = th.font_size_body.value() + THEME_SWATCH_LABEL_PAD.value();
+    // 라벨 줄 여백. 이 카드 높이 식은 `pad`(spacing_sm) · `gap`(spacing_xs) ·
+    // `font_size_body` 를 더하는데 셋 다 배율을 탄다 — 이 항만 평상수면 1.2 에서
+    // 글자는 커지고 여백은 그대로라 라벨이 카드에 낀다.
+    let label_h = th.font_size_body.value() + th.spacing_xs.value();
     let gap = th.spacing_xs.value();
     let card_w = ui.available_width();
     let card_h = pad + stripe_h + gap + label_h + pad;
@@ -1035,7 +1038,6 @@ const COLOR_FIELD_NAME_WIDTH: LogicalPx = LogicalPx(150.0);
 
 /// Theme 프리셋 스와치(design #5): 5색 스트라이프 높이 / 스트라이프~라벨 사이 여백.
 const THEME_SWATCH_STRIPE_HEIGHT: LogicalPx = LogicalPx(38.0);
-const THEME_SWATCH_LABEL_PAD: LogicalPx = LogicalPx(4.0);
 
 /// 한 색 행: 표시 이름(기술 토큰, 비번역) + base/override 접근자(fn 포인터).
 struct ColorRowDef {
