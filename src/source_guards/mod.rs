@@ -661,6 +661,11 @@ mod dispatch_name_literals;
 /// 막으므로 하나만 밖에 있어도 직렬화가 통째로 무효가 된다.
 mod test_serialization_locks;
 
+/// 트리거와 무관하게 필요한 일(설치·부팅 정화)이 조합마다 부팅 경로에 걸려 있는지
+/// 본다. 요청 경로가 유일한 채널이면 그 요청 형태가 좁아지는 순간 그 일이 조용히
+/// 사라진다 — 실제로 났고, 컴파일도 두 조합의 유닛 스위트도 못 잡았다.
+mod jobs_anchored_at_boot;
+
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
 /// 번들 plugin 명부가 적힌 다섯 자리(cfg 두 갈래 · 매니페스트 실물 · 문서 두 곳)가
