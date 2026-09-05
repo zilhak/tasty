@@ -10,9 +10,10 @@ impl AppState {
         &self,
         engine: &'a CoreState,
         terminal_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> Vec<(PaneId, PhysicalRect, Vec<SurfaceRegion<'a>>)> {
         let ws = self.active_workspace(engine);
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
         let mut result = Vec::new();
         for (pane_id, pane_rect) in pane_rects {
@@ -131,7 +132,11 @@ impl AppState {
             }
         }
         for sid in deferred {
-            engine.ensure_surface_initialized(sid);
+            // terminal placeholder 먼저 시도. false 면 terminal 이 아니라는 뜻이므로
+            // plugin placeholder 실제화를 시도한다(둘 다 아니면 no-op — 이미 reify됨).
+            if !engine.ensure_surface_initialized(sid) {
+                engine.reify_plugin_surface(sid);
+            }
         }
     }
 
@@ -141,9 +146,12 @@ impl AppState {
         &self,
         engine: &CoreState,
         terminal_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> Option<PhysicalRect> {
         let surface_id = self.focused_surface_id(engine)?;
-        for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
+        for (_pane_id, _pane_rect, regions) in
+            &self.surface_regions(engine, terminal_rect, scale_factor)
+        {
             for r in regions {
                 if r.id == surface_id {
                     return Some(r.rect);
@@ -164,8 +172,11 @@ impl AppState {
         row: usize,
         cell_w: f32,
         cell_h: f32,
+        scale_factor: f32,
     ) -> Option<PhysicalRect> {
-        for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
+        for (_pane_id, _pane_rect, regions) in
+            &self.surface_regions(engine, terminal_rect, scale_factor)
+        {
             for r in regions {
                 if r.id == surface_id {
                     return Some(PhysicalRect {
@@ -186,8 +197,11 @@ impl AppState {
         engine: &CoreState,
         surface_id: u32,
         terminal_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> Option<PhysicalRect> {
-        for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
+        for (_pane_id, _pane_rect, regions) in
+            &self.surface_regions(engine, terminal_rect, scale_factor)
+        {
             for r in regions {
                 if r.id == surface_id {
                     return Some(r.rect);
@@ -204,8 +218,11 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> Option<u32> {
-        for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
+        for (_pane_id, _pane_rect, regions) in
+            &self.surface_regions(engine, terminal_rect, scale_factor)
+        {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     return Some(r.id);
@@ -233,6 +250,7 @@ impl AppState {
         terminal_rect: PhysicalRect,
         cell_width: f32,
         cell_height: f32,
+        scale_factor: f32,
     ) {
         crate::core::Core::resize_all_terminals(
             self,
@@ -240,6 +258,7 @@ impl AppState {
             terminal_rect,
             cell_width,
             cell_height,
+            scale_factor,
         );
     }
 }

@@ -129,7 +129,7 @@ fn outside_point(popup_pos: egui::Pos2) -> egui::Pos2 {
 fn close_button_point(popup_pos: egui::Pos2, popup_size: egui::Vec2) -> egui::Pos2 {
     egui::pos2(
         popup_pos.x + popup_size.x - 14.0,
-        popup_pos.y + title_bar_height() / 2.0,
+        popup_pos.y + title_bar_height().value() / 2.0,
     )
 }
 

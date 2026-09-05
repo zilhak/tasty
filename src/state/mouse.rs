@@ -1,12 +1,26 @@
-use crate::model::{DividerInfo, PhysicalPx, PhysicalRect, SplitDirection};
+use crate::model::{DividerInfo, LogicalPx, PhysicalPx, PhysicalRect, SplitDirection};
 
 use super::AppState;
 use crate::core::CoreState;
 
-/// divider 히트 판정 밴드의 반폭(px). press 로 드래그를 시작하는 경로, 커서 아이콘
-/// 경로, 트래킹 앱 hover 보고 가드가 **같은 값**을 봐야 "커서는 ↔ 인데 TUI 는 hover 를
-/// 받는" 식의 어긋남이 생기지 않는다. 세 곳에 리터럴로 흩어두면 드리프트한다.
-pub const DIVIDER_HIT_THRESHOLD: f32 = 4.0;
+/// divider 히트 판정 밴드의 반폭. press 로 드래그를 시작하는 경로, 커서 아이콘 경로,
+/// 트래킹 앱 hover 보고 가드가 **같은 값**을 봐야 "커서는 ↔ 인데 TUI 는 hover 를 받는"
+/// 식의 어긋남이 생기지 않는다. 여러 곳에 리터럴로 흩어두면 드리프트한다.
+///
+/// **논리 길이다.** 이 값이 물리였을 때는 DPI 배율 2 화면에서 드래그 표적의 실제
+/// 크기가 절반이 됐다 — 물리 픽셀은 배율이 오를수록 작아지므로, 조작 표적을 물리로
+/// 고정하면 고배율일수록 집기 어려워진다. 배율 1 에서는 논리=물리라 그 회귀가
+/// 드러나지 않는다. 비교 좌표계로 내리는 것은 [`divider_hit_threshold_physical`].
+pub const DIVIDER_HIT_THRESHOLD: LogicalPx = LogicalPx(4.0);
+
+/// 히트 밴드를 비교 좌표계(물리)로 내린다.
+///
+/// 마우스 좌표가 물리라 비교 직전에 한 번만 변환한다. 호출부마다 `to_physical` 을
+/// 적으면 그것이 곧 위 doc 이 경고하는 드리프트의 다음 형태이므로, 변환도 이 한
+/// 곳에만 둔다.
+pub fn divider_hit_threshold_physical(scale_factor: f32) -> f32 {
+    DIVIDER_HIT_THRESHOLD.to_physical(scale_factor).value()
+}
 
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
@@ -18,7 +32,7 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
-        divider_threshold: f32,
+        scale_factor: f32,
     ) -> Option<egui::CursorIcon> {
         // 전체화면 무대 중에는 뒤의 divider/surface 커서를 절대 돌려주지 않는다.
         // 무대는 화면 전체를 덮으므로 그 아래 좌표로 커서를 정하는 것은 유령 판정이고,
@@ -34,10 +48,8 @@ impl AppState {
 
         // 1. Divider check
         let divider = self
-            .find_pane_divider_at(engine, x, y, terminal_rect, divider_threshold)
-            .or_else(|| {
-                self.find_surface_divider_at(engine, x, y, terminal_rect, divider_threshold)
-            });
+            .find_pane_divider_at(engine, x, y, terminal_rect, scale_factor)
+            .or_else(|| self.find_surface_divider_at(engine, x, y, terminal_rect, scale_factor));
         if let Some(info) = divider {
             return Some(match info.direction {
                 SplitDirection::Vertical => egui::CursorIcon::ResizeHorizontal,
@@ -46,7 +58,9 @@ impl AppState {
         }
 
         // 2. Surface check — terminal surface는 텍스트 커서, 그 외는 기본.
-        for (_pane_id, _pane_rect, regions) in &self.surface_regions(engine, terminal_rect) {
+        for (_pane_id, _pane_rect, regions) in
+            &self.surface_regions(engine, terminal_rect, scale_factor)
+        {
             for r in regions {
                 if r.rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     let _local = (x - r.rect.x.value(), y - r.rect.y.value());
@@ -69,11 +83,16 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
-        threshold: f32,
+        scale_factor: f32,
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
-        ws.pane_layout()
-            .find_divider_at(x, y, terminal_rect, threshold)
+        ws.pane_layout().find_divider_at(
+            x,
+            y,
+            terminal_rect,
+            divider_hit_threshold_physical(scale_factor),
+            scale_factor,
+        )
     }
 
     /// Find a surface-level divider at the given position (within the focused pane's panel).
@@ -83,11 +102,11 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
-        threshold: f32,
+        scale_factor: f32,
     ) -> Option<DividerInfo> {
         let ws = self.active_workspace(engine);
         let focused_id = ws.focused_pane;
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
         let pane_rect = match pane_rect {
@@ -105,7 +124,13 @@ impl AppState {
         };
 
         let tab = pane.tabs.get(pane.active_tab)?;
-        tab.layout().find_divider_at(x, y, content_rect, threshold)
+        tab.layout().find_divider_at(
+            x,
+            y,
+            content_rect,
+            divider_hit_threshold_physical(scale_factor),
+            scale_factor,
+        )
     }
 
     /// Update a pane-level split ratio based on a divider drag.
@@ -116,6 +141,7 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
         let new_ratio = match divider.direction {
             SplitDirection::Vertical => {
@@ -130,6 +156,7 @@ impl AppState {
             divider.split_rect,
             new_ratio,
             terminal_rect,
+            scale_factor,
         );
         if updated {
             engine.mark_layout_dirty();
@@ -145,6 +172,7 @@ impl AppState {
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
         let new_ratio = match divider.direction {
             SplitDirection::Vertical => {
@@ -158,7 +186,7 @@ impl AppState {
         let tab_bar_h = self.tab_bar_height;
         let ws = self.active_workspace_mut(engine);
         let focused_id = ws.focused_pane;
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
 
         let pane_rect = pane_rects.into_iter().find(|(id, _)| *id == focused_id);
         let pane_rect = match pane_rect {
@@ -182,9 +210,12 @@ impl AppState {
             None => return false,
         };
 
-        let updated =
-            tab.layout_mut()
-                .update_ratio_for_rect(divider.split_rect, new_ratio, content_rect);
+        let updated = tab.layout_mut().update_ratio_for_rect(
+            divider.split_rect,
+            new_ratio,
+            content_rect,
+            scale_factor,
+        );
         if updated {
             engine.mark_layout_dirty();
         }
