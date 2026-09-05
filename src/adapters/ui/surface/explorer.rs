@@ -44,7 +44,7 @@ const FAV_PIN_THRESHOLD_H: LogicalPx = LogicalPx(600.0);
 /// 좁은 사이드바에서 Favorites 가 차지하는 본문 높이 비율.
 const FAV_PIN_RATIO: f32 = 0.4;
 /// Favorites 고정 영역 최소 높이 하한.
-const FAV_PIN_MIN_H: f32 = 120.0;
+const FAV_PIN_MIN_H: LogicalPx = LogicalPx(120.0);
 
 /// `draw_explorer` 가 호스트에 위임하는 액션. 렌더 루프 종료 후 적용된다.
 #[derive(Clone, Debug)]
@@ -669,7 +669,7 @@ fn favorites_pin_height(body_h: f32) -> f32 {
     if body_h <= 0.0 || body_h >= FAV_PIN_THRESHOLD_H.value() {
         return FAV_PIN_BASE_H.value();
     }
-    ((body_h * FAV_PIN_RATIO / 4.0).round() * 4.0).max(FAV_PIN_MIN_H)
+    ((body_h * FAV_PIN_RATIO / 4.0).round() * 4.0).max(FAV_PIN_MIN_H.value())
 }
 
 /// 즐겨찾기 빈 상태 (design `FavoritesEmpty`): 흐린 별 + "No favorites yet" + 힌트.

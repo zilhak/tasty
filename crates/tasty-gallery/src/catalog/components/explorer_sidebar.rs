@@ -290,11 +290,11 @@ fn favorites_pin_height(body_h: f32) -> f32 {
     const BASE: LogicalPx = LogicalPx(240.0);
     const THRESHOLD: LogicalPx = LogicalPx(600.0);
     const RATIO: f32 = 0.4;
-    const MIN: f32 = 120.0;
+    const MIN: LogicalPx = LogicalPx(120.0);
     if body_h <= 0.0 || body_h >= THRESHOLD.value() {
         return BASE.value();
     }
-    ((body_h * RATIO / 4.0).round() * 4.0).max(MIN)
+    ((body_h * RATIO / 4.0).round() * 4.0).max(MIN.value())
 }
 
 fn fav_row(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {

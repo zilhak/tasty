@@ -31,7 +31,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 // ── 프레임 고정 치수 (디자인 raw px 근사 — 화면 전용 고정값, token-policy §c) ──
-const FRAME_W: f32 = 640.0;
+const FRAME_W: LogicalPx = LogicalPx(640.0);
 const FRAME_H: f32 = 480.0;
 const HEADER_H: f32 = 44.0; // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
 const HEADER_PAD_L: f32 = 14.0; // 디자인 L14
@@ -254,10 +254,10 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
         ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
-            ui.set_width(FRAME_W);
+            ui.set_width(FRAME_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(FRAME_W);
+                ui.set_width(FRAME_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 header(ui, theme, remote);
                 path_bar(ui, theme, remote);
@@ -268,7 +268,8 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
 }
 
 fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, HEADER_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), HEADER_H), egui::Sense::hover());
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -345,7 +346,8 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
 }
 
 fn path_bar(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, PATH_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), PATH_H), egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
     ui.painter().hline(
@@ -520,7 +522,10 @@ fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: f32) -> String {
 }
 
 fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, LIST_HEAD_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), LIST_HEAD_H),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -640,7 +645,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::Loaded => {
             list_header(ui, theme, multi);
             let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(FRAME_W, BODY_H - LIST_HEAD_H),
+                egui::vec2(FRAME_W.value(), BODY_H - LIST_HEAD_H),
                 egui::Sense::hover(),
             );
             let mut col = ui.new_child(
@@ -717,7 +722,8 @@ fn center(
     body_text: Option<&str>,
     action: Option<&str>,
 ) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, BODY_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), BODY_H), egui::Sense::hover());
     let mut col = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -754,7 +760,8 @@ fn center(
 }
 
 fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, FOOTER_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), FOOTER_H), egui::Sense::hover());
     ui.painter().hline(
         rect.x_range(),
         rect.top(),

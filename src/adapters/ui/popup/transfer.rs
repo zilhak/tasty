@@ -16,6 +16,7 @@
 //! 상태 공급: `AppState.dialogs.transfer_progress`(진행 행 Vec) / `transfer_error`(실패 큐).
 //! 08 워커가 진행 이벤트로 행을 갱신하고, 완료/실패 시 App 이 팝업을 open/close/승격한다.
 
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
@@ -31,7 +32,7 @@ pub const TRANSFER_ERROR_POPUP_ID: &str = "transfer_error";
 
 // ── 프레임 고정 치수 (디자인 raw px — 화면 전용 popup 좌표, token-policy §c) ──
 /// `--tasty-transfer-popup-width` (size-400).
-const FRAME_W: f32 = 400.0;
+const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
 const PAD_X: f32 = 14.0;
 /// 헤더 세로 패딩 (디자인 12 = space-md).
@@ -103,7 +104,7 @@ pub fn transfer_progress_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
     // 행 하나: fileRow(~18) + gap + bar(4) + gap + statsRow(~15).
     let row_h = 18.0 + BODY_GAP + 4.0 + BODY_GAP + 15.0;
     let body_h = BODY_PAD * 2.0 + row_h * n as f32 + BODY_GAP * (n.saturating_sub(1)) as f32;
-    egui::vec2(FRAME_W, header_h + body_h + footer_h)
+    egui::vec2(FRAME_W.value(), header_h + body_h + footer_h)
 }
 
 /// 실패 팝업 높이 = header + body(prose + reason well) + footer. reason 길이로 well 줄수 추정.
@@ -124,7 +125,7 @@ pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
     // well: 패딩 8+8 + 텍스트 줄.
     let well_h = 16.0 + well_lines * th.font_size_caption.value() * 1.4;
     let body_h = BODY_PAD * 2.0 + prose_h + BODY_GAP + well_h;
-    egui::vec2(FRAME_W, header_h + body_h + footer_h)
+    egui::vec2(FRAME_W.value(), header_h + body_h + footer_h)
 }
 
 // ── draw_fn ────────────────────────────────────────────────────────────────
@@ -162,7 +163,7 @@ pub fn draw_transfer_progress(
     let mut cancel = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.vertical(|ui| {
-        ui.set_width(FRAME_W);
+        ui.set_width(FRAME_W.value());
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         header_band(
             ui,
@@ -240,7 +241,7 @@ pub fn draw_transfer_error(
     let mut retry = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     ui.vertical(|ui| {
-        ui.set_width(FRAME_W);
+        ui.set_width(FRAME_W.value());
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         header_band(
             ui,
@@ -335,7 +336,8 @@ fn header_band(
     trailing: Option<&str>,
 ) {
     let band_h = HEADER_PAD_Y * 2.0 + HEADER_CONTENT_H;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, band_h), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), band_h), egui::Sense::hover());
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -500,7 +502,8 @@ fn footer_buttons<R>(
 ) -> R {
     let btn_h = ControlSize::Sm.height(th);
     let band_h = FOOTER_PAD_Y * 2.0 + btn_h;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, band_h), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), band_h), egui::Sense::hover());
     ui.painter().hline(
         rect.x_range(),
         rect.top(),

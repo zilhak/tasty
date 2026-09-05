@@ -12,11 +12,12 @@ use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::{t, t_fmt2};
 use crate::state::AppState;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 pub const CONFIRM_DELETE_CATEGORY_POPUP_ID: &str = "confirm_delete_category";
 
 /// 다이얼로그 폭 (디자인 380px).
-const WIDTH: f32 = 380.0;
+const WIDTH: LogicalPx = LogicalPx(380.0);
 
 /// 대상 카테고리 스냅샷(이름 + 소속 워크스페이스 수).
 struct Target {
@@ -57,7 +58,7 @@ pub fn confirm_delete_category_sizer(
     let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     // 헤더(글리프+제목) + 본문 + 버튼 행 + 여백.
     let content_h = 24.0 + body_h + 40.0;
-    egui::vec2(WIDTH, popup::content_margin() * 2.0 + content_h)
+    egui::vec2(WIDTH.value(), popup::content_margin() * 2.0 + content_h)
 }
 
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(취소/외부/Escape) 삭제 대상을 비운다.

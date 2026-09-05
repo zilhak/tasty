@@ -14,11 +14,12 @@ use crate::i18n::t;
 use crate::intent::Intent;
 use crate::state::AppState;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 pub const RAIL_CATEGORY_POPUP_ID: &str = "rail_category";
 
 /// 팝업 폭 (디자인 minWidth 176).
-const POPUP_WIDTH: f32 = 176.0;
+const POPUP_WIDTH: LogicalPx = LogicalPx(176.0);
 /// 메뉴 항목 한 줄 높이 (디자인 28px 행). draw 와 sizer 가 공유.
 const ITEM_HEIGHT: f32 = 28.0;
 /// 헤더(이름) 영역 높이 — 라벨 + 상하 패딩 + 하단 보더.
@@ -218,13 +219,16 @@ pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) ->
         // separator(border_width) + 상하 spacing_xs.
         content_h += th.border_width.value() + th.spacing_xs.value() * 2.0;
     }
-    egui::vec2(POPUP_WIDTH, popup::content_margin() * 2.0 + content_h + 1.0)
+    egui::vec2(
+        POPUP_WIDTH.value(),
+        popup::content_margin() * 2.0 + content_h + 1.0,
+    )
 }
 
 /// PopupDef.default_size — register 시점 placeholder. sizer 가 매 프레임 재계산.
 pub fn rail_category_default_size() -> egui::Vec2 {
     egui::vec2(
-        POPUP_WIDTH,
+        POPUP_WIDTH.value(),
         popup::content_margin() * 2.0 + HEADER_HEIGHT + 2.0 * ITEM_HEIGHT,
     )
 }

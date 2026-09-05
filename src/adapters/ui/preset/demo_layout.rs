@@ -72,7 +72,7 @@ const LEAF_SUMMARY_MIN_H: LogicalPx = LogicalPx(72.0);
 /// `SPLIT_ZONE_MIN` 과 같은 46px 구조 상수 계열.
 const LEAF_ICON_ONLY_MIN: LogicalPx = LogicalPx(46.0);
 /// inline leaf form 최대 폭.
-const FORM_MAX_W: f32 = 240.0;
+const FORM_MAX_W: LogicalPx = LogicalPx(240.0);
 /// inline leaf form 좌우 padding.
 const FORM_PAD: f32 = 6.0;
 /// inline leaf form 필드 세로 gap.
@@ -2076,7 +2076,9 @@ fn draw_leaf_form(
     leaf: &Leaf,
     cx: &mut DrawCtx<'_>,
 ) {
-    let inner_w = (rect.width() - FORM_PAD * 2.0).min(FORM_MAX_W).max(0.0);
+    let inner_w = (rect.width() - FORM_PAD * 2.0)
+        .min(FORM_MAX_W.value())
+        .max(0.0);
     if inner_w < 1.0 {
         return;
     }

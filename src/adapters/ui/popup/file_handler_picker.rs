@@ -35,8 +35,8 @@ pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 
 const POPUP_WIDTH: LogicalPx = LogicalPx(480.0);
 const ITEM_HEIGHT: f32 = 22.0;
-const LIST_MIN_HEIGHT: f32 = 4.0 * ITEM_HEIGHT; // 빈 list 도 시각적 공간 확보
-const LIST_MAX_HEIGHT: f32 = 10.0 * ITEM_HEIGHT;
+const LIST_MIN_HEIGHT: LogicalPx = LogicalPx(4.0 * ITEM_HEIGHT); // 빈 list 도 시각적 공간 확보
+const LIST_MAX_HEIGHT: LogicalPx = LogicalPx(10.0 * ITEM_HEIGHT);
 const HEADER_HEIGHT: f32 = 36.0; // 대상/형식 두 줄
 const BUTTON_ROW_HEIGHT: f32 = 28.0;
 const VERTICAL_PADDING: f32 = 8.0;
@@ -59,8 +59,8 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
         None => (0, 0),
     };
     let list_rows = cand_n.max(recent_n);
-    let list_height =
-        (list_rows.max(4) as f32 * ITEM_HEIGHT).clamp(LIST_MIN_HEIGHT, LIST_MAX_HEIGHT);
+    let list_height = (list_rows.max(4) as f32 * ITEM_HEIGHT)
+        .clamp(LIST_MIN_HEIGHT.value(), LIST_MAX_HEIGHT.value());
 
     let content_height =
         HEADER_HEIGHT + VERTICAL_PADDING + list_height + VERTICAL_PADDING + BUTTON_ROW_HEIGHT;
@@ -192,7 +192,7 @@ pub fn draw_file_handler_picker_view(
 
     let list_height = {
         let rows = props.candidates.len().max(props.recent.len());
-        (rows.max(4) as f32 * ITEM_HEIGHT).clamp(LIST_MIN_HEIGHT, LIST_MAX_HEIGHT)
+        (rows.max(4) as f32 * ITEM_HEIGHT).clamp(LIST_MIN_HEIGHT.value(), LIST_MAX_HEIGHT.value())
     };
 
     let total_w = ui.available_width();

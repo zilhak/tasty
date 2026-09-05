@@ -69,7 +69,7 @@ const MARKER_DEMO_INSET_B: f32 = 22.0;
 // faux 앱 무대 치수 — 본체 셸(사이드바·탭바·상태바·워크스페이스 행)의 비율을 흉내 내는
 // 데모 전용 구조 상수다. Theme 토큰이 아니라 이 무대 장치의 값·비율 자체가 의미라 명명
 // const 로 고정한다. 나머지 여백(8·12·16)은 실제 spacing 토큰과 값이 같아 토큰을 쓴다.
-const FAUX_SIDEBAR_W: f32 = 116.0;
+const FAUX_SIDEBAR_W: LogicalPx = LogicalPx(116.0);
 const FAUX_STATUSBAR_H: f32 = 20.0;
 const FAUX_ROW_H: f32 = 22.0;
 const FAUX_ROW_GAP: f32 = 3.0;
@@ -81,7 +81,7 @@ const FAUX_TEXT_PAD: f32 = 10.0;
 /// faux 무대의 사이드바 폭. 무대가 좁으면 절반으로 클램프된다 — 이 식을
 /// 복제하면 마커가 사이드바 경계에서 어긋나므로 한 곳에 둔다.
 fn faux_sidebar_w(r: egui::Rect) -> f32 {
-    FAUX_SIDEBAR_W.min(r.width() * 0.5)
+    FAUX_SIDEBAR_W.value().min(r.width() * 0.5)
 }
 
 fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
