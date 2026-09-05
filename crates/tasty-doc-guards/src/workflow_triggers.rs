@@ -551,12 +551,24 @@ mod coverage_tests {
     }
 
     /// 좁힘 없이 패키지를 부르는 잡이 있다 — 그것이 문서 가드들의 채널이다.
+    ///
+    /// ★ **양쪽을 함께 묻는다.** "덮인다" 만 재면 [`FilterFreeCoverage::covers`] 가 항상
+    /// 참을 내도 통과한다 — 그리고 그 고장은 이 판독을 쓰는 모든 가드를 한꺼번에
+    /// 무력화한다(덮였다고 답하면 사각이 0 이 되어 전부 초록이다). 한 방향만 재면
+    /// 무정보다.
     #[test]
-    fn the_doc_guard_package_has_a_filter_free_channel() {
+    fn the_coverage_answers_both_yes_and_no() {
         let c = coverage();
         assert!(
             c.covers("no_checkbox_in_docs", "tasty-doc-guards"),
             "`tasty-doc-guards` 가 필터 없는 채널에 안 덮인다: {c:?}"
+        );
+        assert!(
+            !c.covers("a_target_no_workflow_names", "tasty-plugin-markdown"),
+            "아무 워크플로도 이름으로 부르지 않고 그 패키지를 좁힘 없이 돌리지도 않는데 \
+             덮였다고 답했다. 판독이 한쪽으로만 답하는 상태이거나, 필터 없는 잡이 새로 \
+             `--workspace` 를 돌기 시작한 것이다(그러면 이 판독을 쓰는 사각 탐지가 전부 \
+             공허해지므로 그 자리에서 다시 판단해야 한다): {c:?}"
         );
     }
 }
