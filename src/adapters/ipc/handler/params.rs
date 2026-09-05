@@ -61,6 +61,32 @@ where
         })
 }
 
+/// 숫자(id) 로도 문자열(이름) 로도 올 수 있는 **식별 토큰**을 읽어 문자열로 정규화한다.
+///
+/// 이 모양이 관문 밖에 남으면 안 되는 이유는 다른 스칼라와 같다: 관문 밖의 코드가
+/// `v.as_u64()` 를 직접 부르는 순간, 그 자리가 자르기·버리기를 하는지 아무도 안 본다.
+/// 여기서는 자르지 않는다 — 숫자는 폭 변환 없이 십진 표기로 넘긴다.
+///
+/// 빈 문자열(공백만 포함)은 **미지정**으로 읽는다. 값을 안 넣은 것과 빈 칸을 보낸 것을
+/// 가를 근거가 없고, 이름 조회에 빈 토큰을 넘기면 "없는 이름" 이라는 엉뚱한 에러가 난다.
+pub(crate) fn read_id_or_name(params: &Value, key: &str) -> Result<Option<String>, String> {
+    let Some(raw) = present(params, key) else {
+        return Ok(None);
+    };
+    if let Some(n) = raw.as_u64() {
+        return Ok(Some(n.to_string()));
+    }
+    let Some(s) = raw.as_str() else {
+        return Err(malformed(
+            key,
+            raw,
+            "either a whole number (an id) or a string (a name)",
+        ));
+    };
+    let s = s.trim();
+    Ok((!s.is_empty()).then(|| s.to_string()))
+}
+
 /// 부호 있는 정수(시각·오프셋 등). 음수가 정당한 자리에 쓴다.
 pub(crate) fn read_i64(params: &Value, key: &str) -> Result<Option<i64>, String> {
     let Some(raw) = present(params, key) else {
@@ -228,6 +254,40 @@ mod tests {
         }
 
         assert!(require_u32(&json!({ "s": -1 }), "s", &id()).is_err());
+    }
+
+    /// 숫자/이름 겸용 토큰의 갈래. 숫자를 **폭에 맞춰 자르지 않는다**는 것이 요지다 —
+    /// 여기서 자르면 `u32` 범위 밖 id 가 실재하는 다른 카테고리 이름이 될 수 있다.
+    #[test]
+    fn read_id_or_name_normalises_both_shapes_without_narrowing_the_number() {
+        assert_eq!(read_id_or_name(&json!({}), "category").unwrap(), None);
+        assert_eq!(
+            read_id_or_name(&json!({ "category": Value::Null }), "category").unwrap(),
+            None
+        );
+        assert_eq!(
+            read_id_or_name(&json!({ "category": 3 }), "category").unwrap(),
+            Some("3".to_string())
+        );
+        // 폭보다 큰 수도 십진 표기 그대로 — 조회에서 "없는 id" 로 떨어질 뿐,
+        // 잘려서 **다른** 카테고리를 가리키지 않는다.
+        let big = u64::from(u32::MAX) + 2;
+        assert_eq!(
+            read_id_or_name(&json!({ "category": big }), "category").unwrap(),
+            Some(big.to_string())
+        );
+        assert_eq!(
+            read_id_or_name(&json!({ "category": " work " }), "category").unwrap(),
+            Some("work".to_string())
+        );
+        // 빈 토큰은 미지정.
+        assert_eq!(
+            read_id_or_name(&json!({ "category": "   " }), "category").unwrap(),
+            None
+        );
+        // 숫자도 문자열도 아니면 거절한다 — 조용히 미지정으로 바꾸지 않는다.
+        assert!(read_id_or_name(&json!({ "category": [1] }), "category").is_err());
+        assert!(read_id_or_name(&json!({ "category": 1.5 }), "category").is_err());
     }
 
     /// 선택 인자에서 **안 온 것**과 **잘못 온 것**이 갈린다. 종전에는 둘 다 `None` 이라

@@ -91,21 +91,8 @@ fn resolve_category_param(
     engine: &crate::core::CoreState,
     params: &serde_json::Value,
 ) -> Result<Option<crate::model::WorkspaceCategoryId>, String> {
-    let Some(v) = params.get("category") else {
+    let Some(token) = params::read_id_or_name(params, "category")? else {
         return Ok(None);
-    };
-    if v.is_null() {
-        return Ok(None);
-    }
-    let token = if let Some(n) = v.as_u64() {
-        n.to_string()
-    } else if let Some(s) = v.as_str() {
-        if s.trim().is_empty() {
-            return Ok(None);
-        }
-        s.to_string()
-    } else {
-        return Err("'category' must be a category id (number) or name (string)".to_string());
     };
     match engine.resolve_category(&token) {
         Some(id) => Ok(Some(id)),

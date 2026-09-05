@@ -201,18 +201,16 @@ fn parse_lifetime(params: &serde_json::Value) -> Result<Lifetime, String> {
         Persistence::Temporary
     };
 
-    // CLI 는 미지정 optional 을 JSON null 로 보내므로 null 은 "부재" 로 취급한다.
-    let ttl = params.get("ttl_secs").filter(|v| !v.is_null());
-    let count = params.get("count").filter(|v| !v.is_null());
+    // CLI 는 미지정 optional 을 JSON null 로 보내므로 null 은 "부재" 로 취급한다 —
+    // 그 판정은 `params` 관문이 든다(부재와 형식 오류를 가르는 자리도 거기다).
+    let ttl = params::read_int::<u64>(params, "ttl_secs")?;
+    let count = params::read_int::<u64>(params, "count")?;
 
     let limit = match (ttl, count) {
         (Some(_), Some(_)) => {
             return Err("specify at most one of 'ttl_secs' or 'count', not both".to_string());
         }
-        (Some(ttl), None) => {
-            let secs = ttl
-                .as_u64()
-                .ok_or_else(|| "'ttl_secs' must be a positive integer".to_string())?;
+        (Some(secs), None) => {
             if secs == 0 {
                 return Err("'ttl_secs' must be greater than 0".to_string());
             }
@@ -220,10 +218,7 @@ fn parse_lifetime(params: &serde_json::Value) -> Result<Lifetime, String> {
                 deadline_unix: now_unix().saturating_add(secs),
             }
         }
-        (None, Some(count)) => {
-            let remaining = count
-                .as_u64()
-                .ok_or_else(|| "'count' must be a positive integer".to_string())?;
+        (None, Some(remaining)) => {
             if remaining == 0 {
                 return Err("'count' must be greater than 0".to_string());
             }
