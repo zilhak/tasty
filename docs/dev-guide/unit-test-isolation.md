@@ -254,3 +254,50 @@ cargo test --workspace --lib --bins --no-default-features --locked -- --list | g
 목록은 동명 타깃이 dedup 된다 — 타깃별로 가르려면 `2>&1` 로 stderr 의 `Running` 줄을 함께
 받는다. 그리고 검사가 "위반 0" 을 냈을 때는 그것이 "위반 없음" 인지 "그 검사가 대상을 스캔
 범위에 안 넣어 아무것도 안 본 것" 인지 — 검사가 실제로 본 모수를 함께 확인해 가른다.
+
+## 8. 공유 픽스처 `test_state()` 는 **진짜 프로세스를 띄운다**
+
+`src/state/tests.rs` 의 `test_state()` / `test_state_with_memory()` 는 유닛 테스트가
+`AppState` + `CoreState` 한 쌍을 얻는 표준 통로다. 그 안에서 `CoreState::new` 이 도는데,
+이 생성자는 **기본 워크스페이스를 만들면서 실제 PTY 를 열고 실제 셸을 fork 한다**
+(`Pane::spawn_terminal` → `tasty_terminal::Terminal::new` → `portable_pty` →
+`std::process::Command::spawn`).
+
+그러니 이 픽스처를 쓰면 그 시험은 **파일 몇 개를 읽는 시험이 아니라 프로세스를 하나
+띄우는 시험**이다. 따라오는 것:
+
+- 자식 셸 프로세스 하나와 그 PTY(master `/dev/ptmx` + slave `/dev/pts/N`).
+- PTY 마다 exit-watcher OS 스레드 하나(`src/core/pty_registry.rs`).
+- `std::process::Command::spawn` 이 exec 결과를 부모에게 알리려고 내부에서 만드는
+  AF_UNIX SEQPACKET socketpair 한 쌍. **이것은 우리 코드의 채널이 아니다** — 그래서
+  "socketpair 한 번 = 자식 프로세스 spawn 한 번" 이라는 등식이 성립하고, 아래 명령이
+  spawn 횟수를 그대로 센다.
+
+### 몇 번 띄우는지는 이렇게 센다
+
+```bash
+cargo test --bin tasty --no-run                       # 테스트 바이너리 경로를 찍는다
+strace -f -e trace=socketpair -o /tmp/sp.txt <그 경로>
+grep -c 'socketpair(AF_UNIX' /tmp/sp.txt
+```
+
+수를 여기 적지 않는다([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md))
+— 시험이 늘면 같이 는다. 이 수의 성질만 적어 둘 값이 있다: **병렬도에 안 움직인다.**
+`--test-threads` 를 바꿔도 호출 총수는 같다(바뀌는 것은 동시에 살아 있는 수뿐이다).
+그래서 이 한 수는 "얼마나 많이 띄우는가" 만 재고 "얼마나 겹치는가" 에 오염되지 않는다.
+
+### 그 spawn 을 건너뛰는 길
+
+생성자 안에는 있다 — `pending_layout_restore` 가 차 있으면 기본 워크스페이스를 안 만들고,
+따라서 셸도 안 띄운다. 그 자리를 채우는 것은 `restore_layout` 설정이 켜져 있고 `layout_slot`
+이 실제로 읽히는 경우뿐이다.
+
+**그러나 테스트에서 닿는 길은 아니다.** `CoreState::new` 은 `layout_slot` 에 `None` 을
+넘기므로 그 가지가 아예 안 돈다. 지금 유닛 테스트가 이 spawn 을 피하는 수단은 **없다** —
+`test_state()` 를 안 쓰는 것 말고는.
+
+### 왜 이것이 격리 문서에 있나
+
+§7 형태 B(프로세스 밖 OS 자원)의 모집단이 눈에 보이는 것보다 넓기 때문이다. PTY·자식
+프로세스를 다루는 시험만 그 자원을 잡는 것이 아니라, **이 픽스처를 쓰는 모든 시험**이 잡는다.
+어떤 시험이 그 자원을 만지는지 이름으로 짐작하면 틀린다 — `test_state()` 를 부르는지로 본다.
