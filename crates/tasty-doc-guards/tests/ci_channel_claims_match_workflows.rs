@@ -116,6 +116,30 @@
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
 
+//! ## 이 파일의 테스트 42 개가 각각 무엇을 재는가
+//!
+//! **5 개만 레포를 본다** — `no_file_claims_ci_runs_the_full_suite_while_it_does_not` ·
+//! `no_file_claims_ci_enforces_an_integration_test_it_does_not_run` ·
+//! `no_file_denies_the_automatic_channel_a_lib_test_actually_has` ·
+//! `no_file_denies_a_channel_an_integration_test_actually_has` ·
+//! `the_theme_table_keeps_the_two_channels_apart`. 이 다섯이 이 가드의 **판정**이다.
+//! 나머지 37 은 그 판정이 쓰는 **헬퍼의 자기검사**로, 임시 디렉토리에 픽스처를 지어
+//! 판독기가 그 형태를 어떻게 읽는지 고정한다. 둘은 다른 것을 잰다 — 37 이 초록이라는
+//! 것은 판독기가 픽스처대로 읽는다는 뜻이지, 레포에 대한 판정이 옳다는 뜻이 아니다.
+//!
+//! ★ **그 37 이 잡 분할 규칙을 시험하지 않았다.** 실측(2026-09-05): 라이브러리의 잡 헤더
+//! 규칙(2 칸 들여쓰기)을 3 칸으로 바꾸는 변이가 이 파일의 42 개를 **하나도 못 죽였다.**
+//! 이유는 픽스처가 전부 **잡 하나짜리**여서다 — 잡이 하나면 헤더를 못 찾아 파일 전체가
+//! 한 덩어리가 돼도 개수가 1 로 같다. 그 변이를 죽이는 단정은
+//! `tasty_doc_guards::workflow_triggers` 의 단위 테스트에 있다(잡 둘 · 레포 부등식).
+//! 판정이 사는 곳에 그 판정의 시험을 두는 것이고, 여기서 한 번 더 세지 않는다.
+//!
+//! ★ 그리고 위 다섯 중 둘은 **오늘 조기 반환한다**: `check-headless` 가 좁혀지지 않은
+//! `cargo test --workspace` 를 돌기 때문에 "통합 테스트가 전부 자동으로 돈다" 가 참이 되고,
+//! 그 축은 스스로 잠잠해진다. 설계된 동작이지만, 그 둘의 초록을 커버리지 근거로 읽으면
+//! 안 된다 — 초록이 "덮였고 위반이 없다" 와 "볼 것이 없어 안 봤다" 둘 다와 양립한다.
+//!
+
 use std::path::{Path, PathBuf};
 
 use tasty_doc_guards::workflow_triggers::automatic_job_bodies;

@@ -485,6 +485,71 @@ mod coverage_tests {
         );
     }
 
+    /// ★ **분할 규칙 자체를 시험한다 — 잡이 둘일 때만 시험된다.**
+    ///
+    /// 이 단정이 없던 동안 잡 헤더 규칙(2 칸 들여쓰기)을 3 칸으로 바꾸는 변이가
+    /// **아무 테스트도 못 죽였다**(실측 2026-09-05). 이유는 단순하다 — 그때 있던
+    /// 픽스처가 전부 **잡 하나짜리**였다. 잡이 하나면 헤더를 못 찾아 파일 전체가 한
+    /// 덩어리가 돼도 개수가 1 로 같다. 규칙이 시험되려면 잡이 둘이어야 한다.
+    ///
+    /// 그리고 둘일 때 진짜 위험이 드러난다: 헤더를 못 찾으면 **수동 전용 잡 하나가
+    /// 같은 파일의 자동 잡을 함께 지운다.** 아래가 그 형태다.
+    #[test]
+    fn two_jobs_split_and_a_manual_one_does_not_silence_the_automatic_one() {
+        let yaml = "on:\n  push:\n    branches: [main]\njobs:\n  auto:\n    steps:\n      \
+                    - run: cargo test -p alpha\n  manual:\n    if: github.event_name == \
+                    'workflow_dispatch'\n    steps:\n      - run: cargo test -p beta\n";
+        let bodies = automatic_job_bodies(yaml);
+        assert_eq!(
+            bodies.len(),
+            1,
+            "잡 둘 중 자동인 하나만 남아야 한다 — 0 이면 헤더를 못 찾아 파일이 한 덩어리가 \
+             되고 수동 전용 조건이 자동 잡까지 지운 것이다: {bodies:?}"
+        );
+        assert!(
+            bodies[0].contains("cargo test -p alpha"),
+            "자동 잡의 명령이 사라졌다: {bodies:?}"
+        );
+        assert!(
+            !bodies.iter().any(|b| b.contains("cargo test -p beta")),
+            "수동 전용 잡의 명령이 자동 채널로 새어 들어왔다: {bodies:?}"
+        );
+    }
+
+    /// 레포에서도 같은 것을 묻는다 — 픽스처만으로는 관례가 실제로 그러한지 모른다.
+    ///
+    /// 잡이 여럿인 워크플로가 실재하므로 **잡 본문 총수 > 워크플로 파일 수** 여야 한다.
+    /// 헤더 규칙이 깨지면 파일마다 최대 하나가 되어 이 부등식이 무너진다.
+    #[test]
+    fn the_repo_has_more_automatic_job_bodies_than_workflow_files() {
+        let dir = crate::repo_root().join(".github/workflows");
+        let mut files = 0usize;
+        let mut bodies = 0usize;
+        for e in std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            .flatten()
+        {
+            let p = e.path();
+            if !p.extension().is_some_and(|x| x == "yml" || x == "yaml") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            files += 1;
+            bodies += automatic_job_bodies(&text).len();
+        }
+        assert!(
+            files >= 8,
+            "워크플로를 {files} 개밖에 못 읽었다 — 모수가 깨졌다"
+        );
+        assert!(
+            bodies > files,
+            "잡 본문 {bodies} 개 ≤ 워크플로 {files} 개 — 잡이 여럿인 워크플로가 실재하는데 \
+             파일마다 하나 이하로 나왔다. 헤더 규칙이 깨져 파일이 한 덩어리가 된 것이다"
+        );
+    }
+
     /// 좁힘 없이 패키지를 부르는 잡이 있다 — 그것이 문서 가드들의 채널이다.
     #[test]
     fn the_doc_guard_package_has_a_filter_free_channel() {
