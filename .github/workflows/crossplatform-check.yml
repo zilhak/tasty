@@ -19,10 +19,12 @@ name: Cross-platform Check
 # 네이티브 host 타깃이 곧 x86_64-pc-windows-msvc / aarch64-apple-darwin 이므로
 # 별도 `--target` 지정은 불필요(오히려 rustup target 설치를 요구).
 #
-# Linux x64 gui 컴파일은 여기서 생략한다 — 다만 test.yml 의 전체 스위트 잡은 **수동
-# 전용**이라 자동 채널이 아니다(그쪽 헤더 2번 근거). 즉 Linux x64 gui 컴파일은 현재
-# 어떤 자동 잡도 보지 않으며, 사람이 병합 후 main 에서 돌리는 전체 스위트가 유일한
-# 채널이다.
+# Linux x64 gui 컴파일 + not-debug(release) 컴파일 정합성은 아래 check-release 잡이 본다.
+# 한때 여기 "Linux x64 gui 컴파일은 자동 잡이 없고 병합 후 수동 전체 스위트가 유일 채널"
+# 이라 적혀 있었는데, 그 사이 두 결함이 그 사각으로 샜다: gui × not-debug 에서만 미사용이
+# 되는 상수(cfg(debug_assertions) 라우터 안의 dead_code)가 release bin 컴파일을 깨뜨린 채
+# 병합됐다(자동 채널 부재라 아무 데서도 안 잡힘). dev check(macos/windows/headless 전부
+# dev 프로필)로는 not-debug 축을 원리적으로 못 본다. check-release 잡이 그 둘을 함께 닫는다.
 # 단, headless(`--no-default-features`) 빌드만은 어떤 workflow 도 돌지 않아 gui-gating
 # 누락(gui 전용 심볼을 cfg 게이팅 없이 사용)이 CI 를 통과해 유입됐다(headless-build-01).
 # gui feature 가 켜진 빌드에선 그 실수가 드러나지 않으므로, headless 회귀는 오직
@@ -197,3 +199,29 @@ jobs:
       # 같은 구멍이 다시 자란다.
       - name: cargo clippy (headless)
         run: cargo clippy --workspace --all-targets --no-default-features --locked
+
+  # not-debug(release) 컴파일 정합성과 Linux gui(default feature) 컴파일의 **유일한 자동
+  # 채널**이다. 한 스텝이 지금 아무 잡도 안 보던 두 사각을 함께 닫는다:
+  #  ① not-debug 컴파일 — 쓰는 자리가 cfg(debug_assertions) 안이라 release 에서 사라지는
+  #     dead_code/미사용을 잡는다(예: PLATFORM_ONLY_MACOS_GUI 가 이렇게 새어 release bin 을
+  #     깨뜨린 채 병합됐다). dev 프로필로 도는 다른 모든 잡은 이 축을 원리적으로 못 본다.
+  #  ② Linux gui 컴파일 — check-macos/check-windows 는 각 OS 의 gui 를, check-headless 는
+  #     --no-default-features 를 본다. Linux × default(gui) 는 이 잡 전까지 자동 채널이 0
+  #     이었다(병합 후 사람이 돌리는 수동 전체 스위트가 유일 채널).
+  # 안 지키는 것: 실행(컴파일만, 테스트 아님) · dist 산출물 sanity(그건 build-check 수동) ·
+  #   codegen/LTO 단계 결함(check 라 codegen 을 안 한다). build 가 아니라 check 인 근거는
+  #   dead_code/미사용은 codegen 없이 잡히고 check 가 수배 싸기 때문이다(채널 매트릭스는
+  #   docs/dev-guide/ci-gates.md). self-hosted Linux X64 러너에 gui deps(webkit2gtk 등)가
+  #   있어 default feature 컴파일이 선다.
+  check-release:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: cargo check (gui, release)
+        run: cargo check --workspace --release --locked
