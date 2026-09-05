@@ -551,7 +551,20 @@ pub fn boot_blocker_verdict(stderr_tail: &str) -> Option<String> {
 }
 
 fn verdict_or_default(tail: &str, fallback: &str) -> String {
-    boot_blocker_verdict(tail).unwrap_or_else(|| fallback.to_string())
+    if let Some(verdict) = boot_blocker_verdict(tail) {
+        return verdict;
+    }
+    // ★ **빈 tail 은 "시그니처가 없다" 와 다른 세계다.** 폴백 문구는 둘 다
+    // ("stderr 에 내용이 있었는데 안 걸렸다" 와 "stderr 이 아예 없었다") 에 쓰이는데,
+    // 두 세계의 처방이 반대다 — 앞은 "부팅 지연·설정을 본다"(들어와서 느리다), 뒤는
+    // "부팅에 들어가지도 못한 쪽을 본다". 한 메시지에 둘이 같이 실리면 서로를 지운다.
+    //
+    // 이 모듈의 존재 이유가 느린 것과 멈춘 것을 가르는 것인데, 그 아래 침묵 판정이
+    // 가른 것을 이 줄이 도로 흐리고 있었다. 그래서 여기서는 **주장하지 않는다.**
+    if tail.trim().is_empty() {
+        return "stderr 이 비어 있다 — 시그니처가 없는 것이 아니라 볼 것이 없다.".to_string();
+    }
+    fallback.to_string()
 }
 
 /// 자식이 이미 죽었을 때의 panic 메시지. 상한을 다 기다릴 이유가 없는 경우다 —
@@ -770,6 +783,65 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
             Some(Duration::from_millis(200)),
         );
         assert!(msg.contains("부팅 차단 시그니처는 없다"), "{msg}");
+    }
+
+    /// ★ 빈 stderr 에 대고 "시그니처가 없다" 를 말하면, 바로 아래 침묵 판정("한 줄도
+    /// 내지 않았다 — 부팅에 들어가지도 못한 쪽을 먼저 본다")과 **반대 방향을 가리킨다.**
+    /// 한 메시지가 두 처방을 순서 없이 싣는 것이 이 모듈이 없애려는 실패 형태다.
+    #[test]
+    fn an_empty_tail_is_not_reported_as_an_absent_signature() {
+        let empty =
+            spawn_timeout_message("tasty failed to start", SPAWN_PORT_TIMEOUT, 30, "", None);
+        assert!(
+            !empty.contains("부팅 차단 시그니처는 없다"),
+            "stderr 이 비었는데 시그니처 부재를 주장한다 — 아래 침묵 판정과 반대를 가리킨다: {empty}"
+        );
+        assert!(empty.contains("볼 것이 없다"), "{empty}");
+        // 침묵 판정은 제 자리를 지킨다 — 이 줄이 그 세계를 소유한다.
+        assert!(empty.contains("한 줄도 내지 않았다"), "{empty}");
+
+        // ★ 반대 방향 — 내용이 **있는데** 안 걸리는 tail 은 여전히 시그니처 부재를 말해야
+        // 한다. 이게 없으면 위 초록은 "그 문장을 통째로 지웠다" 로도 설명된다.
+        let noisy = spawn_timeout_message(
+            "tasty failed to start",
+            SPAWN_PORT_TIMEOUT,
+            30,
+            "INFO tasty: plugin discovery finished",
+            Some(Duration::from_millis(200)),
+        );
+        assert!(
+            noisy.contains("부팅 차단 시그니처는 없다"),
+            "내용이 있는 tail 에서는 시그니처 부재가 여전히 정보다: {noisy}"
+        );
+        assert!(!noisy.contains("볼 것이 없다"), "{noisy}");
+    }
+
+    /// ★★ 두 마커 계열이 **함께** 나오는 것이 예외가 아니라 통상이다 — 디스플레이가 없는
+    /// 부팅도 `libEGL`/`DRI3` 경고를 그대로 뱉는다. 그때 `detect_blocker` 의 검사 순서가
+    /// 판정의 **확신 수준**을 정한다: 앞쪽은 단정하고("코드 인과가 아니다") 뒤쪽은
+    /// 단정하지 않는다. 그런데 그 순서를 지키는 단정이 **하나도 없었다** — 기존 시험의
+    /// 디스플레이 tail 에 GPU 마커가 없어서, 순서를 뒤집어도 전부 초록이었다.
+    #[test]
+    fn a_display_failure_that_also_logs_gpu_noise_is_still_a_display_failure() {
+        let both = format!(
+            "{SUCCESSFUL_BOOT_GPU_FALLBACK_TAIL}\nError: neither WAYLAND_DISPLAY nor \
+             WAYLAND_SOCKET nor DISPLAY is set."
+        );
+        let verdict = boot_blocker_verdict(&both).expect("둘 다 있으면 판정 대상이다");
+        assert!(
+            verdict.contains("디스플레이 서버가 없다"),
+            "GPU 잡음이 섞였다고 디스플레이 부재가 강등되면 안 된다: {verdict}"
+        );
+        assert!(
+            !verdict.contains("원인 판정이 되지 않는다"),
+            "확신 수준이 낮은 쪽 문장이 나왔다 — 검사 순서가 뒤집혔다: {verdict}"
+        );
+
+        // ★ 반대 방향 — GPU 마커만 있으면 디스플레이를 말하면 안 된다. 위 단정이
+        // "무엇이든 디스플레이라고 한다" 로 통과하는 것을 막는다.
+        let gpu_only =
+            boot_blocker_verdict(SUCCESSFUL_BOOT_GPU_FALLBACK_TAIL).expect("단서는 실린다");
+        assert!(!gpu_only.contains("디스플레이 서버가 없다"), "{gpu_only}");
     }
 
     /// 세 갈래가 서로 다른 문장을 내고, **남의 문장을 안 낸다**(양방향).
