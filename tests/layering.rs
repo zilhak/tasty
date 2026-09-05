@@ -127,6 +127,42 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
 /// 섞여 들어와도 스캔이 새지 않게 한다.
 const PRUNE_DIRS: &[&str] = &["target", ".git"];
 
+/// 순회가 실제로 트리를 봤음을 보장하는 하한.
+///
+/// 실측 2026-09-06: `src/` 의 `.rs` 는 589 개다. 하한은 그 절반 아래로 잡는다 —
+/// 파일이 줄어드는 정상적인 변경에는 걸리지 않으면서, 순회가 통째로 비는 사고
+/// (스캔 루트 오타 · `read_dir` 실패 · 가지치기 폭주)는 잡는다.
+const MIN_SCANNED: usize = 300;
+
+/// 순회 깊이가 하한을 넘는지 판정한다.
+///
+/// 본 테스트와 대조 테스트가 **같은 판정기**를 부르게 하려고 함수로 뺐다.
+/// 대조가 `assert!` 를 복제하면 둘이 갈라져도 아무도 모른다.
+fn walk_is_deep_enough(scanned: usize) -> Result<(), String> {
+    if scanned >= MIN_SCANNED {
+        return Ok(());
+    }
+    Err(format!(
+        "`src/` 순회가 {scanned} 개만 모았다(하한 {MIN_SCANNED}) — 이 상태에서는 \
+         아래의 \"위반 0\" 이 위반이 없어서 0 인지 순회가 아무것도 안 봐서 0 인지 \
+         구분되지 않는다. 스캔 루트·가지치기·`read_dir` 실패를 확인하라"
+    ))
+}
+
+/// `anchors` 중 순회 결과에 나타나지 않은 것.
+///
+/// 하한은 **총량만** 본다 — 한 가지가 통째로 빠져도 나머지가 하한을 채우면 안 걸린다.
+/// 그래서 반드시 순회에 들어와야 하는 파일을 이름으로 함께 고정한다. 여기서 묻는 것은
+/// 그 파일이 **실재하는가**(그건 [`allowed_paths_point_at_paths_that_exist`] 가 본다)가
+/// 아니라 **순회가 거기 닿았는가** 다.
+fn unreached_anchors<'a>(anchors: &[&'a str], scanned: &[String]) -> Vec<&'a str> {
+    anchors
+        .iter()
+        .copied()
+        .filter(|a| !scanned.iter().any(|s| s == a))
+        .collect()
+}
+
 fn is_allowed(rel: &str) -> bool {
     ALLOWED_PATHS.iter().any(|p| {
         if let Some(dir) = p.strip_suffix('/') {
@@ -173,6 +209,25 @@ fn src_does_not_reference_tasty_cli() {
     let mut files = Vec::new();
     gather(&root.join("src"), &mut files);
     files.sort();
+
+    // 아래 판정들은 전부 "순회가 모은 것" 위에서 돌아간다. 그 순회가 비면 모든
+    // 판정이 조용히 통과한다 — 그러니 위반을 세기 전에 인구를 먼저 확인한다.
+    if let Err(why) = walk_is_deep_enough(files.len()) {
+        panic!("{why}");
+    }
+    let scanned: Vec<String> = files.iter().map(|f| rel_of(f, root)).collect();
+    let anchors: Vec<&str> = ALLOWED_PATHS
+        .iter()
+        .copied()
+        .filter(|p| !p.ends_with('/'))
+        .collect();
+    let unreached = unreached_anchors(&anchors, &scanned);
+    assert!(
+        unreached.is_empty(),
+        "순회가 다음 파일에 닿지 않았다 — 실재하는데 순회 결과에 없으면 그 가지를 \
+         통째로 못 본 것이다(하한만으로는 안 잡힌다):\n  {}",
+        unreached.join("\n  ")
+    );
 
     // 두 목록이 겹치면 "베이스라인을 비운다" 가 성립하지 않는다 — 영구 허용
     // 항목은 실제 위반이 남아 있어도 역방향 검사에 걸리지 않기 때문이다.
@@ -328,5 +383,52 @@ fn allowed_paths_point_at_paths_that_exist() {
     assert!(
         missing.is_empty(),
         "면제가 없는 경로를 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 항목을 지워라: {missing:?}"
+    );
+}
+
+/// 인구 확인 둘이 **판별력이 있는지** 고정한다.
+///
+/// 하한과 앵커 확인을 `assert!` 하나씩으로만 두면 초록일 때 그것들이 무엇을 걸러냈는지
+/// 안 보인다 — 아무거나 통과시키는 판정도 똑같이 초록이다. 그래서 두 판정기를 실제
+/// 트리와 **빈 순회** 양쪽에 걸어 갈래를 둘 다 태운다. 이 파일의 기존 대조
+/// [`the_cfg_test_precondition_check_discriminates`] 와 같은 형태다.
+#[test]
+fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let mut walked = Vec::new();
+    gather(&root.join("src"), &mut walked);
+    let walked_rels: Vec<String> = walked.iter().map(|f| rel_of(f, root)).collect();
+
+    // 반대편은 존재하지 않는 루트다. `gather` 는 `read_dir` 실패를 삼키고 빈 목록을
+    // 돌려주는데, 그것이 바로 이 두 판정이 겨냥하는 사고의 형태다.
+    let mut empty = Vec::new();
+    gather(&root.join("src-no-such-directory"), &mut empty);
+    let empty_rels: Vec<String> = empty.iter().map(|f| rel_of(f, root)).collect();
+
+    assert!(
+        walk_is_deep_enough(walked.len()).is_ok(),
+        "실제 `src/` 순회({} 개)를 하한이 거부한다 — 하한이 트리보다 높다",
+        walked.len()
+    );
+    assert!(
+        walk_is_deep_enough(empty.len()).is_err(),
+        "빈 순회({} 개)를 하한이 통과시킨다 — 하한에 판별력이 없다",
+        empty.len()
+    );
+
+    let anchors: Vec<&str> = ALLOWED_PATHS
+        .iter()
+        .copied()
+        .filter(|p| !p.ends_with('/'))
+        .collect();
+    assert!(
+        unreached_anchors(&anchors, &walked_rels).is_empty(),
+        "실제 순회가 앵커 전부에 닿았는데 미도달로 센다"
+    );
+    assert_eq!(
+        unreached_anchors(&anchors, &empty_rels).len(),
+        anchors.len(),
+        "빈 순회인데 미도달 앵커가 전부로 안 잡힌다 — 앵커 확인에 판별력이 없다"
     );
 }
