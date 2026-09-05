@@ -655,6 +655,9 @@ mod debug_handler_isolation;
 /// IPC 라우터가 스캔이 볼 수 있는 이름(문자열 리터럴)으로 갈리는지 본다. 라우터를
 /// 텍스트로 읽는 가드들이 전부 이 전제 위에 서 있고, 수를 세는 하한은 이 부류를 못 본다.
 mod dispatch_name_literals;
+/// 프로세스 전역을 만지는 테스트가 그 전역의 직렬화 락을 잡는지 본다. 락은 잡는 쪽끼리만
+/// 막으므로 하나만 밖에 있어도 직렬화가 통째로 무효가 된다.
+mod test_serialization_locks;
 
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
