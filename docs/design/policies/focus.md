@@ -44,6 +44,8 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 
 - **IPC/CLI 로 focus 를 변경할 수 없다.** focus 변경 API(`surface.focus` / `pane.focus` / `workspace.select` / `focus.direction`)는 release 에 없다(제거됨). focus 는 오직 사용자 행위(단축키·마우스)로만 바뀐다.
 - 모든 명령은 대상을 **ID 로 직접 지정**한다. `list` 는 **전 워크스페이스 순회**(활성 상태 비의존).
+  - 순회하는 `list` 는 호스트가 명시적으로 합산하는 것뿐이다(`src/app/dispatch/list_global.rs`). **그 목록에 없는 `list` 는 포커스된 창의 것만 답하고, 에러가 없다.** 실측(창 둘): 창1 에서 만든 headless pty 가 창2 포커스의 `pty.list` 에 안 나오는데 `pty.read {id}` 는 그 pty 를 읽었다 — **조작할 수 있는데 볼 수 없는** 상태다. 창 소유 자원의 `list` 를 새로 만들면 거기에 등록한다.
+  - 합산이 옳으려면 그 자원의 **id 가 창을 건너 유일해야** 한다. 안 그러면 합친 목록에 같은 id 가 둘 들어가 호출자가 어느 쪽도 지목할 수 없다. 유일성은 `IdGenerator` 가 카운터를 engine 간에 공유해 보장한다 — 그 공유가 빠져 있던 동안 두 창의 pty 가 같은 id 를 받았고, **먼저 만든 쪽은 어떤 요청으로도 닿을 수 없었다**(라우팅이 먼저 찾힌 engine 을 고른다).
 - 활성 상태 *조회* 는 허용(`focused` 필드 등). 활성 상태에 *의존* 하는 동작은 금지.
 - target 미지정 명령은 **에러 + 사용법 안내**(silent fallback 금지). 호출자는 조회(`list surfaces` 등)로 ID 를 확인해 전달한다. 리소스 생성 명령은 응답에 생성된 ID 를 포함한다.
   - `terminal.kill`/`terminal.release`/`terminal.respawn`/`terminal.broadcast` 는 `--surface`(parent) 를 생략하면 host 가 "현재 engine 에 등록된 parent 가 정확히 1개"일 때만 그 parent 로 폴백한다(단일 윈도우 세션의 하위 호환). main window 가 **2개 이상** 열려 있는데 이 4개 메서드가 `--surface` 없이 호출되면, 어느 window 를 봐야 하는지 자체가 정해지지 않으므로 focused window 로 조용히 새지 않고 명시적 에러로 거부한다(`src/app/request_owner.rs` `find_request_owner`/`ambiguous_parent_fallback_requires_surface`).

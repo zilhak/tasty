@@ -25,12 +25,14 @@ mod memory;
 mod message;
 mod meta;
 mod notification;
-mod output;
+// `pane`/`surface`/`workspace` 와 같은 이유로 열려 있다 — 창 소유 자원의 list 를
+// 호스트가 전 창 합산으로 답하기 때문(`app/dispatch/list_global.rs`).
+pub(crate) mod output;
 pub(crate) mod pane;
 pub(crate) mod params;
 mod passkey;
 mod preset;
-mod pty;
+pub(crate) mod pty;
 mod recent;
 mod remote_profile;
 mod settings;
