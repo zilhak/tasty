@@ -14,7 +14,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 use crate::i18n::t;
 
 /// 244px 고정폭(i18n 가변폭은 세로로 흡수).
-pub const CALLOUT_W: f32 = 244.0;
+pub const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 /// tail 삼각 크기(12px diamond 전사).
 const TAIL: f32 = 12.0;
 /// up/down tail 의 좌측 기준 앵커 offset(디자인 left:28).
@@ -116,7 +116,7 @@ pub fn place_callout(
 /// 말풍선 높이 추정(배치용) — 본문 galley 높이 + 고정 라인/패딩. egui Area 는
 /// 세로 auto-size 지만 배치(above/clamp)에는 사전 높이가 필요하다.
 pub fn callout_height(ctx: &egui::Context, theme: &Theme, body: &str) -> f32 {
-    let content_w = CALLOUT_W - 2.0 * theme.spacing_lg.value();
+    let content_w = (CALLOUT_W - theme.spacing_lg.scaled(2.0)).value();
     let body_h = ctx.fonts(|f| {
         f.layout(
             body.to_string(),
@@ -182,7 +182,7 @@ pub fn draw_callout(
                     bottom: theme.spacing_md.value() as i8,
                 })
                 .show(ui, |ui| {
-                    ui.set_width(CALLOUT_W - 2.0 * theme.spacing_lg.value());
+                    ui.set_width((CALLOUT_W - theme.spacing_lg.scaled(2.0)).value());
                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                     // step / total.
                     ui.label(
