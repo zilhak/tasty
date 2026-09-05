@@ -23,6 +23,31 @@ tasty 내부 소스는 길이 값을 **`f32` 그대로 다루지 않는다.** DP
 
 둘 다 `#[repr(transparent)]` 이라 런타임 오버헤드가 없다 (제로 코스트). `Add`/`Sub`/`Mul<f32>`/`Div<f32>`/`Neg`/`*Assign` 과 `max`/`min`/`floor`/`abs` 가 **같은 타입끼리만** 정의돼 있어, `PhysicalPx + LogicalPx` 같은 식은 타입 에러다.
 
+### `const` 문맥에서는 트레이트 연산을 못 쓴다
+
+위 연산자는 전부 트레이트 impl 이고 트레이트 impl 은 `const` 가 아니다. 그래서 상수 초기화식에서
+부르면 컴파일이 막힌다:
+
+```rust
+const BODY_H: LogicalPx = FRAME_H - HEADER_H;   // error[E0015]: cannot call non-const operator
+```
+
+`LogicalPx(FRAME_H.0 - HEADER_H.0)` 으로 필드를 벗기면 컴파일은 되지만 그 자리에서 타입이
+사라진다 — 위 표의 "단언이지 검증이 아니다" 로 되돌아가는 형태고, DPI 가드는 이걸 잡지 않는다
+(그 가드가 겨냥하는 것은 scale factor 산술이다). 그래서 벗기지 않는 통로를 인허런트
+`const fn` 으로 둔다. 두 타입 모두에 있다:
+
+```rust
+const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H);
+const LIST_MIN: LogicalPx = ITEM_HEIGHT.scaled(4.0);
+const INDENT: LogicalPx = LABEL_COL_WIDTH.plus(LogicalPx(12.0));
+```
+
+`plus`/`minus`/`scaled` 는 대응 트레이트 연산과 결과가 같다 — 이름이 다른 것은 인허런트 메서드가
+같은 이름의 트레이트 메서드를 조용히 가리는 것을 피하기 위해서다. 계수가 좌변인 형태
+(`4.0 * LEN`)는 `Mul<f32>` 도 `scaled` 도 지원하지 않으므로 `LEN.scaled(4.0)` 으로 쓴다 —
+곱셈 교환이라 값이 보존된다.
+
 ## 변환 — scale factor 를 명시적으로 통과
 
 두 타입 간 직접 대입은 불가능하다. 반드시 변환 함수를 거치고, 그때 scale factor 를 넘긴다:

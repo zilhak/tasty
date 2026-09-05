@@ -42,6 +42,26 @@ impl PhysicalPx {
     pub fn abs(self) -> Self {
         Self(self.0.abs())
     }
+
+    /// `const` 문맥용 덧셈. `Add` impl 과 결과가 같지만 트레이트 impl 은 `const` 가
+    /// 아니라 상수 초기화식에서 부를 수 없다(E0015). 그 자리에서 `Self(a.0 + b.0)` 로
+    /// 필드를 벗기면 타입이 사라지므로, 벗기지 않고 쓰는 통로를 둔다.
+    pub const fn plus(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+
+    /// `const` 문맥용 뺄셈. 사유는 [`Self::plus`] 와 같다.
+    pub const fn minus(self, other: Self) -> Self {
+        Self(self.0 - other.0)
+    }
+
+    /// `const` 문맥용 스칼라 배. 사유는 [`Self::plus`] 와 같다.
+    ///
+    /// `Mul<f32>` 와 달리 계수가 좌변인 형태(`4.0 * LEN`)는 어차피 지원하지 않으므로,
+    /// 호출 형태가 `LEN.scaled(4.0)` 하나로 고정된다.
+    pub const fn scaled(self, k: f32) -> Self {
+        Self(self.0 * k)
+    }
 }
 
 impl LogicalPx {
@@ -67,6 +87,26 @@ impl LogicalPx {
 
     pub fn abs(self) -> Self {
         Self(self.0.abs())
+    }
+
+    /// `const` 문맥용 덧셈. `Add` impl 과 결과가 같지만 트레이트 impl 은 `const` 가
+    /// 아니라 상수 초기화식에서 부를 수 없다(E0015). 그 자리에서 `Self(a.0 + b.0)` 로
+    /// 필드를 벗기면 타입이 사라지므로, 벗기지 않고 쓰는 통로를 둔다.
+    pub const fn plus(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+
+    /// `const` 문맥용 뺄셈. 사유는 [`Self::plus`] 와 같다.
+    pub const fn minus(self, other: Self) -> Self {
+        Self(self.0 - other.0)
+    }
+
+    /// `const` 문맥용 스칼라 배. 사유는 [`Self::plus`] 와 같다.
+    ///
+    /// `Mul<f32>` 와 달리 계수가 좌변인 형태(`4.0 * LEN`)는 어차피 지원하지 않으므로,
+    /// 호출 형태가 `LEN.scaled(4.0)` 하나로 고정된다.
+    pub const fn scaled(self, k: f32) -> Self {
+        Self(self.0 * k)
     }
 }
 
@@ -205,5 +245,27 @@ impl serde::Serialize for PhysicalPx {
 impl<'de> serde::Deserialize<'de> for PhysicalPx {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         f32::deserialize(deserializer).map(Self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 이 셋이 `const` 문맥에서 평가된다는 것 자체가 검증 대상이다. 값 비교만 하면
+    // `const` 를 떼도 초록이라, 상수 초기화식으로 써서 컴파일 자체를 증거로 삼는다.
+    const A: LogicalPx = LogicalPx(40.0);
+    const B: LogicalPx = LogicalPx(12.0);
+    const SUM: LogicalPx = A.plus(B);
+    const DIFF: LogicalPx = A.minus(B);
+    const QUAD: LogicalPx = B.scaled(4.0);
+    const PHYS: PhysicalPx = PhysicalPx(9.0).plus(PhysicalPx(1.0)).scaled(2.0);
+
+    #[test]
+    fn const_arithmetic_matches_the_trait_impls() {
+        assert_eq!(SUM, A + B);
+        assert_eq!(DIFF, A - B);
+        assert_eq!(QUAD, B * 4.0);
+        assert_eq!(PHYS, (PhysicalPx(9.0) + PhysicalPx(1.0)) * 2.0);
     }
 }
