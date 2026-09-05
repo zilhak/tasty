@@ -10,6 +10,8 @@
 //! `ui.screenshot` was promoted to a release, focus-independent method — it now
 //! lives in the `app_methods` step (targets window/surface by ID, not focus).
 
+#[cfg(debug_assertions)]
+use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc::server::IpcCommand;
@@ -31,6 +33,62 @@ fn reject_unknown_scroll_unit(cmd: &IpcCommand) -> IpcStep {
     );
     send_response(&cmd.response_tx, response);
     IpcStep::Handled
+}
+
+/// 잘못 온 params 는 기본값으로 삼키지 않고 거절한다 — 삼키면 주입이 의도한 것과
+/// 다른 좌표·버튼을 재고도 "injected: true" 로 답한다.
+#[cfg(debug_assertions)]
+fn reject_bad_params(cmd: &IpcCommand, msg: &str) -> IpcStep {
+    let response = host_ipc::protocol::JsonRpcResponse::error(
+        cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+        -32602,
+        msg,
+    );
+    send_response(&cmd.response_tx, response);
+    IpcStep::Handled
+}
+
+/// 두 포인터 주입 경로(mesh · egui)가 **같은 키를 같은 방식으로** 읽게 한다.
+///
+/// 종전에는 두 블록이 각자 `p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5)` 를
+/// 적고 있었다 — 한쪽만 고치면 다른 쪽은 안 고쳐지고, 그 갈림은 아무 데서도 안 터진다.
+/// 스칼라는 관문(`handler::params`)을 지난다: 잘못 온 값은 기본값이 되지 않는다.
+#[cfg(debug_assertions)]
+fn read_pointer_params(
+    p: &serde_json::Value,
+    unit: crate::view::main::debug_input::ScrollUnit,
+) -> Result<(f32, f32, crate::view::main::debug_input::InjectPointer), String> {
+    use crate::view::main::debug_input::InjectPointer;
+
+    // fx, fy ∈ [0,1] surface-local 정규화 좌표 (기본 중앙).
+    let fx = params::read_f64(p, "fx")?.unwrap_or(0.5) as f32;
+    let fy = params::read_f64(p, "fy")?.unwrap_or(0.5) as f32;
+    let button = match params::read_int::<u64>(p, "button")?.unwrap_or(0) {
+        1 => winit::event::MouseButton::Middle,
+        2 => winit::event::MouseButton::Right,
+        _ => winit::event::MouseButton::Left,
+    };
+    let event_type = p
+        .get("event_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("move");
+    let action = match event_type {
+        "press" => InjectPointer::Button {
+            button,
+            pressed: true,
+        },
+        "release" => InjectPointer::Button {
+            button,
+            pressed: false,
+        },
+        "scroll" => InjectPointer::Scroll {
+            dx: params::read_f64(p, "scroll_dx")?.unwrap_or(0.0) as f32,
+            dy: params::read_f64(p, "scroll_dy")?.unwrap_or(0.0) as f32,
+            unit,
+        },
+        _ => InjectPointer::Move,
+    };
+    Ok((fx, fy, action))
 }
 
 impl App {
@@ -96,42 +154,24 @@ impl App {
         }
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_window_mouse" {
-            use crate::view::main::debug_input::{InjectPointer, ScrollUnit};
-            let p = &cmd.request.params;
+            use crate::view::main::debug_input::ScrollUnit;
+            let params = &cmd.request.params;
             // 이 경로는 종전까지 항상 winit `LineDelta` 를 합성했으므로 기본이 line 이다.
-            let Some(unit) =
-                ScrollUnit::from_name(p.get("unit").and_then(|v| v.as_str()).unwrap_or("line"))
-            else {
+            let Some(unit) = ScrollUnit::from_name(
+                params
+                    .get("unit")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("line"),
+            ) else {
                 return reject_unknown_scroll_unit(cmd);
             };
-            let surface_id = p.get("surface_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            // fx, fy ∈ [0,1] surface-local 정규화 좌표 (기본 중앙).
-            let fx = p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-            let fy = p.get("fy").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-            let event_type = p
-                .get("event_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("move");
-            let button = match p.get("button").and_then(|v| v.as_u64()).unwrap_or(0) {
-                1 => winit::event::MouseButton::Middle,
-                2 => winit::event::MouseButton::Right,
-                _ => winit::event::MouseButton::Left,
+            let surface_id = match params::read_u32(params, "surface_id") {
+                Ok(v) => v.unwrap_or(0),
+                Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let action = match event_type {
-                "press" => InjectPointer::Button {
-                    button,
-                    pressed: true,
-                },
-                "release" => InjectPointer::Button {
-                    button,
-                    pressed: false,
-                },
-                "scroll" => InjectPointer::Scroll {
-                    dx: p.get("scroll_dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    dy: p.get("scroll_dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    unit,
-                },
-                _ => InjectPointer::Move,
+            let (fx, fy, action) = match read_pointer_params(params, unit) {
+                Ok(v) => v,
+                Err(msg) => return reject_bad_params(cmd, &msg),
             };
             let ok = w.debug_inject_mesh_pointer(surface_id, fx, fy, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
@@ -146,46 +186,26 @@ impl App {
         // window 정규화 (fx,fy ∈ [0,1] 논리). release 미노출, debug 격리(원칙 1·3).
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_egui_mouse" {
-            use crate::view::main::debug_input::{InjectPointer, ScrollUnit};
-            let p = &cmd.request.params;
+            use crate::view::main::debug_input::ScrollUnit;
+            let params = &cmd.request.params;
             // 이 경로는 종전까지 항상 `MouseWheelUnit::Point` 를 합성했으므로 기본이
             // point 다 — 기존 호출자가 단위를 넘기지 않아도 같은 것을 재현한다.
-            let Some(unit) =
-                ScrollUnit::from_name(p.get("unit").and_then(|v| v.as_str()).unwrap_or("point"))
-            else {
+            let Some(unit) = ScrollUnit::from_name(
+                params
+                    .get("unit")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("point"),
+            ) else {
                 return reject_unknown_scroll_unit(cmd);
             };
-            let fx = p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-            let fy = p.get("fy").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
-            let event_type = p
-                .get("event_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("move");
-            let button = match p.get("button").and_then(|v| v.as_u64()).unwrap_or(0) {
-                1 => winit::event::MouseButton::Middle,
-                2 => winit::event::MouseButton::Right,
-                _ => winit::event::MouseButton::Left,
+            let (fx, fy, action) = match read_pointer_params(params, unit) {
+                Ok(v) => v,
+                Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let action = match event_type {
-                "press" => InjectPointer::Button {
-                    button,
-                    pressed: true,
-                },
-                "release" => InjectPointer::Button {
-                    button,
-                    pressed: false,
-                },
-                "scroll" => InjectPointer::Scroll {
-                    dx: p.get("scroll_dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    dy: p.get("scroll_dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    unit,
-                },
-                _ => InjectPointer::Move,
+            let surface_id = match params::read_u32(params, "surface_id") {
+                Ok(v) => v,
+                Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let surface_id = p
-                .get("surface_id")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
             let ok = w.debug_inject_egui_pointer(fx, fy, surface_id, action);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
@@ -196,9 +216,15 @@ impl App {
         }
         #[cfg(debug_assertions)]
         if cmd.request.method == "debug.inject_egui_key" {
-            let p = &cmd.request.params;
-            let key = p.get("key").and_then(|v| v.as_str()).unwrap_or("Escape");
-            let pressed = p.get("pressed").and_then(|v| v.as_bool()).unwrap_or(true);
+            let params = &cmd.request.params;
+            let key = params
+                .get("key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Escape");
+            let pressed = params
+                .get("pressed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             let ok = w.debug_inject_egui_key(key, pressed);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),

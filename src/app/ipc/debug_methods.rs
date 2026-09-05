@@ -1,6 +1,7 @@
 //! step 3 (debug 빌드 only): debug.event_bus.* / debug.extension.invoke_hook / debug.popup.* /
 //! debug.fullscreen.*.
 
+use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
@@ -90,24 +91,20 @@ impl App {
                 // `popup.close`)와 다른 코드를 타면 이 표면으로 하는 검증 자체가
                 // 실제 동작을 못 비춘다.
                 "debug.popup.close" => {
-                    match cmd
-                        .request
-                        .params
-                        .get("instance_id")
-                        .and_then(|v| v.as_u64())
-                    {
-                        None => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    match params::read_int::<u64>(&cmd.request.params, "instance_id") {
+                        Err(msg) => host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
+                        Ok(None) => host_ipc::protocol::JsonRpcResponse::invalid_params(
                             id,
                             "Missing required 'instance_id' parameter",
                         ),
-                        Some(instance_id) if self.plugin_manager.is_none() => {
+                        Ok(Some(instance_id)) if self.plugin_manager.is_none() => {
                             host_ipc::protocol::JsonRpcResponse::error(
                                 id,
                                 -32002,
                                 format!("plugin manager not initialized (instance {instance_id})"),
                             )
                         }
-                        Some(instance_id) => {
+                        Ok(Some(instance_id)) => {
                             self.enqueue_plugin_popup_close(
                                 instance_id,
                                 tasty_plugin_protocol::PopupCloseReason::PluginRequest,
@@ -130,17 +127,27 @@ impl App {
         #[cfg(feature = "gui")]
         if cmd.request.method.starts_with("debug.plugin_banner.") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let p = &cmd.request.params;
+            let params = &cmd.request.params;
             let response = match cmd.request.method.as_str() {
                 "debug.plugin_banner.open" => {
-                    match (
-                        p.get("banner_id").and_then(|v| v.as_str()),
-                        p.get("surface_id").and_then(|v| v.as_u64()),
-                    ) {
+                    // surface id 는 관문에서 **폭에 맞게** 읽는다 — `as u32` 로 자르면
+                    // 범위 밖 값이 실재하는 다른 surface 를 가리킨다. 잘못 온 값은
+                    // 안 온 것과 갈라서 답한다.
+                    let sid = match params::read_u32(params, "surface_id") {
+                        Ok(v) => v,
+                        Err(msg) => {
+                            send_response(
+                                &cmd.response_tx,
+                                host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
+                            );
+                            return IpcStep::Handled;
+                        }
+                    };
+                    match (params.get("banner_id").and_then(|v| v.as_str()), sid) {
                         (Some(bid), Some(sid)) => {
                             let bid = bid.to_string();
                             // debug 트리거는 소유권 검증 우회(caller=None) — 실 소유 plugin 으로 연다.
-                            match self.open_plugin_banner(None, &bid, sid as u32) {
+                            match self.open_plugin_banner(None, &bid, sid) {
                                 Ok(iid) => host_ipc::protocol::JsonRpcResponse::success(
                                     id,
                                     serde_json::json!({ "instance_id": iid }),
@@ -154,24 +161,24 @@ impl App {
                         ),
                     }
                 }
-                "debug.plugin_banner.close" => {
-                    match p.get("instance_id").and_then(|v| v.as_u64()) {
-                        Some(iid) => {
-                            let closed = self.close_plugin_banner(
-                                iid,
-                                tasty_plugin_protocol::BannerCloseReason::PluginRequest,
-                            );
-                            host_ipc::protocol::JsonRpcResponse::success(
-                                id,
-                                serde_json::json!({ "closed": closed }),
-                            )
-                        }
-                        None => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                "debug.plugin_banner.close" => match params::read_int::<u64>(params, "instance_id")
+                {
+                    Err(msg) => host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
+                    Ok(Some(iid)) => {
+                        let closed = self.close_plugin_banner(
+                            iid,
+                            tasty_plugin_protocol::BannerCloseReason::PluginRequest,
+                        );
+                        host_ipc::protocol::JsonRpcResponse::success(
                             id,
-                            "Missing 'instance_id'",
-                        ),
+                            serde_json::json!({ "closed": closed }),
+                        )
                     }
-                }
+                    Ok(None) => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                        id,
+                        "Missing 'instance_id'",
+                    ),
+                },
                 other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
             };
             send_response(&cmd.response_tx, response);
@@ -385,7 +392,8 @@ impl App {
         &self,
         params: &serde_json::Value,
     ) -> Result<winit::window::WindowId, (i32, String)> {
-        let requested = params.get("window_id").and_then(|v| v.as_u64());
+        let requested =
+            params::read_int::<u64>(params, "window_id").map_err(|msg| (-32602, msg))?;
         let mains: Vec<_> = self
             .view
             .views

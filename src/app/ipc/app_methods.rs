@@ -8,6 +8,7 @@
 //! - `approval.await` (blocking — worker thread 위임)
 
 use crate::AppEvent;
+use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
@@ -187,15 +188,18 @@ impl App {
     /// `window.close` / `view.close`: main view 만 대상, 마지막 main 은 거부.
     /// CLAUDE.md "포커스 독립": id 로 직접 지정, focused 의존 금지.
     fn ipc_handle_window_close(&mut self, cmd: &IpcCommand) -> IpcStep {
-        let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+        // 관문을 거친다 — 값이 왔는데 안 읽히는 것을 "안 왔다" 로 답하면 호출자가
+        // 자기가 준 값을 안 의심한다.
+        let target_id = params::read_int::<u64>(&cmd.request.params, "id");
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = match target_id {
-            None => host_ipc::protocol::JsonRpcResponse::error(
+            Err(msg) => host_ipc::protocol::JsonRpcResponse::error(response_id, -32602, &msg),
+            Ok(None) => host_ipc::protocol::JsonRpcResponse::error(
                 response_id,
                 -32602,
                 "Missing 'id' parameter (u64). focused 의존은 금지.",
             ),
-            Some(id_u64) => {
+            Ok(Some(id_u64)) => {
                 // main view 만 대상 — `window.list` 가 노출하는 범위와 동일.
                 // (modal/preset 은 사용자 조작 영역이라 IPC close 대상이 아님.)
                 let mains: Vec<_> = self
@@ -236,15 +240,16 @@ impl App {
     /// `window.focus` / `view.focus` (debug 전용): 사용자 입력 재현이라 release 미노출.
     #[cfg(debug_assertions)]
     fn ipc_handle_window_focus(&mut self, cmd: &IpcCommand) -> IpcStep {
-        let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+        let target_id = params::read_int::<u64>(&cmd.request.params, "id");
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = match target_id {
-            None => host_ipc::protocol::JsonRpcResponse::error(
+            Err(msg) => host_ipc::protocol::JsonRpcResponse::error(response_id, -32602, &msg),
+            Ok(None) => host_ipc::protocol::JsonRpcResponse::error(
                 response_id,
                 -32602,
                 "Missing 'id' parameter (u64)",
             ),
-            Some(id_u64) => {
+            Ok(Some(id_u64)) => {
                 let mut found = false;
                 for (id, w) in &self.view.views {
                     if w.as_main().is_none() {
@@ -340,7 +345,16 @@ impl App {
                 return IpcStep::Handled;
             }
         };
-        let window_id = cmd.request.params.get("window_id").and_then(|v| v.as_u64());
+        let window_id = match params::read_int::<u64>(&cmd.request.params, "window_id") {
+            Ok(v) => v,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(response_id, -32602, &msg),
+                );
+                return IpcStep::Handled;
+            }
+        };
 
         // ── surface 지정 오프스크린 캡처 (focus 독립) ──
         if let Some(sid) = surface_id {
@@ -989,10 +1003,8 @@ enum RemoteAttachTarget {
 
 impl RemoteAttachTarget {
     fn parse(params: &serde_json::Value) -> Result<Self, String> {
-        let remote_ws = params
-            .get("remote_workspace")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
+        // `as u32` 로 자르면 범위 밖 값이 **실재하는 다른 워크스페이스**를 가리킨다.
+        let remote_ws = params::read_int::<u32>(params, "remote_workspace")?;
         let new_workspace = params
             .get("new_workspace")
             .and_then(|v| v.as_bool())
