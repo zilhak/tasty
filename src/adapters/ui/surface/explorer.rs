@@ -32,7 +32,7 @@ use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 
 // ── grid 셀 치수 (4px 그리드 — explorer_view_cells specimen 과 동일) ──
 /// grid 셀 폭.
-const CELL_W: f32 = 80.0;
+const CELL_W: LogicalPx = LogicalPx(80.0);
 /// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 
@@ -1204,7 +1204,8 @@ fn grid_cell(
         + theme.spacing_xs.value()
         + label_h
         + theme.spacing_sm.value();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(CELL_W, cell_h), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(CELL_W.value(), cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
     // 선택 = surface-active 배경만(추가 accent 보더 없음 — design). hover = overlay-hover.
@@ -1254,7 +1255,7 @@ fn grid_cell(
         halign: egui::Align::Center,
         wrap: egui::text::TextWrapping {
             // 좌우 패딩 spacing_xs(4) 씩 제외한 내부 폭 (design padding "8px 4px").
-            max_width: CELL_W - theme.spacing_xs.value() * 2.0,
+            max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
             max_rows: 3,
             overflow_character: Some('…'),
             ..Default::default()
