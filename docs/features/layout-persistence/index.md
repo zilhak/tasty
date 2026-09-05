@@ -106,6 +106,12 @@ headless(`--headless`)는 레이아웃 복원을 적용하지 않으므로 슬�
 
 `general.restore_surface_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 surface-meta(`scrollback.persist_id`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 **전 슬롯의** `scrollback_ref` 합집합 외 `.bin` 일괄 정리(크래시 잔재) — 슬롯 하나만 보고 정리하면 다른 슬롯이 참조하는 `.bin` 을 지운다. 읽을 수 없는 슬롯이 하나라도 있으면 그 부팅에서는 정리 자체를 건너뛴다(모르면 지우지 않는다).
 
+### Plugin surface 복원 (hello 창)
+
+markdown·image 같은 **plugin surface** 는 호스트가 plugin 프로세스를 spawn 한 뒤 그 plugin 이 `hello` 를 보내 자기 kind 를 등록하기까지 짧은 창이 있다(부팅 부하에 따라 흔들린다). 레이아웃 복원이 이 창에 걸려 kind 가 아직 없으면, 그 surface 를 **kind/snapshot 을 보존한 placeholder 로** 복원한다 — 그 자리를 그냥 버리면 같은 pane 의 형제 tab(무고한 터미널 포함)과 상위 형제 pane 까지 함께 사라지기 때문이다. 화면에 표시될 때마다 도는 reify 가 kind 등록을 확인해 placeholder 를 실제 surface 로 채운다.
+
+plugin 이 끝내 뜨지 않으면(프로세스가 죽었거나 매니페스트에서 그 kind 가 사라진 경우) placeholder 가 **그대로 남는다 — 의도된 동작이다.** 이 상태는 두 얼굴을 갖는다: 사용자에게는 빈 자리로 보이고, 에이전트에게는 `surface.list`·surface tree 에서 원래 kind + `ready: false` + `pending_reason: "plugin_not_loaded"` 로 보인다. "있다" 와 "쓸 수 있다" 를 응답에서 가른 것이라 — 한쪽(빈 탭 표시 또는 `ready` 플래그)만 손대면 둘이 어긋난다. 상태를 바꿀 때는 두 얼굴을 함께 본다.
+
 ### TUI 세션 복원 (`restore.command`)
 
 claude plugin 등이 `tasty claude install` 로 SessionStart/End hook 을 걸면 세션 시작 시 `restore.command`(예: `claude -r <session-id>`)를 surface-meta 에 set. 호스트는 **agent-agnostic** 하게 `restore.command` 값만 읽어 복원에 쓴다 — 그 문자열이 무엇을 싣는지는 전적으로 plugin 소관이다. 예컨대 claude plugin 은 세션 프로필이 부착돼 있으면 `claude -r <id> --settings "<프로필 경로>"` 형태로 써서 **복원된 프로세스에도 프로필이 그대로 붙게** 한다([claude plugin](../../plugins/claude/index.md) "복원을 건너 프로필이 유지되는 방식") — 복원이 발급하는 새 surface id 때문에 surface meta 는 복원을 넘지 못하므로, 프로필을 실어 나르는 유일한 통로가 이 문자열이다. 명령 주입 타이밍은 PTY spawn 그 순간 — `TerminalConfig.initial_input` 으로 writer thread 시작 전 master fd 에 동기 write, child shell 의 첫 stdin read 에 무조건 첫 입력으로 들어감(추가 트리거 없이 spawn 과 동시 실행). 발동 경로 둘: 앱 재시작(레이아웃 복원) · [닫힌 항목 복원](../closed-tab-restore/index.md)(Ctrl+Shift+T).
