@@ -27,6 +27,41 @@ pub use macos::PlatformWebView;
 #[cfg(windows)]
 pub use self::windows::PlatformWebView;
 
+/// webview 생성 실패. **다시 시도할 가치가 있는가**를 타입으로 가른다.
+///
+/// 호출부(`create_missing_webviews`)는 webview 가 없는 html surface 를 다시 시도한다.
+/// 그런데 실패 경로가 X 창을 만들었다 지우면 그 X 이벤트가 이벤트 루프를 깨워
+/// **다음 시도를 스스로 부른다** — 실측으로 10 초에 27477 회, X 서버 CPU 는 코어의
+/// 27%, 로그는 8.2 MB 였다. 그래서 "몇 번까지 시도하는가" 가 정책이 아니라 필수다.
+///
+/// `String` 하나로는 그 정책을 나눌 수 없다. 두 처방이 다르기 때문이다:
+/// 영구 실패는 **즉시 포기**해야 하고, 일시 실패는 **몇 번 더** 해 볼 값어치가 있다.
+/// 근거·재검토 조건: `docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md`
+/// (실패 경로가 반복 가능해지는 것이 그 결정의 직접적 결과다).
+#[derive(Debug, Clone)]
+pub enum WebViewCreateError {
+    /// 다음 시도에 달라질 수 있는 입력이 있다 — 자원 고갈, 서버·런타임 경합.
+    Transient(String),
+    /// 이 프로세스에서는 달라지지 않는다 — 창 종류, 라이브러리 부재, 디스플레이 종류.
+    /// **호출부는 이것을 보면 그 surface 를 더 시도하지 않는다.**
+    Permanent(String),
+}
+
+impl std::fmt::Display for WebViewCreateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transient(m) => write!(f, "{m} (일시)"),
+            Self::Permanent(m) => write!(f, "{m} (영구)"),
+        }
+    }
+}
+
+impl WebViewCreateError {
+    pub fn is_permanent(&self) -> bool {
+        matches!(self, Self::Permanent(_))
+    }
+}
+
 /// gui 코드 편의용 재노출. 정의처는 비-gui 모듈 `plugin_bridge::remote_surface`
 /// (webview 모듈이 `#[cfg(feature = "gui")]` 게이트라 비-gui 의 RemoteSurface 가
 /// 참조할 수 있도록 그곳에 둔다). backend 들은 `super::NavState`, host gui 코드는

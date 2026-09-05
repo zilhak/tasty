@@ -49,6 +49,22 @@ pub struct PlatformWebView {
     parent_x11_window: std::os::raw::c_ulong,
 }
 
+/// 이 백엔드의 실패를 두 종류로 나누는 자리. **분류 근거를 한곳에 모아 둔다** —
+/// 분기마다 흩어 두면 새 분기를 더할 때 무엇을 기준으로 골랐는지가 사라진다.
+///
+/// 기준: **다음 시도에 달라질 수 있는 입력이 있는가.**
+/// - 창 종류(X11/Wayland) · GTK 초기화 · Xlib 적재 · 디스플레이 열기·종류 —
+///   프로세스가 사는 동안 안 바뀐다 ⇒ `Permanent`.
+/// - `XCreateSimpleWindow` 실패(서버 자원 고갈) · GDK 조회가 창을 못 찾음 —
+///   서버 상태라 달라질 수 있다 ⇒ `Transient`.
+fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Permanent(msg.to_string())
+}
+
+fn transient(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Transient(msg.to_string())
+}
+
 impl PlatformWebView {
     pub fn new(
         window: &(impl HasWindowHandle + HasDisplayHandle),
@@ -56,13 +72,13 @@ impl PlatformWebView {
         scale_factor: f64,
         surface_id: u32,
         key_bridge: Rc<WebViewKeyBridge>,
-    ) -> Result<Self, String> {
-        let parent_xid = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
+    ) -> Result<Self, super::WebViewCreateError> {
+        let parent_xid = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Xlib(w) => w.window,
-            _ => return Err("Not an X11 window (Wayland is not supported)".to_string()),
+            _ => return Err(perm("Not an X11 window (Wayland is not supported)")),
         };
 
-        let x11_display_ptr = match window.display_handle().map_err(|e| e.to_string())?.as_raw() {
+        let x11_display_ptr = match window.display_handle().map_err(perm)?.as_raw() {
             RawDisplayHandle::Xlib(d) => d
                 .display
                 .map(|p| p.as_ptr())
@@ -72,10 +88,11 @@ impl PlatformWebView {
 
         // Initialize GTK if not already initialized
         if !gtk::is_initialized() {
-            gtk::init().map_err(|e| format!("GTK init failed: {e}"))?;
+            gtk::init().map_err(|e| perm(format!("GTK init failed: {e}")))?;
         }
 
-        let xlib = x11_dl::xlib::Xlib::open().map_err(|e| format!("Failed to open Xlib: {e}"))?;
+        let xlib =
+            x11_dl::xlib::Xlib::open().map_err(|e| perm(format!("Failed to open Xlib: {e}")))?;
 
         let physical = bounds.to_physical(scale_factor);
         let x = physical.x as i32;
@@ -95,7 +112,7 @@ impl PlatformWebView {
         };
 
         if display.is_null() {
-            return Err("Failed to get X11 display".to_string());
+            return Err(perm("Failed to get X11 display"));
         }
 
         // Create X11 child window
@@ -106,7 +123,7 @@ impl PlatformWebView {
         };
 
         if x11_window == 0 {
-            return Err("XCreateSimpleWindow failed".to_string());
+            return Err(transient("XCreateSimpleWindow failed"));
         }
 
         // SAFETY: 방금 만든 x11_window를 같은 display에 map → sync. 단일 thread, 같은 호출.
@@ -124,11 +141,11 @@ impl PlatformWebView {
         }
 
         // Create GDK window from X11 window
-        let gdk_display = gtk::gdk::Display::default().ok_or("No GDK display")?;
+        let gdk_display = gtk::gdk::Display::default().ok_or_else(|| perm("No GDK display"))?;
 
         let x11_gdk_display: gdkx11::X11Display = gdk_display
             .downcast()
-            .map_err(|_| "GDK display is not X11")?;
+            .map_err(|_| perm("GDK display is not X11"))?;
 
         // 창이 없으면 NULL 이 온다. 바인딩은 그것을 패닉으로 바꾸므로 쓰지 않는다.
         let gdk_window =
@@ -145,7 +162,7 @@ impl PlatformWebView {
                     // SAFETY: 위와 같은 유효한 display. 파괴 요청을 서버로 내보낸다 —
                     // 여기서는 왕복이 필요 없다(뒤에서 이 창을 조회하지 않는다).
                     unsafe { (xlib.XFlush)(display) };
-                    return Err(e);
+                    return Err(transient(e));
                 }
             };
 

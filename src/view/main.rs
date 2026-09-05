@@ -103,6 +103,12 @@ pub struct MainView {
     /// surface 별 마지막으로 webview 에 로드한 URL — `surface.webview_url()` 최신값과 달라지면
     /// (예: `webview.set_url` IPC) 기존 webview 인스턴스에 재로드를 트리거한다(파괴·재생성 없음).
     pub(crate) webview_loaded_urls: std::collections::HashMap<u32, String>,
+    /// surface 별 webview **생성 시도** 횟수. 생성이 실패해도 그 surface 는 다음
+    /// 프레임에 다시 후보가 되는데, 실패 경로가 X 창을 만들었다 지우면 그 X 이벤트가
+    /// 이벤트 루프를 깨워 **다음 시도를 스스로 부른다**. 상한이 없으면 그 고리가
+    /// 안 끝난다(실측: 10 초에 27477 회). 상한은
+    /// `redraw::MAX_WEBVIEW_CREATE_ATTEMPTS`, 영구 실패는 한 번에 상한으로 올린다.
+    pub(crate) webview_create_attempts: std::collections::HashMap<u32, u32>,
     /// 이 창의 모든 native webview 가 공유하는 키/포커스 브리지. webview 는 OS
     /// 자식 창이라 자기가 키보드 포커스를 잡으면 winit `KeyboardInput` 이 끊긴다 —
     /// 백엔드가 이 브리지에 키를 올리고 host 가 매 프레임 비운다
@@ -234,6 +240,7 @@ impl MainView {
             webviews: std::collections::HashMap::new(),
             webview_applied_settings: std::collections::HashMap::new(),
             webview_loaded_urls: std::collections::HashMap::new(),
+            webview_create_attempts: std::collections::HashMap::new(),
             webview_key_bridge: std::rc::Rc::new(crate::webview::WebViewKeyBridge::new()),
             webview_overlay_focus_released: false,
             webview_any_visible: false,
