@@ -1290,3 +1290,152 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
         gone.join("\n")
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 색 파생 계수 — 익명 리터럴 금지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 색을 약하게 만드는 두 호출. 값 공간은 다르지만(배율 0~1 · 알파 0~255) 의도가 같고,
+/// 레포 안에 그 둘이 **같은 비율의 두 표현**임을 적은 자리가 이미 있다
+/// (`tasty-plugin-markdown` 의 diff 배경: `with_alpha(31)` ≈ `gamma_multiply(0.12)`).
+/// 그래서 한 축으로 본다.
+const COLOR_COEFF_CALLS: &[&str] = &[".gamma_multiply(", ".with_alpha("];
+
+/// 이 축의 스캔 인구는 **레포 전체**다 — 위 `SCAN_ROOTS`(UI 여섯 곳)보다 넓다.
+/// 계수를 쓰는 자리가 번들 plugin 크레이트에도 있어서, UI 루트로 좁히면 그쪽이 조용히
+/// 열린다. 좁힘은 조용하고 넓힘은 시끄럽다 — 이 축은 넓은 쪽을 고른다.
+const COLOR_COEFF_SCAN_ROOTS: &[&str] = &["src", "crates"];
+
+/// 스캔이 실제로 레포를 훑었는지 고정한다. 경로가 틀리면 0 건이 초록으로 보인다.
+const MIN_COLOR_COEFF_SCANNED_FILES: usize = 1000;
+
+/// 줄에서 **숫자 리터럴을 인자로 받은** 색 계수 호출을 뽑는다.
+///
+/// 주석은 판정 대상이 아니다. 줄 전체 주석(`//`·`///`·`//!`)은 버리고, 뒤에 달린
+/// 주석은 `"// "`(뒤 공백 포함)에서 자른다 — 공백을 요구해야 `https://` 가 안 잘린다.
+fn color_coeff_literals(line: &str) -> Vec<(&'static str, String)> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("//") {
+        return Vec::new();
+    }
+    let code = match line.find("// ") {
+        Some(at) => &line[..at],
+        None => line,
+    };
+    let mut hits = Vec::new();
+    for call in COLOR_COEFF_CALLS {
+        let mut cursor = 0usize;
+        while let Some(rel) = code[cursor..].find(call) {
+            cursor += rel + call.len();
+            let rest = &code[cursor..];
+            let Some(end) = rest.find([',', ')']) else {
+                continue;
+            };
+            let arg = rest[..end].trim();
+            if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                hits.push((*call, arg.to_string()));
+            }
+        }
+    }
+    hits
+}
+
+/// 색 파생 계수(`gamma_multiply` 배율 · `with_alpha` 알파)는 익명 리터럴로 두지 않는다.
+///
+/// **대응 토큰이 없는 축이다.** DTCG 에 있는 opacity 는 `disabled`(0.5) ·
+/// `recessed`(0.4) · `dimmed`(0.75) 셋뿐이고, 실제 쓰이는 값은 0.09~0.92 로 훨씬 넓다.
+/// 그래서 이 가드는 "토큰을 써라" 가 아니라 **"값에 이름과 사유를 붙여라"** 를 요구한다 —
+/// [ADR-0126](../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 이
+/// 폰트·반경 축에서 내린 것과 같은 결정이고, 그 ADR 본문이 결정을 **축 중립**이라고
+/// 적는다.
+///
+/// **면제 목록이 없다.** 오늘 위반 0 이라 필요가 없고, 첫 예외를 넣는 것은 항목 추가가
+/// 아니라 **부류의 창설**이다(같은 판단을 이 파일의 `OVER_CAP_SANCTIONED` 가 이미
+/// 기록하고 있다). 넣기 전에 그 자리를 고칠 수 있는지 먼저 보고, 못 고치면 올려라.
+#[test]
+fn no_color_derivation_coefficient_is_an_anonymous_literal() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for target in COLOR_COEFF_SCAN_ROOTS {
+        let path = root.join(target);
+        let before = files.len();
+        gather_rs_files(&path, &mut files);
+        assert!(
+            files.len() > before,
+            "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다"
+        );
+    }
+    assert!(
+        files.len() >= MIN_COLOR_COEFF_SCANNED_FILES,
+        "스캔한 .rs 가 {} 개뿐이다 — 하한 {MIN_COLOR_COEFF_SCANNED_FILES}. 경로가 \
+         틀렸으면 위반 0 이 측정이 아니라 침묵이다",
+        files.len()
+    );
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (no, line) in text.lines().enumerate() {
+            for (call, arg) in color_coeff_literals(line) {
+                violations.push(format!("{rel}:{} {call}{arg})", no + 1));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "색 파생 계수가 익명 리터럴이다 ({} 자리). 사유를 적은 명명 const 로 올려라 — \
+         값을 바꾸지 말고 이름만 붙인다. 값을 모으는 것(수렴)은 픽셀이 바뀌므로 별개의 \
+         디자인 결정이다:\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
+}
+
+/// 위 0 이 **깨진 계측기의 0** 이 아님을 보인다 (R56).
+///
+/// 바늘을 소스에 통짜로 남기면 이 파일 자신이 위 가드에 걸린다 — 그래서 합성 줄은
+/// 런타임에 조립한다.
+#[test]
+fn the_color_coeff_scan_sees_both_forms_and_ignores_the_named_one() {
+    let gamma = COLOR_COEFF_CALLS[0];
+    let alpha = COLOR_COEFF_CALLS[1];
+
+    let bad_gamma = format!("        .fill(c{gamma}0.12))");
+    assert_eq!(
+        color_coeff_literals(&bad_gamma),
+        vec![(COLOR_COEFF_CALLS[0], "0.12".to_string())],
+        "배율 리터럴을 못 봤다"
+    );
+
+    let bad_alpha = format!("    let x = c{alpha}180).to_egui();");
+    assert_eq!(
+        color_coeff_literals(&bad_alpha),
+        vec![(COLOR_COEFF_CALLS[1], "180".to_string())],
+        "알파 리터럴을 못 봤다"
+    );
+
+    // 명명 const 로 올린 형태는 통과해야 한다 — 통과 못 하면 처방이 가드에 막힌다.
+    let good = format!("        .fill(c{gamma}WARN_BADGE_FILL_OPACITY))");
+    assert!(
+        color_coeff_literals(&good).is_empty(),
+        "명명 const 형태가 위반으로 잡혔다 — 이 가드가 요구하는 형태 자체가 막힌다"
+    );
+
+    // 주석은 판정 대상이 아니다. 줄 주석과 뒤에 달린 주석 둘 다.
+    let line_comment = format!("    // 예전에는 c{gamma}0.4) 였다");
+    assert!(
+        color_coeff_literals(&line_comment).is_empty(),
+        "줄 주석을 판정했다"
+    );
+    let trailing = format!("    let x = c{alpha}NAMED); // c{gamma}0.4) 였다");
+    assert!(
+        color_coeff_literals(&trailing).is_empty(),
+        "뒤에 달린 주석을 판정했다"
+    );
+}
