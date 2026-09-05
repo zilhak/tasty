@@ -31,6 +31,10 @@ pub enum AwaitOutcome {
 
 type WaiterKey = (u32, TaskId);
 
+/// waiter 맵 락의 poison 복구 공용 보고 좌표(첫-1 회). hub 는 프로세스에 하나다.
+static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Default)]
 pub struct TaskWakerHub {
     waiters: Mutex<HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>>,
@@ -49,18 +53,13 @@ impl TaskWakerHub {
     /// (timeout 을 안 준 호출자는 무한 대기다). 복구가 맞다
     /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
     ///
-    /// 여기는 프레임·출력 단위가 아니라 task 종결 단위라 호출 빈도가 낮다 — 매 발생을
-    /// 로그로 남긴다(1 회 제한은 초당 여러 번 도는 경로에만 쓴다).
+    /// 예전엔 이 자리가 매 발생을 로그로 남겼다(task 종결 단위라 빈도가 낮아 감당된다는
+    /// 판단). 이제는 공용 헬퍼의 첫-1 회 보고로 통일한다 — poison 은 sticky 라 첫 만남이
+    /// 곧 원인이고, 방침(error-handling.md)이 모든 poison 복구를 한 헬퍼·첫-1 회로 모은다.
     fn lock_recovering(
         &self,
     ) -> std::sync::MutexGuard<'_, HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>> {
-        self.waiters.lock().unwrap_or_else(|poisoned| {
-            tracing::error!(
-                "task waker hub mutex poisoned — a thread panicked while holding it; recovering \
-                 so pending task_await callers can still be woken"
-            );
-            poisoned.into_inner()
-        })
+        crate::poison::recover_mutex(self.waiters.lock(), "task waker hub", &TASK_WAKER_POISONED)
     }
 
     /// `current` 가 이미 종결이면 즉시 반환. 아니면 등록 후 timeout 동안 대기.
