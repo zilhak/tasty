@@ -91,19 +91,15 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 
 그래서 "release 표에 있는데 CLI 가 없다" 는 그 자체로 결함이 아니다. 아래가 현재 그런 메서드 전부이고, 각 행이 왜 원칙 2 밖인지 또는 어떻게 이미 충족되는지를 적는다. **새로 그런 메서드를 만들면 여기에 행을 추가한다** — `tests/cli_method_table_parity.rs` 가 이 표와 실제 집합을 양방향으로 대조하므로, 빠뜨리면 테스트가 떨어진다.
 
-총 36개.
+총 30개.
 
 | 이유 | 메서드 | 왜 CLI 가 없나 |
 |---|---|---|
 | plugin → host 서비스 | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
 | plugin → host 서비스 | `fs.pick_file` · `file_picker.trigger` | plugin 프로세스가 못 여는 host UI 스레드 자원(native 다이얼로그 · host 소유 popup)을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다 |
-| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` · `recent.query` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. host 는 kind 를 모르고 generic 하게 대행할 뿐이다 |
-| plugin → host 서비스 | `webview.set_url` · `surface.set_cwd` | plugin 이 **자기** surface 의 상태를 host 에 통보한다 |
-| plugin → host 서비스 | `theme.query` | webview-kind surface 가 `set_context` 를 못 받아 문서 재생성 시 Theme 을 직접 조회한다(ADR-0065). 사람이 볼 값은 `tasty settings get` 쪽이다 |
+| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. host 는 kind 를 모르고 generic 하게 대행할 뿐이다 |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
-| plugin → host 서비스 | `file_handler.dispatch` | explorer plugin 의 더블클릭 같은 in-app 흐름 진입점이다. 사람이 파일을 열 때는 `tasty open` 계열이 그 앞단이다 |
 | plugin → host 서비스 | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
-| plugin → host 서비스 | `telemetry.record_batch` | 단건 `telemetry.record` 는 `tasty telemetry record` 로 있다. batch 는 plugin 이 다건을 모아 보내는 효율 변종이라 CLI 한 줄에 대응하지 않는다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.profile.add` · `remote.profile.get` · `remote.profile.list` · `remote.profile.list_local` · `remote.profile.detect` · `remote.profile.import` · `remote.profile.remove` | `tasty tool remote-profile …` 이 로컬 프로필 파일을 직접 다룬다(IPC 없음). 인스턴스가 떠 있지 않아도 되어야 하는 명령이라 그쪽이 옳다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.passkey.add` · `remote.passkey.get` · `remote.passkey.list` · `remote.passkey.remove` | `tasty tool passkey …` 가 같은 이유로 로컬 처리한다 |
