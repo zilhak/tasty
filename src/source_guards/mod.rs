@@ -666,6 +666,11 @@ mod test_serialization_locks;
 /// 사라진다 — 실제로 났고, 컴파일도 두 조합의 유닛 스위트도 못 잡았다.
 mod jobs_anchored_at_boot;
 
+/// 유도표(`ipc_namespaces`)의 원본(`PluginManager.packages`)을 유도가 사는 크레이트 밖에서
+/// 바꾸는 자리가 있는지 본다. 있으면 표가 낡아, 지운 plugin 의 prefix 가 남고 호스트가 같은
+/// 이름에 가진 구현이 가려진다.
+mod derived_plugin_tables_are_not_bypassed;
+
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
 /// 번들 plugin 명부가 적힌 다섯 자리(cfg 두 갈래 · 매니페스트 실물 · 문서 두 곳)가
