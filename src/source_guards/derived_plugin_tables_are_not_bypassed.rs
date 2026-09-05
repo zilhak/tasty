@@ -197,6 +197,26 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
             .replace("\r\n", "\n");
         let stripped = strip_comments(&src);
         for (n, d) in DERIVED.iter().enumerate() {
+            // ★ 필드 항목은 **그 필드를 소유한 크레이트 안에서만** 본다.
+            //
+            // 위 명부의 주석 셋이 이미 "구조로 닫혔다" 고 적어 뒀다 — 그 필드들은
+            // 크레이트 밖에서 아예 안 보이고, 밖의 위반은 가드가 아니라 **컴파일러가**
+            // 먼저 막는다. 그래서 밖까지 훑는 것은 판정력을 안 주고 이름 충돌만 산다.
+            //
+            // 실제로 샀다: `crates/tasty-doc-guards/src/workflow_triggers.rs` 의
+            // 무관한 지역 구조체가 `packages` 필드를 갖고 있어 `.packages.insert(` 가
+            // 걸렸다. 이름이 같을 뿐 그 표가 아니다 — **이름이 아니라 성질로 판정한다.**
+            //
+            // 자유 함수 항목(`field` 가 `.` 로 시작하지 않는 것)은 어디서든 부를 수
+            // 있어 전 범위를 그대로 훑는다. 그 구분은 이 파일이 이미 쓰던 것이다.
+            if d.field.starts_with('.') {
+                let owner = d.home.rsplit_once("/src/").map(|(c, _)| c);
+                if let Some(owner) = owner
+                    && !rel.starts_with(owner)
+                {
+                    continue;
+                }
+            }
             let hit = stripped.lines().enumerate().filter(|(_, l)| mutates(d, l));
             if rel == d.home {
                 if hit.count() > 0 {
