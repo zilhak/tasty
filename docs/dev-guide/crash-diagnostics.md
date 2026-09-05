@@ -143,7 +143,7 @@ dev 빌드가 심볼이 온전해 위치 파악이 쉽다.
 | `~/.tasty/crash-reports/hang-*.log` | 모두 | 이벤트 루프 stall 시 자동(어느 콜백·어느 GPU 단계에서 멎었나). stall 당 1 개, 복구는 하지 않음 |
 | `~/.tasty-debug/debug-dev.log` | dev 만 | 전체 debug tracing(host 프로세스 전용, host 시작 시 truncate) |
 | `~/.tasty/debug.log` | release / dist 만 | warn 이상 tracing(host 프로세스 전용, host 시작 시 truncate) |
-| `~/.tasty/hook-failures.log` | 모두 | agent hook 전달 실패(CLI 프로세스가 tasty 에 닿지 못한 기록). append-only + 256KB 회전. 언어가 갈린다 — **CLI 가 만드는 두 갈래(미실행·연결 실패)의 `reason` 은 로케일 무관 영어**이고([ADR-0075](../adr/0075-agent-hook-delivery-failure-record.md)), **오류 응답을 그대로 싣는 셋째 갈래는 응답한 쪽의 언어**다(`claude.hook`·`codex.hook` 은 설정 언어로 답한다). 어느 갈래든 `method`/`event`/`surface` 와 `reason` 앞머리의 코드는 언어를 안 탄다 |
+| `~/.tasty/hook-failures.log` | 모두 | agent hook 전달 실패(CLI 프로세스가 tasty 에 닿지 못한 기록). append-only + 256KB 회전. 한 줄은 `<UTC> method=… event=… surface=… code=… reason=…`. **로케일 무관성은 좌표 필드(`method`/`event`/`surface`/`code`)가 지고 `reason` 산문은 그 문구를 만든 쪽의 언어를 따른다**([ADR-0164](../adr/0164-hook-failure-locale-invariance-rests-on-fields.md) — [ADR-0075](../adr/0075-agent-hook-delivery-failure-record.md) 의 언어 조항 부분 개정). CLI 가 만드는 두 갈래(미실행·연결 실패)는 영어이고 타입이 그것을 지킨다. 오류 응답을 싣는 셋째 갈래는 답한 쪽이 문구를 만들며 `claude.hook`·`codex.hook` 은 설정 언어로 답한다 |
 | stderr | 모두 | panic 메시지 + backtrace, `TASTY_LOG` 레벨의 tracing (CLI 프로세스는 이쪽만) |
 
 ## 관련

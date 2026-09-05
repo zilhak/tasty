@@ -134,6 +134,7 @@ fn run_dynamic_client(
             hook_failure::record(
                 &request.method,
                 &request.params,
+                None, // 호스트에 닿지도 못했다 — JSON-RPC 코드가 없다
                 &hook_failure::DiagnosticEnglish::new_unchecked(e.to_string()),
             );
             return Err(anyhow::anyhow!("{}", crate::port_file::localize(&e)));
@@ -142,7 +143,7 @@ fn run_dynamic_client(
     let stream = match connect_ipc(port) {
         Ok(s) => s,
         Err(e) => {
-            hook_failure::record(&request.method, &request.params, &e.diagnostic());
+            hook_failure::record(&request.method, &request.params, None, &e.diagnostic());
             return Err(e.into());
         }
     };
@@ -156,14 +157,20 @@ fn run_dynamic_client(
             Ok(())
         }
         Err(e) => {
-            // 이 경로의 문구는 이미 영어다 — 호스트가 돌려준 JSON-RPC `error.message`
-            // 이거나 `tasty-ipc` 가 코드에 박아 둔 영어 문장이고, 어느 쪽도 CLI 의
-            // 로케일을 타지 않는다. 따라서 stderr 와 로그가 같은 문자열이어도 규약을
-            // 어기지 않는다 — 앞의 둘과 달리 갈라 놓을 것이 없다.
+            // **이 갈래만 문구를 CLI 가 만들지 않는다.** 앞의 둘은 CLI 가 영어 원본을
+            // 쥐고 있어 진단과 표시를 갈라 놓을 수 있지만, 여기 `message` 는 답한 쪽이
+            // 만들어 보낸 것이라 CLI 에 영어 원본이 없다 — 그리고 plugin 이 답하면 그
+            // 문구는 앱 언어를 탄다(`claude.hook`·`codex.hook`). 그래서 로케일 무관성은
+            // 산문이 아니라 **코드 필드**가 진다(`code=`). 코드는 프로토콜 값이라
+            // 안 흔들리고, 이제 산문을 파싱하지 않아도 꺼낼 수 있다.
+            let code = e
+                .downcast_ref::<tasty_ipc::client::JsonRpcCallError>()
+                .map(|err| err.code);
             let msg = e.to_string();
             hook_failure::record(
                 &request.method,
                 &request.params,
+                code,
                 &hook_failure::DiagnosticEnglish::new_unchecked(msg.clone()),
             );
             if let Some(rest) = msg.strip_prefix("Error (") {

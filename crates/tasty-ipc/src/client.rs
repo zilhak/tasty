@@ -14,6 +14,28 @@ use anyhow::Result;
 
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 
+/// 호스트가 JSON-RPC 오류로 답했다 — **코드를 데이터로 들고 있는** 실패.
+///
+/// 이전에는 `anyhow::bail!("Error ({code}): {message}")` 로 곧장 문자열이 됐고, 그래서
+/// 호출자가 코드를 쓰려면 자기가 만든 문장을 자기가 다시 파싱해야 했다. `message` 는
+/// 답한 쪽(호스트 또는 plugin)이 만든 산문이라 **로케일을 탈 수 있는** 반면 `code` 는
+/// 프로토콜 값이라 안 탄다 — 그 둘을 갈라 두는 것이 이 타입의 전부다.
+///
+/// `Display` 는 종전 문자열 그대로다. 기존 호출자의 출력은 한 글자도 바뀌지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsonRpcCallError {
+    pub code: i32,
+    pub message: String,
+}
+
+impl std::fmt::Display for JsonRpcCallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Error ({}): {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for JsonRpcCallError {}
+
 pub mod stream;
 
 pub use stream::StreamConnection;
@@ -75,7 +97,11 @@ impl IpcConnection {
             let response: JsonRpcResponse = serde_json::from_str(trimmed)?;
 
             if let Some(error) = response.error {
-                anyhow::bail!("Error ({}): {}", error.code, error.message);
+                return Err(JsonRpcCallError {
+                    code: error.code,
+                    message: error.message,
+                }
+                .into());
             }
 
             return Ok(response.result.unwrap_or(serde_json::Value::Null));
