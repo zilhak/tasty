@@ -32,6 +32,19 @@ target/debug/tasty read screen --surface 2               # 결과 확인
 kill "$MY_APP"                                           # 종료 — 저장한 PID 로만
 ```
 
+**`cargo test` 는 `target/debug/tasty` 를 만들지 않는다 — 라이브로 재기 전에 빌드 시각을 본다.**
+`cargo test --bin tasty` 가 만드는 것은 **테스트 하네스**(`target/debug/deps/tasty-<해시>`)이고
+`--bin tasty` 라는 이름 때문에 실행 바이너리도 함께 갱신된 것처럼 보인다. 갱신되지 않는다.
+그래서 코드를 고치고 테스트만 돌린 뒤 위 절차로 인스턴스를 띄우면 **직전 코드를 재게 되고,
+그 오진은 양방향이다** — 고친 것이 안 고쳐진 것처럼도, 되돌린 것이 여전히 고쳐진 것처럼도
+보인다. plugin 쪽에 이미 알려진 함정(`cargo build` 가 plugin 바이너리를 relink 하지 않는다,
+`CLAUDE.md` "빌드")의 **본체 판**이고 성질이 같다. 라이브 프로브 전에 한 줄로 확인한다:
+
+```bash
+cargo build --locked --bin tasty                  # 라이브 검증용 바이너리는 이 명령이 만든다
+ls -la --time-style=full-iso target/debug/tasty   # 방금 고친 시각보다 새것인지 눈으로 본다
+```
+
 **종료는 자기가 띄운 PID 로만 한다.** 이름이나 명령줄 패턴으로 찾아서 죽이면
 **자기 것이 아닌 인스턴스까지 죽인다** — 사용자 release · 다른 검증 세션 · 병렬 lane 의
 debug 인스턴스가 동시에 떠 있는 것이 이 레포의 일상이고, 실제로 그 형태가 다른 세션의
