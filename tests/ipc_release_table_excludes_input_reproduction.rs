@@ -64,6 +64,8 @@
 //! 따라서 이 가드를 근거로 로컬 검증을 건너뛰지 않는다.
 #![cfg(debug_assertions)]
 
+mod cfg_span;
+
 use std::path::Path;
 
 use tasty_ipc::method_meta::METHOD_TABLE;
@@ -390,89 +392,12 @@ fn is_debug_gated(lines: &[String], idx: usize) -> bool {
     false
 }
 
-/// 줄의 중괄호 수지 — 줄 주석 뒤, 문자열 리터럴 안, 문자 리터럴 안의 괄호는 세지 않는다.
-fn brace_delta(line: &str) -> i32 {
-    let b = line.as_bytes();
-    let mut depth = 0i32;
-    let mut i = 0usize;
-    let mut in_str = false;
-    while i < b.len() {
-        let c = b[i];
-        if in_str {
-            if c == b'\\' {
-                i += 2;
-                continue;
-            }
-            if c == b'"' {
-                in_str = false;
-            }
-            i += 1;
-            continue;
-        }
-        if c == b'/' && i + 1 < b.len() && b[i + 1] == b'/' {
-            break;
-        }
-        if c == b'"' {
-            in_str = true;
-        } else if c == b'\'' {
-            // 문자 리터럴 `'{'` — 라이프타임(`'a`)과 구분해 닫는 따옴표까지 건너뛴다.
-            let esc = i + 1 < b.len() && b[i + 1] == b'\\';
-            let end = if esc { i + 3 } else { i + 2 };
-            if end < b.len() && b[end] == b'\'' {
-                i = end + 1;
-                continue;
-            }
-        } else if c == b'{' {
-            depth += 1;
-        } else if c == b'}' {
-            depth -= 1;
-        }
-        i += 1;
-    }
-    depth
-}
-
-/// `#[cfg(… debug_assertions …)]` 가 **여러 줄짜리 항목**(블록·if·match)에 붙었을 때,
-/// 그 항목이 덮는 줄 전체를 gated 로 표시한다.
+/// 블록·다중행 항목에 붙은 cfg 를 그 항목이 덮는 줄 전체에 상속시킨다.
 ///
-/// [`is_debug_gated`] 는 팔 **바로 위** 줄만 본다. 그래서
-///
-/// ```text
-/// #[cfg(debug_assertions)]
-/// {
-///     let rpc_id = …;                    // ← 여기서 위로 훑기가 멈춘다
-///     if method == "debug.lua.eval" { … }
-/// }
-/// ```
-///
-/// 형태에서는 팔이 release 로 보인다 — 컴파일러는 release 에서 이 팔을 지우는데
-/// 가드만 남아 있다고 말하는, **위양성**이다. 판정 기준은 관례가 아니라 *컴파일러가
-/// 무엇을 보느냐* 이므로 이 자리를 상속시킨다.
+/// 구현은 [`cfg_span`] 에 있다 — 같은 판정이 필요한 통합 타깃이 둘이고,
+/// 사본이 둘이면 갈리고 갈린 쪽은 조용하다.
 fn debug_gated_lines(lines: &[String]) -> Vec<bool> {
-    let mut gated = vec![false; lines.len()];
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim();
-        if !(t.starts_with("#[") && t.contains("debug_assertions")) {
-            continue;
-        }
-        // attribute 가 붙는 항목의 첫 줄 — 주석·빈 줄·다른 attribute 는 건너뛴다.
-        let Some(start) = (i + 1..lines.len()).find(|&j| {
-            let t = lines[j].trim();
-            !(t.is_empty() || t.starts_with("//") || t.starts_with("#["))
-        }) else {
-            continue;
-        };
-        let mut depth = brace_delta(&lines[start]);
-        gated[start] = true;
-        // 그 줄에서 블록이 열리지 않으면 한 줄짜리 항목이다(기존 판정과 같다).
-        let mut j = start;
-        while depth > 0 && j + 1 < lines.len() {
-            j += 1;
-            gated[j] = true;
-            depth += brace_delta(&lines[j]);
-        }
-    }
-    gated
+    cfg_span::cfg_gated_lines(lines, "debug_assertions")
 }
 
 /// 스캔 결과 한 건 — 순수 함수 대조군에서 그대로 검사할 수 있게 값으로 돌려준다.

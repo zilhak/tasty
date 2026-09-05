@@ -43,6 +43,8 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
 
+mod cfg_span;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -162,6 +164,15 @@ const PENDING_FIX_LITERALS: &[(&str, &str, &str)] = &[
 ];
 
 /// clap 도움말 스캔 대상(`crates/tasty-cli`).
+/// [`clap_help_text_is_english_only`] 가 실제로 검사하는 `///` 줄의 하한.
+///
+/// 스캔 대상이 0 이면 그 술어는 위반을 못 찾는 것이 아니라 **볼 것이 없어서** 초록이다.
+/// `#[cfg(test)]` 를 걷어내는 판정이 너무 많이 먹으면 그 형태로 조용히 무너지므로,
+/// 실측보다 낮되 붕괴를 잡을 만큼은 높게 잡는다 — 전부를 게이트로 보는 변이는 0 으로
+/// 떨어지고, 게이트가 절반쯤 새는 변이도 이 아래로 온다. CLI 표면이 정상적으로 줄어
+/// 여기 걸리면 그때 값을 다시 재서 내린다.
+const MIN_SCANNED_CLAP_DOC_LINES: usize = 800;
+
 const CLAP_DOC_ROOTS: &[&str] = &[
     "crates/tasty-cli/src/commands",
     "crates/tasty-cli/src/commands.rs",
@@ -626,21 +637,41 @@ fn clap_help_text_is_english_only() {
     );
 
     let mut violations = Vec::new();
+    // 실제로 검사된 `///` 줄. 게이트 판정이 망가져 전부 게이트로 보이면 이 수가
+    // 무너지고, 그때 아래 하한이 먼저 말한다 — 0 은 통과가 아니라 측정 실패다.
+    let mut scanned_doc_lines = 0usize;
     for file in &files {
         let Ok(contents) = std::fs::read_to_string(file) else {
             continue;
         };
         let rel = rel_of(file);
-        for (idx, line) in contents.lines().enumerate() {
+        let src: Vec<&str> = contents.lines().collect();
+        // `#[cfg(test)]` 아래는 바이너리에 안 들어가므로 `--help` 에도 안 나온다.
+        // doc 주석은 **뒤따르는 항목**에 귀속되니 속성 앞 줄까지 함께 걷어낸다.
+        let gated = cfg_span::cfg_gated_lines(&src, "test");
+        for (idx, line) in src.iter().enumerate() {
+            if gated[idx] {
+                continue;
+            }
+            if line.trim_start().starts_with("///") {
+                scanned_doc_lines += 1;
+            }
             if let Some(hit) = clap_doc_violation(line) {
                 violations.push(format!("  {rel}:{}: {hit}", idx + 1));
             }
         }
     }
     assert!(
+        scanned_doc_lines >= MIN_SCANNED_CLAP_DOC_LINES,
+        "clap 도움말 후보 `///` 줄이 {scanned_doc_lines} 개뿐이다(하한 \
+         {MIN_SCANNED_CLAP_DOC_LINES}). 게이트 판정이 너무 많이 걷어냈거나 \
+         `CLAP_DOC_ROOTS` 가 낡았다 — 이 술어는 볼 것이 없으면 공짜로 초록이다."
+    );
+    assert!(
         violations.is_empty(),
         "clap help text must be English only — `///` doc comments and about/help literals \
          surface verbatim in `--help` (docs/dev-guide/i18n.md, cli-structure.md 도움말 문구). \
+         `#[cfg(test)]` 아래는 바이너리에 안 들어가므로 여기 안 걸린다. \
          Move Korean/Japanese background notes to `//` comments or docs/:\n{}",
         violations.join("\n")
     );
