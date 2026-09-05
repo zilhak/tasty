@@ -50,7 +50,12 @@ const MIN_GATED_ITEMS: usize = 25;
 
 /// 부모 파일(모듈 선언에 cfg 가 없는 곳)에 사는 것이 **지금 허용되는** 자리.
 ///
-/// 자리로 적는다 — 부류로 적으면 도망길이 된다(R505). 각 줄에 **왜 여기 있는가**를 붙인다.
+/// 자리로 적는다 — 부류로 적으면 도망길이 된다. 각 줄에 **왜 여기 있는가**를 붙인다.
+///
+/// 지금 남은 둘은 **라우팅 지점**뿐이다. 한때 핸들러 본체 셋과 헬퍼 하나가 여기 있었는데,
+/// 그것들은 옮길 곳이 없어서(유일한 debug 모듈이 gui 게이트였다) 부모에 살던 부채였다 —
+/// `handler/debug_state.rs` 를 만들어 옮겼다. 아래 [`every_allowed_parent_site_still_exists`]
+/// 가 그 정리를 강제한다: 옮기고 명부를 안 지우면 빨개진다.
 const KNOWN_PARENT_SITES: &[(&str, &str)] = &[
     (
         "route_debug_handler",
@@ -58,24 +63,8 @@ const KNOWN_PARENT_SITES: &[(&str, &str)] = &[
          자식이 다시 부모의 표를 읽는 순환이 된다",
     ),
     (
-        "handle_ui_state",
-        "부채. gui 게이트 없는 debug 모듈이 없어서 부모에 있다 — 옮길 곳을 만들면 옮긴다",
-    ),
-    (
-        "handle_debug_settings_apply",
-        "부채. 같은 이유(headless 에서도 유효해야 하는데 `debug` 모듈은 gui 게이트다)",
-    ),
-    (
-        "json_deep_merge",
-        "부채. 위 핸들러의 헬퍼라 그것을 옮길 때 함께 옮긴다",
-    ),
-    (
         "PLATFORM_ONLY_MACOS_GUI",
         "라우팅 지점의 거절 문구. 쓰는 자리가 부모의 debug 라우터라 그 옆에 산다",
-    ),
-    (
-        "handle_debug_gpu_stall",
-        "부채. gui 게이트라 `debug` 모듈로 갈 수 있다 — 옮기는 것이 처방이다",
     ),
 ];
 

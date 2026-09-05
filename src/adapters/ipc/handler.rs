@@ -8,6 +8,8 @@ mod debug_nav;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_plugin;
 #[cfg(debug_assertions)]
+mod debug_state;
+#[cfg(debug_assertions)]
 mod debug_terminal;
 mod file_handler;
 #[cfg(feature = "gui")]
@@ -1101,23 +1103,6 @@ fn route_engine_handler(
     })
 }
 
-/// `debug.gpu.stall` — 다음 프레임의 `present` 직전을 `ms` 밀리초 블로킹하도록 예약한다.
-///
-/// 실제 GPU 드라이버 행을 결정적으로 재현할 수 없으므로, 같은 구조(이벤트 루프 스레드
-/// 안에서 반환하지 않는 GPU 호출)를 인위적으로 만들어 stall 워치독을 검증한다.
-///
-/// `debug_assertions` 가 cfg 에 반드시 들어간다 — 호출 대상인 `arm_debug_stall` 이 debug
-/// 전용이라, 이 함수만 gui 로 남으면 호출자가 없어도 release 에서 타입체크에 걸려 빌드가
-/// 깨진다(`route_debug_handler` 는 debug 전용이라 dead code 경고도 뜨지 않는다).
-#[cfg(all(debug_assertions, feature = "gui"))]
-fn handle_debug_gpu_stall(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
-    let Some(ms) = params.get("ms").and_then(serde_json::Value::as_u64) else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'ms' parameter (u64)");
-    };
-    crate::stall_watchdog::arm_debug_stall(ms);
-    JsonRpcResponse::success(id, serde_json::json!({ "armed_ms": ms }))
-}
-
 #[cfg(debug_assertions)]
 fn route_debug_handler(
     state: &mut AppState,
@@ -1126,14 +1111,17 @@ fn route_debug_handler(
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
     Some(match request.method.as_str() {
-        "ui.state" => handle_ui_state(state, engine, id),
+        "ui.state" => debug_state::handle_ui_state(state, engine, id),
         // settings cascade 는 headless 에서도 유효 — gui 게이트 없이 둔다 (ui.state 선례).
-        // 핸들러는 handler.rs 에 직접 둔다 (debug 서브모듈은 gui 게이트라 headless 에서 사라짐).
-        "debug.settings.apply" => handle_debug_settings_apply(state, engine, id, &request.params),
+        // 둘 다 `debug_state` 에 있다: debug 전용이면서 gui 심볼을 안 쓰는 핸들러 모듈
+        // (`debug` 는 gui 게이트라 headless 에서 통째로 사라진다).
+        "debug.settings.apply" => {
+            debug_state::handle_debug_settings_apply(state, engine, id, &request.params)
+        }
         // GPU 결함 주입 — 다음 프레임의 present 를 인위적으로 블로킹해 "이벤트 펌프가
         // 통째로 멎는다" 는 구조와 stall 워치독 발화를 재현 검증한다. release 미노출.
         #[cfg(feature = "gui")]
-        "debug.gpu.stall" => handle_debug_gpu_stall(id, &request.params),
+        "debug.gpu.stall" => debug::handle_debug_gpu_stall(id, &request.params),
         // 아래 셋은 터미널 그리드만 본다 — gui 게이트 없이 `debug_terminal` 모듈에
         // 있고 헤드리스 debug 데몬에도 등록된다(그 모듈 doc).
         "debug.cell_info" => {
@@ -1334,119 +1322,6 @@ fn handle_system_info(
             "active_workspace": state.active_workspace,
         }),
     )
-}
-
-#[cfg(debug_assertions)]
-fn handle_ui_state(
-    state: &AppState,
-    engine: &crate::core::CoreState,
-    id: serde_json::Value,
-) -> JsonRpcResponse {
-    let ws = state.active_workspace(engine);
-    let pane_count = ws.pane_layout().all_pane_ids().len();
-    let focused_pane_id = ws.focused_pane;
-    let tab_count = ws
-        .pane_layout()
-        .find_pane(focused_pane_id)
-        .map(|p| p.tabs.len())
-        .unwrap_or(0);
-    #[cfg(feature = "gui")]
-    let notification_panel_open = state.popups.is_open("notifications");
-    #[cfg(not(feature = "gui"))]
-    let notification_panel_open = false;
-    JsonRpcResponse::success(
-        id,
-        json!({
-            "settings_open": state.settings_open,
-            "notification_panel_open": notification_panel_open,
-            "active_workspace": state.active_workspace,
-            "workspace_count": engine.workspaces.len(),
-            "pane_count": pane_count,
-            "tab_count": tab_count,
-        }),
-    )
-}
-
-/// `debug.settings.apply` — `{ settings }` 의 부분 JSON patch 를 라이브 settings
-/// 직렬화 **복사본** 위에 재귀 deep-merge 한 뒤, 완성된 전체 `Settings` 로
-/// `UpdateSettings` intent 를 dispatch 한다. 이후는 기존 파이프라인
-/// (dispatch_pending_intents → Core::apply → SettingsUpdated → cascade)이
-/// collapse / theme / config.toml save 까지 처리한다 — 모달 / proxy 불요.
-///
-/// 사용자의 "설정 모달에서 값 변경 후 저장" 을 재현하는 디버그 동작이므로
-/// release 에 노출되지 않는다 (`#[cfg(debug_assertions)]`). gui feature 와
-/// 무관하게 동작하므로 (settings cascade 는 headless 에서도 유효) gui 게이트
-/// 없이 두었고, 그래서 핸들러를 gui 게이트된 `debug` 서브모듈이 아니라 여기
-/// (`handle_ui_state` 와 같은 비-gui 선례 위치)에 둔다.
-///
-/// 주의:
-/// - 라이브 `engine.settings` 를 dispatch 전에 직접 mutate 하지 않는다. cascade 가
-///   prev(라이브)와 new 를 비교해 collapse 분기를 결정하므로, pre-mutate 시
-///   prev==new 가 되어 collapse 가 죽는다. merge 는 직렬화 복사본 위에서만 한다.
-/// - `Settings` 는 `deny_unknown_fields` 가 아니므로(`#[serde(default)]`) patch 의
-///   오타/미지정 키는 조용히 무시된다(no-op). 타입 불일치는 `from_value` Err →
-///   `invalid_params` 로 거부되고 라이브는 불변.
-#[cfg(debug_assertions)]
-fn handle_debug_settings_apply(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: serde_json::Value,
-    params: &serde_json::Value,
-) -> JsonRpcResponse {
-    let Some(patch) = params.get("settings") else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'settings' parameter");
-    };
-    if !patch.is_object() {
-        return JsonRpcResponse::invalid_params(id, "'settings' must be a JSON object");
-    }
-
-    // base = 라이브 settings 직렬화 복사본 (라이브 자체는 건드리지 않는다).
-    let mut base = match serde_json::to_value(&engine.settings) {
-        Ok(v) => v,
-        Err(e) => {
-            return JsonRpcResponse::error(
-                id,
-                -32603,
-                format!("failed to serialize live settings: {e}"),
-            );
-        }
-    };
-    json_deep_merge(&mut base, patch);
-
-    // base 가 이미 완전한 Settings 직렬화이므로 serde(default) 함정을 피한다.
-    let new_settings: tasty_settings::Settings = match serde_json::from_value(base) {
-        Ok(s) => s,
-        Err(e) => {
-            return JsonRpcResponse::invalid_params(id, format!("invalid settings patch: {e}"));
-        }
-    };
-
-    state.dispatch_intent(
-        crate::core::intent::DomainIntent::UpdateSettings(new_settings).from_agent_ipc(),
-    );
-    JsonRpcResponse::success(id, json!({ "applied": true }))
-}
-
-/// 표준 재귀 deep-merge. 양쪽이 object 면 키별로 재귀 병합하고, 그 외에는
-/// `patch` 값으로 `target` 을 치환한다. 얕은 치환이 아니므로 nested 필드가
-/// 유실되지 않는다 (예: `appearance` 의 일부 키만 patch 해도 나머지 보존).
-#[cfg(debug_assertions)]
-fn json_deep_merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
-    match (target, patch) {
-        (serde_json::Value::Object(target_map), serde_json::Value::Object(patch_map)) => {
-            for (k, v) in patch_map {
-                json_deep_merge(
-                    target_map
-                        .entry(k.clone())
-                        .or_insert(serde_json::Value::Null),
-                    v,
-                );
-            }
-        }
-        (target_slot, patch_val) => {
-            *target_slot = patch_val.clone();
-        }
-    }
 }
 
 fn handle_tree(

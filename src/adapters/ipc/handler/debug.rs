@@ -427,3 +427,22 @@ pub(super) fn handle_debug_inject_key(
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
 }
+
+/// `debug.gpu.stall` — 다음 프레임의 `present` 직전을 `ms` 밀리초 블로킹하도록 예약한다.
+///
+/// 실제 GPU 드라이버 행을 결정적으로 재현할 수 없으므로, 같은 구조(이벤트 루프 스레드
+/// 안에서 반환하지 않는 GPU 호출)를 인위적으로 만들어 stall 워치독을 검증한다.
+///
+/// `debug_assertions` 가 cfg 에 반드시 들어간다 — 호출 대상인 `arm_debug_stall` 이 debug
+/// 전용이라, 이 함수만 gui 로 남으면 호출자가 없어도 release 에서 타입체크에 걸려 빌드가
+/// 깨진다(`route_debug_handler` 는 debug 전용이라 dead code 경고도 뜨지 않는다).
+pub(super) fn handle_debug_gpu_stall(
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let Some(ms) = params.get("ms").and_then(serde_json::Value::as_u64) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'ms' parameter (u64)");
+    };
+    crate::stall_watchdog::arm_debug_stall(ms);
+    JsonRpcResponse::success(id, serde_json::json!({ "armed_ms": ms }))
+}
