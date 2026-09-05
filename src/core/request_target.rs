@@ -126,6 +126,21 @@ pub(crate) fn method_scoped_resource_id(
         };
         return numeric(params, "source_id").map(|id| ResourceId { kind, id });
     }
+    // `workspace.close` / `workspace.update` 의 `"id"` 는 workspace id 다. workspace id 는
+    // engine 을 건너 유일하므로(`CoreState::has_workspace` 가 보는 그 값) 주인을 정확히
+    // 짚을 수 있는데, 종전에는 이 키가 인식 밖이라 요청이 **포커스된 창**으로 갔다 —
+    // 실측(2026-09-05): 비포커스 창이 가진 workspace 1 을 지목한 `workspace.update` 가
+    // "Workspace 1 not found" 로 실패했다. 같은 요청이 사용자가 어디를 클릭했느냐에 따라
+    // 성공하기도 실패하기도 한다(`docs/design/policies/focus.md` 의 활성 상태 의존 금지).
+    //
+    // `"id"` 가 없는 형태(`index` 로 지목)는 여기서 `None` 이 되어 종전 경로를 탄다 —
+    // index 는 창 안에서의 위치라 창을 건너 해석할 수 있는 값이 아니다.
+    if matches!(method, "workspace.close" | "workspace.update") {
+        return numeric(params, "id").map(|id| ResourceId {
+            kind: Kind::Workspace,
+            id,
+        });
+    }
     if !matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
         return None;
     }
@@ -254,6 +269,31 @@ mod tests {
             rid(&json!({ "parent": 42, "workspace": "5" })),
             ("parent", Kind::Surface, 42)
         ));
+    }
+
+    /// `workspace.close`/`workspace.update` 의 `"id"` 는 workspace 를 지목한다.
+    ///
+    /// 이 규칙이 없던 동안 이 둘은 **포커스된 창**으로 갔다 — 실측(2026-09-05, 창 둘):
+    /// 비포커스 창이 가진 workspace 1 을 지목한 `workspace.update` 가
+    /// "Workspace 1 not found" 로 실패했고, 포커스를 옮기면 같은 요청이 성공했다.
+    #[test]
+    fn workspace_id_key_routes_only_for_the_methods_that_mean_workspace() {
+        let p = json!({ "id": 4, "name": "x" });
+        for m in ["workspace.close", "workspace.update"] {
+            let rid = method_scoped_resource_id(m, &p).expect("대상이 잡혀야 한다");
+            assert!(matches!(rid.kind, Kind::Workspace), "{m}");
+            assert_eq!(rid.id, 4);
+        }
+        // `"id"` 는 호스트 전체에서 뜻이 갈리는 범용 키라 **메서드로 한정**한다 —
+        // 넓히면 hook id · agent id · plugin id 가 workspace 로 오해된다.
+        assert!(method_scoped_resource_id("memory.get", &p).is_none());
+        assert!(method_scoped_resource_id("approval.cancel", &p).is_none());
+        // index 로 지목한 형태는 여전히 대상 없음이다 — index 는 창 안의 위치라
+        // 창을 건너 해석할 수 있는 값이 아니다.
+        assert!(
+            method_scoped_resource_id("workspace.close", &json!({ "index": 0 })).is_none(),
+            "index 는 창을 건너 해석되면 안 된다"
+        );
     }
 
     /// `tab.close` 는 tab id 만 실어 온다 — 그 탭을 담은 pane 을 가진 창이 주인이다.
