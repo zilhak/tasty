@@ -17,58 +17,43 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
             // 헤더 — 검색 Input (padding 10).
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    kit::field(ui, theme, None, "Type to search commands…", true, false);
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                kit::field(ui, theme, None, "Type to search commands…", true, false);
+            });
             kit::hsep(ui, theme);
 
             // 리스트 — MenuItem 행 (첫 active). padding 6.
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    row(ui, theme, icons::TERMINAL, "New Terminal", "Ctrl+T", true);
-                    row(
-                        ui,
-                        theme,
-                        icons::SPLIT,
-                        "Split Pane Vertical",
-                        "Ctrl+D",
-                        false,
-                    );
-                    row(
-                        ui,
-                        theme,
-                        icons::PORT,
-                        "Toggle Theme (Mocha / Latte)",
-                        "",
-                        false,
-                    );
-                    row(ui, theme, icons::SETTINGS, "Settings", "Ctrl+,", false);
-                },
-            );
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                row(ui, theme, icons::TERMINAL, "New Terminal", "Ctrl+T", true);
+                row(
+                    ui,
+                    theme,
+                    icons::SPLIT,
+                    "Split Pane Vertical",
+                    "Ctrl+D",
+                    false,
+                );
+                row(
+                    ui,
+                    theme,
+                    icons::PORT,
+                    "Toggle Theme (Mocha / Latte)",
+                    "",
+                    false,
+                );
+                row(ui, theme, icons::SETTINGS, "Settings", "Ctrl+,", false);
+            });
             kit::hsep(ui, theme);
 
             // footer — mono 힌트 (padding 8x12).
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                        kit::caption(ui, theme, "↑↓ navigate", true);
-                        kit::caption(ui, theme, "↵ run", true);
-                        kit::caption(ui, theme, "esc close", true);
-                    });
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                    kit::caption(ui, theme, "↑↓ navigate", true);
+                    kit::caption(ui, theme, "↵ run", true);
+                    kit::caption(ui, theme, "esc close", true);
+                });
+            });
         });
     });
 

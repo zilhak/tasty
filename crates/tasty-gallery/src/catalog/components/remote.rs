@@ -80,53 +80,41 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더.
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        kit::icon(
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    kit::icon(
+                        ui,
+                        icons::REMOTE,
+                        theme.icon_glyph_size_md.value(),
+                        theme.text_secondary().to_egui(),
+                    );
+                    kit::title(ui, theme, "Remote connections");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        IconButton::new().variant(IconButtonVariant::Ghost).show(
                             ui,
-                            icons::REMOTE,
-                            theme.icon_glyph_size_md.value(),
-                            theme.text_secondary().to_egui(),
+                            theme,
+                            &|ui, rect, c| icons::CLOSE.image(rect.height(), c).paint_at(ui, rect),
                         );
-                        kit::title(ui, theme, "Remote connections");
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            IconButton::new().variant(IconButtonVariant::Ghost).show(
-                                ui,
-                                theme,
-                                &|ui, rect, c| {
-                                    icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                                },
-                            );
-                        });
                     });
-                },
-            );
+                });
+            });
             tab_bar(ui, theme, 0);
 
             // Add profile 버튼행.
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        Button::new("Add profile")
-                            .variant(ButtonVariant::Secondary)
-                            .leading_icon(&|ui, rect, c| {
-                                icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
-                            })
-                            .show(ui, theme);
-                    });
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    Button::new("Add profile")
+                        .variant(ButtonVariant::Secondary)
+                        .leading_icon(&|ui, rect, c| {
+                            icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                        })
+                        .show(ui, theme);
+                });
+            });
 
             // ProfileRow 리스트.
-            kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
+            kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
                 for (i, p) in PROFILES.iter().enumerate() {
                     if i > 0 {
                         kit::hsep(ui, theme);
@@ -136,17 +124,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
             // 로컬 SSH config 섹션 — 프로필 목록 아래에 구분선으로 갈라 붙는다.
             kit::hsep(ui, theme);
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    local_ssh_header(ui, theme);
-                    for h in LOCAL_HOSTS {
-                        local_ssh_row(ui, theme, h);
-                    }
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                local_ssh_header(ui, theme);
+                for h in LOCAL_HOSTS {
+                    local_ssh_row(ui, theme, h);
+                }
+            });
         });
     });
 
@@ -201,7 +184,7 @@ fn local_ssh_header(ui: &mut egui::Ui, theme: &Theme) {
 
 /// alias 행 — 이름 / hint caption / 우측 가져오기(이미 가져왔으면 비활성 + 캡션).
 fn local_ssh_row(ui: &mut egui::Ui, theme: &Theme, (alias, hint, imported): &(&str, &str, &str)) {
-    kit::region_sym(ui, 0.0, theme.spacing_xs.value(), |ui| {
+    kit::region_sym(ui, LogicalPx(0.0), theme.spacing_xs, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
@@ -333,24 +316,19 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
             tab_bar(ui, theme, 1);
 
             // Add attach 버튼행 — 프로토콜 필터 없음 (Profiles 전용).
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        Button::new("Add attach")
-                            .variant(ButtonVariant::Secondary)
-                            .leading_icon(&|ui, rect, c| {
-                                icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
-                            })
-                            .show(ui, theme);
-                    });
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    Button::new("Add attach")
+                        .variant(ButtonVariant::Secondary)
+                        .leading_icon(&|ui, rect, c| {
+                            icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                        })
+                        .show(ui, theme);
+                });
+            });
 
             // AttachRow 리스트.
-            kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
+            kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
                 for (i, a) in ATTACHES.iter().enumerate() {
                     if i > 0 {
                         kit::hsep(ui, theme);
@@ -397,34 +375,29 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn attach_header(ui: &mut egui::Ui, theme: &Theme) {
-    kit::region_sym(
-        ui,
-        theme.spacing_md.value(),
-        theme.spacing_sm.value(),
-        |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                kit::icon(
+    kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            kit::icon(
+                ui,
+                icons::REMOTE,
+                theme.icon_glyph_size_md.value(),
+                theme.text_secondary().to_egui(),
+            );
+            kit::title(ui, theme, "Remote connections");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                IconButton::new().variant(IconButtonVariant::Ghost).show(
                     ui,
-                    icons::REMOTE,
-                    theme.icon_glyph_size_md.value(),
-                    theme.text_secondary().to_egui(),
+                    theme,
+                    &|ui, rect, c| icons::CLOSE.image(rect.height(), c).paint_at(ui, rect),
                 );
-                kit::title(ui, theme, "Remote connections");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    IconButton::new().variant(IconButtonVariant::Ghost).show(
-                        ui,
-                        theme,
-                        &|ui, rect, c| icons::CLOSE.image(rect.height(), c).paint_at(ui, rect),
-                    );
-                });
             });
-        },
-    );
+        });
+    });
 }
 
 fn attach_row(ui: &mut egui::Ui, theme: &Theme, a: &Attach) {
-    kit::region_sym(ui, 0.0, theme.spacing_sm.value(), |ui| {
+    kit::region_sym(ui, LogicalPx(0.0), theme.spacing_sm, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
@@ -573,165 +546,155 @@ fn attach_form_card(ui: &mut egui::Ui, theme: &Theme, inline: bool) {
         tab_bar(ui, theme, 1);
 
         // 본문 — 디자인 rtScrollPad(padding 12 16), rowGap 8.
-        kit::region_sym(
-            ui,
-            theme.spacing_lg.value(),
-            theme.spacing_md.value(),
-            |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                ui.label(
-                    egui::RichText::new("New attach")
-                        .size(theme.font_size_body.value())
-                        .strong()
-                        .color(theme.text_primary().to_egui()),
-                );
-                form_row(ui, theme, "Name", |ui| {
-                    kit::field(ui, theme, None, "gb10", false, false);
-                });
-                form_row(ui, theme, "Label", |ui| {
-                    if inline {
-                        kit::field(ui, theme, None, "optional", true, false);
-                    } else {
-                        kit::field(ui, theme, None, "us-east", false, false);
-                    }
-                });
-                form_row(ui, theme, "Connection", |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value() * 0.75; // gap 6 (raw)
-                    seg_chip(ui, theme, "SSH profile", !inline);
-                    seg_chip(ui, theme, "Direct (inline)", inline);
-                });
+        kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            ui.label(
+                egui::RichText::new("New attach")
+                    .size(theme.font_size_body.value())
+                    .strong()
+                    .color(theme.text_primary().to_egui()),
+            );
+            form_row(ui, theme, "Name", |ui| {
+                kit::field(ui, theme, None, "gb10", false, false);
+            });
+            form_row(ui, theme, "Label", |ui| {
                 if inline {
-                    form_row(ui, theme, "Host", |ui| {
-                        kit::field(ui, theme, None, "edge.example.com", false, true);
-                    });
-                    form_row(ui, theme, "User", |ui| {
-                        kit::field(ui, theme, None, "root", false, false);
-                    });
-                    form_row(ui, theme, "Port", |ui| {
-                        kit::field(ui, theme, Some(96.0), "22", false, true);
-                    });
-                    form_row(ui, theme, "Shell", |ui| {
-                        let mut sel = 0usize;
-                        select(
-                            ui,
-                            theme,
-                            "remote_attach_shell",
-                            &mut sel,
-                            &["auto", "bash", "zsh", "fish"],
-                            ui.available_width(),
-                            true,
-                        );
-                    });
-                    form_row(ui, theme, "Passkey", |ui| {
-                        let mut sel = 0usize;
-                        select(
-                            ui,
-                            theme,
-                            "remote_attach_passkey",
-                            &mut sel,
-                            &["(none)", "edge-pem"],
-                            ui.available_width(),
-                            true,
-                        );
-                    });
+                    kit::field(ui, theme, None, "optional", true, false);
                 } else {
-                    form_row(ui, theme, "SSH profile", |ui| {
-                        let mut sel = 0usize;
-                        select(
-                            ui,
-                            theme,
-                            "remote_attach_ssh_ref",
-                            &mut sel,
-                            &[
-                                "(select a profile)",
-                                "prod-web (us-east)",
-                                "db-primary",
-                                "legacy-box",
-                            ],
-                            ui.available_width(),
-                            true,
-                        );
-                    });
+                    kit::field(ui, theme, None, "us-east", false, false);
                 }
-                // Remote tasty 그룹 헤더 — mono 10 uppercase caps.
-                ui.add_space(theme.spacing_xs.value());
-                ui.label(
-                    egui::RichText::new("REMOTE TASTY")
-                        .monospace()
-                        .size(theme.font_size_micro.value())
-                        .color(theme.text_muted().to_egui()),
-                );
-                form_row(ui, theme, "Executable", |ui| {
-                    kit::field(
-                        ui,
-                        theme,
-                        None,
-                        if inline {
-                            "/opt/tasty/bin/tasty"
-                        } else {
-                            "tasty"
-                        },
-                        false,
-                        true,
-                    );
+            });
+            form_row(ui, theme, "Connection", |ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value() * 0.75; // gap 6 (raw)
+                seg_chip(ui, theme, "SSH profile", !inline);
+                seg_chip(ui, theme, "Direct (inline)", inline);
+            });
+            if inline {
+                form_row(ui, theme, "Host", |ui| {
+                    kit::field(ui, theme, None, "edge.example.com", false, true);
                 });
-                form_row(ui, theme, "Port mode", |ui| {
+                form_row(ui, theme, "User", |ui| {
+                    kit::field(ui, theme, None, "root", false, false);
+                });
+                form_row(ui, theme, "Port", |ui| {
+                    kit::field(ui, theme, Some(96.0), "22", false, true);
+                });
+                form_row(ui, theme, "Shell", |ui| {
                     let mut sel = 0usize;
-                    // 두 variant 카드가 같은 spec 에 그려지므로 salt 를 분리한다.
-                    let salt = if inline {
-                        "remote_attach_port_mode_inline"
-                    } else {
-                        "remote_attach_port_mode_ref"
-                    };
                     select(
                         ui,
                         theme,
-                        salt,
+                        "remote_attach_shell",
                         &mut sel,
-                        &["auto", "subcommand", "file-unix", "file-windows"],
+                        &["auto", "bash", "zsh", "fish"],
                         ui.available_width(),
                         true,
                     );
                 });
-                form_row(ui, theme, "Port file", |ui| {
-                    if inline {
-                        kit::field(ui, theme, None, "/run/user/1000/tasty/port", false, true);
-                    } else {
-                        kit::field(ui, theme, None, "optional path", true, true);
-                    }
-                });
-                // hint — 입력 컬럼(112+12)에 맞춰 들여쓴 캡션.
-                ui.horizontal(|ui| {
-                    ui.add_space(LABEL_COL + theme.spacing_md.value());
-                    ui.label(
-                        egui::RichText::new(
-                            "Optional — an explicit path takes precedence over the port mode.",
-                        )
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_muted().to_egui()),
+                form_row(ui, theme, "Passkey", |ui| {
+                    let mut sel = 0usize;
+                    select(
+                        ui,
+                        theme,
+                        "remote_attach_passkey",
+                        &mut sel,
+                        &["(none)", "edge-pem"],
+                        ui.available_width(),
+                        true,
                     );
                 });
-            },
-        );
+            } else {
+                form_row(ui, theme, "SSH profile", |ui| {
+                    let mut sel = 0usize;
+                    select(
+                        ui,
+                        theme,
+                        "remote_attach_ssh_ref",
+                        &mut sel,
+                        &[
+                            "(select a profile)",
+                            "prod-web (us-east)",
+                            "db-primary",
+                            "legacy-box",
+                        ],
+                        ui.available_width(),
+                        true,
+                    );
+                });
+            }
+            // Remote tasty 그룹 헤더 — mono 10 uppercase caps.
+            ui.add_space(theme.spacing_xs.value());
+            ui.label(
+                egui::RichText::new("REMOTE TASTY")
+                    .monospace()
+                    .size(theme.font_size_micro.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+            form_row(ui, theme, "Executable", |ui| {
+                kit::field(
+                    ui,
+                    theme,
+                    None,
+                    if inline {
+                        "/opt/tasty/bin/tasty"
+                    } else {
+                        "tasty"
+                    },
+                    false,
+                    true,
+                );
+            });
+            form_row(ui, theme, "Port mode", |ui| {
+                let mut sel = 0usize;
+                // 두 variant 카드가 같은 spec 에 그려지므로 salt 를 분리한다.
+                let salt = if inline {
+                    "remote_attach_port_mode_inline"
+                } else {
+                    "remote_attach_port_mode_ref"
+                };
+                select(
+                    ui,
+                    theme,
+                    salt,
+                    &mut sel,
+                    &["auto", "subcommand", "file-unix", "file-windows"],
+                    ui.available_width(),
+                    true,
+                );
+            });
+            form_row(ui, theme, "Port file", |ui| {
+                if inline {
+                    kit::field(ui, theme, None, "/run/user/1000/tasty/port", false, true);
+                } else {
+                    kit::field(ui, theme, None, "optional path", true, true);
+                }
+            });
+            // hint — 입력 컬럼(112+12)에 맞춰 들여쓴 캡션.
+            ui.horizontal(|ui| {
+                ui.add_space(LABEL_COL + theme.spacing_md.value());
+                ui.label(
+                    egui::RichText::new(
+                        "Optional — an explicit path takes precedence over the port mode.",
+                    )
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+                );
+            });
+        });
 
         // footer — 전체폭 borderTop + 우측 [Cancel ghost][Save primary].
         kit::hsep(ui, theme);
-        kit::region_sym(
-            ui,
-            theme.spacing_lg.value(),
-            theme.spacing_md.value(),
-            |ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    Button::new("Save")
-                        .variant(ButtonVariant::Primary)
-                        .show(ui, theme);
-                    Button::new("Cancel")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                });
-            },
-        );
+        kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                Button::new("Save")
+                    .variant(ButtonVariant::Primary)
+                    .show(ui, theme);
+                Button::new("Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, theme);
+            });
+        });
     });
 }
 
@@ -793,7 +756,7 @@ fn seg_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
 }
 
 fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
-    kit::region_sym(ui, 0.0, theme.spacing_sm.value(), |ui| {
+    kit::region_sym(ui, LogicalPx(0.0), theme.spacing_sm, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();

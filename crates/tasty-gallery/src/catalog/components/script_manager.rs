@@ -90,26 +90,21 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
     let width = LogicalPx(ui.available_width()).min(FRAME_MAX_W);
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                    header(ui, theme);
-                    if empty {
-                        empty_state(ui, theme);
-                    } else {
-                        // 행 리스트 — 세로 적층, 간격 0(각 행 하단 separator 가 구분).
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            for s in SEEDS {
-                                script_row(ui, theme, s);
-                            }
-                        });
-                    }
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                header(ui, theme);
+                if empty {
+                    empty_state(ui, theme);
+                } else {
+                    // 행 리스트 — 세로 적층, 간격 0(각 행 하단 separator 가 구분).
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        for s in SEEDS {
+                            script_row(ui, theme, s);
+                        }
+                    });
+                }
+            });
         });
     });
 }

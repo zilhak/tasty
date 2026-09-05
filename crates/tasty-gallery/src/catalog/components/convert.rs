@@ -24,63 +24,58 @@ const TYPES: &[&str] = &["markdown", "editor", "log viewer"];
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                    kit::title(ui, theme, "Convert surface");
-                    // From → To 행.
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                            kit::caption(ui, theme, "From", false);
-                            tag(ui, theme, "terminal", TagVariant::Default, false);
-                        });
-                        kit::icon(
-                            ui,
-                            icons::CHEVRON_RIGHT,
-                            theme.icon_glyph_size_md.value(),
-                            theme.text_muted().to_egui(),
-                        );
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                            kit::caption(ui, theme, "To", false);
-                            TO_SEL.with(|s| {
-                                let mut sel = s.borrow_mut();
-                                select(
-                                    ui,
-                                    theme,
-                                    "convert_to",
-                                    &mut sel,
-                                    TYPES,
-                                    theme.field_width_md.value(),
-                                    true,
-                                );
-                            });
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                kit::title(ui, theme, "Convert surface");
+                // From → To 행.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                        kit::caption(ui, theme, "From", false);
+                        tag(ui, theme, "terminal", TagVariant::Default, false);
                     });
-                    kit::caption(
+                    kit::icon(
                         ui,
-                        theme,
-                        "The running process keeps its scrollback; only the surface renderer changes.",
-                        false,
+                        icons::CHEVRON_RIGHT,
+                        theme.icon_glyph_size_md.value(),
+                        theme.text_muted().to_egui(),
                     );
-                    // footer 버튼.
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Convert")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                        kit::caption(ui, theme, "To", false);
+                        TO_SEL.with(|s| {
+                            let mut sel = s.borrow_mut();
+                            select(
+                                ui,
+                                theme,
+                                "convert_to",
+                                &mut sel,
+                                TYPES,
+                                theme.field_width_md.value(),
+                                true,
+                            );
                         });
                     });
-                },
-            );
+                });
+                kit::caption(
+                    ui,
+                    theme,
+                    "The running process keeps its scrollback; only the surface renderer changes.",
+                    false,
+                );
+                // footer 버튼.
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Convert")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
+                    });
+                });
+            });
         });
     });
 

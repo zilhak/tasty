@@ -25,95 +25,80 @@ const POPUP_WIDTH: LogicalPx = LogicalPx(176.0);
 /// 생성/이름변경 다이얼로그 — `error` 가 `Some` 이면 검증 에러 상태(확인 비활성).
 fn edit_dialog(ui: &mut egui::Ui, theme: &Theme, value: &str, error: Option<&str>) {
     kit::frame_card(ui, theme, EDIT_WIDTH, kit::panel_fill(theme), |ui| {
-        kit::region_sym(
-            ui,
-            theme.spacing_md.value(),
-            theme.spacing_md.value(),
-            |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                kit::title(ui, theme, "New category");
-                kit::field(ui, theme, None, value, value.is_empty(), false);
-                if let Some(err) = error {
-                    ui.colored_label(theme.accent_danger().to_egui(), err);
-                }
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let mut create = Button::new("Create").variant(ButtonVariant::Primary);
-                        if error.is_some() {
-                            create = create.enabled(false);
-                        }
-                        create.show(ui, theme);
-                        Button::new("Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .show(ui, theme);
-                    });
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            kit::title(ui, theme, "New category");
+            kit::field(ui, theme, None, value, value.is_empty(), false);
+            if let Some(err) = error {
+                ui.colored_label(theme.accent_danger().to_egui(), err);
+            }
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut create = Button::new("Create").variant(ButtonVariant::Primary);
+                    if error.is_some() {
+                        create = create.enabled(false);
+                    }
+                    create.show(ui, theme);
+                    Button::new("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
                 });
-            },
-        );
+            });
+        });
     });
 }
 
 /// 삭제 destructive confirm.
 fn delete_confirm(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, DELETE_WIDTH, kit::panel_fill(theme), |ui| {
-        kit::region_sym(
-            ui,
-            theme.spacing_md.value(),
-            theme.spacing_md.value(),
-            |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                ui.horizontal(|ui| {
-                    kit::icon(
-                        ui,
-                        TRASH,
-                        theme.icon_glyph_size_md.value(),
-                        theme.accent_danger().to_egui(),
-                    );
-                    kit::title(ui, theme, "Delete category?");
-                });
-                kit::body(
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            ui.horizontal(|ui| {
+                kit::icon(
                     ui,
-                    theme,
-                    "Delete Services? Its 3 workspaces aren't deleted — they move back to Workspaces.",
+                    TRASH,
+                    theme.icon_glyph_size_md.value(),
+                    theme.accent_danger().to_egui(),
                 );
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Delete category")
-                            .variant(ButtonVariant::Danger)
-                            .show(ui, theme);
-                        Button::new("Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .show(ui, theme);
-                    });
+                kit::title(ui, theme, "Delete category?");
+            });
+            kit::body(
+                ui,
+                theme,
+                "Delete Services? Its 3 workspaces aren't deleted — they move back to Workspaces.",
+            );
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    Button::new("Delete category")
+                        .variant(ButtonVariant::Danger)
+                        .show(ui, theme);
+                    Button::new("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
                 });
-            },
-        );
+            });
+        });
     });
 }
 
 /// 레일 카테고리 팝업 (비클릭 이름 헤더 + 액션 행). `danger` 행은 accent-danger.
 fn rail_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card(ui, theme, POPUP_WIDTH, kit::raised_fill(theme), |ui| {
-        kit::region_sym(
-            ui,
-            theme.spacing_sm.value(),
-            theme.spacing_sm.value(),
-            |ui| {
-                // 비클릭 이름 헤더 (라벨만 — count 표기 없음).
-                ui.label(
-                    egui::RichText::new("Services")
-                        .color(theme.text_primary().to_egui())
-                        .size(theme.font_size_body.value())
-                        .strong(),
-                );
-                kit::hsep(ui, theme);
-                popup_row(ui, theme, PLUS, "Add workspace", false);
-                popup_row(ui, theme, CHEVRON_DOWN, "Collapse", false);
-                kit::hsep(ui, theme);
-                popup_row(ui, theme, EDIT, "Rename category", false);
-                popup_row(ui, theme, TRASH, "Delete category", true);
-            },
-        );
+        kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+            // 비클릭 이름 헤더 (라벨만 — count 표기 없음).
+            ui.label(
+                egui::RichText::new("Services")
+                    .color(theme.text_primary().to_egui())
+                    .size(theme.font_size_body.value())
+                    .strong(),
+            );
+            kit::hsep(ui, theme);
+            popup_row(ui, theme, PLUS, "Add workspace", false);
+            popup_row(ui, theme, CHEVRON_DOWN, "Collapse", false);
+            kit::hsep(ui, theme);
+            popup_row(ui, theme, EDIT, "Rename category", false);
+            popup_row(ui, theme, TRASH, "Delete category", true);
+        });
     });
 }
 

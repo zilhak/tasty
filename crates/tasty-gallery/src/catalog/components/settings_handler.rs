@@ -73,61 +73,56 @@ thread_local! {
 pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    // 헤더 행 — Mono 헤드 좌 + "Add mapping" ghost sm 우 (jsx:914-917).
-                    ui.horizontal(|ui| {
-                        mono_head(ui, theme, "Extension → handler");
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // specimen 은 상태가 없다 — 클릭 응답을 받아 처리할 곳이 없다.
-                            let _ = Button::new("Add mapping")
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .show(ui, theme);
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                // 헤더 행 — Mono 헤드 좌 + "Add mapping" ghost sm 우 (jsx:914-917).
+                ui.horizontal(|ui| {
+                    mono_head(ui, theme, "Extension → handler");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // specimen 은 상태가 없다 — 클릭 응답을 받아 처리할 곳이 없다.
+                        let _ = Button::new("Add mapping")
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .show(ui, theme);
+                    });
+                });
+                EXT_STATE.with(|s| {
+                    let sel = &mut *s.borrow_mut();
+                    for (i, (ext, _)) in EXT_ROWS.iter().enumerate() {
+                        let resp = ui.horizontal(|ui| {
+                            ui.set_min_height(theme.settings_row_min_height().value());
+                            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                            ui.label(
+                                egui::RichText::new(*ext)
+                                    .monospace()
+                                    .size(theme.font_size_term_sm.value())
+                                    .color(theme.text_secondary().to_egui()),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    select(
+                                        ui,
+                                        theme,
+                                        &format!("gallery_ext_map_{i}"),
+                                        &mut sel[i],
+                                        EXT_HANDLERS,
+                                        theme.field_width_md.value(),
+                                        true,
+                                    );
+                                    ui.label(
+                                        egui::RichText::new("→")
+                                            .color(theme.text_muted().to_egui()),
+                                    );
+                                },
+                            );
                         });
-                    });
-                    EXT_STATE.with(|s| {
-                        let sel = &mut *s.borrow_mut();
-                        for (i, (ext, _)) in EXT_ROWS.iter().enumerate() {
-                            let resp = ui.horizontal(|ui| {
-                                ui.set_min_height(theme.settings_row_min_height().value());
-                                ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                                ui.label(
-                                    egui::RichText::new(*ext)
-                                        .monospace()
-                                        .size(theme.font_size_term_sm.value())
-                                        .color(theme.text_secondary().to_egui()),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        select(
-                                            ui,
-                                            theme,
-                                            &format!("gallery_ext_map_{i}"),
-                                            &mut sel[i],
-                                            EXT_HANDLERS,
-                                            theme.field_width_md.value(),
-                                            true,
-                                        );
-                                        ui.label(
-                                            egui::RichText::new("→")
-                                                .color(theme.text_muted().to_egui()),
-                                        );
-                                    },
-                                );
-                            });
-                            // jsx: 마지막 행은 borderBottom 없음.
-                            if i + 1 < EXT_ROWS.len() {
-                                row_separator(ui, theme, resp.response.rect);
-                            }
+                        // jsx: 마지막 행은 borderBottom 없음.
+                        if i + 1 < EXT_ROWS.len() {
+                            row_separator(ui, theme, resp.response.rect);
                         }
-                    });
-                },
-            );
+                    }
+                });
+            });
         });
     });
     spec::meta(
@@ -180,51 +175,40 @@ thread_local! {
 pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    mono_head(ui, theme, "Detection passes (priority order)");
-                    DETECTOR_STATE.with(|s| {
-                        let on = &mut *s.borrow_mut();
-                        for (i, (name, desc, _)) in DETECTOR_ROWS.iter().enumerate() {
-                            let resp = ui.horizontal_top(|ui| {
-                                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Min),
-                                    |ui| {
-                                        switch(ui, theme, &mut on[i], None, true);
-                                        ui.with_layout(
-                                            egui::Layout::top_down(egui::Align::Min),
-                                            |ui| {
-                                                ui.label(
-                                                    egui::RichText::new(*name)
-                                                        .size(theme.font_size_body.value())
-                                                        .color(theme.text_secondary().to_egui()),
-                                                );
-                                                ui.label(
-                                                    egui::RichText::new(*desc)
-                                                        .size(theme.font_size_term_sm.value())
-                                                        .color(theme.text_muted().to_egui()),
-                                                );
-                                            },
-                                        );
-                                    },
-                                );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                mono_head(ui, theme, "Detection passes (priority order)");
+                DETECTOR_STATE.with(|s| {
+                    let on = &mut *s.borrow_mut();
+                    for (i, (name, desc, _)) in DETECTOR_ROWS.iter().enumerate() {
+                        let resp = ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                switch(ui, theme, &mut on[i], None, true);
+                                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                    ui.label(
+                                        egui::RichText::new(*name)
+                                            .size(theme.font_size_body.value())
+                                            .color(theme.text_secondary().to_egui()),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(*desc)
+                                            .size(theme.font_size_term_sm.value())
+                                            .color(theme.text_muted().to_egui()),
+                                    );
+                                });
                             });
-                            ui.add_space(theme.spacing_sm.value());
-                            row_separator(
-                                ui,
-                                theme,
-                                resp.response
-                                    .rect
-                                    .expand2(egui::vec2(0.0, theme.spacing_xs.value())),
-                            );
-                        }
-                    });
-                },
-            );
+                        });
+                        ui.add_space(theme.spacing_sm.value());
+                        row_separator(
+                            ui,
+                            theme,
+                            resp.response
+                                .rect
+                                .expand2(egui::vec2(0.0, theme.spacing_xs.value())),
+                        );
+                    }
+                });
+            });
         });
     });
     spec::meta(
@@ -269,38 +253,33 @@ thread_local! {
 pub fn draw_file_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    mono_head(ui, theme, "Registered file handlers");
-                    HANDLER_STATE.with(|s| {
-                        let on = &mut *s.borrow_mut();
-                        for (i, (name, kind, _)) in HANDLER_ROWS.iter().enumerate() {
-                            let resp = ui.horizontal(|ui| {
-                                ui.set_min_height(theme.settings_row_min_height().value());
-                                ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                                ui.label(
-                                    egui::RichText::new(*name)
-                                        .size(theme.font_size_body.value())
-                                        .color(theme.text_secondary().to_egui()),
-                                );
-                                tag(ui, theme, kind, TagVariant::Default, false);
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        switch(ui, theme, &mut on[i], None, true);
-                                    },
-                                );
-                            });
-                            if i + 1 < HANDLER_ROWS.len() {
-                                row_separator(ui, theme, resp.response.rect);
-                            }
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                mono_head(ui, theme, "Registered file handlers");
+                HANDLER_STATE.with(|s| {
+                    let on = &mut *s.borrow_mut();
+                    for (i, (name, kind, _)) in HANDLER_ROWS.iter().enumerate() {
+                        let resp = ui.horizontal(|ui| {
+                            ui.set_min_height(theme.settings_row_min_height().value());
+                            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                            ui.label(
+                                egui::RichText::new(*name)
+                                    .size(theme.font_size_body.value())
+                                    .color(theme.text_secondary().to_egui()),
+                            );
+                            tag(ui, theme, kind, TagVariant::Default, false);
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    switch(ui, theme, &mut on[i], None, true);
+                                },
+                            );
+                        });
+                        if i + 1 < HANDLER_ROWS.len() {
+                            row_separator(ui, theme, resp.response.rect);
                         }
-                    });
-                },
-            );
+                    }
+                });
+            });
         });
     });
     spec::meta(
@@ -401,17 +380,12 @@ fn origin_variant(origin: &str) -> TagVariant {
 pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    HOOK_STATE.with(|s| {
-                        let st = &mut *s.borrow_mut();
-                        draw_hook_content(ui, theme, st);
-                    });
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                HOOK_STATE.with(|s| {
+                    let st = &mut *s.borrow_mut();
+                    draw_hook_content(ui, theme, st);
+                });
+            });
         });
     });
     spec::meta(

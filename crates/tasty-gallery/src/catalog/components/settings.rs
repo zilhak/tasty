@@ -282,35 +282,25 @@ fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
             // 흐른다 — 사이드바 내부(필터 → 구분선 → 섹션 리스트)는 세로 적층으로 명시한다.
             ui.vertical(|ui| {
                 // 검색 필터 (search 아이콘 + placeholder) — 자체 padding + border-bottom.
-                kit::region_sym(
-                    ui,
-                    theme.spacing_sm.value(),
-                    theme.spacing_sm.value(),
-                    |ui| {
-                        STATE.with(|s| {
-                            let st = &mut *s.borrow_mut();
-                            Input::new()
-                                .placeholder("Filter sections…")
-                                .icon(&|ui, rect, c| {
-                                    icons::SEARCH.image(rect.height(), c).paint_at(ui, rect)
-                                })
-                                .show(ui, theme, &mut st.filter);
-                        });
-                    },
-                );
+                kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                    STATE.with(|s| {
+                        let st = &mut *s.borrow_mut();
+                        Input::new()
+                            .placeholder("Filter sections…")
+                            .icon(&|ui, rect, c| {
+                                icons::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                            })
+                            .show(ui, theme, &mut st.filter);
+                    });
+                });
                 kit::hsep(ui, theme);
                 // 섹션 리스트.
-                kit::region_sym(
-                    ui,
-                    theme.spacing_sm.value(),
-                    theme.spacing_sm.value(),
-                    |ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        for (i, (label, plugin)) in L2_SECTIONS.iter().enumerate() {
-                            l2_item(ui, theme, label, *plugin, i == L2_SELECTED);
-                        }
-                    },
-                );
+                kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                    for (i, (label, plugin)) in L2_SECTIONS.iter().enumerate() {
+                        l2_item(ui, theme, label, *plugin, i == L2_SELECTED);
+                    }
+                });
             });
         });
 }
@@ -651,23 +641,18 @@ fn range_track(ui: &mut egui::Ui, theme: &Theme, width: f32, frac: f32) {
 // ── footer ─────────────────────────────────────────────────────────────────
 
 fn footer(ui: &mut egui::Ui, theme: &Theme) {
-    kit::region_sym(
-        ui,
-        theme.spacing_md.value(),
-        theme.spacing_sm.value(),
-        |ui| {
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    Button::new("Save")
-                        .variant(ButtonVariant::Primary)
-                        .show(ui, theme);
-                    Button::new("Cancel")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                });
+    kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                Button::new("Save")
+                    .variant(ButtonVariant::Primary)
+                    .show(ui, theme);
+                Button::new("Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, theme);
             });
-        },
-    );
+        });
+    });
 }
 
 // ── content 헬퍼 ─────────────────────────────────────────────────────────────

@@ -27,60 +27,55 @@ const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
 
 fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
     kit::frame_card(ui, theme, POPUP_WIDTH, kit::panel_fill(theme), |ui| {
-        kit::region_sym(
-            ui,
-            theme.spacing_md.value(),
-            theme.spacing_md.value(),
-            |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-                // ① 제목 (본체는 font_size_body — kit::title 의 font_size_max 가 아니다).
-                ui.label(
-                    egui::RichText::new("Script changed since registration")
-                        .size(theme.font_size_body.value())
-                        .strong()
-                        .color(theme.text_primary().to_egui()),
-                );
+            // ① 제목 (본체는 font_size_body — kit::title 의 font_size_max 가 아니다).
+            ui.label(
+                egui::RichText::new("Script changed since registration")
+                    .size(theme.font_size_body.value())
+                    .strong()
+                    .color(theme.text_primary().to_egui()),
+            );
 
-                // ② 스크립트 이름 — mono, muted, truncate.
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(name)
-                            .size(theme.font_size_caption.value())
-                            .family(egui::FontFamily::Monospace)
-                            .color(theme.text_muted().to_egui()),
-                    )
-                    .truncate(),
-                );
-
-                // ③ 경고 태그 + 안내문.
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    tag(ui, theme, "changed", TagVariant::Warning, false);
-                    ui.label(
-                        egui::RichText::new(
-                            "Review it, then run the new version. Its recorded hash will be updated.",
-                        )
+            // ② 스크립트 이름 — mono, muted, truncate.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(name)
                         .size(theme.font_size_caption.value())
-                        .color(theme.text_secondary().to_egui()),
-                    );
-                });
+                        .family(egui::FontFamily::Monospace)
+                        .color(theme.text_muted().to_egui()),
+                )
+                .truncate(),
+            );
 
-                ui.add_space(theme.spacing_xs.value());
+            // ③ 경고 태그 + 안내문.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                tag(ui, theme, "changed", TagVariant::Warning, false);
+                ui.label(
+                    egui::RichText::new(
+                        "Review it, then run the new version. Its recorded hash will be updated.",
+                    )
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_secondary().to_egui()),
+                );
+            });
 
-                // ④ 푸터 — 우측정렬, Run 이 가장 오른쪽.
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Run anyway")
-                            .variant(ButtonVariant::Primary)
-                            .show(ui, theme);
-                        Button::new("Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .show(ui, theme);
-                    });
+            ui.add_space(theme.spacing_xs.value());
+
+            // ④ 푸터 — 우측정렬, Run 이 가장 오른쪽.
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    Button::new("Run anyway")
+                        .variant(ButtonVariant::Primary)
+                        .show(ui, theme);
+                    Button::new("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
                 });
-            },
-        );
+            });
+        });
     });
 }
 

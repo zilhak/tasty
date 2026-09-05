@@ -20,30 +20,25 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let width = theme.measure_sm; // ≈300 (narrow column, design w≈280)
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    kit::title(ui, theme, "Rename");
-                    kit::caption(ui, theme, "Path: ~/Downloads/photo.png", false);
-                    // 초기값 = 현재 파일명(확장자 포함). gallery 는 정적 표시.
-                    kit::field(ui, theme, None, "photo.png", false, false);
-                    ui.add_space(theme.spacing_xs.value());
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                            Button::new("Rename")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                kit::title(ui, theme, "Rename");
+                kit::caption(ui, theme, "Path: ~/Downloads/photo.png", false);
+                // 초기값 = 현재 파일명(확장자 포함). gallery 는 정적 표시.
+                kit::field(ui, theme, None, "photo.png", false, false);
+                ui.add_space(theme.spacing_xs.value());
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                        Button::new("Rename")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                },
-            );
+                });
+            });
         });
     });
 

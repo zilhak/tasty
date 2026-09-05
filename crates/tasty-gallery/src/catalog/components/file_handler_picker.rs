@@ -19,85 +19,70 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더.
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                    kit::title(ui, theme, "Open file with…");
-                    kit::caption(ui, theme, "docs/architecture.md", true);
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                kit::title(ui, theme, "Open file with…");
+                kit::caption(ui, theme, "docs/architecture.md", true);
+            });
             kit::hsep(ui, theme);
 
             // 핸들러 행.
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    handler(
-                        ui,
-                        theme,
-                        icons::MARKDOWN,
-                        "Markdown preview",
-                        "built-in",
-                        true,
-                        false,
-                    );
-                    handler(
-                        ui,
-                        theme,
-                        icons::EDIT,
-                        "Text editor",
-                        "built-in",
-                        false,
-                        false,
-                    );
-                    handler(
-                        ui,
-                        theme,
-                        icons::TERMINAL,
-                        "Terminal (less)",
-                        "built-in",
-                        false,
-                        false,
-                    );
-                    handler(
-                        ui,
-                        theme,
-                        icons::FILE,
-                        "Git diff",
-                        "plugin · git-helper",
-                        false,
-                        true,
-                    );
-                },
-            );
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                handler(
+                    ui,
+                    theme,
+                    icons::MARKDOWN,
+                    "Markdown preview",
+                    "built-in",
+                    true,
+                    false,
+                );
+                handler(
+                    ui,
+                    theme,
+                    icons::EDIT,
+                    "Text editor",
+                    "built-in",
+                    false,
+                    false,
+                );
+                handler(
+                    ui,
+                    theme,
+                    icons::TERMINAL,
+                    "Terminal (less)",
+                    "built-in",
+                    false,
+                    false,
+                );
+                handler(
+                    ui,
+                    theme,
+                    icons::FILE,
+                    "Git diff",
+                    "plugin · git-helper",
+                    false,
+                    true,
+                );
+            });
             kit::hsep(ui, theme);
 
             // footer.
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        check(ui, theme, true);
-                        kit::body(ui, theme, "Always open .md with this");
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Open")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    check(ui, theme, true);
+                    kit::body(ui, theme, "Always open .md with this");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Open")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                },
-            );
+                });
+            });
         });
     });
 

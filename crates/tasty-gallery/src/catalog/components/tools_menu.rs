@@ -16,20 +16,15 @@ const WIDTH: LogicalPx = LogicalPx(160.0);
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    row(ui, theme, icons::PORT, "Command palette…", false);
-                    row(ui, theme, icons::REMOTE, "Listening ports...", false);
-                    row(ui, theme, icons::SETTINGS, "Remote connections…", false);
-                    row(ui, theme, icons::PLUG, "Presets", false);
-                    menu_separator(ui, theme);
-                    row(ui, theme, icons::CLIPBOARD, "Clipboard Viewer", false);
-                    row(ui, theme, icons::SEARCH, "Git", false);
-                },
-            );
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                row(ui, theme, icons::PORT, "Command palette…", false);
+                row(ui, theme, icons::REMOTE, "Listening ports...", false);
+                row(ui, theme, icons::SETTINGS, "Remote connections…", false);
+                row(ui, theme, icons::PLUG, "Presets", false);
+                menu_separator(ui, theme);
+                row(ui, theme, icons::CLIPBOARD, "Clipboard Viewer", false);
+                row(ui, theme, icons::SEARCH, "Git", false);
+            });
         });
     });
 

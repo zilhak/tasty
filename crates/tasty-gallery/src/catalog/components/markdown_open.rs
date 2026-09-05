@@ -16,52 +16,47 @@ const WIDTH: f32 = 420.0;
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        kit::title(ui, theme, "Open markdown file");
-                        kit::caption(ui, theme, "README.md", true);
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                    kit::title(ui, theme, "Open markdown file");
+                    kit::caption(ui, theme, "README.md", true);
+                });
+                // 2 Choice 카드.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                    let cw = (WIDTH - theme.spacing_md.value() * 3.0) * 0.5;
+                    choice(
+                        ui,
+                        theme,
+                        cw,
+                        icons::MARKDOWN,
+                        "Rendered preview",
+                        "Formatted view with headings and links.",
+                        true,
+                    );
+                    choice(
+                        ui,
+                        theme,
+                        cw,
+                        icons::EDIT,
+                        "Raw text",
+                        "Edit the source in the editor surface.",
+                        false,
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Open preview")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                    // 2 Choice 카드.
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                        let cw = (WIDTH - theme.spacing_md.value() * 3.0) * 0.5;
-                        choice(
-                            ui,
-                            theme,
-                            cw,
-                            icons::MARKDOWN,
-                            "Rendered preview",
-                            "Formatted view with headings and links.",
-                            true,
-                        );
-                        choice(
-                            ui,
-                            theme,
-                            cw,
-                            icons::EDIT,
-                            "Raw text",
-                            "Edit the source in the editor surface.",
-                            false,
-                        );
-                    });
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Open preview")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
-                    });
-                },
-            );
+                });
+            });
         });
     });
 

@@ -62,91 +62,86 @@ thread_local! {
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    // 페이지 헤더 — Mono "HTML viewer".
-                    ui.label(
-                        egui::RichText::new("HTML viewer")
-                            .monospace()
-                            .size(theme.font_size_micro.value())
-                            .color(theme.text_muted().to_egui()),
-                    );
-                    STATE.with(|s| {
-                        let st = &mut *s.borrow_mut();
-                        // Default zoom — Input(mono, width xs) + "%" suffix (본체
-                        // draw_plugin_number 미러: right_to_left 에서 suffix 가 가장 우측,
-                        // 그 왼쪽에 입력 필드. 유효 f64 → 25..=500 clamp, 빈/무효는 무시,
-                        // 비포커스 시 버퍼를 값으로 정규화).
-                        row(ui, theme, "Default zoom:", |ui| {
-                            ui.label(egui::RichText::new("%").color(theme.text_muted().to_egui()));
-                            let resp = Input::new()
-                                .mono(true)
-                                .width(theme.field_width_xs.value())
-                                .show(ui, theme, &mut st.zoom_buf);
-                            if !resp.has_focus() {
-                                let synced = if st.zoom.fract() == 0.0 {
-                                    format!("{:.0}", st.zoom)
-                                } else {
-                                    format!("{}", st.zoom)
-                                };
-                                if st.zoom_buf != synced {
-                                    st.zoom_buf = synced;
-                                }
-                            } else if resp.changed()
-                                && let Ok(parsed) = st.zoom_buf.trim().parse::<f64>()
-                            {
-                                st.zoom = parsed.clamp(25.0, 500.0);
-                            }
-                        });
-                        // Color scheme — Select(width field_width_md).
-                        row(ui, theme, "Color scheme:", |ui| {
-                            select(
-                                ui,
-                                theme,
-                                "plugin_settings_scheme",
-                                &mut st.scheme_idx,
-                                SCHEME,
-                                theme.field_width_md.value(),
-                                true,
-                            );
-                        });
-                        // Allow remote content — Switch (off).
-                        row(ui, theme, "Allow remote content:", |ui| {
-                            switch(ui, theme, &mut st.allow_remote, None, true);
-                        });
-                        // Sandbox scripts — Switch (on).
-                        row(ui, theme, "Sandbox scripts:", |ui| {
-                            switch(ui, theme, &mut st.sandbox, None, true);
-                        });
-                        // Approval policy (long text) — 디자인 미러 아님, select 긴 텍스트
-                        // 말줄임 회귀 방지 전용 케이스.
-                        row(ui, theme, "Approval policy:", |ui| {
-                            select(
-                                ui,
-                                theme,
-                                "plugin_settings_long_text",
-                                &mut st.long_text_idx,
-                                LONG_TEXT_OPTS,
-                                theme.field_width_md.value(),
-                                true,
-                            );
-                        });
-                    });
-                    // Note.
-                    ui.add_space(theme.spacing_sm.value());
-                    ui.label(
-                        egui::RichText::new(
-                            "Controls how the built-in HTML viewer renders previews opened from \
-                             the terminal. Remote content is blocked by default.",
-                        )
-                        .size(theme.font_size_caption.value())
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                // 페이지 헤더 — Mono "HTML viewer".
+                ui.label(
+                    egui::RichText::new("HTML viewer")
+                        .monospace()
+                        .size(theme.font_size_micro.value())
                         .color(theme.text_muted().to_egui()),
-                    );
-                },
-            );
+                );
+                STATE.with(|s| {
+                    let st = &mut *s.borrow_mut();
+                    // Default zoom — Input(mono, width xs) + "%" suffix (본체
+                    // draw_plugin_number 미러: right_to_left 에서 suffix 가 가장 우측,
+                    // 그 왼쪽에 입력 필드. 유효 f64 → 25..=500 clamp, 빈/무효는 무시,
+                    // 비포커스 시 버퍼를 값으로 정규화).
+                    row(ui, theme, "Default zoom:", |ui| {
+                        ui.label(egui::RichText::new("%").color(theme.text_muted().to_egui()));
+                        let resp = Input::new()
+                            .mono(true)
+                            .width(theme.field_width_xs.value())
+                            .show(ui, theme, &mut st.zoom_buf);
+                        if !resp.has_focus() {
+                            let synced = if st.zoom.fract() == 0.0 {
+                                format!("{:.0}", st.zoom)
+                            } else {
+                                format!("{}", st.zoom)
+                            };
+                            if st.zoom_buf != synced {
+                                st.zoom_buf = synced;
+                            }
+                        } else if resp.changed()
+                            && let Ok(parsed) = st.zoom_buf.trim().parse::<f64>()
+                        {
+                            st.zoom = parsed.clamp(25.0, 500.0);
+                        }
+                    });
+                    // Color scheme — Select(width field_width_md).
+                    row(ui, theme, "Color scheme:", |ui| {
+                        select(
+                            ui,
+                            theme,
+                            "plugin_settings_scheme",
+                            &mut st.scheme_idx,
+                            SCHEME,
+                            theme.field_width_md.value(),
+                            true,
+                        );
+                    });
+                    // Allow remote content — Switch (off).
+                    row(ui, theme, "Allow remote content:", |ui| {
+                        switch(ui, theme, &mut st.allow_remote, None, true);
+                    });
+                    // Sandbox scripts — Switch (on).
+                    row(ui, theme, "Sandbox scripts:", |ui| {
+                        switch(ui, theme, &mut st.sandbox, None, true);
+                    });
+                    // Approval policy (long text) — 디자인 미러 아님, select 긴 텍스트
+                    // 말줄임 회귀 방지 전용 케이스.
+                    row(ui, theme, "Approval policy:", |ui| {
+                        select(
+                            ui,
+                            theme,
+                            "plugin_settings_long_text",
+                            &mut st.long_text_idx,
+                            LONG_TEXT_OPTS,
+                            theme.field_width_md.value(),
+                            true,
+                        );
+                    });
+                });
+                // Note.
+                ui.add_space(theme.spacing_sm.value());
+                ui.label(
+                    egui::RichText::new(
+                        "Controls how the built-in HTML viewer renders previews opened from \
+                             the terminal. Remote content is blocked by default.",
+                    )
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+                );
+            });
         });
     });
 

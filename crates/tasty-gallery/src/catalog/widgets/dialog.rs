@@ -86,8 +86,12 @@ pub fn region(ui: &mut egui::Ui, margin: egui::Margin, add: impl FnOnce(&mut egu
 }
 
 /// 대칭 패딩 region (좌우 `x`, 상하 `y`).
-pub fn region_sym(ui: &mut egui::Ui, x: f32, y: f32, add: impl FnOnce(&mut egui::Ui)) {
-    region(ui, egui::Margin::symmetric(x as i8, y as i8), add);
+pub fn region_sym(ui: &mut egui::Ui, x: LogicalPx, y: LogicalPx, add: impl FnOnce(&mut egui::Ui)) {
+    region(
+        ui,
+        egui::Margin::symmetric(x.value() as i8, y.value() as i8),
+        add,
+    );
 }
 
 /// 전체 폭 1px separator (모달 region 구분선 — border-bottom).
@@ -223,16 +227,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 LogicalPx(64.0),
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, panel_fill(theme), |ui| {
-                        region_sym(
-                            ui,
-                            theme.spacing_lg.value(),
-                            theme.spacing_md.value(),
-                            |ui| {
-                                title(ui, theme, "Frame");
-                                ui.add_space(theme.spacing_sm.value());
-                                body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
-                            },
-                        );
+                        region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+                            title(ui, theme, "Frame");
+                            ui.add_space(theme.spacing_sm.value());
+                            body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
+                        });
                     });
                 },
             );
@@ -247,16 +246,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 LogicalPx(28.0),
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, raised_fill(theme), |ui| {
-                        region_sym(
-                            ui,
-                            theme.spacing_lg.value(),
-                            theme.spacing_md.value(),
-                            |ui| {
-                                title(ui, theme, "Palette-style");
-                                ui.add_space(theme.spacing_sm.value());
-                                body(ui, theme, "surface-raised · spawns under the title bar");
-                            },
-                        );
+                        region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+                            title(ui, theme, "Palette-style");
+                            ui.add_space(theme.spacing_sm.value());
+                            body(ui, theme, "surface-raised · spawns under the title bar");
+                        });
                     });
                 },
             );

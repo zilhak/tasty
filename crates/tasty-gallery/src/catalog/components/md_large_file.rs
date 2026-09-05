@@ -16,35 +16,30 @@ const WIDTH: LogicalPx = LogicalPx(360.0);
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    kit::title(ui, theme, "Open large file?");
-                    kit::caption(ui, theme, ".../docs/big-notes.md", true);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        tag(ui, theme, "3.2 MB", TagVariant::Warning, false);
-                        ui.label(
-                            egui::RichText::new("Over 1 MB — rendering may be slow.")
-                                .size(theme.font_size_caption.value())
-                                .color(theme.text_secondary().to_egui()),
-                        );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                kit::title(ui, theme, "Open large file?");
+                kit::caption(ui, theme, ".../docs/big-notes.md", true);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    tag(ui, theme, "3.2 MB", TagVariant::Warning, false);
+                    ui.label(
+                        egui::RichText::new("Over 1 MB — rendering may be slow.")
+                            .size(theme.font_size_caption.value())
+                            .color(theme.text_secondary().to_egui()),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Open")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Open")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
-                    });
-                },
-            );
+                });
+            });
         });
     });
 
