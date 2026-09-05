@@ -423,32 +423,27 @@ fn sites_that_claim_a_host_counterpart(src: &str) -> Vec<(usize, String)> {
 /// 이름표를 명제보다 넓게 달지 않기 위해 적어 둔다.
 #[test]
 fn every_gallery_constant_that_claims_a_host_dimension_is_accounted_for() {
-    let root = super::repo_root().join("crates/tasty-gallery/src");
-    let mut stack = vec![root];
+    // **자기 손으로 순회하지 않는다.** 직접 `read_dir` 을 돌면 그 순회가 조용히 좁아져도
+    // "자백한 자리 0" 이 언제나 참이 된다. 공용 스캐너의 모수는 `scan_population` 이
+    // git 목록과 **집합 동등**으로 못 박아 두었다.
     let mut claims: Vec<(String, usize, String)> = Vec::new();
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
+    let mut files = 0usize;
+    for (rel_path, raw) in super::rust_sources() {
+        if !rel_path.starts_with("crates/tasty-gallery/src") {
             continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                let rel = p
-                    .strip_prefix(super::repo_root())
-                    .unwrap_or(&p)
-                    .to_string_lossy()
-                    .to_string();
-                let src = tasty_doc_guards::source_text::mask_literals(
-                    &std::fs::read_to_string(&p).unwrap_or_default(),
-                );
-                for (line, name) in sites_that_claim_a_host_counterpart(&src) {
-                    claims.push((rel.clone(), line, name));
-                }
-            }
+        }
+        files += 1;
+        let rel = rel_path.to_string_lossy().to_string();
+        let src = tasty_doc_guards::source_text::mask_literals(&raw);
+        for (line, name) in sites_that_claim_a_host_counterpart(&src) {
+            claims.push((rel.clone(), line, name));
         }
     }
+    assert!(
+        files >= 80,
+        "갤러리 소스를 {files} 개밖에 못 골랐다(하한 80) — 접두사가 트리와 안 맞으면 \
+         스캐너가 성해도 이 판정만 공허해진다"
+    );
 
     // 하나도 못 찾으면 아래 판정이 공허하게 참이 된다. 그 0 은 초록보다 조용하다.
     assert!(

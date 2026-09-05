@@ -150,26 +150,30 @@ fn masked(rel: &str) -> String {
     mask_non_code(&std::fs::read_to_string(super::repo_root().join(rel)).unwrap_or_default())
 }
 
+/// 갤러리 소스 전부를 마스킹해 한 덩어리로.
+///
+/// **자기 손으로 순회하지 않는다.** 직접 `read_dir` 을 돌면 그 순회가 조용히 좁아져도
+/// (경로 오타 · 심볼릭 링크 · 권한) "안 불리는 위젯 0" 이 언제나 참이 된다 — 0 회 순회는
+/// 0 건 발견과 구별되지 않는다. 공용 스캐너를 쓰면 그 모수가
+/// [`super::scan_population`] 의 **집합 동등**(git 목록 대조)으로 이미 못 박혀 있어,
+/// 파일이 조용히 빠지면 그쪽이 이름으로 말한다.
 fn masked_gallery() -> String {
-    let root = super::repo_root().join(GALLERY_SRC);
     let mut blob = String::new();
-    let mut stack = vec![root];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
+    let mut files = 0usize;
+    for (rel, src) in super::rust_sources() {
+        if !rel.starts_with(GALLERY_SRC) {
             continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                blob.push_str(&mask_non_code(
-                    &std::fs::read_to_string(&p).unwrap_or_default(),
-                ));
-                blob.push('\n');
-            }
         }
+        blob.push_str(&mask_non_code(&src));
+        blob.push('\n');
+        files += 1;
     }
+    // 공용 스캐너가 살아 있어도 **접두사가 틀리면** 여기만 0 이 된다. 그 0 은 조용하다.
+    assert!(
+        files >= 80,
+        "갤러리 소스를 {files} 개밖에 못 골랐다(하한 80) — `{GALLERY_SRC}` 접두사가 \
+         트리와 안 맞으면 스캐너가 성해도 이 판정만 공허해진다"
+    );
     blob
 }
 
@@ -192,8 +196,9 @@ fn every_exported_widget_module_is_named_by_the_gallery() {
 
     let blob = masked_gallery();
     assert!(
-        // 하한은 실측(2026-09-06 마스킹 사본 1.23MB)의 절반 아래로 잡는다 — 부분 읽기는
-        // 잡고 정상적인 축소에는 안 걸리게.
+        // 파일 수 하한은 `masked_gallery` 가 든다. 여기는 **읽힌 내용**의 하한이다 —
+        // 파일 수가 맞아도 내용이 비면(권한·인코딩) 이름 대조가 통째로 공허해진다.
+        // 실측 1.23MB 의 절반 아래로 잡아 부분 읽기는 잡고 정상적인 축소엔 안 걸리게.
         blob.len() > 500_000,
         "갤러리 소스를 {} 바이트밖에 못 읽었다 — 경로가 옮겨졌으면 `{GALLERY_SRC}` 를 고쳐라",
         blob.len()
