@@ -177,7 +177,8 @@ fn normalize_header_value(s: &str) -> String {
 ///   정확히 그 형태이고 접두 일치는 그것을 통과시킨다. 이 가드가 막으려는 사고가 바로
 ///   그것이므로(0042 는 그 반대 방향이었다 — 행이 `Accepted` 로 남았다) 여기서 뺀다.
 ///
-/// 오늘 이 두 형태의 실물은 0 이다(행 186 중 빈 칸 0 · 맨 `Superseded` 0). 0 인 것과
+/// 이 두 형태의 실물은 오늘 0 이다(빈 칸 0 · 맨 `Superseded` 0). 모수는 실행마다
+/// 바뀌므로 여기 안 적는다 — 스캔 테스트가 `-- --nocapture` 로 그 줄을 싣는다. 0 인 것과
 /// 막는 것이 있는 것은 다르다 — 이 함수가 그 차이다.
 fn tolerated_too_much(want: &str, got: &str) -> Option<&'static str> {
     if got.trim().is_empty() {
@@ -388,6 +389,7 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
     let mut checked_status = 0usize;
     let mut checked_date = 0usize;
     let mut superseded_seen = 0usize;
+    let mut prefix_ok = 0usize;
     let mut drift: Vec<String> = Vec::new();
 
     for row in &rows {
@@ -405,6 +407,7 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
                 superseded_seen += 1;
             }
             let verdict = if want.starts_with(&got) {
+                prefix_ok += 1;
                 tolerated_too_much(&want, &got)
             } else {
                 Some("행이 본문의 접두가 아니다")
@@ -429,14 +432,17 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
     }
 
     // ★ 아래 하한들은 **하한이지 모수가 아니다.** "표류 0" 이 안 봐서 0 인지 정말
-    // 없어서 0 인지는 이 초록만으로 안 갈린다(R473 형태). 모수를 보려면 이 테스트가
-    // 아니라 같은 술어를 **밖에서** 세라:
-    //   awk -F'|' '/^\| [0-9]{4} /{print $4}' docs/adr/index.md | wc -l
-    // 실측 2026-09-06: 행 186 · Status 대조 186 · Date 대조 186 · 접두 통과 186
-    // · 대체 형태 5 · 표류 0. 즉 `first_word` 동일성의 오탐은 186 중 0 이다.
-    // 이 값을 테스트가 직접 찍지 않는 이유: `tasty-doc-guards` 는 의존이 0 인 것이
-    // 존재 이유라(ADR-0138) `tracing` 을 못 들이고, 훅 C.11 의 `println!` 예외에
-    // 이 크레이트의 `tests/` 는 안 올라 있다. 예외를 넓히는 것은 이 커밋의 범위 밖이다.
+    // 없어서 0 인지는 그 초록만으로 안 갈린다(R473 형태). 그래서 모수를 여기서 싣는다.
+    // libtest 는 통과한 테스트의 출력을 삼키므로 `-- --nocapture` 로 읽는다.
+    // `tracing` 은 여기서 못 쓴다 — 이 크레이트는 의존이 0 인 것이 존재 이유라
+    // (ADR-0138) subscriber 자체가 없다.
+    // 단정보다 **앞**에 둔다: 빨간 경로에서도 모수가 남아야 한다.
+    eprintln!(
+        "[adr-index-parity] 행 {} · Status 대조 {checked_status} · Date 대조 {checked_date} \
+         · 접두 통과 {prefix_ok} · 대체 형태 {superseded_seen} · 표류 {}",
+        rows.len(),
+        drift.len()
+    );
 
     // 0 을 통과로 만들지 않는다 — 열 하나가 안 읽히면 그 갈래는 조용히 빈다.
     // 두 열을 따로 센다: 한 열의 독법이 죽어도 다른 열의 수가 그것을 안 가린다.
