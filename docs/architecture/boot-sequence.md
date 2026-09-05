@@ -94,6 +94,26 @@ finish_boot (Ready):
   부팅 미완 동안 타지 않는다.
 - `resumed()` 재진입(macOS 등)은 `boot.is_some()` 가드로 창 중복 생성을 막는다.
 
+## 부팅에 걸리는 일 (트리거와 무관한 일)
+
+**필요성이 트리거와 무관한 일은 부팅 경로에 건다. 기동만 지연에 둔다.** 지연 자리에
+같은 호출이 남아 있는 것은 재시도라 무해하고, 결함은 지연이 **유일한** 채널일 때
+생긴다. 근거·부류 구분·대안은 [ADR-0178](../adr/0178-a-job-whose-need-is-independent-of-the-trigger-is-anchored-at-boot.md).
+
+지금 명부에 오른 일과 조합별 자리:
+
+| 일 | headless | gui |
+|----|----------|-----|
+| 번들 plugin 설치 (`install_builtins_if_needed`) | `run_headless` (`src/boot.rs`) | `build_plugin_manager` (`src/app/window_lifecycle.rs`) |
+| agent 재시작 정화·핸들 재적재 (`purge_stale_agent_state_on_boot`) | `bootstrap_engine` (`src/boot.rs`) | `finish_boot` (`src/app/boot_machine.rs`) |
+
+**여기서 프로세스는 하나도 안 뜬다** — 설치는 디스크에 놓는 것까지고, plugin 기동은
+첫 호출까지 지연된다. agent 러너 스레드도 수동 `agent.task_run --action start` 전까지
+안 뜬다([agent-runner](../dev-guide/agent-runner.md)).
+
+`src/source_guards/jobs_anchored_at_boot.rs` 가 조합마다 그 함수 본문이 호출을 갖는지
+본다. 명부가 한 조합만 덮어도 실패한다 — 원래 사고의 형태가 "한 조합에만 있었다" 였다.
+
 ## 로딩 프레임
 
 `GpuState::render_loading`(`src/gfx/gpu/loading.rs`) — 배경(theme `bg_app` 토큰)
