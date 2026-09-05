@@ -122,6 +122,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Instant;
+    use tasty_latency_control::ControlProbe;
 
     fn snap(state: TaskState) -> TerminalSnapshot {
         TerminalSnapshot {
@@ -130,9 +131,17 @@ mod tests {
         }
     }
 
+    /// 상한을 넘었을 때 **대조군**을 함께 실어 부하가 만든 값과 코드가 만든 값을 가른다
+    /// (근거·선택 규칙은
+    /// `docs/adr/0181-a-latency-assertion-must-carry-a-control-that-load-moves-and-code-does-not.md`).
+    /// 이 자리가 기다리는 자원은 락과 CPU 뿐이라 스케줄러 계열 대조군이 맞다 — 디스크 뒤에
+    /// 줄 서는 값이 아니다.
     #[test]
     fn await_returns_immediately_if_already_terminal() {
+        const LIMIT: Duration = Duration::from_millis(50);
         let hub = TaskWakerHub::new();
+        // 측정 **전에** 기준선을 잡는다. 이 탐침은 어느 경로로 빠져나가든 값을 남긴다.
+        let mut control = ControlProbe::start("종료 상태의 await_terminal 즉시 반환");
         let start = Instant::now();
         let out = hub.await_terminal(
             1,
@@ -141,7 +150,7 @@ mod tests {
             snap(TaskState::Succeeded),
         );
         let elapsed = start.elapsed();
-        assert!(elapsed < Duration::from_millis(50), "took {elapsed:?}");
+        assert!(elapsed < LIMIT, "{}", control.verdict(elapsed, LIMIT));
         match out {
             AwaitOutcome::Terminal(s) => assert!(matches!(s.state, TaskState::Succeeded)),
             other => panic!("expected Terminal, got {other:?}"),

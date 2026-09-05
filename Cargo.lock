@@ -5659,6 +5659,7 @@ dependencies = [
  "tasty-i18n",
  "tasty-icons",
  "tasty-ipc",
+ "tasty-latency-control",
  "tasty-lua",
  "tasty-memory",
  "tasty-model",
@@ -5923,6 +5924,10 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "tasty-latency-control"
+version = "0.1.0"
 
 [[package]]
 name = "tasty-lua"

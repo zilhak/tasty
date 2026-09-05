@@ -290,6 +290,14 @@ check_egui_window() {
 #                                       `cargo:rerun-if-changed=` 같은 directive 가
 #                                       println 으로만 가능 (build.rs 에선 tracing
 #                                       사용 불가)
+#   - crates/tasty-latency-control/*  : 지연 단정의 대조군(ADR-0181). 이 크레이트가 값을 내는
+#                                       자리는 **패닉 되감기 중**이고, 그 값을 남기는 것이
+#                                       크레이트의 존재 이유다. `spawn_diag` 의 우회로
+#                                       (`tracing` + `with_test_writer`)는 여기 못 쓴다 —
+#                                       subscriber 를 안 깐 바이너리(본체 bin 의 unit test 등)
+#                                       에서 조용히 사라지고, 그 조용한 소실이 정확히 이
+#                                       크레이트가 막으려는 실패다. `eprintln!` 은 libtest 가
+#                                       설정 없이 포획해 실패한 테스트의 출력 블록에 싣는다.
 #   - crates/tasty-doc-guards/src/bin/* : 게이트 스크립트가 부르는 CLI 판정기. 이 크레이트는
 #                                       의존이 0 인 것이 존재 이유라(ADR-0138) tracing 을
 #                                       들일 수 없고, 진단은 stdout/stderr 가 인터페이스다.
@@ -308,6 +316,7 @@ check_println() {
             site/*) continue ;;
             build.rs) continue ;;
             */build.rs) continue ;;
+            crates/tasty-latency-control/*) continue ;;
             crates/tasty-doc-guards/src/bin/*) continue ;;
         esac
         local violation
