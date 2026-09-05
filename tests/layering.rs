@@ -31,6 +31,7 @@
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
 
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
 
 /// 금지 패턴 — 크레이트 경로 참조. `use` / 타입 위치 / 주석 어디에 있든 잡는다.
 const FORBIDDEN: &str = "tasty_cli::";
@@ -123,20 +124,22 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
     }
 }
 
-/// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·VCS 가 `src/` 안에
-/// 섞여 들어와도 스캔이 새지 않게 한다.
-const PRUNE_DIRS: &[&str] = &["target", ".git"];
-
-/// 순회가 실제로 트리를 봤음을 보장하는 하한.
-///
-/// 실측 2026-09-06: `src/` 의 `.rs` 는 591 개다. 하한은 그 절반 아래로 잡는다 —
-/// 파일이 줄어드는 정상적인 변경에는 걸리지 않으면서, 순회가 통째로 비는 사고
-/// (스캔 루트 오타 · `read_dir` 실패 · 가지치기 폭주)는 잡는다.
-const MIN_SCANNED: usize = 300;
+/// 순회가 실제로 트리를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
+/// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
+const SRC_FLOOR: Floor = Floor {
+    min: 300,
+    measured: 591,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수이고, 그것을 움직이는 것은 주로 크레이트 \
+                   분해다 — 한 번에 수십 개가 `crates/` 로 옮겨 가므로 좁은 여유는 정상적인 \
+                   이동에 빨개지고, 그러면 사람이 하한을 내리는 습관을 들인다. 절반쯤 벌려 \
+                   두고 통째로 비는 사고만 잡는다. 얕고 넓은 순회는 이 값이 아니라 깊이와 \
+                   앵커가 막으므로 여유가 넓어도 그쪽은 안 새 나간다.",
+};
 
 /// 순회가 닿아야 할 최소 깊이(`src` 를 1 로 센 경로 성분 수).
 ///
-/// [`MIN_SCANNED`] 는 **총량만** 본다 — 재귀가 중간에 멈춰도 얕은 파일만으로 그 하한을
+/// [`SRC_FLOOR`] 는 **총량만** 본다 — 재귀가 중간에 멈춰도 얕은 파일만으로 그 하한을
 /// 넘길 수 있다. 실측 2026-09-06: 깊이 4 이하가 408 개라 그것만으로 하한 300 을 넘는다.
 /// 그 사고를 잡는 것이 이 값이다. 실측 최대 깊이는 6 이고 깊이 5 이상이 183 개다.
 const MIN_DEPTH: usize = 5;
@@ -153,24 +156,6 @@ const MIN_DEPTH: usize = 5;
 /// `Cargo.toml` 에 `[[bin]]` 선언이 없으므로 cargo 의 기본 규칙에서 이것이 바이너리
 /// 진입점이고, 없으면 크레이트가 빌드되지 않는다.
 const WALK_ANCHOR: &str = "src/main.rs";
-
-/// 순회 깊이가 하한을 넘는지 판정한다.
-///
-/// 하한을 **인자로** 받는다. 본 테스트와 대조가 같은 판정기를 부르게 하려는 것이 하나고,
-/// 대조가 다른 값으로도 불러 **이 판정의 전부가 그 상수임을 보이게** 하려는 것이 둘이다.
-fn walk_is_deep_enough(scanned: usize, floor: usize) -> Result<(), String> {
-    if scanned >= floor {
-        return Ok(());
-    }
-    Err(format!(
-        "`src/` 순회가 {scanned} 개만 모았다(하한 {floor}) — 이 상태에서 아래의 \
-         \"위반 0\" 은 위반이 없다는 뜻이 아니라 아무것도 안 봤다는 뜻이다.\n\
-         ★ 하한을 내려서 통과시키지 마라 — 순회가 죽은 것을 그대로 승인하는 것이다.\n\
-         스캔 루트·가지치기·`read_dir` 실패를 먼저 확인하라. 파일이 정말 줄어서 이 값이 \
-         높아진 것이라면 내려도 되지만 순서가 있다: (1) `find src -name '*.rs' | wc -l` \
-         로 실제 수를 센다 (2) 그 절반 아래로 다시 잡는다 (3) 잰 날과 함께 주석에 적는다."
-    ))
-}
 
 /// 순회가 충분히 깊이 내려갔는지 판정한다. 하한과 같은 이유로 최소 깊이를 인자로 받는다.
 fn walk_descends_far_enough(rels: &[String], min_depth: usize) -> Result<(), String> {
@@ -211,27 +196,21 @@ fn is_allowed(rel: &str) -> bool {
     })
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상(`.rs`)을 모은다.
-fn gather(path: &Path, out: &mut Vec<PathBuf>) {
-    if path.is_file() {
-        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path.to_path_buf());
-        }
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if PRUNE_DIRS.contains(&name) {
-                continue;
-            }
-        }
-        gather(&p, out);
-    }
+/// 스캔 대상인지 — `.rs` 파일 하나.
+fn is_scan_target(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("rs")
+}
+
+/// `src/` 를 순회한다. 가지치기는 이름이 아니라 **성질**로 한다 — 빌드 산출물 디렉토리의
+/// 이름은 `CARGO_TARGET_DIR` 하나로 무엇이든 될 수 있어서 이름 목록은 그것을 못 따라간다.
+/// 하한은 공용 순회가 강제하므로 여기서 빠뜨릴 수 없다.
+fn walk_src(root: &Path) -> Result<Vec<PathBuf>, String> {
+    walk_with_floor(
+        &root.join("src"),
+        &SRC_FLOOR,
+        Descend::SkipBuildCaches,
+        &is_scan_target,
+    )
 }
 
 fn rel_of(file: &Path, root: &Path) -> String {
@@ -244,17 +223,14 @@ fn rel_of(file: &Path, root: &Path) -> String {
 #[test]
 fn src_does_not_reference_tasty_cli() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-    gather(&root.join("src"), &mut files);
-    files.sort();
 
     // 아래 판정들은 전부 "순회가 모은 것" 위에서 돌아간다. 그 순회가 비면 모든
     // 판정이 조용히 통과한다 — 그러니 위반을 세기 전에 인구를 먼저 확인한다.
     // 셋이 서로 다른 사고를 잡는다: 총량(빈 순회) · 깊이(중간에 멈춘 재귀) ·
-    // 앵커(특정 가지 누락).
+    // 앵커(특정 가지 누락). 총량은 공용 순회가 자기 실패문과 함께 본다.
+    let files = walk_src(root).unwrap_or_else(|why| panic!("{why}"));
     let scanned: Vec<String> = files.iter().map(|f| rel_of(f, root)).collect();
     for check in [
-        walk_is_deep_enough(files.len(), MIN_SCANNED),
         walk_descends_far_enough(&scanned, MIN_DEPTH),
         walk_reached_anchor(&scanned, WALK_ANCHOR),
     ] {
@@ -435,27 +411,25 @@ fn allowed_paths_point_at_paths_that_exist() {
 fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    let mut walked = Vec::new();
-    gather(&root.join("src"), &mut walked);
+    let walked = walk_src(root).expect("실제 `src/` 순회가 하한에 걸렸다");
     let walked_rels: Vec<String> = walked.iter().map(|f| rel_of(f, root)).collect();
 
-    // 반대편은 존재하지 않는 루트다. `gather` 는 `read_dir` 실패를 삼키고 빈 목록을
-    // 돌려주는데, 그것이 바로 이 세 판정이 겨냥하는 사고의 형태다.
-    let mut empty = Vec::new();
-    gather(&root.join("src-no-such-directory"), &mut empty);
-    let empty_rels: Vec<String> = empty.iter().map(|f| rel_of(f, root)).collect();
+    // 반대편은 존재하지 않는 루트다. 순회는 `read_dir` 실패를 삼키고 빈 목록을 만드는데,
+    // 그것이 바로 이 판정들이 겨냥하는 사고의 형태다. 총량은 공용 순회가 막으므로
+    // 여기서는 그것이 실제로 막는지만 확인하고, 깊이·앵커는 빈 목록으로 따로 잰다.
+    let dead = walk_with_floor(
+        &root.join("src-no-such-directory"),
+        &SRC_FLOOR,
+        Descend::SkipBuildCaches,
+        &is_scan_target,
+    );
+    assert!(
+        dead.is_err(),
+        "존재하지 않는 루트를 순회했는데 통과했다 — 총량 하한이 안 걸린다"
+    );
+    let empty_rels: Vec<String> = Vec::new();
 
     // --- 갈래 둘: 실제 트리는 통과하고 빈 순회는 거부된다 ---
-    assert!(
-        walk_is_deep_enough(walked.len(), MIN_SCANNED).is_ok(),
-        "실제 `src/` 순회({} 개)를 하한이 거부한다 — 하한이 트리보다 높다",
-        walked.len()
-    );
-    assert!(
-        walk_is_deep_enough(empty.len(), MIN_SCANNED).is_err(),
-        "빈 순회({} 개)를 하한이 통과시킨다 — 하한에 판별력이 없다",
-        empty.len()
-    );
     assert!(
         walk_descends_far_enough(&walked_rels, MIN_DEPTH).is_ok(),
         "실제 `src/` 순회를 깊이 판정이 거부한다 — 최소 깊이가 트리보다 깊다"
@@ -476,10 +450,6 @@ fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
     // --- 대조군 자신: 판정력이 어디서 오는가 ---
     // 무력한 값으로 부르면 같은 빈 순회가 통과한다. 즉 이 판정들의 전부가 그 상수이고,
     // 상수를 내리는 것은 판정을 끄는 것과 같다. 실패문의 금지는 이 사실에 근거한다.
-    assert!(
-        walk_is_deep_enough(empty.len(), 0).is_ok(),
-        "하한 0 으로도 빈 순회가 거부된다 — 판정이 하한 인자를 안 보고 있다"
-    );
     assert!(
         walk_descends_far_enough(&empty_rels, 0).is_ok(),
         "최소 깊이 0 으로도 빈 순회가 거부된다 — 판정이 깊이 인자를 안 보고 있다"
