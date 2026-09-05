@@ -49,16 +49,25 @@
 //! 시그니처를 먼저 넓혀야 하고, egui 기하에 직접 닿는 값은 정책상 남는 것이 맞다
 //! (`docs/concepts/typed-length.md` "외부 API 경계에서만 `.value()`").
 //!
-//! # 왜 `src/` 만 스캔하는가
+//! # 무엇을 스캔하고, 무엇을 안 세는가
 //!
-//! 갤러리(`crates/tasty-gallery`)도 같은 전환을 받고 있지만 잔여가 **한 곳에 안 몰려
-//! 있다** — components · widgets · popup_frame · icons 넷으로 갈린다. 전선을 거기까지
-//! 넓히면 [`FRONTIER`] 가 줄 하나가 아니라 네 줄이 되고, 그때부터 그것은 전선이 아니라
-//! 면제 목록이다(줄이 늘 자리가 생긴다). 갤러리 잔여가 한 곳으로 모이면 그때 넓힌다.
+//! [`SCANNED`] 에 적힌 단위만 센다 — 지금은 `src` 와 갤러리(`crates/tasty-gallery`)
+//! 둘이다. 갤러리는 전환을 끝내 잔여가 0 이고, 그래서 전선 없이 통째로 들어왔다.
+//!
+//! **나머지 크레이트는 "0" 이 아니라 "안 잼" 이다.** 그것들도 같은 전환 대상이지만
+//! 아직 진행 중이라 건수가 커밋마다 움직인다. 움직이는 수를 여기 래칫으로 박으면 이
+//! 가드는 축이 아니라 그쪽 진행 일정에 걸려 빨개진다. 그래서 목록에 안 넣었고, 안
+//! 넣었다는 사실을 이 문단이 대신한다 — 미측정을 통과로 읽지 마라.
+//!
+//! 목록이 조용히 비는 것(오타 난 경로 · 사라진 크레이트)은 0 을 통과로 만든다. 그
+//! 공허를 [`every_scanned_unit_actually_has_files`] 가 따로 막는다.
 
 use std::path::Path;
 
 use super::{mask_non_code, rust_sources};
+
+/// 이 가드가 세는 단위(레포 상대 경로 접두사). 여기 없는 것은 0 이 아니라 미측정이다.
+const SCANNED: &[&str] = &["src/", "crates/tasty-gallery/"];
 
 /// 아직 전환하지 않은 영역과 그 시점의 건수. 건수는 상한이라 전선은 줄어들 수만 있다.
 const FRONTIER: (&str, usize, &str) = (
@@ -210,7 +219,7 @@ fn scan() -> Vec<(String, usize, String)> {
     let mut out = Vec::new();
     for (rel, text) in &files {
         let rel = rel.to_string_lossy().replace('\\', "/");
-        if !rel.starts_with("src/") || gated.contains(&rel) {
+        if !SCANNED.iter().any(|root| rel.starts_with(root)) || gated.contains(&rel) {
             continue;
         }
         for (line, name) in length_constants(&mask_non_code(text)) {
@@ -243,6 +252,24 @@ fn no_f32_length_constant_lives_outside_the_conversion_frontier() {
          전선은 줄어들 수만 있다 — 새 길이 상수는 `LogicalPx` 로 선언하라",
         inside.len()
     );
+}
+
+/// 스캔 목록이 비면 이 가드의 0 은 "없다" 가 아니라 "안 봤다" 가 된다. 접두사 하나가
+/// 오타 나거나 크레이트가 이름을 바꿔도 위 테스트들은 조용히 통과한다 — 여기서 막는다.
+#[test]
+fn every_scanned_unit_actually_has_files() {
+    let files = rust_sources();
+    for root in SCANNED {
+        let n = files
+            .iter()
+            .filter(|(rel, _)| rel.to_string_lossy().replace('\\', "/").starts_with(root))
+            .count();
+        assert!(
+            n > 0,
+            "스캔 목록의 `{root}` 가 파일을 하나도 안 집었다. 경로가 틀렸거나 단위가 사라졌다 \
+             — 그 상태의 0 은 통과가 아니라 측정 실패다"
+        );
+    }
 }
 
 #[test]
