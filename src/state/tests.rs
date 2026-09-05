@@ -957,13 +957,32 @@ fn osc133_command_completed_raises_attention_only_off_mirror() {
             .feed_bytes(OSC133_D);
     }
 
-    let boundaries: Vec<u32> = engine
-        .collect_events()
+    // 여기서 `engine.collect_events()` 를 쓰지 않는다. 그쪽은 `try_take_events()` 라
+    // **상태 락을 못 잡으면 그 터미널을 통째로 건너뛴다**(ADR-0002 — 입력 스레드가 바쁜
+    // 파서 스레드들과 직렬화되지 않게 한 설계). 호스트 루프에서는 파서가 다시 깨우므로
+    // 그 건너뜀이 손실이 아니지만, **한 번만 묻는 테스트**에서는 그 자리가 곧 유실이다.
+    //
+    // 이 두 surface 는 실제 PTY 를 들고 있고 각자 파서 스레드가 셸의 프롬프트 출력을
+    // 아무 때나 `ingest` 한다(`tasty-terminal` 의 파서 루프가 `state.lock()` 을 잡는다).
+    // 그래서 `feed_bytes` 로 **이미 실린** 사건이 건너뛰기 한 번에 안 보일 수 있다.
+    // 실측(2026-09-06, `--bin tasty`): 전수 42 회 중 1 회 이 자리에서 실패, 같은 시험
+    // 단독 40 회는 0 회 — 형제가 있어야 나는 경합이다.
+    //
+    // 처방은 **막는 take** 다. `sleep` 은 재현율만 낮추고 경합을 안 없애며, 낮아진
+    // 재현율은 "고쳤다" 와 구별되지 않는다. 단정을 느슨하게 하는 것도 답이 아니다 —
+    // 이 시험의 명제는 "두 터미널이 다 파싱한다" 이지 "하나라도 파싱한다" 가 아니다.
+    let boundaries: Vec<u32> = [local_sid, mirror_sid]
         .into_iter()
-        .filter(
-            |e| matches!(&e.kind, TerminalEventKind::PromptBoundary { phase, .. } if *phase == 'D'),
-        )
-        .map(|e| e.surface_id)
+        .filter(|sid| {
+            engine
+                .find_terminal_by_id_mut(*sid)
+                .expect("terminal surface")
+                .take_events()
+                .iter()
+                .any(|e| {
+                    matches!(&e.kind, TerminalEventKind::PromptBoundary { phase, .. } if *phase == 'D')
+                })
+        })
         .collect();
     assert!(
         boundaries.contains(&mirror_sid),
