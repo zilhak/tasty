@@ -9,7 +9,7 @@ use serde_json::json;
 use tasty_type_geometry::length::LogicalPx;
 
 /// Item height in the convert popup menu.
-const ITEM_HEIGHT: f32 = 24.0;
+const ITEM_HEIGHT: LogicalPx = LogicalPx(24.0);
 /// 빌트인 비표시 kind (변환 메뉴에 등장하면 안 됨).
 const HIDDEN_KINDS: &[&str] = &["empty"];
 /// 변환 메뉴 상단 우선 표시 순서(bundled UX 정책). 이 목록에 없는 kind 는 알파벳순으로
@@ -50,7 +50,8 @@ fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
 
 fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
     let count = count.max(1);
-    let content_h = count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing;
+    let content_h = ITEM_HEIGHT.scaled(count as f32)
+        + LogicalPx((count.saturating_sub(1)) as f32 * item_spacing);
     // round_ui 누적 오차 / egui Ui::new 초기 cursor 미세 padding 흡수용 1 px 마진.
     // 마지막 항목 baseline 이 content_rect 경계와 정확히 일치할 때 anti-alias 한 줄이
     // 잘려 보이는 case 예방.
@@ -59,7 +60,7 @@ fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
         200.0,
         (popup::title_bar_height()
             + popup::content_margin().scaled(2.0)
-            + LogicalPx(content_h)
+            + content_h
             + LogicalPx(safety_margin))
         .value(),
     )
@@ -76,9 +77,8 @@ mod size_tests {
         let popup_h = convert_popup_size_for(count, item_spacing).y;
         let needed = popup::title_bar_height()
             + popup::content_margin().scaled(2.0)
-            + LogicalPx(
-                count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing,
-            );
+            + ITEM_HEIGHT.scaled(count as f32)
+            + LogicalPx((count.saturating_sub(1)) as f32 * item_spacing);
         assert!(
             LogicalPx(popup_h) >= needed,
             "popup_h ({popup_h}) < needed ({needed}) for count={count} spacing={item_spacing}"
@@ -307,7 +307,7 @@ pub fn draw_convert_view(
         } else {
             egui::Sense::click()
         };
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT), sense);
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT.value()), sense);
 
         if is_selected {
             ui.painter()
