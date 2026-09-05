@@ -7,7 +7,7 @@
 //! surface 복구(restore) 시 내부 탭 목록이 함께 복구돼야 하므로(결정 3), 직렬화
 //! 대상인 **내부 탭(root 경로 + view_mode + 정렬)과 활성 탭 인덱스**는 panel 이 들고
 //! 있는다. snapshot/restore 의 JSON 변환은 host 의 `register_explorer`
-//! (`src/engine/surface_registry/builtins.rs`) 가 담당해 본 crate 는 GUI/serde 무관을
+//! (`src/core/surface_registry/builtins.rs`) 가 담당해 본 crate 는 GUI/serde 무관을
 //! 유지한다.
 
 use std::path::{Path, PathBuf};

@@ -150,8 +150,14 @@ impl Workspace {
     }
 
     /// attach 단계 6: 이 workspace 의 surface 를 터미널/비-터미널로 분류한다.
-    /// engine 없이 leaf 를 직접 downcast 해 deferred `EmptySurface` 도 터미널로 본다
-    /// (surface/list 핸들러가 deferred 를 `type:"Terminal"` 로 보고하는 정책과 동형).
+    /// engine 없이 leaf 를 직접 downcast 한다. deferred `EmptySurface` 중
+    /// **Terminal deferred(`deferred_spawn`, PTY 를 나중에 spawn 할 자리)만** 터미널로
+    /// 보고, **Plugin deferred(`deferred_plugin`, hello 전 placeholder)는 non-terminal
+    /// placeholder** 로 보낸다. 이는 `to_tree_json`(surface/list)이 Terminal deferred 는
+    /// `pty_ready:false` 로, Plugin deferred 는 `type:"Pending"` 으로 갈라 보고하는 것과
+    /// 동형이다. Plugin deferred 를 터미널로 넣으면 attach 가 `tap_surface_for_stream`
+    /// 으로 터미널 tap 을 걸려다 `engine.terminals` 에 없어 조용히 실패해, client mirror
+    /// 에 "데이터 안 오는 빈 터미널" 로 나타난다(placeholder 로도 표시 안 됨).
     pub fn classify_attach_surfaces(&self) -> AttachSurfaceClass {
         let mut class = AttachSurfaceClass::default();
         for pane_id in self.pane_layout().all_pane_ids() {
@@ -176,7 +182,7 @@ impl Workspace {
                         let is_terminal = s.kind() == "terminal"
                             || s.as_any()
                                 .downcast_ref::<EmptySurface>()
-                                .map(|e| e.is_deferred())
+                                .map(|e| e.deferred_spawn().is_some())
                                 .unwrap_or(false);
                         if is_terminal {
                             class.terminals.push(id);

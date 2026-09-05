@@ -8,7 +8,15 @@ use super::{DividerInfo, FocusDirection, PhysicalPx, PhysicalRect, SplitDirectio
 /// leaf-touching mutation and lookup stays in each enum's inherent impl.
 pub trait BinaryTree: Sized {
     type Id: Copy + Eq;
-    const BORDER_WIDTH: PhysicalPx;
+
+    /// 분할선(= 두 자식 사이 간격)의 **물리** 두께.
+    ///
+    /// 연관 상수가 아니라 메서드인 이유: 구현마다 원본 상수의 좌표계가 다르다.
+    /// pane 보더는 논리라 배율을 받아야 물리가 나오고(`PANE_BORDER_WIDTH`),
+    /// surface 보더는 hairline 이라 배율을 **무시하는 것이 정답**이다
+    /// (`SURFACE_BORDER_WIDTH`). 두 경우를 한 상수로 표현할 수 없다.
+    /// 근거: `docs/adr/0148-physical-px-constants-are-split-by-what-they-are-for.md`.
+    fn border_width(scale_factor: f32) -> PhysicalPx;
 
     /// `Split` 일 때 (direction, ratio, &first, &second). `Leaf` 면 None.
     fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)>;
@@ -62,26 +70,30 @@ pub trait BinaryTree: Sized {
         ids[(pos + ids.len() - 1) % ids.len()]
     }
 
-    fn compute_rects(&self, rect: PhysicalRect) -> Vec<(Self::Id, PhysicalRect)> {
+    fn compute_rects(
+        &self,
+        rect: PhysicalRect,
+        scale_factor: f32,
+    ) -> Vec<(Self::Id, PhysicalRect)> {
         match self.split_parts() {
             None => self
                 .leaf_id()
                 .map(|id| vec![(id, rect)])
                 .unwrap_or_default(),
             Some((dir, ratio, first, second)) => {
-                let (r1, r2) = rect.split_with_gap(dir, ratio, Self::BORDER_WIDTH);
-                let mut v = first.compute_rects(r1);
-                v.extend(second.compute_rects(r2));
+                let (r1, r2) = rect.split_with_gap(dir, ratio, Self::border_width(scale_factor));
+                let mut v = first.compute_rects(r1, scale_factor);
+                v.extend(second.compute_rects(r2, scale_factor));
                 v
             }
         }
     }
 
-    fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
+    fn collect_dividers(&self, rect: PhysicalRect, scale_factor: f32) -> Vec<PhysicalRect> {
         match self.split_parts() {
             None => vec![],
             Some((dir, ratio, first, second)) => {
-                let gap = Self::BORDER_WIDTH;
+                let gap = Self::border_width(scale_factor);
                 let (r1, r2) = rect.split_with_gap(dir, ratio, gap);
                 let divider = match dir {
                     SplitDirection::Vertical => PhysicalRect {
@@ -98,8 +110,8 @@ pub trait BinaryTree: Sized {
                     },
                 };
                 let mut v = vec![divider];
-                v.extend(first.collect_dividers(r1));
-                v.extend(second.collect_dividers(r2));
+                v.extend(first.collect_dividers(r1, scale_factor));
+                v.extend(second.collect_dividers(r2, scale_factor));
                 v
             }
         }
@@ -111,9 +123,10 @@ pub trait BinaryTree: Sized {
         y: f32,
         rect: PhysicalRect,
         threshold: f32,
+        scale_factor: f32,
     ) -> Option<DividerInfo> {
         let (dir, ratio, first, second) = self.split_parts()?;
-        let (r1, r2) = rect.split_with_gap(dir, ratio, Self::BORDER_WIDTH);
+        let (r1, r2) = rect.split_with_gap(dir, ratio, Self::border_width(scale_factor));
         let divider_pos = match dir {
             SplitDirection::Vertical => (r1.x + r1.width).value(),
             SplitDirection::Horizontal => (r1.y + r1.height).value(),
@@ -133,8 +146,8 @@ pub trait BinaryTree: Sized {
             });
         }
         first
-            .find_divider_at(x, y, r1, threshold)
-            .or_else(|| second.find_divider_at(x, y, r2, threshold))
+            .find_divider_at(x, y, r1, threshold, scale_factor)
+            .or_else(|| second.find_divider_at(x, y, r2, threshold, scale_factor))
     }
 
     fn update_ratio_for_rect(
@@ -142,8 +155,9 @@ pub trait BinaryTree: Sized {
         split_rect: PhysicalRect,
         new_ratio: f32,
         current_rect: PhysicalRect,
+        scale_factor: f32,
     ) -> bool {
-        let border = Self::BORDER_WIDTH;
+        let border = Self::border_width(scale_factor);
         let Some((dir, ratio, first, second)) = self.split_parts_mut() else {
             return false;
         };
@@ -153,8 +167,8 @@ pub trait BinaryTree: Sized {
         }
         let ratio_val = *ratio;
         let (r1, r2) = current_rect.split_with_gap(dir, ratio_val, border);
-        first.update_ratio_for_rect(split_rect, new_ratio, r1)
-            || second.update_ratio_for_rect(split_rect, new_ratio, r2)
+        first.update_ratio_for_rect(split_rect, new_ratio, r1, scale_factor)
+            || second.update_ratio_for_rect(split_rect, new_ratio, r2, scale_factor)
     }
 
     fn directional_focus(&self, current: Self::Id, direction: FocusDirection) -> Option<Self::Id> {
