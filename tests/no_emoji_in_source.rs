@@ -94,7 +94,10 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if is_pruned(name) {
+            // 이름은 성질이 아니다 — `CARGO_TARGET_DIR` 로 다른 이름을 준 빌드
+            // 디렉토리는 이름 목록에 안 걸린다. 표식 판정을 **보태서** 부른다(흉내
+            // 내지 않는다): 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+            if is_pruned(name) || tasty_doc_guards::is_build_cache_dir(&p) {
                 continue;
             }
         }
