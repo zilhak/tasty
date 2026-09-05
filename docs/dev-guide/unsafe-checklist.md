@@ -20,6 +20,8 @@ unsafe { ... }
 3. **이 FFI 가 panic safe 한가?** panic 시 invariant(lock 미해제 등) 깨지는가?
 4. **Drop 순서가 의존성을 만족하나?** (예: webview controller 가 hwnd 보다 먼저 drop)
 5. **같은 함수의 unsafe 블록 2개+ 를 합쳐도 되나?** (`multiple_unsafe_ops_per_block` lint 가 분할 여부를 가린다)
+6. **NULL 이 오류인가 정상 반환값인가?** 둘은 다르다. 정상 반환값이면 그것을 `Result`/`Option` 으로 받아야 하고, **NULL 에서 `assert!` 하는 래퍼를 거치면 안 된다** — 그 래퍼는 "값이 없다" 를 호출자에게 알리는 유일한 경로를 프로세스 즉사로 바꾼다. glib 계열 바인딩(`from_glib_full`)이 이 형태다: 안에 `assert!(!ptr.is_null())` 가 있어, NULL 을 정상 반환하는 C 함수를 감싸면 그 자리가 즉사 지점이 된다. 그럴 때는 `*-sys` 의 원 함수를 직접 불러 NULL 을 값으로 받는다 (`src/platform/x11_gdk_window.rs`).
+7. **연결이 하나인가?** 같은 X 서버라도 **연결이 다르면 요청 순서가 보장되지 않는다.** 한 연결에서 만든 자원을 다른 연결에서 조회하기 전에는 `XFlush`(보내기)가 아니라 **`XSync`(왕복)** 가 필요하다 — `XFlush` 는 서버가 **처리했는지**를 안 기다리므로, 조회가 생성을 앞질러 "그런 자원 없다" 를 받는다. winit(창 생성)과 GDK/GTK(조회)는 서로 다른 연결이다.
 
 ## 의심스러우면 `unsafe fn`
 

@@ -54,8 +54,10 @@ completion-log(Monitor) 채널이 안정적으로 검증된 뒤 **완료-알림 
     붙어있던 모든 `tasty` CLI 가 통째로 연결 불가가 되는 사고가 실제로 발생했다
     (2026-07-14). self-determination(`TASTY_HOME`)과 정보성 broadcast(`TASTY_PARENT_HOME`)를
     **환경변수 이름으로 분리**해 이 오인을 원천 차단한다.
-- **라인 포맷**: 완료 메시지 **한 줄** (예: `surface 42 작업 완료 (호출 방식: spawn)` /
-  `surface 42 작업 완료 (호출 방식: tell)`). 과거엔 `spawn 완료: surface 42` 형태였으나,
+- **라인 포맷**: 완료 메시지 **한 줄**. 문구는 그 plugin 의 `lang/{en,ko,ja}.toml` 을 거치므로
+  **앱 언어를 따른다** — ko 는 `surface 42 작업 완료 (호출 방식: spawn)`, en 은
+  `surface 42 task complete (via spawn)` 이다. 읽는 쪽이 문구를 문자열로 대조하면 로케일에
+  따라 깨지므로, 대조가 필요하면 surface 번호처럼 언어에 안 실리는 조각으로 한다. 과거엔 `spawn 완료: surface 42` 형태였으나,
   `command_name`(spawn/tell)이 문장 맨 앞에서 완료의 주어처럼 읽혀 "spawn 이라는 호출이
   접수/완료됐다"로 오독되기 쉬웠다 — 실제 의미는 "그 child 가 맡은 작업이 끝났다"인데
   conductor 가 이를 spawn 접수 확인 정도로 여기고 실제 완료 알림을 계속 무시하는 사고로

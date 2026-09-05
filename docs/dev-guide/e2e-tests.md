@@ -19,14 +19,72 @@
 
 **바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
 
+**헤드리스 데몬은 `scripts/build-e2e-headless.sh` 가 짓는다**(`just e2e-headless-bin`). 빌드가 실패하거나 결과가 낡았으면 **아무것도 내지 않는다** — 호출자가 그때 `TASTY_E2E_BIN` 을 안 넘기면 하네스는 오늘 동작으로 떨어진다. 배선이 틀려도 초록이 거짓이 되지 않는 방향이다. 왜 별도 빌드여야 하는지는 그 스크립트 머리에 적혀 있다: 루트 `tasty` 에는 lib 타깃이 없고(바이너리 전용 패키지다) `gui` 는 **패키지 단위** feature 라, `[[bin]]` 을 하나 더 넣어 그 타깃만 `gui` 를 끄는 것은 cargo 에서 **불가능**하다.
+
+**낡은 override 는 하네스가 거절한다.** `spawn_diag::source_newer_than` 이 `src/`·`crates/` 의 `.rs` 중 그 바이너리보다 새것이 있으면 패닉으로 세운다 — 낡은 데몬은 정상 부팅해 정상 응답하므로, 안 잡으면 스위트가 **옛 코드에 대해** 판정하고 그 오진은 양방향이다.
+
+**그 안에서 판정은 스위트 단위다** — `spawn_diag::daemon_kind()`. 인스턴스를 띄우는 스위트 중 **조합 의존 단언을 가진 것만** 자기 조합의 데몬을 요구하고(`DaemonKind::SameCombo`), 나머지는 헤드리스 데몬으로 충분하다(`HeadlessOk`). 명부는 `HEADLESS_OK_SUITES` 한 곳이고, 그것이 `EXPECTED_INSTANCE_TESTS` 와 갈리지 않는 것은 `tests/e2e_single_instance_guard.rs` 가 **양방향으로** 본다(분류 안 된 스위트 / 명부에만 있는 이름). 분류를 안 하면 안전한 쪽인 `SameCombo` 로 떨어진다 — 놓치면 최적화를 잃을 뿐 틀린 빨강은 안 난다.
+
 **로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.
 
+**그 "다툰다" 가 무엇을 굶기는지 쟀다 (2026-09-06).** 공유 인스턴스에 `surface.list` 를
+50 ms 마다 던져 **한 왕복의 최대 지연**을 관측량으로 삼고, 조건을 하나씩 지웠다.
+
+| 조건 | load | 최악 왕복 | 1 초 초과 |
+|---|---|---|---|
+| gui, 추가 부하 없음 | 16 | 199 ms | 0 |
+| gui, 같은 디스플레이에 인스턴스 18 | 39 | **5.79 s** | 1 |
+| **순수 CPU 부하만** (인스턴스는 안 늘림) | 33 | 372 ms | 0 |
+| 부하는 공유 디스플레이, **탐침만 전용 Xvfb** | 35 | 525 ms | 0 |
+| **부하도 탐침도 같은 Xvfb 한 대** | 27 | 648 ms | 0 |
+
+읽는 법: CPU 총량이 아니고(3 행), 디스플레이를 **공유해서** 도 아니다(5 행 — 한 Xvfb 에
+다 몰아도 정체가 없다). 정체는 **실제 GPU·컴포지터가 붙은 X 서버**에서만 났고 그때 그
+서버는 한 코어를 채우고 있었다. 그러니 이 탈출구의 값은 "GPU 를 안 쓴다" 가 맞다.
+**단, 이 팔들은 "실제 X 서버" 와 "하드웨어 GPU 경로" 를 못 가른다** — Xvfb 는 서버뿐
+아니라 렌더러도 소프트웨어라, 가르려면 두 번째 하드웨어 X 가 필요하다(안 쟀다).
+
+**★ 탈출구가 만병통치는 아니다.** 같은 날 헤드리스 조합끼리(X 가 아예 없음) 12 러너로
+부하를 준 팔에서는 `surface.list` 한 번이 **30 초 넘게** 답을 못 받았다(하네스 IPC 는
+10 초 read timeout 을 3 회 시도하고 셋을 다 태웠다 — `Resource temporarily unavailable`).
+그때 load 는 19~24 로 위 3 행(33)보다 **낮았다.** 즉 헤드리스에는 CPU 도 X 도 아닌
+**다른 굶음**이 있고 그 기전은 아직 미측정이다. GPU 밖으로 뺐다고 부하 flake 가 사라진다고
+읽지 마라.
+
 ```
-CARGO_TARGET_DIR=/tmp/tasty-headless cargo build --no-default-features
-TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_harness
+CARGO_TARGET_DIR=target-e2e-headless cargo build --no-default-features --workspace
+TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_instance_harness
 ```
 
-**함정 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
+**두 조건이 각각 필요하다 — 어느 하나만 빠져도 데몬이 plugin 없이 뜬다.** 아래 함정 1·2 가 각각을 설명하고, 표는 그 둘을 따로 잰 것이다.
+
+**함정 1 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
+
+**함정 2 — target 디렉토리를 레포 밖에 두면 데몬이 plugin 없이 뜬다.** host 는 plugin 번들을 `exe_dir/builtin-plugins` 에서 찾고, 거기 없으면 **exe 의 두 단계 위를 워크스페이스 루트로 역산**해 dev bundle 을 만든다(`crates/tasty-host-plugin/src/builtin.rs` 의 `ensure_dev_bundle`). `/tmp/tasty-headless/debug/tasty` 면 역산 결과가 `/tmp` 라 `crates/` 가 없고, 동기화가 전부 false 로 떨어져 데몬이 plugin namespace 하나 없이 올라온다. 그러면 namespace 호출이 `Method not found: markdown.recent` 로 죽는다 — **§0 의 stale plugin drift, 그리고 바로 아래 "override 로도 통과하지 않는 스위트" 와 증상이 글자까지 같다.** 즉 빌드 절차 결함이 headless IPC 표면의 차이로 읽힌다. target 을 레포 안(`target/` 의 형제)에 두면 역산이 레포 루트를 맞혀 번들이 **스스로** 만들어진다.
+
+**함정 3 — `--workspace` 를 빼면 그 target 에 plugin 바이너리가 하나도 안 생긴다.** 이건 함정 2 와 **독립**이다. 루트 패키지만 빌드하면 `tasty-plugin-*` bin crate 들이 그 target 에 없고, `sync_builtin_dev` 는 바이너리가 없는 plugin 을 건너뛴다 — target 을 레포 안에 두어 역산이 맞아도 번들은 빈다.
+
+실측(2026-09-05, `markdown_recent_is_read_only`, 팔마다 `builtin-plugins/` 를 지우고 시작)으로 두 축을 따로 갈랐다.
+
+| target 위치 | `--workspace` | 그 target 의 plugin 바이너리 | 호출 후 `builtin-plugins/` | 테스트 |
+|---|---|---|---|---|
+| 레포 안 | 있음 | 9 | **9 항목** | **PASS** |
+| 레포 밖(`/tmp`) | 있음 | 9 | 0 항목 | FAIL — `Method not found: markdown.recent` |
+| 레포 안 | 없음 | **0** | 0 항목 | FAIL — 같은 문구 |
+
+첫 두 줄은 `--workspace` 와 바이너리 수가 같고 **위치만** 다르다(함정 2). 첫 줄과 셋째 줄은 위치가 같고 `--workspace` 만 다르다(함정 3). **두 실패의 문구가 같다** — 그래서 증상만 보고 원인을 고를 수 없고, 절차 두 조건을 모두 지키는 것이 유일한 대응이다. 대조군은 CI headless 잡이다: 같은 테스트를 통과시키므로 실패는 조합이 아니라 절차 쪽에 있다.
+
+**번들을 복사해 쓰는 변형**(`cp -r target/debug/builtin-plugins <target>/debug/`)도 동작한다 — exe 옆에 번들이 있으면 역산 분기까지 가지 않는다. 다만 복사본은 **갱신되지 않는다**: 이후 plugin 을 고쳐 다시 빌드해도 그 복사본은 그대로라 §0 의 drift 를 한 겹 더 만든다. 레포 밖 target 을 반드시 써야 할 때의 대안으로만 쓴다.
+
+**첫 namespace 호출이 기동을 기다린다.** 헤드리스는 plugin **프로세스**를 지연 기동한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 소속을 매니페스트로 먼저 확인하고, 맞을 때만 `ensure_plugin_manager` 로 띄운다([ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)). 그래서 그 첫 호출은 기동 시간을 그대로 문다(실측 2026-09-05: 첫 호출 1272 ms, 기동 뒤 92 ms).
+
+소속 판정 자체는 더 이상 기동을 기다리지 않으므로, 예전에 이 자리에 적혀 있던 "첫 호출이 드물게 `Method not found` 로 답한다"(namespace 표가 hello 뒤에 채워져서 기동과 첫 조회가 겹치던 형태)는 그 원인이 사라졌다. 여전히 `-32601` 이 나오면 그건 이름이나 설치를 의심할 신호다 — 설치돼 있는데 안 떠 있을 뿐이라면 `-32002 plugin '<id>' is not running` 이 온다.
+
+**이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 위 절차는 `--workspace` 없이 빌드한다. 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 번들을 따로 복사하므로 이 스위트들의 판정에는 영향이 없지만, **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
+
+**★ 조합 교차는 스위트 단위 판정으로 닫혔다.** `TASTY_E2E_BIN` 은 **데몬만** 다른 조합으로 바꾼다. 테스트 바이너리는 여전히 자기 조합으로 컴파일돼 있어서, 데몬의 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 그 단언이 **구조적으로 뒤집힌다** — `tests/e2e_tests.rs` 의 `..._answers_in_both_combos` 계열이 그 형태다. 그래서 **그런 단언을 가진 스위트는 override 를 받지 않는다**(`daemon_kind()`). override 를 켜도 `e2e_tests` 는 자기 조합의 데몬을 그대로 띄우고, GPU 부팅을 건너뛰는 것은 나머지 스위트다.
+
+그 판정의 근거가 된 실측(2026-09-05, 스위트 단위 판정을 넣기 **전**, 인스턴스 11 스위트를 gui 테스트 바이너리 + headless 데몬으로): 스위트 단위 **10 / 11 통과**, `e2e_tests` 만 30 passed / 5 failed. 그 5 중 **4 건이 조합 교차**이고(`an_engine_query_that_reads_no_window_answers_in_both_combos` · `app_layer_methods_that_need_no_window_answer_in_both_combos` · `debug_surfaces_that_read_no_window_answer_in_both_combos` · `a_request_naming_an_unowned_target_is_rejected`), 나머지 1 건이 `multi_window_owner_routing`(실제 창). **앞의 4 건은 동종 조합에서는 양쪽 다 통과한다** — CI headless 잡이 `--skip` 하지 않고 통과시키는 것이 그 증거다. 즉 이 4 건은 제품 결함도 headless 미배선도 아니고 **탈출구 자신의 대가**였다 — 지금은 `e2e_tests` 가 override 를 안 받으므로 나지 않는다. `multi_window_owner_routing` 도 같은 이유로 함께 해소된다. 아래 `--skip` 목록과 혼동하지 마라: 저것은 조합과 무관하게 빠지는 것들이고, 이것은 조합을 교차시켰을 때만 생긴다.
 
 **override 로도 통과하지 않는 스위트가 있다.** headless 데몬은 GUI 바이너리와 IPC 표면이 다르다 — 실제 창이 검증 대상인 스위트, 그리고 headless 에 아직 배선되지 않은 경로에 의존하는 스위트가 그렇다. 어느 것이 왜 빠지는지는 `.github/workflows/crossplatform-check.yml` 의 headless 스텝 주석이 `--skip` 목록과 함께 사유를 적어 둔다 — **여기 복제하지 않는다**(사유가 갈리면 어느 쪽이 정본인지 알 수 없게 된다).
 
@@ -155,6 +213,22 @@ TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_
 ## 5. stderr tail 진단
 
 spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `TASTY_LOG` 로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어) — 값은 §4 의 env 표대로 **본체 기본 필터와 같은 모양**이어야 한다. 30 줄짜리 tail 은 노이즈 몇 줄에도 밀려나므로, 필터를 느슨하게 주는 것이 곧 진단 손실이다.
+
+## 5-1. 마커 대기 만료 진단 (`tests/marker_wait`)
+
+훅이 남기는 마커 파일을 기다리는 자리는 셋이다(`hooks_detection_e2e` · `hook_env_integration` ·
+`webhook_integration`). 대기 함수는 `tests/marker_wait` 한 곳에 있고 세 타깃이 `mod` 로 함께 쓴다 —
+같은 물음에 답하는 사본이 셋이면 하나를 고쳐도 나머지 둘은 안 고쳐진다.
+
+**만료 메시지가 두 사건을 가른다.** 마커가 안 나온 것과, 마커는 나왔는데 이 폴링 루프가 굶어
+못 본 것은 처방이 정반대인데 종전 메시지(`marker file … not written within 15s`)는 둘을 같은
+말로 덮었다. 가르는 값은 **실제 확인 횟수**다 — 예산을 폴 간격으로 나눈 기대치와 비교해,
+기대의 절반에 못 미치면 굶주림이라고 메시지가 직접 적는다. 그때 상한을 올리는 것은 처방이
+아니다(형태 C 완화가 은폐로 작동하는 자리다 — [ADR-0129](../adr/0129-flaky-test-classes-and-standard-fixes.md)).
+
+메시지에 함께 싣는 것: 경과 · 예산 · 확인 횟수와 기대치 · 1 분 부하 · 호출자가 준 증거(선택).
+**부하는 기록이지 판정이 아니다** — 실측에서 부하 평균은 지연을 예측하지 못했다(최대 지연이
+낮은 부하 회차에서 났다).
 
 ## 6. Flaky 대응 절차
 

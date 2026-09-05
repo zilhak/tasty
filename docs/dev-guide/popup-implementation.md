@@ -24,7 +24,7 @@ tasty 에는 팝업을 만드는 경로가 **둘** 있다. 아래 문서 나머�
 **현재 plugin 팝업 (markdown, egui-mesh):**
 
 - `large-file-confirm` — 대용량 파일 열기 확인. 크기 감지·확인 로직이 plugin in-process 소유(host 는 파일 크기를 stat 하지 않는다). plugin 이 `com.tasty.markdown.large_file_confirm` 이벤트를 발행하면 열린다.
-- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host generic `fs.pick_file`([ADR-0042](../adr/0042-fs-pick-file-native-dialog-host-delegation.md))로 위임, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 상세: [plugins/markdown](../plugins/markdown/index.md).
+- `file-open` — markdown 파일 경로 입력 폼(경로 필드 + 찾아보기 + 열기/취소). host 가 surface-kind capability `convert_input_popup="file-open"` 를 보고 convert/open 진입점에서 직접 열거나 event trigger 로도 열린다. 찾아보기는 host 소유 file_picker popup(`file_picker.trigger`, [ADR-0058](../adr/0058-plugin-triggered-host-popup-async-ack-push.md))으로 위임, 열기 확정 시 context 의 `surface_id` 유무로 제자리 변환(`markdown.navigate`)/새 탭(`file_handler.dispatch`) 분기. 상세: [plugins/markdown](../plugins/markdown/index.md).
 
 plugin 팝업 제작 절차는 [plugin-development](plugin-development.md) · [egui-mesh-channel](egui-mesh-channel.md) 참조. 갤러리 specimen 은 host-side 미러로 유지한다(gallery-completeness — plugin egui-mesh 를 갤러리가 직접 렌더하지 않으므로 폼/토큰/구조만 정합).
 

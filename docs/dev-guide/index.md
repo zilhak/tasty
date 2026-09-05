@@ -9,7 +9,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | 문서 | 내용 |
 |------|------|
 | [git-hooks](git-hooks.md) | clone 직후 `./scripts/dev-setup.sh` + pre-commit/pre-push 검사 |
-| [shell-scripts](shell-scripts.md) | `scripts/`·`.githooks/` 규약 — 조기에 끝나는 소비자를 파이프 오른쪽에 두지 않는다(SIGPIPE) |
+| [shell-scripts](shell-scripts.md) | `scripts/`·`.githooks/`·`Justfile`·워크플로 `run:` 규약 — 조기에 끝나는 소비자를 파이프 오른쪽에 두지 않는다(SIGPIPE) |
 | [ci-gates](ci-gates.md) | CI·훅 게이트 매트릭스 — 어떤 검증 명령이 어디서(자동/수동/훅) 실제로 도는지, 자동 채널이 없는 검사는 없다고 명시 |
 | [self-verification](self-verification.md) | 커밋 전 직접 검증(사용자에게 떠넘기지 않기) |
 | [independent-verification](independent-verification.md) | dogfooding · debug↔release 격리 |
@@ -23,6 +23,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [error-handling](error-handling.md) | Result 무시 금지 |
 | [clippy-policy](clippy-policy.md) | 위치별 allow 선호, 워크스페이스 끄기 지양 |
 | [complexity-gate](complexity-gate.md) | 복잡도 게이트(cognitive deny + 파일 SLOC), 예외 컨벤션 |
+| [duplicated-sets](duplicated-sets.md) | 같은 집합이 여러 곳에 적힐 때 — 자리로 셀 수 있는 것, 합칠 곳과 남길 곳을 가르는 기준 |
 | [unsafe-checklist](unsafe-checklist.md) | `// SAFETY:` 작성 + 자가검토 5문 |
 | [color-policy](color-policy.md) | 색 생성 newtype + clippy 강제 |
 | [i18n](i18n.md) | `t()` / lang 파일, 하드코딩 허용 예외, 강제 테스트 |
@@ -62,6 +63,8 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [api-conventions](api-conventions.md) | CLI/IPC 명명 + 안정성/버전 정책 |
 | [cli-structure](cli-structure.md) | CLI 크레이트 내부 세 갈래(commands/ · request/ · local/)와 `Dispatch` |
 | [debug-ipc](debug-ipc.md) | debug 전용 IPC + 격리 |
+| [headless-ipc-surface](headless-ipc-surface.md) | 헤드리스가 답하는 메서드와, 답하지 않는 것의 메서드별 사유 |
+| [cli-ipc-surface](cli-ipc-surface.md) | CLI 진입점 유무를 가르는 판별식과 그것을 실행으로 세는 법 |
 | [attach-behavior](attach-behavior.md) | attach(서버=loopback / 로컬-원격=클라이언트) |
 | [agent-runner](agent-runner.md) | task DAG executor + 동기화 primitive |
 | [agent-identification](agent-identification.md) | `AgentId` 도출(잠정 모델) |
@@ -80,6 +83,8 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [e2e-tests](e2e-tests.md) | E2E 인스턴스 공유 원칙(binary 당 1개 · workspace 격리) + 환경 격리/timeout 정책 |
 | [unit-test-isolation](unit-test-isolation.md) | 유닛 테스트를 로컬 상태(홈 `config.toml` · env · 이 머신에만 있는 파일시스템 경로)로부터 격리하는 규칙 — 설정 주입 지점 + env RAII 가드 + 파일시스템 픽스처는 테스트가 직접 생성 + feature 별 테스트 게이팅 + 병렬 경합(flake) 처방과 가드 검증(§7) |
 | [tui-testing](tui-testing.md) | tui-simulator + debug 셀 검증 |
+| [guard-population](guard-population.md) | 모수가 걷기가 아니라 `const` 배열·fixture 에서 오는 가드 — drift 가 위험이고 비면 조용히 통과한다. 목록을 소스 추출로 바꾸는 절차(ADR-0133 이 못 다루는 갈래) |
+| [guard-verification](guard-verification.md) | 가드가 **자기가 주장하는 것을 실제로 판정하는가** — 변이를 죽인 것이 컴파일러/타입/고아 파일일 수 있다, 술어가 대리(키 이름)를 본다, 눈멂의 방향이 한쪽이면 그 수는 상한, 지표를 목적함수로 삼지 않는다 |
 
 ## Plugin
 

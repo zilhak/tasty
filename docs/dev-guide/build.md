@@ -4,13 +4,13 @@ tasty 의 워크스페이스 구조, 빌드 프로필, 빌드 시간 최적화. 
 
 ## 워크스페이스 구조
 
-cargo workspace — **본 바이너리(`src/`) + `crates/*` 다수**(현재 48개). 크레이트는 레이어로 나뉜다(전체 목록·각 역할은 `crates/` 와 각 `Cargo.toml`):
+cargo workspace — **본 바이너리(`src/`) + `crates/*`**. 크레이트 수와 전수 목록은 [architecture/index.md](../architecture/index.md) 가 정본이고 `architecture_crate_list_complete` 가 그것을 강제한다 — 여기서 수를 복제하지 않는다(복제본은 가드 밖이라 낡는다. 실제로 48 로 낡아 있었다). 크레이트는 레이어로 나뉜다(전체 목록·각 역할은 `crates/` 와 각 `Cargo.toml`):
 
 | 레이어 | 예 | 성격 |
 |--------|-----|------|
 | **type-\*** primitive | `tasty-type-geometry`(길이), `tasty-type-appearance`(색·theme schema) | 최하위 schema/primitive |
 | 도메인 leaf (GUI-free) | `tasty-model`, `tasty-i18n`, `tasty-settings`, `tasty-themes`, `tasty-terminal`, `tasty-memory`, `tasty-hooks`, `tasty-ipc`, `tasty-ssh`, `tasty-remote`, `tasty-portscan` 등 | 공용 도메인·IO |
-| plugin 인프라 | `tasty-plugin-protocol`, `tasty-plugin-sdk`, `tasty-plugin-manifest`, `tasty-host-plugin` | 호스트↔plugin 와이어·SDK |
+| plugin 인프라 | `tasty-plugin-protocol`, `tasty-plugin-sdk`, `tasty-plugin-manifest`, `tasty-host-plugin`, `tasty-plugin-agent-common` | 호스트↔plugin 와이어·SDK·번들 plugin 공용 헬퍼 |
 | 번들 plugin | `tasty-plugin-{claude,codex,image,html,markdown,git-viewer,clipboard-viewer,mesh-demo}` | → [`../plugins/`](../plugins/index.md) |
 | CLI / 테스트 | `tasty-cli`, `tasty-tui-simulator` | |
 

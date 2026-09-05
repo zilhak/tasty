@@ -38,7 +38,7 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 | paint_frame 수신 라우팅 / 송신 헬퍼 | `crates/tasty-host-plugin/src/manager/{pump,events,buffer}.rs` |
 | 보조 핸들 채널 (shared buffer 핸들 전송) | host `crates/tasty-host-plugin/src/handle_channel.rs` · plugin `crates/tasty-plugin-sdk/src/handle_channel.rs` · 매핑 `crates/tasty-shm/` |
 | host 측 surface stand-in | `src/plugin_bridge/egui_mesh_surface.rs` |
-| 화이트리스트 + api_version gate + registry 등록 | `src/engine/surface_registry/egui_mesh.rs` |
+| 화이트리스트 + api_version gate + registry 등록 | `src/core/surface_registry/egui_mesh.rs` |
 | PoC 소비자 | `crates/tasty-plugin-mesh-demo/` |
 
 ### 보조 핸들 채널 — shared buffer 를 plugin 에 넘기는 전송 (크로스플랫폼)
@@ -321,7 +321,7 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 
 | 입력 | wire 이벤트 | 누적 지점 |
 |---|---|---|
-| 포인터 버튼/이동/스크롤 | `PointerButton`/`PointerMoved`/`Scroll` | `egui_mesh_push_pointer_*`/`push_scroll` |
+| 포인터 버튼/이동/스크롤 | `PointerButton`/`PointerMoved`/`Scroll` | `egui_mesh_push_pointer_*`/`egui_mesh_push_scroll` |
 | 포인터가 surface 밖으로 나감 | `PointerGone` | `egui_mesh_push_pointer_gone`/`attach_mesh_push_pointer_gone` ← `mouse.rs` `update_mesh_hover` |
 | 키 누름(press-only) | `Key { key: egui Key::name(), … }` | `egui_mesh_push_key` ← `keyboard.rs` `forward_key_to_egui_mesh` |
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |

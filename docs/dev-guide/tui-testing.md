@@ -48,7 +48,7 @@ raw escape 직접 출력이 목적이라 crossterm/ratatui 같은 추상화는 �
 
 ### `debug.glyph_color` — 렌더러가 GPU 에 push 하는 색
 
-`tasty debug glyph-color --row 0 --col 0 [--bg-mode unfocused] [--surface 3]`. 응답: `in_bounds` `bg_mode`(focused/unfocused) `default_bg`/`bg`/`fg`(각 `{r,g,b,a,hex}`). `compute_cell_colors`(`src/gfx/renderer/palette.rs`)가 GPU 인스턴스 색의 단일 출처 — 렌더러와 `debug.glyph_color` 가 같은 함수를 쓰므로 누락된 SGR 처리가 즉시 드러난다. (faint/dim 회귀: cell_info `intensity == "half"` → glyph_color 에서 fg 가 어둡게 적용됐는지 비교.)
+`tasty debug glyph-color --row 0 --col 0 [--bg-mode unfocused] [--surface 3]`. 응답: `in_bounds` `bg_mode`(focused/unfocused) `default_bg`/`bg`/`fg`(각 `{r,g,b,a,hex}`). `compute_cell_colors`(`src/cell_palette.rs`)가 GPU 인스턴스 색의 단일 출처 — 렌더러와 `debug.glyph_color` 가 같은 함수를 쓰므로 누락된 SGR 처리가 즉시 드러난다. (faint/dim 회귀: cell_info `intensity == "half"` → glyph_color 에서 fg 가 어둡게 적용됐는지 비교.)
 
 ### 입력 시뮬레이션 (debug + `--enable-input-simulation`)
 

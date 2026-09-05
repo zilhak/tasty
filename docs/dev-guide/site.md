@@ -186,8 +186,8 @@ cargo run --manifest-path site/Cargo.toml
 와 삼중으로 겹친다 — 조합 선택은 그 두 곳이 맡는다.
 
 자산 파일명에 버전이 들어 있어(`Tasty-0.10.2-macos-arm64.dmg`) 정적 링크로는 최신을 가리킬 수
-없으므로, Pages 워크플로가 생성기 실행 전에 `gh release view --json tagName,assets > site/release.json`
-으로 최신 릴리스를 받아두고 생성기가 그 파일을 읽는다(`main.rs` 의 `Release`). 로컬 빌드처럼 파일이
+없으므로, Pages 워크플로가 생성기 실행 전에 `gh release view --json tagName,assets` 결과를
+`site/` 아래 `release.json` 으로 받아두고 생성기가 그 파일을 읽는다(`main.rs` 의 `Release`). 로컬 빌드처럼 파일이
 없으면 주 버튼도 릴리스 페이지로 폴백하고 생성기가 `release: none` 을 출력한다. 로컬에서 실제
 링크를 보려면 같은 명령을 직접 실행해 두면 된다(`.gitignore` 대상).
 

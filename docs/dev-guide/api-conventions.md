@@ -38,6 +38,47 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 - 대상 식별은 항상 `--<namespace> <id>` (`--surface 42`, `--tab 7`). **활성 객체 의존 금지**(포커스 독립성 — [focus 정책](../design/policies/focus.md)).
 - 옵션은 kebab-case (`--strip-ansi`, `--since-mark`).
 
+### 잘못된 인자는 거절한다 — 자르지도, 버리지도 않는다
+
+대상 식별자를 읽을 때 **값이 안 왔다 / 왔는데 못 읽는다** 를 가른다. 둘을 합치면 잘못된
+값이 조용히 폴백으로 넘어가고, 그 폴백은 대개 **호출자 자신**이거나 **유일한 후보**다.
+
+- `as u32` 로 **자르지 않는다.** 자르기는 값을 거절하는 게 아니라 **다른 값으로 바꾼다**
+  — `4_294_967_297` 은 `1` 이 되고 `5_000_000_000` 은 `705_032_704` 가 된다. 그 결과가
+  실재하는 다른 surface 를 가리키면 명령이 남의 터미널로 간다. `u32::try_from` 을 쓴다.
+- **선택 인자도 버리지 않는다.** 잘못 온 값을 `None` 으로 만들면 "안 줬다" 와
+  구별되지 않아, 호출자가 지정한 대상 대신 기본값이 쓰인다.
+- **`null` 은 안 왔다로 읽는다.** 직렬화가 빈 슬롯을 `null` 로 채우는 경우가 있어, 이것을
+  오타로 취급하면 정상 경로가 막힌다.
+- **문구를 가른다.** 값이 왔는데 "missing" 이라고 답하면 호출자가 자기가 준 값을 안
+  의심한다. 잘못된 값은 그 값을 되비추며 거절한다.
+
+호스트 쪽 공용 판정은 `src/adapters/ipc/handler/params.rs` 에 있다. 새 핸들러는 인라인으로
+다시 적지 말고 그것을 쓴다 — 같은 몸통이 세 벌로 흩어져 있던 동안 셋 다 같은 결함을 갖고
+있었고, 하나를 고쳐도 나머지 둘은 안 고쳐졌다.
+
+**이것은 전수 가드로 강제된다.** `src/source_guards/params_chokepoint.rs` 가
+params 를 읽는 **두 계층**(`src/adapters/ipc/handler/` 과 짝인 `handler.rs`,
+그리고 `src/app/ipc/` — 관문 자신은 제외)에서 `params` 파생 값을 숫자로 읽는 자리를
+찾는다. 계층이 둘인 것이 요지다: 대부분의 메서드는 앞쪽에서, 창을 소유해야 하는 것과
+App 상태를 만지는 것은 뒤쪽에서 처리된다. **한쪽만 관문에 걸면 다른 쪽이 조용히 자르고
+버린다** — 실제로 뒤쪽에 16 곳이 남아 있었고 그중 `remote_workspace` 는 `as u32` 로
+잘랐다.
+
+가드를 **자르기**(`as u32`)에 걸지 않고 **읽는 자리**에 건 이유: 자르기 자체는 정당한
+곳이 많아(`clippy::cast_possible_truncation` 은 plugin 크레이트 둘에서만 69 건이 뜬다)
+값의 **출처**가 판별식인데, 출처는 `as` 캐스트의 성질이 아니다. 스칼라 읽기를 전부 위
+한 자리로 통과시키고 나서야 명제가 문법적이 된다 — "핸들러는 관문 밖에서 params 를
+숫자로 읽지 않는다" 는 소스 모양만으로 판정된다.
+
+초록의 뜻은 좁다. 잡는 것은 두 모양 — `params` 로 시작하는 식 안의 숫자 읽기와,
+`let` 으로 **한 홉** 갈라 둔 뒤의 읽기다(뒤쪽이 실제로 두 자리를 숨기고 있었다).
+params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있는 요청의
+`…request.params`)을 벗어나거나, 두 홉 이상을 거치거나, 두 계층 밖이면 술어 밖이다.
+한 글자 이름은 일부러 안 받는다 — `p` 는 클로저 인자로도 흔해서 이름으로 받으면
+관계없는 자리를 위반으로 센다. 대신 그 바인딩들을 `params` 로 통일했다. 그래서 0 은 "이 축이 지켜진다" 가 아니라 "이 모양으로는
+안 새고 있다" 로 읽는다. 자세한 범위 정의는 그 파일의 모듈 주석에 있다.
+
 ## CLI vs IPC
 
 `crates/tasty-cli` 의 plugin CLI 빌더는 **top/sub 2단만** 지원 — plugin 이 `x.meta.set` 을 노출하려면 `tasty <plugin> meta-set` 같은 2단으로 매핑. 호스트 본체 CLI 는 3단 직접 빌드 가능.
@@ -48,20 +89,17 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 [identity §2.2](../identity.md) 원칙 2 는 "**에이전트가 자기 작업에 필요한 기능**은 IPC + CLI 양면으로 동작해야 한다" 이다. 걸리는 대상은 **에이전트 기능**이지 release IPC 표면 전체가 아니다 — plugin 이 host 에게 자기 자원을 요청하는 서비스 메서드는 애초에 CLI 호출자가 존재하지 않는다.
 
-그래서 "release 표에 있는데 CLI 가 없다" 는 그 자체로 결함이 아니다. 아래가 현재 그런 메서드 전부이고, 각 행이 왜 원칙 2 밖인지 또는 어떻게 이미 충족되는지를 적는다. **새로 그런 메서드를 만들면 여기에 행을 추가한다** — `tests/cli_method_table_parity.rs` 가 이 표와 실제 집합을 양방향으로 대조하므로, 빠뜨리면 테스트가 떨어진다.
+그래서 "release 표에 있는데 CLI 가 없다" 는 그 자체로 결함이 아니다. 아래가 현재 그런 메서드 전부이고, 각 행이 왜 원칙 2 밖인지 또는 어떻게 이미 충족되는지를 적는다. **새로 그런 메서드를 만들면 여기에 행을 추가한다** — `tests/cli_method_table_parity.rs` 가 이 표와 실제 집합을 양방향으로 대조하므로, 빠뜨리면 테스트가 떨어진다. 아래 개수와, 사유 열이 "대신 이걸 쓰라" 고 든 명령이 실재하는지도 같은 가드가 본다. 개수는 표에서 파생되지 않는 값이라(마크다운 표는 스스로 세지 않는다) 행을 고칠 때 함께 고쳐야 하고, 안 고치면 그 가드가 실제 값을 알려준다.
 
-총 35개.
+총 29개.
 
 | 이유 | 메서드 | 왜 CLI 가 없나 |
 |---|---|---|
-| plugin → host 서비스 | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
-| plugin → host 서비스 | `fs.pick_file` · `file_picker.trigger` | plugin 프로세스가 못 여는 host UI 스레드 자원(native 다이얼로그 · host 소유 popup)을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다 |
-| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` · `recent.query` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. host 는 kind 를 모르고 generic 하게 대행할 뿐이다 |
-| plugin → host 서비스 | `webview.set_url` · `surface.set_cwd` | plugin 이 **자기** surface 의 상태를 host 에 통보한다 |
-| plugin → host 서비스 | `theme.query` | webview-kind surface 가 `set_context` 를 못 받아 문서 재생성 시 Theme 을 직접 조회한다(ADR-0065). 사람이 볼 값은 `tasty settings get` 쪽이다 |
+| plugin → host 서비스 †plugin-only | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
+| plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다 |
+| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)) |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
-| plugin → host 서비스 | `file_handler.dispatch` | explorer plugin 의 더블클릭 같은 in-app 흐름 진입점이다. 사람이 파일을 열 때는 `tasty open` 계열이 그 앞단이다 |
-| plugin → host 서비스 | `telemetry.record_batch` | 단건 `telemetry.record` 는 `tasty telemetry record` 로 있다. batch 는 plugin 이 다건을 모아 보내는 효율 변종이라 CLI 한 줄에 대응하지 않는다 |
+| plugin → host 서비스 †plugin-only | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.profile.add` · `remote.profile.get` · `remote.profile.list` · `remote.profile.list_local` · `remote.profile.detect` · `remote.profile.import` · `remote.profile.remove` | `tasty tool remote-profile …` 이 로컬 프로필 파일을 직접 다룬다(IPC 없음). 인스턴스가 떠 있지 않아도 되어야 하는 명령이라 그쪽이 옳다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.passkey.add` · `remote.passkey.get` · `remote.passkey.list` · `remote.passkey.remove` | `tasty tool passkey …` 가 같은 이유로 로컬 처리한다 |
@@ -69,6 +107,107 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 | 같은 능력을 다른 명령이 준다 | `surface.send_combo` | `surface.send_key` 가 `"ctrl+c"` 형태를 파싱하므로 `tasty send key ctrl+c` 로 덮인다. 이쪽은 modifier 를 배열로 받는 JSON 친화 변종이다 |
 | 같은 능력을 다른 명령이 준다 | `surface.send_to` | `surface.send` 와 동형이라 `tasty send text --surface <id>` 로 덮인다 |
 | 연결 경계가 대신한다 | `attach.acquire` · `attach.release` · `attach.list` | 위 "CLI vs IPC" 의 `attach.*` 항목 참조. `client_id` 가 `stream.open` 핸드셰이크 발급물이라 one-shot CLI 가 들 수 없고, 사람이 쓰는 표면은 `tasty remote attach` / `tasty tool attach` 가 세션 전체를 안에서 처리한다 |
+
+#### † plugin-only — 외부 호출자는 무엇을 받는가
+
+위 표에서 †plugin-only 로 표시한 넷(`banner.open` · `banner.close` · `popup.close` ·
+`host.shared_buffer.create`)은 **CLI 잎이 없는 것에 그치지 않고 외부 dispatch arm 자체가
+없다.** plugin host-call 진입부가 직접 인터셉트하기 때문이다. 나머지 행들은 사정이 다르다 —
+`git_viewer.query` · `markdown.navigate` · `settings.get_plugin_setting` 같은 것은 외부에서
+쏘면 실제로 라우팅되어 인자 오류나 plugin 의 답이 돌아온다. 두 부류가 같은 표에 있는 것은 이
+표의 축이 **CLI 진입점**이지 라우팅이 아니기 때문이다.
+
+이 넷은 `METHOD_TABLE` 에 `plugin_only(&[…])` 로 등재되고, 외부 호출자는 `-32601`("그런
+메서드 없다")이 아니라 다음을 받는다:
+
+    -32016  method '<name>' is plugin-only: only the plugin host-call path dispatches it,
+            so CLI and network IPC callers have no entry point
+
+`-32601` 이면 호출자는 **이름을 의심한다** — 오타를 고치거나 표를 다시 읽는다. 사실은 이름이
+맞고 표에도 있으며 부를 수 있는 주체가 다를 뿐이라, 같은 코드로 답하면 호출자를 틀린 방향으로
+보낸다. 플랫폼 축에서 같은 거짓을 고친 [ADR-0154](../adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
+와 같은 형태이고, 이쪽은 caller 축이다([ADR-0163](../adr/0163-a-registered-name-answers-who-not-whether.md)). 표식과 인터셉트가 갈라지지 않는지는
+`src/source_guards/plugin_only_dispatch_parity.rs` 가 양방향으로 본다.
+
+실측(2026-09-05, gui debug 인스턴스 · plugin 설치된 세계 · 외부 프로브): `plugin_callable` 인
+**231** 개 중 외부 호출이 `-32601` 로 끝난 것이 이 **4** 개였다(나머지는 `-32602` 188 ·
+실행 성공 37 · `-32000` 2). 같은 집합을 "외부 라우터 소스에 이름이 안 보이는 것" 으로 세면
+**14** 개가 나온다 — `window.*` · `view.*` 처럼 match 팔이 아닌 명부로 라우팅되는 것이 섞여
+들어오기 때문이다. 이 부류는 소스 텍스트가 아니라 **실행**으로만 정해진다.
+
+### 등재된 이름인데 이 바이너리에 arm 이 없을 때
+
+같은 거짓의 세 번째 얼굴이다. 이름이 표에 있고 구현도 있는데 **이 빌드 조합에서 그 `match`
+팔이 통째로 사라진** 경우 — `#[cfg(feature = "gui")]` 뒤에 있는 메서드를 헤드리스
+(`--no-default-features`) 데몬에서 부르는 것이 그것이다. 팔이 없으면 호출은 `_` 로 떨어져
+종단에 오고, 종단은 예전에 `-32601` 로 답했다.
+
+그 답은 오타와 **바이트 단위로 같았다.** 실측(2026-09-05, 헤드리스 데몬):
+
+    window.creat    -32601 Method not found: window.creat      ← 오타
+    window.create   -32601 Method not found: window.create     ← 표에 있고 이 빌드엔 없다
+
+지금은 갈린다:
+
+    -32017  method '<name>' is registered but this binary has no dispatch arm for it:
+            it is gated out of this build combination (headless / release)
+
+호출자가 다음에 할 일이 다르기 때문이다 — `-32601` 은 이름을 고치게 하고, `-32017` 은
+**조합을 보게** 한다(gui 빌드로 부르거나, 그 표면이 헤드리스에 열려야 하는지를 묻는다).
+근거·대안·재검토 조건은 [ADR-0167](../adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md).
+
+**이 갈래의 술어는 표를 그 이름 그대로 조회하는 것**(`method_meta::is_registered_name`)이지
+`method_meta()` 가 아니다. 저 함수는 마지막 단계에서 **런타임 등록 plugin prefix** 까지
+해소하므로, 그것으로 갈래를 타면 설치된 plugin 의 이름과 그 아래 오타까지 host 가 삼킨다 —
+실측으로 `claude.children` · `agent_stream.list` · `markdown.no_such_thing` 이 전부 이 코드를
+받았고, plugin 으로 갈 호출이 안 갔다.
+
+세 코드의 관계:
+
+| 사실 | 코드 | 호출자가 다음에 할 일 |
+|------|------|----------------------|
+| 부를 수 있는 주체가 다르다 | `-32016` | 호출 주체를 본다 |
+| 이 플랫폼에서 안 된다 | `-32015` | 플랫폼을 본다 |
+| 이 바이너리에 안 들어 있다 | `-32017` | 빌드 조합을 본다 |
+| 소유 plugin 이 지금 안 떠 있다 | `-32002` | plugin 을 켠다 |
+| 이름이 틀렸다 | `-32601` | 이름을 고친다 |
+
+`-32002` 가 여기 있는 이유는 [ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)
+이다. namespace 소유는 **설치된 매니페스트**가 정하고 생존은 따로 물으므로, disable 된
+plugin 의 메서드는 "그런 메서드 없다"(거짓)가 아니라 "있는데 꺼져 있다"(참)로 답한다.
+
+### plugin 을 거쳐 온 실패도 호스트가 준 코드를 그대로 낸다
+
+plugin namespace 의 메서드는 owner plugin 으로 forward 되고, plugin 은 자기 일을 하려고
+호스트 메서드를 되부른다(`claude.parent` → `terminal.parent`). 그 되부름이 거절되면 사유가
+plugin 을 거쳐 원래 호출자에게 돌아오는데, **코드는 그 왕복을 넘어 살아남는다.**
+
+    claude.parent {"surface_id": 999}
+    → -32602  host call 'call#4' failed: no live surface 999 (named by 'terminal.parent'); …
+
+문구는 한 겹 감싸진다(`host call '<call#N>' failed:` 접두). 그건 plugin 을 거쳤다는 사실
+그대로이고 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 정한
+바다. **코드는 안 감싼다** — `-32602`("인자를 고쳐라")가 `-32000`("서버 사정")이 되면
+호출자가 재시도 정책을 반대로 고른다. 근거는
+[ADR-0171](../adr/0171-a-host-error-code-survives-the-plugin-boundary.md).
+
+호스트가 코드를 안 준 실패(plugin 내부 오류, SDK 의 연결·인코딩 오류)는 종전대로
+`-32000` 이다.
+
+### debug 표에 있는데 CLI 가 없는 메서드
+
+원칙 2 는 debug 빌드의 에이전트 표면에도 걸린다 — `debug.*` 는 release 에 없을 뿐,
+있는 빌드에서는 에이전트가 쓰는 기능이다. 아래는 debug 표(`DEBUG_METHODS`)에 있으면서
+`tasty debug …` 로도 부를 수 없는 것 전부다. release 쪽 표와 나눠 두는 이유는 두 집합의
+문장이 다르기 때문이다("release IPC 에 있는데 CLI 가 없다" vs "debug 빌드에만 있는데
+그 빌드의 CLI 에도 없다").
+
+debug 표 기준 총 3개.
+
+| 이유 | debug 메서드 | 왜 CLI 가 없나 |
+|---|---|---|
+| 사용자 행동 | `system.shutdown` | 호스트 종료는 사용자가 직접 하는 동작이다. debug 빌드에서도 에이전트 표면에 두지 않는다 |
+| 사용자 행동 | `window.focus` · `view.focus` | 포커스 전환은 사용자의 단축키/마우스 영역이다(원칙 3). debug IPC 에 재현 수단이 있는 것과, 그것을 CLI 한 줄로 상시 노출하는 것은 다르다 |
 
 ## 응답 계약 — mirror 워크스페이스로 간 구조 op
 
@@ -93,6 +232,12 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 ## plugin 점유 namespace
 
 plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace claude plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry timer` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
+
+### 대상 surface 는 `surface` / `surface_id` 어느 이름으로 와도 같은 필드다
+
+CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 표준 키는 `surface_id` 다. 그래서 CLI dynamic runner 는 **두 키를 모두 채워** 보낸다. agent plugin(`claude`/`codex`)의 핸들러는 그 두 이름을 **한 필드로** 읽고, 둘이 다른 값이면 고르지 않고 `-32602` 로 거절한다 — 어느 쪽을 골라도 절반의 호출자에게는 지목하지 않은 대상이 된다. 판정은 `tasty-plugin-agent-common` 에 한 벌만 있다.
+
+아무 이름도 안 오면 아무것도 호스트로 넘기지 않는다. 그때 호스트는 **부모가 하나뿐이면 그것**으로 푸는데(`--surface` 생략의 정의), 그 폴백은 *이름을 안 준 호출* 을 위한 것이지 *이름을 줬는데 못 읽은 호출* 을 위한 것이 아니다. 대상을 읽고도 안 실어 보내면 실재하지 않는 id 를 지목한 호출이 남의 자식에 성공한다 — 호스트의 "named target is never resolved by focus" 가드가 그 자리를 지키는데, 이름이 어긋나면 그 가드에 애초에 닿지 않는다.
 
 ### auto_wait chain
 

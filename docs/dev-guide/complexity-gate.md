@@ -2,19 +2,35 @@
 
 함수 cognitive 복잡도와 파일 SLOC 이 임계를 넘는 **신규/증가분**을 차단한다. 기존 초과분은 위치 단위 예외로 동결(grandfather)하고, 리팩터로 줄면 예외를 지워 래칫을 조인다.
 
-**두 축의 강제 채널은 다르다** — cognitive 는 clippy `deny` 라 자동 잡에서 컴파일 자체가 막히고, 파일 SLOC 은 전용 워크플로가 main push 마다 돌린다(2026-09-04 이전에는 PR 전용이라 한 번도 발화하지 않았다 — [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). 채널 정본은 [ci-gates](ci-gates.md). 결정 근거·대안은 [ADR-0037](../adr/0037-complexity-gate.md).
+**두 축의 강제 채널은 다르다** — cognitive 는 clippy `deny` 라 자동 잡에서 컴파일 자체가 막히고, 파일 SLOC 은 전용 워크플로(`complexity-check.yml`)가 담당한다 — **그 트리거와 실제 발사 여부는 시점마다 다르니 여기서 값을 주장하지 않는다.** [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md) 이 `push:[main]` 을 더했고, 그것이 원격에 가 있는지까지가 판정이다. 채널 정본은 [ci-gates](ci-gates.md). 결정 근거·대안은 [ADR-0037](../adr/0037-complexity-gate.md).
 
 ## 무엇을·도구·임계값
 
 | 축 | 도구 | 임계값 | 동결 위치 |
 |----|------|--------|-----------|
-| **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 35곳) |
-| **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | code SLOC **1000** | `.complexity-file-allowlist` (현재 44개 — 도입 시 동결 18 + 채널 부재로 쌓인 부채 26) |
+| **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 34곳) |
+| **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | **출하** code SLOC **1000** | `.complexity-file-allowlist` (현재 24개 — 도입 시 동결분 잔여 16 + 채널 부재로 쌓인 부채 8) |
+| **동결 총합** | `tokei` + `scripts/check-frozen-sum-ratchet.sh` | 동결분 출하 SLOC 합 ≤ `예산 + 1000`, 그리고 ≥ `예산` | `.complexity-file-allowlist` 의 `# frozen-sum-budget:` 줄 |
 
 - 카운트 기준: `grep -rn 'allow(clippy::cognitive_complexity)'` 로 센 **전체** 위치 수. `// complexity-exempt:` 태그는 감사(grep) 가능성을 위한 필수 컨벤션이라, `#[allow(clippy::cognitive_complexity)]`가 있는데 태그가 없는 레거시가 발견되면 그 자리에서 태그를 붙여 카운트에 편입한다(둘을 별도 숫자로 두지 않는다).
 
 - cognitive 임계 20 은 외부 도구 rca cognitive ≈ 50 등가다. clippy 는 egui 즉시모드 draw 의 `ui.horizontal(|ui|{…})` 클로저를 부모에 합산하지 않아 구조적 draw 를 자동 배제 → 임계 초과 baseline 이 거의 순수 로직 함수라 신호가 깨끗하다.
-- clippy 에는 파일 SLOC lint 가 없어 파일 축은 tokei 로 별도 강제한다.
+- clippy 에는 파일 SLOC lint 가 없어 파일 축은 `scripts/check-file-size.sh` 가 tokei 로
+  별도 강제한다(채널은 [ci-gates](ci-gates.md)).
+- **파일 임계 1000 에는 등가가 없다 — 유도되지 않는다.** cognitive 축이 쓴 "다른 도구와의 등가" 를 파일 축은 쓸 수 없고(clippy 에 파일 길이 린트가 없다), 이 레포의 분위수로 유도하는 것은 순환이다(도입 시 동결 목록이 임계 초과 집합 그대로였다). 유지의 근거는 **발화율 곡선**이다 — 1000 은 950 → 1000 에서 요구가 38% 떨어지는 계단의 바닥이고 1250 까지 평평하다(올려도 요구가 안 줄면서 25% 큰 파일을 허용한다). 측정·대안·트리거는 [ADR-0168](../adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md).
+- **파일 축은 신규 파일 필터가 아니라 성장 래칫이다.** 두 달(2026-07-06 → 09-05) 실측에서 새로 생긴 `.rs` 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던 파일이 자란 것이었다.
+- **동결의 성장은 자매 게이트가 본다 — `scripts/check-frozen-sum-ratchet.sh`.** `.complexity-file-allowlist` 는 **경로만** 담아 값이 없으므로, `check-file-size.sh` 만으로는 목록에 오른 파일이 얼마나 자라든 신호가 없다(실측: 두 달에 동결 18 중 **15 가 자라 +2406 줄**, 그중 `render.rs` 는 1002 → 1997). 그래서 목록에 오른 파일들의 출하 SLOC **합** 하나를 예산으로 두고 **양방향으로** 고정한다 — 합이 `예산 + 여유` 를 넘어도 실패하고, `예산` 아래로 내려가도 실패한다(그때는 예산을 내려 래칫을 조인다. 한 방향만 서는 것은 래칫이 아니다).
+  - **예산은 그 목록 파일의 `# frozen-sum-budget:` 줄**이다. 항목이 드나드는 diff 와 예산이 움직이는 diff 가 한 화면에 붙어 보이도록 같은 파일에 둔다. 항목이 **추가**되면 합이 그 파일 크기만큼 뛰므로(추가되는 파일은 정의상 임계 초과다) 그 커밋에서 예산을 함께 갱신한다 — 갱신할 값은 실패 메시지가 알려준다.
+  - **여유는 임계 자신(1000)이다.** 스크립트가 `check-file-size.sh` 의 `THRESHOLD` 를 읽어 쓴다 — 외우지 않는다. 그래서 발화 사건이 "동결분이 허용 파일 하나 분량만큼 자랐다" 가 된다. 실측 발화율은 여유 0 이면 60 일에 218 회로 못 쓰고, 여유 = 임계면 60 일에 4 회다.
+  - **합은 넘긴 커밋을 지목하지 원인 커밋을 지목하지 않는다.** 실측 네 건에서 발화 커밋 자신의 기여는 누적의 3~24 % 였다. 이 한계는 안 풀리므로 실패 메시지가 그 사실과 다음 행동을 함께 말한다. 근거·대안·재검토 트리거는 [ADR-0168](../adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md).
+- **재는 것은 원본이 아니라 인라인 `#[cfg(test)]` 를 지운 사본이다.** 판정(무엇이
+  출하되는가)은 `crates/tasty-doc-guards` 의 `strip-cfg-test` 가 하고 계측(몇 줄인가)은
+  tokei 가 그대로 한다 — 계측기를 둘로 늘리지 않는다. 지운 줄은 빈 줄로 남아 줄 번호가
+  보존되므로 보고는 원본 좌표로 읽힌다. 근거·대안·재검토 조건은
+  [ADR-0165](../adr/0165-the-file-sloc-gate-measures-shipped-lines.md).
+  - **파일 전체**가 출하 밖인 경우(별도 파일 테스트 모듈·cargo 통합 타깃·생성 코드)는
+    여전히 스크립트의 `skip()` 이름 글롭이 담당한다. 그 대리인은
+    `src/source_guards/sloc_gate_skip_proxy.rs` 가 선언 기반 정본에 양방향으로 못박는다.
 
 ## 예외 컨벤션
 
@@ -34,8 +50,38 @@ fn draw_something(...) { ... }
 ### 파일 (SLOC)
 
 - 정당하게 큰 파일은 `.complexity-file-allowlist` 에 레포 상대경로(슬래시)를 한 줄 추가한다.
-- **allowlist 안에 블록이 둘이다.** 위 18 건은 게이트 도입(2026-07-06) 시점의 기존 대형 파일이고, 아래 26 건은 게이트가 한 번도 실행되지 않은 60 일 동안 새로 임계를 넘은 것이다 — **정당화된 예외가 아니라 부채 대장**이다(도입 시점에 이미 초과였던 것은 그 26 중 0 건). 새 항목은 위 블록에 넣고, 아래 블록은 래칫으로 **지우기만 한다**. 근거는 [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md).
-- 테스트 모듈(`tests.rs`·`*_tests.rs`·`tests/`)·생성/전사 코드(`*generated*`, `design-tokens/generated/`)는 스크립트 `skip()` 이 게이트에서 아예 제외하므로 allowlist 등록이 불요하다.
+- **allowlist 안에 블록이 둘이다.** 위 16 건은 게이트 도입(2026-07-06) 시점에 동결한 18 건에서 래칫으로 두 건이 빠진 나머지이고, 아래 8 건은 게이트가 한 번도 실행되지 않은 60 일 동안 새로 임계를 넘은 것이다 — **정당화된 예외가 아니라 부채 대장**이다(도입 시점에 이미 초과였던 것은 0 건). 새 항목은 위 블록에 넣고, 아래 블록은 래칫으로 **지우기만 한다**. 근거는 [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md).
+  - 아래 블록은 한때 26 건이었다. [ADR-0165](../adr/0165-the-file-sloc-gate-measures-shipped-lines.md) 로 게이트가 인라인 `#[cfg(test)]` 를 안 세게 되자 **그중 18 건이 임계 아래로 내려가 래칫으로 빠졌다** — 부채 대장의 3 분의 2 가 복잡도 부채가 아니라 테스트 줄이었다는 뜻이다.
+- 테스트 모듈(`tests.rs`·`*_tests.rs`·`tests/`)·생성/전사 코드(`*generated*`, `design-tokens/generated/`)는 스크립트 `skip()` 이 게이트에서 아예 제외하므로 allowlist 등록이 불요하다. 파일 **안**의 인라인 `#[cfg(test)] mod` 는 `skip()` 이 아니라 계측 단계에서 빠진다 — 게이트가 재는 것이 그 범위를 지운 사본이다.
+
+#### `skip()` 은 정의가 아니라 대리인이다
+
+게이트가 빼려는 것은 **출하되지 않는 코드**이고, `skip()` 이 실제로 보는 것은 **파일명**이다. 도입 커밋(`8b8030c1`, 2026-07-06)은 그 둘을 "테스트 모듈" 이라는 한 낱말로 붙여 놓았을 뿐이고, **파일명이 출하 여부의 적절한 대리인이라는 근거는 그 커밋에도 [ADR-0037](../adr/0037-complexity-gate.md) 에도 이 문서에도 적힌 적이 없다.** 대리인을 쓰는 것 자체가 틀린 것이 아니라, 대리인과 의도가 갈라지는 자리를 아무도 안 보는 것이 틀린 것이다.
+
+그 자리를 `src/source_guards/sloc_gate_skip_proxy.rs` 가 기계로 본다. 판정은 파일 안을 grep 하지 않고 `mod` **선언 지점**의 `#[cfg(...)]` 에서 하며(파일 안 grep 은 문서주석과 문자열을 함께 줍는다), 임계와 skip 패턴은 외우지 않고 스크립트에서 읽는다. 명제는 둘이고, **위반이 무엇을 뜻하는지가 서로 다르다.**
+
+- **(가) 이름으로 면제되는 파일은 전부 진짜로 출하되지 않는다.** 위반은 *출하 코드가 개명 한 번으로 게이트를 우회하고 있다* 는 뜻이다. 임계를 넘은 파일은 allowlist 에 적혀 사람이 심사하지만 **개명은 아무도 안 본다** — "임계를 넘으면 목록에 적고 심사받는다" 는 게이트의 계약이 심사 없는 채널로 새는 것이라, 파일 몇 개가 잘못 재어지느냐보다 이쪽이 본체다. 대응은 이름을 되돌리거나, 정말 커야 한다면 `.complexity-file-allowlist` 에 사유와 함께 등록하는 것이다.
+- **(나) 선언상 출하되지 않는데 이름이 관례에 안 맞아 게이트가 *재는* 파일 중 어느 것도 `.complexity-file-allowlist` 에 올라와 있지 않다.** 임계를 넘은 파일이 레포를 초록으로 유지하는 길은 등재뿐이므로, 모수와 심사 목록이 겹치는 순간이 곧 *대리인이 추상이 아니라 비용이 된* 순간이다 — 출하되지 않는 코드가 출하 코드와 같은 잣대로 재어진 첫 사례가 심사 목록에 남은 것이다.
+
+**가드는 SLOC 을 다시 재지 않는다.** 게이트가 쓰는 tokei code SLOC 을 단위 테스트에서 부를 수 없어 대체 척도를 둘 재 봤고, 추적 `.rs` 1131 파일 전수에서 둘 다 발화 임계로는 못 쓴다는 것이 나왔다 — **원시 줄 수**는 `code ≤ 줄 수` 가 반례 0 이라 방향은 안전하지만 여유가 중앙 46 · 최대 1269 로 너무 헐거워 위반이 없는데도 빨개지고(거짓 경보가 진짜 경보를 죽인다), **주석·공백을 마스킹한 줄 수**는 훨씬 조이지만 문자열 리터럴까지 지워 434 파일에서 code 보다 작다 — 상한이 아니라서 가드가 늦게 울고, 늦는 것은 조용하다. 그래서 (나)는 척도를 하나 더 들이는 대신 **게이트가 이미 남긴 흔적**(심사 목록 등재)을 본다. 대리인을 검사하려고 또 다른 대리인을 세우지 않는다.
+
+#### 면제의 근거는 셋이고, 이름은 그중 아무것도 아니다
+
+`skip()` 이 한 낱말("테스트 모듈·생성/전사 코드")로 묶어 둔 정당화는 사실 셋이고, 앞의 둘과 셋째는 근거의 종류가 다르다.
+
+- **선언** — `#[cfg(test)]` 아래에 있어 출하 빌드에 안 들어간다.
+- **cargo 통합 타깃** — 크레이트 루트 바로 아래 `tests/` 라 cargo 가 별도 타깃으로 빌드한다. 레이아웃이 강제하므로 선언이 없어도 성립한다. **`src/` 안의 `tests/` 디렉토리는 여기 해당하지 않는다** — 그건 그냥 모듈이고 선언이 없으면 출하된다. 경로에 `/tests/` 가 들어 있는지 보는 것으로는 둘이 안 갈린다.
+- **생성물** — 출하되지만 사람이 유지하지 않아 복잡도 예산 밖이다. 앞의 둘과 달리 **출하되는데도 면제되는** 유일한 가지이고, 그 사실이 어디에도 적혀 있지 않았다. 근거는 파일 자신이 첫머리에 다는 `DO NOT EDIT` 표식이다 — 표식은 파일 안에 있어 diff 에 남지만 이름은 옮기면 따라온다.
+
+가드는 이름으로 면제되는 파일마다 이 셋 중 하나를 요구한다. 셋 다 아니면 위반이고, 그 뜻은 *면제가 개명 하나로 얻어졌다* 는 것이다. 표식은 파일이 스스로 다는 것이라 "정말 생성기가 만들었는가" 까지는 답하지 못한다 — 답하는 것은 그보다 약한 명제, **이름만으로는 면제되지 않는다** 이다.
+
+**면제된 파일의 수는 문턱으로 박지 않는다.** 테스트 파일 하나가 자라면 그 수가 움직이고, 움직이는 것이 결함이 아닌 수를 문턱으로 쓰면 정상 성장에 빨개진다. 잡아야 하는 것은 크기가 아니라 **종류의 변화**라서 집합으로 판정한다.
+
+#### 왜 기계가 필요한가 — 두 채널의 비대칭
+
+등재와 면제는 같은 결과(게이트 통과)를 내지만 드는 값이 다르다. 등재는 추적 파일에 한 줄을 남겨 diff 에 노출되고, 게이트 메시지가 사유를 요구하며, 래칫이 걸려 임계 아래로 내려가면 지워진다. 면제는 **추적 파일 변경이 0 이고, 목록이 없고, 사유를 요구하지 않고, 래칫도 없다.** 그래서 면제 채널은 등재 채널보다 크면서도 어디에도 열거되지 않는다 — 사람이 훑어서 알아낼 대상이 아니다.
+
+**(나)가 울면 게이트를 선언 기반으로 바꿀 때다.** 그때의 갈래는 둘이다 — (1) 그 파일 이름을 `*_tests.rs` 관례에 맞춰 대리인을 그대로 두거나, (2) `skip()` 이 `#[cfg(test)]` 선언을 보게 고쳐 대리인을 없애는 것. 지금 (2)를 미루는 이유는 선언 파서를 게이트 안에 들이는 값을 치러야 하는데 **(나)가 울기 전까지 그 값에 대응하는 편익이 0** 이기 때문이다(현재 위반 0). 그 파서는 이 축을 만드는 동안 두 번 틀렸으므로, 방금 두 번 틀린 물건을 게이트 안에 바로 넣지 않는 것이기도 하다. 현재 수치는 이 문서에 적지 않는다 — 문서에 적힌 수는 낡고, 필요한 수는 (가)·(나)의 단정 메시지가 발화 시점에 그 자리에서 알려준다.
 
 ## 로컬 재현
 
@@ -47,17 +93,22 @@ cargo clippy --workspace --all-targets
 bash scripts/check-file-size.sh
 ```
 
-`check-file-size.sh` 는 `tokei` 와 `python`(JSON 파싱)을 요구한다. 종료코드 세 가지를 **서로 구분**한다.
+`check-file-size.sh` 는 `tokei` · `python`(JSON 파싱) · `strip-cfg-test` 바이너리를 요구한다.
+바이너리는 **스크립트가 스스로 빌드하지 않는다** — 이 스크립트는 `cargo test` 안에서도 불리고
+(`tests/file_sloc_gate_fails_loudly.rs`), 그때 중첩 cargo 는 빌드 디렉토리 잠금에서 서로를
+기다린다. 미리 만들어 두거나(`cargo build -p tasty-doc-guards --bin strip-cfg-test`) 경로를
+`TASTY_STRIP_CFG_TEST_BIN` 으로 준다. 종료코드 세 가지를 **서로 구분**한다.
 
 | 코드 | 뜻 |
 |---|---|
 | 0 | 측정에 성공했고 위반이 없다 |
 | 1 | 측정에 성공했고 allowlist 밖 대형 파일이 있다 (목록 출력) |
-| 2 | **측정 자체가 안 됐다** — 도구 미설치, tokei 실행 실패, JSON 파싱 실패, Rust 파일 0건 보고 |
+| 2 | **측정 자체가 안 됐다** — 도구 미설치, 판정기 부재·실행 실패, tokei 실행 실패, JSON 파싱 실패, Rust 파일 0건 보고 |
 
 **2 를 0 과 합치지 않는 것이 요점이다.** 측정이 안 된 것을 "위반 없음" 으로 읽으면 러너에서 tokei 가
-어긋나는 순간 게이트가 영원히 초록이 된다. `tests/file_sloc_gate_fails_loudly.rs` 가 스텁 tokei 로
-네 경우(위반 / 정상 / 실행 실패 / 빈 보고)를 고정한다.
+어긋나는 순간 게이트가 영원히 초록이 된다. `tests/file_sloc_gate_fails_loudly.rs` 가 스텁 tokei ·
+스텁 판정기로 여섯 경우(위반 / 정상 / tokei 실행 실패 / 빈 보고 / 깨진 JSON / 판정기 실패·부재)를
+고정한다.
 
 ## baseline 갱신
 
@@ -67,4 +118,4 @@ bash scripts/check-file-size.sh
 ## CI 배선
 
 - **cognitive**: 기존 `crossplatform-check.yml` 의 Windows clippy 잡이 `cargo clippy` 를 돌리므로, `cognitive_complexity = "deny"` 는 별도 배선 없이 `main` push 마다 자동 차단된다(`-D warnings` 불요 — deny 자체가 에러).
-- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `push:[main]`(문서·site 제외) + `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **실질 채널은 main push 다** — 이 저장소는 PR 을 열지 않아 PR 트리거는 장식이고, 2026-09-04 에 push 트리거를 붙이기 전까지 이 워크플로는 run 이력이 0 건이었다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행한다. 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
+- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `push:[main]`(문서·site 제외) + `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **실질 채널은 main push 다** — 이 저장소는 PR 을 열지 않아 PR 트리거는 장식이고, 2026-09-04 에 push 트리거를 붙이기 전까지 이 워크플로는 run 이력이 0 건이었다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행하고, 그 뒤 판정기를 빌드하는 스텝이 하나 붙는다(의존 0 크레이트라 초 단위). 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.

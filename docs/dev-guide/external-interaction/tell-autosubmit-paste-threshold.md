@@ -67,7 +67,7 @@ tasty 가 단일라인 tell 을 본문과 제출 `\r` 을 **한 문자열(`"{msg
 
 결과: `tell`/`terminal.spawn`/`terminal.broadcast` 경로 모두 메시지 길이·콘텐츠와 무관하게
 결정적으로 동작한다. 단위 테스트가 본문 payload 에 제출 `\r` 이 섞이지 않음(63자+ 회귀 가드
-포함)과 멀티라인 본문 분리를 검증한다.
+`broadcast_payload_splits_trailing_cr_for_submit`)과 멀티라인 본문 분리(`broadcast_payload_multiline_wraps_bracketed_and_submits`)를 검증한다.
 
 ## 일반 교훈
 
