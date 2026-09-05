@@ -93,12 +93,21 @@ exit 0 을 받고 다른 surface 에 보냈다고 믿는다.
   도입하는 경우 — "선언 = 강제" 가 전 타입에 성립하지 않게 되므로 범위를 다시 그어야 한다.
 - 거부로 바뀐 동작이 실제 사용을 깨는 사례가 보고되는 경우.
 
-**자동 채널 (base `a37c310a`)**: 위 결정의 집행 자체는 `crates/tasty-cli/src/dynamic.rs`
-의 단위 테스트 2개와 `crates/tasty-plugin-claude/src/hook.rs` 의 4개가 고정한다
+**자동 채널**: 위 결정의 집행 자체는 `crates/tasty-cli/src/dynamic/tests.rs` 의 다섯
+(`non_numeric_value_for_a_number_flag_is_rejected_not_dropped` ·
+`an_out_of_range_number_is_not_reported_as_a_non_number` ·
+`an_absent_number_flag_is_still_not_an_error` ·
+`stdin_json_non_numeric_value_for_a_number_flag_is_rejected` ·
+`stdin_json_number_flag_takes_a_number_and_a_numeric_string`)와
+`crates/tasty-plugin-claude/src/hook.rs` 의 넷이 고정한다
 (기본·헤드리스 양 조합의 `--lib --bins` 에 포함됨을 실행 목록으로 확인). 반면
 **"선언 타입이 늘어도 이 한 곳을 지난다" 는 불변식에는 자동 채널이 없다** — 새 타입이
-다른 경로로 들어오는 것을 잡는 테스트가 없다. 이 base 기준의 선언이며, 그런 가드가
-생기면 만료된다.
+다른 경로로 들어오는 것을 잡는 테스트가 없다. 그런 가드가 생기면 이 문단은 만료된다.
+
+수 대신 이름으로 적은 이유: 이 자리에는 한때 "단위 테스트 2 개" 라는 수가 base 와 함께
+적혀 있었는데, 그 base 시점의 `dynamic.rs` 에는 그 결정을 고정하는 이름의 테스트가 하나도
+없었다. 수는 세는 사람마다 달라지고 다시 세도 어느 쪽이 맞는지 가릴 근거가 남지 않는다 —
+이름은 실재 여부가 그 자리에서 판정된다.
 
 ## References
 

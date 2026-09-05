@@ -31,6 +31,7 @@
 //! 컴파일에서 빠져 아무것도 검증하지 않는다.
 #![cfg(debug_assertions)]
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use tasty_ipc::method_meta::{METHOD_TABLE, method_meta};
@@ -225,6 +226,63 @@ fn gather_rs(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// `#[cfg(test)] mod <name>;`(**한 줄 선언**)이 가리키는 파일들.
+///
+/// [`test_module_lines`] 는 같은 파일 안의 인라인 `#[cfg(test)] mod … {` 블록만 뺀다.
+/// 테스트가 별도 파일로 나가면 그 선언은 `{` 가 아니라 `;` 로 끝나고, 스캐너는 선언이
+/// 아니라 파일을 읽으므로 **그 파일 전체가 프로덕션 CLI 소스로 세진다** — 픽스처가
+/// 자유롭게 쓰는 이름(`claude.wait_by_surface` 같은 런타임 등록 이름)이 미등재 메서드로
+/// 잡힌다. 실제로 `dynamic.rs` 를 모듈 디렉토리로 자르자 그 형태가 나왔다.
+///
+/// 이름을 센티널 목록에 적어 빼는 길은 택하지 않는다. 그 목록의 뜻은 "IPC 로 보내지 않는
+/// 이름" 이고, 픽스처를 거기 섞으면 목록이 두 의미를 갖는다 — 그 뒤엔 진짜 미등재 메서드가
+/// 테스트에 들어와도 조용해진다. 구조로 빼는 것이 [`test_module_lines`] 와 같은 방침이다.
+///
+/// `#[path = "…"]` 로 선언처를 옮긴 형태까지는 보지 않는다. 이 스캔 루트에 그 형태가 없고,
+/// 생기면 그 파일이 다시 프로덕션으로 세져 **시끄럽게** 실패한다(조용한 누락이 아니다).
+fn test_only_files(root: &Path, files: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let mut out = BTreeSet::new();
+    for path in files {
+        let Ok(src) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let lines: Vec<&str> = src.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if !t.ends_with(';') {
+                continue;
+            }
+            let Some(rest) = t
+                .strip_prefix("mod ")
+                .or_else(|| t.strip_prefix("pub mod "))
+                .or_else(|| t.strip_prefix("pub(crate) mod "))
+                .or_else(|| t.strip_prefix("pub(super) mod "))
+            else {
+                continue;
+            };
+            let gated = lines[..i]
+                .iter()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .is_some_and(|l| l.trim() == "#[cfg(test)]");
+            if !gated {
+                continue;
+            }
+            let name = rest.trim_end_matches(';').trim();
+            let dir = path.parent().unwrap_or(root);
+            for cand in [
+                dir.join(format!("{name}.rs")),
+                dir.join(name).join("mod.rs"),
+            ] {
+                if cand.is_file() {
+                    out.insert(cand);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn rel_of(file: &Path, root: &Path) -> String {
     file.strip_prefix(root)
         .unwrap_or(file)
@@ -266,7 +324,11 @@ fn every_cli_method_string_is_registered_in_method_table() {
     let mut all_files = Vec::new();
     gather_rs(&root.join(CLI_CRATE_ROOT), &mut all_files);
     all_files.sort();
+    let declared_test_only = test_only_files(root, &all_files);
     for path in &all_files {
+        if declared_test_only.contains(path) {
+            continue;
+        }
         let rel = rel_of(path, root);
         let Ok(src) = std::fs::read_to_string(path) else {
             continue;
