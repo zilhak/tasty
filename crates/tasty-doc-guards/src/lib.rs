@@ -119,6 +119,24 @@ pub fn is_build_cache_dir(dir: &Path) -> bool {
     head.starts_with(CACHEDIR_SIGNATURE)
 }
 
+/// 파일 이름의 확장자가 **텍스트로 열 수 없는 바이너리·산출물**인지 — 소스를 텍스트로
+/// 읽는 가드가 "이 파일 내용을 스캔할 수 있나" 를 물을 때 쓰는 공용 denylist.
+///
+/// `cited_coordinates_exist` 와 `no_todo_file_citation` 이 각자 `SKIP_EXTS` 사본을 두고
+/// 있었다(전자는 후자를 베끼며 그 사실을 주석에 적었다). 같은 물음이라 정본을 하나 둔다.
+/// 가드가 더 뺄 형식(예: 좌표 인용을 안 담는 `.svg`·`.lock`)은 이 위에 얹는다 — 판정은
+/// 하나, 모수는 각자다(ADR-0180: 정본은 판정, 스캔 범위는 소비자별).
+pub fn is_binary_artifact_ext(ext: &str) -> bool {
+    BINARY_ARTIFACT_EXTS.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+/// [`is_binary_artifact_ext`] 의 denylist. 텍스트로 열 수 없는 형식만 — 여기 없는
+/// 확장자는 스캔 대상이다(denylist 전수).
+pub const BINARY_ARTIFACT_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "icns", "pdf", "ttf", "otf", "woff", "woff2", "zip",
+    "gz", "xz", "tar", "wasm", "bin", "so", "dylib", "dll", "exe", "sig",
+];
+
 /// 면제 항목이 가리키는 경로 중 **실재하지 않는 것**을 돌려준다 — 참조 무결성.
 ///
 /// **이 판정의 초록이 뜻하는 것은 "면제가 아직 필요하다" 가 아니다.** 가리키는 것이
@@ -199,6 +217,24 @@ mod tests {
         );
         assert_eq!(missing_referents(&root, ["crates"]), vec!["crates"]);
         assert!(missing_referents(&root, ["Cargo.toml", "crates/"]).is_empty());
+    }
+
+    /// 정본 denylist teeth — 바이너리는 막고 텍스트·무확장자는 통과시킨다. 이 판정을
+    /// `cited_coordinates_exist`·`no_todo_file_citation` 이 위임받는다(ADR-0180).
+    #[test]
+    fn binary_exts_are_denied_and_text_is_scanned() {
+        assert!(is_binary_artifact_ext("png"));
+        assert!(is_binary_artifact_ext("PNG"), "대소문자 무관이어야 한다");
+        assert!(is_binary_artifact_ext("woff2"));
+        assert!(!is_binary_artifact_ext("rs"), "소스는 스캔 대상이다");
+        assert!(!is_binary_artifact_ext("md"));
+        assert!(
+            !is_binary_artifact_ext(""),
+            "확장자 없음은 텍스트로 본다(denylist 전수)"
+        );
+        // 소비자가 위에 얹는 형식은 정본에 없다 — 그건 각 가드의 모수다.
+        assert!(!is_binary_artifact_ext("lock"));
+        assert!(!is_binary_artifact_ext("svg"));
     }
 
     #[test]

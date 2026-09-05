@@ -140,7 +140,8 @@ const PRUNE_DIRS: &[&str] = &[
 /// 가정이 아니라 이미 벌어진 상태였다 — 실측(2026-09-05) 이름 면제가 덮고 있던 것에
 /// 우리가 쓴 `assets/linux/tasty.desktop` · `assets/icons/*.svg` ·
 /// `crates/tasty-plugin-markdown/assets/NOTICE.md` 가 포함돼 있었다. 폰트·이미지는
-/// 이름이 아니라 [`SKIP_EXTS`] 가 이미 덮고 있어서, 이름 면제가 실제로 더 덮던 것은
+/// 이름이 아니라 정본 [`tasty_doc_guards::is_binary_artifact_ext`] 가 이미 덮고 있어서,
+/// 이름 면제가 실제로 더 덮던 것은
 /// **우리 파일들뿐이었다.**
 ///
 /// 열거는 새로 들어온 것을 안 덮는다는 점에서 이름과 강도가 다르다. 목록이 실재와
@@ -473,16 +474,11 @@ fn find_p6(line: &str) -> Option<String> {
 
 /// 스캔에서 뺄 확장자 — 바이너리라 인용을 담을 수 없는 것. `read_to_string` 이
 /// 비-UTF8 을 걸러 주지만, 여기서 먼저 쳐내 순회 비용을 줄인다.
-const SKIP_EXTS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "bmp", "ico", "icns", "pdf", "ttf", "otf", "woff", "woff2", "zip",
-    "gz", "xz", "tar", "wasm", "bin", "so", "dylib", "dll", "exe", "sig",
-];
-
 /// 스캔 대상 파일인지 — repo-relative 경로 기준.
 ///
 /// **denylist 전수 방식**: 순회가 닿은 파일은 기본적으로 전부 대상이고 바이너리
-/// 확장자만 뺀다. 확장자가 없는 파일(`Justfile` · 훅 스크립트)도 대상이다.
-/// 근거는 모듈 주석 "스캔 대상 정의" 참조.
+/// 확장자만 뺀다(정본 [`tasty_doc_guards::is_binary_artifact_ext`]). 확장자가 없는
+/// 파일(`Justfile` · 훅 스크립트)도 대상이다. 근거는 모듈 주석 "스캔 대상 정의" 참조.
 fn is_scan_target(rel: &str) -> bool {
     if VENDORED_FILES.contains(&rel) {
         return false;
@@ -494,7 +490,7 @@ fn is_scan_target(rel: &str) -> bool {
         .rsplit_once('.')
         .map(|(_, e)| e.to_ascii_lowercase());
     match ext {
-        Some(e) => !SKIP_EXTS.contains(&e.as_str()),
+        Some(e) => !tasty_doc_guards::is_binary_artifact_ext(&e),
         None => true,
     }
 }

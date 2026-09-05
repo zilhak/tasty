@@ -272,21 +272,23 @@ fn scan_pairs(line: &str) -> Vec<(String, Vec<String>)> {
     out
 }
 
-/// 순회에서 빼는 바이너리·산출물 확장자. 선례는
-/// `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 의 같은 이름 상수다.
-const SKIP_EXTS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "bmp", "ico", "icns", "pdf", "ttf", "otf", "woff", "woff2", "zip",
-    "gz", "xz", "tar", "wasm", "bin", "so", "dylib", "dll", "exe", "sig", "lock", "svg",
-];
+/// 이 가드가 좌표 인용을 안 찾아 공용 denylist 위에 **더** 빼는 형식. `.svg`·`.lock` 은
+/// 우리 소스 경로 좌표를 담지 않는다 — 바이너리 판정은 정본
+/// [`tasty_doc_guards::is_binary_artifact_ext`] 가 하고, 이 목록은 그 위에 얹는 이 가드의
+/// 모수 축소다(ADR-0180: 판정은 하나, 스캔 범위는 소비자별).
+const EXTRA_SKIP_EXTS: &[&str] = &["lock", "svg"];
 
-/// 파일 하나가 스캔 대상인가 — 바이너리·산출물 확장자만 뺀다(denylist 전수).
+/// 파일 하나가 스캔 대상인가 — 공용 바이너리 denylist 위에 [`EXTRA_SKIP_EXTS`] 를 더
+/// 뺀다(denylist 전수).
 fn is_scan_target(name: &str) -> bool {
     let ext = name
         .trim_start_matches('.')
         .rsplit_once('.')
         .map(|(_, e)| e.to_ascii_lowercase());
     match ext {
-        Some(e) => !SKIP_EXTS.contains(&e.as_str()),
+        Some(e) => {
+            !tasty_doc_guards::is_binary_artifact_ext(&e) && !EXTRA_SKIP_EXTS.contains(&e.as_str())
+        }
         None => true,
     }
 }
