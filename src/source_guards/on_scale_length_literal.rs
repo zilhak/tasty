@@ -48,7 +48,7 @@
 //!
 //! [ADR-0126]: ../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md
 
-use super::test_gate::{blank_test_modules, test_gated_files};
+use super::test_gate::blank_test_modules;
 use super::{mask_non_code, repo_root, rust_sources};
 
 /// `size-*` 스케일의 정본. 생성 파일이라 DTCG 원본이 바뀌면 여기도 같이 바뀐다.
@@ -124,7 +124,7 @@ const AREAS: &[(&str, usize, &str)] = &[
     ("src/view/", 47, "설정 화면의 폼 레이아웃"),
     (
         "src/",
-        16,
+        14,
         "그 밖의 본체(gfx·state·app) — GPU/상태 쪽이라 자리마다 사정이 다르다",
     ),
     (
@@ -289,13 +289,15 @@ fn on_scale_literals(masked: &str, scale: &[f32]) -> Vec<(usize, String, f32)> {
 fn scan(blank_tests: bool) -> Vec<Hit> {
     let scale = size_scale();
     let files = rust_sources();
-    let gated = test_gated_files(&files);
+    // 파일 단위 판정("이 파일이 출하되나")은 `shipping_scope` 의 일이다 — 선언 간선의
+    // 전이 폐쇄를 따르고 `#[path]` 도 푼다. 여기서 다시 세지 않는다.
+    let gated = tasty_doc_guards::shipping_scope::test_only_files(&super::repo_root(), &files);
     let mut out = Vec::new();
-    for (rel, text) in &files {
-        let rel = rel.to_string_lossy().replace('\\', "/");
-        if blank_tests && gated.contains(&rel) {
+    for (path, text) in &files {
+        if blank_tests && gated.contains(path) {
             continue;
         }
+        let rel = path.to_string_lossy().replace('\\', "/");
         let masked = mask_non_code(text);
         let masked = if blank_tests {
             blank_test_modules(&masked)
@@ -404,7 +406,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
     let in_tests = all.len() - shipped.len();
     assert_eq!(
         (zeros, in_tests),
-        (173, 164),
+        (169, 170),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );

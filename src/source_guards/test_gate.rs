@@ -1,28 +1,32 @@
-//! 테스트 게이트 판정 — "이 코드가 출하물인가" 를 묻는 소스 스캔 가드들의 공용 술어.
+//! **한 파일 안에서** 테스트 게이트 뒤에 있는 구간을 지운다.
 //!
-//! 자리가 여럿인 것이 문제가 아니라 **판정기가 여럿인 것**이 문제다. 같은 물음에 사본을
-//! 두면 갈린 쪽이 조용히 낡는다 — 이 모듈이 생긴 계기가 그것이다. 세 자리에서 실측으로
-//! 드러난 구멍 둘을 여기서 한 번에 닫는다:
+//! # 이것은 "이 파일이 출하되는가" 가 아니다
 //!
-//! 1. **합성 조건을 못 봤다.** `#[cfg(test)]` 를 문자열로 비교하면
-//!    `#[cfg(all(test, feature = "gui"))]` 가 안 걸린다. 실측 자리는 `src/state.rs` 의
-//!    `fullscreen_stage_tests` 이고, 그 파일의 선언들이 출하물로 셈됐다.
-//! 2. **`lib.rs` 의 자식 모듈을 못 찾았다.** 자식이 사는 디렉토리를 `mod.rs` 만
-//!    특례로 두면 `crates/*/src/lib.rs` 의 `#[cfg(test)] mod tests;` 가 가리키는
-//!    형제 파일(그 크레이트 `src/` 밑의 `tests.rs`)을 못 지운다. `lib.rs` 와
-//!    `main.rs` 도 `mod.rs` 와 같은 특례다.
+//! 그 물음의 판정기는 [`tasty_doc_guards::shipping_scope`] 다 — 선언 간선의 **전이
+//! 폐쇄**를 따르고 `#[path = "..."]` 도 푼다. 여기 있는 것은 그보다 좁은 물음이다:
 //!
-//! 둘 다 **거짓 양성**을 만든다 — 테스트 코드를 출하물로 세는 쪽이라, 그 상태의 가드는
-//! 고칠 수 없는 위반을 계속 가리킨다.
+//! | 물음 | 판정기 | 답의 모양 |
+//! |---|---|---|
+//! | 이 **파일**이 출하되나 | `shipping_scope::test_only_files` | 파일 집합 |
+//! | 이 파일 **안의 어느 구간**이 게이트 뒤인가 | 여기 [`blank_test_modules`] | 같은 파일의 사본 |
+//!
+//! 둘은 서로를 대신하지 못한다. **출하되는 파일도 안에 `#[cfg(test)] mod tests { … }`
+//! 를 품는다** — 파일 단위 판정은 그 구간을 못 지우고, 구간 판정은 자식 파일을 못 찾는다.
+//! 그래서 파일 물음은 위임하고 여기서는 구간만 답한다.
+//!
+//! # 극성은 직접 안 센다
+//!
+//! 조건이 test 를 **함의하는가**는 [`tasty_doc_guards::cfg_predicate::implies`] 가
+//! 판정한다. 처음엔 조건 안에 `test` 토큰이 있는지만 봤는데 그것은 두 방향으로 틀린다 —
+//! `not(test)` 는 **반대**인데 게이트로 셌고(실측: `src/fullscreen_stages.rs` 의
+//! `RELEASE_METAS` 블록이 스캔에서 지워지고 있었다), `any(test, unix)` 는 다른 조건으로도
+//! 컴파일되는데 test 전용으로 셌다. 이쪽 오판은 **거짓 음성**이다 — 출하되는 코드를
+//! 지워 놓고 위반이 없다고 말한다.
 
-use std::path::{Path, PathBuf};
+use tasty_doc_guards::cfg_predicate::implies;
 
-use super::mask_non_code;
-
-/// 테스트 게이트 attribute 의 **끝 다음** 바이트 위치들. `#[cfg(test)]` 만이 아니라
-/// `#[cfg(all(test, feature = "gui"))]` 같은 합성 조건도 센다 — 실측으로 후자가 있었고
-/// (`src/state.rs` 의 `fullscreen_stage_tests`), 리터럴 비교만 하는 판정기는 그 파일을
-/// 출하물로 셌다. 조건 안에 `test` 가 **토큰으로** 있으면 테스트 게이트로 본다.
+/// 테스트 게이트 attribute 의 **끝 다음** 바이트 위치들. 조건이 test 를 **함의할 때만**
+/// 게이트로 본다 — 판정은 [`implies`] 에 위임한다(모듈 문서 "극성은 직접 안 센다").
 pub(super) fn cfg_test_attr_ends(masked: &str) -> Vec<usize> {
     let mut out = Vec::new();
     let mut from = 0usize;
@@ -46,11 +50,7 @@ pub(super) fn cfg_test_attr_ends(masked: &str) -> Vec<usize> {
             }
         }
         let Some(close) = end else { continue };
-        let cond = &masked[body_start..close];
-        let is_test = cond
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .any(|t| t == "test");
-        if is_test {
+        if implies(&masked[body_start..close], "test") {
             // 닫는 `)` 다음의 `]` 까지 건너뛴다.
             let after = masked[close..]
                 .char_indices()
@@ -63,8 +63,11 @@ pub(super) fn cfg_test_attr_ends(masked: &str) -> Vec<usize> {
     out
 }
 
-/// 테스트 게이트가 걸린 `mod ... { ... }` 블록을 줄 구조를 보존한 채 지운다. 중괄호가
-/// 없는 `mod name;` 은 별도 파일이라 [`test_gated_modules`] 가 따로 뺀다.
+/// 테스트 게이트가 걸린 블록(`mod ... { … }` · 게이트가 붙은 식 블록)을 **줄 구조를
+/// 보존한 채** 지운다. 줄 번호가 밀리면 이 사본을 쓰는 가드가 엉뚱한 줄을 가리킨다.
+///
+/// 중괄호가 없는 `mod name;` 은 **별도 파일**이라 여기 대상이 아니다 — 그 파일을 통째로
+/// 빼는 것은 `shipping_scope::test_only_files` 의 일이다(모듈 문서의 표).
 pub(super) fn blank_test_modules(masked: &str) -> String {
     let bytes: Vec<char> = masked.chars().collect();
     let mut out: String = masked.to_string();
@@ -110,103 +113,42 @@ pub(super) fn blank_test_modules(masked: &str) -> String {
     out
 }
 
-/// `#[cfg(test)] mod NAME;` 로 선언된 자식 모듈 이름들. 그 모듈의 파일 전체가 테스트다.
-pub(super) fn test_gated_modules(masked: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for from in cfg_test_attr_ends(masked) {
-        let rest = masked[from..].trim_start();
-        let Some(rest) = rest.strip_prefix("mod ") else {
-            continue;
-        };
-        let Some((name, _)) = rest.split_once(';') else {
-            continue;
-        };
-        if name
-            .trim()
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        {
-            out.push(name.trim().to_string());
-        }
-    }
-    out
-}
-
-/// 자식 모듈이 사는 디렉토리. `mod.rs`·`lib.rs`·`main.rs` 는 자기 부모가 그 자리이고,
-/// 그 밖의 `foo.rs` 는 `foo/` 다.
-fn child_module_dir(rel: &Path) -> PathBuf {
-    let is_root = rel
-        .file_name()
-        .is_some_and(|n| n == "mod.rs" || n == "lib.rs" || n == "main.rs");
-    if is_root {
-        rel.parent().unwrap_or(Path::new("")).to_path_buf()
-    } else {
-        rel.with_extension("")
-    }
-}
-
-/// 테스트 게이트가 걸린 `mod NAME;` 이 가리키는 **파일 경로**들(레포 상대, `/` 구분).
-///
-/// 입력은 [`super::rust_sources`] 가 내는 (경로, 원문) 목록 그대로다.
-pub(super) fn test_gated_files(files: &[(PathBuf, String)]) -> Vec<String> {
-    let mut out = Vec::new();
-    for (rel, text) in files {
-        let dir = child_module_dir(rel).to_string_lossy().replace('\\', "/");
-        for name in test_gated_modules(&mask_non_code(text)) {
-            out.push(format!("{dir}/{name}.rs"));
-            out.push(format!("{dir}/{name}/mod.rs"));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod detector {
     use super::*;
 
-    #[test]
-    fn it_names_test_gated_child_modules() {
-        assert_eq!(
-            test_gated_modules("mod a;\n#[cfg(test)]\nmod b;\nmod c;\n"),
-            vec!["b".to_string()]
-        );
-    }
-
     /// 합성 조건도 테스트 게이트다. 문자열 비교로 판정하면 이 형태가 통째로 샌다 —
     /// 실측 자리는 `src/state.rs` 의 `fullscreen_stage_tests` 였다.
     #[test]
-    fn a_composite_cfg_that_mentions_test_is_still_a_test_gate() {
-        assert_eq!(
-            test_gated_modules("#[cfg(all(test, feature = \"gui\"))]\nmod b;\n"),
-            vec!["b".to_string()]
-        );
-        assert_eq!(
-            blank_test_modules("#[cfg(all(test, feature = \"gui\"))]\nmod b {\n    X\n}\n")
-                .contains('X'),
-            false
+    fn a_composite_cfg_that_implies_test_is_a_gate() {
+        assert!(
+            !blank_test_modules("#[cfg(all(test, feature = \"gui\"))]\nmod b {\n    X\n}\n")
+                .contains('X')
         );
     }
 
-    /// `test` 를 **토큰으로** 본다. 이름 안에 우연히 들어 있는 것은 게이트가 아니다.
+    /// ★ 극성. `not(test)` 는 **프로덕션 전용**이라 지우면 안 된다 — 지우면 출하되는
+    /// 코드를 스캔에서 없애 놓고 "위반 없음" 이라고 말한다(거짓 음성). `any(test, …)` 도
+    /// test 전용이 아니다.
     #[test]
-    fn a_cfg_whose_name_merely_contains_test_is_not_a_gate() {
-        assert!(test_gated_modules("#[cfg(feature = \"latest\")]\nmod b;\n").is_empty());
+    fn a_cfg_that_does_not_imply_test_is_left_alone() {
+        assert!(
+            blank_test_modules("#[cfg(not(test))]\n{\n    RELEASE\n}\n").contains("RELEASE"),
+            "부정을 게이트로 읽어 프로덕션 블록을 지웠다"
+        );
+        assert!(
+            blank_test_modules("#[cfg(any(test, unix))]\nmod b {\n    X\n}\n").contains('X'),
+            "선언을 함의로 읽었다"
+        );
     }
 
-    /// 자식 모듈의 집은 `mod.rs` 만이 아니다. `lib.rs` 를 특례에서 빼면 크레이트마다
-    /// 있는 `#[cfg(test)] mod tests;` 가 출하물로 셈된다.
+    /// 줄 번호가 밀리면 이 사본을 쓰는 가드가 엉뚱한 줄을 가리킨다.
     #[test]
-    fn a_crate_root_holds_its_children_beside_itself() {
-        let files = vec![(
-            PathBuf::from("crates/x/src/lib.rs"),
-            "#[cfg(test)]\nmod tests;\n".to_owned(),
-        )];
-        assert_eq!(
-            test_gated_files(&files),
-            vec![
-                "crates/x/src/tests.rs".to_owned(),
-                "crates/x/src/tests/mod.rs".to_owned()
-            ]
-        );
+    fn it_blanks_without_moving_line_numbers() {
+        let src = "a\n#[cfg(test)]\nmod t {\n    X\n}\nb\n";
+        let out = blank_test_modules(src);
+        assert_eq!(out.lines().count(), src.lines().count());
+        assert!(!out.contains('X'));
+        assert_eq!(out.lines().next_back(), Some("b"));
     }
 }
