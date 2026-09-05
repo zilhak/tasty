@@ -563,7 +563,18 @@ pub enum ShutdownOutcome {
 }
 
 impl ShutdownOutcome {
-    /// 로그 필드용 표기 — 부팅 계측의 `reason = satisfied|deadline` 과 같은 관례.
+    /// 로그 필드용 표기 — **맨 소문자 토큰**(`[a-z][a-z0-9_]*`)이고 닫힌 집합이다.
+    /// 부팅 계측의 `reason = satisfied|deadline` 이 같은 모양을 쓴다.
+    ///
+    /// ★ 그 짝은 **저장소 전역 관례가 아니다.** 같은 이름의 필드가 이 저장소에 셋 있고
+    /// 값의 모양이 서로 다르다 — `agent-stream` 은 `stream:` 을 앞에 붙인 이름공간 토큰
+    /// (`turn_end{reason=stream:turn_timeout}`)을 쓰고, `hook-failures.log` 의 `reason`
+    /// 은 애초에 **산문**이라 언어까지 갈린다(`docs/adr/0164-…`). 그래서 "reason 은 늘
+    /// 맨 토큰" 으로 일반화한 관측자는 다른 두 곳에서 조용히 0 을 센다.
+    ///
+    /// 이쪽 절반(값 셋의 모양·구별)은 아래 단정이 잡는다. 반대쪽 절반(부팅의 인라인
+    /// 리터럴)은 **아무것도 안 잡는다** — 크레이트가 갈려 부를 수도, 타입으로 묶을 수도
+    /// 없어서 이 문장은 주석에 머문다. 부팅 쪽 표기가 바뀌면 여기는 조용히 낡는다.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Graceful => "graceful",
@@ -949,6 +960,36 @@ fn generate_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 종료 계측의 `reason` 값은 **맨 소문자 토큰**이고 서로 구별된다.
+    ///
+    /// 이 로그는 사람이 아니라 기계가 읽는다 — 값에 공백·대문자·구분자가 섞이면 그것을
+    /// 세던 관측자가 **실패가 아니라 0** 을 낸다(안 보인다). 그래서 모양을 단정으로 박는다.
+    /// 값 자체는 `docs/architecture/shutdown-sequence.md` 가 인용한다(`reason="killed"`).
+    #[test]
+    fn shutdown_reasons_are_distinct_bare_lowercase_tokens() {
+        let all = [
+            ShutdownOutcome::Graceful,
+            ShutdownOutcome::Killed,
+            ShutdownOutcome::NoChild,
+        ];
+        let mut seen: Vec<&str> = Vec::new();
+        for o in all {
+            let v = o.as_str();
+            assert!(!v.is_empty(), "빈 표기: {o:?}");
+            assert!(
+                v.starts_with(|c: char| c.is_ascii_lowercase()),
+                "소문자로 시작해야 한다: {v}"
+            );
+            assert!(
+                v.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "맨 소문자 토큰이어야 한다(공백·대문자·구분자 금지): {v}"
+            );
+            assert!(!seen.contains(&v), "두 결말이 같은 표기를 쓴다: {v}");
+            seen.push(v);
+        }
+    }
 
     #[test]
     fn token_is_32_hex_chars() {
