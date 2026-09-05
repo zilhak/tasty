@@ -9,6 +9,36 @@
 //!
 //! These tests are ignored by default since they require a display and
 //! take focus of the desktop.
+//!
+//! ## 공허한 초록 — 이 파일 전수 조사 (2026-09-06)
+//!
+//! 이 스위트의 초록은 **자극이 통했다는 뜻이 아니다.** 자극 경로(enigo 키보드 ·
+//! `debug.inject_window_mouse` · IPC)가 무효과여도, 검사가 전부 "아무 일도 안 일어났다"
+//! 형태면 시험은 통과한다. 실측된 사건이 있다 — 주입이 죽은 슬롯의 발사에서 형제 둘이
+//! 반대 색이었고(하나는 `got: ""` 로 빨강, 하나는 통과), 그 통과는 정책 준수가 아니라
+//! 같은 사망의 다른 얼굴이었다.
+//!
+//! **가르는 축은 단정의 문법이 아니다.** `assert!(!x.contains(..))` 는 부정형이지만
+//! 앞에 자극이 통해야 지나가는 줄이 있으면 공허하지 않고, `assert_eq!(focus, 그대로)` 는
+//! 긍정형이지만 내용은 무변화라 자극이 죽어도 통과한다. 물어야 할 것은 하나다 —
+//! **자극이 무효과일 때 이 시험이 통과하는가.**
+//!
+//! 그 축으로 33 건을 전수로 세면:
+//!
+//! - **26 건**(`test_*` 키보드 계열)은 `wait_for_ui(.., 바뀐 값)` 이 상한 안에 안 오면
+//!   패닉한다 — 자극이 죽으면 빨개진다. 자기 안에 비영 대조를 갖고 있다.
+//! - **5 건**(마우스 주입 계열 중 `click_to_activate_moves_focus` ·
+//!   `drag_creates_local_selection` · `right_click_*` 둘 · `drag_motion_carries_the_pressed_button`)
+//!   은 존재를 요구하는 단정(`present == true` · `contains(..)`)을 앞에 둔다. 같음.
+//! - **2 건**이 공허했다: `hover_motion_never_reaches_a_non_focused_surface` 와
+//!   `test_ime_preedit_cleared_on_popup_focus_shortcut`. 둘 다 이제 자기 안에 비영
+//!   대조를 갖는다(각 시험의 `★★ 비영 대조` 주석).
+//!
+//! **한 건은 대조가 이 시험 밖에 있다.** `test_keyboard_not_sent_to_terminal_when_settings_open`
+//! 의 단정은 `!output.contains(..)` 하나인데, 타이핑 경로가 살아 있다는 증거는 형제
+//! `test_keyboard_sent_to_terminal_when_no_overlay` 가 낸다. 같은 바이너리에서 함께 도니
+//! 경로가 죽으면 형제가 빨개져 드러나긴 한다 — 다만 **이 시험 하나만 뽑아 돌리면 그
+//! 보증이 없다.** 안으로 옮기지 않은 이유는 그러면 같은 국면을 두 번 태우게 돼서다.
 
 mod gui_common;
 
@@ -951,11 +981,37 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
     inst.click_at(w / 2, h * 3 / 4); // 상단 앵커 search_bar 를 피해 터미널 영역 클릭
     std::thread::sleep(Duration::from_millis(200));
 
+    // ★★ **비영 대조 ① — 전제를 잰다.** 아래 단정 둘은 "PTY 로 안 갔다" 와 "preedit 이
+    // 없다" 로 **둘 다 부정**이라, 이 시험이 재현하려는 국면이 애초에 서지 않아도 통과한다.
+    // search_bar 가 안 열렸으면 재포커스가 없고 clear 경로는 돌지도 않는다.
+    let popups = inst.call("debug.host_popup.list", serde_json::json!({}));
+    let search_open = popups["popups"].as_array().is_some_and(|list| {
+        list.iter().any(|p| {
+            p["id"] == serde_json::json!("search_bar") && p["open"] == serde_json::json!(true)
+        })
+    });
+    assert!(
+        search_open,
+        "비영 대조 실패 — search_bar 가 열리지 않았다. clear 경로가 돌지 않았으므로 \
+         아래 초록은 '전송을 막았다' 가 아니라 '보낼 것이 없었다' 다: {popups}"
+    );
+    // ★ 전제의 나머지 절반(search_bar 가 **비포커스**인가)에는 채널이 없다 —
+    // `debug.host_popup.list` 는 `open`·`z_seq`·`rect` 만 내고 포커스는 안 낸다.
+    // 없는 것을 있는 척하지 않고 여기 적어 둔다. 그 절반이 어긋나면 이 시험은 여전히
+    // 조용히 다른 국면을 재게 되고, 그때 드러날 자리는 이 파일이 아니다.
+
     // 이제 터미널 포커스 + search_bar 열림·비포커스. preedit + mark 세팅.
     let pre = inst.call("surface.ime_preedit", serde_json::json!({ "text": "한" }));
     let sid = pre["surface_id"]
         .as_u64()
         .expect("preedit response surface_id");
+    // 비영 대조 ② — 조합이 실제로 섰는가. 형제 시험 `..._flushed_...` 는 이 단정을
+    // 갖고 있는데 이쪽만 빠져 있었다. 안 섰으면 "PTY 로 안 갔다" 는 당연한 참이다.
+    assert_eq!(
+        pre["preedit_active"],
+        serde_json::json!(true),
+        "비영 대조 실패 — preedit 이 서지도 않았다. 아래 초록은 clear 경로의 증거가 아니다"
+    );
     inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
 
     // find 재입력 → 열린 search_bar 를 동기 재포커스 → has_focused()==true → clear.
@@ -1279,6 +1335,39 @@ fn hover_motion_never_reaches_a_non_focused_surface() {
     );
     let other = res["new_surface_id"].as_u64().expect("new_surface_id");
     settle();
+
+    // ★★ **비영 대조.** 이 시험의 단정은 둘 다 "아무 일도 안 일어났다" 형태다 — 바이트가
+    // 안 나왔다(부정)와 포커스가 안 바뀌었다(형태는 긍정이지만 내용은 무변화). 주입이
+    // 무효과면 둘 다 그대로 통과하므로, 그 초록은 정책 준수가 아니라 **자극 부재**다.
+    // 실측 2026-09-06: 주입이 죽은 슬롯의 gui 발사에서 이 시험이 통과한 소수에 들어 있었고,
+    // 같은 원인으로 형제 `hover_motion_reported_only_for_mode_1003` 은 빨갰다.
+    // 그래서 **같은 주입이 살아 있다는 것을 이 시험 안에서 먼저 보인다.**
+    enable_mouse_tracking(&inst, focused, "1003");
+    inst.call("surface.set_mark", json!({ "surface_id": focused }));
+    for fx in [0.30_f32, 0.50, 0.70] {
+        inst.inject_mouse(focused, fx, 0.5, "move", 0);
+    }
+    settle();
+    let control = read_since_mark(&inst, focused);
+    assert!(
+        control.contains("^[[<35;"),
+        "비영 대조 실패 — 포커스된 surface 에서조차 hover 보고가 안 나온다. 주입 경로가 \
+         죽었다는 뜻이고, 그러면 아래 '비포커스로 안 샌다' 는 정책의 증거가 못 된다. \
+         got: {control:?}"
+    );
+    // 대조가 끝났으면 그 surface 의 모드를 되돌린다 — 공유 인스턴스라 켜둔 채로 나가면
+    // 뒤 시험이 남의 상태를 물려받는다. Ctrl-C 는 `cat -v` 만 죽이고 모드는 안 되돌린다.
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": focused, "text": "\u{3}" }),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    inst.call(
+        "surface.send",
+        json!({ "surface_id": focused, "text": "printf '\\e[?1003l\\e[?1006l'\n" }),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    inst.call("surface.set_mark", json!({ "surface_id": focused }));
 
     // 비활성 surface 에서 1003 을 켠다 — 앱은 트래킹 중이라고 믿는 상태.
     enable_mouse_tracking(&inst, other, "1003");
