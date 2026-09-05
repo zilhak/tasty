@@ -121,15 +121,24 @@ mod tests {
         assert!(!e.take_shell_integration_hint_due(2));
     }
 
+    /// surface **둘**을 채우고 하나만 잊는다. 하나만 채우면 "그것만 지웠다" 와
+    /// "세 캐시를 통째로 비웠다" 가 같은 관측이라, 세 `remove` 를 `clear` 로 바꿔도
+    /// 안 죽는다.
     #[test]
     fn forget_shell_integration_hint_clears_all_three_caches() {
         let mut e = engine();
-        e.note_first_output(1);
-        e.note_prompt_boundary_seen(1);
-        e.shell_integration_hint_shown.insert(1);
+        for sid in [1, 2] {
+            e.note_first_output(sid);
+            e.note_prompt_boundary_seen(sid);
+            e.shell_integration_hint_shown.insert(sid);
+        }
         e.forget_shell_integration_hint(1);
         assert!(!e.shell_integration_first_output_at.contains_key(&1));
         assert!(!e.shell_integration_boundary_seen.contains(&1));
         assert!(!e.shell_integration_hint_shown.contains(&1));
+        // 잊으라고 하지 않은 surface 는 세 캐시에 그대로 남는다.
+        assert!(e.shell_integration_first_output_at.contains_key(&2));
+        assert!(e.shell_integration_boundary_seen.contains(&2));
+        assert!(e.shell_integration_hint_shown.contains(&2));
     }
 }
