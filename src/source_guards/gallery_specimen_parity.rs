@@ -33,6 +33,14 @@
 //!   실재하고 그 모듈 경로가 `catalog.rs` 에 나오는지까지가 텍스트로 물을 수 있는 끝이고,
 //!   그 `Spec` 이 어느 `Page` 에 달렸는지는 트리를 세워야 알 수 있다(갤러리 크레이트에
 //!   의존하지 않는 이 가드의 자리에서는 못 한다).
+//!
+//! # 찍는 표에는 **자동 채널이 없다** (R494)
+//!
+//! libtest 는 통과한 테스트의 출력을 삼키고, 이 레포의 어느 회차 스텝도
+//! `--show-output`·`--nocapture` 를 안 쓴다. 그러니 아래 `println!` 은 **초록 회차 어디에도
+//! 안 나온다** — 손으로 `cargo test --bin tasty <이 모듈> -- --nocapture` 로 볼 때만 보인다.
+//! 그것을 알고 둔다: 자동으로 지키는 것은 **단정**이고, 표는 사람이 눈으로 확인할 때 쓰는
+//! 도구다. 표가 채널을 가진 것처럼 쓰지 마라.
 //! - **popup 쪽은 gui 조합에서만 돈다.** `adapters::ui` 가 `#[cfg(feature = "gui")]` 라
 //!   헤드리스에는 등록처 자체가 없다. 무대 쪽은 메타 표가 gui 무관이라(`fullscreen_stages`)
 //!   두 조합에서 다 돈다. 자동 채널은 Windows 유닛 잡과 Linux gui 유닛 잡이다.
@@ -102,9 +110,21 @@ fn check(
     registry: &[&str],
     roster: &[(&str, &str)],
     debts: &[(&str, &str)],
+    debt_budget: usize,
     floor: usize,
     control: &str,
 ) {
+    // 빚은 **수로도** 못 박는다. 실패문이 "정 안 되면 빚 목록에 적어라" 라고 말하는 한,
+    // 그 목록은 한 줄짜리 도망길이 된다 — 처방을 최소로 이행하면 보호가 사라지는 형태다.
+    // 수를 함께 올려야 하면 그 도망이 diff 에 남고, 줄이는 쪽으로도 실패해 빚을 갚은 뒤
+    // 장부를 안 닫는 것도 막는다.
+    assert_eq!(
+        debts.len(),
+        debt_budget,
+        "{what} 의 specimen 없는 자리가 {} 개다(기록 {debt_budget}). 늘었으면 원칙을 어긴 \
+         자리가 는 것이고, 줄었으면 갚은 만큼 이 수를 내려라",
+        debts.len()
+    );
     assert!(
         registry.len() >= floor,
         "{what} 등록처가 {} 개다(하한 {floor}) — 표를 못 읽었으면 아래 판정은 전부 공허하다",
@@ -132,7 +152,10 @@ fn check(
             panic!(
                 "{what} `{id}` 에 대응하는 갤러리 specimen 이 명부에 없다.\n\
                  gallery-first(ADR-0020)는 본체보다 갤러리가 먼저다 — specimen 을 만들고 \
-                 `{}` 의 명부에 그 자리를 적어라. 정말 못 만들면 빚 목록에 사유와 함께 적어라.",
+                 `{}` 의 명부에 그 자리를 적어라.\n\
+                 빚 목록에 옮기는 것은 **이행이 아니다.** 그 목록은 면제가 아니라 \
+                 원칙을 어긴 자리의 장부이고, 행을 더하려면 그 옆의 빚 수도 함께 올려야 \
+                 한다 — 늘리는 쪽으로도 실패한다.",
                 file!()
             );
         };
@@ -182,6 +205,7 @@ fn every_host_popup_has_a_gallery_specimen() {
         &registry,
         POPUP_SPECIMENS,
         POPUP_WITHOUT_SPECIMEN,
+        0,
         20,
         "notifications",
     );
@@ -204,6 +228,7 @@ fn every_fullscreen_stage_has_a_gallery_specimen() {
         &registry,
         STAGE_SPECIMENS,
         STAGE_WITHOUT_SPECIMEN,
+        0,
         1,
         "notifications",
     );

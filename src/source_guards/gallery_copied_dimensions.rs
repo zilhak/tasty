@@ -130,9 +130,15 @@ fn read(rel: &str) -> String {
 /// 매달려 있어서 따로 보면 같은 결정을 네 번 내리게 된다.
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    assert!(
-        !COPIED.is_empty(),
-        "명부가 비면 아무것도 안 보면서 통과한다"
+    // 하한이 아니라 **정확한 수**다. 하한이면 행을 빼는 것이 가장 싼 수선이 되고, 그건
+    // 사본을 없앤 것이 아니라 **보는 눈을 없앤 것**이다.
+    assert_eq!(
+        COPIED.len(),
+        4,
+        "사본 명부가 {} 쌍이다(기록 4). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+         만든 것이다 — 사본이 실제로 사라졌으면(한쪽이 없어졌으면) 이 수를 내리고, \
+         새 사본을 찾았으면 올려라",
+        COPIED.len()
     );
     let theme = read(THEME);
 
@@ -180,13 +186,14 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     let headline = format!("갈라진 치수 {}: {}", split.len(), split.join(" · "));
     assert!(
         split.is_empty(),
-        "{}\n\n{}\n{}\n{}\n{}\n{}",
+        "{}\n\n{}\n{}\n{}\n{}\n{}\n{}",
         headline,
         table,
         "둘 중 어느 쪽으로 통일할지 정해라 — 이건 가드의 오탐이 아니다.",
         "본체를 테마 파생으로 바꾸면 비-기본 테마에서 본체 동작이 바뀌고,",
         "갤러리를 고정값으로 바꾸면 specimen 이 테마를 안 따른다.",
-        "그 선택이 지금 필요해졌다는 것이 이 실패의 내용이다."
+        "그 선택이 지금 필요해졌다는 것이 이 실패의 내용이다.",
+        "명부에서 이 쌍을 빼는 것은 이행이 아니다 — 사본은 그대로 남고 보는 눈만 사라진다."
     );
     // 초록일 때 무엇을 맞춰 봤는지 남긴다 — 넷을 다 봤는지는 이 목록으로만 보인다.
     println!("[사본 치수] {} 쌍\n{table}", COPIED.len());
