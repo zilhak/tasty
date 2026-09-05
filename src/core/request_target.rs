@@ -167,13 +167,13 @@ pub(crate) fn method_scoped_resource_id(
             id,
         });
     }
-    if !matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
-        return None;
+    if matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
+        return numeric(params, "id").map(|id| ResourceId {
+            kind: Kind::HeadlessPty,
+            id,
+        });
     }
-    numeric(params, "id").map(|id| ResourceId {
-        kind: Kind::HeadlessPty,
-        id,
-    })
+    None
 }
 
 fn numeric(params: &serde_json::Value, key: &str) -> Option<u64> {

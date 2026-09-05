@@ -58,7 +58,7 @@ const MIN_HANDLER_FILES: usize = 50;
 ///
 /// 면제는 목록에 남아 검토받고 미등재는 안 남는다 — 그래서 "모르는 키" 를 조용히
 /// 넘기지 않고 여기에 사유와 함께 적게 한다.
-const NOT_A_ROUTING_TARGET: &[(&str, &str)] = &[
+pub(super) const NOT_A_ROUTING_TARGET: &[(&str, &str)] = &[
     // ── 문자열 id. 라우팅은 숫자만 본다(`as_u64`) ─────────────────────────────
     ("agent_id", "session.* 의 agent 이름(문자열)"),
     ("banner_id", "debug 배너 식별자(문자열)"),

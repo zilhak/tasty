@@ -699,5 +699,9 @@ mod params_chokepoint;
 mod reserved_ipc_prefixes;
 mod routing_key_coverage;
 
+/// 위 가드의 명제를 **(메서드, 키) 쌍**으로 올린다. 키 단위 명제는 `"id"` 처럼 한
+/// 메서드에서만 인식되는 키를 모든 메서드에서 인식된 것으로 세어 거짓 초록이 된다.
+mod routing_key_method_scope;
+
 #[cfg(test)]
 mod workflow_fail_fast_tests;
