@@ -682,6 +682,11 @@ mod headless_app_layer_coverage;
 #[cfg(test)]
 mod length_constant_frontier;
 
+/// "이 코드가 출하물인가" 를 묻는 소스 스캔 가드들의 공용 술어. 사본을 두면 갈린 쪽이
+/// 조용히 낡는다.
+#[cfg(test)]
+mod test_gate;
+
 mod platform_gated_dispatch_complement;
 
 /// `plugin_only` 표식과 plugin host-call 진입부의 인터셉트가 같은 집합인지 본다.

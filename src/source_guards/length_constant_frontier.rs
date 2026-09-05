@@ -71,8 +71,7 @@
 //! 목록이 조용히 비는 것(오타 난 경로 · 사라진 크레이트)은 0 을 통과로 만든다. 그
 //! 공허를 [`every_scanned_unit_actually_has_files`] 가 따로 막는다.
 
-use std::path::Path;
-
+use super::test_gate::{blank_test_modules, test_gated_files};
 use super::{mask_non_code, rust_sources};
 
 /// 이 가드가 세는 단위(레포 상대 경로 접두사). 여기 없는 것은 0 이 아니라 미측정이다.
@@ -161,90 +160,10 @@ fn parse_bare_float_const(line: &str) -> Option<(String, String)> {
     Some((name.to_string(), value.to_string()))
 }
 
-/// `#[cfg(test)] mod ... { ... }` 블록을 줄 구조를 보존한 채 지운다. 중괄호가 없는
-/// `#[cfg(test)] mod name;` 은 별도 파일이라 [`test_gated_modules`] 가 따로 뺀다.
-fn blank_test_modules(masked: &str) -> String {
-    let bytes: Vec<char> = masked.chars().collect();
-    let mut out: String = masked.to_string();
-    let mut from = 0usize;
-    while let Some(rel) = masked[from..].find("#[cfg(test)]") {
-        let at = from + rel;
-        from = at + "#[cfg(test)]".len();
-        let Some(open) = masked[from..].find('{').map(|o| from + o) else {
-            continue;
-        };
-        // 여는 중괄호 앞에 세미콜론이 있으면 그 attribute 는 블록이 아니다.
-        if masked[from..open].contains(';') {
-            continue;
-        }
-        let mut depth = 0usize;
-        let mut close = None;
-        for (i, c) in bytes
-            .iter()
-            .enumerate()
-            .skip(masked[..open].chars().count())
-        {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        close = Some(i);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let Some(close_char) = close else { continue };
-        let start_byte = open;
-        let end_byte = masked
-            .char_indices()
-            .nth(close_char)
-            .map_or(masked.len(), |(b, c)| b + c.len_utf8());
-        let region: String = masked[start_byte..end_byte]
-            .chars()
-            .map(|c| if c == '\n' { '\n' } else { ' ' })
-            .collect();
-        out.replace_range(start_byte..end_byte, &region);
-    }
-    out
-}
-
-/// `#[cfg(test)] mod NAME;` 로 선언된 자식 모듈 이름들. 그 모듈의 파일 전체가 테스트다.
-fn test_gated_modules(masked: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut prev_was_gate = false;
-    for line in masked.lines() {
-        let t = line.trim();
-        if prev_was_gate
-            && let Some(rest) = t.strip_prefix("mod ")
-            && let Some(name) = rest.strip_suffix(';')
-        {
-            out.push(name.trim().to_string());
-        }
-        prev_was_gate = t == "#[cfg(test)]";
-    }
-    out
-}
-
 /// 레포 전수 스캔 — (경로, 줄번호, 이름).
 fn scan() -> Vec<(String, usize, String)> {
     let files = rust_sources();
-    let mut gated: Vec<String> = Vec::new();
-    for (rel, text) in &files {
-        // 자식 모듈이 사는 디렉토리는 `mod.rs` 면 자기 부모, `foo.rs` 면 `foo/` 다.
-        let dir = if rel.file_name().is_some_and(|n| n == "mod.rs") {
-            rel.parent().unwrap_or(Path::new("")).to_path_buf()
-        } else {
-            rel.with_extension("")
-        };
-        let dir = dir.to_string_lossy().replace('\\', "/");
-        for name in test_gated_modules(&mask_non_code(text)) {
-            gated.push(format!("{dir}/{name}.rs"));
-            gated.push(format!("{dir}/{name}/mod.rs"));
-        }
-    }
+    let gated = test_gated_files(&files);
     let mut out = Vec::new();
     for (rel, text) in &files {
         let rel = rel.to_string_lossy().replace('\\', "/");
@@ -396,14 +315,6 @@ mod detector {
         assert_eq!(
             length_constants(src),
             vec![(1, "A_WIDTH".to_string()), (6, "C_WIDTH".to_string())]
-        );
-    }
-
-    #[test]
-    fn it_names_test_gated_child_modules() {
-        assert_eq!(
-            test_gated_modules("mod a;\n#[cfg(test)]\nmod b;\nmod c;\n"),
-            vec!["b".to_string()]
         );
     }
 }
