@@ -71,6 +71,10 @@
 //!
 //! 선례: `tests/no_emoji_in_source.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
 
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
 use std::path::{Path, PathBuf};
 
 /// 예외 목록 — (repo-relative 경로, 그 파일에서만 허용하는 패턴 id).

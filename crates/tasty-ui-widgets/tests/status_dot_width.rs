@@ -7,6 +7,10 @@
 //! 술어를 **"gap 이 라벨과 함께 있고 라벨 없이는 없다"** 로 세운다. 폭 하나만 재면
 //! 라벨 있는 경우가 맞는지 알 수 없고, 차이만 재면 dot 지름이 토큰에서 오는지 알 수 없다.
 
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
 use egui::{Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{StatusKind, status_dot};

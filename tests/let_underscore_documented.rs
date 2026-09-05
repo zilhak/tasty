@@ -411,6 +411,202 @@ fn every_let_underscore_in_production_code_says_why() {
     );
 }
 
+// ── 명부 순수성: 테스트 범위가 clippy 명부에 섞이지 않는가 ─────────────
+
+/// 테스트 타깃(그 자체가 별개 크레이트다)에 다는 면제.
+const TARGET_EXEMPTION: &str = "#![allow(clippy::let_underscore_must_use)]";
+
+/// 크레이트 루트에 다는 면제. **`cfg_attr(test, ..)` 인 것이 핵심이다** — 라이브러리
+/// 타깃은 `cfg(test)` 없이 컴파일되므로 프로덕션 자리는 그대로 명부에 오른다.
+/// 실측으로 확인했다: `tasty-cli` 에 이 줄을 넣어도 명부 자리 33 이 33 그대로였고,
+/// `tasty-terminal` 에서는 테스트 자리 2 가 0 이 됐다.
+const CRATE_EXEMPTION: &str = "#![cfg_attr(test, allow(clippy::let_underscore_must_use))]";
+
+/// 면제 표기 — 위 두 형태와 아이템 단위 `#[allow(..)]` 를 한 술어로 본다.
+fn mentions_exemption(line: &str) -> bool {
+    line.contains("allow(clippy::let_underscore_must_use)")
+}
+
+/// `rel` 이 **자기 자신이 하나의 컴파일 타깃**인가. 통합 테스트·벤치는 각자 크레이트라
+/// 크레이트 루트의 면제가 닿지 않는다 — 그 파일에 직접 달아야 한다.
+fn is_own_target(rel: &str) -> bool {
+    is_test_path(rel)
+}
+
+/// `rel` 이 속한 크레이트의 루트 소스 경로들(있는 것만).
+fn crate_roots(root: &Path, rel: &str) -> Vec<PathBuf> {
+    let dir = if let Some(rest) = rel.strip_prefix("crates/") {
+        match rest.split_once('/') {
+            Some((name, _)) => root.join("crates").join(name),
+            None => root.to_path_buf(),
+        }
+    } else {
+        root.to_path_buf()
+    };
+    ["src/lib.rs", "src/main.rs"]
+        .iter()
+        .map(|n| dir.join(n))
+        .filter(|p| p.is_file())
+        .collect()
+}
+
+/// 테스트 범위에서 값을 버리는 자리 — [`violations_in`] 의 **여집합**이다. 저쪽이
+/// 프로덕션만 보는 것과 같은 스캐너·같은 마스킹을 쓴다(사본을 만들지 않는다 — 사본이
+/// 둘이면 갈리고, 갈린 쪽은 조용하다).
+///
+/// `whole_file` 은 파일 자체가 테스트 타깃일 때다. [`test_regions`] 만으로는 부족하다 —
+/// 통합 테스트의 **헬퍼 함수**는 `#[test]` 아이템 밖에 있어서 표식이 없다. 실측으로
+/// 걸렸다: 그 형태를 안 세면 통합 테스트 파일의 면제를 지워도 이 가드가 초록이었다.
+fn test_scope_sites(text: &str, whole_file: bool) -> Vec<usize> {
+    let code_src = tasty_doc_guards::source_text::mask_non_code(text);
+    let code: Vec<&str> = code_src.lines().collect();
+    let in_test = test_regions(&code);
+    let mut out = Vec::new();
+    for (i, line) in code.iter().enumerate() {
+        if (whole_file || in_test[i]) && has_let_underscore(line) {
+            out.push(i);
+        }
+    }
+    out
+}
+
+/// 그 줄을 감싸는 테스트 아이템에 `#[allow(..)]` 이 붙어 있는가. 아이템의 속성 묶음은
+/// 연속된 `#[..]` 줄이라, 표식 줄 위아래로 붙어 있는 것만 본다.
+fn item_is_exempt(code: &[&str], line: usize) -> bool {
+    let mut i = line;
+    loop {
+        let t = code[i].trim_start();
+        if is_test_attr(t, false) {
+            let mut a = i;
+            while a > 0 && code[a - 1].trim_start().starts_with("#[") {
+                a -= 1;
+            }
+            let mut b = i;
+            while b + 1 < code.len() && code[b + 1].trim_start().starts_with("#[") {
+                b += 1;
+            }
+            return code[a..=b].iter().any(|l| mentions_exemption(l));
+        }
+        if i == 0 {
+            return false;
+        }
+        i -= 1;
+    }
+}
+
+/// **테스트 범위의 `let _ =` 는 명부 밖에 있어야 한다.**
+///
+/// `clippy::let_underscore_must_use` 의 출력은 위반 목록이 아니라 **프로덕션에서 값을
+/// 의도적으로 버리는 자리의 명부**다(`docs/dev-guide/error-handling.md`). 정책이 애초에
+/// 아무것도 요구하지 않는 테스트 본문이 거기 섞이면, 테스트가 늘 때마다 숫자만 흔들리고
+/// **새로 들어오는 프로덕션 자리가 그 안에 묻힌다.** 실제로 한 번 났다 — 직전 측정 이후
+/// 하루 만에 테스트 범위 18 자리가 섞였고 수동으로 되돌렸다.
+///
+/// **판정 단위가 자리가 아니라 타깃이다.** 텍스트 스캔은 타입을 모르므로 `let _ =` 하나
+/// 하나에 면제를 요구하면 clippy 가 애초에 경고하지 않는 자리까지 요구한다(실측: 면제
+/// 없는 테스트 범위 자리 80 중 지금 명부에 오른 것은 5 뿐이다). 그래서 요구를 **크레이트
+/// 루트 한 줄 / 테스트 타깃 한 줄**로 올린다 — 요구 수가 80 에서 20 으로 떨어지고, 그
+/// 한 줄이 **그 크레이트의 앞으로 생길 테스트까지 함께 덮는다.** 회귀가 들어온 경로
+/// (프로덕션 파일 안 `#[cfg(test)]` 모듈 8 자리)가 정확히 그 형태였다.
+#[test]
+fn test_scope_stays_out_of_the_lint_roster() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    gather(root, &mut files);
+    files.sort();
+    assert!(
+        scan_is_credible(files.len()),
+        "스캔한 `.rs` 가 {}개다(하한 {MIN_SCANNED_FILES}) — 순회가 깨졌다",
+        files.len()
+    );
+
+    // 자기-공허 검사를 **갈래마다** 센다. 하나로 합치면 한쪽이 죽어도 다른 쪽이 수를
+    // 채워 초록이 된다 — 실측으로 걸렸다: `test_regions` 를 통째로 무력화해도 경로 기반
+    // 갈래가 자리를 채워 이 검사가 통과했다. 회귀가 들어온 경로(프로덕션 파일 안
+    // `#[cfg(test)]` 모듈)가 정확히 죽은 그 갈래였다.
+    let mut seen_by_path = 0usize;
+    let mut seen_by_region = 0usize;
+    let mut report = Vec::new();
+    for file in &files {
+        let rel = rel_of(file, root);
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        let own_target = is_own_target(&rel);
+        let sites = test_scope_sites(&text, own_target);
+        if sites.is_empty() {
+            continue;
+        }
+        if own_target {
+            seen_by_path += sites.len();
+        } else {
+            seen_by_region += sites.len();
+        }
+        let code_src = tasty_doc_guards::source_text::mask_non_code(&text);
+        let code: Vec<&str> = code_src.lines().collect();
+        if code.iter().any(|l| {
+            let t = l.trim_start();
+            t.starts_with("#![") && mentions_exemption(t)
+        }) {
+            continue;
+        }
+        if own_target {
+            report.push(format!("  {rel}  ← 파일 머리에 `{TARGET_EXEMPTION}`"));
+            continue;
+        }
+        let uncovered: Vec<usize> = sites
+            .iter()
+            .copied()
+            .filter(|&i| !item_is_exempt(&code, i))
+            .collect();
+        if uncovered.is_empty() {
+            continue;
+        }
+        let roots = crate_roots(root, &rel);
+        let covered = roots.iter().any(|p| {
+            fs::read_to_string(p).is_ok_and(|t| {
+                tasty_doc_guards::source_text::mask_non_code(&t)
+                    .lines()
+                    .any(|l| l.trim_start().starts_with("#![") && mentions_exemption(l))
+            })
+        });
+        if covered {
+            continue;
+        }
+        let where_to = roots
+            .first()
+            .map(|p| rel_of(p, root))
+            .unwrap_or_else(|| "(크레이트 루트를 못 찾았다)".to_string());
+        report.push(format!(
+            "  {rel}:{}  ← 크레이트 루트 `{where_to}` 에 `{CRATE_EXEMPTION}`",
+            uncovered[0] + 1
+        ));
+    }
+
+    assert!(
+        seen_by_path > 0,
+        "테스트 타깃(`tests/`·`benches/`)에서 `let _` 무시를 한 자리도 못 봤다 — 순회가 깨졌다"
+    );
+    assert!(
+        seen_by_region > 0,
+        "프로덕션 파일 안의 `#[cfg(test)]`/`#[test]` 본문에서 `let _` 무시를 한 자리도 \
+         못 봤다 — 범위 판정(`test_regions`)이 깨졌다"
+    );
+
+    report.sort();
+    report.dedup();
+    assert!(
+        report.is_empty(),
+        "테스트 범위에서 `let _` 로 값을 버리는데 면제가 없다 ({} 곳).\n{}\n\n\
+         이 lint 의 출력은 위반 목록이 아니라 **프로덕션 명부**다 \
+         (docs/dev-guide/error-handling.md). 테스트가 거기 섞이면 새 프로덕션 자리가 \
+         묻힌다.\n\
+         자리마다가 아니라 위에 적힌 **한 줄**을 달면 그 타깃 전체가 덮인다.",
+        report.len(),
+        report.join("\n")
+    );
+}
+
 #[cfg(test)]
 mod helper_tests {
     use super::*;

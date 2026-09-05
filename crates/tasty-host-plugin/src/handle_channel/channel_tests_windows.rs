@@ -7,7 +7,10 @@
 //! 일치하는지 확인. named pipe R/W · auth 핸드셰이크 · 핸들 복제/수신을 한 번에 검증.
 
 #![cfg(all(test, windows))]
-
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
 use std::io;
 use std::ptr;
 use std::sync::mpsc;
