@@ -127,7 +127,7 @@ approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는
 |----------|--------------|
 | 형식 valid / 예약어 아님 | 그 namespace 를 점유한 플러그인이 설치/활성/running 인가 |
 
-owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게 깔려도 A 매니페스트가 거부되면 안 됨), **disable/enable 견고성**, dangling 호출은 runtime 에 `-32601 method not found` 로 **명확히** 실패. 같은 prefix 는 두 플러그인이 동시에 점유 불가(두 번째 install 거부) — 임의 시점에 scope 는 정확히 한 플러그인에 귀속 또는 무소속.
+owner 미검증의 이유 — **install 순서 무관성**(B 가 A 보다 늦게 깔려도 A 매니페스트가 거부되면 안 됨), **disable/enable 견고성**, dangling 호출은 runtime 에 명확히 실패 — 그 namespace 를 **아무도 설치하지 않았으면** `-32601 method not found`, **설치돼 있는데 안 떠 있으면**(disable·재시작 중) `-32002 plugin '<id>' is not running` ([ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)). 같은 prefix 는 두 플러그인이 동시에 점유 불가(두 번째 install 거부) — 임의 시점에 scope 는 정확히 한 플러그인에 귀속 또는 무소속.
 
 **자기 namespace `ipc.invoke:<self>` 는 무용**(self-loop 를 `-32001` 로 차단) — 매니페스트에 두지 않는다.
 

@@ -52,7 +52,9 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 **번들을 복사해 쓰는 변형**(`cp -r target/debug/builtin-plugins <target>/debug/`)도 동작한다 — exe 옆에 번들이 있으면 역산 분기까지 가지 않는다. 다만 복사본은 **갱신되지 않는다**: 이후 plugin 을 고쳐 다시 빌드해도 그 복사본은 그대로라 §0 의 drift 를 한 겹 더 만든다. 레포 밖 target 을 반드시 써야 할 때의 대안으로만 쓴다.
 
-**첫 namespace 호출은 드물게 `-32601` 로 답할 수 있다.** 헤드리스는 plugin manager 를 **지연 초기화**한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 그 자리에서 `ensure_plugin_manager` 를 부르지만, namespace 표는 plugin 이 hello 를 보낸 뒤에 채워진다. 그래서 기동과 첫 조회가 겹치면 절차가 옳아도 `Method not found` 가 나간다. 실측 13 회 중 1 회(부하가 높던 회차), 통제 반복 10 회(cold 5 · warm 5)에서는 재현되지 않았다. **이 문구를 한 번 봤다고 절차 결함으로 단정하지 말고 한 번 더 돌려라** — 위 표의 두 실패는 재실행해도 그대로다.
+**첫 namespace 호출이 기동을 기다린다.** 헤드리스는 plugin **프로세스**를 지연 기동한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 소속을 매니페스트로 먼저 확인하고, 맞을 때만 `ensure_plugin_manager` 로 띄운다([ADR-0173](../adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)). 그래서 그 첫 호출은 기동 시간을 그대로 문다(실측 2026-09-05: 첫 호출 1272 ms, 기동 뒤 92 ms).
+
+소속 판정 자체는 더 이상 기동을 기다리지 않으므로, 예전에 이 자리에 적혀 있던 "첫 호출이 드물게 `Method not found` 로 답한다"(namespace 표가 hello 뒤에 채워져서 기동과 첫 조회가 겹치던 형태)는 그 원인이 사라졌다. 여전히 `-32601` 이 나오면 그건 이름이나 설치를 의심할 신호다 — 설치돼 있는데 안 떠 있을 뿐이라면 `-32002 plugin '<id>' is not running` 이 온다.
 
 **이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 위 절차는 `--workspace` 없이 빌드한다. 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 번들을 따로 복사하므로 이 스위트들의 판정에는 영향이 없지만, **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
 

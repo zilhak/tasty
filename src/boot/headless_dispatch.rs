@@ -258,6 +258,18 @@ pub(crate) fn pump_ipc(
             );
             continue;
         }
+        // 2d) plugin namespace forward — **engine 에 묻기 전에** 정한다. gui 가
+        //     라우터 step 5 에서 같은 자리를 잡는 것과 같은 순서이고, 재료도 같은
+        //     `mgr.ipc_namespaces.resolve` 하나다.
+        //
+        //     예전에는 이 판정이 engine 응답 **뒤**에 있었고 "engine 이 못 답했나" 를
+        //     오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅 신호로 고정해,
+        //     종단을 더 정확하게 만드는 변경이 forward 를 조용히 깨뜨렸다(실측: 표에
+        //     등재된 채 plugin namespace 아래 있던 여덟). 이제 코드는 라우팅에 안
+        //     쓰인다 — [ADR-0173](../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
+        if forward_to_plugin_namespace(app, engine, &cmd) {
+            continue;
+        }
         // 3) engine handler 직결. 권한 게이트 / audit / rate-limit / cap 은
         //    handle_with_caller 내부가 자체 수행한다.
         let resp = crate::ipc::handler::handle_with_caller(
@@ -274,62 +286,43 @@ pub(crate) fn pump_ipc(
         //    completion / notification 같은 에이전트 표면이 headless 에서 무응답이 된다.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
         crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
-        // 5) 호스트가 모르는 메서드는 plugin namespace 로 넘긴다. 넘어갔으면 응답은
-        //    plugin 이 줄 때까지 보류되고, `headless_plugins::pump_plugins` 의
-        //    `mgr.pump` 가 도착 시 client 에 회신한다(gui 와 같은 계약).
-        if is_unrouted_here(&resp) && forward_to_plugin_namespace(app, engine, &cmd) {
-            continue;
-        }
         send_response(&cmd.response_tx, resp);
     }
     std::ops::ControlFlow::Continue(())
 }
 
-/// engine handler 가 "여기서는 이 이름을 라우팅하지 못했다" 로 답했는가.
-///
-/// **두 코드를 함께 본다.** 종단(`unrouted_for_external_caller`)은 같은 사실을 두 갈래로
-/// 답한다 — 표에 없으면 `-32601`, 표에 있는데 이 조합에 arm 이 없으면 `-32017`. forward
-/// 가 물어야 할 것은 그 구분이 아니라 **"engine 이 못 답했나"** 하나이므로 둘 다 신호다.
-///
-/// 한쪽만 보면 무엇이 죽는지는 실측돼 있다(2026-09-05). `-32601` 만 보면 표에 등재된 채
-/// 번들 plugin namespace 아래 있는 여덟(`image.*` 7 · `markdown.navigate`)이 `-32017` 을
-/// 받아 forward 를 못 타고, plugin 이 답하던 호출이 host 의 거절로 바뀐다 — 그 여덟에게
-/// "이 바이너리에 없다" 는 **사실도 아니다**(plugin 이 답한다).
-///
-/// 이 함수가 코드를 신호로 쓰는 것 자체가 gui 와 다른 재료다 — gui 는 같은 forward 를
-/// `src/app/ipc/routing.rs` 에서 **namespace 해소**로, 그것도 종단보다 앞에서 정한다.
-/// 그 비대칭이 위 여덟의 대가를 만든 원인이고, 통합 여부는 별개 축이다.
-#[cfg(not(feature = "gui"))]
-fn is_unrouted_here(resp: &crate::ipc::protocol::JsonRpcResponse) -> bool {
-    resp.error
-        .as_ref()
-        .is_some_and(|e| e.code == -32601 || e.code == -32017)
-}
-
 /// plugin namespace forward — 넘겼으면 `true`(응답은 plugin 이 준다).
 ///
-/// plugin manager 를 여기서 lazy 로 띄운다. 헤드리스 데몬은 attach 세션이 없으면
-/// plugin 을 하나도 안 띄우는 것이 기본값이고(그래서 `ensure_plugin_manager` 의
-/// 유일한 호출자가 attach 경로였다), 그 가벼움을 유지하면서 plugin 메서드에는
-/// 답하려면 **처음 그런 호출이 왔을 때** 띄우는 수밖에 없다 — namespace 표가
-/// spawn 시점에 채워져서 부르기 전에는 소속을 알 수 없기 때문이다.
+/// **소속은 디스크만 읽어 묻고, 기동은 소속이 맞을 때만 한다.**
 ///
-/// 대가는 명시해 둔다: 호스트가 모르는 메서드를 **한 번이라도** 부르면(오타 포함)
-/// 그 데몬은 그 시점에 plugin 을 기동한다. 기동은 프로세스 수명당 1 회고,
-/// 기동 후에도 namespace 가 안 맞으면 원래의 `-32601` 이 그대로 나간다.
+/// 두 층을 나눠 부른다. 먼저 `ensure_plugin_manager_metadata` 는 `~/.tasty/plugins/`
+/// 를 스캔해 매니페스트를 읽을 뿐 프로세스를 하나도 안 띄운다. namespace 소유는
+/// 그 매니페스트가 선언하는 정적 사실이므로 그것만으로 답이 난다(ADR-0173).
+/// 소속이 맞은 뒤에야 `ensure_plugin_manager` 로 기동한다.
+///
+/// 이 순서가 왜 필요한지는 실측돼 있다(2026-09-05, 설치 끝난 홈): 소속을 묻기 위해
+/// 먼저 기동하던 형태에서는 **호스트가 모르는 이름을 한 번 부르는 것만으로**(오타
+/// 포함) 그 데몬이 plugin 9 개를 띄웠고 첫 응답이 1272 ms(기동 후 92 ms)였으며 그
+/// 프로세스들은 데몬 수명 내내 남았다. 지금은 오타가 아무것도 안 띄운다 — 소속이
+/// 안 맞으면 스캔에서 끝난다.
 #[cfg(not(feature = "gui"))]
 fn forward_to_plugin_namespace(
     app: &mut App,
     engine: &CoreState,
     cmd: &crate::ipc::server::IpcCommand,
 ) -> bool {
+    super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+    let owns = app
+        .plugin_manager
+        .as_ref()
+        .is_some_and(|mgr| mgr.ipc_namespaces.resolve(&cmd.request.method).is_some());
+    if !owns {
+        return false;
+    }
     super::headless_plugins::ensure_plugin_manager(app, engine);
     let Some(mgr) = app.plugin_manager.as_mut() else {
         return false;
     };
-    if mgr.ipc_namespaces.resolve(&cmd.request.method).is_none() {
-        return false;
-    }
     let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
     mgr.forward_namespace_call(
         &cmd.request.method,
