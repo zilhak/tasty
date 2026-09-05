@@ -141,13 +141,35 @@ fn silent_disconnect_releases_occupancy_via_heartbeat_ttl() {
 // ───── 실패한 attach 는 점유를 남기지 않는다 (ADR-0116) ─────
 
 /// 점유가 풀릴 때까지 폴링한다. 시한 내에 풀리면 걸린 시간, 아니면 `None`.
-fn wait_until_free(server: &TastyInstance, surface_id: u64, within: Duration) -> Option<Duration> {
+/// 점유가 풀릴 때까지 폴링한 결과 — **폴 횟수를 함께 돌려준다.**
+struct FreeWait {
+    elapsed: Duration,
+    polls: usize,
+}
+
+/// 폴 주기. 예산을 이 값으로 나눈 것이 "굶지 않았다면 이만큼 봤어야 한다" 는 기대치다.
+const FREE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// **대기 예산은 단정하는 문턱보다 커야 한다.** 작으면 문턱을 넘는 값이 이 함수에서
+/// 나올 수 없어 그 단정이 죽는다 — 종전 형태가 그랬다: 예산 10 s 로 재고 20 s 문턱을
+/// 단정했으니, TTL 을 기다린 경우는 `None` 으로 빠져 문턱 비교에 도달조차 못 한다.
+/// 그런데 train68 에서 **21.65 s** 가 실측됐다. 그 값은 TTL 을 기다려서 나온 것이
+/// 아니라(예산이 10 s 다) **한 번의 `is_attached` 왕복이 11 s 넘게 굶은 것**인데,
+/// 실패 문구는 TTL 을 지목했다 — 그 값이 배제하는 원인을 단언한 것이다.
+///
+/// 그래서 예산을 문턱 위로 올리고, 가르는 값(폴 횟수)을 함께 낸다.
+fn wait_until_free(server: &TastyInstance, surface_id: u64, within: Duration) -> Option<FreeWait> {
     let t0 = Instant::now();
+    let mut polls = 0usize;
     while t0.elapsed() < within {
+        polls += 1;
         if !is_attached(server, surface_id) {
-            return Some(t0.elapsed());
+            return Some(FreeWait {
+                elapsed: t0.elapsed(),
+                polls,
+            });
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(FREE_POLL_INTERVAL);
     }
     None
 }
@@ -204,11 +226,20 @@ fn closing_before_the_descriptor_releases_occupancy_promptly() {
         ws.id,
     ));
 
-    let freed = wait_until_free(server, ws.surface_id, Duration::from_secs(10));
+    // 예산은 문턱보다 크다 — 그래야 "TTL 을 기다렸다" 가 이 단정에 **도달할 수 있는**
+    // 결과가 된다. 작게 두면 그 경우는 `None` 으로 빠져 문턱 비교가 죽는다.
+    let budget = HEARTBEAT_TIMEOUT_HINT + Duration::from_secs(5);
+    let freed = wait_until_free(server, ws.surface_id, budget);
     let freed = freed.expect("EOF 이후 점유가 회수되지 않았다");
+    let expected_polls = budget.as_millis() / FREE_POLL_INTERVAL.as_millis();
     assert!(
-        freed < HEARTBEAT_TIMEOUT_HINT,
-        "EOF 는 즉시 감지돼야 한다 — TTL({HEARTBEAT_TIMEOUT_HINT:?}) 을 기다리면 회귀다 (실측 {freed:?})"
+        freed.elapsed < HEARTBEAT_TIMEOUT_HINT,
+        "EOF 는 즉시 감지돼야 한다 — TTL({HEARTBEAT_TIMEOUT_HINT:?}) 을 기다리면 회귀다 \
+         (경과 {:?} · 폴 {}회, 예산이면 최대 {expected_polls}회). \
+         ★ 폴 수가 경과에 비해 훨씬 적으면 TTL 을 기다린 것이 아니라 **폴 루프가 굶은 것**이고, \
+         그때 이 문구가 지목하는 회귀는 원인이 아니다.",
+        freed.elapsed,
+        freed.polls
     );
 
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
