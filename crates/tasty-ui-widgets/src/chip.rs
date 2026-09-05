@@ -188,8 +188,30 @@ pub fn badge(
     resp
 }
 
-/// Badge dot — 라벨 없는 8px 상태 점.
+/// Badge dot — 라벨 없는 상태 점.
+///
+/// `Ui` 에 `badge-dot-size` 정사각 자리를 할당하고 그 중심에 [`paint_badge_dot`] 으로
+/// 그린다 — **그림은 그쪽 한 벌**이고 여기는 자리 계산만 한다. 이미 정해진 좌표에
+/// 겹쳐 그려야 하는 쪽은 [`paint_badge_dot`] 을 직접 부른다.
 pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egui::Response {
+    let dot_sz = theme.badge_dot_size().value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
+    paint_badge_dot(ui.painter(), theme, rect.center(), variant);
+    resp
+}
+
+/// 상태 점 하나를 **좌표에 직접** 그린다 — [`badge_dot`] 이 레이아웃에 자리를 잡아
+/// 부르는 것과 같은 그림이다([`num_keycap`] ↔ [`paint_num_keycap`] 과 같은 갈래).
+///
+/// 본체 목록의 행 우측 점처럼 **행 rect 에서 계산한 좌표**에 그려야 하는 자리가 있어
+/// 갈래가 둘이다. 지름은 `badge-dot-size` 에서만 오므로 지역 상수로 반지름을 박으면
+/// 안 된다 — 토큰은 `ui_zoom` 을 타고 상수는 안 탄다.
+pub fn paint_badge_dot(
+    painter: &egui::Painter,
+    theme: &Theme,
+    center: egui::Pos2,
+    variant: BadgeVariant,
+) {
     let fill = match variant {
         BadgeVariant::Danger => theme.accent_danger().to_egui(),
         BadgeVariant::Primary => theme.accent_primary().to_egui(),
@@ -197,11 +219,7 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
         BadgeVariant::Success => theme.accent_success().to_egui(),
         BadgeVariant::Neutral => theme.surface_active().to_egui(),
     };
-    let dot_sz = theme.badge_dot_size().value();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
-    ui.painter()
-        .circle_filled(rect.center(), dot_sz * 0.5, fill);
-    resp
+    painter.circle_filled(center, theme.badge_dot_size().value() * 0.5, fill);
 }
 
 /// 단일 숫자 키캡 (디자인 `overlays/NumCap` — switch-number overlay).

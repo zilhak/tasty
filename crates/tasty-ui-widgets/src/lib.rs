@@ -60,7 +60,7 @@ pub use autocomplete::{
 pub use button::{Button, ButtonVariant};
 pub use chip::{
     BadgeVariant, KbdKey, TagVariant, badge, badge_dot, kbd, kbd_parts, num_keycap,
-    paint_num_keycap, tag, tag_width,
+    paint_badge_dot, paint_num_keycap, tag, tag_width,
 };
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};

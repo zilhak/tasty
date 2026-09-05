@@ -113,10 +113,11 @@ pub(super) fn draw_list_tab(
                     // 끈 plugin 은 정상 종료이므로 error 아님).
                     if entry.health_error && entry.enabled {
                         let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
-                        ui.painter().circle_filled(
+                        tasty_ui_widgets::paint_badge_dot(
+                            ui.painter(),
+                            &th,
                             dot_center,
-                            4.0,
-                            egui::Color32::from(th.accent_danger()),
+                            tasty_ui_widgets::BadgeVariant::Danger,
                         );
                     }
                     if resp.clicked() {

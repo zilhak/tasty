@@ -1534,15 +1534,19 @@ fn draw_workspace_card(
                     // divergence: idle status dot. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
                     th.text_placeholder().into()
                 };
+                // 지름은 `badge-dot-size` 에서 온다 — 여기 4 를 박으면 같은 슬롯에
+                // 겹쳐 그려지는 키캡만 `ui_zoom` 을 타서 배율에서 둘이 갈린다.
+                // `tasty_ui_widgets::paint_badge_dot` 을 부르지 못하는 이유는 색뿐이다:
+                // idle 색 `text_placeholder` 에 대응하는 `BadgeVariant` 가 없다.
+                let dot_r = th.badge_dot_size().value() * 0.5;
                 ui.painter()
-                    .circle_filled(dot_rect.center(), 4.0, dot_color);
+                    .circle_filled(dot_rect.center(), dot_r, dot_color);
                 // attached → dot 을 감싸는 lavender ring. 디자인 CSS outline 1.5px +
-                // outline-offset 1.5px: dot 반지름(4) + offset(1.5) + stroke 절반(0.75)
-                // = ring 중심 반지름 6.25, 굵기 1.5.
+                // outline-offset 1.5px: dot 반지름 + offset(1.5) + stroke 절반(0.75).
                 if ws.attached {
                     ui.painter().circle_stroke(
                         dot_rect.center(),
-                        6.25,
+                        dot_r + 1.5 + ATTACHED_OUTLINE_WIDTH.value() * 0.5,
                         egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
                     );
                 }
