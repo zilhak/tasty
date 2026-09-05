@@ -28,6 +28,40 @@ gallery-first 이전에 만들어져 본체 binary 에만 있는 view 는 갤러
 
 선례: StatusBar(`crates/tasty-ui-widgets/src/status_bar.rs` ↔ `src/adapters/ui/status_bar.rs` ↔ `catalog/components/status_bar.rs`).
 
+## 무엇이 이 순서를 강제하는가
+
+절차만 적어 두면 지켜지지 않는다. 아래 셋이 `src/source_guards/` 에 있고 본체 bin 의 유닛
+테스트로 돈다.
+
+- **등록처 ↔ specimen**(`gallery_specimen_parity`) — 본체 popup 등록처(`all_defs`)와 전체화면
+  무대 표(`all_metas`)의 각 항목에 대응하는 갤러리 specimen 이 명부에 있는지 본다. 새 popup 이
+  본체에만 들어오면 그 자리에서 실패한다. popup 쪽은 `gui` 조합에서만 돈다.
+- **재수출 위젯 ↔ 갤러리**(`gallery_widget_coverage`) — `tasty-ui-widgets` 가 재수출한 모듈의
+  항목 중 적어도 하나를 갤러리 소스가 이름으로 부르는지 본다. `pub use` 를 우회해 `pub mod` 로
+  내보내는 길은 `pub mod` 명부가 막는다.
+- **되풀이한 것이 아직 같은가**(`gallery_copied_dimensions` · `gallery_copied_rules`) — 아래
+  "복제를 없앨 수 없을 때" 참조.
+
+강제되지 않는 것도 함께 적는다. 이 셋은 **specimen 이 있는가**와 **되풀이한 값·매핑이 같은가**를
+묻지, specimen 이 디자인과 맞는지도, 어느 페이지에 얹혔는지도, 갤러리가 그 위젯을 실제로
+*그리는지*(이름만 부르고 안 그려도 참이다)도 묻지 않는다.
+
+## 복제를 없앨 수 없을 때 — 갈라짐을 시끄럽게 만든다
+
+위 "본체에만 있는 view 를 끌어올릴 때" 대로 공용 함수로 합치는 것이 1 순위다. 크레이트 경계가
+막아 합칠 수 없으면(정본이 무거운 의존을 끌고 오는 경우 등) 복제는 남는다. 그때 필요한 것은
+통일이 아니라 **갈라졌을 때 조용하지 않은 것**이고, 두 축이 있다:
+
+- **값 축**(`gallery_copied_dimensions`) — specimen 이 되풀이한 본체 치수가 아직 같은가.
+  한쪽이 리터럴이고 다른 쪽이 테마 파생이어도 잡는다. 그리고 갤러리 상수의 doc 이 본체를
+  지목하면 그 주장이 명부에서 해소되는지를 함께 묻는다 — 자백해 놓고 아무도 확인하지 않는
+  자리가 그 판별자에 걸린다.
+- **규칙 축**(`gallery_copied_rules`) — specimen 이 되풀이한 **매핑**(어떤 갈래가 무엇으로
+  가는가)이 아직 같은가. 수신자 변수 이름은 비교에서 뺀다.
+
+값도 매핑도 아닌 복제(배치 산술 등)는 이 축들에 안 걸린다. 그때는 가드를 늘리지 말고 공식을
+공용 함수로 합쳐라 — 선례가 `tasty_ui_widgets::top_right_inset_square` 다.
+
 ## 왜 이 순서인가
 
 - **검증을 먼저 세운다**: 갤러리는 본체 앱을 다 띄우지 않고 컴포넌트 하나만 격리 렌더한다. 디자인 정합을 빠르게 반복할 검증대를 본체 배선보다 먼저 갖는다.
