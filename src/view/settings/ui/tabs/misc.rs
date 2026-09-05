@@ -6,7 +6,7 @@
 //!
 //! Scripts 관리 창 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
 //! `ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge` (구조 전사).
-//! 갤러리 specimen: `crates/tasty-gallery/.../components/script_manager.rs`.
+//! 갤러리 specimen: `crates/tasty-gallery/src/catalog/components/script_manager.rs`.
 //! 데이터는 `Settings.scripts`(03, `ScriptRegistry`), 바운드 단축키는
 //! `Settings.keybindings`(04)에서 **조회만**(편집은 Keybindings › Scripts 소유).
 

@@ -6075,7 +6075,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6135,7 +6135,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "egui",

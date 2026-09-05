@@ -545,7 +545,7 @@ pub struct AuthMessage {
 ///
 /// `ok=false`이면 plugin SDK가 [`crate::PluginError::HandshakeRejected`](
 /// 같은 이름의 SDK variant)로 즉시 실패한다. 호스트 측은
-/// `src/plugin/listener.rs`에서 토큰 검증 결과에 따라 송신한다.
+/// `crates/tasty-host-plugin/src/listener.rs`에서 토큰 검증 결과에 따라 송신한다.
 ///
 /// envelope: `{"auth_ack": { "ok": true }}` 또는 `{"auth_ack": { "ok": false, "reason": "..." }}`.
 /// 메인 루프의 `PluginRequest`와 다른 envelope를 사용해 파서 분리.

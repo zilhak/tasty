@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.mesh-demo"
 name = "egui-mesh Demo"
-version = "0.1.8"
+version = "0.1.9"
 description = "egui-mesh channel proof-of-concept surface (A1)"
 api_version = "1"
 # 데모/PoC plugin — 배포 패키징(DMG/AppImage/MSIX)에서 제외한다. dev 빌드
@@ -23,7 +23,7 @@ command = "tasty-plugin-mesh-demo"
 
 # egui-mesh: plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 전용
 # egui_wgpu::Renderer 로 합성한다 (ADR-0028). bundled 전용 화이트리스트 + api_version
-# 게이트를 통과해야 등록된다 (src/engine/surface_registry/egui_mesh.rs).
+# 게이트를 통과해야 등록된다 (src/core/surface_registry/egui_mesh.rs).
 [[surface_kinds]]
 kind = "mesh_demo"
 display_name_i18n_key = "surface.kind.mesh_demo"

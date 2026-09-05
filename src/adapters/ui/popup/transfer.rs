@@ -2,7 +2,7 @@
 //!
 //! 06 bulk 전송(ADR-0054) + 08 이미지 paste 업로드가 실제 전송을 담당하고, 이 모듈은
 //! 그 전송에 대한 사용자 피드백 UI 를 PopupDef 로 제공한다(egui::Window 직접 사용 금지).
-//! 갤러리 specimen `crates/tasty-gallery/.../components/transfer.rs` 의 본체 대응이다
+//! 갤러리 specimen `crates/tasty-gallery/src/catalog/components/transfer.rs` 의 본체 대응이다
 //! (gallery-first — 갤러리에서 시각 확정 후 여기 반영).
 //!
 //! 디자인 canonical: `gallery/overlays-shared.jsx` `TransferProgressFrame`(09a) /
