@@ -95,15 +95,22 @@ pub fn read_control_frame(stream: &mut TcpStream) -> Vec<u8> {
 
 /// 프레임 하나를 읽어 `(tag, payload)` 로 돌려준다. 헤더는 `tag(1) + len(4, BE)`.
 pub fn read_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
+    read_frame_result(stream).expect("read frame")
+}
+
+/// panic 하지 않는 판 — **연결이 살아 있는지 자체를 단정하는 자리**가 쓴다.
+/// `UnexpectedEof`(서버가 닫음)와 `WouldBlock`(상한 초과)은 서로 다른 사건이라,
+/// 그 구분이 필요한 단정은 오류를 그대로 받아야 한다.
+pub fn read_frame_result(stream: &mut TcpStream) -> std::io::Result<(u8, Vec<u8>)> {
     let mut hdr = [0u8; 5];
-    stream.read_exact(&mut hdr).expect("read frame header");
+    stream.read_exact(&mut hdr)?;
     let tag = hdr[0];
     let len = u32::from_be_bytes([hdr[1], hdr[2], hdr[3], hdr[4]]) as usize;
     let mut payload = vec![0u8; len];
     if len > 0 {
-        stream.read_exact(&mut payload).expect("read frame payload");
+        stream.read_exact(&mut payload)?;
     }
-    (tag, payload)
+    Ok((tag, payload))
 }
 
 /// control 프레임 하나를 보낸다.

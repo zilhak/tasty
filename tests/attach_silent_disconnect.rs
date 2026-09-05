@@ -283,3 +283,39 @@ fn self_attach_is_rejected_before_it_can_take_occupancy() {
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
     assert_eq!(outcome, "attached_workspace");
 }
+
+/// **양방향의 반대편.** 위 테스트들은 *침묵하면* 점유가 회수되는 것을 본다. 이것은
+/// **heartbeat 를 보내는 client 는 TTL 을 넘겨도 살아 있는 것**을 본다.
+///
+/// 이 절이 없으면 `attach_common::open_workspace_attach` 에서 heartbeat 가 사라져도
+/// 전부 초록이다 — 그 침묵은 **단독 실행에서 안 보인다.** 교환이 20 초 안에 끝나기
+/// 때문이고, 부하가 붙어 20 초를 넘기는 순간에만 `UnexpectedEof` 로 터진다. 실측
+/// (2026-09-06, 같은 바이너리·8-way 동시 실행): heartbeat 없으면 8/8 실패·EOF 56 건
+/// (스위트 21.0~21.6 s), 있으면 8/8 통과(23.4~43.4 s — 벽을 두 배 넘겨도 산다).
+///
+/// 상한은 제품 상수를 그대로 읽는다 — 값이 바뀌면 이 테스트가 따라간다.
+#[test]
+fn a_heartbeating_client_outlives_the_silence_ttl() {
+    let server = common::shared();
+    let ws = server.create_workspace("heartbeat-outlives-ttl");
+    let mut stream = attach_common::open_workspace_attach(server.port(), ws.id);
+
+    // TTL 을 확실히 넘긴다. 서버는 이 동안 client 가 조용하면 죽은 peer 로 보고 끊는다.
+    std::thread::sleep(tasty_ipc::stream::HEARTBEAT_TIMEOUT + Duration::from_secs(3));
+
+    // 살아 있으면 서버의 idle Ping 이 계속 와서 읽기가 성공한다. 끊겼으면
+    // `UnexpectedEof` 이고, 그건 상한 초과(`WouldBlock`)와 다른 사건이다.
+    let read = attach_common::read_frame_result(&mut stream);
+    assert!(
+        read.is_ok(),
+        "heartbeat 를 보내는 client 가 TTL 을 못 넘겼다 — 서버가 끊었다: {:?}",
+        read.err()
+    );
+
+    // 점유도 그대로 유지된다 — 살아 있다는 것의 제품 측 관측이다.
+    let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
+    assert_eq!(
+        outcome, "attach_error:already_attached",
+        "연결이 살아 있으면 그 workspace 는 여전히 점유 중이어야 한다"
+    );
+}
