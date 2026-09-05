@@ -58,6 +58,8 @@
 
 use std::path::{Path, PathBuf};
 
+use tasty_type_geometry::length::LogicalPx;
+
 /// 스캔 대상 (repo-relative). 자매 가드 `tests/design_token_adherence.rs` 의
 /// `SCAN_ROOTS` 와 같은 집합이다 — 같은 축을 보므로 갈라지면 안 된다.
 ///
@@ -1142,7 +1144,10 @@ const OVER_CAP_PENDING: &[(&str, &str)] = &[(
 )];
 
 /// UI 폰트 상한. `docs/design/systems/theme.md` "UI 폰트 최대" 행이 정본이다.
-const UI_FONT_SIZE_CAP: f32 = 14.0;
+///
+/// 길이라 `LogicalPx` 로 선언한다 — `f32` 로 두면 `src/source_guards/`
+/// `length_constant_frontier` 가 잡는다(그리고 잡았다).
+const UI_FONT_SIZE_CAP: LogicalPx = LogicalPx(14.0);
 
 /// 상수 표 하한 — 표가 비면 "상한 초과 0" 이 조용히 참이 된다.
 const MIN_SCANNED_CONSTS: usize = 100;
@@ -1179,7 +1184,7 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
                 let Some((_, value)) = consts.iter().find(|(n, _)| *n == arg) else {
                     continue;
                 };
-                if *value > UI_FONT_SIZE_CAP {
+                if *value > UI_FONT_SIZE_CAP.value() {
                     over_cap.push((rel.clone(), arg, *value));
                 }
             }
@@ -1207,16 +1212,20 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
             pending_seen.push((rel.clone(), name.clone()));
             continue;
         }
-        unlisted.push(format!("  {rel} — `{name}` = {value} > {UI_FONT_SIZE_CAP}"));
+        unlisted.push(format!(
+            "  {rel} — `{name}` = {value} > {}",
+            UI_FONT_SIZE_CAP.value()
+        ));
     }
     unlisted.sort();
     unlisted.dedup();
     assert!(
         unlisted.is_empty(),
-        "UI 폰트 상한({UI_FONT_SIZE_CAP}px)을 넘는 명명 const 가 폰트 자리에 있다 — \
+        "UI 폰트 상한({}px)을 넘는 명명 const 가 폰트 자리에 있다 — \
          `docs/design/systems/theme.md` \"UI 폰트 최대\" 행이 정본이다:\n{}\n\
          승인된 예외라면 사유를 문서에 적고 `OVER_CAP_SANCTIONED` 에, 디자인 판정을 \
          기다리는 자리라면 `OVER_CAP_PENDING` 에 올려라 — 두 목록은 성격이 달라 섞지 않는다",
+        UI_FONT_SIZE_CAP.value(),
         unlisted.join("\n")
     );
 
