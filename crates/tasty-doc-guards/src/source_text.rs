@@ -193,7 +193,11 @@ fn is_char_literal(chars: &[char], i: usize) -> bool {
 ///
 /// `/` 를 담은 `PathBuf` 는 Windows 에서도 그대로 열린다(std 가 두 구분자를 다 받는다).
 /// 그래서 소비자가 `repo_root().join(rel)` 로 다시 여는 경로도 안 깨진다.
-fn repo_relative(rel: &std::path::Path) -> PathBuf {
+/// **다른 생산자도 이걸 써라.** 레포 상대 경로를 문자열로 펴서 비교하는 자리는 이
+/// 저장소에 여럿이고, 각자 손으로 `replace('\\', "/")` 를 붙이거나 안 붙인다. 안 붙인
+/// 자리는 Windows 에서만 조용히 빗나가고, 그 빗나감은 예외가 아니라 0 이다.
+/// 규칙을 한 벌만 두려고 공개한다.
+pub fn repo_relative(rel: &std::path::Path) -> PathBuf {
     let joined: Vec<String> = rel
         .components()
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
@@ -248,4 +252,25 @@ pub fn is_locale_specific(c: char) -> bool {
         | 0x4E00..=0x9FFF // CJK Unified Ideographs
         | 0xAC00..=0xD7A3 // Hangul Syllables
     )
+}
+
+#[cfg(test)]
+mod repo_relative_tests {
+    /// **이 단정을 재는 채널은 `check-windows` 하나다** (`cargo test --workspace --lib`).
+    ///
+    /// Linux·macOS 에서는 `join` 이 이미 `/` 를 내므로 이 단정은 언제나 참이고, 거기서
+    /// 나오는 초록은 정규화가 살아 있다는 증거가 **아니다**. 채널 이름을 안 적어 두면
+    /// 다음 사람이 그 초록을 증거로 읽는다 — 실측으로, 구분자 결함은 세 게이트가 전부
+    /// 초록인 채로 두 번 살아남았고 `check-windows` 하나만이 답했다.
+    #[test]
+    fn repo_relative_always_yields_forward_slashes() {
+        let p = std::path::PathBuf::from("crates")
+            .join("tasty-doc-guards")
+            .join("src")
+            .join("lib.rs");
+        assert_eq!(
+            super::repo_relative(&p).to_string_lossy(),
+            "crates/tasty-doc-guards/src/lib.rs"
+        );
+    }
 }

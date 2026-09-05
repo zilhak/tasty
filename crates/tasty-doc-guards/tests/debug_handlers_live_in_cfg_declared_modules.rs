@@ -238,11 +238,12 @@ fn every_debug_gated_item_lives_in_a_cfg_declared_file() {
         {
             continue;
         }
-        let rel = file
-            .strip_prefix(&root)
-            .unwrap_or(file)
-            .display()
-            .to_string();
+        // 구분자 정규화는 한 벌만 둔다 — 손으로 펴면 Windows 에서 `\\` 가 남고
+        // 그 어긋남은 조용한 0 이다.
+        let rel =
+            tasty_doc_guards::source_text::repo_relative(file.strip_prefix(&root).unwrap_or(file))
+                .display()
+                .to_string();
         for (line, name) in items {
             // `mod` 선언은 그 자체가 게이트다 — 부모에 있는 것이 정상이다.
             if name.starts_with("mod ") || KNOWN_PARENT_SITES.iter().any(|(n, _)| *n == name) {

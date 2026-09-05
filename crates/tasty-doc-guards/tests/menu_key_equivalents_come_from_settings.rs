@@ -166,11 +166,10 @@ fn every_menu_key_equivalent_is_empty_or_from_settings() {
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
-        let rel = file
-            .strip_prefix(&root)
-            .unwrap_or(file)
-            .display()
-            .to_string();
+        let rel =
+            tasty_doc_guards::source_text::repo_relative(file.strip_prefix(&root).unwrap_or(file))
+                .display()
+                .to_string();
         for (line, source) in sites_in(&text) {
             seen += 1;
             if source == Source::Unknown {
@@ -245,11 +244,14 @@ fn the_registration_sites_live_in_one_place() {
             continue;
         };
         if !sites_in(&text).is_empty() {
+            // 아래에서 `o.contains("macos")` 로 성분을 찾는다 — 구분자가 섞이면
+            // 같은 트리가 플랫폼마다 다른 답을 낸다.
             owners.insert(
-                file.strip_prefix(&root)
-                    .unwrap_or(file)
-                    .display()
-                    .to_string(),
+                tasty_doc_guards::source_text::repo_relative(
+                    file.strip_prefix(&root).unwrap_or(file),
+                )
+                .display()
+                .to_string(),
             );
         }
     }
