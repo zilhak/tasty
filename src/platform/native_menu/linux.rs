@@ -275,8 +275,17 @@ pub fn show_context_menu(
     };
     // Foreign reference to tasty's own (winit-owned) window — not a new
     // window, just enough of a `GdkWindow` for popup_at_rect to anchor to.
-    let rect_window: gtk::gdk::Window =
-        gdkx11::X11Window::foreign_new_for_display(&x11_gdk_display, x11_window).upcast();
+    // 이 창은 winit 이 오래 전에 만든 것이라 webview 쪽과 달리 생성 경합은 없다.
+    // 그래도 NULL 은 올 수 있고(종료 중 창이 이미 파괴된 경우), 그때 우클릭 하나로
+    // 프로세스가 죽으면 안 된다 — 이 함수의 다른 실패 분기와 같이 메뉴를 안 띄운다.
+    let rect_window =
+        match crate::platform::x11_gdk_window::foreign_gdk_window(&x11_gdk_display, x11_window) {
+            Ok(w) => w,
+            Err(e) => {
+                tracing::warn!("native context menu: {e}");
+                return MenuOutcome::Ready(None);
+            }
+        };
 
     let menu = gtk::Menu::new();
     let selected: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));

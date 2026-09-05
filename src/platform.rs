@@ -30,3 +30,6 @@ pub mod stall_watchdog;
 pub mod system_tray;
 #[cfg(feature = "gui")]
 pub mod window_chrome;
+/// X11 XID → `GdkWindow` 변환. GTK 백엔드가 X11 인 Linux 에서만 쓴다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+pub mod x11_gdk_window;
