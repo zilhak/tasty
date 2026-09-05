@@ -74,7 +74,7 @@ pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use menu_item::{MenuItemVariant, menu_item, menu_separator};
 pub use multi_select::{
     MultiSelectAllToggle, MultiSelectLabels, multi_select, multi_select_popup_id,
-    multi_select_summary,
+    multi_select_summary, popup_chrome_width,
 };
 pub use path_field::{PathField, PathFieldOutcome};
 pub use segmented::segmented;

@@ -109,8 +109,17 @@ pub fn multi_select_popup_id(ui: &egui::Ui, id_salt: &str) -> egui::Id {
 ///
 /// max-width 는 **메뉴 상자 전체**의 상한이므로 본문 폭 상한을 구하려면 이만큼 빼야
 /// 한다(`egui::popup_below_widget` 이 `Frame::popup` 을 쓰는 것과 같은 계산).
-fn popup_chrome_width(ui: &egui::Ui) -> f32 {
-    let frame = egui::Frame::popup(ui.style());
+/// 팝업 프레임이 본문 바깥에 더하는 가로 여유 — margin 양쪽 + 보더 양쪽.
+///
+/// 공개하는 이유는 **바깥에서 같은 계산을 다시 쓰지 않게** 하기 위해서다. 이 값을 손으로
+/// 다시 구하면 `egui::Frame::popup` 의 구성이 바뀔 때 한쪽만 따라가고, 그 갈림은 폭이
+/// 어긋나는 것으로만 드러난다(아무것도 안 운다).
+///
+/// ★ `style` 을 인자로 받는다 — 계산이 같아도 **입력이 다르면 값이 다르다.** 위젯은
+/// `ui.style()` 로 부르므로, 밖에서 부르는 쪽도 자기가 실제로 쓰는 style 을 줘야 한다
+/// (`Style::default()` 를 주고 "같은 계산" 이라 적으면 그 문장은 산술만 참이다).
+pub fn popup_chrome_width(style: &egui::Style) -> f32 {
+    let frame = egui::Frame::popup(style);
     frame.total_margin().sum().x + 2.0 * frame.stroke.width
 }
 
@@ -472,7 +481,7 @@ pub fn multi_select(
         all_toggle_width(ui, theme, t.select_all).max(all_toggle_width(ui, theme, t.clear_all))
     });
     let widest_row = widest_option.max(widest_all_toggle);
-    let menu_chrome = popup_chrome_width(ui);
+    let menu_chrome = popup_chrome_width(ui.style());
     let menu_min = width;
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
     let menu_width = widest_row.clamp(menu_min, menu_max);

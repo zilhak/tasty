@@ -116,12 +116,20 @@ fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
         .expect("팝업 Area 가 배치되지 않았다 — 열리지 않았을 가능성")
 }
 
-/// 팝업 프레임(`Frame::popup`)이 본문 바깥에 더하는 가로 여유 — margin 양쪽 + 보더 양쪽.
-/// 위젯 쪽 `popup_chrome_width` 와 같은 계산이다.
+/// 팝업 프레임이 본문 바깥에 더하는 가로 여유 — 위젯이 쓰는 **그 함수를 부른다.**
+///
+/// 예전에는 같은 산술을 여기에 다시 적고 "위젯 쪽 `popup_chrome_width` 와 같은 계산"
+/// 이라고 주석에 적었는데, 지키는 것이 없었다. 게다가 그 사본은 `Style::default()` 를
+/// 쓰고 위젯은 `ui.style()` 을 써서 **산술이 같아도 입력이 달랐다** — 두 값이 우연히
+/// 같을 때만 참인 문장이었다.
+///
+/// ★ 다만 이 값은 아래 단정들에서 **지지항이 아니다**(실측). 상한에 더하는 여유로만
+/// 쓰이고, 계수를 0·1·4 로 흔들어도 이 파일의 어떤 단정도 안 죽는다 — 실측치가 상한에서
+/// 그만큼 떨어져 있기 때문이다. 그러니 이 함수를 고쳐도 초록인 것은 **덮였다는 뜻이
+/// 아니다.** 여기 있는 이유는 상한을 "본문 상한 + 프레임 여유" 로 **읽히게** 쓰기
+/// 위해서이지, 그 여유를 검사하기 위해서가 아니다.
 fn chrome() -> f32 {
-    let style = egui::Style::default();
-    let frame = egui::Frame::popup(&style);
-    frame.total_margin().sum().x + 2.0 * frame.stroke.width
+    tasty_ui_widgets::popup_chrome_width(&egui::Style::default())
 }
 
 #[test]
