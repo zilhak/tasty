@@ -45,6 +45,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .color(egui::Color32::from(theme.text_muted())),
             );
         });
+        cluster(ui, theme, "reduced motion — 3 static dots", |ui| {
+            // 갤러리는 사용자 설정과 무관하게 **두 상태를 나란히** 보여야 하므로
+            // 여기서만 override 를 쓴다(제품 화면은 `theme.reduced_motion` 을 따른다).
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            Spinner::new()
+                .reduced_motion(false)
+                .size(base)
+                .show(ui, theme);
+            Spinner::new()
+                .reduced_motion(true)
+                .size(base)
+                .show(ui, theme);
+        });
     });
 
     meta(
