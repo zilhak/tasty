@@ -352,6 +352,115 @@ impl Default for SpawnOnceLatch {
     }
 }
 
+/// 자식 stderr 의 **꼬리 N 줄**과 **마지막 줄의 시각**을 배경 스레드로 모은다.
+///
+/// 배경 스레드인 이유는 OS 파이프 역압이다 — 안 읽으면 자식이 stderr 쓰기에서 막힌다
+/// (Linux 64 KB · macOS 16 KB). 이 두 값은 이 모듈의 판정 함수들이 그대로 소비한다
+/// ([`spawn_timeout_message`] · [`stderr_silence_verdict`] · [`early_exit_message`]).
+///
+/// **왜 여기 있나.** 판정(소비자)은 이미 이 모듈에 모여 있었는데 포착(생산자)만 세 하네스에
+/// 흩어져 있었고, 셋이 바이트 단위로 같았다. 같은 것이 셋이면 규칙도 셋이라, 하나를
+/// 고쳐도 나머지 둘이 남는다.
+///
+/// ★ **[`Self::last_line_age`] 가 메서드인 것이 이 타입의 요점이다.** 예전에는 호출부가
+/// `stderr_last_at.lock().unwrap().map(|t| t.elapsed())` 를 **`panic!` 의 인자 안**에서
+/// 평가했고, 그러면 가드가 그 statement 끝까지 살아 있어 되감기 중에 Drop 되며 뮤텍스를
+/// 오염시킨다. 그 뒤로는 배경 스레드가 다음 줄에서 죽어 **그 바이너리의 이후 실패가
+/// stderr 꼬리를 잃는다** — 실패 수는 그대로인데 진단만 사라지는 형태다.
+/// 실측(rustc, edition 2021·2024 동일): 인자 안이면 오염 `true`, 값을 먼저 꺼내
+/// statement 밖에서 가드를 떨어뜨리면 `false`. 메서드로 감싸면 가드가 메서드 안에서
+/// 떨어지므로 **오염될 자리가 애초에 생기지 않는다.**
+pub struct StderrCapture {
+    ring: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    last_at: std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    drain: Option<std::thread::JoinHandle<()>>,
+    tail_lines: usize,
+}
+
+/// 링이 붙드는 줄 수. 셋이 같은 값을 쓰고 있었으므로 정의를 하나로 모은다.
+/// 꼬리로 **보여줄** 줄 수(`tail_lines`)는 이것과 별개이고 하네스마다 다르다.
+const STDERR_RING_CAPACITY: usize = 256;
+
+impl StderrCapture {
+    /// `child.stderr.take()` 를 그대로 넘긴다. `None` 이면 포착 없이 빈 채로 산다 —
+    /// 자식이 stderr 를 안 준 경우에도 실패 경로가 그대로 돌아야 한다.
+    pub fn start(stderr: Option<std::process::ChildStderr>, tail_lines: usize) -> Self {
+        let ring = std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::VecDeque::with_capacity(STDERR_RING_CAPACITY),
+        ));
+        let last_at = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let drain = stderr.map(|stderr| {
+            let ring = std::sync::Arc::clone(&ring);
+            let last_at = std::sync::Arc::clone(&last_at);
+            std::thread::spawn(move || {
+                use std::io::BufRead as _;
+                let reader = std::io::BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    *lock(&last_at) = Some(std::time::Instant::now());
+                    let mut ring = lock(&ring);
+                    if ring.len() == STDERR_RING_CAPACITY {
+                        ring.pop_front();
+                    }
+                    ring.push_back(line);
+                }
+            })
+        });
+        Self {
+            ring,
+            last_at,
+            drain,
+            tail_lines,
+        }
+    }
+
+    /// 꼬리 N 줄을 개행으로 이어 붙인 것. 진단 문구가 그대로 싣는다.
+    pub fn tail(&self) -> String {
+        let ring = lock(&self.ring);
+        let start = ring.len().saturating_sub(self.tail_lines);
+        ring.iter()
+            .skip(start)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// 이 포착이 보여주는 꼬리 줄 수 — 진단 문구가 같은 수를 함께 찍는다.
+    pub fn tail_lines(&self) -> usize {
+        self.tail_lines
+    }
+
+    /// 마지막 줄이 온 뒤 흐른 시간. [`stderr_silence_verdict`] 가 그대로 받는다.
+    /// ★ 값을 돌려주고 가드는 여기서 떨어진다 — 타입 doc 의 이유 참조.
+    pub fn last_line_age(&self) -> Option<std::time::Duration> {
+        let at = *lock(&self.last_at);
+        at.map(|t| t.elapsed())
+    }
+
+    /// 꼬리에서 술어에 맞는 첫 줄. 특정 실패 시그니처(bind 실패 등)를 집을 때 쓴다.
+    pub fn find(&self, pred: impl Fn(&str) -> bool) -> Option<String> {
+        let ring = lock(&self.ring);
+        ring.iter().find(|line| pred(line)).cloned()
+    }
+
+    /// 배경 스레드를 거둔다. 자식이 끝난 뒤 하네스의 `Drop` 이 부른다.
+    pub fn join(&mut self) {
+        if let Some(handle) = self.drain.take() {
+            // 이유: 배출 스레드의 패닉은 이 자리에서 할 수 있는 일이 없고, 정리 경로라
+            // 되던지면 다른 정리(포트 파일·격리 홈 삭제)가 안 돈다.
+            let _ = handle.join();
+        }
+    }
+}
+
+/// 오염된 락에서 복구한다. **에러를 무시하는 것이 아니다.**
+///
+/// 보호 대상은 링 버퍼와 `Option<Instant>` 한 칸뿐이라 패닉이 그 둘의 불변식을 깨지
+/// 않는다. 반대로 오염을 남기면 **진단 수집기 자신이 죽어** 이후 실패의 stderr 꼬리가
+/// 통째로 사라진다 — 고치는 쪽이 정보가 는다.
+fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// stderr 시그니처로 가릴 수 있는 것. **두 갈래의 확신 수준이 다르다.**
 enum BootBlocker {
     /// 디스플레이 서버가 아예 없다 — winit 이 즉시 죽는다. 이 시그니처는 부팅에
