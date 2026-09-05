@@ -36,8 +36,15 @@ use std::path::{Path, PathBuf};
 
 use super::{mask_non_code, repo_root};
 
-/// 핸들러 소스 트리와 짝인 모듈 루트. 개별 파일이 아니라 디렉터리다(ADR-0133 ①).
-const HANDLER_DIR: &str = "src/adapters/ipc/handler";
+/// IPC 요청의 params 를 읽는 계층 전부. 개별 파일이 아니라 디렉터리다(ADR-0133 ①).
+///
+/// 둘인 이유: 대부분의 메서드는 `adapters/ipc/handler` 에서 처리되지만, 창을 소유해야
+/// 하는 것과 App 상태를 만지는 것은 `app/ipc` 에서 처리된다. **두 계층이 같은 명제를
+/// 각자 판정한다** — 한쪽만 관문에 걸면 다른 쪽이 조용히 자르고 버린다(실측: 확장 전
+/// `app/ipc` 에 16 곳이 있었고 그중 `remote_workspace` 는 `as u32` 로 잘랐다).
+const SCAN_DIRS: &[&str] = &["src/adapters/ipc/handler", "src/app/ipc"];
+
+/// `handler` 디렉터리와 짝인 모듈 루트.
 const HANDLER_ROOT: &str = "src/adapters/ipc/handler.rs";
 
 /// 관문 자신. 여기서는 `as_u64()` 를 부르는 것이 **일**이다.
@@ -45,19 +52,31 @@ const CHOKEPOINT: &str = "src/adapters/ipc/handler/params.rs";
 
 /// 스캔한 핸들러 `.rs` 파일 수의 하한 — **연기 검사**다. 경로가 틀리면 예외가 아니라
 /// 조용한 0 이 되고, 0 인 모수는 "위반 없음" 을 공짜로 만든다.
-/// 값의 근거: 2026-09-05 실측 **76 개**(관문 제외).
-const MIN_HANDLER_FILES: usize = 50;
+/// 값의 근거: 2026-09-05 실측 **81 개**(관문 제외).
+const MIN_HANDLER_FILES: usize = 55;
 
 /// 계층 안에서 발견되는 숫자 읽기 자리 수의 하한 — **검출기 생존 검사**다.
 /// 위반이 0 인 것과 마커가 하나도 안 잡히는 것이 구분돼야 한다.
-/// 값의 근거: 2026-09-05 실측 **24 곳**(전부 params 파생이 아니다).
-const MIN_NUMERIC_READS: usize = 12;
+/// 값의 근거: 2026-09-05 실측 **27 곳**(전부 params 파생이 아니다).
+const MIN_NUMERIC_READS: usize = 14;
 
 /// 숫자로 읽는 형태. `.as_bool()`/`.as_str()` 은 자르기가 없어 대상이 아니다.
 const NUMERIC_READS: &[&str] = &[".as_u64()", ".as_i64()", ".as_f64()", ".as_number()"];
 
-/// params 인자로 쓰이는 이름. 계층 전체가 이 둘만 쓴다(실측: `params` 287 · `_params` 4).
+/// params 를 담는 이름. 두 계층이 이 둘만 쓴다(실측: `params` 287 · `_params` 4).
+///
+/// 한 글자 이름(`p` 등)은 **일부러 안 받는다.** app 계층이 `let p = &cmd.request.params`
+/// 를 쓰고 있었지만, `p` 는 클로저 인자로도 흔해서 이름으로 받으면 관계없는 자리를
+/// 위반으로 센다(실측: `pty.rs` 의 `|p| p["pty_id"].as_u64()` 넷). 이름을 넓히는 대신
+/// **그 바인딩들을 `params` 로 통일했다** — 술어가 이름에 매여 있으니 이름이 규약이다.
 const PARAMS_NAMES: &[&str] = &["params", "_params"];
+
+/// 살아 있는 요청에서 params 를 꺼내는 필드 경로. `app/ipc` 는 인자가 아니라
+/// `IpcCommand` 를 통째로 받아 `cmd.request.params` 로 읽는다.
+///
+/// `.request.` 라는 마디가 있어야 한다 — 지역에서 **만든** 요청의 `req.params` 와
+/// 갈리는 자리가 거기다(핸들러 계층의 CLI 진입점 테스트가 그 모양을 쓴다).
+const REQUEST_PARAMS: &str = ".request.params";
 
 /// 공백을 줄인 사본과 각 글자의 원래 줄 번호.
 ///
@@ -175,6 +194,13 @@ pub(super) fn scan(src: &str) -> Vec<(usize, String)> {
         }
     }
 
+    for at in find_all(&flat.text, REQUEST_PARAMS) {
+        let extent = expression_extent(&flat.text, at);
+        if has_numeric_read(extent) {
+            out.push((flat.line[at], snippet(extent)));
+        }
+    }
+
     for bound in params_derived_bindings(&flat) {
         for at in find_all(&flat.text, &bound) {
             if !stands_alone(&flat.text, at, &bound) {
@@ -226,7 +252,13 @@ fn params_derived_bindings(flat: &Flat) -> Vec<String> {
         }
         let starts_with_params = PARAMS_NAMES
             .iter()
-            .any(|n| rhs.starts_with(n) && stands_alone(rhs, 0, n));
+            .any(|n| rhs.starts_with(n) && stands_alone(rhs, 0, n))
+            || rhs.starts_with('&').then(|| &rhs[1..]).is_some_and(|r| {
+                PARAMS_NAMES
+                    .iter()
+                    .any(|n| r.starts_with(n) && stands_alone(r, 0, n))
+            })
+            || expression_extent(rhs, 0).contains(REQUEST_PARAMS);
         if !starts_with_params {
             continue;
         }
@@ -258,7 +290,9 @@ fn identifiers(pattern: &str) -> Vec<String> {
 fn scanned_files() -> Vec<PathBuf> {
     let root = repo_root();
     let mut out = Vec::new();
-    gather_rs(&root.join(HANDLER_DIR), &mut out);
+    for dir in SCAN_DIRS {
+        gather_rs(&root.join(dir), &mut out);
+    }
     out.push(root.join(HANDLER_ROOT));
     let skip = root.join(CHOKEPOINT);
     out.retain(|p| *p != skip);
@@ -290,7 +324,7 @@ fn no_handler_reads_a_param_as_a_number_outside_the_chokepoint() {
     let files = scanned_files();
     assert!(
         files.len() >= MIN_HANDLER_FILES,
-        "핸들러 `.rs` 를 {} 개만 걷었다(하한 {MIN_HANDLER_FILES}, 2026-09-05 실측 76). \
+        "핸들러 `.rs` 를 {} 개만 걷었다(하한 {MIN_HANDLER_FILES}, 2026-09-05 실측 81). \
          경로가 틀리면 예외가 아니라 조용한 0 이 되고, 모수가 비면 아래 판정은 그냥 통과한다",
         files.len()
     );
@@ -318,7 +352,7 @@ fn no_handler_reads_a_param_as_a_number_outside_the_chokepoint() {
     assert!(
         numeric_reads >= MIN_NUMERIC_READS,
         "계층 전체에서 숫자 읽기 마커를 {numeric_reads} 개만 봤다(하한 \
-         {MIN_NUMERIC_READS}, 2026-09-05 실측 24). 마커 문자열이 낡았으면 위반 0 은 \
+         {MIN_NUMERIC_READS}, 2026-09-05 실측 27). 마커 문자열이 낡았으면 위반 0 은 \
          '안 샌다' 가 아니라 '아무것도 안 봤다' 다"
     );
 
@@ -359,6 +393,22 @@ fn the_detector_sees_params_derived_reads_and_not_lookalikes() {
                        let t = v.as_u64();";
     assert_eq!(scan(hop_pattern).len(), 1, "패턴 바인딩 한 홉을 놓쳤다");
 
+    // app 계층은 인자가 아니라 `IpcCommand` 를 통째로 받는다.
+    let via_request = "let n = cmd.request.params.get(\"id\").and_then(|v| v.as_u64());";
+    assert_eq!(
+        scan(via_request).len(),
+        1,
+        "`cmd.request.params` 읽기를 놓쳤다"
+    );
+
+    let via_request_hop = "let params = &cmd.request.params;\n\
+                           let n = params.get(\"id\").and_then(|v| v.as_u64());";
+    assert_eq!(
+        scan(via_request_hop).len(),
+        1,
+        "`&cmd.request.params` 를 받아 둔 바인딩을 놓쳤다"
+    );
+
     // ── 안 잡아야 하는 것 ───────────────────────────────────────────────────
     let via_gate = "let n = params::read_int::<u32>(params, \"surface\")?;";
     assert!(scan(via_gate).is_empty(), "관문 경유가 위반으로 잡힌다");
@@ -366,8 +416,14 @@ fn the_detector_sees_params_derived_reads_and_not_lookalikes() {
     let other_value = "let n = obj.get(\"id\").and_then(|v| v.as_u64());";
     assert!(scan(other_value).is_empty(), "params 가 아닌 값이 잡힌다");
 
+    // 지역에서 **만든** 요청. `.request.` 마디가 없는 것이 살아 있는 요청과 갈리는 자리다.
     let field = "assert_eq!(req.params.get(\"id\").and_then(|v| v.as_u64()), Some(3));";
     assert!(scan(field).is_empty(), "`.params` 필드 접근이 잡힌다");
+
+    // 한 글자 이름은 술어 밖이다 — 클로저 인자로 흔해서 이름으로 받으면 관계없는
+    // 자리를 센다.
+    let short_name = "assert!(arr.iter().any(|p| p[\"pty_id\"].as_u64() == Some(3)));";
+    assert!(scan(short_name).is_empty(), "클로저 인자 `p` 가 잡힌다");
 
     let not_numeric = "let s = params.get(\"kind\").and_then(|v| v.as_str());";
     assert!(scan(not_numeric).is_empty(), "숫자가 아닌 읽기가 잡힌다");
@@ -387,9 +443,11 @@ fn the_detector_sees_params_derived_reads_and_not_lookalikes() {
 #[test]
 fn the_scan_root_does_not_contain_this_guard() {
     let me = Path::new(file!());
-    assert!(
-        !me.starts_with(HANDLER_DIR),
-        "이 가드({}) 가 스캔 루트({HANDLER_DIR}) 안에 있다 — 자기 픽스처를 위반으로 센다",
-        me.display()
-    );
+    for dir in SCAN_DIRS {
+        assert!(
+            !me.starts_with(dir),
+            "이 가드({}) 가 스캔 루트({dir}) 안에 있다 — 자기 픽스처를 위반으로 센다",
+            me.display()
+        );
+    }
 }

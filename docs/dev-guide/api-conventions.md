@@ -58,8 +58,12 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 있었고, 하나를 고쳐도 나머지 둘은 안 고쳐졌다.
 
 **이것은 전수 가드로 강제된다.** `src/source_guards/params_chokepoint.rs` 가
-핸들러 계층(`src/adapters/ipc/handler/`, 짝인 `handler.rs`, 관문 자신은 제외)에서
-`params` 파생 값을 숫자로 읽는 자리를 찾는다.
+params 를 읽는 **두 계층**(`src/adapters/ipc/handler/` 과 짝인 `handler.rs`,
+그리고 `src/app/ipc/` — 관문 자신은 제외)에서 `params` 파생 값을 숫자로 읽는 자리를
+찾는다. 계층이 둘인 것이 요지다: 대부분의 메서드는 앞쪽에서, 창을 소유해야 하는 것과
+App 상태를 만지는 것은 뒤쪽에서 처리된다. **한쪽만 관문에 걸면 다른 쪽이 조용히 자르고
+버린다** — 실제로 뒤쪽에 16 곳이 남아 있었고 그중 `remote_workspace` 는 `as u32` 로
+잘랐다.
 
 가드를 **자르기**(`as u32`)에 걸지 않고 **읽는 자리**에 건 이유: 자르기 자체는 정당한
 곳이 많아(`clippy::cast_possible_truncation` 은 plugin 크레이트 둘에서만 69 건이 뜬다)
@@ -69,8 +73,10 @@ namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한�
 
 초록의 뜻은 좁다. 잡는 것은 두 모양 — `params` 로 시작하는 식 안의 숫자 읽기와,
 `let` 으로 **한 홉** 갈라 둔 뒤의 읽기다(뒤쪽이 실제로 두 자리를 숨기고 있었다).
-params 인자의 **이름**이 규약(`params` / `_params`)을 벗어나거나, 두 홉 이상을 거치거나,
-핸들러 계층 밖이면 술어 밖이다. 그래서 0 은 "이 축이 지켜진다" 가 아니라 "이 모양으로는
+params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있는 요청의
+`…request.params`)을 벗어나거나, 두 홉 이상을 거치거나, 두 계층 밖이면 술어 밖이다.
+한 글자 이름은 일부러 안 받는다 — `p` 는 클로저 인자로도 흔해서 이름으로 받으면
+관계없는 자리를 위반으로 센다. 대신 그 바인딩들을 `params` 로 통일했다. 그래서 0 은 "이 축이 지켜진다" 가 아니라 "이 모양으로는
 안 새고 있다" 로 읽는다. 자세한 범위 정의는 그 파일의 모듈 주석에 있다.
 
 ## CLI vs IPC
