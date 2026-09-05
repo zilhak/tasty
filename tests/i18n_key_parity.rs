@@ -9,7 +9,7 @@
 //! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
 //! 자동 잡은 push 된 커밋만 보므로 번역 문자열을 건드렸으면 커밋 전에 직접 돌려라.
 //!
-//! 검사 4 종:
+//! 검사 5 종:
 //! - **키 집합** — ko/ja 가 en 과 정확히 같은 키 집합을 가진다(누락·잉여 0).
 //! - **placeholder** — 키마다 `{}` 개수와 `{name}` 이름 집합이 en 과 같다. `t_fmt` 계열은
 //!   `{}` 를 순서대로 치환하므로 개수가 다르면 인자가 새거나 남고, 이름 있는 placeholder
@@ -18,9 +18,18 @@
 //! - **en 과 같은 값** — ko/ja 값이 en 과 글자까지 같으면 미번역으로 본다. 고유명사·
 //!   약어·기호·경로처럼 같아야 정상인 값은 형태로 자동 예외 처리하고, 판단이 필요한 것은
 //!   [`SAME_AS_ENGLISH_ALLOWLIST`] 에 이유와 함께 등록한다.
-//! - **소스의 리터럴 키** — `t("…")` / `t_fmt("…")` / `t_fmt2("…")` / `t_args("…")` 의
-//!   리터럴 첫 인자가 카탈로그(루트 + plugin en)에 존재한다. `format!` 으로 만드는 동적
-//!   키는 대상이 아니다.
+//! - **소스의 리터럴 키**(순방향, 소스 → 카탈로그) — `t("…")` / `t_fmt("…")` /
+//!   `t_fmt2("…")` / `t_args("…")` 의 리터럴 첫 인자가 카탈로그(루트 + plugin en)에
+//!   존재한다. `format!` 으로 만드는 동적 키는 대상이 아니다.
+//! - **카탈로그 키의 소비자**(역방향, 카탈로그 → 소스) — 카탈로그의 키를 드는 자리가
+//!   추적 파일 어딘가에 있다. 없으면 [`ORPHAN_KEYS`] 명부와 정확히 대조한다.
+//!
+//! **왜 두 방향을 다 보는가.** 한 방향짜리 집합 차분은 **이동과 손실을 못 가른다.**
+//! 유일한 호출부가 지워져 키가 고아가 되는 형태에서 순방향은 초록이다 — 소스에 그 키가
+//! 더는 없으니 "소스가 드는 키가 카탈로그에 있다" 는 여전히 참이다. 반대로 호출부가
+//! 네임스페이스를 잘못 부르면 순방향은 "카탈로그에 없는 키" 로, 역방향은 "아무도 안 쓰는
+//! 키" 로 **같은 사건을 양쪽에서** 신고한다 — 실제로 `src/gfx/gpu/shell_setup.rs` 가
+//! 그렇다([`PENDING_FIX_MISSING_KEYS`] 와 [`ORPHAN_KEYS`] 에 짝으로 남아 있다).
 //!
 //! 등록 방법과 예외의 근거는 `docs/dev-guide/i18n.md` "강제 테스트" 절.
 //! 선례: `tests/native_surface_labels_i18n.rs`(키 존재) ·
@@ -788,5 +797,536 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
         "면제가 실재하지 않는 것을 가리킨다 — 키가 개명됐으면 항목도 고치고, 사라졌으면 \
          지워라:\n{}",
         problems.join("\n")
+    );
+}
+
+// ── 역방향: 카탈로그의 키를 쓰는 자리가 있는가 ─────────────────────────
+
+/// 위 순방향 검사([`literal_translation_keys_exist_in_catalog`])는 **소스 → 카탈로그**
+/// 한 방향만 본다. 이 절이 반대 방향을 본다 — **카탈로그에 있는데 아무도 안 쓰는 키.**
+///
+/// 왜 두 방향이 다 필요한가: 한 방향짜리 집합 차분은 **이동과 손실을 못 가른다.** 유일한
+/// 호출부가 지워져 키가 고아가 되는 형태에서 순방향은 초록이다(소스에 그 키가 더는
+/// 없으니까). 실제로 그 형태가 있었다 — `src/view/settings/ui/tabs/accessibility.rs` 의
+/// 주석이 탭 제목을 L2 사이드바로 옮긴 결정을 적고 있고, 그 탭들의 `…heading` 키 일곱은
+/// 카탈로그에만 남았다.
+///
+/// **소비자가 `.rs` 만이 아니다.** plugin 매니페스트의 `description_i18n_key` 가 키를
+/// 문자열로 든다. 그래서 이 검사는 순방향처럼 소스 리터럴을 파싱하지 않고, **추적 파일
+/// 전량에서 키 문자열이 언급되는지**를 본다 — 판정을 느슨한 쪽으로 몰아, 고아라고
+/// 말하는 것에 대해서만 확신을 갖는다.
+///
+/// **동적 조립은 소스에서 도출한다.** `format!("convert_popup.{kind}")` 처럼 조립되는
+/// 키는 완성형이 소스에 없다. 허용목록으로 적지 않고 [`dynamic_key_templates`] 가
+/// 소스에서 그 형태를 찾아낸다 — 새 동적 키 갈래가 생겨도 이 검사가 거짓 양성을 내지
+/// 않는다.
+
+/// 카탈로그에 있는데 **아무 추적 파일도 문자열로 안 드는** 키. 뒷값은 지금까지 짚은
+/// 사유다. 이 명부는 **정확히 같아야** 한다 — 새 고아가 생기면 늘어서 실패하고, 고아가
+/// 아니게 되면 남아서 실패한다(줄어드는 쪽도 실패시키는 이유: 남는 여유가 곧 안 보는
+/// 구간이다).
+///
+/// 지우지 않고 명부에 둔 이유: 키를 지우는 것은 되돌리기 쉽지만, **정말 그 UI 가
+/// 없어졌는지**는 이 정적 스캔이 답하지 못한다. 항목마다 화면에서 확인한 뒤 지운다.
+const ORPHAN_KEYS: &[(&str, &str)] = &[
+    (
+        "attach.held_body",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "attach.held_title",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "attach.held_workspace_body",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "attach.held_workspace_title",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    ("badge.overflow", "호출부 0 — 사라진 시점은 아직 안 짚었다"),
+    ("button.open", "호출부 0 — 사라진 시점은 아직 안 짚었다"),
+    (
+        "cli.terminal.desc",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "clipboard_viewer.popup.title",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "dialog.error.file_not_found",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "dialog.error.invalid_format",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "dialog.html.title",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "dialog.html.url_label",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "dialog.recent_files",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.hide_preview",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.popup.add_favorite.path",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.popup.rename.path",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.popup.rename.rename",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.select_file",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.show_preview",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.unsupported_format",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "git_viewer.error",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "html.settings.note",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "markdown.addr.no_recent",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "pane_context_menu.new_explorer",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "port_scanner.hint",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "port_scanner.no_ports",
+        "호출부 0 — 형제 `…no_ports_*` 넷만 쓰인다",
+    ),
+    (
+        "quit_modal.cancel_button",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "remote_tool.hide",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "remote_tool.refresh",
+        "호출부 0 — `remote_tool.refresh_tooltip` 만 쓰인다",
+    ),
+    (
+        "remote_tool.reveal",
+        "호출부 0 — `remote_tool.reveal_tooltip` 만 쓰인다",
+    ),
+    (
+        "settings.accessibility.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.appearance.colors.bg_label",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.colors.fg_label",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.colors.focused_heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.appearance.colors.unfocused_heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.appearance.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.appearance.sidebar_width_label",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.tab_font_size_label",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.tab_width_label",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.theme.dark",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.theme.light",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.file_handler.coming_soon",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.file_handler.common.disabled",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.file_handler.common.enabled",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.general.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.keybindings.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.notifications.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.performance.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "settings.terminal.heading",
+        "탭 제목을 L2 사이드바가 그리게 되면서 호출부가 사라졌다",
+    ),
+    (
+        "git_viewer.diff_heading",
+        "호출부 0 — 이 파일의 SAME_AS_ENGLISH_ALLOWLIST 가 유일한 언급이다",
+    ),
+    (
+        "settings.terminal.setup_subtitle",
+        "호출부가 settings.general.* 로 부른다 — PENDING_FIX_MISSING_KEYS 의 반대쪽 절반",
+    ),
+    (
+        "settings.terminal.shell_invalid_path",
+        "호출부가 settings.general.* 로 부른다 — PENDING_FIX_MISSING_KEYS 의 반대쪽 절반",
+    ),
+    (
+        "settings.terminal.shell_valid",
+        "호출부가 settings.general.* 로 부른다 — PENDING_FIX_MISSING_KEYS 의 반대쪽 절반",
+    ),
+    (
+        "toast.copied_files",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    ("toast.cut_files", "호출부 0 — 사라진 시점은 아직 안 짚었다"),
+    (
+        "toast.vi_copy_entered",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "workspace_category.collapse_all",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "workspace_category.expand_all",
+        "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+];
+
+/// 소스에서 도출한 동적 키 템플릿 — `("정적 앞부분.", "정적 뒷부분")`. 리터럴 안에서
+/// `"a.b.{"` 로 시작하는 것만 센다(placeholder 가 **그 문자열 안에** 있어야 한다) —
+/// `json!({})` 처럼 리터럴 **밖의** 중괄호를 세면 살아 있는 키까지 전부 동적으로
+/// 오분류한다(실측으로 걸렸다: 그 느슨한 판정은 51 건을 17 건으로 줄여 보였다).
+fn dynamic_key_templates() -> BTreeSet<(String, String)> {
+    let mut out = BTreeSet::new();
+    let mut files = Vec::new();
+    gather(root(), &mut files);
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        for lit in string_literals(&text) {
+            let Some(open) = lit.find('{') else { continue };
+            let Some(close) = lit[open..].find('}') else {
+                continue;
+            };
+            let (head, tail) = (&lit[..open], &lit[open + close + 1..]);
+            let inner = &lit[open + 1..open + close];
+            // placeholder 안은 비었거나 식별자여야 한다(`{}` · `{kind}`).
+            if !(inner.is_empty() || is_identifier(inner)) {
+                continue;
+            }
+            // 정적 앞부분이 점으로 끝나는 키 모양이어야 한다.
+            if !head.ends_with('.') || head.len() < 2 {
+                continue;
+            }
+            if !head
+                .trim_end_matches('.')
+                .split('.')
+                .all(|seg| !seg.is_empty() && is_identifier(seg))
+            {
+                continue;
+            }
+            if !tail
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+            {
+                continue;
+            }
+            out.insert((head.to_string(), tail.to_string()));
+        }
+    }
+    out
+}
+
+/// `text` 안의 큰따옴표 문자열 리터럴들. 이스케이프(`\"`)를 건너뛴다.
+fn string_literals(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        let start = i + 1;
+        let mut j = start;
+        while j < bytes.len() && bytes[j] != b'"' {
+            if bytes[j] == b'\\' {
+                j += 1;
+            }
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
+        if let Ok(s) = std::str::from_utf8(&bytes[start..j]) {
+            out.push(s.to_string());
+        }
+        i = j + 1;
+    }
+    out
+}
+
+/// 키가 이 템플릿들 중 하나로 조립될 수 있는가. 채워지는 자리에 점이 없어야 한다 —
+/// 점을 허용하면 `"a."` 하나가 `a` 아래 전부를 설명해 버려 판정이 공허해진다.
+fn is_dynamically_assembled(key: &str, templates: &BTreeSet<(String, String)>) -> bool {
+    templates.iter().any(|(head, tail)| {
+        key.len() > head.len() + tail.len()
+            && key.starts_with(head.as_str())
+            && key.ends_with(tail.as_str())
+            && !key[head.len()..key.len() - tail.len()].contains('.')
+    })
+}
+
+/// 카탈로그 키를 문자열로 들 수 있는 추적 파일 전량 — `lang/{en,ko,ja}.toml` 자신만 뺀다.
+/// 확장자로 바이너리를 거르고, 빌드 산출물·git 내부·gitignore 된 로컬 폴더는 건너뛴다.
+fn consumer_files() -> Vec<PathBuf> {
+    const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules"];
+    const SKIP_EXT: &[&str] = &[
+        "png", "jpg", "jpeg", "gif", "webp", "ico", "ttf", "otf", "woff", "woff2", "wasm", "pdf",
+        "bin", "zip", "gz",
+    ];
+    let mut out = Vec::new();
+    let mut stack = vec![root().to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if path.is_dir() {
+                // 점으로 시작하는 디렉토리는 추적 대상이 아니다(로컬 작업 폴더 포함).
+                if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            let rel = rel_of(&path);
+            if LANGS
+                .iter()
+                .any(|l| rel.ends_with(&format!("lang/{l}.toml")))
+            {
+                continue;
+            }
+            // **이 파일 자신은 소비자가 아니다.** [`ORPHAN_KEYS`] 가 고아 키를 이름으로
+            // 들기 때문에, 자기를 말뭉치에 넣으면 명부에 적는 순간 그 키가 "쓰이는 키"
+            // 가 되어 판정이 자기를 만족시킨다.
+            if rel == "tests/i18n_key_parity.rs" {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            if SKIP_EXT.contains(&ext.as_str()) {
+                continue;
+            }
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// en 카탈로그 전체의 키(루트 + plugin).
+fn all_english_keys() -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    for dir in lang_dirs() {
+        keys.extend(load(&dir, "en").into_keys());
+    }
+    keys
+}
+
+#[test]
+fn every_catalog_key_has_a_consumer() {
+    let keys = all_english_keys();
+    // 말뭉치를 **키 모양 토큰**으로 미리 쪼갠다 — 키마다 파일 전량을 훑으면
+    // (키 수 × 말뭉치 바이트)라 분 단위가 된다. 토큰은 `[A-Za-z0-9_.]` 의 최대 연속이라
+    // 따옴표·괄호 안의 키는 그대로 토큰 하나가 된다.
+    let mut files = 0usize;
+    let mut tokens: BTreeSet<String> = BTreeSet::new();
+    for path in consumer_files() {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        files += 1;
+        // 하이픈도 토큰 글자다 — `file_handler.host.markdown-viewer` 처럼 plugin id 를
+        // 담는 키가 있어서, 빼면 그 키가 쪼개져 거짓 고아가 된다(실측으로 걸렸다).
+        for token in
+            text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'))
+        {
+            if token.contains('.') && token.len() > 2 {
+                tokens.insert(token.to_string());
+            }
+        }
+    }
+
+    // 자기-공허 검사 — 순회나 쪼개기가 죽으면 이 검사는 "전부 고아" 를 외치게 되므로
+    // 조용히 초록이 되지는 않는다. 그래도 말뭉치가 살아 있는지는 먼저 못박는다.
+    assert!(
+        files > 100,
+        "소비자 파일이 {files} 개뿐이다 — 순회가 깨졌다"
+    );
+    assert!(
+        tokens.len() > 10_000,
+        "키 모양 토큰이 {} 개뿐이다 — 쪼개기가 깨졌다",
+        tokens.len()
+    );
+    assert!(keys.len() > 1000, "카탈로그 키가 {} 개뿐이다", keys.len());
+
+    let templates = dynamic_key_templates();
+    assert!(
+        !templates.is_empty(),
+        "동적 키 템플릿을 하나도 못 찾았다 — 리터럴 스캔이 죽었다"
+    );
+
+    let mut orphans = BTreeSet::new();
+    for key in &keys {
+        // **토큰과 정확히 같아야** 쓰인 것으로 본다. 더 긴 토큰 안에 들어 있는 것까지
+        // 쳐 주면(`a.b` 를 `a.b_suffix` 가 덮는다) 형제 키가 형을 가린다 — 실측으로
+        // 셋이 그렇게 숨어 있었다(`port_scanner.no_ports` 를 `…no_ports_tasty_empty` 가,
+        // `remote_tool.refresh`·`…reveal` 을 각자의 `…_tooltip` 이 가렸다). 느슨한 쪽은
+        // 거짓 고발을 안 하는 대신 **진짜 고아를 못 본다** — 이 검사가 있는 이유가
+        // 그 방향이라, 정확 일치를 쓴다.
+        if tokens.contains(key.as_str()) {
+            continue;
+        }
+        if is_dynamically_assembled(key, &templates) {
+            continue;
+        }
+        orphans.insert(key.clone());
+    }
+
+    let listed: BTreeSet<String> = ORPHAN_KEYS.iter().map(|(k, _)| (*k).to_string()).collect();
+    assert_eq!(
+        ORPHAN_KEYS.len(),
+        listed.len(),
+        "ORPHAN_KEYS 에 같은 키가 두 번 있다"
+    );
+
+    let new: Vec<&String> = orphans.difference(&listed).collect();
+    let gone: Vec<&String> = listed.difference(&orphans).collect();
+    assert!(
+        new.is_empty() && gone.is_empty(),
+        "카탈로그 키의 소비자 판정이 명부와 다르다.\n         새로 고아가 된 키({}) — 호출부를 지웠으면 키도 지워라:\n{}\n         이제 고아가 아닌 키({}) — ORPHAN_KEYS 에서 빼라:\n{}",
+        new.len(),
+        new.iter()
+            .map(|k| format!("  {k}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        gone.len(),
+        gone.iter()
+            .map(|k| format!("  {k}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+}
+
+/// 명부의 항목이 **실재하는 카탈로그 키**여야 한다. 키를 지우면서 명부를 안 지우면
+/// 위 검사는 그 항목을 `gone` 으로 잡지만, 이 검사는 그 사실을 따로 이름 붙여 낸다.
+#[test]
+fn every_orphan_entry_names_a_catalog_key() {
+    let keys = all_english_keys();
+    let missing: Vec<&str> = ORPHAN_KEYS
+        .iter()
+        .map(|(k, _)| *k)
+        .filter(|k| !keys.contains(*k))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "ORPHAN_KEYS 가 없는 키를 든다: {missing:?}"
+    );
+    let no_reason: Vec<&str> = ORPHAN_KEYS
+        .iter()
+        .filter(|(_, why)| why.trim().is_empty())
+        .map(|(k, _)| *k)
+        .collect();
+    assert!(no_reason.is_empty(), "사유 없는 항목: {no_reason:?}");
+}
+
+#[test]
+fn a_dynamically_assembled_key_is_not_called_an_orphan() {
+    let mut templates = BTreeSet::new();
+    templates.insert(("convert_popup.".to_string(), String::new()));
+    assert!(is_dynamically_assembled("convert_popup.html", &templates));
+    // 채워지는 자리에 점이 있으면 그 템플릿의 산물이 아니다 — 아니면 접두사 하나가
+    // 그 아래 전부를 설명해 판정이 공허해진다.
+    assert!(!is_dynamically_assembled("convert_popup.a.b", &templates));
+    // 접두사만으로 끝나는 키는 채울 자리가 없다.
+    assert!(!is_dynamically_assembled("convert_popup.", &templates));
+}
+
+#[test]
+fn a_brace_outside_the_literal_is_not_a_template() {
+    // `probe("attach.list", json!({}))` — 중괄호가 리터럴 **밖에** 있다. 이것을 템플릿으로
+    // 세면 `attach.` 아래 살아 있는 키까지 전부 동적으로 오분류된다.
+    let lits = string_literals(r#"probe(port, "attach.list", json!({}))"#);
+    assert!(lits.contains(&"attach.list".to_string()), "got {lits:?}");
+    assert!(
+        lits.iter().all(|l| !l.contains('{')),
+        "리터럴 밖 중괄호를 안으로 끌어들였다: {lits:?}"
     );
 }
