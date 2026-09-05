@@ -11,7 +11,7 @@ struct Copy {
     title_lead: &'static str,
     title_accent: &'static str,
     title_tail: &'static str,
-    lede: &'static str,
+    meta_description: &'static str,
     cta_primary: &'static str,
     cta_secondary: &'static str,
     /// Sentence before the installation-guide link, and the link label.
@@ -23,7 +23,6 @@ struct Copy {
     /// Ghost button next to the primary one, pointing at the release page.
     cta_other: &'static str,
 
-    why_kicker: &'static str,
     why_title: &'static str,
     why_body: &'static str,
     why_points: &'static [(&'static str, &'static str, &'static str)],
@@ -52,10 +51,10 @@ struct Copy {
 const KO_COPY: Copy = Copy {
     badge: "Windows · macOS · Linux",
     tagline: "맛있는 터미널.",
-    title_lead: "AI 에이전트가",
-    title_accent: "직접 조작하는",
+    title_lead: "AI 에이전트와",
+    title_accent: "함께 조작하는",
     title_tail: "터미널",
-    lede: "에이전트에게 일을 맡겨두고, 나는 옆 탭에서 하던 일을 계속합니다. \
+    meta_description: "에이전트에게 일을 맡겨두고, 나는 옆 탭에서 하던 일을 계속합니다. \
            포커스도 스크롤도 그대로입니다.",
     cta_primary: "다운로드",
     cta_secondary: "가이드 보기",
@@ -64,7 +63,6 @@ const KO_COPY: Copy = Copy {
     dl_for: "{os} 용 다운로드",
     cta_other: "다른 플랫폼",
 
-    why_kicker: "왜 Tasty 인가",
     why_title: "에이전트가 일해도 내 자리는 그대로입니다",
     why_body: "에이전트가 탭을 만들든 명령을 보내든, 내가 보던 화면은 움직이지 않습니다. \
                잡아둔 선택도, 스크롤 위치도 그대로입니다. 사용자 입력을 흉내 내는 기능은 아예 없습니다.",
@@ -198,10 +196,10 @@ const KO_COPY: Copy = Copy {
 const EN_COPY: Copy = Copy {
     badge: "Windows · macOS · Linux",
     tagline: "Tasty terminal.",
-    title_lead: "A terminal",
-    title_accent: "an AI agent",
-    title_tail: "can drive itself",
-    lede: "Hand a terminal to an agent and your own screen holds still. The agent works in \
+    title_lead: "A terminal you and",
+    title_accent: "your AI agent",
+    title_tail: "drive together",
+    meta_description: "Hand a terminal to an agent and your own screen holds still. The agent works in \
            its own tab through tasty commands and tells you when it lands. Drawn on the GPU, \
            so a wall of splits still feels immediate.",
     cta_primary: "Download",
@@ -211,7 +209,6 @@ const EN_COPY: Copy = Copy {
     dl_for: "Download for {os}",
     cta_other: "Other platforms",
 
-    why_kicker: "Why Tasty",
     why_title: "The agent works, and your seat stays yours",
     why_body: "An agent can open tabs and send commands, and the screen you were looking at, \
                the text you selected, and your scroll position do not move. \
@@ -371,18 +368,14 @@ pub fn render(strings: &Strings, root: &str, docs: &str) -> String {
     shell::document(&Shell {
         strings,
         title: String::new(),
-        description: strip_emphasis(copy.lede),
+        description: strip_emphasis(copy.meta_description),
         root: root.to_string(),
         body,
         active: "",
         ko_href: "ko/index.html".to_string(),
         en_href: "index.html".to_string(),
         docs_prefix: docs,
-        search_index: if strings.lang == "en" {
-            "assets/search-index.en.json"
-        } else {
-            "assets/search-index.json"
-        },
+        search_index: strings.search_index,
     })
 }
 
@@ -397,14 +390,13 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
     <span class="hero__eyebrow"><span class="dot"></span>{badge} · v{version}</span>
     <p class="hero__tagline"><span class="wordmark">Tasty<b>.</b></span> {tagline}</p>
     <h1>{lead} <span class="accent">{accent}</span> {tail}</h1>
-    <p class="hero__lede">{lede}</p>
     <div class="cta-row">
       <a class="btn btn--primary" id="dl-primary" href="{releases}" data-label="{dl_for}"{primary_data}>{primary}</a>
       <a class="btn btn--ghost" href="{releases}">{other}</a>
       <a class="btn btn--ghost" href="{root}{docs}index.html">{secondary}</a>
       <a class="btn btn--ghost" href="{repo}">{github} GitHub</a>
     </div>
-    <p class="hero__lede" style="font-size:14px;margin:12px auto 0">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
+    <p class="hero__note">{note} <a href="{root}{docs}getting-started/install.html">{note_link}</a></p>
   </div>
   {mock}
 </section>"##,
@@ -414,7 +406,6 @@ fn hero(copy: &Copy, root: &str, docs: &str) -> String {
         lead = html_escape(copy.title_lead),
         accent = html_escape(copy.title_accent),
         tail = html_escape(copy.title_tail),
-        lede = html_escape(&strip_emphasis(copy.lede)),
         root = root,
         docs = docs,
         primary = html_escape(copy.cta_primary),
@@ -582,14 +573,12 @@ fn why(copy: &Copy) -> String {
         r##"<section class="section">
   <div class="split">
     <div class="section__head" style="margin-bottom:0">
-      <div class="section__kicker">{kicker}</div>
       <h2>{title}</h2>
       <p>{body}</p>
     </div>
     <ul class="feature-list">{points}</ul>
   </div>
 </section>"##,
-        kicker = html_escape(copy.why_kicker),
         title = html_escape(copy.why_title),
         body = html_escape(copy.why_body),
         points = points,
