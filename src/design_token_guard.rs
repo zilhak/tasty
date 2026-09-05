@@ -1118,7 +1118,18 @@ const SCAN_ROOTS: &[&str] = &[
     }
 }
 
-/// UI 폰트 상한(14px)을 넘는 명명 const 의 **정책 면제** — 범위 밖이라 남는다.
+/// **이 파일에는 원래 면제 목록이 없었다.** 아래 `OVER_CAP_*` 둘이 그 부류를 만든
+/// 것이고, 여기에 줄을 더하는 것은 항목 추가가 아니라 **부류를 넓히는 일**이다.
+///
+/// 만든 이유는 상한에 **문서로 승인된 예외가 실재하기 때문**이다(브랜드 락업). 그것을
+/// 적을 자리가 없으면 가드 자체를 만들 수 없고, 파일 단위 제외는 다른 위반까지 덮으므로
+/// 더 나쁘다. 그래도 대가는 남는다 — **다음 사람에게 "고치는 대신 목록에 넣는" 길이
+/// 열려 있다.** 그 길을 좁히는 것이 아래 래칫과 역방향 검사다.
+///
+/// 새 줄을 더하기 전에 **먼저 그 자리를 고칠 수 있는지** 보고, 못 고치면 그 이유를
+/// 적어라. 이 판단은 커밋 안에서 혼자 내릴 것이 아니다.
+///
+/// ── UI 폰트 상한(14px)을 넘는 명명 const 의 **정책 면제** — 범위 밖이라 남는다.
 ///
 /// 사유의 형태가 "이 자리는 규칙 범위 밖이다" 라, 덮을 것이 지금 없어도 지우지 않는다
 /// (ADR-0150). 아래 [`OVER_CAP_PENDING`] 과 **성격이 달라 합치지 않는다.**
@@ -1130,18 +1141,29 @@ const OVER_CAP_SANCTIONED: &[(&str, &str)] = &[(
     "SETUP_BRAND_TITLE_SIZE",
 )];
 
-/// 상한을 넘는데 **승인이 없는** 자리 — 한시 목록이라 줄어들기만 한다.
+/// 상한을 넘는데 **승인이 없는** 자리 — **면제가 아니라 "아직" 이다.**
 ///
-/// 사유가 한 가지다: "이 값을 어느 semantic 에 묶을지가 아직 안 정해졌고, 낮추면
-/// 픽셀이 바뀐다." 그 사유가 사라지면(= 상한 이하가 되거나 승인되면) 항목도 사라져야
-/// 하고, 아래 단언이 양방향으로 강제한다.
-const OVER_CAP_PENDING: &[(&str, &str)] = &[(
+/// 셋째 칸에 **무슨 결정을 기다리는지** 적는다. 그 칸이 비면 이 목록은 면제 목록과
+/// 구별되지 않는다 — 기다리는 것이 없는 항목은 부채가 아니라 면제다.
+///
+/// 사유의 형태가 한 가지라(= "이 자리가 지금 상한을 넘는다") 사유가 사라지면 항목도
+/// 사라져야 한다. 그 강제는 아래 역방향 검사가 한다. 목록 자체의 증감은
+/// [`OVER_CAP_PENDING_BUDGET`] 래칫이 본다.
+const OVER_CAP_PENDING: &[(&str, &str, &str)] = &[(
     // primitive 16 을 쓰는 자리. const 의 doc 은 tier 를 설명하지만 **상한을 넘는다는
     // 말은 없다** — 상한이 `theme.md` 표에 한 줄로만 있고 채널이 없어서, 그 자리를
-    // 만든 사람도 위반이라고 인지하지 못했다. 14 로 내리면 픽셀이 바뀌므로 디자인 판정.
+    // 만든 사람도 위반이라고 인지하지 못했다.
     "src/view/plugins/ui/add.rs",
     "ADD_PREVIEW_NAME_PRIMITIVE_16",
+    "16 을 14 로 내릴지(픽셀이 바뀐다) 승인으로 올릴지 — 어느 semantic 에 묶을지가 \
+     정해져야 답이 난다. 디자인 판정 대기",
 )];
+
+/// 한시 목록의 건수 래칫. **늘어도 실패하고 줄어도 실패한다** — 줄었으면 이 수도 같이
+/// 내리라는 뜻이다. 남는 여유가 곧 안 보는 구간이다.
+///
+/// 하한(`<=`)으로 두면 항목이 조용히 늘고, 안 두면 이 목록이 그냥 면제 목록이 된다.
+const OVER_CAP_PENDING_BUDGET: usize = 1;
 
 /// UI 폰트 상한. `docs/design/systems/theme.md` "UI 폰트 최대" 행이 정본이다.
 ///
@@ -1171,6 +1193,23 @@ const MIN_SCANNED_CONSTS: usize = 100;
 /// `ALLOWED_PATHS` 와 `BASELINE_FILES` 를 갈라 둔다.
 #[test]
 fn no_named_font_const_exceeds_the_ui_font_size_cap() {
+    // 래칫 — 한시 목록은 늘어도 줄어도 실패한다. 줄었으면 상한도 같이 내려라.
+    assert_eq!(
+        OVER_CAP_PENDING.len(),
+        OVER_CAP_PENDING_BUDGET,
+        "한시 목록의 건수가 상한({OVER_CAP_PENDING_BUDGET})과 다르다. 줄였으면 \
+         `OVER_CAP_PENDING_BUDGET` 도 같이 내려라 — 남는 여유가 곧 안 보는 구간이다. \
+         늘리는 것은 이 파일에 없던 부류를 넓히는 일이라 혼자 정할 것이 아니다"
+    );
+    // 기다리는 것이 없는 항목은 부채가 아니라 면제다 — 그러면 두 목록을 가른 근거가 사라진다.
+    for (rel, name, awaiting) in OVER_CAP_PENDING {
+        assert!(
+            !awaiting.trim().is_empty(),
+            "`{name}`({rel}) 이 무슨 결정을 기다리는지 안 적혀 있다 — 그 칸이 비면 \
+             이 목록은 면제 목록과 구별되지 않는다"
+        );
+    }
+
     let (sources, consts) = scan_sources();
     let sanctioned = |rel: &str, name: &str| {
         OVER_CAP_SANCTIONED
@@ -1214,7 +1253,7 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
         }
         if OVER_CAP_PENDING
             .iter()
-            .any(|(r, n)| *r == rel && *n == name)
+            .any(|(r, n, _)| *r == rel && *n == name)
         {
             pending_seen.push((rel.clone(), name.clone()));
             continue;
@@ -1240,8 +1279,8 @@ fn no_named_font_const_exceeds_the_ui_font_size_cap() {
     // 검사를 걸지 않는다: 그쪽 사유는 "범위 밖" 이라 덮을 것이 없어도 유효하다(ADR-0150).
     let gone: Vec<String> = OVER_CAP_PENDING
         .iter()
-        .filter(|(r, n)| !pending_seen.iter().any(|(sr, sn)| sr == r && sn == n))
-        .map(|(r, n)| format!("  {r} — `{n}`"))
+        .filter(|(r, n, _)| !pending_seen.iter().any(|(sr, sn)| sr == r && sn == n))
+        .map(|(r, n, awaiting)| format!("  {r} — `{n}` (기다리던 것: {awaiting})"))
         .collect();
     assert!(
         gone.is_empty(),
