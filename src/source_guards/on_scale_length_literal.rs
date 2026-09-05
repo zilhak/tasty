@@ -46,6 +46,10 @@
 //! 보는 구간이다.** 슬라이스로 고칠 때마다 그 줄의 수를 같이 내려야 한다. 형태만
 //! 베끼면 다음 사람이 여유를 남기고, 그 여유 안에서는 이 가드가 아무것도 안 막는다.
 //!
+//! **총합은 어디에도 안 적는다.** [`AREAS`] 둘째 항의 합이 그것이다. 적는 순간 그 수는
+//! 두 곳에 살게 되고, 값이 두 곳에 있는데 하나만 움직이는 사고가 이 레포에서 반복된
+//! 형태다. 보고에 총합이 필요하면 그 자리에서 더해라.
+//!
 //! [ADR-0126]: ../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md
 
 use super::test_gate::blank_test_modules;
@@ -129,9 +133,10 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-gallery/",
-        94,
+        89,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
-         한 항목이 아니다: 갈래는 `the_gallery_share_is_one_question_or_it_is_not` 가 든다",
+         한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
+         처방은 `the_gallery_share_splits_by_what_can_be_done` 이 든다",
     ),
     ("crates/tasty-ui-widgets/", 4, "공용 위젯"),
     (
@@ -165,6 +170,45 @@ fn size_scale() -> Vec<f32> {
         };
         if let Ok(v) = value.trim().parse::<f32>() {
             out.push(v);
+        }
+    }
+    out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    out.dedup();
+    out
+}
+
+/// `&Theme` 를 거쳐 나오는 길이 값들. **이름이 있는 값의 집합**이다.
+///
+/// 두 자리에서 읽는다 — `Theme` 의 DEFAULT 값표(손으로 쓰는 semantic 이름)와 생성된
+/// component 접근자(디자인 토큰에서 나온 이름). 어느 쪽도 손으로 안 적는다.
+///
+/// 이 집합에 **없는** 값은 이름을 붙일 수 없다 — 그 자리의 처방은 "토큰으로 바꿔라" 가
+/// 아니라 "이 치수에 이름을 줄 것인가" 이고 그건 디자인 결정이다. 반대로 있다고 해서
+/// 그 이름이 **그 자리에 맞는** 이름이라는 뜻은 아니다(값이 같을 뿐일 수 있다).
+/// 그래서 이 술어는 한 방향으로만 결론을 낸다: **없으면 못 고친다.**
+fn theme_named_values() -> Vec<f32> {
+    let mut out = Vec::new();
+    for (path, prefix) in [
+        ("crates/tasty-type-appearance/src/theme.rs", ": LogicalPx("),
+        (
+            "crates/tasty-type-appearance/src/generated_component.rs",
+            "LogicalPx((",
+        ),
+    ] {
+        let text = std::fs::read_to_string(repo_root().join(path)).unwrap_or_default();
+        for line in text.lines() {
+            let trimmed = line.trim();
+            // 필드 **선언**(`pub name: LogicalPx,`)이 아니라 **값**이 붙은 줄만 본다.
+            let Some(rest) = trimmed.split_once(prefix).map(|(_, r)| r) else {
+                continue;
+            };
+            let head: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if let Ok(v) = head.parse::<f32>() {
+                out.push(v);
+            }
         }
     }
     out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -317,8 +361,28 @@ fn scan(blank_tests: bool) -> Vec<Hit> {
     out
 }
 
-/// 이 가드가 실제로 판정하는 집합 — 출하물이고, 선언 자리가 아니고, 0 이 아닌 것.
+/// 이 가드가 실제로 판정하는 집합 — 출하물이고, 선언 자리가 아니고, 0 이 아니고,
+/// **전시 대상이 아닌** 것.
+///
+/// 전시 대상을 빼는 이유는 [`is_a_varied_specimen_value`] 에 있다: 그 수를 토큰으로
+/// 바꾸면 specimen 이 보여주려던 것이 사라진다. 래칫에 남겨 두면 다음 사람이 고칠 수
+/// **없는** 자리를 향해 달린다. 실측하면 갤러리 몫에 5 자리 있고, 그 수는
+/// [`the_gallery_share_splits_by_what_can_be_done`] 이 든다 — 여기서 조용히 빠지지 않는다.
 fn judged() -> Vec<Hit> {
+    let masked = masked_sources();
+    considered()
+        .into_iter()
+        .filter(|h| {
+            !masked
+                .get(&h.rel)
+                .is_some_and(|m| is_a_varied_specimen_value(m, h))
+        })
+        .collect()
+}
+
+/// 전시 대상을 빼기 **전**의 집합. 빼는 몫의 크기를 재는 쪽이 이것을 쓴다 — 빼 놓고
+/// 그 수를 안 재면 그 부류는 존재하지 않는 것이 된다.
+fn considered() -> Vec<Hit> {
     scan(true)
         .into_iter()
         .filter(|h| h.value != 0.0)
@@ -327,6 +391,14 @@ fn judged() -> Vec<Hit> {
                 .iter()
                 .any(|(p, _, _)| h.rel.starts_with(p))
         })
+        .collect()
+}
+
+/// 경로 → 마스킹된 원문. 여러 판정이 같은 사본을 쓴다.
+fn masked_sources() -> std::collections::BTreeMap<String, String> {
+    rust_sources()
+        .iter()
+        .map(|(p, t)| (p.to_string_lossy().replace('\\', "/"), mask_non_code(t)))
         .collect()
 }
 
@@ -445,6 +517,42 @@ fn every_area_holds_exactly_the_count_it_records() {
     );
 }
 
+/// 그 값이 **specimen 이 전시하려고 바꾸는 값**인가. 같은 호출 머리가 그 파일에서 셋
+/// 이상 나오고 서로 다른 값을 둘 이상 취하면, 그 수는 자리의 치수가 아니라 **보여주는
+/// 대상**이다(`Spinner::new().size(12.0)` · `.size(24.0)` · `.size(14.0)`).
+///
+/// 토큰으로 바꾸면 전시가 사라진다 — 그래서 이 몫은 이 축의 위반이 아니다.
+fn is_a_varied_specimen_value(masked: &str, hit: &Hit) -> bool {
+    // 기하 생성자(`vec2`·`LogicalPx` …)는 어느 파일에나 여럿 나오고 값도 제각각이라
+    // 변주 조건이 거의 항상 참이 된다. 전시는 **위젯을 설정하는 자리**에서 일어난다.
+    const SETTERS: &[&str] = &[
+        "size",
+        "desired_width",
+        "exact_width",
+        "fixed_size",
+        "max_height",
+        "min_height",
+        "max_width",
+        "min_width",
+    ];
+    if !SETTERS.contains(&hit.head.as_str()) {
+        return false;
+    }
+    let scale = size_scale();
+    let same_head: Vec<f32> = on_scale_literals(masked, &scale)
+        .into_iter()
+        .filter(|(_, head, _)| *head == hit.head)
+        .map(|(_, _, v)| v)
+        .collect();
+    if same_head.len() < 3 {
+        return false;
+    }
+    let mut distinct = same_head.clone();
+    distinct.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    distinct.dedup();
+    distinct.len() >= 2
+}
+
 /// 갤러리 몫이 **한 물음인가**를 잰다. 래칫의 3 분의 1 이 갤러리 한 자리에 있어서,
 /// 그 몫이 단일 항목이 아니면 분모가 틀린 것이다.
 ///
@@ -454,7 +562,7 @@ fn every_area_holds_exactly_the_count_it_records() {
 #[test]
 fn the_gallery_share_is_one_question_or_it_is_not() {
     let files = rust_sources();
-    let hits = judged();
+    let hits = considered();
     let (mut named_cited, mut named_plain) = (0usize, 0usize);
     let (mut inline_cited, mut inline_plain) = (0usize, 0usize);
     let mut with_comment = 0usize;
@@ -489,6 +597,49 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         (22, 54, 1, 17),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
+    );
+}
+
+/// 갤러리 몫을 **처방으로** 가른다. 앞의 갈래(모양)가 "무엇인가" 라면 이쪽은
+/// "무엇을 할 수 있는가" 다.
+#[test]
+fn the_gallery_share_splits_by_what_can_be_done() {
+    let files = rust_sources();
+    let named_values = theme_named_values();
+    // R415 양성 대조 — 이름 집합이 비면 아래 판정이 전부 "이름 없음" 으로 쏠린다.
+    assert!(
+        named_values.len() > 30 && named_values.contains(&28.0),
+        "Theme 이름 값을 못 읽었다({} 개) — 그 상태의 판정은 전부 거짓이다",
+        named_values.len()
+    );
+
+    let hits = considered();
+    let (mut displayed, mut fixable, mut nameless, mut undecided) =
+        (0usize, 0usize, 0usize, 0usize);
+    for h in hits
+        .iter()
+        .filter(|h| h.rel.starts_with("crates/tasty-gallery/"))
+    {
+        let raw = files
+            .iter()
+            .find(|(p, _)| p.to_string_lossy().replace('\\', "/") == h.rel)
+            .map_or("", |(_, t)| t.as_str());
+        let masked = mask_non_code(raw);
+        if is_a_varied_specimen_value(&masked, h) {
+            displayed += 1;
+        } else if !named_values.contains(&h.value) {
+            nameless += 1;
+        } else if declares_a_named_dimension(&masked, h.line) {
+            undecided += 1;
+        } else {
+            fixable += 1;
+        }
+    }
+    assert_eq!(
+        (displayed, fixable, nameless, undecided),
+        (5, 13, 1, 75),
+        "갤러리 몫의 처방 갈래가 바뀌었다 — 전시(래칫 밖) · 고칠 수 있는 것 · 이름이 \
+         없는 것 · 판정 불가(이름은 있으나 그 이름이 그 자리 것인지는 사람이 정한다)"
     );
 }
 
