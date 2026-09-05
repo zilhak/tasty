@@ -77,7 +77,7 @@ pub(crate) fn draw(
 
     // 콘텐츠 — popup 과 **같은** 형상 함수. 무대가 popup 기하를 하나도 넘기지 않는
     // 것이 이 함수가 무대에서도 성립하는 근거다.
-    let content_rect = frame.shrink(crate::adapters::ui::popup::content_margin());
+    let content_rect = frame.shrink(crate::adapters::ui::popup::content_margin().value());
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
     let scroll_id = content_scroll_id(&content);
     content

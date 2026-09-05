@@ -58,7 +58,10 @@ pub fn confirm_delete_category_sizer(
     let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     // 헤더(글리프+제목) + 본문 + 버튼 행 + 여백.
     let content_h = 24.0 + body_h + 40.0;
-    egui::vec2(WIDTH.value(), popup::content_margin() * 2.0 + content_h)
+    egui::vec2(
+        WIDTH.value(),
+        (popup::content_margin().scaled(2.0) + LogicalPx(content_h)).value(),
+    )
 }
 
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(취소/외부/Escape) 삭제 대상을 비운다.

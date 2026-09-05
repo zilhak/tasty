@@ -499,13 +499,13 @@ fn conflict_popup_size(
 ) -> egui::Vec2 {
     use crate::adapters::ui::popup::content_margin;
     let width = (340.0 * zoom).round();
-    let content_w = (width - 2.0 * content_margin()).max(1.0);
+    let content_w = (LogicalPx(width) - content_margin().scaled(2.0)).max(LogicalPx(1.0));
     let galley = ui.fonts(|f| {
         f.layout(
             conflict_message_text(pending, general),
             egui::FontId::proportional(th.font_size_body.value()),
             egui::Color32::WHITE, // 측정 전용 — 색은 높이에 무관
-            content_w,
+            content_w.value(),
         )
     });
     conflict_popup_dims(th, galley.size().y, zoom)
@@ -522,14 +522,14 @@ fn conflict_popup_dims(th: &Theme, label_h: f32, zoom: f32) -> egui::Vec2 {
     use crate::adapters::ui::popup::{content_margin, title_bar_height};
     let width = (340.0 * zoom).round();
     let margin = content_margin();
-    let height = title_bar_height().value()
+    let height = title_bar_height()
         + margin
-        + label_h
-        + th.spacing_sm.value()
-        + th.item_height_interactive.value()
+        + LogicalPx(label_h)
+        + th.spacing_sm
+        + th.item_height_interactive
         + margin
-        + th.spacing_xs.value();
-    egui::vec2(width, height.round())
+        + th.spacing_xs;
+    egui::vec2(width, height.value().round())
 }
 
 /// Draw settings directly as a full-window panel (for modal windows).

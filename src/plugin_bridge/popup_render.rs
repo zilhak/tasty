@@ -216,7 +216,7 @@ pub fn draw_plugin_popups(
             any_hovered = true;
         }
 
-        let content_rect = rect.shrink(popup::content_margin());
+        let content_rect = rect.shrink(popup::content_margin().value());
 
         // 셸(chrome)은 host 소유: scrim → bg_panel(content_rect 는 hole) → border. 내용은
         // plugin mesh 가 content_rect 에 합성된다(gpu.render → egui_mesh_prepare). host popup

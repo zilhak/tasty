@@ -221,9 +221,13 @@ pub fn title_bar_height() -> LogicalPx {
 }
 
 /// Popup 콘텐츠 영역 inner margin — `Theme.spacing_xs` (디자인 4px) 의 round_ui.
-pub fn content_margin() -> f32 {
+///
+/// 논리 px 라 `LogicalPx` 를 반환한다. 사유는 [`title_bar_height`] 와 같다 — 둘은
+/// popup 높이를 만드는 한 식에서 더해지므로 시그니처도 함께 넓혀야 그 식이 타입을
+/// 유지한다.
+pub fn content_margin() -> LogicalPx {
     use egui::emath::GuiRounding as _;
-    crate::theme::theme().spacing_xs.value().round_ui()
+    LogicalPx(crate::theme::theme().spacing_xs.value().round_ui())
 }
 
 /// 타이틀바 우측 버튼 사이 간격 — `Theme.spacing_xs`(디자인 4px 그리드) 의 round_ui.
@@ -456,18 +460,21 @@ impl PopupState {
                 | transfer::TRANSFER_PROGRESS_POPUP_ID
                 | transfer::TRANSFER_ERROR_POPUP_ID
         ) {
-            0.0
+            LogicalPx(0.0)
         } else {
             content_margin()
         };
         let top_offset = if self.headless {
             margin
         } else {
-            title_bar_height().value() + margin
+            title_bar_height() + margin
         };
         egui::Rect::from_min_max(
-            egui::pos2(popup.min.x + margin, popup.min.y + top_offset),
-            egui::pos2(popup.max.x - margin, popup.max.y - margin),
+            egui::pos2(
+                popup.min.x + margin.value(),
+                popup.min.y + top_offset.value(),
+            ),
+            egui::pos2(popup.max.x - margin.value(), popup.max.y - margin.value()),
         )
     }
 

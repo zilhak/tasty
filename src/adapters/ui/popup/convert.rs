@@ -6,6 +6,7 @@ use crate::theme;
 use crate::theme::Theme;
 use egui::emath::GuiRounding as _;
 use serde_json::json;
+use tasty_type_geometry::length::LogicalPx;
 
 /// Item height in the convert popup menu.
 const ITEM_HEIGHT: f32 = 24.0;
@@ -56,10 +57,11 @@ fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
     let safety_margin = 1.0;
     egui::vec2(
         200.0,
-        popup::title_bar_height().value()
-            + popup::content_margin() * 2.0
-            + content_h
-            + safety_margin,
+        (popup::title_bar_height()
+            + popup::content_margin().scaled(2.0)
+            + LogicalPx(content_h)
+            + LogicalPx(safety_margin))
+        .value(),
     )
 }
 
@@ -72,12 +74,13 @@ mod size_tests {
     ///                + (N−1)·actual_spacing.
     fn assert_fits(count: usize, item_spacing: f32) {
         let popup_h = convert_popup_size_for(count, item_spacing).y;
-        let needed = popup::title_bar_height().value()
-            + popup::content_margin() * 2.0
-            + count as f32 * ITEM_HEIGHT
-            + (count.saturating_sub(1)) as f32 * item_spacing;
+        let needed = popup::title_bar_height()
+            + popup::content_margin().scaled(2.0)
+            + LogicalPx(
+                count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing,
+            );
         assert!(
-            popup_h >= needed,
+            LogicalPx(popup_h) >= needed,
             "popup_h ({popup_h}) < needed ({needed}) for count={count} spacing={item_spacing}"
         );
     }

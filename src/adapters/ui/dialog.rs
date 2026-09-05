@@ -12,6 +12,7 @@ use crate::i18n::t;
 use crate::state::{AppState, RenameTarget};
 use crate::theme;
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::margin_sym;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
 use tasty_ui_widgets::vspace;
@@ -20,7 +21,7 @@ use tasty_ui_widgets::vspace;
 pub fn rename_popup_default_size() -> egui::Vec2 {
     egui::vec2(
         280.0,
-        popup::title_bar_height().value() + popup::content_margin() * 2.0 + 64.0,
+        (popup::title_bar_height() + popup::content_margin().scaled(2.0) + LogicalPx(64.0)).value(),
     )
 }
 

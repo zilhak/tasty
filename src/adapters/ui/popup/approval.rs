@@ -54,14 +54,15 @@ pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -
     let approx_lines = (body_len as f32 / 60.0).ceil().max(1.0);
     let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     let buttons_h = (choice_count as f32 / 3.0).ceil() * 32.0;
-    let total_h = (popup::title_bar_height().value()
-        + popup::content_margin() * 2.0
-        + body_h
-        + 32.0
-        + buttons_h
-        + 56.0)
-        .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value());
-    egui::vec2(DEFAULT_WIDTH.value(), total_h)
+    let total_h = (popup::title_bar_height()
+        + popup::content_margin().scaled(2.0)
+        + LogicalPx(body_h)
+        + LogicalPx(32.0)
+        + LogicalPx(buttons_h)
+        + LogicalPx(56.0))
+    .min(MAX_HEIGHT)
+    .max(MIN_HEIGHT);
+    egui::vec2(DEFAULT_WIDTH.value(), total_h.value())
 }
 
 /// View 입력 — 한 선택지의 시각/의미 데이터.

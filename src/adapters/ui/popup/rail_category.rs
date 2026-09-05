@@ -221,7 +221,7 @@ pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) ->
     }
     egui::vec2(
         POPUP_WIDTH.value(),
-        popup::content_margin() * 2.0 + content_h + 1.0,
+        (popup::content_margin().scaled(2.0) + LogicalPx(content_h) + LogicalPx(1.0)).value(),
     )
 }
 
@@ -229,6 +229,9 @@ pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) ->
 pub fn rail_category_default_size() -> egui::Vec2 {
     egui::vec2(
         POPUP_WIDTH.value(),
-        popup::content_margin() * 2.0 + HEADER_HEIGHT + 2.0 * ITEM_HEIGHT,
+        (popup::content_margin().scaled(2.0)
+            + LogicalPx(HEADER_HEIGHT)
+            + LogicalPx(2.0 * ITEM_HEIGHT))
+        .value(),
     )
 }
