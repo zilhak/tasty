@@ -733,6 +733,11 @@ mod gallery_copied_dimensions;
 #[cfg(test)]
 mod gallery_specimen_parity;
 
+/// 갤러리가 되풀이한 본체 **규칙**(어떤 갈래가 무엇으로 가는가)이 아직 같은지 본다.
+/// 위 가드가 되풀이한 **수**를 보는 것과 물음이 다르다.
+#[cfg(test)]
+mod gallery_copied_rules;
+
 /// 재수출된 공용 위젯을 갤러리가 한 번이라도 부르는지 본다. 위 두 가드가 popup 과 무대를
 /// 덮으면서 **공용 위젯은 등록처가 없어 못 덮는다**고 적어 둔 자리다.
 #[cfg(test)]
