@@ -307,7 +307,10 @@ fn wt_row(
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h.value())),
+            egui::Rect::from_min_size(
+                rect.min,
+                egui::vec2(theme.listctrl_selected_bar_width().value(), h.value()),
+            ),
             0.0,
             theme.accent_primary().to_egui(),
         );
@@ -444,7 +447,10 @@ fn ch_row(
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h.value())),
+            egui::Rect::from_min_size(
+                rect.min,
+                egui::vec2(theme.listctrl_selected_bar_width().value(), h.value()),
+            ),
             0.0,
             theme.accent_primary().to_egui(),
         );
@@ -520,7 +526,7 @@ fn cm_row(
     time: &str,
 ) -> LogicalPx {
     let pad_x = theme.spacing_md;
-    let h = LogicalPx(28.0);
+    let h = theme.item_height_interactive;
     let rect = egui::Rect::from_min_size(
         egui::pos2(area.left(), y.value()),
         egui::vec2(area.width(), h.value()),

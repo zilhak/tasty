@@ -145,10 +145,10 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-gallery/",
-        89,
+        86,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
          한 항목이 아니다 — 모양은 `the_gallery_share_is_one_question_or_it_is_not` 이, \
-         처방은 `the_gallery_share_splits_by_what_can_be_done` 이 든다",
+         갈래는 `the_gallery_share_splits_into_four_kinds` 가 든다",
     ),
     ("crates/tasty-ui-widgets/", 4, "공용 위젯"),
     (
@@ -376,10 +376,10 @@ fn scan(blank_tests: bool) -> Vec<Hit> {
 /// 이 가드가 실제로 판정하는 집합 — 출하물이고, 선언 자리가 아니고, 0 이 아니고,
 /// **전시 대상이 아닌** 것.
 ///
-/// 전시 대상을 빼는 이유는 [`is_a_varied_specimen_value`] 에 있다: 그 수를 토큰으로
-/// 바꾸면 specimen 이 보여주려던 것이 사라진다. 래칫에 남겨 두면 다음 사람이 고칠 수
-/// **없는** 자리를 향해 달린다. 실측하면 갤러리 몫에 5 자리 있고, 그 수는
-/// [`the_gallery_share_splits_by_what_can_be_done`] 이 든다 — 여기서 조용히 빠지지 않는다.
+/// 전시 대상은 [`DISPLAY_SPECIMENS`] 에 **자리로** 적혀 있다 — 부류가 아니다. 그 수를
+/// 토큰으로 바꾸면 specimen 이 보여주려던 것이 사라지고, 래칫에 남겨 두면 다음 사람이
+/// 고칠 수 **없는** 자리를 향해 달린다. 빠진 몫은 [`considered`] 와
+/// [`the_gallery_share_splits_into_four_kinds`] 가 계속 세므로 조용히 사라지지 않는다.
 fn judged() -> Vec<Hit> {
     considered()
         .into_iter()
@@ -609,16 +609,31 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (22, 54, 1, 17),
+        (22, 54, 1, 14),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
 }
 
-/// 갤러리 몫을 **처방으로** 가른다. 앞의 갈래(모양)가 "무엇인가" 라면 이쪽은
-/// "무엇을 할 수 있는가" 다.
+/// 갤러리 몫을 네 갈래로 가른다. 앞의 갈래(모양)가 "무엇인가" 라면 이쪽은 "그 자리에
+/// 이름이 있는가" 다.
+///
+/// # ★ 값이 같다는 것은 이름이 맞다는 뜻이 아니다
+///
+/// 둘째 갈래는 **"같은 값을 가진 `Theme` 이름이 존재한다"** 까지만 말한다. 그것을 한때
+/// "고칠 수 있는 것" 이라고 불렀는데, 그 이름표가 틀렸다는 것이 열 자리를 손으로 읽어
+/// 드러났다 — 13 중 자리에 맞는 이름을 가진 것은 3 이었다.
+///
+/// 나머지 열은 값만 겹친다: 툴바 높이 32 옆에 있는 이름은 `button_height_lg` 이고,
+/// 스크롤 최대 높이 200 옆에 있는 이름은 전부 **너비**(`settings_sidebar_width` 등)다.
+/// 그 이름을 갖다 쓰면 픽셀은 그대로인 채 **틀린 결합**이 생긴다 — 다음에 그 토큰이
+/// 움직일 때 아무 상관 없는 자리가 따라 움직인다.
+///
+/// 그래서 이 갈래는 처방이 아니라 **후보**다. 자리에 맞는 이름인지는 술어가 아니라
+/// 사람이 정한다. 술어로 정하려 하면 값 일치가 곧 처방이 되어, 위의 결합을 자동으로
+/// 만들어 낸다.
 #[test]
-fn the_gallery_share_splits_by_what_can_be_done() {
+fn the_gallery_share_splits_into_four_kinds() {
     let files = rust_sources();
     let named_values = theme_named_values();
     // R415 양성 대조 — 이름 집합이 비면 아래 판정이 전부 "이름 없음" 으로 쏠린다.
@@ -629,7 +644,7 @@ fn the_gallery_share_splits_by_what_can_be_done() {
     );
 
     let hits = considered();
-    let (mut displayed, mut fixable, mut nameless, mut undecided) =
+    let (mut displayed, mut named_value, mut nameless, mut undecided) =
         (0usize, 0usize, 0usize, 0usize);
     for h in hits
         .iter()
@@ -647,14 +662,22 @@ fn the_gallery_share_splits_by_what_can_be_done() {
         } else if declares_a_named_dimension(&masked, h.line) {
             undecided += 1;
         } else {
-            fixable += 1;
+            named_value += 1;
         }
     }
+    // 같은 값을 두 곳에 적지 않는다 — 전시 몫은 명부가, 나머지의 합은 `AREAS` 가 이미
+    // 들고 있다. 여기 손으로 적는 것은 **갈래별 크기**뿐이고, 그 둘과의 정합은 단정이
+    // 확인한다. 짝을 만들면 한쪽만 움직인다.
+    let roster: usize = DISPLAY_SPECIMENS.iter().map(|(.., n, _)| n).sum();
+    let ratcheted = AREAS
+        .iter()
+        .find(|(a, ..)| *a == "crates/tasty-gallery/")
+        .map_or(0, |(_, n, _)| *n);
     assert_eq!(
-        (displayed, fixable, nameless, undecided),
-        (5, 13, 1, 75),
-        "갤러리 몫의 처방 갈래가 바뀌었다 — 전시(래칫 밖) · 고칠 수 있는 것 · 이름이 \
-         없는 것 · 판정 불가(이름은 있으나 그 이름이 그 자리 것인지는 사람이 정한다)"
+        (displayed, named_value, nameless, undecided),
+        (roster, 10, 1, ratcheted - 10 - 1),
+        "갤러리 몫의 갈래가 바뀌었다 — 전시(래칫 밖) · 같은 값의 이름이 있다 · 이름이 \
+         없다 · 그 줄이 스스로 치수를 이름 짓는다"
     );
 }
 
