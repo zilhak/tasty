@@ -26,7 +26,7 @@ const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// `Pane` 의 활성 탭 본문 `padding:3`.
 const BODY_PAD: LogicalPx = LogicalPx(3.0);
 /// `SurfaceBox` 의 아이콘↔라벨 `gap:6`.
-const LEAF_GAP: f32 = 6.0;
+const LEAF_GAP: LogicalPx = LogicalPx(6.0);
 /// mini tab `padding:0 9px`.
 const TAB_PAD_X: LogicalPx = LogicalPx(9.0);
 /// mini tab 아이콘↔라벨 `gap:5`.
@@ -330,11 +330,11 @@ fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &D
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_app().to_egui());
 
-    let icon = theme.icon_glyph_size_md.value();
-    let label_h = theme.font_size_caption.value();
+    let icon = theme.icon_glyph_size_md;
+    let label_h = theme.font_size_caption;
     // summary-gap = 행↔행, kind명↔요약, 라벨↔값 gap 모두 space-xs.
-    let gap = theme.spacing_xs.value();
-    let row_h = theme.font_size_caption.value();
+    let gap = theme.spacing_xs;
+    let row_h = theme.font_size_caption;
 
     let short_axis = rect.width().min(rect.height());
     let show_kind = short_axis >= LEAF_ICON_ONLY_MIN.value();
@@ -348,17 +348,17 @@ fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &D
         total += LEAF_GAP + label_h;
     }
     if !rows.is_empty() {
-        total += gap + rows.len() as f32 * row_h + (rows.len() as f32 - 1.0) * gap;
+        total += gap + row_h * rows.len() as f32 + gap * (rows.len() as f32 - 1.0);
     }
 
-    let cx_x = rect.center().x;
-    let mut y = rect.center().y - total * 0.5;
+    let cx_x = LogicalPx(rect.center().x);
+    let mut y = LogicalPx(rect.center().y) - total.scaled(0.5);
 
     paint_glyph(
         ui,
         leaf.kind.icon(),
-        egui::pos2(cx_x, y + icon * 0.5),
-        LogicalPx(icon),
+        egui::pos2(cx_x.value(), (y + icon.scaled(0.5)).value()),
+        icon,
         leaf.kind.accent(theme),
     );
     y += icon;
@@ -366,10 +366,10 @@ fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &D
     if show_kind {
         y += LEAF_GAP;
         ui.painter_at(rect).text(
-            egui::pos2(cx_x, y + label_h * 0.5),
+            egui::pos2(cx_x.value(), (y + label_h.scaled(0.5)).value()),
             egui::Align2::CENTER_CENTER,
             leaf.kind.label(),
-            egui::FontId::monospace(label_h),
+            egui::FontId::monospace(label_h.value()),
             theme.text_secondary().to_egui(),
         );
         y += label_h;
@@ -378,29 +378,29 @@ fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &D
     if !rows.is_empty() {
         y += gap;
         let label_font = egui::FontId::monospace(theme.font_size_micro.value());
-        let value_font = egui::FontId::monospace(row_h);
-        let inner_w = (rect.width() - gap * 2.0).max(0.0);
+        let value_font = egui::FontId::monospace(row_h.value());
+        let inner_w = (LogicalPx(rect.width()) - gap.scaled(2.0)).max(LogicalPx(0.0));
         for (i, row) in rows.iter().enumerate() {
             if i > 0 {
                 y += gap;
             }
-            let row_cy = y + row_h * 0.5;
-            let label_w = text_width(ui, row.label, label_font.clone());
-            let avail = (inner_w - label_w - gap).max(0.0);
+            let row_cy = y + row_h.scaled(0.5);
+            let label_w = LogicalPx(text_width(ui, row.label, label_font.clone()));
+            let avail = (inner_w - label_w - gap).max(LogicalPx(0.0));
             let value = elide_to_width(ui, row.value, value_font.clone(), avail, row.front_elide);
-            let value_w = text_width(ui, &value, value_font.clone());
+            let value_w = LogicalPx(text_width(ui, &value, value_font.clone()));
             let line_w = label_w + gap + value_w;
-            let start_x = cx_x - line_w * 0.5;
+            let start_x = cx_x - line_w.scaled(0.5);
             let p = ui.painter_at(rect);
             p.text(
-                egui::pos2(start_x, row_cy),
+                egui::pos2(start_x.value(), row_cy.value()),
                 egui::Align2::LEFT_CENTER,
                 row.label,
                 label_font.clone(),
                 theme.preset_leaf_label_fg().to_egui(),
             );
             p.text(
-                egui::pos2(start_x + label_w + gap, row_cy),
+                egui::pos2((start_x + label_w + gap).value(), row_cy.value()),
                 egui::Align2::LEFT_CENTER,
                 &value,
                 value_font.clone(),
@@ -417,13 +417,13 @@ fn elide_to_width(
     ui: &egui::Ui,
     text: &str,
     font: egui::FontId,
-    max_w: f32,
+    max_w: LogicalPx,
     front: bool,
 ) -> String {
-    if max_w <= 0.0 {
+    if max_w <= LogicalPx(0.0) {
         return String::new();
     }
-    if text_width(ui, text, font.clone()) <= max_w {
+    if LogicalPx(text_width(ui, text, font.clone())) <= max_w {
         return text.to_string();
     }
     let chars: Vec<char> = text.chars().collect();
@@ -432,7 +432,7 @@ fn elide_to_width(
             let candidate: String = std::iter::once('…')
                 .chain(chars[start..].iter().copied())
                 .collect();
-            if text_width(ui, &candidate, font.clone()) <= max_w {
+            if LogicalPx(text_width(ui, &candidate, font.clone())) <= max_w {
                 return candidate;
             }
         }
@@ -444,7 +444,7 @@ fn elide_to_width(
                 .copied()
                 .chain(std::iter::once('…'))
                 .collect();
-            if text_width(ui, &candidate, font.clone()) <= max_w {
+            if LogicalPx(text_width(ui, &candidate, font.clone())) <= max_w {
                 return candidate;
             }
         }
@@ -630,25 +630,25 @@ fn draw_surface_box_edit(
     if selected {
         draw_leaf_form_mock(ui, theme, rect, kind);
     } else {
-        let icon = theme.icon_glyph_size_md.value();
-        let label_h = theme.font_size_caption.value();
+        let icon = theme.icon_glyph_size_md;
+        let label_h = theme.font_size_caption;
         let total = icon + LEAF_GAP + label_h;
-        let icon_cy = rect.center().y - total * 0.5 + icon * 0.5;
+        let icon_cy = LogicalPx(rect.center().y) - total.scaled(0.5) + icon.scaled(0.5);
         paint_glyph(
             ui,
             kind.icon(),
-            egui::pos2(rect.center().x, icon_cy),
-            LogicalPx(icon),
+            egui::pos2(rect.center().x, icon_cy.value()),
+            icon,
             kind.accent(theme),
         );
         ui.painter_at(rect).text(
             egui::pos2(
                 rect.center().x,
-                icon_cy + icon * 0.5 + LEAF_GAP + label_h * 0.5,
+                (icon_cy + icon.scaled(0.5) + LEAF_GAP + label_h.scaled(0.5)).value(),
             ),
             egui::Align2::CENTER_CENTER,
             kind.label(),
-            egui::FontId::monospace(label_h),
+            egui::FontId::monospace(label_h.value()),
             theme.text_secondary().to_egui(),
         );
     }
