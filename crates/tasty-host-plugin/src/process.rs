@@ -13,6 +13,7 @@ use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -24,6 +25,20 @@ use crate::protocol::{PluginEvent, PluginRequest, PluginResponse};
 use tasty_plugin_manifest::{HOST_API_VERSION, PluginPackage};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+// plugin 프로세스 상태를 지키는 내부 락들의 poison 보고 플래그(각 첫 1 회만).
+//
+// 셋 다 임계구역이 자료구조/값 조작뿐이라(타임스탬프 · 상태 enum · dirty 맵) 락을 든 채
+// 죽은 스레드가 불변식을 깨지 않는다 — 복구가 맞다. 조용히 삼키면: pong 갱신이 유실돼
+// plugin 이 죽은 것으로 오판돼 kill 되고(last_pong), aux 채널이 있는데 없는 것으로
+// 보이며(handle_state), 프레임 dirty 영역이 통째로 사라진다(dirty_rects). 자유 함수에서도
+// 쓰므로 모듈 static 으로 둔다.
+static LAST_PONG_POISONED: AtomicBool = AtomicBool::new(false);
+const LAST_PONG_WHAT: &str = "plugin last-pong timestamp";
+static HANDLE_STATE_POISONED: AtomicBool = AtomicBool::new(false);
+const HANDLE_STATE_WHAT: &str = "plugin aux handle stream state";
+static DIRTY_RECTS_POISONED: AtomicBool = AtomicBool::new(false);
+const DIRTY_RECTS_WHAT: &str = "plugin dirty-rects map";
 
 /// 보조 채널 stream을 mailbox에서 가져올 때 첫 호출 한도. plugin SDK가 HandleClient::connect
 /// 완료 → 호스트 accept thread가 stream을 우편함에 채울 때까지 ms 단위 정도면 충분하지만,
@@ -192,7 +207,11 @@ impl PluginProcess {
     }
 
     fn ensure_handle_stream(&self) -> Option<Arc<Mutex<HandleStream>>> {
-        let mut state = self.handle_state.lock().ok()?;
+        let mut state = tasty_utils::poison::recover_mutex(
+            self.handle_state.lock(),
+            HANDLE_STATE_WHAT,
+            &HANDLE_STATE_POISONED,
+        );
         match &*state {
             HandleStreamState::Ready(arc) => return Some(arc.clone()),
             HandleStreamState::Unavailable => return None,
@@ -284,10 +303,12 @@ impl PluginProcess {
     /// reader 스레드가 누적한 dirty rect를 drain. 호스트 main loop이 frame 합성 직전에
     /// 호출. 반환된 map의 value가 `None`이면 "전체 갱신".
     pub fn take_dirty_rects(&self) -> HashMap<SharedBufferId, Option<PixelRect>> {
-        self.dirty_rects
-            .lock()
-            .map(|mut m| std::mem::take(&mut *m))
-            .unwrap_or_default()
+        let mut guard = tasty_utils::poison::recover_mutex(
+            self.dirty_rects.lock(),
+            DIRTY_RECTS_WHAT,
+            &DIRTY_RECTS_POISONED,
+        );
+        std::mem::take(&mut *guard)
     }
 
     /// 자식 프로세스의 OS PID. Windows의 `DuplicateHandle` 대상 식별에 필요.
@@ -307,10 +328,12 @@ impl PluginProcess {
     }
 
     pub fn since_last_pong(&self) -> Duration {
-        self.last_pong
-            .lock()
-            .map(|t| t.elapsed())
-            .unwrap_or(Duration::MAX)
+        tasty_utils::poison::recover_mutex(
+            self.last_pong.lock(),
+            LAST_PONG_WHAT,
+            &LAST_PONG_POISONED,
+        )
+        .elapsed()
     }
 
     /// shutdown 요청만 보내고 **대기하지 않고** 즉시 반환한다. 반환된
@@ -744,9 +767,11 @@ fn handle_incoming_response(
 ) {
     match serde_json::from_value::<PluginResponse>(v) {
         Ok(resp) => {
-            if let Ok(mut p) = last_pong.lock() {
-                *p = Instant::now();
-            }
+            *tasty_utils::poison::recover_mutex(
+                last_pong.lock(),
+                LAST_PONG_WHAT,
+                &LAST_PONG_POISONED,
+            ) = Instant::now();
             if let Err(e) = resp_tx.send(resp) {
                 tracing::trace!("plugin response forward dropped (consumer exited): {e}");
             }
