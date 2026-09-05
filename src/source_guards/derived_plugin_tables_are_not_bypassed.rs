@@ -119,35 +119,21 @@ const DERIVED: &[Derived] = &[
     },
 ];
 
-/// 필드를 소유한 크레이트. 스캔 범위이자, 아래 전제 검사가 읽는 자리다.
-const OWNING_CRATE: &str = "crates/tasty-host-plugin";
+/// 스캔 대상. **모수는 줄이지 않는다** — 자유 함수 항목은 어디서든 불릴 수 있으므로
+/// 전 범위가 필요하다. 필드 항목만 아래에서 **소유 크레이트로 걸러진다**(항목별 판정).
+const SCAN_ROOTS: &[&str] = &["src", "crates"];
 
-/// 스캔 대상 — **필드가 보이는 범위**다.
-///
-/// 예전에는 `src` 와 `crates` 전체를 훑었다. 그때는 필드가 `pub` 이라 실제로 밖에서
-/// 바꿀 수 있었고, 실제 결함도 밖(`src/app/plugin_glue/lifecycle.rs`)에서 났다.
-/// 지금은 셋 다 private 이라 **밖에서는 컴파일러가 먼저 막는다** — 그 범위를 텍스트로
-/// 또 보는 것은 같은 것을 더 약한 수단으로 다시 보는 일이고, 이름이 같은 남의 지역
-/// 필드를 집는다(실측: `crates/tasty-doc-guards` 의 지역 구조체 `out.packages.insert(…)`
-/// 가 걸렸다 — plugin 유도 상태와 무관하다).
-///
-/// **좁히면 모수가 준다**(1400+ → 39). 모수를 줄이는 변경은 언제나 더 초록이므로 이유가
-/// 명시적이어야 한다: 뺀 범위는 **더 강한 수단으로 덮여 있다**. 그 전제가 참인지는
-/// [`the_narrowed_scan_rests_on_the_fields_being_private`] 가 매번 확인한다 — 누가
-/// 필드를 열면 그 테스트가 먼저 빨개지고, 그때 범위를 다시 넓히라고 말한다.
-const SCAN_ROOTS: &[&str] = &[OWNING_CRATE];
-
-/// 훑는 `.rs` 파일 수의 하한 — **연기 검사**. 값의 근거: 2026-09-06 실측 39
-/// (범위를 소유 크레이트로 좁히기 전에는 1400 이상이었다).
-const MIN_SCANNED_FILES: usize = 25;
+/// 훑는 `.rs` 파일 수의 하한 — **연기 검사**. 값의 근거: 2026-09-05 실측 1400 이상.
+const MIN_SCANNED_FILES: usize = 800;
 
 /// 필드 선언이 있는 파일 — 전제 검사가 읽는다.
 const FIELD_DECL_FILE: &str = "crates/tasty-host-plugin/src/manager.rs";
 
-/// 좁힌 스캔이 기대는 **전제**: 유도 상태 필드가 전부 private 이다.
+/// 항목별 걸러내기가 기대는 **전제**: 유도 상태 필드가 전부 private 이다.
 ///
-/// 이 전제가 깨지면 좁힘은 조용한 구멍이 된다 — 밖에서 바꿀 수 있는데 밖을 안 보는
-/// 상태다. 그래서 전제를 가정하지 않고 **매번 읽는다.**
+/// 필드 항목을 소유 크레이트 안에서만 보는 근거는 "밖에서는 컴파일러가 먼저 막는다"
+/// 하나다. 그 전제가 깨지면 걸러내기는 **조용한 구멍**이 된다 — 밖에서 바꿀 수 있는데
+/// 밖을 안 보는 상태다. 그래서 전제를 가정하지 않고 **매번 읽는다.**
 #[test]
 fn the_narrowed_scan_rests_on_the_fields_being_private() {
     let src = std::fs::read_to_string(repo_root().join(FIELD_DECL_FILE))
@@ -179,7 +165,7 @@ fn the_narrowed_scan_rests_on_the_fields_being_private() {
         assert!(
             !decls[0].trim_start().starts_with("pub"),
             "`{field}` 가 다시 열렸다. 그러면 이 크레이트 **밖**에서도 유도를 우회할 수 \
-             있는데 스캔은 이 크레이트만 본다 — `SCAN_ROOTS` 를 다시 넓히거나 필드를 \
+             있는데 판정은 이 크레이트 안만 본다 — 위 항목별 걸러내기를 풀거나 필드를 \
              닫아라: {}",
             decls[0].trim()
         );
@@ -268,6 +254,11 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
             //
             // 자유 함수 항목(`field` 가 `.` 로 시작하지 않는 것)은 어디서든 부를 수
             // 있어 전 범위를 그대로 훑는다. 그 구분은 이 파일이 이미 쓰던 것이다.
+            //
+            // ★ 그래서 걸러내기는 **항목별**이고, `SCAN_ROOTS` 자체는 안 좁힌다.
+            // 범위를 좁히면 자유 함수 부류가 **통째로 조용해진다** — 지금 그 부류가
+            // 비어 있어도 마찬가지다. 없는 것에 맞춰 판정기를 좁히면 그것이 돌아올 때
+            // 조용해진다.
             if d.field.starts_with('.') {
                 let owner = d.home.rsplit_once("/src/").map(|(c, _)| c);
                 if let Some(owner) = owner
