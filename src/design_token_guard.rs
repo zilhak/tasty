@@ -1439,3 +1439,193 @@ fn the_color_coeff_scan_sees_both_forms_and_ignores_the_named_one() {
         "뒤에 달린 주석을 판정했다"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 점 치수 축 — 익명 반지름 금지 · 토큰 값 사본 금지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 점을 그리는 세 표기. 오늘 소스에 있는 것은 앞의 둘뿐인데 셋째를 함께 막는 이유는
+/// `FontId::new(` 과 같다 — 둘만 막으면 셋째 표기로 그대로 재유입된다.
+const DOT_RADIUS_CALLS: &[&str] = &["circle_filled(", "circle_stroke(", "circle("];
+
+/// 점 축의 스캔 인구는 `SCAN_ROOTS` 에서 **갤러리를 뺀 것**이다.
+///
+/// 목록을 따로 적지 않고 걸러서 만든다 — 따로 적으면 두 목록이 조용히 갈린다
+/// (자매 둘이 실제로 그렇게 갈렸고 갈린 동안 양쪽 다 초록이었다).
+///
+/// 갤러리를 빼는 사유는 하나다: 갤러리는 egui 전역 zoom 을 쓰므로 리터럴도 함께 커진다
+/// ([ADR-0135](../docs/adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md)).
+/// 점 지름은 **길이**라 그 예외가 그대로 걸린다 — 같은 파일의 색 계수 축이 갤러리를
+/// 모수에 넣는 것과 반대이고, 가르는 것은 경로가 아니라 **무차원이냐 길이냐**다.
+fn dot_scan_roots() -> Vec<&'static str> {
+    SCAN_ROOTS
+        .iter()
+        .copied()
+        .filter(|r| !r.starts_with(ZOOM_CONST_EXCLUDED_ROOT))
+        .collect()
+}
+
+const MIN_DOT_SCANNED_FILES: usize = 150;
+
+/// `status_dot_size` 토큰 값. `zoomed()` 를 타므로 이 값의 명명 const 는 사본이다.
+///
+/// **비교 전용이다 — 이 값이 렌더되는 자리는 없다.** 그래도 `f32` 가 아니라
+/// `LogicalPx` 로 선언한다: `src/source_guards/length_constant_frontier.rs` 가 전선 밖
+/// `f32` 길이 상수를 막고, 이 축의 값은 길이(점 지름)라 그 술어에 정확히 걸린다.
+/// 같은 형태를 이 파일의 `UI_FONT_SIZE_CAP` 이 이미 쓴다.
+const DOT_SIZE_TOKEN_VALUE: LogicalPx = LogicalPx(8.0);
+
+/// 이름이 점을 뜻하는지 판별하는 표지.
+const DOT_CONST_NAME_MARK: &str = "DOT";
+
+/// 한 줄에서 점 호출의 **두 번째 인자**(반지름)가 숫자 리터럴이면 돌려준다.
+///
+/// 괄호 균형을 세는 이유는 반지름이 보통 식이기 때문이다
+/// (`theme.status_dot_size.value() * 0.5`). 균형을 안 세면 그 안의 `,` 에서 잘린다.
+fn dot_radius_literal(line: &str) -> Vec<String> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("//") {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    for call in DOT_RADIUS_CALLS {
+        let mut cursor = 0usize;
+        while let Some(rel) = line[cursor..].find(call) {
+            cursor += rel + call.len();
+            let mut depth = 0i32;
+            let mut args: Vec<String> = Vec::new();
+            let mut cur = String::new();
+            for ch in line[cursor..].chars() {
+                match ch {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' if depth == 0 => {
+                        args.push(cur.clone());
+                        break;
+                    }
+                    ')' | ']' => depth -= 1,
+                    ',' if depth == 0 => {
+                        args.push(cur.clone());
+                        cur.clear();
+                        continue;
+                    }
+                    _ => {}
+                }
+                cur.push(ch);
+            }
+            if let Some(radius) = args.get(1) {
+                let r = radius.trim();
+                if numeric_literal(r).is_some() {
+                    hits.push(r.to_string());
+                }
+            }
+        }
+    }
+    hits
+}
+
+/// 점 반지름을 숫자 리터럴로 적지 않는다 — 이 축의 **① 자매**다.
+///
+/// 폰트·반경·색 계수 축에는 이 형태가 있었는데 점 축에만 없었다. 오늘 본체 루트의
+/// 위반은 0 이라 면제 목록 없이 선다.
+#[test]
+fn no_dot_radius_is_an_anonymous_literal() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for target in dot_scan_roots() {
+        let path = root.join(target);
+        let before = files.len();
+        gather_rs_files(&path, &mut files);
+        assert!(
+            files.len() > before,
+            "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다"
+        );
+    }
+    assert!(
+        files.len() >= MIN_DOT_SCANNED_FILES,
+        "스캔한 .rs 가 {} 개뿐이다 — 하한 {MIN_DOT_SCANNED_FILES}",
+        files.len()
+    );
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (no, line) in text.lines().enumerate() {
+            for r in dot_radius_literal(line) {
+                violations.push(format!("{rel}:{} 반지름 {r}", no + 1));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "점 반지름이 익명 리터럴이다 ({} 자리). 토큰(`th.status_dot_size`)이 맞으면 \
+         그것을, 스케일 밖 값이면 사유를 적은 명명 const 를 써라(ADR-0126):\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
+}
+
+/// 점 축의 **② 자매** — 토큰 값 8 을 복사한 점 이름 const 를 막는다.
+///
+/// **판별 축이 자매 둘과 다르다. 이름이다.** 폰트·반경 축은 `값 × 자리`로 재는데
+/// (`.size(` · `.corner_radius(` 라는 문법적 자리가 있다) 점 축에는 **그 자리가 없다** —
+/// 점 const 는 `.value() * 0.5` 나 `vec2(` 로 소비되는 일반 산술이라, 소비 형태만 보고
+/// "점 자리" 를 가릴 수 없다. 값만으로 재면 점이 아닌 `LogicalPx(8.0)` 상수를
+/// 잡는다(실측: `file_handler_picker.rs` 의 `VERTICAL_PADDING` · `HORIZONTAL_MARGIN`).
+///
+/// **그래서 이 가드는 사거리가 좁다.** 이름에 `DOT` 이 없는 상수를 점에 쓰면 통과한다 —
+/// 자매 둘이 이름 축을 거부한 바로 그 이유이고, 여기서는 그 대안이 없다. 이 한계는
+/// 감추지 않는다: **부류 밖에 대상이 없다고 단정하지 않는다.**
+#[test]
+fn no_dot_named_const_copies_the_status_dot_token() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for target in dot_scan_roots() {
+        gather_rs_files(&root.join(target), &mut files);
+    }
+    assert!(files.len() >= MIN_DOT_SCANNED_FILES, "모수 미달");
+
+    let mut violations = Vec::new();
+    let mut dot_consts = 0usize;
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        let mut consts = Vec::new();
+        collect_numeric_consts(&lines, &mut consts);
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (name, value) in consts {
+            if !name.contains(DOT_CONST_NAME_MARK) {
+                continue;
+            }
+            dot_consts += 1;
+            if (value - DOT_SIZE_TOKEN_VALUE.value()).abs() < f32::EPSILON {
+                violations.push(format!("{rel}: {name} = {value}"));
+            }
+        }
+    }
+
+    // 비영 대조 — 점 이름 상수를 하나도 못 찾았으면 위 0 은 측정이 아니다(R56).
+    assert!(
+        dot_consts > 0,
+        "점 이름 상수를 하나도 못 찾았다 — 이름 표지(`{DOT_CONST_NAME_MARK}`)나 상수 \
+         파서가 깨졌다. 그 상태의 위반 0 은 침묵이다"
+    );
+    assert!(
+        violations.is_empty(),
+        "`status_dot_size`({}) 값을 복사한 점 이름 상수가 있다 — \
+         토큰을 직접 써라(`th.status_dot_size`):\n\
+         · const 는 `ui_zoom` 을 안 타는데 `status_dot_size` 는 **탄다**(0.85/1.0/1.2 에서 \
+         7/8/10). 사본만 고정돼 다른 픽셀로 그려진다\n\
+         · 스케일 **밖** 값(4 · 5 · 6 · 7)의 명명 const 는 그대로 허용된다(ADR-0126)\n{}",
+        DOT_SIZE_TOKEN_VALUE.value(),
+        violations.join("\n")
+    );
+}
