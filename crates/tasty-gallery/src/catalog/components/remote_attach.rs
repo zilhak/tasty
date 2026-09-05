@@ -30,12 +30,12 @@ use crate::catalog::widgets::dialog as kit;
 
 // ── 프레임 고정 치수 (디자인 raw px — 화면 전용 고정값) ──
 const FRAME_W: LogicalPx = LogicalPx(680.0);
-const FRAME_H: f32 = 460.0;
-const LEFT_W: f32 = 240.0;
-const HEADER_H: f32 = 47.0; // padding 10/10 + content 27
-const HEADER_PAD_L: f32 = 14.0; // 디자인 L14 (size-14)
-const FOOTER_H: f32 = 49.0;
-const BODY_H: LogicalPx = LogicalPx(FRAME_H - HEADER_H - FOOTER_H);
+const FRAME_H: LogicalPx = LogicalPx(460.0);
+const LEFT_W: LogicalPx = LogicalPx(240.0);
+const HEADER_H: LogicalPx = LogicalPx(47.0); // padding 10/10 + content 27
+const HEADER_PAD_L: LogicalPx = LogicalPx(14.0); // 디자인 L14 (size-14)
+const FOOTER_H: LogicalPx = LogicalPx(49.0);
+const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H).minus(FOOTER_H);
 const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0); // name(2 lines) + padding sm
 const WS_ROW_H: LogicalPx = LogicalPx(34.0);
 const BADGE_H: LogicalPx = LogicalPx(16.0); // design size-16
@@ -433,8 +433,10 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
 }
 
 fn header(ui: &mut egui::Ui, theme: &Theme) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), HEADER_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), HEADER_H.value()),
+        egui::Sense::hover(),
+    );
     // borderBottom separator.
     ui.painter().hline(
         rect.x_range(),
@@ -444,7 +446,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
     // 디자인 padding T10 R10 B10 L14.
     let inner = egui::Rect::from_min_max(
         egui::pos2(
-            rect.left() + HEADER_PAD_L,
+            rect.left() + HEADER_PAD_L.value(),
             rect.top() + theme.spacing_sm.value(),
         ),
         egui::pos2(
@@ -479,8 +481,11 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
         egui::vec2(FRAME_W.value(), BODY_H.value()),
         egui::Sense::hover(),
     );
-    let left = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, BODY_H.value()));
-    let right = egui::Rect::from_min_max(egui::pos2(rect.left() + LEFT_W, rect.top()), rect.max);
+    let left = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W.value(), BODY_H.value()));
+    let right = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + LEFT_W.value(), rect.top()),
+        rect.max,
+    );
     // 좌 pane 배경(bg-sidebar) + borderRight.
     ui.painter()
         .rect_filled(left, 0.0, theme.bg_sidebar().to_egui());
@@ -501,9 +506,10 @@ fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState)
     );
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더 — padding 10/12/4.
-    let hdr = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, CAPS_HEADER_H.value()));
+    let hdr =
+        egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W.value(), CAPS_HEADER_H.value()));
     let (_, _) = col.allocate_exact_size(
-        egui::vec2(LEFT_W, CAPS_HEADER_H.value()),
+        egui::vec2(LEFT_W.value(), CAPS_HEADER_H.value()),
         egui::Sense::hover(),
     );
     col.painter().text(
@@ -1074,8 +1080,10 @@ fn badge(
 }
 
 fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), FOOTER_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), FOOTER_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
