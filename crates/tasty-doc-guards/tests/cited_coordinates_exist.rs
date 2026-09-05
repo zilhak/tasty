@@ -117,6 +117,19 @@ fn is_pruned(name: &str) -> bool {
             .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
+/// 이름으로 걸리거나, **디렉토리 자신이 빌드 캐시라고 밝히거나**.
+///
+/// 이름만 보면 `CARGO_TARGET_DIR` 로 만든 다른 이름의 빌드 디렉토리가 통째로 모수에
+/// 들어온다 — 실측(2026-09-06) 그런 디렉토리 하나가 생기자 이 가드의 형식 판정이
+/// 8251 건을 "수집됐는데 판정되지 않았다" 로 세고 빨개졌다. 형제 가드
+/// (`no_todo_file_citation.rs`) 는 같은 비대칭을 먼저 겪고 표식 판정으로 닫았는데
+/// 이쪽은 이름만 본 채로 남아 있었다.
+///
+/// 판정 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+fn is_pruned_dir(path: &Path, name: &str) -> bool {
+    is_pruned(name) || tasty_doc_guards::is_build_cache_dir(path)
+}
+
 fn is_path_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '/' | '-')
 }
@@ -393,7 +406,7 @@ fn gather(path: &Path, out: &mut Vec<PathBuf>) {
         // 가지치기를 빠져나가 문서로 읽힌다. 그러면 같은 커밋이 메인 체크아웃과
         // worktree 에서 서로 다른 모집단을 본다 — 이 가드의 답은 환경이 아니라
         // 코드에서 나와야 한다.
-        if is_pruned(p.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
+        if is_pruned_dir(&p, p.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
             continue;
         }
         gather(&p, out);
@@ -974,6 +987,37 @@ fn pruning_is_by_name_not_by_kind() {
         vec!["keep.md".to_string()],
         "가지치기가 종류를 물었다 — worktree 의 `.git` 파일이 모집단에 들어왔다"
     );
+}
+
+/// **이름이 아닌 근거로도 가지치기된다.** 이 절이 없으면 `is_pruned_dir` 이 이름
+/// 판정으로 퇴화해도 위 테스트가 초록이라 — 다른 이름의 빌드 디렉토리가 모수에 다시
+/// 들어온 것을 아무도 못 본다. 양극성으로 잡는다: 표식이 있으면 걸리고, 이름이 빌드
+/// 디렉토리처럼 보여도 표식이 없으면 안 걸린다.
+#[test]
+fn a_build_dir_under_another_name_is_still_pruned() {
+    let dir = std::env::temp_dir().join(format!("tasty-cited-prune-{}", std::process::id()));
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서 죽으면
+    // 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리를 못 만들었다");
+
+    assert!(
+        !is_pruned_dir(&dir, "target-e2e-headless"),
+        "표식이 없으면 이름이 빌드 디렉토리처럼 보여도 가지치기하지 않는다"
+    );
+
+    std::fs::write(
+        dir.join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n",
+    )
+    .expect("표식을 못 썼다");
+    assert!(
+        is_pruned_dir(&dir, "target-e2e-headless"),
+        "표식이 있으면 이름과 무관하게 가지치기한다"
+    );
+
+    // 정리 실패는 무시한다 — 위와 같은 이유다.
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 수집됐는데 **한 줄도 판정되지 않는** 형식은 형식 단위로 선언한다 — 이유까지.
