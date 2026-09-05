@@ -13,9 +13,16 @@
 //! 명부에 남아 있어도 실패한다.
 //!
 //! **덮는 채널이 있으면 사각이 아니다.** 읽는 것이 전부 무시 대상이어도, 경로 필터 없는
-//! 다른 워크플로가 그 타깃을 `--test <이름>` 으로 부르면 그 push 에서 돈다.
-//! [`targets_covered_by_unfiltered_workflows`] 가 그 명부를 워크플로 파일에서 읽는다 —
-//! 손으로 든 명부는 낡는 순간 거짓 양성(이미 덮인 것을 옮기라고 한다)이 된다.
+//! 다른 워크플로가 그 타깃을 `--test <이름>` 으로 부르거나 `-p <패키지>` 로 그 패키지를
+//! 좁힘 없이 돌리면 그 push 에서 돈다. `tasty_doc_guards::workflow_triggers` 의
+//! `filter_free_coverage` 가 그 명부를 워크플로 파일에서 읽는다 — 손으로 든 명부는 낡는
+//! 순간 거짓 양성(이미 덮인 것을 옮기라고 한다)이 된다.
+//!
+//! **면제를 디렉토리 이름으로 하지 않는다.** 한때 `crates/tasty-doc-guards/tests/` 를
+//! 상수로 건너뛰었는데, 그러면 그 자리의 채널이 사라져도 여기가 침묵한다 — 실측으로
+//! 확인했다(2026-09-05): 그 잡의 호출을 `--test` 하나로 좁히는 변이에서 그 디렉토리의
+//! 17 개가 실제로 눈멀었는데 이 판정은 초록이었다. 성질(덮이는가)로 물으면 그 변이에서
+//! 바로 갈린다. 채널 자체가 남아 있는지는 `filter_free_channel_still_exists` 가 따로 본다.
 //! 그래서 **여기서 옮기라는 요구가 나오면 그것은 옮길 자리다**: 그 타깃을 이름으로 부르는
 //! 필터 없는 잡이 하나도 없다는 뜻이다.
 //!
@@ -34,7 +41,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use tasty_doc_guards::workflow_triggers::push_trigger;
+use tasty_doc_guards::workflow_triggers::filter_free_coverage;
 
 /// 필터 뒤에 남는 것이 승인된 가드와 그 사유. **일부만** 무시 대상인 것만 온다.
 const PARTIALLY_FILTERED: &[(&str, &str)] = &[(
@@ -44,9 +51,11 @@ const PARTIALLY_FILTERED: &[(&str, &str)] = &[(
 )];
 
 /// 스캔 가드 모수의 하한. 스캔이 깨져 목록이 비면 "위반 0 건" 이 조용히 참이 된다.
-/// 실측 34 (2026-09-05) — 술어를 넓힌 뒤 값이다. 여유를 4 만 둔다: 하한이 실제보다
-/// 한참 낮으면 술어가 절반 죽어도 통과한다.
-const MIN_SCANNED: usize = 30;
+///
+/// 실측 51 (2026-09-05). 이 값이 34 였을 때는 `crates/tasty-doc-guards/tests/` 를
+/// 디렉토리 이름으로 건너뛰고 있었다 — 그 면제가 계산으로 바뀌면서 그 17 개도 모수에
+/// 들어왔다. 여유를 6 만 둔다: 하한이 실제보다 한참 낮으면 술어가 절반 죽어도 통과한다.
+const MIN_SCANNED: usize = 45;
 
 /// 필터 뒤에서 문서를 읽으면서 **워크스페이스 크레이트를 링크하는** 가드와 그 사유.
 ///
@@ -114,59 +123,6 @@ fn ignore_globs(root: &Path) -> Vec<String> {
 ///
 /// **`workflow_dispatch` 전용 잡은 세지 않는다.** 사람이 눌러야만 도는 것은 채널이
 /// 아니다. 잡 경계는 두 칸 들여쓴 `<이름>:` 으로 가른다.
-fn targets_covered_by_unfiltered_workflows(root: &Path) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    let dir = root.join(".github/workflows");
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        panic!("read {}: 워크플로 디렉토리를 못 읽었다", dir.display());
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if !p.extension().is_some_and(|x| x == "yml" || x == "yaml") {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(&p) else {
-            continue;
-        };
-        // push 트리거가 있고 경로 필터가 없어야 "필터 없는 채널" 이다.
-        //
-        // 판정을 `text.contains(..)` 로 하면 **다른 워크플로의 필터를 설명하는 주석**을
-        // 가진 파일이 필터를 가진 파일로 읽힌다. 실측(2026-09-05): 그 형태가 정확히
-        // 하나 있었고 하필 `doc-guards.yml` — 필터가 없다는 것 자체가 존재 이유인
-        // 그 파일이다(ADR-0138). 지금은 `-p` 로 부르고 `--test` 이름을 안 써서 아래
-        // 수집에 영향이 없지만, 이름을 쓰기 시작하면 그 순간 조용히 빠진다.
-        let Some(trigger) = push_trigger(&text) else {
-            panic!(
-                "{}: `on:` 을 못 읽었다 — 판정 불가는 통과가 아니다. 그대로 두면 \
-                 덮는 채널을 놓쳐 이미 덮인 가드를 '옮겨라' 로 잡는다",
-                p.display()
-            );
-        };
-        if !trigger.present || trigger.path_filtered || trigger.tags_only {
-            continue;
-        }
-        let mut dispatch_only = false;
-        for line in text.lines() {
-            let t = line.trim_start();
-            let indent = line.len() - t.len();
-            // 잡 헤더에서 상태를 리셋한다.
-            if indent == 2 && t.ends_with(':') && !t.starts_with('-') && !t.starts_with('#') {
-                dispatch_only = false;
-            }
-            if t.starts_with("if:") && t.contains("workflow_dispatch") {
-                dispatch_only = true;
-            }
-            if dispatch_only {
-                continue;
-            }
-            if let Some(rest) = t.strip_prefix("--test ") {
-                out.insert(rest.trim().to_string());
-            }
-        }
-    }
-    out
-}
-
 fn is_ignored(path: &str, globs: &[String]) -> bool {
     globs.iter().any(|g| match g.strip_suffix("/**") {
         Some(prefix) => path.starts_with(prefix) && path[prefix.len()..].starts_with('/'),
@@ -285,6 +241,33 @@ fn integration_targets(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// 이 통합 타깃이 속한 패키지 이름. 커버리지 판정이 `-p <패키지>` 를 보기 때문에
+/// 필요하다. 디렉토리 이름이 아니라 **매니페스트의 `name`** 을 읽는다 — 둘이 같은 것은
+/// 이 레포의 관례일 뿐 규칙이 아니고, 갈리면 덮인 타깃을 안 덮인 것으로 센다.
+fn package_of(root: &Path, target: &Path) -> String {
+    let mut dir = target.parent();
+    while let Some(d) = dir {
+        let manifest = d.join("Cargo.toml");
+        if manifest.is_file() {
+            if let Ok(text) = std::fs::read_to_string(&manifest) {
+                for line in text.lines() {
+                    if let Some(rest) = line.trim().strip_prefix("name") {
+                        let rest = rest.trim_start();
+                        if let Some(v) = rest.strip_prefix('=') {
+                            return v.trim().trim_matches('"').to_string();
+                        }
+                    }
+                }
+            }
+        }
+        if d == root {
+            break;
+        }
+        dir = d.parent();
+    }
+    String::new()
+}
+
 fn rel(p: &Path, root: &Path) -> String {
     p.strip_prefix(root)
         .unwrap_or(p)
@@ -296,11 +279,14 @@ fn rel(p: &Path, root: &Path) -> String {
 fn no_filtered_scan_guard_reads_only_ignored_paths() {
     let root = tasty_doc_guards::repo_root();
     let globs = ignore_globs(&root);
-    let covered = targets_covered_by_unfiltered_workflows(&root);
+    let covered = filter_free_coverage(&root.join(".github/workflows")).unwrap_or_else(|bad| {
+        panic!("`on:` 을 못 읽은 워크플로가 있다 — 판정 불가는 통과가 아니다: {bad:?}")
+    });
+    // 한쪽만 비는 것은 정상 설정일 수 있다 — 통째로 비는 것만 판독 고장으로 본다.
     assert!(
-        !covered.is_empty(),
-        "경로 필터 없는 워크플로가 `--test` 로 지목하는 타깃을 하나도 못 읽었다 — \
-         판독이 깨졌다. 그대로 두면 이미 덮인 가드를 '옮겨라' 로 잡는다"
+        !covered.named.is_empty() || !covered.packages.is_empty() || covered.whole_workspace,
+        "필터 없는 채널을 하나도 못 읽었다 — 판독이 깨졌다. 그대로 두면 이미 덮인 가드를 \
+         '옮겨라' 로 잡는다"
     );
 
     let idents = workspace_crate_idents(&root);
@@ -311,9 +297,6 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
 
     for file in integration_targets(&root) {
         let r = rel(&file, &root);
-        if r.starts_with(FILTER_FREE_DIR) {
-            continue;
-        }
         let src = std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("read {r}: {e}"));
         if !is_pure_source_scan(&src) {
             continue;
@@ -335,9 +318,18 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
         if ignored.is_empty() {
             continue;
         }
-        let stem = file.file_stem().map(|x| x.to_string_lossy().to_string());
-        if stem.is_some_and(|n| covered.contains(&n)) {
-            // 필터 없는 다른 워크플로가 이름으로 부른다 — 이 필터 뒤에 있어도 사각이 아니다.
+        // 필터 없는 채널이 이 타깃을 덮으면 이 필터 뒤에 있어도 사각이 아니다.
+        // **이름으로 면제하지 않는다.** 한때 `crates/tasty-doc-guards/tests/` 를 상수로
+        // 건너뛰었는데, 그러면 그 디렉토리의 채널이 사라져도 여기가 침묵한다 — 실측으로
+        // 확인했다(2026-09-05): 그 잡의 호출을 `--test` 하나로 좁히는 변이에서 그 17 개가
+        // 실제로 눈멀었는데 이 판정은 초록이었다. 지금은 `--test <이름>` 과
+        // `-p <패키지>` 를 함께 읽어 덮임을 **계산**한다.
+        let stem = file
+            .file_stem()
+            .map(|x| x.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let pkg = package_of(&root, &file);
+        if covered.covers(&stem, &pkg) {
             continue;
         }
         if ignored.len() == paths.len() {
