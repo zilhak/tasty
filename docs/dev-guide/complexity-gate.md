@@ -9,7 +9,7 @@
 | 축 | 도구 | 임계값 | 동결 위치 |
 |----|------|--------|-----------|
 | **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 34곳) |
-| **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | **출하** code SLOC **1000** | `.complexity-file-allowlist` (현재 43개 — 도입 시 동결분 잔여 17 + 채널 부재로 쌓인 부채 26) |
+| **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | **출하** code SLOC **1000** | `.complexity-file-allowlist` (현재 24개 — 도입 시 동결분 잔여 16 + 채널 부재로 쌓인 부채 8) |
 
 - 카운트 기준: `grep -rn 'allow(clippy::cognitive_complexity)'` 로 센 **전체** 위치 수. `// complexity-exempt:` 태그는 감사(grep) 가능성을 위한 필수 컨벤션이라, `#[allow(clippy::cognitive_complexity)]`가 있는데 태그가 없는 레거시가 발견되면 그 자리에서 태그를 붙여 카운트에 편입한다(둘을 별도 숫자로 두지 않는다).
 
@@ -43,8 +43,9 @@ fn draw_something(...) { ... }
 ### 파일 (SLOC)
 
 - 정당하게 큰 파일은 `.complexity-file-allowlist` 에 레포 상대경로(슬래시)를 한 줄 추가한다.
-- **allowlist 안에 블록이 둘이다.** 위 17 건은 게이트 도입(2026-07-06) 시점에 동결한 18 건에서 래칫으로 한 건이 빠진 나머지이고, 아래 26 건은 게이트가 한 번도 실행되지 않은 60 일 동안 새로 임계를 넘은 것이다 — **정당화된 예외가 아니라 부채 대장**이다(도입 시점에 이미 초과였던 것은 그 26 중 0 건). 새 항목은 위 블록에 넣고, 아래 블록은 래칫으로 **지우기만 한다**. 근거는 [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md).
-- 테스트 모듈(`tests.rs`·`*_tests.rs`·`tests/`)·생성/전사 코드(`*generated*`, `design-tokens/generated/`)는 스크립트 `skip()` 이 게이트에서 아예 제외하므로 allowlist 등록이 불요하다.
+- **allowlist 안에 블록이 둘이다.** 위 16 건은 게이트 도입(2026-07-06) 시점에 동결한 18 건에서 래칫으로 두 건이 빠진 나머지이고, 아래 8 건은 게이트가 한 번도 실행되지 않은 60 일 동안 새로 임계를 넘은 것이다 — **정당화된 예외가 아니라 부채 대장**이다(도입 시점에 이미 초과였던 것은 0 건). 새 항목은 위 블록에 넣고, 아래 블록은 래칫으로 **지우기만 한다**. 근거는 [ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md).
+  - 아래 블록은 한때 26 건이었다. [ADR-0165](../adr/0165-the-file-sloc-gate-measures-shipped-lines.md) 로 게이트가 인라인 `#[cfg(test)]` 를 안 세게 되자 **그중 18 건이 임계 아래로 내려가 래칫으로 빠졌다** — 부채 대장의 3 분의 2 가 복잡도 부채가 아니라 테스트 줄이었다는 뜻이다.
+- 테스트 모듈(`tests.rs`·`*_tests.rs`·`tests/`)·생성/전사 코드(`*generated*`, `design-tokens/generated/`)는 스크립트 `skip()` 이 게이트에서 아예 제외하므로 allowlist 등록이 불요하다. 파일 **안**의 인라인 `#[cfg(test)] mod` 는 `skip()` 이 아니라 계측 단계에서 빠진다 — 게이트가 재는 것이 그 범위를 지운 사본이다.
 
 #### `skip()` 은 정의가 아니라 대리인이다
 
