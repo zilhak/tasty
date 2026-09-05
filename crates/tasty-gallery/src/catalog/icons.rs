@@ -123,7 +123,7 @@ const TILE_H: LogicalPx = LogicalPx(110.0);
 /// `.icontile .glyph` 박스 36×36 안에 그리는 글리프 — jsx `<GIcon size={22}>`.
 const TILE_GLYPH: LogicalPx = LogicalPx(22.0);
 /// `.glyph` 박스 한 변 — 글리프 수직 중심 산출용.
-const GLYPH_BOX: f32 = 36.0;
+const GLYPH_BOX: LogicalPx = LogicalPx(36.0);
 
 thread_local! {
     /// system-rules 데모의 filter Input 버퍼 (egui memory 에 포커스 유지).
@@ -288,7 +288,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     painter.rect_filled(rect, 0.0, bg);
 
     // 글리프 — padding-top 18 + glyph-box 36 중심.
-    let glyph_cy = rect.top() + theme.spacing_lg.value() + 2.0 + GLYPH_BOX / 2.0;
+    let glyph_cy = LogicalPx(rect.top()) + theme.spacing_lg + LogicalPx(2.0) + GLYPH_BOX / 2.0;
     // hover 시 글리프도 secondary→primary 로 (web .icontile:hover .glyph).
     let glyph_color = if resp.hovered() {
         ec(theme.text_primary())
@@ -298,22 +298,22 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     paint_glyph(
         ui,
         g,
-        egui::pos2(rect.center().x, glyph_cy),
+        egui::pos2(rect.center().x, glyph_cy.value()),
         TILE_GLYPH.value(),
         glyph_color,
     );
 
     // name (mono 12 primary) + role (micro muted).
-    let name_y = glyph_cy + GLYPH_BOX / 2.0 + theme.spacing_sm.value();
+    let name_y = glyph_cy + GLYPH_BOX / 2.0 + theme.spacing_sm;
     painter.text(
-        egui::pos2(rect.center().x, name_y),
+        egui::pos2(rect.center().x, name_y.value()),
         egui::Align2::CENTER_TOP,
         name,
         egui::FontId::monospace(theme.font_size_term_sm.value()),
         ec(theme.text_primary()),
     );
     painter.text(
-        egui::pos2(rect.center().x, name_y + theme.spacing_lg.value()),
+        egui::pos2(rect.center().x, (name_y + theme.spacing_lg).value()),
         egui::Align2::CENTER_TOP,
         role,
         egui::FontId::proportional(theme.font_size_micro.value()),
