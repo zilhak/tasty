@@ -74,7 +74,7 @@ const FAVS_MANY: &[(&str, bool)] = &[
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 /// 데모 컨테이너의 사이드바 본문 높이 — 600 미만이라 비율(40%) 분기를 재현하고,
 /// 긴 트리/많은 즐겨찾기 각각의 스크롤도 자연히 유발한다(§ 아래 4케이스 참고).
-const DEMO_BODY_H: f32 = 340.0;
+const DEMO_BODY_H: LogicalPx = LogicalPx(340.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     // ── (a) Files 길어서 스크롤, Favorites 는 하단에 고정 유지 ──
@@ -196,7 +196,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, contents: impl FnOnce(&mut egui::Ui))
         ))
         .show(ui, |ui| {
             ui.set_width(SIDEBAR_W.value());
-            ui.set_height(DEMO_BODY_H);
+            ui.set_height(DEMO_BODY_H.value());
             ui.spacing_mut().item_spacing.y = 0.0;
             contents(ui);
         });
@@ -223,10 +223,10 @@ fn two_region_inner(
     favs: &[(&str, bool)],
 ) {
     let fav_h = favorites_pin_height(DEMO_BODY_H);
-    let files_h = (DEMO_BODY_H - fav_h - theme.border_width.value()).max(0.0);
+    let files_h = (DEMO_BODY_H - fav_h - theme.border_width).max(LogicalPx(0.0));
 
     ui.allocate_ui_with_layout(
-        egui::vec2(SIDEBAR_W.value(), files_h),
+        egui::vec2(SIDEBAR_W.value(), files_h.value()),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             caption(ui, theme, "Files");
@@ -265,7 +265,7 @@ fn two_region_inner(
     section_separator(ui, theme);
 
     ui.allocate_ui_with_layout(
-        egui::vec2(SIDEBAR_W.value(), fav_h),
+        egui::vec2(SIDEBAR_W.value(), fav_h.value()),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             caption(ui, theme, "Favorites");
@@ -286,15 +286,16 @@ fn two_region_inner(
 }
 
 /// design `favPinHeight` 전사 — 본체 `explorer.rs::favorites_pin_height` 와 동일 공식.
-fn favorites_pin_height(body_h: f32) -> f32 {
+fn favorites_pin_height(body_h: LogicalPx) -> LogicalPx {
     const BASE: LogicalPx = LogicalPx(240.0);
     const THRESHOLD: LogicalPx = LogicalPx(600.0);
     const RATIO: f32 = 0.4;
     const MIN: LogicalPx = LogicalPx(120.0);
-    if body_h <= 0.0 || body_h >= THRESHOLD.value() {
-        return BASE.value();
+    if body_h <= LogicalPx(0.0) || body_h >= THRESHOLD {
+        return BASE;
     }
-    ((body_h * RATIO / 4.0).round() * 4.0).max(MIN.value())
+    // `LogicalPx` 에는 `round` 가 없다 — 4px 그리드로 맞추는 이 한 자리에서만 벗긴다.
+    (LogicalPx((body_h * RATIO / 4.0).value().round()) * 4.0).max(MIN)
 }
 
 fn fav_row(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
