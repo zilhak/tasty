@@ -1,4 +1,4 @@
-<!-- source-hash: 68e90b6c016e -->
+<!-- source-hash: 639b9b8e6020 -->
 # Workspaces
 
 After reading this page you will know how to create Workspaces, name them, group them into categories, switch between them, and close and restore them. What a Workspace is is explained in [A first look](../getting-started/first-look.md).
@@ -49,7 +49,8 @@ Each Workspace remembers its own focused Pane. Switch away and back and the curs
 
 - Drag a card.
 - Right-click a card > **Move Up** / **Move Down**.
-- `tasty move workspace --from 2 --to 0` (counting from 0).
+- `tasty move workspace --id 5 --to 0` — names the Workspace by **ID**, so it moves in whichever window owns it even when several are open. `tasty list workspaces` shows the IDs.
+- `tasty move workspace --from 2 --to 0` (counting from 0) — a position **inside one window**, so with several windows open it moves in the one you are looking at.
 
 ## Marks on a card
 
@@ -66,6 +67,11 @@ When the sidebar is collapsed (**Collapse**, `Ctrl+B`) the cards become square i
 
 - Right-click a card > **Close Workspace**, or `Alt+Shift+W`.
 - `Ctrl+W` is **Close active** — if only one Tab is left it closes the Pane, and if only one Pane is left it closes the Workspace.
+
+A workspace holding a terminal someone is using over a remote attach will not close; you
+get a notice instead. Someone is working in that terminal right now, and closing it would
+end their session without warning. To take it back, press **Force detach** on the occupancy
+badge, then close again.
 
 Closed Workspaces · Panes · Tabs · Surfaces are restored with `Ctrl+Shift+T` (**Restore closed**), most recently closed first. A terminal's scrollback comes back with it. The shell is started fresh, though, so a program that was running does not come back. This list lives only in memory and is gone when Tasty exits.
 

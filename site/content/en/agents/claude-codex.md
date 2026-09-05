@@ -1,4 +1,4 @@
-<!-- source-hash: 2e7f7d1030d3 -->
+<!-- source-hash: 1b19697c417c -->
 # Working with Claude and Codex
 
 This page explains how to run Claude Code and Codex CLI inside Tasty, and how one agent drives another as a child to parallelise work. Install the hooks once, and the parent is notified automatically when a child finishes its work.
@@ -86,7 +86,7 @@ $TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log
 ```
 
 - Both environment variables are already present in shells that Tasty opened. Do not assemble the path by hand.
-- Example line: `surface 57 작업 완료 (호출 방식: spawn)`.
+- Example line (English): `surface 57 task complete (via spawn)`. The wording follows the app language.
 - It keeps coming every time the state changes while the child is alive — it is not a one-off.
 - When the file exceeds 256 KiB it is emptied and written afresh.
 - If a Claude child has been stalled for more than 30 seconds after an API error, a separate "stalled" line arrives in the same file.

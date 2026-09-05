@@ -67,6 +67,8 @@ tasty is-typing --surface 42                  # 최근 5초 내 사람이 키를
 
 `read screen` 은 기본적으로 흐리게 표시되는 자동완성 제안(예: Claude Code 의 회색 제안 텍스트)을 제외합니다. 포함하려면 `--show-dim`.
 
+`--lines N` 을 줬는데 N 줄보다 적게 왔다면, 응답의 `scrollback_len` 이 이유를 알려줍니다. `0` 이면 그 화면이 가진 전부라 더 줄 것이 없습니다 — 전체 화면 앱(TUI)이 뜨자마자 화면을 차지하면 이렇게 됩니다. `0` 이 아닌데도 적게 왔다면 그때는 이상한 것입니다. `alt_screen` 은 지금 전체 화면 앱이 떠 있는지를 알려줍니다.
+
 ## 키 보내기
 
 Enter 외의 키는 `send key` 로 보냅니다.
@@ -183,6 +185,20 @@ tasty read queue --surface 42            # 가장 오래된 메시지 하나 꺼
 tasty read queue --surface 42 --peek     # 꺼내지 않고 보기
 tasty read queue --surface 42 --clear    # 전부 비움
 ```
+
+## 그 밖의 조회·설정
+
+에이전트가 가끔 쓰는 것들입니다. 전체 목록은 `tasty <명령> --help` 로 봅니다.
+
+```sh
+tasty list theme                       # 지금 적용된 테마 스냅샷(색·글자 크기·UI 배율)
+tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
+tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경
+tasty set url --surface 42 --url URL   # 웹뷰 서피스의 주소 변경
+tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
+```
+
+`set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 그렇게 말해 줍니다.
 
 ## 자주 쓰는 명령 표
 
