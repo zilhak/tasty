@@ -529,6 +529,29 @@ pub(crate) fn apply_session_start_profile(
     }));
 }
 
+/// host 호출을 쏘고 **실패해도 계속 간다** — 이 함수는 절대 전파하지 않는다.
+///
+/// 전파하면 안 되는 이유는 호출부의 순서다. `handle_claude_hook` 은 이 루프 *뒤에*
+/// 로컬 정리를 한다(session-end 의 `checklist::remove_state_for_session` ·
+/// `profile_attach::mark_ended`, session-start 의 `store`/`sweep`). 그 넷은
+/// 파일시스템만 만지므로 surface 가 없어도 정의되는 일인데, 여기서 `?` 로 끊으면
+/// **surface 가 사라진 바로 그때** 건너뛴다 — 정리가 필요한 유일한 경우에만 정리가
+/// 안 도는 셈이다.
+///
+/// 그 시나리오가 가능한 이유는 close 순서다 — 호스트가 레이아웃에서 surface 를 먼저
+/// 지우고 그 다음 PTY 를 떨구므로(`close_surface_by_id_inner` → `cleanup_surface`),
+/// PTY 사망 뒤에 도착하는 훅은 이미 없는 surface 를 가리킨다.
+///
+/// **다만 빈도는 근거가 아니다 — 오히려 드물다.** 실측에서 이 warn 을 가진 빌드가 8 일
+/// 연속 뜬 plugin 로그의 session-end 70 건 중 host 호출 실패는 0 건이었다. 그런데도
+/// 최선노력인 것은 대가가 비대칭이기 때문이다: 전파해도 훅 명령이 `|| true` 로 감싸여
+/// 있어([`crate::install::hook_command`]) 호출자에게 닿지 않는데, 대신 위 로컬 정리가
+/// 통째로 안 돈다. 수와 재는 명령은 ADR-0172.
+///
+/// codex 의 `handle_hook` 이 `terminal.set_state` 실패를 전파하는 것은 표류가 아니라
+/// 같은 규칙의 반대편이다 — 거기엔 호출 뒤에 지킬 로컬 상태가 없다. 규칙 전문은
+/// [error-handling](../../../docs/dev-guide/error-handling.md)
+/// "plugin 핸들러의 host 호출 — 전파와 최선노력".
 fn deliver(host: &HostHandle, call: &HostCall) {
     let (method, params) = match call {
         HostCall::SetState { surface_id, state } => (
@@ -586,13 +609,17 @@ fn resolve_surface_id_from(
     // **값이 왔는데 숫자가 아닌 것**과 **키가 아예 없는 것**을 가른다. 둘을 합치면
     // 잘못된 값이 조용히 env 폴백으로 넘어가고, 그 폴백은 호출자 **자신**이라
     // 명령이 자기에게 배달된다 — 종료코드 0, 오류 없음.
+    //
+    // `u32` 범위 밖도 같은 부류다. `as u32` 로 자르면 `5_000_000_000` 이 `705_032_704`
+    // 가 되는데, 그것은 **실재할 수 있는 다른 surface 의 id** 다(실측). 못 읽는 값이
+    // 자기에게 가는 것보다 나쁘다 — 남의 터미널로 간다. 자르지 말고 거부한다.
     for key in ["surface", "surface_id"] {
         let Some(raw) = params.get(key) else { continue };
         if raw.is_null() {
             continue;
         }
-        return match raw.as_u64() {
-            Some(sid) => Ok(sid as u32),
+        return match raw.as_u64().and_then(|n| u32::try_from(n).ok()) {
+            Some(sid) => Ok(sid),
             None => Err(IpcMethodError::invalid_params(
                 &tr.t_fmt("claude.params.surface_not_a_number", &raw.to_string()),
             )),
@@ -1356,6 +1383,25 @@ mod tests {
     fn resolve_surface_id_falls_back_to_env_when_the_param_is_absent() {
         let sid = resolve_surface_id_from(&json!({}), Some("42"), &test_translator()).unwrap();
         assert_eq!(sid, 42);
+    }
+
+    /// `u32` 범위 밖 값은 잘라서 받지 않는다. 자르면 `5_000_000_000` → `705_032_704`
+    /// 로 **실재할 수 있는 다른 surface** 를 가리키게 된다(고치기 전 실측값이다).
+    /// 이 형태는 자기-배달보다 나쁘다 — 남의 터미널로 가고, 되읽기로도 안 잡힌다.
+    #[test]
+    fn a_surface_beyond_u32_is_rejected_not_truncated() {
+        let big = serde_json::json!({ "surface": 5_000_000_000u64 });
+        let err = resolve_surface_id_from(&big, Some("7"), &test_translator())
+            .expect_err("u32 를 넘는 값은 오류여야 한다");
+        assert_eq!(err.code, -32602);
+        // 대조: 범위 안의 값은 그대로 통과한다(문이 닫힌 것이 아니다).
+        let ok = resolve_surface_id_from(
+            &serde_json::json!({ "surface": 4_294_967_295u64 }),
+            None,
+            &test_translator(),
+        )
+        .expect("u32::MAX 는 유효한 값이다");
+        assert_eq!(ok, u32::MAX);
     }
 
     /// 값이 왔는데 숫자가 아니면 **거부**한다 — env 폴백으로 넘기지 않는다.

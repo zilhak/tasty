@@ -16,7 +16,11 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+use tasty_plugin_agent_common::children::{indices_with, join_indices, state_of};
+use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks};
+use tasty_plugin_agent_common::params::{TargetSurfaceError, forward, target_surface};
+use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::error_scan::{ErrorScanner, ScanTarget};
@@ -52,20 +56,77 @@ pub(crate) fn resolve_profile_file_param(
     }
 }
 
+/// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
+///
+/// `hook.rs` 의 `resolve_surface_id_from` 이 같은 판정을 env 폴백까지 포함해서 한다.
+/// 이쪽은 폴백이 없어 어느 쪽이든 에러지만, **자르기는 여기도 위험하다**:
+/// `4_294_967_297 as u32` 는 `1` 이고 `5_000_000_000 as u32` 는 `705_032_704` 다.
+/// 둘 다 실재할 수 있는 다른 surface 의 id 라, 못 읽는 값이 조용히 남의 터미널로 간다.
+///
+/// 메시지도 가른다 — 값이 왔는데 "missing" 이라고 답하면 호출자가 자기가 준 값을
+/// 안 의심한다.
+fn require_u32(
+    params: &Value,
+    key: &str,
+    missing_key: &str,
+    malformed_key: &str,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
+        return Err(IpcMethodError::invalid_params(tr.t(missing_key)));
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| IpcMethodError::invalid_params(&tr.t_fmt(malformed_key, &raw.to_string())))
+}
+
+/// 대상 parent surface — 판정은 [`tasty_plugin_agent_common::params::target_surface`]
+/// 한 벌이고, 여기서는 그 실패를 **claude 카탈로그의 문구로** 옮기기만 한다.
+/// 두 plugin 이 같은 판정을 각자 구현하면 한쪽만 고쳐지는 순간 갈린다 — 이 함수가
+/// 고치고 있는 결함 자체가 그 형태로 생겼다.
+pub(crate) fn optional_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<Option<u32>, IpcMethodError> {
+    target_surface(params).map_err(|e| match e {
+        TargetSurfaceError::Malformed { raw, .. } => IpcMethodError::invalid_params(
+            &tr.t_fmt("claude.params.target_surface_not_a_number", &raw),
+        ),
+        TargetSurfaceError::Conflict {
+            surface,
+            surface_id,
+        } => IpcMethodError::invalid_params(&tr.t_fmt(
+            "claude.params.surface_conflict",
+            &format!("surface={surface}, surface_id={surface_id}"),
+        )),
+    })
+}
+
 pub(crate) fn require_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    optional_target_surface(params, tr)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_surface_id")))
 }
 
+/// 호스트로 넘길 params 에 대상 surface 를 싣는다 — 실패 문구만 claude 것으로 옮긴다.
+fn put_target_surface(
+    dst: &mut serde_json::Map<String, Value>,
+    params: &Value,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    if let Some(surface) = optional_target_surface(params, tr)? {
+        dst.insert("surface".into(), json!(surface));
+    }
+    Ok(())
+}
+
 pub(crate) fn require_child_index(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    params
-        .get("child_index")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_child_index")))
+    require_u32(
+        params,
+        "child_index",
+        "claude.params.missing_child_index",
+        "claude.params.child_index_not_a_number",
+        tr,
+    )
 }
 
 /// `--child <index>` 를 그 자식의 **surface id** 로 해석한다.
@@ -119,74 +180,22 @@ pub(crate) fn resolve_child_surface_id<H: HostCall>(
     })
 }
 
-/// 요청 params 에서 지정한 키들을 존재할 때만 그대로 새 Map 에 복사한다. CLI 인자를
-/// 호스트 `terminal.*` 로 pass-through 하는 용도. claude CLI 는 `surface` 인자에
-/// 대해 `surface`/`surface_id` 두 키를 모두 주입하므로(호스트 terminal.* 는
-/// `surface` 를 읽음) `surface` 를 복사한다.
-fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
-    let mut out = Map::new();
-    for k in keys {
-        if let Some(v) = params.get(*k) {
-            out.insert((*k).to_string(), v.clone());
-        }
-    }
-    out
-}
-
 fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
     host.call(method, params).map_err(IpcMethodError::from)
-}
-
-/// 호스트 IPC 를 동기 호출하는 최소 표면. `HostHandle` 로 실동작하고, 테스트에서는
-/// in-memory mock 으로 대체해 형제 hook 등록/발화/정리 사이클을 재현·검증한다.
-pub(crate) trait HostCall {
-    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError>;
-}
-
-impl HostCall for HostHandle {
-    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
-        HostHandle::call(self, method, params)
-    }
-}
-
-/// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
-/// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
-/// 순수 선택 로직이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에
-/// 서로 다른 command(예: `--command spawn` vs `--command tell`)로 등록된 두 그룹은
-/// 서로의 정리 대상에 포함되지 않는다.
-fn siblings_to_unset(hooks: &[Value], expected_command: &str) -> Vec<u64> {
-    hooks
-        .iter()
-        .filter(|h| h.get("command").and_then(|v| v.as_str()) == Some(expected_command))
-        .filter_map(|h| h.get("id").and_then(|v| v.as_u64()))
-        .collect()
-}
-
-/// 발화한 형제 하나가 자기 그룹(같은 command)의 남은 형제 once-hook 들을 정리한다.
-/// `hook.list` 는 반드시 `surface_id` 로 필터해 다른 surface(=다른 child)의 hook 을
-/// 건드리지 않는다. best-effort — 실패해도 알림 자체는 이미 전달됐다.
-fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expected_command: &str) {
-    if let Ok(resp) = host.call("hook.list", json!({ "surface_id": target_surface }))
-        && let Some(hooks) = resp.as_array()
-    {
-        for hook_id in siblings_to_unset(hooks, expected_command) {
-            // best-effort 정리 — 실패하면 좀비로 남을 수 있으나 알림 자체는 이미
-            // 전달됐으므로 caller 관점 결과에는 영향 없음.
-            let _ = host.call("hook.unset", json!({ "hook_id": hook_id }));
-        }
-    }
 }
 
 /// 호스트 registry 목록(`terminal.children`)에 `surface.foreground_process` 로
 /// 각 자식의 PTY 전경 프로세스를 덧씌운다. claude 특화 필드명(`child_surface_id`)을
 /// 보존하기 위해 호스트 응답(`surface_id`)을 remap 한다. 응답은 bare 배열(claude
 /// CLI 출력 shape).
-pub(crate) fn handle_children(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let resp = host_call(
-        host,
-        "terminal.children",
-        Value::Object(forward(params, &["surface"])),
-    )?;
+pub(crate) fn handle_children(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let mut cp = serde_json::Map::new();
+    put_target_surface(&mut cp, params, tr)?;
+    let resp = host_call(host, "terminal.children", Value::Object(cp))?;
     let list = resp
         .get("children")
         .and_then(|v| v.as_array())
@@ -240,7 +249,8 @@ pub(crate) fn handle_kill(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let child_index = require_child_index(params, tr)?;
-    let mut kp = forward(params, &["surface"]);
+    let mut kp = serde_json::Map::new();
+    put_target_surface(&mut kp, params, tr)?;
     kp.insert("child".into(), json!(child_index));
     // 호스트 terminal.kill 성공 시 { killed_surface_id, child_index } 반환. claude
     // CLI 는 기존에 { killed: true } 를 기대하므로 성공을 그 shape 으로 변환한다.
@@ -268,7 +278,8 @@ pub(crate) fn handle_broadcast(
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_text")))?;
-    let mut bp = forward(params, &["surface", "role"]);
+    let mut bp = forward(params, &["role"]);
+    put_target_surface(&mut bp, params, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
@@ -338,18 +349,15 @@ pub(crate) fn register_notify_hooks<H: HostCall>(
     command_name: &str,
 ) {
     let command = notify_done_command(caller_surface, target_surface, command_name);
-    for event in ["claude-idle", "needs-input", "process-exit"] {
-        // best-effort — 등록 실패해도 spawn/tell 자체는 이미 성공했으므로 무시.
-        let _ = host.call(
-            "hook.set",
-            json!({
-                "surface_id": target_surface,
-                "event": event,
-                "command": command,
-                "once": true,
-            }),
-        );
-    }
+    // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
+    // 등록 루프만 공유하고 목록은 각자 갖는다.
+    tasty_plugin_agent_common::host_call::register_completion_hooks(
+        host,
+        target_surface,
+        &command,
+        &["claude-idle", "needs-input", "process-exit"],
+        "claude",
+    );
     register_error_notify_hook(host, caller_surface, target_surface);
 }
 
@@ -625,7 +633,8 @@ pub(crate) fn handle_respawn(
 
     // 1) 호스트 registry 위임(command 미전송): cwd 있으면 PTY 교체, 없으면 Ctrl-C.
     //    role/nickname/cwd 갱신 + idle 초기화까지 호스트가 수행.
-    let mut rp = forward(params, &["surface", "cwd", "role", "nickname"]);
+    let mut rp = forward(params, &["cwd", "role", "nickname"]);
+    put_target_surface(&mut rp, params, tr)?;
     rp.insert("child".into(), json!(child_index));
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_surface_id = resp
@@ -737,17 +746,11 @@ pub(crate) fn start_claude_in_surface(
     }
 }
 
-/// prompt 임시파일 이름 prefix/suffix — 정리 스윕(`sweep_stale_prompt_files`)이 같은
-/// 패턴으로 자기 파일만 매칭하도록 상수로 뽑아 공유한다.
+/// prompt 임시파일 이름 prefix. 청소 스윕(`prompt_file::sweep_stale`)이 같은 패턴으로
+/// 자기 파일만 매칭하도록 상수로 뽑는다. suffix·TTL·쓰기·스윕은
+/// `tasty-plugin-agent-common` 이 갖고, **prefix 만** 여기 남는다 — codex plugin 이
+/// 같은 surface_id 로 자기 prompt 파일을 같은 디렉터리에 쓰기 때문에 이름이 갈려야 한다.
 const PROMPT_FILE_PREFIX: &str = "tasty-prompt-";
-const PROMPT_FILE_SUFFIX: &str = ".txt";
-
-/// prompt 임시파일이 생성된 뒤 이만큼 지나면 다음 spawn 시점에 청소 대상이 된다.
-/// 자식 셸이 `$(cat '<path>')` 치환을 끝내는 데는 보통 수 ms~수 초면 충분하므로,
-/// 10분이면 그 시간을 넉넉히 넘겨 "아직 안 읽었는데 지워지는" 레이스를 사실상
-/// 배제한다.
-const PROMPT_FILE_TTL: std::time::Duration = std::time::Duration::from_secs(600);
-
 /// prompt 를 임시 파일에 쓰고 `$(cat ...)` 로 주입하는 claude 기동 명령을 만든다.
 /// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
 /// `profile_file` 이 있으면 positional prompt 인자보다 앞에 `--settings "<path>"` 를
@@ -756,8 +759,8 @@ const PROMPT_FILE_TTL: std::time::Duration = std::time::Duration::from_secs(600)
 ///
 /// 파일 정리 시점: 자식이 `$(cat ...)` 로 이 파일을 다 읽은 순간을 tasty 가 알
 /// 방법이 없다(`surface.send` 는 fire-and-forget 텍스트 주입) — 쓰자마자 지우면
-/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 [`PROMPT_FILE_TTL`] 을 넘긴
-/// 이전 파일들을 먼저 청소한다(`sweep_stale_prompt_files`) — 지연 삭제.
+/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 TTL 을 넘긴 이전 파일들을
+/// 먼저 청소한다(`prompt_file::sweep_stale`) — 지연 삭제.
 /// 권한은 생성 시점부터 0600(owner-only, Unix) 으로 좁힌다 — 생성 후 별도
 /// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
 /// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
@@ -768,11 +771,9 @@ fn claude_launch_command_with_prompt(
     profile_file: Option<&str>,
 ) -> String {
     let temp_dir = std::env::temp_dir();
-    sweep_stale_prompt_files(&temp_dir);
-    let prompt_path = temp_dir.join(format!(
-        "{PROMPT_FILE_PREFIX}{surface_id}{PROMPT_FILE_SUFFIX}"
-    ));
-    if let Err(e) = write_prompt_file(&prompt_path, prompt) {
+    prompt_file::sweep_stale(&temp_dir, PROMPT_FILE_PREFIX);
+    let prompt_path = prompt_file::path_for(&temp_dir, PROMPT_FILE_PREFIX, surface_id);
+    if let Err(e) = prompt_file::write(&prompt_path, prompt) {
         tracing::warn!("Failed to write prompt file: {e}");
     }
     let settings_flag = match profile_file {
@@ -783,76 +784,6 @@ fn claude_launch_command_with_prompt(
         "{agent_prefix}claude {settings_flag}\"$(cat '{}')\"\r",
         prompt_path.display()
     )
-}
-
-/// `path` 를 owner-only(0600) 권한으로 새로 만들어 `content` 를 쓴다. 같은 경로에
-/// 이전 실행이 남긴 파일이 있으면(과거 버전이 좁히지 않은 권한으로 만들었을 수
-/// 있는 파일 포함) 먼저 지우고 다시 만든다 — `OpenOptions::mode` 는 파일을 실제로
-/// *생성*하는 순간에만 적용되고, 이미 존재하는 파일을 여는 경우엔 기존 권한이
-/// 그대로 유지되기 때문이다(재사용 시 권한이 좁혀지지 않는 구멍을 막는다).
-fn write_prompt_file(path: &Path, content: &str) -> std::io::Result<()> {
-    // 없는 파일을 지우려는 실패(가장 흔한 경우 — 이전 실행 잔재가 없음)를 포함해
-    // 결과를 신경 쓰지 않는다: 존재하든 안 하든 바로 이어지는 `create(true)` 가
-    // 최종적으로 원하는 상태(0600 새 파일)를 만든다.
-    let _ = std::fs::remove_file(path);
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(content.as_bytes())
-    }
-    #[cfg(not(unix))]
-    {
-        // Windows 는 Unix mode 개념이 없다 — ACL 기반 권한 좁히기는 이 변경의
-        // 범위 밖(별도 작업 필요), 기존 `std::fs::write` 기본 동작 그대로 둔다.
-        std::fs::write(path, content)
-    }
-}
-
-/// `dir` 안에서 `PROMPT_FILE_PREFIX`/`PROMPT_FILE_SUFFIX` 패턴에 매칭하고
-/// `PROMPT_FILE_TTL` 보다 오래된(mtime 기준) 파일을 best-effort 로 지운다 —
-/// 매 spawn 마다 호출되는 지연 삭제 방식(무기한 누적 방지). 읽기/삭제 실패는
-/// 무시한다: 디렉터리 목록 경합, 동시에 다른 프로세스가 아직 참조 중인 파일 등은
-/// spawn 자체를 막을 이유가 아니다 — 대신 `tracing::debug!` 로 남긴다.
-fn sweep_stale_prompt_files(dir: &Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::debug!(
-                "prompt tempfile sweep: read_dir({}) failed: {e}",
-                dir.display()
-            );
-            return;
-        }
-    };
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.starts_with(PROMPT_FILE_PREFIX) || !name.ends_with(PROMPT_FILE_SUFFIX) {
-            continue;
-        }
-        let is_stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .and_then(|modified| {
-                now.duration_since(modified)
-                    .map_err(|e| std::io::Error::other(e.to_string()))
-            })
-            .is_ok_and(|age| age >= PROMPT_FILE_TTL);
-        if is_stale && let Err(e) = std::fs::remove_file(entry.path()) {
-            tracing::debug!(
-                "prompt tempfile sweep: remove({:?}) failed: {e}",
-                entry.path()
-            );
-        }
-    }
 }
 
 /// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다. 부모(claude plugin)의
@@ -994,27 +925,6 @@ fn compute_spawn_warning(
     build_spawn_warning(tr, total, &idle_indices, &stale_indices, threshold)
 }
 
-fn state_of(child: &Value) -> Option<&str> {
-    child.get("state").and_then(|s| s.as_str())
-}
-
-/// 조건에 맞는 child 의 `index` 만 모은다.
-fn indices_with(children: &[Value], pred: impl Fn(&Value) -> bool) -> Vec<u64> {
-    children
-        .iter()
-        .filter(|c| pred(c))
-        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
-        .collect()
-}
-
-fn join_indices(indices: &[u64]) -> String {
-    indices
-        .iter()
-        .map(u64::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 /// host 호출은 `tr`(순수 조회) 뿐 — 단위 테스트 대상.
 ///
 /// 재사용 후보를 **두 목록으로 나눈다.** 둘 다 respawn 대상이지만 근거가 다르다:
@@ -1080,6 +990,114 @@ pub(crate) fn handle_state(
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    /// 대상 surface 를 **호스트로 넘기는 params 에 실제로 싣는다.**
+    ///
+    /// 이 판정이 없어서 났던 일: `claude.kill` / `claude.respawn` 은 `surface_id`
+    /// 를 읽어놓고 호스트에는 `surface` 키만 pass-through 했다. 두 이름이 갈린
+    /// 자리라 `surface_id` 만 실은 호출은 **아무 대상도 안 실은 호출**이 됐고,
+    /// 호스트는 유일-parent 폴백으로 답했다 — 존재하지 않는 surface 를 지목한
+    /// 호출이 남의 자식을 죽이고 성공을 돌려줬다.
+    ///
+    /// 그래서 이 테스트는 "에러가 안 난다" 가 아니라 **실린 값**을 본다.
+    #[test]
+    fn the_target_surface_reaches_the_host_under_either_name() {
+        let tr = test_translator();
+        for params in [json!({ "surface": 7 }), json!({ "surface_id": 7 })] {
+            let mut out = serde_json::Map::new();
+            put_target_surface(&mut out, &params, &tr).expect("두 이름 다 받는다");
+            assert_eq!(
+                out.get("surface"),
+                Some(&json!(7)),
+                "{params} 에서 대상이 호스트로 안 실렸다 — 유일-parent 폴백에 떨어진다"
+            );
+        }
+    }
+
+    /// 아무 이름도 안 주면 **아무것도 안 싣는다** — 호스트의 유일-parent 폴백이
+    /// 곧 CLI 의 "`--surface` 생략" 동작이므로, 여기서 값을 지어내면 그 동작이
+    /// 사라진다.
+    #[test]
+    fn no_target_named_stays_no_target_sent() {
+        let tr = test_translator();
+        let mut out = serde_json::Map::new();
+        put_target_surface(&mut out, &json!({ "child_index": 0 }), &tr).expect("없어도 성공");
+        assert!(
+            out.is_empty(),
+            "대상을 안 준 호출에 값을 지어냈다 — 폴백이 사라진다: {out:?}"
+        );
+    }
+
+    /// 두 이름이 **다른 값**이면 고르지 않고 거절한다. 어느 쪽을 골라도 절반의
+    /// 호출자에게는 지목하지 않은 대상이 된다.
+    #[test]
+    fn two_names_with_different_values_are_refused_not_picked() {
+        let tr = test_translator();
+        let e = optional_target_surface(&json!({ "surface": 1, "surface_id": 2 }), &tr)
+            .expect_err("서로 다른 두 대상을 조용히 하나로 고르면 안 된다");
+        let msg = format!("{e:?}");
+        assert!(
+            msg.contains('1') && msg.contains('2'),
+            "어느 두 값이 부딪혔는지 안 알려준다: {msg}"
+        );
+        // 같은 값이면 부딪힌 것이 아니다.
+        assert_eq!(
+            optional_target_surface(&json!({ "surface": 3, "surface_id": 3 }), &tr).unwrap(),
+            Some(3),
+            "CLI 가 두 키를 같은 값으로 채워 보내는 형태를 막으면 안 된다"
+        );
+    }
+
+    /// `require_surface_id` / `require_child_index` 의 **네 갈래**를 픽스처로 못박는다.
+    /// 실재하는 surface id 를 쓰지 않는다 — 그 id 가 사라지면 회귀가 뜻을 잃는다.
+    #[test]
+    fn required_u32_params_separate_absent_from_malformed_and_refuse_to_truncate() {
+        let tr = test_translator();
+
+        // ① 키 없음.
+        assert!(require_surface_id(&json!({}), &tr).is_err());
+        assert!(require_child_index(&json!({}), &tr).is_err());
+
+        // ② 정상 — 경계값이 그대로 통과한다.
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": 0 }), &tr).unwrap(),
+            0
+        );
+        assert_eq!(
+            require_surface_id(&json!({ "surface_id": u32::MAX }), &tr).unwrap(),
+            u32::MAX
+        );
+
+        // ③ 숫자가 아니다 — 거부하고, "missing" 이라고 답하지 않는다.
+        let e = require_surface_id(&json!({ "surface_id": "conductor" }), &tr).unwrap_err();
+        let m = format!("{e:?}");
+        assert!(m.contains("32 bits"), "{m}");
+        assert!(!m.contains("Missing"), "값이 왔는데 없다고 답한다: {m}");
+
+        // ④ ★ 범위 초과 — 자르면 다른 surface 가 된다(`u32::MAX + 2` → 1).
+        for over in [
+            u64::from(u32::MAX) + 1,
+            u64::from(u32::MAX) + 2,
+            5_000_000_000,
+        ] {
+            assert!(
+                require_surface_id(&json!({ "surface_id": over }), &tr).is_err(),
+                "{over} 가 안 걸린다"
+            );
+            assert!(require_child_index(&json!({ "child_index": over }), &tr).is_err());
+        }
+
+        assert!(require_surface_id(&json!({ "surface_id": -1 }), &tr).is_err());
+    }
+
+    /// `null` 슬롯은 **안 왔다**로 읽는다 — 직렬화가 빈 슬롯을 `null` 로 채우는 경우가
+    /// 있어, 오타로 취급하면 정상 경로가 막힌다.
+    #[test]
+    fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
+        let tr = test_translator();
+        let e = require_surface_id(&json!({ "surface_id": Value::Null }), &tr).unwrap_err();
+        assert!(format!("{e:?}").contains("Missing"), "{e:?}");
+    }
 
     /// 실제 crate `lang/` 을 로드한 `Translator` — 하드코딩 영문 assertion 을
     /// lang 파일 드리프트로부터 고정한다(`checklist.rs` 의 SENTINEL 핀 테스트와
@@ -1222,105 +1240,6 @@ mod tests {
             ),
             "got {out}"
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn write_prompt_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let path = std::env::temp_dir().join("tasty-claude-test-write-prompt-file-perms.txt");
-        write_prompt_file(&path, "secret").unwrap();
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "got mode {mode:o}");
-        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn write_prompt_file_narrows_permissions_on_reuse() {
-        // 이전 실행이 넓은 권한으로 만든 파일이 같은 경로에 이미 있어도, 다시 쓸 때
-        // 0600 으로 좁혀져야 한다(재사용 시 구멍 방지 회귀 가드).
-        let path = std::env::temp_dir().join("tasty-claude-test-write-prompt-file-reuse.txt");
-        std::fs::write(&path, "old").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        }
-        write_prompt_file(&path, "new").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "got mode {mode:o}");
-        }
-        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_removes_files_past_ttl() {
-        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-removes-stale");
-        std::fs::create_dir_all(&dir).unwrap();
-        let stale = dir.join(format!("{PROMPT_FILE_PREFIX}old{PROMPT_FILE_SUFFIX}"));
-        std::fs::write(&stale, "x").unwrap();
-        let old_mtime =
-            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
-        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
-        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&stale)
-            .unwrap()
-            .set_modified(old_mtime)
-            .unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(!stale.exists(), "stale prompt file should have been swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_keeps_files_within_ttl() {
-        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-keeps-fresh");
-        std::fs::create_dir_all(&dir).unwrap();
-        let fresh = dir.join(format!("{PROMPT_FILE_PREFIX}new{PROMPT_FILE_SUFFIX}"));
-        std::fs::write(&fresh, "x").unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(fresh.exists(), "fresh prompt file should not be swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_ignores_non_matching_names() {
-        let dir = std::env::temp_dir().join("tasty-claude-test-sweep-ignores-unrelated");
-        std::fs::create_dir_all(&dir).unwrap();
-        let unrelated = dir.join("some-other-file.txt");
-        std::fs::write(&unrelated, "x").unwrap();
-        let old_mtime =
-            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
-        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
-        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&unrelated)
-            .unwrap()
-            .set_modified(old_mtime)
-            .unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(unrelated.exists(), "non-matching file must not be swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
@@ -1554,21 +1473,6 @@ mod tests {
         let host = MockHost::new();
         host.set_children(vec![json!({ "index": 0, "child_surface_id": 7 })]);
         assert!(resolve_child_surface_id(&host, 3, 0, &tr).is_err());
-    }
-
-    #[test]
-    fn siblings_to_unset_isolates_by_command() {
-        // 같은 target surface 에 spawn 그룹과 tell 그룹이 공존(concurrent 등록).
-        let spawn_cmd = notify_done_command(9, 100, "spawn");
-        let tell_cmd = notify_done_command(9, 100, "tell");
-        let hooks = vec![
-            json!({ "id": 1, "command": spawn_cmd, "event": "process-exit" }),
-            json!({ "id": 2, "command": tell_cmd, "event": "process-exit" }),
-            json!({ "id": 3, "command": spawn_cmd, "event": "claude-idle" }),
-        ];
-        // spawn command 로 정리 → spawn 그룹(id 1,3)만, tell 그룹(id 2)은 제외.
-        let ids = siblings_to_unset(&hooks, &spawn_cmd);
-        assert_eq!(ids, vec![1, 3]);
     }
 
     #[test]
