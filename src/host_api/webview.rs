@@ -41,6 +41,15 @@ pub use self::windows::PlatformWebView;
 #[derive(Debug, Clone)]
 pub enum WebViewCreateError {
     /// 다음 시도에 달라질 수 있는 입력이 있다 — 자원 고갈, 서버·런타임 경합.
+    ///
+    /// macOS 백엔드는 실패 셋을 전부 `Permanent` 로 분류한다(`macos.rs` 의 `perm` —
+    /// main thread 여부·창 종류는 그 프로세스에서 안 바뀐다). 리눅스·Windows 는 이
+    /// variant 를 만든다.
+    // 분류를 린트에 맞춰 바꾸지 않는다 — macOS 에서 그 셋은 실제로 영구 실패이고,
+    // 되돌리면 호출부가 영구 실패를 무한 재시도한다. 다른 조합에는 안 붙여서, 그쪽에서
+    // 생성처가 사라지면 그때는 깨지게 둔다.
+    // reason: macOS 조합에서만 생성처가 없고 워크스페이스가 `dead_code = "deny"` 다.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Transient(String),
     /// 이 프로세스에서는 달라지지 않는다 — 창 종류, 라이브러리 부재, 디스플레이 종류.
     /// **호출부는 이것을 보면 그 surface 를 더 시도하지 않는다.**
