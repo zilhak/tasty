@@ -20,7 +20,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preview 전용 치수 — jsx inline style 전사).
 /// `PaneTree` 의 `gap:5` — bordered pane 카드 사이의 bg-app 공백 = 상위(pane) divider.
-const PANE_GAP: f32 = 5.0;
+const PANE_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab strip `height:20`.
 const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// `Pane` 의 활성 탭 본문 `padding:3`.
@@ -28,29 +28,29 @@ const BODY_PAD: LogicalPx = LogicalPx(3.0);
 /// `SurfaceBox` 의 아이콘↔라벨 `gap:6`.
 const LEAF_GAP: f32 = 6.0;
 /// mini tab `padding:0 9px`.
-const TAB_PAD_X: f32 = 9.0;
+const TAB_PAD_X: LogicalPx = LogicalPx(9.0);
 /// mini tab 아이콘↔라벨 `gap:5`.
-const TAB_GAP: f32 = 5.0;
+const TAB_GAP: LogicalPx = LogicalPx(5.0);
 /// 편집 상태 `MiniHandle` 한 변 크기.
-const E_HANDLE_SZ: f32 = 18.0;
+const E_HANDLE_SZ: LogicalPx = LogicalPx(18.0);
 /// 편집 핸들 클러스터 모서리 inset.
-const E_HANDLE_INSET: f32 = 4.0;
+const E_HANDLE_INSET: LogicalPx = LogicalPx(4.0);
 /// inline leaf form 좌우 padding.
-const E_FORM_PAD: f32 = 6.0;
+const E_FORM_PAD: LogicalPx = LogicalPx(6.0);
 /// inline leaf form 필드 세로 gap.
-const E_FORM_GAP: f32 = 4.0;
+const E_FORM_GAP: LogicalPx = LogicalPx(4.0);
 /// inline leaf form 필드 입력 박스 높이.
-const E_FIELD_H: f32 = 20.0;
+const E_FIELD_H: LogicalPx = LogicalPx(20.0);
 /// inline leaf form 라벨 높이.
-const E_LABEL_H: f32 = 12.0;
+const E_LABEL_H: LogicalPx = LogicalPx(12.0);
 /// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
 const ADD_TAB_W: LogicalPx = LogicalPx(22.0);
 /// mini tab close `×` 히트영역 한 변(14×14).
-const CLOSE_HIT: f32 = 14.0;
+const CLOSE_HIT: LogicalPx = LogicalPx(14.0);
 /// close `×` 왼쪽 margin(라벨과의 간격).
-const CLOSE_MARGIN: f32 = 1.0;
+const CLOSE_MARGIN: LogicalPx = LogicalPx(1.0);
 /// close `×` 노출 시 탭 우측 패딩(9→3 축소).
-const CLOSE_TAB_PAD: f32 = 3.0;
+const CLOSE_TAB_PAD: LogicalPx = LogicalPx(3.0);
 /// 경계 split 존 밴드 폭 비율(변 기준 바깥 30%).
 const SPLIT_ZONE_EDGE: f32 = 0.3;
 /// leaf 값 요약 표시 임계(본체 `demo_layout.rs` 와 동일 구조 상수). 빈 leaf 박스가
@@ -271,32 +271,32 @@ fn split_rects(
     rect: egui::Rect,
     row: bool,
     ratio: f32,
-    divider: f32,
+    divider: LogicalPx,
 ) -> (egui::Rect, egui::Rect, egui::Rect) {
     if row {
-        let avail = (rect.width() - divider).max(0.0);
+        let avail = (LogicalPx(rect.width()) - divider).max(LogicalPx(0.0));
         let fw = avail * ratio;
-        let first = egui::Rect::from_min_size(rect.min, egui::vec2(fw, rect.height()));
+        let first = egui::Rect::from_min_size(rect.min, egui::vec2(fw.value(), rect.height()));
         let mid = egui::Rect::from_min_size(
-            egui::pos2(rect.min.x + fw, rect.min.y),
-            egui::vec2(divider, rect.height()),
+            egui::pos2(rect.min.x + fw.value(), rect.min.y),
+            egui::vec2(divider.value(), rect.height()),
         );
         let second = egui::Rect::from_min_size(
-            egui::pos2(rect.min.x + fw + divider, rect.min.y),
-            egui::vec2(avail - fw, rect.height()),
+            egui::pos2(rect.min.x + (fw + divider).value(), rect.min.y),
+            egui::vec2((avail - fw).value(), rect.height()),
         );
         (first, mid, second)
     } else {
-        let avail = (rect.height() - divider).max(0.0);
+        let avail = (LogicalPx(rect.height()) - divider).max(LogicalPx(0.0));
         let fh = avail * ratio;
-        let first = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), fh));
+        let first = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), fh.value()));
         let mid = egui::Rect::from_min_size(
-            egui::pos2(rect.min.x, rect.min.y + fh),
-            egui::vec2(rect.width(), divider),
+            egui::pos2(rect.min.x, rect.min.y + fh.value()),
+            egui::vec2(rect.width(), divider.value()),
         );
         let second = egui::Rect::from_min_size(
-            egui::pos2(rect.min.x, rect.min.y + fh + divider),
-            egui::vec2(rect.width(), avail - fh),
+            egui::pos2(rect.min.x, rect.min.y + (fh + divider).value()),
+            egui::vec2(rect.width(), (avail - fh).value()),
         );
         (first, mid, second)
     }
@@ -314,7 +314,7 @@ fn draw_surf(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Surf) {
             first,
             second,
         } => {
-            let (r1, line, r2) = split_rects(rect, *row, *ratio, theme.border_width.value());
+            let (r1, line, r2) = split_rects(rect, *row, *ratio, theme.border_width);
             draw_surf(ui, theme, r1, first);
             ui.painter_at(rect)
                 .rect_filled(line, 0.0, theme.border_default().to_egui());
@@ -358,7 +358,7 @@ fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &D
         ui,
         leaf.kind.icon(),
         egui::pos2(cx_x, y + icon * 0.5),
-        icon,
+        LogicalPx(icon),
         leaf.kind.accent(theme),
     );
     y += icon;
@@ -490,14 +490,16 @@ fn draw_pane_card(
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
-    let icon_sz = theme.icon_glyph_size_sm.value();
-    let mut x = strip.min.x;
+    let icon_sz = theme.icon_glyph_size_sm;
+    let mut x = LogicalPx(strip.min.x);
     for (i, t) in tabs.iter().enumerate() {
         let on = i == active;
-        let lw = text_width(ui, t.name, tab_font.clone());
+        let lw = LogicalPx(text_width(ui, t.name, tab_font.clone()));
         let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X;
-        let tab_rect =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H.value()));
+        let tab_rect = egui::Rect::from_min_size(
+            egui::pos2(x.value(), strip.min.y),
+            egui::vec2(tw.value(), STRIP_H.value()),
+        );
         if on {
             p.rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
             // 2px accent 하단 bar.
@@ -506,16 +508,16 @@ fn draw_pane_card(
                     tab_rect.min.x,
                     tab_rect.max.y - theme.tab_indicator_width.value(),
                 ),
-                egui::vec2(tw, theme.tab_indicator_width.value()),
+                egui::vec2(tw.value(), theme.tab_indicator_width.value()),
             );
             p.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
         }
         if i > 0 {
             // 탭 사이 separator (borderRight).
-            p.vline(x, strip.y_range(), egui::Stroke::new(bw, sep));
+            p.vline(x.value(), strip.y_range(), egui::Stroke::new(bw, sep));
         }
         let icon_c = egui::pos2(
-            tab_rect.min.x + TAB_PAD_X + icon_sz * 0.5,
+            tab_rect.min.x + (TAB_PAD_X + icon_sz.scaled(0.5)).value(),
             tab_rect.center().y,
         );
         let icon_color = if on {
@@ -526,7 +528,7 @@ fn draw_pane_card(
         paint_glyph(ui, tab_kind(t).icon(), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + TAB_PAD_X + icon_sz + TAB_GAP,
+                tab_rect.min.x + (TAB_PAD_X + icon_sz + TAB_GAP).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -604,7 +606,7 @@ fn draw_surf_edit(
             first,
             second,
         } => {
-            let (r1, line, r2) = split_rects(rect, *row, *ratio, theme.border_width.value());
+            let (r1, line, r2) = split_rects(rect, *row, *ratio, theme.border_width);
             draw_surf_edit(ui, theme, r1, first, w);
             ui.painter_at(rect)
                 .rect_filled(line, 0.0, theme.border_default().to_egui());
@@ -636,7 +638,7 @@ fn draw_surface_box_edit(
             ui,
             kind.icon(),
             egui::pos2(rect.center().x, icon_cy),
-            icon,
+            LogicalPx(icon),
             kind.accent(theme),
         );
         ui.painter_at(rect).text(
@@ -677,10 +679,10 @@ fn draw_surface_box_edit(
 fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let remove = egui::Rect::from_min_size(
         egui::pos2(
-            rect.max.x - E_HANDLE_INSET - E_HANDLE_SZ,
-            rect.min.y + E_HANDLE_INSET,
+            rect.max.x - (E_HANDLE_INSET + E_HANDLE_SZ).value(),
+            rect.min.y + E_HANDLE_INSET.value(),
         ),
-        egui::vec2(E_HANDLE_SZ, E_HANDLE_SZ),
+        egui::vec2(E_HANDLE_SZ.value(), E_HANDLE_SZ.value()),
     );
     mini_handle_mock(ui, theme, remove, icons::TRASH, true);
 }
@@ -721,16 +723,16 @@ fn mini_handle_mock(
     } else {
         theme.text_secondary().to_egui()
     };
-    paint_glyph(ui, glyph, rect.center(), E_HANDLE_SZ * 0.62, color);
+    paint_glyph(ui, glyph, rect.center(), E_HANDLE_SZ.scaled(0.62), color);
 }
 
 /// inline leaf form mock — kind 별 선언 필드를 generic 하게 렌더한 결과를 전사한다
 /// (본체 `draw_leaf_form` 이 registry `preset_fields` 를 순회 렌더 — parity).
 /// terminal 은 cwd + startup, markdown 은 파일 경로(cwd 없음), 그 외는 cwd.
 fn draw_leaf_form_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind: Kind) {
-    let inner_w = (rect.width() - E_FORM_PAD * 2.0).max(0.0);
-    let mut y = rect.min.y + E_HANDLE_INSET * 2.0 + E_HANDLE_SZ;
-    let x = rect.center().x - inner_w * 0.5;
+    let inner_w = (LogicalPx(rect.width()) - E_FORM_PAD.scaled(2.0)).max(LogicalPx(0.0));
+    let mut y = LogicalPx(rect.min.y) + E_HANDLE_INSET.scaled(2.0) + E_HANDLE_SZ;
+    let x = LogicalPx(rect.center().x) - inner_w.scaled(0.5);
     let fields: &[(&str, &str)] = match kind {
         Kind::Terminal => &[
             ("KIND", "Terminal"),
@@ -742,18 +744,21 @@ fn draw_leaf_form_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind:
         _ => &[("KIND", "Editor"), ("CWD", "~/tasty")],
     };
     for (label, value) in fields {
-        if y + E_LABEL_H + E_FIELD_H > rect.max.y - E_FORM_PAD {
+        if y + E_LABEL_H + E_FIELD_H > LogicalPx(rect.max.y) - E_FORM_PAD {
             break;
         }
         ui.painter_at(rect).text(
-            egui::pos2(x, y),
+            egui::pos2(x.value(), y.value()),
             egui::Align2::LEFT_TOP,
             label,
             egui::FontId::monospace(theme.font_size_micro.value()),
             theme.text_muted().to_egui(),
         );
         y += E_LABEL_H;
-        let fr = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(inner_w, E_FIELD_H));
+        let fr = egui::Rect::from_min_size(
+            egui::pos2(x.value(), y.value()),
+            egui::vec2(inner_w.value(), E_FIELD_H.value()),
+        );
         ui.painter_at(rect).rect(
             fr,
             theme.corner_radius.value(),
@@ -762,7 +767,7 @@ fn draw_leaf_form_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind:
             egui::StrokeKind::Inside,
         );
         ui.painter_at(fr).text(
-            egui::pos2(fr.min.x + E_FORM_PAD, fr.center().y),
+            egui::pos2(fr.min.x + E_FORM_PAD.value(), fr.center().y),
             egui::Align2::LEFT_CENTER,
             value,
             egui::FontId::monospace(theme.font_size_caption.value()),
@@ -954,19 +959,21 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
-    let icon_sz = theme.icon_glyph_size_sm.value();
+    let icon_sz = theme.icon_glyph_size_sm;
     // (kind, name, active, hovered) — active/hover 탭이 close `×` 를 노출한다(탭 2개 → 가드 통과).
     let tabs: &[(Kind, &str, bool, bool)] = &[
         (Kind::Editor, "edit", true, false),
         (Kind::Terminal, "term", false, true),
     ];
-    let mut x = strip.min.x;
+    let mut x = LogicalPx(strip.min.x);
     for (i, (kind, name, on, hovered)) in tabs.iter().enumerate() {
-        let lw = text_width(ui, name, tab_font.clone());
+        let lw = LogicalPx(text_width(ui, name, tab_font.clone()));
         // × 예약: 편집 && 탭>1 → 우측 패딩 9→3 + marginLeft 1 + 14 close.
         let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD;
-        let tab_rect =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H.value()));
+        let tab_rect = egui::Rect::from_min_size(
+            egui::pos2(x.value(), strip.min.y),
+            egui::vec2(tw.value(), STRIP_H.value()),
+        );
         let p = ui.painter_at(strip);
         if *on {
             p.rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
@@ -975,15 +982,15 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
                     tab_rect.min.x,
                     tab_rect.max.y - theme.tab_indicator_width.value(),
                 ),
-                egui::vec2(tw, theme.tab_indicator_width.value()),
+                egui::vec2(tw.value(), theme.tab_indicator_width.value()),
             );
             p.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
         }
         if i > 0 {
-            p.vline(x, strip.y_range(), egui::Stroke::new(bw, sep));
+            p.vline(x.value(), strip.y_range(), egui::Stroke::new(bw, sep));
         }
         let icon_c = egui::pos2(
-            tab_rect.min.x + TAB_PAD_X + icon_sz * 0.5,
+            tab_rect.min.x + (TAB_PAD_X + icon_sz.scaled(0.5)).value(),
             tab_rect.center().y,
         );
         let icon_color = if *on {
@@ -994,7 +1001,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         paint_glyph(ui, kind.icon(), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + TAB_PAD_X + icon_sz + TAB_GAP,
+                tab_rect.min.x + (TAB_PAD_X + icon_sz + TAB_GAP).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -1009,10 +1016,10 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         // close `×` — active/hover 탭에 노출. hover 예시 = overlay-active fill + text-primary.
         let close_rect = egui::Rect::from_min_size(
             egui::pos2(
-                tab_rect.max.x - CLOSE_TAB_PAD - CLOSE_HIT,
-                tab_rect.center().y - CLOSE_HIT * 0.5,
+                tab_rect.max.x - (CLOSE_TAB_PAD + CLOSE_HIT).value(),
+                tab_rect.center().y - CLOSE_HIT.scaled(0.5).value(),
             ),
-            egui::vec2(CLOSE_HIT, CLOSE_HIT),
+            egui::vec2(CLOSE_HIT.value(), CLOSE_HIT.value()),
         );
         let close_color = if *hovered {
             ui.painter_at(strip).rect_filled(
@@ -1028,7 +1035,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             ui,
             icons::CLOSE,
             close_rect.center(),
-            CLOSE_HIT * 0.5,
+            CLOSE_HIT.scaled(0.5),
             close_color,
         );
         x += tw;
@@ -1036,7 +1043,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 
     // add-tab `+` — hover 상태 예시(overlay-hover fill + text-secondary).
     let add = egui::Rect::from_min_size(
-        egui::pos2(x, strip.min.y),
+        egui::pos2(x.value(), strip.min.y),
         egui::vec2(ADD_TAB_W.value(), STRIP_H.value()),
     );
     ui.painter_at(strip)
@@ -1106,11 +1113,11 @@ fn paint_glyph(
     ui: &mut egui::Ui,
     glyph: MockGlyph,
     center: egui::Pos2,
-    size: f32,
+    size: LogicalPx,
     color: egui::Color32,
 ) {
-    let r = egui::Rect::from_center_size(center, egui::vec2(size, size));
-    glyph.image(size, color).paint_at(ui, r);
+    let r = egui::Rect::from_center_size(center, egui::vec2(size.value(), size.value()));
+    glyph.image(size.value(), color).paint_at(ui, r);
 }
 
 fn text_width(ui: &egui::Ui, text: &str, font: egui::FontId) -> f32 {
