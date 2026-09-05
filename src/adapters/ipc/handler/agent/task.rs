@@ -521,10 +521,11 @@ pub fn await_task_blocking(
 
     // 1. 현 state snapshot.
     let snap_opt: Option<TerminalSnapshot> = {
-        let mut guard = match memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
         let store = tasty_agent::TaskStore::new(&mut *guard, HOST_OWNER, agent_seq.as_ref());
         match store.get(workspace_id, &task_id) {
             Ok(Some(t)) => Some(TerminalSnapshot {

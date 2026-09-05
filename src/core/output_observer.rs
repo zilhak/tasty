@@ -555,10 +555,11 @@ fn run_memory_sink(
             "data": item.data,
             "at_ms": now,
         });
-        let mut guard = match memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
         let put_result = guard.put(
             HOST_OWNER,
             &Scope::Global,

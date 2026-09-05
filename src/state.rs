@@ -1057,10 +1057,11 @@ impl AppState {
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
     ) -> R {
-        let mut guard = match self.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            self.memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
         f(&mut *guard)
     }
 

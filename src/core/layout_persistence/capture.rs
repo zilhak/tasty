@@ -230,10 +230,11 @@ impl SavedSurface {
     ) -> Self {
         let surface_id = ts.id;
         let restore_command = {
-            let mut guard = match ctx.memory.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let mut guard = crate::poison::recover_mutex(
+                ctx.memory.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
             crate::surface_meta::SurfaceMetaStore::get(&mut *guard, surface_id, "restore.command")
         };
         let cwd = ctx

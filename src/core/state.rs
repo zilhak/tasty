@@ -973,10 +973,11 @@ impl CoreState {
         let mem = self.memory.clone();
         let t_inject = std::time::Instant::now();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            let mut guard = match mem.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let mut guard = crate::poison::recover_mutex(
+                mem.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
             crate::surface_meta::SurfaceMetaStore::get(&mut *guard, sid, "restore.command")
         });
         timings.restore_inject = t_inject.elapsed();
