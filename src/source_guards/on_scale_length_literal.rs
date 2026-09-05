@@ -130,7 +130,8 @@ const AREAS: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-gallery/",
         98,
-        "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다",
+        "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
+         한 항목이 아니다: 갈래는 `the_gallery_share_is_one_question_or_it_is_not` 가 든다",
     ),
     ("crates/tasty-ui-widgets/", 4, "공용 위젯"),
     (
@@ -338,6 +339,51 @@ fn area_of(rel: &str) -> Option<&'static str> {
         .map(|(p, _, _)| *p)
 }
 
+/// 한 자리에 **붙어 있는 주석 블록**. 선언 줄 바로 위의 연속된 `//`·`///` 줄이다.
+///
+/// 입력은 [`mask_literals`] 를 거친 사본이어야 한다 — 문자열만 덮고 **주석은 남긴다.**
+/// [`mask_non_code`] 와 판정기가 다른 이유는 물음이 다르기 때문이다: 저쪽은 "코드에 X 가
+/// 있나", 이쪽은 "**주석이 달려 있나**". 저 판정기로 물으면 주석이 통째로 사라져 답이
+/// 항상 "없다" 가 된다.
+fn attached_comment(masked_literals: &str, line: usize) -> String {
+    let lines: Vec<&str> = masked_literals.lines().collect();
+    let mut out: Vec<&str> = Vec::new();
+    let mut i = line.saturating_sub(1);
+    while i > 0 {
+        let t = lines.get(i - 1).map_or("", |l| l.trim());
+        if t.starts_with("//") {
+            out.push(t);
+            i -= 1;
+        } else {
+            break;
+        }
+    }
+    out.reverse();
+    out.join("\n")
+}
+
+/// 그 자리가 **디자인 산출물을 출처로 인용하는가.** 갤러리 specimen 은 디자인의 구조를
+/// 1:1 로 전사하는 곳이라(`docs/design/systems/design-parity-notes.md` 의 구조 전사),
+/// 거기서 나온 고정 치수는 스케일에서 뽑은 값이 아니라 **디자인이 그 자리에 정한 수**다.
+fn cites_the_design(comment: &str) -> bool {
+    const MARKS: &[&str] = &["jsx", "디자인", "시안", "design"];
+    let lower = comment.to_lowercase();
+    MARKS.iter().any(|m| lower.contains(m))
+}
+
+/// 그 줄이 **이름 붙은 치수를 선언**하는가(`const W: LogicalPx = LogicalPx(150.0);`).
+///
+/// 이름이 붙은 치수와 호출 인자에 그대로 박힌 수는 성질이 다르다. 앞쪽은 그 파일이 그
+/// 수를 **하나의 치수로 인정**하고 이름과 사유를 붙인 것이고, 뒤쪽은 자리에 스며든
+/// 여백이다. 처방도 다르다 — 뒤쪽은 테마 이름으로 옮기면 끝이지만, 앞쪽은 그 치수에
+/// 대응하는 이름이 있어야 옮길 수 있다.
+fn declares_a_named_dimension(masked: &str, line: usize) -> bool {
+    let Some(text) = masked.lines().nth(line.saturating_sub(1)) else {
+        return false;
+    };
+    text.contains("const ") && (text.contains(": LogicalPx =") || text.contains(": PhysicalPx ="))
+}
+
 #[test]
 fn every_on_scale_literal_lives_inside_a_recorded_area() {
     let hits = judged();
@@ -381,6 +427,53 @@ fn every_area_holds_exactly_the_count_it_records() {
         "래칫이 실측과 어긋났다. 늘었으면 새 위반이고, **줄었으면 그 수를 같이 내려라** \
          — 남는 여유가 곧 안 보는 구간이다:\n{}",
         lines.join("\n")
+    );
+}
+
+/// 갤러리 몫이 **한 물음인가**를 잰다. 래칫의 3 분의 1 이 갤러리 한 자리에 있어서,
+/// 그 몫이 단일 항목이 아니면 분모가 틀린 것이다.
+///
+/// 두 성질로 가른다 — 그 자리가 **디자인을 출처로 인용하는가**와, 그 파일이 **토큰
+/// 이름을 이미 쓰는가**. 뒤쪽이 참인데 앞쪽도 참이면 "짝 중 한쪽만 테마" 이고, 뒤쪽이
+/// 거짓이면 그 파일은 애초에 토큰을 소비하는 자리가 아니다.
+#[test]
+fn the_gallery_share_is_one_question_or_it_is_not() {
+    let files = rust_sources();
+    let hits = judged();
+    let (mut named_cited, mut named_plain) = (0usize, 0usize);
+    let (mut inline_cited, mut inline_plain) = (0usize, 0usize);
+    let mut with_comment = 0usize;
+    for h in hits
+        .iter()
+        .filter(|h| h.rel.starts_with("crates/tasty-gallery/"))
+    {
+        let raw = files
+            .iter()
+            .find(|(p, _)| p.to_string_lossy().replace('\\', "/") == h.rel)
+            .map_or("", |(_, t)| t.as_str());
+        let comment = attached_comment(&tasty_doc_guards::source_text::mask_literals(raw), h.line);
+        if !comment.is_empty() {
+            with_comment += 1;
+        }
+        let named = declares_a_named_dimension(&mask_non_code(raw), h.line);
+        match (named, cites_the_design(&comment)) {
+            (true, true) => named_cited += 1,
+            (true, false) => named_plain += 1,
+            (false, true) => inline_cited += 1,
+            (false, false) => inline_plain += 1,
+        }
+    }
+    // R435 하한 — 주석 추출이 죽으면 `cites_the_design` 이 전부 거짓이 되고 이 단정은
+    // 언제나 참이 된다. 그 상태의 0 은 "인용이 없다" 가 아니라 "안 읽었다" 다.
+    assert!(
+        with_comment >= 40,
+        "주석이 붙은 자리가 {with_comment} 개뿐이다 — 주석 추출이 죽었다"
+    );
+    assert_eq!(
+        (named_cited, named_plain, inline_cited, inline_plain),
+        (22, 54, 1, 21),
+        "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
+         처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
 }
 
