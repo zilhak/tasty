@@ -170,8 +170,14 @@ closure_of() {
 }
 
 # 이 plugin 의 폐포에 그 크레이트가 있는가.
+#
+# **파이프로 쓰지 않는다.** `grep -q` 는 첫 일치에서 입력을 닫고, 그러면 왼쪽의
+# `closure_of`(마지막이 `cat`)가 SIGPIPE 로 죽는다 — `pipefail` 이 켜져 있으므로
+# 파이프라인 rc 가 141 이 되어 **찾았는데 못 찾은 것이 된다.** 이 함수의 반환값은
+# 판정 대상 집합을 정하므로, 뒤집히면 게이트가 조용히 반대로 판정한다.
+# 가드: tests/no_early_exit_consumer_in_shell_pipes.rs
 links() {  # <pname> <crate-name>
-    closure_of "$1" | grep -qxF "$2"
+    grep -qxF "$2" <<<"$(closure_of "$1")"
 }
 
 # 사용: materialize <라벨> <tree-ish> <crate 경로>...
