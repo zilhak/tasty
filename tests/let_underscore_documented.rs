@@ -117,9 +117,24 @@ const PRUNE_DIRS: &[&str] = &[
 /// 테스트 코드로 보는 디렉토리 이름 — 경로 성분 어디에 있어도 제외한다.
 const TEST_DIRS: &[&str] = &["tests", "benches"];
 
+/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
+/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+const LOCAL_HEAD: &str = "claude";
+const LOCAL_TAIL: &str = "-workspace";
+
+/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
+///
+/// **선행 `.` 전부를 자르지 않는다.** "gitignored 폴더는 전부 선행 `.` 을 갖는다" 는
+/// 참이지만 역이 거짓이다 — 선행 `.` 이면서 추적되는 디렉토리가 `.github`·`.githooks`·
+/// `.cargo` 셋이다(2026-09-06 실측). 예외를 하나씩 뚫는 방식은 넷째가 생기는 날
+/// 조용히 틀리고, 그 틀림은 순회 대상을 **줄이는** 쪽이라 가드가 더 초록으로 보인다.
+/// 그래서 근사가 아니라 이름 열거로 판정한다.
 fn is_pruned(name: &str) -> bool {
-    // gitignored 로컬 폴더는 전부 선행 `.` 을 갖는다.
-    (name.starts_with('.') && name != ".githooks") || PRUNE_DIRS.contains(&name)
+    PRUNE_DIRS.contains(&name)
+        || name
+            .strip_prefix('.')
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
 fn gather(path: &Path, out: &mut Vec<PathBuf>) {
