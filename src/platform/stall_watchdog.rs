@@ -138,7 +138,9 @@ pub fn set_phase(phase: Phase) {
 ///
 /// 대상은 native 모달처럼 "돌아오지 않는 것이 정상" 인 동기 호출이다. tasty 의 파일·폴더
 /// 선택(`rfd::FileDialog`)은 macOS 요구사항 때문에 메인 스레드에서 동기로 열리므로
-/// (`adapters/ipc/handler/fs.rs` 참조), 감싸지 않으면 사용자가 선택에 5 초만 써도
+/// (`src/view/plugins/ui/add.rs` 참조 — 이 호출은 **사용자 조작 경로에만** 있다.
+/// IPC 쪽 대응물이던 `fs.pick_file` 은 "돌아오지 않는 모달은 에이전트 표면이 아니다"
+/// 로 제거됐다), 감싸지 않으면 사용자가 선택에 5 초만 써도
 /// `crash-reports/` 에 "GPU driver hang suspected" 리포트가 남는다. 그러면 "그 디렉토리에
 /// 파일이 있다 = 행이 있었다" 라는 이 워치독의 전제가 무너진다.
 ///

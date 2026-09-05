@@ -2,7 +2,7 @@
 //! Preset → live workspace/tab/pane 적용.
 //!
 //! `tasty-presets` 의 데이터 모델을 받아 엔진의 mutable 상태에 instance 를 끼워넣는다.
-//! `state/restore.rs` 의 rebuild_* helpers 와 같은 패턴 (initial_input 기반 startup
+//! `src/core/restore_rebuild.rs` 의 rebuild_* helpers 와 같은 패턴 (initial_input 기반 startup
 //! command 주입, send_fast_init, ratio clamp 등). 단, focus 정책은 `ApplyOptions.focus`
 //! 로 명시 — CLI/IPC 는 false (포커스 독립), 단축키 호출만 true.
 
