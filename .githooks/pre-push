@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tasty pre-push hook — 무거운 검사 2종.
+# Tasty pre-push hook — 무거운 검사 4종 (B.4~B.7).
 #
 # 설치: `git config core.hooksPath .githooks` 1회 실행.
 # bypass: `git push --no-verify` (긴급 시).
@@ -8,6 +8,12 @@
 #   B.4  cargo clippy --workspace --all-targets -- -D clippy::correctness
 #   B.5  cargo check --workspace --all-targets
 #   B.6  cargo check --no-default-features (headless 빌드)
+#   B.7  cargo test -p tasty-doc-guards (문서 정합 통합테스트)
+#
+# 이 훅은 push 하는 머신에서만 돈다 — worker 머신엔 이 채널이 없다.
+# "worker 가 로컬에서 돌려 왔다" 는 관행은 채널이 아니다(사람마다·회차마다
+# 다르고 강제되지 않는다). doc-guards 의 자동 채널은 doc-guards.yml(main
+# push · PR) 과 통합 회차뿐이다. pre-push 는 그 앞단의 조기 발견용이다.
 
 set -e
 
@@ -46,6 +52,18 @@ fi
 yellow "▸ cargo clippy --workspace --all-targets -- -D clippy::correctness"
 if ! cargo clippy --workspace --all-targets -- -D clippy::correctness 2>&1 | tail -5; then
     red "✘ cargo clippy 실패 (correctness 그룹)"
+    FAIL=1
+fi
+
+# ────────────────────────────────────────────────────────────
+# B.7  cargo test -p tasty-doc-guards — 문서·매니페스트·인덱스 정합
+#      통합테스트. adr_index_parity / readme_badge_parity /
+#      ci_channel_claims_match_workflows 등은 pre-commit(fmt only)에는
+#      없어 여기가 로컬 조기 채널이다. 자동 채널은 doc-guards.yml.
+# ────────────────────────────────────────────────────────────
+yellow "▸ cargo test -p tasty-doc-guards"
+if ! cargo test -p tasty-doc-guards 2>&1 | tail -8; then
+    red "✘ cargo test -p tasty-doc-guards 실패 (문서 정합 깨짐)"
     FAIL=1
 fi
 
