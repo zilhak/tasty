@@ -240,9 +240,22 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 /// - plugin **제거**(`plugin.remove`) · `image.open {}` → `-32602 missing
 ///   'surface_id'` — **래퍼가 없다.** 소유가 풀려 host 가 직접 답한다
 ///
-/// headless 는 세 arm 이 전부 `#[cfg(feature = "gui")]` 라 **구현 자체가 없다** —
-/// trampoline 이 되던져도 `-32601` 이다. 조합 차이의 원인은 라우팅 순서가 **아니다**
-/// (ADR-0173 이후 두 조합 모두 forward 가 먼저다).
+/// headless 도 같은 자리에서 같은 형태로 답한다(실측 2026-09-05, 격리 홈 데몬):
+///
+/// - 실행중 · `image.open {}` → `-32017 host call 'call#1' failed: … it is gated out
+///   of this build combination (headless / release)` — **래퍼가 있다.** 세 arm 이 전부
+///   `#[cfg(feature = "gui")]` 라 trampoline 이 되던진 곳에 구현이 없고, host 가 그
+///   사실을 자기 이름을 가진 코드로 답한다(ADR-0167). 즉 조합 차이는 **arm 의 유무**이지
+///   라우팅 순서가 아니다 — ADR-0173 이후 두 조합 모두 forward 가 먼저다
+/// - 설치+비활성 · `image.list` → `-32002 plugin 'com.tasty.image' is not running` —
+///   gui 와 **같은 문구, 같은 자리**
+/// - `image.bogus` → `-32601 method 'image.bogus' not found` (plugin 문구) — 두 조합 동일
+///
+/// 제거 상태는 headless 에서 **만들 수 없다**. `plugin.remove`·`plugin.disable` 자체가
+/// 그 조합에 없어서(`-32017`) 상태 전이를 못 시킨다 — 라우팅 결함이 아니라 이미 기록된
+/// 공백이다([headless-ipc-surface](../../docs/dev-guide/headless-ipc-surface.md) 의
+/// "아직 없다 — `App` 이분이 선행이다"). 위 비활성 상태는 `plugins.toml` 을 직접 고쳐
+/// 만들었다.
 const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     (
         "image.list",
