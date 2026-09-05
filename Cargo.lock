@@ -6024,7 +6024,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6061,7 +6061,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.28"
+version = "0.1.29"
 dependencies = [
  "anyhow",
  "egui",
@@ -6128,7 +6128,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.70"
+version = "0.1.71"
 dependencies = [
  "ammonia",
  "anyhow",

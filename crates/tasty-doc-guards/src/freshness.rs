@@ -94,7 +94,8 @@ mod tests {
         assert_eq!(
             fingerprint(&lib_dir).expect("지문"),
             LIB_FINGERPRINT,
-            "구운 지문이 트리와 다르다 — build.rs 가 다시 안 돌았다(rerun-if-changed 확인)"
+            "구운 지문이 트리와 다르다 — build.rs 가 다시 안 돌았다(rerun-if-changed 확인). \
+             left = 지금 디스크에서 다시 계산한 값, right = 빌드할 때 구운 값"
         );
     }
 
