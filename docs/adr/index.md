@@ -182,3 +182,4 @@
 | 0169 | [길이 타입의 튜플 생성자는 봉인하지 않는다 — 탈출구가 곧 같은 단언이기 때문](0169-the-tuple-constructor-of-length-types-stays-open.md) | Accepted | 2026-09-05 | typed-length, geometry, guards, dpi, sealing, census |
 | 0170 | [e2e 데몬은 스위트 단위로 고르고, 배선은 만들되 기본으로 켜지 않는다](0170-e2e-daemon-is-chosen-per-suite-and-off-by-default.md) | Accepted | 2026-09-05 | testing, e2e, harness, gpu, headless, build |
 | 0171 | [호스트가 준 오류 코드는 plugin 경계를 넘어 살아남는다 — ADR-0153 의 "한 겹 감싸짐" 조항 개정](0171-a-host-error-code-survives-the-plugin-boundary.md) | Accepted | 2026-09-05 | ipc, error-codes, plugin, sdk, wire-protocol, partial-amendment, adr-0153, adr-0154, adr-0163, adr-0167 |
+| 0172 | [뒤에 로컬 정리가 있는 훅 핸들러는 host 호출 실패를 전파하지 않는다](0172-a-hook-handler-that-cleans-up-locally-does-not-propagate.md) | Accepted | 2026-09-05 | plugin, error-handling, hook, agent-integration, adr-0075, adr-0092 |

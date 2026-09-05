@@ -538,9 +538,15 @@ pub(crate) fn apply_session_start_profile(
 /// **surface 가 사라진 바로 그때** 건너뛴다 — 정리가 필요한 유일한 경우에만 정리가
 /// 안 도는 셈이다.
 ///
-/// 게다가 그 경우는 예외가 아니라 상례다: 탭을 닫으면 호스트가 레이아웃에서 surface
-/// 를 먼저 지우고 그 다음 PTY 를 떨구므로, PTY 사망이 발화시키는 `session-end` 훅은
-/// **언제나** 이미 없는 surface 를 가리킨다.
+/// 그 시나리오가 가능한 이유는 close 순서다 — 호스트가 레이아웃에서 surface 를 먼저
+/// 지우고 그 다음 PTY 를 떨구므로(`close_surface_by_id_inner` → `cleanup_surface`),
+/// PTY 사망 뒤에 도착하는 훅은 이미 없는 surface 를 가리킨다.
+///
+/// **다만 빈도는 근거가 아니다 — 오히려 드물다.** 실측에서 이 warn 을 가진 빌드가 8 일
+/// 연속 뜬 plugin 로그의 session-end 70 건 중 host 호출 실패는 0 건이었다. 그런데도
+/// 최선노력인 것은 대가가 비대칭이기 때문이다: 전파해도 훅 명령이 `|| true` 로 감싸여
+/// 있어([`crate::install::hook_command`]) 호출자에게 닿지 않는데, 대신 위 로컬 정리가
+/// 통째로 안 돈다. 수와 재는 명령은 ADR-0172.
 ///
 /// codex 의 `handle_hook` 이 `terminal.set_state` 실패를 전파하는 것은 표류가 아니라
 /// 같은 규칙의 반대편이다 — 거기엔 호출 뒤에 지킬 로컬 상태가 없다. 규칙 전문은

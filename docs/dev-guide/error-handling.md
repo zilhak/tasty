@@ -169,11 +169,16 @@ plugin 이 `host.call(...)` 로 호스트를 부르다 실패했을 때 그 실�
 그래서 **두 핸들러가 죽은 surface 에 다르게 답하는 것은 표류가 아니라 의도된 비대칭**
 이다 — 같은 훅 이벤트에 claude 는 `ok` 를, codex 는 `-32602` 를 낸다.
 
-claude 쪽이 상례라는 점이 이 비대칭을 굳힌다. 탭을 닫으면 호스트가 레이아웃에서
-surface 를 먼저 지우고(`close_surface_by_id_inner`) 그 다음 PTY 를 떨구므로
-(`cleanup_surface` → `drop_terminal`), PTY 사망이 발화시키는 `session-end` 훅은 **언제나**
-이미 없는 surface 를 가리킨다. 그 경로를 거절로 바꾸면 정상 종료마다 에이전트에게
-실패가 돌아가고, 동시에 orphan 정리가 사라진다 — 잃는 것이 둘이다.
+죽은 surface 에 훅이 도착하는 것 자체는 close 순서 때문에 가능하다 — 호스트가
+레이아웃에서 surface 를 먼저 지우고(`close_surface_by_id_inner`) 그 다음 PTY 를
+떨구므로(`cleanup_surface` → `drop_terminal`), PTY 사망 뒤에 도착하는 훅은 이미 없는
+surface 를 가리킨다.
+
+**빈도는 판정 근거가 아니다 — 실측에서 오히려 드물었다**(8 일 연속 뜬 plugin 로그의
+session-end 70 건 중 host 호출 실패 0 건). 그래도 claude 가 전파하지 않는 것은 대가가
+비대칭이기 때문이다: 전파해도 훅 명령이 `|| true` 로 감싸여 있어 호출자에게 닿지 않는데,
+대신 orphan 정리가 통째로 안 돈다. 수와 재는 명령은
+[ADR-0172](../adr/0172-a-hook-handler-that-cleans-up-locally-does-not-propagate.md).
 
 대신 최선노력 쪽에는 대가가 있다: **응답이 그 사실을 말하지 않는다.** claude 의 훅 응답은
 host 호출이 전부 실패해도 surface 가 살아 있을 때와 바이트가 같고, 실패의 유일한 흔적은
