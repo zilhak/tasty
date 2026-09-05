@@ -15,36 +15,122 @@
 //! 모든 호스트 호출은 `host.call(...)`을 통해 동기로 이루어진다.
 
 use serde_json::{Map, Value, json};
+use tasty_plugin_agent_common::children::{indices_with, join_indices, state_of};
+use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks};
+use tasty_plugin_agent_common::params::{TargetSurfaceError, forward, target_surface};
+use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
-/// 응답 매핑 헬퍼: HostHandle::call 결과를 IpcMethodError로 변환.
-fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
-    host.call(method, params)
-        .map_err(|e| IpcMethodError::new(format!("host call '{method}' failed: {e}")))
+/// 번역된 틀에 `{토큰}` 을 채운다. `Translator::t_replace` 는 토큰 하나만 받으므로
+/// 둘 이상인 문구를 위해 둔다 — 호출자가 `.replace` 사슬을 손으로 쓰면 한 토큰을
+/// 빠뜨려도 컴파일이 통과해 `{surface}` 가 그대로 사용자에게 나간다.
+pub(crate) fn t_args(tr: &Translator, key: &str, pairs: &[(&str, &str)]) -> String {
+    let mut out = tr.t(key).to_string();
+    for (token, value) in pairs {
+        out = out.replace(token, value);
+    }
+    out
 }
 
-fn require_u32(params: &Value, key: &str) -> Result<u32, IpcMethodError> {
-    params
-        .get(key)
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params(&format!("missing '{key}'")))
+/// 응답 매핑 헬퍼: `HostHandle::call` 결과를 `IpcMethodError` 로 변환.
+///
+/// **문구를 다시 감싸지 않는다.** `PluginError::HostCall` 의 Display 가 이미
+/// `host call '<method>' failed: <message>` 라, 여기서 같은 틀로 한 번 더 감싸면
+/// 사용자에게 그 접두가 두 번 나간다(실측: `host call 'terminal.tell' failed:
+/// host call 'call#1' failed: no live surface 9999`). 형제 plugin(claude)은
+/// 처음부터 `From` 만 쓴다.
+fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
+    host.call(method, params).map_err(IpcMethodError::from)
+}
+
+/// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
+///
+/// `as u32` 로 자르면 `4_294_967_297` 이 `1` 이 되고 `5_000_000_000` 이
+/// `705_032_704` 가 된다. 둘 다 **실재할 수 있는 다른 surface 의 id** 다 — 못 읽는
+/// 값이 조용히 남의 터미널로 배달된다. 자르지 말고 거부한다.
+///
+/// 메시지도 가른다. 키가 아예 없는 것은 호출자가 인자를 빠뜨린 것이고, 값이 왔는데
+/// 안 읽히는 것은 오타이거나 타입이 틀린 것이다 — "missing" 이라고 답하면 호출자가
+/// 자기가 준 값을 안 의심한다.
+pub(crate) fn require_u32(
+    params: &Value,
+    key: &str,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
+        return Err(IpcMethodError::invalid_params(&tr.t_replace(
+            "codex.params.missing",
+            "{key}",
+            key,
+        )));
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&t_args(
+                tr,
+                "codex.params.not_a_number",
+                &[("{key}", key), ("{raw}", &raw.to_string())],
+            ))
+        })
+}
+
+/// 대상 parent surface — 판정은 [`tasty_plugin_agent_common::params::target_surface`]
+/// 한 벌이고, 여기서는 그 실패를 **codex 카탈로그의 문구로** 옮기기만 한다.
+///
+/// 이 저장소는 같은 물음에 **세 가지 답**을 갖고 있었다: claude 는 `surface_id` 만,
+/// 여기 handlers 는 `surface` 만, `reboot.rs` 는 둘 다(먼저 온 것). 세 번째만 옳았고
+/// 그것도 두 값이 다를 때를 안 봤다. 판정을 한 벌로 모으는 것이 이 정정의 전부다.
+pub(crate) fn optional_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<Option<u32>, IpcMethodError> {
+    target_surface(params).map_err(|e| match e {
+        TargetSurfaceError::Malformed { key, raw } => IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.not_a_number",
+            &[("{key}", key), ("{raw}", &raw)],
+        )),
+        TargetSurfaceError::Conflict {
+            surface,
+            surface_id,
+        } => IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.surface_conflict",
+            &[
+                ("{surface}", &surface.to_string()),
+                ("{surface_id}", &surface_id.to_string()),
+            ],
+        )),
+    })
+}
+
+pub(crate) fn require_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    optional_target_surface(params, tr)?.ok_or_else(|| {
+        IpcMethodError::invalid_params(&tr.t_replace("codex.params.missing", "{key}", "surface"))
+    })
+}
+
+/// 호스트로 넘길 params 에 대상 surface 를 싣는다 — 실패 문구만 codex 것으로 옮긴다.
+///
+/// 호출자가 아무 이름도 안 줬으면 아무것도 안 싣는다: 호스트의 유일-parent 폴백이
+/// 곧 `--surface` 생략 동작이라, 여기서 값을 지어내면 그 동작이 사라진다.
+fn put_target_surface(
+    dst: &mut serde_json::Map<String, Value>,
+    params: &Value,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    if let Some(surface) = optional_target_surface(params, tr)? {
+        dst.insert("surface".into(), json!(surface));
+    }
+    Ok(())
 }
 
 fn optional_str(params: &Value, key: &str) -> Option<String> {
     params.get(key).and_then(|v| v.as_str()).map(String::from)
-}
-
-/// 요청 params 에서 지정한 키들을 존재할 때만 그대로 새 Map 에 복사한다. 자식
-/// 관리 명령을 호스트 `terminal.*` 로 위임할 때 CLI 인자를 pass-through 하는 용도.
-fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
-    let mut out = Map::new();
-    for k in keys {
-        if let Some(v) = params.get(*k) {
-            out.insert((*k).to_string(), v.clone());
-        }
-    }
-    out
 }
 
 /// codex 명령을 PTY로 보낼 문자열을 만든다. prompt가 있으면 임시 파일에 써서
@@ -76,24 +162,16 @@ fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
 /// `--dangerously-bypass-approvals-and-sandbox` 조각(또는 빈 문자열)이다 — 승인
 /// 프롬프트가 자동화 흐름에서 자식을 영구히 멈추게 하는 문제
 /// (docs/plugins/codex/index.md 의 승인/샌드박스 정책 플래그 절 참조)의 해결책.
-/// prompt 임시파일 이름 prefix/suffix — 정리 스윕(`sweep_stale_prompt_files`)이 같은
-/// 패턴으로 자기 파일만 매칭하도록 상수로 뽑아 공유한다. claude 쪽
-/// (`tasty-prompt-{surface_id}.txt`)과 파일명이 겹치지 않도록 codex 전용 prefix 를
-/// 쓴다 — 두 plugin 이 같은 surface_id 로 동시에 다른 자식(claude/codex)을 spawn
-/// 할 수 있다.
+/// prompt 임시파일 이름 prefix. 청소 스윕(`prompt_file::sweep_stale`)이 같은 패턴으로
+/// 자기 파일만 매칭하도록 상수로 뽑는다. claude 쪽(`tasty-prompt-` prefix)과
+/// 파일명이 겹치지 않도록 codex 전용 prefix 를 쓴다 — 두 plugin 이 같은 surface_id 로
+/// 동시에 다른 자식(claude/codex)을 spawn 할 수 있다. suffix·TTL·쓰기·스윕은
+/// `tasty-plugin-agent-common` 이 갖고, **prefix 만** 여기 남는다.
 const PROMPT_FILE_PREFIX: &str = "tasty-codex-prompt-";
-const PROMPT_FILE_SUFFIX: &str = ".txt";
-
-/// prompt 임시파일이 생성된 뒤 이만큼 지나면 다음 spawn 시점에 청소 대상이 된다.
-/// 자식 셸이 `$(cat '<path>')` 치환을 끝내는 데는 보통 수 ms~수 초면 충분하므로,
-/// 10분이면 그 시간을 넉넉히 넘겨 "아직 안 읽었는데 지워지는" 레이스를 사실상
-/// 배제한다.
-const PROMPT_FILE_TTL: std::time::Duration = std::time::Duration::from_secs(600);
-
 /// 파일 정리 시점: 자식이 `$(cat ...)` 로 이 파일을 다 읽은 순간을 tasty 가 알
 /// 방법이 없다(`surface.send` 는 fire-and-forget 텍스트 주입) — 쓰자마자 지우면
-/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 [`PROMPT_FILE_TTL`] 을 넘긴
-/// 이전 파일들을 먼저 청소한다(`sweep_stale_prompt_files`) — 지연 삭제.
+/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 TTL 을 넘긴 이전 파일들을
+/// 먼저 청소한다(`prompt_file::sweep_stale`) — 지연 삭제.
 /// 권한은 생성 시점부터 0600(owner-only, Unix) 으로 좁힌다 — 생성 후 별도
 /// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
 /// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
@@ -107,11 +185,9 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) 
     match prompt {
         Some(p) if !p.is_empty() => {
             let temp_dir = std::env::temp_dir();
-            sweep_stale_prompt_files(&temp_dir);
-            let prompt_path = temp_dir.join(format!(
-                "{PROMPT_FILE_PREFIX}{surface_id}{PROMPT_FILE_SUFFIX}"
-            ));
-            if let Err(e) = write_prompt_file(&prompt_path, p) {
+            prompt_file::sweep_stale(&temp_dir, PROMPT_FILE_PREFIX);
+            let prompt_path = prompt_file::path_for(&temp_dir, PROMPT_FILE_PREFIX, surface_id);
+            if let Err(e) = prompt_file::write(&prompt_path, p) {
                 tracing::warn!("Failed to write codex prompt file: {e}");
             }
             format!(
@@ -123,86 +199,26 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) 
     }
 }
 
-/// `path` 를 owner-only(0600) 권한으로 새로 만들어 `content` 를 쓴다. 같은 경로에
-/// 이전 실행이 남긴 파일이 있으면(과거 버전이 좁히지 않은 권한으로 만들었을 수
-/// 있는 파일 포함) 먼저 지우고 다시 만든다 — `OpenOptions::mode` 는 파일을 실제로
-/// *생성*하는 순간에만 적용되고, 이미 존재하는 파일을 여는 경우엔 기존 권한이
-/// 그대로 유지되기 때문이다(재사용 시 권한이 좁혀지지 않는 구멍을 막는다).
-fn write_prompt_file(path: &Path, content: &str) -> std::io::Result<()> {
-    // 없는 파일을 지우려는 실패(가장 흔한 경우 — 이전 실행 잔재가 없음)를 포함해
-    // 결과를 신경 쓰지 않는다: 존재하든 안 하든 바로 이어지는 `create(true)` 가
-    // 최종적으로 원하는 상태(0600 새 파일)를 만든다.
-    let _ = std::fs::remove_file(path);
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(content.as_bytes())
-    }
-    #[cfg(not(unix))]
-    {
-        // Windows 는 Unix mode 개념이 없다 — ACL 기반 권한 좁히기는 이 변경의
-        // 범위 밖(별도 작업 필요), 기존 `std::fs::write` 기본 동작 그대로 둔다.
-        std::fs::write(path, content)
-    }
-}
-
-/// `dir` 안에서 `PROMPT_FILE_PREFIX`/`PROMPT_FILE_SUFFIX` 패턴에 매칭하고
-/// `PROMPT_FILE_TTL` 보다 오래된(mtime 기준) 파일을 best-effort 로 지운다 —
-/// 매 spawn 마다 호출되는 지연 삭제 방식(무기한 누적 방지). 읽기/삭제 실패는
-/// 무시한다: 디렉터리 목록 경합, 동시에 다른 프로세스가 아직 참조 중인 파일 등은
-/// spawn 자체를 막을 이유가 아니다 — 대신 `tracing::debug!` 로 남긴다.
-fn sweep_stale_prompt_files(dir: &Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::debug!(
-                "prompt tempfile sweep: read_dir({}) failed: {e}",
-                dir.display()
-            );
-            return;
-        }
-    };
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.starts_with(PROMPT_FILE_PREFIX) || !name.ends_with(PROMPT_FILE_SUFFIX) {
-            continue;
-        }
-        let is_stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .and_then(|modified| {
-                now.duration_since(modified)
-                    .map_err(|e| std::io::Error::other(e.to_string()))
-            })
-            .is_ok_and(|age| age >= PROMPT_FILE_TTL);
-        if is_stale && let Err(e) = std::fs::remove_file(entry.path()) {
-            tracing::debug!(
-                "prompt tempfile sweep: remove({:?}) failed: {e}",
-                entry.path()
-            );
-        }
-    }
-}
-
 const VALID_APPROVAL_POLICIES: &[&str] = &["untrusted", "on-request", "never"];
 const VALID_SANDBOX_MODES: &[&str] = &["read-only", "workspace-write", "danger-full-access"];
 
-fn validate_choice(flag_name: &str, value: &str, valid: &[&str]) -> Result<(), IpcMethodError> {
+fn validate_choice(
+    flag_name: &str,
+    value: &str,
+    valid: &[&str],
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
     if valid.contains(&value) {
         Ok(())
     } else {
-        Err(IpcMethodError::invalid_params(&format!(
-            "invalid '{flag_name}' value '{value}' (expected one of: {})",
-            valid.join(", ")
+        Err(IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.invalid_choice",
+            &[
+                ("{flag}", flag_name),
+                ("{value}", value),
+                ("{valid}", &valid.join(", ")),
+            ],
         )))
     }
 }
@@ -243,6 +259,7 @@ fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<Str
 pub(crate) fn resolve_policy_args<H: HostCall>(
     host: &H,
     params: &Value,
+    tr: &Translator,
 ) -> Result<String, IpcMethodError> {
     let full_auto = params
         .get("full_auto")
@@ -254,7 +271,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     if full_auto {
         if approval.is_some() || sandbox.is_some() {
             return Err(IpcMethodError::invalid_params(
-                "'full_auto' cannot be combined with 'approval'/'sandbox' — it already bypasses both",
+                tr.t("codex.params.full_auto_conflict"),
             ));
         }
         return Ok("--dangerously-bypass-approvals-and-sandbox".to_string());
@@ -262,7 +279,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
 
     let approval = match approval {
         Some(v) => {
-            validate_choice("approval", &v, VALID_APPROVAL_POLICIES)?;
+            validate_choice("approval", &v, VALID_APPROVAL_POLICIES, tr)?;
             Some(v)
         }
         None => Some(
@@ -272,7 +289,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     };
     let sandbox = match sandbox {
         Some(v) => {
-            validate_choice("sandbox", &v, VALID_SANDBOX_MODES)?;
+            validate_choice("sandbox", &v, VALID_SANDBOX_MODES, tr)?;
             Some(v)
         }
         None => global_policy_default(host, "default_sandbox_mode"),
@@ -288,7 +305,11 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     Ok(parts.join(" "))
 }
 
-pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_launch(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let workspace_name = params
         .get("workspace")
         .and_then(|v| v.as_str())
@@ -310,8 +331,10 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
         .get("id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "workspace.create response missing 'id': {ws_result}"
+            IpcMethodError::new(tr.t_replace(
+                "codex.launch.workspace_create_missing_id",
+                "{resp}",
+                &ws_result.to_string(),
             ))
         })? as u32;
     let surface_id = ws_result
@@ -320,7 +343,7 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let policy_args = resolve_policy_args(host, &params)?;
+        let policy_args = resolve_policy_args(host, &params, tr)?;
         let cmd = make_codex_command(sid, task.as_deref(), &policy_args);
         host_call(
             host,
@@ -336,9 +359,13 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
     }))
 }
 
-pub fn handle_parent(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_parent(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     // 호스트 registry 가 parent 매핑의 SoT — 그대로 위임.
-    let surface = require_u32(&params, "surface")?;
+    let surface = require_target_surface(&params, tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -346,17 +373,25 @@ pub fn handle_parent(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
 /// `codex` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
 /// namespace 밖을 참조할 수 없어서다(결정 2) — `codex.spawn` 기본 전략이 이
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
-pub fn handle_state(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let surface = require_u32(&params, "surface")?;
+pub fn handle_state(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface = require_target_surface(&params, tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
-pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let surface_id = require_u32(&params, "surface")?;
+pub fn handle_tell(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface_id = require_target_surface(&params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
     // 개행/제출 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트
     // `terminal.tell` 이 동일하게 처리한다 → 본문 포맷을 재구현하지 않고 위임.
     let resp = host_call(
@@ -368,8 +403,8 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
     // caller_surface 는 dynamic CLI 가 `TASTY_SURFACE_ID` 로 자동 채운다(명시
     // --caller-surface 도 허용). 없으면(예: 호스트가 직접 IPC 호출) 완료 알림을
     // 등록하지 않는다 — 누구에게 알릴지 모르므로.
-    if let Ok(caller) = require_u32(&params, "caller_surface") {
-        register_notify_hooks(host, surface_id, caller, "tell");
+    if let Ok(caller) = require_u32(&params, "caller_surface", tr) {
+        register_notify_hooks(host, caller, surface_id, "tell");
     }
 
     Ok(resp)
@@ -380,7 +415,7 @@ pub fn handle_spawn(
     tr: &Translator,
     params: Value,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface = require_u32(&params, "surface")?;
+    let parent_surface = require_target_surface(&params, tr)?;
     let prompt = optional_str(&params, "prompt");
 
     // 1) 호스트 registry 에 자식 등록 + soft 점유 + tab 생성 (command 미전송).
@@ -393,13 +428,15 @@ pub fn handle_spawn(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "terminal.spawn response missing 'child_surface_id': {resp}"
+            IpcMethodError::new(tr.t_replace(
+                "codex.spawn.missing_child_surface_id",
+                "{resp}",
+                &resp.to_string(),
             ))
         })?;
 
     // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
-    let policy_args = resolve_policy_args(host, &params)?;
+    let policy_args = resolve_policy_args(host, &params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -408,7 +445,7 @@ pub fn handle_spawn(
     )?;
 
     // 3) 완료 시(codex-idle/process-exit) parent 에게 1 회성 알림 등록.
-    register_notify_hooks(host, child_sid, parent_surface, "spawn");
+    register_notify_hooks(host, parent_surface, child_sid, "spawn");
 
     // 4) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
     let mut out = resp;
@@ -419,18 +456,6 @@ pub fn handle_spawn(
     }
 
     Ok(out)
-}
-
-/// 호스트 IPC 를 동기 호출하는 최소 표면. `HostHandle` 로 실동작하고, 테스트에서는
-/// in-memory mock 으로 대체해 형제 hook 등록/발화/정리 사이클을 재현·검증한다.
-pub(crate) trait HostCall {
-    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError>;
-}
-
-impl HostCall for HostHandle {
-    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
-        HostHandle::call(self, method, params)
-    }
 }
 
 /// 완료 알림 hook 의 command 문자열 — 등록 시점과 fire 후 정리 시점이 **정확히 같은
@@ -447,8 +472,10 @@ fn notify_caller_command(caller_surface: u32, target_surface: u32, kind: &str) -
 /// 뜻으로 오독되기 쉬워, conductor 가 실제 작업 완료 알림을 "spawn 접수 확인" 정도로
 /// 여기고 계속 무시하는 사고로 이어졌다. `kind`는 호출 방식(spawn/tell)일 뿐 완료의
 /// 주어가 아니므로 괄호로 분리한다(tasty-plugin-claude 의 `notify_done_message`와 동형).
-fn notify_caller_message(kind: &str, target: u32) -> String {
-    format!("surface {target} 작업 완료 (호출 방식: {kind})")
+fn notify_caller_message(tr: &Translator, kind: &str, target: u32) -> String {
+    tr.t("codex.notify.done_message")
+        .replace("{target}", &target.to_string())
+        .replace("{kind}", kind)
 }
 
 /// 샌드박스(bwrap) 초기화 실패 감지 마커 — 오탐 최소화를 위해 특이도가 가장 높은
@@ -456,19 +483,22 @@ fn notify_caller_message(kind: &str, target: u32) -> String {
 /// `RTM_NEWADDR`는 사실상 이 실패 상황에서만 등장한다.
 const SANDBOX_FAILURE_MARKER: &str = "RTM_NEWADDR";
 
-/// 힌트 문구 — `docs/plugins/codex/index.md`(샌드박스 초기화 실패 패턴과 수동
-/// 우회법 `--full-auto`가 이미 문서화된 곳)의 안내를 완료 알림 채널에 요약해
-/// 싣는다. 이 텍스트는 `tasty-cli`가 사람에게 보여주는 stdout/stderr 표면이
-/// 아니라 `~/.tasty/notify/*.log`에 append 되는 내부 채널 문자열이라
-/// `docs/dev-guide/i18n.md`의 "CLI 출력 문자열" 규정(사람이 보는 CLI 표면) 적용
-/// 대상이 아니다.
-const SANDBOX_FAILURE_HINT: &str = "⚠ sandbox 초기화 실패로 보임(RTM_NEWADDR 감지) — 이 실행 환경은 nested sandbox(bwrap)를 지원하지 않을 수 있습니다. --full-auto 로 재시도해보세요.";
+/// 힌트 문구의 번역 키 — `docs/plugins/codex/index.md`(샌드박스 초기화 실패 패턴과
+/// 수동 우회법 `--full-auto` 가 이미 문서화된 곳)의 안내를 완료 알림 채널에 요약해
+/// 싣는다.
+///
+/// 이 문구가 나가는 곳은 `<parent_home>/notify/*.log` 이고 읽는 쪽은 **호출한
+/// 에이전트**다. 사람이 보는 CLI stdout/stderr 표면은 아니지만, 그렇다고 언어를 코드에
+/// 박아 둘 자리도 아니다 — 형제 plugin(claude)은 같은 채널의 같은 성격 문구를
+/// `claude.notify.done_message` 로 번역해 내보낸다. 두 문구가 같은 파일에 섞이면
+/// 읽는 쪽이 한 채널에서 두 언어를 받는다.
+const SANDBOX_FAILURE_HINT_KEY: &str = "codex.notify.sandbox_hint";
 
 /// `screen_text`(대상 surface 의 최근 출력)에서 샌드박스 초기화 실패 시그니처를
 /// 찾으면 힌트 문구를 반환한다. best-effort 탐지 — 순수 함수라 단위 테스트 대상.
-fn detect_sandbox_failure_hint(screen_text: &str) -> Option<&'static str> {
+fn detect_sandbox_failure_hint(tr: &Translator, screen_text: &str) -> Option<String> {
     if screen_text.contains(SANDBOX_FAILURE_MARKER) {
-        Some(SANDBOX_FAILURE_HINT)
+        Some(tr.t(SANDBOX_FAILURE_HINT_KEY).to_string())
     } else {
         None
     }
@@ -477,8 +507,12 @@ fn detect_sandbox_failure_hint(screen_text: &str) -> Option<&'static str> {
 /// 완료 알림 본문에 (있으면) 샌드박스 실패 힌트를 덧붙인다. `screen_text`가
 /// `None`(조회 자체가 실패 — soft-fail)이거나 마커가 없으면 `base`를 그대로
 /// 돌려준다(회귀 없음). 순수 함수 — 단위 테스트 대상.
-fn append_sandbox_hint_if_detected(base: String, screen_text: Option<&str>) -> String {
-    match screen_text.and_then(detect_sandbox_failure_hint) {
+fn append_sandbox_hint_if_detected(
+    tr: &Translator,
+    base: String,
+    screen_text: Option<&str>,
+) -> String {
+    match screen_text.and_then(|s| detect_sandbox_failure_hint(tr, s)) {
         Some(hint) => format!("{base} {hint}"),
         None => base,
     }
@@ -504,34 +538,6 @@ fn fetch_screen_text_for_hint<H: HostCall>(host: &H, target: u32) -> Option<Stri
     .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_string))
 }
 
-/// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
-/// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
-/// 순수 선택이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에
-/// 서로 다른 command(예: `--kind spawn` vs `--kind tell`)로 등록된 두 그룹은 서로의
-/// 정리 대상에 포함되지 않는다(옛 단일 meta 슬롯 방식의 clobber-좀비를 제거).
-fn siblings_to_unset(hooks: &[Value], expected_command: &str) -> Vec<u64> {
-    hooks
-        .iter()
-        .filter(|h| h.get("command").and_then(|v| v.as_str()) == Some(expected_command))
-        .filter_map(|h| h.get("id").and_then(|v| v.as_u64()))
-        .collect()
-}
-
-/// 발화한 형제 하나가 자기 그룹(같은 command)의 남은 형제 once-hook 들을 정리한다.
-/// `hook.list` 는 반드시 `surface_id` 로 필터해 다른 surface(=다른 child)의 hook 을
-/// 건드리지 않는다. best-effort — 실패해도 알림 자체는 이미 전달됐다.
-fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expected_command: &str) {
-    if let Ok(resp) = host.call("hook.list", json!({ "surface_id": target_surface }))
-        && let Some(hooks) = resp.as_array()
-    {
-        for hook_id in siblings_to_unset(hooks, expected_command) {
-            // best-effort 정리 — 실패하면 좀비로 남을 수 있으나 알림 자체는 이미
-            // 전달됐으므로 caller 관점 결과에는 영향 없음.
-            let _ = host.call("hook.unset", json!({ "hook_id": hook_id }));
-        }
-    }
-}
-
 /// child(=target) 가 완료(codex-idle 또는 process-exit)되면 caller 에게 1 회성 알림을
 /// 보내도록 hook 2개를 등록한다. 두 hook 의 command 는 완전히 동일한 `codex
 /// notify-caller` 호출이며, fire 시점에 `hook.list` 를 command 문자열로 매칭해 자기
@@ -539,21 +545,25 @@ fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expected_co
 /// 동작하고, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에 spawn/tell 이 겹쳐
 /// 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다. host 호출 실패는 경고만 하고
 /// 넘어간다(soft — spawn/tell 성공을 막지 않음).
+/// **인자 순서는 claude 쪽과 같다** — 한때 `(host, target, caller, …)` 로 뒤집혀 있었다.
+/// 둘 다 `u32` 라 뒤집혀도 컴파일러가 안 잡고, 두 crate 사이에서 코드를 옮기는 순간
+/// 조용히 뒤바뀐다. 등록 루프 자체는 공용이라 그쪽에는 이 짝이 아예 없다.
 fn register_notify_hooks<H: HostCall>(
     host: &H,
-    target_surface: u32,
     caller_surface: u32,
+    target_surface: u32,
     kind: &str,
 ) {
     let cmd = notify_caller_command(caller_surface, target_surface, kind);
-    for event in ["codex-idle", "process-exit"] {
-        if let Err(e) = host.call(
-            "hook.set",
-            json!({ "surface_id": target_surface, "event": event, "command": cmd, "once": true }),
-        ) {
-            tracing::warn!("codex notify hook.set '{event}' failed: {e}");
-        }
-    }
+    // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
+    // `needs-input` 이 없는 것은 표류가 아니라 codex 에 그 hook 이 없기 때문이다.
+    tasty_plugin_agent_common::host_call::register_completion_hooks(
+        host,
+        target_surface,
+        &cmd,
+        &["codex-idle", "process-exit"],
+        "codex",
+    );
 }
 
 /// `register_notify_hooks` 가 등록한 hook 이 fire 되면 실행되는 핸들러. caller
@@ -562,15 +572,19 @@ fn register_notify_hooks<H: HostCall>(
 /// "누가 먼저 fire했는지" 판별이 전혀 필요 없다. 정리는 `hook.list`(surface 필터) +
 /// command 문자열 일치로 하며, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에
 /// spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다.
-pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Value, IpcMethodError> {
-    let caller = require_u32(&params, "caller")?;
-    let target = require_u32(&params, "target")?;
+pub fn handle_notify_caller<H: HostCall>(
+    host: &H,
+    tr: &Translator,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
+    let caller = require_u32(&params, "caller", tr)?;
+    let target = require_u32(&params, "target", tr)?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
-    let message = notify_caller_message(&kind, target);
+    let message = notify_caller_message(tr, &kind, target);
     // 샌드박스 초기화 실패 힌트(docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트
     // 절 참조) — soft-fail, 조회 실패/미탐지 시 message 그대로.
     let screen_text = fetch_screen_text_for_hint(host, target);
-    let message = append_sandbox_hint_if_detected(message, screen_text.as_deref());
+    let message = append_sandbox_hint_if_detected(tr, message, screen_text.as_deref());
 
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
     // 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔 terminal.tell 도
@@ -606,9 +620,7 @@ fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &
         .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
         .unwrap_or(false);
     if alive {
-        // register_notify_hooks 는 (host, target_surface, caller_surface, kind) 순서다
-        // (claude 쪽과 인자 순서가 다르므로 주의).
-        register_notify_hooks(host, target, caller, kind);
+        register_notify_hooks(host, caller, target, kind);
     }
 }
 
@@ -647,27 +659,6 @@ fn compute_spawn_warning(
         .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
 
     build_spawn_warning(tr, total, &idle_indices, &stale_indices, threshold)
-}
-
-fn state_of(child: &Value) -> Option<&str> {
-    child.get("state").and_then(|s| s.as_str())
-}
-
-/// 조건에 맞는 child 의 `index` 만 모은다.
-fn indices_with(children: &[Value], pred: impl Fn(&Value) -> bool) -> Vec<u64> {
-    children
-        .iter()
-        .filter(|c| pred(c))
-        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
-        .collect()
-}
-
-fn join_indices(indices: &[u64]) -> String {
-    indices
-        .iter()
-        .map(u64::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// child 개수가 임계치를 넘으면 경고 문구를 만든다(순수 함수, 단위 테스트 대상).
@@ -713,39 +704,56 @@ fn build_spawn_warning(
     Some(msg)
 }
 
-pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    host_call(
-        host,
-        "terminal.children",
-        Value::Object(forward(&params, &["surface"])),
-    )
+pub fn handle_children(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let mut cp = serde_json::Map::new();
+    put_target_surface(&mut cp, &params, tr)?;
+    host_call(host, "terminal.children", Value::Object(cp))
 }
 
-pub fn handle_broadcast(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_broadcast(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'text'"))?;
-    let mut bp = forward(&params, &["surface", "role"]);
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_text")))?;
+    let mut bp = forward(&params, &["role"]);
+    put_target_surface(&mut bp, &params, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
-pub fn handle_kill(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child")?;
-    let mut kp = forward(&params, &["surface"]);
+pub fn handle_kill(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child", tr)?;
+    let mut kp = serde_json::Map::new();
+    put_target_surface(&mut kp, &params, tr)?;
     kp.insert("child".into(), json!(child));
     host_call(host, "terminal.kill", Value::Object(kp))
 }
 
-pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child")?;
+pub fn handle_respawn(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child", tr)?;
     let prompt = optional_str(&params, "prompt");
 
     // 1) 호스트 registry 위임: cwd 있으면 PTY 교체, 없으면 Ctrl-C. role/nickname/cwd
     //    갱신 + idle 초기화까지 호스트가 수행하고 child_surface_id 를 돌려준다.
     //    codex 기동은 여기서 하지 않으므로 command 는 넘기지 않는다.
-    let mut rp = forward(&params, &["surface", "cwd", "role", "nickname"]);
+    let mut rp = forward(&params, &["cwd", "role", "nickname"]);
+    put_target_surface(&mut rp, &params, tr)?;
     rp.insert("child".into(), json!(child));
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_sid = resp
@@ -753,13 +761,15 @@ pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMeth
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "terminal.respawn response missing 'child_surface_id': {resp}"
+            IpcMethodError::new(tr.t_replace(
+                "codex.respawn.missing_child_surface_id",
+                "{resp}",
+                &resp.to_string(),
             ))
         })?;
 
     // 2) codex 특화 기동 명령 재전송.
-    let policy_args = resolve_policy_args(host, &params)?;
+    let policy_args = resolve_policy_args(host, &params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -777,14 +787,18 @@ pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMeth
 /// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
 /// codex 의 wire schema 와 호환되어야 한다. 모든 필드가 optional 이므로 empty
 /// object 는 "no decision, continue normally" 의미.
-pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_hook(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'event'"))?;
-    let surface_id = require_u32(&params, "surface")
-        .map_err(|_| IpcMethodError::invalid_params("hook requires --surface to identify child"))?;
-    let new_state = hook_event_to_state(event)?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_event")))?;
+    let surface_id = require_target_surface(&params, tr)
+        .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
+    let new_state = hook_event_to_state(event, tr)?;
     // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
     // 오면 reboot/복원용 세션 meta 를 기록한다. codex 에는 SessionEnd hook 이
     // 없어 unset 경로는 없다 — 다음 session-start 가 덮어쓴다. resume 기동도
@@ -805,6 +819,13 @@ pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
             }
         }
     }
+    // 이 호출만 전파한다 — 뒤에 지켜야 할 로컬 상태가 없기 때문이다(이어지는
+    // `fire_hook` 은 그 자체가 최선노력이다). state 주입이 이 핸들러가 하는 일의
+    // 전부라, 실패를 호출자에게 알리는 편이 참이다. claude 의 `deliver` 가 반대로
+    // 하나도 전파하지 않는 것은 그쪽이 host 호출 *뒤에* 로컬 정리를 하기 때문이며,
+    // 두 판정은 같은 규칙의 양끝이다 —
+    // [error-handling](../../../docs/dev-guide/error-handling.md)
+    // "plugin 핸들러의 host 호출 — 전파와 최선노력".
     host_call(
         host,
         "terminal.set_state",
@@ -824,25 +845,32 @@ pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
 }
 
 /// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
-fn hook_event_to_state(event: &str) -> Result<&'static str, IpcMethodError> {
+fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, IpcMethodError> {
     match event {
         "stop" => Ok("idle"),
         "prompt-submit" | "session-start" => Ok("active"),
-        other => Err(IpcMethodError::invalid_params(&format!(
-            "unknown hook event '{other}' (supported: stop, prompt-submit, session-start)"
+        other => Err(IpcMethodError::invalid_params(&tr.t_replace(
+            "codex.hook.unknown_event",
+            "{event}",
+            other,
         ))),
     }
 }
 
-pub fn handle_install() -> Result<Value, IpcMethodError> {
-    let path = codex_config_toml_path()?;
+pub fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
+    let path = codex_config_toml_path(tr)?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| IpcMethodError::new(format!("mkdir failed: {e}")))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            IpcMethodError::new(tr.t_replace(
+                "codex.install.mkdir_failed",
+                "{detail}",
+                &e.to_string(),
+            ))
+        })?;
     }
     let existing = read_toml_or_default(&path);
     let merged = merge_install(existing);
-    write_toml(&path, &merged)?;
+    write_toml(&path, &merged, tr)?;
     let trusted = codex_hooks_all_trusted();
     let mut resp = json!({
         "installed": true,
@@ -862,14 +890,14 @@ Enter → t → Esc → Down. Trust persists per-machine."
     Ok(resp)
 }
 
-pub fn handle_uninstall() -> Result<Value, IpcMethodError> {
-    let path = codex_config_toml_path()?;
+pub fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError> {
+    let path = codex_config_toml_path(tr)?;
     if !path.exists() {
         return Ok(json!({ "uninstalled": true, "path": path.to_string_lossy(), "noop": true }));
     }
     let existing = read_toml_or_default(&path);
     let cleaned = remove_install(existing);
-    write_toml(&path, &cleaned)?;
+    write_toml(&path, &cleaned, tr)?;
     Ok(json!({ "uninstalled": true, "path": path.to_string_lossy() }))
 }
 
@@ -924,11 +952,15 @@ const HOOK_EVENTS: &[(&str, &str, &str)] = &[
     ("SessionStart", "session-start", "session_start"),
 ];
 
-fn codex_config_toml_path() -> Result<PathBuf, IpcMethodError> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .ok_or_else(|| IpcMethodError::new("HOME env var not set"))?;
-    Ok(PathBuf::from(home).join(".codex").join("config.toml"))
+/// 경로만 계산한다 — 실패를 문구로 만들지 않으므로 `Translator` 가 없는 자리에서도
+/// 쓸 수 있다(`codex_hooks_all_trusted` 는 실패를 그냥 `false` 로 접는다).
+fn config_toml_path_opt() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    Some(PathBuf::from(home).join(".codex").join("config.toml"))
+}
+
+fn codex_config_toml_path(tr: &Translator) -> Result<PathBuf, IpcMethodError> {
+    config_toml_path_opt().ok_or_else(|| IpcMethodError::new(tr.t("codex.install.no_home")))
 }
 
 fn read_toml_or_default(path: &Path) -> toml::Value {
@@ -939,10 +971,13 @@ fn read_toml_or_default(path: &Path) -> toml::Value {
     }
 }
 
-fn write_toml(path: &Path, value: &toml::Value) -> Result<(), IpcMethodError> {
-    let text = toml::to_string_pretty(value)
-        .map_err(|e| IpcMethodError::new(format!("encode failed: {e}")))?;
-    std::fs::write(path, text).map_err(|e| IpcMethodError::new(format!("write failed: {e}")))
+fn write_toml(path: &Path, value: &toml::Value, tr: &Translator) -> Result<(), IpcMethodError> {
+    let text = toml::to_string_pretty(value).map_err(|e| {
+        IpcMethodError::new(tr.t_replace("codex.install.encode_failed", "{detail}", &e.to_string()))
+    })?;
+    std::fs::write(path, text).map_err(|e| {
+        IpcMethodError::new(tr.t_replace("codex.install.write_failed", "{detail}", &e.to_string()))
+    })
 }
 
 fn hook_command(event_kebab: &str) -> String {
@@ -1048,7 +1083,7 @@ fn merge_install(mut value: toml::Value) -> toml::Value {
 /// 이 여부와 무관하게 hook 을 fire 시키므로, 이 함수는 이제 `handle_install` 의
 /// 안내 문구(수동 승인 상태 표시)에만 쓰인다 — 실제 hook 동작에는 영향 없음.
 fn codex_hooks_all_trusted() -> bool {
-    let Ok(path) = codex_config_toml_path() else {
+    let Some(path) = config_toml_path_opt() else {
         return false;
     };
     let value = read_toml_or_default(&path);
@@ -1110,11 +1145,126 @@ fn remove_install(mut value: toml::Value) -> toml::Value {
 mod tests {
     use super::*;
 
+    /// `require_u32` 의 **네 갈래**를 픽스처로 못박는다. 실재하는 surface id 를 쓰지
+    /// 않는 이유: 그 id 가 사라지거나 바뀌면 이 회귀가 조용히 뜻을 잃는다.
+    ///
+    /// **문구가 아니라 키로 단정한다.** 이 메시지들은 번역되므로 영어 조각(`missing` ·
+    /// `32 bits`)으로 갈래를 가르면 로케일이 바뀌는 순간 이 테스트가 뜻을 잃는다 —
+    /// 그런데 그 실패는 그 언어에서만 나타나 한 언어만 보는 완주로는 안 잡힌다.
+    fn absent_msg(tr: &Translator, key: &str) -> String {
+        tr.t_replace("codex.params.missing", "{key}", key)
+    }
+
+    fn malformed_msg(tr: &Translator, key: &str, raw: &str) -> String {
+        t_args(
+            tr,
+            "codex.params.not_a_number",
+            &[("{key}", key), ("{raw}", raw)],
+        )
+    }
+
+    #[test]
+    fn require_u32_separates_absent_from_malformed_and_refuses_to_truncate() {
+        let tr = test_translator();
+        // ① 키 없음 — 호출자가 인자를 빠뜨렸다.
+        let e = require_u32(&json!({}), "surface", &tr).unwrap_err();
+        assert!(e.message.contains(&absent_msg(&tr, "surface")), "{e:?}");
+
+        // ② 정상 — 경계값이 그대로 통과한다.
+        assert_eq!(
+            require_u32(&json!({ "surface": 0 }), "surface", &tr).unwrap(),
+            0
+        );
+        assert_eq!(
+            require_u32(&json!({ "surface": u32::MAX }), "surface", &tr).unwrap(),
+            u32::MAX
+        );
+
+        // ③ 숫자가 아니다 — 거부하고, "없다" 라고 답하지 않는다.
+        let e = require_u32(&json!({ "surface": "conductor" }), "surface", &tr).unwrap_err();
+        let m = e.message.clone();
+        assert!(
+            m.contains(&malformed_msg(&tr, "surface", "\"conductor\"")),
+            "{m}"
+        );
+        assert!(
+            !m.contains(&absent_msg(&tr, "surface")),
+            "값이 왔는데 없다고 답한다: {m}"
+        );
+
+        // ④ ★ 범위 초과 — 자르면 **다른 surface** 가 된다. u32::MAX + 2 는 1 로,
+        //    5_000_000_000 은 705_032_704 로 잘린다. 둘 다 실재할 수 있는 id 다.
+        for over in [
+            u64::from(u32::MAX) + 1,
+            u64::from(u32::MAX) + 2,
+            5_000_000_000,
+        ] {
+            let e = require_u32(&json!({ "surface": over }), "surface", &tr).unwrap_err();
+            assert!(
+                e.message
+                    .contains(&malformed_msg(&tr, "surface", &over.to_string())),
+                "{over} 가 안 걸린다"
+            );
+        }
+
+        // 음수도 같은 갈래다 — `as_u64()` 가 못 읽는다.
+        assert!(require_u32(&json!({ "surface": -1 }), "surface", &tr).is_err());
+    }
+
+    /// 갈래를 가르는 두 문구가 **세 로케일 모두에서 서로 다르다.** 한 언어에서만
+    /// 갈리면 다른 언어 사용자는 "인자를 빠뜨렸다" 와 "값이 틀렸다" 를 구분할 수 없다.
+    #[test]
+    fn the_two_branches_stay_distinguishable_in_every_locale() {
+        for locale in ["en", "ko", "ja"] {
+            let tr = test_translator_for(locale);
+            let absent = absent_msg(&tr, "surface");
+            let malformed = malformed_msg(&tr, "surface", "5000000000");
+            assert_ne!(absent, malformed, "{locale}: 두 갈래의 문구가 같다");
+            assert!(!absent.contains("{key}"), "{locale}: 토큰이 안 채워졌다");
+            assert!(
+                !malformed.contains("{key}") && !malformed.contains("{raw}"),
+                "{locale}: 토큰이 안 채워졌다 — {malformed}"
+            );
+        }
+    }
+
+    /// `null` 은 **값이 왔다**가 아니라 **안 왔다**로 읽는다 — JSON 직렬화가 빈 슬롯을
+    /// `null` 로 채우는 경우가 있어서, 이것을 오타로 취급하면 정상 경로가 막힌다.
+    #[test]
+    fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
+        let tr = test_translator();
+        let e = require_u32(&json!({ "surface": Value::Null }), "surface", &tr).unwrap_err();
+        assert!(e.message.contains(&absent_msg(&tr, "surface")), "{e:?}");
+    }
+
     /// 이 crate 의 `lang/` 를 en 으로 로드한 번역기 — 런타임에 호스트가 주입하는
     /// `plugin_dir` 없이도 같은 카탈로그를 본다(claude plugin 의 `test_translator` 와 동형).
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
+    }
+
+    fn test_translator_for(code: &str) -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, code)
+    }
+
+    /// 이 완주만의 surface id. `make_codex_command` 가 쓰는 prompt 임시파일 경로는
+    /// `{prefix}{surface_id}.txt` 로만 정해지므로, 같은 머신에서 이 크레이트를 **동시에
+    /// 두 번** 완주하면 두 완주가 같은 파일을 쓴다. `prompt_file::write` 는 먼저 지우고
+    /// 다시 만들기 때문에, 한쪽의 쓰기가 다른 쪽의 읽기 사이에 끼면 파일이 잠깐 없어져
+    /// 확률적 red 가 난다 (실측: 동시 2 완주 × 40 회 = 80 완주에 1 회). 유니크하게 만들
+    /// 수 있는 자리가 surface id 뿐이라 pid 를 섞는다 — `slot` 은 한 완주 **안에서**
+    /// 테스트끼리 겹치지 않게 하는 번호이고, pid 가 Linux 기본 상한(2^22)보다 작으므로
+    /// `pid * 8 + slot` 은 slot < 8 에서 (pid, slot) 을 유일하게 되돌릴 수 있다.
+    fn unique_surface_id(slot: u32) -> u32 {
+        std::process::id().wrapping_mul(8).wrapping_add(slot)
+    }
+
+    /// 이 테스트가 만든 prompt 임시파일 경로. 이름 규칙을 여기서 다시 적으면 프로덕션이
+    /// 규칙을 바꿨을 때 정리가 **조용히** 빗나가므로 프로덕션과 같은 헬퍼로 만든다.
+    fn prompt_path(surface_id: u32) -> std::path::PathBuf {
+        prompt_file::path_for(&std::env::temp_dir(), PROMPT_FILE_PREFIX, surface_id)
     }
 
     #[test]
@@ -1131,16 +1281,17 @@ mod tests {
 
     #[test]
     fn make_codex_command_with_plain_prompt_uses_tempfile_cat() {
-        let cmd = make_codex_command(9101, Some("hello"), "");
+        let surface_id = unique_surface_id(1);
+        let cmd = make_codex_command(surface_id, Some("hello"), "");
         assert!(
-            cmd.starts_with(
-                "TASTY_SURFACE_ID=9101 codex --dangerously-bypass-hook-trust \"$(cat '"
-            ),
+            cmd.starts_with(&format!(
+                "TASTY_SURFACE_ID={surface_id} codex --dangerously-bypass-hook-trust \"$(cat '"
+            )),
             "got {cmd}"
         );
         assert!(cmd.ends_with("')\"\r"), "got {cmd}");
         // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(std::env::temp_dir().join("tasty-codex-prompt-9101.txt"));
+        let _ = std::fs::remove_file(prompt_path(surface_id));
     }
 
     #[test]
@@ -1148,15 +1299,15 @@ mod tests {
         // zsh history expansion(`!`)이나 shell quoting 대상 문자가 섞여도 파일
         // 쓰기는 셸 파싱을 거치지 않으므로 그대로 보존돼야 한다.
         let prompt = "fix [!NOTE] \"bug\" in path\\to\\file";
-        let surface_id = 9102;
+        let surface_id = unique_surface_id(2);
         // 반환된 커맨드 문자열 자체는 이 테스트의 관심사가 아니다 — 아래에서 부작용으로
         // 쓰인 tempfile 내용만 검증한다.
         let _ = make_codex_command(surface_id, Some(prompt), "");
-        let prompt_path = std::env::temp_dir().join(format!("tasty-codex-prompt-{surface_id}.txt"));
-        let written = std::fs::read_to_string(&prompt_path).expect("prompt file should exist");
+        let path = prompt_path(surface_id);
+        let written = std::fs::read_to_string(&path).expect("prompt file should exist");
         assert_eq!(written, prompt);
         // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&prompt_path);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -1169,114 +1320,16 @@ mod tests {
 
     #[test]
     fn make_codex_command_with_policy_args_and_prompt() {
-        let cmd = make_codex_command(9103, Some("hello"), "-a never");
+        let surface_id = unique_surface_id(3);
+        let cmd = make_codex_command(surface_id, Some("hello"), "-a never");
         assert!(
-            cmd.starts_with(
-                "TASTY_SURFACE_ID=9103 codex --dangerously-bypass-hook-trust -a never \"$(cat '"
-            ),
+            cmd.starts_with(&format!(
+                "TASTY_SURFACE_ID={surface_id} codex --dangerously-bypass-hook-trust -a never \"$(cat '"
+            )),
             "got {cmd}"
         );
         // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(std::env::temp_dir().join("tasty-codex-prompt-9103.txt"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn write_prompt_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let path = std::env::temp_dir().join("tasty-codex-test-write-prompt-file-perms.txt");
-        write_prompt_file(&path, "secret").unwrap();
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "got mode {mode:o}");
-        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn write_prompt_file_narrows_permissions_on_reuse() {
-        // 이전 실행이 넓은 권한으로 만든 파일이 같은 경로에 이미 있어도, 다시 쓸 때
-        // 0600 으로 좁혀져야 한다(재사용 시 구멍 방지 회귀 가드).
-        let path = std::env::temp_dir().join("tasty-codex-test-write-prompt-file-reuse.txt");
-        std::fs::write(&path, "old").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        }
-        write_prompt_file(&path, "new").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "got mode {mode:o}");
-        }
-        // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_removes_files_past_ttl() {
-        let dir = std::env::temp_dir().join("tasty-codex-test-sweep-removes-stale");
-        std::fs::create_dir_all(&dir).unwrap();
-        let stale = dir.join(format!("{PROMPT_FILE_PREFIX}old{PROMPT_FILE_SUFFIX}"));
-        std::fs::write(&stale, "x").unwrap();
-        let old_mtime =
-            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
-        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
-        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&stale)
-            .unwrap()
-            .set_modified(old_mtime)
-            .unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(!stale.exists(), "stale prompt file should have been swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_keeps_files_within_ttl() {
-        let dir = std::env::temp_dir().join("tasty-codex-test-sweep-keeps-fresh");
-        std::fs::create_dir_all(&dir).unwrap();
-        let fresh = dir.join(format!("{PROMPT_FILE_PREFIX}new{PROMPT_FILE_SUFFIX}"));
-        std::fs::write(&fresh, "x").unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(fresh.exists(), "fresh prompt file should not be swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_ignores_non_matching_names() {
-        let dir = std::env::temp_dir().join("tasty-codex-test-sweep-ignores-unrelated");
-        std::fs::create_dir_all(&dir).unwrap();
-        let unrelated = dir.join("some-other-file.txt");
-        std::fs::write(&unrelated, "x").unwrap();
-        let old_mtime =
-            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
-        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
-        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&unrelated)
-            .unwrap()
-            .set_modified(old_mtime)
-            .unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(unrelated.exists(), "non-matching file must not be swept");
-        // 테스트 tempdir 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(prompt_path(surface_id));
     }
 
     #[test]
@@ -1294,7 +1347,10 @@ mod tests {
         // 않아도 무조건 "never" 로 떨어져야 한다.
         // sandbox 는 그 자체로 정지를 유발하지 않으므로 기존대로 미설정 시 빈 채로 둔다.
         let host = MockHost::new();
-        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
+        assert_eq!(
+            resolve_policy_args(&host, &json!({}), &test_translator()).unwrap(),
+            "-a never"
+        );
     }
 
     #[test]
@@ -1302,7 +1358,7 @@ mod tests {
         let host = MockHost::new();
         let params = json!({ "approval": "never", "sandbox": "read-only" });
         assert_eq!(
-            resolve_policy_args(&host, &params).unwrap(),
+            resolve_policy_args(&host, &params, &test_translator()).unwrap(),
             "-a never -s read-only"
         );
     }
@@ -1310,14 +1366,16 @@ mod tests {
     #[test]
     fn resolve_policy_args_rejects_invalid_approval_value() {
         let host = MockHost::new();
-        let err = resolve_policy_args(&host, &json!({ "approval": "yolo" })).unwrap_err();
+        let err = resolve_policy_args(&host, &json!({ "approval": "yolo" }), &test_translator())
+            .unwrap_err();
         assert!(format!("{err:?}").contains("invalid 'approval'"));
     }
 
     #[test]
     fn resolve_policy_args_rejects_invalid_sandbox_value() {
         let host = MockHost::new();
-        let err = resolve_policy_args(&host, &json!({ "sandbox": "yolo" })).unwrap_err();
+        let err = resolve_policy_args(&host, &json!({ "sandbox": "yolo" }), &test_translator())
+            .unwrap_err();
         assert!(format!("{err:?}").contains("invalid 'sandbox'"));
     }
 
@@ -1326,7 +1384,7 @@ mod tests {
         let host = MockHost::new();
         let params = json!({ "full_auto": true });
         assert_eq!(
-            resolve_policy_args(&host, &params).unwrap(),
+            resolve_policy_args(&host, &params, &test_translator()).unwrap(),
             "--dangerously-bypass-approvals-and-sandbox"
         );
     }
@@ -1335,7 +1393,7 @@ mod tests {
     fn resolve_policy_args_full_auto_rejects_combination_with_approval() {
         let host = MockHost::new();
         let params = json!({ "full_auto": true, "approval": "never" });
-        let err = resolve_policy_args(&host, &params).unwrap_err();
+        let err = resolve_policy_args(&host, &params, &test_translator()).unwrap_err();
         assert!(format!("{err:?}").contains("full_auto"));
     }
 
@@ -1345,7 +1403,7 @@ mod tests {
         host.set_setting("default_approval_policy", "never");
         host.set_setting("default_sandbox_mode", "workspace-write");
         assert_eq!(
-            resolve_policy_args(&host, &json!({})).unwrap(),
+            resolve_policy_args(&host, &json!({}), &test_translator()).unwrap(),
             "-a never -s workspace-write"
         );
     }
@@ -1356,7 +1414,7 @@ mod tests {
         host.set_setting("default_approval_policy", "never");
         let params = json!({ "approval": "on-request" });
         assert_eq!(
-            resolve_policy_args(&host, &params).unwrap(),
+            resolve_policy_args(&host, &params, &test_translator()).unwrap(),
             "-a on-request"
         );
     }
@@ -1368,21 +1426,33 @@ mod tests {
         // 되돌아가지 않는다(의도된 동작, 위 resolve_policy_args 문서 주석 참고).
         let host = MockHost::new();
         host.set_setting("default_approval_policy", "inherit");
-        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
+        assert_eq!(
+            resolve_policy_args(&host, &json!({}), &test_translator()).unwrap(),
+            "-a never"
+        );
     }
 
     #[test]
     fn hook_event_to_state_maps_known_events() {
-        assert_eq!(hook_event_to_state("stop").unwrap(), "idle");
-        assert_eq!(hook_event_to_state("prompt-submit").unwrap(), "active");
-        assert_eq!(hook_event_to_state("session-start").unwrap(), "active");
+        assert_eq!(
+            hook_event_to_state("stop", &test_translator()).unwrap(),
+            "idle"
+        );
+        assert_eq!(
+            hook_event_to_state("prompt-submit", &test_translator()).unwrap(),
+            "active"
+        );
+        assert_eq!(
+            hook_event_to_state("session-start", &test_translator()).unwrap(),
+            "active"
+        );
     }
 
     #[test]
     fn hook_event_to_state_rejects_unsupported() {
         // notification / session-end / subagent-stop 은 codex 가 fire 하지 않으므로
         // 거부 (silent no-op 대신 invalid_params).
-        let err = hook_event_to_state("notification").unwrap_err();
+        let err = hook_event_to_state("notification", &test_translator()).unwrap_err();
         assert!(format!("{err:?}").contains("unknown hook event"));
     }
 
@@ -1492,39 +1562,10 @@ mod tests {
         }
     }
 
-    /// 키가 카탈로그에 실제로 존재해야 한다 — `Translator` 는 미스 시 키 자체를
-    /// 돌려주므로, 이 단정이 없으면 오타난 키가 "번역된 것처럼" 통과한다.
-    #[test]
-    fn spawn_warning_keys_exist_in_every_bundled_locale() {
-        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
-        for locale in ["en", "ko", "ja"] {
-            let tr = Translator::load(&lang_dir, locale);
-            for key in [
-                "codex.spawn_warning.total",
-                "codex.spawn_warning.idle",
-                "codex.spawn_warning.stale",
-            ] {
-                assert_ne!(tr.t(key), key, "{locale}: {key} 누락");
-            }
-            // 플레이스홀더 이름이 로케일마다 어긋나면 치환이 조용히 실패한다.
-            assert!(
-                tr.t("codex.spawn_warning.total").contains("{total}"),
-                "{locale}"
-            );
-            assert!(
-                tr.t("codex.spawn_warning.total").contains("{threshold}"),
-                "{locale}"
-            );
-            assert!(
-                tr.t("codex.spawn_warning.idle").contains("{indices}"),
-                "{locale}"
-            );
-            assert!(
-                tr.t("codex.spawn_warning.stale").contains("{indices}"),
-                "{locale}"
-            );
-        }
-    }
+    // 카탈로그 정합(세 로케일의 키 집합 · 플레이스홀더 이름 · 소스가 부르는 키의 실재)은
+    // **레포 전역 가드 `tests/i18n_key_parity.rs` 가 이미 본다** — 번들 plugin 의
+    // `lang/` 을 전부 훑으므로 여기 사본을 두지 않는다. 그 가드는 통합 타깃이라
+    // 자동 실행이 헤드리스 조합에서만 일어난다(`docs/dev-guide/ci-gates.md`).
 
     /// `heuristic` stale 은 제외된다 — SIGSTOP·긴 추론과 구별되지 않아 일하는
     /// 자식을 respawn 하라고 권하게 된다. 확정(`foreground_is_shell`)만 센다.
@@ -1976,6 +2017,7 @@ trusted_hash = "sha256:xyz"
                     None => Err(tasty_plugin_sdk::PluginError::HostCall {
                         method: method.to_string(),
                         message: "no screen_text set (mock soft-fail)".to_string(),
+                        code: None,
                     }),
                 },
                 _ => Ok(json!({})),
@@ -1983,23 +2025,11 @@ trusted_hash = "sha256:xyz"
         }
     }
 
-    #[test]
-    fn siblings_to_unset_isolates_by_command() {
-        let spawn_cmd = notify_caller_command(9, 100, "spawn");
-        let tell_cmd = notify_caller_command(9, 100, "tell");
-        let hooks = vec![
-            json!({ "id": 1, "command": spawn_cmd, "event": "process-exit" }),
-            json!({ "id": 2, "command": tell_cmd, "event": "process-exit" }),
-            json!({ "id": 3, "command": spawn_cmd, "event": "codex-idle" }),
-        ];
-        assert_eq!(siblings_to_unset(&hooks, &spawn_cmd), vec![1, 3]);
-    }
-
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
 
     #[test]
     fn notify_caller_message_leads_with_work_completion() {
-        let msg = notify_caller_message("spawn", 42);
+        let msg = notify_caller_message(&test_translator_for("ko"), "spawn", 42);
         assert!(
             msg.contains("작업 완료"),
             "완료 대상이 '작업'임이 드러나야 함: {msg}"
@@ -2008,13 +2038,39 @@ trusted_hash = "sha256:xyz"
         assert!(msg.contains("spawn"), "호출 방식 정보 누락: {msg}");
     }
 
+    /// 어느 로케일에서든 **채워지는 값**(대상 번호 · 호출 방식)은 문구에 남는다.
+    /// 자리표시자 이름을 바꾸면 치환이 조용히 안 먹고 `{target}` 이 그대로 나가는데,
+    /// 그건 한 언어만 보면 안 걸린다.
+    #[test]
+    fn notify_caller_message_keeps_its_substitutions_in_every_locale() {
+        for code in ["en", "ko", "ja"] {
+            let msg = notify_caller_message(&test_translator_for(code), "tell", 42);
+            assert!(msg.contains("42"), "[{code}] target 번호 누락: {msg}");
+            assert!(msg.contains("tell"), "[{code}] 호출 방식 누락: {msg}");
+            assert!(
+                !msg.contains("{target}") && !msg.contains("{kind}"),
+                "[{code}] 자리표시자가 치환되지 않았다: {msg}"
+            );
+        }
+    }
+
+    /// 문구가 실제로 `t()` 를 거친다 — 로케일을 바꾸면 완성 문구가 달라진다.
+    /// 이 단정이 없으면 키만 만들어 두고 값을 코드에 도로 박아도 위 테스트는 통과한다.
+    #[test]
+    fn notify_caller_message_changes_with_the_locale() {
+        let en = notify_caller_message(&test_translator_for("en"), "spawn", 42);
+        let ko = notify_caller_message(&test_translator_for("ko"), "spawn", 42);
+        assert_ne!(en, ko, "로케일이 달라도 같은 문구다 — t() 를 안 거친다");
+    }
+
     #[test]
     fn notify_caller_message_does_not_read_as_command_itself_completing() {
         // 회귀 방지: 과거 "{kind} 완료: surface N" 형태는 "spawn 이라는 동작이
         // 완료됐다"로 오독되기 쉬웠다 — kind 가 더 이상 완료의 주어로 문장 맨 앞에
         // 오지 않아야 한다.
+        let tr = test_translator_for("ko");
         for kind in ["spawn", "tell"] {
-            let msg = notify_caller_message(kind, 7);
+            let msg = notify_caller_message(&tr, kind, 7);
             assert!(
                 !msg.starts_with(&format!("{kind} 완료")),
                 "옛 오독 유발 포맷으로 회귀함: {msg}"
@@ -2027,19 +2083,23 @@ trusted_hash = "sha256:xyz"
     #[test]
     fn detect_sandbox_failure_hint_matches_rtm_newaddr() {
         let text = "...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n...";
-        assert!(detect_sandbox_failure_hint(text).is_some());
+        assert!(detect_sandbox_failure_hint(&test_translator(), text).is_some());
     }
 
     #[test]
     fn detect_sandbox_failure_hint_ignores_unrelated_text() {
-        assert!(detect_sandbox_failure_hint("normal codex output, no errors here").is_none());
+        assert!(
+            detect_sandbox_failure_hint(&test_translator(), "normal codex output, no errors here")
+                .is_none()
+        );
     }
 
     #[test]
     fn append_sandbox_hint_if_detected_appends_when_marker_present() {
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let text = "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted";
-        let msg = append_sandbox_hint_if_detected(base.clone(), Some(text));
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), Some(text));
         assert!(
             msg.starts_with(&base),
             "기존 base 메시지는 그대로 유지: {msg}"
@@ -2050,16 +2110,18 @@ trusted_hash = "sha256:xyz"
 
     #[test]
     fn append_sandbox_hint_if_detected_unchanged_when_no_marker() {
-        let base = notify_caller_message("spawn", 100);
-        let msg = append_sandbox_hint_if_detected(base.clone(), Some("normal codex output"));
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), Some("normal codex output"));
         assert_eq!(msg, base, "마커 없으면 회귀 없이 base 그대로여야 함");
     }
 
     #[test]
     fn append_sandbox_hint_if_detected_unchanged_when_query_failed() {
         // screen_text 조회 자체가 실패(soft-fail)한 경우 — None.
-        let base = notify_caller_message("spawn", 100);
-        let msg = append_sandbox_hint_if_detected(base.clone(), None);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), None);
         assert_eq!(
             msg, base,
             "조회 실패 시 알림 전송 자체는 회귀 없이 그대로여야 함"
@@ -2072,9 +2134,10 @@ trusted_hash = "sha256:xyz"
         host.set_screen_text(
             "...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n...",
         );
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let screen_text = fetch_screen_text_for_hint(&host, 100);
-        let msg = append_sandbox_hint_if_detected(base, screen_text.as_deref());
+        let msg = append_sandbox_hint_if_detected(&tr, base, screen_text.as_deref());
         assert!(
             msg.contains("full-auto"),
             "힌트가 실제로 덧붙어야 함: {msg}"
@@ -2085,9 +2148,10 @@ trusted_hash = "sha256:xyz"
     fn notify_caller_message_unchanged_when_no_sandbox_failure() {
         let host = MockHost::new();
         host.set_screen_text("normal codex output, no errors here");
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let screen_text = fetch_screen_text_for_hint(&host, 100);
-        let msg = append_sandbox_hint_if_detected(base.clone(), screen_text.as_deref());
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), screen_text.as_deref());
         assert_eq!(
             msg, base,
             "실패 시그니처가 없으면 회귀 없이 base 그대로여야 함"
@@ -2099,10 +2163,11 @@ trusted_hash = "sha256:xyz"
         // MockHost::new() 는 screen_text 를 세팅하지 않은 상태 — surface.screen_text
         // 호출이 실패하는 경우를 재현(soft-fail).
         let host = MockHost::new();
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let screen_text = fetch_screen_text_for_hint(&host, 100);
         assert!(screen_text.is_none(), "조회 실패는 None 이어야 함");
-        let msg = append_sandbox_hint_if_detected(base.clone(), screen_text.as_deref());
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), screen_text.as_deref());
         assert_eq!(msg, base);
     }
 
@@ -2110,7 +2175,7 @@ trusted_hash = "sha256:xyz"
     fn sibling_cleanup_removes_all_after_one_fires() {
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
-        register_notify_hooks(&host, target, caller, "tell");
+        register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 2, "2 형제 등록");
 
         // codex-idle 이 fire(once 제거) → 나머지 형제(process-exit) 정리.
@@ -2132,8 +2197,8 @@ trusted_hash = "sha256:xyz"
         // id 목록을 덮어써, spawn 그룹의 process-exit 이 정리되지 못하고 좀비로 남았다.
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
-        register_notify_hooks(&host, target, caller, "spawn");
-        register_notify_hooks(&host, target, caller, "tell");
+        register_notify_hooks(&host, caller, target, "spawn");
+        register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 4, "두 그룹 = 4 hook");
 
         // spawn 그룹의 codex-idle 이 먼저 fire → spawn 그룹만 정리.
@@ -2174,13 +2239,14 @@ trusted_hash = "sha256:xyz"
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         host.mark_alive(target);
-        register_notify_hooks(&host, target, caller, "tell");
+        register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 2, "최초 2 형제 등록");
 
         // 1번째 전환: codex-idle — child 는 여전히 살아있다.
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
+            &test_translator(),
             json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
@@ -2194,6 +2260,7 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
+            &test_translator(),
             json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
@@ -2209,7 +2276,7 @@ trusted_hash = "sha256:xyz"
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         host.mark_alive(target);
-        register_notify_hooks(&host, target, caller, "spawn");
+        register_notify_hooks(&host, caller, target, "spawn");
 
         // process-exit 로 fire — host 는 이 시점에 이미 동기로 surface 를 닫으므로
         // surface.locate 가 exists:false 를 돌려주는 상황을 재현.
@@ -2217,6 +2284,7 @@ trusted_hash = "sha256:xyz"
         host.mark_dead(target);
         handle_notify_caller(
             &host,
+            &test_translator(),
             json!({ "caller": caller, "target": target, "kind": "spawn" }),
         )
         .unwrap();

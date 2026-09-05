@@ -14,6 +14,13 @@
 //!
 //! 호스트 코드에는 의존하지 않으며 `tasty-plugin-sdk`만 사용한다.
 
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
+
 mod handlers;
 mod reboot;
 
@@ -63,20 +70,24 @@ impl Plugin for CodexPlugin {
             ..
         } = ctx;
         match method.as_str() {
-            "codex.launch" => handlers::handle_launch(&host, params),
+            "codex.launch" => handlers::handle_launch(&host, params, &self.translator),
             "codex.spawn" => handlers::handle_spawn(&host, &self.translator, params),
-            "codex.children" => handlers::handle_children(&host, params),
-            "codex.parent" => handlers::handle_parent(&host, params),
-            "codex.state" => handlers::handle_state(&host, params),
-            "codex.tell" => handlers::handle_tell(&host, params),
-            "codex.notify_caller" => handlers::handle_notify_caller(&host, params),
-            "codex.broadcast" => handlers::handle_broadcast(&host, params),
-            "codex.kill" => handlers::handle_kill(&host, params),
-            "codex.respawn" => handlers::handle_respawn(&host, params),
-            "codex.install" => handlers::handle_install(),
-            "codex.uninstall" => handlers::handle_uninstall(),
-            "codex.hook" => handlers::handle_hook(&host, params),
-            "codex.reboot" => reboot::handle_reboot(&self.rebooting, &host, &params),
+            "codex.children" => handlers::handle_children(&host, params, &self.translator),
+            "codex.parent" => handlers::handle_parent(&host, params, &self.translator),
+            "codex.state" => handlers::handle_state(&host, params, &self.translator),
+            "codex.tell" => handlers::handle_tell(&host, params, &self.translator),
+            "codex.notify_caller" => {
+                handlers::handle_notify_caller(&host, &self.translator, params)
+            }
+            "codex.broadcast" => handlers::handle_broadcast(&host, params, &self.translator),
+            "codex.kill" => handlers::handle_kill(&host, params, &self.translator),
+            "codex.respawn" => handlers::handle_respawn(&host, params, &self.translator),
+            "codex.install" => handlers::handle_install(&self.translator),
+            "codex.uninstall" => handlers::handle_uninstall(&self.translator),
+            "codex.hook" => handlers::handle_hook(&host, params, &self.translator),
+            "codex.reboot" => {
+                reboot::handle_reboot(&self.rebooting, &host, &self.translator, &params)
+            }
             other => Err(IpcMethodError::not_found(other)),
         }
     }

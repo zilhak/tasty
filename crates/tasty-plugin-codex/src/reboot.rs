@@ -34,7 +34,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::resolve_policy_args;
 
@@ -50,8 +51,6 @@ const INFLIGHT_WHAT: &str = "the codex reboot in-flight set";
 static INFLIGHT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
-const DEFAULT_DELAY_SECS: u64 = 5;
 /// Ctrl+C 전송 횟수 / 간격.
 const CTRL_C_COUNT: u32 = 4;
 const CTRL_C_INTERVAL: Duration = Duration::from_millis(500);
@@ -67,10 +66,6 @@ const TUI_READY_GRACE: Duration = Duration::from_secs(3);
 const NOTICE_ATTEMPTS: u32 = 4;
 const NOTICE_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
-/// 문구 확인 후 추가 Enter 전까지 대기 — claude reboot 와 동일한 63자+ paste
-/// 흡수 대비(제출 CR 이 paste 로 먹히면 입력창 잔류 → 별도 Enter 가 제출).
-const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
-
 /// codex 종료 시 출력되는 힌트 라인의 식별 조각 (v0.142 실측:
 /// "To continue this session, run codex resume <id>").
 const EXIT_MARKER: &str = "run codex resume";
@@ -79,47 +74,66 @@ const BANNER_MARKER: &str = ">_ OpenAI Codex";
 /// 화면 검증에 쓰는 안내문 선두 조각.
 const NOTICE_SNIPPET: &str = "tasty codex reboot";
 
-/// 재시작된 codex 에게 자동 제출되는 안내 프롬프트.
-const REBOOT_NOTICE: &str = "tasty codex reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (codex resume 으로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요.";
+/// 안내 프롬프트의 번역 키. 값은 `lang/{en,ko,ja}.toml` 에 있다.
+///
+/// 문구는 번역되지만 **선두 조각 [`NOTICE_SNIPPET`] 은 로케일과 무관하게 고정**이다 —
+/// 화면 검증이 그 조각으로 "안내가 실제로 떴는가" 를 판정하기 때문이다. 세 언어 값이
+/// 모두 그 조각으로 시작하는 것은 `notice_starts_with_the_snippet_in_every_locale` 가
+/// 못 박는다. 형제 plugin(claude)의 `claude.reboot.notice` 와 같은 구조다.
+const REBOOT_NOTICE_KEY: &str = "codex.reboot.notice";
 
 /// `codex.reboot` 진입점. 검증·캡처를 동기로 끝내고 시퀀스는 background thread
 /// 로 넘긴 뒤 즉시 응답한다 — 호출한 codex 가 턴을 마무리할 시간을 준다.
 pub(crate) fn handle_reboot(
     inflight: &Arc<Mutex<HashSet<u32>>>,
     host: &HostHandle,
+    tr: &Translator,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface(params)?;
-    let (delay_secs, extra_prompt) = parse_reboot_options(params);
+    let surface_id = crate::handlers::require_target_surface(params, tr)?;
+    let (delay_secs, extra_prompt) = parse_options(params);
     // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
     // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
     // 전역 기본값 > codex 자체 기본값)로 해석한다.
-    let policy_args = resolve_policy_args(host, params)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
 
     // 요청 시점 캡처.
-    let session_id = fetch_session_id(host, surface_id)?;
+    let session_id = fetch_session_id(host, surface_id, tr)?;
     if !is_safe_session_id(&session_id) {
-        return Err(IpcMethodError::new(format!(
-            "surface {surface_id} has malformed codex-session-id meta: {session_id:?}"
+        return Err(IpcMethodError::new(crate::handlers::t_args(
+            tr,
+            "codex.reboot.malformed_session_id",
+            &[
+                ("{surface}", &surface_id.to_string()),
+                ("{value}", &format!("{session_id:?}")),
+            ],
         )));
     }
 
     // 마커 기준 카운트도 요청 시점에 스냅샷 — 과거 exit/기동 잔상에 속지 않기 위함.
     let Some(screen) = screen_text(host, surface_id) else {
-        return Err(IpcMethodError::new(format!(
-            "cannot read screen of surface {surface_id}"
+        return Err(IpcMethodError::new(tr.t_replace(
+            "codex.reboot.screen_unreadable",
+            "{surface}",
+            &surface_id.to_string(),
         )));
     };
     let exit_c0 = count_occurrences(&screen, EXIT_MARKER);
     let banner_c0 = count_occurrences(&screen, BANNER_MARKER);
 
     {
-        let mut set = inflight
-            .lock()
-            .map_err(|e| IpcMethodError::new(format!("reboot in-flight lock poisoned: {e}")))?;
+        let mut set = inflight.lock().map_err(|e| {
+            IpcMethodError::new(tr.t_replace(
+                "codex.reboot.lock_poisoned",
+                "{detail}",
+                &e.to_string(),
+            ))
+        })?;
         if !set.insert(surface_id) {
-            return Err(IpcMethodError::new(format!(
-                "reboot already in progress for surface {surface_id}"
+            return Err(IpcMethodError::new(tr.t_replace(
+                "codex.reboot.already_in_progress",
+                "{surface}",
+                &surface_id.to_string(),
             )));
         }
     }
@@ -128,6 +142,9 @@ pub(crate) fn handle_reboot(
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
     let thread_policy_args = policy_args.clone();
+    // 안내문은 **스레드에 넘기기 전에** 조립한다 — `Translator` 를 워커로 옮기지 않으려고
+    // 완성된 문자열만 보낸다. 내용이 실행 시점 상태에 의존하지 않아 시점 차이가 없다.
+    let thread_notice = build_notice(tr, extra_prompt.as_deref());
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
         .spawn(move || {
@@ -138,7 +155,7 @@ pub(crate) fn handle_reboot(
                 &thread_session,
                 exit_c0,
                 banner_c0,
-                extra_prompt.as_deref(),
+                &thread_notice,
                 &thread_policy_args,
             );
             tasty_utils::poison::recover_mutex(
@@ -155,8 +172,10 @@ pub(crate) fn handle_reboot(
             &INFLIGHT_POISON_REPORTED,
         )
         .remove(&surface_id);
-        return Err(IpcMethodError::new(format!(
-            "failed to spawn reboot thread: {e}"
+        return Err(IpcMethodError::new(tr.t_replace(
+            "codex.reboot.spawn_thread_failed",
+            "{detail}",
+            &e.to_string(),
         )));
     }
 
@@ -167,57 +186,35 @@ pub(crate) fn handle_reboot(
     }))
 }
 
-fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
-    params
-        .get("surface")
-        .or_else(|| params.get("surface_id"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'surface' parameter"))
-}
-
-/// `--delay`(기본 5초) / `--prompt`(안내문 뒤에 덧붙일 추가 텍스트) 파싱.
-pub(crate) fn parse_reboot_options(params: &Value) -> (u64, Option<String>) {
-    let delay = params
-        .get("delay")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_DELAY_SECS);
-    let extra = params
-        .get("prompt")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    (delay, extra)
-}
-
 /// surface meta 에서 codex session id 를 읽는다. 없으면 에러 — hook 미설치/미trust
 /// 이거나 그 surface 에서 codex session-start hook 이 아직 발화하지 않은 것.
-fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMethodError> {
+fn fetch_session_id(
+    host: &HostHandle,
+    surface_id: u32,
+    tr: &Translator,
+) -> Result<String, IpcMethodError> {
+    // 호스트 에러는 `PluginError::HostCall` 의 Display 가 이미
+    // `host call '<method>' failed: <message>` 라 다시 감싸지 않는다 — 감싸면 그
+    // 접두가 사용자에게 두 번 나간다(`handlers::host_call` 의 같은 주석 참조).
     let resp = host
         .call(
             "surface.meta.get",
             json!({ "surface_id": surface_id, "key": "codex-session-id" }),
         )
-        .map_err(|e| IpcMethodError::new(format!("host call 'surface.meta.get' failed: {e}")))?;
+        .map_err(IpcMethodError::from)?;
     let session_id = resp
         .get("value")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
     if session_id.is_empty() {
-        return Err(IpcMethodError::new(format!(
-            "no active codex session on surface {surface_id} (codex-session-id meta not set — are tasty hooks installed and trusted? run `tasty codex install`, then approve via /hooks in codex)"
+        return Err(IpcMethodError::new(tr.t_replace(
+            "codex.reboot.no_active_session",
+            "{surface}",
+            &surface_id.to_string(),
         )));
     }
     Ok(session_id)
-}
-
-/// session id 가 셸에 평문으로 들어가므로 uuid 계열 문자만 허용한다.
-pub(crate) fn is_safe_session_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// 셸에 전송할 resume 명령 (제출 `\r` 포함). 모든 셸(cmd/pwsh/bash)에서 동일하게
@@ -242,10 +239,11 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
 }
 
 /// 안내 프롬프트 본문. `--prompt` 추가 텍스트가 있으면 빈 줄 뒤에 덧붙인다.
-pub(crate) fn build_notice(extra: Option<&str>) -> String {
+pub(crate) fn build_notice(tr: &Translator, extra: Option<&str>) -> String {
+    let base = tr.t(REBOOT_NOTICE_KEY);
     match extra {
-        Some(t) => format!("{REBOOT_NOTICE}\n\n{t}"),
-        None => REBOOT_NOTICE.to_string(),
+        Some(t) => format!("{base}\n\n{t}"),
+        None => base.to_string(),
     }
 }
 
@@ -267,7 +265,7 @@ fn run_reboot_sequence(
     session_id: &str,
     exit_c0: usize,
     banner_c0: usize,
-    extra_prompt: Option<&str>,
+    notice: &str,
     policy_args: &str,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
@@ -286,7 +284,7 @@ fn run_reboot_sequence(
     }
     thread::sleep(TUI_READY_GRACE);
 
-    if !deliver_notice(host, surface_id, &build_notice(extra_prompt)) {
+    if !deliver_notice(host, surface_id, notice) {
         tracing::warn!(
             "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
         );
@@ -368,7 +366,7 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
         }
         thread::sleep(NOTICE_VERIFY_DELAY);
         if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-            ensure_submitted(host, surface_id);
+            ensure_submitted(host, surface_id, "codex");
             return true;
         }
         tracing::info!(
@@ -377,22 +375,10 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
         thread::sleep(NOTICE_RETRY_INTERVAL);
     }
     if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-        ensure_submitted(host, surface_id);
+        ensure_submitted(host, surface_id, "codex");
         return true;
     }
     false
-}
-
-/// 문구가 화면에 있어도 제출(`\r`)이 paste 로 흡수돼 입력창에 잔류할 수 있으므로
-/// 별도 Enter 를 한 번 더 보낸다. 이미 제출된 상태면 빈 입력창 Enter 라 no-op.
-fn ensure_submitted(host: &HostHandle, surface_id: u32) {
-    thread::sleep(NOTICE_SUBMIT_DELAY);
-    if let Err(e) = host.call(
-        "surface.send_key",
-        json!({ "surface_id": surface_id, "key": "enter" }),
-    ) {
-        tracing::warn!("codex reboot s{surface_id}: extra submit enter failed: {e}");
-    }
 }
 
 /// `surface.screen_text` 1회 조회. 실패 → None (surface 소멸 등).
@@ -434,32 +420,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_defaults_delay_5_and_no_prompt() {
-        let (delay, extra) = parse_reboot_options(&json!({ "surface": 1 }));
-        assert_eq!(delay, 5);
-        assert_eq!(extra, None);
-    }
-
-    #[test]
-    fn parse_explicit_delay_and_prompt() {
-        let (delay, extra) = parse_reboot_options(&json!({ "delay": 2, "prompt": "이어서 계속" }));
-        assert_eq!(delay, 2);
-        assert_eq!(extra.as_deref(), Some("이어서 계속"));
-    }
-
-    #[test]
-    fn safe_session_id_accepts_uuid() {
-        assert!(is_safe_session_id("019f55e7-3dfa-7292-a8a9-9cf73a8b000b"));
-    }
-
-    #[test]
-    fn safe_session_id_rejects_shell_metachars() {
-        assert!(!is_safe_session_id(""));
-        assert!(!is_safe_session_id("abc; rm -rf /"));
-        assert!(!is_safe_session_id("a$(x)"));
-    }
-
-    #[test]
     fn resume_command_disables_update_prompt_and_submits() {
         assert_eq!(
             resume_command("019f55e7-3dfa", ""),
@@ -475,16 +435,49 @@ mod tests {
         );
     }
 
+    fn test_translator_for(code: &str) -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, code)
+    }
+
     #[test]
-    fn notice_without_extra_is_fixed_text() {
-        assert_eq!(build_notice(None), REBOOT_NOTICE);
+    fn notice_without_extra_is_the_translated_text() {
+        let tr = test_translator_for("ko");
+        assert_eq!(build_notice(&tr, None), tr.t(REBOOT_NOTICE_KEY));
     }
 
     #[test]
     fn notice_with_extra_appends_after_blank_line() {
-        let n = build_notice(Some("soak 이어서"));
-        assert!(n.starts_with(REBOOT_NOTICE));
+        let tr = test_translator_for("ko");
+        let n = build_notice(&tr, Some("soak 이어서"));
+        assert!(n.starts_with(tr.t(REBOOT_NOTICE_KEY)));
         assert!(n.ends_with("\n\nsoak 이어서"));
+    }
+
+    /// **세 로케일 모두** 안내문이 화면 검증 조각으로 시작한다.
+    ///
+    /// 전달 성공 판정(`deliver_notice`)이 [`NOTICE_SNIPPET`] 을 화면에서 찾는 것으로
+    /// 이뤄진다 — 번역문이 그 조각을 잃으면 안내는 떴는데 **못 떴다고 판정**해
+    /// 재시도를 반복하다 경고를 남긴다. 그 회귀는 그 언어를 쓰는 사용자에게만
+    /// 나타나므로 한 언어만 보는 테스트로는 안 잡힌다.
+    #[test]
+    fn notice_starts_with_the_snippet_in_every_locale() {
+        for code in ["en", "ko", "ja"] {
+            let tr = test_translator_for(code);
+            let notice = build_notice(&tr, None);
+            assert!(
+                notice.starts_with(NOTICE_SNIPPET),
+                "[{code}] 안내문이 화면 검증 조각(`{NOTICE_SNIPPET}`)으로 시작하지 않는다: {notice}"
+            );
+        }
+    }
+
+    /// 문구가 실제로 `t()` 를 거친다 — 로케일을 바꾸면 완성 문구가 달라진다.
+    #[test]
+    fn notice_changes_with_the_locale() {
+        let en = build_notice(&test_translator_for("en"), None);
+        let ko = build_notice(&test_translator_for("ko"), None);
+        assert_ne!(en, ko, "로케일이 달라도 같은 문구다 — t() 를 안 거친다");
     }
 
     #[test]
@@ -513,9 +506,51 @@ mod tests {
     }
 
     #[test]
-    fn require_surface_accepts_both_keys() {
-        assert_eq!(require_surface(&json!({ "surface": 7 })).unwrap(), 7);
-        assert_eq!(require_surface(&json!({ "surface_id": 9 })).unwrap(), 9);
-        assert!(require_surface(&json!({})).is_err());
+    fn require_target_surface_accepts_both_keys() {
+        assert_eq!(
+            crate::handlers::require_target_surface(
+                &json!({ "surface": 7 }),
+                &test_translator_for("en")
+            )
+            .unwrap(),
+            7
+        );
+        assert_eq!(
+            crate::handlers::require_target_surface(
+                &json!({ "surface_id": 9 }),
+                &test_translator_for("en")
+            )
+            .unwrap(),
+            9
+        );
+        assert!(
+            crate::handlers::require_target_surface(&json!({}), &test_translator_for("en"))
+                .is_err()
+        );
+
+        // 자르지 않는다 — `u32::MAX + 2` 를 자르면 1 이 되고, 그것은 실재할 수 있는
+        // 다른 surface 의 id 다. `handlers::require_u32` 와 같은 갈래.
+        assert!(
+            crate::handlers::require_target_surface(
+                &json!({ "surface": u64::from(u32::MAX) + 2 }),
+                &test_translator_for("en")
+            )
+            .is_err()
+        );
+        assert!(
+            crate::handlers::require_target_surface(
+                &json!({ "surface": "conductor" }),
+                &test_translator_for("en")
+            )
+            .is_err()
+        );
+        assert_eq!(
+            crate::handlers::require_target_surface(
+                &json!({ "surface": u32::MAX }),
+                &test_translator_for("en")
+            )
+            .unwrap(),
+            u32::MAX
+        );
     }
 }
