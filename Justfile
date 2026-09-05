@@ -123,6 +123,16 @@ PROFILE := env_var_or_default('PROFILE', 'release')
 # 모든 bin plugin crate 를 빌드 + 스테이징.
 # 판별 기준: crates/tasty-plugin-* 중 tasty-plugin.toml 보유 = bin plugin.
 # manifest 없는 lib-only crate (protocol, sdk, manifest, sdk-wasm) 는 자동 skip.
+# e2e 하네스가 띄울 헤드리스 데몬을 짓고 경로를 낸다.
+#
+# IPC/attach 만 쓰는 스위트는 이것을 띄우면 GUI 부팅(창 + wgpu 디바이스 + boot
+# 상태기계)을 통째로 건너뛴다. 조합 의존 단언을 가진 스위트(`e2e_tests`)는 이
+# 경로를 **안 받는다** — `spawn_diag::daemon_kind()`.
+#
+#   BIN=$(just e2e-headless-bin) && export TASTY_E2E_BIN=$BIN
+e2e-headless-bin:
+    @scripts/build-e2e-headless.sh
+
 build-plugins:
     #!/bin/bash
     set -euo pipefail

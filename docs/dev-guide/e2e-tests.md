@@ -19,6 +19,10 @@
 
 **바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
 
+**헤드리스 데몬은 `scripts/build-e2e-headless.sh` 가 짓는다**(`just e2e-headless-bin`). 빌드가 실패하거나 결과가 낡았으면 **아무것도 내지 않는다** — 호출자가 그때 `TASTY_E2E_BIN` 을 안 넘기면 하네스는 오늘 동작으로 떨어진다. 배선이 틀려도 초록이 거짓이 되지 않는 방향이다. 왜 별도 빌드여야 하는지는 그 스크립트 머리에 적혀 있다: 루트 `tasty` 에는 lib 타깃이 없고(바이너리 전용 패키지다) `gui` 는 **패키지 단위** feature 라, `[[bin]]` 을 하나 더 넣어 그 타깃만 `gui` 를 끄는 것은 cargo 에서 **불가능**하다.
+
+**낡은 override 는 하네스가 거절한다.** `spawn_diag::source_newer_than` 이 `src/`·`crates/` 의 `.rs` 중 그 바이너리보다 새것이 있으면 패닉으로 세운다 — 낡은 데몬은 정상 부팅해 정상 응답하므로, 안 잡으면 스위트가 **옛 코드에 대해** 판정하고 그 오진은 양방향이다.
+
 **그 안에서 판정은 스위트 단위다** — `spawn_diag::daemon_kind()`. 인스턴스를 띄우는 스위트 중 **조합 의존 단언을 가진 것만** 자기 조합의 데몬을 요구하고(`DaemonKind::SameCombo`), 나머지는 헤드리스 데몬으로 충분하다(`HeadlessOk`). 명부는 `HEADLESS_OK_SUITES` 한 곳이고, 그것이 `EXPECTED_INSTANCE_TESTS` 와 갈리지 않는 것은 `tests/e2e_single_instance_guard.rs` 가 **양방향으로** 본다(분류 안 된 스위트 / 명부에만 있는 이름). 분류를 안 하면 안전한 쪽인 `SameCombo` 로 떨어진다 — 놓치면 최적화를 잃을 뿐 틀린 빨강은 안 난다.
 
 **로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.

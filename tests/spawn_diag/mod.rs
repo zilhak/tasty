@@ -123,12 +123,85 @@ pub fn instance_bin() -> std::ffi::OsString {
             std::path::Path::new(v).display()
         );
     }
-    let effective = match daemon_kind() {
-        // 조합 의존 단언을 가진 스위트는 override 를 **안 받는다** — 아래 함정 4 참조.
+    let effective = effective_override(daemon_kind(), from_env);
+    if let Some(v) = effective.as_deref()
+        && !v.is_empty()
+        && let Some(newer) = source_newer_than(std::path::Path::new(v), repo_roots())
+    {
+        panic!(
+            "{INSTANCE_BIN_ENV} 가 가리키는 바이너리가 소스보다 낡았다.\n\
+             \x20 바이너리: {}\n\x20 더 새 소스: {}\n\
+             낡은 데몬은 **정상 부팅해 정상 응답한다** — 그래서 이 스위트는 옛 코드에 대해 \
+             통과하거나 실패하고, 그 오진은 양방향이다(고친 것이 안 고쳐진 것처럼도, \
+             되돌린 것이 여전히 고쳐진 것처럼도 보인다).\n\
+             다시 빌드하거나(`scripts/build-e2e-headless.sh`) `{INSTANCE_BIN_ENV}=` 로 꺼라 \
+             — docs/dev-guide/e2e-tests.md",
+            std::path::Path::new(v).display(),
+            newer.display()
+        );
+    }
+    resolve_instance_bin(effective.as_deref(), env!("CARGO_BIN_EXE_tasty"))
+}
+
+/// override 가 **이 스위트에 실제로 적용되는가**. 순수 함수로 둔다 — 환경변수를
+/// 건드리지 않고 두 갈래를 다 시험할 수 있어야 한다.
+///
+/// 조합 의존 단언을 가진 스위트가 override 를 안 받는 것이 **이 설계의 안전장치
+/// 전부**다. 그것이 무너지면 데몬만 조합이 바뀌어 그 단언들이 구조적으로 뒤집힌다
+/// (함정 4). 그래서 여기에 테스트가 붙어 있다.
+fn effective_override(
+    kind: DaemonKind,
+    from_env: Option<std::ffi::OsString>,
+) -> Option<std::ffi::OsString> {
+    match kind {
         DaemonKind::SameCombo => None,
         DaemonKind::HeadlessOk => from_env,
-    };
-    resolve_instance_bin(effective.as_deref(), env!("CARGO_BIN_EXE_tasty"))
+    }
+}
+
+/// 낡음 판정이 훑을 소스 뿌리. 문서·워크플로는 데몬 동작을 안 바꾸므로 안 본다.
+fn repo_roots() -> Vec<std::path::PathBuf> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    vec![root.join("src"), root.join("crates")]
+}
+
+/// `bin` 보다 **새로운** `.rs` 가 하나라도 있으면 그 경로를 준다.
+///
+/// 첫 하나에서 멈춘다 — 몇 개가 새것인지는 판정에 필요 없고, 전수로 훑으면 회차마다
+/// 무는 비용이 된다. 실측 10~14 ms(`find` 등가).
+///
+/// **mtime 을 못 읽는 경로는 "새것 아님" 으로 넘긴다.** 판정 불가를 빨강으로 만들면
+/// 권한·심볼릭 링크 같은 환경 차이가 곧바로 거짓 빨강이 되는데, 이 판정의 목적은
+/// 낡은 것을 잡는 것이지 파일시스템을 검사하는 것이 아니다.
+fn source_newer_than(
+    bin: &std::path::Path,
+    roots: Vec<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    let bin_mtime = std::fs::metadata(bin).and_then(|m| m.modified()).ok()?;
+    let mut stack = roots;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let newer = std::fs::metadata(&p)
+                .and_then(|m| m.modified())
+                .map(|m| m > bin_mtime)
+                .unwrap_or(false);
+            if newer {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 /// 이 스위트가 어떤 데몬을 원하는가.
@@ -337,6 +410,76 @@ mod tests {
             "/built/by/cargo",
         );
         assert_eq!(picked, std::ffi::OsString::from("/prebuilt/headless/tasty"));
+    }
+
+    /// **조합 의존 단언을 가진 스위트는 override 를 안 받는다** — 이 설계의 안전장치
+    /// 전부가 이 한 줄이다. 무너지면 데몬만 조합이 바뀌어 `..._answers_in_both_combos`
+    /// 계열의 단언이 구조적으로 뒤집힌다(함정 4).
+    ///
+    /// **양방향으로 본다** — 무시하는 쪽만 보면 "전부 무시" 도 통과한다.
+    #[test]
+    fn only_the_combo_dependent_suites_ignore_the_override() {
+        let given = || Some(std::ffi::OsString::from("/some/headless/tasty"));
+
+        assert_eq!(
+            effective_override(DaemonKind::SameCombo, given()),
+            None,
+            "자기 조합의 데몬이 필요한 스위트는 override 를 받으면 안 된다"
+        );
+        assert_eq!(
+            effective_override(DaemonKind::HeadlessOk, given()),
+            given(),
+            "IPC 만 쓰는 스위트는 override 를 그대로 받아야 한다 — 안 받으면 이 설계가 \
+             아무것도 안 하는 것과 같다"
+        );
+    }
+
+    /// 낡은 override 바이너리를 잡는가. **이 판정이 죽으면 아무 소리도 안 난다** —
+    /// 낡은 데몬은 정상 부팅해 정상 응답하고 스위트는 옛 코드에 대해 판정한다.
+    ///
+    /// 양방향: 새 소스가 있으면 잡고, 없으면 안 잡는다. 그리고 `.rs` 가 아닌 새 파일은
+    /// 데몬 동작을 안 바꾸므로 잡지 않는다 — 그것까지 잡으면 문서만 고쳐도 빨개진다.
+    #[test]
+    fn a_stale_override_binary_is_detected_and_a_fresh_one_is_not() {
+        let dir = std::env::temp_dir().join(format!(
+            "tasty-stale-probe-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).expect("탐침 디렉토리를 만들 수 있어야 한다");
+        let bin = dir.join("tasty");
+        std::fs::write(&bin, b"bin").expect("가짜 바이너리를 쓸 수 있어야 한다");
+
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]),
+            None,
+            "소스가 하나도 없으면 낡지 않았다"
+        );
+
+        // 바이너리보다 확실히 새것이 되게 한다 — 파일시스템 mtime 해상도가 거칠 수 있다.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(src.join("notes.md"), b"x").expect("문서를 쓸 수 있어야 한다");
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]),
+            None,
+            "`.rs` 가 아닌 파일은 데몬 동작을 안 바꾼다 — 이것까지 잡으면 문서만 고쳐도 \
+             빨개진다"
+        );
+
+        std::fs::write(src.join("app.rs"), b"fn main() {}").expect("소스를 쓸 수 있어야 한다");
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]).as_deref(),
+            Some(src.join("app.rs").as_path()),
+            "바이너리보다 새로운 `.rs` 가 있으면 그 경로를 대야 한다"
+        );
+
+        // 탐침 디렉토리는 판정에 안 쓰이므로 정리 실패를 무시한다 — 남아도 temp 이고,
+        // 여기서 실패를 올리면 판정과 무관한 이유로 빨개진다.
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
