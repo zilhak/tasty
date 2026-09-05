@@ -250,6 +250,8 @@ tier 는 존재한다 — DTCG `primitive.opacity-disabled`(0.5) · `-recessed`(
 | `src/adapters/ui/tab_bar.rs` 활성 탭 밑줄 두께 | `component.tab-indicator-width` | 2 = 2 | **불렀다** — 픽셀 0 |
 | `src/adapters/ui/popup/remote_attach.rs` 선택 행 좌측 바 | 같은 토큰 | 2 = 2 | **불렀다** — 픽셀 0 |
 | `src/adapters/ui/tab_bar.rs` busy 점 | `component.tab-dot-size` | 8 ≠ 6 | **못 부른다** |
+| `crates/tasty-gallery/src/host_shell.rs` UI scale 세그 | `AppearanceSettings::ui_scale_factor_for` | 0.85 ≠ 0.8 | **갈라져 있었다** |
+| `src/adapters/ui/popup.rs` 타이틀 버튼 치수 | `tasty-gallery` 의 `popup_frame::TITLE_BTN_SIZE`·`TITLE_BTN_EDGE_PAD` | 20·4 = 20·4 | **방향이 반대** |
 
 **셋째가 이 부류의 경계다.** 이름이 있다는 것이 부르라는 뜻은 아니다 — 값이 다르면 부르는
 것은 정정이 아니라 **값 변경**이고, 이 ADR 의 본 결정이 그대로 적용된다(스냅하지 말고
@@ -259,6 +261,21 @@ tier 는 존재한다 — DTCG `primitive.opacity-disabled`(0.5) · `-recessed`(
 `zoom_exempt_fields_guard` 에 Hairline 사유로 등재된 **zoom 면제** 필드라 `zoomed()` 를
 안 거친다. **일반적으로는 값이 같아도 토큰은 zoom 을 타고 명명 const 는 안 타므로 픽셀 0 이
 아니다**(위 반경 축 절의 표). 부르기 전에 그 필드가 zoom 을 타는지부터 본다.
+
+**넷째가 이 형태의 대가를 보여준다.** 앞 셋은 "안 불러서 리터럴이 남았다" 였고, 갤러리의
+UI scale 사본은 "안 불러서 **갈라졌다**" 다. 그 사본은 주석에 "Appearance›Display 매핑과
+동일" 이라는 **등식을 주장하면서** 0.8 을 들고 있었고 정본의 small 은 0.85 였다. 배율 집합
+정본에 달린 핀은 자기를 **읽을 수 없는** 소비자의 사본만 겨냥해 두었는데 갤러리는 그
+소비자가 아니다 — 이미 그 크레이트를 의존한다. **핀은 셋째 사본이 있는 줄 몰랐다.**
+그래서 0.8 → 0.85 는 디자인 결정이 아니라 **자기가 같다고 적은 값에 맞추는 정합 회복**이다.
+
+**다섯째는 방향이 반대다 — 이 형태에 방향이 둘이라는 뜻이다.** 앞 넷은 정본(토큰·설정
+크레이트·`theme.md`)에 이름이 있고 소비하는 코드가 안 불렀다. 다섯째는 본체가 무명
+리터럴(`let size = 20.0;` / `- 4.0`)을 쓰고 **그 이름이 갤러리에 있다**. 갤러리가 본체보다
+앞선 자리가 있다는 것이고, 값은 같으므로 이름을 옮기는 일이지 값 변경이 아니다.
+**"정본에 이름이 있나" 만 물으면 이 방향은 절반이 안 잡힌다** — 물음은 "이 값에 이름이
+어디엔가 있나" 여야 한다. 게다가 이 자리는 인라인 리터럴이라 **선언만 보는 전선 가드에도
+안 걸린다**(가드가 세는 것은 `const NAME: f32 = ...` 이다).
 
 **찾는 법**: 값을 먼저 보지 말고 [`theme.md`](../design/systems/theme.md) 의 규칙 표에서
 그 역할의 행을 찾아라 — 위 둘은 "accent 바 · 인디케이터" 행이 **"활성 행의 좌측 바, 탭
