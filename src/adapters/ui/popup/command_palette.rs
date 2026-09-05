@@ -311,13 +311,19 @@ fn row_highlighted(query_empty: bool, row: usize, selected: usize) -> bool {
 ///
 /// 각 키는 개별 키캡 박스(`[Ctrl] [Shift] [N]`), 사이에 muted `+` 구분자. `right_x`
 /// 에서 좌측으로 정렬한다. 키캡 스펙: min-width/height 18, h-padding 5, radius-sm,
-/// surface-raised 배경, border-strong 1px + 하단 2px(물리 키캡 깊이감), mono caption +
-/// text-secondary. `+` 는 text-muted. (디자인 Kbd `border-bottom-width: kbd-shadow-depth`
-/// = size-2. egui rect_stroke 는 균일 두께라 하단만 별도 2px 라인으로 근사 — chip.rs kbd 동일.)
-/// 키캡 하단 edge 두께 = 디자인 `--tasty-kbd-shadow-depth`(size-2). Theme 에 size-2 토큰이
-/// 없어 chip.rs `kbd()` 와 동일하게 고정 2px 로 둔다(디자인 고정 px).
-const KEYCAP_BOTTOM_BORDER: LogicalPx = LogicalPx(2.0);
-
+/// surface-raised 배경, border-strong 1px + 하단 edge(물리 키캡 깊이감), mono caption +
+/// text-secondary. `+` 는 text-muted. egui `rect_stroke` 는 균일 두께라 하단만 별도
+/// 라인으로 근사한다 — `chip.rs` 의 `kbd_parts` 와 같은 방식이다.
+///
+/// 하단 edge 두께는 디자인 `--tasty-kbd-shadow-depth` 이고 **`theme.kbd_shadow_depth()`
+/// 가 그 토큰이다.** 한동안 여기 고정 2px 상수가 있었고 그 주석은 "Theme 에 대응 토큰이
+/// 없다" 고 적었는데, 그건 쓸 당시엔 참이었고 지금은 아니다 — 토큰이 생겼으므로 읽는다.
+/// 상수로 두면 배율에서 갈린다(토큰은 `ui_zoom` 을 타고 상수는 안 탄다).
+///
+/// **나머지 치수는 아직 `kbd_parts` 와 값이 다르다** — 한 변 18 대 `kbd-size` 16,
+/// h-padding 5 대 `kbd-padding-x` 4, 키 사이 4 대 `kbd-gap` 3, 글자 caption 11 대
+/// `kbd-font-size` 10. 넷 다 여기서 크다. 같은 컴포넌트의 두 크기인지 드리프트인지는
+/// 디자인이 답할 물음이라, 값을 맞추지 않고 그대로 둔다.
 fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
     if keys.is_empty() {
         return;
@@ -383,7 +389,7 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
                 egui::pos2(box_rect.left() + radius, box_rect.bottom() - bw),
                 egui::pos2(box_rect.right() - radius, box_rect.bottom() - bw),
             ],
-            egui::Stroke::new(KEYCAP_BOTTOM_BORDER.value(), border),
+            egui::Stroke::new(theme.kbd_shadow_depth().value(), border),
         );
         let gx = box_rect.center().x - galley.size().x / 2.0;
         let gy = center_y - galley.size().y / 2.0;
