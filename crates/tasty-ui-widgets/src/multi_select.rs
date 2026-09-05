@@ -1,14 +1,26 @@
 //! `MultiSelect` — 다중선택 드롭다운 (디자인 `components/forms/Select` 계열).
 //!
-//! 닫힌 트리거는 [`crate::select`] 와 **같은 토큰**(`select_height` / `select_padding_x`
-//! / `select_radius` / `select_font_size` / `select_chevron_room` / `select_fg` /
-//! `select_chevron_fg`)을 쓴다 — 같은 폼에 나란히 놓였을 때 높이·보더·폰트가 어긋나면
-//! 안 되기 때문이다. 다른 것은 셋뿐이다.
+//! 닫힌 트리거의 **형상은 [`crate::select`] 와 한 벌을 공유한다** — 자리 잡기는
+//! [`crate::select::alloc_trigger`], 박스는 [`crate::select::paint_trigger_box`] 를
+//! 둘이 함께 부른다. 주석으로 "같은 토큰을 쓴다" 고 적는 대신 원문을 하나로 둔 것이라,
+//! 같은 폼에 나란히 놓인 두 컨트롤의 높이·배경·반경·선굵기가 갈릴 자리가 없다.
+//!
+//! 다른 것은 넷이다.
 //!
 //! 1. 팝업 본문이 라디오(`selectable_label`)가 아니라 [`crate::checkbox`] 행이다.
 //! 2. close behavior 가 `CloseOnClickOutside` 다 — 항목을 **연속으로** 토글해야 하므로
 //!    하나 눌렀다고 닫히면 쓸 수 없다.
 //! 3. 트리거 텍스트가 값 하나가 아니라 **요약 라벨**이다(0개 / N개 / 전부 3갈래).
+//! 4. ★ **보더 색 갈래가 하나 더 있다** — 이 위젯은 키보드로 끝까지 조작되므로 열렸거나
+//!    포커스를 가졌을 때 `select_border_focus` 를 쓴다. `select` 에는 그 갈래가 없는데,
+//!    그쪽이 빠뜨린 것이 아니라 **애초에 키보드로 조작되지 않기 때문**이다
+//!    (`Sense::click()` 만 받고 키를 하나도 안 읽는다). 그래서 보더 **색**만 공용 헬퍼가
+//!    아니라 호출자가 정한다.
+//!
+//! ★ 위 목록이 "넷뿐" 이라는 것은 **아무것도 지키지 않는다.** 어느 한쪽이 기능을 하나
+//! 얻으면 그 순간 조용히 거짓이 된다(실제로 4 번이 그렇게 빠져 있었다). 지킬 수 있는 것은
+//! 위의 *같음*(공용 헬퍼를 부른다 — 구조가 지킨다)이고, 이 *다름*의 목록은 읽는 사람을
+//! 위한 안내이지 단정이 아니다.
 //!
 //! **요약 문구는 이 crate 가 소유하지 않는다.** 위젯 crate 는 i18n 을 의존하지 않아
 //! 번역을 가질 수 없다 — 호출자가 [`MultiSelectLabels`] 로 세 문구를 주입하고, 어느
@@ -27,7 +39,7 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::keyboard_cursor::{edge_enabled, row_enabled, step_active};
-use crate::select::paint_chevron;
+use crate::select::{alloc_trigger, paint_chevron, paint_trigger_box};
 
 /// 트리거 요약 라벨 3갈래. 문구는 호출자(=i18n 을 가진 쪽)가 주입한다.
 ///
@@ -281,10 +293,8 @@ pub fn multi_select(
     width: f32,
     enabled: bool,
 ) -> bool {
-    let height = theme.select_height().value();
+    // 높이·반경·선굵기는 공용 헬퍼(`alloc_trigger`·`paint_trigger_box`)가 읽는다.
     let pad_x = theme.select_padding_x().value();
-    let radius = theme.select_radius().value();
-    let bw = theme.border_width.value();
     let body = theme.select_font_size().value();
     let chevron_room = theme.select_chevron_room().value();
 
@@ -337,12 +347,7 @@ pub fn multi_select(
         }
     }
 
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    let (rect, resp) = alloc_trigger(ui, theme, width, enabled);
     let dim = |c: egui::Color32| {
         if enabled {
             c
@@ -365,13 +370,7 @@ pub fn multi_select(
     } else {
         theme.select_border()
     };
-    ui.painter().rect(
-        rect,
-        radius,
-        dim(theme.select_bg().to_egui()),
-        egui::Stroke::new(bw, dim(border.to_egui())),
-        egui::StrokeKind::Inside,
-    );
+    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
 
     // 요약 라벨 — 가용 폭(좌 padding ~ chevron 앞) 초과 시 말줄임으로 border/chevron
     // 침범 방지(select 와 동일 규칙). 0 개 선택은 placeholder 톤으로 "아직 안 골랐다" 를
