@@ -63,7 +63,7 @@ pub enum PendingReason {
 }
 
 /// extension 등록 상태 머신. PluginManager가 소유.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct ExtensionRegistry {
     /// extension plugin id → 현재 상태. extends 블록이 없는 plugin은 등록되지 않음.
     states: HashMap<String, ExtensionState>,

@@ -25,10 +25,20 @@ impl PluginManager {
     }
 
     pub fn recompute_extensions(&mut self) {
+        let fresh = self.freshly_computed_extensions();
+        self.extensions = fresh;
+    }
+
+    /// 지금의 packages + config 로 확장 집합을 **처음부터** 계산한다.
+    ///
+    /// `recompute_extensions` 와 아래 디버그 단정이 같은 계산을 쓰게 하려고 뽑았다 —
+    /// 둘이 갈라지면 단정이 자기 사본을 상대로 성립해 아무것도 안 지킨다.
+    fn freshly_computed_extensions(&self) -> super::super::extension_registry::ExtensionRegistry {
         let manifests: Vec<&tasty_plugin_manifest::Manifest> =
             self.packages.iter().map(|p| &p.manifest).collect();
         let cfg = &self.config;
-        self.extensions.recompute(
+        let mut out = self.extensions.clone();
+        out.recompute(
             &manifests,
             &|id| cfg.is_disabled(id),
             &|ext_id, target_id| {
@@ -36,6 +46,29 @@ impl PluginManager {
                 cfg.granted_permissions(ext_id).contains(&token)
             },
         );
+        out
+    }
+
+    /// 유도된 확장 집합이 **지금의 원본과 일치하는가** — debug 빌드에서만 판정한다.
+    ///
+    /// 텍스트 가드는 "유도를 안 불렀다" 는 잡지만 "불렀는데 원본이 그 뒤에 또
+    /// 바뀌었다" 는 못 잡는다(흐름 판정이라 줄 단위 스캔의 범위 밖이다). 그 부류를
+    /// 실행 시점으로 옮긴다 — lifecycle 조작 끝에서 부르면, 순서가 어긋난 그 자리에서
+    /// 바로 터진다. release 에서는 본문이 통째로 사라져 비용이 0 이다.
+    ///
+    /// 실제로 있었다: `plugin_install` 이 `recompute_extensions()` 를
+    /// `config.set_granted()` **앞**에서 불렀고, 뒤따르는 `enable` 이 한 번 더
+    /// 계산하는 덕에 가려져 있었다. 그 `enable` 은 `is_disabled` 분기에서 건너뛴다.
+    pub fn debug_assert_extensions_fresh(&self) {
+        #[cfg(debug_assertions)]
+        {
+            let fresh = self.freshly_computed_extensions();
+            assert!(
+                fresh == self.extensions,
+                "확장 집합이 낡았다 — 유도(`recompute_extensions`) 뒤에 원본(packages 또는 \
+                 config)이 또 바뀌었다. 유도를 원본의 마지막 쓰기 뒤로 옮겨라"
+            );
+        }
     }
 
     pub fn plugin_tool_items(&self) -> Vec<crate::tool_registry::ToolItem> {

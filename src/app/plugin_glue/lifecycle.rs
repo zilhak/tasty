@@ -170,6 +170,7 @@ impl App {
         // 아래 `enable` 이 한 번 더 계산하기 때문인데, 그 호출은 `is_disabled` 일 때
         // 건너뛴다 — 즉 무해함이 다른 분기에 얹혀 있었다.
         mgr.recompute_extensions();
+        mgr.debug_assert_extensions_fresh();
 
         let mut events = vec![CoreEvent::PluginRegistryChanged {
             plugin_id: manifest.id.clone(),
@@ -220,6 +221,7 @@ impl App {
         crate::i18n::unregister_namespace(&plugin_id);
         mgr.recompute_extensions();
         hook_event_registry.unregister(&plugin_id);
+        mgr.debug_assert_extensions_fresh();
         Ok(vec![CoreEvent::PluginRegistryChanged {
             plugin_id,
             change: PluginRegistryChange::Removed,

@@ -321,7 +321,7 @@ pub struct PluginManager {
     pub(super) pending_requests: HashMap<u64, PendingRequestKind>,
     /// 각 plugin에 grant된 권한. 매니페스트 + plugins.toml의 granted를 교집합한 결과.
     /// `Arc`로 공유하여 CallerContext가 동시 호출 시 안전.
-    pub(super) plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,
+    plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,
     /// plugin이 보낸 IpcCall을 호스트의 main loop에서 라우팅 처리하기 위해 모으는 큐.
     /// `App::process_plugin_ipc_calls()`가 매 tick에 비운다.
     pub(super) pending_plugin_calls: Vec<PendingPluginCall>,
@@ -472,6 +472,8 @@ mod queries;
 mod response;
 
 // G.D.c — IpcNamespaceRegistry ↔ tasty-ipc runtime registry mirror 통합 테스트.
+#[cfg(test)]
+mod tests_derived_freshness;
 #[cfg(test)]
 mod tests_namespace_mirror;
 
