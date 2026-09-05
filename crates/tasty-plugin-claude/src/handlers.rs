@@ -349,18 +349,15 @@ pub(crate) fn register_notify_hooks<H: HostCall>(
     command_name: &str,
 ) {
     let command = notify_done_command(caller_surface, target_surface, command_name);
-    for event in ["claude-idle", "needs-input", "process-exit"] {
-        // best-effort — 등록 실패해도 spawn/tell 자체는 이미 성공했으므로 무시.
-        let _ = host.call(
-            "hook.set",
-            json!({
-                "surface_id": target_surface,
-                "event": event,
-                "command": command,
-                "once": true,
-            }),
-        );
-    }
+    // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
+    // 등록 루프만 공유하고 목록은 각자 갖는다.
+    tasty_plugin_agent_common::host_call::register_completion_hooks(
+        host,
+        target_surface,
+        &command,
+        &["claude-idle", "needs-input", "process-exit"],
+        "claude",
+    );
     register_error_notify_hook(host, caller_surface, target_surface);
 }
 

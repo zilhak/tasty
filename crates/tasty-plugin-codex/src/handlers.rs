@@ -404,7 +404,7 @@ pub fn handle_tell(
     // --caller-surface 도 허용). 없으면(예: 호스트가 직접 IPC 호출) 완료 알림을
     // 등록하지 않는다 — 누구에게 알릴지 모르므로.
     if let Ok(caller) = require_u32(&params, "caller_surface", tr) {
-        register_notify_hooks(host, surface_id, caller, "tell");
+        register_notify_hooks(host, caller, surface_id, "tell");
     }
 
     Ok(resp)
@@ -445,7 +445,7 @@ pub fn handle_spawn(
     )?;
 
     // 3) 완료 시(codex-idle/process-exit) parent 에게 1 회성 알림 등록.
-    register_notify_hooks(host, child_sid, parent_surface, "spawn");
+    register_notify_hooks(host, parent_surface, child_sid, "spawn");
 
     // 4) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
     let mut out = resp;
@@ -545,21 +545,25 @@ fn fetch_screen_text_for_hint<H: HostCall>(host: &H, target: u32) -> Option<Stri
 /// 동작하고, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에 spawn/tell 이 겹쳐
 /// 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다. host 호출 실패는 경고만 하고
 /// 넘어간다(soft — spawn/tell 성공을 막지 않음).
+/// **인자 순서는 claude 쪽과 같다** — 한때 `(host, target, caller, …)` 로 뒤집혀 있었다.
+/// 둘 다 `u32` 라 뒤집혀도 컴파일러가 안 잡고, 두 crate 사이에서 코드를 옮기는 순간
+/// 조용히 뒤바뀐다. 등록 루프 자체는 공용이라 그쪽에는 이 짝이 아예 없다.
 fn register_notify_hooks<H: HostCall>(
     host: &H,
-    target_surface: u32,
     caller_surface: u32,
+    target_surface: u32,
     kind: &str,
 ) {
     let cmd = notify_caller_command(caller_surface, target_surface, kind);
-    for event in ["codex-idle", "process-exit"] {
-        if let Err(e) = host.call(
-            "hook.set",
-            json!({ "surface_id": target_surface, "event": event, "command": cmd, "once": true }),
-        ) {
-            tracing::warn!("codex notify hook.set '{event}' failed: {e}");
-        }
-    }
+    // 이벤트 집합은 이 plugin 의 매니페스트(`contributes.hook_events`)가 근거다 —
+    // `needs-input` 이 없는 것은 표류가 아니라 codex 에 그 hook 이 없기 때문이다.
+    tasty_plugin_agent_common::host_call::register_completion_hooks(
+        host,
+        target_surface,
+        &cmd,
+        &["codex-idle", "process-exit"],
+        "codex",
+    );
 }
 
 /// `register_notify_hooks` 가 등록한 hook 이 fire 되면 실행되는 핸들러. caller
@@ -616,9 +620,7 @@ fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &
         .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
         .unwrap_or(false);
     if alive {
-        // register_notify_hooks 는 (host, target_surface, caller_surface, kind) 순서다
-        // (claude 쪽과 인자 순서가 다르므로 주의).
-        register_notify_hooks(host, target, caller, kind);
+        register_notify_hooks(host, caller, target, kind);
     }
 }
 
@@ -2173,7 +2175,7 @@ trusted_hash = "sha256:xyz"
     fn sibling_cleanup_removes_all_after_one_fires() {
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
-        register_notify_hooks(&host, target, caller, "tell");
+        register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 2, "2 형제 등록");
 
         // codex-idle 이 fire(once 제거) → 나머지 형제(process-exit) 정리.
@@ -2195,8 +2197,8 @@ trusted_hash = "sha256:xyz"
         // id 목록을 덮어써, spawn 그룹의 process-exit 이 정리되지 못하고 좀비로 남았다.
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
-        register_notify_hooks(&host, target, caller, "spawn");
-        register_notify_hooks(&host, target, caller, "tell");
+        register_notify_hooks(&host, caller, target, "spawn");
+        register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 4, "두 그룹 = 4 hook");
 
         // spawn 그룹의 codex-idle 이 먼저 fire → spawn 그룹만 정리.
@@ -2237,7 +2239,7 @@ trusted_hash = "sha256:xyz"
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         host.mark_alive(target);
-        register_notify_hooks(&host, target, caller, "tell");
+        register_notify_hooks(&host, caller, target, "tell");
         assert_eq!(host.commands_on(target).len(), 2, "최초 2 형제 등록");
 
         // 1번째 전환: codex-idle — child 는 여전히 살아있다.
@@ -2274,7 +2276,7 @@ trusted_hash = "sha256:xyz"
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         host.mark_alive(target);
-        register_notify_hooks(&host, target, caller, "spawn");
+        register_notify_hooks(&host, caller, target, "spawn");
 
         // process-exit 로 fire — host 는 이 시점에 이미 동기로 surface 를 닫으므로
         // surface.locate 가 exists:false 를 돌려주는 상황을 재현.

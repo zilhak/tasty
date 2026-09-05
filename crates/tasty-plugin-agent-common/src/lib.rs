@@ -20,6 +20,12 @@
 //! IPC 에러 문구도 여기 없다 — claude 는 번역해서 내보내고 codex 는 영어로 박아
 //! **두 plugin 의 규약이 지금 서로 반대**다. 합치면 한쪽 동작이 조용히 바뀐다.
 //!
+//! 한 함수 안에서도 갈린다. 완료 알림 hook 등록(`host_call::register_completion_hooks`)은
+//! 등록 **루프**만 여기 있고 **이벤트 목록**은 각 plugin 이 인자로 준다 — 그 목록의 근거는
+//! 각자의 매니페스트 `contributes.hook_events` 이고, host 는 매니페스트에 없는 이벤트
+//! 구독을 거부한다. codex 에 `needs-input` 이 없는 것은 표류가 아니라 **의도된 비대칭**이다
+//! (대응하는 codex hook 이벤트가 없어 거짓 계약을 만들지 않으려고 선언하지 않았다).
+//!
 //! ## 이 crate 는 plugin 이 아니다
 //!
 //! 이름이 `tasty-plugin-` 으로 시작하지만 `tasty-plugin.toml` 매니페스트가 없다 —
@@ -27,11 +33,12 @@
 //! 라이브러리 크레이트다. 번들 plugin 탐색(빌드 스크립트·버전 bump 검사·번들 가드)은
 //! 전부 매니페스트 유무로 거르므로 여기는 자연히 빠진다.
 //!
-//! **버전 정책 주의**: 이 crate 만 고치면 두 plugin 바이너리의 산출물이 바뀌는데도
-//! `scripts/check-plugin-version-bump.sh` 는 변경 목록에서 `crates/tasty-plugin-<name>/`
-//! 경로를 못 봐서 bump 를 요구하지 않는다. `tasty-plugin-sdk` · `tasty-utils` 에 대해
-//! 이미 있던 성질이고 여기도 같다 — 이 crate 를 단독으로 고쳤다면 두 plugin 의 patch 를
-//! 손으로 올려야 라이브 재sync 가 동작한다.
+//! **버전 정책 주의**: 이 crate 만 고쳐도 두 plugin 의 patch 를 함께 올려야 한다.
+//! 산출물이 실제로 달라지기 때문이다 —
+//! `scripts/check-plugin-version-bump.sh` 는 그것을 자동으로 잡는다(워크스페이스 내부
+//! 의존 폐포를 판정 대상에 넣는다: `docs/adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md`).
+//! 실측: 이 crate 한 줄만 바꾸면 게이트가 `tasty-plugin-claude` · `tasty-plugin-codex`
+//! 둘을 위반으로 낸다. `tasty-plugin-sdk` · `tasty-utils` 도 같다.
 
 pub mod children;
 pub mod host_call;

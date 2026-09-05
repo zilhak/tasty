@@ -43,6 +43,44 @@ pub fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expecte
     }
 }
 
+/// 완료 알림 hook 형제 그룹을 등록한다 — 이벤트마다 같은 `command` 를 `once` 로 단다.
+///
+/// **`caller` 와 `target` 을 둘 다 받지 않는다.** 둘 다 `u32` 라 인접하면 순서가 뒤집혀도
+/// 컴파일러가 못 잡는데, 실제로 두 plugin 의 같은 이름 함수가 **뒤집힌 순서**로 갈려
+/// 있었다(claude `(host, caller, target, kind)` / codex `(host, target, caller, kind)`).
+/// 그래서 여기서는 hook 이 달릴 surface 하나만 받고, caller 가 들어가는 자리는 부르는
+/// 쪽이 이미 만든 `command` 문자열 안에만 있다 — 뒤집힐 짝 자체가 없다.
+///
+/// **이벤트 목록은 인자다.** 두 plugin 이 구독하는 집합이 다른 것은 표류가 아니라 각
+/// CLI 가 내는 hook 이 다르기 때문이고, 그 근거는 각 plugin 의 매니페스트
+/// (`contributes.hook_events`)에 적혀 있다. 여기서 목록을 고정하면 그 근거가 지워진다.
+///
+/// best-effort — 등록이 실패해도 그 등록을 유발한 spawn/tell 은 이미 성공했다. 다만
+/// **조용히 넘기지 않는다**: 최선노력의 대가는 응답이 그 사실을 말하지 않는 것이라
+/// (docs/dev-guide/error-handling.md "plugin 핸들러의 host 호출") 실패의 유일한 흔적이
+/// 로그다. 흔적까지 없으면 등록이 통째로 안 된 채로 정상처럼 보인다.
+pub fn register_completion_hooks<H: HostCall>(
+    host: &H,
+    target_surface: u32,
+    command: &str,
+    events: &[&str],
+    agent: &str,
+) {
+    for event in events {
+        if let Err(e) = host.call(
+            "hook.set",
+            json!({
+                "surface_id": target_surface,
+                "event": event,
+                "command": command,
+                "once": true,
+            }),
+        ) {
+            tracing::warn!("{agent} notify hook.set '{event}' failed: {e}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
