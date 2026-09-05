@@ -179,3 +179,4 @@
 | 0166 | [plugin 버전 게이트는 디렉토리가 아니라 산출물을 판정한다](0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md) | Accepted | 2026-09-05 | plugin, versioning, guards, ci-gates, measurement, adr-0137, adr-0165, adr-0138 |
 | 0167 | [등재된 이름은 "없다" 가 아니라 "이 바이너리에 안 들어 있다" 로 답한다](0167-a-registered-name-answers-whether-it-is-in-this-binary.md) | Accepted | 2026-09-05 | ipc, error-codes, headless, build-combination, guards, adr-0154, adr-0163 |
 | 0168 | [파일 SLOC 임계 1000 은 유도되지 않는다 — 유지의 근거는 발화율 곡선이고, 동결은 한 방향만 잠겨 있다](0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md) | Accepted | 2026-09-05 | complexity-gate, threshold, ratchet, measurement, adr-0037, adr-0131, adr-0165 |
+| 0169 | [길이 타입의 튜플 생성자는 봉인하지 않는다 — 탈출구가 곧 같은 단언이기 때문](0169-the-tuple-constructor-of-length-types-stays-open.md) | Accepted | 2026-09-05 | typed-length, geometry, guards, dpi, sealing, census |
