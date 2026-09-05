@@ -96,8 +96,8 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 | 이유 | 메서드 | 왜 CLI 가 없나 |
 |---|---|---|
 | plugin → host 서비스 | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
-| plugin → host 서비스 | `fs.pick_file` · `file_picker.trigger` | plugin 프로세스가 못 여는 host UI 스레드 자원(native 다이얼로그 · host 소유 popup)을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다 |
-| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. host 는 kind 를 모르고 generic 하게 대행할 뿐이다 |
+| plugin → host 서비스 | `fs.pick_file` · `file_picker.trigger` | plugin 프로세스가 못 여는 host UI 스레드 자원(native 다이얼로그 · host 소유 popup)을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다. **`fs.pick_file` 은 그 위에 동기 잠금이 있다** — 다이얼로그가 열려 있는 동안 그 인스턴스의 이벤트 루프가 멎어 뒤따르는 IPC 가 전부 head-of-line 으로 막힌다(실측). CLI 잎을 만들면 셸이 사용자 선택까지 무한 대기하고, 그 사이 그 인스턴스에 붙은 다른 에이전트도 같이 막힌다 |
+| plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)) |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
 | plugin → host 서비스 | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
@@ -107,6 +107,21 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 | 같은 능력을 다른 명령이 준다 | `surface.send_combo` | `surface.send_key` 가 `"ctrl+c"` 형태를 파싱하므로 `tasty send key ctrl+c` 로 덮인다. 이쪽은 modifier 를 배열로 받는 JSON 친화 변종이다 |
 | 같은 능력을 다른 명령이 준다 | `surface.send_to` | `surface.send` 와 동형이라 `tasty send text --surface <id>` 로 덮인다 |
 | 연결 경계가 대신한다 | `attach.acquire` · `attach.release` · `attach.list` | 위 "CLI vs IPC" 의 `attach.*` 항목 참조. `client_id` 가 `stream.open` 핸드셰이크 발급물이라 one-shot CLI 가 들 수 없고, 사람이 쓰는 표면은 `tasty remote attach` / `tasty tool attach` 가 세션 전체를 안에서 처리한다 |
+
+### debug 표에 있는데 CLI 가 없는 메서드
+
+원칙 2 는 debug 빌드의 에이전트 표면에도 걸린다 — `debug.*` 는 release 에 없을 뿐,
+있는 빌드에서는 에이전트가 쓰는 기능이다. 아래는 debug 표(`DEBUG_METHODS`)에 있으면서
+`tasty debug …` 로도 부를 수 없는 것 전부다. release 쪽 표와 나눠 두는 이유는 두 집합의
+문장이 다르기 때문이다("release IPC 에 있는데 CLI 가 없다" vs "debug 빌드에만 있는데
+그 빌드의 CLI 에도 없다").
+
+debug 표 기준 총 3개.
+
+| 이유 | debug 메서드 | 왜 CLI 가 없나 |
+|---|---|---|
+| 사용자 행동 | `system.shutdown` | 호스트 종료는 사용자가 직접 하는 동작이다. debug 빌드에서도 에이전트 표면에 두지 않는다 |
+| 사용자 행동 | `window.focus` · `view.focus` | 포커스 전환은 사용자의 단축키/마우스 영역이다(원칙 3). debug IPC 에 재현 수단이 있는 것과, 그것을 CLI 한 줄로 상시 노출하는 것은 다르다 |
 
 ## 응답 계약 — mirror 워크스페이스로 간 구조 op
 

@@ -385,6 +385,11 @@ const CLI_GAP_DOC: &str = "docs/dev-guide/api-conventions.md";
 /// 문서에서 표를 특정하는 헤더 행.
 const CLI_GAP_TABLE_HEADER: &str = "| 이유 | 메서드 | 왜 CLI 가 없나 |";
 
+/// debug 절반의 표를 특정하는 헤더 행. release 표와 **다른 표**다 — `debug.*` 는
+/// release 빌드에 아예 없으므로 "release IPC 에 있는데 CLI 가 없다" 와 같은 문장으로
+/// 묶이지 않는다.
+const CLI_GAP_DEBUG_TABLE_HEADER: &str = "| 이유 | debug 메서드 | 왜 CLI 가 없나 |";
+
 /// 셀 안의 **모든 백틱 코드 스팬**. 한 셀에 메서드를 `·` 로 여럿 늘어놓는다.
 ///
 /// 코드 스팬만 뽑으므로 백틱 밖의 사람이 읽는 단서는 자연히 잘린다 — 그래서 대조를
@@ -489,6 +494,85 @@ fn collect_manifests(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// 문서에서 `header` 로 시작하는 표의 메서드 이름을 전부 뽑는다.
+///
+/// 두 표(release · debug)가 같은 파서를 쓴다 — 두 벌로 두면 한쪽만 고쳐지는 순간
+/// 대조 규약이 갈린다.
+fn listed_methods(text: &str, header: &str) -> Vec<String> {
+    let after_header = text
+        .split_once(header)
+        .unwrap_or_else(|| panic!("{CLI_GAP_DOC}: `{header}` 표 헤더를 찾지 못했다"))
+        .1;
+    after_header
+        .lines()
+        .skip(1) // `|---|---|---|` 구분선
+        .take_while(|l| l.trim_start().starts_with('|'))
+        .flat_map(|line| {
+            let cells: Vec<&str> = line.trim().trim_matches('|').split('|').collect();
+            if cells.len() != 3 {
+                panic!("{CLI_GAP_DOC}: 표 행의 열 수가 3이 아니다: {line}");
+            }
+            if cells[0].trim().starts_with("---") {
+                return Vec::new();
+            }
+            let methods = code_spans(cells[1]);
+            assert!(
+                !methods.is_empty(),
+                "{CLI_GAP_DOC}: 표 행의 메서드 열이 비었다: {line}"
+            );
+            methods
+        })
+        .collect()
+}
+
+/// 계산된 집합과 문서 표를 **양방향으로** 대조한다.
+fn assert_documented(
+    actual: &std::collections::BTreeSet<String>,
+    text: &str,
+    header: &str,
+    count_marker: &str,
+    what: &str,
+) {
+    let listed = listed_methods(text, header);
+    let listed_set: std::collections::BTreeSet<String> = listed.iter().cloned().collect();
+    assert_eq!(
+        listed.len(),
+        listed_set.len(),
+        "{CLI_GAP_DOC}: 표에 같은 메서드가 두 번 적혔다 — 한 메서드의 이유는 한 곳이어야 한다"
+    );
+
+    let undocumented: Vec<&String> = actual.difference(&listed_set).collect();
+    assert!(
+        undocumented.is_empty(),
+        "{what} 있는데 CLI 진입점이 없고, {CLI_GAP_DOC} 에도 이유가 없다. \
+         에이전트 기능이면 CLI 를 만들고(원칙 2), 원칙 밖이면 그 이유를 표에 적어라 \
+         — 이유 없이 두면 누락과 구분되지 않는다:\n  {}",
+        undocumented
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+
+    let stale: Vec<&String> = listed_set.difference(actual).collect();
+    assert!(
+        stale.is_empty(),
+        "{CLI_GAP_DOC} 표에 있으나 실제로는 CLI 진입점이 생겼거나 메서드가 사라졌다 — \
+         행을 지워야 표가 참이 된다:\n  {}",
+        stale
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+
+    assert!(
+        text.contains(count_marker),
+        "{CLI_GAP_DOC}: 표 앞 산문의 개수가 실제({})와 다르다 — `{count_marker}` 로 맞춰라",
+        actual.len()
+    );
+}
+
 /// release 표에 있는데 CLI 진입점이 없는 메서드가 문서 표와 **양방향으로** 맞는지.
 ///
 /// 원칙 2("에이전트 기능은 IPC + CLI 양면")는 release IPC 표면 **전체**가 아니라
@@ -512,70 +596,45 @@ fn methods_without_a_cli_entry_point_are_documented() {
 
     let text = std::fs::read_to_string(root.join(CLI_GAP_DOC))
         .unwrap_or_else(|e| panic!("read {CLI_GAP_DOC}: {e}"));
-    let after_header = text
-        .split_once(CLI_GAP_TABLE_HEADER)
-        .unwrap_or_else(|| panic!("{CLI_GAP_DOC}: `{CLI_GAP_TABLE_HEADER}` 표 헤더를 찾지 못했다"))
-        .1;
-    let listed: Vec<String> = after_header
-        .lines()
-        .skip(1) // `|---|---|---|` 구분선
-        .take_while(|l| l.trim_start().starts_with('|'))
-        .flat_map(|line| {
-            let cells: Vec<&str> = line.trim().trim_matches('|').split('|').collect();
-            if cells.len() != 3 {
-                panic!("{CLI_GAP_DOC}: 표 행의 열 수가 3이 아니다: {line}");
-            }
-            // `|---|---|---|` 구분선(헤더 split 뒤 첫 줄이 헤더의 잔여 빈 문자열이라
-            // skip(1) 만으로는 구분선이 남는다).
-            if cells[0].trim().starts_with("---") {
-                return Vec::new();
-            }
-            let methods = code_spans(cells[1]);
-            assert!(
-                !methods.is_empty(),
-                "{CLI_GAP_DOC}: 표 행의 메서드 열이 비었다: {line}"
-            );
-            methods
-        })
+    let marker = format!("총 {}개.", actual.len());
+    assert_documented(
+        &actual,
+        &text,
+        CLI_GAP_TABLE_HEADER,
+        &marker,
+        "release 표에",
+    );
+}
+
+/// debug 절반도 같은 대조를 받는다.
+///
+/// `debug.*` 는 release IPC 표면에 없지만 **debug 빌드의 에이전트 표면**이고, 원칙 2 는
+/// 거기서도 성립한다 — 실제로 이 축을 실행으로 재 보니 debug 메서드 14 개가 CLI 로
+/// 부를 수 없었고, 그중 어느 것도 "왜 없는지" 가 어디에도 없었다. release 절반만 보는
+/// 가드는 그 14 개를 한 번도 못 봤다.
+///
+/// 표를 둘로 나눈 이유: 두 집합의 문장이 다르다. release 쪽은 "release IPC 에 있는데
+/// CLI 가 없다" 이고 debug 쪽은 "debug 빌드에만 있는데 그 빌드의 CLI 에도 없다" 다.
+/// 한 표에 섞으면 어느 빌드 이야기인지가 행마다 달라진다.
+#[test]
+fn debug_methods_without_a_cli_entry_point_are_documented() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let reachable = cli_reachable_methods(root);
+
+    let actual: std::collections::BTreeSet<String> = tasty_ipc::method_meta::DEBUG_METHODS
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .filter(|name| !reachable.contains(name))
         .collect();
 
-    let listed_set: std::collections::BTreeSet<String> = listed.iter().cloned().collect();
-    assert_eq!(
-        listed.len(),
-        listed_set.len(),
-        "{CLI_GAP_DOC}: 표에 같은 메서드가 두 번 적혔다 — 한 메서드의 이유는 한 곳이어야 한다"
-    );
-
-    let undocumented: Vec<&String> = actual.difference(&listed_set).collect();
-    assert!(
-        undocumented.is_empty(),
-        "release 표에 있는데 CLI 진입점이 없고, {CLI_GAP_DOC} 에도 이유가 없다. \
-         에이전트 기능이면 CLI 를 만들고(원칙 2), 원칙 밖이면 그 이유를 표에 적어라 \
-         — 이유 없이 두면 누락과 구분되지 않는다:\n  {}",
-        undocumented
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n  ")
-    );
-
-    let stale: Vec<&String> = listed_set.difference(&actual).collect();
-    assert!(
-        stale.is_empty(),
-        "{CLI_GAP_DOC} 표에 있으나 실제로는 CLI 진입점이 생겼거나 메서드가 사라졌다 — \
-         행을 지워야 표가 참이 된다:\n  {}",
-        stale
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n  ")
-    );
-
-    // 산문에 박아 둔 개수도 함께 맞춘다 — 표만 고치고 개수를 두면 문서가 자기모순이 된다.
-    let count_marker = format!("총 {}개.", actual.len());
-    assert!(
-        text.contains(&count_marker),
-        "{CLI_GAP_DOC}: 표 앞 산문의 개수가 실제({})와 다르다 — `{count_marker}` 로 맞춰라",
-        actual.len()
+    let text = std::fs::read_to_string(root.join(CLI_GAP_DOC))
+        .unwrap_or_else(|e| panic!("read {CLI_GAP_DOC}: {e}"));
+    let marker = format!("debug 표 기준 총 {}개.", actual.len());
+    assert_documented(
+        &actual,
+        &text,
+        CLI_GAP_DEBUG_TABLE_HEADER,
+        &marker,
+        "debug 표에",
     );
 }
