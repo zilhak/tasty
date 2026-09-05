@@ -182,6 +182,22 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 첨부한다. `Stdio::piped()` + background drain thread + 링버퍼(capacity 256)로 OS pipe buffer(Linux 64KB / macOS 16KB)가 차서 child 가 write block 되는 것을 방지. `TASTY_LOG` 로 verbosity 를 cap 한다(drain 1차 + cap 2차 방어) — 값은 §4 의 env 표대로 **본체 기본 필터와 같은 모양**이어야 한다. 30 줄짜리 tail 은 노이즈 몇 줄에도 밀려나므로, 필터를 느슨하게 주는 것이 곧 진단 손실이다.
 
+## 5-1. 마커 대기 만료 진단 (`tests/marker_wait`)
+
+훅이 남기는 마커 파일을 기다리는 자리는 셋이다(`hooks_detection_e2e` · `hook_env_integration` ·
+`webhook_integration`). 대기 함수는 `tests/marker_wait` 한 곳에 있고 세 타깃이 `mod` 로 함께 쓴다 —
+같은 물음에 답하는 사본이 셋이면 하나를 고쳐도 나머지 둘은 안 고쳐진다.
+
+**만료 메시지가 두 사건을 가른다.** 마커가 안 나온 것과, 마커는 나왔는데 이 폴링 루프가 굶어
+못 본 것은 처방이 정반대인데 종전 메시지(`marker file … not written within 15s`)는 둘을 같은
+말로 덮었다. 가르는 값은 **실제 확인 횟수**다 — 예산을 폴 간격으로 나눈 기대치와 비교해,
+기대의 절반에 못 미치면 굶주림이라고 메시지가 직접 적는다. 그때 상한을 올리는 것은 처방이
+아니다(형태 C 완화가 은폐로 작동하는 자리다 — [ADR-0129](../adr/0129-flaky-test-classes-and-standard-fixes.md)).
+
+메시지에 함께 싣는 것: 경과 · 예산 · 확인 횟수와 기대치 · 1 분 부하 · 호출자가 준 증거(선택).
+**부하는 기록이지 판정이 아니다** — 실측에서 부하 평균은 지연을 예측하지 못했다(최대 지연이
+낮은 부하 회차에서 났다).
+
 ## 6. Flaky 대응 절차
 
 0. **panic 메시지 두 번째 줄의 판정문을 먼저 읽는다.** 하네스가 stderr 시그니처로 단서를 미리 갈라 놓는다. 단서마다 **확신 수준이 다르다** — 문장이 단정하는 것만 원인으로 받아들인다.

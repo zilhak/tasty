@@ -13,30 +13,12 @@
 //! 카운트가 리셋되므로 전용 surface 가 정확성 요건이다.
 
 mod common;
+mod marker_wait;
 
+use marker_wait::wait_file_content;
 use serde_json::json;
 use std::path::Path;
-use std::time::{Duration, Instant};
-
-/// 파일이 생기고 내용이 비지 않을 때까지 대기 → trim 된 내용 반환. 실패 시 panic.
-fn wait_file_content(path: &Path, timeout: Duration) -> String {
-    let start = Instant::now();
-    loop {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            let trimmed = content.trim().to_string();
-            if !trimmed.is_empty() {
-                return trimmed;
-            }
-        }
-        if start.elapsed() > timeout {
-            panic!(
-                "marker file {} not written within {timeout:?}",
-                path.display()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
+use std::time::Duration;
 
 /// 마커 파일에 고정 문자열을 쓰는 셸 커맨드 문자열. cmd/sh 양쪽에서 동일하게
 /// 동작하는 단순 리다이렉트라 OS 분기가 필요 없다.

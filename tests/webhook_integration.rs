@@ -23,9 +23,12 @@
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
 
+mod marker_wait;
 mod webhook_common;
 
 use std::time::{Duration, Instant};
+
+use marker_wait::wait_file_content;
 
 use serde_json::{Value, json};
 use webhook_common::{WebhookInstance, stdout_str};
@@ -406,25 +409,6 @@ fn integration_flow(inst: &WebhookInstance) {
 }
 
 // ───────────────────────── hook env 흐름 (구 hook_env_integration.rs 이관) ─────────────────────────
-
-/// 파일이 나타나 내용이 채워질 때까지 폴링 (셸 핸들러가 마커 파일을 쓴다).
-fn wait_file_content(path: &std::path::Path, timeout: Duration) -> String {
-    let start = Instant::now();
-    loop {
-        if let Ok(s) = std::fs::read_to_string(path) {
-            let t = s.trim();
-            if !t.is_empty() {
-                return t.to_string();
-            }
-        }
-        assert!(
-            start.elapsed() < timeout,
-            "marker file not written in time: {}",
-            path.display()
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
 
 /// hook env 검증용 핸들러 TOML + 마커 경로를 spawn **전에** 만든다.
 /// (레지스트리가 user 설정을 자체 영속하므로 spawn 후 파일 재작성 + reload 는
