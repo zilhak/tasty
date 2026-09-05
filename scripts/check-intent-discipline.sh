@@ -24,6 +24,24 @@
 # `// intent-exempt: <사유>` 는 **같은 줄 · 바로 위 줄 · 바로 아래 줄** 에서 인정한다.
 # 여러 줄에 걸친 호출에서 사유를 어디에 적는지가 사람마다 다르고, 셋 다 읽는 사람에게
 # 같은 뜻이기 때문이다.
+#
+# ── 사유의 진위 (두 번째 검사) ────────────────────────────────────────────
+# 위 검사는 **사유가 있는가**만 본다. 사유가 참인가는 통째로는 기계가 못 본다 —
+# 그래서 예외 하나를 붙일 때 아무 말이나 적어도 통과한다.
+#
+# 통째로는 못 봐도 **사유가 좌표·형태를 들면 그 조각은 볼 수 있다.** 그래서 사유
+# 형식에 검사 가능한 조각을 **일부러 넣게** 만든다. 자유 서술만 받으면 아무것도
+# 못 본다. 지금 두 조각을 읽는다:
+#
+#   [결과사용]              그 자리가 큐를 우회하는 이유가 "응답이 필요해서" 라는
+#                           주장. 호출 결과를 버리는 문장이면 그 주장은 거짓이다.
+#   [부재 <파일> <정규식>]   "그 변형이 아직 없어서" 라는 주장. 정규식이 그 파일에
+#                           나타나면 전제가 사라진 것이라 예외를 없애야 한다.
+#
+# 모르는 `[...]` 태그는 통과가 아니라 실패다 — 오타 하나로 검사가 조용히 꺼지면
+# 검사가 있다는 사실 자체가 거짓이 된다.
+#
+# 태그가 없는 사유는 **검사되지 않는다.** 그건 한계지 통과가 아니다.
 
 set -euo pipefail
 
@@ -142,6 +160,71 @@ if [ -n "$matches" ]; then
     echo "'// intent-exempt: <사유>' 주석을 추가하세요."
     echo
     echo "$matches"
+    exit 1
+fi
+
+# ── 사유의 검사 가능한 조각을 검증한다 ──────────────────────────────────
+claim_fail=""
+while IFS= read -r line; do
+    file=${line%%:*}; rest=${line#*:}
+    lno=${rest%%:*}
+    text=$(sed -n "${lno}p" "$file")
+
+    # 주장이 걸리는 줄: 주석 줄에 호출이 함께 있으면 그 줄, 아니면 다음 줄.
+    target_no=$lno
+    case "$text" in
+        *"//"*) before=${text%%//*}
+                case "$before" in
+                    *"("*) ;;
+                    *) target_no=$((lno + 1)) ;;
+                esac ;;
+    esac
+    target=$(sed -n "${target_no}p" "$file")
+
+    # 모르는 태그는 실패. 알려진 둘만 통과한다.
+    # 공백이 든 태그가 있으므로 단어 분리가 아니라 줄 단위로 읽는다.
+    while IFS= read -r tag; do
+        [ -z "$tag" ] && continue
+        case "$tag" in
+            "[결과사용]"|"[부재 "*) ;;
+            *) claim_fail+="$file:$lno: 모르는 사유 태그 $tag — 오타면 검사가 조용히 꺼진다"$'\n' ;;
+        esac
+    done < <(printf '%s\n' "$text" | grep -oE '\[[^]]+\]' || true)
+
+    case "$text" in
+        *"[결과사용]"*)
+            trimmed=$(printf '%s' "$target" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            discard=""
+            case "$trimmed" in
+                # `let _ =` 는 문법적으로는 소비지만 의미로는 버리는 것이다. 대입이
+                # 있다는 것만 보면 이 모양이 그대로 통과한다(실측으로 뚫렸다).
+                *"let _ ="*|"_ = "*) discard=1 ;;
+                # 그 밖에 결과를 버리는 모양: `... );` 로 끝나면서 대입도 분기도 아니다.
+                *");")
+                    case "$trimmed" in
+                        *"="*|return*|"if "*|"match "*|"let "*) ;;
+                        *) discard=1 ;;
+                    esac ;;
+            esac
+            [ -n "$discard" ] && claim_fail+="$file:$target_no: [결과사용] 이 거짓이다 — 결과를 버리는 문장이다: $trimmed"$'\n' ;;
+    esac
+
+    case "$text" in
+        *"[부재 "*)
+            claim=${text#*"[부재 "}; claim=${claim%%"]"*}
+            cf=${claim%% *}; cre=${claim#* }
+            if [ ! -f "$cf" ]; then
+                claim_fail+="$file:$lno: [부재] 가 가리키는 파일이 없다: $cf"$'\n'
+            elif grep -Eq "$cre" "$cf"; then
+                claim_fail+="$file:$lno: [부재] 의 전제가 사라졌다 — $cf 에 /$cre/ 가 생겼다. 이 예외를 없애고 큐로 옮겨라"$'\n'
+            fi ;;
+    esac
+done < <(grep -rn "intent-exempt" src --include='*.rs' || true)
+
+if [ -n "$claim_fail" ]; then
+    echo "intent-exempt 사유가 든 주장이 지금 거짓이다."
+    echo
+    printf '%s' "$claim_fail"
     exit 1
 fi
 
