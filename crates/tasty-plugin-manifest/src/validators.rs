@@ -161,31 +161,6 @@ pub(super) fn is_valid_cli_name(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// 호스트가 자기 CLI 서브커맨드로 쓰는 명령들. plugin이 가로채면 호스트가 가려진다.
-pub(super) fn is_reserved_cli_name(s: &str) -> bool {
-    matches!(
-        s,
-        "plugin"
-            | "new"
-            | "close"
-            | "list"
-            | "set"
-            | "send"
-            | "read"
-            | "move"
-            | "split"
-            | "tree"
-            | "debug"
-            | "wait"
-            | "send-key"
-            | "send-combo"
-            | "surface-meta"
-            | "is-typing"
-            | "notify"
-            | "unset"
-    )
-}
-
 /// Event Bus 패턴 검증. 정확한 키 또는 `<namespace>(.<segment>)*.*` 형태.
 ///
 /// - `surface.created`: 정확한 key → 허용

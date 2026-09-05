@@ -167,3 +167,4 @@
 | 0153 | [번들 plugin 이 점유한 namespace 아래의 host 메서드는 그 plugin 이 되돌려 준다](0153-a-bundled-namespace-hands-host-methods-back.md) | Accepted | 2026-09-05 | plugin, ipc, namespace, routing, guards, identity-principle-2, adr-0140, adr-0143 |
 | 0154 | [플랫폼이 못 하는 메서드는 "없다" 가 아니라 "여기선 못 한다" 로 답한다](0154-a-platform-gated-dispatch-arm-answers-why-not-what.md) | Accepted | 2026-09-05 | ipc, debug, cross-platform, error-codes, cli, guards, adr-0115 |
 | 0155 | [전역 상태 경합 flake 의 두 갈래와 처방을 "인자화됐는가" 에 건다](0155-global-state-race-prescription-by-parameterization.md) | Proposed | 2026-09-05 | testing, flaky-tests, concurrency, test-isolation, env, adr-0129 |
+| 0158 | [plugin CLI 이름과 호스트 명령의 충돌은 등록 시점에서만 판정한다](0158-cli-name-collisions-are-judged-at-registration-not-in-the-manifest.md) | Accepted | 2026-09-05 | plugin, cli, manifest, guards, layering, adr-0140, adr-0105 |

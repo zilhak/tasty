@@ -14,11 +14,11 @@ use super::types::{
     ToolAction, ToolContribute,
 };
 use super::validators::{
-    event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
-    is_reserved_event_namespace, is_reserved_hook_event_key, is_reserved_ipc_prefix,
-    is_valid_cli_name, is_valid_command_id, is_valid_completion_strategy_id, is_valid_event_key,
-    is_valid_event_pattern, is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix,
-    is_valid_kind, is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
+    event_pattern_covers, event_pattern_namespace, is_reserved_event_namespace,
+    is_reserved_hook_event_key, is_reserved_ipc_prefix, is_valid_cli_name, is_valid_command_id,
+    is_valid_completion_strategy_id, is_valid_event_key, is_valid_event_pattern,
+    is_valid_hook_event_key, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_kind,
+    is_valid_plugin_id, is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -390,9 +390,13 @@ impl Manifest {
                     cli.name
                 );
             }
-            if is_reserved_cli_name(&cli.name) {
-                anyhow::bail!("cli name '{}' is reserved by the host", cli.name);
-            }
+            // 호스트 명령과 겹치는 이름은 여기서 거절하지 않는다. 이 크레이트는 CLI
+            // 크레이트 아래에 있어 실제 clap 명령 집합을 볼 수 없고, 그래서 여기 있던
+            // 판정은 손으로 적은 목록일 수밖에 없었다 — 그 목록은 호스트 명령의 절반만
+            // 담은 채 늙어 있었고, 목록 밖 이름은 debug 빌드에서 CLI 전체를 패닉시켰다.
+            // 지금은 등록 시점(`tasty-cli` 의 `build_augmented_cli`)이 실제 명령 집합에서
+            // 도출해 겹치는 이름을 등록하지 않고 경고한다 — 판정이 한 자리에만 있다.
+            // 근거: docs/adr/0158-cli-name-collisions-are-judged-at-registration-not-in-the-manifest.md
             if !seen_cli_names.insert(cli.name.clone()) {
                 anyhow::bail!("cli name '{}' declared twice in this manifest", cli.name);
             }
