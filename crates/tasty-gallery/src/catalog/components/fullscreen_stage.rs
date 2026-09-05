@@ -211,7 +211,7 @@ pub fn draw_titlebar(ui: &mut egui::Ui, theme: &Theme) {
 fn host_title_bar(ui: &mut egui::Ui, theme: &Theme, title: &str, buttons: TitleButtons) {
     let width = 320.0;
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(width, popup_frame::TITLE_BAR_HEIGHT),
+        egui::vec2(width, popup_frame::TITLE_BAR_HEIGHT.value()),
         egui::Sense::hover(),
     );
     let painter = ui.painter_at(rect);

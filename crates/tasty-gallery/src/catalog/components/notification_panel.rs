@@ -135,8 +135,8 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
         ui,
         theme,
         "Notifications",
-        PANEL_W.value(),
-        PANEL_H.value(),
+        PANEL_W,
+        PANEL_H,
         ContentInset::INSET,
         TitleButtons::FULLSCREEN_AND_CLOSE,
         |ui| {

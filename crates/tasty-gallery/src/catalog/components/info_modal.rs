@@ -32,16 +32,15 @@ const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
 
 /// 본체 `info_modal_sizer` 와 같은 규칙으로 높이를 낸다 —
 /// 60자/줄 가정 · 줄높이 = body 폰트 × 1.5 · 하단 버튼 영역 48 · clamp.
-fn sizer_height(theme: &Theme, body: &str) -> f32 {
+fn sizer_height(theme: &Theme, body: &str) -> LogicalPx {
     let approx_lines = (body.chars().count() as f32 / 60.0).ceil().max(2.0);
-    let line_h = theme.font_size_body.value() * 1.5;
-    let footer_h =
-        theme.item_height_interactive.value() + theme.spacing_lg.value() + theme.spacing_xs.value();
+    let line_h = theme.font_size_body * 1.5;
+    let footer_h = theme.item_height_interactive + theme.spacing_lg + theme.spacing_xs;
     (popup_frame::TITLE_BAR_HEIGHT
         + popup_frame::CONTENT_MARGIN * 2.0
-        + approx_lines * line_h
+        + line_h * approx_lines
         + footer_h)
-        .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value())
+        .clamp(MIN_HEIGHT, MAX_HEIGHT)
 }
 
 /// 모달 1장. `extra` 는 [OK] 왼쪽에 붙는 추가 버튼 라벨.
@@ -51,7 +50,7 @@ fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Optio
         ui,
         theme,
         title,
-        WIDTH.value(),
+        WIDTH,
         h,
         ContentInset::INSET,
         TitleButtons::CLOSE,

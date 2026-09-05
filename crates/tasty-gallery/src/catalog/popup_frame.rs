@@ -12,15 +12,16 @@
 //! - `FLUSH` (convert / file_handler_picker): 좌우 0, 상단 추가 0.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 본체 popup 상수 — 제목바 높이.
-pub const TITLE_BAR_HEIGHT: f32 = 28.0;
+pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
 /// 본체 popup 상수 — 콘텐츠 상/하 여백.
-pub const CONTENT_MARGIN: f32 = 4.0;
+pub const CONTENT_MARGIN: LogicalPx = LogicalPx(4.0);
 /// 본체 popup 상수 — 타이틀바 우측 버튼 한 변.
-pub const TITLE_BTN_SIZE: f32 = 20.0;
+pub const TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
 /// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백.
-pub const TITLE_BTN_EDGE_PAD: f32 = 4.0;
+pub const TITLE_BTN_EDGE_PAD: LogicalPx = LogicalPx(4.0);
 
 /// 타이틀바 우측 버튼 세트. 본체 `PopupManager` 구성과 같다 — close(X) 는 타이틀바가
 /// 있는 모든 popup 에, fullscreen 은 **전체화면 무대를 선언한 popup** 에만 붙는다
@@ -66,10 +67,10 @@ pub fn draw_title_buttons(
     let fg: egui::Color32 = theme.text_muted().into();
     let close_rect = egui::Rect::from_center_size(
         egui::pos2(
-            title_rect.max.x - TITLE_BTN_SIZE * 0.5 - TITLE_BTN_EDGE_PAD,
+            title_rect.max.x - (TITLE_BTN_SIZE.scaled(0.5) + TITLE_BTN_EDGE_PAD).value(),
             title_rect.center().y,
         ),
-        egui::Vec2::splat(TITLE_BTN_SIZE),
+        egui::Vec2::splat(TITLE_BTN_SIZE.value()),
     );
     let mut left = title_rect.max.x;
     if buttons.close {
@@ -84,7 +85,7 @@ pub fn draw_title_buttons(
         // close 왼쪽, 4px(space-xs) 간격.
         let rect = egui::Rect::from_center_size(
             egui::pos2(
-                close_rect.center().x - TITLE_BTN_SIZE - theme.spacing_xs.value(),
+                close_rect.center().x - (TITLE_BTN_SIZE + theme.spacing_xs).value(),
                 close_rect.center().y,
             ),
             close_rect.size(),
@@ -137,13 +138,16 @@ pub fn draw(
     ui: &mut egui::Ui,
     theme: &Theme,
     title: &str,
-    width: f32,
-    total_h: f32,
+    width: LogicalPx,
+    total_h: LogicalPx,
     inset: ContentInset,
     buttons: TitleButtons,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
-    let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
+    let (frame_rect, _) = ui.allocate_exact_size(
+        egui::vec2(width.value(), total_h.value()),
+        egui::Sense::hover(),
+    );
     let painter = ui.painter_at(frame_rect);
 
     let bg: egui::Color32 = theme.surface_raised().into();
@@ -163,7 +167,7 @@ pub fn draw(
 
     let title_rect = egui::Rect::from_min_size(
         frame_rect.min,
-        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT),
+        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT.value()),
     );
     painter.rect_filled(
         title_rect,
@@ -184,15 +188,15 @@ pub fn draw(
     );
     draw_title_buttons(&painter, theme, title_rect, buttons);
 
-    let content_top = title_rect.bottom() + CONTENT_MARGIN;
+    let content_top = LogicalPx(title_rect.bottom()) + CONTENT_MARGIN;
     let content_rect = egui::Rect::from_min_max(
         egui::pos2(
             frame_rect.min.x + inset.horizontal,
-            content_top + inset.top_extra,
+            content_top.value() + inset.top_extra,
         ),
         egui::pos2(
             frame_rect.max.x - inset.horizontal,
-            frame_rect.max.y - CONTENT_MARGIN,
+            frame_rect.max.y - CONTENT_MARGIN.value(),
         ),
     );
     // 콘텐츠는 항상 세로 스택이다(본체 popup 콘텐츠와 동일). `new_child` 는 부모 Ui 의
