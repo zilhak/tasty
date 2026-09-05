@@ -132,7 +132,11 @@ impl AppState {
             }
         }
         for sid in deferred {
-            engine.ensure_surface_initialized(sid);
+            // terminal placeholder 먼저 시도. false 면 terminal 이 아니라는 뜻이므로
+            // plugin placeholder 실제화를 시도한다(둘 다 아니면 no-op — 이미 reify됨).
+            if !engine.ensure_surface_initialized(sid) {
+                engine.reify_plugin_surface(sid);
+            }
         }
     }
 

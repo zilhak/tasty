@@ -337,6 +337,40 @@ impl Tab {
         Some((terminal, persist_id))
     }
 
+    /// plugin placeholder(`Deferred::Plugin`)를 실제 surface 로 교체한다 —
+    /// `ensure_initialized`(terminal)의 plugin 짝. `restore` 는 host 가 넘기는
+    /// 클로저로 `(kind, snapshot)` 을 받아 surface 를 만든다: `tasty-model` 은
+    /// `SurfaceKindRegistry` 를 모르므로 registry 조회를 클로저로 주입한다(crate
+    /// 의존 방향 유지). kind 가 아직 registry 에 없으면(plugin hello 전) `restore`
+    /// 가 `None` 을 돌려 placeholder 가 그대로 남고 다음 reify 에서 재시도된다 —
+    /// 별도 재시도 상태를 얹지 않는 이유는 display-point reify 가 매 프레임 이
+    /// 경로를 다시 밟기 때문이다. leaf 가 plugin placeholder 가 아니면 `false`.
+    pub fn reify_deferred_plugin<F>(&mut self, surface_id: SurfaceId, restore: F) -> bool
+    where
+        F: FnOnce(&str, &serde_json::Value) -> Option<Box<dyn Surface>>,
+    {
+        let Some(layout) = self.layout_opt.as_mut() else {
+            return false;
+        };
+        let Some(leaf) = layout.find_leaf_mut(surface_id) else {
+            return false;
+        };
+        let (kind, snapshot) = {
+            let Some(es) = leaf.as_any().downcast_ref::<super::EmptySurface>() else {
+                return false;
+            };
+            let Some(p) = es.deferred_plugin() else {
+                return false;
+            };
+            (p.kind.clone(), p.snapshot.clone())
+        };
+        let Some(new_surface) = restore(&kind, &snapshot) else {
+            return false;
+        };
+        *leaf = new_surface;
+        true
+    }
+
     /// 이 탭의 layout 안에 deferred placeholder로 남아있는 모든 surface ID를 spawn.
     /// 반환값은 `(surface_id, Terminal, persist_id)` 의 목록 — caller 가 store 에
     /// insert 한다.
@@ -563,6 +597,62 @@ mod tests {
     fn deferred_tab(sid: SurfaceId, spawn: DeferredSpawn) -> Tab {
         let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred(sid, spawn));
         Tab::new_with_surface(1, "t".to_string(), surface)
+    }
+
+    fn deferred_plugin_tab(sid: SurfaceId, kind: &str) -> Tab {
+        let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred_plugin(
+            sid,
+            crate::terminal_surface::DeferredPlugin {
+                kind: kind.to_string(),
+                snapshot: serde_json::json!({ "x": 1 }),
+            },
+        ));
+        Tab::new_with_surface(1, "t".to_string(), surface)
+    }
+
+    // ㉮: kind 가 registry 에 등록되면(restore 가 Some) placeholder 가 실제 surface 로
+    // 교체된다.
+    #[test]
+    fn reify_deferred_plugin_replaces_when_restore_succeeds() {
+        let sid = 7;
+        let mut tab = deferred_plugin_tab(sid, "markdown");
+        let ok = tab.reify_deferred_plugin(sid, |kind, snap| {
+            assert_eq!(kind, "markdown");
+            assert_eq!(snap, &serde_json::json!({ "x": 1 }));
+            Some(Box::new(EmptySurface::new(sid)))
+        });
+        assert!(ok, "restore 가 Some 이면 교체돼야");
+        let es = tab
+            .surface()
+            .as_any()
+            .downcast_ref::<EmptySurface>()
+            .expect("still an EmptySurface (실제화 대역)");
+        assert!(
+            es.deferred_plugin().is_none(),
+            "더 이상 plugin placeholder 아님"
+        );
+        assert!(!es.is_deferred());
+    }
+
+    // ㉮: kind 가 아직 없으면(restore 가 None) placeholder 가 그대로 남아 다음 reify
+    // 에서 재시도 가능해야 한다. hello 가 영영 안 오면 이 상태가 유지된다(의도 —
+    // to_tree_json 이 ready:false 로 노출).
+    #[test]
+    fn reify_deferred_plugin_keeps_placeholder_when_kind_missing() {
+        let sid = 7;
+        let mut tab = deferred_plugin_tab(sid, "markdown");
+        let ok = tab.reify_deferred_plugin(sid, |_, _| None);
+        assert!(!ok, "kind 미등록이면 교체 안 함");
+        let es = tab
+            .surface()
+            .as_any()
+            .downcast_ref::<EmptySurface>()
+            .expect("placeholder 유지");
+        assert_eq!(
+            es.deferred_plugin().map(|p| p.kind.as_str()),
+            Some("markdown"),
+            "kind/snapshot 이 보존돼 다음 reify 에서 재시도 가능"
+        );
     }
 
     /// 핵심 회귀: PTY spawn 이 실패해도 placeholder 의 deferred_spawn 이 보존되어

@@ -175,6 +175,35 @@ impl CoreState {
         }
     }
 
+    /// plugin placeholder(`Deferred::Plugin`)를 registry 로 실제화한다 — terminal
+    /// reify(`ensure_surface_initialized`)의 plugin 짝. `SurfaceKindRegistry.get`
+    /// 은 값을 새로 만들지 않는 싼 read 라, kind 가 아직 없으면(plugin hello 전)
+    /// 매 프레임 재시도해도 자원이 쌓이지 않는다(R214 — 실패가 자기 재시도를 부르는
+    /// 고리가 없다). kind 가 등록되는 순간 `restore` 로 실제 surface 를 만들어 leaf 를
+    /// 교체한다. kind 가 영영 안 오면(plugin 이 죽었거나 매니페스트에서 사라짐)
+    /// placeholder 가 그대로 남는다 — 의도된 상태다(`to_tree_json` 이 `ready:false`
+    /// 로 노출; 상세 `docs/features/layout-persistence/index.md`).
+    /// 반환: 이 프레임에 실제화됐으면 `true`.
+    pub fn reify_plugin_surface(&mut self, surface_id: u32) -> bool {
+        let registry = self.surface_registry.clone();
+        for ws in &mut self.workspaces {
+            let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    for tab in &mut pane.tabs {
+                        if tab.reify_deferred_plugin(surface_id, |kind, snap| {
+                            let def = registry.get(kind)?;
+                            (def.restore)(surface_id, snap).ok()
+                        }) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Deferred terminal 이 spawn 된 직후 호출. layout 복원 시 큐에 적재된
     /// scrollback line 들을 해당 surface 의 terminal 에 inject. PTY 가 실제로
     /// 출력하기 전이라 사용자는 위로 스크롤하면 자연스러운 히스토리를 본다.
