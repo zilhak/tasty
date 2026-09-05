@@ -13,6 +13,7 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
 
 use crate::catalog::icons::{FILE, FOLDER, MockGlyph};
@@ -20,7 +21,7 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
 // ── grid 셀 치수 (4px 그리드) ──
 /// 셀 폭.
-const CELL_W: f32 = 80.0;
+const CELL_W: LogicalPx = LogicalPx(80.0);
 
 #[derive(Clone, Copy)]
 struct Entry {
@@ -365,7 +366,8 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
         + theme.spacing_xs.value()
         + label_h
         + theme.spacing_sm.value();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(CELL_W, cell_h), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(CELL_W.value(), cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
     // 선택 = surface-active 배경만(추가 accent 보더 없음). hover = overlay-hover.
@@ -414,7 +416,7 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
         halign: egui::Align::Center,
         wrap: egui::text::TextWrapping {
             // 좌우 패딩 spacing_xs(4) 씩 제외한 내부 폭 (design padding "8px 4px").
-            max_width: CELL_W - theme.spacing_xs.value() * 2.0,
+            max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
             max_rows: 3,
             overflow_character: Some('…'),
             ..Default::default()
