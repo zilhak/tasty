@@ -15,6 +15,11 @@
 //! 조건부 안전을 단정으로 두는 것이 전수 개조보다 정직하다 — 개조는 "고쳤다" 로
 //! 끝나지만 이 단정은 "나머지는 조건부로 안전하다" 를 계속 말한다.
 
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::path::Path;
 
 /// 순회 가드들의 이름 제외 목록 **교집합**(2026-09-06 실측, 8 곳).
