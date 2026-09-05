@@ -264,6 +264,16 @@ pub struct FilterFreeCoverage {
 /// 호출을 특정 타깃/종류로 좁히는 플래그.
 const NARROWING: &[&str] = &["--test", "--lib", "--bins", "--bin", "--doc", "--example"];
 
+/// 한 `cargo test` 호출이 타깃/종류로 좁혀졌는가.
+///
+/// 판정을 함수로 꺼낸 이유는 **부를 수 있게** 하기 위해서다. 목록이 순회 안에 인라인으로
+/// 박혀 있으면 그 목록을 검사하려면 워크플로 디렉토리를 통째로 픽스처로 지어야 하고,
+/// 그러면 아무도 안 짓는다 — 실측(2026-09-06): 이 목록에서 `--test` 를 지워도 이 크레이트
+/// 전체가 초록이었는데, 그 플래그가 **유일한 좁힘 근거**인 자동 잡이 그때 둘 있었다.
+fn narrows(inv: &str) -> bool {
+    inv.split_whitespace().any(|w| NARROWING.contains(&w))
+}
+
 /// 주석·스텝 이름을 지우고 한 줄로 편다.
 ///
 /// 스텝 이름을 지우는 이유는 이 레포의 스텝 이름이 명령을 그대로 쓰기 때문이다
@@ -413,7 +423,7 @@ pub fn filter_free_coverage(
                         out.named.insert(w[1].to_string());
                     }
                 }
-                if words.iter().any(|w| NARROWING.contains(w)) {
+                if narrows(inv) {
                     continue;
                 }
                 for w in words.windows(2) {
@@ -569,6 +579,57 @@ mod coverage_tests {
              덮였다고 답했다. 판독이 한쪽으로만 답하는 상태이거나, 필터 없는 잡이 새로 \
              `--workspace` 를 돌기 시작한 것이다(그러면 이 판독을 쓰는 사각 탐지가 전부 \
              공허해지므로 그 자리에서 다시 판단해야 한다): {c:?}"
+        );
+    }
+
+    /// [`NARROWING`] 의 성분마다, 그 성분 **하나만** 든 호출이 좁힘으로 읽히는가.
+    ///
+    /// 조각을 상수에서 만들지 않고 **손으로 적는다.** 목록을 순회해 조각을 지으면 오타 난
+    /// 항목(`--tesst`)도 자기 자신과는 맞아 통과한다 — 그러면 이 테스트가 목록의 사본이 될
+    /// 뿐 목록을 검사하지 않는다.
+    ///
+    /// 조각마다 성분을 **하나만** 담는다. 둘을 담으면 하나를 지워도 다른 하나가 받쳐 주어
+    /// 그 지움이 조용해진다.
+    ///
+    /// 실측 2026-09-06: 이 테스트가 없을 때 `NARROWING` 에서 `--test` 를 지워도
+    /// `cargo test -p tasty-doc-guards` 는 초록이었다(rc=0). 레포 판정이 안 죽는 이유는
+    /// 좁힘 판정이 **느슨해지는 방향**이라 위반 목록이 비기 때문이다 — 하한은 순회가
+    /// 죽는 방향만 본다. 그때 `--test` 가 유일한 좁힘 근거인 자동 잡은 둘이었다.
+    #[test]
+    fn every_narrowing_flag_is_actually_read_as_narrowing() {
+        let cases: [(&str, &str); 6] = [
+            ("--test", "cargo test --workspace --locked --test e2e_tests"),
+            ("--lib", "cargo test --workspace --locked --lib"),
+            ("--bins", "cargo test --workspace --locked --bins"),
+            ("--bin", "cargo test --workspace --locked --bin tasty"),
+            ("--doc", "cargo test --workspace --locked --doc"),
+            (
+                "--example",
+                "cargo test --workspace --locked --example demo",
+            ),
+        ];
+        for (flag, inv) in cases {
+            assert!(
+                narrows(inv),
+                "`{flag}` 하나로 좁힌 호출을 좁힘으로 안 읽는다. 그 성분이 목록에서 \
+                 빠졌거나 철자가 틀렸다 — 그러면 그 플래그로만 좁힌 자동 잡이 **전체 \
+                 스위트**로 읽히고, 이 판독을 쓰는 사각 탐지가 그 잡을 통째로 잘못 센다"
+            );
+        }
+    }
+
+    /// 음성 대조 — 좁힘이 없는 호출을 좁힘으로 읽으면 위 판정이 공허해진다.
+    #[test]
+    fn an_unnarrowed_invocation_is_not_read_as_narrowed() {
+        assert!(
+            !narrows("cargo test --workspace --locked --no-fail-fast"),
+            "좁힘 플래그가 없는데 좁혀졌다고 읽었다 — 이 술어가 늘 참을 내면 필터 없는 \
+             채널이 하나도 안 세어지고, 모든 타깃이 '안 덮였다' 로 뒤집힌다"
+        );
+        assert!(
+            !narrows("cargo test --workspace --locked -p tasty-doc-guards"),
+            "`-p` 는 패키지 선택이지 타깃 좁힘이 아니다 — 좁힘으로 읽으면 그 패키지를 \
+             통째로 도는 잡이 커버리지에서 빠진다"
         );
     }
 }
