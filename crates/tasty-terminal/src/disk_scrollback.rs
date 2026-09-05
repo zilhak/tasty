@@ -73,8 +73,14 @@ pub struct DiskScrollback {
 
 impl DiskScrollback {
     pub fn new(surface_id: u32) -> std::io::Result<Self> {
-        // debug 빌드는 별도 디렉터리를 써서 동시에 떠 있는 release 인스턴스와
-        // 같은 surface-id 파일을 서로 truncate 하지 않게 격리한다.
+        // 격리축은 **프로세스**다. `surface_id` 공간은 인스턴스마다 독립이고 매 실행
+        // 1 부터 재발급되므로(`IdGenerator::next_surface`), 이름에 프로세스 성분이 없으면
+        // 같은 프로필 두 벌이 같은 번호의 파일을 서로 truncate 한다. pid 를 이름에 실어
+        // 그것을 막는다 — 이 하나가 debug↔release 축도 함께 덮는다(둘은 서로 다른
+        // 프로세스라 pid 가 다르다). 같은 형태의 처방은 `prompt_file::path_for` 를 따른다.
+        //
+        // 하위 디렉터리는 격리가 아니라 **묶음**이다(debug 빌드 산출물을 한자리에 모아
+        // 식별을 돕는다). 격리를 지는 것은 파일명의 pid 다.
         let subdir = if cfg!(debug_assertions) {
             "tasty-scrollback-debug"
         } else {
@@ -82,7 +88,11 @@ impl DiskScrollback {
         };
         let dir = std::env::temp_dir().join(subdir);
         std::fs::create_dir_all(&dir)?;
-        let file_path = dir.join(format!("surface-{}.scrollback", surface_id));
+        let file_path = dir.join(format!(
+            "surface-{}-{}.scrollback",
+            std::process::id(),
+            surface_id
+        ));
         // Truncate any existing file and write the header.
         let mut f = File::create(&file_path)?;
         f.write_all(FILE_MAGIC)?;

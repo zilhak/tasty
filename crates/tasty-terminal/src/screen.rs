@@ -479,6 +479,41 @@ mod tests {
         assert_eq!(t.screen_text_lines(3, false), "t1\nt2\nt3\n");
     }
 
+    /// **뷰포트 포화는 사양이지 결함이 아니다** — 다만 그 둘이 밖에서 구별되지 않는 것이
+    /// 결함이었다. 여기서 두 경우를 나란히 고정한다: 스크롤백이 **없으면** 화면 내용이
+    /// 상한이고(줄 수 = `content_end`), **있으면** 그만큼 더 나온다. 상한은 뷰포트가
+    /// 아니라 **가진 전부**다.
+    ///
+    /// 실사용에서 `--lines {20,68,200,400,1000}` 이 `20,68,68,68,68` 로 나온 것이
+    /// 이 첫 번째 경우다 — TUI 가 프롬프트 몇 줄 뒤 바로 화면을 점유해 primary 에서
+    /// 아무것도 스크롤아웃되지 않은 상태였다. 호출자가 그걸 알 수단이 없어서
+    /// "명령이 안 먹는다" 로 읽혔다.
+    #[test]
+    fn saturation_happens_only_when_nothing_is_left() {
+        // ① 스크롤백 0 — 화면 내용이 전부다.
+        let mut empty = Terminal::new_detached(20, 4);
+        empty.feed_bytes(b"\x1b[?1049h");
+        empty.feed_bytes(b"t0\r\nt1\r\nt2\r\nt3");
+        assert_eq!(empty.scrollback_len(), 0, "전제: 스크롤백이 비어 있다");
+        assert_eq!(
+            empty.screen_text_lines(200, false).lines().count(),
+            4,
+            "가진 것이 4 줄이면 200 을 줘도 4 줄이다 — 잘린 것이 아니다"
+        );
+
+        // ② 같은 화면인데 스크롤백이 있으면 그만큼 더 나온다. 뷰포트가 천장이 아니다.
+        let mut filled = Terminal::new_detached(20, 4);
+        filled.feed_bytes(b"p0\r\np1\r\np2\r\np3\r\np4\r\np5\r\np6\r\np7");
+        filled.feed_bytes(b"\x1b[?1049h");
+        filled.feed_bytes(b"t0\r\nt1\r\nt2\r\nt3");
+        assert_eq!(filled.scrollback_len(), 4, "전제: 스크롤백 4 줄");
+        assert_eq!(
+            filled.screen_text_lines(200, false).lines().count(),
+            8,
+            "화면 4 + 스크롤백 4 — 뷰포트에서 멈추지 않는다"
+        );
+    }
+
     /// alt 스크린에서 `n` 이 화면 높이를 넘으면 **primary 스크롤백**에서 채운다.
     /// `screen_text_lines` 의 독스트링이 그렇게 약속하는데 그 경로를 재는 테스트가
     /// 없었다 — 바로 위 테스트는 `n < 화면 높이` 만 본다. 에이전트가 TUI surface 를

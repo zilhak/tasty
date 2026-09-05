@@ -1,3 +1,9 @@
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 mod accessors;
 mod color;
 mod events;
@@ -482,6 +488,19 @@ const WRITE_PROGRESS_WHAT: &str = "the PTY write-progress counter";
 static WRITE_PROGRESS_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// 공유 `TerminalState` 락의 poison 복구 공용 보고 좌표(첫-1 회). 파서 스레드와 메인
+/// 스레드가 한 `Arc<Mutex<TerminalState>>` 를 나눠 갖는다 — 인스턴스는 여럿이나 첫-1 회
+/// 보고를 한 좌표로 모은다(hot path 라 매번 찍으면 그 로그가 자기 진단을 덮는다).
+pub(crate) const STATE_WHAT: &str = "the terminal state";
+pub(crate) static STATE_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 렌더 waker 락의 poison 복구 공용 보고 좌표(첫-1 회). 담는 것은 콜백 하나뿐이라
+/// 복구가 안전하다.
+pub(crate) const WAKER_WHAT: &str = "the terminal render waker";
+pub(crate) static WAKER_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// [`WriteProgress`] 의 카운터 락. writer 스레드와 [`io::WriteAck`] 가 **둘 다** 이
 /// 한 곳을 지난다.
 ///
@@ -885,11 +904,22 @@ impl Terminal {
                             return;
                         };
                         {
-                            let mut st = state.lock().unwrap_or_else(|p| p.into_inner());
+                            let mut st = tasty_utils::poison::recover_mutex(
+                                state.lock(),
+                                STATE_WHAT,
+                                &STATE_POISON_REPORTED,
+                            );
                             st.ingest(&buf[..n]);
                         }
                         dirty_t.store(true, Ordering::Release);
-                        let w = { waker_t.lock().unwrap_or_else(|p| p.into_inner()).clone() };
+                        let w = {
+                            tasty_utils::poison::recover_mutex(
+                                waker_t.lock(),
+                                WAKER_WHAT,
+                                &WAKER_POISON_REPORTED,
+                            )
+                            .clone()
+                        };
                         w();
                     }
                     Err(_) => break,
@@ -899,7 +929,14 @@ impl Terminal {
             // check (bypassing the throttle), and wake once more to drive it.
             eof_t.store(true, Ordering::Release);
             dirty_t.store(true, Ordering::Release);
-            let w = { waker_t.lock().unwrap_or_else(|p| p.into_inner()).clone() };
+            let w = {
+                tasty_utils::poison::recover_mutex(
+                    waker_t.lock(),
+                    WAKER_WHAT,
+                    &WAKER_POISON_REPORTED,
+                )
+                .clone()
+            };
             w();
         });
 
@@ -933,7 +970,11 @@ impl Terminal {
     /// the new id so targeted PTY polling drains the terminal at its new store
     /// key. Detached mirrors have no parser thread, so this is inert for them.
     pub fn rewire_waker(&self, waker: Waker) {
-        *self.waker.lock().unwrap_or_else(|p| p.into_inner()) = waker;
+        *tasty_utils::poison::recover_mutex(
+            self.waker.lock(),
+            WAKER_WHAT,
+            &WAKER_POISON_REPORTED,
+        ) = waker;
     }
 
     /// Create a detached mirror terminal with no PTY, child, or threads. Its grid
@@ -958,7 +999,7 @@ impl Terminal {
     /// Lock the shared VTE state. Recovers from poisoning (a panicked ingest must
     /// not wedge the whole terminal).
     pub(crate) fn lock_state(&self) -> MutexGuard<'_, TerminalState> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        tasty_utils::poison::recover_mutex(self.state.lock(), STATE_WHAT, &STATE_POISON_REPORTED)
     }
 
     /// Run a closure with shared read access to the active surface. The state lock

@@ -1285,12 +1285,14 @@ fn alive_check_throttled_within_window() {
     // In-the-past init: the first process() must check immediately.
     assert!(t.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
 
+    // 이 자리가 재는 것은 "`process()` 가 도장을 다시 찍었나" 다. 그것을 벽시계 예산으로
+    // 물으면(`first.elapsed() < ALIVE_CHECK_INTERVAL`) 굶은 러너에서 빨개지고, 그 빨강이
+    // 코드를 지목한다. 도장 자체를 비교하면 예산이 아예 없어진다 — 대조군보다 나은
+    // 처방이라 여기는 ADR-0181 의 (B) 가 아니다.
+    let before = t.last_alive_check;
     t.process();
     let first = t.last_alive_check;
-    assert!(
-        first.elapsed() < ALIVE_CHECK_INTERVAL,
-        "first check stamped now"
-    );
+    assert!(first > before, "first check stamped now");
 
     // Immediate second call falls inside the throttle window — no re-check.
     t.process();
@@ -1304,7 +1306,21 @@ fn alive_check_throttled_within_window() {
 
 #[test]
 fn process_exited_eventually_emitted() {
-    let waker = noop_waker();
+    // 대기는 두 축이다 — 이벤트(waker) 우선, 상한은 제품의 alive-check 폴 주기로 자른다.
+    // parser 스레드가 새 데이터/EOF 마다 waker 를 부르므로 정상 경로에선 wake 즉시 process() 해
+    // 수십 ms 에 끝난다. 그러나 부하가 높으면 종료 시의 EOF-waker 가 유실·지연될 수 있어
+    // (sync_channel(1) 신호 병합 + 스케줄 밀림) 순수 이벤트 대기만으로는 자식이 이미 죽었는데도
+    // 대기자가 안 깨는 창이 남는다(형태 C 의 잔여 — 옛 5s+50ms 폴링을 이벤트로 바꿔도 남는다).
+    // 그래서 recv 상한을 ALIVE_CHECK_INTERVAL 로 잘라, wake 가 안 와도 그 주기마다 process() 가
+    // 돌며 제품이 이미 가진 try_wait 폴백으로 종료를 잡는다(process() 는 wake 없이 그 주기 throttle
+    // 로 try_wait 한다). deadline 은 그 위의 최후 안전망이라 넉넉히 둔다.
+    // SyncSender + try_send: waker 콜백이 절대 블록되지 않아야 parser 스레드가 멈추지 않는다.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
+    let waker: Waker = Arc::new(move || {
+        // 버퍼(1)가 이미 차 있으면 깨우기 신호가 대기 중이라는 뜻이라, 이번 send 실패는 무시해도
+        // 대기 측을 깨우기에 충분하다. 콜백은 절대 블록되면 안 되므로 send(블로킹)가 아니라 try_send.
+        let _ = tx.try_send(());
+    });
     let mut t = Terminal::new(
         TerminalConfig {
             cols: 80,
@@ -1320,10 +1336,7 @@ fn process_exited_eventually_emitted() {
     )
     .expect("terminal creation");
 
-    // The shell exits on its own; the reader thread's final EOF wake plus the
-    // Disconnected fast path must surface ProcessExited well within the
-    // deadline regardless of the throttle window.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut seen = false;
     while std::time::Instant::now() < deadline {
         t.process();
@@ -1335,7 +1348,14 @@ fn process_exited_eventually_emitted() {
             seen = true;
             break;
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // 상한을 ALIVE_CHECK_INTERVAL 로 자른다(위 함수 주석) — wake 가 오면 그 전에 즉시 깨고,
+        // 안 와도 이 주기마다 process() 가 try_wait 폴백을 돌린다. 폴링으로의 회귀가 아니라
+        // 이벤트 우선 + 제품 폴 주기 폴백이다. remaining 으로 한 번 더 자르는 건 남은 deadline 을
+        // 넘기지 않으려는 것(마지막 반복).
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        // wake 로 깼는지 상한으로 깼는지 구분할 필요가 없다 — 루프 상단의 process()+이벤트 검사와
+        // deadline 조건이 다음 반복에서 판정한다. 그래서 recv 결과는 무시한다.
+        let _ = rx.recv_timeout(remaining.min(ALIVE_CHECK_INTERVAL));
     }
     assert!(seen, "ProcessExited not emitted before deadline");
 }

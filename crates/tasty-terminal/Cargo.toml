@@ -13,6 +13,7 @@ anyhow = "1"
 tracing = "0.1"
 unicode-width = "0.2"
 finl_unicode = "1.4"
+tasty-ansi = { path = "../tasty-ansi" }
 tasty-reaper = { path = "../tasty-reaper" }
 tasty-utils = { path = "../tasty-utils" }
 

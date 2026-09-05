@@ -144,9 +144,10 @@ fn bulk_capture_preserves_cells_wrapped_and_attrs() {
 #[test]
 fn bulk_capture_matches_per_line_on_disk_backed_scrollback() {
     let mut t = Terminal::new_detached(COLS, ROWS);
-    // 실행 중 인스턴스의 파일과 겹치지 않도록 테스트 전용 surface id 를 쓴다
-    // (경로는 `temp_dir()/tasty-scrollback-debug/surface-<id>.scrollback`).
-    t.enable_disk_scrollback(990_017);
+    // 실행 중 인스턴스와도, 같은 머신의 다른 테스트 완주와도 경로가 겹치지 않도록 이 프로세스
+    // 고유의 surface id 를 쓴다 (경로는 `temp_dir()/tasty-scrollback-debug/surface-<id>.scrollback`
+    // — 고정 id 면 병렬 완주끼리 같은 파일을 건드려 확률적 red 가 난다. ADR-0129 형태 B 고정 경로).
+    t.enable_disk_scrollback(std::process::id());
     // 메모리 상한을 낮게 잡아 초과분이 디스크로 밀려나게 한다.
     t.set_scrollback_limit(32);
     feed_mixed(&mut t, 40);
