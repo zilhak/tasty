@@ -80,10 +80,11 @@ fn truncate_wal(store: &mut tasty_memory::MemoryStore) {
 fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
     // 상한 값은 `adapters::ipc::log_retention` 이 단독으로 소유한다 — 런타임 집행
     // 경로가 같은 테이블을 읽는다. 여기에 숫자를 다시 적으면 두 경로가 갈린다.
-    let mut store = match arc.lock() {
-        Ok(s) => s,
-        Err(p) => p.into_inner(),
-    };
+    let mut store = crate::poison::recover_mutex(
+        arc.lock(),
+        crate::core::MEMORY_WHAT,
+        &crate::core::MEMORY_POISONED,
+    );
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
