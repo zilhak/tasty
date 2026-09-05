@@ -136,47 +136,93 @@ check_cargo_fmt() {
 # 주석이 같은 줄·윗줄·다음 줄 어디에도 없는 `let _ =` 는 여전히 거부.
 # -U1 로 앞뒤 라인 컨텍스트를 확보하고, let 후보를 pending 으로 보류했다가 다음
 # (새 파일에 존재하는) 라인이 주석인지 보고 판정한다.
+#
+# -- 코드인지 문자열인지는 **판정기가 가른다** ---------------------------
+# 이 검사의 물음("이 줄의 **코드**에 `let _ =` 가 있나")은 문자열 리터럴을 코드와
+# 구분해야 답할 수 있다. 여기서 렉서를 다시 만들지 않는다 -- 러스트 층이 이미 갖고
+# 있고(`tasty-doc-guards` 의 `mask-source`), 셸이 자기 것을 만들면 같은 물음에 답이
+# 둘이 된다(실제로 그렇게 갈려 있었다).
+#
+# **줄 번호로 맞춘다.** staged 내용을 마스킹한 사본에서 같은 줄을 읽는다. 그래서
+# 여러 줄에 걸친 문자열 리터럴도 옳게 갈린다 -- 한 줄 정규식으로는 원리적으로 못 하던
+# 것이고, 가드의 회귀 픽스처가 실제로 그것 때문에 막혀 문구를 바꿔 우회했다.
+#
+# 판정기가 없으면(갓 클론한 트리) **한 줄 정규식으로 물러난다.** 그쪽은 더 많이 잡는
+# 방향이라 조용한 통과를 안 만든다. 물러났다는 것을 말한다.
 check_let_underscore() {
     if [ -z "$STAGED_RS" ]; then return; fi
+
+    local mask_bin="" masked="" staged_dir=""
+    if [ -r "$REPO_ROOT/scripts/lib/judge-bin.sh" ]; then
+        . "$REPO_ROOT/scripts/lib/judge-bin.sh"
+        mask_bin="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$REPO_ROOT" 2>/dev/null)"
+    fi
+    if [ -n "$mask_bin" ]; then
+        staged_dir="$(mktemp -d)"
+        for f in $STAGED_RS; do
+            mkdir -p "$staged_dir/staged/$(dirname "$f")"
+            git show ":$f" > "$staged_dir/staged/$f" 2>/dev/null || true
+        done
+        masked="$(mktemp -d)"
+        if "$mask_bin" --keep-comments "$masked" "$staged_dir" staged >/dev/null 2>&1; then
+            masked="$masked/staged"
+        else
+            rm -rf "$masked"; masked=""
+        fi
+        rm -rf "$staged_dir"
+    fi
+    if [ -z "$masked" ]; then
+        echo "  [C.6] mask-source 가 없어 한 줄 정규식으로 판정한다 (여러 줄 문자열 안의 let _ 를 코드로 볼 수 있다)." >&2
+    fi
+
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
-        local violation
-        violation=$(git diff --cached -U1 -- "$f" | awk '
+        local violation masked_file=""
+        if [ -n "$masked" ] && [ -f "$masked/$f" ]; then masked_file="$masked/$f"; fi
+        violation=$(git diff --cached -U1 -- "$f" | awk -v maskfile="$masked_file" '
+            # 마스킹 사본을 줄 번호로 읽어 둔다. 없으면 한 줄 정규식으로 물러난다.
+            BEGIN { if (maskfile != "") { while ((getline ml < maskfile) > 0) MASK[++mn] = ml } }
             function flush() { if (pending != "") { print pending; pending = "" } }
-            /^@@/     { flush(); prev = ""; next }   # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋
+            # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋 + **새 파일 줄 번호** 잡기.
+            # 줄 번호가 있어야 마스킹 사본의 같은 줄을 읽을 수 있다.
+            /^@@/ {
+                flush(); prev = ""
+                if (match($0, /\+[0-9]+/)) nl = substr($0, RSTART + 1, RLENGTH - 1) - 1
+                next
+            }
             /^\+\+\+/ { next }              # +++ b/file 헤더
             /^---/    { next }              # --- a/file 헤더
             {
                 prefix  = substr($0, 1, 1)
                 content = substr($0, 2)
-                # 문자열 리터럴을 지운 사본으로 판정한다. 원문 그대로 보면 두 방향으로
-                # 틀린다 — 문자열 안의 `let _ =` 를 코드로 잡고(거짓 양성), 문자열 안의
-                # `//`(URL 이 대표적)를 사유 주석으로 인정한다(거짓 음성). 한 줄 안에서
-                # 닫히지 않는 문자열(여러 줄 리터럴)은 diff 가 줄 단위라 여전히 근사다.
-                code = content
-                gsub(/"([^"\\]|\\.)*"/, "", code)
                 if (prefix == "-") next     # 제거 라인: 새 파일에 없음 → 무시 (다음 줄 후보 아님)
-                if (prefix == "+" || prefix == " ") {
-                    # 직전 let 후보의 "다음 줄" 이 이 라인. 주석이면 사면, 아니면 위반 확정.
-                    if (pending != "") {
-                        if (content ~ /^[[:space:]]*\/\//) {
-                            pending = ""    # ③ 다음 줄 주석 — OK
-                        } else {
-                            print pending   # 다음 줄 주석 아님 — 위반 확정
-                            pending = ""
-                        }
+                if (prefix != "+" && prefix != " ") next
+                nl++
+                # 판정에 쓰는 사본. 있으면 판정기가 만든 것(문자열·문자 리터럴만 덮고
+                # 주석은 남긴다), 없으면 한 줄 정규식으로 물러난다 — 그쪽은 여러 줄에
+                # 걸친 문자열을 못 다루고, 그게 이 검사의 알려진 근사였다.
+                if (mn > 0 && nl in MASK) { mline = MASK[nl] }
+                else { mline = content; gsub(/"([^"\\]|\\.)*"/, "", mline) }
+                code = mline; sub(/\/\/.*/, "", code)   # 주석을 뺀 코드 부분
+                # 직전 let 후보의 "다음 줄" 이 이 라인. 주석이면 사면, 아니면 위반 확정.
+                if (pending != "") {
+                    if (mline ~ /^[[:space:]]*\/\//) {
+                        pending = ""        # ③ 다음 줄 주석 — OK
+                    } else {
+                        print pending       # 다음 줄 주석 아님 — 위반 확정
+                        pending = ""
                     }
-                    if (prefix == "+" && code ~ /let[[:space:]]+_[[:space:]]*=/) {
-                        if (code ~ /\/\//) {
-                            # ① 같은 줄 주석 — OK
-                        } else if (prev ~ /^[[:space:]]*\/\//) {
-                            # ② 윗줄 주석 — OK
-                        } else {
-                            pending = content   # ③ 판정 보류 — 다음 줄 주석 여부를 봐야 함
-                        }
-                    }
-                    prev = content          # 새 파일에 존재하는 라인만 직전으로 갱신
                 }
+                if (prefix == "+" && code ~ /let[[:space:]]+_[[:space:]]*=/) {
+                    if (mline ~ /\/\//) {
+                        # ① 같은 줄 주석 — OK
+                    } else if (prev ~ /^[[:space:]]*\/\//) {
+                        # ② 윗줄 주석 — OK
+                    } else {
+                        pending = content   # ③ 판정 보류 — 다음 줄 주석 여부를 봐야 함
+                    }
+                }
+                prev = mline                # 새 파일에 존재하는 라인만 직전으로 갱신
             }
             END { flush() }                 # 마지막 보류 후보 확정
         ')
