@@ -12,11 +12,12 @@
 
 use super::view::{TitlebarAction, TitlebarProps};
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 글리프 한 변 크기 (logical points). 46px 버튼 안의 중앙 ~10px 박스.
 const GLYPH: f32 = 10.0;
 /// 글리프 스트로크 굵기 (logical points). UI kit 1px 보더 관습과 동일.
-const GLYPH_STROKE: f32 = 1.0;
+const GLYPH_STROKE: LogicalPx = LogicalPx(1.0);
 
 /// 캡션 클러스터(min·max·close 3버튼) 전체 폭 (logical points).
 /// `view.rs` 의 우측 슬롯 carve-out + 드래그 rect 계산에 쓰인다.
@@ -115,7 +116,7 @@ fn paint_glyph(
     color: egui::Color32,
 ) {
     let h = GLYPH / 2.0;
-    let stroke = egui::Stroke::new(GLYPH_STROKE, color);
+    let stroke = egui::Stroke::new(GLYPH_STROKE.value(), color);
     match kind {
         Glyph::Minimize => {
             // 중앙 수평선.
