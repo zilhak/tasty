@@ -91,8 +91,9 @@ pub fn session_id_for_surface<H: HostCall>(
 /// (→ `false`). 그 외(연결 끊김·timeout·호스트 내부 오류)는 여전히 **모름**이라
 /// `true` 로 떨어진다 — 살아 있는 대상을 없다고 말하지 않는 쪽으로 틀린다.
 ///
-/// 판정을 문자열로 하는 이유: 이 규약의 소유자는 본체의
-/// `src/core/request_target.rs::unowned_target_message` 인데, plugin 은 별도 프로세스이고
+/// 판정을 문자열로 하는 이유: 규약의 정본은 [`tasty_utils::target`] 이고 판정도 거기
+/// [`tasty_utils::target::says_no_live_target`] 에 있는데(만드는 쪽과 붙여 두어야
+/// 문구가 바뀔 때 왕복이 먼저 깨진다), plugin 은 별도 프로세스이고
 /// SDK 의 [`tasty_plugin_sdk::PluginError::HostCall`] 은 **코드 없이 메시지만** 실어
 /// 온다. 즉 지금은 문자열이 유일한 채널이다. 본체가 문구를 바꾸면 이 판정은 조용히
 /// "모름" 쪽으로 떨어진다(살아 있다고 답한다) — 좁게 틀리는 방향이라 안전하지만,
@@ -109,7 +110,7 @@ pub fn surface_exists<H: HostCall>(host: &H, surface_id: u32) -> bool {
 /// 순수 함수로 뽑아 두어 합성 문자열로 찌를 수 있다 — 호스트를 세우지 않고도 이
 /// 판정의 두 방향을 고정할 수 있다.
 fn rejects_as_no_live_surface(message: &str, surface_id: u32) -> bool {
-    message.contains(&format!("no live surface {surface_id}"))
+    tasty_utils::target::says_no_live_target(message, "surface", u64::from(surface_id))
 }
 
 /// transcript 루트 디렉토리. `CLAUDE_CONFIG_DIR` 이 설정돼 있으면 그 아래 `projects`,

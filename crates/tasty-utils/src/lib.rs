@@ -12,6 +12,8 @@
 //! - [`notify`] — child→caller 완료 알림 로그(Monitor tool tail 대상). claude/codex
 //!   plugin 이 공유하는 append 경로 규약이라, 개별 plugin 이 아니라 leaf utils 에서
 //!   [`path::tasty_home`] 위에 단일 정의한다(writer/reader 경로 일치 보장).
+//! - [`target`] — 요청이 지목한 대상을 아무도 안 가졌을 때의 **프로토콜 문구**.
+//!   호스트와 plugin 이 별개 프로세스라 타입을 공유할 수 없어, 문자열 정본을 여기 둔다.
 //! - [`shell_family`] — 셸 바이너리 경로에서 bash/zsh/기타 계열 판정(basename 기준).
 //!   현재는 tasty-settings 만 호출한다(rc/zshenv 주입 여부와 `effective_shell_args`/
 //!   `effective_shell_envs` 분기 결정) — tasty-terminal 은 `ShellFamily::detect` 를
@@ -28,3 +30,4 @@ pub mod path;
 pub mod poison;
 pub mod process;
 pub mod shell_family;
+pub mod target;

@@ -81,26 +81,31 @@ fn require_surface(params: &Value, tr: &Translator) -> Result<u32, IpcMethodErro
 /// 문장**이 나온다(실측: 존재하지 않는 424242 와 살아 있는 1 이 같은 답). 호출자는
 /// `watch` 를 부르면 되는 줄 알고 다시 부르고, 거기서야 다른 이유로 실패한다.
 ///
-/// **문구의 소유자는 본체다** — `src/core/request_target.rs::unowned_target_message` 가
-/// 그 규약을 정한다. plugin 은 별도 프로세스이고 그 함수가 `pub(crate)` 라 부를 수 없어
-/// 같은 모양을 여기서 다시 쓴다. 그래서 이 문장은 본체가 바뀌면 조용히 어긋난다 —
-/// 규약을 SDK 로 내보내는 것이 근본 해법이고, 그 전까지는 이 주석이 유일한 연결이다.
+/// **문구는 한 벌뿐이다** — [`tasty_utils::target::unowned_target_message`] 가 정본이고
+/// 호스트도 같은 함수를 부른다. 이 문장을 여기서 다시 쓰던 동안 실제로 어긋나 있었다:
+/// 호스트는 `(named by '<메서드>')` 에 **요청의 메서드 이름**을 넣는데 복제본은 인자
+/// 이름(`'surface'`)을 박아 두어 문장의 뜻이 달랐다. lang 파일에 두는 것도 같은 이유로
+/// 답이 아니다 — 로케일마다 바이트가 갈리면 이 문구를 문자열로 가르는 소비자가 깨진다.
+/// 그래서 바이트 동일이 **테스트의 단언이 아니라 호출 구조**로 보장된다.
+///
+/// `method` 는 **호출자가 부른 메서드**(`agent_stream.turn_start` 등)다 — 생존을 되묻느라
+/// 내부적으로 부른 host 호출의 이름이 아니다. 호출자가 이름으로 지목한 것이 그쪽이다.
 ///
 /// 판정은 **좁게 틀린다**: host 호출이 실패하면 `surface_exists` 가 `true` 로 떨어져
 /// 예전 문장("보고 있지 않다")으로 돌아간다. 살아 있는 surface 를 "없다" 고 말하지 않는다.
 fn require_live_surface<H: HostCall>(
     host: &H,
-    tr: &Translator,
     surface_id: u32,
+    method: &str,
     fallback: IpcMethodError,
 ) -> IpcMethodError {
     if crate::resolve::surface_exists(host, surface_id) {
         return fallback;
     }
-    IpcMethodError::new(tr.t_replace(
-        "agent_stream.error.no_live_surface",
-        "{surface}",
-        &surface_id.to_string(),
+    IpcMethodError::new(tasty_utils::target::unowned_target_message(
+        "surface",
+        u64::from(surface_id),
+        method,
     ))
 }
 
@@ -233,7 +238,9 @@ pub fn handle_turn_start<H: HostCall>(
         // "안 보고 있다" 는 **없는 surface** 에도 같은 말이 된다 — 그 자리에서만 host 에
         // 되묻는다(정상 경로엔 왕복이 붙지 않는다).
         match e {
-            TurnError::NotWatched => require_live_surface(host, tr, surface_id, msg),
+            TurnError::NotWatched => {
+                require_live_surface(host, surface_id, "agent_stream.turn_start", msg)
+            }
             TurnError::AlreadyOpen { .. } => msg,
         }
     })?;
@@ -280,7 +287,12 @@ pub fn handle_unwatch<H: HostCall>(
             "{surface}",
             &surface_id.to_string(),
         ));
-        return Err(require_live_surface(host, tr, surface_id, fallback));
+        return Err(require_live_surface(
+            host,
+            surface_id,
+            "agent_stream.unwatch",
+            fallback,
+        ));
     }
     reg.save_if_dirty();
     Ok(json!({ "surface_id": surface_id, "unwatched": true }))
@@ -996,15 +1008,22 @@ mod tests {
             json!({ "surface": 424_242 }),
         )
         .expect_err("없는 surface 는 거절");
-        assert!(
-            dead_turn.message.contains("no_live_surface"),
-            "{}",
-            dead_turn.message
+        // 단언 대상이 **정본 함수의 출력 그대로**다. 예전에는 `contains("no_live_surface")`
+        // 로 **번역 키 이름**을 봤는데, 그건 키가 lang 파일에 없을 때 키를 그대로 돌려주는
+        // 스텁 Translator 덕에 통과하던 것이라 문장에 대해 아무것도 안 재고 있었다.
+        // 여기서 재는 것은 포맷이 아니라 **`method` 자리에 무엇이 들어가는가** 다 —
+        // 틀렸던 것이 정확히 그 자리(인자 이름 `'surface'`)였다.
+        assert_eq!(
+            dead_turn.message,
+            tasty_utils::target::unowned_target_message(
+                "surface",
+                424_242,
+                "agent_stream.turn_start"
+            )
         );
-        assert!(
-            dead_unwatch.message.contains("no_live_surface"),
-            "{}",
-            dead_unwatch.message
+        assert_eq!(
+            dead_unwatch.message,
+            tasty_utils::target::unowned_target_message("surface", 424_242, "agent_stream.unwatch")
         );
 
         // **양방향** — 살아 있지만 watch 안 한 surface 는 예전 문장 그대로여야 한다.

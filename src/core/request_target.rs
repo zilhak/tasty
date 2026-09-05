@@ -233,21 +233,12 @@ pub(crate) fn prefix_is_host_reserved(method: &str) -> bool {
 
 /// 요청이 지목한 대상을 **아무 engine 도 안 가졌을 때** 돌려줄 메시지.
 ///
-/// 예전에는 이 자리에서 포커스된 창으로 넘겼다. 그러면 대상을 잘못 적은 요청이
-/// **다른 창에서 조용히 성공한다** — 실측(2026-09-05): 존재하지 않는
-/// `workspace_id` 를 실은 `workspace.create` 가 포커스된 창에 워크스페이스를
-/// 만들고 성공을 돌려줬다. 호출자는 자기가 지목한 곳에 만들어진 줄 안다.
-/// `docs/design/policies/focus.md` 의 "silent fallback 금지" 가 그것이다.
-///
-/// 문구가 창을 말하지 않는 이유: 헤드리스에도 같은 판정이 걸리는데 거기엔 창이 없다.
-/// 두 조합에서 참인 문장이어야 한다.
+/// 문장 자체는 [`tasty_utils::target::unowned_target_message`] 가 정본이다 — 같은 문구를
+/// plugin 프로세스도 내야 하는데 프로세스가 갈려 타입을 공유할 수 없어서, 두 벌이 따로
+/// 표류하지 않도록 문자열 조립만 leaf crate 로 내렸다. 여기 남는 것은 **본체 타입에서
+/// 그 인자를 뽑는 일**뿐이다(utils 가 `ResourceId` 를 알면 leaf 가 깨진다).
 pub(crate) fn unowned_target_message(rid: ResourceId, method: &str) -> String {
-    format!(
-        "no live {} {} (named by '{method}'); \
-         list the resource to get a live id — a named target is never resolved by focus",
-        rid.kind.label(),
-        rid.id
-    )
+    tasty_utils::target::unowned_target_message(rid.kind.label(), rid.id, method)
 }
 
 #[cfg(test)]
