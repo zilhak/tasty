@@ -869,6 +869,42 @@ fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
     assert!(class.explorers.is_empty());
 }
 
+// 회귀: Plugin deferred placeholder(hello 전)는 Terminal deferred 와 달리 터미널이
+// 아니라 non_terminal placeholder 로 분류돼야 한다. terminal 로 오분류하면 attach 가
+// 터미널 tap 을 걸려다 조용히 실패해 client mirror 에 "데이터 안 오는 빈 터미널" 로
+// 나타난다(deferred enum 을 is_deferred() bool 로 좁혀 읽던 자리의 결함).
+#[test]
+fn workspace_classify_attach_surfaces_puts_plugin_deferred_in_non_terminals() {
+    use super::terminal_surface::DeferredPlugin;
+    use super::{EmptySurface, Pane, Surface, TerminalSurface, Workspace};
+    let mut pane = Pane::new_with_surface(1, 1, "t".into(), Box::new(TerminalSurface { id: 100 }));
+    let plugin_ph = EmptySurface::new_deferred_plugin(
+        300,
+        DeferredPlugin {
+            kind: "myplugin".into(),
+            snapshot: serde_json::json!({}),
+        },
+    );
+    pane.split_surface_by_id_with_surface(
+        100,
+        SplitDirection::Vertical,
+        Box::new(plugin_ph) as Box<dyn Surface>,
+    )
+    .unwrap();
+    let ws = Workspace::new_with_pane(1, "w".into(), pane);
+    let class = ws.classify_attach_surfaces();
+    assert_eq!(
+        class.terminals,
+        vec![100],
+        "실 터미널만 terminal 이어야 한다"
+    );
+    assert_eq!(
+        class.non_terminals,
+        vec![300],
+        "plugin deferred 는 non_terminal placeholder 여야 한다 (terminal 오분류 금지)"
+    );
+}
+
 /// ADR-0059 — explorer 는 `non_terminals` 가 아니라 전용 `explorers` 버킷으로
 /// 분류되고, 활성 탭의 **현재(root)** 경로(고정 cwd 가 아니라)가 실려야 한다.
 #[test]
