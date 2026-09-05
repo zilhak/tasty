@@ -416,8 +416,13 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
     let test_only = shipping_scope::test_only_files(&root, &sources);
     assert!(
         test_only.len() >= MIN_TEST_ONLY,
-        "테스트 전용으로 판정된 파일이 {} 개뿐이다(하한 {MIN_TEST_ONLY}) — 면제가 죽었다",
-        test_only.len()
+        "테스트 전용으로 판정된 파일이 {} 개뿐이다(하한 {MIN_TEST_ONLY}, 발견 {}). \
+         면제가 죽으면 픽스처가 위반으로 세진다 — 다만 그 실패는 시끄러운 쪽이라, \
+         이 하한이 잡는 것은 **면제가 통째로 죽은 것**뿐이다. 레포가 정말 줄어서 \
+         터진 것이면 낮춰도 되고, 그때 잃는 것은 없다(부분 사멸은 이 하한이 원래 \
+         안 잡는다)",
+        test_only.len(),
+        sources.len()
     );
 
     let mut offenders: Vec<String> = Vec::new();

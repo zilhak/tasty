@@ -161,11 +161,16 @@ fn every_host_method_under_a_bundled_namespace_is_handled_by_that_plugin() {
     );
     let by_prefix = host_methods_by_prefix();
 
-    let mut namespaces = 0usize;
+    // 수가 아니라 **목록**으로 모은다. 하한이 터질 때 읽는 사람이 "탐색이 죽었다" 와
+    // "선언이 정말 줄었다" 를 가르려면 무엇이 세어졌는지가 보여야 한다.
+    let mut declared: Vec<String> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
     for dir in bundled_plugin_dirs() {
         for prefix in declared_prefixes(&dir) {
-            namespaces += 1;
+            declared.push(format!(
+                "{}::{prefix}",
+                dir.file_name().unwrap_or_default().to_string_lossy()
+            ));
             let Some(host) = by_prefix.get(&prefix) else {
                 // host 가 그 이름 아래 아무것도 구현하지 않았다 — 가려질 것이 없다.
                 continue;
@@ -191,9 +196,19 @@ fn every_host_method_under_a_bundled_namespace_is_handled_by_that_plugin() {
     }
 
     assert!(
-        namespaces >= MIN_DECLARED_NAMESPACES,
-        "선언된 ipc_namespace 가 {namespaces} 개뿐이다(하한 \
-         {MIN_DECLARED_NAMESPACES}). 매니페스트 탐색이 죽었다"
+        declared.len() >= MIN_DECLARED_NAMESPACES,
+        "선언된 ipc_namespace 가 {} 개뿐이다(하한 {MIN_DECLARED_NAMESPACES}). \
+         집힌 것: {:?}\n\
+         이 빨강은 두 세계에서 난다. **목록을 보고 가려라** — 비었거나 낯선 것만 \
+         있으면 탐색·파싱이 죽은 것이고, 아는 것이 줄어 있으면 선언이 정말 빠진 것이다.\n\
+         뒤엣경우에도 이 검사를 지우거나 `#[ignore]` 로 덮지 마라 — 하한만 고쳐라. \
+         다만 낮추는 것은 **이 검사를 버리는 것**일 수 있다: 지금 값은 인구(6)가 아니라 \
+         부분 사멸의 형태로 정한 값이라(한 변종이 통째로 빠지면 3), 3 이하로 내리면 \
+         그 형태를 더는 못 잡는다. 새 값 N 을 쓰려면 **'어떤 부분 사멸이 N 미만을 \
+         만드는가' 를 갈래 이름과 그 수로** 상수 주석에 적어라. 못 적으면 그 N 은 \
+         아무것도 안 잡는 값이고, 그때는 하한이 아니라 검사가 낡은 것이다",
+        declared.len(),
+        declared
     );
     assert!(
         missing.is_empty(),
