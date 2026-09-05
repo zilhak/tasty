@@ -676,6 +676,10 @@ mod headless_app_layer_coverage;
 mod platform_gated_dispatch_complement;
 mod port_mode_roster;
 
+/// 핸들러가 IPC params 를 숫자로 읽는 자리가 관문(`handler/params.rs`) 하나를
+/// 지나는지 본다. 흩어져 있으면 자르기(`as u32`)가 한 자리에서만 고쳐진다.
+mod params_chokepoint;
+
 mod reserved_ipc_prefixes;
 mod routing_key_coverage;
 
