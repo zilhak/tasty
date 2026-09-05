@@ -21,7 +21,7 @@
 //! [`tests::panicking_binding_has_no_call_site`] 가 그것을 검사한다.
 //!
 //! 결정 근거·대안·재검토 조건, 그리고 **이 가드들이 무엇을 안 지키는지**는
-//! `docs/adr/0157-a-null-gdk-window-is-a-value-not-a-crash.md`.
+//! `docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md`.
 
 use gtk::glib::translate::ToGlibPtr;
 
@@ -153,7 +153,7 @@ mod tests {
         assert!(!mask_non_code(ffi).contains("::foreign_new_for_display"));
     }
 
-    /// ADR-0157 의 **전제**를 검사한다. 결정이 아니라 전제라, 이게 깨지면
+    /// ADR-0159 의 **전제**를 검사한다. 결정이 아니라 전제라, 이게 깨지면
     /// "고쳐라" 가 아니라 **"ADR 을 다시 열어라"** 다.
     ///
     /// 전제 둘:
@@ -178,7 +178,7 @@ mod tests {
         );
         let at = |needle: &str| code.iter().position(|l| l.contains(needle));
 
-        let reopen = "— ADR-0157 의 전제가 바뀌었다. 고치지 말고                       docs/adr/0157-a-null-gdk-window-is-a-value-not-a-crash.md 를 다시 열어라";
+        let reopen = "— ADR-0159 의 전제가 바뀌었다. 고치지 말고                       docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md 를 다시 열어라";
 
         // ① 연결이 둘이다.
         assert!(

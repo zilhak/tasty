@@ -1,4 +1,4 @@
-# ADR-0157: NULL GdkWindow 은 크래시가 아니라 값이다 — 그리고 연결이 둘이면 왕복해야 한다
+# ADR-0159: NULL GdkWindow 은 크래시가 아니라 값이다 — 그리고 연결이 둘이면 왕복해야 한다
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
