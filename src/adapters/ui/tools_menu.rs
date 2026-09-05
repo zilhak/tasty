@@ -24,7 +24,7 @@ use tasty_ui_widgets::menu_separator;
 /// Popup width (도구 항목 라벨이 모두 들어가는 baseline). 사이드바 도구 버튼 좌측 정렬.
 const POPUP_WIDTH: LogicalPx = LogicalPx(160.0);
 /// 도구 항목 한 줄 높이. draw 와 sizer 가 같은 값을 참조해야 잘림 방지.
-const ITEM_HEIGHT: f32 = 28.0;
+const ITEM_HEIGHT: LogicalPx = LogicalPx(28.0);
 
 /// Built-in tool entries that are not contributed by any plugin.
 /// `action` 으로 popup / 별도 winit 윈도우 오픈을 구분한다.
@@ -105,7 +105,7 @@ pub fn draw_tools_menu(
     let mut open_file_picker = false;
     for entry in BUILTIN_TOOLS {
         let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
+            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT.value()), egui::Sense::click());
         if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -174,7 +174,7 @@ pub fn draw_tools_menu(
     let mut clicked: Option<ToolItem> = None;
     for item in &items {
         let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
+            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT.value()), egui::Sense::click());
         if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -296,17 +296,16 @@ fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
 fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: f32) -> egui::Vec2 {
     let total = builtin_count + plugin_count;
     let total = total.max(1);
-    let mut content_h =
-        total as f32 * ITEM_HEIGHT + (total.saturating_sub(1)) as f32 * item_spacing;
+    let mut content_h = ITEM_HEIGHT.scaled(total as f32)
+        + LogicalPx((total.saturating_sub(1)) as f32 * item_spacing);
     if builtin_count > 0 && plugin_count > 0 {
-        content_h += 2.0 * item_spacing;
+        content_h += LogicalPx(2.0 * item_spacing);
     }
     // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
     let safety_margin = 1.0;
     egui::vec2(
         POPUP_WIDTH.value(),
-        (popup::content_margin().scaled(2.0) + LogicalPx(content_h) + LogicalPx(safety_margin))
-            .value(),
+        (popup::content_margin().scaled(2.0) + content_h + LogicalPx(safety_margin)).value(),
     )
 }
 
@@ -341,7 +340,8 @@ mod size_tests {
     fn fits_builtin_only_medium_scale() {
         // ui_scale=1.0 → spacing_xs(4.0). BUILTIN 4 개, plugin 0 개, separator 없음.
         let size = tools_menu_size_for(4, 0, 4.0);
-        let needed = popup::content_margin().scaled(2.0) + LogicalPx(4.0 * ITEM_HEIGHT + 3.0 * 4.0);
+        let needed =
+            popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.0);
         assert!(
             LogicalPx(size.y) >= needed,
             "size.y ({}) < needed ({}) for 4 builtin items",
@@ -356,11 +356,9 @@ mod size_tests {
         // BUILTIN 4 + plugin 3 → separator 1 개 추가됨.
         let size = tools_menu_size_for(4, 3, 4.0);
         let needed = popup::content_margin().scaled(2.0)
-            + LogicalPx(
-                7.0 * ITEM_HEIGHT
-                    + 6.0 * 4.0  // item_spacing between 7 items
-                    + 2.0 * 4.0, // menu_separator = 2·spacing_xs
-            );
+            + ITEM_HEIGHT.scaled(7.0)
+            + LogicalPx(6.0 * 4.0)  // item_spacing between 7 items
+            + LogicalPx(2.0 * 4.0); // menu_separator = 2·spacing_xs
         assert!(
             LogicalPx(size.y) >= needed,
             "size.y ({}) < needed ({}) for 4+3 items",
@@ -373,7 +371,8 @@ mod size_tests {
     fn fits_plugin_only_no_separator() {
         // BUILTIN 0 + plugin 5 (hypothetical) → separator 없음.
         let size = tools_menu_size_for(0, 5, 4.0);
-        let needed = popup::content_margin().scaled(2.0) + LogicalPx(5.0 * ITEM_HEIGHT + 4.0 * 4.0);
+        let needed =
+            popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(5.0) + LogicalPx(4.0 * 4.0);
         assert!(LogicalPx(size.y) >= needed);
     }
 
@@ -381,7 +380,7 @@ mod size_tests {
     fn empty_does_not_underflow() {
         let size = tools_menu_size_for(0, 0, 4.0);
         // total.max(1) 이 적용되어 최소 한 줄 분량은 확보된다.
-        assert!(LogicalPx(size.y) >= popup::content_margin().scaled(2.0) + LogicalPx(ITEM_HEIGHT));
+        assert!(LogicalPx(size.y) >= popup::content_margin().scaled(2.0) + ITEM_HEIGHT);
     }
 
     #[test]
@@ -389,7 +388,7 @@ mod size_tests {
         // ui_scale=1.2 → spacing ≈ 4.78. 4 항목 기준 spacing 누적이 늘어나도 fit.
         let size = tools_menu_size_for(4, 0, 4.78);
         let needed =
-            popup::content_margin().scaled(2.0) + LogicalPx(4.0 * ITEM_HEIGHT + 3.0 * 4.78);
+            popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.78);
         assert!(LogicalPx(size.y) >= needed);
     }
 }
