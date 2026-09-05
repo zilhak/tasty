@@ -34,7 +34,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 ## 워크스페이스 크레이트 (51)
 
-의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다([ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 push 전에 직접 돌려라.
+의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. **그 순서를 `crates/tasty-doc-guards/tests/architecture_layer_order_holds.rs` 가 매니페스트 의존과 대조한다** — 절 소속은 각 절 **첫 문단의 열거**에서 읽고(항목마다 `` `이름` `` 으로 시작), 순서를 거스르는 간선은 문서 본문이 이유를 적은 것만 허용한다. 지금 그런 예외는 `tasty-remote` → `tasty-ipc` 하나다(아래 도메인-IO 절). **순서를 거스르는 간선을 보면 그 간선보다 절 순서를 먼저 의심해라** — 실측에서 그런 넷은 전부 정상 의존이었고 절 넷이 잘못된 자리에 있었다. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다([ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 push 전에 직접 돌려라.
 
 ### type-\* / primitive (leaf)
 `tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf) · `tasty-ansi`(ANSI escape 제거 — CSI/OSC 정규식 하나. `tasty-terminal`(IPC `--strip-ansi`)과 `tasty-output`(파서의 plain text 매칭)이 공유한다. 두 크레이트가 서로를 흡수하면 상대가 몰라도 되는 의존(serde / termwiz)을 들이므로 크기가 아니라 의존 방향으로 분리했다, → regex 만, ADR-0089) · `tasty-timer`(중앙 타이머 허브 — 메인 루프의 주기 작업을 키로 등록하고 매 프레임 `drain_due` 로 소비, 고정 주기 ticker 스레드 대신 다음 데드라인까지만 자는 waker 스레드 1개, 의존 0) · `tasty-shm`(공유 메모리 + FD/HANDLE 전달 primitive — POSIX shm + SCM_RIGHTS / Windows DuplicateHandle. 호스트와 plugin 이 대용량 데이터를 주고받는 **선(wire)** 이라 `tasty-plugin-protocol` 과 같은 역할이고, tasty 도메인 개념을 담지 않는다. 워크스페이스 내부 의존 0, 의존 0)
@@ -51,25 +51,25 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 ### UI primitive
 `tasty-egui-theme`(Theme → egui Visuals/Style 어댑터) · `tasty-ui-widgets`(본체·갤러리 공유 egui 위젯/레이아웃 primitive — 시각 동기화 단일 출처) · `tasty-icons`(line/fill 아이콘 SVG 단일 출처 — host/gallery/plugin build-time bake 공유). — [ui-widgets-crate](ui-widgets-crate.md)
 
-### plugin host (IPC 인프라)
-`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait + 클라이언트 연결 `client::{IpcConnection, StreamConnection}` — 서버·프레이밍과 같은 크레이트) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
-
 ### plugin protocol / SDK (sandbox 경계)
 `tasty-plugin-protocol`(호스트↔plugin 와이어, leaf) · `tasty-plugin-sdk`(외부 plugin 제작 SDK, → protocol/shm) · `tasty-plugin-sdk-wasm`(WASM 타깃 SDK) · `tasty-plugin-agent-common`(AI CLI 자식을 다루는 두 번들 plugin — claude/codex — 이 공유하는 헬퍼: prompt 임시파일·형제 hook 정리·children 응답 읽기·reboot 인자. 이름이 `tasty-plugin-` 으로 시작하지만 매니페스트가 없어 번들 plugin 이 아니다, → sdk)
 
 이 계층은 도메인-IO 에 **직접 의존하지 않는다**(sandbox 경계) — protocol/sdk 만 통과.
 
+### plugin host (IPC 인프라)
+`tasty-plugin-manifest`(manifest 스키마/파서) · `tasty-ipc`(JSON-RPC envelope + caller + audit + method_meta + facade trait + 클라이언트 연결 `client::{IpcConnection, StreamConnection}` — 서버·프레이밍과 같은 크레이트) · `tasty-host-plugin`(호스트의 plugin 매니저/process/event_bus/registry)
+
 ### 번들 plugin (bin 크레이트, 모두 `tasty-plugin-sdk` 의존)
 `tasty-plugin-claude`(lib 도 함께 노출) · `tasty-plugin-codex` · `tasty-plugin-git-viewer` · `tasty-plugin-clipboard-viewer` · `tasty-plugin-image` · `tasty-plugin-html` · `tasty-plugin-markdown` · `tasty-plugin-agent-stream` · `tasty-plugin-mesh-demo`(+ manifest). 뒤의 둘은 `bundle = false` 라 배포 패키징에서는 빠지고 dev 번들 sync 로만 붙는다. — [concepts/plugins](../concepts/plugins.md)
+
+### 도구 / standalone
+`tasty-tui-simulator`(E2E TUI 시뮬레이터, lib + `tasty-tui-sim` binary — 로직은 lib 공유, debug 빌드에선 `tasty debug sim` 으로도 노출) · `tasty-gallery`(ui-widgets 데모 바이너리, `cargo run -p tasty-gallery` — 본체 빌드와 분리)
 
 ### CLI client
 `tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/remote-profiles)
 
 ### 가드 전용 (의존 0)
-`tasty-doc-guards`(문서를 읽는 통합 가드 일곱의 집 — `docs/` · `site/` · `*.md` 를 소스·워크플로 텍스트와 대조한다. **의존이 0 인 것이 존재 이유다**: 잡이 싸야 CI 에서 경로 필터 없이 매 push 돌릴 수 있고, 그래야 문서만 바뀐 push 에서도 돈다 — [ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md))
-
-### 도구 / standalone
-`tasty-tui-simulator`(E2E TUI 시뮬레이터, lib + `tasty-tui-sim` binary — 로직은 lib 공유, debug 빌드에선 `tasty debug sim` 으로도 노출) · `tasty-gallery`(ui-widgets 데모 바이너리, `cargo run -p tasty-gallery` — 본체 빌드와 분리)
+`tasty-doc-guards`(문서를 읽는 통합 가드들의 집 — `docs/` · `site/` · `*.md` 를 소스·워크플로 텍스트와 대조한다. **의존이 0 인 것이 존재 이유다**: 잡이 싸야 CI 에서 경로 필터 없이 매 push 돌릴 수 있고, 그래야 문서만 바뀐 push 에서도 돈다 — [ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md))
 
 ### 본 바이너리 (`tasty`)
 위 크레이트를 의존하며 App/View/GPU/IPC 라우터/부팅을 제공.

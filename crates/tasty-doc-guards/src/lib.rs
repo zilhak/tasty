@@ -25,6 +25,9 @@ pub mod cfg_predicate;
 pub mod freshness;
 pub mod manifest_text;
 
+/// 아키텍처 문서의 계층 절과 크레이트의 워크스페이스 내부 의존을 읽는다.
+pub mod crate_layers;
+
 /// 소스를 텍스트로 읽는 가드들이 공유하는 마스킹·순회.
 pub mod source_text;
 
