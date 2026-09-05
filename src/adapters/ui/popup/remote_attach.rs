@@ -53,7 +53,6 @@ const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0);
 const WS_ROW_H: LogicalPx = LogicalPx(34.0);
 const BADGE_H: LogicalPx = LogicalPx(16.0);
 const HEADER_PAD_L: LogicalPx = LogicalPx(14.0);
-const SELECT_BAR_W: LogicalPx = LogicalPx(2.0);
 
 /// 생성 왕복 중 아래 ws 목록의 불투명도 — 목록을 지우지 않고 물러나게만 한다.
 const LIST_DIM_WHILE_CREATING: f32 = 0.5;
@@ -828,8 +827,10 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
         ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H.value()), egui::Sense::click());
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar =
-            egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W.value(), rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if resp.hovered() {
         ui.painter()
@@ -1111,8 +1112,10 @@ fn new_ws_row(
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar =
-            egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W.value(), rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !creating && resp.hovered() {
         ui.painter()
@@ -1314,8 +1317,10 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar =
-            egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W.value(), rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !disabled && resp.hovered() {
         ui.painter()
