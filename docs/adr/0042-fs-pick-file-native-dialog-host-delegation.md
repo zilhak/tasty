@@ -1,6 +1,6 @@
 # ADR-0042: native 파일 선택 다이얼로그는 host `fs.pick_file`(FsRead)로 위임한다
 
-- **Status**: Superseded by ADR-0161 — 이 ADR 이 스스로 한정한 유스케이스(markdown plugin browse 버튼)가 ADR-0058 의 host 소유 popup 으로 옮겨가 비었고, 남은 메서드는 호출자 없이 호스트를 멎게 할 수 있어 제거됐다.
+- **Status**: Superseded by ADR-0162 — 이 ADR 이 스스로 한정한 유스케이스(markdown plugin browse 버튼)가 ADR-0058 의 host 소유 popup 으로 옮겨가 비었고, 남은 메서드는 호출자 없이 호스트를 멎게 할 수 있어 제거됐다.
   원격 인지 + 비동기 파일 브라우징은 [ADR-0053](0053-native-file-picker-remote-attach-channel.md)
   이 별개 메커니즘으로 다룬다(본 ADR 의 개정이 아니다 — 전제 자체가 달라 분리).
 - **Date**: 2026-07-09
@@ -74,6 +74,6 @@ async/oneshot 회신 배관은 없다 — plugin 의 `host.call` 은 host 메인
 
 - [`docs/dev-guide/plugin-permissions.md`](../dev-guide/plugin-permissions.md) — plugin 권한 모델
 - [ADR-0028](0028-plugin-egui-mesh-render-channel.md) — plugin egui-mesh 렌더 채널(plugin 별도 프로세스)
-- `fs.pick_file` 핸들러 모듈(스레드 모델 주석) — ADR-0161 로 제거됐다
+- `fs.pick_file` 핸들러 모듈(스레드 모델 주석) — ADR-0162 로 제거됐다
 - `crates/tasty-ipc/src/method_meta.rs` — `fs.pick_file` 권한 등록(FsRead)
 - `crates/tasty-plugin-markdown/src/main.rs` — caller(browse → `fs.pick_file`)

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (Tools 메뉴 트리거) + plugin(`file_picker.trigger` IPC)
-- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0161](../../adr/0161-a-host-blocking-native-dialog-is-not-an-agent-surface.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
+- **ADR**: [ADR-0053](../../adr/0053-native-file-picker-remote-attach-channel.md) (attach 커스텀 이벤트 채널 + 하이브리드 신뢰 모델), [ADR-0058](../../adr/0058-plugin-triggered-host-popup-async-ack-push.md) (plugin 트리거 — 즉시 ack + 이벤트 push). 관련: [ADR-0162](../../adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md)(옛 `fs.pick_file` 제거 — 이 피커가 그 자리를 대신한다)
 - **코드**: `src/adapters/ui/popup/file_picker.rs`(popup wrapper/view/action), `src/core/fs_list.rs`(공유 디렉토리 나열), `src/adapters/ui/tools_menu.rs`(Tools 메뉴 트리거), `src/adapters/ipc/handler/file_picker.rs`(`file_picker.trigger` — plugin 트리거), `src/app/dispatch/file_picker.rs`(result drain + plugin 에게 `"file_picker.result"` push), `src/core/attach_runtime.rs`(서버측 `handle_list_dir_request`), `src/app/attach_client.rs`(client 원격 파싱 + `MirrorEvent::ListDirResult`), `src/adapters/production/stream_hub.rs`(`ListDirRequestMsg` 분류), `crates/tasty-plugin-markdown/src/main.rs`(Browse 버튼 caller)
 - **화면**: 없음 (popup 은 갤러리 specimen `crates/tasty-gallery/src/catalog/components/file_picker.rs` 로 시각 확인)
 
@@ -10,7 +10,7 @@
 
 Tasty 자체 in-app "파일 열기" 다이얼로그. 로컬 파일시스템뿐 아니라 **attach mirror 워크스페이스가
 브라우징하고 있는 원격 파일시스템**도 같은 UI 로 탐색할 수 있게 한다 — native OS 다이얼로그
-(옛 `fs.pick_file`, ADR-0042 → ADR-0161 로 제거)는 host 프로세스 로컬 파일시스템만 알 뿐
+(옛 `fs.pick_file`, ADR-0042 → ADR-0162 로 제거)는 host 프로세스 로컬 파일시스템만 알 뿐
 원격이라는 개념이 없었다.
 
 ## 내부 동작 (headless-valid)
@@ -95,7 +95,7 @@ markdown plugin 의 "파일 열기" 팝업 Browse 버튼처럼, host 소유 popu
 뒤에나 확정/취소할지 모르는 인터랙션을 **plugin 이** 트리거해야 하는 경우의 IPC 경로다.
 옛 `fs.pick_file` 은 동기 inline dispatch 였고 "OS native 모달이 자기 run loop 를 돌리므로
 host 메인 스레드를 블로킹해도 안전" 하다고 적혀 있었다. 그 전제는 실측으로 뒤집혔고 그
-메서드는 제거됐다([ADR-0161](../../adr/0161-a-host-blocking-native-dialog-is-not-an-agent-surface.md)).
+메서드는 제거됐다([ADR-0162](../../adr/0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md)).
 host 자체 egui popup 은 그와 별개로 OS 가 대신 블로킹해주지 않는다 —
 지연 회신 방식(`host.call` 자체를 확정 시점까지 붙잡아 둠)은 plugin 의 렌더/입력 루프를
 멈추고 60 초 `HostCallTimeout` 위험을 진다(ADR-0058 Alternatives Considered).
