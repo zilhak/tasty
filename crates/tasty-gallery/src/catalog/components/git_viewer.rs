@@ -21,7 +21,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 // ── popup 치수 (디자인 960×640, rail 232 고정). gallery 전시용 축소 ──
-const POPUP_W: f32 = 720.0;
+const POPUP_W: LogicalPx = LogicalPx(720.0);
 const POPUP_H: LogicalPx = LogicalPx(440.0);
 const RAIL_W: f32 = 232.0;
 const SECTION_H: f32 = 28.0;

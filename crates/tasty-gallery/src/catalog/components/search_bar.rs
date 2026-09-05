@@ -4,6 +4,7 @@
 //! Input(flex) + 카운터(40) + ▲▼ + Aa/.*/ab 토글 + divider + close.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{IconButton, IconButtonVariant};
 
 use crate::catalog::icons;
@@ -49,7 +50,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
-    kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
+    kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::raised_fill(theme), |ui| {
         kit::region_sym(
             ui,
             theme.spacing_sm.value(),

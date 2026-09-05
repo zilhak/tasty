@@ -16,13 +16,14 @@
 //! 팝업 기본 크기는 `popup/defs.rs` 의 360×150 — 폭 360 을 그대로 쓴다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, tag};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// `popup/defs.rs` 의 `script_changed_confirm` 기본 폭.
-const POPUP_WIDTH: f32 = 360.0;
+const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
 
 fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
     kit::frame_card(ui, theme, POPUP_WIDTH, kit::panel_fill(theme), |ui| {

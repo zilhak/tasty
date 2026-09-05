@@ -5,12 +5,13 @@
 //! rename 1 Spec, 기존 widgets/dialog 와 통합).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 360.0;
+const WIDTH: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {

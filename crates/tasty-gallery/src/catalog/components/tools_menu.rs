@@ -4,13 +4,14 @@
 //! builtin 4 + separator + plugin 2. 색·치수는 Theme 토큰.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 160.0;
+const WIDTH: LogicalPx = LogicalPx(160.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {

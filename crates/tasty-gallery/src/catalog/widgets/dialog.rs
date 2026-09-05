@@ -25,7 +25,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// scrim Spec 무대의 높이. center anchor 와 top anchor 변형이 공유한다.
 const SCRIM_STAGE_H: LogicalPx = LogicalPx(200.0);
 /// 무대 안에 놓는 모달 카드의 폭. 두 변형이 같아야 anchor 차이만 눈에 남는다.
-const FRAME_CARD_W: f32 = 240.0;
+const FRAME_CARD_W: LogicalPx = LogicalPx(240.0);
 
 // ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
 
@@ -35,7 +35,7 @@ const FRAME_CARD_W: f32 = 240.0;
 pub fn frame_card(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: f32,
+    width: LogicalPx,
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
@@ -52,9 +52,9 @@ pub fn frame_card(
             // `Frame::show` 의 콘텐츠 ui 는 부모 레이아웃을 상속하므로, 명시적
             // vertical child 없이는 region 들이 가로 흐름에 얹혀 본문이 글자당
             // 줄바꿈으로 붕괴한다 (scrim_backdrop 의 top_down child 와 동일 원리).
-            ui.set_width(width);
+            ui.set_width(width.value());
             ui.vertical(|ui| {
-                ui.set_width(width);
+                ui.set_width(width.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 add(ui);
             });

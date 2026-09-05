@@ -11,15 +11,16 @@
 //! Theme 토큰만으로 정적 재현.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::icons::{CHEVRON_DOWN, EDIT, PLUS, TRASH};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const EDIT_WIDTH: f32 = 360.0;
-const DELETE_WIDTH: f32 = 380.0;
-const POPUP_WIDTH: f32 = 176.0;
+const EDIT_WIDTH: LogicalPx = LogicalPx(360.0);
+const DELETE_WIDTH: LogicalPx = LogicalPx(380.0);
+const POPUP_WIDTH: LogicalPx = LogicalPx(176.0);
 
 /// 생성/이름변경 다이얼로그 — `error` 가 `Some` 이면 검증 에러 상태(확인 비활성).
 fn edit_dialog(ui: &mut egui::Ui, theme: &Theme, value: &str, error: Option<&str>) {

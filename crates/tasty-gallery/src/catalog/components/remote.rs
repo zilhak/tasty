@@ -11,6 +11,7 @@
 //! ref↔inline + Remote tasty 그룹)을 별도 Spec 으로 노출한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, TagVariant, select, tag,
 };
@@ -19,7 +20,7 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 520.0;
+const WIDTH: LogicalPx = LogicalPx(520.0);
 
 struct Profile {
     name: &'static str,
@@ -517,7 +518,7 @@ fn warn_pill(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 /// 폼 라벨 컬럼 폭 — 디자인 `--tasty-remote-label-col`(size-112).
 const LABEL_COL: f32 = 112.0;
 /// 폼 카드 폭 — 디자인 `RemoteFormFrame` maxWidth 460 (raw).
-const FORM_WIDTH: f32 = 460.0;
+const FORM_WIDTH: LogicalPx = LogicalPx(460.0);
 
 pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {

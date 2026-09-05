@@ -16,7 +16,7 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 660.0;
+const WIDTH: LogicalPx = LogicalPx(660.0);
 /// 즐겨찾기 별 컬럼 폭 — 본체 `port_scanner.rs` 의 `FAV_COL_WIDTH` 미러.
 const FAV_COL_WIDTH: LogicalPx = LogicalPx(28.0);
 
@@ -263,7 +263,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 닫힘(미적용) 버튼 — surface-raised + border.
         funnel_button(ui, theme, "State", false);
         // 열린 드롭다운 카드(min-width 216).
-        kit::frame_card(ui, theme, 216.0, kit::panel_fill(theme), |ui| {
+        kit::frame_card(ui, theme, LogicalPx(216.0), kit::panel_fill(theme), |ui| {
             kit::region_sym(
                 ui,
                 theme.spacing_sm.value(),

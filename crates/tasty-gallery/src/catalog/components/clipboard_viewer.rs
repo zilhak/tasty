@@ -40,7 +40,7 @@ use crate::catalog::widgets::dialog as kit;
 
 /// popup 본문 치수(디자인 480×360 고정 — size_hint). Theme 에 대응 토큰이 없는
 /// 화면 전용 고정값.
-const POPUP_W: f32 = 480.0;
+const POPUP_W: LogicalPx = LogicalPx(480.0);
 const POPUP_H: f32 = 360.0;
 
 // CenterState 아이콘 크기는 plugin 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).

@@ -16,13 +16,14 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Input, select, switch};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings detail 영역(HTML viewer 페이지) 프레임 폭 근사.
-const WIDTH: f32 = 440.0;
+const WIDTH: LogicalPx = LogicalPx(440.0);
 
 /// Color scheme 선택지 (디자인 `Follow theme` / `Light` / `Dark`).
 const SCHEME: &[&str] = &["Follow theme", "Light", "Dark"];

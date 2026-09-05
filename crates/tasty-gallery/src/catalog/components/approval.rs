@@ -4,12 +4,13 @@
 //! `pre` 명령 블록 + 권한 Tag) · footer(Deny / Allow once / Always).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{BadgeVariant, Button, ButtonVariant, TagVariant, badge_dot, tag};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 440.0;
+const WIDTH: LogicalPx = LogicalPx(440.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {

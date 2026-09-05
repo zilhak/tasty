@@ -22,7 +22,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings 콘텐츠 컬럼 근사 프레임 폭(settings_handler 와 동일).
-const WIDTH: f32 = 560.0;
+const WIDTH: LogicalPx = LogicalPx(560.0);
 /// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
 const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
 /// jsx size row Input `style={{ width: 88 }}` — field-width-xs(90) 로 근사.

@@ -23,7 +23,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings 콘텐츠 컬럼(1100 - L2 200 - 패딩) 근사 프레임 폭.
-const WIDTH: f32 = 560.0;
+const WIDTH: LogicalPx = LogicalPx(560.0);
 /// jsx `HookRow` line 2 "Shell cmd:" 라벨 폭 (`width: 74`).
 const HOOK_CMD_LABEL_W: LogicalPx = LogicalPx(74.0);
 /// jsx add-draft 카드 필드 라벨 폭 (`width: 100`).

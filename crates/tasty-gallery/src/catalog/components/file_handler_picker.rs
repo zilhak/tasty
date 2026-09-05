@@ -5,6 +5,7 @@
 //! footer(Always 체크 + Cancel/Open).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
@@ -12,7 +13,7 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 420.0;
+const WIDTH: LogicalPx = LogicalPx(420.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {

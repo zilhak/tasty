@@ -16,6 +16,7 @@
 //! - **no image** — 툴바(refresh/new) + 캔버스 중앙 fallback glyph + "No image".
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -23,7 +24,7 @@ use crate::catalog::widgets::dialog as kit;
 
 // ── surface 타일 대표 치수 + control 버튼 치수(host add_sized 고정값) ──
 /// 본문 폭(전시 박스).
-const PANE_W: f32 = 560.0;
+const PANE_W: LogicalPx = LogicalPx(560.0);
 /// 캔버스 영역 높이(전시 박스).
 const CANVAS_H: f32 = 300.0;
 /// control 버튼 폭 (host `add_sized([24,20])`).

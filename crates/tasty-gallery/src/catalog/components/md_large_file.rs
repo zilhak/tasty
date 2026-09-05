@@ -5,12 +5,13 @@
 //! 이며 이 specimen 은 그 plugin 컴포넌트의 디자인 SoT 다 — 토큰·구조 정합.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, tag};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 360.0;
+const WIDTH: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {

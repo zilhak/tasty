@@ -6,13 +6,14 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, select, tag};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 400.0;
+const WIDTH: LogicalPx = LogicalPx(400.0);
 
 thread_local! {
     static TO_SEL: RefCell<usize> = const { RefCell::new(1) };

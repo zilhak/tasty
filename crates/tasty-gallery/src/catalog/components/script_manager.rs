@@ -87,7 +87,7 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
-    let width = ui.available_width().min(FRAME_MAX_W.value());
+    let width = LogicalPx(ui.available_width()).min(FRAME_MAX_W);
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
             kit::region_sym(

@@ -4,6 +4,7 @@
 //! accent border + ring); 각 카드 icon + title + sub; Cancel / Open preview.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -14,7 +15,7 @@ const WIDTH: f32 = 420.0;
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::panel_fill(theme), |ui| {
             kit::region_sym(
                 ui,
                 theme.spacing_md.value(),

@@ -138,7 +138,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             .max(theme.measure_sm.value());
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::panel_fill(theme), |ui| {
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);
             ui.horizontal_top(|ui| {

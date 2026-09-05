@@ -14,7 +14,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    let width = theme.measure_sm.value(); // ≈300 (narrow column, design w≈280)
+    let width = theme.measure_sm; // ≈300 (narrow column, design w≈280)
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
             kit::region_sym(
