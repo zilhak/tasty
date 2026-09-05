@@ -300,8 +300,9 @@ pub fn draw_approval_popup(
         return PopupAction::None;
     }
 
+    let th = theme::theme();
     let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(8.0, 4.0));
+    let inner_rect = available.shrink2(egui::vec2(th.spacing_sm.value(), th.spacing_xs.value()));
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 

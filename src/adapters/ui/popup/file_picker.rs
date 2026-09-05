@@ -261,7 +261,10 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
                         };
                         let glyph_size = th.icon_glyph_size_md.value();
                         let icon_rect = egui::Rect::from_min_size(
-                            egui::pos2(rect.left() + 8.0, rect.center().y - glyph_size * 0.5),
+                            egui::pos2(
+                                rect.left() + th.spacing_sm.value(),
+                                rect.center().y - glyph_size * 0.5,
+                            ),
                             egui::vec2(glyph_size, glyph_size),
                         );
                         glyph
@@ -287,7 +290,7 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
                             th.text_muted().into(),
                         );
                         ui.painter().text(
-                            egui::pos2(rect.right() - 8.0, rect.center().y),
+                            egui::pos2(rect.right() - th.spacing_sm.value(), rect.center().y),
                             egui::Align2::RIGHT_CENTER,
                             &entry.modified_display,
                             mono,

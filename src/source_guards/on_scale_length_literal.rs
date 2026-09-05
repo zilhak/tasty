@@ -113,7 +113,7 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        58,
+        48,
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (

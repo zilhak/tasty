@@ -247,7 +247,7 @@ pub fn draw_apply_preset_view(
                             );
                         }
                         ui.painter().text(
-                            egui::pos2(rect.min.x + 8.0, rect.center().y),
+                            egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             name,
                             egui::FontId::proportional(PRESET_ROW_LABEL_PRIMITIVE_12.value()),
