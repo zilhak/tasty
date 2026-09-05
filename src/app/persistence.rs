@@ -97,6 +97,7 @@ impl App {
                 schedulable_dirty_since(
                     e.settings.general.restore_layout,
                     e.layout_slot.is_some(),
+                    e.layout_slot_protected,
                     e.layout_dirty.dirty_since(),
                 )
             })
@@ -155,19 +156,37 @@ mod tests {
     }
 }
 
-/// flush 데드라인을 걸어도 되는 dirty 인가 — `apply_save_layout_now`(force=false)
-/// 가 **실제로 저장하는 조건**과 같은 판정이다
-/// (`crate::core::impl_workspace::apply_save_layout_now`).
+/// flush 데드라인을 걸어도 되는 dirty 인가.
 ///
-/// 두 판정이 어긋나면 저장되지 않을 dirty 로 데드라인을 만들게 되고, 그 dirty 는
-/// 영원히 해소되지 않으므로 `dirty_since + debounce` 라는 **지난 시각**이 매 프레임
-/// 재등록돼 이벤트 루프가 쉬지 못한다(`docs/dev-guide/timer-hub.md`).
+/// 기준은 하나다 — **저장을 건너뛰면서 `layout_dirty` 를 지우지 않는 갈래는 예약 대상이
+/// 아니다.** 예약하면 그 dirty 가 영원히 안 풀려 `dirty_since + debounce` 라는 **지난
+/// 시각**이 매 프레임 재등록되고 이벤트 루프가 쉬지 못한다(`docs/dev-guide/timer-hub.md`).
+///
+/// `crate::core::impl_workspace::apply_save_layout_now`(force=false) 가 그런 갈래를
+/// **셋** 갖는다. 셋 다 `layout_dirty.clear()` **앞에서** 반환한다:
+///
+/// ```text
+///   restore_layout 이 꺼짐        → should_save=false 로 반환
+///   layout_slot 이 None           → let-else 로 반환 (headless engine)
+///   layout_slot_protected         → 잠긴 슬롯이라 반환
+/// ```
+///
+/// ★ 셋째가 한때 여기 빠져 있었다. 그때 이 주석은 "같은 판정이다" 라고 적고 있었고
+/// **그 문장을 지키는 것이 아무것도 없었다** — 잠긴 슬롯에서 사용자가 레이아웃을 바꾸면
+/// 예약은 걸리고 저장은 매번 건너뛰어, 이 주석이 스스로 경고한 스핀이 그대로 났다.
+/// 도달 경로도 막혀 있지 않다: 슬롯은 부팅에서 읽기 결과를 알기 전에 claim 되고
+/// (`app/boot_machine.rs`), `SlotLoad::Unreadable` 은 `layout_slot` 을 비우지 않으며
+/// (`core/state.rs`), 다른 protected 자리는 경고만 한다.
+///
+/// **같음을 지키는 것은 이 문단이 아니라 아래 단위 테스트다** — 세 갈래마다 하나씩 있고,
+/// 저쪽에 갈래가 하나 더 생기면 여기에도 인자가 하나 더 늘어야 한다.
 pub(crate) fn schedulable_dirty_since(
     restore_layout: bool,
     has_slot: bool,
+    slot_protected: bool,
     dirty_since: Option<std::time::Instant>,
 ) -> Option<std::time::Instant> {
-    if restore_layout && has_slot {
+    if restore_layout && has_slot && !slot_protected {
         dirty_since
     } else {
         None
@@ -186,29 +205,45 @@ mod schedulable_dirty_tests {
     fn a_dirty_engine_that_will_never_save_is_not_schedulable() {
         let t = Instant::now();
         assert_eq!(
-            schedulable_dirty_since(false, true, Some(t)),
+            schedulable_dirty_since(false, true, false, Some(t)),
             None,
             "저장 꺼짐"
         );
         assert_eq!(
-            schedulable_dirty_since(true, false, Some(t)),
+            schedulable_dirty_since(true, false, false, Some(t)),
             None,
             "슬롯 없음"
         );
-        assert_eq!(schedulable_dirty_since(false, false, Some(t)), None);
+        assert_eq!(schedulable_dirty_since(false, false, false, Some(t)), None);
+    }
+
+    /// **세 번째 갈래** — 슬롯이 잠긴 engine.
+    ///
+    /// `SlotLoad::Unreadable` 은 디스크의 사용자 레이아웃을 이 세션이 덮어쓰지 않도록
+    /// 슬롯을 잠근다. 그러면 `apply_save_layout_now` 는 `layout_dirty.clear()` **앞에서**
+    /// 반환하므로 dirty 가 영원히 남는다 — 앞의 두 갈래와 정확히 같은 이유로 예약 대상이
+    /// 아니다. 이 갈래가 빠져 있던 동안 그 스핀이 실제로 가능했다.
+    #[test]
+    fn a_dirty_engine_whose_slot_is_locked_is_not_schedulable() {
+        let t = Instant::now();
+        assert_eq!(
+            schedulable_dirty_since(true, true, true, Some(t)),
+            None,
+            "잠긴 슬롯은 저장이 항상 건너뛰어지므로 예약하면 스핀한다"
+        );
     }
 
     /// 저장하는 engine 의 dirty 는 그대로 데드라인이 된다.
     #[test]
     fn a_dirty_engine_that_will_save_keeps_its_deadline() {
         let t = Instant::now();
-        assert_eq!(schedulable_dirty_since(true, true, Some(t)), Some(t));
+        assert_eq!(schedulable_dirty_since(true, true, false, Some(t)), Some(t));
     }
 
     /// dirty 가 없으면 어느 설정에서도 예약 없음.
     #[test]
     fn a_clean_engine_is_never_schedulable() {
-        assert_eq!(schedulable_dirty_since(true, true, None), None);
-        assert_eq!(schedulable_dirty_since(false, true, None), None);
+        assert_eq!(schedulable_dirty_since(true, true, false, None), None);
+        assert_eq!(schedulable_dirty_since(false, true, false, None), None);
     }
 }
