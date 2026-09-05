@@ -357,7 +357,13 @@ fn shell_carriers(root: &Path) -> Vec<(String, Vec<(usize, String)>)> {
     wf_files.sort();
     assert!(
         wf_files.len() >= MIN_WORKFLOWS,
-        "워크플로를 {}개밖에 못 찾았다(하한 {MIN_WORKFLOWS}) — 수집이 깨졌다",
+        "워크플로를 {}개밖에 못 찾았다(하한 {MIN_WORKFLOWS}) — 수집이 깨졌다.\n\
+         ★ 판별 — 이 자리는 갈래가 하나뿐이다. 바로 위에서 `read_dir` 실패는 이미 panic 으로 걸러 \
+         냈으니, 여기까지 와서 수가 모자란 것은 **디렉토리는 열렸는데 그 안에 정말 적은 것**이다. \
+         밖에서 세는 값이 같아야 한다:\n\
+             ls .github/workflows | grep -cE '[.]ya?ml$'\n\
+         2026-09-06 실측 11. 두 수가 다르면 확장자 필터가 어긋난 것이다.\n\
+         ★ 이 하한을 내려서 통과시키지 마라 — 워크플로가 진짜로 지워졌다면 그것부터 사고다.",
         wf_files.len()
     );
     for path in wf_files {
@@ -387,7 +393,15 @@ fn no_shell_script_pipes_into_an_early_exit_consumer() {
     assert!(
         scan_is_credible(files.len()),
         "셸 스크립트를 {}개밖에 못 찾았다(하한 {MIN_SHELL_SCRIPTS}) — 수집이 깨졌다. \
-         위반 0 이 '깨끗하다' 가 아니라 '아무것도 안 봤다' 일 수 있다",
+         위반 0 이 '깨끗하다' 가 아니라 '아무것도 안 봤다' 일 수 있다.\n\
+         ★ 판별 — 이 모수는 **내용(shebang)으로** 고른 집합이고, 확장자로 고른 집합이 그 짝이다:\n\
+             git ls-files '*.sh' '*.bash' | wc -l\n\
+         2026-09-06 실측 20. 두 수는 원래 안 맞는다 — source 전용 라이브러리는 shebang 을 안 갖고 \
+         (실측 1 건), shebang 은 있으나 셸이 아닌 것도 있다(실측 1 건). 그래서 **차이 자체가 아니라 \
+         차이가 커지는가**를 봐라. 확장자 쪽이 그대로인데 여기만 무너졌으면 shebang 판정이 깨진 \
+         것이고, 둘이 함께 줄었으면 스크립트가 정말 줄어든 것이다.\n\
+         ★ 이 하한을 내려서 통과시키지 마라 — 이 가드가 막는 것은 조용한 파이프 위반이고, 모수가 \
+         줄면 줄어든 만큼이 정확히 안 보이게 된다.",
         files.len()
     );
 
@@ -523,7 +537,19 @@ fn no_shell_carrier_pipes_into_an_early_exit_consumer() {
     let carriers = shell_carriers(&root);
     assert!(
         carriers.len() > MIN_WORKFLOWS,
-        "셸을 담는 자리를 {}개밖에 못 찾았다 — 수집이 깨졌다",
+        "셸을 담는 자리를 {}개밖에 못 찾았다 — 수집이 깨졌다.\n\
+         ★ 먼저 적을 것 — 이 자리의 하한은 **다른 모수의 이름을 빌려 쓰고 있다.** \
+         `MIN_WORKFLOWS` 는 워크플로 수의 하한인데 여기서 재는 것은 Justfile 을 더한 \
+         '셸을 담는 자리' 다. 두 모수가 다르므로 이 수는 저 이름의 함수가 아니다.\n\
+         ★ 판별 — 그 차이가 곧 판별식이다. [`shell_carriers`] 는 워크플로 앞에 Justfile 하나를 \
+         담고, 그 자리는 `if let Ok(text)` 라 **읽기에 실패하면 조용히 빠진다.** 그러니:\n\
+             carriers.len() - (`.github/workflows` 의 yml/yaml 수) 는 정확히 1 이어야 한다.\n\
+         0 이면 Justfile 이 조용히 빠진 것이고(파일이 있는지부터 봐라), 1 인데 전체가 모자라면 \
+         워크플로가 준 것이라 [`shell_carriers`] 안쪽 하한이 먼저 말했어야 한다.\n\
+         ★ 이 수를 내려서 통과시키지 마라 — 이 단언이 잡는 좁은 구간은 '워크플로는 하한을 \
+         겨우 채웠는데 Justfile 이 사라진' 경우 하나뿐이고, 내리면 그 하나가 없어진다.\n\
+         Justfile 이 정말 없어졌으면 이 자리의 모수를 따로 이름 붙여 선언해라 — 남의 이름을 \
+         빌린 채로 값만 고치면 다음 사람이 어느 모수를 고쳤는지 못 읽는다.",
         carriers.len()
     );
 

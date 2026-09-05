@@ -675,7 +675,17 @@ fn clap_help_text_is_english_only() {
         scanned_doc_lines >= MIN_SCANNED_CLAP_DOC_LINES,
         "clap 도움말 후보 `///` 줄이 {scanned_doc_lines} 개뿐이다(하한 \
          {MIN_SCANNED_CLAP_DOC_LINES}). 게이트 판정이 너무 많이 걷어냈거나 \
-         `CLAP_DOC_ROOTS` 가 낡았다 — 이 술어는 볼 것이 없으면 공짜로 초록이다."
+         `CLAP_DOC_ROOTS` 가 낡았다 — 이 술어는 볼 것이 없으면 공짜로 초록이다.\n\
+           ★ 판별 — 이 모수는 두 단계를 거친다: 뿌리에서 `///` 줄을 모으고, 그다음 `#[cfg(test)]` \
+           게이트로 걷어낸다. 그러니 **게이트 앞의 수**를 따로 세면 어느 단계가 무너졌는지 갈린다:\n\
+               git ls-files 'crates/tasty-cli/src/commands/*.rs' crates/tasty-cli/src/commands.rs \
+           crates/tasty-cli/src/lib.rs | xargs grep -h '^ *///' | wc -l\n\
+           2026-09-06 실측 1331(게이트 앞). 그 수는 그대로인데 여기만 무너졌으면 **게이트가 너무 많이 \
+           먹은 것**이고, 그 수도 함께 줄었으면 CLI 표면이 정말 줄어든 것이다. 앞쪽이 이 자리의 주된 \
+           고장 형태다 — 뿌리가 통째로 어긋나는 것보다 게이트가 새는 쪽이 훨씬 조용하다.\n\
+           ★ 이 하한을 내려서 통과시키지 마라 — 게이트가 절반쯤 새는 변이는 정확히 이 수를 이 아래로 \
+           떨어뜨리고, 하한을 내리는 것은 그 변이를 승인하는 것과 같은 조작이다.\n\
+           CLI 가 정당하게 줄었으면 위 명령으로 게이트 앞 수를 먼저 재고, 그 비율대로 값을 다시 잡아라."
     );
     assert!(
         violations.is_empty(),
