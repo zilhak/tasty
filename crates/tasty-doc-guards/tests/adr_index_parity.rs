@@ -183,8 +183,19 @@ fn tolerated_too_much(want: &str, got: &str) -> Option<&'static str> {
     if got.trim().is_empty() {
         return Some("행의 상태 칸이 비었다");
     }
+    // 상태 **이름 전체**를 실어야 한다. 접두만 요구하면 본문 `Accepted` 에 행 `A` 가
+    // 통과한다 — "칸을 채워라" 를 최소로 이행한 결과가 정확히 그것이고, 그러면 이
+    // 검사가 지키려던 것이 남지 않는다. 뒤쪽(사유·괄호절)은 여전히 잘라도 된다.
+    if first_word(want) != first_word(got) {
+        return Some("행이 상태 이름의 일부만 싣고 있다");
+    }
     let num = superseder(want)?;
     (!got.contains(&num)).then_some("행이 대체한 ADR 번호를 잃었다")
+}
+
+/// 공백 앞까지. 값이 비면 빈 문자열.
+fn first_word(v: &str) -> &str {
+    v.split_whitespace().next().unwrap_or("")
 }
 
 /// `Superseded by 0162 …` 에서 `0162`. [`normalize_header_value`] 를 거친 값이라
@@ -347,6 +358,16 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
         }
     }
 
+    // ★ 아래 하한들은 **하한이지 모수가 아니다.** "표류 0" 이 안 봐서 0 인지 정말
+    // 없어서 0 인지는 이 초록만으로 안 갈린다(R473 형태). 모수를 보려면 이 테스트가
+    // 아니라 같은 술어를 **밖에서** 세라:
+    //   awk -F'|' '/^\| [0-9]{4} /{print $4}' docs/adr/index.md | wc -l
+    // 실측 2026-09-06: 행 186 · Status 대조 186 · Date 대조 186 · 접두 통과 186
+    // · 대체 형태 5 · 표류 0. 즉 `first_word` 동일성의 오탐은 186 중 0 이다.
+    // 이 값을 테스트가 직접 찍지 않는 이유: `tasty-doc-guards` 는 의존이 0 인 것이
+    // 존재 이유라(ADR-0138) `tracing` 을 못 들이고, 훅 C.11 의 `println!` 예외에
+    // 이 크레이트의 `tests/` 는 안 올라 있다. 예외를 넓히는 것은 이 커밋의 범위 밖이다.
+
     // 0 을 통과로 만들지 않는다 — 열 하나가 안 읽히면 그 갈래는 조용히 빈다.
     // 두 열을 따로 센다: 한 열의 독법이 죽어도 다른 열의 수가 그것을 안 가린다.
     assert!(
@@ -363,13 +384,17 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
         superseded_seen >= MIN_SUPERSEDED,
         "본문이 다른 ADR 을 가리키는 행을 {superseded_seen} 건밖에 못 봤다 \
          (하한 {MIN_SUPERSEDED}) — 그 형태가 없으면 '행이 대체 번호를 잃었다' \
-         갈래가 한 번도 안 밟히고, 그때의 초록은 위반이 없다는 뜻이 아니다"
+         갈래가 한 번도 안 밟히고, 그때의 초록은 위반이 없다는 뜻이 아니다. \
+         ★ 이 하한을 내려서 통과시키지 마라 — 내리면 그 갈래가 밟히는지를 아무도 \
+         안 지킨다. 본문에서 그 형태가 정말 사라졌으면 갈래도 함께 지워라"
     );
 
     assert!(
         drift.is_empty(),
-        "인덱스 행이 본문 헤더와 다른 값을 싣고 있다 {} 건. 본문을 고쳤으면 행도 \
-         같이 내려라 — 인덱스만 읽는 사람은 죽은 결정을 살아 있는 것으로 읽는다:\n  {}",
+        "인덱스 행이 본문 헤더와 다른 값을 싣고 있다 {} 건. \
+         ★ 본문이 정본이다 — 행을 본문에 맞춰라. 본문을 행에 맞추지 마라: \
+         그렇게 해도 초록은 되지만, 인덱스만 읽는 사람은 죽은 결정을 살아 있는 것으로 \
+         읽고 그 결정이 어디로 갔는지까지 잃는다:\n  {}",
         drift.len(),
         drift.join("\n  ")
     );
