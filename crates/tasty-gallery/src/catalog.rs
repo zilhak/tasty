@@ -1320,13 +1320,13 @@ pub fn pages() -> Vec<Page> {
                     vec![
                         spec(
                             "onedepth",
-                            "1-depth (Plugins idiom)",
+                            "1-depth (general shell)",
                             Some("Fixed list selects, detail fills the rest"),
                             widgets::layout_1depth::draw,
                         ),
                         spec(
                             "twodepth",
-                            "2-depth (Settings idiom)",
+                            "2-depth (general shell)",
                             Some("L1 tabs (underline) + L2 sections (surface-active)"),
                             widgets::layout_2depth::draw,
                         ),

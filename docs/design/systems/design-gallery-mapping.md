@@ -262,7 +262,7 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 본체는 `TopBottomPanel`/`SidePanel` 을 `Context` 에 직접 붙여 창 전체를 채우므로 갤러리가 그
 함수를 호출할 수 없다 — 같은 구조를 rect 기준으로 전사한다. 전사할 고정 창 크기가 본체에
 없어서 무대 크기는 토큰으로 조립한다(`LIST_W + measure_md` × `measure_sm`). 디자인의 820×540
-은 여기 들어오지 않는다. (Layouts 의 `1-depth (Plugins idiom)` specimen
+은 여기 들어오지 않는다. (Layouts 의 `1-depth (general shell)` specimen
 `crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` 은 이 창이 아니라 **리스트→상세
 배치 관용구 자체**를 보이는 별개 specimen 이다.)
 
