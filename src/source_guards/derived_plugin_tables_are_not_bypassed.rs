@@ -178,6 +178,16 @@ const MIN_SHIPPING_SCANNED: usize = 900;
 /// 죽은 것을 판정기 자신이 못 보는 것은 같다). 값의 근거: 2026-09-06 실측 126.
 const MIN_TEST_ONLY: usize = 60;
 
+/// 항목별 범위가 admit 해야 하는 **유도 자리 아닌** 파일 수의 하한.
+///
+/// 2026-09-06 실측 **30**(`crates/tasty-host-plugin` 의 출하 `.rs` 31 중 home 제외).
+/// 값의 근거는 "지금 몇 개인가" 가 아니라 **어떤 축소가 몇을 만드는가**다:
+/// 범위가 모듈 디렉터리(`crates/tasty-host-plugin/src/manager/`)로 좁아지면 9, home 파일 하나로 좁아지면 0 —
+/// 둘 다 변이로 재서 나온 수다(디렉터리의 파일 수를 세서 뺀 값이 아니다. 그렇게
+/// 세면 12 가 나오는데, 면제된 파일이 빠지므로 판정이 실제로 보는 수는 9 다).
+/// 20 은 그 둘을 모두 빨갛게 하면서 크레이트가 3 분의 1 줄어도 견딘다.
+const MIN_PEERS_IN_SCOPE: usize = 20;
+
 /// 필드 선언이 있는 파일 — 전제 검사가 읽는다.
 const FIELD_DECL_FILE: &str = "crates/tasty-host-plugin/src/manager.rs";
 
@@ -440,6 +450,11 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
 
     let mut offenders: Vec<String> = Vec::new();
     let mut homes_seen = vec![false; DERIVED.len()];
+    // 항목마다 **범위가 실제로 admit 한 home 아닌 파일 수.** `homes_seen` 만으로는
+    // 범위 축소를 못 본다 — home 은 어떤 축소에도 자기 범위 안에 남기 때문이다
+    // (2026-09-06 실측: 소유 prefix 를 home 파일 자신으로 바꾸면 `homes_seen` ·
+    // `scanned` · `offenders` 가 하나도 안 움직인 채 가드가 진짜 위반을 놓쳤다).
+    let mut peers_in_scope = vec![0usize; DERIVED.len()];
     let mut scanned = 0usize;
     for (path, src) in &sources {
         if test_only.contains(path) {
@@ -474,6 +489,9 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
                     continue;
                 }
             }
+            if rel != d.home {
+                peers_in_scope[n] += 1;
+            }
             let hit = stripped.lines().enumerate().filter(|(_, l)| mutates(d, l));
             if rel == d.home {
                 if hit.count() > 0 {
@@ -495,6 +513,36 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
          범위를 삼킨 것이라 하한이 아니라 면제를 봐야 한다",
         sources.len()
     );
+
+    // ★ 범위가 home 하나로 쪼그라들지 않았는가.
+    //
+    // 위 `homes_seen` 은 이 방향을 **원리적으로** 못 본다: 범위를 아무리 좁혀도 home
+    // 자신은 언제나 그 안에 남으므로, "유도 자리가 보인다" 는 축소를 통과한다. 그래서
+    // 대조군을 하나 더 세운다 — 물음이 "자리가 보이는가" 가 아니라 "**자리 아닌 곳도
+    // 보는가**" 다.
+    for (n, peers) in peers_in_scope.iter().enumerate() {
+        if !DERIVED[n].field.starts_with('.') {
+            continue; // 자유 함수 부류는 애초에 안 좁힌다 — 좁힘이 없으면 잴 것도 없다.
+        }
+        assert!(
+            *peers >= MIN_PEERS_IN_SCOPE,
+            "{} 의 판정 범위에 유도 자리 말고 남은 파일이 {peers} 개뿐이다(하한 \
+             {MIN_PEERS_IN_SCOPE}). 이 항목은 소유 크레이트({}) 전체를 봐야 하는데 \
+             그보다 좁게 보고 있다. 세계가 둘이고 목록이 아니라 **소유 크레이트에 \
+             파일이 몇 개인가**로 갈린다:\n  \
+             (1) 그 크레이트에 출하되는 `.rs` 가 아직 많다 → 좁힌 것은 판정기다. \
+             `d.home` 이나 소유 prefix 유도(`rsplit_once(\"/src/\")`)를 봐라. \
+             하한을 건드리지 마라 — 이 하한이 잡으려던 것이 바로 그 축소다.\n  \
+             (2) 그 크레이트가 정말 이 크기로 줄었다 → 그때만 하한을 내린다. 그리고 \
+             0 으로는 내리지 마라. 0 이면 이 대조군이 아무것도 안 주장한다.",
+            DERIVED[n].what,
+            DERIVED[n]
+                .home
+                .rsplit_once("/src/")
+                .map(|(c, _)| c)
+                .unwrap_or(DERIVED[n].home),
+        );
+    }
 
     // 유도 자리에서 아무 변형도 안 보이면 판정이 죽은 것이다 — 이름이 바뀌었거나
     // 자리가 옮겨졌는데 조용히 통과하는 것이 이 부류의 원래 사고다.
