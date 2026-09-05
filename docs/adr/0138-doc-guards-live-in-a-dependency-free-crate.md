@@ -72,6 +72,14 @@ GitHub 은 바뀐 파일이 **전부** 이 목록에 걸리면 워크플로를 �
 `changelog_unreleased` 는 문서를 읽지만 **안 옮긴다** — `test.yml` 의 push 트리거에는
 경로 필터가 없고 그 잡(`semver-guards`)이 이 타깃을 이름으로 부른다. 이미 덮여 있다.
 
+**이 판단은 이제 가드가 지킨다.** `filtered_guards_are_not_totally_blind.rs` 가 경로 필터
+없는 워크플로의 `--test <이름>` 목록을 읽어 면제를 판정한다 — 사람이 기억할 필요가 없고,
+`semver-guards` 가 그 이름을 떨어뜨리거나 `test.yml` 에 경로 필터가 생기거나 그 잡이
+`workflow_dispatch` 전용이 되면 즉시 실패한다(세 방향 다 변이로 확인). 반대 방향의 함정도
+같이 닫혔다: **이 가드를 옮기면 오히려 깨진다** — 타깃이 본체 패키지를 떠나면
+`--test changelog_unreleased` 가 `no test target` 으로 실패한다. 덮는 채널을 손 명부로
+들었다면 그 명부가 낡는 순간 "옮겨라" 라는 거짓 요구가 나왔을 자리다.
+
 **남은 사각을 명시한다.** 다음 셋은 문서를 읽지만 크레이트 상수와 대조한다 —
 `cli_method_table_parity` · `permission_free_methods_docs_parity`(둘 다 `tasty_ipc`,
 86 크레이트) · `contributes_gate_docs_parity`(`tasty_plugin_manifest`, 56). 안 적으면

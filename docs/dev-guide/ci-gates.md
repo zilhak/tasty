@@ -233,14 +233,26 @@ done | sort | uniq -c
 
 | | 개수 | 채널 |
 |---|---|---|
-| 필터 없는 채널을 가진 것 | 14 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
-| `check-headless` 만 가진 것 | 32 | `crossplatform-check.yml` 의 `paths-ignore` 뒤 |
+| 필터 없는 채널을 가진 것 | 15 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
+| `check-headless` 만 가진 것 | 34 | `crossplatform-check.yml` 의 `paths-ignore` 뒤 |
 
-**필터가 구멍이 되는 것은 그중 1 뿐이다.** 뒤 32 중 27 은 읽는 경로에 무시 대상이 하나도
+**필터가 구멍이 되는 것은 그중 1 뿐이다.** 뒤 34 중 28 은 읽는 경로에 무시 대상이 하나도
 없고(그 경로가 안 바뀐 push 에서는 판정이 바뀔 수 없다), 4 는 경로 리터럴 없이
-`CARGO_MANIFEST_DIR` 로 `crates/**` 의 매니페스트를 읽는다. 남은 하나가
-`cli_method_table_parity` 이고, 그 입력은 **일부만** 무시 대상이다
-(`docs/dev-guide/api-conventions.md` + `crates/tasty-cli/src/**`).
+`CARGO_MANIFEST_DIR` 로 `crates/**` 의 매니페스트를 읽는다.
+
+**1 은 다른 워크플로가 덮는다.** `changelog_unreleased` 는 읽는 것이 `*.md` 둘뿐이라
+이 필터 뒤에 있으면 총체적 사각이어야 하는데, `test.yml` 의 `semver-guards` 가 경로 필터
+**없이** main push 마다 `--test changelog_unreleased` 로 이름을 지목한다. 그래서 사각이
+아니다 — [ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md) 이 이 가드를
+"안 옮긴다" 로 판정한 근거가 그것이고, 그 근거는 지금도 참이다. **옮기면 오히려 깨진다**:
+타깃이 본체 패키지를 떠나면 `--test changelog_unreleased` 가 `no test target` 으로 실패한다
+(실측).
+
+남은 하나가 `cli_method_table_parity` 이고, 그 입력은 **일부만** 무시 대상이다
+(`docs/dev-guide/api-conventions.md` + `crates/tasty-cli/src/**`). 셋 중 유일하게
+워크스페이스 크레이트를 링크하는 가드이기도 하다(`tasty_ipc` 의 `METHOD_TABLE` ·
+`DEBUG_METHODS` 를 런타임 값으로 읽는다) — 옮기려면 그 링크를 텍스트 판독으로 바꾸는
+선행 작업이 필요하다.
 
 ★ **이 분류는 이제 손으로 세지 않는다.** `crates/tasty-doc-guards/tests/filtered_guards_are_not_totally_blind.rs`
 가 워크플로에서 `paths-ignore` 를 읽어 필터 뒤 스캔 가드를 매번 다시 분류하고, **읽는 경로가
@@ -248,6 +260,11 @@ done | sort | uniq -c
 `PARTIALLY_FILTERED` 에 사유와 함께 등재되며 명부는 양방향으로 고정된다(새로 생겨도,
 사라졌는데 남아 있어도 실패). `doc-guards.yml` 은 경로 필터가 없으므로 이 관측자는
 문서만 담은 push 에서도 돈다.
+
+**덮는 채널도 그 관측자가 읽는다.** 경로 필터 없는 워크플로가 `--test <이름>` 으로 지목하는
+타깃은 면제된다 — 그 명부 역시 워크플로 파일에서 읽으므로 손으로 갱신하지 않는다. 손 명부는
+낡는 순간 **거짓 양성**(이미 덮인 가드를 옮기라고 한다)이 되고, 그 요구를 따르면 위처럼
+지목하던 잡이 깨진다. 그래서 이 관측자가 옮기라고 하면 그것은 실제로 옮길 자리다.
 
 ★ **"전부 무시 대상" 과 "일부 무시 대상" 은 처방이 다르다.** 전부인 것은 문서만 담은
 push 가 위반의 **유일한 경로**라 필터가 총체적 사각이다 — 그래서 그 셋은 doc-guards 로
