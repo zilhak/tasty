@@ -83,7 +83,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [e2e-tests](e2e-tests.md) | E2E 인스턴스 공유 원칙(binary 당 1개 · workspace 격리) + 환경 격리/timeout 정책 |
 | [unit-test-isolation](unit-test-isolation.md) | 유닛 테스트를 로컬 상태(홈 `config.toml` · env · 이 머신에만 있는 파일시스템 경로)로부터 격리하는 규칙 — 설정 주입 지점 + env RAII 가드 + 파일시스템 픽스처는 테스트가 직접 생성 + feature 별 테스트 게이팅 + 병렬 경합(flake) 처방과 가드 검증(§7) + 공유 픽스처 `test_state()` 가 진짜 셸을 fork 한다는 것과 그 횟수를 세는 법(§8) |
 | [tui-testing](tui-testing.md) | tui-simulator + debug 셀 검증 |
-| [guard-population](guard-population.md) | 모수가 걷기가 아니라 `const` 배열·fixture 에서 오는 가드 — drift 가 위험이고 비면 조용히 통과한다. 목록을 소스 추출로 바꾸는 절차(ADR-0133 이 못 다루는 갈래) |
+| [guard-population](guard-population.md) | 모수가 걷기가 아니라 `const` 배열·fixture 에서 오는 가드 — drift 가 위험이고 비면 조용히 통과한다. 목록을 소스 추출로 바꾸는 절차(ADR-0133 이 못 다루는 갈래) + 직접 `read_dir` 자리의 갈래(순회의 뿌리로 가른다)와 세는 법 |
 | [guard-verification](guard-verification.md) | 가드가 **자기가 주장하는 것을 실제로 판정하는가** — 변이를 죽인 것이 컴파일러/타입/고아 파일일 수 있다, 술어가 대리(키 이름)를 본다, 눈멂의 방향이 한쪽이면 그 수는 상한, 지표를 목적함수로 삼지 않는다 |
 
 ## Plugin
