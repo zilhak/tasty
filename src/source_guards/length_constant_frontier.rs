@@ -1,4 +1,4 @@
-//! 길이 상수가 `f32` 로 다시 새는 것을 막는 전선(frontier) 가드.
+//! 길이 상수가 타입 없는 부동소수(`f32`·`f64`)로 다시 새는 것을 막는 전선(frontier) 가드.
 //!
 //! [`docs/concepts/typed-length.md`] 는 내부 소스에서 길이를 `PhysicalPx`/`LogicalPx`
 //! 로 다루도록 규정한다. 그 규칙의 집행은 셋으로 나뉜다:
@@ -7,14 +7,23 @@
 //! 2. **변환을 빠뜨리는 것** — `src/dpi_conversion_guard.rs` 가 막는다(`.value()` 로 벗긴
 //!    뒤 scale factor 를 곱하거나 나누는 형태).
 //! 3. **애초에 타입을 안 쓰고 선언하는 것** — 여기다. 앞의 둘은 이미 타입이 붙은 값에만
-//!    걸리므로, `const W: f32 = 96.0;` 처럼 처음부터 `f32` 인 상수는 둘 다 통과한다.
+//!    걸리므로, `const W: f32 = 96.0;` 처럼 처음부터 맨 부동소수인 상수는 둘 다 통과한다.
+//!
+//! `f64` 도 함께 센다. 한동안 `f32` 만 봤는데, 그 상태의 0 은 "`f64` 길이가 없다" 가
+//! 아니라 **"`f64` 는 안 봤다"** 였다 — 실측하면 있었고(창 리사이즈 엣지 두께, 모달 흔들기
+//! 진폭) 둘 다 winit 이 좌표를 `f64` 로 주는 경계에 붙어 있었다. 타입 정책은 어느 폭의
+//! 부동소수인지를 묻지 않는다.
 //!
 //! # 술어는 "전부" 가 아니라 "전선 밖" 이다
 //!
 //! 본체의 길이 상수 전환은 진행 중이라 `src` 전체가 아직 0 이 아니다. 그래서 술어를
-//! 좁혔다 — **면제 목록을 만들지 않고** 아직 안 한 영역을 [`FRONTIER`] 한 줄로 이름
-//! 짓고, 그 밖에서는 0 을 요구한다. 전선에는 건수가 박혀 있어 **줄어들 수만 있다**:
+//! 좁혔다 — **면제 목록을 만들지 않고** 아직 안 한 영역을 [`FRONTIERS`] 에 한 줄씩 이름
+//! 짓고, 그 밖에서는 0 을 요구한다. 각 전선에는 건수가 박혀 있어 **줄어들 수만 있다**:
 //! 전선 안에 새로 늘려도 실패한다.
+//!
+//! 전선은 경계마다 사유가 달라 한 줄이 아니다. egui 쪽 경계는 값이 `f32` 기하와 섞이는
+//! 것이고, winit 쪽 경계는 좌표가 `f64` 로 들어오는 것이다 — 사유가 다르면 줄도 다르다.
+//! 한 줄로 뭉치면 어느 쪽이 줄었는지가 안 보인다.
 //!
 //! 술어를 "산술에 안 섞이는 상수" 처럼 **쓰임**으로 정의하지 않은 이유는, 그 판정이
 //! 함수 경계 추적을 요구하고 그 추적이 이 축에서 계속 틀렸기 때문이다. 오분류 목록이
@@ -70,28 +79,46 @@ use super::{mask_non_code, rust_sources};
 const SCANNED: &[&str] = &["src/", "crates/tasty-gallery/"];
 
 /// 아직 전환하지 않은 영역과 그 시점의 건수. 건수는 상한이라 전선은 줄어들 수만 있다.
-const FRONTIER: (&str, usize, &str) = (
-    "src/adapters/ui/",
-    1,
-    "쓰이는 식이 egui 기하이거나 우리 f32 관문이라, 선언이 아니라 그 경계와 함께 닫힌다",
-);
+///
+/// 경계마다 사유가 다르므로 줄도 따로 둔다 — 뭉치면 한쪽이 줄어도 다른 쪽이 채워 수가
+/// 안 움직인다. 파일 하나가 통째로 그 경계인 자리는 파일 경로를 그대로 적는다.
+const FRONTIERS: &[(&str, usize, &str)] = &[
+    (
+        "src/adapters/ui/",
+        1,
+        "쓰이는 식이 egui 기하이거나 우리 f32 관문이라, 선언이 아니라 그 경계와 함께 닫힌다",
+    ),
+    (
+        "src/platform/window_chrome.rs",
+        1,
+        "winit 이 창 좌표를 f64 로 주고 이 판정이 그 좌표와 직접 비교된다 — 경계가 f64 다",
+    ),
+    (
+        "src/app/modal/shake.rs",
+        1,
+        "흔들기 오프셋이 winit outer_position(f64)에 그대로 더해진다 — 같은 f64 경계",
+    ),
+];
 
 /// 이 조각이 이름에 있으면 길이로 세지 않는다. 배율·시간·굵기·투명도처럼 픽셀이
 /// 아닌 양들이다.
 const NON_LENGTH_HINTS: &[&str] = &[
     "ALPHA", "RATIO", "FACTOR", "OPACITY", "GAMMA", "FRAC", "SCALE", "SPEED", "_MS", "SECS",
     "WEIGHT", "MULT", "PERCENT", "_PCT", "ASPECT", "ZOOM", "DURATION", "_HZ", "_FPS", "DELAY",
-    "FADE",
+    // `FREQ` 는 `f64` 를 함께 세면서 들어왔다 — 모달 흔들기의 진동 횟수(`SHAKE_FREQUENCY`)
+    // 가 길이가 아닌데 `_HZ` 로도 `SPEED` 로도 안 걸린다.
+    "FADE", "FREQ",
 ];
 
-/// 마스킹된 소스에서 `f32` 로 선언된 **길이로 보이는** 상수의 (줄번호, 이름).
+/// 마스킹된 소스에서 맨 부동소수(`f32`·`f64`)로 선언된 **길이로 보이는** 상수의
+/// (줄번호, 이름).
 ///
 /// 순수 함수다 — 합성 스니펫을 그대로 먹일 수 있다.
 fn length_constants(masked: &str) -> Vec<(usize, String)> {
     let masked = blank_test_modules(masked);
     let mut out = Vec::new();
     for (idx, line) in masked.lines().enumerate() {
-        let Some((name, value)) = parse_f32_const(line) else {
+        let Some((name, value)) = parse_bare_float_const(line) else {
             continue;
         };
         if NON_LENGTH_HINTS.iter().any(|h| name.contains(h)) {
@@ -105,9 +132,9 @@ fn length_constants(masked: &str) -> Vec<(usize, String)> {
     out
 }
 
-/// `const NAME: f32 = VALUE;` 한 줄에서 이름과 값 문자열. 들여쓰기와 `pub` 가시성
-/// 수식어는 무시한다.
-fn parse_f32_const(line: &str) -> Option<(String, String)> {
+/// `const NAME: f32 = VALUE;` 또는 `const NAME: f64 = VALUE;` 한 줄에서 이름과 값
+/// 문자열. 들여쓰기와 `pub` 가시성 수식어는 무시한다.
+fn parse_bare_float_const(line: &str) -> Option<(String, String)> {
     let rest = line.trim_start();
     let rest = rest.strip_prefix("pub").map_or(rest, |r| {
         let r = r.trim_start();
@@ -126,7 +153,9 @@ fn parse_f32_const(line: &str) -> Option<(String, String)> {
         return None;
     }
     let rest = rest.trim_start();
-    let rest = rest.strip_prefix("f32")?;
+    let rest = rest
+        .strip_prefix("f32")
+        .or_else(|| rest.strip_prefix("f64"))?;
     let value = rest.trim_start().strip_prefix('=')?.trim();
     let value = value.strip_suffix(';').unwrap_or(value).trim();
     Some((name.to_string(), value.to_string()))
@@ -230,28 +259,33 @@ fn scan() -> Vec<(String, usize, String)> {
 }
 
 #[test]
-fn no_f32_length_constant_lives_outside_the_conversion_frontier() {
+fn no_bare_float_length_constant_lives_outside_the_conversion_frontier() {
     let hits = scan();
-    let (frontier, budget, why) = FRONTIER;
-    let (inside, outside): (Vec<_>, Vec<_>) = hits
+    let outside: Vec<_> = hits
         .iter()
-        .partition(|(rel, _, _)| rel.starts_with(frontier));
+        .filter(|(rel, _, _)| !FRONTIERS.iter().any(|(f, _, _)| rel.starts_with(f)))
+        .collect();
 
     assert!(
         outside.is_empty(),
-        "전선 밖에서 f32 길이 상수가 발견됐다 — `LogicalPx` 로 선언하라:\n{}",
+        "전선 밖에서 맨 부동소수 길이 상수가 발견됐다 — `LogicalPx`/`PhysicalPx` 로 선언하라:\n{}",
         outside
             .iter()
             .map(|(rel, line, name)| format!("  {rel}:{line}  {name}"))
             .collect::<Vec<_>>()
             .join("\n")
     );
-    assert!(
-        inside.len() <= budget,
-        "전선({frontier}, 사유: {why})의 f32 길이 상수가 {} 개로 상한 {budget} 을 넘었다. \
-         전선은 줄어들 수만 있다 — 새 길이 상수는 `LogicalPx` 로 선언하라",
-        inside.len()
-    );
+    for (frontier, budget, why) in FRONTIERS {
+        let n = hits
+            .iter()
+            .filter(|(rel, _, _)| rel.starts_with(frontier))
+            .count();
+        assert!(
+            n <= *budget,
+            "전선({frontier}, 사유: {why})의 맨 부동소수 길이 상수가 {n} 개로 상한 {budget} 을 \
+             넘었다. 전선은 줄어들 수만 있다 — 새 길이 상수는 타입을 붙여 선언하라"
+        );
+    }
 }
 
 /// 스캔 목록이 비면 이 가드의 0 은 "없다" 가 아니라 "안 봤다" 가 된다. 접두사 하나가
@@ -274,15 +308,41 @@ fn every_scanned_unit_actually_has_files() {
 
 #[test]
 fn the_frontier_budget_is_not_slack() {
-    // 상한이 실제 건수보다 크면 그만큼 조용히 새 위반을 받아준다. 같아야 한다.
-    let inside = scan()
-        .into_iter()
-        .filter(|(rel, _, _)| rel.starts_with(FRONTIER.0))
-        .count();
-    assert_eq!(
-        inside, FRONTIER.1,
-        "전선 건수가 바뀌었다. 줄였으면 FRONTIER 의 수도 같이 줄여라(늘었으면 위 테스트가 잡는다)"
-    );
+    // 상한이 실제 건수보다 크면 그만큼 조용히 새 위반을 받아준다. 줄마다 같아야 한다 —
+    // 합계로 재면 한쪽이 줄고 다른 쪽이 느는 것을 못 본다.
+    let hits = scan();
+    for (frontier, budget, _) in FRONTIERS {
+        let n = hits
+            .iter()
+            .filter(|(rel, _, _)| rel.starts_with(frontier))
+            .count();
+        assert_eq!(
+            n, *budget,
+            "전선 `{frontier}` 의 건수가 바뀌었다. 줄였으면 FRONTIERS 의 수도 같이 줄여라 \
+             (늘었으면 위 테스트가 잡는다)"
+        );
+    }
+}
+
+/// 전선 줄이 실재를 안 가리키면 그 줄의 상한은 아무것도 안 막는다 — 경로 오타나 파일
+/// 이동이 그 상태를 만든다. 스캔 목록의 공허를 따로 막는 것과 같은 이유다.
+#[test]
+fn every_frontier_line_points_at_something() {
+    let files = rust_sources();
+    for (frontier, _, _) in FRONTIERS {
+        let n = files
+            .iter()
+            .filter(|(rel, _)| {
+                rel.to_string_lossy()
+                    .replace('\\', "/")
+                    .starts_with(frontier)
+            })
+            .count();
+        assert!(
+            n > 0,
+            "전선 `{frontier}` 가 파일을 하나도 안 집었다 — 그 줄의 상한은 아무것도 안 막는다"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -303,6 +363,11 @@ mod detector {
             length_constants("pub(crate) const GAP: f32 = 4.0;"),
             vec![(1, "GAP".to_string())]
         );
+        // `f64` 도 같은 실패다 — 타입 정책은 부동소수의 폭을 묻지 않는다.
+        assert_eq!(
+            length_constants("const RESIZE_EDGE_MARGIN: f64 = 8.0;"),
+            vec![(1, "RESIZE_EDGE_MARGIN".to_string())]
+        );
         // 이미 타입이 붙었으면 대상이 아니다.
         assert!(length_constants("const PANEL_WIDTH: LogicalPx = LogicalPx(96.0);").is_empty());
         // 상수가 아닌 선언은 이 가드의 사각이다.
@@ -315,6 +380,7 @@ mod detector {
         // 이름 힌트.
         assert!(length_constants("const SPLIT_RATIO: f32 = 0.3;").is_empty());
         assert!(length_constants("const HOVER_ALPHA: f32 = 12.0;").is_empty());
+        assert!(length_constants("const SHAKE_FREQUENCY: f64 = 3.0;").is_empty());
         // 0 초과 1 미만.
         assert!(length_constants("const HAIRLINE: f32 = 0.5;").is_empty());
         // 이름 힌트에도 값 범위에도 안 걸리는 배율은 잡힌다 — 알려진 오탐이다.
