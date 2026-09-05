@@ -7,6 +7,10 @@
 //! **두 방향을 다 보는 이유**: 이 옵션의 소비자가 둘이고 물음이 다르다. 파일 SLOC
 //! 게이트는 이 축을 스크립트의 `skip()` 으로 이미 처리하므로 기본값이 바뀌면 그쪽
 //! 측정이 조용히 움직인다. 그래서 "켜면 된다" 만큼 **"안 켜면 그대로다"** 가 단언이다.
+//!
+//! `cfg_attr` 축도 여기서 본다. 술어 판정 자체는 `cfg_predicate` 의 단위 테스트가 보지만,
+//! **바이너리가 그 판정을 실제로 부르는가**는 별개 사건이다 — 그 배선이 빠져 있던 것이
+//! 이 게이트의 실회차 첫 발화를 거짓 양성으로 만들었다.
 
 // 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
 // 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
@@ -62,6 +66,22 @@ fn fixture(root: &Path) {
         "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n",
     )
     .unwrap();
+    std::fs::write(src.join("attrs.rs"), attrs_fixture()).unwrap();
+}
+
+/// `cfg_attr` 두 극성이 한 파일에 있는 픽스처.
+///
+/// 억제 이름을 조립 인자로 빼는 이유는 `scripts/check-allow-reason.sh` 가 줄 단위
+/// 렉서라 이 문자열을 실제 억제로 세기 때문이다 — 픽스처가 그 게이트의 모수에
+/// 들어가면 안 된다.
+fn attrs_fixture() -> String {
+    let a = "allow";
+    format!(
+        "#![cfg_attr(test, {a}(clippy::x))]\n\
+         pub fn ship_one() {{}}\n\
+         #[cfg_attr(not(test), {a}(clippy::y))]\n\
+         pub fn ship_two() {{}}\n"
+    )
 }
 
 fn run(root: &Path, out: &Path, flag: Option<&str>) {
@@ -127,6 +147,37 @@ fn a_shipping_file_survives_either_way() {
         assert!(
             helper.contains("pub fn ship()"),
             "출하되는 파일이 지워졌다 (flag={flag:?}): {helper:?}"
+        );
+    }
+}
+
+/// `cfg_attr` 이 실제로 배선돼 있는가 — 그리고 **양극성**으로.
+///
+/// `test` 를 요구하는 속성만 출하 밖이다. `not(test)` 는 프로덕션 전용이라 남아야
+/// 하고, 두 경우 모두 속성이 붙은 **항목은 출하된다** — 항목까지 지우면 출하 코드가
+/// 조용히 판정 밖으로 나간다.
+#[test]
+fn a_cfg_attr_that_requires_test_is_stripped_and_its_opposite_is_not() {
+    for (i, flag) in [None, Some("--blank-test-only-files")]
+        .into_iter()
+        .enumerate()
+    {
+        let root = Tmp::new(&format!("attr-root-{i}"));
+        let out = Tmp::new(&format!("attr-out-{i}"));
+        fixture(root.path());
+        run(root.path(), out.path(), flag);
+        let got = std::fs::read_to_string(out.path().join("crates/demo/src/attrs.rs")).unwrap();
+        assert!(
+            !got.contains("cfg_attr(test"),
+            "`test` 를 요구하는 속성이 출하 사본에 남았다 (flag={flag:?}): {got:?}"
+        );
+        assert!(
+            got.contains("cfg_attr(not(test)"),
+            "프로덕션 전용 속성을 지웠다 — 출하 코드가 판정 밖으로 나간다 (flag={flag:?}): {got:?}"
+        );
+        assert!(
+            got.contains("pub fn ship_one()") && got.contains("pub fn ship_two()"),
+            "속성이 붙은 항목까지 지웠다 (flag={flag:?}): {got:?}"
         );
     }
 }
