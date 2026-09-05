@@ -52,10 +52,9 @@ jobs:
       - name: Intent discipline
         run: bash scripts/check-intent-discipline.sh
 
-      # **이 스텝은 설계상 절대 빨개지지 않는다.** `check-allow-reason.sh` 는 리포트
-      # 전용이라(스크립트 머리말) 건수와 무관하게 `exit 0` 한다. 그러니 이 스텝의
-      # 초록은 "근거 없는 `#[allow]` 가 없다" 가 아니라 **"스캐너가 아직 돈다"** 뿐이다
-      # — 실제 건수는 로그 첫 줄에 있다. 검사를 hard-fail 로 올리는 것은 별도 결정이다.
-      - name: Allow reason (report only — cannot fail)
+      # 잔여가 0 이 아니라 hard-fail 이 아니고, 그렇다고 리포트로 두면 건수와 무관하게
+      # 항상 통과하는 칸이 생긴다. 그래서 **상한 래칫**이다 — 늘어도 줄어도 빨개진다
+      # (줄면 상한을 같이 내리라는 뜻이다. 남는 여유가 곧 안 보는 구간이다).
+      - name: Allow reason (ratchet)
         if: always()
         run: bash scripts/check-allow-reason.sh

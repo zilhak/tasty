@@ -27,7 +27,7 @@
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | Intent 규율 | `bash scripts/check-intent-discipline.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
-| 사유 없는 `#[allow]` (**리포트 전용 — 빨개지지 않는다**) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
+| 사유 없는 `#[allow]` (**상한 래칫**) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/tasty-plugin-*/**` 가 바뀐 경우만** · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
@@ -340,13 +340,17 @@ positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡�
 면제 경로가 트리 재조직을 안 따라감(3). 술어를 고쳐 36 이 사라졌고, 남은 14 에
 사유를 적었다. 근거는 `scripts/check-intent-discipline.sh` 머리말에 있다.
 
-**둘째 스크립트는 게이트가 아니라 리포트다.** `check-allow-reason.sh` 는 건수와
-무관하게 `exit 0` 한다(스크립트 머리말이 그렇게 정하고 있다). 배선 시점의 건수는
-0 이 아니다 — 즉 **이 스텝의 초록은 "근거 없는 `#[allow]` 가 없다" 는 뜻이 아니라
-"스캐너가 아직 돈다" 는 뜻뿐이다.** 그래도 배선하는 이유는 두 가지다: 스캐너가
-깨지면(경로 재조직·`rg` 부재·awk 문법) 그때는 스텝이 죽어서 보이고, 건수가
-로그에 남아 추세를 볼 수 있다. hard-fail 로 올리려면 기준선을 정하는 별도 결정이
-필요하다 — 지금 그냥 올리면 main 이 즉시 빨개진다.
+**둘째 스크립트는 상한 래칫이다 — 리포트로 두면 안 되는 이유가 있다.**
+`check-allow-reason.sh` 는 원래 건수와 무관하게 `exit 0` 했다. 그 상태로 CI 스텝에
+넣으면 **잔여를 안은 채 영원히 초록인 칸**이 하나 생긴다. 채널은 도는데 술어가
+아무것도 안 보는 형태이고, 초록이 뜨니 아무도 다시 안 본다.
+
+잔여가 0 이 아니라 hard-fail 도 답이 아니다(그 자리에서 main 이 빨개진다). 그래서
+[전선 가드](../../src/source_guards/length_constant_frontier.rs)와 같은 형태를
+썼다 — **상한을 박고 세 방향을 다 본다**: 늘면 실패, **줄어도 실패**(상한을 같이
+내리라는 뜻), 스캐너가 깨져도 실패. 셋째 방향이 핵심이다. 상한이 실제 건수보다
+크면 그 차이만큼 새 위반을 조용히 받아주므로, **남는 여유가 곧 안 보는 구간**이다.
+상한은 한 방향으로만 돈다 — 올리려면 그 한 줄을 고쳐야 하고, 그것이 리뷰에 보인다.
 
 **면제 경로는 이제 썩지 않는다** — 목록의 경로가 실재하지 않으면 스크립트가 `exit 2`
 로 죽는다. 예전에는 없는 경로가 조용히 무시돼 다섯이 죽어 있었다.
