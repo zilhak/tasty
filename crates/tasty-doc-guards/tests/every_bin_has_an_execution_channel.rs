@@ -51,6 +51,18 @@ const MIN_BINS: usize = 3;
 /// 출력을 읽는다고 볼 표지. `status` 는 종료코드, `stdout` 은 내용이다.
 const READS_OUTPUT: &[&str] = &["stdout", "status", "code()"];
 
+/// 그 소스가 실행 결과를 **읽기는 하는가.**
+///
+/// 판정을 함수로 꺼낸 이유는 부를 수 있게 하기 위해서다 — 목록이 순회 안에 인라인이면
+/// 성분 하나를 지워도 레포 판정은 조용하다. 실측 2026-09-06(트리 9c1419aa2):
+/// `"stdout"` 을 지워도 `cargo test -p tasty-doc-guards` 는 rc=0 이었다. 이유는
+/// **형제가 받쳐 주기** 때문이다 — bin 을 돌리는 파일 넷 중 `stdout` 을 담은 둘이
+/// `status`/`code()` 도 함께 담고 있어서, 하나를 지워도 다른 하나가 같은 파일을 덮었다.
+/// 목록이 뚫린 것은 아니지만 **그 성분을 지키는 것이 없다.**
+fn reads_output(text: &str) -> bool {
+    READS_OUTPUT.iter().any(|m| text.contains(m))
+}
+
 fn repo_root() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     while !dir.join(".git").exists() {
@@ -174,7 +186,7 @@ fn no_executor_runs_the_bin_and_looks_away() {
             let Ok(text) = std::fs::read_to_string(&path) else {
                 continue;
             };
-            if !READS_OUTPUT.iter().any(|m| text.contains(m)) {
+            if !reads_output(&text) {
                 blind.push(format!("tests/{file} — `{bin}` 을 돌리고 출력을 안 읽는다"));
             }
         }
@@ -237,5 +249,50 @@ fn a_bare_prefix_is_not_a_bin_name() {
     assert!(
         handles_in(&bare).is_empty(),
         "이름 없는 접두사를 bin 이름으로 주웠다"
+    );
+}
+
+/// [`READS_OUTPUT`] 의 성분마다, 그 성분 **하나만** 든 소스가 "출력을 읽는다" 로 읽히는가.
+///
+/// 조각을 상수에서 만들지 않고 손으로 적는다 — 목록을 순회해 조각을 지으면 오타 난
+/// 항목(`stdoutt`)도 자기 자신과는 맞아 통과하고, 그러면 이 테스트가 목록의 사본이 된다.
+///
+/// ★ 조각마다 성분을 **하나만** 담는 것이 여기서는 특히 중요하다. 이 목록이 조용했던
+/// 이유가 정확히 그것이기 때문이다 — 레포의 실제 파일들은 세 성분을 여럿 함께 담고 있어
+/// 하나를 지워도 다른 하나가 받쳐 주었다. 그래서 `code()` 조각에는 `status` 를 안 쓰고
+/// (`exit.code()` 로 적는다), `status` 조각에는 `code()` 를 안 쓴다.
+#[test]
+fn every_output_marker_is_actually_read_as_reading_output() {
+    let cases: [(&str, &str); 3] = [
+        (
+            "stdout",
+            r#"let text = String::from_utf8_lossy(&out.stdout);"#,
+        ),
+        (
+            "status",
+            r#"assert!(out.status.success(), "판정기가 죽었다");"#,
+        ),
+        (
+            "code()",
+            r#"assert_eq!(exit.code(), Some(0), "종료 코드");"#,
+        ),
+    ];
+    for (marker, snippet) in cases {
+        assert!(
+            reads_output(snippet),
+            "`{marker}` 하나로 출력을 읽는 소스를 '안 읽는다' 로 읽는다. 그 성분이 \
+             목록에서 빠졌거나 철자가 틀렸다 — 그러면 그 방식으로만 결과를 보는 \
+             테스트가 '돌리고 눈감는다' 로 고발된다(거짓 빨강)"
+        );
+    }
+}
+
+/// 음성 대조 — 이 술어가 늘 참을 내면 위 판정이 통째로 공허해진다.
+#[test]
+fn running_a_bin_without_looking_is_not_reading_output() {
+    assert!(
+        !reads_output(r#"Command::new(BIN).arg("--help").output().unwrap();"#),
+        "결과를 하나도 안 보는 소스를 '읽는다' 로 셌다 — 이 술어가 늘 참이면 \
+         `no_executor_runs_the_bin_and_looks_away` 는 아무것도 안 지킨다"
     );
 }
