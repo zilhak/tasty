@@ -32,13 +32,18 @@
 use tasty_doc_guards::repo_root;
 use tasty_doc_guards::temp_path::census;
 
-const SCAN_ROOTS: &[&str] = &["src", "crates"];
+// 스캔 범위. `src`·`crates` 에 더해 **레포 루트 `tests/`(통합 테스트)** 를 본다 — 이
+// 가드가 겨냥하는 "프로세스 전역 자원을 직렬화 없이 공유" 가 가장 잘 나는 곳이 통합
+// 테스트다(공유 인스턴스·격리 HOME·포트 파일). 이 셋 밖(`benches`·`examples`·루트
+// 아닌 스크립트)은 flaky 테스트가 살지 않아 제외한다 — 누락이 아니라 범위 결정이다.
+// (이전엔 `["src","crates"]` 로 근거 없이 루트 tests/ 를 빠뜨려 사거리 구멍이었다.)
+const SCAN_ROOTS: &[&str] = &["src", "crates", "tests"];
 
-// 실측(2026-09-05): files=1188 · sites=29 · uniquified=24 · reasoned=5.
-const MIN_FILES: usize = 1000;
-const MIN_SITES: usize = 20;
-const MIN_UNIQUIFIED: usize = 15;
-const MIN_REASONED: usize = 3;
+// 실측(2026-09-05, 루트 tests/ 편입 후): files=1256 · sites=55 · uniquified=49 · reasoned=6.
+const MIN_FILES: usize = 1100;
+const MIN_SITES: usize = 40;
+const MIN_UNIQUIFIED: usize = 35;
+const MIN_REASONED: usize = 4;
 
 #[test]
 fn every_temp_path_is_uniquified_or_reasoned() {

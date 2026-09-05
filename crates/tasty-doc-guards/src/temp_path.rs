@@ -29,6 +29,13 @@
 //! - `nanos`/`SystemTime` — 시간 nonce. 동시성에서 같은 눈금에 겹칠 창이 있어 **가장
 //!   약하다** — 새 코드는 위 둘 중 하나를 쓰는 게 낫다.
 //!
+//! 성분이 **변수 뒤에 숨은** 경우도 본다: `let unique = format!("{}-{}",
+//! std::process::id(), ..nanos..)` 뒤에 `temp_dir().join(format!("x-{unique}"))`. 루트
+//! 통합 테스트의 지배적 관용구라, 위 성분으로 바인딩된 지역 변수를 [`uniquifier_bound_vars`]
+//! 로 모아 경로 짓는 창이 그 변수를 참조하면 유니크화로 인정한다(인라인 `{unique}` 는
+//! 문자열 안이라 raw 소스에서 단어 경계로 본다). 이 갈래가 없으면 루트 tests/ 를 편입한
+//! 순간 25 곳이 거짓 위반이 됐다(실측) — 범위를 넓히자 판정기 사각이 드러난 형태다(R430).
+//!
 //! ## 잡지 못하는 것 (R16)
 //!
 //! - `temp_dir()` 를 받아 **멀리서** 고정 이름을 붙이는 형태(창 밖에서 `.join`) — 창 안에
@@ -79,8 +86,12 @@ pub struct FileClass {
 /// `code` 는 [`mask_non_code`](crate::source_text::mask_non_code)(주석·문자열 덮음),
 /// `comments` 는 [`mask_literals`](crate::source_text::mask_literals)(문자열만 덮고 주석은
 /// 남김)의 결과다 — 앞은 코드 토큰, 뒤는 사유 마커를 읽는다. 둘 다 줄 수가 같아야 한다.
-pub fn classify(code: &[&str], comments: &[&str]) -> FileClass {
+pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
     assert_eq!(code.len(), comments.len(), "두 마스크의 줄 수가 다르다");
+    assert_eq!(code.len(), raw.len(), "raw 줄 수가 다르다");
+    // uniquifier 성분으로 바인딩된 지역 변수(`let unique = format!(.. process::id() .. nanos ..)`).
+    // 유니크화가 변수 뒤에 숨어 아래 창 밖(위)에 있을 때 이 변수 참조로 인정한다.
+    let uniq_vars = uniquifier_bound_vars(code);
     let mut out = FileClass::default();
     for idx in 0..code.len() {
         if !code[idx].contains("temp_dir()") {
@@ -94,7 +105,10 @@ pub fn classify(code: &[&str], comments: &[&str]) -> FileClass {
         }
         out.sites.push(idx);
 
-        let uniquified = (idx..=hi).any(|j| UNIQ_TOKENS.iter().any(|t| code[j].contains(t)));
+        // 유니크화 인정: ① 창 안에 성분이 직접 있거나, ② 경로 짓는 창이 uniquifier 로
+        // 바인딩된 변수를 참조한다(인라인 `{unique}` 는 문자열 안이라 raw 에서 본다).
+        let uniquified = (idx..=hi).any(|j| UNIQ_TOKENS.iter().any(|t| code[j].contains(t)))
+            || (idx..=hi).any(|j| uniq_vars.iter().any(|v| references_word(raw[j], v)));
         if uniquified {
             out.uniquified.push(idx);
             continue;
@@ -109,6 +123,66 @@ pub fn classify(code: &[&str], comments: &[&str]) -> FileClass {
         }
     }
     out
+}
+
+/// 파일 안에서 **uniquifier 성분으로 바인딩된 지역 변수** 이름들.
+///
+/// 루트 통합 테스트의 지배적 관용구는 `let unique = format!("{}-{}",
+/// std::process::id(), ..nanos..)` 뒤에 `temp_dir().join(format!("x-{unique}"))` 다.
+/// 유니크화 성분이 변수 뒤에 숨어 [`JOIN_WINDOW`] 밖(위)에 있으므로, 그 변수를
+/// 여기서 모아 경로 짓는 창의 참조로 인정한다. `let [mut] <name> ... = ...` 의 문을
+/// 다음 `;` 까지 훑어 [`UNIQ_TOKENS`] 가 있으면 그 `<name>` 을 담는다.
+fn uniquifier_bound_vars(code: &[&str]) -> Vec<String> {
+    let mut vars = Vec::new();
+    for i in 0..code.len() {
+        let Some(pos) = code[i].find("let ") else {
+            continue;
+        };
+        let rest = code[i][pos + 4..].trim_start();
+        let rest = rest.strip_prefix("mut ").unwrap_or(rest);
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        // 바인딩 문(다음 `;` 까지)에 uniquifier 성분이 있나.
+        let mut j = i;
+        while j < code.len() {
+            if UNIQ_TOKENS.iter().any(|t| code[j].contains(t)) {
+                vars.push(name);
+                break;
+            }
+            if code[j].contains(';') {
+                break;
+            }
+            j += 1;
+        }
+    }
+    vars
+}
+
+/// `line` 이 `word` 를 **단어 경계로** 포함하는가(부분 문자열 오인 방지 — `id` 가
+/// `width` 안에서 매칭되지 않게).
+fn references_word(line: &str, word: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = line[from..].find(word) {
+        let start = from + rel;
+        let end = start + word.len();
+        let before_ok = start == 0 || !is_word_byte(bytes[start - 1]);
+        let after_ok = end >= bytes.len() || !is_word_byte(bytes[end]);
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}
+
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
 }
 
 /// 워크스페이스 전역 census.
@@ -133,7 +207,7 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
         let code: Vec<&str> = code_src.lines().collect();
         let comments: Vec<&str> = comment_src.lines().collect();
         let raw_lines: Vec<&str> = raw.lines().collect();
-        let fc = classify(&code, &comments);
+        let fc = classify(&code, &comments, &raw_lines);
 
         c.sites += fc.sites.len();
         c.uniquified += fc.uniquified.len();
@@ -156,7 +230,8 @@ mod tests {
         let comment_src = mask_literals(src);
         let code: Vec<&str> = code_src.lines().collect();
         let comments: Vec<&str> = comment_src.lines().collect();
-        classify(&code, &comments)
+        let raw: Vec<&str> = src.lines().collect();
+        classify(&code, &comments, &raw)
     }
 
     /// 고정 이름을 공유 temp 에 지으면 — 유니크화도 사유도 없으면 — 잡는다.
@@ -191,6 +266,44 @@ mod tests {
         );
         assert!(fc.silent.is_empty(), "체인 아래 pid 를 창이 봐야 한다");
         assert_eq!(fc.uniquified.len(), 1);
+    }
+
+    /// 유니크화 성분이 **변수 뒤에 숨고**(창 밖 위) 경로가 인라인 `{unique}` 로
+    /// 참조하면 통과한다 — 루트 통합 테스트의 지배적 관용구.
+    #[test]
+    fn an_inline_unique_var_bound_to_a_uniquifier_passes() {
+        let fc = classify_src(
+            "fn f() {\n    let unique = format!(\"{}-{}\", std::process::id(), nanos());\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let marker = std::env::temp_dir().join(format!(\"tasty-mark-{unique}.txt\"));\n}",
+        );
+        assert!(
+            fc.silent.is_empty(),
+            "창 밖 위에서 uniquifier 로 바인딩된 변수를 인라인 참조하면 통과해야 한다"
+        );
+        assert_eq!(fc.uniquified.len(), 1);
+    }
+
+    /// 위치 인자(`format!(\"{}\", unique)`)로 참조해도 같다.
+    #[test]
+    fn a_positional_unique_var_passes() {
+        let fc = classify_src(
+            "fn f() {\n    let unique = format!(\"{}\", std::process::id());\n    let p = std::env::temp_dir().join(format!(\"tasty-test-{}.port\", unique));\n}",
+        );
+        assert!(fc.silent.is_empty());
+        assert_eq!(fc.uniquified.len(), 1);
+    }
+
+    /// 변수가 uniquifier 로 바인딩되지 **않았으면**(예: 고정 시나리오명) 참조해도
+    /// 통과하지 않는다 — 변수 이름이 아니라 바인딩의 성분으로 판정한다.
+    #[test]
+    fn a_var_not_bound_to_a_uniquifier_does_not_pass() {
+        let fc = classify_src(
+            "fn f() {\n    let scenario = read_name();\n    let p = std::env::temp_dir().join(format!(\"tasty-{scenario}\"));\n}",
+        );
+        assert_eq!(
+            fc.silent.len(),
+            1,
+            "uniquifier 로 바인딩 안 된 변수는 유니크화가 아니다"
+        );
     }
 
     /// 사유(`이유:`)를 그 자리에 적으면 의도된 공유로 통과한다.
