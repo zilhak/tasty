@@ -32,6 +32,10 @@ tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"
+# 소스를 텍스트로 훑는 가드가 "코드에 X 가 있나" 를 물을 때 쓰는 마스킹 판정기.
+# dev 전용이라 산출물·의존 폐포에 안 들어간다(plugin version gate 와 층 가드는
+# 둘 다 `[dev-dependencies]` 를 보지 않는다). 그 크레이트 자신은 의존 0 이다.
+tasty-doc-guards = { path = "../tasty-doc-guards" }
 
 [lints]
 workspace = true

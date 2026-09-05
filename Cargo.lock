@@ -5741,6 +5741,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tasty-approval",
+ "tasty-doc-guards",
  "tasty-host-plugin",
  "tasty-i18n",
  "tasty-ipc",
