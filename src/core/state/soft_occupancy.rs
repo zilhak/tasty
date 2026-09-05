@@ -7,6 +7,7 @@
 //! 가 stream 바이트를 결선하는 자리와 대칭이되, soft 는 StreamHub/gui 비의존이라
 //! headless 에서도 컴파일된다. 단 소비처가 전부 gui(gpu.rs·egui_panels) + 후속 작업
 //! (terminal.spawn/kill)이라 headless 빌드엔 아직 호출자가 없어 모듈 단위로 침묵한다.
+// 이유: soft 점유의 소비처가 전부 gui 라 headless 엔 아직 호출자가 없다(위 모듈 주석).
 #![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
 use super::CoreState;

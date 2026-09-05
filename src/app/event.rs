@@ -121,12 +121,14 @@ pub(crate) enum AppEvent {
     #[cfg(feature = "gui")]
     OpenPlugins,
     /// Request to shut down the entire application.
+    // 이유: 이 variant 를 만드는 곳이 gui 창 라이프사이클뿐이라 headless 빌드엔 생성처가 없다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     Shutdown,
     /// Request to minimize (park state, close windows).
     #[cfg(feature = "gui")]
     Minimize,
     /// Request quit following the close_behavior setting.
+    // 이유: `Shutdown` 과 같다 — gui 창 종료 경로만 만든다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     QuitRequested,
     /// Request to re-show hidden windows from the system tray (Windows / Linux,

@@ -20,7 +20,7 @@
 //!
 //! 기능 문서: `docs/features/macos-permissions/index.md`.
 
-// 비-macOS / headless 빌드에서는 결정 로직을 호출하는 실행부가 cfg 로 잘려 나간다.
+// 이유: 비-macOS / headless 빌드에서는 결정 로직을 호출하는 실행부가 cfg 로 잘려 나간다.
 // 그래도 로직 자체는 컴파일한다 — cfg 로 잘린 코드는 타입체크조차 되지 않으므로,
 // 다른 플랫폼에서 검증 가능한 면적을 남겨두는 것이 이 분리의 목적이다.
 #![cfg_attr(not(all(target_os = "macos", feature = "gui")), allow(dead_code))]

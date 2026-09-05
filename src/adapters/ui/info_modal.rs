@@ -38,6 +38,7 @@ pub enum InfoModalButtonAction {
     /// 현재 유일한 생산자가 macOS 전용 안내(Full Disk Access)라 다른 OS 에서는
     /// 아무도 만들지 않는다. `GeneralSubTab::Display` 와 동일하게 variant 자체는
     /// 플랫폼 공통으로 두고 경고만 억제한다 — 그리는 쪽은 어느 OS 에서든 컴파일된다.
+    // 이유: 유일한 생산자가 macOS 전용 안내라 다른 OS 빌드엔 생성처가 없다(위 문단).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenExternal(String),
 }

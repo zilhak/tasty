@@ -1,3 +1,5 @@
+// 이유: 크래시 리포터를 설치하는 것이 gui 부팅 경로뿐이라 headless 빌드엔 호출자가 없다. 모듈을
+// `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
 use std::backtrace::Backtrace;

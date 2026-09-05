@@ -18,6 +18,8 @@
 //! ADR-0040: 이 레지스트리는 hard(원격 attach)와 soft(표시만) 점유를 통합한다. hard 는
 //! 위 기존 메커니즘 그대로이고, soft 는 `soft` 테이블에 additive 로 얹혀 hard 술어를
 //! 오염하지 않는다. 통합 조회는 `occupancy_of`.
+// 이유: 이 레지스트리를 읽고 쓰는 것이 렌더·attach 폴링(gui)이라 headless 엔 호출자가 거의 없다
+// (위 모듈 주석). 모듈을 `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
 #![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
 use std::collections::HashMap;

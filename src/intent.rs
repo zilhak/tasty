@@ -1,4 +1,4 @@
-// headless 빌드에선 호출 트리 (app::dispatch::intents) 가 cfg(gui) 로 가려져
+// 이유: headless 빌드에선 호출 트리 (app::dispatch::intents) 가 cfg(gui) 로 가려져
 // intent variant / 도메인 핸들러 / preset/capture 헬퍼가 미사용으로 잡힌다.
 // 본질적으로 gui 어댑터의 API 면 + IPC handler 경유 후보이므로 *headless 한정*
 // 으로 dead_code/unused_imports 를 침묵 — gui 빌드에서는 검사 그대로.

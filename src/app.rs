@@ -96,6 +96,7 @@ impl std::fmt::Display for NoGpuAdapter {
 #[cfg(feature = "gui")]
 impl std::error::Error for NoGpuAdapter {}
 
+// 이유: 이 구조체의 필드를 읽는 것이 gui 이벤트 루프뿐이라 headless 빌드엔 독자가 없다.
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) struct App {
     /// 도메인 본체 — `CoreState` 의 mutate 로직을 점진 흡수한 Method wrapper 다수를

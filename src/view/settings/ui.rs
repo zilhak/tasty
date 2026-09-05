@@ -119,10 +119,12 @@ pub(crate) enum GeneralSubTab {
     /// Alt/Option/Shift 키 표시 스타일. macOS 전용 — 아이콘 글리프 개념이
     /// 없는 Windows/Linux 에서는 dead variant 가 되지만 `MiscSubTab::Tastyrc` 와
     /// 동일하게 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+    // 이유: 이 variant 를 push 하는 것이 macOS 전용 분기뿐이다(위).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Display,
     /// macOS 권한(TCC) 상태 표시 + 시스템 설정 바로가기. macOS 전용 — 다른 OS 에는
     /// TCC 라는 개념이 없어 push 하지 않으며, `Display` 와 같은 이유로 variant 만 남긴다.
+    // 이유: `Display` 와 같다 — macOS 전용 분기만 push 한다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     MacosPermissions,
 }
@@ -150,6 +152,7 @@ pub(crate) enum TerminalSubTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
     Scripts,
+    // 이유: 이 variant 를 push 하는 것이 Windows 전용 분기뿐이다(위 enum 주석).
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
 }
@@ -842,6 +845,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             // Display(Alt/Option/Shift 표시 스타일)는 macOS 전용 — 아이콘 글리프
             // 개념이 없는 Windows/Linux 에서는 push 하지 않는다.
             let cur = ui_state.general_sub_tab;
+            // 이유: `Display` 를 push 하는 분기가 macOS 에만 있어 다른 OS 에선 `mut` 가 남는다(위).
             #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
             let mut items = vec![
                 (GeneralSubTab::General, t("settings.tab.general")),
@@ -990,7 +994,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
         SettingsTab::Misc => {
             // Scripts 는 전 플랫폼·최상단. Tastyrc(빌트인 bashrc 편집)는 Windows 전용.
             let cur = ui_state.misc_sub_tab;
-            // Windows 에서만 push(Tastyrc) 하므로 비-Windows 에선 mut 불필요.
+            // 이유: Windows 에서만 push(Tastyrc) 하므로 비-Windows 에선 mut 불필요.
             #[cfg_attr(not(windows), allow(unused_mut))]
             let mut sections = vec![L2Section {
                 label: t("settings.misc.scripts").to_string(),

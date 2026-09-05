@@ -1,5 +1,5 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
-// headless(no-default-features) 빌드는 gui 사용처가 사라져 코어 타입 다수가 dead 로
+// 이유: headless(no-default-features) 빌드는 gui 사용처가 사라져 코어 타입 다수가 dead 로
 // 판정된다 — 컴파일 가드 빌드일 뿐이므로 headless 한정 침묵 (handler.rs 의 모듈 단위
 // 관행을 crate 단위로 일반화). gui 빌드에서는 dead_code=deny 가 그대로 강제된다.
 #![cfg_attr(not(feature = "gui"), allow(dead_code))]

@@ -13,6 +13,7 @@ use crate::theme::Theme;
 /// 둔다. macOS 는 네이티브 신호등을 유지(`controls: None`)하고 Windows 캡션은
 /// P5 후속이라 이 enum 을 쓰지 않는다 — 그 빌드에선 variant 가 구성되지 않으므로
 /// dead_code 를 허용한다(렌더/매핑 코드는 전 플랫폼 공통 컴파일).
+// 이유: Linux DE 버튼만 이 enum 을 구성한다 — macOS 신호등·Windows 캡션 빌드엔 생성처가 없다.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowButton {
@@ -22,6 +23,7 @@ pub enum WindowButton {
 }
 
 /// 컨트롤 버튼 클러스터의 측면. Linux DE 관습(GNOME/KDE=우측, 일부 좌측).
+// 이유: `WindowButton` 과 같다 — 이 측면 값을 만드는 곳이 Linux DE 프리셋뿐이다.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlSide {
@@ -58,6 +60,7 @@ pub struct TitlebarProps<'a> {
     pub controls: Option<TitlebarControls>,
     /// 윈도우 maximize 상태 — Windows 캡션 버튼의 maximize↔restore 글리프 토글에
     /// 사용한다. 캡션 버튼이 없는 OS 에서는 무시된다.
+    // 이유: 이 필드를 읽는 곳이 Windows 캡션 버튼의 글리프 토글뿐이다(위).
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub maximized: bool,
 }
@@ -68,6 +71,7 @@ pub struct TitlebarProps<'a> {
 /// (`caption.rs`)에서 생성된다. macOS 는 네이티브 신호등이라 StartDrag/ToggleMaximize
 /// 만 생성하므로 그 빌드에선 미사용 variant 의 dead_code 를 허용한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// 이유: macOS 는 네이티브 신호등이라 `Minimize`/`Close` 생성처가 그 빌드에 없다(위).
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub enum TitlebarAction {
     /// 비인터랙티브(드래그) 영역에서 드래그 시작 → 윈도우 이동.

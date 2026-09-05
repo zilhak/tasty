@@ -45,6 +45,7 @@ pub enum MenuOutcome {
     /// Linux 백엔드만 이 variant 를 만든다. 다른 플랫폼 빌드에서는 생성처가
     /// 없지만, 호출자(`view/main/redraw.rs`)가 플랫폼 분기 없이 하나의 match
     /// 로 처리하도록 타입에는 남겨 둔다.
+    // 이유: 이 variant 를 만드는 것이 Linux 백엔드뿐이다(위) — 타입에 남겨 호출부 match 를 한 벌로 둔다.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Pending(MenuHandle),
 }

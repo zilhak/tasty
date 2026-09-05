@@ -421,6 +421,7 @@ pub struct CoreState {
     /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
     /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.
     /// headless 는 렌더가 없어 읽지 않는다(gui 한정).
+    // 이유: 이 필드를 읽는 것이 render_pass 뿐이라 렌더가 없는 headless 엔 독자가 없다(위).
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) readonly_views: HashMap<u32, tasty_terminal::Terminal>,
 
@@ -619,6 +620,7 @@ pub struct CoreState {
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
+    // 이유: 이 플래그를 읽는 것이 debug 전용 입력 시뮬레이션 IPC(gui)뿐이다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) input_simulation_enabled: bool,
 

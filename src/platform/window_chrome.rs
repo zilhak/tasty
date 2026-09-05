@@ -11,7 +11,7 @@ use winit::window::{ResizeDirection, WindowAttributes};
 
 /// CSD 창의 가장자리 리사이즈 핸들 두께 (physical px). 네이티브 데코가 없는
 /// Linux 창에서 이 폭 안쪽을 가리키면 리사이즈 엣지로 친다.
-// macOS 는 네이티브 데코라 호출부(mouse.rs)가 `#[cfg(not(target_os = "macos"))]`로
+// 이유: macOS 는 네이티브 데코라 호출부(mouse.rs)가 `#[cfg(not(target_os = "macos"))]`로
 // 빠진다 — macOS 빌드에서는 dead_code 로 잡히므로 해당 타겟에서만 allow.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 pub const RESIZE_EDGE_MARGIN: f64 = 8.0;
@@ -20,6 +20,7 @@ pub const RESIZE_EDGE_MARGIN: f64 = 8.0;
 /// 좌표·크기 모두 physical px. 모서리(코너)가 변보다 우선한다. 순수 함수라 OS 무관
 /// 하게 컴파일·테스트된다. 데코 없는 Windows/Linux 창의 단일 MainView 리사이즈 경로가
 /// 공유 호출한다(macOS 는 네이티브 데코라 호출하지 않음).
+// 이유: 호출부가 데코 없는 창의 리사이즈 경로뿐이라 macOS 빌드엔 호출자가 없다(위).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn resize_direction_at(
     x: f64,

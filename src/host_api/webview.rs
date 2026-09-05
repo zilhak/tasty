@@ -132,6 +132,7 @@ impl WebViewBounds {
     /// 에러가 되므로 그 플랫폼에서만 면제한다 — 지우거나 `#[cfg]` 로 빼지 않는 이유는
     /// 아래 왕복 테스트가 세 OS 모두에서 이 함수를 `from_physical` 의 역으로 고정하기
     /// 때문이다. macOS 에서만 그 고정이 사라지면 한쪽만 바뀌는 것을 못 잡는다.
+    // 이유: 논리→물리 변환을 부르는 것이 X11(GTK)·Win32 경로뿐이라 macOS 빌드엔 호출부가 없다(위).
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn to_physical(self, scale_factor: f64) -> PhysicalWebViewBounds {
         PhysicalWebViewBounds {

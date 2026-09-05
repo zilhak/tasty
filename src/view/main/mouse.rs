@@ -1499,6 +1499,7 @@ fn effective_click_tracking_decision(
 /// macOS 는 네이티브 데코라 `try_begin_os_resize` 자체가 컴파일에서 빠지므로
 /// (호출부 cfg 가드) 그 빌드에서는 미사용이다 — `window_chrome.rs`의
 /// `RESIZE_EDGE_MARGIN`/`resize_direction_at` 과 동일하게 dead_code 를 허용한다.
+// 이유: macOS 는 네이티브 데코라 호출부 `try_begin_os_resize` 가 그 빌드에서 빠진다(위).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn resize_should_yield_to_content(
     resize_edge_widget_hovered: bool,

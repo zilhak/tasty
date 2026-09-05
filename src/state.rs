@@ -1,4 +1,4 @@
-// headless 빌드에선 호출 트리 (app::dispatch/intents) 가 cfg(gui) 로 가려져
+// 이유: headless 빌드에선 호출 트리 (app::dispatch/intents) 가 cfg(gui) 로 가려져
 // state 의 gui 전용 필드/메서드가 미사용으로 잡힌다. 본질적으로 gui 어댑터의
 // API 면이므로 *headless 한정* 으로 dead_code/unused_imports 를 침묵시킨다.
 // gui 빌드에서는 검사 그대로 작동.
