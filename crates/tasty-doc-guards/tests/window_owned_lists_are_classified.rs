@@ -185,6 +185,9 @@ const ROSTER: &[(&str, Class, &str)] = &[
 /// (CLAUDE.md 의 불가침 원칙 1). 포커스 독립성은 *에이전트 기능*에 거는 요구라
 /// 여기 셋은 같은 잣대로 재지 않는다 — 다만 범위 밖이라는 것을 **적어 둬야**
 /// 다음 사람이 누락과 못 가른다.
+/// 명부 항목 수 하한 — 중복 검사의 모수가 비면 "중복 없음" 은 언제나 참이다.
+const MIN_LISTED: usize = 25;
+
 const OUT_OF_SCOPE: &[(&str, &str)] = &[
     (
         "debug.tool.list",
@@ -269,6 +272,43 @@ fn every_entry_carries_a_reason() {
         .map(|(m, _, _)| *m)
         .collect();
     assert!(empty.is_empty(), "사유가 빈 명부 항목: {empty:?}");
+}
+
+/// 한 메서드가 **두 행에** 있으면 빨감 — 명부 안에서도, 범위 밖 목록과 사이에서도.
+///
+/// 커버리지 검사(`the_roster_covers_…`)는 **빠진 것**만 본다. 두 행이 남는 형태는 그
+/// 검사에 안 걸린다 — 덮이기는 덮이니까. 그런데 그 형태는 병합에서 생긴다: 두 회차가
+/// 같은 메서드를 서로 다른 갈래로 넣고 둘 다 살아남으면, 이 명부는 **한 자원에 대해 두
+/// 답을 든 채로 초록**이 된다. 실측으로 났다(`image.list` 병합).
+///
+/// 어느 행이 옳은지는 이 가드가 못 정한다. 정하라고 말하는 것이 이 가드의 일이다.
+#[test]
+fn no_method_is_listed_twice() {
+    let mut seen: std::collections::BTreeMap<&str, Vec<String>> = std::collections::BTreeMap::new();
+    for (m, class, _) in ROSTER {
+        seen.entry(m)
+            .or_default()
+            .push(format!("ROSTER({class:?})"));
+    }
+    for (m, _) in OUT_OF_SCOPE {
+        seen.entry(m).or_default().push("OUT_OF_SCOPE".to_string());
+    }
+    assert!(
+        seen.len() >= MIN_LISTED,
+        "명부에서 {} 항목밖에 못 읽었다(하한 {MIN_LISTED}) — 모수가 비면 중복은 언제나 0 이다",
+        seen.len()
+    );
+    let dupes: Vec<String> = seen
+        .iter()
+        .filter(|(_, wheres)| wheres.len() > 1)
+        .map(|(m, wheres)| format!("  {m} — {}", wheres.join(" + ")))
+        .collect();
+    assert!(
+        dupes.is_empty(),
+        "같은 메서드가 여러 행에 있다. 갈래가 둘이면 답도 둘이고, 다음 사람은 먼저 읽은 \
+         쪽을 믿는다 — 어느 쪽이 옳은지 정해서 한 행만 남겨라:\n{}",
+        dupes.join("\n")
+    );
 }
 
 /// dispatch 표에서 `"<이름>.list"` 형태의 메서드를 전부 뽑는다.
