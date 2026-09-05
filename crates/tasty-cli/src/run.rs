@@ -113,9 +113,15 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     ))
 }
 
-/// plugin CLI 단발 요청. **agent hook 이 타는 유일한 경로**다(auto-wait/polling 은
-/// spawn/tell 전용, static CLI 는 plugin 명령이 아니다) — 그래서 실패 기록
-/// ([`crate::hook_failure`])을 여기에만 건다.
+/// plugin CLI 단발 요청. **agent hook 이 타는 유일한 경로**다(static CLI 는 plugin
+/// 명령이 아니다) — 그래서 실패 기록([`crate::hook_failure`])을 여기에만 건다.
+///
+/// 그 "유일" 을 지키는 것은 이 파일이 아니라 **매니페스트**다. hook 서브커맨드가
+/// `polling` 이나 `auto_wait` 를 선언하면 그 명령은 아래 두 디스패치
+/// ([`run_dynamic_client_polling`] · [`run_dynamic_client_with_auto_wait`])로 새고,
+/// 거기에는 기록이 없어 그 hook 의 실패는 아무 데도 안 남는다 — 빌드도 테스트도
+/// 초록인 채로. 그 전제를 재는 자리는
+/// `tests/hook_commands_stay_on_the_recording_path.rs` 다.
 ///
 /// 세 실패 지점을 모두 기록한다: 포트 파일 부재(=tasty 미실행, 실사용에서 가장 흔한
 /// 원인) / connect 실패 / JSON-RPC 에러. 셸 래퍼가 exit code 를 버리므로, 기록하지
