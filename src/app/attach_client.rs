@@ -179,10 +179,11 @@ mod outbox {
         /// 그대로 회수한다(`send_frame` 과 같은 복구 방침) — 이미 도착한 출력을 버리지
         /// 않는다.
         pub(super) fn take_for(&self, _host: &MirrorHost<'_>) -> Vec<MirrorEvent> {
-            match self.events.lock() {
-                Ok(mut b) => std::mem::take(&mut *b),
-                Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
-            }
+            std::mem::take(&mut *crate::poison::recover_mutex(
+                self.events.lock(),
+                super::MIRROR_OUTBOX_WHAT,
+                &super::MIRROR_OUTBOX_POISONED,
+            ))
         }
 
         /// 테스트에서 버퍼를 채우고 들여다보는 유일한 창구 — 프로덕션 경로는
@@ -219,6 +220,15 @@ type FrameSender = std::sync::mpsc::Sender<OutFrame>;
 /// 반영). heartbeat/write 스레드는 연결 1 회 수명에 스코프돼 있어 이 간접 계층이
 /// 필요 없다 — 자신만의 raw `FrameSender` 를 직접 캡처한다.
 type SharedFrameSender = Arc<Mutex<FrameSender>>;
+
+/// attach 연결 락들의 poison 복구 공용 보고 좌표(첫-1 회). frame sender 는 mpsc
+/// `Sender`(원자적 send — FORBIDDEN 인 소켓 writer 와 다르다)이고 mirror 출력 버퍼는
+/// `Vec` 라, 둘 다 복구가 안전하다. 틀린 것은 흔적이 없다는 것이라 여기로 모은다.
+const FRAME_TX_WHAT: &str = "attach frame sender";
+static FRAME_TX_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const MIRROR_OUTBOX_WHAT: &str = "attach mirror outbox";
+static MIRROR_OUTBOX_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// mirror 세션의 transport 상태(attach-behavior.md#재연결-시-세션-상태-보존 참고). `Connected` 만 실제 소켓 IO 가 살아있다 —
 /// `Reconnecting` 은 mirror workspace/터미널(scrollback 포함)을 살려둔 채 transport 만
@@ -335,9 +345,7 @@ impl AttachClientSession {
         tag: StreamTag,
         payload: Vec<u8>,
     ) -> Result<(), std::sync::mpsc::SendError<OutFrame>> {
-        self.frame_tx
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+        crate::poison::recover_mutex(self.frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
             .send(OutFrame { tag, payload })
     }
 }
@@ -525,7 +533,9 @@ impl App {
         // 달리 재연결을 가로질러 살아남지 않으므로 공유 핸들이 아닌 이 연결의 raw
         // sender 를 직접 잡는다. `disconnected` 도 이 연결 전용 Arc — 재연결 후
         // 새 연결은 별도의 새 heartbeat 스레드(새 raw sender/새 disconnected)를 띈다.
-        let raw_frame_tx = frame_tx.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        let raw_frame_tx =
+            crate::poison::recover_mutex(frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
+                .clone();
         spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
 
         self.attach_client_sessions.push(AttachClientSession {
@@ -581,7 +591,8 @@ impl App {
         // 바라봐 갱신을 못 본다 — `SharedFrameSender` 문서 참고).
         let shared_frame_tx: SharedFrameSender =
             self.attach_client_sessions[sess_idx].frame_tx.clone();
-        *shared_frame_tx.lock().unwrap_or_else(|p| p.into_inner()) = new_frame_tx;
+        *crate::poison::recover_mutex(shared_frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED) =
+            new_frame_tx;
 
         // 2. survivor 매핑 + mirror 트리 in-place 교체(같은 local_ws_id → scrollback/
         //    local id 보존) + focus 복원(구조 delta 와 동일 패턴).
@@ -678,10 +689,9 @@ impl App {
 
         // 4. heartbeat thread — 이 연결 전용 raw sender(attach-behavior.md#재연결-시-세션-상태-보존 참고 — `make_mirror_surface`
         //    문서 참고, heartbeat 는 재연결을 가로질러 살아남지 않는다).
-        let raw_frame_tx = shared_frame_tx
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let raw_frame_tx =
+            crate::poison::recover_mutex(shared_frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
+                .clone();
         spawn_attach_heartbeat_thread(raw_frame_tx, disconnected.clone());
 
         let sess = &mut self.attach_client_sessions[sess_idx];
@@ -1918,7 +1928,12 @@ fn make_mirror_surface(
         for chunk in rx {
             for part in chunk.chunks(MAX_BODY) {
                 let framed = stream::encode_mux(remote_id, part);
-                let current = frame_tx.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                let current = crate::poison::recover_mutex(
+                    frame_tx.lock(),
+                    FRAME_TX_WHAT,
+                    &FRAME_TX_POISONED,
+                )
+                .clone();
                 if current
                     .send(OutFrame {
                         tag: StreamTag::Data,
@@ -3210,9 +3225,7 @@ fn send_capture_control_frame(
     msg: &serde_json::Value,
 ) -> anyhow::Result<()> {
     let payload = serde_json::to_vec(msg)?;
-    frame_tx
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
+    crate::poison::recover_mutex(frame_tx.lock(), FRAME_TX_WHAT, &FRAME_TX_POISONED)
         .send(OutFrame {
             tag: StreamTag::Control,
             payload,
