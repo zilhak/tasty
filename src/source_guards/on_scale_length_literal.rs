@@ -113,6 +113,18 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     ),
 ];
 
+/// **전시 대상 명부** — 자리 단위다. 부류로 면제하면 다음 사람이 아무 자리나 "전시" 라고
+/// 부른다. 항목은 (파일, 호출 머리, 자리 수, 사유)이고 수는 상한이자 하한이다.
+///
+/// 줄 번호로 적지 않는 이유는 그 수가 위쪽 편집마다 낡기 때문이다 — (파일, 머리)는
+/// 그 자리가 무엇인지로 식별한다.
+const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
+    "crates/tasty-gallery/src/catalog/components/prim_spinner.rs",
+    "size",
+    5,
+    "스피너를 여러 크기로 보여주는 것이 이 카드의 목적이다 — 토큰으로 바꾸면 전시가 사라진다",
+)];
+
 /// 영역별 잔여와 그 사유. 수는 상한이자 **하한**이다 — 위 "양방향 래칫" 참조.
 const AREAS: &[(&str, usize, &str)] = &[
     (
@@ -369,15 +381,18 @@ fn scan(blank_tests: bool) -> Vec<Hit> {
 /// **없는** 자리를 향해 달린다. 실측하면 갤러리 몫에 5 자리 있고, 그 수는
 /// [`the_gallery_share_splits_by_what_can_be_done`] 이 든다 — 여기서 조용히 빠지지 않는다.
 fn judged() -> Vec<Hit> {
-    let masked = masked_sources();
     considered()
         .into_iter()
-        .filter(|h| {
-            !masked
-                .get(&h.rel)
-                .is_some_and(|m| is_a_varied_specimen_value(m, h))
-        })
+        .filter(|h| !is_a_registered_display_specimen(h))
         .collect()
+}
+
+/// 그 자리가 [`DISPLAY_SPECIMENS`] 에 **등록돼 있는가.** 등록되지 않은 전시 후보는
+/// 빠지지 않는다 — 면제는 부류가 아니라 자리다.
+fn is_a_registered_display_specimen(hit: &Hit) -> bool {
+    DISPLAY_SPECIMENS
+        .iter()
+        .any(|(path, head, _, _)| hit.rel == *path && hit.head == *head)
 }
 
 /// 전시 대상을 빼기 **전**의 집합. 빼는 몫의 크기를 재는 쪽이 이것을 쓴다 — 빼 놓고
@@ -640,6 +655,50 @@ fn the_gallery_share_splits_by_what_can_be_done() {
         (5, 13, 1, 75),
         "갤러리 몫의 처방 갈래가 바뀌었다 — 전시(래칫 밖) · 고칠 수 있는 것 · 이름이 \
          없는 것 · 판정 불가(이름은 있으나 그 이름이 그 자리 것인지는 사람이 정한다)"
+    );
+}
+
+/// 전시 명부가 **실재를 가리키고, 그 크기가 기록과 같은가.** 그리고 명부 **밖**에
+/// 전시로 보이는 자리가 없는가.
+///
+/// 앞쪽이 없으면 명부는 오타 하나로 조용히 비고, 빈 명부는 아무것도 안 뺀다(그러면
+/// 이 축의 수가 소리 없이 늘어난다). 뒤쪽이 없으면 새 전시 specimen 이 등록 없이
+/// 래칫에 쌓여 다음 사람이 고칠 수 없는 자리를 향해 달린다.
+#[test]
+fn the_display_roster_points_at_real_sites_and_covers_the_ones_that_look_like_it() {
+    assert!(
+        !DISPLAY_SPECIMENS.is_empty(),
+        "전시 명부가 비었다 — 빈 명부는 아무것도 안 빼면서 언제나 통과한다"
+    );
+    let all = considered();
+    for (path, head, budget, why) in DISPLAY_SPECIMENS {
+        let n = all
+            .iter()
+            .filter(|h| h.rel == *path && h.head == *head)
+            .count();
+        assert_eq!(
+            n, *budget,
+            "전시 명부 `{path}` 의 `{head}`(사유: {why}) 자리가 {n} 개다. 늘었으면 전시가 \
+             아닌 것이 섞였을 수 있고, 줄었으면 그 수를 같이 내려라"
+        );
+    }
+
+    let masked = masked_sources();
+    let unregistered: Vec<String> = all
+        .iter()
+        .filter(|h| !is_a_registered_display_specimen(h))
+        .filter(|h| {
+            masked
+                .get(&h.rel)
+                .is_some_and(|m| is_a_varied_specimen_value(m, h))
+        })
+        .map(|h| format!("  {}:{}  {}({})", h.rel, h.line, h.head, h.value))
+        .collect();
+    assert!(
+        unregistered.is_empty(),
+        "전시로 보이는데 명부에 없는 자리가 있다 — 전시가 맞으면 사유와 함께 등록하고, \
+         아니면 토큰으로 바꿔라:\n{}",
+        unregistered.join("\n")
     );
 }
 
