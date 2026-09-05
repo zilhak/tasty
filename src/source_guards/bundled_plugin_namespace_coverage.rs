@@ -36,9 +36,22 @@ const MANIFEST_NAME: &str = "tasty-plugin.toml";
 /// plugin 이 host→plugin 호출을 받는 자리. SDK trait 의 메서드 이름이다.
 const DISPATCH_FN: &str = "fn handle_ipc_method";
 
-/// namespace 를 선언한 번들 plugin 수의 하한 — **연기 검사**다.
-/// 값의 근거: 2026-09-05 실측 2 (image, markdown).
-const MIN_NAMESPACE_PLUGINS: usize = 2;
+/// **선언된 namespace prefix** 수의 하한 — 연기 검사다. 아래 카운터는 plugin 마다가
+/// 아니라 `[[contributes.ipc_namespace]]` **한 블록마다** 증가한다.
+///
+/// 이 값에 원래 적혀 있던 근거는 "2026-09-05 실측 2 (image, markdown)" 였는데, **그것은
+/// 이 카운터의 값이 아니다.** 2 는 "호스트 메서드 prefix 와 겹치는 것" 의 수로 읽힌다 —
+/// 그 둘이 이 파일의 판정 대상이라 헷갈리기 쉽다. 이 카운터가 세는 것은 겹침과 무관하게
+/// **선언 전부**다.
+///
+/// 2026-09-06 이 카운터를 실행해 **6** 이었다(agent_stream · claude · codex · html ·
+/// image · markdown — 여섯 plugin 이 하나씩).
+///
+/// 하한을 4 로 둔 근거는 인구가 아니라 **부분 사멸의 형태**다. 완전 사멸(열거 실패 ·
+/// 파싱 실패)은 0 이라 어떤 하한에도 걸리지만, 한 종류가 통째로 빠지는 형태는 줄어든
+/// 수로 나타난다. 관측한 여섯은 `description_i18n_key` 를 가진 셋과 안 가진 셋으로
+/// 갈리므로, 파서가 한 변종을 놓치면 3 이 된다 — 옛 하한 2 는 그것을 통과시켰다.
+const MIN_DECLARED_NAMESPACES: usize = 4;
 
 /// 호스트 메서드 수의 하한. 표가 비면 아래 포함 판정이 빈 집합끼리라 그냥 통과한다.
 /// 값의 근거: 2026-09-05 실측 `METHOD_TABLE.len()` = 276.
@@ -67,13 +80,17 @@ fn bundled_plugin_dirs() -> Vec<PathBuf> {
     out
 }
 
+/// 매니페스트를 **실제 파서로** 읽는다(역직렬화까지, 검증은 별개).
+fn parse_manifest(dir: &std::path::Path) -> tasty_plugin_manifest::Manifest {
+    let text = read(&dir.join(MANIFEST_NAME));
+    toml::from_str(&text)
+        .unwrap_or_else(|e| panic!("{}/{MANIFEST_NAME} 파싱 실패: {e}", dir.display()))
+}
+
 /// 매니페스트가 선언한 `[[contributes.ipc_namespace]]` prefix — **실제 파서로** 읽는다.
 /// 정규식으로 긁으면 주석 처리된 블록이나 다른 테이블의 `prefix =` 를 같이 집는다.
 fn declared_prefixes(dir: &std::path::Path) -> Vec<String> {
-    let text = read(&dir.join(MANIFEST_NAME));
-    let manifest: tasty_plugin_manifest::Manifest = toml::from_str(&text)
-        .unwrap_or_else(|e| panic!("{}/{MANIFEST_NAME} 파싱 실패: {e}", dir.display()));
-    manifest
+    parse_manifest(dir)
         .contributes
         .ipc_namespace
         .iter()
@@ -174,9 +191,9 @@ fn every_host_method_under_a_bundled_namespace_is_handled_by_that_plugin() {
     }
 
     assert!(
-        namespaces >= MIN_NAMESPACE_PLUGINS,
-        "ipc_namespace 를 선언한 번들 plugin 이 {namespaces} 개뿐이다(하한 \
-         {MIN_NAMESPACE_PLUGINS}, 2026-09-05 실측 2). 매니페스트 탐색이 죽었다"
+        namespaces >= MIN_DECLARED_NAMESPACES,
+        "선언된 ipc_namespace 가 {namespaces} 개뿐이다(하한 \
+         {MIN_DECLARED_NAMESPACES}). 매니페스트 탐색이 죽었다"
     );
     assert!(
         missing.is_empty(),
@@ -234,5 +251,85 @@ fn after() { emit(\"ns.after\"); }
     assert!(
         found.contains("ns.inside") && !found.contains("ns.after"),
         "문자열 안 중괄호에 속아 본문이 일찍 끊기거나 넘쳤다: {found:?}"
+    );
+}
+
+// ─── 새 매니페스트가 들어올 때 무엇이 그것을 처음 보는가 ──────────────────────
+
+/// 매니페스트를 가진 번들 plugin 수의 하한 — **연기 검사**. 디렉터리 열거가 죽으면
+/// 아래 전수 명제는 빈 순회라 그냥 통과한다. 값의 근거: 2026-09-06 실측 9.
+const MIN_BUNDLED_PLUGINS: usize = 6;
+
+/// 번들 plugin 매니페스트는 **전부** 실제 검증(`Manifest::validate`)을 통과한다.
+///
+/// ## 왜 이것이 따로 필요했나
+///
+/// 매니페스트 검증은 지금까지 두 자리에서만 일어났다: **런타임**(`Manifest::load` —
+/// plugin 이 뜰 때)과 **plugin 별 통합 테스트**
+/// ([본보기](../../crates/tasty-plugin-html/tests/manifest_loads.rs)). 뒤엣것은
+/// 새 plugin 크레이트가 들어올 때 **자동으로 안 따라온다** — 손으로 파일을 하나 더
+/// 만들어야 하고, 안 만들면 아무 일도 안 일어난다.
+///
+/// 실측(2026-09-06): 매니페스트를 가진 번들 plugin 9, 그중 `Manifest::load` 를 부르는
+/// 테스트를 가진 것 **3**(html · markdown · mesh-demo). 나머지 **6** 은 빌드·테스트가
+/// 전부 초록인 채로 **런타임에만** 거절된다 — 그 형태의 실패는 "plugin 이 안 뜬다" 로
+/// 나타나고, 매니페스트를 의심하기 전에 다른 것을 먼저 의심하게 된다.
+///
+/// 이 판정의 모수는 **디렉터리 열거**라 새 plugin 이 자동으로 들어온다. 위 파일
+/// 상단의 `bundled_plugin_dirs()` 를 그대로 쓴다 — 같은 물음에 모수를 둘로 만들지
+/// 않는다.
+#[test]
+fn every_bundled_manifest_passes_the_real_validation() {
+    let dirs = bundled_plugin_dirs();
+    assert!(
+        dirs.len() >= MIN_BUNDLED_PLUGINS,
+        "매니페스트를 가진 번들 plugin 이 {} 개뿐이다(하한 {MIN_BUNDLED_PLUGINS}, \
+         2026-09-06 실측 9) — 디렉터리 열거가 죽으면 아래 전수 명제는 빈 순회다",
+        dirs.len()
+    );
+    for dir in &dirs {
+        parse_manifest(dir).validate().unwrap_or_else(|e| {
+            panic!(
+                "{}/{MANIFEST_NAME} 이 검증을 통과하지 못한다: {e}\n\
+                 이 상태의 plugin 은 **런타임에만** 거절된다 — 빌드도 테스트도 초록이다",
+                dir.display()
+            )
+        });
+    }
+}
+
+/// 위 검증이 실제로 무언가를 **거절하는가.**
+///
+/// 전수 초록인 불변식은 레포 안에 위반 표본이 없다 — 그래서 이 대조만은 실물의
+/// 대칭차로 못 잡는다. 대신 **실물을 최소로 흔든다**: 실제로 namespace 를 선언한
+/// 번들 매니페스트를 그대로 읽어, prefix 한 필드만 호스트 예약어로 바꾼다. 합성
+/// 픽스처가 아니라서 다른 검증 규칙에 먼저 걸릴 자리가 없고, 흔든 것이 정확히
+/// 판정 대상이다.
+#[test]
+fn the_validation_rejects_a_reserved_prefix() {
+    let mut with_namespace = bundled_plugin_dirs()
+        .into_iter()
+        .map(|d| parse_manifest(&d))
+        .filter(|m| !m.contributes.ipc_namespace.is_empty());
+    let mut manifest = with_namespace
+        .next()
+        .expect("namespace 를 선언한 번들 매니페스트가 없다 — 대조군이 죽었다");
+
+    // 팔 1: 흔들기 전 — 통과해야 한다.
+    manifest
+        .validate()
+        .expect("실물 매니페스트가 흔들기 전에 이미 실패한다 — 대조가 성립 안 한다");
+
+    // 팔 2: prefix 한 필드만 호스트 예약어로.
+    let reserved = tasty_plugin_manifest::validators::RESERVED_IPC_PREFIXES
+        .first()
+        .expect("예약 목록이 비었다 — 흔들 값이 없다");
+    manifest.contributes.ipc_namespace[0].prefix = (*reserved).to_string();
+    let err = manifest
+        .validate()
+        .expect_err("예약된 prefix 를 선언했는데 검증이 통과했다");
+    assert!(
+        format!("{err}").contains(reserved),
+        "거절은 했는데 이유가 그 prefix 가 아니다 — 다른 규칙에 먼저 걸렸다: {err}"
     );
 }
