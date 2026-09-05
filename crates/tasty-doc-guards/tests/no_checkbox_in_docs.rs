@@ -66,8 +66,12 @@ fn is_checkbox_item(line: &str) -> bool {
     rest.starts_with(']')
 }
 
-/// 스캔 대상 파일인지 — repo-relative 경로 기준. `docs/` 하위 `.md` 전부.
-fn is_scan_target(rel: &str) -> bool {
+/// 체크박스를 금지할 문서인지 — `docs/` 하위 `.md` 전부.
+///
+/// 이름을 물음으로 적는다: 다른 가드의 같은 이름 `is_scan_target` 들과 grep 에서 뭉쳐
+/// 보이지만, 이 가드의 물음은 "체크박스 검사 대상 문서인가" 로 그들과 다르다 — 다른
+/// 물음이라 위임할 정본이 없다(ADR-0180: 같은 이름 다른 물음은 이름을 갈라 세운다).
+fn is_checkbox_doc(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
 
@@ -75,7 +79,7 @@ fn is_scan_target(rel: &str) -> bool {
 fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         let rel = rel_of(path, root);
-        if is_scan_target(&rel) {
+        if is_checkbox_doc(&rel) {
             out.push(path.to_path_buf());
         }
         return;
