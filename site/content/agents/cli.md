@@ -186,6 +186,20 @@ tasty read queue --surface 42 --peek     # 꺼내지 않고 보기
 tasty read queue --surface 42 --clear    # 전부 비움
 ```
 
+## 그 밖의 조회·설정
+
+에이전트가 가끔 쓰는 것들입니다. 전체 목록은 `tasty <명령> --help` 로 봅니다.
+
+```sh
+tasty list theme                       # 지금 적용된 테마 스냅샷(색·글자 크기·UI 배율)
+tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
+tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경
+tasty set url --surface 42 --url URL   # 웹뷰 서피스의 주소 변경
+tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
+```
+
+`set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 그렇게 말해 줍니다.
+
 ## 자주 쓰는 명령 표
 
 | 하고 싶은 것 | 명령 |

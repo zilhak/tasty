@@ -1435,6 +1435,7 @@ metadata_semaphore_conflict = "Error: --metadata already sets 'semaphore' — re
 
 [cli.telemetry]
 tags_not_object = "Error: --tags must be valid JSON object: {}"
+events_not_array = "Error: --events must be a JSON array of event objects: {}"
 cap_reset_target_required = "Error: telemetry cap reset requires --id or --agent"
 
 [cli.approval]

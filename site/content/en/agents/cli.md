@@ -1,4 +1,4 @@
-<!-- source-hash: 1ac458a6a3c5 -->
+<!-- source-hash: 72f4700ff6e2 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -187,6 +187,20 @@ tasty read queue --surface 42            # pop the oldest message
 tasty read queue --surface 42 --peek     # look without popping
 tasty read queue --surface 42 --clear    # empty everything
 ```
+
+## Other queries and settings
+
+Things an agent reaches for occasionally. `tasty <command> --help` lists them all.
+
+```sh
+tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
+tasty list recent --kind markdown      # files recently opened as that kind
+tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
+tasty set url --surface 42 --url URL   # change the address of a webview surface
+tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
+```
+
+`set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Point them at a plain terminal surface and they say so.
 
 ## Frequently used commands
 

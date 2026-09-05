@@ -456,6 +456,8 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
             ("hook.list", serde_json::json!({ "surface_id": surface }))
         }
         ListCommands::GlobalHooks => ("global_hook.list", serde_json::json!({})),
+        ListCommands::Theme => ("theme.query", serde_json::json!({})),
+        ListCommands::Recent { kind } => ("recent.query", serde_json::json!({ "kind": kind })),
         ListCommands::Queue { surface } => (
             "message.count",
             serde_json::json!({ "surface_id": resolve_surface_id(*surface) }),
@@ -630,6 +632,14 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "attach_clear": clear_mapping,
                 "category": category,
             }),
+        ),
+        SetCommands::Cwd { surface, path } => (
+            "surface.set_cwd",
+            serde_json::json!({ "surface_id": surface, "cwd": path }),
+        ),
+        SetCommands::Url { surface, url } => (
+            "webview.set_url",
+            serde_json::json!({ "surface_id": surface, "url": url }),
         ),
         SetCommands::GlobalHook {
             condition,

@@ -18,6 +18,8 @@
 
 ### Added
 
+- CLI 진입점 6 개 — IPC 표에는 있는데 CLI 로는 부를 수 없던 release 메서드들이다. `tasty list theme`(적용 중인 테마 스냅샷) · `tasty list recent --kind <kind>`(그 종류로 최근 연 파일) · `tasty set cwd --surface <id> [--path <p>]`(원격 서피스가 보고하는 cwd) · `tasty set url --surface <id> --url <u>`(웹뷰 서피스 주소) · `tasty file-handler dispatch <path> [--depth cheap|deep] [--origin-surface <id>] [--ignore-size-limit]`(탐색기 더블클릭과 같은 열기 경로) · `tasty telemetry record-batch --events <json 배열>`(여러 이벤트를 한 타임스탬프로 기록해 순서를 보장). 전부 살아 있는 인스턴스에 직접 쏘아 확인했다.
+
 - debug CLI 진입점 15 개 — IPC 표에는 있는데 CLI 로는 부를 수 없던 debug 메서드들이다. 조회: `tasty debug focused-surface` · `selection` · `pending-menu` · `ui-state`. 탐색 재현: `switch-workspace --index` · `switch-tab --index` · `close-workspace --index`. 터미널 파서에 직접 바이트 주입: `feed-bytes --surface (--text | --bytes <hex>)`. 입력 주입: `inject key` · `inject mouse` · `inject window-mouse` · `inject egui-mouse` · `inject egui-key`. plugin 배너 강제 조작: `plugin-banner open|close`(host 빌트인 배너인 `debug banner` 와 다른 표면이다). 전부 `tasty debug` 트리라 **debug 빌드에만 존재한다** — release 빌드의 CLI 에는 `debug` 서브커맨드 자체가 없다(원칙 1). 파라미터 이름은 각 핸들러가 실제로 읽는 것과 맞췄고, 잎마다 실제 인스턴스에 쏘아 메서드가 와이어에 실리는 것까지 확인했다.
 
 - **헤드리스 debug 빌드가 debug 표면 다섯에 답한다** — `debug.lua.eval` · `debug.event_bus.list_subscribers|publish|trace` · `debug.extension.invoke_hook`. 지금까지 전부 `-32601`(Method not found) 이었다. 이들이 읽는 것은 Lua 엔진과 plugin 매니저뿐이라 창이 없어도 답이 정해지는데, dispatch 가 GUI 라우터에만 있어서 헤드리스에서만 사라져 있었다 — debug 표면은 에이전트가 자기 작업을 검증하는 자리라 그 부재는 헤드리스 인스턴스에서 검증 수단이 없다는 뜻이었다. **release 노출은 그대로 없다**(release 빌드에서는 여전히 `-32601`). 창·렌더러·입력 큐를 읽는 나머지 31 건은 헤드리스에 없는 것이 정답이며, 그 사유가 메서드마다 문서에 적혔다.

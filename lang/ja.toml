@@ -1411,6 +1411,7 @@ metadata_semaphore_conflict = "エラー: --metadata に既に 'semaphore' が�
 
 [cli.telemetry]
 tags_not_object = "エラー: --tags は有効な JSON オブジェクトである必要があります: {}"
+events_not_array = "エラー: --events はイベントオブジェクトの JSON 配列である必要があります: {}"
 cap_reset_target_required = "エラー: telemetry cap reset には --id または --agent が必要です"
 
 [cli.approval]

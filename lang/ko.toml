@@ -1409,6 +1409,7 @@ metadata_semaphore_conflict = "오류: --metadata 에 이미 'semaphore' 가 있
 
 [cli.telemetry]
 tags_not_object = "오류: --tags 는 올바른 JSON 객체여야 합니다: {}"
+events_not_array = "오류: --events 는 이벤트 객체의 JSON 배열이어야 합니다: {}"
 cap_reset_target_required = "오류: telemetry cap reset 에는 --id 또는 --agent 가 필요합니다"
 
 [cli.approval]

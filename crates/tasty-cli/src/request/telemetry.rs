@@ -41,6 +41,27 @@ pub(super) fn telemetry_command_to_method_params(
             }
             ("telemetry.record", p)
         }
+        RecordBatch { events } => match serde_json::from_str::<serde_json::Value>(events) {
+            Ok(v @ serde_json::Value::Array(_)) => {
+                ("telemetry.record_batch", serde_json::json!({ "events": v }))
+            }
+            // 배열이 아닌 JSON 도 여기서 걸러낸다 — host 는 같은 이유로 거절하지만,
+            // 셸에서 오타를 낸 사람에게는 왕복 전에 답하는 편이 낫다.
+            Ok(_) => {
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.telemetry.events_not_array", "not an array")
+                );
+                std::process::exit(2);
+            }
+            Err(e) => {
+                eprintln!(
+                    "{}",
+                    tasty_i18n::t_fmt("cli.telemetry.events_not_array", &e.to_string())
+                );
+                std::process::exit(2);
+            }
+        },
         Summary {
             metric,
             agent,
