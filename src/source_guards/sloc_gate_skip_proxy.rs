@@ -184,28 +184,22 @@ enum Backing {
 /// 따라오지만 이 문구는 파일 안에 있어 diff 에 남는다.
 const GENERATED_MARKER: &str = "DO NOT EDIT";
 
-/// 크레이트 루트 바로 아래 `tests/` 인가. `src/` 안의 `tests/` 디렉토리는 **여기 해당하지
-/// 않는다** — 그건 그냥 모듈이고, 선언이 없으면 출하된다. 경로에 `/tests/` 가 들어 있는지
-/// 보는 것으로는 둘이 안 갈린다.
+/// 크레이트 루트 바로 아래 `tests/` 인가 — 판정을 정본
+/// [`tasty_doc_guards::shipping_scope::is_cargo_test_target`] 으로 **위임**한다. 같은 물음을
+/// `test_only_files` 도 쓰므로(그게 이 성질을 출하 판정에 넣는다) 사본을 두면 답이 갈린다
+/// (R414). 여기서는 `Backing` 분류에만 쓴다.
 fn is_cargo_test_target(rel: &str) -> bool {
-    let full = repo_root().join(rel);
-    let mut dir = full.parent();
-    while let Some(d) = dir {
-        if d.join("Cargo.toml").is_file() {
-            return full
-                .strip_prefix(d)
-                .is_ok_and(|rest| rest.starts_with("tests"));
-        }
-        dir = d.parent();
-    }
-    false
+    tasty_doc_guards::shipping_scope::is_cargo_test_target(&repo_root(), Path::new(rel))
 }
 
+/// `test_only_files` 가 이제 cargo 타깃도 "출하 안 됨" 으로 잡으므로(정본 통일), cargo 타깃은
+/// `c.test_only` 로도 참이다. 분류에서 **레이아웃 근거를 선언 근거보다 먼저** 본다 — 그래야
+/// `Declaration` 은 순수 `#[cfg(test)]` 선언만 남고 `CargoTestTarget` 가지가 굶지 않는다.
 fn backing(c: &Candidate) -> Backing {
-    if c.test_only {
-        Backing::Declaration
-    } else if is_cargo_test_target(&c.rel) {
+    if is_cargo_test_target(&c.rel) {
         Backing::CargoTestTarget
+    } else if c.test_only {
+        Backing::Declaration
     } else if c.generated {
         Backing::Generated
     } else {

@@ -18,8 +18,23 @@ use std::path::{Path, PathBuf};
 use crate::cfg_predicate::implies;
 use crate::source_text::mask_non_code;
 
-/// 선언상 **출하되지 않는** 파일 집합(레포 상대 경로). 부모가 test 게이트면 자식도
-/// 안 나간다 — 전이 폐쇄를 따른다.
+/// 선언상 **출하되지 않는** 파일 집합(레포 상대 경로).
+///
+/// **성질은 "이 파일이 출하 산출물(라이브러리/바이너리)에 들어가는가" 다** — 형태(디렉토리
+/// 이름)가 아니라(R426). 출하 안 되는 형태를 전부 세고 각각 넣을지·이유를 밝힌다:
+///
+/// - **`#[cfg(test)] mod x;` 로 (전이적으로) 선언된 파일** — 넣는다. 부모가 test 게이트면
+///   자식도 안 나간다(전이 폐쇄). diff 에 남는 선언 기반 판정이라 개명에 안 흔들린다.
+/// - **cargo 예약 통합테스트 타깃**(패키지 루트 바로 아래 `tests/` — [`is_cargo_test_target`])
+///   — 넣는다. cargo 가 별도 타깃으로 빌드해 lib/bin 산출물에 안 들어간다. 이들은 **루트
+///   파일이라 들어오는 `mod` 간선이 없어** 위 전이 폐쇄로는 절대 안 잡힌다(그게 통합테스트
+///   env/cwd 변형을 조용히 놓치던 사각이었다). `src/**/tests/` 같은 일반 모듈 디렉토리는
+///   패키지 루트 바로 밑이 아니라 제외된다 — 그건 출하되는 모듈일 수 있다.
+/// - **`benches/`·`examples/`** — 성질상(bench 하네스·example 바이너리는 앱 산출물 밖)
+///   후보지만 **이 레포에 그 디렉토리가 없다** — 양성 대조가 불가능한 절은 두지 않는다
+///   (R415). 생기면 위 통합테스트와 같은 구조 규칙을 확장한다.
+/// - **인라인 `#[cfg(test)]` 블록** — 파일 단위 물음이 아니라 줄 단위라 여기 물음이 아니다.
+///   [`crate::cfg_predicate::cfg_gated_lines`] 가 답한다.
 ///
 /// 입력은 `(레포 상대 경로, 원문)` 목록이다. 파일 순회를 인자로 받는 이유는 소비자마다
 /// 스캔 범위가 다르기 때문이다 — 게이트 대리인은 `src`·`crates` 전체를 보고, CLI 메서드
@@ -43,8 +58,29 @@ pub fn test_only_files(root: &Path, sources: &[(PathBuf, String)]) -> BTreeSet<P
     sources
         .iter()
         .map(|(p, _)| p.clone())
-        .filter(|p| walk(p, &edges, &mut BTreeSet::new()))
+        .filter(|p| is_cargo_test_target(root, p) || walk(p, &edges, &mut BTreeSet::new()))
         .collect()
+}
+
+/// cargo 예약 통합테스트 타깃인가 — **패키지 루트(`Cargo.toml` 이 있는 디렉토리) 바로 아래의
+/// `tests/`** 다. cargo 가 이들을 별도 타깃으로 빌드해 lib/bin 산출물에 안 넣으므로, 선언이
+/// 없어도 출하되지 않는다. `src/**/tests/` 같은 일반 모듈 디렉토리는 패키지 루트 바로 밑이
+/// 아니라 제외된다(그건 출하될 수 있다) — 경로에 `/tests/` 가 있는지만 봐서는 안 갈린다.
+///
+/// **이 판정기는 하나다.** 같은 물음("cargo 타깃이라 안 나가는가")을 본체 SLOC 게이트 대리인
+/// (`sloc_gate_skip_proxy`)도 갖는데, 사본을 두면 답이 갈린다(R414) — 그쪽이 여기로 위임한다.
+pub fn is_cargo_test_target(root: &Path, rel: &Path) -> bool {
+    let full = root.join(rel);
+    let mut dir = full.parent();
+    while let Some(d) = dir {
+        if d.join("Cargo.toml").is_file() {
+            return full
+                .strip_prefix(d)
+                .is_ok_and(|rest| rest.starts_with("tests"));
+        }
+        dir = d.parent();
+    }
+    false
 }
 
 /// `mod X;` 선언에서 모듈 파일로 가는 간선. 값은 `(부모 파일, cfg 가 test 를 함의하는가)`.
