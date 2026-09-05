@@ -103,9 +103,13 @@ pub(crate) fn params_resource_id(params: &serde_json::Value) -> Option<(&str, Re
 }
 
 /// `pty.*` 의 `"id"` 는 headless pty id 지만, 이 키는 위 목록에 넣을 수 **없다** —
-/// `"id"` 는 host 핸들러 전체에서 25 곳이 각기 다른 의미로 쓰는 범용 키라(hook id ·
+/// `"id"` 는 host 핸들러 전반이 **각기 다른 의미로** 쓰는 범용 키라(hook id ·
 /// agent id · plugin id …) 무조건 pty 로 해석하면 오탐이 쏟아진다. 그래서 여기만
 /// **메서드 이름으로 한정**한다.
+///
+/// 몇 곳인지는 적지 않는다 — 그 수는 핸들러가 하나 늘 때마다 낡고, 낡았는지 확인
+/// 하려면 저장소를 훑어야 해서 아무도 확인하지 않는다. 필요하면 재라:
+/// `grep -rc '"id"' src/adapters/ipc/handler/`.
 ///
 /// `pty.attach_surface` 는 제외한다 — `"id"`(pty)와 함께 `"pane_id"` 를 받으므로
 /// 위 목록이 이미 그쪽으로 푼다. `pty.spawn` 도 제외다: 대상이 아니라 **생성**이라
@@ -194,8 +198,9 @@ pub(crate) fn method_scoped_resource_id(
     //     포커스 A: split{target_surface:1} → 성공                     split{target_surface:2} → "surface 2 not found"
     //
     // 같은 요청이 **사용자가 어디를 클릭했느냐**에 따라 성공하기도 실패하기도 했다
-    // (`docs/design/policies/focus.md` 의 활성 상태 의존 금지). `workspace.update` 가
-    // 아래에서 고쳐진 것과 같은 형태다.
+    // (`docs/design/policies/focus.md` 의 활성 상태 의존 금지). 바로 앞의
+    // `workspace.close`/`update`/`move` 갈래가 같은 이유로 생겼다 — 그 갈래를
+    // 이름으로 가리키는 이유는 "아래" 같은 방향이 코드가 움직이면 조용히 틀려서다.
     if method == "split" {
         if let Some(id) = numeric(params, "target_pane") {
             return Some(ResourceId {
@@ -521,6 +526,16 @@ mod tests {
         let params = json!({ "id": 0x8000_0002u32, "pane_id": 3 });
         assert!(matches!(rid(&params), ("pane_id", Kind::Pane, 3)));
         assert!(method_scoped_resource_id("pty.attach_surface", &params).is_none());
+    }
+
+    /// `pty.spawn` 도 그 목록에 없다 — **생성**이라 실을 id 가 없다(문서가 그렇게 적고
+    /// 있다). 목록이 화이트리스트라 실수로 들어올 일은 없지만, 이웃
+    /// `pty.attach_surface` 는 단정이 있고 이것만 없으면 "빠뜨린 것" 과 "뺀 것" 이
+    /// 구분되지 않는다.
+    #[test]
+    fn spawn_is_not_a_target_because_it_creates_one() {
+        let params = json!({ "id": 0x8000_0002u32 });
+        assert!(method_scoped_resource_id("pty.spawn", &params).is_none());
     }
 
     /// 라우팅이 대상을 **푸는 것**과 그 대상을 **가진 engine 을 찾는 것**은 다른 단계다.
