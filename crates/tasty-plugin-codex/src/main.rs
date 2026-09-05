@@ -69,14 +69,18 @@ impl Plugin for CodexPlugin {
             "codex.parent" => handlers::handle_parent(&host, params),
             "codex.state" => handlers::handle_state(&host, params),
             "codex.tell" => handlers::handle_tell(&host, params),
-            "codex.notify_caller" => handlers::handle_notify_caller(&host, params),
+            "codex.notify_caller" => {
+                handlers::handle_notify_caller(&host, &self.translator, params)
+            }
             "codex.broadcast" => handlers::handle_broadcast(&host, params),
             "codex.kill" => handlers::handle_kill(&host, params),
             "codex.respawn" => handlers::handle_respawn(&host, params),
             "codex.install" => handlers::handle_install(),
             "codex.uninstall" => handlers::handle_uninstall(),
             "codex.hook" => handlers::handle_hook(&host, params),
-            "codex.reboot" => reboot::handle_reboot(&self.rebooting, &host, &params),
+            "codex.reboot" => {
+                reboot::handle_reboot(&self.rebooting, &host, &self.translator, &params)
+            }
             other => Err(IpcMethodError::not_found(other)),
         }
     }

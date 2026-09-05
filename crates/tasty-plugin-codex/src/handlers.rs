@@ -463,8 +463,10 @@ fn notify_caller_command(caller_surface: u32, target_surface: u32, kind: &str) -
 /// 뜻으로 오독되기 쉬워, conductor 가 실제 작업 완료 알림을 "spawn 접수 확인" 정도로
 /// 여기고 계속 무시하는 사고로 이어졌다. `kind`는 호출 방식(spawn/tell)일 뿐 완료의
 /// 주어가 아니므로 괄호로 분리한다(tasty-plugin-claude 의 `notify_done_message`와 동형).
-fn notify_caller_message(kind: &str, target: u32) -> String {
-    format!("surface {target} 작업 완료 (호출 방식: {kind})")
+fn notify_caller_message(tr: &Translator, kind: &str, target: u32) -> String {
+    tr.t("codex.notify.done_message")
+        .replace("{target}", &target.to_string())
+        .replace("{kind}", kind)
 }
 
 /// 샌드박스(bwrap) 초기화 실패 감지 마커 — 오탐 최소화를 위해 특이도가 가장 높은
@@ -472,19 +474,22 @@ fn notify_caller_message(kind: &str, target: u32) -> String {
 /// `RTM_NEWADDR`는 사실상 이 실패 상황에서만 등장한다.
 const SANDBOX_FAILURE_MARKER: &str = "RTM_NEWADDR";
 
-/// 힌트 문구 — `docs/plugins/codex/index.md`(샌드박스 초기화 실패 패턴과 수동
-/// 우회법 `--full-auto`가 이미 문서화된 곳)의 안내를 완료 알림 채널에 요약해
-/// 싣는다. 이 텍스트는 `tasty-cli`가 사람에게 보여주는 stdout/stderr 표면이
-/// 아니라 `~/.tasty/notify/*.log`에 append 되는 내부 채널 문자열이라
-/// `docs/dev-guide/i18n.md`의 "CLI 출력 문자열" 규정(사람이 보는 CLI 표면) 적용
-/// 대상이 아니다.
-const SANDBOX_FAILURE_HINT: &str = "⚠ sandbox 초기화 실패로 보임(RTM_NEWADDR 감지) — 이 실행 환경은 nested sandbox(bwrap)를 지원하지 않을 수 있습니다. --full-auto 로 재시도해보세요.";
+/// 힌트 문구의 번역 키 — `docs/plugins/codex/index.md`(샌드박스 초기화 실패 패턴과
+/// 수동 우회법 `--full-auto` 가 이미 문서화된 곳)의 안내를 완료 알림 채널에 요약해
+/// 싣는다.
+///
+/// 이 문구가 나가는 곳은 `<parent_home>/notify/*.log` 이고 읽는 쪽은 **호출한
+/// 에이전트**다. 사람이 보는 CLI stdout/stderr 표면은 아니지만, 그렇다고 언어를 코드에
+/// 박아 둘 자리도 아니다 — 형제 plugin(claude)은 같은 채널의 같은 성격 문구를
+/// `claude.notify.done_message` 로 번역해 내보낸다. 두 문구가 같은 파일에 섞이면
+/// 읽는 쪽이 한 채널에서 두 언어를 받는다.
+const SANDBOX_FAILURE_HINT_KEY: &str = "codex.notify.sandbox_hint";
 
 /// `screen_text`(대상 surface 의 최근 출력)에서 샌드박스 초기화 실패 시그니처를
 /// 찾으면 힌트 문구를 반환한다. best-effort 탐지 — 순수 함수라 단위 테스트 대상.
-fn detect_sandbox_failure_hint(screen_text: &str) -> Option<&'static str> {
+fn detect_sandbox_failure_hint(tr: &Translator, screen_text: &str) -> Option<String> {
     if screen_text.contains(SANDBOX_FAILURE_MARKER) {
-        Some(SANDBOX_FAILURE_HINT)
+        Some(tr.t(SANDBOX_FAILURE_HINT_KEY).to_string())
     } else {
         None
     }
@@ -493,8 +498,12 @@ fn detect_sandbox_failure_hint(screen_text: &str) -> Option<&'static str> {
 /// 완료 알림 본문에 (있으면) 샌드박스 실패 힌트를 덧붙인다. `screen_text`가
 /// `None`(조회 자체가 실패 — soft-fail)이거나 마커가 없으면 `base`를 그대로
 /// 돌려준다(회귀 없음). 순수 함수 — 단위 테스트 대상.
-fn append_sandbox_hint_if_detected(base: String, screen_text: Option<&str>) -> String {
-    match screen_text.and_then(detect_sandbox_failure_hint) {
+fn append_sandbox_hint_if_detected(
+    tr: &Translator,
+    base: String,
+    screen_text: Option<&str>,
+) -> String {
+    match screen_text.and_then(|s| detect_sandbox_failure_hint(tr, s)) {
         Some(hint) => format!("{base} {hint}"),
         None => base,
     }
@@ -578,15 +587,19 @@ fn register_notify_hooks<H: HostCall>(
 /// "누가 먼저 fire했는지" 판별이 전혀 필요 없다. 정리는 `hook.list`(surface 필터) +
 /// command 문자열 일치로 하며, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에
 /// spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다.
-pub fn handle_notify_caller<H: HostCall>(host: &H, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_notify_caller<H: HostCall>(
+    host: &H,
+    tr: &Translator,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
     let caller = require_u32(&params, "caller")?;
     let target = require_u32(&params, "target")?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
-    let message = notify_caller_message(&kind, target);
+    let message = notify_caller_message(tr, &kind, target);
     // 샌드박스 초기화 실패 힌트(docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트
     // 절 참조) — soft-fail, 조회 실패/미탐지 시 message 그대로.
     let screen_text = fetch_screen_text_for_hint(host, target);
-    let message = append_sandbox_hint_if_detected(message, screen_text.as_deref());
+    let message = append_sandbox_hint_if_detected(tr, message, screen_text.as_deref());
 
     // 완료 로그 파일에 append — conductor 가 Monitor tool 로 tail 하면 busy/idle 여부와
     // 무관하게 다음 턴에 전달된다. 완료 알림의 유일한 경로다(과거엔 terminal.tell 도
@@ -1175,6 +1188,11 @@ mod tests {
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
+    }
+
+    fn test_translator_for(code: &str) -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, code)
     }
 
     #[test]
@@ -2059,7 +2077,7 @@ trusted_hash = "sha256:xyz"
 
     #[test]
     fn notify_caller_message_leads_with_work_completion() {
-        let msg = notify_caller_message("spawn", 42);
+        let msg = notify_caller_message(&test_translator_for("ko"), "spawn", 42);
         assert!(
             msg.contains("작업 완료"),
             "완료 대상이 '작업'임이 드러나야 함: {msg}"
@@ -2068,13 +2086,39 @@ trusted_hash = "sha256:xyz"
         assert!(msg.contains("spawn"), "호출 방식 정보 누락: {msg}");
     }
 
+    /// 어느 로케일에서든 **채워지는 값**(대상 번호 · 호출 방식)은 문구에 남는다.
+    /// 자리표시자 이름을 바꾸면 치환이 조용히 안 먹고 `{target}` 이 그대로 나가는데,
+    /// 그건 한 언어만 보면 안 걸린다.
+    #[test]
+    fn notify_caller_message_keeps_its_substitutions_in_every_locale() {
+        for code in ["en", "ko", "ja"] {
+            let msg = notify_caller_message(&test_translator_for(code), "tell", 42);
+            assert!(msg.contains("42"), "[{code}] target 번호 누락: {msg}");
+            assert!(msg.contains("tell"), "[{code}] 호출 방식 누락: {msg}");
+            assert!(
+                !msg.contains("{target}") && !msg.contains("{kind}"),
+                "[{code}] 자리표시자가 치환되지 않았다: {msg}"
+            );
+        }
+    }
+
+    /// 문구가 실제로 `t()` 를 거친다 — 로케일을 바꾸면 완성 문구가 달라진다.
+    /// 이 단정이 없으면 키만 만들어 두고 값을 코드에 도로 박아도 위 테스트는 통과한다.
+    #[test]
+    fn notify_caller_message_changes_with_the_locale() {
+        let en = notify_caller_message(&test_translator_for("en"), "spawn", 42);
+        let ko = notify_caller_message(&test_translator_for("ko"), "spawn", 42);
+        assert_ne!(en, ko, "로케일이 달라도 같은 문구다 — t() 를 안 거친다");
+    }
+
     #[test]
     fn notify_caller_message_does_not_read_as_command_itself_completing() {
         // 회귀 방지: 과거 "{kind} 완료: surface N" 형태는 "spawn 이라는 동작이
         // 완료됐다"로 오독되기 쉬웠다 — kind 가 더 이상 완료의 주어로 문장 맨 앞에
         // 오지 않아야 한다.
+        let tr = test_translator_for("ko");
         for kind in ["spawn", "tell"] {
-            let msg = notify_caller_message(kind, 7);
+            let msg = notify_caller_message(&tr, kind, 7);
             assert!(
                 !msg.starts_with(&format!("{kind} 완료")),
                 "옛 오독 유발 포맷으로 회귀함: {msg}"
@@ -2087,19 +2131,23 @@ trusted_hash = "sha256:xyz"
     #[test]
     fn detect_sandbox_failure_hint_matches_rtm_newaddr() {
         let text = "...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n...";
-        assert!(detect_sandbox_failure_hint(text).is_some());
+        assert!(detect_sandbox_failure_hint(&test_translator(), text).is_some());
     }
 
     #[test]
     fn detect_sandbox_failure_hint_ignores_unrelated_text() {
-        assert!(detect_sandbox_failure_hint("normal codex output, no errors here").is_none());
+        assert!(
+            detect_sandbox_failure_hint(&test_translator(), "normal codex output, no errors here")
+                .is_none()
+        );
     }
 
     #[test]
     fn append_sandbox_hint_if_detected_appends_when_marker_present() {
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let text = "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted";
-        let msg = append_sandbox_hint_if_detected(base.clone(), Some(text));
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), Some(text));
         assert!(
             msg.starts_with(&base),
             "기존 base 메시지는 그대로 유지: {msg}"
@@ -2110,16 +2158,18 @@ trusted_hash = "sha256:xyz"
 
     #[test]
     fn append_sandbox_hint_if_detected_unchanged_when_no_marker() {
-        let base = notify_caller_message("spawn", 100);
-        let msg = append_sandbox_hint_if_detected(base.clone(), Some("normal codex output"));
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), Some("normal codex output"));
         assert_eq!(msg, base, "마커 없으면 회귀 없이 base 그대로여야 함");
     }
 
     #[test]
     fn append_sandbox_hint_if_detected_unchanged_when_query_failed() {
         // screen_text 조회 자체가 실패(soft-fail)한 경우 — None.
-        let base = notify_caller_message("spawn", 100);
-        let msg = append_sandbox_hint_if_detected(base.clone(), None);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), None);
         assert_eq!(
             msg, base,
             "조회 실패 시 알림 전송 자체는 회귀 없이 그대로여야 함"
@@ -2132,9 +2182,10 @@ trusted_hash = "sha256:xyz"
         host.set_screen_text(
             "...\nbwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n...",
         );
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let screen_text = fetch_screen_text_for_hint(&host, 100);
-        let msg = append_sandbox_hint_if_detected(base, screen_text.as_deref());
+        let msg = append_sandbox_hint_if_detected(&tr, base, screen_text.as_deref());
         assert!(
             msg.contains("full-auto"),
             "힌트가 실제로 덧붙어야 함: {msg}"
@@ -2145,9 +2196,10 @@ trusted_hash = "sha256:xyz"
     fn notify_caller_message_unchanged_when_no_sandbox_failure() {
         let host = MockHost::new();
         host.set_screen_text("normal codex output, no errors here");
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let screen_text = fetch_screen_text_for_hint(&host, 100);
-        let msg = append_sandbox_hint_if_detected(base.clone(), screen_text.as_deref());
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), screen_text.as_deref());
         assert_eq!(
             msg, base,
             "실패 시그니처가 없으면 회귀 없이 base 그대로여야 함"
@@ -2159,10 +2211,11 @@ trusted_hash = "sha256:xyz"
         // MockHost::new() 는 screen_text 를 세팅하지 않은 상태 — surface.screen_text
         // 호출이 실패하는 경우를 재현(soft-fail).
         let host = MockHost::new();
-        let base = notify_caller_message("spawn", 100);
+        let tr = test_translator();
+        let base = notify_caller_message(&tr, "spawn", 100);
         let screen_text = fetch_screen_text_for_hint(&host, 100);
         assert!(screen_text.is_none(), "조회 실패는 None 이어야 함");
-        let msg = append_sandbox_hint_if_detected(base.clone(), screen_text.as_deref());
+        let msg = append_sandbox_hint_if_detected(&tr, base.clone(), screen_text.as_deref());
         assert_eq!(msg, base);
     }
 
@@ -2241,6 +2294,7 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
+            &test_translator(),
             json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
@@ -2254,6 +2308,7 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
+            &test_translator(),
             json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
@@ -2277,6 +2332,7 @@ trusted_hash = "sha256:xyz"
         host.mark_dead(target);
         handle_notify_caller(
             &host,
+            &test_translator(),
             json!({ "caller": caller, "target": target, "kind": "spawn" }),
         )
         .unwrap();

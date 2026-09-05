@@ -34,7 +34,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{HostHandle, IpcMethodError};
+use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::resolve_policy_args;
 
@@ -79,14 +79,20 @@ const BANNER_MARKER: &str = ">_ OpenAI Codex";
 /// 화면 검증에 쓰는 안내문 선두 조각.
 const NOTICE_SNIPPET: &str = "tasty codex reboot";
 
-/// 재시작된 codex 에게 자동 제출되는 안내 프롬프트.
-const REBOOT_NOTICE: &str = "tasty codex reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (codex resume 으로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요.";
+/// 안내 프롬프트의 번역 키. 값은 `lang/{en,ko,ja}.toml` 에 있다.
+///
+/// 문구는 번역되지만 **선두 조각 [`NOTICE_SNIPPET`] 은 로케일과 무관하게 고정**이다 —
+/// 화면 검증이 그 조각으로 "안내가 실제로 떴는가" 를 판정하기 때문이다. 세 언어 값이
+/// 모두 그 조각으로 시작하는 것은 `notice_starts_with_the_snippet_in_every_locale` 가
+/// 못 박는다. 형제 plugin(claude)의 `claude.reboot.notice` 와 같은 구조다.
+const REBOOT_NOTICE_KEY: &str = "codex.reboot.notice";
 
 /// `codex.reboot` 진입점. 검증·캡처를 동기로 끝내고 시퀀스는 background thread
 /// 로 넘긴 뒤 즉시 응답한다 — 호출한 codex 가 턴을 마무리할 시간을 준다.
 pub(crate) fn handle_reboot(
     inflight: &Arc<Mutex<HashSet<u32>>>,
     host: &HostHandle,
+    tr: &Translator,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface(params)?;
@@ -128,6 +134,9 @@ pub(crate) fn handle_reboot(
     let thread_inflight = inflight.clone();
     let thread_session = session_id.clone();
     let thread_policy_args = policy_args.clone();
+    // 안내문은 **스레드에 넘기기 전에** 조립한다 — `Translator` 를 워커로 옮기지 않으려고
+    // 완성된 문자열만 보낸다. 내용이 실행 시점 상태에 의존하지 않아 시점 차이가 없다.
+    let thread_notice = build_notice(tr, extra_prompt.as_deref());
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
         .spawn(move || {
@@ -138,7 +147,7 @@ pub(crate) fn handle_reboot(
                 &thread_session,
                 exit_c0,
                 banner_c0,
-                extra_prompt.as_deref(),
+                &thread_notice,
                 &thread_policy_args,
             );
             tasty_utils::poison::recover_mutex(
@@ -256,10 +265,11 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
 }
 
 /// 안내 프롬프트 본문. `--prompt` 추가 텍스트가 있으면 빈 줄 뒤에 덧붙인다.
-pub(crate) fn build_notice(extra: Option<&str>) -> String {
+pub(crate) fn build_notice(tr: &Translator, extra: Option<&str>) -> String {
+    let base = tr.t(REBOOT_NOTICE_KEY);
     match extra {
-        Some(t) => format!("{REBOOT_NOTICE}\n\n{t}"),
-        None => REBOOT_NOTICE.to_string(),
+        Some(t) => format!("{base}\n\n{t}"),
+        None => base.to_string(),
     }
 }
 
@@ -281,7 +291,7 @@ fn run_reboot_sequence(
     session_id: &str,
     exit_c0: usize,
     banner_c0: usize,
-    extra_prompt: Option<&str>,
+    notice: &str,
     policy_args: &str,
 ) {
     thread::sleep(Duration::from_secs(delay_secs));
@@ -300,7 +310,7 @@ fn run_reboot_sequence(
     }
     thread::sleep(TUI_READY_GRACE);
 
-    if !deliver_notice(host, surface_id, &build_notice(extra_prompt)) {
+    if !deliver_notice(host, surface_id, notice) {
         tracing::warn!(
             "codex reboot s{surface_id}: notice not confirmed on screen after {NOTICE_ATTEMPTS} attempts"
         );
@@ -489,16 +499,49 @@ mod tests {
         );
     }
 
+    fn test_translator_for(code: &str) -> Translator {
+        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
+        Translator::load(&lang_dir, code)
+    }
+
     #[test]
-    fn notice_without_extra_is_fixed_text() {
-        assert_eq!(build_notice(None), REBOOT_NOTICE);
+    fn notice_without_extra_is_the_translated_text() {
+        let tr = test_translator_for("ko");
+        assert_eq!(build_notice(&tr, None), tr.t(REBOOT_NOTICE_KEY));
     }
 
     #[test]
     fn notice_with_extra_appends_after_blank_line() {
-        let n = build_notice(Some("soak 이어서"));
-        assert!(n.starts_with(REBOOT_NOTICE));
+        let tr = test_translator_for("ko");
+        let n = build_notice(&tr, Some("soak 이어서"));
+        assert!(n.starts_with(tr.t(REBOOT_NOTICE_KEY)));
         assert!(n.ends_with("\n\nsoak 이어서"));
+    }
+
+    /// **세 로케일 모두** 안내문이 화면 검증 조각으로 시작한다.
+    ///
+    /// 전달 성공 판정(`deliver_notice`)이 [`NOTICE_SNIPPET`] 을 화면에서 찾는 것으로
+    /// 이뤄진다 — 번역문이 그 조각을 잃으면 안내는 떴는데 **못 떴다고 판정**해
+    /// 재시도를 반복하다 경고를 남긴다. 그 회귀는 그 언어를 쓰는 사용자에게만
+    /// 나타나므로 한 언어만 보는 테스트로는 안 잡힌다.
+    #[test]
+    fn notice_starts_with_the_snippet_in_every_locale() {
+        for code in ["en", "ko", "ja"] {
+            let tr = test_translator_for(code);
+            let notice = build_notice(&tr, None);
+            assert!(
+                notice.starts_with(NOTICE_SNIPPET),
+                "[{code}] 안내문이 화면 검증 조각(`{NOTICE_SNIPPET}`)으로 시작하지 않는다: {notice}"
+            );
+        }
+    }
+
+    /// 문구가 실제로 `t()` 를 거친다 — 로케일을 바꾸면 완성 문구가 달라진다.
+    #[test]
+    fn notice_changes_with_the_locale() {
+        let en = build_notice(&test_translator_for("en"), None);
+        let ko = build_notice(&test_translator_for("ko"), None);
+        assert_ne!(en, ko, "로케일이 달라도 같은 문구다 — t() 를 안 거친다");
     }
 
     #[test]

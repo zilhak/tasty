@@ -21,3 +21,10 @@ stale = " 인덱스 [{indices}]의 자식은 에이전트 프로세스가 더 �
 
 [settings.subtab]
 codex = "Codex"
+
+[codex.notify]
+done_message = "surface {target} 작업 완료 (호출 방식: {kind})"
+sandbox_hint = "⚠ sandbox 초기화 실패로 보임(RTM_NEWADDR 감지) — 이 실행 환경은 nested sandbox(bwrap)를 지원하지 않을 수 있습니다. --full-auto 로 재시도해보세요."
+
+[codex.reboot]
+notice = "tasty codex reboot : 이 세션은 tasty 의 reboot 기능으로 재시작되었습니다 (codex resume 으로 동일 세션 resume). 직전 턴이 잘렸을 수 있으니 마지막 작업 상태를 확인하고 이어서 진행하세요."

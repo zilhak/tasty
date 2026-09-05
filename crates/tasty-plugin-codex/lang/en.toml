@@ -21,3 +21,10 @@ stale = " Children at index [{indices}] no longer have an agent process running 
 
 [settings.subtab]
 codex = "Codex"
+
+[codex.notify]
+done_message = "surface {target} task complete (via {kind})"
+sandbox_hint = "⚠ sandbox init appears to have failed (RTM_NEWADDR detected) — this environment may not support a nested sandbox (bwrap). Try again with --full-auto."
+
+[codex.reboot]
+notice = "tasty codex reboot: this session was restarted by tasty's reboot feature (codex resume resumes the same session). The previous turn may have been cut off — check the last work state before continuing."

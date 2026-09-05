@@ -21,3 +21,10 @@ stale = " インデックス [{indices}] の子はエージェントプロセス
 
 [settings.subtab]
 codex = "Codex"
+
+[codex.notify]
+done_message = "surface {target} 作業完了 (呼び出し方式: {kind})"
+sandbox_hint = "⚠ sandbox の初期化に失敗した可能性があります(RTM_NEWADDR を検出)— この実行環境は入れ子の sandbox(bwrap)に対応していない可能性があります。--full-auto で再試行してください。"
+
+[codex.reboot]
+notice = "tasty codex reboot : このセッションは tasty の reboot 機能で再起動されました(codex resume で同一セッションを再開)。直前のターンが途中で切れている可能性があるため、最後の作業状態を確認してから続行してください。"
