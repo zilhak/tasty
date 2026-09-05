@@ -687,6 +687,11 @@ mod length_constant_frontier;
 #[cfg(test)]
 mod test_gate;
 
+/// 값이 `size-*` 스케일 안인데 숫자로 쓴 길이 자리를 센다. 위 가드가 선언의 **타입**을
+/// 묻는다면 이쪽은 값의 **출처**를 묻는다 — 토큰이 움직여도 안 따라가는 자리다.
+#[cfg(test)]
+mod on_scale_length_literal;
+
 mod platform_gated_dispatch_complement;
 
 /// `plugin_only` 표식과 plugin host-call 진입부의 인터셉트가 같은 집합인지 본다.
