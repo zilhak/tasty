@@ -207,9 +207,19 @@ impl SavedSurface {
         if let Some(es) = surface
             .as_any_mut()
             .downcast_mut::<crate::model::EmptySurface>()
-            && es.is_deferred()
         {
-            return Self::capture_deferred_surface(es, ctx);
+            // plugin placeholder(아직 실제화 안 된 non-terminal surface)는 원래
+            // kind/snapshot 을 그대로 보존해 round-trip 한다 — 여기서 terminal 이나
+            // "empty" 로 저장하면 다음 복원 때 plugin surface 가 딴것으로 변질된다.
+            if let Some(p) = es.deferred_plugin() {
+                return SavedSurface::Generic {
+                    kind: p.kind.clone(),
+                    data: p.snapshot.clone(),
+                };
+            }
+            if es.is_deferred() {
+                return Self::capture_deferred_surface(es, ctx);
+            }
         }
         Self::capture_generic_surface(&*surface, ctx.registry)
     }
@@ -253,14 +263,10 @@ impl SavedSurface {
     ) -> Self {
         let surface_id = es.id;
         let cwd = es
-            .deferred_spawn
-            .as_ref()
+            .deferred_spawn()
             .and_then(|s| s.working_dir.as_ref())
             .map(|p| p.to_string_lossy().to_string());
-        let restore_command = es
-            .deferred_spawn
-            .as_ref()
-            .and_then(|s| s.restore_command.clone());
+        let restore_command = es.deferred_spawn().and_then(|s| s.restore_command.clone());
         // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
         // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
         //  파일은 startup GC 가 청소한다.)
@@ -282,8 +288,7 @@ impl SavedSurface {
         surface_id: u32,
     ) -> Option<String> {
         let stored = es
-            .deferred_spawn
-            .as_ref()
+            .deferred_spawn()
             .and_then(|s| s.scrollback_persist_id.clone());
         match stored {
             Some(existing) if !ctx.seen_refs.contains(&existing) => {
@@ -308,7 +313,7 @@ impl SavedSurface {
                         );
                     }
                 }
-                if let Some(spawn) = es.deferred_spawn.as_mut() {
+                if let Some(spawn) = es.deferred_spawn_mut() {
                     spawn.scrollback_persist_id = Some(new_id.clone());
                 }
                 ctx.seen_refs.insert(new_id.clone());

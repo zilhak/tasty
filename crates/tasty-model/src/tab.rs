@@ -310,7 +310,7 @@ impl Tab {
         // spawn 정보를 take 하지 않고 clone 한다. PTY spawn 이 실패해도
         // placeholder 의 deferred_spawn 이 남아 있어야 다음 reify 트리거에서
         // 재시도된다. (waker 는 Arc, 나머지는 작은 문자열/벡터라 clone 이 저렴.)
-        let spawn = empty.deferred_spawn.clone()?;
+        let spawn = empty.deferred_spawn().cloned()?;
         let persist_id = spawn.scrollback_persist_id.clone();
         let terminal = match spawn_terminal_from_deferred(surface_id, spawn) {
             Ok(t) => t,

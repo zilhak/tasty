@@ -1389,8 +1389,7 @@ impl AppState {
                 ));
             } else if let Some(es) = s.as_any().downcast_ref::<crate::model::EmptySurface>() {
                 let pid = es
-                    .deferred_spawn
-                    .as_ref()
+                    .deferred_spawn()
                     .and_then(|sp| sp.scrollback_persist_id.clone());
                 out.push((es.id, pid));
             } else if let Some(sid) = s.surface_id() {

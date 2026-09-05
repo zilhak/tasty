@@ -36,6 +36,35 @@ pub struct DeferredSpawn {
     pub scrollback_persist_id: Option<String>,
 }
 
+/// Non-terminal(plugin) surface 를 나중에 실제화하기 위한 파라미터.
+///
+/// `EmptySurface { deferred: Some(Deferred::Plugin(..)) }` placeholder 의 본체다.
+/// layout 복원 시점에 plugin 이 아직 hello 를 안 보내 `SurfaceKindRegistry` 에
+/// `kind` 가 없으면(부팅 창) 그 자리를 이 placeholder 가 차지하고, `kind` 가
+/// 등록되는 순간 reify 가 `snapshot` 으로 실제 surface 를 복원한다. `?` 전파로
+/// 형제 tab/pane 이 함께 유실되던 것을 막는 목적 — 상세 [`crate::empty_surface`].
+#[derive(Clone)]
+pub struct DeferredPlugin {
+    /// surface kind 식별자(예: `"markdown"`). registry 등록을 기다리는 대상.
+    pub kind: String,
+    /// 해당 kind 의 `restore` 콜백이 받을 JSON. reify 까지 owned 로 보관한다.
+    pub snapshot: serde_json::Value,
+}
+
+/// `EmptySurface` 가 나중에 실제화될 자리표시자일 때 그 종류를 한 자리에 담는다.
+///
+/// terminal(PTY lazy spawn)과 plugin(kind registry 대기)의 두 지연이 있고, 한
+/// surface 가 **둘 다일 수는 없다** — `Option<DeferredSpawn>` 과
+/// `Option<DeferredPlugin>` 을 각각 필드로 두면 "둘 다 Some" 이라는 무의미 상태가
+/// 타입에 생기므로, enum 하나로 올려 그 상태를 컴파일러가 배제한다.
+#[derive(Clone)]
+pub enum Deferred {
+    /// PTY 가 아직 안 뜬 터미널 자리.
+    Terminal(DeferredSpawn),
+    /// plugin kind 가 아직 registry 에 없는 non-terminal surface 자리.
+    Plugin(DeferredPlugin),
+}
+
 impl Surface for TerminalSurface {
     crate::impl_surface_any!();
 

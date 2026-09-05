@@ -183,8 +183,7 @@ fn capture_surface(
         && es.is_deferred()
     {
         let cwd = es
-            .deferred_spawn
-            .as_ref()
+            .deferred_spawn()
             .and_then(|s| s.working_dir.as_ref())
             .map(|p| p.to_string_lossy().to_string());
         return PresetSurface {

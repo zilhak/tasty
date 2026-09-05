@@ -10,7 +10,9 @@
 
 use crate::core::CoreState;
 use crate::model::closed_item::*;
-use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface};
+use crate::model::{
+    DeferredPlugin, EmptySurface, Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface,
+};
 
 /// rebuild_surface 의 반환 — 단일 surface 인지 layout 인지.
 pub(crate) enum RebuildResult {
@@ -57,13 +59,24 @@ pub(crate) fn rebuild_surface(
         }
         ClosedPanel::Generic { kind, snapshot } => {
             let id = engine.next_ids.next_surface();
-            let def = engine.surface_registry.get(&kind)?;
-            match (def.restore)(id, &snapshot) {
-                Ok(surface) => Some(RebuildResult::Single(surface)),
-                Err(e) => {
-                    tracing::warn!("restore failed for kind '{}': {e}", kind);
-                    None
+            // kind 가 아직 registry 에 없으면(plugin 이 hello 전인 부팅 창) 여기서
+            // None 을 반환해선 안 된다 — 호출자 `rebuild_pane` 의 tab 루프가 `?` 로
+            // 그 pane 의 형제 tab(무고한 terminal 포함)까지 통째로 버린다. 대신
+            // kind/snapshot 을 보존한 deferred placeholder 로 남겨 형제를 살리고,
+            // reify(`reify_displayed_surfaces`)가 kind 등록 후 실제화한다.
+            match engine.surface_registry.get(&kind) {
+                None => {
+                    let ph =
+                        EmptySurface::new_deferred_plugin(id, DeferredPlugin { kind, snapshot });
+                    Some(RebuildResult::Single(Box::new(ph)))
                 }
+                Some(def) => match (def.restore)(id, &snapshot) {
+                    Ok(surface) => Some(RebuildResult::Single(surface)),
+                    Err(e) => {
+                        tracing::warn!("restore failed for kind '{}': {e}", kind);
+                        None
+                    }
+                },
             }
         }
     }
@@ -244,5 +257,76 @@ fn shell_escape(path: &std::path::Path) -> String {
         format!("'{}'", s.replace('\'', "'\\''"))
     } else {
         s.to_string()
+    }
+}
+
+#[cfg(test)]
+mod deferred_plugin_tests {
+    use super::*;
+    use crate::model::closed_item::{ClosedPane, ClosedPanel, ClosedTab};
+
+    fn engine() -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    fn generic_tab(id: u32, kind: &str) -> ClosedTab {
+        ClosedTab {
+            id,
+            name: kind.to_string(),
+            explicit_name: None,
+            panel: ClosedPanel::Generic {
+                kind: kind.to_string(),
+                snapshot: serde_json::json!({ "k": kind }),
+            },
+        }
+    }
+
+    // 부팅 창(plugin hello 전이라 registry 에 kind 없음)에서 Generic surface 를
+    // 복원하면 None 이 아니라 kind/snapshot 을 보존한 deferred placeholder 여야 한다.
+    // None 이면 호출자 rebuild_pane 의 `?` 가 형제 tab 을 통째로 버린다.
+    #[test]
+    fn missing_plugin_kind_rebuilds_as_deferred_placeholder() {
+        let mut e = engine();
+        let panel = ClosedPanel::Generic {
+            kind: "no_such_plugin".to_string(),
+            snapshot: serde_json::json!({ "a": 1 }),
+        };
+        let r = rebuild_surface(&mut e, panel).expect("miss must yield a placeholder, not None");
+        match r {
+            RebuildResult::Single(s) => {
+                let es = s
+                    .as_any()
+                    .downcast_ref::<EmptySurface>()
+                    .expect("placeholder is an EmptySurface");
+                let p = es.deferred_plugin().expect("carries deferred plugin info");
+                assert_eq!(p.kind, "no_such_plugin");
+                assert_eq!(p.snapshot, serde_json::json!({ "a": 1 }));
+            }
+            _ => panic!("expected a single placeholder surface"),
+        }
+    }
+
+    // 핵심 회귀(결함 1): 한 pane 에 plugin tab(kind miss)과 다른 tab 이 함께 있을 때,
+    // miss 가 `?` 로 pane 전체를 죽이지 않고 형제 tab 이 보존돼야 한다. 형제가
+    // terminal 이어도 동일 — `?` 는 rebuild_pane 의 tab 루프 하나라 형제 종류와
+    // 무관하다(여기선 PTY spawn 을 피하려 형제도 Generic 으로 둔다).
+    #[test]
+    fn missing_plugin_kind_preserves_sibling_tabs() {
+        let mut e = engine();
+        let pane = ClosedPane {
+            id: 0,
+            tabs: vec![
+                generic_tab(1, "no_such_plugin"),
+                generic_tab(2, "also_missing"),
+            ],
+            active_tab: 0,
+        };
+        let rebuilt = rebuild_pane(&mut e, pane).expect("pane must survive a missing plugin kind");
+        assert_eq!(
+            rebuilt.tabs.len(),
+            2,
+            "형제 tab 이 보존되어야 한다 (? 전파가 끊겼는지의 명제)"
+        );
     }
 }
