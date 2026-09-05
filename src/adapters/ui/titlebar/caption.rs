@@ -15,6 +15,11 @@ use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 /// 글리프 한 변 크기 (logical points). 46px 버튼 안의 중앙 ~10px 박스.
+///
+/// **아이콘 글리프 스케일 밖(10)** — 그 스케일은 12 · 14 · 15 · 16 이고 10 은 없다.
+/// `primitive.font-size-10` 이 있지만 그건 텍스트 가족이라 글리프 치수의 근거가 되지
+/// 않는다(ADR-0126 "판정은 가족별로 한다"). 인접 tier(12)로 맞추는 것은 값이 바뀌는
+/// 디자인 변경이라 스냅하지 않고 이름과 사유만 둔다.
 const GLYPH: LogicalPx = LogicalPx(10.0);
 /// 글리프 스트로크 굵기 (logical points). UI kit 1px 보더 관습과 동일.
 const GLYPH_STROKE: LogicalPx = LogicalPx(1.0);

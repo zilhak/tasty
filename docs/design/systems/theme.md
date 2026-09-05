@@ -196,7 +196,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 ## 코드 위치
 
 - schema: `crates/tasty-type-appearance/src/{color,theme}.rs`
-- 전역/IO: `crates/tasty-themes/`(`theme()`, `apply_theme`, `resolve`, `install_global[_with_zoom]`, mocha/latte 임베드)
+- 전역/IO: `crates/tasty-themes/`(`theme()`, `apply_theme`, `resolve`, `install_global[_with_runtime]`, mocha/latte 임베드)
 - settings: `crates/tasty-settings/src/appearance.rs`
 - 부팅: `src/app/window_lifecycle.rs::boot_apply_theme`
 </content>
