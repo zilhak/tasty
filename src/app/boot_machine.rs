@@ -38,6 +38,27 @@ use crate::gpu::GpuState;
 /// 동급 케이던스이면서 60fps 프레임 예산에 맞춘 값.
 pub(crate) const BOOT_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
+/// 부팅이 pending layout restore 가 요구하는 plugin surface kind 의 hello 등록을
+/// 기다리는 상한. `WaitingPlugins` 스텝(상태 머신 경로)과
+/// `boot_wait_for_required_plugin_kinds`(동기 루프 경로)가 공유한다.
+///
+/// **이 값은 유실을 막는 값이 아니다.** satisfied 든 이 상한 초과든 apply 는
+/// 어차피 수행되고, apply(=`rebuild_pane` 트리)는 kind 가 아직 registry 에
+/// 없어도 서브트리를 버리지 않고 deferred placeholder 를 남긴다 —
+/// `reify_displayed_surfaces` 가 kind 등록 후 실제화한다(유실 0). 그래서 이
+/// 상한은 **"부팅 첫 프레임에 plugin 자리가 placeholder 로 잠깐 비어 보이는
+/// 것을 얼마나 감출까"의 트레이드오프**다:
+/// - 크게 잡으면 부팅이 그만큼(최대 이 값) hello 를 더 기다려 첫 프레임에 실제
+///   surface 가 이미 차 있을 확률이 오르지만, 그 대기만큼 부팅이 느려진다.
+/// - 작게(0 에 가깝게) 잡으면 부팅이 빨라지지만, hello 가 늦은 plugin 은
+///   placeholder 로 떴다가 다음 프레임 이후 채워지는 깜빡임이 보일 수 있다.
+///
+/// 300 이라는 구체값의 유래는 코드에 근거가 남아있지 않다(승격 전 두 곳 다
+/// 주석 없는 리터럴이었다). 조정하려는 사람은 300 의 유래가 아니라 위
+/// 트레이드오프로 판단하면 된다. deferred/reify 의미론은
+/// [`docs/features/layout-persistence/index.md`] 의 "Plugin surface 복원" 참조.
+pub(crate) const PLUGIN_WAIT_DEADLINE: Duration = Duration::from_millis(300);
+
 /// 부팅 상태 머신의 phase. 스텝 의미론은 구 동기 코드와 1:1 대응한다
 /// (`window_lifecycle.rs` 의 `create_app_state` 참조).
 pub(crate) enum BootPhase {
@@ -326,7 +347,8 @@ impl App {
                 target: "tasty::boot",
                 ms = started.elapsed().as_secs_f64() * 1000.0,
                 reason = if satisfied { "satisfied" } else { "deadline" },
-                "T4 layout_wait_plugins (deadline 300ms)"
+                deadline_ms = PLUGIN_WAIT_DEADLINE.as_millis() as u64,
+                "T4 layout_wait_plugins"
             );
             // 전이 시 1회 apply — 구 코드의 "1차 루프 탈출 → apply → 2차
             // 루프 진입" 순서와 동일. 단일 take 는 Intent 본문이 보장.
@@ -424,7 +446,7 @@ impl App {
             let now = Instant::now();
             boot.phase = BootPhase::WaitingPlugins {
                 started: now,
-                deadline: now + Duration::from_millis(300),
+                deadline: now + PLUGIN_WAIT_DEADLINE,
                 needed,
             };
             false

@@ -263,7 +263,29 @@ fn shell_escape(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod deferred_plugin_tests {
     use super::*;
-    use crate::model::closed_item::{ClosedPane, ClosedPanel, ClosedTab};
+    use crate::model::closed_item::{ClosedPane, ClosedPaneNode, ClosedPanel, ClosedTab};
+
+    // ── (2) deadline=0 관점: hello 를 하나도 기다리지 않고(=registry 미충족 시점)
+    // apply 해도 유실이 없다 ──
+    //
+    // deadline(`PLUGIN_WAIT_DEADLINE`)은 App 부팅의 타이밍값이라 그 자체를 test 에
+    // 값으로 주입하려면 App boot 상태 머신 전체를 fixture 로 세워야 한다("fixture
+    // 안 만든다" 와 충돌). deadline 의 유일한 관측 효과는 "apply 시점에 registry 가
+    // 아직 비어 있는가"이고, deadline=0 은 그 극단(hello 를 하나도 안 기다림)이다.
+    // 그래서 registry 미충족 상태에서 apply 경로(`rebuild_pane_node` 중첩)를 직접
+    // 태우는 것이 deadline=0 주입과 동치다 — 아래 테스트의 `engine()` 은 plugin
+    // kind 를 등록하지 않은 채라 그 자체가 "hello 전" 상태다.
+    //
+    // "유실이 없다" 를 세 술어로 나눠 단언한다(어느 전파 홉이 살아있는지 뭉개지
+    // 않게):
+    //   ① 그 노드가 placeholder 로 남는다(kind 보존)
+    //        → missing_plugin_kind_rebuilds_as_deferred_placeholder
+    //   ② 같은 pane 의 다른 tab 이 산다(1차 전파 = rebuild_pane 의 tab 루프 `?`)
+    //        → missing_plugin_kind_preserves_sibling_tabs
+    //   ③ 형제 pane 이 산다(2차 전파 = rebuild_pane_node::Split 의 `?`)
+    //        → deadline_zero_apply_preserves_sibling_panes
+    // 양성 대조(R136): kind 가 등록돼 있으면(=hello 후) 같은 경로가 placeholder 가
+    // 아니라 실제 surface 를 낸다 → registered_kind_restores_real_surface_not_placeholder.
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -328,5 +350,97 @@ mod deferred_plugin_tests {
             2,
             "형제 tab 이 보존되어야 한다 (? 전파가 끊겼는지의 명제)"
         );
+    }
+
+    // ③ 2차 전파: rebuild_pane_node::Split 에서 한 leaf pane 의 kind miss 가 `?` 로
+    // Split 을 죽이면 형제 pane 이 통째로 사라진다. deadline=0(hello 전) 상태에서도
+    // 형제 pane 이 살아야 한다.
+    #[test]
+    fn deadline_zero_apply_preserves_sibling_panes() {
+        let mut e = engine();
+        let node = ClosedPaneNode::Split {
+            direction: crate::model::SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(ClosedPaneNode::Leaf(ClosedPane {
+                id: 0,
+                tabs: vec![generic_tab(1, "no_such_plugin")],
+                active_tab: 0,
+            })),
+            second: Box::new(ClosedPaneNode::Leaf(ClosedPane {
+                id: 0,
+                tabs: vec![generic_tab(2, "sibling_pane")],
+                active_tab: 0,
+            })),
+        };
+        let rebuilt =
+            rebuild_pane_node(&mut e, node).expect("split must survive a missing kind in one leaf");
+        match rebuilt {
+            PaneNode::Split { first, second, .. } => {
+                assert!(
+                    matches!(*first, PaneNode::Leaf(_)),
+                    "miss leaf 가 placeholder pane 으로 남아야 한다"
+                );
+                assert!(
+                    matches!(*second, PaneNode::Leaf(_)),
+                    "형제 pane 이 보존되어야 한다 (rebuild_pane_node::Split 의 ? 전파가 끊겼는지)"
+                );
+            }
+            _ => panic!("expected a split node"),
+        }
+    }
+
+    // 양성 대조용 등록 kind — restore 가 성공(Ok)해 placeholder 가 아닌 실제 surface 를
+    // 낸다(여기선 관측을 위해 deferred 가 아닌 EmptySurface 를 돌려준다).
+    fn register_ok_kind(e: &mut CoreState, kind: &'static str) {
+        use crate::core::surface_registry::SurfaceKindDef;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        e.surface_registry.register(SurfaceKindDef {
+            kind,
+            display_name_i18n_key: "test.dummy",
+            icon: None,
+            create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),
+            restore: Arc::new(|id, _| Ok(Box::new(EmptySurface::new(id)) as Box<dyn Surface>)),
+            snapshot: Arc::new(|_| None),
+            preset_fields: Vec::new(),
+            param_aliases: HashMap::new(),
+            default_params: HashMap::new(),
+            consumes_egui_input: false,
+            zoomable: false,
+            egui_copy: false,
+            copy_path: false,
+            egui_paste: false,
+            name_from_param: None,
+            records_recent: false,
+            convert_requires_input: false,
+            convert_input_popup: None,
+        });
+    }
+
+    // 양성 대조(R136): kind 가 registry 에 등록돼 있으면(=hello 도착 후) 같은 miss
+    // 경로가 placeholder 가 아니라 restore 가 만든 실제 surface 를 낸다. 이게 없으면
+    // "무조건 placeholder 가 나오는 것 아니냐" 를 배제하지 못한다.
+    #[test]
+    fn registered_kind_restores_real_surface_not_placeholder() {
+        let mut e = engine();
+        register_ok_kind(&mut e, "present_plugin");
+        let panel = ClosedPanel::Generic {
+            kind: "present_plugin".to_string(),
+            snapshot: serde_json::json!({ "a": 1 }),
+        };
+        let r = rebuild_surface(&mut e, panel).expect("registered kind restores");
+        match r {
+            RebuildResult::Single(s) => {
+                let es = s
+                    .as_any()
+                    .downcast_ref::<EmptySurface>()
+                    .expect("our test restore returns an EmptySurface");
+                assert!(
+                    es.deferred_plugin().is_none(),
+                    "등록된 kind 는 deferred placeholder 가 아니라 실제 복원이어야 한다"
+                );
+            }
+            _ => panic!("expected a single surface"),
+        }
     }
 }

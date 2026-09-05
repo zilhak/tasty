@@ -442,10 +442,11 @@ impl App {
     /// `required_plugin_kinds` 만 peek (take 안 함) — Intent 본문이 단일 take 를
     /// 보장. T4 부팅 계측 포함 (탈출 사유: satisfied / deadline).
     fn boot_wait_for_required_plugin_kinds(&mut self) {
+        use crate::app::boot_machine::PLUGIN_WAIT_DEADLINE;
         use std::time::{Duration, Instant};
         let needed = self.boot_required_plugin_kinds();
         let t4 = Instant::now();
-        let deadline = t4 + Duration::from_millis(300);
+        let deadline = t4 + PLUGIN_WAIT_DEADLINE;
         let mut t4_reason = "deadline";
         while Instant::now() < deadline {
             if self.boot_pump_step_plugins_registered(&needed) {
@@ -458,7 +459,8 @@ impl App {
             target: "tasty::boot",
             ms = t4.elapsed().as_secs_f64() * 1000.0,
             reason = t4_reason,
-            "T4 layout_wait_plugins (deadline 300ms)"
+            deadline_ms = PLUGIN_WAIT_DEADLINE.as_millis() as u64,
+            "T4 layout_wait_plugins"
         );
     }
 
