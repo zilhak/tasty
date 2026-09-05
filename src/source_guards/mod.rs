@@ -733,6 +733,11 @@ mod gallery_copied_dimensions;
 #[cfg(test)]
 mod gallery_specimen_parity;
 
+/// 재수출된 공용 위젯을 갤러리가 한 번이라도 부르는지 본다. 위 두 가드가 popup 과 무대를
+/// 덮으면서 **공용 위젯은 등록처가 없어 못 덮는다**고 적어 둔 자리다.
+#[cfg(test)]
+mod gallery_widget_coverage;
+
 mod headless_app_layer_coverage;
 
 #[cfg(test)]
