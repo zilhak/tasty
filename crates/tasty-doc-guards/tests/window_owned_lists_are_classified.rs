@@ -22,6 +22,20 @@
 //! 두 가지다 — 합산 집합에서 무엇이 **빠지는** 것을 잡고, 지금 안 합산되는 자원이
 //! **왜** 그런지를 검사받는 텍스트로 만든다.
 //!
+//! ## 옆 명부와 **물음이 다르다** — 합치지 않는다
+//!
+//! `src/source_guards/routing_key_method_scope.rs` 의 `PAIR_EXEMPT` 도 포커스 대체 축의
+//! 명부이고 겹치는 메서드도 있지만, 묻는 것이 다르다:
+//!
+//! | | 묻는 것 | 답이 옳을 때 |
+//! |---|---|---|
+//! | 이 명부 | 이 목록을 **합쳐야 하는가** | 호출자가 전 창의 자원을 본다 |
+//! | `PAIR_EXEMPT` | 이 요청이 **주인 창을 찾는가** | 지목한 자원이 있는 창으로 간다 |
+//!
+//! 읽기(전 창 합산)와 지목(한 창 해석)은 같은 자원에 대해 **둘 다** 필요할 수 있다 —
+//! global hook 이 그 예다: 여기서는 `Aggregated` 이고 저기서는 `Kind::GlobalHook` 으로
+//! 푼다. 하나로 합치면 그중 한 물음의 답이 사라진다.
+//!
 //! ## 이 가드가 도는 자리가 값이다
 //!
 //! 같은 축의 실행 단언은 `tests/e2e_tests.rs` 의 `multi_window_owner_routing` 에
@@ -87,13 +101,13 @@ const ROSTER: &[(&str, Class, &str)] = &[
     ),
     (
         "hook.list",
-        PerEngineNotAggregated,
-        "`hook_manager` 가 engine 마다 새로 만들어지고 hook id 가 IdGenerator 에 없어 창 간 충돌한다 — 합산 전에 id 공간을 먼저 고쳐야 한다",
+        Aggregated,
+        "hook id 가 IdGenerator 공유로 바뀌어 창을 건너 유일하다. `surface_id` 는 대상이 아니라 필터라 주인 창을 정하지 않는다 — 그래서 합산이 답이다",
     ),
     (
         "global_hook.list",
-        PerEngineNotAggregated,
-        "`global_hook_manager` 도 engine 마다 새로 만들어진다. 이름과 달리 창에 매여 있고 id 도 충돌한다",
+        Aggregated,
+        "global hook id 도 IdGenerator 공유. 이름과 달리 창에 매인다(`global_hook_manager` 가 CoreState 필드) — 그 성질 때문에 합산이 필요하고, 지목은 Kind::GlobalHook 이 따로 푼다",
     ),
     (
         "notification.list",
@@ -110,6 +124,77 @@ const ROSTER: &[(&str, Class, &str)] = &[
         PerEngineNotAggregated,
         "engine 별 `OccupancyRegistry`. CLI 표면이 없어(`tasty tool attach` 는 다른 메서드) 실행 재현은 안 했다",
     ),
+    // ── 아래는 dispatch 표의 `.list` 전수를 명부와 대조하다 드러난 것들이다.
+    // 그 대조가 없던 동안 이 명부는 `.list` 27 중 13 만 덮고 있었다.
+    (
+        "image.list",
+        PerEngineNotAggregated,
+        "`engine.workspaces` 를 순회한다 — 창 소유인데 합산에 없다. 다만 `tasty-plugin-image` 가 `image` prefix 를 선언하고 namespace forward 가 `dispatch_list_global` 앞이라 이 host 핸들러에 요청이 닿는지부터가 별개 축이다(plugin 이 host 메서드를 그림자로 덮는 형태)",
+    ),
+    (
+        "completion_strategy.list",
+        SharedAcrossEngines,
+        "`completion_strategy::global()` — 프로세스 전역 레지스트리라 어느 창으로 가도 같다",
+    ),
+    (
+        "hook_handler.list",
+        SharedAcrossEngines,
+        "`hook_handler::global()` — 상동. hook **핸들러**는 전역이고 hook **인스턴스**만 창 소유다",
+    ),
+    (
+        "webhook.list",
+        SharedAcrossEngines,
+        "`webhook::list()` — 프로세스 전역",
+    ),
+    (
+        "session.list",
+        SharedAcrossEngines,
+        "`core.session_list()` — `core` 는 전 engine 이 같은 것을 본다",
+    ),
+    (
+        "preset.list",
+        SharedAcrossEngines,
+        "`core.preset_store` (공유 Mutex). 핸들러가 `state` 를 받지만 `_state` 로 안 쓴다",
+    ),
+    (
+        "memory.secret.list",
+        SharedAcrossEngines,
+        "`core.with_memory` — `memory.list` 와 같은 저장소",
+    ),
+    (
+        "telemetry.cap.list",
+        SharedAcrossEngines,
+        "`core` 만 읽는다(`_state` · `_engine` 미사용)",
+    ),
+    ("telemetry.anomaly.list", SharedAcrossEngines, "상동"),
+    (
+        "remote.profile.list",
+        SharedAcrossEngines,
+        "`RemoteProfiles::load` — 파일에서 읽으므로 engine 과 무관",
+    ),
+    (
+        "remote.passkey.list",
+        SharedAcrossEngines,
+        "`Passkeys::load` — 상동",
+    ),
+];
+
+/// 이 축의 범위 밖인 `.list` 메서드와 그 이유.
+///
+/// debug IPC 는 **사용자 조작을 재현하는** 검증 도구이고 release 표면에 없다
+/// (CLAUDE.md 의 불가침 원칙 1). 포커스 독립성은 *에이전트 기능*에 거는 요구라
+/// 여기 셋은 같은 잣대로 재지 않는다 — 다만 범위 밖이라는 것을 **적어 둬야**
+/// 다음 사람이 누락과 못 가른다.
+const OUT_OF_SCOPE: &[(&str, &str)] = &[
+    (
+        "debug.tool.list",
+        "debug 전용. `state.tool_registry` 라 창별인 것은 맞다",
+    ),
+    (
+        "debug.banner.list",
+        "debug 전용. 정의 목록 자체는 `all_defs()` 로 전역이다",
+    ),
+    ("debug.host_popup.list", "debug 전용. 상동"),
 ];
 
 fn repo_root() -> PathBuf {
@@ -186,6 +271,79 @@ fn every_entry_carries_a_reason() {
     assert!(empty.is_empty(), "사유가 빈 명부 항목: {empty:?}");
 }
 
+/// dispatch 표에서 `"<이름>.list"` 형태의 메서드를 전부 뽑는다.
+///
+/// **자동 발견이 아니다.** 창 소유인지 판정하려는 것이 아니라 — 그 술어는 이 저장소에서
+/// 네 번 다 샜다(모듈 doc 참조) — **이 명부가 표를 덮는지**만 본다. 이름 모양으로는
+/// `tree` 같은 것을 못 보지만, 그런 것은 명부가 손으로 덮는다. 여기서 잡는 것은 그 반대
+/// 방향이다: 표에 있는데 명부에도 범위 밖 목록에도 없는 것.
+fn dispatch_list_methods(root: &Path) -> Vec<String> {
+    let src = std::fs::read_to_string(root.join("src/adapters/ipc/handler.rs"))
+        .expect("handler.rs 를 읽지 못했다 — 경로가 바뀌었으면 이 가드도 함께 옮긴다");
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        if t.starts_with("//") {
+            continue;
+        }
+        let mut rest = t;
+        while let Some(at) = rest.find('"') {
+            let after = &rest[at + 1..];
+            let Some(end) = after.find('"') else { break };
+            let lit = &after[..end];
+            if lit.ends_with(".list")
+                && lit
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '.' || c == '_')
+            {
+                out.push(lit.to_string());
+            }
+            rest = &after[end + 1..];
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// 명부가 dispatch 표의 `.list` 를 덮는가.
+///
+/// 이 검사가 없던 동안 명부는 표의 `.list` 27 중 13 만 덮고 있었고, 빠진 것 중에
+/// **창 소유가 하나 있었다**(`image.list` — `engine.workspaces` 를 순회한다). 명부의
+/// 한계로 적혀 있던 "새 list 메서드가 들어와도 모른다" 가 실제로 그만큼 벌어져 있었다.
+#[test]
+fn the_roster_covers_every_list_method_in_the_dispatch_table() {
+    let root = repo_root();
+    let found = dispatch_list_methods(&root);
+    assert!(
+        found.len() >= 20,
+        "dispatch 표에서 `.list` 를 {} 개밖에 못 뽑았다 — 추출이 깨졌다. \
+         모수가 줄면 '빠진 것 없음' 은 언제나 참이다",
+        found.len()
+    );
+    let known: std::collections::BTreeSet<&str> = ROSTER
+        .iter()
+        .map(|(m, _, _)| *m)
+        .chain(OUT_OF_SCOPE.iter().map(|(m, _)| *m))
+        .collect();
+    let missing: Vec<&String> = found
+        .iter()
+        .filter(|m| !known.contains(m.as_str()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "dispatch 표에 있는데 명부에도 범위 밖 목록에도 없는 `.list` 메서드다. \
+         창 소유 컬렉션을 순회하면 갈래와 사유를 달아 `ROSTER` 에, 그렇지 않으면 \
+         `OUT_OF_SCOPE` 에 이유와 함께 적어라 — 어느 쪽인지 **적히지 않은 것**이 \
+         이 명부의 사각이다:\n  {}",
+        missing
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}
+
 #[test]
 fn the_open_ones_are_not_silently_emptied() {
     // 열린 결함이 사라졌다면 그것은 고쳐졌다는 뜻이고, 그때 갈래를 옮기는 것이
@@ -196,7 +354,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .filter(|(_, c, _)| *c == PerEngineNotAggregated)
         .count();
     assert_eq!(
-        open, 5,
+        open, 4,
         "창별인데 합산 안 되는 항목의 수가 바뀌었다. 고쳤으면 갈래를 옮기고 이 수를 \
          함께 내려라 — 남겨 두면 다음 사람이 이미 닫힌 것을 다시 센다."
     );
