@@ -81,6 +81,8 @@
 
 ### Fixed
 
+- **`split` 이 지목한 대상이 아니라 포커스된 창에서 실행되던 것** — `tasty split --target-surface <ID>` (IPC `split`)는 대상이 **필수**인데, 라우팅이 `target_surface`/`target_pane` 을 인식하지 않아 모든 split 이 포커스된 창으로 갔다. 창이 둘일 때 같은 요청이 사용자가 어디를 클릭했느냐에 따라 성공하기도 `"surface N not found"` 로 실패하기도 했다 — 그 surface 는 다른 창에 살아 있는 채로. 이제 두 키로 주인 창을 찾고, 존재하지 않는 대상은 `-32602` 로 거절한다(`no live surface N (named by 'split')`). CLI 가 이 값을 문자열로 싣는 형태와 nickname 으로 지목하는 형태도 함께 풀린다.
+
 - **`claude.kill` · `claude.respawn` · `codex.kill` · `codex.respawn` 이 지목한 부모가 아닌 대상에 실행되던 것** — 두 plugin 다 대상 surface 를 `surface` 키로만 호스트에 넘겼는데, 호출자가 `surface_id` 로 지목하면 그 값이 실리지 않아 호스트의 **"부모가 하나뿐이면 그것" 폴백**에 떨어졌다. 실재하지 않는 surface 를 지목한 호출이 성공을 돌려주며 남의 자식을 죽였고, 폴백은 namespace 를 안 가려서 `codex.kill` 이 claude 자식을 죽이는 것까지 재현됐다. CLI 는 두 키를 모두 채워 보내므로 **raw IPC 호출에서만** 났다. 이제 두 이름을 한 필드로 읽고(판정 한 벌 — `tasty-plugin-agent-common`), 두 값이 다르면 `-32602` 로 거절한다. 아무 이름도 안 준 호출의 폴백은 그대로다.
 - **`codex.*` 가 `surface_id` 로 지목한 호출을 거절하던 것** — `codex.parent`/`state`/`tell`/`spawn`/`respawn`/`children` 은 `surface` 만 받았다. `docs/dev-guide/agent-runner.md` 가 `codex.spawn` 도 `claude.spawn` 과 "같은 모양" 이라고 적은 그 모양(`params.surface_id`)이 실제로는 안 됐다.
 - **claude 의 인자 오류 문구가 안 받는 키를 받는다고 적던 것** — `Missing required 'surface' (or 'surface_id') parameter` 라고 답하면서 `surface` 는 안 읽었다.

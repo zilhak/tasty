@@ -170,6 +170,32 @@ pub(crate) fn method_scoped_resource_id(
             id,
         });
     }
+    // `split` 은 대상을 **반드시** 지목한다 — `target_surface` 와 `target_pane` 중 하나가
+    // 필수이고 둘 다 주면 핸들러가 거절한다. 그런데 그 두 키가 인식 밖이라 모든 split 이
+    // 포커스된 창으로 갔다. 실측(2026-09-05, 창 둘 · 두 surface 다 살아 있는 상태):
+    //
+    //     포커스 B: split{target_surface:1} → "surface 1 not found"   split{target_surface:2} → 성공
+    //     포커스 A: split{target_surface:1} → 성공                     split{target_surface:2} → "surface 2 not found"
+    //
+    // 같은 요청이 **사용자가 어디를 클릭했느냐**에 따라 성공하기도 실패하기도 했다
+    // (`docs/design/policies/focus.md` 의 활성 상태 의존 금지). `workspace.update` 가
+    // 아래에서 고쳐진 것과 같은 형태다.
+    if method == "split" {
+        if let Some(id) = numeric(params, "target_pane") {
+            return Some(ResourceId {
+                kind: Kind::Pane,
+                id,
+            });
+        }
+        // CLI 는 이 값을 **문자열로** 보낸다(같은 인자가 nickname 도 받아서 한 타입으로
+        // 고정돼 있다) — 숫자만 보면 CLI 경로가 통째로 안 풀린다. 숫자로 안 읽히는
+        // 값은 nickname 이고, 그 해석은 memory store 를 봐야 해서 이 순수 함수 밖이다
+        // (그 경우는 여기서 `None` 이 되어 종전 경로를 탄다).
+        return numeric_or_numeric_string(params, "target_surface").map(|id| ResourceId {
+            kind: Kind::Surface,
+            id,
+        });
+    }
     if matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
         return numeric(params, "id").map(|id| ResourceId {
             kind: Kind::HeadlessPty,
@@ -181,6 +207,18 @@ pub(crate) fn method_scoped_resource_id(
 
 fn numeric(params: &serde_json::Value, key: &str) -> Option<u64> {
     params.get(key).and_then(|v| v.as_u64())
+}
+
+/// 숫자, 또는 **숫자로 읽히는 문자열**. 핸들러가 같은 순서로 읽는 자리에만 쓴다
+/// (`pane::resolve_surface_target` 도 문자열을 먼저 `parse::<u32>()` 하고 실패하면
+/// nickname 으로 넘어간다) — 라우팅이 핸들러보다 더 관대하면 라우팅만 성공하는
+/// 값이 생긴다.
+fn numeric_or_numeric_string(params: &serde_json::Value, key: &str) -> Option<u64> {
+    let v = params.get(key)?;
+    if let Some(n) = v.as_u64() {
+        return Some(n);
+    }
+    v.as_str()?.parse::<u32>().ok().map(u64::from)
 }
 
 /// 이 engine 이 그 리소스를 갖고 있는가 — parked engine 탐색의 술어.
@@ -252,6 +290,41 @@ mod tests {
     fn rid(params: &serde_json::Value) -> (&str, Kind, u64) {
         let (key, r) = params_resource_id(params).expect("expected a resource id");
         (key, r.kind, r.id)
+    }
+
+    /// `split` 은 **대상이 필수**인데 그 두 키가 인식 밖이라 모든 split 이 포커스된
+    /// 창으로 갔다. 실측(창 둘): 같은 요청이 포커스에 따라 성공하기도
+    /// `"surface N not found"` 로 실패하기도 했다 — 두 surface 다 살아 있는 채로.
+    #[test]
+    fn split_names_its_target_and_routing_reads_it() {
+        let by =
+            |p: &serde_json::Value| method_scoped_resource_id("split", p).map(|r| (r.kind, r.id));
+        assert!(matches!(
+            by(&json!({ "level": "pane", "target_pane": 3 })),
+            Some((Kind::Pane, 3))
+        ));
+        assert!(matches!(
+            by(&json!({ "level": "surface", "target_surface": 7 })),
+            Some((Kind::Surface, 7))
+        ));
+        // ★ CLI 는 이 값을 **문자열로** 보낸다(같은 인자가 nickname 도 받는다).
+        // 숫자만 보면 CLI 로 들어온 split 이 통째로 안 풀린다.
+        assert!(
+            matches!(
+                by(&json!({ "level": "surface", "target_surface": "7" })),
+                Some((Kind::Surface, 7))
+            ),
+            "CLI 가 보내는 문자열 형태가 안 풀린다 — 실제 사용 경로 전부가 폴백으로 간다"
+        );
+        // nickname 은 memory store 를 봐야 풀린다 — 순수 함수 밖이라 여기선 `None` 이고
+        // `App::find_request_owner` 가 이어받는다.
+        assert!(by(&json!({ "target_surface": "faraway" })).is_none());
+        assert!(by(&json!({ "level": "surface" })).is_none());
+        // 자르지 않는다 — 잘린 값은 실재하는 다른 surface 를 가리킨다.
+        assert!(
+            by(&json!({ "target_surface": (u64::from(u32::MAX) + 2).to_string() })).is_none(),
+            "32 비트를 넘는 값을 잘라서 다른 surface 로 만들었다"
+        );
     }
 
     /// 표준 키(surface_id/pane_id/workspace_id)는 기존 그대로 인식된다(회귀 방지).
