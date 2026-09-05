@@ -24,6 +24,8 @@ pub const SEED_PORT: u16 = 28429;
 pub fn config_path() -> PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("webhooks.toml"))
+        // 이유: 홈 미해결에서만 쓰는 공유 폴백. 인스턴스별 격리가 목적이 아니라 사용자
+        // config 라 의도된 공유다(홈 없는 환경은 예외적, 파일핸들러 선례와 동일).
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-webhooks.toml"))
 }
 

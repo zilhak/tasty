@@ -33,6 +33,9 @@ pub mod shipping_scope;
 /// 락 poison 을 보고 없이 복구하는 자리를 집는다.
 pub mod poison_recovery;
 
+/// 공유 temp 아래 고정 이름 임시 경로를 집는다(ADR-0129 형태 B).
+pub mod temp_path;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

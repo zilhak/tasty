@@ -1464,6 +1464,8 @@ fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
 fn file_handler_recent_path() -> std::path::PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("file-handler-recent.json"))
+        // 이유: 홈 미해결(CI 등)에서만 쓰는 공유 폴백. 인스턴스별 격리가 목적이 아니라
+        // 사용자 LRU 라 의도된 공유다 — 홈이 없으면 save 가 안 되고 in-memory 로만 돈다.
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }
 
