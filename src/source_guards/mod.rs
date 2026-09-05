@@ -743,6 +743,11 @@ mod gallery_copied_rules;
 #[cfg(test)]
 mod gallery_widget_coverage;
 
+/// 레포 상대 경로를 문자열로 펴는 자리가 구분자를 정규화하는지 본다. 성질(구분자)은
+/// Linux 에서 못 재므로 **형태**(정규화를 거치는가)를 본다.
+#[cfg(test)]
+mod repo_relative_paths;
+
 mod headless_app_layer_coverage;
 
 #[cfg(test)]

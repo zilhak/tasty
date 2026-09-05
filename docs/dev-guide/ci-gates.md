@@ -579,6 +579,34 @@ done | wc -l
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
+### 처방을 낼 때는 그 처방을 재는 채널의 이름을 함께 적는다
+
+어떤 성질은 **한 플랫폼에서만 관측된다.** 그 성질의 처방을 다른 플랫폼에서 도는 단정으로
+"검증했다" 고 적으면, 그 단정은 처방 전후로 똑같이 초록이다 — 검증했다고 적히고 실제로는
+아무것도 재지 않은 상태가 남는다.
+
+실례가 경로 구분자다. `Path::strip_prefix` 는 그 플랫폼의 구분자를 남기고, 그 결과를
+문자열로 펴서 소스에 박힌 `/` 리터럴과 맞추면 Windows 에서만 어긋난다. 어긋남은 예외가
+아니라 **조용한 0** 이라 조회가 전부 빗나간 채 "위반 0" 이 나온다. Linux·macOS 는 고치기
+전에도 `/` 를 내므로 세 게이트(full·unit·headless)가 처방 전후로 똑같이 초록이었고,
+답한 채널은 `check-windows` 하나였다.
+
+그래서 두 가지를 나눠 적는다.
+
+- **성질을 재는 채널** — 구분자 정규화가 살아 있는지 묻는 단정은
+  `crates/tasty-doc-guards/src/source_text.rs` 의 유닛 테스트에 있고, 그것을 **실행하는
+  채널은 `check-windows` 하나다**(`--lib --bins`). 그 단정 자리에 채널 이름을 함께
+  적어 둔다 — 안 적으면 다음 사람이 Linux 의 초록을 증거로 읽는다.
+- **형태를 재는 채널** — 잴 수 없는 성질은 잴 수 있는 형태로 옮긴다.
+  `src/source_guards/repo_relative_paths.rs` 는 구분자를 재지 않고, 레포 상대 경로를
+  문자열로 펴는 자리가 공용 정규화(`source_text::repo_relative`)를 지나는지를 본다.
+  형태는 소스에 있으니 **어느 플랫폼에서든 같은 답**이 나오고, 그래서 이 가드는 유닛
+  타깃이 도는 모든 조합에서 채널을 갖는다.
+
+채널이 없으면 **"없다" 고 적는다.** 있는 척하는 단정보다 낫다 —
+[ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) 가 수에
+대해 말한 것과 같은 이유로, 검증 주장도 그 출처를 잃으면 낡은 채로 읽힌다.
+
 ### macOS 유닛 테스트의 비용은 이 잡의 시간이 아니다
 
 `check-macos` 는 오래 `cargo check` 하나뿐이었고, 그래서 **macOS 로 게이트된 유닛 테스트는
