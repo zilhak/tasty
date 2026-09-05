@@ -19,6 +19,11 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(docs 스캔 구조) · `tests/no_emoji_in_source.rs`.
 
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::path::{Path, PathBuf};
 
 /// 스캔에서 제외할 파일(repo-relative). 현재 비어 있다 — 규칙 본문은 금지 형태를
