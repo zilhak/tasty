@@ -57,6 +57,23 @@ const MIN_DECLARED_NAMESPACES: usize = 4;
 /// 값의 근거: 2026-09-05 실측 `METHOD_TABLE.len()` = 276.
 const MIN_HOST_METHODS: usize = 200;
 
+/// **두 변이 실제로 만난 횟수**의 하한 — 이 시험이 무엇이든 판정한 횟수다.
+///
+/// 위 두 하한은 각 변의 크기만 본다. 그런데 판정이 일어나는 자리는 **교집합**이고,
+/// 두 변이 아무리 커도 교집합이 비면 비교는 한 번도 안 일어난 채 초록이다. 그 초록은
+/// "가려진 메서드가 없다" 가 아니라 **"아무것도 안 봤다"** 인데 둘의 관측이 같다.
+///
+/// 2026-09-06 실측 **2** — `image`(host 7 건) · `markdown`(host 1 건).
+/// 선언은 여섯인데 넷(`agent_stream` · `claude` · `codex` · `html`)은 host 쪽에 같은
+/// prefix 의 메서드가 없어 `continue` 로 빠진다. 즉 이 시험이 실제로 판정하는 것은
+/// 선언의 3 분의 1 이다.
+///
+/// 하한을 2 가 아니라 **1** 로 둔다: `markdown` 의 host 메서드 한 건이 없어지면
+/// 1 이 되는 것이 정상이고, 그것은 이 시험이 잡으려는 결함이 아니다. 1 이 주장하는
+/// 것은 하나뿐이다 — **두 변을 잇는 join(prefix 문자열 일치)이 살아 있는가.**
+/// 그것이 죽으면 0 이 되고, 그때 위 두 하한은 **둘 다 통과한다.**
+const MIN_JOINED_PREFIXES: usize = 1;
+
 fn read(path: &std::path::Path) -> String {
     std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("{} 을 읽지 못했다: {e}", path.display()))
@@ -165,6 +182,9 @@ fn every_host_method_under_a_bundled_namespace_is_handled_by_that_plugin() {
     // "선언이 정말 줄었다" 를 가르려면 무엇이 세어졌는지가 보여야 한다.
     let mut declared: Vec<String> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
+    // 두 변이 실제로 만난 것 — 이 시험이 무엇이든 판정한 자리다. 수가 아니라 목록으로
+    // 모은다: 0 이 아닐 때도 "무엇이 빠졌나" 를 declared 와 차집합으로 읽을 수 있다.
+    let mut joined: Vec<String> = Vec::new();
     for dir in bundled_plugin_dirs() {
         for prefix in declared_prefixes(&dir) {
             declared.push(format!(
@@ -175,6 +195,7 @@ fn every_host_method_under_a_bundled_namespace_is_handled_by_that_plugin() {
                 // host 가 그 이름 아래 아무것도 구현하지 않았다 — 가려질 것이 없다.
                 continue;
             };
+            joined.push(format!("{prefix}(host {} 건)", host.len()));
             let bodies = dispatch_bodies(&dir);
             assert!(
                 !bodies.is_empty(),
@@ -194,6 +215,32 @@ fn every_host_method_under_a_bundled_namespace_is_handled_by_that_plugin() {
             }
         }
     }
+
+    assert!(
+        joined.len() >= MIN_JOINED_PREFIXES,
+        "이 시험이 실제로 판정한 자리가 {} 개다(하한 {MIN_JOINED_PREFIXES}).\n  \
+         만난 것: {:?}\n  \
+         선언된 것: {:?}\n  \
+         판정은 두 변의 **교집합**에서만 일어난다. 위 두 하한(호스트 메서드 수 · 선언 \
+         수)은 각 변의 크기만 보므로, 교집합이 비어도 **둘 다 통과한다** — 그때 아래 \
+         포함 판정은 한 번도 안 돌고 시험은 초록이다. 그 초록의 뜻은 \"가려진 메서드가 \
+         없다\" 가 아니라 \"아무것도 안 봤다\" 인데, 두 관측이 같다.\n  \
+         ★ 세계가 둘이고 **이 메시지만으로는 안 갈린다.** 가르는 조작은 하나다 — \
+         `host_methods_by_prefix()` 의 키를 찍어 위 '선언된 것' 의 prefix 문자열과 \
+         맞춰봐라:\n  \
+         (1) 키에 그 prefix 가 **있는데** 안 만났다 → join 이 죽었다(한쪽의 문자열 \
+         형태가 달라졌다. 대소문자 · 구분자 · 접미사). 이 하한이 잡으려던 것이 바로 \
+         그것이다. 하한을 건드리지 마라.\n  \
+         (2) 키에 **없다** → host 쪽에 그 이름의 메서드가 정말 없다. 그러면 이 시험은 \
+         지킬 대상 자체가 없다. **하한을 0 으로 내리지 마라** — 0 은 (1) 을 영영 \
+         안 보이게 만든다. 대신 이 시험이 무엇을 지키는지 다시 적어라: 그 상태에서 \
+         이 시험은 어떤 회귀도 못 잡으므로, 남길 이유가 있으면 그 이유를 쓰고 없으면 \
+         시험째 지우는 것이 맞다. 하한만 내려 초록으로 만드는 것이 셋 중 유일하게 \
+         틀린 답이다.",
+        joined.len(),
+        joined,
+        declared,
+    );
 
     assert!(
         declared.len() >= MIN_DECLARED_NAMESPACES,
