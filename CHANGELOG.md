@@ -90,6 +90,8 @@
 
 ### Fixed
 
+- **`tasty plugin remove` 로 지운 기본 제공 플러그인이 다음 실행에 되살아나던 것** — 제거를 영속시키는 기록(`plugins.toml` 의 `removed_builtins`)이 설정 모달의 **Uninstall 에만** 걸려 있었고, CLI·IPC 경로는 그 기록을 안 남겼다. 그래서 같은 "제거" 가 GUI 로 하면 영구, 명령으로 하면 다음 실행에 **꺼진 채로 부활**이었다 — 제거되지도 않고 동작하지도 않는 상태. 사용자 가이드는 처음부터 "제거한 기본 플러그인은 다음 실행 때 다시 설치되지 않습니다" 라고 적고 있었으므로, 명령 쪽이 문서와 어긋나 있었다. 이제 두 경로가 같은 본문을 지나며 기록을 남긴다. 되살리는 방법은 종전과 같다 — `tasty plugin upgrade-builtins --restore-removed <id>`. 되살린 플러그인은 **켜진 상태**로 온다(제거가 남기던 비활성 자국도 함께 정리한다).
+
 - **plugin 을 제거해도 그 이름이 계속 예약돼 있던 것** — `plugin.remove` 는 설치 목록만 손으로 지우고 **namespace 소유 표를 다시 만들지 않았다.** 소유 표는 설치된 매니페스트에서 유도되는데(제거된 plugin 은 거기 없다) 유도를 안 돌리니 표에 옛 항목이 남았고, 그 prefix 의 호출이 `-32002 plugin '<id>' is not running` 으로 거절됐다 — 설치조차 안 돼 있는데. 호스트가 같은 이름에 구현을 가진 `image.list` · `image.open` · `markdown.navigate` 는 그 상태에서 **닿을 방법이 없었다**(실측: `plugin.remove com.tasty.image` 뒤 `plugin.list` 는 8 개인데 `image.list` 는 `-32002`). 이제 제거도 설치와 같은 재발견 경로를 거쳐, 제거 직후 그 이름은 호스트 구현이 답한다.
 
 - **한 머신에 tasty 를 두 벌 띄우면 자식 CLI 의 prompt 가 섞이던 것** — claude·codex plugin 이 자식에게 넘길 prompt 를 임시파일에 쓰고 `$(cat '<path>')` 로 치환하는데, 그 파일 이름이 `{plugin prefix}{surface_id}.txt` 라 **인스턴스마다 달라지는 성분이 없었다.** surface id 공간은 인스턴스마다 독립이고 매 실행 1 부터 재발급되므로 두 인스턴스에 같은 번호의 surface 가 동시에 산다 — 그때 두 인스턴스의 같은 plugin 이 같은 파일을 쓴다. 쓰기가 "지우고 다시 만들기" 라, 한쪽의 쓰기가 다른 쪽 자식 셸의 치환 사이에 끼면 **prompt 가 빈 문자열이 되거나 남의 prompt 가 들어갔다.** 이제 이름에 plugin 프로세스의 pid 가 들어가 인스턴스 축이 갈린다. 청소 스윕은 그대로다 — pid 를 prefix 뒤에 두어 이전 버전이 남긴 이름도 같은 패턴에 걸린다.

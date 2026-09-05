@@ -209,6 +209,27 @@ impl App {
         }
         std::fs::remove_dir_all(&plugin_dir)
             .map_err(|e| anyhow::anyhow!("remove dir failed: {e}"))?;
+        // 제거를 **기록**한다 — 번들 plugin 은 디스크에서 지우는 것만으로는 제거되지
+        // 않는다. 다음 부팅의 `install_builtins_if_needed` 가 다시 놓기 때문이다.
+        // `mark_builtin_removed` 는 외부 plugin 이면 no-op 이라 번들/비번들 구분이
+        // 이 함수 하나에 모여 있다.
+        //
+        // **이 호출은 진입점이 아니라 여기 있어야 한다.** 설정 모달의 Uninstall 만
+        // 이걸 부르고 IPC `plugin.remove` 는 안 불렀던 적이 있다 — 같은 이름의 조작이
+        // 진입점에 따라 다른 일을 했고, GUI 로는 되고 에이전트로는 안 되는 동작이라
+        // 불가침 원칙 2 를 어겼다. 공용 본문에 두면 다음 진입점이 잊을 수 없다.
+        // 되돌리는 수단: `plugin.upgrade_builtins { restore_removed: [...] }` ·
+        // CLI `--restore-removed` / `--restore-removed-all` (ADR-0179).
+        crate::plugin::mark_builtin_removed(mgr, &plugin_id);
+        // 비활성 자국은 **설치된 것에 대한** 상태다. 제거된 id 를 거기 남겨 두면 그
+        // 자국이 다음 설치의 기본값을 조용히 정한다 — 되돌림(`restore_removed`)으로
+        // 다시 놓은 plugin 이 이유 없이 꺼진 채로 온다. 제거 의사는 이제 제 자리
+        // (`removed_builtins`)에 적히므로 이 자국은 남길 이유가 없다.
+        if mgr.config.enable(&plugin_id)
+            && let Err(e) = mgr.config.save()
+        {
+            tracing::warn!("plugins.toml save failed after clearing disabled mark: {e}");
+        }
         // 설치 목록을 **다시 발견**한다 — 손으로 `packages` 만 지우면 안 된다.
         // `ipc_namespaces` 는 이제 설치된 매니페스트에서 유도되는 표라
         // (ADR-0173) `packages` 를 바꾸는 자리가 그 유도를 같이 돌리지 않으면

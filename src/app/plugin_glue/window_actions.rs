@@ -64,15 +64,14 @@ impl App {
         }
     }
 
-    /// `Uninstall` action — plugin 을 제거하고, 성공 시 builtin 목록에서도
-    /// removed 로 표시한다 (재설치 판단에 필요).
+    /// `Uninstall` action — plugin 을 제거한다.
+    ///
+    /// removed 표시는 `plugin_remove` 본문이 한다. 여기서 따로 부르지 않는다 —
+    /// 예전에는 이 자리에만 있어서 IPC `plugin.remove` 가 그 기록을 남기지 않았다.
     fn handle_uninstall(&mut self, id: String) {
         match self.plugin_remove(id.clone()) {
             Ok(events) => {
                 self.cascade_plugin_events(events);
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    plugin::mark_builtin_removed(mgr, &id);
-                }
             }
             Err(e) => {
                 tracing::warn!("plugins modal: uninstall({id}) failed: {e}");
