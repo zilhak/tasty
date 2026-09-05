@@ -680,3 +680,71 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
         assert!(SPAWN_PORT_TIMEOUT > SPAWN_SHELL_TIMEOUT);
     }
 }
+
+/// 번들 plugin 을 **실제로 호출하는** 테스트 바이너리.
+///
+/// 여기 없는 스위트는 빈 번들 루트로 부팅한다 — host 는 spec 마다 원본을 못 찾아
+/// 조용히 건너뛰고, 격리 홈으로 가는 복사가 통째로 사라진다. 실측(2026-09-06,
+/// `attach_silent_disconnect`, 번들만 바꾼 대조): 홈 최대 1148 MB → 4 MB.
+///
+/// **판정은 성질로, 저장은 이름으로 한다.** 이 명부는 바이너리 이름으로 매칭하지만
+/// 무엇을 넣을지는 이름 모양이 아니라 *그 스위트가 plugin 네임스페이스를 호출하거나
+/// plugin 이 뒷받침하는 surface 타입을 여는가* 로 정했다. 이름으로 판정하면 샌다 —
+/// `explorer` 는 plugin 처럼 생겼지만 호스트 view 이고, `webhook.*` 는 권한 등급에
+/// `plugin` 이 붙어 있지만 핸들러는 host 다. 같은 층 구분을 다른 자리에서 이름 붙인
+/// 예가 `crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` 에 있다.
+///
+/// **극성이 opt-in 인 것도 의도다.** 빠뜨리면 그 스위트의 plugin 호출이
+/// `-32601 Method not found` 로 실패해 **그 자리에서 빨개진다**. 반대 극성(기본
+/// 스테이징 + 예외 명부)은 명부가 낡아도 초록이라 비용만 조용히 자란다 — 이 비용이
+/// 오래 안 보였던 이유가 정확히 그것이다.
+///
+/// 새 스위트가 plugin 을 쓰기 시작하면 여기 추가한다.
+pub const SUITES_THAT_CALL_BUNDLED_PLUGINS: &[&str] = &["e2e_tests", "soak_memory"];
+
+/// 지금 도는 테스트 바이너리 이름 (`.../deps/e2e_tests-1a2b3c4d` → `e2e_tests`).
+///
+/// **바이너리 단위여야 한다.** 공유 인스턴스는 프로세스당 `OnceLock` 이라
+/// (`tests/common` 의 `shared()`) 테스트 함수 안에서 opt-in 을 부르면 먼저 도는
+/// 테스트가 초기화를 가져가 경합한다. 같은 사실이 "테스트 N 개 = 인스턴스 1 개" 라
+/// 위 실측의 1148 MB 도 부팅 하나의 값이다.
+pub fn current_suite_name() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let stem = exe.file_stem()?.to_str()?;
+    // cargo 가 붙이는 `-<hex>` 만 벗긴다. 스위트 이름 자체에 `-` 는 안 쓴다.
+    match stem.rsplit_once('-') {
+        Some((name, hash))
+            if !name.is_empty()
+                && !hash.is_empty()
+                && hash.bytes().all(|b| b.is_ascii_hexdigit()) =>
+        {
+            Some(name.to_string())
+        }
+        _ => Some(stem.to_string()),
+    }
+}
+
+/// 이 스위트가 번들 plugin 을 안 쓰면 빈 디렉터리를 번들 루트로 지정한다.
+///
+/// 제품의 `bundle_root()` 는 `TASTY_BUILTIN_PLUGINS_DIR` 를 **최우선**으로 보므로,
+/// 이 한 줄이 workspace 스테이징 탐색과 격리 홈 복사를 **둘 다** 건너뛰게 한다.
+/// 제품 코드는 건드리지 않는다 — 설치 경로에는 서명·업그레이드 판정이 얹혀 있다.
+pub fn apply_bundle_opt_in(command: &mut std::process::Command) {
+    let needs = current_suite_name()
+        .is_some_and(|s| SUITES_THAT_CALL_BUNDLED_PLUGINS.contains(&s.as_str()));
+    if needs {
+        return;
+    }
+    // 만들기에 실패하면 아무것도 안 한다 — 없는 경로를 넘기면 제품이 그 분기를
+    // 무시하고 진짜 번들을 찾으므로, 실패는 "변경 전" 동작으로 되돌아간다.
+    // `create_dir_all` 은 멱등이라 동시 생성도 안전하고, 유니크화하면 내용이 같은
+    // 빈 디렉터리만 완주 수만큼 늘 뿐이다. 격리가 사는 자리는 여기가 아니라 홈이다.
+    //
+    // 이유: **비어 있다는 것이 이 디렉터리 내용의 전부**라 아무도 쓰지 않고 아무도
+    // 지우지 않는다 — 고정 이름이 위험한 근거(동시 완주가 서로의 파일을 truncate
+    // 하거나 디렉터리를 지운다)가 성립할 대상이 없다. 공유가 의도다.
+    let empty = std::env::temp_dir().join("tasty-test-empty-plugin-bundle");
+    if std::fs::create_dir_all(&empty).is_ok() && empty.is_dir() {
+        command.env("TASTY_BUILTIN_PLUGINS_DIR", &empty);
+    }
+}

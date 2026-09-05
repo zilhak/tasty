@@ -404,6 +404,9 @@ impl WebhookInstance {
             // 이름·값의 정의 자리는 `spawn_diag` 하나다.
             .env(spawn_diag::LOG_ENV, spawn_diag::LOG_FILTER_WEBHOOK)
             .stderr(Stdio::piped());
+        // 이 스위트가 번들 plugin 을 안 부르면 빈 번들로 띄운다 — 격리 홈으로 가는
+        // 1 GB 복사가 통째로 사라진다. 명부와 근거는 `spawn_diag` 에 있다.
+        spawn_diag::apply_bundle_opt_in(&mut command);
         for (k, v) in env_args {
             command.env(k, v);
         }
