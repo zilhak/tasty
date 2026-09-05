@@ -299,6 +299,15 @@ check_egui_window() {
 #                                       에서 조용히 사라지고, 그 조용한 소실이 정확히 이
 #                                       크레이트가 막으려는 실패다. `eprintln!` 은 libtest 가
 #                                       설정 없이 포획해 실패한 테스트의 출력 블록에 싣는다.
+#   - src/source_guards/*             : 이 디렉토리 전체가 `#[cfg(test)] mod source_guards;`
+#                                       뒤에 있어 **출하 바이너리에 없다** — 라이브러리가
+#                                       출력하지 않는다는 이 규칙의 대상이 아니다. 여기서
+#                                       찍는 것은 가드가 **초록일 때 무엇을 집었는지**이고
+#                                       (`-- --nocapture`), 그것이 없으면 양성 대조가
+#                                       "통과했다" 만 남기고 무엇을 통과시켰는지는 안 남긴다.
+#                                       `tracing` 은 여기서 못 쓴다 — bin 의 유닛 테스트에는
+#                                       subscriber 가 없어 조용히 사라지고, 그 조용한 소실이
+#                                       정확히 막으려는 것이다(latency-control 예외와 같은 사유).
 #   - crates/tasty-doc-guards/src/bin/* : 게이트 스크립트가 부르는 CLI 판정기. 이 크레이트는
 #                                       의존이 0 인 것이 존재 이유라(ADR-0138) tracing 을
 #                                       들일 수 없고, 진단은 stdout/stderr 가 인터페이스다.
@@ -318,6 +327,7 @@ check_println() {
             build.rs) continue ;;
             */build.rs) continue ;;
             crates/tasty-latency-control/*) continue ;;
+            src/source_guards/*) continue ;;
             crates/tasty-doc-guards/src/bin/*) continue ;;
         esac
         local violation
