@@ -34,6 +34,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::resolve_policy_args;
@@ -50,8 +51,6 @@ const INFLIGHT_WHAT: &str = "the codex reboot in-flight set";
 static INFLIGHT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
-const DEFAULT_DELAY_SECS: u64 = 5;
 /// Ctrl+C 전송 횟수 / 간격.
 const CTRL_C_COUNT: u32 = 4;
 const CTRL_C_INTERVAL: Duration = Duration::from_millis(500);
@@ -67,10 +66,6 @@ const TUI_READY_GRACE: Duration = Duration::from_secs(3);
 const NOTICE_ATTEMPTS: u32 = 4;
 const NOTICE_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
-/// 문구 확인 후 추가 Enter 전까지 대기 — claude reboot 와 동일한 63자+ paste
-/// 흡수 대비(제출 CR 이 paste 로 먹히면 입력창 잔류 → 별도 Enter 가 제출).
-const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
-
 /// codex 종료 시 출력되는 힌트 라인의 식별 조각 (v0.142 실측:
 /// "To continue this session, run codex resume <id>").
 const EXIT_MARKER: &str = "run codex resume";
@@ -96,7 +91,7 @@ pub(crate) fn handle_reboot(
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
     let surface_id = require_surface(params)?;
-    let (delay_secs, extra_prompt) = parse_reboot_options(params);
+    let (delay_secs, extra_prompt) = parse_options(params);
     // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
     // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
     // 전역 기본값 > codex 자체 기본값)로 해석한다.
@@ -199,20 +194,6 @@ fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
         })
 }
 
-/// `--delay`(기본 5초) / `--prompt`(안내문 뒤에 덧붙일 추가 텍스트) 파싱.
-pub(crate) fn parse_reboot_options(params: &Value) -> (u64, Option<String>) {
-    let delay = params
-        .get("delay")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_DELAY_SECS);
-    let extra = params
-        .get("prompt")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    (delay, extra)
-}
-
 /// surface meta 에서 codex session id 를 읽는다. 없으면 에러 — hook 미설치/미trust
 /// 이거나 그 surface 에서 codex session-start hook 이 아직 발화하지 않은 것.
 fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMethodError> {
@@ -233,14 +214,6 @@ fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMet
         )));
     }
     Ok(session_id)
-}
-
-/// session id 가 셸에 평문으로 들어가므로 uuid 계열 문자만 허용한다.
-pub(crate) fn is_safe_session_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// 셸에 전송할 resume 명령 (제출 `\r` 포함). 모든 셸(cmd/pwsh/bash)에서 동일하게
@@ -392,7 +365,7 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
         }
         thread::sleep(NOTICE_VERIFY_DELAY);
         if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-            ensure_submitted(host, surface_id);
+            ensure_submitted(host, surface_id, "codex");
             return true;
         }
         tracing::info!(
@@ -401,22 +374,10 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
         thread::sleep(NOTICE_RETRY_INTERVAL);
     }
     if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-        ensure_submitted(host, surface_id);
+        ensure_submitted(host, surface_id, "codex");
         return true;
     }
     false
-}
-
-/// 문구가 화면에 있어도 제출(`\r`)이 paste 로 흡수돼 입력창에 잔류할 수 있으므로
-/// 별도 Enter 를 한 번 더 보낸다. 이미 제출된 상태면 빈 입력창 Enter 라 no-op.
-fn ensure_submitted(host: &HostHandle, surface_id: u32) {
-    thread::sleep(NOTICE_SUBMIT_DELAY);
-    if let Err(e) = host.call(
-        "surface.send_key",
-        json!({ "surface_id": surface_id, "key": "enter" }),
-    ) {
-        tracing::warn!("codex reboot s{surface_id}: extra submit enter failed: {e}");
-    }
 }
 
 /// `surface.screen_text` 1회 조회. 실패 → None (surface 소멸 등).
@@ -456,32 +417,6 @@ fn poll_screen(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_defaults_delay_5_and_no_prompt() {
-        let (delay, extra) = parse_reboot_options(&json!({ "surface": 1 }));
-        assert_eq!(delay, 5);
-        assert_eq!(extra, None);
-    }
-
-    #[test]
-    fn parse_explicit_delay_and_prompt() {
-        let (delay, extra) = parse_reboot_options(&json!({ "delay": 2, "prompt": "이어서 계속" }));
-        assert_eq!(delay, 2);
-        assert_eq!(extra.as_deref(), Some("이어서 계속"));
-    }
-
-    #[test]
-    fn safe_session_id_accepts_uuid() {
-        assert!(is_safe_session_id("019f55e7-3dfa-7292-a8a9-9cf73a8b000b"));
-    }
-
-    #[test]
-    fn safe_session_id_rejects_shell_metachars() {
-        assert!(!is_safe_session_id(""));
-        assert!(!is_safe_session_id("abc; rm -rf /"));
-        assert!(!is_safe_session_id("a$(x)"));
-    }
 
     #[test]
     fn resume_command_disables_update_prompt_and_submits() {

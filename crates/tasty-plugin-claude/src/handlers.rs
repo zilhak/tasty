@@ -16,7 +16,11 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+use tasty_plugin_agent_common::children::{indices_with, join_indices, state_of};
+use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks};
+use tasty_plugin_agent_common::params::forward;
+use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::error_scan::{ErrorScanner, ScanTarget};
@@ -147,62 +151,8 @@ pub(crate) fn resolve_child_surface_id<H: HostCall>(
     })
 }
 
-/// 요청 params 에서 지정한 키들을 존재할 때만 그대로 새 Map 에 복사한다. CLI 인자를
-/// 호스트 `terminal.*` 로 pass-through 하는 용도. claude CLI 는 `surface` 인자에
-/// 대해 `surface`/`surface_id` 두 키를 모두 주입하므로(호스트 terminal.* 는
-/// `surface` 를 읽음) `surface` 를 복사한다.
-fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
-    let mut out = Map::new();
-    for k in keys {
-        if let Some(v) = params.get(*k) {
-            out.insert((*k).to_string(), v.clone());
-        }
-    }
-    out
-}
-
 fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
     host.call(method, params).map_err(IpcMethodError::from)
-}
-
-/// 호스트 IPC 를 동기 호출하는 최소 표면. `HostHandle` 로 실동작하고, 테스트에서는
-/// in-memory mock 으로 대체해 형제 hook 등록/발화/정리 사이클을 재현·검증한다.
-pub(crate) trait HostCall {
-    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError>;
-}
-
-impl HostCall for HostHandle {
-    fn call(&self, method: &str, params: Value) -> Result<Value, tasty_plugin_sdk::PluginError> {
-        HostHandle::call(self, method, params)
-    }
-}
-
-/// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
-/// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
-/// 순수 선택 로직이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에
-/// 서로 다른 command(예: `--command spawn` vs `--command tell`)로 등록된 두 그룹은
-/// 서로의 정리 대상에 포함되지 않는다.
-fn siblings_to_unset(hooks: &[Value], expected_command: &str) -> Vec<u64> {
-    hooks
-        .iter()
-        .filter(|h| h.get("command").and_then(|v| v.as_str()) == Some(expected_command))
-        .filter_map(|h| h.get("id").and_then(|v| v.as_u64()))
-        .collect()
-}
-
-/// 발화한 형제 하나가 자기 그룹(같은 command)의 남은 형제 once-hook 들을 정리한다.
-/// `hook.list` 는 반드시 `surface_id` 로 필터해 다른 surface(=다른 child)의 hook 을
-/// 건드리지 않는다. best-effort — 실패해도 알림 자체는 이미 전달됐다.
-fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expected_command: &str) {
-    if let Ok(resp) = host.call("hook.list", json!({ "surface_id": target_surface }))
-        && let Some(hooks) = resp.as_array()
-    {
-        for hook_id in siblings_to_unset(hooks, expected_command) {
-            // best-effort 정리 — 실패하면 좀비로 남을 수 있으나 알림 자체는 이미
-            // 전달됐으므로 caller 관점 결과에는 영향 없음.
-            let _ = host.call("hook.unset", json!({ "hook_id": hook_id }));
-        }
-    }
 }
 
 /// 호스트 registry 목록(`terminal.children`)에 `surface.foreground_process` 로
@@ -765,17 +715,11 @@ pub(crate) fn start_claude_in_surface(
     }
 }
 
-/// prompt 임시파일 이름 prefix/suffix — 정리 스윕(`sweep_stale_prompt_files`)이 같은
-/// 패턴으로 자기 파일만 매칭하도록 상수로 뽑아 공유한다.
+/// prompt 임시파일 이름 prefix. 청소 스윕(`prompt_file::sweep_stale`)이 같은 패턴으로
+/// 자기 파일만 매칭하도록 상수로 뽑는다. suffix·TTL·쓰기·스윕은
+/// `tasty-plugin-agent-common` 이 갖고, **prefix 만** 여기 남는다 — codex plugin 이
+/// 같은 surface_id 로 자기 prompt 파일을 같은 디렉터리에 쓰기 때문에 이름이 갈려야 한다.
 const PROMPT_FILE_PREFIX: &str = "tasty-prompt-";
-const PROMPT_FILE_SUFFIX: &str = ".txt";
-
-/// prompt 임시파일이 생성된 뒤 이만큼 지나면 다음 spawn 시점에 청소 대상이 된다.
-/// 자식 셸이 `$(cat '<path>')` 치환을 끝내는 데는 보통 수 ms~수 초면 충분하므로,
-/// 10분이면 그 시간을 넉넉히 넘겨 "아직 안 읽었는데 지워지는" 레이스를 사실상
-/// 배제한다.
-const PROMPT_FILE_TTL: std::time::Duration = std::time::Duration::from_secs(600);
-
 /// prompt 를 임시 파일에 쓰고 `$(cat ...)` 로 주입하는 claude 기동 명령을 만든다.
 /// 파일 쓰기 실패는 warn 후에도 계속 진행한다(빈 프롬프트로라도 기동은 시도).
 /// `profile_file` 이 있으면 positional prompt 인자보다 앞에 `--settings "<path>"` 를
@@ -784,8 +728,8 @@ const PROMPT_FILE_TTL: std::time::Duration = std::time::Duration::from_secs(600)
 ///
 /// 파일 정리 시점: 자식이 `$(cat ...)` 로 이 파일을 다 읽은 순간을 tasty 가 알
 /// 방법이 없다(`surface.send` 는 fire-and-forget 텍스트 주입) — 쓰자마자 지우면
-/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 [`PROMPT_FILE_TTL`] 을 넘긴
-/// 이전 파일들을 먼저 청소한다(`sweep_stale_prompt_files`) — 지연 삭제.
+/// 아직 안 읽은 자식과 레이스한다. 대신 매 spawn 마다 TTL 을 넘긴 이전 파일들을
+/// 먼저 청소한다(`prompt_file::sweep_stale`) — 지연 삭제.
 /// 권한은 생성 시점부터 0600(owner-only, Unix) 으로 좁힌다 — 생성 후 별도
 /// `chmod` 로 좁히면 그 사이 기본 권한(보통 0644)으로 잠깐 노출되는 TOCTOU 창이
 /// 생기므로, `OpenOptions`(Unix `mode`)로 처음부터 좁게 만든다.
@@ -796,11 +740,9 @@ fn claude_launch_command_with_prompt(
     profile_file: Option<&str>,
 ) -> String {
     let temp_dir = std::env::temp_dir();
-    sweep_stale_prompt_files(&temp_dir);
-    let prompt_path = temp_dir.join(format!(
-        "{PROMPT_FILE_PREFIX}{surface_id}{PROMPT_FILE_SUFFIX}"
-    ));
-    if let Err(e) = write_prompt_file(&prompt_path, prompt) {
+    prompt_file::sweep_stale(&temp_dir, PROMPT_FILE_PREFIX);
+    let prompt_path = prompt_file::path_for(&temp_dir, PROMPT_FILE_PREFIX, surface_id);
+    if let Err(e) = prompt_file::write(&prompt_path, prompt) {
         tracing::warn!("Failed to write prompt file: {e}");
     }
     let settings_flag = match profile_file {
@@ -811,76 +753,6 @@ fn claude_launch_command_with_prompt(
         "{agent_prefix}claude {settings_flag}\"$(cat '{}')\"\r",
         prompt_path.display()
     )
-}
-
-/// `path` 를 owner-only(0600) 권한으로 새로 만들어 `content` 를 쓴다. 같은 경로에
-/// 이전 실행이 남긴 파일이 있으면(과거 버전이 좁히지 않은 권한으로 만들었을 수
-/// 있는 파일 포함) 먼저 지우고 다시 만든다 — `OpenOptions::mode` 는 파일을 실제로
-/// *생성*하는 순간에만 적용되고, 이미 존재하는 파일을 여는 경우엔 기존 권한이
-/// 그대로 유지되기 때문이다(재사용 시 권한이 좁혀지지 않는 구멍을 막는다).
-fn write_prompt_file(path: &Path, content: &str) -> std::io::Result<()> {
-    // 없는 파일을 지우려는 실패(가장 흔한 경우 — 이전 실행 잔재가 없음)를 포함해
-    // 결과를 신경 쓰지 않는다: 존재하든 안 하든 바로 이어지는 `create(true)` 가
-    // 최종적으로 원하는 상태(0600 새 파일)를 만든다.
-    let _ = std::fs::remove_file(path);
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(content.as_bytes())
-    }
-    #[cfg(not(unix))]
-    {
-        // Windows 는 Unix mode 개념이 없다 — ACL 기반 권한 좁히기는 이 변경의
-        // 범위 밖(별도 작업 필요), 기존 `std::fs::write` 기본 동작 그대로 둔다.
-        std::fs::write(path, content)
-    }
-}
-
-/// `dir` 안에서 `PROMPT_FILE_PREFIX`/`PROMPT_FILE_SUFFIX` 패턴에 매칭하고
-/// `PROMPT_FILE_TTL` 보다 오래된(mtime 기준) 파일을 best-effort 로 지운다 —
-/// 매 spawn 마다 호출되는 지연 삭제 방식(무기한 누적 방지). 읽기/삭제 실패는
-/// 무시한다: 디렉터리 목록 경합, 동시에 다른 프로세스가 아직 참조 중인 파일 등은
-/// spawn 자체를 막을 이유가 아니다 — 대신 `tracing::debug!` 로 남긴다.
-fn sweep_stale_prompt_files(dir: &Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::debug!(
-                "prompt tempfile sweep: read_dir({}) failed: {e}",
-                dir.display()
-            );
-            return;
-        }
-    };
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.starts_with(PROMPT_FILE_PREFIX) || !name.ends_with(PROMPT_FILE_SUFFIX) {
-            continue;
-        }
-        let is_stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .and_then(|modified| {
-                now.duration_since(modified)
-                    .map_err(|e| std::io::Error::other(e.to_string()))
-            })
-            .is_ok_and(|age| age >= PROMPT_FILE_TTL);
-        if is_stale && let Err(e) = std::fs::remove_file(entry.path()) {
-            tracing::debug!(
-                "prompt tempfile sweep: remove({:?}) failed: {e}",
-                entry.path()
-            );
-        }
-    }
 }
 
 /// 자식 Claude 에 발급할 SessionToken 을 호스트에서 가져온다. 부모(claude plugin)의
@@ -1020,27 +892,6 @@ fn compute_spawn_warning(
         .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
 
     build_spawn_warning(tr, total, &idle_indices, &stale_indices, threshold)
-}
-
-fn state_of(child: &Value) -> Option<&str> {
-    child.get("state").and_then(|s| s.as_str())
-}
-
-/// 조건에 맞는 child 의 `index` 만 모은다.
-fn indices_with(children: &[Value], pred: impl Fn(&Value) -> bool) -> Vec<u64> {
-    children
-        .iter()
-        .filter(|c| pred(c))
-        .filter_map(|c| c.get("index").and_then(|i| i.as_u64()))
-        .collect()
-}
-
-fn join_indices(indices: &[u64]) -> String {
-    indices
-        .iter()
-        .map(u64::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// host 호출은 `tr`(순수 조회) 뿐 — 단위 테스트 대상.
@@ -1303,99 +1154,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn write_prompt_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        // 유니크 tempdir 로 격리한다 — 고정 이름은 같은 머신의 다른 완주와 충돌해 확률적 red 가
-        // 난다(ADR-0129 형태 B 고정 경로). tempdir 의 Drop 이 정리하므로 수동 remove 는 불필요.
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("prompt.txt");
-        write_prompt_file(&path, "secret").unwrap();
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "got mode {mode:o}");
-    }
-
-    #[test]
-    fn write_prompt_file_narrows_permissions_on_reuse() {
-        // 이전 실행이 넓은 권한으로 만든 파일이 같은 경로에 이미 있어도, 다시 쓸 때
-        // 0600 으로 좁혀져야 한다(재사용 시 구멍 방지 회귀 가드).
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("prompt.txt");
-        std::fs::write(&path, "old").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        }
-        write_prompt_file(&path, "new").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "got mode {mode:o}");
-        }
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_removes_files_past_ttl() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().to_path_buf();
-        let stale = dir.join(format!("{PROMPT_FILE_PREFIX}old{PROMPT_FILE_SUFFIX}"));
-        std::fs::write(&stale, "x").unwrap();
-        let old_mtime =
-            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
-        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
-        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&stale)
-            .unwrap()
-            .set_modified(old_mtime)
-            .unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(!stale.exists(), "stale prompt file should have been swept");
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_keeps_files_within_ttl() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().to_path_buf();
-        let fresh = dir.join(format!("{PROMPT_FILE_PREFIX}new{PROMPT_FILE_SUFFIX}"));
-        std::fs::write(&fresh, "x").unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(fresh.exists(), "fresh prompt file should not be swept");
-    }
-
-    #[test]
-    fn sweep_stale_prompt_files_ignores_non_matching_names() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().to_path_buf();
-        let unrelated = dir.join("some-other-file.txt");
-        std::fs::write(&unrelated, "x").unwrap();
-        let old_mtime =
-            std::time::SystemTime::now() - (PROMPT_FILE_TTL + std::time::Duration::from_secs(60));
-        // Windows `SetFileTime` 은 핸들에 `FILE_WRITE_ATTRIBUTES` 를 요구한다 —
-        // `File::open` 의 읽기 전용 핸들로는 `PermissionDenied(os error 5)` 가 난다.
-        // POSIX `futimens` 는 읽기 전용 fd 로도 되므로 Linux·macOS 에선 안 드러난다.
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&unrelated)
-            .unwrap()
-            .set_modified(old_mtime)
-            .unwrap();
-
-        sweep_stale_prompt_files(&dir);
-
-        assert!(unrelated.exists(), "non-matching file must not be swept");
-    }
-
     // ── 완료 알림 문구 — "spawn 완료" 오독 방지 ──
     // 원래 이 회귀 가드가 겨냥한 한국어 문구는 `lang/ko.toml` 로 옮겨졌으므로,
     // 그 locale 을 실제로 로드해 동일 속성을 검증한다(하드코딩 복제 대신 lang
@@ -1627,21 +1385,6 @@ mod tests {
         let host = MockHost::new();
         host.set_children(vec![json!({ "index": 0, "child_surface_id": 7 })]);
         assert!(resolve_child_surface_id(&host, 3, 0, &tr).is_err());
-    }
-
-    #[test]
-    fn siblings_to_unset_isolates_by_command() {
-        // 같은 target surface 에 spawn 그룹과 tell 그룹이 공존(concurrent 등록).
-        let spawn_cmd = notify_done_command(9, 100, "spawn");
-        let tell_cmd = notify_done_command(9, 100, "tell");
-        let hooks = vec![
-            json!({ "id": 1, "command": spawn_cmd, "event": "process-exit" }),
-            json!({ "id": 2, "command": tell_cmd, "event": "process-exit" }),
-            json!({ "id": 3, "command": spawn_cmd, "event": "claude-idle" }),
-        ];
-        // spawn command 로 정리 → spawn 그룹(id 1,3)만, tell 그룹(id 2)은 제외.
-        let ids = siblings_to_unset(&hooks, &spawn_cmd);
-        assert_eq!(ids, vec![1, 3]);
     }
 
     #[test]

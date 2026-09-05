@@ -5974,6 +5974,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-plugin-agent-common"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tasty-plugin-sdk",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "tasty-plugin-agent-stream"
 version = "0.1.11"
 dependencies = [
@@ -5998,6 +6008,7 @@ dependencies = [
  "regex",
  "serde_json",
  "shell-escape",
+ "tasty-plugin-agent-common",
  "tasty-plugin-sdk",
  "tasty-utils",
  "tempfile",
@@ -6030,10 +6041,11 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "anyhow",
  "serde_json",
+ "tasty-plugin-agent-common",
  "tasty-plugin-sdk",
  "tasty-utils",
  "toml 0.8.2",

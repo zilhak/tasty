@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-codex"
-version = "0.1.36"
+version = "0.1.37"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: codex CLI integration"
@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-plugin-agent-common = { path = "../tasty-plugin-agent-common" }
 tasty-utils = { path = "../tasty-utils" }
 serde_json = "1"
 toml = "0.8"

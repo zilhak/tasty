@@ -42,16 +42,24 @@ const MIN_MTIME_WRITE_SITES: usize = 1;
 
 /// mtime 쓰기 호출이 **어느 파일에 몇 곳** 있는지 고정한다 — 건수 고정이다.
 ///
-/// ## 왜 하한으로 부족한가
+/// ## 모수가 4 에서 1 로 줄었다 — 이 표의 역할이 바뀌었다
 ///
-/// `MIN_MTIME_WRITE_SITES = 1` 대 실측 4 다. **세 곳이 조용히 사라져도** 하한은 안
-/// 움직이고, 사라진 곳에 위반이 없으면 offender 목록도 안 움직여 신호가 아예 없다.
+/// 원래 이 표가 겨눈 것은 "하한 1 대 실측 4" 의 틈이었다. 네 사이트는 claude/codex
+/// plugin 의 **같은 테스트가 두 벌 복제된 것**이었고, 세 곳이 조용히 사라져도 하한은
+/// 안 움직였다. 그 복제가 `tasty-plugin-agent-common` 으로 합쳐지면서
+/// (`prompt_file` 의 sweep 테스트가 헬퍼 하나를 공유한다) 레포 전체의 mtime 쓰기가
+/// **한 파일의 한 곳**이 됐다.
+///
+/// 그래서 지금은 하한과 이 표가 "전부 사라짐" 에 대해 **같이 운다**. 표가 여전히 하는
+/// 일은 셋이다: ① 사라진 파일을 **이름으로** 말한다(하한은 수만 말한다), ② 다른
+/// 파일에 사이트가 **새로 생기면** 잡는다 — 복제가 되살아나는 형태가 정확히 그것이다,
+/// ③ 한 파일 안에서 건수가 늘거나 줄면 잡는다.
 ///
 /// ## 왜 집합 동등이 아니라 건수 고정에서 멈추는가
 ///
 /// `define_class_return` 은 블록마다 `struct <이름>;` 이라는 식별자가 있어 **이름 집합**을
-/// 고정할 수 있었다. 여기는 그런 것이 없다 — 네 사이트의 문장이 `.set_modified(old_mtime)`
-/// 로 **글자까지 같다.** 감싸는 함수 이름을 읽으면 갈리지만, 그러려면 이 가드 안에 함수
+/// 고정할 수 있었다. 여기는 그런 것이 없다 — 사이트의 문장이 `.set_modified(old)` 한 줄이라
+/// 서로 구별할 식별자가 없다. 감싸는 함수 이름을 읽으면 갈리지만, 그러려면 이 가드 안에 함수
 /// 경계 파서를 새로 만들어야 하고 그 파서가 또 틀릴 수 있다. 겨누는 실패 모드는 "판정기가
 /// 사이트를 놓친다" 이고 파일별 건수가 그것을 잡으므로, 거기서 멈춘다.
 ///
@@ -59,10 +67,8 @@ const MIN_MTIME_WRITE_SITES: usize = 1;
 /// 더하면 이 표는 안 움직인다. `a_same_file_swap_is_not_distinguished` 가 그 한계를
 /// 고정한다 — 나중에 판정기가 그것을 가르게 된다면 결함을 고친 것이 아니라 **이 결정을
 /// 바꾼 것**이므로 그 테스트를 함께 고쳐야 한다.
-const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
-    ("crates/tasty-plugin-claude/src/handlers.rs", 2),
-    ("crates/tasty-plugin-codex/src/handlers.rs", 2),
-];
+const EXPECTED_MTIME_SITES: &[(&str, usize)] =
+    &[("crates/tasty-plugin-agent-common/src/prompt_file.rs", 1)];
 
 /// 레포를 훑어 `파일 → 사이트 수` 를 만든다. 본 판정과 변이가 같은 것을 쓴다.
 fn scan_site_population() -> BTreeMap<String, usize> {
@@ -153,8 +159,9 @@ fn mtime_is_never_written_through_a_read_only_handle() {
     let drift = site_drift(&scan_site_population());
     assert!(
         drift.is_empty(),
-        "mtime 쓰기 사이트 분포가 스냅샷과 다르다 — 하한 {MIN_MTIME_WRITE_SITES} 은 네 곳 \
-         중 세 곳이 사라져도 안 움직이므로 파일별 건수를 고정한다.\n{}",
+        "mtime 쓰기 사이트 분포가 스냅샷과 다르다 — 하한 {MIN_MTIME_WRITE_SITES} 은 사라진 \
+         파일의 이름도, 다른 파일에 새로 생긴 사이트도 말하지 못하므로 파일별 건수를 \
+         고정한다.\n{}",
         drift.join("\n")
     );
     assert!(
@@ -237,35 +244,29 @@ mod exemption_mutations {
 mod population_mutations {
     use super::*;
 
-    /// 무변이 대조 + 같은 자리의 비영 대조.
+    /// 무변이 대조 + 하한이 실제로 채워져 있는지.
     #[test]
     fn the_unmutated_site_map_has_no_drift() {
         let actual = scan_site_population();
         assert!(site_drift(&actual).is_empty(), "무변이인데 차분이 있다");
         let total: usize = actual.values().sum();
         assert!(
-            total > MIN_MTIME_WRITE_SITES,
-            "사이트를 {total} 곳만 찾았다(하한 {MIN_MTIME_WRITE_SITES}) — 하한과 같으면 \
-             '하한이 못 잡는 폭' 자체가 없다"
+            total >= MIN_MTIME_WRITE_SITES,
+            "사이트를 {total} 곳 찾았다(하한 {MIN_MTIME_WRITE_SITES}) — 스캐너가 죽었다"
         );
     }
 
-    /// **하한이 못 잡는 폭을 같은 테스트에서 단정한다.** 한 파일이 통째로 빠져도 남은
-    /// 개수가 하한 이상이라 하한만 있는 가드는 초록이다.
+    /// 파일이 통째로 빠지면 **이름으로** 말한다.
+    ///
+    /// 모수가 1 이라 이 변이는 하한도 같이 잡는다(그 사실을 아래에서 함께 단정한다).
+    /// 그래도 이 표가 하는 일이 남는다 — 하한은 "몇 곳" 만 말하고 **어느 파일**인지는
+    /// 말하지 못한다. 모수가 다시 늘면 두 판정이 갈리고, 그때는 이 표만 운다.
     #[test]
-    fn a_lost_file_is_caught_while_the_floor_stays_green() {
+    fn a_lost_file_is_named_not_just_counted() {
         let actual = scan_site_population();
         let victim = actual.keys().next().expect("대조군이 비었다").clone();
         let mut lost = actual.clone();
-        let removed = lost.remove(&victim).expect("방금 고른 키다");
-
-        let left: usize = lost.values().sum();
-        assert!(
-            left >= MIN_MTIME_WRITE_SITES,
-            "전제가 깨졌다: {victim} 의 {removed} 곳을 잃으면 {left} 곳이 남아 하한 \
-             {MIN_MTIME_WRITE_SITES} 아래로 내려간다 — 그렇다면 하한이 이 변이를 잡는다. \
-             doc 의 서술을 다시 재고 고쳐라"
-        );
+        lost.remove(&victim).expect("방금 고른 키다");
 
         let drift = site_drift(&lost);
         assert_eq!(drift.len(), 1, "잃은 파일 하나만 말해야 한다: {drift:?}");
@@ -273,6 +274,28 @@ mod population_mutations {
             drift[0].contains(&victim),
             "이름으로 말하지 않는다: {drift:?}"
         );
+
+        // 지금 모수에서는 하한도 함께 운다. 이 줄이 깨졌다면 모수가 늘어난 것이고,
+        // 그때 이 표는 하한이 못 보는 폭을 되찾는다 — doc 의 "모수가 4 에서 1 로" 절을
+        // 그 실측으로 고쳐라.
+        let left: usize = lost.values().sum();
+        assert!(
+            left < MIN_MTIME_WRITE_SITES,
+            "모수가 늘었다({left} 곳 남음) — doc 과 이 주석을 함께 고쳐라"
+        );
+    }
+
+    /// **다른 파일에 사이트가 새로 생기면 잡는다.** 지금 이 표의 주된 일이다 —
+    /// 합쳤던 헬퍼가 어느 plugin 으로 되살아나는 형태가 정확히 이 모양이다.
+    #[test]
+    fn a_new_site_in_another_file_is_caught() {
+        let mut grown = scan_site_population();
+        grown.insert("crates/tasty-plugin-codex/src/handlers.rs".into(), 2);
+
+        let drift = site_drift(&grown);
+        assert_eq!(drift.len(), 1, "{drift:?}");
+        assert!(drift[0].contains("새로 생김"), "{drift:?}");
+        assert!(drift[0].contains("tasty-plugin-codex"), "{drift:?}");
     }
 
     /// 한 파일 안에서 개수가 하나 줄면 잡는다 — 하한이 못 보는 자리다.

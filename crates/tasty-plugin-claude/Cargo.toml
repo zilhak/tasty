@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-plugin-agent-common = { path = "../tasty-plugin-agent-common" }
 tasty-utils = { path = "../tasty-utils" }
 serde_json = "1"
 tracing = "0.1"

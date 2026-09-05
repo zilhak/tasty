@@ -37,6 +37,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::require_surface_id;
@@ -53,8 +54,6 @@ const INFLIGHT_WHAT: &str = "the claude reboot in-flight set";
 static INFLIGHT_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 명령 접수 → kill 시작까지 기본 대기 (초). `--delay` 로 오버라이드.
-const DEFAULT_DELAY_SECS: u64 = 5;
 /// Ctrl+C 전송 횟수 / 간격.
 const CTRL_C_COUNT: u32 = 4;
 const CTRL_C_INTERVAL: Duration = Duration::from_millis(500);
@@ -73,11 +72,6 @@ const TUI_READY_GRACE: Duration = Duration::from_secs(3);
 const NOTICE_ATTEMPTS: u32 = 4;
 const NOTICE_RETRY_INTERVAL: Duration = Duration::from_secs(3);
 const NOTICE_VERIFY_DELAY: Duration = Duration::from_millis(1500);
-/// 문구 확인 후 추가 Enter 전까지 대기. tell 의 본문/`\r` 분리 write 도 TUI 부팅
-/// 직후엔 한 read burst 로 합쳐져 `\r` 이 paste 로 흡수될 수 있다(실측: 문구가
-/// 입력창에 미제출로 잔류). 이미 제출된 경우 빈 입력창 Enter 는 no-op 이므로
-/// 확인 후 별도 Enter 1회는 항상 안전하다.
-const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
 /// 화면 검증에 쓰는 문구 조각 — 안내문 선두라 112col 화면에서도 줄바꿈 없이
 /// 붙어서 렌더된다.
 const NOTICE_SNIPPET: &str = "tasty claude reboot";
@@ -121,7 +115,7 @@ pub(crate) fn reboot_surface(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let (delay_secs, extra_prompt) = parse_reboot_options(params);
+    let (delay_secs, extra_prompt) = parse_options(params);
     // host 왕복 없이 판정 가능한 프로필 검증(상호배타 · 이름 해석 · 파일 파싱)은
     // 전부 여기서 끝낸다 — 뒤따르는 어떤 부수효과(meta 갱신 · Ctrl+C 시퀀스)보다
     // 앞이라, 잘못된 인자로는 대상이 죽지 않는다.
@@ -214,20 +208,6 @@ pub(crate) fn reboot_surface(
         "session_id": session_id,
         "reboot_in_secs": delay_secs,
     }))
-}
-
-/// `--delay`(기본 5초) / `--prompt`(안내문 뒤에 덧붙일 추가 텍스트) 파싱.
-pub(crate) fn parse_reboot_options(params: &Value) -> (u64, Option<String>) {
-    let delay = params
-        .get("delay")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_DELAY_SECS);
-    let extra = params
-        .get("prompt")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    (delay, extra)
 }
 
 /// `--profile-file` / `--profile` / `--clear-profile` 로 요청된 부착 상태 변경.
@@ -534,14 +514,6 @@ fn fetch_session_id(
     Ok(session_id)
 }
 
-/// session id 가 셸에 평문으로 들어가므로 uuid 계열 문자만 허용한다.
-pub(crate) fn is_safe_session_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
 /// 셸에 전송할 resume 명령 (제출 `\r` 포함). 모든 셸(cmd/pwsh/bash)에서 동일하게
 /// 동작하는 평문 — inline env prefix 는 붙이지 않는다(PTY env 에 `TASTY_SURFACE_ID`
 /// 가 이미 주입돼 있고, `VAR=x cmd` 문법은 POSIX 전용이라 cmd.exe 에서 깨진다).
@@ -721,7 +693,7 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, baseline: &str, notice: &s
     }
     // 마지막 시도 직후 verify 가 아슬하게 놓쳤을 수 있으니 한 번 더 확인.
     if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-        ensure_submitted(host, surface_id);
+        ensure_submitted(host, surface_id, "claude");
         return true;
     }
     false
@@ -763,22 +735,10 @@ fn try_deliver_notice_once(
     }
     thread::sleep(NOTICE_VERIFY_DELAY);
     if screen_contains(host, surface_id, NOTICE_SNIPPET) {
-        ensure_submitted(host, surface_id);
+        ensure_submitted(host, surface_id, "claude");
         NoticeAttempt::Confirmed
     } else {
         NoticeAttempt::NotYetVisible
-    }
-}
-
-/// 문구가 화면에 있어도 제출(`\r`)이 paste 로 흡수돼 입력창에 잔류할 수 있으므로
-/// 별도 Enter 를 한 번 더 보낸다. 이미 제출된 상태면 빈 입력창 Enter 라 no-op.
-fn ensure_submitted(host: &HostHandle, surface_id: u32) {
-    thread::sleep(NOTICE_SUBMIT_DELAY);
-    if let Err(e) = host.call(
-        "surface.send_key",
-        json!({ "surface_id": surface_id, "key": "enter" }),
-    ) {
-        tracing::warn!("claude reboot s{surface_id}: extra submit enter failed: {e}");
     }
 }
 
@@ -893,42 +853,6 @@ mod tests {
         let (action, resolved) = preflight_profile(&json!({}), Some(dir.path()), &tr).unwrap();
         assert!(matches!(action, ProfileOption::Keep));
         assert_eq!(resolved, None);
-    }
-
-    #[test]
-    fn parse_defaults_delay_5_and_no_prompt() {
-        let (delay, extra) = parse_reboot_options(&json!({ "surface_id": 1 }));
-        assert_eq!(delay, 5);
-        assert_eq!(extra, None);
-    }
-
-    #[test]
-    fn parse_explicit_delay_and_prompt() {
-        let (delay, extra) =
-            parse_reboot_options(&json!({ "delay": 2, "prompt": "빌드부터 다시 확인" }));
-        assert_eq!(delay, 2);
-        assert_eq!(extra.as_deref(), Some("빌드부터 다시 확인"));
-    }
-
-    #[test]
-    fn parse_empty_prompt_treated_as_none() {
-        let (_, extra) = parse_reboot_options(&json!({ "prompt": "" }));
-        assert_eq!(extra, None);
-    }
-
-    #[test]
-    fn safe_session_id_accepts_uuid() {
-        assert!(is_safe_session_id("0e5cbdf4-32a1-4a5c-9c1d-8f2b3a4c5d6e"));
-        assert!(is_safe_session_id("abc_DEF-123"));
-    }
-
-    #[test]
-    fn safe_session_id_rejects_shell_metachars() {
-        assert!(!is_safe_session_id(""));
-        assert!(!is_safe_session_id("abc; rm -rf /"));
-        assert!(!is_safe_session_id("a b"));
-        assert!(!is_safe_session_id("a$(x)"));
-        assert!(!is_safe_session_id("a&b"));
     }
 
     /// R1 — 부착 4 분기가 meta 와 **같은 값**을 기록에 남기는지. 이름 부착은

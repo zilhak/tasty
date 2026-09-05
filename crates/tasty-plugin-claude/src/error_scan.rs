@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::json;
 
-use crate::handlers::HostCall;
+use tasty_plugin_agent_common::host_call::HostCall;
 
 /// 호스트에 있던 `CLAUDE_ERROR_PATTERN` 을 직접 옮긴 것. cutover 로 호스트
 /// 측은 제거됐고 이 상수가 단일 출처다.

@@ -102,7 +102,7 @@ fn record_file(data_dir: &Path, session_id: &str) -> PathBuf {
 /// 실패시킬 이유는 아니다.
 fn resolve(data_dir: Option<&Path>, session_id: &str) -> Option<PathBuf> {
     let dir = data_dir?;
-    if !crate::reboot::is_safe_session_id(session_id) {
+    if !tasty_plugin_agent_common::reboot::is_safe_session_id(session_id) {
         return None;
     }
     Some(record_file(dir, session_id))
@@ -205,7 +205,7 @@ pub(crate) fn remove(data_dir: Option<&Path>, session_id: &str) {
 }
 
 /// TTL 을 넘긴 기록을 best-effort 로 회수한다 — session-start 마다 호출하는 지연
-/// 삭제 방식(`handlers::sweep_stale_prompt_files` 와 같은 형태). 실패는 무시한다:
+/// 삭제 방식(`prompt_file::sweep_stale` 과 같은 형태). 실패는 무시한다:
 /// 디렉터리 경합이나 권한 문제가 훅 처리를 막을 이유가 아니다.
 pub(crate) fn sweep(data_dir: Option<&Path>) {
     sweep_at(data_dir, std::time::SystemTime::now());
