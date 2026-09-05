@@ -1677,29 +1677,46 @@ mod tests {
     /// [`TmpHome`] 는 임시 디렉토리의 **절대** 경로를 주입하므로 "래퍼가 해석된 루트를
     /// 넘기는가" 를 구분하지 못한다 — 절대 경로는 해석 전후가 같기 때문이다. 상대
     /// 경로여야 `tasty_dir()`(CWD 기준 절대화)과 미해석 `tasty_home()` 이 갈린다.
+    /// **생성자가 [`SERIAL`] 을 직접 쥔다** — 호출부가 잊어도 직렬화가 깨지지 않는다.
+    /// 이 락은 상대 `TASTY_HOME` 을 만지는 다른 테스트·CWD canary 와 **공유**하므로
+    /// 반드시 그 모듈의 `SERIAL` 을 잡아야 그들과 직렬화된다(새 락이면 충돌한다). 락은
+    /// `_lock` 필드로 가드 수명 동안 유지되고, Drop 이 env 를 되돌린 뒤 풀린다.
     struct RelativeHomeGuard {
         prev: Option<String>,
         /// 실제로 파일이 떨어질 임시 디렉토리(파일을 만드는 경로에서만 쓴다).
         _dir: Option<tempfile::TempDir>,
+        /// 마지막 필드라 Drop::drop(env 복원) 뒤에 떨어져 복원이 락 안에서 난다.
+        _lock: std::sync::MutexGuard<'static, ()>,
     }
 
     impl RelativeHomeGuard {
-        fn set(rel: &std::path::Path, dir: Option<tempfile::TempDir>) -> Self {
+        fn set(
+            rel: &std::path::Path,
+            dir: Option<tempfile::TempDir>,
+            lock: std::sync::MutexGuard<'static, ()>,
+        ) -> Self {
             let prev = std::env::var("TASTY_HOME").ok();
             // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
             unsafe { std::env::set_var("TASTY_HOME", rel) };
-            Self { prev, _dir: dir }
+            Self {
+                prev,
+                _dir: dir,
+                _lock: lock,
+            }
         }
 
         /// CWD 아래의 상대 이름. **파일을 만들지 않는 경로에서만** 쓴다 — 만들면
         /// 레포 워킹트리가 더러워진다.
         fn name(rel: &str) -> Self {
-            Self::set(std::path::Path::new(rel), None)
+            let lock = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+            Self::set(std::path::Path::new(rel), None, lock)
         }
 
         /// 임시 디렉토리를 가리키는 **상대** 경로(CWD 에서 `..` 로 거슬러 올라간다).
         /// 상대성은 유지하면서 생성 파일은 임시 디렉토리에 떨어뜨린다.
         fn temp() -> Self {
+            // 락을 먼저 잡는다 — 아래 `current_dir()` 읽기까지 직렬화 범위에 넣는다.
+            let lock = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
             let dir = tempfile::tempdir().expect("tempdir");
             let cwd = std::env::current_dir().expect("cwd");
             let mut rel = std::path::PathBuf::new();
@@ -1714,7 +1731,7 @@ mod tests {
                 }
             }
             assert!(rel.is_relative(), "가드가 상대 경로를 만들어야 의미가 있다");
-            Self::set(&rel, Some(dir))
+            Self::set(&rel, Some(dir), lock)
         }
     }
 
@@ -1748,9 +1765,8 @@ mod tests {
     /// 다시 해석하므로 상대 경로가 나가면 통합이 무음으로 죽는다.
     #[test]
     fn bash_rcfile_args_uses_the_resolved_root() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
-        // 이 함수는 문자열만 조립하고 파일을 만들지 않는다 — 그래서 CWD 아래를
-        // 가리키는 상대 이름을 그대로 써도 워킹트리가 더러워지지 않는다.
+        // 가드 생성자가 SERIAL 을 직접 쥔다(문자열만 조립하고 파일은 안 만든다 — CWD
+        // 아래 상대 이름을 써도 워킹트리가 더러워지지 않는다).
         let _home = RelativeHomeGuard::name("relative-tasty-home");
 
         let settings = GeneralSettings {
@@ -1783,7 +1799,7 @@ mod tests {
     /// 임시 디렉토리를 가리키는 가드를 쓴다(CWD 를 더럽히지 않는다).
     #[test]
     fn effective_shell_envs_uses_the_resolved_root() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        // 가드 생성자가 SERIAL 을 직접 쥔다.
         let _home = RelativeHomeGuard::temp();
 
         let settings = GeneralSettings {
