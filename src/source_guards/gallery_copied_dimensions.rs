@@ -682,6 +682,206 @@ fn the_checkable_roster_premises_still_hold() {
     );
 }
 
+/// **자백한 자리의 명부.** 계상 판정의 모집단을 수가 아니라 이름으로 못 박는다.
+///
+/// 계상 판정은 "doc 에 `본체` 라고 적혔는가" 로 모집단을 정한다. 그래서 그 낱말을 지우면
+/// 자리가 모집단에서 **사라지고**, 판정은 조용히 초록이 된다 — 실패문이 "그건 이행이
+/// 아니다" 라고 경고하는 바로 그 길이다(R491 의 ㄴ 면: 가드가 자기 모집단을 스스로 좁힐
+/// 수 있다). 여기서 집합 동등으로 못 박으면 그 삭제가 **이름을 대며** 빨개진다.
+///
+/// ★ 이것은 구멍을 **막지 않는다. 시끄럽게 만든다.** 낱말과 이 행을 함께 지우면 통과한다
+/// — 다만 그때는 편집이 두 파일에 걸쳐 diff 에 남고, 지운 행이 사유를 달고 있었다는 것도
+/// 남는다. 지금은 낱말 하나가 조용히 사라진다. 그 차이가 이 명부의 값 전부다.
+const CONFESSED: &[(&str, &str)] = &[
+    (GALLERY_INFO_MODAL, "WIDTH"),
+    (GALLERY_INFO_MODAL, "MIN_HEIGHT"),
+    (GALLERY_INFO_MODAL, "MAX_HEIGHT"),
+    (GALLERY_POPUP_FRAME, "TITLE_BAR_HEIGHT"),
+    (GALLERY_POPUP_FRAME, "CONTENT_MARGIN"),
+    (GALLERY_POPUP_FRAME, "TITLE_BTN_SIZE"),
+    (GALLERY_POPUP_FRAME, "TITLE_BTN_EDGE_PAD"),
+    (GALLERY_QUIT_MODAL, "WINDOW_W"),
+    (GALLERY_PORT_SCANNER, "FAV_COL_WIDTH"),
+    (GALLERY_PRESET_EDITOR, "LEAF_SUMMARY_MIN_W"),
+    (
+        "crates/tasty-gallery/src/catalog/components/script_manager.rs",
+        "FRAME_MAX_W",
+    ),
+];
+
+/// 갤러리 상수의 초기화식이 **공용 항목을 가리키는 경로식**인가.
+///
+/// 이 신호는 산문에 안 기댄다 — 소스가 그 항목을 이름으로 부르고 있으면 그 자리는 사본이
+/// 아니라 공유다. 그 사실은 doc 을 지워도 남는다.
+fn points_at_a_shared_item(init: &str) -> bool {
+    init.contains("tasty_design_tokens::") || init.contains("tasty_ui_widgets::")
+}
+
+/// 갤러리의 `LogicalPx` 상수 전부 — (파일, 이름, 초기화식).
+fn gallery_length_constants() -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for (rel_path, raw) in super::rust_sources() {
+        if !rel_path.starts_with("crates/tasty-gallery/src") {
+            continue;
+        }
+        let rel = rel_path.to_string_lossy().to_string();
+        let masked = mask_non_code(&raw);
+        for line in masked.lines() {
+            let t = line
+                .trim_start()
+                .strip_prefix("pub(crate) ")
+                .or_else(|| line.trim_start().strip_prefix("pub "))
+                .unwrap_or(line.trim_start());
+            let Some(rest) = t.strip_prefix("const ") else {
+                continue;
+            };
+            let Some((name, ty)) = rest.split_once(':') else {
+                continue;
+            };
+            if !ty.contains("LogicalPx") {
+                continue;
+            }
+            let name = name.trim().to_string();
+            let init = initializer_of(&masked, &name).unwrap_or_default();
+            out.push((rel.clone(), name, init));
+        }
+    }
+    out
+}
+
+/// **자백의 모집단을 이름으로 못 박는다 — 낱말 하나가 조용히 사라지지 않게.**
+///
+/// # 왜 산문을 못 대체하는가 (재고 나서 쓴다)
+///
+/// 계상 판정이 기대는 신호는 doc 의 낱말 하나다. 그걸 구조 신호로 갈아치울 수 있는지
+/// **먼저 쟀다.** 갤러리 `LogicalPx` 상수 **167** 개가 모집단이고, 그중 자백한 자리는
+/// **11** 이다. 후보 신호 넷을 같은 모집단에 대고 세면:
+///
+/// | 신호 | 집는 수 | 무엇을 놓치나 / 무엇을 잘못 집나 |
+/// |---|---|---|
+/// | 타입(`LogicalPx`) | 167 | 갤러리 자기 치수까지 전부 — 신호가 아니다 |
+/// | 이름이 본체 상수와 같다 | 66 | **60 이 자백과 무관**하다. `WIDTH` 하나가 갤러리 15 파일에서 본체 `confirm_delete_category::WIDTH` 와 짝지어진다 — 서로 다른 컴포넌트다 |
+/// | 이름 같고 **값도 같다** | 37 | 아래 ★ |
+/// | 초기화식이 공용 항목 경로 | 3 | 공유 자리만 — 리터럴을 되풀이하는 사본은 원리적으로 못 본다 |
+///
+/// ★ **값 동등을 짝 판정의 조건으로 쓰면 갈라지는 순간 짝이 아니게 된다.** 이 가드의
+/// 존재 이유가 "갈라졌을 때 시끄러운 것" 인데, 그 신호는 갈라짐을 **짝 아님으로 정의해**
+/// 정확히 말해야 할 때 침묵한다. 실측이 그 형태를 그대로 보여준다 — 이름 같고 값 다른
+/// 22 자리가 나오는데, 그중 어느 것이 "무관한 이름 충돌" 이고 어느 것이 "갈라진 사본"
+/// 인지 신호 자신은 못 가른다.
+///
+/// 그리고 **양성 대조가 먼저 무너진다**(R549): 지금 명부에 오른 갤러리 쪽 11 개 중 이름
+/// 신호가 잡는 것은 **5** 뿐이다. 못 잡는 여섯이 하필 흥미로운 쪽이다 — 이름이 다른 사본
+/// (본체 `DEFAULT_WIDTH` ↔ 갤러리 `WIDTH`), 본체가 테마 파생이라 상수 자체가 없는 자리,
+/// 공용 토큰을 읽어 값이 소스에 없는 자리. 문자열 술어는 **추상화한 쪽을 조용히 놓친다.**
+///
+/// 이 모듈이 이름 바늘을 버린 이유(파일 이름 짝짓기)와 결론이 같지만 **논증은 다르다.**
+/// 거기서는 "같은 이름인데 사본이 아닌 자리" 가 문제였고, 여기서는 **양성 대조 회수율이
+/// 절반 이하** 라는 것과 **값 신호가 자기 목적을 지운다**는 것이 문제다. 같은 이유가 두
+/// 물음에 자동으로 옮겨 붙지 않으므로 여기서 다시 쟀다.
+///
+/// # 그래서 무엇을 했나 — 그리고 무엇을 안 했나
+///
+/// 산문은 남긴다. 대신 **모집단을 집합으로 못 박아** 낱말 삭제가 이름을 대며 빨개지게
+/// 한다. 그리고 산문에 안 기대는 신호 하나(공용 항목 경로식)는 그 부분집합에 한해
+/// 완전히 강제한다 — 그 셋은 doc 을 지워도 소스가 여전히 그 항목을 부른다.
+///
+/// **안 막은 것**: 자백한 적 없는 새 사본은 여전히 안 보인다. 위 표대로 그것을 잡는
+/// 신호가 없다. 낱말과 명부 행을 **함께** 지우는 것도 통과한다 — 다만 두 파일에 걸친
+/// 편집으로 diff 에 남는다. 부분적으로 막은 것을 "막았다" 로 적지 않는다.
+///
+/// # R544 — 빨개졌을 때 가장 싼 초록화
+///
+/// 새 자백이 생겨 빨개지면 가장 싼 길은 이 명부에 한 줄 더하는 것이고, 그러면 계상
+/// 판정이 그 자리를 물게 된다 — **보호가 는다.** 자백이 사라져 빨개지면 가장 싼 길은
+/// 명부에서 지우는 것이고, 그건 보호를 깎는다. 그래서 그 갈래의 실패문이 "낱말만 지운
+/// 것인지 자리 자체가 사라진 것인지" 를 먼저 묻게 썼다. 공용 항목 신호가 빨개지는 길은
+/// 하나뿐이다 — 그 자리를 명부에 올리는 것(보호가 는다).
+#[test]
+fn the_confessed_population_is_pinned_by_name_not_by_prose() {
+    let consts = gallery_length_constants();
+    assert!(
+        consts.len() >= 120,
+        "갤러리 `LogicalPx` 상수를 {} 개밖에 못 찾았다(하한 120) — 수집이 좁아지면 아래 \
+         집합 동등이 양쪽 다 작아진 채로 맞아떨어진다",
+        consts.len()
+    );
+
+    let mut found: Vec<(String, String)> = Vec::new();
+    for (rel, name, _) in &consts {
+        if still_claims_a_host_counterpart(rel, name) {
+            found.push((rel.clone(), name.clone()));
+        }
+    }
+    found.sort();
+    let mut pinned: Vec<(String, String)> = CONFESSED
+        .iter()
+        .map(|(f, n)| ((*f).to_string(), (*n).to_string()))
+        .collect();
+    pinned.sort();
+
+    let gone: Vec<&(String, String)> = pinned.iter().filter(|p| !found.contains(p)).collect();
+    let extra: Vec<&(String, String)> = found.iter().filter(|p| !pinned.contains(p)).collect();
+    assert!(
+        gone.is_empty(),
+        "명부에 있는데 더 이상 본체를 지목하지 않는 자리가 {} 개다:\n{}\n\n\
+         **낱말만 지운 것인지 자리 자체가 사라진 것인지 먼저 갈라라.**\n\
+         · 상수가 지워졌으면 이 명부에서도 지워라(그건 정상이다)\n\
+         · 상수는 그대로인데 doc 에서 `본체` 만 빠졌으면 **되돌려라** — 사본은 그대로 남고 \
+         계상 판정만 그 자리를 못 보게 된다. 그건 이행이 아니다",
+        gone.len(),
+        gone.iter()
+            .map(|(f, n)| format!("  {f}  {n}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    assert!(
+        extra.is_empty(),
+        "본체를 지목하는데 이 명부에 없는 자리가 {} 개다:\n{}\n\n\
+         명부에 올려라 — 모집단을 이름으로 못 박는 것이 이 시험의 전부다",
+        extra.len(),
+        extra
+            .iter()
+            .map(|(f, n)| format!("  {f}  {n}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    // 산문에 안 기대는 신호 하나 — 공용 항목을 가리키는 자리는 그 사실이 소스에 남는다.
+    let shared: Vec<&(String, String, String)> = consts
+        .iter()
+        .filter(|(_, _, init)| points_at_a_shared_item(init))
+        .collect();
+    assert!(
+        !shared.is_empty(),
+        "공용 항목을 가리키는 갤러리 상수를 하나도 못 찾았다 — 술어가 죽었으면 아래 판정이 \
+         공허하다"
+    );
+    for (rel, name, init) in &shared {
+        let accounted = SHARES_ONE_ITEM
+            .iter()
+            .any(|(f, n, ..)| f == rel && n == name)
+            || COPIED.iter().any(|(_, _, g)| match g {
+                Side::Alias(f, n) | Side::Lit(f, n) => f == rel && n == name,
+                Side::ThemeSum(f, _) => f == rel,
+            });
+        assert!(
+            accounted,
+            "`{rel}:{name}` 이 공용 항목을 가리키는데(`{init}`) 어느 명부에도 없다.\n\
+             이 신호는 doc 에 안 기댄다 — 소스가 그 항목을 부르고 있으면 그 자리는 사본이 \
+             아니라 **공유**이고, 그 사실은 주석을 지워도 남는다. `SHARES_ONE_ITEM` 이나 \
+             `COPIED`(Alias) 에 올려라"
+        );
+    }
+
+    println!(
+        "[자백 모집단] 갤러리 LogicalPx 상수 {} · 자백 {} · 공용 항목 경로 {}",
+        consts.len(),
+        found.len(),
+        shared.len()
+    );
+}
+
 #[cfg(test)]
 mod detector {
     use super::*;
