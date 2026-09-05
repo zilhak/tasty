@@ -30,6 +30,7 @@
 | 사유 없는 `#[allow]` (**상한 래칫**) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/tasty-plugin-*/**` 가 바뀐 경우만** · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
+| 사이트 생성 — 가이드 링크 · `ORDER` 누락 | `cargo run --release --manifest-path site/Cargo.toml -- --strict` | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 |
 
 **문서만 담은 push 는 세 크로스플랫폼 잡을 발사하지 않는다.** `crossplatform-check.yml` 의
 push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 있다. 컴파일 입력이
@@ -139,6 +140,31 @@ gh run list --workflow=<이름>.yml --limit 20
 - 예외는 하나다 — **"실제로 발사됐다/발사된 적이 없다" 처럼 원격의 사실을 주장하는
   문장**은 어디에 있든 관측 좌표(측정 날짜 또는 재는 명령)를 같은 서술에 달아야 한다.
   좌표 없는 원격 주장은 확인할 방법이 없고, 확인할 수 없는 주장은 반증되지 않는다.
+
+### 반대 방향 — 배선돼 있는데 아무 문서도 안 적은 채널
+
+위 표와 [가드](#이-문서와-레포가-어긋나지-않게-하는-것)는 **주장 → 워크플로** 한 방향만
+본다. 반대쪽(워크플로에 있는데 아무 문서도 안 적은 채널)은 자동으로 결함이 아니다 —
+주장하지 않은 채널은 거짓 주장이 아니다. 그래서 검사를 만들기 전에 **세었다**
+(2026-09-05, `.github/workflows/` 작업 트리 기준).
+
+자동 트리거를 가진 잡은 19 개다(브랜치 push · PR · schedule 13 + 태그 push 6). 수동 전용은
+5 개다(`build-check.yml` 넷 + `test.yml` 의 `test-linux-x64`). **아무 문서도 안 적은 채널은
+0 이었다.** 이 문서의 표에만 없던 것이 8 개였고, 셋으로 갈렸다.
+
+- **배포 파이프라인이라 여기 안 적는다** — `release.yml` 여섯 잡과 `pages.yml` 의 `deploy`.
+  산출물을 만들지 검증 술어를 돌리지 않는다. 절차는 [release](release.md) ·
+  [release-runners](release-runners.md) · [site](site.md) 가 담는다.
+- **빠뜨린 것 하나** — `pages.yml` 의 `build`. `--strict` 가 깨진 상대 링크와 `ORDER` 누락을
+  **실패로 승격**하므로 검증 술어이고, 그 스텝이 workspace 밖 `site/` 크레이트를 컴파일하기도
+  한다. 위 표에 행을 넣었다.
+- **죽은 채널은 0** — 배선만 있고 안 도는 잡은 없었다. 다만 `build-check.yml` 은 지금까지
+  실행 이력이 0 이다(수동 전용이니 "쓸 수 있다" 는 주장은 참이다).
+
+**그래서 반대 방향 가드는 만들지 않는다.** 결함이 1 건이고 그 1 건은 문서 한 줄로 닫힌다.
+가드로 만들면 "모든 자동 잡이 이 표에 있어야 한다" 는 명부형 판정이 되는데, 배포 잡처럼
+정당한 예외가 계속 생겨 **명부 밖에 대상이 없다** 를 함께 단정해야 한다 — 그 단정이 이
+표보다 먼저 낡는다.
 
 ## "안 돈다" 를 쓰기 전에 두 가지를 갈라라
 
