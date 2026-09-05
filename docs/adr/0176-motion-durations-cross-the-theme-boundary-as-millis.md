@@ -22,7 +22,7 @@
 1000 배 틀렸다.
 
 시간 값은 이 레포에서 세 형태로 흐른다 — 밀리초 `f32`(토큰), 초 `f32`/`f64`(egui
-`animate_bool_with_time`), [`Duration`](std::time::Duration)(타이머). 셋 다 맨 실수라
+`animate_bool_with_time`), `Duration`(타이머). 셋 다 맨 실수라
 섞여도 컴파일이 통과한다. `PhysicalPx`/`LogicalPx` 가 존재하는 이유와 같은 상황이다.
 
 ## Decision
