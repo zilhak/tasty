@@ -1010,7 +1010,7 @@ mod tests {
             unsafe { std::env::set_var(Self::KEY, v) };
         }
         fn unset(&self) {
-            // SAFETY: 상동.
+            // SAFETY: set 과 동일 — 단일 #[test] 안에 격리해 직렬화된다.
             unsafe { std::env::remove_var(Self::KEY) };
         }
     }
@@ -1018,7 +1018,7 @@ mod tests {
     impl Drop for SurfaceIdEnvGuard {
         fn drop(&mut self) {
             match &self.0 {
-                // SAFETY: 상동.
+                // SAFETY: set 과 동일 — 단일 #[test] 안에 격리해 직렬화된다.
                 Some(v) => unsafe { std::env::set_var(Self::KEY, v) },
                 // SAFETY: 상동.
                 None => unsafe { std::env::remove_var(Self::KEY) },

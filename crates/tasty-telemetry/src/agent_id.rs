@@ -139,7 +139,7 @@ mod tests {
             unsafe { std::env::set_var(AgentId::ENV_KEY, v) };
         }
         fn unset(&self) {
-            // SAFETY: 상동.
+            // SAFETY: set 과 동일 — ENV_LOCK 로 직렬화된 단위 테스트 한정.
             unsafe { std::env::remove_var(AgentId::ENV_KEY) };
         }
     }
@@ -147,7 +147,7 @@ mod tests {
     impl Drop for AgentIdEnvGuard {
         fn drop(&mut self) {
             match &self.0 {
-                // SAFETY: 상동.
+                // SAFETY: set 과 동일 — ENV_LOCK 로 직렬화된 단위 테스트 한정.
                 Some(v) => unsafe { std::env::set_var(AgentId::ENV_KEY, v) },
                 // SAFETY: 상동.
                 None => unsafe { std::env::remove_var(AgentId::ENV_KEY) },
