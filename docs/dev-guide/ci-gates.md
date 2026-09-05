@@ -227,26 +227,55 @@ done | sort | uniq -c
 통과했다는 사실은 그 가드가 무엇을 발견했는지에 대해 아무것도 말하지 않는다. 그래서 이
 부류만 따로 센다(2026-09-05, 작업 트리 기준).
 
-모수는 **43** 이다 — 통합 타깃 88 중 레포 파일을 런타임에 읽는 것이 51, 그중 프로세스를
-띄우지 않는 순수 스캔이 43. 재는 명령은 아래.
+모수는 **46** 이다 — 통합 타깃 93 중 레포 파일을 런타임에 읽으면서 프로세스는 띄우지 않는
+것. 재는 명령은 아래. (2026-09-05 재측정. 직전 값은 43/88 이었고, 그 사이 늘어난 것이다 —
+이 수는 커밋마다 바뀌므로 값이 아니라 **재는 법**이 정본이다.)
 
 | | 개수 | 채널 |
 |---|---|---|
-| 필터 없는 채널을 가진 것 | 12 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
-| `check-headless` 만 가진 것 | 31 | `crossplatform-check.yml` 의 `paths-ignore` 뒤 |
+| 필터 없는 채널을 가진 것 | 14 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
+| `check-headless` 만 가진 것 | 32 | `crossplatform-check.yml` 의 `paths-ignore` 뒤 |
 
-**필터가 구멍이 되는 것은 그중 1 뿐이다.** 뒤 31 중 26 은 읽는 경로에 무시 대상이 하나도
+**필터가 구멍이 되는 것은 그중 1 뿐이다.** 뒤 32 중 27 은 읽는 경로에 무시 대상이 하나도
 없고(그 경로가 안 바뀐 push 에서는 판정이 바뀔 수 없다), 4 는 경로 리터럴 없이
 `CARGO_MANIFEST_DIR` 로 `crates/**` 의 매니페스트를 읽는다. 남은 하나가
 `cli_method_table_parity` 이고, 그 입력은 **일부만** 무시 대상이다
 (`docs/dev-guide/api-conventions.md` + `crates/tasty-cli/src/**`).
 
+★ **이 분류는 이제 손으로 세지 않는다.** `crates/tasty-doc-guards/tests/filtered_guards_are_not_totally_blind.rs`
+가 워크플로에서 `paths-ignore` 를 읽어 필터 뒤 스캔 가드를 매번 다시 분류하고, **읽는 경로가
+전부 무시 대상인 것이 생기면 실패한다.** 일부만 무시 대상인 것은 그 파일의
+`PARTIALLY_FILTERED` 에 사유와 함께 등재되며 명부는 양방향으로 고정된다(새로 생겨도,
+사라졌는데 남아 있어도 실패). `doc-guards.yml` 은 경로 필터가 없으므로 이 관측자는
+문서만 담은 push 에서도 돈다.
+
 ★ **"전부 무시 대상" 과 "일부 무시 대상" 은 처방이 다르다.** 전부인 것은 문서만 담은
 push 가 위반의 **유일한 경로**라 필터가 총체적 사각이다 — 그래서 그 셋은 doc-guards 로
 옮겼다(ADR-0138). 일부인 것은 코드 쪽 위반이 여전히 잡히고 문서 쪽 위반도 **다음 소스
-push 에서** 잡힌다. 실측으로도 그 창은 열리지 않았다 — 연속 push 35 구간에서 전부 무시
-대상인 push 는 2 건, `api-conventions.md` 를 담은 push 는 6 건, **그 교집합은 0** 이다
-(창이 짧다는 사실과 함께 읽어라). 그래서 이 하나는 **옮기지 않고 잔여로 적는다.**
+push 에서** 잡힌다. 실측으로도 그 창은 열리지 않았다.
+
+**push 단위** (2026-09-05 재측정, 창 **25.1 시간** · 재구성된 push 41 구간 — 경로 필터가
+없는 `format-check.yml` 의 run 목록으로 push 경계를 복원했고, 그 워크플로가 그보다 오래
+살지 않아 이 창이 지금 잴 수 있는 최대다):
+
+    crossplatform-check 가 안 뜨는 push(변경이 전부 무시 대상) : 4
+    api-conventions.md 를 담은 push                            : 8
+    그 교집합                                                  : 0
+
+**커밋 단위**는 0 이 아니다 — 30 일 창에서 **4**, 전체 이력에서 **10** 이다(변경 파일이
+전부 무시 대상이면서 `api-conventions.md` 를 담은 커밋). 커밋 단위는 push 단위의 **상한**
+이므로(한 push 안의 커밋 하나라도 소스를 담으면 워크플로가 뜬다) 이 수가 노출을 뜻하지는
+않는다. 다만 **0 이 구조가 아니라 묶는 습관에서 나온다**는 것은 말해 준다 — 위 주변부만
+놓고 보면 41 push 당 0.8 회쯤 겹칠 자리이고, 실제로 안 겹친 이유는 `api-conventions.md` 가
+API 작업과 함께 바뀌어 늘 소스와 같은 push 에 실렸기 때문이다.
+
+그래서 이 하나는 **옮기지 않고 잔여로 적는다.** 다시 볼 조건은 위 관측자가 본다 — 입력이
+**전부** 무시 대상이 되는 순간(예: 코드 쪽 입력이 빠지는 리팩터) 그 테스트가 실패한다.
+그때의 처방도 이미 재 뒀다: 문서를 읽는 세 테스트 중
+`commands_cited_as_alternatives_exist` 는 크레이트 의존이 **아예 없어** 그대로 옮겨지고,
+`methods_without_a_cli_entry_point_are_documented` 는 `tasty_doc_guards::method_table`
+텍스트 판독으로 대체되며, `debug_methods_without_a_cli_entry_point_are_documented` 만
+`DEBUG_METHODS` 판독을 새로 만들어야 한다.
 
 ```bash
 # 순수 소스 스캔 가드 세기 — 통합 타깃 중 레포 파일을 읽고 프로세스는 안 띄우는 것
