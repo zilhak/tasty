@@ -1025,6 +1025,24 @@ fn multi_window_owner_routing() {
         "workspace.list 가 모든 engine 의 workspace 를 합쳐 반환해야: {workspaces:?}"
     );
 
+    // `tree` 도 전체 순회 — 이름이 `*.list` 가 아니라서 오래 빠져 있던 자리다.
+    // 판정을 수로 하지 않고 **`workspace.list` 와 같은 id 집합**인지로 한다: 둘이
+    // 같은 물음에 답하므로, 한쪽만 창을 건너면 그 자리에서 갈린다.
+    let ws_ids: std::collections::HashSet<u64> =
+        workspaces.iter().filter_map(|w| w["id"].as_u64()).collect();
+    let tree = tasty
+        .call("tree", json!({}))
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let tree_ids: std::collections::HashSet<u64> =
+        tree.iter().filter_map(|w| w["id"].as_u64()).collect();
+    assert_eq!(
+        tree_ids, ws_ids,
+        "tree 와 workspace.list 의 workspace 집합이 달라졌다 — 한쪽이 포커스된 창만 \
+         보고 있다. tree={tree:?} workspace.list={workspaces:?}"
+    );
+
     // owner-based routing: focused 가 새 윈도우인 상태에서 첫 윈도우 surface 에 IPC.
     // (focus 는 사용자 단축키 영역이라 IPC 로 전환 안 함 — 자동 focus 가 새 윈도우.)
     tasty.set_mark(sid);

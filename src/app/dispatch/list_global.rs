@@ -35,8 +35,15 @@ impl App {
             "pane.list" => {
                 Some(self.collect_list(id, |_c, s, e, id| pane::handle_pane_list(s, e, id)))
             }
-            // 아래 둘은 결과가 맨 배열이 아니라 **이름 붙은 배열**이라 합산 함수가
-            // 필드를 알아야 한다. 막힌 것은 함수의 거처가 아니라 결과 모양이었다.
+            // `tree` 는 이름이 `*.list` 가 아니라서 이 집합을 이름 모양으로 훑는
+            // 눈에 오래 안 보였다. 성질은 같다 — 창 소유 컬렉션을 순회하고, 대상 인자가
+            // 없어 포커스된 창으로 떨어졌다. 실측(창 둘, 창1 비포커스): `list tree` 가
+            // 창2 의 워크스페이스만 냈고 창1 의 것은 `list panes`·`list workspaces`
+            // 에는 보이는데 여기서만 사라졌다. 워크스페이스 id 는 창을 건너 유일하므로
+            // (`IdGenerator` 공유) 이어 붙이면 그대로 키가 된다.
+            "tree" => Some(self.collect_list(id, |_c, s, e, id| {
+                JsonRpcResponse::success(id, json!(host_ipc::handler::build_engine_tree(s, e)))
+            })),
             // 아래 둘은 결과가 맨 배열이 아니라 **이름 붙은 배열**이라 합산 함수가
             // 필드를 알아야 한다. 막힌 것은 함수의 거처가 아니라 결과 모양이었다.
             "pty.list" => {

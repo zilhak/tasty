@@ -184,3 +184,4 @@
 | 0171 | [호스트가 준 오류 코드는 plugin 경계를 넘어 살아남는다 — ADR-0153 의 "한 겹 감싸짐" 조항 개정](0171-a-host-error-code-survives-the-plugin-boundary.md) | Accepted | 2026-09-05 | ipc, error-codes, plugin, sdk, wire-protocol, partial-amendment, adr-0153, adr-0154, adr-0163, adr-0167 |
 | 0172 | [뒤에 로컬 정리가 있는 훅 핸들러는 host 호출 실패를 전파하지 않는다](0172-a-hook-handler-that-cleans-up-locally-does-not-propagate.md) | Accepted | 2026-09-05 | plugin, error-handling, hook, agent-integration, adr-0075, adr-0092 |
 | 0173 | [namespace 해소는 프로세스 표가 아니라 매니페스트를 읽는다](0173-namespace-resolution-reads-the-manifest-not-the-process-table.md) | Accepted | 2026-09-05 | plugin, ipc, routing, headless, namespace, error-codes, adr-0136, adr-0167, adr-0171 |
+| 0175 | [창 소유 목록의 합산 여부는 이름이 아니라 성질로 판정한다](0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md) | Accepted | 2026-09-05 | focus-independence, ipc, routing, list-aggregation |
