@@ -32,16 +32,16 @@ use crate::catalog::widgets::dialog as kit;
 
 // ── 프레임 고정 치수 (디자인 raw px 근사 — 화면 전용 고정값, token-policy §c) ──
 const FRAME_W: LogicalPx = LogicalPx(640.0);
-const FRAME_H: f32 = 480.0;
-const HEADER_H: f32 = 44.0; // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
-const HEADER_PAD_L: f32 = 14.0; // 디자인 L14
-const PATH_H: f32 = 36.0; // padding ~6/6 + refresh IconButton(sm)
-const LIST_HEAD_H: f32 = 26.0; // caption row — loaded/multi 상태만
-const FOOTER_H: f32 = 84.0; // name row(28) + gap(8) + action row(28) + padding 10/10 근사
-const BODY_H: f32 = FRAME_H - HEADER_H - PATH_H - FOOTER_H;
+const FRAME_H: LogicalPx = LogicalPx(480.0);
+const HEADER_H: LogicalPx = LogicalPx(44.0); // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
+const HEADER_PAD_L: LogicalPx = LogicalPx(14.0); // 디자인 L14
+const PATH_H: LogicalPx = LogicalPx(36.0); // padding ~6/6 + refresh IconButton(sm)
+const LIST_HEAD_H: LogicalPx = LogicalPx(26.0); // caption row — loaded/multi 상태만
+const FOOTER_H: LogicalPx = LogicalPx(84.0); // name row(28) + gap(8) + action row(28) + padding 10/10 근사
+const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H).minus(PATH_H).minus(FOOTER_H);
 const ROW_H: LogicalPx = LogicalPx(28.0); // FpRow padding 6/space-md + content 16
-const SIZE_COL_W: f32 = 68.0;
-const MOD_COL_W: f32 = 108.0;
+const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
+const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라벨 고정폭
 const FOOTER_CHIP_W: LogicalPx = LogicalPx(92.0); // "All files ▾" 타입필터 칩
 
@@ -268,8 +268,10 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
 }
 
 fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), HEADER_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), HEADER_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -277,7 +279,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(
-            rect.left() + HEADER_PAD_L,
+            rect.left() + HEADER_PAD_L.value(),
             rect.top() + theme.spacing_sm.value(),
         ),
         egui::pos2(
@@ -346,8 +348,10 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
 }
 
 fn path_bar(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), PATH_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), PATH_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
     ui.painter().hline(
@@ -356,7 +360,7 @@ fn path_bar(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L, rect.top()),
+        egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
         egui::pos2(rect.right() - theme.spacing_sm.value(), rect.bottom()),
     );
     let mut child = ui.new_child(
@@ -460,21 +464,21 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
 
 /// 행 컬럼 x좌표 — list header 와 `row` 가 동일 레이아웃을 공유.
 struct Cols {
-    checkbox_x: Option<f32>,
-    icon_x: f32,
-    name_left: f32,
+    checkbox_x: Option<LogicalPx>,
+    icon_x: LogicalPx,
+    name_left: LogicalPx,
     /// name 컬럼 우측 한계(= size 컬럼 좌측 - gap) — 디자인 `flex:1; max-width:0;
     /// overflow:hidden; ellipsis` 흉내(긴 이름 말줄임)에 쓰인다.
-    name_right: f32,
-    size_right: f32,
-    mod_right: f32,
+    name_right: LogicalPx,
+    size_right: LogicalPx,
+    mod_right: LogicalPx,
 }
 
 fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
-    let pad = theme.spacing_md.value();
-    let gap = theme.spacing_sm.value();
-    let glyph = theme.icon_glyph_size_md.value();
-    let mut x = rect.left() + pad;
+    let pad = theme.spacing_md;
+    let gap = theme.spacing_sm;
+    let glyph = theme.icon_glyph_size_md;
+    let mut x = LogicalPx(rect.left()) + pad;
     let checkbox_x = if multi {
         let cx = x;
         x += glyph + gap;
@@ -485,7 +489,7 @@ fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
     let icon_x = x;
     x += glyph + gap;
     let name_left = x;
-    let mod_right = rect.right() - pad;
+    let mod_right = LogicalPx(rect.right()) - pad;
     let size_right = mod_right - MOD_COL_W - gap;
     let name_right = size_right - SIZE_COL_W - gap;
     Cols {
@@ -500,21 +504,21 @@ fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
 
 /// 폭이 `max_w` 를 넘으면 문자 단위로 잘라 `…` 을 붙인다 (디자인 `text-overflow:
 /// ellipsis` 흉내 — FpRow name 컬럼).
-fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: f32) -> String {
+fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: LogicalPx) -> String {
     let measure = |s: &str| {
         ui.painter()
             .layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
             .rect
             .width()
     };
-    if max_w <= 0.0 || measure(text) <= max_w {
+    if max_w <= LogicalPx(0.0) || measure(text) <= max_w.value() {
         return text.to_owned();
     }
     let mut chars: Vec<char> = text.chars().collect();
     while !chars.is_empty() {
         chars.pop();
         let candidate: String = chars.iter().collect::<String>() + "…";
-        if measure(&candidate) <= max_w {
+        if measure(&candidate) <= max_w.value() {
             return candidate;
         }
     }
@@ -523,7 +527,7 @@ fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: f32) -> String {
 
 fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), LIST_HEAD_H),
+        egui::vec2(FRAME_W.value(), LIST_HEAD_H.value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -535,21 +539,21 @@ fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
     let font = egui::FontId::monospace(theme.font_size_micro.value());
     let muted = theme.text_muted().to_egui();
     ui.painter().text(
-        egui::pos2(c.name_left, rect.center().y),
+        egui::pos2(c.name_left.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         "NAME",
         font.clone(),
         muted,
     );
     ui.painter().text(
-        egui::pos2(c.size_right, rect.center().y),
+        egui::pos2(c.size_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         "SIZE",
         font.clone(),
         muted,
     );
     ui.painter().text(
-        egui::pos2(c.mod_right, rect.center().y),
+        egui::pos2(c.mod_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         "MODIFIED",
         font,
@@ -592,7 +596,7 @@ fn row(
     if let Some(cx) = c.checkbox_x {
         let mut chk = checked;
         let cb_rect = egui::Rect::from_min_size(
-            egui::pos2(cx, rect.center().y - glyph_size * 0.5),
+            egui::pos2(cx.value(), rect.center().y - glyph_size * 0.5),
             egui::vec2(glyph_size, glyph_size),
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cb_rect));
@@ -604,7 +608,7 @@ fn row(
         (icons::FILE, theme.text_muted().to_egui())
     };
     let ir = egui::Rect::from_min_size(
-        egui::pos2(c.icon_x, rect.center().y - glyph_size * 0.5),
+        egui::pos2(c.icon_x.value(), rect.center().y - glyph_size * 0.5),
         egui::vec2(glyph_size, glyph_size),
     );
     icon_glyph.image(glyph_size, icon_color).paint_at(ui, ir);
@@ -616,7 +620,7 @@ fn row(
     let name_font = egui::FontId::proportional(theme.font_size_body.value());
     let name_text = elide(ui, r.name, name_font.clone(), c.name_right - c.name_left);
     ui.painter().text(
-        egui::pos2(c.name_left, rect.center().y),
+        egui::pos2(c.name_left.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         name_text,
         name_font,
@@ -625,14 +629,14 @@ fn row(
     let mono_caption = egui::FontId::monospace(theme.font_size_caption.value());
     let muted = theme.text_muted().to_egui();
     ui.painter().text(
-        egui::pos2(c.size_right, rect.center().y),
+        egui::pos2(c.size_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         r.size,
         mono_caption.clone(),
         muted,
     );
     ui.painter().text(
-        egui::pos2(c.mod_right, rect.center().y),
+        egui::pos2(c.mod_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         r.modified,
         mono_caption,
@@ -645,7 +649,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::Loaded => {
             list_header(ui, theme, multi);
             let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(FRAME_W.value(), BODY_H - LIST_HEAD_H),
+                egui::vec2(FRAME_W.value(), (BODY_H - LIST_HEAD_H).value()),
                 egui::Sense::hover(),
             );
             let mut col = ui.new_child(
@@ -722,14 +726,16 @@ fn center(
     body_text: Option<&str>,
     action: Option<&str>,
 ) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), BODY_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), BODY_H.value()),
+        egui::Sense::hover(),
+    );
     let mut col = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    col.add_space((BODY_H - EMPTY_BLOCK_H).max(0.0) * 0.5);
+    col.add_space(((BODY_H - LogicalPx(EMPTY_BLOCK_H)).max(LogicalPx(0.0)) * 0.5).value());
     col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
     if spinner {
         Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
@@ -760,8 +766,10 @@ fn center(
 }
 
 fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), FOOTER_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), FOOTER_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
