@@ -176,16 +176,17 @@ mod tests {
 
     #[test]
     fn await_times_out_after_short_duration() {
+        const CEILING: Duration = Duration::from_millis(500);
         let hub = TaskWakerHub::new();
+        let mut control = ControlProbe::start("50ms 대기의 상한");
         let start = Instant::now();
         let out = hub.await_terminal(1, &"t-1".to_string(), Some(50), snap(TaskState::Running));
         let elapsed = start.elapsed();
         assert!(matches!(out, AwaitOutcome::TimedOut));
-        // 50ms ± 100ms 허용 (CI jitter).
-        assert!(
-            elapsed >= Duration::from_millis(40) && elapsed < Duration::from_millis(500),
-            "elapsed={elapsed:?}"
-        );
+        // 아래쪽(40ms)은 부하에 안 흔들린다 — 굶은 러너는 타이머를 **일찍** 깨우지
+        // 못하므로 이 방향의 빨강은 언제나 코드다. 위쪽만 대조군을 싣는다.
+        assert!(elapsed >= Duration::from_millis(40), "elapsed={elapsed:?}");
+        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
     }
 
     #[test]

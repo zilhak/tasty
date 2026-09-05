@@ -1285,12 +1285,14 @@ fn alive_check_throttled_within_window() {
     // In-the-past init: the first process() must check immediately.
     assert!(t.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
 
+    // 이 자리가 재는 것은 "`process()` 가 도장을 다시 찍었나" 다. 그것을 벽시계 예산으로
+    // 물으면(`first.elapsed() < ALIVE_CHECK_INTERVAL`) 굶은 러너에서 빨개지고, 그 빨강이
+    // 코드를 지목한다. 도장 자체를 비교하면 예산이 아예 없어진다 — 대조군보다 나은
+    // 처방이라 여기는 ADR-0181 의 (B) 가 아니다.
+    let before = t.last_alive_check;
     t.process();
     let first = t.last_alive_check;
-    assert!(
-        first.elapsed() < ALIVE_CHECK_INTERVAL,
-        "first check stamped now"
-    );
+    assert!(first > before, "first check stamped now");
 
     // Immediate second call falls inside the throttle window — no re-check.
     t.process();
