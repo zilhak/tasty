@@ -134,7 +134,11 @@ impl Terminal {
         let st = match self.state.try_lock() {
             Ok(st) => st,
             Err(std::sync::TryLockError::WouldBlock) => return true,
-            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+            Err(std::sync::TryLockError::Poisoned(p)) => tasty_utils::poison::recover_poisoned(
+                p,
+                crate::STATE_WHAT,
+                &crate::STATE_POISON_REPORTED,
+            ),
         };
         // Ignore output that looks like echo of recent user input.
         if st.last_output_at <= st.last_input_at + INPUT_ECHO_WINDOW {
@@ -152,7 +156,14 @@ impl Terminal {
         match self.state.try_lock() {
             Ok(st) => st.last_output_at,
             Err(std::sync::TryLockError::WouldBlock) => std::time::Instant::now(),
-            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().last_output_at,
+            Err(std::sync::TryLockError::Poisoned(p)) => {
+                tasty_utils::poison::recover_poisoned(
+                    p,
+                    crate::STATE_WHAT,
+                    &crate::STATE_POISON_REPORTED,
+                )
+                .last_output_at
+            }
         }
     }
 
@@ -173,9 +184,12 @@ impl Terminal {
                 // Parser holds the lock while ingesting output, so this is exactly
                 // the burst window where drawing an intermediate cursor is noisy.
                 Err(std::sync::TryLockError::WouldBlock) => true,
-                Err(std::sync::TryLockError::Poisoned(p)) => {
-                    p.into_inner().should_suppress_cursor_during_output()
-                }
+                Err(std::sync::TryLockError::Poisoned(p)) => tasty_utils::poison::recover_poisoned(
+                    p,
+                    crate::STATE_WHAT,
+                    &crate::STATE_POISON_REPORTED,
+                )
+                .should_suppress_cursor_during_output(),
             }
         }
     }
@@ -252,7 +266,14 @@ impl Terminal {
         match self.state.try_lock() {
             Ok(mut st) => Some(st.take_events()),
             Err(std::sync::TryLockError::WouldBlock) => None,
-            Err(std::sync::TryLockError::Poisoned(p)) => Some(p.into_inner().take_events()),
+            Err(std::sync::TryLockError::Poisoned(p)) => Some(
+                tasty_utils::poison::recover_poisoned(
+                    p,
+                    crate::STATE_WHAT,
+                    &crate::STATE_POISON_REPORTED,
+                )
+                .take_events(),
+            ),
         }
     }
 
