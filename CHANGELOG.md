@@ -90,6 +90,8 @@
 
 ### Fixed
 
+- **plugin 을 제거해도 그 이름이 계속 예약돼 있던 것** — `plugin.remove` 는 설치 목록만 손으로 지우고 **namespace 소유 표를 다시 만들지 않았다.** 소유 표는 설치된 매니페스트에서 유도되는데(제거된 plugin 은 거기 없다) 유도를 안 돌리니 표에 옛 항목이 남았고, 그 prefix 의 호출이 `-32002 plugin '<id>' is not running` 으로 거절됐다 — 설치조차 안 돼 있는데. 호스트가 같은 이름에 구현을 가진 `image.list` · `image.open` · `markdown.navigate` 는 그 상태에서 **닿을 방법이 없었다**(실측: `plugin.remove com.tasty.image` 뒤 `plugin.list` 는 8 개인데 `image.list` 는 `-32002`). 이제 제거도 설치와 같은 재발견 경로를 거쳐, 제거 직후 그 이름은 호스트 구현이 답한다.
+
 - **한 머신에 tasty 를 두 벌 띄우면 자식 CLI 의 prompt 가 섞이던 것** — claude·codex plugin 이 자식에게 넘길 prompt 를 임시파일에 쓰고 `$(cat '<path>')` 로 치환하는데, 그 파일 이름이 `{plugin prefix}{surface_id}.txt` 라 **인스턴스마다 달라지는 성분이 없었다.** surface id 공간은 인스턴스마다 독립이고 매 실행 1 부터 재발급되므로 두 인스턴스에 같은 번호의 surface 가 동시에 산다 — 그때 두 인스턴스의 같은 plugin 이 같은 파일을 쓴다. 쓰기가 "지우고 다시 만들기" 라, 한쪽의 쓰기가 다른 쪽 자식 셸의 치환 사이에 끼면 **prompt 가 빈 문자열이 되거나 남의 prompt 가 들어갔다.** 이제 이름에 plugin 프로세스의 pid 가 들어가 인스턴스 축이 갈린다. 청소 스윕은 그대로다 — pid 를 prefix 뒤에 두어 이전 버전이 남긴 이름도 같은 패턴에 걸린다.
 
 - **`split` 이 지목한 대상이 아니라 포커스된 창에서 실행되던 것** — `tasty split --target-surface <ID>` (IPC `split`)는 대상이 **필수**인데, 라우팅이 `target_surface`/`target_pane` 을 인식하지 않아 모든 split 이 포커스된 창으로 갔다. 창이 둘일 때 같은 요청이 사용자가 어디를 클릭했느냐에 따라 성공하기도 `"surface N not found"` 로 실패하기도 했다 — 그 surface 는 다른 창에 살아 있는 채로. 이제 두 키로 주인 창을 찾고, 존재하지 않는 대상은 `-32602` 로 거절한다(`no live surface N (named by 'split')`). CLI 가 이 값을 문자열로 싣는 형태와 nickname 으로 지목하는 형태도 함께 풀린다.

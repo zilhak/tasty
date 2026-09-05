@@ -332,9 +332,12 @@ pub struct PluginManager {
     /// plugin hello/manifest 수신 시 등록되고, disable / 재시작 시 정리된다.
     /// 설정 모달의 sub-tab 합성은 본 registry 를 순회 (Step 5).
     pub settings_pages: crate::settings_registry::SettingsPageRegistry,
-    /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. plugin이
-    /// 실행 중일 때만 등록되며, 호스트 IPC dispatcher가 namespace 메서드를
-    /// 어느 plugin에 forward할지 해결할 때 조회한다.
+    /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. **설치된 매니페스트에서
+    /// 유도되며**(ADR-0173) 실행 여부와 무관하다 — 호스트 IPC dispatcher가 namespace
+    /// 메서드를 어느 plugin에 forward할지 해결할 때 조회한다. "누가 그 이름의 주인인가"
+    /// 와 "지금 떠 있는가" 는 다른 물음이고, 뒤엣것은 `processes` 가 답한다(안 떠 있으면
+    /// `-32002`). 이 표는 `packages` 에서 유도되므로 `packages` 를 바꾸는 자리는
+    /// [`PluginManager::refresh_packages`] 를 거쳐야 한다.
     pub ipc_namespaces: IpcNamespaceRegistry,
     /// plugin id → (buffer id → 매핑 영역). 호스트가 `host.shared_buffer.create`로
     /// 발급한 영역의 매핑 유지(=OS region keep-alive)와 dirty 수신 시 lookup용.

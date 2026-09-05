@@ -203,7 +203,14 @@ impl App {
         }
         std::fs::remove_dir_all(&plugin_dir)
             .map_err(|e| anyhow::anyhow!("remove dir failed: {e}"))?;
-        mgr.packages.retain(|p| p.manifest.id != plugin_id);
+        // 설치 목록을 **다시 발견**한다 — 손으로 `packages` 만 지우면 안 된다.
+        // `ipc_namespaces` 는 이제 설치된 매니페스트에서 유도되는 표라
+        // (ADR-0173) `packages` 를 바꾸는 자리가 그 유도를 같이 돌리지 않으면
+        // 지운 plugin 의 prefix 가 남아, 그 이름의 호출이 `-32002 plugin '<id>'
+        // is not running` 으로 거절된다 — 설치조차 안 돼 있는데. 호스트가 같은
+        // 이름에 구현을 갖고 있으면 그 구현이 그 상태에서 가려진다.
+        // `plugin_install` 이 이미 같은 함수를 쓴다(두 방향을 대칭으로 둔다).
+        mgr.refresh_packages();
         mgr.command_registry.unregister_plugin(&plugin_id);
         crate::i18n::unregister_namespace(&plugin_id);
         mgr.recompute_extensions();
