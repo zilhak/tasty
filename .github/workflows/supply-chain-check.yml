@@ -1,12 +1,30 @@
 name: Supply Chain Check
 
 # 루트 deny.toml 로 cargo-deny 의 advisories / licenses / bans / sources 4단계를 검증.
-# cargo-deny 는 무컴파일·초단위라 자동화 부하가 극소이므로 매 PR 게이트로 상시화한다.
-# 추가로 advisory DB 는 코드 무변경에도 시간 드리프트(신규 CVE)가 생기므로 주간 스케줄로
-# 정기 스캔한다(daily 는 러너 부하 대비 이득이 적어 weekly). build-check/test 처럼 무거운
-# 잡과 달리 deny 는 부하가 없어 수동 only 정책의 예외로 둔다.
+#
+# **이 검사가 잡는 것은 두 갈래이고 트리거가 각각 다르다.**
+#  - 변경이 만드는 것(새 의존의 라이선스·ban, 새로 직접 의존이 된 크레이트의 advisory,
+#    쓰이지 않게 된 ignore 항목): 그 변경이 들어오는 push 에서 잡아야 한다 → `push` +
+#    `paths`. 걸리는 입력이 `Cargo.lock` 과 `deny.toml` 뿐이므로 경로를 그 둘로 좁힌다.
+#  - 시간이 만드는 것(코드 무변경인데 새 CVE 가 뜬 경우): push 로는 영영 안 잡힌다
+#    → 주간 `schedule`. daily 는 러너 부하 대비 이득이 적어 weekly.
+#
+# `pull_request` 만으로는 앞 갈래가 **이 저장소에서 안 돈다** — main 에 직접 push 하는
+# 흐름이라 PR 이 열리지 않는다(실측: 최근 실행 8 회가 전부 `schedule`, `pull_request` 0).
+# 그동안 앞 갈래의 유일한 채널이 주간 스케줄이어서 노출 창이 최대 7 일이었다.
+#
+# 비용: 실측 13~15 s(무컴파일 — lock 파일만 읽는다). 경로 필터를 걸면 도는 회차도
+# 적다 — 연속 push 34 구간에서 `Cargo.lock` 을 담은 것 10 회. self-hosted 러너를 쓰는
+# 이유는 `cargo-deny` 가 거기 이미 깔려 있기 때문이다(공용 러너면 매 회차
+# `cargo install` 로 분 단위가 된다). build-check/test 처럼 무거운 잡과 달리 이 잡은
+# 그 줄에서 초 단위로 빠진다.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - deny.toml
   pull_request:
     branches: [main]
   schedule:
