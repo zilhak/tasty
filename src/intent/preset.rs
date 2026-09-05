@@ -221,13 +221,11 @@ fn clone_preset_from_store(
     kind: PresetKind,
     name: &str,
 ) -> Result<Option<ClonedPreset>, PresetMutationError> {
-    let guard = match core.preset_store.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            tracing::warn!("preset_store mutex poisoned; recovering");
-            p.into_inner()
-        }
-    };
+    let guard = crate::poison::recover_mutex(
+        core.preset_store.lock(),
+        crate::core::PRESET_STORE_WHAT,
+        &crate::core::PRESET_STORE_POISONED,
+    );
     let cloned = match kind {
         PresetKind::Workspace => guard
             .get_workspace(name)
@@ -371,13 +369,11 @@ pub fn save_inner(
     overwrite: bool,
     preset: ClonedPreset,
 ) -> Result<SaveOutcome, PresetMutationError> {
-    let mut store = match core.preset_store.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            tracing::warn!("preset_store mutex poisoned; recovering");
-            p.into_inner()
-        }
-    };
+    let mut store = crate::poison::recover_mutex(
+        core.preset_store.lock(),
+        crate::core::PRESET_STORE_WHAT,
+        &crate::core::PRESET_STORE_POISONED,
+    );
 
     let kind = preset.kind();
     let Some(name) = resolve_save_name(&store, kind, base_name, explicit_name, overwrite) else {
@@ -395,13 +391,11 @@ pub fn delete_inner(
     kind: PresetKind,
     name: &str,
 ) -> Result<(), PresetMutationError> {
-    let mut store = match core.preset_store.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            tracing::warn!("preset_store mutex poisoned; recovering");
-            p.into_inner()
-        }
-    };
+    let mut store = crate::poison::recover_mutex(
+        core.preset_store.lock(),
+        crate::core::PRESET_STORE_WHAT,
+        &crate::core::PRESET_STORE_POISONED,
+    );
     store.delete(kind, name).map_err(PresetMutationError::Store)
 }
 
@@ -412,13 +406,11 @@ pub fn rename_inner(
     from: &str,
     to: &str,
 ) -> Result<(), PresetMutationError> {
-    let mut store = match core.preset_store.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            tracing::warn!("preset_store mutex poisoned; recovering");
-            p.into_inner()
-        }
-    };
+    let mut store = crate::poison::recover_mutex(
+        core.preset_store.lock(),
+        crate::core::PRESET_STORE_WHAT,
+        &crate::core::PRESET_STORE_POISONED,
+    );
     store
         .rename(kind, from, to)
         .map_err(PresetMutationError::Store)

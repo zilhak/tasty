@@ -56,13 +56,11 @@ fn with_store<R>(
     core: &crate::core::Core,
     f: impl FnOnce(&tasty_presets::PresetStore) -> R,
 ) -> R {
-    let guard = match core.preset_store.lock() {
-        Ok(g) => g,
-        Err(p) => {
-            tracing::warn!("preset_store mutex poisoned; recovering");
-            p.into_inner()
-        }
-    };
+    let guard = crate::poison::recover_mutex(
+        core.preset_store.lock(),
+        crate::core::PRESET_STORE_WHAT,
+        &crate::core::PRESET_STORE_POISONED,
+    );
     f(&guard)
 }
 

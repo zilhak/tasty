@@ -152,13 +152,11 @@ impl View for PresetView {
         let keybindings = &self.keybindings;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
-            let mut store_guard = match store_arc.lock() {
-                Ok(g) => g,
-                Err(poisoned) => {
-                    tracing::warn!("preset_store mutex poisoned; recovering");
-                    poisoned.into_inner()
-                }
-            };
+            let mut store_guard = crate::poison::recover_mutex(
+                store_arc.lock(),
+                crate::core::PRESET_STORE_WHAT,
+                &crate::core::PRESET_STORE_POISONED,
+            );
             crate::preset_ui::draw_preset_panel(
                 ctx,
                 &mut store_guard,

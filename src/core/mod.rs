@@ -124,6 +124,12 @@ pub(crate) const MEMORY_WHAT: &str = "memory store";
 pub(crate) static MEMORY_POISONED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// preset store 락의 poison 복구 공용 보고 좌표. `preset_store`(concrete)와 `presets`
+/// (dyn)는 같은 allocation 이라 락도 하나 — 첫-1 회 플래그도 하나다.
+pub(crate) const PRESET_STORE_WHAT: &str = "preset store";
+pub(crate) static PRESET_STORE_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// mirror 워크스페이스 원격 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)
 /// 의 원소. popup wrapper/`ExplorerViewStore` outbox 가 (mirror 판별 후) push, App 이
 /// `about_to_wait` 에서 drain 해 세션의 attach 채널로 `list_dir_request` 를 전송한다 —

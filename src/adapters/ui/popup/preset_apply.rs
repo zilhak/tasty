@@ -113,10 +113,12 @@ fn draw_apply_popup(
     kind: PresetKind,
 ) -> PopupAction {
     let th = theme::theme();
-    let names: Vec<String> = match state.preset_store.lock() {
-        Ok(g) => g.list(kind),
-        Err(poisoned) => poisoned.into_inner().list(kind),
-    };
+    let names: Vec<String> = crate::poison::recover_mutex(
+        state.preset_store.lock(),
+        crate::core::PRESET_STORE_WHAT,
+        &crate::core::PRESET_STORE_POISONED,
+    )
+    .list(kind);
 
     // 초기 선택 seeding: 선택이 없으면 첫 항목, 선택이 names 에 없으면 첫 항목으로 reset.
     if state.dialogs.preset_picker_selected.is_none() {
