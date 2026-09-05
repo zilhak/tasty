@@ -1115,3 +1115,123 @@ const SCAN_ROOTS: &[&str] = &[
         );
     }
 }
+
+/// UI 폰트 상한(14px)을 넘는 명명 const 의 **정책 면제** — 범위 밖이라 남는다.
+///
+/// 사유의 형태가 "이 자리는 규칙 범위 밖이다" 라, 덮을 것이 지금 없어도 지우지 않는다
+/// (ADR-0150). 아래 [`OVER_CAP_PENDING`] 과 **성격이 달라 합치지 않는다.**
+const OVER_CAP_SANCTIONED: &[(&str, &str)] = &[(
+    // 브랜드 락업 — `docs/architecture/boot-sequence.md` 가 "14px UI 폰트 상한의
+    // sanctioned 예외" 라고 명시한다. 워드마크는 브랜드 자산의 verbatim 전사라
+    // UI 텍스트 스케일의 대상이 아니다.
+    "src/gfx/gpu/shell_setup.rs",
+    "SETUP_BRAND_TITLE_SIZE",
+)];
+
+/// 상한을 넘는데 **승인이 없는** 자리 — 한시 목록이라 줄어들기만 한다.
+///
+/// 사유가 한 가지다: "이 값을 어느 semantic 에 묶을지가 아직 안 정해졌고, 낮추면
+/// 픽셀이 바뀐다." 그 사유가 사라지면(= 상한 이하가 되거나 승인되면) 항목도 사라져야
+/// 하고, 아래 단언이 양방향으로 강제한다.
+const OVER_CAP_PENDING: &[(&str, &str)] = &[(
+    // primitive 16 을 쓰는 자리. const 의 doc 은 tier 를 설명하지만 **상한을 넘는다는
+    // 말은 없다** — 상한이 `theme.md` 표에 한 줄로만 있고 채널이 없어서, 그 자리를
+    // 만든 사람도 위반이라고 인지하지 못했다. 14 로 내리면 픽셀이 바뀌므로 디자인 판정.
+    "src/view/plugins/ui/add.rs",
+    "ADD_PREVIEW_NAME_PRIMITIVE_16",
+)];
+
+/// UI 폰트 상한. `docs/design/systems/theme.md` "UI 폰트 최대" 행이 정본이다.
+const UI_FONT_SIZE_CAP: f32 = 14.0;
+
+/// 상수 표 하한 — 표가 비면 "상한 초과 0" 이 조용히 참이 된다.
+const MIN_SCANNED_CONSTS: usize = 100;
+
+/// 폰트 자리의 명명 const 가 **UI 폰트 상한을 넘지 않는다.**
+///
+/// 상한은 `CLAUDE.md` 와 `docs/design/systems/theme.md` 에 규칙으로 있었지만 **그것을
+/// 보는 판정기가 없었다.** 값의 크기는 기계가 볼 수 있는데도 리터럴 재유입(자매 가드)과
+/// 토큰 복사본만 보고 있었고, 크기는 아무도 안 봤다.
+///
+/// 면제를 **사유별로 두 목록으로** 나눈다. 섞으면 역방향 검사를 못 건다 — 정책 면제는
+/// 덮을 것이 없어도 남아야 하고(ADR-0150) 한시 부채는 사라지면 지워져야 하는데, 한
+/// 목록에서는 두 규칙이 동시에 성립할 수 없다. `tests/layering.rs` 가 같은 이유로
+/// `ALLOWED_PATHS` 와 `BASELINE_FILES` 를 갈라 둔다.
+#[test]
+fn no_named_font_const_exceeds_the_ui_font_size_cap() {
+    let (sources, consts) = scan_sources();
+    let sanctioned = |rel: &str, name: &str| {
+        OVER_CAP_SANCTIONED
+            .iter()
+            .any(|(r, n)| *r == rel && *n == name)
+    };
+    let mut over_cap: Vec<(String, String, f32)> = Vec::new();
+    for (rel, contents) in &sources {
+        let lines: Vec<&str> = contents.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            for (arg, at) in font_call_args(line) {
+                if spinner_receiver(&lines, i, &line[..at]) {
+                    continue;
+                }
+                let Some((_, value)) = consts.iter().find(|(n, _)| *n == arg) else {
+                    continue;
+                };
+                if *value > UI_FONT_SIZE_CAP {
+                    over_cap.push((rel.clone(), arg, *value));
+                }
+            }
+        }
+    }
+
+    // 코퍼스가 비면 위반도 0 이다 — 상수 표가 살아 있는지 먼저 단정한다.
+    assert!(
+        consts.len() >= MIN_SCANNED_CONSTS,
+        "상수 표가 {}개뿐이다(하한 {MIN_SCANNED_CONSTS}) — 표가 비면 상한 검사가 \
+         조용히 통과한다",
+        consts.len()
+    );
+
+    let mut unlisted: Vec<String> = Vec::new();
+    let mut pending_seen: Vec<(String, String)> = Vec::new();
+    for (rel, name, value) in &over_cap {
+        if sanctioned(rel, name) {
+            continue;
+        }
+        if OVER_CAP_PENDING
+            .iter()
+            .any(|(r, n)| *r == rel && *n == name)
+        {
+            pending_seen.push((rel.clone(), name.clone()));
+            continue;
+        }
+        unlisted.push(format!("  {rel} — `{name}` = {value} > {UI_FONT_SIZE_CAP}"));
+    }
+    unlisted.sort();
+    unlisted.dedup();
+    assert!(
+        unlisted.is_empty(),
+        "UI 폰트 상한({UI_FONT_SIZE_CAP}px)을 넘는 명명 const 가 폰트 자리에 있다 — \
+         `docs/design/systems/theme.md` \"UI 폰트 최대\" 행이 정본이다:\n{}\n\
+         승인된 예외라면 사유를 문서에 적고 `OVER_CAP_SANCTIONED` 에, 디자인 판정을 \
+         기다리는 자리라면 `OVER_CAP_PENDING` 에 올려라 — 두 목록은 성격이 달라 섞지 않는다",
+        unlisted.join("\n")
+    );
+
+    // 역방향 — 한시 목록은 줄어들기만 한다. 정책 목록(`OVER_CAP_SANCTIONED`)에는 이
+    // 검사를 걸지 않는다: 그쪽 사유는 "범위 밖" 이라 덮을 것이 없어도 유효하다(ADR-0150).
+    let gone: Vec<String> = OVER_CAP_PENDING
+        .iter()
+        .filter(|(r, n)| !pending_seen.iter().any(|(sr, sn)| sr == r && sn == n))
+        .map(|(r, n)| format!("  {r} — `{n}`"))
+        .collect();
+    assert!(
+        gone.is_empty(),
+        "한시 목록이 가리키는 자리가 이제 상한을 안 넘는다 — 고쳤으면 목록에서도 \
+         지워라. 남겨 두면 \"여기는 원래 부채\" 라는 신호가 아무것도 안 덮은 채 \
+         살아남는다:\n{}",
+        gone.join("\n")
+    );
+}
