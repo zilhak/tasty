@@ -8,6 +8,11 @@
 //! 게이트는 이 축을 스크립트의 `skip()` 으로 이미 처리하므로 기본값이 바뀌면 그쪽
 //! 측정이 조용히 움직인다. 그래서 "켜면 된다" 만큼 **"안 켜면 그대로다"** 가 단언이다.
 
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
