@@ -58,17 +58,26 @@ fi
 # 안 만든다. 다만 래칫이라 **넘치면 실패한다**: 그래서 자동 채널이 판정기를 먼저 짓는다.
 . "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
 MASK_BIN="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT")"
-SCAN_ROOT="$ROOT"
+
+# **두 물음에 두 사본을 쓴다.** 억제가 *있는가* 는 코드에만 있어야 하므로 주석까지 덮은
+# 사본에서 묻고, 사유 *주석*이 붙어 있는가 는 주석이 남은 사본에서 묻는다. 한 사본으로
+# 둘을 다 하면 어느 쪽이든 틀린다 — 주석을 남기면 주석 안의 `#[allow(...)]` 언급이
+# 억제로 세어지고(실측 1 자리), 주석을 덮으면 근거가 통째로 사라져 전부 위반이 된다.
+# 줄 번호는 두 사본 모두 보존되므로 같은 i 로 맞물린다.
+DET_ROOT="$ROOT"
+TXT_ROOT="$ROOT"
 if [ -n "$MASK_BIN" ]; then
     MASKED="$(mktemp -d)"
     trap 'rm -rf "$MASKED"' EXIT
-    if "$MASK_BIN" --keep-comments "$MASKED" "$ROOT" crates src >/dev/null; then
-        SCAN_ROOT="$MASKED"
+    if "$MASK_BIN" "$MASKED/det" "$ROOT" crates src >/dev/null \
+        && "$MASK_BIN" --keep-comments "$MASKED/txt" "$ROOT" crates src >/dev/null; then
+        DET_ROOT="$MASKED/det"
+        TXT_ROOT="$MASKED/txt"
     else
-        echo "[allow-reason] 마스킹 실패 — 원문에서 센다(문자열 안의 억제 형태까지 세어진다)." >&2
+        echo "[allow-reason] 마스킹 실패 — 원문에서 센다(문자열·주석 안의 억제 형태까지 세어진다)." >&2
     fi
 else
-    echo "[allow-reason] 원문에서 센다 — 문자열 안의 억제 형태까지 세어진다." >&2
+    echo "[allow-reason] 원문에서 센다 — 문자열·주석 안의 억제 형태까지 세어진다." >&2
 fi
 
 REASON_PATTERN='reason:|이유:|complexity-exempt:|SAFETY'
@@ -80,11 +89,12 @@ REASON_PATTERN='reason:|이유:|complexity-exempt:|SAFETY'
 # 세는 형태가 60 자리 늘고(조건부 억제) 인정하는 표기가 41 자리 늘어(한글 마커·블록 창)
 # 두 변화가 상쇄된 값이다. 그래서 이 231 은 이전 234 와 **같은 것을 센 수가 아니다.**
 #
-# 184 → 183 도 같은 성질이다. 위반이 하나 줄어서가 아니라 **문자열 안의 억제 형태를
-# 실물로 세던 한 자리**가 마스킹으로 빠진 것이다(생성 코드를 문자열로 조립하는 자리였다).
+# 184 → 183 → 182 도 같은 성질이다. 위반이 줄어서가 아니라 **언급을 실물로 세던 자리**가
+# 마스킹으로 빠진 것이다: 184 → 183 은 문자열 안의 억제(생성 코드를 조립하는 자리),
+# 183 → 182 는 **주석 안의 억제 언급** 한 자리다(실측으로 그 한 줄을 고쳐 확인했다).
 # 판정기가 없어 원문에서 세면 이 값이 184 로 돌아와 래칫이 실패한다 — 자동 채널이
 # 판정기를 먼저 짓는 이유다.
-CAP=183
+CAP=182
 
 report=""
 count=0
@@ -93,29 +103,31 @@ while IFS= read -r file; do
     [ -z "$file" ] && continue
     # 사본에 없는 파일(마스커와 rg 의 파일 집합이 완전히 같지는 않다)은 **그 파일만**
     # 원문에서 센다 — 건너뛰면 모수가 조용히 줄고, 줄어든 모수는 언제나 초록이다.
-    scan="$SCAN_ROOT/$file"
-    [ -f "$scan" ] || scan="$file"
+    det="$DET_ROOT/$file"
+    [ -f "$det" ] || det="$file"
+    txt="$TXT_ROOT/$file"
+    [ -f "$txt" ] || txt="$file"
     hits=$(awk -v reason_pat="$REASON_PATTERN" '
-        {
-            lines[NR] = $0
-        }
+        # 첫 파일 = 탐지용(주석까지 덮은 사본), 둘째 = 근거용(주석이 남은 사본).
+        FNR == NR { det[FNR] = $0; ndet = FNR; next }
+        { txt[FNR] = $0 }
         END {
-            for (i = 1; i <= NR; i++) {
-                line = lines[i]
+            for (i = 1; i <= ndet; i++) {
+                line = det[i]
                 # 무조건 억제와 조건부 억제(`cfg_attr(..., allow(...))`)를 함께 센다.
                 if (line !~ /#!?\[allow\(/ && !(line ~ /#!?\[cfg_attr\(/ && line ~ /allow\(/)) {
                     continue
                 }
-                found = (line ~ reason_pat)
+                found = (txt[i] ~ reason_pat)
                 # 바로 위에 붙은 주석 블록 전체를 본다 — 빈 줄이나 코드 줄에서 끊긴다.
                 for (k = i - 1; k >= 1 && !found; k--) {
-                    if (lines[k] !~ /^[[:space:]]*\/\//) break
-                    if (lines[k] ~ reason_pat) found = 1
+                    if (txt[k] !~ /^[[:space:]]*\/\//) break
+                    if (txt[k] ~ reason_pat) found = 1
                 }
-                if (!found) printf "%d: %s\n", i, line
+                if (!found) printf "%d: %s\n", i, txt[i]
             }
         }
-    ' "$scan")
+    ' "$det" "$txt")
     [ -z "$hits" ] && continue
     while IFS= read -r hit; do
         report+="${file}:${hit}"$'\n'
