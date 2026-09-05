@@ -210,6 +210,7 @@ impl App {
                 total,
                 rate: String::new(),
             });
+            // intent-exempt: focus 보존 — OpenPopupMode 에 focus 없는 centered 변형이 없어 큐로 옮기면 에이전트 발화가 포커스를 가져간다
             main.state.popups.open_centered(TRANSFER_PROGRESS_POPUP_ID);
             main.mark_dirty();
         }

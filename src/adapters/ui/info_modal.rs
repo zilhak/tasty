@@ -127,6 +127,7 @@ pub fn on_close_info_modal(
         std::process::exit(code);
     }
     if !state.dialogs.info_modal_queue.is_empty() {
+        // intent-exempt: popup 자기-close cleanup — 이 함수가 on_close 훅이라 여기서 큐의 다음 항목을 잇는다
         state.popups.open_centered_focused(INFO_MODAL_ID);
     }
 }

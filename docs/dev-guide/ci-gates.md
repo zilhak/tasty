@@ -26,6 +26,8 @@
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
+| Intent 규율 | `bash scripts/check-intent-discipline.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
+| 사유 없는 `#[allow]` (**리포트 전용 — 빨개지지 않는다**) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/tasty-plugin-*/**` 가 바뀐 경우만** · 수동 |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | PR 전용 · 매주 월 09:00 UTC · 수동 → **schedule 만 실효** |
 
@@ -322,6 +324,32 @@ positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡�
 | Linux x64 gui 컴파일 | (위 전체 스위트에 포함) | 상동 — 이것만 보는 자동 잡은 없다 |
 | 기본 조합 clippy (Linux) | `cargo clippy --workspace --all-targets --locked` | 각 작업 lane. CI 에서 이 조합을 보는 것은 Windows 잡뿐이다 |
 | dist 산출물 빌드 | `scripts/build-*.sh` | `build-check.yml` 수동 실행 |
+
+### `script-gates.yml` — 배선한 날의 상태
+
+이 워크플로는 **배선했다는 것과 초록이라는 것을 갈라 적어야 하는 실례**다.
+배선 시점에 두 스크립트를 작업 트리에서 직접 돌린 결과는 `rc=0`(둘 다)이다. 다만
+그 직전까지 `check-intent-discipline.sh` 는 **위반 50 건으로 오래 빨갰다** — 채널이
+없어 아무도 안 봤고, 그 사이 문서 셋(`docs/design/flows/action-dispatch.md` ·
+[ADR-0037](../adr/0037-complexity-gate.md) · `docs/architecture/invariants/index.md`)
+은 그것을 살아 있는 게이트로 인용하고 있었다.
+
+**빨간 채로 배선하지 않았다.** 50 을 먼저 갈랐고, 36 이 술어의 오탐이었다 —
+주석·문자열을 코드로 셈(2) · 테스트 본문을 위반으로 셈(22) · 이름만 같은 다른 타입의
+메서드(6) · 질의 API 를 변이로 셈(1) · 사유 주석이 다음 줄에 있어 못 봄(2) ·
+면제 경로가 트리 재조직을 안 따라감(3). 술어를 고쳐 36 이 사라졌고, 남은 14 에
+사유를 적었다. 근거는 `scripts/check-intent-discipline.sh` 머리말에 있다.
+
+**둘째 스크립트는 게이트가 아니라 리포트다.** `check-allow-reason.sh` 는 건수와
+무관하게 `exit 0` 한다(스크립트 머리말이 그렇게 정하고 있다). 배선 시점의 건수는
+0 이 아니다 — 즉 **이 스텝의 초록은 "근거 없는 `#[allow]` 가 없다" 는 뜻이 아니라
+"스캐너가 아직 돈다" 는 뜻뿐이다.** 그래도 배선하는 이유는 두 가지다: 스캐너가
+깨지면(경로 재조직·`rg` 부재·awk 문법) 그때는 스텝이 죽어서 보이고, 건수가
+로그에 남아 추세를 볼 수 있다. hard-fail 로 올리려면 기준선을 정하는 별도 결정이
+필요하다 — 지금 그냥 올리면 main 이 즉시 빨개진다.
+
+**면제 경로는 이제 썩지 않는다** — 목록의 경로가 실재하지 않으면 스크립트가 `exit 2`
+로 죽는다. 예전에는 없는 경로가 조용히 무시돼 다섯이 죽어 있었다.
 
 **전체 스위트를 자동화하지 않는 이유**는 `test.yml` 헤더에 있다 — 실측 274.5s 중
 222.4s 가 GUI 인스턴스를 띄우는 11개라 러너 GPU 가용성에 따라 그대로 flaky 가 된다.

@@ -91,7 +91,13 @@ dispatcher 가 강제 거부하지 않고 **핸들러 작성자가 `origin.is_us
 
 ## intent-discipline 강제
 
-popup 도메인 직접 호출(`state.popups.open*`/`.close`/`.toggle*`)은 `scripts/check-intent-discipline.sh`(grep 기반 CI)로 금지. 예외는 동일 라인 `// intent-exempt: <사유>` 주석으로 suppress(query API `is_open`/`get_mut`/`register` 는 제외). draw-prep i18n refresh, popup 자기-close cleanup, Settings 윈도우 init 등록이 현재 예외. 호스트 모든 Intent 가시화는 debug 전용 `intent::watch`(`src/intent/watch.rs`)가 `tracing::debug!` 로(release 제거).
+도메인 직접 **변이** 호출은 `scripts/check-intent-discipline.sh` 가 금지한다 — popup 만이 아니라 preset · surface · tab · pane · workspace 여섯 도메인이다. 채널은 `script-gates.yml`(main push · PR).
+
+술어는 **변이 API 를 열거**한다(`open`/`open_centered`/`open_centered_focused`/`open_with_scope`/`open_at_top_of_scope`/`open_at_focused`/`close`/`toggle*`). 질의(`is_open`·`get_mut`·`open_geometry`)는 대상이 아니다 — 접두어로 뭉뚱그리면 질의가 변이로 잡힌다.
+
+**대상이 아닌 자리 셋**: ① 주석·문자열 리터럴(코드가 아니다) ② `#[cfg(test)] mod` 본문과 `*_tests.rs`(도메인이 **피험자**다 — 규율은 도메인을 *도구로* 쓸 때의 규칙이다) ③ 이름만 같은 다른 타입의 메서드(패턴별 면제 경로).
+
+예외는 `// intent-exempt: <사유>` 주석으로 suppress — **같은 줄 · 바로 위 · 바로 아래** 어디든 인정한다. 현재 예외는 popup 자기-close cleanup(on_close 훅에서 큐의 다음 항목), 처리 핸들러 본문의 cascade, 응답이 필요한 mutate(Core method sync 리턴), 그리고 focus 보존을 위해 큐를 우회한 자리 하나다. 호스트 모든 Intent 가시화는 debug 전용 `intent::watch`(`src/intent/watch.rs`)가 `tracing::debug!` 로(release 제거).
 
 ## dedup
 

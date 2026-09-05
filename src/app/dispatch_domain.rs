@@ -868,6 +868,7 @@ impl App {
         // close_surface_by_id_no_snapshot 내부 (Case 1~5) 에서 cleanup_targets 전체에 대한
         // enqueue_surface_closed 가 발화된다 (R1 leak fix). 반환값(이미 닫힌 surface 여부)은
         // cascade 흐름에 영향 없어 의도적 무시.
+        // intent-exempt: 처리 핸들러 본문의 cascade — Intent 는 흐름의 시작점에만 둔다
         state.close_surface_by_id_no_snapshot(engine, surface_id, true);
         if let Some(base) = dirty_main {
             base.dirty = true;

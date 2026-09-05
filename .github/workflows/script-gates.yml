@@ -1,0 +1,61 @@
+name: Script Gates
+
+# `scripts/` 의 셸 게이트 중 **컴파일이 필요 없는 텍스트 스캔** 둘을 돌린다.
+#   - check-intent-discipline.sh : Intent 큐를 우회한 도메인 직접 mutation
+#   - check-allow-reason.sh      : 사유 없는 `#[allow(...)]`
+#
+# 둘 다 등록 이래 **어떤 자동 채널에도 없었다.** 그 사이 intent 쪽은 위반 50 건을
+# 쌓은 채 빨갛게 있었고(문서 셋은 그것을 살아 있는 게이트로 인용하고 있었다),
+# allow-reason 쪽은 초록이었지만 빨개져도 아무도 모르는 자리였다.
+#
+# self-hosted Linux X64 근거: complexity-check.yml 과 같다 — 무컴파일 게이트라
+# 초단위로 끝나고, mac/win 러너에 부담을 지울 이유가 없다.
+
+on:
+  # main push 가 실질적인 유일 채널이다 — 이 저장소는 PR 을 열지 않고 main 에 직접
+  # push 한다. complexity-check.yml 이 같은 근거로 같은 조합을 쓴다(ADR-0131).
+  #
+  # `paths-ignore` 를 complexity-check 에서 그대로 베끼지 않고 **스캔 대상을 먼저
+  # 확인했다**: 두 스크립트 모두 `.rs` 만 읽는다
+  #   check-intent-discipline.sh : find src -name '*.rs'
+  #   check-allow-reason.sh      : rg --files -g '*.rs' crates src
+  # `site/` 에 `.rs` 가 있지만 두 스캔의 대상 밖(`src`·`crates` 만 본다)이라
+  # `site/**` 를 건너뛰어도 사각이 생기지 않는다. 문서만 담은 push 는 두 판정을
+  # 바꿀 수 없다.
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'site/**'
+      - '**/*.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: script-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  script-gates:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # 두 게이트를 **각각** 돌린다. 하나로 묶으면 앞이 죽을 때 뒤가 실행되지 않고,
+      # 그 결과는 `0 failed` 로도 안 나온다 — 줄 자체가 없어 미측정이 통과로 보인다.
+      - name: Intent discipline
+        run: bash scripts/check-intent-discipline.sh
+
+      # **이 스텝은 설계상 절대 빨개지지 않는다.** `check-allow-reason.sh` 는 리포트
+      # 전용이라(스크립트 머리말) 건수와 무관하게 `exit 0` 한다. 그러니 이 스텝의
+      # 초록은 "근거 없는 `#[allow]` 가 없다" 가 아니라 **"스캐너가 아직 돈다"** 뿐이다
+      # — 실제 건수는 로그 첫 줄에 있다. 검사를 hard-fail 로 올리는 것은 별도 결정이다.
+      - name: Allow reason (report only — cannot fail)
+        if: always()
+        run: bash scripts/check-allow-reason.sh
