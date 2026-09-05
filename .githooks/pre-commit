@@ -19,6 +19,7 @@
 #   C.12 dbg! — debug leak 방지                          [diff 추가 라인]
 #   P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로 [staged diff]
 #   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [staged 파일 목록]
+#   W.2  새 파일이 추가됐을 때 그것을 처음 보는 타깃 안내 (경고만) [staged 파일 목록]
 #
 # 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서.
 
@@ -381,6 +382,78 @@ check_changelog_reminder() {
 }
 
 # ────────────────────────────────────────────────────────────
+# W.2  새 파일이 추가됐을 때 그것을 처음 보는 타깃 안내 (경고만)
+#
+# 새로 만든 것을 판정하는 타깃이 **다른 패키지에 있어서** 놓치는 일이 반복됐다.
+# `cargo test -p <크레이트>` 는 루트 패키지의 통합 타깃을 안 돌리고, 그 반대도
+# 마찬가지다. 판정자는 있었고 자동 채널도 있었는데 커밋하는 사람이 안 돌렸다.
+#
+# 정확한 매핑("이 파일을 무엇이 판정하는가")은 순회 범위를 소스에서 읽어야 하고
+# 그것은 임의의 코드라 근사밖에 안 된다. 그래서 여기서는 **새것의 종류**로만
+# 안내한다 — 종류는 경로 모양으로 정해지므로 근사가 아니다.
+#
+# 경고일 뿐이라 목록이 낡아도 커밋을 막지 않는다. 다만 낡은 안내는 죽은 인용이
+# 되므로, 안내하기 전에 그 타깃 파일이 실재하는지 확인하고 없으면 그렇게 말한다.
+# ────────────────────────────────────────────────────────────
+suggest_target() {
+    # $1 = 타깃 소스 경로, $2 = 돌리는 명령, $3 = 왜 이것이 먼저 보는가
+    if [ -f "$1" ]; then
+        yellow "      $2"
+        yellow "        ↳ $3"
+    else
+        yellow "      (안내가 낡았다: $1 가 없다 — 이 훅의 W.2 목록을 고쳐라)"
+    fi
+}
+
+check_new_file_judges() {
+    local added new_int_test new_crate new_src new_doc
+    added=$(git diff --cached --name-only --diff-filter=A || true)
+    if [ -z "$added" ]; then return; fi
+
+    new_int_test=$(echo "$added" | /usr/bin/grep -E '^(tests/[^/]+\.rs|crates/[^/]+/tests/[^/]+\.rs)$' || true)
+    new_crate=$(echo "$added" | /usr/bin/grep -E '^crates/[^/]+/Cargo\.toml$' || true)
+    new_src=$(echo "$added" | /usr/bin/grep -E '^(src/|crates/[^/]+/src/).*\.rs$' || true)
+    new_doc=$(echo "$added" | /usr/bin/grep -E '^docs/.*\.md$' || true)
+
+    if [ -z "$new_int_test$new_crate$new_src$new_doc" ]; then return; fi
+
+    yellow "▸ [W.2] 새 파일이 추가됐다. 그것을 처음 보는 타깃은 이 커밋을 만든 명령에"
+    yellow "  안 들어갔을 수 있다 (-p <크레이트> 는 루트 패키지 타깃을 안 돌린다)."
+
+    if [ -n "$new_int_test" ]; then
+        yellow "  새 통합 테스트 타깃:"
+        echo "$new_int_test" | sed 's/^/      /' >&2
+        suggest_target "tests/let_underscore_documented.rs" \
+            "cargo test --locked --test let_underscore_documented" \
+            "테스트 타깃이 프로덕션 lint 명부에 섞이는 것을 여기서 처음 본다 (파일 머리 allow 한 줄이 필요하다)"
+    fi
+    if [ -n "$new_crate" ]; then
+        yellow "  새 크레이트:"
+        echo "$new_crate" | sed 's/^/      /' >&2
+        suggest_target "crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs" \
+            "cargo test --locked -p tasty-doc-guards --test architecture_crate_list_complete" \
+            "크레이트 명부와 문서의 정합을 여기서 처음 본다"
+        yellow "      cargo deny check licenses"
+        yellow "        ↳ license 필드가 없으면 여기서만 걸린다 (로컬에 있는데 안 부르면 CI 에서 처음 본다)"
+    fi
+    if [ -n "$new_src" ]; then
+        yellow "  새 소스 파일:"
+        echo "$new_src" | sed 's/^/      /' >&2
+        suggest_target "tests/no_emoji_in_source.rs" \
+            "cargo test --locked --test no_emoji_in_source --test no_hardcoded_ui_strings" \
+            "새 소스의 이모지·하드코딩 문자열을 여기서 처음 본다"
+    fi
+    if [ -n "$new_doc" ]; then
+        yellow "  새 문서:"
+        echo "$new_doc" | sed 's/^/      /' >&2
+        suggest_target "crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs" \
+            "cargo test --locked -p tasty-doc-guards" \
+            "체크박스·표 정합·인용 좌표를 이 크레이트가 처음 본다"
+    fi
+    yellow "  (경고일 뿐 커밋은 진행된다 — 이미 돌렸으면 무시해라.)"
+}
+
+# ────────────────────────────────────────────────────────────
 # P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로
 #
 # 판정은 scripts/check-plugin-version-bump.sh 하나가 한다 — 훅과 CI 가 같은 것을
@@ -428,6 +501,7 @@ check_println
 check_dbg
 check_plugin_version_bump
 check_changelog_reminder
+check_new_file_judges
 
 if [ "$FAIL" -ne 0 ]; then
     echo >&2
