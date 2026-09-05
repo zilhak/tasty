@@ -244,6 +244,11 @@ pub(crate) fn accessibility_trusted() -> bool {
 /// 권한 판정 결과로 `surface.raw_key` 가 무엇을 할지. 승인 전에는 주입하지 않는다 —
 /// 승인 없이 `CGEventPost` 를 부르면 조용히 무시돼 "성공했다는데 아무 일도 안 일어남"
 /// 이 되고, 호출자가 원인을 알 방법이 없다.
+///
+/// 유일한 소비자(`surface.raw_key` 핸들러)가 debug 전용이라 release 에서는 참조가 0 이
+/// 된다 — gui 빌드는 `dead_code = deny` 라 선언만 남으면 빌드가 깨지므로 선언도 같은
+/// cfg 로 내린다. 순수 규칙 테스트는 release 테스트에서도 돌아야 하므로 `test` 를 포함한다.
+#[cfg(any(debug_assertions, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RawKeyDecision {
     /// 승인됨 — 그대로 주입한다.
@@ -253,6 +258,7 @@ pub(crate) enum RawKeyDecision {
 }
 
 /// 위 판정의 **순수** 규칙. FFI 호출과 분리해 두면 macOS 밖에서도 검증된다.
+#[cfg(any(debug_assertions, test))]
 pub(crate) fn raw_key_decision(accessibility_trusted: bool) -> RawKeyDecision {
     if accessibility_trusted {
         RawKeyDecision::Inject
