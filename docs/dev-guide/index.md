@@ -64,6 +64,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [cli-structure](cli-structure.md) | CLI 크레이트 내부 세 갈래(commands/ · request/ · local/)와 `Dispatch` |
 | [debug-ipc](debug-ipc.md) | debug 전용 IPC + 격리 |
 | [headless-ipc-surface](headless-ipc-surface.md) | 헤드리스가 답하는 메서드와, 답하지 않는 것의 메서드별 사유 |
+| [cli-ipc-surface](cli-ipc-surface.md) | IPC 표의 어느 메서드가 CLI 로 닿고, 못 닿는 것은 왜인지 |
 | [attach-behavior](attach-behavior.md) | attach(서버=loopback / 로컬-원격=클라이언트) |
 | [agent-runner](agent-runner.md) | task DAG executor + 동기화 primitive |
 | [agent-identification](agent-identification.md) | `AgentId` 도출(잠정 모델) |
