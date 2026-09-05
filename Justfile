@@ -177,8 +177,10 @@ build-plugins:
     mkdir -p "$bundle_root"
     for c in "${crates[@]}"; do
         d="crates/$c"
+        # `|| true` 가 없으면 아래 -z 분기가 죽는다 — grep 이 못 찾았을 때
+        # pipefail + set -e 가 대입 자리에서 먼저 죽여 진단이 발화하지 못한다.
         id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
-            | sed 's/.*"\([^"]*\)".*/\1/')
+            | sed 's/.*"\([^"]*\)".*/\1/' || true)
         if [ -z "$id" ]; then
             echo "✘ $c: cannot parse id from $d/tasty-plugin.toml" >&2
             exit 1
