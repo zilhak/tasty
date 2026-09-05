@@ -103,8 +103,13 @@ pub(super) fn resolve_surface_target(state: &AppState, params: &serde_json::Valu
     if val.is_null() {
         return None;
     }
-    if let Some(n) = val.as_u64() {
-        return Some(n as u32);
+    // 자르지 않는다 — 잘린 값은 실재하는 다른 surface 를 가리킨다. 이 함수는 `Option`
+    // 을 반환해 "대상 미지정" 과 합쳐지지만, 자르기만은 여기서 막는다(호출부가 대상
+    // 없음으로 이어서 거절한다).
+    if val.is_number() {
+        return crate::adapters::ipc::handler::params::read_int::<u32>(params, "target_surface")
+            .ok()
+            .flatten();
     }
     if let Some(s) = val.as_str() {
         if s.is_empty() {

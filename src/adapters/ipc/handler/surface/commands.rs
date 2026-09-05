@@ -61,7 +61,7 @@ pub(crate) fn handle_command_at(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let index = match params.get("index").and_then(|v| v.as_i64()) {
+    let index = match p_try!(params::opt_i64(params, "index", &id)) {
         Some(i) => i,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };

@@ -2,6 +2,7 @@
 //! 런타임에 read-back. `plugin_id` 는 요청 파라미터로 받지 않고
 //! `CallerContext` 에서 강제 도출한다(다른 plugin 값 조회 불가).
 
+use super::params::{self, p_try};
 use serde_json::{Value, json};
 
 use crate::core::CoreState;
@@ -64,8 +65,8 @@ pub fn handle_set_remote_transfer(
         new_settings.remote_transfer.dir = dir.to_string();
         changed = true;
     }
-    if let Some(max_mb) = params.get("max_mb") {
-        let Some(max_mb) = max_mb.as_u64() else {
+    if params.get("max_mb").is_some_and(|v| !v.is_null()) {
+        let Some(max_mb) = p_try!(params::opt_int::<u64>(params, "max_mb", &id)) else {
             return JsonRpcResponse::invalid_params(id, "'max_mb' must be a non-negative integer");
         };
         new_settings.remote_transfer.max_mb = max_mb;

@@ -135,11 +135,8 @@ fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
         .ok_or_else(|| "'sink.type' must be 'memory' or 'file'".to_string())?;
     let sink = match sink_type {
         "memory" => {
-            let max_records = sink_obj
-                .get("max_records")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(10_000);
+            let max_records =
+                super::params::read_int::<usize>(sink_obj, "max_records")?.unwrap_or(10_000);
             SinkSpec::Memory { max_records }
         }
         "file" => {

@@ -71,6 +71,30 @@ pub(crate) fn read_i64(params: &Value, key: &str) -> Result<Option<i64>, String>
         .ok_or_else(|| malformed(key, raw, "a whole number that fits in 64 signed bits"))
 }
 
+/// 부호 있는 정수를 **폭에 맞게** 읽는다. `exit_code`(i32) 처럼 음수가 정당하면서
+/// 폭이 좁은 자리에 쓴다 — `as i32` 로 자르면 `4_294_967_296` 이 `0`(정상 종료!)이 된다.
+pub(crate) fn read_signed<T>(params: &Value, key: &str) -> Result<Option<T>, String>
+where
+    T: TryFrom<i64>,
+{
+    let Some(raw) = present(params, key) else {
+        return Ok(None);
+    };
+    raw.as_i64()
+        .and_then(|n| T::try_from(n).ok())
+        .map(Some)
+        .ok_or_else(|| {
+            malformed(
+                key,
+                raw,
+                &format!(
+                    "a whole number that fits in {} signed bits",
+                    std::mem::size_of::<T>() * 8
+                ),
+            )
+        })
+}
+
 /// 실수 파라미터(정규화 좌표 등).
 pub(crate) fn read_f64(params: &Value, key: &str) -> Result<Option<f64>, String> {
     let Some(raw) = present(params, key) else {

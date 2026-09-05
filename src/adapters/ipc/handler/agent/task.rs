@@ -975,10 +975,10 @@ pub fn handle_task_set_result(
             return JsonRpcResponse::invalid_params(id, "Missing 'state' ('succeeded' | 'failed')");
         }
     };
-    let exit_code = params
-        .get("exit_code")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
+    let exit_code = p_try!(
+        params::read_signed::<i32>(params, "exit_code")
+            .map_err(|msg| JsonRpcResponse::invalid_params(id.clone(), msg))
+    );
     let output = params.get("output").cloned();
     let error = params
         .get("error")
