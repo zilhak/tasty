@@ -144,6 +144,12 @@ check_let_underscore() {
             {
                 prefix  = substr($0, 1, 1)
                 content = substr($0, 2)
+                # 문자열 리터럴을 지운 사본으로 판정한다. 원문 그대로 보면 두 방향으로
+                # 틀린다 — 문자열 안의 `let _ =` 를 코드로 잡고(거짓 양성), 문자열 안의
+                # `//`(URL 이 대표적)를 사유 주석으로 인정한다(거짓 음성). 한 줄 안에서
+                # 닫히지 않는 문자열(여러 줄 리터럴)은 diff 가 줄 단위라 여전히 근사다.
+                code = content
+                gsub(/"([^"\\]|\\.)*"/, "", code)
                 if (prefix == "-") next     # 제거 라인: 새 파일에 없음 → 무시 (다음 줄 후보 아님)
                 if (prefix == "+" || prefix == " ") {
                     # 직전 let 후보의 "다음 줄" 이 이 라인. 주석이면 사면, 아니면 위반 확정.
@@ -155,8 +161,8 @@ check_let_underscore() {
                             pending = ""
                         }
                     }
-                    if (prefix == "+" && content ~ /let[[:space:]]+_[[:space:]]*=/) {
-                        if (content ~ /\/\//) {
+                    if (prefix == "+" && code ~ /let[[:space:]]+_[[:space:]]*=/) {
+                        if (code ~ /\/\//) {
                             # ① 같은 줄 주석 — OK
                         } else if (prev ~ /^[[:space:]]*\/\//) {
                             # ② 윗줄 주석 — OK

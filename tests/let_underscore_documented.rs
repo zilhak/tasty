@@ -40,19 +40,27 @@
 //! 타입을 알 수 없기 때문이다. 변수 바인딩 억제(`let _ = path;`)도 "왜 여기서
 //! 안 쓰는가" 가 읽는 사람에게 궁금한 지점이라 한 줄 주석이 손해가 아니다.
 //!
-//! ## 이 스캔이 못 보는 형태 (알려진 한계)
+//! ## 어휘 마스킹 (이전 결정을 뒤집었다)
 //!
-//! 렉서가 아니라 텍스트 스캔이라 두 방향으로 부정확하다. **둘 다 의도적으로
-//! 남긴다** — 문자열 리터럴을 인식하기 시작하면 반쪽 파서가 되고, 반쪽 파서는
-//! 틀린 확신을 준다. 정확히 판정하려면 렉서를 들여야 하는데, 그 비용은 이 가드가
-//! 지키려는 값보다 크다.
+//! 이 doc 은 한때 "두 방향의 부정확을 **의도적으로 남긴다** — 렉서를 들이는 비용이
+//! 이 가드가 지키려는 값보다 크다" 고 적고 있었다. **그 비용 전제가 틀렸다**: 같은
+//! 마스커가 레포에 이미 여러 벌 적혀 있었고(측정), 하나를 [`rust_mask`] 로 올리는
+//! 것이 새로 쓰는 것보다 쌌다. 남긴다고 적은 두 형태는 이제 둘 다 잡는다.
 //!
-//! - **미탐(과소집행)** — 문장 범위 안에 주석이 아닌 `//` 가 있으면 사유 주석이
-//!   있는 것으로 오인한다. URL 문자열이 대표적이라, `let _ = get("http://x");` 는
-//!   사유가 없어도 통과한다. 안전한 방향의 실수다.
-//! - **오탐** — 문자열 리터럴 안의 금지 형태를 코드로 본다. `let s = "…";` 형태로
-//!   규칙 본문을 담는 줄이 실제로 생기면 [`ALLOWLIST`] 에 `(경로, 조각)` 으로
-//!   등록한다. 파일을 통째로 면제하지 않는다.
+//! - **미탐이었던 것** — 문장 범위의 `//` 가 주석인지 문자열 내용인지 안 봤다.
+//!   `let _ = get("http://x");` 가 사유 없이 통과했다. 이제 [`rust_mask::mask_literals`]
+//!   가 문자열만 지운 사본에서 `//` 를 찾으므로 이 형태가 잡힌다.
+//! - **오탐이었던 것** — 문자열 리터럴 안의 금지 형태를 코드로 봤다. 한 lane 이 실제로
+//!   이것 때문에 커밋을 막혀 스니펫을 바꿔 우회했다. 이제 [`rust_mask::mask_non_code`]
+//!   를 거친 사본에서만 찾는다.
+//!
+//! 두 방향 각각에 회귀 테스트가 있고([`helper_tests`]), 마스커를 무효화하는 변이가
+//! 그 둘을 각각 하나씩 죽이는 것을 확인했다.
+//!
+//! **남은 근사**: `.githooks/pre-commit` C.6 은 awk 라 같은 렉서를 못 쓴다. 거기서는
+//! 한 줄 안에서 닫히는 문자열만 지운다 — **여러 줄에 걸친 문자열 리터럴은 훅이 여전히
+//! 원문으로 본다**(diff 가 줄 단위라 그 층에서는 피할 수 없다). 그래서 두 층의 정확도가
+//! 갈리는 방향은 **훅이 더 거칠다** 쪽이고, 전수 판정의 정본은 이 가드다.
 //!
 //! 어느 쪽도 사람 리뷰나 `.githooks/pre-commit` C.6 을 대체하지 않는다. 이 가드는
 //! **전수로 도는 하한선**이지 상한선이 아니다.
@@ -61,6 +69,9 @@
 //! [`docs/dev-guide/error-handling.md`](../docs/dev-guide/error-handling.md) 참조 —
 //! 값을 버린 것이 검증 자체를 무력화한 경우가 있었고, 그 자리는 `tests/` 아래라
 //! 이 가드가 보지 않는다.
+
+/// 어휘 마스킹은 두 층이 공유한다 — 사본이 둘이면 갈린다.
+mod rust_mask;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -137,18 +148,13 @@ fn is_test_path(rel: &str) -> bool {
     rel.split('/').any(|seg| TEST_DIRS.contains(&seg))
 }
 
-/// `let _ =` 가 코드에 실제로 나타나는 열 위치. 줄 주석(`//`) 뒤는 제외한다.
+/// `let _ =` 가 코드에 나타나는가. **인자는 [`rust_mask::mask_non_code`] 를 거친 줄**이라
+/// 주석·문자열·문자 리터럴은 이미 공백이다 — 여기서 다시 자르지 않는다.
 ///
-/// 문자열 리터럴은 파싱하지 않는다 — 리터럴 안에 금지 형태를 담은 줄을 코드로
-/// 오인한다. 렉서를 들이는 것보다 싸고, 그런 줄이 실제로 생기면 [`ALLOWLIST`] 에
-/// `(경로, 조각)` 으로 등록한다. 이 가드 파일 자신이 면제 없이 통과하는 이유는
-/// ALLOWLIST 가 아니라 `tests/` 경로 제외([`is_test_path`]) + 픽스처 런타임 조립
-/// ([`ignore_stmt`]) 이다.
-fn has_let_underscore(line: &str) -> bool {
-    let code = match line.find("//") {
-        Some(i) => &line[..i],
-        None => line,
-    };
+/// 잘라내기를 없앤 것이 곧 거짓 음성 하나를 없앤 것이다: 예전에는 첫 `//` 앞까지만
+/// 코드로 봐서, 같은 줄 앞쪽 문자열에 `//` 가 있으면(`"http://…"`) 그 뒤의 진짜
+/// `let _ =` 를 못 봤다.
+fn has_let_underscore(code: &str) -> bool {
     let bytes = code.as_bytes();
     let mut i = 0;
     while let Some(off) = code[i..].find("let") {
@@ -249,21 +255,29 @@ fn preceded_by_comment(lines: &[&str], start: usize) -> bool {
 }
 
 fn violations_in(text: &str) -> Vec<(usize, String)> {
-    let lines: Vec<&str> = text.lines().collect();
-    let in_test = test_regions(&lines);
+    let raw: Vec<&str> = text.lines().collect();
+    // 두 판정에 서로 다른 마스킹이 필요하다 — 모듈 doc 참조.
+    //   "코드에 `let _ =` 가 있나"  -> 주석·문자열 다 지운 사본
+    //   "사유 주석이 달려 있나"     -> 문자열만 지우고 주석은 남긴 사본
+    let code_src = rust_mask::mask_non_code(text);
+    let lit_src = rust_mask::mask_literals(text);
+    let code: Vec<&str> = code_src.lines().collect();
+    let lit: Vec<&str> = lit_src.lines().collect();
+    let in_test = test_regions(&code);
     let mut out = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
+    for (i, line) in code.iter().enumerate() {
         if in_test[i] || !has_let_underscore(line) {
             continue;
         }
-        let end = statement_end(&lines, i);
+        let end = statement_end(&code, i);
         // 문장 범위 + 그 다음 한 줄 (rustfmt 가 trailing 주석을 다음 줄로 밀어내는 형태).
-        let scan_to = (end + 1).min(lines.len().saturating_sub(1));
-        let inline = lines[i..=scan_to].iter().any(|l| l.contains("//"));
-        if inline || preceded_by_comment(&lines, i) {
+        let scan_to = (end + 1).min(code.len().saturating_sub(1));
+        let inline = lit[i..=scan_to].iter().any(|l| l.contains("//"));
+        if inline || preceded_by_comment(&lit, i) {
             continue;
         }
-        out.push((i + 1, line.trim().to_string()));
+        // 보고는 원문으로 한다 — 마스킹된 줄은 사람이 못 읽는다.
+        out.push((i + 1, raw[i].trim().to_string()));
     }
     out
 }
@@ -419,6 +433,26 @@ mod helper_tests {
         assert!(scan("fn f() {\n    let _y = g();\n}\n").is_empty());
         assert!(scan("fn f() {\n    if _ == g() {}\n}\n").is_empty());
         assert!(fixture("fn f() {\n    out{IGNORE}\n}\n").is_empty());
+    }
+
+    /// 문자열 리터럴 안의 금지 형태는 코드가 아니다 — 렉서 없이 원문을 보면
+    /// 여기서 틀렸다. 실제로 한 lane 이 이 형태 때문에 커밋을 막혀 스니펫을 바꿔
+    /// 우회했다.
+    #[test]
+    fn a_form_inside_a_string_literal_is_not_a_violation() {
+        let src = format!(
+            "fn f() {{\n    let s = \"{}\";\n    drop(s);\n}}\n",
+            ignore_stmt()
+        );
+        assert!(scan(&src).is_empty());
+    }
+
+    /// 반대 방향 — 문자열 안의 `//` 는 사유 주석이 아니다. URL 이 대표적이고,
+    /// 이쪽은 **아무도 아프지 않게 통과**시키므로 더 오래 남는다.
+    #[test]
+    fn a_slash_slash_inside_a_string_is_not_a_reason() {
+        let src = format!("fn f() {{\n    let {}= get(\"http://x\");\n}}\n", "_ ");
+        assert_eq!(scan(&src), vec![2]);
     }
 
     #[test]
