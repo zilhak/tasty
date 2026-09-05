@@ -15,12 +15,16 @@
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).
 #![allow(dead_code)]
 
+#[path = "../spawn_diag/mod.rs"]
+mod spawn_diag;
+
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use enigo::{Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings};
@@ -95,6 +99,23 @@ unsafe impl Send for GuiTestInstance {}
 // SAFETY: 위 Send와 동일 근거 — Mutex 직렬화 + 단순 포인터 값 전달.
 unsafe impl Sync for GuiTestInstance {}
 
+/// stderr 링 크기 / 실패 시 싣는 꼬리 줄 수 — 형제 하네스 둘과 같은 값이다.
+const STDERR_RING_CAPACITY: usize = 256;
+const STDERR_TAIL_LINES: usize = 30;
+
+/// GUI 부팅 상한. IPC 전용 하네스보다 짧게 둔 값을 그대로 유지한다 — 이 회차는
+/// 상한을 바꾸지 않는다(상한 조정은 처방이 아니다).
+const GUI_SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(15);
+
+fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, lines: usize) -> String {
+    let ring = ring.lock().unwrap();
+    ring.iter()
+        .skip(ring.len().saturating_sub(lines))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 impl GuiTestInstance {
     /// Spawn a tasty GUI instance for testing.
     /// Waits for the window to appear and focuses it.
@@ -112,23 +133,77 @@ impl GuiTestInstance {
         // TASTY_DEBUG_SUPPRESS_NATIVE_MENU: egui 프레임이 세우는 컨텍스트 메뉴(explorer 등)를
         // 블로킹 native 팝업 없이 `debug_captured_menu` 로 포획하게 해, headless 에서
         // `debug.pending_menu` 로 관찰 가능케 한다(debug 격리, release 미노출).
-        let process = Command::new(env!("CARGO_BIN_EXE_tasty"))
+        let mut process = Command::new(env!("CARGO_BIN_EXE_tasty"))
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("TASTY_DEBUG_SUPPRESS_NATIVE_MENU", "1")
+            // **부모 세션의 `TASTY_*` 를 끊는다.** 이 값들이 들어오면 자식은 자기가
+            // 다른 tasty 안에서 도는 CLI 라고 판단해 **GUI 를 안 띄우고 help 를 찍고
+            // 종료한다**(실측: 지우면 같은 바이너리가 port file 을 쓴다). 형제 하네스
+            // 둘(`tests/common`·`tests/webhook_common`)은 격리 HOME·TASTY_HOME 으로
+            // 이 경로를 이미 막고 있고, 이 하네스만 안 막고 있었다.
+            .env_remove("TASTY_PARENT_HOME")
+            .env_remove("TASTY_SURFACE_ID")
+            .env_remove("TASTY_AGENT_ID")
+            .env_remove("TASTY_SESSION_TOKEN")
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("failed to spawn tasty GUI");
+
+        // stderr 를 링에 담고 마지막 줄의 시각을 남긴다 — `tests/common`·`tests/webhook_common`
+        // 과 같은 형태다. 이 하네스만 **셋 다 없었다**: 꼬리도, 죽은 자식 판정도, 느림/멈춤
+        // 구분도. 그래서 GUI 부팅이 실패하면 "15 초 안에 port file 이 안 나왔다" 한 줄이
+        // 전부였고, 디스플레이 부재처럼 **즉사하는** 흔한 실패까지 그 문장을 썼다.
+        let stderr_ring: Arc<Mutex<VecDeque<String>>> =
+            Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
+        let stderr_last_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        if let Some(stderr) = process.stderr.take() {
+            let ring = Arc::clone(&stderr_ring);
+            let last_at = Arc::clone(&stderr_last_at);
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    *last_at.lock().unwrap() = Some(Instant::now());
+                    let mut ring = ring.lock().unwrap();
+                    if ring.len() == STDERR_RING_CAPACITY {
+                        ring.pop_front();
+                    }
+                    ring.push_back(line);
+                }
+            });
+        }
 
         // Wait for port file (IPC ready)
         let start = Instant::now();
         let port = loop {
-            if start.elapsed() > Duration::from_secs(15) {
-                panic!("tasty GUI failed to write port file within 15 seconds");
+            if start.elapsed() > GUI_SPAWN_PORT_TIMEOUT {
+                panic!(
+                    "{}",
+                    spawn_diag::spawn_timeout_message(
+                        "tasty GUI failed to write the port file",
+                        GUI_SPAWN_PORT_TIMEOUT,
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                    )
+                );
             }
             if let Ok(content) = std::fs::read_to_string(&port_file)
                 && let Ok(port) = content.trim().parse::<u16>()
             {
                 break port;
+            }
+            // 자식이 이미 죽었으면 상한을 기다리지 않는다. GUI 부팅 실패는 대부분 즉사라
+            // (디스플레이 부재·GPU 초기화 실패) 이 확인 하나가 15 초를 통째로 아낀다.
+            if let Ok(Some(status)) = process.try_wait() {
+                panic!(
+                    "{}",
+                    spawn_diag::early_exit_message(
+                        &status.to_string(),
+                        STDERR_TAIL_LINES,
+                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                    )
+                );
             }
             std::thread::sleep(Duration::from_millis(100));
         };
