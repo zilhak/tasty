@@ -414,10 +414,25 @@ fn every_area_holds_exactly_the_count_it_records() {
             // 남은 자리를 함께 낸다. 슬라이스는 "무엇이 남았나" 를 보고 고르는 작업이라,
             // 그 목록을 다른 도구로 다시 내면 두 도구의 수가 갈린다 — 이 축에서 이미
             // 한 번 겪었다(임시 스캐너의 수가 재현되지 않았다).
-            for h in hits.iter().filter(|h| area_of(&h.rel) == Some(*area)) {
+            //
+            // 한 영역당 상한을 둔다. 테스트 하네스가 긴 실패 메시지를 자르기 때문이다 —
+            // 실측으로 280 줄짜리 목록이 231 줄에서 잘렸고 **잘린 뒤쪽 영역은 통째로 안
+            // 보였다.** 목록이 조용히 잘리면 "그 영역엔 자리가 없다" 로 읽힌다.
+            const PER_AREA: usize = 40;
+            let mine: Vec<&Hit> = hits
+                .iter()
+                .filter(|h| area_of(&h.rel) == Some(*area))
+                .collect();
+            for h in mine.iter().take(PER_AREA) {
                 lines.push(format!(
                     "      {}:{}  {}({})",
                     h.rel, h.line, h.head, h.value
+                ));
+            }
+            if mine.len() > PER_AREA {
+                lines.push(format!(
+                    "      … 외 {} 자리(메시지 길이 상한)",
+                    mine.len() - PER_AREA
                 ));
             }
         }
