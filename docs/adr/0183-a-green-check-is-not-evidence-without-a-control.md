@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-06
-- **Tags**: guards, measurement, control, testing, mutation, false-green, r433, r453, r459, r461, r462, r472, r473, r475, r476, r480, r491, r497, r498, r499, adr-0129, adr-0139, adr-0180, adr-0181
+- **Tags**: guards, measurement, control, testing, mutation, false-green, r433, r453, r459, r461, r462, r472, r473, r475, r476, r480, r491, r497, r498, r499, r501, r503, r504, r505, r506, adr-0129, adr-0139, adr-0180, adr-0181
 
 ## Context
 
