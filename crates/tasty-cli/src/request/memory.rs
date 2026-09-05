@@ -1,31 +1,28 @@
 //! `tasty memory ...` CLI → JsonRpcRequest 매핑 + 공용 scope/value/TTL 헬퍼.
 
-use crate::commands::MemoryCommands;
+use crate::commands::{MemoryCommands, memory::ScopeArgs};
 
-pub(super) fn resolve_scope(
-    scope: Option<&str>,
-    surface: Option<u32>,
-    workspace: Option<u32>,
-    window: Option<u64>,
-    account: Option<&str>,
-    global: bool,
-) -> Option<String> {
-    if let Some(s) = scope {
+/// scope 선택자 → scope 토큰. 아무것도 안 주면 `None`.
+///
+/// 인자가 [`ScopeArgs`] 한 덩어리인 것이 요점이다 — 여섯 값을 따로 받으면 호출부마다
+/// 여섯 줄이 되고, 그 여섯 줄이 자리 수만큼(16) 복제된 것이 이 모듈의 원래 모습이었다.
+pub(super) fn resolve_scope(a: &ScopeArgs) -> Option<String> {
+    if let Some(s) = a.scope.as_deref() {
         return Some(s.to_string());
     }
-    if let Some(id) = surface {
+    if let Some(id) = a.surface {
         return Some(format!("surface:{id}"));
     }
-    if let Some(id) = workspace {
+    if let Some(id) = a.workspace {
         return Some(format!("workspace:{id}"));
     }
-    if let Some(id) = window {
+    if let Some(id) = a.window {
         return Some(format!("window:{id}"));
     }
-    if let Some(u) = account {
+    if let Some(u) = a.account.as_deref() {
         return Some(format!("account:{u}"));
     }
-    if global {
+    if a.global {
         return Some("global".to_string());
     }
     None
@@ -48,11 +45,6 @@ pub(super) fn memory_command_to_method_params(
     match command {
         Put {
             scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
             key,
             value,
             value_b64,
@@ -61,14 +53,7 @@ pub(super) fn memory_command_to_method_params(
             expires_at,
             cas,
         } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+            let scope_token = require_scope(scope);
             let mut params = serde_json::json!({
                 "scope": scope_token,
                 "key": key,
@@ -112,69 +97,23 @@ pub(super) fn memory_command_to_method_params(
             }
             ("memory.put", params)
         }
-        Get {
-            scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
-            key,
-        } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+        Get { scope, key } => {
+            let scope_token = require_scope(scope);
             (
                 "memory.get",
                 serde_json::json!({ "scope": scope_token, "key": key }),
             )
         }
-        Delete {
-            scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
-            key,
-            cas,
-        } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+        Delete { scope, key, cas } => {
+            let scope_token = require_scope(scope);
             let mut p = serde_json::json!({ "scope": scope_token, "key": key });
             if let Some(c) = cas {
                 p["cas"] = serde_json::json!(c);
             }
             ("memory.delete", p)
         }
-        Exists {
-            scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
-            key,
-        } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+        Exists { scope, key } => {
+            let scope_token = require_scope(scope);
             (
                 "memory.exists",
                 serde_json::json!({ "scope": scope_token, "key": key }),
@@ -182,25 +121,13 @@ pub(super) fn memory_command_to_method_params(
         }
         List {
             scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
             prefix,
             limit,
             since,
             until,
             offset,
         } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+            let scope_token = require_scope(scope);
             let mut p = serde_json::json!({ "scope": scope_token });
             if let Some(pre) = prefix {
                 p["prefix"] = serde_json::json!(pre);
@@ -221,11 +148,6 @@ pub(super) fn memory_command_to_method_params(
         }
         Query {
             scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
             path,
             equals,
             prefix,
@@ -234,14 +156,7 @@ pub(super) fn memory_command_to_method_params(
             until,
             offset,
         } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+            let scope_token = require_scope(scope);
             // `--equals` 는 JSON 리터럴로 파싱; 실패하면 문자열 그대로.
             let equals_val: serde_json::Value = match serde_json::from_str(equals) {
                 Ok(v) => v,
@@ -269,23 +184,9 @@ pub(super) fn memory_command_to_method_params(
             }
             ("memory.query", p)
         }
-        Export {
-            scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
-        } => {
+        Export { scope } => {
             let mut p = serde_json::json!({});
-            if let Some(tok) = resolve_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            ) {
+            if let Some(tok) = resolve_scope(scope) {
                 p["scope"] = serde_json::json!(tok);
             }
             ("memory.export", p)
@@ -325,23 +226,8 @@ pub(super) fn memory_command_to_method_params(
                 serde_json::json!({ "entries": entries, "replace": replace }),
             )
         }
-        Count {
-            scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
-            prefix,
-        } => {
-            let scope_token = require_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            );
+        Count { scope, prefix } => {
+            let scope_token = require_scope(scope);
             let mut p = serde_json::json!({ "scope": scope_token });
             if let Some(pre) = prefix {
                 p["prefix"] = serde_json::json!(pre);
@@ -349,23 +235,9 @@ pub(super) fn memory_command_to_method_params(
             ("memory.count", p)
         }
         Scopes => ("memory.scopes", serde_json::json!({})),
-        Stats {
-            scope,
-            surface,
-            workspace,
-            window,
-            account,
-            global,
-        } => {
+        Stats { scope } => {
             let mut p = serde_json::json!({});
-            if let Some(tok) = resolve_scope(
-                scope.as_deref(),
-                *surface,
-                *workspace,
-                *window,
-                account.as_deref(),
-                *global,
-            ) {
+            if let Some(tok) = resolve_scope(scope) {
                 p["scope"] = serde_json::json!(tok);
             }
             ("memory.stats", p)
@@ -388,15 +260,9 @@ pub(super) fn ttl_to_expires_at(secs: u64) -> i64 {
     now_ms.saturating_add(add_ms)
 }
 
-pub(super) fn require_scope(
-    scope: Option<&str>,
-    surface: Option<u32>,
-    workspace: Option<u32>,
-    window: Option<u64>,
-    account: Option<&str>,
-    global: bool,
-) -> String {
-    match resolve_scope(scope, surface, workspace, window, account, global) {
+/// [`resolve_scope`] 와 같되, scope 가 없으면 메시지를 내고 종료한다.
+pub(super) fn require_scope(a: &ScopeArgs) -> String {
+    match resolve_scope(a) {
         Some(s) => s,
         None => {
             eprintln!("{}", tasty_i18n::t("cli.memory.scope_required"));

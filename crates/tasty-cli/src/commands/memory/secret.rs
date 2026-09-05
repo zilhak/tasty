@@ -1,3 +1,4 @@
+use super::ScopeArgs;
 use clap::Subcommand;
 
 /// `tasty memory secret ...` subcommands.
@@ -5,18 +6,8 @@ use clap::Subcommand;
 pub enum MemorySecretCommands {
     /// Store a secret value at scope/key.
     Put {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
         #[arg(long)]
         key: String,
         #[arg(long)]
@@ -33,103 +24,50 @@ pub enum MemorySecretCommands {
         #[arg(long)]
         cas: Option<u64>,
     },
+    /// Read a single secret entry.
     Get {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
         #[arg(long)]
         key: String,
     },
+    /// Delete a secret (idempotent).
     Delete {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
         #[arg(long)]
         key: String,
         #[arg(long)]
         cas: Option<u64>,
     },
+    /// Check whether a secret exists at scope/key.
     Exists {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
         #[arg(long)]
         key: String,
     },
+    /// List secret entries in a scope.
     List {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
         #[arg(long)]
         prefix: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Count secrets in a scope.
     Count {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
         #[arg(long)]
         prefix: Option<String>,
     },
+    /// List scopes that hold at least one secret.
     Scopes,
+    /// Secret store statistics. Scope selector is optional.
     Stats {
-        #[arg(long, conflicts_with_all = ["surface", "workspace", "window", "account", "global"])]
-        scope: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "workspace", "window", "account", "global"])]
-        surface: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "window", "account", "global"])]
-        workspace: Option<u32>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "account", "global"])]
-        window: Option<u64>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "global"])]
-        account: Option<String>,
-        #[arg(long, conflicts_with_all = ["scope", "surface", "workspace", "window", "account"])]
-        global: bool,
+        #[command(flatten)]
+        scope: ScopeArgs,
     },
 }
