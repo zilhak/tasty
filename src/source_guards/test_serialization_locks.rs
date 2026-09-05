@@ -38,7 +38,9 @@
 
 use std::collections::BTreeSet;
 
-use super::{mask_non_code, repo_root, rust_sources, word_positions};
+use super::{
+    mask_non_code, repo_root, rust_sources, rust_sources_with_integration_tests, word_positions,
+};
 
 /// 락이 지키는 것을 만지는 테스트를 어디까지 찾는가.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -167,6 +169,18 @@ const OTHER_LOCKS: &[(&str, &str, &str)] = &[
         "프로세스 cwd. **자기 채널이 있다** — `set_current_dir` 재진입 가드가 같은 \
          크레이트에 있다",
     ),
+    (
+        "tests/attach_common/mod.rs",
+        "WRITE_LOCK",
+        "attach 소켓의 쓰기 쪽. 전역 변수가 아니라 **하나의 스트림**을 지킨다 — \
+         heartbeat 스레드와 본 프레임이 섞이면 프로토콜이 깨진다",
+    ),
+    (
+        "tests/e2e_tests.rs",
+        "WINDOW_EXCLUSIVE",
+        "창을 만드는 시나리오. 지키는 것이 프로세스 안의 값이 아니라 **GUI 창이라는 \
+         프로세스 밖 자원**이라 읽기/쓰기 두 차선으로 가른다",
+    ),
 ];
 
 /// 규칙이 실제로 보는 테스트 수의 하한 — **연기 검사**다. 스캐너가 죽거나 `#[test]` 를
@@ -284,7 +298,9 @@ fn every_serialization_lock_is_listed() {
         .chain(OTHER_LOCKS.iter().map(|(f, l, _)| (*f, *l)))
         .collect();
     let mut found: BTreeSet<(String, String)> = BTreeSet::new();
-    for (path, text) in rust_sources() {
+    // 이 가드의 대상은 **테스트 자신**이라 모수가 다르다 — 출하 코드만 보면
+    // `tests/` 의 통합 테스트가 통째로 안 보이고, 전수 명제가 전수가 아니게 된다.
+    for (path, text) in rust_sources_with_integration_tests() {
         let rel = path.to_string_lossy().replace('\\', "/");
         for line in mask_non_code(&text).lines() {
             let t = line.trim();
@@ -297,7 +313,10 @@ fn every_serialization_lock_is_listed() {
             let Some((name, ty)) = rest.split_once(':') else {
                 continue;
             };
-            if ty.replace(' ', "").contains("Mutex<()>") {
+            // 모양으로 판정하는 자리라 **모양이 곧 모수**다. `Mutex<()>` 만 보면
+            // `RwLock<()>` 로 쓴 락이 안 보인다 — 실측으로 하나 있었다.
+            let ty = ty.replace(' ', "");
+            if ty.contains("Mutex<()>") || ty.contains("RwLock<()>") {
                 found.insert((rel.clone(), name.trim().to_string()));
             }
         }

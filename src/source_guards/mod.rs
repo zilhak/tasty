@@ -49,8 +49,29 @@ use std::path::{Path, PathBuf};
 /// 현재 실측은 1100 개 남짓이라 여유를 두고 잡는다.
 const MIN_SCANNED_FILES: usize = 900;
 
-/// 스캔 루트. 워크스페이스의 Rust 소스 전부(본체 + 모든 크레이트).
+/// 통합 테스트 하한 — 실측 58 개.
+const MIN_INTEGRATION_TEST_FILES: usize = 40;
+
+/// 스캔 루트 — **출하되는 코드**. 본체 + 모든 크레이트.
+///
+/// "Rust 소스 전부" 가 아니다. 실측(2026-09-05) git 이 아는 `.rs` 1265 개 중 **63 개가
+/// 이 루트 밖**이다 — `tests/` 58 · `site/src/` 4 · `build.rs` 1. 대부분의 가드는
+/// "출하되는 코드가 규칙을 지키나" 를 물으므로 그 63 이 대상이 아닌 것이 맞다.
+///
+/// **다만 테스트 자신을 대상으로 삼는 가드는 물음이 다르다** — 아래
+/// [`SCAN_ROOTS_WITH_INTEGRATION_TESTS`] 를 쓴다. 물음이 둘이면 모수도 둘이다.
 const SCAN_ROOTS: &[&str] = &["src", "crates"];
+
+/// 통합 테스트까지 포함한 스캔 루트 — **테스트를 대상으로 삼는 가드 전용**.
+///
+/// `cargo test` 가 병렬로 돌리는 것은 한 바이너리 안의 테스트이고, `tests/` 의 통합
+/// 테스트도 그 대상이다. 그래서 "이 전역을 만지는 테스트가 전부 락을 잡는다" 같은
+/// **전수 명제**를 세우는 가드가 `SCAN_ROOTS` 만 보면 전수가 아니다 — 이 레포에서
+/// 가장 큰 테스트 뭉치가 통째로 안 보인다.
+///
+/// `SCAN_ROOTS` 와 합치지 않는다. 합치면 출하 코드를 묻는 가드들이 테스트 코드까지
+/// 대상으로 삼아, 대부분의 가드에서 대량 오탐이 된다.
+const SCAN_ROOTS_WITH_INTEGRATION_TESTS: &[&str] = &["src", "crates", "tests"];
 
 /// 주석을 걷어낸다.
 ///
@@ -264,6 +285,26 @@ fn rust_sources() -> Vec<(PathBuf, String)> {
         out.len() >= MIN_SCANNED_FILES,
         "스캔 하한 미달: {} 개만 읽었다(하한 {MIN_SCANNED_FILES}). 워커나 스캔 루트가 깨졌다",
         out.len()
+    );
+    out
+}
+
+/// [`SCAN_ROOTS_WITH_INTEGRATION_TESTS`] 판. 통합 테스트가 실제로 읽혔는지를 따로
+/// 못박는다 — 루트 이름이 틀리면 예외가 아니라 조용한 0 이 되고, 0 만큼 늘어난
+/// 모수는 늘지 않은 것과 구별되지 않는다.
+fn rust_sources_with_integration_tests() -> Vec<(PathBuf, String)> {
+    let out = tasty_doc_guards::source_text::rust_sources(
+        &repo_root(),
+        SCAN_ROOTS_WITH_INTEGRATION_TESTS,
+    );
+    let integration = out
+        .iter()
+        .filter(|(p, _)| p.to_string_lossy().replace('\\', "/").starts_with("tests/"))
+        .count();
+    assert!(
+        integration >= MIN_INTEGRATION_TEST_FILES,
+        "통합 테스트를 {integration} 개밖에 못 읽었다(하한 {MIN_INTEGRATION_TEST_FILES}). \
+         넓힌 모수가 안 넓어졌으면 이 가드는 넓히기 전과 똑같이 통과한다"
     );
     out
 }
