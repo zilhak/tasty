@@ -108,7 +108,7 @@ impl GpuState {
                         );
                         vspace(ui, STRUCT_GAP_2);
                         ui.label(
-                            egui::RichText::new(t("settings.general.setup_subtitle"))
+                            egui::RichText::new(t("settings.terminal.setup_subtitle"))
                                 .size(th.font_size_caption.value())
                                 .color(text_dim),
                         );
@@ -130,7 +130,7 @@ impl GpuState {
                         .show(ui, |ui| {
                             ui.add(
                                 egui::Label::new(
-                                    egui::RichText::new(t("settings.general.shell_not_found"))
+                                    egui::RichText::new(t("settings.terminal.shell_not_found"))
                                         .size(SETUP_WARNING_SIZE.value())
                                         .color(amber),
                                 )
@@ -142,7 +142,7 @@ impl GpuState {
 
                     // ── Input ──────────────────────────────────────
                     ui.label(
-                        egui::RichText::new(t("settings.general.shell_label"))
+                        egui::RichText::new(t("settings.terminal.shell_label"))
                             .size(SETUP_INPUT_LABEL_PRIMITIVE_12.value())
                             .color(text_dim),
                     );
@@ -162,13 +162,13 @@ impl GpuState {
                     vspace(ui, th.spacing_xs);
                     if show_error {
                         ui.label(
-                            egui::RichText::new(t("settings.general.shell_invalid_path"))
+                            egui::RichText::new(t("settings.terminal.shell_invalid_path"))
                                 .size(th.font_size_caption.value())
                                 .color(red_err),
                         );
                     } else if is_valid {
                         ui.label(
-                            egui::RichText::new(t("settings.general.shell_valid"))
+                            egui::RichText::new(t("settings.terminal.shell_valid"))
                                 .size(th.font_size_caption.value())
                                 .color(accent_ok),
                         );

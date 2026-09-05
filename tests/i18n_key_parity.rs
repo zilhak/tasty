@@ -28,8 +28,11 @@
 //! 유일한 호출부가 지워져 키가 고아가 되는 형태에서 순방향은 초록이다 — 소스에 그 키가
 //! 더는 없으니 "소스가 드는 키가 카탈로그에 있다" 는 여전히 참이다. 반대로 호출부가
 //! 네임스페이스를 잘못 부르면 순방향은 "카탈로그에 없는 키" 로, 역방향은 "아무도 안 쓰는
-//! 키" 로 **같은 사건을 양쪽에서** 신고한다 — 실제로 `src/gfx/gpu/shell_setup.rs` 가
-//! 그렇다([`PENDING_FIX_MISSING_KEYS`] 와 [`ORPHAN_KEYS`] 에 짝으로 남아 있다).
+//! 키" 로 **같은 사건을 양쪽에서** 신고한다. 실제로 그런 것이 있었다 —
+//! `src/gfx/gpu/shell_setup.rs` 가 `settings.general.*` 로 부르는데 카탈로그는 그 다섯을
+//! `[settings.terminal]` 아래 두고 있었고, 순방향은 그것을 [`PENDING_FIX_MISSING_KEYS`]
+//! 로 유예해 두고 있었다. 역방향을 켜자 같은 사건의 반대쪽 절반(고아가 된 카탈로그 키)이
+//! 나왔고, 그래서 호출부를 고쳐 양쪽이 함께 비었다.
 //!
 //! 등록 방법과 예외의 근거는 `docs/dev-guide/i18n.md` "강제 테스트" 절.
 //! 선례: `tests/native_surface_labels_i18n.rs`(키 존재) ·
@@ -170,28 +173,7 @@ const MODIFIER_TOKENS: &[&str] = &[
 /// 여기 있는 동안은 실패로 치지 않되, 키가 카탈로그에 생기면(=고쳐지면) 이 항목을
 /// 지우라고 fail 한다. 새 위반을 여기에 넣어 덮지 않는다 — 고치는 것이 기본이다.
 const PENDING_FIX_MISSING_KEYS: &[(&str, &str)] = &[
-    // src/gfx/gpu/shell_setup.rs 가 settings.general.* 로 조회하지만 카탈로그는 이 다섯을
-    // [settings.terminal] 아래에 둔다 — 첫 실행 셸 설정 화면에 키 문자열이 그대로 노출된다.
-    (
-        "settings.general.setup_subtitle",
-        "shell_setup.rs: 카탈로그는 settings.terminal.setup_subtitle",
-    ),
-    (
-        "settings.general.shell_not_found",
-        "shell_setup.rs: 카탈로그는 settings.terminal.shell_not_found",
-    ),
-    (
-        "settings.general.shell_label",
-        "shell_setup.rs: 카탈로그는 settings.terminal.shell_label",
-    ),
-    (
-        "settings.general.shell_invalid_path",
-        "shell_setup.rs: 카탈로그는 settings.terminal.shell_invalid_path",
-    ),
-    (
-        "settings.general.shell_valid",
-        "shell_setup.rs: 카탈로그는 settings.terminal.shell_valid",
-    ),
+    // 비어 있는 것이 정상이다 — 유예는 예외이고 고치는 것이 기본이다.
 ];
 
 /// 소스 순회에서 통째로 가지치기할 디렉토리명(`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와 동일).
@@ -1022,18 +1004,6 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
         "git_viewer.diff_heading",
         "호출부 0 — 이 파일의 SAME_AS_ENGLISH_ALLOWLIST 가 유일한 언급이다",
-    ),
-    (
-        "settings.terminal.setup_subtitle",
-        "호출부가 settings.general.* 로 부른다 — PENDING_FIX_MISSING_KEYS 의 반대쪽 절반",
-    ),
-    (
-        "settings.terminal.shell_invalid_path",
-        "호출부가 settings.general.* 로 부른다 — PENDING_FIX_MISSING_KEYS 의 반대쪽 절반",
-    ),
-    (
-        "settings.terminal.shell_valid",
-        "호출부가 settings.general.* 로 부른다 — PENDING_FIX_MISSING_KEYS 의 반대쪽 절반",
     ),
     (
         "toast.copied_files",
