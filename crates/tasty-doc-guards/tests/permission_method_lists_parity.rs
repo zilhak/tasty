@@ -50,6 +50,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use tasty_doc_guards::{KNOWN_CTORS, method_table};
 
 const TOKEN_SOURCE: &str = "crates/tasty-plugin-manifest/src/types.rs";
 const METHOD_SOURCE: &str = "crates/tasty-ipc/src/method_meta.rs";
@@ -66,32 +67,6 @@ fn root() -> PathBuf {
 fn read(rel: &str) -> String {
     let path = root().join(rel);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
-}
-
-/// 줄 주석을 지운다. 문자열 리터럴 안의 `//` 는 건드리지 않는다.
-fn strip_line_comments(src: &str) -> String {
-    let mut out = String::with_capacity(src.len());
-    for line in src.lines() {
-        let mut in_str = false;
-        let mut cut = line.len();
-        let b = line.as_bytes();
-        let mut i = 0;
-        while i < b.len() {
-            match b[i] {
-                b'\\' if in_str => i += 1,
-                b'"' => in_str = !in_str,
-                b'/' if !in_str && i + 1 < b.len() && b[i + 1] == b'/' => {
-                    cut = i;
-                    break;
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-        out.push_str(&line[..cut]);
-        out.push(' ');
-    }
-    out
 }
 
 /// `Permission::as_token` 의 팔에서 variant → 토큰을 뽑는다.
@@ -124,19 +99,6 @@ fn variant_tokens(src: &str) -> BTreeMap<String, String> {
     out
 }
 
-/// 이 파서가 **해석할 줄 아는** 생성자와 그 뜻.
-///
-/// `true` = plugin 이 부를 수 있다(권한 목록을 `&[..]` 에서 읽는다), `false` = 못 부른다.
-/// 이 목록은 아래 [`constructors_in_source`] 가 소스에서 뽑은 집합과 **대조된다** —
-/// 손으로 적은 목록은 진짜 집합과 따로 늙기 때문이다.
-const KNOWN_CTORS: &[(&str, bool)] = &[
-    ("plugin", true),
-    // 권한 축에서 `plugin` 과 같다. 다른 것은 외부 호출자에게 dispatch arm 이 없다는
-    // 것뿐이고, 그건 이 문서(권한 표)의 관심사가 아니다.
-    ("plugin_only", true),
-    ("local_only", false),
-];
-
 /// `method_meta.rs` 가 실제로 정의한 `MethodMeta` 생성자 이름.
 ///
 /// 손으로 유지하는 목록 대신 **소스에서 도출**한다. 도출한 것과 [`KNOWN_CTORS`] 가
@@ -157,82 +119,6 @@ fn constructors_in_source(src: &str) -> BTreeSet<String> {
             out.insert(name.trim().to_string());
         }
     }
-    out
-}
-
-/// `METHOD_TABLE` 을 메서드 → 필요 variant 로 읽는다. `None` 은 plugin 이 못 부르는 것.
-///
-/// 항목이 여러 줄에 걸치고 후행 쉼표가 붙는 형태(`(\n "x",\n plugin(&[..]),\n)`)가 실제로
-/// 있으므로 줄 단위로 읽지 않는다 — 그렇게 읽으면 그 항목들이 **조용히 빠진다.**
-///
-/// 모르는 생성자를 만나면 **실패한다.** 건너뛰면 검사가 조용히 꺼지고, 검사가 있다는
-/// 사실 자체가 거짓이 된다.
-fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
-    let start = src
-        .find("pub const METHOD_TABLE")
-        .expect("METHOD_TABLE 을 못 찾았다");
-    let end = src[start..]
-        .find("\npub const DEBUG_METHODS")
-        .expect("METHOD_TABLE 의 끝을 못 찾았다");
-    let flat = strip_line_comments(&src[start..start + end]);
-    let b = flat.as_bytes();
-    let mut out = BTreeMap::new();
-    let mut unknown: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] != b'"' {
-            i += 1;
-            continue;
-        }
-        let Some(close) = flat[i + 1..].find('"') else {
-            break;
-        };
-        let name = &flat[i + 1..i + 1 + close];
-        let after = &flat[i + 1 + close + 1..];
-        let trimmed = after.trim_start();
-        if !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_')
-            && trimmed.starts_with(',')
-        {
-            let tail = trimmed[1..].trim_start();
-            let ctor: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
-                .collect();
-            if tail[ctor.len()..].starts_with('(') {
-                let Some((_, plugin_callable)) =
-                    KNOWN_CTORS.iter().find(|(n, _)| *n == ctor.as_str())
-                else {
-                    unknown.push(format!("{name} → {ctor}(…)"));
-                    i += 1 + close + 1;
-                    continue;
-                };
-                if *plugin_callable {
-                    let rest = &tail[ctor.len() + 1..];
-                    let open = rest.find('[').expect("plugin 계열은 &[..] 형태다");
-                    let close2 = rest[open..].find(']').expect("&[..] 가 안 닫혔다");
-                    let inner = &rest[open + 1..open + close2];
-                    let vs: Vec<String> = inner
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    out.insert(name.to_string(), Some(vs));
-                } else {
-                    out.insert(name.to_string(), None);
-                }
-            }
-        }
-        i += 1 + close + 1;
-    }
-    assert!(
-        unknown.is_empty(),
-        "METHOD_TABLE 에 이 파서가 모르는 생성자가 있다 — 건너뛰면 그 항목들이 표에서 \
-         사라져 이 가드가 거짓 결함을 보고한다. `KNOWN_CTORS` 에 해석을 더해라:\n  {}",
-        unknown.join("\n  ")
-    );
     out
 }
 

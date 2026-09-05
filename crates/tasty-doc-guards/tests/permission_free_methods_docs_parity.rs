@@ -6,9 +6,15 @@
 //! 알 수 없다 — 매니페스트 작성자에게 그 표가 정본이라, 표에 없는 개방 범위는 **열려
 //! 있는데 문서에 없는 권한**이 된다.
 //!
-//! 선례 `tests/contributes_gate_docs_parity.rs` 와 같은 형태다 — 소스를 텍스트로 파싱하지
-//! 않고 [`METHOD_TABLE`] 을 **런타임에 열거**한다. 파서가 없으니 파서가 틀릴 일도 없고,
-//! `method_meta.rs` 의 주석·줄바꿈·다중행 항목에 흔들리지도 않는다.
+//! `METHOD_TABLE` 은 [`tasty_doc_guards::method_table`] 로 **텍스트에서** 읽는다. 한때
+//! 런타임 열거였고 그 근거는 "파서가 없으니 파서가 틀릴 일도 없다" 였는데, 그 대가가
+//! 이 가드의 **자동 채널**이었다 — `tasty_ipc` 를 링크하느라 본체 패키지에 살았고, 그
+//! 유일한 자동 잡은 `paths-ignore: docs/**` 뒤에 있다. 이 가드의 입력은 문서 하나뿐이라
+//! **위반될 수 있는 유일한 push 에서만 안 돌았다**(ADR-0138 과 같은 형태).
+//!
+//! 파서가 틀릴 위험은 없어지지 않고 **다른 곳으로 옮겨 붙박았다** —
+//! `tests/method_table_readings_agree.rs`(본체 패키지)가 이 판독과 런타임 열거가 같은
+//! 집합을 내는지 본다. 옮길 때 실측으로 확인했다: 양쪽 다 276 개, 차분 0.
 //!
 //! 양방향을 본다. 코드에만 있는 메서드(문서 누락)도, 문서에만 있는 메서드(삭제된 항목의
 //! 잔재)도 잡는다.
@@ -20,9 +26,6 @@
 //! 통과한다. 근거가 갈리는 지점이라 사람이 봐야 한다.
 
 use std::collections::BTreeSet;
-use std::path::Path;
-
-use tasty_ipc::method_meta::METHOD_TABLE;
 
 const DOC: &str = "docs/dev-guide/plugin-permissions.md";
 
@@ -45,8 +48,16 @@ fn code_spans(cell: &str) -> Vec<String> {
 }
 
 fn doc_text() -> String {
-    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(DOC))
-        .unwrap_or_else(|e| panic!("read {DOC}: {e}"))
+    let path = tasty_doc_guards::repo_root().join(DOC);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {DOC}: {e}"))
+}
+
+/// `METHOD_TABLE` 판독 — 메서드 → (plugin 이 부를 수 있으면) 요구 variant 목록.
+fn method_table() -> std::collections::BTreeMap<String, Option<Vec<String>>> {
+    let path = tasty_doc_guards::repo_root().join("crates/tasty-ipc/src/method_meta.rs");
+    let src =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    tasty_doc_guards::method_table(&src)
 }
 
 /// 표의 메서드 열에 적힌 메서드 이름을 **적힌 순서 그대로**(중복 포함) 모은다.
@@ -78,11 +89,14 @@ fn doc_methods(text: &str) -> Vec<String> {
 }
 
 /// `plugin_callable` 이면서 요구 권한이 0개인 메서드 — 이 가드가 지키는 집합.
-fn permission_free_methods() -> BTreeSet<&'static str> {
-    METHOD_TABLE
-        .iter()
-        .filter(|(_, meta)| meta.plugin_callable && meta.required.is_empty())
-        .map(|(name, _)| *name)
+fn permission_free_methods() -> BTreeSet<String> {
+    method_table()
+        .into_iter()
+        .filter_map(|(name, required)| match required {
+            // `None` = plugin 이 못 부른다. `Some(v)` 에서 v 가 비면 토큰 0개로 열려 있다.
+            Some(v) if v.is_empty() => Some(name),
+            _ => None,
+        })
         .collect()
 }
 
@@ -90,9 +104,9 @@ fn permission_free_methods() -> BTreeSet<&'static str> {
 fn every_permission_free_method_is_documented() {
     let listed: BTreeSet<String> = doc_methods(&doc_text()).into_iter().collect();
 
-    let missing: Vec<&str> = permission_free_methods()
+    let missing: Vec<String> = permission_free_methods()
         .into_iter()
-        .filter(|m| !listed.contains(*m))
+        .filter(|m| !listed.contains(m))
         .collect();
     assert!(
         missing.is_empty(),

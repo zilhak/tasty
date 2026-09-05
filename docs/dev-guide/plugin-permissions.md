@@ -109,7 +109,7 @@ approval 등, 키 접두 `tasty.`). 그래서 **접두 `tasty.` 로 시작하는
 
 **앞의 두 군은 구멍이 아니라 정책이다.** 그 둘은 "게이트를 빠뜨렸다" 가 아니라 그 자리에 게이트를 두지 않기로 한 결정이고, 특히 아래쪽 군은 SSH 접속 권한이 이미 그 이상을 허용하므로 별도 토큰을 만들지 않는다는 이 레포의 확립된 판단이다([ADR-0004](../adr/0004-ipc-transport-tcp.md)). 다만 그 사실이 **문서에 있어야** grant 화면을 보는 사용자와 매니페스트를 쓰는 plugin 작성자가 실제 개방 범위를 안다. 셋째 군은 그 반대다 — 결정을 기다리는 자리이므로, 같은 표에 있다는 것이 같은 근거를 갖는다는 뜻이 되지 않게 군을 갈라 둔다.
 
-위 표는 `tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 런타임 열거해 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다. 이 문서의 다른 두 parity 가드와 마찬가지로 **CI 가 자동으로 실행하지는 않는다**(아래 [ci-gates](ci-gates.md) 언급 참조 — 스캔 가드라 컴파일 검사는 이 가드에 대해 아무것도 보장하지 않는다). 다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
+위 표는 `crates/tasty-doc-guards/tests/permission_free_methods_docs_parity.rs` 가 `METHOD_TABLE` 을 `crates/tasty-ipc/src/method_meta.rs` 에서 읽어 양방향으로 강제한다 — 새 메서드를 `plugin(&[])` 로 등록하면 이 표에도 넣어야 통과한다. 이 가드는 의존이 0 인 크레이트에 살아 **`doc-guards.yml` 이 경로 필터 없이 매 push 실행한다** — 이 표를 고치는 것이 곧 이 가드를 위반하는 유일한 방법이라, 문서만 바뀐 push 에서도 도는 것이 요점이다([ci-gates](ci-gates.md) · ADR-0138). 그 판독이 실제 표와 갈리지 않는지는 본체 패키지의 `tests/method_table_readings_agree.rs` 가 런타임 열거와 대조해 붙박는다. 다만 **어느 군에 넣을지는 가드가 판정하지 않는다**(근거의 분류라 기계가 고를 값이 아니다).
 
 ### `network` — 여는 것 하나 + 정직한 선언
 
