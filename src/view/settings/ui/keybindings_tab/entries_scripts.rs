@@ -17,7 +17,6 @@ const SCRIPT_SLOT_PREFIX: &str = "script:";
 const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
 const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
 const LABEL_GAP: LogicalPx = LogicalPx(12.0);
-const ROW_GAP: LogicalPx = LogicalPx(4.0);
 
 pub(super) fn draw_script_bindings(
     ui: &mut egui::Ui,
@@ -26,6 +25,10 @@ pub(super) fn draw_script_bindings(
     captured: &KeyCapture,
 ) {
     let th = crate::theme::theme();
+    // 행 간격은 `Theme.spacing_xs` 에서 읽는다. 같은 파일의 세로 리듬이 이미
+    // `vspace(ui, th.spacing_sm)` 로 배율을 타므로, 이 간격만 평상수로 두면 1.2 에서
+    // 그 리듬과 어긋난다.
+    let row_gap = th.spacing_xs;
 
     // 녹화된 combo 처리 — script: 슬롯만.
     if let Some(slot) = recording_field.clone()
@@ -134,6 +137,6 @@ pub(super) fn draw_script_bindings(
                 });
             }
         });
-        ui.add_space(ROW_GAP.value());
+        ui.add_space(row_gap.value());
     }
 }
