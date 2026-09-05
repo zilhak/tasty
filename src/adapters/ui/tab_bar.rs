@@ -26,6 +26,18 @@ use tasty_type_geometry::rect::PhysicalRect;
 /// 지금 두 값이 짝(2 ↔ 4)인 것은 **우연이다** — 밑줄 두께가 바뀌어도 이 점은 안 바뀐다.
 const TAB_ACTIVE_DOT_SIZE: LogicalPx = LogicalPx(4.0);
 
+/// 탭의 busy 표시 점 지름. 스케일 밖(6) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이라
+/// 그리로 보내면 배율 1 에서 픽셀이 바뀐다(ADR-0126 대로 이름만 붙인다).
+///
+/// **이 자리에는 겨냥하는 토큰 이름이 이미 있다** — `component.tab-dot-size` 인데 값이
+/// `{component.status-dot-size}` = 8 이라 부르면 6 → 8 이 된다. 그래서 부르지 않았다.
+/// 그 토큰이 디자인이 정한 8 인지, 다른 세 dot 이름을 만들 때 대칭으로 딸려 나온 8 인지가
+/// 갈려야 이 자리가 토큰으로 갈지 값을 지킬지 정해진다.
+///
+/// **같은 6 을 `src/adapters/ui/sidebar/view.rs` 의 rail 상태 점도 쓴다** — 무관한 두
+/// 화면이 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
+const TAB_BUSY_DOT_SIZE: LogicalPx = LogicalPx(6.0);
+
 use crate::adapters::ui::icons;
 use crate::core::AttentionKind;
 use crate::state::AppState;
@@ -221,7 +233,7 @@ pub fn draw_pane_tab_bars_view(
     let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
     let h_padding: f32 = 8.0;
-    let dot_radius: f32 = 3.0;
+    let dot_radius = TAB_BUSY_DOT_SIZE.value() * 0.5;
     let dot_pad: f32 = 6.0;
     let active_indicator_h = th.tab_indicator_width.value();
     let plus_font_size = th.tab_bar_label_font_size.value();
