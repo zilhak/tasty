@@ -1,6 +1,7 @@
 //! Claude child PTY 에러 패턴 스캐너.
 //!
-//! 호스트 `src/state/claude_error.rs`의 카탈로그 정규식을 그대로 옮긴다.
+//! 호스트에 있던 카탈로그 정규식을 그대로 옮겨 왔고, cutover 로 호스트 쪽은
+//! 제거됐다 — 지금은 본 모듈이 단일 출처다.
 //! 호스트는 main loop tick마다 in-memory terminal buffer를 직접 스캔했지만,
 //! plugin은 호스트 메모리에 접근할 수 없으므로 IPC `surface.read_since_mark`로
 //! 텍스트를 받아 매칭한다. 매치 시 `surface.fire_hook`으로 `claude-error`를
@@ -32,9 +33,8 @@ use serde_json::json;
 
 use crate::handlers::HostCall;
 
-/// 호스트와 1:1 동일한 정규식. `src/state/claude_error.rs`의
-/// `CLAUDE_ERROR_PATTERN`을 직접 옮긴 것. 어느 한 쪽을 수정하면 cutover 후
-/// 양쪽이 어긋나므로 step 04 cutover 시 호스트 측은 제거된다.
+/// 호스트에 있던 `CLAUDE_ERROR_PATTERN` 을 직접 옮긴 것. cutover 로 호스트
+/// 측은 제거됐고 이 상수가 단일 출처다.
 const CLAUDE_ERROR_PATTERN: &str = r"(?i)(\bAPI Error\b|Output blocked by content filtering policy|\boverloaded_error\b|\brate_limit_error\b|\bInternal Server Error\b|\bnetwork error\b|\bBad Request\b)";
 
 static CLAUDE_ERROR_REGEX: OnceLock<Regex> = OnceLock::new();

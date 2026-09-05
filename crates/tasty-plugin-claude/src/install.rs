@@ -1,8 +1,7 @@
 //! `~/.claude/settings.json` 머지 로직.
 //!
-//! 호스트 `src/cli/claude.rs`의 install/uninstall helper를 1:1 옮긴 것.
-//! 두 곳을 동시에 유지해 cutover 직전까지 회귀를 막는다. step 04 cutover에서
-//! 호스트 측은 제거되고 본 모듈이 단일 출처가 된다.
+//! 호스트에 있던 install/uninstall helper 를 1:1 옮긴 것. cutover 로 호스트
+//! 측은 제거됐고 본 모듈이 단일 출처다.
 //!
 //! `is_tasty_stop_hook_installed`는 tasty Stop hook 설치 여부를 점검하는
 //! 별도 노출 함수다 — 실사용 소비자가 생긴 적은 없다.
