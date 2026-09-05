@@ -271,8 +271,22 @@ gh run view --job <check-headless 잡 id> --log \
 | 같은 파일 안의 인라인 `#[cfg(all(test, feature = "gui"))] mod tests { … }` | 11 | 1.2% |
 | 개별 `#[test]` 에 직접 붙은 `#[cfg(feature = "gui")]` | 29 | 3.1% |
 
-상위 기여: `adapters::ui` 463 · `view` 177 · `gfx` 31 · `app::attach_client` 30. src 안의
-gui 게이트된 `mod` 선언은 67 개다.
+상위 기여: `adapters::ui` 463 · `view` 177 · `gfx` 31 · `app::attach_client` 30.
+그 909 를 물려주는 `mod` 선언 자체는 많지 않다 — `mod x;` 선언 **바로 앞 줄**에 gui cfg 가
+붙은 것을 세면 70 이다(main `a3da2fed` 실측). 재는 명령:
+
+```bash
+find src -name '*.rs' -exec awk '
+  /^[[:space:]]*(pub([(][^)]*[)])?[[:space:]]+)?mod[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*;/ \
+    { if (prev ~ /#\[cfg\(.*feature[[:space:]]*=[[:space:]]*"gui"/) n++ }
+  { prev = $0 }
+  END { print n+0 }' {} \; | awk '{s+=$1} END {print s}'
+```
+
+앞서 이 자리에는 **67** 이 적혀 있었다. 그 값이 틀렸다는 뜻이 아니다 — **어느 도구로 낸
+값인지 이 문서가 적어 두지 않아 위 70 과 가릴 수단이 없다**(커밋이 움직인 것인지 세는
+대상이 다른 것인지 재현할 방법이 없다). 같은 절의 909 · 11 · 29 는 도구와 모수 커밋
+(`d7dc4079`)을 함께 적어 두었고, **한 문서 안의 그 불균일이 이 한 자리를 못 믿게 만든다.**
 
 **세 행의 근거 강도가 다르다.** 아래 둘은 소스에서 게이트를 직접 찾아 붙인 **양성 귀속**이고
 (40 건 전부가 셋 중 하나로 분류됐다 — 미분류 0), 위 909 는 **충분조건이지 유일 원인이 아니다**
