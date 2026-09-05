@@ -1,114 +1,180 @@
-# ADR-0180: `test_only_files` 가 "출하되는가" 의 정본이다 — cargo 통합테스트 타깃은 안 나가고, 미러는 위임한다
+# ADR-0180: 소스 스캔 가드의 세 판정 물음에 이름과 집을 준다 — "출하되는가" 의 정본은 `shipping_scope` 다
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
-- **Tags**: guards, shipping-scope, test-isolation, canonical-judge, cargo-layout, r414, adr-0129, adr-0165
+- **Tags**: guards, shipping-scope, cfg-predicate, test-gate, canonical-judge, layering, cargo-layout, r414, r451, r453, adr-0129, adr-0165, adr-0166
 
 ## Context
 
-"이 파일이 출하 산출물(라이브러리/바이너리)에 들어가는가" 를 여러 가드가 묻는다. 격리
-가드([`env_isolation`]·[`poison_recovery`])는 이 답으로 "test 맥락인가 / 출하 코드인가" 를
-가르고, 파일 SLOC 게이트([ADR-0165](0165-the-file-sloc-gate-measures-shipped-lines.md))는
-"복잡도 예산에 세는가" 를 가른다.
+소스를 텍스트로 읽는 가드들은 몇 가지 **판정 물음**을 공유한다. 그 물음에 이름이 없어서,
+필요한 가드마다 자기 자리에서 사본을 만들었다 — 하루에 **네 레인**이 같은 개념 언저리에
+모였다(R451): `test_gate.rs`(706, main), 이 lane 의 `shipping_scope` 확장 + 본 ADR,
+폐기된 통합테스트 판정(728), temp_path uniquifier 중복(735/728). **넷이 모였다는 것은 그
+개념이 코드에 정의돼 있지 않다는 뜻이다** — 그래서 본 ADR 의 값은 "합쳤다" 가 아니라 **이
+물음들에 이름과 집을 준 것**이다.
 
-이 물음의 정본은 `tasty_doc_guards::shipping_scope::test_only_files` 였다. 그런데 그 판정은
-`#[cfg(test)] mod x;` 선언 간선의 **전이 폐쇄**로만 "출하 안 됨" 을 잡았다 — 즉 선언에서
-닿는 파일만 봤다. **cargo 예약 통합테스트**(루트 `tests/*.rs`, `crates/*/tests/*.rs`)는 그
-그물에 안 걸린다: 이들은 별도 테스트 타깃의 루트 파일이라 **들어오는 `mod` 간선이 없다.**
-결과로 격리 가드는 통합테스트의 env/cwd 변형·조용한 poison 복구를 "출하 코드가 아니다" 가
-아니라 **"test 맥락이 아니다"** 로 흘려보냈다 — 조용한 거짓 음성이다.
-
-같은 물음이 **한 번 더** 구현돼 있었다. 본체 SLOC 게이트 대리인
-(`src/source_guards/sloc_gate_skip_proxy.rs`)은 면제 근거를 종류별로 세는데, 그중
-`CargoTestTarget` 가지가 `is_cargo_test_target`(패키지 루트 바로 아래 `tests/`) 을 **자체
-사본**으로 판정하고 있었다. 즉 "출하되는가" 의 답이 선언 기반(정본)과 레이아웃 기반(사본)
-두 곳으로 갈려 있었고, 격리 가드는 앞쪽만 봐서 뒤쪽을 놓쳤다. 소비자를 변경 전/후로 돌려
-판정을 diff 하니(R442) 이 갈림이 드러났다 — 입력 필터를 정독하는 것만으로는 소비자를
-절반만 세고 파손을 0 으로 셌다.
+혼동의 핵심은 **서로 다른 세 물음이 하나로 뭉쳐 보인 것**이었다. 실제로 이들은 다르고,
+그 사실은 **호출부를 세는 것만으로** 드러난다(R453): 706 의 한 커밋(`0f7ef11c5`)이
+`cfg_predicate::implies` · `shipping_scope::test_only_files` · `test_gate::blank_test_modules`
+를 **셋 다** 부른다. **한 소비자가 둘을 다 부르면 그 둘은 다른 물음이다** — 같은 물음이면
+아무도 둘 다 필요하지 않다. 그래서 706 은 `shipping_scope` 의 **경쟁자가 아니라 첫 소비자**다.
 
 ## Decision
 
-세 문장으로 못박는다.
+### 세 물음을 이름과 정의로 박는다
 
-1. **`test_only_files` 가 "이 파일이 출하되는가" 의 정본이다.** 이 물음을 묻는 자리는 이
-   판정기를 부르고 모수(스캔 범위)만 각자 넘긴다 — 답을 자기 자리에서 다시 구현하지 않는다.
-2. **cargo 예약 통합테스트 타깃은 출하되지 않는다.** 패키지 루트(`Cargo.toml` 이 있는
-   디렉토리) 바로 아래 `tests/` 는 cargo 가 별도 타깃으로 빌드해 lib/bin 산출물에 안 넣는다.
-   이것은 **레이아웃이 강제하는 성질**이라 `#[cfg(test)]` 선언이 없어도 성립하고, 그래서
-   전이 폐쇄와 **별개 갈래**로 판정한다([`is_cargo_test_target`]). `src/**/tests/` 같은 일반
-   모듈 디렉토리는 패키지 루트 바로 밑이 아니라 제외된다 — 그건 출하될 수 있다.
-3. **같은 물음의 사본을 두지 않는다.** SLOC 게이트 대리인은 자체 `is_cargo_test_target` 을
-   버리고 정본에 위임한다. 대리인의 종류별 면제 taxonomy 는 남기되(그 물음은 "무엇이 이
-   면제를 떠받치나" 로 다르다), 레이아웃 근거를 선언 근거보다 먼저 분류해 정본이 cargo
-   타깃까지 잡아도 `CargoTestTarget` 가지가 굶지 않게 한다.
+- **`cfg_predicate`** — *"이 줄/항목이 어떤 cfg 극성 아래 있는가"* (줄 단위). `implies(pred,
+  needle)` 는 술어가 needle 을 함의하는지, `cfg_gated_lines(lines, needle)` 는 그 항목이
+  덮는 줄들을 판정한다. 중첩 `all`/`any`/`not`·다줄 속성을 정확히 다룬다.
+- **`test_gate`**(main 크레이트 `src/source_guards/`) — *"인라인 테스트 모듈의 형태"*:
+  `#[cfg(test)]` 로 게이트된 블록을 줄 구조 보존한 채 지우고(`blank_test_modules`),
+  게이트된 자식 `mod NAME;` 의 이름/파일을 센다. `length_constant_frontier` 가 소비한다.
+- **`shipping_scope`**(`crates/tasty-doc-guards/`) — *"이 파일이 출하 산출물에 들어가는가"*
+  (파일 단위): `test_only_files`(선언 전이 폐쇄) + `is_cargo_test_target`(cargo 통합테스트
+  타깃). env·poison·SLOC 게이트·CLI 대조·본체 SLOC 대리인이 소비한다.
 
-### 왜 통일했나 — 그리고 poison 은 왜 안 합쳤나 (R414)
+"정본" 이라는 낱말은 **`shipping_scope` 에 대해서만** 선언한다 — 세 물음 전체에 걸치면 그
+선언이 거짓이 된다. `cfg_predicate`·`test_gate` 는 각자의 물음으로 선다.
 
-통일의 근거는 "둘 다 가드라서" 가 아니라 **물음이 같아서**다. `test_only_files` 와 대리인의
-`is_cargo_test_target` 은 글자 그대로 같은 것을 묻는다("cargo 타깃이라 안 나가는가") — 한
-항목(어떤 파일)이 양쪽에서 다른 답을 가질 수 없다. 물음이 하나면 판정기도 하나여야 하고,
-사본은 갈려서 조용히 틀린다. 이것이 이 통일의 유일한 정당화다.
+### "출하되는가" 의 정본은 `shipping_scope::test_only_files` 다
 
-**반대로 [`poison_recovery`] 는 합치지 않았다** — 물음이 다르기 때문이다. 격리 가드는 "이
-테스트가 전역 상태를 직렬화 없이 만지나" 를 묻고 test 맥락을 **판정 대상**으로 삼는다.
-poison 가드는 "출하되는 락 복구가 조용히 삼켜지나" 를 묻고 test 를 **면제 대상**으로 삼는다.
-같은 `test_only_files` 를 쓰지만 그 답을 반대 방향으로 쓴다. 그래서 scan 범위도 다르다
-(격리는 루트 `tests/` 를 보고, poison 은 출하 표면인 `src`·`crates` 만 본다). **합친 이유와
-안 합친 이유가 한 문서에 있어야** 다음 사람이 규칙을 안다.
+이 물음을 묻는 자리는 이 판정기를 부르고 스캔 범위(모수)만 각자 넘긴다 — 답을 자기
+자리에서 다시 구현하지 않는다. cargo 통합테스트 타깃(패키지 루트 `tests/`,
+[`is_cargo_test_target`])은 레이아웃이 강제로 출하 밖이라 선언 없이도 test-only 이고,
+그것을 이 판정기에 편입한다.
 
-### 이 결정이 기대는 전제 (R437)
+**정본의 집은 의존 방향이 강제한다.** env·poison·temp_path 는 `tasty-doc-guards` 에 살고,
+그 크레이트는 main 에 의존할 수 없다. "출하되는가" 를 모든 소비자가 부르려면 정본은
+**반드시 `tasty-doc-guards`** 에 있어야 한다. 이것은 "내 것을 고른다" 가 아니라 의존
+방향이 정하는 답이다 — main 의 `test_gate`·`length_constant_frontier` 는 이 정본에 닿을 수
+있으므로(main → doc-guards), 그쪽이 위임한다.
 
-이 결정은 **"패키지 루트 바로 아래 `tests/` 는 출하 산출물에 안 들어간다"** 는 cargo
-레이아웃 전제 위에 선다. 전제가 깨지는 경우 — cargo 가 통합테스트를 lib/bin 에 링크하기
-시작하거나, 프로젝트가 `Cargo.toml` 경계 밖에 통합테스트를 두거나, `[[test]]` 로 `tests/`
-아닌 경로를 테스트 타깃으로 선언하는 경우 — [`is_cargo_test_target`] 이 **거짓 음성**(출하
-파일을 test-only 로 오판)을 낸다. 그 오판은 격리·poison·SLOC 게이트 모두에서 조용한
-면제로 나타난다. 이 전제를 지키는 것은 cargo 자신의 타깃 규칙이지, 이 코드가 아니다 —
-그래서 재검토 조건에 레이아웃 변경을 넣는다.
+### 사본이 정당한 자리와 그 자리가 적어야 할 것
+
+같은 물음이어도 **두 자리가 의존을 만들 수 없으면** 사본이 정당하다 — 층 경계다. 실측
+사례는 **셸 게이트 ↔ 러스트 가드**뿐이다(`scripts/check-*.sh` 는 러스트 크레이트를
+링크하지 못해 `mask-source`·`strip-cfg-test` **바이너리를 호출**한다). 반대로
+`src/source_guards`(main) ↔ `crates/tasty-doc-guards` 는 **의존 가능**하므로(main →
+doc-guards) 그 사이의 사본은 정당하지 않다 — 위임한다.
+
+정당한 사본이 있는 자리는 셋을 적는다: **① 사본이라는 사실 ② 동조 조건(무엇이 바뀌면
+같이 바뀌어야 하는가) ③ 정본으로 가는 상호 참조.** 이 셋이 없는 사본이 결함이다 —
+사본 자체가 아니라.
+
+### 사본인지 가르는 판별자 둘 — 그리고 싼 쪽은 반쪽이다
+
+- **R414 (데이터로, 완전하되 비쌈)**: 두 구현에 **같은 파일 집합**을 먹여 판정을 diff
+  한다. 차이 0 이면 같은 답, 차이가 있으면 그 차이가 두 물음의 정의(또는 한쪽의 구멍)다.
+  **같음도 다름도** 판정한다.
+- **R453 (사용으로, 싸되 반쪽)**: **한 소비자가 둘을 다 부르면 그 둘은 다른 물음이다.**
+  호출부만 세면 되므로 R414 보다 싸다 — 다섯 번째 사본을 만들기 전에 이것부터 센다.
+  그러나 **"다름" 한 방향으로만 성립한다.** "아무도 둘 다 안 부른다" 는 "같은 물음이다"
+  의 증거가 **되지 못한다** — 만날 일이 없어서일 수 있다. (반례: `rust_sources` 두 벌은
+  다른 크레이트라 한 소비자가 둘 다 부를 수가 없지만 그래도 같은 물음이고 중복이다.)
+- **싼 판별자를 같음의 증거로 쓰면 틀린다.** R453 이 침묵하면(아무도 둘 다 안 부름)
+  판정은 아직 안 났다 — 같음/중복은 **R414(데이터)** 또는 **직접 증거**(정본이 이미 그
+  답을 갖고 있음)로만 선다. 이 순서를 안 적으면 다음 사람이 R453 의 침묵을 "같지 않다"
+  나 "중복 아니다" 로 오독한다.
 
 ## Consequences
 
-- **얻은 것**: 격리 가드가 통합테스트를 본다 — 요약하면 통합테스트의 env/cwd 변형과 조용한
-  poison 복구가 이제 "출하 아님" 으로 올바로 분류돼 판정 안에 든다. "출하되는가" 의 답이
-  한 곳에서만 나온다.
-- **잃은 것**: `test_only_files` 가 파일마다 `Cargo.toml` 조상을 찾는 파일시스템 왕복을 한다
-  (기존에도 `declaration_edges` 가 후보 실재를 `is_file()` 로 확인했으므로 층은 같다).
-  대리인의 taxonomy 는 이제 분류 **순서**에 민감하다(레이아웃을 선언보다 먼저 봐야 한다) —
-  주석으로 못박았다.
-- **운영 비용 / 유지 부담**: 새 소비자가 "출하되는가" 를 물으면 `test_only_files` 를 부르고
-  모수만 넘긴다. 자체 판정을 만들면 이 ADR 이 금지하는 사본이 된다.
+- **얻은 것**: 세 물음에 이름이 생겨, 다음 사람이 사본을 만들기 전에 어느 물음인지 묻고
+  호출부를 센다. "출하되는가" 는 한 자리(`shipping_scope`)에서만 답이 나오고, 그 답이
+  통합테스트까지 포함해 완전하다.
+- **잃은 것**: `shipping_scope` 가 파일마다 `Cargo.toml` 조상을 찾는 파일시스템 왕복을
+  한다(기존 `declaration_edges` 와 같은 층).
+- **운영 비용**: 새 소비자는 정본을 부르고 모수만 넘긴다. 층 경계로 사본이 불가피하면 위
+  세 줄(사실·동조·상호참조)을 단다.
+
+### 경쟁 구현 전수 (R437 자기적용)
+
+"정본" 을 선언하는 문서가 경쟁자를 안 세면 그 선언은 검증되지 않은 전제다. "출하되는가"
+물음의 실측 구현들:
+
+- **`shipping_scope::test_only_files`**(`tasty-doc-guards`) — 정본. 전이 폐쇄 +
+  통합테스트 타깃.
+- **`test_gate::test_gated_files`**(main, 706) — 파일 단위 테스트 게이트 판정을 담지만
+  `length_constant_frontier` 는 이 모듈의 **줄 단위**(`blank_test_modules`)만 쓴다. 파일
+  단위 물음은 이미 `shipping_scope` 에 위임한다(706 이 첫 소비자).
+- **`length_constant_frontier` 옛 사본** — `blank_test_modules`/`test_gated_modules` 를
+  자체 보유했다. 706 이 `test_gate` 로, 이 lane 이 `cfg_predicate` 로 각각 위임화했다.
+- **728 폐기본** — 통합테스트 판정을 따로 만들었다가 이 정본과 중복이라 폐기.
+- **`sloc_gate_skip_proxy`** — 이미 `shipping_scope` 에 위임(사본 아님).
+
+### 706 대조 (R414 확인 사살)
+
+같은 파일 집합(`rust_sources(src, crates)`)에 두 파일-단위 판정기를 먹인 실측:
+`test_gate::test_gated_files`=29 · `shipping_scope::test_only_files`=120 ·
+한쪽만=91 · **반대쪽만=0**. 차이가 있고(두 답이 같지 않다), 한 방향이다 —
+`shipping_scope` 가 통합테스트 타깃까지 더 잡는다. R453(706 이 둘 다 호출)과 합쳐,
+`test_gate` 의 파일 단위 물음은 `shipping_scope` 로 위임하는 것이 맞다.
+
+### 판별자가 두 방향으로 답을 낸 두 사건 — 층이 사본을 정당화한다
+
+이 물음군에서 R453 이 실제로 **두 방향으로** 쓰였고, 그 대비가 "정당한 사본" 과 "진짜
+중복" 을 가른다:
+
+- **두 물음(R453 유효 방향)** — `test_gate` ↔ `shipping_scope`. 706 의 한 커밋이 둘 다
+  부른다 → 다른 물음이다(위 706 대조). 둘은 경쟁이 아니라 층이다.
+- **같은 층의 진짜 중복(R453 침묵 → 직접 증거)** — `length_constant_frontier` 의
+  `blank_test_modules` 지역 사본(735, 폐기) vs `test_gate::blank_test_modules`(706, 공용).
+  **아무도 둘 다 안 부른다 — R453 은 여기서 아무 말도 못 한다.** 판정 근거는 호출부가
+  아니라 **직접 증거**다: 706 이 같은 개선(복합 cfg 를 함의로 판정)을 하면서 판정을
+  `test_gate` 로 `pub(super)` 공용화했고 복합 teeth 까지 갖췄다 — 넣으려던 것이 이미 거기
+  있다. R414 로도 확인(diff=0: 모수에서 두 판이 갈릴 자리 넷 — `not(test)` 2·
+  `any(debug_assertions, test)` 2 — 이 모두 길이 상수를 안 담는다). → 735 사본 폐기
+  (`9994b8a57` revert), 잃는 것 0. **두 자리가 같은 크레이트라 의존을 만들 수 있으므로
+  위임이 답이고, 사본은 정당하지 않다.**
+- **다른 층의 정당한 사본** — temp_path uniquifier(728). 두 자리가 다른 크레이트라 의존을
+  만들 수 없다 → 층 경계 사본. 위 "사본이 정당한 자리" 세 줄(사실·동조·상호참조)을 단다.
+
+**한 문장으로**: R453 은 "둘 다 부른다" 로만 답하고 침묵은 답이 아니다. 침묵한 자리에서
+같음/중복은 R414 나 직접 증거로 가리고, **그다음 층(의존 가능성)이 사본의 정당성을
+가른다** — 같은 층이면 위임, 다른 층이면 정당한 사본.
+
+### 한 판정기의 한 오답이 소비자마다 반대 방향으로 틀린다 (728)
+
+정본이 하나여야 하는 가장 강한 논증이다: "출하되는가" 의 한 오답이 **소비자마다 반대
+방향으로** 나타난다 — env 축은 "테스트가 아니다" 라며 건너뛰고(거짓 음성, 조용함),
+poison 축은 "출하 코드다" 라며 잡는다(거짓 양성, 시끄러움). 사본이 갈리면 두 축이 서로
+다른 진실을 믿는다.
+
+### 모수가 아니라 성질 판정이 구멍이었다 (728 — 이 처방의 한계)
+
+통합테스트 45 파일은 **이미 모수 안에 있었다**(env 는 `crates/*/tests/` 를 스캔하고
+있었다). 구멍은 모수가 아니라 **성질 판정**(`test_only_files` 가 그 파일을 test-only 로
+분류 못 함)이었다. 그래서 "스캔 루트만 넓히는" 처방이었으면 못 봤다 — 성질 판정을
+고쳐야 했다. 루트 `tests/` 편입은 그 위에 별도로 필요한 확장이다.
 
 ## Alternatives Considered
 
-- **A — 사본 유지(각 가드가 자기 판정)**: 지금까지의 상태다. `test_only_files` 는 선언만,
-  대리인은 레이아웃까지 봤다. **사각이 실제로 났다** — 격리 가드가 통합테스트를 조용히
-  놓쳤다. 사본은 답이 갈리고 갈린 쪽은 면제하는 방향으로 조용히 틀린다.
-- **B — 형태별 하드코딩 목록**(`tests/`·`benches/`·`examples/` … 을 문자열로 나열): 성질이
-  아니라 형태를 세므로 **새 형태가 생기면 조용히 샌다**. `benches/`·`examples/` 는 이 레포에
-  현재 없어(양성 대조 불가, R415) 목록에 넣어도 죽은 가지가 되고, 생겼을 때 갱신을 잊으면
-  출하 아님이 출하로 샌다. 성질("cargo 가 별도 타깃으로 빌드하는가")로 판정하면 그 형태가
-  자동으로 들어온다.
+- **A — 사본 유지(각 가드가 자기 판정)**: R451 이 보인 상태다. 사각이 실제로 났고
+  (통합테스트 조용히 놓침), 사본은 갈려서 반대 방향으로 조용히 틀린다.
+- **B — 형태별 하드코딩 목록**(테스트·벤치 디렉토리를 이름으로 나열): 형태를 세므로 새
+  형태가 생기면 샌다. 성질("cargo 가 별도 타깃으로 빌드하는가")로 판정하면 자동으로 들어온다.
+- **C — 세 물음을 한 "정본" 으로 묶기**: `cfg_predicate`·`test_gate`·`shipping_scope` 를
+  한 낱말로 덮으면 706 처럼 한 소비자가 둘을 다 부르는 순간 그 선언이 거짓이 된다(R453).
+  세 물음은 세 이름으로 둔다.
 
 ## Reconsideration Triggers
 
-다음 중 하나가 충족되면 본 ADR 을 재검토한다.
-
-- cargo 의 타깃 레이아웃 규칙이 바뀌어 "패키지 루트 `tests/` 는 출하 안 됨" 전제가 깨질 때
-  (통합테스트가 lib/bin 에 링크되거나, `[[test]]` 로 `tests/` 밖 경로가 타깃이 될 때).
-- 어떤 소비자가 "출하되는가" 를 지금과 다른 뜻으로 쓰기 시작할 때(예: example 바이너리를
-  배포 산출물로 세기 시작) — 그러면 물음이 갈리므로 정본을 나누거나 각자 물음을 적어야 한다.
+- cargo 타깃 레이아웃이 바뀌어 "패키지 루트 `tests/` 는 출하 안 됨" 전제가 깨질 때.
+- 어떤 소비자가 "출하되는가" 를 다른 뜻으로 쓰기 시작할 때(예: example 바이너리를 배포
+  산출물로 셈) — 그러면 물음이 갈리므로 정본을 나누거나 각자 물음을 적는다.
+- `src/source_guards` 와 `tasty-doc-guards` 사이에 의존을 만들 수 없게 되는 변경이 생겨,
+  지금 "위임" 인 자리가 "정당한 사본" 으로 바뀔 때.
 
 ## References
 
-- 정본 판정기: `crates/tasty-doc-guards/src/shipping_scope.rs` (`test_only_files`,
-  `is_cargo_test_target`)
-- 위임하는 미러: `src/source_guards/sloc_gate_skip_proxy.rs` (`backing`)
-- 소비자: `crates/tasty-doc-guards/src/env_isolation.rs` ·
-  `crates/tasty-doc-guards/src/poison_recovery.rs` ·
-  `crates/tasty-doc-guards/src/bin/strip-cfg-test.rs` ·
-  `src/source_guards/plugin_locale_specific_literals.rs` ·
-  `tests/cli_method_table_parity.rs`
-- 착지: commit `1f516da07`(정본 통일) · `72127fa86`(env SCAN_ROOTS 루트 tests/ 확장)
-- 관련: [ADR-0165](0165-the-file-sloc-gate-measures-shipped-lines.md)(SLOC 게이트는 출하 줄을
-  잰다) · [ADR-0129](0129-flaky-test-classes-and-standard-fixes.md)(격리 가드가 겨냥하는
-  flake 형태)
+- 정본: `crates/tasty-doc-guards/src/shipping_scope.rs`(`test_only_files`·
+  `is_cargo_test_target`) · `crates/tasty-doc-guards/src/cfg_predicate.rs`
+- 위임/소비: main 크레이트 `src/source_guards/` 의 `test_gate` 모듈(706, `7919c9a89` —
+  이 lane 에는 아직 없고 train70 병합으로 들어온다) ·
+  `src/source_guards/length_constant_frontier.rs` · `src/source_guards/sloc_gate_skip_proxy.rs`
+  · `crates/tasty-doc-guards/src/env_isolation.rs` ·
+  `crates/tasty-doc-guards/src/poison_recovery.rs` · `tests/cli_method_table_parity.rs`
+- 층 경계 사본 선례(바이너리 위임): `scripts/check-*.sh` ↔ `crates/tasty-doc-guards/src/bin/`
+  (`mask-source`·`strip-cfg-test`)
+- 관련: [ADR-0165](0165-the-file-sloc-gate-measures-shipped-lines.md) ·
+  [ADR-0166](0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)(shipping-scope
+  형태) · [ADR-0129](0129-flaky-test-classes-and-standard-fixes.md)
