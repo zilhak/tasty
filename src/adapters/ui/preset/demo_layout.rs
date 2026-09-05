@@ -75,8 +75,6 @@ const LEAF_ICON_ONLY_MIN: LogicalPx = LogicalPx(46.0);
 const FORM_MAX_W: LogicalPx = LogicalPx(240.0);
 /// inline leaf form 좌우 padding.
 const FORM_PAD: f32 = 6.0;
-/// inline leaf form 필드 세로 gap.
-const FORM_GAP: LogicalPx = LogicalPx(4.0);
 
 /// registry 미주입 컨텍스트(갤러리·테스트·main 부재)에서 쓰는 정적 kind 후보 +
 /// builtin 정렬 기준. registry 가 주입되면 [`KindCatalog::from_registry`] 가 실제
@@ -2098,7 +2096,10 @@ fn draw_leaf_form(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     child.set_clip_rect(form_rect);
-    child.spacing_mut().item_spacing.y = FORM_GAP.value();
+    // inline leaf form 필드 세로 gap. 이 form 은 미니 전사 도형이 아니라 실제
+    // theme 위젯(라벨·Select)으로 짜여 있어 내용이 배율을 탄다 — 간격만 평상수면
+    // 1.2 에서 필드는 커지고 사이는 그대로다.
+    child.spacing_mut().item_spacing.y = theme.spacing_xs.value();
 
     // kind Select.
     field_label(&mut child, theme, t("preset.edit.kind"));
