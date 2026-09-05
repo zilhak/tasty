@@ -17,6 +17,7 @@
 #   C.9  egui::Window 직접 사용                          [diff 추가 라인]
 #   C.11 println! / eprintln! — tracing 강제             [diff 추가 라인]
 #   C.12 dbg! — debug leak 방지                          [diff 추가 라인]
+#   P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로 [staged diff]
 #   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [staged 파일 목록]
 #
 # 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서.
@@ -81,7 +82,12 @@ check_mod_use_order() {
             /^#!\[/ { next }
             /^(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]/ { if (!end_zone) saw_use = NR; next }
             /^(pub(\([^)]*\))?[[:space:]]+)?extern[[:space:]]+crate[[:space:]]/ { next }
+            # 선언형 `mod x;` 만 검사 대상이다. 인라인 `mod x { ... }` 는 선언이
+            # 아니라 **코드**라서 fn/struct 와 같이 영역을 끝낸다 — 그렇게 안 가르면
+            # `use` 뒤의 `#[cfg(unix)] mod unix { ... }`(테스트 파일의 흔한 형태)가
+            # 오탐으로 걸려, 그 파일을 건드리는 커밋이 전부 막힌다.
             /^(pub(\([^)]*\))?[[:space:]]+)?mod[[:space:]]/ {
+                if ($0 !~ /;[[:space:]]*$/) { end_zone = 1; next }
                 if (saw_use && !end_zone) { print NR; exit }
                 next
             }
@@ -130,41 +136,93 @@ check_cargo_fmt() {
 # 주석이 같은 줄·윗줄·다음 줄 어디에도 없는 `let _ =` 는 여전히 거부.
 # -U1 로 앞뒤 라인 컨텍스트를 확보하고, let 후보를 pending 으로 보류했다가 다음
 # (새 파일에 존재하는) 라인이 주석인지 보고 판정한다.
+#
+# -- 코드인지 문자열인지는 **판정기가 가른다** ---------------------------
+# 이 검사의 물음("이 줄의 **코드**에 `let _ =` 가 있나")은 문자열 리터럴을 코드와
+# 구분해야 답할 수 있다. 여기서 렉서를 다시 만들지 않는다 -- 러스트 층이 이미 갖고
+# 있고(`tasty-doc-guards` 의 `mask-source`), 셸이 자기 것을 만들면 같은 물음에 답이
+# 둘이 된다(실제로 그렇게 갈려 있었다).
+#
+# **줄 번호로 맞춘다.** staged 내용을 마스킹한 사본에서 같은 줄을 읽는다. 그래서
+# 여러 줄에 걸친 문자열 리터럴도 옳게 갈린다 -- 한 줄 정규식으로는 원리적으로 못 하던
+# 것이고, 가드의 회귀 픽스처가 실제로 그것 때문에 막혀 문구를 바꿔 우회했다.
+#
+# 판정기가 없으면(갓 클론한 트리) **한 줄 정규식으로 물러난다.** 그쪽은 더 많이 잡는
+# 방향이라 조용한 통과를 안 만든다. 물러났다는 것을 말한다.
 check_let_underscore() {
     if [ -z "$STAGED_RS" ]; then return; fi
+
+    local mask_bin="" masked="" staged_dir=""
+    if [ -r "$REPO_ROOT/scripts/lib/judge-bin.sh" ]; then
+        . "$REPO_ROOT/scripts/lib/judge-bin.sh"
+        mask_bin="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$REPO_ROOT" 2>/dev/null)"
+    fi
+    if [ -n "$mask_bin" ]; then
+        staged_dir="$(mktemp -d)"
+        for f in $STAGED_RS; do
+            mkdir -p "$staged_dir/staged/$(dirname "$f")"
+            git show ":$f" > "$staged_dir/staged/$f" 2>/dev/null || true
+        done
+        masked="$(mktemp -d)"
+        if "$mask_bin" --keep-comments "$masked" "$staged_dir" staged >/dev/null 2>&1; then
+            masked="$masked/staged"
+        else
+            rm -rf "$masked"; masked=""
+        fi
+        rm -rf "$staged_dir"
+    fi
+    if [ -z "$masked" ]; then
+        echo "  [C.6] mask-source 가 없어 한 줄 정규식으로 판정한다 (여러 줄 문자열 안의 let _ 를 코드로 볼 수 있다)." >&2
+    fi
+
     for f in $STAGED_RS; do
         [ -f "$f" ] || continue
-        local violation
-        violation=$(git diff --cached -U1 -- "$f" | awk '
+        local violation masked_file=""
+        if [ -n "$masked" ] && [ -f "$masked/$f" ]; then masked_file="$masked/$f"; fi
+        violation=$(git diff --cached -U1 -- "$f" | awk -v maskfile="$masked_file" '
+            # 마스킹 사본을 줄 번호로 읽어 둔다. 없으면 한 줄 정규식으로 물러난다.
+            BEGIN { if (maskfile != "") { while ((getline ml < maskfile) > 0) MASK[++mn] = ml } }
             function flush() { if (pending != "") { print pending; pending = "" } }
-            /^@@/     { flush(); prev = ""; next }   # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋
+            # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋 + **새 파일 줄 번호** 잡기.
+            # 줄 번호가 있어야 마스킹 사본의 같은 줄을 읽을 수 있다.
+            /^@@/ {
+                flush(); prev = ""
+                if (match($0, /\+[0-9]+/)) nl = substr($0, RSTART + 1, RLENGTH - 1) - 1
+                next
+            }
             /^\+\+\+/ { next }              # +++ b/file 헤더
             /^---/    { next }              # --- a/file 헤더
             {
                 prefix  = substr($0, 1, 1)
                 content = substr($0, 2)
                 if (prefix == "-") next     # 제거 라인: 새 파일에 없음 → 무시 (다음 줄 후보 아님)
-                if (prefix == "+" || prefix == " ") {
-                    # 직전 let 후보의 "다음 줄" 이 이 라인. 주석이면 사면, 아니면 위반 확정.
-                    if (pending != "") {
-                        if (content ~ /^[[:space:]]*\/\//) {
-                            pending = ""    # ③ 다음 줄 주석 — OK
-                        } else {
-                            print pending   # 다음 줄 주석 아님 — 위반 확정
-                            pending = ""
-                        }
+                if (prefix != "+" && prefix != " ") next
+                nl++
+                # 판정에 쓰는 사본. 있으면 판정기가 만든 것(문자열·문자 리터럴만 덮고
+                # 주석은 남긴다), 없으면 한 줄 정규식으로 물러난다 — 그쪽은 여러 줄에
+                # 걸친 문자열을 못 다루고, 그게 이 검사의 알려진 근사였다.
+                if (mn > 0 && nl in MASK) { mline = MASK[nl] }
+                else { mline = content; gsub(/"([^"\\]|\\.)*"/, "", mline) }
+                code = mline; sub(/\/\/.*/, "", code)   # 주석을 뺀 코드 부분
+                # 직전 let 후보의 "다음 줄" 이 이 라인. 주석이면 사면, 아니면 위반 확정.
+                if (pending != "") {
+                    if (mline ~ /^[[:space:]]*\/\//) {
+                        pending = ""        # ③ 다음 줄 주석 — OK
+                    } else {
+                        print pending       # 다음 줄 주석 아님 — 위반 확정
+                        pending = ""
                     }
-                    if (prefix == "+" && content ~ /let[[:space:]]+_[[:space:]]*=/) {
-                        if (content ~ /\/\//) {
-                            # ① 같은 줄 주석 — OK
-                        } else if (prev ~ /^[[:space:]]*\/\//) {
-                            # ② 윗줄 주석 — OK
-                        } else {
-                            pending = content   # ③ 판정 보류 — 다음 줄 주석 여부를 봐야 함
-                        }
-                    }
-                    prev = content          # 새 파일에 존재하는 라인만 직전으로 갱신
                 }
+                if (prefix == "+" && code ~ /let[[:space:]]+_[[:space:]]*=/) {
+                    if (mline ~ /\/\//) {
+                        # ① 같은 줄 주석 — OK
+                    } else if (prev ~ /^[[:space:]]*\/\//) {
+                        # ② 윗줄 주석 — OK
+                    } else {
+                        pending = content   # ③ 판정 보류 — 다음 줄 주석 여부를 봐야 함
+                    }
+                }
+                prev = mline                # 새 파일에 존재하는 라인만 직전으로 갱신
             }
             END { flush() }                 # 마지막 보류 후보 확정
         ')
@@ -232,6 +290,19 @@ check_egui_window() {
 #                                       `cargo:rerun-if-changed=` 같은 directive 가
 #                                       println 으로만 가능 (build.rs 에선 tracing
 #                                       사용 불가)
+#   - crates/tasty-latency-control/*  : 지연 단정의 대조군(ADR-0181). 이 크레이트가 값을 내는
+#                                       자리는 **패닉 되감기 중**이고, 그 값을 남기는 것이
+#                                       크레이트의 존재 이유다. `spawn_diag` 의 우회로
+#                                       (`tracing` + `with_test_writer`)는 여기 못 쓴다 —
+#                                       subscriber 를 안 깐 바이너리(본체 bin 의 unit test 등)
+#                                       에서 조용히 사라지고, 그 조용한 소실이 정확히 이
+#                                       크레이트가 막으려는 실패다. `eprintln!` 은 libtest 가
+#                                       설정 없이 포획해 실패한 테스트의 출력 블록에 싣는다.
+#   - crates/tasty-doc-guards/src/bin/* : 게이트 스크립트가 부르는 CLI 판정기. 이 크레이트는
+#                                       의존이 0 인 것이 존재 이유라(ADR-0138) tracing 을
+#                                       들일 수 없고, 진단은 stdout/stderr 가 인터페이스다.
+#                                       (`src/` 의 나머지는 예외가 아니다 — 라이브러리는
+#                                       아무것도 출력하지 않는다)
 # 그 외 .rs 파일은 tracing::info!/warn!/error! 사용.
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
@@ -245,6 +316,8 @@ check_println() {
             site/*) continue ;;
             build.rs) continue ;;
             */build.rs) continue ;;
+            crates/tasty-latency-control/*) continue ;;
+            crates/tasty-doc-guards/src/bin/*) continue ;;
         esac
         local violation
         violation=$(git diff --cached -U0 -- "$f" \
@@ -308,6 +381,42 @@ check_changelog_reminder() {
 }
 
 # ────────────────────────────────────────────────────────────
+# P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로
+#
+# 판정은 scripts/check-plugin-version-bump.sh 하나가 한다 — 훅과 CI 가 같은 것을
+# 불러야 둘이 갈리지 않는다. 판별식(파일 수 문턱이 아니라 rustfmt 정규화 후 내용)의
+# 근거·측정·대안은 docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md.
+#
+# **비교 기준은 HEAD 가 아니라 main 과의 merge-base 다.** HEAD 와 비교하면 `--amend`
+# 로 고쳐 커밋할 때 "이미 올린 그 커밋" 이 기준이 되어 두 번째 bump 를 요구하게 된다.
+# merge-base 기준이면 "이 lane 이 main 대비 한 번 올렸는가" 를 묻게 되어 amend·rebase
+# 어느 쪽에도 흔들리지 않고, 목적(반영 시점에 올라 있는가)과도 일치한다.
+# main 이 없거나(단독 clone) merge-base 를 못 구하면 HEAD 로 떨어진다.
+# ────────────────────────────────────────────────────────────
+check_plugin_version_bump() {
+    local staged_plugin base rc
+    staged_plugin=$(git diff --cached --name-only --diff-filter=ACMRD \
+        | /usr/bin/grep -E '^crates/tasty-plugin-[^/]+/' || true)
+    if [ -z "$staged_plugin" ]; then return; fi
+
+    base=$(git merge-base main HEAD 2>/dev/null || true)
+    [ -n "$base" ] || base=HEAD
+
+    set +e
+    bash scripts/check-plugin-version-bump.sh --staged --base "$base"
+    rc=$?
+    set -e
+    case "$rc" in
+        0) ;;
+        1) red "▸ [P.1] plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로다 (위 목록)."
+           FAIL=1 ;;
+        *) # **판정 불가를 통과로 세지 않는다.** 이유는 스크립트가 이미 출력했다.
+           red "▸ [P.1] 판정 불가 (exit $rc) — 위 사유를 해소하거나 --no-verify 로 우회해라."
+           FAIL=1 ;;
+    esac
+}
+
+# ────────────────────────────────────────────────────────────
 # 실행
 # ────────────────────────────────────────────────────────────
 check_mod_use_order
@@ -317,6 +426,7 @@ check_color_hardcode
 check_egui_window
 check_println
 check_dbg
+check_plugin_version_bump
 check_changelog_reminder
 
 if [ "$FAIL" -ne 0 ]; then
