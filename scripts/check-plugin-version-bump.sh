@@ -415,6 +415,20 @@ $(printf '%s\n' "$CHANGED" | sed -n "s|^\($d/.*\)$|\1|p")"
         printf '    내용이 바뀐 파일:%s\n' "$changed_list" >&2
         printf '    고쳐라: %s 와 %s 의 version 을 **같은 값**으로 patch +1.\n' \
             "$base/Cargo.toml" "$man" >&2
+        if [ "$MODE" = staged ]; then
+            printf '    [모수] 이 판정이 본 범위는 **이 커밋 하나**(index vs %s)다. 발행이\n' \
+                "$BEFORE_REV" >&2
+            printf '           묻는 범위는 다르다 — **직전 push 지점부터 지금까지**다.\n' >&2
+            printf '           그래서 lane 이 여러 커밋으로 나눠 착지하면 이 검사는 앞 커밋이\n' >&2
+            printf '           이미 올린 값에 대해 **또 한 번의 bump 를 요구한다**(값이 부푼다).\n' >&2
+            printf '           그때 옳은 처리는 둘 중 하나다:\n' >&2
+            printf '             (가) 이 변경을 그 앞 bump 커밋에 합친다(같은 lane 안이면 보통 이쪽).\n' >&2
+            printf '             (나) 여기서 한 번 더 올리고 **최종 값은 병합하는 쪽이 정한다**고 보고한다.\n' >&2
+            printf '           발행 기준으로 다시 재는 명령: %s --range <직전 push> HEAD\n' \
+                "scripts/check-plugin-version-bump.sh" >&2
+            printf '           ★ 두 모수는 둘 다 필요하다 — 이 검사는 push 전에 답할 수 있는\n' >&2
+            printf '             유일한 채널이고, 발행 판정은 push 지점을 아는 쪽만 할 수 있다.\n' >&2
+        fi
         VIOLATIONS=$((VIOLATIONS + 1))
     fi
 done
