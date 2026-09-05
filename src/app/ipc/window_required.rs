@@ -101,6 +101,13 @@ impl App {
 
     #[cfg(debug_assertions)]
     pub(crate) fn ipc_step_window_required(&mut self, cmd: &IpcCommand) -> IpcStep {
+        // `surface.ime_` 접두는 **이름 판정이지만 이름이 곧 성질이다** — 이 접두를 가진
+        // 메서드 집합과 `handle_ime_method` 가 실제로 푸는 arm 집합이 지금 정확히 같다
+        // (다섯). 그래서 성질로 다시 써도 집합이 안 달라진다.
+        //
+        // 다만 그 일치는 저절로 유지되지 않는다. IME 메서드를 **다른 이름으로** 더하면
+        // 이 관문이 안 걸어 창 없이 통과하고, 그 실패는 조용하다. 새 IME 메서드는 이
+        // 접두를 쓰거나, 안 쓸 거면 아래 `==` 나열에 함께 적어라.
         let is_window_required = cmd.request.method.starts_with("surface.ime_")
             || cmd.request.method == "debug.info"
             || cmd.request.method == "debug.inject_window_mouse"
