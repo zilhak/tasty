@@ -1482,3 +1482,54 @@ fn an_unowned_target_is_rejected_for_every_resource_kind() {
         );
     }
 }
+
+/// debug 표면 중 **창을 안 읽는 것**은 두 조합의 debug 빌드에서 같이 답한다.
+///
+/// 이 다섯이 읽는 것은 `App` 의 `lua_engine` / `plugin_manager` 뿐이다. 그런데 dispatch 가
+/// gui 라우터의 debug step 에만 있어서 헤드리스에서는 `-32601` 이었다 — 창을 안 보는데
+/// 자리가 없어서 사라진 것이라, 에이전트가 자기 작업을 검증하는 표면(event bus 관측 ·
+/// 확장 훅 발화 · Lua 주입)이 헤드리스에서만 없는 형태였다.
+///
+/// **여는 것은 "헤드리스 debug 빌드에서도 답한다" 이지 "release 에 노출한다" 가 아니다.**
+/// release 격리는 `DEBUG_METHODS` 가 debug 빌드에서만 비지 않는 것과, 이 arm 들이
+/// `#[cfg(debug_assertions)]` 안에 있는 것 둘로 유지된다. 이 테스트 자체는 debug 로
+/// 돌므로 그 격리를 여기서 못 본다 — release 격리는
+/// `tests/ipc_release_table_excludes_input_reproduction.rs` 와 실행 대조가 본다.
+#[test]
+fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    for method in [
+        "debug.lua.eval",
+        "debug.event_bus.list_subscribers",
+        "debug.event_bus.publish",
+        "debug.event_bus.trace",
+        "debug.extension.invoke_hook",
+    ] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+        assert_ne!(
+            code,
+            Some(-32601),
+            "`{method}` 가 읽는 것은 `App` 의 lua_engine/plugin_manager 뿐이다 — 두 조합의 \
+             debug 빌드에서 라우팅돼야 한다: {resp}"
+        );
+    }
+
+    // 음성 대조. 이것들은 창·egui 입력 큐를 읽어 헤드리스에 대응물이 없다. 없는 것이
+    // 정답이며, 그것을 같은 회차에서 못 박지 않으면 위 루프만 남아 "debug step 을
+    // 통째로 옮겨도 통과" 가 된다.
+    for method in ["debug.tool.list", "debug.popup.list"] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+        #[cfg(feature = "gui")]
+        assert_ne!(code, Some(-32601), "gui 는 `{method}` 에 답한다: {resp}");
+        #[cfg(not(feature = "gui"))]
+        assert_eq!(
+            code,
+            Some(-32601),
+            "`{method}` 는 창을 읽는다 — 헤드리스엔 없는 것이 정답이다: {resp}"
+        );
+    }
+}

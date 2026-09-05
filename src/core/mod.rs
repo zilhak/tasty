@@ -37,6 +37,8 @@ pub(crate) mod surface_registry;
 pub(crate) mod terminal_store;
 
 pub(crate) mod app_surface;
+#[cfg(debug_assertions)]
+pub(crate) mod app_surface_debug;
 pub(crate) mod impl_attach;
 pub(crate) mod impl_clipboard;
 pub(crate) mod impl_close;

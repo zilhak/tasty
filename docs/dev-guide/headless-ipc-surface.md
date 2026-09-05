@@ -174,8 +174,56 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 | `file_picker.trigger` | 창 안 popup(`state.dialogs.file_picker`)을 연다. 그릴 창이 없다 |
 | `webview.set_url` | 설정한 URL 을 소비하는 것이 매 프레임 도는 렌더러뿐이다. 값은 기록되겠지만 아무 일도 일어나지 않는다 |
 
+### `debug.*` 36 건
+
+debug 표면은 **에이전트가 자기 작업을 검증하는 자리**다(popup 이 떴는가, 훅이 발화했는가,
+event bus 에 누가 붙었는가). 그래서 헤드리스에서만 사라지면 헤드리스 인스턴스는 자기
+동작을 확인할 수단이 없다 — release 격리와는 다른 축이다. **여는 것은 "헤드리스 debug
+빌드에서도 답한다" 이지 "release 에 노출한다" 가 아니다.** release 격리는 `DEBUG_METHODS`
+가 release 에서 비는 것으로 유지되고, 실행으로 확인한다(release 헤드리스 실측: 아래 다섯
+전부 `-32601`).
+
+모수는 **호출마다 새 인스턴스를 띄우는** census 로 쟀다(2026-09-05). 한 인스턴스에서
+순차로 부르면 앞쪽의 파괴적 호출이 뒤쪽 호출의 라우팅 대상을 없애고, 그러면 멀쩡한
+메서드가 `Method not found` 로 보인다. 36 = 답한다 5 + 없는 것이 정답 31, 애매한 것 0.
+
+#### 답한다 (5)
+
+읽는 것이 `App` 의 `lua_engine` / `plugin_manager` 뿐이다. 창·렌더러·egui 입력 큐를 하나도
+안 본다. 자리가 없어서 사라졌던 것이라 헤드리스 pump 에 자리를 만들었고, 본체는 두 조합이
+**같은 함수**를 쓴다(`src/core/app_surface_debug.rs` · `handler/debug_plugin.rs`).
+
+| 메서드 | 읽는 것 |
+|--------|---------|
+| `debug.lua.eval` | `App.lua_engine` 워커에 스크립트를 던진다(fire-and-forget) |
+| `debug.event_bus.list_subscribers` | `plugin_manager` 의 event bus 구독자 |
+| `debug.event_bus.publish` | 같은 bus 에 이벤트를 넣는다 |
+| `debug.event_bus.trace` | 같은 bus 의 trace |
+| `debug.extension.invoke_hook` | `plugin_manager` 의 확장 훅을 수동 발화 |
+
+event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 — 조회가 plugin 프로세스를
+띄우면 관측이 자기 대상을 바꾼다([ADR-0136](../adr/0136-a-query-does-not-create-what-it-observes.md)).
+그래서 아무 plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의 사실이다.
+
+#### 없는 것이 정답 (31)
+
+| 메서드 | 왜 |
+|--------|-----|
+| `debug.info` · `debug.focused_surface` · `debug.selection` · `debug.pending_menu` | 창 하나의 렌더 상태(셀 크기·포커스·선택·대기 중 native 메뉴)를 읽는다 |
+| `debug.settings.open` | `AppEvent::OpenSettings` 를 winit proxy 로 보낸다. 헤드리스엔 proxy 가 없다 |
+| `debug.gpu.stall` | 렌더 스레드를 일부러 막아 stall 워치독을 시험한다. 막을 스레드가 없다 |
+| `debug.banner.*` (4) · `debug.host_popup.*` (3) · `debug.modifier_hint.*` (2) | host 위젯의 표시 상태다. 그릴 창이 없으면 상태 자체가 없다 |
+| `debug.tool.list` · `debug.tool.invoke` | 도구 메뉴는 창의 위젯이다 |
+| `debug.fullscreen.*` (4) | 무대는 **창 단위**라 `self.view.views` 를 순회해 `window_id` 로 창을 지목한다 |
+| `debug.plugin_banner.*` (2) | 소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 |
+| `debug.inject_mouse` · `debug.inject_key` · `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` (5) | 사용자 입력 재현이다. 앞 둘은 대상 surface 의 PTY 로, 뒤 셋은 winit·egui 입력 큐로 들어간다 — 그 큐가 창에 딸려 있다 |
+| `debug.popup.*` (3) | **모듈 위치가 막고 있다.** `handle_list`/`handle_open` 자체는 매니저만 읽는데 모듈 선언이 `all(debug_assertions, gui)` 게이트다(실측: cfg 한 줄만 바꾸면 헤드리스 컴파일 error 0). 게이트를 옮기는 것이 선행이라 이 회차에서 열지 않았다. `close` 는 별개로 렌더가 수집하는 close 큐를 거친다 |
+
+`src/source_guards/headless_app_layer_coverage.rs` 가 이 표와 두 라우터의 정합을 강제한다 —
+app 층 step 과 debug step 두 쌍을 같은 규약으로 본다.
+
 ## 남은 표면
 
-`debug.*` 36 건의 개별 판정은 아직 적히지 않았다. `image.*` 는 이 목록에 없다 — 번들
+`debug.*` 36 건의 판정은 위 "`debug.*` 36 건" 절에 있다. `image.*` 는 이 목록에 없다 — 번들
 plugin 이 그 namespace 를 점유하고 self-call trampoline 로 host 에 돌려주므로 두 조합에서
 같은 자리에 닿는다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)).

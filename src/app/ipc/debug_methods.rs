@@ -39,27 +39,16 @@ impl App {
         }
         // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
         // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
+        // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
+        // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
+        // 본체는 헤드리스 pump 와 **같은 함수**를 쓴다 — 두 벌로 두면 갈라진다.
         if cmd.request.method == "debug.lua.eval" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let source = cmd.request.params.get("source").and_then(|v| v.as_str());
-            let response = match (source, self.lua_engine.as_ref()) {
-                (Some(src), Some(engine)) => {
-                    // fire-and-forget: 워커/deadline(07) 격리 하에서 실행. 부수효과는 로그로 관측.
-                    engine.run_script(src, Some("debug.lua.eval"));
-                    host_ipc::protocol::JsonRpcResponse::success(
-                        id,
-                        serde_json::json!({ "scheduled": true }),
-                    )
-                }
-                (None, _) => {
-                    host_ipc::protocol::JsonRpcResponse::invalid_params(id, "Missing 'source'")
-                }
-                (_, None) => host_ipc::protocol::JsonRpcResponse::error(
-                    id,
-                    -32603,
-                    "lua engine not initialized",
-                ),
-            };
+            let response = crate::core::app_surface_debug::lua_eval(
+                self.lua_engine.as_ref(),
+                id,
+                &cmd.request.params,
+            );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }

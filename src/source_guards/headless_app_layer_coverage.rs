@@ -29,6 +29,8 @@ const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
 const HEADLESS_PUMP: &str = "src/boot/headless_dispatch.rs";
 const HEADLESS_FN: &str = "fn pump_ipc";
+const GUI_DEBUG_STEP: &str = "src/app/ipc/debug_methods.rs";
+const GUI_DEBUG_FN: &str = "fn ipc_step_debug";
 
 /// gui step 이 부르는 메서드 수의 하한 — **연기 검사**다.
 /// 값의 근거: 2026-09-05 실측 17 건.
@@ -97,11 +99,12 @@ fn method_literals(body: &str) -> BTreeSet<String> {
         let Some(end) = after.find('"') else { break };
         let lit = &after[..end];
         let dotted = lit.split('.').count() >= 2;
+        // 끝이 `.` 인 것은 **prefix 판정**이다(`starts_with("debug.event_bus.")`).
+        // 버리면 그 갈래가 통째로 안 보여, prefix 로 답하는 쪽을 "안 답한다" 로 센다.
         let shaped = !lit.is_empty()
             && lit
                 .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_')
-            && !lit.ends_with('.');
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_');
         if dotted && shaped {
             out.insert(lit.to_string());
         }
@@ -109,6 +112,17 @@ fn method_literals(body: &str) -> BTreeSet<String> {
     }
     out
 }
+
+/// 두 라우터가 **다른 모양의 코드**로 같은 갈래를 답하는 자리.
+///
+/// gui 의 app 층 step 은 `plugin.` prefix 로 갈래를 치는데, 헤드리스 pump 는 같은 갈래를
+/// `plugin::is_readonly_method(...)` 호출로 판정한다. 리터럴끼리 맞대면 이 대응이 안
+/// 보여서 **답하는 것을 안 답한다고** 센다 — 그러면 사유를 적으라고 요구하게 되고, 적히는
+/// 사유는 거짓이 된다.
+///
+/// 그래서 이름 대신 **증거**를 요구한다: 헤드리스 본문에 그 토큰이 있어야 covered 다.
+/// 토큰이 사라지면(헤드리스가 그 갈래를 잃으면) 다시 빨개진다.
+const HEADLESS_COVERS: &[(&str, &str)] = &[("plugin.", "is_readonly_method")];
 
 fn gui_methods() -> BTreeSet<String> {
     let src = read(GUI_STEP);
@@ -143,9 +157,15 @@ fn every_gui_app_layer_method_is_answered_headless_or_carries_a_reason() {
     );
 
     let excused: BTreeSet<&str> = NOT_IN_HEADLESS.iter().map(|(m, _)| *m).collect();
+    let pump = read(HEADLESS_PUMP);
+    let covered_by_token = |m: &str| {
+        HEADLESS_COVERS
+            .iter()
+            .any(|(item, token)| *item == m && pump.contains(token))
+    };
     let missing: Vec<&String> = gui
         .iter()
-        .filter(|m| !headless.contains(*m) && !excused.contains(m.as_str()))
+        .filter(|m| !headless.contains(*m) && !excused.contains(m.as_str()) && !covered_by_token(m))
         .collect();
     assert!(
         missing.is_empty(),
@@ -215,4 +235,139 @@ fn after() { let m = \"ns.after\"; }
         !found.contains("ns.before") && !found.contains("ns.after"),
         "본문 밖 리터럴을 집었다: {found:?}"
     );
+}
+
+/// gui 의 **debug step** 에는 있고 헤드리스에는 의도적으로 없는 것과 그 사유.
+///
+/// 위 `NOT_IN_HEADLESS` 와 형태는 같지만 대조 쌍이 다르다 — 저쪽은 app 층 step,
+/// 이쪽은 debug step 이다. 판정식은 하나다: **창(또는 렌더러·egui 입력 큐)을 읽는가.**
+/// 실행으로 셌다(2026-09-05, 호출마다 새 인스턴스를 띄우는 census 로 오염 0):
+/// debug 표면 36 건 중 5 건이 창을 안 읽어서 열렸고, 31 건이 아래다.
+const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
+    (
+        "debug.settings.open",
+        "설정 모달을 연다. `AppEvent::OpenSettings` 를 winit proxy 로 보내는데 헤드리스엔 \
+         그 proxy 가 없다",
+    ),
+    (
+        "debug.popup.",
+        "plugin popup 조회/개폐. `handle_list`/`handle_open` 자체는 매니저만 읽지만 모듈이 \
+         `all(debug_assertions, gui)` 게이트다 — 게이트를 옮기는 것이 선행 작업이라 이 \
+         회차에서 열지 않았다(실측: cfg 한 줄만 바꿔도 헤드리스 컴파일 error 0). \
+         `close` 는 별개로 렌더가 수집하는 close 큐를 거친다",
+    ),
+    (
+        "debug.plugin_banner.",
+        "소유 view 의 BannerManager 와 host 매니저를 함께 다룬다. view 가 없다",
+    ),
+    (
+        "debug.fullscreen.",
+        "무대는 창 단위다 — `self.view.views` 를 순회해 `window_id` 로 창을 지목한다",
+    ),
+];
+
+/// gui 의 debug step 이 부르는 것마다 **헤드리스가 답하거나 왜 못 답하는지가 적혀 있다.**
+///
+/// 위 app 층 판정과 같은 규약을 debug step 에 적용한 것이다. 이 step 이 통째로 헤드리스에
+/// 없다는 사실 자체가 판정을 대신하지 못한다 — 그 안에는 창을 읽는 것과 안 읽는 것이
+/// 섞여 있었고, 안 읽는 다섯은 자리가 없어서 사라진 것이었다.
+#[test]
+fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
+    let src = read(GUI_DEBUG_STEP);
+    let body = fn_body(&src, GUI_DEBUG_FN)
+        .unwrap_or_else(|| panic!("{GUI_DEBUG_STEP} 에서 `{GUI_DEBUG_FN}` 본문을 못 잘랐다"));
+    let gui = method_literals(&body);
+    assert!(
+        gui.len() >= MIN_GUI_DEBUG_ITEMS,
+        "debug step 에서 {} 개밖에 못 뽑았다(하한 {MIN_GUI_DEBUG_ITEMS}, 2026-09-05 실측 \
+         8). 대조군이 죽었다",
+        gui.len()
+    );
+    let headless = headless_methods();
+
+    let excused: BTreeSet<&str> = DEBUG_NOT_IN_HEADLESS.iter().map(|(m, _)| *m).collect();
+    // 헤드리스가 prefix 로 답하면 그 아래 이름도 답하는 것이다(그 반대도 같다).
+    let covered = |item: &str| {
+        headless.contains(item)
+            || headless
+                .iter()
+                .any(|h| h.ends_with('.') && item.starts_with(h.as_str()))
+            || excused.contains(item)
+            || excused
+                .iter()
+                .any(|e| e.ends_with('.') && item.starts_with(*e))
+    };
+    let missing: Vec<&String> = gui.iter().filter(|m| !covered(m)).collect();
+    assert!(
+        missing.is_empty(),
+        "gui 의 debug step 이 답하는데 헤드리스는 답하지도, 왜 못 답하는지 적혀 있지도 \
+         않다. debug 표면은 **에이전트가 자기 작업을 검증하는 자리**라, 헤드리스에서만 \
+         사라지면 헤드리스 인스턴스는 검증할 수단이 없다. `pump_ipc` 에서 답하게 하거나 \
+         `DEBUG_NOT_IN_HEADLESS` 에 사유를 적어라: {missing:?}"
+    );
+
+    // 낡은 사유 — 헤드리스가 실제로 답하는데 못 답한다고 적혀 있는 것.
+    let stale: Vec<&str> = DEBUG_NOT_IN_HEADLESS
+        .iter()
+        .map(|(m, _)| *m)
+        .filter(|m| headless.contains(*m))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "헤드리스가 실제로 답하는데 사유가 아직 못 답한다고 말한다: {stale:?}"
+    );
+
+    for (method, reason) in DEBUG_NOT_IN_HEADLESS {
+        assert!(
+            reason.len() >= 10,
+            "`{method}` 의 사유가 너무 짧아 아무것도 말하지 않는다"
+        );
+    }
+}
+
+/// debug step 에서 뽑히는 항목 수의 하한 — **연기 검사**다.
+/// 값의 근거: 2026-09-05 실측 8 건(이름 + prefix).
+const MIN_GUI_DEBUG_ITEMS: usize = 5;
+
+/// prefix 리터럴을 버리지 않는가.
+///
+/// `starts_with("debug.event_bus.")` 처럼 **갈래 전체**를 prefix 로 받는 자리가 두
+/// 라우터에 다 있다. 끝이 `.` 인 리터럴을 버리면 그 갈래가 안 보여, 답하는 쪽을
+/// "안 답한다" 로 세고 사유를 적으라고 요구하게 된다 — 거짓 양성이다.
+#[test]
+fn a_prefix_literal_is_kept() {
+    let src = "\
+fn pump_ipc(app: &mut App) {
+    if m.starts_with(\"ns.family.\") { go(); }
+    if m == \"ns.one\" { go(); }
+}
+";
+    let body = fn_body(src, "fn pump_ipc").expect("본문을 잘라야 한다");
+    let found = method_literals(&body);
+    assert!(found.contains("ns.family."), "prefix 를 버렸다: {found:?}");
+    assert!(found.contains("ns.one"));
+}
+
+/// 증거 토큰이 사라지면 그 대응도 사라진다.
+///
+/// `HEADLESS_COVERS` 는 면제가 아니라 **다른 모양으로 답한다는 주장**이다. 주장의 근거가
+/// 헤드리스 본문의 토큰 하나뿐이므로, 그 토큰이 없어졌을 때 covered 로 남으면 이 표가
+/// 그냥 면제 목록이 된다.
+#[test]
+fn a_cover_claim_dies_with_its_evidence() {
+    let pump = read(HEADLESS_PUMP);
+    for (item, token) in HEADLESS_COVERS {
+        assert!(
+            pump.contains(token),
+            "`{item}` 을 헤드리스가 답한다고 적혀 있는데 그 근거인 `{token}` 이 \
+             `{HEADLESS_PUMP}` 에 없다. 갈래가 사라졌으면 이 줄도 지우고, 사유가 \
+             필요하면 `NOT_IN_HEADLESS` 로 옮겨라"
+        );
+        // 토큰이 없는 세계에서는 covered 가 아니어야 한다 — 판정이 토큰을 실제로 본다.
+        let without = pump.replace(token, "");
+        assert!(
+            !without.contains(token),
+            "치환이 안 먹었다 — 이 대조는 아무것도 안 본다"
+        );
+    }
 }

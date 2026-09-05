@@ -86,6 +86,56 @@ pub(crate) fn pump_ipc(
                 continue;
             }
         }
+        // 2c-debug) debug 빌드의 app 층 표면 중 **창이 없어도 답이 정의되는 것.**
+        //
+        //     gui 는 이것들을 라우터의 debug step(`src/app/ipc/debug_methods.rs`)에서
+        //     처리하는데 그 step 자체가 헤드리스에 없다. 읽는 것은 `App` 의
+        //     `lua_engine` / `plugin_manager` 이고 둘 다 feature 게이트가 없는 필드다 —
+        //     창을 안 보는데 자리가 없어서 `-32601` 이던 것이라, 에이전트 검증 표면이
+        //     헤드리스에서만 사라지는 형태였다(`docs/identity.md` 원칙 2).
+        //
+        //     여기 **없는** debug 메서드(popup · banner · fullscreen · modifier_hint ·
+        //     tool · inject_* · selection · pending_menu · focused_surface · info ·
+        //     gpu.stall)는 창·렌더러·egui 입력 큐를 읽는다. 판정은 메서드별로
+        //     `docs/dev-guide/headless-ipc-surface.md` 에 있다.
+        #[cfg(debug_assertions)]
+        {
+            let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            if cmd.request.method == "debug.lua.eval" {
+                let resp = crate::core::app_surface_debug::lua_eval(
+                    app.lua_engine.as_ref(),
+                    rpc_id,
+                    &cmd.request.params,
+                );
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
+            // 아래 둘은 매니저를 본다. **메타데이터 층까지만** 세운다 — 조회가 plugin
+            // 프로세스를 띄우면 관측이 자기 대상을 바꾼다(ADR-0136). 그래서 아직 아무
+            // plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의
+            // 사실이다(매니저가 아예 없을 때의 `-32000` 과 구분된다).
+            if cmd.request.method.starts_with("debug.event_bus.") {
+                super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+                let resp = crate::ipc::handler::debug_plugin::handle_event_bus(
+                    app.plugin_manager.as_mut(),
+                    &cmd.request.method,
+                    &cmd.request.params,
+                    rpc_id,
+                );
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
+            if cmd.request.method == "debug.extension.invoke_hook" {
+                super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+                crate::ipc::handler::debug_plugin::handle_extension_invoke_hook(
+                    app.plugin_manager.as_mut(),
+                    &cmd.request.params,
+                    rpc_id,
+                    cmd.response_tx.clone(),
+                );
+                continue;
+            }
+        }
         // 2d) app 층 표면 중 **창이 없어도 답이 정의되는 것**을 여기서 답한다.
         //     gui 의 `app_methods` step 과 **같은 함수**를 부른다
         //     (`crate::core::app_surface`) — 두 벌로 두면 한쪽만 고쳐지는 순간 갈라진다.
