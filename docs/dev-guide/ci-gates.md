@@ -259,11 +259,30 @@ done | sort | uniq -c
 
 소스를 런타임에 읽어 대조하는 가드는 **실행되지 않으면 존재하지 않는 것과 같다** — 컴파일이
 통과했다는 사실은 그 가드가 무엇을 발견했는지에 대해 아무것도 말하지 않는다. 그래서 이
-부류만 따로 센다(2026-09-05, 작업 트리 기준).
+부류만 따로 센다(2026-09-06 재측정, 작업 트리 기준).
 
-모수는 **46** 이다 — 통합 타깃 93 중 레포 파일을 런타임에 읽으면서 프로세스는 띄우지 않는
-것. 재는 명령은 아래. (2026-09-05 재측정. 직전 값은 43/88 이었고, 그 사이 늘어난 것이다 —
-이 수는 커밋마다 바뀌므로 값이 아니라 **재는 법**이 정본이다.)
+모수는 **아래 표의 합**이다 — 통합 타깃 중 레포 파일을 런타임에 읽으면서 프로세스는 띄우지
+않는 것. 여기에 총합을 따로 적지 않는다. 적으면 같은 수가 두 곳에 있게 되고, 늘어날 때
+한 곳만 움직인다 — 실측으로 그 형태가 났다(2026-09-06): 표는 15 에서 17 로 갱신됐는데 위에
+적혀 있던 모수는 46 에 멈춰 있었고, 그때 실제 값은 51 이었다. 표의 두 행이 곧 분할이므로,
+행이 갱신되면 합도 함께 갱신된다.
+
+**재는 법이 정본이다**(이 수는 커밋마다 바뀐다). 술어를 흉내 내지 말고 그 자리에서 부른다 —
+하한을 잠깐 터무니없이 올리면 판정기가 자기가 센 값을 실패 메시지에 적는다:
+
+```bash
+# 모수(필터 뒤까지 포함한 순수 스캔 가드 전체)
+sed -i 's/MIN_SCANNED: usize = 45/MIN_SCANNED: usize = 999/' \
+  crates/tasty-doc-guards/tests/filtered_guards_are_not_totally_blind.rs
+cargo test -p tasty-doc-guards --test filtered_guards_are_not_totally_blind
+# 첫 행(필터 없는 채널을 가진 것)
+sed -i 's/MIN_GUARDED: usize = 12/MIN_GUARDED: usize = 999/' \
+  crates/tasty-doc-guards/tests/filter_free_channel_still_exists.rs
+cargo test -p tasty-doc-guards --test filter_free_channel_still_exists
+```
+
+역-sed 로 되돌린다(`git checkout` 은 같은 파일의 미커밋 작업까지 지운다). 둘째 행은 첫 값에서
+첫 행을 뺀 것이다.
 
 | | 개수 | 채널 |
 |---|---|---|
