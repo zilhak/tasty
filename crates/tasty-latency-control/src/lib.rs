@@ -487,6 +487,39 @@ impl Drop for ControlProbe {
 mod tests {
     use super::*;
 
+    /// ★ 초록일 때도 남는 관측 한 줄 — 이 부류의 물음은 "어느 기계에서 어느 시험의
+    /// **여유가 얼마인가**" 이고, 지금은 초록이면 아무 수도 안 남는다.
+    ///
+    /// **채널이 짝이어야 성립한다.** libtest 는 통과한 테스트의 출력을 삼키므로 이 줄은
+    /// `--show-output`(또는 `--nocapture`) 으로 부를 때만 보인다. 통합 회차가 이 크레이트를
+    /// 그 플래그로 부르는 별도 스텝을 갖는다 — 본 leg 에 붙이면 수천 건 출력이 로그를 덮는다.
+    /// 안 보인다고 "관측이 없다" 로 읽지 마라.
+    ///
+    /// 접두사가 고정이라 `grep '^\[latency-control\]'` 로 캔다.
+    ///
+    /// ★ 테스트 이름을 **문자열로 안 적는다** — 적으면 함수 이름과 조용히 어긋난다.
+    /// 이 자리의 함수 경로에서 뽑으므로 이름을 바꾸면 출력도 따라간다.
+    macro_rules! observe {
+        ($($k:ident = $v:expr),+ $(,)?) => {{
+            fn here() {}
+            let path = std::any::type_name_of_val(&here);
+            let name = path
+                .strip_suffix("::here")
+                .unwrap_or(path)
+                .rsplit("::")
+                .next()
+                .unwrap_or(path);
+            let mut line = format!("[latency-control] {name}");
+            $( line.push_str(&format!(" {}={}", stringify!($k), $v)); )+
+            println!("{line}");
+        }};
+    }
+
+    /// 관측값의 표기를 한 곳으로 — 자릿수가 시험마다 다르면 추세를 못 캔다.
+    fn n(v: f64) -> String {
+        format!("{v:.2}")
+    }
+
     /// ★ ADR-0181 의 규칙 2 를 재는 변이 단정이다(R437).
     ///
     /// 측정 대상 경로에 인위적 지연을 넣는다 — 여기서는 "그 경로가 막혀 있다" 를 잠으로
@@ -505,6 +538,11 @@ mod tests {
         busy_for(Duration::from_millis(200));
         let after = control.sample();
 
+        observe!(
+            before = n(before.ratio()),
+            after = n(after.ratio()),
+            margin = n(MUTATION_MARGIN),
+        );
         assert!(
             control_stayed_out_of_the_path(&after),
             "{}",
@@ -658,6 +696,10 @@ mod tests {
             std::sync::atomic::Ordering::Relaxed,
         );
         let blocked = round_trip_sample(|| trip(&peer), baseline);
+        observe!(
+            ratio = n(blocked.ratio()),
+            band = format!("{:?}", blocked.band()),
+        );
         assert!(
             blocked.is_inflated(),
             "상대편이 5 ms 막혔는데 대조군이 기준선의 {:.1} 배에 그쳤다({:?} → {:?}) — \
@@ -693,6 +735,12 @@ mod tests {
         let channel = round_trip_sample(|| trip(&peer), trip_baseline);
         let scheduler = cpu.sample();
 
+        observe!(
+            channel = n(channel.ratio()),
+            scheduler = n(scheduler.ratio()),
+            separation = n(channel.ratio() / scheduler.ratio().max(f64::MIN_POSITIVE)),
+            margin = n(MUTATION_MARGIN),
+        );
         assert!(
             channel.is_inflated(),
             "상대편을 막았는데 채널 계열이 {:.1} 배에 그쳤다",
