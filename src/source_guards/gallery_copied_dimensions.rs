@@ -25,6 +25,14 @@
 //! 그 자리에 남는다.** 값 비교로는 영영 안 보이고, 갈라지는 순간에도 화면 말고는 아무 신호가
 //! 없다. 그 자리를 여기서 시끄럽게 만든다.
 //!
+//!
+//! # 찍는 표에는 **자동 채널이 없다** (R494)
+//!
+//! libtest 는 통과한 테스트의 출력을 삼키고, 이 레포의 어느 회차 스텝도
+//! `--show-output`·`--nocapture` 를 안 쓴다. 그러니 아래 `println!` 은 **초록 회차 어디에도
+//! 안 나온다** — 손으로 `cargo test --bin tasty <이 모듈> -- --nocapture` 로 볼 때만 보인다.
+//! 그것을 알고 둔다: 자동으로 지키는 것은 **단정**이고, 표는 사람이 눈으로 확인할 때 쓰는
+//! 도구다. 표가 채널을 가진 것처럼 쓰지 마라.
 //! # 이 가드는 지금 결정을 내리지 않는다
 //!
 //! 어느 쪽으로 통일할지는 설계 결정이다(본체를 테마 파생으로 바꾸면 **비-기본 테마에서 본체
@@ -77,32 +85,38 @@ const COPIED: &[(&str, &str, &str, GallerySide, &str)] = &[
     ),
 ];
 
-/// `const NAME: LogicalPx = LogicalPx(<수>);` 의 수. 순수 함수 — 합성 입력을 그대로 먹인다.
-fn const_value(masked: &str, name: &str) -> Option<f32> {
+/// `const NAME: LogicalPx = LogicalPx(<수>);` 의 (줄번호, 수). 순수 함수 — 합성 입력을
+/// 그대로 먹인다.
+///
+/// 줄번호까지 내는 이유는 실패 메시지 때문이다. "값이 갈라졌다, 정해라" 만 띄우면 **무엇을**
+/// 정해야 하는지 사람이 모른 채 메시지를 본다 — 좌표가 있어야 그 자리로 갈 수 있다.
+fn const_site(masked: &str, name: &str) -> Option<(usize, f32)> {
     let needle = format!("const {name}:");
-    let line = masked
+    let (idx, line) = masked
         .lines()
-        .find(|l| l.trim_start().starts_with(&needle))?;
+        .enumerate()
+        .find(|(_, l)| l.trim_start().starts_with(&needle))?;
     let open = line.rfind("LogicalPx(")? + "LogicalPx(".len();
     let num: String = line[open..]
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.')
         .collect();
-    num.parse().ok()
+    Some((idx + 1, num.parse().ok()?))
 }
 
-/// `Theme` 기본 표의 `name: LogicalPx(<수>),` 값.
-fn theme_default(masked: &str, name: &str) -> Option<f32> {
+/// `Theme` 기본 표의 `name: LogicalPx(<수>),` (줄번호, 값).
+fn theme_site(masked: &str, name: &str) -> Option<(usize, f32)> {
     let needle = format!("{name}: LogicalPx(");
-    let line = masked
+    let (idx, line) = masked
         .lines()
-        .find(|l| l.trim_start().starts_with(&needle))?;
+        .enumerate()
+        .find(|(_, l)| l.trim_start().starts_with(&needle))?;
     let open = line.find(&needle)? + needle.len();
     let num: String = line[open..]
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.')
         .collect();
-    num.parse().ok()
+    Some((idx + 1, num.parse().ok()?))
 }
 
 fn read(rel: &str) -> String {
@@ -110,6 +124,10 @@ fn read(rel: &str) -> String {
 }
 
 /// 넷을 한 번에 본다 — 하나만 덮으면 나머지 셋이 조용하다.
+///
+/// 갈라진 것 하나에서 멈추지 않고 **넷을 다 재고 나서** 실패한다. 첫 어긋남에서 멈추면
+/// 사람이 한 번에 하나씩만 보게 되고, 그건 이 축에서 특히 나쁘다 — 넷이 같은 결정 하나에
+/// 매달려 있어서 따로 보면 같은 결정을 네 번 내리게 된다.
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     assert!(
@@ -119,54 +137,59 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     let theme = read(THEME);
 
     let mut listed = Vec::new();
+    let mut split = Vec::new();
     for (host_rel, host_const, gallery_rel, side, what) in COPIED {
         let host_src = read(host_rel);
-        let host = const_value(&host_src, host_const).unwrap_or_else(|| {
+        let (host_line, host) = const_site(&host_src, host_const).unwrap_or_else(|| {
             panic!("본체 `{host_rel}` 에서 `{host_const}` 를 못 읽었다 — 이름이 바뀌었으면 명부를 따라 고쳐라")
         });
-        match side {
+        let left = format!("{host_rel}:{host_line}  {host_const} = {host}");
+        let (right, value) = match side {
             GallerySide::Restated(name) => {
                 let gallery_src = read(gallery_rel);
-                let value = const_value(&gallery_src, name)
+                let (line, value) = const_site(&gallery_src, name)
                     .unwrap_or_else(|| panic!("갤러리 `{gallery_rel}` 에서 `{name}` 을 못 읽었다"));
-                assert_eq!(
-                    host, value,
-                    "{what}: 본체 `{host_const}`={host} 인데 갤러리 `{name}`={value} 다. \
-                     갤러리는 본체 값을 되풀이하는 자리라 둘 중 하나가 낡은 것이다 — \
-                     본체가 옳으면 갤러리를 맞추고, 갤러리가 옳으면 그것은 디자인 변경이니 \
-                     본체를 먼저 고쳐라"
-                );
-                listed.push(format!("  {what:<24} {host_const}={host}  = {name}"));
+                (format!("{gallery_rel}:{line}  {name} = {value}"), value)
             }
             GallerySide::ThemeSum(names) => {
                 let mut sum = 0.0;
+                let mut terms = Vec::new();
                 for n in *names {
-                    sum += theme_default(&theme, n).unwrap_or_else(|| {
-                        panic!(
-                            "`{THEME}` 에서 `{n}` 의 기본값을 못 읽었다 — 못 읽으면 합이 \
-                                작아져 이 단정이 거짓으로 빨개진다"
-                        )
+                    let (line, v) = theme_site(&theme, n).unwrap_or_else(|| {
+                        panic!("`{THEME}` 에서 `{n}` 의 기본값을 못 읽었다 — 못 읽으면 합이 작아져 이 단정이 거짓으로 빨개진다")
                     });
+                    sum += v;
+                    terms.push(format!("{n}={v}@{THEME}:{line}"));
                 }
-                assert_eq!(
-                    host,
+                (
+                    format!("{gallery_rel}  테마 파생 {} = {sum}", terms.join(" + ")),
                     sum,
-                    "{what}: 본체는 **고정값** `{host_const}`={host} 이고 갤러리는 **테마 파생** \
-                     ({})={sum} 이다. 값이 갈라졌다 — 둘 중 어느 쪽으로 통일할지 정해라. \
-                     이건 가드의 오탐이 아니다. 본체를 테마 파생으로 바꾸면 비-기본 테마에서 \
-                     본체 동작이 바뀌고, 갤러리를 고정값으로 바꾸면 specimen 이 테마를 안 따른다. \
-                     그 선택이 지금 필요해졌다는 것이 이 실패의 내용이다",
-                    names.join(" + ")
-                );
-                listed.push(format!(
-                    "  {what:<24} {host_const}={host}  = {}",
-                    names.join(" + ")
-                ));
+                )
             }
+        };
+        let mark = if host == value { "=" } else { "≠" };
+        listed.push(format!(
+            "  [{mark}] {what}\n        본체   {left}\n        갤러리 {right}"
+        ));
+        if host != value {
+            split.push((*what).to_string());
         }
     }
+
+    let table = listed.join("\n");
+    let headline = format!("갈라진 치수 {}: {}", split.len(), split.join(" · "));
+    assert!(
+        split.is_empty(),
+        "{}\n\n{}\n{}\n{}\n{}\n{}",
+        headline,
+        table,
+        "둘 중 어느 쪽으로 통일할지 정해라 — 이건 가드의 오탐이 아니다.",
+        "본체를 테마 파생으로 바꾸면 비-기본 테마에서 본체 동작이 바뀌고,",
+        "갤러리를 고정값으로 바꾸면 specimen 이 테마를 안 따른다.",
+        "그 선택이 지금 필요해졌다는 것이 이 실패의 내용이다."
+    );
     // 초록일 때 무엇을 맞춰 봤는지 남긴다 — 넷을 다 봤는지는 이 목록으로만 보인다.
-    println!("[사본 치수] {} 쌍\n{}", COPIED.len(), listed.join("\n"));
+    println!("[사본 치수] {} 쌍\n{table}", COPIED.len());
 }
 
 #[cfg(test)]
@@ -176,33 +199,33 @@ mod detector {
     #[test]
     fn it_reads_a_named_length_constant() {
         let src = "const A: LogicalPx = LogicalPx(440.0);\nconst B: LogicalPx = LogicalPx(12.5);";
-        assert_eq!(const_value(src, "A"), Some(440.0));
-        assert_eq!(const_value(src, "B"), Some(12.5));
+        assert_eq!(const_site(src, "A"), Some((1, 440.0)));
+        assert_eq!(const_site(src, "B"), Some((2, 12.5)));
     }
 
     /// 이름이 **접두사로만** 맞는 상수를 집으면 엉뚱한 값이 비교된다.
     #[test]
     fn a_longer_name_is_not_the_name_asked_for() {
         let src = "const MIN_HEIGHT_LG: LogicalPx = LogicalPx(999.0);";
-        assert_eq!(const_value(src, "MIN_HEIGHT"), None);
+        assert_eq!(const_site(src, "MIN_HEIGHT"), None);
     }
 
     #[test]
     fn a_theme_field_default_is_read_by_name() {
         let src =
             "            spacing_lg: LogicalPx(16.0),\n            spacing_xs: LogicalPx(4.0),";
-        assert_eq!(theme_default(src, "spacing_lg"), Some(16.0));
-        assert_eq!(theme_default(src, "spacing_xs"), Some(4.0));
+        assert_eq!(theme_site(src, "spacing_lg"), Some((1, 16.0)));
+        assert_eq!(theme_site(src, "spacing_xs"), Some((2, 4.0)));
     }
 
     #[test]
     fn a_name_that_is_not_there_is_not_invented() {
         assert_eq!(
-            const_value("const A: LogicalPx = LogicalPx(1.0);", "B"),
+            const_site("const A: LogicalPx = LogicalPx(1.0);", "B"),
             None
         );
         assert_eq!(
-            theme_default("spacing_lg: LogicalPx(16.0),", "spacing_md"),
+            theme_site("spacing_lg: LogicalPx(16.0),", "spacing_md"),
             None
         );
     }
