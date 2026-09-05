@@ -36,13 +36,17 @@ const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modul
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
-/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 작업 폴더(플러그인
-/// 매니페스트의 스테이징 사본이 있어 소스가 아니다).
+/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더 **둘 다**.
+///
+/// 작업 폴더 쪽(꼬리가 붙은 이름)만 자르던 자리다. 세션 설정 폴더 쪽도 gitignored 라
+/// 같은 근거로 순회 대상이 아닌데 빠져 있었고, 같은 물음에 답하는 다른 사본들과
+/// 집합이 하나 어긋나 있었다(2026-09-06 실측). 이 커밋으로 순회가 **줄어들지만**
+/// 오늘 결과는 불변이다 — 그 폴더 아래 `.rs` 가 0 개다.
 fn is_pruned(name: &str) -> bool {
     PRUNE_DIRS.contains(&name)
         || name
             .strip_prefix('.')
-            .is_some_and(|rest| rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
 /// 금지 코드포인트인지 — 픽토그래픽 이모지(1F000..1FAFF) + regional indicator(1F1E6..1F1FF).
