@@ -102,8 +102,9 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
     let line_h = theme::theme().font_size_body.value() * 1.5;
     let body_h = approx_lines * line_h;
-    let total_h = (popup::title_bar_height() + popup::content_margin() * 2.0 + body_h + 48.0)
-        .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value());
+    let total_h =
+        (popup::title_bar_height().value() + popup::content_margin() * 2.0 + body_h + 48.0)
+            .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value());
     egui::vec2(DEFAULT_WIDTH.value(), total_h)
 }
 

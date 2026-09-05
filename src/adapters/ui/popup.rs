@@ -19,6 +19,7 @@ pub(crate) mod script_confirm;
 pub(crate) mod transfer;
 
 use crate::state::AppState;
+use tasty_type_geometry::length::LogicalPx;
 
 // 참고: 기존 `PopupContent` trait는 PopupDef(데이터 지향)로 대체되었다. 새 popup을
 // 추가하려면 `popup::defs` 의 `all_defs()`에 항목을 추가하라.
@@ -204,14 +205,19 @@ pub struct PopupState {
 
 /// Popup 타이틀바 높이 — `Theme.item_height_interactive` (디자인 28px) 의 round_ui.
 /// `with_colors_and_zoom` 가 토큰 자체에 host UI zoom 을 박으므로 본 함수도
-/// 매 호출마다 현재 zoom 이 반영된 높이를 반환한다. const 였던 시절과 시그니처
-/// 호환을 위해 `f32` 반환.
-pub fn title_bar_height() -> f32 {
+/// 매 호출마다 현재 zoom 이 반영된 높이를 반환한다.
+///
+/// 논리 px 라 `LogicalPx` 를 반환한다. `round_ui` 는 egui 트레이트라 `f32` 위에서만
+/// 도므로 그 한 줄에서만 벗기고 곧바로 다시 싼다 — 호출처가 벗기지 않게 하는 것이
+/// 이 시그니처의 목적이다.
+pub fn title_bar_height() -> LogicalPx {
     use egui::emath::GuiRounding as _;
-    crate::theme::theme()
-        .item_height_interactive
-        .value()
-        .round_ui()
+    LogicalPx(
+        crate::theme::theme()
+            .item_height_interactive
+            .value()
+            .round_ui(),
+    )
 }
 
 /// Popup 콘텐츠 영역 inner margin — `Theme.spacing_xs` (디자인 4px) 의 round_ui.
@@ -404,7 +410,10 @@ impl PopupState {
     }
 
     fn title_rect(&self) -> egui::Rect {
-        egui::Rect::from_min_size(self.pos, egui::vec2(self.size.x, title_bar_height()))
+        egui::Rect::from_min_size(
+            self.pos,
+            egui::vec2(self.size.x, title_bar_height().value()),
+        )
     }
 
     /// 현재 이동(드래그) 핸들 영역. `None`이면 이동 불가.
@@ -454,7 +463,7 @@ impl PopupState {
         let top_offset = if self.headless {
             margin
         } else {
-            title_bar_height() + margin
+            title_bar_height().value() + margin
         };
         egui::Rect::from_min_max(
             egui::pos2(popup.min.x + margin, popup.min.y + top_offset),

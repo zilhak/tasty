@@ -13,7 +13,10 @@ use super::{DragHandle, PopupDef, PopupScope, PopupState};
 /// 프레임부터 보고 rect 로 대체돼 헤더 전체가 이동 영역이 된다. 위젯 우선 중재
 /// (`is_using_pointer()`)로 겹친 입력 클릭은 항상 우선된다.
 fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
-    egui::Rect::from_min_size(s.pos, egui::vec2(s.size.x * 0.5, super::title_bar_height()))
+    egui::Rect::from_min_size(
+        s.pos,
+        egui::vec2(s.size.x * 0.5, super::title_bar_height().value()),
+    )
 }
 
 /// 프로세스 수명 내내 살아있는 정적 popup 정의 목록.

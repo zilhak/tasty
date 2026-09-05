@@ -20,7 +20,7 @@ use tasty_ui_widgets::vspace;
 pub fn rename_popup_default_size() -> egui::Vec2 {
     egui::vec2(
         280.0,
-        popup::title_bar_height() + popup::content_margin() * 2.0 + 64.0,
+        popup::title_bar_height().value() + popup::content_margin() * 2.0 + 64.0,
     )
 }
 

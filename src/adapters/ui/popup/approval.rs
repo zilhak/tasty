@@ -54,7 +54,7 @@ pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -
     let approx_lines = (body_len as f32 / 60.0).ceil().max(1.0);
     let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     let buttons_h = (choice_count as f32 / 3.0).ceil() * 32.0;
-    let total_h = (popup::title_bar_height()
+    let total_h = (popup::title_bar_height().value()
         + popup::content_margin() * 2.0
         + body_h
         + 32.0

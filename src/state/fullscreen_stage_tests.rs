@@ -185,7 +185,7 @@ fn screen_input() -> egui::RawInput {
 /// `popup_close_tests` 가 X 버튼 좌표를 구하는 방식과 같은 관례다(공개 필드
 /// `pos`/`size` + 공개 함수만 사용).
 fn fullscreen_btn_center(pos: egui::Pos2, size: egui::Vec2) -> egui::Pos2 {
-    let title_h = crate::adapters::ui::popup::title_bar_height();
+    let title_h = crate::adapters::ui::popup::title_bar_height().value();
     let btn = 20.0;
     let close_center_x = pos.x + size.x - btn * 0.5 - 4.0;
     egui::pos2(

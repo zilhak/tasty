@@ -56,7 +56,10 @@ fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
     let safety_margin = 1.0;
     egui::vec2(
         200.0,
-        popup::title_bar_height() + popup::content_margin() * 2.0 + content_h + safety_margin,
+        popup::title_bar_height().value()
+            + popup::content_margin() * 2.0
+            + content_h
+            + safety_margin,
     )
 }
 
@@ -69,7 +72,7 @@ mod size_tests {
     ///                + (N−1)·actual_spacing.
     fn assert_fits(count: usize, item_spacing: f32) {
         let popup_h = convert_popup_size_for(count, item_spacing).y;
-        let needed = popup::title_bar_height()
+        let needed = popup::title_bar_height().value()
             + popup::content_margin() * 2.0
             + count as f32 * ITEM_HEIGHT
             + (count.saturating_sub(1)) as f32 * item_spacing;

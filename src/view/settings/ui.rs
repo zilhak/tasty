@@ -522,7 +522,7 @@ fn conflict_popup_dims(th: &Theme, label_h: f32, zoom: f32) -> egui::Vec2 {
     use crate::adapters::ui::popup::{content_margin, title_bar_height};
     let width = (340.0 * zoom).round();
     let margin = content_margin();
-    let height = title_bar_height()
+    let height = title_bar_height().value()
         + margin
         + label_h
         + th.spacing_sm.value()
@@ -1711,9 +1711,9 @@ mod tab_key_tests {
             line
         );
         // 라벨이 0 높이여도 최소한 타이틀바 + 버튼행 높이 이상을 확보한다(버튼 clip 방지).
-        let floor = title_bar_height() + th.item_height_interactive.value();
+        let floor = title_bar_height() + th.item_height_interactive;
         assert!(
-            conflict_popup_dims(&th, 0.0, 1.0).y >= floor,
+            conflict_popup_dims(&th, 0.0, 1.0).y >= floor.value(),
             "empty-label height must clear title+button floor"
         );
         // 폭은 zoom 을 반영한다(고정 폭 비대칭 제거).
