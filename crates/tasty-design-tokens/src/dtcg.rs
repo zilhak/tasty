@@ -879,6 +879,55 @@ fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAcces
     }
 }
 
+/// duration component 접근자의 본문 형태.
+///
+/// 치수와 달리 **zoom 을 곱하지 않는다** — 시간은 UI 배율을 타지 않는다. 그리고
+/// semantic 종착에도 `Theme` 필드가 없다(색·치수와 달리 duration 은 테마마다 달라지지
+/// 않아 필드로 굽지 않는다). 그래서 형태가 둘뿐이다.
+enum DurationAccessor {
+    /// alias 대상이 다른 component duration 접근자.
+    Chain(String),
+    /// 종착 리터럴(ms).
+    RawMs(f32),
+}
+
+/// duration component 접근자의 본문 형태를 고른다.
+fn resolve_duration_accessor(set: &TokenSet, token: &Token) -> Result<DurationAccessor, String> {
+    let own_path = token.path();
+    if let Some(target_path) = alias_target(&token.value)
+        && let Some(target) = set.get(target_path)
+        && target.tier == Tier::Component
+    {
+        return Ok(DurationAccessor::Chain(accessor_fn_name(&target.name)));
+    }
+    let terminal = set
+        .resolve(&own_path, ThemeMode::Mocha)
+        .map_err(|e| format!("{own_path}: {e} — 생성 스킵"))?;
+    let stripped = terminal.strip_suffix("ms").unwrap_or(&terminal);
+    stripped
+        .trim()
+        .parse::<f32>()
+        .map(DurationAccessor::RawMs)
+        .map_err(|_| format!("{own_path}: 터미널 값 파싱 실패 ({terminal}) — 생성 스킵"))
+}
+
+/// duration 접근자 하나의 `impl Theme` 메서드 텍스트.
+fn emit_duration_accessor(set: &TokenSet, token: &Token, acc: &DurationAccessor) -> String {
+    let terminal = set
+        .resolve(&token.path(), ThemeMode::Mocha)
+        .expect("resolve_duration_accessor 통과 토큰은 resolve 가능");
+    let fn_name = accessor_fn_name(&token.name);
+    let body = match acc {
+        DurationAccessor::Chain(target_fn) => format!("self.{target_fn}()"),
+        DurationAccessor::RawMs(v) => format!("Millis({v:?})"),
+    };
+    format!(
+        "\n    /// `{}` → `{}` = {terminal}\n    #[inline]\n    pub fn {fn_name}(&self) -> Millis {{\n        {body}\n    }}\n",
+        token.path(),
+        token.value,
+    )
+}
+
 /// 색 component 접근자의 본문 형태.
 enum ColorAccessor {
     /// alias 체인이 semantic 색에 닿고, 표에 대응 `theme.rs` 접근자가 있음.
@@ -1000,8 +1049,26 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
                     Err(reason) => skips.push(reason),
                 }
             }
-            // duration/number/fontWeight component 토큰 — 04 범위 밖. 테마 불변이라
-            // `generated::component` 의 raw const 로 이미 충분 (zoom 무관).
+            "duration" => {
+                let fn_name = accessor_fn_name(&token.name);
+                // 이름이 겹치면 `impl Theme` 이 중복 메서드로 컴파일이 깨진다 — 반환
+                // 타입이 달라도 마찬가지라 두 표를 **함께** 본다.
+                if EXISTING_THEME_DIM_ACCESSOR_NAMES.contains(&fn_name.as_str())
+                    || EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str())
+                {
+                    skips.push(format!(
+                        "{}: theme.rs 기존 수기 접근자 `{fn_name}` 과 이름 충돌 — 생성 스킵",
+                        token.path()
+                    ));
+                    continue;
+                }
+                match resolve_duration_accessor(set, token) {
+                    Ok(acc) => body.push_str(&emit_duration_accessor(set, token, &acc)),
+                    Err(reason) => skips.push(reason),
+                }
+            }
+            // number/fontWeight component 토큰 — 04 범위 밖. 테마 불변이고 무단위라
+            // `generated::component` 의 raw const 로 이미 충분.
             _ => {}
         }
     }
@@ -1009,12 +1076,14 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
     let header = "//! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.\n\
                   //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
                   //!\n\
-                  //! Tier 3 (component) 치수·색 접근자. `generated::component` 의 raw\n\
-                  //! const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를\n\
+                  //! Tier 3 (component) 치수·색·시간 접근자. `generated::component` 의\n\
+                  //! raw const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를\n\
                   //! 반환하거나(semantic 종착) `ui_zoom` 을 직접 곱하고(primitive 직접\n\
                   //! 종착), 색은 semantic 접근자 체인 또는 component→component 접근자\n\
-                  //! 상호 호출로 이어붙인다.\n\n\
+                  //! 상호 호출로 이어붙인다. 시간은 `Millis` 로 나가며 **zoom 을 곱하지\n\
+                  //! 않는다** — 배율은 길이 축이다.\n\n\
                   use crate::color::HexColor;\n\
+                  use crate::motion::Millis;\n\
                   use tasty_type_geometry::length::LogicalPx;\n\n\
                   impl crate::theme::Theme {";
     let mut file = header.to_string();
