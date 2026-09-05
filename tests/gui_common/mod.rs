@@ -142,6 +142,13 @@ impl GuiTestInstance {
             // 종료한다**(실측: 지우면 같은 바이너리가 port file 을 쓴다). 형제 하네스
             // 둘(`tests/common`·`tests/webhook_common`)은 격리 HOME·TASTY_HOME 으로
             // 이 경로를 이미 막고 있고, 이 하네스만 안 막고 있었다.
+            //
+            // 이 한 줄이 없을 때 나오는 문구는 원인을 안 가리킨다 —
+            // "tasty GUI failed to write the port file" 은 디스플레이나 GPU 를
+            // 의심하게 만든다. 그런데 이 스위트를 돌리라고 지시하는 문서
+            // (`docs/ai-verification/`)의 독자가 바로 **tasty 안에서 도는 에이전트**라,
+            // 지시받은 대로 돌린 사람이 100% 이 실패를 본다. 그래서 이건
+            // 하네스의 편의가 아니라 그 문서가 성립하기 위한 조건이다.
             .env_remove("TASTY_PARENT_HOME")
             .env_remove("TASTY_SURFACE_ID")
             .env_remove("TASTY_AGENT_ID")
