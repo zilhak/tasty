@@ -1,9 +1,7 @@
 //! `View` — GUI 어댑터. winit 윈도우, egui, modal/focus 식별자, event loop proxy,
 //! views HashMap 등 *사용자의 화면* 측면을 모은다.
 //!
-//! D.3.E.3.d — 옛 `src/adapters/ui/window/` 의 9 파일 + 3 서브디렉터리가
-//! `src/view/` 로 평탄화 이동. trait 본체는 `src/view/ui.rs`, 구현체 모듈은
-//! 본 모듈 안 형제.
+//! trait 본체는 `src/view/ui.rs`, 구현체 모듈은 본 모듈 안 형제다.
 
 pub(crate) mod base;
 pub(crate) mod main;

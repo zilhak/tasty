@@ -5,6 +5,42 @@ use crate::view::ui::View;
 
 use super::MainView;
 
+/// 한 surface 의 webview 생성을 몇 번까지 시도하는가.
+///
+/// **왜 상한이 필요한가**: 생성이 실패해도 그 surface 는 다음 프레임에 다시 후보가
+/// 된다. 그런데 실패 경로가 X 자식창을 만들었다 지우면 그 X 이벤트가 winit 이벤트
+/// 루프를 깨워 **다음 프레임을 스스로 부른다** — 실패가 자기 재시도를 낳는 고리다.
+/// 실측(합성 영구 실패, 10 초): 시도 27477 회 · X 서버 CPU 코어의 27% · 로그 8.2 MB.
+/// 같은 실패를 X 작업이 없는 자리로 옮기면 시도가 3 회에서 멈췄다 — 고리를 만드는
+/// 것은 로그가 아니라 X 왕복이다.
+///
+/// 8 인 이유: 일시 실패(서버 자원 고갈)가 프레임 몇 개 안에 풀리지 않으면 더 기다려도
+/// 같다는 판단이다. **정확한 수보다 상한이 있다는 것이 요점이다** — "로그가 줄었다"
+/// 는 확률이고 "8 회를 넘지 않는다" 는 불변식이다.
+pub(crate) const MAX_WEBVIEW_CREATE_ATTEMPTS: u32 = 8;
+
+/// 상한이 1 이면 `Permanent` 와 `Transient` 의 처방이 같아진다 — 분류가 아무 차이도
+/// 안 낳는데 아래 유닛 테스트는 둘 다 초록이다. 그래서 컴파일 타임에 막는다.
+const _: () = assert!(MAX_WEBVIEW_CREATE_ATTEMPTS > 1);
+
+/// 이 surface 를 또 시도할 것인가.
+pub(crate) fn should_attempt_webview(attempts: u32) -> bool {
+    attempts < MAX_WEBVIEW_CREATE_ATTEMPTS
+}
+
+/// 실패 뒤의 새 시도 횟수. **영구 실패는 한 번에 상한으로 올린다** — 이 프로세스에서
+/// 달라질 입력이 없으므로 더 해 보는 것이 낭비다.
+pub(crate) fn next_webview_attempts(
+    attempts: u32,
+    err: &crate::webview::WebViewCreateError,
+) -> u32 {
+    if err.is_permanent() {
+        MAX_WEBVIEW_CREATE_ATTEMPTS
+    } else {
+        attempts.saturating_add(1).min(MAX_WEBVIEW_CREATE_ATTEMPTS)
+    }
+}
+
 impl MainView {
     pub(super) fn handle_redraw(
         &mut self,
@@ -44,12 +80,14 @@ impl MainView {
             let terminal_rect = self.compute_terminal_rect();
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
+            let scale_factor = self.base.gpu.scale_factor();
             crate::core::Core::resize_all_terminals(
                 &self.state,
                 &mut self.core_state,
                 terminal_rect,
                 cell_w,
                 cell_h,
+                scale_factor,
             );
         }
 
@@ -398,7 +436,9 @@ impl MainView {
         let mut all_html_ids: Vec<u32> = Vec::new();
 
         for (ws_idx, ws) in self.core_state.workspaces.iter().enumerate() {
-            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+            let pane_rects = ws
+                .pane_layout()
+                .compute_rects(terminal_rect, scale_factor as f32);
             for (pane_id, pane_rect) in &pane_rects {
                 if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                     // tab bar 아래 콘텐츠 영역 — 탭 내부 분할(SurfaceGroup)의 leaf rect
@@ -419,7 +459,9 @@ impl MainView {
                         // 탭당 1 개(`Tab::surface()` = 포커스 leaf)가 아니라 레이아웃
                         // 트리의 모든 leaf 를 본다 — 비포커스 leaf 의 webview 도
                         // native overlay 를 가져야 한다.
-                        for (sid, leaf_rect) in layout.compute_rects(content_rect) {
+                        for (sid, leaf_rect) in
+                            layout.compute_rects(content_rect, scale_factor as f32)
+                        {
                             let Some(surface) = layout.find_surface(sid) else {
                                 continue;
                             };
@@ -439,7 +481,13 @@ impl MainView {
                                 // 간격으로 보이게 하고 화면 공간을 낭비하지 않기 위함.
                                 // 위쪽 변은 tab bar 가 있어 원래부터 inset 이 없다.
                                 // 단독 leaf 이면 네 변이 모두 외곽이라 기존 동작 그대로다.
-                                let inset = 4.0_f64;
+                                //
+                                // 히트 밴드와 **같은 값**이어야 한다 — 여백이 밴드보다
+                                // 좁으면 native webview 가 드래그 영역을 덮는다. 그래서
+                                // 리터럴을 다시 적지 않고 그 상수를 물리로 내려 쓴다.
+                                let inset = crate::state::mouse::divider_hit_threshold_physical(
+                                    scale_factor as f32,
+                                ) as f64;
                                 let on_edge =
                                     |a: crate::model::PhysicalPx, b: crate::model::PhysicalPx| {
                                         (a - b).abs() < crate::model::PhysicalPx(0.5)
@@ -500,6 +548,12 @@ impl MainView {
         // Create new webviews for Html panels that don't have one yet
         for &sid in all_html_ids {
             if !self.webviews.contains_key(&sid) {
+                // 예산을 다 쓴 surface 는 더 시도하지 않는다. 여기서 안 걸러내면
+                // 실패가 자기 재시도를 부르는 고리가 끝나지 않는다.
+                let attempts = self.webview_create_attempts.get(&sid).copied().unwrap_or(0);
+                if !should_attempt_webview(attempts) {
+                    continue;
+                }
                 // Find the URL for this surface
                 let url = self.find_webview_url(sid);
                 // 생성 시 적용할 plugin 설정(부재 시 default) 을 미리 해석한다.
@@ -539,10 +593,9 @@ impl MainView {
                         }
                         self.webviews.insert(sid, wv);
                         self.webview_applied_settings.insert(sid, settings);
+                        self.webview_create_attempts.remove(&sid);
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to create WebView for surface {}: {}", sid, e);
-                    }
+                    Err(e) => self.record_webview_failure(sid, attempts, &e),
                 }
             }
         }
@@ -555,6 +608,39 @@ impl MainView {
     /// `sync_webviews` 의 reveal 판정(nav_state 기준) 이전에 호출하면 재로드가
     /// 트리거된 프레임에 곧바로 반영된다 — 이전 페이지가 한 프레임이라도 다시
     /// 노출되는 일이 없다.
+    /// webview 생성 실패를 기록하고 **필요한 만큼만** 알린다.
+    ///
+    /// 예산 소모 규칙이 한곳에 모여 있다: 영구 실패는 한 번에 상한으로,
+    /// 일시 실패는 하나씩. 로그는 **첫 실패와 포기하는 순간**만 남긴다 — 그 사이를
+    /// 다 남기면 로그가 실패 고리의 속도로 늘어난다(실측 10 초에 27477 줄).
+    fn record_webview_failure(
+        &mut self,
+        sid: u32,
+        attempts: u32,
+        err: &crate::webview::WebViewCreateError,
+    ) {
+        let next = next_webview_attempts(attempts, err);
+        self.webview_create_attempts.insert(sid, next);
+        if attempts == 0 {
+            tracing::warn!("Failed to create WebView for surface {sid}: {err}");
+        }
+        if next >= MAX_WEBVIEW_CREATE_ATTEMPTS {
+            // `next` 가 아니라 **실제로 한 시도 수**를 적는다. 영구 실패는 예산을
+            // 한 번에 다 쓰므로 `next` 를 적으면 1 회만 하고도 "8 회 했다" 가 된다 —
+            // 그 줄로 종류를 판정할 사람이 정확히 반대로 읽는다.
+            let made = attempts + 1;
+            tracing::warn!(
+                concat!(
+                    "Giving up on the WebView for surface {} after {} attempt(s): ",
+                    "{} — 이 surface 는 다시 열 때까지 비어 있다"
+                ),
+                sid,
+                made,
+                err
+            );
+        }
+    }
+
     fn resync_webview_urls(&mut self, all_html_ids: &[u32]) {
         for &sid in all_html_ids {
             let Some(url) = self.find_webview_url(sid) else {
@@ -663,6 +749,9 @@ impl MainView {
         self.webview_applied_settings
             .retain(|sid, _| all_html_ids.contains(sid));
         self.webview_loaded_urls
+            .retain(|sid, _| all_html_ids.contains(sid));
+        // 시도 횟수도 같이 지운다 — surface 를 닫았다 열면 예산이 새로 생긴다.
+        self.webview_create_attempts
             .retain(|sid, _| all_html_ids.contains(sid));
 
         // 설정 변경 재적용 — 살아있는 webview 마다 현재 설정을 해석해, 마지막 적용값과
@@ -825,7 +914,13 @@ impl MainView {
         items: &[crate::platform::native_menu::MenuItem],
         cont: impl FnOnce(&mut MainView, Option<u32>) + 'static,
     ) {
-        use crate::platform::native_menu::{MenuOutcome, show_context_menu};
+        use crate::platform::native_menu::{
+            MenuOutcome, show_context_menu, warn_if_menu_anchor_scale_premise_broken,
+        };
+        // `x`/`y` 는 논리 좌표다. 플랫폼 백엔드가 그것을 **자기** 논리 좌표계로
+        // 읽으므로, 두 좌표계의 배율이 같다는 전제가 성립해야 앵커가 맞는다.
+        // Linux/GTK 에서만 그 둘의 출처가 갈린다(winit vs GDK) — 깨지면 경고한다.
+        warn_if_menu_anchor_scale_premise_broken(self.base.winit.scale_factor());
         match show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, items) {
             MenuOutcome::Ready(result) => {
                 cont(self, result);
@@ -2260,6 +2355,45 @@ fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_me
 #[cfg(test)]
 mod tests {
     use super::category_header_menu_items;
+    use super::{MAX_WEBVIEW_CREATE_ATTEMPTS, next_webview_attempts, should_attempt_webview};
+    use crate::webview::WebViewCreateError;
+
+    /// 영구 실패는 **한 번에** 예산을 다 쓴다. 여기서 안 멈추면 실패가 자기 재시도를
+    /// 부르는 고리가 8 회를 돈다 — 영구 실패에는 그 8 회가 전부 낭비다.
+    #[test]
+    fn a_permanent_failure_gives_up_at_once() {
+        let err = WebViewCreateError::Permanent("no display".into());
+        let next = next_webview_attempts(0, &err);
+        assert_eq!(next, MAX_WEBVIEW_CREATE_ATTEMPTS);
+        assert!(!should_attempt_webview(next), "포기했어야 한다");
+    }
+
+    /// 일시 실패는 **정확히 상한만큼** 시도한다. 상한이 코드에 박혀 있다는 것을
+    /// 세어서 확인한다 — "로그가 줄었다" 는 확률이고 이것은 불변식이다.
+    #[test]
+    fn a_transient_failure_stops_exactly_at_the_cap() {
+        let err = WebViewCreateError::Transient("server busy".into());
+        let mut attempts = 0;
+        let mut tried = 0;
+        while should_attempt_webview(attempts) {
+            tried += 1;
+            attempts = next_webview_attempts(attempts, &err);
+            assert!(tried <= 1000, "상한이 없다 — 무한 재시도");
+        }
+        assert_eq!(
+            tried, MAX_WEBVIEW_CREATE_ATTEMPTS,
+            "시도 횟수가 상한과 다르다"
+        );
+    }
+
+    /// 상한이 1 이면 두 처방이 같아진다 — 영구/일시를 가른 것이 아무 차이도 안 낳는데
+    /// 위 두 테스트는 **둘 다 초록**이다. 그래서 그 자리를 따로 막는다.
+    #[test]
+    fn the_cap_leaves_room_for_the_two_prescriptions_to_differ() {
+        let t = next_webview_attempts(0, &WebViewCreateError::Transient("x".into()));
+        let p = next_webview_attempts(0, &WebViewCreateError::Permanent("x".into()));
+        assert_ne!(t, p, "첫 실패에서 두 종류가 같은 결과를 낸다");
+    }
 
     /// 라벨은 i18n 상태에 좌우되므로 id·separator 위치로 구성·순서를 고정한다.
     fn shape(items: &[crate::platform::native_menu::MenuItem]) -> Vec<Option<u32>> {

@@ -89,10 +89,12 @@ impl MainView {
         action: InjectPointer,
     ) -> bool {
         let terminal_rect = self.compute_terminal_rect();
-        let Some(rect) = self
-            .state
-            .surface_rect_by_id(&self.core_state, surface_id, terminal_rect)
-        else {
+        let Some(rect) = self.state.surface_rect_by_id(
+            &self.core_state,
+            surface_id,
+            terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) else {
             return false;
         };
         let x = rect.x.value() + fx * rect.width.value();
@@ -151,10 +153,12 @@ impl MainView {
         // 테스트가 취약하다. 미지정 시 기존대로 window 정규화([0,1]) 로 해석한다.
         let pos = if let Some(sid) = surface_id {
             let terminal_rect = self.compute_terminal_rect();
-            let Some(rect) = self
-                .state
-                .surface_rect_by_id(&self.core_state, sid, terminal_rect)
-            else {
+            let Some(rect) = self.state.surface_rect_by_id(
+                &self.core_state,
+                sid,
+                terminal_rect,
+                self.base.gpu.scale_factor(),
+            ) else {
                 return false;
             };
             let point = PhysicalPx(rect.x.value() + fx * rect.width.value());

@@ -180,7 +180,10 @@ fn draw_theme_swatch(
 
     let pad = th.spacing_sm.value();
     let stripe_h = THEME_SWATCH_STRIPE_HEIGHT.value();
-    let label_h = th.font_size_body.value() + THEME_SWATCH_LABEL_PAD.value();
+    // 라벨 줄 여백. 이 카드 높이 식은 `pad`(spacing_sm) · `gap`(spacing_xs) ·
+    // `font_size_body` 를 더하는데 셋 다 배율을 탄다 — 이 항만 평상수면 1.2 에서
+    // 글자는 커지고 여백은 그대로라 라벨이 카드에 낀다.
+    let label_h = th.font_size_body.value() + th.spacing_xs.value();
     let gap = th.spacing_xs.value();
     let card_w = ui.available_width();
     let card_h = pad + stripe_h + gap + label_h + pad;
@@ -623,7 +626,7 @@ fn draw_tasty_color_row(
         let fill = if is_ov {
             egui::Color32::from(val)
         } else {
-            val.with_alpha(102).to_egui()
+            val.with_alpha(SWATCH_INHERITED_ALPHA).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(
@@ -884,7 +887,7 @@ fn draw_surface_bg_row(
         let fill = if is_ov {
             egui::Color32::from(val)
         } else {
-            val.with_alpha(102).to_egui()
+            val.with_alpha(SWATCH_INHERITED_ALPHA).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(
@@ -1024,6 +1027,10 @@ fn draw_surface_font_section(
 
 /// swatch 한 변 / override dot 지름 / hex 입력 폭 (디자인 jsx: 18·5·96 px).
 const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
+
+/// 오버라이드되지 않은(= 테마에서 상속받은) 색 스와치의 알파. 디자인이 적은
+/// opacity 0.4 를 알파로 옮긴 값(102/255)이다. 대응 토큰이 없어 이름만 둔다.
+const SWATCH_INHERITED_ALPHA: u8 = 102;
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 const COLOR_HEX_INPUT_WIDTH: LogicalPx = LogicalPx(96.0);
 /// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.
@@ -1031,7 +1038,6 @@ const COLOR_FIELD_NAME_WIDTH: LogicalPx = LogicalPx(150.0);
 
 /// Theme 프리셋 스와치(design #5): 5색 스트라이프 높이 / 스트라이프~라벨 사이 여백.
 const THEME_SWATCH_STRIPE_HEIGHT: LogicalPx = LogicalPx(38.0);
-const THEME_SWATCH_LABEL_PAD: LogicalPx = LogicalPx(4.0);
 
 /// 한 색 행: 표시 이름(기술 토큰, 비번역) + base/override 접근자(fn 포인터).
 struct ColorRowDef {
@@ -1347,7 +1353,7 @@ fn draw_color_picker_row(
             egui::Color32::from(val)
         } else {
             // opacity 0.4 (디자인) — 패널 위에 얹혀 dim 하게 보인다.
-            val.with_alpha(102).to_egui()
+            val.with_alpha(SWATCH_INHERITED_ALPHA).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(
@@ -1677,7 +1683,7 @@ fn font_family_picker(
 
                 if let Some(families) = font_families {
                     egui::ScrollArea::vertical()
-                        .max_height(250.0)
+                        .max_height(th.font_family_menu_max_height().value())
                         .drag_to_scroll(false)
                         .show(ui, |ui| {
                             for family in families {

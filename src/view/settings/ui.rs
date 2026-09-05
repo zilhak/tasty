@@ -119,10 +119,12 @@ pub(crate) enum GeneralSubTab {
     /// Alt/Option/Shift 키 표시 스타일. macOS 전용 — 아이콘 글리프 개념이
     /// 없는 Windows/Linux 에서는 dead variant 가 되지만 `MiscSubTab::Tastyrc` 와
     /// 동일하게 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+    // 이유: 이 variant 를 push 하는 것이 macOS 전용 분기뿐이다(위).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Display,
     /// macOS 권한(TCC) 상태 표시 + 시스템 설정 바로가기. macOS 전용 — 다른 OS 에는
     /// TCC 라는 개념이 없어 push 하지 않으며, `Display` 와 같은 이유로 variant 만 남긴다.
+    // 이유: `Display` 와 같다 — macOS 전용 분기만 push 한다.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     MacosPermissions,
 }
@@ -150,6 +152,7 @@ pub(crate) enum TerminalSubTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
     Scripts,
+    // 이유: 이 variant 를 push 하는 것이 Windows 전용 분기뿐이다(위 enum 주석).
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
 }
@@ -499,13 +502,13 @@ fn conflict_popup_size(
 ) -> egui::Vec2 {
     use crate::adapters::ui::popup::content_margin;
     let width = (340.0 * zoom).round();
-    let content_w = (width - 2.0 * content_margin()).max(1.0);
+    let content_w = (LogicalPx(width) - content_margin().scaled(2.0)).max(LogicalPx(1.0));
     let galley = ui.fonts(|f| {
         f.layout(
             conflict_message_text(pending, general),
             egui::FontId::proportional(th.font_size_body.value()),
             egui::Color32::WHITE, // 측정 전용 — 색은 높이에 무관
-            content_w,
+            content_w.value(),
         )
     });
     conflict_popup_dims(th, galley.size().y, zoom)
@@ -524,12 +527,12 @@ fn conflict_popup_dims(th: &Theme, label_h: f32, zoom: f32) -> egui::Vec2 {
     let margin = content_margin();
     let height = title_bar_height()
         + margin
-        + label_h
-        + th.spacing_sm.value()
-        + th.item_height_interactive.value()
+        + LogicalPx(label_h)
+        + th.spacing_sm
+        + th.item_height_interactive
         + margin
-        + th.spacing_xs.value();
-    egui::vec2(width, height.round())
+        + th.spacing_xs;
+    egui::vec2(width, height.value().round())
 }
 
 /// Draw settings directly as a full-window panel (for modal windows).
@@ -842,6 +845,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             // Display(Alt/Option/Shift 표시 스타일)는 macOS 전용 — 아이콘 글리프
             // 개념이 없는 Windows/Linux 에서는 push 하지 않는다.
             let cur = ui_state.general_sub_tab;
+            // 이유: `Display` 를 push 하는 분기가 macOS 에만 있어 다른 OS 에선 `mut` 가 남는다(위).
             #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
             let mut items = vec![
                 (GeneralSubTab::General, t("settings.tab.general")),
@@ -990,7 +994,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
         SettingsTab::Misc => {
             // Scripts 는 전 플랫폼·최상단. Tastyrc(빌트인 bashrc 편집)는 Windows 전용.
             let cur = ui_state.misc_sub_tab;
-            // Windows 에서만 push(Tastyrc) 하므로 비-Windows 에선 mut 불필요.
+            // 이유: Windows 에서만 push(Tastyrc) 하므로 비-Windows 에선 mut 불필요.
             #[cfg_attr(not(windows), allow(unused_mut))]
             let mut sections = vec![L2Section {
                 label: t("settings.misc.scripts").to_string(),
@@ -1437,7 +1441,7 @@ fn draw_settings_footer(
 /// HookHandler 탭 draft 를 각 레지스트리에 commit + 디스크 저장까지 수행한다.
 /// 테마 install 은 여기서 하지 않는다. Save → 모달 close 시 `close_active_modal`
 /// 이 `UpdateSettings` 인텐트를 큐잉하고, `cascade_settings_updated`(about_to_wait,
-/// 렌더 밖)가 `install_global_with_zoom` 으로 전역 Theme 를 적용한다. 렌더 클로저는
+/// 렌더 밖)가 `install_global_with_runtime` 으로 전역 Theme 를 적용한다. 렌더 클로저는
 /// `draw_settings_panel` 의 `THEME.read()` guard 를 보유 중이므로, 여기서
 /// `set_theme`(=`THEME.write()`)을 호출하면 std RwLock self-deadlock 으로
 /// hang 한다. install 은 렌더 밖에서만.
@@ -1711,9 +1715,9 @@ mod tab_key_tests {
             line
         );
         // 라벨이 0 높이여도 최소한 타이틀바 + 버튼행 높이 이상을 확보한다(버튼 clip 방지).
-        let floor = title_bar_height() + th.item_height_interactive.value();
+        let floor = title_bar_height() + th.item_height_interactive;
         assert!(
-            conflict_popup_dims(&th, 0.0, 1.0).y >= floor,
+            conflict_popup_dims(&th, 0.0, 1.0).y >= floor.value(),
             "empty-label height must clear title+button floor"
         );
         // 폭은 zoom 을 반영한다(고정 폭 비대칭 제거).

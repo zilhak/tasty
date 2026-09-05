@@ -241,10 +241,11 @@ impl MainView {
 
         let (cols, rows) = terminal.dimensions();
         // Use the actual content rect (after tab bar) instead of the raw pane rect
-        let surface_rect = match self
-            .state
-            .focused_surface_rect(&self.core_state, *terminal_rect)
-        {
+        let surface_rect = match self.state.focused_surface_rect(
+            &self.core_state,
+            *terminal_rect,
+            self.base.gpu.scale_factor(),
+        ) {
             Some(r) => r,
             None => return,
         };
@@ -319,7 +320,11 @@ impl MainView {
         // 참조해야 좌표 변환이 화면과 일치한다(ADR-0049).
         let terminal = engine.visible_terminal(surface_id)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
-        let surface_rect = self.state.focused_surface_rect(engine, *terminal_rect)?;
+        let surface_rect = self.state.focused_surface_rect(
+            engine,
+            *terminal_rect,
+            self.base.gpu.scale_factor(),
+        )?;
         let (cols, rows) = terminal.dimensions();
         let point = selection::pixel_to_grid(
             x,

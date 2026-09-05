@@ -159,6 +159,8 @@ fn encode_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Resu
 /// Save clipboard image data as a PNG file in a temp directory.
 /// Returns the absolute path to the saved file.
 fn save_clipboard_image_as_png(image: &arboard::ImageData<'_>) -> anyhow::Result<String> {
+    // 이유: 디렉터리는 의도된 공유다 — 격리는 파일명이 진다. 안에 쓰는 파일은
+    // `clipboard_image_file_name()` 이 `paste-<millis>.png` 로 매번 다르게 짓는다.
     let dir = std::env::temp_dir().join("tasty-clipboard");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(clipboard_image_file_name());

@@ -79,7 +79,7 @@ fn borderless_for(window: &Window) -> Fullscreen {
 /// 창의 가장자리에서 리사이즈 커서가 살아나고 드래그가 먹는다. 무대 중에는 입력
 /// 게이트가 막아주지만, **무대 없이 fullscreen 인 창**(macOS 신호등)이 가능하므로
 /// 게이트에 기대지 않고 여기서 함께 본다.
-// macOS 는 네이티브 데코레이션이라 tasty 가 가장자리 리사이즈를 직접 다루지 않는다 —
+// 이유: macOS 는 네이티브 데코레이션이라 tasty 가 가장자리 리사이즈를 직접 다루지 않는다 —
 // 호출부 두 곳이 모두 `#[cfg(not(target_os = "macos"))]` 안이라 그 타깃에서는 쓰이지 않는다
 // (`resize_should_yield_to_content` 가 같은 이유로 같은 표기를 쓴다).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -89,6 +89,7 @@ pub(crate) fn window_size_is_locked(window: &Window) -> bool {
 
 /// [`window_size_is_locked`] 의 판정만 떼어낸 것. `Window` 는 실제 winit 창 없이
 /// 만들 수 없어 그대로는 단위 테스트가 안 된다.
+// 이유: 유일한 호출자가 위 `window_size_is_locked` 라 그것이 죽는 macOS 에서 함께 죽는다.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn size_is_locked(maximized: bool, os_fullscreen: bool) -> bool {
     maximized || os_fullscreen
@@ -158,7 +159,7 @@ impl MainView {
     /// 소비자는 `debug.fullscreen.state` 다. 멀티 모니터 실측은 개발 환경에서
     /// 재현할 수 없으므로, 사용자가 이 출력만 보내주면 모니터 타겟팅을 판정할 수
     /// 있게 하는 것이 이 함수의 목적이다.
-    // 그 IPC 가 debug 전용이라 release 빌드에는 호출부가 없다.
+    // 이유: 그 IPC 가 debug 전용이라 release 빌드에는 호출부가 없다.
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub(crate) fn fullscreen_window_report(&self) -> FullscreenWindowReport {
         let size = self.base.winit.inner_size();

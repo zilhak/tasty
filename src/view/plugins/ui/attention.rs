@@ -4,6 +4,7 @@
 
 use crate::i18n::t;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -17,22 +18,34 @@ use crate::theme;
 // 어떤 `ui_scale` 에서도 정수다 — "zoom 1 에서만 0.5 다" 가 아니라 전 배율에서
 // 다르다. 규칙 전문은 `docs/design/systems/theme.md` "스케일 밖 폰트 값".
 //
-// 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다.
+// 토큰이 아니므로 `ui_scale` 줌을 타지 않는다 — 이것도 현행 유지다. 그 대가와
+// 재검토 조건(디자인이 `.5` 스케일을 정식 tier 로 승인하면 발동)은
+// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 에 있다 —
+// 위 문단은 원인이고, 근거·대안·철회 조건은 그 ADR 이 든다.
 
 /// 알림 비어있음 상태의 제목. 스케일 밖(13.5).
-const ATTN_EMPTY_TITLE_SIZE: f32 = 13.5;
+const ATTN_EMPTY_TITLE_SIZE: LogicalPx = LogicalPx(13.5);
 /// 사유 카드 본문. 스케일 밖(12.5).
-const ATTN_REASON_BLURB_SIZE: f32 = 12.5;
+const ATTN_REASON_BLURB_SIZE: LogicalPx = LogicalPx(12.5);
 /// 서명 지문 라벨/값. 스케일 밖(11.5).
-const ATTN_FINGERPRINT_SIZE: f32 = 11.5;
+const ATTN_FINGERPRINT_SIZE: LogicalPx = LogicalPx(11.5);
 /// 항목 행의 사유 라벨. 스케일 밖(10.5) — `font_size_micro`(10)와 0.5 차이라
 /// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const ATTN_REASON_LABEL_SIZE: f32 = 10.5;
+const ATTN_REASON_LABEL_SIZE: LogicalPx = LogicalPx(10.5);
 
 /// DTCG primitive `font-size-12` 를 직접 쓰는 자리. 12px 는 primitive 에는 있지만
 /// **semantic role 이 배정돼 있지 않아** `Theme` 필드가 없다 — 어느 semantic 에
 /// 묶을지가 판단 항목이라 primitive 값을 그대로 이름 붙여 둔다.
-const ATTN_PRIMITIVE_12: f32 = 12.0;
+const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
+
+/// severity 점의 지름. 스케일 밖(7) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고,
+/// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
+/// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
+/// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다.
+/// **같은 7 을 `crates/tasty-ui-widgets/src/status_bar.rs` 의 `DOT_SIZE` 도 쓴다** —
+/// 무관한 두 크레이트가 독립적으로 고른 값이라 드리프트가 아니라 역할일 가능성이 높고,
+/// 그 판단이 서면 둘이 한 토큰으로 모인다.
+const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
@@ -84,7 +97,7 @@ pub(super) fn draw_attention_tab(
     }
 
     egui::SidePanel::left("plugins_attention_list")
-        .exact_width(240.0)
+        .exact_width(th.plugins_side_panel_width().value())
         .resizable(false)
         .show(ctx, |ui| {
             vspace(ui, th.spacing_sm);
@@ -124,12 +137,16 @@ pub(super) fn draw_attention_tab(
                         name_pos + egui::vec2(0.0, 18.0),
                         egui::Align2::LEFT_TOP,
                         t(label_key),
-                        egui::FontId::proportional(ATTN_REASON_LABEL_SIZE),
+                        egui::FontId::proportional(ATTN_REASON_LABEL_SIZE.value()),
                         color,
                     );
                     // 우측 severity dot.
                     let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
-                    ui.painter().circle_filled(dot_center, 3.5, color);
+                    ui.painter().circle_filled(
+                        dot_center,
+                        ATTN_STATUS_DOT_SIZE.value() * 0.5,
+                        color,
+                    );
                     if resp.clicked() {
                         ui_state.attention_selected_id = Some(entry.id.clone());
                     }
@@ -165,14 +182,14 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
     ui.vertical_centered(|ui| {
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_title"))
-                .size(ATTN_EMPTY_TITLE_SIZE)
+                .size(ATTN_EMPTY_TITLE_SIZE.value())
                 .color(egui::Color32::from(th.text_secondary())),
         );
         // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
         vspace(ui, th.spacing_xs);
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_body"))
-                .size(ATTN_PRIMITIVE_12)
+                .size(ATTN_PRIMITIVE_12.value())
                 .color(egui::Color32::from(th.text_muted())),
         );
     });
@@ -212,11 +229,14 @@ fn draw_detail(
         vspace(ui, th.spacing_md);
 
         // 사유 배너 (severity 색 프레임).
+        // 사유 배너의 채움/테두리 짝. 대응 토큰 없음.
+        const REASON_BANNER_FILL_OPACITY: f32 = 0.11;
+        const REASON_BANNER_STROKE_OPACITY: f32 = 0.36;
         egui::Frame::new()
-            .fill(color.gamma_multiply(0.11))
+            .fill(color.gamma_multiply(REASON_BANNER_FILL_OPACITY))
             .stroke(egui::Stroke::new(
                 th.border_width.value(),
-                color.gamma_multiply(0.36),
+                color.gamma_multiply(REASON_BANNER_STROKE_OPACITY),
             ))
             .corner_radius(th.corner_radius.value())
             .inner_margin(margin_all(th.spacing_md))
@@ -230,7 +250,7 @@ fn draw_detail(
                 vspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t(blurb_key))
-                        .size(ATTN_REASON_BLURB_SIZE)
+                        .size(ATTN_REASON_BLURB_SIZE.value())
                         .color(egui::Color32::from(th.text_secondary())),
                 );
             });
@@ -267,7 +287,11 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                             .strong()
                             .color(egui::Color32::from(th.accent_success())),
                     );
-                    ui.label(egui::RichText::new(p).monospace().size(ATTN_PRIMITIVE_12));
+                    ui.label(
+                        egui::RichText::new(p)
+                            .monospace()
+                            .size(ATTN_PRIMITIVE_12.value()),
+                    );
                     ui.label(
                         egui::RichText::new(t("plugins.attn_newly_requested"))
                             .size(th.font_size_caption.value())
@@ -286,7 +310,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                     ui.label(
                         egui::RichText::new(p)
                             .monospace()
-                            .size(ATTN_PRIMITIVE_12)
+                            .size(ATTN_PRIMITIVE_12.value())
                             .strikethrough()
                             .color(egui::Color32::from(th.text_muted())),
                     );
@@ -306,13 +330,13 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(t("plugins.attn_fingerprint"))
-                            .size(ATTN_FINGERPRINT_SIZE)
+                            .size(ATTN_FINGERPRINT_SIZE.value())
                             .color(egui::Color32::from(th.text_secondary())),
                     );
                     ui.label(
                         egui::RichText::new(fp)
                             .monospace()
-                            .size(ATTN_FINGERPRINT_SIZE)
+                            .size(ATTN_FINGERPRINT_SIZE.value())
                             .color(egui::Color32::from(th.text_muted())),
                     );
                 });
@@ -335,7 +359,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                         ui.label(
                             egui::RichText::new(detail)
                                 .monospace()
-                                .size(ATTN_PRIMITIVE_12)
+                                .size(ATTN_PRIMITIVE_12.value())
                                 .color(egui::Color32::from(th.accent_danger())),
                         );
                     });
@@ -359,15 +383,19 @@ fn draw_action_bar(
             "plugins.attn_needs_review"
         };
         ui.painter().circle_filled(
-            ui.cursor().min + egui::vec2(3.5, ui.text_style_height(&egui::TextStyle::Body) / 2.0),
-            3.5,
+            ui.cursor().min
+                + egui::vec2(
+                    ATTN_STATUS_DOT_SIZE.value() * 0.5,
+                    ui.text_style_height(&egui::TextStyle::Body) / 2.0,
+                ),
+            ATTN_STATUS_DOT_SIZE.value() * 0.5,
             color,
         );
         // 디자인 값 11px 은 off-grid — 4px 그리드의 가장 가까운 값인 spacing_md(12)로 snap.
         hspace(ui, th.spacing_md);
         ui.label(
             egui::RichText::new(t(status_key))
-                .size(ATTN_PRIMITIVE_12)
+                .size(ATTN_PRIMITIVE_12.value())
                 .color(color),
         );
 

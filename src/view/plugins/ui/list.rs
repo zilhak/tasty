@@ -37,7 +37,7 @@ pub(super) fn draw_list_tab(
         .collect();
 
     egui::SidePanel::left("plugins_list")
-        .exact_width(240.0)
+        .exact_width(th.plugins_side_panel_width().value())
         .resizable(false)
         .show(ctx, |ui| {
             vspace(ui, th.spacing_sm);
@@ -113,10 +113,11 @@ pub(super) fn draw_list_tab(
                     // 끈 plugin 은 정상 종료이므로 error 아님).
                     if entry.health_error && entry.enabled {
                         let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
-                        ui.painter().circle_filled(
+                        tasty_ui_widgets::paint_badge_dot(
+                            ui.painter(),
+                            &th,
                             dot_center,
-                            4.0,
-                            egui::Color32::from(th.accent_danger()),
+                            tasty_ui_widgets::BadgeVariant::Danger,
                         );
                     }
                     if resp.clicked() {
@@ -169,11 +170,14 @@ pub(super) fn draw_list_tab(
             // 정상 종료이므로 error 가 아님).
             if entry.health_error && entry.enabled {
                 let danger = egui::Color32::from(th.accent_danger());
+                // error 박스의 채움/테두리 짝. 대응 토큰 없음.
+                const ERROR_BOX_FILL_OPACITY: f32 = 0.12;
+                const ERROR_BOX_STROKE_OPACITY: f32 = 0.35;
                 egui::Frame::new()
-                    .fill(danger.gamma_multiply(0.12))
+                    .fill(danger.gamma_multiply(ERROR_BOX_FILL_OPACITY))
                     .stroke(egui::Stroke::new(
                         th.border_width.value(),
-                        danger.gamma_multiply(0.35),
+                        danger.gamma_multiply(ERROR_BOX_STROKE_OPACITY),
                     ))
                     .corner_radius(th.corner_radius.value())
                     .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))

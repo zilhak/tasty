@@ -93,7 +93,7 @@ impl View for QuitView {
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             egui::TopBottomPanel::bottom("quit_buttons")
-                .exact_height(52.0)
+                .exact_height(th.item_height_interactive.value() + th.spacing_md.value() * 2.0)
                 .show(ctx, |ui| {
                     vspace(ui, th.spacing_md);
                     let available_width = ui.available_width() - 32.0;
@@ -104,7 +104,7 @@ impl View for QuitView {
                         hspace(ui, th.spacing_lg);
                         if ui
                             .add_sized(
-                                [button_width, 28.0],
+                                [button_width, th.item_height_interactive.value()],
                                 egui::Button::new(t("quit_modal.quit_button")),
                             )
                             .clicked()
@@ -114,7 +114,7 @@ impl View for QuitView {
                         hspace(ui, th.spacing_sm);
                         if ui
                             .add_sized(
-                                [button_width, 28.0],
+                                [button_width, th.item_height_interactive.value()],
                                 egui::Button::new(t("quit_modal.minimize_button")),
                             )
                             .clicked()

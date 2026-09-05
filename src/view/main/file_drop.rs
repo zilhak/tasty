@@ -71,14 +71,15 @@ impl MainView {
             return;
         }
         {
+            let scale_factor = self.base.gpu.scale_factor();
             let engine = &mut self.core_state;
             // best-effort focus 이동. drop 좌표에 pane/surface 가 없으면 현재 focus 유지.
-            let _pane_focus = self
-                .state
-                .focus_pane_at_position(engine, x, y, terminal_rect);
-            let _surface_focus = self
-                .state
-                .focus_surface_at_position(engine, x, y, terminal_rect);
+            let _pane_focus =
+                self.state
+                    .focus_pane_at_position(engine, x, y, terminal_rect, scale_factor);
+            let _surface_focus =
+                self.state
+                    .focus_surface_at_position(engine, x, y, terminal_rect, scale_factor);
         }
         for path in drops {
             self.state.dispatch_intent(

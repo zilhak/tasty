@@ -13,9 +13,6 @@
 //! 그 외(`MainView`/`PresetView`)는 `View` + `sealed::Sealed` 를 직접 구현한다
 //! (trait object dispatch 실사용이 없던 `TerminalHostView`/`EditorView` marker
 //! supertrait 및 `Modality`/`.modality()`/`.as_modal()` 스캐폴딩은 제거됨).
-//!
-//! D.3.E.3.c — 옛 `src/adapters/ui/window.rs::Window` trait 가 본 파일로 이동.
-//! 구현체 모듈 (main/settings/quit/preset/plugins) 의 위치 이동은 D.3.E.3.d.
 
 /// Sealed 모듈 — 외부에서 `View` 를 직접 구현하지 못하게 차단한다.
 /// 모달 계열은 `ModalView` supertrait 를 경유하고, 그 외 구현체는 `View` +

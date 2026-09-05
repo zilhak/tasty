@@ -17,10 +17,20 @@
 //! 프로세스에서 돌리므로 `OnceLock` 기반 전역 초기화는 테스트 실행 순서에 따라
 //! 다른 언어를 덮어써 버릴 수 있어 재현성이 없다.
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::HashMap;
 
-/// entries.rs 의 `(?)` 아이콘 슬롯 예약폭(HELP_HINT_GAP 4px + icon_glyph_size_sm 14px).
-/// entries.rs 자체 상수와 값은 같지만 이 파일은 그쪽 private 상수에 의존하지 않는다.
+/// entries.rs 의 `(?)` 아이콘 슬롯 예약폭 — `Theme.spacing_xs`(4) + `icon_glyph_size_sm`(14).
+///
+/// **배율 1.0 에서 언 사본이다.** entries.rs 는 두 값을 모두 `Theme` 에서 읽으므로
+/// 배율이 오르면 그쪽 슬롯은 넓어지고 여기는 안 넓어진다. 이 파일이 재는 것은 라벨 컬럼
+/// 폭의 **상대 비교**(어느 라벨이 더 긴가)라 배율이 곱해져도 순서가 안 바뀌어 지금은
+/// 하중을 받지 않는다 — 그래서 사본을 두되 언 사본이라는 것을 적어 둔다.
 const HELP_HINT_GAP: f32 = 4.0;
 const ICON_SLOT: f32 = 14.0;
 
