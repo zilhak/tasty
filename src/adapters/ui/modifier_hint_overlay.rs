@@ -648,7 +648,7 @@ fn draw_content(
 ///
 /// alt/option 단독은 egui 가 이미 세로로 처리하므로, 이중 스크롤을 피하려 zoom/가로로 전용되는
 /// modifier(Ctrl·Cmd·Shift) 가 있을 때만 값을 낸다.
-fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f32 {
+pub(crate) fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f32 {
     let pointer_over = ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
     if !pointer_over {
         return 0.0;

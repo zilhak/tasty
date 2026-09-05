@@ -179,3 +179,89 @@ mod tests {
         assert_eq!(converted, LogicalPx(50.0));
     }
 }
+
+/// 노치 거리가 **자리마다 재도 같은가** — ADR-0130 의 결정을 그 자리에서 확인한다.
+///
+/// 위의 단위 테스트들은 [`wheel_delta_to_points`] 의 산술만 본다: 인자로 준 노치를
+/// 따르는가. 그것은 **호출 자리가 그 노치를 어디서 얻는지는 말하지 않는다.** 상수를
+/// 다시 박아도 그 테스트들은 초록이다 — 자기가 인자를 주기 때문이다.
+///
+/// 그래서 여기서는 인자를 주지 않는다. egui 컨텍스트 하나에 **기본값도 egui 기본값도
+/// 아닌 값**을 심고, 각 경로가 그 컨텍스트에서 값을 실제로 집어 오는지를 잰다.
+#[cfg(test)]
+mod one_notch_per_context {
+    use super::*;
+    use egui::{Event, Modifiers, Pos2, RawInput, Rect, pos2, vec2};
+
+    /// 기본값 50 도 egui native 기본값 40 도 아닌 값. 어느 쪽을 상수로 박아도
+    /// 이 수와 어긋나므로 그 자리가 드러난다.
+    const NOTCH: f32 = 77.0;
+
+    fn wheel_input(modifiers: Modifiers, pointer: Option<Pos2>) -> RawInput {
+        let mut events = Vec::new();
+        if let Some(p) = pointer {
+            events.push(Event::PointerMoved(p));
+        }
+        events.push(Event::MouseWheel {
+            unit: MouseWheelUnit::Line,
+            delta: vec2(0.0, 1.0),
+            modifiers,
+        });
+        RawInput {
+            events,
+            modifiers,
+            ..Default::default()
+        }
+    }
+
+    /// egui 자신이 host `ScrollArea` 를 움직이는 거리 = 심어 둔 옵션값.
+    /// 이 줄이 기준점이다 — 아래 두 경로는 여기에 맞춰야 한다.
+    #[test]
+    fn egui_moves_a_host_scroll_area_by_the_option_value() {
+        let ctx = egui::Context::default();
+        ctx.options_mut(|o| o.line_scroll_speed = NOTCH);
+        let mut seen = f32::NAN;
+        // `run` 의 FullOutput 은 그리지 않으므로 쓰지 않는다 — 여기서 재는 것은
+        // 그 프레임 동안 각 경로가 컨텍스트에서 읽어 낸 값이다.
+        let _frame = ctx.run(wheel_input(Modifiers::NONE, None), |ctx| {
+            seen = ctx.input(|i| i.raw_scroll_delta.y);
+        });
+        assert_eq!(seen, NOTCH, "egui 가 옵션이 아닌 다른 값으로 스크롤한다");
+    }
+
+    /// plugin 표면(surface · popup · banner)이 와이어에 싣는 거리.
+    #[test]
+    fn the_wire_conversion_takes_its_notch_from_the_same_context() {
+        let ctx = egui::Context::default();
+        ctx.options_mut(|o| o.line_scroll_speed = NOTCH);
+        assert_eq!(line_scroll(&ctx), LogicalPx(NOTCH));
+        let (_, dy) = wheel_delta_to_points(
+            MouseWheelUnit::Line,
+            vec2(0.0, 1.0),
+            LogicalPx(800.0),
+            line_scroll(&ctx),
+        );
+        assert_eq!(
+            dy,
+            LogicalPx(NOTCH),
+            "plugin 표면이 host 위젯과 다른 거리를 받는다"
+        );
+    }
+
+    /// modifier hint overlay — egui 가 세로 휠을 zoom/가로로 전용하는 동안 대신 읽는 자리.
+    #[test]
+    fn the_modifier_hint_overlay_takes_its_notch_from_the_same_context() {
+        let ctx = egui::Context::default();
+        ctx.options_mut(|o| o.line_scroll_speed = NOTCH);
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
+        let mods = Modifiers {
+            ctrl: true,
+            ..Modifiers::NONE
+        };
+        let mut seen = f32::NAN;
+        let _frame = ctx.run(wheel_input(mods, Some(pos2(10.0, 10.0))), |ctx| {
+            seen = crate::adapters::ui::modifier_hint_overlay::modifier_free_wheel_y(ctx, rect);
+        });
+        assert_eq!(seen, NOTCH, "overlay 가 다른 거리로 스크롤한다");
+    }
+}
