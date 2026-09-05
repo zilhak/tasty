@@ -48,10 +48,10 @@
 //! 것이 새로 쓰는 것보다 쌌다. 남긴다고 적은 두 형태는 이제 둘 다 잡는다.
 //!
 //! - **미탐이었던 것** — 문장 범위의 `//` 가 주석인지 문자열 내용인지 안 봤다.
-//!   `let _ = get("http://x");` 가 사유 없이 통과했다. 이제 [`rust_mask::mask_literals`]
+//!   `let _ = get("http://x");` 가 사유 없이 통과했다. 이제 [`tasty_doc_guards::source_text::mask_literals`]
 //!   가 문자열만 지운 사본에서 `//` 를 찾으므로 이 형태가 잡힌다.
 //! - **오탐이었던 것** — 문자열 리터럴 안의 금지 형태를 코드로 봤다. 한 lane 이 실제로
-//!   이것 때문에 커밋을 막혀 스니펫을 바꿔 우회했다. 이제 [`rust_mask::mask_non_code`]
+//!   이것 때문에 커밋을 막혀 스니펫을 바꿔 우회했다. 이제 [`tasty_doc_guards::source_text::mask_non_code`]
 //!   를 거친 사본에서만 찾는다.
 //!
 //! 두 방향 각각에 회귀 테스트가 있고([`helper_tests`]), 마스커를 무효화하는 변이가
@@ -69,9 +69,6 @@
 //! [`docs/dev-guide/error-handling.md`](../docs/dev-guide/error-handling.md) 참조 —
 //! 값을 버린 것이 검증 자체를 무력화한 경우가 있었고, 그 자리는 `tests/` 아래라
 //! 이 가드가 보지 않는다.
-
-/// 어휘 마스킹은 두 층이 공유한다 — 사본이 둘이면 갈린다.
-mod rust_mask;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -148,7 +145,7 @@ fn is_test_path(rel: &str) -> bool {
     rel.split('/').any(|seg| TEST_DIRS.contains(&seg))
 }
 
-/// `let _ =` 가 코드에 나타나는가. **인자는 [`rust_mask::mask_non_code`] 를 거친 줄**이라
+/// `let _ =` 가 코드에 나타나는가. **인자는 [`tasty_doc_guards::source_text::mask_non_code`] 를 거친 줄**이라
 /// 주석·문자열·문자 리터럴은 이미 공백이다 — 여기서 다시 자르지 않는다.
 ///
 /// 잘라내기를 없앤 것이 곧 거짓 음성 하나를 없앤 것이다: 예전에는 첫 `//` 앞까지만
@@ -259,8 +256,8 @@ fn violations_in(text: &str) -> Vec<(usize, String)> {
     // 두 판정에 서로 다른 마스킹이 필요하다 — 모듈 doc 참조.
     //   "코드에 `let _ =` 가 있나"  -> 주석·문자열 다 지운 사본
     //   "사유 주석이 달려 있나"     -> 문자열만 지우고 주석은 남긴 사본
-    let code_src = rust_mask::mask_non_code(text);
-    let lit_src = rust_mask::mask_literals(text);
+    let code_src = tasty_doc_guards::source_text::mask_non_code(text);
+    let lit_src = tasty_doc_guards::source_text::mask_literals(text);
     let code: Vec<&str> = code_src.lines().collect();
     let lit: Vec<&str> = lit_src.lines().collect();
     let in_test = test_regions(&code);

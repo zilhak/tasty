@@ -47,11 +47,7 @@
 //!   가드의 값보다 비싸다. 대신 "모듈 이름 중 품는 것이 없다" 를 별도로 단정한다 —
 //!   있으면 사거리를 셀 수 없으므로 통과가 아니라 **실패**로 다룬다. 상한을 닫는 쪽이다.
 
-/// 어휘 마스킹은 공용 모듈이 한 벌로 갖는다 — 사본이 둘이면 갈리고, 갈린 쪽은 조용하다.
-/// 이 파일이 아래에서 합성 픽스처를 문자열로 들고 있으므로, 마스킹이 없으면 **가드가 자기
-/// 픽스처를 진짜 테스트로 센다.**
-mod rust_mask;
-use rust_mask::mask_non_code;
+use tasty_doc_guards::source_text::mask_non_code;
 
 use std::fs;
 use std::path::{Path, PathBuf};

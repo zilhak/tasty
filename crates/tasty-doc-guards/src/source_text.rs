@@ -9,14 +9,37 @@ use std::path::PathBuf;
 
 /// 주석·문자열·문자 리터럴을 공백으로 덮은 사본을 만든다. 줄바꿈은 그대로 두므로
 /// 결과 문자열의 줄 번호는 원본과 같다. 라이프타임 틱(`'a`)은 문자 리터럴과 구분한다.
+///
+/// "여기 **코드**에 X 가 있나" 를 묻는 가드가 쓴다.
 pub fn mask_non_code(src: &str) -> String {
+    mask(src, true)
+}
+
+/// 문자열·문자 리터럴만 덮고 **주석은 원문 그대로 남긴** 사본.
+///
+/// "여기 **주석**이 달려 있나" 를 묻는 가드가 쓴다. 두 물음은 서로의 답을 지우므로
+/// 한 함수로 못 합친다 — 주석을 덮으면 주석의 유무를 못 묻고, 안 덮으면 주석 속 코드
+/// 형태가 코드로 세어진다. 판정기를 하나로 모으는 것은 **원인**을 모으는 것이지 함수
+/// 개수를 줄이는 것이 아니다.
+///
+/// 이 결과에 `//` 가 있으면 진짜 주석이다. 원문에는 있는데 여기 없으면 그 `//` 는
+/// 문자열 안에 있었다는 뜻이다 — URL 이 대표적이다.
+pub fn mask_literals(src: &str) -> String {
+    mask(src, false)
+}
+
+fn mask(src: &str, blank_comments: bool) -> String {
     let chars: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
     let mut i = 0usize;
     while i < chars.len() {
         i = match chars[i] {
-            '/' if chars.get(i + 1) == Some(&'/') => mask_line_comment(&chars, i, &mut out),
-            '/' if chars.get(i + 1) == Some(&'*') => mask_block_comment(&chars, i, &mut out),
+            '/' if chars.get(i + 1) == Some(&'/') => {
+                mask_line_comment(&chars, i, &mut out, blank_comments)
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                mask_block_comment(&chars, i, &mut out, blank_comments)
+            }
             'r' | 'b' if raw_string_hashes(&chars, i).is_some() => {
                 mask_raw_string(&chars, i, &mut out)
             }
@@ -36,29 +59,38 @@ fn blank(out: &mut String, c: char) {
     out.push(if c == '\n' { '\n' } else { ' ' });
 }
 
-fn mask_line_comment(chars: &[char], mut i: usize, out: &mut String) -> usize {
+fn mask_line_comment(chars: &[char], mut i: usize, out: &mut String, blank_it: bool) -> usize {
     while i < chars.len() && chars[i] != '\n' {
-        blank(out, chars[i]);
+        emit(out, chars[i], blank_it);
         i += 1;
     }
     i
 }
 
-fn mask_block_comment(chars: &[char], mut i: usize, out: &mut String) -> usize {
+/// 주석 구간의 한 글자 — 덮을지 남길지가 호출자의 선택이다.
+fn emit(out: &mut String, c: char, blank_it: bool) {
+    if blank_it {
+        blank(out, c);
+    } else {
+        out.push(c);
+    }
+}
+
+fn mask_block_comment(chars: &[char], mut i: usize, out: &mut String, blank_it: bool) -> usize {
     let mut depth = 0usize;
     while i < chars.len() {
         let opening = chars[i] == '/' && chars.get(i + 1) == Some(&'*');
         let closing = chars[i] == '*' && chars.get(i + 1) == Some(&'/');
         if opening || closing {
             depth = if opening { depth + 1 } else { depth - 1 };
-            blank(out, chars[i]);
-            blank(out, chars[i + 1]);
+            emit(out, chars[i], blank_it);
+            emit(out, chars[i + 1], blank_it);
             i += 2;
             if closing && depth == 0 {
                 break;
             }
         } else {
-            blank(out, chars[i]);
+            emit(out, chars[i], blank_it);
             i += 1;
         }
     }
