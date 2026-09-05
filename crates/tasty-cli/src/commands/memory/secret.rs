@@ -55,6 +55,15 @@ pub enum MemorySecretCommands {
         prefix: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Only entries with `updated_at >= since` (unix ms).
+        #[arg(long)]
+        since: Option<i64>,
+        /// Only entries with `updated_at < until` (unix ms).
+        #[arg(long)]
+        until: Option<i64>,
+        /// Skip the first N matching entries (use with --limit for pagination).
+        #[arg(long)]
+        offset: Option<usize>,
     },
     /// Count secrets in a scope.
     Count {

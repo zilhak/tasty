@@ -86,6 +86,9 @@ pub(super) fn memory_secret_command_to_method_params(
             scope,
             prefix,
             limit,
+            since,
+            until,
+            offset,
         } => {
             let scope_token = require_scope(scope);
             let mut p = serde_json::json!({ "scope": scope_token });
@@ -94,6 +97,15 @@ pub(super) fn memory_secret_command_to_method_params(
             }
             if let Some(l) = limit {
                 p["limit"] = serde_json::json!(l);
+            }
+            if let Some(s) = since {
+                p["since"] = serde_json::json!(s);
+            }
+            if let Some(u) = until {
+                p["until"] = serde_json::json!(u);
+            }
+            if let Some(o) = offset {
+                p["offset"] = serde_json::json!(o);
             }
             ("memory.secret.list", p)
         }
