@@ -104,10 +104,9 @@ impl FileFormatRegistry {
         // 단 user 가 host 의 예약 detector ($directory) 를 patch 하는 시나리오는 있을 수 있어,
         // 이미 등록된 id 면 허용.
         let already_exists = self
-            .inner
-            .read()
-            .map(|g| g.contributions.contains_key(&DetectorId(decl.id.clone())))
-            .unwrap_or(false);
+            .lock_read()
+            .contributions
+            .contains_key(&DetectorId(decl.id.clone()));
         let from_restricted = !already_exists;
         let warnings = crate::file::format::config::validate_detector_decl(&decl, from_restricted)?;
         for w in warnings {
