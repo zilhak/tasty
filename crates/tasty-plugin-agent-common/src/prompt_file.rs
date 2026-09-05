@@ -1,9 +1,16 @@
 //! 자식 CLI 에 넘길 prompt 를 임시파일로 쓰고, 오래된 것을 청소한다.
 //!
-//! prompt 는 `$(cat '<path>')` 로 기동 명령에 치환되어 들어간다. 임시파일 **이름의
-//! prefix 는 plugin 마다 다르다** — 같은 `surface_id` 로 claude 와 codex 를 동시에
-//! spawn 할 수 있어 파일명이 겹치면 서로의 prompt 를 읽는다. 그래서 prefix 는 상수가
-//! 아니라 인자다.
+//! prompt 는 `$(cat '<path>')` 로 기동 명령에 치환되어 들어간다. 이름이 겹치면 자식 셸이
+//! **남의 prompt 를 읽거나 빈 문자열을 읽는다**([`write`] 가 지우고 다시 만들기 때문에,
+//! 그 사이에 치환이 끼면 빈 파일을 읽는다). 그래서 이름은 두 축으로 갈라져 있다.
+//!
+//! * **plugin 축** — prefix 가 plugin 마다 다르다. 같은 `surface_id` 로 claude 와 codex 를
+//!   동시에 spawn 할 수 있다. 그래서 prefix 는 상수가 아니라 인자다.
+//! * **인스턴스 축** — 이름에 이 프로세스의 pid 가 들어간다. `surface_id` 공간은
+//!   **인스턴스마다 독립이고 매 실행 1 부터 재발급된다**(`IdGenerator::next_surface`).
+//!   즉 한 머신에 tasty 를 두 벌 띄우면 **같은 번호의 surface 가 동시에 산다** — 이 축을
+//!   안 가르면 두 인스턴스의 같은 plugin 이 같은 경로를 쓴다. plugin 은 인스턴스마다
+//!   별도 프로세스라 pid 가 그 축을 정확히 가른다.
 
 use std::path::{Path, PathBuf};
 
@@ -17,9 +24,20 @@ pub const SUFFIX: &str = ".txt";
 /// 배제한다.
 pub const TTL: std::time::Duration = std::time::Duration::from_secs(600);
 
-/// `dir` 안에서 이 surface 가 쓸 prompt 파일 경로.
+/// `dir` 안에서 이 surface 가 쓸 prompt 파일 경로 — `{prefix}{pid}-{surface_id}{SUFFIX}`.
+///
+/// pid 를 **인자가 아니라 여기서 읽는다.** 소비자가 넘기게 하면 "무엇을 넘길지" 가 호출부
+/// 마다 갈릴 수 있는데, 이 값이 갈라야 하는 것은 *이 프로세스* 하나로 정해져 있다.
+/// 같은 프로세스 안에서는 결정적이라 테스트가 프로덕션 헬퍼로 경로를 되짚을 수 있다.
+///
+/// pid 를 prefix **뒤**에 넣는 것이 [`sweep_stale`] 의 전이 처리를 겸한다 — 그 스윕은
+/// prefix/suffix 로 매칭하므로 pid 가 없던 옛 이름(`{prefix}{surface_id}{SUFFIX}`)도
+/// 그대로 걸린다. 이름 규칙을 바꿔도 옛 파일이 영영 남지 않는다.
 pub fn path_for(dir: &Path, prefix: &str, surface_id: u32) -> PathBuf {
-    dir.join(format!("{prefix}{surface_id}{SUFFIX}"))
+    dir.join(format!(
+        "{prefix}{}-{surface_id}{SUFFIX}",
+        std::process::id()
+    ))
 }
 
 /// `path` 를 owner-only(0600) 권한으로 새로 만들어 `content` 를 쓴다. 같은 경로에
@@ -52,6 +70,15 @@ pub fn write(path: &Path, content: &str) -> std::io::Result<()> {
 
 /// `dir` 안에서 `prefix`/[`SUFFIX`] 패턴에 매칭하고 [`TTL`] 보다 오래된(mtime 기준)
 /// 파일을 best-effort 로 지운다 — 실패해도 기동을 막지 않는다.
+///
+/// **판정은 나이 하나다 — 이름 안의 pid 를 살아 있는지 물어보지 않는다.** 그 판정이
+/// 가능하긴 하다([`path_for`] 가 pid 를 이름에 남기므로) 하지만 값이 없다: 죽은
+/// 프로세스가 남긴 파일도 [`TTL`] 안에 어차피 지워지고, 이득은 그 10 분을 앞당기는 것
+/// 뿐이다. 반대편 비용은 크다 — 프로세스 생존 확인은 플랫폼마다 다른 경로를 타고
+/// (`/proc` 은 리눅스에만 있다) 이 크레이트에 그런 의존을 새로 들이게 된다. 이 모듈이
+/// 프로세스를 만지지 않는 상태로 남는 편이 낫다.
+///
+/// pid 가 없던 옛 이름도 이 패턴에 걸린다 — [`path_for`] 의 pid 위치 참조.
 pub fn sweep_stale(dir: &Path, prefix: &str) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -141,6 +168,38 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600, "got mode {mode:o}");
         }
+    }
+
+    /// **경로에 이 프로세스의 pid 가 들어간다.** 이것이 인스턴스 축을 가르는 유일한
+    /// 수단이다 — `surface_id` 는 인스턴스마다 1 부터 재발급되므로 두 인스턴스에 같은
+    /// 번호가 동시에 산다. 이 단언이 죽으면 두 인스턴스가 같은 prompt 파일을 쓴다.
+    #[test]
+    fn the_path_carries_this_process_id() {
+        let name = path_for(Path::new("/tmp"), PREFIX, 7)
+            .file_name()
+            .expect("file name")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            name,
+            format!("{PREFIX}{}-7{SUFFIX}", std::process::id()),
+            "이름 규칙이 바뀌었다"
+        );
+    }
+
+    /// **pid 가 없던 옛 이름도 스윕에 걸린다.** 이름 규칙을 바꾸면 이전 버전이 남긴
+    /// 파일이 새 패턴에 안 걸려 영영 남을 수 있다 — pid 를 prefix 뒤에 넣은 것이 그것을
+    /// 막는다. prefix 앞에 넣거나 suffix 를 바꾸면 이 단언이 죽는다.
+    #[test]
+    fn sweep_still_catches_the_name_shape_that_had_no_pid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join(format!("{PREFIX}7{SUFFIX}"));
+        std::fs::write(&legacy, "x").unwrap();
+        age_back(&legacy);
+
+        sweep_stale(tmp.path(), PREFIX);
+
+        assert!(!legacy.exists(), "pid 없던 옛 이름이 안 지워졌다");
     }
 
     #[test]

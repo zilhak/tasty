@@ -163,7 +163,7 @@ fn optional_str(params: &Value, key: &str) -> Option<String> {
 /// 프롬프트가 자동화 흐름에서 자식을 영구히 멈추게 하는 문제
 /// (docs/plugins/codex/index.md 의 승인/샌드박스 정책 플래그 절 참조)의 해결책.
 /// prompt 임시파일 이름 prefix. 청소 스윕(`prompt_file::sweep_stale`)이 같은 패턴으로
-/// 자기 파일만 매칭하도록 상수로 뽑는다. claude 쪽(`tasty-prompt-{surface_id}.txt`)과
+/// 자기 파일만 매칭하도록 상수로 뽑는다. claude 쪽(`tasty-prompt-` prefix)과
 /// 파일명이 겹치지 않도록 codex 전용 prefix 를 쓴다 — 두 plugin 이 같은 surface_id 로
 /// 동시에 다른 자식(claude/codex)을 spawn 할 수 있다. suffix·TTL·쓰기·스윕은
 /// `tasty-plugin-agent-common` 이 갖고, **prefix 만** 여기 남는다.
