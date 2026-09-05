@@ -129,7 +129,7 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-gallery/",
-        98,
+        94,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다. \
          한 항목이 아니다: 갈래는 `the_gallery_share_is_one_question_or_it_is_not` 가 든다",
     ),
@@ -471,7 +471,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (22, 54, 1, 21),
+        (22, 54, 1, 17),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );

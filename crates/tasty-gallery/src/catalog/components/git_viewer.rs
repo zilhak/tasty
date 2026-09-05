@@ -296,8 +296,8 @@ fn wt_row(
     let pad_x = theme.spacing_md;
     let pad_y = theme.spacing_sm;
     let gap = theme.spacing_xs;
-    let l1_h = theme.font_size_term_sm + LogicalPx(4.0);
-    let l2_h = theme.font_size_caption + LogicalPx(4.0);
+    let l1_h = theme.font_size_term_sm + gap;
+    let l2_h = theme.font_size_caption + gap;
     let h = pad_y.scaled(2.0) + l1_h + gap + l2_h;
     let rect = egui::Rect::from_min_size(
         egui::pos2(area.left(), y.value()),
