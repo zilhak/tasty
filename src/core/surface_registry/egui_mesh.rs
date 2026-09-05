@@ -161,10 +161,17 @@ fn build_and_register_egui_mesh_kind_def(
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let ms = s.as_any().downcast_ref::<EguiMeshSurface>()?;
-            Some(serde_json::json!({
-                "display_name": ms.display_name,
-                "file": ms.file,
-            }))
+            let mut obj = serde_json::Map::new();
+            obj.insert("display_name".into(), serde_json::json!(ms.display_name));
+            // file 이 없으면 키 자체를 뺀다(null 을 싣지 않는다). preset 은 TOML 로
+            // 저장하는데 TOML 은 null 을 표현하지 못해, file=null 을 실으면 이 surface 가
+            // 든 pane 의 preset capture 전체가 "unsupported unit type" 으로 깨진다
+            // (layout 은 JSON 이라 담겨서 이 결함이 preset 에서만 드러났다). markdown/html
+            // snapshot 도 값이 없으면 키를 빼는 같은 관례를 쓴다.
+            if let Some(file) = &ms.file {
+                obj.insert("file".into(), serde_json::json!(file));
+            }
+            Some(serde_json::Value::Object(obj))
         }),
         preset_fields: crate::core::surface_registry::PresetFieldSpec::from_decls(
             &decl.preset_fields,
@@ -292,6 +299,38 @@ mod tests {
         let restored = (def.restore)(5, &snap).unwrap();
         assert_eq!(restored.kind(), "mesh_demo");
         assert_eq!(restored.display_name(), "Readme");
+    }
+
+    #[test]
+    fn snapshot_omits_file_key_when_file_absent() {
+        // preset 은 TOML 로 저장하는데 TOML 은 null 을 표현하지 못한다 — file 없는
+        // egui-mesh surface 의 snapshot 이 file:null 을 실으면 그 surface 가 든 pane 의
+        // preset capture 가 통째로 "unsupported unit type" 으로 깨진다(layout 은 JSON 이라
+        // 담겨서 이 결함이 preset 에서만 드러났다). 값이 없으면 키 자체를 뺀다.
+        let reg = SurfaceKindRegistry::new();
+        assert!(register_egui_mesh_kind(
+            &reg,
+            "com.tasty.mesh-demo",
+            &decl("mesh_demo"),
+            HOST_API_VERSION
+        ));
+        let def = reg.get("mesh_demo").unwrap();
+        // file 없이 생성 → snapshot 에 file 키가 아예 없어야 한다(null 아님).
+        let s = (def.create)(7, None, &json!({ "display_name": "Demo" })).unwrap();
+        let snap = (def.snapshot)(s.as_ref()).unwrap();
+        assert!(
+            snap.get("file").is_none(),
+            "file 없으면 snapshot 에 file 키가 없어야 한다(preset TOML 은 null 불가): {snap}"
+        );
+        // file 이 있으면 그대로 실린다.
+        let s2 = (def.create)(
+            8,
+            None,
+            &json!({ "display_name": "Doc", "file": "/tmp/a.png" }),
+        )
+        .unwrap();
+        let snap2 = (def.snapshot)(s2.as_ref()).unwrap();
+        assert_eq!(snap2["file"], "/tmp/a.png");
     }
 
     #[test]
