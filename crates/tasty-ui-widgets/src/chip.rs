@@ -63,6 +63,11 @@ pub fn tag(
     variant: TagVariant,
     dot: bool,
 ) -> egui::Response {
+    // 태그 테두리/채움은 accent 를 그대로 쓰지 않고 낮춘 톤이다. 대응 component
+    // 토큰이 없어 값을 여기 이름으로 둔다 — 어느 토큰으로 수렴할지는 디자인 판단.
+    const TAG_BORDER_OPACITY: f32 = 0.4;
+    const TAG_REMOTE_FILL_OPACITY: f32 = 0.16;
+    const TAG_REMOTE_BORDER_OPACITY: f32 = 0.45;
     let (fill, border, fg) = match variant {
         // Default(외곽선 chip)만 `tag-*` component 색 대응. 나머지 상태 변형(accent
         // 계열)은 대응 component 토큰이 없어 semantic 유지.
@@ -83,27 +88,55 @@ pub fn tag(
         ),
         TagVariant::Info => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_info().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_info()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_info().to_egui(),
         ),
         TagVariant::Remote => (
-            theme.accent_remote().to_egui().gamma_multiply(0.16),
-            Some(theme.accent_remote().to_egui().gamma_multiply(0.45)),
+            theme
+                .accent_remote()
+                .to_egui()
+                .gamma_multiply(TAG_REMOTE_FILL_OPACITY),
+            Some(
+                theme
+                    .accent_remote()
+                    .to_egui()
+                    .gamma_multiply(TAG_REMOTE_BORDER_OPACITY),
+            ),
             theme.accent_remote().to_egui(),
         ),
         TagVariant::Success => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_success().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_success()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_success().to_egui(),
         ),
         TagVariant::Warning => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_warning().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_warning()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_warning().to_egui(),
         ),
         TagVariant::Danger => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_danger().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_danger()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_danger().to_egui(),
         ),
     };

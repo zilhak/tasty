@@ -91,7 +91,11 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // ── Selection / focus ring ──
     // A2 시범 이식: primitive 직접접근 → semantic 접근자(동일 primitive 리턴, 픽셀 동일).
     // accent-primary 의 ~31% alpha. straight RGBA → to_egui() 가 gamma-aware premultiply.
-    visuals.selection.bg_fill = theme.accent_primary().with_alpha(80).to_egui();
+    const SELECTION_BG_ALPHA: u8 = 80;
+    visuals.selection.bg_fill = theme
+        .accent_primary()
+        .with_alpha(SELECTION_BG_ALPHA)
+        .to_egui();
     // focus 외곽선은 디자인 시스템의 2px focus ring (border-focus).
     visuals.selection.stroke =
         egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus());

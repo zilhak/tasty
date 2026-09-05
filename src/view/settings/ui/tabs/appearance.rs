@@ -623,7 +623,7 @@ fn draw_tasty_color_row(
         let fill = if is_ov {
             egui::Color32::from(val)
         } else {
-            val.with_alpha(102).to_egui()
+            val.with_alpha(SWATCH_INHERITED_ALPHA).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(
@@ -884,7 +884,7 @@ fn draw_surface_bg_row(
         let fill = if is_ov {
             egui::Color32::from(val)
         } else {
-            val.with_alpha(102).to_egui()
+            val.with_alpha(SWATCH_INHERITED_ALPHA).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(
@@ -1024,6 +1024,10 @@ fn draw_surface_font_section(
 
 /// swatch 한 변 / override dot 지름 / hex 입력 폭 (디자인 jsx: 18·5·96 px).
 const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
+
+/// 오버라이드되지 않은(= 테마에서 상속받은) 색 스와치의 알파. 디자인이 적은
+/// opacity 0.4 를 알파로 옮긴 값(102/255)이다. 대응 토큰이 없어 이름만 둔다.
+const SWATCH_INHERITED_ALPHA: u8 = 102;
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 const COLOR_HEX_INPUT_WIDTH: LogicalPx = LogicalPx(96.0);
 /// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.
@@ -1347,7 +1351,7 @@ fn draw_color_picker_row(
             egui::Color32::from(val)
         } else {
             // opacity 0.4 (디자인) — 패널 위에 얹혀 dim 하게 보인다.
-            val.with_alpha(102).to_egui()
+            val.with_alpha(SWATCH_INHERITED_ALPHA).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(

@@ -229,11 +229,14 @@ fn draw_detail(
         vspace(ui, th.spacing_md);
 
         // 사유 배너 (severity 색 프레임).
+        // 사유 배너의 채움/테두리 짝. 대응 토큰 없음.
+        const REASON_BANNER_FILL_OPACITY: f32 = 0.11;
+        const REASON_BANNER_STROKE_OPACITY: f32 = 0.36;
         egui::Frame::new()
-            .fill(color.gamma_multiply(0.11))
+            .fill(color.gamma_multiply(REASON_BANNER_FILL_OPACITY))
             .stroke(egui::Stroke::new(
                 th.border_width.value(),
-                color.gamma_multiply(0.36),
+                color.gamma_multiply(REASON_BANNER_STROKE_OPACITY),
             ))
             .corner_radius(th.corner_radius.value())
             .inner_margin(margin_all(th.spacing_md))

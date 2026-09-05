@@ -57,7 +57,13 @@ pub fn horizontal_tab_bar_with_arrows<T: Copy + PartialEq>(
         let bar_rect = output.inner_rect;
         let icon_size = 14.0_f32;
         let arrow_area_w = icon_size * 1.6;
-        let icon_tint: Color32 = ui.style().visuals.text_color().gamma_multiply(0.4);
+        // 스크롤 화살표는 본문 텍스트보다 물러난 톤. 대응 토큰 없음.
+        const SCROLL_ARROW_OPACITY: f32 = 0.4;
+        let icon_tint: Color32 = ui
+            .style()
+            .visuals
+            .text_color()
+            .gamma_multiply(SCROLL_ARROW_OPACITY);
 
         let left_rect = egui::Rect::from_min_size(
             bar_rect.left_top(),

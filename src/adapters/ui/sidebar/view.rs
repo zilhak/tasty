@@ -663,8 +663,10 @@ pub fn draw_full_sidebar_view(
                             ),
                             first_rect.size(),
                         );
-                        let ghost_bg = th.surface_raised().with_alpha(180).to_egui();
-                        let ghost_fg = th.text_primary().with_alpha(180).to_egui();
+                        // 드래그 중 따라다니는 고스트는 반투명이다. 대응 토큰 없음.
+                        const DRAG_GHOST_ALPHA: u8 = 180;
+                        let ghost_bg = th.surface_raised().with_alpha(DRAG_GHOST_ALPHA).to_egui();
+                        let ghost_fg = th.text_primary().with_alpha(DRAG_GHOST_ALPHA).to_egui();
                         ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
                         ui.painter().text(
                             ghost_rect.center(),

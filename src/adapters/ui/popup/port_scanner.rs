@@ -1708,8 +1708,16 @@ fn draw_favorites_section(
                         let sz = th.icon_glyph_size_sm.value();
                         let (r, _) =
                             ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                        // 즐겨찾기 별 아이콘 톤. 대응 토큰 없음 — 같은 아이콘이 두 곳에서
+                        // 서로 다른 값을 쓴다(수렴은 디자인 판단).
+                        const FAV_STAR_ICON_OPACITY: f32 = 0.37;
                         icons::STAR
-                            .image(sz, th.text_muted().to_egui().gamma_multiply(0.37))
+                            .image(
+                                sz,
+                                th.text_muted()
+                                    .to_egui()
+                                    .gamma_multiply(FAV_STAR_ICON_OPACITY),
+                            )
                             .paint_at(ui, r);
                         ui.label(
                             egui::RichText::new(props.label_favorites_empty)

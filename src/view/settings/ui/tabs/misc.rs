@@ -518,8 +518,11 @@ fn trigger_chip(
     let radius = th.corner_radius_sm.value();
     // 호버 오버레이 — 전경색 저알파 mix (위젯 공통 규칙과 동일 도출).
     if resp.hovered() {
+        // 대응 오버레이 토큰(`overlay_hover`)은 합성된 색이라 배율 자리에 못 넣는다.
+        // 값에 이름만 두고 수렴은 디자인 판단으로 남긴다.
+        const HOVER_OVERLAY_OPACITY: f32 = 0.12;
         ui.painter()
-            .rect_filled(rect, radius, fg.gamma_multiply(0.12));
+            .rect_filled(rect, radius, fg.gamma_multiply(HOVER_OVERLAY_OPACITY));
     }
     ui.painter().rect_stroke(
         rect,
@@ -604,12 +607,19 @@ fn draw_changed_badge(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Them
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
+    // 경고 배지의 채움/테두리 짝. 대응 토큰 없음 — 같은 idiom 이 네 곳에 서로
+    // 다른 값으로 있고, 어느 값으로 모을지는 디자인 판단이다.
+    const WARN_BADGE_FILL_OPACITY: f32 = 0.12;
+    const WARN_BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
-        .rect_filled(rect, radius, warn.gamma_multiply(0.12));
+        .rect_filled(rect, radius, warn.gamma_multiply(WARN_BADGE_FILL_OPACITY));
     ui.painter().rect_stroke(
         rect,
         radius,
-        egui::Stroke::new(th.border_width.value(), warn.gamma_multiply(0.4)),
+        egui::Stroke::new(
+            th.border_width.value(),
+            warn.gamma_multiply(WARN_BADGE_STROKE_OPACITY),
+        ),
         egui::StrokeKind::Inside,
     );
     let gy = egui::Rect::from_min_size(

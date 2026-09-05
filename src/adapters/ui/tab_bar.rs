@@ -845,8 +845,10 @@ pub fn draw_pane_tab_bars_view(
             egui::pos2(drag.current_x - tab_w / 2.0, pane_logical_y),
             egui::vec2(tab_w, bar_h),
         );
-        let ghost_bg = th.bg_panel().with_alpha(180).to_egui();
-        let ghost_fg = th.text_primary().with_alpha(180).to_egui();
+        // 드래그 중 따라다니는 고스트는 반투명이다. 대응 토큰 없음.
+        const DRAG_GHOST_ALPHA: u8 = 180;
+        let ghost_bg = th.bg_panel().with_alpha(DRAG_GHOST_ALPHA).to_egui();
+        let ghost_fg = th.text_primary().with_alpha(DRAG_GHOST_ALPHA).to_egui();
         overlay_painter.rect_filled(ghost_rect, 0.0, ghost_bg);
         overlay_painter.text(
             ghost_rect.center(),

@@ -30,14 +30,22 @@ pub fn draw_drop_overlay(
     let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drop_overlay"));
     let painter = ctx.layer_painter(layer);
 
-    // 반투명 fill — accent_primary 의 12% alpha.
-    let fill = theme.accent_primary().with_alpha(31).to_egui();
+    // 반투명 fill — accent_primary 의 12% alpha. 대응 토큰이 없어 이름만 둔다.
+    const OVERLAY_FILL_ALPHA: u8 = 31;
+    let fill = theme
+        .accent_primary()
+        .with_alpha(OVERLAY_FILL_ALPHA)
+        .to_egui();
     painter.rect_filled(rect, theme.corner_radius.value(), fill);
 
     // 1px 보더 — accent_primary, alpha 0.6.
+    const OVERLAY_BORDER_ALPHA: u8 = 153;
     let stroke = egui::Stroke::new(
         theme.border_width.value(),
-        theme.accent_primary().with_alpha(153).to_egui(),
+        theme
+            .accent_primary()
+            .with_alpha(OVERLAY_BORDER_ALPHA)
+            .to_egui(),
     );
     painter.rect_stroke(
         rect.shrink(theme.spacing_sm.value()),

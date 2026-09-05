@@ -95,7 +95,12 @@ pub(crate) fn draw_notification_content_inner(
                     egui::Color32::TRANSPARENT
                 } else {
                     // unread 알림 항목 배경: theme blue 의 살짝 깔린 톤.
-                    crate::theme::theme().blue.with_alpha(20).to_egui()
+                    // 대응 토큰 없음 — 값에 이름만 둔다.
+                    const UNREAD_ROW_BG_ALPHA: u8 = 20;
+                    crate::theme::theme()
+                        .blue
+                        .with_alpha(UNREAD_ROW_BG_ALPHA)
+                        .to_egui()
                 };
 
                 egui::Frame::new()
