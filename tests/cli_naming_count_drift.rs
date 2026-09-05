@@ -21,11 +21,11 @@ const EXPECTED: &[(&str, usize)] = &[
     ("completion_strategy", 1),
     ("file_handler", 2),
     ("file_picker", 1),
-    ("fs", 1),
     ("git_viewer", 1),
     ("global_hook", 3),
     ("hook", 3),
     ("hook_handler", 3),
+    ("host", 1), // host.shared_buffer.create — plugin 보조 채널 전용, CLI 진입점 없음
     ("image", 7),
     ("markdown", 1),
     ("memory", 49),

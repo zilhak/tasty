@@ -11,33 +11,14 @@
 //! 윈도우 spawn(포커스 도난) 최소화를 위해 단일 공유 인스턴스에서 순차 실행한다
 //! (webhook_integration.rs 와 동일 설계).
 
+mod marker_wait;
 mod webhook_common;
 
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use marker_wait::wait_file_content;
 use serde_json::json;
 use webhook_common::{WebhookInstance, free_port};
-
-/// 파일이 생기고 내용이 비지 않을 때까지 대기 → trim 된 내용 반환. 실패 시 panic.
-fn wait_file_content(path: &Path, timeout: Duration) -> String {
-    let start = Instant::now();
-    loop {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            let trimmed = content.trim().to_string();
-            if !trimmed.is_empty() {
-                return trimmed;
-            }
-        }
-        if start.elapsed() > timeout {
-            panic!(
-                "marker file {} not written within {timeout:?}",
-                path.display()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
 
 #[test]
 fn shell_handlers_receive_tasty_hook_env() {

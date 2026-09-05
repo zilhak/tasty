@@ -24,16 +24,28 @@ use std::time::Duration;
 /// 창을 만드는 시나리오와 나머지를 갈라 놓는 차선(lane) 잠금. 나머지는 read 로
 /// 서로 병렬이고, 창을 만드는 하나만 write 로 단독이다.
 ///
-/// **왜 필요한가 — 실측(기본 gui 조합, Xvfb).** `multi_window_owner_routing` 이 두
-/// 번째 창을 만들면 그 창이 포커스를 가져가는데, **owner 를 params 에서 못 푸는
-/// 메서드는 포커스된 창으로 라우팅된다**: `src/app/request_owner.rs` 의 `Kind` 는
+/// **왜 생겼나 — 실측(기본 gui 조합, Xvfb).** `multi_window_owner_routing` 이 두
+/// 번째 창을 만들면 그 창이 포커스를 가져가는데, **owner 를 params 에서 못 찾는
+/// 메서드는 포커스된 창으로 라우팅된다**. 그때 근거로 든 것은 `Kind` 가
 /// surface / workspace / pane 셋뿐이라 `tab.close {tab_id}` 와 `pty.*` 의 headless
-/// pty id 는 owner 를 못 찾고 `focused_view_id` 로 떨어진다. 그래서 첫 창의 tab/pty
-/// 를 겨눈 호출이 두 번째 창의 engine 으로 가 "not found" 가 됐다(3 건 실패).
-/// 창이 하나뿐인 헤드리스 조합에서는 이 형태가 나타나지 않는다.
+/// pty id 가 owner 를 못 찾고 `focused_view_id` 로 떨어진다는 것이었다(3 건 실패).
 ///
-/// 그건 제품 축의 사실이고 이 파일이 고칠 것이 아니다 — 테스트는 창을 만드는
-/// 시나리오를 나머지와 **겹치지 않게** 돌려서 그 축을 건드리지 않는다.
+/// **그 근거 셋은 이제 하나도 살아 있지 않다(2026-09-06 재측정).**
+/// `src/core/request_target.rs` 의 `Kind` 는 여덟이고(surface · workspace · pane ·
+/// tab · headless · hook · observer · category), `params_resource_id` 가 `tab_id` 를,
+/// `method_scoped_resource_id` 가 `pty.kill`/`read`/`wait`/`write` 의 `"id"` 를 푼다.
+/// 지목한 대상이 어느 창에도 없을 때 모호성 오류가 참인 거절을 덮던 것도
+/// `src/app/request_owner.rs` 에서 닫혔다.
+///
+/// **그래도 이 잠금을 지금 걷지 않는다** — 걷어도 되는지는 **안 재봤다.** 위
+/// 기전 자체("owner 를 못 찾는 요청은 포커스로 간다")는 살아 있고, 그런 요청이
+/// 이 파일에 더 없다는 것을 확인하지 않았다. 걷으려면 **부하 아래에서** 걷고
+/// 돌려 봐야 한다 — 이 형태는 단독 실행에서 안 난다.
+///
+/// **★ 잠금은 동시성을 막지 잔여를 막지 않는다.** write 차선은 창 만드는
+/// 시나리오가 남들과 *겹치지* 않게 할 뿐, 그것이 **남긴 창**은 뒤에 도는 read
+/// 차선 전부가 본다. 그래서 그 시나리오는 자기가 만든 창을 스스로 닫는다.
+/// 창 수를 읽는 단언을 새로 넣을 때 이 성질을 먼저 보라.
 static WINDOW_EXCLUSIVE: RwLock<()> = RwLock::new(());
 
 /// 창을 만들지 않는 시나리오의 차선. poison 은 무시한다 — 다른 테스트가 panic 한
@@ -922,8 +934,9 @@ fn headless_pty_attach_surface_promotes_to_a_tab() {
 // ========== Multi-window: owner-based routing + list 전체 순회 ==========
 
 /// **이 파일에서 유일하게 창을 요구하는 시나리오다.** `window.create` 는 gui 라우터의
-/// `app_methods` step 에만 있어 헤드리스 데몬에서는 `-32601` 이 난다 — 배선 결함이
-/// 아니라 창이 없다는 사실 그 자체이므로, 헤드리스 조합 CI 는 **이 이름 하나만**
+/// `app_methods` step 에만 있어 헤드리스 데몬에서는 `-32017`("표에는 있는데 이 바이너리에
+/// arm 이 없다")이 난다 — 배선 결함이 아니라 창이 없다는 사실 그 자체이므로, 헤드리스
+/// 조합 CI 는 **이 이름 하나만**
 /// `--skip` 한다(`.github/workflows/crossplatform-check.yml`,
 /// `tests/headless_skip_names_are_exact.rs` 가 그 이름의 정확성을 강제한다).
 #[test]
@@ -1012,6 +1025,24 @@ fn multi_window_owner_routing() {
         "workspace.list 가 모든 engine 의 workspace 를 합쳐 반환해야: {workspaces:?}"
     );
 
+    // `tree` 도 전체 순회 — 이름이 `*.list` 가 아니라서 오래 빠져 있던 자리다.
+    // 판정을 수로 하지 않고 **`workspace.list` 와 같은 id 집합**인지로 한다: 둘이
+    // 같은 물음에 답하므로, 한쪽만 창을 건너면 그 자리에서 갈린다.
+    let ws_ids: std::collections::HashSet<u64> =
+        workspaces.iter().filter_map(|w| w["id"].as_u64()).collect();
+    let tree = tasty
+        .call("tree", json!({}))
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let tree_ids: std::collections::HashSet<u64> =
+        tree.iter().filter_map(|w| w["id"].as_u64()).collect();
+    assert_eq!(
+        tree_ids, ws_ids,
+        "tree 와 workspace.list 의 workspace 집합이 달라졌다 — 한쪽이 포커스된 창만 \
+         보고 있다. tree={tree:?} workspace.list={workspaces:?}"
+    );
+
     // owner-based routing: focused 가 새 윈도우인 상태에서 첫 윈도우 surface 에 IPC.
     // (focus 는 사용자 단축키 영역이라 IPC 로 전환 안 함 — 자동 focus 가 새 윈도우.)
     tasty.set_mark(sid);
@@ -1038,4 +1069,568 @@ fn multi_window_owner_routing() {
     assert_eq!(send_second["sent"], true);
     let out2 = tasty.wait_for_output(new_sid, "W2_owner_route", Duration::from_secs(5));
     assert!(out2.contains("W2_owner_route"));
+
+    // 만든 창을 닫는다 — 위 단언이 전부 끝난 뒤라 검증은 그대로 남는다.
+    //
+    // **차선 잠금이 이것까지 해 주지 않는다.** write 차선은 이 시나리오가 남들과
+    // 겹치지 않게 할 뿐이고, 잠금을 놓는 순간 **남긴 창**은 뒤에 도는 read 차선
+    // 전부에게 보인다. 실제로 그 잔여가 형제 테스트의 전제를 바꿔 회차에서만
+    // 빨개진 적이 있다 — 단독 실행에서는 순서가 반대라 안 났다.
+    //
+    // 닫힘을 **단언한다**. 조용히 실패하면 잔여가 그대로 남아 같은 형태가 다시
+    // 나는데, 그때 이 자리는 정리한 것처럼 보인다.
+    let win_id = create_resp["window_id"]
+        .as_u64()
+        .expect("window.create 가 window_id 를 줬다");
+    let close_resp = tasty.call_raw("window.close", json!({ "id": win_id }));
+    assert!(
+        close_resp.get("error").is_none(),
+        "만든 창을 닫지 못하면 잔여가 남는다: {close_resp}"
+    );
+    let closing = std::time::Instant::now();
+    loop {
+        let n = tasty
+            .call("window.list", json!({}))
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        if n <= 1 {
+            break;
+        }
+        assert!(
+            closing.elapsed() < Duration::from_secs(5),
+            "창을 닫으라고 했는데 5 초가 지나도 window.list 가 {n} 이다"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+// ========== plugin 읽기 표면 — 창 없이 답하는가 ==========
+
+/// `plugin.list` 가 창 없이 답한다.
+///
+/// 이전에는 헤드리스에서 `-32601`(그런 메서드 없다)이었다. 그것은 `plugin.*`
+/// 관리 표면이 통째로 없다는 뜻이었고, CLI 전용 실행 형태인 헤드리스에서
+/// `docs/identity.md` 원칙 2(에이전트 기능은 IPC + CLI 양면)에 정면으로 걸렸다.
+///
+/// **왜 통합 테스트여야 하는가.** 이 경로의 단위 테스트
+/// (`src/adapters/ipc/handler/plugin.rs`)는 매니저가 **있을 때** 에러가 아니라는 것을
+/// 못 잰다 — `PluginManager` 는 waker 와 registry port 를 요구해 단위 테스트가 만들 수
+/// 없고, `tasty-host-plugin` 의 테스트용 생성자는 그 크레이트의 `#[cfg(test)]` 라 여기서
+/// 보이지 않는다. 그래서 단위 테스트만 두면 "모든 응답이 에러" 여도 통과한다. 라우팅
+/// 표(`READONLY_METHODS`)와 dispatch arm 이 실제로 이어져 있다는 것도 여기서만 잰다.
+///
+/// 헤드리스 조합에서는 테스트가 띄우는 바이너리 자체가 헤드리스라, 이 단언은 그
+/// 조합에서 **창이 없는 데몬**을 상대로 돈다. gui 조합에서도 성립해야 한다 — 두
+/// 라우터가 같은 함수를 쓰기 때문이다.
+#[test]
+fn plugin_list_answers_without_a_window() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw("plugin.list", json!({}));
+
+    assert!(
+        resp.get("error").is_none(),
+        "plugin.list 가 에러로 답했다: {resp}"
+    );
+    let plugins = resp
+        .get("result")
+        .and_then(|r| r.get("plugins"))
+        .and_then(|p| p.as_array())
+        .unwrap_or_else(|| panic!("plugin.list 응답에 plugins 배열이 없다: {resp}"));
+
+    // 개수는 홈 상태에 달렸으므로 세지 않는다. 배열이라는 것과, 있다면 각 항목이
+    // 매니페스트에서 나온 모양이라는 것만 본다.
+    for p in plugins {
+        assert!(
+            p.get("id").and_then(|v| v.as_str()).is_some(),
+            "plugin 항목에 id 가 없다: {p}"
+        );
+    }
+}
+
+/// `plugin.show` 는 매니저가 있어도 **없는 plugin 이름**에는 다른 에러를 준다.
+///
+/// 이것이 위 테스트의 대조다 — 위만 있으면 "모든 plugin.* 가 무조건 성공" 이어도
+/// 통과한다. 여기서 요구하는 것은 성공/실패가 **입력에 따라 갈린다**는 것이다.
+/// `-32000`(매니저 없음)이 아니라 `-32003`(그 plugin 이 설치돼 있지 않음)이어야
+/// 매니저가 실제로 세워져 조회가 수행됐다는 뜻이 된다.
+///
+/// **두 코드의 차이가 이 축의 계측기다.** `-32000` 은 "물어볼 대상 자체가 없다",
+/// `-32003` 은 "물어봤고 그런 것이 없더라" 다. 앞의 것으로 느슨하게 고치면 이
+/// 테스트는 매니저가 한 번도 안 세워져도 통과한다 — 즉 검증하려던 것을 정확히
+/// 놓친다. 코드를 바꿔야 한다면 무엇이 계측되는지 먼저 다시 세워라.
+#[test]
+fn plugin_show_distinguishes_an_unknown_plugin_from_a_missing_manager() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw(
+        "plugin.show",
+        json!({"id": "no-such-plugin-in-any-installation"}),
+    );
+
+    let err = resp
+        .get("error")
+        .unwrap_or_else(|| panic!("없는 plugin 인데 성공으로 답했다: {resp}"));
+    let code = err.get("code").and_then(|c| c.as_i64());
+    assert_eq!(
+        code,
+        Some(-32003),
+        "없는 plugin 은 -32003 이어야 한다(-32000 이면 매니저 자체가 안 세워진 것): {resp}"
+    );
+}
+
+/// 수명주기 메서드는 **여전히 없다** — 이 축이 연 것은 읽기 표면뿐이다.
+///
+/// **이 테스트는 위 둘이 빨개질 때 초록으로 남아야 한다.** 배선
+/// (`src/boot/headless_dispatch.rs` 의 읽기 전용 가로채기)을 죽이면 위 두 테스트는
+/// `-32601` 로 실패하는데, 이것은 그대로 통과한다. 셋이 함께 빨개지면 그 변이는
+/// "무언가 깨졌다" 만 말하고, 배선이 **정확히 그 둘을 만든다**는 것은 말하지 못한다.
+/// 이 비대칭이 이 세 테스트의 판정력이므로, 셋을 한 조건으로 묶도록 고치지 마라.
+///
+/// 이 단언이 없으면 위 둘은 "`plugin.*` 를 전부 열었다" 와 구별되지 않는다.
+/// 헤드리스에서 `plugin.enable` 이 답하려면 `App.plugin_manager` 만으로는 부족하고
+/// gui feature 로 게이트된 `app/plugin_glue` 와 `cascade_plugin_events` 가 필요하다.
+/// 그 경계를 여는 것은 별도 결정이므로, 지금은 없는 것이 현재 상태다.
+#[cfg(not(feature = "gui"))]
+#[test]
+fn lifecycle_methods_are_still_absent_in_a_headless_daemon() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let resp = tasty.call_raw("plugin.enable", json!({"id": "anything"}));
+
+    let code = resp
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64());
+    assert_eq!(
+        code,
+        Some(-32017),
+        "헤드리스에서 plugin.enable 은 아직 arm 이 없는 메서드여야 한다. `-32601` 이 왔다면 \
+         표에서 이름이 빠진 것이고, 그러면 호출자가 오타와 구분할 수 없다: {resp}"
+    );
+}
+
+/// 대상을 **지목했는데 아무 창도 안 가진** 요청은 거절된다 — 포커스된 창으로 안 샌다.
+///
+/// 지우기 전의 폴백은 이 요청을 포커스된 창에 넘겼고, 그래서 **존재하지 않는
+/// `workspace_id` 를 실은 `workspace.create` 가 조용히 성공했다**(실측 2026-09-05:
+/// 포커스된 창에 워크스페이스를 만들고 그 id 를 돌려줬다). 호출자는 자기가 지목한
+/// 곳에 만들어진 줄 안다. `docs/design/policies/focus.md` 의 "silent fallback 금지".
+///
+/// **두 조합 모두**에서 돈다. 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만
+/// 판정은 같아야 한다 — 한쪽만 거절하면 같은 요청이 조합에 따라 다르게 끝난다.
+#[test]
+fn a_request_naming_an_unowned_target_is_rejected() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    // 지목했고 아무도 안 가졌다 → 에러. 핸들러가 그 키를 무시하더라도 그렇다.
+    let resp = tasty.call_raw(
+        "workspace.create",
+        json!({ "workspace_id": 999_999, "name": "unowned-target-probe" }),
+    );
+    assert!(
+        resp.get("error").is_some(),
+        "지목한 대상을 아무도 안 가졌으면 거절해야 한다(성공하면 포커스된 창에 \
+         만들어진 것이다): {resp}"
+    );
+    let msg = resp["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("999999") && msg.contains("workspace"),
+        "에러가 무엇을 못 찾았는지 말해야 고칠 수 있다: {resp}"
+    );
+
+    // plugin → host call 경로도 같은 판정을 받는다. 라우팅 사본이 둘이라
+    // (IPC 라우터 / intent 디스패처) 한쪽만 고치면 다른 쪽이 조용히 옛 동작을 남긴다.
+    // `image.*` 는 image plugin 의 namespace 이고 그 plugin 이 `image.open` 을 호스트로
+    // 되던지므로, 이 호출이 그 사본을 탄다 — 응답의 `host call ... failed` 감싸기가
+    // 경로를 드러낸다.
+    //
+    // 이 단언만 gui 인 이유는 이 축과 무관하다: 헤드리스에는 `image.open` 의 호스트
+    // arm 자체가 없어서(`#[cfg(feature = "gui")]`) 되던진 호출이 소유 검사에 닿기 전에
+    // "Method not found" 로 끝난다. 그건 headless 가 app 층 메서드를 떨어뜨리는
+    // 별개 축이고, 그쪽이 닫히면 이 게이트도 없어진다.
+    #[cfg(feature = "gui")]
+    {
+        let via_plugin = tasty.call_raw(
+            "image.open",
+            json!({ "surface_id": 999_999, "path": "/tmp/does-not-exist.png" }),
+        );
+        let via_msg = via_plugin
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        assert!(
+            via_msg.contains("surface 999999"),
+            "plugin 을 경유한 호출도 지목한 대상이 없으면 같은 이유로 거절돼야 한다: \
+             {via_plugin}"
+        );
+    }
+
+    // plugin 이 점유한 namespace 의 메서드는 id 를 실었어도 **안 잘린다.**
+    // 그 prefix 는 호스트 예약이 아니라서(번들 plugin 이 갖고 있다) plugin 이 답할 수
+    // 있고, 헤드리스는 소유 검사가 engine handler 앞이라 여기서 자르면 forward 될
+    // 호출을 불러 보기도 전에 죽인다. 이 단언이 그 경계를 지킨다.
+    let forwarded = tasty.call_raw("markdown.recent", json!({ "surface_id": 999_999 }));
+    assert!(
+        forwarded.get("result").is_some(),
+        "plugin namespace 의 메서드는 id 를 실어도 forward 돼야 한다: {forwarded}"
+    );
+
+    // 지목 안 한 같은 메서드는 그대로 동작한다 — 폴백을 통째로 없앤 것이 아니다.
+    let ok = tasty.call_raw("workspace.create", json!({ "name": "no-target-probe" }));
+    assert!(
+        ok.get("result").is_some(),
+        "대상을 지목하지 않은 생성 요청은 계속 동작해야 한다: {ok}"
+    );
+}
+
+/// app 층 표면 중 **창이 없어도 답이 정의되는 것**은 두 조합에서 같이 답한다.
+///
+/// 양방향으로 본다 — 연 것이 실제로 라우팅되는 것과, 안 연 것이 여전히 `-32601` 인
+/// 것을 같은 회차에서. 한쪽만 보면 "전부 열었다" 와 "아무것도 안 열었다" 가 둘 다
+/// 통과하는 판정이 된다.
+///
+/// 판정 기준은 성공이 아니라 **`-32601` 이 아님**이다. 인자 없이 부르므로 라우팅된
+/// 메서드는 `-32602`(인자 오류)로 답하고, 그것이 "핸들러에 닿았다" 는 증거다. 성공을
+/// 요구하면 클립보드·SSH 같은 환경 의존이 판정에 섞인다.
+#[test]
+fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    for method in [
+        "clipboard.set_text",
+        "remote.workspaces",
+        "agent.task_await",
+        "approval.await",
+    ] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+        // 라우팅 실패의 두 얼굴을 **함께** 배제한다. `-32601` 만 보면 이름이 표에서
+        // 빠졌을 때만 잡히고, 표에 남은 채 arm 만 사라지면 `-32017` 로 조용히 통과한다.
+        assert_ne!(
+            code,
+            Some(-32601),
+            "`{method}` 는 창이 없어도 답이 정의된다 — 두 조합에서 라우팅돼야 한다: {resp}"
+        );
+        assert_ne!(
+            code,
+            Some(-32017),
+            "`{method}` 의 arm 이 이 조합에서 사라졌다 — 창을 안 보는데 게이트 뒤로 \
+             들어갔다는 뜻이다: {resp}"
+        );
+    }
+
+    // 반대편. `window.list` 가 읽는 것은 `App.view` 라 헤드리스에 대응물이 없다.
+    // gui 에서는 답하고 헤드리스에서는 **`-32017`("이 바이너리에 arm 이 없다")** 인 것이
+    // 의도된 상태이며, 그것을 여기서 못 박아 둔다 — 안 그러면 위 루프만 남아 "전부 열어도
+    // 통과" 가 된다.
+    let resp = tasty.call_raw("window.list", json!({}));
+    let code = resp["error"]["code"].as_i64();
+    #[cfg(feature = "gui")]
+    assert_ne!(code, Some(-32601), "gui 는 window.list 에 답한다: {resp}");
+    #[cfg(not(feature = "gui"))]
+    assert_eq!(
+        code,
+        Some(-32017),
+        "헤드리스에 창이 없으므로 `window.list` 는 이 조합에 arm 이 없는 것이 정답이다. \
+         `-32601` 이 왔다면 호출자가 오타와 구분할 수 없고, 다른 코드가 왔다면 \
+         `App.view` 없이 답하는 길이 생긴 것이니 판정을 다시 세워라: {resp}"
+    );
+}
+
+/// 플랫폼이 못 하는 debug 메서드는 **"없다" 가 아니라 "여기선 못 한다" 로** 답한다.
+///
+/// `surface.raw_key` 는 `DEBUG_METHODS` 에도 CLI 서브커맨드에도 플랫폼 조건 없이 있다.
+/// 그런데 dispatch arm 만 macOS gui 게이트라, 상보 arm 이 없으면 다른 조합에서 `match` 의
+/// `_` 가 받아 `-32601`("그런 메서드 없음")로 끝난다 — 이름은 맞고 표에도 있으므로 그 답은
+/// 거짓이고, 그것을 받은 호출자는 오타를 의심하는 **틀린 수리**로 간다.
+///
+/// 소스 짝 맞춤은 `src/source_guards/platform_gated_dispatch_complement.rs` 가 본다.
+/// 여기서는 그 짝이 실제로 **응답을 바꾸는지**를 실행으로 못 박는다 — 소스에 arm 이
+/// 있다는 것과 그것이 라우터에 닿는다는 것은 다른 사실이다. 근거는 ADR-0154.
+#[test]
+fn a_platform_gated_debug_method_says_why_not_that_it_is_missing() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    for method in ["surface.raw_key", "surface.switch_input_source"] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+
+        #[cfg(all(target_os = "macos", feature = "gui"))]
+        assert_ne!(
+            code,
+            Some(-32601),
+            "macOS gui 에서는 실제 핸들러가 받는다: {resp}"
+        );
+
+        #[cfg(not(all(target_os = "macos", feature = "gui")))]
+        {
+            assert_eq!(
+                code,
+                Some(-32015),
+                "이 조합은 실행하지 못하지만 메서드는 **있다** — 상보 arm 이 사유와 함께 \
+                 `-32015` 로 답해야 한다. `-32601` 이 왔다면 상보 arm 이 사라진 것이고, \
+                 그러면 `tasty debug raw-key` 가 도움말에 뜨는데 '그런 메서드 없음' 으로 \
+                 끝난다: {resp}"
+            );
+            let msg = resp["error"]["message"].as_str().unwrap_or_default();
+            assert!(
+                msg.contains("macOS-only"),
+                "코드만으로는 무엇이 부족한지 알 수 없다 — 사유가 함께 와야 한다: {resp}"
+            );
+        }
+    }
+}
+
+/// engine 층 조회 중 **창을 하나도 안 읽는 것**은 두 조합에서 같이 답한다.
+///
+/// `theme.query` 가 읽는 것은 전역 Theme 과 `CoreState.settings` 둘뿐이다. 그런데 그
+/// 핸들러가 `gui` 게이트가 걸린 `webview` 모듈 안에 살고 있어서 arm 까지 함께 게이트됐고,
+/// 헤드리스에서는 `-32601`(그런 메서드 없음)로 끝났다 — 읽을 것이 다 있는데도.
+/// 헤드리스는 CLI 전용 실행 형태라 그 부재는 `docs/identity.md` 원칙 2 의 구멍이다.
+///
+/// 반대편도 같은 회차에서 본다. `webview.set_url` 이 쓰는 값을 소비하는 것은 렌더러뿐이라
+/// 헤드리스에서 없는 것이 정답이고, 그것을 여기 못 박아 두지 않으면 위 단언만 남아
+/// "전부 열어도 통과" 가 된다.
+#[test]
+fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    let resp = tasty.call_raw("theme.query", json!({}));
+    assert!(
+        resp.get("result").is_some(),
+        "`theme.query` 는 전역 Theme 과 settings 만 읽는다 — 두 조합에서 답해야 한다: {resp}"
+    );
+    assert!(
+        resp["result"].get("colors").is_some(),
+        "색상표가 실려야 한다 — 라우팅만 되고 빈 답이면 호출자에게 쓸모가 없다: {resp}"
+    );
+
+    let resp = tasty.call_raw("webview.set_url", json!({}));
+    let code = resp["error"]["code"].as_i64();
+    #[cfg(feature = "gui")]
+    assert_ne!(
+        code,
+        Some(-32601),
+        "gui 는 webview.set_url 에 답한다: {resp}"
+    );
+    #[cfg(not(feature = "gui"))]
+    assert_eq!(
+        code,
+        Some(-32017),
+        "webview 의 URL 을 소비하는 것은 렌더러뿐이라 헤드리스엔 arm 이 없는 것이 \
+         정답이다 — 다만 이름은 있으므로 오타(`-32601`)와는 다르게 답한다: {resp}"
+    );
+}
+/// 지목한 대상이 **없으면** 부류를 가리지 않고 거절하고, **있으면** 그 검사가 안 걸린다.
+///
+/// 앞선 자리(`a_request_naming_an_unowned_target_is_rejected`)는 이 판정을 `workspace_id`
+/// **한 키**로만 고정했다. 그런데 판정기가 보는 키는 열하나이고 부류는 일곱이다
+/// (`core::request_target::params_resource_id`) — 한 키만 박아 두면 나머지 열이 조용히
+/// 빠져도 초록이다. 실제로 이 저장소에서 같은 형태가 났다: 같은 판정을 워크스페이스
+/// 단위에서는 하고 surface 단위에서는 안 하던 자리가 있었다(ADR-0156).
+///
+/// **두 방향을 짝으로 본다.** 거절만 세면 "전부 거절" 과 구별이 안 되므로, 같은 메서드에
+/// **살아 있는** id 를 실었을 때 이 검사가 걸리지 않는 것을 같은 회차에서 확인한다.
+///
+/// 그리고 **두 조합에서 같은 몸통이 돈다.** gui 는 라우터 앞에서, 헤드리스는 engine
+/// handler 앞에서 판정하는데 — 경로가 다르므로 결과가 같은지는 재야 안다.
+#[test]
+fn an_unowned_target_is_rejected_for_every_resource_kind() {
+    let _lane = lane();
+    let tasty = common::shared();
+    const MISSING: u64 = 999_999;
+
+    // (부류/키, 메서드, 그 키를 뺀 나머지 params). 메서드는 그 키를 실제로 받는
+    // **호스트 예약 prefix** 로 고른다 — plugin prefix 는 애초에 이 판정을 안 지난다.
+    let cases: Vec<(&str, &str, &str, serde_json::Value)> = vec![
+        (
+            "workspace",
+            "workspace_id",
+            "workspace.create",
+            json!({ "name": "unowned-kind-probe" }),
+        ),
+        (
+            "workspace",
+            "target_workspace_id",
+            "workspace.move",
+            json!({}),
+        ),
+        ("surface", "surface_id", "surface.close", json!({})),
+        ("surface", "surface", "terminal.children", json!({})),
+        ("surface", "parent", "terminal.kill", json!({})),
+        ("surface", "target", "surface.split", json!({})),
+        (
+            "surface",
+            "to_surface_id",
+            "message.send",
+            json!({ "message": "x" }),
+        ),
+        ("tab", "tab_id", "tab.close", json!({})),
+        ("pane", "pane_id", "pane.close", json!({})),
+        ("pane", "pane", "tab.new", json!({})),
+        (
+            "pane",
+            "target_pane_id",
+            "split",
+            json!({ "level": "pane" }),
+        ),
+        ("headless pty", "id", "pty.write", json!({ "data": "x" })),
+        ("surface hook", "hook_id", "hook.unset", json!({})),
+        (
+            "output observer",
+            "observer_id",
+            "output.observe_stop",
+            json!({}),
+        ),
+    ];
+
+    // ── 방향 ①: 없는 대상은 부류를 가리지 않고 거절된다.
+    for (kind, key, method, base) in &cases {
+        let mut params = base.clone();
+        params[*key] = json!(MISSING);
+        let resp = tasty.call_raw(method, params);
+        let msg = resp
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        assert!(
+            !msg.contains("Method not found"),
+            "{method} 가 없는 메서드다 — 이 줄은 판정이 아니라 미측정이다. 이름을 고쳐라: {resp}"
+        );
+        assert!(
+            msg.contains(&MISSING.to_string()),
+            "{key}({kind}) 를 없는 id 로 실었는데 그것을 말하는 거절이 안 나왔다 \
+             — 지목한 대상이 없는데 조용히 성공했을 수 있다: {resp}"
+        );
+        assert!(
+            msg.contains(kind),
+            "거절이 **무엇을** 못 찾았는지 말해야 고칠 수 있다({kind} 를 기대): {resp}"
+        );
+    }
+
+    // ── 방향 ②: 살아 있는 대상에는 이 검사가 안 걸린다.
+    // 거절만 세면 "전부 거절" 과 구별이 안 된다. 여기서 다른 이유의 실패는 허용한다
+    // (자기 surface 를 닫으려 한다든지) — 보는 것은 **소유 검사가 걸렸는가** 하나다.
+    let tree = tasty.call("tree", json!({}));
+    let live_ws = tree[0]["id"].as_u64().expect("살아 있는 workspace id");
+    let surfaces = tasty.call("surface.list", json!({}));
+    let live_surface = surfaces
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|s| s["id"].as_u64())
+        .expect("살아 있는 surface id");
+    let panes = tasty.call("pane.list", json!({}));
+    let live_pane = panes
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|p| p["id"].as_u64())
+        .expect("살아 있는 pane id");
+
+    let live: Vec<(&str, &str, serde_json::Value, u64)> = vec![
+        (
+            "workspace_id",
+            "workspace.create",
+            json!({ "name": "live-kind-probe" }),
+            live_ws,
+        ),
+        ("surface", "terminal.children", json!({}), live_surface),
+        ("pane", "tab.new", json!({}), live_pane),
+    ];
+    for (key, method, base, id) in live {
+        let mut params = base.clone();
+        params[key] = json!(id);
+        let resp = tasty.call_raw(method, params);
+        let msg = resp
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+        assert!(
+            !msg.contains("no live"),
+            "{key}={id} 는 살아 있는데 소유 검사가 걸렸다 — 검사가 너무 넓다: {resp}"
+        );
+    }
+}
+
+/// debug 표면 중 **창을 안 읽는 것**은 두 조합의 debug 빌드에서 같이 답한다.
+///
+/// 이 다섯이 읽는 것은 `App` 의 `lua_engine` / `plugin_manager` 뿐이다. 그런데 dispatch 가
+/// gui 라우터의 debug step 에만 있어서 헤드리스에서는 `-32601` 이었다 — 창을 안 보는데
+/// 자리가 없어서 사라진 것이라, 에이전트가 자기 작업을 검증하는 표면(event bus 관측 ·
+/// 확장 훅 발화 · Lua 주입)이 헤드리스에서만 없는 형태였다.
+///
+/// **여는 것은 "헤드리스 debug 빌드에서도 답한다" 이지 "release 에 노출한다" 가 아니다.**
+/// release 격리는 `DEBUG_METHODS` 가 debug 빌드에서만 비지 않는 것과, 이 arm 들이
+/// `#[cfg(debug_assertions)]` 안에 있는 것 둘로 유지된다. 이 테스트 자체는 debug 로
+/// 돌므로 그 격리를 여기서 못 본다 — release 격리는
+/// `tests/ipc_release_table_excludes_input_reproduction.rs` 와 실행 대조가 본다.
+#[test]
+fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
+    let _lane = lane();
+    let tasty = common::shared();
+
+    for method in [
+        "debug.lua.eval",
+        "debug.event_bus.list_subscribers",
+        "debug.event_bus.publish",
+        "debug.event_bus.trace",
+        "debug.extension.invoke_hook",
+        // 조회만이다. 같은 갈래의 `debug.popup.open` 은 아래 음성 대조에 있다 —
+        // 헤드리스에 닫는 경로가 없어 여는 것만 열면 안 된다.
+        "debug.popup.list",
+        // 같은 형태. 무대 표를 gui 무관 메타와 그리기 함수로 가른 뒤 조회만 연다.
+        "debug.fullscreen.list",
+    ] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+        assert_ne!(
+            code,
+            Some(-32601),
+            "`{method}` 가 읽는 것은 `App` 의 lua_engine/plugin_manager, 또는 gui 무관 정적 \
+             표뿐이다 — 두 조합의 debug 빌드에서 라우팅돼야 한다: {resp}"
+        );
+        // 위와 같은 이유. 표에 남은 채 arm 만 게이트 뒤로 들어가면 `-32017` 이 된다.
+        assert_ne!(
+            code,
+            Some(-32017),
+            "`{method}` 의 arm 이 이 조합에서 사라졌다: {resp}"
+        );
+    }
+
+    // 음성 대조. 헤드리스에 대응물이 없어 **없는 것이 정답**인 것들이다. 같은 회차에서
+    // 이것을 못 박지 않으면 위 루프만 남아 "debug step 을 통째로 옮겨도 통과" 가 된다.
+    //
+    // 사유가 둘로 갈린다 — 한 갈래 안에서도 갈린다는 것이 이 대조의 요점이다:
+    //   `debug.tool.list`  창·egui 입력 큐를 읽는다. 헤드리스에 그 상태 자체가 없다.
+    //   `debug.popup.open` 매니저만 읽어 **답은 정의되지만** 헤드리스엔 그 인스턴스를
+    //                      닫는 경로가 하나도 없다(debug close 도, plugin 자신의
+    //                      release `popup.close` 도 gui 게이트 안이다). 여는 것만
+    //                      열면 닫을 수 없는 상태가 남는다.
+    //   `debug.fullscreen.open` 같은 갈래의 `list` 는 위에서 답하는데 이쪽은 아니다 —
+    //                      `pick_debug_window` 로 창을 지목한다. 무대는 창 단위다.
+    for method in [
+        "debug.tool.list",
+        "debug.popup.open",
+        "debug.fullscreen.open",
+    ] {
+        let resp = tasty.call_raw(method, json!({}));
+        let code = resp["error"]["code"].as_i64();
+        #[cfg(feature = "gui")]
+        assert_ne!(code, Some(-32601), "gui 는 `{method}` 에 답한다: {resp}");
+        #[cfg(not(feature = "gui"))]
+        assert_eq!(
+            code,
+            Some(-32017),
+            "헤드리스엔 arm 이 없는 것이 정답이다 — 이름은 표에 있으므로 오타와 \
+             같은 코드로 답하면 안 된다: {resp}"
+        );
+    }
 }

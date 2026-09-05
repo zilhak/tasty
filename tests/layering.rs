@@ -28,7 +28,7 @@
 //! 주석 안의 언급도 위반으로 본다 — 주석이 옛 경로를 가리키면 그것도 실제
 //! 오정보이므로 코드와 같이 갱신되어야 한다.
 //!
-//! 선례: `tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -60,7 +60,7 @@ const ALLOWED_PATHS: &[&str] = &[
 const BASELINE_FILES: &[&str] = &[];
 
 /// **범위 밖** — `#[cfg(test)]` 전용 모듈. `(경로, 사유)` 쌍으로 적는다
-/// (`tests/no_todo_file_citation.rs` 의 `ALLOWLIST` 규약).
+/// (`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 의 `ALLOWLIST` 규약).
 ///
 /// 여기 이름을 올리는 것은 위반을 눈감아 주는 것이 아니라 **그 파일이 프로덕션
 /// 빌드에 존재하지 않음**을 주장하는 것이다. 그래서 가드는 그 주장을 검사한다 —
@@ -310,5 +310,23 @@ fn the_cfg_test_precondition_check_discriminates() {
     assert!(
         declared_under_cfg_test("src/does_not_exist/nope.rs", root).is_err(),
         "부모 모듈을 못 찾았는데 통과시킨다"
+    );
+}
+
+/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
+///
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
+/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
+///
+/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
+/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+#[test]
+fn allowed_paths_point_at_paths_that_exist() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let missing = tasty_doc_guards::missing_referents(root, ALLOWED_PATHS.iter().copied());
+    assert!(
+        missing.is_empty(),
+        "면제가 없는 경로를 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 항목을 지워라: {missing:?}"
     );
 }

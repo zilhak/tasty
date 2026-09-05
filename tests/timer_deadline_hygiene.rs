@@ -8,7 +8,7 @@
 //! 비용이 크고, 두 사례 모두 단위 테스트로는 잡히지 않는 **호출부 한 줄**이었다.
 //!
 //! 규칙과 배경 서술은 [`docs/dev-guide/timer-hub.md`] "파생 데드라인은 반드시
-//! 바닥친다" 절. 선례(소스 스캔 테스트): `tests/no_todo_file_citation.rs`,
+//! 바닥친다" 절. 선례(소스 스캔 테스트): `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`,
 //! `tests/no_emoji_in_source.rs`.
 //!
 //! **R1 — 파생 데드라인은 `arm_derived` 를 통해서만 등록한다.**

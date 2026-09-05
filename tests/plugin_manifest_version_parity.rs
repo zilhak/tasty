@@ -5,8 +5,9 @@
 //! 노출·비교하는 값인데, 과거엔 Cargo.toml 만 patch 자동 +1 되고 매니페스트는 방치돼
 //! 드리프트(예: markdown Cargo 0.1.11 vs manifest 0.1.1)가 쌓였다. 버전 정책이 이제
 //! 둘의 lockstep 갱신을 요구하므로(§버전 정책 > Plugin), 이 테스트가 그 집행 채널이다.
-//! `cargo test --workspace` 가 강제한다 — 그 잡은 수동 전용이라 자동 채널은 아니다
-//! (`docs/dev-guide/ci-gates.md`).
+//! `cargo test --workspace` 가 강제한다 — 이 테스트의
+//! 자동 실행은 **헤드리스 조합**(`check-headless` 의 전체 스위트)에서만 일어난다
+//! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
 //!
 //! 참고: 매니페스트가 없는 라이브러리/인프라 크레이트(sdk, protocol, manifest 등)는
 //! 번들 대상이 아니므로 스캔에서 자동 제외된다(파일 부재 = skip).

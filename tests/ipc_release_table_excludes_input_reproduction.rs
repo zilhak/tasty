@@ -39,22 +39,32 @@
 //!
 //! 이 가드들이 **잡지 못하는 것**: 이름에 단서가 없고 debug CLI 진입점도 없는
 //! 새 release 메서드의 의미 판단. 그건 사람이 리뷰에서 본다 — 자동화의 목표는
-//! "이미 내려진 판정이 조용히 뒤집히는 것" 을 막는 데까지다. 가드 4 는 팔 바로 위의
-//! `#[cfg]` 줄만 읽으므로, 팔을 `#[cfg(debug_assertions)] { .. }` **블록**으로 감싸는
-//! 형태는 debug 로 인식하지 못하고 위양성이 난다 — 현재 라우터에는 그 형태가 없다.
+//! "이미 내려진 판정이 조용히 뒤집히는 것" 을 막는 데까지다.
+//!
+//! 가드 4 의 추출기는 **팔 바로 위의 `#[cfg]`** 와 **팔을 감싸는 블록의 `#[cfg]`** 를
+//! 모두 읽고(`debug_gated_lines`), 팔의 모양은 `"m" =>` · `== "m"` · `starts_with("ns.")`
+//! 셋을 본다. 이 둘은 각각 겪은 결함이다 — 블록 형태를 못 읽어 지워질 팔을 남았다고 한
+//! **위양성**, `==` 만 봐서 같은 블록의 접두어 팔을 통째로 놓친 **거짓 음성**. 뒤엣것이
+//! 더 나쁘다(가드가 초록인 채로 표면이 열린다). 두 방향 모두 [`extractor_mutations`]
+//! 에서 변이로 고정한다.
+//!
+//! 남는 사각지대는 **라우터 함수 밖**이다: 팔을 헬퍼 함수로 옮기면 `RELEASE_ROUTERS` 의
+//! 시그니처 본문에 안 잡힌다. 그때는 그 헬퍼를 `RELEASE_ROUTERS` 에 추가한다.
 //!
 //! release 빌드에서는 `DEBUG_METHODS` 가 빈 슬라이스라 대조가 성립하지 않으므로
 //! `#![cfg(debug_assertions)]` 로 debug 에서만 돈다.
 //!
-//! **채널 — 컴파일은 자동, 실행은 수동이다.** `tests/*.rs` 라 이 파일이 컴파일되는지는
-//! CI 가 자동으로 본다(`crossplatform-check.yml` 의 Windows `clippy --all-targets` 와
-//! headless `clippy --all-targets --no-default-features`). 하지만 **테스트를 실행하는**
-//! 잡은 `test.yml` 의 전체 스위트뿐이고 그건 `workflow_dispatch` 전용이라 push 로 돌지
-//! 않는다. 즉 이 가드의 **판정이 실제로 나는 곳은 둘** — 작업 lane 의 로컬
-//! `cargo test --workspace --locked`, 그리고 병합 후 main 에서의 1 회 실행이다
+//! **채널 — 컴파일은 두 조합 모두 자동, 실행은 한 조합만이다.** `tests/*.rs` 라 이 파일이
+//! 컴파일되는지는 CI 가 두 조합에서 본다(`crossplatform-check.yml` 의 Windows
+//! `clippy --all-targets` 와 headless `clippy --all-targets --no-default-features`).
+//! 실행 쪽은 자동 실행은 **헤드리스 조합**(`check-headless` 의 전체 스위트)에서만 일어난다
+//! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
+//! `test.yml` 의 기본 조합 전체 스위트는 `workflow_dispatch` 전용이라 거기엔 채널이 없다.
 //! (채널 정본은 [ci-gates](../docs/dev-guide/ci-gates.md)).
 //! 따라서 이 가드를 근거로 로컬 검증을 건너뛰지 않는다.
 #![cfg(debug_assertions)]
+
+use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::path::Path;
 
@@ -316,11 +326,22 @@ fn join_wrapped_arms(lines: &mut [String]) {
         lines[i] = String::new();
     }
 }
+/// 디스패치 위치에서 뽑은 메서드 이름 리터럴 하나.
+struct Arm<'a> {
+    name: &'a str,
+    /// `starts_with("ns.")` 형태 — 이름 하나가 아니라 **접두어**를 가리킨다.
+    is_prefix: bool,
+}
 
-/// 디스패치 위치의 메서드 이름 리터럴만 뽑는다 — `"ns.method" =>` (match 팔) 과
-/// `method == "ns.method"` (if 형) 두 형태. 응답 payload 의 문자열은 이 두 문법
-/// 위치가 아니라서 걸리지 않는다.
-fn dispatch_methods(line: &str) -> Vec<&str> {
+/// 디스패치 위치의 메서드 이름 리터럴만 뽑는다 — `"ns.method" =>` (match 팔),
+/// `method == "ns.method"` (if 형), `method.starts_with("ns.")` (접두어 형) 세 형태.
+/// 응답 payload 의 문자열은 이 세 문법 위치가 아니라서 걸리지 않는다.
+///
+/// 접두어 형을 함께 보는 이유: 같은 라우터의 같은 블록 안에서도 **두 구현이 다른 모양의
+/// 코드를 쓴다.** 실제로 헤드리스 pump 의 debug 갈래 셋 중 둘은 `==`, 하나는
+/// `starts_with` 였고, `==` 만 보는 추출기는 셋 중 둘만 봤다. 그 상태에서 접두어 형으로
+/// release 표면을 여는 팔은 **가드가 통째로 못 본다** — 위양성보다 나쁜 거짓 음성이다.
+fn dispatch_methods(line: &str) -> Vec<Arm<'_>> {
     let mut out = Vec::new();
     let mut from = 0;
     while let Some(rel) = line[from..].find('"') {
@@ -336,13 +357,14 @@ fn dispatch_methods(line: &str) -> Vec<&str> {
         // 뒤쪽에 `=>` 가 있으면 그것도 팔로 센다.
         let is_arm = after.starts_with("=>") || (after.starts_with('|') && after.contains("=>"));
         let is_eq = before.ends_with("==");
+        let is_prefix = before.ends_with("starts_with(") || before.ends_with("strip_prefix(");
         let shaped = name.contains('.')
             && !name.is_empty()
             && name
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.');
-        if shaped && (is_arm || is_eq) {
-            out.push(name);
+        if shaped && (is_arm || is_eq || is_prefix) {
+            out.push(Arm { name, is_prefix });
         }
         from = close + 1;
     }
@@ -370,6 +392,50 @@ fn is_debug_gated(lines: &[String], idx: usize) -> bool {
     false
 }
 
+/// 블록·다중행 항목에 붙은 cfg 를 그 항목이 덮는 줄 전체에 상속시킨다.
+///
+/// 구현은 [`cfg_span`] 에 있다 — 같은 판정이 필요한 통합 타깃이 둘이고,
+/// 사본이 둘이면 갈리고 갈린 쪽은 조용하다.
+fn debug_gated_lines(lines: &[String]) -> Vec<bool> {
+    cfg_span::cfg_gated_lines(lines, "debug_assertions")
+}
+
+/// 스캔 결과 한 건 — 순수 함수 대조군에서 그대로 검사할 수 있게 값으로 돌려준다.
+struct Scanned {
+    name: String,
+    is_prefix: bool,
+    gated: bool,
+}
+
+/// 라우터 본문 줄들에서 디스패치 팔을 뽑고 각 팔이 debug 게이트 아래인지 표시한다.
+fn scan_arms(lines: &[String]) -> Vec<Scanned> {
+    let gated = debug_gated_lines(lines);
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for arm in dispatch_methods(line) {
+            out.push(Scanned {
+                name: arm.name.to_string(),
+                is_prefix: arm.is_prefix,
+                gated: gated[i] || is_debug_gated(lines, i),
+            });
+        }
+    }
+    out
+}
+
+/// release 표에 그 팔이 등재돼 있는가. 접두어 형은 그 접두어로 시작하는 항목이
+/// 하나라도 있으면 등재된 것으로 본다.
+fn registered_in_release_table(name: &str, is_prefix: bool) -> bool {
+    if is_prefix {
+        METHOD_TABLE.iter().any(|(m, _)| m.starts_with(name))
+    } else {
+        METHOD_TABLE.iter().any(|(m, _)| *m == name)
+    }
+}
+
 /// 가드 4 — release 라우터의 팔은 release 표에 등재돼 있어야 한다.
 #[test]
 fn release_router_arms_are_registered_in_the_release_table() {
@@ -382,19 +448,14 @@ fn release_router_arms_are_registered_in_the_release_table() {
         let src = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("라우터 소스를 읽을 수 없다: {}: {e}", path.display()));
         let lines = fn_body_lines(&src, sig);
-        let mut here = 0usize;
-        for (i, line) in lines.iter().enumerate() {
-            if line.trim_start().starts_with("//") {
+        let arms = scan_arms(&lines);
+        let here = arms.len();
+        for arm in arms {
+            if arm.gated {
                 continue;
             }
-            for name in dispatch_methods(line) {
-                here += 1;
-                if is_debug_gated(&lines, i) {
-                    continue;
-                }
-                if !METHOD_TABLE.iter().any(|(m, _)| m == &name) {
-                    offenders.push(format!("{rel}: {name}"));
-                }
+            if !registered_in_release_table(&arm.name, arm.is_prefix) {
+                offenders.push(format!("{rel}: {}", arm.name));
             }
         }
         assert!(
@@ -421,4 +482,111 @@ fn release_router_arms_are_registered_in_the_release_table() {
          `#[cfg(debug_assertions)]` 를 걸거나 debug 라우터로 옮겨라:\n  {}",
         offenders.join("\n  ")
     );
+}
+
+/// 가드 4 의 추출기가 **무엇을 보고 무엇을 못 보는지** 를 고정한다.
+///
+/// 이 가드는 소스를 읽어 컴파일러의 판정을 흉내 내는 자리다. 흉내가 어긋나는 방향이
+/// 둘이라 둘 다 못 박는다 — 지워질 팔을 남았다고 하는 **위양성**, 남을 팔을 못 보는
+/// **거짓 음성**. 뒤엣것이 더 나쁘다(가드가 초록인 채로 표면이 열린다).
+mod extractor_mutations {
+    use super::*;
+
+    fn lines(src: &str) -> Vec<String> {
+        src.lines().map(str::to_owned).collect()
+    }
+
+    /// 블록에 붙은 cfg 가 안쪽 팔들에 상속된다 — 이 가드가 고쳐진 자리.
+    #[test]
+    fn a_block_level_cfg_gates_the_arms_inside_it() {
+        let src = "\
+#[cfg(debug_assertions)]
+{
+    let rpc_id = id.clone();
+    if method == \"debug.lua.eval\" { run(); }
+    if method.starts_with(\"debug.event_bus.\") { run(); }
+}
+";
+        let arms = scan_arms(&lines(src));
+        assert_eq!(
+            arms.len(),
+            2,
+            "세 형태 중 둘을 팔로 봐야 한다: {}",
+            arms.len()
+        );
+        assert!(
+            arms.iter().all(|a| a.gated),
+            "블록 cfg 가 안쪽 팔에 상속되지 않았다 — 위양성이 그대로다"
+        );
+        assert!(
+            arms.iter()
+                .any(|a| a.is_prefix && a.name == "debug.event_bus."),
+            "접두어 형을 못 봤다"
+        );
+    }
+
+    /// cfg 줄을 떼면 같은 팔이 다시 지목된다 — 상속이 **무조건 통과**가 아니다.
+    #[test]
+    fn removing_the_block_cfg_reopens_the_finding() {
+        let src = "\
+{
+    let rpc_id = id.clone();
+    if method == \"debug.lua.eval\" { run(); }
+}
+";
+        let arms = scan_arms(&lines(src));
+        assert!(
+            arms.iter().any(|a| a.name == "debug.lua.eval" && !a.gated),
+            "cfg 없는 블록의 팔을 gated 로 봤다 — 상속이 너무 넓다"
+        );
+    }
+
+    /// 게이트된 블록이 닫힌 **뒤**의 팔은 여전히 release 다.
+    #[test]
+    fn an_arm_after_the_gated_block_is_still_release() {
+        let src = "\
+#[cfg(debug_assertions)]
+{
+    if method == \"debug.lua.eval\" { run(); }
+}
+if method == \"leaked.method\" { run(); }
+";
+        let arms = scan_arms(&lines(src));
+        let leaked = arms
+            .iter()
+            .find(|a| a.name == "leaked.method")
+            .expect("블록 뒤의 팔을 못 봤다");
+        assert!(!leaked.gated, "블록의 게이트가 블록 밖으로 새어 나갔다");
+    }
+
+    /// 문자열 안의 중괄호가 블록을 일찍 닫지 않는다 — 닫히면 그 뒤가 release 로 보인다.
+    #[test]
+    fn braces_inside_strings_do_not_close_the_gated_block() {
+        let src = "\
+#[cfg(debug_assertions)]
+{
+    log(\"}\");
+    if method == \"debug.lua.eval\" { run(); }
+}
+";
+        let arms = scan_arms(&lines(src));
+        assert!(
+            arms.iter().any(|a| a.name == "debug.lua.eval" && a.gated),
+            "문자열 안 `}}` 에 속아 블록이 일찍 닫혔다"
+        );
+    }
+
+    /// 등재 판정이 접두어와 정확 이름을 구분한다.
+    #[test]
+    fn a_prefix_arm_is_registered_only_if_the_table_has_something_under_it() {
+        assert!(
+            !registered_in_release_table("no.such.namespace.", true),
+            "아무것도 없는 접두어를 등재됐다고 봤다"
+        );
+        let (first, _) = METHOD_TABLE[0];
+        assert!(
+            registered_in_release_table(first, false),
+            "표에 있는 이름을 미등재로 봤다 — 대조군이 죽었다"
+        );
+    }
 }

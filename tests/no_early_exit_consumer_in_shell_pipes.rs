@@ -46,6 +46,10 @@
 //!
 //! 채널: 이 가드는 통합 테스트다 — 채널 정본은 `docs/dev-guide/ci-gates.md`.
 
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _ =` 는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -59,6 +63,9 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 /// 고정 개수의 두 용도 중 **연기 검사** 쪽이다: 모수를 이 수로 고정하는 것이 아니라,
 /// 경로가 어긋나 0 을 내는 것을 막는 하한이다.
 const MIN_SHELL_SCRIPTS: usize = 15;
+
+/// 워크플로 수집 하한 — 같은 이유로, 경로가 어긋나 0 을 내는 것을 막는다.
+const MIN_WORKFLOWS: usize = 8;
 
 /// 수집 결과가 **믿을 만한가** — 판정을 순수 함수로 뽑아 합성 입력으로 찌를 수 있게 한다.
 ///
@@ -194,6 +201,45 @@ fn violations(text: &str) -> Vec<(usize, String)> {
     found
 }
 
+/// shebang 을 읽기 위해 여는 **앞부분 바이트 수**. 한 줄을 판정하는 데 필요한 만큼만
+/// 읽는다.
+///
+/// 종전에는 `read_to_string` 으로 파일을 통째로 읽었다. 이 수집기는 확장자를 안 보고
+/// **모든 파일**을 열어 보므로, 그 비용이 트리의 총 바이트에 비례했다 — 실측(2026-09-05)
+/// 다른 이름의 빌드 디렉토리가 모수에 들어왔을 때 이 가드가 0.05s → 89.17s (1783 배) 가
+/// 됐고, 27 타깃 중 가장 크게 움직였다. 가지치기(ADR-0146)가 그 경로를 막았지만 크기에
+/// 비례하는 성질 자체는 남아 있었다 — 산출물이 아닌 큰 파일이 늘면 다시 비싸진다.
+///
+/// 셸 첫 줄은 실질적으로 이보다 훨씬 짧다. 이 창을 넘는 첫 줄은 shebang 이 아니다.
+const SHEBANG_WINDOW: usize = 256;
+
+/// 첫 줄이 셸 shebang 인가.
+///
+/// UTF-8 로 못 읽는 파일은 셸 스크립트가 아니다. 앞부분만 보므로 **뒤쪽이 UTF-8 이
+/// 아닌 파일도 첫 줄로 판정된다** — 종전의 통째 읽기는 그런 파일을 통째로 건너뛰었다.
+/// 방향이 옳은 쪽으로만 달라진다: shebang 을 가진 파일이 뒤에 이진 바이트를 담았다고
+/// 모수에서 빠질 이유가 없다.
+fn has_shell_shebang(path: &Path) -> bool {
+    use std::io::Read;
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = [0u8; SHEBANG_WINDOW];
+    let Ok(n) = file.read(&mut head) else {
+        return false;
+    };
+    let head = &head[..n];
+    if !head.starts_with(b"#!") {
+        return false;
+    }
+    let line_end = head.iter().position(|b| *b == b'\n').unwrap_or(head.len());
+    let Ok(first) = std::str::from_utf8(&head[..line_end]) else {
+        return false;
+    };
+    first.contains("bash") || first.contains("sh")
+}
+
 fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         panic!("디렉토리를 읽지 못했다: {}", dir.display());
@@ -203,7 +249,13 @@ fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if path.is_dir() {
-            if SKIP_DIRS.contains(&name.as_ref()) || (name.starts_with('.') && name != ".githooks")
+            // 이름으로 걸리거나, **디렉토리 자신이 빌드 캐시라고 밝히거나**. 이름만 볼 때는
+            // `CARGO_TARGET_DIR` 로 만든 다른 이름의 빌드 디렉토리가 통째로 모수에 들어왔고,
+            // 이 가드는 아래 `read_to_string` 을 **모든 파일에** 걸기 때문에 그 대가가 가장
+            // 컸다 — 실측(2026-09-05) 0.05s → 89.17s (1783 배).
+            if SKIP_DIRS.contains(&name.as_ref())
+                || (name.starts_with('.') && name != ".githooks")
+                || tasty_doc_guards::is_build_cache_dir(&path)
             {
                 continue;
             }
@@ -211,15 +263,120 @@ fn collect_shell_scripts(dir: &Path, out: &mut Vec<PathBuf>) {
         } else {
             // 확장자가 아니라 **shebang** 으로 고른다 — `.githooks/pre-commit` 처럼 확장자가
             // 없는 셸 스크립트가 있고, `*.sh` 로 훑으면 그것이 통째로 모수 밖에 남는다.
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let first = text.lines().next().unwrap_or("");
-            if first.starts_with("#!") && (first.contains("bash") || first.contains("sh")) {
+            if has_shell_shebang(&path) {
                 out.push(path);
             }
         }
     }
+}
+
+// ─── 셸을 담지만 셸 스크립트 파일이 아닌 자리 ────────────────────────────────
+//
+// 위 수집기는 **파일 첫 줄의 shebang** 으로 고른다. 그 규칙이 통째로 못 보는 자리가 둘
+// 있고, 둘 다 이 레포에 실재했다:
+//
+//   Justfile              첫 줄이 주석이고 `#!/bin/bash` 는 레시피 **안쪽** 11 곳에 있다.
+//                         그 레시피들은 `set -euo pipefail` 을 켠다 — 실현 조건이 성립한다.
+//   .github/workflows/    `run:` 블록이 셸인데, `.github` 이 dot 디렉토리라 순회에서 빠진다.
+//
+// 모수를 확장자로도, 첫 줄로도 고르면 안 된다는 뜻이다. **셸을 담는 자리**를 이름으로
+// 지목하고, 새 자리가 생겼을 때 조용히 빠지지 않도록 개수를 함께 고정한다.
+
+/// 워크플로 YAML 의 `run:` 블록 본문 — (파일 안 시작 줄, 본문).
+///
+/// 블록 스칼라(`run: |`)와 한 줄 형태(`run: cmd`)를 모두 본다. YAML 파서를 붙이지 않는
+/// 근사다 — 판정이 보수적인 쪽(더 많이 보는 쪽)으로만 틀리도록 들여쓰기로 끊는다.
+fn workflow_run_blocks(text: &str) -> Vec<(usize, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let body_after_key = trimmed
+            .strip_prefix("- ")
+            .unwrap_or(trimmed)
+            .strip_prefix("run:")
+            .map(str::trim);
+        let Some(rest) = body_after_key else {
+            i += 1;
+            continue;
+        };
+        // 키의 들여쓰기는 대시가 아니라 **`run` 낱말의 위치**다. `- run: |` 에서 대시를
+        // 기준으로 재면 같은 step 의 `env:`(더 깊이 들여쓴다)까지 본문으로 삼킨다.
+        let key_indent = line.find("run:").unwrap_or(line.len() - trimmed.len());
+        if rest.starts_with('|') || rest.starts_with('>') {
+            // 블록 스칼라 — 키보다 깊이 들여쓴 줄이 본문이다.
+            let mut body = Vec::new();
+            let mut base: Option<usize> = None;
+            let mut j = i + 1;
+            while j < lines.len() {
+                let l = lines[j];
+                if l.trim().is_empty() {
+                    body.push(String::new());
+                    j += 1;
+                    continue;
+                }
+                let ind = l.len() - l.trim_start().len();
+                if ind <= key_indent {
+                    break;
+                }
+                let base = *base.get_or_insert(ind);
+                body.push(l.chars().skip(base).collect());
+                j += 1;
+            }
+            out.push((i + 2, body.join("\n")));
+            i = j;
+        } else {
+            if !rest.is_empty() {
+                out.push((i + 1, rest.to_string()));
+            }
+            i += 1;
+        }
+    }
+    out
+}
+
+/// 이 레포에서 셸을 담는 **비-스크립트 파일**. 새 자리가 생기면 여기 더한다.
+fn shell_carriers(root: &Path) -> Vec<(String, Vec<(usize, String)>)> {
+    let mut out: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+
+    // Justfile 은 통째로 셸로 읽는다 — 과대근사이지만 **더 많이 보는 쪽**이라 안전하다.
+    // 레시피 헤더(`name:`)나 `:=` 대입에는 파이프가 없어서 실측 오탐이 0 이다.
+    if let Ok(text) = std::fs::read_to_string(root.join("Justfile")) {
+        out.push(("Justfile".to_string(), violations(&text)));
+    }
+
+    let wf_dir = root.join(".github").join("workflows");
+    let mut wf_files: Vec<PathBuf> = std::fs::read_dir(&wf_dir)
+        .unwrap_or_else(|e| panic!("워크플로 디렉토리를 못 읽었다: {} ({e})", wf_dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yml" || x == "yaml"))
+        .collect();
+    wf_files.sort();
+    assert!(
+        wf_files.len() >= MIN_WORKFLOWS,
+        "워크플로를 {}개밖에 못 찾았다(하한 {MIN_WORKFLOWS}) — 수집이 깨졌다",
+        wf_files.len()
+    );
+    for path in wf_files {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = format!(
+            ".github/workflows/{}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        );
+        let mut hits = Vec::new();
+        for (start, body) in workflow_run_blocks(&text) {
+            for (line, cmd) in violations(&body) {
+                hits.push((start + line - 1, cmd));
+            }
+        }
+        out.push((rel, hits));
+    }
+    out
 }
 
 #[test]
@@ -358,4 +515,148 @@ fn the_scan_refuses_to_report_zero_from_an_empty_input() {
     assert!(!scan_is_credible(0));
     assert!(!scan_is_credible(MIN_SHELL_SCRIPTS - 1));
     assert!(scan_is_credible(MIN_SHELL_SCRIPTS));
+}
+
+#[test]
+fn no_shell_carrier_pipes_into_an_early_exit_consumer() {
+    let root = repo_root();
+    let carriers = shell_carriers(&root);
+    assert!(
+        carriers.len() > MIN_WORKFLOWS,
+        "셸을 담는 자리를 {}개밖에 못 찾았다 — 수집이 깨졌다",
+        carriers.len()
+    );
+
+    let hits: Vec<String> = carriers
+        .iter()
+        .flat_map(|(name, found)| {
+            found
+                .iter()
+                .map(move |(line, cmd)| format!("{name}:{line}  {}", cmd.trim()))
+        })
+        .collect();
+
+    assert!(
+        hits.is_empty(),
+        "셸 스크립트가 아니지만 셸을 담는 자리에서 조기 종료 소비자가 파이프의 오른쪽에 \
+         있다. 처방은 스크립트와 같다 — `grep -m1 PAT FILE` 로 파이프를 없애거나 producer 를 \
+         변수로 받아 히어스트링으로 넘긴다:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+// ─── carrier 추출기를 겨냥한 변이 (합성 입력) ───────────────────────────────
+
+#[test]
+fn a_workflow_run_block_is_extracted_as_shell() {
+    let yaml = "\
+jobs:
+  a:
+    steps:
+      - name: x
+        run: |
+          set -e
+          v=$(producer | head -1)
+      - name: y
+        run: echo ok
+";
+    let blocks = workflow_run_blocks(yaml);
+    assert_eq!(blocks.len(), 2, "블록 두 개를 못 뽑았다: {blocks:?}");
+    // 블록 스칼라 본문은 들여쓰기가 벗겨진 채로 나온다.
+    assert!(blocks[0].1.starts_with("set -e\n"), "{:?}", blocks[0].1);
+    assert_eq!(blocks[1].1, "echo ok");
+    // 그리고 그 본문에서 위반이 잡힌다 — 줄 번호는 파일 기준이다.
+    let hit = &violations(&blocks[0].1)[0];
+    assert_eq!(blocks[0].0 + hit.0 - 1, 7, "줄 번호가 어긋난다");
+}
+
+#[test]
+fn a_workflow_key_that_merely_ends_in_run_is_not_a_run_block() {
+    // `dry-run:` · `should_run:` 를 `run:` 으로 읽으면 엉뚱한 값이 셸로 들어온다.
+    let yaml = "\
+jobs:
+  a:
+    steps:
+      - with:
+          dry-run: producer | head -1
+        run: echo ok
+";
+    let blocks = workflow_run_blocks(yaml);
+    assert_eq!(blocks.len(), 1, "{blocks:?}");
+    assert_eq!(blocks[0].1, "echo ok");
+}
+
+#[test]
+fn a_workflow_block_ends_at_the_next_key() {
+    // 본문이 다음 키를 삼키면, 그 키의 값이 셸로 판정된다.
+    let yaml = "\
+jobs:
+  a:
+    steps:
+      - run: |
+          echo one
+        env:
+          X: producer | head -1
+";
+    let blocks = workflow_run_blocks(yaml);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].1.trim(), "echo one");
+    assert!(violations(&blocks[0].1).is_empty());
+}
+
+/// **빌드 디렉토리는 이름이 아니라 표식으로 걸러진다.** 이 가드는 shebang 을 보려고
+/// 모든 파일을 읽으므로, 산출물이 모수에 들어오면 대가가 가장 크다 — 실측(2026-09-05)
+/// 다른 이름의 빌드 디렉토리를 두었을 때 0.05s 가 89.17s 가 됐다.
+///
+/// 양극성으로 잡는다. 이 절이 없으면 판정이 이름으로 되돌아가도 나머지 테스트가 전부
+/// 초록이라, 모수가 다시 새는 것을 아무도 못 본다.
+#[test]
+fn a_build_dir_is_recognised_by_its_tag_not_its_name() {
+    let dir = std::env::temp_dir().join(format!("tasty-shellprune-{}", std::process::id()));
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서
+    // 죽으면 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리");
+
+    assert!(
+        !tasty_doc_guards::is_build_cache_dir(&dir),
+        "표식이 없으면 빌드 캐시가 아니다"
+    );
+
+    std::fs::write(
+        dir.join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n",
+    )
+    .expect("표식 쓰기");
+    assert!(
+        tasty_doc_guards::is_build_cache_dir(&dir),
+        "표식이 있으면 이름과 무관하게 빌드 캐시다"
+    );
+
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없고, 여기서
+    // 죽으면 진짜 실패가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_carrier_set_covers_the_justfile_and_every_workflow() {
+    let root = repo_root();
+    let carriers = shell_carriers(&root);
+    let names: Vec<&str> = carriers.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(names.contains(&"Justfile"), "Justfile 이 빠졌다: {names:?}");
+    // 워크플로는 디렉토리에 있는 만큼 전부 들어와야 한다 — 새 워크플로가 조용히
+    // 모수 밖에 남는 것이 이 가드가 늦게 선 이유다.
+    let on_disk = std::fs::read_dir(root.join(".github").join("workflows"))
+        .expect("워크플로 디렉토리")
+        .flatten()
+        .filter(|e| {
+            let p = e.path();
+            p.extension().is_some_and(|x| x == "yml" || x == "yaml")
+        })
+        .count();
+    assert_eq!(
+        names.iter().filter(|n| n.starts_with(".github/")).count(),
+        on_disk,
+        "워크플로 수집이 디스크와 어긋난다: {names:?}"
+    );
 }

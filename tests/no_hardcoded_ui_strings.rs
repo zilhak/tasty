@@ -4,8 +4,10 @@
 //! 배경: `CLAUDE.md` "국제화" 는 자연어 하드코딩을 금지하지만 지금까지 리뷰에만
 //! 의존했고, egui 본체는 지켜졌어도 가장자리(CLI stderr · OS 네이티브 메뉴 · 알림
 //! 제목 · `unwrap_or` 폴백)에서 반복 재발했다. 이 테스트가 `cargo test --workspace`
-//! 에서 그 재발을 막는다 — 그 잡은 수동 전용이라 자동 채널은 아니다
-//! (`docs/dev-guide/ci-gates.md`). 근거 문서는
+//! 에서 그 재발을 막는다 — 이 테스트의
+//! 자동 실행은 **헤드리스 조합**(`check-headless` 의 전체 스위트)에서만 일어난다
+//! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
+//! 근거 문서는
 //! `docs/dev-guide/i18n.md` — 예외 목록도 그 문서의 "하드코딩 허용 예외" 를 그대로 옮긴 것이다.
 //!
 //! **형태별 검사** (한 정규식으로는 절반도 못 잡으므로 `find_*` 로 분리):
@@ -39,7 +41,9 @@
 //! 잔존 위반은 [`PENDING_FIX_LITERALS`] 에 파일·리터럴·고칠 방법과 함께 둔다 — 고쳐지면
 //! 항목을 지우라고 fail 하므로 빚이 조용히 남지 않는다.
 //!
-//! 선례: `tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
+
+use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -56,6 +60,13 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     ),
     ("crates/tasty-tui-simulator/", "테스트용 TUI 시뮬레이터"),
     (
+        "src/source_guards/",
+        "src/main.rs 가 `#[cfg(test)] mod source_guards;` 로 다는 테스트 전용 모듈 — \
+         릴리스 바이너리에 없다. 이 스캐너는 파일 **안**의 `#[test]` 만 보므로 모듈 \
+         선언 쪽 cfg 를 못 따라간다. `#[test]` 밖 헬퍼의 진단 문구가 사용자 문구로 \
+         잘못 걸리던 것을 경로로 막는다 (`/debug/` 제외와 같은 근거)",
+    ),
+    (
         "crates/tasty-cli/src/format.rs",
         "tasty list 구조 출력의 고정 토큰 — 기계 파싱 대상 (i18n.md 예외, t() 미사용이 컨벤션)",
     ),
@@ -66,6 +77,13 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     (
         "crates/tasty-cli/src/help.rs",
         "clap 도움말 보강 출력 — clap 의 영어 about 텍스트와 한 화면에 섞여 나오므로 같은 언어(i18n.md clap 예외)",
+    ),
+    (
+        "crates/tasty-doc-guards/src/bin/",
+        "게이트 스크립트가 부르는 개발 도구 — 사용자 배포 표면이 아니고, 이 크레이트는 \
+         의존이 0 인 것이 존재 이유라(ADR-0138) 번역 테이블을 들일 수도 없다. 진단은 \
+         게이트 로그로 나가 개발자만 읽는다 (`crates/tasty-tui-simulator/` 와 같은 근거). \
+         **`src/bin/` 만이다** — 이 크레이트의 라이브러리는 아무것도 출력하지 않는다",
     ),
 ];
 
@@ -153,13 +171,22 @@ const PENDING_FIX_LITERALS: &[(&str, &str, &str)] = &[
 ];
 
 /// clap 도움말 스캔 대상(`crates/tasty-cli`).
+/// [`clap_help_text_is_english_only`] 가 실제로 검사하는 `///` 줄의 하한.
+///
+/// 스캔 대상이 0 이면 그 술어는 위반을 못 찾는 것이 아니라 **볼 것이 없어서** 초록이다.
+/// `#[cfg(test)]` 를 걷어내는 판정이 너무 많이 먹으면 그 형태로 조용히 무너지므로,
+/// 실측보다 낮되 붕괴를 잡을 만큼은 높게 잡는다 — 전부를 게이트로 보는 변이는 0 으로
+/// 떨어지고, 게이트가 절반쯤 새는 변이도 이 아래로 온다. CLI 표면이 정상적으로 줄어
+/// 여기 걸리면 그때 값을 다시 재서 내린다.
+const MIN_SCANNED_CLAP_DOC_LINES: usize = 800;
+
 const CLAP_DOC_ROOTS: &[&str] = &[
     "crates/tasty-cli/src/commands",
     "crates/tasty-cli/src/commands.rs",
     "crates/tasty-cli/src/lib.rs",
 ];
 
-/// 순회에서 통째로 가지치기할 디렉토리명(`tests/no_todo_file_citation.rs` 와 동일).
+/// 순회에서 통째로 가지치기할 디렉토리명(`crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 와 동일).
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
@@ -617,22 +644,63 @@ fn clap_help_text_is_english_only() {
     );
 
     let mut violations = Vec::new();
+    // 실제로 검사된 `///` 줄. 게이트 판정이 망가져 전부 게이트로 보이면 이 수가
+    // 무너지고, 그때 아래 하한이 먼저 말한다 — 0 은 통과가 아니라 측정 실패다.
+    let mut scanned_doc_lines = 0usize;
     for file in &files {
         let Ok(contents) = std::fs::read_to_string(file) else {
             continue;
         };
         let rel = rel_of(file);
-        for (idx, line) in contents.lines().enumerate() {
+        let src: Vec<&str> = contents.lines().collect();
+        // `#[cfg(test)]` 아래는 바이너리에 안 들어가므로 `--help` 에도 안 나온다.
+        // doc 주석은 **뒤따르는 항목**에 귀속되니 속성 앞 줄까지 함께 걷어낸다.
+        let gated = cfg_span::cfg_gated_lines(&src, "test");
+        for (idx, line) in src.iter().enumerate() {
+            if gated[idx] {
+                continue;
+            }
+            if line.trim_start().starts_with("///") {
+                scanned_doc_lines += 1;
+            }
             if let Some(hit) = clap_doc_violation(line) {
                 violations.push(format!("  {rel}:{}: {hit}", idx + 1));
             }
         }
     }
     assert!(
+        scanned_doc_lines >= MIN_SCANNED_CLAP_DOC_LINES,
+        "clap 도움말 후보 `///` 줄이 {scanned_doc_lines} 개뿐이다(하한 \
+         {MIN_SCANNED_CLAP_DOC_LINES}). 게이트 판정이 너무 많이 걷어냈거나 \
+         `CLAP_DOC_ROOTS` 가 낡았다 — 이 술어는 볼 것이 없으면 공짜로 초록이다."
+    );
+    assert!(
         violations.is_empty(),
         "clap help text must be English only — `///` doc comments and about/help literals \
          surface verbatim in `--help` (docs/dev-guide/i18n.md, cli-structure.md 도움말 문구). \
+         `#[cfg(test)]` 아래는 바이너리에 안 들어가므로 여기 안 걸린다. \
          Move Korean/Japanese background notes to `//` comments or docs/:\n{}",
         violations.join("\n")
+    );
+}
+
+/// 면제가 가리키는 경로가 **실재하는가** — 참조 무결성.
+///
+/// **초록은 "이 면제가 아직 필요하다" 가 아니다**(ADR-0150). 가리키는 것이 실재한다는
+/// 것뿐이고, 실재해도 그 면제가 아무것도 안 덮고 있을 수 있다. 두 축을 섞으면 "안 덮으면
+/// 지워라" 라는 틀린 처방이 참조 무결성의 옷을 입고 돌아온다.
+///
+/// 경로가 썩으면 면제는 조용히 아무 일도 안 하게 되는데, 목록에는 "여기는 원래 위반해도
+/// 된다" 는 신호가 남는다. 판정과 그 양극성 회귀는 [`tasty_doc_guards::missing_referents`].
+#[test]
+fn allowlist_path_prefixes_point_at_paths_that_exist() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let missing = tasty_doc_guards::missing_referents(
+        root,
+        ALLOWLIST_PATH_PREFIXES.iter().map(|(rel, _)| *rel),
+    );
+    assert!(
+        missing.is_empty(),
+        "면제가 없는 경로를 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 항목을 지워라: {missing:?}"
     );
 }

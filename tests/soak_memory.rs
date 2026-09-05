@@ -327,6 +327,10 @@ fn soak() {
     let checkpoint_every = env_u64("SOAK_CHECKPOINT_EVERY", 10).max(1);
     let out_dir = std::env::var_os("SOAK_OUT_DIR")
         .map(PathBuf::from)
+        // 이유: SOAK_OUT_DIR 미지정 시의 폴백 디렉토리다(ADR-0129 형태 B). 격리는 디렉토리가
+        //       아니라 파일명이 진다 — 아래 out_path 가 `soak-{scenario}-{epoch}.jsonl` 로 매
+        //       실행 유일하고, create_dir_all 은 멱등이며, 이 테스트는 #[ignore] 라 동시 자동
+        //       실행되지 않는다(SOAK_* env 로 수동 단독 실행).
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-soak"));
 
     std::fs::create_dir_all(&out_dir).expect("failed to create SOAK_OUT_DIR");

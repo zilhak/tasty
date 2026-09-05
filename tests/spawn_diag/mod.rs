@@ -85,20 +85,177 @@ pub fn init_test_tracing() {
 /// `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가
 /// 듣는 것처럼 보인다. 경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다.
 ///
+/// **함정 2**: 그 target 디렉토리를 **레포 밖에 두면** plugin 번들이 안 만들어진다. host 는
+/// `exe_dir/builtin-plugins` 를 먼저 보고, 없으면 exe 의 두 단계 위를 워크스페이스 루트로
+/// 역산하는데 — 레포 밖 디렉토리에서는 그 역산이 `crates/` 없는 경로를 가리켜 실패하고
+/// 데몬이 plugin namespace 없이 올라온다.
+///
+/// **함정 3**: `--workspace` 없이 빌드하면 그 target 에 `tasty-plugin-*` 바이너리가 **하나도
+/// 안 생긴다**. 함정 2 와 독립이다 — 레포 안에 두어 역산이 맞아도 동기화할 바이너리가 없다.
+///
+/// 두 함정의 증상이 같다: `Method not found: <plugin namespace>.<method>`. 이는 §0 의 stale
+/// plugin drift 및 "headless 에 아직 배선되지 않은 경로" 와도 **문구가 같아** 빌드 절차 결함이
+/// IPC 표면 차이로 오독된다. 그래서 override 절차는 레포 안 target + `--workspace` 둘 다를
+/// 요구한다 (`docs/dev-guide/e2e-tests.md` §0-1 — 세 팔 실측표가 두 조건을 따로 가른다).
+///
+/// **함정 4 (닫혔다)**: 이 override 는 **데몬만** 조합을 바꾼다. 테스트 바이너리는
+/// 자기 조합으로 컴파일된 채라, 데몬 동작을 `cfg(feature = "gui")` 로 갈라 단언하는
+/// 테스트는 단언이 구조적으로 뒤집힌다. 그래서 **그런 단언을 가진 스위트는 override 를
+/// 받지 않는다** — [`daemon_kind`] 가 스위트별로 가르고, `e2e_tests` 가 그 하나다.
+/// 실측 2026-09-05(닫기 전): gui 테스트 바이너리 + 헤드리스 데몬으로 11 스위트를 돌려
+/// `e2e_tests` 만 5 건 깨졌고, 그중 4 건이 조합 교차였다. 지금은 그 스위트가 자기
+/// 조합의 데몬을 그대로 띄우므로 그 4 건이 나지 않는다.
+///
 /// 존재하지 않는 경로를 주면 spawn 이 "그냥 실패" 하는 대신 **여기서** 죽는다 —
 /// 30 초를 기다린 뒤 port file 미작성으로 오진되는 것을 막는다.
 pub fn instance_bin() -> std::ffi::OsString {
     let from_env = std::env::var_os(INSTANCE_BIN_ENV);
-    let resolved = resolve_instance_bin(from_env.as_deref(), env!("CARGO_BIN_EXE_tasty"));
-    if from_env.is_some() && !std::path::Path::new(&resolved).is_file() {
+    // 경로 검증은 **이 스위트가 override 를 쓰든 안 쓰든** 한다. 오타를 쓴 사람은
+    // 어느 스위트를 돌리든 그 자리에서 알아야 하고, 안 그러면 "왜 안 듣지" 가 된다.
+    if let Some(v) = from_env.as_deref()
+        && !v.is_empty()
+        && !std::path::Path::new(v).is_file()
+    {
         panic!(
             "{INSTANCE_BIN_ENV} 가 가리키는 경로에 실행 파일이 없다: {}\n\
              별도 CARGO_TARGET_DIR 로 빌드한 산출물의 절대경로여야 한다 — \
              docs/dev-guide/e2e-tests.md",
-            resolved.to_string_lossy()
+            std::path::Path::new(v).display()
         );
     }
-    resolved
+    let effective = effective_override(daemon_kind(), from_env);
+    if let Some(v) = effective.as_deref()
+        && !v.is_empty()
+        && let Some(newer) = source_newer_than(std::path::Path::new(v), repo_roots())
+    {
+        panic!(
+            "{INSTANCE_BIN_ENV} 가 가리키는 바이너리가 소스보다 낡았다.\n\
+             \x20 바이너리: {}\n\x20 더 새 소스: {}\n\
+             낡은 데몬은 **정상 부팅해 정상 응답한다** — 그래서 이 스위트는 옛 코드에 대해 \
+             통과하거나 실패하고, 그 오진은 양방향이다(고친 것이 안 고쳐진 것처럼도, \
+             되돌린 것이 여전히 고쳐진 것처럼도 보인다).\n\
+             다시 빌드하거나(`scripts/build-e2e-headless.sh`) `{INSTANCE_BIN_ENV}=` 로 꺼라 \
+             — docs/dev-guide/e2e-tests.md",
+            std::path::Path::new(v).display(),
+            newer.display()
+        );
+    }
+    resolve_instance_bin(effective.as_deref(), env!("CARGO_BIN_EXE_tasty"))
+}
+
+/// override 가 **이 스위트에 실제로 적용되는가**. 순수 함수로 둔다 — 환경변수를
+/// 건드리지 않고 두 갈래를 다 시험할 수 있어야 한다.
+///
+/// 조합 의존 단언을 가진 스위트가 override 를 안 받는 것이 **이 설계의 안전장치
+/// 전부**다. 그것이 무너지면 데몬만 조합이 바뀌어 그 단언들이 구조적으로 뒤집힌다
+/// (함정 4). 그래서 여기에 테스트가 붙어 있다.
+fn effective_override(
+    kind: DaemonKind,
+    from_env: Option<std::ffi::OsString>,
+) -> Option<std::ffi::OsString> {
+    match kind {
+        DaemonKind::SameCombo => None,
+        DaemonKind::HeadlessOk => from_env,
+    }
+}
+
+/// 낡음 판정이 훑을 소스 뿌리. 문서·워크플로는 데몬 동작을 안 바꾸므로 안 본다.
+fn repo_roots() -> Vec<std::path::PathBuf> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    vec![root.join("src"), root.join("crates")]
+}
+
+/// `bin` 보다 **새로운** `.rs` 가 하나라도 있으면 그 경로를 준다.
+///
+/// 첫 하나에서 멈춘다 — 몇 개가 새것인지는 판정에 필요 없고, 전수로 훑으면 회차마다
+/// 무는 비용이 된다. 실측 10~14 ms(`find` 등가).
+///
+/// **mtime 을 못 읽는 경로는 "새것 아님" 으로 넘긴다.** 판정 불가를 빨강으로 만들면
+/// 권한·심볼릭 링크 같은 환경 차이가 곧바로 거짓 빨강이 되는데, 이 판정의 목적은
+/// 낡은 것을 잡는 것이지 파일시스템을 검사하는 것이 아니다.
+fn source_newer_than(
+    bin: &std::path::Path,
+    roots: Vec<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    let bin_mtime = std::fs::metadata(bin).and_then(|m| m.modified()).ok()?;
+    let mut stack = roots;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let newer = std::fs::metadata(&p)
+                .and_then(|m| m.modified())
+                .map(|m| m > bin_mtime)
+                .unwrap_or(false);
+            if newer {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// 이 스위트가 어떤 데몬을 원하는가.
+///
+/// 두 값의 차이는 **조합 의존 단언을 가지는가** 하나다. 가진 스위트는 데몬이
+/// 테스트 바이너리와 같은 조합이어야 그 단언이 뜻을 갖고, 안 가진 스위트는
+/// 헤드리스 데몬으로 충분하다 — 그리고 그러면 그 스위트는 GUI 부팅을 통째로
+/// 건너뛴다(창 + wgpu 디바이스 + boot 상태기계).
+pub enum DaemonKind {
+    /// 데몬이 **테스트 바이너리와 같은 조합**이어야 한다. override 를 무시한다.
+    SameCombo,
+    /// IPC / attach 스트림만 쓴다 — 헤드리스 데몬으로 충분하다.
+    HeadlessOk,
+}
+
+/// 인스턴스를 띄우는 스위트 중 **헤드리스 데몬으로 충분한 것들.**
+///
+/// 여기 없는 스위트는 [`DaemonKind::SameCombo`] 로 떨어진다 — **모르는 것은 안전한
+/// 쪽으로 보낸다.** 새 스위트가 조합 의존 단언을 갖고 들어왔는데 목록이 기본으로
+/// 헤드리스면 override 를 켠 사람에게 **틀린 빨강**이 가지만, 반대 방향의 누락은
+/// "최적화를 놓친다" 로 끝난다. 두 오류가 비대칭이라 기본값을 이쪽으로 둔다.
+///
+/// 명부가 `EXPECTED_INSTANCE_TESTS` 와 어긋나지 않는 것은
+/// `tests/e2e_single_instance_guard.rs` 가 본다.
+const HEADLESS_OK_SUITES: &[&str] = &[
+    "attach_attention_loopback",
+    "attach_convert_cwd_loopback",
+    "attach_git_query_loopback",
+    "attach_list_dir_loopback",
+    "attach_local_creation_tap",
+    "attach_silent_disconnect",
+    "hook_env_integration",
+    "hooks_detection_e2e",
+    "shared_instance_harness",
+    "soak_memory",
+    "webhook_integration",
+];
+
+/// 이 스위트의 판정. `CARGO_CRATE_NAME` 은 통합 테스트에서 **test 타깃 이름**으로
+/// 확장되고(실측), 이 모듈은 각 테스트 바이너리에 함께 컴파일되므로 스위트마다
+/// 다른 값이 된다.
+///
+/// **`e2e_tests` 만 [`DaemonKind::SameCombo`] 다.** 실측 2026-09-05: 인스턴스를 띄우는
+/// 11 스위트 중 `cfg(feature = "gui")` 계열 사이트를 가진 것은 `e2e_tests.rs` 하나였고
+/// (10 사이트), 나머지 10 개는 각 0 이었다. 실행 쪽 확인도 있다 —
+/// `docs/dev-guide/e2e-tests.md` §0-1 이 gui 테스트 바이너리 + 헤드리스 데몬으로
+/// 11 스위트를 돌려 10 개가 통과하고 `e2e_tests` 만 깨진 것을 기록해 두었다.
+/// `gui_tests` 는 애초에 이 경로를 안 쓴다(`BIN_SELECTION_ALLOWLIST`).
+pub fn daemon_kind() -> DaemonKind {
+    if HEADLESS_OK_SUITES.contains(&env!("CARGO_CRATE_NAME")) {
+        DaemonKind::HeadlessOk
+    } else {
+        DaemonKind::SameCombo
+    }
 }
 
 /// [`instance_bin`] 의 선택 규칙만 떼어낸 것 — 환경변수를 건드리지 않고 시험할 수
@@ -221,18 +378,43 @@ pub fn early_exit_message(status: &str, tail_lines: usize, tail: &str) -> String
 
 /// spawn timeout panic 메시지. 단계 이름·상한·판정·stderr tail 을 한 형식으로 묶어
 /// 두 하네스가 같은 모양으로 실패하게 한다.
+/// **느린 것과 멈춘 것을 가른다.** 상한을 넘긴 부팅은 두 사건일 수 있다: 자식이 마감
+/// 직전까지 진행 중이었거나(예산 부족 — 상한이 얇다), 한참 전부터 아무 말도 없었거나
+/// (멈춤 — 상한을 올려도 그대로다). 종전 문구는 둘 다 `failed to start within 40s` 였다.
+///
+/// 가르는 값은 **마지막 stderr 이후 경과**다. 문턱은 상한의 절반 — 그 정도 침묵이면
+/// 남은 예산을 더 줘도 같은 자리에 서 있을 것이라는 뜻이다. 순수 함수라 아래 단위
+/// 테스트가 세 방향을 다 찌른다.
+pub fn stderr_silence_verdict(last_line_age: Option<Duration>, limit: Duration) -> String {
+    match last_line_age {
+        None => "자식이 stderr 에 한 줄도 내지 않았다 — 부팅에 들어가지도 못한 쪽을 먼저 본다."
+            .to_string(),
+        Some(age) if age * 2 >= limit => format!(
+            "마지막 stderr 이후 {age:?} 조용했다 — 느린 것이 아니라 멈춘 쪽이다. \
+             상한 인상은 이 사건의 처방이 아니다."
+        ),
+        Some(age) => format!(
+            "마지막 stderr 이 {age:?} 전이다 — 마감 직전까지 진행 중이었다. \
+             예산 부족 쪽이라, 무엇이 그 시간을 쓰는지를 재라."
+        ),
+    }
+}
+
 pub fn spawn_timeout_message(
     stage: &str,
     limit: Duration,
     tail_lines: usize,
     tail: &str,
+    last_line_age: Option<Duration>,
 ) -> String {
     let verdict = verdict_or_default(
         tail,
         "부팅 차단 시그니처는 없다 — 부팅 지연이나 설정 경로를 본다.",
     );
+    let silence = stderr_silence_verdict(last_line_age, limit);
     format!(
-        "{stage} within {limit:?}.\n{verdict}\n--- stderr (last {tail_lines} lines) ---\n{tail}"
+        "{stage} within {limit:?}.\n{verdict}\n{silence}\n\
+         --- stderr (last {tail_lines} lines) ---\n{tail}"
     )
 }
 
@@ -253,6 +435,76 @@ mod tests {
             "/built/by/cargo",
         );
         assert_eq!(picked, std::ffi::OsString::from("/prebuilt/headless/tasty"));
+    }
+
+    /// **조합 의존 단언을 가진 스위트는 override 를 안 받는다** — 이 설계의 안전장치
+    /// 전부가 이 한 줄이다. 무너지면 데몬만 조합이 바뀌어 `..._answers_in_both_combos`
+    /// 계열의 단언이 구조적으로 뒤집힌다(함정 4).
+    ///
+    /// **양방향으로 본다** — 무시하는 쪽만 보면 "전부 무시" 도 통과한다.
+    #[test]
+    fn only_the_combo_dependent_suites_ignore_the_override() {
+        let given = || Some(std::ffi::OsString::from("/some/headless/tasty"));
+
+        assert_eq!(
+            effective_override(DaemonKind::SameCombo, given()),
+            None,
+            "자기 조합의 데몬이 필요한 스위트는 override 를 받으면 안 된다"
+        );
+        assert_eq!(
+            effective_override(DaemonKind::HeadlessOk, given()),
+            given(),
+            "IPC 만 쓰는 스위트는 override 를 그대로 받아야 한다 — 안 받으면 이 설계가 \
+             아무것도 안 하는 것과 같다"
+        );
+    }
+
+    /// 낡은 override 바이너리를 잡는가. **이 판정이 죽으면 아무 소리도 안 난다** —
+    /// 낡은 데몬은 정상 부팅해 정상 응답하고 스위트는 옛 코드에 대해 판정한다.
+    ///
+    /// 양방향: 새 소스가 있으면 잡고, 없으면 안 잡는다. 그리고 `.rs` 가 아닌 새 파일은
+    /// 데몬 동작을 안 바꾸므로 잡지 않는다 — 그것까지 잡으면 문서만 고쳐도 빨개진다.
+    #[test]
+    fn a_stale_override_binary_is_detected_and_a_fresh_one_is_not() {
+        let dir = std::env::temp_dir().join(format!(
+            "tasty-stale-probe-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).expect("탐침 디렉토리를 만들 수 있어야 한다");
+        let bin = dir.join("tasty");
+        std::fs::write(&bin, b"bin").expect("가짜 바이너리를 쓸 수 있어야 한다");
+
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]),
+            None,
+            "소스가 하나도 없으면 낡지 않았다"
+        );
+
+        // 바이너리보다 확실히 새것이 되게 한다 — 파일시스템 mtime 해상도가 거칠 수 있다.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(src.join("notes.md"), b"x").expect("문서를 쓸 수 있어야 한다");
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]),
+            None,
+            "`.rs` 가 아닌 파일은 데몬 동작을 안 바꾼다 — 이것까지 잡으면 문서만 고쳐도 \
+             빨개진다"
+        );
+
+        std::fs::write(src.join("app.rs"), b"fn main() {}").expect("소스를 쓸 수 있어야 한다");
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]).as_deref(),
+            Some(src.join("app.rs").as_path()),
+            "바이너리보다 새로운 `.rs` 가 있으면 그 경로를 대야 한다"
+        );
+
+        // 탐침 디렉토리는 판정에 안 쓰이므로 정리 실패를 무시한다 — 남아도 temp 이고,
+        // 여기서 실패를 올리면 판정과 무관한 이유로 빨개진다.
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -322,8 +574,41 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
     fn an_ordinary_slow_boot_gets_no_false_verdict() {
         let tail = "INFO tasty: plugin discovery finished\nINFO tasty: theme loaded";
         assert!(boot_blocker_verdict(tail).is_none());
-        let msg = spawn_timeout_message("tasty failed to start", SPAWN_PORT_TIMEOUT, 30, tail);
+        let msg = spawn_timeout_message(
+            "tasty failed to start",
+            SPAWN_PORT_TIMEOUT,
+            30,
+            tail,
+            Some(Duration::from_millis(200)),
+        );
         assert!(msg.contains("부팅 차단 시그니처는 없다"), "{msg}");
+    }
+
+    /// 세 갈래가 서로 다른 문장을 내고, **남의 문장을 안 낸다**(양방향).
+    #[test]
+    fn the_silence_verdict_separates_stalled_from_merely_slow() {
+        let limit = Duration::from_secs(40);
+
+        let none = stderr_silence_verdict(None, limit);
+        assert!(none.contains("한 줄도 내지 않았다"), "{none}");
+
+        let stalled = stderr_silence_verdict(Some(Duration::from_secs(30)), limit);
+        assert!(stalled.contains("멈춘 쪽"), "{stalled}");
+        assert!(stalled.contains("처방이 아니다"), "{stalled}");
+
+        let slow = stderr_silence_verdict(Some(Duration::from_millis(200)), limit);
+        assert!(slow.contains("예산 부족"), "{slow}");
+        assert!(
+            !slow.contains("멈춘 쪽") && !slow.contains("한 줄도"),
+            "갈래가 안 갈렸다: {slow}"
+        );
+
+        // 문턱은 상한의 절반이다 — 경계 양쪽을 함께 박는다.
+        assert!(stderr_silence_verdict(Some(limit / 2), limit).contains("멈춘 쪽"));
+        assert!(
+            stderr_silence_verdict(Some(limit / 2 - Duration::from_millis(1)), limit)
+                .contains("예산 부족")
+        );
     }
 
     #[test]

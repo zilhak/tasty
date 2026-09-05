@@ -245,6 +245,8 @@ pub struct WebhookInstance {
     /// Drop 시 홈을 삭제할지(빌더에서 명시 home 을 준 재시작 테스트는 false).
     own_home: bool,
     stderr_ring: Arc<Mutex<VecDeque<String>>>,
+    /// 마지막 stderr 줄의 시각 — 상한을 넘겼을 때 "느리다" 와 "멈췄다" 를 가른다.
+    stderr_last_at: Arc<Mutex<Option<Instant>>>,
     stderr_drain: Option<JoinHandle<()>>,
 }
 
@@ -426,11 +428,16 @@ impl WebhookInstance {
 
         let stderr_ring: Arc<Mutex<VecDeque<String>>> =
             Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
+        // 마지막 줄이 **언제** 왔는지가 "느리다" 와 "멈췄다" 를 가르는 값이다
+        // (`spawn_diag::stderr_silence_verdict`). 줄 자체는 링에, 시각은 여기에 남는다.
+        let stderr_last_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
         let stderr_drain = process.stderr.take().map(|stderr| {
             let ring = Arc::clone(&stderr_ring);
+            let last_at = Arc::clone(&stderr_last_at);
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
+                    *last_at.lock().unwrap() = Some(Instant::now());
                     let mut ring = ring.lock().unwrap();
                     if ring.len() == STDERR_RING_CAPACITY {
                         ring.pop_front();
@@ -450,6 +457,7 @@ impl WebhookInstance {
                         SPAWN_PORT_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
                     )
                 );
             }
@@ -481,6 +489,7 @@ impl WebhookInstance {
             shell_home,
             own_home,
             stderr_ring: Arc::clone(&stderr_ring),
+            stderr_last_at: Arc::clone(&stderr_last_at),
             stderr_drain,
         };
 
@@ -499,6 +508,7 @@ impl WebhookInstance {
                         SPAWN_SHELL_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES),
+                        instance.stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
                     )
                 );
             }
