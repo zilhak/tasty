@@ -609,27 +609,47 @@ gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
 잡이 직렬로 쌓이고, 그때 macOS 가 새 임계경로가 될 수 있다. 레인이 각자 push 하기 시작하면
 그 조건이 성립한다 — 그때 위 명령으로 다시 재고 이 스텝을 유지할지 판단한다.
 
-### macOS 잡의 fd 예산은 잡 로그가 찍는다
+### macOS 잡의 fd 예산 — 여유가 남아 있는지 단정한다
 
-같은 잡에 `fd budget (계측 전용)` 스텝이 있다 — `ulimit -n` · `ulimit -Hn` ·
-`sysctl -n kern.maxfilesperproc kern.maxfiles` 를 찍는다. **판정이 아니라 계측**이라
-`continue-on-error` 로 무엇도 실패시키지 않는다.
+같은 잡의 `fd budget` 스텝이 `ulimit -n` · `ulimit -Hn` ·
+`sysctl -n kern.maxfilesperproc kern.maxfiles` 를 찍고, **soft 상한이 4096 미만이면
+실패한다.**
 
-왜 필요한가: 그 다음 스텝의 바이너리는 진짜 PTY 와 자식 셸을 띄우고, 마스터 fd 는 registry
-의 idle TTL 이 만료될 때까지 산다. TTL 이 런 길이보다 길면 **런 안에서는 아무것도 회수되지
-않는다** — 그래서 최고 fd 는 동시성이 아니라 **체류 시간**을 따라간다(Linux 에서는 병렬도를
-줄였더니 최고 fd 가 오히려 늘었다). 그 수가 러너 상한에 닿는지는 상한을 모르면 못 정한다.
+왜 이 자리에 단정이 있나: 그 다음 스텝의 바이너리는 `test_state()` 를 쓰는 시험마다
+실제 PTY 와 자식 셸을 띄운다([unit-test-isolation](unit-test-isolation.md) §8). 여유가
+사라지면 증상은 여기가 아니라 **아래 유닛 테스트 스텝이 EMFILE 로 깨지는 것**으로 나타나고,
+그 빨강은 원인을 안 말한다. 이 단정은 그때 원인 자리에서 먼저 터지라고 있다.
 
-**값은 여기 적지 않는다** — 러너 이미지가 바뀌면 낡고, 낡은 수가 판정 근거로 쓰인다
+그리고 그 여유는 **우리가 정한 것이 아니라 러너 이미지가 준 것**이다. 이 레포는 워크플로
+어디에서도 `ulimit` 을 설정하지 않는다(그 스텝도 읽기만 한다). 그래서 이미지가 바뀌면
+여유는 아무 커밋 없이 사라질 수 있다 — 단정이 없으면 그 변화를 아무도 안 본다.
+
+#### 측정값 (2026-09-06 · run 33994212447 · commit `5d00e2641`)
+
+    macOS self-hosted 러너   soft 10240 · hard unlimited
+                             kern.maxfilesperproc 122880 · kern.maxfiles 245760
+    Linux 최고 fd(실측)      966 (기본 병렬도) · 1157 (`--test-threads 3`)
+
+⇒ 약 9 배 여유. **이 값 때문에 fd 축이 닫혔다.**
+
+값을 여기 적는 이유: CI 로그는 90 일 뒤 사라지고, 사라지는 곳에만 있는 값은 다음 사람에게
+없는 값이다. 대신 **측정일과 측정 대상을 함께** 박는다 — 이 수는 커밋이 아니라 러너
+이미지와 스위트 크기를 따라가므로, 날짜 없이 적으면 낡은 줄 모르고 근거로 쓰인다
 ([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
-값은 잡 로그에만 있다. 재는 법:
+
+#### 다시 재는 법
 
 ```bash
-gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -A 3 'fd budget'
+# 러너 쪽 상한 — 잡 로그에서
+gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -A 4 'fd budget'
+
+# 우리 쪽 최고 fd — 테스트 바이너리를 직접 띄우고 /proc 를 표본한다
+cargo test --bin tasty --no-run          # 바이너리 경로를 찍는다
+# 그 경로를 백그라운드로 띄우고, 도는 동안 `ls /proc/<pid>/fd | wc -l` 의 최댓값을 잡는다
 ```
 
-이 레포는 워크플로 어디에서도 `ulimit` 을 **설정**하지 않는다(그 스텝도 읽기만 한다).
-그러니 로그의 값은 러너 이미지 기본값 그대로다 — 언젠가 상한을 올리면 재는 대상이 바뀐다.
+단정이 터지면 하한을 내리지 마라 — 재야 할 것은 그 시점의 **실제 최고 fd** 다. 위 두 수를
+다시 재서 여유가 정말 남아 있으면 그때 하한을 정하고, 이 절의 측정값과 날짜를 함께 고친다.
 
 ### 조합 격자의 빈 칸 — Linux + gui + debug (지금은 채워져 있다)
 
