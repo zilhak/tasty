@@ -309,11 +309,53 @@ done | wc -l
 
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
-| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — **두 조합 모두**가 실행한다(Windows 잡은 `--lib --bins`, 헤드리스 잡은 그 상위집합인 전체 스위트). 명령이 같아서가 아니라 둘 다 유닛 타깃을 포함해서다 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
+| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **대체로 있다** — 두 조합 모두가 유닛 타깃을 포함한다(Windows 잡은 `--lib --bins`, 헤드리스 잡은 그 상위집합인 전체 스위트). **다만 조합 격자에 빈 칸이 하나 있어 그 칸의 유닛 테스트는 어디서도 안 돈다** — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
 | 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 1 건 제외). **기본 조합에는 없다** — Windows 잡은 `--lib --bins` 이고 `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/design_token_adherence.rs` |
 | 문서 가드 통합 테스트 (`crates/tasty-doc-guards/tests/*.rs`) | **있다 — 두 조합과 무관하게** `doc-guards.yml` 이 `-p tasty-doc-guards` 로 돌린다. 그 잡에만 `paths-ignore` 가 없어, 문서만 바뀐 push 에서 도는 **유일한** 테스트 채널이다([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)). `check-headless` 의 전체 스위트에서도 함께 돈다 | 있다 | `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
+
+### 조합 격자의 빈 칸 — Linux + gui + debug
+
+유닛 테스트가 "두 조합 모두" 라고 말할 때 그 둘은 **Windows + gui + debug** 와
+**Linux + headless + debug** 다. 그래서 **Linux 이면서 gui feature 뒤에 있는** 유닛
+테스트는 앞쪽에서 `cfg` 로 사라지고 뒤쪽에서 feature 로 사라진다 — 양쪽 다 안 돈다.
+
+| | debug | release |
+|---|---|---|
+| macOS + gui | `check-macos`(컴파일) | — |
+| Windows + gui | `check-windows`(컴파일 + 유닛) | — |
+| Linux + headless | `check-headless`(컴파일 + 전체) | — |
+| **Linux + gui** | **없다** | `check-release`(컴파일) |
+
+빈 칸은 테스트만이 아니라 **컴파일**도 비어 있다. 그 칸에만 있는 코드가 실재한다 —
+`src/platform/native_menu/linux.rs` 는 `#[cfg(feature = "gui")]` 아래 Linux 전용이면서
+`#[cfg(debug_assertions)]` 함수를 갖는다.
+
+**수를 여기 적지 않는다**([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md))
+— 재는 절차를 적는다. 이름을 조합별로 열거해 빼고, 남은 것이 Windows 조합에 실재하는지는
+**크로스 빌드한 테스트 바이너리에 바이트로 물어본다.**
+
+```bash
+enum() { cargo test --workspace --locked "$@" -- --list 2>&1 | awk '
+  /^ *Running / { p=$0; sub(/.*\(/,"",p); sub(/\).*/,"",p); sub(/.*\//,"",p); sub(/-[0-9a-f]+$/,"",p)
+                  s=$2" "$3; sub(/ *\(.*/,"",s); t=p"|"s; next }
+  /^ *Doc-tests / { t="doc|"$2; next }
+  /: test$/ { n=$0; sub(/: test$/,"",n); print t "\t" n }'; }
+enum > /tmp/D.txt                       # 기본 feature 전체
+cargo test --workspace --no-default-features --locked -- --list 2>&1 | ... > /tmp/H.txt
+sort -u -o /tmp/D.txt /tmp/D.txt; sort -u -o /tmp/H.txt /tmp/H.txt
+comm -23 /tmp/D.txt /tmp/H.txt | grep '^tasty|' | cut -f2 > /tmp/gui.txt   # gui 게이트된 본체 유닛
+
+cargo test --target x86_64-pc-windows-gnu --bin tasty --no-run --locked   # mingw 링커 필요
+win=$(ls -t target/x86_64-pc-windows-gnu/debug/deps/tasty-*.exe | head -1)
+while read n; do grep -qaF "$n" "$win" || echo "빈 칸: $n"; done < /tmp/gui.txt
+```
+
+**`strings` 로 세지 마라.** 한글 테스트 이름은 비-ASCII 라 `strings` 가 안 잡아,
+빈 칸을 **과대**로 센다(실측: `strings` 28 · `grep -aF` 9). 그리고 반대 방향도 봐라 —
+`grep -F` 는 부분문자열도 맞히므로, 어떤 이름이 다른 이름의 진부분문자열이면 "있다" 가
+거짓 통과한다(실측 0 건).
 
 ### "헤드리스 커버리지" 는 두 가지를 섞어 부른다
 
