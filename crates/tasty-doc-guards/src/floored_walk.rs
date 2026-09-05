@@ -279,6 +279,24 @@ mod tests {
         );
     }
 
+    /// 결과 순서는 소비자가 기대는 성질이다 — 실패문에 목록을 싣는 가드는 순서가 흔들리면
+    /// 같은 결함을 매번 다른 모습으로 보고한다. 파일을 스무 개 만드는 것은 그 때문이다:
+    /// `read_dir` 이 돌려주는 순서는 파일시스템이 정하고, 셋만 만들면 그것이 우연히
+    /// 정렬 순서와 같아 정렬을 지워도 이 대조가 안 죽는다.
+    #[test]
+    fn the_walk_returns_a_sorted_list() {
+        let names: Vec<String> = (0..20).rev().map(|i| format!("f{i:02}.rs")).collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let t = Tree::new(&refs, &[]);
+        let got = walk_with_floor(&t.0, &floor(20, 20), Descend::Everything, &all)
+            .expect("스무 개를 모았으면 통과해야 한다");
+        assert!(
+            got.windows(2).all(|w| w[0] <= w[1]),
+            "순회 결과가 정렬돼 있지 않다 — 순서를 파일시스템에 맡기면 같은 결함이 완주마다 \
+             다른 순서로 보고된다: {got:?}"
+        );
+    }
+
     #[test]
     fn a_floor_of_zero_is_refused_before_the_walk_runs() {
         let t = Tree::new(&[], &[]);
