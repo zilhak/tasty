@@ -5,7 +5,7 @@
 //! `types()`/`dataForType()` 는 로컬에 벤더링된
 //! `objc2-app-kit-0.3.2/src/generated/NSPasteboard.rs:326,429,459`(둘 다 safe fn,
 //! `unsafe` 블록 불필요 — `#![forbid(unsafe_code)]`와 충돌 없음)을 직접 읽어 확인한
-//! 실제 공개 바인딩이고, arboard 자신의 `src/platform/osx.rs`(레지스트리 캐시)를
+//! 실제 공개 바인딩이고, arboard 자신의 `arboard/src/platform/osx.rs`(레지스트리 캐시)를
 //! 근거로 text/html/image 가 실제로 읽는 UTI(`NSPasteboardTypeString`/
 //! `NSPasteboardTypeHTML`/`NSPasteboardTypeTIFF`)를 확인했다. macOS 빌드 환경에서
 //! 재확인 필요.
