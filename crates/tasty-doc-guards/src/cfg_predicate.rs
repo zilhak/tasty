@@ -49,6 +49,16 @@ pub fn implies(pred: &str, needle: &str) -> bool {
 /// 한 줄의 중괄호 수지. **줄 주석·문자열·문자 리터럴 안은 세지 않는다** —
 /// 문자열 속 `}` 에 속으면 블록이 일찍 닫히고 그 뒤가 게이트 밖으로 보인다.
 pub fn brace_delta(line: &str) -> i32 {
+    delta(line, b'{', b'}')
+}
+
+/// 한 줄의 괄호 수지. `cfg_attr` 이 여러 줄에 걸칠 때 끝을 찾는 데 쓴다 —
+/// [`brace_delta`] 와 같은 이유로 리터럴·주석 안은 세지 않는다.
+pub fn paren_delta(line: &str) -> i32 {
+    delta(line, b'(', b')')
+}
+
+fn delta(line: &str, open: u8, close: u8) -> i32 {
     let b = line.as_bytes();
     let mut depth = 0i32;
     let mut i = 0usize;
@@ -72,16 +82,16 @@ pub fn brace_delta(line: &str) -> i32 {
         if c == b'"' {
             in_str = true;
         } else if c == b'\'' {
-            // 문자 리터럴 `'{'` — 라이프타임(`'a`)과 구분해 닫는 따옴표까지 건너뛴다.
+            // 문자 리터럴 `'{'` `'('` — 라이프타임(`'a`)과 구분해 닫는 따옴표까지 건너뛴다.
             let esc = i + 1 < b.len() && b[i + 1] == b'\\';
             let end = if esc { i + 3 } else { i + 2 };
             if end < b.len() && b[end] == b'\'' {
                 i = end + 1;
                 continue;
             }
-        } else if c == b'{' {
+        } else if c == open {
             depth += 1;
-        } else if c == b'}' {
+        } else if c == close {
             depth -= 1;
         }
         i += 1;
@@ -143,6 +153,91 @@ pub fn cfg_gated_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
         }
     }
     gated
+}
+
+/// `cfg_attr(<술어>, …)` 에서 술어만 떼어낸다. 첫 최상위 쉼표 앞이 술어다.
+fn cfg_attr_predicate(attr: &str) -> Option<String> {
+    let at = attr.find("cfg_attr(")? + "cfg_attr(".len();
+    let rest = &attr[at..];
+    let mut depth = 0usize;
+    for (off, ch) in rest.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    // 인자가 하나뿐인 `cfg_attr` 은 문법 오류다 — 술어로 읽지 않는다.
+                    return None;
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => return Some(rest[..off].to_string()),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 술어가 `needle` 을 **함의하는** `cfg_attr` 속성의 **줄만** 표시한다.
+///
+/// [`cfg_gated_lines`] 와 범위가 다르다 — `cfg_attr` 는 **항목을 지우지 않는다.**
+/// `#[cfg_attr(test, derive(Debug))] struct S;` 에서 `struct S` 는 출하되고,
+/// 조건부인 것은 붙는 속성뿐이다. 그래서 지울 것도 그 속성 줄뿐이다. 항목까지
+/// 지우면 출하 코드가 조용히 스캔 밖으로 나간다 — 이 모듈이 막으려는 바로 그
+/// 형태이고, 이 축에서 대가가 가장 큰 오류다.
+///
+/// 극성은 [`implies`] 가 가른다. `not(test)` 는 **프로덕션 전용**이라 지우면 안 되고,
+/// `any(test, …)` 는 test 밖에서도 참이라 지우면 안 된다 — 둘 다 함의가 아니다.
+///
+/// 속성 바로 위의 주석 덩이는 함께 표시한다 — 근거 주석이 그 자리에 있어야 한다는
+/// 요구가 별도 게이트에 있어서, 그 주석은 속성 선언의 일부다.
+///
+/// 여는 형태는 `#[cfg_attr(…)]`(바깥) 과 `#![cfg_attr(…)]`(안쪽, 크레이트/모듈 루트)
+/// 둘 다다. 뒤쪽을 빠뜨린 것이 이 함수가 생긴 이유다 — 크레이트 루트의
+/// `#![cfg_attr(test, allow(…))]` 한 줄이 출하 산출물을 바꾸지 않는데도 내용이
+/// 달라진 것으로 읽혔다.
+pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
+    let mut marked = vec![false; lines.len()];
+    let mut i = 0usize;
+    while i < lines.len() {
+        let t = lines[i].as_ref().trim_start();
+        if !(t.starts_with("#[cfg_attr(") || t.starts_with("#![cfg_attr(")) {
+            i += 1;
+            continue;
+        }
+        // 속성 하나를 끝까지 모은다 — 여러 줄에 걸칠 수 있다.
+        let mut end = i;
+        let mut depth = 0i32;
+        let mut text = String::new();
+        loop {
+            let line = lines[end].as_ref();
+            text.push_str(line);
+            depth += paren_delta(line);
+            if depth <= 0 || end + 1 >= lines.len() {
+                break;
+            }
+            end += 1;
+        }
+        // 괄호가 안 닫혔으면 읽은 것이 아니다 — 넓게 남긴다(bump 를 한 번 더 요구할 뿐).
+        if depth == 0 && cfg_attr_predicate(&text).is_some_and(|pred| implies(&pred, needle)) {
+            for m in marked.iter_mut().take(end + 1).skip(i) {
+                *m = true;
+            }
+            // 속성 **바로 위**의 주석 덩이도 같이 표시한다. 억제 속성의 근거 주석은
+            // 자유 산문이 아니라 `scripts/check-allow-reason.sh` 가 **그 자리에**
+            // 있으라고 요구하는 선언의 일부다 — 속성이 출하 밖이면 그 근거도 함께
+            // 나간다. 주석은 어떤 빌드에도 안 들어가므로 이 확장으로 실변경이 숨을
+            // 여지는 없다.
+            for j in (0..i).rev() {
+                if lines[j].as_ref().trim_start().starts_with("//") {
+                    marked[j] = true;
+                } else {
+                    break;
+                }
+            }
+        }
+        i = end + 1;
+    }
+    marked
 }
 
 #[cfg(test)]
@@ -212,6 +307,86 @@ mod cfg_span_tests {
         let t = gated(src, "test");
         assert!(d[0] && d[1] && !d[2] && !d[3]);
         assert!(!t[0] && !t[1] && t[2] && t[3]);
+    }
+}
+
+#[cfg(test)]
+mod cfg_attr_tests {
+    use super::cfg_attr_lines;
+
+    fn marked(src: &str) -> Vec<bool> {
+        let lines: Vec<&str> = src.lines().collect();
+        cfg_attr_lines(&lines, "test")
+    }
+
+    /// 이 함수가 생긴 형태 — 크레이트 루트의 안쪽 속성. 출하 빌드에서 `test` 는
+    /// 안 켜지므로 이 줄은 산출물에 없다.
+    #[test]
+    fn an_inner_crate_attribute_that_requires_test_is_out_of_shipping() {
+        let g = marked("#![cfg_attr(test, allow(clippy::x))]\npub fn shipped() {}");
+        assert!(g[0], "크레이트 루트의 `#![cfg_attr(test, …)]` 를 못 봤다");
+        assert!(!g[1], "출하되는 항목까지 지웠다");
+    }
+
+    /// **범위가 다르다** — `cfg_attr` 는 항목을 지우지 않는다. 여기서 항목까지
+    /// 지우면 출하 코드가 조용히 스캔 밖으로 나간다.
+    #[test]
+    fn the_item_under_a_cfg_attr_still_ships() {
+        let g = marked("#[cfg_attr(test, derive(Debug))]\npub struct S {\n    pub a: u8,\n}");
+        assert!(g[0]);
+        assert!(
+            !g[1] && !g[2] && !g[3],
+            "`cfg_attr` 이 붙은 항목을 통째로 지웠다"
+        );
+    }
+
+    /// 반대 극성 둘. 이 둘이 지워지면 **프로덕션이 검사 밖으로 나간다** — 이 축에서
+    /// 대가가 가장 큰 오류다.
+    #[test]
+    fn a_predicate_that_holds_outside_test_is_never_stripped() {
+        assert!(
+            !marked("#[cfg_attr(not(test), deny(warnings))]\nfn f() {}")[0],
+            "`not(test)` 는 프로덕션 전용이다"
+        );
+        assert!(
+            !marked("#[cfg_attr(any(test, feature = \"x\"), allow(y))]\nfn f() {}")[0],
+            "`any(test, …)` 는 test 밖에서도 참이다"
+        );
+        assert!(
+            !marked("#[cfg_attr(feature = \"x\", allow(y))]\nfn f() {}")[0],
+            "test 와 무관한 술어다"
+        );
+    }
+
+    /// 억제 속성의 근거 주석은 그 자리에 있으라고 요구되는 선언의 일부라 함께
+    /// 나간다. 위 항목 보존과 헷갈리면 안 된다 — 위는 속성 **아래**의 코드고
+    /// 여기는 속성 **위**의 주석이다.
+    #[test]
+    fn the_mandated_reason_comment_goes_out_with_the_attribute() {
+        let g = marked(
+            "pub fn before() {}\n// 이유: 테스트 본문의 자리라\n// 명부에 섞이면 안 된다\n#![cfg_attr(test, allow(clippy::x))]\npub fn after() {}",
+        );
+        assert!(!g[0], "속성과 무관한 코드까지 지웠다");
+        assert!(g[1] && g[2], "속성 위의 근거 주석이 남아 차분에 잡힌다");
+        assert!(g[3]);
+        assert!(!g[4], "속성 아래의 출하 코드를 지웠다");
+    }
+
+    /// `all(…)` 은 한 갈래만 요구해도 요구다 — [`super::implies`] 와 같은 판정.
+    #[test]
+    fn a_predicate_that_requires_test_among_others_is_stripped() {
+        assert!(marked("#[cfg_attr(all(test, unix), allow(y))]\nfn f() {}")[0]);
+    }
+
+    /// 여러 줄에 걸친 속성도 끝까지 읽는다 — 첫 줄만 지우면 남은 줄이 차분에 남는다.
+    #[test]
+    fn a_multi_line_attribute_is_marked_to_its_end() {
+        let g = marked("#[cfg_attr(\n    test,\n    allow(clippy::x)\n)]\nfn shipped() {}");
+        assert!(
+            g[0] && g[1] && g[2] && g[3],
+            "속성이 여러 줄인데 일부만 지웠다"
+        );
+        assert!(!g[4], "속성 뒤의 항목까지 지웠다");
     }
 }
 

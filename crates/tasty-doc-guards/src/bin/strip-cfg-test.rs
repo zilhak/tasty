@@ -12,7 +12,9 @@
 //!
 //! ## 지우는 것
 //!
-//! 기본은 파일 안의 인라인 `#[cfg(test)]` 범위만이다. 파일 **전체**가 출하 밖인 경우
+//! 기본은 파일 안의 인라인 `#[cfg(test)]` 범위와, 술어가 `test` 를 요구하는
+//! `cfg_attr` **속성 줄**이다. 뒤쪽은 범위가 다르다 — `cfg_attr` 은 붙는 속성만
+//! 조건부이고 항목 자신은 출하되므로, 속성 줄만 지운다. 파일 **전체**가 출하 밖인 경우
 //! (`#[cfg(test)] mod x;` 로 선언된 별도 파일 · cargo 통합 타깃)는 파일 SLOC 게이트에서는
 //! 스크립트의 `skip()` 이 담당한다 — 그 축은 그 게이트의 판정을 안 바꾸므로 기본값에서
 //! 건드리지 않는다.
@@ -37,7 +39,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tasty_doc_guards::cfg_predicate::cfg_gated_lines;
+use tasty_doc_guards::cfg_predicate::{cfg_attr_lines, cfg_gated_lines};
 use tasty_doc_guards::shipping_scope::test_only_files;
 
 fn main() {
@@ -124,16 +126,22 @@ fn blank_every_line(src: &str) -> String {
     "\n".repeat(n.saturating_sub(1))
 }
 
-/// 인라인 `#[cfg(test)]` 가 덮는 줄을 빈 줄로 바꾼다. 줄 수는 그대로다.
+/// 인라인 `#[cfg(test)]` 가 덮는 줄과 `cfg_attr(test, …)` 속성 줄을 빈 줄로 바꾼다.
+/// 줄 수는 그대로다.
+///
+/// 두 축을 **따로** 세는 이유는 범위가 다르기 때문이다. `#[cfg(test)]` 는 항목을
+/// 통째로 들어내고, `cfg_attr` 은 붙는 **속성만** 조건부라 항목은 출하된다.
+/// 한 판정으로 합치면 둘 중 하나는 틀린 범위를 쓴다.
 fn strip(src: &str) -> String {
     let lines: Vec<&str> = src.split('\n').collect();
     let gated = cfg_gated_lines(&lines, "test");
+    let attrs = cfg_attr_lines(&lines, "test");
     let mut out = String::with_capacity(src.len());
     for (i, line) in lines.iter().enumerate() {
         if i > 0 {
             out.push('\n');
         }
-        if !gated[i] {
+        if !gated[i] && !attrs[i] {
             out.push_str(line);
         }
     }
