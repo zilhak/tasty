@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.agent-stream"
 name = "Agent Stream"
-version = "0.1.10"
+version = "0.1.11"
 description = "Tails AI agent session transcripts and normalizes them into structured stream events"
 api_version = "1"
 # 배포 패키징(DMG / AppImage / MSIX / deb)에서는 아직 제외한다. 이유:
@@ -74,7 +74,7 @@ flags = [
 [contributes.cli.arg_groups.poll_args]
 flags = [
     # 이름이 `surface` 면 CLI 계층이 TASTY_SURFACE_ID 로 자동 채운다
-    # (crates/tasty-cli/src/dynamic.rs) — poll 의 surface 는 "대상 지정"이 아니라
+    # (crates/tasty-cli/src/dynamic/request.rs) — poll 의 surface 는 "대상 지정"이 아니라
     # "선택적 필터"라, 자동 채움이 붙으면 사용자가 지정하지 않았는데도 호출자 자신의
     # surface 로 조용히 좁혀진다. 그래서 파라미터 이름을 `filter_surface` 로 둔다.
     { name = "filter_surface", type = "u32", flag = "--surface", required = false, help = "Only return events collected for this surface (no default — omitting it returns every watched surface)" },
