@@ -591,9 +591,11 @@ const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
 /// 호출이 하나 늘었고, 이 표가 **파일별**이라 그 사실이 "어느 파일에 생겼는가" 로 드러났다
 /// — 총계였으면 다른 파일에서 하나 줄어든 것과 구별되지 않았다.
 const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
-    // 3 = Windows 유닛 · headless 전체 스위트 · Linux gui 유닛. 마지막 것이
-    // 조합 격자의 Linux×gui×debug 칸을 덮는다(docs/dev-guide/ci-gates.md).
-    ("crossplatform-check.yml", 3),
+    // 4 = Windows 유닛 · headless 전체 스위트 · Linux gui 유닛 · Linux gui e2e 1 건.
+    // 뒤의 둘이 조합 격자의 Linux×gui×debug 칸을 덮는다. 마지막 것은 아직 게이트가
+    // 아니라 관측용(`continue-on-error`)이고, 승격 조건은 그 스텝 주석에 있다
+    // (docs/dev-guide/ci-gates.md).
+    ("crossplatform-check.yml", 4),
     ("doc-guards.yml", 1),
     ("test.yml", 3),
 ];
