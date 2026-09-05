@@ -65,13 +65,13 @@ const LIST_WIDTH: f32 = 196.0;
 /// 우측 detail 툴바 높이.
 const TOOLBAR_HEIGHT: LogicalPx = LogicalPx(44.0);
 /// 리스트 row 상하 padding.
-const ROW_PAD_Y: f32 = 7.0;
+const ROW_PAD_Y: LogicalPx = LogicalPx(7.0);
 /// 리스트 row 좌우 padding (좌측 accent bar 다음 텍스트 들여쓰기).
-const ROW_PAD_X: f32 = 9.0;
+const ROW_PAD_X: LogicalPx = LogicalPx(9.0);
 /// row 안 name↔subtitle 세로 gap.
-const ROW_GAP: f32 = 1.0;
+const ROW_GAP: LogicalPx = LogicalPx(1.0);
 /// 리스트 내부 좌우 inset (row 가 패널 가장자리에 붙지 않게).
-const LIST_INSET: f32 = 6.0;
+const LIST_INSET: LogicalPx = LogicalPx(6.0);
 /// rename 인라인 입력 폭.
 const RENAME_W: LogicalPx = LogicalPx(150.0);
 /// 툴바 separator 높이.
@@ -376,16 +376,16 @@ fn draw_list_row(
     sub: &str,
     selected: bool,
 ) -> egui::Response {
-    let name_h = theme.font_size_body.value();
-    let sub_h = theme.font_size_caption.value();
-    let row_h = ROW_PAD_Y * 2.0 + name_h + ROW_GAP + sub_h;
+    let name_h = theme.font_size_body;
+    let sub_h = theme.font_size_caption;
+    let row_h = ROW_PAD_Y.scaled(2.0) + name_h + ROW_GAP + sub_h;
     let (full, resp) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), row_h),
+        egui::vec2(ui.available_width(), row_h.value()),
         egui::Sense::click(),
     );
     let rect = egui::Rect::from_min_max(
-        egui::pos2(full.min.x + LIST_INSET, full.min.y),
-        egui::pos2(full.max.x - LIST_INSET, full.max.y),
+        egui::pos2(full.min.x + LIST_INSET.value(), full.min.y),
+        egui::pos2(full.max.x - LIST_INSET.value(), full.max.y),
     );
     let radius = theme.corner_radius_sm.value();
     let p = ui.painter_at(full);
@@ -405,21 +405,24 @@ fn draw_list_row(
         theme.text_secondary().to_egui()
     };
     p.text(
-        egui::pos2(rect.min.x + ROW_PAD_X, rect.min.y + ROW_PAD_Y),
+        egui::pos2(
+            rect.min.x + ROW_PAD_X.value(),
+            rect.min.y + ROW_PAD_Y.value(),
+        ),
         egui::Align2::LEFT_TOP,
         name,
-        egui::FontId::proportional(name_h),
+        egui::FontId::proportional(name_h.value()),
         name_color,
     );
     // painter_at 가 full 로 clip → 긴 subtitle 도 row 밖으로 넘치지 않는다.
     p.text(
         egui::pos2(
-            rect.min.x + ROW_PAD_X,
-            rect.min.y + ROW_PAD_Y + name_h + ROW_GAP,
+            rect.min.x + ROW_PAD_X.value(),
+            rect.min.y + (ROW_PAD_Y + name_h + ROW_GAP).value(),
         ),
         egui::Align2::LEFT_TOP,
         sub,
-        egui::FontId::monospace(sub_h),
+        egui::FontId::monospace(sub_h.value()),
         theme.text_muted().to_egui(),
     );
     if resp.hovered() {
@@ -607,7 +610,7 @@ fn draw_preset_list(
         lui.set_clip_rect(list_rect);
         lui.add_space(theme.spacing_sm.value());
         lui.horizontal(|ui| {
-            ui.add_space(LIST_INSET);
+            ui.add_space(LIST_INSET.value());
             let count = t_fmt("preset.header.count", &rows.len().to_string());
             ui.label(
                 egui::RichText::new(count.to_uppercase())
@@ -616,7 +619,7 @@ fn draw_preset_list(
                     .color(theme.text_muted().to_egui()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(LIST_INSET);
+                ui.add_space(LIST_INSET.value());
                 if IconButton::new()
                     .variant(IconButtonVariant::Ghost)
                     .size(ControlSize::Sm)
