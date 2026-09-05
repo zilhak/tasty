@@ -40,6 +40,12 @@ use tasty_doc_guards::temp_path::census;
 const SCAN_ROOTS: &[&str] = &["src", "crates", "tests"];
 
 // 실측(2026-09-05, 루트 tests/ 편입 후): files=1256 · sites=55 · uniquified=49 · reasoned=6.
+//
+// ★ 아래 넷은 **연기 검사**다. 값이 하한 밑으로 내려갔을 때 세계가 둘이고
+// (모수가 정말 줄었다 / 수집이 깨졌다), 가장 싼 수선이 **값을 내리는 것**이라
+// 가르는 법을 안 적으면 언제나 앞쪽으로 읽힌다. 그래서 각 실패 메시지가
+// **그 자리의 판별식**을 싣는다 — 넷이 서로 다르다.
+// 규율 전문은 docs/dev-guide/guard-population.md 의 "하한에는 판별식이 붙어야 한다".
 const MIN_FILES: usize = 1100;
 const MIN_SITES: usize = 40;
 const MIN_UNIQUIFIED: usize = 35;
@@ -72,18 +78,40 @@ fn every_temp_path_is_uniquified_or_reasoned() {
     // ── 자기-공허 방지: 갈래마다 선다 ──────────────────────────────────────────
     assert!(
         c.files_scanned >= MIN_FILES,
-        "훑은 파일이 {} 개뿐이다(하한 {MIN_FILES}) — 순회가 죽었으면 아래 초록은 거짓이다",
+        "훑은 파일이 {} 개뿐이다(하한 {MIN_FILES}) — 순회가 죽었으면 아래 초록은 거짓이다.\n  \
+         [판별식] `git ls-files -- src crates tests | grep -c '\\.rs$'` 를 세어 이 수의 \
+         **움직임**과 맞춰 봐라(두 수는 원래 같지 않다 — 저쪽은 추적되는 파일만 센다). 그 수도 함께 줄었으면 레포가 정말 줄어든 것이고, \
+         그 수는 그대로인데 이 수만 줄었으면 `SCAN_ROOTS` 가 낡았거나 순회가 죽은 것이다 \
+         — 뿌리 이름이 바뀌면 예외가 아니라 **0 개 디렉터리**가 되어 조용히 빠진다.\n  \
+         ★ 판별식을 밟지 않고 이 값만 내리지 마라. 내리면 다음번엔 더 쉽게 내려간다.\n  \
+         [정말 줄었으면] 왜 줄었는지(어느 뿌리가 은퇴했는지)를 위 실측 주석에 적고 \
+         값을 내려라 — 값만 바뀐 커밋은 그 자리를 다시 못 읽게 만든다.",
         c.files_scanned
     );
     assert!(
         c.sites >= MIN_SITES,
-        "경로 짓는 temp_dir 자리를 {} 곳만 집었다(하한 {MIN_SITES}) — 자리 판정이 죽었을 수 있다",
+        "경로 짓는 temp_dir 자리를 {} 곳만 집었다(하한 {MIN_SITES}) — 자리 판정이 죽었을 수 \
+         있다.\n  \
+         [판별식] 이 수는 `temp_dir()` 줄 중 **창 안에 `.join(` 이 있는 것**만 센다. \
+         그러니 `temp_dir(` 의 **총 등장 수**를 따로 세어 함께 봐라. 총수도 줄었으면 \
+         그런 코드가 정말 없어진 것이고, 총수는 그대로인데 이 수만 줄었으면 `.join(` \
+         인식이나 창 판정이 깨진 것이다. 그때는 바로 아래 `UNPAIRED_RATCHET` 도 함께 \
+         움직인다 — 두 수가 같은 방향으로 움직이는지가 갈림점이다.\n  \
+         ★ 판별식을 밟지 않고 이 값만 내리지 마라.\n  \
+         [정말 줄었으면] 없어진 자리를 실측 주석에 적고 값을 내려라.",
         c.sites
     );
     assert!(
         c.uniquified >= MIN_UNIQUIFIED,
         "유니크화된 자리가 {} 곳뿐이다(하한 {MIN_UNIQUIFIED}) — 유니크화 인식이 죽으면 \
-         이 수가 떨어지고 그 자리들이 거짓 위반이 된다",
+         이 수가 떨어지고 그 자리들이 거짓 위반이 된다.\n  \
+         [판별식] 인식이 죽었는지는 추측하지 말고 **부르면 된다**: \
+         `cargo test -p tasty-doc-guards --lib every_recognized_uniquifier_is_actually_recognized`. \
+         그 테스트는 `UNIQ_TOKENS` 의 성분마다 리터럴 조각 하나를 갖고 있어, 성분이 \
+         빠지거나 철자가 틀리면 **그 성분의 이름을 대고** 죽는다. 그것이 초록인데 이 \
+         수가 줄었으면 인식은 살아 있고 코드가 정말 바뀐 것이다.\n  \
+         ★ 그 조각 테스트를 안 돌려 보고 이 값만 내리지 마라.\n  \
+         [정말 줄었으면] 어느 자리가 유니크화를 잃었는지 적고 값을 내려라.",
         c.uniquified
     );
     assert_eq!(
@@ -101,7 +129,17 @@ fn every_temp_path_is_uniquified_or_reasoned() {
     );
     assert!(
         c.reasoned >= MIN_REASONED,
-        "사유로 통과한 자리가 {} 곳뿐이다(하한 {MIN_REASONED}) — 사유 인식이 죽었을 수 있다",
+        "사유로 통과한 자리가 {} 곳뿐이다(하한 {MIN_REASONED}) — 사유 인식이 죽었을 수 \
+         있다.\n  \
+         [판별식] 위와 같은 방식으로 **부른다**: \
+         `cargo test -p tasty-doc-guards --lib temp_path::tests` 의 사유 마커 조각들 \
+         (`a_reason_at_the_top_of_the_attached_block_counts` · \
+         `a_korean_sayu_marker_also_passes`)이 초록인가. `REASON_TOKENS` 의 마커 하나가 \
+         빠지면 그 조각이 이름을 대고 죽는다. 조각이 초록인데 이 수만 줄었으면 사유를 \
+         단 자리가 정말 줄어든 것이다 — 그건 대개 **좋은 방향**이다(사유 대신 \
+         유니크화로 옮겼다는 뜻이면 `uniquified` 가 같이 올라간다. 두 수를 함께 봐라).\n  \
+         ★ 조각을 안 돌려 보고 이 값만 내리지 마라.\n  \
+         [정말 줄었으면] 옮겨간 자리를 적고 값을 내려라.",
         c.reasoned
     );
 
