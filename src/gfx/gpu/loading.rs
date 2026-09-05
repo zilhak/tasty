@@ -12,10 +12,9 @@ use winit::window::Window;
 
 use super::GpuState;
 use crate::app::boot_machine::BootPhase;
-// 워드마크 락업 상수·렌더는 위젯 크레이트가 단일 출처다(갤러리 specimen 과 공유).
-use crate::adapters::ui::brand::{
-    PHASE_SLOT_HEIGHT, SPINNER_SIZE, WORDMARK_FONT_SIZE, WORDMARK_ICON_SIZE,
-};
+// 워드마크 락업 렌더는 위젯 크레이트가 단일 출처다(갤러리 specimen 과 공유).
+// 락업 치수는 `Theme` 의 `loading_screen_*` 에서 온다 — 여기 리터럴로 적으면 같은
+// 스택의 간격·문구만 배율을 타서 어긋난다(ADR-0135).
 
 /// 부팅 phase → i18n 문구 키. `WaitingEngine`(S-7 추가) 은 별도 확정 문구가 없어
 /// 선행 단계 `GpuInit` 과 같은 문구로 묶는다(디자인 확정값 부재 시 가장 가까운
@@ -54,28 +53,31 @@ impl GpuState {
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(bg.into()))
                 .show(ctx, |ui| {
-                    let content_height = WORDMARK_ICON_SIZE.value()
+                    let content_height = th.loading_screen_wordmark_icon_size().value()
                         + th.spacing_xl.value()
-                        + SPINNER_SIZE.value()
+                        + th.loading_screen_spinner_size().value()
                         + th.spacing_lg.value()
-                        + PHASE_SLOT_HEIGHT.value();
+                        + th.loading_screen_phase_slot_height().value();
                     let top_pad = ((ui.available_height() - content_height) / 2.0).max(0.0);
                     ui.add_space(top_pad);
                     ui.vertical_centered(|ui| {
                         crate::adapters::ui::brand::draw_wordmark(
                             ui,
                             &th,
-                            WORDMARK_ICON_SIZE,
-                            WORDMARK_FONT_SIZE,
+                            th.loading_screen_wordmark_icon_size(),
+                            th.loading_screen_wordmark_font_size(),
                         );
                         ui.add_space(th.spacing_xl.value());
                         tasty_ui_widgets::Spinner::new()
-                            .size(SPINNER_SIZE.value())
+                            .size(th.loading_screen_spinner_size().value())
                             .color(th.accent_primary().to_egui())
                             .show(ui, &th);
                         ui.add_space(th.spacing_lg.value());
                         let (slot_rect, _) = ui.allocate_exact_size(
-                            egui::vec2(ui.available_width(), PHASE_SLOT_HEIGHT.value()),
+                            egui::vec2(
+                                ui.available_width(),
+                                th.loading_screen_phase_slot_height().value(),
+                            ),
                             egui::Sense::hover(),
                         );
                         ui.painter().text(

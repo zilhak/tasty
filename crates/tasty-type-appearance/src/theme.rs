@@ -1776,12 +1776,12 @@ impl Theme {
     }
 
     // ── 컴포넌트 치수 (디자인 export 에 아직 토큰이 없는 자리) ──
-    // 아래 아홉은 대응 디자인 토큰이 **없다.** 그래도 리터럴로 두면 안 되는 이유는
+    // 아래 열셋은 대응 디자인 토큰이 **없다.** 그래도 리터럴로 두면 안 되는 이유는
     // 토큰 부재가 아니라 **배율**이다: 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
     // (`gfx/gpu.rs` `update_scale_factor`) UI 배율을 `with_colors_and_zoom` 의
     // `zoomed()` 로만 적용하므로, 호출부 리터럴은 `ui_scale` 을 따라가지 않는다.
     // 상자만 고정이고 안의 폰트·간격·글리프는 커지므로 0.85 에서 여백이 뜨고 1.2 에서
-    // 내용이 잘린다 — 이 축의 값은 168~340 이라 폰트 축(13~17)보다 대가가 크다.
+    // 내용이 잘린다 — 이 축의 값은 16~340 이라 폰트 축(13~17)보다 대가가 크다.
     // 값은 이식 전 리터럴 그대로다(zoom 1 픽셀 불변, `component_accessors_invariant_at_zoom_one`).
     // `modhint_*` · `multiselect_*` 와 같은 사정 — export 가 갱신되면 생성물로 넘어간다.
     /// 포트 스캐너 컬럼 메뉴 최소 폭 (180px).
@@ -1832,6 +1832,37 @@ impl Theme {
     #[inline]
     pub fn file_picker_note_max_width(&self) -> LogicalPx {
         LogicalPx((340.0 * self.ui_zoom).round())
+    }
+    // 부팅·종료 로딩 화면의 브랜드 락업 스택(`src/gfx/gpu/loading.rs` + 갤러리
+    // `chrome_loading` specimen). 값은 브랜드 락업 확정값(`guidelines/brand-logo.html`)
+    // 이라 **바꾸지 않는다** — 바뀌는 것은 배율 추종뿐이다. 같은 스택의 간격
+    // (`spacing_xl`·`spacing_lg`)과 phase 문구(`font_size_body`)는 이미 배율을 타므로,
+    // 이 넷만 리터럴로 두면 배율에서 스택이 어긋난다. 특히 phase 슬롯은 높이가 고정인데
+    // 안의 글자만 커져 **문구가 슬롯을 넘는다** — 그 슬롯의 존재 이유가 레이아웃 고정이다.
+    /// 로딩 화면 워드마크 마크(수박 아이콘) 크기 (64px). 14px UI 폰트 상한의
+    /// sanctioned 예외(브랜드 락업 — `docs/design/systems/theme.md` "명명 구조 상수").
+    #[inline]
+    pub fn loading_screen_wordmark_icon_size(&self) -> LogicalPx {
+        LogicalPx((64.0 * self.ui_zoom).round())
+    }
+    /// 로딩 화면 워드마크 `tasty.` 폰트 크기 (38px). 위와 동일 근거의 브랜드 락업 값.
+    /// 사이드바 헤더의 워드마크는 다른 값(`sidebar_wordmark_font_size`)이다 — 같은
+    /// 락업의 두 크기이므로 하나로 합치지 않는다.
+    #[inline]
+    pub fn loading_screen_wordmark_font_size(&self) -> LogicalPx {
+        LogicalPx((38.0 * self.ui_zoom).round())
+    }
+    /// 로딩 화면 스피너 크기 (32px). 디자인 확정: 기본 16 → boot hero 32.
+    #[inline]
+    pub fn loading_screen_spinner_size(&self) -> LogicalPx {
+        LogicalPx((32.0 * self.ui_zoom).round())
+    }
+    /// 로딩 화면 phase 문구의 고정 높이 슬롯 (16px). 문구 유무와 무관하게 레이아웃이
+    /// 흔들리지 않도록 항상 이 높이를 예약한다 — 그래서 안의 글자와 **같은 배율**을
+    /// 타야 한다.
+    #[inline]
+    pub fn loading_screen_phase_slot_height(&self) -> LogicalPx {
+        LogicalPx((16.0 * self.ui_zoom).round())
     }
     // ── 생성물로 넘어간 컴포넌트 토큰 그룹 ──
     // sidebar-category-header · autocomplete · md-table · drilldown · listctrl 의
@@ -2382,6 +2413,26 @@ mod tests {
                 340.0,
                 "file_picker_note_max_width",
             ),
+            (
+                Theme::loading_screen_wordmark_icon_size,
+                64.0,
+                "loading_screen_wordmark_icon_size",
+            ),
+            (
+                Theme::loading_screen_wordmark_font_size,
+                38.0,
+                "loading_screen_wordmark_font_size",
+            ),
+            (
+                Theme::loading_screen_spinner_size,
+                32.0,
+                "loading_screen_spinner_size",
+            ),
+            (
+                Theme::loading_screen_phase_slot_height,
+                16.0,
+                "loading_screen_phase_slot_height",
+            ),
         ];
         let (small, base, large) = (at(0.85), at(1.0), at(1.2));
         for (f, expect_at_one, name) in probes {
@@ -2396,8 +2447,9 @@ mod tests {
                 (expect_at_one * 1.2f32).round(),
                 "{name} zoom 1.2"
             );
-            // 배율 셋이 실제로 갈라지는지 — 이 축의 값은 전부 26 이상이라 반올림이
+            // 배율 셋이 실제로 갈라지는지 — 이 축의 값은 전부 16 이상이라 반올림이
             // 셋을 뭉개지 않는다(폰트·굵기 축과 다른 점이다, ADR-0126 의 표).
+            // 하한이 16 인 것은 로딩 화면 phase 슬롯이다: 0.85→14 · 1.0→16 · 1.2→19.
             assert!(
                 f(&large).value() > f(&base).value() && f(&base).value() > f(&small).value(),
                 "{name} 이 배율을 안 탄다"

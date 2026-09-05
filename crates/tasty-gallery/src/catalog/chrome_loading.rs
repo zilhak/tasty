@@ -15,9 +15,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::Spinner;
 // 워드마크 락업 상수·렌더·브랜드 색은 위젯 크레이트가 단일 출처다 — 예전엔 본체
 // `src/adapters/ui/brand.rs` 값을 여기 로컬 미러링했으나 승격으로 복제를 없앴다.
-use tasty_ui_widgets::brand::{
-    self, PHASE_SLOT_HEIGHT, SPINNER_SIZE, WORDMARK_FONT_SIZE, WORDMARK_ICON_SIZE,
-};
+use tasty_ui_widgets::brand::{self};
 
 use crate::catalog::spec::{meta, note};
 
@@ -44,11 +42,11 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_app().to_egui());
 
-    let content_height = WORDMARK_ICON_SIZE.value()
+    let content_height = theme.loading_screen_wordmark_icon_size().value()
         + theme.spacing_xl.value()
-        + SPINNER_SIZE.value()
+        + theme.loading_screen_spinner_size().value()
         + theme.spacing_lg.value()
-        + PHASE_SLOT_HEIGHT.value();
+        + theme.loading_screen_phase_slot_height().value();
     let top_pad = ((canvas.y - content_height) / 2.0).max(0.0);
 
     let mut child = ui.new_child(
@@ -57,15 +55,20 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
     child.add_space(top_pad);
-    brand::draw_wordmark(&mut child, theme, WORDMARK_ICON_SIZE, WORDMARK_FONT_SIZE);
+    brand::draw_wordmark(
+        &mut child,
+        theme,
+        theme.loading_screen_wordmark_icon_size(),
+        theme.loading_screen_wordmark_font_size(),
+    );
     child.add_space(theme.spacing_xl.value());
     Spinner::new()
-        .size(SPINNER_SIZE.value())
+        .size(theme.loading_screen_spinner_size().value())
         .color(theme.accent_primary().to_egui())
         .show(&mut child, theme);
     child.add_space(theme.spacing_lg.value());
     let (slot_rect, _) = child.allocate_exact_size(
-        egui::vec2(canvas.x, PHASE_SLOT_HEIGHT.value()),
+        egui::vec2(canvas.x, theme.loading_screen_phase_slot_height().value()),
         egui::Sense::hover(),
     );
     if let Some(text) = phase_text {
