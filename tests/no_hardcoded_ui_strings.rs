@@ -43,7 +43,7 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/design_token_adherence.rs`.
 
-mod cfg_span;
+use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

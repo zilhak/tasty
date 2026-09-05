@@ -64,7 +64,7 @@
 //! 따라서 이 가드를 근거로 로컬 검증을 건너뛰지 않는다.
 #![cfg(debug_assertions)]
 
-mod cfg_span;
+use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::path::Path;
 

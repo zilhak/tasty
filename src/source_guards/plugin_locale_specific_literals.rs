@@ -48,11 +48,9 @@
 //! 처음 넣을 때는 모수가 0 이라 공허했고, markdown plugin 이 인라인 테스트 모듈을 형제
 //! 파일로 분리하면서 실효가 됐다.
 
-/// `#[cfg(...)]` 의 실제 줄 범위. 통합 테스트 두 개가 이미 쓰는 모듈을 **사본 없이**
-/// 함께 쓴다 — 그 모듈 자신의 설명대로 "사본이 둘이면 갈리고, 갈린 쪽은 조용하다".
-/// 통합 타깃은 서로를 import 할 수 없어 `mod` 로 붙이는 형태이고, 여기서도 같다.
-#[path = "../../tests/cfg_span/mod.rs"]
-mod cfg_span;
+/// `#[cfg(...)]` 의 실제 줄 범위. 판정기는 `tasty-doc-guards` 하나이고 여기는 부르기만
+/// 한다 — 사본이 둘이면 갈리고, 갈린 쪽은 조용하다.
+use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

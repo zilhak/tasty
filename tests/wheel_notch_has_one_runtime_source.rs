@@ -12,7 +12,7 @@
 //! 그쪽은 컨텍스트에 기본값 아닌 값을 심고 세 경로가 그것을 집어 오는지 실행으로 잰다.
 //! 이쪽은 그 셋 말고 **네 번째가 생기는 것**을 본다.
 
-mod cfg_span;
+use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::path::{Path, PathBuf};
 
