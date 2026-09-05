@@ -180,6 +180,27 @@ fn is_char_literal(chars: &[char], i: usize) -> bool {
 ///
 /// **읽기 실패는 panic 이다.** 스캔 가드에서 조용히 건너뛰면 모수가 줄고, 줄어든 모수는
 /// 언제나 초록이다.
+/// 레포 상대 경로를 **구분자까지 정규화**해 돌려준다 — 언제나 `/` 다.
+///
+/// 소비자 대부분은 이 경로를 `to_string_lossy()` 로 펴서 **소스에 박힌 `/` 리터럴**
+/// (명부의 좌표, 접두사)과 문자열로 비교한다. 그런데 `strip_prefix` 가 돌려주는 것은
+/// **그 플랫폼의 구분자**라, Windows 에서는 같은 파일이 `crates\\x\\y.rs` 로 펴져
+/// 어떤 리터럴과도 안 맞는다. 그 어긋남은 예외가 아니라 **조용한 0** 이다 —
+/// 명부 조회가 전부 빗나가고, 가드는 "명부에 없다" 고 보고한다.
+///
+/// 2026-09-06 실측: 갤러리 사본 판정이 Windows 에서만 11 건을 미등록으로 잡았다.
+/// 같은 커밋이 Linux 에서는 초록이었다 — 판정의 입력이 트리뿐인데도 플랫폼이 답을 갈랐다.
+///
+/// `/` 를 담은 `PathBuf` 는 Windows 에서도 그대로 열린다(std 가 두 구분자를 다 받는다).
+/// 그래서 소비자가 `repo_root().join(rel)` 로 다시 여는 경로도 안 깨진다.
+fn repo_relative(rel: &std::path::Path) -> PathBuf {
+    let joined: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    PathBuf::from(joined.join("/"))
+}
+
 pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
     let mut stack: Vec<PathBuf> = scan_roots.iter().map(|r| root.join(r)).collect();
@@ -196,10 +217,10 @@ pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf
                 }
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "rs") {
-                let rel = path
-                    .strip_prefix(root)
-                    .expect("스캔 경로는 레포 안이어야 한다")
-                    .to_path_buf();
+                let rel = repo_relative(
+                    path.strip_prefix(root)
+                        .expect("스캔 경로는 레포 안이어야 한다"),
+                );
                 let text = std::fs::read_to_string(&path)
                     .unwrap_or_else(|e| panic!("소스를 읽을 수 없다: {} — {e}", path.display()));
                 out.push((rel, text.replace("\r\n", "\n")));
