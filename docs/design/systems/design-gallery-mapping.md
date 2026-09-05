@@ -354,6 +354,16 @@ env 일회성 캡처가 격리 자동검증 경로다.
 상위 화면 idiom 데모. 본체 binary 의존 0 — layout·색·폰트·간격은 Theme 토큰, 상태는
 thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 
+### 1 depth (general list → detail)
+
+`crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs`(`onedepth`). **대응하는 본체
+함수가 없다** — 특정 창이 아니라 좌측 고정 리스트(200) → 우측 detail 배치 관용구 자체를
+보이는 데모다. Plugins 창의 미러는 이것이 아니라
+`crates/tasty-gallery/src/catalog/components/plugins_window.rs` 이고, 그쪽은 목록 폭을 본체와
+같은 접근자 `Theme::plugins_side_panel_width`(240)에서 읽고 행 높이도 40 이다(위
+[Overlays — plugins window](#overlays--plugins-window) 절). 필터가 놓이는 자리도 다르다 —
+본체 Plugins 창의 필터는 헤더 밴드 우측이고 이 idiom 데모는 목록 안이다.
+
 ### 2 depth (Settings idiom)
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx` ↔ 본체
@@ -365,16 +375,16 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
 않는 일반 2-depth idiom(168/40, 토큰 도출)이다 — 혼동 금지.
 
-| 디자인 jsx 컴포넌트 | tasty 함수 (갤러리) | 비고 |
-|---|---|---|
-| `SettingsWindow`(container, 824×472) | `draw` | 모달 고정폭 `MODAL_W/H` |
-| L1 top tabs (underline) | `draw_top_tabs` → `horizontal_tab_bar_with_arrows` | `gallery-alignment §3`: underline fork 금지, scroll-arrows 공유 위젯 유지 (underline = 스킨) |
-| L2 sidebar(필터+리스트, 200) | `draw_split` → `two_depth_layout_filtered` | 필터 Input + sub-section 리스트. 패널 폭은 공유 위젯값(`tab_width` 150) — 디자인 settings sidebar 200 과 차이는 공유 위젯 fork 회피로 미적용 |
-| `Row`(label-150 + 컨트롤) | `form_row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(2행 — `close_active`/`quit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
-| `Mono`(섹션 헤딩) | `section_heading` | micro(10)·uppercase·text-muted |
-| `Note` | `note` | `measure-md`(400) 폭·text-muted |
-| 색 스와치(16, radius 2) | `swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
-| footer Cancel/Save | `draw_bottom_buttons` | ghost/primary, gap 8 |
+| 디자인 jsx 컴포넌트 | 본체 (`src/view/settings/ui.rs`) | 갤러리 (`components/settings.rs`) | 비고 |
+|---|---|---|---|
+| `SettingsWindow`(container, 824×472) | `draw_settings_panel` | `draw` | 모달 고정폭 `MODAL_W/H` |
+| L1 top tabs (underline) | `draw_l1_tab_band` | `l1_band` / `l1_tab` | `gallery-alignment §3`: underline fork 금지 (underline = 스킨). **공유 위젯을 쓰지 않는다** — 양쪽 다 자기 `Frame` 으로 밴드를 그린다. 좌측 타이틀·세로 구분선이 탭과 같은 줄에 들어가야 해서 탭만 담는 컨테이너에 안 맞는다 |
+| L2 sidebar(필터+리스트, 200) | `draw_l2_sidebar` | `l2_sidebar` / `l2_item` | 필터 Input + sub-section 리스트. **양쪽 다 200** 이고 공유 위젯을 쓰지 않는다 — 본체는 모달 셸이 소유하는 `SidePanel`(오른쪽 1px vline), 갤러리는 같은 폭의 `Frame`. `tasty_ui_widgets::two_depth_layout_filtered` 는 콘텐츠 안에 놓이는 둥근 테두리 패널(`SUB_TAB_PANEL_WIDTH` 150)이라 **다른 idiom** 이다 |
+| `Row`(label-150 + 컨트롤) | 공통 헬퍼 없음 — 탭마다 따로(`tabs/remote_transfer.rs` `settings_row` · `tabs/appearance.rs` `plugin_setting_row` 등) | `row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(2행 — `close_active`/`quit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
+| `Mono`(섹션 헤딩) | — | `mono` | micro(10)·uppercase·text-muted |
+| `Note` | — | `note` | `measure-md`(400) 폭·text-muted |
+| 색 스와치(16, radius 2) | — | `theme_swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
+| footer Cancel/Save | `draw_settings_footer` | `footer` | ghost/primary, gap 8 |
 
 form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen const, 디자인
 `tokens/semantic.css` 미러). content 는 Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다

@@ -1,7 +1,9 @@
 //! Horizontal tab bar with overflow chevron arrows.
 //!
-//! 본체 settings modal 상단 탭 (`src/view/settings/ui.rs:301-401`) 과 갤러리
-//! `layout_2depth::draw_top_tabs` 가 공유하는 idiom.
+//! **현재 소비처는 갤러리 primitive specimen `components/prim_layout_shell.rs` 하나뿐이다.**
+//! 본체 settings 의 L1 탭 밴드(`src/view/settings/ui.rs` `draw_l1_tab_band`)는 이 위젯을
+//! 부르지 않고 자기 `Frame` 으로 밴드를 그린다 — 좌측 타이틀·세로 구분선이 같은 줄에
+//! 들어가야 해서 탭만 담는 이 컨테이너에 맞지 않는다.
 //!
 //! - 가로 `ScrollArea` 안에 `selectable_label` 리스트.
 //! - 콘텐츠 폭 > viewport 폭 일 때만 좌/우 chevron overlay 표시.
