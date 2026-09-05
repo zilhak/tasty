@@ -25,12 +25,12 @@
 //! 세는 검사로 못 좁힌다 — 이름 하나를 매크로 뒤로 숨기면 항목이 하나 줄 뿐이고(하한
 //! 아래로 안 내려간다), 매크로가 만든 이름으로 갈래를 **더하면** 항목 수가 아예 안
 //! 변한다. 하한은 줄어드는 방향만 볼 수 있어서 뒤쪽은 원리적으로 못 본다(둘 다 실측으로
-//! 통과했다). 그래서 이름의 수가 아니라 **이름을 읽는 자리**를 따로 잰다 —
-//! [`every_dispatch_decides_by_a_name_the_scan_can_see`].
+//! 통과했다). 그래서 이름의 수가 아니라 **이름을 읽는 자리**를 따로 잰다 — 그 판정은
+//! 라우터 전부에 걸리므로 [`super::dispatch_name_literals`] 가 한 자리에서 맡는다.
 
 use std::collections::BTreeSet;
 
-use super::{METHOD_EXPR, fn_body, opaque_method_sites, repo_root};
+use super::{fn_body, repo_root};
 
 const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
@@ -439,87 +439,4 @@ fn a_cover_claim_dies_with_its_evidence() {
             "치환이 안 먹었다 — 이 대조는 아무것도 안 본다"
         );
     }
-}
-
-/// **이름을 읽는 자리는 전부 리터럴이다** — 그래야 위 판정들이 이름을 볼 수 있다.
-///
-/// 세 dispatch 본문 모두에 건다. 하나라도 리터럴이 아닌 값으로 갈래를 치면, 이 파일의
-/// 다른 검사들은 그 갈래를 **없는 것으로** 세고 초록을 유지한다(실측으로 확인했다 —
-/// [`opaque_method_sites`] 의 설명).
-#[test]
-fn every_dispatch_decides_by_a_name_the_scan_can_see() {
-    for (file, func) in [
-        (GUI_STEP, GUI_FN),
-        (HEADLESS_PUMP, HEADLESS_FN),
-        (GUI_DEBUG_STEP, GUI_DEBUG_FN),
-    ] {
-        let src = read(file);
-        let body =
-            fn_body(&src, func).unwrap_or_else(|| panic!("{file} 에서 `{func}` 본문을 못 잘랐다"));
-        assert!(
-            body.contains(METHOD_EXPR),
-            "{file} 의 `{func}` 본문에 `{METHOD_EXPR}` 이 하나도 없다 — 이름을 읽는 \
-             표현식이 바뀌었으면 `METHOD_EXPR` 도 같이 고쳐라. 안 고치면 이 검사는 \
-             아무 자리도 안 보면서 초록이다"
-        );
-        let opaque = opaque_method_sites(&body);
-        assert!(
-            opaque.is_empty(),
-            "{file} 의 `{func}` 가 **문자열 리터럴이 아닌 값**으로 메서드 이름을 가른다. \
-             이 파일의 판정은 본문을 텍스트로 읽으므로 그 이름은 안 보이고, 답하지도 \
-             사유가 적혀 있지도 않은 메서드가 조용히 생긴다. 리터럴로 적어라: {opaque:?}"
-        );
-    }
-}
-
-/// 매크로가 만든 이름을 문다 — 실측으로 뚫렸던 두 형태 그대로.
-#[test]
-fn a_name_a_macro_makes_is_caught() {
-    let hidden = "\
-fn pump_ipc(app: &mut App) {
-    if cmd.request.method == hidden_name!() { go(); }
-}
-";
-    let body = fn_body(hidden, "fn pump_ipc").unwrap();
-    assert!(
-        method_literals(&body).is_empty(),
-        "이 갈래는 리터럴 스캔에 안 보인다 — 그것이 전제다"
-    );
-    assert!(
-        !opaque_method_sites(&body).is_empty(),
-        "매크로가 만든 이름을 안 봤다"
-    );
-
-    let arm = "\
-fn pump_ipc(app: &mut App) {
-    let r = match cmd.request.method.as_str() {
-        \"ns.one\" => a(),
-        HIDDEN_NAME => b(),
-        other => c(other),
-    };
-}
-";
-    let body = fn_body(arm, "fn pump_ipc").unwrap();
-    let sites = opaque_method_sites(&body);
-    assert_eq!(
-        sites.len(),
-        1,
-        "상수 팔 하나만 걸려야 한다(리터럴 팔과 전부받기 바인딩은 정상이다): {sites:?}"
-    );
-}
-
-/// 값을 **넘기기만** 하는 자리는 판정 자리가 아니다 — 거짓 양성을 막는 대조군.
-#[test]
-fn passing_the_name_along_is_not_a_decision() {
-    let src = "\
-fn pump_ipc(app: &mut App) {
-    delegate(&cmd.request.method, &cmd.request.params, id);
-    let s = cmd.request.method.as_str();
-}
-";
-    let body = fn_body(src, "fn pump_ipc").unwrap();
-    assert!(
-        opaque_method_sites(&body).is_empty(),
-        "넘기는 자리를 판정으로 셌다"
-    );
 }

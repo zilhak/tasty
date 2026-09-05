@@ -38,13 +38,13 @@
 //! 넣되 † 를 안 달면 리터럴일 때는 "게이트만 있고 † 없음" 으로 빨개지는데, 같은 팔을
 //! 매크로가 만든 이름으로 바꾸면 **6 개 테스트가 전부 초록**이었다. 팔이 하나 느는 방향
 //! 이라 팔 수가 줄지 않고, 수를 세는 검사는 느는 방향을 못 보기 때문이다 — 여유의 문제가
-//! 아니다. 그래서 팔의 이름이 리터럴인지를 따로 잰다
-//! ([`every_dispatch_arm_names_a_method_the_scan_can_see`]).
+//! 아니다. 그래서 팔의 이름이 리터럴인지를 따로 잰다 — 같은 전제 위에 선 가드가
+//! 여럿이라 그 판정은 [`super::dispatch_name_literals`] 가 라우터 전부에 대해 맡는다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use super::{METHOD_EXPR, mask_non_code, opaque_method_sites, repo_root, strip_comments};
+use super::{mask_non_code, repo_root, strip_comments};
 
 const DOC: &str = "docs/dev-guide/debug-ipc.md";
 const DISPATCH: &str = "src/adapters/ipc/handler.rs";
@@ -461,57 +461,4 @@ match m {
             "빈 호출 집합을 게이트됨으로 읽었다: {gated:?}"
         );
     }
-}
-
-/// dispatch 팔이 **스캔이 볼 수 있는 이름**으로 갈리는가.
-///
-/// 위 세 집합 비교는 팔의 문자열 리터럴로만 지도를 만든다. 이름이 리터럴이 아니면 그
-/// 메서드는 지도에 없고, 없는 것은 세 집합 어디에도 안 나타나 **비교를 통과한다.**
-/// 팔 수 하한은 이 방향을 못 본다(모듈 문서의 실측).
-#[test]
-fn every_dispatch_arm_names_a_method_the_scan_can_see() {
-    let src = read(DISPATCH);
-    assert!(
-        src.contains(METHOD_EXPR),
-        "{DISPATCH} 에 `{METHOD_EXPR}` 이 없다 — 메서드를 읽는 표현식이 바뀌었으면 그 \
-         상수도 같이 고쳐라. 안 고치면 이 검사는 아무 자리도 안 보면서 초록이다"
-    );
-    let opaque = opaque_method_sites(&src);
-    assert!(
-        opaque.is_empty(),
-        "{DISPATCH} 의 dispatch 가 **문자열 리터럴이 아닌 값**으로 메서드를 가른다. 그 \
-         팔은 이 가드의 지도에 안 들어와, 게이트가 걸렸는데 † 가 없어도 조용히 통과한다. \
-         리터럴로 적어라: {opaque:?}"
-    );
-}
-
-/// 팔의 패턴이 **괄호를 가질 때도** 잡히는가 — 실측으로 뚫렸던 모양 그대로.
-///
-/// 매크로 호출 패턴은 `mac!()` 처럼 괄호를 담는다. 팔의 끝을 닫는 괄호로도 인정하면
-/// 패턴의 시작 자리가 그 괄호 **뒤로** 밀려 패턴이 빈 문자열이 되고, 빈 패턴은 건너뛰어
-/// 진다. 게다가 앞 팔이 블록이고 쉼표가 없으며 그 사이에 `#[cfg(...)]` 이 끼는 것이
-/// 실제 dispatch 의 흔한 모양이라, 이 셋이 겹친 자리에서 정확히 통과했다.
-#[test]
-fn a_macro_arm_with_parentheses_is_caught() {
-    let src = "\
-fn route(request: &Request) -> Option<Response> {
-    Some(match request.method.as_str() {
-        \"ns.one\" => {
-            one(request)
-        }
-        #[cfg(feature = \"gui\")]
-        probe!() => {
-            two(request)
-        }
-        \"ns.three\" => three(request),
-        _ => return None,
-    })
-}
-";
-    let found = opaque_method_sites(src);
-    assert_eq!(
-        found.len(),
-        1,
-        "괄호를 가진 매크로 팔 하나만 걸려야 한다(리터럴 팔과 `_` 는 정상이다): {found:?}"
-    );
 }

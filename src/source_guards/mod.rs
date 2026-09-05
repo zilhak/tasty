@@ -648,10 +648,13 @@ fn test_invocations_missing_no_fail_fast(yaml: &str) -> Vec<String> {
         .collect()
 }
 
-/// `debug-ipc.md` 의 † 표시가 런타임 게이트라는 **코드의 성질**과 어긋나지 않는지 본다.
-/// 표식은 사람이 손으로 붙이고, 성질은 소스에 있다 — 갈라져도 아무 데서도 안 터진다.
 mod debug_gate_dagger;
 mod debug_handler_isolation;
+/// `debug-ipc.md` 의 † 표시가 런타임 게이트라는 **코드의 성질**과 어긋나지 않는지 본다.
+/// 표식은 사람이 손으로 붙이고, 성질은 소스에 있다 — 갈라져도 아무 데서도 안 터진다.
+/// IPC 라우터가 스캔이 볼 수 있는 이름(문자열 리터럴)으로 갈리는지 본다. 라우터를
+/// 텍스트로 읽는 가드들이 전부 이 전제 위에 서 있고, 수를 세는 하한은 이 부류를 못 본다.
+mod dispatch_name_literals;
 
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
