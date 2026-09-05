@@ -16,6 +16,16 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::{LogicalPx, PhysicalPx};
 use tasty_type_geometry::rect::PhysicalRect;
 
+/// 활성 탭 마커가 `Dot` 일 때의 점 지름. 스케일 밖(4) — 점 치수 토큰은
+/// `status-dot-size`(8) 하나뿐이라 여기를 그리로 보내면 점이 두 배가 된다.
+/// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다.
+///
+/// **이 상수가 생긴 이유가 값이 아니라 이름이다.** 종전에는 밑줄 마커의 *두께*
+/// (`tab-indicator-width`, 2)를 그대로 점의 *반지름*으로 재사용하고 있었다. 두 치수는
+/// 의미가 달라 한쪽만 바뀌어야 하는 날이 오는데, 이름을 공유하면 그때 둘이 같이 움직인다.
+/// 지금 두 값이 짝(2 ↔ 4)인 것은 **우연이다** — 밑줄 두께가 바뀌어도 이 점은 안 바뀐다.
+const TAB_ACTIVE_DOT_SIZE: LogicalPx = LogicalPx(4.0);
+
 use crate::adapters::ui::icons;
 use crate::core::AttentionKind;
 use crate::state::AppState;
@@ -213,7 +223,7 @@ pub fn draw_pane_tab_bars_view(
     let h_padding: f32 = 8.0;
     let dot_radius: f32 = 3.0;
     let dot_pad: f32 = 6.0;
-    let active_indicator_h: f32 = 2.0;
+    let active_indicator_h = th.tab_indicator_width.value();
     let plus_font_size = th.tab_bar_label_font_size.value();
     let arrow_font_size = th.tab_bar_arrow_font_size.value();
 
@@ -425,7 +435,7 @@ pub fn draw_pane_tab_bars_view(
                                         ActiveTabIndicator::Fill => {}
                                         ActiveTabIndicator::Dot => {
                                             // 탭 상단 중앙의 accent 점 마커.
-                                            let r = active_indicator_h;
+                                            let r = TAB_ACTIVE_DOT_SIZE.value() * 0.5;
                                             let center = egui::pos2(
                                                 tab_rect.center().x,
                                                 tab_rect.min.y + r * 2.0,
