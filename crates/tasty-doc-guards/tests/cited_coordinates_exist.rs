@@ -289,9 +289,20 @@ fn comment_prefixes(rel: &str) -> Option<&'static [&'static str]> {
         .map(|(_, e)| e);
     match ext {
         Some("rs") => Some(&["//"]),
-        Some("toml" | "sh" | "bash" | "yml" | "yaml" | "py" | "just") => Some(&["#"]),
+        Some("toml" | "sh" | "bash" | "yml" | "yaml" | "py" | "just" | "ps1") => Some(&["#"]),
         Some("lua") => Some(&["--"]),
-        None if matches!(name, "Justfile" | "justfile" | "pre-commit" | "pre-push") => Some(&["#"]),
+        None if matches!(
+            name,
+            "Justfile"
+                | "justfile"
+                | "pre-commit"
+                | "pre-push"
+                | "pre-merge-commit"
+                | ".complexity-file-allowlist"
+        ) =>
+        {
+            Some(&["#"])
+        }
         _ => None,
     }
 }
@@ -962,6 +973,96 @@ fn pruning_is_by_name_not_by_kind() {
         seen,
         vec!["keep.md".to_string()],
         "가지치기가 종류를 물었다 — worktree 의 `.git` 파일이 모집단에 들어왔다"
+    );
+}
+
+/// 수집됐는데 **한 줄도 판정되지 않는** 형식은 형식 단위로 선언한다 — 이유까지.
+///
+/// `comment_prefixes` 가 `None` 을 돌려주면 그 파일은 **조용히** 빠진다. 조용하면
+/// 아무도 안 본다 — 실측으로 그 사각에 진짜 죽은 좌표가 하나 앉아 있었다
+/// (`.complexity-file-allowlist` 이 `#` 주석으로 든 ADR 경로가 다른 번호로 착지했다).
+///
+/// 명부를 **파일이 아니라 형식**으로 잡는 이유: 파일 단위면 `.json` 하나가 새로
+/// 들어올 때마다 낡는다. 형식 단위면 평범한 작업으로는 안 낡고, **새 형식이 들어올
+/// 때만** 빨개져 판단을 요구한다.
+const UNJUDGED_FORMS: &[(&str, &str)] = &[
+    ("json", "주석 문법이 없다 — 데이터다"),
+    ("txt", "주석 문법이 없다 — 데이터·픽스처다"),
+    ("rtf", "주석 문법이 없다 — 서식 문서다"),
+    ("wxs", "주석 문법이 없다(XML) — WiX 정의다"),
+    ("html", "주석 문법이 없다(XML 계열) — 생성물이거나 자산이다"),
+    (
+        "desktop",
+        "freedesktop 항목 파일 — 값이 경로 꼴이라 산문과 못 가른다",
+    ),
+    (
+        "gitignore",
+        "무시 규칙 자체가 경로 목록이다 — 인용이 아니다",
+    ),
+    (
+        "gitattributes",
+        "속성 규칙 자체가 경로 패턴이다 — 인용이 아니다",
+    ),
+    // 아래 셋은 주석 문법이 **있는데도** 안 본다. vendored 최소화 자산이 경로 꼴
+    // 문자열을 데이터로 뱉기 때문이다 — 실측: `mermaid.min.js` 하나가 실재하지 않는
+    // 경로 6 건을 낸다. 우리가 쓴 `site/static/*` 까지 함께 빠지는 것이 이 선택의
+    // 대가이고, 그쪽 인용은 오늘 전부 풀린다.
+    ("js", "vendored 최소화 자산이 경로 꼴 데이터를 낸다"),
+    ("css", "vendored 최소화 자산이 경로 꼴 데이터를 낸다"),
+    (
+        "wit",
+        "WIT 인터페이스 정의 — 주석은 있으나 인용을 싣지 않는다",
+    ),
+];
+
+/// 형식 이름을 판다 — 확장자, 없으면 선행 점을 뗀 파일명.
+fn form_of(rel: &str) -> String {
+    let name = rel.rsplit('/').next().unwrap_or("");
+    let trimmed = name.trim_start_matches('.');
+    trimmed
+        .rsplit_once('.')
+        .map_or_else(|| trimmed.to_string(), |(_, e)| e.to_ascii_lowercase())
+}
+
+/// **명부 밖에 대상이 없다는 것까지 함께 단정한다**(그 반대 방향만 보면 명부가
+/// 낡아도 조용하다). 반대 방향(명부의 죽은 항목)은 일부러 안 본다 — 그건 어떤 형식의
+/// 마지막 파일이 지워지는 것만으로 빨개져, 평범한 작업이 게이트를 흔든다.
+#[test]
+fn every_gathered_but_unjudged_file_declares_its_format() {
+    let root = &tasty_doc_guards::repo_root();
+    let mut files = Vec::new();
+    gather(root, &mut files);
+    assert!(
+        !files.is_empty(),
+        "순회가 비었다 — 이 단정은 그 상태에서 아무 뜻이 없다"
+    );
+
+    let declared: std::collections::BTreeSet<&str> =
+        UNJUDGED_FORMS.iter().map(|(f, _)| *f).collect();
+    let mut unjudged = 0usize;
+    let mut undeclared = Vec::new();
+    for f in &files {
+        let rel = rel_of(f, root);
+        if comment_prefixes(&rel).is_some() || rel.ends_with(".md") {
+            continue;
+        }
+        unjudged += 1;
+        let form = form_of(&rel);
+        if !declared.contains(form.as_str()) {
+            undeclared.push(format!("  {rel} — 형식 `{form}`"));
+        }
+    }
+    assert!(
+        unjudged > 0,
+        "판정에서 빠지는 파일이 하나도 없다 — 이 단정이 헛돌고 있다는 뜻이다"
+    );
+    assert!(
+        undeclared.is_empty(),
+        "수집됐는데 판정되지 않는 형식이 선언 밖에 있다 {} 건. 주석 문법이 있으면 \
+         `comment_prefixes` 에 넣고, 없거나 일부러 안 본다면 이유와 함께 \
+         `UNJUDGED_FORMS` 에 넣어라:\n{}",
+        undeclared.len(),
+        undeclared.join("\n")
     );
 }
 
