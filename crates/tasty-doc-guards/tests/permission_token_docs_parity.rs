@@ -133,6 +133,54 @@ fn a_method_name_sharing_the_prefix_does_not_satisfy_a_token() {
     ));
 }
 
+/// 명부의 문서마다, 그 경로를 **손으로 적은 조각**으로 붙든다.
+///
+/// 실측 2026-09-06 (트리 9c1419aa2): `DOCS` 에서 첫 원소를 지우고
+/// `cargo test -p tasty-doc-guards` 를 돌리면 rc=0 이었다 — 검사 대상 둘 중 하나가
+/// 통째로 빠졌는데 조용했다. 명부는 **빼는 쪽이 느슨해지는** 극성이라, 원소가 줄면
+/// 순회가 덜 돌 뿐 아무 단정도 안 걸린다.
+///
+/// 조각을 `DOCS` 에서 만들지 않고 손으로 적는다. 명부를 순회해 조각을 지으면 오타 난
+/// 항목(`plugin-permission.md`)도 자기 자신과는 맞아 통과한다 — 그러면 이 테스트가
+/// 명부의 사본이 될 뿐 명부를 검사하지 않는다. 조각당 문서 하나만 담는다.
+///
+/// 등호로 크기를 함께 붙든다. 문서를 **더하는** 방향은 검사가 늘어 더 엄격하지만,
+/// 조각 없이 늘면 그 새 항목이 다시 아무에게도 안 지켜진다.
+#[test]
+fn every_doc_on_the_roster_is_named_by_a_literal_of_its_own() {
+    let cases: [(&str, &str); 2] = [
+        (
+            "docs/dev-guide/plugin-permissions.md",
+            "토큰별 개방 범위 표",
+        ),
+        ("docs/concepts/plugins.md", "개념 나열"),
+    ];
+    let tokens = tokens_from_source(&read(SOURCE));
+    for (path, role) in cases {
+        assert!(
+            DOCS.contains(&path),
+            "`{path}`({role})가 명부에 없다 — 지워졌거나 철자가 틀렸다. 그 문서는 이제 \
+             대조되지 않으므로, 거기서 토큰이 사라져도 아무도 모른다"
+        );
+        // 명부에 있기만 하고 그 문서가 토큰을 하나도 안 실으면 그 항목은 죽은 자리다.
+        // 판정은 흉내 내지 않고 이 파일의 술어를 그대로 부른다.
+        let text = read(path);
+        assert!(
+            tokens.iter().any(|t| doc_mentions(&text, t)),
+            "`{path}`({role})가 명부에 있는데 토큰을 하나도 안 싣는다 — 문서가 옮겨졌거나 \
+             표기가 바뀌었다. 이 상태의 초록은 '전부 실렸다' 가 아니라 '아무것도 안 봤다' 다"
+        );
+    }
+    assert_eq!(
+        DOCS.len(),
+        cases.len(),
+        "명부가 {} 개인데 조각은 {} 개다 — 문서를 더했으면 위 `cases` 에도 그 경로를 \
+         리터럴로 적어라. 안 적으면 새 항목은 다시 아무에게도 안 지켜진다",
+        DOCS.len(),
+        cases.len()
+    );
+}
+
 #[test]
 fn every_permission_token_appears_in_the_docs() {
     let tokens = tokens_from_source(&read(SOURCE));
