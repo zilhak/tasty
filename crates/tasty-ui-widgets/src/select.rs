@@ -29,7 +29,14 @@ pub fn select(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
-    let dim = |c: egui::Color32| if enabled { c } else { c.gamma_multiply(0.5) };
+    // disabled 디밍은 `opacity_disabled`(0.5) 공통 톤이다 — 이 위젯만의 값이 아니다.
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            c.gamma_multiply(theme.opacity_disabled())
+        }
+    };
 
     // 트리거 박스. hover border 는 대응 select component 토큰 없어 semantic 유지.
     let border = if enabled && resp.hovered() {
