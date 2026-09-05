@@ -48,6 +48,9 @@ pub mod env_isolation;
 /// 워크플로의 `on:` 트리거를 구조로 읽는다 — 주석과 트리거 키를 가른다.
 pub mod workflow_triggers;
 
+/// 하한을 빠뜨릴 수 없는 공용 순회 — 순회가 죽었을 때 조용히 통과하는 것을 막는다.
+pub mod floored_walk;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
