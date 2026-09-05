@@ -8,6 +8,7 @@
 //! `Button` 재사용, 색·간격·반경은 `Theme` 토큰.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 
 use crate::i18n::t;
@@ -17,9 +18,9 @@ pub const CALLOUT_W: f32 = 244.0;
 /// tail 삼각 크기(12px diamond 전사).
 const TAIL: f32 = 12.0;
 /// up/down tail 의 좌측 기준 앵커 offset(디자인 left:28).
-const TAIL_OFF_H: f32 = 28.0;
+const TAIL_OFF_H: LogicalPx = LogicalPx(28.0);
 /// left/right tail 의 상단 기준 앵커 offset(디자인 top:24).
-const TAIL_OFF_V: f32 = 24.0;
+const TAIL_OFF_V: LogicalPx = LogicalPx(24.0);
 
 /// 마커가 말풍선의 어느 쪽에 있는지 = tail 방향.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -59,19 +60,28 @@ pub fn place_callout(
     let safe_rect = screen.shrink(safe);
     // 후보 pos + tail (선호순서).
     let below = (
-        egui::pos2(marker.center().x - TAIL_OFF_H, marker.bottom() + gap),
+        egui::pos2(
+            marker.center().x - TAIL_OFF_H.value(),
+            marker.bottom() + gap,
+        ),
         Tail::Up,
     );
     let above = (
-        egui::pos2(marker.center().x - TAIL_OFF_H, marker.top() - gap - size.y),
+        egui::pos2(
+            marker.center().x - TAIL_OFF_H.value(),
+            marker.top() - gap - size.y,
+        ),
         Tail::Down,
     );
     let right = (
-        egui::pos2(marker.right() + gap, marker.center().y - TAIL_OFF_V),
+        egui::pos2(marker.right() + gap, marker.center().y - TAIL_OFF_V.value()),
         Tail::Left,
     );
     let left = (
-        egui::pos2(marker.left() - gap - size.x, marker.center().y - TAIL_OFF_V),
+        egui::pos2(
+            marker.left() - gap - size.x,
+            marker.center().y - TAIL_OFF_V.value(),
+        ),
         Tail::Right,
     );
 
