@@ -185,6 +185,11 @@ impl Drop for GtkMenuHandle {
 /// 수(모니터 수 정도)에 비례한다. `f64` 는 비트로 넣어 정확 비교한다.
 static WARNED_ANCHOR_SCALES: Mutex<Vec<(u64, i32)>> = Mutex::new(Vec::new());
 
+/// 위 경고-억제 셋 락의 poison 복구 공용 보고 좌표(첫-1 회). 복구는 안전하다(억제는 부가).
+const WARNED_ANCHOR_SCALES_WHAT: &str = "native-menu anchor-scale warning set";
+static WARNED_ANCHOR_SCALES_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// 네이티브 메뉴 앵커 좌표계의 **전제**(winit 배율 == GDK 배율)가 깨졌으면 경고한다.
 ///
 /// [`show_context_menu`] 에 넘기는 `x`/`y` 는 winit(=egui) **논리** 좌표다. GTK 는
@@ -222,11 +227,12 @@ pub fn warn_if_menu_anchor_scale_premise_broken(winit_scale: f64) {
 
     let key = (winit_scale.to_bits(), gdk_scale);
     {
-        let mut warned = match WARNED_ANCHOR_SCALES.lock() {
-            Ok(guard) => guard,
-            // 경고 경로가 락 오염으로 침묵하면 안 된다 — 중복 억제는 부가 기능이다.
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        // 경고 경로가 락 오염으로 침묵하면 안 된다 — 중복 억제는 부가 기능이다.
+        let mut warned = crate::poison::recover_mutex(
+            WARNED_ANCHOR_SCALES.lock(),
+            WARNED_ANCHOR_SCALES_WHAT,
+            &WARNED_ANCHOR_SCALES_POISONED,
+        );
         if warned.contains(&key) {
             return;
         }
