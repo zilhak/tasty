@@ -20,6 +20,11 @@ use std::sync::Mutex;
 
 use tasty_agent::task::TaskId;
 
+/// 이 레지스트리 락의 poison 복구 공용 보고 좌표(첫-1 회). 인스턴스는 하나다.
+const HOOK_WAIT_WHAT: &str = "agent hook-wait registry";
+static HOOK_WAIT_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// hook_id → (workspace_id, task_id, deadline_ms) 1회성 매핑. `deadline_ms` 는
 /// push 전략의 필수 timeout(§B-3/§C-3) — 훅 보고가 유실돼도 task 가 영구
 /// Running 에 남지 않도록 `sweep_expired` 가 강제 마감한다.
@@ -45,10 +50,8 @@ impl HookTaskWaits {
     /// 는 main thread 소유 `Core`/`CoreState` 에 접근할 수 없다 — `task_waker_hub`
     /// 공유와 동형).
     pub fn register(&self, hook_id: u64, workspace_id: u32, task_id: TaskId, deadline_ms: u64) {
-        let mut guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard =
+            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         guard.insert(hook_id, (workspace_id, task_id, deadline_ms));
     }
 
@@ -56,10 +59,8 @@ impl HookTaskWaits {
     /// 조회 후 잔존시키면 같은 hook_id 의 재발화(예: 같은 훅이 다른 목적으로
     /// 재등록된 경우)가 이미 끝난 task 를 다시 매칭하는 오탐 위험이 있다.
     pub fn resolve(&self, hook_id: u64) -> Option<(u32, TaskId)> {
-        let mut guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard =
+            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         guard.remove(&hook_id).map(|(ws, tid, _)| (ws, tid))
     }
 
@@ -69,10 +70,8 @@ impl HookTaskWaits {
     /// 참조): 제거가 원자적이라 여러 thread 가 동시에 sweep 해도 항목이 중복
     /// 처리되지 않는다.
     pub fn sweep_expired(&self, now_ms: u64) -> Vec<(u32, TaskId)> {
-        let mut guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard =
+            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         let expired_ids: Vec<u64> = guard
             .iter()
             .filter(|(_, (_, _, deadline))| *deadline <= now_ms)
@@ -86,10 +85,8 @@ impl HookTaskWaits {
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        let guard = match self.inner.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let guard =
+            crate::poison::recover_mutex(self.inner.lock(), HOOK_WAIT_WHAT, &HOOK_WAIT_POISONED);
         guard.len()
     }
 }
