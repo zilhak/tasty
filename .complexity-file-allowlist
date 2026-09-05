@@ -9,6 +9,12 @@
 # 이 목록은 **경로만** 담는다 — 값이 없으므로 등재된 파일이 얼마나 자라든 게이트가
 # 아무 신호도 내지 않는다. 그 비대칭과 재검토 트리거는 docs/adr/0167-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md
 # 상세: docs/dev-guide/complexity-gate.md, docs/adr/0037-complexity-gate.md
+#
+# 아래 예산은 이 목록에 오른 파일들의 출하 SLOC **합** 이다. scripts/check-frozen-sum-ratchet.sh
+# 가 양방향으로 고정한다 — 합이 예산 + 임계(1000)를 넘으면 실패하고, 예산 아래로 내려가도
+# 실패한다(그때는 이 수를 내려 래칫을 조인다). 항목이 추가되면 합이 그 파일 크기만큼 뛰므로
+# 그 커밋에서 이 수를 함께 갱신한다 — 목록 diff 와 이 줄이 같은 화면에 보이도록 여기 둔다.
+# frozen-sum-budget: 36433
 crates/tasty-gallery/src/catalog.rs
 crates/tasty-host-plugin/src/builtin.rs
 crates/tasty-memory/src/lib.rs

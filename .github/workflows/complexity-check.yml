@@ -64,3 +64,9 @@ jobs:
 
       - name: File SLOC gate
         run: bash scripts/check-file-size.sh
+
+      # 자매 게이트. 파일 SLOC 게이트는 파일이 임계를 넘는 *순간* 만 보고, 목록에 오른
+      # 뒤의 성장은 아무도 안 본다 — 이쪽이 그 합을 본다. tokei·판정기를 위에서 이미
+      # 갖췄으므로 새 준비가 없다.
+      - name: Frozen sum ratchet
+        run: bash scripts/check-frozen-sum-ratchet.sh
