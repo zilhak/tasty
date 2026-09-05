@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
-- **Tags**: guards, shipping-scope, cfg-predicate, test-gate, canonical-judge, layering, cargo-layout, r414, r451, r453, adr-0129, adr-0165, adr-0166
+- **Tags**: guards, shipping-scope, cfg-predicate, test-gate, canonical-judge, layering, cargo-layout, scan-target, r414, r442, r451, r453, adr-0129, adr-0165, adr-0166
 
 ## Context
 
@@ -75,6 +75,38 @@ doc-guards) 그 사이의 사본은 정당하지 않다 — 위임한다.
   판정은 아직 안 났다 — 같음/중복은 **R414(데이터)** 또는 **직접 증거**(정본이 이미 그
   답을 갖고 있음)로만 선다. 이 순서를 안 적으면 다음 사람이 R453 의 침묵을 "같지 않다"
   나 "중복 아니다" 로 오독한다.
+
+### 이 형태는 소스 스캔 가드 일반에 적용된다
+
+위 규칙(물음에 이름 → 같은 물음은 위임·다른 물음은 이름 분리 → 정본은 공통 핵심만,
+정당한 차이는 모수)은 이 세 물음에 국한되지 않는다. **레포 자신의 파일을 읽고 분류를
+돌려주는 함수** 전반에 적용된다. 실측(728, 2026-09-06): 그런 함수 332 개 중 이름이 겹치는
+것이 28 벌, 그중 `is_scan_target` 만 다섯 벌인데 넷은 서로 **다른 물음**을 같은 이름으로
+숨기고 있었다. 이 형태로 전수 집행한다.
+
+실증으로 둘을 실제로 고쳤다(R442, 읽지 않고 돌려서 잰다):
+
+- **같은 물음 → 위임**: `cited_coordinates_exist` 와 `no_todo_file_citation` 의 바이너리
+  denylist 를 lib 정본 [`is_binary_artifact_ext`] 로 올렸다. 위임 인프라가 이미 있어
+  (두 가드가 `is_build_cache_dir`·`repo_root` 를 이미 위임받음) 배선 비용 0, R414 그린
+  (모집단 불변). 자인된 사본(전자가 후자를 베낌)이 사라졌다.
+- **다른 물음 → 이름 분리**: `no_checkbox_in_docs` 의 `is_scan_target`(=`docs/*.md`)을
+  `is_checkbox_doc` 으로 바꿨다. 위임할 정본이 없다(물음이 다르다) — 이름이 물음을 말하게
+  해 grep 에서 갈리게 한다.
+
+두 경계를 함께 박는다 — 없으면 다음 사람이 안 맞는 데까지 끌고 간다:
+
+- **경계 1 — "같은 이름" 은 판별자가 아니다.** `is_scan_target` 다섯은 이름이 같아도
+  물음이 다르다(`docs/*.md` · `.rs`+매니페스트 · 바이너리 아닌 텍스트 · 출하 `.rs`).
+  이름이 물음을 숨기므로 통합 전에 R414(데이터)나 본문으로 물음을 먼저 가른다. 같은 이름
+  다른 물음은 위 세 물음(`cfg_predicate`·`test_gate`·`shipping_scope`)의 재현이다 —
+  실측 4·5·6·7 번째 사례.
+- **경계 2 — 같은 물음이어도 정본은 공통 핵심만 담는다.** `cited_coordinates_exist` 와
+  `no_todo_file_citation` 은 "바이너리 아닌 텍스트 파일인가" 로 같은 물음이되 정당하게
+  다른 경계를 갖는다(전자는 `.svg`·`.lock` 을 더 빼고, 후자는 vendored 를 뺀다). 그
+  차이를 정본에 억지로 합치면 한쪽 행동이 바뀐다(R414 diff 가 그 신호다). 정본은 공통
+  판정만 갖고 가드별 차이는 **모수**로 소비자에 남긴다 — "출하되는가" 정본이 "판정은
+  하나, 스캔 범위는 각자" 로 한 것과 동형이다.
 
 ## Consequences
 
@@ -167,7 +199,8 @@ poison 축은 "출하 코드다" 라며 잡는다(거짓 양성, 시끄러움). 
 ## References
 
 - 정본: `crates/tasty-doc-guards/src/shipping_scope.rs`(`test_only_files`·
-  `is_cargo_test_target`) · `crates/tasty-doc-guards/src/cfg_predicate.rs`
+  `is_cargo_test_target`) · `crates/tasty-doc-guards/src/cfg_predicate.rs` ·
+  `crates/tasty-doc-guards/src/lib.rs`(`is_binary_artifact_ext` — 스캔 대상 파일 판정)
 - 위임/소비: main 크레이트 `src/source_guards/` 의 `test_gate` 모듈(706, `7919c9a89` —
   이 lane 에는 아직 없고 train70 병합으로 들어온다) ·
   `src/source_guards/length_constant_frontier.rs` · `src/source_guards/sloc_gate_skip_proxy.rs`
