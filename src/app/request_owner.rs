@@ -12,16 +12,29 @@ use winit::window::WindowId;
 /// `--surface`(parent) 생략 시 기대는 host `single_parent()` 폴백은 **호출이 실제로
 /// 라우팅된 그 window 안에서만** 유일성을 본다 — 다중 윈도우 세션에서는 애초에 어느
 /// window 를 봐야 하는지가 정해지지 않는다. 이 4개 메서드가 리소스 id 없이(= 이
-/// 함수 호출 시점에 `params_resource_id`/`workspace` 문자열 둘 다로 owner 를 못 찾은
-/// 채) 호출됐는데 main window 가 2개 이상 열려 있으면, `find_request_owner` 가
+/// 함수 호출 시점에 `params_resource_id`/`method_scoped_resource_id` 어느 쪽으로도
+/// **대상을 지목하지 않은 채**) 호출됐는데 main window 가 2개 이상 열려 있으면,
+/// `find_request_owner` 가
 /// focused window 로 조용히 새지 않고 명시적 `--surface` 를 요구한다(호출자가
 /// 명시하지 않는 한 대상 window 를 추론할 근거가 없다). window 가 1개뿐이면 기존
 /// 동작 그대로(하위 호환) — `single_parent()` 가 그 안에서 0/2+ parent 를 여전히 스스로 거부한다.
 ///
+/// **`target_named` 가 참이면 이 판정은 걸리지 않는다.** 대상을 지목했는데 그것이
+/// 아무 window 에도 없는 경우가 그렇다 — 그때 "`--surface` 를 줘라" 는 **거짓
+/// 안내**다. 호출자는 이미 대상을 줬고, 다른 대상을 하나 더 줘도 달라지지 않는다.
+/// 그 요청의 참인 거절은 "그 id 가 없다" 이고, 그것은 라우팅 하류가 이미
+/// 낸다(`app/ipc/routing.rs` 의 `unowned_target_message` 갈래). 여기서 먼저
+/// 가로채면 **틀린 수리로 보내는 답**이 참인 답을 덮는다.
+///
 /// 순수 함수로 분리해 `App`/`winit` 없이 단위 테스트한다(`find_workspace_by_name`
 /// 와 동일 패턴, `window_access.rs` 참고).
-fn ambiguous_parent_fallback_requires_surface(method: &str, main_window_count: usize) -> bool {
-    main_window_count > 1
+fn ambiguous_parent_fallback_requires_surface(
+    method: &str,
+    main_window_count: usize,
+    target_named: bool,
+) -> bool {
+    !target_named
+        && main_window_count > 1
         && matches!(
             method,
             "terminal.kill" | "terminal.release" | "terminal.respawn" | "terminal.broadcast"
@@ -89,7 +102,8 @@ impl App {
         method: &str,
         params: &serde_json::Value,
     ) -> Result<Option<WindowId>, String> {
-        if let Some(rid) = request_resource_id(method, params) {
+        let named = request_resource_id(method, params);
+        if let Some(rid) = named {
             let found = self.find_main_with_resource(rid);
             if found.is_some() {
                 return Ok(found);
@@ -101,7 +115,11 @@ impl App {
         if let Some(target) = params.get("workspace").and_then(|v| v.as_str()) {
             return self.find_main_with_workspace_target(target);
         }
-        if ambiguous_parent_fallback_requires_surface(method, self.main_window_count()) {
+        if ambiguous_parent_fallback_requires_surface(
+            method,
+            self.main_window_count(),
+            named.is_some(),
+        ) {
             return Err(format!(
                 "multiple windows open; --surface is required for '{method}' \
                  (cannot infer the target window from focus)"
@@ -145,13 +163,14 @@ mod tests {
             "terminal.broadcast",
         ] {
             assert!(
-                !ambiguous_parent_fallback_requires_surface(method, 1),
+                !ambiguous_parent_fallback_requires_surface(method, 1, false),
                 "{method} 는 window 1개일 때 생략을 허용해야 함"
             );
         }
         assert!(!ambiguous_parent_fallback_requires_surface(
             "terminal.kill",
-            0
+            0,
+            false
         ));
     }
 
@@ -167,8 +186,37 @@ mod tests {
             "terminal.broadcast",
         ] {
             assert!(
-                ambiguous_parent_fallback_requires_surface(method, 2),
+                ambiguous_parent_fallback_requires_surface(method, 2, false),
                 "{method} 는 window 2개일 때 --surface 를 요구해야 함"
+            );
+        }
+    }
+
+    /// **대상을 지목한 요청은 이 판정에 안 걸린다** — 지목했는데 없는 경우다.
+    ///
+    /// 그때 두 거절이 다 참이지만 순서가 있다. "창이 여럿이라 못 고른다" 는
+    /// 호출자에게 `--surface` 를 주라고 하는데, 호출자는 **이미 대상을 줬다** —
+    /// 하나 더 줘도 안 달라지므로 틀린 수리로 보낸다. 참인 답은 "그 id 가 없다"
+    /// 이고 라우팅 하류가 그것을 낸다. 그래서 여기서 가로채면 안 된다.
+    ///
+    /// **양방향으로 본다** — 안 걸리는 쪽만 보면 "전부 안 걸림" 도 통과한다.
+    #[test]
+    fn a_named_target_is_not_answered_with_the_ambiguity_error() {
+        for method in [
+            "terminal.kill",
+            "terminal.release",
+            "terminal.respawn",
+            "terminal.broadcast",
+        ] {
+            assert!(
+                !ambiguous_parent_fallback_requires_surface(method, 2, true),
+                "{method} 가 대상을 지목했는데 '창이 여럿이라 못 고른다' 로 답하면 \
+                 호출자를 틀린 수리로 보낸다 — 참인 거절은 '그 id 가 없다' 다"
+            );
+            assert!(
+                ambiguous_parent_fallback_requires_surface(method, 2, false),
+                "{method} 가 아무것도 안 지목했으면 그때는 이 판정이 걸려야 한다 — \
+                 안 걸리면 포커스된 창으로 조용히 샌다"
             );
         }
     }
@@ -179,15 +227,18 @@ mod tests {
     fn unrelated_methods_are_unaffected_even_with_multiple_windows() {
         assert!(!ambiguous_parent_fallback_requires_surface(
             "terminal.spawn",
-            2
+            2,
+            false
         ));
         assert!(!ambiguous_parent_fallback_requires_surface(
             "terminal.tell",
-            2
+            2,
+            false
         ));
         assert!(!ambiguous_parent_fallback_requires_surface(
             "terminal.children",
-            2
+            2,
+            false
         ));
     }
 }
