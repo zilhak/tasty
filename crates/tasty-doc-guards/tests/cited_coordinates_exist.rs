@@ -373,7 +373,12 @@ fn gather(path: &Path, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.is_dir() && is_pruned(p.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
+        // **이름으로 가지친다 — 종류를 묻지 않는다.** worktree 에서 `.git` 은 디렉토리가
+        // 아니라 `gitdir:` 한 줄이 든 파일이라, `is_dir()` 을 먼저 물으면 그 파일이
+        // 가지치기를 빠져나가 문서로 읽힌다. 그러면 같은 커밋이 메인 체크아웃과
+        // worktree 에서 서로 다른 모집단을 본다 — 이 가드의 답은 환경이 아니라
+        // 코드에서 나와야 한다.
+        if is_pruned(p.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
             continue;
         }
         gather(&p, out);
@@ -919,6 +924,35 @@ fn a_format_whose_comment_syntax_is_unknown_is_not_judged() {
     assert!(comment_prefixes(".githooks/pre-commit").is_some());
     assert!(comment_prefixes("site/index.html").is_none());
     assert!(citation_lines("site/index.html", "<img src=\"assets/x.svg\">").is_empty());
+}
+
+/// **모집단이 환경을 읽으면 답도 환경을 읽는다.** worktree 의 `.git` 은 파일이고
+/// 메인 체크아웃의 `.git` 은 디렉토리다 — 가지치기가 종류를 물으면 앞쪽에서만
+/// 그 파일이 문서로 읽혀 두 트리의 모집단이 갈린다. 실재하는 레포를 상대로 시험하면
+/// 이 회귀가 체크아웃 종류에 따라 조용히 사라지므로 임시 디렉토리로 형태를 짓는다.
+#[test]
+fn pruning_is_by_name_not_by_kind() {
+    let dir = std::env::temp_dir().join(format!("tasty-doc-guards-prune-{}", std::process::id()));
+    // 앞선 실행이 남긴 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("target")).expect("임시 디렉토리를 못 만들었다");
+    std::fs::write(dir.join("target").join("buried.md"), "x").expect("쓰기 실패");
+    // worktree 의 형태 — `.git` 이 디렉토리가 아니라 파일이다.
+    std::fs::write(dir.join(".git"), "gitdir: elsewhere\n").expect("쓰기 실패");
+    std::fs::write(dir.join("keep.md"), "x").expect("쓰기 실패");
+
+    let mut files = Vec::new();
+    gather(&dir, &mut files);
+    let mut seen: Vec<String> = files.iter().map(|f| rel_of(f, &dir)).collect();
+    seen.sort();
+    // 단정 전에 치운다 — 실패해도 다음 실행이 위에서 다시 치우므로 막을 이유가 없다.
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        seen,
+        vec!["keep.md".to_string()],
+        "가지치기가 종류를 물었다 — worktree 의 `.git` 파일이 모집단에 들어왔다"
+    );
 }
 
 /// 순회가 바이너리·산출물을 빼고 확장자 없는 파일은 담는가.
