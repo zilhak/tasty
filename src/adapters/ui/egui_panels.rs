@@ -732,7 +732,8 @@ fn draw_occupied_overlays(
             continue;
         }
         let btn_w = (o.w - 8.0).clamp(24.0, 96.0);
-        let btn_pos = egui::pos2(o.x + o.w - btn_w - 4.0, o.y + 4.0);
+        let inset = th.spacing_xs.value();
+        let btn_pos = egui::pos2(o.x + o.w - btn_w - inset, o.y + inset);
         let clicked = egui::Area::new(egui::Id::new(format!("attach_force_detach_{}", o.sid)))
             .fixed_pos(btn_pos)
             .order(egui::Order::Foreground)

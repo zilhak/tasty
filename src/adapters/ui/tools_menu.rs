@@ -111,7 +111,7 @@ pub fn draw_tools_menu(
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
         }
         ui.painter().text(
-            egui::pos2(rect.min.x + 8.0, rect.center().y),
+            egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y),
             egui::Align2::LEFT_CENTER,
             t(entry.label_key),
             egui::FontId::proportional(th.font_size_body.value()),
@@ -190,7 +190,7 @@ pub fn draw_tools_menu(
             }
         };
         ui.painter().text(
-            egui::pos2(rect.min.x + 8.0, rect.center().y),
+            egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y),
             egui::Align2::LEFT_CENTER,
             label,
             egui::FontId::proportional(th.font_size_body.value()),

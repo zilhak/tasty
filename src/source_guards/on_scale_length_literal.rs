@@ -118,7 +118,7 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/adapters/ui/",
-        49,
+        44,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     ("src/view/", 31, "설정 화면의 폼 레이아웃"),

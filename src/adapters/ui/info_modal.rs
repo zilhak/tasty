@@ -150,9 +150,9 @@ pub fn draw_info_modal(
         return PopupAction::Close;
     };
 
-    let margin = 8.0;
+    let margin = th.spacing_sm.value();
     let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(margin, 4.0));
+    let inner_rect = available.shrink2(egui::vec2(margin, th.spacing_xs.value()));
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 
