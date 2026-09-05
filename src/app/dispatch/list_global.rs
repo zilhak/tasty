@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::app::App;
 use crate::ipc as host_ipc;
-use crate::ipc::handler::{output, pane, pty, surface, workspace, workspace_category};
+use crate::ipc::handler::{hooks, output, pane, pty, surface, workspace, workspace_category};
 use crate::ipc::protocol::JsonRpcResponse;
 
 impl App {
@@ -53,6 +53,21 @@ impl App {
                 output::handle_observe_list(c, s, e, id)
             })),
             "workspace_category.list" => Some(self.collect_categories(id)),
+            // 두 hook 표면은 **id 공간이 공유로 바뀐 뒤에야** 합산이 뜻을 갖는다. 그 전에는
+            // 두 창의 훅이 똑같이 id 1 을 받아, 합친 목록에 같은 id 가 둘 실려 호출자가
+            // 어느 쪽도 지목하지 못했다(`IdGenerator` 의 hook · global_hook 카운터).
+            //
+            // `hook.list` 의 `surface_id` 는 **대상이 아니라 필터**다 — 그것으로 주인 창이
+            // 정해지지 않으므로 여기서 합산한다. 필터는 각 engine 에 그대로 넘긴다.
+            "hook.list" => {
+                let params = request.params.clone();
+                Some(self.collect_list(id, move |_c, s, e, id| {
+                    hooks::handle_hook_list(s, e, id, &params)
+                }))
+            }
+            "global_hook.list" => {
+                Some(self.collect_list(id, |_c, s, e, id| hooks::handle_global_hook_list(s, e, id)))
+            }
             _ => None,
         }
     }

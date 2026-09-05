@@ -14,7 +14,8 @@ mod file_handler;
 mod file_picker;
 mod git_viewer;
 mod hook_handler;
-mod hooks;
+// `list_global` 이 두 hook 목록을 합산하므로 크레이트 안에서 보여야 한다.
+pub(crate) mod hooks;
 #[cfg(feature = "gui")]
 mod image;
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
