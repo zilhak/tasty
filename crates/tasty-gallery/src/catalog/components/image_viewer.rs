@@ -26,13 +26,13 @@ use crate::catalog::widgets::dialog as kit;
 /// 본문 폭(전시 박스).
 const PANE_W: LogicalPx = LogicalPx(560.0);
 /// 캔버스 영역 높이(전시 박스).
-const CANVAS_H: f32 = 300.0;
+const CANVAS_H: LogicalPx = LogicalPx(300.0);
 /// control 버튼 폭 (host `add_sized([24,20])`).
-const BTN_W: f32 = 24.0;
+const BTN_W: LogicalPx = LogicalPx(24.0);
 /// control 버튼 높이.
-const BTN_H: f32 = 20.0;
+const BTN_H: LogicalPx = LogicalPx(20.0);
 /// "Fit" zoom 버튼 폭 (host `add_sized([30,20])`).
-const FIT_W: f32 = 30.0;
+const FIT_W: LogicalPx = LogicalPx(30.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
@@ -93,15 +93,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
     kit::frame_card(ui, theme, PANE_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();
-        let pad = theme.spacing_sm.value();
-        let bar_h = BTN_H + pad * 2.0;
+        let pad = theme.spacing_sm;
+        let bar_h = BTN_H + pad.scaled(2.0);
         let total_h = bar_h + CANVAS_H;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, total_h), egui::Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(w, total_h.value()), egui::Sense::hover());
         let p = ui.painter_at(rect);
 
         // ── control bar ──
-        let by = rect.top() + pad;
-        let mut x = rect.left() + pad;
+        let by = LogicalPx(rect.top()) + pad;
+        let mut x = LogicalPx(rect.left()) + pad;
         // viewer 모드: 이미지 있으면 prev/next/refresh/edit/new, 없으면 refresh/new 만.
         // 본체 플러그인이 tasty-icons 베이크 벡터를 쓰므로 specimen 도 같은 canonical
         // 아이콘을 egui_extras 글리프로 렌더해 미러한다(raw 유니코드 글리프 제거).
@@ -123,17 +124,17 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
         x += pad;
         let name = if loaded { "diagram.png (2/5)" } else { "—" };
         p.text(
-            egui::pos2(x, by + BTN_H * 0.5),
+            egui::pos2(x.value(), (by + BTN_H.scaled(0.5)).value()),
             egui::Align2::LEFT_CENTER,
             name,
             egui::FontId::proportional(theme.font_size_caption.value()),
             theme.text_muted().to_egui(),
         );
         // zoom 그룹 (우측 정렬): Fit + % - 를 오른쪽부터 역순 배치.
-        zoom_group(&p, theme, rect.right() - pad, by);
+        zoom_group(&p, theme, LogicalPx(rect.right()) - pad, by);
 
         // bar 하단 separator.
-        let canvas_top = rect.top() + bar_h;
+        let canvas_top = rect.top() + bar_h.value();
         p.hline(
             rect.x_range(),
             canvas_top,
@@ -200,12 +201,15 @@ fn button(
     p: &egui::Painter,
     ui: &egui::Ui,
     theme: &Theme,
-    x: f32,
-    y: f32,
-    width: f32,
+    x: LogicalPx,
+    y: LogicalPx,
+    width: LogicalPx,
     icon: icons::Icon,
-) -> f32 {
-    let r = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, BTN_H));
+) -> LogicalPx {
+    let r = egui::Rect::from_min_size(
+        egui::pos2(x.value(), y.value()),
+        egui::vec2(width.value(), BTN_H.value()),
+    );
     p.rect_filled(
         r,
         theme.corner_radius_sm.value(),
@@ -222,19 +226,22 @@ fn button(
     let gr = egui::Rect::from_center_size(r.center(), egui::vec2(gs, gs));
     icon.image(gs, theme.text_primary().to_egui())
         .paint_at(ui, gr);
-    x + width + theme.spacing_xs.value()
+    x + width + theme.spacing_xs
 }
 
 /// 우측 정렬 zoom 그룹 — 오른쪽 끝 `right_x` 에서 `-`, `%`, `+`, `Fit` 순으로 역배치.
-fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: f32, y: f32) {
-    let gap = theme.spacing_xs.value();
+fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: LogicalPx, y: LogicalPx) {
+    let gap = theme.spacing_xs;
     // `-` 버튼.
-    let minus = egui::Rect::from_min_size(egui::pos2(right_x - BTN_W, y), egui::vec2(BTN_W, BTN_H));
+    let minus = egui::Rect::from_min_size(
+        egui::pos2((right_x - BTN_W).value(), y.value()),
+        egui::vec2(BTN_W.value(), BTN_H.value()),
+    );
     btn_box(p, theme, minus, "-");
     // 퍼센트 라벨.
-    let pct_x = minus.left() - gap;
+    let pct_x = LogicalPx(minus.left()) - gap;
     let pct = p.text(
-        egui::pos2(pct_x, y + BTN_H * 0.5),
+        egui::pos2(pct_x.value(), (y + BTN_H.scaled(0.5)).value()),
         egui::Align2::RIGHT_CENTER,
         "100%",
         egui::FontId::proportional(theme.font_size_caption.value()),
@@ -242,14 +249,14 @@ fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: f32, y: f32) {
     );
     // `+` 버튼.
     let plus = egui::Rect::from_min_size(
-        egui::pos2(pct.left() - gap - BTN_W, y),
-        egui::vec2(BTN_W, BTN_H),
+        egui::pos2(pct.left() - (gap + BTN_W).value(), y.value()),
+        egui::vec2(BTN_W.value(), BTN_H.value()),
     );
     btn_box(p, theme, plus, "+");
     // `Fit` 버튼.
     let fit = egui::Rect::from_min_size(
-        egui::pos2(plus.left() - gap - FIT_W, y),
-        egui::vec2(FIT_W, BTN_H),
+        egui::pos2(plus.left() - (gap + FIT_W).value(), y.value()),
+        egui::vec2(FIT_W.value(), BTN_H.value()),
     );
     btn_box(p, theme, fit, "Fit");
 }
