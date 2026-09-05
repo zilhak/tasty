@@ -1,6 +1,7 @@
 //! `output.observe_*` IPC 핸들러. 모든 mutate / read 는 `Core` wrapper 를 거친다
 //! (`core.observer_*`) — handler 는 *engine 직접 mutate 금지* (Phase D 원칙).
 
+use super::params::{self, p_try};
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -39,7 +40,7 @@ pub fn handle_observe_stop(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let observer_id = match params.get("observer_id").and_then(|v| v.as_u64()) {
+    let observer_id = match p_try!(params::opt_int::<u64>(params, "observer_id", &id)) {
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
     };
@@ -66,7 +67,7 @@ pub fn handle_observe_info(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let observer_id = match params.get("observer_id").and_then(|v| v.as_u64()) {
+    let observer_id = match p_try!(params::opt_int::<u64>(params, "observer_id", &id)) {
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
     };

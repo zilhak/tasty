@@ -6,6 +6,7 @@
 
 #![cfg(debug_assertions)]
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::state::AppState;
@@ -46,16 +47,16 @@ pub(super) fn handle_debug_inject_mouse(
         Err(e) => return e,
     };
     // col, row: 1-indexed cell coordinates
-    let col = match params.get("col").and_then(|v| v.as_u64()) {
+    let col = match p_try!(params::opt_int::<u64>(params, "col", &id)) {
         Some(c) => c,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
     };
-    let row = match params.get("row").and_then(|v| v.as_u64()) {
+    let row = match p_try!(params::opt_int::<u64>(params, "row", &id)) {
         Some(r) => r,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
     // button: 0=left, 1=middle, 2=right. Default: 0
-    let button = params.get("button").and_then(|v| v.as_u64()).unwrap_or(0);
+    let button = p_try!(params::opt_int::<u64>(params, "button", &id)).unwrap_or(0);
     // event_type: "press", "release", "move". Default: "press"
     let event_type = params
         .get("event_type")
@@ -192,7 +193,7 @@ pub(super) fn handle_debug_modhint_hold(
     state
         .modifier_hint
         .update_hold(axis("ctrl"), axis("alt"), axis("option"), axis("shift"));
-    if let Some(ms) = params.get("elapsed_ms").and_then(|v| v.as_u64()) {
+    if let Some(ms) = p_try!(params::opt_int::<u64>(params, "elapsed_ms", &id)) {
         state
             .modifier_hint
             .debug_backdate(std::time::Duration::from_millis(ms));
@@ -329,7 +330,7 @@ pub(super) fn handle_debug_banner_set_countdown(
     let Some(scope_token) = params.get("scope").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'scope' parameter");
     };
-    let Some(seconds) = params.get("seconds").and_then(|v| v.as_u64()) else {
+    let Some(seconds) = p_try!(params::opt_int::<u64>(params, "seconds", &id)) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'seconds' parameter");
     };
     let Some(scope) = crate::adapters::ui::BannerScope::from_token(scope_token) else {

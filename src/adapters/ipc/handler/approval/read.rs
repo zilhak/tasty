@@ -41,7 +41,7 @@ pub fn await_blocking(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(rpc_id, "Missing 'id'"),
     };
-    let timeout_ms = match params.get("timeout_ms").and_then(|v| v.as_u64()) {
+    let timeout_ms = match p_try!(params::opt_int::<u64>(params, "timeout_ms", &rpc_id)) {
         Some(0) => None,
         Some(v) => Some(v),
         None => store.get(&req_id).and_then(|r| r.request.timeout_ms),
@@ -174,10 +174,7 @@ pub fn handle_history(
         .get("state")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+    let limit = p_try!(params::opt_int::<usize>(params, "limit", &id));
 
     let scopes: Vec<String> = match core.with_memory(|s| s.scopes()) {
         Ok(s) => s,

@@ -10,6 +10,7 @@
 //! (원칙 1①). attach 제어는 *에이전트 행동*(ID 지정·입력 시뮬레이션 아님)이라 release
 //! 빌드에 노출된다.
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::core::CoreState;
@@ -141,7 +142,7 @@ pub(crate) fn handle_into_gui(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let port = match params.get("port").and_then(|v| v.as_u64()) {
+    let port = match p_try!(params::opt_int::<u64>(params, "port", &id)) {
         Some(v) if v <= u16::MAX as u64 => v as u16,
         _ => return JsonRpcResponse::invalid_params(id, "Missing/invalid 'port' parameter"),
     };

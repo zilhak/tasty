@@ -12,6 +12,7 @@
 //! 이 모듈 선언(`handler.rs`)은 `#[cfg(all(debug_assertions, target_os = "macos",
 //! feature = "gui"))]` 이라 release·비-macOS·headless 빌드에서 통째로 사라진다.
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -64,7 +65,7 @@ pub fn handle_raw_key(
     if let Err(e) = require_input_simulation(state, engine, &id) {
         return e;
     }
-    let keycode = match params.get("keycode").and_then(|v| v.as_u64()) {
+    let keycode = match p_try!(params::opt_int::<u64>(params, "keycode", &id)) {
         Some(k) if k <= u16::MAX as u64 => k as u16,
         _ => return JsonRpcResponse::invalid_params(id, "Missing or invalid 'keycode' (u16)"),
     };

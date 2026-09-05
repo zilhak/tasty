@@ -3,6 +3,7 @@
 //! audit log 조회/집계/삭제. CallerContext 검사는 method_meta 의 `local_only`
 //! 가 dispatcher 레벨에서 거른다 (운영자 전용).
 
+use super::params::{self, p_try};
 use serde_json::{Value, json};
 
 use crate::ipc::audit::{
@@ -69,13 +70,13 @@ fn build_query(params: &Value, id: &Value) -> std::result::Result<AuditQuery, Js
             JsonRpcResponse::invalid_params(id.clone(), format!("unknown decision '{s}'"))
         })?);
     }
-    if let Some(n) = params.get("since_ms").and_then(|v| v.as_u64()) {
+    if let Some(n) = params::opt_int::<u64>(params, "since_ms", id)? {
         q.since_ms = Some(n);
     }
-    if let Some(n) = params.get("until_ms").and_then(|v| v.as_u64()) {
+    if let Some(n) = params::opt_int::<u64>(params, "until_ms", id)? {
         q.until_ms = Some(n);
     }
-    if let Some(n) = params.get("limit").and_then(|v| v.as_u64()) {
+    if let Some(n) = params::opt_int::<u64>(params, "limit", id)? {
         q.limit = Some(n as usize);
     }
     Ok(q)
@@ -114,9 +115,7 @@ pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> Js
         Ok(q) => q,
         Err(resp) => return resp,
     };
-    let top_n = params
-        .get("top_n")
-        .and_then(|v| v.as_u64())
+    let top_n = p_try!(params::opt_int::<u64>(params, "top_n", &id))
         .map(|n| n as usize)
         .unwrap_or(10);
     let now = now_ms();
@@ -147,12 +146,9 @@ pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> Jso
         Ok(q) => q,
         Err(resp) => return resp,
     };
-    let after_ts_ms = params.get("after_ts_ms").and_then(|v| v.as_u64());
-    let after_seq = params.get("after_seq").and_then(|v| v.as_u64());
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
+    let after_ts_ms = p_try!(params::opt_int::<u64>(params, "after_ts_ms", &id));
+    let after_seq = p_try!(params::opt_int::<u64>(params, "after_seq", &id));
+    let limit = p_try!(params::opt_int::<u64>(params, "limit", &id)).map(|n| n as usize);
     let now = now_ms();
     let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
@@ -178,7 +174,7 @@ pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> Jso
 /// `plugin.audit_clear` — `before_ms` 이전 record 삭제 (생략 시 전체).
 /// 반환: `{ removed: N }`.
 pub fn handle_clear(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
-    let before_ms = params.get("before_ms").and_then(|v| v.as_u64());
+    let before_ms = p_try!(params::opt_int::<u64>(params, "before_ms", &id));
     let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
         store.clear(before_ms)

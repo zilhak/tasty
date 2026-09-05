@@ -1,6 +1,7 @@
 //! `approval` IPC: request 도메인.
 
 use super::*;
+use crate::adapters::ipc::handler::params::{self, p_try};
 
 pub fn handle_request(
     core: &mut crate::core::Core,
@@ -58,7 +59,7 @@ pub fn handle_request(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let timeout_ms = params.get("timeout_ms").and_then(|v| v.as_u64());
+    let timeout_ms = p_try!(params::opt_int::<u64>(params, "timeout_ms", &id));
 
     let severity = match params.get("severity").and_then(|v| v.as_str()) {
         None => Severity::Info,

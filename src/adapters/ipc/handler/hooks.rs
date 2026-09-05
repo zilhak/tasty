@@ -1,4 +1,5 @@
 use super::params::require_u32;
+use super::params::{self, p_try};
 use serde_json::json;
 use tasty_hooks::HookEvent;
 
@@ -168,7 +169,7 @@ pub(crate) fn handle_hook_unset(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let hook_id = match params.get("hook_id").and_then(|v| v.as_u64()) {
+    let hook_id = match p_try!(params::opt_int::<u64>(params, "hook_id", &id)) {
         Some(h) => h,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
     };

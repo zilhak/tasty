@@ -14,6 +14,7 @@
 //! 발급되어 surface id 와 충돌하지 않는다). 어느 한 쪽만 지우면 누수/좀비가
 //! 되므로 kill/sweep 은 **항상 두 store 를 함께** 정리한다.
 
+use super::params::{self, p_try};
 use std::time::Instant;
 
 use serde_json::{Value, json};
@@ -210,10 +211,7 @@ pub(crate) fn handle_read(engine: &mut CoreState, id: Value, params: &Value) -> 
     if !engine.pty_registry.contains(pty_id) {
         return JsonRpcResponse::invalid_params(id, format!("headless pty {pty_id} not found"));
     }
-    let lines = params
-        .get("lines")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+    let lines = p_try!(params::opt_int::<usize>(params, "lines", &id));
     let show_dim = params
         .get("show_dim")
         .and_then(|v| v.as_bool())

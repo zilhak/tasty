@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -58,10 +59,7 @@ pub(crate) fn handle_screen_text(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let lines = params
-        .get("lines")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+    let lines = p_try!(params::opt_int::<usize>(params, "lines", &id));
     let show_dim = params
         .get("show_dim")
         .and_then(|v| v.as_bool())

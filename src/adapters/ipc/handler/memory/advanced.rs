@@ -64,16 +64,10 @@ pub fn handle_query(
             .get("prefix")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        limit: params
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
+        limit: p_try!(params::opt_int::<usize>(params, "limit", &id)),
         since: p_try!(params::opt_i64(params, "since", &id)),
         until: p_try!(params::opt_i64(params, "until", &id)),
-        offset: params
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
+        offset: p_try!(params::opt_int::<usize>(params, "offset", &id)),
     };
     match core.with_memory(|s| s.query(&scope, &path, &equals, &opts)) {
         Ok(entries) => {

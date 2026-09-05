@@ -16,6 +16,7 @@
 
 #![cfg(debug_assertions)]
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::state::AppState;
@@ -33,11 +34,11 @@ pub(super) fn handle_debug_cell_info(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let row = match params.get("row").and_then(|v| v.as_u64()) {
+    let row = match p_try!(params::opt_int::<u64>(params, "row", &id)) {
         Some(r) => r as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
-    let col = match params.get("col").and_then(|v| v.as_u64()) {
+    let col = match p_try!(params::opt_int::<u64>(params, "col", &id)) {
         Some(c) => c as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
     };
@@ -85,7 +86,7 @@ pub(super) fn handle_debug_screen_attrs(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let row = match params.get("row").and_then(|v| v.as_u64()) {
+    let row = match p_try!(params::opt_int::<u64>(params, "row", &id)) {
         Some(r) => r as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
@@ -167,11 +168,11 @@ pub(super) fn handle_debug_glyph_color(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let row = match params.get("row").and_then(|v| v.as_u64()) {
+    let row = match p_try!(params::opt_int::<u64>(params, "row", &id)) {
         Some(r) => r as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'row' parameter"),
     };
-    let col = match params.get("col").and_then(|v| v.as_u64()) {
+    let col = match p_try!(params::opt_int::<u64>(params, "col", &id)) {
         Some(c) => c as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'col' parameter"),
     };

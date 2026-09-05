@@ -1,5 +1,6 @@
 //! `telemetry.summary` / `telemetry.timeseries` / `telemetry.top` 핸들러.
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Map, Value, json};
 use tasty_memory::{ListOpts, MemoryValue, Scope};
 use tasty_telemetry::{
@@ -37,9 +38,9 @@ impl QueryFilter {
         if let Some(ref a) = agent {
             validate_agent_id(a).map_err(|e| e.to_string())?;
         }
-        let workspace_id = crate::adapters::ipc::handler::params::read_u32(params, "workspace_id")?;
-        let since = params.get("since").and_then(|v| v.as_u64());
-        let until = params.get("until").and_then(|v| v.as_u64());
+        let workspace_id = params::read_u32(params, "workspace_id")?;
+        let since = params::read_int::<u64>(params, "since")?;
+        let until = params::read_int::<u64>(params, "until")?;
         Ok(Self {
             metric,
             agent,
@@ -232,11 +233,7 @@ pub fn handle_top(
     if by != "agent" && by != "workspace" {
         return JsonRpcResponse::invalid_params(id, "'by' must be 'agent' or 'workspace'");
     }
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .unwrap_or(10);
+    let limit = p_try!(params::opt_int::<usize>(params, "limit", &id)).unwrap_or(10);
     let filter = match QueryFilter::from_params(params) {
         Ok(f) => f,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),

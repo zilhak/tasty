@@ -1,5 +1,6 @@
 //! `telemetry.session_summary` — 세션 단위 집계 요약 + markdown 렌더.
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
@@ -27,8 +28,8 @@ pub fn handle_session_summary(
             Ok(v) => v,
             Err(e) => return e,
         };
-    let since = params.get("since").and_then(|v| v.as_u64());
-    let until = params.get("until").and_then(|v| v.as_u64());
+    let since = p_try!(params::opt_int::<u64>(params, "since", &id));
+    let until = p_try!(params::opt_int::<u64>(params, "until", &id));
     let format = params
         .get("format")
         .and_then(|v| v.as_str())
@@ -40,11 +41,7 @@ pub fn handle_session_summary(
             format!("invalid 'format' '{format}' (markdown|json)"),
         );
     }
-    let top_n_size = params
-        .get("top_n")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .unwrap_or(10);
+    let top_n_size = p_try!(params::opt_int::<usize>(params, "top_n", &id)).unwrap_or(10);
 
     let summary = match build_session_summary(core, workspace_id, since, until, top_n_size) {
         Ok(s) => s,

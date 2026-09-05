@@ -22,6 +22,7 @@
 
 #![cfg(debug_assertions)]
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::state::AppState;
@@ -36,7 +37,7 @@ pub(super) fn handle_debug_switch_tab(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let index = match params.get("index").and_then(|v| v.as_u64()) {
+    let index = match p_try!(params::opt_int::<u64>(params, "index", &id)) {
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
@@ -64,7 +65,7 @@ pub(super) fn handle_debug_close_workspace(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let index = match params.get("index").and_then(|v| v.as_u64()) {
+    let index = match p_try!(params::opt_int::<u64>(params, "index", &id)) {
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
@@ -95,7 +96,7 @@ pub(super) fn handle_debug_switch_workspace(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let index = match params.get("index").and_then(|v| v.as_u64()) {
+    let index = match p_try!(params::opt_int::<u64>(params, "index", &id)) {
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };

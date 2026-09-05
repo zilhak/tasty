@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
@@ -30,7 +31,7 @@ pub fn handle_semaphore_create(
         Ok(n) => n,
         Err(e) => return e,
     };
-    let permits = match params.get("permits").and_then(|v| v.as_u64()) {
+    let permits = match p_try!(params::opt_int::<u64>(params, "permits", &id)) {
         Some(c) if c <= u32::MAX as u64 => c as u32,
         _ => {
             return JsonRpcResponse::invalid_params(
@@ -61,7 +62,7 @@ pub fn handle_semaphore_set_permits(
         Ok(n) => n,
         Err(e) => return e,
     };
-    let permits = match params.get("permits").and_then(|v| v.as_u64()) {
+    let permits = match p_try!(params::opt_int::<u64>(params, "permits", &id)) {
         Some(c) if c <= u32::MAX as u64 => c as u32,
         _ => {
             return JsonRpcResponse::invalid_params(

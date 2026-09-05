@@ -14,6 +14,7 @@
 //!   있으므로 추가 게이트가 의미 없음).
 //! - `session.list` 는 host 전용 (`local_only`). 모든 활성 세션을 본다.
 
+use super::params::{self, p_try};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
@@ -86,7 +87,7 @@ pub fn handle_issue(
             );
         }
     };
-    let ttl_ms = params.get("ttl_ms").and_then(|v| v.as_u64());
+    let ttl_ms = p_try!(params::opt_int::<u64>(params, "ttl_ms", &id));
 
     // 권한 토큰을 Permission 으로 매핑하고, 알 수 없는 토큰을 거부.
     let mut perms: Vec<Permission> = Vec::with_capacity(perm_tokens.len());
@@ -224,10 +225,8 @@ pub fn handle_grant_agent_permission(
             format!("unknown permission token: {permission}"),
         );
     }
-    let ttl_ms = params
-        .get("ttl_secs")
-        .and_then(|v| v.as_u64())
-        .map(|s| s.saturating_mul(1000));
+    let ttl_ms =
+        p_try!(params::opt_int::<u64>(params, "ttl_secs", &id)).map(|s| s.saturating_mul(1000));
     let now = now_ms();
     let result = core.session_grant_permission_for_agent(&agent_id, &permission, ttl_ms, now);
     match result {

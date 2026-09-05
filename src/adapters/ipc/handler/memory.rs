@@ -20,9 +20,7 @@ pub use plan::*;
 pub use secret::*;
 
 pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
+    params::opt_int::<u64>(params, "workspace_id", id)?
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(id.clone(), "Missing or invalid 'workspace_id'")
@@ -35,9 +33,7 @@ pub(super) fn require_workspace_id(params: &Value, id: &Value) -> Result<u32, Js
 /// `>= PTY_ID_BASE` 는 headless PTY id 공간이라 실재 surface 가 가질 수 없다 — 거부한다
 /// (`docs/adr/0094-surface-id-space-bounded-below-pty-base.md`).
 pub(super) fn require_surface_id(params: &Value, id: &Value) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
+    params::opt_int::<u64>(params, "surface_id", id)?
         .and_then(|n| u32::try_from(n).ok())
         .filter(|n| crate::core::pty_registry::is_surface_id_space(*n))
         .ok_or_else(|| {
@@ -482,7 +478,7 @@ pub fn handle_delete(
     if let Err(e) = reject_host_key(caller, &key, &id) {
         return e;
     }
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.delete(&owner, &scope, &key, cas)) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),

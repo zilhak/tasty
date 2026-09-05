@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use super::params::{self, p_try};
 use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -7,29 +8,31 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// 단계 7 — workspace.create/update params 에서 SSH attach 매핑을 파싱한다.
 /// `attach_profile`(저장 프로필) 우선, 없으면 `attach_ssh`(1회성 인라인).
 /// 둘 다 없으면 None(매핑 없음).
-fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMapping> {
-    let remote_workspace = params
-        .get("attach_remote_workspace")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+/// `Result` 를 반환하는 이유: 잘못된 `attach_remote_workspace` 를 `None` 으로 만들면
+/// **매핑 없음**과 구별되지 않아, 사용자가 지정한 원격 워크스페이스 대신 매핑 없이
+/// 조용히 진행된다.
+fn parse_attach_mapping(
+    params: &serde_json::Value,
+) -> Result<Option<WorkspaceAttachMapping>, String> {
+    let remote_workspace = params::read_int::<u32>(params, "attach_remote_workspace")?;
     if let Some(name) = params
         .get("attach_profile")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     {
-        return Some(WorkspaceAttachMapping {
+        return Ok(Some(WorkspaceAttachMapping {
             target: WorkspaceAttachTarget::Profile {
                 name: name.to_string(),
             },
             remote_workspace,
-        });
+        }));
     }
     if let Some(host) = params
         .get("attach_ssh")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     {
-        return Some(WorkspaceAttachMapping {
+        return Ok(Some(WorkspaceAttachMapping {
             target: WorkspaceAttachTarget::Inline {
                 host: host.to_string(),
                 remote_tasty: None,
@@ -37,9 +40,9 @@ fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMap
                 port_file: None,
             },
             remote_workspace,
-        });
+        }));
     }
-    None
+    Ok(None)
 }
 
 /// `attach_ssh` host 가 self(loopback) 대상(`127.0.0.1:PORT`/`localhost:PORT`/
@@ -276,7 +279,10 @@ pub fn handle_workspace_create(
     }
 
     // 단계 7 — SSH attach 매핑 설정(있으면). layout.json 영속을 위해 dirty 표시.
-    if let Some(mapping) = parse_attach_mapping(params) {
+    if let Some(mapping) = match parse_attach_mapping(params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    } {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
         engine.mark_layout_dirty();
     }
@@ -318,7 +324,7 @@ pub fn handle_workspace_update(
     };
     let workspace_id = if let Some(ws_id) = id_param {
         ws_id
-    } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+    } else if let Some(i) = p_try!(params::opt_int::<u64>(params, "index", &id)) {
         let idx = i as usize;
         if idx >= engine.workspaces.len() {
             return JsonRpcResponse::invalid_params(
@@ -403,7 +409,10 @@ pub fn handle_workspace_update(
     if clear {
         engine.workspaces[index].set_attach_mapping(None);
         engine.mark_layout_dirty();
-    } else if let Some(mapping) = parse_attach_mapping(params) {
+    } else if let Some(mapping) = match parse_attach_mapping(params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    } {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
         engine.mark_layout_dirty();
     }
@@ -458,7 +467,7 @@ pub fn handle_workspace_close(
                 return JsonRpcResponse::invalid_params(id, format!("Workspace {ws_id} not found"));
             }
         }
-    } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+    } else if let Some(i) = p_try!(params::opt_int::<u64>(params, "index", &id)) {
         let idx = i as usize;
         if idx >= engine.workspaces.len() {
             return JsonRpcResponse::invalid_params(
@@ -548,11 +557,11 @@ pub fn handle_workspace_move(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let from = match params.get("from_index").and_then(|v| v.as_u64()) {
+    let from = match p_try!(params::opt_int::<u64>(params, "from_index", &id)) {
         Some(f) => f as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
     };
-    let to = match params.get("to_index").and_then(|v| v.as_u64()) {
+    let to = match p_try!(params::opt_int::<u64>(params, "to_index", &id)) {
         Some(t) => t as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };

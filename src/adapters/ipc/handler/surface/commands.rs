@@ -20,10 +20,7 @@ pub(crate) fn handle_commands(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+    let limit = p_try!(params::opt_int::<usize>(params, "limit", &id));
     let since = p_try!(params::opt_i64(params, "since", &id));
     let entries = match read_command_entries(core, surface_id, limit, since) {
         Ok(v) => v,

@@ -418,15 +418,18 @@ fn hard_occupied_structural_guard(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Option<JsonRpcResponse> {
+    // 이 조회는 **어느 워크스페이스의 상태를 볼지**만 고른다. 잘못된 값의 오류를 여기서
+    // 버리는 것은(`.ok().flatten()`) 대상 없음으로 흘려보내기 위해서다 — 그 뒤 핸들러의
+    // `require_*` 가 같은 값을 다시 읽고 **이유를 붙여 거절**한다. 중요한 것은 자르지
+    // 않는 것이다: 자르면 `None` 이 아니라 실재하는 다른 대상이 되어 라우팅이 성공한다.
     let ws_idx: usize = match method {
         "split" => {
             // 자르지 않는다 — 자르면 `None` 이 아니라 **실재하는 다른 pane** 이 되어
             // 라우팅이 성공한다. 범위 밖은 종전대로 대상 없음으로 흘려보내고, 그 뒤
             // 핸들러의 `require_*` 가 이유를 붙여 거절한다.
-            let target_pane = params
-                .get("target_pane")
-                .and_then(|v| v.as_u64())
-                .and_then(|v| u32::try_from(v).ok());
+            let target_pane = params::read_int::<u32>(params, "target_pane")
+                .ok()
+                .flatten();
             let target_surface = pane::resolve_surface_target(state, params);
             target_pane
                 .and_then(|pid| engine.find_workspace_index_for_pane(pid))
@@ -438,36 +441,25 @@ fn hard_occupied_structural_guard(
         }
         // 워크스페이스 통째 닫기 — 대상 자체가 workspace 라 id/index 를 그대로 쓴다.
         "workspace.close" => {
-            if let Some(ws_id) = params
-                .get("id")
-                .and_then(|v| v.as_u64())
-                .and_then(|v| u32::try_from(v).ok())
-            {
+            if let Some(ws_id) = params::read_int::<u32>(params, "id").ok().flatten() {
                 engine.workspaces.iter().position(|w| w.id == ws_id)?
             } else {
-                params.get("index").and_then(|v| v.as_u64())? as usize
+                params::read_int::<usize>(params, "index").ok().flatten()?
             }
         }
         "tab.create" | "pane.close" | "tab.move" => {
-            let pane_id = params
-                .get("pane_id")
-                .and_then(|v| v.as_u64())
-                .and_then(|v| u32::try_from(v).ok())?;
+            let pane_id = params::read_int::<u32>(params, "pane_id").ok().flatten()?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
         "tab.close" => {
-            let tab_id = params
-                .get("tab_id")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32)?;
+            let tab_id = params::read_int::<u32>(params, "tab_id").ok().flatten()?;
             let pane_id = engine.find_pane_for_tab(tab_id)?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
         "surface.close" | "markdown.navigate" | "image.open" => {
-            let surface_id = params
-                .get("surface_id")
-                .and_then(|v| v.as_u64())
-                .and_then(|v| u32::try_from(v).ok())?;
+            let surface_id = params::read_int::<u32>(params, "surface_id")
+                .ok()
+                .flatten()?;
             engine
                 .find_workspace_index_for_surface(surface_id)
                 .map(|(i, _)| i)?
@@ -1268,11 +1260,14 @@ fn require_pane_id(
 }
 
 /// Extract optional caller_surface_id from params.
+///
+/// 오류를 버린다 — 이 값은 **부가 정보**(알림을 누구에게 돌려줄지)라 대상 선택에
+/// 안 쓰이고, 여기서 거절하면 본 작업까지 막힌다. 다만 판정 자체는 공용 자리를
+/// 지난다(자르기가 일어나지 않는다).
 pub(super) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
-    params
-        .get("caller_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    params::read_int::<u32>(params, "caller_surface_id")
+        .ok()
+        .flatten()
 }
 
 /// Check if a surface belongs to a pane (directly or in any tab).

@@ -5,6 +5,7 @@
 //! 이었다(18시간 실행 21,102건). 근거는
 //! [ADR-0085](../../../../../docs/adr/0085-ipc-log-retention-bounded.md).
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, AnomalyKind, anomaly_key};
@@ -132,8 +133,8 @@ pub fn handle_anomaly_list(
         .get("kind")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let since = params.get("since").and_then(|v| v.as_u64());
-    let until = params.get("until").and_then(|v| v.as_u64());
+    let since = p_try!(params::opt_int::<u64>(params, "since", &id));
+    let until = p_try!(params::opt_int::<u64>(params, "until", &id));
 
     let list_opts = ListOpts {
         prefix: Some(ANOMALY_KEY_PREFIX.to_string()),
