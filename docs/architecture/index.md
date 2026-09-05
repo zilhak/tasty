@@ -39,12 +39,12 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 ### type-\* / primitive (leaf)
 `tasty-type-geometry`(길이·도형: `LogicalPx`/`PhysicalPx`/`Rect`, 의존 0) · `tasty-type-appearance`(색·테마 schema, → type-geometry) · `tasty-design-tokens`(vendored DTCG 디자인 토큰 + codegen, → type-geometry 만) · `tasty-utils`(path helper, leaf) · `tasty-ansi`(ANSI escape 제거 — CSI/OSC 정규식 하나. `tasty-terminal`(IPC `--strip-ansi`)과 `tasty-output`(파서의 plain text 매칭)이 공유한다. 두 크레이트가 서로를 흡수하면 상대가 몰라도 되는 의존(serde / termwiz)을 들이므로 크기가 아니라 의존 방향으로 분리했다, → regex 만, ADR-0089) · `tasty-timer`(중앙 타이머 허브 — 메인 루프의 주기 작업을 키로 등록하고 매 프레임 `drain_due` 로 소비, 고정 주기 ticker 스레드 대신 다음 데드라인까지만 자는 waker 스레드 1개, 의존 0)
 
-type-\* 끼리만 의존 가능. 도메인/IO crate 의존 금지(그룹 내 순환도 금지). — [typed-length](../concepts/typed-length.md)
+이 절 안에서만 의존 가능("type-\*" 는 절 이름이고 규칙의 단위는 **절 소속**이다 — `tasty-utils`·`tasty-ansi`·`tasty-timer`·`tasty-design-tokens` 처럼 이름이 `tasty-type-` 으로 시작하지 않는 것도 이 절이다). 도메인/IO crate 의존 금지(그룹 내 순환도 금지). — [typed-length](../concepts/typed-length.md)
 
 ### 도메인-IO
 `tasty-themes`(전역 Theme + TOML IO) · `tasty-settings`(설정 스키마/직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY + termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(에이전트 메모리 `memory.db`) · `tasty-telemetry`(→ memory) · `tasty-output`(출력 파서 카탈로그) · `tasty-approval`(approval 게이트) · `tasty-agent`(세션/lifecycle, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-shm`(공유 메모리) · `tasty-portscan` · `tasty-reaper`(자식 프로세스를 호스트 수명에 결박 — Windows Job Object / 비-Windows no-op) · `tasty-lua`(Lua 스크립트 — 워커 격리 + 고정 host API, ADR-0031) · `tasty-i18n`(번역) · `tasty-remote-profiles`(원격 연결 프로필 + passkey, typed-tagged registry — attach/explorer/plugin 공유, ADR-0015/0032) · `tasty-ssh`(시스템 ssh 위임 — ssh 프로세스 spawn · 터널 수명 · 원격 포트 발견 · 백오프 · 취소. SSH 프로토콜은 구현하지 않는다, → remote-profiles/i18n/utils) · `tasty-remote`(원격 인스턴스 client 능력 — 워크스페이스 조회/생성. CLI·GUI·IPC 3소비자 공유, → ssh/ipc/remote-profiles, ADR-0089) · `tasty-model`(도메인 모델 — workspace/pane/tab/surface, → terminal/type-geometry/utils, GUI-free) · `tasty-dag-layout`(task DAG 레이어 레이아웃 — Sugiyama 계열로 노드 좌표만 계산, egui/Theme 를 모르는 순수 계산이라 본체·갤러리가 같은 코드를 씀, → type-geometry 만. [dag-layout](../dev-guide/dag-layout.md)) · `tasty-git-core`(read-only git2 래퍼 — repo 탐색·status/log/diff/worktrees, mutate 없음. host core(원격 attach git query)와 `tasty-plugin-git-viewer`(로컬)가 공유, → utils, ADR-0056)
 
-type-\* + 다른 도메인-IO 만 의존 가능.
+이 절 + type-\*/primitive 절만 의존 가능(위와 같이 판정 단위는 절 소속이다). **예외 하나** — `tasty-remote` 는 plugin host 의 `tasty-ipc` 에 의존한다: 원격 client 능력이 IPC 호출이고, 합칠 후보 둘(`tasty-ssh` 와 `tasty-ipc`)이 각각 더 나쁜 의존을 들여 기각됐다. 그 방향은 [ADR-0089](../adr/0089-crate-split-follows-dependency-direction.md) 의 결정이다. 이 절의 다른 크레이트에는 예외가 없다.
 
 ### UI primitive
 `tasty-egui-theme`(Theme → egui Visuals/Style 어댑터) · `tasty-ui-widgets`(본체·갤러리 공유 egui 위젯/레이아웃 primitive — 시각 동기화 단일 출처) · `tasty-icons`(line/fill 아이콘 SVG 단일 출처 — host/gallery/plugin build-time bake 공유). — [ui-widgets-crate](ui-widgets-crate.md)
