@@ -321,6 +321,79 @@ mod tests {
         );
     }
 
+    /// **인정하는 유니크화 성분 하나하나가 실제로 인식되는지** 묻는다.
+    ///
+    /// 실측 2026-09-06: 이 테스트가 없을 때 [`UNIQ_TOKENS`] 아홉 중 **여덟을 통째로
+    /// 지워도** 레포 스캔(`--test no_unshared_fixed_temp_path`)도 이 모듈의 유닛
+    /// 열둘도 전부 초록이었다. 오늘 레포에서 그 여덟이 **유일 근거인 자리가 0** 이라
+    /// 수가 안 움직이기 때문이다 — 하중을 받는 것은 `process::id` 하나뿐이었다.
+    /// 값을 움직이는 변이는 이미 여럿이 잡는다. **값이 안 움직이는 변이를 잡는 것이
+    /// 이 테스트의 전부다.**
+    ///
+    /// 조각을 상수에서 만들지 않고 **손으로 적는다.** 목록을 순회해 조각을 지으면
+    /// 오타가 난 항목(`NamedTempFilee`)도 자기 자신과는 맞아 통과한다 — 그러면 이
+    /// 테스트가 목록의 사본이 될 뿐 목록을 검사하지 않는다.
+    ///
+    /// 조각마다 성분을 **하나만** 담는다. 둘을 담으면 하나를 지워도 다른 하나가
+    /// 받쳐 주어 그 지움이 조용해진다.
+    ///
+    /// 여기 여덟뿐인 이유: `process::id` 는 아래 세 테스트가 이미 이름으로 부른다.
+    /// 확인했다 — 아홉을 하나씩 빼면 전부 빨개지고, 여덟은 이 테스트가 성분 이름을
+    /// 대며 잡고 `process::id` 는 그 셋이 잡는다.
+    #[test]
+    fn every_recognized_uniquifier_is_actually_recognized() {
+        let cases: [(&str, &str); 8] = [
+            (
+                "TempDir",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let d = TempDir::new_in(&base).unwrap();\n}",
+            ),
+            (
+                "tempfile",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let b = tempfile::Builder::new().tempdir_in(&base).unwrap();\n}",
+            ),
+            (
+                "tempdir(",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let d = tempdir().unwrap();\n}",
+            ),
+            (
+                "NamedTempFile",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let h = NamedTempFile::new_in(&base).unwrap();\n}",
+            ),
+            (
+                "pid",
+                "fn f() {\n    let p = std::env::temp_dir().join(format!(\"tasty-{}\", pid));\n}",
+            ),
+            (
+                "path_for",
+                "fn f() {\n    let p = std::env::temp_dir().join(path_for(\"tasty\"));\n}",
+            ),
+            (
+                "nanos",
+                "fn f() {\n    let p = std::env::temp_dir().join(format!(\"tasty-{}\", nanos()));\n}",
+            ),
+            (
+                "SystemTime",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let t = SystemTime::now();\n}",
+            ),
+        ];
+        for (name, src) in cases {
+            let fc = classify_src(src);
+            assert_eq!(
+                fc.sites.len(),
+                1,
+                "{name}: 조각이 경로 짓는 자리 하나를 내야 한다 — 안 그러면 아래 단정이 \
+                 공허하다"
+            );
+            assert!(
+                fc.silent.is_empty(),
+                "{name} 을 유니크화로 인정하지 않는다. 이 성분을 목록에서 뺐거나 철자를 \
+                 바꿨으면 모듈 문서의 등급표도 함께 고쳐라 — 문서는 이것을 인정한다고 \
+                 말하고 있다"
+            );
+            assert_eq!(fc.uniquified.len(), 1, "{name}: 유니크화 한 곳이어야 한다");
+        }
+    }
+
     /// pid 를 섞으면 유니크화로 통과한다.
     #[test]
     fn a_pid_keyed_name_passes() {
