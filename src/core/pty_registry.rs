@@ -25,7 +25,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -118,7 +118,9 @@ pub struct PtyEntry {
     /// 마지막 IO 활동 시각(monotonic). idle TTL 판정 기준 — read/write 시 `touch`.
     last_activity: Instant,
     /// watcher-thread 가 `child.wait()` 완료 시 채우는 cell(`runner_host.rs` 패턴 이식).
-    exit_result: Arc<Mutex<Option<PtyExit>>>,
+    /// `Condvar` 를 짝지어, cell 을 채운 watcher 가 대기자를 깨운다 — 대기자는 고정 간격
+    /// 폴링(부하에 비례해 깨지는 형태 C) 대신 종료 즉시 반환한다([`wait_for_exit`]).
+    exit_result: Arc<(Mutex<Option<PtyExit>>, Condvar)>,
     /// exit watcher 스레드 핸들. 살려두기만 하면 되므로 join 하지 않는다(detached).
     _watcher: Option<JoinHandle<()>>,
 }
@@ -142,7 +144,7 @@ impl PtyEntry {
     /// 굳는다. 근거 `docs/dev-guide/error-handling.md` "락 poison".
     pub fn exit(&self) -> Option<PtyExit> {
         crate::poison::recover_mutex(
-            self.exit_result.lock(),
+            self.exit_result.0.lock(),
             EXIT_CELL_WHAT,
             &EXIT_CELL_POISON_REPORTED,
         )
@@ -179,7 +181,11 @@ pub struct PtySpawnSpec {
 pub struct PtyRegistry {
     entries: HashMap<u32, PtyEntry>,
     /// Surface id 와 disjoint 한 별도 카운터([`PTY_ID_BASE`] 부터).
-    next_id: AtomicU32,
+    ///
+    /// **engine 들이 이 Arc 를 공유한다.** registry 마다 따로 세면 두 창이 같은 pty id 를
+    /// 발급하고, 라우팅은 그 id 를 가진 engine 을 **먼저 찾히는 순서로** 고르므로 나중
+    /// 것은 어떤 요청으로도 못 닿는다(`IdGenerator` doc 의 "글로벌 유니크").
+    next_id: std::sync::Arc<AtomicU32>,
     max_concurrent: usize,
     idle_ttl: Duration,
 }
@@ -188,7 +194,7 @@ impl Default for PtyRegistry {
     fn default() -> Self {
         Self {
             entries: HashMap::new(),
-            next_id: AtomicU32::new(PTY_ID_BASE),
+            next_id: std::sync::Arc::new(AtomicU32::new(PTY_ID_BASE)),
             max_concurrent: DEFAULT_MAX_CONCURRENT,
             idle_ttl: DEFAULT_IDLE_TTL,
         }
@@ -196,8 +202,19 @@ impl Default for PtyRegistry {
 }
 
 impl PtyRegistry {
+    /// 카운터를 공유하지 않는 독립 registry — **단위 테스트 전용**이다.
+    /// production 은 항상 [`PtyRegistry::with_counter`] 로 engine 간 공유 카운터를 든다.
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    pub fn with_counter(next_id: std::sync::Arc<AtomicU32>) -> Self {
+        Self {
+            next_id,
+            ..Self::default()
+        }
     }
 
     /// 상한/TTL override 생성자 — `rate_limit.rs` 철학(기본값은 박되 호출자 지정 가능).
@@ -244,7 +261,7 @@ impl PtyRegistry {
                 command: spec.command,
                 created_at: now,
                 last_activity: now,
-                exit_result: Arc::new(Mutex::new(None)),
+                exit_result: Arc::new((Mutex::new(None), Condvar::new())),
                 _watcher: None,
             },
         );
@@ -271,10 +288,18 @@ impl PtyRegistry {
                 // 여기서 조용히 버리면 종료 결과가 영영 안 채워져 자식이 계속 실행 중으로
                 // 보인다 — 위 `exit` 와 같은 이유로 복구한다.
                 *crate::poison::recover_mutex(
-                    cell.lock(),
+                    cell.0.lock(),
                     EXIT_CELL_WHAT,
                     &EXIT_CELL_POISON_REPORTED,
                 ) = Some(outcome);
+                // cell 을 채운 직후 대기자(`wait_for_exit`)를 깨운다. 깨우는 이 쪽은
+                // 프로덕션 경로(exit-code 캡처 watcher 라 항상 돈다)인데 기다리는 쪽은
+                // `#[cfg(test)]` 뿐이라 비대칭이다 — 의도한 것이다: notify 는 받을 대기자가
+                // 없으면 아무 일도 안 하는 무비용 신호라, non-test 빌드에서 죽은 코드가 아니라
+                // 그냥 아무도 받지 않는 신호일 뿐이다. 대기자가 아직 wait 에 들어가지 않았어도
+                // 신호가 유실되지 않는다 — 대기자는 wait 전에 cell 을 먼저 검사하고, wait 는
+                // 반드시 그 락을 쥔 채 시작하기 때문이다.
+                cell.1.notify_all();
             });
         match handle {
             Ok(h) => {
@@ -286,6 +311,47 @@ impl PtyRegistry {
                 false
             }
         }
+    }
+
+    /// `id` 의 자식이 종료될 때까지 블록 대기하고 종료 결과를 반환한다(상한 `timeout`).
+    ///
+    /// exit-watcher 가 cell 을 채우며 보내는 `Condvar` 신호로 깨어나므로, 고정 간격 폴링과
+    /// 달리 러너 부하와 무관하게 **종료 즉시** 반환한다. 이 테스트류가 보증하려는 계약은
+    /// "종료가 온다(그리고 코드가 정확하다)" 이지 "종료가 N 초 안에 온다" 가 아니므로, 시간은
+    /// 사고다 — 고정 마감시각 단정은 부하가 높은 회차에서 확률적으로 깨진다(ADR-0129 형태 C).
+    /// 상한은 그래서 신호가 영영 오지 않을 때만 걸리는 안전망이고, 넉넉히 준다. 상한 안에
+    /// 종료가 안 오면 `None`, 미존재 id 도 `None`.
+    ///
+    /// **테스트 전용**(`#[cfg(test)]`). `pty.wait` IPC 핸들러는 이걸 쓰지 않는다 — 그쪽은
+    /// 즉시 반환해야 IPC 스레드가 막히지 않으므로 [`PtyEntry::exit`] 스냅샷을 읽는다. 즉
+    /// 프로덕션에는 블로킹 대기 소비자가 없다. 이 메서드는 e2e 테스트가 폴링+마감시각 단정
+    /// 대신 종료 이벤트를 기다리게 하려고만 존재하므로 non-test 빌드에서 노출하지 않는다
+    /// (노출하면 dead code 라 이 레포는 error 로 잡는다). 프로덕션 소비자가 생기면 그때
+    /// 게이트를 벗긴다 — "나중에 쓸 것"은 미리 노출할 근거가 아니다.
+    #[cfg(test)]
+    pub fn wait_for_exit(&self, id: u32, timeout: std::time::Duration) -> Option<PtyExit> {
+        let pair = self.entries.get(&id)?.exit_result.clone();
+        let (lock, cvar) = &*pair;
+        let deadline = Instant::now() + timeout;
+        let mut guard =
+            crate::poison::recover_mutex(lock.lock(), EXIT_CELL_WHAT, &EXIT_CELL_POISON_REPORTED);
+        while guard.is_none() {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            // 락을 쥔 채 wait 에 들어간다 — attach 스레드의 notify 가 이 사이에 끼어들어도
+            // 유실되지 않는다. poison 은 값을 잃지 않고 그대로 복구한다(exit cell 은 한 칸뿐).
+            guard = match cvar.wait_timeout(guard, remaining) {
+                Ok((g, _)) => g,
+                // 이 락은 헬퍼 밖(`Condvar::wait_timeout` 재획득)에서 poison 을 만난다 —
+                // `recover_poisoned` 로 같은 exit cell 좌표에 첫-1 회 보고를 모은다.
+                Err(p) => {
+                    crate::poison::recover_poisoned(p, EXIT_CELL_WHAT, &EXIT_CELL_POISON_REPORTED).0
+                }
+            };
+        }
+        guard.clone()
     }
 
     /// IO 활동(read/write) 발생 시 idle 타이머를 리셋한다. 미존재 id 면 `false`.
@@ -363,6 +429,9 @@ impl PtyRegistry {
 }
 
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
 
@@ -386,6 +455,37 @@ mod tests {
         assert_eq!(e.command, vec!["echo".to_string(), "hi".to_string()]);
         assert_eq!(e.owner_agent_id, "agent-1");
         assert!(!e.has_exited());
+    }
+
+    /// 카운터를 공유한 두 registry 는 **같은 id 를 두 번 발급하지 않는다.**
+    ///
+    /// 창마다 registry 가 따로이므로 카운터가 registry 소유였을 때는 둘 다
+    /// `PTY_ID_BASE` 부터 셌다. 그러면 두 pty 가 같은 id 를 갖고, 라우팅은 그 id 를 가진
+    /// engine 을 먼저 찾히는 순서로 고르므로 **나중 것은 어떤 요청으로도 못 닿는다** —
+    /// 실측(2026-09-05, 창 둘): 두 창의 pty 가 둘 다 `0x8000_0000` 이었고,
+    /// `output.observe_info {observer_id:1}` 은 포커스와 무관하게 **같은 하나**만 돌려줬다.
+    #[test]
+    fn registries_sharing_a_counter_never_issue_the_same_id() {
+        let shared = std::sync::Arc::new(AtomicU32::new(PTY_ID_BASE));
+        let mut a = PtyRegistry::with_counter(std::sync::Arc::clone(&shared));
+        let mut b = PtyRegistry::with_counter(std::sync::Arc::clone(&shared));
+        let now = Instant::now();
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..3 {
+            assert!(seen.insert(a.register(spec(&["a"]), now).unwrap()));
+            assert!(seen.insert(b.register(spec(&["b"]), now).unwrap()));
+        }
+        assert_eq!(seen.len(), 6, "공유 카운터인데 id 가 겹쳤다: {seen:?}");
+        assert!(seen.iter().all(|id| *id >= PTY_ID_BASE));
+
+        // 대조군 — 카운터를 안 나누면 겹친다. 이 축이 실제로 무엇을 막는지 고정한다.
+        let mut c = PtyRegistry::new();
+        let mut d = PtyRegistry::new();
+        assert_eq!(
+            c.register(spec(&["c"]), now).unwrap(),
+            d.register(spec(&["d"]), now).unwrap(),
+            "독립 카운터는 같은 값에서 시작한다 — 공유가 필요한 이유가 이것이다"
+        );
     }
 
     #[test]
@@ -547,12 +647,12 @@ mod tests {
         let poisoner = cell.clone();
         // 이유: 이 스레드는 패닉하는 것이 목적이라 join 결과는 항상 Err 다 — 버린다.
         let _ = thread::spawn(move || {
-            let _guard = poisoner.lock().expect("fresh lock");
+            let _guard = poisoner.0.lock().expect("fresh lock");
             panic!("poison the exit cell on purpose");
         })
         .join();
         assert!(
-            cell.is_poisoned(),
+            cell.0.is_poisoned(),
             "락이 실제로 poison 됐어야 전제가 성립한다"
         );
 

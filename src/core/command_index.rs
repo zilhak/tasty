@@ -178,10 +178,11 @@ impl CommandIndex {
     ) -> Option<CommandCapEvent> {
         let key = format!("tasty.commands.{key_ts}");
 
-        let mut guard = match memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
         // 현재 행 수 확보(첫 'D' 때 1회 인덱스 COUNT, 이후 in-memory 증분).
         let count = *self.counts.entry(surface_id).or_insert_with(|| {
             guard

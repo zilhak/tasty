@@ -346,10 +346,11 @@ impl Core {
         // 재발급되므로, 이래야 복원 surface 자체가 재사용 id(=stale 메타 보유)와 겹치지
         // 않아 capture 가 남의 restore.command 를 읽지 않는다.
         {
-            let mut guard = match engine.memory.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let mut guard = crate::poison::recover_mutex(
+                engine.memory.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
             seed_surface_id_floor(&mut *guard, &engine.next_ids);
         }
 
@@ -370,10 +371,11 @@ impl Core {
                 .iter()
                 .flat_map(|ws| ws.all_surface_ids())
                 .collect();
-            let mut guard = match engine.memory.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let mut guard = crate::poison::recover_mutex(
+                engine.memory.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
             let removed =
                 crate::surface_meta::SurfaceMetaStore::purge_dead_surfaces(&mut *guard, &live);
             if removed > 0 {

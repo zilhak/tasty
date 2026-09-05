@@ -116,16 +116,13 @@ impl RunnerRegistry {
     /// 근거 전문은 [`error-handling.md`](../../../docs/dev-guide/error-handling.md)
     /// "락 poison".
     fn lock_recovering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, RunnerControl>> {
-        self.threads.lock().unwrap_or_else(|poisoned| {
-            if !self.poison_reported.swap(true, Ordering::Relaxed) {
-                tracing::error!(
-                    "RunnerRegistry mutex poisoned — a thread panicked while holding it. \
-                     Recovering the thread map so the render path and the runner restart path \
-                     keep working; later occurrences are not logged."
-                );
-            }
-            poisoned.into_inner()
-        })
+        // 첫-1 회 보고를 인라인으로 세워 두었던 자리 — 이제 공용 헬퍼가 같은 일을 한다
+        // (`poison_reported` 는 그대로 이 인스턴스의 플래그로 넘긴다).
+        crate::poison::recover_mutex(
+            self.threads.lock(),
+            "runner registry thread map",
+            &self.poison_reported,
+        )
     }
 
     pub fn new() -> Self {

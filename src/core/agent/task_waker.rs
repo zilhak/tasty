@@ -31,6 +31,10 @@ pub enum AwaitOutcome {
 
 type WaiterKey = (u32, TaskId);
 
+/// waiter 맵 락의 poison 복구 공용 보고 좌표(첫-1 회). hub 는 프로세스에 하나다.
+static TASK_WAKER_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Default)]
 pub struct TaskWakerHub {
     waiters: Mutex<HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>>,
@@ -49,18 +53,13 @@ impl TaskWakerHub {
     /// (timeout 을 안 준 호출자는 무한 대기다). 복구가 맞다
     /// ([`error-handling.md`](../../../docs/dev-guide/error-handling.md) "락 poison").
     ///
-    /// 여기는 프레임·출력 단위가 아니라 task 종결 단위라 호출 빈도가 낮다 — 매 발생을
-    /// 로그로 남긴다(1 회 제한은 초당 여러 번 도는 경로에만 쓴다).
+    /// 예전엔 이 자리가 매 발생을 로그로 남겼다(task 종결 단위라 빈도가 낮아 감당된다는
+    /// 판단). 이제는 공용 헬퍼의 첫-1 회 보고로 통일한다 — poison 은 sticky 라 첫 만남이
+    /// 곧 원인이고, 방침(error-handling.md)이 모든 poison 복구를 한 헬퍼·첫-1 회로 모은다.
     fn lock_recovering(
         &self,
     ) -> std::sync::MutexGuard<'_, HashMap<WaiterKey, Vec<SyncSender<TerminalSnapshot>>>> {
-        self.waiters.lock().unwrap_or_else(|poisoned| {
-            tracing::error!(
-                "task waker hub mutex poisoned — a thread panicked while holding it; recovering \
-                 so pending task_await callers can still be woken"
-            );
-            poisoned.into_inner()
-        })
+        crate::poison::recover_mutex(self.waiters.lock(), "task waker hub", &TASK_WAKER_POISONED)
     }
 
     /// `current` 가 이미 종결이면 즉시 반환. 아니면 등록 후 timeout 동안 대기.
@@ -123,6 +122,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Instant;
+    use tasty_latency_control::ControlProbe;
 
     fn snap(state: TaskState) -> TerminalSnapshot {
         TerminalSnapshot {
@@ -131,9 +131,17 @@ mod tests {
         }
     }
 
+    /// 상한을 넘었을 때 **대조군**을 함께 실어 부하가 만든 값과 코드가 만든 값을 가른다
+    /// (근거·선택 규칙은
+    /// `docs/adr/0181-a-latency-assertion-must-carry-a-control-that-load-moves-and-code-does-not.md`).
+    /// 이 자리가 기다리는 자원은 락과 CPU 뿐이라 스케줄러 계열 대조군이 맞다 — 디스크 뒤에
+    /// 줄 서는 값이 아니다.
     #[test]
     fn await_returns_immediately_if_already_terminal() {
+        const LIMIT: Duration = Duration::from_millis(50);
         let hub = TaskWakerHub::new();
+        // 측정 **전에** 기준선을 잡는다. 이 탐침은 어느 경로로 빠져나가든 값을 남긴다.
+        let mut control = ControlProbe::start("종료 상태의 await_terminal 즉시 반환");
         let start = Instant::now();
         let out = hub.await_terminal(
             1,
@@ -142,7 +150,7 @@ mod tests {
             snap(TaskState::Succeeded),
         );
         let elapsed = start.elapsed();
-        assert!(elapsed < Duration::from_millis(50), "took {elapsed:?}");
+        assert!(elapsed < LIMIT, "{}", control.verdict(elapsed, LIMIT));
         match out {
             AwaitOutcome::Terminal(s) => assert!(matches!(s.state, TaskState::Succeeded)),
             other => panic!("expected Terminal, got {other:?}"),
@@ -168,16 +176,17 @@ mod tests {
 
     #[test]
     fn await_times_out_after_short_duration() {
+        const CEILING: Duration = Duration::from_millis(500);
         let hub = TaskWakerHub::new();
+        let mut control = ControlProbe::start("50ms 대기의 상한");
         let start = Instant::now();
         let out = hub.await_terminal(1, &"t-1".to_string(), Some(50), snap(TaskState::Running));
         let elapsed = start.elapsed();
         assert!(matches!(out, AwaitOutcome::TimedOut));
-        // 50ms ± 100ms 허용 (CI jitter).
-        assert!(
-            elapsed >= Duration::from_millis(40) && elapsed < Duration::from_millis(500),
-            "elapsed={elapsed:?}"
-        );
+        // 아래쪽(40ms)은 부하에 안 흔들린다 — 굶은 러너는 타이머를 **일찍** 깨우지
+        // 못하므로 이 방향의 빨강은 언제나 코드다. 위쪽만 대조군을 싣는다.
+        assert!(elapsed >= Duration::from_millis(40), "elapsed={elapsed:?}");
+        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
     }
 
     #[test]

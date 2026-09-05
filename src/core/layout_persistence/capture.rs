@@ -207,9 +207,19 @@ impl SavedSurface {
         if let Some(es) = surface
             .as_any_mut()
             .downcast_mut::<crate::model::EmptySurface>()
-            && es.is_deferred()
         {
-            return Self::capture_deferred_surface(es, ctx);
+            // plugin placeholder(아직 실제화 안 된 non-terminal surface)는 원래
+            // kind/snapshot 을 그대로 보존해 round-trip 한다 — 여기서 terminal 이나
+            // "empty" 로 저장하면 다음 복원 때 plugin surface 가 딴것으로 변질된다.
+            if let Some(p) = es.deferred_plugin() {
+                return SavedSurface::Generic {
+                    kind: p.kind.clone(),
+                    data: p.snapshot.clone(),
+                };
+            }
+            if es.is_deferred() {
+                return Self::capture_deferred_surface(es, ctx);
+            }
         }
         Self::capture_generic_surface(&*surface, ctx.registry)
     }
@@ -220,10 +230,11 @@ impl SavedSurface {
     ) -> Self {
         let surface_id = ts.id;
         let restore_command = {
-            let mut guard = match ctx.memory.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let mut guard = crate::poison::recover_mutex(
+                ctx.memory.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
             crate::surface_meta::SurfaceMetaStore::get(&mut *guard, surface_id, "restore.command")
         };
         let cwd = ctx
@@ -253,14 +264,10 @@ impl SavedSurface {
     ) -> Self {
         let surface_id = es.id;
         let cwd = es
-            .deferred_spawn
-            .as_ref()
+            .deferred_spawn()
             .and_then(|s| s.working_dir.as_ref())
             .map(|p| p.to_string_lossy().to_string());
-        let restore_command = es
-            .deferred_spawn
-            .as_ref()
-            .and_then(|s| s.restore_command.clone());
+        let restore_command = es.deferred_spawn().and_then(|s| s.restore_command.clone());
         // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
         // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
         //  파일은 startup GC 가 청소한다.)
@@ -282,8 +289,7 @@ impl SavedSurface {
         surface_id: u32,
     ) -> Option<String> {
         let stored = es
-            .deferred_spawn
-            .as_ref()
+            .deferred_spawn()
             .and_then(|s| s.scrollback_persist_id.clone());
         match stored {
             Some(existing) if !ctx.seen_refs.contains(&existing) => {
@@ -308,7 +314,7 @@ impl SavedSurface {
                         );
                     }
                 }
-                if let Some(spawn) = es.deferred_spawn.as_mut() {
+                if let Some(spawn) = es.deferred_spawn_mut() {
                     spawn.scrollback_persist_id = Some(new_id.clone());
                 }
                 ctx.seen_refs.insert(new_id.clone());
@@ -320,12 +326,19 @@ impl SavedSurface {
 
     fn capture_generic_surface(surface: &dyn Surface, registry: &SurfaceKindRegistry) -> Self {
         let kind = surface.kind().to_string();
-        if let Some(def) = registry.get(&kind)
-            && let Some(data) = (def.snapshot)(surface)
-        {
+        if let Some(def) = registry.get(&kind) {
+            // snapshot 이 None 이어도(내용을 모름) kind 는 보존한다 — "내용을 모른다"
+            // 는 "종류를 모른다" 가 아니다. kind 를 empty 로 버리면 재시작 시 그 자리가
+            // 빈 empty 탭으로 살아나 종류마저 잃지만, 보존하면 registry 에 있는 kind 로
+            // 복원되거나(hello 전이면) deferred plugin placeholder 로 살아난다. preset
+            // capture(`preset_capture.rs`)가 같은 None 에 kind 를 보존하는 것과 정합 —
+            // 같은 입력에 두 경로가 다르게 답하던 것(preset=kind 보존, layout=empty)을
+            // 맞춘다.
+            let data = (def.snapshot)(surface).unwrap_or_else(|| json!({}));
             return SavedSurface::Generic { kind, data };
         }
-        // snapshot 함수가 None을 반환했거나 registry에 없는 kind면 Empty로 fallback.
+        // registry 에 아예 없는 kind(등록되지 않은 종류)만 Empty 로 fallback — leaf
+        // 자체가 사라지면 split 구조가 어색해지므로.
         SavedSurface::Generic {
             kind: "empty".into(),
             data: json!({}),

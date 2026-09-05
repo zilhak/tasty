@@ -13,6 +13,7 @@
 //!
 //! headless 빌드는 렌더가 없어 호출자가 없다(gui 한정 — render_pass/attach_poll).
 //! 같은 정책의 `attach.rs` 와 동형으로 *headless 한정* dead_code 를 침묵한다.
+// 이유: display-only mirror 를 만드는 것이 렌더 경로뿐이라 렌더가 없는 headless 엔 호출자가 없다(위).
 #![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
 use tasty_terminal::Terminal;

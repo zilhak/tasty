@@ -66,9 +66,12 @@ pub fn is_webview_kind(kind: &str) -> bool {
 ///
 /// 프로덕션 등록 경로(`register_webview_kind`, plugin lifecycle)는 이 락을 잡지 않는다 —
 /// 부팅 시 단일 스레드 등록을 가정하기 때문이다. 위의 "하나라도 락 밖 접근이 있으면 무효"
-/// 는 그래서 **테스트 축의** 불변식이다: 테스트가 그 프로덕션 경로를 직접 돌리면 직렬화
-/// 밖이 되고, 그 접근까지 코드로 강제하는 가드는 아직 없다(static 전역 재진입 가드로 별도
-/// 추적). 현재 테스트는 전부 헬퍼를 거쳐 이 락을 잡으므로 그 사각은 열려 있지 않다.
+/// 는 그래서 **테스트 축의** 불변식이다.
+///
+/// 그 불변식에 이제 채널이 있다 — `source_guards::test_serialization_locks` 가 이 크레이트의
+/// `#[test]` 중 이 전역의 접근면(전역 자신 · `register_webview_kind` · `is_webview_kind` ·
+/// `reset_for_test`)을 부르는 것을 전부 걷어, 이 락을 안 잡으면 실패한다. 남는 사각은
+/// **이름을 하나도 안 쓰고 두 겹 너머로 닿는 경로**다(가드가 언급으로 판정한다).
 #[cfg(test)]
 pub static WEBVIEW_KIND_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

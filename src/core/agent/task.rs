@@ -712,12 +712,13 @@ pub(crate) fn task_list_from_state(
     workspace_id: u32,
 ) -> Result<Vec<Task>, AgentError> {
     let seq = engine.agent_seq.clone();
-    let mut guard = match engine.memory.lock() {
-        Ok(g) => g,
-        // poison 은 다른 스레드의 패닉 흔적일 뿐 store 자체는 읽을 수 있다 —
-        // `Core::with_memory` 와 같은 처리(거기서 유일한 lock 정책을 정한다).
-        Err(p) => p.into_inner(),
-    };
+    // poison 은 다른 스레드의 패닉 흔적일 뿐 store 자체는 읽을 수 있다 —
+    // `Core::with_memory` 와 같은 처리(거기서 유일한 lock 정책을 정한다).
+    let mut guard = crate::poison::recover_mutex(
+        engine.memory.lock(),
+        crate::core::MEMORY_WHAT,
+        &crate::core::MEMORY_POISONED,
+    );
     let store = TaskStore::new(&mut *guard, HOST_OWNER, seq.as_ref());
     store.list(workspace_id)
 }

@@ -36,6 +36,9 @@ pub(crate) mod state;
 pub(crate) mod surface_registry;
 pub(crate) mod terminal_store;
 
+pub(crate) mod app_surface;
+#[cfg(debug_assertions)]
+pub(crate) mod app_surface_debug;
 pub(crate) mod impl_attach;
 pub(crate) mod impl_clipboard;
 pub(crate) mod impl_close;
@@ -46,6 +49,7 @@ pub(crate) mod impl_pty;
 pub(crate) mod impl_split;
 pub(crate) mod impl_tab;
 pub(crate) mod impl_workspace;
+pub(crate) mod request_target;
 
 pub(crate) use state::{
     AttachMeshContextForward, AttentionKind, CoreState, GuiAttachUserReq, PendingImageUpload,
@@ -110,6 +114,21 @@ static NEXT_FILE_PICKER_TRIGGER_REQUEST_ID: std::sync::atomic::AtomicU64 =
 pub(crate) fn next_file_picker_trigger_request_id() -> u64 {
     NEXT_FILE_PICKER_TRIGGER_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
+
+/// memory store 락의 poison 복구가 쓰는 공용 보고 좌표.
+///
+/// store 는 프로세스에 하나(App 이 소유, `Arc` clone 으로 여러 모듈이 나눠 갖는다)라
+/// 첫-1 회 플래그도 하나다. 여러 모듈이 이 락을 잡되 복구는 전부
+/// `poison::recover_mutex` 를 거쳐 이 좌표로 모인다 — 조용한 복구를 첫 1 회만 보고한다.
+pub(crate) const MEMORY_WHAT: &str = "memory store";
+pub(crate) static MEMORY_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// preset store 락의 poison 복구 공용 보고 좌표. `preset_store`(concrete)와 `presets`
+/// (dyn)는 같은 allocation 이라 락도 하나 — 첫-1 회 플래그도 하나다.
+pub(crate) const PRESET_STORE_WHAT: &str = "preset store";
+pub(crate) static PRESET_STORE_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// mirror 워크스페이스 원격 디렉토리 목록 forward 큐(`CoreState::pending_list_dir_forward`)
 /// 의 원소. popup wrapper/`ExplorerViewStore` outbox 가 (mirror 판별 후) push, App 이
@@ -457,10 +476,8 @@ impl Core {
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
     ) -> R {
-        let mut guard = match self.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard =
+            crate::poison::recover_mutex(self.memory.lock(), MEMORY_WHAT, &MEMORY_POISONED);
         f(&mut *guard)
     }
 

@@ -23,6 +23,21 @@ pub struct IdGenerator {
     pane: Arc<std::sync::atomic::AtomicU32>,
     tab: Arc<std::sync::atomic::AtomicU32>,
     surface: Arc<std::sync::atomic::AtomicU32>,
+    /// headless pty 카운터([`PTY_ID_BASE`](crate::core::pty_registry::PTY_ID_BASE) 부터).
+    /// 위 doc 의 "글로벌 유니크" 는 이 둘에도 걸린다 — 라우팅이 pty id 와 observer id 를
+    /// **창을 건너** 푸는데(`request_target::Kind::HeadlessPty` · `Kind::Observer`),
+    /// 카운터가 engine 마다면 두 창이 같은 id 를 발급하고 그중 하나는 **어떤 요청으로도
+    /// 닿을 수 없게 된다**(먼저 찾힌 engine 이 항상 이긴다).
+    pty: Arc<std::sync::atomic::AtomicU32>,
+    observer: Arc<std::sync::atomic::AtomicU64>,
+    /// surface hook 카운터. 위 pty·observer 와 **같은 이유**로 공유다 — 라우팅이 hook id 를
+    /// 창을 건너 푼다(`request_target::Kind::Hook`).
+    hook: Arc<std::sync::atomic::AtomicU64>,
+    /// global hook 카운터. 이쪽은 라우팅이 창을 건너 풀지도 **않아서**(`Kind` 에 없다)
+    /// 포커스된 창의 것만 답한다 — 카운터까지 engine 마다면 비포커스 창의 훅은 존재하는데
+    /// 어떤 요청으로도 닿지 않는다. 공유 카운터는 그 상태의 **절반**을 없앤다(id 는 유일해지고,
+    /// 나머지 절반인 라우팅은 `Kind` 쪽 문제다).
+    global_hook: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl Default for IdGenerator {
@@ -33,14 +48,38 @@ impl Default for IdGenerator {
 
 impl IdGenerator {
     pub fn new() -> Self {
-        use std::sync::atomic::AtomicU32;
+        use std::sync::atomic::{AtomicU32, AtomicU64};
         Self {
             workspace: Arc::new(AtomicU32::new(1)),
             category: Arc::new(AtomicU32::new(1)),
             pane: Arc::new(AtomicU32::new(1)),
             tab: Arc::new(AtomicU32::new(1)),
             surface: Arc::new(AtomicU32::new(1)),
+            pty: Arc::new(AtomicU32::new(crate::core::pty_registry::PTY_ID_BASE)),
+            observer: Arc::new(AtomicU64::new(1)),
+            hook: Arc::new(AtomicU64::new(1)),
+            global_hook: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    /// headless pty id 카운터 — `PtyRegistry` 가 이 Arc 를 들고 발급한다.
+    pub fn pty_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
+        Arc::clone(&self.pty)
+    }
+
+    /// observer id 카운터 — `ObserverRouter` 가 이 Arc 를 들고 발급한다.
+    pub fn observer_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        Arc::clone(&self.observer)
+    }
+
+    /// surface hook id 카운터 — `HookManager` 가 이 Arc 를 들고 발급한다.
+    pub fn hook_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        Arc::clone(&self.hook)
+    }
+
+    /// global hook id 카운터 — `GlobalHookManager` 가 이 Arc 를 들고 발급한다.
+    pub fn global_hook_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
+        Arc::clone(&self.global_hook)
     }
 
     pub fn next_workspace(&self) -> u32 {
@@ -402,6 +441,7 @@ pub struct CoreState {
     /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
     /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.
     /// headless 는 렌더가 없어 읽지 않는다(gui 한정).
+    // 이유: 이 필드를 읽는 것이 render_pass 뿐이라 렌더가 없는 headless 엔 독자가 없다(위).
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) readonly_views: HashMap<u32, tasty_terminal::Terminal>,
 
@@ -576,7 +616,6 @@ pub struct CoreState {
     /// 별도 레지스트리로 들지 않는다 — 살아있는 engine 들의 이 필드를 모은 집합이
     /// 곧 점유 집합이다(`App::occupied_layout_slots`). `src/core/attach.rs` 의
     /// `OccupancyRegistry` 와 같은 성격이라 재시작 시 전부 free 로 환원된다.
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
     /// 점유한 슬롯을 **덮어쓰면 안 되는가.** 부팅 때 그 슬롯을 읽지 못했으면(권한·IO
     /// 오류, 이 빌드가 모르는 미래 version) 사용자의 창 구성이 디스크에 그대로 남아
@@ -601,6 +640,7 @@ pub struct CoreState {
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
+    // 이유: 이 플래그를 읽는 것이 debug 전용 입력 시뮬레이션 IPC(gui)뿐이다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) input_simulation_enabled: bool,
 
@@ -732,20 +772,24 @@ impl CoreState {
         let restore_layout = settings.general.restore_layout;
 
         // Create engine with empty workspaces first; we'll fill them below.
+        // 두 registry 가 같은 카운터를 들어야 하므로 먼저 확정한다.
+        let next_ids = shared_ids.unwrap_or_default();
         let mut engine = Self {
             workspaces: Vec::new(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
-            next_ids: shared_ids.unwrap_or_default(),
+            next_ids: next_ids.clone(),
             default_cols: cols,
             default_rows: rows,
             waker: waker.clone(),
             settings,
             notifications: NotificationStore::with_coalesce_ms(500),
-            hook_manager: HookManager::new(),
-            global_hook_manager: GlobalHookManager::new(),
+            hook_manager: HookManager::with_counter(next_ids.hook_counter()),
+            global_hook_manager: GlobalHookManager::with_counter(next_ids.global_hook_counter()),
             closed_items: crate::model::ClosedItemStore::new(),
             command_index: crate::core::command_index::CommandIndex::new(),
-            observer_router: crate::output_observer::ObserverRouter::new(),
+            observer_router: crate::output_observer::ObserverRouter::with_counter(
+                next_ids.observer_counter(),
+            ),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
@@ -780,7 +824,9 @@ impl CoreState {
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
             attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
-            pty_registry: crate::core::pty_registry::PtyRegistry::new(),
+            pty_registry: crate::core::pty_registry::PtyRegistry::with_counter(
+                next_ids.pty_counter(),
+            ),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_screenshot_captures: Vec::new(),
@@ -948,10 +994,11 @@ impl CoreState {
         let mem = self.memory.clone();
         let t_inject = std::time::Instant::now();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            let mut guard = match mem.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
+            let mut guard = crate::poison::recover_mutex(
+                mem.lock(),
+                crate::core::MEMORY_WHAT,
+                &crate::core::MEMORY_POISONED,
+            );
             crate::surface_meta::SurfaceMetaStore::get(&mut *guard, sid, "restore.command")
         });
         timings.restore_inject = t_inject.elapsed();
@@ -1437,6 +1484,8 @@ fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
 fn file_handler_recent_path() -> std::path::PathBuf {
     tasty_utils::path::tasty_home()
         .map(|d| d.join("file-handler-recent.json"))
+        // 이유: 홈 미해결(CI 등)에서만 쓰는 공유 폴백. 인스턴스별 격리가 목적이 아니라
+        // 사용자 LRU 라 의도된 공유다 — 홈이 없으면 save 가 안 되고 in-memory 로만 돈다.
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handler-recent.json"))
 }
 
@@ -1480,6 +1529,56 @@ mod id_generator_tests {
             "floor 이후 첫 id 는 min_next 와 같아야 한다"
         );
         assert_eq!(ids.next_surface(), 19);
+    }
+
+    /// ★ 이 고침의 경계. 두 engine 이 **같은 `IdGenerator`** 에서 카운터를 받으면 hook id 가
+    /// 겹치지 않는다. 겹치면 창을 건너 찾는 쪽(`request_target::Kind::Hook`)이 먼저 찾힌
+    /// engine 을 늘 이기게 해서 나머지 하나는 어떤 요청으로도 닿지 않는다 — 실측된 형태다
+    /// (`unset global-hook --hook 1` 두 번째 호출이 `removed: false`).
+    #[test]
+    fn two_engines_do_not_hand_out_the_same_hook_id() {
+        use tasty_hooks::{HookBinding, HookEvent, HookManager};
+        let ids = IdGenerator::new();
+        let mut a = HookManager::with_counter(ids.hook_counter());
+        let mut b = HookManager::with_counter(ids.hook_counter());
+        let ia = a.add_hook(
+            1,
+            HookEvent::CommandCompleted(None),
+            HookBinding::InlineShell("echo a".into()),
+            false,
+        );
+        let ib = b.add_hook(
+            1,
+            HookEvent::CommandCompleted(None),
+            HookBinding::InlineShell("echo b".into()),
+            false,
+        );
+        assert_ne!(ia, ib, "두 engine 의 hook id 가 같으면 하나는 못 닿는다");
+    }
+
+    /// global hook 도 같다. **다만 이것만으로 그 자원이 닿게 되지는 않는다** — global hook 은
+    /// 라우팅이 창을 건너 풀지 않아(`Kind` 에 없다) 여전히 포커스된 창의 것만 답한다.
+    /// id 공간은 그 결함의 **선행 조건**이고 나머지 절반은 라우팅 쪽이다.
+    #[test]
+    fn two_engines_do_not_hand_out_the_same_global_hook_id() {
+        use crate::host_api::hooks::global::{GlobalHookManager, HookCondition};
+        let ids = IdGenerator::new();
+        let mut a = GlobalHookManager::with_counter(ids.global_hook_counter());
+        let mut b = GlobalHookManager::with_counter(ids.global_hook_counter());
+        let ia = a.add(
+            HookCondition::Interval(std::time::Duration::from_secs(60)),
+            "echo a".into(),
+            None,
+        );
+        let ib = b.add(
+            HookCondition::Interval(std::time::Duration::from_secs(60)),
+            "echo b".into(),
+            None,
+        );
+        assert_ne!(
+            ia, ib,
+            "두 engine 의 global hook id 가 같으면 하나는 못 닿는다"
+        );
     }
 
     #[test]

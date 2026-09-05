@@ -13,11 +13,12 @@ fn collect_terminal_resize_targets(
     terminal_rect: crate::model::PhysicalRect,
     cell_width: f32,
     cell_height: f32,
+    scale_factor: f32,
 ) -> Vec<(u32, usize, usize)> {
     let tab_bar_h = state.tab_bar_height;
     let mut out = Vec::new();
     for ws in &engine.workspaces {
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
         for (pane_id, pane_rect) in pane_rects {
             let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
                 continue;
@@ -32,7 +33,7 @@ fn collect_terminal_resize_targets(
                 let Some(layout) = tab.layout_opt.as_ref() else {
                     continue;
                 };
-                for (sid, rect) in layout.compute_rects(content_rect) {
+                for (sid, rect) in layout.compute_rects(content_rect, scale_factor) {
                     let cols = ((rect.width.value() / cell_width.max(1.0)).floor() as usize).max(1);
                     let rows =
                         ((rect.height.value() / cell_height.max(1.0)).floor() as usize).max(1);
@@ -217,9 +218,16 @@ impl Core {
         terminal_rect: crate::model::PhysicalRect,
         cell_width: f32,
         cell_height: f32,
+        scale_factor: f32,
     ) {
-        let targets =
-            collect_terminal_resize_targets(state, engine, terminal_rect, cell_width, cell_height);
+        let targets = collect_terminal_resize_targets(
+            state,
+            engine,
+            terminal_rect,
+            cell_width,
+            cell_height,
+            scale_factor,
+        );
         for (sid, cols, rows) in targets {
             // hard-점유된 surface(원격 client 가 mirror 로 구동 중인 서버측 실제 PTY)는
             // client-driven geometry(ADR-0045) — 점유 client 가 유일 구동자다. 이 host
