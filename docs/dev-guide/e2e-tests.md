@@ -22,18 +22,37 @@
 **로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.
 
 ```
-CARGO_TARGET_DIR=/tmp/tasty-headless cargo build --no-default-features
-cp -r target/debug/builtin-plugins /tmp/tasty-headless/debug/
-TASTY_E2E_BIN=/tmp/tasty-headless/debug/tasty cargo test --test shared_instance_harness
+CARGO_TARGET_DIR=target-e2e-headless cargo build --no-default-features --workspace
+TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_instance_harness
 ```
+
+**두 조건이 각각 필요하다 — 어느 하나만 빠져도 데몬이 plugin 없이 뜬다.** 아래 함정 1·2 가 각각을 설명하고, 표는 그 둘을 따로 잰 것이다.
 
 **함정 1 — 반드시 별도 `CARGO_TARGET_DIR` 로 빌드해라.** `CARGO_BIN_EXE_tasty` 와 headless 빌드는 `target/debug/tasty` 라는 **같은 경로**를 다툰다. 같은 target 디렉토리에 headless 를 빌드하면 다음 `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가 듣는 것처럼 보인다. 어느 바이너리를 띄우는지를 **경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다** — §0 의 stale plugin 바이너리와 같은 계열의 함정이다. 존재하지 않는 경로를 주면 하네스가 그 자리에서 실패한다(30 초를 기다린 뒤 port file 미작성으로 오진되지 않는다).
 
-**함정 2 — 번들 복사 줄을 빼면 데몬이 plugin 없이 뜬다.** host 는 plugin 번들을 `exe_dir/builtin-plugins` 에서 찾고, 거기 없으면 exe 의 두 단계 위를 워크스페이스 루트로 역산해 dev bundle 을 만든다(`crates/tasty-host-plugin/src/builtin.rs`). 별도 target 디렉토리는 레포 밖이라 그 역산이 실패하고, 데몬은 plugin namespace 하나 없이 올라온다. 그러면 namespace 호출이 `Method not found: markdown.recent` 로 죽는다 — **§0 의 stale plugin drift, 그리고 바로 아래 "override 로도 통과하지 않는 스위트" 와 증상이 글자까지 같다.** 즉 빌드 절차 결함이 headless IPC 표면의 차이로 읽힌다. 번들을 exe 옆에 복사해 두면 역산 자체가 필요 없어진다(첫 분기에서 걸린다).
+**함정 2 — target 디렉토리를 레포 밖에 두면 데몬이 plugin 없이 뜬다.** host 는 plugin 번들을 `exe_dir/builtin-plugins` 에서 찾고, 거기 없으면 **exe 의 두 단계 위를 워크스페이스 루트로 역산**해 dev bundle 을 만든다(`crates/tasty-host-plugin/src/builtin.rs` 의 `ensure_dev_bundle`). `/tmp/tasty-headless/debug/tasty` 면 역산 결과가 `/tmp` 라 `crates/` 가 없고, 동기화가 전부 false 로 떨어져 데몬이 plugin namespace 하나 없이 올라온다. 그러면 namespace 호출이 `Method not found: markdown.recent` 로 죽는다 — **§0 의 stale plugin drift, 그리고 바로 아래 "override 로도 통과하지 않는 스위트" 와 증상이 글자까지 같다.** 즉 빌드 절차 결함이 headless IPC 표면의 차이로 읽힌다. target 을 레포 안(`target/` 의 형제)에 두면 역산이 레포 루트를 맞혀 번들이 **스스로** 만들어진다.
 
-실측(2026-09-05, `markdown_recent_is_read_only`)으로 세 팔을 갈랐다 — 번들 없이 레포 밖: **FAIL**(위 문구 그대로) / 번들 복사 후 레포 밖: **PASS** / 레포 안 target 디렉토리: **PASS**. 대조군은 CI headless 잡이다: 같은 테스트를 통과시키므로 실패는 조합이 아니라 절차 쪽에 있다.
+**함정 3 — `--workspace` 를 빼면 그 target 에 plugin 바이너리가 하나도 안 생긴다.** 이건 함정 2 와 **독립**이다. 루트 패키지만 빌드하면 `tasty-plugin-*` bin crate 들이 그 target 에 없고, `sync_builtin_dev` 는 바이너리가 없는 plugin 을 건너뛴다 — target 을 레포 안에 두어 역산이 맞아도 번들은 빈다.
+
+실측(2026-09-05, `markdown_recent_is_read_only`, 팔마다 `builtin-plugins/` 를 지우고 시작)으로 두 축을 따로 갈랐다.
+
+| target 위치 | `--workspace` | 그 target 의 plugin 바이너리 | 호출 후 `builtin-plugins/` | 테스트 |
+|---|---|---|---|---|
+| 레포 안 | 있음 | 9 | **9 항목** | **PASS** |
+| 레포 밖(`/tmp`) | 있음 | 9 | 0 항목 | FAIL — `Method not found: markdown.recent` |
+| 레포 안 | 없음 | **0** | 0 항목 | FAIL — 같은 문구 |
+
+첫 두 줄은 `--workspace` 와 바이너리 수가 같고 **위치만** 다르다(함정 2). 첫 줄과 셋째 줄은 위치가 같고 `--workspace` 만 다르다(함정 3). **두 실패의 문구가 같다** — 그래서 증상만 보고 원인을 고를 수 없고, 절차 두 조건을 모두 지키는 것이 유일한 대응이다. 대조군은 CI headless 잡이다: 같은 테스트를 통과시키므로 실패는 조합이 아니라 절차 쪽에 있다.
+
+**번들을 복사해 쓰는 변형**(`cp -r target/debug/builtin-plugins <target>/debug/`)도 동작한다 — exe 옆에 번들이 있으면 역산 분기까지 가지 않는다. 다만 복사본은 **갱신되지 않는다**: 이후 plugin 을 고쳐 다시 빌드해도 그 복사본은 그대로라 §0 의 drift 를 한 겹 더 만든다. 레포 밖 target 을 반드시 써야 할 때의 대안으로만 쓴다.
+
+**첫 namespace 호출은 드물게 `-32601` 로 답할 수 있다.** 헤드리스는 plugin manager 를 **지연 초기화**한다 — `forward_to_plugin_namespace`(`src/boot/headless_dispatch.rs`)가 그 자리에서 `ensure_plugin_manager` 를 부르지만, namespace 표는 plugin 이 hello 를 보낸 뒤에 채워진다. 그래서 기동과 첫 조회가 겹치면 절차가 옳아도 `Method not found` 가 나간다. 실측 13 회 중 1 회(부하가 높던 회차), 통제 반복 10 회(cold 5 · warm 5)에서는 재현되지 않았다. **이 문구를 한 번 봤다고 절차 결함으로 단정하지 말고 한 번 더 돌려라** — 위 표의 두 실패는 재실행해도 그대로다.
 
 **이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 위 절차는 `--workspace` 없이 빌드한다. 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 번들을 따로 복사하므로 이 스위트들의 판정에는 영향이 없지만, **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
+
+**★ 이 탈출구는 CI 가 통과시키는 테스트도 깨뜨린다 — 조합이 교차하기 때문이다.** `TASTY_E2E_BIN` 은 **데몬만** 다른 조합으로 바꾼다. 테스트 바이너리는 여전히 자기 조합으로 컴파일돼 있어서, 데몬의 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 그 단언이 **구조적으로 뒤집힌다**. `tests/e2e_tests.rs` 의 `..._answers_in_both_combos` 계열이 그 형태다 — gui 로 컴파일된 쪽이 "gui 는 이 메서드에 답한다" 를 단언하는데 상대는 headless 데몬이라 `-32601` 이 온다.
+
+실측(2026-09-05, 인스턴스 11 스위트를 gui 테스트 바이너리 + headless 데몬으로): 스위트 단위 **10 / 11 통과**, `e2e_tests` 만 30 passed / 5 failed. 그 5 중 **4 건이 조합 교차**이고(`an_engine_query_that_reads_no_window_answers_in_both_combos` · `app_layer_methods_that_need_no_window_answer_in_both_combos` · `debug_surfaces_that_read_no_window_answer_in_both_combos` · `a_request_naming_an_unowned_target_is_rejected`), 나머지 1 건이 `multi_window_owner_routing`(실제 창). **앞의 4 건은 동종 조합에서는 양쪽 다 통과한다** — CI headless 잡이 `--skip` 하지 않고 통과시키는 것이 그 증거다. 즉 이 4 건은 제품 결함도 headless 미배선도 아니고 **탈출구 자신의 대가**다. 아래 `--skip` 목록과 혼동하지 마라: 저것은 조합과 무관하게 빠지는 것들이고, 이것은 조합을 교차시켰을 때만 생긴다.
 
 **override 로도 통과하지 않는 스위트가 있다.** headless 데몬은 GUI 바이너리와 IPC 표면이 다르다 — 실제 창이 검증 대상인 스위트, 그리고 headless 에 아직 배선되지 않은 경로에 의존하는 스위트가 그렇다. 어느 것이 왜 빠지는지는 `.github/workflows/crossplatform-check.yml` 의 headless 스텝 주석이 `--skip` 목록과 함께 사유를 적어 둔다 — **여기 복제하지 않는다**(사유가 갈리면 어느 쪽이 정본인지 알 수 없게 된다).
 

@@ -85,13 +85,23 @@ pub fn init_test_tracing() {
 /// `cargo test` 가 그것을 gui 로 덮어써서, 아무것도 바뀌지 않았는데 override 가
 /// 듣는 것처럼 보인다. 경로로 확정하지 않으면 검증이 조용히 다른 것을 잰다.
 ///
-/// **함정 2**: 별도 target 디렉토리에는 plugin 번들이 없다. host 는 `exe_dir/builtin-plugins`
-/// 를 먼저 보고, 없으면 exe 의 두 단계 위를 워크스페이스 루트로 역산하는데 — 레포 밖
-/// 디렉토리에서는 그 역산이 실패해 데몬이 plugin namespace 없이 올라온다. 증상은
-/// `Method not found: <plugin namespace>.<method>` 이고, 이는 §0 의 stale plugin drift 및
-/// "headless 에 아직 배선되지 않은 경로" 와 **문구가 같아** 빌드 절차 결함이 IPC 표면
-/// 차이로 오독된다. 그래서 override 절차는 번들을 exe 옆에 복사하는 줄을 포함한다
-/// (`docs/dev-guide/e2e-tests.md` §0-1).
+/// **함정 2**: 그 target 디렉토리를 **레포 밖에 두면** plugin 번들이 안 만들어진다. host 는
+/// `exe_dir/builtin-plugins` 를 먼저 보고, 없으면 exe 의 두 단계 위를 워크스페이스 루트로
+/// 역산하는데 — 레포 밖 디렉토리에서는 그 역산이 `crates/` 없는 경로를 가리켜 실패하고
+/// 데몬이 plugin namespace 없이 올라온다.
+///
+/// **함정 3**: `--workspace` 없이 빌드하면 그 target 에 `tasty-plugin-*` 바이너리가 **하나도
+/// 안 생긴다**. 함정 2 와 독립이다 — 레포 안에 두어 역산이 맞아도 동기화할 바이너리가 없다.
+///
+/// 두 함정의 증상이 같다: `Method not found: <plugin namespace>.<method>`. 이는 §0 의 stale
+/// plugin drift 및 "headless 에 아직 배선되지 않은 경로" 와도 **문구가 같아** 빌드 절차 결함이
+/// IPC 표면 차이로 오독된다. 그래서 override 절차는 레포 안 target + `--workspace` 둘 다를
+/// 요구한다 (`docs/dev-guide/e2e-tests.md` §0-1 — 세 팔 실측표가 두 조건을 따로 가른다).
+///
+/// **함정 4**: 이 override 는 **데몬만** 조합을 바꾼다. 테스트 바이너리는 자기 조합으로
+/// 컴파일된 채라, 데몬 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 단언이
+/// 뒤집힌다. 동종 조합에서는 양쪽 다 통과하는 테스트가 여기서만 깨진다 — 제품 결함으로
+/// 읽지 마라 (§0-1 "조합이 교차하기 때문이다").
 ///
 /// 존재하지 않는 경로를 주면 spawn 이 "그냥 실패" 하는 대신 **여기서** 죽는다 —
 /// 30 초를 기다린 뒤 port file 미작성으로 오진되는 것을 막는다.
