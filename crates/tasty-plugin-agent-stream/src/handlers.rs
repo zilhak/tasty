@@ -109,7 +109,22 @@ fn require_live_surface<H: HostCall>(
     ))
 }
 
-fn resolve_error_message(tr: &Translator, err: &ResolveError) -> IpcMethodError {
+/// `resolve` 가 낸 실패를 IPC 에러로 옮긴다.
+///
+/// `surface_id`·`method` 를 받는 이유는 마지막 갈래 하나 때문이다: 호스트가 "그런 대상은
+/// 없다" 고 거절한 것을 **그대로 실어 보내면 괄호 안이 내부 호출 이름**(`surface.meta.get`)
+/// 이 된다. 그 이름은 호출자가 지목한 적이 없다 — 지목한 것은 이 메서드다. 실측
+/// (2026-09-05): `agent_stream.watch` 에 없는 id 를 주면 `(named by 'surface.meta.get')`
+/// 이 돌아왔고, 같은 사정에서 `turn_start`·`unwatch` 는 자기 이름을 답한다. 한 사정에
+/// 세 가지 이름이 나오면 호출자는 그 괄호를 못 읽는다.
+///
+/// 그 외의 host 실패는 그대로 넘긴다 — 거기 담긴 사유가 유일한 정보다.
+fn resolve_error_message(
+    tr: &Translator,
+    err: &ResolveError,
+    surface_id: u32,
+    method: &str,
+) -> IpcMethodError {
     match err {
         ResolveError::NoSessionMeta { surface_id } => IpcMethodError::new(
             tr.t_replace(
@@ -127,7 +142,17 @@ fn resolve_error_message(tr: &Translator, err: &ResolveError) -> IpcMethodError 
             "{session}",
             session_id,
         )),
-        ResolveError::HostCall { message } => IpcMethodError::new(message.clone()),
+        ResolveError::HostCall { message } => {
+            if tasty_utils::target::says_no_live_target(message, "surface", u64::from(surface_id)) {
+                IpcMethodError::new(tasty_utils::target::unowned_target_message(
+                    "surface",
+                    u64::from(surface_id),
+                    method,
+                ))
+            } else {
+                IpcMethodError::new(message.clone())
+            }
+        }
     }
 }
 
@@ -150,12 +175,19 @@ pub fn handle_watch<H: HostCall>(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let session_id = resolve::session_id_for_surface(host, surface_id)
-        .map_err(|e| resolve_error_message(tr, &e))?;
+        .map_err(|e| resolve_error_message(tr, &e, surface_id, "agent_stream.watch"))?;
 
     let transcript = match resolve::transcript_path(&session_id) {
         Ok(path) => Some(path),
         Err(ResolveError::TranscriptNotFound { .. }) => None,
-        Err(e) => return Err(resolve_error_message(tr, &e)),
+        Err(e) => {
+            return Err(resolve_error_message(
+                tr,
+                &e,
+                surface_id,
+                "agent_stream.watch",
+            ));
+        }
     };
 
     let mut reg = lock(registry, tr)?;
@@ -943,16 +975,39 @@ mod tests {
                 .and_then(Value::as_u64)
                 .unwrap_or(0);
             match method {
-                "surface.locate" => Err(PluginError::HostCall {
+                // 없는 대상에는 **어느 호스트 호출이든** 같은 모양으로 거절한다 — 실측이
+                // 그렇다. 그래서 스텁도 메서드마다 다른 답을 흉내 내지 않는다.
+                "surface.locate" | "surface.meta.get" => Err(PluginError::HostCall {
                     method: method.to_string(),
-                    message: format!(
-                        "no live surface {sid} (named by 'surface.locate'); list the resource \
-                         to get a live id — a named target is never resolved by focus"
-                    ),
+                    message: tasty_utils::target::unowned_target_message("surface", sid, method),
                 }),
                 other => panic!("unexpected host call {other}"),
             }
         }
+    }
+
+    /// `watch` 도 **호출자가 부른 메서드**를 괄호에 넣는다 — 내부 호출 이름이 아니다.
+    ///
+    /// 실측(2026-09-05): 없는 id 로 `agent_stream.watch` 를 부르면 호스트의 거절이 그대로
+    /// 실려 나와 `(named by 'surface.meta.get')` 이 됐다. 호출자는 그 이름을 지목한 적이
+    /// 없고, 같은 사정에서 `turn_start`·`unwatch` 는 자기 이름을 답한다. 한 사정에 세 가지
+    /// 이름이 나오면 그 괄호는 읽을 수 없는 칸이 된다.
+    #[test]
+    fn watch_names_the_method_the_caller_called() {
+        let tr = Translator::default();
+        let err = handle_watch(
+            &RejectingHost,
+            &shared(),
+            &tr,
+            json!({ "surface": 424_242 }),
+        )
+        .expect_err("없는 surface 는 거절");
+        assert_eq!(
+            err.message,
+            tasty_utils::target::unowned_target_message("surface", 424_242, "agent_stream.watch"),
+            "내부 호출 이름이 새어 나왔다: {}",
+            err.message
+        );
     }
 
     /// 값을 실어 보냈는데 그 값이 surface id 가 될 수 없으면 **"안 줬다" 가 아니다.**
