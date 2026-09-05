@@ -254,7 +254,7 @@ plugin `build.rs` 의 `ICONS` 목록에 한 줄. 근거·대안은 [ADR-0036](..
 - **이름**: crate `tasty-plugin-<name>` = binary 이름, id `com.x.<name>`(다어절 hyphen), IPC prefix = id 마지막 segment 의 `_` 변환, i18n key root = prefix.
 - **i18n**: 매니페스트 `*_i18n_key` 는 host 가 lookup. 플러그인이 직접 그리는 텍스트는 `tasty_plugin_sdk::i18n::Translator`(`TASTY_LOCALE` 주입 — host 가 부팅 시 `general.language` 에서 set, §7 표). 키는 자기 prefix 안에만(`surface.kind.<own>` 만 예외).
 - **권한 표기**: 실제 필요한 것만. 자기 namespace `ipc.invoke:<self>` 금지(self-loop 차단으로 무용).
-- **모듈 분리**: main.rs 가 ~300줄 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리(claude/codex 가 reference). 단순 플러그인(image 61줄)은 단일 main.rs.
+- **모듈 분리**: `main.rs` 가 ~300 줄을 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리한다(`crates/tasty-plugin-claude/src/` · `crates/tasty-plugin-codex/src/` 가 reference). 커지면 실제로 가른다 — `crates/tasty-plugin-image/src/` 가 그 예로, 렌더와 문서 처리를 `crates/tasty-plugin-image/src/render.rs` · `crates/tasty-plugin-image/src/doc.rs` 로 냈다. 아직 단일 `main.rs` 인 것도 있다(`crates/tasty-plugin-html/src/main.rs`). **줄 수는 적지 않는다** — 커밋마다 바뀌는 값이라 적는 순간 낡고, 예시가 낡으면 규칙이 자기 반대를 가르친다(ADR-0139).
 - **Cargo**: `tasty-plugin-protocol` 직접 의존 금지 — SDK 가 re-export. `[lints] workspace = true`.
 
 ## 9. 빌드 & 설치
