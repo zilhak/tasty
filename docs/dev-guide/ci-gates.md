@@ -323,7 +323,26 @@ done | sort | uniq -c
 `crates/tasty-doc-guards/tests/filter_free_channel_still_exists.rs` 가 그 셋을 닫는다.
 판정은 **이름이 아니라 성질**이다 — "`doc-guards.yml` 이 있는가" 가 아니라 "경로 필터
 없이 매 push 도는 잡 중 이 패키지를 **좁히지 않고** 돌리는 것이 있는가". 워크플로 이름이
-바뀌거나 잡이 다른 파일로 옮겨가도 채널이 남아 있으면 통과한다. 트리거 판독과 커버리지 수집은
+바뀌거나 잡이 다른 파일로 옮겨가도 채널이 남아 있으면 통과한다. ★ **그 판정은 밖에서 부를 수 있다 — 흉내 내지 마라.** `workflow-channels` 판정기
+바이너리가 워크플로마다 한 줄(`<파일> push path_filtered tags_only 자동잡 수동전용잡`)과
+커버리지 세 줄(`named=` · `packages=` · `whole_workspace=`)을 낸다. 다른 판정기들과 같은
+관례다 — `scripts/lib/judge-bin.sh` 의 `resolve_judge` 로 찾고 `--check-fresh` 로 신선도를
+묻는다.
+
+```bash
+cargo build -p tasty-doc-guards --bin workflow-channels
+./target/debug/workflow-channels .
+```
+
+**여는 이유는 사본이 갈리기 때문이다.** 실측(2026-09-05): 하루에 세 레인이 각자 이
+판정을 흉내 냈고 셋 다 원본과 다른 답을 냈다 — 그중 하나는 `paths-ignore` 를 **가진**
+워크플로를 "필터 없음" 으로 냈다. ★ 갈리는 방향은 대체로 **덜 잡는 쪽**이라 조용하다.
+`crates/tasty-doc-guards/tests/exposed_judge_agrees_with_the_library.rs` 가 노출본과
+라이브러리가 같은 답을 내는지 계속 묻는다(하한 포함) — 그것이 없으면 노출본 자신이 또
+하나의 사본이 된다. **다만 그 대조는 갈림만 본다**: 둘이 함께 틀리면 일치하므로 초록이다.
+옳음은 내용을 단정하는 가드들이 진다.
+
+트리거 판독과 커버리지 수집은
 `tasty_doc_guards::workflow_triggers` 한 벌을 위 관측자와 함께 쓴다 — 주석과 트리거 키를
 구조로 가르고(문자열 `contains` 로 세면 다른 워크플로의 필터를 *설명하는* 주석이 필터로
 읽힌다. 실측으로 정확히 한 파일이 그 형태였고 하필 `doc-guards.yml` 이었다), 태그 전용

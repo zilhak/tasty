@@ -118,6 +118,8 @@
 
 use std::path::{Path, PathBuf};
 
+use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
+
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
 /// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
 fn repo_root() -> PathBuf {
@@ -345,7 +347,7 @@ fn is_workflow_file(path: &Path) -> bool {
     )
 }
 
-fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
+fn automatic_job_bodies_of_dir(workflows: &Path) -> Vec<String> {
     let mut bodies = Vec::new();
     let Ok(entries) = std::fs::read_dir(workflows) else {
         panic!("워크플로 디렉토리를 읽지 못했다: {}", workflows.display());
@@ -374,35 +376,13 @@ fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
         {
             continue;
         }
-        let mut in_jobs = false;
-        let mut current = String::new();
-        for line in text.lines() {
-            if line.starts_with("jobs:") {
-                in_jobs = true;
-                continue;
-            }
-            if !in_jobs {
-                continue;
-            }
-            let is_job_head = line.starts_with("  ")
-                && !line.starts_with("   ")
-                && line.trim_end().ends_with(':');
-            if is_job_head {
-                if !current.is_empty() {
-                    bodies.push(std::mem::take(&mut current));
-                }
-            }
-            current.push_str(line);
-            current.push('\n');
-        }
-        if !current.is_empty() {
-            bodies.push(current);
-        }
+        // 잡 분할과 수동 전용 제외는 **라이브러리 한 벌**이 한다. 한때 여기 사본이
+        // 있었고 lib 판과 문자 그대로 같았다 — 같은 물음에 답이 둘이면 갈릴 때까지만
+        // 같다. 파일 단위 트리거 판정(바로 위)은 이 가드의 물음("자동 채널이 있는가")에
+        // 속하므로 여기 남는다. lib 쪽은 "매 push 도는가" 라 판정이 더 좁다.
+        bodies.extend(automatic_job_bodies(&text));
     }
     bodies
-        .into_iter()
-        .filter(|body| !body.contains("github.event_name == 'workflow_dispatch'"))
-        .collect()
 }
 
 /// 한 잡 본문이 **좁혀지지 않은** `cargo test --workspace` 를 돌리는가.
@@ -570,7 +550,7 @@ impl Combo {
 /// 자동 잡의 `cargo test` 호출들 — (조합, 인자 꼬리).
 fn automatic_test_invocations(root: &Path) -> Vec<(Combo, String)> {
     let mut out = Vec::new();
-    for body in automatic_job_bodies(&root.join(".github/workflows")) {
+    for body in automatic_job_bodies_of_dir(&root.join(".github/workflows")) {
         for tail in cargo_test_tails(&body) {
             let combo = if tail.contains("--no-default-features") {
                 Combo::Headless
@@ -2521,7 +2501,7 @@ const AUTOMATIC_FULL: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n 
 fn a_workflow_is_read_under_either_extension() {
     for (name, file) in [("yml", "ci.yml"), ("yaml", "ci.yaml")] {
         let dir = workflow_dir(name, &[(file, AUTOMATIC_FULL)]);
-        let bodies = automatic_job_bodies(&dir);
+        let bodies = automatic_job_bodies_of_dir(&dir);
         assert_eq!(bodies.len(), 1, "{file} 을 워크플로로 읽지 않았다");
         assert!(bodies[0].contains("cargo test --workspace"));
         // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -2531,7 +2511,7 @@ fn a_workflow_is_read_under_either_extension() {
     // 워크플로가 아닌 확장자는 들어오지 않는다 — 모수를 넓히는 것과 아무거나 읽는 것은 다르다.
     let dir = workflow_dir("other", &[("notes.md", AUTOMATIC_FULL)]);
     assert!(
-        automatic_job_bodies(&dir).is_empty(),
+        automatic_job_bodies_of_dir(&dir).is_empty(),
         "워크플로가 아닌 파일을 잡 본문으로 읽었다"
     );
     // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -2546,7 +2526,7 @@ fn widening_the_extension_does_not_widen_the_trigger_rule() {
     for (name, file) in [("m-yml", "manual.yml"), ("m-yaml", "manual.yaml")] {
         let dir = workflow_dir(name, &[(file, manual)]);
         assert!(
-            automatic_job_bodies(&dir).is_empty(),
+            automatic_job_bodies_of_dir(&dir).is_empty(),
             "{file}: 수동 전용 워크플로가 자동 잡으로 들어왔다"
         );
         // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
