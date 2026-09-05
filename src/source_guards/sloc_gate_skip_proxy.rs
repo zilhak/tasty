@@ -139,35 +139,13 @@ fn name_skipped(path: &str, patterns: &[String]) -> bool {
     patterns.iter().any(|p| glob_matches(p, path))
 }
 
-/// cfg 술어가 `test` 를 **함의**하는가. `not(test)` · `any(unix, test)` 는 아니다 —
-/// 전자는 반대이고 후자는 다른 조건으로도 컴파일된다.
+/// 판정기가 둘이면 갈리고, 갈린 쪽은 조용하다 — cfg 술어 해석은 [`cfg_span::implies`]
+/// 하나만 쓴다. 여기 사본이 있었고 같은 물음을 세 곳이 각자 답하고 있었다.
+#[path = "../../tests/cfg_span/mod.rs"]
+mod cfg_span;
+
 fn implies_test(pred: &str) -> bool {
-    let p: String = pred.chars().filter(|c| !c.is_whitespace()).collect();
-    if p == "test" {
-        return true;
-    }
-    let Some(inner) = p.strip_prefix("all(").and_then(|s| s.strip_suffix(')')) else {
-        return false;
-    };
-    let mut depth = 0usize;
-    let mut cur = String::new();
-    let mut parts = Vec::new();
-    for ch in inner.chars() {
-        match ch {
-            '(' => {
-                depth += 1;
-                cur.push(ch);
-            }
-            ')' => {
-                depth -= 1;
-                cur.push(ch);
-            }
-            ',' if depth == 0 => parts.push(std::mem::take(&mut cur)),
-            _ => cur.push(ch),
-        }
-    }
-    parts.push(cur);
-    parts.iter().any(|part| implies_test(part))
+    cfg_span::implies(pred, "test")
 }
 
 /// `mod X;` 선언에서 모듈 파일로 가는 간선. 값은 `(부모 파일, cfg 가 test 를 함의하는가)`.

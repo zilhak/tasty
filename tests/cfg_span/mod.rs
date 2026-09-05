@@ -56,7 +56,52 @@ pub fn brace_delta(line: &str) -> i32 {
     depth
 }
 
-/// `#[cfg(… <needle> …)]` 가 붙은 항목이 덮는 줄 전체를 `true` 로 표시한다.
+/// cfg 술어가 `needle` 을 **함의**하는가.
+///
+/// 문자열 포함(`contains`)으로 어림잡으면 두 방향으로 틀린다 — `not(test)` 는 **반대**이고
+/// `any(test, feature = "test-support")` 는 다른 조건으로도 컴파일된다. 실측(2026-09-05,
+/// `src`·`crates`): `not(test)` 1 자리 · `any(test, …)` 4 자리 · `not(debug_assertions)`
+/// 2 자리가 그 형태다. 그것들을 게이트 안으로 세면 **출하되는 코드가 스캔에서 사라진다** —
+/// 위반이 아니라 침묵이라 조용히 비어 간다.
+pub fn implies(pred: &str, needle: &str) -> bool {
+    let p: String = pred.chars().filter(|c| !c.is_whitespace()).collect();
+    if p == needle {
+        return true;
+    }
+    let Some(inner) = p.strip_prefix("all(").and_then(|s| s.strip_suffix(')')) else {
+        return false;
+    };
+    let mut depth = 0usize;
+    let mut cur = String::new();
+    let mut parts = Vec::new();
+    for ch in inner.chars() {
+        match ch {
+            '(' => {
+                depth += 1;
+                cur.push(ch);
+            }
+            ')' => {
+                depth -= 1;
+                cur.push(ch);
+            }
+            ',' if depth == 0 => parts.push(std::mem::take(&mut cur)),
+            _ => cur.push(ch),
+        }
+    }
+    parts.push(cur);
+    parts.iter().any(|part| implies(part, needle))
+}
+
+/// 이 줄의 속성이 `needle` 을 함의하는 `#[cfg(…)]` 인가.
+fn attr_implies(line: &str, needle: &str) -> bool {
+    let t = line.trim();
+    let Some(pred) = t.strip_prefix("#[cfg(").and_then(|s| s.strip_suffix(")]")) else {
+        return false;
+    };
+    implies(pred, needle)
+}
+
+/// `#[cfg(…)]` 가 `needle` 을 **함의할 때** 그 항목이 덮는 줄 전체를 `true` 로 표시한다.
 ///
 /// 범위는 셋이다:
 /// 1. 속성 **앞**의 doc 주석·다른 속성·빈 줄 — Rust 는 doc 주석을 **뒤따르는 항목**에
@@ -67,8 +112,7 @@ pub fn brace_delta(line: &str) -> i32 {
 pub fn cfg_gated_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
     let mut gated = vec![false; lines.len()];
     for (i, line) in lines.iter().enumerate() {
-        let t = line.as_ref().trim();
-        if !(t.starts_with("#[") && t.contains(needle)) {
+        if !attr_implies(line.as_ref(), needle) {
             continue;
         }
         gated[i] = true;
