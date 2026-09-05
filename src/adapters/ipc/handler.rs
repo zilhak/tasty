@@ -12,8 +12,6 @@ mod debug_terminal;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
-#[cfg(feature = "gui")]
-mod fs;
 mod git_viewer;
 mod hook_handler;
 mod hooks;
@@ -740,18 +738,13 @@ fn route_engine_handler(
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
         "recent.query" => recent::handle_query(state, id, request.params.clone()),
-        // native 파일 선택 다이얼로그(rfd) 위임 — plugin 이 자기 프로세스에서 못 여는
-        // host UI 스레드 자원. host 는 특정 kind 를 모른 채 filters 만 받아 대행한다
-        // (파일열기 팝업 플러그인化의 유일 generic 갭, ADR-0042). rfd 는 gui feature.
-        #[cfg(feature = "gui")]
-        "fs.pick_file" => fs::handle_pick_file(id, &request.params),
         // (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md) git-viewer
         // 원격 조회 트리거 — mirror workspace/attach 세션은
         // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
         // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
         // (ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
-        // 여는 UI state 변경이라 fs.pick_file 과 동일하게 gui feature 전용.
+        // 여는 UI state 변경이라 gui feature 전용.
         #[cfg(feature = "gui")]
         "file_picker.trigger" => {
             file_picker::handle_trigger(state, engine, caller, id, &request.params)

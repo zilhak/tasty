@@ -1,5 +1,5 @@
 //! Native file picker popup (04) — Tasty 자체 "파일 열기" 다이얼로그. 로컬/원격
-//! (attach mirror workspace) 겸용 select-and-confirm 다이얼로그로, `fs.pick_file`
+//! (attach mirror workspace) 겸용 select-and-confirm 다이얼로그로, OS native 다이얼로그
 //! (ADR-0042, native OS 다이얼로그 host 위임)이 원격 개념을 가질 수 없다는 근본
 //! 한계를 신규 ADR(`docs/adr/0046-*.md`)로 보완한다.
 //!

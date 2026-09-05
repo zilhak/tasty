@@ -578,7 +578,7 @@ impl MarkdownPlugin {
         }
     }
 
-    /// 파일열기 팝업 한 frame 을 egui-mesh 로 그린다. [browse] 는 host `fs.pick_file`
+    /// 파일열기 팝업 한 frame 을 egui-mesh 로 그린다. [browse] 는 host `file_picker.trigger`
     /// (native 다이얼로그)로 경로를 채우고, [열기] 는 입력 경로를 host `file_handler.dispatch`
     /// 로 열고 팝업을 닫는다. [취소]/Esc 는 팝업만 닫는다. chrome(scrim/border)은 host 소유.
     #[cfg(any(unix, windows))]
@@ -787,7 +787,7 @@ fn draw_confirm(
 enum FileOpenAction {
     /// 아무것도 안 함.
     None,
-    /// native 파일 다이얼로그를 연다(host fs.pick_file).
+    /// host 소유 file_picker popup 을 연다(`file_picker.trigger`, ADR-0058).
     Browse,
     /// 입력 경로로 파일을 연다.
     Open,
@@ -816,9 +816,8 @@ struct FilePickerResultWire {
 /// ADR-0058). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
 /// popup 도 직접 못 열기 때문에 host 에 위임한다. markdown 확장자로 필터. 반환값은
 /// **선택 경로가 아니라** 이 요청의 `request_id` — 실제 경로는 나중에 `on_event`
-/// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push,
-/// 옛 `fs.pick_file`/rfd 동기 모달과 달리 이 호출 자체는 popup 확정을 기다리지 않고
-/// 곧장 반환된다).
+/// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push —
+/// 이 호출 자체는 popup 확정을 기다리지 않고 곧장 반환된다).
 ///
 /// `owner_popup_instance` 로 자기 popup instance 를 함께 신고한다 — host 가 두 팝업을
 /// 부모-자식 스택으로 다루는 근거다(ADR-0084).

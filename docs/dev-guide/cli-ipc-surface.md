@@ -52,10 +52,6 @@
   plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)).
   host 잎을 만들면 plugin 설치 여부에 따라 흔들리므로, 진입점은 plugin 의 매니페스트
   `ipc_method` 기여로 가야 한다 — plugin 크레이트 수정 + 매니페스트/Cargo 버전 bump.
-- **`fs.pick_file` 의 비동기화** — 지금은 사용자 선택까지 gui 이벤트 루프를 막는다.
-  `file_picker.trigger` 처럼 `request_id` 만 즉시 회신하고 결과를 이벤트로 push 하는
-  형태로 바꾸면 셸에서도 부를 수 있다. 그 전에는 진입점을 만들면 셸이 무한 대기하고,
-  그 사이 같은 인스턴스에 붙은 다른 에이전트도 head-of-line 으로 막힌다.
 
 ## 관련 문서
 

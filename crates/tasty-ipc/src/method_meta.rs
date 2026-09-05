@@ -477,26 +477,20 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
         ("recent.query", plugin(&[SurfaceRead])),
         // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
-        // native OS 파일 선택 다이얼로그(rfd)를 host 프로세스에서 열고 선택 경로를
-        // 회신한다. plugin 은 자기 프로세스에서 native 다이얼로그(host UI 스레드 자원)를
-        // 못 여므로 host 에 위임한다 — generic 하게 "파일 선택" 만 대행하고 host 는 특정
-        // kind/plugin 을 모른다. 사용자가 임의 경로를 고르는 read 관심사라 FsRead. filters
-        // 는 caller(예: markdown plugin 이 md/markdown)가 채운다. ADR-0042.
-        ("fs.pick_file", plugin(&[FsRead])),
         // ── git_viewer.* (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md
         // — 원격 attach mirror git 조회 트리거) ─
         // git-viewer plugin 이 mirror workspace 에서 status/log/worktrees snapshot
         // 또는 diff 를 요청. host 는 즉시 request_id 만 회신하고(비동기 accept), 실제
         // 조회는 attach Control 채널 왕복 후 `event.dispatch` unicast 로 plugin 에
         // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
-        // 없음). 임의 원격 경로 read 라 FsRead(로컬 fs.pick_file 과 동일 근거).
+        // 없음). 임의 원격 경로 read 라 FsRead(파일을 고르는 read 관심사, `file_picker.trigger` 와 동일 근거).
         ("git_viewer.query", plugin(&[FsRead])),
         // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
         // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(ADR-0053)을
         // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
         // ADR-0058), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast
         // `"file_picker.result"` 로 plugin 에 push 된다. 파일을 고르는 read 관심사라
-        // FsRead(로컬 fs.pick_file/git_viewer.query 와 동일 근거).
+        // FsRead(`git_viewer.query` 와 동일 근거).
         ("file_picker.trigger", plugin(&[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED

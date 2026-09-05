@@ -170,7 +170,6 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 
 | 메서드 | 왜 |
 |--------|-----|
-| `fs.pick_file` | OS 네이티브 파일 대화상자를 띄운다. 띄울 데스크톱이 없으면 하는 일 자체가 없다 |
 | `file_picker.trigger` | 창 안 popup(`state.dialogs.file_picker`)을 연다. 그릴 창이 없다 |
 | `webview.set_url` | 설정한 URL 을 소비하는 것이 매 프레임 도는 렌더러뿐이다. 값은 기록되겠지만 아무 일도 일어나지 않는다 |
 

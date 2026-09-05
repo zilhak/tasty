@@ -151,7 +151,7 @@ fn surface_list_requires_surface_read() {
     assert!(m.required.contains(&Permission::SurfaceRead));
 }
 
-/// ADR-0058: `file_picker.trigger` 는 `fs.pick_file`/`git_viewer.query` 와
+/// ADR-0058: `file_picker.trigger` 는 `git_viewer.query` 와
 /// 동일 근거(파일을 고르는 read 관심사)로 FsRead 권한이 필요하고, plugin 이 직접
 /// host.call 로 호출 가능해야 한다.
 #[test]

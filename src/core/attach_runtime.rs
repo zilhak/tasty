@@ -1243,7 +1243,7 @@ pub(crate) fn finalize_bulk_transfer(
 /// (04) file picker — mirror client 가 attach 채널로 보낸 `list_dir_request`
 /// 하나를 처리한다. `client_id` 가 이 engine 이 호스팅하는 어떤 workspace 든
 /// 점유(holder)해야 신뢰한다(구조 op forward/캡처 업로드와 동일한 "attach 점유 =
-/// 권한" 원칙 — 로컬 `fs.pick_file` IPC 의 `FsRead` 권한 게이트와는 다른 신뢰
+/// 권한" 원칙 — 로컬 plugin IPC 의 `FsRead` 권한 게이트와는 다른 신뢰
 /// 모델, 하이브리드 설계 근거는 신규 ADR 참고). 대상 디렉토리를 공유
 /// `read_dir_entries`(`crate::core::fs_list`)로 읽어 wire entries 로 변환해
 /// 회신한다(best-effort — `StreamControl` enum 은 그대로 두고 그 enum 이 인식

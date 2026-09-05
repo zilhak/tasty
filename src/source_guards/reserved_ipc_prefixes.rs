@@ -61,6 +61,12 @@ const RESERVED_AHEAD_OF_ANY_METHOD: &[(&str, &str)] = &[
         "`surface.ime_*`(debug 전용 prefix 규칙)의 이름 공간. 최상위 `ime.*` 는 아직 없다",
     ),
     (
+        "fs",
+        "`fs.pick_file` 이 ADR-0161 로 빠져 그 아래 호스트 메서드가 0 개가 됐다. \
+         이름은 계속 막는다 — 비었다고 내주면 `fs.*` 가 호스트 파일시스템 표면처럼 \
+         읽히는 자리를 plugin 이 갖는다(ADR-0140 의 '뺏는 것보다 막는 쪽이 싸다')",
+    ),
+    (
         "ipc",
         "IPC 자체를 가리키는 이름 — plugin 이 가질 자리가 아니다",
     ),

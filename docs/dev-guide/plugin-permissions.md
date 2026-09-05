@@ -38,7 +38,7 @@
 | `notification` | `notification.create` · `notification.list` · `surface.completion` · `surface.attention.get` · `surface.attention.clear` | — |
 | `clipboard.read` | `image.paste` **하나뿐** | — |
 | `clipboard.write` | `clipboard.set_text` | — |
-| `fs.read` | `fs.pick_file` · `file_handler.dispatch` · `image.open` · `markdown.navigate` · `git_viewer.query` · `file_picker.trigger` | — |
+| `fs.read` | `file_handler.dispatch` · `image.open` · `markdown.navigate` · `git_viewer.query` · `file_picker.trigger` | — |
 | `fs.write` | `image.save` · `image.export_png` | — |
 | `process.spawn` | **없음** — `method_meta` 어느 메서드도 요구하지 않는다 | 없음 |
 | `terminal.spawn` | `terminal.spawn` · `terminal.respawn` · `pty.spawn` · `pty.attach_surface` · `surface.wake` · `surface.respawn_terminal` | — |
