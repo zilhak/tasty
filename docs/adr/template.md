@@ -42,6 +42,18 @@
 - 본 템플릿의 "작성 규칙" 섹션은 실제 ADR 에 포함하지 않는다.
 - **Accepted 후에는 본문을 수정하지 않는다.** Status 필드만 갱신하고, 결정이 바뀌면 새 ADR 로 Supersede 한다 (구 ADR 의 Status 를 `Superseded by ADR-YYYY` 로 변경).
   - **사실 정정 예외**: 이 불변 원칙은 *결정이 바뀌는* 경우를 위한 것이다 — 이전 결정을 기록으로 보존하고, 바뀐 결정은 새 ADR 로 대체한다. 반면 처음부터 **사실과 어긋난 서술**(존재하지 않는 경로·API·동작, git 에 없는 위치를 실제 사용처로 적은 것 등)은 보존할 "이전 결정" 자체가 없으므로 정정 대상이며, 본문을 직접 고친다. Status·Date 는 그대로 둔다.
+  - **부분 개정 예외**: 결정의 **한 조항만** 다른 결정으로 대체하고 나머지는 유효로 남기는
+    형태. 구 ADR 의 본체가 살아 있는데 Supersede 하면 유효한 결정까지 죽은 것으로 읽히므로,
+    조항 단위로 갈아끼운다. **Supersede 와 갈리는 지점은 "본체가 살아 있는가" 하나다.**
+    - 새 ADR — 제목에 `— ADR-XXXX 의 <조항> 개정` 을 달고, Decision 에 무엇을 개정하고
+      **구 ADR 의 나머지 중 무엇이 그대로 유효한지**를 이름으로 적는다. References 에
+      `개정 대상: [ADR-XXXX](<파일>) (<조항>)` 과 `개정 패턴 선례: [ADR-0030](<파일>)` 을 적는다
+      (꺾쇠는 실제 값으로 채운다).
+    - 구 ADR — References 에 `부분 개정: [XXXX](<파일>) (<조항> 개정)` 한 줄만 더한다.
+      **Status 는 `Accepted` 로 유지하고 `Date`·`Accepted` 도 그대로 둔다.**
+    - 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md) 이 [ADR-0028](0028-plugin-egui-mesh-render-channel.md) 의
+      image Canvas-하이브리드 조항만, [ADR-0065](0065-markdown-webview-render-channel.md) 이 같은 ADR 의
+      markdown 채널 조항만 개정했다. 0028 은 지금도 `Accepted` 다.
   - **References-only errata 예외**: Accepted ADR 이라도 References 섹션의 깨진(비-git 위치 등) 링크를 위생 차원에서 고치는 것은 결정 변경이 아니므로 허용한다. 단 본문(Context / Decision / Consequences 등 결정 내용)은 그대로 둔다.
   - **구현 확정 보강 예외**: Decision 이 아키텍처/방향만 정하고 구체적 형태·영향 범위를 다루지
     않았던 지점(명시적으로 "후속에서 확정한다" 고 적어뒀든, 그냥 언급이 없었든)을 후속 트랙이
