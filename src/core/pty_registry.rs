@@ -181,7 +181,11 @@ pub struct PtySpawnSpec {
 pub struct PtyRegistry {
     entries: HashMap<u32, PtyEntry>,
     /// Surface id 와 disjoint 한 별도 카운터([`PTY_ID_BASE`] 부터).
-    next_id: AtomicU32,
+    ///
+    /// **engine 들이 이 Arc 를 공유한다.** registry 마다 따로 세면 두 창이 같은 pty id 를
+    /// 발급하고, 라우팅은 그 id 를 가진 engine 을 **먼저 찾히는 순서로** 고르므로 나중
+    /// 것은 어떤 요청으로도 못 닿는다(`IdGenerator` doc 의 "글로벌 유니크").
+    next_id: std::sync::Arc<AtomicU32>,
     max_concurrent: usize,
     idle_ttl: Duration,
 }
@@ -190,7 +194,7 @@ impl Default for PtyRegistry {
     fn default() -> Self {
         Self {
             entries: HashMap::new(),
-            next_id: AtomicU32::new(PTY_ID_BASE),
+            next_id: std::sync::Arc::new(AtomicU32::new(PTY_ID_BASE)),
             max_concurrent: DEFAULT_MAX_CONCURRENT,
             idle_ttl: DEFAULT_IDLE_TTL,
         }
@@ -198,8 +202,19 @@ impl Default for PtyRegistry {
 }
 
 impl PtyRegistry {
+    /// 카운터를 공유하지 않는 독립 registry — **단위 테스트 전용**이다.
+    /// production 은 항상 [`PtyRegistry::with_counter`] 로 engine 간 공유 카운터를 든다.
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    pub fn with_counter(next_id: std::sync::Arc<AtomicU32>) -> Self {
+        Self {
+            next_id,
+            ..Self::default()
+        }
     }
 
     /// 상한/TTL override 생성자 — `rate_limit.rs` 철학(기본값은 박되 호출자 지정 가능).
@@ -436,6 +451,37 @@ mod tests {
         assert_eq!(e.command, vec!["echo".to_string(), "hi".to_string()]);
         assert_eq!(e.owner_agent_id, "agent-1");
         assert!(!e.has_exited());
+    }
+
+    /// 카운터를 공유한 두 registry 는 **같은 id 를 두 번 발급하지 않는다.**
+    ///
+    /// 창마다 registry 가 따로이므로 카운터가 registry 소유였을 때는 둘 다
+    /// `PTY_ID_BASE` 부터 셌다. 그러면 두 pty 가 같은 id 를 갖고, 라우팅은 그 id 를 가진
+    /// engine 을 먼저 찾히는 순서로 고르므로 **나중 것은 어떤 요청으로도 못 닿는다** —
+    /// 실측(2026-09-05, 창 둘): 두 창의 pty 가 둘 다 `0x8000_0000` 이었고,
+    /// `output.observe_info {observer_id:1}` 은 포커스와 무관하게 **같은 하나**만 돌려줬다.
+    #[test]
+    fn registries_sharing_a_counter_never_issue_the_same_id() {
+        let shared = std::sync::Arc::new(AtomicU32::new(PTY_ID_BASE));
+        let mut a = PtyRegistry::with_counter(std::sync::Arc::clone(&shared));
+        let mut b = PtyRegistry::with_counter(std::sync::Arc::clone(&shared));
+        let now = Instant::now();
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..3 {
+            assert!(seen.insert(a.register(spec(&["a"]), now).unwrap()));
+            assert!(seen.insert(b.register(spec(&["b"]), now).unwrap()));
+        }
+        assert_eq!(seen.len(), 6, "공유 카운터인데 id 가 겹쳤다: {seen:?}");
+        assert!(seen.iter().all(|id| *id >= PTY_ID_BASE));
+
+        // 대조군 — 카운터를 안 나누면 겹친다. 이 축이 실제로 무엇을 막는지 고정한다.
+        let mut c = PtyRegistry::new();
+        let mut d = PtyRegistry::new();
+        assert_eq!(
+            c.register(spec(&["c"]), now).unwrap(),
+            d.register(spec(&["d"]), now).unwrap(),
+            "독립 카운터는 같은 값에서 시작한다 — 공유가 필요한 이유가 이것이다"
+        );
     }
 
     #[test]

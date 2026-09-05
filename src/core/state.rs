@@ -23,6 +23,13 @@ pub struct IdGenerator {
     pane: Arc<std::sync::atomic::AtomicU32>,
     tab: Arc<std::sync::atomic::AtomicU32>,
     surface: Arc<std::sync::atomic::AtomicU32>,
+    /// headless pty 카운터([`PTY_ID_BASE`](crate::core::pty_registry::PTY_ID_BASE) 부터).
+    /// 위 doc 의 "글로벌 유니크" 는 이 둘에도 걸린다 — 라우팅이 pty id 와 observer id 를
+    /// **창을 건너** 푸는데(`request_target::Kind::HeadlessPty` · `Kind::Observer`),
+    /// 카운터가 engine 마다면 두 창이 같은 id 를 발급하고 그중 하나는 **어떤 요청으로도
+    /// 닿을 수 없게 된다**(먼저 찾힌 engine 이 항상 이긴다).
+    pty: Arc<std::sync::atomic::AtomicU32>,
+    observer: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Default for IdGenerator {
@@ -33,14 +40,26 @@ impl Default for IdGenerator {
 
 impl IdGenerator {
     pub fn new() -> Self {
-        use std::sync::atomic::AtomicU32;
+        use std::sync::atomic::{AtomicU32, AtomicU64};
         Self {
             workspace: Arc::new(AtomicU32::new(1)),
             category: Arc::new(AtomicU32::new(1)),
             pane: Arc::new(AtomicU32::new(1)),
             tab: Arc::new(AtomicU32::new(1)),
             surface: Arc::new(AtomicU32::new(1)),
+            pty: Arc::new(AtomicU32::new(crate::core::pty_registry::PTY_ID_BASE)),
+            observer: Arc::new(AtomicU64::new(1)),
         }
+    }
+
+    /// headless pty id 카운터 — `PtyRegistry` 가 이 Arc 를 들고 발급한다.
+    pub fn pty_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
+        Arc::clone(&self.pty)
+    }
+
+    /// observer id 카운터 — `ObserverRouter` 가 이 Arc 를 들고 발급한다.
+    pub fn observer_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        Arc::clone(&self.observer)
     }
 
     pub fn next_workspace(&self) -> u32 {
@@ -732,10 +751,12 @@ impl CoreState {
         let restore_layout = settings.general.restore_layout;
 
         // Create engine with empty workspaces first; we'll fill them below.
+        // 두 registry 가 같은 카운터를 들어야 하므로 먼저 확정한다.
+        let next_ids = shared_ids.unwrap_or_default();
         let mut engine = Self {
             workspaces: Vec::new(),
             categories: vec![crate::model::WorkspaceCategory::normal()],
-            next_ids: shared_ids.unwrap_or_default(),
+            next_ids: next_ids.clone(),
             default_cols: cols,
             default_rows: rows,
             waker: waker.clone(),
@@ -745,7 +766,9 @@ impl CoreState {
             global_hook_manager: GlobalHookManager::new(),
             closed_items: crate::model::ClosedItemStore::new(),
             command_index: crate::core::command_index::CommandIndex::new(),
-            observer_router: crate::output_observer::ObserverRouter::new(),
+            observer_router: crate::output_observer::ObserverRouter::with_counter(
+                next_ids.observer_counter(),
+            ),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
@@ -780,7 +803,9 @@ impl CoreState {
             mesh_mirror: crate::core::mesh_mirror::MeshMirrorRegistry::default(),
             attach_mesh_frames: crate::core::attach_mesh_frames::AttachMeshFrameStore::default(),
             child_terminals: crate::core::child_terminal::ChildTerminalRegistry::load(),
-            pty_registry: crate::core::pty_registry::PtyRegistry::new(),
+            pty_registry: crate::core::pty_registry::PtyRegistry::with_counter(
+                next_ids.pty_counter(),
+            ),
             readonly_views: HashMap::new(),
             pending_gui_attach: Vec::new(),
             pending_screenshot_captures: Vec::new(),

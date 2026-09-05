@@ -87,7 +87,10 @@ fn unix_ms_now() -> i64 {
 
 /// 메인 스레드 상태. 각 옵저버는 자기 worker thread 와 bounded sender 를 갖는다.
 pub struct ObserverRouter {
-    next_id: ObserverId,
+    /// **engine 들이 이 Arc 를 공유한다** — router 마다 따로 세면 두 창이 같은 observer
+    /// id 를 발급하고, `Kind::Observer` 라우팅이 먼저 찾힌 engine 을 고르므로 나중 것은
+    /// 어떤 요청으로도 못 닿는다(`IdGenerator` doc 의 "글로벌 유니크").
+    next_id: std::sync::Arc<std::sync::atomic::AtomicU64>,
     observers: HashMap<ObserverId, ObserverEntry>,
     /// surface 별 partial-line 버퍼. `'\n'` 이 들어올 때까지 누적.
     line_buffers: HashMap<u32, LineBuffer>,
@@ -156,8 +159,13 @@ const SINK_CHANNEL_CAP: usize = 256;
 
 impl ObserverRouter {
     pub fn new() -> Self {
+        Self::with_counter(std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)))
+    }
+
+    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    pub fn with_counter(next_id: std::sync::Arc<std::sync::atomic::AtomicU64>) -> Self {
         Self {
-            next_id: 1,
+            next_id,
             observers: HashMap::new(),
             line_buffers: HashMap::new(),
             retired: Vec::new(),
@@ -186,8 +194,9 @@ impl ObserverRouter {
             }
         }
 
-        let id = self.next_id;
-        self.next_id += 1;
+        let id: ObserverId = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // Sink resolved view (외부 응답용)
         let resolved_sink = match &spec.sink {
