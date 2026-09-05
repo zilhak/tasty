@@ -555,6 +555,28 @@ gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
 잡이 직렬로 쌓이고, 그때 macOS 가 새 임계경로가 될 수 있다. 레인이 각자 push 하기 시작하면
 그 조건이 성립한다 — 그때 위 명령으로 다시 재고 이 스텝을 유지할지 판단한다.
 
+### macOS 잡의 fd 예산은 잡 로그가 찍는다
+
+같은 잡에 `fd budget (계측 전용)` 스텝이 있다 — `ulimit -n` · `ulimit -Hn` ·
+`sysctl -n kern.maxfilesperproc kern.maxfiles` 를 찍는다. **판정이 아니라 계측**이라
+`continue-on-error` 로 무엇도 실패시키지 않는다.
+
+왜 필요한가: 그 다음 스텝의 바이너리는 진짜 PTY 와 자식 셸을 띄우고, 마스터 fd 는 registry
+의 idle TTL 이 만료될 때까지 산다. TTL 이 런 길이보다 길면 **런 안에서는 아무것도 회수되지
+않는다** — 그래서 최고 fd 는 동시성이 아니라 **체류 시간**을 따라간다(Linux 에서는 병렬도를
+줄였더니 최고 fd 가 오히려 늘었다). 그 수가 러너 상한에 닿는지는 상한을 모르면 못 정한다.
+
+**값은 여기 적지 않는다** — 러너 이미지가 바뀌면 낡고, 낡은 수가 판정 근거로 쓰인다
+([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+값은 잡 로그에만 있다. 재는 법:
+
+```bash
+gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -A 3 'fd budget'
+```
+
+이 레포는 워크플로 어디에서도 `ulimit` 을 **설정**하지 않는다(그 스텝도 읽기만 한다).
+그러니 로그의 값은 러너 이미지 기본값 그대로다 — 언젠가 상한을 올리면 재는 대상이 바뀐다.
+
 ### 조합 격자의 빈 칸 — Linux + gui + debug (지금은 채워져 있다)
 
 유닛 테스트가 "두 조합 모두" 라고 말할 때 그 둘은 **Windows + gui + debug** 와

@@ -75,6 +75,27 @@ jobs:
       - name: cargo check
         run: cargo check --workspace --locked
 
+      # fd 예산을 **로그에 남긴다** — 판정이 아니라 계측이다. 무엇도 실패시키지 않는다.
+      #
+      # 왜 필요한가: 아래 스텝의 바이너리는 진짜 PTY 와 자식 셸을 띄우고, 마스터 fd 는
+      # registry 의 idle TTL 이 만료될 때까지 산다. TTL 이 런 길이보다 길면 **런 안에서는
+      # 아무것도 회수되지 않는다** — 그래서 최고 fd 는 동시성이 아니라 체류 시간을 따라간다
+      # (Linux 실측 2026-09-06: 병렬 20 에서 966, 병렬 3 으로 **줄였더니** 1157).
+      # 그 수가 러너의 상한에 닿는지 아닌지는 **상한을 모르면 못 정한다.**
+      #
+      # 이 레포는 워크플로 어디에서도 `ulimit` 을 **설정**하지 않는다(이 스텝도 읽기만
+      # 한다 — 상한을 올리면 재는 대상이 바뀐다). 그러니 여기 찍히는 것은
+      # 러너 이미지의 기본값 그대로다. 값은 이 로그에만 있고 문서에는 적지 않는다 —
+      # 이미지가 바뀌면 낡는 수라, 적는 순간 낡은 값이 판정 근거로 쓰인다.
+      #
+      # 세 줄 다 찍는다 — soft 만 보면 이미지나 도구가 올려 둔 경우를 못 본다.
+      - name: fd budget (계측 전용)
+        continue-on-error: true
+        run: |
+          echo "soft: $(ulimit -n)"
+          echo "hard: $(ulimit -Hn)"
+          sysctl -n kern.maxfilesperproc kern.maxfiles
+
       # macOS 로 게이트된 유닛 테스트는 이 스텝이 생기기 전까지 **어느 채널도 안 돌렸다** —
       # 컴파일만 되고 실행은 아무도 안 했다. 명령은 check-windows 의 `cargo test (unit)` ·
       # check-headless 의 `cargo test (linux, gui, unit)` 과 **글자 그대로 같다**(새 형태를
