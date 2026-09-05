@@ -37,9 +37,9 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 1100.0;
-const HEIGHT: f32 = 700.0;
-const L2_WIDTH: f32 = 200.0;
+const WIDTH: LogicalPx = LogicalPx(1100.0);
+const HEIGHT: LogicalPx = LogicalPx(700.0);
+const L2_WIDTH: LogicalPx = LogicalPx(200.0);
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
 
@@ -128,17 +128,15 @@ thread_local! {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    let band_h = theme.titlebar_height.value() + theme.spacing_sm.value(); // 44
-    let footer_h = theme.item_height_interactive.value() + theme.spacing_sm.value() * 2.0; // 44
-    let mid_h = (HEIGHT - band_h - footer_h - theme.border_width.value() * 2.0)
-        .max(theme.measure_sm.value());
+    let band_h = theme.titlebar_height + theme.spacing_sm; // 44
+    let footer_h = theme.item_height_interactive + theme.spacing_sm.scaled(2.0); // 44
+    let mid_h = (HEIGHT - band_h - footer_h - theme.border_width.scaled(2.0)).max(theme.measure_sm);
     // content 폭은 명시 계산(측정 패스에서 available_width 0 → 음수 폭 패닉 회피).
-    let content_w =
-        (WIDTH - L2_WIDTH - theme.border_width.value() - theme.spacing_lg.value() * 2.0)
-            .max(theme.measure_sm.value());
+    let content_w = (WIDTH - L2_WIDTH - theme.border_width - theme.spacing_lg.scaled(2.0))
+        .max(theme.measure_sm);
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::panel_fill(theme), |ui| {
+        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);
             ui.horizontal_top(|ui| {
@@ -199,14 +197,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 // ── L1 상단 밴드 ───────────────────────────────────────────────────────────
 
-fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: f32) {
+fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: LogicalPx) {
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
         .inner_margin(egui::Margin::symmetric(theme.spacing_md.value() as i8, 0))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.set_min_height(band_h);
+                ui.set_min_height(band_h.value());
                 ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                 // 좌측 "Settings" 타이틀 (bold 14px) + 세로 구분선.
                 ui.label(
@@ -235,7 +233,7 @@ fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: f32) {
         });
 }
 
-fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: f32, active: bool) {
+fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: LogicalPx, active: bool) {
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(theme.font_size_body.value()),
@@ -243,7 +241,7 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: f32, active: bo
     );
     let pad = theme.spacing_md.value();
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(galley.rect.width() + pad * 2.0, band_h),
+        egui::vec2(galley.rect.width() + pad * 2.0, band_h.value()),
         egui::Sense::hover(),
     );
     let fg = if active {
@@ -271,12 +269,12 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: f32, active: bo
 
 // ── L2 섹션 사이드바 ───────────────────────────────────────────────────────
 
-fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
+fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
         .show(ui, |ui| {
-            ui.set_width(L2_WIDTH);
-            ui.set_min_height(mid_h);
+            ui.set_width(L2_WIDTH.value());
+            ui.set_min_height(mid_h.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             // 부모(`draw` 의 `horizontal_top`)가 가로 레이아웃이라 Frame 의 child Ui 도 가로로
             // 흐른다 — 사이드바 내부(필터 → 구분선 → 섹션 리스트)는 세로 적층으로 명시한다.
@@ -340,9 +338,9 @@ fn l2_item(ui: &mut egui::Ui, theme: &Theme, label: &str, plugin: bool, active: 
     );
 }
 
-fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
+fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
     let (r, _) = ui.allocate_exact_size(
-        egui::vec2(theme.border_width.value(), mid_h),
+        egui::vec2(theme.border_width.value(), mid_h.value()),
         egui::Sense::hover(),
     );
     ui.painter().vline(
@@ -354,14 +352,16 @@ fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
 
 // ── content ────────────────────────────────────────────────────────────────
 
-fn content(ui: &mut egui::Ui, theme: &Theme, content_w: f32, mid_h: f32) {
+fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: LogicalPx) {
     egui::Frame::new()
         .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
         .show(ui, |ui| {
-            ui.set_min_width(content_w);
-            ui.set_min_height(mid_h);
+            ui.set_min_width(content_w.value());
+            ui.set_min_height(mid_h.value());
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-            let inner = content_w - theme.spacing_lg.value() * 2.0;
+            // 아래 `theme_swatch` 가 f32 폭을 받는다 — 그 관문까지가 이번 회차 밖이라
+            // 여기서 한 번 벗긴다.
+            let inner = (content_w - theme.spacing_lg.scaled(2.0)).value();
             // 위 사이드바와 같은 이유 — content 의 섹션/행은 세로 적층.
             ui.vertical(|ui| {
                 // ── Theme preset (선택된 L2 = Theme) ──
