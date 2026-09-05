@@ -592,15 +592,34 @@ fn automatic_test_invocations(root: &Path) -> Vec<(Combo, String)> {
 /// `None` 은 "이 축이 성립하지 않는다" 는 뜻이다 — 자동 잡 중 하나가 좁혀지지 않은
 /// `cargo test` 를 돌리면 통합 테스트가 전부 자동으로 도는 것이므로 어떤 인용도 거짓이
 /// 아니다. 그때 이 가드는 첫 번째 축과 같은 방식으로 스스로 잠잠해진다.
+/// 이 `cargo test` 호출이 **일부로 좁혀졌는가** — 타깃으로든 패키지로든.
+///
+/// ★ `-p` / `--package` 를 세지 않던 때가 있었고, 그래서 `cargo test -p tasty-doc-guards`
+/// 하나가 [`integration_tests_run_automatically`] 를 `None` 으로 만들었다. 그 `None` 의
+/// 뜻은 "통합 테스트가 **전부** 자동으로 돈다" 라서, 한 패키지만 도는 호출이 그 결론을
+/// 낸 것은 틀린다 — 그리고 그 틀림의 결과는 판정 둘이 **조용히 조기 반환**하는 것이다.
+/// 실측으로 잡았다(2026-09-05): 잠잠하게 만든 호출에 `--workspace` 가 있는지 **다른
+/// 성질로** 물었더니 없었다.
+///
+/// 함수로 뺀 이유는 [`the_self_silencing_axis_names_what_silenced_it`] 이 같은 판정을
+/// 물어야 하기 때문이다. 거기서 다시 쓰면 사본이 되고, 사본은 원본보다 단순해서 **덜
+/// 잡는 쪽으로** 갈린다 — 그러면 "축이 왜 잠잠한가" 를 묻는 검사가 틀린 답으로 안심시킨다.
+fn tail_is_narrowed(tail: &str) -> bool {
+    tail.split_whitespace().any(|w| {
+        w.starts_with("--lib")
+            || w.starts_with("--bins")
+            || w == "--test"
+            || w == "-p"
+            || w == "--package"
+    })
+}
+
 fn integration_tests_run_automatically(root: &Path) -> Option<std::collections::BTreeSet<String>> {
     let mut named = std::collections::BTreeSet::new();
     {
         for (_combo, tail) in automatic_test_invocations(root) {
             let words: Vec<&str> = tail.split_whitespace().collect();
-            let narrowed = words
-                .iter()
-                .any(|w| w.starts_with("--lib") || w.starts_with("--bins") || *w == "--test");
-            if !narrowed {
+            if !tail_is_narrowed(&tail) {
                 return None;
             }
             for pair in words.windows(2) {
@@ -1607,6 +1626,65 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
 /// 문장을 요구하고 있었다. 이제 요구하는 것은 **조합 한정 표지**다. 두 행의 차이는
 /// 여전히 남는다: lib 유닛 테스트는 두 조합 모두에서 돌고, 통합 테스트는 헤드리스
 /// 조합에서만 돈다.
+/// ★ **축이 스스로 잠잠해졌다면, 그 근거가 실재하는지 묻는다** — 초록의 이유를 묻는 것이다.
+///
+/// 이 파일의 판정 다섯 중 둘은 [`integration_tests_run_automatically`] 가 `None` 이면
+/// 조기 반환한다. `None` 의 뜻은 "좁혀지지 않은 자동 호출이 있다 = 통합 테스트가 전부
+/// 자동으로 돈다" 이고, 그때는 검사할 것이 없는 게 맞다.
+///
+/// **그런데 같은 `None` 이 판독이 깨져도 난다.** 좁힘은 `--test <이름>` 같은 플래그로
+/// 판정하는데, 이 레포의 `test.yml` 은 그것을 **접힌 스칼라(`>`)로 여러 줄에 걸쳐** 쓴다.
+/// 평탄화가 깨지면 그 플래그들이 사라져 좁혀지지 않은 호출로 보이고, 그러면 판정 둘이
+/// **틀린 이유로** 잠잠해진다 — 그리고 그 둘은 조용히 초록이다. 초록은 "덮였고 위반이
+/// 없다" 와 "볼 것이 없어 안 봤다" 둘 다와 양립하므로, 잠잠해진 이유를 여기서 확인한다.
+#[test]
+fn the_self_silencing_axis_names_what_silenced_it() {
+    let root = repo_root();
+    if integration_tests_run_automatically(&root).is_some() {
+        // 축이 살아 있다 — 두 판정이 실제로 돌므로 여기서 볼 것이 없다.
+        return;
+    }
+
+    let invocations = automatic_test_invocations(&root);
+    assert!(
+        !invocations.is_empty(),
+        "자동 잡의 `cargo test` 호출을 하나도 못 읽었다 — 판독이 깨졌다. 이 상태에서 나온 \
+         판정은 무엇도 안 본 것이다"
+    );
+    let unnarrowed: Vec<&String> = invocations
+        .iter()
+        .filter(|(_, tail)| !tail_is_narrowed(tail))
+        .map(|(_, tail)| tail)
+        .collect();
+    assert!(
+        !unnarrowed.is_empty(),
+        "판정 둘이 스스로 잠잠해졌는데(`integration_tests_run_automatically` 가 `None`) \
+         그 근거가 되는 좁혀지지 않은 자동 호출이 하나도 없다 — 판독이 깨졌다"
+    );
+
+    // ★ **근거를 좁힘 판정으로 다시 묻지 않는다.** 그러면 `None` 을 만든 그 술어로 그
+    // `None` 을 정당화하는 동어반복이 된다 — 술어가 깨지면 둘이 함께 틀리고 초록이다.
+    // 실측으로 그 형태를 한 번 썼다가 변이가 안 죽어서 잡았다(2026-09-05). 그래서
+    // **다른 성질**로 묻는다: 잠잠하게 만든 그 호출이 정말 전체 스위트를 돌리는가.
+    //
+    // 확인만이 아니라 교정이기도 하다 — `-p` 도 `--workspace` 도 없는 `cargo test` 는
+    // 루트 패키지만 돌린다. 그것을 "통합 테스트가 전부 자동으로 돈다" 의 근거로 쓰면
+    // 애초에 틀린다.
+    let not_whole: Vec<String> = unnarrowed
+        .iter()
+        .filter(|tail| !tail.split_whitespace().any(|w| w == "--workspace"))
+        .map(|tail| format!("cargo test{tail}"))
+        .collect();
+    assert!(
+        not_whole.is_empty(),
+        "판정 둘을 잠잠하게 만든 호출이 **전체 스위트가 아니다**(`--workspace` 가 없다). \
+         좁힘 판독이 깨져 좁혀진 호출을 좁혀지지 않은 것으로 읽었거나, 루트 패키지만 도는 \
+         호출을 전체 스위트로 센 것이다. 어느 쪽이든 그 둘의 초록은 '위반이 없다' 가 \
+         아니라 '안 봤다' 다:\n  {}",
+        not_whole.join("\n  ")
+    );
+}
+
 #[test]
 fn the_theme_table_keeps_the_two_channels_apart() {
     let path = repo_root().join("docs/design/systems/theme.md");
