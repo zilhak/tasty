@@ -172,6 +172,13 @@ fn repo_root() -> PathBuf {
 }
 
 /// 스캔에서 제외할 디렉토리 — 빌드 산출물과 커밋되지 않는 로컬 폴더.
+///
+/// ★ **이 목록의 위험한 방향은 더하는 쪽이다.** 가지치기 명부라 원소를 지우면 훑는 범위가
+/// 늘어나 더 엄격해진다 — 그 변이가 초록인 것은 구멍이 아니라 방향이 반대인 것이다.
+/// 느슨해지는 변이는 항목을 **더하는** 것이고, 그 방향에는 계측기가 있다: 실측
+/// (2026-09-06) `"docs"` 를 더하면 스위트가 **51 통과 / 1 실패**로 빨개진다
+/// (`the_gui_ignored_layer_has_no_single_value` 가 먼저 반응한다). 모든 추가가 잡힌다는
+/// 뜻은 아니다 — 잰 것은 그 한 자리다.
 const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 
 /// 텍스트로 읽을 확장자.
@@ -213,6 +220,12 @@ const ABSENCE_MARKERS: &[&str] = &[
 /// `tests/macos_bundle_codesign.rs` 는 명령과 "채널" 을 다른 줄에 뒀다. 줄로 끊어 보면
 /// 그런 주장이 그대로 빠져나간다. 그래서 인용 지점 앞뒤 창을 한 덩어리로 읽는다.
 /// CI 가 자동으로 돌린다는 뜻으로 읽히는 표지.
+///
+/// ★ 원소마다 하중이 같지 않다. 실측(2026-09-06, 추적 `*.md`·`*.yml` 전역) `"(CI)"` 는
+/// **실물이 0 회**다 — 그 원소를 지워도 아무 값이 안 움직인다. 그것을 "안 막는 조각" 으로
+/// 읽지 마라: **0 인 것과 막는 것이 없는 것은 다르다.** 내일 그 형태의 서술이 오면 이
+/// 조각이 지켜야 한다. 다만 오늘 변이로 이 원소의 하중을 잴 수는 없다는 사실을 값으로
+/// 적어 둔다(그 변이의 rc=0 은 초록이 아니라 미측정이다).
 const CI_MARKERS: &[&str] = &[
     "(CI)",
     "CI 강제",
@@ -230,6 +243,9 @@ const CI_MARKERS: &[&str] = &[
 /// [`CI_MARKERS`] 와 목록이 다르다. 저기엔 `test.yml` 같은 **참조**가 들어 있는데,
 /// 워크플로를 가리키는 것 자체는 주장이 아니다 — 명령이 함께 있을 때만 주장이 된다.
 /// 이 축은 명령이 없으므로 "강제한다/잡는다" 는 **집행 주장**만 표지로 삼는다.
+///
+/// ★ [`CI_MARKERS`] 와 같은 사정이 여기에도 있다. 실측(2026-09-06, 같은 모수) `"CI 강제"`
+/// 는 실물이 **0 회**다 — 변이가 값을 못 움직인다. 미측정이지 초록이 아니다.
 const ENFORCE_MARKERS: &[&str] = &[
     "CI 강제",
     "CI 에서 강제",
@@ -294,6 +310,12 @@ fn absence_exempts(scope: &str) -> bool {
 }
 
 /// lib 유닛 테스트 이름 추출의 하한 — 추출이 깨지면 역방향 검사가 통째로 잠잠해진다.
+///
+/// ★ 이 하한이 잡는 것은 **붕괴이지 침식이 아니다.** 실측(2026-09-06) 추출값은 **5130**
+/// 이고 하한은 100 이다 — 51 배 여유라, 추출이 98% 줄어도 이 단정은 통과한다. 그래도
+/// 100 을 유지하는 이유는 이 자리가 막는 고장의 실제 모양이 "0 에 가깝게 떨어진다" 이기
+/// 때문이다(파싱이 깨지면 부분적으로 세지 않는다). 침식을 잡고 싶으면 하한이 아니라
+/// **직전 값과의 차분**이 필요하고, 그건 이 파일이 가진 도구가 아니다.
 const MIN_LIB_TESTS: usize = 100;
 
 /// 스캔 하한 — 수집이나 인용 추출이 조용히 줄어드는 것을 잡는다.
@@ -302,6 +324,17 @@ const MIN_LIB_TESTS: usize = 100;
 /// 둘을 구분하지 않으면 스캔이 깨진 날 초록이 뜬다.
 const MIN_SCANNED_FILES: usize = 400;
 /// 같은 이유의 하한 — 통합 테스트 파일 인용 지점 수.
+///
+/// ★ **이 하한은 오늘 도달하지 않는다.** 이것을 쥔 유일한 자리
+/// [`no_file_claims_ci_enforces_an_integration_test_it_does_not_run`] 이 그 앞에서
+/// 일찍 반환하기 때문이다 — 자동 잡 하나(`check-headless`)가 좁혀지지 않은
+/// `cargo test` 를 돌려서 `integration_tests_run_automatically` 가 `None` 을 낸다.
+///
+/// 실측(2026-09-06): 이 값을 999999 로 올려도 스위트는 **52 통과 / 0 실패**였다. 값을
+/// 안 움직이는 변이가 곧 그 자리가 안 도는 증거다. 이 수를 "지키는 하한" 으로 읽지 마라 —
+/// 지금은 **휴면 팔에 딸린 죽은 상수**이고, 그 사실을 값으로 적어 두는 것이 이 주석이다.
+/// 팔이 왜 휴면인지와 그 휴면이 무엇을 삼키는지는
+/// [`the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists`] 에 있다.
 const MIN_TEST_CITATIONS: usize = 40;
 
 /// 인용된 명령이 **좁혀진 조합**인가 — `--lib`/`--bins`/`--test` 로 좁힌 형태는 실제로
@@ -659,6 +692,10 @@ fn integration_tests_run_automatically(root: &Path) -> Option<std::collections::
 /// 조용히 기본값으로 읽으면 채널 수가 틀리고, 채널 수가 틀린 가드는 **틀린 근거로 남의
 /// 서술을 고발한다.** 그래서 모델을 못 세우면 초록이 아니라 빨강이다 — 계측기의 고장이
 /// "이상 없음" 으로 읽히면 그건 계측기가 아니다.
+///
+/// ★ 실측(2026-09-06) 워크플로에 `--features`·`--all-features` 는 **둘 다 0 회**다. 이
+/// 목록은 오늘 아무것도 안 걸러낸다 — 그래도 두는 이유가 위 문단이다. 하중이 0 인 것과
+/// 하중을 안 받는 것은 다르고, 이 자리는 **앞으로 올 형태**를 막으려고 미리 놓은 것이다.
 const UNMODELLED_TEST_FLAGS: &[&str] = &["--features", "--all-features"];
 
 /// 그 자리가 **조합을 한정해서** 채널을 말하고 있는가.
@@ -1616,7 +1653,10 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
     collect_files(&root, &mut files);
     assert!(
         files.len() >= MIN_SCANNED_FILES,
-        "스캔한 파일이 {}개뿐이다(하한 {MIN_SCANNED_FILES}) — 수집이 줄었다",
+        "스캔한 파일이 {}개뿐이다(하한 {MIN_SCANNED_FILES}) — 수집이 줄었다.\n\
+         ★ 이 수를 내려서 통과시키지 마라. 먼저 가른다 — (1) `SKIP_DIRS` 에 항목이 늘었나 \
+         (2) `TEXT_EXTS` 가 줄었나 (3) 레포에서 그만큼의 파일이 실제로 사라졌나. \
+         (1)·(2) 면 수선은 그것을 되돌리는 것이고, (3) 일 때만 하한을 내린다.",
         files.len()
     );
 
@@ -1638,7 +1678,10 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
 
     assert!(
         citations >= MIN_TEST_CITATIONS,
-        "통합 테스트 인용을 {citations}개밖에 못 찾았다(하한 {MIN_TEST_CITATIONS}) — 추출이 깨졌다"
+        "통합 테스트 인용을 {citations}개밖에 못 찾았다(하한 {MIN_TEST_CITATIONS}) — 추출이 \
+         깨졌다.\n★ 이 수를 내려서 통과시키지 마라. 이 자리에 도달했다는 것 자체가 사건이다 — \
+         이 팔은 오랫동안 휴면이었고(아래 상수 주석), 깨어났다는 뜻이다. 먼저 \
+         `integration_tests_run_automatically` 가 왜 이제 `Some` 을 내는지 확인해라."
     );
 
     violations.sort();
@@ -1669,7 +1712,11 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
     let lib_tests = lib_test_names(&root);
     assert!(
         lib_tests.len() >= MIN_LIB_TESTS,
-        "lib 테스트 이름을 {}개밖에 못 찾았다(하한 {MIN_LIB_TESTS}) — 추출이 깨졌다",
+        "lib 테스트 이름을 {}개밖에 못 찾았다(하한 {MIN_LIB_TESTS}) — 추출이 깨졌다.\n\
+         ★ 이 수를 내려서 통과시키지 마라. 가르는 법: `#[test]` 를 담은 크레이트가 정말 \
+         그만큼 줄었는지를 먼저 세라(`cargo test --workspace --lib` 의 test result 합). \
+         모수가 정말 줄었으면 하한을 내리고, 수가 그대로인데 추출만 0 에 가까우면 \
+         `lib_test_names` 의 파싱이 깨진 것이다 — 그때 하한을 내리면 그 고장이 초록이 된다.",
         lib_tests.len()
     );
 
@@ -1737,7 +1784,10 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     collect_files(&root, &mut files);
     assert!(
         files.len() >= MIN_SCANNED_FILES,
-        "스캔한 파일이 {}개다(하한 {MIN_SCANNED_FILES}) — 수집이 조용히 줄었다",
+        "스캔한 파일이 {}개다(하한 {MIN_SCANNED_FILES}) — 수집이 조용히 줄었다.\n\
+         ★ 이 수를 내려서 통과시키지 마라. 먼저 가른다 — (1) `SKIP_DIRS` 에 항목이 늘었나 \
+         (2) `TEXT_EXTS` 가 줄었나 (3) 레포에서 그만큼의 파일이 실제로 사라졌나. \
+         (1)·(2) 면 수선은 그것을 되돌리는 것이고, (3) 일 때만 하한을 내린다.",
         files.len()
     );
 
@@ -3092,5 +3142,96 @@ fn only_the_file_that_defines_the_name_is_exempt() {
         weak_absence_offsets(refers, "crates/x/src/lib.rs", &libs).len(),
         1,
         "남의 이름을 부른 모듈 doc 이 경로 면제로 빠졌다"
+    );
+}
+
+/// 표지 세 개를 **리터럴 조각으로** 박는다 — [`AFFIRMATIVE_RUN_MARKERS`] 의 원소가
+/// 조용히 사라지는 것을 막는다.
+///
+/// 왜 목록을 순회해서 쓰지 않는가: 순회로 조각을 지으면 원소를 지웠을 때 조각도 함께
+/// 사라져 단정이 **자기 자신과** 맞는다. 그러면 이 테스트는 목록의 사본일 뿐이고, 목록이
+/// 줄어드는 사고를 하나도 못 잡는다. 그래서 조각을 손으로 적고, 조각당 성분 하나만 담는다.
+///
+/// 왜 하필 이 목록인가(실측 2026-09-06): `"자동으로 돈다"` 하나만으로 면제가 무효가 되는
+/// 서술이 **5** 개이고, 그 다섯 중 형제 표지가 함께 있는 것은 **0** 이다. 그런데 그 원소를
+/// 지워도 스위트는 **52 통과 / 0 실패**였다 — 하중을 받는 원소인데 아무 단정이 그것을 안
+/// 지키고 있었다. 방향도 나쁜 쪽이다: 원소가 빠지면 [`absence_exempts`] 가 더 자주 참이
+/// 되어 면제가 늘고 위반이 준다. 즉 **조용해지는 방향**의 고장이었다.
+#[test]
+fn each_affirmative_run_marker_is_pinned_by_a_literal() {
+    for fragment in ["자동으로 돈다", "자동으로 돌린다", "✅ 자동"] {
+        assert!(
+            AFFIRMATIVE_RUN_MARKERS.contains(&fragment),
+            "`AFFIRMATIVE_RUN_MARKERS` 에서 {fragment:?} 가 사라졌다. 이 목록이 줄면 \
+             `absence_exempts` 의 면제가 넓어져 위반이 조용히 준다.\n\
+             ★ 이 리터럴을 지워서 통과시키지 마라 — 그것은 목록과 단정을 함께 지우는 \
+             것이라 사고를 사고인 채로 통과시킨다. 표지를 정말 폐기하려면 그 표지에 \
+             기대던 서술이 몇 개였는지 먼저 세고, 그 수를 이 주석에 값으로 남겨라."
+        );
+    }
+}
+
+/// 자동 잡의 `--skip` 명부가 넓어지는 것을 막는 상한.
+///
+/// [`no_file_claims_ci_enforces_an_integration_test_it_does_not_run`] 이 휴면인 근거는
+/// "자동 잡 하나가 좁혀지지 않은 `cargo test` 를 돌리니 통합 테스트가 전부 자동으로
+/// 돈다" 는 것이다. 그 전제는 `--skip` 만큼 거짓이다 — 이름이 하나 늘 때마다 휴면이
+/// 삼키는 범위가 그만큼 는다.
+const MAX_SKIPPED_IN_UNNARROWED: usize = 1;
+
+/// 집행 검사 팔의 **휴면에 근거가 있는지**를 값으로 붙든다.
+///
+/// 이 파일에서 가장 조용한 자리다. 그 팔은 오늘 한 줄도 안 돌고(실측: [`MIN_TEST_CITATIONS`]
+/// 를 999999 로 올려도 52 통과 / 0 실패), 그 사실이 어디에도 안 적혀 있었다. 안 도는 것
+/// 자체는 정당할 수 있다 — 정당하지 않은 것은 **안 도는 줄 모르는 것**이다.
+#[test]
+fn the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists() {
+    let root = repo_root();
+    let dormant = integration_tests_run_automatically(&root).is_none();
+
+    let unnarrowed: Vec<(Combo, String)> = automatic_test_invocations(&root)
+        .into_iter()
+        .filter(|(_, tail)| !tail_is_narrowed(tail))
+        .collect();
+
+    if !dormant {
+        assert!(
+            unnarrowed.is_empty(),
+            "팔이 깨어났는데 좁혀지지 않은 자동 호출이 아직 있다 — 판정이 서로 어긋난다"
+        );
+        return;
+    }
+
+    assert!(
+        !unnarrowed.is_empty(),
+        "집행 검사 팔이 휴면인데 그 근거(좁혀지지 않은 자동 `cargo test`)가 워크플로에 \
+         없다. 근거 없는 휴면은 미측정이다 — `integration_tests_run_automatically` 가 \
+         왜 `None` 을 내는지 먼저 확인해라."
+    );
+
+    // 휴면의 근거가 삼키는 것: 그 호출이 이름으로 건너뛰는 테스트들.
+    let mut skipped: Vec<String> = Vec::new();
+    for (_, tail) in &unnarrowed {
+        let words: Vec<&str> = tail.split_whitespace().collect();
+        for pair in words.windows(2) {
+            if pair[0] == "--skip" {
+                skipped.push(pair[1].to_string());
+            }
+        }
+    }
+    skipped.sort();
+    skipped.dedup();
+
+    assert!(
+        skipped.len() <= MAX_SKIPPED_IN_UNNARROWED,
+        "좁혀지지 않은 자동 호출이 이름으로 건너뛰는 테스트가 {}개다(상한 \
+         {MAX_SKIPPED_IN_UNNARROWED}): {skipped:?}\n\
+         이 팔은 '통합 테스트가 전부 자동으로 돈다' 를 근거로 휴면인데, 건너뛴 이름은 \
+         그 전제 밖이다 — 아무 자동 채널도 그것을 안 돌리고, 이 팔도 그것을 안 본다.\n\
+         ★ 이 상한을 올려서 통과시키지 마라. 먼저 가른다 — 새 `--skip` 이 (가) 그 조합에서 \
+         원리적으로 못 도는 것인가(그러면 다른 조합의 자동 잡이 그것을 도는지 확인해 \
+         `ci-gates.md` 에 채널을 적는다), (나) 불안정해서 뺀 것인가(그러면 상한이 아니라 \
+         그 불안정이 사건이다). 상한을 올리는 것은 (가) 를 확인하고 채널을 적은 뒤다.",
+        skipped.len()
     );
 }
