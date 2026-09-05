@@ -142,11 +142,18 @@ impl LuaEngine {
     }
 
     /// 메인이 발행하는 최신 읽기전용 스냅샷 교체. read API 가 다음부터 이 값을 읽는다.
+    ///
+    /// **poison 이어도 발행한다.** ① 복구가 맞다 — 임계구역이 `Arc` 하나를 통째로
+    /// 갈아끼우는 것뿐이라 그 사이 패닉이 나도 남는 값은 언제나 완결된 이전 스냅샷이다.
+    /// ② 관측은 헬퍼의 **첫 1 회** 보고가 갖는다. 예전에는 경고만 남기고 발행을
+    /// 포기했는데, poison 은 sticky 라 그 포기가 곧 **영구 정지**였다 — 스크립트가
+    /// 그 시점의 트리를 영원히 읽고, 매 발행마다 같은 경고가 다시 찍혔다.
     pub fn publish_snapshot(&self, snap: LuaSnapshot) {
-        match self.snapshot.lock() {
-            Ok(mut guard) => *guard = Arc::new(snap),
-            Err(e) => tracing::warn!(target: "tasty_lua", "snapshot publish poisoned: {e}"),
-        }
+        *tasty_utils::poison::recover_mutex(
+            self.snapshot.lock(),
+            "the tasty-lua read snapshot",
+            &SNAPSHOT_POISON_REPORTED,
+        ) = Arc::new(snap);
     }
 
     /// 워커가 쌓아둔 커맨드를 모두 꺼낸다. 메인이 안전지점에서 호출해 적용한다.
@@ -322,6 +329,14 @@ fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: S
 
 /// N VM 명령마다 호출되는 hook 간격. 낮을수록 deadline 해상도↑·오버헤드↑.
 /// 10k 이면 tight loop 에서 sub-ms 해상도로 abort 하면서 정상 실행 오버헤드는 무시할 수준.
+/// 스냅샷 락 poison 을 첫 1 회만 보고한다(발행은 매 프레임 도는 자리다).
+static SNAPSHOT_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// deadline 락 poison 을 첫 1 회만 보고한다(1 만 명령마다 도는 VM 훅이다).
+static DEADLINE_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 const INTERRUPT_EVERY_N_INSTRUCTIONS: u32 = 10_000;
 
 /// deadline 훅 설치. Lua 5.4 는 Luau `set_interrupt` 대신 instruction-count `set_hook` 를
@@ -329,10 +344,17 @@ const INTERRUPT_EVERY_N_INSTRUCTIONS: u32 = 10_000;
 fn install_interrupt(lua: &Lua, deadline: SharedDeadline) {
     let triggers = mlua::HookTriggers::new().every_nth_instruction(INTERRUPT_EVERY_N_INSTRUCTIONS);
     lua.set_hook(triggers, move |_, _| {
-        let expired = match deadline.lock() {
-            Ok(guard) => guard.is_some_and(|dl| Instant::now() >= dl),
-            Err(_) => false,
-        };
+        // **poison 이어도 판정한다.** ① 복구가 맞다 — 임계구역은 `Option<Instant>`
+        // 하나를 읽는 것뿐이다. ② 관측은 헬퍼의 첫 1 회 보고가 갖는다(이 훅은 1 만
+        // 명령마다 도는 자리라 매번 찍으면 로그가 잠긴다). 예전처럼 `false` 로
+        // 떨어지면 poison 이 sticky 인 탓에 **시간 예산 자체가 영구히 꺼진다** —
+        // 폭주하는 스크립트를 아무도 끊지 못한다.
+        let expired = tasty_utils::poison::recover_mutex(
+            deadline.lock(),
+            "the tasty-lua script deadline",
+            &DEADLINE_POISON_REPORTED,
+        )
+        .is_some_and(|dl| Instant::now() >= dl);
         if expired {
             Err(mlua::Error::runtime(
                 "script exceeded time budget (deadline)",
@@ -355,10 +377,16 @@ where
 }
 
 fn set_deadline(deadline: &SharedDeadline, value: Option<Instant>) {
-    match deadline.lock() {
-        Ok(mut guard) => *guard = value,
-        Err(e) => tracing::warn!(target: "tasty_lua", "deadline lock poisoned: {e}"),
-    }
+    // **poison 이어도 쓴다.** 여기서 포기하면 deadline 이 `None` 으로 남아
+    // [`install_interrupt`] 의 판정이 늘 "만료 아님" 이 된다 — 그 훅을 고쳐 두어도
+    // 시간 예산은 여전히 꺼진 채다. 두 자리는 같은 락을 쓰는 한 쌍이라 답이 갈리면
+    // 한쪽의 수정이 다른 쪽에 먹힌다. ① 복구가 맞다(`Option<Instant>` 대입 하나).
+    // ② 관측은 헬퍼의 첫 1 회 보고.
+    *tasty_utils::poison::recover_mutex(
+        deadline.lock(),
+        "the tasty-lua script deadline",
+        &DEADLINE_POISON_REPORTED,
+    ) = value;
 }
 
 /// `tasty.on` dispatcher API 설치 (VM 생성 시 1회). host_api 는 별도.
@@ -590,6 +618,44 @@ mod tests {
         }
     }
 
+    /// 스냅샷 락이 poison 이어도 **발행이 계속된다.**
+    ///
+    /// 예전에는 경고만 남기고 발행을 포기했다. poison 은 sticky 라 그 포기는 곧 영구
+    /// 정지였고, 스크립트는 그 시점의 트리를 영원히 읽었다 — 겉으로는 "트리가 안 변하는
+    /// 것" 과 구분되지 않는다. 단언은 "패닉하지 않는다" 가 아니라 **새 값이 읽힌다**다.
+    #[test]
+    fn a_poisoned_snapshot_lock_still_publishes() {
+        let engine = LuaEngine::new().expect("init");
+        engine.publish_snapshot(LuaSnapshot {
+            tree: vec![serde_json::json!({"id": 1})],
+        });
+
+        let poisoner = Arc::clone(&engine.snapshot);
+        std::thread::spawn(move || {
+            let _g = poisoner.lock().expect("fresh lock");
+            panic!("poison the snapshot on purpose");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(engine.snapshot.is_poisoned(), "전제: 락이 poison 이다");
+
+        engine.publish_snapshot(LuaSnapshot {
+            tree: vec![serde_json::json!({"id": 2}), serde_json::json!({"id": 3})],
+        });
+
+        let snap = tasty_utils::poison::recover_mutex(
+            engine.snapshot.lock(),
+            "test read",
+            &SNAPSHOT_POISON_REPORTED,
+        )
+        .clone();
+        assert_eq!(
+            snap.tree.len(),
+            2,
+            "poison 뒤의 발행이 반영돼야 한다 — 낡은 트리가 남으면 영구 정지다"
+        );
+    }
+
     #[test]
     fn publish_snapshot_replaces_value() {
         let engine = LuaEngine::new().expect("init");
@@ -651,6 +717,53 @@ mod tests {
         engine
             .eval("return 1 + 1")
             .expect("worker alive after error");
+    }
+
+    // --- poison 아래에서도 시간 예산이 살아 있는가 (합성 픽스처) ---
+
+    /// deadline 락이 poison 이어도 **폭주 스크립트가 끊긴다.**
+    ///
+    /// 이 락은 두 자리가 함께 쓴다 — `set_deadline`(쓰기)과 `install_interrupt` 훅(읽기).
+    /// 예전에는 둘 다 poison 에서 포기했고, 그러면 deadline 이 `None` 인 채 훅도 늘
+    /// "만료 아님" 을 돌려줘 **시간 예산이 통째로 꺼졌다.** poison 은 sticky 라 그것이
+    /// 영구 상태다. 묻는 것은 "패닉하지 않는가" 가 아니라 **예산이 여전히 집행되는가**다.
+    ///
+    /// 한쪽만 고쳐도 이 테스트는 빨갛다 — 그래서 한 쌍으로 묶어 둔다.
+    #[test]
+    fn a_poisoned_deadline_lock_still_aborts_a_runaway_script() {
+        let deadline: SharedDeadline = Arc::new(Mutex::new(None));
+
+        let poisoner = Arc::clone(&deadline);
+        std::thread::spawn(move || {
+            let _g = poisoner.lock().expect("fresh lock");
+            panic!("poison the deadline on purpose");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(deadline.is_poisoned(), "전제: 락이 poison 이다");
+
+        let lua = Lua::new();
+        install_interrupt(&lua, deadline.clone());
+        set_deadline(&deadline, Some(Instant::now() + Duration::from_millis(50)));
+
+        // **유한 루프를 쓴다.** `while true do end` 이면 예산이 꺼진 변이에서 이 테스트가
+        // *실패* 하지 않고 **정지** 한다 — 그러면 변이 판정이 잡의 벽시계 타임아웃으로
+        // 귀속돼, 잡으려던 결함을 오히려 가린다. 유한 루프면 예산이 꺼졌을 때 스크립트가
+        // 그냥 끝나고 아래 `expect_err` 가 곧바로 빨개진다.
+        let t0 = Instant::now();
+        let err = lua
+            .load("local n = 0 for i = 1, 200000000 do n = n + 1 end return n")
+            .exec()
+            .expect_err("예산을 넘긴 스크립트는 abort 돼야 한다");
+        assert!(
+            err.to_string().contains("time budget"),
+            "abort 사유가 예산이어야 한다 (실제: {err})"
+        );
+        assert!(
+            t0.elapsed() < Duration::from_secs(5),
+            "예산이 실제로 집행됐다면 즉시 끊긴다 (실측 {:?})",
+            t0.elapsed()
+        );
     }
 
     // --- deadline / 무한루프 방어 (ADR-0031) ---
