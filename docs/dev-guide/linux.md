@@ -26,7 +26,9 @@ while [ ! -f ~/.tasty/tasty.port ]; do sleep 0.2; done
 ./target/debug/tasty --port-file /tmp/tasty-a.port &
 ```
 
-종료: `tasty system shutdown`(IPC) 권장. `kill $(pgrep -x tasty)` 으로 죽이면 포트 파일 수동 삭제(`rm -f ~/.tasty/tasty.port`).
+종료: `system.shutdown` IPC 권장 — **CLI 는 없다**(호스트 종료는 사용자 행동이라 에이전트
+표면에 두지 않는다, [api-conventions](api-conventions.md) "release IPC 에 있는데 CLI 가 없는
+메서드"). 포트로 raw JSON-RPC 를 보낸다. `kill $(pgrep -x tasty)` 으로 죽이면 포트 파일 수동 삭제(`rm -f ~/.tasty/tasty.port`).
 
 ## 빌드 후 재시작
 
