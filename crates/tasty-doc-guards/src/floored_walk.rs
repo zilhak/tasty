@@ -116,6 +116,100 @@ impl Floor {
     }
 }
 
+/// 디렉토리를 만났을 때 무엇을 할지.
+pub enum Pick {
+    /// 안 모으고 그 아래로 계속 내려간다.
+    Skip,
+    /// 모으고 그 아래로도 계속 내려간다.
+    Take,
+    /// 모으고 그 아래로는 안 내려간다. 그 안이 이 물음의 답에 안 들어갈 때 쓴다 —
+    /// 빌드 캐시를 찾는 순회가 캐시 내부를 훑으면 그 가드 자신이 사고의 규모를 재현한다.
+    TakeAndStop,
+}
+
+/// `root` 아래를 재귀 순회해 `pick` 이 고르는 **디렉토리**를 모은다.
+///
+/// 파일 순회와 물음이 다르고, **하한을 거는 대상도 다르다.** 여기서 하한은 모은 수가
+/// 아니라 **훑은 수**에 걸린다 — 조건에 맞는 디렉토리가 0 개인 것은 정상일 수 있지만
+/// (찾는 것이 원래 없을 수 있다), 훑은 디렉토리가 0 이면 그것은 순회가 죽은 것이다.
+/// 그 둘을 안 가르면 "없어서 0" 과 "못 봐서 0" 이 같은 초록이 된다.
+#[must_use = "하한 미달은 이 Result 로만 나온다 — 버리면 순회가 죽어도 조용히 통과한다"]
+pub fn walk_dirs_with_floor(
+    root: &Path,
+    rel_base: &Path,
+    floor: &Floor,
+    pick: &dyn Fn(&Walked) -> Pick,
+) -> Result<Vec<Walked>, String> {
+    floor.validate().map_err(|why| {
+        format!(
+            "순회 하한 선언이 앞뒤가 안 맞는다 ({}): {why}",
+            root.display()
+        )
+    })?;
+
+    let mut out = Vec::new();
+    let mut walked = 0usize;
+    collect_dirs(root, rel_base, pick, &mut out, &mut walked);
+    out.sort_by(|a, b| a.rel.cmp(&b.rel));
+
+    if walked < floor.min {
+        return Err(format!(
+            "{} 순회가 디렉토리를 {} 개만 훑었다(하한 {}) — 모은 것이 {} 개인데, 이 수가 \
+             적다는 것은 찾는 것이 없다는 뜻이 아니라 아무 데도 안 가 봤다는 뜻이다.\n\
+             마지막 실측은 {} 의 {} 개였고, 하한을 그보다 낮게 잡은 이유는 이렇다: {}\n\
+             ★ 하한을 내려서 통과시키지 마라 — 순회가 죽은 것을 그대로 승인하는 것이다.\n\
+             순서가 있다. (1) 순회 루트와 심볼릭 링크와 `read_dir` 실패를 먼저 확인한다. \
+             (2) 트리가 정말 얕아진 것이면 실제 수를 다시 세서 `measured`·`measured_on` 을 \
+             함께 갱신한다. (3) 그러고 나서 `why_this_gap` 이 여전히 맞는지 다시 읽는다.",
+            root.display(),
+            walked,
+            floor.min,
+            out.len(),
+            floor.measured_on,
+            floor.measured,
+            floor.why_this_gap,
+        ));
+    }
+    Ok(out)
+}
+
+fn collect_dirs(
+    dir: &Path,
+    rel_base: &Path,
+    pick: &dyn Fn(&Walked) -> Pick,
+    out: &mut Vec<Walked>,
+    walked: &mut usize,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        // 파일 순회와 같은 이유로 링크를 안 따라간다 — 레포 밖으로 새면 모수가 작업
+        // 트리의 종류를 읽는다.
+        if kind.is_symlink() || !kind.is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        *walked += 1;
+        let found = Walked {
+            rel: normalized_rel(&path, rel_base),
+            path,
+        };
+        match pick(&found) {
+            Pick::Skip => collect_dirs(&found.path, rel_base, pick, out, walked),
+            Pick::Take => {
+                let next = found.path.clone();
+                out.push(found);
+                collect_dirs(&next, rel_base, pick, out, walked);
+            }
+            Pick::TakeAndStop => out.push(found),
+        }
+    }
+}
+
 /// `root` 아래를 재귀 순회해 `keep` 이 참인 파일을 모은다. 모인 수가 하한에 못 미치면
 /// **결과 대신 이유를 돌려준다.**
 ///
@@ -395,6 +489,60 @@ mod tests {
         let got = walk_with_floor(&plain.0, &plain.0, &floor(1, 1), Descend::Everything, &all)
             .expect("둘 다 모인다");
         assert_eq!(got.len(), 2, "평범한 하위 디렉토리까지 건너뛴다");
+    }
+
+    /// 디렉토리 순회의 하한은 **훑은 수**에 걸린다. 모은 수에 걸면 "찾는 것이 원래
+    /// 없다" 는 정상 상태가 실패가 된다.
+    #[test]
+    fn the_directory_walk_floors_what_it_visited_not_what_it_kept() {
+        let t = Tree::new(&["a/x.rs", "b/y.rs", "c/z.rs"], &[]);
+        // 아무것도 안 고르지만 셋을 훑었으니 통과한다.
+        let got = walk_dirs_with_floor(&t.0, &t.0, &floor(3, 3), &|_| Pick::Skip)
+            .expect("모은 것이 0 이어도 훑은 것이 하한을 넘으면 통과해야 한다");
+        assert!(got.is_empty(), "아무것도 안 골랐는데 모았다");
+
+        // 훑은 것이 모자라면 거부된다.
+        let thin = Tree::new(&["a/x.rs"], &[]);
+        let why = walk_dirs_with_floor(&thin.0, &thin.0, &floor(3, 3), &|_| Pick::Skip)
+            .expect_err("훑은 것이 하한에 못 미치는데 통과했다");
+        assert!(
+            why.contains("디렉토리를 1 개만 훑었다"),
+            "실패문이 훑은 수를 안 말한다: {why}"
+        );
+    }
+
+    /// `TakeAndStop` 이 실제로 멈추는지 — 그리고 `Take` 는 안 멈추는지. 한쪽만 재면
+    /// "멈췄다" 와 "거기 아무것도 없다" 가 구별되지 않는다.
+    #[test]
+    fn take_and_stop_prunes_while_take_keeps_descending() {
+        let t = Tree::new(&["hit/deep/x.rs", "plain/y.rs"], &[]);
+        let stop = walk_dirs_with_floor(&t.0, &t.0, &floor(1, 4), &|w| {
+            if w.rel.ends_with("hit") {
+                Pick::TakeAndStop
+            } else {
+                Pick::Skip
+            }
+        })
+        .expect("셋 이상 훑는다");
+        assert_eq!(
+            stop.iter().map(|w| w.rel.as_str()).collect::<Vec<_>>(),
+            vec!["hit"],
+            "`TakeAndStop` 인데 그 아래로 내려갔다"
+        );
+
+        let go = walk_dirs_with_floor(&t.0, &t.0, &floor(1, 4), &|w| {
+            if w.rel.contains("hit") {
+                Pick::Take
+            } else {
+                Pick::Skip
+            }
+        })
+        .expect("셋 이상 훑는다");
+        assert_eq!(
+            go.iter().map(|w| w.rel.as_str()).collect::<Vec<_>>(),
+            vec!["hit", "hit/deep"],
+            "`Take` 인데 그 아래로 안 내려갔다 — 그러면 위 검사의 초록은 가지치기의 증거가 아니다"
+        );
     }
 
     #[test]

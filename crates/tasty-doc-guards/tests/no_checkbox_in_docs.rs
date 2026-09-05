@@ -25,7 +25,9 @@
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::Path;
-use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
+use tasty_doc_guards::floored_walk::{
+    Descend, Floor, Pick, Walked, walk_dirs_with_floor, walk_with_floor,
+};
 
 /// 스캔에서 제외할 파일(repo-relative). 현재 비어 있다 — 규칙 본문은 금지 형태를
 /// 행 시작 목록으로 쓰지 않는 방식으로 이 가드를 통과하므로 등록할 파일이 없다.
@@ -184,35 +186,45 @@ fn is_prunable_dir(name: &str) -> bool {
             .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
-/// `docs_root` 하위를 순회하며 `is_prunable_dir` 이 참인 디렉토리를 모은다.
+/// `docs/` 아래 디렉토리 순회의 하한. 여기서 하한은 **모은 수가 아니라 훑은 수**에
+/// 걸린다 — 가지쳐야 할 디렉토리가 0 개인 것이 이 가드가 지키려는 정상 상태다.
+const DOCS_DIR_FLOOR: Floor = Floor {
+    min: 50,
+    measured: 87,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 `docs/` 아래 디렉토리 수다. 문서 디렉토리는 카테고리라 \
+                   개별 문서보다 훨씬 천천히 움직이지만, 카테고리 하나를 접으면 그 아래가 \
+                   통째로 사라져 한 번에 여럿이 준다 — 그래서 여유를 중간쯤 둔다.",
+};
+
+/// `root` 하위를 순회하며 `is_prunable_dir` 이 참인 디렉토리를 모은다.
 /// 가지친 자리 아래로도 계속 내려간다 — 세는 것이 목적이지 자르는 것이 아니다.
-fn prunable_dirs_under(docs_root: &Path, rel_root: &Path, out: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(docs_root) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = path
+///
+/// 하한을 **인자로** 받는다. 본 테스트와 대조가 같은 순회를 부르되 대조는 작은 트리를
+/// 쓰기 때문이다 — 하한을 상수로 박으면 대조가 그 하한에 걸려 다른 순회를 짜게 되고,
+/// 그러면 대조가 본 테스트와 다른 것을 재게 된다.
+fn prunable_dirs_under(root: &Path, rel_root: &Path, floor: &Floor) -> Result<Vec<String>, String> {
+    walk_dirs_with_floor(root, rel_root, floor, &|found| {
+        let name = found
+            .path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
         if is_prunable_dir(&name) {
-            out.push(normalized_rel(&path, rel_root));
+            Pick::Take
+        } else {
+            Pick::Skip
         }
-        prunable_dirs_under(&path, rel_root, out);
-    }
+    })
+    .map(|dirs| dirs.into_iter().map(|d| d.rel).collect())
 }
 
 #[test]
 fn docs_holds_no_prunable_directory() {
     let root = &tasty_doc_guards::repo_root();
-    let mut found = Vec::new();
-    prunable_dirs_under(&root.join("docs"), root, &mut found);
-    found.sort();
+    let found = prunable_dirs_under(&root.join("docs"), root, &DOCS_DIR_FLOOR)
+        .unwrap_or_else(|why| panic!("{why}"));
     assert!(
         found.is_empty(),
         "docs/ 아래에 순회에서 가지쳐야 할 디렉토리가 있다 — 이 가드의 순회(`gather`)는 \
@@ -271,9 +283,16 @@ fn the_prunable_check_reacts_to_a_planted_tree() {
     std::fs::create_dir_all(docs.join(format!(".{LOCAL_HEAD}"))).unwrap();
     std::fs::create_dir_all(docs.join("adr")).unwrap();
 
-    let mut found = Vec::new();
-    prunable_dirs_under(&docs, &base, &mut found);
-    found.sort();
+    // 대조는 심은 트리를 쓰므로 하한도 그 트리의 것이다. 본 테스트와 **같은 순회**를
+    // 부르되 하한만 갈아 끼운다 — 대조가 다른 순회를 짜면 본 테스트가 쓰는 것을 안 재게 된다.
+    let probe_floor = Floor {
+        min: 3,
+        measured: 5,
+        measured_on: "2026-09-06",
+        why_this_gap: "심은 트리라 수가 고정이다. 하한을 실측보다 낮춰 두는 것은 이 대조가                        트리 모양의 사소한 변경에 깨지지 않게 하려는 것뿐이다.",
+    };
+    let found = prunable_dirs_under(&docs, &base, &probe_floor)
+        .unwrap_or_else(|why| panic!("대조 트리 순회가 하한에 걸렸다: {why}"));
     // 정리 실패는 무시한다 — 판정은 위에서 이미 끝났고, 여기서 `?` 나 `unwrap` 을
     // 쓰면 임시 디렉토리 삭제 실패가 가드의 빨강으로 둔갑한다. 남아도 임시 경로다.
     let _ = std::fs::remove_dir_all(&base);

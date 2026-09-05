@@ -21,7 +21,9 @@
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::Path;
-use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
+use tasty_doc_guards::floored_walk::{
+    Descend, Floor, Pick, Walked, walk_dirs_with_floor, walk_with_floor,
+};
 
 /// 순회 가드들의 이름 제외 목록 **교집합**(2026-09-06 실측, 8 곳).
 ///
@@ -56,11 +58,20 @@ const KNOWN_OUTSIDE: &[(&str, &str)] = &[(
      서명 일치). 성질 판정을 부르는 순회 가드는 이름과 무관하게 이것을 가지친다.",
 )];
 
-/// 순회가 살아 있는지 보는 연기 검사의 하한. 표식 **수**에는 하한을 걸 수 없다 —
-/// 0 개는 고장이 아니라 정상 상태다(빌드 전이거나 `CARGO_TARGET_DIR` 가 레포 밖).
-/// 반면 디렉토리를 하나도 못 세면 그것은 순회가 죽었다는 뜻이다.
-/// 값의 근거: 2026-09-06 실측 367(표식 아래와 심볼릭 링크는 안 센다).
-const MIN_DIRS_WALKED: usize = 200;
+/// 순회가 살아 있는지 보는 하한. **표식 수에는 하한을 걸 수 없다** — 0 개는 고장이
+/// 아니라 정상 상태다(빌드 전이거나 `CARGO_TARGET_DIR` 가 레포 밖). 반면 디렉토리를
+/// 하나도 못 훑으면 그것은 순회가 죽었다는 뜻이다. 공용 순회가 그 구분을 강제한다 —
+/// 거기서 하한은 모은 수가 아니라 훑은 수에 걸린다.
+const MARKER_FLOOR: Floor = Floor {
+    min: 200,
+    measured: 369,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 레포의 디렉토리 수인데, 표식을 만나면 그 아래로 안 들어가므로 \
+                   빌드 캐시의 크기에 안 흔들린다(들어가면 이 가드 자신이 막으려는 사고의 \
+                   규모를 재현한다). 그래서 실제로 움직이는 것은 소스 트리의 모양뿐이고 \
+                   천천히 는다 — 다만 크레이트 분해가 한 번에 디렉토리 여럿을 옮기므로 \
+                   여유를 절반쯤 둔다.",
+};
 
 /// 통합 타깃 순회의 하한.
 const TARGET_FLOOR: Floor = Floor {
@@ -145,40 +156,23 @@ fn is_covered_by_name_pruning(rel: &str) -> bool {
 /// 두 가지만 제한한다. 심볼릭 링크는 따라가지 않고(레포 밖 실제 경로로 순회가 샌다),
 /// 표식을 찾으면 그 아래로 들어가지 않는다(캐시 내부는 이 물음의 답에 안 들어가고,
 /// 들어가면 이 가드 자신이 그 사고의 규모를 재현한다).
-fn find_markers(dir: &Path, root: &Path, out: &mut Vec<String>, walked: &mut usize) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
-        if kind.is_symlink() || !kind.is_dir() {
-            continue;
+fn find_markers(root: &Path, rel_base: &Path, floor: &Floor) -> Result<Vec<String>, String> {
+    walk_dirs_with_floor(root, rel_base, floor, &|found| {
+        if tasty_doc_guards::is_build_cache_dir(&found.path) {
+            // 표식을 찾으면 그 아래로 안 들어간다 — 캐시 내부는 이 물음의 답에 안
+            // 들어가고, 들어가면 이 가드 자신이 그 사고의 규모를 재현한다.
+            Pick::TakeAndStop
+        } else {
+            Pick::Skip
         }
-        let path = entry.path();
-        *walked += 1;
-        if tasty_doc_guards::is_build_cache_dir(&path) {
-            out.push(normalized_rel(&path, root));
-            continue;
-        }
-        find_markers(&path, root, out, walked);
-    }
+    })
+    .map(|dirs| dirs.into_iter().map(|d| d.rel).collect())
 }
 
 #[test]
 fn every_build_cache_marker_sits_under_a_name_that_every_scanner_prunes() {
     let root = tasty_doc_guards::repo_root();
-    let mut markers = Vec::new();
-    let mut walked = 0usize;
-    find_markers(&root, &root, &mut markers, &mut walked);
-    markers.sort();
-
-    assert!(
-        walked >= MIN_DIRS_WALKED,
-        "디렉토리를 {walked} 개만 순회했다(하한 {MIN_DIRS_WALKED}) — 순회가 죽었다면 \
-         아래 판정은 빈 집합을 훑고 조용히 통과한다."
-    );
+    let markers = find_markers(&root, &root, &MARKER_FLOOR).unwrap_or_else(|why| panic!("{why}"));
 
     let outside: Vec<&String> = markers
         .iter()
@@ -249,10 +243,16 @@ fn the_scan_separates_a_marker_outside_the_pruned_names_from_one_inside() {
         );
     }
 
-    let mut found = Vec::new();
-    let mut walked = 0usize;
-    find_markers(&base, &base, &mut found, &mut walked);
-    found.sort();
+    // 대조는 심은 트리를 쓰므로 하한도 그 트리의 것이다. 본 테스트와 **같은 순회**를
+    // 부르되 하한만 갈아 끼운다.
+    let probe_floor = Floor {
+        min: 3,
+        measured: 7,
+        measured_on: "2026-09-06",
+        why_this_gap: "심은 트리라 수가 고정이다. 하한을 실측보다 낮춰 두는 것은 이 대조가                        트리 모양의 사소한 변경에 깨지지 않게 하려는 것뿐이다.",
+    };
+    let found = find_markers(&base, &base, &probe_floor)
+        .unwrap_or_else(|why| panic!("대조 트리 순회가 하한에 걸렸다: {why}"));
 
     let mut expected = vec![
         format!("{}/debug", KNOWN_OUTSIDE[0].0),
