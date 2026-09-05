@@ -90,7 +90,7 @@ pub(crate) fn handle_reboot(
     tr: &Translator,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface(params, tr)?;
+    let surface_id = crate::handlers::require_target_surface(params, tr)?;
     let (delay_secs, extra_prompt) = parse_options(params);
     // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
     // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
@@ -184,29 +184,6 @@ pub(crate) fn handle_reboot(
         "session_id": session_id,
         "reboot_in_secs": delay_secs,
     }))
-}
-
-/// `surface` / `surface_id` 중 먼저 온 것을 읽는다 — `handlers::require_u32` 와 같은
-/// 이유로 **자르지 않는다**(범위 초과가 남의 surface id 가 된다).
-fn require_surface(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    let Some(raw) = params
-        .get("surface")
-        .or_else(|| params.get("surface_id"))
-        .filter(|v| !v.is_null())
-    else {
-        return Err(IpcMethodError::invalid_params(
-            tr.t("codex.reboot.missing_surface"),
-        ));
-    };
-    raw.as_u64()
-        .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| {
-            IpcMethodError::invalid_params(&tr.t_replace(
-                "codex.reboot.surface_not_a_number",
-                "{raw}",
-                &raw.to_string(),
-            ))
-        })
 }
 
 /// surface meta 에서 codex session id 를 읽는다. 없으면 에러 — hook 미설치/미trust
@@ -529,35 +506,50 @@ mod tests {
     }
 
     #[test]
-    fn require_surface_accepts_both_keys() {
+    fn require_target_surface_accepts_both_keys() {
         assert_eq!(
-            require_surface(&json!({ "surface": 7 }), &test_translator_for("en")).unwrap(),
+            crate::handlers::require_target_surface(
+                &json!({ "surface": 7 }),
+                &test_translator_for("en")
+            )
+            .unwrap(),
             7
         );
         assert_eq!(
-            require_surface(&json!({ "surface_id": 9 }), &test_translator_for("en")).unwrap(),
+            crate::handlers::require_target_surface(
+                &json!({ "surface_id": 9 }),
+                &test_translator_for("en")
+            )
+            .unwrap(),
             9
         );
-        assert!(require_surface(&json!({}), &test_translator_for("en")).is_err());
+        assert!(
+            crate::handlers::require_target_surface(&json!({}), &test_translator_for("en"))
+                .is_err()
+        );
 
         // 자르지 않는다 — `u32::MAX + 2` 를 자르면 1 이 되고, 그것은 실재할 수 있는
         // 다른 surface 의 id 다. `handlers::require_u32` 와 같은 갈래.
         assert!(
-            require_surface(
+            crate::handlers::require_target_surface(
                 &json!({ "surface": u64::from(u32::MAX) + 2 }),
                 &test_translator_for("en")
             )
             .is_err()
         );
         assert!(
-            require_surface(
+            crate::handlers::require_target_surface(
                 &json!({ "surface": "conductor" }),
                 &test_translator_for("en")
             )
             .is_err()
         );
         assert_eq!(
-            require_surface(&json!({ "surface": u32::MAX }), &test_translator_for("en")).unwrap(),
+            crate::handlers::require_target_surface(
+                &json!({ "surface": u32::MAX }),
+                &test_translator_for("en")
+            )
+            .unwrap(),
             u32::MAX
         );
     }

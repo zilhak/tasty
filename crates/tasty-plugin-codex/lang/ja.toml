@@ -34,12 +34,11 @@ lock_poisoned = "reboot in-flight ロックが poison しました: {detail}"
 already_in_progress = "surface {surface} の reboot はすでに進行中です"
 spawn_thread_failed = "reboot スレッドを起動できませんでした: {detail}"
 no_active_session = "surface {surface} にアクティブな codex セッションがありません (codex-session-id meta 未設定 — tasty hook が導入・信頼されているか確認してください。`tasty codex install` の後 codex の /hooks で承認)"
-missing_surface = "必須パラメータ 'surface' がありません"
-surface_not_a_number = "'surface' に {raw} が渡されました — 32ビットに収まる整数である必要があります。切り捨てず拒否します: 切り捨てられた id は実在しうる別の対象を指します"
 
 [codex.params]
 missing = "必須パラメータ '{key}' がありません"
 not_a_number = "'{key}' に {raw} が渡されました — 32ビットに収まる整数である必要があります。切り捨てず拒否します: 切り捨てられた id は実在しうる別の対象を指します"
+surface_conflict = "'surface' と 'surface_id' が異なる対象を指している (surface={surface}, surface_id={surface_id}) — どちらか一方、または同じ値を送ること"
 invalid_choice = "'{flag}' の値 '{value}' は不正です (指定可能: {valid})"
 full_auto_conflict = "'full_auto' は 'approval'/'sandbox' と併用できません — すでに両方を迂回します"
 missing_message = "必須パラメータ 'message' がありません"

@@ -65,7 +65,7 @@ impl Plugin for CodexPlugin {
         match method.as_str() {
             "codex.launch" => handlers::handle_launch(&host, params, &self.translator),
             "codex.spawn" => handlers::handle_spawn(&host, &self.translator, params),
-            "codex.children" => handlers::handle_children(&host, params),
+            "codex.children" => handlers::handle_children(&host, params, &self.translator),
             "codex.parent" => handlers::handle_parent(&host, params, &self.translator),
             "codex.state" => handlers::handle_state(&host, params, &self.translator),
             "codex.tell" => handlers::handle_tell(&host, params, &self.translator),

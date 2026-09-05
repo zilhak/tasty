@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use tasty_plugin_agent_common::children::{indices_with, join_indices, state_of};
 use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks};
-use tasty_plugin_agent_common::params::forward;
+use tasty_plugin_agent_common::params::{TargetSurfaceError, forward, target_surface};
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
@@ -80,14 +80,43 @@ fn require_u32(
         .ok_or_else(|| IpcMethodError::invalid_params(&tr.t_fmt(malformed_key, &raw.to_string())))
 }
 
+/// 대상 parent surface — 판정은 [`tasty_plugin_agent_common::params::target_surface`]
+/// 한 벌이고, 여기서는 그 실패를 **claude 카탈로그의 문구로** 옮기기만 한다.
+/// 두 plugin 이 같은 판정을 각자 구현하면 한쪽만 고쳐지는 순간 갈린다 — 이 함수가
+/// 고치고 있는 결함 자체가 그 형태로 생겼다.
+pub(crate) fn optional_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<Option<u32>, IpcMethodError> {
+    target_surface(params).map_err(|e| match e {
+        TargetSurfaceError::Malformed { raw, .. } => IpcMethodError::invalid_params(
+            &tr.t_fmt("claude.params.target_surface_not_a_number", &raw),
+        ),
+        TargetSurfaceError::Conflict {
+            surface,
+            surface_id,
+        } => IpcMethodError::invalid_params(&tr.t_fmt(
+            "claude.params.surface_conflict",
+            &format!("surface={surface}, surface_id={surface_id}"),
+        )),
+    })
+}
+
 pub(crate) fn require_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    require_u32(
-        params,
-        "surface_id",
-        "claude.params.missing_surface_id",
-        "claude.params.surface_id_not_a_number",
-        tr,
-    )
+    optional_target_surface(params, tr)?
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_surface_id")))
+}
+
+/// 호스트로 넘길 params 에 대상 surface 를 싣는다 — 실패 문구만 claude 것으로 옮긴다.
+fn put_target_surface(
+    dst: &mut serde_json::Map<String, Value>,
+    params: &Value,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    if let Some(surface) = optional_target_surface(params, tr)? {
+        dst.insert("surface".into(), json!(surface));
+    }
+    Ok(())
 }
 
 pub(crate) fn require_child_index(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
@@ -159,12 +188,14 @@ fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, Ip
 /// 각 자식의 PTY 전경 프로세스를 덧씌운다. claude 특화 필드명(`child_surface_id`)을
 /// 보존하기 위해 호스트 응답(`surface_id`)을 remap 한다. 응답은 bare 배열(claude
 /// CLI 출력 shape).
-pub(crate) fn handle_children(host: &HostHandle, params: &Value) -> Result<Value, IpcMethodError> {
-    let resp = host_call(
-        host,
-        "terminal.children",
-        Value::Object(forward(params, &["surface"])),
-    )?;
+pub(crate) fn handle_children(
+    host: &HostHandle,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let mut cp = serde_json::Map::new();
+    put_target_surface(&mut cp, params, tr)?;
+    let resp = host_call(host, "terminal.children", Value::Object(cp))?;
     let list = resp
         .get("children")
         .and_then(|v| v.as_array())
@@ -218,7 +249,8 @@ pub(crate) fn handle_kill(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let child_index = require_child_index(params, tr)?;
-    let mut kp = forward(params, &["surface"]);
+    let mut kp = serde_json::Map::new();
+    put_target_surface(&mut kp, params, tr)?;
     kp.insert("child".into(), json!(child_index));
     // 호스트 terminal.kill 성공 시 { killed_surface_id, child_index } 반환. claude
     // CLI 는 기존에 { killed: true } 를 기대하므로 성공을 그 shape 으로 변환한다.
@@ -246,7 +278,8 @@ pub(crate) fn handle_broadcast(
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_text")))?;
-    let mut bp = forward(params, &["surface", "role"]);
+    let mut bp = forward(params, &["role"]);
+    put_target_surface(&mut bp, params, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
@@ -603,7 +636,8 @@ pub(crate) fn handle_respawn(
 
     // 1) 호스트 registry 위임(command 미전송): cwd 있으면 PTY 교체, 없으면 Ctrl-C.
     //    role/nickname/cwd 갱신 + idle 초기화까지 호스트가 수행.
-    let mut rp = forward(params, &["surface", "cwd", "role", "nickname"]);
+    let mut rp = forward(params, &["cwd", "role", "nickname"]);
+    put_target_surface(&mut rp, params, tr)?;
     rp.insert("child".into(), json!(child_index));
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_surface_id = resp
@@ -959,6 +993,63 @@ pub(crate) fn handle_state(
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    /// 대상 surface 를 **호스트로 넘기는 params 에 실제로 싣는다.**
+    ///
+    /// 이 판정이 없어서 났던 일: `claude.kill` / `claude.respawn` 은 `surface_id`
+    /// 를 읽어놓고 호스트에는 `surface` 키만 pass-through 했다. 두 이름이 갈린
+    /// 자리라 `surface_id` 만 실은 호출은 **아무 대상도 안 실은 호출**이 됐고,
+    /// 호스트는 유일-parent 폴백으로 답했다 — 존재하지 않는 surface 를 지목한
+    /// 호출이 남의 자식을 죽이고 성공을 돌려줬다.
+    ///
+    /// 그래서 이 테스트는 "에러가 안 난다" 가 아니라 **실린 값**을 본다.
+    #[test]
+    fn the_target_surface_reaches_the_host_under_either_name() {
+        let tr = test_translator();
+        for params in [json!({ "surface": 7 }), json!({ "surface_id": 7 })] {
+            let mut out = serde_json::Map::new();
+            put_target_surface(&mut out, &params, &tr).expect("두 이름 다 받는다");
+            assert_eq!(
+                out.get("surface"),
+                Some(&json!(7)),
+                "{params} 에서 대상이 호스트로 안 실렸다 — 유일-parent 폴백에 떨어진다"
+            );
+        }
+    }
+
+    /// 아무 이름도 안 주면 **아무것도 안 싣는다** — 호스트의 유일-parent 폴백이
+    /// 곧 CLI 의 "`--surface` 생략" 동작이므로, 여기서 값을 지어내면 그 동작이
+    /// 사라진다.
+    #[test]
+    fn no_target_named_stays_no_target_sent() {
+        let tr = test_translator();
+        let mut out = serde_json::Map::new();
+        put_target_surface(&mut out, &json!({ "child_index": 0 }), &tr).expect("없어도 성공");
+        assert!(
+            out.is_empty(),
+            "대상을 안 준 호출에 값을 지어냈다 — 폴백이 사라진다: {out:?}"
+        );
+    }
+
+    /// 두 이름이 **다른 값**이면 고르지 않고 거절한다. 어느 쪽을 골라도 절반의
+    /// 호출자에게는 지목하지 않은 대상이 된다.
+    #[test]
+    fn two_names_with_different_values_are_refused_not_picked() {
+        let tr = test_translator();
+        let e = optional_target_surface(&json!({ "surface": 1, "surface_id": 2 }), &tr)
+            .expect_err("서로 다른 두 대상을 조용히 하나로 고르면 안 된다");
+        let msg = format!("{e:?}");
+        assert!(
+            msg.contains('1') && msg.contains('2'),
+            "어느 두 값이 부딪혔는지 안 알려준다: {msg}"
+        );
+        // 같은 값이면 부딪힌 것이 아니다.
+        assert_eq!(
+            optional_target_surface(&json!({ "surface": 3, "surface_id": 3 }), &tr).unwrap(),
+            Some(3),
+            "CLI 가 두 키를 같은 값으로 채워 보내는 형태를 막으면 안 된다"
+        );
+    }
 
     /// `require_surface_id` / `require_child_index` 의 **네 갈래**를 픽스처로 못박는다.
     /// 실재하는 surface id 를 쓰지 않는다 — 그 id 가 사라지면 회귀가 뜻을 잃는다.

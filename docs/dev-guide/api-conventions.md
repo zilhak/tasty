@@ -174,6 +174,12 @@ debug 표 기준 총 3개.
 
 plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예약어와 충돌 금지(`system surface tab pane workspace claude plugin hook global_hook webhook message tool notification window debug ui ime split tree memory output approval telemetry timer` 등). 상세는 [plugin-development](plugin-development.md) "예약 prefix".
 
+### 대상 surface 는 `surface` / `surface_id` 어느 이름으로 와도 같은 필드다
+
+CLI 인자는 `--surface`(매니페스트의 `surface`)이고 호스트 IPC 의 표준 키는 `surface_id` 다. 그래서 CLI dynamic runner 는 **두 키를 모두 채워** 보낸다. agent plugin(`claude`/`codex`)의 핸들러는 그 두 이름을 **한 필드로** 읽고, 둘이 다른 값이면 고르지 않고 `-32602` 로 거절한다 — 어느 쪽을 골라도 절반의 호출자에게는 지목하지 않은 대상이 된다. 판정은 `tasty-plugin-agent-common` 에 한 벌만 있다.
+
+아무 이름도 안 오면 아무것도 호스트로 넘기지 않는다. 그때 호스트는 **부모가 하나뿐이면 그것**으로 푸는데(`--surface` 생략의 정의), 그 폴백은 *이름을 안 준 호출* 을 위한 것이지 *이름을 줬는데 못 읽은 호출* 을 위한 것이 아니다. 대상을 읽고도 안 실어 보내면 실재하지 않는 id 를 지목한 호출이 남의 자식에 성공한다 — 호스트의 "named target is never resolved by focus" 가드가 그 자리를 지키는데, 이름이 어긋나면 그 가드에 애초에 닿지 않는다.
+
 ### auto_wait chain
 
 일부 plugin 명령은 1차 IPC 응답 직후 wait IPC 를 자동 chain 해 대상이 terminal state(`idle`/`needs_input`/`exited`)에 도달할 때까지 block 할 수 있다. child terminal 의 파생 상태 `stale`([ADR-0072](../adr/0072-child-state-hook-observation-fusion.md))은 **기본 terminal state 집합에 넣지 않는다** — 무출력 임계값 기반 판정은 휴리스틱이라 오탐 시 아직 일하는 자식을 종결 처리하게 된다. 다만 hook 유실로 영구 대기하는 것보다 조기 탈출이 나은 소비자는 `terminal_states` 에 직접 `"stale"` 을 추가해 선택할 수 있다. 매니페스트 `[[contributes.cli.subcommand]].auto_wait` 한 필드로 선언적으로 켠다(plugin 핸들러 미수정, CLI dynamic runner 가 chain). `map_from_response`(1차 응답→wait params, 우선) + `map_from_request`(요청→fallback) + `polling`(state_field/terminal_states/interval). `polling` 과 `auto_wait` 동시 선언은 validator 가 reject(직교 — 전자는 *이 명령 자체가 wait*, 후자는 *응답 직후 다른 method chain*). `surface`↔`surface_id` 키는 자동 alias.

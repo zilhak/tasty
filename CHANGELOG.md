@@ -81,6 +81,10 @@
 
 ### Fixed
 
+- **`claude.kill` · `claude.respawn` · `codex.kill` · `codex.respawn` 이 지목한 부모가 아닌 대상에 실행되던 것** — 두 plugin 다 대상 surface 를 `surface` 키로만 호스트에 넘겼는데, 호출자가 `surface_id` 로 지목하면 그 값이 실리지 않아 호스트의 **"부모가 하나뿐이면 그것" 폴백**에 떨어졌다. 실재하지 않는 surface 를 지목한 호출이 성공을 돌려주며 남의 자식을 죽였고, 폴백은 namespace 를 안 가려서 `codex.kill` 이 claude 자식을 죽이는 것까지 재현됐다. CLI 는 두 키를 모두 채워 보내므로 **raw IPC 호출에서만** 났다. 이제 두 이름을 한 필드로 읽고(판정 한 벌 — `tasty-plugin-agent-common`), 두 값이 다르면 `-32602` 로 거절한다. 아무 이름도 안 준 호출의 폴백은 그대로다.
+- **`codex.*` 가 `surface_id` 로 지목한 호출을 거절하던 것** — `codex.parent`/`state`/`tell`/`spawn`/`respawn`/`children` 은 `surface` 만 받았다. `docs/dev-guide/agent-runner.md` 가 `codex.spawn` 도 `claude.spawn` 과 "같은 모양" 이라고 적은 그 모양(`params.surface_id`)이 실제로는 안 됐다.
+- **claude 의 인자 오류 문구가 안 받는 키를 받는다고 적던 것** — `Missing required 'surface' (or 'surface_id') parameter` 라고 답하면서 `surface` 는 안 읽었다.
+
 - **호스트 명령과 같은 이름을 선언한 plugin CLI 가 CLI 전체를 죽이던 것** — 매니페스트 `contributes.cli` 의 이름은 등록 전에 아무것도 대조하지 않아서 `terminal` 같은 호스트 명령 이름이 그대로 clap 트리에 두 번 들어갔다. release 에서는 도달 불가능한 중복이 조용히 얹혔지만, **debug 빌드에서는 clap 의 중복 검사가 `command name '…' is duplicated` 로 프로세스를 패닉**시켜 `tasty --help` 와 **다른 모든 plugin 명령까지 함께 죽었다** — plugin 하나의 이름 하나가 CLI 전부를 못 쓰게 만들었다. 이제 등록 시점에 **정적 명령 집합(이름과 alias 전부, 손목록이 아니라 clap 트리에서 도출)** 과 대조해 겹치는 이름은 등록하지 않고 경고한다. 막는 대상이 release 에서 이미 도달 불가였던 이름뿐이라 **서드파티가 잃는 기능은 없다.**
 - **헤드리스에서 `theme.query`(CLI `tasty` IPC)가 `-32601`(Method not found)로 끝나던 것.** 이 조회가 읽는 것은 전역 Theme 과 설정 둘뿐이라 창이 없어도 답이 정해지는데, 핸들러가 `gui` 전용 webview 모듈 안에 있어서 등록까지 함께 빠져 있었다. 헤드리스는 CLI 전용 실행 형태라 이 부재는 "에이전트 기능은 IPC + CLI 양면" 원칙의 구멍이었다. 두 조합이 이제 같은 함수로 답한다.
 - **호스트 IPC 가 `u32` 범위를 넘는 id 를 잘라서 받아들이던 것.** `surface_id` · `surface` · `pane` · `target` · `child` 등을 읽는 헬퍼가 `terminal` · `pty` · `preset` 에 같은 몸통으로 세 벌 있었고 셋 다 잘랐다(호출 20 곳, `terminal.tell` 포함). 실측: `surface.locate` 에 `<실재 id> + 2^32` 를 주면 그 실재 surface 를 `"exists": true` 로 되돌려줬다 — 명령이 조용히 **다른 터미널**로 갔다. 이제 `invalid_params` 로 거절하고, **키가 없는 것과 값이 잘못된 것을 다른 문구로** 답한다. 선택 인자(`pane` 등)도 잘못 온 값을 버리지 않는다 — 종전에는 버려져서 호출자가 지정한 대상 대신 기본값으로 폴백했다(`terminal.spawn` 은 그 폴백이 **유일 parent** 였다).

@@ -17,7 +17,7 @@
 use serde_json::{Map, Value, json};
 use tasty_plugin_agent_common::children::{indices_with, join_indices, state_of};
 use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks};
-use tasty_plugin_agent_common::params::forward;
+use tasty_plugin_agent_common::params::{TargetSurfaceError, forward, target_surface};
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
@@ -73,6 +73,60 @@ pub(crate) fn require_u32(
                 &[("{key}", key), ("{raw}", &raw.to_string())],
             ))
         })
+}
+
+/// 대상 parent surface — 판정은 [`tasty_plugin_agent_common::params::target_surface`]
+/// 한 벌이고, 여기서는 그 실패를 **codex 카탈로그의 문구로** 옮기기만 한다.
+///
+/// 이 저장소는 같은 물음에 **세 가지 답**을 갖고 있었다: claude 는 `surface_id` 만,
+/// 여기 handlers 는 `surface` 만, `reboot.rs` 는 둘 다(먼저 온 것). 세 번째만 옳았고
+/// 그것도 두 값이 다를 때를 안 봤다. 판정을 한 벌로 모으는 것이 이 정정의 전부다.
+pub(crate) fn optional_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<Option<u32>, IpcMethodError> {
+    target_surface(params).map_err(|e| match e {
+        TargetSurfaceError::Malformed { key, raw } => IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.not_a_number",
+            &[("{key}", key), ("{raw}", &raw)],
+        )),
+        TargetSurfaceError::Conflict {
+            surface,
+            surface_id,
+        } => IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.surface_conflict",
+            &[
+                ("{surface}", &surface.to_string()),
+                ("{surface_id}", &surface_id.to_string()),
+            ],
+        )),
+    })
+}
+
+pub(crate) fn require_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
+    optional_target_surface(params, tr)?.ok_or_else(|| {
+        IpcMethodError::invalid_params(&tr.t_replace("codex.params.missing", "{key}", "surface"))
+    })
+}
+
+/// 호스트로 넘길 params 에 대상 surface 를 싣는다 — 실패 문구만 codex 것으로 옮긴다.
+///
+/// 호출자가 아무 이름도 안 줬으면 아무것도 안 싣는다: 호스트의 유일-parent 폴백이
+/// 곧 `--surface` 생략 동작이라, 여기서 값을 지어내면 그 동작이 사라진다.
+fn put_target_surface(
+    dst: &mut serde_json::Map<String, Value>,
+    params: &Value,
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
+    if let Some(surface) = optional_target_surface(params, tr)? {
+        dst.insert("surface".into(), json!(surface));
+    }
+    Ok(())
 }
 
 fn optional_str(params: &Value, key: &str) -> Option<String> {
@@ -311,7 +365,7 @@ pub fn handle_parent(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     // 호스트 registry 가 parent 매핑의 SoT — 그대로 위임.
-    let surface = require_u32(&params, "surface", tr)?;
+    let surface = require_target_surface(&params, tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -324,7 +378,7 @@ pub fn handle_state(
     params: Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface = require_u32(&params, "surface", tr)?;
+    let surface = require_target_surface(&params, tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
@@ -333,7 +387,7 @@ pub fn handle_tell(
     params: Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_u32(&params, "surface", tr)?;
+    let surface_id = require_target_surface(&params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
@@ -361,7 +415,7 @@ pub fn handle_spawn(
     tr: &Translator,
     params: Value,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface = require_u32(&params, "surface", tr)?;
+    let parent_surface = require_target_surface(&params, tr)?;
     let prompt = optional_str(&params, "prompt");
 
     // 1) 호스트 registry 에 자식 등록 + soft 점유 + tab 생성 (command 미전송).
@@ -648,14 +702,14 @@ fn build_spawn_warning(
     Some(msg)
 }
 
-/// `tr` 를 받지 않는 유일한 핸들러다 — 이 함수가 만드는 문구가 하나도 없다.
-/// 형태를 맞추려고 안 쓰는 인자를 두면 다음 사람이 "여기도 번역할 것이 있다" 로 읽는다.
-pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    host_call(
-        host,
-        "terminal.children",
-        Value::Object(forward(&params, &["surface"])),
-    )
+pub fn handle_children(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let mut cp = serde_json::Map::new();
+    put_target_surface(&mut cp, &params, tr)?;
+    host_call(host, "terminal.children", Value::Object(cp))
 }
 
 pub fn handle_broadcast(
@@ -667,7 +721,8 @@ pub fn handle_broadcast(
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_text")))?;
-    let mut bp = forward(&params, &["surface", "role"]);
+    let mut bp = forward(&params, &["role"]);
+    put_target_surface(&mut bp, &params, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
@@ -678,7 +733,8 @@ pub fn handle_kill(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let child = require_u32(&params, "child", tr)?;
-    let mut kp = forward(&params, &["surface"]);
+    let mut kp = serde_json::Map::new();
+    put_target_surface(&mut kp, &params, tr)?;
     kp.insert("child".into(), json!(child));
     host_call(host, "terminal.kill", Value::Object(kp))
 }
@@ -694,7 +750,8 @@ pub fn handle_respawn(
     // 1) 호스트 registry 위임: cwd 있으면 PTY 교체, 없으면 Ctrl-C. role/nickname/cwd
     //    갱신 + idle 초기화까지 호스트가 수행하고 child_surface_id 를 돌려준다.
     //    codex 기동은 여기서 하지 않으므로 command 는 넘기지 않는다.
-    let mut rp = forward(&params, &["surface", "cwd", "role", "nickname"]);
+    let mut rp = forward(&params, &["cwd", "role", "nickname"]);
+    put_target_surface(&mut rp, &params, tr)?;
     rp.insert("child".into(), json!(child));
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_sid = resp
@@ -737,7 +794,7 @@ pub fn handle_hook(
         .get("event")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_event")))?;
-    let surface_id = require_u32(&params, "surface", tr)
+    let surface_id = require_target_surface(&params, tr)
         .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     let new_state = hook_event_to_state(event, tr)?;
     // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
