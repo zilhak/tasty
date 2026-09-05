@@ -30,6 +30,9 @@ pub mod source_text;
 /// **이 파일은 출하되는가** — 선언 기반 판정 하나.
 pub mod shipping_scope;
 
+/// 락 poison 을 보고 없이 복구하는 자리를 집는다.
+pub mod poison_recovery;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
