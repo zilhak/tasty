@@ -251,11 +251,18 @@ tier 는 존재한다 — DTCG `primitive.opacity-disabled`(0.5) · `-recessed`(
 | `src/adapters/ui/popup/remote_attach.rs` 선택 행 좌측 바 | 같은 토큰 | 2 = 2 | **불렀다** — 픽셀 0 |
 | `src/adapters/ui/tab_bar.rs` busy 점 | `component.tab-dot-size` | 8 ≠ 6 | **못 부른다** |
 | `crates/tasty-gallery/src/host_shell.rs` UI scale 세그 | `AppearanceSettings::ui_scale_factor_for` | 0.85 ≠ 0.8 | **갈라져 있었다** |
-| `src/adapters/ui/popup.rs` 타이틀 버튼 치수 | `tasty-gallery` 의 `popup_frame::TITLE_BTN_SIZE`·`TITLE_BTN_EDGE_PAD` | 20·4 = 20·4 | **방향이 반대** |
+| `src/adapters/ui/popup.rs` 타이틀 버튼 치수 | `tasty-gallery` 의 `popup_frame::TITLE_BTN_SIZE`·`TITLE_BTN_EDGE_PAD` | 20·4 = 20·4 | **방향이 반대** → 공유 자리로 올렸다 |
 
 **셋째가 이 부류의 경계다.** 이름이 있다는 것이 부르라는 뜻은 아니다 — 값이 다르면 부르는
 것은 정정이 아니라 **값 변경**이고, 이 ADR 의 본 결정이 그대로 적용된다(스냅하지 말고
 사유를 적은 명명 const 로 두고 디자인 판단으로 넘긴다).
+
+**다섯째는 방향이 반대라 처방도 반대다.** 앞의 넷은 "본체에 이름이 있는데 그 자리가 안
+부른다" 였는데, 이 자리는 **갤러리가 이름을 들고 본체가 리터럴을 쓰고 있었다** — 갤러리
+쪽 doc 이 그것을 "본체 popup 상수" 라고 적기까지 했다. 부를 이름을 옮겨오는 것이 아니라
+**둘이 함께 읽을 자리로 이름을 올리는 것**이 처방이고, 그 자리는 두 크레이트가 이미
+의존하는 `tasty-ui-widgets::tokens` 다. 인라인 리터럴이라 선언만 보는 가드에 안 걸리는
+것도 이 형태의 특징이다.
 
 앞의 둘이 픽셀 0 이었던 이유도 값이 같아서만은 아니다 — `tab_indicator_width` 는
 `zoom_exempt_fields_guard` 에 Hairline 사유로 등재된 **zoom 면제** 필드라 `zoomed()` 를
