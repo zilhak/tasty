@@ -55,9 +55,9 @@ const CLOSE_MARGIN: LogicalPx = LogicalPx(1.0);
 /// close `×` 노출 시 탭 우측 패딩(9→3 축소).
 const CLOSE_TAB_PAD: LogicalPx = LogicalPx(3.0);
 /// 편집 모드 선택 핸들(remove) 한 변 크기.
-const HANDLE_SZ: f32 = 18.0;
+const HANDLE_SZ: LogicalPx = LogicalPx(18.0);
 /// 핸들 클러스터 모서리 inset.
-const HANDLE_INSET: f32 = 4.0;
+const HANDLE_INSET: LogicalPx = LogicalPx(4.0);
 /// 경계 hover-split 존 밴드 폭 비율(변 기준 바깥 30%). 길이가 아니라 배율이라
 /// `LogicalPx` 가 아니다 — `rect.width()` 에 곱해져 길이를 만드는 쪽이다.
 const SPLIT_ZONE_EDGE: f32 = 0.3;
@@ -2021,10 +2021,10 @@ fn draw_handle_cluster(
 ) {
     let remove = egui::Rect::from_min_size(
         egui::pos2(
-            rect.max.x - HANDLE_INSET - HANDLE_SZ,
-            rect.min.y + HANDLE_INSET,
+            rect.max.x - (HANDLE_INSET + HANDLE_SZ).value(),
+            rect.min.y + HANDLE_INSET.value(),
         ),
-        egui::vec2(HANDLE_SZ, HANDLE_SZ),
+        egui::vec2(HANDLE_SZ.value(), HANDLE_SZ.value()),
     );
     if mini_handle(ui, theme, remove, icons::TRASH, true, ("rm", leaf_id)) {
         cx.act = Some(Act::Remove { id: leaf_id });
@@ -2060,8 +2060,8 @@ fn mini_handle(
     } else {
         theme.text_secondary().to_egui()
     };
-    let glyph = HANDLE_SZ * 0.62;
-    paint_icon(ui, icon, rect.center(), LogicalPx(glyph), color);
+    let glyph = HANDLE_SZ.scaled(0.62);
+    paint_icon(ui, icon, rect.center(), glyph, color);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -2083,9 +2083,9 @@ fn draw_leaf_form(
         return;
     }
     // 핸들 클러스터(상단) 아래에서 시작.
-    let top = rect.min.y + HANDLE_INSET * 2.0 + HANDLE_SZ;
+    let top = LogicalPx(rect.min.y) + HANDLE_INSET.scaled(2.0) + HANDLE_SZ;
     let form_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.center().x - inner_w * 0.5, top),
+        egui::pos2(rect.center().x - inner_w * 0.5, top.value()),
         egui::pos2(rect.center().x + inner_w * 0.5, rect.max.y - FORM_PAD),
     );
     if form_rect.height() < 1.0 {
