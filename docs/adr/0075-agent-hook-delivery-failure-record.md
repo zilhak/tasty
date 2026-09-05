@@ -64,6 +64,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 ## References
 
+- 부분 개정: [0164](0164-hook-failure-locale-invariance-rests-on-fields.md) (`reason` 의 값을 로케일 무관 영어로 고정한 언어 조항 개정 — 로케일 무관성을 `code` 등 좌표 필드가 지고 산문은 만든 쪽의 언어를 따른다. 이 ADR 의 나머지는 그대로 유효하다).
 - [ADR-0072 child state hook observation fusion](0072-child-state-hook-observation-fusion.md) — hook 침묵을 판정 축으로 쓰는 파생 판정(상호보완, 순서 의존 없음)
 - [ADR-0070 port discovery timeout](0070-port-discovery-timeout.md) — 외부 프로세스 대기에 상한을 거는 같은 계열 결정
 - [dev-guide/error-handling](../dev-guide/error-handling.md) — `Result` 를 무시하지 않는 정책. 셸의 `|| true` 는 그 정책의 셸 판본이다

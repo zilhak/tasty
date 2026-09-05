@@ -174,3 +174,4 @@
 | 0160 | [IPC 메서드는 CLI 로 닿거나, 왜 못 닿는지의 근거를 든다](0160-every-ipc-method-is-cli-reachable-or-carries-a-reason.md) | Accepted | 2026-09-05 | ipc, cli, agent-surface, guard, identity-principle |
 | 0162 | [호스트를 막는 네이티브 다이얼로그는 에이전트 표면이 아니다 — `fs.pick_file` 을 뺀다](0162-a-host-blocking-native-dialog-is-not-an-agent-surface.md) | Accepted | 2026-09-05 | ipc, agent-surface, gui, blocking, rfd, portal, identity-principle, adr-0042, adr-0058, adr-0091 |
 | 0163 | [등재된 이름은 "없다" 가 아니라 "부를 수 있는 주체가 다르다" 로 답한다](0163-a-registered-name-answers-who-not-whether.md) | Accepted | 2026-09-05 | ipc, error-codes, plugin, agent-surface, guards, adr-0154, adr-0140, adr-0152 |
+| 0164 | [hook 실패 기록의 로케일 무관성은 산문이 아니라 좌표 필드가 진다](0164-hook-failure-locale-invariance-rests-on-fields.md) | Accepted | 2026-09-05 | cli, agent-hooks, diagnostics, i18n, plugin, partial-amendment, adr-0075 |
