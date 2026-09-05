@@ -199,3 +199,4 @@
 | 0186 | [불가침 원칙에도 집행 등급이 있다 — 구두 원칙은 집행이 0이다](0186-an-inviolable-principle-needs-an-enforcer.md) | Accepted | 2026-09-06 | guards, principles, enforcement, gallery, gallery-first, r473, r475, r486, r488, adr-0020, adr-0184, adr-0185 |
 | 0187 | [줄어든 수는 잃은 것이 아니다 — 인구조사의 감소는 모수를 넓혀 다시 잰다](0187-a-decreased-census-is-not-a-loss-remeasure-by-widening-the-population.md) | Accepted | 2026-09-06 | measurement, census, population, attribution, migration, r476, r483, r495, r497, adr-0139, adr-0183 |
 | 0188 | [빨강은 재실행 대조가 답하기 전까지 귀속하지 않는다](0188-a-red-is-not-attributed-until-a-rerun-control-answers.md) | Accepted | 2026-09-06 | ci, measurement, control, attribution, flaky, rerun, bias, adr-0183, adr-0139 |
+| 0189 | [목록의 원소는 조각으로 박는다 — 등급을 매긴 판단은 지키는 것이 있어야 주장이 된다](0189-a-list-element-is-pinned-by-a-literal-snippet.md) | Proposed | 2026-09-06 | guards, mutation-testing, census, positive-control, r510, r515, r537, r538, adr-0139, adr-0183 |
