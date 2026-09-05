@@ -714,14 +714,13 @@ mod jobs_anchored_at_boot;
 /// 이름에 가진 구현이 가려진다.
 mod derived_plugin_tables_are_not_bypassed;
 
-mod builtin_plugin_roster;
-mod bundled_plugin_namespace_coverage;
 /// 번들 plugin 명부가 적힌 다섯 자리(cfg 두 갈래 · 매니페스트 실물 · 문서 두 곳)가
 /// 같은 집합인지 본다. 자리가 여럿인 것이 아니라 잇는 것이 없는 것이 결함이다.
+mod builtin_plugin_roster;
+mod bundled_plugin_namespace_coverage;
+
 mod headless_app_layer_coverage;
 
-/// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
-/// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.
 #[cfg(test)]
 mod length_constant_frontier;
 
@@ -730,8 +729,9 @@ mod length_constant_frontier;
 #[cfg(test)]
 mod test_gate;
 
-/// 값이 `size-*` 스케일 안인데 숫자로 쓴 길이 자리를 센다. 위 가드가 선언의 **타입**을
-/// 묻는다면 이쪽은 값의 **출처**를 묻는다 — 토큰이 움직여도 안 따라가는 자리다.
+/// 값이 `size-*` 스케일 안인데 숫자로 쓴 길이 자리를 센다. `length_constant_frontier` 가
+/// 선언의 **타입**을 묻는다면 이쪽은 값의 **출처**를 묻는다 — 토큰이 움직여도 안 따라가는
+/// 자리다. (자리로 가리키면 사이에 모듈이 하나 끼는 순간 다른 것을 가리킨다 — 실제로 그랬다.)
 #[cfg(test)]
 mod on_scale_length_literal;
 
@@ -744,6 +744,8 @@ mod plugin_only_dispatch_parity;
 /// 번들 plugin 프로덕션 코드에 로케일 고정(CJK) 문구가 박혀 있는지 본다. 박힌 문구는
 /// 어떤 로케일 설정에서도 그 언어로만 나간다.
 mod plugin_locale_specific_literals;
+/// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
+/// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.
 mod port_mode_roster;
 
 /// 기하를 내주는 debug 관측면 둘(popup · banner)이 같은 키 모양으로 내는지, 그리고
