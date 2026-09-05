@@ -1,0 +1,241 @@
+//! **새 bin 이 들어오면 조립은 저절로 따라오고 판정은 안 따라온다** — 그 비대칭을 막는다.
+//!
+//! 이 크레이트의 `src/bin/` 에 파일을 하나 놓으면 cargo 가 `[[bin]]` 선언 없이 자동으로
+//! 발견해 빌드한다. 그래서 `doc-guards.yml` 의 패키지 테스트가 **컴파일 채널은 공짜로**
+//! 준다. 그런데 그 바이너리가 무엇을 출력하는지는 아무것도 안 본다 — 판정 채널은 누가
+//! 손으로 만들어야만 생긴다. 실측으로 그 형태가 났다(2026-09-06): 새 bin 하나를 들였고,
+//! 컴파일은 저절로 됐고, 판정은 같은 회차에 직접 쓴 테스트뿐이었다. 안 썼으면 없었다.
+//!
+//! 그때 고쳐진 것은 **사례 하나**지 부류가 아니다. 다음 사람이 두 번째 bin 을 들이면
+//! 같은 일이 다시 일어난다. 그래서 부류로 만든다.
+//!
+//! # 무엇으로 짝을 찾는가 — 이름이 아니다
+//!
+//! `mask-source.rs` ↔ `mask_source_bin.rs` 처럼 **이름 규약**으로 짝지을 수 있다. 쓰지
+//! 않는다. 그것은 관례를 흉내 내는 것이지 성질을 묻는 것이 아니고, 두 방향으로 다 틀린다:
+//! 테스트 파일 이름만 바꾸면 커버리지가 그대로인데 빨개지고, 이름만 맞고 아무것도 안
+//! 돌리는 빈 파일은 초록이다.
+//!
+//! 대신 **cargo 자신이 주는 실행 핸들**을 묻는다. 통합 테스트가 빌드된 바이너리를 찾는
+//! 지원되는 방법은 `env!("CARGO_BIN_EXE_<이름>")` 하나뿐이다. 그 상수가 이 크레이트의
+//! 테스트 어딘가에 있다는 것은 **누군가 그것을 실제로 실행한다**는 뜻이고, 그것은 이름이
+//! 아니라 성질이다.
+//!
+//! 이 선택이 틀리는 방향은 하나뿐이고 **시끄러운 쪽**이다: 누가 핸들 대신 경로를
+//! 하드코딩해 돌리면 이 가드는 "채널이 없다" 고 **거짓 경보**를 낸다. 조용히 놓치지는
+//! 않는다.
+//!
+//! # 이 가드가 단정하지 않는 것
+//!
+//! **그 실행이 옳게 판정하는지는 안 본다.** 볼 수 없다 — 출력이 맞는지는 이 가드가 아니라
+//! 그 테스트가 답할 물음이다. 둘째 축은 그보다 훨씬 약한 것만 묻는다: 그 파일이 출력을
+//! **읽기는 하는가**(`status` / `stdout`). "돌려놓고 눈을 돌린" 형태만 배제한다.
+//!
+//! 그리고 **이 판정의 배선 자체는 아무도 안 본다.** 아래 픽스처 둘은 판독기(`handles_in`)의
+//! 극성을 고정하지만, 레포 판정의 걸러내는 줄을 "언제나 통과" 로 바꾸면 다섯이 모두 초록이다
+//! — 실측했다(2026-09-06). 자기 자신을 재는 자리는 언제나 한 겹 남고, 그 한 겹은 여기서
+//! 못 닫는다. 적어두는 이유는 닫혔다고 오해하지 않게 하려는 것이다.
+//!
+//! 곁으로 하나 — 이 파일처럼 **아직 커밋되지 않은 새 파일**에서는 변이 적용 단정으로
+//! `git diff` 를 쓰면 안 된다. 추적 대상이 아니라 무엇을 고쳐도 빈 출력이라, "변이가
+//! 적용됐다" 를 재는 자리가 조용히 무력해진다. 원문 사본과 대조하거나 치환 횟수를 세라.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+
+const CRATE_DIR: &str = "crates/tasty-doc-guards";
+
+/// bin 이 이보다 적으면 수집이 깨진 것이다 — 모수가 0 이면 "전부 덮였다" 는 언제나 참이다.
+const MIN_BINS: usize = 3;
+
+/// 출력을 읽는다고 볼 표지. `status` 는 종료코드, `stdout` 은 내용이다.
+const READS_OUTPUT: &[&str] = &["stdout", "status", "code()"];
+
+fn repo_root() -> PathBuf {
+    let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    while !dir.join(".git").exists() {
+        if !dir.pop() {
+            panic!("레포 루트를 못 찾았다");
+        }
+    }
+    dir
+}
+
+/// `src/bin/` 의 바이너리 이름들 — 파일 stem 이 곧 cargo 가 쓰는 이름이다.
+fn bin_names(crate_dir: &Path) -> BTreeSet<String> {
+    let dir = crate_dir.join("src/bin");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        panic!("`{}` 를 읽지 못했다", dir.display());
+    };
+    let mut names = BTreeSet::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "rs")
+            && let Some(stem) = path.file_stem()
+        {
+            names.insert(stem.to_string_lossy().to_string());
+        }
+    }
+    names
+}
+
+/// 테스트 파일 하나가 실행 핸들로 지목한 bin 이름들.
+///
+/// 순수 함수라 픽스처로 양극성을 고정할 수 있다. 이름을 통째로 적지 않고 **조각으로
+/// 조립**해서 찾는다 — 이 파일 자신이 상수에 완성된 핸들을 담으면, 레포를 훑을 때 이
+/// 파일이 그 bin 을 덮는 것으로 잘못 세게 된다. 그 오류는 조용한 방향이다.
+fn handles_in(source: &str) -> BTreeSet<String> {
+    let needle = concat!("CARGO_BIN_", "EXE_");
+    let mut found = BTreeSet::new();
+    let mut from = 0;
+    while let Some(rel) = source[from..].find(needle) {
+        let at = from + rel + needle.len();
+        from = at;
+        let name: String = source[at..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .collect();
+        if !name.is_empty() {
+            found.insert(name);
+        }
+    }
+    found
+}
+
+/// bin 이름 → 그것을 실행하는 테스트 파일들.
+fn executors(crate_dir: &Path) -> BTreeMap<String, Vec<String>> {
+    let dir = crate_dir.join("tests");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        panic!("`{}` 를 읽지 못했다", dir.display());
+    };
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let file = path.file_name().unwrap_or_default().to_string_lossy();
+        for name in handles_in(&text) {
+            map.entry(name).or_default().push(file.to_string());
+        }
+    }
+    map
+}
+
+#[test]
+fn every_bin_is_run_by_some_test() {
+    let crate_dir = repo_root().join(CRATE_DIR);
+    let bins = bin_names(&crate_dir);
+    assert!(
+        bins.len() >= MIN_BINS,
+        "`{CRATE_DIR}/src/bin` 에서 bin 을 {}개밖에 못 셌다(하한 {MIN_BINS}) — 수집이 \
+         깨졌다. 모수가 줄면 '전부 덮였다' 는 아무것도 안 지킨다",
+        bins.len()
+    );
+
+    let runs = executors(&crate_dir);
+    let orphans: Vec<&String> = bins.iter().filter(|b| !runs.contains_key(*b)).collect();
+    assert!(
+        orphans.is_empty(),
+        "아래 bin 은 컴파일만 되고 **아무도 안 돌린다**. cargo 가 `src/bin/*.rs` 를 자동으로 \
+         발견해 빌드하므로 조립 채널은 저절로 생겼지만, 출력을 보는 자리는 손으로 만들어야 \
+         생긴다:\n  {}\n\n  [무엇을 보는가] 이 크레이트 `tests/` 안에서 그 bin 의 실행 \
+         핸들(cargo 가 주는 `CARGO_BIN_EXE_<이름>` 상수)이 쓰인 자리를 찾는다. 이름 규약으로 \
+         짝짓지 않으므로 테스트 파일 이름은 무엇이든 좋다.\n  \
+         [단정하지 않는 것] 그 실행이 **옳게 판정하는지는 안 본다.** 그러니 이 빨강의 처방은 \
+         하나뿐이다 — 그 bin 을 실제로 돌려 출력을 확인하는 테스트를 더해라. 이미 그런 \
+         테스트가 있는데 빨갛다면, 핸들 대신 경로를 하드코딩한 것이다(그때는 핸들로 바꿔라 \
+         — 경로는 프로필마다 달라 러너에서 깨진다).",
+        orphans
+            .iter()
+            .map(|b| format!("src/bin/{b}.rs"))
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}
+
+#[test]
+fn no_executor_runs_the_bin_and_looks_away() {
+    let crate_dir = repo_root().join(CRATE_DIR);
+    let runs = executors(&crate_dir);
+    assert!(
+        !runs.is_empty(),
+        "실행 핸들을 하나도 못 찾았다 — 판독이 깨졌다. 이 상태에서는 앞 판정도 전부 \
+         '고아' 로 나오거나(시끄러움) 아무것도 안 본 것이다"
+    );
+
+    let mut blind = Vec::new();
+    for (bin, files) in &runs {
+        for file in files {
+            let path = crate_dir.join("tests").join(file);
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if !READS_OUTPUT.iter().any(|m| text.contains(m)) {
+                blind.push(format!("tests/{file} — `{bin}` 을 돌리고 출력을 안 읽는다"));
+            }
+        }
+    }
+    assert!(
+        blind.is_empty(),
+        "아래는 bin 을 실행하지만 그 **출력을 읽지 않는다**(`status` 도 `stdout` 도 안 \
+         본다). 실행만 하는 것은 '죽지 않는다' 만 재는 것이라 컴파일 채널보다 조금 나은 \
+         정도다:\n  {}\n\n  [단정하지 않는 것] 출력을 **옳게** 읽는지는 여기서 못 본다 — \
+         읽기는 하는가만 묻는다.",
+        blind.join("\n  ")
+    );
+}
+
+// ─── 판정기 자신의 양극성 (합성 입력) ────────────────────────────────────────
+//
+// 레포 상태는 지금 3/3 이 덮여 있어 **한 방향밖에 안 보인다.** 한 방향만 재면 무정보다 —
+// `handles_in` 이 늘 비어 있어도, 늘 가득 차 있어도 레포 판정은 초록일 수 있다. 그래서
+// 양극을 픽스처로 고정한다. 핸들은 **조각으로 조립**한다(위 `handles_in` 의 주석 참조).
+
+fn handle(name: &str) -> String {
+    format!("env!(\"{}{name}\")", concat!("CARGO_BIN_", "EXE_"))
+}
+
+#[test]
+fn the_reader_answers_both_yes_and_no() {
+    let covered = format!("const BIN: &str = {};", handle("mask-source"));
+    assert!(
+        handles_in(&covered).contains("mask-source"),
+        "실행 핸들이 있는 소스에서 그 이름을 못 찾았다 — 이 판독이 늘 '없다' 를 내면 \
+         모든 bin 이 고아로 나온다"
+    );
+
+    let uncovered = "let path = \"target/debug/mask-source\"; // 경로 하드코딩";
+    assert!(
+        handles_in(uncovered).is_empty(),
+        "핸들이 아닌 경로 문자열을 실행 채널로 셌다 — 이 판독이 늘 '있다' 를 내면 앞 \
+         판정은 아무것도 안 지킨다"
+    );
+}
+
+#[test]
+fn a_second_bin_in_the_same_file_is_not_swallowed() {
+    let both = format!("{}\n{}", handle("alpha"), handle("beta-two"));
+    let found = handles_in(&both);
+    assert!(
+        found.contains("alpha") && found.contains("beta-two"),
+        "한 파일이 bin 둘을 돌리는데 하나만 셌다: {found:?} — 뒤엣것이 고아로 나온다"
+    );
+}
+
+#[test]
+fn a_bare_prefix_is_not_a_bin_name() {
+    // 이 파일 자신이 상수에 담고 있는 형태다. 빈 이름을 주우면 그 이름의 bin 이 늘
+    // 덮인 것으로 세어져, `handles_in` 이 아무 이름에나 참을 내는 것과 같아진다.
+    let bare = format!(
+        "const NEEDLE: &str = \"{}\";",
+        concat!("CARGO_BIN_", "EXE_")
+    );
+    assert!(
+        handles_in(&bare).is_empty(),
+        "이름 없는 접두사를 bin 이름으로 주웠다"
+    );
+}
