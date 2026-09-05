@@ -54,6 +54,29 @@ pub enum Descend {
     SkipBuildCaches,
 }
 
+/// 순회가 찾은 파일 하나 — 절대 경로와 **정규화된** repo-relative 경로를 짝으로 낸다.
+///
+/// 짝으로 내는 이유가 있다. 소비자는 파일을 다시 열어야 해서 절대 경로가 필요하고,
+/// 명부·면제 목록과 비교하려면 상대 경로가 필요하다. 하나만 내면 소비자가 나머지를
+/// 자기 손으로 만들고, **그 "다시 만드는 자리" 가 없애려는 것 자체다.**
+///
+/// [`Walked::rel`] 의 구분자는 어느 플랫폼에서든 `/` 다. `strip_prefix` 의 결과는 그
+/// 플랫폼 구분자를 그대로 물고 나오므로, 소비자가 그것을 펴서 소스에 박힌 `/` 리터럴과
+/// 비교하면 Windows 에서 전부 빗나간다 — 그리고 **그 어긋남은 예외가 아니라 조용한 0** 이다.
+/// 명부 조회가 모조리 실패하고 가드는 "명부에 없다" 고 보고한다.
+///
+/// 이 성질은 Linux 에서 잴 수 없다(여기서는 고치기 전에도 `/` 가 나온다). 그래서 Linux
+/// 에서 도는 단정을 두지 않는다 — 대신 잴 수 있는 것을 잡는다: 소비자가 정규화를 자기
+/// 손으로 하는 자리가 남아 있는지는 텍스트로 셀 수 있고,
+/// `floored_walk_consumers_do_not_renormalize` 가 그것을 본다.
+#[derive(Debug)]
+pub struct Walked {
+    /// 파일을 다시 열 때 쓴다.
+    pub path: PathBuf,
+    /// 비교에 쓴다. 구분자는 언제나 `/`.
+    pub rel: String,
+}
+
 impl Floor {
     /// 선언 자체가 말이 되는지. 순회를 돌기 **전에** 본다 — 앞뒤가 안 맞는 하한으로
     /// 순회를 돌면 그 결과가 무엇을 뜻하는지 아무도 모른다.
@@ -109,10 +132,11 @@ impl Floor {
 #[must_use = "하한 미달은 이 Result 로만 나온다 — 버리면 순회가 죽어도 조용히 통과한다"]
 pub fn walk_with_floor(
     root: &Path,
+    rel_base: &Path,
     floor: &Floor,
     descend: Descend,
-    keep: &dyn Fn(&Path) -> bool,
-) -> Result<Vec<PathBuf>, String> {
+    keep: &dyn Fn(&Walked) -> bool,
+) -> Result<Vec<Walked>, String> {
     floor.validate().map_err(|why| {
         format!(
             "순회 하한 선언이 앞뒤가 안 맞는다 ({}): {why}",
@@ -121,8 +145,9 @@ pub fn walk_with_floor(
     })?;
 
     let mut out = Vec::new();
-    collect(root, &descend, keep, &mut out);
-    out.sort();
+    collect(root, rel_base, &descend, keep, &mut out);
+    // `rel` 로 정렬한다 — 문자열이라 순서가 플랫폼에 안 흔들린다.
+    out.sort_by(|a, b| a.rel.cmp(&b.rel));
 
     if out.len() < floor.min {
         return Err(format!(
@@ -145,7 +170,13 @@ pub fn walk_with_floor(
     Ok(out)
 }
 
-fn collect(dir: &Path, descend: &Descend, keep: &dyn Fn(&Path) -> bool, out: &mut Vec<PathBuf>) {
+fn collect(
+    dir: &Path,
+    rel_base: &Path,
+    descend: &Descend,
+    keep: &dyn Fn(&Walked) -> bool,
+    out: &mut Vec<Walked>,
+) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -155,11 +186,37 @@ fn collect(dir: &Path, descend: &Descend, keep: &dyn Fn(&Path) -> bool, out: &mu
             if matches!(descend, Descend::SkipBuildCaches) && crate::is_build_cache_dir(&path) {
                 continue;
             }
-            collect(&path, descend, keep, out);
-        } else if keep(&path) {
-            out.push(path);
+            collect(&path, rel_base, descend, keep, out);
+        } else {
+            let found = Walked {
+                rel: normalized_rel(&path, rel_base),
+                path,
+            };
+            if keep(&found) {
+                out.push(found);
+            }
         }
     }
+}
+
+/// `rel_base` 기준 상대 경로를 만들고 구분자를 `/` 로 편다.
+///
+/// **정규화는 여기 한 곳에서만 한다.** 소비자마다 하면 언젠가 한 곳이 빠뜨리고, 빠뜨린
+/// 쪽은 예외가 아니라 조용한 0 을 낸다 — 소스에 박힌 `/` 리터럴과의 비교가 모조리
+/// 빗나가고, 가드는 "명부에 없다" 고 보고한다.
+///
+/// [`walk_with_floor`] 가 파일마다 이것을 부르지만, 디렉토리를 모으거나 경로 하나를
+/// 다루는 자리는 순회를 안 거친다. 그런 자리도 자기 손으로 펴지 말고 이것을 불러라 —
+/// 그래야 "정규화하는 자리" 가 저장소에 하나로 남고, 그 하나만 맞으면 전부 맞는다.
+///
+/// **재는 채널**: 이 함수가 옳은지는 `crossplatform-check` 의 `check-windows` 만 잰다
+/// (Linux 에서는 고치기 전에도 `/` 가 나온다). 소비자가 이것을 안 부르고 자기 손으로
+/// 펴는 자리가 남아 있는지는 `floored_walk_consumers_do_not_renormalize` 가 잰다.
+pub fn normalized_rel(path: &Path, rel_base: &Path) -> String {
+    path.strip_prefix(rel_base)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 #[cfg(test)]
@@ -216,14 +273,14 @@ mod tests {
         }
     }
 
-    fn all(_: &Path) -> bool {
+    fn all(_: &Walked) -> bool {
         true
     }
 
     #[test]
     fn a_walk_that_meets_its_floor_returns_what_it_found() {
         let t = Tree::new(&["a.rs", "sub/b.rs", "sub/deep/c.rs"], &[]);
-        let got = walk_with_floor(&t.0, &floor(3, 3), Descend::Everything, &all)
+        let got = walk_with_floor(&t.0, &t.0, &floor(3, 3), Descend::Everything, &all)
             .expect("셋을 모았으면 통과해야 한다");
         assert_eq!(got.len(), 3, "재귀가 죽으면 얕은 자리만 모은다");
     }
@@ -231,7 +288,7 @@ mod tests {
     #[test]
     fn a_dead_walk_returns_why_instead_of_an_empty_list() {
         let t = Tree::new(&["a.rs"], &[]);
-        let why = walk_with_floor(&t.0, &floor(3, 10), Descend::Everything, &all)
+        let why = walk_with_floor(&t.0, &t.0, &floor(3, 10), Descend::Everything, &all)
             .expect_err("하한 미달인데 통과했다");
         assert!(
             why.contains("1 개만 모았다") && why.contains("하한 3"),
@@ -246,8 +303,8 @@ mod tests {
     #[test]
     fn the_keep_predicate_actually_filters() {
         let t = Tree::new(&["a.rs", "b.md", "c.md"], &[]);
-        let got = walk_with_floor(&t.0, &floor(1, 1), Descend::Everything, &|p| {
-            p.extension().is_some_and(|e| e == "md")
+        let got = walk_with_floor(&t.0, &t.0, &floor(1, 1), Descend::Everything, &|w| {
+            w.rel.ends_with(".md")
         })
         .expect("둘을 모았으면 통과해야 한다");
         assert_eq!(
@@ -262,14 +319,14 @@ mod tests {
     #[test]
     fn build_caches_are_skipped_only_when_asked() {
         let t = Tree::new(&["keep.rs", "cache/inside.rs"], &["cache"]);
-        let skipped = walk_with_floor(&t.0, &floor(1, 1), Descend::SkipBuildCaches, &|p| {
-            p.extension().is_some_and(|e| e == "rs")
+        let skipped = walk_with_floor(&t.0, &t.0, &floor(1, 1), Descend::SkipBuildCaches, &|w| {
+            w.rel.ends_with(".rs")
         })
         .expect("바깥 파일 하나는 남는다");
         assert_eq!(skipped.len(), 1, "빌드 캐시 안을 들여다봤다");
 
-        let everything = walk_with_floor(&t.0, &floor(1, 1), Descend::Everything, &|p| {
-            p.extension().is_some_and(|e| e == "rs")
+        let everything = walk_with_floor(&t.0, &t.0, &floor(1, 1), Descend::Everything, &|w| {
+            w.rel.ends_with(".rs")
         })
         .expect("둘 다 모인다");
         assert_eq!(
@@ -288,19 +345,20 @@ mod tests {
         let names: Vec<String> = (0..20).rev().map(|i| format!("f{i:02}.rs")).collect();
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         let t = Tree::new(&refs, &[]);
-        let got = walk_with_floor(&t.0, &floor(20, 20), Descend::Everything, &all)
+        let got = walk_with_floor(&t.0, &t.0, &floor(20, 20), Descend::Everything, &all)
             .expect("스무 개를 모았으면 통과해야 한다");
         assert!(
-            got.windows(2).all(|w| w[0] <= w[1]),
+            got.windows(2).all(|p| p[0].rel <= p[1].rel),
             "순회 결과가 정렬돼 있지 않다 — 순서를 파일시스템에 맡기면 같은 결함이 완주마다 \
-             다른 순서로 보고된다: {got:?}"
+             다른 순서로 보고된다: {:?}",
+            got.iter().map(|w| &w.rel).collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn a_floor_of_zero_is_refused_before_the_walk_runs() {
         let t = Tree::new(&[], &[]);
-        let why = walk_with_floor(&t.0, &floor(0, 10), Descend::Everything, &all)
+        let why = walk_with_floor(&t.0, &t.0, &floor(0, 10), Descend::Everything, &all)
             .expect_err("하한 0 을 받아들였다");
         assert!(
             why.contains("하한이 0 이다"),
@@ -311,7 +369,7 @@ mod tests {
     #[test]
     fn a_floor_above_its_own_measurement_is_refused() {
         let t = Tree::new(&["a.rs"], &[]);
-        let why = walk_with_floor(&t.0, &floor(11, 10), Descend::Everything, &all)
+        let why = walk_with_floor(&t.0, &t.0, &floor(11, 10), Descend::Everything, &all)
             .expect_err("실측보다 높은 하한을 받아들였다");
         assert!(why.contains("보다 크다"), "다른 이유로 거부했다: {why}");
     }
@@ -323,7 +381,7 @@ mod tests {
             measured_on: "얼마 전",
             ..floor(1, 10)
         };
-        let why = walk_with_floor(&t.0, &bad, Descend::Everything, &all)
+        let why = walk_with_floor(&t.0, &t.0, &bad, Descend::Everything, &all)
             .expect_err("날짜 없는 실측을 받아들였다");
         assert!(why.contains("YYYY-MM-DD"), "다른 이유로 거부했다: {why}");
     }
@@ -335,7 +393,7 @@ mod tests {
             why_this_gap: "적당히",
             ..floor(1, 10)
         };
-        let why = walk_with_floor(&t.0, &bad, Descend::Everything, &all)
+        let why = walk_with_floor(&t.0, &t.0, &bad, Descend::Everything, &all)
             .expect_err("사유 없는 간격을 받아들였다");
         assert!(why.contains("너무 짧다"), "다른 이유로 거부했다: {why}");
     }

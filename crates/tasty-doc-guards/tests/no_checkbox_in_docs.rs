@@ -24,8 +24,8 @@
 // — docs/dev-guide/error-handling.md.
 #![allow(clippy::let_underscore_must_use)]
 
-use std::path::{Path, PathBuf};
-use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
+use std::path::Path;
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
 /// 스캔에서 제외할 파일(repo-relative). 현재 비어 있다 — 규칙 본문은 금지 형태를
 /// 행 시작 목록으로 쓰지 않는 방식으로 이 가드를 통과하므로 등록할 파일이 없다.
@@ -90,17 +90,14 @@ fn is_checkbox_doc(rel: &str) -> bool {
 /// 검사 대상으로 삼는데, 그날 빨개지는 것은 이 주석이 아니라 그 테스트다.
 ///
 /// 하한은 공용 순회가 강제한다 — 여기서 빠뜨릴 수 없고, 실패문도 거기서 나온다.
-fn gather_docs(root: &Path) -> Result<Vec<PathBuf>, String> {
-    walk_with_floor(&root.join("docs"), &DOCS_FLOOR, Descend::Everything, &|p| {
-        is_checkbox_doc(&rel_of(p, root))
-    })
-}
-
-fn rel_of(file: &Path, root: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+fn gather_docs(root: &Path) -> Result<Vec<Walked>, String> {
+    walk_with_floor(
+        &root.join("docs"),
+        root,
+        &DOCS_FLOOR,
+        Descend::Everything,
+        &|found| is_checkbox_doc(&found.rel),
+    )
 }
 
 #[test]
@@ -109,12 +106,12 @@ fn no_checkbox_in_docs() {
     let files = gather_docs(root).unwrap_or_else(|why| panic!("{why}"));
 
     let mut violations = Vec::new();
-    for file in files {
-        let rel = rel_of(&file, root);
+    for file in &files {
+        let rel = &file.rel;
         if ALLOWLIST_FILES.contains(&rel.as_str()) {
             continue;
         }
-        let Ok(contents) = std::fs::read_to_string(&file) else {
+        let Ok(contents) = std::fs::read_to_string(&file.path) else {
             continue; // 비-UTF8 은 마크다운 문서가 아니다.
         };
         for (i, line) in contents.lines().enumerate() {
@@ -204,7 +201,7 @@ fn prunable_dirs_under(docs_root: &Path, rel_root: &Path, out: &mut Vec<String>)
             .to_string_lossy()
             .to_string();
         if is_prunable_dir(&name) {
-            out.push(rel_of(&path, rel_root));
+            out.push(normalized_rel(&path, rel_root));
         }
         prunable_dirs_under(&path, rel_root, out);
     }

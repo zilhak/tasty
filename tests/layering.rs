@@ -30,8 +30,8 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
 
-use std::path::{Path, PathBuf};
-use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
+use std::path::Path;
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
 /// 금지 패턴 — 크레이트 경로 참조. `use` / 타입 위치 / 주석 어디에 있든 잡는다.
 const FORBIDDEN: &str = "tasty_cli::";
@@ -92,7 +92,7 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
     let Some((parent_rel, src)) = candidates.iter().find_map(|c| {
         std::fs::read_to_string(c)
             .ok()
-            .map(|s| (rel_of(c, root), s))
+            .map(|s| (normalized_rel(c, root), s))
     }) else {
         return Err(format!("{rel}: 부모 모듈 파일을 찾지 못했다"));
     };
@@ -197,27 +197,21 @@ fn is_allowed(rel: &str) -> bool {
 }
 
 /// 스캔 대상인지 — `.rs` 파일 하나.
-fn is_scan_target(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()) == Some("rs")
+fn is_scan_target(found: &Walked) -> bool {
+    found.rel.ends_with(".rs")
 }
 
 /// `src/` 를 순회한다. 가지치기는 이름이 아니라 **성질**로 한다 — 빌드 산출물 디렉토리의
 /// 이름은 `CARGO_TARGET_DIR` 하나로 무엇이든 될 수 있어서 이름 목록은 그것을 못 따라간다.
 /// 하한은 공용 순회가 강제하므로 여기서 빠뜨릴 수 없다.
-fn walk_src(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn walk_src(root: &Path) -> Result<Vec<Walked>, String> {
     walk_with_floor(
         &root.join("src"),
+        root,
         &SRC_FLOOR,
         Descend::SkipBuildCaches,
         &is_scan_target,
     )
-}
-
-fn rel_of(file: &Path, root: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
 }
 
 #[test]
@@ -229,7 +223,7 @@ fn src_does_not_reference_tasty_cli() {
     // 셋이 서로 다른 사고를 잡는다: 총량(빈 순회) · 깊이(중간에 멈춘 재귀) ·
     // 앵커(특정 가지 누락). 총량은 공용 순회가 자기 실패문과 함께 본다.
     let files = walk_src(root).unwrap_or_else(|why| panic!("{why}"));
-    let scanned: Vec<String> = files.iter().map(|f| rel_of(f, root)).collect();
+    let scanned: Vec<String> = files.iter().map(|f| f.rel.clone()).collect();
     for check in [
         walk_descends_far_enough(&scanned, MIN_DEPTH),
         walk_reached_anchor(&scanned, WALK_ANCHOR),
@@ -283,12 +277,12 @@ fn src_does_not_reference_tasty_cli() {
     let mut new_violations = Vec::new();
     let mut baseline_hit = Vec::new();
     let mut test_only_hit = Vec::new();
-    for file in files {
-        let rel = rel_of(&file, root);
+    for file in &files {
+        let rel = &file.rel;
         if is_allowed(&rel) {
             continue;
         }
-        let Ok(contents) = std::fs::read_to_string(&file) else {
+        let Ok(contents) = std::fs::read_to_string(&file.path) else {
             continue; // 비-UTF8 은 경로 참조를 담을 수 없다.
         };
         let mut hits = Vec::new();
@@ -412,13 +406,14 @@ fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     let walked = walk_src(root).expect("실제 `src/` 순회가 하한에 걸렸다");
-    let walked_rels: Vec<String> = walked.iter().map(|f| rel_of(f, root)).collect();
+    let walked_rels: Vec<String> = walked.iter().map(|f| f.rel.clone()).collect();
 
     // 반대편은 존재하지 않는 루트다. 순회는 `read_dir` 실패를 삼키고 빈 목록을 만드는데,
     // 그것이 바로 이 판정들이 겨냥하는 사고의 형태다. 총량은 공용 순회가 막으므로
     // 여기서는 그것이 실제로 막는지만 확인하고, 깊이·앵커는 빈 목록으로 따로 잰다.
     let dead = walk_with_floor(
         &root.join("src-no-such-directory"),
+        root,
         &SRC_FLOOR,
         Descend::SkipBuildCaches,
         &is_scan_target,
