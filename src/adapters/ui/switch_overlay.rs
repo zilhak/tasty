@@ -210,7 +210,7 @@ pub fn appear_fade(
         if theme.reduced_motion {
             0.0
         } else {
-            theme.motion_ui_fast_ms() / 1000.0
+            theme.switch_overlay_fade().to_secs_f32()
         },
     )
 }

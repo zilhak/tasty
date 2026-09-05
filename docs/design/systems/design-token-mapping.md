@@ -176,9 +176,9 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|
-| `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `motion_hold_reveal_ms()` = `MOTION_HOLD_REVEAL_MS` | **신규**. 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
+| `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `modhint_hold_delay()` (생성, `Millis`) | 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
 | `--tasty-motion-hold-reveal-shift` | → `duration-1200` (1200ms) | `motion_hold_reveal_shift_ms()` = `MOTION_HOLD_REVEAL_SHIFT_MS` | **신규** primitive duration-1200. **Shift 단독** 홀드만 이 지연. 타이핑 중 Shift 스침으로 팝업이 튀는 것 억제. 모션 아님 → reduced_motion 무관 |
-| `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `motion_ui_fade_ms()` = `MOTION_UI_FADE_MS` | **신규**. 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
+| `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `modhint_fade()` (생성, `Millis`) | 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
 | `--tasty-modhint-width` | → `size-180` (180px) | `modhint_width()` | 열린 사이드바 폭(기본 180)과 정렬 |
 | `--tasty-modhint-height` | → 400px | `modhint_height()` | 기본 세로 높이 |
 | `--tasty-modhint-min-width` | → 180px | `modhint_min_width()` | 리사이즈 최소 (= 기본 너비) |
@@ -227,7 +227,7 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 | `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | **신규** `line_height_ui: f32 = 1.4` (무차원 비율, zoom 무관) | UI 줄간격 배수 |
 | `--tasty-tooltip-max-width` | → `size-240` (240px) | **신규** `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
 | `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` | 앵커와 간격 |
-| `--tasty-tooltip-motion` | → `motion-ui-med` → duration-150 (150ms) | (없음 — 모션 토큰 미보유) | hover delay 150ms 는 위젯 상수 `HOVER_DELAY_SECONDS`(시간값, 길이/색 토큰 아님). fade 는 immediate-mode snap 으로 생략 |
+| `--tasty-tooltip-motion` | → `motion-ui-med` → duration-150 (150ms) | `tooltip_delay()` (생성, `Millis`) | hover delay. 종전에는 위젯 상수 `HOVER_DELAY_SECONDS: f64 = 0.15` 였다. fade 는 immediate-mode snap 으로 생략 |
 | `--tasty-help-hint-size` | → `icon-size-sm` (14) | `icon_glyph_size_sm` | (?) 글리프 14px |
 | `--tasty-help-hint-gap` | → `space-xs` (4) | `spacing_xs` | 라벨과 gap |
 | `--tasty-help-hint-color` | → `text-muted` | `text_muted()` | rest 색 |

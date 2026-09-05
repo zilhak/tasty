@@ -172,7 +172,7 @@ pub fn debug_state_json(
     };
     let elapsed_ms = elapsed.map(|d| d.as_secs_f32() * 1000.0).unwrap_or(0.0);
     let delay = reveal_delay_ms(held, theme);
-    let fade = theme.motion_ui_fade_ms();
+    let fade = theme.modhint_fade().to_millis_f32();
     let alpha = hold_reveal_alpha(elapsed_ms, delay, fade, reduced_motion);
     let sections = build_hint_sections(
         held,
@@ -247,12 +247,14 @@ pub fn hold_reveal_alpha(
 /// 스침이 잦음). Shift 를 포함하되 다른 modifier 도 눌린 조합(Ctrl+Shift 등)은 의도적
 /// 단축키 조합이라 기본 지연을 유지한다. 매 프레임 현재 조합으로 재평가되므로, Shift 단독
 /// 1.5초 뒤 Ctrl 을 추가하면 지연이 500ms 로 떨어지고 경과(1.5s) > 500ms 라 즉시 표시된다.
-/// `delay_ms` 는 Theme 토큰(`motion_hold_reveal_ms`/`motion_hold_reveal_shift_ms`)에서 온다.
+/// `delay_ms` 는 Theme 토큰(`modhint_hold_delay`/`motion_hold_reveal_shift`)에서 온다.
 fn reveal_delay_ms(held: Combo, theme: &Theme) -> f32 {
+    // `hold_reveal_alpha` 가 단위 없는 ms 산술을 하는 순수 함수라 여기서 벗겨 넘긴다 —
+    // `Millis` 의 범위는 `Theme` 경계까지이고, 그 바깥의 순수 함수는 f32 ms 로 둔다.
     if held.shift && !held.ctrl && !held.alt && !held.option {
-        theme.motion_hold_reveal_shift_ms()
+        theme.motion_hold_reveal_shift().to_millis_f32()
     } else {
-        theme.motion_hold_reveal_ms()
+        theme.modhint_hold_delay().to_millis_f32()
     }
 }
 
@@ -339,7 +341,7 @@ pub fn draw_modifier_hint(
 
     let held_ms = since.elapsed().as_secs_f32() * 1000.0;
     let delay = reveal_delay_ms(held, theme);
-    let fade = theme.motion_ui_fade_ms();
+    let fade = theme.modhint_fade().to_millis_f32();
     let Some(alpha) = hold_reveal_alpha(held_ms, delay, fade, reduced_motion) else {
         // 아직 지연 게이트 전 — 500ms 도달 시점에 깨어나도록 정확히 예약(busy-loop 아님).
         let remain = (delay - held_ms).max(1.0);

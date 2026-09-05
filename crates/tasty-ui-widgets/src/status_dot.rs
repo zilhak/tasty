@@ -74,7 +74,7 @@ pub fn status_dot(
 
     if pulse && !reduced_motion {
         let t = ui.ctx().input(|i| i.time);
-        let period = theme.status_dot_pulse_ms() as f64 / 1000.0; // ms → s
+        let period = theme.status_dot_pulse_duration().to_secs_f64();
         let phase = (t / period).rem_euclid(1.0) as f32;
         let eased = 1.0 - (1.0 - phase).powi(3); // ease-out cubic
         let radius = (dot * 0.5 + RING_INSET) * (PULSE_SCALE_MIN + PULSE_SCALE_RANGE * eased);

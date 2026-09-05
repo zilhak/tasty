@@ -12,6 +12,9 @@
 //! 임의 tier 간 참조 + 다단 체인을 허용한다. tier 규율의 강제는 생성물
 //! visibility(`generated::primitive` = `pub(crate)`)로만 수행한다.
 
+mod duration_accessor;
+use duration_accessor::{emit_duration_accessor, resolve_duration_accessor};
+
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -877,55 +880,6 @@ fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAcces
             "{own_path}: alias 대상 없음 ({target_path}) — 생성 스킵"
         )),
     }
-}
-
-/// duration component 접근자의 본문 형태.
-///
-/// 치수와 달리 **zoom 을 곱하지 않는다** — 시간은 UI 배율을 타지 않는다. 그리고
-/// semantic 종착에도 `Theme` 필드가 없다(색·치수와 달리 duration 은 테마마다 달라지지
-/// 않아 필드로 굽지 않는다). 그래서 형태가 둘뿐이다.
-enum DurationAccessor {
-    /// alias 대상이 다른 component duration 접근자.
-    Chain(String),
-    /// 종착 리터럴(ms).
-    RawMs(f32),
-}
-
-/// duration component 접근자의 본문 형태를 고른다.
-fn resolve_duration_accessor(set: &TokenSet, token: &Token) -> Result<DurationAccessor, String> {
-    let own_path = token.path();
-    if let Some(target_path) = alias_target(&token.value)
-        && let Some(target) = set.get(target_path)
-        && target.tier == Tier::Component
-    {
-        return Ok(DurationAccessor::Chain(accessor_fn_name(&target.name)));
-    }
-    let terminal = set
-        .resolve(&own_path, ThemeMode::Mocha)
-        .map_err(|e| format!("{own_path}: {e} — 생성 스킵"))?;
-    let stripped = terminal.strip_suffix("ms").unwrap_or(&terminal);
-    stripped
-        .trim()
-        .parse::<f32>()
-        .map(DurationAccessor::RawMs)
-        .map_err(|_| format!("{own_path}: 터미널 값 파싱 실패 ({terminal}) — 생성 스킵"))
-}
-
-/// duration 접근자 하나의 `impl Theme` 메서드 텍스트.
-fn emit_duration_accessor(set: &TokenSet, token: &Token, acc: &DurationAccessor) -> String {
-    let terminal = set
-        .resolve(&token.path(), ThemeMode::Mocha)
-        .expect("resolve_duration_accessor 통과 토큰은 resolve 가능");
-    let fn_name = accessor_fn_name(&token.name);
-    let body = match acc {
-        DurationAccessor::Chain(target_fn) => format!("self.{target_fn}()"),
-        DurationAccessor::RawMs(v) => format!("Millis({v:?})"),
-    };
-    format!(
-        "\n    /// `{}` → `{}` = {terminal}\n    #[inline]\n    pub fn {fn_name}(&self) -> Millis {{\n        {body}\n    }}\n",
-        token.path(),
-        token.value,
-    )
 }
 
 /// 색 component 접근자의 본문 형태.

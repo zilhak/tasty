@@ -16,6 +16,7 @@
 //! 색상 직렬화·partial 표현은 `ThemeColors` / `PartialColors` 에서 분리.
 
 use crate::color::{GpuRgb, HexColor};
+use crate::motion::Millis;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tasty_type_geometry::length::LogicalPx;
@@ -143,40 +144,15 @@ pub const OPACITY_DISABLED: f32 = 0.5;
 /// 와 같은 이유로 순수 비율 f32 상수.
 pub const OPACITY_RECESSED: f32 = 0.4;
 
-/// 비-터미널 chrome(배너 등장/소멸 등)의 UI 모션 지속시간 (`--tasty-motion-ui` →
-/// `--tasty-duration-120` = 120ms). theme.md 의 "터미널 콘텐츠 애니메이션 0ms" 는
-/// 터미널 콘텐츠 한정이라, 알림류 chrome 에는 페이드를 허용한다.
-pub const MOTION_UI_MS: f32 = 120.0;
-
-/// 빠른 비-터미널 chrome UI 모션 지속시간 (`--tasty-motion-ui-fast` →
-/// `--tasty-duration-90` = 90ms). `MOTION_UI_MS`(120ms) 보다 한 단계 짧은 페이드 —
-/// switch-number-overlay 등장처럼 즉각성이 중요한 오버레이용. 터미널 콘텐츠 0ms
-/// 불변식은 터미널 grid 한정이라 UI 오버레이 chrome 에는 무관.
-pub const MOTION_UI_FAST_MS: f32 = 90.0;
-
-/// status-dot pulse 링 1회 주기 (`--tasty-status-dot-pulse-duration` →
-/// `--tasty-duration-1600` = 1600ms). 확장·페이드 링 애니메이션의 주기 — 터미널
-/// 콘텐츠가 아닌 상태 표시 chrome 모션이라 토큰화 대상.
-pub const STATUS_DOT_PULSE_MS: f32 = 1600.0;
-
-/// modifier-hint 오버레이 홀드→표시 지연 (`--tasty-motion-hold-reveal` →
-/// `--tasty-duration-500` = 500ms). **모션이 아니라 지연**이다 — 사용자가 modifier 를
-/// 실수로 스쳐도 안 뜨게 하는 의도 게이트라 reduced_motion 여부와 무관하게 유지된다
-/// (fade 는 200ms 만 모션). 터미널 콘텐츠 0ms 불변식과 무관한 UI 오버레이 chrome.
-pub const MOTION_HOLD_REVEAL_MS: f32 = 500.0;
-
-/// modifier-hint **Shift 단독** 홀드 표시 지연 (`--tasty-motion-hold-reveal-shift` →
-/// `--tasty-duration-1200` = 1200ms). Shift 는 대문자·기호 입력에 상시 쓰여 스침이 잦으므로,
-/// Shift 만 눌린 경우에 한해 기본 500ms 대신 1.2초를 기다려 타이핑 중 오버레이가 튀는 것을
-/// 억제한다(Ctrl+Shift 등 다른 modifier 를 동반한 조합은 의도적 단축키라 기본 500ms 유지).
-/// [`MOTION_HOLD_REVEAL_MS`] 와 마찬가지로 **지연이며 모션이 아니라** reduced_motion 무관.
-pub const MOTION_HOLD_REVEAL_SHIFT_MS: f32 = 1200.0;
-
-/// 비-터미널 chrome UI 페이드 지속시간 (`--tasty-motion-ui-fade` →
-/// `--tasty-duration-200` = 200ms). modifier-hint 오버레이 등장 페이드(opacity 0.2→1.0)에
-/// 쓴다. `MOTION_UI_MS`(120ms)보다 한 단계 긴 페이드 — 홀드 게이트를 통과한 뒤라
-/// 좀 더 여유 있게 떠오른다. reduced_motion 시 이 페이드는 0ms 로 생략된다.
-pub const MOTION_UI_FADE_MS: f32 = 200.0;
+/// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). Shift 는 대문자·기호 입력에 상시
+/// 쓰여 스침이 잦으므로, Shift 만 눌린 경우에 한해 기본 500ms(`component.modhint-hold-delay`)
+/// 대신 1.2초를 기다려 타이핑 중 오버레이가 튀는 것을 억제한다(Ctrl+Shift 등 다른 modifier 를
+/// 동반한 조합은 의도적 단축키라 기본값 유지). **지연이며 모션이 아니라** reduced_motion 무관.
+///
+/// **이 값에는 대응 디자인 토큰이 없다** — `primitive.duration-1200` 자체가 없어서
+/// 생성 경로를 탈 수 없고, 코드가 값을 발명한 자리다. 나머지 모션 값은 전부
+/// `generated_component.rs` 의 생성 접근자로 옮겼고 여기만 손으로 남았다.
+pub const MOTION_HOLD_REVEAL_SHIFT_MS: Millis = Millis(1200.0);
 
 /// 떠 있는 패널(popover / banner)의 lift 그림자 토큰. egui 비의존 순수 표현 —
 /// egui 변환은 `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
@@ -1577,27 +1553,6 @@ impl Theme {
         OPACITY_DISABLED
     }
 
-    /// 비-터미널 chrome UI 모션 지속시간 (120ms). 배너 등장/소멸 알파 페이드 등.
-    /// `--tasty-motion-ui` → `--tasty-duration-120`.
-    #[inline]
-    pub fn motion_ui_ms(&self) -> f32 {
-        MOTION_UI_MS
-    }
-
-    /// 빠른 비-터미널 chrome UI 모션 지속시간 (90ms). switch-number-overlay 등장 페이드 등.
-    /// `--tasty-motion-ui-fast` → `--tasty-duration-90`.
-    #[inline]
-    pub fn motion_ui_fast_ms(&self) -> f32 {
-        MOTION_UI_FAST_MS
-    }
-
-    /// status-dot pulse 링 1회 주기 (1600ms). `--tasty-status-dot-pulse-duration`
-    /// → `--tasty-duration-1600`.
-    #[inline]
-    pub fn status_dot_pulse_ms(&self) -> f32 {
-        STATUS_DOT_PULSE_MS
-    }
-
     // ── 컴포넌트 토큰 (banner) — 기존 semantic 접근자 / 신규 primitive 조합 ──
     /// 배너 셸 배경. `--tasty-banner-bg` → `surface-raised` (surface0).
     #[inline]
@@ -1632,24 +1587,13 @@ impl Theme {
     }
 
     // ── 모션 (modifier-hint) ──
-    /// modifier-hint 홀드→표시 지연 (500ms). `--tasty-motion-hold-reveal`. **지연이며
-    /// 모션이 아니라** reduced_motion 여부와 무관하게 유지된다.
+    /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). 타이핑 중 Shift 스침으로
+    /// 오버레이가 튀는 것을 억제한다. **지연이며 모션이 아니라** reduced_motion 무관.
+    ///
+    /// 대응 토큰이 없어 손으로 남은 유일한 모션 값이다([`MOTION_HOLD_REVEAL_SHIFT_MS`]).
     #[inline]
-    pub fn motion_hold_reveal_ms(&self) -> f32 {
-        MOTION_HOLD_REVEAL_MS
-    }
-    /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). `--tasty-motion-hold-reveal-shift`.
-    /// 타이핑 중 Shift 스침으로 오버레이가 튀는 것을 억제한다. **지연이며 모션이 아니라**
-    /// reduced_motion 무관.
-    #[inline]
-    pub fn motion_hold_reveal_shift_ms(&self) -> f32 {
+    pub fn motion_hold_reveal_shift(&self) -> Millis {
         MOTION_HOLD_REVEAL_SHIFT_MS
-    }
-    /// UI chrome 페이드 (200ms). `--tasty-motion-ui-fade`. modifier-hint 등장 페이드.
-    /// reduced_motion 시 0ms 로 생략.
-    #[inline]
-    pub fn motion_ui_fade_ms(&self) -> f32 {
-        MOTION_UI_FADE_MS
     }
 
     // ── 컴포넌트 토큰 (modifier-hint 오버레이) — `--tasty-modhint-*` ──

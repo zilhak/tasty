@@ -24,8 +24,6 @@ const VIEWBOX: f32 = 24.0;
 const STROKE_VB: f32 = 2.0;
 /// track 저대비 alpha (디자인 `.tasty-spinner__track { opacity: 0.22 }`).
 const TRACK_ALPHA: f32 = 0.22;
-/// 회전 주기(초) — 디자인 `animation: tasty-spin 0.9s linear infinite`.
-const SPIN_PERIOD: f64 = 0.9;
 /// arc 가 도는 각도(디자인 `a r r 0 0 1 r r` = 90° 호).
 const ARC_SWEEP: f32 = std::f32::consts::FRAC_PI_2;
 
@@ -104,7 +102,10 @@ impl Spinner {
 
         // arc — 상단에서 시작하는 90° 호, 시간에 따라 회전.
         let t = ui.ctx().input(|i| i.time);
-        let phase = (t / SPIN_PERIOD).rem_euclid(1.0) as f32;
+        // 회전 주기 — 디자인 `animation: tasty-spin 0.9s linear infinite`
+        // (`component.spinner-duration` = 900ms). 종전에는 `SPIN_PERIOD: f64 = 0.9`
+        // 라는 위젯 로컬 상수였고, 단위가 이름에도 없어 스캐너가 0.9ms 로 읽었다.
+        let phase = (t / theme.spinner_duration().to_secs_f64()).rem_euclid(1.0) as f32;
         // -90°(상단) 기준 시작 + 회전 위상.
         let start = -std::f32::consts::FRAC_PI_2 + phase * std::f32::consts::TAU;
         draw_arc(

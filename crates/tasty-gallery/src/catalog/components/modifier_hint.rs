@@ -157,8 +157,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
-    let held = theme.motion_hold_reveal_ms() as i64;
-    let fade = theme.motion_ui_fade_ms() as i64;
+    let held = theme.modhint_hold_delay().to_millis_f32() as i64;
+    let fade = theme.modhint_fade().to_millis_f32() as i64;
     spec::meta(
         ui,
         theme,
