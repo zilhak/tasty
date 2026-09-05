@@ -60,6 +60,8 @@ tasty tool remote-profile remove --name gx10-attach
 
 `--port-file <경로>` 를 주면 그 파일을 최우선으로 읽습니다.
 
+원격 머신에서 지금 떠 있는 인스턴스의 IPC 포트를 직접 확인하려면 그 머신에서 `tasty port` 를 실행합니다 — 포트 모드 `subcommand` 가 원격에서 부르는 것이 이것입니다.
+
 ## 2. 원격이 살아 있는지 확인
 
 ```sh
