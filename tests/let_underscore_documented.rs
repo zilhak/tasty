@@ -31,7 +31,14 @@
 //! ## 대상 범위
 //!
 //! 테스트 코드는 제외한다 — `tests/` 디렉토리와 벤치 디렉토리 아래 전부, 남은 파일
-//! 안의 `#[cfg(test)]` / `#[test]` 아이템 본문, `#![cfg(test)]` 파일 전체다. 테스트에서
+//! 안의 `#[cfg(test)]` / `#[test]` 아이템 본문, 파일 단위 `#![cfg(test)]` 전체다.
+//!
+//! **`cfg` 술어는 이름이 아니라 성질로 판정한다**([`cfg_requires_test`]). `#[cfg(test)]`
+//! 만 문자열로 맞춰 보면 `#[cfg(all(test, unix))]` 형태를 통째로 프로덕션으로 세어
+//! 사유 주석을 요구한다(실측: 아이템 9 · 파일 2 자리). 반대 방향이 더 위험하다 —
+//! `any(test, …)` 를 테스트로 세면 test 아닌 조합에서 살아 있는 **프로덕션 코드가
+//! 조용히 검사 밖으로 나간다**. 그래서 판정은 "test 를 **요구**하는가" 다: `all(…)` 은
+//! 한 갈래만 요구해도 요구이고, `any(…)` · `not(test)` 는 요구가 아니다. 테스트에서
 //! 값을 버리는 것은 그 자체가 의도라 사유가 자명하고, 여기까지 강제하면 통과시키기
 //! 위한 형식적 주석만 늘어난다. 정책이 지키려는 것은 **프로덕션에서 조용히 사라지는
 //! 실패**다.
@@ -177,20 +184,71 @@ fn is_ident_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-/// `#[cfg(test)]` / `#[test]` 아이템 본문에 속하는 줄 번호(0-based). `#![cfg(test)]`
-/// 가 있으면 파일 전체를 테스트로 본다.
+/// `cfg` 술어가 **`test` 를 요구하는가.** 이름으로 묻지 않고 성질로 묻는다 —
+/// `#[cfg(test)]` 만 문자열로 맞춰 보면 `#[cfg(all(test, unix))]` 같은 형태를 통째로
+/// 놓친다(실측: 레포에 `all(test, …)` 형태가 아이템 9 · 파일 2 자리 있다).
+///
+/// 방향이 중요하다. `all(test, …)` 는 **test 없이는 컴파일되지 않으므로** 테스트 범위다.
+/// `any(test, …)` 는 아니다 — `#[cfg(any(unix, test))]` · `#[cfg(any(test, feature =
+/// "test-support"))]` 는 test 가 아닌 조합에서도 살아 있어 그 코드는 프로덕션이다.
+/// 이 구분을 안 하면 프로덕션 코드가 조용히 검사 밖으로 나간다.
+fn cfg_requires_test(pred: &str) -> bool {
+    let p = pred.trim();
+    if p == "test" {
+        return true;
+    }
+    match p.strip_prefix("all(").and_then(|r| r.strip_suffix(')')) {
+        Some(inner) => cfg_args(inner).iter().any(|a| cfg_requires_test(a)),
+        None => false,
+    }
+}
+
+/// 최상위 쉼표로만 자른다 — 중첩 괄호 안의 쉼표는 인자 경계가 아니다.
+fn cfg_args(inner: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut cur = String::new();
+    for ch in inner.chars() {
+        match ch {
+            ',' if depth == 0 => {
+                out.push(std::mem::take(&mut cur));
+                continue;
+            }
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        cur.push(ch);
+    }
+    if !cur.trim().is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// `#[cfg(<test 를 요구하는 술어>)]` 또는 `#[test]` 인가. 여는 형태(`#!`)도 함께 본다.
+fn is_test_attr(line: &str, inner_attr: bool) -> bool {
+    let t = line.trim_start();
+    let prefix = if inner_attr { "#![cfg(" } else { "#[cfg(" };
+    if !inner_attr && t.starts_with("#[test]") {
+        return true;
+    }
+    t.strip_prefix(prefix)
+        .and_then(|r| r.trim_end().strip_suffix(")]"))
+        .is_some_and(cfg_requires_test)
+}
+
+/// `#[cfg(test)]` / `#[test]` 아이템 본문에 속하는 줄 번호(0-based). 파일 단위
+/// `#![cfg(<test 요구>)]` 가 있으면 파일 전체를 테스트로 본다.
 fn test_regions(lines: &[&str]) -> Vec<bool> {
     let mut marked = vec![false; lines.len()];
-    if lines
-        .iter()
-        .any(|l| l.trim_start().starts_with("#![cfg(test)]"))
-    {
+    if lines.iter().any(|l| is_test_attr(l, true)) {
         return vec![true; lines.len()];
     }
     let mut i = 0;
     while i < lines.len() {
         let t = lines[i].trim_start();
-        if t.starts_with("#[cfg(test)]") || t.starts_with("#[test]") {
+        if is_test_attr(t, false) {
             let mut depth: i32 = 0;
             let mut started = false;
             let mut j = i;
@@ -416,6 +474,49 @@ mod helper_tests {
         assert!(
             fixture("#[cfg(test)]\nmod tests {\n    fn t() {\n        {IGNORE}\n    }\n}\n")
                 .is_empty()
+        );
+    }
+
+    /// 술어를 **성질로** 묻는다는 것의 회귀 — `#[cfg(test)]` 만 문자열로 맞추면
+    /// 이 형태가 프로덕션으로 세어져 사유 주석을 요구받는다.
+    #[test]
+    fn a_cfg_that_requires_test_among_other_predicates_is_still_test() {
+        assert!(
+            fixture(
+                "#[cfg(all(test, unix))]\nmod tests {\n    fn t() {\n        {IGNORE}\n    }\n}\n"
+            )
+            .is_empty()
+        );
+        assert!(
+            fixture(
+                "#[cfg(all(unix, all(test, feature = \"gui\")))]\nmod tests {\n    fn t() {\n        {IGNORE}\n    }\n}\n"
+            )
+            .is_empty()
+        );
+    }
+
+    /// **반대 방향이 이 판정의 위험한 쪽이다.** `any(test, …)` 는 test 가 아닌
+    /// 조합에서도 컴파일되므로 프로덕션이다 — 이것을 테스트로 세면 프로덕션 코드가
+    /// 조용히 검사 밖으로 나간다.
+    #[test]
+    fn a_cfg_that_merely_mentions_test_is_not_test_scope() {
+        assert_eq!(
+            fixture("#[cfg(any(unix, test))]\nmod m {\n    fn f() {\n        {IGNORE}\n    }\n}\n"),
+            vec![4]
+        );
+        assert_eq!(
+            fixture("#[cfg(not(test))]\nmod m {\n    fn f() {\n        {IGNORE}\n    }\n}\n"),
+            vec![4]
+        );
+    }
+
+    #[test]
+    fn a_file_level_cfg_that_requires_test_exempts_the_whole_file() {
+        assert!(fixture("#![cfg(all(test, unix))]\n\nfn f() {\n    {IGNORE}\n}\n").is_empty());
+        // 파일 단위라도 test 를 요구하지 않으면 프로덕션이다.
+        assert_eq!(
+            fixture("#![cfg(unix)]\n\nfn f() {\n    {IGNORE}\n}\n"),
+            vec![4]
         );
     }
 
