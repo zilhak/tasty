@@ -328,6 +328,74 @@ fn the_first_commit_has_no_baseline_and_says_so() {
     );
 }
 
+// ── 판정기의 신선도 ───────────────────────────────────────────────────
+//
+// 출하 범위를 좁히는 판정기(`strip-cfg-test`)는 **빌드 산출물**이다. 그래서 그것을 고친
+// 사람과 판정을 돌리는 사람이 다르면 고침이 소스에 있는데 판정은 옛 규칙으로 돈다 —
+// 그 오진은 조용하다(실측으로 밟았다). 없을 때와 같은 방향(좁히기를 끄고 넓게)으로
+// 처리하되, **말은 한다.** 양극성으로 본다: 낡으면 말하고, 안 낡으면 말하지 않는다.
+
+/// `<repo>/target/debug/strip-cfg-test` 에 실행 가능한 껍데기를 놓고, 판정기 소스
+/// 디렉토리를 만든다. 소스가 바이너리보다 새것인가는 호출자가 정한다.
+fn plant_judge(d: &Path, source_is_newer: bool) {
+    let bin = d.join("target/debug/strip-cfg-test");
+    fs::create_dir_all(bin.parent().expect("부모")).expect("target 디렉토리");
+    fs::write(&bin, "#!/bin/sh\nexit 0\n").expect("껍데기 판정기");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).expect("실행 권한");
+    }
+    let src = d.join("crates/tasty-doc-guards/src");
+    fs::create_dir_all(&src).expect("판정기 소스 디렉토리");
+    let unit = src.join("cfg_predicate.rs");
+    fs::write(&unit, "pub fn implies() {}\n").expect("판정기 소스");
+    // mtime 순서를 확정한다 — 같은 초에 쓰이면 `find -newer` 가 갈리지 않는다.
+    let (older, newer) = if source_is_newer {
+        (&bin, &unit)
+    } else {
+        (&unit, &bin)
+    };
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(120);
+    fs::File::open(older)
+        .expect("열기")
+        .set_times(fs::FileTimes::new().set_modified(base))
+        .expect("mtime 되돌리기");
+    fs::File::open(newer)
+        .expect("열기")
+        .set_times(fs::FileTimes::new().set_modified(base + std::time::Duration::from_secs(60)))
+        .expect("mtime 앞당기기");
+}
+
+#[test]
+fn a_judge_older_than_its_own_source_says_so_and_widens() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    plant_judge(d, true);
+    let (_, text) = check(d, &["--staged"]);
+    assert!(
+        text.contains("낡았다"),
+        "낡은 판정기가 조용히 쓰였다 — 옛 규칙으로 돈 판정을 아무도 못 본다:\n{text}"
+    );
+    assert!(
+        text.contains("cargo build -p tasty-doc-guards"),
+        "무엇을 하라는지가 없다:\n{text}"
+    );
+}
+
+/// 반대 방향. 이것이 없으면 "항상 낡았다고 말하는" 검사도 위 테스트를 통과한다.
+#[test]
+fn a_judge_newer_than_its_source_is_not_called_stale() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    plant_judge(d, false);
+    let (_, text) = check(d, &["--staged"]);
+    assert!(
+        !text.contains("낡았다"),
+        "신선한 판정기를 낡았다고 했다 — 매번 넓게 보면 좁히기가 죽은 것과 같다:\n{text}"
+    );
+}
+
 // ── 산출물의 범위: plugin 디렉토리 밖 ─────────────────────────────────
 //
 // 번들 plugin 은 워크스페이스 크레이트를 링크한다. 그 크레이트가 바뀌면 plugin 바이너리가

@@ -111,6 +111,22 @@ if [ -z "$STRIP_BIN" ]; then
     echo "                 좁히려면: cargo build -p tasty-doc-guards --bin strip-cfg-test" >&2
 fi
 
+# **낡은 판정기는 없는 판정기보다 나쁘다.** 판정기가 빌드 산출물이라, 그것을 고친 사람과
+# 판정을 돌리는 사람이 다르면 **고침이 소스에 있는데 판정은 옛 규칙으로 돈다** — 그리고
+# 그 오진은 조용하다(실측 2026-09-05: `cfg_attr` 을 물린 커밋을 얹고도 게이트가 옛 결과를
+# 냈고, 다시 지으니 8 → 2 로 바뀌었다). 없을 때와 같은 방향으로 처리한다: 좁히기를 포기하고
+# 넓게 본다. 넓은 쪽은 조용한 통과를 안 만든다.
+#
+# 판정기 소스가 이 트리에 없으면(픽스처 저장소·배포 tarball) 신선도를 물을 수 없으므로 넘어간다.
+STRIP_SRC="crates/tasty-doc-guards/src"
+if [ -n "$STRIP_BIN" ] && [ -d "$STRIP_SRC" ]; then
+    if [ -n "$(find "$STRIP_SRC" -name '*.rs' -newer "$STRIP_BIN" -print -quit 2>/dev/null)" ]; then
+        echo "[plugin-version] strip-cfg-test 가 자기 소스보다 낡았다 — 옛 판정으로 돌지 않도록 좁히기를 끈다." >&2
+        echo "                 다시 지어라: cargo build -p tasty-doc-guards --bin strip-cfg-test" >&2
+        STRIP_BIN=""
+    fi
+fi
+
 # edition 을 루트 Cargo.toml 에서 읽는다. 여기 박아두면 워크스페이스가 올릴 때 만료된다.
 RUST_EDITION=$(sed -n 's/^edition[[:space:]]*=[[:space:]]*"\([0-9]*\)".*/\1/p' Cargo.toml | sed -n '1p')
 [ -n "$RUST_EDITION" ] || die "판정 불가: 루트 Cargo.toml 에서 edition 을 못 읽었다."
