@@ -1,6 +1,6 @@
 # 아키텍처 개요
 
-tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 51 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
+tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다. **본 바이너리(`src/`) + 52 개 크레이트(`crates/*`)** 로 구성되며, **ports-and-adapters(헥사고날) + headless core** 로 layering 된다 — 도메인 로직은 GUI 없이도 동작하고, GUI/IPC/OS 연동은 교체 가능한 adapter 뒤에 있다.
 
 ## 기술 스택
 
@@ -32,7 +32,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 > 옛 `Engine` struct 는 삭제됐고 필드가 Core/Hub/View 로 분산됐다. 전환기 컨테이너로 남아 있던 `engine` 모듈도 사라졌고, 그 sub-module(`surface_registry` / `command_index` / `output_observer` / `layout_persistence`)은 `src/core/` 아래로 옮겨졌다.
 
-## 워크스페이스 크레이트 (51)
+## 워크스페이스 크레이트 (52)
 
 의존은 아래 계층 순서로만 흐른다(상위 → 하위). 순환 없음. **그 순서를 `crates/tasty-doc-guards/tests/architecture_layer_order_holds.rs` 가 매니페스트 의존과 대조한다** — 절 소속은 각 절 **첫 문단의 열거**에서 읽고(항목마다 `` `이름` `` 으로 시작), 순서를 거스르는 간선은 문서 본문이 이유를 적은 것만 허용한다. 지금 그런 예외는 `tasty-remote` → `tasty-ipc` 하나다(아래 도메인-IO 절). **순서를 거스르는 간선을 보면 그 간선보다 절 순서를 먼저 의심해라** — 실측에서 그런 넷은 전부 정상 의존이었고 절 넷이 잘못된 자리에 있었다. 이 절은 `crates/*/` 전체를 빠짐없이 열거한다 — `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` 가 각 디렉토리명의 등장과 위 괄호 수의 일치를 강제한다 — `doc-guards.yml` 이 main push · PR 마다 자동으로 돌린다([ci-gates](../dev-guide/ci-gates.md)). 크레이트를 추가했으면 push 전에 직접 돌려라.
 
@@ -69,7 +69,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 `tasty-cli`(clap CLI — request/format/transport/dynamic plugin subcommand. → ipc/host-plugin/terminal/approval/remote-profiles)
 
 ### 가드 전용 (의존 0)
-`tasty-doc-guards`(문서를 읽는 통합 가드들의 집 — `docs/` · `site/` · `*.md` 를 소스·워크플로 텍스트와 대조한다. **의존이 0 인 것이 존재 이유다**: 잡이 싸야 CI 에서 경로 필터 없이 매 push 돌릴 수 있고, 그래야 문서만 바뀐 push 에서도 돈다 — [ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md))
+`tasty-latency-control`(지연 단정의 대조군 — 부하가 만든 값과 코드가 만든 값을 가른다. 계열 둘(고정 CPU 일감 · 자식 하나 띄우기)을 주고, 실패 문장이 어느 계열을 썼는지 밝힌다. **의존 0 + 소비처가 전부 `dev-dependencies`** 라 제품 산출물에 안 들어간다 — [ADR-0181](../adr/0181-a-latency-assertion-must-carry-a-control-that-load-moves-and-code-does-not.md)) · `tasty-doc-guards`(문서를 읽는 통합 가드들의 집 — `docs/` · `site/` · `*.md` 를 소스·워크플로 텍스트와 대조한다. **의존이 0 인 것이 존재 이유다**: 잡이 싸야 CI 에서 경로 필터 없이 매 push 돌릴 수 있고, 그래야 문서만 바뀐 push 에서도 돈다 — [ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md))
 
 ### 본 바이너리 (`tasty`)
 위 크레이트를 의존하며 App/View/GPU/IPC 라우터/부팅을 제공.

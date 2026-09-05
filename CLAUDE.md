@@ -95,7 +95,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 ## 빌드
 
-Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 51 개 — 그중 `tasty-plugin-sdk-wasm` 은 workspace `exclude`). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
+Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 52 개 — 그중 `tasty-plugin-sdk-wasm` 은 workspace `exclude`). 빌드 프로필 3 종 (`dev` / `release` / `dist`).
 
 - **일상 개발**: `cargo build` 또는 `cargo build --release`.
 - **배포 산출물 빌드 (DMG / MSIX / AppImage 등)**: `cargo build --profile dist`. 일상 빌드에는 사용하지 않는다 (3.5 배 느림).
