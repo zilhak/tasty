@@ -24,16 +24,28 @@ use std::time::Duration;
 /// 창을 만드는 시나리오와 나머지를 갈라 놓는 차선(lane) 잠금. 나머지는 read 로
 /// 서로 병렬이고, 창을 만드는 하나만 write 로 단독이다.
 ///
-/// **왜 필요한가 — 실측(기본 gui 조합, Xvfb).** `multi_window_owner_routing` 이 두
-/// 번째 창을 만들면 그 창이 포커스를 가져가는데, **owner 를 params 에서 못 푸는
-/// 메서드는 포커스된 창으로 라우팅된다**: `src/app/request_owner.rs` 의 `Kind` 는
+/// **왜 생겼나 — 실측(기본 gui 조합, Xvfb).** `multi_window_owner_routing` 이 두
+/// 번째 창을 만들면 그 창이 포커스를 가져가는데, **owner 를 params 에서 못 찾는
+/// 메서드는 포커스된 창으로 라우팅된다**. 그때 근거로 든 것은 `Kind` 가
 /// surface / workspace / pane 셋뿐이라 `tab.close {tab_id}` 와 `pty.*` 의 headless
-/// pty id 는 owner 를 못 찾고 `focused_view_id` 로 떨어진다. 그래서 첫 창의 tab/pty
-/// 를 겨눈 호출이 두 번째 창의 engine 으로 가 "not found" 가 됐다(3 건 실패).
-/// 창이 하나뿐인 헤드리스 조합에서는 이 형태가 나타나지 않는다.
+/// pty id 가 owner 를 못 찾고 `focused_view_id` 로 떨어진다는 것이었다(3 건 실패).
 ///
-/// 그건 제품 축의 사실이고 이 파일이 고칠 것이 아니다 — 테스트는 창을 만드는
-/// 시나리오를 나머지와 **겹치지 않게** 돌려서 그 축을 건드리지 않는다.
+/// **그 근거 셋은 이제 하나도 살아 있지 않다(2026-09-06 재측정).**
+/// `src/core/request_target.rs` 의 `Kind` 는 여덟이고(surface · workspace · pane ·
+/// tab · headless · hook · observer · category), `params_resource_id` 가 `tab_id` 를,
+/// `method_scoped_resource_id` 가 `pty.kill`/`read`/`wait`/`write` 의 `"id"` 를 푼다.
+/// 지목한 대상이 어느 창에도 없을 때 모호성 오류가 참인 거절을 덮던 것도
+/// `src/app/request_owner.rs` 에서 닫혔다.
+///
+/// **그래도 이 잠금을 지금 걷지 않는다** — 걷어도 되는지는 **안 재봤다.** 위
+/// 기전 자체("owner 를 못 찾는 요청은 포커스로 간다")는 살아 있고, 그런 요청이
+/// 이 파일에 더 없다는 것을 확인하지 않았다. 걷으려면 **부하 아래에서** 걷고
+/// 돌려 봐야 한다 — 이 형태는 단독 실행에서 안 난다.
+///
+/// **★ 잠금은 동시성을 막지 잔여를 막지 않는다.** write 차선은 창 만드는
+/// 시나리오가 남들과 *겹치지* 않게 할 뿐, 그것이 **남긴 창**은 뒤에 도는 read
+/// 차선 전부가 본다. 그래서 그 시나리오는 자기가 만든 창을 스스로 닫는다.
+/// 창 수를 읽는 단언을 새로 넣을 때 이 성질을 먼저 보라.
 static WINDOW_EXCLUSIVE: RwLock<()> = RwLock::new(());
 
 /// 창을 만들지 않는 시나리오의 차선. poison 은 무시한다 — 다른 테스트가 panic 한
@@ -1039,6 +1051,40 @@ fn multi_window_owner_routing() {
     assert_eq!(send_second["sent"], true);
     let out2 = tasty.wait_for_output(new_sid, "W2_owner_route", Duration::from_secs(5));
     assert!(out2.contains("W2_owner_route"));
+
+    // 만든 창을 닫는다 — 위 단언이 전부 끝난 뒤라 검증은 그대로 남는다.
+    //
+    // **차선 잠금이 이것까지 해 주지 않는다.** write 차선은 이 시나리오가 남들과
+    // 겹치지 않게 할 뿐이고, 잠금을 놓는 순간 **남긴 창**은 뒤에 도는 read 차선
+    // 전부에게 보인다. 실제로 그 잔여가 형제 테스트의 전제를 바꿔 회차에서만
+    // 빨개진 적이 있다 — 단독 실행에서는 순서가 반대라 안 났다.
+    //
+    // 닫힘을 **단언한다**. 조용히 실패하면 잔여가 그대로 남아 같은 형태가 다시
+    // 나는데, 그때 이 자리는 정리한 것처럼 보인다.
+    let win_id = create_resp["window_id"]
+        .as_u64()
+        .expect("window.create 가 window_id 를 줬다");
+    let close_resp = tasty.call_raw("window.close", json!({ "id": win_id }));
+    assert!(
+        close_resp.get("error").is_none(),
+        "만든 창을 닫지 못하면 잔여가 남는다: {close_resp}"
+    );
+    let closing = std::time::Instant::now();
+    loop {
+        let n = tasty
+            .call("window.list", json!({}))
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        if n <= 1 {
+            break;
+        }
+        assert!(
+            closing.elapsed() < Duration::from_secs(5),
+            "창을 닫으라고 했는데 5 초가 지나도 window.list 가 {n} 이다"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 // ========== plugin 읽기 표면 — 창 없이 답하는가 ==========
