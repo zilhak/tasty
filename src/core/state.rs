@@ -30,6 +30,14 @@ pub struct IdGenerator {
     /// 닿을 수 없게 된다**(먼저 찾힌 engine 이 항상 이긴다).
     pty: Arc<std::sync::atomic::AtomicU32>,
     observer: Arc<std::sync::atomic::AtomicU64>,
+    /// surface hook 카운터. 위 pty·observer 와 **같은 이유**로 공유다 — 라우팅이 hook id 를
+    /// 창을 건너 푼다(`request_target::Kind::Hook`).
+    hook: Arc<std::sync::atomic::AtomicU64>,
+    /// global hook 카운터. 이쪽은 라우팅이 창을 건너 풀지도 **않아서**(`Kind` 에 없다)
+    /// 포커스된 창의 것만 답한다 — 카운터까지 engine 마다면 비포커스 창의 훅은 존재하는데
+    /// 어떤 요청으로도 닿지 않는다. 공유 카운터는 그 상태의 **절반**을 없앤다(id 는 유일해지고,
+    /// 나머지 절반인 라우팅은 `Kind` 쪽 문제다).
+    global_hook: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl Default for IdGenerator {
@@ -49,6 +57,8 @@ impl IdGenerator {
             surface: Arc::new(AtomicU32::new(1)),
             pty: Arc::new(AtomicU32::new(crate::core::pty_registry::PTY_ID_BASE)),
             observer: Arc::new(AtomicU64::new(1)),
+            hook: Arc::new(AtomicU64::new(1)),
+            global_hook: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -60,6 +70,16 @@ impl IdGenerator {
     /// observer id 카운터 — `ObserverRouter` 가 이 Arc 를 들고 발급한다.
     pub fn observer_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
         Arc::clone(&self.observer)
+    }
+
+    /// surface hook id 카운터 — `HookManager` 가 이 Arc 를 들고 발급한다.
+    pub fn hook_counter(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        Arc::clone(&self.hook)
+    }
+
+    /// global hook id 카운터 — `GlobalHookManager` 가 이 Arc 를 들고 발급한다.
+    pub fn global_hook_counter(&self) -> Arc<std::sync::atomic::AtomicU32> {
+        Arc::clone(&self.global_hook)
     }
 
     pub fn next_workspace(&self) -> u32 {
@@ -763,8 +783,8 @@ impl CoreState {
             waker: waker.clone(),
             settings,
             notifications: NotificationStore::with_coalesce_ms(500),
-            hook_manager: HookManager::new(),
-            global_hook_manager: GlobalHookManager::new(),
+            hook_manager: HookManager::with_counter(next_ids.hook_counter()),
+            global_hook_manager: GlobalHookManager::with_counter(next_ids.global_hook_counter()),
             closed_items: crate::model::ClosedItemStore::new(),
             command_index: crate::core::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::with_counter(
@@ -1509,6 +1529,56 @@ mod id_generator_tests {
             "floor 이후 첫 id 는 min_next 와 같아야 한다"
         );
         assert_eq!(ids.next_surface(), 19);
+    }
+
+    /// ★ 이 고침의 경계. 두 engine 이 **같은 `IdGenerator`** 에서 카운터를 받으면 hook id 가
+    /// 겹치지 않는다. 겹치면 창을 건너 찾는 쪽(`request_target::Kind::Hook`)이 먼저 찾힌
+    /// engine 을 늘 이기게 해서 나머지 하나는 어떤 요청으로도 닿지 않는다 — 실측된 형태다
+    /// (`unset global-hook --hook 1` 두 번째 호출이 `removed: false`).
+    #[test]
+    fn two_engines_do_not_hand_out_the_same_hook_id() {
+        use tasty_hooks::{HookBinding, HookEvent, HookManager};
+        let ids = IdGenerator::new();
+        let mut a = HookManager::with_counter(ids.hook_counter());
+        let mut b = HookManager::with_counter(ids.hook_counter());
+        let ia = a.add_hook(
+            1,
+            HookEvent::CommandCompleted(None),
+            HookBinding::InlineShell("echo a".into()),
+            false,
+        );
+        let ib = b.add_hook(
+            1,
+            HookEvent::CommandCompleted(None),
+            HookBinding::InlineShell("echo b".into()),
+            false,
+        );
+        assert_ne!(ia, ib, "두 engine 의 hook id 가 같으면 하나는 못 닿는다");
+    }
+
+    /// global hook 도 같다. **다만 이것만으로 그 자원이 닿게 되지는 않는다** — global hook 은
+    /// 라우팅이 창을 건너 풀지 않아(`Kind` 에 없다) 여전히 포커스된 창의 것만 답한다.
+    /// id 공간은 그 결함의 **선행 조건**이고 나머지 절반은 라우팅 쪽이다.
+    #[test]
+    fn two_engines_do_not_hand_out_the_same_global_hook_id() {
+        use crate::host_api::hooks::global::{GlobalHookManager, HookCondition};
+        let ids = IdGenerator::new();
+        let mut a = GlobalHookManager::with_counter(ids.global_hook_counter());
+        let mut b = GlobalHookManager::with_counter(ids.global_hook_counter());
+        let ia = a.add(
+            HookCondition::Interval(std::time::Duration::from_secs(60)),
+            "echo a".into(),
+            None,
+        );
+        let ib = b.add(
+            HookCondition::Interval(std::time::Duration::from_secs(60)),
+            "echo b".into(),
+            None,
+        );
+        assert_ne!(
+            ia, ib,
+            "두 engine 의 global hook id 가 같으면 하나는 못 닿는다"
+        );
     }
 
     #[test]

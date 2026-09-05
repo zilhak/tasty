@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashSet;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 pub type HookId = u64;
@@ -170,7 +172,11 @@ impl HookEvent {
 
 pub struct HookManager {
     hooks: Vec<SurfaceHook>,
-    next_id: HookId,
+    /// id 카운터. **engine 사이에서 공유한다** — 라우팅이 hook id 를 창을 건너 풀기
+    /// 때문이다(`request_target::Kind::Hook`). 카운터가 engine 마다면 두 창이 같은 id 를
+    /// 발급하고, 창을 건너 찾는 쪽은 **먼저 찾힌 engine 이 항상 이겨서** 나머지 하나는
+    /// 어떤 요청으로도 닿지 않는다. pty · observer 가 같은 이유로 공유 카운터다.
+    next_id: Arc<AtomicU64>,
 }
 
 impl Default for HookManager {
@@ -180,10 +186,19 @@ impl Default for HookManager {
 }
 
 impl HookManager {
+    /// 자기 카운터로 만든다 — 단독 engine(테스트)용이다.
     pub fn new() -> Self {
         Self {
             hooks: Vec::new(),
-            next_id: 1,
+            next_id: Arc::new(AtomicU64::new(1)),
+        }
+    }
+
+    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    pub fn with_counter(next_id: Arc<AtomicU64>) -> Self {
+        Self {
+            hooks: Vec::new(),
+            next_id,
         }
     }
 
@@ -194,8 +209,7 @@ impl HookManager {
         binding: HookBinding,
         once: bool,
     ) -> HookId {
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         // Pre-compile regex for OutputMatch events
         let compiled_regex = if let HookEvent::OutputMatch(ref pattern) = event {
             regex::Regex::new(pattern).ok()
