@@ -41,12 +41,22 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 static SHARED_INSTANCE: OnceLock<Mutex<GuiTestInstance>> = OnceLock::new();
 static CLEANUP_PID: AtomicU32 = AtomicU32::new(0);
+/// 첫 spawn 이 실패했을 때 뒤 테스트가 **실제로 다시 프로세스를 띄우는 것**을 막는다.
+/// 기전은 `spawn_diag` 에 있고 상태만 여기 둔다 — 이유는 그쪽 doc 주석 참조.
+/// 형제 하네스 `tests/common` 은 같은 래치를 자기 안에 손으로 갖고 있다(그 파일은
+/// 이 lane 소유가 아니라 여기서 옮기지 않았다). 그쪽도 이 타입으로 모으면 정의가 하나가 된다.
+static SPAWN_LATCH: spawn_diag::SpawnOnceLatch = spawn_diag::SpawnOnceLatch::new();
 
 /// Acquire the shared GUI test instance.
 /// The first call spawns the tasty process; subsequent calls reuse it.
 pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
     let guard = SHARED_INSTANCE.get_or_init(|| {
+        // ★ 이 클로저는 panic 하면 `OnceLock` 을 **미초기화로 남긴다** — 다음 테스트가
+        // 그대로 다시 돈다. 실측(디스플레이 없이 6 건): spawn 시도 6 회, 패닉 자리 1 곳.
+        // 래치를 spawn **앞**에 두는 것이 요점이다 — 두 번째 프로세스를 띄우기 전에 막는다.
+        SPAWN_LATCH.entering("gui 공유 인스턴스");
         let inst = GuiTestInstance::spawn();
+        SPAWN_LATCH.succeeded();
         // Register atexit to kill tasty when the test process exits
         CLEANUP_PID.store(inst.process_id(), Ordering::Relaxed);
         extern "C" fn on_exit() {

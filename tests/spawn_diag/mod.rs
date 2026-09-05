@@ -291,6 +291,67 @@ pub const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(40);
 /// S2 — 첫 surface 의 PTY 가 프롬프트를 낼 때까지. S1 이 끝난 뒤라 GPU 와 무관하다.
 pub const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// 공유 인스턴스의 **첫 spawn 이 실패하면 다시 시도하지 않게** 막는 래치.
+///
+/// `OnceLock::get_or_init` 은 초기화 클로저가 panic 하면 **미초기화 상태로 남는다.**
+/// 그래서 다음 테스트가 그 클로저를 그대로 다시 돈다 — 부팅이 막힌 조건(디스플레이
+/// 부재·GPU 초기화 실패·포트 파일 미작성)에서는 **테스트 수만큼 프로세스가 실제로 더
+/// 뜨고** 각각이 상한까지 기다린다. 실측(`gui_tests`, 디스플레이 없이 6 건):
+/// 래치 없이 spawn 시도 **6 회**, 패닉 자리는 **1 곳**. 즉 실패 6 건이 사건 1 개다.
+///
+/// **왜 공유 static 이 아니라 타입인가.** 래치가 지켜야 하는 것은 "이 하네스의 공유
+/// 인스턴스" 하나다. 한 test binary 가 하네스를 둘 이상 품으면 static 하나로는 한쪽의
+/// 실패가 다른 쪽의 spawn 을 막아 **가짜 실패**를 만든다. 그래서 기전만 여기서 공유하고
+/// 상태는 하네스가 각자 자기 `static` 으로 갖는다.
+///
+/// 사용법 — `get_or_init` 클로저의 **첫 줄**과 spawn 직후:
+/// ```ignore
+/// static SPAWN_LATCH: spawn_diag::SpawnOnceLatch = spawn_diag::SpawnOnceLatch::new();
+/// SHARED_INSTANCE.get_or_init(|| {
+///     SPAWN_LATCH.entering("gui 공유 인스턴스");
+///     let inst = Instance::spawn();
+///     SPAWN_LATCH.succeeded();
+///     inst
+/// })
+/// ```
+pub struct SpawnOnceLatch {
+    failed: std::sync::atomic::AtomicBool,
+}
+
+impl SpawnOnceLatch {
+    pub const fn new() -> Self {
+        Self {
+            failed: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// 초기화 클로저에 **들어가면서** 부른다. 이미 한 번 실패했으면 여기서 죽는다 —
+    /// 두 번째 프로세스를 띄우기 **전에** 막는 것이 이 함수의 전부다.
+    ///
+    /// 첫 실패의 panic 메시지에 stderr tail 과 실패 판정이 붙어 있으므로, 이 메시지는
+    /// 원인을 다시 설명하지 않고 **어디를 보라고만** 말한다.
+    pub fn entering(&self, what: &str) {
+        assert!(
+            !self.failed.swap(true, std::sync::atomic::Ordering::SeqCst),
+            "{what} 의 첫 spawn 이 이미 실패했다 — 재시도하지 않는다. \
+             원인과 stderr tail 은 이 binary 의 **첫 번째** 실패 메시지에 있다"
+        );
+    }
+
+    /// spawn 이 성공했을 때 부른다. 이 호출이 없으면 래치가 내려간 채로 남아,
+    /// 성공한 인스턴스를 쓰는 다음 호출이 잘못 막힌다.
+    pub fn succeeded(&self) {
+        self.failed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Default for SpawnOnceLatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// stderr 시그니처로 가릴 수 있는 것. **두 갈래의 확신 수준이 다르다.**
 enum BootBlocker {
     /// 디스플레이 서버가 아예 없다 — winit 이 즉시 죽는다. 이 시그니처는 부팅에
