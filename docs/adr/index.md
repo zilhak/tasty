@@ -198,3 +198,4 @@
 | 0185 | [적을 수 없는 값은 재는 법으로 적는다 — 시제가 값과 명령을 가른다](0185-an-unwritable-value-is-written-as-the-way-to-measure-it.md) | Accepted | 2026-09-06 | docs, guards, measurement, freshness, declaration, tense, r473, r474, r477, r479, adr-0139, adr-0180, adr-0183, adr-0184 |
 | 0186 | [불가침 원칙에도 집행 등급이 있다 — 구두 원칙은 집행이 0이다](0186-an-inviolable-principle-needs-an-enforcer.md) | Accepted | 2026-09-06 | guards, principles, enforcement, gallery, gallery-first, r473, r475, r486, r488, adr-0020, adr-0184, adr-0185 |
 | 0187 | [줄어든 수는 잃은 것이 아니다 — 인구조사의 감소는 모수를 넓혀 다시 잰다](0187-a-decreased-census-is-not-a-loss-remeasure-by-widening-the-population.md) | Accepted | 2026-09-06 | measurement, census, population, attribution, migration, r476, r483, r495, r497, adr-0139, adr-0183 |
+| 0188 | [빨강은 재실행 대조가 답하기 전까지 귀속하지 않는다](0188-a-red-is-not-attributed-until-a-rerun-control-answers.md) | Accepted | 2026-09-06 | ci, measurement, control, attribution, flaky, rerun, bias, adr-0183, adr-0139 |
