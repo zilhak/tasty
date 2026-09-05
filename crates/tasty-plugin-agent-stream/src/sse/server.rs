@@ -44,6 +44,15 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 /// 소비자가 끊겼을 때 재접속까지 기다릴 시간(ms) 힌트. 끊김이 정상 경로라 명시한다.
 const RETRY_HINT_MS: u64 = 3000;
 
+/// 연결 핸들 리스트 락의 poison 복구 공용 보고 좌표(첫-1 회). 담는 것은 `JoinHandle`
+/// 목록뿐이라 복구가 안전하다 — 틀린 것은 흔적이 없다는 것이었다.
+const CONNECTIONS_WHAT: &str = "the SSE connection-handle list";
+static CONNECTIONS_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
+/// 스트림 레지스트리(replay 버퍼) 락의 poison 복구 공용 보고 좌표(첫-1 회).
+const STREAM_REGISTRY_WHAT: &str = "the SSE stream registry";
+static STREAM_REGISTRY_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+
 /// SSE 응답 헤더 + 재접속 힌트. `Content-Length` 가 없고 연결을 닫지 않는다.
 const STREAM_PREAMBLE: &str = concat!(
     "HTTP/1.1 200 OK\r\n",
@@ -186,10 +195,11 @@ impl SseServer {
     }
 
     fn take_connection_handles(&self) -> Vec<JoinHandle<()>> {
-        let mut list = match self.connections.lock() {
-            Ok(list) => list,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut list = tasty_utils::poison::recover_mutex(
+            self.connections.lock(),
+            CONNECTIONS_WHAT,
+            &CONNECTIONS_POISON_REPORTED,
+        );
         list.drain(..).collect()
     }
 }
@@ -254,10 +264,12 @@ fn spawn_connection(
             ctx.active.fetch_sub(1, Ordering::SeqCst);
         });
     match spawned {
-        Ok(handle) => match connections.lock() {
-            Ok(mut list) => list.push(handle),
-            Err(poisoned) => poisoned.into_inner().push(handle),
-        },
+        Ok(handle) => tasty_utils::poison::recover_mutex(
+            connections.lock(),
+            CONNECTIONS_WHAT,
+            &CONNECTIONS_POISON_REPORTED,
+        )
+        .push(handle),
         Err(e) => {
             active.fetch_sub(1, Ordering::SeqCst);
             tracing::warn!("agent-stream: cannot spawn an SSE connection thread: {e}");
@@ -267,10 +279,11 @@ fn spawn_connection(
 
 /// 이미 끝난 연결 스레드를 걷어낸다 — 오래 뜬 서버에서 핸들이 무한히 쌓이지 않게.
 fn reap_finished(connections: &Arc<Mutex<Vec<JoinHandle<()>>>>) {
-    let mut list = match connections.lock() {
-        Ok(list) => list,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut list = tasty_utils::poison::recover_mutex(
+        connections.lock(),
+        CONNECTIONS_WHAT,
+        &CONNECTIONS_POISON_REPORTED,
+    );
     let mut kept = Vec::with_capacity(list.len());
     for handle in list.drain(..) {
         if handle.is_finished() {
@@ -367,10 +380,11 @@ fn collect_replay(registry: &Shared, resume: Option<u64>, opts: SubOptions) -> R
     let Some(after_seq) = resume else {
         return Replay::default();
     };
-    let reg = match registry.lock() {
-        Ok(reg) => reg,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let reg = tasty_utils::poison::recover_mutex(
+        registry.lock(),
+        STREAM_REGISTRY_WHAT,
+        &STREAM_REGISTRY_POISON_REPORTED,
+    );
     reg.replay_after(after_seq, opts)
 }
 

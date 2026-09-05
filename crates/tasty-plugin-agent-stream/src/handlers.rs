@@ -48,16 +48,83 @@ fn lock<'a>(
     })
 }
 
+/// params 에서 대상 surface id 를 읽는다.
+///
+/// **"키가 없다" 와 "값이 surface id 일 수 없다" 를 가른다.** 예전에는 둘 다
+/// `missing_surface` 로 답했다 — 즉 `surface: 999999999999` 처럼 **값을 실어 보낸**
+/// 요청에 "대상을 안 줬다" 고 답했다. 호출자는 자기가 준 값을 서버가 못 본 줄 알고
+/// 같은 값을 다시 보낸다. 값이 있는데 없다고 하는 답은 조용한 오답이다.
+///
+/// 여기서 판정하는 것은 **형식**뿐이다 — 그 id 의 surface 가 실제로 사는지는 별개
+/// 질문이고, 그쪽은 각 핸들러가 host 에 묻는다([`require_live_surface`]).
 fn require_surface(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
-    params
-        .get("surface")
-        .or_else(|| params.get("surface_id"))
-        .and_then(Value::as_u64)
+    let Some(raw) = params.get("surface").or_else(|| params.get("surface_id")) else {
+        return Err(IpcMethodError::invalid_params(
+            tr.t("agent_stream.error.missing_surface"),
+        ));
+    };
+    raw.as_u64()
         .and_then(|v| u32::try_from(v).ok())
-        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("agent_stream.error.missing_surface")))
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(&tr.t_replace(
+                "agent_stream.error.invalid_surface",
+                "{value}",
+                &raw.to_string(),
+            ))
+        })
 }
 
-fn resolve_error_message(tr: &Translator, err: &ResolveError) -> IpcMethodError {
+/// 레지스트리가 "이 surface 는 안 보고 있다" 고 답했을 때, 그것이 **없는 surface** 인지
+/// 확인한다.
+///
+/// 없는 surface 에 "보고 있지 않다" 고 답하면 살아 있는 미watch surface 와 **완전히 같은
+/// 문장**이 나온다(실측: 존재하지 않는 424242 와 살아 있는 1 이 같은 답). 호출자는
+/// `watch` 를 부르면 되는 줄 알고 다시 부르고, 거기서야 다른 이유로 실패한다.
+///
+/// **문구는 한 벌뿐이다** — [`tasty_utils::target::unowned_target_message`] 가 정본이고
+/// 호스트도 같은 함수를 부른다. 이 문장을 여기서 다시 쓰던 동안 실제로 어긋나 있었다:
+/// 호스트는 `(named by '<메서드>')` 에 **요청의 메서드 이름**을 넣는데 복제본은 인자
+/// 이름(`'surface'`)을 박아 두어 문장의 뜻이 달랐다. lang 파일에 두는 것도 같은 이유로
+/// 답이 아니다 — 로케일마다 바이트가 갈리면 이 문구를 문자열로 가르는 소비자가 깨진다.
+/// 그래서 바이트 동일이 **테스트의 단언이 아니라 호출 구조**로 보장된다.
+///
+/// `method` 는 **호출자가 부른 메서드**(`agent_stream.turn_start` 등)다 — 생존을 되묻느라
+/// 내부적으로 부른 host 호출의 이름이 아니다. 호출자가 이름으로 지목한 것이 그쪽이다.
+///
+/// 판정은 **좁게 틀린다**: host 호출이 실패하면 `surface_exists` 가 `true` 로 떨어져
+/// 예전 문장("보고 있지 않다")으로 돌아간다. 살아 있는 surface 를 "없다" 고 말하지 않는다.
+fn require_live_surface<H: HostCall>(
+    host: &H,
+    surface_id: u32,
+    method: &str,
+    fallback: IpcMethodError,
+) -> IpcMethodError {
+    if crate::resolve::surface_exists(host, surface_id) {
+        return fallback;
+    }
+    IpcMethodError::new(tasty_utils::target::unowned_target_message(
+        "surface",
+        u64::from(surface_id),
+        method,
+    ))
+}
+
+/// `resolve` 가 낸 실패를 IPC 에러로 옮긴다.
+///
+/// `surface_id`·`method` 를 받는 이유는 마지막 갈래 하나 때문이다: 호스트가 "그런 대상은
+/// 없다" 고 거절한 것을 **그대로 실어 보내면 괄호 안이 내부 호출 이름**(`surface.meta.get`)
+/// 이 된다. 그 이름은 호출자가 지목한 적이 없다 — 지목한 것은 이 메서드다. 실측
+/// (2026-09-05): `agent_stream.watch` 에 없는 id 를 주면 `(named by 'surface.meta.get')`
+/// 이 돌아왔고, 같은 사정에서 `turn_start`·`unwatch` 는 자기 이름을 답한다. 한 사정에
+/// 세 가지 이름이 나오면 호출자는 그 괄호를 못 읽는다.
+///
+/// 그 외의 host 실패는 그대로 넘긴다 — 거기 담긴 사유가 유일한 정보다.
+fn resolve_error_message(
+    tr: &Translator,
+    err: &ResolveError,
+    surface_id: u32,
+    method: &str,
+) -> IpcMethodError {
     match err {
         ResolveError::NoSessionMeta { surface_id } => IpcMethodError::new(
             tr.t_replace(
@@ -75,7 +142,17 @@ fn resolve_error_message(tr: &Translator, err: &ResolveError) -> IpcMethodError 
             "{session}",
             session_id,
         )),
-        ResolveError::HostCall { message } => IpcMethodError::new(message.clone()),
+        ResolveError::HostCall { message } => {
+            if tasty_utils::target::says_no_live_target(message, "surface", u64::from(surface_id)) {
+                IpcMethodError::new(tasty_utils::target::unowned_target_message(
+                    "surface",
+                    u64::from(surface_id),
+                    method,
+                ))
+            } else {
+                IpcMethodError::new(message.clone())
+            }
+        }
     }
 }
 
@@ -98,12 +175,19 @@ pub fn handle_watch<H: HostCall>(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let session_id = resolve::session_id_for_surface(host, surface_id)
-        .map_err(|e| resolve_error_message(tr, &e))?;
+        .map_err(|e| resolve_error_message(tr, &e, surface_id, "agent_stream.watch"))?;
 
     let transcript = match resolve::transcript_path(&session_id) {
         Ok(path) => Some(path),
         Err(ResolveError::TranscriptNotFound { .. }) => None,
-        Err(e) => return Err(resolve_error_message(tr, &e)),
+        Err(e) => {
+            return Err(resolve_error_message(
+                tr,
+                &e,
+                surface_id,
+                "agent_stream.watch",
+            ));
+        }
     };
 
     let mut reg = lock(registry, tr)?;
@@ -161,7 +245,8 @@ fn require_request_id(params: &Value, tr: &Translator) -> Result<String, IpcMeth
 /// 턴은 그 surface 의 다음 `turn_end`(정상 종료·취소·오류·해제·세션 소멸) 가 닫는다.
 /// claude-idle 훅을 구독하지 않는 이유: transcript 가 이미 그 신호를 만들고(ADR-0093),
 /// 훅 구독은 claude plugin 이 활성일 때만 성립하는 의존을 새로 만들기 때문이다.
-pub fn handle_turn_start(
+pub fn handle_turn_start<H: HostCall>(
+    host: &H,
     registry: &Shared,
     tr: &Translator,
     params: Value,
@@ -180,7 +265,17 @@ pub fn handle_turn_start(
         request_id.clone(),
         Duration::from_secs(timeout_secs),
     )
-    .map_err(|e| turn_error_message(tr, surface_id, &e))?;
+    .map_err(|e| {
+        let msg = turn_error_message(tr, surface_id, &e);
+        // "안 보고 있다" 는 **없는 surface** 에도 같은 말이 된다 — 그 자리에서만 host 에
+        // 되묻는다(정상 경로엔 왕복이 붙지 않는다).
+        match e {
+            TurnError::NotWatched => {
+                require_live_surface(host, surface_id, "agent_stream.turn_start", msg)
+            }
+            TurnError::AlreadyOpen { .. } => msg,
+        }
+    })?;
     Ok(json!({
         "surface_id": surface_id,
         "request_id": request_id,
@@ -208,7 +303,8 @@ fn turn_error_message(tr: &Translator, surface_id: u32, err: &TurnError) -> IpcM
 }
 
 /// `agent_stream.unwatch` — tail 을 멈추고 종료 이벤트를 남긴다.
-pub fn handle_unwatch(
+pub fn handle_unwatch<H: HostCall>(
+    host: &H,
     registry: &Shared,
     tr: &Translator,
     params: Value,
@@ -216,11 +312,19 @@ pub fn handle_unwatch(
     let surface_id = require_surface(&params, tr)?;
     let mut reg = lock(registry, tr)?;
     if !reg.remove(surface_id, crate::record::REASON_UNWATCHED) {
-        return Err(IpcMethodError::new(tr.t_replace(
+        // 보고 있던 surface 는 죽어 있어도 여기까지 안 온다(위 `remove` 가 참) — 즉
+        // 죽은 대상의 뒷정리를 막지 않는다. 생존을 되묻는 것은 **레지스트리에 없을 때**뿐이다.
+        let fallback = IpcMethodError::new(tr.t_replace(
             "agent_stream.error.not_watched",
             "{surface}",
             &surface_id.to_string(),
-        )));
+        ));
+        return Err(require_live_surface(
+            host,
+            surface_id,
+            "agent_stream.unwatch",
+            fallback,
+        ));
     }
     reg.save_if_dirty();
     Ok(json!({ "surface_id": surface_id, "unwatched": true }))
@@ -438,13 +542,24 @@ mod tests {
 
     struct StubHost {
         session: Option<&'static str>,
+        /// `surface.locate` 가 돌려줄 값. 기본은 살아 있음 —
+        /// [`live()`] 로 만든다. 없는 surface 를 재는 테스트만 false 를 쓴다.
+        exists: bool,
+    }
+
+    /// 살아 있는 surface 를 답하는 host. 기존 테스트의 전제를 그대로 유지한다.
+    fn live() -> StubHost {
+        StubHost {
+            session: None,
+            exists: true,
+        }
     }
 
     impl HostCall for StubHost {
         fn call(&self, method: &str, _params: Value) -> Result<Value, PluginError> {
             match method {
                 "surface.meta.get" => Ok(json!({ "value": self.session })),
-                "surface.locate" => Ok(json!({ "exists": true })),
+                "surface.locate" => Ok(json!({ "exists": self.exists })),
                 other => panic!("unexpected host call {other}"),
             }
         }
@@ -455,9 +570,15 @@ mod tests {
     }
 
     /// 지금 비어 있는 루프백 포트 하나. 바인드해 번호를 읽고 바로 놓는다.
-    fn free_port() -> u16 {
+    /// 임시 포트를 리스너째 예약해 반환한다. 소비자(`handle_serve`)는 port 번호만 받으므로,
+    /// 실제 bind 직전에 이 리스너를 drop 해 예약~bind 사이의 TOCTOU 창을 최소화한다
+    /// (ADR-0129 형태 B 정방향, `tasty-ssh::reserve_local_port` 와 동형). 그냥 bind 후
+    /// 곧바로 놓아 port 번호만 돌려주면, 그 사이 같은 머신의 다른 완주가 포트를 집어가
+    /// `serve_bind_failed` 로 확률적 red 가 난다.
+    fn reserve_port() -> (std::net::TcpListener, u16) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        listener.local_addr().expect("addr").port()
+        let port = listener.local_addr().expect("addr").port();
+        (listener, port)
     }
 
     /// 레지스트리 락을 실제로 poisoned 로 만든다 — 락을 쥔 스레드를 패닉시키는 것이
@@ -488,11 +609,13 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
+        let (reservation, port) = reserve_port();
+        drop(reservation);
         handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "127.0.0.1"}),
+            json!({"port": port, "bind": "127.0.0.1"}),
         )
         .expect("the first bind succeeds");
         assert_ne!(snapshot_serve(dir.path()), Value::Null);
@@ -535,7 +658,8 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
-        let first_port = free_port();
+        let (reservation, first_port) = reserve_port();
+        drop(reservation);
         handle_serve(
             &registry,
             &mut server,
@@ -546,11 +670,12 @@ mod tests {
 
         poison_registry(&registry);
 
+        // poison 으로 bind 도달 전에 실패하므로 port 는 쓰이지 않는다 — 예약을 잡지 않는다.
         let err = handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "127.0.0.1"}),
+            json!({"port": reserve_port().1, "bind": "127.0.0.1"}),
         )
         .expect_err("a poisoned registry must be reported, not swallowed");
         assert!(
@@ -577,11 +702,13 @@ mod tests {
         let tr = Translator::default();
         let mut server = None;
 
+        let (reservation, port) = reserve_port();
+        drop(reservation);
         handle_serve(
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "127.0.0.1"}),
+            json!({"port": port, "bind": "127.0.0.1"}),
         )
         .expect("the first bind succeeds");
         assert!(registry.lock().expect("lock").serve_config().is_some());
@@ -591,7 +718,7 @@ mod tests {
             &registry,
             &mut server,
             &tr,
-            json!({"port": free_port(), "bind": "192.0.2.1", "token": "t"}),
+            json!({"port": reserve_port().1, "bind": "192.0.2.1", "token": "t"}),
         )
         .expect_err("binding a foreign address must fail");
         assert!(
@@ -635,7 +762,10 @@ mod tests {
 
     #[test]
     fn watch_without_a_target_surface_is_rejected() {
-        let host = StubHost { session: Some("s") };
+        let host = StubHost {
+            session: Some("s"),
+            exists: true,
+        };
         let err = handle_watch(&host, &shared(), &Translator::default(), json!({}))
             .expect_err("must reject");
         assert_eq!(err.code, -32602);
@@ -644,7 +774,10 @@ mod tests {
 
     #[test]
     fn watch_without_session_meta_is_rejected_loudly() {
-        let host = StubHost { session: None };
+        let host = StubHost {
+            session: None,
+            exists: true,
+        };
         let registry = shared();
         let err = handle_watch(
             &host,
@@ -663,8 +796,13 @@ mod tests {
 
     #[test]
     fn unwatch_of_an_unknown_surface_is_an_error_not_a_silent_ok() {
-        let err = handle_unwatch(&shared(), &Translator::default(), json!({ "surface": 3 }))
-            .expect_err("must reject");
+        let err = handle_unwatch(
+            &live(),
+            &shared(),
+            &Translator::default(),
+            json!({ "surface": 3 }),
+        )
+        .expect_err("must reject");
         assert!(err.message.contains("not_watched"), "{}", err.message);
     }
 
@@ -743,6 +881,7 @@ mod tests {
     fn turn_start_opens_a_turn_on_a_watched_surface() {
         let registry = watched_shared(3);
         let out = handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": "abc" }),
@@ -759,6 +898,7 @@ mod tests {
         // `${body.request_id}` 는 전체 플레이스홀더면 타입을 보존한다 — 숫자로 와도 받는다.
         let registry = watched_shared(3);
         let out = handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": 42 }),
@@ -770,8 +910,13 @@ mod tests {
     #[test]
     fn turn_start_without_a_request_id_is_rejected() {
         let registry = watched_shared(3);
-        let err = handle_turn_start(&registry, &Translator::default(), json!({ "surface": 3 }))
-            .expect_err("must reject");
+        let err = handle_turn_start(
+            &live(),
+            &registry,
+            &Translator::default(),
+            json!({ "surface": 3 }),
+        )
+        .expect_err("must reject");
         assert_eq!(err.code, -32602);
         assert!(
             err.message.contains("missing_request_id"),
@@ -786,6 +931,7 @@ mod tests {
         let registry = watched_shared(3);
         let huge = "x".repeat(MAX_REQUEST_ID_LEN + 1);
         let err = handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": huge }),
@@ -806,6 +952,7 @@ mod tests {
         let registry = watched_shared(3);
         let at_cap = "x".repeat(MAX_REQUEST_ID_LEN);
         handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": at_cap }),
@@ -814,9 +961,154 @@ mod tests {
         assert!(registry.lock().expect("lock").has_open_turn(3));
     }
 
+    /// 없는 surface 를 **호스트가 실제로 답하는 방식**으로 답하는 host.
+    ///
+    /// `{exists:false}` 가 아니라 요청 거절이다 — 실측(2026-09-05, 격리 헤드리스
+    /// 인스턴스). 스텁이 `{exists:false}` 를 쓰면 이 테스트는 프로덕션에서 한 번도
+    /// 돌지 않는 경로를 재게 된다(그 함정에 `pump` 의 기존 회귀가 걸려 있었다).
+    struct RejectingHost;
+
+    impl HostCall for RejectingHost {
+        fn call(&self, method: &str, params: Value) -> Result<Value, PluginError> {
+            let sid = params
+                .get("surface_id")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            match method {
+                // 없는 대상에는 **어느 호스트 호출이든** 같은 모양으로 거절한다 — 실측이
+                // 그렇다. 그래서 스텁도 메서드마다 다른 답을 흉내 내지 않는다.
+                "surface.locate" | "surface.meta.get" => Err(PluginError::HostCall {
+                    method: method.to_string(),
+                    message: tasty_utils::target::unowned_target_message("surface", sid, method),
+                    code: None,
+                }),
+                other => panic!("unexpected host call {other}"),
+            }
+        }
+    }
+
+    /// `watch` 도 **호출자가 부른 메서드**를 괄호에 넣는다 — 내부 호출 이름이 아니다.
+    ///
+    /// 실측(2026-09-05): 없는 id 로 `agent_stream.watch` 를 부르면 호스트의 거절이 그대로
+    /// 실려 나와 `(named by 'surface.meta.get')` 이 됐다. 호출자는 그 이름을 지목한 적이
+    /// 없고, 같은 사정에서 `turn_start`·`unwatch` 는 자기 이름을 답한다. 한 사정에 세 가지
+    /// 이름이 나오면 그 괄호는 읽을 수 없는 칸이 된다.
+    #[test]
+    fn watch_names_the_method_the_caller_called() {
+        let tr = Translator::default();
+        let err = handle_watch(
+            &RejectingHost,
+            &shared(),
+            &tr,
+            json!({ "surface": 424_242 }),
+        )
+        .expect_err("없는 surface 는 거절");
+        assert_eq!(
+            err.message,
+            tasty_utils::target::unowned_target_message("surface", 424_242, "agent_stream.watch"),
+            "내부 호출 이름이 새어 나왔다: {}",
+            err.message
+        );
+    }
+
+    /// 값을 실어 보냈는데 그 값이 surface id 가 될 수 없으면 **"안 줬다" 가 아니다.**
+    ///
+    /// 실측(2026-09-05, 격리 헤드리스 인스턴스): 세 메서드 전부 `surface: 999999999999`
+    /// 에 `missing_surface` 로 답했다 — 키를 아예 뺀 요청과 **글자 하나 다르지 않았다.**
+    #[test]
+    fn a_surface_value_out_of_u32_range_is_not_reported_as_missing() {
+        let tr = Translator::default();
+        let absent = require_surface(&json!({}), &tr).expect_err("키 없음은 거절");
+        let too_big = require_surface(&json!({ "surface": 999_999_999_999u64 }), &tr)
+            .expect_err("범위 초과는 거절");
+        assert!(
+            absent.message.contains("missing_surface"),
+            "키가 없으면 missing: {}",
+            absent.message
+        );
+        assert!(
+            too_big.message.contains("invalid_surface"),
+            "값이 있으면 invalid: {}",
+            too_big.message
+        );
+        assert_ne!(
+            absent.message, too_big.message,
+            "두 사정이 같은 문장이면 호출자는 같은 값을 다시 보낸다"
+        );
+        // 양방향 — 정상 값은 그대로 통과한다.
+        assert_eq!(
+            require_surface(&json!({ "surface": 7 }), &tr).expect("정상"),
+            7
+        );
+    }
+
+    /// **없는 surface** 에 "안 보고 있다" 고 답하지 않는다 — 두 메서드 모두.
+    ///
+    /// 실측(같은 회차): 존재하지 않는 424242 와 **살아 있는** 1 이 `turn_start`·`unwatch`
+    /// 에서 같은 문장을 받았다. 호출자는 `watch` 를 부르면 되는 줄 알고 다시 부른다.
+    #[test]
+    fn a_missing_surface_is_not_reported_as_merely_unwatched() {
+        let tr = Translator::default();
+
+        let dead_turn = handle_turn_start(
+            &RejectingHost,
+            &shared(),
+            &tr,
+            json!({ "surface": 424_242, "request_id": "abc" }),
+        )
+        .expect_err("없는 surface 는 거절");
+        let dead_unwatch = handle_unwatch(
+            &RejectingHost,
+            &shared(),
+            &tr,
+            json!({ "surface": 424_242 }),
+        )
+        .expect_err("없는 surface 는 거절");
+        // 단언 대상이 **정본 함수의 출력 그대로**다. 예전에는 `contains("no_live_surface")`
+        // 로 **번역 키 이름**을 봤는데, 그건 키가 lang 파일에 없을 때 키를 그대로 돌려주는
+        // 스텁 Translator 덕에 통과하던 것이라 문장에 대해 아무것도 안 재고 있었다.
+        // 여기서 재는 것은 포맷이 아니라 **`method` 자리에 무엇이 들어가는가** 다 —
+        // 틀렸던 것이 정확히 그 자리(인자 이름 `'surface'`)였다.
+        assert_eq!(
+            dead_turn.message,
+            tasty_utils::target::unowned_target_message(
+                "surface",
+                424_242,
+                "agent_stream.turn_start"
+            )
+        );
+        assert_eq!(
+            dead_unwatch.message,
+            tasty_utils::target::unowned_target_message("surface", 424_242, "agent_stream.unwatch")
+        );
+
+        // **양방향** — 살아 있지만 watch 안 한 surface 는 예전 문장 그대로여야 한다.
+        // 이쪽이 무너지면 위 둘은 "전부 없는 surface 라고 답한다" 는 뜻이 된다.
+        let live_turn = handle_turn_start(
+            &live(),
+            &shared(),
+            &tr,
+            json!({ "surface": 3, "request_id": "abc" }),
+        )
+        .expect_err("watch 안 했으면 거절");
+        let live_unwatch = handle_unwatch(&live(), &shared(), &tr, json!({ "surface": 3 }))
+            .expect_err("watch 안 했으면 거절");
+        assert!(
+            live_turn.message.contains("turn_not_watched"),
+            "{}",
+            live_turn.message
+        );
+        assert!(
+            live_unwatch.message.contains("not_watched"),
+            "{}",
+            live_unwatch.message
+        );
+    }
+
     #[test]
     fn turn_start_on_an_unwatched_surface_is_rejected_loudly() {
         let err = handle_turn_start(
+            &live(),
             &shared(),
             &Translator::default(),
             json!({ "surface": 3, "request_id": "abc" }),
@@ -829,12 +1121,14 @@ mod tests {
     fn turn_start_rejects_an_overlapping_turn() {
         let registry = watched_shared(3);
         handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": "first" }),
         )
         .expect("first opens");
         let err = handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": "second" }),
@@ -847,6 +1141,7 @@ mod tests {
     fn turn_start_clamps_the_timeout_into_range() {
         let registry = watched_shared(3);
         let out = handle_turn_start(
+            &live(),
             &registry,
             &Translator::default(),
             json!({ "surface": 3, "request_id": "abc", "timeout_secs": 1 }),
