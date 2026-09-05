@@ -327,3 +327,123 @@ fn the_first_commit_has_no_baseline_and_says_so() {
         "첫 커밋이라는 것이 출력에 안 나온다 — 조용한 통과와 구분되지 않는다:\n{text}"
     );
 }
+
+// ── 산출물의 범위: plugin 디렉토리 밖 ─────────────────────────────────
+//
+// 번들 plugin 은 워크스페이스 크레이트를 링크한다. 그 크레이트가 바뀌면 plugin 바이너리가
+// 달라지는데, 매니페스트가 없어 판정 대상에서 자연히 빠져 있었다. 아래 둘이 **양극성**이다 —
+// 링크한 것은 요구하고 안 한 것은 안 요구한다. 한쪽만 보면 "전부 요구하는" 게이트도 통과한다.
+
+/// 링크된 크레이트 하나와 그것을 쓰는 plugin, 그리고 **아무도 안 쓰는** 크레이트 하나를
+/// 담은 진짜 cargo 워크스페이스. `cargo tree` 가 읽을 수 있어야 하므로 매니페스트가
+/// 형식만 흉내 낸 것이면 안 된다.
+fn seed_workspace() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("임시 디렉토리");
+    let d = tmp.path();
+    run_git(d, &["init", "--quiet"]);
+    run_git(d, &["config", "user.email", "fixture@example.invalid"]);
+    run_git(d, &["config", "user.name", "fixture"]);
+    run_git(d, &["config", "core.hooksPath", "/dev/null"]);
+
+    write(
+        d,
+        "Cargo.toml",
+        "[workspace]\nresolver = \"2\"\n\
+         members = [\"crates/tasty-plugin-fixture\", \"crates/tasty-shared\", \"crates/tasty-lonely\"]\n\
+         [workspace.package]\nedition = \"2024\"\n\
+         [package]\nname = \"root-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\
+         [lib]\npath = \"lib.rs\"\n",
+    );
+    write(d, "lib.rs", "pub fn nothing() {}\n");
+    write(
+        d,
+        &format!("{PLUGIN}/Cargo.toml"),
+        "[package]\nname = \"tasty-plugin-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\
+         [dependencies]\ntasty-shared = { path = \"../tasty-shared\" }\n",
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/tasty-plugin.toml"),
+        "id = \"com.tasty.fixture\"\nversion = \"0.1.0\"\n",
+    );
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    tasty_shared::greet();\n}\n",
+    );
+    for c in ["tasty-shared", "tasty-lonely"] {
+        write(
+            d,
+            &format!("crates/{c}/Cargo.toml"),
+            &format!("[package]\nname = \"{c}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"),
+        );
+        write(
+            d,
+            &format!("crates/{c}/src/lib.rs"),
+            "pub fn greet() {\n    let _ = 1;\n}\n",
+        );
+    }
+    run_git(d, &["add", "-A"]);
+    run_git(d, &["commit", "--quiet", "-m", "seed"]);
+    tmp
+}
+
+#[test]
+fn a_change_in_a_linked_workspace_crate_demands_a_bump() {
+    let tmp = seed_workspace();
+    let d = tmp.path();
+    write(
+        d,
+        "crates/tasty-shared/src/lib.rs",
+        "pub fn greet() {\n    let _ = 2;\n}\n",
+    );
+    commit_all(d, "fix(shared): change behaviour");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 1,
+        "링크된 크레이트가 바뀌었는데 통과했다 — 이 자리가 여태 안 보이던 구멍이다:\n{text}"
+    );
+    assert!(
+        text.contains("tasty-shared/src/lib.rs"),
+        "어느 파일 때문인지 메시지에 없다:\n{text}"
+    );
+}
+
+#[test]
+fn a_change_in_an_unlinked_workspace_crate_does_not() {
+    let tmp = seed_workspace();
+    let d = tmp.path();
+    write(
+        d,
+        "crates/tasty-lonely/src/lib.rs",
+        "pub fn greet() {\n    let _ = 2;\n}\n",
+    );
+    commit_all(d, "fix(lonely): change behaviour");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 0,
+        "아무 plugin 도 링크하지 않는 크레이트가 bump 를 요구했다:\n{text}"
+    );
+}
+
+#[test]
+fn a_missing_shipping_judge_widens_and_says_so() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"changed\";\n}\n",
+    );
+    commit_all(d, "feat(fixture): change behaviour");
+
+    // 합성 저장소에는 `target/` 이 없으므로 판정기가 없는 경로가 그대로 재현된다.
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 1, "{text}");
+    assert!(
+        text.contains("출하 범위를 못 좁힌다"),
+        "판정이 넓어진 것을 말하지 않는다 — 조용히 달라지면 다음 사람이 못 본다:\n{text}"
+    );
+}

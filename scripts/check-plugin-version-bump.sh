@@ -35,6 +35,37 @@
 # bump 하나)과 거짓 음성(라이브 반영이 조용히 깨짐)의 대가가 비대칭이므로 여기서는
 # 오탐 쪽을 감수한다. 재검토 조건은 ADR-0137.
 #
+# ── 무엇을 그 plugin 의 산출물로 세는가 ────────────────────────────────
+#
+# **plugin 디렉토리만 보면 공유 크레이트를 통째로 놓친다.** 번들 plugin 은
+# `tasty-plugin-agent-common`·`tasty-plugin-sdk`·`tasty-utils` 같은 워크스페이스 크레이트를
+# 링크하고, 그것들이 바뀌면 plugin 바이너리가 달라진다. 그런데 그 크레이트들은 매니페스트가
+# 없어 판정 대상에서 자연히 빠졌다 — 버전 그대로인 채 내용만 다른 산출물이 발행되고,
+# `upgrade-builtins` 는 same-version skip 이라 **이미 그 버전을 받은 인스턴스는 재시작 없이
+# 그 수정을 영영 못 받는다.** 빌드도 테스트도 초록인데 반영만 안 된다.
+#
+# 실측(가드 도입 이후 main 395 커밋): 공유 크레이트를 건드린 커밋 22 건, 그 22 건이 요구했어야
+# 할 plugin bump 147 건 중 실제로 오른 것은 7 건. 영향 plugin 을 전부 올린 커밋은 1 건뿐이었다.
+#
+# 그래서 판정 대상 파일 집합을 **워크스페이스 내부 의존 폐포**로 넓힌다(`cargo tree`,
+# normal+build 만 — dev-의존은 산출물에 안 들어간다). 그 값은 변경된 크레이트 중 매니페스트
+# 없는 것이 하나라도 있을 때만 구한다(plugin 하나당 ~0.15 s).
+#
+# ── 그리고 **출하되는 내용**만 센다 ────────────────────────────────────
+#
+# 폐포로 넓히면 fan-out 이 생긴다 — `tasty-utils` 한 줄이 9 개 plugin 전부를 건드린다. 그래서
+# 무엇을 "달라졌다" 로 셀지가 전보다 훨씬 크게 작동한다. 산출물에 안 들어가는 것을 세면 안 된다:
+#
+#   · 인라인 `#[cfg(test)]` 범위
+#   · `#[cfg(test)] mod x;` 로만 선언된 **파일 전체**
+#
+# 둘 다 `strip-cfg-test --blank-test-only-files` 가 지운다 — 파일 SLOC 게이트가 이미 쓰는
+# 판정기다(ADR-0165). 여기서 술어를 다시 구현하지 않는다. 실측에서 이 축이 147 요구 중
+# 36 을 없앴고, 그 36 은 전부 전체-테스트 파일이었다.
+#
+# **빈 줄을 접는 이유**: 그 판정기는 줄 번호 보존용으로 지운 자리를 빈 줄로 남긴다. 안 접으면
+# `#[cfg(test)] mod x;` 두 줄이 는 것이 "내용이 달라졌다" 로 읽힌다(실측으로 밟았다).
+#
 # 사용:
 #   check-plugin-version-bump.sh --staged [--base <rev>]   # index 를 base 와 비교 (기본 base=HEAD)
 #   check-plugin-version-bump.sh --range <before> <after>   # 두 커밋의 끝점 비교
@@ -55,6 +86,24 @@ cd "$ROOT" || die "판정 불가: 저장소 루트로 이동 실패."
 # 정규화기가 없으면 **판정 불가**다. 없는 채로 통과시키면 0 을 통과로 세는 형태가 된다.
 command -v rustfmt >/dev/null 2>&1 \
     || die "판정 불가: rustfmt 가 없다 — 포맷 변경과 실변경을 가를 수 없다. rustup component add rustfmt"
+
+# 출하 판정기. **여기서 빌드하지 않는다** — pre-commit 에서 cargo 를 부르면 바깥 cargo 와
+# 락을 다툰다(파일 SLOC 게이트가 같은 이유로 같은 형태를 쓴다). 없으면 판정 불가다.
+STRIP_BIN="${TASTY_STRIP_CFG_TEST_BIN:-}"
+if [ -z "$STRIP_BIN" ]; then
+    for cand in "$ROOT/target/debug/strip-cfg-test" "$ROOT/target/release/strip-cfg-test"; do
+        if [ -x "$cand" ]; then STRIP_BIN="$cand"; break; fi
+    done
+fi
+# 없으면 **더 넓게** 본다. 여기서 판정 불가로 죽이지 않는 이유는, 이 스크립트가 갓 클론한
+# 트리의 pre-commit 에서도 불리기 때문이다. 넓게 보는 방향은 조용한 통과를 안 만든다 —
+# 출하 밖 변경(테스트 전용)이 bump 를 요구하는 오탐이 될 뿐이고, ADR-0137 이 적은 비대칭
+# (오탐 하나 vs 라이브 반영이 조용히 깨짐)에서 감수하는 쪽이다. 다만 **조용히 바뀌지는
+# 않는다** — 아래 한 줄이 판정이 좁아진 것이 아니라 넓어졌음을 매번 말한다.
+if [ -z "$STRIP_BIN" ]; then
+    echo "[plugin-version] strip-cfg-test 가 없어 출하 범위를 못 좁힌다 — 테스트 전용 변경까지 bump 를 요구한다." >&2
+    echo "                 좁히려면: cargo build -p tasty-doc-guards --bin strip-cfg-test" >&2
+fi
 
 # edition 을 루트 Cargo.toml 에서 읽는다. 여기 박아두면 워크스페이스가 올릴 때 만료된다.
 RUST_EDITION=$(sed -n 's/^edition[[:space:]]*=[[:space:]]*"\([0-9]*\)".*/\1/p' Cargo.toml | sed -n '1p')
@@ -97,20 +146,83 @@ after_ref() { printf '%s:%s' "$AFTER_PREFIX" "$1"; }
 
 exists_at() { git cat-file -e "$1" 2>/dev/null; }
 
-# 정규화한 내용의 체크섬. 파일이 없으면 고정 토큰을 낸다 — "없음" 과 "빈 파일" 을
-# 같게 보면 파일 추가·삭제를 무변경으로 오판한다.
+# ── 한쪽 끝의 크레이트 트리를 펼친다 ─────────────────────────────────
+# 전체-테스트 파일 판정은 **다른 파일의 선언**(`#[cfg(test)] mod x;`)을 봐야 하므로
+# 파일 하나만 꺼내면 답이 안 나온다. 그래서 관련 크레이트를 통째로 펼친 뒤 판정기를 한 번
+# 돌린다. 펼치는 대상은 변경에 걸린 크레이트뿐이라 워크스페이스 규모와 무관하다.
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# 이 plugin 이 링크하는 **워크스페이스 내부** 크레이트 이름들(한 줄에 하나). 값을 캐시한다 —
+# 후보 선정과 파일 집합 계산에서 두 번 묻는다.
 #
-# `.rs` 는 rustfmt 를 통과시킨다. rustfmt 가 실패하면(옛 edition 등) **원문을 그대로
-# 쓴다** — 정규화 실패를 "같음" 으로 흘리지 않는다. 그 경우 포맷 차이가 남아 게이트가
-# 발화하는데, 그 방향(오탐)이 조용한 통과보다 낫다.
-normalized_sum() {
-    local ref="$1" path="$2" out fmt
-    if ! exists_at "$ref"; then printf '<absent>'; return; fi
-    out=$(git show "$ref")
+# 이름 **정확 일치**로 본다. 부분 문자열로 보면 `tasty-utils` 가 `tasty-utils-extra` 에도
+# 걸려 엉뚱한 plugin 을 판정 대상으로 끌어들인다.
+closure_of() {
+    local pname="$1" cache="$WORK/closure.$1"
+    if [ ! -f "$cache" ]; then
+        cargo tree -p "$pname" -e normal,build --prefix none --offline 2>/dev/null \
+            | awk '{print $1}' | sort -u > "$cache" \
+            || die "판정 불가: cargo tree 가 실패했다 ($pname)."
+        [ -s "$cache" ] || die "판정 불가: $pname 의 의존 폐포가 비었다 — 빈 모수는 측정 실패다."
+    fi
+    cat "$cache"
+}
+
+# 이 plugin 의 폐포에 그 크레이트가 있는가.
+links() {  # <pname> <crate-name>
+    closure_of "$1" | grep -qxF "$2"
+}
+
+# 사용: materialize <라벨> <tree-ish> <crate 경로>...
+# 라벨 디렉토리에 `crates/<...>` 를 펼치고 출하 밖 줄을 지운 사본을 남긴다.
+materialize() {
+    local label="$1" tree="$2"; shift 2
+    [ "$#" -gt 0 ] || return 0
+    [ -n "$STRIP_BIN" ] || return 0
+    local raw="$WORK/$label.raw" cooked="$WORK/$label.cooked"
+    mkdir -p "$raw" "$cooked" || die "판정 불가: 작업 디렉토리를 못 만들었다."
+    # 없는 경로가 섞이면 git archive 가 통째로 실패한다 — 있는 것만 넘긴다.
+    local present=() p
+    for p in "$@"; do
+        if git cat-file -e "$tree:$p" 2>/dev/null; then present+=("$p"); fi
+    done
+    [ "${#present[@]}" -gt 0 ] || return 0
+    git archive --format=tar "$tree" -- "${present[@]}" | tar -x -C "$raw" \
+        || die "판정 불가: 트리를 펼치지 못했다 ($label)."
+    [ -d "$raw/crates" ] || return 0
+    "$STRIP_BIN" --blank-test-only-files "$cooked" "$raw" crates >/dev/null \
+        || die "판정 불가: 출하 판정기가 실패했다 ($label)."
+}
+
+# 출하 내용의 체크섬. 파일이 없으면 고정 토큰을 낸다 — "없음" 과 "빈 파일" 을 같게 보면
+# 파일 추가·삭제를 무변경으로 오판한다.
+#
+# `.rs` 는 판정기를 거친 사본을 쓰고 rustfmt 로 포맷을 지운다. rustfmt 가 실패하면(옛
+# edition 등) **그 앞 단계 내용을 그대로 쓴다** — 정규화 실패를 "같음" 으로 흘리지 않는다.
+# 그 방향(오탐)이 조용한 통과보다 낫다. 마지막에 **빈 줄을 접는다**(위 헤더의 이유).
+shipped_sum() {
+    local label="$1" ref="$2" path="$3" out fmt cooked
     case "$path" in
         *.rs)
+            # **출하가 0 이면 없는 것과 같다.** `.rs` 에서는 "파일이 없다" 와 "전부
+            # 출하 밖이다" 가 산출물에 미치는 영향이 똑같이 0 이므로 같은 토큰을 낸다.
+            # 안 그러면 테스트 전용 파일을 **새로 추가**하는 것이 "없음 → 빈 사본" 으로
+            # 읽혀 발화한다(실측으로 밟았다). 진짜 파일을 지우는 쪽은 여전히 갈린다 —
+            # 그쪽은 before 가 내용 있는 체크섬이다.
+            if ! exists_at "$ref"; then printf '<no-ship>'; return; fi
+            cooked="$WORK/$label.cooked/$path"
+            if [ -f "$cooked" ]; then out=$(cat "$cooked"); else out=$(git show "$ref"); fi
             fmt=$(printf '%s' "$out" | rustfmt --edition "$RUST_EDITION" --emit stdout 2>/dev/null)
             [ -n "$fmt" ] && out="$fmt"
+            out=$(printf '%s' "$out" | sed '/^[[:space:]]*$/d')
+            if [ -z "$out" ]; then printf '<no-ship>'; return; fi
+            ;;
+        *)
+            # 소스가 아닌 것(`lang/*.toml`·`assets/*`)은 없음과 빈 파일을 가른다 —
+            # 삭제를 무변경으로 오판하지 않기 위해서다.
+            if ! exists_at "$ref"; then printf '<absent>'; return; fi
+            out=$(git show "$ref")
             ;;
     esac
     printf '%s' "$out" | cksum
@@ -161,10 +273,61 @@ build_affecting() {
 
 VIOLATIONS=0
 CONSIDERED=0
-# plugin 후보는 변경 목록에서 뽑는다 — 트리 전체를 훑지 않으므로 규모와 무관하다.
-PLUGINS=$(printf '%s\n' "$CHANGED" \
-    | sed -n 's|^\(crates/tasty-plugin-[^/]*\)/.*$|\1|p' \
-    | sort -u)
+
+# 변경에 걸린 크레이트(산출물 경로만). 트리 전체를 훑지 않으므로 규모와 무관하다.
+CHANGED_CRATES=""
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    build_affecting "$f" || continue
+    CHANGED_CRATES="$CHANGED_CRATES
+$(printf '%s' "$f" | sed -n 's|^\(crates/[^/]*\)/.*$|\1|p')"
+done <<EOF
+$CHANGED
+EOF
+CHANGED_CRATES=$(printf '%s\n' "$CHANGED_CRATES" | sed -n '/./p' | sort -u)
+
+# 매니페스트를 가진 것 = 번들 plugin. 나머지가 **공유 크레이트**이고, 그것이 이 게이트가
+# 여태 못 보던 자리다.
+SHARED_CHANGED=""
+for c in $CHANGED_CRATES; do
+    [ -f "$ROOT/$c/tasty-plugin.toml" ] || SHARED_CHANGED="$SHARED_CHANGED $c"
+done
+
+# plugin 후보 ① 변경된 크레이트 중 매니페스트를 가진 것
+PLUGINS=""
+for c in $CHANGED_CRATES; do
+    [ -f "$ROOT/$c/tasty-plugin.toml" ] && PLUGINS="$PLUGINS $c"
+done
+
+# plugin 후보 ② 바뀐 공유 크레이트를 폐포에 포함하는 번들 plugin.
+#
+# **`cargo tree` 는 작업 트리의 의존 그래프를 읽는다** — `--range` 로 과거 구간을 볼 때도
+# 그렇다. CI 는 after 쪽을 체크아웃한 상태로 부르므로 그 자리에서는 after 그래프가 맞고,
+# 로컬 `--staged` 도 마찬가지다. 의존 자체가 바뀐 구간을 소급해서 볼 때만 어긋나는데,
+# 그 방향은 **더 넓게 보는 쪽**이라 조용한 통과를 만들지 않는다.
+if [ -n "${SHARED_CHANGED// /}" ]; then
+    for man in "$ROOT"/crates/*/tasty-plugin.toml; do
+        [ -f "$man" ] || continue
+        pdir=$(dirname "$man"); pname=$(basename "$pdir"); prel="crates/$pname"
+        case " $PLUGINS " in *" $prel "*) continue ;; esac
+        for c in $SHARED_CHANGED; do
+            if links "$pname" "$(basename "$c")"; then PLUGINS="$PLUGINS $prel"; break; fi
+        done
+    done
+fi
+PLUGINS=$(printf '%s\n' $PLUGINS | sed -n '/./p' | sort -u)
+
+# 양끝 트리를 한 번씩만 펼친다.
+INVOLVED=$(printf '%s\n' $CHANGED_CRATES | sed -n '/./p' | sort -u)
+if [ "$MODE" = staged ]; then
+    AFTER_TREE=$(git write-tree) || die "판정 불가: 인덱스 트리를 못 만들었다."
+else
+    AFTER_TREE="$AFTER"
+fi
+# shellcheck disable=SC2086
+materialize before "$BEFORE_REV" $INVOLVED
+# shellcheck disable=SC2086
+materialize after "$AFTER_TREE" $INVOLVED
 
 for base in $PLUGINS; do
     man="$base/tasty-plugin.toml"
@@ -174,13 +337,25 @@ for base in $PLUGINS; do
     # before 에 매니페스트가 없으면 새로 추가된 plugin 이다 — 올릴 이전 값이 없다.
     exists_at "$BEFORE_REV:$man" || continue
 
-    files=$(printf '%s\n' "$CHANGED" | sed -n "s|^\($base/.*\)$|\1|p")
+    # 이 plugin 의 산출물에 닿는 변경 = 자기 디렉토리 + 워크스페이스 내부 의존 폐포.
+    scope="$base"
+    if [ -n "${SHARED_CHANGED// /}" ]; then
+        for c in $SHARED_CHANGED; do
+            if links "$(basename "$base")" "$(basename "$c")"; then scope="$scope $c"; fi
+        done
+    fi
+    files=""
+    for d in $scope; do
+        files="$files
+$(printf '%s\n' "$CHANGED" | sed -n "s|^\($d/.*\)$|\1|p")"
+    done
+    files=$(printf '%s\n' "$files" | sed -n '/./p' | sort -u)
     content_changed=0
     changed_list=""
     for f in $files; do
         build_affecting "$f" || continue
-        a=$(normalized_sum "$BEFORE_REV:$f" "$f")
-        b=$(normalized_sum "$(after_ref "$f")" "$f")
+        a=$(shipped_sum before "$BEFORE_REV:$f" "$f")
+        b=$(shipped_sum after "$(after_ref "$f")" "$f")
         if [ "$a" != "$b" ]; then
             content_changed=1
             changed_list="$changed_list
