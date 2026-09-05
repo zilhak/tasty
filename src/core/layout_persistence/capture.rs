@@ -325,12 +325,19 @@ impl SavedSurface {
 
     fn capture_generic_surface(surface: &dyn Surface, registry: &SurfaceKindRegistry) -> Self {
         let kind = surface.kind().to_string();
-        if let Some(def) = registry.get(&kind)
-            && let Some(data) = (def.snapshot)(surface)
-        {
+        if let Some(def) = registry.get(&kind) {
+            // snapshot 이 None 이어도(내용을 모름) kind 는 보존한다 — "내용을 모른다"
+            // 는 "종류를 모른다" 가 아니다. kind 를 empty 로 버리면 재시작 시 그 자리가
+            // 빈 empty 탭으로 살아나 종류마저 잃지만, 보존하면 registry 에 있는 kind 로
+            // 복원되거나(hello 전이면) deferred plugin placeholder 로 살아난다. preset
+            // capture(`preset_capture.rs`)가 같은 None 에 kind 를 보존하는 것과 정합 —
+            // 같은 입력에 두 경로가 다르게 답하던 것(preset=kind 보존, layout=empty)을
+            // 맞춘다.
+            let data = (def.snapshot)(surface).unwrap_or_else(|| json!({}));
             return SavedSurface::Generic { kind, data };
         }
-        // snapshot 함수가 None을 반환했거나 registry에 없는 kind면 Empty로 fallback.
+        // registry 에 아예 없는 kind(등록되지 않은 종류)만 Empty 로 fallback — leaf
+        // 자체가 사라지면 split 구조가 어색해지므로.
         SavedSurface::Generic {
             kind: "empty".into(),
             data: json!({}),
