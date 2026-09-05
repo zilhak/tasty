@@ -327,14 +327,7 @@ impl Core {
         if panes_len > 1 {
             // Case 3: pane close (workspace 유지).
             let ws = &mut engine.workspaces[ws_idx];
-            let was_focused = ws.focused_pane == pane_id;
-            ws.pane_layout_mut().close_pane(pane_id);
-            // 닫힌 pane 이 포커스 pane 이었을 때만 포커스를 옮긴다 — 사용자가 보고
-            // 있지 않은 pane 을 닫았는데 시야가 움직이면 불가침 원칙 1 위반이다
-            // (`Core::apply_close_pane` 의 `was_focused` 가드와 같은 규칙).
-            if was_focused && let Some(first) = ws.pane_layout().first_pane() {
-                ws.focused_pane = first.id;
-            }
+            ws.close_pane_preserving_focus(pane_id);
             engine.mark_layout_dirty();
             return Some((
                 a_box,

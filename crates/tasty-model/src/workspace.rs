@@ -95,6 +95,37 @@ impl Workspace {
             .expect("BUG: pane_layout accessed during structural mutation (between take/put)")
     }
 
+    /// pane 을 닫고, **닫힌 pane 이 포커스였을 때만** 포커스를 옮긴다.
+    ///
+    /// 사용자가 보고 있지 않은 pane 을 닫았는데 시야가 움직이면 불가침 원칙 1
+    /// (사용자 행동 ↔ 에이전트 행동 분리) 위반이다. pane 을 닫는 경로는 여럿인데
+    /// (pane 닫기 · 마지막 surface 닫기 · 이동으로 비워진 pane) 규칙은 하나라,
+    /// 경로마다 옮겨 적는 대신 여기 하나로 둔다.
+    ///
+    /// 반환값은 [`PaneNode::close_pane`] 의 반환값 — **실제로 닫혔는지**다.
+    ///
+    /// `removed` 접합항은 "안 닫았으면 아무것도 안 한다" 는 계약을 코드에 적은 것이지
+    /// **지지항이 아니다**: 지워도 이 크레이트의 어떤 단정도 안 죽는다. 두 조건이
+    /// 독립이 아니기 때문이다 — 닫기가 실패하는 두 경우(없는 pane · 마지막 leaf)에
+    /// `was_focused` 가 참이면서 첫 생존자가 포커스와 다른 상황은 `focused_pane` 이
+    /// 이미 트리에 없는 pane 을 가리킬 때뿐이고, 호출자는 전부 조회로 얻은 id 를
+    /// 넘긴다. 그 상황을 단정으로 박지 않는 이유는 그때 무엇이 옳은지가 분명하지
+    /// 않아서다(매달린 포커스를 유지하는 쪽이 옳다고 말할 수 없다).
+    ///
+    /// 재는 법: `if removed` 를 `if true` 로 바꾸고 `cargo test -p tasty-model`.
+    /// 빨개지면 그때부터 지지항이니 이 문단을 지워라.
+    pub fn close_pane_preserving_focus(&mut self, pane_id: PaneId) -> bool {
+        let was_focused = self.focused_pane == pane_id;
+        let removed = self.pane_layout_mut().close_pane(pane_id);
+        if removed
+            && was_focused
+            && let Some(first) = self.pane_layout().first_pane()
+        {
+            self.focused_pane = first.id;
+        }
+        removed
+    }
+
     /// Create a workspace from a pre-built Pane (for non-terminal surface types).
     pub fn new_with_pane(id: WorkspaceId, name: String, pane: Pane) -> Self {
         let focused_pane = pane.id;
@@ -265,5 +296,49 @@ mod tests {
         assert!((json["pane_layout"]["ratio"].as_f64().unwrap() - 0.3).abs() < 1e-6);
         // 기존 평면 "panes" 필드도 여전히 존재(하위호환)해야 한다.
         assert_eq!(json["panes"].as_array().unwrap().len(), 2);
+    }
+
+    /// pane **셋**이어야 한다. 둘이면 하나를 닫은 뒤 유일한 생존자가 곧 포커스라
+    /// `was_focused` 가드를 지워도 값이 안 움직인다 — 그 픽스처로는 아래 첫 시험이
+    /// 아무것도 재지 못한다(실측으로 확인했다).
+    fn three_pane_ws(focused: PaneId) -> Workspace {
+        let pane_layout = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PaneNode::Leaf(leaf_pane(1, 1, 1))),
+            second: Box::new(PaneNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: Box::new(PaneNode::Leaf(leaf_pane(2, 2, 2))),
+                second: Box::new(PaneNode::Leaf(leaf_pane(3, 3, 3))),
+            }),
+        };
+        Workspace::from_restored(9, "test".to_string(), String::new(), pane_layout, focused)
+    }
+
+    /// 불가침 원칙 1 — 보고 있지 않은 pane 을 닫았다고 시야가 움직이면 안 된다.
+    /// 포커스는 3 인데 1 을 닫으면 첫 생존자는 2 다. 가드가 없으면 2 로 끌려간다.
+    #[test]
+    fn closing_an_unfocused_pane_leaves_focus_where_it_was() {
+        let mut ws = three_pane_ws(3);
+        assert!(ws.close_pane_preserving_focus(1));
+        assert_eq!(ws.focused_pane, 3);
+    }
+
+    #[test]
+    fn closing_the_focused_pane_moves_focus_to_the_first_survivor() {
+        let mut ws = three_pane_ws(3);
+        assert!(ws.close_pane_preserving_focus(3));
+        assert_eq!(ws.focused_pane, 1);
+    }
+
+    /// 없는 pane 을 닫으라 하면 **닫지 않았다고 답한다.** 이 시험이 재는 것은
+    /// 반환값이다 — 뒤의 `focused_pane` 단정은 `removed` 가드가 아니라 `was_focused`
+    /// 가드가 통과시킨다(포커스가 3 이고 닫으라는 것은 77 이라 애초에 같지 않다).
+    #[test]
+    fn a_close_that_removed_nothing_reports_it() {
+        let mut ws = three_pane_ws(3);
+        assert!(!ws.close_pane_preserving_focus(77));
+        assert_eq!(ws.focused_pane, 3);
     }
 }
