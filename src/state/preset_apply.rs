@@ -13,7 +13,8 @@ use tasty_presets::{
 
 use crate::core::CoreState;
 use crate::model::{
-    Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace,
+    DeferredPlugin, EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab,
+    TerminalSurface, Workspace,
 };
 
 /// PresetSplitDirection → live SplitDirection. presets crate 는 외부 enum 을 모르므로
@@ -35,7 +36,6 @@ pub struct ApplyOptions {
 
 #[derive(Debug)]
 pub enum ApplyError {
-    UnknownKind(String),
     PaneNotFound(u32),
     WorkspaceNotFound(u32),
     Empty,
@@ -47,7 +47,6 @@ pub enum ApplyError {
 impl std::fmt::Display for ApplyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownKind(k) => write!(f, "unknown surface kind: {k}"),
             Self::PaneNotFound(id) => write!(f, "target pane not found: {id}"),
             Self::WorkspaceNotFound(id) => write!(f, "target workspace not found: {id}"),
             Self::Empty => write!(f, "preset has no usable leaves"),
@@ -354,7 +353,24 @@ impl AppState {
         }
 
         let Some(def) = engine.surface_registry.get(&preset.kind) else {
-            return Err(ApplyError::UnknownKind(preset.kind.clone()));
+            // 미등록 kind 를 restore(rebuild_surface)와 동형으로 deferred plugin placeholder 로
+            // 흡수한다. Err 전파는 build_surface_layout 의 Split 에서 `?` 로 퍼져 이 leaf 의
+            // 형제(무고한 terminal 포함)까지 통째로 버린다 — 같은 kind miss 를 restore 는
+            // 흡수하고 apply 는 거부하면 그 자체가 결함이다(R275).
+            //
+            // ★ restore 와 다른 점을 명시한다(R323 — 다음 사람이 "restore 와 같으니 reify 가
+            // 반드시 온다"로 읽으면 틀린다): restore 의 kind miss 는 plugin hello 전 **일시
+            // 부재**라 reify(`reify_displayed_surfaces`)가 뒤따른다. apply 의 미등록은 plugin
+            // 미설치·제거인 **영구 부재일 수 있어** placeholder 가 빈 채 남을 수 있다(reify 가
+            // 안 올 수 있다). 그래도 형제 유실(회복 불가)보다 빈 placeholder 탭(사용자가 닫으면
+            // 되는 회복 가능)이 낫고, placeholder 는 화면에 보이므로 조용한 손실도 아니다.
+            return Ok(Box::new(EmptySurface::new_deferred_plugin(
+                surface_id,
+                DeferredPlugin {
+                    kind: preset.kind.clone(),
+                    snapshot: preset.params.clone(),
+                },
+            )));
         };
         // cwd 우선순위: 명시된 preset.cwd > derive_cwd file_path 필드의 부모 디렉토리.
         // 사용자 요구("파일 kind 의 cwd 는 파일이 있는 폴더")를 apply 시점에 실현한다.
@@ -607,5 +623,63 @@ mod tests {
             engine.workspaces[idx].category,
             crate::model::NORMAL_CATEGORY_ID
         );
+    }
+
+    #[test]
+    fn missing_kind_leaf_is_absorbed_keeping_sibling_terminal() {
+        use crate::model::{EmptySurface, SurfaceLayout};
+        use tasty_presets::PresetSplitDirection;
+
+        let (mut state, mut engine) = test_state();
+        let split = PresetSurfaceLayout::Split {
+            direction: PresetSplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(PresetSurfaceLayout::Leaf {
+                surface: PresetSurface {
+                    id: None,
+                    kind: "terminal".to_string(),
+                    cwd: None,
+                    startup_command: None,
+                    params: serde_json::Value::Null,
+                },
+            }),
+            second: Box::new(PresetSurfaceLayout::Leaf {
+                surface: PresetSurface {
+                    id: None,
+                    kind: "no_such_plugin".to_string(),
+                    cwd: None,
+                    startup_command: None,
+                    params: json!({ "file": "/x" }),
+                },
+            }),
+        };
+
+        // Err 전파였다면 여기서 apply 전체가 실패해 형제 terminal 까지 잃었다.
+        let layout = state
+            .build_surface_layout(&mut engine, &split)
+            .expect("미등록 kind 가 있어도 형제를 살리고 성공해야 한다");
+
+        let SurfaceLayout::Split { first, second, .. } = layout else {
+            panic!("Split 이어야 한다");
+        };
+        // 형제 terminal 은 살아남는다.
+        let SurfaceLayout::Leaf(term) = *first else {
+            panic!("first 는 Leaf 여야 한다");
+        };
+        assert_eq!(term.kind(), "terminal");
+        // 미등록 kind 는 deferred plugin placeholder 로 흡수된다(kind/snapshot 보존).
+        let SurfaceLayout::Leaf(ph) = *second else {
+            panic!("second 는 Leaf 여야 한다");
+        };
+        let es = ph
+            .as_any()
+            .downcast_ref::<EmptySurface>()
+            .expect("미등록 kind 는 EmptySurface placeholder 여야 한다");
+        assert!(es.is_deferred());
+        let dp = es
+            .deferred_plugin()
+            .expect("plugin deferred placeholder 여야 한다");
+        assert_eq!(dp.kind, "no_such_plugin");
+        assert_eq!(dp.snapshot, json!({ "file": "/x" }));
     }
 }
