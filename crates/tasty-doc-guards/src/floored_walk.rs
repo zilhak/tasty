@@ -181,8 +181,19 @@ fn collect(
         return;
     };
     for entry in entries.flatten() {
+        // **심볼릭 링크는 따라가지 않는다.** 따라가면 순회가 레포 밖 실제 경로로 새고,
+        // 그 순간 모수가 작업 트리의 종류를 읽는다 — worktree 에는 레포 밖을 가리키는
+        // 링크가 있고 보통의 clone 에는 없어서, 같은 커밋이 기계마다 다른 수를 낸다.
+        // 실측 2026-09-06: 이 레포에서 따라가면 `.rs` 가 15 개 더 세어졌고, 그 15 는
+        // 커밋되지 않는 로컬 작업 폴더의 것이라 어느 가드의 대상도 아니다.
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_dir() {
+        if kind.is_dir() {
             if matches!(descend, Descend::SkipBuildCaches) && crate::is_build_cache_dir(&path) {
                 continue;
             }
@@ -353,6 +364,37 @@ mod tests {
              다른 순서로 보고된다: {:?}",
             got.iter().map(|w| &w.rel).collect::<Vec<_>>()
         );
+    }
+
+    /// 링크를 안 따라간다는 것은 **양방향으로** 재야 한다. 링크 너머 파일이 안 세어지는
+    /// 것만 보면 "링크를 안 따라갔다" 와 "거기 파일이 없다" 가 구별되지 않는다.
+    #[test]
+    fn symlinks_are_not_followed_out_of_the_tree() {
+        let outside = Tree::new(&["beyond.rs"], &[]);
+        let inside = Tree::new(&["here.rs"], &[]);
+        std::os::unix::fs::symlink(&outside.0, inside.0.join("link")).unwrap();
+
+        let got = walk_with_floor(
+            &inside.0,
+            &inside.0,
+            &floor(1, 1),
+            Descend::Everything,
+            &all,
+        )
+        .expect("트리 안의 파일 하나는 모인다");
+        let rels: Vec<&str> = got.iter().map(|w| w.rel.as_str()).collect();
+        assert_eq!(
+            rels,
+            vec!["here.rs"],
+            "링크 너머로 순회가 샜다 — 그러면 모수가 작업 트리의 종류를 읽는다"
+        );
+
+        // 반대편: 링크가 아니라 진짜 디렉토리였으면 그 파일이 세어진다. 이것이 없으면
+        // 위 초록은 "링크를 건너뛰었다" 가 아니라 "거기 아무것도 없었다" 일 수 있다.
+        let plain = Tree::new(&["here.rs", "sub/beyond.rs"], &[]);
+        let got = walk_with_floor(&plain.0, &plain.0, &floor(1, 1), Descend::Everything, &all)
+            .expect("둘 다 모인다");
+        assert_eq!(got.len(), 2, "평범한 하위 디렉토리까지 건너뛴다");
     }
 
     #[test]
