@@ -12,6 +12,7 @@
 //! 저장소 의존)을 직접 못 부르고 같은 위젯·토큰으로 미러한다(settings_handler 전례).
 
 use std::cell::RefCell;
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input};
@@ -23,7 +24,7 @@ use crate::catalog::widgets::dialog as kit;
 /// 디자인 settings 콘텐츠 컬럼 근사 프레임 폭(settings_handler 와 동일).
 const WIDTH: f32 = 560.0;
 /// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
-const LABEL_COL_W: f32 = 150.0;
+const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
 /// jsx size row Input `style={{ width: 88 }}` — field-width-xs(90) 로 근사.
 ///
 /// 디자인 88 은 field-width 토큰 세트(90/110/160/200) 밖 specimen 값이라, mono
@@ -171,7 +172,7 @@ fn xfer_row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(
         ui.set_min_height(theme.settings_row_min_height().value());
         ui.spacing_mut().item_spacing.x = 0.0;
         let (lr, _) = ui.allocate_exact_size(
-            egui::vec2(LABEL_COL_W, theme.settings_row_min_height().value()),
+            egui::vec2(LABEL_COL_W.value(), theme.settings_row_min_height().value()),
             egui::Sense::hover(),
         );
         ui.painter().text(

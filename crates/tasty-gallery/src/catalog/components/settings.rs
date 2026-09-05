@@ -25,6 +25,7 @@
 //! 갤러리 토큰 규율상 literal preset hex 대신 **theme 팔레트 토큰**으로 구조만 전사한다.
 
 use std::cell::RefCell;
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
@@ -40,7 +41,7 @@ const WIDTH: f32 = 1100.0;
 const HEIGHT: f32 = 700.0;
 const L2_WIDTH: f32 = 200.0;
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
-const ROW_LABEL_W: f32 = 150.0;
+const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
 
 /// L1 상단 탭 (jsx `L1_LABEL`: FileHandler → "Handler" — S13 일반화, 내부 키는
 /// FileHandler 유지). 활성 = Appearance.
@@ -500,7 +501,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(&mut 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
         let (lr, _) = ui.allocate_exact_size(
-            egui::vec2(ROW_LABEL_W, theme.item_height_interactive.value()),
+            egui::vec2(ROW_LABEL_W.value(), theme.item_height_interactive.value()),
             egui::Sense::hover(),
         );
         ui.painter().text(

@@ -17,6 +17,7 @@
 //! `favorite_row`/`favorites_empty` 와 동일 형상.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tree_row;
 
 use crate::catalog::icons::{FOLDER, STAR, STAR_FILL};
@@ -70,7 +71,7 @@ const FAVS_MANY: &[(&str, bool)] = &[
 ];
 
 /// design ExpSidebar width 196.
-const SIDEBAR_W: f32 = 196.0;
+const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 /// 데모 컨테이너의 사이드바 본문 높이 — 600 미만이라 비율(40%) 분기를 재현하고,
 /// 긴 트리/많은 즐겨찾기 각각의 스크롤도 자연히 유발한다(§ 아래 4케이스 참고).
 const DEMO_BODY_H: f32 = 340.0;
@@ -194,7 +195,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, contents: impl FnOnce(&mut egui::Ui))
             egui::Color32::from(theme.separator),
         ))
         .show(ui, |ui| {
-            ui.set_width(SIDEBAR_W);
+            ui.set_width(SIDEBAR_W.value());
             ui.set_height(DEMO_BODY_H);
             ui.spacing_mut().item_spacing.y = 0.0;
             contents(ui);
@@ -225,7 +226,7 @@ fn two_region_inner(
     let files_h = (DEMO_BODY_H - fav_h - theme.border_width.value()).max(0.0);
 
     ui.allocate_ui_with_layout(
-        egui::vec2(SIDEBAR_W, files_h),
+        egui::vec2(SIDEBAR_W.value(), files_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             caption(ui, theme, "Files");
@@ -264,7 +265,7 @@ fn two_region_inner(
     section_separator(ui, theme);
 
     ui.allocate_ui_with_layout(
-        egui::vec2(SIDEBAR_W, fav_h),
+        egui::vec2(SIDEBAR_W.value(), fav_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             caption(ui, theme, "Favorites");
@@ -286,12 +287,12 @@ fn two_region_inner(
 
 /// design `favPinHeight` 전사 — 본체 `explorer.rs::favorites_pin_height` 와 동일 공식.
 fn favorites_pin_height(body_h: f32) -> f32 {
-    const BASE: f32 = 240.0;
-    const THRESHOLD: f32 = 600.0;
+    const BASE: LogicalPx = LogicalPx(240.0);
+    const THRESHOLD: LogicalPx = LogicalPx(600.0);
     const RATIO: f32 = 0.4;
     const MIN: f32 = 120.0;
-    if body_h <= 0.0 || body_h >= THRESHOLD {
-        return BASE;
+    if body_h <= 0.0 || body_h >= THRESHOLD.value() {
+        return BASE.value();
     }
     ((body_h * RATIO / 4.0).round() * 4.0).max(MIN)
 }

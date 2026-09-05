@@ -14,6 +14,7 @@
 //! 콘텐츠 영역 자체는 비워둔다(네이티브 overlay 가 덮음). 색·치수·폰트는 전부 `Theme`.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
 
 use crate::catalog::icons;
@@ -21,9 +22,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // ── chrome 타일 대표 치수 (콘텐츠는 OS overlay — 경계 박스만 전시) ──
 /// chrome 타일 폭.
-const TILE_W: f32 = 240.0;
+const TILE_W: LogicalPx = LogicalPx(240.0);
 /// chrome 타일 높이.
-const TILE_H: f32 = 150.0;
+const TILE_H: LogicalPx = LogicalPx(150.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -121,7 +122,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
-                egui::vec2(TILE_W, TILE_H),
+                egui::vec2(TILE_W.value(), TILE_H.value()),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     // 콘텐츠 블록을 세로 가운데쯤에 오도록 위쪽 여백.

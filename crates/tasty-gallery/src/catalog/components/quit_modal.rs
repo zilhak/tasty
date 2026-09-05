@@ -20,16 +20,20 @@
 //!   (`docs/design/policies/shared-widgets.md` 목표 상태).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 본체 `open_quit_modal` 의 창 크기.
-const WINDOW_W: f32 = 400.0;
-const WINDOW_H: f32 = 200.0;
+const WINDOW_W: LogicalPx = LogicalPx(400.0);
+const WINDOW_H: LogicalPx = LogicalPx(200.0);
 
 fn window(ui: &mut egui::Ui, theme: &Theme) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(WINDOW_W, WINDOW_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(WINDOW_W.value(), WINDOW_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter()
         .rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
     ui.painter().rect_stroke(

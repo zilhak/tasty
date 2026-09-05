@@ -13,6 +13,7 @@
 //!  - Mini tab strip → 20px, bg-sidebar. 활성 = bg-panel + 2px accent 하단 bar + kind 아이콘.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -21,9 +22,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// `PaneTree` 의 `gap:5` — bordered pane 카드 사이의 bg-app 공백 = 상위(pane) divider.
 const PANE_GAP: f32 = 5.0;
 /// mini tab strip `height:20`.
-const STRIP_H: f32 = 20.0;
+const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// `Pane` 의 활성 탭 본문 `padding:3`.
-const BODY_PAD: f32 = 3.0;
+const BODY_PAD: LogicalPx = LogicalPx(3.0);
 /// `SurfaceBox` 의 아이콘↔라벨 `gap:6`.
 const LEAF_GAP: f32 = 6.0;
 /// mini tab `padding:0 9px`.
@@ -43,7 +44,7 @@ const E_FIELD_H: f32 = 20.0;
 /// inline leaf form 라벨 높이.
 const E_LABEL_H: f32 = 12.0;
 /// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
-const ADD_TAB_W: f32 = 22.0;
+const ADD_TAB_W: LogicalPx = LogicalPx(22.0);
 /// mini tab close `×` 히트영역 한 변(14×14).
 const CLOSE_HIT: f32 = 14.0;
 /// close `×` 왼쪽 margin(라벨과의 간격).
@@ -54,10 +55,10 @@ const CLOSE_TAB_PAD: f32 = 3.0;
 const SPLIT_ZONE_EDGE: f32 = 0.3;
 /// leaf 값 요약 표시 임계(본체 `demo_layout.rs` 와 동일 구조 상수). 빈 leaf 박스가
 /// 이 너비/높이 미만이면 요약을 숨기고 아이콘 + kind명만 남긴다.
-const LEAF_SUMMARY_MIN_W: f32 = 96.0;
-const LEAF_SUMMARY_MIN_H: f32 = 72.0;
+const LEAF_SUMMARY_MIN_W: LogicalPx = LogicalPx(96.0);
+const LEAF_SUMMARY_MIN_H: LogicalPx = LogicalPx(72.0);
 /// 짧은 축이 이 값 미만이면 kind명까지 숨기고 아이콘만 남긴다(icon-only degrade).
-const LEAF_ICON_ONLY_MIN: f32 = 46.0;
+const LEAF_ICON_ONLY_MIN: LogicalPx = LogicalPx(46.0);
 
 // ── specimen 박스 치수 ───────────────────────────────────────────────────────
 //
@@ -67,11 +68,11 @@ const LEAF_ICON_ONLY_MIN: f32 = 46.0;
 // 임계를 바꾸면 이 박스들도 함께 봐야 한다.
 
 /// Workspace scope — pane split 이 가로로 자라 다른 둘보다 넓다.
-const SCOPE_BOX_W_WIDE: f32 = 320.0;
+const SCOPE_BOX_W_WIDE: LogicalPx = LogicalPx(320.0);
 /// Tab / Pane scope 공통 가로.
-const SCOPE_BOX_W: f32 = 210.0;
+const SCOPE_BOX_W: LogicalPx = LogicalPx(210.0);
 /// scope 3 종 공통 세로 — 나란히 세우므로 같아야 한다.
-const SCOPE_BOX_H: f32 = 220.0;
+const SCOPE_BOX_H: LogicalPx = LogicalPx(220.0);
 
 /// 요약 2 줄이 다 보이는 박스(96×72 초과).
 const LEAF_BOX_FULL: (f32, f32) = (176.0, 120.0);
@@ -336,9 +337,10 @@ fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &D
     let row_h = theme.font_size_caption.value();
 
     let short_axis = rect.width().min(rect.height());
-    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN;
-    let show_summary =
-        show_kind && rect.width() >= LEAF_SUMMARY_MIN_W && rect.height() >= LEAF_SUMMARY_MIN_H;
+    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN.value();
+    let show_summary = show_kind
+        && rect.width() >= LEAF_SUMMARY_MIN_W.value()
+        && rect.height() >= LEAF_SUMMARY_MIN_H.value();
     let rows: &[SummaryCell] = if show_summary { &leaf.summary } else { &[] };
 
     let mut total = icon;
@@ -484,7 +486,7 @@ fn draw_pane_card(
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
     // mini tab strip.
-    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H));
+    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H.value()));
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
@@ -495,7 +497,7 @@ fn draw_pane_card(
         let lw = text_width(ui, t.name, tab_font.clone());
         let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X;
         let tab_rect =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H));
+            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H.value()));
         if on {
             p.rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
             // 2px accent 하단 bar.
@@ -544,7 +546,7 @@ fn draw_pane_card(
 
     // 활성 탭 본문 — padding 3, bg-app.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
-    let inner = body.shrink(BODY_PAD);
+    let inner = body.shrink(BODY_PAD.value());
     let active_tab = tabs.get(active).or_else(|| tabs.first());
     if let Some(t) = active_tab {
         draw_surf(ui, theme, inner, &t.layout);
@@ -783,7 +785,7 @@ fn draw_scope_body_edit(
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
     let mut w = EditWalk { next: 0, selected };
-    draw_surf_edit(ui, theme, rect.shrink(BODY_PAD), surf, &mut w);
+    draw_surf_edit(ui, theme, rect.shrink(BODY_PAD.value()), surf, &mut w);
     ui.painter_at(rect).rect_stroke(
         rect,
         radius,
@@ -801,7 +803,7 @@ fn draw_scope_body(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, scope: &S
             let bw = theme.border_width.value();
             let p = ui.painter_at(rect);
             p.rect_filled(rect, radius, theme.bg_app().to_egui());
-            draw_surf(ui, theme, rect.shrink(BODY_PAD), s);
+            draw_surf(ui, theme, rect.shrink(BODY_PAD.value()), s);
             ui.painter_at(rect).rect_stroke(
                 rect,
                 radius,
@@ -948,7 +950,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
     // mini tab strip.
-    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H));
+    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H.value()));
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
@@ -964,7 +966,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         // × 예약: 편집 && 탭>1 → 우측 패딩 9→3 + marginLeft 1 + 14 close.
         let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD;
         let tab_rect =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H));
+            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H.value()));
         let p = ui.painter_at(strip);
         if *on {
             p.rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
@@ -1033,7 +1035,10 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     }
 
     // add-tab `+` — hover 상태 예시(overlay-hover fill + text-secondary).
-    let add = egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(ADD_TAB_W, STRIP_H));
+    let add = egui::Rect::from_min_size(
+        egui::pos2(x, strip.min.y),
+        egui::vec2(ADD_TAB_W.value(), STRIP_H.value()),
+    );
     ui.painter_at(strip)
         .rect_filled(add, 0.0, theme.overlay_hover().to_egui());
     paint_glyph(
@@ -1050,7 +1055,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 
     // 활성 탭 본문 — 단일 leaf(비선택) + 경계 split 존(Left 활성) overlay.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
-    let inner = body.shrink(BODY_PAD);
+    let inner = body.shrink(BODY_PAD.value());
     draw_surface_box_edit(ui, theme, inner, Kind::Editor, false);
     draw_split_zone_overlay_mock(ui, theme, inner);
 
@@ -1128,8 +1133,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Workspace",
             "pane split + tabs + surface split",
             &workspace,
-            SCOPE_BOX_W_WIDE,
-            SCOPE_BOX_H,
+            SCOPE_BOX_W_WIDE.value(),
+            SCOPE_BOX_H.value(),
         );
         scope_demo(
             ui,
@@ -1137,8 +1142,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Tab",
             "surface split tree only",
             &tab_scope,
-            SCOPE_BOX_W,
-            SCOPE_BOX_H,
+            SCOPE_BOX_W.value(),
+            SCOPE_BOX_H.value(),
         );
         scope_demo(
             ui,
@@ -1146,8 +1151,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Pane",
             "tab strip + active tab",
             &pane_scope,
-            SCOPE_BOX_W,
-            SCOPE_BOX_H,
+            SCOPE_BOX_W.value(),
+            SCOPE_BOX_H.value(),
         );
     });
 

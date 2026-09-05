@@ -17,17 +17,18 @@
 //! 공용 `tasty_ui_widgets::Button`(`docs/design/policies/shared-widgets.md` 목표 상태).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::popup_frame::{self, ContentInset, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 본체 `info_modal.rs` 의 `DEFAULT_WIDTH`.
-const WIDTH: f32 = 440.0;
+const WIDTH: LogicalPx = LogicalPx(440.0);
 /// 본체 `info_modal.rs` 의 `MIN_HEIGHT`.
-const MIN_HEIGHT: f32 = 140.0;
+const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
 /// 본체 `info_modal.rs` 의 `MAX_HEIGHT`.
-const MAX_HEIGHT: f32 = 360.0;
+const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
 
 /// 본체 `info_modal_sizer` 와 같은 규칙으로 높이를 낸다 —
 /// 60자/줄 가정 · 줄높이 = body 폰트 × 1.5 · 하단 버튼 영역 48 · clamp.
@@ -40,7 +41,7 @@ fn sizer_height(theme: &Theme, body: &str) -> f32 {
         + popup_frame::CONTENT_MARGIN * 2.0
         + approx_lines * line_h
         + footer_h)
-        .clamp(MIN_HEIGHT, MAX_HEIGHT)
+        .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value())
 }
 
 /// 모달 1장. `extra` 는 [OK] 왼쪽에 붙는 추가 버튼 라벨.
@@ -50,7 +51,7 @@ fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Optio
         ui,
         theme,
         title,
-        WIDTH,
+        WIDTH.value(),
         h,
         ContentInset::INSET,
         TitleButtons::CLOSE,

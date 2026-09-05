@@ -36,6 +36,7 @@
 //! 좁아 사이드바가 클램프될 때 마커가 경계를 넘는다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_2, TUTORIAL_STEP_GAP_X};
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
 
@@ -43,7 +44,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // ── 고정 컴포넌트 치수 (구조 값 — dialog::frame_card 240.0 와 동일 관례) ──────
 const CALLOUT_W: f32 = 244.0;
-const POPUP_W: f32 = 360.0;
+const POPUP_W: LogicalPx = LogicalPx(360.0);
 const TAIL: f32 = 12.0; // 12px diamond → 삼각 tail
 
 // ── 재사용되는 국소 구조 값 (모듈 문서의 규칙: 재사용되면 이름을 붙인다) ─────
@@ -466,7 +467,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
         .corner_radius(theme.corner_radius_lg.value())
         .shadow(theme.shadow_popover().to_egui())
         .show(ui, |ui| {
-            ui.set_width(POPUP_W);
+            ui.set_width(POPUP_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             // 헤더.
             egui::Frame::new()
@@ -477,7 +478,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                     bottom: theme.spacing_md.value() as i8,
                 })
                 .show(ui, |ui| {
-                    ui.set_width(POPUP_W);
+                    ui.set_width(POPUP_W.value());
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("튜토리얼")
@@ -495,7 +496,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
             egui::Frame::new()
                 .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
                 .show(ui, |ui| {
-                    ui.set_width(POPUP_W);
+                    ui.set_width(POPUP_W.value());
                     egui::ScrollArea::vertical()
                         .max_height(200.0)
                         .auto_shrink([false, true])
@@ -551,7 +552,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                     bottom: theme.spacing_md.value() as i8,
                 })
                 .show(ui, |ui| {
-                    ui.set_width(POPUP_W);
+                    ui.set_width(POPUP_W.value());
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("Esc 닫기")

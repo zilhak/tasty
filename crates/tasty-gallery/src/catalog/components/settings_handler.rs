@@ -10,6 +10,7 @@
 //! seed 데이터를 그대로 쓴다. 본체 대응: `src/view/settings/ui/file_handler_tab/`.
 
 use std::cell::RefCell;
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
@@ -24,9 +25,9 @@ use crate::catalog::widgets::dialog as kit;
 /// 디자인 settings 콘텐츠 컬럼(1100 - L2 200 - 패딩) 근사 프레임 폭.
 const WIDTH: f32 = 560.0;
 /// jsx `HookRow` line 2 "Shell cmd:" 라벨 폭 (`width: 74`).
-const HOOK_CMD_LABEL_W: f32 = 74.0;
+const HOOK_CMD_LABEL_W: LogicalPx = LogicalPx(74.0);
 /// jsx add-draft 카드 필드 라벨 폭 (`width: 100`).
-const HOOK_ADD_LABEL_W: f32 = 100.0;
+const HOOK_ADD_LABEL_W: LogicalPx = LogicalPx(100.0);
 
 /// jsx `Mono` — mono 10 uppercase letter-spacing caps, text-muted.
 fn mono_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
@@ -615,7 +616,7 @@ fn draw_hook_row(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     ui.allocate_ui_with_layout(
-                        egui::vec2(HOOK_CMD_LABEL_W, theme.input_height().value()),
+                        egui::vec2(HOOK_CMD_LABEL_W.value(), theme.input_height().value()),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.label(
@@ -646,7 +647,10 @@ fn hook_field_row(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
         ui.allocate_ui_with_layout(
-            egui::vec2(HOOK_ADD_LABEL_W, theme.settings_row_min_height().value()),
+            egui::vec2(
+                HOOK_ADD_LABEL_W.value(),
+                theme.settings_row_min_height().value(),
+            ),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(

@@ -20,6 +20,7 @@
 //! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{
     CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
 };
@@ -38,15 +39,15 @@ const PATH_H: f32 = 36.0; // padding ~6/6 + refresh IconButton(sm)
 const LIST_HEAD_H: f32 = 26.0; // caption row — loaded/multi 상태만
 const FOOTER_H: f32 = 84.0; // name row(28) + gap(8) + action row(28) + padding 10/10 근사
 const BODY_H: f32 = FRAME_H - HEADER_H - PATH_H - FOOTER_H;
-const ROW_H: f32 = 28.0; // FpRow padding 6/space-md + content 16
+const ROW_H: LogicalPx = LogicalPx(28.0); // FpRow padding 6/space-md + content 16
 const SIZE_COL_W: f32 = 68.0;
 const MOD_COL_W: f32 = 108.0;
-const FOOTER_LABEL_W: f32 = 64.0; // 디자인 "File name" 라벨 고정폭
+const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라벨 고정폭
 const FOOTER_CHIP_W: f32 = 92.0; // "All files ▾" 타입필터 칩
 
 /// 원격 host 배지 칩의 높이(디자인 size-22). 4px 그리드 밖이고 대응 Theme 토큰이
 /// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
-const HOST_BADGE_H: f32 = 22.0;
+const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 
 /// 브레드크럼 구분자·타입필터 칩 화살표의 글리프 한 변. **아이콘 스케일 밖이다** —
 /// Theme 은 12(xs) · 14(sm) · 15(row-action) · 16(md) 만 갖는데 디자인은 여기 13 을
@@ -54,7 +55,7 @@ const HOST_BADGE_H: f32 = 22.0;
 const CRUMB_GLYPH: f32 = 13.0;
 
 /// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
-const EMPTY_BODY_MAX_W: f32 = 340.0;
+const EMPTY_BODY_MAX_W: LogicalPx = LogicalPx(340.0);
 const HOST: &str = "deploy@10.0.4.12";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -319,7 +320,7 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
     let glyph = theme.icon_glyph_size_xs.value();
     let gap = theme.spacing_xs.value();
     let pad_x = theme.spacing_sm.value();
-    let h = HOST_BADGE_H;
+    let h = HOST_BADGE_H.value();
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
@@ -561,7 +562,7 @@ fn row(
     focus: bool,
 ) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, ROW_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, ROW_H.value()), egui::Sense::hover());
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -736,7 +737,7 @@ fn center(
             .color(heading_color),
     );
     if let Some(b) = body_text {
-        col.set_max_width(EMPTY_BODY_MAX_W);
+        col.set_max_width(EMPTY_BODY_MAX_W.value());
         col.label(
             egui::RichText::new(b)
                 .size(theme.font_size_caption.value())
@@ -784,7 +785,7 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
     col.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         ui.allocate_ui_with_layout(
-            egui::vec2(FOOTER_LABEL_W, 0.0),
+            egui::vec2(FOOTER_LABEL_W.value(), 0.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(

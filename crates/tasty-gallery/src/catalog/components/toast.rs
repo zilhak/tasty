@@ -19,6 +19,7 @@
 //! 한 frame area 안에 우측 하단 앵커로 그려 *상대 위치* 만 시각화한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::vspace;
 
 use tasty_ui_widgets::tokens::{
@@ -37,13 +38,13 @@ use crate::catalog::toast_card::{
 // 보여야 하는지(1줄 · wrap · 스택)에 달려 있기 때문이다.
 
 /// 모든 케이스 공통 가로. wrap 케이스가 80% 폭 클램프를 실제로 넘도록 정한 값.
-const SPECIMEN_W: f32 = 480.0;
+const SPECIMEN_W: LogicalPx = LogicalPx(480.0);
 /// 토스트 1 개 케이스의 세로.
-const SPECIMEN_H_SINGLE: f32 = 120.0;
+const SPECIMEN_H_SINGLE: LogicalPx = LogicalPx(120.0);
 /// 여러 줄 wrap 케이스의 세로 — 한 장이 세로로 자란다.
-const SPECIMEN_H_WRAP: f32 = 180.0;
+const SPECIMEN_H_WRAP: LogicalPx = LogicalPx(180.0);
 /// 4 개 스택 케이스의 세로.
-const SPECIMEN_H_STACK: f32 = 280.0;
+const SPECIMEN_H_STACK: LogicalPx = LogicalPx(280.0);
 
 /// 데모 프레임 좌상단 "scope (frame)" 라벨의 세로 인셋. 4px 그리드 밖(6px)이라
 /// spacing 토큰에 대응이 없다 — 프레임 border 와 캡 높이 사이를 눈으로 맞춘 값이다.
@@ -223,8 +224,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                SPECIMEN_W,
-                SPECIMEN_H_SINGLE,
+                SPECIMEN_W.value(),
+                SPECIMEN_H_SINGLE.value(),
                 vec![ToastEntryView {
                     kind: ToastKind::Info,
                     message: "Reloaded settings.json".into(),
@@ -243,8 +244,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                SPECIMEN_W,
-                SPECIMEN_H_SINGLE,
+                SPECIMEN_W.value(),
+                SPECIMEN_H_SINGLE.value(),
                 vec![ToastEntryView {
                     kind: ToastKind::Success,
                     message: "Workspace saved.".into(),
@@ -263,8 +264,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                SPECIMEN_W,
-                SPECIMEN_H_SINGLE,
+                SPECIMEN_W.value(),
+                SPECIMEN_H_SINGLE.value(),
                 vec![ToastEntryView {
                     kind: ToastKind::Warning,
                     message: "Low disk space — clean up downloads.".into(),
@@ -283,8 +284,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                SPECIMEN_W,
-                SPECIMEN_H_SINGLE,
+                SPECIMEN_W.value(),
+                SPECIMEN_H_SINGLE.value(),
                 vec![ToastEntryView {
                     kind: ToastKind::Error,
                     message: "Plugin crashed: tasty-plugin-foo. See logs.".into(),
@@ -303,8 +304,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                SPECIMEN_W,
-                SPECIMEN_H_WRAP,
+                SPECIMEN_W.value(),
+                SPECIMEN_H_WRAP.value(),
                 vec![ToastEntryView {
                     kind: ToastKind::Warning,
                     message:
@@ -331,8 +332,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             frame_case(
                 ui,
                 theme,
-                SPECIMEN_W,
-                SPECIMEN_H_STACK,
+                SPECIMEN_W.value(),
+                SPECIMEN_H_STACK.value(),
                 vec![
                     ToastEntryView {
                         kind: ToastKind::Info,

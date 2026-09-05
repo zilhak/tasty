@@ -14,6 +14,7 @@
 //! invalid·deleted·unmerged·`-` = `accent_danger`, linked·`?` = neutral.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{TagVariant, tag};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -21,7 +22,7 @@ use crate::catalog::widgets::dialog as kit;
 
 // ── popup 치수 (디자인 960×640, rail 232 고정). gallery 전시용 축소 ──
 const POPUP_W: f32 = 720.0;
-const POPUP_H: f32 = 440.0;
+const POPUP_H: LogicalPx = LogicalPx(440.0);
 const RAIL_W: f32 = 232.0;
 const SECTION_H: f32 = 28.0;
 const CTX_H: f32 = 30.0;
@@ -99,7 +100,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn shell(ui: &mut egui::Ui, theme: &Theme, show_diff: bool) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, POPUP_H), egui::Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(w, POPUP_H.value()), egui::Sense::hover());
         header(ui, theme, rect);
 
         let ctx_top = rect.top() + HEADER_H;

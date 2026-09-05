@@ -16,13 +16,14 @@
 //! 같은 무대와 같은 카드 폭을 써야 나란히 놓고 비교할 수 있으므로 값이 갈리면 안 된다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::icons::MockGlyph;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // ── specimen 무대 치수 (모듈 문서의 규칙: 두 변형이 나눠 쓰므로 이름을 붙인다) ──
 /// scrim Spec 무대의 높이. center anchor 와 top anchor 변형이 공유한다.
-const SCRIM_STAGE_H: f32 = 200.0;
+const SCRIM_STAGE_H: LogicalPx = LogicalPx(200.0);
 /// 무대 안에 놓는 모달 카드의 폭. 두 변형이 같아야 anchor 차이만 눈에 남는다.
 const FRAME_CARD_W: f32 = 240.0;
 
@@ -215,7 +216,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui,
                 theme,
                 theme.measure_sm.value(),
-                SCRIM_STAGE_H,
+                SCRIM_STAGE_H.value(),
                 64.0,
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, panel_fill(theme), |ui| {
@@ -239,7 +240,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui,
                 theme,
                 theme.measure_sm.value(),
-                SCRIM_STAGE_H,
+                SCRIM_STAGE_H.value(),
                 28.0,
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, raised_fill(theme), |ui| {

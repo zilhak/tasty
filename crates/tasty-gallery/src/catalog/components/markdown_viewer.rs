@@ -31,6 +31,7 @@
 //! rect 로 근사한다 — 아래 `image_block`.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Spinner, checkbox};
 
 use crate::catalog::icons;
@@ -39,11 +40,11 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 문서 카드 폭(전시 박스).
 const DOC_W: f32 = 560.0;
 /// 상태 타일 치수.
-const TILE_W: f32 = 200.0;
-const TILE_H: f32 = 132.0;
+const TILE_W: LogicalPx = LogicalPx(200.0);
+const TILE_H: LogicalPx = LogicalPx(132.0);
 
 /// 주소창 바 폭(HTML chrome 정적 근사 — `render.rs::addr_bar_html` 의 디자인 폭).
-const ADDR_BAR_W: f32 = 360.0;
+const ADDR_BAR_W: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     // 0. 상단 주소창 chrome — 더 이상 host egui 위젯(PathField)이 아니라 문서 HTML 에 내장된
@@ -996,7 +997,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
-                egui::vec2(TILE_W, TILE_H),
+                egui::vec2(TILE_W.value(), TILE_H.value()),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     ui.add_space(theme.spacing_xl.value());
@@ -1015,7 +1016,7 @@ fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
         .fill(theme.bg_sidebar().to_egui())
         .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0))
         .show(ui, |ui| {
-            ui.set_width(ADDR_BAR_W);
+            ui.set_width(ADDR_BAR_W.value());
             ui.horizontal_centered(|ui| {
                 egui::Frame::new()
                     .fill(theme.surface_raised().to_egui())

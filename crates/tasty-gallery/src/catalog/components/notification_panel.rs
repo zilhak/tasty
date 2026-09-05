@@ -21,6 +21,7 @@
 //! - 본체 `ui.small_button` → 공용 `Button`(`ControlSize::Sm`).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 
@@ -28,8 +29,8 @@ use crate::catalog::popup_frame::{self, ContentInset, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// `popup/defs.rs` 의 `notifications` 기본 크기.
-const PANEL_W: f32 = 350.0;
-const PANEL_H: f32 = 400.0;
+const PANEL_W: LogicalPx = LogicalPx(350.0);
+const PANEL_H: LogicalPx = LogicalPx(400.0);
 /// 본체 unread 배경 알파 (0..255).
 const UNREAD_BG_ALPHA: u8 = 20;
 
@@ -134,8 +135,8 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
         ui,
         theme,
         "Notifications",
-        PANEL_W,
-        PANEL_H,
+        PANEL_W.value(),
+        PANEL_H.value(),
         ContentInset::INSET,
         TitleButtons::FULLSCREEN_AND_CLOSE,
         |ui| {

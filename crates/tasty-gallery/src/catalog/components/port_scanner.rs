@@ -6,6 +6,7 @@
 //! footer(count + Copy address + Close). 색·치수는 Theme 토큰, Table 은 공용 위젯.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, StatusKind, Table, TableAlign,
     TableColumn, TableColumnWidth, TagVariant, status_dot, tag,
@@ -17,7 +18,7 @@ use crate::catalog::widgets::dialog as kit;
 
 const WIDTH: f32 = 660.0;
 /// 즐겨찾기 별 컬럼 폭 — 본체 `port_scanner.rs` 의 `FAV_COL_WIDTH` 미러.
-const FAV_COL_WIDTH: f32 = 28.0;
+const FAV_COL_WIDTH: LogicalPx = LogicalPx(28.0);
 
 struct PortRow {
     port: &'static str,
@@ -206,7 +207,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
             kit::region_sym(ui, theme.spacing_sm.value(), 0.0, |ui| {
                 let cols = vec![
-                    col("", TableColumnWidth::Exact(FAV_COL_WIDTH), TableAlign::Left),
+                    col(
+                        "",
+                        TableColumnWidth::Exact(FAV_COL_WIDTH.value()),
+                        TableAlign::Left,
+                    ),
                     col("Port", TableColumnWidth::Exact(84.0), TableAlign::Right),
                     col("Proto", TableColumnWidth::Exact(76.0), TableAlign::Left),
                     col("Address", TableColumnWidth::Exact(140.0), TableAlign::Left),
@@ -493,7 +498,7 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
                                 ui.allocate_ui_with_layout(
-                                    egui::vec2(FAV_COL_WIDTH, fav_row_h),
+                                    egui::vec2(FAV_COL_WIDTH.value(), fav_row_h),
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| star(ui, theme, true),
                                 );

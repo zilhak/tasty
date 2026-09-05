@@ -15,6 +15,7 @@
 //! Unbound `text-disabled`, help `font-size-caption`(11) `accent-warning`.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, kbd};
 
 use crate::catalog::icons;
@@ -23,11 +24,11 @@ use crate::catalog::widgets::dialog as kit;
 
 /// 갤러리 프레임 최대 폭 (jsx `maxWidth: 560`). 본체는 settings content 폭을 상속하나
 /// 갤러리 미러는 카드로 감싸 560 으로 bound.
-const FRAME_MAX_W: f32 = 560.0;
+const FRAME_MAX_W: LogicalPx = LogicalPx(560.0);
 // 빈 상태 글리프 크기는 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).
 use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
 /// 행 중앙 컬럼의 name→path→help 사이 hairline 간격 (jsx `gap: 2` — 4px 그리드 하위).
-const ROW_LINE_GAP: f32 = 2.0;
+const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 
 /// RTL 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를 미리
 /// 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
@@ -86,7 +87,7 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
-    let width = ui.available_width().min(FRAME_MAX_W);
+    let width = ui.available_width().min(FRAME_MAX_W.value());
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
             kit::region_sym(
@@ -122,7 +123,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
             egui::vec2(left_w, 0.0),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP;
+                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
                 ui.label(
                     egui::RichText::new("Scripts")
                         .size(theme.font_size_max.value())
@@ -156,7 +157,7 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
         // 좌: script 글리프 16 · text-muted · margin-top 2.
         ui.vertical(|ui| {
-            ui.add_space(ROW_LINE_GAP);
+            ui.add_space(ROW_LINE_GAP.value());
             kit::icon(
                 ui,
                 icons::SCRIPT,
@@ -200,7 +201,7 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
             }
             // 남은 좌측 폭 = 중앙 컬럼(name/path/help).
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP;
+                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
                 // row1 — name + changed 배지.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();

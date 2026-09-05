@@ -15,6 +15,7 @@
 //! 막다른 center-state 가 아니라 "행이 정확히 하나인 목록"으로 degrade 한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{
     CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
 };
@@ -28,21 +29,21 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 // ── 프레임 고정 치수 (디자인 raw px — 화면 전용 고정값) ──
-const FRAME_W: f32 = 680.0;
+const FRAME_W: LogicalPx = LogicalPx(680.0);
 const FRAME_H: f32 = 460.0;
 const LEFT_W: f32 = 240.0;
 const HEADER_H: f32 = 47.0; // padding 10/10 + content 27
 const HEADER_PAD_L: f32 = 14.0; // 디자인 L14 (size-14)
 const FOOTER_H: f32 = 49.0;
-const BODY_H: f32 = FRAME_H - HEADER_H - FOOTER_H;
-const PROFILE_ROW_H: f32 = 50.0; // name(2 lines) + padding sm
-const WS_ROW_H: f32 = 34.0;
-const BADGE_H: f32 = 16.0; // design size-16
-const STRIP_W: f32 = 440.0; // 새 행 상태 specimen 의 pane 폭
+const BODY_H: LogicalPx = LogicalPx(FRAME_H - HEADER_H - FOOTER_H);
+const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0); // name(2 lines) + padding sm
+const WS_ROW_H: LogicalPx = LogicalPx(34.0);
+const BADGE_H: LogicalPx = LogicalPx(16.0); // design size-16
+const STRIP_W: LogicalPx = LogicalPx(440.0); // 새 행 상태 specimen 의 pane 폭
 
 /// 두 열의 caps 헤더("ATTACH PROFILES" / "REMOTE WORKSPACES") 행 높이 —
 /// padding 12/12 + micro caps 한 줄. 4px 그리드 밖이고 대응 Theme 토큰이 없다.
-const CAPS_HEADER_H: f32 = 30.0;
+const CAPS_HEADER_H: LogicalPx = LogicalPx(30.0);
 
 /// 우측 pane 상태. `Loaded` / `Empty` 는 같은 목록 렌더 경로를 타고 ws 목록의
 /// 길이만 다르다.
@@ -393,10 +394,10 @@ fn new_row_strip(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
         ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
-            ui.set_width(STRIP_W);
+            ui.set_width(STRIP_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(STRIP_W);
+                ui.set_width(STRIP_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 new_ws_row(ui, theme, state);
                 // 생성 중에는 아래 목록이 dim + inert 된다.
@@ -419,10 +420,10 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
         ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
-            ui.set_width(FRAME_W);
+            ui.set_width(FRAME_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(FRAME_W);
+                ui.set_width(FRAME_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 header(ui, theme);
                 body(ui, theme, state);
@@ -432,7 +433,8 @@ fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
 }
 
 fn header(ui: &mut egui::Ui, theme: &Theme) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, HEADER_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), HEADER_H), egui::Sense::hover());
     // borderBottom separator.
     ui.painter().hline(
         rect.x_range(),
@@ -473,8 +475,11 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn body(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, BODY_H), egui::Sense::hover());
-    let left = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, BODY_H));
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), BODY_H.value()),
+        egui::Sense::hover(),
+    );
+    let left = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, BODY_H.value()));
     let right = egui::Rect::from_min_max(egui::pos2(rect.left() + LEFT_W, rect.top()), rect.max);
     // 좌 pane 배경(bg-sidebar) + borderRight.
     ui.painter()
@@ -496,8 +501,11 @@ fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState)
     );
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더 — padding 10/12/4.
-    let hdr = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, CAPS_HEADER_H));
-    let (_, _) = col.allocate_exact_size(egui::vec2(LEFT_W, CAPS_HEADER_H), egui::Sense::hover());
+    let hdr = egui::Rect::from_min_size(rect.min, egui::vec2(LEFT_W, CAPS_HEADER_H.value()));
+    let (_, _) = col.allocate_exact_size(
+        egui::vec2(LEFT_W, CAPS_HEADER_H.value()),
+        egui::Sense::hover(),
+    );
     col.painter().text(
         egui::pos2(
             hdr.left() + theme.spacing_md.value(),
@@ -522,7 +530,8 @@ fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState)
 
 fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Prof, selected: bool) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H.value()), egui::Sense::hover());
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -713,7 +722,7 @@ fn loaded_pane(
     // caps 헤더 — "REMOTE WORKSPACES · {profile}". 생성이라는 사실은 행 라벨이 말하므로
     // 그룹을 설명하는 이 문구는 새 행이 생겨도 그대로다.
     let (hdr, _) = col.allocate_exact_size(
-        egui::vec2(rect.width(), CAPS_HEADER_H),
+        egui::vec2(rect.width(), CAPS_HEADER_H.value()),
         egui::Sense::hover(),
     );
     let base_x = hdr.left() + theme.spacing_md.value();
@@ -767,7 +776,8 @@ fn empty_line(ui: &mut egui::Ui, theme: &Theme, profile: &str) {
 /// 색 하나로만 구분하지 않는다.
 fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), egui::Sense::hover());
     if state.selected() {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -943,7 +953,8 @@ fn selected_bar(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 
 fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), egui::Sense::hover());
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -1034,7 +1045,7 @@ fn badge(
         0.0
     };
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H.value()), egui::Sense::hover());
     let radius = theme.corner_radius_sm.value();
     ui.painter()
         .rect_filled(rect, radius, color.gamma_multiply(fill_a));
@@ -1063,7 +1074,8 @@ fn badge(
 }
 
 fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, FOOTER_H), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), FOOTER_H), egui::Sense::hover());
     ui.painter().hline(
         rect.x_range(),
         rect.top(),

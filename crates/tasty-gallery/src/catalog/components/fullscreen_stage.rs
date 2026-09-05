@@ -18,6 +18,7 @@
 //!   `Ui` 가 없으므로 양쪽 모두 painter 직선이다(형상은 canonical `close`/`fit` 과 동일).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 
 use super::glyph;
@@ -25,12 +26,15 @@ use crate::catalog::popup_frame::{self, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 무대 셸 데모 크기 — 창 전체를 축소한 비율 무대.
-const STAGE_W: f32 = 640.0;
-const STAGE_H: f32 = 300.0;
+const STAGE_W: LogicalPx = LogicalPx(640.0);
+const STAGE_H: LogicalPx = LogicalPx(300.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(STAGE_W, STAGE_H), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(
+            egui::vec2(STAGE_W.value(), STAGE_H.value()),
+            egui::Sense::hover(),
+        );
         let painter = ui.painter_at(rect);
 
         // 창 전체 scrim — 마커 오버레이와 같은 토큰.
