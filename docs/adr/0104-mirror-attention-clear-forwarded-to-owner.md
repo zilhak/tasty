@@ -86,7 +86,9 @@ producer-중립 공유 상태인 attention 레코드 제거 하나뿐이다. 서
   `kind: null` 을 되돌려 push 하고, 같은 kind 로 재발동했을 때 프레임이 다시 도착한다
   (레코드가 남아 있었다면 dedup 이 재전송을 막는다).
   - **고정되는 것**: (미러측) 제거 edge 판정과 forward 큐 적재 — 세 해제 경로 전부, 그리고
-    반복 호출이 edge 를 다시 만들지 않는다는 성질까지 단위 테스트가 값으로 고정한다.
+    반복 호출이 edge 를 다시 만들지 않는다는 성질까지 단위 테스트가 값으로 고정한다
+    (`attention_forwards_only_on_change` · `attention_forwards_resets_on_reacquire` ·
+    `mirror_apply_does_not_touch_forward_cache`).
     (서버측) wire 형태의 역직렬화·분류, holder 연결의 요청이 검증을 통과해 레코드가 실제로
     지워진다는 것, 빈 레코드에 반복 요청이 와도 프레임이 나가지 않는다는 것 — loopback
     e2e 가 실제 인스턴스에서 고정한다.

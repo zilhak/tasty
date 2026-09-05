@@ -57,6 +57,15 @@ chrome 에 해당하는 것이 양쪽에 다 있고(modifier hint overlay 40 · 
    상수를 갖지 않게 되고, 기본값의 정의처는 설정 쪽
    (`tasty_settings::DEFAULT_WHEEL_LINE_SCROLL`) 하나다. 이 구조 덕에
    `modifier_hint_overlay` 는 손대지 않아도 따라온다 — 그것은 이미 이 옵션을 읽는다.
+
+   **이 성질을 보는 술어가 둘이다.** 값을 한 번 맞추는 것과 맞은 채로 있는 것은 다르고,
+   환산 함수에 노치를 인자로 넘겨 산술만 보는 테스트는 호출 자리가 그 노치를 **어디서
+   얻는지**를 말하지 않는다 — 표면이 하나 더 생기면서 상수를 다시 박아도 초록이다.
+   그래서 동작 축(`src/plugin_bridge/wire_scroll.rs` 의 `one_notch_per_context`)은 기본값도
+   egui 기본값도 아닌 값을 컨텍스트에 심고 egui 자신·와이어 환산·overlay 셋이 그것을
+   집어 오는지 재고, 소스 축(`tests/wheel_notch_has_one_runtime_source.rs`)은 휠 Line 을
+   다루는 자리를 세어 **넷째가 생기는 것**을 본다. 환산하지 않고 단위를 그대로 넘기는
+   자리는 그 성질을 사유로 적어 면제한다.
 3. **설정의 자리는 `GeneralSettings` 다.** 이 절은 이미 마우스 동작 설정을 담고 있다
    (`link_click_modifier` · `click_to_move_cursor` · `mouse_capture_hint` ·
    `mouse_capture_blacklist`). 새 절을 만들지 않는다.
@@ -127,3 +136,4 @@ plugin 표면은 같은 옵션에서 뽑은 값이 와이어에 실린다.
 - [input-layer](../architecture/input-layer.md) — 입력 계층 일관성
 - [theme](../design/systems/theme.md) — 시각 토큰의 범위(입력 튜닝 값을 담지 않는 이유)
 - `src/plugin_bridge/wire_scroll.rs` — 줄 → 포인트 환산의 단일 지점
+- `tests/wheel_notch_has_one_runtime_source.rs` — 환산 자리가 런타임 출처를 읽는지 세는 술어

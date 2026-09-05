@@ -83,6 +83,6 @@ take the last one"), 뒤쪽 위젯 우선 예외(`should_prioritize_hits_on_back
 - [`docs/design/policies/shared-widgets.md`](../design/policies/shared-widgets.md) — 보편 컴포넌트 단일 출처
 - [`docs/features/explorer/index.md`](../features/explorer/index.md) — detail 행 상호작용
 - `crates/tasty-ui-widgets/src/table.rs`, `crates/tasty-ui-widgets/tests/table_row_click.rs`
-- egui 0.31.1 `src/widgets/label.rs`(sense 결정), `src/hit_test.rs`(동률 시 나중 등록 우선),
-  `src/text_selection/label_text_selection.rs`(hover 시 `CursorIcon::Text`),
-  egui_extras 0.31 `src/layout.rs`(셀 `Ui` sense 부여 시점)
+- egui 0.31.1 `egui/src/widgets/label.rs`(sense 결정), `egui/src/hit_test.rs`(동률 시 나중 등록 우선),
+  `egui/src/text_selection/label_text_selection.rs`(hover 시 `CursorIcon::Text`),
+  egui_extras 0.31 `egui_extras/src/layout.rs`(셀 `Ui` sense 부여 시점)

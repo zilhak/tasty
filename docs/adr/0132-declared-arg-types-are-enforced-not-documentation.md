@@ -9,7 +9,7 @@
 Plugin 매니페스트(`tasty-plugin.toml`)는 CLI 인자마다 타입을 선언한다. 현재 선언된
 분포는 `string` 79 · `u32` 55 · `process` 9 · `bool` 7 · `file_path` 2 · `url` 1 ·
 `i64` 1 이다(추적 파일 기준 실측). 이 중 **숫자 타입 56개**(`u32` 55 + `i64` 1)가
-동적 CLI 빌더(`crates/tasty-cli/src/dynamic.rs`)의 같은 변환 경로를 지난다.
+동적 CLI 의 값 강제 층(`crates/tasty-cli/src/dynamic/stdin.rs`)의 같은 변환 경로를 지난다.
 
 그 경로가 변환 실패를 `.ok()` 로 흘렸다. 사용자가 `--surface abc` 를 주면
 `parse::<u32>()` 가 `None` 이 되고, 그 인자는 **애초에 주어지지 않은 것과 구별되지
@@ -35,6 +35,13 @@ exit 0 을 받고 다른 surface 에 보냈다고 믿는다.
 **"인자가 없음" 과 "인자가 있는데 변환 실패" 를 같은 상태로 축약하지 않는다.** 전자는
 정상이며 기본값 경로가 정당하게 동작한다. 후자는 호출자의 오류이므로 기본값 경로에
 도달해서는 안 된다. 이 구분이 무너지면 기본값이 **오류를 조용히 덮는 장치**로 바뀐다.
+
+**강제는 값이 들어오는 문마다 건다.** 매니페스트의 타입 선언은 `CliArg` 에 붙지
+어느 문으로 들어왔는지에 붙지 않으므로, 한 문에만 걸면 같은 선언이 경로에 따라 다른
+뜻이 된다. 지금 문은 둘이다 — `--flag` 값 추출(`extract_value`)과 stdin JSON 병합
+(`merge_stdin_params`, `stdin_json = true` 인 서브커맨드). 둘 다 같은 규칙을 쓴다:
+숫자로 읽히면 숫자로, 아니면 호출 전체를 거부. CLI 가 이미 채운 키는 stdin 이
+덮지 않으므로 같은 값을 두 번 판정하지 않는다.
 
 같은 원칙이 IPC 층에도 적용된다. 파라미터로 온 `surface` 가 숫자가 아니면
 환경변수 폴백으로 내려가지 않고 `invalid_params` 로 끝난다 — 폴백은 "값이 없을 때"
@@ -64,8 +71,10 @@ exit 0 을 받고 다른 surface 에 보냈다고 믿는다.
   자기 마음대로 종료하지도 않는다. 고르지 않은 이유는 **강제 지점의 개수**다.
   `value_parser` 는 `Arg` 마다 붙으므로 매니페스트에 타입이 하나 늘 때마다
   `build_arg` 에 배선을 하나 더 해야 하고, 배선을 빠뜨린 타입만 조용히 옛 동작으로
-  남는다. 값 추출 시점은 **모든 선언 타입이 반드시 지나는 한 곳**이라, 새 타입이
-  들어와도 강제가 기본값이 된다. 이르게 잡는 것보다 **빠뜨릴 수 없게** 하는 쪽을 골랐다.
+  남는다. 값 추출 시점은 그 문의 **모든 선언 타입이 반드시 지나는 한 곳**이라, 새
+  타입이 들어와도 강제가 기본값이 된다. 이르게 잡는 것보다 **빠뜨릴 수 없게** 하는
+  쪽을 골랐다. 다만 이 근거는 **문 하나 안에서만** 성립한다 — 값이 들어오는 문이
+  둘이므로(위 결정) 강제도 둘이고, 새 문이 생기면 그 문에 다시 걸어야 한다.
 - **C: `surface` 만 특별 취급** — 지금 관측된 피해가 거기서 나왔다는 이유뿐이고,
   나머지 55개 숫자 플래그는 같은 결함을 가진 채 남는다. 관측된 자리만 고치는 것은
   기전이 아니라 증상을 고치는 것이다.
@@ -74,23 +83,36 @@ exit 0 을 받고 다른 surface 에 보냈다고 믿는다.
 
 다음 중 하나가 충족되면 본 ADR 을 재검토한다.
 
-- **값 추출이 한 곳이 아니게 되는 경우** — 매니페스트 인자를 읽는 경로가 둘 이상으로
-  갈리면 "한 초크포인트라 빠뜨릴 수 없다" 는 이 결정의 근거가 그 자리에서 죽는다.
-  판정은 실행으로 한다: 선언 타입마다 변환 실패를 넣었을 때 전부 거부되는지 센다.
+- **값이 들어오는 문이 셋째로 늘어나는 경우** — 지금 문은 둘(`--flag` 추출 · stdin
+  JSON 병합)이고 둘 다 강제한다. 문이 하나 늘면 "선언한 타입은 강제된다" 는 결론이
+  그 문에서 거짓이 되고, 그 거짓은 **들어온 문에 따라 다르게** 나타나므로 겉으로는
+  간헐적 결함으로 보인다. 판정은 실행으로 한다: 문마다 선언 타입마다 변환 실패를
+  넣었을 때 전부 거부되는지 센다 — 문의 개수를 세는 것으로 대신하지 않는다(문을
+  세는 것은 코드를 읽는 일이고, 강제 여부는 돌려봐야 안다).
 - 매니페스트 타입 체계가 강제 불가능한 타입(자유 형식 문자열에 의미를 얹은 것 등)을
   도입하는 경우 — "선언 = 강제" 가 전 타입에 성립하지 않게 되므로 범위를 다시 그어야 한다.
 - 거부로 바뀐 동작이 실제 사용을 깨는 사례가 보고되는 경우.
 
-**자동 채널 (base `a37c310a`)**: 위 결정의 집행 자체는 `crates/tasty-cli/src/dynamic.rs`
-의 단위 테스트 2개와 `crates/tasty-plugin-claude/src/hook.rs` 의 4개가 고정한다
+**자동 채널**: 위 결정의 집행 자체는 `crates/tasty-cli/src/dynamic/tests.rs` 의 다섯
+(`non_numeric_value_for_a_number_flag_is_rejected_not_dropped` ·
+`an_out_of_range_number_is_not_reported_as_a_non_number` ·
+`an_absent_number_flag_is_still_not_an_error` ·
+`stdin_json_non_numeric_value_for_a_number_flag_is_rejected` ·
+`stdin_json_number_flag_takes_a_number_and_a_numeric_string`)와
+`crates/tasty-plugin-claude/src/hook.rs` 의 넷이 고정한다
 (기본·헤드리스 양 조합의 `--lib --bins` 에 포함됨을 실행 목록으로 확인). 반면
 **"선언 타입이 늘어도 이 한 곳을 지난다" 는 불변식에는 자동 채널이 없다** — 새 타입이
-다른 경로로 들어오는 것을 잡는 테스트가 없다. 이 base 기준의 선언이며, 그런 가드가
-생기면 만료된다.
+다른 경로로 들어오는 것을 잡는 테스트가 없다. 그런 가드가 생기면 이 문단은 만료된다.
+
+수 대신 이름으로 적은 이유: 이 자리에는 한때 "단위 테스트 2 개" 라는 수가 base 와 함께
+적혀 있었는데, 그 base 시점의 `dynamic.rs` 에는 그 결정을 고정하는 이름의 테스트가 하나도
+없었다. 수는 세는 사람마다 달라지고 다시 세도 어느 쪽이 맞는지 가릴 근거가 남지 않는다 —
+이름은 실재 여부가 그 자리에서 판정된다.
 
 ## References
 
-- `crates/tasty-cli/src/dynamic.rs` — 동적 CLI 빌더의 값 추출 경로와 `surface` 기본값 주입
+- `crates/tasty-cli/src/dynamic/stdin.rs` — 동적 CLI 의 값 추출·타입 강제 경로
+- `crates/tasty-cli/src/dynamic/request.rs` — 그 값으로 요청을 조립하며 넣는 `surface` 기본값
 - `crates/tasty-plugin-claude/src/hook.rs` — IPC 층의 같은 구분(파라미터 오류 vs 부재)
 - [`docs/dev-guide/plugin-development.md`](../dev-guide/plugin-development.md) — 매니페스트 인자 선언
 - [`docs/dev-guide/i18n.md`](../dev-guide/i18n.md) — 에러 문구의 번역 키 정책

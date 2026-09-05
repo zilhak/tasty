@@ -20,14 +20,14 @@ modifier-hint 오버레이는 modifier 를 홀드하면 "그 조합을 포함하
 
 **신규 토큰은 색 1개 + 치수 2개.** 색 `modhint_empty_fg()`(→ `text_muted`)는 디자인 SoT `tokens/components.css` 의 `--tasty-modhint-empty-fg` 미러다. 치수(3px 간격·20px 최소높이)는 디자인이 시안에서 인라인 px(`.mh-section--empty{gap:3px}`, `.mh-empty{min-height:20px}`)로만 둔 값을 코드에서 토큰화한 것 — raw px 하드코딩 금지 정책상 `modhint_empty_row_gap()`·`modhint_empty_row_min_height()` 슬롯을 손추가한다. modhint 계열은 codegen(dtcg) 밖의 손작성 토큰이라 `theme.rs` 직접 추가가 맞다.
 
-**검증은 debug 격리 IPC + 단위테스트로 한다.** `debug.modifier_hint.state` 덤프의 각 섹션에 `empty` 플래그를 노출해 스크린샷 없이 빈-플레이스홀더 표시를 자동 단정한다. `visible` 은 draw 의 방어 가드와 동일 조건이며, 빈 섹션이 유지되므로 미할당 조합 홀드에서도 `visible:true` 가 된다.
+**검증은 debug 격리 IPC + 단위테스트로 한다.** `debug.modifier_hint.state` 덤프의 각 섹션에 `empty` 플래그를 노출해 스크린샷 없이 빈-플레이스홀더 표시를 자동 단정한다(`empty_sections_are_retained` · `mixed_hold_keeps_filled_and_empty_sections` · `consumes_build_hint_sections`). `visible` 은 draw 의 방어 가드와 동일 조건이며, 빈 섹션이 유지되므로 미할당 조합 홀드에서도 `visible:true` 가 된다.
 
 ## Consequences
 
 - **얻은 것**:
   - 미할당 조합을 홀드해도 패널이 뜨고 "바인딩 없음" 을 명시 — "반응 없음/고장" 과 "정말 미할당" 이 구분된다.
   - 플레이스홀더가 실제 행보다 조용하게(muted·wash 없음·키캡 없음) 스타일링돼 실제 바인딩·역할 행과 경쟁하지 않는다.
-  - `build_hint_sections()` 는 순수 함수라 빈 섹션 유지·혼재 공존을 단위테스트로 고정하고, `debug.modifier_hint.state` 의 `empty` 플래그로 렌더 픽셀 없이 자동 단정한다.
+  - `build_hint_sections()` 는 순수 함수라 빈 섹션 유지·혼재 공존을 단위테스트(`empty_sections_are_retained` · `mixed_hold_keeps_filled_and_empty_sections`)로 고정하고, `debug.modifier_hint.state` 의 `empty` 플래그로 렌더 픽셀 없이 자동 단정한다.
 - **잃은 것**:
   - 항상 표시되는 빈 섹션이 리스트에 노이즈를 더한다(비-macOS 최대 2개·macOS 최대 6개). 3px 타이트 간격·20px 행높이로 밀도를 완화했으나 완전 제거는 아니다(의도적 트레이드).
   - 신규 치수 토큰 2개는 디자인이 인라인 px 로만 둔 값을 코드에서 토큰화한 것이라, 디자인 `components.css` 에는 대응 치수 토큰 미러가 없다(색 토큰만 미러 존재).

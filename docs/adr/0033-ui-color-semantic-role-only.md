@@ -46,6 +46,6 @@ design-tokens 시리즈는 "UI 는 primitive 색(Catppuccin 원색: `crust`/`sur
 
 - `docs/design/systems/theme.md` — "Semantic 접근자 우선"(집행 체계·보류 해제 기록)
 - `crates/tasty-type-appearance/src/semantic_color_generated.rs` — role 접근자 codegen 산출물
-- `crates/tasty-design-tokens/dtcg/tasty.tokens.json` · `src/dtcg.rs` — 토큰 SoT + 매핑표
+- `crates/tasty-design-tokens/dtcg/tasty.tokens.json` · `crates/tasty-design-tokens/src/dtcg.rs` — 토큰 SoT + 매핑표
 - `tests/design_token_adherence.rs` — `no_primitive_color_field_access_in_host_ui` 가드(스코프에 ui-widgets 편입)
 - [ADR-0020](0020-gallery-complete-component-source.md) — 갤러리 = 컴포넌트 완전 출처(팔레트 데모 제외 근거)

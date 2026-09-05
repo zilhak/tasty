@@ -58,7 +58,7 @@ gitignored 이므로 clone 한 사람에게 죽은 좌표를 남기지 않는다
 지우면 검사·테스트가 검증하려던 것 자체가 사라진다. 이 파일들은 가드의 allowlist 로
 관리하며, allowlist 에 넣는 판단 기준은 **"금지 형태를 담는 것이 그 파일의 본질인가"** 다.
 
-**집행은 `tests/no_todo_file_citation.rs` 가 한다.** 탐지 범위는 번호 인용·conductor
+**집행은 `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 가 한다.** 탐지 범위는 번호 인용·conductor
 번호·경로 인용·changelog slug·앵커 슬러그·폴더 이름 단독 언급 여섯 형태이고, 스캔 대상은
 레포 전체 파일이다. `template.md` 의 "폴더의 존재·용도 설명은 허용" 예외도 함께 삭제됐다.
 

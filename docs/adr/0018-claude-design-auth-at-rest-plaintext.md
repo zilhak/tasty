@@ -35,8 +35,9 @@ keyring)를 하지 않는다. 보호 범위를 **"OS user / 파일 권한" 한 �
   이 user-scoped — 그 이상의 ACL 강화는 약속하지 않는다.
 - keyring 가용성에 의존하지 않으므로 Linux 헤드리스/WSL/CI 에서도 동일하게 동작한다(평문/
   암호문 혼재로 인한 손상 위험 없음).
-- 코드: `crates/tasty-plugin-claude-design/src/auth.rs`(모듈 주석 + 회귀 테스트
-  `save_load_clear_roundtrip`, `unix_perms_are_owner_only`).
+- 코드: 당시 `tasty-plugin-claude-design` 크레이트의 `auth.rs`(모듈 주석 + 회귀 테스트
+  `save_load_clear_roundtrip`, `unix_perms_are_owner_only`). 그 plugin 은 [ADR-0057](0057-remove-claude-design-plugin.md)
+  로 제거돼 이 좌표는 더 이상 존재하지 않는다.
 
 이는 ADR-0005 의 결론을 자격증명 보관에 일관되게 확장한 것이다. 단, 데이터 성격이 달라
 **위협의 우선순위가 다름**을 명시한다(아래 Consequences).
@@ -77,4 +78,4 @@ keyring)를 하지 않는다. 보호 범위를 **"OS user / 파일 권한" 한 �
 
 - [ADR-0005](0005-memory-secret-not-a-vault.md) — memory secret 영역 평문 결정(본 ADR 의 모태)
 - [`dev-guide/plugin-sensitive-data.md`](../dev-guide/plugin-sensitive-data.md) — 민감 데이터 가이드
-- 코드: `crates/tasty-plugin-claude-design/src/auth.rs`
+- 코드: 없음 — plugin 이 [ADR-0057](0057-remove-claude-design-plugin.md) 로 제거됐다.

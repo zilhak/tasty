@@ -75,7 +75,7 @@ GUI **메인 스레드에서 동기 블로킹**으로 돈다. 그런데 그 응�
 - **운영 비용 / 유지 부담**: `STREAM_PROTO` 를 올리면 구버전 client 는 이제 **조용히 실패**가
   아니라 명시적 거절을 받는다. 프로토콜 버전을 올릴 때는 그 거절이 의도한 동작인지(하위
   호환을 유지할 것인지) 함께 판단해야 한다 — 지금은 정확히 같은 값만 통과하는 엄격 매칭이다.
-- **검증 범위**: proto 게이트는 단위 테스트(일치 통과 / 불일치 거절 ack / 생략 시 0 거절)와
+- **검증 범위**: proto 게이트는 단위 테스트(`matching_proto_passes_without_pushing_a_rejection` 일치 통과 / `mismatched_proto_is_rejected_with_an_error_ack` 불일치 거절 ack / `missing_proto_field_defaults_to_zero_and_is_rejected` 생략 시 0 거절)와
   실제 인스턴스 대상 e2e(점유 미획득 + 그 peer 가 붙어 있는 동안 정상 attach 성공) 양쪽이
   고정한다. self-attach 게이트는 e2e 가 **메인 루프 응답성**으로 고정한다 — 게이트를 지우면
   IPC 왕복이 초 단위로 늘어 교착이 실측된다. 점유 유무만 폴링하면 실패가 빠를 때 창을 놓친다.

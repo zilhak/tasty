@@ -112,9 +112,35 @@ done | wc -l                                    # 51
 
 - **연기 검사로서의 하한** — "경로가 틀렸거나 읽기에 실패했다" 를 잡는 용도. 이건 옳다.
   경로 오타는 예외가 아니라 **조용한 0** 을 만들고, 0 인 모수는 언제나 초록이기 때문이다.
-  현재 `MIN_SCANNED_FILES` 셋(`src/design_token_guard.rs` 200 · `src/source_guards.rs` 900 ·
-  `tests/ci_channel_claims_match_workflows.rs` 400)이 전부 이 용도이고 각자 doc 에 그렇게
-  적혀 있다. 남긴다.
+  현재 `MIN_SCANNED_FILES` 는 **일곱**이고 전부 이 용도이며 각자 doc 에 그렇게 적혀 있다.
+  남긴다. 좌표는 base `98d9b948`.
+
+  | 자리 | 하한 | 그 가드 doc 이 적어 둔 실측 |
+  |---|---|---|
+  | `src/design_token_guard.rs` | 200 | 미기록 |
+  | `src/dpi_conversion_guard.rs` | 800 | 1109 |
+  | `src/source_guards/mod.rs` | 900 | "1100 남짓" |
+  | `crates/tasty-host-plugin/src/test_support.rs` | 20 | 37 |
+  | `crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` | 400 | 미기록 |
+  | `tests/let_underscore_documented.rs` | 700 | 1180 |
+  | `tests/no_emoji_in_source.rs` | 700 | 1120 |
+
+  오른쪽 칸은 **그 가드 자신의 doc 이 적어 둔 값**이지 이 표를 쓰며 잰 값이 아니다 —
+  둘을 섞으면 다음 사람이 표를 측정 결과로 읽는다. "미기록" 둘은 아래 ③이 요구하는
+  "무엇을 썼는지 가드 문서에 적는다" 를 절반만 지킨 자리다(용도는 적혀 있고 근거 수가
+  없다). 그 둘을 채우는 것은 이 ADR 의 결정이 아니라 그 가드 소유자의 후속이다.
+
+  **이 목록은 처음 쓸 때 이미 셋이 아니라 넷이었다.** `src/dpi_conversion_guard.rs` 의
+  하한(커밋 `c08984a5`)이 이 ADR(`a4d9a4ab`)보다 **먼저** 들어와 있었는데 빠져 있었다 —
+  이 ADR 이 진단하는 그 비대칭("추가는 관측되고 누락은 관측되지 않는다")이 ADR 자신의
+  열거에서 일어났다. 사실 정정이라 본문을 직접 고친다.
+
+  뒤의 셋(`tests/` 둘과 `test_support.rs`)은 나중에 더해졌고 근거는 **변이로 잰 것**이다.
+  28 개 정적 스캔 가드가 전부 `env!("CARGO_MANIFEST_DIR")` 로 루트를 잡으므로 변이 하나로
+  전수를 쟀다 — 루트를 빈 디렉토리로 두고 각각 단독 실행했을 때 **26 은 빨개지고(명시
+  하한이거나, 없는 파일을 읽다 나는 panic) 셋만 초록이었다.** grep 으로 하한 유무를 분류한
+  1 차 시도는 양방향으로 틀렸다(그 셋을 "있음" 으로, 다른 다섯을 "없음" 으로) — 하한의
+  존재를 판정한 것은 변이뿐이다.
 - **모수 고정으로서의 하한** — "이만큼 봤으니 다 봤다" 의 근거로 쓰는 용도. 이건 쓰지
   않는다. 실제 모수가 하한보다 크면 그 차이만큼 사각을 갖고도 초록이다.
 
@@ -138,15 +164,30 @@ done | wc -l                                    # 51
   넣는 것보다 손이 더 간다 — 그것이 이 결정이 사려는 것이다(면제는 남고 미등재는 안 남는다).
 - **운영 비용**: 새 스캔 루트를 넣을 때 넓힌 비용을 한 번 재야 한다. 실제로는 명령 한 줄이고,
   그 값이 0이면 그대로 넣는다.
-- **강제 범위 — 세 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
-  안에서만 성립한다. 기계가 보는 판정은 셋이다:
+- **강제 범위 — 네 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
+  안에서만 성립한다. 기계가 보는 판정은 넷이다:
   `the_gpu_scan_root_is_a_directory_not_a_file`(`tests/design_token_adherence.rs` —
   통합 타깃이라 헤드리스 잡)과 `the_two_sister_guards_scan_the_same_roots`
   (`src/design_token_guard.rs`), `every_scan_unit_contributes_at_least_one_file`
-  (`src/source_guards.rs`) — 뒤의 둘은 본체 crate 의 lib 유닛이라
-  `cargo test --workspace --lib --bins` 로 **자동으로 돈다**. 그 셋 밖 —
-  **나머지 11 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체(1178),
-  base = `32c71757`.** base 가 바뀌어 공통 검사가 더 생기면 이 문단은 다시 만료된다.
+  (`src/source_guards/mod.rs`), `the_scan_population_matches_what_git_lists`
+  (`src/source_guards/scan_population.rs`) — 뒤의 셋은 본체 crate 의 lib 유닛이라
+  `cargo test --workspace --lib --bins` 로 **자동으로 돈다**.
+  넷째는 셋째를 한 칸 더 조인 것이다: 셋째는 스캔 **단위**(`src` · `crates/<이름>`) 집합을
+  고정하고, 넷째는 **파일** 집합을 고정한다 — 단위 동등은 크레이트가 통째로 빠지는 것은
+  잡지만 한 단위 안에서 파일이 사라지는 것은 못 잡는다. 모수는 스냅샷 상수가 아니라
+  `git ls-files` 다. 파일이 1100 개 남짓이라 상수로 박으면 **사람이 갱신을 잊는** 형태가
+  되는데, 그것이 바로 이 ADR 이 막으려는 실패이기 때문이다. 그 넷 밖 —
+  **나머지 11 개의 경로 목록이 개별 파일을 등재하는 것을 막는 판정은 없다.** 넷째가 늘어도
+  이 11 은 안 줄어든다 — 넷째는 `source_guards` 자신의 모수를 더 조인 것이지 다른 목록을
+  덮지 않는다. 이 선언의 좌표를 못박는다: **모수 = 추적 `.rs` 전체(1187),
+  base = `98d9b948`.** base 가 바뀌어 공통 검사가 더 생기면 이 문단은 다시 만료된다.
+  - **하한 셋이 늘었을 때 이 넷과 11 은 안 움직였다.** 위 ③의 표가 넷 → 일곱이 됐지만
+    그것은 **연기 검사**의 목록이고, 이 문단이 세는 것은 **모수를 고정하는 판정**이다 —
+    두 목록은 겹치지 않는다. 새 하한이 딸려 온 테스트
+    (`the_scan_refuses_to_report_zero_from_an_empty_walk` 셋)는 하한 술어 자신의 극성을
+    보는 픽스처라, 어떤 경로 목록도 조이지 않는다. 새 경로 목록도 안 생겼다(셋 다 전역
+    순회 + 가지치기 형태라 등재 목록이 없다). 그래서 **11 은 11 그대로다.** 이 문단의
+    만료 조건("공통 검사가 더 생기면")에도 안 걸린다 — 걸리는 것은 넷째가 늘어날 때다.
   - **셋째 자리는 이 ADR 밖에서 왔다 — 그 사실이 근거다.**
     `every_scan_unit_contributes_at_least_one_file` 은 디자인 토큰 축이 아니라 소스 가드
     축에서, 이 ADR 과 독립적으로 같은 결론에 도달했다: 개수 하한이 **단위 하나가 통째로
@@ -204,7 +245,7 @@ done | wc -l                                    # 51
   이 ADR 의 발단이 된 반경 축 정리가 그 규약을 따랐다
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색 가드의 모수가 갤러리를 의도적으로
   빼는 근거. "계층마다 모수가 다르다" 의 실례
-- [`src/source_guards.rs`](../../src/source_guards.rs) `every_scan_unit_contributes_at_least_one_file`
+- [`src/source_guards/mod.rs`](../../src/source_guards/mod.rs) `every_scan_unit_contributes_at_least_one_file`
   — 이 ADR 과 **독립적으로** 같은 결론에 도달한 사례(커밋 `a37c310a`). 개수 하한을 집합
   동등으로 올린 근거가 그 함수의 doc 주석에 실측으로 적혀 있다
 - [ADR-0128](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) — 타입 봉인

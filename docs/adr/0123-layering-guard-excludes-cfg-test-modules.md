@@ -23,7 +23,7 @@
 아니다.
 
 그런데 그 테스트를 `tests/` 통합 테스트로 옮길 수 없다. `tasty` 패키지에는 `[lib]`
-타깃도 `src/lib.rs` 도 없다 — 바이너리 전용 크레이트다. 통합 테스트 크레이트가 링크할
+타깃도 크레이트 루트의 `lib.rs` 도 없다 — 바이너리 전용 크레이트다. 통합 테스트 크레이트가 링크할
 대상 자체가 없으므로, 항목을 `pub` 으로 올려도 닿지 않는다. 가시성 문제가 아니라
 링크 대상의 부재다.
 
@@ -99,5 +99,5 @@
 ## References
 
 - `tests/layering.rs` — 가드 본체(세 목록과 두 방향 검사).
-- `tests/no_todo_file_citation.rs` — `(경로, 사유)` 쌍 면제 목록의 선례.
+- `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` — `(경로, 사유)` 쌍 면제 목록의 선례.
 - [ADR-0105](0105-no-nongit-path-refs-in-tracked-sources.md) — 추적 소스의 참조 규칙.

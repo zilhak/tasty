@@ -45,6 +45,7 @@
 
 ## References
 
+- [`docs/architecture/index.md`](../architecture/index.md) §도메인-IO — 이 결정이 그 절의 계층 규칙에 남긴 유일한 예외(`tasty-remote` → `tasty-ipc`)를 그 자리에 적어 두었다
 - [`docs/dev-guide/build.md`](../dev-guide/build.md) §크레이트 분리 가이드 — 후보 조건 3종과 이 ADR 이 정한 우선순위
 - [ADR-0007](0007-attach-targets-remote.md) — 원격성은 client 가 흡수한다(IPC 서버는 loopback 만 안다)
 - [ADR-0032](0032-remote-attach-two-layer-split.md) — ssh / tasty-attach 프로필 2레이어

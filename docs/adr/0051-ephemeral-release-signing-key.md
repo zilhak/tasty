@@ -6,13 +6,13 @@
 
 ## Context
 
-builtin plugin 매니페스트(`tasty-plugin.toml`)는 Ed25519 서명으로 confused-deputy(권한 변조)를 막는다(`crates/tasty-host-plugin/src/bundle_sig.rs::TRUSTED_PUBKEYS`). 원래 설계는 "release" 슬롯을 운영자가 1회 발급하는 영구 신뢰 루트로 두는 것이었다 — `crates/tasty-host-plugin/keys/release-pubkey.bin` 을 git에 영구 커밋하고, 대응 개인키를 GitHub Secret `TASTY_RELEASE_SIGN_KEY` 로 등록해 `.github/workflows/release.yml` 이 매 release 빌드마다 이 secret 을 디코딩해 서명하는 흐름이었다.
+builtin plugin 매니페스트(`tasty-plugin.toml`)는 Ed25519 서명으로 confused-deputy(권한 변조)를 막는다(`crates/tasty-host-plugin/src/bundle_sig.rs::TRUSTED_PUBKEYS`). 원래 설계는 "release" 슬롯을 운영자가 1회 발급하는 영구 신뢰 루트로 두는 것이었다 — `tasty-host-plugin` 의 `keys/release-pubkey.bin` 을 git에 영구 커밋하고, 대응 개인키를 GitHub Secret `TASTY_RELEASE_SIGN_KEY` 로 등록해 `.github/workflows/release.yml` 이 매 release 빌드마다 이 secret 을 디코딩해 서명하는 흐름이었다.
 
 이 절차는 실제로 한 번도 완성되지 않았다 — `release-pubkey.bin` 이 계속 all-zero placeholder 로 커밋돼 있었고, `TASTY_RELEASE_SIGN_KEY` secret 도 등록된 적이 없었다(`gh secret list` 확인 결과 0개). 그 결과 release CI 는 tag push 때마다 "Decode release signing key" step 에서 곧바로 fail 했다 — 오랫동안 release 파이프라인이 아예 동작하지 않은 원인 중 하나.
 
 ## Decision
 
-release plugin 서명키를 **영구 보관하지 않고, 빌드마다 로컬에서 자동생성**한다. 이미 존재하던 dev key 메커니즘(`scripts/gen-dev-key.sh`, `scripts/ensure-sign-key.sh`)을 release 빌드에도 그대로 적용한다 — `~/.tasty-keys/release.pem` 이 없으면(4대 self-hosted 러너 전부 없음) 그 자리에서 새 Ed25519 keypair 를 만들어 서명하고, 그 개인키는 해당 머신에만 남긴다. `crates/tasty-host-plugin/keys/release-pubkey.bin` 은 git 추적을 중단하고(`dev-pubkey.bin` 과 동일하게 `.gitignore`), 항상 all-zero placeholder 로 남는 걸 정상 상태로 취급한다. 실질적인 서명 검증은 dev 슬롯이 담당한다.
+release plugin 서명키를 **영구 보관하지 않고, 빌드마다 로컬에서 자동생성**한다. 이미 존재하던 dev key 메커니즘(`scripts/gen-dev-key.sh`, `scripts/ensure-sign-key.sh`)을 release 빌드에도 그대로 적용한다 — `~/.tasty-keys/release.pem` 이 없으면(4대 self-hosted 러너 전부 없음) 그 자리에서 새 Ed25519 keypair 를 만들어 서명하고, 그 개인키는 해당 머신에만 남긴다. 그 `keys/release-pubkey.bin` 은 git 추적을 중단하고(`dev-pubkey.bin` 과 동일하게 `.gitignore`), 항상 all-zero placeholder 로 남는 걸 정상 상태로 취급한다. 실질적인 서명 검증은 dev 슬롯이 담당한다.
 
 이 결정의 근거는 `crates/tasty-host-plugin/src/builtin.rs::install_builtins_if_needed()` 확인 결과다 — builtin plugin 은 항상 그 앱 바이너리와 **같은 설치 번들 안에서 로컬로 복사**되며, 앱 버전과 독립적으로 원격에서 개별 업데이트되는 경로가 없다. 따라서 "구버전 바이너리가 신버전 키로 서명된 plugin 을 검증해야 하는" 상황 자체가 존재하지 않는다 — 매 릴리스가 자기 안에서 완결되는 신뢰 단위이므로, 릴리스마다 다른 키를 써도 안전하다.
 

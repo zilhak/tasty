@@ -58,4 +58,4 @@ host 가 와이어 `Scroll` 로 보내는 값은 경로마다 다르다. **egui-
 - [ADR-0097](0097-plugin-self-repaint-resident-timer.md) — self-repaint 알림을 보내는 상주 타이머(이 ADR 은 알림 **횟수** 를 줄이는 축)
 - `crates/tasty-plugin-sdk/src/egui_surface.rs` — 분할(`push_scroll_events`)과 Context 초기화
 - `crates/tasty-egui-theme/src/lib.rs` — host egui 의 `apply_theme_to_egui`
-- egui 0.31.1 `src/input_state/mod.rs`(휠 smooth 판정과 지수완화 drain) · `src/style.rs`(`ScrollAnimation`)
+- egui 0.31.1 `egui/src/input_state/mod.rs`(휠 smooth 판정과 지수완화 drain) · `egui/src/style.rs`(`ScrollAnimation`)
