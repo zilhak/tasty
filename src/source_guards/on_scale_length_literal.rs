@@ -132,7 +132,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         98,
         "갤러리 specimen — 배율에는 면제지만(ADR-0135) 스케일에는 아니다",
     ),
-    ("crates/tasty-ui-widgets/", 14, "공용 위젯"),
+    ("crates/tasty-ui-widgets/", 4, "공용 위젯"),
     (
         "crates/",
         26,
@@ -406,7 +406,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
     let in_tests = all.len() - shipped.len();
     assert_eq!(
         (zeros, in_tests),
-        (169, 170),
+        (167, 181),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );
