@@ -49,12 +49,36 @@ tasty debug fullscreen state --window-id <ID>
    `permission_denied: session_token unknown/expired/revoked` 다. 배율과 무관한 실패라
    여기서 막히면 원인을 엉뚱한 데서 찾게 된다.
 5. **배율 없이 한 번, 배율을 걸고 한 번** 띄워 위 표의 신호를 각각 읽는다.
-6. 대상 화면(webview·banner·popup mesh·탭바 높이·네이티브 메뉴 좌표)의 좌표·크기를
+6. **좌표를 IPC 로 직접 읽을 수 있으면 스크린샷보다 그쪽을 먼저 쓴다.** 픽셀은
+   "몇 px 인가" 만 답하고 "논리 몇인가" 는 안 답해서, 배율이 걸린 값에서 두 가설
+   (토큰이 논리라 정확히 배수인가 / 콘텐츠가 정하는 치수라 스냅됐는가)을 못 가른다.
+
+   | 표면 | 명령 | 무엇이 나오는가 |
+   |------|------|-----------------|
+   | popup | `tasty debug host-popup list` | `rect`(논리) · `z_seq` |
+   | banner | `tasty debug banner list` | `shown[].rect`(논리) · `shown[].content_rect`(물리, plugin mesh 만) · `coords` |
+
+   두 응답의 `rect` 는 키 모양과 좌표계가 같아 직접 비교된다. 배너의 `content_rect` 만
+   물리인데, 셸은 host egui 가 논리로 그리고 콘텐츠는 plugin 이 ppp 로 재렌더해 GPU 가
+   합성하는 별개 경로라 논리로 접으면 그 두 경로를 가르는 정보가 사라지기 때문이다.
+   어느 쪽이 어느 좌표계인지는 응답의 `coords` 가 스스로 말한다.
+
+   **배너의 `rect` 는 한 프레임 늦다** — 배너는 popup 과 달리 좌표를 모델에 들고 있지
+   않고 컨테이너가 매 프레임 배치하므로, 뜬 직후 첫 프레임에는 `null` 이다. `show`
+   직후가 아니라 한 프레임 뒤에 읽는다.
+
+   실측 예(2026-09-05, Linux, `mouse-capture` / `view`): 배율 1 에서 `h: 50.0`,
+   배율 2 에서 `h: 49.5` — **논리 높이가 배율에 따라 달라진다.** 물리로는 50 과 99 다.
+   이 배너 높이는 토큰이 정하는 값이 아니라 콘텐츠가 정하고 물리 스냅을 거친 뒤 논리로
+   되돌아온다는 뜻이고, 스크린샷만으로는 이것이 "100 에서 1 px 짧다" 인지
+   "49.5 × 2" 인지 갈리지 않는다.
+
+7. 대상 화면(webview·banner·popup mesh·탭바 높이·네이티브 메뉴 좌표)의 좌표·크기를
    두 배율에서 비교한다. 캡처 방법과 Xvfb 함정은
    [screenshot-methods](screenshot-methods.md) 를 따른다 — X11 캡처는 검게 나오므로
    GPU 경유 `screenshot --window` 를 쓰고, 캡처 전에 포인터를 한 번 움직여 재렌더를
    유발한다.
-7. 정리는 **저장한 PID** 로 한다. `xvfb-run` 을 쓰면 `$!` 는 래퍼이므로, 안의 프로세스는
+8. 정리는 **저장한 PID** 로 한다. `xvfb-run` 을 쓰면 `$!` 는 래퍼이므로, 안의 프로세스는
    `/proc/<pid>/environ` 의 격리 `TASTY_HOME` 으로 찾는다. 패턴 매칭으로 죽이지 않는다.
 
 ## 화면이 창보다 커야 한다

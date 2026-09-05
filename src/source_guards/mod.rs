@@ -679,6 +679,10 @@ mod length_constant_frontier;
 mod platform_gated_dispatch_complement;
 mod port_mode_roster;
 
+/// 기하를 내주는 debug 관측면 둘(popup · banner)이 같은 키 모양으로 내는지, 그리고
+/// 배너 쪽이 좌표계를 응답에 명시하는지 본다. 갈리면 두 표면을 재는 검증 스크립트가
+/// 두 벌이 되고 그 둘은 따로 늙는다.
+mod geometry_surface_shape;
 /// 핸들러가 IPC params 를 숫자로 읽는 자리가 관문(`handler/params.rs`) 하나를
 /// 지나는지 본다. 흩어져 있으면 자르기(`as u32`)가 한 자리에서만 고쳐진다.
 mod params_chokepoint;

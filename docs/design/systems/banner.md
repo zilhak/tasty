@@ -147,7 +147,11 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
 
 - **터미널 텍스트 읽기**(`surface.read_since_mark` 등)에는 **배너 정보를 포함하지 않는다**(텍스트 오염 방지). 배너는 egui `Order::Foreground` overlay 로 그려져 termwiz 그리드 버퍼에 닿지 않으므로(`surface/query.rs` 의 read 경로에 banner 참조 없음) read 표면과 **구조적으로 분리**된다 — 별도 필터링 없이도 grid read 결과에 섞이지 않는다. debug+gui 빌드 실측으로 확인(배너 표시 후 `surface.read_*` 호출 시 배너 텍스트 미포함).
 - **debug 빌드 전용** 으로만 배너를 읽고 제어한다. debug 메서드는 사용자 입력 재현/내부 상태 덤프 격리 정책(`#[cfg(debug_assertions)]` + `feature="gui"`, [debug-ipc](../../dev-guide/debug-ipc.md))을 따르며, release 라우터에는 등록되지 않는다. IPC 메서드(= CLI `tasty debug banner <sub>`):
-  - `debug.banner.list` (`list`) — 빌트인 def 목록 + 현재 표시/대기 상태 덤프.
+  - `debug.banner.list` (`list`) — 빌트인 def 목록 + 현재 표시/대기 상태 + 기하 덤프.
+    표시 중인 배너마다 셸 rect(논리)와 plugin egui-mesh 콘텐츠 rect(물리)를 낸다.
+    셸 rect 의 출처는 hover 판정이 쓰는 것과 같은 `card_rects` 라 **직전 프레임 실측**이고,
+    그래서 뜬 직후 첫 프레임에는 없다 — 배너는 popup 과 달리 자기 좌표를 모델에 들고
+    있지 않고 컨테이너가 매 프레임 배치한다.
   - `debug.banner.show` (`show --banner-id <id> --scope <token>`) — 배너 발화. `outcome`(`Shown`/`Queued`/`ResetCountdown`/`Ignored`) 반환.
   - `debug.banner.close` (`close --banner-id <id>`) — id 로 닫기(표시 중이면 큐 head 승격).
   - `debug.banner.set_countdown` (`set-countdown --scope <token> --seconds <n>`) — 표시 중 TTL 배너 남은 시간 강제 설정.

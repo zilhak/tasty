@@ -482,6 +482,20 @@ impl BannerManager {
         self.scopes.values().map(|lane| lane.queue.len()).sum()
     }
 
+    /// 직전 프레임에 실제로 그려진 카드 rect — **egui 논리 좌표**다.
+    ///
+    /// `card_rects` 와 같은 값이며, hover 판정이 쓰는 것과 같은 자리를 읽는다.
+    /// 배너는 popup 과 달리 자기 좌표를 모델에 들고 있지 않다(popup 은
+    /// `PopupState.pos`/`size` 를 갖는다) — 컨테이너가 매 프레임 배치하므로
+    /// 좌표는 **그린 뒤에야** 확정된다. 그래서 이 값은 항상 한 프레임 늦고,
+    /// 배너가 뜬 직후 첫 프레임에는 `None` 이다.
+    // 이유: 호출부가 debug.rs(`#[cfg(debug_assertions)]`)뿐이라 release 빌드에서
+    // 미사용으로 잡힌다. `total_queued` 와 같은 사유.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pub fn card_rect(&self, scope: &BannerScope, key: &BannerKey) -> Option<egui::Rect> {
+        self.card_rects.get(&(scope.clone(), key.clone())).copied()
+    }
+
     /// 어떤 배너든 떠 있거나 대기 중인지.
     pub fn has_any(&self) -> bool {
         !self.scopes.is_empty()
@@ -1025,6 +1039,30 @@ mod tests {
 
     fn persistent(id: BannerId, scope: BannerScope) -> BannerState {
         BannerState::persistent(id, scope)
+    }
+
+    /// `card_rect` 는 **직전 프레임에 그려진** 카드만 답한다 — 그린 적 없는 배너는
+    /// `None` 이다. 배너는 popup 과 달리 좌표를 모델에 들고 있지 않아서(popup 은
+    /// `PopupState.pos`/`size`), 이 "한 프레임 늦음" 은 구현 사정이 아니라 계약이다.
+    /// `debug.banner.list` 의 `rect` 가 뜬 직후 `null` 인 것이 여기서 나온다.
+    #[test]
+    fn card_rect_answers_only_for_what_was_drawn() {
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::View;
+        let key = BannerKey::Host("mouse-capture");
+        assert_eq!(
+            mgr.card_rect(&scope, &key),
+            None,
+            "그린 적 없는 배너에 좌표가 있으면 그건 실측이 아니라 추측이다"
+        );
+
+        let drawn = egui::Rect::from_min_size(egui::pos2(8.0, 32.0), egui::vec2(1264.0, 50.0));
+        mgr.card_rects.insert((scope.clone(), key.clone()), drawn);
+        assert_eq!(mgr.card_rect(&scope, &key), Some(drawn));
+
+        // 다른 스코프·다른 키는 섞이지 않는다 — 배너는 스코프마다 동시에 뜬다.
+        assert_eq!(mgr.card_rect(&BannerScope::Workspace(0), &key), None);
+        assert_eq!(mgr.card_rect(&scope, &BannerKey::Plugin(1)), None);
     }
 
     #[test]

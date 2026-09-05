@@ -229,10 +229,27 @@ pub(super) fn handle_debug_modhint_state(
     JsonRpcResponse::success(id, dump)
 }
 
-/// `debug.banner.list` — 빌트인 배너 정의 목록 + 현재 표시/대기 상태를 반환.
+/// `debug.banner.list` — 빌트인 배너 정의 목록 + 현재 표시/대기 상태 + **기하**를 반환.
 ///
 /// 배너는 사용자 행동에서만 발사되므로(발화 정책 §불가침) 이 표면은 release 에
 /// 노출되지 않는다. plugin 기여 배너는 (도입 시) 별도 표면이 담당한다.
+///
+/// # 좌표계 — 두 rect 가 서로 다르다
+///
+/// 응답 최상위의 `coords` 가 이것을 그대로 싣는다. 이 레포에서 좌표계를 안 적으면
+/// 반드시 틀린다(`docs/concepts/typed-length.md`).
+///
+/// - `shown[].rect` — 셸(카드) 영역. **egui 논리 좌표.** `debug.host_popup.list` 의
+///   `rect` 와 같은 좌표계·같은 키 모양(`x`/`y`/`w`/`h`)이라 두 응답을 직접 비교할 수
+///   있다. 배율이 바뀌어도 값이 같아야 한다 — 달라지면 그 자체가 DPI 결함 신호다.
+/// - `shown[].content_rect` — plugin egui-mesh 배너의 콘텐츠 합성 영역. **물리 픽셀.**
+///   셸은 host egui 가 논리로 그리고 콘텐츠는 plugin 이 ppp 로 재렌더해 GPU 가 합성하는
+///   별개 경로라, 논리로 접어 내리면 그 두 경로를 가르는 정보가 사라진다. host 배너는
+///   `null`.
+///
+/// `rect` 는 popup 과 달리 **한 프레임 늦고**, 배너가 뜬 직후 첫 프레임에는 `null` 이다 —
+/// 배너는 자기 좌표를 모델에 들고 있지 않고 컨테이너가 매 프레임 배치하므로 좌표가
+/// 그린 뒤에야 확정된다(`BannerManager::card_rect`).
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
     let defs: Vec<_> = crate::adapters::ui::banner::defs::all_defs()
@@ -253,11 +270,37 @@ pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) 
                 .queued_banners(&b.scope)
                 .map(|q| q.id)
                 .collect();
+            // 셸 rect: 직전 프레임 실측(논리). popup 과 같은 키 모양으로 낸다.
+            let rect = state
+                .banners
+                .card_rect(&b.scope, &b.key())
+                .map(|r| json!({ "x": r.min.x, "y": r.min.y, "w": r.width(), "h": r.height() }));
+            // 콘텐츠 rect: plugin egui-mesh 배너만. GPU 합성 영역이라 물리 픽셀이다.
+            let content_rect = match &b.content {
+                crate::adapters::ui::banner::BannerContentSource::PluginMesh {
+                    instance_id,
+                    ..
+                } => state
+                    .plugin_mesh_banner_regions
+                    .iter()
+                    .find(|(inst, _)| inst == instance_id)
+                    .map(|(_, r)| {
+                        json!({
+                            "x": r.x.value(),
+                            "y": r.y.value(),
+                            "w": r.width.value(),
+                            "h": r.height.value(),
+                        })
+                    }),
+                crate::adapters::ui::banner::BannerContentSource::Host => None,
+            };
             json!({
                 "id": b.id,
                 "scope": b.scope.to_token(),
                 "remaining_seconds": b.remaining_seconds(),
                 "queued": queued,
+                "rect": rect,
+                "content_rect": content_rect,
             })
         })
         .collect();
@@ -267,6 +310,8 @@ pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) 
             "defs": defs,
             "shown": shown,
             "total_queued": state.banners.total_queued(),
+            // 좌표계를 응답이 스스로 말한다 — 문서만 아는 사실이면 호출부가 물리로 읽는다.
+            "coords": { "rect": "logical", "content_rect": "physical" },
         }),
     )
 }
