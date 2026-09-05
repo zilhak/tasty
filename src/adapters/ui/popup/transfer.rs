@@ -34,17 +34,17 @@ pub const TRANSFER_ERROR_POPUP_ID: &str = "transfer_error";
 /// `--tasty-transfer-popup-width` (size-400).
 const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
-const PAD_X: f32 = 14.0;
+const PAD_X: LogicalPx = LogicalPx(14.0);
 /// 헤더 세로 패딩 (디자인 12 = space-md).
-const HEADER_PAD_Y: f32 = 12.0;
+const HEADER_PAD_Y: LogicalPx = LogicalPx(12.0);
 /// 바디 패딩 (디자인 14 — raw).
-const BODY_PAD: f32 = 14.0;
+const BODY_PAD: LogicalPx = LogicalPx(14.0);
 /// 푸터 세로 패딩 (디자인 10 — raw).
-const FOOTER_PAD_Y: f32 = 10.0;
+const FOOTER_PAD_Y: LogicalPx = LogicalPx(10.0);
 /// 바디 내부 요소 gap (디자인 10 — raw).
-const BODY_GAP: f32 = 10.0;
+const BODY_GAP: LogicalPx = LogicalPx(10.0);
 /// 헤더/푸터 콘텐츠 높이 근사(glyph 16 / 제목 14 line ≈ 20).
-const HEADER_CONTENT_H: f32 = 20.0;
+const HEADER_CONTENT_H: LogicalPx = LogicalPx(20.0);
 
 /// 진행 팝업 상태 — 진행 중인 파일 행들. 08 워커 진행 이벤트가 `row_by_id` 로 갱신한다.
 #[derive(Debug, Default, Clone)]
@@ -99,19 +99,21 @@ pub fn transfer_progress_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
         .map(|p| p.rows.len())
         .unwrap_or(1)
         .max(1);
-    let header_h = HEADER_PAD_Y * 2.0 + HEADER_CONTENT_H;
-    let footer_h = FOOTER_PAD_Y * 2.0 + ControlSize::Sm.height(&theme::theme());
+    let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
+    let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&theme::theme()));
     // 행 하나: fileRow(~18) + gap + bar(4) + gap + statsRow(~15).
-    let row_h = 18.0 + BODY_GAP + 4.0 + BODY_GAP + 15.0;
-    let body_h = BODY_PAD * 2.0 + row_h * n as f32 + BODY_GAP * (n.saturating_sub(1)) as f32;
-    egui::vec2(FRAME_W.value(), header_h + body_h + footer_h)
+    let row_h = LogicalPx(18.0) + BODY_GAP + LogicalPx(4.0) + BODY_GAP + LogicalPx(15.0);
+    let body_h = BODY_PAD.scaled(2.0)
+        + row_h.scaled(n as f32)
+        + BODY_GAP.scaled((n.saturating_sub(1)) as f32);
+    egui::vec2(FRAME_W.value(), (header_h + body_h + footer_h).value())
 }
 
 /// 실패 팝업 높이 = header + body(prose + reason well) + footer. reason 길이로 well 줄수 추정.
 pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
     let th = theme::theme();
-    let header_h = HEADER_PAD_Y * 2.0 + HEADER_CONTENT_H;
-    let footer_h = FOOTER_PAD_Y * 2.0 + ControlSize::Sm.height(&th);
+    let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
+    let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
     let (name_len, reason_len) = state
         .dialogs
         .transfer_error
@@ -124,8 +126,8 @@ pub fn transfer_error_sizer(state: &AppState, _e: &CoreState) -> egui::Vec2 {
     let well_lines = ((reason_len as f32) / 50.0).ceil().max(1.0);
     // well: 패딩 8+8 + 텍스트 줄.
     let well_h = 16.0 + well_lines * th.font_size_caption.value() * 1.4;
-    let body_h = BODY_PAD * 2.0 + prose_h + BODY_GAP + well_h;
-    egui::vec2(FRAME_W.value(), header_h + body_h + footer_h)
+    let body_h = BODY_PAD.scaled(2.0) + LogicalPx(prose_h) + BODY_GAP + LogicalPx(well_h);
+    egui::vec2(FRAME_W.value(), (header_h + body_h + footer_h).value())
 }
 
 // ── draw_fn ────────────────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ pub fn draw_transfer_progress(
         body_region(ui, |ui| {
             for (i, row) in rows.iter().enumerate() {
                 if i > 0 {
-                    ui.add_space(BODY_GAP);
+                    ui.add_space(BODY_GAP.value());
                 }
                 progress_row(ui, &th, row);
             }
@@ -269,7 +271,7 @@ pub fn draw_transfer_error(
                         .color(th.text_secondary()),
                 );
             });
-            ui.add_space(BODY_GAP);
+            ui.add_space(BODY_GAP.value());
             reason_well(ui, &th, &reason);
         });
         // danger-fill 금지 — ghost/secondary 만.
@@ -336,17 +338,25 @@ fn header_band(
     title: &str,
     trailing: Option<&str>,
 ) {
-    let band_h = HEADER_PAD_Y * 2.0 + HEADER_CONTENT_H;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), band_h), egui::Sense::hover());
+    let band_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + PAD_X, rect.top() + HEADER_PAD_Y),
-        egui::pos2(rect.right() - PAD_X, rect.bottom() - HEADER_PAD_Y),
+        egui::pos2(
+            rect.left() + PAD_X.value(),
+            rect.top() + HEADER_PAD_Y.value(),
+        ),
+        egui::pos2(
+            rect.right() - PAD_X.value(),
+            rect.bottom() - HEADER_PAD_Y.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -378,7 +388,7 @@ fn header_band(
 /// 바디 region (padding 14, 전체폭).
 fn body_region(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
-        .inner_margin(egui::Margin::same(BODY_PAD as i8))
+        .inner_margin(egui::Margin::same(BODY_PAD.value() as i8))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add(ui);
@@ -404,9 +414,9 @@ fn progress_row(ui: &mut egui::Ui, th: &theme::Theme, row: &TransferRow) {
                 .color(th.text_primary()),
         );
     });
-    ui.add_space(BODY_GAP);
+    ui.add_space(BODY_GAP.value());
     progress_bar(ui, th, row_pct(row));
-    ui.add_space(BODY_GAP);
+    ui.add_space(BODY_GAP.value());
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(format!(
@@ -502,17 +512,25 @@ fn footer_buttons<R>(
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     let btn_h = ControlSize::Sm.height(th);
-    let band_h = FOOTER_PAD_Y * 2.0 + btn_h;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FRAME_W.value(), band_h), egui::Sense::hover());
+    let band_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(btn_h);
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + PAD_X, rect.top() + FOOTER_PAD_Y),
-        egui::pos2(rect.right() - PAD_X, rect.bottom() - FOOTER_PAD_Y),
+        egui::pos2(
+            rect.left() + PAD_X.value(),
+            rect.top() + FOOTER_PAD_Y.value(),
+        ),
+        egui::pos2(
+            rect.right() - PAD_X.value(),
+            rect.bottom() - FOOTER_PAD_Y.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
