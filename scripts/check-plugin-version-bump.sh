@@ -95,36 +95,18 @@ command -v rustfmt >/dev/null 2>&1 \
 
 # 출하 판정기. **여기서 빌드하지 않는다** — pre-commit 에서 cargo 를 부르면 바깥 cargo 와
 # 락을 다툰다(파일 SLOC 게이트가 같은 이유로 같은 형태를 쓴다). 없으면 판정 불가다.
-STRIP_BIN="${TASTY_STRIP_CFG_TEST_BIN:-}"
-if [ -z "$STRIP_BIN" ]; then
-    for cand in "$ROOT/target/debug/strip-cfg-test" "$ROOT/target/release/strip-cfg-test"; do
-        if [ -x "$cand" ]; then STRIP_BIN="$cand"; break; fi
-    done
-fi
-# 없으면 **더 넓게** 본다. 여기서 판정 불가로 죽이지 않는 이유는, 이 스크립트가 갓 클론한
-# 트리의 pre-commit 에서도 불리기 때문이다. 넓게 보는 방향은 조용한 통과를 안 만든다 —
+# 판정기를 찾는 것과 **낡았는지 보는 것**은 공용이다 — 이 계열 게이트 셋이 같은 크레이트의
+# CLI 판정기를 부르고, 규칙을 게이트마다 따로 쓰면 같은 물음에 답이 셋이 된다.
+# 스크립트 자신의 위치에서 읽는다 — `$ROOT` 는 **판정 대상 저장소**라, 합성 픽스처
+# 저장소에서 부르면 거기엔 이 파일이 없다.
+. "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
+STRIP_BIN="$(resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT")"
+# 없거나 낡았으면 **더 넓게** 본다. 여기서 판정 불가로 죽이지 않는 이유는, 이 스크립트가 갓
+# 클론한 트리의 pre-commit 에서도 불리기 때문이다. 넓게 보는 방향은 조용한 통과를 안 만든다 —
 # 출하 밖 변경(테스트 전용)이 bump 를 요구하는 오탐이 될 뿐이고, ADR-0137 이 적은 비대칭
-# (오탐 하나 vs 라이브 반영이 조용히 깨짐)에서 감수하는 쪽이다. 다만 **조용히 바뀌지는
-# 않는다** — 아래 한 줄이 판정이 좁아진 것이 아니라 넓어졌음을 매번 말한다.
+# (오탐 하나 vs 라이브 반영이 조용히 깨짐)에서 감수하는 쪽이다. 사유는 헬퍼가 말한다.
 if [ -z "$STRIP_BIN" ]; then
-    echo "[plugin-version] strip-cfg-test 가 없어 출하 범위를 못 좁힌다 — 테스트 전용 변경까지 bump 를 요구한다." >&2
-    echo "                 좁히려면: cargo build -p tasty-doc-guards --bin strip-cfg-test" >&2
-fi
-
-# **낡은 판정기는 없는 판정기보다 나쁘다.** 판정기가 빌드 산출물이라, 그것을 고친 사람과
-# 판정을 돌리는 사람이 다르면 **고침이 소스에 있는데 판정은 옛 규칙으로 돈다** — 그리고
-# 그 오진은 조용하다(실측 2026-09-05: `cfg_attr` 을 물린 커밋을 얹고도 게이트가 옛 결과를
-# 냈고, 다시 지으니 8 → 2 로 바뀌었다). 없을 때와 같은 방향으로 처리한다: 좁히기를 포기하고
-# 넓게 본다. 넓은 쪽은 조용한 통과를 안 만든다.
-#
-# 판정기 소스가 이 트리에 없으면(픽스처 저장소·배포 tarball) 신선도를 물을 수 없으므로 넘어간다.
-STRIP_SRC="crates/tasty-doc-guards/src"
-if [ -n "$STRIP_BIN" ] && [ -d "$STRIP_SRC" ]; then
-    if [ -n "$(find "$STRIP_SRC" -name '*.rs' -newer "$STRIP_BIN" -print -quit 2>/dev/null)" ]; then
-        echo "[plugin-version] strip-cfg-test 가 자기 소스보다 낡았다 — 옛 판정으로 돌지 않도록 좁히기를 끈다." >&2
-        echo "                 다시 지어라: cargo build -p tasty-doc-guards --bin strip-cfg-test" >&2
-        STRIP_BIN=""
-    fi
+    echo "[plugin-version] 출하 범위를 못 좁힌다 — 테스트 전용 변경까지 bump 를 요구한다." >&2
 fi
 
 # edition 을 루트 Cargo.toml 에서 읽는다. 여기 박아두면 워크스페이스가 올릴 때 만료된다.

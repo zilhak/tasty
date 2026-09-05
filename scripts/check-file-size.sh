@@ -64,14 +64,11 @@ skip() {
 # 바이너리를 여기서 `cargo build` 로 만들지 않는다 — 이 스크립트는 `cargo test` 안에서도
 # 불리고(tests/file_sloc_gate_fails_loudly.rs), 그때 중첩 cargo 는 빌드 디렉토리 잠금에서
 # 서로를 기다린다. 호출자가 경로를 주거나(TASTY_STRIP_CFG_TEST_BIN), 이미 빌드된 것을 쓴다.
-STRIP_BIN="${TASTY_STRIP_CFG_TEST_BIN:-}"
+# 찾기와 **신선도 판정**은 공용이다. 낡은 판정기는 없는 판정기보다 나쁘다 — 여기서는
+# 둘 다 판정 불가로 다룬다(위 "측정이 안 됐으면 통과가 아니다" 와 같은 근거).
+. "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
+STRIP_BIN="$(resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT")"
 if [ -z "$STRIP_BIN" ]; then
-    for cand in "$ROOT/target/debug/strip-cfg-test" "$ROOT/target/release/strip-cfg-test"; do
-        [ -x "$cand" ] && { STRIP_BIN="$cand"; break; }
-    done
-fi
-if [ -z "$STRIP_BIN" ]; then
-    echo "strip-cfg-test 가 없다 — 먼저 빌드하라: cargo build -p tasty-doc-guards --bin strip-cfg-test"
     echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"
     exit 2
 fi
