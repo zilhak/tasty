@@ -247,6 +247,40 @@ fn font_call_args(line: &str) -> Vec<(String, usize)> {
     call_args(line, FONT_CALLS)
 }
 
+/// 인자 추출이 **`LogicalPx` 형태를 본다** — 이 축의 가드가 한 번 그것을 못 봤다.
+///
+/// `call_args` 는 호출 뒤 첫 `,`/`)` 까지를 인자로 끊는데, `.size(NAME.value())` 에서
+/// 첫 `)` 는 `.value()` 의 것이다. 그래서 인자가 `NAME.value(` 로 잘려 이름 검사에서
+/// 떨어졌고, **가드는 CLAUDE.md 가 금지하는 bare `f32` 만 보고 요구하는 `LogicalPx` 는
+/// 못 보고 있었다.** 이름과 값이 같고 형태만 다른 변이 둘로 갈랐다: bare 는 빨강,
+/// `.value()` 는 초록이었다.
+///
+/// 아래는 그 회귀를 형태로 고정한다 — 양극을 함께 둬서 "둘 다 못 본다" 로 통과하지
+/// 않게 한다.
+#[test]
+fn the_font_arg_scan_sees_the_logical_px_form() {
+    let wrapped = font_call_args(".size(ADD_PREVIEW_NAME_PRIMITIVE_16.value())");
+    assert_eq!(
+        wrapped.iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        ["ADD_PREVIEW_NAME_PRIMITIVE_16"],
+        "`LogicalPx` const 를 `.value()` 로 넘긴 자리를 못 봤다 — 이 레포의 길이 상수는 \
+         대부분 이 형태다(CLAUDE.md 길이 타입 필수)"
+    );
+
+    let bare = font_call_args(".size(SEGMENT_BADGE_SIZE)");
+    assert_eq!(
+        bare.iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        ["SEGMENT_BADGE_SIZE"],
+        "bare 형태를 못 봤다 — 벗기기를 넣으면서 원래 보던 것을 잃었다"
+    );
+
+    // 비영 대조 — 상수가 아닌 인자는 안 잡아야 한다(R56: 위 둘이 "다 잡는다" 로 통과하는 것을 막는다).
+    assert!(
+        font_call_args(".size(th.font_size_body.value())").is_empty(),
+        "토큰 접근자를 명명 상수로 잡았다 — 이 가드의 대상이 아니다"
+    );
+}
+
 /// 주어진 호출 형태들의 **첫 인자가 명명 상수인** 자리를 모은다.
 ///
 /// 경로 수식을 벗긴다 — `tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS` 는
@@ -266,6 +300,10 @@ fn call_args(line: &str, calls: &[&str]) -> Vec<(String, usize)> {
             };
             let arg = rest[..end].trim();
             let arg = arg.rsplit("::").next().unwrap_or(arg).trim();
+            // `LogicalPx` const 는 `.value()` 로 벗겨서 넘긴다 — 그 형태가 이 레포의
+            // **필수** 형태다(CLAUDE.md 길이 타입). 벗기지 않으면 인자가 `NAME.value(`
+            // 로 잘려 이름 검사에서 떨어지고, 가드는 금지된 bare f32 만 보게 된다.
+            let arg = arg.strip_suffix(".value(").unwrap_or(arg).trim();
             if is_screaming_snake(arg) {
                 hits.push((arg.to_string(), at));
             }
