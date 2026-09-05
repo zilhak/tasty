@@ -205,6 +205,14 @@ materialize() {
         || die "판정 불가: 출하 판정기가 실패했다 ($label)."
 }
 
+# 이 게이트가 "version" 으로 읽는 줄 = 최상위 `version = "..."` 중 **첫 줄**.
+#
+# 술어를 여기 한 번만 둔다. 값을 **읽는** 쪽(version_at)과 그 줄을 내용 증거에서
+# **빼는** 쪽(shipped_sum)이 다른 줄을 가리키면, 게이트가 자기가 판정하는 값을 증거로
+# 도로 세거나 반대로 진짜 변경을 지운다 — 둘 다 조용하다.
+VERSION_LINE_RE='^version[[:space:]]*=[[:space:]]*"'
+version_line_no() { awk -v re="$VERSION_LINE_RE" '$0 ~ re { print NR; exit }'; }
+
 # 출하 내용의 체크섬. 파일이 없으면 고정 토큰을 낸다 — "없음" 과 "빈 파일" 을 같게 보면
 # 파일 추가·삭제를 무변경으로 오판한다.
 #
@@ -212,7 +220,7 @@ materialize() {
 # edition 등) **그 앞 단계 내용을 그대로 쓴다** — 정규화 실패를 "같음" 으로 흘리지 않는다.
 # 그 방향(오탐)이 조용한 통과보다 낫다. 마지막에 **빈 줄을 접는다**(위 헤더의 이유).
 shipped_sum() {
-    local label="$1" ref="$2" path="$3" out fmt cooked
+    local label="$1" ref="$2" path="$3" out fmt cooked vline
     case "$path" in
         *.rs)
             # **출하가 0 이면 없는 것과 같다.** `.rs` 에서는 "파일이 없다" 와 "전부
@@ -228,6 +236,23 @@ shipped_sum() {
             out=$(printf '%s' "$out" | sed '/^[[:space:]]*$/d')
             if [ -z "$out" ]; then printf '<no-ship>'; return; fi
             ;;
+        */Cargo.toml|*/tasty-plugin.toml)
+            # **판정하는 값 자신을 증거로 쓰지 않는다.** version 줄이 내용에 남아 있으면
+            # 그 줄 하나가 "산출물이 달라졌다" 를 만들고, 게이트는 값을 **내리는** 커밋에
+            # 또 한 번의 bump 를 요구한다 — 올리면 되돌림이 아니라 순환이다. 값을 되
+            # 정하는 것은 예외가 아니라 규칙이 정상으로 규정한 흐름이다(분할 착지 때
+            # 병합하는 쪽이 최종 값을 정한다).
+            #
+            # 산출물이 이 값을 담는 것은 맞다(`CARGO_PKG_VERSION`). 그래서 더더욱 증거가
+            # 될 수 없다 — 담기니까 늘 달라지고, 늘 다르면 아무것도 못 가른다.
+            #
+            # 빼는 줄은 version_at 이 **읽는 그 줄**이다(위 공용 술어). 나머지 줄
+            # (feature·의존·bin 선언)은 그대로 본다.
+            if ! exists_at "$ref"; then printf '<absent>'; return; fi
+            out=$(git show "$ref")
+            vline=$(printf '%s' "$out" | version_line_no)
+            [ -n "$vline" ] && out=$(printf '%s' "$out" | sed "${vline}d")
+            ;;
         *)
             # 소스가 아닌 것(`lang/*.toml`·`assets/*`)은 없음과 빈 파일을 가른다 —
             # 삭제를 무변경으로 오판하지 않기 위해서다.
@@ -239,13 +264,14 @@ shipped_sum() {
 }
 
 # [package] 절의 version. 매니페스트(tasty-plugin.toml)는 최상위 version 을 쓴다.
+# 어느 줄인지는 위 공용 술어가 정한다 — shipped_sum 이 빼는 줄과 반드시 같은 줄이다.
 version_at() {
-    local ref="$1" text
+    local ref="$1" text vline
     if ! exists_at "$ref"; then printf ''; return; fi
     text=$(git show "$ref")
-    printf '%s' "$text" \
-        | sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
-        | sed -n '1p'
+    vline=$(printf '%s' "$text" | version_line_no)
+    [ -n "$vline" ] || { printf ''; return; }
+    printf '%s' "$text" | sed -n "${vline}s/${VERSION_LINE_RE}\([^\"]*\)\".*/\1/p"
 }
 
 # semver 를 정수 셋으로. 비교 가능한 형태가 아니면 빈 값.

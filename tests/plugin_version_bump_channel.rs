@@ -276,6 +276,52 @@ fn a_version_that_goes_down_is_rejected() {
 }
 
 #[test]
+fn a_version_change_alone_is_not_evidence_that_the_artifact_changed() {
+    // 되돌림의 형태: 내용은 그대로 두고 값만 되돌린다. version 줄을 내용 증거로 세면
+    // 그 줄 하나가 "달라졌다" 를 만들고 게이트는 되돌림에 또 한 번의 bump 를 요구한다 —
+    // 올리면 되돌림이 아니다. 분할 착지에서 병합하는 쪽이 최종 값을 다시 정하는 흐름은
+    // 규칙이 정상으로 규정한 것이라, 이 순환은 예외 상황이 아니다.
+    let tmp = seed_repo();
+    let d = tmp.path();
+    bump_to(d, "0.1.5");
+    commit_all(d, "chore(fixture): move to 0.1.5");
+    bump_to(d, "0.1.4");
+    commit_all(d, "revert(fixture): put the value back");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 0, "값만 되돌렸는데 또 올리라고 했다:\n{text}");
+    assert!(
+        text.contains("판정 대상 0 건"),
+        "version 줄 자신이 판정 대상을 만들었다:\n{text}"
+    );
+}
+
+#[test]
+fn the_rest_of_the_manifest_is_still_content() {
+    // 위 고침이 뺀 것은 **version 줄 한 줄**이다. `Cargo.toml` 을 통째로 뺐다면 feature·
+    // 의존 변경이 산출물을 바꾸고도 조용히 통과한다 — 그 방향을 여기서 막는다.
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(
+        d,
+        &format!("{PLUGIN}/Cargo.toml"),
+        "[package]\nname = \"tasty-plugin-fixture\"\nversion = \"0.1.0\"\n\n\
+         [features]\ndefault = [\"extra\"]\nextra = []\n",
+    );
+    commit_all(d, "feat(fixture): turn on a feature");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 1,
+        "version 줄 말고 다른 줄이 바뀌었는데 통과했다:\n{text}"
+    );
+    assert!(
+        text.contains("Cargo.toml"),
+        "어느 파일 때문인지 메시지에 없다:\n{text}"
+    );
+}
+
+#[test]
 fn a_non_git_directory_is_undecidable_not_a_pass() {
     let tmp = tempfile::tempdir().expect("임시 디렉토리");
     let (code, text) = check(tmp.path(), &["--range", "HEAD^", "HEAD"]);
