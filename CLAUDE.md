@@ -104,8 +104,8 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 50 개 — 그중 `
 
 | 목적 | 명령 | 어디서 도는가 |
 |------|------|---------------|
-| 빌드 (dev) | `cargo build` — **plugin 을 고쳤으면 `cargo build --workspace`** (아래) | 자동 채널 없음. macOS·Windows 컴파일은 `crossplatform-check` 의 잡이 배선돼 있고(작업 트리 기준), Linux gui 컴파일은 아무 자동 잡도 안 본다. **배선과 초록은 다르다** — 표 아래 "배선돼 있다는 것과 초록이라는 것" 참조 |
-| 빌드 (release 검증) | `cargo build --release` | 자동 채널 없음(dist 산출물은 `build-check.yml` 수동) |
+| 빌드 (dev) | `cargo build` — **plugin 을 고쳤으면 `cargo build --workspace`** (아래) | 자동 채널 없음. macOS·Windows 컴파일은 `crossplatform-check` 의 잡이 배선돼 있고(작업 트리 기준), Linux **dev(debug) gui** 컴파일은 아무 자동 잡도 안 본다(release-gui 컴파일은 `check-release` 가 본다 — 두 조합은 `debug_assertions` 이 반대라 상보적이다). **배선과 초록은 다르다** — 표 아래 "배선돼 있다는 것과 초록이라는 것" 참조 |
+| 빌드 (release 검증) | `cargo build --release` | not-debug(release) gui **컴파일 정합성**은 `crossplatform-check` 의 `check-release` 잡이 본다(`cargo check --workspace --release`, main push · PR). **컴파일까지만** — 실행·dist 산출물은 아니다(dist 는 `build-check.yml` 수동) |
 | lint | `cargo clippy --workspace --all-targets --locked` | 이 조합을 배선한 자동 잡은 `crossplatform-check` 의 Windows 잡 하나뿐이다 — **그 하나가 빨간 동안 이 조합에는 실행 채널이 없다.** pre-push 훅은 비슷하지만 다르다(`--locked` 없음 + `-- -D clippy::correctness`) |
 | 포맷 검사 | `cargo fmt --check` | ✅ 자동 — `format-check.yml`(main push · PR) + pre-commit A.2 |
 | 테스트 | `cargo test --workspace --locked` | **이 조합(기본 feature) 그대로는 자동 채널 없음** — `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용이다. 다만 `check-headless` 가 main push 마다 **헤드리스 조합의 전체 스위트**를 돌아 통합 테스트 대부분이 자동으로 실행된다(실측 `d7dc4079`: 통합 항목 474 중 438). 자동으로 안 도는 것은 `tests/gui_tests.rs` 33 건과 명명 `--skip` 3 건뿐이다 |

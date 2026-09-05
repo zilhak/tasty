@@ -23,6 +23,7 @@
 | macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
 | headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
+| **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/tasty-plugin-*/**` 가 바뀐 경우만** · 수동 |
@@ -283,6 +284,36 @@ gui 게이트된 `mod` 선언은 67 개다.
 lib 유닛 테스트에서 그 서술을 지우면 사실보다 약하다. 어느 쪽이든 다음 사람의 판단을
 망친다 — 채널을 서술할 때 "없다" 는 "있다" 만큼 확인이 필요하다.
 
+### 조건부 allow 도 조합별로 린트 채널을 지운다
+
+파일 위치가 한 축이라면 **조건부 `allow` 는 다른 축**이다. `#![cfg_attr(not(feature =
+"gui"), allow(dead_code, unused_imports))]` 같은 attribute 는 그 조합(headless)에서
+해당 lint 를 **끈다** — 그 조합에서만 도는 자동 잡(`check-headless`)이 그 lint 를
+영영 못 본다. deny 로 승격된 lint 라도 마찬가지다: `allow` 가 deny 를 이긴다.
+
+**crate-level 하나가 조합 전체의 채널을 지운다(실측).** `src/main.rs` 최상단의
+`#![cfg_attr(not(feature = "gui"), allow(dead_code))]` 를 임시로 걷고 headless
+`cargo check` 를 돌리면 그동안 숨어 있던 dead code 가 다수 error 로 터진다(`enum
+Strategy` · `const PAPLAY_SOUND`/`APLAY_SOUND` · `static STRATEGY` 등). 즉 그
+attribute 는 no-op 가 아니라 **headless 의 dead_code 채널을 crate 전역으로 삭제**하고
+있다 — [R123](../adr/0142-channel-claims-are-written-against-the-working-tree.md) 의
+② 형(잡은 돌지만 술어가 못 봐서 초록이 오도)의 전형이다.
+
+**같은 allow 가 중첩되면 자식 제거는 채널을 복원하지 못한다.** inner attribute 는
+자손 모듈로 전파되므로, `main.rs`(crate) → `adapters/ipc.rs`(모듈) → `adapters/ipc/
+handler.rs`(자식) 처럼 같은 조건부 allow 가 겹쳐 있으면 자식 하나를 떼도 상위가 여전히
+그 트리를 덮는다. 자식 allow 제거는 "채널을 되살린 것" 처럼 보이지만 실제로는 중복
+제거(no-op)일 뿐이다 — 채널을 되살리려면 **가장 바깥의 allow** 를 걷어야 한다. 그래서
+조건부 allow 를 지울 때는 그 자리가 실제로 무엇을 침묵시키는지(가장 바깥인지, 이미 상위가
+덮는 중복인지)를 [R136](../adr/0155-global-state-race-prescription-by-parameterization.md)
+positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡는지)로 먼저 확인한다.
+
+**census 는 목록으로만 남기고 일괄로 걷지 않는다.** 레포에는 조건부 `cfg_attr(…, allow(…))`
+가 여러 곳에 있고 **자리마다 근거가 다르다** — 플랫폼 분기(`not(all(macos, gui))` 등) ·
+`not(debug_assertions)`(release 에서만 dead) · `not(feature = "gui")`(headless 미배선) ·
+역방향 `feature = "gui"`(headless 전용 코드). 근거가 살아 있는 자리를 기계적으로 걷으면
+다른 조합에서 거짓 경고가 난다. 그래서 걷을 자리는 위 R136 으로 하나씩 판정한다.
+
 ## 사람이 돌리는 것 (자동 채널 없음)
 
 | 검사 | 명령 | 누가 언제 |
@@ -311,6 +342,7 @@ e2e 하네스가 헤드리스로 뜨게 되면 그 비용이 사라지고 자동
 | pre-push | `cargo clippy --workspace --all-targets -- -D clippy::correctness` | 부분 — Windows 잡의 clippy 는 `--locked` 를 쓰고 correctness deny 를 걸지 않는다 |
 | pre-push | `cargo check --workspace --all-targets` | 부분 — CI 는 `--all-targets` 없이 macOS 에서 본다 |
 | pre-push | `cargo check --no-default-features` | ✅ `crossplatform-check.yml` |
+| pre-push | `cargo test -p tasty-doc-guards` | ✅ `doc-guards.yml` — **같은 크레이트를 부른다**. 훅은 push 하는 머신에서만 돌아 worker 머신엔 이 채널이 없다(아래 R142) |
 
 즉 **훅에만 있는 검사가 셋**이다(mod/use 순서 · `egui::Window` · `println!`/`dbg!`).
 훅을 설치하지 않은 체크아웃이나 `--no-verify` 커밋은 그 셋을 통과한다 — 이것들은 diff
