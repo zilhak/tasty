@@ -13,6 +13,7 @@
 //! P0 매핑대로 기존 접근자(`docs/design/systems/design-token-mapping.md` switch-overlay).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::num_keycap;
 
 use crate::catalog::icons::{CHEVRON_DOWN, CHEVRON_RIGHT, FILE, MockGlyph, TERMINAL};
@@ -20,14 +21,15 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // 키캡 slot 의 디자인 고정 px = switch-overlay-size = kbd-size = size-16.
 // 본체 `num_keycap` 위젯이 같은 16px 를 할당하므로 slot 폭/오프셋 계산과 정합한다.
-const KEYCAP_SIZE: f32 = 16.0;
+const KEYCAP_SIZE: LogicalPx = LogicalPx(16.0);
 
 /// 공용 `num_keycap` 위젯을 16px slot 중앙(`center`)에 배치한다.
 /// specimen 은 painter 로 절대 위치에 레이아웃하므로, 위젯을 키캡 rect 크기의 child UI
 /// 안에서 호출해 제자리에 그린다(본체와 동일 위젯 공유 — 재구현 금지).
 /// `active` = 현재 탭/워크스페이스 → accent_primary fill + text_on_accent 숫자.
 fn keycap_at(ui: &mut egui::Ui, theme: &Theme, center: egui::Pos2, digit: &str, active: bool) {
-    let rect = egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE, KEYCAP_SIZE));
+    let rect =
+        egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE.value(), KEYCAP_SIZE.value()));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     num_keycap(&mut child, theme, digit, active);
 }
@@ -54,17 +56,17 @@ const TABS: &[(MockGlyph, &str, &str, bool)] = &[
 ];
 
 fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
-    let h = theme.item_height_interactive.value(); // 28
-    let pad = theme.spacing_md.value(); // 12
-    let gap = theme.spacing_sm.value(); // 8
+    let h = theme.item_height_interactive; // 28
+    let pad = theme.spacing_md; // 12
+    let gap = theme.spacing_sm; // 8
     let bw = theme.border_width.value();
     let font = egui::FontId::proportional(theme.font_size_body.value());
 
     // 탭 폭 = pad + 아이콘slot(16) + gap + 라벨폭 + pad (디자인 fit-content).
-    let widths: Vec<f32> = TABS
+    let widths: Vec<LogicalPx> = TABS
         .iter()
         .map(|(_, label, _, _)| {
-            let lw = ui.fonts(|f| {
+            let lw = LogicalPx(ui.fonts(|f| {
                 f.layout_no_wrap(
                     (*label).to_owned(),
                     font.clone(),
@@ -72,13 +74,19 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 )
                 .size()
                 .x
-            });
+            }));
             pad + KEYCAP_SIZE + gap + lw + pad
         })
         .collect();
-    let total: f32 = widths.iter().sum();
+    // `LogicalPx` 에는 `Sum` 이 없다 — 더하기로 접는다(빈 목록은 `Default` = 0).
+    let total = widths
+        .iter()
+        .copied()
+        .reduce(|a, b| a + b)
+        .unwrap_or_default();
 
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(total, h), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(total.value(), h.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(
         rect,
@@ -86,28 +94,34 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         egui::Color32::from(theme.bg_sidebar()),
     );
 
-    let mut x = rect.min.x;
+    let mut x = LogicalPx(rect.min.x);
     for (i, (glyph, label, digit, active)) in TABS.iter().enumerate() {
         let tw = widths[i];
-        let tab = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tw, h));
+        let tab = egui::Rect::from_min_size(
+            egui::pos2(x.value(), rect.min.y),
+            egui::vec2(tw.value(), h.value()),
+        );
         if *active {
             p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
             let ind = theme.tab_indicator_width.value();
             let bar = egui::Rect::from_min_size(
                 egui::pos2(tab.min.x, tab.max.y - ind),
-                egui::vec2(tw, ind),
+                egui::vec2(tw.value(), ind),
             );
             p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
         }
         if i > 0 {
             p.vline(
-                x,
+                x.value(),
                 rect.y_range(),
                 egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
             );
         }
         // leading 16px slot: held → 숫자 키캡, else 표면 아이콘.
-        let slot_c = egui::pos2(tab.min.x + pad + KEYCAP_SIZE * 0.5, tab.center().y);
+        let slot_c = egui::pos2(
+            tab.min.x + (pad + KEYCAP_SIZE.scaled(0.5)).value(),
+            tab.center().y,
+        );
         if held {
             keycap_at(ui, theme, slot_c, digit, *active);
         } else {
@@ -124,7 +138,10 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             );
         }
         p.text(
-            egui::pos2(tab.min.x + pad + KEYCAP_SIZE + gap, tab.center().y),
+            egui::pos2(
+                tab.min.x + (pad + KEYCAP_SIZE + gap).value(),
+                tab.center().y,
+            ),
             egui::Align2::LEFT_CENTER,
             label,
             font.clone(),
@@ -226,20 +243,20 @@ fn status_color(theme: &Theme, s: WsStatus) -> egui::Color32 {
 }
 
 fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
-    let w = theme.field_width_lg.value() - theme.spacing_md.value() * 1.0; // ≈188
-    let pad = theme.spacing_sm.value(); // 8
-    let gap = theme.spacing_sm.value(); // 8
+    let w = theme.field_width_lg - theme.spacing_md * 1.0; // ≈188
+    let pad = theme.spacing_sm; // 8
+    let gap = theme.spacing_sm; // 8
     let bw = theme.border_width.value();
     let lead = KEYCAP_SIZE; // 16px slot (dot/numcap 공통)
     let text_x_off = pad + lead + gap; // 32 — divider margin-left 와 동일
 
-    let head_h = theme.spacing_lg.value() + theme.spacing_xs.value(); // 10+4 ≈ 헤더 영역
-    let name_lh = theme.font_size_body.value() + theme.spacing_xs.value(); // ≈17
-    let sub_lh = theme.font_size_caption.value() + theme.spacing_xs.value() * 0.75; // ≈14
-    let row_h = pad + name_lh + 1.0 + sub_lh + pad;
+    let head_h = theme.spacing_lg + theme.spacing_xs; // 10+4 ≈ 헤더 영역
+    let name_lh = theme.font_size_body + theme.spacing_xs; // ≈17
+    let sub_lh = theme.font_size_caption + theme.spacing_xs * 0.75; // ≈14
+    let row_h = pad + name_lh + LogicalPx(1.0) + sub_lh + pad;
     let h = head_h + row_h * WS_ROWS.len() as f32;
 
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(
         rect,
@@ -259,9 +276,12 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         egui::Color32::from(theme.text_muted()),
     );
 
-    let mut y = rect.min.y + head_h;
+    let mut y = LogicalPx(rect.min.y) + head_h;
     for (i, (digit, name, sub, status, active)) in WS_ROWS.iter().enumerate() {
-        let row = egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, row_h));
+        let row = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x, y.value()),
+            egui::vec2(w.value(), row_h.value()),
+        );
         if *active {
             p.rect_filled(row, 0.0, egui::Color32::from(theme.surface_active()));
             let bar = egui::Rect::from_min_size(
@@ -272,14 +292,17 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         } else if i > 0 {
             // 행간 divider — 텍스트 시작(32)부터 우측 끝까지.
             p.hline(
-                (rect.min.x + text_x_off)..=rect.max.x,
+                (rect.min.x + text_x_off.value())..=rect.max.x,
                 row.min.y,
                 egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
             );
         }
 
-        let name_cy = row.min.y + pad + name_lh * 0.5;
-        let slot_c = egui::pos2(row.min.x + pad + lead * 0.5, name_cy);
+        let name_cy = LogicalPx(row.min.y) + pad + name_lh.scaled(0.5);
+        let slot_c = egui::pos2(
+            row.min.x + (pad + lead.scaled(0.5)).value(),
+            name_cy.value(),
+        );
         if held {
             keycap_at(ui, theme, slot_c, digit, *active);
         } else {
@@ -291,7 +314,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             );
         }
         p.text(
-            egui::pos2(row.min.x + text_x_off, name_cy),
+            egui::pos2(row.min.x + text_x_off.value(), name_cy.value()),
             egui::Align2::LEFT_CENTER,
             name,
             egui::FontId::proportional(theme.font_size_body.value()),
@@ -303,8 +326,8 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         );
         p.text(
             egui::pos2(
-                row.min.x + text_x_off,
-                name_cy + name_lh * 0.5 + 1.0 + sub_lh * 0.5,
+                row.min.x + text_x_off.value(),
+                (name_cy + name_lh.scaled(0.5) + LogicalPx(1.0) + sub_lh.scaled(0.5)).value(),
             ),
             egui::Align2::LEFT_CENTER,
             sub,
@@ -510,30 +533,31 @@ const CAT_GROUPS: &[CatGroup] = &[
 ];
 
 fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
-    let w = theme.field_width_lg.value() - theme.spacing_md.value(); // ≈188
-    let pad = theme.spacing_sm.value(); // 8 (행 padding)
-    let gap = theme.spacing_sm.value(); // 8
+    let w = theme.field_width_lg - theme.spacing_md; // ≈188
+    let pad = theme.spacing_sm; // 8 (행 padding)
+    let gap = theme.spacing_sm; // 8
     let bw = theme.border_width.value();
     let lead = KEYCAP_SIZE; // 16 status-dot slot
     let text_x_off = pad + lead + gap; // 32 — divider margin-left
 
-    let chev = theme.spacing_md.value(); // 12 chevron slot 폭
-    let head_gap = theme.spacing_xs.value(); // 4 chevron↔label
-    let head_pad_v = theme.spacing_xs.value(); // 4
-    let head_margin_top = theme.spacing_sm.value(); // 8
-    let head_line = theme.sidebar_section_heading_font_size.value(); // 10
+    let chev = theme.spacing_md; // 12 chevron slot 폭
+    let head_gap = theme.spacing_xs; // 4 chevron↔label
+    let head_pad_v = theme.spacing_xs; // 4
+    let head_margin_top = theme.spacing_sm; // 8
+    let head_line = theme.sidebar_section_heading_font_size; // 10
     let head_h = head_margin_top + head_pad_v * 2.0 + head_line;
 
-    let name_lh = theme.font_size_body.value() + theme.spacing_xs.value(); // ≈17
+    let name_lh = theme.font_size_body + theme.spacing_xs; // ≈17
     let row_h = pad + name_lh + pad;
 
     // 전체 높이 = Σ(헤더 + 행들) + 아래 패딩.
-    let mut total = theme.spacing_sm.value(); // paddingBottom 8
+    let mut total = theme.spacing_sm; // paddingBottom 8
     for (_, rows) in CAT_GROUPS {
         total += head_h + row_h * rows.len() as f32;
     }
 
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, total), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(w.value(), total.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     p.rect_filled(
         rect,
@@ -541,13 +565,17 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         egui::Color32::from(theme.bg_sidebar()),
     );
 
-    let mut y = rect.min.y;
+    let mut y = LogicalPx(rect.min.y);
     for (head, rows) in CAT_GROUPS {
         // ── 카테고리 헤더 ──
-        let hrect = egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, head_h));
-        let hcy = hrect.min.y + head_margin_top + head_pad_v + head_line * 0.5;
+        let hrect = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x, y.value()),
+            egui::vec2(w.value(), head_h.value()),
+        );
+        let hcy =
+            (LogicalPx(hrect.min.y) + head_margin_top + head_pad_v + head_line.scaled(0.5)).value();
         // chevron (load-bearing — 교체 금지). 접힘=우향, 확장=하향.
-        let chev_c = egui::pos2(rect.min.x + pad + chev * 0.5, hcy);
+        let chev_c = egui::pos2(rect.min.x + (pad + chev.scaled(0.5)).value(), hcy);
         let glyph = if head.collapsed {
             CHEVRON_RIGHT
         } else {
@@ -562,22 +590,25 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         );
         // 라벨 (mono uppercase micro).
         p.text(
-            egui::pos2(rect.min.x + pad + chev + head_gap, hcy),
+            egui::pos2(rect.min.x + (pad + chev + head_gap).value(), hcy),
             egui::Align2::LEFT_CENTER,
             head.label.to_uppercase(),
-            egui::FontId::monospace(head_line),
+            egui::FontId::monospace(head_line.value()),
             egui::Color32::from(theme.text_muted()),
         );
         // 우측 정렬 키캡 (held + n 있을 때만).
         if held && let Some(d) = head.n {
-            let cap_c = egui::pos2(rect.max.x - pad - KEYCAP_SIZE * 0.5, hcy);
+            let cap_c = egui::pos2(rect.max.x - (pad + KEYCAP_SIZE.scaled(0.5)).value(), hcy);
             keycap_at(ui, theme, cap_c, d, head.active);
         }
         y += head_h;
 
         // ── 워크스페이스 행 (status dot 유지 — modifier-exclusive) ──
         for (i, (name, status, active)) in rows.iter().enumerate() {
-            let row = egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, row_h));
+            let row = egui::Rect::from_min_size(
+                egui::pos2(rect.min.x, y.value()),
+                egui::vec2(w.value(), row_h.value()),
+            );
             if *active {
                 p.rect_filled(row, 0.0, egui::Color32::from(theme.surface_active()));
                 let bar = egui::Rect::from_min_size(
@@ -587,20 +618,20 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
             } else if i > 0 {
                 p.hline(
-                    (rect.min.x + text_x_off)..=rect.max.x,
+                    (rect.min.x + text_x_off.value())..=rect.max.x,
                     row.min.y,
                     egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
                 );
             }
             let cy = row.center().y;
-            let slot_c = egui::pos2(row.min.x + pad + lead * 0.5, cy);
+            let slot_c = egui::pos2(row.min.x + (pad + lead.scaled(0.5)).value(), cy);
             p.circle_filled(
                 slot_c,
                 theme.status_dot_size.value() * 0.5,
                 status_color(theme, *status),
             );
             p.text(
-                egui::pos2(row.min.x + text_x_off, cy),
+                egui::pos2(row.min.x + text_x_off.value(), cy),
                 egui::Align2::LEFT_CENTER,
                 name,
                 egui::FontId::proportional(theme.font_size_body.value()),

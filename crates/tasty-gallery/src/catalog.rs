@@ -1242,7 +1242,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "plugins-window",
                         "Installed / Attention / Add plugin",
-                        Some("헤더 48 + 목록 240 + 상세 · builtin 점 · health danger dot"),
+                        Some(
+                            "상태 8 · 헤더 48 + 목록 + 상세 전량 · builtin 점 · health danger dot",
+                        ),
                         components::plugins_window::draw,
                     )],
                 ),
@@ -1318,13 +1320,13 @@ pub fn pages() -> Vec<Page> {
                     vec![
                         spec(
                             "onedepth",
-                            "1-depth (Plugins idiom)",
+                            "1-depth (general shell)",
                             Some("Fixed list selects, detail fills the rest"),
                             widgets::layout_1depth::draw,
                         ),
                         spec(
                             "twodepth",
-                            "2-depth (Settings idiom)",
+                            "2-depth (general shell)",
                             Some("L1 tabs (underline) + L2 sections (surface-active)"),
                             widgets::layout_2depth::draw,
                         ),

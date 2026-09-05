@@ -5,6 +5,7 @@
 //! Apply to workspace).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
@@ -12,58 +13,43 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 440.0;
+const WIDTH: LogicalPx = LogicalPx(440.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더 — title + 세그먼트.
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        kit::title(ui, theme, "Apply preset");
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            seg(ui, theme, &["Workspace", "Tab", "Pane"], 0);
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    kit::title(ui, theme, "Apply preset");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        seg(ui, theme, &["Workspace", "Tab", "Pane"], 0);
                     });
-                },
-            );
+                });
+            });
             kit::hsep(ui, theme);
 
             // preset 행.
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    preset(ui, theme, "Dev split", "2 panes · editor + shell", true);
-                    preset(ui, theme, "Logs grid", "4 panes · tail -f", false);
-                    preset(ui, theme, "Single shell", "1 pane · zsh", false);
-                },
-            );
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                preset(ui, theme, "Dev split", "2 panes · editor + shell", true);
+                preset(ui, theme, "Logs grid", "4 panes · tail -f", false);
+                preset(ui, theme, "Single shell", "1 pane · zsh", false);
+            });
             kit::hsep(ui, theme);
 
             // footer.
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Apply to workspace")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Apply to workspace")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                },
-            );
+                });
+            });
         });
     });
 
@@ -123,7 +109,7 @@ fn preset(ui: &mut egui::Ui, theme: &Theme, name: &str, meta: &str, selected: bo
     kit::icon(
         &mut child,
         icons::SPLIT,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_secondary().to_egui(),
     );
     child.vertical(|ui| {

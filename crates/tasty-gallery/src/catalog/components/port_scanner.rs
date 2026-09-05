@@ -6,6 +6,7 @@
 //! footer(count + Copy address + Close). 색·치수는 Theme 토큰, Table 은 공용 위젯.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, StatusKind, Table, TableAlign,
     TableColumn, TableColumnWidth, TagVariant, status_dot, tag,
@@ -15,9 +16,9 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 660.0;
+const WIDTH: LogicalPx = LogicalPx(660.0);
 /// 즐겨찾기 별 컬럼 폭 — 본체 `port_scanner.rs` 의 `FAV_COL_WIDTH` 미러.
-const FAV_COL_WIDTH: f32 = 28.0;
+const FAV_COL_WIDTH: LogicalPx = LogicalPx(28.0);
 
 struct PortRow {
     port: &'static str,
@@ -114,85 +115,73 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더 (padding 10x14).
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        kit::icon(
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    kit::icon(
+                        ui,
+                        icons::PORT,
+                        theme.icon_glyph_size_md,
+                        theme.text_secondary().to_egui(),
+                    );
+                    kit::title(ui, theme, "Listening ports");
+                    tag(ui, theme, "5 listening", TagVariant::Accent, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        IconButton::new().variant(IconButtonVariant::Ghost).show(
                             ui,
-                            icons::PORT,
-                            theme.icon_glyph_size_md.value(),
-                            theme.text_secondary().to_egui(),
+                            theme,
+                            &|ui, rect, c| icons::CLOSE.image(rect.height(), c).paint_at(ui, rect),
                         );
-                        kit::title(ui, theme, "Listening ports");
-                        tag(ui, theme, "5 listening", TagVariant::Accent, false);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            IconButton::new().variant(IconButtonVariant::Ghost).show(
-                                ui,
-                                theme,
-                                &|ui, rect, c| {
-                                    icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                                },
-                            );
-                            // 컬럼 chooser 트리거(컬럼 표시/숨김). Refresh 옆.
-                            IconButton::new().variant(IconButtonVariant::Ghost).show(
-                                ui,
-                                theme,
-                                &|ui, rect, c| {
-                                    icons::COLUMNS.image(rect.height(), c).paint_at(ui, rect)
-                                },
-                            );
-                            IconButton::new().variant(IconButtonVariant::Ghost).show(
-                                ui,
-                                theme,
-                                &|ui, rect, c| {
-                                    icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
-                                },
-                            );
-                            kit::field(
-                                ui,
-                                theme,
-                                Some(theme.field_width_md.value()),
-                                "Filter…",
-                                true,
-                                false,
-                            );
-                        });
+                        // 컬럼 chooser 트리거(컬럼 표시/숨김). Refresh 옆.
+                        IconButton::new().variant(IconButtonVariant::Ghost).show(
+                            ui,
+                            theme,
+                            &|ui, rect, c| {
+                                icons::COLUMNS.image(rect.height(), c).paint_at(ui, rect)
+                            },
+                        );
+                        IconButton::new().variant(IconButtonVariant::Ghost).show(
+                            ui,
+                            theme,
+                            &|ui, rect, c| {
+                                icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
+                            },
+                        );
+                        kit::field(
+                            ui,
+                            theme,
+                            Some(theme.field_width_md),
+                            "Filter…",
+                            true,
+                            false,
+                        );
                     });
-                },
-            );
+                });
+            });
             kit::hsep(ui, theme);
 
             // Show-all 체크행 (padding 8x14).
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        // 체크박스 mock (checked).
-                        let s = theme.icon_glyph_size_md.value();
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
-                        ui.painter().rect_filled(
-                            r,
-                            theme.corner_radius_sm.value(),
-                            theme.accent_primary().to_egui(),
-                        );
-                        icons::SHIELD_CHECK
-                            .image(s, theme.text_on_accent().to_egui())
-                            .paint_at(ui, r);
-                        kit::body(ui, theme, "Show all (system-wide)");
-                        // 우측 정렬 상태 필터 버튼(적용 변형 — accent 채움).
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            funnel_button(ui, theme, "State · 1/3", true);
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    // 체크박스 mock (checked).
+                    let s = theme.icon_glyph_size_md.value();
+                    let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
+                    ui.painter().rect_filled(
+                        r,
+                        theme.corner_radius_sm.value(),
+                        theme.accent_primary().to_egui(),
+                    );
+                    icons::SHIELD_CHECK
+                        .image(s, theme.text_on_accent().to_egui())
+                        .paint_at(ui, r);
+                    kit::body(ui, theme, "Show all (system-wide)");
+                    // 우측 정렬 상태 필터 버튼(적용 변형 — accent 채움).
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        funnel_button(ui, theme, "State · 1/3", true);
                     });
-                },
-            );
+                });
+            });
 
             // 즐겨찾기 섹션 (design FavoritesSection) — 캡션(22px: "Favorites · N" +
             // 우측 "system-wide") + bounded 리스트(최대 112px, 행 22px). bg-sidebar
@@ -204,9 +193,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
             // 상태(컬럼 표시/숨김 시각 케이스). leading fav 컬럼(28px, 헤더 라벨 없음)
             // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
-            kit::region_sym(ui, theme.spacing_sm.value(), 0.0, |ui| {
+            kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
                 let cols = vec![
-                    col("", TableColumnWidth::Exact(FAV_COL_WIDTH), TableAlign::Left),
+                    col(
+                        "",
+                        TableColumnWidth::Exact(FAV_COL_WIDTH.value()),
+                        TableAlign::Left,
+                    ),
                     col("Port", TableColumnWidth::Exact(84.0), TableAlign::Right),
                     col("Proto", TableColumnWidth::Exact(76.0), TableAlign::Left),
                     col("Address", TableColumnWidth::Exact(140.0), TableAlign::Left),
@@ -231,24 +224,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::hsep(ui, theme);
 
             // footer (padding 8x14).
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    ui.horizontal(|ui| {
-                        kit::caption(ui, theme, "5 of 5 ports", false);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Close")
-                                .variant(ButtonVariant::Secondary)
-                                .show(ui, theme);
-                            Button::new("Copy address")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                ui.horizontal(|ui| {
+                    kit::caption(ui, theme, "5 of 5 ports", false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Close")
+                            .variant(ButtonVariant::Secondary)
+                            .show(ui, theme);
+                        Button::new("Copy address")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                },
-            );
+                });
+            });
         });
     });
 
@@ -258,38 +246,33 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 닫힘(미적용) 버튼 — surface-raised + border.
         funnel_button(ui, theme, "State", false);
         // 열린 드롭다운 카드(min-width 216).
-        kit::frame_card(ui, theme, 216.0, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_sm.value(),
-                theme.spacing_sm.value(),
-                |ui| {
-                    kit::caption(ui, theme, "Filter by state", true);
-                    ui.add_space(theme.spacing_xs.value());
-                    check_row(ui, theme, "LISTEN", true);
-                    check_row(ui, theme, "ESTABLISHED", false);
-                    check_row(ui, theme, "CLOSE_WAIT", false);
-                    kit::hsep(ui, theme);
-                    ui.horizontal(|ui| {
-                        Button::new("Select all")
-                            .variant(ButtonVariant::Ghost)
-                            .show(ui, theme);
-                        Button::new("Deselect all")
-                            .variant(ButtonVariant::Ghost)
+        kit::frame_card(ui, theme, LogicalPx(216.0), kit::panel_fill(theme), |ui| {
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                kit::caption(ui, theme, "Filter by state", true);
+                ui.add_space(theme.spacing_xs.value());
+                check_row(ui, theme, "LISTEN", true);
+                check_row(ui, theme, "ESTABLISHED", false);
+                check_row(ui, theme, "CLOSE_WAIT", false);
+                kit::hsep(ui, theme);
+                ui.horizontal(|ui| {
+                    Button::new("Select all")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                    Button::new("Deselect all")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                });
+                ui.horizontal(|ui| {
+                    Button::new("Reset (LISTEN only)")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Apply")
+                            .variant(ButtonVariant::Primary)
                             .show(ui, theme);
                     });
-                    ui.horizontal(|ui| {
-                        Button::new("Reset (LISTEN only)")
-                            .variant(ButtonVariant::Ghost)
-                            .show(ui, theme);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Apply")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                        });
-                    });
-                },
-            );
+                });
+            });
         });
     });
 
@@ -446,7 +429,7 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
     let fav_ir = egui::Frame::NONE
         .fill(theme.bg_sidebar().to_egui())
         .show(ui, |ui| {
-            kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
+            kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), fav_row_h),
                     egui::Layout::left_to_right(egui::Align::Center),
@@ -473,8 +456,10 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                             let sz = theme.icon_glyph_size_sm.value();
                             let (r, _) =
                                 ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                            // 즐겨찾기 별 아이콘 톤. 대응 토큰 없음 — 본체와 같은 값을 여기 다시 적는다.
+                            const FAV_STAR_ICON_OPACITY: f32 = 0.37;
                             icons::STAR
-                                .image(sz, theme.text_muted().to_egui().gamma_multiply(0.37))
+                                .image(sz, theme.text_muted().to_egui().gamma_multiply(FAV_STAR_ICON_OPACITY))
                                 .paint_at(ui, r);
                             ui.label(
                                 egui::RichText::new(
@@ -493,7 +478,7 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
                                 ui.allocate_ui_with_layout(
-                                    egui::vec2(FAV_COL_WIDTH, fav_row_h),
+                                    egui::vec2(FAV_COL_WIDTH.value(), fav_row_h),
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| star(ui, theme, true),
                                 );
@@ -600,7 +585,7 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
             kit::icon(
                 ui,
                 icons::COPY,
-                theme.icon_glyph_size_sm.value(),
+                theme.icon_glyph_size_sm,
                 theme.text_muted().to_egui(),
             );
         }

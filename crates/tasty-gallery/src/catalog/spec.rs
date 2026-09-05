@@ -278,7 +278,8 @@ fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color3
         // accent 12% tint (research: success/danger 12% bg). 기존 theme accent 에서
         // gamma_multiply 로 도출 — git_viewer specimen 의 9~10% tint 와 동일 관행
         // (raw from_rgba_* 는 disallowed-methods 로 금지).
-        let tint = accent.gamma_multiply(0.12);
+        const ACCENT_TINT_OPACITY: f32 = 0.12;
+        let tint = accent.gamma_multiply(ACCENT_TINT_OPACITY);
         let resp = egui::Frame::new()
             .fill(tint)
             .corner_radius(theme.corner_radius_sm.value())

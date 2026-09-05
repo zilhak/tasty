@@ -31,19 +31,20 @@
 //! rect 로 근사한다 — 아래 `image_block`.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Spinner, checkbox};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 문서 카드 폭(전시 박스).
-const DOC_W: f32 = 560.0;
+const DOC_W: LogicalPx = LogicalPx(560.0);
 /// 상태 타일 치수.
-const TILE_W: f32 = 200.0;
-const TILE_H: f32 = 132.0;
+const TILE_W: LogicalPx = LogicalPx(200.0);
+const TILE_H: LogicalPx = LogicalPx(132.0);
 
 /// 주소창 바 폭(HTML chrome 정적 근사 — `render.rs::addr_bar_html` 의 디자인 폭).
-const ADDR_BAR_W: f32 = 360.0;
+const ADDR_BAR_W: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     // 0. 상단 주소창 chrome — 더 이상 host egui 위젯(PathField)이 아니라 문서 HTML 에 내장된
@@ -70,7 +71,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     // 1. 전체 element catalog 문서.
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        ui.set_max_width(DOC_W);
+        ui.set_max_width(DOC_W.value());
         document(ui, theme);
     });
 
@@ -277,7 +278,7 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
             theme.spacing_md.value() as i8,
         ))
         .show(ui, |ui| {
-            ui.set_width(DOC_W - theme.spacing_lg.value() * 2.0);
+            ui.set_width((DOC_W - theme.spacing_lg.scaled(2.0)).value());
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
 
             heading(ui, theme, 1, "Markdown surface");
@@ -871,8 +872,10 @@ fn alert_box(
     label: &str,
     body: &str,
 ) {
+    // callout 배경 — accent 저알파. 대응 토큰 없음.
+    const CALLOUT_BG_ALPHA: u8 = 31;
     egui::Frame::new()
-        .fill(color.with_alpha(31).to_egui())
+        .fill(color.with_alpha(CALLOUT_BG_ALPHA).to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
             color.to_egui(),
@@ -996,7 +999,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
-                egui::vec2(TILE_W, TILE_H),
+                egui::vec2(TILE_W.value(), TILE_H.value()),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     ui.add_space(theme.spacing_xl.value());
@@ -1015,7 +1018,7 @@ fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
         .fill(theme.bg_sidebar().to_egui())
         .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0))
         .show(ui, |ui| {
-            ui.set_width(ADDR_BAR_W);
+            ui.set_width(ADDR_BAR_W.value());
             ui.horizontal_centered(|ui| {
                 egui::Frame::new()
                     .fill(theme.surface_raised().to_egui())
@@ -1072,7 +1075,7 @@ fn toc_chrome(ui: &mut egui::Ui, theme: &Theme) {
             theme.spacing_sm.value() as i8,
         ))
         .show(ui, |ui| {
-            ui.set_width(DOC_W - theme.spacing_lg.value() * 2.0);
+            ui.set_width((DOC_W - theme.spacing_lg.scaled(2.0)).value());
             ui.horizontal(|ui| {
                 ui.label(rich(
                     theme,

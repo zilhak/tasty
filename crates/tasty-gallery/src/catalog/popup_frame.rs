@@ -12,15 +12,25 @@
 //! - `FLUSH` (convert / file_handler_picker): 좌우 0, 상단 추가 0.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 본체 popup 상수 — 제목바 높이.
-pub const TITLE_BAR_HEIGHT: f32 = 28.0;
+pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
 /// 본체 popup 상수 — 콘텐츠 상/하 여백.
-pub const CONTENT_MARGIN: f32 = 4.0;
-/// 본체 popup 상수 — 타이틀바 우측 버튼 한 변.
-pub const TITLE_BTN_SIZE: f32 = 20.0;
-/// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백.
-pub const TITLE_BTN_EDGE_PAD: f32 = 4.0;
+///
+/// 본체(`adapters::ui::popup::content_margin`)는 이 자리를 `Theme.spacing_xs` 에서
+/// 읽는다. 여기서는 같은 값을 그 토큰의 정본(`semantic.space-xs` = `primitive.size-4`)
+/// 에서 직접 가져온다 — 갤러리의 `Theme` 은 `with_colors` 로만 만들어져 zoom 재굽기를
+/// 거치지 않으므로(스케일 세그는 egui `set_zoom_factor` 쪽이다) 두 경로의 값이 같고,
+/// 리터럴 사본을 둘 이유가 없다.
+pub const CONTENT_MARGIN: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
+/// 본체 popup 상수 — 타이틀바 우측 버튼 한 변. 사본이 아니라 공유 상수를 읽는다
+/// (종전에는 이 파일이 정의를 들고 본체가 리터럴을 썼다 — 방향이 반대였다).
+pub const TITLE_BTN_SIZE: LogicalPx = tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE;
+/// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백. 본체는 이 자리에
+/// `Theme.spacing_xs` 를 쓴다(간격이라 배율을 탄다). 갤러리는 egui 전역 zoom 이라
+/// 같은 토큰을 여기서 상수로 읽어도 값이 같다.
+pub const TITLE_BTN_EDGE_PAD: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
 
 /// 타이틀바 우측 버튼 세트. 본체 `PopupManager` 구성과 같다 — close(X) 는 타이틀바가
 /// 있는 모든 popup 에, fullscreen 은 **전체화면 무대를 선언한 popup** 에만 붙는다
@@ -66,10 +76,10 @@ pub fn draw_title_buttons(
     let fg: egui::Color32 = theme.text_muted().into();
     let close_rect = egui::Rect::from_center_size(
         egui::pos2(
-            title_rect.max.x - TITLE_BTN_SIZE * 0.5 - TITLE_BTN_EDGE_PAD,
+            title_rect.max.x - (TITLE_BTN_SIZE.scaled(0.5) + TITLE_BTN_EDGE_PAD).value(),
             title_rect.center().y,
         ),
-        egui::Vec2::splat(TITLE_BTN_SIZE),
+        egui::Vec2::splat(TITLE_BTN_SIZE.value()),
     );
     let mut left = title_rect.max.x;
     if buttons.close {
@@ -84,7 +94,7 @@ pub fn draw_title_buttons(
         // close 왼쪽, 4px(space-xs) 간격.
         let rect = egui::Rect::from_center_size(
             egui::pos2(
-                close_rect.center().x - TITLE_BTN_SIZE - theme.spacing_xs.value(),
+                close_rect.center().x - (TITLE_BTN_SIZE + theme.spacing_xs).value(),
                 close_rect.center().y,
             ),
             close_rect.size(),
@@ -137,13 +147,16 @@ pub fn draw(
     ui: &mut egui::Ui,
     theme: &Theme,
     title: &str,
-    width: f32,
-    total_h: f32,
+    width: LogicalPx,
+    total_h: LogicalPx,
     inset: ContentInset,
     buttons: TitleButtons,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
-    let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
+    let (frame_rect, _) = ui.allocate_exact_size(
+        egui::vec2(width.value(), total_h.value()),
+        egui::Sense::hover(),
+    );
     let painter = ui.painter_at(frame_rect);
 
     let bg: egui::Color32 = theme.surface_raised().into();
@@ -163,7 +176,7 @@ pub fn draw(
 
     let title_rect = egui::Rect::from_min_size(
         frame_rect.min,
-        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT),
+        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT.value()),
     );
     painter.rect_filled(
         title_rect,
@@ -184,15 +197,15 @@ pub fn draw(
     );
     draw_title_buttons(&painter, theme, title_rect, buttons);
 
-    let content_top = title_rect.bottom() + CONTENT_MARGIN;
+    let content_top = LogicalPx(title_rect.bottom()) + CONTENT_MARGIN;
     let content_rect = egui::Rect::from_min_max(
         egui::pos2(
             frame_rect.min.x + inset.horizontal,
-            content_top + inset.top_extra,
+            content_top.value() + inset.top_extra,
         ),
         egui::pos2(
             frame_rect.max.x - inset.horizontal,
-            frame_rect.max.y - CONTENT_MARGIN,
+            frame_rect.max.y - CONTENT_MARGIN.value(),
         ),
     );
     // 콘텐츠는 항상 세로 스택이다(본체 popup 콘텐츠와 동일). `new_child` 는 부모 Ui 의

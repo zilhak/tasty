@@ -7,13 +7,25 @@
 //! 보여주고(`draw`), 동시에 14 Spec 전부가 호출하는 frame/region/field 헬퍼를
 //! `pub` 으로 노출한다 (research §2.4 공통).
 //!
-//! 색·치수·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
+//! 색·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
 //! (`scrim-bg` black 50% / `shadow-modal` black .55) 을 black-alpha 로 도출한다.
+//!
+//! 치수 중 **specimen 무대의 비율**은 토큰이 아니다 — 대응하는 `Theme` 값이 없고
+//! (`measure_*` 는 300/400/460), 소비자가 이 파일 안뿐이라 토큰으로 올릴 근거가 없다.
+//! 대신 이름 붙인 상수로 둔다(`SCRIM_STAGE_H` · `FRAME_CARD_W`) — 두 anchor 변형이
+//! 같은 무대와 같은 카드 폭을 써야 나란히 놓고 비교할 수 있으므로 값이 갈리면 안 된다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::catalog::icons::MockGlyph;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+// ── specimen 무대 치수 (모듈 문서의 규칙: 두 변형이 나눠 쓰므로 이름을 붙인다) ──
+/// scrim Spec 무대의 높이. center anchor 와 top anchor 변형이 공유한다.
+const SCRIM_STAGE_H: LogicalPx = LogicalPx(200.0);
+/// 무대 안에 놓는 모달 카드의 폭. 두 변형이 같아야 anchor 차이만 눈에 남는다.
+const FRAME_CARD_W: LogicalPx = LogicalPx(240.0);
 
 // ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
 
@@ -23,7 +35,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 pub fn frame_card(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: f32,
+    width: LogicalPx,
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
@@ -40,9 +52,9 @@ pub fn frame_card(
             // `Frame::show` 의 콘텐츠 ui 는 부모 레이아웃을 상속하므로, 명시적
             // vertical child 없이는 region 들이 가로 흐름에 얹혀 본문이 글자당
             // 줄바꿈으로 붕괴한다 (scrim_backdrop 의 top_down child 와 동일 원리).
-            ui.set_width(width);
+            ui.set_width(width.value());
             ui.vertical(|ui| {
-                ui.set_width(width);
+                ui.set_width(width.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 add(ui);
             });
@@ -50,9 +62,10 @@ pub fn frame_card(
 }
 
 /// 인라인 글리프 — `size` 정사각 영역을 할당해 `color` tint 로 그린다.
-pub fn icon(ui: &mut egui::Ui, glyph: MockGlyph, size: f32, color: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-    glyph.image(size, color).paint_at(ui, rect);
+pub fn icon(ui: &mut egui::Ui, glyph: MockGlyph, size: LogicalPx, color: egui::Color32) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(size.value(), size.value()), egui::Sense::hover());
+    glyph.image(size.value(), color).paint_at(ui, rect);
 }
 
 /// 모달 기본 배경 (bg-panel).
@@ -74,8 +87,12 @@ pub fn region(ui: &mut egui::Ui, margin: egui::Margin, add: impl FnOnce(&mut egu
 }
 
 /// 대칭 패딩 region (좌우 `x`, 상하 `y`).
-pub fn region_sym(ui: &mut egui::Ui, x: f32, y: f32, add: impl FnOnce(&mut egui::Ui)) {
-    region(ui, egui::Margin::symmetric(x as i8, y as i8), add);
+pub fn region_sym(ui: &mut egui::Ui, x: LogicalPx, y: LogicalPx, add: impl FnOnce(&mut egui::Ui)) {
+    region(
+        ui,
+        egui::Margin::symmetric(x.value() as i8, y.value() as i8),
+        add,
+    );
 }
 
 /// 전체 폭 1px separator (모달 region 구분선 — border-bottom).
@@ -127,14 +144,14 @@ pub fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str, mono: bool) {
 pub fn field(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: Option<f32>,
+    width: Option<LogicalPx>,
     text: &str,
     placeholder: bool,
     mono: bool,
 ) {
-    let h = theme.item_height_interactive.value();
-    let w = width.unwrap_or_else(|| ui.available_width());
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let h = theme.item_height_interactive;
+    let w = width.unwrap_or_else(|| LogicalPx(ui.available_width()));
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
     let p = ui.painter();
     p.rect_filled(
         rect,
@@ -171,12 +188,15 @@ pub fn field(
 pub fn scrim_backdrop(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: f32,
-    height: f32,
-    top_space: f32,
+    width: LogicalPx,
+    height: LogicalPx,
+    top_space: LogicalPx,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width.value(), height.value()),
+        egui::Sense::hover(),
+    );
     let p = ui.painter_at(rect);
     // faux app (bg-app).
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
@@ -190,7 +210,7 @@ pub fn scrim_backdrop(
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    child.add_space(top_space);
+    child.add_space(top_space.value());
     add(&mut child);
 }
 
@@ -200,37 +220,41 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // center anchor.
         spec::cluster(ui, theme, "center anchor", |ui| {
-            scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 64.0, |ui| {
-                frame_card(ui, theme, 240.0, panel_fill(theme), |ui| {
-                    region_sym(
-                        ui,
-                        theme.spacing_lg.value(),
-                        theme.spacing_md.value(),
-                        |ui| {
+            scrim_backdrop(
+                ui,
+                theme,
+                theme.measure_sm,
+                SCRIM_STAGE_H,
+                LogicalPx(64.0),
+                |ui| {
+                    frame_card(ui, theme, FRAME_CARD_W, panel_fill(theme), |ui| {
+                        region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                             title(ui, theme, "Frame");
                             ui.add_space(theme.spacing_sm.value());
                             body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
-                        },
-                    );
-                });
-            });
+                        });
+                    });
+                },
+            );
         });
         // top anchor (~88px offset).
         spec::cluster(ui, theme, "top anchor (~88px)", |ui| {
-            scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 28.0, |ui| {
-                frame_card(ui, theme, 240.0, raised_fill(theme), |ui| {
-                    region_sym(
-                        ui,
-                        theme.spacing_lg.value(),
-                        theme.spacing_md.value(),
-                        |ui| {
+            scrim_backdrop(
+                ui,
+                theme,
+                theme.measure_sm,
+                SCRIM_STAGE_H,
+                LogicalPx(28.0),
+                |ui| {
+                    frame_card(ui, theme, FRAME_CARD_W, raised_fill(theme), |ui| {
+                        region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                             title(ui, theme, "Palette-style");
                             ui.add_space(theme.spacing_sm.value());
                             body(ui, theme, "surface-raised · spawns under the title bar");
-                        },
-                    );
-                });
-            });
+                        });
+                    });
+                },
+            );
         });
     });
 

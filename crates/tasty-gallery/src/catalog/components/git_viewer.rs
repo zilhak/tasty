@@ -14,18 +14,19 @@
 //! invalid·deleted·unmerged·`-` = `accent_danger`, linked·`?` = neutral.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{TagVariant, tag};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 // ── popup 치수 (디자인 960×640, rail 232 고정). gallery 전시용 축소 ──
-const POPUP_W: f32 = 720.0;
-const POPUP_H: f32 = 440.0;
-const RAIL_W: f32 = 232.0;
-const SECTION_H: f32 = 28.0;
-const CTX_H: f32 = 30.0;
-const HEADER_H: f32 = 44.0;
+const POPUP_W: LogicalPx = LogicalPx(720.0);
+const POPUP_H: LogicalPx = LogicalPx(440.0);
+const RAIL_W: LogicalPx = LogicalPx(232.0);
+const SECTION_H: LogicalPx = LogicalPx(28.0);
+const CTX_H: LogicalPx = LogicalPx(30.0);
+const HEADER_H: LogicalPx = LogicalPx(44.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
@@ -99,21 +100,34 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn shell(ui: &mut egui::Ui, theme: &Theme, show_diff: bool) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, POPUP_H), egui::Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(w, POPUP_H.value()), egui::Sense::hover());
         header(ui, theme, rect);
 
-        let ctx_top = rect.top() + HEADER_H;
-        let ctx_rect =
-            egui::Rect::from_min_size(egui::pos2(rect.left(), ctx_top), egui::vec2(w, CTX_H));
+        let ctx_top = LogicalPx(rect.top()) + HEADER_H;
+        let ctx_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.left(), ctx_top.value()),
+            egui::vec2(w, CTX_H.value()),
+        );
         context_strip(ui, theme, ctx_rect);
 
         let body_top = ctx_top + CTX_H;
-        let body = egui::Rect::from_min_max(egui::pos2(rect.left(), body_top), rect.max);
-        let rail =
-            egui::Rect::from_min_max(body.min, egui::pos2(body.left() + RAIL_W, body.bottom()));
-        let right =
-            egui::Rect::from_min_max(egui::pos2(body.left() + RAIL_W, body.top()), body.max);
-        vline(ui, theme, body.left() + RAIL_W, body.top(), body.bottom());
+        let body = egui::Rect::from_min_max(egui::pos2(rect.left(), body_top.value()), rect.max);
+        let rail = egui::Rect::from_min_max(
+            body.min,
+            egui::pos2(body.left() + RAIL_W.value(), body.bottom()),
+        );
+        let right = egui::Rect::from_min_max(
+            egui::pos2(body.left() + RAIL_W.value(), body.top()),
+            body.max,
+        );
+        vline(
+            ui,
+            theme,
+            LogicalPx(body.left()) + RAIL_W,
+            LogicalPx(body.top()),
+            LogicalPx(body.bottom()),
+        );
 
         rail_pane(ui, theme, rail);
 
@@ -121,7 +135,13 @@ fn shell(ui: &mut egui::Ui, theme: &Theme, show_diff: bool) {
         let top = egui::Rect::from_min_size(right.min, egui::vec2(right.width(), half));
         let bottom =
             egui::Rect::from_min_max(egui::pos2(right.left(), right.top() + half), right.max);
-        hline(ui, theme, right.left(), right.right(), right.top() + half);
+        hline(
+            ui,
+            theme,
+            LogicalPx(right.left()),
+            LogicalPx(right.right()),
+            LogicalPx(right.top() + half),
+        );
         changes_pane(ui, theme, top);
         if show_diff {
             diff_pane(ui, theme, bottom);
@@ -135,7 +155,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let pad = theme.spacing_md.value();
     let p = ui.painter();
     p.text(
-        egui::pos2(rect.left() + pad, rect.top() + HEADER_H * 0.5),
+        egui::pos2(rect.left() + pad, rect.top() + HEADER_H.scaled(0.5).value()),
         egui::Align2::LEFT_CENTER,
         "Git",
         egui::FontId::proportional(theme.font_size_max.value()),
@@ -145,7 +165,10 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let bw = theme.field_width_xs.value() * 0.7;
     let bh = theme.item_height_tab.value();
     let btn = egui::Rect::from_min_size(
-        egui::pos2(rect.right() - pad - bw, rect.top() + (HEADER_H - bh) * 0.5),
+        egui::pos2(
+            rect.right() - pad - bw,
+            rect.top() + (HEADER_H - LogicalPx(bh)).scaled(0.5).value(),
+        ),
         egui::vec2(bw, bh),
     );
     p.rect_filled(
@@ -166,13 +189,25 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         egui::FontId::proportional(theme.font_size_caption.value()),
         theme.text_primary().to_egui(),
     );
-    hline(ui, theme, rect.left(), rect.right(), rect.top() + HEADER_H);
+    hline(
+        ui,
+        theme,
+        LogicalPx(rect.left()),
+        LogicalPx(rect.right()),
+        LogicalPx(rect.top()) + HEADER_H,
+    );
 }
 
 fn context_strip(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
-    hline(ui, theme, rect.left(), rect.right(), rect.bottom());
+    hline(
+        ui,
+        theme,
+        LogicalPx(rect.left()),
+        LogicalPx(rect.right()),
+        LogicalPx(rect.bottom()),
+    );
     let pad = theme.spacing_md.value();
     let mut cui = ui.new_child(
         egui::UiBuilder::new()
@@ -205,7 +240,7 @@ fn context_strip(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 
 fn rail_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     section_head(ui, theme, area, "WORKTREES (3)");
-    let mut y = area.top() + SECTION_H;
+    let mut y = LogicalPx(area.top()) + SECTION_H;
     y = wt_row(
         ui,
         theme,
@@ -250,26 +285,29 @@ fn wt_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     area: egui::Rect,
-    y: f32,
+    y: LogicalPx,
     name: &str,
     oid: &str,
     selected: bool,
     invalid: bool,
     kind: &str,
     state: (&str, TagVariant),
-) -> f32 {
-    let pad_x = theme.spacing_md.value();
-    let pad_y = theme.spacing_sm.value();
-    let gap = theme.spacing_xs.value();
-    let l1_h = theme.font_size_term_sm.value() + 4.0;
-    let l2_h = theme.font_size_caption.value() + 4.0;
-    let h = pad_y * 2.0 + l1_h + gap + l2_h;
-    let rect = egui::Rect::from_min_size(egui::pos2(area.left(), y), egui::vec2(area.width(), h));
+) -> LogicalPx {
+    let pad_x = theme.spacing_md;
+    let pad_y = theme.spacing_sm;
+    let gap = theme.spacing_xs;
+    let l1_h = theme.font_size_term_sm + LogicalPx(4.0);
+    let l2_h = theme.font_size_caption + LogicalPx(4.0);
+    let h = pad_y.scaled(2.0) + l1_h + gap + l2_h;
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(area.left(), y.value()),
+        egui::vec2(area.width(), h.value()),
+    );
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h)),
+            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h.value())),
             0.0,
             theme.accent_primary().to_egui(),
         );
@@ -283,8 +321,14 @@ fn wt_row(
     };
     // line 1: name + type pill(right).
     let l1 = egui::Rect::from_min_size(
-        egui::pos2(rect.left() + pad_x, rect.top() + pad_y),
-        egui::vec2(rect.width() - pad_x * 2.0, l1_h),
+        egui::pos2(
+            (LogicalPx(rect.left()) + pad_x).value(),
+            (LogicalPx(rect.top()) + pad_y).value(),
+        ),
+        egui::vec2(
+            (LogicalPx(rect.width()) - pad_x.scaled(2.0)).value(),
+            l1_h.value(),
+        ),
     );
     let type_variant = if kind == "main" {
         TagVariant::Info
@@ -306,8 +350,14 @@ fn wt_row(
     );
     // line 2: oid(info) + state pill(right).
     let l2 = egui::Rect::from_min_size(
-        egui::pos2(rect.left() + pad_x, l1.max.y + gap),
-        egui::vec2(rect.width() - pad_x * 2.0, l2_h),
+        egui::pos2(
+            (LogicalPx(rect.left()) + pad_x).value(),
+            (LogicalPx(l1.max.y) + gap).value(),
+        ),
+        egui::vec2(
+            (LogicalPx(rect.width()) - pad_x.scaled(2.0)).value(),
+            l2_h.value(),
+        ),
     );
     let mut t2 = ui.new_child(
         egui::UiBuilder::new()
@@ -324,13 +374,19 @@ fn wt_row(
             theme.accent_info().to_egui(),
         );
     }
-    hline(ui, theme, rect.left(), rect.right(), rect.bottom());
+    hline(
+        ui,
+        theme,
+        LogicalPx(rect.left()),
+        LogicalPx(rect.right()),
+        LogicalPx(rect.bottom()),
+    );
     y + h
 }
 
 fn changes_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     section_head(ui, theme, area, "CHANGES (3)");
-    let mut y = area.top() + SECTION_H;
+    let mut y = LogicalPx(area.top()) + SECTION_H;
     y = ch_row(
         ui,
         theme,
@@ -371,28 +427,31 @@ fn ch_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     area: egui::Rect,
-    y: f32,
+    y: LogicalPx,
     glyph: &str,
     variant: TagVariant,
     dir: &str,
     file: &str,
     selected: bool,
-) -> f32 {
-    let pad_x = theme.spacing_md.value();
-    let h = 26.0;
-    let rect = egui::Rect::from_min_size(egui::pos2(area.left(), y), egui::vec2(area.width(), h));
+) -> LogicalPx {
+    let pad_x = theme.spacing_md;
+    let h = LogicalPx(26.0);
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(area.left(), y.value()),
+        egui::vec2(area.width(), h.value()),
+    );
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h)),
+            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h.value())),
             0.0,
             theme.accent_primary().to_egui(),
         );
     }
     let mut cui = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(pad_x, 0.0)))
+            .max_rect(rect.shrink2(egui::vec2(pad_x.value(), 0.0)))
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -423,7 +482,7 @@ fn ch_row(
 
 fn commits_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     section_head(ui, theme, area, "COMMITS (2)");
-    let mut y = area.top() + SECTION_H;
+    let mut y = LogicalPx(area.top()) + SECTION_H;
     y = cm_row(
         ui,
         theme,
@@ -453,20 +512,23 @@ fn cm_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     area: egui::Rect,
-    y: f32,
+    y: LogicalPx,
     oid: &str,
     refs: &[&str],
     summary: &str,
     author: &str,
     time: &str,
-) -> f32 {
-    let pad_x = theme.spacing_md.value();
-    let h = 28.0;
-    let rect = egui::Rect::from_min_size(egui::pos2(area.left(), y), egui::vec2(area.width(), h));
+) -> LogicalPx {
+    let pad_x = theme.spacing_md;
+    let h = LogicalPx(28.0);
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(area.left(), y.value()),
+        egui::vec2(area.width(), h.value()),
+    );
     let gap = theme.spacing_sm.value();
     let mut left = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(pad_x, 0.0)))
+            .max_rect(rect.shrink2(egui::vec2(pad_x.value(), 0.0)))
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     left.spacing_mut().item_spacing.x = gap;
@@ -482,7 +544,7 @@ fn cm_row(
     let left_end = left.min_rect().right();
     let mut right = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(rect.shrink2(egui::vec2(pad_x, 0.0)))
+            .max_rect(rect.shrink2(egui::vec2(pad_x.value(), 0.0)))
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     right.spacing_mut().item_spacing.x = gap;
@@ -518,7 +580,13 @@ fn diff_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
     let toolbar = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), 32.0));
     ui.painter()
         .rect_filled(toolbar, 0.0, theme.bg_sidebar().to_egui());
-    hline(ui, theme, toolbar.left(), toolbar.right(), toolbar.bottom());
+    hline(
+        ui,
+        theme,
+        LogicalPx(toolbar.left()),
+        LogicalPx(toolbar.right()),
+        LogicalPx(toolbar.bottom()),
+    );
     let pad = theme.spacing_sm.value();
     let p = ui.painter();
     p.text(
@@ -618,20 +686,32 @@ fn diff_line(
     let sz = theme.font_size_caption.value();
     let h = (sz * 1.65).round();
     let rect = egui::Rect::from_min_size(egui::pos2(well.left(), *ly), egui::vec2(well.width(), h));
+    // diff 줄 배경 톤. hunk 머리만 한 단계 더 옅다. 대응 토큰 없음.
+    const DIFF_HUNK_BG_OPACITY: f32 = 0.09;
+    const DIFF_LINE_BG_OPACITY: f32 = 0.10;
     let (fg, bg, sign) = match kind {
         DiffKind::Hunk => (
             theme.accent_info().to_egui(),
-            theme.accent_info().to_egui().gamma_multiply(0.09),
+            theme
+                .accent_info()
+                .to_egui()
+                .gamma_multiply(DIFF_HUNK_BG_OPACITY),
             "",
         ),
         DiffKind::Add => (
             theme.accent_success().to_egui(),
-            theme.accent_success().to_egui().gamma_multiply(0.10),
+            theme
+                .accent_success()
+                .to_egui()
+                .gamma_multiply(DIFF_LINE_BG_OPACITY),
             "+",
         ),
         DiffKind::Del => (
             theme.accent_danger().to_egui(),
-            theme.accent_danger().to_egui().gamma_multiply(0.10),
+            theme
+                .accent_danger()
+                .to_egui()
+                .gamma_multiply(DIFF_LINE_BG_OPACITY),
             "-",
         ),
         DiffKind::Ctx => (
@@ -681,10 +761,16 @@ fn diff_line(
 // ── 공용 헬퍼 ──
 
 fn section_head(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect, text: &str) {
-    let rect = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), SECTION_H));
+    let rect = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), SECTION_H.value()));
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
-    hline(ui, theme, rect.left(), rect.right(), rect.bottom());
+    hline(
+        ui,
+        theme,
+        LogicalPx(rect.left()),
+        LogicalPx(rect.right()),
+        LogicalPx(rect.bottom()),
+    );
     ui.painter().text(
         egui::pos2(rect.left() + theme.spacing_md.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
@@ -707,18 +793,18 @@ fn mono_label(
     );
 }
 
-fn hline(ui: &mut egui::Ui, theme: &Theme, x0: f32, x1: f32, y: f32) {
+fn hline(ui: &mut egui::Ui, theme: &Theme, x0: LogicalPx, x1: LogicalPx, y: LogicalPx) {
     ui.painter().hline(
-        x0..=x1,
-        y,
+        x0.value()..=x1.value(),
+        y.value(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
 }
 
-fn vline(ui: &mut egui::Ui, theme: &Theme, x: f32, y0: f32, y1: f32) {
+fn vline(ui: &mut egui::Ui, theme: &Theme, x: LogicalPx, y0: LogicalPx, y1: LogicalPx) {
     ui.painter().vline(
-        x,
-        y0..=y1,
+        x.value(),
+        y0.value()..=y1.value(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
 }

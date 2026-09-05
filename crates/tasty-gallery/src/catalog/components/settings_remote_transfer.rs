@@ -12,6 +12,7 @@
 //! 저장소 의존)을 직접 못 부르고 같은 위젯·토큰으로 미러한다(settings_handler 전례).
 
 use std::cell::RefCell;
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input};
@@ -21,9 +22,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings 콘텐츠 컬럼 근사 프레임 폭(settings_handler 와 동일).
-const WIDTH: f32 = 560.0;
+const WIDTH: LogicalPx = LogicalPx(560.0);
 /// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
-const LABEL_COL_W: f32 = 150.0;
+const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
 /// jsx size row Input `style={{ width: 88 }}` — field-width-xs(90) 로 근사.
 ///
 /// 디자인 88 은 field-width 토큰 세트(90/110/160/200) 밖 specimen 값이라, mono
@@ -47,75 +48,64 @@ struct State {
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_lg.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    // 섹션 헤딩 "Received files" — mono micro uppercase muted.
-                    mono_head(ui, theme, "Received files");
+            kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                // 섹션 헤딩 "Received files" — mono micro uppercase muted.
+                mono_head(ui, theme, "Received files");
 
-                    STATE.with(|s| {
-                        let st = &mut *s.borrow_mut();
+                STATE.with(|s| {
+                    let st = &mut *s.borrow_mut();
 
-                        // 행 1: Save folder — mono path Input + Browse…(secondary, folder).
-                        xfer_row(ui, theme, "Save folder", |ui| {
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                                    // specimen — 클릭 응답 불필요, 그리기만(폴더 피커는 host 소유).
-                                    let _ = Button::new("Browse…")
-                                        .variant(ButtonVariant::Secondary)
-                                        .size(ControlSize::Sm)
-                                        .leading_icon(&|ui, rect, c| {
-                                            icons::FOLDER.image(rect.width(), c).paint_at(ui, rect);
-                                        })
-                                        .show(ui, theme);
-                                    Input::new()
-                                        .mono(true)
-                                        .placeholder("~/.tasty/transfers/")
-                                        .show(ui, theme, &mut st.dir);
-                                },
-                            );
+                    // 행 1: Save folder — mono path Input + Browse…(secondary, folder).
+                    xfer_row(ui, theme, "Save folder", |ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                            // specimen — 클릭 응답 불필요, 그리기만(폴더 피커는 host 소유).
+                            let _ = Button::new("Browse…")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ControlSize::Sm)
+                                .leading_icon(&|ui, rect, c| {
+                                    icons::FOLDER.image(rect.width(), c).paint_at(ui, rect);
+                                })
+                                .show(ui, theme);
+                            Input::new()
+                                .mono(true)
+                                .placeholder("~/.tasty/transfers/")
+                                .show(ui, theme, &mut st.dir);
                         });
-                        row_desc(
-                            ui,
-                            theme,
-                            "Where files received from a remote workspace are saved.",
-                        );
-                        separator_line(ui, theme);
-
-                        // 행 2: Maximum size — numeric mono Input + 정적 mono "MiB" suffix.
-                        xfer_row(ui, theme, "Maximum size", |ui| {
-                            ui.with_layout(
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                                    Input::new().mono(true).width(size_input_width(theme)).show(
-                                        ui,
-                                        theme,
-                                        &mut st.max,
-                                    );
-                                    ui.label(
-                                        egui::RichText::new("MiB")
-                                            .monospace()
-                                            .size(theme.font_size_caption.value())
-                                            .color(theme.text_muted().to_egui()),
-                                    );
-                                },
-                            );
-                        });
-                        row_desc(
-                            ui,
-                            theme,
-                            "Total the folder may hold. A transfer that would push it past this \
-                             limit is rejected before it starts.",
-                        );
                     });
-                },
-            );
+                    row_desc(
+                        ui,
+                        theme,
+                        "Where files received from a remote workspace are saved.",
+                    );
+                    separator_line(ui, theme);
+
+                    // 행 2: Maximum size — numeric mono Input + 정적 mono "MiB" suffix.
+                    xfer_row(ui, theme, "Maximum size", |ui| {
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                            Input::new().mono(true).width(size_input_width(theme)).show(
+                                ui,
+                                theme,
+                                &mut st.max,
+                            );
+                            ui.label(
+                                egui::RichText::new("MiB")
+                                    .monospace()
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_muted().to_egui()),
+                            );
+                        });
+                    });
+                    row_desc(
+                        ui,
+                        theme,
+                        "Total the folder may hold. A transfer that would push it past this \
+                             limit is rejected before it starts.",
+                    );
+                });
+            });
         });
     });
 
@@ -171,7 +161,7 @@ fn xfer_row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(
         ui.set_min_height(theme.settings_row_min_height().value());
         ui.spacing_mut().item_spacing.x = 0.0;
         let (lr, _) = ui.allocate_exact_size(
-            egui::vec2(LABEL_COL_W, theme.settings_row_min_height().value()),
+            egui::vec2(LABEL_COL_W.value(), theme.settings_row_min_height().value()),
             egui::Sense::hover(),
         );
         ui.painter().text(

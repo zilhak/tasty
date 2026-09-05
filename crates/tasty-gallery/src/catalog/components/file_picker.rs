@@ -20,6 +20,7 @@
 //! loaded 프레임의 `pipeline.yaml` 행에 상시 표시(selection 과 시각 구분).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{
     CENTER_BLOCK_H_SPECIMEN as EMPTY_BLOCK_H, CENTER_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2,
 };
@@ -30,31 +31,31 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 // ── 프레임 고정 치수 (디자인 raw px 근사 — 화면 전용 고정값, token-policy §c) ──
-const FRAME_W: f32 = 640.0;
-const FRAME_H: f32 = 480.0;
-const HEADER_H: f32 = 44.0; // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
-const HEADER_PAD_L: f32 = 14.0; // 디자인 L14
-const PATH_H: f32 = 36.0; // padding ~6/6 + refresh IconButton(sm)
-const LIST_HEAD_H: f32 = 26.0; // caption row — loaded/multi 상태만
-const FOOTER_H: f32 = 84.0; // name row(28) + gap(8) + action row(28) + padding 10/10 근사
-const BODY_H: f32 = FRAME_H - HEADER_H - PATH_H - FOOTER_H;
-const ROW_H: f32 = 28.0; // FpRow padding 6/space-md + content 16
-const SIZE_COL_W: f32 = 68.0;
-const MOD_COL_W: f32 = 108.0;
-const FOOTER_LABEL_W: f32 = 64.0; // 디자인 "File name" 라벨 고정폭
-const FOOTER_CHIP_W: f32 = 92.0; // "All files ▾" 타입필터 칩
+const FRAME_W: LogicalPx = LogicalPx(640.0);
+const FRAME_H: LogicalPx = LogicalPx(480.0);
+const HEADER_H: LogicalPx = LogicalPx(44.0); // padding ~8/8(디자인 10/10 근사) + content(host badge 22 최대)
+const HEADER_PAD_L: LogicalPx = LogicalPx(14.0); // 디자인 L14
+const PATH_H: LogicalPx = LogicalPx(36.0); // padding ~6/6 + refresh IconButton(sm)
+const LIST_HEAD_H: LogicalPx = LogicalPx(26.0); // caption row — loaded/multi 상태만
+const FOOTER_H: LogicalPx = LogicalPx(84.0); // name row(28) + gap(8) + action row(28) + padding 10/10 근사
+const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H).minus(PATH_H).minus(FOOTER_H);
+const ROW_H: LogicalPx = LogicalPx(28.0); // FpRow padding 6/space-md + content 16
+const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
+const MOD_COL_W: LogicalPx = LogicalPx(108.0);
+const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라벨 고정폭
+const FOOTER_CHIP_W: LogicalPx = LogicalPx(92.0); // "All files ▾" 타입필터 칩
 
 /// 원격 host 배지 칩의 높이(디자인 size-22). 4px 그리드 밖이고 대응 Theme 토큰이
 /// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
-const HOST_BADGE_H: f32 = 22.0;
+const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 
 /// 브레드크럼 구분자·타입필터 칩 화살표의 글리프 한 변. **아이콘 스케일 밖이다** —
 /// Theme 은 12(xs) · 14(sm) · 15(row-action) · 16(md) 만 갖는데 디자인은 여기 13 을
 ///쓴다. 조용히 12/14 로 반올림하지 않고 값을 보존한 채 이름만 붙였다.
-const CRUMB_GLYPH: f32 = 13.0;
+const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 
 /// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
-const EMPTY_BODY_MAX_W: f32 = 340.0;
+const EMPTY_BODY_MAX_W: LogicalPx = LogicalPx(340.0);
 const HOST: &str = "deploy@10.0.4.12";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -253,10 +254,10 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
         ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
-            ui.set_width(FRAME_W);
+            ui.set_width(FRAME_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(FRAME_W);
+                ui.set_width(FRAME_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 header(ui, theme, remote);
                 path_bar(ui, theme, remote);
@@ -267,7 +268,10 @@ fn card(ui: &mut egui::Ui, theme: &Theme, state: FpState, remote: bool, multi: b
 }
 
 fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, HEADER_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), HEADER_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -275,7 +279,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(
-            rect.left() + HEADER_PAD_L,
+            rect.left() + HEADER_PAD_L.value(),
             rect.top() + theme.spacing_sm.value(),
         ),
         egui::pos2(
@@ -293,7 +297,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
     kit::icon(
         &mut child,
         icons::FILE,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_muted().to_egui(),
     );
     kit::title(&mut child, theme, "Open file");
@@ -319,16 +323,22 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
     let glyph = theme.icon_glyph_size_xs.value();
     let gap = theme.spacing_xs.value();
     let pad_x = theme.spacing_sm.value();
-    let h = HOST_BADGE_H;
+    let h = HOST_BADGE_H.value();
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
+    // info 배지의 채움/테두리 짝. 대응 토큰 없음.
+    const BADGE_FILL_OPACITY: f32 = 0.14;
+    const BADGE_STROKE_OPACITY: f32 = 0.45;
     ui.painter()
-        .rect_filled(rect, radius, info.gamma_multiply(0.14));
+        .rect_filled(rect, radius, info.gamma_multiply(BADGE_FILL_OPACITY));
     ui.painter().rect_stroke(
         rect,
         radius,
-        egui::Stroke::new(theme.border_width.value(), info.gamma_multiply(0.45)),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            info.gamma_multiply(BADGE_STROKE_OPACITY),
+        ),
         egui::StrokeKind::Inside,
     );
     let gy = egui::Rect::from_min_size(
@@ -344,7 +354,10 @@ fn host_badge(ui: &mut egui::Ui, theme: &Theme, host: &str) {
 }
 
 fn path_bar(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, PATH_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), PATH_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter()
         .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
     ui.painter().hline(
@@ -353,7 +366,7 @@ fn path_bar(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L, rect.top()),
+        egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
         egui::pos2(rect.right() - theme.spacing_sm.value(), rect.bottom()),
     );
     let mut child = ui.new_child(
@@ -457,21 +470,21 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
 
 /// 행 컬럼 x좌표 — list header 와 `row` 가 동일 레이아웃을 공유.
 struct Cols {
-    checkbox_x: Option<f32>,
-    icon_x: f32,
-    name_left: f32,
+    checkbox_x: Option<LogicalPx>,
+    icon_x: LogicalPx,
+    name_left: LogicalPx,
     /// name 컬럼 우측 한계(= size 컬럼 좌측 - gap) — 디자인 `flex:1; max-width:0;
     /// overflow:hidden; ellipsis` 흉내(긴 이름 말줄임)에 쓰인다.
-    name_right: f32,
-    size_right: f32,
-    mod_right: f32,
+    name_right: LogicalPx,
+    size_right: LogicalPx,
+    mod_right: LogicalPx,
 }
 
 fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
-    let pad = theme.spacing_md.value();
-    let gap = theme.spacing_sm.value();
-    let glyph = theme.icon_glyph_size_md.value();
-    let mut x = rect.left() + pad;
+    let pad = theme.spacing_md;
+    let gap = theme.spacing_sm;
+    let glyph = theme.icon_glyph_size_md;
+    let mut x = LogicalPx(rect.left()) + pad;
     let checkbox_x = if multi {
         let cx = x;
         x += glyph + gap;
@@ -482,7 +495,7 @@ fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
     let icon_x = x;
     x += glyph + gap;
     let name_left = x;
-    let mod_right = rect.right() - pad;
+    let mod_right = LogicalPx(rect.right()) - pad;
     let size_right = mod_right - MOD_COL_W - gap;
     let name_right = size_right - SIZE_COL_W - gap;
     Cols {
@@ -497,21 +510,21 @@ fn cols(rect: egui::Rect, theme: &Theme, multi: bool) -> Cols {
 
 /// 폭이 `max_w` 를 넘으면 문자 단위로 잘라 `…` 을 붙인다 (디자인 `text-overflow:
 /// ellipsis` 흉내 — FpRow name 컬럼).
-fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: f32) -> String {
+fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: LogicalPx) -> String {
     let measure = |s: &str| {
         ui.painter()
             .layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
             .rect
             .width()
     };
-    if max_w <= 0.0 || measure(text) <= max_w {
+    if max_w <= LogicalPx(0.0) || measure(text) <= max_w.value() {
         return text.to_owned();
     }
     let mut chars: Vec<char> = text.chars().collect();
     while !chars.is_empty() {
         chars.pop();
         let candidate: String = chars.iter().collect::<String>() + "…";
-        if measure(&candidate) <= max_w {
+        if measure(&candidate) <= max_w.value() {
             return candidate;
         }
     }
@@ -519,7 +532,10 @@ fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: f32) -> String {
 }
 
 fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, LIST_HEAD_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), LIST_HEAD_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
@@ -529,21 +545,21 @@ fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
     let font = egui::FontId::monospace(theme.font_size_micro.value());
     let muted = theme.text_muted().to_egui();
     ui.painter().text(
-        egui::pos2(c.name_left, rect.center().y),
+        egui::pos2(c.name_left.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         "NAME",
         font.clone(),
         muted,
     );
     ui.painter().text(
-        egui::pos2(c.size_right, rect.center().y),
+        egui::pos2(c.size_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         "SIZE",
         font.clone(),
         muted,
     );
     ui.painter().text(
-        egui::pos2(c.mod_right, rect.center().y),
+        egui::pos2(c.mod_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         "MODIFIED",
         font,
@@ -561,7 +577,7 @@ fn row(
     focus: bool,
 ) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, ROW_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, ROW_H.value()), egui::Sense::hover());
     if selected {
         ui.painter()
             .rect_filled(rect, 0.0, theme.surface_active().to_egui());
@@ -586,7 +602,7 @@ fn row(
     if let Some(cx) = c.checkbox_x {
         let mut chk = checked;
         let cb_rect = egui::Rect::from_min_size(
-            egui::pos2(cx, rect.center().y - glyph_size * 0.5),
+            egui::pos2(cx.value(), rect.center().y - glyph_size * 0.5),
             egui::vec2(glyph_size, glyph_size),
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cb_rect));
@@ -598,7 +614,7 @@ fn row(
         (icons::FILE, theme.text_muted().to_egui())
     };
     let ir = egui::Rect::from_min_size(
-        egui::pos2(c.icon_x, rect.center().y - glyph_size * 0.5),
+        egui::pos2(c.icon_x.value(), rect.center().y - glyph_size * 0.5),
         egui::vec2(glyph_size, glyph_size),
     );
     icon_glyph.image(glyph_size, icon_color).paint_at(ui, ir);
@@ -610,7 +626,7 @@ fn row(
     let name_font = egui::FontId::proportional(theme.font_size_body.value());
     let name_text = elide(ui, r.name, name_font.clone(), c.name_right - c.name_left);
     ui.painter().text(
-        egui::pos2(c.name_left, rect.center().y),
+        egui::pos2(c.name_left.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         name_text,
         name_font,
@@ -619,14 +635,14 @@ fn row(
     let mono_caption = egui::FontId::monospace(theme.font_size_caption.value());
     let muted = theme.text_muted().to_egui();
     ui.painter().text(
-        egui::pos2(c.size_right, rect.center().y),
+        egui::pos2(c.size_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         r.size,
         mono_caption.clone(),
         muted,
     );
     ui.painter().text(
-        egui::pos2(c.mod_right, rect.center().y),
+        egui::pos2(c.mod_right.value(), rect.center().y),
         egui::Align2::RIGHT_CENTER,
         r.modified,
         mono_caption,
@@ -639,7 +655,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
         FpState::Loaded => {
             list_header(ui, theme, multi);
             let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(FRAME_W, BODY_H - LIST_HEAD_H),
+                egui::vec2(FRAME_W.value(), (BODY_H - LIST_HEAD_H).value()),
                 egui::Sense::hover(),
             );
             let mut col = ui.new_child(
@@ -716,18 +732,21 @@ fn center(
     body_text: Option<&str>,
     action: Option<&str>,
 ) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, BODY_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), BODY_H.value()),
+        egui::Sense::hover(),
+    );
     let mut col = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    col.add_space((BODY_H - EMPTY_BLOCK_H).max(0.0) * 0.5);
+    col.add_space(((BODY_H - LogicalPx(EMPTY_BLOCK_H)).max(LogicalPx(0.0)) * 0.5).value());
     col.spacing_mut().item_spacing.y = theme.spacing_sm.value();
     if spinner {
         Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
     } else {
-        kit::icon(&mut col, glyph, EMPTY_GLYPH, glyph_color);
+        kit::icon(&mut col, glyph, LogicalPx(EMPTY_GLYPH), glyph_color);
     }
     col.label(
         egui::RichText::new(heading)
@@ -736,7 +755,7 @@ fn center(
             .color(heading_color),
     );
     if let Some(b) = body_text {
-        col.set_max_width(EMPTY_BODY_MAX_W);
+        col.set_max_width(EMPTY_BODY_MAX_W.value());
         col.label(
             egui::RichText::new(b)
                 .size(theme.font_size_caption.value())
@@ -753,7 +772,10 @@ fn center(
 }
 
 fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, FOOTER_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), FOOTER_H.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
@@ -784,7 +806,7 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
     col.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         ui.allocate_ui_with_layout(
-            egui::vec2(FOOTER_LABEL_W, 0.0),
+            egui::vec2(FOOTER_LABEL_W.value(), 0.0),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(
@@ -795,7 +817,7 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
             },
         );
         let remaining = ui.available_width();
-        let input_w = (remaining - FOOTER_CHIP_W - theme.spacing_sm.value()).max(0.0);
+        let input_w = (LogicalPx(remaining) - FOOTER_CHIP_W - theme.spacing_sm).max(LogicalPx(0.0));
         kit::field(
             ui,
             theme,
@@ -836,7 +858,8 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
 /// "All files ▾" 타입 필터 칩 — 정적(팝오버 미열림) specimen.
 fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
     let h = theme.item_height_interactive.value();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W, h), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W.value(), h), egui::Sense::hover());
     ui.painter().rect_filled(
         rect,
         theme.corner_radius.value(),
@@ -858,12 +881,12 @@ fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
     );
     let ir = egui::Rect::from_min_size(
         egui::pos2(
-            rect.right() - pad - CRUMB_GLYPH,
-            rect.center().y - CRUMB_GLYPH * 0.5,
+            rect.right() - pad - CRUMB_GLYPH.value(),
+            rect.center().y - CRUMB_GLYPH.value() * 0.5,
         ),
-        egui::vec2(CRUMB_GLYPH, CRUMB_GLYPH),
+        egui::vec2(CRUMB_GLYPH.value(), CRUMB_GLYPH.value()),
     );
     icons::CHEVRON_DOWN
-        .image(CRUMB_GLYPH, theme.text_muted().to_egui())
+        .image(CRUMB_GLYPH.value(), theme.text_muted().to_egui())
         .paint_at(ui, ir);
 }

@@ -15,6 +15,7 @@
 //! Unbound `text-disabled`, help `font-size-caption`(11) `accent-warning`.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, kbd};
 
 use crate::catalog::icons;
@@ -23,11 +24,11 @@ use crate::catalog::widgets::dialog as kit;
 
 /// 갤러리 프레임 최대 폭 (jsx `maxWidth: 560`). 본체는 settings content 폭을 상속하나
 /// 갤러리 미러는 카드로 감싸 560 으로 bound.
-const FRAME_MAX_W: f32 = 560.0;
+const FRAME_MAX_W: LogicalPx = LogicalPx(560.0);
 // 빈 상태 글리프 크기는 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).
 use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
 /// 행 중앙 컬럼의 name→path→help 사이 hairline 간격 (jsx `gap: 2` — 4px 그리드 하위).
-const ROW_LINE_GAP: f32 = 2.0;
+const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 
 /// RTL 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를 미리
 /// 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
@@ -86,29 +87,24 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
-    let width = ui.available_width().min(FRAME_MAX_W);
+    let width = LogicalPx(ui.available_width()).min(FRAME_MAX_W);
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                    header(ui, theme);
-                    if empty {
-                        empty_state(ui, theme);
-                    } else {
-                        // 행 리스트 — 세로 적층, 간격 0(각 행 하단 separator 가 구분).
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            for s in SEEDS {
-                                script_row(ui, theme, s);
-                            }
-                        });
-                    }
-                },
-            );
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                header(ui, theme);
+                if empty {
+                    empty_state(ui, theme);
+                } else {
+                    // 행 리스트 — 세로 적층, 간격 0(각 행 하단 separator 가 구분).
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        for s in SEEDS {
+                            script_row(ui, theme, s);
+                        }
+                    });
+                }
+            });
         });
     });
 }
@@ -122,7 +118,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
             egui::vec2(left_w, 0.0),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP;
+                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
                 ui.label(
                     egui::RichText::new("Scripts")
                         .size(theme.font_size_max.value())
@@ -156,11 +152,11 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
         // 좌: script 글리프 16 · text-muted · margin-top 2.
         ui.vertical(|ui| {
-            ui.add_space(ROW_LINE_GAP);
+            ui.add_space(ROW_LINE_GAP.value());
             kit::icon(
                 ui,
                 icons::SCRIPT,
-                theme.icon_glyph_size_md.value(),
+                theme.icon_glyph_size_md,
                 theme.text_muted().to_egui(),
             );
         });
@@ -200,7 +196,7 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
             }
             // 남은 좌측 폭 = 중앙 컬럼(name/path/help).
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP;
+                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
                 // row1 — name + changed 배지.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -278,12 +274,18 @@ fn changed_badge(ui: &mut egui::Ui, theme: &Theme) {
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = theme.corner_radius_sm.value();
+    // 경고 배지의 채움/테두리 짝. 대응 토큰 없음.
+    const BADGE_FILL_OPACITY: f32 = 0.12;
+    const BADGE_STROKE_OPACITY: f32 = 0.4;
     ui.painter()
-        .rect_filled(rect, radius, warn.gamma_multiply(0.12));
+        .rect_filled(rect, radius, warn.gamma_multiply(BADGE_FILL_OPACITY));
     ui.painter().rect_stroke(
         rect,
         radius,
-        egui::Stroke::new(theme.border_width.value(), warn.gamma_multiply(0.4)),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            warn.gamma_multiply(BADGE_STROKE_OPACITY),
+        ),
         egui::StrokeKind::Inside,
     );
     let gy = egui::Rect::from_min_size(
@@ -302,7 +304,12 @@ fn empty_state(ui: &mut egui::Ui, theme: &Theme) {
     ui.vertical_centered(|ui| {
         ui.add_space(theme.spacing_xl.value());
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-        kit::icon(ui, icons::SCRIPT, EMPTY_GLYPH, theme.text_muted().to_egui());
+        kit::icon(
+            ui,
+            icons::SCRIPT,
+            LogicalPx(EMPTY_GLYPH),
+            theme.text_muted().to_egui(),
+        );
         ui.label(
             egui::RichText::new("No scripts registered")
                 .size(theme.font_size_max.value())

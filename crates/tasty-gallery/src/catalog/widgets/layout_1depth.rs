@@ -1,8 +1,18 @@
 //! `onedepth` specimen — 1-depth list → detail (research §2.5 Layouts).
+//! Layouts 페이지 "List → detail" 섹션의 **일반(general) 1-depth 셸** 데모다.
 //!
-//! Plugins 창 idiom. 좌측 고정 리스트(~200, bg-sidebar) + 우측 detail(flex, padding 18).
-//! - 리스트: filter Input + 항목(agent dot + name), 선택 행 surface-active.
-//! - detail: title(15/600) + Tag + Switch 행(label 130) + Permissions(Tag들).
+//! - 좌측 리스트(`field_width_lg` = 200, bg-sidebar): filter Input + 항목
+//!   (status dot + name), 선택 행 surface-active. 행 높이 `item_height_interactive`.
+//! - 우측 detail(남은 폭, padding `spacing_md`): 제목 + Tag + Switch 행 + Permissions Tag 들.
+//!
+//! **Plugins 창의 미러가 아니다.** 그 미러는 `components/plugins_window.rs`(Overlays
+//! `plugins-window`)이고, 그쪽 목록 폭은 본체와 같은 접근자
+//! `Theme::plugins_side_panel_width`(240)에서 읽으며 행 높이도 40 이다. 필터가 놓이는
+//! 자리도 다르다 — 본체 Plugins 창의 필터는 헤더 밴드 우측이지 목록 안이 아니다.
+//! 여기 항목이 plugin 이 아닌 이름(ripgrep · agent-runner …)인 것도 특정 창에 매이지
+//! 않는 idiom 데모이기 때문이다. (예전 모듈 문서가 "Plugins 창 idiom" 이라 적어 이
+//! specimen 이 그 창의 기준인 것처럼 보였다 — `layout_2depth` 가 같은 형태의 주장을
+//! 먼저 철회했고 이쪽이 남아 있었다.)
 //!
 //! Theme 토큰만으로 정적 재현 (binary 미의존).
 

@@ -17,28 +17,28 @@
 //! 공용 `tasty_ui_widgets::Button`(`docs/design/policies/shared-widgets.md` 목표 상태).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::popup_frame::{self, ContentInset, TitleButtons};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 본체 `info_modal.rs` 의 `DEFAULT_WIDTH`.
-const WIDTH: f32 = 440.0;
+const WIDTH: LogicalPx = LogicalPx(440.0);
 /// 본체 `info_modal.rs` 의 `MIN_HEIGHT`.
-const MIN_HEIGHT: f32 = 140.0;
+const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
 /// 본체 `info_modal.rs` 의 `MAX_HEIGHT`.
-const MAX_HEIGHT: f32 = 360.0;
+const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
 
 /// 본체 `info_modal_sizer` 와 같은 규칙으로 높이를 낸다 —
 /// 60자/줄 가정 · 줄높이 = body 폰트 × 1.5 · 하단 버튼 영역 48 · clamp.
-fn sizer_height(theme: &Theme, body: &str) -> f32 {
+fn sizer_height(theme: &Theme, body: &str) -> LogicalPx {
     let approx_lines = (body.chars().count() as f32 / 60.0).ceil().max(2.0);
-    let line_h = theme.font_size_body.value() * 1.5;
-    let footer_h =
-        theme.item_height_interactive.value() + theme.spacing_lg.value() + theme.spacing_xs.value();
+    let line_h = theme.font_size_body * 1.5;
+    let footer_h = theme.item_height_interactive + theme.spacing_lg + theme.spacing_xs;
     (popup_frame::TITLE_BAR_HEIGHT
         + popup_frame::CONTENT_MARGIN * 2.0
-        + approx_lines * line_h
+        + line_h * approx_lines
         + footer_h)
         .clamp(MIN_HEIGHT, MAX_HEIGHT)
 }

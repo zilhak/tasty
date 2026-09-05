@@ -11,6 +11,7 @@
 //! 함수가 그린다 — `draw_system_rules` + 8 그룹 draw(`draw_actions` 등).
 
 use std::cell::RefCell;
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{IconButton, Input};
@@ -116,13 +117,13 @@ const KEYS: &[Entry] = &[
 //
 // Theme 에 대응 토큰이 없는 카탈로그 그리드 전용 치수 — 디자인 px 를 주석으로 명시.
 /// `.icongrid` auto-fill `minmax(132px, 1fr)` 의 셀 폭.
-const TILE_W: f32 = 132.0;
+const TILE_W: LogicalPx = LogicalPx(132.0);
 /// `.icontile` 높이 — padding 18/13 + glyph-box 36 + name/role.
-const TILE_H: f32 = 110.0;
+const TILE_H: LogicalPx = LogicalPx(110.0);
 /// `.icontile .glyph` 박스 36×36 안에 그리는 글리프 — jsx `<GIcon size={22}>`.
-const TILE_GLYPH: f32 = 22.0;
+const TILE_GLYPH: LogicalPx = LogicalPx(22.0);
 /// `.glyph` 박스 한 변 — 글리프 수직 중심 산출용.
-const GLYPH_BOX: f32 = 36.0;
+const GLYPH_BOX: LogicalPx = LogicalPx(36.0);
 
 thread_local! {
     /// system-rules 데모의 filter Input 버퍼 (egui memory 에 포커스 유지).
@@ -272,7 +273,10 @@ fn icongrid(ui: &mut egui::Ui, theme: &Theme, icons: &[Entry]) {
 }
 
 fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(TILE_W, TILE_H), egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(TILE_W.value(), TILE_H.value()),
+        egui::Sense::hover(),
+    );
     let painter = ui.painter_at(rect);
 
     // 셀 배경 — panel, hover 시 overlay-hover (web .icontile:hover).
@@ -284,7 +288,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     painter.rect_filled(rect, 0.0, bg);
 
     // 글리프 — padding-top 18 + glyph-box 36 중심.
-    let glyph_cy = rect.top() + theme.spacing_lg.value() + 2.0 + GLYPH_BOX / 2.0;
+    let glyph_cy = LogicalPx(rect.top()) + theme.spacing_lg + LogicalPx(2.0) + GLYPH_BOX / 2.0;
     // hover 시 글리프도 secondary→primary 로 (web .icontile:hover .glyph).
     let glyph_color = if resp.hovered() {
         ec(theme.text_primary())
@@ -294,22 +298,22 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     paint_glyph(
         ui,
         g,
-        egui::pos2(rect.center().x, glyph_cy),
-        TILE_GLYPH,
+        egui::pos2(rect.center().x, glyph_cy.value()),
+        TILE_GLYPH.value(),
         glyph_color,
     );
 
     // name (mono 12 primary) + role (micro muted).
-    let name_y = glyph_cy + GLYPH_BOX / 2.0 + theme.spacing_sm.value();
+    let name_y = glyph_cy + GLYPH_BOX / 2.0 + theme.spacing_sm;
     painter.text(
-        egui::pos2(rect.center().x, name_y),
+        egui::pos2(rect.center().x, name_y.value()),
         egui::Align2::CENTER_TOP,
         name,
         egui::FontId::monospace(theme.font_size_term_sm.value()),
         ec(theme.text_primary()),
     );
     painter.text(
-        egui::pos2(rect.center().x, name_y + theme.spacing_lg.value()),
+        egui::pos2(rect.center().x, (name_y + theme.spacing_lg).value()),
         egui::Align2::CENTER_TOP,
         role,
         egui::FontId::proportional(theme.font_size_micro.value()),

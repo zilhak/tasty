@@ -4,63 +4,59 @@
 //! accent border + ring); 각 카드 icon + title + sub; Cancel / Open preview.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 420.0;
+const WIDTH: LogicalPx = LogicalPx(420.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(
-                ui,
-                theme.spacing_md.value(),
-                theme.spacing_md.value(),
-                |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        kit::title(ui, theme, "Open markdown file");
-                        kit::caption(ui, theme, "README.md", true);
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                    kit::title(ui, theme, "Open markdown file");
+                    kit::caption(ui, theme, "README.md", true);
+                });
+                // 2 Choice 카드.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                    let cw = (WIDTH - theme.spacing_md.scaled(3.0)).scaled(0.5);
+                    choice(
+                        ui,
+                        theme,
+                        cw,
+                        icons::MARKDOWN,
+                        "Rendered preview",
+                        "Formatted view with headings and links.",
+                        true,
+                    );
+                    choice(
+                        ui,
+                        theme,
+                        cw,
+                        icons::EDIT,
+                        "Raw text",
+                        "Edit the source in the editor surface.",
+                        false,
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Open preview")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                        Button::new("Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
                     });
-                    // 2 Choice 카드.
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                        let cw = (WIDTH - theme.spacing_md.value() * 3.0) * 0.5;
-                        choice(
-                            ui,
-                            theme,
-                            cw,
-                            icons::MARKDOWN,
-                            "Rendered preview",
-                            "Formatted view with headings and links.",
-                            true,
-                        );
-                        choice(
-                            ui,
-                            theme,
-                            cw,
-                            icons::EDIT,
-                            "Raw text",
-                            "Edit the source in the editor surface.",
-                            false,
-                        );
-                    });
-                    ui.horizontal(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            Button::new("Open preview")
-                                .variant(ButtonVariant::Primary)
-                                .show(ui, theme);
-                            Button::new("Cancel")
-                                .variant(ButtonVariant::Ghost)
-                                .show(ui, theme);
-                        });
-                    });
-                },
-            );
+                });
+            });
         });
     });
 
@@ -97,7 +93,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn choice(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: f32,
+    width: LogicalPx,
     glyph: MockGlyph,
     title: &str,
     sub: &str,
@@ -119,19 +115,14 @@ fn choice(
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
         .show(ui, |ui| {
-            ui.set_width(width - theme.spacing_md.value() * 2.0);
+            ui.set_width((width - theme.spacing_md.scaled(2.0)).value());
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
             let icon_color = if selected {
                 theme.accent_primary()
             } else {
                 theme.text_secondary()
             };
-            kit::icon(
-                ui,
-                glyph,
-                theme.icon_glyph_size_md.value(),
-                icon_color.to_egui(),
-            );
+            kit::icon(ui, glyph, theme.icon_glyph_size_md, icon_color.to_egui());
             ui.label(
                 egui::RichText::new(title)
                     .size(theme.font_size_body.value())

@@ -28,7 +28,8 @@ fn split(ui: &mut egui::Ui, theme: &Theme, vertical: bool, hover: bool) {
         egui::Color32::from(theme.separator)
     };
     // hit-band: accent-primary 저알파 tint (드래그 영역 가시화).
-    let band = theme.accent_primary().with_alpha(36).to_egui();
+    const HIT_BAND_ALPHA: u8 = 36;
+    let band = theme.accent_primary().with_alpha(HIT_BAND_ALPHA).to_egui();
     let band_w = theme.spacing_sm.value(); // ~8 hit-band
     let line_w = theme.border_width.value();
 

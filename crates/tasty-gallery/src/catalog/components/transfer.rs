@@ -19,6 +19,7 @@
 //! - 푸터: `padding 10/14` · borderTop separator · 우측정렬 버튼(gap 8). danger-fill 금지.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
@@ -28,17 +29,17 @@ use crate::catalog::widgets::dialog as kit;
 
 // ── 프레임 고정 치수 (디자인 raw px — 화면 전용, token-policy §c) ──
 /// `--tasty-transfer-popup-width` (size-400).
-const FRAME_W: f32 = 400.0;
+const FRAME_W: LogicalPx = LogicalPx(400.0);
 /// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
-const PAD_X: f32 = 14.0;
+const PAD_X: LogicalPx = LogicalPx(14.0);
 /// 헤더 세로 패딩 (디자인 12 = space-md).
-const HEADER_PAD_Y: f32 = 12.0;
+const HEADER_PAD_Y: LogicalPx = LogicalPx(12.0);
 /// 바디 패딩 (디자인 14 — raw).
-const BODY_PAD: f32 = 14.0;
+const BODY_PAD: LogicalPx = LogicalPx(14.0);
 /// 푸터 세로 패딩 (디자인 10 — raw).
-const FOOTER_PAD_Y: f32 = 10.0;
+const FOOTER_PAD_Y: LogicalPx = LogicalPx(10.0);
 /// 바디 내부 요소 gap (디자인 10 — raw).
-const BODY_GAP: f32 = 10.0;
+const BODY_GAP: LogicalPx = LogicalPx(10.0);
 
 /// 09a — 전송 진행 팝업 specimen (단일 파일 + 다중 파일 행반복). 프레임을 클러스터에
 /// 직접 렌더한다(실제 scrim dim 은 본체 `draw.rs` 소유 — file_picker specimen 관례).
@@ -125,10 +126,10 @@ fn frame(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
         ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
-            ui.set_width(FRAME_W);
+            ui.set_width(FRAME_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(FRAME_W);
+                ui.set_width(FRAME_W.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 add(ui);
             });
@@ -145,17 +146,26 @@ fn header_band(
     trailing: Option<&str>,
 ) {
     // 콘텐츠 높이 = max(glyph 16, 제목 14 line) ≈ 20; 패딩 12/12.
-    let content_h = 20.0;
-    let band_h = HEADER_PAD_Y * 2.0 + content_h;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, band_h), egui::Sense::hover());
+    let content_h = LogicalPx(20.0);
+    let band_h = HEADER_PAD_Y.scaled(2.0) + content_h;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + PAD_X, rect.top() + HEADER_PAD_Y),
-        egui::pos2(rect.right() - PAD_X, rect.bottom() - HEADER_PAD_Y),
+        egui::pos2(
+            rect.left() + PAD_X.value(),
+            rect.top() + HEADER_PAD_Y.value(),
+        ),
+        egui::pos2(
+            rect.right() - PAD_X.value(),
+            rect.bottom() - HEADER_PAD_Y.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -163,12 +173,7 @@ fn header_band(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    kit::icon(
-        &mut child,
-        glyph,
-        theme.icon_glyph_size_md.value(),
-        glyph_color,
-    );
+    kit::icon(&mut child, glyph, theme.icon_glyph_size_md, glyph_color);
     child.label(
         egui::RichText::new(title)
             .size(theme.font_size_max.value())
@@ -203,7 +208,7 @@ fn progress_card(ui: &mut egui::Ui, theme: &Theme, rows: &[ProgressRow]) {
         body_region(ui, |ui| {
             for (i, row) in rows.iter().enumerate() {
                 if i > 0 {
-                    ui.add_space(BODY_GAP);
+                    ui.add_space(BODY_GAP.value());
                 }
                 progress_row(ui, theme, row);
             }
@@ -219,7 +224,7 @@ fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
         kit::icon(
             ui,
             icons::FILE,
-            theme.icon_glyph_size_md.value(),
+            theme.icon_glyph_size_md,
             theme.text_muted().to_egui(),
         );
         let avail = ui.available_width();
@@ -231,9 +236,9 @@ fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
                 .color(theme.text_primary().to_egui()),
         );
     });
-    ui.add_space(BODY_GAP);
+    ui.add_space(BODY_GAP.value());
     progress_bar(ui, theme, row.pct);
-    ui.add_space(BODY_GAP);
+    ui.add_space(BODY_GAP.value());
     // done/total · rate — space-between.
     ui.horizontal(|ui| {
         ui.label(
@@ -300,7 +305,7 @@ fn error_card(ui: &mut egui::Ui, theme: &Theme, name: &str, reason: &str, retry:
                         .color(theme.text_secondary().to_egui()),
                 );
             });
-            ui.add_space(BODY_GAP);
+            ui.add_space(BODY_GAP.value());
             reason_well(ui, theme, reason);
         });
         // 푸터 버튼 — danger-fill 금지 (ghost/secondary 만).
@@ -353,7 +358,7 @@ fn reason_well(ui: &mut egui::Ui, theme: &Theme, reason: &str) {
 /// 바디 region (padding 14, 전체폭).
 fn body_region(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
-        .inner_margin(egui::Margin::same(BODY_PAD as i8))
+        .inner_margin(egui::Margin::same(BODY_PAD.value() as i8))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add(ui);
@@ -363,17 +368,26 @@ fn body_region(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 /// 푸터 (padding 10/14, borderTop separator, 우측정렬). `add` 는 우→좌 순서로
 /// 위젯을 넣는다(먼저 넣은 것이 우측 끝).
 fn footer_buttons(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
-    let btn_h = ControlSize::Sm.height(theme);
-    let band_h = FOOTER_PAD_Y * 2.0 + btn_h;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FRAME_W, band_h), egui::Sense::hover());
+    let btn_h = LogicalPx(ControlSize::Sm.height(theme));
+    let band_h = FOOTER_PAD_Y.scaled(2.0) + btn_h;
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(FRAME_W.value(), band_h.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + PAD_X, rect.top() + FOOTER_PAD_Y),
-        egui::pos2(rect.right() - PAD_X, rect.bottom() - FOOTER_PAD_Y),
+        egui::pos2(
+            rect.left() + PAD_X.value(),
+            rect.top() + FOOTER_PAD_Y.value(),
+        ),
+        egui::pos2(
+            rect.right() - PAD_X.value(),
+            rect.bottom() - FOOTER_PAD_Y.value(),
+        ),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
