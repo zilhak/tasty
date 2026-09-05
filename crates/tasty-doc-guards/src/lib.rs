@@ -22,6 +22,8 @@
 
 /// `#[cfg(...)]` 술어를 읽는다.
 pub mod cfg_predicate;
+/// 지문 계산 규칙 — `build.rs` 와 **원문 한 벌**을 공유한다(그쪽은 `include!`).
+mod fingerprint_rule;
 pub mod freshness;
 pub mod manifest_text;
 

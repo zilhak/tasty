@@ -19,6 +19,10 @@
 
 use std::path::Path;
 
+// 지문 계산 규칙은 빌드 스크립트와 **원문 한 벌**을 공유한다(`build.rs` 가 같은 파일을
+// `include!` 한다). 규칙 셋(정렬·`bin/` 제외·LF 정규화)과 그 이유는 그 파일 머리에.
+use crate::fingerprint_rule::fingerprint;
+
 /// 빌드할 때 구운 라이브러리 소스 지문.
 pub const LIB_FINGERPRINT: &str = env!("TASTY_DOC_GUARDS_LIB_FINGERPRINT");
 
@@ -64,69 +68,20 @@ pub fn check(root: &Path, own_rel: &str, own_text: &str) -> Freshness {
     Freshness::Fresh
 }
 
-/// 빌드 스크립트와 **같은 규칙**으로 디스크에서 지문을 구한다. 두 계산이 갈리면
-/// 판정기가 영원히 낡은 것으로 나오므로, 규칙(정렬·`bin/` 제외·LF 정규화)을 바꿀 때는
-/// 양쪽을 함께 고친다.
-fn fingerprint(lib_dir: &Path) -> Option<String> {
-    let mut files = Vec::new();
-    collect(lib_dir, lib_dir, &mut files)?;
-    files.sort();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for (rel, bytes) in &files {
-        mix(&mut h, rel.as_bytes());
-        mix(&mut h, bytes);
-    }
-    Some(format!("{h:016x}"))
-}
-
-fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) -> Option<()> {
-    for entry in std::fs::read_dir(dir).ok()? {
-        let path = entry.ok()?.path();
-        if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "bin") {
-                continue;
-            }
-            collect(root, &path, out)?;
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            let rel = path
-                .strip_prefix(root)
-                .ok()?
-                .to_string_lossy()
-                .replace('\\', "/");
-            out.push((rel, normalize(&std::fs::read(&path).ok()?)));
-        }
-    }
-    Some(())
-}
-
-fn normalize(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
-            i += 1;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    out
-}
-
-fn mix(h: &mut u64, bytes: &[u8]) {
-    for b in bytes {
-        *h ^= u64::from(*b);
-        *h = h.wrapping_mul(0x100_0000_01b3);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 이 크레이트 자신에 대고 물으면 **맞아야** 한다. 이것이 빌드 스크립트와 여기의
-    /// 계산 규칙이 갈리지 않았다는 유일한 증거다 — 갈리면 판정기가 영원히 낡은 것으로
-    /// 나오고, 그 상태는 조용히 폴백만 켠다.
+    /// 이 크레이트 자신에 대고 물으면 **맞아야** 한다.
+    ///
+    /// 이 단정이 무엇을 잡는지 한 번 바뀌었다. 규칙이 두 벌이던 때에는 이것이 "빌드
+    /// 스크립트와 여기의 계산이 갈리지 않았다" 는 유일한 증거였는데, 지금은 양쪽이
+    /// `fingerprint_rule.rs` **원문 한 벌**을 공유하므로 갈릴 수가 없다 — 규칙을 고쳐도
+    /// 두 값이 함께 움직여 이 테스트는 초록으로 남는다(실측했다).
+    ///
+    /// 그래서 지금 이것이 잡는 것은 **구운 값이 트리보다 낡는 것**이다. `build.rs` 의
+    /// `rerun-if-changed` 가 좁아지면 소스를 고쳐도 값이 다시 안 구워지고, 그때 빨개진다
+    /// (감시를 `Cargo.toml` 로 좁히고 라이브러리 소스를 건드려 실측했다).
     #[test]
     fn the_baked_fingerprint_matches_this_tree() {
         let root = crate::repo_root();
@@ -139,7 +94,7 @@ mod tests {
         assert_eq!(
             fingerprint(&lib_dir).expect("지문"),
             LIB_FINGERPRINT,
-            "빌드 스크립트와 런타임의 지문 계산이 갈렸다 — 판정기가 영원히 낡은 것으로 나온다"
+            "구운 지문이 트리와 다르다 — build.rs 가 다시 안 돌았다(rerun-if-changed 확인)"
         );
     }
 
