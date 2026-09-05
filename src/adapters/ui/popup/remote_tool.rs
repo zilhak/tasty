@@ -546,8 +546,9 @@ fn scroll_list_with_fade<R>(
 fn fade_edges(offset: f32, content_h: f32, view_h: f32) -> (bool, bool) {
     // 부동소수 오차로 끝까지 스크롤한 뒤에도 페이드가 남는 것을 막는 여유값.
     // 1px 미만 차이는 사람 눈에 "더 있다" 로 읽히지도 않는다.
-    const EPS: f32 = 1.0;
-    let max_offset = (content_h - view_h).max(0.0);
+    const EPS: LogicalPx = LogicalPx(1.0);
+    let max_offset = (LogicalPx(content_h) - LogicalPx(view_h)).max(LogicalPx(0.0));
+    let offset = LogicalPx(offset);
     (offset > EPS, offset < max_offset - EPS)
 }
 
