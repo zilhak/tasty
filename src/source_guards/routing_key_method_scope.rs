@@ -26,8 +26,9 @@
 //! ## 도달 판정의 깊이
 //!
 //! arm 의 식에서 부른 함수 본문까지 따라간다(`require_surface_id` 처럼 키를 안에 박아
-//! 둔 헬퍼가 있어서 한 단계로는 모자란다). 실측상 **깊이 2 에서 값이 고정**되고 3·7
-//! 에서도 같다. 그래서 3 을 쓴다 — 고정점 바로 위라 여유가 있고, 더 깊여도 안 변한다.
+//! 둔 헬퍼가 있어서 한 단계로는 모자란다). 재수출도 따라간다 — `surface::handle_x` 의
+//! 본체가 `surface/close.rs` 에 있는 형태가 흔하고, 그 한 걸음이 없으면 그 핸들러의
+//! 키 읽기가 통째로 안 보인다. 실측 고정점은 **깊이 4**(5·7 도 같은 값).
 //!
 //! ## 면제는 쌍으로 적는다
 //!
@@ -44,8 +45,9 @@ const HANDLER_DIR: &str = "src/adapters/ipc/handler";
 const HANDLER_ROOT: &str = "src/adapters/ipc/handler.rs";
 const ROUTING_SOURCE: &str = "src/core/request_target.rs";
 
-/// arm 의 식에서 따라 들어갈 호출 깊이. 실측 고정점은 2 다(3·7 도 같은 값).
-const RESOLVE_DEPTH: u32 = 3;
+/// arm 의 식에서 따라 들어갈 호출 깊이(arm 자신이 1 단계다).
+/// 실측 고정점은 4 이고 5·7 에서도 값이 같다 — 고정점 바로 위를 쓴다.
+const RESOLVE_DEPTH: u32 = 5;
 
 /// dispatch arm 수의 하한 — **연기 검사**다. 파서가 죽으면 예외가 아니라 조용한 0 이
 /// 되고, 모수가 비면 아래 집합 동등은 양쪽이 빈 집합이라 그냥 통과한다.
@@ -64,34 +66,16 @@ const PAIR_EXEMPT: &[(&str, &str, &str)] = &[
          이 메서드를 pty 한정에서 뺀 이유가 그것이다",
     ),
     (
-        "webhook.info",
-        "id",
-        "webhook 등록부는 창이 아니라 Core 소유다(핸들러가 engine 을 안 받는다)",
-    ),
-    (
-        "webhook.unregister",
-        "id",
-        "webhook 등록부는 창이 아니라 Core 소유다(핸들러가 engine 을 안 받는다)",
-    ),
-    (
-        "hook_handler.dispatch",
-        "id",
-        "hook 실행 기록은 Core 소유다(핸들러가 engine 을 안 받는다)",
-    ),
-    (
         "global_hook.unset",
         "hook_id",
         "global hook 은 `global_hook_manager` 에 있어 창에 안 매인다 — 같은 키를 쓰는 \
          `hook.unset`(surface hook)만 창 소유라 그쪽만 한정 목록에 있다",
     ),
-    (
-        "surface.switch_input_source",
-        "source_id",
-        "OS 입력 소스(TIS) 식별자다 — `preset.capture` 의 `source_id`(자원 id)와 이름만 \
-         같다. 이 메서드는 애초에 대상 surface 를 받지 못한다(효과가 OS 전역에 나간다, \
-         docs/adr/0115-input-reproduction-ipc-debug-isolation.md)",
-    ),
 ];
+
+/// 키 리터럴 뒤로 문자열 변환을 찾아볼 창(문자 수, 공백 제거 후).
+/// `params.get("id").and_then(|v|v.as_str())` 가 들어가는 크기다.
+const STRING_READ_WINDOW: usize = 40;
 
 fn is_id_shaped(key: &str) -> bool {
     key == "id" || key.ends_with("_id")
@@ -315,14 +299,29 @@ fn resolve(index: &BTreeMap<FnKey, String>, caller: &[String], path: &str) -> Op
         .filter(|p| !matches!(**p, "adapters" | "ipc" | "handler"))
         .map(|p| (*p).to_string())
         .collect();
-    for cand in [
+    let prefixes = [
         [base.clone(), tail.clone()].concat(),
         tail.clone(),
         [caller.to_vec(), tail.clone()].concat(),
-    ] {
-        let key = (cand, name.clone());
+    ];
+    for cand in &prefixes {
+        let key = (cand.clone(), name.clone());
         if index.contains_key(&key) {
             return Some(key);
+        }
+    }
+    // 자식 모듈에서 **재수출**된 것. `surface::handle_surface_close` 의 본체는
+    // `handler/surface/close.rs` 에 있고 `surface.rs` 는 `pub(crate) use` 로 내보낼 뿐이다.
+    // 이 한 걸음이 없으면 그런 핸들러의 키 읽기가 통째로 안 보인다 — 실측으로 걸렸다.
+    for pre in &prefixes {
+        let mut hits = index
+            .keys()
+            .filter(|(m, n)| *n == name && m.len() > pre.len() && m.starts_with(pre));
+        // `?` 를 쓰면 **첫 접두가 비었을 때 함수를 통째로 빠져나간다** — 뒤 접두를
+        // 못 본다. 실측으로 걸렸다(`terminal::…` 안에서 부른 `surface::handle_x` 넷).
+        let Some(only) = hits.next() else { continue };
+        if hits.next().is_none() {
+            return Some(only.clone());
         }
     }
     None
@@ -350,9 +349,14 @@ fn id_keys_in(fragment: &str) -> BTreeSet<String> {
             let after = &rest[at + marker.len()..];
             let Some(end) = after.find('"') else { break };
             let key = &after[..end];
+            // 라우팅은 **숫자만** 본다(`as_u64`). 바로 문자열로 꺼내는 읽기는 대상
+            // 지목이 아니다 — `"id"` 하나가 메서드에 따라 숫자이기도 문자열이기도
+            // 하므로(agent dag id · approval id 는 문자열), 키 이름으로는 못 가른다.
+            let tail = &after[end..after.len().min(end + STRING_READ_WINDOW)];
             if !key.is_empty()
                 && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
                 && is_id_shaped(key)
+                && !tail.contains("as_str()")
             {
                 out.insert(key.to_string());
             }
@@ -617,6 +621,10 @@ fn the_extractor_reads_arms_calls_and_keys() {
             .collect::<Vec<_>>(),
         vec!["surface_id".to_string(), "tab_id".to_string()],
         "키 추출의 극성이 달라졌다"
+    );
+    assert!(
+        id_keys_in("params.get(\"id\").and_then(|v| v.as_str())").is_empty(),
+        "문자열로 꺼내는 읽기가 대상 지목으로 잡혔다 — 라우팅은 숫자만 본다"
     );
     assert!(called_paths("a::b::f(x) + g(y)").contains(&"a::b::f".to_string()));
     assert!(
