@@ -82,7 +82,12 @@ check_mod_use_order() {
             /^#!\[/ { next }
             /^(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]/ { if (!end_zone) saw_use = NR; next }
             /^(pub(\([^)]*\))?[[:space:]]+)?extern[[:space:]]+crate[[:space:]]/ { next }
+            # 선언형 `mod x;` 만 검사 대상이다. 인라인 `mod x { ... }` 는 선언이
+            # 아니라 **코드**라서 fn/struct 와 같이 영역을 끝낸다 — 그렇게 안 가르면
+            # `use` 뒤의 `#[cfg(unix)] mod unix { ... }`(테스트 파일의 흔한 형태)가
+            # 오탐으로 걸려, 그 파일을 건드리는 커밋이 전부 막힌다.
             /^(pub(\([^)]*\))?[[:space:]]+)?mod[[:space:]]/ {
+                if ($0 !~ /;[[:space:]]*$/) { end_zone = 1; next }
                 if (saw_use && !end_zone) { print NR; exit }
                 next
             }
