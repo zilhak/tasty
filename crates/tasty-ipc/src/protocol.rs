@@ -64,11 +64,29 @@ impl JsonRpcResponse {
     /// 외부(CLI / 네트워크 IPC) 호출자가 dispatch 끝까지 못 닿은 이름에 대한 답.
     ///
     /// `-32601`("그런 메서드 없다")은 호출자를 **이름을 의심하는 쪽**으로 보낸다 —
-    /// 오타를 고치거나 표를 다시 읽는다. 그런데 표에 `plugin_only` 로 등재된 이름은
-    /// 이름이 맞고 표에도 있으며 **부를 수 있는 주체가 다를 뿐**이다. 두 상황은 고칠
-    /// 방법이 다르므로 같은 코드로 답하면 호출자를 틀린 방향으로 보낸다 — 플랫폼 축에서
-    /// 같은 거짓을 고친 [ADR-0154](../../../docs/adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
-    /// 와 같은 형태다.
+    /// 오타를 고치거나 표를 다시 읽는다. 그 방향에 고칠 것이 없는 경우가 셋이고, 셋 다
+    /// **이름은 맞다**. 무엇이 다른지가 호출자가 다음에 할 일을 가른다:
+    ///
+    /// | 사실 | 코드 | 호출자가 다음에 할 일 |
+    /// |------|------|----------------------|
+    /// | 부를 수 있는 주체가 다르다 | `-32016` | 호출 주체를 본다 |
+    /// | 이 플랫폼에서 안 된다 | `-32015` | 플랫폼을 본다 |
+    /// | 이 바이너리에 안 들어 있다 | `-32017` | 조합(헤드리스/release)을 본다 |
+    /// | 이름이 틀렸다 | `-32601` | 이름을 고친다 |
+    ///
+    /// 앞의 둘은 [ADR-0163](../../../docs/adr/0163-a-registered-name-answers-who-not-whether.md)
+    /// 과 [ADR-0154](../../../docs/adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
+    /// 가 결정했고, 셋째가 이 함수의 마지막 갈래다.
+    ///
+    /// ## 셋째 갈래의 술어가 왜 [`is_registered_name`] 인가
+    ///
+    /// [`method_meta`] 로 물으면 안 된다. 그 함수는 **런타임 등록 plugin prefix** 까지
+    /// 해소하므로 설치된 plugin 의 이름과 그 아래 오타까지 `Some` 을 준다 — 그것으로
+    /// 갈래를 타면 plugin 으로 갈 호출이 host 의 답을 받는다(실측 근거는
+    /// [`is_registered_name`] 에 있다).
+    ///
+    /// [`is_registered_name`]: crate::method_meta::is_registered_name
+    /// [`method_meta`]: crate::method_meta::method_meta
     pub fn unrouted_for_external_caller(id: serde_json::Value, method: &str) -> Self {
         match crate::method_meta::method_meta(method) {
             Some(m) if m.plugin_only => Self::error(
@@ -77,6 +95,15 @@ impl JsonRpcResponse {
                 format!(
                     "method '{method}' is plugin-only: only the plugin host-call path \
                      dispatches it, so CLI and network IPC callers have no entry point"
+                ),
+            ),
+            _ if crate::method_meta::is_registered_name(method) => Self::error(
+                id,
+                -32017,
+                format!(
+                    "method '{method}' is registered but this binary has no dispatch \
+                     arm for it: it is gated out of this build combination \
+                     (headless / release)"
                 ),
             ),
             _ => Self::method_not_found(id, method),
@@ -187,13 +214,45 @@ mod tests {
         assert_eq!(resp.error.expect("에러여야 한다").code, -32601);
     }
 
-    /// 등재됐지만 `plugin_only` 가 아닌 이름도 `-32601` 이다 — 그 이름이 외부에서
-    /// 안 닿는 것은 **다른 이유**(플랫폼·조합 게이트)이고 답도 그 층이 낸다.
+    /// 등재됐지만 `plugin_only` 가 아닌 이름이 여기까지 왔다면 **이 조합에 arm 이 없는
+    /// 것**이고, 그렇게 답한다.
+    ///
+    /// 이 자리는 원래 `-32601` 이었다. 그 근거는 "안 닿는 것은 다른 이유(플랫폼·조합
+    /// 게이트)이고 답도 그 층이 낸다" 였는데, 실행해 보면 **그 층은 답하지 않는다** —
+    /// 조합 게이트는 `match` 팔을 통째로 없애므로 호출은 `_` 로 떨어져 바로 여기 온다.
+    /// 그래서 오타와 구분이 안 됐다(실측 2026-09-05: 헤드리스에서 `window.creat` 와
+    /// `window.create` 의 응답이 바이트 단위로 같았다).
     #[test]
-    fn a_registered_but_not_plugin_only_name_is_method_not_found() {
+    fn a_registered_name_with_no_arm_here_says_so() {
         let resp =
             JsonRpcResponse::unrouted_for_external_caller(serde_json::json!(1), "system.info");
-        assert_eq!(resp.error.expect("에러여야 한다").code, -32601);
+        let err = resp.error.expect("에러여야 한다");
+        assert_eq!(err.code, -32017, "등재된 이름인데 -32601 로 답했다");
+        assert!(
+            err.message.contains("no dispatch arm"),
+            "사유가 메시지에 없다: {}",
+            err.message
+        );
+    }
+
+    /// 오타와 등재된 이름이 **다른 코드**로 갈린다.
+    ///
+    /// 이 축의 결함이 정확히 이 구분의 부재였다. 한 이름만 보면 어느 쪽이 틀렸는지 알 수
+    /// 없으므로 **짝으로** 본다 — 한 글자만 다른 두 이름을 같은 함수에 넣는다.
+    #[test]
+    fn a_typo_and_a_registered_name_do_not_get_the_same_answer() {
+        let real =
+            JsonRpcResponse::unrouted_for_external_caller(serde_json::json!(1), "workspace.create");
+        let typo =
+            JsonRpcResponse::unrouted_for_external_caller(serde_json::json!(1), "workspace.creat");
+        let real = real.error.expect("에러여야 한다");
+        let typo = typo.error.expect("에러여야 한다");
+        assert_eq!(real.code, -32017);
+        assert_eq!(typo.code, -32601);
+        assert_ne!(
+            real.code, typo.code,
+            "오타와 등재된 이름이 같은 답을 받는다 — 호출자가 무엇을 고쳐야 할지 모른다"
+        );
     }
 
     #[test]

@@ -277,7 +277,7 @@ pub(crate) fn pump_ipc(
         // 5) 호스트가 모르는 메서드는 plugin namespace 로 넘긴다. 넘어갔으면 응답은
         //    plugin 이 줄 때까지 보류되고, `headless_plugins::pump_plugins` 의
         //    `mgr.pump` 가 도착 시 client 에 회신한다(gui 와 같은 계약).
-        if is_method_not_found(&resp) && forward_to_plugin_namespace(app, engine, &cmd) {
+        if is_unrouted_here(&resp) && forward_to_plugin_namespace(app, engine, &cmd) {
             continue;
         }
         send_response(&cmd.response_tx, resp);
@@ -285,10 +285,25 @@ pub(crate) fn pump_ipc(
     std::ops::ControlFlow::Continue(())
 }
 
-/// engine handler 가 "그런 메서드 없다" 로 답했는가.
+/// engine handler 가 "여기서는 이 이름을 라우팅하지 못했다" 로 답했는가.
+///
+/// **두 코드를 함께 본다.** 종단(`unrouted_for_external_caller`)은 같은 사실을 두 갈래로
+/// 답한다 — 표에 없으면 `-32601`, 표에 있는데 이 조합에 arm 이 없으면 `-32017`. forward
+/// 가 물어야 할 것은 그 구분이 아니라 **"engine 이 못 답했나"** 하나이므로 둘 다 신호다.
+///
+/// 한쪽만 보면 무엇이 죽는지는 실측돼 있다(2026-09-05). `-32601` 만 보면 표에 등재된 채
+/// 번들 plugin namespace 아래 있는 여덟(`image.*` 7 · `markdown.navigate`)이 `-32017` 을
+/// 받아 forward 를 못 타고, plugin 이 답하던 호출이 host 의 거절로 바뀐다 — 그 여덟에게
+/// "이 바이너리에 없다" 는 **사실도 아니다**(plugin 이 답한다).
+///
+/// 이 함수가 코드를 신호로 쓰는 것 자체가 gui 와 다른 재료다 — gui 는 같은 forward 를
+/// `src/app/ipc/routing.rs` 에서 **namespace 해소**로, 그것도 종단보다 앞에서 정한다.
+/// 그 비대칭이 위 여덟의 대가를 만든 원인이고, 통합 여부는 별개 축이다.
 #[cfg(not(feature = "gui"))]
-fn is_method_not_found(resp: &crate::ipc::protocol::JsonRpcResponse) -> bool {
-    resp.error.as_ref().is_some_and(|e| e.code == -32601)
+fn is_unrouted_here(resp: &crate::ipc::protocol::JsonRpcResponse) -> bool {
+    resp.error
+        .as_ref()
+        .is_some_and(|e| e.code == -32601 || e.code == -32017)
 }
 
 /// plugin namespace forward — 넘겼으면 `true`(응답은 plugin 이 준다).

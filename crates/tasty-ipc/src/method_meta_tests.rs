@@ -493,3 +493,46 @@ fn a_poisoned_prefix_registry_still_blocks_the_owner_bypass() {
     );
     clear_plugin_prefixes_for_tests();
 }
+
+/// 종단 응답의 셋째 갈래는 **정확 표 조회**로 갈린다 — prefix fallback 을 타면 안 된다.
+///
+/// [`method_meta`] 는 마지막 단계에서 런타임 등록 plugin prefix 까지 해소하므로, 그것으로
+/// `unrouted_for_external_caller` 의 갈래를 태우면 설치된 plugin 의 이름과 그 아래 오타까지
+/// host 가 삼킨다 — 실측 2026-09-05 로 `claude.children` · `agent_stream.list` ·
+/// `markdown.no_such_thing` 이 전부 `-32017` 이 되고, plugin 으로 갈 호출이 안 갔다.
+/// 근거는 [ADR-0167](../../../docs/adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md).
+///
+/// 이 테스트가 `method_meta_tests.rs` 에 사는 이유는 **런타임 prefix 레지스트리를 만지기
+/// 때문**이다. 그 전역을 만지는 테스트는 이 파일의 `TEST_LOCK` 을 잡아야 한다.
+#[test]
+fn the_unrouted_third_branch_asks_the_exact_table_not_the_prefix_fallback() {
+    let _g = test_lock();
+    clear_plugin_prefixes_for_tests();
+    register_plugin_prefix("zzztestns");
+
+    let name = "zzztestns.whatever";
+    assert!(
+        method_meta(name).is_some(),
+        "prefix 등록이 안 먹었다 — 이 테스트의 대조군이 죽었다"
+    );
+    assert!(
+        !crate::method_meta::is_registered_name(name),
+        "prefix fallback 을 '표에 있다' 로 셌다 — plugin 표면을 host 가 삼킨다"
+    );
+    let resp =
+        crate::protocol::JsonRpcResponse::unrouted_for_external_caller(serde_json::json!(1), name);
+    assert_eq!(
+        resp.error.expect("에러여야 한다").code,
+        -32601,
+        "plugin namespace 이름이 -32601 이 아니면 헤드리스 forward 가 안 탄다"
+    );
+
+    // 대조군의 반대편 — 표에 그 이름 그대로 있는 것은 셋째 갈래를 탄다.
+    let resp = crate::protocol::JsonRpcResponse::unrouted_for_external_caller(
+        serde_json::json!(1),
+        "window.create",
+    );
+    assert_eq!(resp.error.expect("에러여야 한다").code, -32017);
+
+    unregister_plugin_prefix("zzztestns");
+}

@@ -177,3 +177,4 @@
 | 0164 | [hook 실패 기록의 로케일 무관성은 산문이 아니라 좌표 필드가 진다](0164-hook-failure-locale-invariance-rests-on-fields.md) | Accepted | 2026-09-05 | cli, agent-hooks, diagnostics, i18n, plugin, partial-amendment, adr-0075 |
 | 0165 | [파일 SLOC 게이트는 출하되는 줄을 잰다 — 파일 전체가 아니라](0165-the-file-sloc-gate-measures-shipped-lines.md) | Accepted | 2026-09-05 | complexity-gate, guards, measurement, adr-0037, adr-0131, adr-0150 |
 | 0166 | [plugin 버전 게이트는 디렉토리가 아니라 산출물을 판정한다](0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md) | Accepted | 2026-09-05 | plugin, versioning, guards, ci-gates, measurement, adr-0137, adr-0165, adr-0138 |
+| 0167 | [등재된 이름은 "없다" 가 아니라 "이 바이너리에 안 들어 있다" 로 답한다](0167-a-registered-name-answers-whether-it-is-in-this-binary.md) | Accepted | 2026-09-05 | ipc, error-codes, headless, build-combination, guards, adr-0154, adr-0163 |

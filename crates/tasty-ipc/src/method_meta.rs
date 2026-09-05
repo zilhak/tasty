@@ -762,6 +762,22 @@ pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
     prefixes_read().contains_key(prefix)
 }
 
+/// 이 이름이 **표에 그 이름 그대로 적혀 있는가**. prefix fallback 은 보지 않는다.
+///
+/// `method_meta()` 와 다른 물음이다. 저쪽은 "이 이름을 어떻게 다뤄야 하나" 를 묻고
+/// 그래서 정적 `PREFIX_RULES` 와 **런타임 등록 plugin prefix** 까지 4 단계로 해소한다.
+/// 여기서 묻는 것은 "**우리가 이 이름을 우리 것으로 적어 뒀나**" 하나뿐이다.
+///
+/// 두 물음을 섞으면 설치된 plugin 의 표면이 통째로 host 것으로 오인된다. 실측
+/// 2026-09-05: `method_meta(...).is_some()` 을 "표에 있다" 로 읽고 종단 응답을 가르면
+/// `claude.children` · `agent_stream.list` 는 물론 `markdown.no_such_thing` 같은 **오타까지**
+/// 마지막 단계(런타임 prefix)에 걸려 host 의 답을 받는다 — plugin 으로 갈 호출이 안 간다.
+/// 그 모수는 유한하지도 않다(그 prefix 아래 임의의 이름이 전부 해당된다).
+pub fn is_registered_name(method: &str) -> bool {
+    METHOD_TABLE.iter().any(|(name, _)| *name == method)
+        || DEBUG_METHODS.iter().any(|(name, _)| *name == method)
+}
+
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
 pub fn method_meta(method: &str) -> Option<MethodMeta> {
     for (name, meta) in METHOD_TABLE {

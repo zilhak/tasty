@@ -135,6 +135,42 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 **14** 개가 나온다 — `window.*` · `view.*` 처럼 match 팔이 아닌 명부로 라우팅되는 것이 섞여
 들어오기 때문이다. 이 부류는 소스 텍스트가 아니라 **실행**으로만 정해진다.
 
+### 등재된 이름인데 이 바이너리에 arm 이 없을 때
+
+같은 거짓의 세 번째 얼굴이다. 이름이 표에 있고 구현도 있는데 **이 빌드 조합에서 그 `match`
+팔이 통째로 사라진** 경우 — `#[cfg(feature = "gui")]` 뒤에 있는 메서드를 헤드리스
+(`--no-default-features`) 데몬에서 부르는 것이 그것이다. 팔이 없으면 호출은 `_` 로 떨어져
+종단에 오고, 종단은 예전에 `-32601` 로 답했다.
+
+그 답은 오타와 **바이트 단위로 같았다.** 실측(2026-09-05, 헤드리스 데몬):
+
+    window.creat    -32601 Method not found: window.creat      ← 오타
+    window.create   -32601 Method not found: window.create     ← 표에 있고 이 빌드엔 없다
+
+지금은 갈린다:
+
+    -32017  method '<name>' is registered but this binary has no dispatch arm for it:
+            it is gated out of this build combination (headless / release)
+
+호출자가 다음에 할 일이 다르기 때문이다 — `-32601` 은 이름을 고치게 하고, `-32017` 은
+**조합을 보게** 한다(gui 빌드로 부르거나, 그 표면이 헤드리스에 열려야 하는지를 묻는다).
+근거·대안·재검토 조건은 [ADR-0167](../adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md).
+
+**이 갈래의 술어는 표를 그 이름 그대로 조회하는 것**(`method_meta::is_registered_name`)이지
+`method_meta()` 가 아니다. 저 함수는 마지막 단계에서 **런타임 등록 plugin prefix** 까지
+해소하므로, 그것으로 갈래를 타면 설치된 plugin 의 이름과 그 아래 오타까지 host 가 삼킨다 —
+실측으로 `claude.children` · `agent_stream.list` · `markdown.no_such_thing` 이 전부 이 코드를
+받았고, plugin 으로 갈 호출이 안 갔다.
+
+세 코드의 관계:
+
+| 사실 | 코드 | 호출자가 다음에 할 일 |
+|------|------|----------------------|
+| 부를 수 있는 주체가 다르다 | `-32016` | 호출 주체를 본다 |
+| 이 플랫폼에서 안 된다 | `-32015` | 플랫폼을 본다 |
+| 이 바이너리에 안 들어 있다 | `-32017` | 빌드 조합을 본다 |
+| 이름이 틀렸다 | `-32601` | 이름을 고친다 |
+
 ### debug 표에 있는데 CLI 가 없는 메서드
 
 원칙 2 는 debug 빌드의 에이전트 표면에도 걸린다 — `debug.*` 는 release 에 없을 뿐,

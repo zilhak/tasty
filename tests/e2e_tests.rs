@@ -922,8 +922,9 @@ fn headless_pty_attach_surface_promotes_to_a_tab() {
 // ========== Multi-window: owner-based routing + list 전체 순회 ==========
 
 /// **이 파일에서 유일하게 창을 요구하는 시나리오다.** `window.create` 는 gui 라우터의
-/// `app_methods` step 에만 있어 헤드리스 데몬에서는 `-32601` 이 난다 — 배선 결함이
-/// 아니라 창이 없다는 사실 그 자체이므로, 헤드리스 조합 CI 는 **이 이름 하나만**
+/// `app_methods` step 에만 있어 헤드리스 데몬에서는 `-32017`("표에는 있는데 이 바이너리에
+/// arm 이 없다")이 난다 — 배선 결함이 아니라 창이 없다는 사실 그 자체이므로, 헤드리스
+/// 조합 CI 는 **이 이름 하나만**
 /// `--skip` 한다(`.github/workflows/crossplatform-check.yml`,
 /// `tests/headless_skip_names_are_exact.rs` 가 그 이름의 정확성을 강제한다).
 #[test]
@@ -1140,8 +1141,9 @@ fn lifecycle_methods_are_still_absent_in_a_headless_daemon() {
         .and_then(|c| c.as_i64());
     assert_eq!(
         code,
-        Some(-32601),
-        "헤드리스에서 plugin.enable 은 아직 없는 메서드여야 한다: {resp}"
+        Some(-32017),
+        "헤드리스에서 plugin.enable 은 아직 arm 이 없는 메서드여야 한다. `-32601` 이 왔다면 \
+         표에서 이름이 빠진 것이고, 그러면 호출자가 오타와 구분할 수 없다: {resp}"
     );
 }
 
@@ -1243,16 +1245,25 @@ fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
     ] {
         let resp = tasty.call_raw(method, json!({}));
         let code = resp["error"]["code"].as_i64();
+        // 라우팅 실패의 두 얼굴을 **함께** 배제한다. `-32601` 만 보면 이름이 표에서
+        // 빠졌을 때만 잡히고, 표에 남은 채 arm 만 사라지면 `-32017` 로 조용히 통과한다.
         assert_ne!(
             code,
             Some(-32601),
             "`{method}` 는 창이 없어도 답이 정의된다 — 두 조합에서 라우팅돼야 한다: {resp}"
         );
+        assert_ne!(
+            code,
+            Some(-32017),
+            "`{method}` 의 arm 이 이 조합에서 사라졌다 — 창을 안 보는데 게이트 뒤로 \
+             들어갔다는 뜻이다: {resp}"
+        );
     }
 
     // 반대편. `window.list` 가 읽는 것은 `App.view` 라 헤드리스에 대응물이 없다.
-    // gui 에서는 답하고 헤드리스에서는 `-32601` 인 것이 **의도된 상태**이며, 그것을
-    // 여기서 못 박아 둔다 — 안 그러면 위 루프만 남아 "전부 열어도 통과" 가 된다.
+    // gui 에서는 답하고 헤드리스에서는 **`-32017`("이 바이너리에 arm 이 없다")** 인 것이
+    // 의도된 상태이며, 그것을 여기서 못 박아 둔다 — 안 그러면 위 루프만 남아 "전부 열어도
+    // 통과" 가 된다.
     let resp = tasty.call_raw("window.list", json!({}));
     let code = resp["error"]["code"].as_i64();
     #[cfg(feature = "gui")]
@@ -1260,9 +1271,10 @@ fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
     #[cfg(not(feature = "gui"))]
     assert_eq!(
         code,
-        Some(-32601),
-        "헤드리스에 창이 없으므로 `window.list` 는 없는 것이 정답이다. 여기가 빨개졌다면 \
-         `App.view` 없이 답하는 길이 생겼다는 뜻이니 판정을 다시 세워라: {resp}"
+        Some(-32017),
+        "헤드리스에 창이 없으므로 `window.list` 는 이 조합에 arm 이 없는 것이 정답이다. \
+         `-32601` 이 왔다면 호출자가 오타와 구분할 수 없고, 다른 코드가 왔다면 \
+         `App.view` 없이 답하는 길이 생긴 것이니 판정을 다시 세워라: {resp}"
     );
 }
 
@@ -1347,8 +1359,9 @@ fn an_engine_query_that_reads_no_window_answers_in_both_combos() {
     #[cfg(not(feature = "gui"))]
     assert_eq!(
         code,
-        Some(-32601),
-        "webview 의 URL 을 소비하는 것은 렌더러뿐이라 헤드리스엔 없는 것이 정답이다: {resp}"
+        Some(-32017),
+        "webview 의 URL 을 소비하는 것은 렌더러뿐이라 헤드리스엔 arm 이 없는 것이 \
+         정답이다 — 다만 이름은 있으므로 오타(`-32601`)와는 다르게 답한다: {resp}"
     );
 }
 /// 지목한 대상이 **없으면** 부류를 가리지 않고 거절하고, **있으면** 그 검사가 안 걸린다.
@@ -1520,6 +1533,12 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
             "`{method}` 가 읽는 것은 `App` 의 lua_engine/plugin_manager, 또는 gui 무관 정적 \
              표뿐이다 — 두 조합의 debug 빌드에서 라우팅돼야 한다: {resp}"
         );
+        // 위와 같은 이유. 표에 남은 채 arm 만 게이트 뒤로 들어가면 `-32017` 이 된다.
+        assert_ne!(
+            code,
+            Some(-32017),
+            "`{method}` 의 arm 이 이 조합에서 사라졌다: {resp}"
+        );
     }
 
     // 음성 대조. 헤드리스에 대응물이 없어 **없는 것이 정답**인 것들이다. 같은 회차에서
@@ -1543,6 +1562,11 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
         #[cfg(feature = "gui")]
         assert_ne!(code, Some(-32601), "gui 는 `{method}` 에 답한다: {resp}");
         #[cfg(not(feature = "gui"))]
-        assert_eq!(code, Some(-32601), "헤드리스엔 없는 것이 정답이다: {resp}");
+        assert_eq!(
+            code,
+            Some(-32017),
+            "헤드리스엔 arm 이 없는 것이 정답이다 — 이름은 표에 있으므로 오타와 \
+             같은 코드로 답하면 안 된다: {resp}"
+        );
     }
 }
