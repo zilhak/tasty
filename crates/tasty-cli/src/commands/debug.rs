@@ -175,6 +175,57 @@ pub enum DebugCommands {
         #[command(subcommand)]
         cmd: Option<tasty_tui_simulator::Commands>,
     },
+    /// Dump the focused surface id (debug builds only). Observation only — the
+    /// focused view is read, never changed.
+    FocusedSurface,
+    /// Dump the current selection of the focused window (debug builds only).
+    Selection,
+    /// Dump the pending native menu action of the focused window (debug builds only).
+    PendingMenu,
+    /// Dump the UI state tree of the focused window (debug builds only).
+    UiState,
+    /// Switch the active workspace by index — reproduces the user's workspace tab
+    /// click, so it is debug-only (user action, not agent action).
+    SwitchWorkspace {
+        /// Workspace index (0-based).
+        #[arg(long)]
+        index: u64,
+    },
+    /// Switch the active tab of the focused pane by index — reproduces the user's
+    /// tab click. Debug builds only.
+    SwitchTab {
+        /// Tab index within the focused pane (0-based).
+        #[arg(long)]
+        index: u64,
+    },
+    /// Close a workspace by index — reproduces the workspace context menu's
+    /// "Close workspace", which touches the closed-items undo stack. Debug only.
+    CloseWorkspace {
+        /// Workspace index (0-based).
+        #[arg(long)]
+        index: u64,
+    },
+    /// Feed raw bytes straight into a surface's terminal parser, bypassing the
+    /// PTY. Debug builds only — it fabricates output the shell never produced.
+    FeedBytes {
+        /// Target surface id (defaults to the current surface).
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Text to feed (UTF-8). Mutually exclusive with `--bytes`.
+        #[arg(long)]
+        text: Option<String>,
+        /// Bytes to feed as an even-length hex string (e.g. `1b5b3141`).
+        #[arg(long, conflicts_with = "text")]
+        bytes: Option<String>,
+    },
+    /// Input injection — reproduces user keyboard/mouse input. Debug builds only
+    /// (identity principle 1: input reproduction has no release surface).
+    #[command(subcommand)]
+    Inject(InjectDebugCommands),
+    /// Plugin-contributed banner force-open/close, bypassing the owning plugin.
+    /// Debug builds only — `debug banner` is the host built-in banner instead.
+    #[command(subcommand)]
+    PluginBanner(PluginBannerDebugCommands),
     /// Open a streaming channel and verify the server→client push path: send N
     /// data frames and expect each one echoed back (debug builds only).
     StreamEcho {
@@ -436,5 +487,126 @@ pub enum EventBusCommands {
         /// trace_id (e.g. "h2a")
         #[arg()]
         trace_id: String,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum InjectDebugCommands {
+    /// Inject key bytes into a surface's input path.
+    Key {
+        /// Target surface id (defaults to the current surface).
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Text to send (UTF-8). Mutually exclusive with `--bytes`.
+        #[arg(long)]
+        text: Option<String>,
+        /// Bytes as an even-length hex string (e.g. `1b5b41` for Up).
+        #[arg(long, conflicts_with = "text")]
+        bytes: Option<String>,
+    },
+    /// Inject a terminal-cell mouse event (row/column addressed).
+    Mouse {
+        /// Target surface id (defaults to the current surface).
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Cell row (0-based).
+        #[arg(long)]
+        row: u32,
+        /// Cell column (0-based).
+        #[arg(long)]
+        col: u32,
+        /// One of `move`, `press`, `release`.
+        #[arg(long, default_value = "move")]
+        event_type: String,
+        /// 0 = left, 1 = middle, 2 = right.
+        #[arg(long, default_value_t = 0)]
+        button: u64,
+    },
+    /// Inject a pointer event into the window mesh, addressed by normalized
+    /// surface-local coordinates.
+    WindowMouse {
+        /// Target surface id.
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Surface-local x in [0,1].
+        #[arg(long, default_value_t = 0.5)]
+        fx: f64,
+        /// Surface-local y in [0,1].
+        #[arg(long, default_value_t = 0.5)]
+        fy: f64,
+        /// One of `move`, `press`, `release`, `scroll`.
+        #[arg(long, default_value = "move")]
+        event_type: String,
+        /// 0 = left, 1 = middle, 2 = right.
+        #[arg(long, default_value_t = 0)]
+        button: u64,
+        /// Scroll unit: `line` or `pixel`.
+        #[arg(long, default_value = "line")]
+        unit: String,
+        /// Horizontal scroll delta (with `--event-type scroll`).
+        #[arg(long, default_value_t = 0.0)]
+        scroll_dx: f64,
+        /// Vertical scroll delta (with `--event-type scroll`).
+        #[arg(long, default_value_t = 0.0)]
+        scroll_dy: f64,
+    },
+    /// Inject a pointer event into the egui layer (chrome: tab bar, sidebar,
+    /// popups) rather than the terminal mesh.
+    EguiMouse {
+        /// Target surface id.
+        #[arg(long)]
+        surface: Option<u32>,
+        /// Surface-local x in [0,1].
+        #[arg(long, default_value_t = 0.5)]
+        fx: f64,
+        /// Surface-local y in [0,1].
+        #[arg(long, default_value_t = 0.5)]
+        fy: f64,
+        /// One of `move`, `press`, `release`, `scroll`.
+        #[arg(long, default_value = "move")]
+        event_type: String,
+        /// 0 = left, 1 = middle, 2 = right.
+        #[arg(long, default_value_t = 0)]
+        button: u64,
+        /// Scroll unit: `line` or `pixel`.
+        #[arg(long, default_value = "line")]
+        unit: String,
+        /// Horizontal scroll delta (with `--event-type scroll`).
+        #[arg(long, default_value_t = 0.0)]
+        scroll_dx: f64,
+        /// Vertical scroll delta (with `--event-type scroll`).
+        #[arg(long, default_value_t = 0.0)]
+        scroll_dy: f64,
+    },
+    /// Inject a key event into the egui layer.
+    EguiKey {
+        /// egui key name (e.g. `Enter`, `Escape`, `ArrowDown`).
+        #[arg(long)]
+        key: String,
+        /// Press (default) or release with `--pressed false`.
+        #[arg(long, default_value_t = true)]
+        pressed: bool,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum PluginBannerDebugCommands {
+    /// Force-open a plugin-contributed banner on a surface, skipping the
+    /// ownership check that a real plugin caller would go through.
+    Open {
+        /// Banner id declared by the owning plugin.
+        #[arg(long)]
+        banner_id: String,
+        /// Target surface id (defaults to the current surface).
+        #[arg(long)]
+        surface: Option<u32>,
+    },
+    /// Close a plugin banner instance by id.
+    Close {
+        /// Banner instance id returned by `plugin-banner open`.
+        #[arg(long)]
+        instance_id: u64,
     },
 }
