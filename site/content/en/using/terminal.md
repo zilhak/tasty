@@ -1,4 +1,4 @@
-<!-- source-hash: d04de861be51 -->
+<!-- source-hash: 2daf8dc2068e -->
 # Working with the terminal
 
 After reading this page you will know how to copy · paste · search · open links · scroll in a terminal Surface, and how programs that capture the mouse and notifications appear. Shortcuts are the values of the default preset (**Tasty**), and `Alt` is `Cmd` on macOS.
@@ -53,6 +53,14 @@ Move around the screen and the scrollback and copy without the mouse. Enter with
 ### Clipboard access by programs (OSC 52)
 
 A program inside the terminal (tmux, remote vim, and so on) can always **write** to the clipboard. **Reading** requires turning on **Settings** > **Terminal** > **Allow clipboard read (OSC 52)**. It is off by default; be aware that once on, a program on the far side of SSH can also take the clipboard contents.
+
+### Writing to the clipboard from a script
+
+A script or agent can put text on the clipboard directly.
+
+```sh
+tasty clipboard set-text "text to copy"
+```
 
 ## Search
 

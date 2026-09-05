@@ -1,4 +1,4 @@
-<!-- source-hash: b97841adbd48 -->
+<!-- source-hash: bf7f4e022bda -->
 # Remote attach
 
 Bring a Workspace from a Tasty running on another machine into your own Tasty as a **mirror**, view it, and operate it. Connection and authentication are left entirely to SSH, so if you can SSH into that machine, you can attach too.
@@ -60,6 +60,8 @@ Port modes:
 | `file-windows` | Reads the port file of a Windows remote |
 
 If you pass `--port-file <path>`, that file is read with the highest priority.
+
+To read the IPC port of the instance currently running on the remote machine, run `tasty port` on that machine — this is what port mode `subcommand` calls on the remote.
 
 ## 2. Check that the remote is alive
 
