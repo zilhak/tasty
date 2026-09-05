@@ -489,7 +489,7 @@ fn warn_pill(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 // ════════════════════════════════════════════════════════════════════════
 
 /// 폼 라벨 컬럼 폭 — 디자인 `--tasty-remote-label-col`(size-112).
-const LABEL_COL: f32 = 112.0;
+const LABEL_COL: LogicalPx = LogicalPx(112.0);
 /// 폼 카드 폭 — 디자인 `RemoteFormFrame` maxWidth 460 (raw).
 const FORM_WIDTH: LogicalPx = LogicalPx(460.0);
 
@@ -671,7 +671,7 @@ fn attach_form_card(ui: &mut egui::Ui, theme: &Theme, inline: bool) {
             });
             // hint — 입력 컬럼(112+12)에 맞춰 들여쓴 캡션.
             ui.horizontal(|ui| {
-                ui.add_space(LABEL_COL + theme.spacing_md.value());
+                ui.add_space((LABEL_COL + theme.spacing_md).value());
                 ui.label(
                     egui::RichText::new(
                         "Optional — an explicit path takes precedence over the port mode.",
@@ -703,7 +703,7 @@ fn form_row(ui: &mut egui::Ui, theme: &Theme, label: &str, add: impl FnOnce(&mut
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
         ui.allocate_ui_with_layout(
-            egui::vec2(LABEL_COL, theme.item_height_interactive.value()),
+            egui::vec2(LABEL_COL.value(), theme.item_height_interactive.value()),
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
                 ui.label(
