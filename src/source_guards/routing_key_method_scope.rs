@@ -58,20 +58,12 @@ const MIN_METHODS: usize = 200;
 ///
 /// 각 항목에 왜 라우팅이 필요 없는지를 적는다. 여기 적히지 않은 쌍은 그 메서드가
 /// 조용히 **포커스된 창**으로 간다는 뜻이다.
-const PAIR_EXEMPT: &[(&str, &str, &str)] = &[
-    (
-        "pty.attach_surface",
-        "id",
-        "같은 요청의 `pane_id` 가 범용 키라 이미 주인을 짚는다 — `request_target.rs` 가 \
+const PAIR_EXEMPT: &[(&str, &str, &str)] = &[(
+    "pty.attach_surface",
+    "id",
+    "같은 요청의 `pane_id` 가 범용 키라 이미 주인을 짚는다 — `request_target.rs` 가 \
          이 메서드를 pty 한정에서 뺀 이유가 그것이다",
-    ),
-    (
-        "global_hook.unset",
-        "hook_id",
-        "global hook 은 `global_hook_manager` 에 있어 창에 안 매인다 — 같은 키를 쓰는 \
-         `hook.unset`(surface hook)만 창 소유라 그쪽만 한정 목록에 있다",
-    ),
-];
+)];
 
 /// 키 리터럴 뒤로 문자열 변환을 찾아볼 창(문자 수, 공백 제거 후).
 /// `params.get("id").and_then(|v|v.as_str())` 가 들어가는 크기다.

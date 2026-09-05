@@ -19,10 +19,18 @@ pub(crate) enum Kind {
     /// headless pty(`PTY_ID_BASE` 이상). 창이 아니라 **engine 의 `pty_registry`** 에
     /// 산다 — 창마다 engine 이 따로이므로 창을 건너 찾아야 한다.
     HeadlessPty,
-    /// surface hook — `engine.hook_manager` 소유다. `global_hook.*` 의 훅은 여기가
-    /// 아니라 `global_hook_manager` 에 있어 이 kind 로 풀지 않는다(같은 `hook_id`
-    /// 키를 쓰지만 다른 저장소다 — 그래서 키가 아니라 메서드로 한정한다).
+    /// surface hook — `engine.hook_manager` 소유다. `global_hook.*` 의 훅은 다른 저장소
+    /// (`global_hook_manager`)에 있어 [`Kind::GlobalHook`] 으로 따로 푼다. 같은 `hook_id`
+    /// 키를 쓰므로 키가 아니라 **메서드로** 한정한다.
     Hook,
+    /// global hook — `engine.global_hook_manager` 소유.
+    ///
+    /// **이름과 달리 창에 매인다.** 그 매니저는 `CoreState` 의 필드라 engine(창)마다
+    /// 하나다. 그래서 다른 창의 global hook 은 그 창의 engine 에서만 찾을 수 있고, 이
+    /// kind 가 없던 동안에는 요청이 포커스된 창으로 새서 **존재하는데 어떤 요청으로도
+    /// 닿지 않는** 훅이 남았다(실측: `unset global-hook --hook 1` 이 두 번째 호출에서
+    /// `removed: false`).
+    GlobalHook,
     /// output observer — `engine.observer_router` 소유.
     Observer,
     /// workspace category — `engine.categories` 소유. 예약된 `normal`(id 0)은 **모든
@@ -42,6 +50,7 @@ impl Kind {
             Kind::Tab => "tab",
             Kind::HeadlessPty => "headless pty",
             Kind::Hook => "surface hook",
+            Kind::GlobalHook => "global hook",
             Kind::Observer => "output observer",
             Kind::Category => "workspace category",
         }
@@ -107,10 +116,17 @@ pub(crate) fn method_scoped_resource_id(
     params: &serde_json::Value,
 ) -> Option<ResourceId> {
     // surface hook 은 `engine.hook_manager` 에 있고 global hook 은 `global_hook_manager`
-    // 에 있다. 두 표면이 `hook_id` 라는 **같은 키**를 쓰므로 키로는 못 가른다.
+    // 에 있다. 두 표면이 `hook_id` 라는 **같은 키**를 쓰므로 키로는 못 가른다 — 저장소가
+    // 다를 뿐 둘 다 engine 소유라, 메서드로 갈라 각각의 kind 로 푼다.
     if method == "hook.unset" {
         return numeric(params, "hook_id").map(|id| ResourceId {
             kind: Kind::Hook,
+            id,
+        });
+    }
+    if method == "global_hook.unset" {
+        return numeric(params, "hook_id").map(|id| ResourceId {
+            kind: Kind::GlobalHook,
             id,
         });
     }
@@ -241,6 +257,7 @@ pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: Resource
             .list_hooks(None)
             .iter()
             .any(|h| h.id == rid.id),
+        Kind::GlobalHook => narrow.is_some_and(|id| engine.global_hook_manager.get(id).is_some()),
         Kind::Observer => engine.observer_router.info(rid.id).is_some(),
         Kind::Category => narrow.is_some_and(|id| engine.category_index(id).is_some()),
     }
@@ -506,20 +523,61 @@ mod tests {
         assert!(method_scoped_resource_id("pty.attach_surface", &params).is_none());
     }
 
-    /// surface hook 은 창마다 따로인 `engine.hook_manager` 에 산다.
-    ///
-    /// `global_hook.unset` 은 **같은 `hook_id` 키**를 쓰지만 다른 저장소
-    /// (`global_hook_manager`)를 본다 — 그래서 키 목록이 아니라 메서드로 한정한다.
-    /// 두 번째 단언이 그 구분의 대조다.
+    /// 라우팅이 대상을 **푸는 것**과 그 대상을 **가진 engine 을 찾는 것**은 다른 단계다.
+    /// 위 테스트가 앞 단계를 잡고, 이것이 뒷 단계(`engine_has_resource`)를 잡는다 —
+    /// 앞만 있으면 kind 는 생겼는데 어느 창도 그 자원을 "가졌다" 고 답하지 않아 요청이
+    /// 여전히 새어 나간다.
     #[test]
-    fn a_surface_hook_is_a_target_but_a_global_hook_is_not() {
+    fn an_engine_reports_the_global_hook_it_owns() {
+        use crate::host_api::hooks::global::HookCondition;
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        let mut engine = crate::core::CoreState::new(80, 24, waker).expect("engine");
+        let id = engine.global_hook_manager.add(
+            HookCondition::Interval(std::time::Duration::from_secs(60)),
+            "echo x".into(),
+            None,
+        );
+        assert!(engine_has_resource(
+            &engine,
+            ResourceId {
+                kind: Kind::GlobalHook,
+                id: u64::from(id),
+            }
+        ));
+        assert!(
+            !engine_has_resource(
+                &engine,
+                ResourceId {
+                    kind: Kind::GlobalHook,
+                    id: u64::from(id) + 1,
+                }
+            ),
+            "없는 id 를 가졌다고 답하면 라우팅이 아무 창이나 고른다"
+        );
+    }
+
+    /// 두 hook 표면은 **같은 `hook_id` 키**를 쓰지만 저장소가 다르다
+    /// (`engine.hook_manager` / `engine.global_hook_manager`). 키로는 못 가르므로
+    /// 메서드로 한정하고, 각각 다른 `Kind` 로 푼다.
+    ///
+    /// global 쪽이 한때 "대상이 아니다" 였던 것은 그 이름 때문에 **창에 안 매인다고 읽은
+    /// 것**이고, 실제로는 그 매니저가 `CoreState` 필드라 창마다 하나다. 그동안 그 요청은
+    /// 포커스된 창으로 새서 다른 창의 훅에 닿지 못했다.
+    #[test]
+    fn both_hook_surfaces_are_targets_but_of_different_kinds() {
         let params = json!({ "hook_id": 12u64 });
+        let g = method_scoped_resource_id("global_hook.unset", &params)
+            .expect("global hook 도 대상이다");
+        assert!(matches!(g.kind, Kind::GlobalHook));
+        assert_eq!(g.id, 12);
+
         let got =
             method_scoped_resource_id("hook.unset", &params).expect("surface hook 은 대상이다");
         assert!(matches!(got.kind, Kind::Hook));
         assert_eq!(got.id, 12);
 
-        assert!(method_scoped_resource_id("global_hook.unset", &params).is_none());
+        // 키만으로는 여전히 안 풀린다 — 가르는 것은 메서드다.
+        assert!(params_resource_id(&params).is_none());
         assert!(params_resource_id(&params).is_none());
     }
 

@@ -246,13 +246,14 @@ impl App {
             Kind::Pane => narrow.and_then(|id| self.find_main_with_pane(id)),
             Kind::Tab => narrow.and_then(|id| self.find_main_with_tab(id)),
             Kind::HeadlessPty => narrow.and_then(|id| self.find_main_with_headless_pty(id)),
-            Kind::Hook | Kind::Observer | Kind::Category => {
+            Kind::Hook | Kind::GlobalHook | Kind::Observer | Kind::Category => {
                 self.find_main_with_engine_resource(rid)
             }
         }
     }
 
-    /// engine 소유 리소스(hook · observer · workspace category)를 가진 MainView.
+    /// engine 소유 리소스(surface hook · global hook · observer · workspace category)를
+    /// 가진 MainView.
     ///
     /// `find_main_with_*` 를 하나씩 더하지 않는 이유: 이들은 술어가
     /// [`engine_has_resource`](crate::core::request_target::engine_has_resource) 에 이미
