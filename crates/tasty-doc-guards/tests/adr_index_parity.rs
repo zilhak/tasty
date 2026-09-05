@@ -311,6 +311,76 @@ fn the_heading_number_matches_the_file_name() {
 /// 링크를 쓸 수 있고 행은 안 쓴다. 그래서 링크를 벗기고 `ADR-` 접두를 지운 뒤 비교한다.
 /// 그러고도 본문이 사유를 덧붙이는 경우가 있어(`Superseded by 0052 (부분) — …`)
 /// **행이 본문의 접두인지**를 묻는다 — 행은 본문의 짧은 형태다.
+/// 판정 술어를 **직접** 부르는 대조. 위의 스캔 테스트만으로는 이 갈래들이 지켜지지
+/// 않는다 — 실측 2026-09-06: `tolerated_too_much` 를 항상 `None` 으로 바꿔도 스캔은
+/// 초록이었다(rc=0 · F=0). 코퍼스(`docs/adr/`)를 흔들면 갈래가 밟히지만 그 변이는
+/// 원복하면 사라져 회귀에 안 남는다. 그래서 갈래마다 여기서 한 번 더 묻는다.
+///
+/// 같은 크레이트의 `temp_path` 는 이 형태를 12 개 갖고 있고, 그래서 그쪽은 판정을
+/// 느슨하게 바꾸면 유닛이 빨개진다. 이 파일에는 0 이었다 — 그 차이가 구멍이었다.
+#[test]
+fn the_status_verdicts_each_have_their_own_reason() {
+    // 빈 칸 — 최소 이행이 "아무거나 채운다" 가 되면 안 된다.
+    assert_eq!(
+        tolerated_too_much("Accepted", ""),
+        Some("행의 상태 칸이 비었다")
+    );
+    assert_eq!(
+        tolerated_too_much("Accepted", "   "),
+        Some("행의 상태 칸이 비었다")
+    );
+
+    // 한 글자 — 접두이긴 하지만 상태 **이름**이 아니다. 빈 칸 처방의 최소 이행이
+    // 정확히 이 형태였다.
+    assert_eq!(
+        tolerated_too_much("Accepted", "A"),
+        Some("행이 상태 이름의 일부만 싣고 있다")
+    );
+    assert_eq!(
+        tolerated_too_much("Superseded by 0162", "Sup"),
+        Some("행이 상태 이름의 일부만 싣고 있다")
+    );
+
+    // 이름은 맞는데 대체한 번호를 잃었다 — 인덱스만 읽는 사람이 어디로 갔는지 모른다.
+    assert_eq!(
+        tolerated_too_much("Superseded by 0162", "Superseded"),
+        Some("행이 대체한 ADR 번호를 잃었다")
+    );
+
+    // 뒤쪽을 자르는 것은 허용이다. 이름이 같고 번호가 남아 있으면 통과한다.
+    assert_eq!(tolerated_too_much("Accepted", "Accepted"), None);
+    assert_eq!(tolerated_too_much("Accepted (부분 적용)", "Accepted"), None);
+    assert_eq!(
+        tolerated_too_much("Superseded by 0162 — 사유", "Superseded by 0162"),
+        None
+    );
+}
+
+/// `superseder` 는 네 자리 번호만 인정한다. 이 갈래가 죽으면 위의 "번호를 잃었다" 가
+/// 영영 안 밟히고, `MIN_SUPERSEDED` 하한이 그것을 대신 잡아 주지 않는다 — 하한은
+/// **본문에 그 형태가 몇 개 있나**를 볼 뿐 판정이 사는지는 안 본다.
+#[test]
+fn a_superseder_is_a_four_digit_number_or_nothing() {
+    assert_eq!(superseder("Superseded by 0162"), Some("0162".to_string()));
+    assert_eq!(
+        superseder("Superseded by 0162 — 사유가 뒤에 붙는다"),
+        Some("0162".to_string())
+    );
+    assert_eq!(superseder("Accepted"), None);
+    assert_eq!(superseder("Superseded by 162"), None); // 세 자리는 아니다
+    assert_eq!(superseder("superseded by 0162"), None); // 대소문자가 다르면 아니다
+}
+
+/// 첫 낱말은 공백 앞까지다. 값이 비면 빈 문자열이고, 그때는 빈 칸 갈래가 먼저 잡는다.
+#[test]
+fn the_first_word_stops_at_whitespace() {
+    assert_eq!(first_word("Accepted"), "Accepted");
+    assert_eq!(first_word("Superseded by 0162"), "Superseded");
+    assert_eq!(first_word("  Accepted  (부분)"), "Accepted");
+    assert_eq!(first_word(""), "");
+    assert_eq!(first_word("   "), "");
+}
+
 #[test]
 fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
     let rows = index_rows();
