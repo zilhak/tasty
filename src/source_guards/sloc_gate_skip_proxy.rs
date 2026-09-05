@@ -47,7 +47,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::{SCAN_ROOTS, mask_non_code, repo_root, rust_sources};
+use super::{SCAN_ROOTS, repo_root, rust_sources};
 
 const GATE: &str = "scripts/check-file-size.sh";
 
@@ -139,129 +139,20 @@ fn name_skipped(path: &str, patterns: &[String]) -> bool {
     patterns.iter().any(|p| glob_matches(p, path))
 }
 
-/// 판정기가 둘이면 갈리고, 갈린 쪽은 조용하다 — cfg 술어 해석은 [`cfg_span::implies`]
-/// 하나만 쓴다. 여기 사본이 있었고 같은 물음을 세 곳이 각자 답하고 있었다.
-#[path = "../../tests/cfg_span/mod.rs"]
-mod cfg_span;
+/// 선언상 **출하되지 않는** 파일 집합. 부모가 test 게이트면 자식도 안 나간다(전이 폐쇄).
+/// 반환 경로는 **레포 상대**다(`rust_sources` 의 형태).
+///
+/// **판정기는 하나다.** 같은 물음("이 파일은 출하되는가")을 갖는 자리가 이 모듈 말고도
+/// 형제 가드(`plugin_locale_specific_literals`)와 루트 통합 타깃
+/// (`tests/cli_method_table_parity.rs`)에 있는데, 뒤쪽은 이 모듈의 비공개 항목을 못 본다.
+/// 그래서 판정을 `tasty_doc_guards::shipping_scope` 로 올리고 **모수만** 각자 넘긴다.
+/// 사본을 두면 답이 갈리고, 갈린 쪽은 면제하는 방향으로 조용히 틀린다.
+pub(super) fn test_only_files() -> BTreeSet<PathBuf> {
+    tasty_doc_guards::shipping_scope::test_only_files(&repo_root(), &rust_sources())
+}
 
 fn implies_test(pred: &str) -> bool {
-    cfg_span::implies(pred, "test")
-}
-
-/// `mod X;` 선언에서 모듈 파일로 가는 간선. 값은 `(부모 파일, cfg 가 test 를 함의하는가)`.
-///
-/// **판정은 선언 지점에서 한다** — 파일 안을 grep 하면 문서주석과 문자열이 섞인다.
-/// 마스킹한 사본으로 줄을 읽되 `#[path = "..."]` 의 값은 문자열이라 마스킹에 지워지므로
-/// **같은 줄 번호의 원문**에서 꺼낸다(`mask_non_code` 가 줄 구조를 보존한다).
-fn declaration_edges() -> BTreeMap<PathBuf, (PathBuf, bool)> {
-    let mut edges = BTreeMap::new();
-    for (path, raw) in rust_sources() {
-        let masked = mask_non_code(&raw);
-        let mlines: Vec<&str> = masked.lines().collect();
-        let rlines: Vec<&str> = raw.lines().collect();
-        for (i, mline) in mlines.iter().enumerate() {
-            let Some(name) = mod_decl_name(mline) else {
-                continue;
-            };
-            let mut gated = false;
-            let mut explicit: Option<String> = None;
-            let mut j = i;
-            while j > 0 {
-                j -= 1;
-                let t = mlines[j].trim();
-                if t.is_empty() || rlines[j].trim_start().starts_with("//") {
-                    continue;
-                }
-                if !t.starts_with("#[") {
-                    break;
-                }
-                if let Some(pred) = t.strip_prefix("#[cfg(").and_then(|s| s.strip_suffix(")]"))
-                    && implies_test(pred)
-                {
-                    gated = true;
-                }
-                if rlines[j].contains("path")
-                    && let Some(v) = path_attr_value(rlines[j])
-                {
-                    explicit = Some(v);
-                }
-            }
-            let base = match path.file_name().and_then(|n| n.to_str()) {
-                Some("mod.rs") | Some("lib.rs") | Some("main.rs") => {
-                    path.parent().map(Path::to_path_buf)
-                }
-                _ => path
-                    .parent()
-                    .map(|p| p.join(path.file_stem().unwrap_or_default())),
-            }
-            .unwrap_or_default();
-            let candidates: Vec<PathBuf> = match &explicit {
-                Some(rel) => vec![path.parent().unwrap_or(Path::new("")).join(rel)],
-                None => vec![
-                    base.join(format!("{name}.rs")),
-                    base.join(&name).join("mod.rs"),
-                ],
-            };
-            for cand in candidates {
-                if repo_root().join(&cand).is_file() {
-                    edges.insert(cand, (path.clone(), gated));
-                    break;
-                }
-            }
-        }
-    }
-    edges
-}
-
-fn mod_decl_name(line: &str) -> Option<String> {
-    let t = line.trim();
-    let t = t.strip_prefix("pub ").unwrap_or(t);
-    let t = match t.find("mod ") {
-        Some(0) => t,
-        _ if t.starts_with("pub(") => t.split_once(") ").map(|(_, r)| r)?,
-        _ => return None,
-    };
-    let rest = t.strip_prefix("mod ")?;
-    let name = rest.strip_suffix(';')?.trim();
-    (!name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
-        .then(|| name.to_string())
-}
-
-fn path_attr_value(raw_line: &str) -> Option<String> {
-    let at = raw_line.find("path")?;
-    let rest = &raw_line[at..];
-    let open = rest.find('"')?;
-    let after = &rest[open + 1..];
-    let close = after.find('"')?;
-    Some(after[..close].to_string())
-}
-
-/// 선언상 **출하되지 않는** 파일 집합. 부모가 test 게이트면 자식도 안 나간다(전이 폐쇄).
-///
-/// 형제 가드(`plugin_locale_specific_literals`)도 같은 물음을 갖는다 — "이 파일은
-/// 출하되는가". 사본을 만들면 두 답이 갈리고 갈린 쪽은 조용하므로 여기 하나를 나눠 쓴다.
-/// 반환 경로는 **레포 상대**다(`rust_sources` 의 형태).
-pub(super) fn test_only_files() -> BTreeSet<PathBuf> {
-    let edges = declaration_edges();
-    fn walk(
-        p: &PathBuf,
-        edges: &BTreeMap<PathBuf, (PathBuf, bool)>,
-        seen: &mut BTreeSet<PathBuf>,
-    ) -> bool {
-        if !seen.insert(p.clone()) {
-            return false;
-        }
-        match edges.get(p) {
-            None => false,
-            Some((_, true)) => true,
-            Some((parent, false)) => walk(parent, edges, seen),
-        }
-    }
-    rust_sources()
-        .into_iter()
-        .map(|(p, _)| p)
-        .filter(|p| walk(p, &edges, &mut BTreeSet::new()))
-        .collect()
+    tasty_doc_guards::cfg_predicate::implies(pred, "test")
 }
 
 fn as_slash(path: &Path) -> String {

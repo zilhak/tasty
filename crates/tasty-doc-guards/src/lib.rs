@@ -13,6 +13,15 @@
 //! 여기에 의존을 하나라도 더하면 그 결정의 전제가 사라진다. `Cargo.toml` 의
 //! `[dependencies]` 는 비어 있어야 하고, `the_crate_has_no_dependencies` 가 그것을 본다.
 
+/// `#[cfg(...)]` 술어를 읽는다.
+pub mod cfg_predicate;
+
+/// 소스를 텍스트로 읽는 가드들이 공유하는 마스킹·순회.
+pub mod source_text;
+
+/// **이 파일은 출하되는가** — 선언 기반 판정 하나.
+pub mod shipping_scope;
+
 use std::path::{Path, PathBuf};
 
 /// 레포 루트. 이 크레이트가 워크스페이스 루트가 아니라 `crates/<이름>` 아래 살기 때문에

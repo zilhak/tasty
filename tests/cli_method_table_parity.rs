@@ -226,7 +226,8 @@ fn gather_rs(path: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// `#[cfg(test)] mod <name>;`(**한 줄 선언**)이 가리키는 파일들.
+/// 선언상 **출하되지 않는** 파일들 — 판정은 `tasty_doc_guards::shipping_scope` 하나가
+/// 한다. 여기서 넘기는 것은 **모수**(이 크레이트의 파일 목록)뿐이다.
 ///
 /// [`test_module_lines`] 는 같은 파일 안의 인라인 `#[cfg(test)] mod … {` 블록만 뺀다.
 /// 테스트가 별도 파일로 나가면 그 선언은 `{` 가 아니라 `;` 로 끝나고, 스캐너는 선언이
@@ -238,49 +239,22 @@ fn gather_rs(path: &Path, out: &mut Vec<PathBuf>) {
 /// 이름" 이고, 픽스처를 거기 섞으면 목록이 두 의미를 갖는다 — 그 뒤엔 진짜 미등재 메서드가
 /// 테스트에 들어와도 조용해진다. 구조로 빼는 것이 [`test_module_lines`] 와 같은 방침이다.
 ///
-/// `#[path = "…"]` 로 선언처를 옮긴 형태까지는 보지 않는다. 이 스캔 루트에 그 형태가 없고,
-/// 생기면 그 파일이 다시 프로덕션으로 세져 **시끄럽게** 실패한다(조용한 누락이 아니다).
-fn test_only_files(root: &Path, files: &[PathBuf]) -> BTreeSet<PathBuf> {
-    let mut out = BTreeSet::new();
-    for path in files {
-        let Ok(src) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let lines: Vec<&str> = src.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            let t = line.trim();
-            if !t.ends_with(';') {
-                continue;
-            }
-            let Some(rest) = t
-                .strip_prefix("mod ")
-                .or_else(|| t.strip_prefix("pub mod "))
-                .or_else(|| t.strip_prefix("pub(crate) mod "))
-                .or_else(|| t.strip_prefix("pub(super) mod "))
-            else {
-                continue;
-            };
-            let gated = lines[..i]
-                .iter()
-                .rev()
-                .find(|l| !l.trim().is_empty())
-                .is_some_and(|l| l.trim() == "#[cfg(test)]");
-            if !gated {
-                continue;
-            }
-            let name = rest.trim_end_matches(';').trim();
-            let dir = path.parent().unwrap_or(root);
-            for cand in [
-                dir.join(format!("{name}.rs")),
-                dir.join(name).join("mod.rs"),
-            ] {
-                if cand.is_file() {
-                    out.insert(cand);
-                }
-            }
-        }
-    }
-    out
+/// 여기에 자체 파서가 있었다. 그 사본은 `#[cfg(all(test, …))]` 도 `#[path = "…"]` 도
+/// 전이 폐쇄도 못 읽어서 **판정이 정본과 갈렸다** — 갈린 방향은 "출하로 세는" 쪽이라
+/// 시끄럽게 틀리지만, 같은 물음에 답하는 자리를 둘 두는 것 자체가 원인의 복제다.
+fn declared_test_only(root: &Path, files: &[PathBuf]) -> BTreeSet<PathBuf> {
+    let sources: Vec<(PathBuf, String)> = files
+        .iter()
+        .filter_map(|p| {
+            let rel = p.strip_prefix(root).ok()?.to_path_buf();
+            let text = std::fs::read_to_string(p).ok()?.replace("\r\n", "\n");
+            Some((rel, text))
+        })
+        .collect();
+    tasty_doc_guards::shipping_scope::test_only_files(root, &sources)
+        .into_iter()
+        .map(|rel| root.join(rel))
+        .collect()
 }
 
 fn rel_of(file: &Path, root: &Path) -> String {
@@ -324,7 +298,7 @@ fn every_cli_method_string_is_registered_in_method_table() {
     let mut all_files = Vec::new();
     gather_rs(&root.join(CLI_CRATE_ROOT), &mut all_files);
     all_files.sort();
-    let declared_test_only = test_only_files(root, &all_files);
+    let declared_test_only = declared_test_only(root, &all_files);
     for path in &all_files {
         if declared_test_only.contains(path) {
             continue;
