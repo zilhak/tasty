@@ -727,6 +727,40 @@ fn skip_names(tail: &str) -> Vec<String> {
         .collect()
 }
 
+/// `--` 뒤에 놓인 **양성 필터**(이름 인자)들과 `--exact` 여부.
+///
+/// `--skip` 의 대칭이다. `--skip X` 가 "X 를 빼고 나머지" 라면 이쪽은 "이것만" 이고,
+/// 그래서 채널 판정에 주는 효과도 대칭이어야 한다 — skip 이 **전부**를 덮으면 채널이
+/// 아니듯, 양성 필터가 **일부만** 고르면 그 호출은 타깃 전체의 채널이 아니다.
+///
+/// 이 구분이 없으면 한 테스트만 지목한 스텝이 그 타깃 전체의 실행 채널로 세어지고,
+/// 그 타깃에 새 테스트가 생겨도 자동으로 돈다고 잘못 말하게 된다.
+fn positive_filters(tail: &str) -> (Vec<String>, bool) {
+    let words: Vec<&str> = tail.split_whitespace().collect();
+    let Some(sep) = words.iter().position(|w| *w == "--") else {
+        return (Vec::new(), false);
+    };
+    let after = &words[sep + 1..];
+    let exact = after.iter().any(|w| *w == "--exact");
+    let mut filters = Vec::new();
+    let mut i = 0;
+    while i < after.len() {
+        let w = after[i];
+        // 값을 하나 먹는 harness 플래그는 그 값까지 건너뛴다.
+        if w == "--skip" || w == "--test-threads" || w == "--logfile" || w == "--format" {
+            i += 2;
+            continue;
+        }
+        if w.starts_with('-') {
+            i += 1;
+            continue;
+        }
+        filters.push(w.to_string());
+        i += 1;
+    }
+    (filters, exact)
+}
+
 /// 한 파일에서 `#[test]` 가 붙은 함수 이름들.
 fn test_fn_names(text: &str) -> Vec<String> {
     let lines: Vec<&str> = text.lines().collect();
@@ -875,6 +909,22 @@ fn integration_target_channels(
         {
             let names = test_fn_names(&text);
             if !names.is_empty() && names.iter().all(|n| skips.iter().any(|s| n.contains(s))) {
+                continue;
+            }
+        }
+        // 양성 필터가 타깃을 **좁히면** 그 호출은 타깃 전체의 채널이 아니다(위 doc).
+        let (filters, exact) = positive_filters(tail);
+        if !filters.is_empty()
+            && let Ok(text) = std::fs::read_to_string(&source)
+        {
+            let names = test_fn_names(&text);
+            let covers_all = !names.is_empty()
+                && names.iter().all(|n| {
+                    filters
+                        .iter()
+                        .any(|f| if exact { n == f } else { n.contains(f) })
+                });
+            if !covers_all {
                 continue;
             }
         }
@@ -2168,6 +2218,51 @@ fn a_skip_that_covers_every_test_removes_the_targets_channel() {
         integration_target_channels(&root, "partial", &invocations, &features),
         combos(&[Combo::Headless]),
         "일부만 skip 된 타깃의 채널을 지웠다"
+    );
+    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 양성 필터(`-- <이름>`)가 타깃을 좁히면 그 호출은 타깃 전체의 채널이 아니다.
+/// 좁히지 않으면(모든 테스트가 필터에 걸리면) 채널이다 — `--skip` 규칙의 대칭이다.
+///
+/// 이 구분이 없으면 한 건만 지목한 관측용 스텝 하나가 그 타깃 전체의 실행 채널로
+/// 세어지고, 그 타깃에 새 테스트가 생겨도 자동으로 돈다고 잘못 말하게 된다.
+#[test]
+fn a_positive_filter_that_narrows_the_target_is_not_its_channel() {
+    let root = fake_repo(
+        "filters",
+        &[
+            (
+                "narrowed.rs",
+                &format!("{}{}", one_test("chosen_one"), one_test("left_out")),
+            ),
+            ("whole.rs", &one_test("chosen_one")),
+        ],
+        &[("w.yml", AUTOMATIC_FULL)],
+    );
+    let invocations = vec![(
+        Combo::Headless,
+        " --workspace --no-default-features -- chosen_one --exact".to_string(),
+    )];
+    let features = std::collections::BTreeMap::new();
+    assert!(
+        integration_target_channels(&root, "narrowed", &invocations, &features).is_empty(),
+        "한 건만 고른 호출을 타깃 전체의 실행 채널로 셌다"
+    );
+    assert_eq!(
+        integration_target_channels(&root, "whole", &invocations, &features),
+        combos(&[Combo::Headless]),
+        "필터가 그 타깃의 모든 테스트를 덮는데 채널을 지웠다"
+    );
+    // `--exact` 가 없으면 부분일치라 판정이 달라진다 — 그 축도 함께 고정한다.
+    let loose = vec![(
+        Combo::Headless,
+        " --workspace --no-default-features -- chosen".to_string(),
+    )];
+    assert!(
+        integration_target_channels(&root, "narrowed", &loose, &features).is_empty(),
+        "부분일치 필터도 좁히는 것은 마찬가지다"
     );
     // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
     let _ = std::fs::remove_dir_all(&root);
