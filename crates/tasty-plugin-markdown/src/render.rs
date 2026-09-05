@@ -3089,6 +3089,11 @@ mod tests {
     #[test]
     fn sanitize_html_strips_event_handler_attributes() {
         let out = sanitize_html(r#"<img src="x.png" onerror="alert(1)">"#);
+        // ★ 먼저 img 가 **살아남았다**는 것을 못박는다. 이 줄이 없으면 아래 부정 둘은
+        // `out` 이 빈 문자열일 때도 통과하고, 그 초록의 뜻은 "핸들러를 벗겼다" 가 아니라
+        // "아무것도 안 남았다" 다. 빈 출력은 가상이 아니다 — 태그 허용목록에서 `img` 가
+        // 빠지면 ammonia 가 요소를 통째로 지우고, 그때도 이 시험은 계속 초록이다.
+        assert!(out.contains("x.png"));
         assert!(!out.contains("onerror"));
         assert!(!out.contains("alert"));
     }
@@ -3096,6 +3101,10 @@ mod tests {
     #[test]
     fn sanitize_html_strips_javascript_scheme_href() {
         let out = sanitize_html(r#"<a href="javascript:alert(1)">click</a>"#);
+        // 위와 같은 이유의 양성 짝. 다만 이 줄이 증명하는 것은 **출력이 비지 않았다**
+        // 까지다 — ammonia 는 `<a>` 를 지워도 안쪽 텍스트를 남기므로, "앵커가 살아남았다"
+        // 는 뜻이 아니다. 그 이상을 주장하면 그게 새 거짓이다.
+        assert!(out.contains("click"));
         assert!(!out.contains("javascript:"));
     }
 
@@ -3749,6 +3758,8 @@ mod tests {
         // case, so this only proves the current bundle is clean — see
         // `escape_script_close_neutralizes_mixed_case_occurrences` for the actual logic test.
         let js = mermaid_js_source();
+        // 번들이 비어 있으면 아래 부정은 무조건 통과한다 — 그 갈래를 먼저 닫는다.
+        assert!(js.contains("mermaid"));
         assert!(!js.to_ascii_lowercase().contains("</script"));
     }
 
