@@ -372,6 +372,20 @@ pub fn control_stayed_out_of_the_path(sample: &ControlSample) -> bool {
 ///
 /// 문턱 10 배는 그 아래로 한 자릿수, 계열이 하나일 때의 값(1 근처) 위로 한 자릿수다.
 /// 잡음이 몇 배 흔들려도 살아남고, 변이는 그대로 죽는다 — 실측으로 양방향 확인했다.
+/// 대조군이 **정말 다시 쟀나.**
+///
+/// ADR-0181 의 규칙 셋에 안 적혀 있던 전제다. "안 움직였다" 는 **죽은 대조군과 구별되지
+/// 않는다** — `sample()` 이 기준선을 그대로 돌려주기만 해도 음성 방향 단정이 전부 통과한다.
+/// 맞아서 초록인 것이 아니라 **빗나가서** 초록인 것이다. 진짜로 다시 잰 값은 나노초까지
+/// 기준선과 같을 수 없으므로, 같으면 다시 안 잰 것으로 읽는다.
+///
+/// 이 술어가 인라인 비교가 아니라 함수인 이유는 하나다 — **죽은 표본을 먹여 볼 수 있어야
+/// 한다.** 인라인이면 그 자리의 초록이 "산 것을 통과시켰다" 인지 "무엇이든 통과시킨다" 인지
+/// 안 갈린다.
+pub fn control_was_actually_resampled(sample: &ControlSample) -> bool {
+    sample.cost() != sample.baseline()
+}
+
 pub fn families_separated(moved: &ControlSample, held: &ControlSample) -> bool {
     moved.ratio() > held.ratio() * MUTATION_MARGIN
 }
@@ -735,6 +749,18 @@ mod tests {
             blocked.cost(),
         );
         assert!(blocked.kind() == CHANNEL_FAMILY.kind);
+
+        // ★ 양성 대조 — `is_inflated()` 가 **늘 참이라서** 위가 초록인 것이 아니다.
+        // 이 단정의 전부가 "움직였다" 하나라, 술어가 항진식이면 상대편을 안 막아도
+        // 초록이고 그때 이 시험은 아무것도 안 잰다(R480 의 '조용한 1').
+        let quiet =
+            ControlSample::from_parts_in(&CHANNEL_FAMILY, blocked.baseline(), blocked.baseline());
+        assert!(
+            !quiet.is_inflated(),
+            "술어가 기준선과 같은 표본을 '부풀었다' 로 판정한다({:.2} 배) — \
+             그러면 위 초록은 상대편이 막혔다는 증거가 못 된다",
+            quiet.ratio()
+        );
     }
 
     /// ★★ 계열이 정말 셋인가 — **부하를 안 만들고** 재는 방법.
@@ -776,10 +802,20 @@ mod tests {
         // 빗나가서 초록인 것이다. 그래서 살아 있음을 먼저 묻는다: 진짜로 다시 잰 값은
         // 기준선과 정확히 같을 수 없다.
         assert!(
-            scheduler.cost() != scheduler.baseline(),
+            control_was_actually_resampled(&scheduler),
             "스케줄러 대조군이 기준선을 그대로 돌려줬다({:?}) — 다시 재지 않았다는 뜻이고, \
              그러면 아래 '안 움직였다' 는 독립의 증거가 못 된다",
             scheduler.cost()
+        );
+        // ★ 생존 단정 자신의 대조 — 이 술어가 **죽은 대조군을 실제로 거부하는가.**
+        // 없으면 위 초록은 "산 것을 통과시켰다" 가 아니라 "무엇이든 통과시킨다" 로도
+        // 설명된다. 그것이 이 시험이 막으려던 바로 그 형태다(R506).
+        let never_resampled =
+            ControlSample::from_parts_in(&CPU_FAMILY, scheduler.baseline(), scheduler.baseline());
+        assert!(
+            !control_was_actually_resampled(&never_resampled),
+            "술어가 기준선을 그대로 돌려준 표본을 '다시 쟀다' 로 판정한다 — \
+             위 생존 단정은 아무것도 안 지킨다"
         );
         // ★ 독립의 판정은 "스케줄러가 **안** 움직였다" 가 아니라 "둘이 **다른 비율로**
         // 움직였다" 이다. 앞선 판은 절대 밴드(2.0)로 전자를 요구했고, 그 여유가 1.13 배라
