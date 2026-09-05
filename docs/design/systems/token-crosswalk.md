@@ -66,6 +66,40 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 - DTCG semantic **색** 토큰 ↔ Rust 접근자 전수표. 과거 이 문서가 "Rust 미대응"으로 꼽았던 것 중 `text-on-accent` → `Theme::text_on_accent()`, `radius-sm` → `SIZING.corner_radius_sm` 은 **이미 구현되어 있다** (stale 정정). `radius-pill`/`motion-*`/`ui-scale-*`/`brand-*` 등은 여전히 Theme 표면 부재 — 색은 시리즈 05, component 색 접근자는 시리즈 04 에서 결정.
 - component tier(버튼/입력/탭/토스트…) ↔ 호출처 매핑, SIZING 소비처의 토큰 참조 전환 (시리즈 02).
 
+### ★ 시리즈 02 착수 전 필독 — 그 전환에는 **픽셀 변경이 섞여 있다**
+
+**토큰을 소비처에 연결하는 것이 언제나 무변경 리팩터인 것은 아니다.** vendor 된 값과 그
+자리가 지금 그리는 값이 다르면, 연결하는 순간 화면이 바뀐다. 그건 전환이 아니라 **디자인
+결정**이므로 전환 커밋이 곁다리로 할 수 없다.
+
+**같은 형태를 이 레포는 이미 한 번 겪었다** — 폰트 축에서 "값이 바뀌는 치환은 하나도
+없다" 는 주장과 함께 올라온 묶음에 실제로는 ±0.5~1.0 변경이 10 자리 섞여 있었고,
+그 결과가 [ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 이다.
+그 ADR 의 결론(스케일 밖 값은 스냅하지 않고 사유를 적은 명명 const 로 둔다)은 폰트 ·
+코너 반경 · 점 치수 세 축에 적용돼 있다.
+
+**전환 전에 값 대조부터 한다.** 접근자를 부르기 전에 그 자리가 지금 그리는 값을 재고,
+토큰 값과 다르면 연결하지 말고 디자인 판단을 받는다.
+
+실측(2026-09-05, 치수 접근자 208): **도달 125 · 별칭 필드로 도달 53 · 자체 계산이면서
+미도달 30.** "안 불리는 접근자 83" 이라는 수는 오해를 부른다 — 그중 53 은 같은 값을
+**base 필드 이름으로 이미 부르고 있다**(예: `titlebar-caption-width` ↔ `caption_width`).
+
+값이 어긋나는 것으로 **확인된** 자리는 셋이고 셋 다 상태 점 계열이다.
+
+| 토큰 | 토큰 값 | 지금 그리는 값 | 자리 |
+|---|---|---|---|
+| `component.tab-dot-size` | 8 | **6** | `src/adapters/ui/tab_bar.rs` (`TAB_BUSY_DOT_SIZE`) |
+| `component.status-dot-attached-ring-width` | 2 | **1.5** | `src/adapters/ui/sidebar/view.rs` (`ATTACHED_OUTLINE_WIDTH`) |
+| `component.status-dot-attached-ring-offset` | 2 | **1.5** | 같은 자리 (ring 반경 계산) |
+
+나머지 27 은 **미측정**이다 — 값이 2 · 4 · 8 · 12 · 16 · 24 · 28 처럼 어디에나 있는 수라
+"그 파일에 그 값이 있다" 가 "그 자리가 그 값을 그린다" 를 뜻하지 않는다. 0 이 아니라
+안 잰 것이다.
+
+**세 건 다 소스에는 이미 기록돼 있었다 — 각 상수의 doc 주석에.** 그런데 전환을 하는 쪽은
+상수 주석이 아니라 이 문서를 읽는다. 그래서 여기 옮겨 적는다.
+
 ## 관련
 
 - [theme.md](theme.md) — Theme 2계층 모델 + UI 디자인 규칙
