@@ -498,7 +498,7 @@ fn collect_manifests(dir: &Path, out: &mut Vec<PathBuf>) {
 ///
 /// 두 표(release · debug)가 같은 파서를 쓴다 — 두 벌로 두면 한쪽만 고쳐지는 순간
 /// 대조 규약이 갈린다.
-fn listed_methods(text: &str, header: &str) -> Vec<String> {
+fn table_rows(text: &str, header: &str) -> Vec<Vec<String>> {
     let after_header = text
         .split_once(header)
         .unwrap_or_else(|| panic!("{CLI_GAP_DOC}: `{header}` 표 헤더를 찾지 못했다"))
@@ -507,18 +507,28 @@ fn listed_methods(text: &str, header: &str) -> Vec<String> {
         .lines()
         .skip(1) // `|---|---|---|` 구분선
         .take_while(|l| l.trim_start().starts_with('|'))
-        .flat_map(|line| {
+        .filter_map(|line| {
             let cells: Vec<&str> = line.trim().trim_matches('|').split('|').collect();
             if cells.len() != 3 {
                 panic!("{CLI_GAP_DOC}: 표 행의 열 수가 3이 아니다: {line}");
             }
             if cells[0].trim().starts_with("---") {
-                return Vec::new();
+                return None;
             }
-            let methods = code_spans(cells[1]);
+            Some(cells.iter().map(|c| c.trim().to_string()).collect())
+        })
+        .collect()
+}
+
+/// 표의 메서드 열에 적힌 이름 전부.
+fn listed_methods(text: &str, header: &str) -> Vec<String> {
+    table_rows(text, header)
+        .into_iter()
+        .flat_map(|cells| {
+            let methods = code_spans(&cells[1]);
             assert!(
                 !methods.is_empty(),
-                "{CLI_GAP_DOC}: 표 행의 메서드 열이 비었다: {line}"
+                "{CLI_GAP_DOC}: 표 행의 메서드 열이 비었다: {cells:?}"
             );
             methods
         })
@@ -636,5 +646,123 @@ fn debug_methods_without_a_cli_entry_point_are_documented() {
         CLI_GAP_DEBUG_TABLE_HEADER,
         &marker,
         "debug 표에",
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 사유 열 방향: 표가 "대신 이걸 쓰라" 고 가리키는 명령이 실재하는가.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 최상위 서브커맨드 이름 — `pub enum Commands` 의 variant 를 clap 기본 규칙(kebab-case)
+/// 으로 변환한다. `#[command(name = "…")]` 이 있으면 그것이 이긴다.
+fn top_level_commands(root: &Path) -> std::collections::BTreeSet<String> {
+    let src = std::fs::read_to_string(root.join("crates/tasty-cli/src/lib.rs"))
+        .expect("crates/tasty-cli/src/lib.rs 를 읽지 못했다");
+    let start = src
+        .find("pub enum Commands {")
+        .expect("`pub enum Commands` 를 찾지 못했다 — 이 추출기가 낡았다");
+    let body = &src[start..];
+    let mut depth = 0i32;
+    let mut out = std::collections::BTreeSet::new();
+    let mut override_name: Option<String> = None;
+    for line in body.lines() {
+        let t = line.trim();
+        // enum 본문 depth 1 의 줄만 variant 로 센다.
+        if depth == 1 {
+            if let Some(rest) = t.strip_prefix("#[command(name = \"") {
+                if let Some((name, _)) = rest.split_once('"') {
+                    override_name = Some(name.to_string());
+                }
+            } else if t.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                let ident: String = t
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric())
+                    .collect();
+                if !ident.is_empty() {
+                    out.insert(override_name.take().unwrap_or_else(|| kebab(&ident)));
+                }
+            }
+        }
+        depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+        if depth <= 0 && !out.is_empty() {
+            break;
+        }
+    }
+    out
+}
+
+fn kebab(ident: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in ident.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('-');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// 문서가 "대신 이걸 쓰라" 고 든 명령이 실재해야 한다.
+///
+/// 이 표의 행은 부재의 **근거**다. 근거가 존재하지 않는 명령을 가리키면 그 행은 읽는
+/// 사람을 없는 곳으로 보내면서 동시에 "그러니 CLI 가 없어도 된다" 는 결론을 지탱한다 —
+/// 실제로 그런 행이 둘 있었다(`tasty settings get` · `tasty open`, 둘 다 없는 명령).
+/// 멤버십만 보는 위 가드들은 이 형태를 통과시킨다.
+///
+/// 최상위 이름만 본다. 하위 경로까지 보려면 서브커맨드 enum 을 전부 따라가야 하는데,
+/// 그 비용에 비해 잡히는 형태가 좁다 — 오늘의 두 결함은 모두 **최상위/1단**에서 갈렸다.
+#[test]
+fn commands_cited_as_alternatives_exist() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let known = top_level_commands(root);
+    assert!(
+        known.len() > 20,
+        "최상위 명령을 {} 개밖에 못 뽑았다 — 추출기가 죽었다(대조군)",
+        known.len()
+    );
+    let text = std::fs::read_to_string(root.join(CLI_GAP_DOC))
+        .unwrap_or_else(|e| panic!("read {CLI_GAP_DOC}: {e}"));
+
+    // **사유 열만** 본다. 산문에는 "`tasty attach` 로 노출되지 **않는다**" 처럼 없는
+    // 명령을 일부러 이름 대는 부정문이 있어서, 문서 전체를 훑으면 그것을 오답으로 센다.
+    let reasons: Vec<String> = [CLI_GAP_TABLE_HEADER, CLI_GAP_DEBUG_TABLE_HEADER]
+        .iter()
+        .flat_map(|h| table_rows(&text, h))
+        .map(|cells| cells[2].clone())
+        .collect();
+
+    let mut bad: Vec<String> = Vec::new();
+    for span in reasons.iter().flat_map(|r| {
+        r.split('`')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    }) {
+        let Some(rest) = span.strip_prefix("tasty ") else {
+            continue;
+        };
+        let first = rest.split_whitespace().next().unwrap_or_default();
+        // `tasty <plugin> …` 처럼 자리표시자인 것은 이름이 아니다.
+        if first.is_empty() || first.starts_with('<') || first.starts_with('-') {
+            continue;
+        }
+        if !known.contains(first) {
+            bad.push(format!(
+                "`tasty {first} …` — 그런 최상위 명령이 없다 (인용: `{span}`)"
+            ));
+        }
+    }
+    bad.sort();
+    bad.dedup();
+    assert!(
+        bad.is_empty(),
+        "{CLI_GAP_DOC} 가 실재하지 않는 명령을 대안으로 가리킨다. 부재의 근거가 없는 곳을 \
+         가리키면 그 행은 근거가 아니라 오답이다:\n  {}",
+        bad.join("\n  ")
     );
 }
