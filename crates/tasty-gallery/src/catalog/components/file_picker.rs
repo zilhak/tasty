@@ -43,7 +43,7 @@ const ROW_H: LogicalPx = LogicalPx(28.0); // FpRow padding 6/space-md + content 
 const SIZE_COL_W: f32 = 68.0;
 const MOD_COL_W: f32 = 108.0;
 const FOOTER_LABEL_W: LogicalPx = LogicalPx(64.0); // 디자인 "File name" 라벨 고정폭
-const FOOTER_CHIP_W: f32 = 92.0; // "All files ▾" 타입필터 칩
+const FOOTER_CHIP_W: LogicalPx = LogicalPx(92.0); // "All files ▾" 타입필터 칩
 
 /// 원격 host 배지 칩의 높이(디자인 size-22). 4px 그리드 밖이고 대응 Theme 토큰이
 /// 없다 — 칩 하나의 구조 높이라 spacing 리듬 값이 아니다.
@@ -803,7 +803,7 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
             },
         );
         let remaining = ui.available_width();
-        let input_w = (remaining - FOOTER_CHIP_W - theme.spacing_sm.value()).max(0.0);
+        let input_w = (LogicalPx(remaining) - FOOTER_CHIP_W - theme.spacing_sm).max(LogicalPx(0.0));
         kit::field(
             ui,
             theme,
@@ -844,7 +844,8 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: FpState, multi: bool) {
 /// "All files ▾" 타입 필터 칩 — 정적(팝오버 미열림) specimen.
 fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
     let h = theme.item_height_interactive.value();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W, h), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W.value(), h), egui::Sense::hover());
     ui.painter().rect_filled(
         rect,
         theme.corner_radius.value(),

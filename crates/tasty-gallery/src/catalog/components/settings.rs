@@ -541,7 +541,7 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
         kit::field(
             ui,
             theme,
-            Some(theme.field_width_color.value()),
+            Some(theme.field_width_color),
             value,
             !overridden,
             true,

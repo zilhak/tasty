@@ -144,14 +144,14 @@ pub fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str, mono: bool) {
 pub fn field(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: Option<f32>,
+    width: Option<LogicalPx>,
     text: &str,
     placeholder: bool,
     mono: bool,
 ) {
-    let h = theme.item_height_interactive.value();
-    let w = width.unwrap_or_else(|| ui.available_width());
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let h = theme.item_height_interactive;
+    let w = width.unwrap_or_else(|| LogicalPx(ui.available_width()));
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w.value(), h.value()), egui::Sense::hover());
     let p = ui.painter();
     p.rect_filled(
         rect,

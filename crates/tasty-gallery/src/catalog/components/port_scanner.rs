@@ -150,7 +150,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         kit::field(
                             ui,
                             theme,
-                            Some(theme.field_width_md.value()),
+                            Some(theme.field_width_md),
                             "Filter…",
                             true,
                             false,

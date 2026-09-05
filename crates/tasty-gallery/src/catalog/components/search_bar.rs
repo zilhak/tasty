@@ -11,7 +11,7 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 360.0;
+const WIDTH: LogicalPx = LogicalPx(360.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
@@ -50,16 +50,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
-    kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::raised_fill(theme), |ui| {
+    kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_sm, theme.spacing_xs, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                 // 검색어 Input (flex).
-                let counter_w = theme.field_width_xs.value() * 0.5;
+                let counter_w = theme.field_width_xs.scaled(0.5);
                 let trailing = counter_w
-                    + theme.item_height_interactive.value() * 4.0
-                    + theme.spacing_md.value() * 4.0;
-                let input_w = (WIDTH - theme.spacing_sm.value() * 2.0 - trailing).max(80.0);
+                    + theme.item_height_interactive.scaled(4.0)
+                    + theme.spacing_md.scaled(4.0);
+                let input_w =
+                    (WIDTH - theme.spacing_sm.scaled(2.0) - trailing).max(LogicalPx(80.0));
                 kit::field(ui, theme, Some(input_w), "tasty", false, false);
                 // 카운터.
                 let counter_color = if no_match {
