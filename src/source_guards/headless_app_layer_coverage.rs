@@ -20,10 +20,17 @@
 //!
 //! 판정은 **각 dispatch 함수의 본문만** 본다. 같은 메서드 이름이 doc 주석·다른 헬퍼에
 //! 흔하게 등장해서, 파일 전체를 세면 안 열린 것이 열린 것으로 잡힌다.
+//!
+//! 텍스트로 읽는 대가는 **리터럴이 아닌 이름은 안 보인다** 는 것이다. 그 사각은 수를
+//! 세는 검사로 못 좁힌다 — 이름 하나를 매크로 뒤로 숨기면 항목이 하나 줄 뿐이고(하한
+//! 아래로 안 내려간다), 매크로가 만든 이름으로 갈래를 **더하면** 항목 수가 아예 안
+//! 변한다. 하한은 줄어드는 방향만 볼 수 있어서 뒤쪽은 원리적으로 못 본다(둘 다 실측으로
+//! 통과했다). 그래서 이름의 수가 아니라 **이름을 읽는 자리**를 따로 잰다 —
+//! [`every_dispatch_decides_by_a_name_the_scan_can_see`].
 
 use std::collections::BTreeSet;
 
-use super::{fn_body, repo_root};
+use super::{fn_body, repo_root, strip_comments};
 
 const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
@@ -432,4 +439,221 @@ fn a_cover_claim_dies_with_its_evidence() {
             "치환이 안 먹었다 — 이 대조는 아무것도 안 본다"
         );
     }
+}
+
+/// dispatch 가 이름을 읽는 표현식. 이 뒤에 오는 모양으로 **판정 자리**를 찾는다.
+const METHOD_EXPR: &str = "request.method";
+
+/// 스캐너가 **볼 수 없는 이름**으로 판정하는 자리.
+///
+/// 위 판정은 dispatch 본문을 텍스트로 읽어 `"a.b"` 꼴 리터럴을 뽑는 것이다. 이름이
+/// 리터럴이 아니면 — 매크로가 만들거나 상수·변수와 맞대면 — 그 이름은 목록에 안 들어온다.
+/// 그러면 답하지도 사유가 적혀 있지도 않은 메서드가 **조용히** 생긴다.
+///
+/// 실측이 있다(2026-09-05, debug step 기준). 리터럴 하나를 `macro_rules!` 뒤로 숨기면
+/// 뽑히는 항목이 12 → 11 로 줄고, 매크로가 만든 이름으로 갈래를 하나 새로 더하면 항목
+/// 수가 **아예 안 변한다.** 두 경우 다 아래 하한(5)에 안 걸려 초록으로 통과했다. 즉 이
+/// 부류는 크기가 0 이었던 것이 아니라 하한이 못 보던 것이다 — 수를 세는 검사로는 이
+/// 사각을 못 좁힌다.
+///
+/// 그래서 이름의 **수** 대신 이름을 읽는 **자리**를 본다. 셋만 판정 자리로 친다:
+/// `== <x>` · `.starts_with(<x>)` · `match ….as_str() { <팔> => }`. 그 자리의 값은
+/// 문자열 리터럴이어야 한다. 그 밖의 모양(값을 위임 함수 인자로 **넘기는** 것)은 여기서
+/// 이름을 가르지 않으므로 대상이 아니다.
+fn opaque_method_sites(body: &str) -> Vec<String> {
+    // 주석을 먼저 걷어낸다. 안 걷으면 주석 안의 괄호가 깊이를 흔들어 팔의 시작 자리를
+    // 어긋나게 하고(실측), 주석에 적힌 메서드 이름이 판정 자리로 잡힌다.
+    let body = strip_comments(body);
+    let body = body.as_str();
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while let Some(i) = body[at..].find(METHOD_EXPR) {
+        at += i + METHOD_EXPR.len();
+        let rest = body[at..].trim_start();
+        if let Some(r) = rest.strip_prefix("==") {
+            if !r.trim_start().starts_with('"') {
+                out.push(format!("`== {}`", head(r)));
+            }
+        } else if let Some(r) = rest.strip_prefix(".starts_with(") {
+            if !r.trim_start().starts_with('"') {
+                out.push(format!("`.starts_with({}`", head(r)));
+            }
+        } else if let Some(r) = rest.strip_prefix(".as_str()") {
+            let r = r.trim_start();
+            if r.starts_with('{') {
+                out.extend(non_literal_arms(r));
+            }
+        }
+    }
+    out
+}
+
+/// 오류 메시지에 붙일 짧은 발췌 — 자리를 사람이 찾을 수 있을 만큼만.
+fn head(s: &str) -> String {
+    s.trim_start()
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(40)
+        .collect()
+}
+
+/// 팔 패턴에서 주석과 속성을 걷어낸다 — `#[cfg(debug_assertions)]` 이 붙은 팔과
+/// 팔 앞의 설명 주석이 실제 코드에 있다(실측).
+fn pattern_text(raw: &str) -> String {
+    raw.lines()
+        .map(|l| l.split("//").next().unwrap_or("").trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `match ….as_str() { … }` 의 팔 중 **패턴이 리터럴이 아닌** 것.
+///
+/// 팔 패턴은 문자열 리터럴이거나, `_`/소문자 식별자(전부받기 바인딩)여야 한다.
+/// 대문자 상수나 매크로 호출이 패턴 자리에 오면 그 이름은 텍스트로 안 보인다.
+fn non_literal_arms(block: &str) -> Vec<String> {
+    let b = block.as_bytes();
+    let mut out = Vec::new();
+    let (mut i, mut depth, mut pat_start, mut in_str) = (0usize, 0usize, 0usize, false);
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => in_str = true,
+            b'{' | b'(' | b'[' => {
+                depth += 1;
+                if depth == 1 {
+                    pat_start = i + 1;
+                }
+            }
+            b'}' | b')' | b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+                // 블록 팔(`"x" => { … }`) 뒤의 쉼표는 생략할 수 있다. 닫힘도 팔의 끝으로
+                // 쳐야 다음 팔의 패턴이 앞 팔 전체를 끌고 오지 않는다.
+                if depth == 1 {
+                    pat_start = i + 1;
+                }
+            }
+            b',' if depth == 1 => pat_start = i + 1,
+            b'=' if depth == 1 && b.get(i + 1) == Some(&b'>') => {
+                for alt in pattern_text(&block[pat_start..i]).split('|') {
+                    let alt = alt.trim();
+                    if alt.is_empty() {
+                        continue;
+                    }
+                    let binding = alt == "_"
+                        || (!alt.is_empty()
+                            && alt
+                                .chars()
+                                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'));
+                    if !alt.starts_with('"') && !binding {
+                        out.push(format!("`match` 팔 `{alt}`"));
+                    }
+                }
+                i += 2;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
+/// **이름을 읽는 자리는 전부 리터럴이다** — 그래야 위 판정들이 이름을 볼 수 있다.
+///
+/// 세 dispatch 본문 모두에 건다. 하나라도 리터럴이 아닌 값으로 갈래를 치면, 이 파일의
+/// 다른 검사들은 그 갈래를 **없는 것으로** 세고 초록을 유지한다(실측으로 확인했다 —
+/// [`opaque_method_sites`] 의 설명).
+#[test]
+fn every_dispatch_decides_by_a_name_the_scan_can_see() {
+    for (file, func) in [
+        (GUI_STEP, GUI_FN),
+        (HEADLESS_PUMP, HEADLESS_FN),
+        (GUI_DEBUG_STEP, GUI_DEBUG_FN),
+    ] {
+        let src = read(file);
+        let body =
+            fn_body(&src, func).unwrap_or_else(|| panic!("{file} 에서 `{func}` 본문을 못 잘랐다"));
+        assert!(
+            body.contains(METHOD_EXPR),
+            "{file} 의 `{func}` 본문에 `{METHOD_EXPR}` 이 하나도 없다 — 이름을 읽는 \
+             표현식이 바뀌었으면 `METHOD_EXPR` 도 같이 고쳐라. 안 고치면 이 검사는 \
+             아무 자리도 안 보면서 초록이다"
+        );
+        let opaque = opaque_method_sites(&body);
+        assert!(
+            opaque.is_empty(),
+            "{file} 의 `{func}` 가 **문자열 리터럴이 아닌 값**으로 메서드 이름을 가른다. \
+             이 파일의 판정은 본문을 텍스트로 읽으므로 그 이름은 안 보이고, 답하지도 \
+             사유가 적혀 있지도 않은 메서드가 조용히 생긴다. 리터럴로 적어라: {opaque:?}"
+        );
+    }
+}
+
+/// 매크로가 만든 이름을 문다 — 실측으로 뚫렸던 두 형태 그대로.
+#[test]
+fn a_name_a_macro_makes_is_caught() {
+    let hidden = "\
+fn pump_ipc(app: &mut App) {
+    if cmd.request.method == hidden_name!() { go(); }
+}
+";
+    let body = fn_body(hidden, "fn pump_ipc").unwrap();
+    assert!(
+        method_literals(&body).is_empty(),
+        "이 갈래는 리터럴 스캔에 안 보인다 — 그것이 전제다"
+    );
+    assert!(
+        !opaque_method_sites(&body).is_empty(),
+        "매크로가 만든 이름을 안 봤다"
+    );
+
+    let arm = "\
+fn pump_ipc(app: &mut App) {
+    let r = match cmd.request.method.as_str() {
+        \"ns.one\" => a(),
+        HIDDEN_NAME => b(),
+        other => c(other),
+    };
+}
+";
+    let body = fn_body(arm, "fn pump_ipc").unwrap();
+    let sites = opaque_method_sites(&body);
+    assert_eq!(
+        sites.len(),
+        1,
+        "상수 팔 하나만 걸려야 한다(리터럴 팔과 전부받기 바인딩은 정상이다): {sites:?}"
+    );
+}
+
+/// 값을 **넘기기만** 하는 자리는 판정 자리가 아니다 — 거짓 양성을 막는 대조군.
+#[test]
+fn passing_the_name_along_is_not_a_decision() {
+    let src = "\
+fn pump_ipc(app: &mut App) {
+    delegate(&cmd.request.method, &cmd.request.params, id);
+    let s = cmd.request.method.as_str();
+}
+";
+    let body = fn_body(src, "fn pump_ipc").unwrap();
+    assert!(
+        opaque_method_sites(&body).is_empty(),
+        "넘기는 자리를 판정으로 셌다"
+    );
 }
