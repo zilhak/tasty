@@ -439,22 +439,92 @@ mod tests {
         resp.result.expect("expected success result")
     }
 
+    const EXIT_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// `wait_for_exit` 가 `None` 을 낸 **두 사건**을 갈라 문장으로 만든다.
+    ///
+    /// **왜 가르나.** `PtyRegistry::wait_for_exit` 는 예산을 다 썼을 때도, 그런 id 가
+    /// 레지스트리에 아예 없을 때도(`entries.get(&id)?`) 똑같이 `None` 을 낸다. 종전
+    /// 문구는 그 둘 모두에 "did not exit within timeout" 이라고 적었다 — 실측으로
+    /// 없는 id 는 **1.16 ms** 만에 그 문구를 냈다. 부하 의존 타임아웃으로 읽히는
+    /// 빨강이 사실은 부하와 무관한 사건일 수 있고, 그때 상한 인상은 처방이 아니다.
+    ///
+    /// 가르는 값은 **경과**다. 순수 함수라 아래 단위 테스트가 세 방향을 다 찌른다.
+    fn exit_wait_failure(
+        pty_id: u32,
+        elapsed: std::time::Duration,
+        budget: std::time::Duration,
+        still_registered: bool,
+    ) -> String {
+        if !still_registered {
+            return format!(
+                "headless pty {pty_id} 가 레지스트리에 없다 — 기다린 것이 아니라 \
+                 대상이 없었다({elapsed:?} 만에 반환). 상한({budget:?}) 인상은 \
+                 이 사건의 처방이 아니다"
+            );
+        }
+        if elapsed >= budget {
+            return format!(
+                "headless pty {pty_id} 가 예산 {budget:?} 안에 종료하지 않았다\
+                 (경과 {elapsed:?}). exit-watcher 가 cell 을 못 채웠거나 자식이 \
+                 실제로 안 죽었다 — 어느 쪽인지는 이 자리에서 안 갈린다"
+            );
+        }
+        format!(
+            "headless pty {pty_id} 대기가 예산 {budget:?} 을 다 쓰지 않고 끝났다\
+             (경과 {elapsed:?}). Condvar 루프는 남은 시간이 0 일 때만 빠져나오므로 \
+             이 조합은 일어나면 안 된다 — 상한이 아니라 대기 자체를 봐라"
+        )
+    }
+
     /// exit-watcher 의 종료 신호를 기다려 종료 정보를 반환한다 — 고정 간격 폴링이 아니라
     /// `Condvar` 대기라, 러너 부하로 스케줄이 밀려도 종료 즉시 반환한다(ADR-0129 형태 C 근본).
     /// 상한은 신호가 영영 안 올 때만 걸리는 안전망이라 넉넉히 둔다(정상 경로는 수 ms).
     fn wait_for_exit(engine: &mut CoreState, pty_id: u32) -> Value {
-        match engine
-            .pty_registry
-            .wait_for_exit(pty_id, std::time::Duration::from_secs(30))
-        {
+        let started = std::time::Instant::now();
+        match engine.pty_registry.wait_for_exit(pty_id, EXIT_WAIT_BUDGET) {
             Some(exit) => json!({
                 "id": pty_id,
                 "exited": true,
                 "exit_code": exit.code,
                 "success": exit.success,
             }),
-            None => panic!("headless pty {pty_id} did not exit within timeout"),
+            None => panic!(
+                "{}",
+                exit_wait_failure(
+                    pty_id,
+                    started.elapsed(),
+                    EXIT_WAIT_BUDGET,
+                    engine.pty_registry.contains(pty_id),
+                )
+            ),
         }
+    }
+
+    #[test]
+    fn the_exit_wait_failure_tells_which_of_the_two_events_happened() {
+        let budget = std::time::Duration::from_secs(30);
+
+        // 대상이 없다 — 경과가 짧고, 상한 인상이 처방이 아니라고 적힌다.
+        let gone = exit_wait_failure(7, std::time::Duration::from_millis(1), budget, false);
+        assert!(gone.contains("레지스트리에 없다"), "{gone}");
+        assert!(gone.contains("처방이 아니다"), "{gone}");
+
+        // 양방향 — 예산을 다 쓴 쪽은 그 문장을 쓰지 않는다.
+        let spent = exit_wait_failure(7, budget, budget, true);
+        assert!(spent.contains("예산"), "{spent}");
+        assert!(
+            !spent.contains("레지스트리에 없다"),
+            "대상이 있는데 없다고 적었다: {spent}"
+        );
+
+        // 세 번째 갈래 — 있는데 예산도 안 썼다. 일어나면 안 되는 조합이라 그렇게 적는다.
+        let odd = exit_wait_failure(7, std::time::Duration::from_millis(1), budget, true);
+        assert!(odd.contains("일어나면 안 된다"), "{odd}");
+        assert!(
+            !odd.contains("레지스트리에 없다") && !odd.contains("안에 종료하지 않았다"),
+            "세 갈래가 안 갈렸다: {odd}"
+        );
     }
 
     #[test]
