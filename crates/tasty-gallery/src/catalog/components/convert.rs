@@ -38,7 +38,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::icon(
                         ui,
                         icons::CHEVRON_RIGHT,
-                        theme.icon_glyph_size_md.value(),
+                        theme.icon_glyph_size_md,
                         theme.text_muted().to_egui(),
                     );
                     ui.vertical(|ui| {

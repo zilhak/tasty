@@ -86,7 +86,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::icon(
                         ui,
                         icons::REMOTE,
-                        theme.icon_glyph_size_md.value(),
+                        theme.icon_glyph_size_md,
                         theme.text_secondary().to_egui(),
                     );
                     kit::title(ui, theme, "Remote connections");
@@ -381,7 +381,7 @@ fn attach_header(ui: &mut egui::Ui, theme: &Theme) {
             kit::icon(
                 ui,
                 icons::REMOTE,
-                theme.icon_glyph_size_md.value(),
+                theme.icon_glyph_size_md,
                 theme.text_secondary().to_egui(),
             );
             kit::title(ui, theme, "Remote connections");

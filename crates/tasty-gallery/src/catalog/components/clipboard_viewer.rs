@@ -352,7 +352,7 @@ fn image_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     kit::icon(
         &mut lui,
         icons::IMAGE,
-        theme.icon_glyph_size_sm.value(),
+        theme.icon_glyph_size_sm,
         theme.text_muted().to_egui(),
     );
     tag(&mut lui, theme, "Image", TagVariant::Accent, false);
@@ -547,7 +547,7 @@ fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     kit::icon(
         &mut lui,
         icons::LAYERS,
-        theme.icon_glyph_size_sm.value(),
+        theme.icon_glyph_size_sm,
         theme.text_muted().to_egui(),
     );
     tag(&mut lui, theme, "Other", TagVariant::Accent, false);
@@ -681,7 +681,7 @@ fn header_row(ui: &mut egui::Ui, theme: &Theme) {
     kit::icon(
         &mut lui,
         icons::CLIPBOARD,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_muted().to_egui(),
     );
     lui.label(
@@ -704,7 +704,7 @@ fn header_row(ui: &mut egui::Ui, theme: &Theme) {
     kit::icon(
         &mut rui,
         icons::CLOSE,
-        theme.icon_glyph_size_sm.value(),
+        theme.icon_glyph_size_sm,
         theme.text_secondary().to_egui(),
     );
 
@@ -735,7 +735,7 @@ fn type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
     kit::icon(
         &mut lui,
         icons::TEXT_LEFT,
-        theme.icon_glyph_size_sm.value(),
+        theme.icon_glyph_size_sm,
         theme.text_muted().to_egui(),
     );
     tag(&mut lui, theme, "Text", TagVariant::Accent, false);
@@ -775,7 +775,7 @@ fn type_bar_row_html(
     kit::icon(
         &mut lui,
         icons::HTML,
-        theme.icon_glyph_size_sm.value(),
+        theme.icon_glyph_size_sm,
         theme.text_muted().to_egui(),
     );
     tag(&mut lui, theme, "HTML", TagVariant::Accent, false);
@@ -946,7 +946,7 @@ fn center_popup(
                     } else {
                         theme.text_muted().to_egui().gamma_multiply(0.5)
                     };
-                    kit::icon(ui, glyph, CENTER_ICON_SIZE, tint);
+                    kit::icon(ui, glyph, LogicalPx(CENTER_ICON_SIZE), tint);
                     ui.add_space(theme.spacing_sm.value());
                     let title_color = if danger {
                         theme.accent_danger().to_egui()

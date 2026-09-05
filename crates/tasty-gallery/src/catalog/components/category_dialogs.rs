@@ -57,7 +57,7 @@ fn delete_confirm(ui: &mut egui::Ui, theme: &Theme) {
                 kit::icon(
                     ui,
                     TRASH,
-                    theme.icon_glyph_size_md.value(),
+                    theme.icon_glyph_size_md,
                     theme.accent_danger().to_egui(),
                 );
                 kit::title(ui, theme, "Delete category?");

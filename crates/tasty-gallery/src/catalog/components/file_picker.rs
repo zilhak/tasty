@@ -52,7 +52,7 @@ const HOST_BADGE_H: LogicalPx = LogicalPx(22.0);
 /// 브레드크럼 구분자·타입필터 칩 화살표의 글리프 한 변. **아이콘 스케일 밖이다** —
 /// Theme 은 12(xs) · 14(sm) · 15(row-action) · 16(md) 만 갖는데 디자인은 여기 13 을
 ///쓴다. 조용히 12/14 로 반올림하지 않고 값을 보존한 채 이름만 붙였다.
-const CRUMB_GLYPH: f32 = 13.0;
+const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 
 /// 그 블록 본문 텍스트의 최대 폭 — 한 줄이 너무 길어지지 않게 잡는 값.
 const EMPTY_BODY_MAX_W: LogicalPx = LogicalPx(340.0);
@@ -295,7 +295,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, remote: bool) {
     kit::icon(
         &mut child,
         icons::FILE,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_muted().to_egui(),
     );
     kit::title(&mut child, theme, "Open file");
@@ -734,7 +734,7 @@ fn center(
     if spinner {
         Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
     } else {
-        kit::icon(&mut col, glyph, EMPTY_GLYPH, glyph_color);
+        kit::icon(&mut col, glyph, LogicalPx(EMPTY_GLYPH), glyph_color);
     }
     col.label(
         egui::RichText::new(heading)
@@ -866,12 +866,12 @@ fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
     );
     let ir = egui::Rect::from_min_size(
         egui::pos2(
-            rect.right() - pad - CRUMB_GLYPH,
-            rect.center().y - CRUMB_GLYPH * 0.5,
+            rect.right() - pad - CRUMB_GLYPH.value(),
+            rect.center().y - CRUMB_GLYPH.value() * 0.5,
         ),
-        egui::vec2(CRUMB_GLYPH, CRUMB_GLYPH),
+        egui::vec2(CRUMB_GLYPH.value(), CRUMB_GLYPH.value()),
     );
     icons::CHEVRON_DOWN
-        .image(CRUMB_GLYPH, theme.text_muted().to_egui())
+        .image(CRUMB_GLYPH.value(), theme.text_muted().to_egui())
         .paint_at(ui, ir);
 }

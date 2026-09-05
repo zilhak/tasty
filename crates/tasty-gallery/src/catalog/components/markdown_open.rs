@@ -122,12 +122,7 @@ fn choice(
             } else {
                 theme.text_secondary()
             };
-            kit::icon(
-                ui,
-                glyph,
-                theme.icon_glyph_size_md.value(),
-                icon_color.to_egui(),
-            );
+            kit::icon(ui, glyph, theme.icon_glyph_size_md, icon_color.to_egui());
             ui.label(
                 egui::RichText::new(title)
                     .size(theme.font_size_body.value())

@@ -109,7 +109,7 @@ fn preset(ui: &mut egui::Ui, theme: &Theme, name: &str, meta: &str, selected: bo
     kit::icon(
         &mut child,
         icons::SPLIT,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_secondary().to_egui(),
     );
     child.vertical(|ui| {

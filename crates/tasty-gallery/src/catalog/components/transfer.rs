@@ -165,12 +165,7 @@ fn header_band(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    kit::icon(
-        &mut child,
-        glyph,
-        theme.icon_glyph_size_md.value(),
-        glyph_color,
-    );
+    kit::icon(&mut child, glyph, theme.icon_glyph_size_md, glyph_color);
     child.label(
         egui::RichText::new(title)
             .size(theme.font_size_max.value())
@@ -221,7 +216,7 @@ fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
         kit::icon(
             ui,
             icons::FILE,
-            theme.icon_glyph_size_md.value(),
+            theme.icon_glyph_size_md,
             theme.text_muted().to_egui(),
         );
         let avail = ui.available_width();

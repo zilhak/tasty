@@ -156,7 +156,7 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
             kit::icon(
                 ui,
                 icons::SCRIPT,
-                theme.icon_glyph_size_md.value(),
+                theme.icon_glyph_size_md,
                 theme.text_muted().to_egui(),
             );
         });
@@ -298,7 +298,12 @@ fn empty_state(ui: &mut egui::Ui, theme: &Theme) {
     ui.vertical_centered(|ui| {
         ui.add_space(theme.spacing_xl.value());
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-        kit::icon(ui, icons::SCRIPT, EMPTY_GLYPH, theme.text_muted().to_egui());
+        kit::icon(
+            ui,
+            icons::SCRIPT,
+            LogicalPx(EMPTY_GLYPH),
+            theme.text_muted().to_egui(),
+        );
         ui.label(
             egui::RichText::new("No scripts registered")
                 .size(theme.font_size_max.value())

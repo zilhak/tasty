@@ -461,7 +461,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
     kit::icon(
         &mut child,
         icons::REMOTE,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_muted().to_egui(),
     );
     kit::title(&mut child, theme, "Add remote workspace");
@@ -678,7 +678,7 @@ fn center_state(
     if spinner {
         Spinner::new().size(EMPTY_GLYPH).show(&mut col, theme);
     } else {
-        kit::icon(&mut col, glyph, EMPTY_GLYPH, glyph_color);
+        kit::icon(&mut col, glyph, LogicalPx(EMPTY_GLYPH), glyph_color);
     }
     col.label(
         egui::RichText::new(heading)
@@ -992,7 +992,7 @@ fn ws_row(ui: &mut egui::Ui, theme: &Theme, w: &Ws, selected: bool) {
     kit::icon(
         &mut child,
         icons::SPLIT,
-        theme.font_size_caption.value(),
+        theme.font_size_caption,
         theme.text_muted().to_egui(),
     );
     child.label(

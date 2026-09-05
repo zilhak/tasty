@@ -62,9 +62,10 @@ pub fn frame_card(
 }
 
 /// 인라인 글리프 — `size` 정사각 영역을 할당해 `color` tint 로 그린다.
-pub fn icon(ui: &mut egui::Ui, glyph: MockGlyph, size: f32, color: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-    glyph.image(size, color).paint_at(ui, rect);
+pub fn icon(ui: &mut egui::Ui, glyph: MockGlyph, size: LogicalPx, color: egui::Color32) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(size.value(), size.value()), egui::Sense::hover());
+    glyph.image(size.value(), color).paint_at(ui, rect);
 }
 
 /// 모달 기본 배경 (bg-panel).

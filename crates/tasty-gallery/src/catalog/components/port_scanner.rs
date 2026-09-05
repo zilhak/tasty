@@ -121,7 +121,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::icon(
                         ui,
                         icons::PORT,
-                        theme.icon_glyph_size_md.value(),
+                        theme.icon_glyph_size_md,
                         theme.text_secondary().to_egui(),
                     );
                     kit::title(ui, theme, "Listening ports");
@@ -583,7 +583,7 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
             kit::icon(
                 ui,
                 icons::COPY,
-                theme.icon_glyph_size_sm.value(),
+                theme.icon_glyph_size_sm,
                 theme.text_muted().to_egui(),
             );
         }

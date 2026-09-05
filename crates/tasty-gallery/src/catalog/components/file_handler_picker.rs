@@ -151,7 +151,7 @@ fn handler(
     kit::icon(
         &mut child,
         glyph,
-        theme.icon_glyph_size_md.value(),
+        theme.icon_glyph_size_md,
         theme.text_secondary().to_egui(),
     );
     child.vertical(|ui| {
