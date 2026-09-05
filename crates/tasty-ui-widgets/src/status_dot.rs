@@ -39,6 +39,11 @@ impl StatusKind {
 }
 
 /// 상태 점 + 라벨을 한 줄로 그린다. `pulse` + `!reduced_motion` 이면 링 애니메이션.
+///
+/// **라벨이 비면 점만 그리고 폭도 점 하나뿐이다.** 라벨 없는 점이 필요한 자리(행
+/// 좌측의 실행 표시 등)가 이 위젯을 그대로 부를 수 있어야 하는데, 뒤따르는 라벨이
+/// 없는데도 `GAP` 을 할당하면 그 자리만 정렬선이 밀린다. 소비자가 폭을 되빼는 래퍼를
+/// 쓰게 만들지 않는다 — 되빼는 값은 그때마다 다시 손으로 적히고 여기 상수와 갈린다.
 pub fn status_dot(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -55,7 +60,13 @@ pub fn status_dot(
         egui::Color32::PLACEHOLDER,
     );
     let h = dot.max(galley.rect.height());
-    let w = dot + GAP + galley.rect.width();
+    // 라벨이 없으면 gap 도 없다 — 뒤에 붙을 것이 없는 여백이다.
+    let w = dot
+        + if label.is_empty() {
+            0.0
+        } else {
+            GAP + galley.rect.width()
+        };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
 
     let dot_center = egui::pos2(rect.left() + dot * 0.5, rect.center().y);
@@ -63,7 +74,7 @@ pub fn status_dot(
 
     if pulse && !reduced_motion {
         let t = ui.ctx().input(|i| i.time);
-        let period = theme.status_dot_pulse_ms() as f64 / 1000.0; // ms → s
+        let period = theme.status_dot_pulse_duration().to_secs_f64();
         let phase = (t / period).rem_euclid(1.0) as f32;
         let eased = 1.0 - (1.0 - phase).powi(3); // ease-out cubic
         let radius = (dot * 0.5 + RING_INSET) * (PULSE_SCALE_MIN + PULSE_SCALE_RANGE * eased);
@@ -73,11 +84,13 @@ pub fn status_dot(
     }
     ui.painter().circle_filled(dot_center, dot * 0.5, color);
 
-    let pos = egui::pos2(
-        rect.left() + dot + GAP,
-        rect.center().y - galley.rect.height() * 0.5,
-    );
-    ui.painter()
-        .galley(pos, galley, theme.text_secondary().to_egui());
+    if !label.is_empty() {
+        let pos = egui::pos2(
+            rect.left() + dot + GAP,
+            rect.center().y - galley.rect.height() * 0.5,
+        );
+        ui.painter()
+            .galley(pos, galley, theme.text_secondary().to_egui());
+    }
     resp
 }

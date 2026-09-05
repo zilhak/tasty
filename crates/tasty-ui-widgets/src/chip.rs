@@ -63,6 +63,11 @@ pub fn tag(
     variant: TagVariant,
     dot: bool,
 ) -> egui::Response {
+    // 태그 테두리/채움은 accent 를 그대로 쓰지 않고 낮춘 톤이다. 대응 component
+    // 토큰이 없어 값을 여기 이름으로 둔다 — 어느 토큰으로 수렴할지는 디자인 판단.
+    const TAG_BORDER_OPACITY: f32 = 0.4;
+    const TAG_REMOTE_FILL_OPACITY: f32 = 0.16;
+    const TAG_REMOTE_BORDER_OPACITY: f32 = 0.45;
     let (fill, border, fg) = match variant {
         // Default(외곽선 chip)만 `tag-*` component 색 대응. 나머지 상태 변형(accent
         // 계열)은 대응 component 토큰이 없어 semantic 유지.
@@ -83,27 +88,55 @@ pub fn tag(
         ),
         TagVariant::Info => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_info().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_info()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_info().to_egui(),
         ),
         TagVariant::Remote => (
-            theme.accent_remote().to_egui().gamma_multiply(0.16),
-            Some(theme.accent_remote().to_egui().gamma_multiply(0.45)),
+            theme
+                .accent_remote()
+                .to_egui()
+                .gamma_multiply(TAG_REMOTE_FILL_OPACITY),
+            Some(
+                theme
+                    .accent_remote()
+                    .to_egui()
+                    .gamma_multiply(TAG_REMOTE_BORDER_OPACITY),
+            ),
             theme.accent_remote().to_egui(),
         ),
         TagVariant::Success => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_success().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_success()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_success().to_egui(),
         ),
         TagVariant::Warning => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_warning().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_warning()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_warning().to_egui(),
         ),
         TagVariant::Danger => (
             egui::Color32::TRANSPARENT,
-            Some(theme.accent_danger().to_egui().gamma_multiply(0.4)),
+            Some(
+                theme
+                    .accent_danger()
+                    .to_egui()
+                    .gamma_multiply(TAG_BORDER_OPACITY),
+            ),
             theme.accent_danger().to_egui(),
         ),
     };
@@ -188,8 +221,30 @@ pub fn badge(
     resp
 }
 
-/// Badge dot — 라벨 없는 8px 상태 점.
+/// Badge dot — 라벨 없는 상태 점.
+///
+/// `Ui` 에 `badge-dot-size` 정사각 자리를 할당하고 그 중심에 [`paint_badge_dot`] 으로
+/// 그린다 — **그림은 그쪽 한 벌**이고 여기는 자리 계산만 한다. 이미 정해진 좌표에
+/// 겹쳐 그려야 하는 쪽은 [`paint_badge_dot`] 을 직접 부른다.
 pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egui::Response {
+    let dot_sz = theme.badge_dot_size().value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
+    paint_badge_dot(ui.painter(), theme, rect.center(), variant);
+    resp
+}
+
+/// 상태 점 하나를 **좌표에 직접** 그린다 — [`badge_dot`] 이 레이아웃에 자리를 잡아
+/// 부르는 것과 같은 그림이다([`num_keycap`] ↔ [`paint_num_keycap`] 과 같은 갈래).
+///
+/// 본체 목록의 행 우측 점처럼 **행 rect 에서 계산한 좌표**에 그려야 하는 자리가 있어
+/// 갈래가 둘이다. 지름은 `badge-dot-size` 에서만 오므로 지역 상수로 반지름을 박으면
+/// 안 된다 — 토큰은 `ui_zoom` 을 타고 상수는 안 탄다.
+pub fn paint_badge_dot(
+    painter: &egui::Painter,
+    theme: &Theme,
+    center: egui::Pos2,
+    variant: BadgeVariant,
+) {
     let fill = match variant {
         BadgeVariant::Danger => theme.accent_danger().to_egui(),
         BadgeVariant::Primary => theme.accent_primary().to_egui(),
@@ -197,61 +252,90 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
         BadgeVariant::Success => theme.accent_success().to_egui(),
         BadgeVariant::Neutral => theme.surface_active().to_egui(),
     };
-    let dot_sz = theme.badge_dot_size().value();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
-    ui.painter()
-        .circle_filled(rect.center(), dot_sz * 0.5, fill);
-    resp
+    painter.circle_filled(center, theme.badge_dot_size().value() * 0.5, fill);
 }
 
 /// 단일 숫자 키캡 (디자인 `overlays/NumCap` — switch-number overlay).
 ///
-/// `kbd()` 의 단일 키캡 시각을 그대로 따르되 `active` 면 accent fill 로 교체한다.
-/// modifier 홀드 중 탭/워크스페이스의 leading indicator 를 제자리 교체하는 용도라
-/// 16×16 고정. core `kbd()` 와 시각 기준(상수·하단 2px·radius)을 공유한다.
-///
-/// - inactive: `surface_raised` fill + `border_strong` 엣지 + `text_secondary` 숫자.
-/// - active: `accent_primary` fill/엣지 + `text_on_accent` 숫자.
+/// `Ui` 에 한 변 `switch-overlay-size` 인 정사각 자리를 할당하고 그 중심에
+/// [`paint_num_keycap`] 으로 그린다 — **그림은 그쪽 한 벌**이고 여기는 자리 계산만
+/// 한다. 이미 정해진 좌표에 겹쳐 그려야 하는 쪽은 [`paint_num_keycap`] 을 직접 부른다.
 pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -> egui::Response {
-    // inactive 는 `kbd-*` component 색 대응. active accent 는 chip component 토큰
-    // 없어 semantic 유지.
+    let side = theme.switch_overlay_size().value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    paint_num_keycap(ui.painter(), theme, rect.center(), digit, active, 1.0);
+    resp
+}
+
+/// 숫자 키캡 한 장을 **좌표에 직접** 그린다 — [`num_keycap`] 이 레이아웃에 자리를
+/// 잡아 부르는 것과 같은 그림이다.
+///
+/// 이 갈래가 필요한 이유는 소비처가 둘이고 **레이아웃 여부가 다르기 때문**이다.
+/// 갤러리 specimen 은 `Ui` 안에 자리를 할당해 그리고, 본체 switch-number overlay 는
+/// 탭 스트립·사이드바 행 위에 이미 정해진 좌표로 겹쳐 그린다(그래서 알파 페이드도
+/// 필요하다). 모양이 아니라 **놓는 방식**이 다르므로, 갈리는 것은 자리 계산까지고
+/// 그림은 여기 한 벌이다.
+///
+/// `alpha` 는 등장 페이드 계수(0..=1) — 채움·엣지·글자에 같은 값이 걸려 키캡 전체가
+/// 함께 떠오른다.
+///
+/// 색과 두 치수(한 변·하단 두께)는 `switch-overlay-*` component 토큰을 읽는다 —
+/// 이 컴포넌트가 자기 토큰 집합을 가지므로 semantic 을 직접 읽지 않는다. 디자인이
+/// 키캡만 다시 칠하면 여기만 바뀐다. radius 와 글자 크기는 그 집합에 없어
+/// `kbd-*` 를 그대로 쓴다(`switch-overlay-*` 자신이 `kbd-*` 의 별칭이다).
+pub fn paint_num_keycap(
+    painter: &egui::Painter,
+    theme: &Theme,
+    center: egui::Pos2,
+    digit: &str,
+    active: bool,
+    alpha: f32,
+) {
     let (fill, border, fg) = if active {
-        let accent = theme.accent_primary().to_egui();
-        (accent, accent, theme.text_on_accent().to_egui())
+        (
+            theme.switch_overlay_active_bg().to_egui(),
+            theme.switch_overlay_active_bg().to_egui(),
+            theme.switch_overlay_active_fg().to_egui(),
+        )
     } else {
         (
-            theme.kbd_bg().to_egui(),
-            theme.kbd_border().to_egui(),
-            theme.kbd_fg().to_egui(),
+            theme.switch_overlay_bg().to_egui(),
+            theme.switch_overlay_border().to_egui(),
+            theme.switch_overlay_fg().to_egui(),
         )
     };
+    let (fill, border, fg) = (
+        fill.gamma_multiply(alpha),
+        border.gamma_multiply(alpha),
+        fg.gamma_multiply(alpha),
+    );
+    let side = theme.switch_overlay_size().value();
     let radius = theme.kbd_radius().value();
     let bw = theme.border_width.value();
-    let micro = theme.kbd_font_size().value();
-    let kbd_h = theme.kbd_size().value();
-    let bottom_border = theme.kbd_shadow_depth().value();
-    let galley =
-        ui.painter()
-            .layout_no_wrap(digit.to_owned(), mono(micro), egui::Color32::PLACEHOLDER);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(kbd_h, kbd_h), egui::Sense::hover());
-    ui.painter().rect_filled(rect, radius, fill);
+    let bottom_border = theme.switch_overlay_shadow_depth().value();
+    let rect = egui::Rect::from_center_size(center, egui::vec2(side, side));
+    painter.rect_filled(rect, radius, fill);
     // 키캡 하단 보더 2px 강조 → 윗변 1px, 아랫변 2px 로 따로 그린다 (kbd 와 동일).
-    ui.painter().rect_stroke(
+    painter.rect_stroke(
         rect,
         radius,
         egui::Stroke::new(bw, border),
         egui::StrokeKind::Inside,
     );
-    ui.painter().line_segment(
+    painter.line_segment(
         [
             egui::pos2(rect.left() + radius, rect.bottom() - bw),
             egui::pos2(rect.right() - radius, rect.bottom() - bw),
         ],
         egui::Stroke::new(bottom_border, border),
     );
+    let galley = painter.layout_no_wrap(
+        digit.to_owned(),
+        mono(theme.kbd_font_size().value()),
+        egui::Color32::PLACEHOLDER,
+    );
     let pos = rect.center() - galley.rect.size() * 0.5;
-    ui.painter().galley(pos, galley, fg);
-    resp
+    painter.galley(pos, galley, fg);
 }
 
 /// Kbd — 키캡 시퀀스. `keys` 는 `"+"` 로 분할(예: `"Ctrl+K"`), 각 키를 키캡으로.

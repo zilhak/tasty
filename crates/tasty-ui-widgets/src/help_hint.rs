@@ -16,13 +16,6 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::tooltip::{Tooltip, TooltipPlacement};
 
-/// hover 후 버블을 띄우기까지의 delay. design `--tasty-motion-ui-med`(= duration-150,
-/// 150ms). tasty Theme 에 UI 모션 토큰이 없어(전례: switch overlay fade 도 immediate
-/// 처리) 위젯 레벨 duration 상수로 둔다 — 길이/색이 아닌 시간값이라 토큰 축(raw px
-/// 금지) 대상이 아니다. egui 전역 `Interaction::tooltip_delay`(0.5s)를 건드리면 기존
-/// `on_hover_text` 전부가 영향을 받으므로 커스텀 타이밍을 쓴다.
-const HOVER_DELAY_SECONDS: f64 = 0.15;
-
 /// HelpHint 빌더.
 pub struct HelpHint<'a> {
     text: &'a str,
@@ -79,7 +72,7 @@ impl<'a> HelpHint<'a> {
 
         let resp = resp.on_hover_cursor(egui::CursorIcon::Help);
 
-        let show = self.open || hover_delay_elapsed(ui, resp.id, hovered);
+        let show = self.open || hover_delay_elapsed(ui, theme, resp.id, hovered);
         if show {
             let tip_id = self.id.unwrap_or_else(|| resp.id.with("tooltip"));
             Tooltip::new(self.text)
@@ -91,16 +84,19 @@ impl<'a> HelpHint<'a> {
     }
 }
 
-/// hover 시작 시각을 egui memory 에 기록하고 `HOVER_DELAY_SECONDS` 경과 여부를 판정한다.
-/// hover 가 풀리면 타이머를 지워 다음 hover 에서 다시 시작한다.
-fn hover_delay_elapsed(ui: &egui::Ui, id: egui::Id, hovered: bool) -> bool {
+/// hover 시작 시각을 egui memory 에 기록하고 `component.tooltip-delay`(150ms) 경과
+/// 여부를 판정한다. hover 가 풀리면 타이머를 지워 다음 hover 에서 다시 시작한다.
+///
+/// egui 전역 `Interaction::tooltip_delay`(0.5s)를 건드리면 기존 `on_hover_text` 전부가
+/// 영향을 받으므로 커스텀 타이밍을 쓴다.
+fn hover_delay_elapsed(ui: &egui::Ui, theme: &Theme, id: egui::Id, hovered: bool) -> bool {
     let key = id.with("help_hint_hover_started_at");
     if hovered {
         let now = ui.ctx().input(|i| i.time);
         let start = ui
             .ctx()
             .data_mut(|d| *d.get_temp_mut_or_insert_with(key, || now));
-        if now - start < HOVER_DELAY_SECONDS {
+        if now - start < theme.tooltip_delay().to_secs_f64() {
             // delay 경과 후 자동으로 다시 판정되도록 repaint 예약.
             ui.ctx().request_repaint();
             false

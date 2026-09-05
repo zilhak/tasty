@@ -91,7 +91,13 @@ pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 /// 좌측 컬러 바 두께. = `SIZING.spacing_xs`.
 pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
 
-/// 토스트 사이 세로 간격. **4px 그리드 밖(6)** 이라 대응 토큰이 없다.
+/// 토스트 사이 세로 간격. **4px 그리드 밖(6)** 이다.
+///
+/// **대응 토큰이 없는 것이 아니다** — `component.toast-gap` 이 `{semantic.space-sm}` = 8 로
+/// vendor 되어 있고, 그 값이 여기와 다르다. 그리드 스텝에서 6 을 못 찾은 것과 컴포넌트
+/// 토큰이 없는 것은 다른 물음인데 전에는 한 문장이 둘을 합쳐 두고 있었다. 어느 값이
+/// 맞는지는 host chrome 토큰 전환 시리즈의 결정이고, 그때 6 → 8 이면 **픽셀이 바뀐다** —
+/// `docs/design/systems/token-crosswalk.md` 의 "시리즈 02 착수 전 필독" 표에 등재돼 있다.
 pub const TOAST_GAP: f32 = 6.0;
 
 /// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
@@ -176,3 +182,25 @@ pub const BOOT_CARD_CORNER_RADIUS: f32 = 12.0;
 /// accent tag pill 의 코너 반경. **스케일 밖 3px.** 디자인의
 /// `component.badge-radius` 는 `semantic.radius-sm`(2)다.
 pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;
+
+// ── popup 타이틀바 버튼 — 본체와 갤러리가 공유하는 구조값 ────────────────────
+//
+// 이름이 **갤러리에만** 있고 본체는 리터럴로 쓰고 있었다(`let size = 20.0;` ·
+// `- 4.0`). 방향이 반대인 형태다 — 보통은 본체에 이름이 있고 갤러리가 사본을 두는데,
+// 여기서는 갤러리가 "본체 popup 상수" 라고 적어 두고 본체가 그것을 모른다. 인라인
+// 리터럴이라 선언만 보는 가드에도 안 걸렸다. 공유 자리(이 파일)로 올려 한 곳에서
+// 읽게 한다.
+
+/// popup 타이틀바 우측 버튼(close · 전체화면) 한 변. **size 스케일 밖 20px.**
+///
+/// DTCG 의 `primitive.size-*` 에 20 이 없다(`font-size-20` 은 있으나 폰트 가족이라
+/// 길이로 쓸 값이 아니다). ADR-0126 대로 가까운 토큰(16 · 22)으로 스냅하지 않는다 —
+/// 스냅은 픽셀을 바꾸는 디자인 결정이다. 이름과 사유를 붙여 두고 값은 디자인 판단으로
+/// 넘긴다.
+///
+/// **배율**: 이 상수 자체는 `zoomed()` 밖이지만, 본체는 이 값을 그대로 쓰지 않고
+/// UI 배율을 먹여 쓴다. 이 버튼이 앉는 타이틀바 높이가 `item_height_interactive`(배율을
+/// 탄다)에서 오고 옆 간격도 `spacing_xs`(탄다)라, 버튼만 고정이면 1.2 배에서 커진 띠
+/// 안에 작은 버튼이 남는다 — ADR-0126 "그릇과 내용은 배율에 대해 같은 편이어야 한다".
+/// 갤러리는 egui 전역 zoom 을 쓰므로(ADR-0135) 이 값을 그대로 읽는다.
+pub const POPUP_TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);

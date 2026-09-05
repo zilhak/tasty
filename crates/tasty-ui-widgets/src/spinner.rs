@@ -8,8 +8,11 @@
 //! - 회전: 0.9s linear infinite (디자인 `tasty-spin`).
 //! - `prefers-reduced-motion`: 회전 정지 + 3-dot 정적 표시(디자인 fallback).
 //!
-//! egui 에는 `prefers-reduced-motion` 매체 질의가 없으므로 호출부가 `reduced_motion`
-//! 을 명시적으로 넘긴다(StatusDot 와 동일 패턴). 색은 호출부 지정이 없으면
+//! egui 에는 `prefers-reduced-motion` 매체 질의가 없으므로 tasty 는 이 값을
+//! `Theme` 에 실어 나른다 — 스피너는 **기본으로 `theme.reduced_motion` 을 읽는다.**
+//! 종전에는 호출부가 명시적으로 넘겨야 했고, 실제로 넘기는 자리가 레포 전체에
+//! 하나도 없어서 설정을 켜도 스피너가 계속 돌았다. 결정은
+//! `docs/adr/0174-theme-carries-reduced-motion.md`. 색은 호출부 지정이 없으면
 //! `theme.text_muted()` 를 쓴다.
 
 use tasty_type_appearance::theme::Theme;
@@ -21,16 +24,14 @@ const VIEWBOX: f32 = 24.0;
 const STROKE_VB: f32 = 2.0;
 /// track 저대비 alpha (디자인 `.tasty-spinner__track { opacity: 0.22 }`).
 const TRACK_ALPHA: f32 = 0.22;
-/// 회전 주기(초) — 디자인 `animation: tasty-spin 0.9s linear infinite`.
-const SPIN_PERIOD: f64 = 0.9;
 /// arc 가 도는 각도(디자인 `a r r 0 0 1 r r` = 90° 호).
 const ARC_SWEEP: f32 = std::f32::consts::FRAC_PI_2;
 
 /// Spinner 빌더.
 pub struct Spinner {
     size: f32,
-    /// 정지 + 3-dot fallback (`prefers-reduced-motion`).
-    reduced_motion: bool,
+    /// 설정을 무시하는 override. `None` 이면 `theme.reduced_motion` 을 따른다.
+    reduced_motion: Option<bool>,
     /// 호출부 지정 색. `None` 이면 `theme.text_muted()`.
     color: Option<egui::Color32>,
 }
@@ -45,7 +46,7 @@ impl Spinner {
     pub fn new() -> Self {
         Self {
             size: DEFAULT_SIZE,
-            reduced_motion: false,
+            reduced_motion: None,
             color: None,
         }
     }
@@ -56,9 +57,14 @@ impl Spinner {
         self
     }
 
-    /// `prefers-reduced-motion` — 회전 대신 3-dot 정적 표시.
+    /// 사용자 설정(`theme.reduced_motion`)을 **무시하고** 모션 여부를 고정한다.
+    ///
+    /// 이건 예외 전용이다 — 실행 중인 설정과 무관하게 두 상태를 **동시에 보여야
+    /// 하는** 자리에만 쓴다(갤러리 specimen 이 유일한 그런 자리다). 제품 화면에서
+    /// 이걸 부르면 접근성 설정을 되돌리는 것이므로, 새로 부르기 전에 그 자리가
+    /// 정말 "설정을 무시해야 하는" 자리인지 먼저 답해라.
     pub fn reduced_motion(mut self, reduced_motion: bool) -> Self {
-        self.reduced_motion = reduced_motion;
+        self.reduced_motion = Some(reduced_motion);
         self
     }
 
@@ -78,7 +84,7 @@ impl Spinner {
             return resp;
         }
 
-        if self.reduced_motion {
+        if self.reduced_motion.unwrap_or(theme.reduced_motion) {
             draw_dots(ui, rect, color);
             return resp;
         }
@@ -96,7 +102,10 @@ impl Spinner {
 
         // arc — 상단에서 시작하는 90° 호, 시간에 따라 회전.
         let t = ui.ctx().input(|i| i.time);
-        let phase = (t / SPIN_PERIOD).rem_euclid(1.0) as f32;
+        // 회전 주기 — 디자인 `animation: tasty-spin 0.9s linear infinite`
+        // (`component.spinner-duration` = 900ms). 종전에는 `SPIN_PERIOD: f64 = 0.9`
+        // 라는 위젯 로컬 상수였고, 단위가 이름에도 없어 스캐너가 0.9ms 로 읽었다.
+        let phase = (t / theme.spinner_duration().to_secs_f64()).rem_euclid(1.0) as f32;
         // -90°(상단) 기준 시작 + 회전 위상.
         let start = -std::f32::consts::FRAC_PI_2 + phase * std::f32::consts::TAU;
         draw_arc(

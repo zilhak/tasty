@@ -1,6 +1,11 @@
 //! Two-depth layout — 좌측 sub-menu 패널 + 우측 콘텐츠 idiom.
 //!
-//! 본체 settings 의 Appearance / Keybindings 탭, 갤러리 `layout_2depth` 가 공유하는 패턴.
+//! **현재 소비처는 갤러리 primitive specimen `components/prim_layout_shell.rs` 하나뿐이다.**
+//! 본체 settings 는 이 패턴을 안 쓴다 — 그쪽 L2 사이드바는 모달 셸이 소유하는
+//! `SidePanel`(`src/view/settings/ui.rs` `draw_l2_sidebar`, 폭 200, 오른쪽 1px vline)이라
+//! 여기처럼 콘텐츠 안에 놓이는 둥근 테두리 패널이 아니다. 갤러리 `layout_2depth` 도
+//! 자기 painter 로 그린다. 폭도 다르다 — 이 위젯은 `tokens::SUB_TAB_PANEL_WIDTH`(150)
+//! 고정이고 settings 는 200 이다. 즉 같은 idiom 의 다른 구현이 아니라 **다른 idiom** 이다.
 //! - 좌측: 고정 폭 (`tokens::SUB_TAB_PANEL_WIDTH`) `Frame` + `crust` 배경 + `surface0` 1px 보더.
 //! - 우측: `set_max_height(available_height)` 만 걸린 vertical 영역.
 //! - 좌·우 사이 `tokens::PANEL_SPACING` (8px) 의 horizontal gap.
