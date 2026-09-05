@@ -637,8 +637,14 @@ fn cancel_requested() -> bool {
 /// 자식 슬롯 잠금. 이 뮤텍스 안에서 하는 일은 `Option<Child>` 의 take/replace 뿐이라
 /// 패닉 지점이 없다 — poisoned 는 도달 불가지만, 도달하더라도 자식을 회수하지 못해
 /// 프로세스가 새는 쪽이 더 나쁘므로 값을 복구해 계속 진행한다.
+/// 자식 슬롯 락의 poison 복구 공용 보고 좌표(첫-1 회). 임계구역은 `Option<Child>` 의
+/// take/replace 뿐이라 복구가 안전하다 — 틀린 것은 흔적이 없다는 것이었다.
+const CHILD_SLOT_WHAT: &str = "the ssh child slot";
+static CHILD_SLOT_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 fn lock_slot(m: &Mutex<Option<Child>>) -> std::sync::MutexGuard<'_, Option<Child>> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
+    tasty_utils::poison::recover_mutex(m.lock(), CHILD_SLOT_WHAT, &CHILD_SLOT_POISON_REPORTED)
 }
 
 /// 타임아웃으로 끊은 자식을 kill + wait 해 좀비를 남기지 않는다
