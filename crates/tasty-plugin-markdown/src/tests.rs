@@ -37,6 +37,61 @@ fn create_surface_loads_missing_file_as_error() {
     assert!(doc.content.is_empty());
 }
 
+// round-trip 회귀: create 는 file 을 snapshot 으로 실어야 layout/preset 저장에
+// file 이 보존된다(그래야 host 가 snapshot_cache→SavedSurface::Generic.data 로
+// round-trip). 이게 없으면(SDK 기본 = 빈 SurfaceResult) plugin surface 가 저장 시
+// 내용을 잃는다.
+#[test]
+fn create_surface_carries_file_in_snapshot() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    let res = p.create_surface(SurfaceCreateCtx {
+        surface_id: 1,
+        kind: "markdown".into(),
+        cwd: None,
+        params: json!({
+            "surface_id": 1,
+            "kind": "markdown",
+            "params": { "file": "/tmp/x.md" }
+        }),
+    });
+    assert_eq!(
+        res.snapshot,
+        Some(json!({ "file": "/tmp/x.md" })),
+        "create 는 file 을 snapshot 으로 실어야 한다"
+    );
+}
+
+// layout 재시작 복원 경로: restore 는 create 가 실은 snapshot({file}) 을 그대로
+// 받아 같은 문서를 열고, snapshot 을 재반환해 다음 저장에도 file 을 유지한다.
+#[test]
+fn restore_surface_reopens_from_snapshot_and_re_carries_it() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    let res = p.restore_surface(SurfaceRestoreCtx {
+        surface_id: 2,
+        kind: "markdown".into(),
+        data: json!({ "file": "/tmp/x.md" }),
+    });
+    assert!(p.docs.contains_key(&2), "restore 가 문서를 연다");
+    assert_eq!(
+        res.snapshot,
+        Some(json!({ "file": "/tmp/x.md" })),
+        "restore 도 snapshot 을 재반환해야 다음 저장에 file 이 남는다"
+    );
+}
+
+// file 없는 빈 markdown 은 저장할 snapshot 이 없어 None — 호스트는 기존 캐시 유지.
+#[test]
+fn create_without_file_yields_no_snapshot() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    let res = p.create_surface(SurfaceCreateCtx {
+        surface_id: 3,
+        kind: "markdown".into(),
+        cwd: None,
+        params: json!({ "surface_id": 3, "kind": "markdown", "params": {} }),
+    });
+    assert_eq!(res.snapshot, None);
+}
+
 /// 크기게이트 임계값 판정 — 초과만 게이트(경계값·이하·부재는 통과). host
 /// `file/dispatch.rs` 의 `size_gate_boundary_and_over` 를 plugin in-process 로 이관.
 #[test]

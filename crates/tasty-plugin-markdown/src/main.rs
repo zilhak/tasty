@@ -36,7 +36,7 @@ use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
     BusHandle, EventDispatchCtx, EventScope, HostHandle, IpcMethodCtx, IpcMethodError, Plugin,
     PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx,
-    SurfaceResult, Translator, WebviewNavigationAttemptCtx,
+    SurfaceRestoreCtx, SurfaceResult, Translator, WebviewNavigationAttemptCtx,
 };
 use tasty_type_appearance::theme::Theme;
 use watch::WatchCmd;
@@ -259,14 +259,20 @@ impl Plugin for MarkdownPlugin {
         // stat 하지 않는다(크기게이트는 plugin 소유). 이벤트 → host `fire_popup_triggers`
         // → 이 plugin 의 `[[contributes.popup]]`(event trigger) 확인 팝업이 열린다.
         let file = surface_param_file(&ctx.params);
-        let doc = self.make_doc(file.clone(), ctx.surface_id);
-        self.docs.insert(ctx.surface_id, doc);
-        // idle 감시 등록(단계 06). `markdown.navigate` 제자리 이동도 같은 surface_id 로
-        // create_surface 를 다시 호출하므로 여기서 자연스럽게 갱신된다.
-        self.watch_register(ctx.surface_id, file);
-        // 문서를 HTML 로 렌더해 host WebView 에 싣는다 — 이 kind 는 mesh 를 그리지 않는다.
-        self.reload_webview(ctx.surface_id);
-        SurfaceResult::default()
+        self.open_file_surface(ctx.surface_id, file)
+    }
+
+    // layout 재시작 복원 경로. preset apply 는 `surface.create` 를 타지만 layout
+    // 재시작은 `surface.restore` 를 탄다 — SDK 기본 구현은 빈 `SurfaceResult` 라,
+    // 구현하지 않으면 재시작 시 markdown 이 file 을 잃고 빈 채로 살아난다. create 가
+    // 실어 둔 snapshot(`{"file": ...}`)을 그대로 받아 같은 문서를 연다.
+    fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
+        let file = ctx
+            .data
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        self.open_file_surface(ctx.surface_id, file)
     }
 
     fn destroy_surface(&mut self, surface_id: u32) {
@@ -442,6 +448,25 @@ impl MarkdownPlugin {
     /// 문서를 만든다. 파일이 임계값을 *초과* 하면 read 를 보류(`new_deferred`)하고
     /// large-file 이벤트를 발행해 확인 팝업을 띄운다(크기 감지는 plugin in-process).
     /// bus 가 없으면(초기화 전) 게이트를 건너뛰고 즉시 로드한다(fail-open).
+    /// create/restore 공용 — file 로 문서를 열고, host 에 snapshot(`{"file": ...}`)을
+    /// 올려 layout/preset round-trip 에 file 을 보존한다. host 는 이 snapshot 을
+    /// `RemoteSurface.snapshot_cache` 로 캐시했다가 `SavedSurface::Generic.data` 로
+    /// 저장하고, 다음 실행의 `surface.restore` 에 `data` 로 되돌려준다. file 이 없으면
+    /// 저장할 것이 없어 `None`(호스트는 기존 캐시 유지).
+    fn open_file_surface(&mut self, surface_id: u32, file: Option<String>) -> SurfaceResult {
+        let doc = self.make_doc(file.clone(), surface_id);
+        self.docs.insert(surface_id, doc);
+        // idle 감시 등록(단계 06). `markdown.navigate` 제자리 이동도 같은 surface_id 로
+        // create_surface 를 다시 호출하므로 여기서 자연스럽게 갱신된다.
+        self.watch_register(surface_id, file.clone());
+        // 문서를 HTML 로 렌더해 host WebView 에 싣는다 — 이 kind 는 mesh 를 그리지 않는다.
+        self.reload_webview(surface_id);
+        SurfaceResult {
+            display_name: None,
+            snapshot: file.as_ref().map(|f| json!({ "file": f })),
+        }
+    }
+
     fn make_doc(&self, file: Option<String>, surface_id: u32) -> MdDoc {
         if let Some(path) = file.as_deref()
             && let Some(size) = file_exceeds_limit(path)
@@ -578,7 +603,7 @@ impl MarkdownPlugin {
         }
     }
 
-    /// 파일열기 팝업 한 frame 을 egui-mesh 로 그린다. [browse] 는 host `file_picker.trigger`
+    /// 파일열기 팝업 한 frame 을 egui-mesh 로 그린다. [browse] 는 host `fs.pick_file`
     /// (native 다이얼로그)로 경로를 채우고, [열기] 는 입력 경로를 host `file_handler.dispatch`
     /// 로 열고 팝업을 닫는다. [취소]/Esc 는 팝업만 닫는다. chrome(scrim/border)은 host 소유.
     #[cfg(any(unix, windows))]
@@ -787,7 +812,7 @@ fn draw_confirm(
 enum FileOpenAction {
     /// 아무것도 안 함.
     None,
-    /// host 소유 file_picker popup 을 연다(`file_picker.trigger`, ADR-0058).
+    /// native 파일 다이얼로그를 연다(host fs.pick_file).
     Browse,
     /// 입력 경로로 파일을 연다.
     Open,
@@ -816,8 +841,9 @@ struct FilePickerResultWire {
 /// ADR-0058). plugin 프로세스는 native OS 다이얼로그도, host 의 in-app
 /// popup 도 직접 못 열기 때문에 host 에 위임한다. markdown 확장자로 필터. 반환값은
 /// **선택 경로가 아니라** 이 요청의 `request_id` — 실제 경로는 나중에 `on_event`
-/// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push —
-/// 이 호출 자체는 popup 확정을 기다리지 않고 곧장 반환된다).
+/// 의 `"file_picker.result"` 로 비동기 도착한다(ADR-0058 의 즉시 ack + 이벤트 push,
+/// 옛 `fs.pick_file`/rfd 동기 모달과 달리 이 호출 자체는 popup 확정을 기다리지 않고
+/// 곧장 반환된다).
 ///
 /// `owner_popup_instance` 로 자기 popup instance 를 함께 신고한다 — host 가 두 팝업을
 /// 부모-자식 스택으로 다루는 근거다(ADR-0084).
