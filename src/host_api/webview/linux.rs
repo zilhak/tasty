@@ -49,6 +49,22 @@ pub struct PlatformWebView {
     parent_x11_window: std::os::raw::c_ulong,
 }
 
+/// 이 백엔드의 실패를 두 종류로 나누는 자리. **분류 근거를 한곳에 모아 둔다** —
+/// 분기마다 흩어 두면 새 분기를 더할 때 무엇을 기준으로 골랐는지가 사라진다.
+///
+/// 기준: **다음 시도에 달라질 수 있는 입력이 있는가.**
+/// - 창 종류(X11/Wayland) · GTK 초기화 · Xlib 적재 · 디스플레이 열기·종류 —
+///   프로세스가 사는 동안 안 바뀐다 ⇒ `Permanent`.
+/// - `XCreateSimpleWindow` 실패(서버 자원 고갈) · GDK 조회가 창을 못 찾음 —
+///   서버 상태라 달라질 수 있다 ⇒ `Transient`.
+fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Permanent(msg.to_string())
+}
+
+fn transient(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Transient(msg.to_string())
+}
+
 impl PlatformWebView {
     pub fn new(
         window: &(impl HasWindowHandle + HasDisplayHandle),
@@ -56,13 +72,13 @@ impl PlatformWebView {
         scale_factor: f64,
         surface_id: u32,
         key_bridge: Rc<WebViewKeyBridge>,
-    ) -> Result<Self, String> {
-        let parent_xid = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
+    ) -> Result<Self, super::WebViewCreateError> {
+        let parent_xid = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Xlib(w) => w.window,
-            _ => return Err("Not an X11 window (Wayland is not supported)".to_string()),
+            _ => return Err(perm("Not an X11 window (Wayland is not supported)")),
         };
 
-        let x11_display_ptr = match window.display_handle().map_err(|e| e.to_string())?.as_raw() {
+        let x11_display_ptr = match window.display_handle().map_err(perm)?.as_raw() {
             RawDisplayHandle::Xlib(d) => d
                 .display
                 .map(|p| p.as_ptr())
@@ -72,10 +88,11 @@ impl PlatformWebView {
 
         // Initialize GTK if not already initialized
         if !gtk::is_initialized() {
-            gtk::init().map_err(|e| format!("GTK init failed: {e}"))?;
+            gtk::init().map_err(|e| perm(format!("GTK init failed: {e}")))?;
         }
 
-        let xlib = x11_dl::xlib::Xlib::open().map_err(|e| format!("Failed to open Xlib: {e}"))?;
+        let xlib =
+            x11_dl::xlib::Xlib::open().map_err(|e| perm(format!("Failed to open Xlib: {e}")))?;
 
         let physical = bounds.to_physical(scale_factor);
         let x = physical.x as i32;
@@ -95,7 +112,7 @@ impl PlatformWebView {
         };
 
         if display.is_null() {
-            return Err("Failed to get X11 display".to_string());
+            return Err(perm("Failed to get X11 display"));
         }
 
         // Create X11 child window
@@ -106,24 +123,48 @@ impl PlatformWebView {
         };
 
         if x11_window == 0 {
-            return Err("XCreateSimpleWindow failed".to_string());
+            return Err(transient("XCreateSimpleWindow failed"));
         }
 
-        // SAFETY: 방금 만든 x11_window를 같은 display에 map → flush. 단일 thread, 같은 호출.
+        // SAFETY: 방금 만든 x11_window를 같은 display에 map → sync. 단일 thread, 같은 호출.
+        //
+        // 근거·재검토 조건: docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md
+        // `XFlush` 가 아니라 `XSync` 인 것이 핵심이다 — 아래에서 이 창을 조회하는
+        // 것은 **GDK 자기 연결**이고, 창을 만든 것은 winit 의 연결이다. `XFlush` 는
+        // 소켓에 쓰기만 하고 서버가 처리했는지는 안 기다리므로, 두 연결 사이에
+        // 순서 보장이 없어 GDK 쪽 조회가 생성보다 먼저 처리될 수 있다. 그러면
+        // 서버는 "그런 창 없다" 로 답한다. `XSync` 는 왕복이라 반환 시점에 생성이
+        // **처리 완료**돼 있고, 그 뒤에는 어느 연결이 물어도 창이 보인다.
         unsafe {
             (xlib.XMapWindow)(display, x11_window);
-            (xlib.XFlush)(display);
+            (xlib.XSync)(display, 0 /* discard = False */);
         }
 
         // Create GDK window from X11 window
-        let gdk_display = gtk::gdk::Display::default().ok_or("No GDK display")?;
+        let gdk_display = gtk::gdk::Display::default().ok_or_else(|| perm("No GDK display"))?;
 
         let x11_gdk_display: gdkx11::X11Display = gdk_display
             .downcast()
-            .map_err(|_| "GDK display is not X11")?;
+            .map_err(|_| perm("GDK display is not X11"))?;
 
-        let gdk_window: gtk::gdk::Window =
-            gdkx11::X11Window::foreign_new_for_display(&x11_gdk_display, x11_window).upcast();
+        // 창이 없으면 NULL 이 온다. 바인딩은 그것을 패닉으로 바꾸므로 쓰지 않는다.
+        let gdk_window =
+            match crate::platform::x11_gdk_window::foreign_gdk_window(&x11_gdk_display, x11_window)
+            {
+                Ok(w) => w,
+                Err(e) => {
+                    // 여기서 그냥 돌아가면 방금 만든 X 창이 주인 없이 남는다. 호출부
+                    // (`create_missing_webviews`)는 webview 가 없는 surface 를 **매 프레임**
+                    // 다시 시도하므로, 정리하지 않으면 실패가 이어지는 동안 창이 쌓인다.
+                    // SAFETY: 이 함수가 방금 같은 display 에 만든 창이고, 아직 누구에게도
+                    // 넘기지 않았다(GDK 래핑이 실패한 자리다). 단일 thread.
+                    unsafe { (xlib.XDestroyWindow)(display, x11_window) };
+                    // SAFETY: 위와 같은 유효한 display. 파괴 요청을 서버로 내보낸다 —
+                    // 여기서는 왕복이 필요 없다(뒤에서 이 창을 조회하지 않는다).
+                    unsafe { (xlib.XFlush)(display) };
+                    return Err(transient(e));
+                }
+            };
 
         // Create GTK window and bind to the GDK window
         let gtk_window = gtk::Window::new(gtk::WindowType::Toplevel);

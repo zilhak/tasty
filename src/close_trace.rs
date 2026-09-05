@@ -39,23 +39,21 @@ pub(crate) fn duration_ms(d: Duration) -> f64 {
 /// 아니어서 소비되지 않은 값은 다음 `arm` 이 덮어쓴다.
 static CASCADE_T0: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
 
+/// cascade 계측 셀 락의 poison 복구 공용 보고 좌표(첫-1 회). 셀은 한 칸이라 복구는 안전하다.
+static CASCADE_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const CASCADE_WHAT: &str = "close-trace cascade cell";
+
 /// cascade workspace close 진입(`close_case_workspace` 선두)에서 호출.
 /// `snapshot` 은 그 close 가 C1/C2 를 탔는지 — `close_total` 에 그대로 실린다.
 pub(crate) fn arm_cascade(t0: Instant, snapshot: bool) {
-    let mut g = match CASCADE_T0.lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
-    };
+    let mut g = crate::poison::recover_mutex(CASCADE_T0.lock(), CASCADE_WHAT, &CASCADE_POISONED);
     *g = Some((t0, snapshot));
 }
 
 /// cascade cleanup 완료 지점에서 호출 — 무장된 t0 을 소비한다. `None` 이면 이번
 /// cascade 는 workspace level 이 아니었다는 뜻이라 `close_total` 을 찍지 않는다.
 pub(crate) fn take_cascade() -> Option<(Instant, bool)> {
-    let mut g = match CASCADE_T0.lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
-    };
+    let mut g = crate::poison::recover_mutex(CASCADE_T0.lock(), CASCADE_WHAT, &CASCADE_POISONED);
     g.take()
 }
 

@@ -1,3 +1,5 @@
+// 이유: 파일 열기 디스패치의 호출 트리가 전부 gui 라 headless 빌드엔 호출자가 없다. 모듈을
+// `#[cfg]` 로 가리지 않는 것은 headless 에서도 타입체크를 받게 하려는 것이다.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! 파일 디스패치 helper 잔존 모듈 (D.3.C.G.3 완료 후).
 //!

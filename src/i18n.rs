@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! Internationalization (i18n) facade for the main binary.
 //!
 //! The translation store itself now lives in the shared [`tasty_i18n`] crate so

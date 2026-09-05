@@ -4,7 +4,18 @@
 //! 타입이 실제로 막는 것은 **혼합**(`PhysicalPx + LogicalPx`)이고, **변환 누락**은 막지
 //! 못한다 — `PhysicalPx(x * ppp)` 에서 `* ppp` 를 빠뜨려도 그대로 컴파일된다. 그래서
 //! 변환은 `to_physical(sf)` / `to_logical(sf)` 로만 하고, 그 밖의 수동 산술을 이 가드가
-//! 잡는다. 즉 정책의 절반은 컴파일러가, 나머지 절반은 이 스캔이 강제한다.
+//! 잡는다.
+//!
+//! # 분담은 셋이다 — 이 가드는 그중 하나다
+//!
+//! 1. **두 좌표계를 섞는 것** (`PhysicalPx + LogicalPx`) — 컴파일러.
+//! 2. **변환을 빠뜨리는 것** (`.value()` 뒤의 수동 scale factor 산술) — 이 가드.
+//! 3. **애초에 타입을 안 쓰고 선언하는 것** (`const W: f32 = 96.0;`) —
+//!    `src/source_guards/length_constant_frontier.rs`.
+//!
+//! 셋째가 따로 있는 이유는 앞의 둘이 **이미 타입이 붙은 값**에만 걸리기 때문이다.
+//! 처음부터 `f32` 로 선언된 길이는 섞일 두 타입도, 벗길 `.value()` 도 없어 둘 다
+//! 조용히 통과한다.
 //!
 //! # 왜 `tests/` 가 아니라 여기인가 — 되돌리지 마라
 //!
@@ -366,6 +377,17 @@ fn verdict(
 
 /// 디렉토리 순회. **실패를 삼키지 않는다** — 못 읽은 디렉토리는 위반이 없는 디렉토리와
 /// 구분되지 않으므로, 조용히 건너뛰면 가드가 초록인 채로 눈이 먼다.
+/// 매니페스트가 `name` 을 **의존으로 선언**하는가. 주석이나 산문 언급은 세지 않는다 —
+/// 단순 문자열 포함으로 보면 "이 크레이트에 의존하지 않는다" 는 주석 한 줄이 판정을
+/// 뒤집는다.
+fn declares_dependency(manifest: &str, name: &str) -> bool {
+    manifest.lines().any(|l| {
+        let l = l.trim_start();
+        l.strip_prefix(name)
+            .is_some_and(|rest| rest.trim_start().starts_with('='))
+    })
+}
+
 fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries = std::fs::read_dir(dir).unwrap_or_else(|e| {
         panic!(
@@ -431,6 +453,133 @@ mod tests {
 
     fn count_in_source(source: &str) -> usize {
         violations(&mask_non_code(source)).len()
+    }
+
+    /// `ALLOWED` 의 사유 중 **기계로 확인할 수 있는 것**을 확인한다.
+    ///
+    /// 면제의 근거가 산문이면, 그 근거가 거짓이 되어도 표는 그대로 남아 면제만
+    /// 살아남는다 — 이름·경로로 면제하는 표의 공통 약점이다. 여기 걸린 셋은 사유가
+    /// 사실 진술이라 검사할 수 있다. 넷째(`appearance.rs`, "길이가 아니라 글자 크기")는
+    /// 의미 판단이라 검사 대상이 아니고, **검사 못 한다는 것을 여기 적어 둔다.**
+    #[test]
+    fn the_checkable_allowed_reasons_still_hold() {
+        let root = repo_root();
+        let read = |rel: &str| {
+            std::fs::read_to_string(root.join(rel))
+                .unwrap_or_else(|e| panic!("{rel} 을 못 읽었다: {e}"))
+        };
+
+        // ① "변환 API 본체" — 정말 그 두 함수를 여기서 정의하는가.
+        let length = read("crates/tasty-type-geometry/src/length.rs");
+        for f in ["fn to_physical", "fn to_logical"] {
+            assert!(
+                length.contains(f),
+                "length.rs 가 `{f}` 를 정의하지 않는다 — ALLOWED 의 '변환 API 본체'                  사유가 거짓이 됐다. 함수가 옮겨졌으면 면제도 따라가야 한다."
+            );
+        }
+
+        // ② "짝 타입의 변환 본체" — 왕복 양방향이 여기 있는가.
+        let webview = read("src/host_api/webview.rs");
+        for f in ["fn to_physical", "fn from_physical"] {
+            assert!(
+                webview.contains(f),
+                "webview.rs 가 `{f}` 를 정의하지 않는다 — 초크포인트 사유가 거짓이 됐다."
+            );
+        }
+
+        // ③ "plugin SDK 는 tasty-type-geometry 에 의존하지 않는다" — 사실 진술이다.
+        //    의존이 생기면 타입 API 를 쓸 수 있게 되므로 면제의 근거가 사라진다.
+        let sdk = read("crates/tasty-plugin-sdk/Cargo.toml");
+        assert!(
+            !declares_dependency(&sdk, "tasty-type-geometry"),
+            "plugin SDK 가 이제 tasty-type-geometry 에 의존한다 — ALLOWED 의 사유가              거짓이 됐다. 타입 API 를 쓸 수 있으므로 그 2건을 이식하고 표에서 빼라."
+        );
+        // 비영 대조 — 파일을 실제로 읽었고 파서가 산다. 의존 0 과 못 읽음을 가른다.
+        let declared = sdk
+            .lines()
+            .filter(|l| {
+                let l = l.trim_start();
+                l.starts_with("tasty-") && l.contains('=')
+            })
+            .count();
+        assert!(
+            declared > 0,
+            "SDK 의 Cargo.toml 에서 tasty- 의존을 하나도 못 읽었다 — 파서나 경로가 틀렸다"
+        );
+    }
+
+    /// `WebViewBounds::to_physical` 의 macOS `allow(dead_code)` 면제가 든 **근거**를
+    /// 검사한다.
+    ///
+    /// 그 면제는 "지우거나 `#[cfg]` 로 빼지 않는 이유는 왕복 테스트가 세 OS 모두에서
+    /// 이 함수를 `from_physical` 의 역으로 고정하기 때문" 이라고 적는다. 함수의 존재만
+    /// 보면 그 근거가 거짓이 되는 것을 못 본다 — 왕복 테스트에 OS 게이트가 붙는 순간
+    /// macOS 에서 고정이 사라지고, 그때 면제는 "안 쓰는 함수를 남겨 둔 것" 이 된다.
+    #[test]
+    fn the_macos_dead_code_exemption_still_has_its_reason() {
+        let src = std::fs::read_to_string(repo_root().join("src/host_api/webview.rs"))
+            .expect("webview.rs 를 못 읽었다");
+
+        // ① 근거가 지목하는 왕복 테스트가 실재하고 두 방향을 다 부른다.
+        let start = src
+            .find("mod bounds_tests {")
+            .expect("왕복 테스트 모듈이 없다 — 면제의 근거가 사라졌다");
+        let tests = &src[start..];
+        for needle in [
+            "fn the_physical_round_trip_returns_the_original_rect",
+            "from_physical(",
+            "to_physical(",
+        ] {
+            assert!(
+                tests.contains(needle),
+                "왕복 테스트에 `{needle}` 이 없다 — 면제의 근거가 거짓이 됐다"
+            );
+        }
+
+        // ② 그 테스트가 **세 OS 모두에서** 도는가. OS 게이트가 붙으면 근거가 무너진다.
+        assert!(
+            !tests.contains("target_os"),
+            "왕복 테스트 모듈에 OS 게이트가 생겼다 — 면제의 근거('세 OS 모두에서 \
+             고정한다')가 거짓이 됐다. 게이트를 빼거나 면제를 다시 판단해라."
+        );
+
+        // ③ 비영 대조 — 파일에는 OS 게이트가 실제로 있다(면제 자신이 그것이다).
+        //    ②의 0 이 "게이트가 없다" 인지 "파일을 못 읽었다" 인지를 가른다.
+        assert!(
+            src[..start].contains("target_os"),
+            "webview.rs 앞부분에 OS 게이트가 하나도 없다 — 면제 자체가 사라졌거나 \
+             파일을 잘못 읽었다. 그렇다면 이 테스트의 전제부터 다시 봐라."
+        );
+    }
+
+    /// 위 판정기가 살아 있는가 — 주석 언급과 진짜 선언을 가르는지 fixture 로 본다.
+    /// (모수 단언과 서로를 대체하지 않는다: 이쪽은 "판정기가 죽었는가", 위는 "볼 것이
+    /// 주어졌는가" 를 본다.)
+    #[test]
+    fn a_commented_mention_is_not_a_dependency_declaration() {
+        let name = "tasty-type-geometry";
+        assert!(declares_dependency(
+            "tasty-type-geometry = { path = \"../tasty-type-geometry\" }",
+            name
+        ));
+        assert!(declares_dependency(
+            "  tasty-type-geometry  = \"0.1\"",
+            name
+        ));
+        // 주석 언급은 선언이 아니다 — 이것이 문자열 포함 판정과 갈리는 자리다.
+        assert!(!declares_dependency(
+            "# tasty-type-geometry 에 의존하지 않는다",
+            name
+        ));
+        assert!(!declares_dependency(
+            "# tasty-type-geometry = \"0.1\"",
+            name
+        ));
+        // 접두사가 같은 다른 크레이트를 삼키지 않는다.
+        assert!(!declares_dependency(
+            "tasty-type-geometry-extra = \"0.1\"",
+            name
+        ));
     }
 
     #[test]

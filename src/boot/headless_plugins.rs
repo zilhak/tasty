@@ -24,10 +24,24 @@ use crate::app::App;
 use crate::core::CoreState;
 use crate::state::AppState;
 
-/// attach 세션이 mesh mirror 후보를 mirror 하려 할 때 호출 — 이미 초기화돼 있으면
-/// no-op. `engine.waker_factory` 가 없으면(불변식 위반 — headless 는 부팅 시 항상
-/// 설정) 경고만 남기고 스킵한다.
-pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
+/// 매니저를 **디스크를 읽기만 해서** 세운다 — plugin 프로세스를 띄우지 않고,
+/// 번들 plugin 을 설치하지도 권한을 grant 하지도 않는다.
+///
+/// 조회 메서드(`plugin.list` 등)가 부르는 층이다. 조회가 자기 관측 대상을 바꾸면
+/// 에이전트가 상태를 **관찰하려고** 부른 명령이 그 상태를 만들어버린다. 그래서
+/// 여기서 하는 일은 `refresh_packages` 뿐이고, 그것은 `~/.tasty/plugins/` 를 스캔해
+/// `packages`/`rejected` 를 채우는 읽기 연산이다.
+///
+/// 특히 [`crate::plugin::install_builtins_if_needed`] 는 이 층에 **없다** — 그것은
+/// 번들에서 파일을 복사하고 매니페스트 권한을 `plugins.toml` 에 자동 grant 한다.
+/// 설치와 권한 부여는 조회의 부수효과일 수 없다.
+///
+/// 그 결과 아직 아무것도 설치되지 않은 홈에서는 목록이 빈다. 그것은 거짓이 아니라
+/// 그 시점의 사실이며, 매니저가 아예 없을 때의 `-32000` 응답과 **구분되는 답**이다.
+///
+/// `engine.waker_factory` 가 없으면(불변식 위반 — headless 는 부팅 시 항상 설정)
+/// 경고만 남기고 스킵한다. 이미 초기화돼 있으면 no-op.
+pub(crate) fn ensure_plugin_manager_metadata(app: &mut App, engine: &CoreState) {
     if app.plugin_manager.is_some() {
         return;
     }
@@ -50,11 +64,28 @@ pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
     mgr.set_completion_strategy_registry(std::sync::Arc::new(
         crate::completion_strategy::HostCompletionStrategyPort,
     ));
-    crate::plugin::install_builtins_if_needed(&mut mgr);
     mgr.refresh_packages();
-    mgr.discover_and_start();
-    tracing::info!("headless plugin manager bootstrapped (attach mesh mirror session)");
+    tracing::info!("headless plugin manager bootstrapped (metadata only — no plugin started)");
     app.plugin_manager = Some(mgr);
+}
+
+/// attach 세션이 mesh mirror 후보를 mirror 하려 할 때, 또는 plugin namespace 로
+/// forward 해야 할 때 호출 — 이미 **기동까지** 끝나 있으면 no-op.
+///
+/// [`ensure_plugin_manager_metadata`] 위에 번들 설치와 프로세스 기동을 얹는다.
+/// 조회 경로에서 부르지 않는다(위 함수의 주석 참조).
+pub(crate) fn ensure_plugin_manager(app: &mut App, engine: &CoreState) {
+    if app.plugin_started {
+        return;
+    }
+    ensure_plugin_manager_metadata(app, engine);
+    let Some(mgr) = app.plugin_manager.as_mut() else {
+        return;
+    };
+    crate::plugin::install_builtins_if_needed(mgr);
+    mgr.discover_and_start();
+    app.plugin_started = true;
+    tracing::info!("headless plugin manager started (attach mesh mirror session)");
 }
 
 /// GUI `about_to_wait()` plugin 블록의 헤드리스 등가. hello 마무리(surface_kind
@@ -146,7 +177,7 @@ fn register_hook_events(
     hello_pairs: &[(String, String)],
 ) {
     for (plugin_id, _) in hello_pairs {
-        if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+        if let Some(pkg) = mgr.packages().iter().find(|p| &p.manifest.id == plugin_id) {
             let keys: Vec<String> = pkg
                 .manifest
                 .contributes
@@ -171,7 +202,7 @@ fn register_surface_kinds(
 ) {
     for (plugin_id, _version) in hello_pairs {
         if let Some(pkg) = mgr
-            .packages
+            .packages()
             .iter()
             .find(|p| &p.manifest.id == plugin_id)
             .cloned()
@@ -221,7 +252,28 @@ fn register_one_surface_kind(
     }
 }
 
+/// 헤드리스 진입부의 pre-gate. GUI 의 `App::gates_before_routing` 과 같은 3종을
+/// 같은 순서로 돌린다. 헤드리스는 engine 이 항상 하나라 그쪽의 view 탐색이 필요 없다.
+fn gates_before_intercept(
+    app: &mut App,
+    state: &AppState,
+    engine: &mut CoreState,
+    request: &crate::ipc::protocol::JsonRpcRequest,
+    caller: &crate::ipc::caller::CallerContext,
+) -> Option<crate::ipc::protocol::JsonRpcResponse> {
+    let canonical = crate::ipc::alias::canonicalize(&request.method);
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let ws = engine.workspaces.get(state.active_workspace).map(|w| w.id);
+    let core = &mut app.core;
+    crate::ipc::handler::check_permission_gate(core, engine, caller, canonical, ws, &id)
+        .or_else(|| crate::ipc::handler::check_cap_gate(core, engine, caller, canonical, ws, &id))
+        .or_else(|| {
+            crate::ipc::handler::check_rate_limit_gate(core, engine, caller, canonical, ws, &id)
+        })
+}
+
 /// `src/app/dispatch/plugin_ipc.rs::process_plugin_ipc_calls` 의 헤드리스 등가.
+/// 게이트 3종을 인터셉트보다 먼저 돌리는 순서까지 같다(ADR-0152).
 /// `host.shared_buffer.create` 는 egui-mesh 프레임 생성에 필수라 그대로 인터셉트한다.
 /// popup.close/banner.open/banner.close 는 헤드리스에 대응하는 GUI 상태(popup/banner
 /// overlay, view)가 없어 생략한다.
@@ -238,6 +290,31 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         None => return,
     };
     for call in calls {
+        let caller = crate::ipc::caller::CallerContext::Plugin {
+            plugin_id: call.plugin_id.clone(),
+            permissions: call.permissions.clone(),
+        };
+        let request = crate::ipc::protocol::JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(serde_json::Value::from(call.call_id)),
+            method: call.method.clone(),
+            params: call.params.clone(),
+            session_token: None,
+        };
+        // 게이트 3종이 **인터셉트보다 먼저** 돈다 — GUI 진입부와 같은 순서다
+        // (ADR-0152). 아래 인터셉트는 `handle_with_caller` 에 도달하지 않으므로,
+        // 게이트가 그 함수 안에만 있으면 그 갈래만 권한·cap·rate·audit 를 통째로
+        // 건너뛴다.
+        if let Some(resp) = gates_before_intercept(app, state, engine, &request, &caller) {
+            let (msg, code) = match resp.error {
+                Some(e) => (Some(e.message), Some(e.code)),
+                None => (None, None),
+            };
+            if let Some(mgr) = app.plugin_manager.as_mut() {
+                mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
+            }
+            continue;
+        }
         if call.method == tasty_plugin_protocol::METHOD_HOST_SHARED_BUFFER_CREATE {
             let size = call
                 .params
@@ -250,21 +327,10 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
                         Ok(r) => (serde_json::to_value(&r).ok(), None),
                         Err(e) => (None, Some(e)),
                     };
-                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
             }
             continue;
         }
-        let caller = crate::ipc::caller::CallerContext::Plugin {
-            plugin_id: call.plugin_id.clone(),
-            permissions: call.permissions.clone(),
-        };
-        let request = crate::ipc::protocol::JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(serde_json::Value::from(call.call_id)),
-            method: call.method.clone(),
-            params: call.params.clone(),
-            session_token: None,
-        };
         let response = crate::ipc::handler::handle_with_caller(
             &mut app.core,
             state,
@@ -277,12 +343,13 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         // `docs/adr/0111-headless-drains-the-intent-queue.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
         crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
-        let (result, error) = match response.error {
-            Some(err) => (None, Some(err.message)),
-            None => (response.result, None),
+        // gui 갈래(`src/app/dispatch/plugin_ipc.rs`)와 같은 계약 — 코드를 함께 넘긴다.
+        let (result, error, code) = match response.error {
+            Some(err) => (None, Some(err.message), Some(err.code)),
+            None => (response.result, None, None),
         };
         if let Some(mgr) = app.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
         }
     }
 }

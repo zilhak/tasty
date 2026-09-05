@@ -58,6 +58,8 @@
 
 use std::path::{Path, PathBuf};
 
+use tasty_type_geometry::length::LogicalPx;
+
 /// 스캔 대상 (repo-relative). 자매 가드 `tests/design_token_adherence.rs` 의
 /// `SCAN_ROOTS` 와 같은 집합이다 — 같은 축을 보므로 갈라지면 안 된다.
 ///
@@ -247,6 +249,40 @@ fn font_call_args(line: &str) -> Vec<(String, usize)> {
     call_args(line, FONT_CALLS)
 }
 
+/// 인자 추출이 **`LogicalPx` 형태를 본다** — 이 축의 가드가 한 번 그것을 못 봤다.
+///
+/// `call_args` 는 호출 뒤 첫 `,`/`)` 까지를 인자로 끊는데, `.size(NAME.value())` 에서
+/// 첫 `)` 는 `.value()` 의 것이다. 그래서 인자가 `NAME.value(` 로 잘려 이름 검사에서
+/// 떨어졌고, **가드는 CLAUDE.md 가 금지하는 bare `f32` 만 보고 요구하는 `LogicalPx` 는
+/// 못 보고 있었다.** 이름과 값이 같고 형태만 다른 변이 둘로 갈랐다: bare 는 빨강,
+/// `.value()` 는 초록이었다.
+///
+/// 아래는 그 회귀를 형태로 고정한다 — 양극을 함께 둬서 "둘 다 못 본다" 로 통과하지
+/// 않게 한다.
+#[test]
+fn the_font_arg_scan_sees_the_logical_px_form() {
+    let wrapped = font_call_args(".size(ADD_PREVIEW_NAME_PRIMITIVE_16.value())");
+    assert_eq!(
+        wrapped.iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        ["ADD_PREVIEW_NAME_PRIMITIVE_16"],
+        "`LogicalPx` const 를 `.value()` 로 넘긴 자리를 못 봤다 — 이 레포의 길이 상수는 \
+         대부분 이 형태다(CLAUDE.md 길이 타입 필수)"
+    );
+
+    let bare = font_call_args(".size(SEGMENT_BADGE_SIZE)");
+    assert_eq!(
+        bare.iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        ["SEGMENT_BADGE_SIZE"],
+        "bare 형태를 못 봤다 — 벗기기를 넣으면서 원래 보던 것을 잃었다"
+    );
+
+    // 비영 대조 — 상수가 아닌 인자는 안 잡아야 한다(R56: 위 둘이 "다 잡는다" 로 통과하는 것을 막는다).
+    assert!(
+        font_call_args(".size(th.font_size_body.value())").is_empty(),
+        "토큰 접근자를 명명 상수로 잡았다 — 이 가드의 대상이 아니다"
+    );
+}
+
 /// 주어진 호출 형태들의 **첫 인자가 명명 상수인** 자리를 모은다.
 ///
 /// 경로 수식을 벗긴다 — `tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS` 는
@@ -266,6 +302,10 @@ fn call_args(line: &str, calls: &[&str]) -> Vec<(String, usize)> {
             };
             let arg = rest[..end].trim();
             let arg = arg.rsplit("::").next().unwrap_or(arg).trim();
+            // `LogicalPx` const 는 `.value()` 로 벗겨서 넘긴다 — 그 형태가 이 레포의
+            // **필수** 형태다(CLAUDE.md 길이 타입). 벗기지 않으면 인자가 `NAME.value(`
+            // 로 잘려 이름 검사에서 떨어지고, 가드는 금지된 bare f32 만 보게 된다.
+            let arg = arg.strip_suffix(".value(").unwrap_or(arg).trim();
             if is_screaming_snake(arg) {
                 hits.push((arg.to_string(), at));
             }
@@ -444,6 +484,291 @@ fn const_radius_violations(
             }
         }
     }
+}
+
+/// 이 축의 스캔 모수는 `SCAN_ROOTS` 중 **갤러리를 뺀 전부**다.
+///
+/// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 생성 const 값도
+/// 함께 커지므로 거기서는 결함이 아니다(`docs/adr/0135-…`). 넣으면 결함 아닌 자리가
+/// 위반이 되어 allowlist 만 불어난다.
+///
+/// **제외를 빼는 쪽으로 적는 이유**: 한때 이 자리는 `"src/"` 로 **남기는 쪽**을 적었는데,
+/// 사유는 갤러리 하나인데 술어는 셋을 뺐다 — `crates/tasty-ui-widgets/src` 와
+/// `crates/tasty-egui-theme/src` 가 경로 모양 때문에 함께 빠졌다. 둘은 갤러리가 아니라
+/// **본체 UI** 다(본체가 widgets 를 쓰는 파일이 수십 개다). 거기서 생성 const 를 직접 읽으면
+/// 본체에서는 배율을 안 타고 갤러리에서는 타는, 정확히 이 축의 결함이 된다.
+///
+/// 오늘 그 자리가 비어 있는 것은 가드 덕이 아니다 — 두 크레이트가 `tasty-design-tokens`
+/// 에 **의존하지 않아서** 컴파일이 막는다. 의존이 하루 생기면 그 보호는 신호 없이
+/// 사라지므로, 사유가 하나면 제외도 하나로 적는다.
+const ZOOM_CONST_EXCLUDED_ROOT: &str = "crates/tasty-gallery/";
+
+/// 아래 셋은 **거짓 초록 하한**이다. 표가 비거나 코퍼스가 비면 위반이 0 이 되어 가드가
+/// 조용히 통과한다 — "위반 0" 은 모수가 비영일 때만 뜻이 있다.
+const MIN_GENERATED_LOGICAL_CONSTS: usize = 200;
+const MIN_GENERATED_OTHER_CONSTS: usize = 40;
+/// 갤러리를 뺀 코퍼스의 하한. 갤러리 **한 쪽만** 남는 뒤집힌 필터는 이 하한 아래로
+/// 떨어지므로 여기서 걸린다 — 하한이 "코퍼스가 비었나" 와 "필터가 뒤집혔나" 를 함께 본다.
+///
+/// 다만 하한은 **어디를 보는지**는 못 본다. 예전 술어(`src/` 만)는 이 하한을 넉넉히
+/// 넘기면서 본체 UI 크레이트 둘을 통째로 놓쳤다 — 그 형태는 아래 루트 도달 단언이 잡는다.
+const MIN_ZOOM_CONST_SCANNED_FILES: usize = 150;
+
+/// 생성 DTCG 상수를 **타입으로** 가른다 — `(LogicalPx 인 것, 아닌 것)`.
+///
+/// 타입이 축을 가른다: `LogicalPx` 는 길이라 `ui_scale` 배율 축이고, `f32`(불투명도 ·
+/// 가중치 · 지속시간)는 무차원이라 배율과 무관하다. 그래서 전자만 위반이다.
+fn generated_const_types() -> (Vec<String>, Vec<String>) {
+    let dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/tasty-design-tokens/src/generated");
+    let (mut logical, mut other) = (Vec::new(), Vec::new());
+    for file in ["primitive.rs", "semantic.rs", "component.rs"] {
+        let text = std::fs::read_to_string(dir.join(file)).unwrap_or_else(|e| {
+            panic!(
+                "생성 토큰 파일을 읽을 수 없다: {file} — {e}. 조용히 건너뛰면 이름 표가 \
+                 비고, 빈 표로는 위반이 0 이 되어 가드가 통과한다."
+            )
+        });
+        for line in text.lines() {
+            let rest = line.trim_start();
+            // `pub` 뒤에 공백을 바로 요구하면 `pub(crate) const` 를 통째로 놓친다 —
+            // `primitive.rs` 전량이 그 형태라 표에서 한 층이 조용히 빠진다. 지금은
+            // 못 쓰는 층이지만(외부 크레이트가 참조하면 컴파일 에러) 표에 넣는 쪽이
+            // 안전하다: 가시성이 넓어지는 날 가드가 이미 덮고 있다.
+            let Some(rest) = rest.strip_prefix("pub") else {
+                continue;
+            };
+            let rest = rest.strip_prefix("(crate)").unwrap_or(rest);
+            let Some(rest) = rest.trim_start().strip_prefix("const ") else {
+                continue;
+            };
+            let Some((name, ty)) = rest.split_once(':') else {
+                continue;
+            };
+            let name = name.trim();
+            if !is_screaming_snake(name) {
+                continue;
+            }
+            let ty = ty.split('=').next().unwrap_or("").trim();
+            if ty == "LogicalPx" {
+                logical.push(name.to_string());
+            } else {
+                other.push(name.to_string());
+            }
+        }
+    }
+    (logical, other)
+}
+
+/// 생성 토큰 모듈(`generated`) 참조에서 **경로의 마지막 조각**을 뽑는다.
+///
+/// **이름이 아니라 경로로 잡는 이유**: 생성 모듈에는 `HEIGHT` · `SIZE` · `MAX_WIDTH`
+/// 같은 일반적인 이름이 있어서, 이름만 대조하면 무관한 로컬 상수를 대량 오검출한다.
+/// 경로가 있는 줄(= `use` 문)만 보면 소비 선언 하나당 정확히 한 번 잡힌다.
+fn generated_const_refs(lines: &[&str]) -> Vec<(String, usize)> {
+    // **바늘을 쪼갠다(R80).** 통짜로 두면 이 파일 자신이 그 패턴을 담게 되고,
+    // 지금은 스캔 루트 밖이라 안 걸리지만 그건 **우연**이다 — 루트가 넓어지는 날
+    // 가드가 자기를 물고, 그때의 처방은 보통 "자기 파일 제외" 라는 면제다.
+    // 면제를 두지 않으려면 애초에 바늘을 담지 않으면 된다.
+    // 쪼갬이 살아 있는지는 [`the_guard_does_not_carry_its_own_needle`] 가 본다.
+    const NEEDLE: &str = concat!("tasty_design_tokens", "::generated::");
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let mut rest = *line;
+        while let Some(at) = rest.find(NEEDLE) {
+            let tail = &rest[at + NEEDLE.len()..];
+            let path: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+                .collect();
+            out.push((path.rsplit("::").next().unwrap_or("").to_string(), i + 1));
+            rest = &rest[at + NEEDLE.len()..];
+        }
+    }
+    out
+}
+
+/// UI 계층은 생성 DTCG 상수 중 **길이(`LogicalPx`)** 를 직접 소비하지 않는다.
+///
+/// 규칙 자체는 새것이 아니다 — `crates/tasty-design-tokens/src/lib.rs` 의
+/// "zoom 우회 금지 (필수)" 가 "런타임 소비는 반드시 `&Theme` 필드/접근자를 경유한다" 고
+/// 못박고 `generated/semantic.rs` doc 도 같은 말을 반복한다. **없던 것은 집행이다.**
+///
+/// 생성 const 는 컴파일 타임 상수라 `with_colors_and_zoom` 의 `zoomed()` 밖이고,
+/// 같은 값의 `Theme` 필드는 안이다. zoom 1 에서만 같고 0.85 / 1.2 에서 갈라진다 —
+/// **토큰을 썼으니 됐다고 믿게 만들기 때문에 리터럴보다 나쁘다.**
+///
+/// 무차원 상수(`EDGE_DIM_OPACITY` 등 `f32`)는 배율 축이 아니라 대상이 아니다.
+#[test]
+fn ui_does_not_consume_generated_length_consts_directly() {
+    let (logical, other) = generated_const_types();
+    assert!(
+        logical.len() >= MIN_GENERATED_LOGICAL_CONSTS,
+        "생성 LogicalPx 상수가 {}개뿐이다(하한 {MIN_GENERATED_LOGICAL_CONSTS}) — 표가 \
+         비면 위반이 0 이 되어 가드가 조용히 통과한다. 무차원 표는 {}개",
+        logical.len(),
+        other.len()
+    );
+    assert!(
+        other.len() >= MIN_GENERATED_OTHER_CONSTS,
+        "생성 무차원 상수가 {}개뿐이다(하한 {MIN_GENERATED_OTHER_CONSTS}) — 두 갈래 중 \
+         하나가 비면 타입 분류가 한쪽으로 쏠린다. LogicalPx 표는 {}개",
+        other.len(),
+        logical.len()
+    );
+    // **한 이름이 두 갈래에 다 있으면 이름 분류가 모호해진다** — 그 순간 이 가드의
+    // 판정은 어느 쪽을 먼저 보느냐에 달린 값이 된다. 편입 시점 겹침 0 이고, 생기면
+    // 이름이 아니라 전체 경로로 분류하도록 바꿔야 한다.
+    let collisions: Vec<&String> = logical.iter().filter(|n| other.contains(n)).collect();
+    assert!(
+        collisions.is_empty(),
+        "생성 상수 이름 {}개가 LogicalPx 와 무차원 양쪽에 있다 — 이름만으로는 축을 \
+         가를 수 없다(경로 분류로 바꿔라): {:?}",
+        collisions.len(),
+        collisions
+    );
+
+    // 표가 실제로 두 갈래로 갈리는지 실소스로 확인한다 — 개수 하한은 "몇 개" 만 보고
+    // "무엇" 은 안 본다. 두 이름은 이 축의 양극이다(길이 하나 · 무차원 하나).
+    assert!(
+        logical.iter().any(|n| n == "ICON_SIZE_SM"),
+        "`ICON_SIZE_SM`(LogicalPx)이 길이 표에 없다 — 타입 파서가 죽었다"
+    );
+    assert!(
+        other.iter().any(|n| n == "EDGE_DIM_OPACITY"),
+        "`EDGE_DIM_OPACITY`(f32)가 무차원 표에 없다 — 타입 파서가 한쪽으로 쏠렸다"
+    );
+
+    let (sources, _) = scan_sources();
+    let scanned: Vec<_> = sources
+        .iter()
+        .filter(|(rel, _)| !rel.starts_with(ZOOM_CONST_EXCLUDED_ROOT))
+        .collect();
+    assert!(
+        scanned.len() >= MIN_ZOOM_CONST_SCANNED_FILES,
+        "`{ZOOM_CONST_EXCLUDED_ROOT}` 를 뺀 스캔 파일이 {}개뿐이다(하한 \
+         {MIN_ZOOM_CONST_SCANNED_FILES}) — 코퍼스가 비면 위반도 0 이다. 전체 스캔 {}개",
+        scanned.len(),
+        sources.len()
+    );
+
+    // **코퍼스가 본체 UI 크레이트에 닿는지 이름으로 확인한다.** 개수 하한은 "몇 개" 만
+    // 보고 "어디" 는 안 본다 — 예전 술어는 파일 152 개로 하한을 넉넉히 넘기면서도
+    // 아래 두 루트를 통째로 못 보고 있었다. 그 형태는 개수로는 원리적으로 안 잡힌다.
+    for root in ["crates/tasty-ui-widgets/src", "crates/tasty-egui-theme/src"] {
+        assert!(
+            scanned.iter().any(|(rel, _)| rel.starts_with(root)),
+            "`{root}` 아래 파일이 스캔 코퍼스에 하나도 없다 — 본체 UI 크레이트다(갤러리가 \
+             아니다). 배율을 안 타는 생성 const 를 거기 두면 본체에서만 조용히 깨진다"
+        );
+    }
+
+    let mut violations = Vec::new();
+    let mut dimensionless = 0usize;
+    for (rel, contents) in &scanned {
+        let lines: Vec<&str> = contents.lines().collect();
+        for (name, at) in generated_const_refs(&lines) {
+            if logical.contains(&name) {
+                violations.push(format!(
+                    "  {rel}:{at} — `{name}` 은 LogicalPx(배율 축)다. 같은 값의 `Theme` \
+                     필드/접근자를 경유해라"
+                ));
+            } else if other.contains(&name) {
+                dimensionless += 1;
+            } else {
+                violations.push(format!(
+                    "  {rel}:{at} — `{name}` 을 생성 상수 표에서 못 찾았다. 모듈째 import \
+                     하면 타입을 못 가르므로 상수를 이름으로 import 해라"
+                ));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "UI 계층이 생성 DTCG 길이 상수를 직접 소비한다 — const 는 `zoomed()` 밖이라 \
+         `ui_scale` 을 안 타고 같은 값의 `Theme` 필드는 탄다(zoom 1 에서만 같다):\n{}\n\
+         (같은 스캔에서 무차원 상수 소비 {} 건은 정상으로 통과했다 — 판정기가 두 갈래를 \
+         실제로 가르고 있다는 뜻이다)",
+        violations.join("\n"),
+        dimensionless
+    );
+}
+
+/// R80 — 이 가드가 자기가 찾는 패턴을 자기 소스에 담지 않는다.
+///
+/// 담아도 오늘은 안 걸린다(이 파일은 스캔 루트 밖이다). 그건 우연이고, 루트가 넓어지는
+/// 날 가드가 자기를 문다 — 그때 흔한 처방이 "자기 파일 제외" 라는 면제인데, 면제는
+/// 그 파일이 **다른 위반**을 들여도 조용해진다. 바늘을 쪼개면 면제가 필요 없다.
+#[test]
+fn the_guard_does_not_carry_its_own_needle() {
+    let me = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/design_token_guard.rs"),
+    )
+    .expect("자기 소스 read 실패");
+    let whole = concat!("tasty_design_tokens", "::generated::");
+    assert_eq!(
+        me.matches(whole).count(),
+        0,
+        "가드 소스가 자기 바늘을 통짜로 담고 있다 — 쪼개진 형태로 되돌려라"
+    );
+    // 비영 대조 — 위 0 이 "파일을 못 읽어서 0" 이 아님을 같은 줄에서 보인다(R56).
+    assert!(
+        me.matches("generated").count() > 0,
+        "자기 소스에서 `generated` 를 하나도 못 찾았다 — 파일을 못 읽은 것이다"
+    );
+}
+
+/// R79 — 변이 대상을 이름으로 박지 않고 **실측으로 최악을 고른다.**
+///
+/// 이 축의 최악은 `ICON_SIZE_SM` 처럼 눈에 띄는 이름이 아니라, **일반적인 이름을 깊은
+/// 모듈 경로로 도달**하는 형태다: `component::autocomplete::MAX_HEIGHT`. `MAX_HEIGHT` 는
+/// 생성 모듈 여러 곳에 있고 UI 소스에도 흔한 이름이라, 이름만 대조하는 판정기는 여기서
+/// 오검출로 무너지고, `semantic::` 한 모듈만 보는 판정기는 **조용히 통과한다.**
+///
+/// 그 약한 형태가 실제로 초록임을 같은 테스트에서 단정한다 — 그래야 "내 판정기가 더
+/// 강하다" 가 주장이 아니라 대조가 된다.
+#[test]
+fn the_path_parser_beats_the_weak_forms_on_the_deepest_path() {
+    // fixture 도 쪼갠다 — 통짜로 쓰면 이 파일이 바늘을 담게 되고
+    // [`the_guard_does_not_carry_its_own_needle`] 가 운다. (실제로 울었다.)
+    let line = concat!(
+        "use tasty_design_tokens",
+        "::generated::component::autocomplete::MAX_HEIGHT;"
+    );
+    let refs = generated_const_refs(&[line]);
+    assert_eq!(
+        refs.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        vec!["MAX_HEIGHT"],
+        "마지막 조각을 못 뽑았다 — 중간 모듈이 하나 더 끼면 무너진다"
+    );
+
+    // 약한 형태 ①: `semantic::` 한 모듈만 보는 판정기 → 이 줄에 **초록**이다.
+    assert!(
+        !line.contains("generated::semantic::"),
+        "약한 형태(semantic 전용)가 이 줄을 잡아 버리면 대조가 성립하지 않는다"
+    );
+    // 약한 형태 ②: 경로의 **첫** 조각을 상수 이름으로 읽는 판정기 → `component` 를
+    // 얻어 상수 표에서 못 찾고, 표에 없으면 무시하도록 짠 판정기는 초록이 된다.
+    let first = line
+        .split("::generated::")
+        .nth(1)
+        .and_then(|t| t.split("::").next())
+        .unwrap_or("");
+    assert_eq!(first, "component");
+    let (logical, other) = generated_const_types();
+    assert!(
+        !logical.iter().any(|n| n == first) && !other.iter().any(|n| n == first),
+        "첫 조각이 상수 표에 있으면 약한 형태 ②가 우연히 잡는다 — 대조가 무너진다"
+    );
+
+    // 그리고 최악의 이름이 실제로 길이 축이라는 것 — 이게 아니면 위 대조가 헛것이다.
+    assert!(
+        logical.iter().any(|n| n == "MAX_HEIGHT"),
+        "`MAX_HEIGHT` 가 LogicalPx 표에 없다 — 최악 후보를 잘못 골랐다"
+    );
 }
 
 /// 반경 축의 **명명 const 우회로**를 닫는다. 자매 가드는 리터럴만 막으므로,
@@ -791,4 +1116,519 @@ const SCAN_ROOTS: &[&str] = &[
             ]
         );
     }
+}
+
+/// **이 파일에는 원래 면제 목록이 없었다.** 아래 `OVER_CAP_*` 둘이 그 부류를 만든
+/// 것이고, 여기에 줄을 더하는 것은 항목 추가가 아니라 **부류를 넓히는 일**이다.
+///
+/// 만든 이유는 상한에 **문서로 승인된 예외가 실재하기 때문**이다(브랜드 락업). 그것을
+/// 적을 자리가 없으면 가드 자체를 만들 수 없고, 파일 단위 제외는 다른 위반까지 덮으므로
+/// 더 나쁘다. 그래도 대가는 남는다 — **다음 사람에게 "고치는 대신 목록에 넣는" 길이
+/// 열려 있다.** 그 길을 좁히는 것이 아래 래칫과 역방향 검사다.
+///
+/// 새 줄을 더하기 전에 **먼저 그 자리를 고칠 수 있는지** 보고, 못 고치면 그 이유를
+/// 적어라. 이 판단은 커밋 안에서 혼자 내릴 것이 아니다.
+///
+/// ── UI 폰트 상한(14px)을 넘는 명명 const 의 **정책 면제** — 범위 밖이라 남는다.
+///
+/// 사유의 형태가 "이 자리는 규칙 범위 밖이다" 라, 덮을 것이 지금 없어도 지우지 않는다
+/// (ADR-0150). 아래 [`OVER_CAP_PENDING`] 과 **성격이 달라 합치지 않는다.**
+const OVER_CAP_SANCTIONED: &[(&str, &str)] = &[(
+    // 브랜드 락업 — `docs/architecture/boot-sequence.md` 가 "14px UI 폰트 상한의
+    // sanctioned 예외" 라고 명시한다. 워드마크는 브랜드 자산의 verbatim 전사라
+    // UI 텍스트 스케일의 대상이 아니다.
+    "src/gfx/gpu/shell_setup.rs",
+    "SETUP_BRAND_TITLE_SIZE",
+)];
+
+/// 상한을 넘는데 **승인이 없는** 자리 — **면제가 아니라 "아직" 이다.**
+///
+/// 셋째 칸에 **무슨 결정을 기다리는지** 적는다. 그 칸이 비면 이 목록은 면제 목록과
+/// 구별되지 않는다 — 기다리는 것이 없는 항목은 부채가 아니라 면제다.
+///
+/// 사유의 형태가 한 가지라(= "이 자리가 지금 상한을 넘는다") 사유가 사라지면 항목도
+/// 사라져야 한다. 그 강제는 아래 역방향 검사가 한다. 목록 자체의 증감은
+/// [`OVER_CAP_PENDING_BUDGET`] 래칫이 본다.
+const OVER_CAP_PENDING: &[(&str, &str, &str)] = &[(
+    // primitive 16 을 쓰는 자리. const 의 doc 은 tier 를 설명하지만 **상한을 넘는다는
+    // 말은 없다** — 상한이 `theme.md` 표에 한 줄로만 있고 채널이 없어서, 그 자리를
+    // 만든 사람도 위반이라고 인지하지 못했다.
+    "src/view/plugins/ui/add.rs",
+    "ADD_PREVIEW_NAME_PRIMITIVE_16",
+    "16 을 14 로 내릴지(픽셀이 바뀐다) 승인으로 올릴지 — 어느 semantic 에 묶을지가 \
+     정해져야 답이 난다. 디자인 판정 대기",
+)];
+
+/// 한시 목록의 건수 래칫. **늘어도 실패하고 줄어도 실패한다** — 줄었으면 이 수도 같이
+/// 내리라는 뜻이다. 남는 여유가 곧 안 보는 구간이다.
+///
+/// 하한(`<=`)으로 두면 항목이 조용히 늘고, 안 두면 이 목록이 그냥 면제 목록이 된다.
+const OVER_CAP_PENDING_BUDGET: usize = 1;
+
+/// UI 폰트 상한. `docs/design/systems/theme.md` "UI 폰트 최대" 행이 정본이다.
+///
+/// **비교 전용 문턱이다 — 렌더되는 자리가 없다.** 쓰이는 곳은 비교 하나와 실패 메시지
+/// 둘뿐이라, 이 값을 그리는 코드를 찾지 마라.
+///
+/// **토큰을 링크한다 — 값을 손으로 옮겨 적지 않는다.** theme.md 의 그 행이 상한을
+/// `font_size_max` 라고 이름으로 못박고 있으므로 정본은 그 토큰이고, 여기 숫자를 다시
+/// 적으면 두 벌이 되어 **갈라져도 아무도 모른다.** 실측: 링크 전에는 토큰만 14 → 16 으로
+/// 바꿔도 이 가드가 초록이었다(가드는 계속 14 를 강제하고, 토큰은 16 이라고 말한다).
+///
+/// 그래서 `LogicalPx` 인 것도 저절로 따라온다 — `SIZING.font_size_max` 가 그 타입이다.
+/// (`f32` 로 두면 `src/source_guards/length_constant_frontier` 가 잡는다. 그 가드에는
+/// 면제 목록이 없고 `FRONTIER` 영역 한 줄뿐이라, 빠져나가려면 전선을 면제 목록으로
+/// 바꿔야 한다 — 그 대가가 `.value()` 세 번보다 크다.)
+const UI_FONT_SIZE_CAP: LogicalPx = tasty_type_appearance::theme::SIZING.font_size_max;
+
+/// 상수 표 하한 — 표가 비면 "상한 초과 0" 이 조용히 참이 된다.
+const MIN_SCANNED_CONSTS: usize = 100;
+
+/// 폰트 자리의 명명 const 가 **UI 폰트 상한을 넘지 않는다.**
+///
+/// 상한은 `CLAUDE.md` 와 `docs/design/systems/theme.md` 에 규칙으로 있었지만 **그것을
+/// 보는 판정기가 없었다.** 값의 크기는 기계가 볼 수 있는데도 리터럴 재유입(자매 가드)과
+/// 토큰 복사본만 보고 있었고, 크기는 아무도 안 봤다.
+///
+/// 면제를 **사유별로 두 목록으로** 나눈다. 섞으면 역방향 검사를 못 건다 — 정책 면제는
+/// 덮을 것이 없어도 남아야 하고(ADR-0150) 한시 부채는 사라지면 지워져야 하는데, 한
+/// 목록에서는 두 규칙이 동시에 성립할 수 없다. `tests/layering.rs` 가 같은 이유로
+/// `ALLOWED_PATHS` 와 `BASELINE_FILES` 를 갈라 둔다.
+#[test]
+fn no_named_font_const_exceeds_the_ui_font_size_cap() {
+    // 래칫 — 한시 목록은 늘어도 줄어도 실패한다. 줄었으면 상한도 같이 내려라.
+    assert_eq!(
+        OVER_CAP_PENDING.len(),
+        OVER_CAP_PENDING_BUDGET,
+        "한시 목록의 건수가 상한({OVER_CAP_PENDING_BUDGET})과 다르다. 줄였으면 \
+         `OVER_CAP_PENDING_BUDGET` 도 같이 내려라 — 남는 여유가 곧 안 보는 구간이다. \
+         늘리는 것은 이 파일에 없던 부류를 넓히는 일이라 혼자 정할 것이 아니다"
+    );
+    // 기다리는 것이 없는 항목은 부채가 아니라 면제다 — 그러면 두 목록을 가른 근거가 사라진다.
+    for (rel, name, awaiting) in OVER_CAP_PENDING {
+        assert!(
+            !awaiting.trim().is_empty(),
+            "`{name}`({rel}) 이 무슨 결정을 기다리는지 안 적혀 있다 — 그 칸이 비면 \
+             이 목록은 면제 목록과 구별되지 않는다"
+        );
+    }
+
+    let (sources, consts) = scan_sources();
+    let sanctioned = |rel: &str, name: &str| {
+        OVER_CAP_SANCTIONED
+            .iter()
+            .any(|(r, n)| *r == rel && *n == name)
+    };
+    let mut over_cap: Vec<(String, String, f32)> = Vec::new();
+    for (rel, contents) in &sources {
+        let lines: Vec<&str> = contents.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            for (arg, at) in font_call_args(line) {
+                if spinner_receiver(&lines, i, &line[..at]) {
+                    continue;
+                }
+                let Some((_, value)) = consts.iter().find(|(n, _)| *n == arg) else {
+                    continue;
+                };
+                if *value > UI_FONT_SIZE_CAP.value() {
+                    over_cap.push((rel.clone(), arg, *value));
+                }
+            }
+        }
+    }
+
+    // 코퍼스가 비면 위반도 0 이다 — 상수 표가 살아 있는지 먼저 단정한다.
+    assert!(
+        consts.len() >= MIN_SCANNED_CONSTS,
+        "상수 표가 {}개뿐이다(하한 {MIN_SCANNED_CONSTS}) — 표가 비면 상한 검사가 \
+         조용히 통과한다",
+        consts.len()
+    );
+
+    let mut unlisted: Vec<String> = Vec::new();
+    let mut pending_seen: Vec<(String, String)> = Vec::new();
+    for (rel, name, value) in &over_cap {
+        if sanctioned(rel, name) {
+            continue;
+        }
+        if OVER_CAP_PENDING
+            .iter()
+            .any(|(r, n, _)| *r == rel && *n == name)
+        {
+            pending_seen.push((rel.clone(), name.clone()));
+            continue;
+        }
+        unlisted.push(format!(
+            "  {rel} — `{name}` = {value} > {}",
+            UI_FONT_SIZE_CAP.value()
+        ));
+    }
+    unlisted.sort();
+    unlisted.dedup();
+    assert!(
+        unlisted.is_empty(),
+        "UI 폰트 상한({}px)을 넘는 명명 const 가 폰트 자리에 있다 — \
+         `docs/design/systems/theme.md` \"UI 폰트 최대\" 행이 정본이다:\n{}\n\
+         승인된 예외라면 사유를 문서에 적고 `OVER_CAP_SANCTIONED` 에, 디자인 판정을 \
+         기다리는 자리라면 `OVER_CAP_PENDING` 에 올려라 — 두 목록은 성격이 달라 섞지 않는다",
+        UI_FONT_SIZE_CAP.value(),
+        unlisted.join("\n")
+    );
+
+    // 역방향 — 한시 목록은 줄어들기만 한다. 정책 목록(`OVER_CAP_SANCTIONED`)에는 이
+    // 검사를 걸지 않는다: 그쪽 사유는 "범위 밖" 이라 덮을 것이 없어도 유효하다(ADR-0150).
+    let gone: Vec<String> = OVER_CAP_PENDING
+        .iter()
+        .filter(|(r, n, _)| !pending_seen.iter().any(|(sr, sn)| sr == r && sn == n))
+        .map(|(r, n, awaiting)| format!("  {r} — `{n}` (기다리던 것: {awaiting})"))
+        .collect();
+    assert!(
+        gone.is_empty(),
+        "한시 목록이 가리키는 자리가 이제 상한을 안 넘는다 — 고쳤으면 목록에서도 \
+         지워라. 남겨 두면 \"여기는 원래 부채\" 라는 신호가 아무것도 안 덮은 채 \
+         살아남는다:\n{}",
+        gone.join("\n")
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 색 파생 계수 — 익명 리터럴 금지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 색을 약하게 만드는 두 호출. 값 공간은 다르지만(배율 0~1 · 알파 0~255) 의도가 같고,
+/// 레포 안에 그 둘이 **같은 비율의 두 표현**임을 적은 자리가 이미 있다
+/// (`tasty-plugin-markdown` 의 diff 배경: `with_alpha(31)` ≈ `gamma_multiply(0.12)`).
+/// 그래서 한 축으로 본다.
+const COLOR_COEFF_CALLS: &[&str] = &[".gamma_multiply(", ".with_alpha("];
+
+/// 이 축의 스캔 인구는 **레포 전체**다 — 위 `SCAN_ROOTS`(UI 여섯 곳)보다 넓다.
+/// 계수를 쓰는 자리가 번들 plugin 크레이트에도 있어서, UI 루트로 좁히면 그쪽이 조용히
+/// 열린다. 좁힘은 조용하고 넓힘은 시끄럽다 — 이 축은 넓은 쪽을 고른다.
+const COLOR_COEFF_SCAN_ROOTS: &[&str] = &["src", "crates"];
+
+/// 스캔이 실제로 레포를 훑었는지 고정한다. 경로가 틀리면 0 건이 초록으로 보인다.
+const MIN_COLOR_COEFF_SCANNED_FILES: usize = 1000;
+
+/// 줄에서 **숫자 리터럴을 인자로 받은** 색 계수 호출을 뽑는다.
+///
+/// 주석은 판정 대상이 아니다. 줄 전체 주석(`//`·`///`·`//!`)은 버리고, 뒤에 달린
+/// 주석은 `"// "`(뒤 공백 포함)에서 자른다 — 공백을 요구해야 `https://` 가 안 잘린다.
+fn color_coeff_literals(line: &str) -> Vec<(&'static str, String)> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("//") {
+        return Vec::new();
+    }
+    let code = match line.find("// ") {
+        Some(at) => &line[..at],
+        None => line,
+    };
+    let mut hits = Vec::new();
+    for call in COLOR_COEFF_CALLS {
+        let mut cursor = 0usize;
+        while let Some(rel) = code[cursor..].find(call) {
+            cursor += rel + call.len();
+            let rest = &code[cursor..];
+            let Some(end) = rest.find([',', ')']) else {
+                continue;
+            };
+            let arg = rest[..end].trim();
+            if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                hits.push((*call, arg.to_string()));
+            }
+        }
+    }
+    hits
+}
+
+/// 색 파생 계수(`gamma_multiply` 배율 · `with_alpha` 알파)는 익명 리터럴로 두지 않는다.
+///
+/// **대응 토큰이 없는 축이다.** DTCG 에 있는 opacity 는 `disabled`(0.5) ·
+/// `recessed`(0.4) · `dimmed`(0.75) 셋뿐이고, 실제 쓰이는 값은 0.09~0.92 로 훨씬 넓다.
+/// 그래서 이 가드는 "토큰을 써라" 가 아니라 **"값에 이름과 사유를 붙여라"** 를 요구한다 —
+/// [ADR-0126](../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 이
+/// 폰트·반경 축에서 내린 것과 같은 결정이고, 그 ADR 본문이 결정을 **축 중립**이라고
+/// 적는다.
+///
+/// **면제 목록이 없다.** 오늘 위반 0 이라 필요가 없고, 첫 예외를 넣는 것은 항목 추가가
+/// 아니라 **부류의 창설**이다(같은 판단을 이 파일의 `OVER_CAP_SANCTIONED` 가 이미
+/// 기록하고 있다). 넣기 전에 그 자리를 고칠 수 있는지 먼저 보고, 못 고치면 올려라.
+#[test]
+fn no_color_derivation_coefficient_is_an_anonymous_literal() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for target in COLOR_COEFF_SCAN_ROOTS {
+        let path = root.join(target);
+        let before = files.len();
+        gather_rs_files(&path, &mut files);
+        assert!(
+            files.len() > before,
+            "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다"
+        );
+    }
+    assert!(
+        files.len() >= MIN_COLOR_COEFF_SCANNED_FILES,
+        "스캔한 .rs 가 {} 개뿐이다 — 하한 {MIN_COLOR_COEFF_SCANNED_FILES}. 경로가 \
+         틀렸으면 위반 0 이 측정이 아니라 침묵이다",
+        files.len()
+    );
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (no, line) in text.lines().enumerate() {
+            for (call, arg) in color_coeff_literals(line) {
+                violations.push(format!("{rel}:{} {call}{arg})", no + 1));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "색 파생 계수가 익명 리터럴이다 ({} 자리). 사유를 적은 명명 const 로 올려라 — \
+         값을 바꾸지 말고 이름만 붙인다. 값을 모으는 것(수렴)은 픽셀이 바뀌므로 별개의 \
+         디자인 결정이다:\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
+}
+
+/// 위 0 이 **깨진 계측기의 0** 이 아님을 보인다 (R56).
+///
+/// 바늘을 소스에 통짜로 남기면 이 파일 자신이 위 가드에 걸린다 — 그래서 합성 줄은
+/// 런타임에 조립한다.
+#[test]
+fn the_color_coeff_scan_sees_both_forms_and_ignores_the_named_one() {
+    let gamma = COLOR_COEFF_CALLS[0];
+    let alpha = COLOR_COEFF_CALLS[1];
+
+    let bad_gamma = format!("        .fill(c{gamma}0.12))");
+    assert_eq!(
+        color_coeff_literals(&bad_gamma),
+        vec![(COLOR_COEFF_CALLS[0], "0.12".to_string())],
+        "배율 리터럴을 못 봤다"
+    );
+
+    let bad_alpha = format!("    let x = c{alpha}180).to_egui();");
+    assert_eq!(
+        color_coeff_literals(&bad_alpha),
+        vec![(COLOR_COEFF_CALLS[1], "180".to_string())],
+        "알파 리터럴을 못 봤다"
+    );
+
+    // 명명 const 로 올린 형태는 통과해야 한다 — 통과 못 하면 처방이 가드에 막힌다.
+    let good = format!("        .fill(c{gamma}WARN_BADGE_FILL_OPACITY))");
+    assert!(
+        color_coeff_literals(&good).is_empty(),
+        "명명 const 형태가 위반으로 잡혔다 — 이 가드가 요구하는 형태 자체가 막힌다"
+    );
+
+    // 주석은 판정 대상이 아니다. 줄 주석과 뒤에 달린 주석 둘 다.
+    let line_comment = format!("    // 예전에는 c{gamma}0.4) 였다");
+    assert!(
+        color_coeff_literals(&line_comment).is_empty(),
+        "줄 주석을 판정했다"
+    );
+    let trailing = format!("    let x = c{alpha}NAMED); // c{gamma}0.4) 였다");
+    assert!(
+        color_coeff_literals(&trailing).is_empty(),
+        "뒤에 달린 주석을 판정했다"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 점 치수 축 — 익명 반지름 금지 · 토큰 값 사본 금지
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 점을 그리는 세 표기. 오늘 소스에 있는 것은 앞의 둘뿐인데 셋째를 함께 막는 이유는
+/// `FontId::new(` 과 같다 — 둘만 막으면 셋째 표기로 그대로 재유입된다.
+const DOT_RADIUS_CALLS: &[&str] = &["circle_filled(", "circle_stroke(", "circle("];
+
+/// 점 축의 스캔 인구는 `SCAN_ROOTS` 에서 **갤러리를 뺀 것**이다.
+///
+/// 목록을 따로 적지 않고 걸러서 만든다 — 따로 적으면 두 목록이 조용히 갈린다
+/// (자매 둘이 실제로 그렇게 갈렸고 갈린 동안 양쪽 다 초록이었다).
+///
+/// 갤러리를 빼는 사유는 하나다: 갤러리는 egui 전역 zoom 을 쓰므로 리터럴도 함께 커진다
+/// ([ADR-0135](../docs/adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md)).
+/// 점 지름은 **길이**라 그 예외가 그대로 걸린다 — 같은 파일의 색 계수 축이 갤러리를
+/// 모수에 넣는 것과 반대이고, 가르는 것은 경로가 아니라 **무차원이냐 길이냐**다.
+fn dot_scan_roots() -> Vec<&'static str> {
+    SCAN_ROOTS
+        .iter()
+        .copied()
+        .filter(|r| !r.starts_with(ZOOM_CONST_EXCLUDED_ROOT))
+        .collect()
+}
+
+const MIN_DOT_SCANNED_FILES: usize = 150;
+
+/// `status_dot_size` 토큰 값. `zoomed()` 를 타므로 이 값의 명명 const 는 사본이다.
+///
+/// **비교 전용이다 — 이 값이 렌더되는 자리는 없다.** 그래도 `f32` 가 아니라
+/// `LogicalPx` 로 선언한다: `src/source_guards/length_constant_frontier.rs` 가 전선 밖
+/// `f32` 길이 상수를 막고, 이 축의 값은 길이(점 지름)라 그 술어에 정확히 걸린다.
+/// 같은 형태를 이 파일의 `UI_FONT_SIZE_CAP` 이 이미 쓴다.
+const DOT_SIZE_TOKEN_VALUE: LogicalPx = LogicalPx(8.0);
+
+/// 이름이 점을 뜻하는지 판별하는 표지.
+const DOT_CONST_NAME_MARK: &str = "DOT";
+
+/// 한 줄에서 점 호출의 **두 번째 인자**(반지름)가 숫자 리터럴이면 돌려준다.
+///
+/// 괄호 균형을 세는 이유는 반지름이 보통 식이기 때문이다
+/// (`theme.status_dot_size.value() * 0.5`). 균형을 안 세면 그 안의 `,` 에서 잘린다.
+fn dot_radius_literal(line: &str) -> Vec<String> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("//") {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    for call in DOT_RADIUS_CALLS {
+        let mut cursor = 0usize;
+        while let Some(rel) = line[cursor..].find(call) {
+            cursor += rel + call.len();
+            let mut depth = 0i32;
+            let mut args: Vec<String> = Vec::new();
+            let mut cur = String::new();
+            for ch in line[cursor..].chars() {
+                match ch {
+                    '(' | '[' => depth += 1,
+                    ')' | ']' if depth == 0 => {
+                        args.push(cur.clone());
+                        break;
+                    }
+                    ')' | ']' => depth -= 1,
+                    ',' if depth == 0 => {
+                        args.push(cur.clone());
+                        cur.clear();
+                        continue;
+                    }
+                    _ => {}
+                }
+                cur.push(ch);
+            }
+            if let Some(radius) = args.get(1) {
+                let r = radius.trim();
+                if numeric_literal(r).is_some() {
+                    hits.push(r.to_string());
+                }
+            }
+        }
+    }
+    hits
+}
+
+/// 점 반지름을 숫자 리터럴로 적지 않는다 — 이 축의 **① 자매**다.
+///
+/// 폰트·반경·색 계수 축에는 이 형태가 있었는데 점 축에만 없었다. 오늘 본체 루트의
+/// 위반은 0 이라 면제 목록 없이 선다.
+#[test]
+fn no_dot_radius_is_an_anonymous_literal() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for target in dot_scan_roots() {
+        let path = root.join(target);
+        let before = files.len();
+        gather_rs_files(&path, &mut files);
+        assert!(
+            files.len() > before,
+            "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다"
+        );
+    }
+    assert!(
+        files.len() >= MIN_DOT_SCANNED_FILES,
+        "스캔한 .rs 가 {} 개뿐이다 — 하한 {MIN_DOT_SCANNED_FILES}",
+        files.len()
+    );
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (no, line) in text.lines().enumerate() {
+            for r in dot_radius_literal(line) {
+                violations.push(format!("{rel}:{} 반지름 {r}", no + 1));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "점 반지름이 익명 리터럴이다 ({} 자리). 토큰(`th.status_dot_size`)이 맞으면 \
+         그것을, 스케일 밖 값이면 사유를 적은 명명 const 를 써라(ADR-0126):\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
+}
+
+/// 점 축의 **② 자매** — 토큰 값 8 을 복사한 점 이름 const 를 막는다.
+///
+/// **판별 축이 자매 둘과 다르다. 이름이다.** 폰트·반경 축은 `값 × 자리`로 재는데
+/// (`.size(` · `.corner_radius(` 라는 문법적 자리가 있다) 점 축에는 **그 자리가 없다** —
+/// 점 const 는 `.value() * 0.5` 나 `vec2(` 로 소비되는 일반 산술이라, 소비 형태만 보고
+/// "점 자리" 를 가릴 수 없다. 값만으로 재면 점이 아닌 `LogicalPx(8.0)` 상수를
+/// 잡는다(실측: `file_handler_picker.rs` 의 `VERTICAL_PADDING` · `HORIZONTAL_MARGIN`).
+///
+/// **그래서 이 가드는 사거리가 좁다.** 이름에 `DOT` 이 없는 상수를 점에 쓰면 통과한다 —
+/// 자매 둘이 이름 축을 거부한 바로 그 이유이고, 여기서는 그 대안이 없다. 이 한계는
+/// 감추지 않는다: **부류 밖에 대상이 없다고 단정하지 않는다.**
+#[test]
+fn no_dot_named_const_copies_the_status_dot_token() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for target in dot_scan_roots() {
+        gather_rs_files(&root.join(target), &mut files);
+    }
+    assert!(files.len() >= MIN_DOT_SCANNED_FILES, "모수 미달");
+
+    let mut violations = Vec::new();
+    let mut dot_consts = 0usize;
+    for file in &files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        let mut consts = Vec::new();
+        collect_numeric_consts(&lines, &mut consts);
+        let rel = file
+            .strip_prefix(root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (name, value) in consts {
+            if !name.contains(DOT_CONST_NAME_MARK) {
+                continue;
+            }
+            dot_consts += 1;
+            if (value - DOT_SIZE_TOKEN_VALUE.value()).abs() < f32::EPSILON {
+                violations.push(format!("{rel}: {name} = {value}"));
+            }
+        }
+    }
+
+    // 비영 대조 — 점 이름 상수를 하나도 못 찾았으면 위 0 은 측정이 아니다(R56).
+    assert!(
+        dot_consts > 0,
+        "점 이름 상수를 하나도 못 찾았다 — 이름 표지(`{DOT_CONST_NAME_MARK}`)나 상수 \
+         파서가 깨졌다. 그 상태의 위반 0 은 침묵이다"
+    );
+    assert!(
+        violations.is_empty(),
+        "`status_dot_size`({}) 값을 복사한 점 이름 상수가 있다 — \
+         토큰을 직접 써라(`th.status_dot_size`):\n\
+         · const 는 `ui_zoom` 을 안 타는데 `status_dot_size` 는 **탄다**(0.85/1.0/1.2 에서 \
+         7/8/10). 사본만 고정돼 다른 픽셀로 그려진다\n\
+         · 스케일 **밖** 값(4 · 5 · 6 · 7)의 명명 const 는 그대로 허용된다(ADR-0126)\n{}",
+        DOT_SIZE_TOKEN_VALUE.value(),
+        violations.join("\n")
+    );
 }

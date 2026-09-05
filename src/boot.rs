@@ -80,10 +80,11 @@ fn truncate_wal(store: &mut tasty_memory::MemoryStore) {
 fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
     // 상한 값은 `adapters::ipc::log_retention` 이 단독으로 소유한다 — 런타임 집행
     // 경로가 같은 테이블을 읽는다. 여기에 숫자를 다시 적으면 두 경로가 갈린다.
-    let mut store = match arc.lock() {
-        Ok(s) => s,
-        Err(p) => p.into_inner(),
-    };
+    let mut store = crate::poison::recover_mutex(
+        arc.lock(),
+        crate::core::MEMORY_WHAT,
+        &crate::core::MEMORY_POISONED,
+    );
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -599,7 +600,9 @@ fn dispatch_headless_event(
     match event {
         AppEvent::Shutdown | AppEvent::QuitRequested => return std::ops::ControlFlow::Break(()),
         AppEvent::TerminalOutput(id) => handle_terminal_output(app, state, engine, id),
-        AppEvent::IpcReady => headless_dispatch::pump_ipc(app, state, engine),
+        // pump 가 `system.shutdown` 을 받으면 break 를 돌려준다 — 데몬을 멈추는
+        // 유일한 IPC 경로다(gui 의 winit proxy 에 대응).
+        AppEvent::IpcReady => return headless_dispatch::pump_ipc(app, state, engine),
         AppEvent::StreamReady => headless_stream::handle_stream_ready(app, state, engine),
         AppEvent::RunLuaScript { source, name } => run_lua_script(app, &source, &name),
     }
@@ -648,6 +651,21 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         "tasty.startup.post",
         &serde_json::Value::Null,
     );
+
+    // 번들 plugin 을 **설치**한다 — 띄우지는 않는다. gui 가 창을 만들 때
+    // `install_builtins_if_needed` 를 부르는 것과 같은 자리이며, 헤드리스에만 이
+    // 호출이 없으면 갓 만든 홈은 package 0 인 채로 남는다(`plugin.list` 가 0 을
+    // 답하고 어떤 plugin 메서드도 소속이 안 잡힌다).
+    //
+    // 예전에는 이 설치가 "호스트가 모르는 이름을 처음 부를 때" 딸려 왔다 — 즉
+    // **오타 하나가 plugin 을 설치·기동**했다. 소속 판정을 매니페스트로 옮기면서
+    // (ADR-0173) 그 우연한 트리거가 사라졌으므로, 설치는 제 자리인 부팅으로 온다.
+    // 기동은 여전히 지연이다: 여기서 프로세스는 하나도 안 뜬다.
+    headless_plugins::ensure_plugin_manager_metadata(&mut app, &engine);
+    if let Some(mgr) = app.plugin_manager.as_mut() {
+        crate::plugin::install_builtins_if_needed(mgr);
+        mgr.refresh_packages();
+    }
 
     tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
 

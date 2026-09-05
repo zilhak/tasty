@@ -96,6 +96,7 @@ impl std::fmt::Display for NoGpuAdapter {
 #[cfg(feature = "gui")]
 impl std::error::Error for NoGpuAdapter {}
 
+// 이유: 이 구조체의 필드를 읽는 것이 gui 이벤트 루프뿐이라 headless 빌드엔 독자가 없다.
 #[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) struct App {
     /// 도메인 본체 — `CoreState` 의 mutate 로직을 점진 흡수한 Method wrapper 다수를
@@ -175,6 +176,19 @@ pub(crate) struct App {
     /// Plugin host manager. None until the first AppState is created
     /// (which provides the WakerFactory).
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
+    /// 매니저가 **기동까지** 끝났는가 — 번들 설치와 plugin 프로세스 spawn.
+    ///
+    /// `plugin_manager.is_some()` 로는 이것을 판정할 수 없다. 헤드리스는 조회
+    /// 메서드에 답하려고 매니저를 **디스크 읽기만으로** 세우는 경로가 따로 있어서
+    /// (`src/boot/headless_plugins.rs`), 매니저가 있어도 아직 아무 plugin 도 안 뜬
+    /// 상태가 정상이다. 이 값이 없으면 그 상태에서 기동 요청이 no-op 이 된다.
+    ///
+    /// 헤드리스 부트스트랩만의 상태라 feature 로 가둔다. gui 는 매니저를 만들 때
+    /// 곧바로 설치·기동까지 하므로(`src/app/window_lifecycle.rs` `build_plugin_manager`)
+    /// 두 상태가 갈리는 순간이 없다 — 거기에 이 필드를 두면 항상 참인 값을 유지하는
+    /// 비용만 남고, 유지를 빠뜨리면 거짓을 말한다.
+    #[cfg(not(feature = "gui"))]
+    pub(crate) plugin_started: bool,
     /// Sessionwide engine state — workspaces, settings, hooks, registries.
     /// None until the first MainView lifecycle initializes it; Some after.
     pub(crate) core_state: Option<crate::core::CoreState>,
@@ -349,6 +363,8 @@ impl App {
             #[cfg(debug_assertions)]
             input_simulation_enabled,
             plugin_manager: None,
+            #[cfg(not(feature = "gui"))]
+            plugin_started: false,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
@@ -402,6 +418,8 @@ impl App {
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             plugin_manager: None,
+            #[cfg(not(feature = "gui"))]
+            plugin_started: false,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
@@ -479,6 +497,26 @@ impl App {
                 })
             })
             .unwrap_or(tasty_settings::DEFAULT_WHEEL_LINE_SCROLL);
+        // 전역 Theme 에 실을 런타임 값(배율·모션 감소). `wheel_line_scroll` 과 같은
+        // 자리에서 같은 방식으로 찾는다 — 호출부 6 곳이 이 값을 따로 넘기지 않아도
+        // 되게 하려는 것이고, 그게 이 값을 빠뜨릴 수 없게 하는 형태다.
+        // 배율만은 인자로 받은 `appearance` 에서 온다: 모달 창은 아직 자기 settings
+        // 를 CoreState 에 갖고 있지 않은 시점에도 열리는데, 그때 넘어온 appearance 가
+        // 그 창이 그릴 배율의 정본이다.
+        let theme_runtime = tasty_themes::ThemeRuntime {
+            ui_zoom: appearance.ui_scale_factor(),
+            ..self
+                .core_state
+                .as_ref()
+                .map(|cs| cs.settings.theme_runtime())
+                .or_else(|| {
+                    self.view
+                        .views
+                        .values()
+                        .find_map(|w| w.as_main().map(|m| m.core_state.settings.theme_runtime()))
+                })
+                .unwrap_or_default()
+        };
         let proxy = self.view.proxy.clone();
         pollster::block_on(async move {
             if self.gpu_adapter.is_none() {
@@ -519,6 +557,7 @@ impl App {
                 &adapter,
                 window,
                 appearance,
+                theme_runtime,
                 wheel_line_scroll,
                 proxy,
             )

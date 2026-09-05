@@ -25,6 +25,14 @@ pub use macos::show_context_menu;
 #[cfg(windows)]
 pub use windows::show_context_menu;
 
+#[cfg(target_os = "linux")]
+pub use linux::warn_if_menu_anchor_scale_premise_broken;
+
+/// 비-Linux 백엔드는 앵커 좌표계가 하나뿐이라(NSMenu / TrackPopupMenu 가 창과
+/// 같은 좌표계를 쓴다) 어긋날 전제 자체가 없다 — 아무 것도 하지 않는다.
+#[cfg(not(target_os = "linux"))]
+pub fn warn_if_menu_anchor_scale_premise_broken(_winit_scale: f64) {}
+
 /// Result of asking the platform to show a context menu.
 pub enum MenuOutcome {
     /// The menu already ran to completion — selected item id, or `None` when
@@ -37,6 +45,7 @@ pub enum MenuOutcome {
     /// Linux 백엔드만 이 variant 를 만든다. 다른 플랫폼 빌드에서는 생성처가
     /// 없지만, 호출자(`view/main/redraw.rs`)가 플랫폼 분기 없이 하나의 match
     /// 로 처리하도록 타입에는 남겨 둔다.
+    // 이유: 이 variant 를 만드는 것이 Linux 백엔드뿐이다(위) — 타입에 남겨 호출부 match 를 한 벌로 둔다.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Pending(MenuHandle),
 }

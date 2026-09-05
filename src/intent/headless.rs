@@ -31,7 +31,7 @@
 //! `src/adapters/ipc/handler/hooks.rs` 의 `surface.fire_hook`). 그러니 여기서
 //! 넣지 않는 것은 적재를 막는 것이 아니라 적재율을 올리지 않는 것이다.
 
-// gui 빌드에서는 호출부가 없다(headless boot 전용) — 테스트만 쓴다. 모듈을 cfg 로
+// 이유: gui 빌드에서는 호출부가 없다(headless boot 전용) — 테스트만 쓴다. 모듈을 cfg 로
 // 가리지 않는 이유는 위 모듈 주석 참조.
 #![cfg_attr(feature = "gui", allow(dead_code))]
 

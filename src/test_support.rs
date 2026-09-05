@@ -102,7 +102,7 @@ impl EnvVarGuard {
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         match &self.prev {
-            // SAFETY: `set` 과 동일 조건.
+            // SAFETY: `set` 과 동일 조건 — 전용 락으로 직렬화된 단위 테스트 한정.
             Some(v) => unsafe { std::env::set_var(self.key, v) },
             // SAFETY: 상동.
             None => unsafe { std::env::remove_var(self.key) },

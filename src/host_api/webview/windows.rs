@@ -42,6 +42,23 @@ pub struct PlatformWebView {
     parent_hwnd: HWND,
 }
 
+/// 이 백엔드의 실패를 두 종류로 나누는 자리. 기준은
+/// [`super::WebViewCreateError`] 와 같다 — **다음 시도에 달라질 수 있는 입력이 있는가.**
+/// ★ **이 백엔드의 분류는 정적 독해로만 했다 — 실행으로 확인하지 않았다.**
+/// 이 환경에서 Windows 를 띄울 수 없다. 창 종류와 창 핸들만 `Permanent` 이고,
+/// `CreateWindowExW` 이후(WebView2 환경·컨트롤러 생성, COM 핸들러 등록)는 전부
+/// `Transient` 로 뒀다 — 그 실패들은 WebView2 런타임 상태에 달렸고 런타임은
+/// 갱신·재시작될 수 있기 때문이다. **틀렸을 때의 비용은 시도 상한이 막는다**:
+/// 영구 실패를 `Transient` 로 잘못 적어도 8 회에서 멈춘다. 반대 방향(일시를
+/// 영구로)이 더 비싸서 이쪽으로 기울였다.
+fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Permanent(msg.to_string())
+}
+
+fn transient(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Transient(msg.to_string())
+}
+
 impl PlatformWebView {
     pub fn new(
         window: &impl HasWindowHandle,
@@ -49,10 +66,10 @@ impl PlatformWebView {
         scale_factor: f64,
         surface_id: u32,
         key_bridge: Rc<WebViewKeyBridge>,
-    ) -> std::result::Result<Self, String> {
-        let parent = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
+    ) -> std::result::Result<Self, super::WebViewCreateError> {
+        let parent = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut std::ffi::c_void),
-            _ => return Err("Not a Win32 window".to_string()),
+            _ => return Err(perm("Not a Win32 window")),
         };
 
         // SAFETY: WebView2 컨트롤러는 main thread (winit event loop)에서만 생성/소멸한다.
@@ -103,7 +120,7 @@ impl PlatformWebView {
                 None,
                 None,
             )
-            .map_err(|e| format!("CreateWindowExW failed: {e}"))?;
+            .map_err(|e| transient(format!("CreateWindowExW failed: {e}")))?;
 
             // Create WebView2 environment
             let (env_tx, env_rx) = mpsc::channel();
@@ -120,11 +137,11 @@ impl PlatformWebView {
                     },
                 )),
             )
-            .map_err(|e| format!("CreateEnvironment failed: {e}"))?;
+            .map_err(|e| transient(format!("CreateEnvironment failed: {e}")))?;
 
             let env = webview2_com::wait_with_pump(env_rx)
-                .map_err(|e| format!("Environment wait failed: {e}"))?
-                .ok_or("No environment returned")?;
+                .map_err(|e| transient(format!("Environment wait failed: {e}")))?
+                .ok_or_else(|| transient("No environment returned"))?;
 
             // Create controller
             let (ctrl_tx, ctrl_rx) = mpsc::channel();
@@ -139,11 +156,11 @@ impl PlatformWebView {
                     },
                 )),
             )
-            .map_err(|e| format!("CreateController failed: {e}"))?;
+            .map_err(|e| transient(format!("CreateController failed: {e}")))?;
 
             let controller = webview2_com::wait_with_pump(ctrl_rx)
-                .map_err(|e| format!("Controller wait failed: {e}"))?
-                .ok_or("No controller returned")?;
+                .map_err(|e| transient(format!("Controller wait failed: {e}")))?
+                .ok_or_else(|| transient("No controller returned"))?;
 
             // Set bounds
             controller
@@ -153,11 +170,11 @@ impl PlatformWebView {
                     right: w,
                     bottom: h,
                 })
-                .map_err(|e| format!("SetBounds failed: {e}"))?;
+                .map_err(|e| transient(format!("SetBounds failed: {e}")))?;
 
             let webview: ICoreWebView2 = controller
                 .CoreWebView2()
-                .map_err(|e| format!("CoreWebView2 failed: {e}"))?;
+                .map_err(|e| transient(format!("CoreWebView2 failed: {e}")))?;
 
             // WebView2 는 기본적으로(`AreBrowserAcceleratorKeysEnabled`=true) Ctrl+F/Ctrl+P/
             // F3/F5/F12 등 브라우저 accelerator 키 세트를 자체 소비한다 — 예를 들어 Ctrl+F 는
@@ -190,7 +207,7 @@ impl PlatformWebView {
             let allow_remote = Rc::new(Cell::new(false));
             webview
                 .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
-                .map_err(|e| format!("AddWebResourceRequestedFilter failed: {e}"))?;
+                .map_err(|e| transient(format!("AddWebResourceRequestedFilter failed: {e}")))?;
             let env_cb = env.clone();
             let allow_cb = allow_remote.clone();
             // webview2-com 0.38 (windows 0.61) 의 add_WebResourceRequested 는
@@ -219,7 +236,7 @@ impl PlatformWebView {
             ));
             webview
                 .add_WebResourceRequested(&handler, &mut token)
-                .map_err(|e| format!("add_WebResourceRequested failed: {e}"))?;
+                .map_err(|e| transient(format!("add_WebResourceRequested failed: {e}")))?;
 
             // navigation 생명주기 콜백. start→Loading, completed→Done/Failed(IsSuccess out-param).
             // 토큰은 WebResourceRequested 와 동일하게 *mut i64(EventRegistrationToken 아님).
@@ -247,7 +264,7 @@ impl PlatformWebView {
             ));
             webview
                 .add_NavigationStarting(&h_start, &mut tok_start)
-                .map_err(|e| format!("add_NavigationStarting failed: {e}"))?;
+                .map_err(|e| transient(format!("add_NavigationStarting failed: {e}")))?;
 
             let nav_done = nav_state.clone();
             let mut tok_done: i64 = 0;
@@ -273,7 +290,7 @@ impl PlatformWebView {
             ));
             webview
                 .add_NavigationCompleted(&h_done, &mut tok_done)
-                .map_err(|e| format!("add_NavigationCompleted failed: {e}"))?;
+                .map_err(|e| transient(format!("add_NavigationCompleted failed: {e}")))?;
 
             // 키 포워딩 — `AcceleratorKeyPressed` 는 정확히 이 목적을 위한 API 다
             // (WebView2 가 페이지에 키를 넘기기 **전에** host 에게 먼저 묻는다).
@@ -314,7 +331,7 @@ impl PlatformWebView {
             ));
             controller
                 .add_AcceleratorKeyPressed(&h_key, &mut tok_key)
-                .map_err(|e| format!("add_AcceleratorKeyPressed failed: {e}"))?;
+                .map_err(|e| transient(format!("add_AcceleratorKeyPressed failed: {e}")))?;
 
             // 클릭 등으로 webview 가 포커스를 가져가면 host 모델 포커스를 맞춘다 —
             // 그 클릭은 winit 에 도달하지 않아 `try_click_to_activate` 가 안 돈다.
@@ -328,7 +345,7 @@ impl PlatformWebView {
             ));
             controller
                 .add_GotFocus(&h_focus, &mut tok_focus)
-                .map_err(|e| format!("add_GotFocus failed: {e}"))?;
+                .map_err(|e| transient(format!("add_GotFocus failed: {e}")))?;
 
             Ok(Self {
                 hwnd,

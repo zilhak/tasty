@@ -267,9 +267,12 @@ pub(super) fn collect_egui_mesh_targets(
     state: &AppState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
+    scale_factor: f32,
 ) -> Vec<(u32, String, PhysicalRect)> {
     let mut out: Vec<(u32, String, PhysicalRect)> = Vec::new();
-    for (_pane_id, _pane_rect, regions) in state.surface_regions(engine, terminal_rect) {
+    for (_pane_id, _pane_rect, regions) in
+        state.surface_regions(engine, terminal_rect, scale_factor)
+    {
         for r in regions {
             if let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>() {
                 out.push((r.id, ms.plugin_id.clone(), r.rect));
@@ -286,9 +289,12 @@ pub(super) fn collect_attach_mesh_targets(
     state: &AppState,
     engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
+    scale_factor: f32,
 ) -> Vec<(u32, PhysicalRect)> {
     let mut out: Vec<(u32, PhysicalRect)> = Vec::new();
-    for (_pane_id, _pane_rect, regions) in state.surface_regions(engine, terminal_rect) {
+    for (_pane_id, _pane_rect, regions) in
+        state.surface_regions(engine, terminal_rect, scale_factor)
+    {
         for r in regions {
             if r.surface
                 .as_any()

@@ -176,7 +176,7 @@ define_class!(
         /// 빠져나가며 `Bool` 로 타입 검사돼 macOS 에서만 컴파일이 깨진다(꼬리
         /// 표현식은 `__objc2_result` 에 묶여 `bool` 로 추론되므로 멀쩡하다 — 한
         /// 함수 안에서 두 경로의 기대 타입이 다르다). 값은 전부 표현식으로 흘린다.
-        /// `src/source_guards.rs` 의 가드가 이 형태를 전 플랫폼에서 막는다.
+        /// `src/source_guards/define_class_return.rs` 의 가드가 이 형태를 전 플랫폼에서 막는다.
         #[unsafe(method(performKeyEquivalent:))]
         fn perform_key_equivalent(&self, event: &NSEvent) -> bool {
             if view_holds_first_responder(self) && self.forward_key_to_host(event) {
@@ -303,6 +303,14 @@ pub struct PlatformWebView {
     _nav_delegate: Retained<NavDelegate>,
 }
 
+/// 이 백엔드의 실패를 두 종류로 나누는 자리. 기준은
+/// [`super::WebViewCreateError`] 와 같다 — **다음 시도에 달라질 수 있는 입력이 있는가.**
+/// 이 백엔드는 셋 다 `Permanent` 다 — main thread 여부·창 종류는 프로세스가
+/// 사는 동안 안 바뀐다. 그래서 `transient` 헬퍼가 없다.
+fn perm(msg: impl std::fmt::Display) -> super::WebViewCreateError {
+    super::WebViewCreateError::Permanent(msg.to_string())
+}
+
 impl PlatformWebView {
     /// Create a WKWebView as a child of the given window, positioned at `bounds`.
     pub fn new(
@@ -311,13 +319,12 @@ impl PlatformWebView {
         scale_factor: f64,
         surface_id: u32,
         key_bridge: Rc<WebViewKeyBridge>,
-    ) -> Result<Self, String> {
-        let mtm =
-            MainThreadMarker::new().ok_or_else(|| "Must be called from main thread".to_string())?;
+    ) -> Result<Self, super::WebViewCreateError> {
+        let mtm = MainThreadMarker::new().ok_or_else(|| perm("Must be called from main thread"))?;
 
-        let ns_view_ptr = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
+        let ns_view_ptr = match window.window_handle().map_err(perm)?.as_raw() {
             RawWindowHandle::AppKit(w) => w.ns_view.as_ptr(),
-            _ => return Err("Not an AppKit window".to_string()),
+            _ => return Err(perm("Not an AppKit window")),
         };
         // SAFETY: ns_view_ptr는 winit이 만든 활성 NSView로, 본 함수 호출 동안 살아있다
         // (winit이 윈도우를 drop하지 않는 한). mtm 검증 통과로 main thread 확정.

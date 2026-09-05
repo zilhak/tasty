@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 /// Condition that triggers a global hook.
@@ -61,7 +63,12 @@ pub struct GlobalHook {
 /// Manages global (non-surface-bound) hooks driven by timers.
 pub struct GlobalHookManager {
     hooks: HashMap<u32, GlobalHook>,
-    next_id: u32,
+    /// id 카운터. **engine 사이에서 공유한다** — `HookManager` 와 같은 이유이고, 여기는
+    /// 한 겹 더 나쁘다: global hook 은 라우팅이 창을 건너 풀지도 않아(`Kind` 에 없다)
+    /// 포커스된 창의 것만 답한다. 카운터까지 engine 마다면 비포커스 창의 훅은 **존재하는데
+    /// 어떤 요청으로도 닿지 않는다**(실측: `unset global-hook --hook 1` 이 두 번째 호출에서
+    /// `removed: false` 를 내고 창1 의 것은 그대로 남는다).
+    next_id: Arc<AtomicU32>,
     /// When each Interval/Once hook last fired (or was created).
     last_fired: HashMap<u32, Instant>,
     /// Creation time for Once hooks, to measure elapsed time.
@@ -75,10 +82,18 @@ pub struct GlobalHookManager {
 }
 
 impl GlobalHookManager {
+    /// 자기 카운터로 만든다 — **테스트 전용**이다. production 경로에 이것이 남아 있으면
+    /// engine 마다 1 부터 도는 카운터가 되살아나므로 cfg 로 못 박는다.
+    #[cfg(test)]
     pub fn new() -> Self {
+        Self::with_counter(Arc::new(AtomicU32::new(0)))
+    }
+
+    /// engine 들이 공유하는 카운터로 만든다 — production 경로는 이쪽이다.
+    pub fn with_counter(next_id: Arc<AtomicU32>) -> Self {
         Self {
             hooks: HashMap::new(),
-            next_id: 0,
+            next_id,
             last_fired: HashMap::new(),
             created_at: HashMap::new(),
             fired_once: Vec::new(),
@@ -88,8 +103,7 @@ impl GlobalHookManager {
 
     /// Add a new hook. Returns the assigned hook ID.
     pub fn add(&mut self, condition: HookCondition, command: String, label: Option<String>) -> u32 {
-        self.next_id += 1;
-        let id = self.next_id;
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let now = Instant::now();
 
         match &condition {

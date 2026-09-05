@@ -27,6 +27,50 @@ pub use macos::PlatformWebView;
 #[cfg(windows)]
 pub use self::windows::PlatformWebView;
 
+/// webview 생성 실패. **다시 시도할 가치가 있는가**를 타입으로 가른다.
+///
+/// 호출부(`create_missing_webviews`)는 webview 가 없는 html surface 를 다시 시도한다.
+/// 그런데 실패 경로가 X 창을 만들었다 지우면 그 X 이벤트가 이벤트 루프를 깨워
+/// **다음 시도를 스스로 부른다** — 실측으로 10 초에 27477 회, X 서버 CPU 는 코어의
+/// 27%, 로그는 8.2 MB 였다. 그래서 "몇 번까지 시도하는가" 가 정책이 아니라 필수다.
+///
+/// `String` 하나로는 그 정책을 나눌 수 없다. 두 처방이 다르기 때문이다:
+/// 영구 실패는 **즉시 포기**해야 하고, 일시 실패는 **몇 번 더** 해 볼 값어치가 있다.
+/// 근거·재검토 조건: `docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md`
+/// (실패 경로가 반복 가능해지는 것이 그 결정의 직접적 결과다).
+#[derive(Debug, Clone)]
+pub enum WebViewCreateError {
+    /// 다음 시도에 달라질 수 있는 입력이 있다 — 자원 고갈, 서버·런타임 경합.
+    ///
+    /// macOS 백엔드는 실패 셋을 전부 `Permanent` 로 분류한다(`macos.rs` 의 `perm` —
+    /// main thread 여부·창 종류는 그 프로세스에서 안 바뀐다). 리눅스·Windows 는 이
+    /// variant 를 만든다.
+    // 분류를 린트에 맞춰 바꾸지 않는다 — macOS 에서 그 셋은 실제로 영구 실패이고,
+    // 되돌리면 호출부가 영구 실패를 무한 재시도한다. 다른 조합에는 안 붙여서, 그쪽에서
+    // 생성처가 사라지면 그때는 깨지게 둔다.
+    // reason: macOS 조합에서만 생성처가 없고 워크스페이스가 `dead_code = "deny"` 다.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    Transient(String),
+    /// 이 프로세스에서는 달라지지 않는다 — 창 종류, 라이브러리 부재, 디스플레이 종류.
+    /// **호출부는 이것을 보면 그 surface 를 더 시도하지 않는다.**
+    Permanent(String),
+}
+
+impl std::fmt::Display for WebViewCreateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transient(m) => write!(f, "{m} (일시)"),
+            Self::Permanent(m) => write!(f, "{m} (영구)"),
+        }
+    }
+}
+
+impl WebViewCreateError {
+    pub fn is_permanent(&self) -> bool {
+        matches!(self, Self::Permanent(_))
+    }
+}
+
 /// gui 코드 편의용 재노출. 정의처는 비-gui 모듈 `plugin_bridge::remote_surface`
 /// (webview 모듈이 `#[cfg(feature = "gui")]` 게이트라 비-gui 의 RemoteSurface 가
 /// 참조할 수 있도록 그곳에 둔다). backend 들은 `super::NavState`, host gui 코드는
@@ -83,6 +127,13 @@ impl WebViewBounds {
     ///
     /// macOS 는 Cocoa 가 논리 좌표(point)를 그대로 받으므로 이 변환을 쓰지 않는다 —
     /// 물리로 올리는 쪽은 X11(GTK)·Win32 다.
+    ///
+    /// 그래서 macOS 빌드에서는 호출부가 없다. `-D dead-code` 아래서 그것이 컴파일
+    /// 에러가 되므로 그 플랫폼에서만 면제한다 — 지우거나 `#[cfg]` 로 빼지 않는 이유는
+    /// 아래 왕복 테스트가 세 OS 모두에서 이 함수를 `from_physical` 의 역으로 고정하기
+    /// 때문이다. macOS 에서만 그 고정이 사라지면 한쪽만 바뀌는 것을 못 잡는다.
+    // 이유: 논리→물리 변환을 부르는 것이 X11(GTK)·Win32 경로뿐이라 macOS 빌드엔 호출부가 없다(위).
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn to_physical(self, scale_factor: f64) -> PhysicalWebViewBounds {
         PhysicalWebViewBounds {
             x: self.x * scale_factor,

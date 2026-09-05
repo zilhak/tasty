@@ -1,4 +1,4 @@
-// headless 빌드에선 호출 트리 (app::dispatch/intents) 가 cfg(gui) 로 가려져
+// 이유: headless 빌드에선 호출 트리 (app::dispatch/intents) 가 cfg(gui) 로 가려져
 // state 의 gui 전용 필드/메서드가 미사용으로 잡힌다. 본질적으로 gui 어댑터의
 // API 면이므로 *headless 한정* 으로 dead_code/unused_imports 를 침묵시킨다.
 // gui 빌드에서는 검사 그대로 작동.
@@ -330,7 +330,13 @@ pub struct AppState {
     pub(crate) tutorial: crate::adapters::ui::tutorial::TutorialRuntime,
     /// All transient dialog/popup state.
     pub(crate) dialogs: DialogState,
-    /// Measured tab bar height in physical pixels, updated each frame by egui.
+    /// 측정된 탭바 높이(물리 픽셀). 매 프레임 `adapters::ui::tab_bar` 가 실측값으로
+    /// 덮는다 — 여기 있는 것은 **아직 안 쟀다**는 뜻의 자리표시자다.
+    ///
+    /// 그래서 0 으로 시작한다. 논리 토큰(`SIZING.tab_bar_height`)과 같은 수를 넣으면
+    /// **배율 1 에서만 우연히 맞는 값**이 되어, 덮는 자리가 조건부가 되거나 첫 프레임
+    /// 전에 읽는 경로가 생겼을 때 배율 2 에서 정확히 절반인 그럴듯한 수로 조용히
+    /// 지나간다. 0 은 그 상황에서 탭바가 사라져 눈에 띈다.
     pub(crate) tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
     #[cfg(feature = "gui")]
@@ -1057,10 +1063,11 @@ impl AppState {
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
     ) -> R {
-        let mut guard = match self.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            self.memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
         f(&mut *guard)
     }
 
@@ -1094,7 +1101,7 @@ impl AppState {
             #[cfg(feature = "gui")]
             tutorial: crate::adapters::ui::tutorial::TutorialRuntime::default(),
             dialogs: DialogState::new(),
-            tab_bar_height: PhysicalPx(24.0),
+            tab_bar_height: PhysicalPx(0.0),
             captured_double_tap: None,
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
@@ -1326,12 +1333,12 @@ impl AppState {
         if self
             .fullscreen_stage
             .as_ref()
-            .is_some_and(|s| s.id == def.id)
+            .is_some_and(|s| s.id == def.id())
         {
             return true;
         }
         self.close_fullscreen_stage();
-        self.fullscreen_stage = Some(crate::adapters::ui::fullscreen::StageState { id: def.id });
+        self.fullscreen_stage = Some(crate::adapters::ui::fullscreen::StageState { id: def.id() });
         true
     }
 
@@ -1389,8 +1396,7 @@ impl AppState {
                 ));
             } else if let Some(es) = s.as_any().downcast_ref::<crate::model::EmptySurface>() {
                 let pid = es
-                    .deferred_spawn
-                    .as_ref()
+                    .deferred_spawn()
                     .and_then(|sp| sp.scrollback_persist_id.clone());
                 out.push((es.id, pid));
             } else if let Some(sid) = s.surface_id() {
@@ -1445,6 +1451,10 @@ impl AppState {
         let t = Instant::now();
         self.purge_surface_memory_scope(surface_id);
         sums.memory_purge += t.elapsed();
+        // surface 가 사라졌으니 그 자리의 점유 흔적도 지운다. 안 지우면 레지스트리가
+        // 없는 surface 를 점유 중이라고 계속 말한다(`attach.list` · `surface_held_by`).
+        // 워크스페이스 락은 건드리지 않는다 — 형제 surface 는 아직 살아 있다.
+        engine.attach.forget_closed_surface(surface_id);
     }
 
     fn delete_scrollback_persist(persist_id: Option<String>) {
@@ -1759,5 +1769,28 @@ mod keyboard_overlay_tests {
         assert!(keyboard_overlay_open(true, false, false, false));
         assert!(keyboard_overlay_open(false, true, false, false));
         assert!(keyboard_overlay_open(false, false, true, false));
+    }
+}
+
+#[cfg(test)]
+mod tab_bar_height_seed_tests {
+    use super::*;
+
+    /// 논리 토큰과 같은 수로 씨앗을 주면 배율 1 에서만 맞는 값이 된다. 이 필드는
+    /// 실측이 채우는 자리이므로 씨앗은 "안 쟀다" 여야 한다.
+    #[test]
+    fn the_seed_is_not_the_logical_token() {
+        let (state, _engine) = super::tests::test_state();
+        let seeded = state.tab_bar_height;
+        assert_eq!(
+            seeded,
+            PhysicalPx(0.0),
+            "씨앗은 '안 쟀다' 를 뜻하는 0 이어야 한다"
+        );
+        assert_ne!(
+            seeded.value(),
+            tasty_type_appearance::theme::SIZING.tab_bar_height.value(),
+            "씨앗이 논리 토큰과 같은 수다 — 배율 1 에서만 맞는 값이라 배율 2 에서 절반으로 조용히 지나간다"
+        );
     }
 }
