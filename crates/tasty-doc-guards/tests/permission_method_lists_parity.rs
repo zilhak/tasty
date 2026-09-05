@@ -157,7 +157,14 @@ fn method_table(src: &str) -> BTreeMap<String, Option<Vec<String>>> {
             && trimmed.starts_with(',')
         {
             let tail = trimmed[1..].trim_start();
-            if let Some(rest) = tail.strip_prefix("plugin(") {
+            // `plugin_only(&[..])` 는 권한 축에서 `plugin(&[..])` 과 같다 — plugin 이
+            // 부를 수 있고 같은 권한을 요구한다. 다른 것은 **외부** 호출자에게
+            // dispatch arm 이 없다는 것뿐이라 이 문서(권한 표)의 관심사가 아니다.
+            // 이 갈래가 없으면 그 항목들이 조용히 빠져 "표에 없다" 로 오보된다.
+            if let Some(rest) = tail
+                .strip_prefix("plugin(")
+                .or_else(|| tail.strip_prefix("plugin_only("))
+            {
                 let open = rest.find('[').expect("plugin(&[..]) 형태가 아니다");
                 let close2 = rest[open..].find(']').expect("plugin(&[..]) 가 안 닫혔다");
                 let inner = &rest[open + 1..open + close2];
@@ -325,6 +332,15 @@ fn the_parsers_are_alive() {
         m.meth.get("timer.list").cloned(),
         Some(None),
         "local_only 항목을 못 읽는다"
+    );
+    assert!(
+        m.meth
+            .get("banner.open")
+            .cloned()
+            .flatten()
+            .is_some_and(|v| v.contains(&"UiBanner".to_string())),
+        "`plugin_only(&[..])` 항목을 못 읽는다 — 이 갈래가 빠지면 그 메서드들이 조용히 \
+         사라져 '문서가 없는 메서드를 적었다' 로 오보된다"
     );
     assert_eq!(
         expand("approval.summary.get/set"),

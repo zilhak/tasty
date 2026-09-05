@@ -677,6 +677,10 @@ mod headless_app_layer_coverage;
 mod length_constant_frontier;
 
 mod platform_gated_dispatch_complement;
+
+/// `plugin_only` 표식과 plugin host-call 진입부의 인터셉트가 같은 집합인지 본다.
+/// 갈라지면 외부 호출자가 "있는 메서드" 에 "없다" 를 받는다.
+mod plugin_only_dispatch_parity;
 mod port_mode_roster;
 
 /// 기하를 내주는 debug 관측면 둘(popup · banner)이 같은 키 모양으로 내는지, 그리고

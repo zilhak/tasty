@@ -18,6 +18,15 @@ use tasty_plugin_manifest::Permission;
 pub struct MethodMeta {
     /// plugin이 이 메서드를 호출할 수 있는지. false면 plugin은 어떤 경우에도 호출 불가.
     pub plugin_callable: bool,
+    /// **plugin 만** 부를 수 있는지 — 즉 이 이름에 외부(CLI/네트워크 IPC) dispatch
+    /// arm 이 없다. plugin host-call 진입부가 직접 인터셉트하는 메서드들이다.
+    ///
+    /// 이 표는 원래 caller **게이트**만 담았고 라우팅은 담지 않았다. 그런데 게이트의
+    /// 한쪽 방향은 이미 말할 수 있었다 — `local_only()` 가 "plugin 은 못 부른다" 다.
+    /// 반대 방향을 말할 수단이 없어서, plugin 전용 메서드가 `plugin(&[…])` 로 적히고
+    /// 외부 호출자는 `-32601`("그런 메서드 없다")을 받았다. 이름은 맞고 표에도 있는데
+    /// 없다고 답한 것이라, 플랫폼 축에서 같은 거짓을 고친 ADR-0154 와 같은 형태다(ADR-0163).
+    pub plugin_only: bool,
     /// plugin이 호출하려면 매니페스트에 이 권한들이 모두 선언돼 있어야 함.
     pub required: &'static [Permission],
 }
@@ -25,6 +34,19 @@ pub struct MethodMeta {
 const fn plugin(required: &'static [Permission]) -> MethodMeta {
     MethodMeta {
         plugin_callable: true,
+        plugin_only: false,
+        required,
+    }
+}
+
+/// plugin 만 부를 수 있는 메서드 — 외부 dispatch arm 이 없다.
+///
+/// `local_only()` 의 거울이다. 표에 등재하는 이유도 같다: 거부가 **정책인지 누락인지**
+/// 구분되게 하려고. 다른 것은 그 거부를 누가 받느냐뿐이다.
+const fn plugin_only(required: &'static [Permission]) -> MethodMeta {
+    MethodMeta {
+        plugin_callable: true,
+        plugin_only: true,
         required,
     }
 }
@@ -32,6 +54,7 @@ const fn plugin(required: &'static [Permission]) -> MethodMeta {
 const fn local_only() -> MethodMeta {
     MethodMeta {
         plugin_callable: false,
+        plugin_only: false,
         required: &[],
     }
 }
@@ -58,7 +81,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 요구할지(그리고 개수·총량 상한을 함께 둘지)는 매니페스트 호환성이 걸린
         // 별도 결정이고, ADR-0152 의 "이 ADR 이 안 정한 것" 에 열린 질문으로 있다.
         // 그때까지는 현재 동작 그대로 등재해 최소한 cap·rate·audit 는 걸리게 한다.
-        ("host.shared_buffer.create", plugin(&[])),
+        ("host.shared_buffer.create", plugin_only(&[])),
         // ── 타이머 관측 ───────────────────────────────────────────────
         // 등록된 주기 작업의 read-only 스냅샷("지금 무엇이 이 인스턴스를 깨우는가").
         // local_only — plugin 이 호스트 내부 스케줄을 알아야 할 이유가 없고, 조회
@@ -496,12 +519,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
         // 다른 plugin의 인스턴스 close 요청은 만들어진 응답에서 거부.
-        ("popup.close", plugin(&[UiPopup])),
+        ("popup.close", plugin_only(&[UiPopup])),
         // ── banner (plugin → host, A3) ────────────────────────────────
         // 자기 contribute banner 를 자기 surface 에 띄운다(D1 소유권 검증은 App).
-        ("banner.open", plugin(&[UiBanner])),
+        ("banner.open", plugin_only(&[UiBanner])),
         // 자기 배너 인스턴스를 명시적으로 닫는다.
-        ("banner.close", plugin(&[UiBanner])),
+        ("banner.close", plugin_only(&[UiBanner])),
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
         ("plugin.list", local_only()),
         ("plugin.show", local_only()),
@@ -709,6 +732,7 @@ pub fn register_plugin_prefix(prefix: &str) {
         .entry(prefix.to_string())
         .or_insert(MethodMeta {
             plugin_callable: true,
+            plugin_only: false,
             required: &[],
         });
 }

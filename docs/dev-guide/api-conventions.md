@@ -95,11 +95,11 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 
 | 이유 | 메서드 | 왜 CLI 가 없나 |
 |---|---|---|
-| plugin → host 서비스 | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
+| plugin → host 서비스 †plugin-only | `banner.open` · `banner.close` · `popup.close` | plugin 이 **자기** contribute UI 인스턴스를 여닫는다. 대상 식별이 caller plugin 자신이라 CLI 호출자가 존재하지 않는다 |
 | plugin → host 서비스 | `file_picker.trigger` | plugin 프로세스가 못 여는 host 소유 popup 을 대신 연다. 결과는 응답이 아니라 `event.dispatch` 로 그 plugin 에 push 된다 |
 | plugin → host 서비스 | `git_viewer.query` · `markdown.navigate` | 특정 plugin(git-viewer · markdown 주소창)이 자기 surface 를 위해 부른다. `git_viewer.query` 는 `request_id` 만 회신하고 결과를 그 plugin 에 unicast push 하므로 셸이 결과를 받을 수 없고, `markdown.navigate` 는 그 namespace 를 번들 plugin 이 점유해 외부 호출이 plugin 으로 forward 된다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)) |
 | plugin → host 서비스 | `settings.get_plugin_setting` | `caller_plugin_id` 를 요청 파라미터가 아니라 `CallerContext` 에서 강제 도출한다 — CLI 호출자는 plugin 신원이 없어 **원리적으로** 부를 수 없다 |
-| plugin → host 서비스 | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
+| plugin → host 서비스 †plugin-only | `host.shared_buffer.create` | 응답이 main 채널 하나로 끝나지 않는다 — 공유 메모리 핸들(Unix fd / Windows HANDLE)이 그 plugin 프로세스의 **보조 채널**로 함께 전달되고, 받는 쪽은 그것을 자기 주소공간에 매핑한다. CLI 프로세스에는 그 채널도 매핑 대상도 없어 결과를 받을 수 없다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.attach` · `remote.workspaces` | `tasty remote attach` / `tasty remote workspaces` 가 SSH 터널을 직접 열고 클라이언트 주도로 실행한다. 이 IPC 는 같은 일을 **원격/에이전트가 시킬 때**의 판이다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.profile.add` · `remote.profile.get` · `remote.profile.list` · `remote.profile.list_local` · `remote.profile.detect` · `remote.profile.import` · `remote.profile.remove` | `tasty tool remote-profile …` 이 로컬 프로필 파일을 직접 다룬다(IPC 없음). 인스턴스가 떠 있지 않아도 되어야 하는 명령이라 그쪽이 옳다 |
 | CLI 는 있고 IPC 를 안 탄다 | `remote.passkey.add` · `remote.passkey.get` · `remote.passkey.list` · `remote.passkey.remove` | `tasty tool passkey …` 가 같은 이유로 로컬 처리한다 |
@@ -107,6 +107,33 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 | 같은 능력을 다른 명령이 준다 | `surface.send_combo` | `surface.send_key` 가 `"ctrl+c"` 형태를 파싱하므로 `tasty send key ctrl+c` 로 덮인다. 이쪽은 modifier 를 배열로 받는 JSON 친화 변종이다 |
 | 같은 능력을 다른 명령이 준다 | `surface.send_to` | `surface.send` 와 동형이라 `tasty send text --surface <id>` 로 덮인다 |
 | 연결 경계가 대신한다 | `attach.acquire` · `attach.release` · `attach.list` | 위 "CLI vs IPC" 의 `attach.*` 항목 참조. `client_id` 가 `stream.open` 핸드셰이크 발급물이라 one-shot CLI 가 들 수 없고, 사람이 쓰는 표면은 `tasty remote attach` / `tasty tool attach` 가 세션 전체를 안에서 처리한다 |
+
+#### † plugin-only — 외부 호출자는 무엇을 받는가
+
+위 표에서 †plugin-only 로 표시한 넷(`banner.open` · `banner.close` · `popup.close` ·
+`host.shared_buffer.create`)은 **CLI 잎이 없는 것에 그치지 않고 외부 dispatch arm 자체가
+없다.** plugin host-call 진입부가 직접 인터셉트하기 때문이다. 나머지 행들은 사정이 다르다 —
+`git_viewer.query` · `markdown.navigate` · `settings.get_plugin_setting` 같은 것은 외부에서
+쏘면 실제로 라우팅되어 인자 오류나 plugin 의 답이 돌아온다. 두 부류가 같은 표에 있는 것은 이
+표의 축이 **CLI 진입점**이지 라우팅이 아니기 때문이다.
+
+이 넷은 `METHOD_TABLE` 에 `plugin_only(&[…])` 로 등재되고, 외부 호출자는 `-32601`("그런
+메서드 없다")이 아니라 다음을 받는다:
+
+    -32016  method '<name>' is plugin-only: only the plugin host-call path dispatches it,
+            so CLI and network IPC callers have no entry point
+
+`-32601` 이면 호출자는 **이름을 의심한다** — 오타를 고치거나 표를 다시 읽는다. 사실은 이름이
+맞고 표에도 있으며 부를 수 있는 주체가 다를 뿐이라, 같은 코드로 답하면 호출자를 틀린 방향으로
+보낸다. 플랫폼 축에서 같은 거짓을 고친 [ADR-0154](../adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)
+와 같은 형태이고, 이쪽은 caller 축이다([ADR-0163](../adr/0163-a-registered-name-answers-who-not-whether.md)). 표식과 인터셉트가 갈라지지 않는지는
+`src/source_guards/plugin_only_dispatch_parity.rs` 가 양방향으로 본다.
+
+실측(2026-09-05, gui debug 인스턴스 · plugin 설치된 세계 · 외부 프로브): `plugin_callable` 인
+**231** 개 중 외부 호출이 `-32601` 로 끝난 것이 이 **4** 개였다(나머지는 `-32602` 188 ·
+실행 성공 37 · `-32000` 2). 같은 집합을 "외부 라우터 소스에 이름이 안 보이는 것" 으로 세면
+**14** 개가 나온다 — `window.*` · `view.*` 처럼 match 팔이 아닌 명부로 라우팅되는 것이 섞여
+들어오기 때문이다. 이 부류는 소스 텍스트가 아니라 **실행**으로만 정해진다.
 
 ### debug 표에 있는데 CLI 가 없는 메서드
 

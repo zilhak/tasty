@@ -148,7 +148,7 @@ pub fn handle_with_caller(
         return resp;
     }
 
-    JsonRpcResponse::method_not_found(id, &request.method)
+    JsonRpcResponse::unrouted_for_external_caller(id, &request.method)
 }
 
 /// method alias 정규화 + deprecated 경고 + 라우팅용 request 구성.
