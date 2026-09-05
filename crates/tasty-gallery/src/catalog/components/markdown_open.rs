@@ -11,11 +11,11 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: f32 = 420.0;
+const WIDTH: LogicalPx = LogicalPx(420.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, LogicalPx(WIDTH), kit::panel_fill(theme), |ui| {
+        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
                 ui.vertical(|ui| {
@@ -26,7 +26,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 // 2 Choice 카드.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                    let cw = (WIDTH - theme.spacing_md.value() * 3.0) * 0.5;
+                    let cw = (WIDTH - theme.spacing_md.scaled(3.0)).scaled(0.5);
                     choice(
                         ui,
                         theme,
@@ -93,7 +93,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn choice(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: f32,
+    width: LogicalPx,
     glyph: MockGlyph,
     title: &str,
     sub: &str,
@@ -115,7 +115,7 @@ fn choice(
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
         .show(ui, |ui| {
-            ui.set_width(width - theme.spacing_md.value() * 2.0);
+            ui.set_width((width - theme.spacing_md.scaled(2.0)).value());
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
             let icon_color = if selected {
                 theme.accent_primary()
