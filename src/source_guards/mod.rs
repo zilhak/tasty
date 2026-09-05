@@ -719,6 +719,11 @@ mod derived_plugin_tables_are_not_bypassed;
 mod builtin_plugin_roster;
 mod bundled_plugin_namespace_coverage;
 
+/// 본체 등록처(popup `all_defs` · 무대 `all_metas`)에 있는 것이 갤러리 카탈로그에도
+/// 있는지 본다. gallery-first 는 불가침 원칙인데 그것을 어겼을 때 빨개지는 것이 0 이었다.
+#[cfg(test)]
+mod gallery_specimen_parity;
+
 mod headless_app_layer_coverage;
 
 #[cfg(test)]
