@@ -201,6 +201,12 @@ pub(crate) fn method_scoped_resource_id(
     // (`docs/design/policies/focus.md` 의 활성 상태 의존 금지). 바로 앞의
     // `workspace.close`/`update`/`move` 갈래가 같은 이유로 생겼다 — 그 갈래를
     // 이름으로 가리키는 이유는 "아래" 같은 방향이 코드가 움직이면 조용히 틀려서다.
+    //
+    // 채널: 그 갈래가 **살아 있다**는 것은
+    // `workspace_id_key_routes_only_for_the_methods_that_mean_workspace` 가 지킨다(세
+    // 메서드를 이름으로 순회한다). 갈래가 지워지면 그 시험이 죽으므로 이 참조는 매달리지
+    // 않는다. 반면 "같은 이유로 생겼다" 는 **연혁**이라 그것을 재는 채널은 없다 — 없다고
+    // 적어 두는 편이, 지킨다고 읽히는 단정을 하나 더 두는 것보다 낫다.
     if method == "split" {
         if let Some(id) = numeric(params, "target_pane") {
             return Some(ResourceId {
