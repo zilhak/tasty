@@ -21,6 +21,7 @@
 #![allow(clippy::let_underscore_must_use)]
 
 use std::path::Path;
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
 /// 순회 가드들의 이름 제외 목록 **교집합**(2026-09-06 실측, 8 곳).
 ///
@@ -61,6 +62,21 @@ const KNOWN_OUTSIDE: &[(&str, &str)] = &[(
 /// 값의 근거: 2026-09-06 실측 367(표식 아래와 심볼릭 링크는 안 센다).
 const MIN_DIRS_WALKED: usize = 200;
 
+/// 통합 타깃 순회의 하한.
+const TARGET_FLOOR: Floor = Floor {
+    min: 60,
+    measured: 105,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 통합 테스트 타깃의 수다. 가드가 하나 늘 때마다 하나씩 느는 \
+                   식이라 한 번에 크게 안 움직이지만, 한 크레이트가 통째로 갈리면 그 \
+                   크레이트의 `tests/` 가 함께 옮겨 간다 — 그래서 여유를 넓게 둔다. 이 수는 \
+                   판정에 안 쓰이고 실패문의 정보로만 쓰이므로, 하한의 목적은 그 정보가 \
+                   순회 고장에서 나온 0 이 아님을 보장하는 것 하나다. 값의 계보: \
+                   `ls tests/*.rs crates/*/tests/*.rs` 로 센 105(2026-09-06). 이 순회가 같은 \
+                   것을 보는지는 수가 아니라 `the_target_walk_sees_both_roots_and_stays_flat` \
+                   이 확인한다 — 수를 박으면 낡고, 뿌리와 깊이는 안 낡는다.",
+};
+
 /// `CACHEDIR.TAG` 규격의 서명 줄. 여기서는 **판정이 아니라 입력**으로만 쓴다 —
 /// 판정은 언제나 [`tasty_doc_guards::is_build_cache_dir`] 가 한다.
 const CACHEDIR_LINE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55\n";
@@ -73,39 +89,43 @@ const CACHEDIR_LINE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55\n";
 ///
 /// `read_dir` 이 이 레포의 유일한 순회 수단이라는 것은 `file_walks_declare_their_mechanism`
 /// 이 따로 고정한다 — 그래서 이 세기는 흉내가 아니라 그 사실 위에 선다.
-fn scanners_without_property_check(root: &Path) -> usize {
-    let mut dirs = vec![root.join("tests")];
-    if let Ok(entries) = std::fs::read_dir(root.join("crates")) {
-        for e in entries.flatten() {
-            dirs.push(e.path().join("tests"));
-        }
-    }
-    let mut n = 0;
-    for d in dirs {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.extension().is_none_or(|x| x != "rs") {
-                continue;
-            }
-            let Ok(src) = std::fs::read_to_string(&p) else {
-                continue;
-            };
-            if src.contains("read_dir") && !src.contains("is_build_cache_dir") {
-                n += 1;
-            }
-        }
-    }
-    n
+fn scanners_without_property_check(root: &Path) -> Option<usize> {
+    let Ok(targets) = walk_with_floor(
+        root,
+        root,
+        &TARGET_FLOOR,
+        Descend::SkipBuildCaches,
+        &is_integration_target,
+    ) else {
+        // 이 수는 실패문의 정보일 뿐이라 순회가 죽어도 판정을 막지 않는다. 다만 0 을
+        // 정보로 싣지는 않는다 — 0 은 "이름 축 요구가 사라졌다" 는 뜻으로 읽히는데
+        // 순회가 죽어서 나온 0 은 그 뜻이 아니다. `None` 이 그 둘을 코드로 가른다.
+        return None;
+    };
+    Some(
+        targets
+            .iter()
+            .filter(|t| {
+                std::fs::read_to_string(&t.path).is_ok_and(|src| {
+                    src.contains("read_dir") && !src.contains("is_build_cache_dir")
+                })
+            })
+            .count(),
+    )
 }
 
-fn rel_of(path: &Path, root: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
+/// 통합 테스트 타깃인가 — 루트 패키지와 각 크레이트의 `tests/` 바로 아래 `.rs`.
+/// 경로로 가른다. `rel` 은 공용 순회가 정규화해서 주므로 플랫폼마다 안 갈린다.
+fn is_integration_target(found: &Walked) -> bool {
+    if !found.rel.ends_with(".rs") {
+        return false;
+    }
+    let parts: Vec<&str> = found.rel.split('/').collect();
+    match parts.as_slice() {
+        ["tests", _] => true,
+        ["crates", _, "tests", _] => true,
+        _ => false,
+    }
 }
 
 /// 경로 성분 중 하나라도 [`KNOWN_OUTSIDE`] 에 등재된 이름인가.
@@ -139,7 +159,7 @@ fn find_markers(dir: &Path, root: &Path, out: &mut Vec<String>, walked: &mut usi
         let path = entry.path();
         *walked += 1;
         if tasty_doc_guards::is_build_cache_dir(&path) {
-            out.push(rel_of(&path, root));
+            out.push(normalized_rel(&path, root));
             continue;
         }
         find_markers(&path, root, out, walked);
@@ -165,7 +185,10 @@ fn every_build_cache_marker_sits_under_a_name_that_every_scanner_prunes() {
         .filter(|rel| !is_covered_by_name_pruning(rel) && !is_known_outside(rel))
         .collect();
 
-    let blind = scanners_without_property_check(&root);
+    let blind = match scanners_without_property_check(&root) {
+        Some(n) => format!("{n} 개"),
+        None => "셀 수 없었다 — 그 순회가 하한에 걸렸다".to_string(),
+    };
     assert!(
         outside.is_empty(),
         "빌드 캐시 표식이 이름 제외({COMMON_PRUNED:?}) 밖에 있고 `KNOWN_OUTSIDE` 에도 \
@@ -173,7 +196,7 @@ fn every_build_cache_marker_sits_under_a_name_that_every_scanner_prunes() {
          ★ 이 빨강은 커밋이 아니라 **이 기계의 파일시스템 상태**에 귀속된다. 그 디렉토리가 \
          실재할 때만 빨갛고, CI 는 그것을 만드는 절차를 돌지 않으므로 거기서는 이 판정이 \
          영원히 초록이다 — 초록이 아니라 **그 축에서 미측정**이다.\n\
-         지금 순회하면서 성질 판정을 안 부르는 통합 테스트 타깃이 {blind} 개다. 그 자리에서 \
+         지금 순회하면서 성질 판정을 안 부르는 통합 테스트 타깃이 {blind}다. 그 자리에서 \
          이 디렉토리가 모수에 통째로 들어가면 순회 시간이 두 자릿수 배로 늘거나 그 안의 \
          산출물이 소스로 판정된다.\n\n\
          무엇을 할지 — 순서대로 확인하라:\n\
@@ -275,4 +298,68 @@ fn every_excused_directory_carries_a_reason_not_just_a_name() {
              사유를 못 대는 항목이라면, 그것은 등재 대상이 아니라 옮길 대상이다."
         );
     }
+}
+
+/// 통합 타깃 순회가 **두 뿌리를 다 보는지** 확인한다.
+///
+/// 수로 확인하지 않는 이유가 있다. 수는 가드가 하나 늘 때마다 낡고, 낡은 수를 고치는
+/// 손이 그 자리에서 판정을 함께 무디게 한다. 반면 "루트 패키지와 크레이트 양쪽을
+/// 보는가" 는 구조라 안 낡는다. 한쪽 뿌리만 잡혀도 수는 그럴듯하게 나오므로, 이
+/// 확인이 없으면 절반 죽은 순회가 조용히 통과한다.
+///
+/// **"한 겹에 머무는가" 는 여기서 못 묻는다.** 그 물음의 답을 정하는 것은 순회가 아니라
+/// [`is_integration_target`] 이고, 순회 결과를 다시 재면 그 술어가 통과시킨 것만 보게 되어
+/// 단정이 언제나 참이 된다 — 실제로 그렇게 썼다가 변이로 걸렸다(술어의 깊이 조건을
+/// 풀어도 그 단정은 안 죽었다). 그래서 그 물음은 아래 술어 대조로 옮겼다.
+#[test]
+fn the_target_walk_sees_both_roots() {
+    let root = tasty_doc_guards::repo_root();
+    let targets = walk_with_floor(
+        &root,
+        &root,
+        &TARGET_FLOOR,
+        Descend::SkipBuildCaches,
+        &is_integration_target,
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
+
+    assert!(
+        targets.iter().any(|t| t.rel.starts_with("tests/")),
+        "루트 패키지의 `tests/` 를 하나도 못 봤다 — 순회가 절반 죽었다"
+    );
+    assert!(
+        targets.iter().any(|t| t.rel.starts_with("crates/")),
+        "크레이트의 `tests/` 를 하나도 못 봤다 — 순회가 절반 죽었다"
+    );
+}
+
+/// 통합 타깃 술어가 **한 겹만** 집는지. cargo 는 `tests/` 바로 아래 `.rs` 만 타깃으로
+/// 만들고 그 아래 디렉토리는 공유 헬퍼다 — 물음이 다르므로 세면 안 된다.
+///
+/// 술어를 직접 부른다. 순회 결과로 물으면 술어가 통과시킨 것만 보게 되어 답이 언제나
+/// 참이고, 레포에 그런 자리가 있는지에도 답이 흔들린다(지금 `tests/` 아래에는 하위
+/// 디렉토리가 일곱 있고 그 안에 `.rs` 가 여섯 있다 — 2026-09-06 실측).
+#[test]
+fn the_target_predicate_takes_only_the_flat_layer() {
+    let probe = |rel: &str| Walked {
+        path: std::path::PathBuf::from(rel),
+        rel: rel.to_string(),
+    };
+    assert!(is_integration_target(&probe("tests/layering.rs")));
+    assert!(is_integration_target(&probe(
+        "crates/tasty-doc-guards/tests/x.rs"
+    )));
+    assert!(
+        !is_integration_target(&probe("tests/common/mod.rs")),
+        "`tests/` 하위 디렉토리는 공유 헬퍼지 타깃이 아니다"
+    );
+    assert!(
+        !is_integration_target(&probe("crates/a/tests/sub/x.rs")),
+        "크레이트 쪽도 마찬가지다"
+    );
+    assert!(!is_integration_target(&probe("src/main.rs")));
+    assert!(
+        !is_integration_target(&probe("tests/fixtures/a.md")),
+        "`.rs` 가 아닌 것을 타깃으로 센다"
+    );
 }
