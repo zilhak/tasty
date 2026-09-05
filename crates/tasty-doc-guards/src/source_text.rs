@@ -208,3 +208,23 @@ pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf
     }
     out
 }
+
+/// 값만으로 "로케일 무관 영어가 아니다" 가 확정되는 문자.
+///
+/// **이 술어가 답하는 것은 좁다** — 한글·가나·한자가 한 글자라도 있으면 그 문자열은
+/// 어떤 로케일에서도 영어가 아니다. 반대는 성립하지 않는다: ASCII 라고 영어인 것도,
+/// 번역문이 아닌 것도 아니다(스페인어·터키어는 전부 이 범위 밖이다). 그래서 이것은
+/// **판정의 전부가 아니라 값만으로 끝나는 부분집합**이다.
+///
+/// 두 가드가 같은 물음을 물어서 여기 둔다 — 번들 plugin 프로덕션 코드의 로케일 고정
+/// 문구와, 진단 로그에 실릴 문자열의 로케일 무관성. 각자 사본을 두면 한쪽에 범위를
+/// 더해도 다른 쪽은 모른다.
+pub fn is_locale_specific(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x11FF   // Hangul Jamo
+        | 0x3040..=0x30FF // Hiragana · Katakana
+        | 0x3130..=0x318F // Hangul Compatibility Jamo
+        | 0x4E00..=0x9FFF // CJK Unified Ideographs
+        | 0xAC00..=0xD7A3 // Hangul Syllables
+    )
+}

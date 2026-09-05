@@ -10,6 +10,33 @@
 //! `DiagnosticEnglish::new_unchecked` 는 호출자의 보증에 기대는 생성자라, 그 인자에
 //! 번역 호출이 들어가면 타입은 통과시키고 규약만 깨진다.
 //!
+//! ## 한 줄에 실리는 값은 세 종류이고, 지키는 수단이 각각 다르다
+//!
+//! `hook-failures.log` 한 줄에는 성질이 다른 값이 섞여 있다. 하나의 검사로 셋을 다
+//! 지킬 수 없어서 수단을 갈라 둔다.
+//!
+//! - **기계가 파싱하는 좌표** — `method=` · `event=` · `code=` · `surface=`. 프로토콜
+//!   값이거나 요청에 이미 있던 식별자라 애초에 문구가 아니다. 지키는 수단은 타입이다
+//!   (`code` 는 `Option<i32>`, `event` 는 요청에서 뽑은 토큰). 이 파일이 볼 것이 없다.
+//! - **개발자·에이전트가 읽는 진단 산문** — `reason=`. 로케일 무관 영어라는 규약이
+//!   붙고, 이 파일의 세 테스트가 그 규약을 본다.
+//! - **사용자에게 보이는 메시지** — 로그가 아니라 stderr 로 나가고, **번역문이 맞다**.
+//!   그쪽은 `t()` 를 **요구하는** 가드(`no_hardcoded_ui_strings`)가 지킨다. 두 가드는
+//!   같은 실패에 대해 정반대를 요구하므로, 어느 산출물로 나가는 값인지를 먼저 갈라야
+//!   한다. 그 갈라짐이 `DiagnosticEnglish` 라는 타입의 존재 이유다.
+//!
+//! ## 술어는 규약보다 좁다 — 좁은 만큼 두 개다
+//!
+//! 규약은 "로케일 무관 영어" 인데, 그것을 통째로 재는 술어는 없다. 그래서 값이 아니라
+//! **출처**를 보는 검사(번역 호출·래퍼가 인자에 섞였나)를 1 번으로 두고, 출처만으로는
+//! 못 잡는 형태를 2 번이 값으로 받는다 — `t()` 를 안 거치고 **소스에 직접 박은** 비영어
+//! 리터럴이다. 실제로 그 형태는 1 번을 그냥 통과했다(그 측정이 2 번을 만든 계기다).
+//!
+//! 2 번도 규약 전체는 못 잰다: 스페인어·터키어 번역문은 전부 ASCII 라 값만으로는
+//! 영어와 구별되지 않는다. **그것은 이 파일의 결함이 아니라 값 검사의 한계**이고,
+//! 그 갈래는 여전히 1 번(출처)이 잡는다. 둘 다 통과하고도 규약을 깨는 경우가 남는다 —
+//! `t()` 를 안 거친 스페인어 리터럴 — 는 가드가 아니라 리뷰의 몫이다.
+//!
 //! ## 이 가드가 덮지 못하는 갈래 — 원리적으로 그렇다
 //!
 //! 실패 지점 셋 중 **셋째(요청은 닿았는데 오류 응답이 온 경우)의 문구는 CLI 가 만들지
@@ -217,6 +244,67 @@ fn diagnostic_reasons_are_never_built_from_translations() {
         violations.is_empty(),
         "`hook-failures.log` 의 reason 은 로케일 무관 영어다. 번역문을 실으려면 그 문구를 \
          stderr 로 내고, 로그에는 영어 원본을 넘겨라:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// `DiagnosticEnglish::new_unchecked(...)` 의 인자에 **로케일 고정 문자를 담은 리터럴**이
+/// 있으면 실패.
+///
+/// 1 번(`diagnostic_reasons_are_never_built_from_translations`)은 `t()` 를 **거쳐서** 들어온
+/// 번역문을 잡는다. 이 테스트는 그것을 **안 거치고** 소스에 직접 박힌 비영어 문구를 잡는다 —
+/// 실측으로 그 형태가 1 번을 통과했다: `new_unchecked(format!("알 수 없는 오류: {}", msg))` 를
+/// 심어도 이 파일도, `no_hardcoded_ui_strings` 도, 워크스페이스 전체 테스트도 초록이었다.
+///
+/// **런타임 값은 대상이 아니다.** `e.to_string()` · `msg.clone()` 처럼 답한 쪽이 만들어 보낸
+/// 문구는 CLI 가 언어를 고를 수 없는 값이라 애초에 보증의 대상이 아니고(위 모듈 doc), 여기서도
+/// 리터럴만 보므로 걸리지 않는다. 즉 이 검사가 덮는 것은 **CLI 가 자기 소스에서 문구를 만드는
+/// 갈래** 하나다.
+///
+/// 판정은 두 공유 도구를 그대로 쓴다 — 문자 술어는 `is_locale_specific`, "리터럴 안인가" 는
+/// `mask_literals` 다. 후자는 리터럴만 공백으로 덮고 주석은 남기므로, **원문이 비영어인데 덮인
+/// 자리** = 리터럴 안이다. 주석에 한글을 쓰는 것은 이 레포의 정상이라 그쪽은 걸리면 안 된다.
+#[test]
+fn diagnostic_reasons_never_contain_locale_specific_literals() {
+    use tasty_doc_guards::source_text::{is_locale_specific, mask_literals};
+
+    let files = sources();
+    let mut violations = Vec::new();
+    let mut scanned_calls = 0;
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let mut from = 0;
+        while let Some(pos) = text[from..].find("new_unchecked") {
+            let at = from + pos;
+            from = at + "new_unchecked".len();
+            let args = call_args(&text, at);
+            if args.is_empty() {
+                continue;
+            }
+            scanned_calls += 1;
+            // 두 사본은 **글자 수**가 같다(덮기는 한 글자를 한 칸으로 바꾼다). 바이트 수는
+            // 다르므로 반드시 char 단위로 짝지어 본다.
+            let masked = mask_literals(&args);
+            let inside_literal = args
+                .chars()
+                .zip(masked.chars())
+                .any(|(orig, m)| is_locale_specific(orig) && m == ' ');
+            if inside_literal {
+                let line = text[..at].matches('\n').count() + 1;
+                violations.push(format!("{}:{line}  new_unchecked({args})", path.display()));
+            }
+        }
+    }
+    assert!(
+        scanned_calls > 0,
+        "`new_unchecked` 호출을 하나도 못 찾았다 — 이름이 바뀌었으면 이 가드는 조용히 죽는다"
+    );
+    assert!(
+        violations.is_empty(),
+        "`hook-failures.log` 의 reason 은 로케일 무관 영어다. 소스에 박은 비영어 문구는 \
+         진단 채널이 아니라 사용자 표면으로 보내라 — 로그에는 영어 원본을 넘긴다:\n{}",
         violations.join("\n")
     );
 }

@@ -48,9 +48,10 @@
 //! 처음 넣을 때는 모수가 0 이라 공허했고, markdown plugin 이 인라인 테스트 모듈을 형제
 //! 파일로 분리하면서 실효가 됐다.
 
+use tasty_doc_guards::cfg_predicate as cfg_span;
 /// `#[cfg(...)]` 의 실제 줄 범위. 판정기는 `tasty-doc-guards` 하나이고 여기는 부르기만
 /// 한다 — 사본이 둘이면 갈리고, 갈린 쪽은 조용하다.
-use tasty_doc_guards::cfg_predicate as cfg_span;
+use tasty_doc_guards::source_text::is_locale_specific;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -164,22 +165,12 @@ pub(crate) fn locale_specific_literals(src: &str) -> Vec<(usize, String)> {
             continue;
         }
         for lit in string_literals(line) {
-            if lit.chars().any(is_cjk) {
+            if lit.chars().any(is_locale_specific) {
                 out.push((idx + 1, lit));
             }
         }
     }
     out
-}
-
-fn is_cjk(c: char) -> bool {
-    matches!(c as u32,
-        0x1100..=0x11FF   // Hangul Jamo
-        | 0x3040..=0x30FF // Hiragana · Katakana
-        | 0x3130..=0x318F // Hangul Compatibility Jamo
-        | 0x4E00..=0x9FFF // CJK Unified Ideographs
-        | 0xAC00..=0xD7A3 // Hangul Syllables
-    )
 }
 
 /// 한 줄의 문자열 리터럴들. 이스케이프된 따옴표는 건너뛴다.
