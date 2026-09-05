@@ -42,6 +42,24 @@ pub use status_bar::{draw_status_bar, status_bar_bottom_inset};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};
 
+/// 배율 밖에 있는 호스트 chrome 치수를 현재 UI 배율로 올린다.
+///
+/// `Theme` 필드는 생성 시점에 `zoomed()` 를 한 번 거치지만, 대응 디자인 토큰이 없어
+/// 파일 안 명명 const 로 남은 치수는 그 경로 밖이라 배율을 안 탄다. 그 상태로 두면
+/// **그릇만 고정되고 안의 글자·아이콘은 커진다** — 0.85 에서 여백이 뜨고 1.2 에서 내용이
+/// 잘린다(ADR-0126 "그릇과 내용은 같은 편이어야 한다"). 반올림 지점을 `zoomed()` 와 같게
+/// 맞춰 배율 1 에서 값이 변하지 않는다.
+///
+/// **토큰이 생기면 이 함수가 아니라 `Theme` 필드로 옮겨간다** — 여기 있는 것은 토큰이
+/// 아직 없다는 표시이지 별도 스케일이라는 뜻이 아니다.
+#[inline]
+pub(crate) fn zoomed_px(
+    theme: &tasty_type_appearance::theme::Theme,
+    px: tasty_type_geometry::length::LogicalPx,
+) -> tasty_type_geometry::length::LogicalPx {
+    tasty_type_geometry::length::LogicalPx((px.value() * theme.ui_zoom).round())
+}
+
 /// popup + 오버레이 체인(toast/banner/modifier-hint/tutorial) 조립 진입점. 매 프레임
 /// `egui_bridge.rs` 가 호출한다.
 ///

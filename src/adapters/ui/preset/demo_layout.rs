@@ -33,7 +33,19 @@ use crate::core::surface_registry::{
 };
 use crate::i18n::t;
 
+// 미리보기 치수를 배율에 올리는 공용 헬퍼. 이 파일 전용이 아니라
+// `adapters::ui` 가 들고 있다 — 같은 사정의 자리가 여럿이라 사본을 두지 않는다.
+use crate::adapters::ui::zoomed_px as z;
+
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preview 전용 치수 — specimen 과 동일).
+//
+// **값은 배율 1 기준이고, 쓸 때는 [`z`] 로 UI 배율을 올린다.** 대응 토큰이 없다는 것이
+// 리터럴로 두어도 된다는 뜻은 아니다 — 이 미리보기 안의 글자·아이콘은 `Theme` 에서
+// 오므로 배율을 타는데 그것들을 담는 상자만 안 타면 1.2 에서 20px 띠 안에 17px 아이콘이
+// 들어간다. 같은 사정의 선례가 `tasty-type-appearance` 의 "컴포넌트 치수(디자인 export 에
+// 아직 토큰이 없는 자리)" 블록이고, 판정 규칙은 ADR-0126 "그릇과 내용은 같은 편이어야
+// 한다" 다. 갤러리 쌍둥이(`preset_editor.rs`)는 전역 zoom 을 쓰므로 이 처리를 하지
+// **않는다** — 거기선 리터럴도 함께 커진다.
 /// 상위(pane) divider = bordered 카드 사이 bg-app 공백.
 const PANE_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab strip height.
@@ -74,7 +86,7 @@ const LEAF_ICON_ONLY_MIN: LogicalPx = LogicalPx(46.0);
 /// inline leaf form 최대 폭.
 const FORM_MAX_W: LogicalPx = LogicalPx(240.0);
 /// inline leaf form 좌우 padding.
-const FORM_PAD: f32 = 6.0;
+const FORM_PAD: LogicalPx = LogicalPx(6.0);
 
 /// registry 미주입 컨텍스트(갤러리·테스트·main 부재)에서 쓰는 정적 kind 후보 +
 /// builtin 정렬 기준. registry 가 주입되면 [`KindCatalog::from_registry`] 가 실제
@@ -1691,7 +1703,13 @@ fn draw_surface_box(
         {
             let nx = (pos.x - rect.min.x) / rect.width();
             let ny = (pos.y - rect.min.y) / rect.height();
-            zone = pick_zone(nx, ny, rect.width(), rect.height());
+            zone = pick_zone(
+                nx,
+                ny,
+                rect.width(),
+                rect.height(),
+                z(theme, SPLIT_ZONE_MIN),
+            );
         }
         if resp.hovered() {
             let cursor = if zone.is_some() {
@@ -1773,10 +1791,10 @@ fn draw_leaf_preview(
     let row_h = theme.font_size_caption;
 
     let short_axis = rect.width().min(rect.height());
-    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN.value();
+    let show_kind = short_axis >= z(theme, LEAF_ICON_ONLY_MIN).value();
     let show_summary = show_kind
-        && rect.width() >= LEAF_SUMMARY_MIN_W.value()
-        && rect.height() >= LEAF_SUMMARY_MIN_H.value();
+        && rect.width() >= z(theme, LEAF_SUMMARY_MIN_W).value()
+        && rect.height() >= z(theme, LEAF_SUMMARY_MIN_H).value();
 
     let rows = if show_summary {
         leaf_summary_rows(leaf, catalog)
@@ -1787,7 +1805,7 @@ fn draw_leaf_preview(
     // 아이콘 + kind명 + 요약 전체 높이를 계산해 세로 중앙 정렬.
     let mut total = icon;
     if show_kind {
-        total += LEAF_GAP + label_h;
+        total += z(theme, LEAF_GAP) + label_h;
     }
     if !rows.is_empty() {
         total += gap + row_h * rows.len() as f32 + gap * (rows.len() as f32 - 1.0);
@@ -1806,7 +1824,7 @@ fn draw_leaf_preview(
     y += icon;
 
     if show_kind {
-        y += LEAF_GAP;
+        y += z(theme, LEAF_GAP);
         // painter_at 가 rect 로 clip 하므로 좁은 leaf 에서도 라벨이 넘치지 않는다.
         ui.painter_at(rect).text(
             egui::pos2(cx_x.value(), (y + label_h.scaled(0.5)).value()),
@@ -1951,20 +1969,23 @@ impl SplitZone {
 
 /// 정규화 커서 좌표(nx,ny ∈ 0..1)와 leaf 픽셀 크기(w,h)로 활성 split 존을 고른다.
 /// 4변까지 거리 후보(left=nx, right=1-nx, top=ny, bottom=1-ny) 중 최솟값이
-/// [`SPLIT_ZONE_EDGE`] 미만인 변이 활성. 축 길이가 [`SPLIT_ZONE_MIN`] 미만이면 그
-/// 축 후보(좌우는 w, 상하는 h)를 제외한다(degrade — 좁은 leaf 의 중앙 선택 보장).
-fn pick_zone(nx: f32, ny: f32, w: f32, h: f32) -> Option<SplitZone> {
+/// [`SPLIT_ZONE_EDGE`] 미만인 변이 활성. 축 길이가 `min_axis` 미만이면 그 축
+/// 후보(좌우는 w, 상하는 h)를 제외한다(degrade — 좁은 leaf 의 중앙 선택 보장).
+///
+/// 임계를 상수로 읽지 않고 **인자로 받는다** — [`SPLIT_ZONE_MIN`] 은 배율을 타야 하는
+/// 값이고([`z`]), 이 함수는 순수하게 남겨 테스트가 임계를 직접 지정할 수 있게 한다.
+fn pick_zone(nx: f32, ny: f32, w: f32, h: f32, min_axis: LogicalPx) -> Option<SplitZone> {
     let mut best: Option<(f32, SplitZone)> = None;
     let mut consider = |dist: f32, zone: SplitZone| {
         if dist < SPLIT_ZONE_EDGE && best.is_none_or(|(d, _)| dist < d) {
             best = Some((dist, zone));
         }
     };
-    if w >= SPLIT_ZONE_MIN.value() {
+    if w >= min_axis.value() {
         consider(nx, SplitZone::Left);
         consider(1.0 - nx, SplitZone::Right);
     }
-    if h >= SPLIT_ZONE_MIN.value() {
+    if h >= min_axis.value() {
         consider(ny, SplitZone::Top);
         consider(1.0 - ny, SplitZone::Bottom);
     }
@@ -2019,10 +2040,10 @@ fn draw_handle_cluster(
 ) {
     let remove = egui::Rect::from_min_size(
         egui::pos2(
-            rect.max.x - (HANDLE_INSET + HANDLE_SZ).value(),
-            rect.min.y + HANDLE_INSET.value(),
+            rect.max.x - (z(theme, HANDLE_INSET) + z(theme, HANDLE_SZ)).value(),
+            rect.min.y + z(theme, HANDLE_INSET).value(),
         ),
-        egui::vec2(HANDLE_SZ.value(), HANDLE_SZ.value()),
+        egui::vec2(z(theme, HANDLE_SZ).value(), z(theme, HANDLE_SZ).value()),
     );
     if mini_handle(ui, theme, remove, icons::TRASH, true, ("rm", leaf_id)) {
         cx.act = Some(Act::Remove { id: leaf_id });
@@ -2058,7 +2079,7 @@ fn mini_handle(
     } else {
         theme.text_secondary().to_egui()
     };
-    let glyph = HANDLE_SZ.scaled(0.62);
+    let glyph = z(theme, HANDLE_SZ).scaled(0.62);
     paint_icon(ui, icon, rect.center(), glyph, color);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -2074,17 +2095,23 @@ fn draw_leaf_form(
     leaf: &Leaf,
     cx: &mut DrawCtx<'_>,
 ) {
-    let inner_w = (rect.width() - FORM_PAD * 2.0)
-        .min(FORM_MAX_W.value())
-        .max(0.0);
+    // 식을 논리 길이 위에서 끝내고 마지막에 한 번만 벗긴다 — 항마다 벗기면 같은
+    // 계산에 `.value()` 가 셋 흩어진다.
+    let inner_w = (LogicalPx(rect.width()) - z(theme, FORM_PAD).scaled(2.0))
+        .min(z(theme, FORM_MAX_W))
+        .max(LogicalPx(0.0))
+        .value();
     if inner_w < 1.0 {
         return;
     }
     // 핸들 클러스터(상단) 아래에서 시작.
-    let top = LogicalPx(rect.min.y) + HANDLE_INSET.scaled(2.0) + HANDLE_SZ;
+    let top = LogicalPx(rect.min.y) + z(theme, HANDLE_INSET).scaled(2.0) + z(theme, HANDLE_SZ);
     let form_rect = egui::Rect::from_min_max(
         egui::pos2(rect.center().x - inner_w * 0.5, top.value()),
-        egui::pos2(rect.center().x + inner_w * 0.5, rect.max.y - FORM_PAD),
+        egui::pos2(
+            rect.center().x + inner_w * 0.5,
+            rect.max.y - z(theme, FORM_PAD).value(),
+        ),
     );
     if form_rect.height() < 1.0 {
         return;
@@ -2233,7 +2260,7 @@ fn draw_pane_tree(
             second,
         } => {
             // divider(PANE_GAP)는 칠하지 않는다 — bg-app 공백이 무거운 상위 divider.
-            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, PANE_GAP.value());
+            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, z(theme, PANE_GAP).value());
             draw_pane_tree(ui, theme, r1, first, cx);
             draw_pane_tree(ui, theme, r2, second, cx);
         }
@@ -2255,7 +2282,10 @@ fn draw_pane_card(
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
     // mini tab strip 배경.
-    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H.value()));
+    let strip = egui::Rect::from_min_size(
+        rect.min,
+        egui::vec2(rect.width(), z(theme, STRIP_H).value()),
+    );
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
@@ -2268,13 +2298,19 @@ fn draw_pane_card(
         // 탭 1개면 × 숨김(pane 은 항상 탭 ≥1) → 폭도 rest 그대로.
         let show_close = cx.edit && pane.tabs.len() > 1;
         let tw = if show_close {
-            TAB_PAD_X + icon_sz + TAB_GAP + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD
+            z(theme, TAB_PAD_X)
+                + icon_sz
+                + z(theme, TAB_GAP)
+                + lw
+                + z(theme, CLOSE_MARGIN)
+                + z(theme, CLOSE_HIT)
+                + z(theme, CLOSE_TAB_PAD)
         } else {
-            TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X
+            z(theme, TAB_PAD_X) + icon_sz + z(theme, TAB_GAP) + lw + z(theme, TAB_PAD_X)
         };
         let tab_rect = egui::Rect::from_min_size(
             egui::pos2(x.value(), strip.min.y),
-            egui::vec2(tw.value(), STRIP_H.value()),
+            egui::vec2(tw.value(), z(theme, STRIP_H).value()),
         );
 
         // 클릭 상호작용 — active 가 아닌 탭만 pointer + 클릭(SetActive, 아래에서 판정).
@@ -2306,7 +2342,7 @@ fn draw_pane_card(
             p.vline(x.value(), strip.y_range(), egui::Stroke::new(bw, sep));
         }
         let icon_c = egui::pos2(
-            tab_rect.min.x + (TAB_PAD_X + icon_sz.scaled(0.5)).value(),
+            tab_rect.min.x + (z(theme, TAB_PAD_X) + icon_sz.scaled(0.5)).value(),
             tab_rect.center().y,
         );
         let icon_color = if on {
@@ -2317,7 +2353,7 @@ fn draw_pane_card(
         paint_icon(ui, cx.catalog.kind_icon(rep), icon_c, icon_sz, icon_color);
         ui.painter_at(strip).text(
             egui::pos2(
-                tab_rect.min.x + (TAB_PAD_X + icon_sz + TAB_GAP).value(),
+                tab_rect.min.x + (z(theme, TAB_PAD_X) + icon_sz + z(theme, TAB_GAP)).value(),
                 tab_rect.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -2336,10 +2372,10 @@ fn draw_pane_card(
         if show_close {
             let close_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    tab_rect.max.x - (CLOSE_TAB_PAD + CLOSE_HIT).value(),
-                    tab_rect.center().y - CLOSE_HIT.scaled(0.5).value(),
+                    tab_rect.max.x - (z(theme, CLOSE_TAB_PAD) + z(theme, CLOSE_HIT)).value(),
+                    tab_rect.center().y - z(theme, CLOSE_HIT).scaled(0.5).value(),
                 ),
-                egui::vec2(CLOSE_HIT.value(), CLOSE_HIT.value()),
+                egui::vec2(z(theme, CLOSE_HIT).value(), z(theme, CLOSE_HIT).value()),
             );
             let close_resp = ui.interact(
                 close_rect,
@@ -2365,7 +2401,7 @@ fn draw_pane_card(
                     ui,
                     icons::CLOSE,
                     close_rect.center(),
-                    CLOSE_HIT.scaled(0.5),
+                    z(theme, CLOSE_HIT).scaled(0.5),
                     col,
                 );
             }
@@ -2392,7 +2428,7 @@ fn draw_pane_card(
     if cx.edit {
         let add = egui::Rect::from_min_size(
             egui::pos2(x.value(), strip.min.y),
-            egui::vec2(ADD_TAB_W.value(), STRIP_H.value()),
+            egui::vec2(z(theme, ADD_TAB_W).value(), z(theme, STRIP_H).value()),
         );
         let resp = ui.interact(
             add,
@@ -2422,7 +2458,7 @@ fn draw_pane_card(
 
     // 활성 탭 본문 — padding 3, bg-app.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
-    let inner = body.shrink(BODY_PAD.value());
+    let inner = body.shrink(z(theme, BODY_PAD).value());
     if let Some(t) = pane.tabs.get(pane.active).or_else(|| pane.tabs.first()) {
         draw_surf(ui, theme, inner, &t.layout, cx);
     }
@@ -2448,7 +2484,7 @@ fn draw_tab_frame(
     let bw = theme.border_width.value();
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
-    draw_surf(ui, theme, rect.shrink(BODY_PAD.value()), node, cx);
+    draw_surf(ui, theme, rect.shrink(z(theme, BODY_PAD).value()), node, cx);
     ui.painter_at(rect).rect_stroke(
         rect,
         radius,
@@ -3517,17 +3553,26 @@ mod tests {
     #[test]
     fn pick_zone_edges_center_and_degrade() {
         // 중앙 → 존 없음(중앙 클릭 = 선택).
-        assert_eq!(pick_zone(0.5, 0.5, 200.0, 200.0), None);
+        assert_eq!(pick_zone(0.5, 0.5, 200.0, 200.0, SPLIT_ZONE_MIN), None);
         // 좌측 경계 안쪽 → Left.
-        assert_eq!(pick_zone(0.1, 0.5, 200.0, 200.0), Some(SplitZone::Left));
+        assert_eq!(
+            pick_zone(0.1, 0.5, 200.0, 200.0, SPLIT_ZONE_MIN),
+            Some(SplitZone::Left)
+        );
         // nx=0.3 정확히 경계(미만 아님) → 활성 아님.
-        assert_eq!(pick_zone(0.3, 0.5, 200.0, 200.0), None);
+        assert_eq!(pick_zone(0.3, 0.5, 200.0, 200.0, SPLIT_ZONE_MIN), None);
         // 하단 → Bottom.
-        assert_eq!(pick_zone(0.5, 0.95, 200.0, 200.0), Some(SplitZone::Bottom));
+        assert_eq!(
+            pick_zone(0.5, 0.95, 200.0, 200.0, SPLIT_ZONE_MIN),
+            Some(SplitZone::Bottom)
+        );
         // 폭 46px 미만 → 좌우 밴드 소멸. ny=0.5 면 상하도 비활성 → 중앙 선택 가능.
-        assert_eq!(pick_zone(0.05, 0.5, 40.0, 200.0), None);
+        assert_eq!(pick_zone(0.05, 0.5, 40.0, 200.0, SPLIT_ZONE_MIN), None);
         // 같은 좁은 leaf 라도 상단이면 Top 은 유효(짧은 축은 폭뿐, 높이는 충분).
-        assert_eq!(pick_zone(0.05, 0.1, 40.0, 200.0), Some(SplitZone::Top));
+        assert_eq!(
+            pick_zone(0.05, 0.1, 40.0, 200.0, SPLIT_ZONE_MIN),
+            Some(SplitZone::Top)
+        );
     }
 
     #[test]

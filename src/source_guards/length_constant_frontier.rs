@@ -72,7 +72,7 @@ const SCANNED: &[&str] = &["src/", "crates/tasty-gallery/"];
 /// 아직 전환하지 않은 영역과 그 시점의 건수. 건수는 상한이라 전선은 줄어들 수만 있다.
 const FRONTIER: (&str, usize, &str) = (
     "src/adapters/ui/",
-    2,
+    1,
     "쓰이는 식이 egui 기하이거나 우리 f32 관문이라, 선언이 아니라 그 경계와 함께 닫힌다",
 );
 
