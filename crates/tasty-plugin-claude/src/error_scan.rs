@@ -725,16 +725,23 @@ mod tests {
         assert!(host.events().is_empty(), "발사 없음: {:?}", host.events());
     }
 
+    /// surface **둘**을 켠다. 하나만 켜면 `disable(1)` 이 네 맵을 통째로 비워도 이
+    /// 시험은 초록이라, "1 을 껐다" 와 "전부 껐다" 가 안 갈린다.
     #[test]
     fn disable_clears_stall_state() {
         let host = ScanHost::new(ERR, "active");
         let mut s = ErrorScanner::new();
         s.enable(1, ScanTarget::Child);
+        s.enable(2, ScanTarget::Child);
         let t0 = Instant::now();
         s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 2, t0);
         s.disable(1);
         assert!(!s.watch.contains_key(&1));
         assert!(!s.last_stall_notify.contains_key(&1));
+        // 끄라고 하지 않은 surface 의 감시는 그대로다.
+        assert!(s.watch.contains_key(&2));
+        assert!(s.is_enabled(2));
     }
 
     // ── 생존 대조(`scan_target_is_alive`) ──
