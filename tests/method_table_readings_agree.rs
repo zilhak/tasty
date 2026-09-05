@@ -26,7 +26,7 @@ fn parsed() -> std::collections::BTreeMap<String, Option<Vec<String>>> {
 }
 
 #[test]
-fn the_text_reading_finds_every_method_the_link_does() {
+fn the_two_readings_name_exactly_the_same_methods() {
     let runtime: BTreeSet<String> = METHOD_TABLE.iter().map(|(m, _)| (*m).to_string()).collect();
     let text: BTreeSet<String> = parsed().into_keys().collect();
     assert!(
@@ -50,7 +50,9 @@ fn the_text_reading_agrees_on_which_methods_plugins_may_call() {
     let mut mismatched = Vec::new();
     for (name, meta) in METHOD_TABLE.iter() {
         let Some(required) = text.get(*name) else {
-            continue; // 위 테스트가 담당한다
+            // `the_two_readings_name_exactly_the_same_methods` 가 담당한다 — 그 테스트를
+            // 지우면 이 `continue` 가 조용한 구멍이 된다.
+            continue;
         };
         let text_callable = required.is_some();
         if text_callable != meta.plugin_callable {
