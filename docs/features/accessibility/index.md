@@ -25,7 +25,15 @@
 
 값은 `Theme.reduced_motion` 이 실어 나르고 **위젯의 기본 동작이 그것을 읽는다** — 호출부가 넘기는 형태였을 때 실제로 넘기는 자리가 하나도 없어 설정이 무력했기 때문이다([ADR-0174](../../adr/0174-theme-carries-reduced-motion.md)). 채우는 자리는 `Settings::theme_runtime()` 하나이고, 전역 `Theme` 설치 경로가 그것을 그대로 나른다. 위젯 쪽 override(`Spinner::reduced_motion`)는 실행 중 설정과 무관하게 두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
 
-plugin 프로세스는 아직 이 값을 모른다(`ThemeWire` 에 필드 없음) — 현재 plugin 이 그리는 모션 위젯이 없어 잠재 구멍이다.
+plugin 프로세스는 아직 이 값을 모른다(`ThemeWire` 에 필드 없음) — 닫는 비용의 대부분이 plugin 패치 버전 bump 이고 현재 plugin 이 그리는 모션 위젯이 0 이라, **닫지 않고 감시한다.**
+
+```bash
+# 분자 = plugin 이 그리는 Spinner / 모수 = 그릴 수 있는 번들 plugin(= tasty-ui-widgets 의존)
+echo "$(grep -rc 'Spinner::new()' --include='*.rs' crates/tasty-plugin-*/src | awk -F: '{s+=$2} END{print s+0}') \
+      / $(grep -l 'tasty-ui-widgets' crates/tasty-plugin-*/Cargo.toml | wc -l)"
+```
+
+분자가 0 이 아니게 되는 순간이 이 구멍이 실재가 되는 순간이고, 그때 `ThemeWire` 에 필드를 더한다. 모수를 함께 세는 이유는 분자만으로는 그 0 이 "위험이 없다" 인지 "볼 자리가 없다" 인지 갈리지 않기 때문이다.
 
 ### Modifier key hints
 

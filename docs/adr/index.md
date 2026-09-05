@@ -186,3 +186,4 @@
 | 0173 | [namespace 해소는 프로세스 표가 아니라 매니페스트를 읽는다](0173-namespace-resolution-reads-the-manifest-not-the-process-table.md) | Accepted | 2026-09-05 | plugin, ipc, routing, headless, namespace, error-codes, adr-0136, adr-0167, adr-0171 |
 | 0175 | [창 소유 목록의 합산 여부는 이름이 아니라 성질로 판정한다](0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md) | Accepted | 2026-09-05 | focus-independence, ipc, routing, list-aggregation |
 | 0174 | [접근성 "모션 감소" 는 `Theme` 이 실어 나르고, 위젯의 기본값이 그것을 읽는다](0174-theme-carries-reduced-motion.md) | Accepted | 2026-09-05 | accessibility, theme, motion, widgets, defaults |
+| 0176 | [모션 지속시간은 `Millis` 로 `Theme` 경계를 건넌다](0176-motion-durations-cross-the-theme-boundary-as-millis.md) | Accepted | 2026-09-05 | design-tokens, motion, typed-values, theme, code-generation |

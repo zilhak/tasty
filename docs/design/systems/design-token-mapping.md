@@ -228,6 +228,25 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 | `--tasty-tooltip-max-width` | → `size-240` (240px) | **신규** `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
 | `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` | 앵커와 간격 |
 | `--tasty-tooltip-motion` | → `motion-ui-med` → duration-150 (150ms) | `tooltip_delay()` (생성, `Millis`) | hover delay. 종전에는 위젯 상수 `HOVER_DELAY_SECONDS: f64 = 0.15` 였다. fade 는 immediate-mode snap 으로 생략 |
+
+### duration 접근자에서 값을 벗기는 자리 — 감시 대상
+
+`Millis` 는 `Theme` 경계까지다([ADR-0176](../../adr/0176-motion-durations-cross-the-theme-boundary-as-millis.md)).
+경계 밖의 단위 없는 ms 산술(순수 함수·표시 문자열)에는 `to_millis_f32()` 로 벗겨
+넘긴다. **그 자리가 늘어나면** 벗기는 것이 일상이 됐다는 뜻이고, 길이 축처럼 두 번째
+가드가 필요해진다(그 조건이 ADR-0176 의 재검토 트리거다).
+
+```bash
+# 분자 = 벗기는 자리 / 모수 = duration 접근자를 쓰는 자리 전체
+echo "$(grep -rn 'to_millis_f32()' --include='*.rs' src crates \
+        | grep -vc 'crates/tasty-type-appearance/src/motion.rs') \
+      / $(grep -rnE '\.(banner_fade|modhint_fade|modhint_hold_delay|spinner_duration|status_dot_pulse_duration|switch_overlay_fade|tooltip_delay|motion_hold_reveal_shift)\(\)' \
+          --include='*.rs' src crates | grep -vc 'crates/tasty-type-appearance/src/')"
+```
+
+모수를 함께 세는 이유는 분자만으로는 그 수가 큰지 작은지 알 수 없기 때문이다 —
+접근자 사용이 늘어 분자도 같이 느는 것과, 사용은 그대로인데 벗기기만 느는 것은
+다른 일이다.
 | `--tasty-help-hint-size` | → `icon-size-sm` (14) | `icon_glyph_size_sm` | (?) 글리프 14px |
 | `--tasty-help-hint-gap` | → `space-xs` (4) | `spacing_xs` | 라벨과 gap |
 | `--tasty-help-hint-color` | → `text-muted` | `text_muted()` | rest 색 |
