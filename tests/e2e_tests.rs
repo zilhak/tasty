@@ -1506,6 +1506,9 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
         "debug.event_bus.publish",
         "debug.event_bus.trace",
         "debug.extension.invoke_hook",
+        // 조회만이다. 같은 갈래의 `debug.popup.open` 은 아래 음성 대조에 있다 —
+        // 헤드리스에 닫는 경로가 없어 여는 것만 열면 안 된다.
+        "debug.popup.list",
     ] {
         let resp = tasty.call_raw(method, json!({}));
         let code = resp["error"]["code"].as_i64();
@@ -1517,19 +1520,21 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
         );
     }
 
-    // 음성 대조. 이것들은 창·egui 입력 큐를 읽어 헤드리스에 대응물이 없다. 없는 것이
-    // 정답이며, 그것을 같은 회차에서 못 박지 않으면 위 루프만 남아 "debug step 을
-    // 통째로 옮겨도 통과" 가 된다.
-    for method in ["debug.tool.list", "debug.popup.list"] {
+    // 음성 대조. 헤드리스에 대응물이 없어 **없는 것이 정답**인 것들이다. 같은 회차에서
+    // 이것을 못 박지 않으면 위 루프만 남아 "debug step 을 통째로 옮겨도 통과" 가 된다.
+    //
+    // 사유가 둘로 갈린다 — 한 갈래 안에서도 갈린다는 것이 이 대조의 요점이다:
+    //   `debug.tool.list`  창·egui 입력 큐를 읽는다. 헤드리스에 그 상태 자체가 없다.
+    //   `debug.popup.open` 매니저만 읽어 **답은 정의되지만** 헤드리스엔 그 인스턴스를
+    //                      닫는 경로가 하나도 없다(debug close 도, plugin 자신의
+    //                      release `popup.close` 도 gui 게이트 안이다). 여는 것만
+    //                      열면 닫을 수 없는 상태가 남는다.
+    for method in ["debug.tool.list", "debug.popup.open"] {
         let resp = tasty.call_raw(method, json!({}));
         let code = resp["error"]["code"].as_i64();
         #[cfg(feature = "gui")]
         assert_ne!(code, Some(-32601), "gui 는 `{method}` 에 답한다: {resp}");
         #[cfg(not(feature = "gui"))]
-        assert_eq!(
-            code,
-            Some(-32601),
-            "`{method}` 는 창을 읽는다 — 헤드리스엔 없는 것이 정답이다: {resp}"
-        );
+        assert_eq!(code, Some(-32601), "헤드리스엔 없는 것이 정답이다: {resp}");
     }
 }

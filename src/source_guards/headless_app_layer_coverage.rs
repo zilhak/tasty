@@ -250,11 +250,17 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
          그 proxy 가 없다",
     ),
     (
-        "debug.popup.",
-        "plugin popup 조회/개폐. `handle_list`/`handle_open` 자체는 매니저만 읽지만 모듈이 \
-         `all(debug_assertions, gui)` 게이트다 — 게이트를 옮기는 것이 선행 작업이라 이 \
-         회차에서 열지 않았다(실측: cfg 한 줄만 바꿔도 헤드리스 컴파일 error 0). \
-         `close` 는 별개로 렌더가 수집하는 close 큐를 거친다",
+        "debug.popup.open",
+        "plugin popup 인스턴스를 만든다. `handle_open` 자체는 매니저만 읽지만, 헤드리스에는 \
+         그것을 **닫는 경로가 하나도 없다** — debug close 도 plugin 자신의 release \
+         `popup.close` 도 gui 게이트 안의 `app::dispatch` 에 산다. open 만 열면 그 빌드에서 \
+         닫을 수 없는 인스턴스가 남는다(표면을 넓히면서 정리 책임을 새로 지는 형태다)",
+    ),
+    (
+        "debug.popup.close",
+        "렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 \
+         돈다(ADR-0084). 그 glue(`App::enqueue_plugin_popup_close`)가 gui 게이트 안의 \
+         `app::dispatch` 에 있다",
     ),
     (
         "debug.plugin_banner.",

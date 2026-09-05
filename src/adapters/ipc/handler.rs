@@ -56,7 +56,10 @@ pub mod audit;
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub mod ime;
 pub mod plugin;
-#[cfg(all(debug_assertions, feature = "gui"))]
+// gui 게이트를 뗐다 — 이 모듈의 `handle_list`/`handle_open` 은 `PluginManager` 만
+// 읽는다(창도 egui 도 안 본다). gui 를 요구하면 헤드리스 데몬이 자기 plugin popup 을
+// 조회할 수단을 잃는다. 파일 자신의 `#![cfg(debug_assertions)]` 와 이제 일치한다.
+#[cfg(debug_assertions)]
 pub mod popup;
 pub mod session;
 

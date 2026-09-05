@@ -186,11 +186,17 @@ event bus 에 누가 붙었는가). 그래서 헤드리스에서만 사라지면
 순차로 부르면 앞쪽의 파괴적 호출이 뒤쪽 호출의 라우팅 대상을 없애고, 그러면 멀쩡한
 메서드가 `Method not found` 로 보인다. 36 = 답한다 5 + 없는 것이 정답 31, 애매한 것 0.
 
-#### 답한다 (5)
+#### 답한다 (6)
 
 읽는 것이 `App` 의 `lua_engine` / `plugin_manager` 뿐이다. 창·렌더러·egui 입력 큐를 하나도
 안 본다. 자리가 없어서 사라졌던 것이라 헤드리스 pump 에 자리를 만들었고, 본체는 두 조합이
-**같은 함수**를 쓴다(`src/core/app_surface_debug.rs` · `handler/debug_plugin.rs`).
+**같은 함수**를 쓴다(`src/core/app_surface_debug.rs` · `handler/debug_plugin.rs` ·
+`handler/popup.rs`).
+
+**판정은 갈래 단위가 아니라 이름 단위다.** `debug.popup.*` 가 그 실례다 — 셋이 한 갈래인데
+`list` 는 여기 있고 `open`/`close` 는 아래에 있으며, 둘의 사유마저 서로 다르다(`open` 은
+답이 정의되는데도 닫을 수단이 없어서, `close` 는 glue 가 gui 게이트 안이라서). 갈래로
+묶어 한 줄로 적으면 그 차이가 안 보이고, 실제로 이 표에 한동안 그렇게 적혀 있었다.
 
 | 메서드 | 읽는 것 |
 |--------|---------|
@@ -199,12 +205,13 @@ event bus 에 누가 붙었는가). 그래서 헤드리스에서만 사라지면
 | `debug.event_bus.publish` | 같은 bus 에 이벤트를 넣는다 |
 | `debug.event_bus.trace` | 같은 bus 의 trace |
 | `debug.extension.invoke_hook` | `plugin_manager` 의 확장 훅을 수동 발화 |
+| `debug.popup.list` | `plugin_manager` 의 popup contribute 목록과 열린 인스턴스. **조회만이다** — 같은 갈래의 `open`/`close` 는 아래 표에 있다 |
 
 event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 — 조회가 plugin 프로세스를
 띄우면 관측이 자기 대상을 바꾼다([ADR-0136](../adr/0136-a-query-does-not-create-what-it-observes.md)).
 그래서 아무 plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의 사실이다.
 
-#### 없는 것이 정답 (31)
+#### 없는 것이 정답 (30)
 
 | 메서드 | 왜 |
 |--------|-----|
@@ -216,7 +223,8 @@ event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 —
 | `debug.fullscreen.*` (4) | 무대는 **창 단위**라 `self.view.views` 를 순회해 `window_id` 로 창을 지목한다 |
 | `debug.plugin_banner.*` (2) | 소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 |
 | `debug.inject_mouse` · `debug.inject_key` · `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` (5) | 사용자 입력 재현이다. 앞 둘은 대상 surface 의 PTY 로, 뒤 셋은 winit·egui 입력 큐로 들어간다 — 그 큐가 창에 딸려 있다 |
-| `debug.popup.*` (3) | **모듈 위치가 막고 있다.** `handle_list`/`handle_open` 자체는 매니저만 읽는데 모듈 선언이 `all(debug_assertions, gui)` 게이트다(실측: cfg 한 줄만 바꾸면 헤드리스 컴파일 error 0). 게이트를 옮기는 것이 선행이라 이 회차에서 열지 않았다. `close` 는 별개로 렌더가 수집하는 close 큐를 거친다 |
+| `debug.popup.open` | 매니저만 읽어 **답은 정의된다.** 그런데 헤드리스에는 그 인스턴스를 **닫는 경로가 하나도 없다** — debug close 도, plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch` 에 산다. 여는 것만 열면 그 빌드에서 닫을 수 없는 상태가 남는다 |
+| `debug.popup.close` | 렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돈다([ADR-0084](../adr/0084-plugin-triggered-host-popup-ownership.md)). 그 glue 가 gui 게이트 안이다 |
 
 `src/source_guards/headless_app_layer_coverage.rs` 가 이 표와 두 라우터의 정합을 강제한다 —
 app 층 step 과 debug step 두 쌍을 같은 규약으로 본다.

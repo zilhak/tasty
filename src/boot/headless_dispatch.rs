@@ -125,6 +125,21 @@ pub(crate) fn pump_ipc(
                 send_response(&cmd.response_tx, resp);
                 continue;
             }
+            // plugin popup **조회**. 매니저만 읽어 창이 없어도 답이 정의된다
+            // (gui 와 같은 함수를 부른다).
+            //
+            // `open`/`close` 는 여기 없다. 컴파일이 막아서가 아니라 — 헤드리스에는
+            // plugin popup 을 **닫는 경로가 하나도 없기** 때문이다(debug close 도,
+            // plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch`
+            // 에 산다). open 만 열면 그 빌드에서 닫을 수 없는 인스턴스가 남는다 —
+            // 표면을 넓히면서 정리 책임을 새로 지는 형태라 열지 않았다.
+            if cmd.request.method == "debug.popup.list" {
+                super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+                let resp =
+                    crate::ipc::handler::popup::handle_list(app.plugin_manager.as_ref(), rpc_id);
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
             if cmd.request.method == "debug.extension.invoke_hook" {
                 super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
                 crate::ipc::handler::debug_plugin::handle_extension_invoke_hook(
