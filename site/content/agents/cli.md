@@ -126,6 +126,7 @@ tasty close self                                        # 지금 이 서피스 �
 ```sh
 tasty surface cursor-position --surface 42     # 커서가 몇 행 몇 열에 있나
 tasty surface foreground-process --surface 42  # 지금 앞에서 도는 프로그램 (셸이면 유휴)
+tasty surface mouse-tracking --surface 42      # 안의 프로그램이 마우스를 잡고 있나
 tasty surface locate --surface 42              # 이 서피스가 속한 패인, 그리고 아직 살아 있는지
 tasty surface respawn-terminal --surface 42    # 자리를 유지한 채 셸만 다시 띄우기
 tasty surface fire-hook --surface 42 --event process-exit    # 훅을 직접 발화

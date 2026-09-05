@@ -174,6 +174,20 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 - **외부 표면에 남는 cfg 가드는 router 분기 한 줄** (위 라우팅 코드의 `#[cfg(debug_assertions)] route_debug_handler(...)`).
 - **삭제 가능성 테스트**: debug 파일을 지웠을 때 cfg-guard 호출처 몇 줄 제거 외에 다른 변경이 필요하면 격리가 깨진 것이다.
 
+### 마우스를 다룬다고 debug 가 아니다 — 가르는 것은 조작이냐 상태 읽기냐
+
+`debug.inject_window_mouse` 는 debug 고 `surface.mouse_tracking` 은 release 다. 이름이 둘 다
+마우스지만 축이 다르다 — 앞은 **사용자 조작을 재현**하고, 뒤는 **터미널이 지금 어떤 상태인가**를
+읽는다. 원칙 1 의 물음("에이전트가 자기 작업에 필요한가 vs 사용자 조작을 재현하는가")에
+`surface.mouse_tracking` 은 앞쪽으로 답한다: 안의 프로그램이 마우스를 잡았는지 모르면
+에이전트는 마우스 시퀀스를 보낼지 텍스트를 보낼지 정할 수 없고, 드래그 선택이 왜 안 먹는지도
+가릴 수 없다. `surface.foreground_process`(셸이 유휴인가)와 같은 자리다.
+
+**이 판정은 자동으로 안 난다.** `tests/ipc_release_table_excludes_input_reproduction.rs` 의
+이름 규칙(`inject`·`raw_key`·`switch_input_source`·`ime_`·`simulate`)은 이 이름을 안 잡는다 —
+그 가드가 스스로 적어 둔 사각지대("이름에 단서가 없고 debug CLI 진입점도 없는 새 release
+메서드의 의미 판단")가 정확히 이 자리다. 그래서 판정 근거를 여기 남긴다.
+
 ### 예외: 데이터 구조의 dev-only 필드
 
 매니페스트나 빌트인 spec 처럼 **데이터 구조의 필드 하나만 dev 전용**인 경우는 분리 대상이 아니다(예: `BuiltinSpec` 의 `#[cfg(debug_assertions)] crate_dir`). *디버그 동작* 이 아니라 *dev 빌드 데이터 차이* 라 같은 룰을 적용하면 구조가 찢어진다.

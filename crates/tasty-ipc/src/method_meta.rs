@@ -158,6 +158,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("surface.attention.get", plugin(&[Notification])),
         ("surface.attention.clear", plugin(&[Notification])),
         ("surface.read_since_mark", plugin(&[TerminalRead])),
+        ("surface.mouse_tracking", plugin(&[TerminalRead])),
         ("surface.parse_since_mark", plugin(&[TerminalRead])),
         ("surface.commands", plugin(&[TerminalRead])),
         ("surface.last_command", plugin(&[TerminalRead])),

@@ -672,6 +672,9 @@ fn route_engine_handler(
         "surface.cursor_position" => {
             surface::handle_cursor_position(state, engine, id, &request.params)
         }
+        "surface.mouse_tracking" => {
+            surface::handle_mouse_tracking(state, engine, id, &request.params)
+        }
         "surface.foreground_process" => {
             surface::handle_foreground_process(state, engine, id, &request.params)
         }

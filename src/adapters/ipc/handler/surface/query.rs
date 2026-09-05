@@ -102,6 +102,65 @@ pub(crate) fn handle_cursor_position(
     }
 }
 
+/// 터미널이 지금 **마우스를 잡고 있는가**, 잡고 있다면 어느 레벨인가.
+///
+/// 에이전트가 자기 작업을 정하는 데 쓰는 값이다 — 안의 프로그램이 마우스를 잡았으면
+/// 그 surface 에서는 사용자의 드래그 선택이 앱으로 안 가고, 반대로 안 잡았으면 마우스
+/// 시퀀스를 보내 봐야 화면에 쓰레기 문자로 찍힌다. 두 세계의 처방이 반대인데 그것을
+/// 구분할 관측면이 없었다.
+///
+/// **이 값이 없으면 원리적으로 못 가르는 물음이 있다** — 마우스 보고가 하나도 안 나올 때,
+/// "트래킹이 애초에 안 켜졌다" 와 "켜졌는데 보고가 안 나온다" 가 같은 관측(빈 출력)으로
+/// 보인다. 앞은 픽스처 문제, 뒤는 제품 결함이라 처방이 반대다. 실측 2026-09-06: gui
+/// 하네스에서 그 0 을 만나 두 설명 중 어느 쪽인지 판정하지 못했다.
+///
+/// `mode` 는 **실효 레벨**이다(1000/1002/1003 은 독립 레지스터고 실효 레벨은 켜진 것 중
+/// 가장 넓은 것 — `MouseTrackingRegisters::effective`). ★ 개별 레지스터는 안 낸다:
+/// "1003 을 끄지 않은 채 1002 를 켰다" 같은 상태는 이 값으로 **구분되지 않는다**.
+/// 그 구분이 필요한 자리는 `tasty-terminal` 의 단위 시험이 갖고 있다.
+///
+/// `sgr` 은 1006(SGR 확장 좌표) 여부다. 트래킹이 켜져 있어도 이 값에 따라 바이트 모양이
+/// 달라지므로 함께 낸다.
+pub(crate) fn handle_mouse_tracking(
+    _state: &AppState,
+    engine: &crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let Some(terminal) = engine.find_terminal_by_id(surface_id) else {
+        return JsonRpcResponse::invalid_params(id, format!("Surface {surface_id} not found"));
+    };
+    let mode = mouse_tracking_label(terminal.mouse_tracking());
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "surface_id": surface_id,
+            "mode": mode,
+            "tracking": mode != NO_MOUSE_TRACKING,
+            "sgr": terminal.sgr_mouse(),
+        }),
+    )
+}
+
+/// `mode` 가 이 값일 때만 `tracking` 이 거짓이다. 두 필드가 같은 곳에서 나오도록
+/// 상수를 하나 둔다 — 문자열을 양쪽에 손으로 적으면 한쪽만 고쳐도 컴파일된다.
+const NO_MOUSE_TRACKING: &str = "none";
+
+/// 실효 레벨을 응답 문자열로. **순수 함수라 시험이 직접 부른다** — 핸들러는
+/// `CoreState` 를 요구해서 시험에서 못 부르고, 그러면 이 사상이 무대조로 남는다.
+fn mouse_tracking_label(mode: tasty_terminal::MouseTrackingMode) -> &'static str {
+    match mode {
+        tasty_terminal::MouseTrackingMode::None => NO_MOUSE_TRACKING,
+        tasty_terminal::MouseTrackingMode::Click => "click",
+        tasty_terminal::MouseTrackingMode::CellMotion => "cell_motion",
+        tasty_terminal::MouseTrackingMode::AllMotion => "all_motion",
+    }
+}
+
 /// 터미널 PTY의 전경(foreground) 프로세스 이름/PID 조회.
 /// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
@@ -251,5 +310,38 @@ mod tests {
         assert_eq!(out["scrollback_len"], json!(402));
         assert_eq!(out["alt_screen"], json!(false));
         assert_eq!(out["id"], json!(3), "pty.read 의 키도 보존한다");
+    }
+
+    /// 네 레벨이 **서로 다른 이름**을 갖고, `tracking` 이 정확히 `None` 에서만 거짓이다.
+    ///
+    /// 양방향인 이유: 사상이 전부 같은 문자열을 돌려줘도(예: 실수로 `_ => "none"`)
+    /// "None 이 none 이다" 만 보는 단정은 통과한다. 그러면 이 관측면은 늘 "트래킹 꺼짐"
+    /// 을 보고하게 되고, **그것이 이 메서드가 존재하는 이유 자체를 배신한다** —
+    /// 이 값은 "트래킹이 안 켜졌다" 와 "켜졌는데 보고가 없다" 를 가르려고 만든 것이다.
+    #[test]
+    fn every_tracking_level_reports_a_name_of_its_own() {
+        use tasty_terminal::MouseTrackingMode as M;
+        let all = [M::None, M::Click, M::CellMotion, M::AllMotion];
+        let labels: Vec<&str> = all.iter().copied().map(mouse_tracking_label).collect();
+
+        let mut distinct = labels.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            all.len(),
+            "레벨 넷이 이름 {labels:?} 로 뭉갰다 — 뭉개진 레벨은 이 관측면에서 사라진다"
+        );
+
+        assert_eq!(mouse_tracking_label(M::None), NO_MOUSE_TRACKING);
+        // ★ 반대 방향 — 나머지 셋은 하나도 그 값이 아니어야 한다. 이것이 없으면
+        //   `tracking` 이 항상 거짓인 구현도 위 단정을 통과한다.
+        for mode in [M::Click, M::CellMotion, M::AllMotion] {
+            assert_ne!(
+                mouse_tracking_label(mode),
+                NO_MOUSE_TRACKING,
+                "{mode:?} 가 트래킹 꺼짐으로 보고된다"
+            );
+        }
     }
 }

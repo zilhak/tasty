@@ -27,6 +27,18 @@ pub enum SurfaceCommands {
         #[arg(long)]
         surface: u32,
     },
+    /// Print whether the program inside a terminal surface has grabbed the
+    /// mouse, and at which level.
+    ///
+    /// Use it before sending mouse sequences or expecting drag selection to
+    /// work: when tracking is on, the program consumes mouse input; when it is
+    /// off, mouse sequences would land on screen as stray characters. The
+    /// target surface is always given explicitly with --surface.
+    MouseTracking {
+        /// Surface ID (required)
+        #[arg(long)]
+        surface: u32,
+    },
     /// Print the process currently in the foreground of a terminal surface.
     ///
     /// Use it to tell whether a shell is idle or is running something. The
