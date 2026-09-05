@@ -364,11 +364,24 @@ mod tests {
             1,
         );
 
+        // **존재가 아니라 내용을 기다린다.** 리다이렉트(`> file`)는 파일을 먼저 만들고
+        // 나중에 쓴다 — `exists()` 로 깨면 빈 파일을 읽는 창이 열린다. 실제로 그 창에
+        // 걸려 Windows 잡이 간헐적으로 빨갰다(같은 회차의 다른 8 회는 통과 —
+        // 환경변수가 정말 비어 있었다면 매번 실패한다).
         let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline && !marker.exists() {
+        let mut content = String::new();
+        while Instant::now() < deadline {
+            content = std::fs::read_to_string(&marker).unwrap_or_default();
+            if !content.trim().is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(25));
         }
-        let content = std::fs::read_to_string(&marker).expect("marker written");
-        assert_eq!(content.trim(), "1");
+        assert_eq!(
+            content.trim(),
+            "1",
+            "5 초 안에 마커에 exit code 가 안 쓰였다 — 훅이 `TASTY_HOOK_EXIT_CODE` 를 \
+             셸 자식에게 전달하지 않으면 여기서 잡힌다"
+        );
     }
 }
