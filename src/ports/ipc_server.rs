@@ -1,7 +1,7 @@
 //! Outbound port — IPC server 추상화. Hub 가 보유.
 //!
-//! production: `TcpIpcServer` (옛 `src/adapters/ipc/server.rs::IpcServer` 의
-//! 본문). 인스턴스 생성 시그니처는 *production 마다 다를 수 있어* trait 표면에
+//! production: `TcpIpcServer`(`src/adapters/production/tcp_ipc_server.rs`).
+//! 인스턴스 생성 시그니처는 *production 마다 다를 수 있어* trait 표면에
 //! 포함하지 않는다 (Hub 가 production adapter 의 concrete `start_*` 호출).
 //!
 //! Trait 표면은 *런타임 polling 만* — `try_recv()` + `port()`. shutdown 은 Drop.
