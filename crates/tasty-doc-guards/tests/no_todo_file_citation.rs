@@ -513,11 +513,18 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let entry = entry
             .unwrap_or_else(|e| panic!("디렉토리 항목을 읽지 못했다: {} — {e}", path.display()));
         let p = entry.path();
-        if p.is_dir() {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if is_pruned_dir(&p, name) {
-                continue;
-            }
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        // ★ **이름으로 하는 가지치기는 종류를 묻지 않는다.** worktree 에서 `.git` 은
+        // 디렉토리가 아니라 `gitdir:` 한 줄이 든 **파일**이다 — 종류를 먼저 물으면
+        // 그 파일이 가지치기를 빠져나가 모집단에 들고, 같은 커밋이 worktree 와 메인
+        // 체크아웃에서 서로 다른 파일을 보게 된다. 모집단이 환경을 읽으면 답도
+        // 언젠가 환경을 읽는다.
+        if is_pruned(name) {
+            continue;
+        }
+        // 캐시 표식 판정은 디렉토리 **안** 을 읽는다 — 파일에는 뜻이 없다.
+        if p.is_dir() && is_pruned_dir(&p, name) {
+            continue;
         }
         gather(&p, root, out);
     }
@@ -831,6 +838,35 @@ fn scan_target_covers_scripts_ci_and_root_docs() {
     assert!(!is_scan_target(
         "crates/tasty-plugin-claude/tasty-plugin.toml.sig"
     ));
+}
+
+/// **모집단이 환경을 읽으면 답도 환경을 읽는다.** worktree 에서 `.git` 은 파일이고
+/// 메인 체크아웃에서는 디렉토리다 — 가지치기가 종류를 물으면 앞쪽에서만 그 파일이
+/// 모집단에 들어 두 트리가 서로 다른 파일을 본다. 실재하는 레포를 상대로 시험하면
+/// 이 회귀가 체크아웃 종류에 따라 조용히 사라지므로 임시 디렉토리로 형태를 짓는다.
+#[test]
+fn pruning_is_by_name_not_by_kind() {
+    let dir = std::env::temp_dir().join(format!("tasty-prune-kind-{}", std::process::id()));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리");
+    // worktree 의 형태 — 가지치기 이름을 가진 것이 디렉토리가 아니라 파일이다.
+    std::fs::write(dir.join(".git"), "gitdir: elsewhere\n").expect("쓰기");
+    std::fs::write(dir.join(".worktree"), "x\n").expect("쓰기");
+    std::fs::write(dir.join("keep.md"), "x").expect("쓰기");
+
+    let mut files = Vec::new();
+    gather(&dir, &dir, &mut files);
+    let mut seen: Vec<String> = files.iter().map(|f| rel_of(f, &dir)).collect();
+    seen.sort();
+    // 정리 실패는 무시한다 — 임시 디렉토리라 남아도 판정에 영향이 없다.
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        seen,
+        vec!["keep.md".to_string()],
+        "가지치기가 종류를 물었다 — 가지치기 이름을 가진 파일이 모집단에 들어왔다"
+    );
 }
 
 /// **이름이 아닌 근거로도 가지치기된다.** 이 절이 없으면 `is_pruned_dir` 이 이름

@@ -64,11 +64,14 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let p = entry.path();
-        if p.is_dir() {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if is_pruned(name) {
-                continue;
-            }
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        // ★ **이름으로 하는 가지치기는 종류를 묻지 않는다.** worktree 에서 `.git` 은
+        // 디렉토리가 아니라 `gitdir:` 한 줄이 든 **파일**이다 — 종류를 먼저 물으면
+        // 그 파일이 가지치기를 빠져나가 모집단에 들고, 같은 커밋이 worktree 와 메인
+        // 체크아웃에서 서로 다른 파일을 보게 된다. 모집단이 환경을 읽으면 답도
+        // 언젠가 환경을 읽는다.
+        if is_pruned(name) {
+            continue;
         }
         gather(&p, root, out);
     }
