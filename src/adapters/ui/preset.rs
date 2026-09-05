@@ -404,11 +404,11 @@ fn draw_list_row(
     } else {
         theme.text_secondary().to_egui()
     };
+    // 두 줄의 좌측 기준선. 이름줄 아래로 `name_h + ROW_GAP` 만큼 내려 부제를 둔다.
+    let text_x = rect.min.x + ROW_PAD_X.value();
+    let name_y = rect.min.y + ROW_PAD_Y.value();
     p.text(
-        egui::pos2(
-            rect.min.x + ROW_PAD_X.value(),
-            rect.min.y + ROW_PAD_Y.value(),
-        ),
+        egui::pos2(text_x, name_y),
         egui::Align2::LEFT_TOP,
         name,
         egui::FontId::proportional(name_h.value()),
@@ -416,10 +416,7 @@ fn draw_list_row(
     );
     // painter_at 가 full 로 clip → 긴 subtitle 도 row 밖으로 넘치지 않는다.
     p.text(
-        egui::pos2(
-            rect.min.x + ROW_PAD_X.value(),
-            rect.min.y + (ROW_PAD_Y + name_h + ROW_GAP).value(),
-        ),
+        egui::pos2(text_x, name_y + (name_h + ROW_GAP).value()),
         egui::Align2::LEFT_TOP,
         sub,
         egui::FontId::monospace(sub_h.value()),
