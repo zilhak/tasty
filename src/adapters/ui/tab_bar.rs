@@ -38,7 +38,13 @@ const TAB_ACTIVE_DOT_SIZE: LogicalPx = LogicalPx(4.0);
 /// 화면이 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
 const TAB_BUSY_DOT_SIZE: LogicalPx = LogicalPx(6.0);
 
+/// busy 점과 탭 라벨 사이 여백. 종전에는 `let dot_pad: f32 = 6.0;` 인라인 리터럴이었다 —
+/// 이름이 없으면 이 값이 점 지름(6)과 **같은 값이라는 사실**도, 그것이 우연이라는 사실도
+/// 소스에서 안 읽힌다. 선언이 아니라 `let` 이라 선언 축 가드에도 안 걸렸다.
+const TAB_BUSY_DOT_PAD: LogicalPx = LogicalPx(6.0);
+
 use crate::adapters::ui::icons;
+use crate::adapters::ui::zoomed_px;
 use crate::core::AttentionKind;
 use crate::state::AppState;
 use crate::theme;
@@ -233,8 +239,14 @@ pub fn draw_pane_tab_bars_view(
     let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
     let h_padding: f32 = 8.0;
-    let dot_radius = TAB_BUSY_DOT_SIZE.value() * 0.5;
-    let dot_pad: f32 = 6.0;
+    // 점 치수와 그 옆 여백도 배율을 탄다 — 같은 탭 안의 라벨 폰트와 탭바 높이가
+    // `Theme` 에서 와서 이미 타므로, 점만 고정이면 1.2 에서 점이 상대적으로 쪼그라든다
+    // (ADR-0126 "그릇과 내용은 같은 편이어야 한다"). 값 자체를 토큰으로 스냅하는 것은
+    // 별개 물음이고 그쪽은 같은 ADR 이 스냅하지 말라고 정해 두었다.
+    let dot_radius = zoomed_px(&th, TAB_BUSY_DOT_SIZE).scaled(0.5);
+    // 라벨이 점에 내주는 폭 = 지름 + 여백. 논리 길이로 더하고 여기서 한 번만 벗긴다.
+    let dot_reserve =
+        (zoomed_px(&th, TAB_BUSY_DOT_SIZE) + zoomed_px(&th, TAB_BUSY_DOT_PAD)).value();
     let active_indicator_h = th.tab_indicator_width.value();
     let plus_font_size = th.tab_bar_label_font_size.value();
     let arrow_font_size = th.tab_bar_arrow_font_size.value();
@@ -447,7 +459,8 @@ pub fn draw_pane_tab_bars_view(
                                         ActiveTabIndicator::Fill => {}
                                         ActiveTabIndicator::Dot => {
                                             // 탭 상단 중앙의 accent 점 마커.
-                                            let r = TAB_ACTIVE_DOT_SIZE.value() * 0.5;
+                                            let r =
+                                                zoomed_px(&th, TAB_ACTIVE_DOT_SIZE).value() * 0.5;
                                             let center = egui::pos2(
                                                 tab_rect.center().x,
                                                 tab_rect.min.y + r * 2.0,
@@ -461,10 +474,12 @@ pub fn draw_pane_tab_bars_view(
                                 // 그 왼쪽에 둔다 (close 와 겹치지 않게).
                                 let dot_right = tab_rect.max.x - h_padding - 14.0;
                                 if is_busy {
-                                    let dot_center =
-                                        egui::pos2(dot_right - dot_radius, tab_rect.center().y);
+                                    let dot_center = egui::pos2(
+                                        dot_right - dot_radius.value(),
+                                        tab_rect.center().y,
+                                    );
                                     let color: egui::Color32 = th.accent_success().into();
-                                    painter.circle_filled(dot_center, dot_radius, color);
+                                    painter.circle_filled(dot_center, dot_radius.value(), color);
                                 }
 
                                 // kind 아이콘 (leading) — ui_kit tab strip.
@@ -525,7 +540,7 @@ pub fn draw_pane_tab_bars_view(
                                 // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽.
                                 let mut text_right = dot_right - 4.0;
                                 if is_busy {
-                                    text_right -= dot_radius * 2.0 + dot_pad;
+                                    text_right -= dot_reserve;
                                 }
                                 let available_w = (text_right - text_x).max(0.0);
                                 let font_id = egui::FontId::proportional(label_font_size);
