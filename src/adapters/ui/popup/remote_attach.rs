@@ -1220,9 +1220,10 @@ fn dot_slot_glyph(
     }
 }
 
-/// ws 행의 실행 dot — 같은 슬롯 안에 그린다. `status_dot` 은 라벨이 비어도 dot 뒤에
-/// 자기 gap 을 할당하므로 그대로 부르면 이름 열이 새 행보다 밀린다. 슬롯을 먼저 잡고
-/// 그 안의 child 에 그려서, 위젯이 삼키는 여백이 정렬선에 새지 않게 한다.
+/// ws 행의 실행 dot — `dot_slot` 안에 그린다. 슬롯을 거치는 이유는 **열 정렬**이다:
+/// 같은 슬롯을 `dot_slot_glyph` 도 쓰므로 실행 dot 행과 새 행의 이름 열이 같은 x 에서
+/// 시작한다. (`status_dot` 자신은 라벨이 비면 dot 폭만 할당하므로 여기서 되뺄 여백은
+/// 없다 — `crates/tasty-ui-widgets/tests/status_dot_width.rs` 가 그 계약을 못박는다.)
 fn dot_slot_status(ui: &mut egui::Ui, th: &Theme, kind: StatusKind, pulse: bool) {
     let slot = dot_slot(ui, th);
     let mut c = ui.new_child(
