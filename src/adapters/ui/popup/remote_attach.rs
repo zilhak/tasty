@@ -42,17 +42,17 @@ const UI_MEMORY_ID: &str = "remote_attach.ui";
 const ATTACH_KIND: &str = "tasty-attach";
 
 // ── 레이아웃 고정 치수 (디자인 raw px — 화면 전용) ──
-const LEFT_W: f32 = 240.0;
+const LEFT_W: LogicalPx = LogicalPx(240.0);
 const HEADER_H: LogicalPx = LogicalPx(47.0);
-const FOOTER_H: f32 = 49.0;
+const FOOTER_H: LogicalPx = LogicalPx(49.0);
 
 // 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
 use tasty_ui_widgets::tokens::{CENTER_GLYPH_SIZE, STRUCT_GAP_2};
-const CAPS_H: f32 = 30.0;
+const CAPS_H: LogicalPx = LogicalPx(30.0);
 const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0);
 const WS_ROW_H: LogicalPx = LogicalPx(34.0);
 const BADGE_H: LogicalPx = LogicalPx(16.0);
-const HEADER_PAD_L: f32 = 14.0;
+const HEADER_PAD_L: LogicalPx = LogicalPx(14.0);
 const SELECT_BAR_W: LogicalPx = LogicalPx(2.0);
 
 /// 생성 왕복 중 아래 ws 목록의 불투명도 — 목록을 지우지 않고 물러나게만 한다.
@@ -631,8 +631,8 @@ pub fn draw_remote_attach_popup(
 
     // ── footer ──
     let footer_rect = egui::Rect::from_min_size(
-        egui::pos2(full.left(), full.bottom() - FOOTER_H),
-        egui::vec2(full.width(), FOOTER_H),
+        egui::pos2(full.left(), full.bottom() - FOOTER_H.value()),
+        egui::vec2(full.width(), FOOTER_H.value()),
     );
 
     // ── body(2-pane) ──
@@ -640,10 +640,12 @@ pub fn draw_remote_attach_popup(
         egui::pos2(full.left(), header_rect.bottom()),
         egui::pos2(full.right(), footer_rect.top()),
     );
-    let left_rect =
-        egui::Rect::from_min_size(body_rect.min, egui::vec2(LEFT_W, body_rect.height()));
+    let left_rect = egui::Rect::from_min_size(
+        body_rect.min,
+        egui::vec2(LEFT_W.value(), body_rect.height()),
+    );
     let right_rect = egui::Rect::from_min_max(
-        egui::pos2(body_rect.left() + LEFT_W, body_rect.top()),
+        egui::pos2(body_rect.left() + LEFT_W.value(), body_rect.top()),
         body_rect.max,
     );
     // 좌 pane 배경(bg-sidebar) + borderRight separator.
@@ -722,7 +724,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L, rect.top()),
+        egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
         egui::pos2(rect.right() - th.spacing_sm.value(), rect.bottom()),
     );
     let mut close = false;
@@ -776,8 +778,10 @@ fn draw_left_pane(
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더.
     caps_header(&mut col, th, t("remote_attach.attach_profiles"), None);
-    let list_rect =
-        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
+    let list_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
+        rect.max,
+    );
     let mut list = col.new_child(
         egui::UiBuilder::new()
             .max_rect(list_rect)
@@ -797,7 +801,7 @@ fn draw_left_pane(
                                 ui.max_rect().left() + th.spacing_md.value(),
                                 ui.cursor().top(),
                             ),
-                            egui::vec2(LEFT_W - th.spacing_md.value() * 2.0, 40.0),
+                            egui::vec2((LEFT_W - th.spacing_md.scaled(2.0)).value(), 40.0),
                         ))
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
@@ -1026,8 +1030,10 @@ fn draw_ws_list(
         t("remote_attach.remote_workspaces"),
         Some(profile_name),
     );
-    let list_rect =
-        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
+    let list_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
+        rect.max,
+    );
     let mut list = col.new_child(
         egui::UiBuilder::new()
             .max_rect(list_rect)
@@ -1506,7 +1512,7 @@ fn draw_footer(
 /// caps 헤더 — mono micro uppercase muted. `suffix` 있으면 "· {suffix}" 를 붙인다.
 fn caps_header(ui: &mut egui::Ui, th: &Theme, label: &str, suffix: Option<&str>) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), CAPS_H),
+        egui::vec2(ui.available_width(), CAPS_H.value()),
         egui::Sense::hover(),
     );
     let base_x = rect.left() + th.spacing_md.value();
