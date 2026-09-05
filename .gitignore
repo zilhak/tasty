@@ -19,3 +19,7 @@ crates/tasty-plugin-*/tasty-plugin.toml.sig
 /_site
 /site/target
 /site/release.json
+
+# e2e 탈출구용 headless 산출물 (docs/dev-guide/e2e-tests.md §0-1) — `target/` 의 형제여야
+# `ensure_dev_bundle` 의 워크스페이스 역산이 레포 루트를 맞힌다.
+/target-e2e-headless

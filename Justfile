@@ -123,6 +123,16 @@ PROFILE := env_var_or_default('PROFILE', 'release')
 # 모든 bin plugin crate 를 빌드 + 스테이징.
 # 판별 기준: crates/tasty-plugin-* 중 tasty-plugin.toml 보유 = bin plugin.
 # manifest 없는 lib-only crate (protocol, sdk, manifest, sdk-wasm) 는 자동 skip.
+# e2e 하네스가 띄울 헤드리스 데몬을 짓고 경로를 낸다.
+#
+# IPC/attach 만 쓰는 스위트는 이것을 띄우면 GUI 부팅(창 + wgpu 디바이스 + boot
+# 상태기계)을 통째로 건너뛴다. 조합 의존 단언을 가진 스위트(`e2e_tests`)는 이
+# 경로를 **안 받는다** — `spawn_diag::daemon_kind()`.
+#
+#   BIN=$(just e2e-headless-bin) && export TASTY_E2E_BIN=$BIN
+e2e-headless-bin:
+    @scripts/build-e2e-headless.sh
+
 build-plugins:
     #!/bin/bash
     set -euo pipefail
@@ -177,8 +187,10 @@ build-plugins:
     mkdir -p "$bundle_root"
     for c in "${crates[@]}"; do
         d="crates/$c"
-        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
-            | sed 's/.*"\([^"]*\)".*/\1/')
+        # `|| true` 가 없으면 아래 -z 분기가 죽는다 — grep 이 못 찾았을 때
+        # pipefail + set -e 가 대입 자리에서 먼저 죽여 진단이 발화하지 못한다.
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
+            | sed 's/.*"\([^"]*\)".*/\1/' || true)
         if [ -z "$id" ]; then
             echo "✘ $c: cannot parse id from $d/tasty-plugin.toml" >&2
             exit 1
@@ -234,7 +246,7 @@ build-plugin name:
     for d in crates/tasty-plugin-*; do
         [ -f "$d/tasty-plugin.toml" ] || continue
         c=$(basename "$d")
-        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
             | sed 's/.*"\([^"]*\)".*/\1/')
         short=${c#tasty-plugin-}
         if [ "$name" = "$c" ] || [ "$name" = "$short" ] || [ "$name" = "$id" ]; then
@@ -250,7 +262,7 @@ build-plugin name:
             [ -f "$d/tasty-plugin.toml" ] || continue
             c=$(basename "$d")
             short=${c#tasty-plugin-}
-            id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+            id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
                 | sed 's/.*"\([^"]*\)".*/\1/')
             echo "    $short  ($c, $id)" >&2
         done
@@ -393,7 +405,7 @@ link-plugins:
     abs_workspace=$(pwd)
     for c in "${crates[@]}"; do
         d="crates/$c"
-        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+        id=$(grep -m1 -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" \
             | sed 's/.*"\([^"]*\)".*/\1/')
         bin_name="$c$exe_ext"
         src_bin="$abs_workspace/$profile_dir/$bin_name"

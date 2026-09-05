@@ -4,7 +4,7 @@ members = ["crates/*"]
 # 빌드에 새지 않도록 main workspace 에서 완전 제외. 자체 Cargo.lock 사용.
 # `cargo build` / `cargo build --workspace` 모두 이 crate 를 미인식.
 # 본 격리가 없으면 wasmtime 의존성 해석으로 cold build time 이 분 단위 증가.
-# 상세 = docs/architecture/wasm-poc-result.md.
+# POC 측정과 채택 보류 결정 = docs/adr/0009-plugin-sandbox-deferred.md.
 # `site/` = GitHub Pages 정적 사이트 생성기. 본체와 공유하는 코드가 없고
 # pulldown-cmark/syntect 의존성이 본체 빌드에 새면 안 되므로 제외한다.
 # 사이트 빌드는 `cargo run --manifest-path site/Cargo.toml` 로 별도 수행.
@@ -438,6 +438,12 @@ dhat-heap = ["dep:dhat"]
 
 [dev-dependencies]
 serde_json = "1"
+# 스캔 가드가 공유하는 판정(레포 루트, 빌드 캐시 디렉토리 식별). 이 크레이트는 의존이
+# 0 이라(ADR-0138) 여기에 dev-dep 로 들여도 루트 테스트 빌드가 무거워지지 않는다.
+tasty-doc-guards = { path = "crates/tasty-doc-guards" }
+# 지연 단정의 대조군(ADR-0181). 의존 0 이라 테스트 빌드가 무거워지지 않고,
+# dev-dep 이라 제품 산출물에 들어가지 않는다.
+tasty-latency-control = { path = "crates/tasty-latency-control" }
 enigo = "0.6"
 tempfile = "3"
 # 메모리 누수 soak 하네스(tests/soak_memory.rs)의 외부 측정용 — 프로세스 트리

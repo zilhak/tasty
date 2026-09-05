@@ -9,7 +9,7 @@ Tasty 자체 코드는 `LICENSE` 파일에 명시된 MIT 라이선스를 따릅�
 
 - 출처: NAVER Corp. — https://github.com/naver/d2codingfont
 - 버전: Ver 1.3.2 (2018-05-24)
-- 적용 범위: `assets/fonts/D2Coding-ligature-Regular.ttf`, `assets/fonts/D2Coding-ligature-Bold.ttf`
+- 적용 범위: `crates/tasty-font/assets/D2Coding-ligature-Regular.ttf`, `crates/tasty-font/assets/D2Coding-ligature-Bold.ttf`
 - 라이선스: SIL Open Font License, Version 1.1 (OFL 1.1)
 - 라이선스 본문: [`LICENSES/D2Coding-OFL.txt`](LICENSES/D2Coding-OFL.txt)
 - Reserved Font Name: `D2Coding`
