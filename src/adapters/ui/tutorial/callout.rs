@@ -22,6 +22,18 @@ const TAIL_OFF_H: LogicalPx = LogicalPx(28.0);
 /// left/right tail 의 상단 기준 앵커 offset(디자인 top:24).
 const TAIL_OFF_V: LogicalPx = LogicalPx(24.0);
 
+/// 스텝 레일 점의 지름. 스케일 밖(5) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고
+/// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
+/// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
+/// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다.
+/// **같은 5 를 `src/view/settings/ui/tabs/appearance.rs` 의 `COLOR_OVERRIDE_DOT_SIZE`
+/// 도 쓴다** — 무관한 두 화면이 독립적으로 고른 값이라 드리프트가 아니라 역할일
+/// 가능성이 높고, 그 판단이 서면 둘이 한 토큰으로 모인다.
+///
+/// 이것은 상태 점이 아니라 **진행 표시(pagination)** 점이다 — 위 두 자리가 한 토큰으로
+/// 모이더라도 이 자리가 거기 속하는지는 별개 물음이다.
+const STEP_RAIL_DOT_SIZE: LogicalPx = LogicalPx(5.0);
+
 /// 마커가 말풍선의 어느 쪽에 있는지 = tail 방향.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tail {
@@ -220,9 +232,15 @@ pub fn draw_callout(
                             } else {
                                 theme.surface_active().to_egui()
                             };
-                            let (r, _) =
-                                ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
-                            ui.painter().circle_filled(r.center(), 2.5, c);
+                            let (r, _) = ui.allocate_exact_size(
+                                egui::vec2(STEP_RAIL_DOT_SIZE.value(), STEP_RAIL_DOT_SIZE.value()),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().circle_filled(
+                                r.center(),
+                                STEP_RAIL_DOT_SIZE.value() * 0.5,
+                                c,
+                            );
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let next_label = if last {
