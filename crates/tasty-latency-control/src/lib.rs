@@ -6,10 +6,12 @@
 //! 한다. 선택 규칙·거부한 대안·재검토 조건은
 //! `docs/adr/0181-a-latency-assertion-must-carry-a-control-that-load-moves-and-code-does-not.md`.
 //!
-//! **이 크레이트가 제공하는 대조군은 스케줄러 계열 하나뿐이다.** 측정 대상이 CPU 를
-//! 기다리는 자리에만 쓴다. 디스크·writeback 뒤에 줄 서는 값(IPC 왕복 등)에는 쓰면
-//! 안 된다 — 실측으로 writeback 이 포화돼 IPC 왕복이 5.4 초일 때 스케줄러 쪽 지표는
-//! 7 ms 밖에 안 움직였다. 그런 자리의 대조군은 같은 채널의 값싼 왕복이어야 한다.
+//! **계열을 자리마다 고른다.** 측정 대상이 CPU 를 기다리면 스케줄러 계열
+//! ([`ControlProbe::start`]), 자식 프로세스를 띄우고 기다리면 spawn 계열
+//! ([`ControlProbe::start_spawn`]). 실측으로 writeback 이 포화돼 IPC 왕복이 5.4 초일 때
+//! 스케줄러 쪽 지표는 7 ms 밖에 안 움직였다 — 계열을 잘못 고르면 대조군이 "부하 아님"
+//! 이라고 **잘못 증언한다**. IPC 왕복처럼 채널 뒤에 줄 서는 값의 대조군은 이 크레이트가
+//! 아직 안 준다; 같은 채널의 값싼 왕복이어야 하고 그건 호출자 쪽 물건이다.
 
 use std::time::{Duration, Instant};
 
@@ -24,10 +26,57 @@ pub const INFLATED: f64 = 3.0;
 /// (`-O` 로 재면 38 µs), 실패 경로에서만 도는 값이라 이 비용은 예산에 들어가지 않는다.
 const SPIN_ITERS: u64 = 50_000;
 
+/// 계열 이름 — 실패 문장이 어느 대조군을 썼는지 밝힌다.
+const CPU_KIND: &str = "고정 CPU 일감";
+const SPAWN_KIND: &str = "자식 하나 띄우기";
+
 /// 기준선을 잡을 때 몇 번 재서 **최소**를 고르나. 최소를 쓰는 이유는 여러 번 중
 /// 가장 덜 선점된 회차가 유휴 비용에 가장 가깝기 때문이다 — 평균은 그 순간의
 /// 부하를 기준선에 섞어 넣어, 부하 속에서 만든 기준선이 부하를 못 보게 만든다.
 const CALIBRATION_ROUNDS: usize = 9;
+
+/// spawn 계열은 한 회가 밀리초 단위라 회차를 줄인다. 이 값이 곧 초록 경로에서
+/// 띄우는 자식 수라, 대조군 자신이 러너에 부담이 되지 않게 3 으로 둔다.
+const SPAWN_CALIBRATION_ROUNDS: usize = 3;
+
+/// 자식 하나를 띄우고 거둘 때까지. 측정 대상이 `Command::spawn` 뒤에 줄 서는 자리
+/// (ssh 포트 발견 등)의 대조군이다 — fork/exec·스케줄러·바이너리 적재까지 같은 자원을
+/// 지나면서, 측정 대상의 코드는 한 줄도 안 부른다.
+///
+/// 띄우지 못하면 `Duration::ZERO` 를 준다. 기준선이 0 이면 [`ControlSample::ratio`] 가
+/// 1.0 을 주므로, **대조군이 없을 때 부하를 주장하지 않는다**.
+fn spawn_probe() -> Duration {
+    let started = Instant::now();
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", "exit"]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = std::process::Command::new("/bin/true");
+    let Ok(mut child) = cmd
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return Duration::ZERO;
+    };
+    if child.wait().is_err() {
+        return Duration::ZERO;
+    }
+    started.elapsed()
+}
+
+/// `work` 를 `rounds` 번 재서 최소를 준다.
+fn calibrate_with(work: fn() -> Duration, rounds: usize) -> Duration {
+    let mut baseline = work();
+    for _ in 1..rounds {
+        baseline = baseline.min(work());
+    }
+    baseline
+}
 
 /// 고정된 CPU 일감. 최적화로 사라지지 않게 결과를 `black_box` 로 붙잡는다.
 fn spin() -> Duration {
@@ -52,11 +101,9 @@ pub struct CpuControl {
 impl CpuControl {
     /// 지금 자리의 기준선을 잡는다. **측정 대상을 돌리기 전에** 부른다.
     pub fn calibrate() -> Self {
-        let mut baseline = spin();
-        for _ in 1..CALIBRATION_ROUNDS {
-            baseline = baseline.min(spin());
+        Self {
+            baseline: calibrate_with(spin, CALIBRATION_ROUNDS),
         }
-        Self { baseline }
     }
 
     /// 기준선을 값으로 준다 — 산술을 부하 없이 고정하는 시험용.
@@ -73,6 +120,7 @@ impl CpuControl {
         ControlSample {
             cost: spin(),
             baseline: self.baseline,
+            kind: CPU_KIND,
         }
     }
 }
@@ -82,12 +130,27 @@ impl CpuControl {
 pub struct ControlSample {
     cost: Duration,
     baseline: Duration,
+    /// 어느 계열의 대조군인가 — 문장이 이것을 밝혀야 읽는 사람이 "그 대조군이 이 자리에
+    /// 맞나" 를 다시 물을 수 있다. 계열을 잘못 고르는 것이 이 설계의 주된 사고다.
+    kind: &'static str,
 }
 
 impl ControlSample {
     /// 잰 값으로 만든다 — 산술을 부하 없이 고정하는 시험용.
     pub fn from_parts(cost: Duration, baseline: Duration) -> Self {
-        Self { cost, baseline }
+        Self::from_parts_with_kind(CPU_KIND, cost, baseline)
+    }
+
+    pub fn from_parts_with_kind(kind: &'static str, cost: Duration, baseline: Duration) -> Self {
+        Self {
+            cost,
+            baseline,
+            kind,
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        self.kind
     }
 
     pub fn cost(&self) -> Duration {
@@ -121,17 +184,18 @@ pub fn latency_verdict(
     sample: &ControlSample,
 ) -> String {
     let ratio = sample.ratio();
+    let kind = sample.kind;
     if sample.is_inflated() {
         return format!(
-            "{what} 이 {measured:?} 걸려 상한 {limit:?} 를 넘었다 — 그런데 대조군(고정 CPU 일감)도 \
+            "{what} 이 {measured:?} 걸려 상한 {limit:?} 를 넘었다 — 그런데 대조군({kind})도 \
              기준선의 {ratio:.1} 배로 부풀었다({:?} → {:?}). 러너가 굶은 것이라 \
-             이 빨강은 {what} 에 대한 증거가 아니다. 상한 인상은 이 사건의 처방이 아니다",
+             이 빨강은 코드에 대한 증거가 아니다. 상한 인상은 이 사건의 처방이 아니다",
             sample.baseline, sample.cost,
         );
     }
     format!(
-        "{what} 이 {measured:?} 걸려 상한 {limit:?} 를 넘었다. 대조군(고정 CPU 일감)은 \
-         기준선의 {ratio:.1} 배로 정상이다({:?} → {:?}) — 러너가 아니라 {what} 자신이 느려졌다",
+        "{what} 이 {measured:?} 걸려 상한 {limit:?} 를 넘었다. 대조군({kind})은 기준선의 \
+         {ratio:.1} 배로 정상이다({:?} → {:?}) — 러너가 아니라 측정 대상 자신이 느려졌다",
         sample.baseline, sample.cost,
     )
 }
@@ -143,28 +207,53 @@ pub fn latency_verdict(
 /// `Drop` 에 둔다 — 되감기(unwind) 중에도 값이 나온다. 초록일 때는 아무 말도 안 한다.
 pub struct ControlProbe {
     label: String,
-    control: CpuControl,
+    work: fn() -> Duration,
+    kind: &'static str,
+    baseline: Duration,
     reported: bool,
 }
 
 impl ControlProbe {
-    /// **측정 대상을 돌리기 전에** 만든다 — 기준선이 측정 전 상태를 담아야 한다.
+    /// 스케줄러 계열. **측정 대상을 돌리기 전에** 만든다 — 기준선이 측정 전 상태를
+    /// 담아야 한다. 측정 대상이 CPU·락만 기다리는 자리에 쓴다.
     pub fn start(label: impl Into<String>) -> Self {
+        Self::with(label, spin, CALIBRATION_ROUNDS, CPU_KIND)
+    }
+
+    /// 프로세스 spawn 계열. 측정 대상이 자식을 띄우고 기다리는 자리에 쓴다 —
+    /// 스케줄러 계열은 fork/exec·바이너리 적재의 포화를 못 본다.
+    pub fn start_spawn(label: impl Into<String>) -> Self {
+        Self::with(label, spawn_probe, SPAWN_CALIBRATION_ROUNDS, SPAWN_KIND)
+    }
+
+    fn with(
+        label: impl Into<String>,
+        work: fn() -> Duration,
+        rounds: usize,
+        kind: &'static str,
+    ) -> Self {
         Self {
             label: label.into(),
-            control: CpuControl::calibrate(),
+            work,
+            kind,
+            baseline: calibrate_with(work, rounds),
             reported: false,
         }
     }
 
-    pub fn control(&self) -> CpuControl {
-        self.control
+    fn sample(&self) -> ControlSample {
+        ControlSample {
+            cost: (self.work)(),
+            baseline: self.baseline,
+            kind: self.kind,
+        }
     }
 
     /// 실패 문장을 만든다. 이 값이 패닉 메시지에 실리므로 `Drop` 은 입을 다문다.
     pub fn verdict(&mut self, measured: Duration, limit: Duration) -> String {
         self.reported = true;
-        latency_verdict(&self.label, measured, limit, &self.control.sample())
+        let sample = self.sample();
+        latency_verdict(&self.label, measured, limit, &sample)
     }
 }
 
@@ -180,11 +269,12 @@ impl Drop for ControlProbe {
         if !drop_should_speak(self.reported, std::thread::panicking()) {
             return;
         }
-        let sample = self.control.sample();
+        let sample = self.sample();
         eprintln!(
-            "[대조군 {}] 이 패닉은 지연 단정이 낸 것이 아니다 — 대조군은 기준선의 {:.1} 배다({:?} → {:?}). \
+            "[대조군 {} · {}] 이 패닉은 지연 단정이 낸 것이 아니다 — 대조군은 기준선의 {:.1} 배다({:?} → {:?}). \
              3 배 이상이면 러너가 굶은 것이고, 그때 위 실패의 원인 지목을 믿으면 안 된다.",
             self.label,
+            self.kind,
             sample.ratio(),
             sample.baseline(),
             sample.cost(),
@@ -275,6 +365,24 @@ mod tests {
         assert!(!reactive.contains("대조군 자신이 깨진 것"), "{reactive}");
     }
 
+    /// spawn 계열도 같은 규칙을 진다 — 측정 대상 경로의 지연에 안 움직여야 한다(R437).
+    #[test]
+    fn the_spawn_control_is_deaf_to_a_delay_in_the_measured_path() {
+        let baseline = calibrate_with(spawn_probe, SPAWN_CALIBRATION_ROUNDS);
+        if baseline.is_zero() {
+            // 자식을 못 띄우는 환경 — 대조군이 없다. 없는 것을 있다고 말하지 않는다.
+            return;
+        }
+        let before = ControlSample::from_parts_with_kind(SPAWN_KIND, spawn_probe(), baseline);
+        std::thread::sleep(Duration::from_millis(200));
+        let after = ControlSample::from_parts_with_kind(SPAWN_KIND, spawn_probe(), baseline);
+        assert!(
+            !after.is_inflated(),
+            "{}",
+            control_independence_verdict(&before, &after)
+        );
+    }
+
     /// 부하 없이 산술만 고정한다 — 양방향.
     #[test]
     fn the_verdict_separates_a_starved_runner_from_a_slow_code_path() {
@@ -292,6 +400,16 @@ mod tests {
         let msg = latency_verdict("await 즉시 반환", measured, limit, &quiet);
         assert!(msg.contains("자신이 느려졌다"), "{msg}");
         assert!(!msg.contains("러너가 굶은 것"), "{msg}");
+        // 계열이 문장에 실린다 — 잘못 고른 대조군을 읽는 사람이 알아볼 수 있어야 한다.
+        assert!(msg.contains(CPU_KIND), "{msg}");
+        let spawn_msg = latency_verdict(
+            "무엇",
+            measured,
+            limit,
+            &ControlSample::from_parts_with_kind(SPAWN_KIND, base * 2, base),
+        );
+        assert!(spawn_msg.contains(SPAWN_KIND), "{spawn_msg}");
+        assert!(!spawn_msg.contains(CPU_KIND), "{spawn_msg}");
     }
 
     /// 문턱 양쪽 — 3 배 미만은 정상, 3 배는 부하.
