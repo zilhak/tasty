@@ -21,6 +21,25 @@
 //! `refresh_`/`rebuild_` 같은 이름은 세지 않는다 — 타이머 동기화와 파일 복사가 그
 //! 이름을 쓰고, 반대로 유도인데 그 이름이 아닌 것도 있다.
 //!
+//! **면제도 같은 규칙을 받는다.** 테스트 픽스처는 상태를 손으로 세우는 것이 정상이라
+//! 안 보는데, 그 "테스트 전용인가" 를 파일 **이름**(`tests*.rs` · `*_tests.rs`)으로
+//! 물었었다. 이름은 성질이 아니다 — 출하되는 파일에 `tests_` 를 붙이면 그 파일은
+//! **조용히** 판정에서 사라진다. 지금은 [ADR-0180] 의 판정기 하나
+//! (`shipping_scope::test_only_files`: `#[cfg(test)] mod x;` 전이 폐쇄 + cargo 통합
+//! 테스트 타깃)를 **부른다**. 같은 물음에 답을 둘로 만들지 않는다.
+//!
+//! 두 술어가 오늘 갈리는 파일은 90 이고 **전부 한 방향**이다(2026-09-06 실측, 모수
+//! 1209): 이름으로는 안 걸리는데 선언상 출하 안 되는 것 90, 반대(이름으로 면제되는데
+//! 실제로 출하되는 것)는 0. 즉 이름 술어가 오늘 **가리고 있는 것은 없다** — 이 교체의
+//! 값은 위험한 방향이 앞으로도 0 으로 남는 것이 우연이 아니게 만드는 데 있다. 그
+//! 우연이 깨지는 조건은 하나다: 출하되는 파일 이름이 `tests` 로 시작하거나 `_tests.`
+//! 를 담는 순간.
+//!
+//! 대신 면제가 커진 만큼 판정 모수는 줄었다(본 파일 1173 → 1083). **면제는 언제나
+//! 초록 방향**이라 그 값에 하한을 둔다 — 발견 수가 아니라 **면제 뒤 실제로 본 수**에.
+//!
+//! [ADR-0180]: ../../docs/adr/0180-test-only-files-is-the-canonical-shipping-judge.md
+//!
 //! 그 술어로 host 의 plugin 상태를 훑으면 캐시된 유도 상태는 다섯이고, 그중 넷이
 //! **공개 필드**라 밖에서 직접 바꿀 수 있다(아래 명부). 다섯째
 //! (`plugin_permissions`)는 `pub(super)` 라 세터를 거쳐야만 바뀐다 — **캡슐화가
@@ -68,7 +87,9 @@
 //!
 //! [ADR-0173]: ../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+use tasty_doc_guards::shipping_scope;
 
 use super::{repo_root, strip_comments};
 
@@ -119,15 +140,22 @@ const DERIVED: &[Derived] = &[
     },
 ];
 
-/// 스캔 대상. **모수는 줄이지 않는다** — 자유 함수 항목은 어디서든 불릴 수 있으므로
-/// 전 범위가 필요하다. 필드 항목만 아래에서 **소유 크레이트로 걸러진다**(항목별 판정).
-const SCAN_ROOTS: &[&str] = &["src", "crates"];
+/// 면제 뒤 **실제로 본** 파일 수의 하한 — 연기 검사. 하한을 발견 수가 아니라 판정 수에
+/// 두는 이유는, 면제가 커지는 방향이 **언제나 더 초록**이기 때문이다. 발견 수만 세면
+/// 면제가 전부를 삼켜도 통과한다. 값의 근거: 2026-09-06 실측 1083.
+const MIN_SHIPPING_SCANNED: usize = 900;
 
-/// 훑는 `.rs` 파일 수의 하한 — **연기 검사**. 값의 근거: 2026-09-05 실측 1400 이상.
-const MIN_SCANNED_FILES: usize = 800;
+/// 면제된 파일 수의 하한 — 반대 방향의 연기 검사다. 0 이면 면제가 죽은 것이고, 그때
+/// 판정은 픽스처를 위반으로 세기 시작한다(시끄러운 실패라 조용하지는 않지만, 판정기가
+/// 죽은 것을 판정기 자신이 못 보는 것은 같다). 값의 근거: 2026-09-06 실측 126.
+const MIN_TEST_ONLY: usize = 60;
 
 /// 필드 선언이 있는 파일 — 전제 검사가 읽는다.
 const FIELD_DECL_FILE: &str = "crates/tasty-host-plugin/src/manager.rs";
+
+/// 이름에는 `tests` 가 없는데 선언상 출하되지 않는 실물 파일 — 면제 판정의 한쪽 팔.
+const NAME_BLIND_TEST_ONLY_FILE: &str =
+    "crates/tasty-doc-guards/tests/filtered_guards_are_not_totally_blind.rs";
 
 /// 항목별 걸러내기가 기대는 **전제**: 유도 상태 필드가 전부 private 이다.
 ///
@@ -172,27 +200,6 @@ fn the_narrowed_scan_rests_on_the_fields_being_private() {
     }
 }
 
-/// 테스트 전용 파일은 안 본다 — 픽스처가 상태를 손으로 세우는 것이 정상이다.
-fn is_test_file(rel: &str) -> bool {
-    let name = rel.rsplit('/').next().unwrap_or(rel);
-    name.starts_with("tests") || name.contains("_tests.") || name == "tests.rs"
-}
-
-fn rust_files(root: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries {
-        let entry = entry.expect("디렉터리 항목을 읽을 수 없다");
-        let path = entry.path();
-        if path.is_dir() {
-            rust_files(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
-}
-
 /// 그 줄이 이 유도 상태를 바꾸는가.
 fn mutates(d: &Derived, line: &str) -> bool {
     let Some(at) = line.find(d.field) else {
@@ -211,36 +218,73 @@ fn mutates(d: &Derived, line: &str) -> bool {
     d.verbs.iter().any(|v| after.starts_with(v))
 }
 
+/// 면제 판정의 **두 팔을 실물로** 못박는다.
+///
+/// 면제는 언제나 초록 방향이라, 판정이 어느 쪽으로든 미끄러지면 이 가드는 조용해진다.
+/// 그래서 합성 픽스처가 아니라 이 레포의 실제 파일 두 종류로 양쪽을 잡는다.
+///
+/// - **면제되면 안 되는 쪽**: 유도가 사는 파일들(`DERIVED[..].home`). 이들이 면제되면
+///   아래 `homes_seen` 대조군이 죽어 판정 전체가 무의미해진다.
+/// - **면제돼야 하는 쪽**: 이름에 `tests` 가 안 들어가는데 선언상 출하 안 되는 파일.
+///   이 파일이 바로 이름 술어와 선언 술어가 갈리던 자리다(2026-09-06 실측: 갈리는
+///   파일 90, 그중 이 가드의 바늘을 담은 것 3 — 전부 이런 형태였다).
+#[test]
+fn the_exemption_is_pinned_on_both_sides_by_real_files() {
+    let root = repo_root();
+    let sources = super::rust_sources();
+    let test_only = shipping_scope::test_only_files(&root, &sources);
+
+    for d in DERIVED {
+        assert!(
+            !test_only.contains(&PathBuf::from(d.home)),
+            "유도가 사는 {} 가 면제됐다 — 그러면 대조군이 죽는다",
+            d.home
+        );
+    }
+
+    let by_name_not_exempt = PathBuf::from(NAME_BLIND_TEST_ONLY_FILE);
+    assert!(
+        sources.iter().any(|(p, _)| *p == by_name_not_exempt),
+        "{NAME_BLIND_TEST_ONLY_FILE} 이 스캔에 없다 — 옮겼으면 이 상수도 함께 고쳐라. \
+         (이 팔이 죽으면 면제가 이름 술어로 되돌아가도 아무도 모른다)"
+    );
+    let name = NAME_BLIND_TEST_ONLY_FILE
+        .rsplit('/')
+        .next()
+        .unwrap_or(NAME_BLIND_TEST_ONLY_FILE);
+    assert!(
+        !name.starts_with("tests") && !name.contains("_tests.") && name != "tests.rs",
+        "{NAME_BLIND_TEST_ONLY_FILE} 이 이름으로도 걸린다 — 두 술어가 갈리는 자리가 \
+         아니라서 대조가 동어반복이 된다. 갈리는 실물을 다시 골라라"
+    );
+    assert!(
+        test_only.contains(&by_name_not_exempt),
+        "{NAME_BLIND_TEST_ONLY_FILE} 이 면제 밖이다 — 선언 판정이 이 형태를 놓쳤다"
+    );
+}
+
 /// 유도 상태는 **유도가 사는 파일에서만** 바뀐다.
 #[test]
 fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
     let root = repo_root();
-    let mut files = Vec::new();
-    for r in SCAN_ROOTS {
-        rust_files(&root.join(r), &mut files);
-    }
+    let sources = super::rust_sources();
+    let test_only = shipping_scope::test_only_files(&root, &sources);
     assert!(
-        files.len() >= MIN_SCANNED_FILES,
-        "훑은 .rs 가 {} 개뿐이다(하한 {MIN_SCANNED_FILES}) — 스캔이 죽으면 아래 판정은 \
-         볼 것이 없어 그냥 통과한다",
-        files.len()
+        test_only.len() >= MIN_TEST_ONLY,
+        "테스트 전용으로 판정된 파일이 {} 개뿐이다(하한 {MIN_TEST_ONLY}) — 면제가 죽었다",
+        test_only.len()
     );
 
     let mut offenders: Vec<String> = Vec::new();
     let mut homes_seen = vec![false; DERIVED.len()];
-    for path in &files {
-        let rel = path
-            .strip_prefix(&root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        if is_test_file(&rel) {
+    let mut scanned = 0usize;
+    for (path, src) in &sources {
+        if test_only.contains(path) {
             continue;
         }
-        let src = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
-            .replace("\r\n", "\n");
-        let stripped = strip_comments(&src);
+        scanned += 1;
+        let rel = path.to_string_lossy().replace('\\', "/");
+        let stripped = strip_comments(src);
         for (n, d) in DERIVED.iter().enumerate() {
             // ★ 필드 항목은 **그 필드를 소유한 크레이트 안에서만** 본다.
             //
@@ -279,6 +323,13 @@ fn derived_plugin_state_is_only_mutated_where_it_is_derived() {
             }
         }
     }
+
+    assert!(
+        scanned >= MIN_SHIPPING_SCANNED,
+        "면제하고 남은 파일이 {scanned} 개뿐이다(하한 {MIN_SHIPPING_SCANNED}, 발견 {}) — \
+         면제가 판정 범위를 삼켰다",
+        sources.len()
+    );
 
     // 유도 자리에서 아무 변형도 안 보이면 판정이 죽은 것이다 — 이름이 바뀌었거나
     // 자리가 옮겨졌는데 조용히 통과하는 것이 이 부류의 원래 사고다.
