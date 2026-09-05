@@ -73,6 +73,148 @@ fn strip_comments(src: &str) -> String {
     out
 }
 
+/// IPC dispatch 가 메서드 이름을 읽는 표현식. 이 뒤에 오는 모양으로 **판정 자리**를 찾는다.
+///
+/// 두 라우터(`handler.rs` 의 두 `match` · gui/헤드리스 step 셋)가 전부 이 표현식으로
+/// 갈래를 친다. 표현식이 바뀌면 이 상수도 같이 고쳐야 한다 — 안 고치면 아래 판정이
+/// 아무 자리도 안 보면서 초록이 된다(부르는 쪽이 그것을 단정한다).
+const METHOD_EXPR: &str = "request.method";
+
+/// 스캐너가 **볼 수 없는 이름**으로 판정하는 자리.
+///
+/// 위 판정은 dispatch 본문을 텍스트로 읽어 `"a.b"` 꼴 리터럴을 뽑는 것이다. 이름이
+/// 리터럴이 아니면 — 매크로가 만들거나 상수·변수와 맞대면 — 그 이름은 목록에 안 들어온다.
+/// 그러면 답하지도 사유가 적혀 있지도 않은 메서드가 **조용히** 생긴다.
+///
+/// 실측이 있다(2026-09-05, debug step 기준). 리터럴 하나를 `macro_rules!` 뒤로 숨기면
+/// 뽑히는 항목이 12 → 11 로 줄고, 매크로가 만든 이름으로 갈래를 하나 새로 더하면 항목
+/// 수가 **아예 안 변한다.** 두 경우 다 아래 하한(5)에 안 걸려 초록으로 통과했다. 즉 이
+/// 부류는 크기가 0 이었던 것이 아니라 하한이 못 보던 것이다 — 수를 세는 검사로는 이
+/// 사각을 못 좁힌다.
+///
+/// 그래서 이름의 **수** 대신 이름을 읽는 **자리**를 본다. 셋만 판정 자리로 친다:
+/// `== <x>` · `.starts_with(<x>)` · `match ….as_str() { <팔> => }`. 그 자리의 값은
+/// 문자열 리터럴이어야 한다. 그 밖의 모양(값을 위임 함수 인자로 **넘기는** 것)은 여기서
+/// 이름을 가르지 않으므로 대상이 아니다.
+fn opaque_method_sites(body: &str) -> Vec<String> {
+    // 주석을 먼저 걷어낸다. 안 걷으면 주석 안의 괄호가 깊이를 흔들어 팔의 시작 자리를
+    // 어긋나게 하고(실측), 주석에 적힌 메서드 이름이 판정 자리로 잡힌다.
+    let body = strip_comments(body);
+    let body = body.as_str();
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while let Some(i) = body[at..].find(METHOD_EXPR) {
+        at += i + METHOD_EXPR.len();
+        let rest = body[at..].trim_start();
+        if let Some(r) = rest.strip_prefix("==") {
+            if !r.trim_start().starts_with('"') {
+                out.push(format!("`== {}`", head(r)));
+            }
+        } else if let Some(r) = rest.strip_prefix(".starts_with(") {
+            if !r.trim_start().starts_with('"') {
+                out.push(format!("`.starts_with({}`", head(r)));
+            }
+        } else if let Some(r) = rest.strip_prefix(".as_str()") {
+            let r = r.trim_start();
+            if r.starts_with('{') {
+                out.extend(non_literal_arms(r));
+            }
+        }
+    }
+    out
+}
+
+/// 오류 메시지에 붙일 짧은 발췌 — 자리를 사람이 찾을 수 있을 만큼만.
+fn head(s: &str) -> String {
+    s.trim_start()
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(40)
+        .collect()
+}
+
+/// 팔 패턴에서 주석과 속성을 걷어낸다 — `#[cfg(debug_assertions)]` 이 붙은 팔과
+/// 팔 앞의 설명 주석이 실제 코드에 있다(실측).
+fn pattern_text(raw: &str) -> String {
+    raw.lines()
+        .map(|l| l.split("//").next().unwrap_or("").trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `match ….as_str() { … }` 의 팔 중 **패턴이 리터럴이 아닌** 것.
+///
+/// 팔 패턴은 문자열 리터럴이거나, `_`/소문자 식별자(전부받기 바인딩)여야 한다.
+/// 대문자 상수나 매크로 호출이 패턴 자리에 오면 그 이름은 텍스트로 안 보인다.
+fn non_literal_arms(block: &str) -> Vec<String> {
+    let b = block.as_bytes();
+    let mut out = Vec::new();
+    let (mut i, mut depth, mut pat_start, mut in_str) = (0usize, 0usize, 0usize, false);
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => in_str = true,
+            b'{' | b'(' | b'[' => {
+                depth += 1;
+                if depth == 1 {
+                    pat_start = i + 1;
+                }
+            }
+            b'}' | b')' | b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+                // 블록 팔(`"x" => { … }`) 뒤의 쉼표는 생략할 수 있다. 그 닫는 중괄호도
+                // 팔의 끝으로 쳐야 다음 팔의 패턴이 앞 팔 전체를 끌고 온다.
+                //
+                // **중괄호만이다.** 괄호까지 팔의 끝으로 치면 패턴 자신이 괄호를 가진
+                // 경우(`mac!() => …`)에 시작 자리가 패턴 **뒤로** 밀려 패턴이 빈 문자열이
+                // 되고, 빈 것은 검사가 건너뛴다 — 정확히 잡아야 할 모양이 통과했다(실측).
+                if depth == 1 && c == b'}' {
+                    pat_start = i + 1;
+                }
+            }
+            b',' if depth == 1 => pat_start = i + 1,
+            b'=' if depth == 1 && b.get(i + 1) == Some(&b'>') => {
+                for alt in pattern_text(&block[pat_start..i]).split('|') {
+                    let alt = alt.trim();
+                    if alt.is_empty() {
+                        continue;
+                    }
+                    let binding = alt == "_"
+                        || (!alt.is_empty()
+                            && alt
+                                .chars()
+                                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'));
+                    if !alt.starts_with('"') && !binding {
+                        out.push(format!("`match` 팔 `{alt}`"));
+                    }
+                }
+                i += 2;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
 /// 시그니처로 함수를 찾아 그 **본문**을 중괄호 균형으로 잘라낸다.
 ///
 /// 들여쓰기에 의존하지 않는다 — rustfmt 스타일이 바뀌어도 같은 것을 자른다.
