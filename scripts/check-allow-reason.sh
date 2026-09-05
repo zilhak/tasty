@@ -41,6 +41,36 @@ else
     FILES=$(git ls-files -- 'crates/*.rs' 'src/*.rs')
 fi
 
+# ── 문자열 리터럴을 덮은 사본에서 센다 ─────────────────────────────────────
+#
+# 이 검사는 텍스트 스캔이라 타입을 모르고, **문자열 안의 억제 형태를 실물로 센다.**
+# 그 형태를 소스에 쓰는 것은 가드의 회귀 픽스처다 — 판정 대상 형태를 회귀로 박으려면
+# 그 형태를 써야 하고, 쓴 순간 이 게이트의 모수가 된다(실측으로 여러 번 밟았다).
+#
+# 판정을 여기서 다시 구현하지 않는다. 러스트 층이 이미 그 판정을 갖고 있고
+# (`tasty_doc_guards::source_text`), 셸이 자기 렉서를 만들면 같은 물음에 답이 둘이 된다.
+# **주석은 남기는 마스크**를 쓴다 — 이 게이트는 억제의 유무만이 아니라 **사유 주석의
+# 유무**를 함께 묻기 때문이다. 주석까지 덮으면 그 물음의 답이 사라진다.
+#
+# 줄 번호는 보존되므로 보고 좌표는 **원본 경로:줄** 그대로다.
+#
+# 판정기가 없거나 낡았으면 원문에서 센다 — 그쪽은 더 많이 세는 방향이라 조용한 통과를
+# 안 만든다. 다만 래칫이라 **넘치면 실패한다**: 그래서 자동 채널이 판정기를 먼저 짓는다.
+. "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
+MASK_BIN="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT")"
+SCAN_ROOT="$ROOT"
+if [ -n "$MASK_BIN" ]; then
+    MASKED="$(mktemp -d)"
+    trap 'rm -rf "$MASKED"' EXIT
+    if "$MASK_BIN" --keep-comments "$MASKED" "$ROOT" crates src >/dev/null; then
+        SCAN_ROOT="$MASKED"
+    else
+        echo "[allow-reason] 마스킹 실패 — 원문에서 센다(문자열 안의 억제 형태까지 세어진다)." >&2
+    fi
+else
+    echo "[allow-reason] 원문에서 센다 — 문자열 안의 억제 형태까지 세어진다." >&2
+fi
+
 REASON_PATTERN='reason:|이유:|complexity-exempt:|SAFETY'
 
 # 래칫 상한. **실제 건수와 같아야 한다** — 크면 그 차이만큼 조용히 받아준다.
@@ -49,13 +79,22 @@ REASON_PATTERN='reason:|이유:|complexity-exempt:|SAFETY'
 # 이 수는 술어를 넓힌 회차에 다시 잰 값이다(234 → 231). **위반이 줄어서가 아니다** —
 # 세는 형태가 60 자리 늘고(조건부 억제) 인정하는 표기가 41 자리 늘어(한글 마커·블록 창)
 # 두 변화가 상쇄된 값이다. 그래서 이 231 은 이전 234 와 **같은 것을 센 수가 아니다.**
-CAP=184
+#
+# 184 → 183 도 같은 성질이다. 위반이 하나 줄어서가 아니라 **문자열 안의 억제 형태를
+# 실물로 세던 한 자리**가 마스킹으로 빠진 것이다(생성 코드를 문자열로 조립하는 자리였다).
+# 판정기가 없어 원문에서 세면 이 값이 184 로 돌아와 래칫이 실패한다 — 자동 채널이
+# 판정기를 먼저 짓는 이유다.
+CAP=183
 
 report=""
 count=0
 
 while IFS= read -r file; do
     [ -z "$file" ] && continue
+    # 사본에 없는 파일(마스커와 rg 의 파일 집합이 완전히 같지는 않다)은 **그 파일만**
+    # 원문에서 센다 — 건너뛰면 모수가 조용히 줄고, 줄어든 모수는 언제나 초록이다.
+    scan="$SCAN_ROOT/$file"
+    [ -f "$scan" ] || scan="$file"
     hits=$(awk -v reason_pat="$REASON_PATTERN" '
         {
             lines[NR] = $0
@@ -76,7 +115,7 @@ while IFS= read -r file; do
                 if (!found) printf "%d: %s\n", i, line
             }
         }
-    ' "$file")
+    ' "$scan")
     [ -z "$hits" ] && continue
     while IFS= read -r hit; do
         report+="${file}:${hit}"$'\n'

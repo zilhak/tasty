@@ -1,6 +1,6 @@
 name: Script Gates
 
-# `scripts/` 의 셸 게이트 중 **컴파일이 필요 없는 텍스트 스캔** 둘을 돌린다.
+# `scripts/` 의 셸 게이트 중 **텍스트 스캔** 둘을 돌린다.
 #   - check-intent-discipline.sh : Intent 큐를 우회한 도메인 직접 mutation
 #   - check-allow-reason.sh      : 사유 없는 `#[allow(...)]`
 #
@@ -8,8 +8,14 @@ name: Script Gates
 # 쌓은 채 빨갛게 있었고(문서 셋은 그것을 살아 있는 게이트로 인용하고 있었다),
 # allow-reason 쪽은 초록이었지만 빨개져도 아무도 모르는 자리였다.
 #
-# self-hosted Linux X64 근거: complexity-check.yml 과 같다 — 무컴파일 게이트라
-# 초단위로 끝나고, mac/win 러너에 부담을 지울 이유가 없다.
+# **판정기 하나를 먼저 짓는다.** allow-reason 은 문자열 리터럴을 덮은 사본에서 세는데,
+# 그 마스킹은 셸이 아니라 `tasty-doc-guards` 의 CLI 판정기가 한다(같은 물음에 답을 둘로
+# 만들지 않으려는 것이다). 판정기가 없으면 원문에서 세고, 원문 값은 상한을 넘어 **래칫이
+# 실패한다** — 그러니 여기서는 있는 것이 전제다. 그 크레이트는 의존이 0 이라(ADR-0138)
+# 이 빌드가 초 단위다(실측 0.9 s).
+#
+# self-hosted Linux X64 근거: complexity-check.yml 과 같다 — 초단위로 끝나고,
+# mac/win 러너에 부담을 지울 이유가 없다.
 
 on:
   # main push 가 실질적인 유일 채널이다 — 이 저장소는 PR 을 열지 않고 main 에 직접
@@ -46,6 +52,11 @@ jobs:
         run: |
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # 판정기. 실패하면 아래 게이트가 원문에서 세어 래칫이 빨개지므로, 여기서 죽는 것이
+      # 조용한 오판보다 낫다.
+      - name: Build the masking judge
+        run: cargo build -p tasty-doc-guards --bin mask-source
 
       # 두 게이트를 **각각** 돌린다. 하나로 묶으면 앞이 죽을 때 뒤가 실행되지 않고,
       # 그 결과는 `0 failed` 로도 안 나온다 — 줄 자체가 없어 미측정이 통과로 보인다.
