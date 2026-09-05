@@ -91,7 +91,13 @@ pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 /// 좌측 컬러 바 두께. = `SIZING.spacing_xs`.
 pub const TOAST_ACCENT_BAR_WIDTH: f32 = SIZING.spacing_xs.0;
 
-/// 토스트 사이 세로 간격. **4px 그리드 밖(6)** 이라 대응 토큰이 없다.
+/// 토스트 사이 세로 간격. **4px 그리드 밖(6)** 이다.
+///
+/// **대응 토큰이 없는 것이 아니다** — `component.toast-gap` 이 `{semantic.space-sm}` = 8 로
+/// vendor 되어 있고, 그 값이 여기와 다르다. 그리드 스텝에서 6 을 못 찾은 것과 컴포넌트
+/// 토큰이 없는 것은 다른 물음인데 전에는 한 문장이 둘을 합쳐 두고 있었다. 어느 값이
+/// 맞는지는 host chrome 토큰 전환 시리즈의 결정이고, 그때 6 → 8 이면 **픽셀이 바뀐다** —
+/// `docs/design/systems/token-crosswalk.md` 의 "시리즈 02 착수 전 필독" 표에 등재돼 있다.
 pub const TOAST_GAP: f32 = 6.0;
 
 /// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
