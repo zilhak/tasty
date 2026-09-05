@@ -7,6 +7,7 @@ description = "Semantic output parsers for tasty surfaces (path/url/prompt/exit-
 
 [dependencies]
 regex = "1"
+tasty-ansi = { path = "../tasty-ansi" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

@@ -5716,6 +5716,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-ansi"
+version = "0.1.0"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "tasty-approval"
 version = "0.1.0"
 dependencies = [
@@ -5963,6 +5970,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "tasty-ansi",
 ]
 
 [[package]]
@@ -6278,6 +6286,7 @@ dependencies = [
  "libc",
  "portable-pty",
  "regex",
+ "tasty-ansi",
  "tasty-reaper",
  "tasty-utils",
  "termwiz",
