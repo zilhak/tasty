@@ -89,7 +89,7 @@ impl App {
         };
         // plugin_id → display name map (매니페스트의 name).
         let name_for: std::collections::HashMap<&str, &str> = mgr
-            .packages
+            .packages()
             .iter()
             .map(|p| (p.manifest.id.as_str(), p.manifest.name.as_str()))
             .collect();

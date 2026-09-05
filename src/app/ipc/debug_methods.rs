@@ -1,6 +1,7 @@
 //! step 3 (debug 빌드 only): debug.event_bus.* / debug.extension.invoke_hook / debug.popup.* /
 //! debug.fullscreen.*.
 
+use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
@@ -39,27 +40,16 @@ impl App {
         }
         // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
         // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
+        // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
+        // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
+        // 본체는 헤드리스 pump 와 **같은 함수**를 쓴다 — 두 벌로 두면 갈라진다.
         if cmd.request.method == "debug.lua.eval" {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let source = cmd.request.params.get("source").and_then(|v| v.as_str());
-            let response = match (source, self.lua_engine.as_ref()) {
-                (Some(src), Some(engine)) => {
-                    // fire-and-forget: 워커/deadline(07) 격리 하에서 실행. 부수효과는 로그로 관측.
-                    engine.run_script(src, Some("debug.lua.eval"));
-                    host_ipc::protocol::JsonRpcResponse::success(
-                        id,
-                        serde_json::json!({ "scheduled": true }),
-                    )
-                }
-                (None, _) => {
-                    host_ipc::protocol::JsonRpcResponse::invalid_params(id, "Missing 'source'")
-                }
-                (_, None) => host_ipc::protocol::JsonRpcResponse::error(
-                    id,
-                    -32603,
-                    "lua engine not initialized",
-                ),
-            };
+            let response = crate::core::app_surface_debug::lua_eval(
+                self.lua_engine.as_ref(),
+                id,
+                &cmd.request.params,
+            );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
@@ -101,24 +91,20 @@ impl App {
                 // `popup.close`)와 다른 코드를 타면 이 표면으로 하는 검증 자체가
                 // 실제 동작을 못 비춘다.
                 "debug.popup.close" => {
-                    match cmd
-                        .request
-                        .params
-                        .get("instance_id")
-                        .and_then(|v| v.as_u64())
-                    {
-                        None => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    match params::read_int::<u64>(&cmd.request.params, "instance_id") {
+                        Err(msg) => host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
+                        Ok(None) => host_ipc::protocol::JsonRpcResponse::invalid_params(
                             id,
                             "Missing required 'instance_id' parameter",
                         ),
-                        Some(instance_id) if self.plugin_manager.is_none() => {
+                        Ok(Some(instance_id)) if self.plugin_manager.is_none() => {
                             host_ipc::protocol::JsonRpcResponse::error(
                                 id,
                                 -32002,
                                 format!("plugin manager not initialized (instance {instance_id})"),
                             )
                         }
-                        Some(instance_id) => {
+                        Ok(Some(instance_id)) => {
                             self.enqueue_plugin_popup_close(
                                 instance_id,
                                 tasty_plugin_protocol::PopupCloseReason::PluginRequest,
@@ -141,17 +127,27 @@ impl App {
         #[cfg(feature = "gui")]
         if cmd.request.method.starts_with("debug.plugin_banner.") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let p = &cmd.request.params;
+            let params = &cmd.request.params;
             let response = match cmd.request.method.as_str() {
                 "debug.plugin_banner.open" => {
-                    match (
-                        p.get("banner_id").and_then(|v| v.as_str()),
-                        p.get("surface_id").and_then(|v| v.as_u64()),
-                    ) {
+                    // surface id 는 관문에서 **폭에 맞게** 읽는다 — `as u32` 로 자르면
+                    // 범위 밖 값이 실재하는 다른 surface 를 가리킨다. 잘못 온 값은
+                    // 안 온 것과 갈라서 답한다.
+                    let sid = match params::read_u32(params, "surface_id") {
+                        Ok(v) => v,
+                        Err(msg) => {
+                            send_response(
+                                &cmd.response_tx,
+                                host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
+                            );
+                            return IpcStep::Handled;
+                        }
+                    };
+                    match (params.get("banner_id").and_then(|v| v.as_str()), sid) {
                         (Some(bid), Some(sid)) => {
                             let bid = bid.to_string();
                             // debug 트리거는 소유권 검증 우회(caller=None) — 실 소유 plugin 으로 연다.
-                            match self.open_plugin_banner(None, &bid, sid as u32) {
+                            match self.open_plugin_banner(None, &bid, sid) {
                                 Ok(iid) => host_ipc::protocol::JsonRpcResponse::success(
                                     id,
                                     serde_json::json!({ "instance_id": iid }),
@@ -165,24 +161,24 @@ impl App {
                         ),
                     }
                 }
-                "debug.plugin_banner.close" => {
-                    match p.get("instance_id").and_then(|v| v.as_u64()) {
-                        Some(iid) => {
-                            let closed = self.close_plugin_banner(
-                                iid,
-                                tasty_plugin_protocol::BannerCloseReason::PluginRequest,
-                            );
-                            host_ipc::protocol::JsonRpcResponse::success(
-                                id,
-                                serde_json::json!({ "closed": closed }),
-                            )
-                        }
-                        None => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                "debug.plugin_banner.close" => match params::read_int::<u64>(params, "instance_id")
+                {
+                    Err(msg) => host_ipc::protocol::JsonRpcResponse::invalid_params(id, &msg),
+                    Ok(Some(iid)) => {
+                        let closed = self.close_plugin_banner(
+                            iid,
+                            tasty_plugin_protocol::BannerCloseReason::PluginRequest,
+                        );
+                        host_ipc::protocol::JsonRpcResponse::success(
                             id,
-                            "Missing 'instance_id'",
-                        ),
+                            serde_json::json!({ "closed": closed }),
+                        )
                     }
-                }
+                    Ok(None) => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                        id,
+                        "Missing 'instance_id'",
+                    ),
+                },
                 other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
             };
             send_response(&cmd.response_tx, response);
@@ -223,22 +219,12 @@ impl App {
         id: serde_json::Value,
     ) -> host_ipc::protocol::JsonRpcResponse {
         match method {
-            "debug.fullscreen.list" => Self::debug_fullscreen_list(id),
+            "debug.fullscreen.list" => crate::core::app_surface_debug::fullscreen_list(id),
             "debug.fullscreen.open" => self.debug_fullscreen_open(params, id),
             "debug.fullscreen.close" => self.debug_fullscreen_close(params, id),
             "debug.fullscreen.state" => self.debug_fullscreen_state(params, id),
             other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
         }
-    }
-
-    /// 등록된 무대 정의 전체. 제목은 i18n 키 그대로 — 언어 설정에 따라 값이 흔들리면
-    /// 자동 검증이 로케일에 묶인다.
-    fn debug_fullscreen_list(id: serde_json::Value) -> host_ipc::protocol::JsonRpcResponse {
-        let stages: Vec<_> = crate::adapters::ui::fullscreen::defs::all_defs()
-            .iter()
-            .map(|d| serde_json::json!({ "id": d.id, "title_key": d.title_key }))
-            .collect();
-        host_ipc::protocol::JsonRpcResponse::success(id, serde_json::json!({ "stages": stages }))
     }
 
     fn debug_fullscreen_open(
@@ -251,10 +237,10 @@ impl App {
         };
         // 창을 고르기 **전에** 무대 id 를 검증한다. 모르는 id 를 조용한 no-op 으로
         // 흘리면 오타가 "열렸는데 안 보인다" 로 보인다.
-        if crate::adapters::ui::fullscreen::defs::find(stage_id).is_none() {
-            let known: Vec<&str> = crate::adapters::ui::fullscreen::defs::all_defs()
+        if crate::fullscreen_stages::find(stage_id).is_none() {
+            let known: Vec<&str> = crate::fullscreen_stages::all_metas()
                 .iter()
-                .map(|d| d.id)
+                .map(|m| m.id)
                 .collect();
             return host_ipc::protocol::JsonRpcResponse::invalid_params(
                 id,
@@ -396,7 +382,8 @@ impl App {
         &self,
         params: &serde_json::Value,
     ) -> Result<winit::window::WindowId, (i32, String)> {
-        let requested = params.get("window_id").and_then(|v| v.as_u64());
+        let requested =
+            params::read_int::<u64>(params, "window_id").map_err(|msg| (-32602, msg))?;
         let mains: Vec<_> = self
             .view
             .views

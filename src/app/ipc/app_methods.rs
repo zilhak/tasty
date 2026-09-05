@@ -8,6 +8,7 @@
 //! - `approval.await` (blocking — worker thread 위임)
 
 use crate::AppEvent;
+use crate::adapters::ipc::handler::params;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
@@ -187,15 +188,18 @@ impl App {
     /// `window.close` / `view.close`: main view 만 대상, 마지막 main 은 거부.
     /// CLAUDE.md "포커스 독립": id 로 직접 지정, focused 의존 금지.
     fn ipc_handle_window_close(&mut self, cmd: &IpcCommand) -> IpcStep {
-        let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+        // 관문을 거친다 — 값이 왔는데 안 읽히는 것을 "안 왔다" 로 답하면 호출자가
+        // 자기가 준 값을 안 의심한다.
+        let target_id = params::read_int::<u64>(&cmd.request.params, "id");
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = match target_id {
-            None => host_ipc::protocol::JsonRpcResponse::error(
+            Err(msg) => host_ipc::protocol::JsonRpcResponse::error(response_id, -32602, &msg),
+            Ok(None) => host_ipc::protocol::JsonRpcResponse::error(
                 response_id,
                 -32602,
                 "Missing 'id' parameter (u64). focused 의존은 금지.",
             ),
-            Some(id_u64) => {
+            Ok(Some(id_u64)) => {
                 // main view 만 대상 — `window.list` 가 노출하는 범위와 동일.
                 // (modal/preset 은 사용자 조작 영역이라 IPC close 대상이 아님.)
                 let mains: Vec<_> = self
@@ -236,15 +240,16 @@ impl App {
     /// `window.focus` / `view.focus` (debug 전용): 사용자 입력 재현이라 release 미노출.
     #[cfg(debug_assertions)]
     fn ipc_handle_window_focus(&mut self, cmd: &IpcCommand) -> IpcStep {
-        let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
+        let target_id = params::read_int::<u64>(&cmd.request.params, "id");
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let response = match target_id {
-            None => host_ipc::protocol::JsonRpcResponse::error(
+            Err(msg) => host_ipc::protocol::JsonRpcResponse::error(response_id, -32602, &msg),
+            Ok(None) => host_ipc::protocol::JsonRpcResponse::error(
                 response_id,
                 -32602,
                 "Missing 'id' parameter (u64)",
             ),
-            Some(id_u64) => {
+            Ok(Some(id_u64)) => {
                 let mut found = false;
                 for (id, w) in &self.view.views {
                     if w.as_main().is_none() {
@@ -327,13 +332,29 @@ impl App {
                 return IpcStep::Handled;
             }
         };
-        let surface_id = cmd
-            .request
-            .params
-            .get("surface_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
-        let window_id = cmd.request.params.get("window_id").and_then(|v| v.as_u64());
+        let surface_id = match crate::adapters::ipc::handler::params::read_u32(
+            &cmd.request.params,
+            "surface_id",
+        ) {
+            Ok(v) => v,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(response_id, msg),
+                );
+                return IpcStep::Handled;
+            }
+        };
+        let window_id = match params::read_int::<u64>(&cmd.request.params, "window_id") {
+            Ok(v) => v,
+            Err(msg) => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(response_id, -32602, &msg),
+                );
+                return IpcStep::Handled;
+            }
+        };
 
         // ── surface 지정 오프스크린 캡처 (focus 독립) ──
         if let Some(sid) = surface_id {
@@ -384,40 +405,16 @@ impl App {
         send_response(&cmd.response_tx, response);
         IpcStep::Handled
     }
-
-    /// `clipboard.set_text` — 로컬 클립보드에 텍스트를 쓴다. `Permission::ClipboardWrite`
-    /// 로 plugin 노출(원칙 2). remote mirror 캡처 결과를 원격 clipboard 에 반영하는
-    /// attach 전송 경로(`attach_client.rs`)도 원격 tasty 인스턴스에서 이 메서드로 도착한다.
-    ///
-    /// params: { text (필수, string) }
+    /// `clipboard.set_text` — 본체는 두 조합이 공유한다
+    /// (`crate::core::app_surface`). 여기서는 응답을 회신만 한다.
     fn ipc_handle_clipboard_set_text(&mut self, cmd: &IpcCommand) -> IpcStep {
         let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let text = match cmd.request.params.get("text").and_then(|v| v.as_str()) {
-            Some(t) => t.to_string(),
-            None => {
-                send_response(
-                    &cmd.response_tx,
-                    host_ipc::protocol::JsonRpcResponse::error(
-                        response_id,
-                        -32602,
-                        "Missing 'text' parameter (string)",
-                    ),
-                );
-                return IpcStep::Handled;
-            }
-        };
-        let response = match self.core.clipboard_arc().write_text(&text) {
-            Ok(()) => host_ipc::protocol::JsonRpcResponse::success(
-                response_id,
-                serde_json::json!({"ok": true}),
-            ),
-            Err(e) => host_ipc::protocol::JsonRpcResponse::error(
-                response_id,
-                -32000,
-                format!("Failed to write clipboard: {e}"),
-            ),
-        };
-        send_response(&cmd.response_tx, response);
+        let resp = crate::core::app_surface::clipboard_set_text(
+            &self.core,
+            response_id,
+            &cmd.request.params,
+        );
+        send_response(&cmd.response_tx, resp);
         IpcStep::Handled
     }
 
@@ -483,18 +480,20 @@ impl App {
         caller: &host_ipc::caller::CallerContext,
     ) -> IpcStep {
         let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        // 읽기 전용 조회는 헤드리스와 **공유하는 한 함수**가 답한다. 여기에 같은 표를
+        // 다시 두면 한쪽만 고쳐지는 순간 갈라지므로, 라우팅 표는 그 함수에만 있다
+        // (`crate::adapters::ipc::handler::plugin::dispatch_readonly`).
+        if let Some(response) = host_ipc::handler::plugin::dispatch_readonly(
+            &self.core,
+            self.plugin_manager.as_ref(),
+            cmd.request.method.as_str(),
+            id.clone(),
+            &cmd.request.params,
+        ) {
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         let response = match cmd.request.method.as_str() {
-            "plugin.list" => {
-                host_ipc::handler::plugin::handle_list(self.plugin_manager.as_ref(), id)
-            }
-            "plugin.show" => host_ipc::handler::plugin::handle_show(
-                self.plugin_manager.as_ref(),
-                id,
-                &cmd.request.params,
-            ),
-            "plugin.extension.list" => {
-                host_ipc::handler::plugin::handle_extension_list(self.plugin_manager.as_ref(), id)
-            }
             "plugin.install" => {
                 let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
                     Some(p) => std::path::PathBuf::from(p),
@@ -617,11 +616,6 @@ impl App {
                     ),
                 }
             }
-            "plugin.permissions" => host_ipc::handler::plugin::handle_permissions(
-                self.plugin_manager.as_ref(),
-                id,
-                &cmd.request.params,
-            ),
             "plugin.grant" => {
                 let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
                     Some(s) => s.to_string(),
@@ -732,13 +726,6 @@ impl App {
                     &cmd.request.params,
                 )
             }
-            "plugin.list_agent_permissions" => {
-                host_ipc::handler::session::handle_list_agent_permissions(
-                    &self.core,
-                    id,
-                    &cmd.request.params,
-                )
-            }
             "plugin.upgrade_builtins" => {
                 let force = cmd
                     .request
@@ -789,12 +776,6 @@ impl App {
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
-            "plugin.audit_query" => {
-                host_ipc::handler::audit::handle_query(&self.core, id, &cmd.request.params)
-            }
-            "plugin.audit_summary" => {
-                host_ipc::handler::audit::handle_summary(&self.core, id, &cmd.request.params)
-            }
             "plugin.audit_follow" => {
                 host_ipc::handler::audit::handle_follow(&self.core, id, &cmd.request.params)
             }
@@ -842,10 +823,9 @@ impl App {
             IpcStep::Handled
         }
     }
-
-    /// `agent.task_await`: blocking. Arc<TaskWakerHub> + memory port arc + agent_seq
-    /// 를 worker thread 로 클론. await_task_blocking 이 현 state snapshot → hub
-    /// recv_timeout. J.A.S5.
+    /// `agent.task_await`: 블로킹. **어느 engine 의 허브인지 고르는 것만** 여기 있다 —
+    /// 창 → parked → (헤드리스 전용) 단일 engine 순으로 훑는다. 고른 뒤의 대기는 두
+    /// 조합이 공유한다(`crate::core::app_surface::spawn_task_await`).
     fn ipc_dispatch_task_await(&mut self, cmd: &IpcCommand) {
         let hub_opt = self
             .view
@@ -868,31 +848,22 @@ impl App {
         let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match (hub_opt, seq_opt) {
-            (Some(hub), Some(seq)) => {
-                let params = cmd.request.params.clone();
-                let response_tx = cmd.response_tx.clone();
-                std::thread::spawn(move || {
-                    let resp = crate::adapters::ipc::handler::agent::task::await_task_blocking(
-                        &hub, &memory, seq, rpc_id, &params,
-                    );
-                    send_response(&response_tx, resp);
-                });
-            }
-            _ => {
-                send_response(
-                    &cmd.response_tx,
-                    host_ipc::protocol::JsonRpcResponse::error(
-                        rpc_id,
-                        -32000,
-                        "no application state available",
-                    ),
-                );
-            }
+            (Some(hub), Some(seq)) => crate::core::app_surface::spawn_task_await(
+                hub,
+                memory,
+                seq,
+                rpc_id,
+                cmd.request.params.clone(),
+                &cmd.response_tx,
+            ),
+            _ => send_response(
+                &cmd.response_tx,
+                crate::core::app_surface::no_application_state(rpc_id),
+            ),
         }
     }
-
-    /// `approval.await`: blocking. Arc<ApprovalStore> + memory port arc 를
-    /// worker thread 로 클론해 cascade 없이 자기 수명에서 영속한다.
+    /// `approval.await`: 블로킹. store 선택만 여기 있고 대기는 공유한다
+    /// (`ipc_dispatch_task_await` 와 같은 구조).
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
             .view
@@ -908,80 +879,27 @@ impl App {
         let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {
-            Some(store) => {
-                let params = cmd.request.params.clone();
-                let response_tx = cmd.response_tx.clone();
-                std::thread::spawn(move || {
-                    let resp = host_ipc::handler::approval::await_blocking(
-                        &store, &memory, rpc_id, &params,
-                    );
-                    send_response(&response_tx, resp);
-                });
-            }
-            None => {
-                send_response(
-                    &cmd.response_tx,
-                    host_ipc::protocol::JsonRpcResponse::error(
-                        rpc_id,
-                        -32000,
-                        "no application state available",
-                    ),
-                );
-            }
+            Some(store) => crate::core::app_surface::spawn_approval_await(
+                store,
+                memory,
+                rpc_id,
+                cmd.request.params.clone(),
+                &cmd.response_tx,
+            ),
+            None => send_response(
+                &cmd.response_tx,
+                crate::core::app_surface::no_application_state(rpc_id),
+            ),
         }
     }
-
-    /// `remote.workspaces` { profile? , ssh? , remote_tasty? , remote_port_mode? } →
-    /// 원격 tasty 의 워크스페이스 목록(browse). 블로킹 SSH I/O 라 **워커 스레드**에서
-    /// 조회하고 완료 시 `response_tx` 로 지연 회신한다(이벤트루프 무블록).
-    ///
-    /// 순수 조회 — 로컬 사용자 상태(focus/닫은항목 히스토리/선택)에 닿지 않는다(원칙 1).
-    /// CLI `tasty remote workspaces` 와 `tasty_remote::browse::browse` 를 공유한다.
+    /// `remote.workspaces` — 본체는 두 조합이 공유한다
+    /// (`crate::core::app_surface`). App 상태를 읽지 않는다.
     fn ipc_dispatch_remote_workspaces(&mut self, cmd: &IpcCommand) {
-        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-        let conn = match RemoteConnParams::parse(&cmd.request.params) {
-            Ok(c) => c,
-            Err(msg) => {
-                send_response(
-                    &cmd.response_tx,
-                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, msg),
-                );
-                return;
-            }
-        };
-        let RemoteConnParams {
-            profile,
-            ssh,
-            remote_tasty,
-            remote_port_mode,
-        } = conn;
-        let response_tx = cmd.response_tx.clone();
-        std::thread::spawn(move || {
-            let resp = match tasty_remote::browse::resolve_connection_spec(
-                profile.as_deref(),
-                ssh.as_deref(),
-                &remote_tasty,
-                &remote_port_mode,
-            ) {
-                Ok((target, rt, pm, pf)) => {
-                    match tasty_remote::browse::browse(&target, &rt, &pm, pf.as_deref()) {
-                        Ok(list) => host_ipc::protocol::JsonRpcResponse::success(
-                            rpc_id,
-                            serde_json::to_value(list).unwrap_or(serde_json::Value::Null),
-                        ),
-                        Err(e) => host_ipc::protocol::JsonRpcResponse::error(
-                            rpc_id,
-                            -32050,
-                            format!("remote browse failed: {e}"),
-                        ),
-                    }
-                }
-                Err(e) => {
-                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, e.to_string())
-                }
-            };
-            send_response(&response_tx, resp);
-        });
+        crate::core::app_surface::spawn_remote_workspaces(
+            cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+            &cmd.request.params,
+            &cmd.response_tx,
+        );
     }
 
     /// `remote.attach` { remote_workspace | new_workspace , profile? , ssh? ,
@@ -1059,49 +977,9 @@ impl App {
     }
 }
 
-/// `remote.*` 공통 접속 파라미터(`profile` XOR `ssh` + 포트 발견 옵션).
-///
-/// 두 디스패처(`remote.workspaces` / `remote.attach`)가 같은 상호배타 가드를 각자
-/// 재현하면 메시지가 어긋나므로 한 곳에 모은다. CLI 선처리(`run.rs`)의 가드와 같은 규약.
-struct RemoteConnParams {
-    profile: Option<String>,
-    ssh: Option<String>,
-    remote_tasty: String,
-    remote_port_mode: String,
-}
+use crate::core::app_surface::RemoteConnParams;
 
 impl RemoteConnParams {
-    fn parse(params: &serde_json::Value) -> Result<Self, &'static str> {
-        let profile = params
-            .get("profile")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        let ssh = params
-            .get("ssh")
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-        if profile.is_some() && ssh.is_some() {
-            return Err("'profile' and 'ssh' are mutually exclusive");
-        }
-        if profile.is_none() && ssh.is_none() {
-            return Err("one of 'profile' or 'ssh' is required");
-        }
-        Ok(Self {
-            profile,
-            ssh,
-            remote_tasty: params
-                .get("remote_tasty")
-                .and_then(|v| v.as_str())
-                .unwrap_or("tasty")
-                .to_string(),
-            remote_port_mode: params
-                .get("remote_port_mode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("auto")
-                .to_string(),
-        })
-    }
-
     /// 접속 스펙 resolve → 엔드포인트(SSH 터널/loopback). **블로킹** — 워커 전용.
     fn resolve_endpoint(&self) -> anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)> {
         let (target, rt, pm, pf) = tasty_remote::browse::resolve_connection_spec(
@@ -1125,10 +1003,8 @@ enum RemoteAttachTarget {
 
 impl RemoteAttachTarget {
     fn parse(params: &serde_json::Value) -> Result<Self, String> {
-        let remote_ws = params
-            .get("remote_workspace")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
+        // `as u32` 로 자르면 범위 밖 값이 **실재하는 다른 워크스페이스**를 가리킨다.
+        let remote_ws = params::read_int::<u32>(params, "remote_workspace")?;
         let new_workspace = params
             .get("new_workspace")
             .and_then(|v| v.as_bool())

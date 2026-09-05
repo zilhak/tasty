@@ -868,6 +868,7 @@ impl App {
         // close_surface_by_id_no_snapshot 내부 (Case 1~5) 에서 cleanup_targets 전체에 대한
         // enqueue_surface_closed 가 발화된다 (R1 leak fix). 반환값(이미 닫힌 surface 여부)은
         // cascade 흐름에 영향 없어 의도적 무시.
+        // intent-exempt: 처리 핸들러 본문의 cascade — Intent 는 흐름의 시작점에만 둔다
         state.close_surface_by_id_no_snapshot(engine, surface_id, true);
         if let Some(base) = dirty_main {
             base.dirty = true;
@@ -1487,11 +1488,13 @@ impl App {
         } else {
             // 색/zoom 외 변화 (예: tab_width / font 등) 면 broadcast 불필요하나,
             // 전역 Theme 가 settings 의 다른 partial 색 override 를 반영해야 할 수도
-            // 있어 install_global 로 그대로 갱신. host UI zoom 은 항상 실어야 한다
-            // — zoom 없이 install 하면 전역 Theme 가 1.0 으로 리셋돼 다른 윈도우의
-            // 사이드바/UI 배율이 줄어든다.
-            let ui_zoom = new_settings.appearance.ui_scale_factor();
-            tasty_themes::install_global_with_zoom(&new_settings.appearance, ui_zoom);
+            // 있어 install_global 로 그대로 갱신. 설정에서 오는 런타임 값은
+            // `Settings::theme_runtime()` 이 통째로 낸다 — 예전처럼 값을 하나씩
+            // 인자로 넘기면 하나를 빠뜨렸을 때 전역 Theme 가 기본값으로 리셋된다.
+            tasty_themes::install_global_with_runtime(
+                &new_settings.appearance,
+                new_settings.theme_runtime(),
+            );
         }
 
         // Event Bus 1.0: theme/language 변경 발화.

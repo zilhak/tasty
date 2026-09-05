@@ -4,8 +4,12 @@ use crate::app::{App, ModalShake};
 
 impl App {
     /// Start a modal shake animation. No-op if already shaking.
+    ///
+    /// 접근성 "모션 감소"가 켜져 있으면 아예 시작하지 않는다. 이 애니메이션은 창
+    /// 자체를 좌우로 흔드는(`set_outer_position`) 물리적 움직임이라, 모션 감소가
+    /// 막으려는 것 그 자체다. 값을 전역 `Theme` 에서 읽는 이유는 ADR-0174.
     pub(crate) fn trigger_modal_shake(&mut self) {
-        if self.modal_shake.is_some() {
+        if self.modal_shake.is_some() || crate::theme::theme().reduced_motion {
             return;
         }
         let modal_id = match self.view.active_modal_id {

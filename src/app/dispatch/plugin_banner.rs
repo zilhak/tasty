@@ -6,10 +6,11 @@
 //! host 본문(각 view 의 `core_state`)만 알기 때문에 여기서 소유권(D1)을 검증한다.
 
 use crate::app::App;
+use tasty_type_geometry::length::LogicalPx;
 
 /// plugin egui-mesh banner 미지정 시 셸 높이(LogicalPx). manifest `size_hint.height`
 /// 가 없을 때 host 가 도킹 높이로 쓰는 기본값.
-const DEFAULT_BANNER_MESH_HEIGHT: f32 = 64.0;
+const DEFAULT_BANNER_MESH_HEIGHT: LogicalPx = LogicalPx(64.0);
 
 impl App {
     /// plugin banner 를 연다. `surface_id` 가 가리키는 egui-mesh surface 의 소유 plugin 을
@@ -78,10 +79,10 @@ impl App {
                     inst.contribute
                         .size_hint
                         .map(|s| s.height as f32)
-                        .unwrap_or(DEFAULT_BANNER_MESH_HEIGHT),
+                        .unwrap_or(DEFAULT_BANNER_MESH_HEIGHT.value()),
                 )
             })
-            .unwrap_or((None, DEFAULT_BANNER_MESH_HEIGHT));
+            .unwrap_or((None, DEFAULT_BANNER_MESH_HEIGHT.value()));
 
         // 3) 소유 view 의 BannerManager 에 push (Surface scope). 이미 열려 있으면 dedup 로
         //    같은 instance_id 가 오므로, key(Plugin(iid)) 중복이면 push 가 무시/리셋한다.

@@ -32,7 +32,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
 /// 매니페스트 + granted 를 다시 교집합하여 manager 의 in-memory 권한 set 을 갱신.
 fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
     let Some(pkg) = mgr
-        .packages
+        .packages()
         .iter()
         .find(|p| p.manifest.id == plugin_id)
         .cloned()
@@ -157,7 +157,6 @@ impl App {
 
         mgr.refresh_packages();
         mgr.command_registry.register_plugin(&manifest);
-        mgr.recompute_extensions();
         let lang_dir = dest.join(&manifest.lang_dir);
         crate::i18n::register_namespace(&manifest.id, &lang_dir);
         let tokens: Vec<String> = manifest.permissions.clone();
@@ -165,6 +164,13 @@ impl App {
         if let Err(e) = mgr.config.save() {
             tracing::warn!("plugins.toml save failed: {e}");
         }
+        // 유도는 **원본을 바꾸는 마지막 쓰기 뒤**에 온다. `extensions` 는 packages 와
+        // config(비활성 여부 · `ext:` 권한) 둘 다에서 계산되므로, `set_granted` 앞에서
+        // 계산하면 방금 준 권한을 안 본 값이 남는다. 지금까지 그것이 안 보이던 이유는
+        // 아래 `enable` 이 한 번 더 계산하기 때문인데, 그 호출은 `is_disabled` 일 때
+        // 건너뛴다 — 즉 무해함이 다른 분기에 얹혀 있었다.
+        mgr.recompute_extensions();
+        mgr.debug_assert_extensions_fresh();
 
         let mut events = vec![CoreEvent::PluginRegistryChanged {
             plugin_id: manifest.id.clone(),
@@ -203,11 +209,40 @@ impl App {
         }
         std::fs::remove_dir_all(&plugin_dir)
             .map_err(|e| anyhow::anyhow!("remove dir failed: {e}"))?;
-        mgr.packages.retain(|p| p.manifest.id != plugin_id);
+        // 제거를 **기록**한다 — 번들 plugin 은 디스크에서 지우는 것만으로는 제거되지
+        // 않는다. 다음 부팅의 `install_builtins_if_needed` 가 다시 놓기 때문이다.
+        // `mark_builtin_removed` 는 외부 plugin 이면 no-op 이라 번들/비번들 구분이
+        // 이 함수 하나에 모여 있다.
+        //
+        // **이 호출은 진입점이 아니라 여기 있어야 한다.** 설정 모달의 Uninstall 만
+        // 이걸 부르고 IPC `plugin.remove` 는 안 불렀던 적이 있다 — 같은 이름의 조작이
+        // 진입점에 따라 다른 일을 했고, GUI 로는 되고 에이전트로는 안 되는 동작이라
+        // 불가침 원칙 2 를 어겼다. 공용 본문에 두면 다음 진입점이 잊을 수 없다.
+        // 되돌리는 수단: `plugin.upgrade_builtins { restore_removed: [...] }` ·
+        // CLI `--restore-removed` / `--restore-removed-all` (ADR-0179).
+        crate::plugin::mark_builtin_removed(mgr, &plugin_id);
+        // 비활성 자국은 **설치된 것에 대한** 상태다. 제거된 id 를 거기 남겨 두면 그
+        // 자국이 다음 설치의 기본값을 조용히 정한다 — 되돌림(`restore_removed`)으로
+        // 다시 놓은 plugin 이 이유 없이 꺼진 채로 온다. 제거 의사는 이제 제 자리
+        // (`removed_builtins`)에 적히므로 이 자국은 남길 이유가 없다.
+        if mgr.config.enable(&plugin_id)
+            && let Err(e) = mgr.config.save()
+        {
+            tracing::warn!("plugins.toml save failed after clearing disabled mark: {e}");
+        }
+        // 설치 목록을 **다시 발견**한다 — 손으로 `packages` 만 지우면 안 된다.
+        // `ipc_namespaces` 는 이제 설치된 매니페스트에서 유도되는 표라
+        // (ADR-0173) `packages` 를 바꾸는 자리가 그 유도를 같이 돌리지 않으면
+        // 지운 plugin 의 prefix 가 남아, 그 이름의 호출이 `-32002 plugin '<id>'
+        // is not running` 으로 거절된다 — 설치조차 안 돼 있는데. 호스트가 같은
+        // 이름에 구현을 갖고 있으면 그 구현이 그 상태에서 가려진다.
+        // `plugin_install` 이 이미 같은 함수를 쓴다(두 방향을 대칭으로 둔다).
+        mgr.refresh_packages();
         mgr.command_registry.unregister_plugin(&plugin_id);
         crate::i18n::unregister_namespace(&plugin_id);
         mgr.recompute_extensions();
         hook_event_registry.unregister(&plugin_id);
+        mgr.debug_assert_extensions_fresh();
         Ok(vec![CoreEvent::PluginRegistryChanged {
             plugin_id,
             change: PluginRegistryChange::Removed,
@@ -262,7 +297,7 @@ impl App {
             anyhow::bail!("unknown permission '{token}'");
         }
         let pkg = mgr
-            .packages
+            .packages()
             .iter()
             .find(|p| p.manifest.id == plugin_id)
             .cloned()
@@ -375,7 +410,7 @@ impl App {
         let mut events: Vec<CoreEvent> = Vec::new();
 
         for (plugin_id, _) in &hello_pairs {
-            if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+            if let Some(pkg) = mgr.packages().iter().find(|p| &p.manifest.id == plugin_id) {
                 let keys: Vec<String> = pkg
                     .manifest
                     .contributes
@@ -394,7 +429,7 @@ impl App {
             let tx = mgr.host_cmd_tx.clone();
             for (plugin_id, version) in &hello_pairs {
                 if let Some(pkg) = mgr
-                    .packages
+                    .packages()
                     .iter()
                     .find(|p| &p.manifest.id == plugin_id)
                     .cloned()

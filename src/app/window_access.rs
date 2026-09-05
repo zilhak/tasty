@@ -198,6 +198,80 @@ impl App {
         None
     }
 
+    /// 탭을 가진 MainView 의 WindowId 를 반환.
+    ///
+    /// 탭은 창에 직접 매이지 않는다 — `find_pane_for_tab` 이 그 탭을 담은 pane 을
+    /// 찾고, pane 이 engine 에 있으면 그 창이 주인이다.
+    pub(crate) fn find_main_with_tab(&self, tab_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && m.core_state.find_pane_for_tab(tab_id).is_some()
+            {
+                return Some(*wid);
+            }
+        }
+        None
+    }
+
+    /// headless pty 를 가진 MainView 의 WindowId 를 반환.
+    ///
+    /// `pty_registry` 는 **engine 마다 따로**다(`MainView::core_state`). 창이 둘이면
+    /// 한쪽에서 spawn 한 pty 는 다른 쪽 registry 에 없으므로, id 만 들고 온 요청은
+    /// 창을 건너 찾아야 주인을 만난다.
+    pub(crate) fn find_main_with_headless_pty(&self, pty_id: u32) -> Option<WindowId> {
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && m.core_state.pty_registry.contains(pty_id)
+            {
+                return Some(*wid);
+            }
+        }
+        None
+    }
+
+    /// [`ResourceId`](crate::core::request_target::ResourceId) 하나를 주인 창으로 푼다 —
+    /// kind 별 분기를 한 곳에만 둔다. 새 kind 를 더하면 여기서 컴파일이 깨지므로,
+    /// 라우팅 경로와 parked 경로가 서로 다른 집합을 보는 사고가 안 난다.
+    pub(crate) fn find_main_with_resource(
+        &self,
+        rid: crate::core::request_target::ResourceId,
+    ) -> Option<WindowId> {
+        use crate::core::request_target::Kind;
+        // 창에 매인 리소스 id 는 `u32` 다. 안 들어가는 값은 그 종류의 id 일 수 없으므로
+        // 주인이 없다 — 좁히면서 자르지 않고 여기서 판정한다.
+        let narrow = u32::try_from(rid.id).ok();
+        match rid.kind {
+            Kind::Surface => narrow.and_then(|id| self.find_main_with_surface(id)),
+            Kind::Workspace => narrow.and_then(|id| self.find_main_with_workspace(id)),
+            Kind::Pane => narrow.and_then(|id| self.find_main_with_pane(id)),
+            Kind::Tab => narrow.and_then(|id| self.find_main_with_tab(id)),
+            Kind::HeadlessPty => narrow.and_then(|id| self.find_main_with_headless_pty(id)),
+            Kind::Hook | Kind::GlobalHook | Kind::Observer | Kind::Category => {
+                self.find_main_with_engine_resource(rid)
+            }
+        }
+    }
+
+    /// engine 소유 리소스(surface hook · global hook · observer · workspace category)를
+    /// 가진 MainView.
+    ///
+    /// `find_main_with_*` 를 하나씩 더하지 않는 이유: 이들은 술어가
+    /// [`engine_has_resource`](crate::core::request_target::engine_has_resource) 에 이미
+    /// 있고, 창 순회와 parked 순회가 **같은 술어**를 보는 것이 이 축의 요점이다.
+    fn find_main_with_engine_resource(
+        &self,
+        rid: crate::core::request_target::ResourceId,
+    ) -> Option<WindowId> {
+        for (wid, w) in &self.view.views {
+            if let Some(m) = w.as_main()
+                && crate::core::request_target::engine_has_resource(&m.core_state, rid)
+            {
+                return Some(*wid);
+            }
+        }
+        None
+    }
+
     /// Workspace 를 (id 또는 표시 이름) 문자열로 여러 window 에 걸쳐 찾는다 —
     /// `terminal::resolve_workspace_id` 와 동일한 우선순위(숫자 id exact match 우선,
     /// 실패 시 name exact match)를 단일 engine 이 아니라 **모든 main window** 에
