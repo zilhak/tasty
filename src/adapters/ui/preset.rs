@@ -11,17 +11,18 @@
 //! (`DemoLayout::show_edit`)를 토글한다(Edit↔Done). rename·duplicate·delete 는
 //! 기존 store API 에 직결돼 동작한다.
 
+pub mod demo_layout;
+
 use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, PresetSurfaceLayout};
 use tasty_settings::KeybindingSettings;
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant};
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::input::shortcuts::any_binding_pressed_egui;
 use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
 use crate::i18n::{t, t_fmt};
-
-pub mod demo_layout;
 
 use demo_layout::{DemoLayout, KindCatalog, ShortcutAction, ShowOutcome};
 
@@ -62,7 +63,7 @@ fn match_preset_shortcut(
 /// 좌측 리스트 폭.
 const LIST_WIDTH: f32 = 196.0;
 /// 우측 detail 툴바 높이.
-const TOOLBAR_HEIGHT: f32 = 44.0;
+const TOOLBAR_HEIGHT: LogicalPx = LogicalPx(44.0);
 /// 리스트 row 상하 padding.
 const ROW_PAD_Y: f32 = 7.0;
 /// 리스트 row 좌우 padding (좌측 accent bar 다음 텍스트 들여쓰기).
@@ -72,9 +73,9 @@ const ROW_GAP: f32 = 1.0;
 /// 리스트 내부 좌우 inset (row 가 패널 가장자리에 붙지 않게).
 const LIST_INSET: f32 = 6.0;
 /// rename 인라인 입력 폭.
-const RENAME_W: f32 = 150.0;
+const RENAME_W: LogicalPx = LogicalPx(150.0);
 /// 툴바 separator 높이.
-const TOOLBAR_SEP_H: f32 = 18.0;
+const TOOLBAR_SEP_H: LogicalPx = LogicalPx(18.0);
 
 /// rename 인라인 편집 상태 (egui temp memory 에 보관 — 프레임 간 유지).
 #[derive(Clone)]
@@ -555,7 +556,7 @@ fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
 
     let toolbar_rect = egui::Rect::from_min_size(
         detail_rect.min,
-        egui::vec2(detail_rect.width(), TOOLBAR_HEIGHT),
+        egui::vec2(detail_rect.width(), TOOLBAR_HEIGHT.value()),
     );
     let preview_rect = egui::Rect::from_min_max(
         egui::pos2(detail_rect.min.x, toolbar_rect.max.y),
@@ -687,7 +688,7 @@ fn draw_toolbar_editing(
     // name input — lost_focus 시 rename 커밋.
     let name_resp = ui.add(
         egui::TextEdit::singleline(&mut meta.name)
-            .desired_width(RENAME_W)
+            .desired_width(RENAME_W.value())
             .id(egui::Id::new(("preset_edit_name", kind.as_str()))),
     );
     if name_resp.lost_focus() {
@@ -698,7 +699,7 @@ fn draw_toolbar_editing(
     if kind == PresetKind::Workspace {
         let sub_resp = ui.add(
             egui::TextEdit::singleline(&mut meta.subtitle)
-                .desired_width(RENAME_W)
+                .desired_width(RENAME_W.value())
                 .hint_text(t("preset.edit.subtitle_hint"))
                 .id(egui::Id::new("preset_edit_subtitle")),
         );
@@ -822,7 +823,7 @@ fn draw_toolbar_view(
         let r = rename.as_mut().unwrap();
         let resp = ui.add(
             egui::TextEdit::singleline(&mut r.buffer)
-                .desired_width(RENAME_W)
+                .desired_width(RENAME_W.value())
                 .id(egui::Id::new(("preset_rename_input", kind.as_str()))),
         );
         if r.request_focus {
@@ -871,8 +872,10 @@ fn draw_toolbar_view(
         // separator.
         ui.add_space(theme.spacing_xs.value());
         let bw = theme.border_width.value();
-        let (sep_rect, _) =
-            ui.allocate_exact_size(egui::vec2(bw.max(1.0), TOOLBAR_SEP_H), egui::Sense::hover());
+        let (sep_rect, _) = ui.allocate_exact_size(
+            egui::vec2(bw.max(1.0), TOOLBAR_SEP_H.value()),
+            egui::Sense::hover(),
+        );
         ui.painter()
             .rect_filled(sep_rect, 0.0, theme.separator.to_egui());
         ui.add_space(theme.spacing_xs.value());

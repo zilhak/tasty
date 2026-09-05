@@ -18,6 +18,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_remote::browse::{self as remote_browse, RemoteWorkspace};
 use tasty_remote_profiles::RemoteProfiles;
@@ -42,17 +43,17 @@ const ATTACH_KIND: &str = "tasty-attach";
 
 // ── 레이아웃 고정 치수 (디자인 raw px — 화면 전용) ──
 const LEFT_W: f32 = 240.0;
-const HEADER_H: f32 = 47.0;
+const HEADER_H: LogicalPx = LogicalPx(47.0);
 const FOOTER_H: f32 = 49.0;
 
 // 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
 use tasty_ui_widgets::tokens::{CENTER_GLYPH_SIZE, STRUCT_GAP_2};
 const CAPS_H: f32 = 30.0;
-const PROFILE_ROW_H: f32 = 50.0;
-const WS_ROW_H: f32 = 34.0;
-const BADGE_H: f32 = 16.0;
+const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0);
+const WS_ROW_H: LogicalPx = LogicalPx(34.0);
+const BADGE_H: LogicalPx = LogicalPx(16.0);
 const HEADER_PAD_L: f32 = 14.0;
-const SELECT_BAR_W: f32 = 2.0;
+const SELECT_BAR_W: LogicalPx = LogicalPx(2.0);
 
 /// 생성 왕복 중 아래 ws 목록의 불투명도 — 목록을 지우지 않고 물러나게만 한다.
 const LIST_DIM_WHILE_CREATING: f32 = 0.5;
@@ -622,7 +623,8 @@ pub fn draw_remote_attach_popup(
     let mut do_connect = false;
 
     // ── 헤더 ──
-    let header_rect = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), HEADER_H));
+    let header_rect =
+        egui::Rect::from_min_size(full.min, egui::vec2(full.width(), HEADER_H.value()));
     if draw_header(ui, &th, header_rect) {
         close = true;
     }
@@ -818,10 +820,12 @@ fn draw_left_pane(
 
 fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool) -> bool {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H.value()), egui::Sense::click());
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W, rect.height()));
+        let bar =
+            egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W.value(), rect.height()));
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if resp.hovered() {
         ui.painter()
@@ -1098,10 +1102,11 @@ fn new_ws_row(
     } else {
         egui::Sense::click()
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), sense);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W, rect.height()));
+        let bar =
+            egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W.value(), rect.height()));
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !creating && resp.hovered() {
         ui.painter()
@@ -1299,10 +1304,11 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
     } else {
         egui::Sense::click()
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), sense);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W, rect.height()));
+        let bar =
+            egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W.value(), rect.height()));
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !disabled && resp.hovered() {
         ui.painter()
@@ -1543,7 +1549,7 @@ fn badge(
     let icon_gap = th.spacing_xs.value();
     let icon_w = if warn_icon { icon_sz + icon_gap } else { 0.0 };
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
     ui.painter()
         .rect_filled(rect, radius, color.gamma_multiply(fill_a));

@@ -18,6 +18,7 @@
 //! `catalog::components::apply_preset` 에 존재.
 
 use tasty_presets::PresetKind;
+use tasty_type_geometry::length::LogicalPx;
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -28,7 +29,7 @@ use tasty_presets::PresetKind;
 
 /// preset 행 라벨. DTCG primitive `font-size-12` 는 있으나 semantic role 이 없어
 /// `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
-const PRESET_ROW_LABEL_PRIMITIVE_12: f32 = 12.0;
+const PRESET_ROW_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
@@ -247,7 +248,7 @@ pub fn draw_apply_preset_view(
                             egui::pos2(rect.min.x + 8.0, rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             name,
-                            egui::FontId::proportional(PRESET_ROW_LABEL_PRIMITIVE_12),
+                            egui::FontId::proportional(PRESET_ROW_LABEL_PRIMITIVE_12.value()),
                             if is_selected {
                                 th.text_primary().into()
                             } else {

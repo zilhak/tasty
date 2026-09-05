@@ -15,6 +15,7 @@ pub mod view;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
@@ -33,13 +34,13 @@ use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 /// grid 셀 폭.
 const CELL_W: f32 = 80.0;
 /// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
-const SIDEBAR_W: f32 = 196.0;
+const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 
 // ── Favorites 하단 고정(pin) 영역 치수 (design favPinHeight) ────────────────
 /// 기본 고정 높이.
-const FAV_PIN_BASE_H: f32 = 240.0;
+const FAV_PIN_BASE_H: LogicalPx = LogicalPx(240.0);
 /// 사이드바 본문 높이가 이 값 미만이면 고정 높이 대신 비율(`FAV_PIN_RATIO`)을 쓴다.
-const FAV_PIN_THRESHOLD_H: f32 = 600.0;
+const FAV_PIN_THRESHOLD_H: LogicalPx = LogicalPx(600.0);
 /// 좁은 사이드바에서 Favorites 가 차지하는 본문 높이 비율.
 const FAV_PIN_RATIO: f32 = 0.4;
 /// Favorites 고정 영역 최소 높이 하한.
@@ -134,7 +135,7 @@ pub fn draw_explorer(
             |ui| {
                 // 사이드바 (고정폭).
                 ui.allocate_ui_with_layout(
-                    egui::vec2(SIDEBAR_W, ui.available_height()),
+                    egui::vec2(SIDEBAR_W.value(), ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| sidebar(ui, theme, panel, view, favorites, &mut action, mirror_ws_id),
                 );
@@ -665,8 +666,8 @@ fn sidebar(
 /// `FAV_PIN_THRESHOLD_H` 이상이면 `FAV_PIN_BASE_H` 고정, 미만이면 본문 높이의
 /// `FAV_PIN_RATIO` 를 4px 그리드로 스냅한 값과 `FAV_PIN_MIN_H` 중 큰 값.
 fn favorites_pin_height(body_h: f32) -> f32 {
-    if body_h <= 0.0 || body_h >= FAV_PIN_THRESHOLD_H {
-        return FAV_PIN_BASE_H;
+    if body_h <= 0.0 || body_h >= FAV_PIN_THRESHOLD_H.value() {
+        return FAV_PIN_BASE_H.value();
     }
     ((body_h * FAV_PIN_RATIO / 4.0).round() * 4.0).max(FAV_PIN_MIN_H)
 }

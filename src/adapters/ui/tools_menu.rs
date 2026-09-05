@@ -18,10 +18,11 @@ use crate::plugin::tool_registry::ToolItem;
 use crate::state::AppState;
 use crate::theme;
 use egui::emath::GuiRounding as _;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::menu_separator;
 
 /// Popup width (도구 항목 라벨이 모두 들어가는 baseline). 사이드바 도구 버튼 좌측 정렬.
-const POPUP_WIDTH: f32 = 160.0;
+const POPUP_WIDTH: LogicalPx = LogicalPx(160.0);
 /// 도구 항목 한 줄 높이. draw 와 sizer 가 같은 값을 참조해야 잘림 방지.
 const ITEM_HEIGHT: f32 = 28.0;
 
@@ -303,7 +304,7 @@ fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: 
     // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
     let safety_margin = 1.0;
     egui::vec2(
-        POPUP_WIDTH,
+        POPUP_WIDTH.value(),
         popup::content_margin() * 2.0 + content_h + safety_margin,
     )
 }
@@ -346,7 +347,7 @@ mod size_tests {
             size.y,
             needed
         );
-        assert_eq!(size.x, POPUP_WIDTH);
+        assert_eq!(size.x, POPUP_WIDTH.value());
     }
 
     #[test]

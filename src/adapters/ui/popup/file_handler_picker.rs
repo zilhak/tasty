@@ -28,18 +28,19 @@ use crate::i18n::t;
 use crate::state::{AppState, FileHandlerPickerResult};
 use crate::theme;
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::hspace;
 
 pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 
-const POPUP_WIDTH: f32 = 480.0;
+const POPUP_WIDTH: LogicalPx = LogicalPx(480.0);
 const ITEM_HEIGHT: f32 = 22.0;
 const LIST_MIN_HEIGHT: f32 = 4.0 * ITEM_HEIGHT; // 빈 list 도 시각적 공간 확보
 const LIST_MAX_HEIGHT: f32 = 10.0 * ITEM_HEIGHT;
 const HEADER_HEIGHT: f32 = 36.0; // 대상/형식 두 줄
 const BUTTON_ROW_HEIGHT: f32 = 28.0;
 const VERTICAL_PADDING: f32 = 8.0;
-const HORIZONTAL_MARGIN: f32 = 8.0;
+const HORIZONTAL_MARGIN: LogicalPx = LogicalPx(8.0);
 
 /// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 전체 경로 포함.
 /// 타이틀바 폭에 맞춘 겹침 방지(elide)는 `popup/draw.rs`(모든 popup 공통)가 전담하므로
@@ -65,7 +66,7 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
         HEADER_HEIGHT + VERTICAL_PADDING + list_height + VERTICAL_PADDING + BUTTON_ROW_HEIGHT;
 
     egui::vec2(
-        POPUP_WIDTH,
+        POPUP_WIDTH.value(),
         popup::title_bar_height() + popup::content_margin() * 2.0 + content_height,
     )
 }
@@ -138,7 +139,7 @@ pub fn draw_file_handler_picker_view(
 
     // Horizontal margin
     let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(HORIZONTAL_MARGIN, 0.0));
+    let inner_rect = available.shrink2(egui::vec2(HORIZONTAL_MARGIN.value(), 0.0));
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 

@@ -24,6 +24,7 @@ use tasty_presets::{
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, select};
 
 use crate::adapters::ui::icons::{self, Icon};
@@ -36,11 +37,11 @@ use crate::i18n::t;
 /// 상위(pane) divider = bordered 카드 사이 bg-app 공백.
 const PANE_GAP: f32 = 5.0;
 /// mini tab strip height.
-const STRIP_H: f32 = 20.0;
+const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
-const ADD_TAB_W: f32 = 22.0;
+const ADD_TAB_W: LogicalPx = LogicalPx(22.0);
 /// 활성 탭 본문 padding.
-const BODY_PAD: f32 = 3.0;
+const BODY_PAD: LogicalPx = LogicalPx(3.0);
 /// surface leaf 아이콘↔라벨 gap.
 const LEAF_GAP: f32 = 6.0;
 /// mini tab 좌우 padding.
@@ -57,26 +58,25 @@ const CLOSE_TAB_PAD: f32 = 3.0;
 const HANDLE_SZ: f32 = 18.0;
 /// 핸들 클러스터 모서리 inset.
 const HANDLE_INSET: f32 = 4.0;
-/// 경계 hover-split 존 밴드 폭 비율(변 기준 바깥 30%). 아래 SPLIT_ZONE_MIN 과 함께
-/// preview 전용 egui logical 좌표계 값이라 typed-length(PhysicalPx/LogicalPx) 규칙
-/// 밖 — 이 파일 전체가 egui `Rect`+raw f32 관행(PANE_GAP 등)이라 그에 따른다.
+/// 경계 hover-split 존 밴드 폭 비율(변 기준 바깥 30%). 길이가 아니라 배율이라
+/// `LogicalPx` 가 아니다 — `rect.width()` 에 곱해져 길이를 만드는 쪽이다.
 const SPLIT_ZONE_EDGE: f32 = 0.3;
 /// split 존 최소 축 길이(px). 축이 이 값 미만이면 그 축 밴드는 소멸(degrade)해
 /// 좁은 leaf 에서도 중앙 선택이 항상 가능하다.
-const SPLIT_ZONE_MIN: f32 = 46.0;
+const SPLIT_ZONE_MIN: LogicalPx = LogicalPx(46.0);
 /// leaf 미리보기 값 요약 표시 임계(구조 상수 — 토큰 아님, `SPLIT_ZONE_MIN` 동류).
 /// 빈 leaf 박스가 이 너비/높이 미만이면 요약을 숨기고 아이콘 + kind명만 남긴다.
-const LEAF_SUMMARY_MIN_W: f32 = 96.0;
-const LEAF_SUMMARY_MIN_H: f32 = 72.0;
+const LEAF_SUMMARY_MIN_W: LogicalPx = LogicalPx(96.0);
+const LEAF_SUMMARY_MIN_H: LogicalPx = LogicalPx(72.0);
 /// leaf 짧은 축이 이 값 미만이면 kind명까지 숨기고 아이콘만 남긴다(icon-only degrade).
 /// `SPLIT_ZONE_MIN` 과 같은 46px 구조 상수 계열.
-const LEAF_ICON_ONLY_MIN: f32 = 46.0;
+const LEAF_ICON_ONLY_MIN: LogicalPx = LogicalPx(46.0);
 /// inline leaf form 최대 폭.
 const FORM_MAX_W: f32 = 240.0;
 /// inline leaf form 좌우 padding.
 const FORM_PAD: f32 = 6.0;
 /// inline leaf form 필드 세로 gap.
-const FORM_GAP: f32 = 4.0;
+const FORM_GAP: LogicalPx = LogicalPx(4.0);
 
 /// registry 미주입 컨텍스트(갤러리·테스트·main 부재)에서 쓰는 정적 kind 후보 +
 /// builtin 정렬 기준. registry 가 주입되면 [`KindCatalog::from_registry`] 가 실제
@@ -1775,9 +1775,10 @@ fn draw_leaf_preview(
     let row_h = theme.font_size_caption.value();
 
     let short_axis = rect.width().min(rect.height());
-    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN;
-    let show_summary =
-        show_kind && rect.width() >= LEAF_SUMMARY_MIN_W && rect.height() >= LEAF_SUMMARY_MIN_H;
+    let show_kind = short_axis >= LEAF_ICON_ONLY_MIN.value();
+    let show_summary = show_kind
+        && rect.width() >= LEAF_SUMMARY_MIN_W.value()
+        && rect.height() >= LEAF_SUMMARY_MIN_H.value();
 
     let rows = if show_summary {
         leaf_summary_rows(leaf, catalog)
@@ -1961,11 +1962,11 @@ fn pick_zone(nx: f32, ny: f32, w: f32, h: f32) -> Option<SplitZone> {
             best = Some((dist, zone));
         }
     };
-    if w >= SPLIT_ZONE_MIN {
+    if w >= SPLIT_ZONE_MIN.value() {
         consider(nx, SplitZone::Left);
         consider(1.0 - nx, SplitZone::Right);
     }
-    if h >= SPLIT_ZONE_MIN {
+    if h >= SPLIT_ZONE_MIN.value() {
         consider(ny, SplitZone::Top);
         consider(1.0 - ny, SplitZone::Bottom);
     }
@@ -2095,7 +2096,7 @@ fn draw_leaf_form(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     child.set_clip_rect(form_rect);
-    child.spacing_mut().item_spacing.y = FORM_GAP;
+    child.spacing_mut().item_spacing.y = FORM_GAP.value();
 
     // kind Select.
     field_label(&mut child, theme, t("preset.edit.kind"));
@@ -2251,7 +2252,7 @@ fn draw_pane_card(
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
     // mini tab strip 배경.
-    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H));
+    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H.value()));
     p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
 
     let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
@@ -2269,7 +2270,7 @@ fn draw_pane_card(
             TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X
         };
         let tab_rect =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H));
+            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H.value()));
 
         // 클릭 상호작용 — active 가 아닌 탭만 pointer + 클릭(SetActive, 아래에서 판정).
         let resp = ui.interact(
@@ -2378,8 +2379,10 @@ fn draw_pane_card(
 
     // 편집 모드: strip 끝에 add-tab "+" 버튼(디자인 22×20 — strip 높이보다 2px 넓다).
     if cx.edit {
-        let add =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(ADD_TAB_W, STRIP_H));
+        let add = egui::Rect::from_min_size(
+            egui::pos2(x, strip.min.y),
+            egui::vec2(ADD_TAB_W.value(), STRIP_H.value()),
+        );
         let resp = ui.interact(
             add,
             ui.id().with(("preset_demo_addtab", pane.id)),
@@ -2408,7 +2411,7 @@ fn draw_pane_card(
 
     // 활성 탭 본문 — padding 3, bg-app.
     let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
-    let inner = body.shrink(BODY_PAD);
+    let inner = body.shrink(BODY_PAD.value());
     if let Some(t) = pane.tabs.get(pane.active).or_else(|| pane.tabs.first()) {
         draw_surf(ui, theme, inner, &t.layout, cx);
     }
@@ -2434,7 +2437,7 @@ fn draw_tab_frame(
     let bw = theme.border_width.value();
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
-    draw_surf(ui, theme, rect.shrink(BODY_PAD), node, cx);
+    draw_surf(ui, theme, rect.shrink(BODY_PAD.value()), node, cx);
     ui.painter_at(rect).rect_stroke(
         rect,
         radius,

@@ -16,6 +16,7 @@ use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::vspace;
 
 /// 모달 [확인] 시 동작.
@@ -59,9 +60,9 @@ pub struct InfoModal {
 }
 
 pub const INFO_MODAL_ID: &str = "info_modal";
-const DEFAULT_WIDTH: f32 = 440.0;
-const MIN_HEIGHT: f32 = 140.0;
-const MAX_HEIGHT: f32 = 360.0;
+const DEFAULT_WIDTH: LogicalPx = LogicalPx(440.0);
+const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
+const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
 
 /// 큐에 modal 한 건을 추가하고 popup을 연다. 이미 열려 있으면 큐만 추가.
 ///
@@ -102,8 +103,8 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     let line_h = theme::theme().font_size_body.value() * 1.5;
     let body_h = approx_lines * line_h;
     let total_h = (popup::title_bar_height() + popup::content_margin() * 2.0 + body_h + 48.0)
-        .clamp(MIN_HEIGHT, MAX_HEIGHT);
-    egui::vec2(DEFAULT_WIDTH, total_h)
+        .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value());
+    egui::vec2(DEFAULT_WIDTH.value(), total_h)
 }
 
 /// PopupDef::on_close 진입점 — X 버튼(또는 그 외 draw_fn 을 우회하는 닫힘 경로)로

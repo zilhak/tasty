@@ -1,5 +1,6 @@
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, KeybindingSettings};
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{HelpHint, TooltipPlacement};
 
 use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
@@ -61,12 +62,12 @@ pub(super) fn draw_keybinding_entries(
     }
 
     // 버튼/간격 치수. 4px 그리드 준수.
-    const BUTTON_HEIGHT: f32 = 24.0;
-    const BUTTON_WIDTH: f32 = 140.0;
-    const ADD_BUTTON_WIDTH: f32 = 32.0;
-    const LABEL_GAP: f32 = 12.0;
-    const ROW_GAP: f32 = 4.0;
-    const HELP_HINT_GAP: f32 = 4.0;
+    const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
+    const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
+    const ADD_BUTTON_WIDTH: LogicalPx = LogicalPx(32.0);
+    const LABEL_GAP: LogicalPx = LogicalPx(12.0);
+    const ROW_GAP: LogicalPx = LogicalPx(4.0);
+    const HELP_HINT_GAP: LogicalPx = LogicalPx(4.0);
 
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
@@ -75,11 +76,11 @@ pub(super) fn draw_keybinding_entries(
             // 위젯이 왼쪽 끝에 배치된다 — 라벨을 먼저 add해 "라벨 (?)" 순서(= (?)
             // 가 라벨 바로 뒤에 이어짐)를 만든다.
             ui.allocate_ui_with_layout(
-                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
+                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.label(t(label_key));
-                    ui.add_space(HELP_HINT_GAP);
+                    ui.add_space(HELP_HINT_GAP.value());
                     if let Some(desc_key) = desc_key {
                         HelpHint::new(t(desc_key))
                             .placement(TooltipPlacement::Bottom)
@@ -89,11 +90,11 @@ pub(super) fn draw_keybinding_entries(
                     }
                 },
             );
-            ui.add_space(LABEL_GAP);
+            ui.add_space(LABEL_GAP.value());
 
             // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(ROW_GAP, ROW_GAP);
+                ui.spacing_mut().item_spacing = egui::vec2(ROW_GAP.value(), ROW_GAP.value());
 
                 let bindings_len = keybindings
                     .get_bindings(field_id)
@@ -135,7 +136,7 @@ pub(super) fn draw_keybinding_entries(
                             .monospace(),
                     )
                     .fill(bg_color)
-                    .min_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT));
+                    .min_size(egui::vec2(BUTTON_WIDTH.value(), BUTTON_HEIGHT.value()));
 
                     if ui.add_enabled(can_record, button).clicked() {
                         *recording_field = Some(RecordingSlot {
@@ -169,14 +170,14 @@ pub(super) fn draw_keybinding_entries(
                     th.text_muted()
                 };
                 let add_width = if bindings_len == 0 {
-                    BUTTON_WIDTH
+                    BUTTON_WIDTH.value()
                 } else {
-                    ADD_BUTTON_WIDTH
+                    ADD_BUTTON_WIDTH.value()
                 };
                 let add_btn =
                     egui::Button::new(egui::RichText::new(&add_label).color(add_fg).monospace())
                         .fill(add_bg)
-                        .min_size(egui::vec2(add_width, BUTTON_HEIGHT));
+                        .min_size(egui::vec2(add_width, BUTTON_HEIGHT.value()));
                 if ui
                     .add_enabled(can_record, add_btn)
                     .on_hover_text(t("settings.keybindings.add_binding_button"))
@@ -190,6 +191,6 @@ pub(super) fn draw_keybinding_entries(
                 }
             });
         });
-        ui.add_space(ROW_GAP);
+        ui.add_space(ROW_GAP.value());
     }
 }

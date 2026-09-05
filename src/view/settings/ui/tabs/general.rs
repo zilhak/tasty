@@ -1,5 +1,6 @@
 use crate::i18n::{LanguageEntry, t};
 use crate::settings::Settings;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{LanguageOption, LanguageSelectLabels, language_select, vspace};
 
 /// `languages` 는 설정 창이 연 시점에 스캔한 언어 목록(내장 3 + 언어팩 N —
@@ -8,8 +9,8 @@ use tasty_ui_widgets::{LanguageOption, LanguageSelectLabels, language_select, vs
 /// 휠 노치 거리 슬라이더의 범위. 하한은 0 이 아니다 — 0 이면 휠이 아무 데서도 안
 /// 움직여 설정 창을 스크롤해 되돌리는 것조차 막힌다. 상한은 한 노치가 화면을 통째로
 /// 넘기지 않을 정도로 둔다.
-const WHEEL_LINE_SCROLL_MIN: f32 = 10.0;
-const WHEEL_LINE_SCROLL_MAX: f32 = 200.0;
+const WHEEL_LINE_SCROLL_MIN: LogicalPx = LogicalPx(10.0);
+const WHEEL_LINE_SCROLL_MAX: LogicalPx = LogicalPx(200.0);
 
 pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &[LanguageEntry]) {
     let th = crate::theme::theme();
@@ -60,7 +61,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
             ui.label(t("settings.general.wheel_line_scroll_label"));
             ui.add(
                 egui::DragValue::new(&mut settings.general.wheel_line_scroll)
-                    .range(WHEEL_LINE_SCROLL_MIN..=WHEEL_LINE_SCROLL_MAX)
+                    .range(WHEEL_LINE_SCROLL_MIN.value()..=WHEEL_LINE_SCROLL_MAX.value())
                     .speed(1.0)
                     .fixed_decimals(0)
                     .suffix(" pt"),

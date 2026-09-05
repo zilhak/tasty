@@ -33,15 +33,16 @@
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
 use crate::settings::{GeneralSettings, KeybindingSettings};
+use tasty_type_geometry::length::LogicalPx;
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot};
 use tasty_ui_widgets::vspace;
 
 /// 버튼/간격 치수. 4px 그리드 준수 (entries.rs 와 동일 값).
-const BUTTON_HEIGHT: f32 = 24.0;
-const BUTTON_WIDTH: f32 = 140.0;
-const LABEL_GAP: f32 = 12.0;
-const ROW_GAP: f32 = 4.0;
+const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
+const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
+const LABEL_GAP: LogicalPx = LogicalPx(12.0);
+const ROW_GAP: LogicalPx = LogicalPx(4.0);
 
 /// 이 섹션이 편집하는 quick-switch 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -307,7 +308,7 @@ pub(super) fn draw_quick_switch_section(
     // modifier 드롭다운 (기존 blocks 이관).
     egui::Grid::new(format!("{}_modifier_grid", kind.modifier_salt()))
         .num_columns(2)
-        .spacing([LABEL_GAP, 8.0])
+        .spacing([LABEL_GAP.value(), 8.0])
         .show(ui, |ui| {
             ui.label(t(kind.modifier_label_key()));
             let modifier = match kind {
@@ -470,13 +471,13 @@ fn slot_row(
     ui.horizontal_top(|ui| {
         // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(entries.rs 와 동일 관례).
         ui.allocate_ui_with_layout(
-            egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
+            egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(format!("{}:", bare_display_label(target)));
             },
         );
-        ui.add_space(LABEL_GAP);
+        ui.add_space(LABEL_GAP.value());
 
         let combo = bare_combo(keybindings, target);
         let display = if is_recording {
@@ -505,7 +506,7 @@ fn slot_row(
         };
         let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
             .fill(bg)
-            .min_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT));
+            .min_size(egui::vec2(BUTTON_WIDTH.value(), BUTTON_HEIGHT.value()));
         if ui.add_enabled(can_record, btn).clicked() {
             *recording_field = Some(RecordingSlot {
                 field_id: String::new(),
@@ -514,7 +515,7 @@ fn slot_row(
             });
         }
     });
-    ui.add_space(ROW_GAP);
+    ui.add_space(ROW_GAP.value());
 }
 
 /// 녹화된 키(bare 또는 개별 지정 콤보)를 소비해 슬롯에 반영. 충돌 시 기존

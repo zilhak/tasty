@@ -20,6 +20,7 @@
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::mpsc;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
@@ -1615,11 +1616,11 @@ const FAV_COL_WIDTH: f32 = 28.0;
 
 /// 로딩 줄 스피너의 한 변. 값은 아이콘 스케일 md(16)와 같지만 아이콘 글리프가 아니라
 /// 스피너 지름이라 그 토큰을 쓰지 않고 이름을 따로 둔다.
-const LOADING_SPINNER_SIZE: f32 = 16.0;
+const LOADING_SPINNER_SIZE: LogicalPx = LogicalPx(16.0);
 
 /// 즐겨찾기 리스트 스크롤 cap(design "5행 × 22px = 110 ≤ 112 cap") — 5행이 꽉 채워도
 /// 스크롤 시작 전 여유 2px 를 남겨 스크롤 가능함을 암시한다.
-const FAVORITES_LIST_MAX_H: f32 = 112.0;
+const FAVORITES_LIST_MAX_H: LogicalPx = LogicalPx(112.0);
 
 /// `PortStar` (design `PortStar`) — 22×22(`item_height_tree`) 별 토글. `on` 이면 채운
 /// `STAR_FILL` + accent-warning(Explorer 즐겨찾기와 동일 골드), 아니면 outline `STAR`
@@ -1721,7 +1722,7 @@ fn draw_favorites_section(
             } else {
                 egui::ScrollArea::vertical()
                     .id_salt("port_scanner.favorites_scroll")
-                    .max_height(FAVORITES_LIST_MAX_H)
+                    .max_height(FAVORITES_LIST_MAX_H.value())
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         for fav in props.favorites {
@@ -1848,7 +1849,7 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         ui.horizontal(|ui| {
             ui.add(
                 egui::Spinner::new()
-                    .size(LOADING_SPINNER_SIZE)
+                    .size(LOADING_SPINNER_SIZE.value())
                     .color(th.text_muted()),
             );
             ui.label(

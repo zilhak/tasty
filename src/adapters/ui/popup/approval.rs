@@ -9,6 +9,7 @@
 //! gallery 에서 단독 시각 검증 가능.
 
 use tasty_approval::{ApprovalRecord, Responder, Severity};
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
@@ -19,9 +20,9 @@ use tasty_ui_widgets::vspace;
 
 pub const APPROVAL_POPUP_ID: &str = "approval";
 
-const DEFAULT_WIDTH: f32 = 480.0;
-const MIN_HEIGHT: f32 = 180.0;
-const MAX_HEIGHT: f32 = 480.0;
+const DEFAULT_WIDTH: LogicalPx = LogicalPx(480.0);
+const MIN_HEIGHT: LogicalPx = LogicalPx(180.0);
+const MAX_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
 pub fn approval_popup_title(state: &AppState, engine: &crate::core::CoreState) -> String {
@@ -38,7 +39,7 @@ pub fn approval_popup_title(state: &AppState, engine: &crate::core::CoreState) -
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
 pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
-        return egui::vec2(DEFAULT_WIDTH, MIN_HEIGHT);
+        return egui::vec2(DEFAULT_WIDTH.value(), MIN_HEIGHT.value());
     };
     let record = engine.approval_store.get(id);
     let body_len = record
@@ -59,8 +60,8 @@ pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -
         + 32.0
         + buttons_h
         + 56.0)
-        .clamp(MIN_HEIGHT, MAX_HEIGHT);
-    egui::vec2(DEFAULT_WIDTH, total_h)
+        .clamp(MIN_HEIGHT.value(), MAX_HEIGHT.value());
+    egui::vec2(DEFAULT_WIDTH.value(), total_h)
 }
 
 /// View 입력 — 한 선택지의 시각/의미 데이터.

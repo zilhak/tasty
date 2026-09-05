@@ -1,11 +1,12 @@
 use crate::i18n::{t, t_fmt};
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// plugin 미리보기 카드의 이름 줄. DTCG primitive `font-size-16` 은 있으나
 /// semantic role 이 배정돼 있지 않아 `Theme` 필드가 없다 — 어느 semantic 에 묶을지가
 /// 판단 항목이라 ADR-0126 대로 **이름에 primitive 임을 남긴다**. 토큰이 아니라
 /// `ui_scale` 줌을 타지 않는 것도 현행 유지다.
-const ADD_PREVIEW_NAME_PRIMITIVE_16: f32 = 16.0;
+const ADD_PREVIEW_NAME_PRIMITIVE_16: LogicalPx = LogicalPx(16.0);
 
 use tasty_ui_widgets::vspace;
 
@@ -103,7 +104,7 @@ fn draw_add_preview(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(&preview.name)
-                        .size(ADD_PREVIEW_NAME_PRIMITIVE_16)
+                        .size(ADD_PREVIEW_NAME_PRIMITIVE_16.value())
                         .color(egui::Color32::from(th.text_primary())),
                 );
                 ui.label(format!("v{}", preview.version));

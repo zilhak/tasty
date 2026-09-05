@@ -7,6 +7,7 @@
 
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
@@ -16,7 +17,7 @@ use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 /// (theme.md "painter 전사 글리프") 재사용하지 않는다. 컴포넌트 토큰
 /// `status-dot-attached-ring-width` 는 2px 로 정의돼 있어 이 값과 어긋나며, 맞추려면
 /// ring 반경 계산(offset·stroke 절반)을 함께 다시 잡아야 해 디자인 확인이 선행한다.
-const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
+const ATTACHED_OUTLINE_WIDTH: LogicalPx = LogicalPx(1.5);
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -27,10 +28,10 @@ const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
 
 /// alert 배지 안의 숫자. 스케일 밖(9.5) — `badge_font_size()`(micro 10)와 0.5 차이라
 /// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const ALERT_BADGE_FONT_SIZE: f32 = 9.5;
+const ALERT_BADGE_FONT_SIZE: LogicalPx = LogicalPx(9.5);
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
-const GHOST_WS_NAME_PRIMITIVE_12: f32 = 12.0;
+const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
@@ -242,7 +243,7 @@ fn paint_alert_badge(
     let h = 15.0;
     let galley = ui.painter().layout_no_wrap(
         count.to_string(),
-        egui::FontId::proportional(ALERT_BADGE_FONT_SIZE),
+        egui::FontId::proportional(ALERT_BADGE_FONT_SIZE.value()),
         egui::Color32::from(th.text_on_accent()),
     );
     let pad = 4.0;
@@ -659,7 +660,7 @@ pub fn draw_full_sidebar_view(
                             ghost_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             &ws.name,
-                            egui::FontId::proportional(GHOST_WS_NAME_PRIMITIVE_12),
+                            egui::FontId::proportional(GHOST_WS_NAME_PRIMITIVE_12.value()),
                             ghost_fg,
                         );
                     }
@@ -1426,7 +1427,7 @@ fn draw_collapsed_avatar(
         ui.painter().rect_stroke(
             rect,
             4.0,
-            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
+            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1542,7 +1543,7 @@ fn draw_workspace_card(
                     ui.painter().circle_stroke(
                         dot_rect.center(),
                         6.25,
-                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
+                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {

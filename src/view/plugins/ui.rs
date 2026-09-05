@@ -11,13 +11,14 @@
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 모달 헤더의 plug 글리프. 아이콘 스케일 밖(17) — 스케일은 12 · 14 · 15 · 16 이고
 /// 17 은 어디에도 없다. 인접 tier(16)로 맞추는 것은 값이 바뀌는 디자인 변경이라
 /// [ADR-0126](../../../docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md)
 /// 과 같게 다룬다 — 스냅하지 않고 이름을 붙여 드리프트를 보이게 둔다.
 /// 토큰이 아니므로 `ui_scale` 줌을 타지 않는 것도 현행 유지다.
-const PLUG_HEADER_GLYPH: f32 = 17.0;
+const PLUG_HEADER_GLYPH: LogicalPx = LogicalPx(17.0);
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -30,11 +31,11 @@ const PLUG_HEADER_GLYPH: f32 = 17.0;
 // `docs/design/systems/theme.md` "스케일 밖 폰트 값".
 
 /// segment 탭 라벨. 스케일 밖(12.5).
-const SEGMENT_TAB_LABEL_SIZE: f32 = 12.5;
+const SEGMENT_TAB_LABEL_SIZE: LogicalPx = LogicalPx(12.5);
 /// segment 탭의 danger 배지 숫자. 스케일 밖(9.5).
-const SEGMENT_BADGE_SIZE: f32 = 9.5;
+const SEGMENT_BADGE_SIZE: LogicalPx = LogicalPx(9.5);
 /// segment 탭의 mono 카운트. 스케일 밖(10.5).
-const SEGMENT_COUNT_SIZE: f32 = 10.5;
+const SEGMENT_COUNT_SIZE: LogicalPx = LogicalPx(10.5);
 
 /// 상세 패널에 표시할 plugin command 한 줄.
 #[derive(Debug, Clone)]
@@ -258,7 +259,7 @@ pub fn draw_plugins_panel(
                 // divergence: 헤더 accent 인데 peach 리터럴 → accent-attention(=peach) role 로
                 // 값 보존 전사. "notice/주의환기"가 아니라 헤더 강조라 role 은 살짝 어긋남.
                 ui.add(icons::PLUG.image(
-                    PLUG_HEADER_GLYPH,
+                    PLUG_HEADER_GLYPH.value(),
                     egui::Color32::from(th.accent_attention()),
                 ));
                 hspace(ui, th.spacing_xs);
@@ -398,7 +399,7 @@ fn segment_tab(
     };
     let label_galley = ui.painter().layout_no_wrap(
         label.to_string(),
-        egui::FontId::proportional(SEGMENT_TAB_LABEL_SIZE),
+        egui::FontId::proportional(SEGMENT_TAB_LABEL_SIZE.value()),
         label_color,
     );
 
@@ -407,7 +408,7 @@ fn segment_tab(
     let badge_galley = if badge {
         Some(ui.painter().layout_no_wrap(
             count.unwrap().to_string(),
-            egui::FontId::proportional(SEGMENT_BADGE_SIZE),
+            egui::FontId::proportional(SEGMENT_BADGE_SIZE.value()),
             egui::Color32::from(th.text_on_accent()),
         ))
     } else {
@@ -417,7 +418,7 @@ fn segment_tab(
         count.map(|c| {
             ui.painter().layout_no_wrap(
                 c.to_string(),
-                egui::FontId::monospace(SEGMENT_COUNT_SIZE),
+                egui::FontId::monospace(SEGMENT_COUNT_SIZE.value()),
                 count_color,
             )
         })

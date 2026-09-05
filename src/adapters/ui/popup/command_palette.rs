@@ -17,6 +17,7 @@ use crate::state::command_palette::{self, PaletteCommand};
 use crate::theme;
 use crate::theme::Theme;
 use tasty_settings::KeybindingSettings;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{margin_all, margin_sym};
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
@@ -28,11 +29,11 @@ use tasty_ui_widgets::{margin_all, margin_sym};
 
 /// footer 의 kbd 힌트 줄. 스케일 밖(10.5) — `kbd_font_size()`(micro 10)와 0.5 차이라
 /// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const PALETTE_HINT_FONT_SIZE: f32 = 10.5;
+const PALETTE_HINT_FONT_SIZE: LogicalPx = LogicalPx(10.5);
 
 /// footer 힌트 사이 가로 간격. 디자인 전사값 14 로 4px 그리드 밖이다
 /// (`spacing_md`=12 와 2px 차).
-const PALETTE_HINT_GAP_X: f32 = 14.0;
+const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
@@ -274,9 +275,9 @@ pub fn draw_command_palette_view(
         })
         .show(ui, |ui| {
             let hint_color = theme.text_muted().to_egui();
-            let hint_font = egui::FontId::monospace(PALETTE_HINT_FONT_SIZE);
+            let hint_font = egui::FontId::monospace(PALETTE_HINT_FONT_SIZE.value());
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = PALETTE_HINT_GAP_X;
+                ui.spacing_mut().item_spacing.x = PALETTE_HINT_GAP_X.value();
                 for hint in [
                     format!("↑↓ {}", props.hint_navigate),
                     format!("↵ {}", props.hint_run),
@@ -315,7 +316,7 @@ fn row_highlighted(query_empty: bool, row: usize, selected: usize) -> bool {
 /// = size-2. egui rect_stroke 는 균일 두께라 하단만 별도 2px 라인으로 근사 — chip.rs kbd 동일.)
 /// 키캡 하단 edge 두께 = 디자인 `--tasty-kbd-shadow-depth`(size-2). Theme 에 size-2 토큰이
 /// 없어 chip.rs `kbd()` 와 동일하게 고정 2px 로 둔다(디자인 고정 px).
-const KEYCAP_BOTTOM_BORDER: f32 = 2.0;
+const KEYCAP_BOTTOM_BORDER: LogicalPx = LogicalPx(2.0);
 
 fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
     if keys.is_empty() {
@@ -382,7 +383,7 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
                 egui::pos2(box_rect.left() + radius, box_rect.bottom() - bw),
                 egui::pos2(box_rect.right() - radius, box_rect.bottom() - bw),
             ],
-            egui::Stroke::new(KEYCAP_BOTTOM_BORDER, border),
+            egui::Stroke::new(KEYCAP_BOTTOM_BORDER.value(), border),
         );
         let gx = box_rect.center().x - galley.size().x / 2.0;
         let gy = center_y - galley.size().y / 2.0;

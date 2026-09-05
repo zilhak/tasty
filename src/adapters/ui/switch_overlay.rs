@@ -19,15 +19,16 @@
 //! 주입할 수 없으므로 이 오버레이를 강제 표시할 수 없다(순수 미리보기).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::input::shortcuts::modifier_hint::Combo;
 use crate::settings::KeybindingSettings;
 
 /// 키캡 한 변 (= 디자인 `switch-overlay-size` = `kbd-size` = size-16). 갤러리 num_cap·
 /// 본체 `kbd()`(chip.rs `KBD_HEIGHT`) 와 동일.
-const KEYCAP_SIZE: f32 = 16.0;
+const KEYCAP_SIZE: LogicalPx = LogicalPx(16.0);
 /// 키캡 하단 3D edge (= `switch-overlay-shadow-depth` = size-2). chip.rs `KBD_BOTTOM_BORDER`.
-const KEYCAP_BOTTOM_BORDER: f32 = 2.0;
+const KEYCAP_BOTTOM_BORDER: LogicalPx = LogicalPx(2.0);
 
 /// 현재 눌린 modifier 가 가리키는 switch-number overlay 의 대상.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,7 +165,7 @@ pub fn category_digit(kb: &KeybindingSettings, index: usize) -> Option<&str> {
 
 /// 키캡 한 변(px) — 우측정렬·중앙정렬 배치 계산용(카테고리 헤더/레일 키캡).
 pub fn keycap_size() -> f32 {
-    KEYCAP_SIZE
+    KEYCAP_SIZE.value()
 }
 
 /// 한 자리 숫자 키캡을 `center` 기준 16px slot 에 그린다.
@@ -184,7 +185,8 @@ pub fn paint_keycap(
     active: bool,
     alpha: f32,
 ) {
-    let rect = egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE, KEYCAP_SIZE));
+    let rect =
+        egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE.value(), KEYCAP_SIZE.value()));
     let radius = theme.corner_radius_sm.value();
     let bw = theme.border_width.value();
     let (fill, edge, fg): (egui::Color32, egui::Color32, egui::Color32) = if active {
@@ -219,7 +221,7 @@ pub fn paint_keycap(
             egui::pos2(rect.left() + radius, rect.bottom() - bw),
             egui::pos2(rect.right() - radius, rect.bottom() - bw),
         ],
-        egui::Stroke::new(KEYCAP_BOTTOM_BORDER, edge),
+        egui::Stroke::new(KEYCAP_BOTTOM_BORDER.value(), edge),
     );
     painter.text(
         rect.center(),

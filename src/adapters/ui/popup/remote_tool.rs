@@ -43,7 +43,7 @@ const HEADER_PAD_Y: i8 = 11;
 /// 비대칭 — 디자인 전사 그대로다).
 const CONTENT_PAD_TOP: i8 = 10;
 /// 헤더 아이템 가로 간격. 디자인 전사값 9 로 그리드 밖이다(`spacing_sm`=8 과 1px 차).
-const HEADER_GAP_X: f32 = 9.0;
+const HEADER_GAP_X: LogicalPx = LogicalPx(9.0);
 
 const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
@@ -615,7 +615,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         // 텍스트 박스가 더 낮아(~18) 헤더가 얕아진다 → min_height 로 디자인 높이 강제.
         // popup border 가 stroke Outside 라 콘텐츠가 1px 위에서 시작 → +2 보정해 26.
         ui.set_min_height(th.remote_tool_header_min_height().value());
-        ui.spacing_mut().item_spacing.x = HEADER_GAP_X;
+        ui.spacing_mut().item_spacing.x = HEADER_GAP_X.value();
         // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
         ui.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
         ui.label(
@@ -1637,7 +1637,7 @@ fn draw_profile_form(
                                         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                                         ui.add(
                                             egui::TextEdit::singleline(k)
-                                                .desired_width(LABEL_COL_WIDTH)
+                                                .desired_width(LABEL_COL_WIDTH.value())
                                                 .hint_text("key")
                                                 .font(egui::TextStyle::Monospace),
                                         );
@@ -2802,11 +2802,11 @@ fn text_row(
 }
 
 /// 디자인 ProfileForm 의 라벨 컬럼 폭 (LogicalPx). grid `gridTemplateColumns: 112px 1fr`.
-/// egui 위젯 좌표는 logical points 라 f32 로 둔다(Theme 상수가 아닌 화면전용 고정값).
-const LABEL_COL_WIDTH: f32 = 112.0;
+/// 화면전용 고정값이라 `Theme` 상수가 아니지만 길이이므로 `LogicalPx` 로 둔다.
+const LABEL_COL_WIDTH: LogicalPx = LogicalPx(112.0);
 /// hint/error 문구를 입력 컬럼에 맞춰 들여쓸 폭 = 라벨 컬럼(112) + columnGap(12).
 /// 디자인 `marginLeft: 124px`.
-const HINT_INDENT: f32 = LABEL_COL_WIDTH + 12.0;
+const HINT_INDENT: LogicalPx = LABEL_COL_WIDTH.plus(LogicalPx(12.0));
 
 // ── selectable 텍스트 ──────────────────────────────────────────────────
 // egui `Label` 의 드래그 선택은 내장 `LabelSelectionState::cursor_for()` 가 처리하는데,
@@ -2912,7 +2912,7 @@ fn selectable_label(
 /// Type 행/passkey 행이 모두 같은 컬럼 폭으로 정렬되도록 폭을 강제한다.
 fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
     ui.allocate_ui_with_layout(
-        egui::vec2(LABEL_COL_WIDTH, ui.spacing().interact_size.y),
+        egui::vec2(LABEL_COL_WIDTH.value(), ui.spacing().interact_size.y),
         egui::Layout::right_to_left(egui::Align::Center),
         |ui| {
             selectable_text(
@@ -2922,7 +2922,7 @@ fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
                 th.font_size_body.value(),
                 false,
                 false,
-                TextWrap::Truncate(LABEL_COL_WIDTH),
+                TextWrap::Truncate(LABEL_COL_WIDTH.value()),
             );
         },
     );
@@ -2938,7 +2938,7 @@ fn indented_hint(
     italic: bool,
 ) {
     ui.horizontal(|ui| {
-        ui.add_space(HINT_INDENT);
+        ui.add_space(HINT_INDENT.value());
         selectable_text(
             ui,
             text,

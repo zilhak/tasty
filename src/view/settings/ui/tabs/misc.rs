@@ -11,6 +11,7 @@
 //! `Settings.keybindings`(04)에서 **조회만**(편집은 Keybindings › Scripts 소유).
 
 use std::collections::HashMap;
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, kbd,
@@ -23,14 +24,14 @@ use crate::settings::{AUTO_TRIGGER_EVENTS, AutoTrigger, KeybindingSettings, Sett
 use tasty_ui_widgets::vspace;
 
 /// name→path→help 행 사이 hairline 간격 (디자인 `gap: 2` — 4px 그리드 하위).
-const ROW_LINE_GAP: f32 = 2.0;
+const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 /// changed 배지 고정 높이 (디자인 `height: 16`).
-const BADGE_HEIGHT: f32 = 16.0;
+const BADGE_HEIGHT: LogicalPx = LogicalPx(16.0);
 // 빈 상태 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
 // specimen(`components/script_manager.rs`)이 같은 상수를 읽는다.
 use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
 /// Add card 라벨 컬럼 폭 (디자인 `width: 100`).
-const ADD_LABEL_W: f32 = 100.0;
+const ADD_LABEL_W: LogicalPx = LogicalPx(100.0);
 
 /// Misc › Scripts 관리 창의 UI-only 상호작용 상태. 스크립트 데이터 자체는
 /// `Settings.scripts`(draft)에 있다.
@@ -152,7 +153,7 @@ pub fn draw_scripts_subtab(
                 st.confirm_id = None;
             }
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP;
+                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
                 ui.label(
                     egui::RichText::new(t("settings.misc.scripts"))
                         .size(th.font_size_max.value())
@@ -257,7 +258,7 @@ fn draw_script_row(
         ui.spacing_mut().item_spacing.x = th.spacing_md.value();
         // 좌: script 글리프 16 · text-muted · margin-top 2.
         ui.vertical(|ui| {
-            ui.add_space(ROW_LINE_GAP);
+            ui.add_space(ROW_LINE_GAP.value());
             let (rect, _) = ui.allocate_exact_size(
                 egui::vec2(th.icon_glyph_size_md.value(), th.icon_glyph_size_md.value()),
                 egui::Sense::hover(),
@@ -390,7 +391,7 @@ fn draw_script_row(
 
                 // 남은 좌측 폭 = 중앙 컬럼(name/path/help).
                 ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = ROW_LINE_GAP;
+                    ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                         ui.label(
@@ -512,7 +513,8 @@ fn trigger_chip(
         egui::Color32::PLACEHOLDER,
     );
     let w = pad_x * 2.0 + galley.rect.width() + gap + glyph;
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT.value()), egui::Sense::click());
     let radius = th.corner_radius_sm.value();
     // 호버 오버레이 — 전경색 저알파 mix (위젯 공통 규칙과 동일 도출).
     if resp.hovered() {
@@ -599,7 +601,8 @@ fn draw_changed_badge(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Them
         egui::Color32::PLACEHOLDER,
     );
     let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT), egui::Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
     ui.painter()
         .rect_filled(rect, radius, warn.gamma_multiply(0.12));
@@ -717,7 +720,7 @@ fn draw_add_card(
 /// Add card 라벨 셀 (폭 100, 우측정렬 아님 — 좌측정렬 13/text-secondary).
 fn add_label(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
     ui.allocate_ui_with_layout(
-        egui::vec2(ADD_LABEL_W, th.item_height_interactive.value()),
+        egui::vec2(ADD_LABEL_W.value(), th.item_height_interactive.value()),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.label(

@@ -6,6 +6,7 @@
 
 use crate::i18n::t;
 use crate::settings::{KeybindingSettings, Settings};
+use tasty_type_geometry::length::LogicalPx;
 
 use super::{FieldKind, KeyCapture, RecordingSlot};
 use tasty_ui_widgets::vspace;
@@ -13,10 +14,10 @@ use tasty_ui_widgets::vspace;
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
 const SCRIPT_SLOT_PREFIX: &str = "script:";
 
-const BUTTON_HEIGHT: f32 = 24.0;
-const BUTTON_WIDTH: f32 = 140.0;
-const LABEL_GAP: f32 = 12.0;
-const ROW_GAP: f32 = 4.0;
+const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
+const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
+const LABEL_GAP: LogicalPx = LogicalPx(12.0);
+const ROW_GAP: LogicalPx = LogicalPx(4.0);
 
 pub(super) fn draw_script_bindings(
     ui: &mut egui::Ui,
@@ -94,14 +95,14 @@ pub(super) fn draw_script_bindings(
             // 달리 고정폭을 넘을 수 있다 — 잘리는 대신 말줄임(…) 처리하고, hover
             // 툴팁으로 전체 이름을 확인할 수 있게 한다.
             ui.allocate_ui_with_layout(
-                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT),
+                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.add(egui::Label::new(name).truncate())
                         .on_hover_text(name);
                 },
             );
-            ui.add_space(LABEL_GAP);
+            ui.add_space(LABEL_GAP.value());
 
             let display = if is_recording {
                 t("settings.keybindings.hint_press_key").to_string()
@@ -124,7 +125,7 @@ pub(super) fn draw_script_bindings(
             };
             let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
                 .fill(bg)
-                .min_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT));
+                .min_size(egui::vec2(BUTTON_WIDTH.value(), BUTTON_HEIGHT.value()));
             if ui.add(btn).clicked() {
                 *recording_field = Some(RecordingSlot {
                     field_id: slot_id.clone(),
@@ -133,6 +134,6 @@ pub(super) fn draw_script_bindings(
                 });
             }
         });
-        ui.add_space(ROW_GAP);
+        ui.add_space(ROW_GAP.value());
     }
 }
