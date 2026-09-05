@@ -239,6 +239,11 @@ check_egui_window() {
 #                                       `cargo:rerun-if-changed=` 같은 directive 가
 #                                       println 으로만 가능 (build.rs 에선 tracing
 #                                       사용 불가)
+#   - crates/tasty-doc-guards/src/bin/* : 게이트 스크립트가 부르는 CLI 판정기. 이 크레이트는
+#                                       의존이 0 인 것이 존재 이유라(ADR-0138) tracing 을
+#                                       들일 수 없고, 진단은 stdout/stderr 가 인터페이스다.
+#                                       (`src/` 의 나머지는 예외가 아니다 — 라이브러리는
+#                                       아무것도 출력하지 않는다)
 # 그 외 .rs 파일은 tracing::info!/warn!/error! 사용.
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
@@ -252,6 +257,7 @@ check_println() {
             site/*) continue ;;
             build.rs) continue ;;
             */build.rs) continue ;;
+            crates/tasty-doc-guards/src/bin/*) continue ;;
         esac
         local violation
         violation=$(git diff --cached -U0 -- "$f" \

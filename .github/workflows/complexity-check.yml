@@ -55,5 +55,12 @@ jobs:
           fi
           tokei --version
 
+      # 게이트가 재는 것은 원본이 아니라 **인라인 `#[cfg(test)]` 를 지운 사본**이고,
+      # 그 사본을 만드는 것이 이 바이너리다. 게이트는 스스로 빌드하지 않는다(중첩 cargo 가
+      # 빌드 디렉토리 잠금에서 서로를 기다리는 자리가 있다) — 여기서 미리 만들어 둔다.
+      # tasty-doc-guards 는 의존이 0 이라(ADR-0138) 이 빌드가 초 단위다.
+      - name: Build the shipping-scope judge
+        run: cargo build --locked -p tasty-doc-guards --bin strip-cfg-test
+
       - name: File SLOC gate
         run: bash scripts/check-file-size.sh

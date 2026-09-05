@@ -8,8 +8,11 @@
 //! `docs/adr/0131-file-sloc-gate-needs-a-firing-trigger.md` 가 이 게이트에 발화 트리거를 달았기
 //! 때문에 그 결함이 그때부터 활성이다. 채널을 켠 것과 같은 계보에서 닫는다.
 //!
-//! **판정 방식**: 실제 tokei 를 쓰지 않는다. PATH 앞에 스텁 `tokei` 를 놓아 네 경우를 주입하고
-//! 종료코드만 본다 — 러너에 tokei 가 없어도 돌고, 레포 내용이 바뀌어도 값이 안 흔들린다.
+//! **판정 방식**: 실제 tokei 도 실제 판정기도 쓰지 않는다. PATH 앞에 스텁 `tokei` 를 놓고
+//! `TASTY_STRIP_CFG_TEST_BIN` 에 스텁 판정기를 물려 경우를 주입하고 종료코드만 본다 —
+//! 러너에 tokei 가 없어도 돌고, 레포 내용이 바뀌어도 값이 안 흔들린다. 스텁을 쓰는 두 번째
+//! 이유가 있다: 진짜 판정기는 cargo 산출물이라, 여기서 그것을 빌드하면 **바깥 `cargo test`
+//! 와 빌드 디렉토리 잠금을 두고 서로를 기다린다.**
 //! 위반(1) / 측정 실패(2) / 통과(0) 를 **서로 다른 코드**로 요구하므로, 셋 중 둘이 같은 값으로
 //! 붕괴하면 여기서 죽는다.
 //!
@@ -33,15 +36,27 @@ fn stub_dir(body: &str) -> tempfile::TempDir {
     dir
 }
 
-/// 스텁 tokei 를 PATH 앞에 두고 게이트를 돌려 종료코드를 얻는다.
+/// 스텁 tokei 를 PATH 앞에 두고 게이트를 돌려 종료코드를 얻는다. 판정기는 성공 스텁.
 fn run_gate_with(body: &str) -> i32 {
-    let dir = stub_dir(body);
+    run_gate(body, "mkdir -p \"$1\"\nexit 0")
+}
+
+/// tokei 스텁과 판정기(strip-cfg-test) 스텁을 함께 주입하고 게이트를 돌린다.
+fn run_gate(tokei_body: &str, strip_body: &str) -> i32 {
+    let dir = stub_dir(tokei_body);
+    let strip = dir.path().join("strip-cfg-test");
+    fs::write(&strip, format!("#!/bin/sh\n{strip_body}\n")).expect("판정기 스텁 작성");
+    let mut perm = fs::metadata(&strip).expect("스텁 metadata").permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&strip, perm).expect("실행권한");
+
     let root = env!("CARGO_MANIFEST_DIR");
     let old = std::env::var("PATH").unwrap_or_default();
     let path = format!("{}:{}", dir.path().display(), old);
     let out = Command::new("bash")
         .arg(format!("{root}/scripts/check-file-size.sh"))
         .env("PATH", path)
+        .env("TASTY_STRIP_CFG_TEST_BIN", &strip)
         .current_dir(root)
         .output()
         .expect("게이트 실행");
@@ -106,4 +121,35 @@ fn malformed_json_is_not_a_pass() {
         2,
         "파서가 죽으면 측정 실패(exit 2)여야 한다"
     );
+}
+
+/// 판정기가 죽으면 **측정 실패**다. 사본이 안 만들어졌는데 tokei 가 (빈 트리를 보고)
+/// 무언가를 돌려주면 게이트는 "위반 0 건" 으로 읽는다 — 그 붕괴를 여기서 막는다.
+#[test]
+fn a_failing_stripper_is_not_a_pass() {
+    assert_eq!(
+        run_gate(UNDER_THRESHOLD, "echo boom >&2\nexit 3"),
+        2,
+        "출하 줄 판정기가 죽으면 측정 실패(exit 2)여야 한다 — 통과(0)도 위반(1)도 아니다"
+    );
+}
+
+/// 판정기 경로가 아예 없으면 통과가 아니다. 러너에 바이너리를 안 만들어 둔 상태가
+/// 조용히 초록이 되면 게이트가 무엇을 쟀는지 아무도 모른다.
+#[test]
+fn a_missing_stripper_is_not_a_pass() {
+    let dir = stub_dir(UNDER_THRESHOLD);
+    let root = env!("CARGO_MANIFEST_DIR");
+    let old = std::env::var("PATH").unwrap_or_default();
+    let out = Command::new("bash")
+        .arg(format!("{root}/scripts/check-file-size.sh"))
+        .env("PATH", format!("{}:{}", dir.path().display(), old))
+        .env(
+            "TASTY_STRIP_CFG_TEST_BIN",
+            dir.path().join("__no_such_binary__"),
+        )
+        .current_dir(root)
+        .output()
+        .expect("게이트 실행");
+    assert_eq!(out.status.code(), Some(2));
 }

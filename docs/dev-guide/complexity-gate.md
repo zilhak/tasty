@@ -9,13 +9,21 @@
 | 축 | 도구 | 임계값 | 동결 위치 |
 |----|------|--------|-----------|
 | **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 34곳) |
-| **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | code SLOC **1000** | `.complexity-file-allowlist` (현재 43개 — 도입 시 동결분 잔여 17 + 채널 부재로 쌓인 부채 26) |
+| **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | **출하** code SLOC **1000** | `.complexity-file-allowlist` (현재 43개 — 도입 시 동결분 잔여 17 + 채널 부재로 쌓인 부채 26) |
 
 - 카운트 기준: `grep -rn 'allow(clippy::cognitive_complexity)'` 로 센 **전체** 위치 수. `// complexity-exempt:` 태그는 감사(grep) 가능성을 위한 필수 컨벤션이라, `#[allow(clippy::cognitive_complexity)]`가 있는데 태그가 없는 레거시가 발견되면 그 자리에서 태그를 붙여 카운트에 편입한다(둘을 별도 숫자로 두지 않는다).
 
 - cognitive 임계 20 은 외부 도구 rca cognitive ≈ 50 등가다. clippy 는 egui 즉시모드 draw 의 `ui.horizontal(|ui|{…})` 클로저를 부모에 합산하지 않아 구조적 draw 를 자동 배제 → 임계 초과 baseline 이 거의 순수 로직 함수라 신호가 깨끗하다.
 - clippy 에는 파일 SLOC lint 가 없어 파일 축은 `scripts/check-file-size.sh` 가 tokei 로
   별도 강제한다(채널은 [ci-gates](ci-gates.md)).
+- **재는 것은 원본이 아니라 인라인 `#[cfg(test)]` 를 지운 사본이다.** 판정(무엇이
+  출하되는가)은 `crates/tasty-doc-guards` 의 `strip-cfg-test` 가 하고 계측(몇 줄인가)은
+  tokei 가 그대로 한다 — 계측기를 둘로 늘리지 않는다. 지운 줄은 빈 줄로 남아 줄 번호가
+  보존되므로 보고는 원본 좌표로 읽힌다. 근거·대안·재검토 조건은
+  [ADR-0165](../adr/0165-the-file-sloc-gate-measures-shipped-lines.md).
+  - **파일 전체**가 출하 밖인 경우(별도 파일 테스트 모듈·cargo 통합 타깃·생성 코드)는
+    여전히 스크립트의 `skip()` 이름 글롭이 담당한다. 그 대리인은
+    `src/source_guards/sloc_gate_skip_proxy.rs` 가 선언 기반 정본에 양방향으로 못박는다.
 
 ## 예외 컨벤션
 
@@ -77,17 +85,22 @@ cargo clippy --workspace --all-targets
 bash scripts/check-file-size.sh
 ```
 
-`check-file-size.sh` 는 `tokei` 와 `python`(JSON 파싱)을 요구한다. 종료코드 세 가지를 **서로 구분**한다.
+`check-file-size.sh` 는 `tokei` · `python`(JSON 파싱) · `strip-cfg-test` 바이너리를 요구한다.
+바이너리는 **스크립트가 스스로 빌드하지 않는다** — 이 스크립트는 `cargo test` 안에서도 불리고
+(`tests/file_sloc_gate_fails_loudly.rs`), 그때 중첩 cargo 는 빌드 디렉토리 잠금에서 서로를
+기다린다. 미리 만들어 두거나(`cargo build -p tasty-doc-guards --bin strip-cfg-test`) 경로를
+`TASTY_STRIP_CFG_TEST_BIN` 으로 준다. 종료코드 세 가지를 **서로 구분**한다.
 
 | 코드 | 뜻 |
 |---|---|
 | 0 | 측정에 성공했고 위반이 없다 |
 | 1 | 측정에 성공했고 allowlist 밖 대형 파일이 있다 (목록 출력) |
-| 2 | **측정 자체가 안 됐다** — 도구 미설치, tokei 실행 실패, JSON 파싱 실패, Rust 파일 0건 보고 |
+| 2 | **측정 자체가 안 됐다** — 도구 미설치, 판정기 부재·실행 실패, tokei 실행 실패, JSON 파싱 실패, Rust 파일 0건 보고 |
 
 **2 를 0 과 합치지 않는 것이 요점이다.** 측정이 안 된 것을 "위반 없음" 으로 읽으면 러너에서 tokei 가
-어긋나는 순간 게이트가 영원히 초록이 된다. `tests/file_sloc_gate_fails_loudly.rs` 가 스텁 tokei 로
-네 경우(위반 / 정상 / 실행 실패 / 빈 보고)를 고정한다.
+어긋나는 순간 게이트가 영원히 초록이 된다. `tests/file_sloc_gate_fails_loudly.rs` 가 스텁 tokei ·
+스텁 판정기로 여섯 경우(위반 / 정상 / tokei 실행 실패 / 빈 보고 / 깨진 JSON / 판정기 실패·부재)를
+고정한다.
 
 ## baseline 갱신
 
@@ -97,4 +110,4 @@ bash scripts/check-file-size.sh
 ## CI 배선
 
 - **cognitive**: 기존 `crossplatform-check.yml` 의 Windows clippy 잡이 `cargo clippy` 를 돌리므로, `cognitive_complexity = "deny"` 는 별도 배선 없이 `main` push 마다 자동 차단된다(`-D warnings` 불요 — deny 자체가 에러).
-- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `push:[main]`(문서·site 제외) + `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **실질 채널은 main push 다** — 이 저장소는 PR 을 열지 않아 PR 트리거는 장식이고, 2026-09-04 에 push 트리거를 붙이기 전까지 이 워크플로는 run 이력이 0 건이었다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행한다. 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
+- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `push:[main]`(문서·site 제외) + `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **실질 채널은 main push 다** — 이 저장소는 PR 을 열지 않아 PR 트리거는 장식이고, 2026-09-04 에 push 트리거를 붙이기 전까지 이 워크플로는 run 이력이 0 건이었다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행하고, 그 뒤 판정기를 빌드하는 스텝이 하나 붙는다(의존 0 크레이트라 초 단위). 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
