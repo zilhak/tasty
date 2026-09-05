@@ -220,18 +220,29 @@ const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 /// "가려졌지만 우회로가 있는" 상태이고, **넷째가 우회로 없이 생기면 그 호스트 구현은
 /// 외부에서 닿지 않게 된다.** 이 가드가 지키는 것이 그 경계다.
 ///
-/// 실측(2026-09-05, 두 조합을 띄워 같은 요청 대조):
+/// ## 누가 답했는지는 응답 문구가 가른다
 ///
-/// - `image.list` — gui `{"entries":[]}` / headless `-32000 … Method not found`
-/// - `image.open` — 둘 다 `-32000` 이지만 사유가 다르다(gui 는 인자 부족, headless 는
-///   메서드 없음)
-/// - `markdown.navigate` — 둘 다 `-32601`. plugin 은 이 이름을 **부르기만** 하고 받지
-///   않으므로, 외부 호출자에게는 어느 조합에서도 없는 메서드다
+/// 세 이름 모두 **plugin 이 먼저 받는다**(forward 가 라우터의 첫 단계다). plugin 이
+/// trampoline 으로 `host.call` 하면 SDK 가 실패를 `host call '<call#N>' failed: …` 로
+/// 감싸므로, **그 래퍼의 유무가 "host 가 직접 답했나" 를 가른다.** 결과값만 보면
+/// 두 경로가 구별되지 않는다 — 성공 응답은 host 것이 그대로 통과하기 때문이다.
 ///
-/// 조합 차이의 원인은 라우팅 순서가 **아니다**. 세 arm 이 전부 `#[cfg(feature = "gui")]`
-/// 라 headless 에는 구현 자체가 없다. 순서 차이(gui 는 forward 가 먼저, headless 는
-/// engine handler 가 먼저)는 이 셋에서는 관측되지 않는다 — 어느 쪽이든 plugin 이 먼저
-/// 받고 trampoline 으로 되돌아오기 때문이다.
+/// 실측(2026-09-05, gui 격리 홈):
+///
+/// - plugin 실행중 · `image.open {}` → `-32602 host call 'call#2' failed: missing
+///   'surface_id'` — 래퍼가 있다. forward → plugin → trampoline → host 다
+/// - plugin 실행중 · `markdown.navigate {}` → `-32602 host call 'call#1' failed:
+///   invalid params: missing field ``surface_id``` — 같은 형태
+/// - plugin 실행중 · `image.list` → `{"entries":[]}` (host 값이 그대로 나온다)
+/// - plugin **미실행**(`plugin.disable`) · `image.list` → `-32002 plugin
+///   'com.tasty.image' is not running` — 소유는 매니페스트에서 오므로 유지되고
+///   실행만 거절된다(ADR-0173)
+/// - plugin **제거**(`plugin.remove`) · `image.open {}` → `-32602 missing
+///   'surface_id'` — **래퍼가 없다.** 소유가 풀려 host 가 직접 답한다
+///
+/// headless 는 세 arm 이 전부 `#[cfg(feature = "gui")]` 라 **구현 자체가 없다** —
+/// trampoline 이 되던져도 `-32601` 이다. 조합 차이의 원인은 라우팅 순서가 **아니다**
+/// (ADR-0173 이후 두 조합 모두 forward 가 먼저다).
 const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     (
         "image.list",
