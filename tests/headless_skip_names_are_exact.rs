@@ -47,6 +47,12 @@
 //!   가드의 값보다 비싸다. 대신 "모듈 이름 중 품는 것이 없다" 를 별도로 단정한다 —
 //!   있으면 사거리를 셀 수 없으므로 통과가 아니라 **실패**로 다룬다. 상한을 닫는 쪽이다.
 
+/// 어휘 마스킹은 공용 모듈이 한 벌로 갖는다 — 사본이 둘이면 갈리고, 갈린 쪽은 조용하다.
+/// 이 파일이 아래에서 합성 픽스처를 문자열로 들고 있으므로, 마스킹이 없으면 **가드가 자기
+/// 픽스처를 진짜 테스트로 센다.**
+mod rust_mask;
+use rust_mask::mask_non_code;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -95,144 +101,6 @@ fn skips_from_workflow() -> Vec<String> {
          진짜 0 건인지 파서가 죽은 건지 구분되지 않으므로 실패로 다룬다"
     );
     out
-}
-
-/// 주석과 문자열 리터럴을 공백으로 지운 사본. **줄 수와 줄 구조는 보존한다.**
-///
-/// 이게 없으면 문서주석 안의 `fn foo(` 나 테스트 픽스처 문자열 안의 `#[test]` 가 실제
-/// 선언으로 세어진다. 이 파일 자신이 아래에서 합성 픽스처를 문자열로 들고 있으므로,
-/// 마스킹이 없으면 **가드가 자기 픽스처를 진짜 테스트로 센다.**
-fn mask_non_code(src: &str) -> String {
-    let c: Vec<char> = src.chars().collect();
-    let mut out = String::with_capacity(src.len());
-    let mut i = 0usize;
-    let keep = |ch: char, out: &mut String| out.push(if ch == '\n' { '\n' } else { ' ' });
-
-    while i < c.len() {
-        match (c[i], c.get(i + 1)) {
-            ('/', Some('/')) => {
-                while i < c.len() && c[i] != '\n' {
-                    keep(c[i], &mut out);
-                    i += 1;
-                }
-            }
-            ('/', Some('*')) => {
-                let mut depth = 1usize;
-                keep(c[i], &mut out);
-                keep(c[i + 1], &mut out);
-                i += 2;
-                while i < c.len() && depth > 0 {
-                    if c[i] == '/' && c.get(i + 1) == Some(&'*') {
-                        depth += 1;
-                        keep(c[i], &mut out);
-                        i += 1;
-                    } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
-                        depth -= 1;
-                        keep(c[i], &mut out);
-                        i += 1;
-                    }
-                    if i < c.len() {
-                        keep(c[i], &mut out);
-                        i += 1;
-                    }
-                }
-            }
-            ('r', _) | ('b', _) if raw_string_at(&c, i).is_some() => {
-                let hashes = raw_string_at(&c, i).expect("바로 위에서 확인했다");
-                // `r` (또는 `br`) + `#`*n + `"` 까지 지우고, 닫는 `"` + `#`*n 을 찾는다.
-                let open_len = if c[i] == 'b' { 2 } else { 1 } + hashes + 1;
-                for _ in 0..open_len {
-                    keep(c[i], &mut out);
-                    i += 1;
-                }
-                while i < c.len() {
-                    if c[i] == '"' && (1..=hashes).all(|k| c.get(i + k) == Some(&'#')) {
-                        for _ in 0..=hashes {
-                            keep(c[i], &mut out);
-                            i += 1;
-                        }
-                        break;
-                    }
-                    keep(c[i], &mut out);
-                    i += 1;
-                }
-            }
-            ('\'', _) if char_literal_len(&c, i).is_some() => {
-                let n = char_literal_len(&c, i).expect("바로 위에서 확인했다");
-                for _ in 0..n {
-                    keep(c[i], &mut out);
-                    i += 1;
-                }
-            }
-            ('"', _) => {
-                keep(c[i], &mut out);
-                i += 1;
-                while i < c.len() {
-                    if c[i] == '\\' {
-                        keep(c[i], &mut out);
-                        i += 1;
-                        if i < c.len() {
-                            keep(c[i], &mut out);
-                            i += 1;
-                        }
-                        continue;
-                    }
-                    let done = c[i] == '"';
-                    keep(c[i], &mut out);
-                    i += 1;
-                    if done {
-                        break;
-                    }
-                }
-            }
-            (ch, _) => {
-                out.push(ch);
-                i += 1;
-            }
-        }
-    }
-    out
-}
-
-/// `i` 에서 char 리터럴이 시작하면 그 길이를 준다. 라이프타임(`'a`)은 닫는 따옴표가 없어
-/// `None` 이다.
-///
-/// **이게 없으면 `'"'` 같은 리터럴이 문자열 모드를 열어 그 뒤가 통째로 어긋난다.** 이
-/// 파일의 마스커 자신이 `'"'` 를 담고 있어서, 빠뜨린 채로도 대부분의 파일에서는 아무
-/// 증상이 없다가 이 파일에서만 틀린다 — `the_fixtures_in_this_file_are_not_counted_as_tests`
-/// 가 그걸 잡는다.
-fn char_literal_len(c: &[char], i: usize) -> Option<usize> {
-    if c.get(i) != Some(&'\'') {
-        return None;
-    }
-    if c.get(i + 1) == Some(&'\\') {
-        // `'\n'` · `'\''` · `'\u{1F600}'` — 닫는 따옴표를 짧은 창 안에서 찾는다.
-        return (2..12).find(|k| c.get(i + k) == Some(&'\'')).map(|k| k + 1);
-    }
-    (c.get(i + 2) == Some(&'\'')).then_some(3)
-}
-
-/// `i` 에서 raw string 이 시작하면 `#` 의 개수를 준다. `r"..."` 는 0, `r#"..."#` 는 1.
-/// `b` 접두(byte string)도 같이 본다.
-fn raw_string_at(c: &[char], i: usize) -> Option<usize> {
-    let mut j = i;
-    if c.get(j) == Some(&'b') {
-        j += 1;
-    }
-    if c.get(j) != Some(&'r') {
-        return None;
-    }
-    // `r` 앞이 식별자 문자면 `r` 은 이름의 일부다 (`for` 의 `r` 등).
-    if i > 0 && (c[i - 1].is_ascii_alphanumeric() || c[i - 1] == '_') {
-        return None;
-    }
-    j += 1;
-    let mut hashes = 0usize;
-    while c.get(j) == Some(&'#') {
-        hashes += 1;
-        j += 1;
-    }
-    (c.get(j) == Some(&'"')).then_some(hashes)
 }
 
 /// `cargo test --workspace` 가 실제로 컴파일하는 `.rs`. `[workspace] exclude` 는 **읽어서**
