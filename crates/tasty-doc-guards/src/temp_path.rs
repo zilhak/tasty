@@ -116,6 +116,12 @@ pub struct FileClass {
     pub reasoned: Vec<usize>,
     /// 그중 유니크화도 사유도 없는 줄 — 고정 이름 공유(위반).
     pub silent: Vec<usize>,
+    /// 창 안에 `.join(` 이 없어 **자리로도 안 세어진** `temp_dir()` 줄.
+    ///
+    /// 대부분은 정당하다 — 디렉터리를 그대로 넘기는 읽기 전용 용법이다. 그러나 창을
+    /// 넘겨 경로를 짓는 자리도 여기로 떨어지고, 그쪽은 **검사 없이 통과한다.** 두 부류가
+    /// 한 칸에 섞여 있어 소스만으로 못 가르므로, 수를 세어 **늘어나는 것**을 본다.
+    pub unpaired: Vec<usize>,
 }
 
 /// masked 코드 줄들과 masked 주석 줄들로 temp 경로 자리를 분류한다.
@@ -138,6 +144,7 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
         // 창 안에서 경로를 짓는가. 안 지으면(읽기 전용·먼 곳에서 join) 보지 않는다.
         let builds_path = (idx..=hi).any(|j| code[j].contains(".join("));
         if !builds_path {
+            out.unpaired.push(idx);
             continue;
         }
         out.sites.push(idx);
@@ -230,6 +237,8 @@ pub struct Census {
     pub sites: usize,
     pub uniquified: usize,
     pub reasoned: usize,
+    /// 창 안에 `.join(` 이 없어 자리로 안 세어진 `temp_dir()` 줄의 수.
+    pub unpaired: usize,
     /// `"레포상대경로:1기반줄: 원문"` 형태의 위반 목록.
     pub silent: Vec<String>,
 }
@@ -250,6 +259,7 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
         c.sites += fc.sites.len();
         c.uniquified += fc.uniquified.len();
         c.reasoned += fc.reasoned.len();
+        c.unpaired += fc.unpaired.len();
         for &idx in &fc.silent {
             let text = raw_lines.get(idx).map(|s| s.trim()).unwrap_or("");
             c.silent

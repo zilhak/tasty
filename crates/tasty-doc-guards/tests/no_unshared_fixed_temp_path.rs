@@ -45,6 +45,21 @@ const MIN_SITES: usize = 40;
 const MIN_UNIQUIFIED: usize = 35;
 const MIN_REASONED: usize = 4;
 
+/// 창(`JOIN_WINDOW`) 안에 `.join(` 이 없어 **자리로도 안 세어진** `temp_dir()` 줄의 수.
+/// 하한이 아니라 **양방향 래칫**이다 — 실측 2026-09-06: 4.
+///
+/// 왜 이 칸이 필요한가: 창을 넘겨 경로를 짓는 자리는 위반으로 잡히지 않고 **조용히
+/// 빠진다.** 창을 넓혀 잡으려 하면 안 된다 — 실측(계단 11 점)으로 6~24 는 완전히
+/// 평평하고, 40 과 400 에서 붙는 넷은 전부 **가짜 짝**이다(`valid.join(", ")` 같은
+/// 문자열 join, 28 줄 아래 다른 테스트의 `.join(`). 400 에서는 `reasoned` 가 6 → 2 로
+/// 무너진다. 그래서 창은 그대로 두고 **빠지는 수가 움직이는 것**을 본다.
+///
+/// 양방향인 이유는 `check-allow-reason` 의 래칫과 같다. 늘면 새로 안 보는 구간이
+/// 생긴 것이고, 줄었는데 값을 안 내리면 **남는 여유가 곧 안 보는 구간**이 된다.
+/// 오늘 이 4 는 전부 정당한 읽기 전용 전달로 보이지만, 그 판단은 소스로 못 굳힌다 —
+/// 두 부류가 한 칸에 섞여 있다. 그래서 값이 아니라 **움직임**을 지킨다.
+const UNPAIRED_RATCHET: usize = 4;
+
 #[test]
 fn every_temp_path_is_uniquified_or_reasoned() {
     let root = repo_root();
@@ -66,6 +81,15 @@ fn every_temp_path_is_uniquified_or_reasoned() {
         "유니크화된 자리가 {} 곳뿐이다(하한 {MIN_UNIQUIFIED}) — 유니크화 인식이 죽으면 \
          이 수가 떨어지고 그 자리들이 거짓 위반이 된다",
         c.uniquified
+    );
+    assert_eq!(
+        c.unpaired, UNPAIRED_RATCHET,
+        "창 안에 `.join(` 이 없어 검사에서 빠지는 `temp_dir()` 줄이 {} 개다 \
+         (래칫 {UNPAIRED_RATCHET}). 늘었으면 새로 안 보는 자리가 생긴 것이다 — \
+         그 자리가 경로를 짓는다면 `temp_dir().join(..)` 을 붙여 쓰거나 창 안으로 \
+         옮겨라. 정말 읽기 전용이면 이 값을 함께 올려라. 줄었으면 값을 같이 내려라 — \
+         남는 여유가 곧 안 보는 구간이다.",
+        c.unpaired
     );
     assert!(
         c.reasoned >= MIN_REASONED,
