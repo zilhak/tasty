@@ -41,7 +41,7 @@ use crate::catalog::widgets::dialog as kit;
 /// popup 본문 치수(디자인 480×360 고정 — size_hint). Theme 에 대응 토큰이 없는
 /// 화면 전용 고정값.
 const POPUP_W: LogicalPx = LogicalPx(480.0);
-const POPUP_H: f32 = 360.0;
+const POPUP_H: LogicalPx = LogicalPx(360.0);
 
 // CenterState 아이콘 크기는 plugin 본체와 **같은 상수**를 읽는다(`tasty-ui-widgets::tokens`).
 use tasty_ui_widgets::tokens::CLIPBOARD_CENTER_ICON_SIZE as CENTER_ICON_SIZE;
@@ -409,12 +409,12 @@ fn seg(ui: &mut egui::Ui, theme: &Theme, glyph: MockGlyph, label: &str, active: 
 
 /// body(files) — well 안에 아이콘 + mono 경로 한 줄씩(design ellipsis 전사).
 fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
-    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
-    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
-    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
+    let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
+    let type_bar_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let h = POPUP_H - header_h - type_bar_h - footer_h;
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
 
     let margin = theme.spacing_md.value();
     let well = rect.shrink(margin);
@@ -454,12 +454,12 @@ fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
 /// body — well 안에 아이콘(30px 고정) + 메타 + "인라인 미리보기 없음" 안내를 상하좌우
 /// 중앙 정렬(design jsx image 분기의 `cbWell` + `alignItems/justifyContent: center`).
 fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
-    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
-    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
-    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
+    let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
+    let type_bar_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let h = POPUP_H - header_h - type_bar_h - footer_h;
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
 
     let margin = theme.spacing_md.value();
     let well = rect.shrink(margin);
@@ -559,12 +559,12 @@ fn other_type_bar_row(ui: &mut egui::Ui, theme: &Theme) {
 /// separator(design `TypeBody` `other` 분기 1:1 전사). 목록 자체는 접지
 /// 않는다(design §6.5 확정) — well 이 이미 스크롤 컨테이너다.
 fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
-    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
-    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
-    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
+    let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
+    let type_bar_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let h = POPUP_H - header_h - type_bar_h - footer_h;
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
 
     let margin = theme.spacing_md.value();
     let well = rect.shrink(margin);
@@ -794,12 +794,12 @@ fn type_bar_row_html(
 
 /// body — well(border+radius+bg-app) 안에 mono 미리보기.
 fn body_row(ui: &mut egui::Ui, theme: &Theme) {
-    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
-    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
-    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
+    let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
+    let type_bar_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let h = POPUP_H - header_h - type_bar_h - footer_h;
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
 
     let margin = theme.spacing_md.value();
     let well = rect.shrink(margin);
@@ -830,12 +830,12 @@ fn body_row(ui: &mut egui::Ui, theme: &Theme) {
 /// body(HTML) — [`body_row`]와 동일 well, 임의 문자열(원본 또는 prettify 결과)을
 /// 줄 단위로 그린다. text 타입과 완전히 동일한 스타일(design 확정 결과).
 fn body_row_text(ui: &mut egui::Ui, theme: &Theme, content: &str) {
-    let footer_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
-    let header_h = theme.spacing_md.value() * 2.0 + theme.item_height_tab.value();
-    let type_bar_h = theme.spacing_sm.value() * 2.0 + theme.item_height_tab.value();
+    let footer_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
+    let header_h = theme.spacing_md.scaled(2.0) + theme.item_height_tab;
+    let type_bar_h = theme.spacing_sm.scaled(2.0) + theme.item_height_tab;
     let h = POPUP_H - header_h - type_bar_h - footer_h;
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.value()), egui::Sense::hover());
 
     let margin = theme.spacing_md.value();
     let well = rect.shrink(margin);
@@ -934,10 +934,10 @@ fn center_popup(
 ) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         header_row(ui, theme);
-        let h = (POPUP_H / 2.0).round();
+        let h = POPUP_H / 2.0;
         let w = ui.available_width();
         ui.allocate_ui_with_layout(
-            egui::vec2(w, h),
+            egui::vec2(w, h.value().round()),
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
             |ui| {
                 ui.vertical_centered(|ui| {
