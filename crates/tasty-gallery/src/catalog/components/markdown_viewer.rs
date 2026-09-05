@@ -38,7 +38,7 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 문서 카드 폭(전시 박스).
-const DOC_W: f32 = 560.0;
+const DOC_W: LogicalPx = LogicalPx(560.0);
 /// 상태 타일 치수.
 const TILE_W: LogicalPx = LogicalPx(200.0);
 const TILE_H: LogicalPx = LogicalPx(132.0);
@@ -71,7 +71,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     // 1. 전체 element catalog 문서.
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        ui.set_max_width(DOC_W);
+        ui.set_max_width(DOC_W.value());
         document(ui, theme);
     });
 
@@ -278,7 +278,7 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
             theme.spacing_md.value() as i8,
         ))
         .show(ui, |ui| {
-            ui.set_width(DOC_W - theme.spacing_lg.value() * 2.0);
+            ui.set_width((DOC_W - theme.spacing_lg.scaled(2.0)).value());
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
 
             heading(ui, theme, 1, "Markdown surface");
@@ -1073,7 +1073,7 @@ fn toc_chrome(ui: &mut egui::Ui, theme: &Theme) {
             theme.spacing_sm.value() as i8,
         ))
         .show(ui, |ui| {
-            ui.set_width(DOC_W - theme.spacing_lg.value() * 2.0);
+            ui.set_width((DOC_W - theme.spacing_lg.scaled(2.0)).value());
             ui.horizontal(|ui| {
                 ui.label(rich(
                     theme,
