@@ -43,6 +43,7 @@ impl HostBridge for StubBridge {
     }
 
     fn log(&self, level: &str, msg: &str) {
+        // 이유: 단일 스레드 WASM stub 이라 poison 이 생길 수 없다 — 조용히 버려도 안전하다.
         if let Ok(mut g) = self.logs.lock() {
             g.push((level.into(), msg.into()));
         }
