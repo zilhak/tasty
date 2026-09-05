@@ -18,6 +18,8 @@
 
 ### Added
 
+- **`workspace.move` · `workspace_category.move` 가 대상을 `id` 로 받는다** (CLI `tasty move workspace --id N --to M` · `tasty workspace-category move --id N --to M`). 지금까지 두 명령은 `from_index` 만 받았는데 그 순번은 **창 안의 위치**라 창이 여럿이면 대상이 정해지지 않았다 — 같은 요청이 사용자가 어느 창을 보고 있느냐에 따라 다른 창에 떨어졌다(실측: 비포커스 창의 카테고리를 옮기려던 `{from_index:3}` 이 포커스된 창에 떨어져 "category index out of range"). workspace id 와 카테고리 id 는 창을 건너 유일하므로 `id` 로 주인 창이 정해지고, `to_index` 는 그 창 안의 목적지라 뜻이 분명하다. `tab.move` 가 `pane_id` 로 주인을 먼저 짚는 것과 같은 형태다. 종전의 `from_index` 형태는 그대로 동작하며(포커스된 창) **둘을 함께 주면 거절한다** — 어긋났을 때 조용히 한쪽을 고르지 않는다.
+
 - **마크다운 표가 렌더에서 내용을 잃는 것을 가드가 잡는다** — 추적 `.md` 를 보는 가드는 여럿이었지만 전부 **소스 텍스트**만 봐서, 소스로는 아무 규칙도 안 어기는데 렌더에서만 깨지는 부류가 통째로 안 잡혔다. 사람이 소스를 읽으면 내용이 다 보이므로 리뷰로도 안 잡힌다 — 실제로 그 부류가 세 문서에서 오래 살아남았다. 판정은 렌더러 없이 둘로 한다: **행마다 셀 수가 헤더와 같은가**(이스케이프 안 된 `|` 가 셀을 쪼갠 것 — 코드 스팬 안이라도 쪼개진다)와 **표 본문에 구분행이 없는가**(빈 줄 없이 붙은 뒤 표가 앞 표에 삼켜진 것). 뒤 술어는 앞 술어의 부분집합이 아니다 — 붙은 두 표의 열 수가 같으면 셀 수는 전부 맞아 앞 술어가 침묵한다. 못 잡는 다섯(코드펜스 짝 · 헤더와 구분행의 열 수 불일치 · 들여쓴 표 · 링크 · 셀 안 HTML)은 가드 모듈 주석에 사전 등록했다.
 - CLI 진입점 6 개 — IPC 표에는 있는데 CLI 로는 부를 수 없던 release 메서드들이다. `tasty list theme`(적용 중인 테마 스냅샷) · `tasty list recent --kind <kind>`(그 종류로 최근 연 파일) · `tasty set cwd --surface <id> [--path <p>]`(원격 서피스가 보고하는 cwd) · `tasty set url --surface <id> --url <u>`(웹뷰 서피스 주소) · `tasty file-handler dispatch <path> [--depth cheap|deep] [--origin-surface <id>] [--ignore-size-limit]`(탐색기 더블클릭과 같은 열기 경로) · `tasty telemetry record-batch --events <json 배열>`(여러 이벤트를 한 타임스탬프로 기록해 순서를 보장). 전부 살아 있는 인스턴스에 직접 쏘아 확인했다.
 

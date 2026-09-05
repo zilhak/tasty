@@ -152,7 +152,7 @@ pub(crate) fn method_scoped_resource_id(
     // 거절 문구를 그대로 낸다.
     if matches!(
         method,
-        "workspace_category.rename" | "workspace_category.delete"
+        "workspace_category.rename" | "workspace_category.delete" | "workspace_category.move"
     ) {
         return numeric(params, "id")
             .filter(|id| *id != u64::from(crate::model::NORMAL_CATEGORY_ID))
@@ -161,7 +161,10 @@ pub(crate) fn method_scoped_resource_id(
                 id,
             });
     }
-    if matches!(method, "workspace.close" | "workspace.update") {
+    if matches!(
+        method,
+        "workspace.close" | "workspace.update" | "workspace.move"
+    ) {
         return numeric(params, "id").map(|id| ResourceId {
             kind: Kind::Workspace,
             id,
@@ -299,13 +302,21 @@ mod tests {
     #[test]
     fn category_id_routes_only_for_category_methods_and_never_for_normal() {
         let p = json!({ "id": 4, "name": "x" });
-        for m in ["workspace_category.rename", "workspace_category.delete"] {
+        for m in [
+            "workspace_category.rename",
+            "workspace_category.delete",
+            "workspace_category.move",
+        ] {
             let rid = method_scoped_resource_id(m, &p).expect("대상이 잡혀야 한다");
             assert!(matches!(rid.kind, Kind::Category), "{m}");
             assert_eq!(rid.id, 4);
         }
         // 예약 카테고리는 지목 대상이 아니다.
-        for m in ["workspace_category.rename", "workspace_category.delete"] {
+        for m in [
+            "workspace_category.rename",
+            "workspace_category.delete",
+            "workspace_category.move",
+        ] {
             assert!(
                 method_scoped_resource_id(m, &json!({ "id": 0, "name": "x" })).is_none(),
                 "{m} 이 normal 을 지목으로 쳤다 — 창이 정해지지 않는다"
@@ -324,7 +335,7 @@ mod tests {
     #[test]
     fn workspace_id_key_routes_only_for_the_methods_that_mean_workspace() {
         let p = json!({ "id": 4, "name": "x" });
-        for m in ["workspace.close", "workspace.update"] {
+        for m in ["workspace.close", "workspace.update", "workspace.move"] {
             let rid = method_scoped_resource_id(m, &p).expect("대상이 잡혀야 한다");
             assert!(matches!(rid.kind, Kind::Workspace), "{m}");
             assert_eq!(rid.id, 4);
@@ -338,6 +349,11 @@ mod tests {
         assert!(
             method_scoped_resource_id("workspace.close", &json!({ "index": 0 })).is_none(),
             "index 는 창을 건너 해석되면 안 된다"
+        );
+        assert!(
+            method_scoped_resource_id("workspace.move", &json!({ "from_index": 2, "to_index": 0 }))
+                .is_none(),
+            "from_index 만 준 이동은 여전히 대상이 없다 — 창이 정해지지 않는다"
         );
     }
 

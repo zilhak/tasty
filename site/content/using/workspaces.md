@@ -48,7 +48,8 @@ tasty list workspaces
 
 - 카드를 드래그합니다.
 - 카드 우클릭 > **위로 이동** <!-- en: Move Up --> / **아래로 이동** <!-- en: Move Down -->.
-- `tasty move workspace --from 2 --to 0` (0 부터 셉니다).
+- `tasty move workspace --id 5 --to 0` — 옮길 워크스페이스를 **ID 로** 지정합니다. 창이 여러 개여도 그 ID 를 가진 창에서 옮겨집니다. ID 는 `tasty list workspaces` 에 나옵니다.
+- `tasty move workspace --from 2 --to 0` (0 부터 셉니다) — 순번은 **창 안의 자리**라, 창이 여러 개면 지금 보고 있는 창에서 옮겨집니다.
 
 ## 카드에 붙는 표시
 

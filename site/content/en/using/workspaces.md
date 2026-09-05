@@ -1,4 +1,4 @@
-<!-- source-hash: 4e1148855453 -->
+<!-- source-hash: 639b9b8e6020 -->
 # Workspaces
 
 After reading this page you will know how to create Workspaces, name them, group them into categories, switch between them, and close and restore them. What a Workspace is is explained in [A first look](../getting-started/first-look.md).
@@ -49,7 +49,8 @@ Each Workspace remembers its own focused Pane. Switch away and back and the curs
 
 - Drag a card.
 - Right-click a card > **Move Up** / **Move Down**.
-- `tasty move workspace --from 2 --to 0` (counting from 0).
+- `tasty move workspace --id 5 --to 0` — names the Workspace by **ID**, so it moves in whichever window owns it even when several are open. `tasty list workspaces` shows the IDs.
+- `tasty move workspace --from 2 --to 0` (counting from 0) — a position **inside one window**, so with several windows open it moves in the one you are looking at.
 
 ## Marks on a card
 

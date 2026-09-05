@@ -537,6 +537,13 @@ pub fn handle_workspace_close(
     JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
 }
 
+/// 워크스페이스 순서 이동.
+///
+/// 대상은 **`id` 로 지목한다** — workspace id 는 engine 을 건너 유일해서 라우팅이 주인
+/// 창을 짚는다. `from_index` 는 창 안의 위치라 창이 정해지지 않으므로, 그 형태로 부르면
+/// 포커스된 창에 떨어진다(`docs/design/policies/focus.md`). 종전 호출을 깨지 않으려고
+/// 남겨 두었고 둘을 함께 주면 거절한다 — 어긋났을 때 조용히 한쪽을 고르지 않는다.
+/// `to_index` 는 지목된 창 **안에서의** 목적지라 창이 정해진 뒤에는 뜻이 분명하다.
 pub fn handle_workspace_move(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -544,9 +551,26 @@ pub fn handle_workspace_move(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let from = match p_try!(params::opt_int::<u64>(params, "from_index", &id)) {
-        Some(f) => f as usize,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
+    let named = p_try!(params::opt_int::<u64>(params, "id", &id));
+    let from_index = p_try!(params::opt_int::<u64>(params, "from_index", &id));
+    let from = match (named, from_index) {
+        (Some(_), Some(_)) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "give either 'id' (the workspace to move) or 'from_index', not both",
+            );
+        }
+        (Some(ws_id), None) => match engine.find_workspace_index_for_id(ws_id as u32) {
+            Some(i) => i,
+            // 라우팅이 주인 창으로 보냈으므로 여기 없으면 그 id 가 죽은 것이다.
+            None => {
+                return JsonRpcResponse::invalid_params(id, format!("no workspace {ws_id}"));
+            }
+        },
+        (None, Some(f)) => f as usize,
+        (None, None) => {
+            return JsonRpcResponse::invalid_params(id, "Missing 'id' or 'from_index' parameter");
+        }
     };
     let to = match p_try!(params::opt_int::<u64>(params, "to_index", &id)) {
         Some(t) => t as usize,

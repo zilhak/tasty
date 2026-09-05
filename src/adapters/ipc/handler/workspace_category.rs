@@ -105,14 +105,38 @@ pub fn handle_delete(
 }
 
 /// 카테고리 순서 이동(reorder). normal(0번) 위치 고정 — from/to == 0 거부.
+///
+/// 대상은 **`id` 로 지목한다** — 카테고리 id 는 engine 을 건너 유일해서 라우팅이 주인
+/// 창을 짚는다(`normal` 만 예외인데 그건 애초에 이동이 거부된다). `from_index` 는 창
+/// 안의 위치라 창이 안 정해지므로 그 형태는 포커스된 창에 떨어진다 — 종전 호출을 위해
+/// 남겨 두었고 둘을 함께 주면 거절한다. `to_index` 는 지목된 창 안에서의 목적지다.
 pub fn handle_move(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let from = match p_try!(params::opt_int::<u64>(params, "from_index", &id)) {
-        Some(f) => f as usize,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
+    let named = p_try!(params::opt_int::<u64>(params, "id", &id));
+    let from_index = p_try!(params::opt_int::<u64>(params, "from_index", &id));
+    let from = match (named, from_index) {
+        (Some(_), Some(_)) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "give either 'id' (the category to move) or 'from_index', not both",
+            );
+        }
+        (Some(cat_id), None) => match engine.category_index(cat_id as u32) {
+            Some(i) => i,
+            None => {
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    format!("no workspace category {cat_id}"),
+                );
+            }
+        },
+        (None, Some(f)) => f as usize,
+        (None, None) => {
+            return JsonRpcResponse::invalid_params(id, "Missing 'id' or 'from_index' parameter");
+        }
     };
     let to = match p_try!(params::opt_int::<u64>(params, "to_index", &id)) {
         Some(t) => t as usize,
