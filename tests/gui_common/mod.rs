@@ -75,7 +75,17 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
         }
         Mutex::new(inst)
     });
-    guard.lock().unwrap()
+    // 오염된 락에서 복구한다 — `.unwrap()` 이면 **한 건의 패닉이 나머지 전부를 죽인다.**
+    // 이 인스턴스는 33 건이 공유하므로, 한 테스트가 단정에서 죽으면 그 뒤의 모든 테스트가
+    // 자기 물음을 묻지도 못하고 `PoisonError` 로 실패한다 — 실측: 진짜 실패 1 건이
+    // 화면에 31 건으로 나왔다. 그러면 회차가 세는 수가 사건 수가 아니게 되고,
+    // "격리하면 도는가" 같은 물음에 그 수로 답할 수 없다.
+    // 복구가 안전한 이유: 보호 대상은 자식 프로세스 핸들과 Enigo 뿐이라 테스트 단정의
+    // 패닉이 그 둘의 불변식을 깨지 않는다. 인스턴스가 실제로 죽었으면 뒤 테스트는
+    // 자기 자리에서 자기 이유로 실패한다 — 그것이 오염 실패보다 정확하다.
+    guard
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 // --- GuiTestInstance ---
