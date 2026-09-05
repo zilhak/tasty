@@ -186,48 +186,6 @@ tasty read queue --surface 42 --peek     # 꺼내지 않고 보기
 tasty read queue --surface 42 --clear    # 전부 비움
 ```
 
-## 그 밖의 조회·설정
-
-에이전트가 가끔 쓰는 것들입니다. 전체 목록은 `tasty <명령> --help` 로 봅니다.
-
-```sh
-tasty list theme                       # 지금 적용된 테마 스냅샷(색·글자 크기·UI 배율)
-tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
-tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경
-tasty set url --surface 42 --url URL   # 웹뷰 서피스의 주소 변경
-tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
-```
-
-`set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 그렇게 말해 줍니다.
-
-## 자주 쓰는 명령 표
-
-| 하고 싶은 것 | 명령 |
-|---|---|
-| 계층 구조 보기 | `tasty list tree` |
-| 서피스 목록 | `tasty list surfaces` |
-| 텍스트 보내기 (Enter 포함) | `tasty send text "ls\r" --surface ID` |
-| 키 보내기 | `tasty send key enter --surface ID` |
-| 마크 찍기 | `tasty set mark --surface ID` |
-| 마크 이후 읽기 | `tasty read since-mark --surface ID --strip-ansi` |
-| 화면 읽기 | `tasty read screen --surface ID --lines N` |
-| 알림 | `tasty notify "본문" --title "제목"` |
-| 스크린샷 | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
-| 도움말 | `tasty --help`, `tasty <명령> --help`, `tasty -a -h` (전체 트리) |
-
-## 문제 해결
-
-- **연결이 안 됩니다** — Tasty 가 실행 중인지, `~/.tasty/tasty.port` 파일이 있는지 확인합니다. 파일이 남아 있는데 접속이 안 되면 이전 인스턴스가 비정상 종료된 것입니다 ([문제 해결](../help/troubleshooting.md)).
-- **`--surface` 없이 부르면 거부됩니다** — `TASTY_SURFACE_ID` 가 없는 셸(Tasty 밖)에서는 대상 서피스를 알 수 없어 명령이 오류로 끝납니다. Tasty 는 포커스된 서피스로 추측하지 않습니다 — 어느 창이 앞에 나와 있든 같은 명령은 같은 결과를 냅니다. 스크립트에서는 항상 `--surface` 를 적습니다.
-- **`read since-mark` 가 비어 있습니다** — 마크를 찍기 전에 출력이 끝났거나, 명령이 아직 안 끝난 것입니다. `read screen` 으로 현재 상태를 봅니다.
-- **`screenshot` 이 어느 창을 찍는지 모르겠습니다** — 자동 선택은 **메인 창(터미널 창)만** 셉니다. 메인 창이 하나면 `--window` 없이 그 창을 찍고, 메인 창이 여럿이면 `--window` 가 필수입니다(포커스된 창을 임의로 고르지 않습니다). 설정 창처럼 `list windows` 에 안 나오는 창은 이 계산에 들어가지 않습니다 — 설정 창이 떠 있어도 `--window` 없이 메인 창이 찍히며, 설정 창 자체를 찍으려면 `--window` 로 그 ID 를 직접 적습니다.
-
-## 다음 읽을 것
-
-- [Claude · Codex 와 함께 쓰기](claude-codex.md) — 자식 에이전트를 띄우고 완료를 통지받기.
-- [작업 DAG](tasks.md) — 여러 작업을 의존 관계로 묶어 순서대로 실행하기.
-- [훅 · 알림 · 웹훅](hooks-notifications.md) — 이벤트로 명령을 자동 실행하기.
-
 ## 자식 터미널을 에이전트처럼 굴리기
 
 한 워크스페이스 안에 자식 터미널을 띄워 명령을 돌리고, 메시지를 보내고, 목록을 보고, 끝나면
@@ -302,3 +260,45 @@ tasty telemetry timeseries --metric tokens --window 1h
 
 `record` 는 부르는 쪽을 에이전트로 자동 귀속합니다(`TASTY_AGENT_ID`). 여러 값을 순서까지 지켜
 한 번에 넣으려면 `tasty telemetry record-batch` 를 씁니다.
+
+## 그 밖의 조회·설정
+
+에이전트가 가끔 쓰는 것들입니다. 전체 목록은 `tasty <명령> --help` 로 봅니다.
+
+```sh
+tasty list theme                       # 지금 적용된 테마 스냅샷(색·글자 크기·UI 배율)
+tasty list recent --kind markdown      # 그 종류로 최근 연 파일 목록
+tasty set cwd --surface 42 --path /tmp # 원격 서피스가 보고하는 작업 디렉터리 변경
+tasty set url --surface 42 --url URL   # 웹뷰 서피스의 주소 변경
+tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 것과 같은 경로로 파일 열기
+```
+
+`set cwd` 와 `set url` 은 대상이 각각 원격 서피스·웹뷰 서피스일 때만 동작합니다. 일반 터미널 서피스에 쓰면 그렇게 말해 줍니다.
+
+## 자주 쓰는 명령 표
+
+| 하고 싶은 것 | 명령 |
+|---|---|
+| 계층 구조 보기 | `tasty list tree` |
+| 서피스 목록 | `tasty list surfaces` |
+| 텍스트 보내기 (Enter 포함) | `tasty send text "ls\r" --surface ID` |
+| 키 보내기 | `tasty send key enter --surface ID` |
+| 마크 찍기 | `tasty set mark --surface ID` |
+| 마크 이후 읽기 | `tasty read since-mark --surface ID --strip-ansi` |
+| 화면 읽기 | `tasty read screen --surface ID --lines N` |
+| 알림 | `tasty notify "본문" --title "제목"` |
+| 스크린샷 | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
+| 도움말 | `tasty --help`, `tasty <명령> --help`, `tasty -a -h` (전체 트리) |
+
+## 문제 해결
+
+- **연결이 안 됩니다** — Tasty 가 실행 중인지, `~/.tasty/tasty.port` 파일이 있는지 확인합니다. 파일이 남아 있는데 접속이 안 되면 이전 인스턴스가 비정상 종료된 것입니다 ([문제 해결](../help/troubleshooting.md)).
+- **`--surface` 없이 부르면 거부됩니다** — `TASTY_SURFACE_ID` 가 없는 셸(Tasty 밖)에서는 대상 서피스를 알 수 없어 명령이 오류로 끝납니다. Tasty 는 포커스된 서피스로 추측하지 않습니다 — 어느 창이 앞에 나와 있든 같은 명령은 같은 결과를 냅니다. 스크립트에서는 항상 `--surface` 를 적습니다.
+- **`read since-mark` 가 비어 있습니다** — 마크를 찍기 전에 출력이 끝났거나, 명령이 아직 안 끝난 것입니다. `read screen` 으로 현재 상태를 봅니다.
+- **`screenshot` 이 어느 창을 찍는지 모르겠습니다** — 자동 선택은 **메인 창(터미널 창)만** 셉니다. 메인 창이 하나면 `--window` 없이 그 창을 찍고, 메인 창이 여럿이면 `--window` 가 필수입니다(포커스된 창을 임의로 고르지 않습니다). 설정 창처럼 `list windows` 에 안 나오는 창은 이 계산에 들어가지 않습니다 — 설정 창이 떠 있어도 `--window` 없이 메인 창이 찍히며, 설정 창 자체를 찍으려면 `--window` 로 그 ID 를 직접 적습니다.
+
+## 다음 읽을 것
+
+- [Claude · Codex 와 함께 쓰기](claude-codex.md) — 자식 에이전트를 띄우고 완료를 통지받기.
+- [작업 DAG](tasks.md) — 여러 작업을 의존 관계로 묶어 순서대로 실행하기.
+- [훅 · 알림 · 웹훅](hooks-notifications.md) — 이벤트로 명령을 자동 실행하기.

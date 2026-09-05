@@ -1,4 +1,4 @@
-<!-- source-hash: 5de78667b49d -->
+<!-- source-hash: 0229a7e31ad7 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -188,48 +188,6 @@ tasty read queue --surface 42 --peek     # look without popping
 tasty read queue --surface 42 --clear    # empty everything
 ```
 
-## Other queries and settings
-
-Things an agent reaches for occasionally. `tasty <command> --help` lists them all.
-
-```sh
-tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
-tasty list recent --kind markdown      # files recently opened as that kind
-tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
-tasty set url --surface 42 --url URL   # change the address of a webview surface
-tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
-```
-
-`set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Point them at a plain terminal surface and they say so.
-
-## Frequently used commands
-
-| What you want | Command |
-|---|---|
-| Show the hierarchy | `tasty list tree` |
-| Surface list | `tasty list surfaces` |
-| Send text (including Enter) | `tasty send text "ls\r" --surface ID` |
-| Send a key | `tasty send key enter --surface ID` |
-| Set a mark | `tasty set mark --surface ID` |
-| Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
-| Read the screen | `tasty read screen --surface ID --lines N` |
-| Notification | `tasty notify "body" --title "title"` |
-| Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
-| Help | `tasty --help`, `tasty <command> --help`, `tasty -a -h` (full tree) |
-
-## Troubleshooting
-
-- **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
-- **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
-- **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
-- **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
-
-## What to read next
-
-- [Claude · Codex](claude-codex.md) — Spawning child agents and being told when they land.
-- [Task DAG](tasks.md) — Tying several pieces of work together by dependency.
-- [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.
-
 ## Running child terminals like agents
 
 Spawn a child terminal inside a workspace to run a command, send it messages, list them, and clean up when it finishes. This works for **any program**, not only Claude · Codex (their [dedicated commands](claude-codex.md) do the same thing with session management layered on top).
@@ -294,3 +252,45 @@ tasty telemetry timeseries --metric tokens --window 1h
 ```
 
 `record` attributes the call to the caller automatically (`TASTY_AGENT_ID`). To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
+
+## Other queries and settings
+
+Things an agent reaches for occasionally. `tasty <command> --help` lists them all.
+
+```sh
+tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
+tasty list recent --kind markdown      # files recently opened as that kind
+tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
+tasty set url --surface 42 --url URL   # change the address of a webview surface
+tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
+```
+
+`set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Point them at a plain terminal surface and they say so.
+
+## Frequently used commands
+
+| What you want | Command |
+|---|---|
+| Show the hierarchy | `tasty list tree` |
+| Surface list | `tasty list surfaces` |
+| Send text (including Enter) | `tasty send text "ls\r" --surface ID` |
+| Send a key | `tasty send key enter --surface ID` |
+| Set a mark | `tasty set mark --surface ID` |
+| Read since the mark | `tasty read since-mark --surface ID --strip-ansi` |
+| Read the screen | `tasty read screen --surface ID --lines N` |
+| Notification | `tasty notify "body" --title "title"` |
+| Screenshot | `tasty screenshot --path out.png [--surface ID] [--window ID]` |
+| Help | `tasty --help`, `tasty <command> --help`, `tasty -a -h` (full tree) |
+
+## Troubleshooting
+
+- **Cannot connect** — check that Tasty is running and that the `~/.tasty/tasty.port` file exists. If the file is there but the connection fails, the previous instance exited abnormally ([Troubleshooting](../help/troubleshooting.md)).
+- **Calling without `--surface` is rejected** — in a shell without `TASTY_SURFACE_ID` (outside Tasty) there is no target Surface, so the command ends in an error. Tasty never guesses the focused one: the same command gives the same result no matter which window is in front. Always write `--surface` in scripts.
+- **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
+- **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
+
+## What to read next
+
+- [Claude · Codex](claude-codex.md) — Spawning child agents and being told when they land.
+- [Task DAG](tasks.md) — Tying several pieces of work together by dependency.
+- [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.
