@@ -20,7 +20,7 @@
 |---|---|---|---|---|
 | 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
-| macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [배선] |
+| macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [배선] |
 | headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
@@ -29,7 +29,7 @@
 | 동결 총합 래칫 | `bash scripts/check-frozen-sum-ratchet.sh` | `complexity-check.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
-| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다 | [실측] |
+| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동 | [실측] |
 | 사이트 생성 — 가이드 링크 · `ORDER` 누락 | `cargo run --release --manifest-path site/Cargo.toml -- --strict` | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
 
@@ -63,6 +63,23 @@
   `crossplatform-check` 에서는 나머지가 초록인 것이 안 보인다.
 - **등급 미정** — 초록을 본 적이 없고 배선만으로 판단하기도 곤란한 행. 모른다고 적는 것이
   [배선]이라 적는 것보다 정직하다.
+
+★ **등급이 답하지 않는 물음이 하나 더 있다: 그 채널이 무엇을 모수로 재는가.**
+`plugin-version-check.yml` 이 그 실물이다. 이 채널은 [실측]이 맞지만, 그것이 재는 범위는
+**직전 push 지점부터 지금까지**이고 lane 이 로컬에서 돌리는 `--staged` 검사가 재는 범위는
+**그 커밋 하나**다. 두 물음이 다르다 — 앞은 "발행된 값과 지금 내용이 짝이 맞나", 뒤는
+"내 커밋이 버전을 올렸나". 그래서 **모든 lane 이 자기 기준으로 통과하고도 통합 지점에서
+빨개질 수 있다.** 실측으로 그 형태가 났다(한 크레이트 변경이 세 번들 plugin 의 워크스페이스
+의존 폐포 안이라 산출물이 달라진 경우 —
+[ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)).
+누구의 잘못도 아니다. **그 판정은 병합하는 쪽이 `--range <직전 push> HEAD` 로 한다.**
+등급을 올려도 이 어긋남은 안 사라진다 — 등급의 축이 아니라 **모수의 축**이기 때문이다.
+
+그리고 이건 **일회성이 아니다.** 같은 형태가 하루 안에 두 번 났고(통합 회차의 게이트
+빨강 하나, 그리고 다른 lane 이 자기 검사로 스스로 다시 잡은 것 하나), 둘 다 원인이 같다 —
+`tasty-ui-widgets` 처럼 여러 번들 plugin 이 링크하는 워크스페이스 크레이트를 고치면
+그 폐포 안의 plugin 산출물이 전부 달라진다. 그러니 **그 크레이트를 건드리는 회차마다
+나온다고 보고 통합 지점에서 `--range` 로 다시 재는 것**이 정상 절차다.
 
 ★ **등급은 "무엇이 지키는가" 한 축만 잰다.** 그 가드가 **옳은 곳을 지목하는가**는 다른
 축이고, 여기 칸으로 안 들어간다. 빨강이 났는데 그 이유가 흔든 자리를 안 가리키면, 그
@@ -536,15 +553,21 @@ gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
 
 | | debug | release |
 |---|---|---|
-| macOS + gui | `check-macos`(컴파일 + `--lib --bins` 유닛) **[배선]** | — |
+| macOS + gui | `check-macos`(컴파일 + `--lib --bins` 유닛) **[실측]** | — |
 | Windows + gui | `check-windows`(컴파일 + 유닛) **[실측]** | — |
 | Linux + headless | `check-headless`(컴파일 + 전체) **[실측]** | — |
 | **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) **[실측]** | `check-release`(컴파일) **[배선]** |
 
 ★ **등급의 출처**(위 "등급" 절의 정의 그대로 — 과거형 사실이다): 성공 회차 둘의 잡·스텝
 결론을 직접 읽었다. 거기서 `cargo test (linux, gui, unit)` 은 **success** 였고, 그것이
-**Linux + gui + debug 칸이 배선을 넘어 실측으로 올라간 근거**다. macOS 칸은 스텝이 방금
-생겨 아직 한 번도 안 돌았으므로 [배선]에 머문다 — 한 번 초록을 보면 그때 올린다. 재는 법은
+**Linux + gui + debug 칸이 배선을 넘어 실측으로 올라간 근거**다. macOS 칸도 같은 방식으로
+올랐다 — 그 스텝이 처음 도는 회차에서 `cargo test (macos, gui, unit)` 이 **success** 였다.
+(과거값이라 값으로 적는다. **지금 초록인가**는 현재형이므로 아래 명령으로 그 자리에서 재라.)
+
+★ **판정은 잡이 아니라 스텝까지 본다.** 잡이 초록이어도 그 안의 스텝이 `skipped` 일 수 있고,
+그때 그 칸은 그 회차에 존재하지 않는다 — 실제로 이 저장소에서 그 형태가 났다(아래
+"그 잡이 초록인가" 절). 그러니 [실측]으로 올릴 때 근거는 **그 스텝의 `conclusion`** 이지
+잡의 결론이 아니다. 재는 법은
 위 [비용 절](#macos-유닛-테스트의-비용은-이-잡의-시간이-아니다)의 `gh api` 두 줄과 같고,
 `.steps[]` 의 `conclusion` 을 보면 된다.
 
