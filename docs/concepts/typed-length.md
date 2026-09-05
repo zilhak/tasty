@@ -23,6 +23,31 @@ tasty 내부 소스는 길이 값을 **`f32` 그대로 다루지 않는다.** DP
 
 둘 다 `#[repr(transparent)]` 이라 런타임 오버헤드가 없다 (제로 코스트). `Add`/`Sub`/`Mul<f32>`/`Div<f32>`/`Neg`/`*Assign` 과 `max`/`min`/`floor`/`abs` 가 **같은 타입끼리만** 정의돼 있어, `PhysicalPx + LogicalPx` 같은 식은 타입 에러다.
 
+### `const` 문맥에서는 트레이트 연산을 못 쓴다
+
+위 연산자는 전부 트레이트 impl 이고 트레이트 impl 은 `const` 가 아니다. 그래서 상수 초기화식에서
+부르면 컴파일이 막힌다:
+
+```rust
+const BODY_H: LogicalPx = FRAME_H - HEADER_H;   // error[E0015]: cannot call non-const operator
+```
+
+`LogicalPx(FRAME_H.0 - HEADER_H.0)` 으로 필드를 벗기면 컴파일은 되지만 그 자리에서 타입이
+사라진다 — 위 표의 "단언이지 검증이 아니다" 로 되돌아가는 형태고, DPI 가드는 이걸 잡지 않는다
+(그 가드가 겨냥하는 것은 scale factor 산술이다). 그래서 벗기지 않는 통로를 인허런트
+`const fn` 으로 둔다. 두 타입 모두에 있다:
+
+```rust
+const BODY_H: LogicalPx = FRAME_H.minus(HEADER_H);
+const LIST_MIN: LogicalPx = ITEM_HEIGHT.scaled(4.0);
+const INDENT: LogicalPx = LABEL_COL_WIDTH.plus(LogicalPx(12.0));
+```
+
+`plus`/`minus`/`scaled` 는 대응 트레이트 연산과 결과가 같다 — 이름이 다른 것은 인허런트 메서드가
+같은 이름의 트레이트 메서드를 조용히 가리는 것을 피하기 위해서다. 계수가 좌변인 형태
+(`4.0 * LEN`)는 `Mul<f32>` 도 `scaled` 도 지원하지 않으므로 `LEN.scaled(4.0)` 으로 쓴다 —
+곱셈 교환이라 값이 보존된다.
+
 ## 변환 — scale factor 를 명시적으로 통과
 
 두 타입 간 직접 대입은 불가능하다. 반드시 변환 함수를 거치고, 그때 scale factor 를 넘긴다:
@@ -54,6 +79,18 @@ egui::FontId::proportional(th.font_size_body.value());
 내부 로직 중간에서 `.value()` 로 빠져나와 `f32` 산술을 하는 것은 안티패턴 — 타입 보호를 스스로 버리는 셈이다.
 
 **특히 `.value()` 로 벗긴 뒤 scale factor 를 곱하거나 나누는 것**은 위 표의 두 번째 실수 그 자체다. 그 형태는 `src/dpi_conversion_guard.rs` 가 잡는다. 산술이 정당한 자리(변환 API 본체, 길이 타입에 의존할 수 없는 plugin SDK 등)는 그 가드의 `ALLOWED` 에 **사유와 함께** 등재한다 — 파일 단위가 아니라 건수까지 고정하므로, 등재된 파일이 새 위반을 들이면 그것도 잡힌다.
+
+## 집행은 셋으로 나뉜다
+
+| 무엇을 막는가 | 누가 막는가 |
+|---|---|
+| 두 좌표계를 섞는 것 (`PhysicalPx + LogicalPx`) | 컴파일러 |
+| 변환을 빠뜨리는 것 (`.value()` 뒤의 수동 scale factor 산술) | `src/dpi_conversion_guard.rs` |
+| 애초에 타입을 안 쓰고 선언하는 것 (`const W: f32 = 96.0;`) | `src/source_guards/length_constant_frontier.rs` |
+
+셋째가 따로 필요한 이유는 앞의 둘이 **이미 타입이 붙은 값**에만 걸리기 때문이다. 처음부터 `f32` 인 길이는 섞일 두 타입도 벗길 `.value()` 도 없어 둘 다 조용히 통과한다.
+
+셋째 가드의 술어는 두 겹이다. **어디를 보는가**는 스캔 목록이 정하고(지금은 `src` 와 `crates/tasty-gallery`), 그 안에서 **"전환 전선 밖에 없다"** 를 요구한다. 본체 전환이 진행 중이라 아직 남은 영역이 있고, 그 영역은 면제 목록이 아니라 **경로 한 줄과 건수**로 이름 지어져 있다 — 건수가 상한이라 전선은 줄어들 수만 있다. 갤러리는 전환을 끝내 전선 없이 0 을 요구받는다. **목록에 없는 크레이트는 0 이 아니라 미측정이다** — 목록이 조용히 비는 것(접두사 오타 등)은 별도 테스트가 막는다. 그 가드가 설계상 못 잡는 형태(테스트 코드, 배율성 이름, 0~1 값, `static`·`let`)는 그 파일의 모듈 주석이 열거하고, 각 형태를 겨냥한 테스트가 사각의 모양을 못박는다.
 
 ## `f32` 로 남는 값
 
