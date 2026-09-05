@@ -34,12 +34,12 @@ use tasty_ui_widgets::hspace;
 pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 
 const POPUP_WIDTH: LogicalPx = LogicalPx(480.0);
-const ITEM_HEIGHT: f32 = 22.0;
-const LIST_MIN_HEIGHT: LogicalPx = LogicalPx(4.0 * ITEM_HEIGHT); // 빈 list 도 시각적 공간 확보
-const LIST_MAX_HEIGHT: LogicalPx = LogicalPx(10.0 * ITEM_HEIGHT);
-const HEADER_HEIGHT: f32 = 36.0; // 대상/형식 두 줄
-const BUTTON_ROW_HEIGHT: f32 = 28.0;
-const VERTICAL_PADDING: f32 = 8.0;
+const ITEM_HEIGHT: LogicalPx = LogicalPx(22.0);
+const LIST_MIN_HEIGHT: LogicalPx = ITEM_HEIGHT.scaled(4.0); // 빈 list 도 시각적 공간 확보
+const LIST_MAX_HEIGHT: LogicalPx = ITEM_HEIGHT.scaled(10.0);
+const HEADER_HEIGHT: LogicalPx = LogicalPx(36.0); // 대상/형식 두 줄
+const BUTTON_ROW_HEIGHT: LogicalPx = LogicalPx(28.0);
+const VERTICAL_PADDING: LogicalPx = LogicalPx(8.0);
 const HORIZONTAL_MARGIN: LogicalPx = LogicalPx(8.0);
 
 /// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 전체 경로 포함.
@@ -59,18 +59,17 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
         None => (0, 0),
     };
     let list_rows = cand_n.max(recent_n);
-    let list_height = (list_rows.max(4) as f32 * ITEM_HEIGHT)
-        .clamp(LIST_MIN_HEIGHT.value(), LIST_MAX_HEIGHT.value());
+    let list_height = ITEM_HEIGHT
+        .scaled(list_rows.max(4) as f32)
+        .max(LIST_MIN_HEIGHT)
+        .min(LIST_MAX_HEIGHT);
 
     let content_height =
         HEADER_HEIGHT + VERTICAL_PADDING + list_height + VERTICAL_PADDING + BUTTON_ROW_HEIGHT;
 
     egui::vec2(
         POPUP_WIDTH.value(),
-        (popup::title_bar_height()
-            + popup::content_margin().scaled(2.0)
-            + LogicalPx(content_height))
-        .value(),
+        (popup::title_bar_height() + popup::content_margin().scaled(2.0) + content_height).value(),
     )
 }
 
@@ -159,7 +158,7 @@ pub fn draw_file_handler_picker_view(
             .color(th.text_muted()),
     );
 
-    ui.add_space(VERTICAL_PADDING);
+    ui.add_space(VERTICAL_PADDING.value());
 
     // ── 빈 상태 (handler 0개) ─────────────────────────────────────────
     let is_empty = props.candidates.is_empty() && props.recent.is_empty();
@@ -170,7 +169,7 @@ pub fn draw_file_handler_picker_view(
                 .size(th.font_size_body.value())
                 .color(th.text_secondary()),
         );
-        ui.add_space(VERTICAL_PADDING);
+        ui.add_space(VERTICAL_PADDING.value());
         let mut cancel_clicked = false;
         let mut open_settings_clicked = false;
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -195,7 +194,10 @@ pub fn draw_file_handler_picker_view(
 
     let list_height = {
         let rows = props.candidates.len().max(props.recent.len());
-        (rows.max(4) as f32 * ITEM_HEIGHT).clamp(LIST_MIN_HEIGHT.value(), LIST_MAX_HEIGHT.value())
+        ITEM_HEIGHT
+            .scaled(rows.max(4) as f32)
+            .max(LIST_MIN_HEIGHT)
+            .min(LIST_MAX_HEIGHT)
     };
 
     let total_w = ui.available_width();
@@ -213,7 +215,7 @@ pub fn draw_file_handler_picker_view(
             );
             egui::ScrollArea::vertical()
                 .id_salt("file_handler_picker_candidates")
-                .max_height(list_height)
+                .max_height(list_height.value())
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
                     draw_handler_list(
@@ -240,7 +242,7 @@ pub fn draw_file_handler_picker_view(
             );
             egui::ScrollArea::vertical()
                 .id_salt("file_handler_picker_recent")
-                .max_height(list_height)
+                .max_height(list_height.value())
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
                     draw_handler_list(ui, th, props.recent, props.selected_id, col_w, &mut action);
@@ -248,7 +250,7 @@ pub fn draw_file_handler_picker_view(
         });
     });
 
-    ui.add_space(VERTICAL_PADDING);
+    ui.add_space(VERTICAL_PADDING.value());
 
     // ── 버튼 row ──────────────────────────────────────────────────────
     let mut open_clicked = false;
@@ -290,7 +292,7 @@ fn draw_handler_list(
 ) {
     for entry in items {
         let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(col_w, ITEM_HEIGHT), egui::Sense::click());
+            ui.allocate_exact_size(egui::vec2(col_w, ITEM_HEIGHT.value()), egui::Sense::click());
 
         let is_selected = selected_id == Some(entry.id.as_str());
 
