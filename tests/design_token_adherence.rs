@@ -78,6 +78,85 @@ const COLOR_SCAN_ROOTS: &[&str] = &[
 /// 플러그인(`crates/tasty-plugin-*`)도 미포함 — S-11 과 비중첩.
 const GLYPH_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu"];
 
+/// 호출부 길이 리터럴 축의 스캔 모수 — 본체 UI 전부에서 **갤러리만** 뺀다.
+///
+/// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 리터럴도 함께
+/// 커지므로 거기서는 결함이 아니다(`docs/adr/0135-…`). 제외의 사유가 그것 하나이므로
+/// 제외도 그것 하나로 적는다 — 남기는 쪽(`"src/"` 같은 경로 모양)으로 적으면 갤러리가
+/// 아닌 위젯 크레이트까지 사유 없이 함께 빠진다.
+const LENGTH_SETTER_SCAN_ROOTS: &[&str] = &[
+    "src/view",
+    "src/adapters/ui",
+    "src/gfx/gpu",
+    "crates/tasty-ui-widgets/src",
+    "crates/tasty-egui-theme/src",
+];
+
+/// 길이를 직접 받는 egui 호출부. 이 접두 뒤에 숫자가 오면 그 길이는 `Theme` 밖이라
+/// **본체에서 `ui_scale` 을 안 탄다**(본체는 egui `zoom_factor` 를 1.0 으로 고정하고
+/// 배율을 `zoomed()` 로만 먹인다 — ADR-0135).
+const LENGTH_SETTER_PREFIXES: &[&str] = &[
+    "set_min_width(",
+    "set_max_width(",
+    "set_min_height(",
+    "set_max_height(",
+    "min_height(",
+    "max_height(",
+    "exact_width(",
+    "exact_height(",
+    "desired_width(",
+    "desired_height(",
+];
+
+/// **한시 목록 — 줄어들기만 한다.** [`ALLOWLIST_PREFIXES`] 와 성격이 다르므로 합치지
+/// 않는다(`tests/layering.rs` 가 같은 이유로 세 목록을 갈라 둔다).
+///
+/// - `ALLOWLIST_PREFIXES` 는 **정책** 면제다 — 사유가 "이 경로는 검사 범위 밖이다" 라
+///   덮을 것이 지금 없어도 남는다(ADR-0150).
+/// - 이 목록의 사유는 전부 한 가지다: **"이 자리의 값이 `field_width_*` tier 밖이라
+///   아직 토큰이 없다."** 그 사유가 사라지면(= 리터럴이 없어지면) 항목도 사라져야 하고,
+///   아래 단언이 그것을 양방향으로 강제한다.
+///
+/// 여섯 자리를 지금 고치지 않는 이유는 값이 바뀌기 때문이다 — tier 를 넓힐지 이 여섯을
+/// tier 로 스냅할지는 디자인 판정이고, 자리마다 이름을 주면 드리프트가 정당해 보여
+/// 눈에 안 보이게 된다(ADR-0126). **이 가드가 답하는 것은 그 질문이 아니라 "일곱째가
+/// 새로 들어오는가" 다.**
+const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
+    (
+        "src/view/settings/ui/file_handler_tab/extension_mapping.rs",
+        "desired_width(",
+        "120.0",
+    ),
+    (
+        "src/view/settings/ui/file_handler_tab/handlers.rs",
+        "desired_width(",
+        "80.0",
+    ),
+    (
+        "src/view/settings/ui/file_handler_tab/handlers.rs",
+        "desired_width(",
+        "120.0",
+    ),
+    (
+        "src/view/settings/ui/file_handler_tab/handlers.rs",
+        "desired_width(",
+        "240.0",
+    ),
+    (
+        "src/view/settings/ui/keybindings_tab/plugins.rs",
+        "desired_width(",
+        "180.0",
+    ),
+    (
+        "src/view/settings/ui/tabs/appearance.rs",
+        "desired_width(",
+        "190.0",
+    ),
+];
+
+/// 코퍼스 하한 — 스캔이 비면 위반도 0 이 되어 가드가 조용히 통과한다.
+const MIN_LENGTH_SETTER_SCANNED_FILES: usize = 150;
+
 /// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
 /// 평면 필드 직접 접근(`th.blue`/`theme.surface0`)을 host UI 에서 금지하기 위한 목록.
 /// `text` 는 `text_primary`/`text_muted` 등 semantic 접근자의 접두라 경계 검사로 가른다.
@@ -899,5 +978,116 @@ fn allowlist_prefixes_point_at_paths_that_exist() {
     assert!(
         missing.is_empty(),
         "면제가 없는 경로를 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 항목을 지워라: {missing:?}"
+    );
+}
+
+/// 호출부 길이 리터럴을 `(파일, 접두, 값)` 으로 모은다 — **줄 번호를 담지 않는다.**
+/// 담으면 위쪽에 한 줄만 들어가도 한시 목록이 통째로 썩어, 목록이 결함과 무관하게
+/// 흔들린다.
+fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
+    let mut out = Vec::new();
+    let mut scanned = 0usize;
+    for target in LENGTH_SETTER_SCAN_ROOTS {
+        let path = root.join(target);
+        let mut files = Vec::new();
+        gather_rs_files(&path, &mut files);
+        assert!(
+            !files.is_empty(),
+            "스캔 루트 `{target}` 에서 .rs 파일을 하나도 찾지 못했다 — 조용한 미스캔은 \
+             위양성보다 나쁘다"
+        );
+        scanned += files.len();
+        for file in files {
+            let rel = file
+                .strip_prefix(root)
+                .unwrap_or(&file)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let contents = std::fs::read_to_string(&file).expect("소스 파일 read 실패");
+            for line in contents.lines() {
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                for &prefix in LENGTH_SETTER_PREFIXES {
+                    let mut from = 0;
+                    while let Some(idx) = line[from..].find(prefix) {
+                        let start = from + idx;
+                        from = start + prefix.len();
+                        // `set_max_height(` 안의 `max_height(` 를 두 번 세지 않는다.
+                        if line[..start].chars().next_back().is_some_and(is_word_char) {
+                            continue;
+                        }
+                        let tail = &line[from..];
+                        let value: String = tail
+                            .chars()
+                            .take_while(|c| c.is_ascii_digit() || *c == '.')
+                            .collect();
+                        // 숫자가 아니면 토큰을 넘긴 것이다 — 이 축이 원하는 형태다.
+                        if value.is_empty() || !value.starts_with(|c: char| c.is_ascii_digit()) {
+                            continue;
+                        }
+                        out.push((rel.clone(), prefix, value));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        scanned >= MIN_LENGTH_SETTER_SCANNED_FILES,
+        "스캔 파일이 {scanned}개뿐이다(하한 {MIN_LENGTH_SETTER_SCANNED_FILES}) — \
+         코퍼스가 비면 위반도 0 이다"
+    );
+    out.sort();
+    out
+}
+
+/// 호출부에 길이 리터럴이 **새로** 들어오지 않는다.
+///
+/// 이 축의 결함은 토큰이 아니라 배율이다. 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
+/// UI 배율을 `Theme::with_colors_and_zoom` 의 `zoomed()` 로만 적용하므로, 호출부에 적힌
+/// 숫자는 `ui_scale` 을 안 탄다 — 같은 리터럴이 갤러리에서는 결함이 아니다(ADR-0135).
+///
+/// **하한(`<= n`)이 아니라 집합 동등으로 본다.** 건수 고정은 빨개지기는 해도 무엇이
+/// 늘었는지 말하지 않고, 한 방향(늘어남)만 보면 자리가 고쳐졌을 때 목록이 그대로 남아
+/// "이미 부채" 라는 신호가 조용히 살아남는다. 동등은 두 방향을 다 이름으로 뱉는다.
+#[test]
+fn no_new_length_literal_at_call_sites() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let found = length_setter_literals(root);
+    let mut expected: Vec<(String, &str, String)> = LENGTH_SETTER_BASELINE
+        .iter()
+        .map(|(rel, prefix, value)| ((*rel).to_string(), *prefix, (*value).to_string()))
+        .collect();
+    expected.sort();
+
+    let show = |v: &[(String, &str, String)]| {
+        v.iter()
+            .map(|(r, p, val)| format!("  {r} — `{p}{val})`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let added: Vec<_> = found
+        .iter()
+        .filter(|x| !expected.contains(x))
+        .cloned()
+        .collect();
+    let gone: Vec<_> = expected
+        .iter()
+        .filter(|x| !found.contains(x))
+        .cloned()
+        .collect();
+
+    assert!(
+        added.is_empty(),
+        "호출부에 길이 리터럴이 새로 들어왔다 — 본체는 egui zoom_factor 를 1.0 으로 \
+         고정하므로 이 숫자는 `ui_scale` 을 안 탄다. `Theme` 의 `field_width_*` 등 \
+         대응 토큰을 넘겨라(ADR-0135):\n{}",
+        show(&added)
+    );
+    assert!(
+        gone.is_empty(),
+        "한시 목록이 가리키는 리터럴이 사라졌다 — 고쳤으면 목록에서도 지워라. 남겨 두면 \
+         \"여기는 원래 부채\" 라는 신호가 아무것도 안 덮은 채 살아남는다:\n{}",
+        show(&gone)
     );
 }
