@@ -157,7 +157,6 @@ impl App {
 
         mgr.refresh_packages();
         mgr.command_registry.register_plugin(&manifest);
-        mgr.recompute_extensions();
         let lang_dir = dest.join(&manifest.lang_dir);
         crate::i18n::register_namespace(&manifest.id, &lang_dir);
         let tokens: Vec<String> = manifest.permissions.clone();
@@ -165,6 +164,12 @@ impl App {
         if let Err(e) = mgr.config.save() {
             tracing::warn!("plugins.toml save failed: {e}");
         }
+        // 유도는 **원본을 바꾸는 마지막 쓰기 뒤**에 온다. `extensions` 는 packages 와
+        // config(비활성 여부 · `ext:` 권한) 둘 다에서 계산되므로, `set_granted` 앞에서
+        // 계산하면 방금 준 권한을 안 본 값이 남는다. 지금까지 그것이 안 보이던 이유는
+        // 아래 `enable` 이 한 번 더 계산하기 때문인데, 그 호출은 `is_disabled` 일 때
+        // 건너뛴다 — 즉 무해함이 다른 분기에 얹혀 있었다.
+        mgr.recompute_extensions();
 
         let mut events = vec![CoreEvent::PluginRegistryChanged {
             plugin_id: manifest.id.clone(),
