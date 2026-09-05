@@ -43,15 +43,15 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, vspace};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 // ── 고정 컴포넌트 치수 (구조 값 — dialog::frame_card 240.0 와 동일 관례) ──────
-const CALLOUT_W: f32 = 244.0;
+const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 const POPUP_W: LogicalPx = LogicalPx(360.0);
-const TAIL: f32 = 12.0; // 12px diamond → 삼각 tail
+const TAIL: LogicalPx = LogicalPx(12.0); // 12px diamond → 삼각 tail
 
 // ── 재사용되는 국소 구조 값 (모듈 문서의 규칙: 재사용되면 이름을 붙인다) ─────
 // jsx tail offset — 위/아래 tail 은 말풍선 왼쪽에서 28, 좌/우 tail 은 위에서 24.
 // 네 방향 tail 이 두 값을 나눠 쓰므로 한 지점 오프셋이 아니다.
-const TAIL_OFFSET_X: f32 = 28.0;
-const TAIL_OFFSET_Y: f32 = 24.0;
+const TAIL_OFFSET_X: LogicalPx = LogicalPx(28.0);
+const TAIL_OFFSET_Y: LogicalPx = LogicalPx(24.0);
 
 // marker 데모 박스 — ring 변형과 glow 변형이 같은 무대를 쓴다. 두 specimen 이
 // 같은 비율을 보여야 비교가 성립하므로 값을 공유한다. `FAUX_ROW_H` 와 아래
@@ -70,13 +70,13 @@ const MARKER_DEMO_INSET_B: LogicalPx = LogicalPx(22.0);
 // 데모 전용 구조 상수다. Theme 토큰이 아니라 이 무대 장치의 값·비율 자체가 의미라 명명
 // const 로 고정한다. 나머지 여백(8·12·16)은 실제 spacing 토큰과 값이 같아 토큰을 쓴다.
 const FAUX_SIDEBAR_W: LogicalPx = LogicalPx(116.0);
-const FAUX_STATUSBAR_H: f32 = 20.0;
-const FAUX_ROW_H: f32 = 22.0;
-const FAUX_ROW_GAP: f32 = 3.0;
-const FAUX_GLYPH_INSET: f32 = 6.0;
-const FAUX_DOT_R: f32 = 4.0;
-const FAUX_LABEL_GAP: f32 = 14.0;
-const FAUX_TEXT_PAD: f32 = 10.0;
+const FAUX_STATUSBAR_H: LogicalPx = LogicalPx(20.0);
+const FAUX_ROW_H: LogicalPx = LogicalPx(22.0);
+const FAUX_ROW_GAP: LogicalPx = LogicalPx(3.0);
+const FAUX_GLYPH_INSET: LogicalPx = LogicalPx(6.0);
+const FAUX_DOT_R: LogicalPx = LogicalPx(4.0);
+const FAUX_LABEL_GAP: LogicalPx = LogicalPx(14.0);
+const FAUX_TEXT_PAD: LogicalPx = LogicalPx(10.0);
 
 /// faux 무대의 사이드바 폭. 무대가 좁으면 절반으로 클램프된다 — 이 식을
 /// 복제하면 마커가 사이드바 경계에서 어긋나므로 한 곳에 둔다.
@@ -97,11 +97,11 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     p.rect_filled(side, 0.0, theme.bg_sidebar().to_egui());
     p.vline(side.max.x, side.y_range(), sep);
     let rows = [("web", true), ("api", false), ("db", false)];
-    let mut ry = side.min.y + FAUX_TEXT_PAD;
+    let mut ry = LogicalPx(side.min.y) + FAUX_TEXT_PAD;
     for (label, active) in rows {
         let row = egui::Rect::from_min_size(
-            egui::pos2(side.min.x + inset, ry),
-            egui::vec2(sidebar_w - inset * 2.0, FAUX_ROW_H),
+            egui::pos2(side.min.x + inset, ry.value()),
+            egui::vec2(sidebar_w - inset * 2.0, FAUX_ROW_H.value()),
         );
         if active {
             p.rect_filled(
@@ -112,13 +112,16 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
         }
         // workspace 상태 dot (accent-success).
         p.circle_filled(
-            egui::pos2(row.min.x + FAUX_GLYPH_INSET + FAUX_DOT_R, row.center().y),
-            FAUX_DOT_R,
+            egui::pos2(
+                row.min.x + (FAUX_GLYPH_INSET + FAUX_DOT_R).value(),
+                row.center().y,
+            ),
+            FAUX_DOT_R.value(),
             theme.accent_success().to_egui(),
         );
         p.text(
             egui::pos2(
-                row.min.x + FAUX_GLYPH_INSET + FAUX_LABEL_GAP,
+                row.min.x + (FAUX_GLYPH_INSET + FAUX_LABEL_GAP).value(),
                 row.center().y,
             ),
             egui::Align2::LEFT_CENTER,
@@ -174,11 +177,11 @@ fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
     // 터미널 본문 (surface-terminal-focused-bg).
     let body = egui::Rect::from_min_max(
         egui::pos2(main.min.x, tabbar.max.y),
-        egui::pos2(main.max.x, main.max.y - FAUX_STATUSBAR_H),
+        egui::pos2(main.max.x, main.max.y - FAUX_STATUSBAR_H.value()),
     );
     p.rect_filled(body, 0.0, term_bg);
     p.text(
-        egui::pos2(body.min.x + tab_pad, body.min.y + FAUX_TEXT_PAD),
+        egui::pos2(body.min.x + tab_pad, body.min.y + FAUX_TEXT_PAD.value()),
         egui::Align2::LEFT_TOP,
         "$ kubectl get pods -n prod",
         egui::FontId::monospace(cap),
@@ -261,7 +264,7 @@ fn callout(
             bottom: theme.spacing_md.value() as i8,
         })
         .show(ui, |ui| {
-            ui.set_width(CALLOUT_W - 2.0 * theme.spacing_lg.value());
+            ui.set_width((CALLOUT_W - theme.spacing_lg.scaled(2.0)).value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             // step / total (mono, accent-primary, 600).
             ui.label(
@@ -335,35 +338,35 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, tail: Tail) 
     // jsx tail offset: up/down left:28, left/right top:24 (bubble 모서리에서의 위치).
     let (a, b, apex) = match tail {
         Tail::Up => {
-            let cx = bubble.min.x + TAIL_OFFSET_X;
+            let cx = LogicalPx(bubble.min.x) + TAIL_OFFSET_X;
             (
-                egui::pos2(cx - h, bubble.min.y),
-                egui::pos2(cx + h, bubble.min.y),
-                egui::pos2(cx, bubble.min.y - h),
+                egui::pos2((cx - h).value(), bubble.min.y),
+                egui::pos2((cx + h).value(), bubble.min.y),
+                egui::pos2(cx.value(), bubble.min.y - h.value()),
             )
         }
         Tail::Down => {
-            let cx = bubble.min.x + TAIL_OFFSET_X;
+            let cx = LogicalPx(bubble.min.x) + TAIL_OFFSET_X;
             (
-                egui::pos2(cx - h, bubble.max.y),
-                egui::pos2(cx + h, bubble.max.y),
-                egui::pos2(cx, bubble.max.y + h),
+                egui::pos2((cx - h).value(), bubble.max.y),
+                egui::pos2((cx + h).value(), bubble.max.y),
+                egui::pos2(cx.value(), bubble.max.y + h.value()),
             )
         }
         Tail::Left => {
-            let cy = bubble.min.y + TAIL_OFFSET_Y;
+            let cy = LogicalPx(bubble.min.y) + TAIL_OFFSET_Y;
             (
-                egui::pos2(bubble.min.x, cy - h),
-                egui::pos2(bubble.min.x, cy + h),
-                egui::pos2(bubble.min.x - h, cy),
+                egui::pos2(bubble.min.x, (cy - h).value()),
+                egui::pos2(bubble.min.x, (cy + h).value()),
+                egui::pos2(bubble.min.x - h.value(), cy.value()),
             )
         }
         Tail::Right => {
-            let cy = bubble.min.y + TAIL_OFFSET_Y;
+            let cy = LogicalPx(bubble.min.y) + TAIL_OFFSET_Y;
             (
-                egui::pos2(bubble.max.x, cy - h),
-                egui::pos2(bubble.max.x, cy + h),
-                egui::pos2(bubble.max.x + h, cy),
+                egui::pos2(bubble.max.x, (cy - h).value()),
+                egui::pos2(bubble.max.x, (cy + h).value()),
+                egui::pos2(bubble.max.x + h.value(), cy.value()),
             )
         }
     };
