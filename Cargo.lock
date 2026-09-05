@@ -6280,7 +6280,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "tasty-i18n",
- "tasty-latency-control",
  "tasty-remote-profiles",
  "tasty-utils",
  "tracing",

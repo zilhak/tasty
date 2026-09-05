@@ -1390,7 +1390,6 @@ impl Default for Backoff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tasty_latency_control::ControlProbe;
 
     #[test]
     fn ssh_target_parse_keeps_destination() {
@@ -1596,8 +1595,11 @@ mod tests {
     #[test]
     fn port_discovery_times_out_instead_of_hanging() {
         const CEILING: Duration = Duration::from_secs(10);
-        // 이 자리가 기다리는 것은 fork/exec 과 폴링이라 spawn 계열 대조군을 쓴다.
-        let mut control = ControlProbe::start_spawn("무한 대기 회귀 감시");
+        // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
+        // 그 계열이 ADR-0181 의 규칙 3(값이 싸고 변동이 작다)을 못 지킨다 — 부하도
+        // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
+        // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
+        // 말하게 되고, 그것이 그 ADR 이 지금 상태보다 나쁘다고 못 박은 거짓 음성이다.
         let started = Instant::now();
         let r = run_capture_with_budget(
             never_returns_command(),
@@ -1608,7 +1610,7 @@ mod tests {
         assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
         // 상한(300ms) + 폴링/프로세스 spawn 여유. 무한 대기면 여기서 잡힌다.
         let elapsed = started.elapsed();
-        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
+        assert!(elapsed < CEILING, "상한 안에 반환되지 않음: {elapsed:?}");
         // 타임아웃 detail 은 로그 전용 — 사용자 문구에 내부 사정이 새지 않는다.
         assert!(!err.to_string().contains("no-hang test"));
     }
@@ -2061,11 +2063,15 @@ mod tests {
         handle.register(child).expect("취소 전이므로 등록 성공");
 
         const CEILING: Duration = Duration::from_secs(10);
-        let mut control = ControlProbe::start_spawn("cancel 이 자식을 즉시 거둔다");
+        // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
+        // 그 계열이 ADR-0181 의 규칙 3(값이 싸고 변동이 작다)을 못 지킨다 — 부하도
+        // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
+        // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
+        // 말하게 되고, 그것이 그 ADR 이 지금 상태보다 나쁘다고 못 박은 거짓 음성이다.
         let t0 = Instant::now();
         handle.cancel();
         let elapsed = t0.elapsed();
-        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
+        assert!(elapsed < CEILING, "kill 후 즉시 reaping: {elapsed:?}");
         assert!(handle.is_cancelled());
         // cancel 이 자식을 가져가 정리했으므로 회수할 것이 남지 않는다.
         assert!(handle.reclaim().is_none());
@@ -2118,7 +2124,11 @@ mod tests {
             killer.cancel();
         });
         const CEILING: Duration = Duration::from_secs(5);
-        let mut control = ControlProbe::start_spawn("외부 취소가 상한 만료 전에 끊는다");
+        // 대조군을 뺐다. 이 자리가 기다리는 자원은 fork/exec 이라 계열은 맞았지만,
+        // 그 계열이 ADR-0181 의 규칙 3(값이 싸고 변동이 작다)을 못 지킨다 — 부하도
+        // 유휴도 없이 기준선 대비 0.8~3.6 배, 유휴를 끼면 4.8 배까지 흔들리는 것이
+        // 실측됐다. 그만큼 흔들리는 값에 판정을 붙이면 "러너가 굶었다" 를 근거 없이
+        // 말하게 되고, 그것이 그 ADR 이 지금 상태보다 나쁘다고 못 박은 거짓 음성이다.
         let started = Instant::now();
         // 예산 10초, 자식은 60초 — 취소가 없으면 10초를 다 쓴다.
         let err = run_capture_with_budget(
@@ -2130,7 +2140,7 @@ mod tests {
         t.join().expect("killer 스레드");
         assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
         let elapsed = started.elapsed();
-        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
+        assert!(elapsed < CEILING, "상한 만료 전에 끊겨야 한다: {elapsed:?}");
     }
 
     /// 취소로 죽은 자식은 **타임아웃으로 분류되지 않는다**. 취소 kill 은 시그널 종료라
