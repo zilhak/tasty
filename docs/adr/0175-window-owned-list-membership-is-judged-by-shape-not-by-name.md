@@ -71,6 +71,47 @@
 - `active` 가 창 수만큼 참이 되는 것이 소비자에게 실제 문제가 된다. 그때는 `tree` 만이
   아니라 `workspace.list` 와 함께 필드의 뜻을 바꾼다.
 
+## 보강 — 새 술어로 census 를 다시 돌린 결과 (같은 날, 후속 회차)
+
+위 Alternatives C 는 "지금은 회귀 단언 하나로 두고 아래 트리거에서 다시 본다" 였고,
+**첫 트리거가 곧바로 걸렸다** — 세 성질로 전수를 다시 뽑으니 `tree` 말고 넷이 더 나왔다.
+
+실측(격리 인스턴스, 창 둘, 창1 비포커스, 창1 에 표식 자원을 심고 창2 포커스에서 조회):
+
+    tasty list hooks         []                 창1 의 hook id 1 이 없다
+    tasty list global-hooks  []                 창1 의 global hook id 1 이 없다
+    tasty list notifications No notifications   창1 의 알림이 없다
+
+양성 대조로 같은 자원을 창2 에 만들면 각 목록이 **창2 의 것 하나만** 낸다. `approval.list`
+와 `attach.list` 는 저장소가 engine 마다 새로 만들어지는 것을 소스로 확인했고(둘 다
+`CoreState` 생성자에서 `Arc::new`/`::new`), 대상 인자가 없어 같은 형태다 — 다만 비포커스
+창에 그 자원을 만들 수단이 없어 **실행 재현은 못 했다.**
+
+**둘은 합산 전에 id 공간을 먼저 고쳐야 한다 — 위 재검토 트리거 2 가 걸린 것이다.**
+`IdGenerator` 가 공유하는 카운터는 workspace · category · pane · tab · surface · pty ·
+observer 일곱이고 **hook 과 global hook 은 거기 없다.** 그래서 두 창의 hook 이 똑같이
+id 1 을 받는다. 실측: 포커스된 창에서 `unset global-hook --hook 1` 이 성공하고, 한 번
+더 부르면 `removed: false` 다 — **비포커스 창의 global hook 은 존재하는데 어떤 요청으로도
+닿지 않는다.** 이 저장소가 pty 에서 겪은 것과 같은 형태다.
+
+### 자동 발견은 못 한다 — 네 형태로 다 새었고 넷 다 실측이다
+
+Alternatives C 를 **기각으로 확정한다.** 세 성질을 정적으로 자동 발견하려는 술어는
+이렇게 샜다: 이름 모양은 `tree` 를 놓치고 · "params 를 안 받는다" 는 `hook.list` 를
+놓치고(그 params 는 대상이 아니라 필터다) · `engine.<필드>` 줄 단위 grep 은 rustfmt 가
+접은 줄을 못 봐 네 필드와 일곱 자리를 놓치고 · `CoreState` 컬렉션 필드 전수로 올리면
+명부가 ~50 이 되는데 대부분이 `pending_*` 버퍼라 자원이 아니다.
+
+대신 **손으로 유지하는 명부**를 둔다(`crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs`).
+못 하는 것을 먼저 적는다 — **새 list 메서드가 들어와도 이 명부는 모른다.** 하는 것은
+둘이다: 합산 집합에서 무엇이 **빠지는** 것을 잡고, 안 합산되는 자원이 **왜** 그런지를
+검사받는 텍스트로 만든다.
+
+**도는 자리가 값이다.** 이 축의 실행 단언은 `multi_window_owner_routing` 인데, 그것은
+창을 요구해 헤드리스 조합 CI 가 이름으로 `--skip` 하는 유일한 항목이다. 명부 쪽은
+`tasty-doc-guards` 라 경로 필터 없는 잡에서 돈다. 둘은 겹치는 것이 아니라 **채널이
+다르다** — 조합별 채널의 정본은 [ci-gates](../dev-guide/ci-gates.md).
+
 ## References
 
 - [focus 정책](../design/policies/focus.md) — "CLI/IPC 포커스 독립 원칙", "라우팅 아래에도 층이 하나 더 있다"
