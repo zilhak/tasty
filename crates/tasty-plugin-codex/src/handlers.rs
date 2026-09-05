@@ -1240,6 +1240,24 @@ mod tests {
         Translator::load(&lang_dir, code)
     }
 
+    /// 이 완주만의 surface id. `make_codex_command` 가 쓰는 prompt 임시파일 경로는
+    /// `{prefix}{surface_id}.txt` 로만 정해지므로, 같은 머신에서 이 크레이트를 **동시에
+    /// 두 번** 완주하면 두 완주가 같은 파일을 쓴다. `prompt_file::write` 는 먼저 지우고
+    /// 다시 만들기 때문에, 한쪽의 쓰기가 다른 쪽의 읽기 사이에 끼면 파일이 잠깐 없어져
+    /// 확률적 red 가 난다 (실측: 동시 2 완주 × 40 회 = 80 완주에 1 회). 유니크하게 만들
+    /// 수 있는 자리가 surface id 뿐이라 pid 를 섞는다 — `slot` 은 한 완주 **안에서**
+    /// 테스트끼리 겹치지 않게 하는 번호이고, pid 가 Linux 기본 상한(2^22)보다 작으므로
+    /// `pid * 8 + slot` 은 slot < 8 에서 (pid, slot) 을 유일하게 되돌릴 수 있다.
+    fn unique_surface_id(slot: u32) -> u32 {
+        std::process::id().wrapping_mul(8).wrapping_add(slot)
+    }
+
+    /// 이 테스트가 만든 prompt 임시파일 경로. 이름 규칙을 여기서 다시 적으면 프로덕션이
+    /// 규칙을 바꿨을 때 정리가 **조용히** 빗나가므로 프로덕션과 같은 헬퍼로 만든다.
+    fn prompt_path(surface_id: u32) -> std::path::PathBuf {
+        prompt_file::path_for(&std::env::temp_dir(), PROMPT_FILE_PREFIX, surface_id)
+    }
+
     #[test]
     fn make_codex_command_no_prompt() {
         assert_eq!(
@@ -1254,16 +1272,17 @@ mod tests {
 
     #[test]
     fn make_codex_command_with_plain_prompt_uses_tempfile_cat() {
-        let cmd = make_codex_command(9101, Some("hello"), "");
+        let surface_id = unique_surface_id(1);
+        let cmd = make_codex_command(surface_id, Some("hello"), "");
         assert!(
-            cmd.starts_with(
-                "TASTY_SURFACE_ID=9101 codex --dangerously-bypass-hook-trust \"$(cat '"
-            ),
+            cmd.starts_with(&format!(
+                "TASTY_SURFACE_ID={surface_id} codex --dangerously-bypass-hook-trust \"$(cat '"
+            )),
             "got {cmd}"
         );
         assert!(cmd.ends_with("')\"\r"), "got {cmd}");
         // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(std::env::temp_dir().join("tasty-codex-prompt-9101.txt"));
+        let _ = std::fs::remove_file(prompt_path(surface_id));
     }
 
     #[test]
@@ -1271,15 +1290,15 @@ mod tests {
         // zsh history expansion(`!`)이나 shell quoting 대상 문자가 섞여도 파일
         // 쓰기는 셸 파싱을 거치지 않으므로 그대로 보존돼야 한다.
         let prompt = "fix [!NOTE] \"bug\" in path\\to\\file";
-        let surface_id = 9102;
+        let surface_id = unique_surface_id(2);
         // 반환된 커맨드 문자열 자체는 이 테스트의 관심사가 아니다 — 아래에서 부작용으로
         // 쓰인 tempfile 내용만 검증한다.
         let _ = make_codex_command(surface_id, Some(prompt), "");
-        let prompt_path = std::env::temp_dir().join(format!("tasty-codex-prompt-{surface_id}.txt"));
-        let written = std::fs::read_to_string(&prompt_path).expect("prompt file should exist");
+        let path = prompt_path(surface_id);
+        let written = std::fs::read_to_string(&path).expect("prompt file should exist");
         assert_eq!(written, prompt);
         // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(&prompt_path);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -1292,15 +1311,16 @@ mod tests {
 
     #[test]
     fn make_codex_command_with_policy_args_and_prompt() {
-        let cmd = make_codex_command(9103, Some("hello"), "-a never");
+        let surface_id = unique_surface_id(3);
+        let cmd = make_codex_command(surface_id, Some("hello"), "-a never");
         assert!(
-            cmd.starts_with(
-                "TASTY_SURFACE_ID=9103 codex --dangerously-bypass-hook-trust -a never \"$(cat '"
-            ),
+            cmd.starts_with(&format!(
+                "TASTY_SURFACE_ID={surface_id} codex --dangerously-bypass-hook-trust -a never \"$(cat '"
+            )),
             "got {cmd}"
         );
         // 테스트 tempfile 정리 — 실패해도(OS 임시 디렉토리 정리 대상) 테스트 결과에 무해.
-        let _ = std::fs::remove_file(std::env::temp_dir().join("tasty-codex-prompt-9103.txt"));
+        let _ = std::fs::remove_file(prompt_path(surface_id));
     }
 
     #[test]
