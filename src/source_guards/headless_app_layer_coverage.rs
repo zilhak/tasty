@@ -262,13 +262,35 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
          돈다(ADR-0084). 그 glue(`App::enqueue_plugin_popup_close`)가 gui 게이트 안의 \
          `app::dispatch` 에 있다",
     ),
+    // 이쪽은 갈래 한 줄이 맞다 — 재 봤다. `open` 은 `self.view.views` 를 순회해 소유
+    // 창을 찾고, `close` 도 `self.view.views` 를 돌며 `state.banners` 를 닫는다. 둘의
+    // 판정이 같으므로 이름별로 가를 이유가 없다(갈래 한 줄이 나쁜 것이 아니라, 그 안에서
+    // 판정이 갈리는데 한 줄로 두는 것이 나쁘다).
     (
         "debug.plugin_banner.",
-        "소유 view 의 BannerManager 와 host 매니저를 함께 다룬다. view 가 없다",
+        "소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 — `open`·`close` 둘 다 \
+         `self.view.views` 를 순회한다. view 가 없다",
+    ),
+    // `debug.fullscreen.` 을 갈래 한 줄로 두지 않는다 — 그 안에서 판정이 갈린다.
+    // `list` 는 창을 안 읽고 정적 무대 표만 읽는데, 그 표(`StageDef`)가 `draw_fn` 을
+    // 필드로 갖는 gui 타입이라 헤드리스가 읽을 수 없다. 나머지 셋과 사유가 다르다.
+    (
+        "debug.fullscreen.list",
+        "창을 안 읽는다 — 정적 무대 표(`adapters::ui::fullscreen::defs::all_defs`)만 읽는다. \
+         그런데 그 표의 `StageDef` 가 `draw_fn`(egui 그리기 함수)을 필드로 가져 표 자체가 \
+         gui 타입이다. 열려면 표를 (id·title_key) 메타와 그리기 함수로 가르는 것이 선행이다",
     ),
     (
-        "debug.fullscreen.",
-        "무대는 창 단위다 — `self.view.views` 를 순회해 `window_id` 로 창을 지목한다",
+        "debug.fullscreen.open",
+        "무대는 창 단위다 — `pick_debug_window` 로 `self.view.views` 에서 창을 지목한다",
+    ),
+    (
+        "debug.fullscreen.close",
+        "무대는 창 단위다 — `pick_debug_window` 로 `self.view.views` 에서 창을 지목한다",
+    ),
+    (
+        "debug.fullscreen.state",
+        "무대는 창 단위다 — `pick_debug_window` 로 `self.view.views` 에서 창을 지목한다",
     ),
 ];
 
@@ -308,9 +330,19 @@ fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
     // 이름이 전부 덮였으면 갈래도 덮인 것이다. 이 규칙이 없으면 갈래를 갈라 적는 순간
     // 갈래 리터럴 하나 때문에 사유를 또 요구하고, 그 사유가 다시 갈래 전체를 덮어
     // ②(낡은 갈래 사유)를 되살린다.
-    let concrete_under = |p: &str| -> Vec<&String> {
+    //
+    // 갈래 아래의 구체 이름은 dispatch 본문 밖에 있을 수 있다 — 라우터가 갈래를
+    // `starts_with` 로 받고 **같은 파일의 위임 함수**가 이름별로 가르는 형태가 그렇다
+    // (`ipc_debug_fullscreen`). 그래서 구체 이름은 파일 전체에서 찾는다. 대상이 이미
+    // 알려진 갈래 접두어로 좁혀져 있어 무관한 메서드가 딸려 들어오지 않는다.
+    let in_file = method_literals(&src);
+    let concrete_under = |p: &str| -> Vec<String> {
         gui.iter()
+            .chain(in_file.iter())
             .filter(|m| m.as_str() != p && m.starts_with(p) && !m.ends_with('.'))
+            .cloned()
+            .collect::<BTreeSet<String>>()
+            .into_iter()
             .collect()
     };
     let missing: Vec<&String> = gui
@@ -321,7 +353,7 @@ fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
             }
             if m.ends_with('.') {
                 let under = concrete_under(m);
-                return under.is_empty() || !under.iter().all(|c| covered(c));
+                return under.is_empty() || !under.iter().all(|c| covered(c.as_str()));
             }
             true
         })

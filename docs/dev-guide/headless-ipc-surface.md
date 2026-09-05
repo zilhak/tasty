@@ -220,8 +220,9 @@ event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 —
 | `debug.gpu.stall` | 렌더 스레드를 일부러 막아 stall 워치독을 시험한다. 막을 스레드가 없다 |
 | `debug.banner.*` (4) · `debug.host_popup.*` (3) · `debug.modifier_hint.*` (2) | host 위젯의 표시 상태다. 그릴 창이 없으면 상태 자체가 없다 |
 | `debug.tool.list` · `debug.tool.invoke` | 도구 메뉴는 창의 위젯이다 |
-| `debug.fullscreen.*` (4) | 무대는 **창 단위**라 `self.view.views` 를 순회해 `window_id` 로 창을 지목한다 |
-| `debug.plugin_banner.*` (2) | 소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 |
+| `debug.fullscreen.open` · `close` · `state` (3) | 무대는 **창 단위**라 `pick_debug_window` 로 `self.view.views` 에서 창을 지목한다 |
+| `debug.fullscreen.list` | 창을 **안** 읽는다 — 정적 무대 표(`adapters::ui::fullscreen::defs`)만 읽는다. 그런데 그 표의 `StageDef` 가 `draw_fn`(egui 그리기 함수)을 필드로 가져 표 자체가 gui 타입이다. 열려면 표를 (id·title_key) 메타와 그리기 함수로 가르는 것이 선행이다 |
+| `debug.plugin_banner.*` (2) | 소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 — `open` 도 `close` 도 `self.view.views` 를 순회한다. **재 봤고 갈래 안에서 판정이 안 갈린다**, 그래서 한 줄이 맞다 |
 | `debug.inject_mouse` · `debug.inject_key` · `debug.inject_window_mouse` · `debug.inject_egui_mouse` · `debug.inject_egui_key` (5) | 사용자 입력 재현이다. 앞 둘은 대상 surface 의 PTY 로, 뒤 셋은 winit·egui 입력 큐로 들어간다 — 그 큐가 창에 딸려 있다 |
 | `debug.popup.open` | 매니저만 읽어 **답은 정의된다.** 그런데 헤드리스에는 그 인스턴스를 **닫는 경로가 하나도 없다** — debug close 도, plugin 자신의 release `popup.close` 도 gui 게이트 안의 `app::dispatch` 에 산다. 여는 것만 열면 그 빌드에서 닫을 수 없는 상태가 남는다 |
 | `debug.popup.close` | 렌더가 수집하는 close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돈다([ADR-0084](../adr/0084-plugin-triggered-host-popup-ownership.md)). 그 glue 가 gui 게이트 안이다 |
