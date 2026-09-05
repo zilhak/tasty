@@ -132,7 +132,7 @@ mod tests {
     //! ## 왜 텍스트 파싱이 아니라 런타임 열거인가
     //!
     //! 선례 `crates/tasty-doc-guards/tests/permission_free_methods_docs_parity.rs` ·
-    //! `tests/contributes_gate_docs_parity.rs` 와 같은 형태다. 소스를 파싱하면
+    //! `crates/tasty-doc-guards/tests/contributes_gate_docs_parity.rs` 와 같은 형태다. 소스를 파싱하면
     //! 주석·`#[cfg]`·줄바꿈에 흔들리고 파서 자체가 틀릴 수 있다. 두 `ALL` 배열을
     //! 컴파일된 값으로 열거하면 그 실패 모드가 없다. 대조는 **`Debug` 이름**으로
     //! 한다 — 두 타입은 서로 다른 크레이트의 별개 타입이라 값끼리 비교할 수 없고,

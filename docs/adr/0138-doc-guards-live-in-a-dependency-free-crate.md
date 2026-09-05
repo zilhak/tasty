@@ -72,19 +72,35 @@ GitHub 은 바뀐 파일이 **전부** 이 목록에 걸리면 워크플로를 �
 `changelog_unreleased` 는 문서를 읽지만 **안 옮긴다** — `test.yml` 의 push 트리거에는
 경로 필터가 없고 그 잡(`semver-guards`)이 이 타깃을 이름으로 부른다. 이미 덮여 있다.
 
-**남은 사각을 명시한다.** 다음 셋은 문서를 읽지만 크레이트 상수와 대조하므로 의존 0 이
-안 된다 — `cli_method_table_parity` · `permission_free_methods_docs_parity`(둘 다
-`tasty_ipc`, 86 크레이트) · `contributes_gate_docs_parity`(`tasty_plugin_manifest`, 56).
-**이 셋은 이 ADR 이후에도 `check-headless` 가 유일 채널이고, 따라서 문서만 바뀐 push 에서
-여전히 안 돈다.** 안 적으면 "문서 가드는 이제 다 싸다" 로 읽힌다.
+**남은 사각을 명시한다.** 다음 셋은 문서를 읽지만 크레이트 상수와 대조한다 —
+`cli_method_table_parity` · `permission_free_methods_docs_parity`(둘 다 `tasty_ipc`,
+86 크레이트) · `contributes_gate_docs_parity`(`tasty_plugin_manifest`, 56). 안 적으면
+"문서 가드는 이제 다 싸다" 로 읽힌다.
 
-**남은 셋 중 둘이 하필 노출이 가장 심한 쪽이다.** 가드 28 개를 경로 리터럴로 갈랐을 때
+**그 셋 중 둘이 하필 노출이 가장 심한 쪽이었다.** 가드 28 개를 경로 리터럴로 갈랐을 때
 *입력이 전부 무시 대상* 인 것이 셋이었는데(`architecture_crate_list_complete` ·
-`contributes_gate_docs_parity` · `permission_free_methods_docs_parity`), 그중 옮긴 것은
-첫째뿐이다. 다음 수단은 뒤의 둘을 각자의 소유 크레이트(`crates/tasty-ipc/tests/` ·
-`tasty-plugin-manifest` 의 `tests/` — 후자는 아직 없어 신설이 필요하다)로 옮기고 `-p <그 크레이트>` 잡을 붙이는 것이다 —
-385 가 아니라 86 / 56 이 된다. 의존 0 은 아니므로 이 ADR 의 결정이 아니라 그 절충을 따로
-재는 후속이다.
+`contributes_gate_docs_parity` · `permission_free_methods_docs_parity`), 이 ADR 시점에
+옮긴 것은 첫째뿐이었다.
+
+**정정 — "의존 0 이 안 된다" 는 전제가 틀렸다.** 여기서 셋을 링크가 필요한 것으로 묶고
+다음 수단을 소유 크레이트 이동 + `-p` 잡(385 대신 86 / 56)으로 적었는데, **세 번째 길이
+있었다**: 상수를 **텍스트로 읽고**, 판독이 진짜 표와 갈리는 위험은 본체 패키지의 교차 대조
+가드가 받는다. 그 크레이트를 링크할 수 있는 자리는 그쪽이고, 판독기가 바뀌는 것은 소스
+변경이라 `check-headless` 가 본다 — 채널이 갈리는 것이 오히려 맞다. 그리고 그 형태의
+선례는 이 ADR 안에 이미 있었다: `permission_token_docs_parity` 가 `Permission::as_token`
+을 그렇게 읽고 있었다.
+
+그 길로 둘을 옮겼다 — `permission_free_methods_docs_parity`(`METHOD_TABLE` 판독,
+교차 대조는 `tests/method_table_readings_agree.rs`) · `contributes_gate_docs_parity`
+(`contributes_gates!` + `Permission::as_token` 판독, 교차 대조는
+`tests/contributes_gate_readings_agree.rs`). 옮기기 전에 두 판독이 링크 열거와 같은지
+먼저 쟀다(각각 276:276 · 게이트 12 항목 순서까지 일치). 판독기는 모르는 형태나 빈 결과를
+만나면 **panic 한다** — 조용히 건너뛰면 소비자가 빈 쪽을 대조하며 통과한다.
+
+**남은 하나는 `cli_method_table_parity` 다.** 같은 판독기가 닿지만(같은 파일의
+`method_meta()` · `DEBUG_METHODS` 까지 필요하다) 804 줄이라 이동 비용이 다르고, 입력이
+`docs/dev-guide/api-conventions.md` 라 *일부만 무시 대상* 쪽이어서 노출이 위 둘보다 덜하다.
+소유 크레이트 이동 + `-p` 잡이라는 대안은 그 하나에 대해 여전히 유효하다.
 
 ### 루트 해석을 한 곳에 모으고, 틀리면 panic 한다
 

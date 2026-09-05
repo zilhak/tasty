@@ -15,6 +15,7 @@
 
 /// `#[cfg(...)]` 술어를 읽는다.
 pub mod cfg_predicate;
+pub mod manifest_text;
 
 /// 소스를 텍스트로 읽는 가드들이 공유하는 마스킹·순회.
 pub mod source_text;
