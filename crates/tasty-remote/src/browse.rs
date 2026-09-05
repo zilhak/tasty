@@ -335,12 +335,25 @@ mod tests {
     }
 
     /// 닫힌 포트 → 연결 거부 에러.
+    ///
+    /// **놓고 쓰는 형태라 재시도로 감싼다.** "닫힌 포트" 는 bind 했다 놓아야만 만들 수
+    /// 있고, 놓은 순간부터 probe 까지 사이에 같은 머신의 다른 완주가 그 포트를 집어갈 수
+    /// 있다. 집어간 것이 하필 tasty 면 probe 가 성공해 단언이 뒤집힌다
+    /// (`docs/adr/0129-flaky-test-classes-and-standard-fixes.md` 형태 B 역방향 — 자원을
+    /// 쥐는 처방이 안 맞아 재시도 + 약한 단언이 정본이다). 세 포트가 전부 응답하면 그때는
+    /// 우연이 아니다.
     #[test]
     fn probe_connection_refused_is_error() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let r = probe_method(port, "workspace.list", serde_json::json!({}));
-        assert!(r.is_err(), "연결 거부는 에러여야 한다: {r:?}");
+        let mut answered = Vec::new();
+        for _ in 0..3 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            match probe_method(port, "workspace.list", serde_json::json!({})) {
+                Err(_) => return,
+                Ok(v) => answered.push((port, v)),
+            }
+        }
+        panic!("연결 거부는 에러여야 한다 — 세 포트가 전부 응답했다: {answered:?}");
     }
 }

@@ -19,5 +19,11 @@ tracing = "0.1"
 # Error handling
 anyhow = "1"
 
+[dev-dependencies]
+# 테스트 픽스처 디렉토리 — OS 가 유일 이름을 준다. 아래 `ssh_config` 테스트의
+# `tmpdir` 참조: pid 를 섞는 것이 아니라서 "이 모듈은 프로세스를 만지지 않는다" 계약과
+# 충돌하지 않으면서 동시 완주 간 충돌만 없앤다.
+tempfile = "3"
+
 [lints]
 workspace = true

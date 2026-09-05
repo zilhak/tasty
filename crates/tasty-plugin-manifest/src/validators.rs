@@ -63,31 +63,66 @@ pub(super) fn is_valid_ipc_prefix(s: &str) -> bool {
 }
 
 /// 호스트가 자기 IPC 메서드에 쓰는 prefix들. plugin이 점유하면 호스트 메서드가 가려진다.
+///
+/// 호스트 메서드 표(`tasty_ipc::method_meta::METHOD_TABLE`)와 **집합으로 맞물려 있다** —
+/// 본체의 `source_guards::reserved_ipc_prefixes` 가 양방향으로 대조하므로, 새 호스트
+/// prefix 가 생기면 여기에 넣거나 왜 넣지 않는지를 그 가드에 적어야 한다. 이 크레이트가
+/// 표를 직접 읽지 못하는 이유는 의존 방향이다 — `tasty-ipc` 가 이 크레이트를 쓴다.
+pub const RESERVED_IPC_PREFIXES: &[&str] = &[
+    "agent",
+    "approval",
+    "attach",
+    "banner",
+    "clipboard",
+    "completion_strategy",
+    "debug",
+    "file_handler",
+    "file_picker",
+    "fs",
+    "git_viewer",
+    "global_hook",
+    "hook",
+    "hook_handler",
+    // plugin ↔ host 보조 채널 계열(`host.shared_buffer.*`). 매니페스트로 이 이름을
+    // 점유하면 그 뒤 호스트가 같은 prefix 에 메서드를 더할 때 표에 없는 `host.*` 가
+    // plugin 으로 forward 된다.
+    "host",
+    "ime",
+    "ipc",
+    "memory",
+    "message",
+    "notification",
+    "output",
+    "pane",
+    "plugin",
+    "popup",
+    "preset",
+    "pty",
+    "recent",
+    "remote",
+    "session",
+    "settings",
+    "split",
+    "surface",
+    "system",
+    "tab",
+    "telemetry",
+    "terminal",
+    "theme",
+    "timer",
+    "tool",
+    "tree",
+    "ui",
+    "view",
+    "webhook",
+    "webview",
+    "window",
+    "workspace",
+    "workspace_category",
+];
+
 pub(super) fn is_reserved_ipc_prefix(s: &str) -> bool {
-    matches!(
-        s,
-        "plugin"
-            | "system"
-            | "surface"
-            | "tab"
-            | "pane"
-            | "workspace"
-            | "split"
-            | "tree"
-            | "hook"
-            | "global_hook"
-            | "message"
-            | "tool"
-            | "notification"
-            | "window"
-            | "debug"
-            | "ui"
-            | "ime"
-            | "ipc"
-            | "memory"
-            | "output"
-            | "approval"
-    )
+    RESERVED_IPC_PREFIXES.contains(&s)
 }
 
 /// CLI 명령 이름 형식 검증.
@@ -124,31 +159,6 @@ pub(super) fn is_valid_cli_name(s: &str) -> bool {
     }
     s.chars()
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
-/// 호스트가 자기 CLI 서브커맨드로 쓰는 명령들. plugin이 가로채면 호스트가 가려진다.
-pub(super) fn is_reserved_cli_name(s: &str) -> bool {
-    matches!(
-        s,
-        "plugin"
-            | "new"
-            | "close"
-            | "list"
-            | "set"
-            | "send"
-            | "read"
-            | "move"
-            | "split"
-            | "tree"
-            | "debug"
-            | "wait"
-            | "send-key"
-            | "send-combo"
-            | "surface-meta"
-            | "is-typing"
-            | "notify"
-            | "unset"
-    )
 }
 
 /// Event Bus 패턴 검증. 정확한 키 또는 `<namespace>(.<segment>)*.*` 형태.

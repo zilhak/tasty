@@ -11,29 +11,56 @@ use crate::scan::scan_themes;
 use crate::store::{BUILTIN_MOCHA_ID, rewrite_mocha_fallback};
 use tasty_type_appearance::theme::Theme;
 
+/// 전역 `Theme` 이 색 파일이 아니라 **설정**에서 받아와야 하는 값들.
+///
+/// 하나로 묶는 이유는 인자를 빠뜨리는 것이 **이미 사고를 냈기** 때문이다 —
+/// `ui_zoom` 을 안 실은 install 이 전역 Theme 을 배율 1.0 으로 되돌려 다른 윈도우의 UI 가
+/// 줄어든 적이 있고, 그 사유가 호출부 주석에 남아 있다. 값이 하나 더 늘 때마다 인자가
+/// 하나 더 느는 형태였으면 그 사고가 값마다 반복된다. 묶어 두면 새 값이 생겨도 호출부
+/// 모양이 안 변하고, 채우는 자리는 [`ThemeRuntime`] 을 만드는 한 곳으로 모인다.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThemeRuntime {
+    /// host UI zoom 배율 (`appearance.ui_scale_factor()`).
+    pub ui_zoom: f32,
+    /// 접근성 "모션 감소"(`accessibility.reduced_motion`).
+    pub reduced_motion: bool,
+}
+
+impl Default for ThemeRuntime {
+    /// 설정을 모르는 문맥(테스트·부팅 이전)의 값 — 배율 1.0, 모션 감소 꺼짐.
+    fn default() -> Self {
+        Self {
+            ui_zoom: 1.0,
+            reduced_motion: false,
+        }
+    }
+}
+
 /// 두 레이어를 합쳐 실제 적용될 `Theme` 인스턴스를 만든다.
 /// `theme_base` 위에 `theme_overrides` 의 `Some` 필드만 덮어쓴 결과.
 pub fn resolve<C: ThemeApplyContext + ?Sized>(ctx: &C) -> Theme {
-    resolve_with_zoom(ctx, 1.0)
+    resolve_with_runtime(ctx, ThemeRuntime::default())
 }
 
-/// `resolve()` 의 일반화 — host UI zoom 배율을 sizing 토큰에 반영한다.
-pub fn resolve_with_zoom<C: ThemeApplyContext + ?Sized>(ctx: &C, ui_zoom: f32) -> Theme {
+/// `resolve()` 의 일반화 — 설정에서 오는 런타임 값([`ThemeRuntime`])을 반영한다.
+pub fn resolve_with_runtime<C: ThemeApplyContext + ?Sized>(ctx: &C, rt: ThemeRuntime) -> Theme {
     let mut colors = ctx.theme_base().clone();
     colors.apply_partial(ctx.theme_overrides());
-    Theme::with_colors_and_zoom(colors, ctx.theme_is_light(), ui_zoom)
+    let mut t = Theme::with_colors_and_zoom(colors, ctx.theme_is_light(), rt.ui_zoom);
+    t.reduced_motion = rt.reduced_motion;
+    t
 }
 
 /// `resolve()` 결과를 전역 `Theme` 에 박는다.
 /// 등록된 plugin surface defaults 도 함께 머지 (사용자 정의 kind 는 보존).
 pub fn install_global<C: ThemeApplyContext + ?Sized>(ctx: &C) {
-    install_global_with_zoom(ctx, 1.0)
+    install_global_with_runtime(ctx, ThemeRuntime::default())
 }
 
-/// `install_global` 의 일반화 — host UI zoom 배율을 반영한 Theme 으로 전역 슬롯
+/// `install_global` 의 일반화 — 설정에서 오는 런타임 값을 반영한 Theme 으로 전역 슬롯
 /// 을 갱신한다.
-pub fn install_global_with_zoom<C: ThemeApplyContext + ?Sized>(ctx: &C, ui_zoom: f32) {
-    let mut t = resolve_with_zoom(ctx, ui_zoom);
+pub fn install_global_with_runtime<C: ThemeApplyContext + ?Sized>(ctx: &C, rt: ThemeRuntime) {
+    let mut t = resolve_with_runtime(ctx, rt);
     crate::plugin_defaults::apply_plugin_defaults_to(&mut t);
     set_theme(t);
 }
@@ -154,6 +181,23 @@ mod tests {
         fn set_theme_is_light(&mut self, v: bool) {
             self.is_light = v;
         }
+    }
+
+    /// 이 값이 `Theme` 까지 실려 가지 않으면 위젯이 설정을 읽을 방법이 없다 —
+    /// 실제로 그랬고(넘기는 자리가 0 이었다), 그래서 이 축을 여기서 붙잡는다.
+    #[test]
+    fn runtime_values_reach_the_resolved_theme() {
+        let ctx = TestCtx::mocha();
+        let t = resolve_with_runtime(
+            &ctx,
+            ThemeRuntime {
+                ui_zoom: 1.0,
+                reduced_motion: true,
+            },
+        );
+        assert!(t.reduced_motion);
+        // 기본(설정을 모르는 문맥)은 꺼짐이어야 한다 — 모션을 임의로 끄지 않는다.
+        assert!(!resolve(&ctx).reduced_motion);
     }
 
     #[test]

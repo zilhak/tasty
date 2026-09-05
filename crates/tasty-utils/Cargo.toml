@@ -9,6 +9,13 @@ description = "Cross-cutting utility helpers for Tasty — path resolution, etc.
 directories = "6"
 tracing = "0.1"
 
+[features]
+# 소비 crate 의 테스트가 `tasty_home()` 을 스레드 로컬로 재지정할 수 있게 하는 훅
+# (`push_home_override`/`pop_home_override`). 프로덕션(release)에는 컴파일되지 않는다 —
+# 소비 crate 의 **dev-dependency** 에서만 켠다. 이 crate 자신의 unit test 는 `cfg(test)`
+# 로 같은 훅을 본다. 근거·처방 등급: `docs/adr/0155-global-state-race-prescription-by-parameterization.md`.
+test-support = []
+
 [dev-dependencies]
 tempfile = "3"
 

@@ -1142,7 +1142,7 @@ fn build_raw_input(width_px: u32, height_px: u32, ppp: f32, input: &RawInputWire
 /// egui 0.31 이 휠 델타를 "이미 부드럽다" 고 판정하는 상한(포인트). `Point` 단위
 /// `MouseWheel` 의 델타 길이가 이 값 **미만**이면 egui 는 그 프레임에서 델타를 전부
 /// `smooth_scroll_delta` 에 반영하고, 이상이면 `unprocessed_scroll_delta` 에 적립해
-/// 여러 프레임에 걸쳐 지수완화로 소진한다(egui-0.31.1 `src/input_state/mod.rs` 의
+/// 여러 프레임에 걸쳐 지수완화로 소진한다(`egui-0.31.1/src/input_state/mod.rs` 의
 /// `is_smooth` 판정과 그 아래 drain 루프). 소진이 끝날 때까지 egui 는 매 pass
 /// `wants_repaint_after() == ZERO` 를 돌려준다.
 const EGUI_SMOOTH_WHEEL_LIMIT: f32 = 8.0;

@@ -531,6 +531,13 @@ pub struct IpcCallResult {
     pub result: Option<serde_json::Value>,
     #[serde(default)]
     pub error: Option<String>,
+    /// 호스트가 준 JSON-RPC 오류 코드. 없으면 SDK 가 server error(-32000)로 본다.
+    ///
+    /// **반대 방향([`PluginResponse::error_code`])에는 처음부터 있었다.** 이쪽만 없어서
+    /// 호스트가 "인자를 고쳐라"(`-32602`)로 거절한 것이 plugin 을 거쳐 나오면
+    /// "서버 사정"(`-32000`)이 됐다 — 호출자가 다음에 할 일이 반대로 바뀐다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<i32>,
 }
 
 /// plugin이 connection 직후 첫 줄로 보내는 인증 메시지.
@@ -545,7 +552,7 @@ pub struct AuthMessage {
 ///
 /// `ok=false`이면 plugin SDK가 [`crate::PluginError::HandshakeRejected`](
 /// 같은 이름의 SDK variant)로 즉시 실패한다. 호스트 측은
-/// `src/plugin/listener.rs`에서 토큰 검증 결과에 따라 송신한다.
+/// `crates/tasty-host-plugin/src/listener.rs`에서 토큰 검증 결과에 따라 송신한다.
 ///
 /// envelope: `{"auth_ack": { "ok": true }}` 또는 `{"auth_ack": { "ok": false, "reason": "..." }}`.
 /// 메인 루프의 `PluginRequest`와 다른 envelope를 사용해 파서 분리.

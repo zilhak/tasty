@@ -1,13 +1,15 @@
 //! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.
 //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.
 //!
-//! Tier 3 (component) 치수·색 접근자. `generated::component` 의 raw
-//! const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를
+//! Tier 3 (component) 치수·색·시간 접근자. `generated::component` 의
+//! raw const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를
 //! 반환하거나(semantic 종착) `ui_zoom` 을 직접 곱하고(primitive 직접
 //! 종착), 색은 semantic 접근자 체인 또는 component→component 접근자
-//! 상호 호출로 이어붙인다.
+//! 상호 호출로 이어붙인다. 시간은 `Millis` 로 나가며 **zoom 을 곱하지
+//! 않는다** — 배율은 길이 축이다.
 
 use crate::color::HexColor;
+use crate::motion::Millis;
 use tasty_type_geometry::length::LogicalPx;
 
 impl crate::theme::Theme {
@@ -189,6 +191,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn banner_countdown_font_size(&self) -> LogicalPx {
         self.font_size_micro
+    }
+
+    /// `component.banner-fade` → `{semantic.motion-ui}` = 120ms
+    #[inline]
+    pub fn banner_fade(&self) -> Millis {
+        Millis(120.0)
     }
 
     /// `component.banner-gap` → `{semantic.space-md}` = 12px
@@ -1499,6 +1507,12 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.modhint-fade` → `{semantic.motion-ui-fade}` = 200ms
+    #[inline]
+    pub fn modhint_fade(&self) -> Millis {
+        Millis(200.0)
+    }
+
     /// `component.modhint-grip-fg` → `{semantic.border-strong}`
     #[inline]
     pub fn modhint_grip_fg(&self) -> HexColor {
@@ -1515,6 +1529,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn modhint_header_height(&self) -> LogicalPx {
         LogicalPx((28.0 * self.ui_zoom).round())
+    }
+
+    /// `component.modhint-hold-delay` → `{semantic.motion-hold-reveal}` = 500ms
+    #[inline]
+    pub fn modhint_hold_delay(&self) -> Millis {
+        Millis(500.0)
     }
 
     /// `component.modhint-radius` → `{semantic.radius}` = 4px
@@ -1793,6 +1813,12 @@ impl crate::theme::Theme {
         self.sidebar_wordmark_font_size
     }
 
+    /// `component.spinner-duration` → `{primitive.duration-900}` = 900ms
+    #[inline]
+    pub fn spinner_duration(&self) -> Millis {
+        Millis(900.0)
+    }
+
     /// `component.spinner-indicator` → `{semantic.accent-primary}`
     #[inline]
     pub fn spinner_indicator(&self) -> HexColor {
@@ -1845,6 +1871,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn status_dot_idle(&self) -> HexColor {
         self.status_idle()
+    }
+
+    /// `component.status-dot-pulse-duration` → `{primitive.duration-1600}` = 1600ms
+    #[inline]
+    pub fn status_dot_pulse_duration(&self) -> Millis {
+        Millis(1600.0)
     }
 
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px
@@ -1929,6 +1961,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn switch_overlay_border(&self) -> HexColor {
         self.kbd_border()
+    }
+
+    /// `component.switch-overlay-fade` → `{semantic.motion-ui-fast}` = 90ms
+    #[inline]
+    pub fn switch_overlay_fade(&self) -> Millis {
+        Millis(90.0)
     }
 
     /// `component.switch-overlay-fg` → `{component.kbd-fg}`
@@ -2427,6 +2465,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn tooltip_border(&self) -> HexColor {
         self.border_strong()
+    }
+
+    /// `component.tooltip-delay` → `{semantic.motion-ui-med}` = 150ms
+    #[inline]
+    pub fn tooltip_delay(&self) -> Millis {
+        Millis(150.0)
     }
 
     /// `component.tooltip-fg` → `{semantic.text-secondary}`

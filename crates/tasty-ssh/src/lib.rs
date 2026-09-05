@@ -637,8 +637,14 @@ fn cancel_requested() -> bool {
 /// 자식 슬롯 잠금. 이 뮤텍스 안에서 하는 일은 `Option<Child>` 의 take/replace 뿐이라
 /// 패닉 지점이 없다 — poisoned 는 도달 불가지만, 도달하더라도 자식을 회수하지 못해
 /// 프로세스가 새는 쪽이 더 나쁘므로 값을 복구해 계속 진행한다.
+/// 자식 슬롯 락의 poison 복구 공용 보고 좌표(첫-1 회). 임계구역은 `Option<Child>` 의
+/// take/replace 뿐이라 복구가 안전하다 — 틀린 것은 흔적이 없다는 것이었다.
+const CHILD_SLOT_WHAT: &str = "the ssh child slot";
+static CHILD_SLOT_POISON_REPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 fn lock_slot(m: &Mutex<Option<Child>>) -> std::sync::MutexGuard<'_, Option<Child>> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
+    tasty_utils::poison::recover_mutex(m.lock(), CHILD_SLOT_WHAT, &CHILD_SLOT_POISON_REPORTED)
 }
 
 /// 타임아웃으로 끊은 자식을 kill + wait 해 좀비를 남기지 않는다
@@ -1384,6 +1390,7 @@ impl Default for Backoff {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tasty_latency_control::ControlProbe;
 
     #[test]
     fn ssh_target_parse_keeps_destination() {
@@ -1560,6 +1567,15 @@ mod tests {
     }
 
     /// 시작하면 상한 안에는 절대 끝나지 않는 자식 프로세스(타임아웃 경로 검증용).
+    /// 띄우면 **반드시 실패하는** 명령. "ssh 를 안 띄웠다" 를 시계가 아니라 **사건**으로
+    /// 만드는 데 쓴다 — 띄웠으면 `spawn` 이 실패해 `SshConnectionFailed` 가 나오고,
+    /// 안 띄웠으면 조기 반환의 사유(`TimedOut`/`Cancelled`)가 그대로 나온다. 두 값이
+    /// 다르므로 분류 하나로 갈린다. 경과 상한은 같은 것을 훨씬 약하게 물으면서
+    /// 굶은 러너에서 빨개지기까지 했다(ADR-0181).
+    fn unspawnable_command() -> Command {
+        Command::new("/tasty-ssh-test/this-path-must-not-exist")
+    }
+
     fn never_returns_command() -> Command {
         #[cfg(windows)]
         {
@@ -1579,6 +1595,9 @@ mod tests {
     /// `remote_browse::probe_stale_port_eof_is_error_not_hang` 과 같은 성격의 no-hang 테스트.
     #[test]
     fn port_discovery_times_out_instead_of_hanging() {
+        const CEILING: Duration = Duration::from_secs(10);
+        // 이 자리가 기다리는 것은 fork/exec 과 폴링이라 spawn 계열 대조군을 쓴다.
+        let mut control = ControlProbe::start_spawn("무한 대기 회귀 감시");
         let started = Instant::now();
         let r = run_capture_with_budget(
             never_returns_command(),
@@ -1588,11 +1607,8 @@ mod tests {
         let err = r.expect_err("상한을 넘긴 자식은 에러여야 한다");
         assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
         // 상한(300ms) + 폴링/프로세스 spawn 여유. 무한 대기면 여기서 잡힌다.
-        assert!(
-            started.elapsed() < Duration::from_secs(10),
-            "상한 안에 반환되지 않음: {:?}",
-            started.elapsed()
-        );
+        let elapsed = started.elapsed();
+        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
         // 타임아웃 detail 은 로그 전용 — 사용자 문구에 내부 사정이 새지 않는다.
         assert!(!err.to_string().contains("no-hang test"));
     }
@@ -1600,11 +1616,15 @@ mod tests {
     #[test]
     fn exhausted_budget_skips_spawning_ssh() {
         // 전체 예산이 소진되면 남은 체인 단계는 ssh 를 띄우지도 않고 즉시 타임아웃.
-        let started = Instant::now();
-        let err = run_capture_with_budget(never_returns_command(), Duration::ZERO, "exhausted")
+        // 띄울 수 없는 명령을 준다 — 띄웠다면 spawn 이 실패해 `SshConnectionFailed` 가
+        // 나온다. `TimedOut` 이 나온다는 것이 곧 안 띄웠다는 사건이다.
+        let err = run_capture_with_budget(unspawnable_command(), Duration::ZERO, "exhausted")
             .expect_err("예산 0 은 에러");
-        assert_eq!(err.kind, PortDiscoveryFailureKind::TimedOut);
-        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(
+            err.kind,
+            PortDiscoveryFailureKind::TimedOut,
+            "spawn 을 시도했으면 SshConnectionFailed 가 나왔을 것이다: {err}"
+        );
     }
 
     #[test]
@@ -2019,12 +2039,11 @@ mod tests {
             std::net::TcpListener::bind(("127.0.0.1", p)).is_err(),
             "reserved port {p} must be held while the listener is alive"
         );
-        // 대조군: 놓으면 usable — drop 후엔 같은 포트로 bind 가능해야 한다.
+        // drop 후 재bind 가능 여부는 OS 정책에 대한 단언이지 `reserve_local_port` 의 계약이
+        // 아니다 — 커널은 방금 푼 포트를 이 프로세스에 예약하지 않으므로, 여러 워크트리가
+        // 병렬로 도는 머신에서는 그 창에 남이 들어와 확률적으로 깨진다(대조군이 창을 옮겼을
+        // 뿐 없애지 못했다). 앞 단언(점유 중 재bind 실패)이 계약을 결정적으로 세운다.
         drop(listener);
-        assert!(
-            std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
-            "port {p} must be rebindable after the reservation is dropped"
-        );
     }
 
     /// 등록된 자식은 `cancel()` 로 kill + reaping 된다 — 실제 ssh 없이 오래 사는 더미
@@ -2041,12 +2060,12 @@ mod tests {
             .expect("sleep spawn");
         handle.register(child).expect("취소 전이므로 등록 성공");
 
+        const CEILING: Duration = Duration::from_secs(10);
+        let mut control = ControlProbe::start_spawn("cancel 이 자식을 즉시 거둔다");
         let t0 = Instant::now();
         handle.cancel();
-        assert!(
-            t0.elapsed() < Duration::from_secs(10),
-            "kill 후 즉시 reaping"
-        );
+        let elapsed = t0.elapsed();
+        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
         assert!(handle.is_cancelled());
         // cancel 이 자식을 가져가 정리했으므로 회수할 것이 남지 않는다.
         assert!(handle.reclaim().is_none());
@@ -2075,15 +2094,16 @@ mod tests {
         let handle = SshCancel::new();
         let _scope = handle.scope();
         handle.cancel();
-        let started = Instant::now();
-        let err = run_capture_with_budget(
-            never_returns_command(),
-            Duration::from_secs(10),
-            "cancelled",
-        )
-        .expect_err("취소된 스코프");
-        assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
-        assert!(started.elapsed() < Duration::from_secs(1));
+        // 띄울 수 없는 명령 — 띄웠다면 `SshConnectionFailed` 다. `Cancelled` 가 나오는
+        // 것이 곧 안 띄웠다는 사건이고, 경과 상한 없이 판정된다.
+        let err =
+            run_capture_with_budget(unspawnable_command(), Duration::from_secs(10), "cancelled")
+                .expect_err("취소된 스코프");
+        assert_eq!(
+            err.kind,
+            PortDiscoveryFailureKind::Cancelled,
+            "spawn 을 시도했으면 SshConnectionFailed 가 나왔을 것이다: {err}"
+        );
     }
 
     /// 상한이 남아 있어도 **외부 취소**가 진행 중인 자식을 끊는다(사용자 의도 경로).
@@ -2097,6 +2117,8 @@ mod tests {
             std::thread::sleep(Duration::from_millis(200));
             killer.cancel();
         });
+        const CEILING: Duration = Duration::from_secs(5);
+        let mut control = ControlProbe::start_spawn("외부 취소가 상한 만료 전에 끊는다");
         let started = Instant::now();
         // 예산 10초, 자식은 60초 — 취소가 없으면 10초를 다 쓴다.
         let err = run_capture_with_budget(
@@ -2107,11 +2129,8 @@ mod tests {
         .expect_err("취소된 조회");
         t.join().expect("killer 스레드");
         assert_eq!(err.kind, PortDiscoveryFailureKind::Cancelled);
-        assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "상한 만료 전에 끊겨야 한다: {:?}",
-            started.elapsed()
-        );
+        let elapsed = started.elapsed();
+        assert!(elapsed < CEILING, "{}", control.verdict(elapsed, CEILING));
     }
 
     /// 취소로 죽은 자식은 **타임아웃으로 분류되지 않는다**. 취소 kill 은 시그널 종료라

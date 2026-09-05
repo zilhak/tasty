@@ -41,7 +41,8 @@ pub use plugin_defaults::{
 pub use port::ThemeStorage;
 pub use scan::{ThemeEntry, rescan, scan_themes};
 pub use state::{
-    apply_theme, install_global, install_global_with_zoom, resolve, resolve_with_zoom,
+    ThemeRuntime, apply_theme, install_global, install_global_with_runtime, resolve,
+    resolve_with_runtime,
 };
 pub use store::{
     BUILTIN_LATTE_ID, BUILTIN_MOCHA_ID, ThemeStoreError, ensure_mocha_exists, first_run_init,

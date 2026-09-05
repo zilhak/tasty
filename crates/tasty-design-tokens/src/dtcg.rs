@@ -12,6 +12,9 @@
 //! 임의 tier 간 참조 + 다단 체인을 허용한다. tier 규율의 강제는 생성물
 //! visibility(`generated::primitive` = `pub(crate)`)로만 수행한다.
 
+mod duration_accessor;
+use duration_accessor::{emit_duration_accessor, resolve_duration_accessor};
+
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -1000,8 +1003,26 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
                     Err(reason) => skips.push(reason),
                 }
             }
-            // duration/number/fontWeight component 토큰 — 04 범위 밖. 테마 불변이라
-            // `generated::component` 의 raw const 로 이미 충분 (zoom 무관).
+            "duration" => {
+                let fn_name = accessor_fn_name(&token.name);
+                // 이름이 겹치면 `impl Theme` 이 중복 메서드로 컴파일이 깨진다 — 반환
+                // 타입이 달라도 마찬가지라 두 표를 **함께** 본다.
+                if EXISTING_THEME_DIM_ACCESSOR_NAMES.contains(&fn_name.as_str())
+                    || EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str())
+                {
+                    skips.push(format!(
+                        "{}: theme.rs 기존 수기 접근자 `{fn_name}` 과 이름 충돌 — 생성 스킵",
+                        token.path()
+                    ));
+                    continue;
+                }
+                match resolve_duration_accessor(set, token) {
+                    Ok(acc) => body.push_str(&emit_duration_accessor(set, token, &acc)),
+                    Err(reason) => skips.push(reason),
+                }
+            }
+            // number/fontWeight component 토큰 — 04 범위 밖. 테마 불변이고 무단위라
+            // `generated::component` 의 raw const 로 이미 충분.
             _ => {}
         }
     }
@@ -1009,12 +1030,14 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
     let header = "//! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.\n\
                   //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
                   //!\n\
-                  //! Tier 3 (component) 치수·색 접근자. `generated::component` 의 raw\n\
-                  //! const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를\n\
+                  //! Tier 3 (component) 치수·색·시간 접근자. `generated::component` 의\n\
+                  //! raw const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를\n\
                   //! 반환하거나(semantic 종착) `ui_zoom` 을 직접 곱하고(primitive 직접\n\
                   //! 종착), 색은 semantic 접근자 체인 또는 component→component 접근자\n\
-                  //! 상호 호출로 이어붙인다.\n\n\
+                  //! 상호 호출로 이어붙인다. 시간은 `Millis` 로 나가며 **zoom 을 곱하지\n\
+                  //! 않는다** — 배율은 길이 축이다.\n\n\
                   use crate::color::HexColor;\n\
+                  use crate::motion::Millis;\n\
                   use tasty_type_geometry::length::LogicalPx;\n\n\
                   impl crate::theme::Theme {";
     let mut file = header.to_string();

@@ -1,0 +1,12 @@
+[package]
+name = "tasty-latency-control"
+version = "0.1.0"
+edition = "2024"
+
+# 의존 0 — 이 크레이트는 지연 단정의 실패 경로에서만 도는 하네스 조각이라,
+# 여기에 의존을 들이면 그 실패 경로가 재는 자원이 늘어난다(대조군이 오염된다).
+# 그리고 소비처는 전부 `dev-dependencies` 다 — 제품 산출물에 들어가지 않는다.
+[dependencies]
+
+[lints]
+workspace = true

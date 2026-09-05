@@ -92,6 +92,21 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// 전역 `Theme` 을 만들 때 실어야 하는 설정 값들을 한 덩이로 낸다.
+    ///
+    /// **이 함수가 이 값들이 채워지는 유일한 자리다.** 종전에는 install 호출부마다
+    /// 값을 하나씩 인자로 넘겼고, 그 형태가 실제로 두 번 사고를 냈다 — `ui_zoom` 을
+    /// 빠뜨린 install 이 전역 Theme 을 배율 1.0 으로 되돌렸고, `reduced_motion` 은
+    /// 위젯 인자로만 존재해 넘기는 자리가 레포 전체에 하나도 없었다(설정을 켜도
+    /// 스피너가 계속 돌았다). 값을 늘릴 때 호출부를 안 건드려도 되게 하려고 묶는다.
+    /// 결정과 대안은 `docs/adr/0174-theme-carries-reduced-motion.md`.
+    pub fn theme_runtime(&self) -> tasty_themes::ThemeRuntime {
+        tasty_themes::ThemeRuntime {
+            ui_zoom: self.appearance.ui_scale_factor(),
+            reduced_motion: self.accessibility.reduced_motion,
+        }
+    }
+
     /// Plugin settings 슬롯 조회. 부재 시 `None` — 호출자가 manifest default 로 fallback.
     pub fn plugin_setting(
         &self,
@@ -863,6 +878,20 @@ ui_scale = "large"
     fn modifier_hint_enabled_false_preserved() {
         let parsed: Settings = toml::from_str("[modifier_hint]\nenabled = false").unwrap();
         assert!(!parsed.modifier_hint.enabled);
+    }
+
+    /// `theme_runtime()` 이 이 값들이 채워지는 유일한 자리다 — 여기서 빠지면 전역
+    /// Theme 을 설치하는 4 경로 전부가 조용히 기본값을 쓴다.
+    #[test]
+    fn theme_runtime_carries_every_settings_backed_value() {
+        let mut settings = Settings::default();
+        settings.accessibility.reduced_motion = true;
+        let rt = settings.theme_runtime();
+        assert!(rt.reduced_motion);
+        assert_eq!(rt.ui_zoom, settings.appearance.ui_scale_factor());
+
+        let off = Settings::default().theme_runtime();
+        assert!(!off.reduced_motion);
     }
 
     #[test]

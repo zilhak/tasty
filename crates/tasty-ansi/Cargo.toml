@@ -1,0 +1,12 @@
+[package]
+name = "tasty-ansi"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "ANSI escape stripping shared by the terminal buffer and the output parsers"
+
+[dependencies]
+regex = "1"
+
+[lints]
+workspace = true

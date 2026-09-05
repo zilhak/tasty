@@ -16,7 +16,6 @@ pub mod parsers;
 
 use std::sync::LazyLock;
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 /// 파싱된 의미 단위 한 건. `kind` 가 파서 ID 와 일치하며 `data` 는 파서별
@@ -115,15 +114,12 @@ pub fn parse_buffer_with(text: &str, parsers: &[&'static dyn Parser]) -> Vec<Par
     out
 }
 
-/// ANSI escape (`\x1b[...m`, `\x1b]...\x07`, `\x1b]...\x1b\\`) 를 제거한 라인을
-/// 돌려준다. 파서 내부에서 plain text 매칭이 필요한 곳에서 사용. raw 라인의
-/// byte offset 매핑은 보존되지 않는다 (offset 은 stripped 결과 기준).
-pub(crate) fn strip_ansi(s: &str) -> String {
-    static RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").unwrap()
-    });
-    RE.replace_all(s, "").into_owned()
-}
+/// ANSI escape 제거 — 파서 내부에서 plain text 매칭이 필요한 곳에서 쓴다.
+///
+/// 구현은 `tasty-ansi` 한 곳에 있다. 예전에는 이 크레이트와 `tasty-terminal` 에
+/// 사본이 하나씩 있었고 이름이 달라(`strip_ansi` vs `strip_ansi_escapes`) 갈라지는
+/// 것이 grep 으로도 안 보였다.
+pub(crate) use tasty_ansi::strip_ansi;
 
 #[cfg(test)]
 mod tests {
@@ -168,11 +164,5 @@ mod tests {
     fn parse_buffer_rejects_unknown_parser() {
         let err = parse_buffer("anything", ["bogus"]).unwrap_err();
         assert_eq!(err, "bogus");
-    }
-
-    #[test]
-    fn strip_ansi_removes_csi_and_osc() {
-        let s = "\x1b[31mred\x1b[0m \x1b]0;title\x07after";
-        assert_eq!(strip_ansi(s), "red after");
     }
 }

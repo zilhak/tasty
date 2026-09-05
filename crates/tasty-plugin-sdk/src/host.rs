@@ -367,6 +367,7 @@ pub(crate) fn deliver_ipc_result(
     call_id: u64,
     result: Option<Value>,
     error: Option<String>,
+    error_code: Option<i32>,
 ) {
     let sender =
         tasty_utils::poison::recover_mutex(pending.lock(), PENDING_WHAT, &PENDING_POISONED)
@@ -376,6 +377,7 @@ pub(crate) fn deliver_ipc_result(
             Some(message) => Err(PluginError::HostCall {
                 method: format!("call#{call_id}"),
                 message,
+                code: error_code,
             }),
             None => Ok(result.unwrap_or(Value::Null)),
         };
@@ -414,11 +416,11 @@ mod tests {
             tx
         });
         // 모르는 call_id는 조용히 무시.
-        deliver_ipc_result(&handle.pending, 999, Some(Value::Null), None);
+        deliver_ipc_result(&handle.pending, 999, Some(Value::Null), None, None);
         assert!(handle.pending.lock().unwrap().contains_key(&7));
 
         // 알려진 call_id는 pending에서 제거.
-        deliver_ipc_result(&handle.pending, 7, Some(Value::Null), None);
+        deliver_ipc_result(&handle.pending, 7, Some(Value::Null), None, None);
         assert!(!handle.pending.lock().unwrap().contains_key(&7));
     }
 
@@ -427,10 +429,41 @@ mod tests {
         let handle = dummy_handle();
         let (tx, rx) = mpsc::channel::<HostCallResult>();
         handle.pending.lock().unwrap().insert(5, tx);
-        deliver_ipc_result(&handle.pending, 5, None, Some("denied".into()));
+        deliver_ipc_result(&handle.pending, 5, None, Some("denied".into()), None);
         let err = rx.recv().unwrap().unwrap_err();
         match err {
-            PluginError::HostCall { message, .. } => assert_eq!(message, "denied"),
+            PluginError::HostCall { message, code, .. } => {
+                assert_eq!(message, "denied");
+                assert_eq!(code, None, "호스트가 코드를 안 주면 None 이다");
+            }
+            other => panic!("expected HostCall variant, got {other:?}"),
+        }
+    }
+
+    /// 호스트가 준 코드가 waiter 까지 온다 — 그리고 **표시 문구는 안 바뀐다**.
+    ///
+    /// 문구를 읽는 소비자가 이미 있다(agent-stream 의 "그런 surface 는 없다" 판정).
+    /// 코드를 더하는 변경이 그 판정을 깨면 안 되므로 두 축을 한 자리에서 못 박는다.
+    #[test]
+    fn deliver_carries_the_host_error_code_without_changing_the_message() {
+        let handle = dummy_handle();
+        let (tx, rx) = mpsc::channel::<HostCallResult>();
+        handle.pending.lock().unwrap().insert(21, tx);
+        deliver_ipc_result(
+            &handle.pending,
+            21,
+            None,
+            Some("no live surface 999 (named by 'terminal.parent')".into()),
+            Some(-32602),
+        );
+        let err = rx.recv().unwrap().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "host call 'call#21' failed: no live surface 999 (named by 'terminal.parent')",
+            "표시 문구에 코드가 새어 들어갔다 — 문구를 읽는 판정이 깨진다"
+        );
+        match err {
+            PluginError::HostCall { code, .. } => assert_eq!(code, Some(-32602)),
             other => panic!("expected HostCall variant, got {other:?}"),
         }
     }
@@ -444,6 +477,7 @@ mod tests {
             &handle.pending,
             11,
             Some(serde_json::json!({"ok": 1})),
+            None,
             None,
         );
         let v = rx.recv().unwrap().unwrap();

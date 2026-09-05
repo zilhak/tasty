@@ -1,8 +1,13 @@
 //! IPC 호출자 컨텍스트 — local CLI/사용자 vs plugin process vs agent(자식 Claude 등) 구분.
 //!
-//! `route_engine_handler`/`route_gui_handler` 진입점에서 `CallerContext::ensure_allowed`로
-//! 권한을 검사한 뒤 분기한다. Local/Internal 은 모든 메서드 통과, Plugin/Agent 는
-//! 매니페스트(또는 grant) 에 선언된 권한과 [`crate::ipc::method_meta`] 테이블을 대조한다.
+//! 호스트는 **요청에 답하기 전에** `CallerContext::ensure_allowed` 로 권한을 검사한다.
+//! Local 은 모든 메서드 통과, Plugin/Agent 는 매니페스트(또는 grant)에 선언된 권한과
+//! [`crate::method_meta`] 테이블을 대조한다.
+//!
+//! 검사가 **어느 자리에서** 도는지가 이 함수의 정확성만큼 중요하다 — 라우팅 도중
+//! 조기에 응답해 버리는 자리가 검사보다 앞에 있으면 이 함수는 호출조차 되지 않는다.
+//! 그 순서를 지키는 계약은 호스트 쪽 가드
+//! `every_routing_entry_gates_before_it_answers` 가 소유한다.
 
 use std::collections::HashSet;
 use std::fmt;

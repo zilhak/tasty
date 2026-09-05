@@ -32,6 +32,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{OnceLock, RwLock};
 
 use tasty_utils::path::tasty_home;
@@ -590,6 +591,15 @@ impl LoadReport {
 
 // ── translation store ───────────────────────────────────────────────────────
 
+/// `namespaces` RwLock 의 poison 을 보고했는가(첫 1 회만).
+///
+/// 임계구역이 `HashMap` insert/remove/조회뿐이라 락을 든 채 죽은 스레드가 불변식을
+/// 깨지 않는다 — 복구가 맞다. 조용히 삼키면(`if let Ok`) read 쪽은 번역 조회가 통째로
+/// 건너뛰어져 사용자가 키를 그대로 보고, write 쪽은 namespace 등록/해제가 무음으로
+/// 유실돼 그 plugin 의 문자열이 전부 키로 노출된다.
+static NAMESPACES_POISONED: AtomicBool = AtomicBool::new(false);
+const NAMESPACES_WHAT: &str = "i18n plugin namespace overlays";
+
 pub struct Translations {
     /// Built-in + user override strings. Frozen after `init`.
     base: HashMap<String, &'static str>,
@@ -841,13 +851,17 @@ impl Translations {
         if let Some(s) = self.base.get(key) {
             return s;
         }
-        if let Ok(ns) = self.namespaces.read() {
-            for map in ns.values() {
-                if let Some(s) = map.get(key) {
-                    return s;
-                }
+        let ns = tasty_utils::poison::recover_read(
+            self.namespaces.read(),
+            NAMESPACES_WHAT,
+            &NAMESPACES_POISONED,
+        );
+        for map in ns.values() {
+            if let Some(s) = map.get(key) {
+                return s;
             }
         }
+        drop(ns);
         key
     }
 
@@ -912,9 +926,12 @@ impl Translations {
             strings.into_iter().map(|(k, v)| (k, leak_str(v))).collect();
 
         let count = leaked.len();
-        if let Ok(mut ns) = self.namespaces.write() {
-            ns.insert(namespace.to_string(), leaked);
-        }
+        tasty_utils::poison::recover_write(
+            self.namespaces.write(),
+            NAMESPACES_WHAT,
+            &NAMESPACES_POISONED,
+        )
+        .insert(namespace.to_string(), leaked);
         tracing::info!(
             "i18n: registered namespace '{}' with {} strings (lang_dir={})",
             namespace,
@@ -926,9 +943,12 @@ impl Translations {
     /// Remove a previously registered namespace. Strings remain in memory
     /// (`Box::leak`) but are no longer reachable through `get`.
     pub fn unregister_namespace(&self, namespace: &str) {
-        if let Ok(mut ns) = self.namespaces.write() {
-            ns.remove(namespace);
-        }
+        tasty_utils::poison::recover_write(
+            self.namespaces.write(),
+            NAMESPACES_WHAT,
+            &NAMESPACES_POISONED,
+        )
+        .remove(namespace);
         tracing::info!("i18n: unregistered namespace '{}'", namespace);
     }
 }

@@ -843,10 +843,20 @@ fn center_state(
             ui.vertical_centered(|ui| {
                 // design opacity 0.9(danger)/0.5(muted) 근사 — gamma_multiply(경고
                 // callout 의 color-mix 근사 idiom 재사용).
+                // 빈 상태 아이콘 톤 — 디자인이 적은 opacity 0.9(danger)/0.5(muted).
+                // 대응 토큰 없음(0.5 는 `opacity_disabled` 와 값만 같고 역할이 다르다).
+                const EMPTY_ICON_DANGER_OPACITY: f32 = 0.9;
+                const EMPTY_ICON_MUTED_OPACITY: f32 = 0.5;
                 let icon_tint = if danger {
-                    theme.accent_danger().to_egui().gamma_multiply(0.9)
+                    theme
+                        .accent_danger()
+                        .to_egui()
+                        .gamma_multiply(EMPTY_ICON_DANGER_OPACITY)
                 } else {
-                    theme.text_muted().to_egui().gamma_multiply(0.5)
+                    theme
+                        .text_muted()
+                        .to_egui()
+                        .gamma_multiply(EMPTY_ICON_MUTED_OPACITY)
                 };
                 icon_glyph(ui, icon, CENTER_ICON_SIZE, icon_tint);
                 ui.add_space(theme.spacing_sm.value());

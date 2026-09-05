@@ -5,7 +5,7 @@
 //! `serde_json::Value`로 직렬화되어 실린다.
 //!
 //! 카탈로그(이벤트 키 → 페이로드 스키마 → scope → 등급 매핑)는
-//! `docs/agent-guide/event-catalog.md`가 단일 출처(SoT)다.
+//! `docs/reference/event-catalog.md`가 단일 출처(SoT)다.
 
 mod envelope;
 

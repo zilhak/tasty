@@ -5,11 +5,11 @@
 //! 표류한 halo) 아무도 모르게 남아 있었다. 이 가드가 그 종류를 잡는다.
 //!
 //! # 왜 lib 유닛 테스트인가 (관례 예외 — `tests/` 로 되돌리지 마라)
-//! 소스를 런타임에 스캔하는 드리프트 가드다. `tests/*.rs` 로 두면 실행 채널이
-//! `workflow_dispatch` 뿐이라(정본 `docs/dev-guide/ci-gates.md`) 자동으로는 **컴파일만**
-//! 되고 스캔이 실행되지 않는다 — 스캔이 본체인 가드에겐 강제력 0 이다. 크레이트 `src/`
-//! 안 `#[cfg(test)]` 로 두면 Windows `--lib --bins` 와 headless
-//! `--lib --bins --no-default-features` 두 자동 잡에서 **실행**된다. 이 가드는 egui 를
+//! 소스를 런타임에 스캔하는 드리프트 가드다. `tests/*.rs` 로 두면 실행 채널이 **헤드리스
+//! 조합 하나**뿐이다(정본 `docs/dev-guide/ci-gates.md`) — 기본 조합의 자동 잡은
+//! `--lib --bins` 라 통합 타깃을 못 본다. 스캔이 본체인 가드에겐 채널 하나를 통째로 잃는
+//! 것이다. 크레이트 `src/` 안 `#[cfg(test)]` 로 두면 Windows 잡(`--lib --bins`)과 헤드리스
+//! 잡(전체 스위트) 두 자동 잡에서 **실행**된다. 이 가드는 egui 를
 //! 부르지 않는 순수 텍스트 스캔이라 `--no-default-features`(egui-compat off)에서도 선다.
 //! 관례(`tests/*_chokepoint.rs`)를 깨는 이유는 그 자동 실행 하나다 — `tests/` 로 옮기면
 //! 조용히 자동 채널을 잃는다.

@@ -9,7 +9,7 @@
 //! 그래서 게이트 목록을 **데이터**로 만들고 양쪽이 같은 출처를 읽게 한다.
 //!
 //! - 검증 코드는 토큰 문자열을 [`ContributesGate::required`] 로만 얻는다.
-//! - 문서 parity 가드(`tests/contributes_gate_docs_parity.rs`)는 [`ContributesGate::ALL`] 을
+//! - 문서 parity 가드(`crates/tasty-doc-guards/tests/contributes_gate_docs_parity.rs`)는 [`ContributesGate::ALL`] 을
 //!   순회해 문서 표와 1:1 로 맞는지 본다.
 //!
 //! 토큰 문자열은 이 표에 **없다** — [`Permission::as_token`] 에서 온다. 그래야 `validate.rs` ·

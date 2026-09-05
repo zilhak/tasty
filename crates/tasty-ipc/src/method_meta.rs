@@ -18,6 +18,15 @@ use tasty_plugin_manifest::Permission;
 pub struct MethodMeta {
     /// plugin이 이 메서드를 호출할 수 있는지. false면 plugin은 어떤 경우에도 호출 불가.
     pub plugin_callable: bool,
+    /// **plugin 만** 부를 수 있는지 — 즉 이 이름에 외부(CLI/네트워크 IPC) dispatch
+    /// arm 이 없다. plugin host-call 진입부가 직접 인터셉트하는 메서드들이다.
+    ///
+    /// 이 표는 원래 caller **게이트**만 담았고 라우팅은 담지 않았다. 그런데 게이트의
+    /// 한쪽 방향은 이미 말할 수 있었다 — `local_only()` 가 "plugin 은 못 부른다" 다.
+    /// 반대 방향을 말할 수단이 없어서, plugin 전용 메서드가 `plugin(&[…])` 로 적히고
+    /// 외부 호출자는 `-32601`("그런 메서드 없다")을 받았다. 이름은 맞고 표에도 있는데
+    /// 없다고 답한 것이라, 플랫폼 축에서 같은 거짓을 고친 ADR-0154 와 같은 형태다(ADR-0163).
+    pub plugin_only: bool,
     /// plugin이 호출하려면 매니페스트에 이 권한들이 모두 선언돼 있어야 함.
     pub required: &'static [Permission],
 }
@@ -25,6 +34,19 @@ pub struct MethodMeta {
 const fn plugin(required: &'static [Permission]) -> MethodMeta {
     MethodMeta {
         plugin_callable: true,
+        plugin_only: false,
+        required,
+    }
+}
+
+/// plugin 만 부를 수 있는 메서드 — 외부 dispatch arm 이 없다.
+///
+/// `local_only()` 의 거울이다. 표에 등재하는 이유도 같다: 거부가 **정책인지 누락인지**
+/// 구분되게 하려고. 다른 것은 그 거부를 누가 받느냐뿐이다.
+const fn plugin_only(required: &'static [Permission]) -> MethodMeta {
+    MethodMeta {
+        plugin_callable: true,
+        plugin_only: true,
         required,
     }
 }
@@ -32,6 +54,7 @@ const fn plugin(required: &'static [Permission]) -> MethodMeta {
 const fn local_only() -> MethodMeta {
     MethodMeta {
         plugin_callable: false,
+        plugin_only: false,
         required: &[],
     }
 }
@@ -48,6 +71,17 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // GPU 리소스 카운트 read-only 스냅샷 (메모리 누수 soak 검증). 순수 조회지만
         // 내부 렌더러 구조를 노출하는 진단 표면이라 local_only — plugin 미노출.
         ("system.gpu_stats", local_only()),
+        // ── plugin 보조 채널 ──────────────────────────────────────────
+        // egui-mesh 프레임용 공유 메모리 생성. main 채널 + 보조 채널(fd/HANDLE 송신)을
+        // 함께 다뤄야 해서 라우터가 아니라 plugin 진입부가 가로채 처리하지만, **등재는
+        // 여기 있어야 한다** — 표에 없으면 표를 읽는 어떤 감사도 이 메서드를 보지 못하고,
+        // 게이트도 이름을 못 찾아 태울 수 없다.
+        //
+        // 지금 요구하는 토큰이 없는 것은 **결정이 아니라 미결**이다. 어떤 권한을
+        // 요구할지(그리고 개수·총량 상한을 함께 둘지)는 매니페스트 호환성이 걸린
+        // 별도 결정이고, ADR-0152 의 "이 ADR 이 안 정한 것" 에 열린 질문으로 있다.
+        // 그때까지는 현재 동작 그대로 등재해 최소한 cap·rate·audit 는 걸리게 한다.
+        ("host.shared_buffer.create", plugin_only(&[])),
         // ── 타이머 관측 ───────────────────────────────────────────────
         // 등록된 주기 작업의 read-only 스냅샷("지금 무엇이 이 인스턴스를 깨우는가").
         // local_only — plugin 이 호스트 내부 스케줄을 알아야 할 이유가 없고, 조회
@@ -466,37 +500,31 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // 약한 SurfaceRead 권한. host 는 특정 kind 이름을 모른다(generic).
         ("recent.query", plugin(&[SurfaceRead])),
         // ── fs.* (native 파일시스템 자원 위임 — host 프로세스 전용) ─────
-        // native OS 파일 선택 다이얼로그(rfd)를 host 프로세스에서 열고 선택 경로를
-        // 회신한다. plugin 은 자기 프로세스에서 native 다이얼로그(host UI 스레드 자원)를
-        // 못 여므로 host 에 위임한다 — generic 하게 "파일 선택" 만 대행하고 host 는 특정
-        // kind/plugin 을 모른다. 사용자가 임의 경로를 고르는 read 관심사라 FsRead. filters
-        // 는 caller(예: markdown plugin 이 md/markdown)가 채운다. ADR-0042.
-        ("fs.pick_file", plugin(&[FsRead])),
         // ── git_viewer.* (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md
         // — 원격 attach mirror git 조회 트리거) ─
         // git-viewer plugin 이 mirror workspace 에서 status/log/worktrees snapshot
         // 또는 diff 를 요청. host 는 즉시 request_id 만 회신하고(비동기 accept), 실제
         // 조회는 attach Control 채널 왕복 후 `event.dispatch` unicast 로 plugin 에
         // push 된다(popup.set_context 는 이 결과 전달에 쓰지 않는다 — context 필드가
-        // 없음). 임의 원격 경로 read 라 FsRead(로컬 fs.pick_file 과 동일 근거).
+        // 없음). 임의 원격 경로 read 라 FsRead(파일을 고르는 read 관심사, `file_picker.trigger` 와 동일 근거).
         ("git_viewer.query", plugin(&[FsRead])),
         // ── file_picker.* (plugin 트리거 host 소유 file_picker popup) ─
         // plugin(현재는 markdown Browse)이 host 소유 `file_picker` popup(ADR-0053)을
         // 열도록 트리거한다. host 는 즉시 request_id 만 회신하고(비동기 accept,
         // ADR-0058), 실제 확정/취소 결과는 확정 지점에서 `event.dispatch` unicast
         // `"file_picker.result"` 로 plugin 에 push 된다. 파일을 고르는 read 관심사라
-        // FsRead(로컬 fs.pick_file/git_viewer.query 와 동일 근거).
+        // FsRead(`git_viewer.query` 와 동일 근거).
         ("file_picker.trigger", plugin(&[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
         // 다른 plugin의 인스턴스 close 요청은 만들어진 응답에서 거부.
-        ("popup.close", plugin(&[UiPopup])),
+        ("popup.close", plugin_only(&[UiPopup])),
         // ── banner (plugin → host, A3) ────────────────────────────────
         // 자기 contribute banner 를 자기 surface 에 띄운다(D1 소유권 검증은 App).
-        ("banner.open", plugin(&[UiBanner])),
+        ("banner.open", plugin_only(&[UiBanner])),
         // 자기 배너 인스턴스를 명시적으로 닫는다.
-        ("banner.close", plugin(&[UiBanner])),
+        ("banner.close", plugin_only(&[UiBanner])),
         // ── 호스트 자체 메서드 (plugin/window 관리) — local-only ──────
         ("plugin.list", local_only()),
         ("plugin.show", local_only()),
@@ -659,9 +687,11 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
 /// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.
 ///
-/// host-plugin 의 plugin lifecycle (`start_plugin_internal` / `disable` /
-/// `pump`) 가 [`register_plugin_prefix`] / [`unregister_plugin_prefix`] 로
-/// 동기 갱신한다.
+/// host-plugin 이 **설치된 매니페스트에서 소유 표를 다시 만들 때** 이 미러도 같은
+/// 자리에서 함께 갱신한다(`PluginManager::refresh_packages` 안). plugin 의 기동·종료가
+/// 아니라 **설치 상태**가 재료라, plugin 이 안 떠 있어도 소유는 유지된다 — 실행 여부는
+/// 다른 물음이고 라우터가 `-32002` 로 따로 답한다. 근거는
+/// `docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md`.
 static PLUGIN_PREFIXES: OnceLock<RwLock<HashMap<String, MethodMeta>>> = OnceLock::new();
 
 fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
@@ -704,6 +734,7 @@ pub fn register_plugin_prefix(prefix: &str) {
         .entry(prefix.to_string())
         .or_insert(MethodMeta {
             plugin_callable: true,
+            plugin_only: false,
             required: &[],
         });
 }
@@ -731,6 +762,22 @@ pub fn clear_plugin_prefixes_for_tests() {
 /// 우회가 그대로 열린다. 그래서 락이 poison 이어도 복구해서 실제 값을 본다.
 pub fn is_registered_plugin_prefix(prefix: &str) -> bool {
     prefixes_read().contains_key(prefix)
+}
+
+/// 이 이름이 **표에 그 이름 그대로 적혀 있는가**. prefix fallback 은 보지 않는다.
+///
+/// `method_meta()` 와 다른 물음이다. 저쪽은 "이 이름을 어떻게 다뤄야 하나" 를 묻고
+/// 그래서 정적 `PREFIX_RULES` 와 **런타임 등록 plugin prefix** 까지 4 단계로 해소한다.
+/// 여기서 묻는 것은 "**우리가 이 이름을 우리 것으로 적어 뒀나**" 하나뿐이다.
+///
+/// 두 물음을 섞으면 설치된 plugin 의 표면이 통째로 host 것으로 오인된다. 실측
+/// 2026-09-05: `method_meta(...).is_some()` 을 "표에 있다" 로 읽고 종단 응답을 가르면
+/// `claude.children` · `agent_stream.list` 는 물론 `markdown.no_such_thing` 같은 **오타까지**
+/// 마지막 단계(런타임 prefix)에 걸려 host 의 답을 받는다 — plugin 으로 갈 호출이 안 간다.
+/// 그 모수는 유한하지도 않다(그 prefix 아래 임의의 이름이 전부 해당된다).
+pub fn is_registered_name(method: &str) -> bool {
+    METHOD_TABLE.iter().any(|(name, _)| *name == method)
+        || DEBUG_METHODS.iter().any(|(name, _)| *name == method)
 }
 
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.

@@ -174,6 +174,70 @@ fn read_is_shared_across_callers() {
     assert_eq!(list[0].owner.as_deref(), Some(PLUGIN_A));
 }
 
+/// owner 검사는 **이미 있는 행**만 지킨다 — 아직 없는 키는 누구든 만들 수 있고,
+/// 그러면 그 키의 owner 가 된다. 그래서 `tasty.audit.` 같은 호스트 namespace 는
+/// "호스트가 이미 쓴 키" 만 보호될 뿐, 그 옆에 새 키를 심는 것은 store 가 막지
+/// 않는다. 심은 행은 호스트 자신의 prefix 조회에 그대로 섞인다.
+///
+/// 이것을 막는 것은 store 가 아니라 IPC 핸들러의 예약 namespace 정책이다
+/// (`memory::HOST_KEY_NAMESPACE`, [ADR-0141]). 그 전제를 여기 박아 둔다 — store 가
+/// 언젠가 namespace 를 직접 지키게 되면 이 테스트가 먼저 깨진다.
+///
+/// [ADR-0141]: ../../../docs/adr/0141-host-key-namespace-is-reserved-in-raw-memory-kv.md
+#[test]
+fn ownership_does_not_reserve_a_key_namespace() {
+    let mut s = store();
+    let scope = Scope::Global;
+    s.put(
+        HOST_OWNER,
+        &scope,
+        "tasty.audit.0001",
+        &text("deny"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+
+    // 있는 행은 지켜진다.
+    assert!(matches!(
+        s.put(
+            PLUGIN_A,
+            &scope,
+            "tasty.audit.0001",
+            &text("x"),
+            &PutOpts::default()
+        ),
+        Err(MemoryError::OwnedByOther { .. })
+    ));
+    assert!(matches!(
+        s.delete(PLUGIN_A, &scope, "tasty.audit.0001", None),
+        Err(MemoryError::OwnedByOther { .. })
+    ));
+
+    // 없는 키는 지켜지지 않는다 — 그리고 호스트의 prefix 조회에 섞인다.
+    s.put(
+        PLUGIN_A,
+        &scope,
+        "tasty.audit.9999",
+        &text("forged"),
+        &PutOpts::default(),
+    )
+    .unwrap();
+    let rows = s
+        .list(
+            &scope,
+            &ListOpts {
+                prefix: Some("tasty.audit.".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(rows.len(), 2, "심은 행이 호스트 조회에 섞이지 않는다");
+    assert!(
+        rows.iter().any(|e| e.owner.as_deref() == Some(PLUGIN_A)),
+        "심은 행의 owner 가 plugin 인데도 같은 조회에 함께 나온다"
+    );
+}
+
 #[test]
 fn expired_keys_treated_as_missing() {
     let mut s = store();

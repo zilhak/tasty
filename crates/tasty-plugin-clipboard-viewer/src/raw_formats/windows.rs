@@ -3,7 +3,7 @@
 //! 이 모듈은 Linux 조사/구현 머신에서 컴파일 검증이 불가능하다 — `EnumFormats`/
 //! `format_name_big`/`get_vec` 는 로컬에 벤더링된
 //! `clipboard-win-5.4.1/src/raw.rs:301,927-953,1081` 소스를 직접 읽어 확인한 실제
-//! 공개 API 이고, arboard 자신의 `src/platform/windows.rs`(레지스트리 캐시)를 근거로
+//! 공개 API 이고, arboard 자신의 `arboard/src/platform/windows.rs`(레지스트리 캐시)를 근거로
 //! text/image/html 이 실제로 쓰는 포맷(`CF_UNICODETEXT`, `CF_DIBV5`+등록 포맷 "PNG",
 //! 등록 포맷 "HTML Format")을 그대로 확인했다. Windows 빌드 환경에서 재확인 필요.
 

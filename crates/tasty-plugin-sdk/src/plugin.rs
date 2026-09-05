@@ -315,10 +315,23 @@ impl IpcMethodError {
 }
 
 /// Plugin 핸들러 안에서 SDK 호출이 실패하면 `?` 한 번으로 IPC 응답까지
-/// 흘려보낼 수 있게 자동 변환을 제공한다. JSON-RPC 코드는 server error(-32000).
+/// 흘려보낼 수 있게 자동 변환을 제공한다.
+///
+/// **호스트가 코드를 준 실패는 그 코드를 그대로 낸다.** 그러지 않으면 호스트가
+/// "인자를 고쳐라"(`-32602`)로 거절한 것이 plugin 을 거치는 순간 "서버 사정"
+/// (`-32000`)이 되어, 호출자가 재시도 정책을 반대로 고른다 — 같은 잘못에 답이
+/// 둘인 형태다(ADR-0154 · ADR-0163 · ADR-0167 과 같은 축).
+///
+/// 코드가 없는 실패(SDK 자체의 연결·인코딩 오류 등)는 종전대로 server error(-32000).
 impl From<crate::error::PluginError> for IpcMethodError {
     fn from(err: crate::error::PluginError) -> Self {
-        IpcMethodError::new(err.to_string())
+        let message = err.to_string();
+        match err {
+            crate::error::PluginError::HostCall {
+                code: Some(code), ..
+            } => IpcMethodError::with_code(message, code),
+            _ => IpcMethodError::new(message),
+        }
     }
 }
 
@@ -449,3 +462,52 @@ pub struct EventDispatchCtx {
 }
 
 use crate::bus::BusHandle;
+
+#[cfg(test)]
+mod ipc_method_error_tests {
+    use super::IpcMethodError;
+    use crate::error::PluginError;
+
+    /// 호스트가 준 코드가 외부 응답까지 온다.
+    ///
+    /// 이 변환이 코드를 버리던 동안, 호스트가 `-32602`("인자를 고쳐라")로 거절한 것이
+    /// plugin 을 거치면 `-32000`("서버 사정")이 됐다. 두 코드는 호출자의 **재시도 정책**을
+    /// 반대로 가른다 — 앞엣것은 인자를 고쳐 다시 걸고, 뒤엣것은 포기한다.
+    #[test]
+    fn a_host_supplied_code_survives_the_plugin_boundary() {
+        let err = PluginError::HostCall {
+            method: "call#7".into(),
+            message: "no live surface 999 (named by 'terminal.parent')".into(),
+            code: Some(-32602),
+        };
+        let out: IpcMethodError = err.into();
+        assert_eq!(out.code, -32602, "호스트 코드가 -32000 으로 뭉개졌다");
+        assert!(
+            out.message
+                .contains("no live surface 999 (named by 'terminal.parent')"),
+            "문구가 바뀌었다: {}",
+            out.message
+        );
+    }
+
+    /// 코드가 없는 호스트 실패는 종전대로 server error 다.
+    #[test]
+    fn a_host_failure_without_a_code_is_still_a_server_error() {
+        let err = PluginError::HostCall {
+            method: "call#7".into(),
+            message: "denied".into(),
+            code: None,
+        };
+        let out: IpcMethodError = err.into();
+        assert_eq!(out.code, -32000);
+    }
+
+    /// SDK 자신의 실패(연결·인코딩 등)도 종전대로 server error 다 — 호스트가 답한 것이
+    /// 아니므로 실을 코드가 없다.
+    #[test]
+    fn an_sdk_internal_failure_is_a_server_error() {
+        let out: IpcMethodError = PluginError::HostClosed.into();
+        assert_eq!(out.code, -32000);
+        assert_eq!(out.message, "host closed connection");
+    }
+}

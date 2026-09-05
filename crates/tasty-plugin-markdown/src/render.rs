@@ -710,6 +710,14 @@ fn figurize_paragraph_buffer(buf: Vec<Event<'_>>) -> Vec<Event<'_>> {
 
 /// Schemes this pass recognizes for bare-URL autolinking. `www.`-prefixed (schemeless) hosts
 /// and email addresses are out of scope for now (conductor-scoped — a separate TODO if needed).
+/// find 히트 하이라이트 배경의 알파. 대응 토큰이 없어 값에 이름만 둔다.
+/// (`alert_css` 의 `BG_ALPHA` 와 값 공간은 같고 역할이 다르다.)
+const FIND_HIT_BG_ALPHA: u8 = 90;
+
+/// diff 추가/삭제 줄 배경의 알파 — `gamma_multiply(0.12)` 과 같은 비율을
+/// 알파 공간으로 옮긴 값이다. 대응 토큰 없음.
+const DIFF_LINE_BG_ALPHA: u8 = 31;
+
 const AUTOLINK_SCHEMES: &[&str] = &["https://", "http://"];
 
 /// Trailing characters stripped one at a time from the end of a matched URL run — mirrors GFM's
@@ -1978,7 +1986,10 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         ),
         alert_rules = alert_css(theme),
         hljs_rules = hljs_css(theme),
-        find_match_bg = theme.accent_warning().with_alpha(90).to_hex(),
+        find_match_bg = theme
+            .accent_warning()
+            .with_alpha(FIND_HIT_BG_ALPHA)
+            .to_hex(),
         find_current_bg = theme.accent_primary().to_hex(),
         find_current_fg = theme.text_on_accent().to_hex(),
     )
@@ -2066,8 +2077,14 @@ fn hljs_css(theme: &Theme) -> String {
         tag = theme.teal.to_hex(),
         variable = theme.lavender.to_hex(),
         builtin = theme.red.to_hex(),
-        deletion_bg = theme.accent_danger().with_alpha(31).to_hex(),
-        addition_bg = theme.accent_success().with_alpha(31).to_hex(),
+        deletion_bg = theme
+            .accent_danger()
+            .with_alpha(DIFF_LINE_BG_ALPHA)
+            .to_hex(),
+        addition_bg = theme
+            .accent_success()
+            .with_alpha(DIFF_LINE_BG_ALPHA)
+            .to_hex(),
     )
 }
 
@@ -4913,7 +4930,10 @@ Outro\n";
         assert!(
             css.contains(&format!(
                 "background:{};",
-                theme.accent_warning().with_alpha(90).to_hex()
+                theme
+                    .accent_warning()
+                    .with_alpha(FIND_HIT_BG_ALPHA)
+                    .to_hex()
             )),
             "got: {css}"
         );

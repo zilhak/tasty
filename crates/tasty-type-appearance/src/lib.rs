@@ -34,6 +34,7 @@
 //! 상세는 `docs/dev-guide/color-policy.md` 참고.
 
 pub mod color;
+pub mod motion;
 pub mod theme;
 
 /// `tasty-design-tokens` 생성기가 산출하는 semantic 색 접근자 (`impl Theme`).
@@ -48,3 +49,7 @@ mod generated_component;
 /// (`tests/` 로 옮기면 자동 실행 채널을 잃는다 — 되돌리지 마라).
 #[cfg(test)]
 mod shadow_policy_guard;
+#[cfg(test)]
+mod zoom_coverage_guard;
+#[cfg(test)]
+mod zoom_exempt_fields_guard;

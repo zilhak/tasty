@@ -16,6 +16,13 @@
 //! (`[[contributes.popup]]` in the manifest) are still self-rendered by the plugin — only the
 //! main document surface moved to the webview channel.
 
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
+
 mod render;
 mod watch;
 
@@ -36,7 +43,7 @@ use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
     BusHandle, EventDispatchCtx, EventScope, HostHandle, IpcMethodCtx, IpcMethodError, Plugin,
     PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx,
-    SurfaceResult, Translator, WebviewNavigationAttemptCtx,
+    SurfaceRestoreCtx, SurfaceResult, Translator, WebviewNavigationAttemptCtx,
 };
 use tasty_type_appearance::theme::Theme;
 use watch::WatchCmd;
@@ -259,14 +266,20 @@ impl Plugin for MarkdownPlugin {
         // stat 하지 않는다(크기게이트는 plugin 소유). 이벤트 → host `fire_popup_triggers`
         // → 이 plugin 의 `[[contributes.popup]]`(event trigger) 확인 팝업이 열린다.
         let file = surface_param_file(&ctx.params);
-        let doc = self.make_doc(file.clone(), ctx.surface_id);
-        self.docs.insert(ctx.surface_id, doc);
-        // idle 감시 등록(단계 06). `markdown.navigate` 제자리 이동도 같은 surface_id 로
-        // create_surface 를 다시 호출하므로 여기서 자연스럽게 갱신된다.
-        self.watch_register(ctx.surface_id, file);
-        // 문서를 HTML 로 렌더해 host WebView 에 싣는다 — 이 kind 는 mesh 를 그리지 않는다.
-        self.reload_webview(ctx.surface_id);
-        SurfaceResult::default()
+        self.open_file_surface(ctx.surface_id, file)
+    }
+
+    // layout 재시작 복원 경로. preset apply 는 `surface.create` 를 타지만 layout
+    // 재시작은 `surface.restore` 를 탄다 — SDK 기본 구현은 빈 `SurfaceResult` 라,
+    // 구현하지 않으면 재시작 시 markdown 이 file 을 잃고 빈 채로 살아난다. create 가
+    // 실어 둔 snapshot(`{"file": ...}`)을 그대로 받아 같은 문서를 연다.
+    fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
+        let file = ctx
+            .data
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        self.open_file_surface(ctx.surface_id, file)
     }
 
     fn destroy_surface(&mut self, surface_id: u32) {
@@ -277,6 +290,14 @@ impl Plugin for MarkdownPlugin {
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
             "markdown.reload" => self.markdown_reload(&ctx.params),
+            // host 가 구현한 이름이다(surface 를 열고 있는 창을 host 가 안다). 이
+            // namespace 를 plugin 이 점유하는 순간 외부 호출은 전부 여기로 forward 되므로,
+            // arm 이 없으면 host 구현이 **외부에서만** 안 닿는다 — plugin 이 설치돼 있으면
+            // 막히고 빠지면 열리는, 설치 상태에 따라 흔들리는 표면이 된다.
+            // 실측(2026-09-05): arm 이 없을 때 외부 `markdown.navigate` 는 plugin 의
+            // not_found 로 끝났고, plugin 을 빼면 같은 호출이 host arm 에 닿았다.
+            // image.open/list 와 같은 self-call trampoline 로 host 에 돌려준다.
+            "markdown.navigate" => Ok(ctx.host.call(&ctx.method, ctx.params)?),
             // 최근목록 조회는 host 소유(AppState.recent_files) — plugin 은 저장소를 못 본다.
             // host 는 generic `recent.query {kind}` 만 알고 "markdown" 을 모른다. CLI/주소창
             // caller 가 이 plugin namespace 로 보낸 호출을 host 의 generic 메서드로 kind 를
@@ -434,6 +455,25 @@ impl MarkdownPlugin {
     /// 문서를 만든다. 파일이 임계값을 *초과* 하면 read 를 보류(`new_deferred`)하고
     /// large-file 이벤트를 발행해 확인 팝업을 띄운다(크기 감지는 plugin in-process).
     /// bus 가 없으면(초기화 전) 게이트를 건너뛰고 즉시 로드한다(fail-open).
+    /// create/restore 공용 — file 로 문서를 열고, host 에 snapshot(`{"file": ...}`)을
+    /// 올려 layout/preset round-trip 에 file 을 보존한다. host 는 이 snapshot 을
+    /// `RemoteSurface.snapshot_cache` 로 캐시했다가 `SavedSurface::Generic.data` 로
+    /// 저장하고, 다음 실행의 `surface.restore` 에 `data` 로 되돌려준다. file 이 없으면
+    /// 저장할 것이 없어 `None`(호스트는 기존 캐시 유지).
+    fn open_file_surface(&mut self, surface_id: u32, file: Option<String>) -> SurfaceResult {
+        let doc = self.make_doc(file.clone(), surface_id);
+        self.docs.insert(surface_id, doc);
+        // idle 감시 등록(단계 06). `markdown.navigate` 제자리 이동도 같은 surface_id 로
+        // create_surface 를 다시 호출하므로 여기서 자연스럽게 갱신된다.
+        self.watch_register(surface_id, file.clone());
+        // 문서를 HTML 로 렌더해 host WebView 에 싣는다 — 이 kind 는 mesh 를 그리지 않는다.
+        self.reload_webview(surface_id);
+        SurfaceResult {
+            display_name: None,
+            snapshot: file.as_ref().map(|f| json!({ "file": f })),
+        }
+    }
+
     fn make_doc(&self, file: Option<String>, surface_id: u32) -> MdDoc {
         if let Some(path) = file.as_deref()
             && let Some(size) = file_exceeds_limit(path)
@@ -1122,161 +1162,4 @@ fn main() -> anyhow::Result<()> {
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
 // 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
 #[allow(clippy::let_underscore_must_use)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reload_with_surface_id_returns_ok() {
-        let mut p = MarkdownPlugin::new(Translator::default());
-        let resp = p
-            .markdown_reload(&json!({ "surface": 42 }))
-            .expect("reload should succeed");
-        assert_eq!(resp["ok"], json!(true));
-        assert_eq!(resp["surface_id"], json!(42));
-    }
-
-    #[test]
-    fn reload_without_surface_id_is_invalid_params() {
-        let mut p = MarkdownPlugin::new(Translator::default());
-        let err = p.markdown_reload(&json!({})).unwrap_err();
-        assert_eq!(err.code, -32602);
-        assert!(err.message.contains("surface"));
-    }
-
-    #[test]
-    fn create_surface_loads_missing_file_as_error() {
-        let mut p = MarkdownPlugin::new(Translator::default());
-        // SDK 가 넘기는 envelope 형태(file 은 nested `params.file`)로 구성한다.
-        p.create_surface(SurfaceCreateCtx {
-            surface_id: 1,
-            kind: "markdown".into(),
-            cwd: None,
-            params: json!({
-                "surface_id": 1,
-                "kind": "markdown",
-                "params": { "file": "\0nonexistent-md-for-test" }
-            }),
-        });
-        let doc = p.docs.get(&1).expect("doc inserted");
-        assert!(doc.load_error.is_some());
-        assert!(doc.content.is_empty());
-    }
-
-    /// 크기게이트 임계값 판정 — 초과만 게이트(경계값·이하·부재는 통과). host
-    /// `file/dispatch.rs` 의 `size_gate_boundary_and_over` 를 plugin in-process 로 이관.
-    #[test]
-    fn file_exceeds_limit_gates_over_only() {
-        let dir = std::env::temp_dir();
-        let big = dir.join(format!("tasty-md-big-{}.md", std::process::id()));
-        let exact = dir.join(format!("tasty-md-exact-{}.md", std::process::id()));
-        let small = dir.join(format!("tasty-md-small-{}.md", std::process::id()));
-        std::fs::write(&big, vec![b'x'; LARGE_FILE_LIMIT_BYTES as usize + 1]).unwrap();
-        std::fs::write(&exact, vec![b'x'; LARGE_FILE_LIMIT_BYTES as usize]).unwrap();
-        std::fs::write(&small, vec![b'x'; 500 * 1024]).unwrap();
-
-        assert_eq!(
-            file_exceeds_limit(big.to_str().unwrap()),
-            Some(LARGE_FILE_LIMIT_BYTES + 1)
-        );
-        // 정확히 임계값 → None (초과만 게이트).
-        assert_eq!(file_exceeds_limit(exact.to_str().unwrap()), None);
-        assert_eq!(file_exceeds_limit(small.to_str().unwrap()), None);
-        // 없는 파일 → None (게이트 통과, 로드 시 error 표시).
-        assert_eq!(file_exceeds_limit("\0nonexistent-md-for-test"), None);
-
-        let _ = std::fs::remove_file(&big); // best-effort 정리 — 실패 무시(테스트 결과 무관).
-        let _ = std::fs::remove_file(&exact); // best-effort 정리 — 실패 무시.
-        let _ = std::fs::remove_file(&small); // best-effort 정리 — 실패 무시.
-    }
-
-    /// deferred 문서는 [열기] 확정(`resume_load`) 전까지 read 를 보류한다.
-    #[test]
-    fn deferred_doc_holds_read_until_resume() {
-        let path =
-            std::env::temp_dir().join(format!("tasty-md-deferred-{}.md", std::process::id()));
-        std::fs::write(&path, b"# hello deferred").unwrap();
-        let mut doc = MdDoc::new_deferred(Some(path.to_string_lossy().into_owned()));
-        assert!(doc.pending_large);
-        assert!(doc.content.is_empty());
-        // 확정 후 실제 로드.
-        doc.resume_load();
-        assert!(!doc.pending_large);
-        assert!(doc.content.contains("hello deferred"));
-        // best-effort 정리 — 실패해도 테스트 결과에 영향 없음.
-        let _ = std::fs::remove_file(&path);
-    }
-
-    /// `force_reload` 가 외부 삭제를 error 상태로 감지한다 — idle 감시(`watch.rs`)가
-    /// mtime 변경을 감지했을 때, 그리고 `markdown.reload` IPC 가 명시 호출됐을 때 모두
-    /// 이 경로 하나로 수렴한다(watch.rs 모듈 문서 — 레이스를 없애는 단일 쓰기 경로).
-    #[test]
-    fn force_reload_detects_external_deletion_as_error() {
-        let path = std::env::temp_dir().join(format!("tasty-md-delpoll-{}.md", std::process::id()));
-        std::fs::write(&path, b"# hello poll").unwrap();
-        let mut doc = MdDoc::new(Some(path.to_string_lossy().into_owned()));
-        // 정상 로드 baseline.
-        assert!(!doc.content.is_empty());
-        assert!(doc.load_error.is_none());
-
-        // 외부 삭제 → force_reload 가 read_now 실패를 load_error 로 남긴다.
-        std::fs::remove_file(&path).unwrap();
-        doc.force_reload();
-        assert!(
-            doc.load_error.is_some(),
-            "삭제가 error 상태로 감지되어야 한다"
-        );
-
-        // best-effort 정리 — 이미 삭제되었을 수 있음.
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn format_size_and_basename_examples() {
-        assert_eq!(format_size(2 * 1024 * 1024 + 200 * 1024), "2.2 MB");
-        assert_eq!(format_size(12 * 1024 * 1024), "12 MB");
-        #[cfg(not(windows))]
-        assert_eq!(basename("/docs/big-notes.md"), "big-notes.md");
-    }
-
-    #[test]
-    fn parse_recent_extracts_paths_in_order() {
-        let v = json!({ "recent": [
-            { "path": "/a/first.md", "file_name": "first.md" },
-            { "path": "/b/second.md", "file_name": "second.md" },
-        ]});
-        assert_eq!(parse_recent(&v), vec!["/a/first.md", "/b/second.md"]);
-    }
-
-    #[test]
-    fn parse_recent_tolerates_missing_or_malformed() {
-        assert!(parse_recent(&json!({})).is_empty());
-        assert!(parse_recent(&json!({ "recent": "nope" })).is_empty());
-        // path 없는 항목은 건너뛴다.
-        assert_eq!(
-            parse_recent(&json!({ "recent": [{ "file_name": "x" }, { "path": "/ok.md" }] })),
-            vec!["/ok.md"]
-        );
-    }
-
-    #[test]
-    fn surface_param_file_reads_nested_and_flat() {
-        assert_eq!(
-            surface_param_file(&json!({ "params": { "file": "/a/b.md" } })).as_deref(),
-            Some("/a/b.md")
-        );
-        assert_eq!(
-            surface_param_file(&json!({ "file": "/c/d.md" })).as_deref(),
-            Some("/c/d.md")
-        );
-        assert_eq!(surface_param_file(&json!({ "params": {} })), None);
-    }
-
-    /// `reload_webview` 는 `self.host` 가 없으면(on_start 전) 조용히 no-op 해야 한다 —
-    /// panic 하지 않고 경고 로그만 남긴다.
-    #[test]
-    fn reload_webview_without_host_is_noop() {
-        let mut p = MarkdownPlugin::new(Translator::default());
-        p.docs.insert(7, MdDoc::new(None));
-        p.reload_webview(7); // host 없음 — panic 하지 않아야 한다.
-    }
-}
+mod tests;

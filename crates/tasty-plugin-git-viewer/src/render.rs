@@ -208,8 +208,10 @@ fn error_line(ui: &mut egui::Ui, theme: &Theme, err: &str) {
     let h = theme.spacing_sm.value() * 2.0 + theme.font_size_caption.value();
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
     let danger = theme.accent_danger().to_egui();
+    // 오류 요약 줄 배경. 대응 토큰 없음 — 값에 이름만 둔다.
+    const ERROR_ROW_BG_OPACITY: f32 = 0.1;
     ui.painter()
-        .rect_filled(rect, 0.0, danger.gamma_multiply(0.1));
+        .rect_filled(rect, 0.0, danger.gamma_multiply(ERROR_ROW_BG_OPACITY));
     bottom_separator(ui, theme, rect);
     ui.painter()
         .with_clip_rect(rect.shrink2(vec2(pad_x, 0.0)))
@@ -1000,19 +1002,31 @@ fn diff_line(ui: &mut egui::Ui, theme: &Theme, row: DiffRow<'_>, row_w: f32) {
     let avail = ui.available_width();
     let full_w = avail.max(row_w);
     let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
+    // diff 줄 배경 톤. hunk 머리만 한 단계 더 옅다. 대응 토큰 없음.
+    const DIFF_HUNK_BG_OPACITY: f32 = 0.09;
+    const DIFF_LINE_BG_OPACITY: f32 = 0.10;
 
     let (fg, bg) = match (is_hunk, kind) {
         (true, _) => (
             theme.accent_info().to_egui(),
-            theme.accent_info().to_egui().gamma_multiply(0.09),
+            theme
+                .accent_info()
+                .to_egui()
+                .gamma_multiply(DIFF_HUNK_BG_OPACITY),
         ),
         (false, DiffLineKind::Addition) => (
             theme.accent_success().to_egui(),
-            theme.accent_success().to_egui().gamma_multiply(0.10),
+            theme
+                .accent_success()
+                .to_egui()
+                .gamma_multiply(DIFF_LINE_BG_OPACITY),
         ),
         (false, DiffLineKind::Deletion) => (
             theme.accent_danger().to_egui(),
-            theme.accent_danger().to_egui().gamma_multiply(0.10),
+            theme
+                .accent_danger()
+                .to_egui()
+                .gamma_multiply(DIFF_LINE_BG_OPACITY),
         ),
         (false, DiffLineKind::Context) => (theme.text_primary().to_egui(), Color32::TRANSPARENT),
     };
@@ -1050,12 +1064,14 @@ fn diff_line(ui: &mut egui::Ui, theme: &Theme, row: DiffRow<'_>, row_w: f32) {
             DiffLineKind::Context => "",
         };
         // 부호 글리프는 jsx `opacity: 0.8`(hunk band border 패턴과 동일 gamma_multiply).
+        // +/- 부호는 본문 전경보다 한 단계 물러난다. 대응 토큰 없음.
+        const DIFF_SIGN_OPACITY: f32 = 0.8;
         p.text(
             egui::pos2(rect.left() + DIFF_GUTTER_W * 2.0 + DIFF_SIGN_W * 0.5, cy),
             Align2::CENTER_CENTER,
             sign,
             mono(sz),
-            fg.gamma_multiply(0.8),
+            fg.gamma_multiply(DIFF_SIGN_OPACITY),
         );
     }
     let text_x = rect.left() + DIFF_GUTTER_W * 2.0 + DIFF_SIGN_W;

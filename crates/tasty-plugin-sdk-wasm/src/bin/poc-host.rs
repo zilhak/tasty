@@ -79,6 +79,7 @@ fn main() -> anyhow::Result<()> {
 
     writeln!(out)?;
     writeln!(out, "=== StubBridge logs (host_call / log) ===")?;
+    // 이유: 단일 스레드 poc 호스트라 poison 이 생길 수 없다 — 조용히 버려도 안전하다.
     if let Ok(g) = bridge.logs.lock() {
         for (i, (lvl, msg)) in g.iter().take(10).enumerate() {
             writeln!(out, "  [{i}] {lvl} {msg}")?;

@@ -218,7 +218,7 @@ mod tests {
 /// 함수 단위로 금지하면 정당한 복구까지 걸린다.
 ///
 /// **판정은 순수 함수로 뽑아 두었다**([`recovered_forbidden_lines`] ·
-/// [`silently_skipped_forbidden_lines`]). 파일 순회 안에 인라인으로 두면 면제를 겨냥한
+/// [`silently_skipped_lock_lines`]). 파일 순회 안에 인라인으로 두면 면제를 겨냥한
 /// 변이를 합성 입력으로 찌를 수 없어, 변이가 "레포에 진짜 위반을 심는" 방식으로만
 /// 가능해진다 — 느리고 트리를 더럽힌다. 아래 합성 입력 테스트가 그 변이를 영구히
 /// 붙박은 것이다.
@@ -232,25 +232,49 @@ mod forbidden_lock_guard {
 
     /// 이 헬퍼로 복구하면 안 되는 락 식별자와 그 이유.
     ///
-    /// **이유를 함께 적는 것이 목록의 절반이다.** "금지" 라는 사실만 있으면 다음 사람이
-    /// 이 목록을 정당하게 줄일 수도 부당하게 줄일 수도 없고, 근거 없는 금지 목록은
-    /// 언젠가 통째로 지워진다. 지금 이 락이 **어느 크레이트에서 무엇을 지키고 있는지**를
-    /// 함께 남긴다.
-    const FORBIDDEN_LOCKS: &[(&str, &str)] = &[(
-        "writer",
-        "임계구역이 소켓/스트림에 프레임을 쓴다. 락을 든 채 죽은 스레드는 줄을 절반만 \
-         남겼을 수 있고, 그 위에 이어 쓰면 한 줄 = 한 메시지 불변식이 깨져 상대가 \
-         쓰레기를 읽는다. 데이터를 신뢰할 수 없는 자리라 복구가 오답이다. \
-         현재 이 락을 잡는 자리와 각자의 선택: \
-         `tasty-plugin-sdk` 의 `runtime::send_event`/`send_response` 는 **패닉을 유지**한다 \
-         (폭발 반경이 그 plugin 프로세스 하나로 한정되고, 그 범위는 방침이 패닉을 허용하는 \
-         범위다). `tasty-plugin-sdk` 의 `HostHandle::notify`/`call` 은 **에러를 반환**한다 \
-         (plugin 코드가 호출자라 결과를 받아 처리할 수 있다). `tasty-cli` 의 \
-         `local::attach::run_raw_bridge` 는 **복구하지 않고 세션을 접되** \
-         `note_writer_poisoned` 로 이유를 남긴다(원인 없이 끊긴 attach 로 보이지 않게). \
-         `tasty-host-plugin` 의 `aux_reader_loop` 는 Pong 전송을 **건너뛰되 로그를 남긴다** \
-         (상대가 채널을 죽은 것으로 판정하는 결과가 뒤따르므로 그 이유가 남아야 한다).",
-    )];
+    /// **명부의 술어(무엇의 명부인가): 임계구역이 프레임·레코드 경계를 갖는가.**
+    /// 락이 지키는 것이 소켓/스트림에 프레임(한 줄=한 메시지)을 쓰는 자리면, 락을 든 채
+    /// 죽은 스레드가 반쪽 프레임을 남길 수 있다. poison 을 `into_inner` 로 복구해 그 위에
+    /// 이어 쓰면 프레이밍이 깨져 상대가 쓰레기를 읽는다 — 그래서 복구가 오답이고,
+    /// skip(+보고) 또는 전파가 맞다. 자료구조·값 슬롯(경계 없음)은 이 명부의 반대편이라
+    /// 복구가 옳다(그쪽은 아래 축 2 가 "조용히 삼키지 말라" 로 지킨다).
+    ///
+    /// 이 술어에 걸리는 피보호 타입은 [`FORBIDDEN_STREAM_TYPES`] 이고, 그 타입을 감싼
+    /// 락의 바인딩 이름이 아래 목록이다 — 이름이 아니라 **타입이 근거**다.
+    /// `stream_typed_lock_names_are_all_listed` 가 그 타입의 새 락(다른 이름)이 목록 밖에
+    /// 생기면 실패시켜, "이름 둘짜리 명부" 가 조용히 낡는 것을 막는다.
+    ///
+    /// **이유를 함께 적는 것이 목록의 절반이다.** 근거 없는 금지 목록은 언젠가 통째로
+    /// 지워진다. 지금 이 락이 **어느 크레이트에서 무엇을 지키고 있는지**를 함께 남긴다.
+    const FORBIDDEN_LOCKS: &[(&str, &str)] = &[
+        (
+            "writer",
+            "임계구역이 소켓/스트림에 프레임을 쓴다(`Mutex<TcpStream>`·`Mutex<HandleStream>`). \
+             락을 든 채 죽은 스레드는 줄을 절반만 남겼을 수 있고, 그 위에 이어 쓰면 한 줄 = \
+             한 메시지 불변식이 깨져 상대가 쓰레기를 읽는다. 데이터를 신뢰할 수 없는 자리라 \
+             복구가 오답이다. 현재 이 락을 잡는 자리와 각자의 선택: \
+             `tasty-plugin-sdk` 의 `runtime::send_event`/`send_response` 는 **패닉을 유지**한다 \
+             (폭발 반경이 그 plugin 프로세스 하나로 한정되고, 그 범위는 방침이 패닉을 허용하는 \
+             범위다). `tasty-plugin-sdk` 의 `HostHandle::notify`/`call` 은 **에러를 반환**한다 \
+             (plugin 코드가 호출자라 결과를 받아 처리할 수 있다). `tasty-cli` 의 \
+             `local::attach::run_raw_bridge` 는 **복구하지 않고 세션을 접되** \
+             `note_writer_poisoned` 로 이유를 남긴다(원인 없이 끊긴 attach 로 보이지 않게). \
+             `tasty-host-plugin` 의 `aux_reader_loop`·`with_handle_stream` 은 전송/연산을 \
+             **건너뛰되 로그를 남긴다**(상대가 채널을 죽은 것으로 판정하므로 그 이유가 남아야 한다).",
+        ),
+        (
+            "handle_writer",
+            "보조 핸들 채널의 프레임 라이터(`Mutex<HandleClient>`)다. `writer` 와 같은 이유 — \
+             임계구역이 스트림에 프레임을 쓰므로 반쪽 프레임 위에 이어 쓰면 프레이밍이 깨진다. \
+             `tasty-plugin-sdk` 의 `shared_buffer`/`HostHandle`/`runtime` 이 이 이름으로 잡는다.",
+        ),
+    ];
+
+    /// [`FORBIDDEN_LOCKS`] 의 술어에 걸리는 피보호 타입 — 프레임 I/O 스트림.
+    ///
+    /// 명부의 근거는 이름이 아니라 이 타입들이다. `fs::File`(줄 단위 로그, 반쪽 줄 허용)·
+    /// 자료구조·값 슬롯은 경계가 없어 여기 없다.
+    const FORBIDDEN_STREAM_TYPES: &[&str] = &["TcpStream", "HandleStream", "HandleClient"];
 
     /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다.
     ///
@@ -260,6 +284,7 @@ mod forbidden_lock_guard {
     /// 가 집합으로 잡는다. 이 상수는 그 위의 조잡한 안전망일 뿐이다.
     const MIN_FILES_SCANNED: usize = 200;
     const MIN_RECOVER_CALLS: usize = 30;
+    const MIN_LOCK_STATEMENTS: usize = 150;
 
     /// `recover_*(` 를 찾을 때 쓰는 needle. **조각을 붙여 만든다** — 이 파일 안에
     /// 완성된 리터럴이 나타나면 스캐너가 자기 자신을 위반으로 집는다. 파일 통째
@@ -413,9 +438,14 @@ mod forbidden_lock_guard {
         let mut buf = String::new();
         let mut start = 0usize;
         let mut depth: i32 = 0;
+        let mut lexer = LineLexer::default();
         for (i, line) in masked.lines().enumerate() {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("//") {
+            // 리터럴·주석 내용을 공백으로 지운 뷰로 괄호를 센다 — `"\x1b[2J"` 의 `[`
+            // 처럼 문자열 속 괄호가 깊이를 흔들어 문장을 오조인하는 것을 막는다.
+            // 코드 토큰(`.lock()` 등)은 그대로 남아 하위 검사가 그대로 본다.
+            let cleaned = lexer.clean_line(line);
+            let trimmed = cleaned.trim();
+            if trimmed.is_empty() {
                 continue;
             }
             if buf.is_empty() {
@@ -443,6 +473,158 @@ mod forbidden_lock_guard {
         out
     }
 
+    /// 줄을 넘어 이어지는 렉서 상태(블록 주석 · 원시 문자열). 일반 문자열·문자 리터럴은
+    /// 한 줄 안에서 닫힌다고 보고(러스트에서 개행을 담으려면 원시 문자열을 쓴다) 처리한다.
+    #[derive(Default)]
+    struct LineLexer {
+        in_block_comment: bool,
+        in_raw_string: Option<usize>, // 닫는 데 필요한 `#` 개수
+    }
+
+    impl LineLexer {
+        /// 리터럴·주석 내용을 공백으로 바꾼 줄을 돌려준다. 코드 구조(괄호·`.`·식별자)는
+        /// 보존해 괄호 깊이 계산과 하위 부분문자열 검사가 실제 코드만 보게 한다.
+        fn clean_line(&mut self, line: &str) -> String {
+            let chars: Vec<char> = line.chars().collect();
+            let mut out = String::with_capacity(chars.len());
+            let mut i = 0;
+            while i < chars.len() {
+                if self.in_block_comment {
+                    if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                        self.in_block_comment = false;
+                        out.push_str("  ");
+                        i += 2;
+                    } else {
+                        out.push(' ');
+                        i += 1;
+                    }
+                    continue;
+                }
+                if let Some(hashes) = self.in_raw_string {
+                    let close: String = std::iter::once('"')
+                        .chain(std::iter::repeat_n('#', hashes))
+                        .collect();
+                    if chars[i] == '"' && line_matches_at(&chars, i, &close) {
+                        self.in_raw_string = None;
+                        for _ in 0..close.len() {
+                            out.push(' ');
+                        }
+                        i += close.len();
+                    } else {
+                        out.push(' ');
+                        i += 1;
+                    }
+                    continue;
+                }
+                let c = chars[i];
+                // 줄 주석 — 줄 끝까지 코드가 아니다.
+                if c == '/' && chars.get(i + 1) == Some(&'/') {
+                    break;
+                }
+                // 블록 주석 시작.
+                if c == '/' && chars.get(i + 1) == Some(&'*') {
+                    self.in_block_comment = true;
+                    out.push_str("  ");
+                    i += 2;
+                    continue;
+                }
+                // 원시 문자열 시작 `r"` · `r#"` · `br#"` 등.
+                if (c == 'r' || c == 'b')
+                    && let Some(open) = raw_string_open(&chars, i)
+                {
+                    // open = 접두(`r`=1 · `br`=2) + `#`×hashes + 여는 `"`.
+                    let prefix = if c == 'b' { 2 } else { 1 };
+                    let hashes = open - prefix - 1;
+                    self.in_raw_string = Some(hashes);
+                    for _ in 0..open {
+                        out.push(' ');
+                    }
+                    i += open;
+                    continue;
+                }
+                // 일반 문자열.
+                if c == '"' {
+                    out.push(' ');
+                    i += 1;
+                    while i < chars.len() {
+                        if chars[i] == '\\' {
+                            out.push_str("  ");
+                            i += 2;
+                            continue;
+                        }
+                        if chars[i] == '"' {
+                            out.push(' ');
+                            i += 1;
+                            break;
+                        }
+                        out.push(' ');
+                        i += 1;
+                    }
+                    continue;
+                }
+                // 문자 리터럴 대 수명(`'a`) 구분 — 닫는 `'` 가 곧 오면 문자 리터럴.
+                if c == '\''
+                    && let Some(len) = char_literal_len(&chars, i)
+                {
+                    for _ in 0..len {
+                        out.push(' ');
+                    }
+                    i += len;
+                    continue;
+                }
+                out.push(c);
+                i += 1;
+            }
+            out
+        }
+    }
+
+    /// `chars[i..]` 가 `needle` 로 시작하는가.
+    fn line_matches_at(chars: &[char], i: usize, needle: &str) -> bool {
+        needle
+            .chars()
+            .enumerate()
+            .all(|(k, ch)| chars.get(i + k) == Some(&ch))
+    }
+
+    /// `chars[i]` 가 원시 문자열의 시작이면 여는 토큰 길이(`r"`=2, `r#"`=3, `br##"`=5…),
+    /// 아니면 `None`. `i` 는 `r` 또는 `b` 위치다.
+    fn raw_string_open(chars: &[char], i: usize) -> Option<usize> {
+        let mut j = i;
+        if chars.get(j) == Some(&'b') {
+            j += 1;
+        }
+        if chars.get(j) != Some(&'r') {
+            return None;
+        }
+        j += 1;
+        while chars.get(j) == Some(&'#') {
+            j += 1;
+        }
+        if chars.get(j) == Some(&'"') {
+            Some(j + 1 - i)
+        } else {
+            None
+        }
+    }
+
+    /// `chars[i] == '\''` 일 때 문자 리터럴 전체 길이(닫는 `'` 포함), 수명이면 `None`.
+    fn char_literal_len(chars: &[char], i: usize) -> Option<usize> {
+        // `'\x'` 형태(이스케이프) — `'` `\` .. `'`
+        if chars.get(i + 1) == Some(&'\\') {
+            let mut j = i + 2;
+            while j < chars.len() && chars[j] != '\'' {
+                j += 1;
+            }
+            return (chars.get(j) == Some(&'\'')).then_some(j + 1 - i);
+        }
+        // `'x'` — 한 글자 뒤에 닫는 따옴표.
+        if chars.get(i + 2) == Some(&'\'') {
+            return Some(3);
+        }
+        None
+    }
+
     fn locks_named(text: &str, name: &str) -> bool {
         let tightened = tighten_dot_chains(text);
         [".lock()", ".write()", ".read()", ".try_write()"]
@@ -459,26 +641,97 @@ mod forbidden_lock_guard {
             .collect()
     }
 
-    /// 축 2 — 금지 락을 **조용히 지나치는** 줄.
+    /// std 락 획득 verb. **빈 괄호**만 센다 — `io::Read::read(buf)`/`Write::write(buf)` 는
+    /// 버퍼 인자를 받으므로, 빈 괄호 `.read()`/`.write()` 는 `RwLock` 이다(타입 판별점).
+    /// 트리에 parking_lot·`tokio::sync`·`.lock().await` 가 0 이라(실측) `.lock()` 은 전부 std.
+    const LOCK_VERBS: &[&str] = &[
+        ".lock()",
+        ".read()",
+        ".write()",
+        ".try_lock()",
+        ".try_read()",
+        ".try_write()",
+    ];
+
+    /// 의도된 삼킴임을 그 자리에 밝히는 사유 마커(`check-allow-reason` 과 같은 관례).
+    const REASON_MARKERS: &[&str] = &["이유:", "reason:", "사유:"];
+
+    /// 축 2(넓힘) — **어떤** std 락이든 poison 을 조용히 지나치는 문.
     ///
-    /// 복구도 패닉도 아닌 제3의 형태다. 허용되는 셋(`expect` · `map_err` · `match` 의
-    /// `Err` 팔)은 poison 을 다루지만, `if let Ok(..) = writer.lock()`(else 없음)과
-    /// `.ok()` 는 아무것도 하지 않고 로그도 남기지 않는다.
-    fn silently_skipped_forbidden_lines(masked: &str) -> Vec<usize> {
+    /// 첫 sweep 은 [`FORBIDDEN_LOCKS`] 만 봤다. 이 판정기는 그 밖의 락도 본다 — 조용한
+    /// 삼킴은 poison 을 버리고 임계구역을 건너뛰는데 아무것도 안 깨지는 **조용한** 결함이라
+    /// (R424) 명부는 시끄러운 쪽이어야 한다: 삼킴은 복구/전파거나, 의도면 그 자리에 사유.
+    ///
+    /// 삼킴 형태: 락 verb 직후 `.ok()` · 체인 끝 `.unwrap_or(_default)` · `if/while/&& let Ok(`
+    /// (else 없음). poison 을 다루는 형태 — 복구(`into_inner`·`recover_*`)·전파(`unwrap`·
+    /// `expect`·`?`·`map_err`)·`let Ok..else`·`match` — 는 삼킴이 아니다. `.ok()` 는 **락 verb
+    /// 바로 뒤**만 본다(`x.lock().unwrap().foo().ok()` 를 오탐하지 않게).
+    fn silently_skipped_lock_lines(masked: &str) -> Vec<usize> {
+        let lines: Vec<&str> = masked.lines().collect();
         let mut hits = Vec::new();
         for (line_no, stmt) in statement_spans(masked) {
-            for (name, _) in FORBIDDEN_LOCKS {
-                if !locks_named(&stmt, name) {
-                    continue;
-                }
-                let silent_if = stmt.contains("if let Ok(") && !stmt.contains("else");
-                let silent_ok = tighten_dot_chains(&stmt).contains(".ok()");
-                if silent_if || silent_ok {
-                    hits.push(line_no);
-                }
+            let tight = tighten_dot_chains(&stmt);
+            if !LOCK_VERBS.iter().any(|v| tight.contains(v)) {
+                continue;
             }
+            // poison 을 다루는 형태면 삼킴이 아니다.
+            let handled = tight.contains("into_inner()")
+                || tight.contains("recover_mutex(")
+                || tight.contains("recover_read(")
+                || tight.contains("recover_write(")
+                || tight.contains("recover_poisoned(");
+            if handled {
+                continue;
+            }
+            let silent_ok = LOCK_VERBS
+                .iter()
+                .any(|v| tight.contains(&format!("{v}.ok()")));
+            let silent_unwrap_or =
+                tight.contains(".unwrap_or(") || tight.contains(".unwrap_or_default()");
+            let has_let_ok = stmt.contains("if let Ok(")
+                || stmt.contains("while let Ok(")
+                || tight.contains("&&let Ok(");
+            let silent_iflet = has_let_ok && !stmt.contains("else");
+            if !(silent_ok || silent_unwrap_or || silent_iflet) {
+                continue;
+            }
+            // 의도된 삼킴: 그 문 또는 위에 붙은 주석 블록에 사유 마커.
+            if REASON_MARKERS.iter().any(|m| stmt.contains(m))
+                || reason_in_attached_comment(&lines, line_no)
+            {
+                continue;
+            }
+            hits.push(line_no);
         }
         hits
+    }
+
+    /// `start_line`(1 기반) 위로 **연속된 주석 줄**에서 사유 마커를 찾는다.
+    fn reason_in_attached_comment(lines: &[&str], start_line: usize) -> bool {
+        let mut i = start_line; // lines[i-1] 이 시작 줄(0 기반 i-1).
+        while i >= 2 {
+            let above = lines[i - 2].trim_start();
+            if !above.starts_with("//") {
+                break;
+            }
+            if REASON_MARKERS.iter().any(|m| above.contains(m)) {
+                return true;
+            }
+            i -= 1;
+        }
+        false
+    }
+
+    /// 축 2 가 **본** std 락 문의 수. 판정기가 죽어 아무 락도 못 보면(verb 목록이
+    /// 망가지면) 위반이 0 이라 게이트가 조용히 통과한다 — 그 거짓 초록을 막는 모수다.
+    fn lock_statements_seen(masked: &str) -> usize {
+        statement_spans(masked)
+            .into_iter()
+            .filter(|(_, stmt)| {
+                let tight = tighten_dot_chains(stmt);
+                LOCK_VERBS.iter().any(|v| tight.contains(v))
+            })
+            .count()
     }
 
     // ── 파일 순회 ────────────────────────────────────────────────────────
@@ -584,7 +837,7 @@ mod forbidden_lock_guard {
                    if let Ok(mut w) = writer.lock() { w.send(); }\n    }\n}\n";
         let masked = mask_test_modules(src);
         assert_eq!(
-            silently_skipped_forbidden_lines(&masked),
+            silently_skipped_lock_lines(&masked),
             vec![6],
             "테스트 항목 둘 사이에 낀 프로덕션 줄은 살아 있어야 한다"
         );
@@ -596,17 +849,17 @@ mod forbidden_lock_guard {
         let src = "#[cfg(test)]\nmod tests;\n\
                    fn prod() {\n    if let Ok(mut w) = writer.lock() { w.send(); }\n}\n";
         let masked = mask_test_modules(src);
-        assert_eq!(silently_skipped_forbidden_lines(&masked), vec![4]);
+        assert_eq!(silently_skipped_lock_lines(&masked), vec![4]);
     }
 
     #[test]
     fn detects_and_spares_the_three_forms_of_silent_skip() {
         assert_eq!(
-            silently_skipped_forbidden_lines("if let Ok(mut w) = writer.lock() {"),
+            silently_skipped_lock_lines("if let Ok(mut w) = writer.lock() {"),
             vec![1]
         );
         assert_eq!(
-            silently_skipped_forbidden_lines("let tx = writer.lock().ok().and_then(|w| w.take());"),
+            silently_skipped_lock_lines("let tx = writer.lock().ok().and_then(|w| w.take());"),
             vec![1]
         );
         // 허용 형태 셋 — 못 잡는 것이 의도다. 나중에 판정기를 넓히면 여기서 드러난다.
@@ -617,7 +870,7 @@ mod forbidden_lock_guard {
             "let Ok(mut w) = writer.lock() else { return; };",
         ] {
             assert!(
-                silently_skipped_forbidden_lines(allowed).is_empty(),
+                silently_skipped_lock_lines(allowed).is_empty(),
                 "poison 을 다루는 형태다: {allowed}"
             );
         }
@@ -654,24 +907,61 @@ mod forbidden_lock_guard {
             "D: 수신자가 쪼개져도 축 1 이 봐야 한다"
         );
         assert!(
-            !silently_skipped_forbidden_lines(b).is_empty(),
+            !silently_skipped_lock_lines(b).is_empty(),
             "B 대조군이 안 발화하면 아래 둘의 판정이 성립하지 않는다"
         );
         assert!(
-            !silently_skipped_forbidden_lines(c).is_empty(),
+            !silently_skipped_lock_lines(c).is_empty(),
             "C: 쪼개진 `if let Ok(` 도 축 2 가 봐야 한다"
         );
         assert!(
-            !silently_skipped_forbidden_lines(f).is_empty(),
+            !silently_skipped_lock_lines(f).is_empty(),
             "F: 쪼개진 `.ok()` 도 축 2 가 봐야 한다"
         );
     }
 
+    /// 두 축의 범위가 다르다. 축 1(복구 금지)은 **명부에 있는 락만** 본다 — 명부 밖
+    /// 락의 복구는 정당하다. 축 2(무음 지나침)는 **명부와 무관하게** 어떤 std 락이든
+    /// 본다: 조용한 삼킴은 그 자체가 결함이라 시끄러운 쪽이어야 한다(R424). `pending`
+    /// 은 명부 밖이지만 poison 을 아무 말 없이 버리므로 축 2 는 잡는다.
     #[test]
-    fn locks_outside_the_list_are_untouched() {
+    fn axis1_is_list_scoped_but_axis2_sees_every_lock() {
         let recovered = "let g = poison::recover_mutex(self.pending.lock(), W, &P);";
         assert!(recovered_forbidden_lines(recovered).is_empty());
-        assert!(silently_skipped_forbidden_lines("if let Ok(mut p) = pending.lock() {").is_empty());
+        assert!(!silently_skipped_lock_lines("if let Ok(mut p) = pending.lock() {").is_empty());
+    }
+
+    /// 사유 마커가 붙으면 의도된 삼킴이라 축 2 가 면제한다 — 문 안에서든, 바로 위
+    /// 주석 블록에서든. 마커가 없으면 같은 삼킴이 걸린다(대조군).
+    #[test]
+    fn a_reasoned_silent_skip_is_spared() {
+        // 위 주석에 사유.
+        let above = "    // 이유: 종료 경로라 poison 이면 그냥 버린다\n    \
+                     let _ = pending.lock().ok();\n";
+        assert!(
+            silently_skipped_lock_lines(above).is_empty(),
+            "위 주석의 사유가 면제해야 한다"
+        );
+        // 같은 삼킴, 사유 없음 — 걸린다.
+        assert!(
+            !silently_skipped_lock_lines("    let _ = pending.lock().ok();\n").is_empty(),
+            "사유 없는 대조군은 걸려야 한다"
+        );
+    }
+
+    /// 빈 괄호 `.read()`/`.write()` 는 `RwLock` 이라 축 2 가 본다. io `Read::read(buf)`/
+    /// `Write::write(buf)` 는 버퍼 인자가 있어 락이 아니다 — 삼켜도 걸리지 않는다.
+    #[test]
+    fn empty_parens_read_write_is_a_lock_but_buffered_io_is_not() {
+        assert!(
+            !silently_skipped_lock_lines("if let Ok(g) = cfg.read() { use_it(&g); }").is_empty(),
+            "빈 괄호 .read() 는 RwLock"
+        );
+        assert!(
+            silently_skipped_lock_lines("if let Ok(n) = sock.read(&mut buf) { emit(n); }")
+                .is_empty(),
+            "버퍼 인자를 받는 io read 는 락이 아니다"
+        );
     }
 
     // ── 트리 스캔 테스트 ─────────────────────────────────────────────────
@@ -767,25 +1057,32 @@ mod forbidden_lock_guard {
     }
 
     #[test]
-    fn forbidden_locks_are_never_silently_skipped() {
+    fn no_lock_is_silently_skipped_without_a_reason() {
         let root = repo_root();
         let files = rust_sources(&root);
         assert!(files.len() >= MIN_FILES_SCANNED, "스캔 대상이 너무 적다");
 
         let mut violations = Vec::new();
+        let mut seen = 0usize;
         for path in &files {
             let Some(masked) = normalized(path) else {
                 continue;
             };
-            for line in silently_skipped_forbidden_lines(&masked) {
+            seen += lock_statements_seen(&masked);
+            for line in silently_skipped_lock_lines(&masked) {
                 let rel = path.strip_prefix(&root).unwrap_or(path);
                 violations.push(format!("{}:{line}", rel.display()));
             }
         }
         assert!(
+            seen >= MIN_LOCK_STATEMENTS,
+            "본 락 문이 너무 적다({seen}) — verb 판정이 죽었을 수 있다(하한 {MIN_LOCK_STATEMENTS})"
+        );
+        assert!(
             violations.is_empty(),
-            "복구가 오답인 락을 무음으로 지나친다 — poison 을 다루는 형태(expect · \
-             map_err · match 의 Err 팔)로 바꿔라:\n{}",
+            "std 락 poison 을 무음으로 지나친다 — 복구(into_inner·recover_*)·전파(expect·\
+             map_err·?·match)로 바꾸거나, 의도된 삼킴이면 그 자리에 사유(`이유:`/`reason:`)를 \
+             남겨라:\n{}",
             violations.join("\n")
         );
     }
@@ -799,10 +1096,11 @@ mod forbidden_lock_guard {
         for (name, _) in FORBIDDEN_LOCKS {
             let found = files.iter().any(|path| {
                 normalized(path).is_some_and(|masked| {
-                    masked
-                        .lines()
-                        .filter(|l| !l.trim_start().starts_with("//"))
-                        .any(|l| locks_named(l, name))
+                    // 문 단위로 잇는다 — `self\n.handle_writer\n.lock()` 처럼 수신자가
+                    // 쪼개진 락은 줄 단위로는 안 보인다.
+                    statement_spans(&masked)
+                        .iter()
+                        .any(|(_, stmt)| locks_named(stmt, name))
                 })
             });
             assert!(
@@ -810,5 +1108,86 @@ mod forbidden_lock_guard {
                 "금지 목록의 `{name}` 락이 트리에 없다 — 목록이 낡았다"
             );
         }
+    }
+
+    /// 명부의 술어를 **타입으로** 못박는다 — 프레임 스트림 타입([`FORBIDDEN_STREAM_TYPES`])을
+    /// 감싼 락이 새로 생기면, 그 이름이 무엇이든 [`FORBIDDEN_LOCKS`] 에 있어야 한다.
+    ///
+    /// 이름 목록만 두면 "셋째(다음 스트림 락)는 안 걸린다"(R426). 이 테스트가 선언을
+    /// 타입으로 훑어, 명부에 없는 이름이 프레임 타입을 감싸는 순간 실패한다 — 명부가
+    /// 조용히 낡는 것을 막는다. 익명 자리(enum variant 등 `이름:` 없는 선언)는 바인딩
+    /// 이름이 없어 사용처(`writer`/skip-report)로 덮이므로 여기서 세지 않는다.
+    #[test]
+    fn stream_typed_lock_names_are_all_listed() {
+        let root = repo_root();
+        let files = rust_sources(&root);
+        let listed: std::collections::BTreeSet<&str> =
+            FORBIDDEN_LOCKS.iter().map(|(n, _)| *n).collect();
+
+        let mut found_any = false;
+        let mut missing = std::collections::BTreeSet::new();
+        for path in &files {
+            let Some(masked) = normalized(path) else {
+                continue;
+            };
+            for line in masked.lines() {
+                let t = line.trim_start();
+                if t.starts_with("//") {
+                    continue;
+                }
+                let Some(at) = FORBIDDEN_STREAM_TYPES
+                    .iter()
+                    .find_map(|ty| line.find(&format!("Mutex<{ty}>")))
+                else {
+                    continue;
+                };
+                // 바인딩 이름은 `이름: <…Mutex<stream>…>` 형태(필드·파라미터)의 그 콜론
+                // **앞** 식별자다. `Mutex<stream>` 앞부분에서 바인딩 콜론(경로 `::` 아닌
+                // 단일 `:`)을 찾는다 — 반환 타입(`-> Result<…Mutex<…>, …mpsc::…>`)에는
+                // 앞쪽에 바인딩 콜론이 없어 익명으로 걸러진다.
+                let prefix = &line[..at];
+                let bytes = prefix.as_bytes();
+                let mut colon = None;
+                for i in 0..bytes.len() {
+                    if bytes[i] == b':'
+                        && (i == 0 || bytes[i - 1] != b':')
+                        && (i + 1 >= bytes.len() || bytes[i + 1] != b':')
+                    {
+                        colon = Some(i);
+                    }
+                }
+                let Some(ci) = colon else {
+                    continue;
+                };
+                let name: String = prefix[..ci]
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                if name.is_empty() {
+                    continue;
+                }
+                found_any = true;
+                if !listed.contains(name.as_str()) {
+                    let rel = path.strip_prefix(&root).unwrap_or(path);
+                    missing.insert(format!("{}: {name}", rel.display()));
+                }
+            }
+        }
+        assert!(
+            found_any,
+            "프레임 스트림 타입을 감싼 락 선언을 하나도 못 찾았다 — 스캔이 죽었거나 \
+             FORBIDDEN_STREAM_TYPES 의 타입명이 트리와 어긋났다"
+        );
+        assert!(
+            missing.is_empty(),
+            "프레임 스트림 타입({:?})을 감싼 락인데 FORBIDDEN_LOCKS 에 이름이 없다 — \
+             복구가 오답인 자리가 명부 밖에 생겼다. 이름을 명부에 넣어라:\n{}",
+            FORBIDDEN_STREAM_TYPES,
+            missing.into_iter().collect::<Vec<_>>().join("\n")
+        );
     }
 }

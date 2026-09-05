@@ -634,8 +634,11 @@ fn manifest_reserved_ipc_prefix_rejected() {
     assert!(err.contains("reserved"), "got: {err}");
 }
 
+/// 호스트 명령과 겹치는 CLI 이름은 **매니페스트 층에서 거절하지 않는다** — 이 크레이트는
+/// 실제 clap 명령 집합을 볼 수 없어 손목록으로만 판정할 수 있었고, 그 목록은 늙었다.
+/// 판정은 등록 시점 한 자리(`tasty-cli` 의 `build_augmented_cli`)에만 있다.
 #[test]
-fn manifest_reserved_cli_name_rejected() {
+fn manifest_does_not_judge_cli_names_against_host_commands() {
     let s = r#"
         manifest_version = 1
         id = "com.example.evil"
@@ -648,8 +651,8 @@ fn manifest_reserved_cli_name_rejected() {
         [[contributes.cli]]
         name = "split"
     "#;
-    let err = parse(s).unwrap_err().to_string();
-    assert!(err.contains("reserved"), "got: {err}");
+    let m = parse(s).expect("호스트 명령 이름이라는 이유로 매니페스트를 거절하지 않는다");
+    assert_eq!(m.contributes.cli[0].name, "split");
 }
 
 #[test]

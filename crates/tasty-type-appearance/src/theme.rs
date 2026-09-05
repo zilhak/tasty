@@ -16,6 +16,7 @@
 //! 색상 직렬화·partial 표현은 `ThemeColors` / `PartialColors` 에서 분리.
 
 use crate::color::{GpuRgb, HexColor};
+use crate::motion::Millis;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tasty_type_geometry::length::LogicalPx;
@@ -143,40 +144,15 @@ pub const OPACITY_DISABLED: f32 = 0.5;
 /// 와 같은 이유로 순수 비율 f32 상수.
 pub const OPACITY_RECESSED: f32 = 0.4;
 
-/// 비-터미널 chrome(배너 등장/소멸 등)의 UI 모션 지속시간 (`--tasty-motion-ui` →
-/// `--tasty-duration-120` = 120ms). theme.md 의 "터미널 콘텐츠 애니메이션 0ms" 는
-/// 터미널 콘텐츠 한정이라, 알림류 chrome 에는 페이드를 허용한다.
-pub const MOTION_UI_MS: f32 = 120.0;
-
-/// 빠른 비-터미널 chrome UI 모션 지속시간 (`--tasty-motion-ui-fast` →
-/// `--tasty-duration-90` = 90ms). `MOTION_UI_MS`(120ms) 보다 한 단계 짧은 페이드 —
-/// switch-number-overlay 등장처럼 즉각성이 중요한 오버레이용. 터미널 콘텐츠 0ms
-/// 불변식은 터미널 grid 한정이라 UI 오버레이 chrome 에는 무관.
-pub const MOTION_UI_FAST_MS: f32 = 90.0;
-
-/// status-dot pulse 링 1회 주기 (`--tasty-status-dot-pulse-duration` →
-/// `--tasty-duration-1600` = 1600ms). 확장·페이드 링 애니메이션의 주기 — 터미널
-/// 콘텐츠가 아닌 상태 표시 chrome 모션이라 토큰화 대상.
-pub const STATUS_DOT_PULSE_MS: f32 = 1600.0;
-
-/// modifier-hint 오버레이 홀드→표시 지연 (`--tasty-motion-hold-reveal` →
-/// `--tasty-duration-500` = 500ms). **모션이 아니라 지연**이다 — 사용자가 modifier 를
-/// 실수로 스쳐도 안 뜨게 하는 의도 게이트라 reduced_motion 여부와 무관하게 유지된다
-/// (fade 는 200ms 만 모션). 터미널 콘텐츠 0ms 불변식과 무관한 UI 오버레이 chrome.
-pub const MOTION_HOLD_REVEAL_MS: f32 = 500.0;
-
-/// modifier-hint **Shift 단독** 홀드 표시 지연 (`--tasty-motion-hold-reveal-shift` →
-/// `--tasty-duration-1200` = 1200ms). Shift 는 대문자·기호 입력에 상시 쓰여 스침이 잦으므로,
-/// Shift 만 눌린 경우에 한해 기본 500ms 대신 1.2초를 기다려 타이핑 중 오버레이가 튀는 것을
-/// 억제한다(Ctrl+Shift 등 다른 modifier 를 동반한 조합은 의도적 단축키라 기본 500ms 유지).
-/// [`MOTION_HOLD_REVEAL_MS`] 와 마찬가지로 **지연이며 모션이 아니라** reduced_motion 무관.
-pub const MOTION_HOLD_REVEAL_SHIFT_MS: f32 = 1200.0;
-
-/// 비-터미널 chrome UI 페이드 지속시간 (`--tasty-motion-ui-fade` →
-/// `--tasty-duration-200` = 200ms). modifier-hint 오버레이 등장 페이드(opacity 0.2→1.0)에
-/// 쓴다. `MOTION_UI_MS`(120ms)보다 한 단계 긴 페이드 — 홀드 게이트를 통과한 뒤라
-/// 좀 더 여유 있게 떠오른다. reduced_motion 시 이 페이드는 0ms 로 생략된다.
-pub const MOTION_UI_FADE_MS: f32 = 200.0;
+/// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). Shift 는 대문자·기호 입력에 상시
+/// 쓰여 스침이 잦으므로, Shift 만 눌린 경우에 한해 기본 500ms(`component.modhint-hold-delay`)
+/// 대신 1.2초를 기다려 타이핑 중 오버레이가 튀는 것을 억제한다(Ctrl+Shift 등 다른 modifier 를
+/// 동반한 조합은 의도적 단축키라 기본값 유지). **지연이며 모션이 아니라** reduced_motion 무관.
+///
+/// **이 값에는 대응 디자인 토큰이 없다** — `primitive.duration-1200` 자체가 없어서
+/// 생성 경로를 탈 수 없고, 코드가 값을 발명한 자리다. 나머지 모션 값은 전부
+/// `generated_component.rs` 의 생성 접근자로 옮겼고 여기만 손으로 남았다.
+pub const MOTION_HOLD_REVEAL_SHIFT_MS: Millis = Millis(1200.0);
 
 /// 떠 있는 패널(popover / banner)의 lift 그림자 토큰. egui 비의존 순수 표현 —
 /// egui 변환은 `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
@@ -887,15 +863,21 @@ pub struct Theme {
     pub font_size_max: LogicalPx,
     /// markdown surface heading 앵커 — egui_commonmark 헤딩 사다리 최상단(H1). 렌더 CONTENT 라
     /// UI 14px 상한 예외 (20px). per-H2·본문 leading 은 라이브러리 소유로 은퇴됨.
+    /// **zoom 제외 — 렌더 콘텐츠라 UI 배율 축 밖이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_prose_h1: LogicalPx,
     /// UI 텍스트(툴팁 등) 줄간격 배수 (1.4, design `--tasty-line-height-ui`). 무차원 비율.
     pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
+    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
+    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_term: LogicalPx,
     /// terminal cell 스케일 — large (16px).
+    /// **zoom 제외 — 터미널 콘텐츠. `effective_terminal_font` 로 GPU 셰이더에 따로 간다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub font_size_term_lg: LogicalPx,
+    /// 기본 보더 굵기 (1px).
+    /// **zoom 제외 — 1px 보더 정책. 배율을 태우면 hairline 이 아니게 된다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub border_width: LogicalPx,
     /// 대상을 **감싸 지목하는 링**의 두께 (2px). 키보드 포커스(egui
     /// `selection.stroke`)가 원래 용도지만, 우클릭/드롭 대상 표시·튜토리얼 마커·
@@ -911,6 +893,7 @@ pub struct Theme {
     /// 하는 구간은 굵기를 직접 정해야 한다. `border_width`(1) 와
     /// `focus_ring_width`(2) 사이의 hairline 이고 DTCG dim 토큰에 대응이 없다
     /// (`icon_glyph_size_row_action` 과 같은 부류).
+    /// **zoom 제외 — hairline. 이 굵기를 쓰는 타이틀바 버튼 기하가 고정 px 라 선만 굵어지면 글리프가 뭉갠다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub icon_stroke_width: LogicalPx,
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
@@ -920,6 +903,8 @@ pub struct Theme {
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
+    /// 탭 하나의 기본 폭. 본체 탭바는 `AppearanceSettings.tab_width` 를 읽고, 이 필드의 소비자는 갤러리와 sub-menu 패널 폭이다.
+    /// **zoom 제외 — 탭바 크롬. 컨테이너와 그 안의 폰트가 함께 고정이라 클리핑이 안 난다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_width: LogicalPx,
     pub spacing_xs: LogicalPx,
     pub spacing_sm: LogicalPx,
@@ -949,15 +934,31 @@ pub struct Theme {
     pub sidebar_collapsed_icon_height: LogicalPx,
     pub sidebar_collapsed_workspace_height: LogicalPx,
     // ── Tab bar 전용 (host UI zoom 영향 받지 않음) ──
+    /// 탭바 자체 높이.
+    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_bar_height: LogicalPx,
+    /// 탭 라벨 폰트 크기.
+    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_bar_label_font_size: LogicalPx,
+    /// 좌/우 스크롤 화살표 폰트 크기.
+    /// **zoom 제외 — 탭바 크롬(`tab_width` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_bar_arrow_font_size: LogicalPx,
     // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
+    /// 작업영역 하단 StatusBar 높이.
+    /// **zoom 제외 — 상태바 크롬. 컨테이너와 내용이 함께 고정이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub status_bar_height: LogicalPx,
     // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
+    /// CSD 타이틀바 높이.
+    /// **zoom 제외 — CSD 타이틀바 크롬. OS 창 장식 기하라 배율과 독립이다.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub titlebar_height: LogicalPx,
+    /// macOS 신호등(traffic light) 점 지름.
+    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub traffic_size: LogicalPx,
+    /// Windows 캡션 버튼(min·max·close) 폭.
+    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub caption_width: LogicalPx,
+    /// Linux DE 버튼(min·max·close) 원형 지름.
+    /// **zoom 제외 — CSD 타이틀바 크롬(`titlebar_height` 와 같은 이유).** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub window_button_size: LogicalPx,
     // ── 가독 폭 (Note / content / 모달 컬럼용) ──
     pub measure_sm: LogicalPx,
@@ -978,6 +979,7 @@ pub struct Theme {
     pub toast_accent_width: LogicalPx,
     /// 한쪽 변에 붙는 띠(탭 밑줄·활성 행 좌측 accent 바). 감싸는 링은
     /// `focus_ring_width` — 값은 같은 2 지만 그쪽만 zoom 을 탄다.
+    /// **zoom 제외 — hairline 띠.** 면제 집합 자체는 이 크레이트의 zoom 면제 가드가 이름 단위로 고정한다.
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
 
@@ -985,6 +987,18 @@ pub struct Theme {
     /// component 접근자가 primitive 직접 alias 치수에 곱하는 용도 — 이미 `zoomed()`
     /// 로 resolve 된 필드에는 재적용하지 않는다.
     pub ui_zoom: f32,
+
+    /// 접근성 "모션 감소" 설정(`accessibility.reduced_motion`)이 켜져 있는가.
+    ///
+    /// **색·치수가 아닌데 `Theme` 이 드는 이유는 위젯이 잊을 수 없게 하기 위해서다.**
+    /// 종전에는 위젯이 이 값을 호출부 인자로 받았고, 그 인자를 실제로 넘기는 자리가
+    /// 레포 전체에 0 이었다 — 설정을 켜도 스피너가 계속 돌았다. 그리는 코드는 `Theme`
+    /// 없이는 그릴 수 없으므로, 여기 실으면 새 자리가 생겨도 빠뜨릴 수 없다.
+    /// 결정과 대안은 ADR-0174.
+    ///
+    /// 기본은 `false` — `with_colors*` 로 직접 만든 `Theme`(테스트·갤러리·plugin 프로세스)
+    /// 은 이 설정을 모른다. host 는 전역 설치 경로가 값을 실어 나른다.
+    pub reduced_motion: bool,
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
@@ -1150,6 +1164,7 @@ impl Theme {
             tab_indicator_width: SIZING.tab_indicator_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             ui_zoom,
+            reduced_motion: false,
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -1538,27 +1553,6 @@ impl Theme {
         OPACITY_DISABLED
     }
 
-    /// 비-터미널 chrome UI 모션 지속시간 (120ms). 배너 등장/소멸 알파 페이드 등.
-    /// `--tasty-motion-ui` → `--tasty-duration-120`.
-    #[inline]
-    pub fn motion_ui_ms(&self) -> f32 {
-        MOTION_UI_MS
-    }
-
-    /// 빠른 비-터미널 chrome UI 모션 지속시간 (90ms). switch-number-overlay 등장 페이드 등.
-    /// `--tasty-motion-ui-fast` → `--tasty-duration-90`.
-    #[inline]
-    pub fn motion_ui_fast_ms(&self) -> f32 {
-        MOTION_UI_FAST_MS
-    }
-
-    /// status-dot pulse 링 1회 주기 (1600ms). `--tasty-status-dot-pulse-duration`
-    /// → `--tasty-duration-1600`.
-    #[inline]
-    pub fn status_dot_pulse_ms(&self) -> f32 {
-        STATUS_DOT_PULSE_MS
-    }
-
     // ── 컴포넌트 토큰 (banner) — 기존 semantic 접근자 / 신규 primitive 조합 ──
     /// 배너 셸 배경. `--tasty-banner-bg` → `surface-raised` (surface0).
     #[inline]
@@ -1593,24 +1587,13 @@ impl Theme {
     }
 
     // ── 모션 (modifier-hint) ──
-    /// modifier-hint 홀드→표시 지연 (500ms). `--tasty-motion-hold-reveal`. **지연이며
-    /// 모션이 아니라** reduced_motion 여부와 무관하게 유지된다.
+    /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). 타이핑 중 Shift 스침으로
+    /// 오버레이가 튀는 것을 억제한다. **지연이며 모션이 아니라** reduced_motion 무관.
+    ///
+    /// 대응 토큰이 없어 손으로 남은 유일한 모션 값이다([`MOTION_HOLD_REVEAL_SHIFT_MS`]).
     #[inline]
-    pub fn motion_hold_reveal_ms(&self) -> f32 {
-        MOTION_HOLD_REVEAL_MS
-    }
-    /// modifier-hint **Shift 단독** 홀드 표시 지연 (1200ms). `--tasty-motion-hold-reveal-shift`.
-    /// 타이핑 중 Shift 스침으로 오버레이가 튀는 것을 억제한다. **지연이며 모션이 아니라**
-    /// reduced_motion 무관.
-    #[inline]
-    pub fn motion_hold_reveal_shift_ms(&self) -> f32 {
+    pub fn motion_hold_reveal_shift(&self) -> Millis {
         MOTION_HOLD_REVEAL_SHIFT_MS
-    }
-    /// UI chrome 페이드 (200ms). `--tasty-motion-ui-fade`. modifier-hint 등장 페이드.
-    /// reduced_motion 시 0ms 로 생략.
-    #[inline]
-    pub fn motion_ui_fade_ms(&self) -> f32 {
-        MOTION_UI_FADE_MS
     }
 
     // ── 컴포넌트 토큰 (modifier-hint 오버레이) — `--tasty-modhint-*` ──
@@ -1749,6 +1732,95 @@ impl Theme {
         LogicalPx((320.0 * self.ui_zoom).round())
     }
 
+    // ── 컴포넌트 치수 (디자인 export 에 아직 토큰이 없는 자리) ──
+    // 아래 열셋은 대응 디자인 토큰이 **없다.** 그래도 리터럴로 두면 안 되는 이유는
+    // 토큰 부재가 아니라 **배율**이다: 본체는 egui `zoom_factor` 를 1.0 으로 고정하고
+    // (`gfx/gpu.rs` `update_scale_factor`) UI 배율을 `with_colors_and_zoom` 의
+    // `zoomed()` 로만 적용하므로, 호출부 리터럴은 `ui_scale` 을 따라가지 않는다.
+    // 상자만 고정이고 안의 폰트·간격·글리프는 커지므로 0.85 에서 여백이 뜨고 1.2 에서
+    // 내용이 잘린다 — 이 축의 값은 16~340 이라 폰트 축(13~17)보다 대가가 크다.
+    // 값은 이식 전 리터럴 그대로다(zoom 1 픽셀 불변, `component_accessors_invariant_at_zoom_one`).
+    // `modhint_*` · `multiselect_*` 와 같은 사정 — export 가 갱신되면 생성물로 넘어간다.
+    /// 포트 스캐너 컬럼 메뉴 최소 폭 (180px).
+    #[inline]
+    pub fn port_columns_menu_min_width(&self) -> LogicalPx {
+        LogicalPx((180.0 * self.ui_zoom).round())
+    }
+    /// 포트 스캐너 상태 필터 메뉴 최소 폭 (216px). 컬럼 메뉴보다 넓은 것은 라벨이
+    /// 길어서다 — 두 값을 하나로 합치면 컬럼 메뉴가 불필요하게 넓어진다.
+    #[inline]
+    pub fn port_state_menu_min_width(&self) -> LogicalPx {
+        LogicalPx((216.0 * self.ui_zoom).round())
+    }
+    /// 포트 스캐너 상태 필터 체크박스 리스트 최대 높이 (168px). 초과분은 내부 스크롤.
+    #[inline]
+    pub fn port_state_menu_max_height(&self) -> LogicalPx {
+        LogicalPx((168.0 * self.ui_zoom).round())
+    }
+    /// remote tool 헤더 최소 높이 (26px). 디자인 헤더 콘텐츠 높이 24 에, popup border 가
+    /// stroke Outside 라 콘텐츠가 1px 아래에서 시작하는 것을 +2 로 보정한 값이다.
+    /// 스케일 위의 값이 아니므로 토큰으로 스냅하지 않는다(ADR-0126).
+    #[inline]
+    pub fn remote_tool_header_min_height(&self) -> LogicalPx {
+        LogicalPx((26.0 * self.ui_zoom).round())
+    }
+    /// 튜토리얼 토픽 팝업 본문 스크롤 최대 높이 (200px).
+    #[inline]
+    pub fn tutorial_topic_body_max_height(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+    /// plugins 화면 헤더 높이 (48px).
+    #[inline]
+    pub fn plugins_header_height(&self) -> LogicalPx {
+        LogicalPx((48.0 * self.ui_zoom).round())
+    }
+    /// plugins 화면 좌측 리스트 패널 폭 (240px). 목록 탭과 알림 탭이 같은 폭을
+    /// 공유한다 — 탭을 바꿀 때 패널 경계가 움직이지 않아야 한다.
+    #[inline]
+    pub fn plugins_side_panel_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+    /// 설정 > 모양의 폰트 패밀리 리스트 최대 높이 (250px).
+    #[inline]
+    pub fn font_family_menu_max_height(&self) -> LogicalPx {
+        LogicalPx((250.0 * self.ui_zoom).round())
+    }
+    /// 파일 선택 팝업의 설명문 최대 폭 (340px) — 이 폭에서 줄바꿈한다.
+    #[inline]
+    pub fn file_picker_note_max_width(&self) -> LogicalPx {
+        LogicalPx((340.0 * self.ui_zoom).round())
+    }
+    // 부팅·종료 로딩 화면의 브랜드 락업 스택(`src/gfx/gpu/loading.rs` + 갤러리
+    // `chrome_loading` specimen). 값은 브랜드 락업 확정값(`guidelines/brand-logo.html`)
+    // 이라 **바꾸지 않는다** — 바뀌는 것은 배율 추종뿐이다. 같은 스택의 간격
+    // (`spacing_xl`·`spacing_lg`)과 phase 문구(`font_size_body`)는 이미 배율을 타므로,
+    // 이 넷만 리터럴로 두면 배율에서 스택이 어긋난다. 특히 phase 슬롯은 높이가 고정인데
+    // 안의 글자만 커져 **문구가 슬롯을 넘는다** — 그 슬롯의 존재 이유가 레이아웃 고정이다.
+    /// 로딩 화면 워드마크 마크(수박 아이콘) 크기 (64px). 14px UI 폰트 상한의
+    /// sanctioned 예외(브랜드 락업 — `docs/design/systems/theme.md` "명명 구조 상수").
+    #[inline]
+    pub fn loading_screen_wordmark_icon_size(&self) -> LogicalPx {
+        LogicalPx((64.0 * self.ui_zoom).round())
+    }
+    /// 로딩 화면 워드마크 `tasty.` 폰트 크기 (38px). 위와 동일 근거의 브랜드 락업 값.
+    /// 사이드바 헤더의 워드마크는 다른 값(`sidebar_wordmark_font_size`)이다 — 같은
+    /// 락업의 두 크기이므로 하나로 합치지 않는다.
+    #[inline]
+    pub fn loading_screen_wordmark_font_size(&self) -> LogicalPx {
+        LogicalPx((38.0 * self.ui_zoom).round())
+    }
+    /// 로딩 화면 스피너 크기 (32px). 디자인 확정: 기본 16 → boot hero 32.
+    #[inline]
+    pub fn loading_screen_spinner_size(&self) -> LogicalPx {
+        LogicalPx((32.0 * self.ui_zoom).round())
+    }
+    /// 로딩 화면 phase 문구의 고정 높이 슬롯 (16px). 문구 유무와 무관하게 레이아웃이
+    /// 흔들리지 않도록 항상 이 높이를 예약한다 — 그래서 안의 글자와 **같은 배율**을
+    /// 타야 한다.
+    #[inline]
+    pub fn loading_screen_phase_slot_height(&self) -> LogicalPx {
+        LogicalPx((16.0 * self.ui_zoom).round())
+    }
     // ── 생성물로 넘어간 컴포넌트 토큰 그룹 ──
     // sidebar-category-header · autocomplete · md-table · drilldown · listctrl 의
     // 접근자는 전부 `generated_component.rs` 에서 생성된다. 디자인 export 에 해당
@@ -2245,6 +2317,103 @@ mod tests {
         assert_eq!(t.icon_glyph_size_row_action.value(), 15.0);
     }
 
+    /// 이 lane 이 리터럴에서 옮겨 온 컴포넌트 치수 아홉이 **`ui_scale` 을 탄다**는 것을
+    /// 고정한다. 위 `component_accessors_invariant_at_zoom_one` 은 zoom 1 값만 보므로,
+    /// 접근자를 다시 상수로 되돌리는 변경을 못 잡는다 — 그게 이 축의 원래 결함이었다.
+    /// 본체는 egui `zoom_factor` 를 1.0 으로 고정하고 배율을 `zoomed()` 로만 넣으므로,
+    /// 이 값들이 배율을 놓치면 상자만 고정되고 내용은 커져 1.2 에서 잘린다.
+    #[test]
+    fn component_dimensions_without_design_tokens_follow_ui_zoom() {
+        let at = |z: f32| Theme::with_colors_and_zoom(dummy_colors(), false, z);
+        // (접근자, zoom 1 값) — 값은 이식 전 호출부 리터럴이다.
+        /// (접근자, zoom 1 값, 이름). clippy `type_complexity` 회피용 별칭.
+        type ZoomProbe = (fn(&Theme) -> LogicalPx, f32, &'static str);
+        let probes: &[ZoomProbe] = &[
+            (
+                Theme::port_columns_menu_min_width,
+                180.0,
+                "port_columns_menu_min_width",
+            ),
+            (
+                Theme::port_state_menu_min_width,
+                216.0,
+                "port_state_menu_min_width",
+            ),
+            (
+                Theme::port_state_menu_max_height,
+                168.0,
+                "port_state_menu_max_height",
+            ),
+            (
+                Theme::remote_tool_header_min_height,
+                26.0,
+                "remote_tool_header_min_height",
+            ),
+            (
+                Theme::tutorial_topic_body_max_height,
+                200.0,
+                "tutorial_topic_body_max_height",
+            ),
+            (Theme::plugins_header_height, 48.0, "plugins_header_height"),
+            (
+                Theme::plugins_side_panel_width,
+                240.0,
+                "plugins_side_panel_width",
+            ),
+            (
+                Theme::font_family_menu_max_height,
+                250.0,
+                "font_family_menu_max_height",
+            ),
+            (
+                Theme::file_picker_note_max_width,
+                340.0,
+                "file_picker_note_max_width",
+            ),
+            (
+                Theme::loading_screen_wordmark_icon_size,
+                64.0,
+                "loading_screen_wordmark_icon_size",
+            ),
+            (
+                Theme::loading_screen_wordmark_font_size,
+                38.0,
+                "loading_screen_wordmark_font_size",
+            ),
+            (
+                Theme::loading_screen_spinner_size,
+                32.0,
+                "loading_screen_spinner_size",
+            ),
+            (
+                Theme::loading_screen_phase_slot_height,
+                16.0,
+                "loading_screen_phase_slot_height",
+            ),
+        ];
+        let (small, base, large) = (at(0.85), at(1.0), at(1.2));
+        for (f, expect_at_one, name) in probes {
+            assert_eq!(f(&base).value(), *expect_at_one, "{name} zoom 1");
+            assert_eq!(
+                f(&small).value(),
+                (expect_at_one * 0.85f32).round(),
+                "{name} zoom 0.85"
+            );
+            assert_eq!(
+                f(&large).value(),
+                (expect_at_one * 1.2f32).round(),
+                "{name} zoom 1.2"
+            );
+            // 배율 셋이 실제로 갈라지는지 — 이 축의 값은 전부 16 이상이라 반올림이
+            // 셋을 뭉개지 않는다(폰트·굵기 축과 다른 점이다, ADR-0126 의 표).
+            // 하한이 16 인 것은 로딩 화면 phase 슬롯이다: 0.85→14 · 1.0→16 · 1.2→19.
+            assert!(
+                f(&large).value() > f(&base).value() && f(&base).value() > f(&small).value(),
+                "{name} 이 배율을 안 탄다"
+            );
+        }
+    }
+
     /// 행 액션 글리프가 zoom 경로에 실제로 들어가 있는지. 평범한 `const` 로 두면
     /// 같은 팝업의 헤더 아이콘만 커지고 이 아이콘만 고정되므로, 배율이 적용되는지
     /// 자체를 고정한다(`zoomed` 는 반올림한다).
@@ -2415,6 +2584,16 @@ mod tests {
         assert_eq!(t.kbd_gap().value(), 3.0); // chip.rs KBD_GAP
         assert_eq!(t.kbd_shadow_depth().value(), 2.0); // chip.rs KBD_BOTTOM_BORDER
         assert_eq!(t.select_chevron_room().value(), 28.0); // select.rs CHEVRON_PAD
+        // 디자인 export 에 토큰이 없는 컴포넌트 치수 — 이식 전 호출부 리터럴과 동일.
+        assert_eq!(t.port_columns_menu_min_width().value(), 180.0);
+        assert_eq!(t.port_state_menu_min_width().value(), 216.0);
+        assert_eq!(t.port_state_menu_max_height().value(), 168.0);
+        assert_eq!(t.remote_tool_header_min_height().value(), 26.0);
+        assert_eq!(t.tutorial_topic_body_max_height().value(), 200.0);
+        assert_eq!(t.plugins_header_height().value(), 48.0);
+        assert_eq!(t.plugins_side_panel_width().value(), 240.0);
+        assert_eq!(t.font_family_menu_max_height().value(), 250.0);
+        assert_eq!(t.file_picker_note_max_width().value(), 340.0);
         // semantic-종착 — 이식 전 위젯이 읽던 바로 그 zoomed 필드와 동일 값.
         assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // button gap
         assert_eq!(t.button_radius().value(), t.corner_radius.value());

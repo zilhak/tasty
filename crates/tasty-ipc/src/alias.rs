@@ -4,7 +4,7 @@
 //! method_meta는 **새 이름만** 알면 된다 — 옛 이름은 [`canonicalize`]에서
 //! 1회 변환된 뒤 사라진다.
 //!
-//! deprecated 이름은 [`docs/dev-guide/cli-naming.md`](../../docs/dev-guide/cli-naming.md)에
+//! deprecated 이름은 [`docs/dev-guide/api-conventions.md`](../../docs/dev-guide/api-conventions.md)에
 //! 옮긴 시점이 명시되어 있다. 0.7.0 에서 `surface.meta_*` 4 종이 제거되었고,
 //! 현재는 `tool.ssh.*`(1세대) 와 `ssh.profile.*`(2세대)가 `remote.profile.*` 로
 //! alias 한시 호환 중이다 (구이름 실제 제거는 다음 minor tag 직전).

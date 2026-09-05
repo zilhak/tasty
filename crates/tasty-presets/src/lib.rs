@@ -10,6 +10,13 @@
 //! `intent::preset_capture` 모듈이 담당. 즉 presets crate 는 `tasty-core::model` /
 //! `Surface` trait 에 의존하지 않는다.
 
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
+
 mod port;
 mod port_impl;
 
