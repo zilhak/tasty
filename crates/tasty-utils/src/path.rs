@@ -20,6 +20,13 @@ use directories::BaseDirs;
 /// AI 에이전트가 경로를 외우기 쉽게 단일화 (Linux 규약상 `~/.config/tasty/` 가
 /// 자연스럽지만, agent 접근성 우선).
 pub fn tasty_home() -> Option<PathBuf> {
+    // 0) 테스트 override (feature-gated) — 이 **스레드**에 한해 최우선. `TASTY_HOME` env 를
+    //    전혀 읽지 않으므로(프로세스 전역이라 병렬 테스트·다른 완주와 경합한다) 완전히
+    //    격리된다. 자세한 계약·구멍은 [`push_home_override`] 참고.
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(dir) = home_override::current() {
+        return Some(dir);
+    }
     // 1) TASTY_HOME 환경변수 우선 (임시 루트 override)
     if let Ok(custom) = std::env::var("TASTY_HOME") {
         let trimmed = custom.trim();
@@ -34,6 +41,60 @@ pub fn tasty_home() -> Option<PathBuf> {
         ".tasty"
     };
     BaseDirs::new().map(|dirs| dirs.home_dir().join(dirname))
+}
+
+/// 테스트가 `tasty_home()` 을 임시 루트로 고정하는 스레드 로컬 override 스택.
+///
+/// 이 스레드에서 [`push_home_override`] 로 세운 값이 있으면 `tasty_home()` 이 `TASTY_HOME`
+/// env 를 **읽기도 전에** 그것을 돌려준다. env 를 만지지 않으므로 병렬 테스트·다른 git
+/// worktree 완주와 경합하지 않는다(그게 이 훅의 존재 이유다 — 처방 등급 ⓒ 계열, 근거는
+/// `docs/adr/0155-global-state-race-prescription-by-parameterization.md`).
+///
+/// **구멍: 자식 스레드에는 상속되지 않는다.** 프로덕션이 `std::thread::spawn` 등으로 만든
+/// 스레드 본문에서 `tasty_home()` 을 읽으면 이 override 를 보지 못하고 실제 홈/env 로
+/// 폴백한다. 그 구멍이 host-plugin 스위트에서 실제로 걸리는 자리가 0 이라는 측정 위에서
+/// 이 처방을 골랐고, 그 전제는 host-plugin 의
+/// `tests::spawned_thread_bodies_do_not_read_tasty_home` 소스 스캔 가드가 지킨다(전제가
+/// 깨지면 ADR-0155 를 다시 연다).
+#[cfg(any(test, feature = "test-support"))]
+mod home_override {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    thread_local! {
+        static STACK: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(super) fn current() -> Option<PathBuf> {
+        STACK.with(|s| s.borrow().last().cloned())
+    }
+
+    pub(super) fn push(dir: PathBuf) {
+        STACK.with(|s| s.borrow_mut().push(dir));
+    }
+
+    pub(super) fn pop() {
+        STACK.with(|s| {
+            s.borrow_mut().pop();
+        });
+    }
+}
+
+/// 이 스레드의 `tasty_home()` 을 `dir` 로 고정한다. [`pop_home_override`] 와 짝을 이루는
+/// 스택이라 중첩해도 안전하다 — RAII 가드가 생성 시 push, drop 시 pop 하면 된다.
+///
+/// **env 를 만지지 않는다.** 그래서 이 override 를 쓰는 테스트는 `set_var` 를 부르는
+/// 테스트(홈 해석 자체가 검증 대상이라 env 가 피험자인 소수)와 병렬로 돌아도 읽기-쓰기
+/// 경합이 없다. 자식 스레드 비상속 구멍은 [`home_override`] 문서 참고.
+#[cfg(any(test, feature = "test-support"))]
+pub fn push_home_override(dir: PathBuf) {
+    home_override::push(dir);
+}
+
+/// [`push_home_override`] 로 세운 이 스레드의 마지막 override 를 되돌린다.
+#[cfg(any(test, feature = "test-support"))]
+pub fn pop_home_override() {
+    home_override::pop();
 }
 
 /// OS 사용자 홈 디렉토리 — **tasty 데이터 루트가 아니다.**
