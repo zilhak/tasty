@@ -117,8 +117,9 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 stage_binary tasty "$APP_DIR/Contents/MacOS/tasty"
 
-# Stage plugins under Contents/Resources/. `bundle_root()` (crates/tasty-host-plugin/
-# src/builtin.rs) discovers `Contents/Resources/plugins/` for .app bundles and syncs
+# Stage plugins under Contents/Resources/. `bundle_root()`
+# (`crates/tasty-host-plugin/src/builtin.rs`) discovers `Contents/Resources/plugins/`
+# for .app bundles and syncs
 # each `<plugin-id>/` into `~/.tasty/plugins/<id>/` on first launch.
 #
 # NOT Contents/MacOS/ — codesign treats any directory holding an executable under
