@@ -1,10 +1,17 @@
 //! Tasty plugin manager — 호스트 측 lifecycle/IPC routing/manifest registry.
 //!
-//! 본 crate 는 본 바이너리 `src/adapters/plugin/` 의 manager / handle_channel /
-//! process / listener / protocol / discovery / builtin / event_bus 등 다수
-//! 모듈을 흡수했다. host 본 바이너리 결합은 6 개 host_port trait
+//! 본 crate 가 manager / handle_channel / process / listener / protocol /
+//! discovery / builtin / event_bus 를 들고 있다 — 본 바이너리에 흩어져 있던 것을
+//! 흡수해 온 것이고, 그쪽에는 더 이상 남아 있지 않다. host 본 바이너리 결합은 6 개 host_port trait
 //! (SurfaceRegistry / FileFormatRegistryPort / FileHandlerRegistryPort /
 //! I18nNamespaceRegistrar / IpcHostFacade) + plugin_bridge/ 잔존 5 모듈로 격리.
+
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 pub mod builtin;
 pub mod bundle_sig;

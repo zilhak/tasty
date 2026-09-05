@@ -2,6 +2,12 @@
 //!
 //! 호스트 IPC dispatcher는 `<prefix>.<method>` 메서드를 받았을 때 이 registry로
 //! 어느 plugin에 forward할지 해결한다.
+//!
+//! **이 표가 답하는 것은 "누가 소유하는가" 하나이고, 재료는 설치된 매니페스트다**
+//! (`refresh_packages` 가 채운다). "지금 살아 있는가" 는 다른 물음이며 같은 자리에서
+//! `processes` 검사가 따로 답한다(`validate_namespace_call` → `-32002`). 두 물음을 이
+//! 표 하나에 겹쳐 두면 꺼진 plugin 의 메서드가 "그런 메서드 없다" 로 답해 거짓이 된다
+//! — 근거는 [ADR-0173](../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
 
 use std::collections::HashMap;
 
@@ -44,6 +50,22 @@ impl IpcNamespaceRegistry {
                 self.prefix_to_plugin.remove(&p);
             }
         }
+    }
+
+    /// 지금 소유자로 등록돼 있는 plugin id 들.
+    pub fn plugin_ids(&self) -> Vec<String> {
+        self.plugin_to_prefixes.keys().cloned().collect()
+    }
+
+    /// 한 plugin 이 점유한 prefix 들. 없으면 빈 슬라이스.
+    ///
+    /// 해제할 때 **매니페스트를 다시 찾지 않고** 여기서 꺼내 쓰라고 있다 — 패키지가
+    /// 디스크에서 사라진 뒤에는 매니페스트 조회가 실패해 mirror 가 남는다.
+    pub fn prefixes_of(&self, plugin_id: &str) -> &[String] {
+        self.plugin_to_prefixes
+            .get(plugin_id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// 메서드명(`"codex.spawn"`)을 보고 어느 plugin이 처리할지 해결.

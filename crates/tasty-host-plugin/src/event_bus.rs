@@ -250,6 +250,7 @@ impl EventBus {
         envelope: EventEnvelope,
         publisher_plugin_id: Option<&str>,
     ) -> Vec<PluginDispatch> {
+        // 이유: 아래 `inner` 를 변형하는 곳이 debug 전용 trace 기록뿐이라 release 에선 `mut` 가 남는다.
         #[cfg_attr(not(debug_assertions), allow(unused_mut))]
         let mut inner = self.lock_recovering();
         // debug 빌드: trace 링버퍼에 envelope 기록.

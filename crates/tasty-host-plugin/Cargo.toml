@@ -47,6 +47,11 @@ wasm-poc = []
 
 [dev-dependencies]
 tempfile = "3"
+# 테스트에서만 tasty_home() 스레드 로컬 override 훅(push/pop_home_override)을 켠다.
+# resolver v3(edition 2024) 가 이 dev-dep feature 를 정규(lib/release) 빌드로 통일하지
+# 않으므로 release 산출물에는 훅이 남지 않는다 — 그 비누출은 cargo tree 로 관측
+# 확인한다(docs/adr/0155). 정규 의존 선언은 위 [dependencies] 에 그대로 있다.
+tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

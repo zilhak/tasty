@@ -524,14 +524,8 @@ impl PluginManager {
             if let Some(proc) = self.processes.remove(&id) {
                 proc.shutdown(super::PLUGIN_SHUTDOWN_TIMEOUT);
             }
-            self.ipc_namespaces.unregister_plugin(&id);
-            // G.D.b — runtime registry 도 mirror 해제. restart 후
-            // start_plugin_internal 이 다시 register 한다.
-            if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id) {
-                for ns in &pkg.manifest.contributes.ipc_namespace {
-                    tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
-                }
-            }
+            // ipc namespace 유지 — 재시작 중에 오는 호출은 "없는 메서드" 가 아니라
+            // "지금 안 뜬 plugin" 이다(ADR-0173).
             self.event_bus.clear_plugin(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
             self.plugin_buffers.remove(&id);

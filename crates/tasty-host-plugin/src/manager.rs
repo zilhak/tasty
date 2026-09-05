@@ -278,7 +278,7 @@ pub struct EguiMeshFrame {
 }
 
 pub struct PluginManager {
-    pub packages: Vec<PluginPackage>,
+    packages: Vec<PluginPackage>,
     /// trust gate 에서 거부된 plugin 들 (서명 미신뢰/검증 실패/권한 변경).
     /// `refresh_packages` 가 `packages` 와 함께 갱신한다. UI "확인 필요" 탭 +
     /// 사이드바 경고 배지가 소비. debug 빌드는 trust gate 우회라 항상 비어 있다.
@@ -321,7 +321,7 @@ pub struct PluginManager {
     pub(super) pending_requests: HashMap<u64, PendingRequestKind>,
     /// 각 plugin에 grant된 권한. 매니페스트 + plugins.toml의 granted를 교집합한 결과.
     /// `Arc`로 공유하여 CallerContext가 동시 호출 시 안전.
-    pub(super) plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,
+    plugin_permissions: HashMap<String, Arc<HashSet<Permission>>>,
     /// plugin이 보낸 IpcCall을 호스트의 main loop에서 라우팅 처리하기 위해 모으는 큐.
     /// `App::process_plugin_ipc_calls()`가 매 tick에 비운다.
     pub(super) pending_plugin_calls: Vec<PendingPluginCall>,
@@ -332,10 +332,13 @@ pub struct PluginManager {
     /// plugin hello/manifest 수신 시 등록되고, disable / 재시작 시 정리된다.
     /// 설정 모달의 sub-tab 합성은 본 registry 를 순회 (Step 5).
     pub settings_pages: crate::settings_registry::SettingsPageRegistry,
-    /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. plugin이
-    /// 실행 중일 때만 등록되며, 호스트 IPC dispatcher가 namespace 메서드를
-    /// 어느 plugin에 forward할지 해결할 때 조회한다.
-    pub ipc_namespaces: IpcNamespaceRegistry,
+    /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. **설치된 매니페스트에서
+    /// 유도되며**(ADR-0173) 실행 여부와 무관하다 — 호스트 IPC dispatcher가 namespace
+    /// 메서드를 어느 plugin에 forward할지 해결할 때 조회한다. "누가 그 이름의 주인인가"
+    /// 와 "지금 떠 있는가" 는 다른 물음이고, 뒤엣것은 `processes` 가 답한다(안 떠 있으면
+    /// `-32002`). 이 표는 `packages` 에서 유도되므로 `packages` 를 바꾸는 자리는
+    /// [`PluginManager::refresh_packages`] 를 거쳐야 한다.
+    ipc_namespaces: IpcNamespaceRegistry,
     /// plugin id → (buffer id → 매핑 영역). 호스트가 `host.shared_buffer.create`로
     /// 발급한 영역의 매핑 유지(=OS region keep-alive)와 dirty 수신 시 lookup용.
     /// plugin process가 종료/재시작되면 해당 plugin 슬롯이 통째로 drop되어
@@ -355,7 +358,7 @@ pub struct PluginManager {
     /// Plugin extension 상태 추적. `[extends]` 블록을 선언한 plugin들의
     /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
     /// hook dispatch 시 `active_extension_for_target`을 조회한다.
-    pub extensions: super::extension_registry::ExtensionRegistry,
+    extensions: super::extension_registry::ExtensionRegistry,
     /// (ext_id, method) 단위 hook 실패 추적. 3회 연속 실패하면 60초간 backoff.
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
@@ -469,6 +472,8 @@ mod queries;
 mod response;
 
 // G.D.c — IpcNamespaceRegistry ↔ tasty-ipc runtime registry mirror 통합 테스트.
+#[cfg(test)]
+mod tests_derived_freshness;
 #[cfg(test)]
 mod tests_namespace_mirror;
 

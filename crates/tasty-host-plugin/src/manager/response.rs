@@ -1,6 +1,7 @@
 //! Plugin → host 응답 처리. `pump` 에서 매 tick 호출되는 `drain_plugin_responses`
 //! 와 그 dispatch 로 호출되는 pre/post hook 응답 처리, `sweep_expired_hooks` 까지 포함.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -12,6 +13,14 @@ use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl};
 use super::{
     FinalCaller, HookOutcome, PendingRequestKind, PluginManager, TargetOutcome, parse_hook_result,
 };
+
+// surface handle 슬롯 락의 poison 보고 플래그(각 첫 1 회만). 둘 다 값 슬롯(String ·
+// Option<Value>)이라 락을 든 채 죽어도 불변식이 성하다 — 복구가 맞다. 조용히 삼키면
+// 라벨/스냅샷이 갱신 없이 stale 로 남는데 그 사실이 어디에도 안 남는다.
+static DISPLAY_NAME_POISONED: AtomicBool = AtomicBool::new(false);
+const DISPLAY_NAME_WHAT: &str = "surface display-name slot";
+static SNAPSHOT_CACHE_POISONED: AtomicBool = AtomicBool::new(false);
+const SNAPSHOT_CACHE_WHAT: &str = "surface snapshot cache slot";
 
 impl PluginManager {
     pub(super) fn drain_plugin_responses(&mut self) {
@@ -70,9 +79,16 @@ impl PluginManager {
                 caller_plugin_id,
                 call_id,
             } => {
-                // plugin caller에는 ipc.result로 회신. error_code는 plugin 측이
-                // 받은 표준 form 그대로(메시지에 합쳐서 전달).
-                self.send_ipc_result(&caller_plugin_id, call_id, resp.result, resp.error);
+                // plugin caller에는 ipc.result로 회신. 코드도 함께 간다 — 같은 함수의
+                // namespace 갈래(위)가 이미 `resp.error_code` 를 쓰고 있었고, 이쪽만
+                // 버리면 plugin 을 거쳐 나온 응답이 전부 `-32000` 이 된다.
+                self.send_ipc_result(
+                    &caller_plugin_id,
+                    call_id,
+                    resp.result,
+                    resp.error,
+                    resp.error_code,
+                );
             }
             PendingRequestKind::ExtensionPreIpcHook {
                 target_plugin_id,
@@ -198,15 +214,19 @@ impl PluginManager {
         let Some(entry) = self.surfaces.get(&surface_id) else {
             return;
         };
-        if let Some(name) = parsed.display_name
-            && let Ok(mut slot) = entry.handles.display_name.lock()
-        {
-            *slot = name;
+        if let Some(name) = parsed.display_name {
+            *tasty_utils::poison::recover_mutex(
+                entry.handles.display_name.lock(),
+                DISPLAY_NAME_WHAT,
+                &DISPLAY_NAME_POISONED,
+            ) = name;
         }
-        if let Some(snapshot) = parsed.snapshot
-            && let Ok(mut slot) = entry.handles.snapshot_cache.lock()
-        {
-            *slot = Some(snapshot);
+        if let Some(snapshot) = parsed.snapshot {
+            *tasty_utils::poison::recover_mutex(
+                entry.handles.snapshot_cache.lock(),
+                SNAPSHOT_CACHE_WHAT,
+                &SNAPSHOT_CACHE_POISONED,
+            ) = Some(snapshot);
         }
     }
 

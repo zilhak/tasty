@@ -12,6 +12,7 @@ use std::collections::VecDeque;
 use std::io::{self, Write};
 #[cfg(unix)]
 use std::io::{BufRead, BufReader};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, mpsc};
 #[cfg(any(unix, test))]
 use std::time::Duration;
@@ -258,6 +259,15 @@ impl HandleStreamReader {
 ///
 /// Unix/Windows 양쪽 구현 완료. [`HandleListener::bind`]가 Unix는 `AF_UNIX` socket을,
 /// Windows는 Named Pipe(overlapped accept 루프)를 연다.
+/// 보조 핸들 채널의 handshake 대기 맵 poison 을 보고했는가(첫 1 회만).
+///
+/// [`crate::listener`] 의 메인 TCP handshake 맵과 같은 형태다 — 임계구역이 `HashMap`
+/// insert/remove 뿐이라 패닉이 나도 불변식이 성립하므로 복구가 맞다. 조용히 버리면
+/// 등록이 안 된 채 caller 의 `recv` 만 흘러 **plugin 이 왜 aux 채널을 못 여는지 timeout
+/// 으로만 보이고**, 수락 쪽에서 버리면 이미 연결한 plugin 이 무음으로 거절된다.
+static HANDLE_PENDING_POISONED: AtomicBool = AtomicBool::new(false);
+const HANDLE_PENDING_WHAT: &str = "plugin aux handle channel pending map";
+
 pub struct HandleListener {
     endpoint: String,
     pending: Arc<Mutex<HashMap<String, mpsc::Sender<HandleStream>>>>,
@@ -381,9 +391,12 @@ impl HandleListener {
     /// 자동 정리).
     pub fn register_token(&self, token: &str) -> mpsc::Receiver<HandleStream> {
         let (tx, rx) = mpsc::channel();
-        if let Ok(mut p) = self.pending.lock() {
-            p.insert(token.to_string(), tx);
-        }
+        tasty_utils::poison::recover_mutex(
+            self.pending.lock(),
+            HANDLE_PENDING_WHAT,
+            &HANDLE_PENDING_POISONED,
+        )
+        .insert(token.to_string(), tx);
         rx
     }
 
@@ -420,7 +433,12 @@ fn handle_incoming_unix(
     let Some(auth) = read_auth_unix(&stream) else {
         return;
     };
-    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+    let tx_opt = tasty_utils::poison::recover_mutex(
+        pending.lock(),
+        HANDLE_PENDING_WHAT,
+        &HANDLE_PENDING_POISONED,
+    )
+    .remove(&auth.token);
     match tx_opt {
         Some(tx) => accept_handshake_unix(stream, auth, tx),
         None => reject_handshake_unix(&stream, &auth),
@@ -605,7 +623,12 @@ fn handle_incoming_windows(
         }
     };
 
-    let tx_opt = pending.lock().ok().and_then(|mut p| p.remove(&auth.token));
+    let tx_opt = tasty_utils::poison::recover_mutex(
+        pending.lock(),
+        HANDLE_PENDING_WHAT,
+        &HANDLE_PENDING_POISONED,
+    )
+    .remove(&auth.token);
 
     match tx_opt {
         Some(tx) => {

@@ -8,6 +8,12 @@
 //! `auto_reload_one` 의 happy path 는 PluginProcess::spawn 이 필요해 별도
 //! 통합 테스트로 이전 (본 모듈은 process spawn 없이 검증 가능한 부분만).
 
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::sync::Arc;
 use std::time::SystemTime;
 

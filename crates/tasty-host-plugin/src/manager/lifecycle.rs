@@ -251,6 +251,65 @@ impl PluginManager {
         let (packages, rejected) = crate::discovery::discover_with_rejections();
         self.packages = packages;
         self.rejected = rejected;
+        self.sync_ipc_namespaces_from_packages();
+    }
+
+    /// 라우팅 해소의 재료를 **설치 사실**에 맞춘다 — 실행 여부는 여기서 묻지 않는다.
+    ///
+    /// 그 물음은 같은 호출 경로에서 `validate_namespace_call` 의 `processes` 검사가
+    /// 이미 따로 지고 있고(`-32002 plugin '…' is not running`), 두 물음을 표 하나에
+    /// 겹쳐 두면 꺼진 plugin 의 메서드가 "그런 메서드 없다" 로 답해 **거짓이 된다.**
+    ///
+    /// 스캔 시점에 채우는 것이 중요한 이유가 하나 더 있다: 이 표를 spawn 시점에
+    /// 채우면 헤드리스는 "이 이름이 plugin 소속인가" 를 **묻기 위해 먼저 plugin 을
+    /// 띄워야** 한다. 실측(2026-09-05)에서 그 대가는 오타 한 번당 프로세스 9 개와
+    /// 1.2 초였고, 그 프로세스는 데몬 수명 내내 남았다. 근거·수·대안은
+    /// [ADR-0173](../../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md).
+    fn sync_ipc_namespaces_from_packages(&mut self) {
+        let installed: std::collections::HashSet<String> = self
+            .packages
+            .iter()
+            .map(|p| p.manifest.id.clone())
+            .collect();
+        let stale: Vec<String> = self
+            .ipc_namespaces
+            .plugin_ids()
+            .into_iter()
+            .filter(|id| !installed.contains(id))
+            .collect();
+        for id in stale {
+            for prefix in self.ipc_namespaces.prefixes_of(&id).to_vec() {
+                tasty_ipc::method_meta::unregister_plugin_prefix(&prefix);
+            }
+            self.ipc_namespaces.unregister_plugin(&id);
+        }
+        let declared: Vec<(String, Vec<String>)> = self
+            .packages
+            .iter()
+            .map(|p| {
+                (
+                    p.manifest.id.clone(),
+                    p.manifest
+                        .contributes
+                        .ipc_namespace
+                        .iter()
+                        .map(|ns| ns.prefix.clone())
+                        .collect(),
+                )
+            })
+            .collect();
+        for (id, prefixes) in declared {
+            for prefix in prefixes {
+                if let Err(e) = self.ipc_namespaces.register(&id, &prefix) {
+                    tracing::warn!("plugin '{id}' ipc namespace registration failed: {e}");
+                    continue;
+                }
+                // `tasty-ipc::method_meta` runtime registry 도 mirror 등록. host
+                // registry 가 거절한 prefix 는 mirror 도 건너뛰어 **항상 동조** 불변식
+                // 을 지킨다.
+                tasty_ipc::method_meta::register_plugin_prefix(&prefix);
+            }
+        }
     }
 
     pub fn discover_and_start(&mut self) {
@@ -404,25 +463,9 @@ impl PluginManager {
         // `plugin.loaded` 발화 위치 — D.3.C.G.2.e 부터 hello 수신 후 호출자
         // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
         // 발화는 제거 (이중 발화 회피).
-        self.register_plugin_ipc_namespaces(pkg);
-    }
-
-    /// manifest의 ipc_namespace contribute를 registry에 흡수(host + runtime mirror).
-    fn register_plugin_ipc_namespaces(&mut self, pkg: &PluginPackage) {
-        for ns in &pkg.manifest.contributes.ipc_namespace {
-            if let Err(e) = self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix) {
-                tracing::warn!(
-                    "plugin '{}' ipc namespace registration failed: {}",
-                    pkg.manifest.id,
-                    e
-                );
-                continue;
-            }
-            // G.D.b — `tasty-ipc::method_meta` runtime registry 도 mirror
-            // 등록. host registry 실패한 prefix 는 runtime mirror 도 skip
-            // 하여 두 registry 의 *항상 동조* 불변식 유지.
-            tasty_ipc::method_meta::register_plugin_prefix(&ns.prefix);
-        }
+        //
+        // ipc namespace 등록은 **여기 없다.** 소유는 설치 사실이지 기동 사실이
+        // 아니므로 `sync_ipc_namespaces_from_packages` 가 스캔 시점에 채운다.
     }
 
     fn on_plugin_spawn_failure(&mut self, pkg: &PluginPackage, e: anyhow::Error) {
@@ -581,20 +624,21 @@ impl PluginManager {
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }
-        self.ipc_namespaces.unregister_plugin(plugin_id);
-        // G.D.b — runtime registry 도 mirror 해제. packages 에서 manifest 재조회
-        // 후 그 plugin 이 점유한 prefix 들을 unregister. completion_strategy 의
-        // owner id 도 install 시점과 동일 유도 규칙(completion_strategy_owner_id)
-        // 으로 계산해둔다 — install 은 ipc_namespace 접두어를 owner 로 쓰므로
-        // uninstall 도 같은 문자열로 지워야 매치된다(그냥 plugin_id 를 쓰면 서로
-        // 어긋나 등록은 되고 해제는 안 되는 stale 전략이 남는다).
-        let mut cs_owner_id: Option<String> = None;
-        if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) {
-            for ns in &pkg.manifest.contributes.ipc_namespace {
-                tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
-            }
-            cs_owner_id = Some(completion_strategy_owner_id(pkg).to_string());
-        }
+        // ipc namespace 는 **해제하지 않는다.** disable 은 설치를 되돌리는 것이 아니라
+        // 기동을 끄는 것이고, 소유는 설치 사실이다. 해제하면 그 plugin 의 메서드가
+        // "그런 메서드 없다"(거짓)로 답한다 — 지금은 소유가 남아 forward 로 가고
+        // `validate_namespace_call` 이 `-32002 plugin '…' is not running`(참)으로
+        // 답한다([ADR-0173](../../../../docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md)).
+        //
+        // completion_strategy 의 owner id 는 install 시점과 동일 유도 규칙
+        // (`completion_strategy_owner_id`)으로 계산해둔다 — install 은 ipc_namespace
+        // 접두어를 owner 로 쓰므로 uninstall 도 같은 문자열로 지워야 매치된다(그냥
+        // plugin_id 를 쓰면 등록은 되고 해제는 안 되는 stale 전략이 남는다).
+        let cs_owner_id: Option<String> = self
+            .packages
+            .iter()
+            .find(|p| p.manifest.id == plugin_id)
+            .map(|pkg| completion_strategy_owner_id(pkg).to_string());
         // file_format / file_handler / hook_handler / completion_strategy registry 에서
         // plugin 의 contribute 제거.
         self.file_format.uninstall_plugin(plugin_id);
@@ -647,12 +691,8 @@ impl PluginManager {
         if let Some(proc) = self.processes.remove(plugin_id) {
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
         }
-        self.ipc_namespaces.unregister_plugin(plugin_id);
-        if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) {
-            for ns in &pkg.manifest.contributes.ipc_namespace {
-                tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
-            }
-        }
+        // ipc namespace 유지 — swap 중에 오는 호출은 "없는 메서드" 가 아니라
+        // "지금 안 뜬 plugin" 이다(ADR-0173).
         self.event_bus.clear_plugin(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin swap restart");
         self.plugin_buffers.remove(plugin_id);

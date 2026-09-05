@@ -139,6 +139,7 @@ pub enum RejectionReason {
 
 // debug 빌드는 trust gate 를 우회해 `Rejected` 를 절대 만들지 않는다 — 그쪽에선
 // dead_code 경고가 정상이므로 억제한다 (release 에선 정상 사용).
+// 이유: debug 는 trust gate 를 우회해 `Rejected` 를 만들지 않는다(위) — release 에선 정상 사용.
 #[cfg_attr(debug_assertions, allow(dead_code))]
 enum TrustOutcome {
     Trusted,

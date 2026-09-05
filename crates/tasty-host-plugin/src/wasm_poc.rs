@@ -6,7 +6,7 @@
 //! 본 crate 로 새지 않도록 격리).
 //!
 //! 본 모듈은 `wasm-poc` feature 활성 시점에 *production 통합* 단계의 인터페이스
-//! 자리표시. 정식 채택 의사결정 (= `docs/evaluations/wasm-poc.md §5`)
+//! 자리표시. 정식 채택 의사결정 (= `docs/adr/0009-plugin-sandbox-deferred.md`)
 //! 후에 본 모듈이 sdk-wasm 의 `WasmPluginRuntime` 을 import 해서
 //! `PluginProcess` 와 동등한 채널 인터페이스 (`PluginEvent` mpsc, `PluginRequest`
 //! mpsc) 를 노출하도록 구현 예정.
