@@ -64,7 +64,7 @@ fn match_preset_shortcut(
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preset-window 셸 전용 치수 — specimen 전사).
 /// 좌측 리스트 폭.
-const LIST_WIDTH: f32 = 196.0;
+const LIST_WIDTH: LogicalPx = LogicalPx(196.0);
 /// 우측 detail 툴바 높이.
 const TOOLBAR_HEIGHT: LogicalPx = LogicalPx(44.0);
 /// 리스트 row 상하 padding.
@@ -562,14 +562,17 @@ struct PresetPanelRects {
 fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
     let body = ui.available_rect_before_wrap();
     let bw = theme.border_width.value();
-    let list_rect = egui::Rect::from_min_size(body.min, egui::vec2(LIST_WIDTH, body.height()));
-    let detail_rect =
-        egui::Rect::from_min_max(egui::pos2(body.min.x + LIST_WIDTH, body.min.y), body.max);
+    let list_rect =
+        egui::Rect::from_min_size(body.min, egui::vec2(LIST_WIDTH.value(), body.height()));
+    let detail_rect = egui::Rect::from_min_max(
+        egui::pos2(body.min.x + LIST_WIDTH.value(), body.min.y),
+        body.max,
+    );
     let painter = ui.painter();
     painter.rect_filled(list_rect, 0.0, theme.bg_sidebar().to_egui());
     painter.rect_filled(detail_rect, 0.0, theme.bg_panel().to_egui());
     painter.vline(
-        body.min.x + LIST_WIDTH,
+        body.min.x + LIST_WIDTH.value(),
         body.y_range(),
         egui::Stroke::new(bw, theme.separator.to_egui()),
     );
