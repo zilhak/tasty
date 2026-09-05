@@ -117,8 +117,42 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::ThemeSum("src/adapters/ui/popup.rs", &["spacing_xs"]),
         Side::Alias(GALLERY_POPUP_FRAME, "TITLE_BTN_EDGE_PAD"),
     ),
+    (
+        "종료 확인 창 폭",
+        Side::Lit("src/app/modal/quit.rs", "WINDOW_W"),
+        Side::Lit(GALLERY_QUIT_MODAL, "WINDOW_W"),
+    ),
+    (
+        "종료 확인 창 높이",
+        Side::Lit("src/app/modal/quit.rs", "WINDOW_H"),
+        Side::Lit(GALLERY_QUIT_MODAL, "WINDOW_H"),
+    ),
+    (
+        "포트 스캐너 즐겨찾기 컬럼 폭",
+        Side::Lit("src/adapters/ui/popup/port_scanner.rs", "FAV_COL_WIDTH"),
+        Side::Lit(GALLERY_PORT_SCANNER, "FAV_COL_WIDTH"),
+    ),
+    (
+        "프리셋 leaf 요약 표시 폭 임계",
+        Side::Lit(
+            "src/adapters/ui/preset/demo_layout.rs",
+            "LEAF_SUMMARY_MIN_W",
+        ),
+        Side::Lit(GALLERY_PRESET_EDITOR, "LEAF_SUMMARY_MIN_W"),
+    ),
+    (
+        "프리셋 leaf 요약 표시 높이 임계",
+        Side::Lit(
+            "src/adapters/ui/preset/demo_layout.rs",
+            "LEAF_SUMMARY_MIN_H",
+        ),
+        Side::Lit(GALLERY_PRESET_EDITOR, "LEAF_SUMMARY_MIN_H"),
+    ),
 ];
 
+const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
+const GALLERY_PORT_SCANNER: &str = "crates/tasty-gallery/src/catalog/components/port_scanner.rs";
+const GALLERY_PRESET_EDITOR: &str = "crates/tasty-gallery/src/catalog/components/preset_editor.rs";
 const GALLERY_INFO_MODAL: &str = "crates/tasty-gallery/src/catalog/components/info_modal.rs";
 const GALLERY_POPUP_FRAME: &str = "crates/tasty-gallery/src/catalog/popup_frame.rs";
 
@@ -132,8 +166,14 @@ fn const_site(masked: &str, name: &str) -> Option<(usize, f32)> {
     // 밀린다. 값 비교는 그래도 통과하므로 **표만 조용히 틀린다**(그 형태를 아래 detector 가
     // 잡았다).
     let (line_no, line) = find_const_line(masked, name)?;
-    let open = line.rfind("LogicalPx(")? + "LogicalPx(".len();
-    let num: String = line[open..]
+    // `LogicalPx(n)` 이 흔하지만 **맨 `f32` 상수**도 같은 치수를 든다(본체
+    // `port_scanner::FAV_COL_WIDTH` 가 그 형태다). 그 형태를 못 읽으면 그 쌍은 명부에
+    // 적을 수조차 없다 — 자료구조의 비대칭이 "그 자리에 아무것도 없다" 로 보이는 형태다.
+    let rest = match line.rfind("LogicalPx(") {
+        Some(at) => &line[at + "LogicalPx(".len()..],
+        None => line.split('=').nth(1)?.trim(),
+    };
+    let num: String = rest
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.')
         .collect();
@@ -272,8 +312,8 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 사본을 없앤 것이 아니라 **보는 눈을 없앤 것**이다.
     assert_eq!(
         COPIED.len(),
-        7,
-        "사본 명부가 {} 쌍이다(기록 7). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        12,
+        "사본 명부가 {} 쌍이다(기록 12). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );
@@ -315,6 +355,148 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     );
     // 초록일 때 무엇을 맞춰 봤는지 남긴다 — 다 봤는지는 이 목록으로만 보인다.
     println!("[사본 치수] {} 쌍\n{table}", COPIED.len());
+}
+
+/// 자백했지만 **사본이 아닌** 자리 — 두 쪽이 같은 항목 하나를 읽는다.
+///
+/// 이 명부가 [`COPIED`] 의 금지문에 적어 둔 예외의 실물이다. 쌍이 아니라 사본이 사라진
+/// 형태라 비교할 두 값이 없다.
+const SHARES_ONE_ITEM: &[(&str, &str, &str)] = &[(
+    GALLERY_POPUP_FRAME,
+    "TITLE_BTN_SIZE",
+    "본체와 갤러리가 둘 다 `tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE` 를 읽는다",
+)];
+
+/// 자백하면서 **다르다고 밝힌** 자리. 사본이 아니라 의도된 차이다.
+const DECLARED_DIFFERENT: &[(&str, &str, &str)] = &[(
+    "crates/tasty-gallery/src/catalog/components/script_manager.rs",
+    "FRAME_MAX_W",
+    "본체는 settings content 폭을 상속하고 갤러리 미러만 카드로 감싸 bound 한다 — \
+     같은 치수가 아니라는 것을 그 자리가 스스로 적는다",
+)];
+
+/// 갤러리에서 **본체를 지목하는 doc 이 붙은** 길이 상수 선언을 모은다.
+///
+/// 문자열 리터럴만 덮은 사본을 쓴다 — 물어야 할 것이 **주석에 무엇이 적혔는가**라
+/// 주석까지 덮으면 물음 자체가 사라진다(두 물음은 서로의 답을 지운다).
+fn sites_that_claim_a_host_counterpart(src: &str) -> Vec<(usize, String)> {
+    let lines: Vec<&str> = src.lines().collect();
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim_start().trim_start_matches("pub ");
+        if !t.starts_with("const ") || !t.contains(": LogicalPx") {
+            continue;
+        }
+        let Some(name) = t
+            .trim_start_matches("const ")
+            .split(':')
+            .next()
+            .map(str::trim)
+        else {
+            continue;
+        };
+        let mut doc = String::new();
+        let mut j = i;
+        while j > 0 && lines[j - 1].trim_start().starts_with("///") {
+            doc.insert_str(0, lines[j - 1].trim_start());
+            j -= 1;
+        }
+        if doc.contains("본체") {
+            out.push((i + 1, name.to_string()));
+        }
+    }
+    out
+}
+
+/// **자백한 사본은 전부 명부에 있어야 한다.**
+///
+/// 이것이 이 축의 판별자다. 종전에는 "갤러리 파일 이름과 본체 파일 이름이 같은가" 라는
+/// **이름 바늘**로 갈랐는데, 그건 양쪽으로 틀린다(같은 이름인데 사본이 아닌 자리, 다른
+/// 이름인데 사본인 자리). 여기서는 **그 자리가 스스로 적은 문장**을 읽고, 그 문장이
+/// 명부에서 해소되는지를 묻는다 — 내용 판별자다.
+///
+/// # 이 판별자가 못 보는 것
+///
+/// **자백 안 한 사본은 안 보인다.** 갤러리 `preset_editor::LEAF_ICON_ONLY_MIN` 이 그
+/// 예다 — 본체 `demo_layout.rs` 에 같은 이름·같은 값이 있는데 그 자리의 doc 은 본체를
+/// 언급하지 않아 여기 안 걸린다. 그러니 이 수는 **사본의 수가 아니라 자백의 수**다.
+/// 이름표를 명제보다 넓게 달지 않기 위해 적어 둔다.
+#[test]
+fn every_gallery_constant_that_claims_a_host_dimension_is_accounted_for() {
+    let root = super::repo_root().join("crates/tasty-gallery/src");
+    let mut stack = vec![root];
+    let mut claims: Vec<(String, usize, String)> = Vec::new();
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                let rel = p
+                    .strip_prefix(super::repo_root())
+                    .unwrap_or(&p)
+                    .to_string_lossy()
+                    .to_string();
+                let src = tasty_doc_guards::source_text::mask_literals(
+                    &std::fs::read_to_string(&p).unwrap_or_default(),
+                );
+                for (line, name) in sites_that_claim_a_host_counterpart(&src) {
+                    claims.push((rel.clone(), line, name));
+                }
+            }
+        }
+    }
+
+    // 하나도 못 찾으면 아래 판정이 공허하게 참이 된다. 그 0 은 초록보다 조용하다.
+    assert!(
+        claims.len() >= 8,
+        "본체를 지목하는 갤러리 상수를 {} 개밖에 못 찾았다(하한 8) — 수집이 깨졌으면 \
+         아래 판정은 전부 공허하다",
+        claims.len()
+    );
+
+    let mut unaccounted = Vec::new();
+    for (rel, line, name) in &claims {
+        let in_roster = COPIED.iter().any(|(_, _, g)| match g {
+            Side::Lit(f, n) | Side::Alias(f, n) => f == rel && n == name,
+            Side::ThemeSum(f, _) => f == rel,
+        });
+        let shared = SHARES_ONE_ITEM
+            .iter()
+            .any(|(f, n, _)| *f == rel && *n == name);
+        let different = DECLARED_DIFFERENT
+            .iter()
+            .any(|(f, n, _)| *f == rel && *n == name);
+        if !in_roster && !shared && !different {
+            unaccounted.push(format!("  {rel}:{line}  {name}"));
+        }
+    }
+
+    assert!(
+        unaccounted.is_empty(),
+        "본체를 지목해 놓고 어디에도 안 걸린 갤러리 상수가 {} 개다:\n{}\n\n\
+         그 자리는 스스로 사본이라고 적었는데 그 주장을 **아무도 확인하지 않는다** — \
+         갈라져도 화면 말고는 신호가 없다. 셋 중 하나를 해라:\n\
+         · 본체에 대응하는 치수가 있으면 `COPIED` 에 쌍으로 올려라(본체가 인자 자리에 \
+         리터럴을 박고 있으면 **먼저 본체에 이름을 줘라** — 이름이 없으면 가리킬 좌표가 없다)\n\
+         · 두 쪽이 같은 항목 하나를 읽으면 `SHARES_ONE_ITEM` 에 사유와 함께 올려라\n\
+         · 의도적으로 다른 치수면 `DECLARED_DIFFERENT` 에 사유와 함께 올려라\n\
+         ★ 주석에서 \"본체\" 라는 낱말을 지우는 것은 **이행이 아니다** — 사본은 그대로 남고 \
+         이 판별자만 못 보게 된다.",
+        unaccounted.len(),
+        unaccounted.join("\n")
+    );
+
+    println!(
+        "[자백한 사본] {} 자리 · 명부 {} 쌍 · 공유 {} · 의도적 차이 {}",
+        claims.len(),
+        COPIED.len(),
+        SHARES_ONE_ITEM.len(),
+        DECLARED_DIFFERENT.len()
+    );
 }
 
 #[cfg(test)]
