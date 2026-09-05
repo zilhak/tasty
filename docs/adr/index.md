@@ -166,3 +166,4 @@
 | 0149 | [부류를 부른 것도 지목이다 — 이름만 세는 추출기는 그 서술을 아무 축도 판정하지 않는다](0149-a-class-citation-is-a-citation.md) | Accepted | 2026-09-05 | guards, ci-gates, docs, false-negative, census, adr-0139, adr-0142, adr-0144 |
 | 0153 | [번들 plugin 이 점유한 namespace 아래의 host 메서드는 그 plugin 이 되돌려 준다](0153-a-bundled-namespace-hands-host-methods-back.md) | Accepted | 2026-09-05 | plugin, ipc, namespace, routing, guards, identity-principle-2, adr-0140, adr-0143 |
 | 0154 | [플랫폼이 못 하는 메서드는 "없다" 가 아니라 "여기선 못 한다" 로 답한다](0154-a-platform-gated-dispatch-arm-answers-why-not-what.md) | Accepted | 2026-09-05 | ipc, debug, cross-platform, error-codes, cli, guards, adr-0115 |
+| 0155 | [전역 상태 경합 flake 의 두 갈래와 처방을 "인자화됐는가" 에 건다](0155-global-state-race-prescription-by-parameterization.md) | Proposed | 2026-09-05 | testing, flaky-tests, concurrency, test-isolation, env, adr-0129 |
