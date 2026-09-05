@@ -43,7 +43,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spi
 pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
 const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
-const POPUP_HEIGHT: f32 = 480.0;
+const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 // 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
 // `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
@@ -56,7 +56,7 @@ const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// PopupDef.sizer — 고정 640×480(gallery specimen `FRAME_W`/`FRAME_H`).
 pub fn picker_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
-    egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT)
+    egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
 /// 목록 한 행의 시각 입력. `DirEntryInfo` 를 그대로 쓰지 않는 이유는
@@ -227,12 +227,13 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     hline(ui, th);
 
     // ── Body ─────────────────────────────────────────────────────────
-    let body_height = (POPUP_HEIGHT - 44.0 - 36.0 - 84.0).max(60.0);
+    let body_height =
+        (POPUP_HEIGHT - LogicalPx(44.0) - LogicalPx(36.0) - LogicalPx(84.0)).max(LogicalPx(60.0));
     match &props.state {
         FpViewState::Loaded => {
             egui::ScrollArea::vertical()
                 .id_salt("file_picker_list")
-                .max_height(body_height)
+                .max_height(body_height.value())
                 .show(ui, |ui| {
                     for entry in props.entries {
                         let selected = props.selected.iter().any(|s| s == &entry.name);
@@ -415,7 +416,7 @@ enum CenterGlyph {
 fn center_state(
     ui: &mut egui::Ui,
     th: &Theme,
-    body_height: f32,
+    body_height: LogicalPx,
     glyph: CenterGlyph,
     heading: &str,
     body_text: Option<&str>,
@@ -423,10 +424,15 @@ fn center_state(
 ) -> bool {
     let mut clicked = false;
     ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), body_height),
+        egui::vec2(ui.available_width(), body_height.value()),
         egui::Layout::top_down(egui::Align::Center),
         |ui| {
-            ui.add_space((body_height - CENTER_BLOCK_H).max(0.0) * 0.5);
+            ui.add_space(
+                (body_height - LogicalPx(CENTER_BLOCK_H))
+                    .max(LogicalPx(0.0))
+                    .scaled(0.5)
+                    .value(),
+            );
             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
             match glyph {
                 CenterGlyph::Spinner => {
