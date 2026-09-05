@@ -446,17 +446,33 @@ fn const_radius_violations(
     }
 }
 
-/// 이 축의 스캔 모수는 `SCAN_ROOTS` 중 **`src/` 아래만**이다 — 갤러리는 뺀다.
+/// 이 축의 스캔 모수는 `SCAN_ROOTS` 중 **갤러리를 뺀 전부**다.
+///
 /// 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을 걸어 생성 const 값도
 /// 함께 커지므로 거기서는 결함이 아니다(`docs/adr/0135-…`). 넣으면 결함 아닌 자리가
 /// 위반이 되어 allowlist 만 불어난다.
-const ZOOM_CONST_SCAN_PREFIX: &str = "src/";
+///
+/// **제외를 빼는 쪽으로 적는 이유**: 한때 이 자리는 `"src/"` 로 **남기는 쪽**을 적었는데,
+/// 사유는 갤러리 하나인데 술어는 셋을 뺐다 — `crates/tasty-ui-widgets/src` 와
+/// `crates/tasty-egui-theme/src` 가 경로 모양 때문에 함께 빠졌다. 둘은 갤러리가 아니라
+/// **본체 UI** 다(본체가 widgets 를 쓰는 파일이 수십 개다). 거기서 생성 const 를 직접 읽으면
+/// 본체에서는 배율을 안 타고 갤러리에서는 타는, 정확히 이 축의 결함이 된다.
+///
+/// 오늘 그 자리가 비어 있는 것은 가드 덕이 아니다 — 두 크레이트가 `tasty-design-tokens`
+/// 에 **의존하지 않아서** 컴파일이 막는다. 의존이 하루 생기면 그 보호는 신호 없이
+/// 사라지므로, 사유가 하나면 제외도 하나로 적는다.
+const ZOOM_CONST_EXCLUDED_ROOT: &str = "crates/tasty-gallery/";
 
 /// 아래 셋은 **거짓 초록 하한**이다. 표가 비거나 코퍼스가 비면 위반이 0 이 되어 가드가
 /// 조용히 통과한다 — "위반 0" 은 모수가 비영일 때만 뜻이 있다.
 const MIN_GENERATED_LOGICAL_CONSTS: usize = 200;
 const MIN_GENERATED_OTHER_CONSTS: usize = 40;
-const MIN_ZOOM_CONST_SCANNED_FILES: usize = 100;
+/// 갤러리를 뺀 코퍼스의 하한. 갤러리 **한 쪽만** 남는 뒤집힌 필터는 이 하한 아래로
+/// 떨어지므로 여기서 걸린다 — 하한이 "코퍼스가 비었나" 와 "필터가 뒤집혔나" 를 함께 본다.
+///
+/// 다만 하한은 **어디를 보는지**는 못 본다. 예전 술어(`src/` 만)는 이 하한을 넉넉히
+/// 넘기면서 본체 UI 크레이트 둘을 통째로 놓쳤다 — 그 형태는 아래 루트 도달 단언이 잡는다.
+const MIN_ZOOM_CONST_SCANNED_FILES: usize = 150;
 
 /// 생성 DTCG 상수를 **타입으로** 가른다 — `(LogicalPx 인 것, 아닌 것)`.
 ///
@@ -589,15 +605,26 @@ fn ui_does_not_consume_generated_length_consts_directly() {
     let (sources, _) = scan_sources();
     let scanned: Vec<_> = sources
         .iter()
-        .filter(|(rel, _)| rel.starts_with(ZOOM_CONST_SCAN_PREFIX))
+        .filter(|(rel, _)| !rel.starts_with(ZOOM_CONST_EXCLUDED_ROOT))
         .collect();
     assert!(
         scanned.len() >= MIN_ZOOM_CONST_SCANNED_FILES,
-        "`{ZOOM_CONST_SCAN_PREFIX}` 아래 스캔 파일이 {}개뿐이다(하한 \
+        "`{ZOOM_CONST_EXCLUDED_ROOT}` 를 뺀 스캔 파일이 {}개뿐이다(하한 \
          {MIN_ZOOM_CONST_SCANNED_FILES}) — 코퍼스가 비면 위반도 0 이다. 전체 스캔 {}개",
         scanned.len(),
         sources.len()
     );
+
+    // **코퍼스가 본체 UI 크레이트에 닿는지 이름으로 확인한다.** 개수 하한은 "몇 개" 만
+    // 보고 "어디" 는 안 본다 — 예전 술어는 파일 152 개로 하한을 넉넉히 넘기면서도
+    // 아래 두 루트를 통째로 못 보고 있었다. 그 형태는 개수로는 원리적으로 안 잡힌다.
+    for root in ["crates/tasty-ui-widgets/src", "crates/tasty-egui-theme/src"] {
+        assert!(
+            scanned.iter().any(|(rel, _)| rel.starts_with(root)),
+            "`{root}` 아래 파일이 스캔 코퍼스에 하나도 없다 — 본체 UI 크레이트다(갤러리가 \
+             아니다). 배율을 안 타는 생성 const 를 거기 두면 본체에서만 조용히 깨진다"
+        );
+    }
 
     let mut violations = Vec::new();
     let mut dimensionless = 0usize;
