@@ -530,14 +530,27 @@ Host gx10
     Port 2201
 "#;
 
-    /// 픽스처 디렉토리. 테스트마다 다른 이름을 주므로 병렬 실행에도 겹치지 않는다
-    /// (프로세스 id 를 섞지 않는다 — 이 모듈은 프로세스를 만지지 않는다는 계약을
-    /// 테스트 코드에서도 지킨다).
-    fn tmpdir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("tasty-ssh-config-{name}"));
-        let _ = std::fs::remove_dir_all(&dir); // 이전 실행 잔재. 없으면 그만이다.
-        std::fs::create_dir_all(&dir).expect("tempdir");
-        dir
+    /// 픽스처 디렉토리. **유일 이름은 OS 가 준다** — `name` 은 사람이 읽으라고 붙이는
+    /// 접두사일 뿐 격리를 지지 않는다.
+    ///
+    /// 이전 형태는 `temp_dir()/tasty-ssh-config-{name}` 고정 경로였고 "테스트마다 다른
+    /// 이름을 주므로 병렬 실행에도 겹치지 않는다" 고 적었다. 그 문장은 **한 완주 안에서만**
+    /// 참이다 — 동시에 도는 두 완주는 같은 이름을 쓰고, 이 헬퍼가 시작하며 `remove_dir_all`
+    /// 을 부르므로 늦게 들어온 쪽이 **살아 있는 옆 완주의 픽스처를 통째로 지운다**
+    /// (ADR-0129 형태 B, 고정 경로).
+    ///
+    /// pid 를 섞지 않는다는 원래 결정("이 모듈은 프로세스를 만지지 않는다는 계약을 테스트
+    /// 코드에서도 지킨다")은 그대로 지킨다 — `tempfile` 은 pid 를 읽는 것이 아니라 OS 에
+    /// 유일 경로를 요청하는 것이라 그 계약과 무관하다. 같은 레포의
+    /// `tasty-plugin-agent-common` prompt_file 테스트가 이미 이 형태다.
+    ///
+    /// 반환값을 살려 둬야 한다 — [`tempfile::TempDir`] 의 Drop 이 디렉토리를 지운다.
+    /// (고정 경로 형태는 지우는 주체가 *다음* 완주였고, 그래서 /tmp 에 잔재가 계속 남았다.)
+    fn tmpdir(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("tasty-ssh-config-{name}-"))
+            .tempdir()
+            .expect("tempdir")
     }
 
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -552,8 +565,8 @@ Host gx10
     #[test]
     fn collects_literal_aliases_only() {
         let dir = tmpdir("literal");
-        let main = write(&dir, "config", MAIN);
-        write(&dir, "extra.conf", EXTRA);
+        let main = write(dir.path(), "config", MAIN);
+        write(dir.path(), "extra.conf", EXTRA);
         let names: Vec<String> = enumerate_hosts_at(&main)
             .into_iter()
             .map(|h| h.alias)
@@ -570,7 +583,7 @@ Host gx10
     fn match_block_ends_host_context_but_not_collection() {
         let dir = tmpdir("match");
         let main = write(
-            &dir,
+            dir.path(),
             "config",
             "Host a\n  HostName ha\nMatch host b\n  User inside\nHost after-match\n  User me\n",
         );
@@ -587,21 +600,25 @@ Host gx10
     #[test]
     fn include_resolves_relative_to_config_dir() {
         let dir = tmpdir("include-rel");
-        let main = write(&dir, "config", "Include extra.conf\n");
-        write(&dir, "extra.conf", "Host work\n  HostName work.internal\n");
+        let main = write(dir.path(), "config", "Include extra.conf\n");
+        write(
+            dir.path(),
+            "extra.conf",
+            "Host work\n  HostName work.internal\n",
+        );
         let hosts = enumerate_hosts_at(&main);
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].alias, "work");
-        assert_eq!(hosts[0].source, dir.join("extra.conf"));
+        assert_eq!(hosts[0].source, dir.path().join("extra.conf"));
     }
 
     #[test]
     fn include_glob_expands_and_is_ordered() {
         let dir = tmpdir("include-glob");
-        let main = write(&dir, "config", "Include conf.d/*.conf\n");
-        write(&dir, "conf.d/b.conf", "Host bee\n");
-        write(&dir, "conf.d/a.conf", "Host ay\n");
-        write(&dir, "conf.d/skip.txt", "Host nope\n");
+        let main = write(dir.path(), "config", "Include conf.d/*.conf\n");
+        write(dir.path(), "conf.d/b.conf", "Host bee\n");
+        write(dir.path(), "conf.d/a.conf", "Host ay\n");
+        write(dir.path(), "conf.d/skip.txt", "Host nope\n");
         let names: Vec<String> = enumerate_hosts_at(&main)
             .into_iter()
             .map(|h| h.alias)
@@ -613,9 +630,9 @@ Host gx10
     #[test]
     fn include_cycle_does_not_hang() {
         let dir = tmpdir("cycle");
-        let main = write(&dir, "config", "Host root\nInclude a.conf\n");
-        write(&dir, "a.conf", "Host a\nInclude b.conf\n");
-        write(&dir, "b.conf", "Host b\nInclude a.conf\n");
+        let main = write(dir.path(), "config", "Host root\nInclude a.conf\n");
+        write(dir.path(), "a.conf", "Host a\nInclude b.conf\n");
+        write(dir.path(), "b.conf", "Host b\nInclude a.conf\n");
         let names: Vec<String> = enumerate_hosts_at(&main)
             .into_iter()
             .map(|h| h.alias)
@@ -626,7 +643,7 @@ Host gx10
     #[test]
     fn missing_config_returns_empty_not_error() {
         let dir = tmpdir("missing");
-        let hosts = enumerate_hosts_at(&dir.join("nope").join("config"));
+        let hosts = enumerate_hosts_at(&dir.path().join("nope").join("config"));
         assert!(hosts.is_empty());
     }
 
@@ -634,11 +651,11 @@ Host gx10
     fn duplicate_alias_kept_once_in_first_seen_order() {
         let dir = tmpdir("dup");
         let main = write(
-            &dir,
+            dir.path(),
             "config",
             "Host gx10\n  Port 2200\nInclude extra.conf\n",
         );
-        write(&dir, "extra.conf", "Host gx10\n  Port 2201\n");
+        write(dir.path(), "extra.conf", "Host gx10\n  Port 2201\n");
         let hosts = enumerate_hosts_at(&main);
         assert_eq!(hosts.len(), 1);
         // 뒤에 나온 블록의 hint 가 먼저 수집된 항목을 덮지 않는다.
@@ -650,7 +667,7 @@ Host gx10
     fn keyword_case_and_equals_separator() {
         let dir = tmpdir("syntax");
         let main = write(
-            &dir,
+            dir.path(),
             "config",
             "host=gx10\n  hostname = 10.0.0.5\nHOST bastion\n  PORT\t2222\n",
         );
@@ -666,7 +683,7 @@ Host gx10
     fn comments_and_quotes_are_handled() {
         let dir = tmpdir("comment");
         let main = write(
-            &dir,
+            dir.path(),
             "config",
             "# 전체 주석\nHost gx10 # 줄 끝 주석\n  User \"space name\"\n",
         );
@@ -679,8 +696,8 @@ Host gx10
     #[test]
     fn hint_captures_only_directives_in_own_block() {
         let dir = tmpdir("hint");
-        let main = write(&dir, "config", MAIN);
-        write(&dir, "extra.conf", EXTRA);
+        let main = write(dir.path(), "config", MAIN);
+        write(dir.path(), "extra.conf", EXTRA);
         let hosts = enumerate_hosts_at(&main);
         let gx10 = &hosts[0];
         assert_eq!(gx10.hostname.as_deref(), Some("10.0.0.5"));
@@ -696,19 +713,21 @@ Host gx10
     #[test]
     fn unparsable_port_leaves_hint_empty() {
         let dir = tmpdir("port");
-        let main = write(&dir, "config", "Host gx10\n  Port not-a-number\n");
+        let main = write(dir.path(), "config", "Host gx10\n  Port not-a-number\n");
         let hosts = enumerate_hosts_at(&main);
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].port, None);
     }
 
-    /// 스펙 픽스처를 그대로 쓴 열거 결과. 테스트마다 다른 디렉토리 이름을 받는다 —
-    /// [`tmpdir`] 가 시작 시 디렉토리를 비우므로 이름을 공유하면 병렬 실행에서 서로의
-    /// 픽스처를 지운다.
+    /// 스펙 픽스처를 그대로 쓴 열거 결과. `slot` 은 실패 시 어느 호출인지 읽으라고 붙는
+    /// 접두사이고, 격리는 [`tmpdir`] 가 진다 — 같은 `slot` 을 두 번 줘도 다른 경로가 나온다.
+    ///
+    /// `dir` 을 바인딩으로 살려 두는 것이 필수다. `tmpdir(slot).path()` 로 바로 쓰면 임시
+    /// 디렉토리가 그 식이 끝나는 자리에서 Drop 되어 사라진다.
     fn fixture_hosts(slot: &str) -> Vec<SshConfigHost> {
         let dir = tmpdir(slot);
-        let main = write(&dir, "config", MAIN);
-        write(&dir, "extra.conf", EXTRA);
+        let main = write(dir.path(), "config", MAIN);
+        write(dir.path(), "extra.conf", EXTRA);
         enumerate_hosts_at(&main)
     }
 
@@ -785,7 +804,7 @@ Host gx10
     #[test]
     fn config_availability_reports_existing_readable_file() {
         let dir = tmpdir("avail-ok");
-        let p = write(&dir, "config", "Host a\n");
+        let p = write(dir.path(), "config", "Host a\n");
         let a = config_availability(Some(&p));
         assert!(a.exists);
         assert!(a.readable);
@@ -794,7 +813,7 @@ Host gx10
     #[test]
     fn config_availability_reports_missing_file_and_no_home() {
         let dir = tmpdir("avail-missing");
-        let a = config_availability(Some(&dir.join("nope")));
+        let a = config_availability(Some(&dir.path().join("nope")));
         assert!(!a.exists);
         // 없는 파일은 열리지도 않는다 — 두 축이 어긋나지 않게 고정한다.
         assert!(!a.readable);
@@ -810,7 +829,7 @@ Host gx10
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tmpdir("avail-perm");
-        let p = write(&dir, "config", "Host a\n");
+        let p = write(dir.path(), "config", "Host a\n");
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
         // root 는 퍼미션을 무시하고 읽는다 — 그 환경에서는 이 케이스를 만들 수 없으니
         // 거짓 실패를 내지 않고 건너뛴다(판정 로직이 아니라 픽스처의 한계다).
@@ -831,7 +850,7 @@ Host gx10
     #[test]
     fn config_availability_treats_a_directory_as_unreadable() {
         let dir = tmpdir("avail-dir");
-        let as_config = dir.join("config");
+        let as_config = dir.path().join("config");
         std::fs::create_dir(&as_config).expect("디렉토리 생성");
         let a = config_availability(Some(&as_config));
         assert!(a.exists, "경로에 무언가 있긴 하다");

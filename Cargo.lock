@@ -6237,6 +6237,7 @@ dependencies = [
  "anyhow",
  "serde",
  "tasty-utils",
+ "tempfile",
  "toml 0.8.2",
  "tracing",
 ]
