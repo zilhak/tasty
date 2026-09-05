@@ -34,6 +34,7 @@
 //! 상세는 `docs/dev-guide/color-policy.md` 참고.
 
 pub mod color;
+pub mod motion;
 pub mod theme;
 
 /// `tasty-design-tokens` 생성기가 산출하는 semantic 색 접근자 (`impl Theme`).
