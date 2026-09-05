@@ -10,7 +10,6 @@
 
 use tasty_dag_layout::{GraphLayout, Orientation};
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 
 use super::node::{self, Lod, NodeVis};
 use super::{Graph, Rel};
@@ -19,7 +18,7 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 줌 하한 / auto-fit 상한 (`Z_MIN` / fit cap).
 const ZOOM_MIN: f32 = 0.2;
-const FIT_MAX: LogicalPx = LogicalPx(1.0);
+const ZOOM_FIT_MAX: f32 = 1.0;
 
 /// 캔버스가 그래프 층에 적용하는 변환.
 #[derive(Debug, Clone, Copy)]
@@ -76,12 +75,12 @@ fn fit(rect: egui::Rect, layout: &GraphLayout, theme: &Theme) -> Transform {
     if gw <= 0.0 || gh <= 0.0 {
         return Transform {
             origin: egui::vec2(pad, pad),
-            zoom: FIT_MAX.value(),
+            zoom: ZOOM_FIT_MAX,
         };
     }
     let zoom = ((rect.width() - pad * 2.0) / gw)
         .min((rect.height() - pad * 2.0) / gh)
-        .clamp(ZOOM_MIN, FIT_MAX.value());
+        .clamp(ZOOM_MIN, ZOOM_FIT_MAX);
     Transform {
         origin: egui::vec2(
             (rect.width() - gw * zoom) / 2.0 - b.min.x * zoom,
