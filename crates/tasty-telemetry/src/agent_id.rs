@@ -128,11 +128,22 @@ mod tests {
     /// `remove_var` 로 "정리" 하면 그 실값을 잃고, 단언이 패닉하면 정리 자체가
     /// 건너뛰어져 — 어느 쪽이든 같은 프로세스의 뒤따르는 테스트가 오염된 env 를
     /// 물려받는다.
-    struct AgentIdEnvGuard(Option<std::ffi::OsString>);
+    ///
+    /// **생성자가 [`ENV_LOCK`] 을 직접 쥔다** — 호출부가 잊어도 env 격리가 깨지지
+    /// 않는다(락은 가드 수명 동안 `_lock` 필드로 유지되고, Drop 이 env 를 되돌린 뒤
+    /// 풀린다). poison 은 복구한다(락은 `()` 라 오염될 상태가 없다).
+    struct AgentIdEnvGuard {
+        prev: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
 
     impl AgentIdEnvGuard {
         fn new() -> Self {
-            Self(std::env::var_os(AgentId::ENV_KEY))
+            let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            Self {
+                prev: std::env::var_os(AgentId::ENV_KEY),
+                _lock,
+            }
         }
         fn set(&self, v: &str) {
             // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정.
@@ -146,7 +157,7 @@ mod tests {
 
     impl Drop for AgentIdEnvGuard {
         fn drop(&mut self) {
-            match &self.0 {
+            match &self.prev {
                 // SAFETY: set 과 동일 — ENV_LOCK 로 직렬화된 단위 테스트 한정.
                 Some(v) => unsafe { std::env::set_var(AgentId::ENV_KEY, v) },
                 // SAFETY: 상동.
@@ -210,9 +221,8 @@ mod tests {
 
     #[test]
     fn from_env_all_cases() {
-        // mutex 로 다른 env-touching 테스트와 직렬화하고, 가드가 스코프 종료 시
-        // (패닉 포함) 실행 환경의 원래 TASTY_AGENT_ID 를 되돌린다.
-        let _serial = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // 가드 생성자가 ENV_LOCK 을 직접 쥐고, 스코프 종료 시(패닉 포함) 실행 환경의
+        // 원래 TASTY_AGENT_ID 를 되돌린 뒤 락을 푼다.
         let env = AgentIdEnvGuard::new();
 
         // 1) unset → host
