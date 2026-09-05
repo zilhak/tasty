@@ -21,7 +21,8 @@
 #![allow(dead_code)]
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{Shutdown, TcpStream};
+use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -50,6 +51,37 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 /// 프레임 쓰기를 직렬화한다. 헤더와 payload 가 `write_all` **두 번**이라, 그 사이에
 /// heartbeat 가 끼어들면 프레임 경계가 깨진다 — 서버는 그걸 unknown tag 로 읽고 끊는다.
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// heartbeat 를 가진 attach 연결.
+///
+/// **왜 wrapper 가 필요한가.** heartbeat 스레드는 `try_clone` 한 **fd 사본**을 들고
+/// 있어서, 호출자가 `TcpStream` 하나를 떨어뜨려도 소켓이 안 닫힌다 — 그러면 서버는
+/// 그 client 를 계속 살아 있다고 보고 **점유를 영영 안 놓는다**(실측: drop 후 8 초
+/// 동안 해제 0). 그래서 drop 시점에 fd 가 아니라 **소켓 자체를 shutdown** 해 FIN 을
+/// 즉시 보낸다. 사본이 몇 개든 상관없고, heartbeat 스레드는 다음 write 실패로 끝난다.
+pub struct AttachStream {
+    inner: TcpStream,
+}
+
+impl Deref for AttachStream {
+    type Target = TcpStream;
+    fn deref(&self) -> &TcpStream {
+        &self.inner
+    }
+}
+
+impl DerefMut for AttachStream {
+    fn deref_mut(&mut self) -> &mut TcpStream {
+        &mut self.inner
+    }
+}
+
+impl Drop for AttachStream {
+    fn drop(&mut self) {
+        // 이미 닫힌 소켓이면 실패하는데, 그건 원하던 상태라 볼 것이 없다.
+        let _ = self.inner.shutdown(Shutdown::Both);
+    }
+}
 
 /// 이 연결이 살아 있는 동안 `HEARTBEAT_INTERVAL` 마다 빈 Ping 을 보낸다.
 ///
@@ -148,7 +180,7 @@ fn open_stream(port: u16, params: Value) -> TcpStream {
 /// `stream.open{target_workspace}` 핸드셰이크. attach 성공을 나타내는
 /// `{"event":"attached_workspace",...}` control 프레임까지 읽고 연결을 반환한다
 /// (ack·터미널 초기 스냅샷 등 무관한 프레임은 건너뛴다).
-pub fn open_workspace_attach(port: u16, workspace_id: u64) -> TcpStream {
+pub fn open_workspace_attach(port: u16, workspace_id: u64) -> AttachStream {
     let mut stream = open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}));
     // **살아 있는 client 를 흉내내는 것은 여기뿐이다.** heartbeat 는 점유를 유지시키므로
     // (서버는 침묵을 죽음으로 보고 점유를 회수한다) 침묵 자체를 시험하는 헬퍼
@@ -167,7 +199,7 @@ pub fn open_workspace_attach(port: u16, workspace_id: u64) -> TcpStream {
             continue;
         }
         match v.get("event").and_then(|e| e.as_str()) {
-            Some("attached_workspace") => return stream,
+            Some("attached_workspace") => return AttachStream { inner: stream },
             Some("attach_error") => panic!("workspace attach rejected: {v:?}"),
             _ => continue, // 터미널 스냅샷 등 무관한 control 프레임 — 계속 대기.
         }
@@ -239,10 +271,11 @@ pub fn raw_open_workspace_proto(port: u16, workspace_id: u64, proto: u32) -> Tcp
 /// **연결을 반환하지 않는다** — 호출 직후 소켓이 drop 되므로, 성공했다면 그 점유는
 /// 곧 EOF 로 회수된다. "이 시점에 attach 가 되는가" 만 묻는 프로브용이다.
 pub fn try_open_workspace_attach(port: u16, workspace_id: u64) -> String {
-    try_open_workspace_attach_inner(open_stream(
+    // 위 `_with_token` 판과 같은 이유로 살아 있다고 말한다.
+    try_open_workspace_attach_inner(heartbeating(open_stream(
         port,
         json!({"proto": 1, "target_workspace": workspace_id}),
-    ))
+    )))
 }
 
 /// `try_open_workspace_attach` 에 `session_token` 을 실은 판. 스트림 채널이 토큰을
@@ -262,10 +295,19 @@ pub fn try_open_workspace_attach_with_token(port: u16, workspace_id: u64, token:
     let mut msg = serde_json::to_string(&req).unwrap();
     msg.push('\n');
     stream.write_all(msg.as_bytes()).expect("send handshake");
-    try_open_workspace_attach_inner(stream)
+    // 이 헬퍼의 계약은 "attach 결과를 보고 끊는다" 지 침묵이 아니다 — 침묵이 계약인
+    // 것은 `raw_open_workspace_no_read` 하나다. 부하가 붙어 결과가 20 초를 넘겨 오면
+    // 서버가 죽은 peer 로 보고 끊어 `UnexpectedEof` 가 난다(train68 실측).
+    try_open_workspace_attach_inner(heartbeating(stream))
 }
 
-fn try_open_workspace_attach_inner(stream: TcpStream) -> String {
+/// 연결에 heartbeat 를 걸고 [`AttachStream`] 으로 감싼다 — drop 이 소켓을 닫아야 한다.
+fn heartbeating(stream: TcpStream) -> AttachStream {
+    spawn_heartbeat(&stream);
+    AttachStream { inner: stream }
+}
+
+fn try_open_workspace_attach_inner(stream: AttachStream) -> String {
     let mut stream = stream;
     loop {
         let (tag, payload) = read_frame(&mut stream);
