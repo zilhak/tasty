@@ -1326,12 +1326,12 @@ impl AppState {
         if self
             .fullscreen_stage
             .as_ref()
-            .is_some_and(|s| s.id == def.id)
+            .is_some_and(|s| s.id == def.id())
         {
             return true;
         }
         self.close_fullscreen_stage();
-        self.fullscreen_stage = Some(crate::adapters::ui::fullscreen::StageState { id: def.id });
+        self.fullscreen_stage = Some(crate::adapters::ui::fullscreen::StageState { id: def.id() });
         true
     }
 

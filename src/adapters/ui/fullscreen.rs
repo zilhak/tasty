@@ -26,7 +26,7 @@ pub(crate) mod notifications;
 use crate::state::AppState;
 
 /// 무대 식별자. `PopupId` 와 같이 정적 문자열이다 — debug IPC 가 이 id 로 무대를 지정한다.
-pub type StageId = &'static str;
+pub use crate::fullscreen_stages::{StageId, StageMeta};
 
 /// 무대 draw 함수의 프레임 결과. popup 의 `PopupAction` 과 대칭.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,9 +39,10 @@ pub enum StageAction {
 
 /// 무대 하나의 정적 정의. 프로세스 수명 내내 살아있다.
 pub struct StageDef {
-    pub id: StageId,
-    /// i18n 키. 무대 셸이 `t()` 로 번역해 제목으로 그린다.
-    pub title_key: &'static str,
+    /// gui 무관 메타(id · 제목 키). **소유하지 않고 참조한다** — 정의가 메타를 복제하면
+    /// 둘이 어긋날 수 있는데, 참조면 "정의는 있는데 메타가 없다" 가 타입으로 불가능해진다
+    /// (반대 방향만 정합 테스트가 본다).
+    pub meta: &'static StageMeta,
     /// 콘텐츠 렌더 함수. 무대가 활성인 매 프레임 호출된다. 셸(scrim + 제목)은
     /// [`draw_fullscreen_stage`] 가 이미 그린 뒤이고, 이 함수는 그 안쪽만 채운다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> StageAction,
@@ -50,6 +51,18 @@ pub struct StageDef {
     /// 그리는 게 없으므로 `&mut Ui` 가 아니라 `&egui::Context` 를 받는다 — 무대
     /// 콘텐츠 상태가 egui temp memory 에 있으면 여기서만 지울 수 있다.
     pub on_close: Option<fn(&egui::Context, &mut AppState, &mut crate::core::CoreState)>,
+}
+
+impl StageDef {
+    /// 무대 식별자. 메타에서 온다.
+    pub fn id(&self) -> StageId {
+        self.meta.id
+    }
+
+    /// 제목 i18n 키. 메타에서 온다.
+    pub fn title_key(&self) -> &'static str {
+        self.meta.title_key
+    }
 }
 
 /// 활성 무대의 런타임 상태. 창당 최대 하나이므로 `AppState` 에 `Option` 으로 산다.
@@ -132,7 +145,7 @@ pub fn draw_fullscreen_stage(
             // 셸: 창 전체 scrim + 제목. 뒤 콘텐츠는 이 프레임에 그려지지 않지만
             // scrim 은 무대가 "덮고 있다" 는 시각을 유지한다(마커 오버레이와 같은 토큰).
             ui.painter().rect_filled(screen, 0.0, th.scrim().to_egui());
-            let title = crate::i18n::t(def.title_key);
+            let title = crate::i18n::t(def.title_key());
             ui.painter().text(
                 egui::pos2(screen.center().x, screen.top() + th.spacing_xl.value()),
                 egui::Align2::CENTER_TOP,
@@ -148,7 +161,7 @@ pub fn draw_fullscreen_stage(
             let mut content = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(content_rect(screen))
-                    .id_salt(def.id),
+                    .id_salt(def.id()),
             );
             let content_action = (def.draw_fn)(&mut content, state, engine);
             if content_action == StageAction::Close {
@@ -215,7 +228,7 @@ mod tests {
 
     #[test]
     fn every_def_has_a_unique_id() {
-        let mut ids: Vec<StageId> = defs::all_defs().iter().map(|d| d.id).collect();
+        let mut ids: Vec<StageId> = defs::all_defs().iter().map(|d| d.id()).collect();
         ids.sort_unstable();
         let before = ids.len();
         ids.dedup();
@@ -253,7 +266,7 @@ mod tests {
     fn find_rejects_unknown_ids() {
         assert!(defs::find("no-such-stage").is_none());
         for def in defs::all_defs() {
-            assert!(defs::find(def.id).is_some());
+            assert!(defs::find(def.id()).is_some());
         }
     }
 }

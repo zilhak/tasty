@@ -41,3 +41,18 @@ pub(crate) fn lua_eval(
         (_, None) => JsonRpcResponse::error(rpc_id, -32603, "lua engine not initialized"),
     }
 }
+
+/// `debug.fullscreen.list` — 등록된 무대 메타 전체.
+///
+/// **두 조합이 이 함수 하나를 부른다.** 읽는 것은 gui 무관 메타 표
+/// ([`crate::fullscreen_stages`])뿐이라 창이 없어도 답이 정의된다 — 무대를 *여는* 것과
+/// 달리 *어떤 무대가 있나* 는 창의 성질이 아니다.
+///
+/// 제목은 i18n 키 그대로 내보낸다. 값을 내보내면 자동 검증이 로케일에 묶인다.
+pub(crate) fn fullscreen_list(id: Value) -> JsonRpcResponse {
+    let stages: Vec<_> = crate::fullscreen_stages::all_metas()
+        .iter()
+        .map(|m| serde_json::json!({ "id": m.id, "title_key": m.title_key }))
+        .collect();
+    JsonRpcResponse::success(id, serde_json::json!({ "stages": stages }))
+}

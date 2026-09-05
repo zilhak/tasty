@@ -20,6 +20,7 @@ mod design_token_guard;
 #[cfg(test)]
 mod dpi_conversion_guard;
 mod file;
+mod fullscreen_stages;
 #[cfg(feature = "gui")]
 mod gfx;
 mod hook_handler;

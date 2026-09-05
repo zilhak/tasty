@@ -30,10 +30,10 @@
 //! 그때 temp memory 에 적어 두고 훅이 그것을 읽어 지운다(egui 내부 id 규칙을
 //! 재현하지 않는다).
 
-use super::{StageAction, StageId};
+use super::StageAction;
 
 /// 알림 무대 id. `PopupDef.fullscreen_stage` 와 debug IPC 가 이 값을 가리킨다.
-pub(crate) const NOTIFICATIONS_STAGE_ID: StageId = "notifications";
+pub(crate) use crate::fullscreen_stages::NOTIFICATIONS_STAGE_ID;
 
 /// 콘텐츠 자체 상태(스크롤)의 egui id 를 적어 두는 temp memory 슬롯.
 fn scroll_id_slot() -> egui::Id {

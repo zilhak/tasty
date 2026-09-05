@@ -219,22 +219,12 @@ impl App {
         id: serde_json::Value,
     ) -> host_ipc::protocol::JsonRpcResponse {
         match method {
-            "debug.fullscreen.list" => Self::debug_fullscreen_list(id),
+            "debug.fullscreen.list" => crate::core::app_surface_debug::fullscreen_list(id),
             "debug.fullscreen.open" => self.debug_fullscreen_open(params, id),
             "debug.fullscreen.close" => self.debug_fullscreen_close(params, id),
             "debug.fullscreen.state" => self.debug_fullscreen_state(params, id),
             other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
         }
-    }
-
-    /// 등록된 무대 정의 전체. 제목은 i18n 키 그대로 — 언어 설정에 따라 값이 흔들리면
-    /// 자동 검증이 로케일에 묶인다.
-    fn debug_fullscreen_list(id: serde_json::Value) -> host_ipc::protocol::JsonRpcResponse {
-        let stages: Vec<_> = crate::adapters::ui::fullscreen::defs::all_defs()
-            .iter()
-            .map(|d| serde_json::json!({ "id": d.id, "title_key": d.title_key }))
-            .collect();
-        host_ipc::protocol::JsonRpcResponse::success(id, serde_json::json!({ "stages": stages }))
     }
 
     fn debug_fullscreen_open(
@@ -247,10 +237,10 @@ impl App {
         };
         // 창을 고르기 **전에** 무대 id 를 검증한다. 모르는 id 를 조용한 no-op 으로
         // 흘리면 오타가 "열렸는데 안 보인다" 로 보인다.
-        if crate::adapters::ui::fullscreen::defs::find(stage_id).is_none() {
-            let known: Vec<&str> = crate::adapters::ui::fullscreen::defs::all_defs()
+        if crate::fullscreen_stages::find(stage_id).is_none() {
+            let known: Vec<&str> = crate::fullscreen_stages::all_metas()
                 .iter()
-                .map(|d| d.id)
+                .map(|m| m.id)
                 .collect();
             return host_ipc::protocol::JsonRpcResponse::invalid_params(
                 id,

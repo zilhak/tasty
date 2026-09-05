@@ -258,7 +258,7 @@ fn the_same_click_on_a_popup_without_the_flag_does_nothing() {
 /// 프레임을 돌렸을 때 엔트리 수가 1 → 2 로 늘고 무대가 기록한 id 가 살아 있으면,
 /// 무대 id ≠ popup id 다(무대가 popup 의 것을 재사용했다면 수가 그대로 1 이다).
 ///
-/// 무대 콘텐츠 Ui 를 `def.id` 로 salt 하는 배선이 사라지는 회귀를 여기서 잡는다.
+/// 무대 콘텐츠 Ui 를 `def.id()` 로 salt 하는 배선이 사라지는 회귀를 여기서 잡는다.
 #[test]
 fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
     type ScrollState = egui::containers::scroll_area::State;
@@ -312,7 +312,7 @@ fn the_stage_scroll_state_is_a_different_entry_from_the_popups() {
 }
 
 /// 무대 사이의 격리 — 같은 콘텐츠를 **다른 id 로** 올린 두 무대는 서로 다른 스크롤
-/// 상태를 쓴다. 이것이 셸의 `id_salt(def.id)` 가 실제로 하는 일이고, popup 과의 비교로는
+/// 상태를 쓴다. 이것이 셸의 `id_salt(def.id())` 가 실제로 하는 일이고, popup 과의 비교로는
 /// 드러나지 않는다(무대와 popup 은 애초에 다른 `Area` 라 salt 없이도 갈린다).
 #[test]
 fn two_stages_with_the_same_content_do_not_share_scroll_state() {
