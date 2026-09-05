@@ -232,25 +232,49 @@ mod forbidden_lock_guard {
 
     /// 이 헬퍼로 복구하면 안 되는 락 식별자와 그 이유.
     ///
-    /// **이유를 함께 적는 것이 목록의 절반이다.** "금지" 라는 사실만 있으면 다음 사람이
-    /// 이 목록을 정당하게 줄일 수도 부당하게 줄일 수도 없고, 근거 없는 금지 목록은
-    /// 언젠가 통째로 지워진다. 지금 이 락이 **어느 크레이트에서 무엇을 지키고 있는지**를
-    /// 함께 남긴다.
-    const FORBIDDEN_LOCKS: &[(&str, &str)] = &[(
-        "writer",
-        "임계구역이 소켓/스트림에 프레임을 쓴다. 락을 든 채 죽은 스레드는 줄을 절반만 \
-         남겼을 수 있고, 그 위에 이어 쓰면 한 줄 = 한 메시지 불변식이 깨져 상대가 \
-         쓰레기를 읽는다. 데이터를 신뢰할 수 없는 자리라 복구가 오답이다. \
-         현재 이 락을 잡는 자리와 각자의 선택: \
-         `tasty-plugin-sdk` 의 `runtime::send_event`/`send_response` 는 **패닉을 유지**한다 \
-         (폭발 반경이 그 plugin 프로세스 하나로 한정되고, 그 범위는 방침이 패닉을 허용하는 \
-         범위다). `tasty-plugin-sdk` 의 `HostHandle::notify`/`call` 은 **에러를 반환**한다 \
-         (plugin 코드가 호출자라 결과를 받아 처리할 수 있다). `tasty-cli` 의 \
-         `local::attach::run_raw_bridge` 는 **복구하지 않고 세션을 접되** \
-         `note_writer_poisoned` 로 이유를 남긴다(원인 없이 끊긴 attach 로 보이지 않게). \
-         `tasty-host-plugin` 의 `aux_reader_loop` 는 Pong 전송을 **건너뛰되 로그를 남긴다** \
-         (상대가 채널을 죽은 것으로 판정하는 결과가 뒤따르므로 그 이유가 남아야 한다).",
-    )];
+    /// **명부의 술어(무엇의 명부인가): 임계구역이 프레임·레코드 경계를 갖는가.**
+    /// 락이 지키는 것이 소켓/스트림에 프레임(한 줄=한 메시지)을 쓰는 자리면, 락을 든 채
+    /// 죽은 스레드가 반쪽 프레임을 남길 수 있다. poison 을 `into_inner` 로 복구해 그 위에
+    /// 이어 쓰면 프레이밍이 깨져 상대가 쓰레기를 읽는다 — 그래서 복구가 오답이고,
+    /// skip(+보고) 또는 전파가 맞다. 자료구조·값 슬롯(경계 없음)은 이 명부의 반대편이라
+    /// 복구가 옳다(그쪽은 아래 축 2 가 "조용히 삼키지 말라" 로 지킨다).
+    ///
+    /// 이 술어에 걸리는 피보호 타입은 [`FORBIDDEN_STREAM_TYPES`] 이고, 그 타입을 감싼
+    /// 락의 바인딩 이름이 아래 목록이다 — 이름이 아니라 **타입이 근거**다.
+    /// `stream_typed_lock_names_are_all_listed` 가 그 타입의 새 락(다른 이름)이 목록 밖에
+    /// 생기면 실패시켜, "이름 둘짜리 명부" 가 조용히 낡는 것을 막는다.
+    ///
+    /// **이유를 함께 적는 것이 목록의 절반이다.** 근거 없는 금지 목록은 언젠가 통째로
+    /// 지워진다. 지금 이 락이 **어느 크레이트에서 무엇을 지키고 있는지**를 함께 남긴다.
+    const FORBIDDEN_LOCKS: &[(&str, &str)] = &[
+        (
+            "writer",
+            "임계구역이 소켓/스트림에 프레임을 쓴다(`Mutex<TcpStream>`·`Mutex<HandleStream>`). \
+             락을 든 채 죽은 스레드는 줄을 절반만 남겼을 수 있고, 그 위에 이어 쓰면 한 줄 = \
+             한 메시지 불변식이 깨져 상대가 쓰레기를 읽는다. 데이터를 신뢰할 수 없는 자리라 \
+             복구가 오답이다. 현재 이 락을 잡는 자리와 각자의 선택: \
+             `tasty-plugin-sdk` 의 `runtime::send_event`/`send_response` 는 **패닉을 유지**한다 \
+             (폭발 반경이 그 plugin 프로세스 하나로 한정되고, 그 범위는 방침이 패닉을 허용하는 \
+             범위다). `tasty-plugin-sdk` 의 `HostHandle::notify`/`call` 은 **에러를 반환**한다 \
+             (plugin 코드가 호출자라 결과를 받아 처리할 수 있다). `tasty-cli` 의 \
+             `local::attach::run_raw_bridge` 는 **복구하지 않고 세션을 접되** \
+             `note_writer_poisoned` 로 이유를 남긴다(원인 없이 끊긴 attach 로 보이지 않게). \
+             `tasty-host-plugin` 의 `aux_reader_loop`·`with_handle_stream` 은 전송/연산을 \
+             **건너뛰되 로그를 남긴다**(상대가 채널을 죽은 것으로 판정하므로 그 이유가 남아야 한다).",
+        ),
+        (
+            "handle_writer",
+            "보조 핸들 채널의 프레임 라이터(`Mutex<HandleClient>`)다. `writer` 와 같은 이유 — \
+             임계구역이 스트림에 프레임을 쓰므로 반쪽 프레임 위에 이어 쓰면 프레이밍이 깨진다. \
+             `tasty-plugin-sdk` 의 `shared_buffer`/`HostHandle`/`runtime` 이 이 이름으로 잡는다.",
+        ),
+    ];
+
+    /// [`FORBIDDEN_LOCKS`] 의 술어에 걸리는 피보호 타입 — 프레임 I/O 스트림.
+    ///
+    /// 명부의 근거는 이름이 아니라 이 타입들이다. `fs::File`(줄 단위 로그, 반쪽 줄 허용)·
+    /// 자료구조·값 슬롯은 경계가 없어 여기 없다.
+    const FORBIDDEN_STREAM_TYPES: &[&str] = &["TcpStream", "HandleStream", "HandleClient"];
 
     /// 스캔 하한. 경로가 틀리면 대상이 0 개가 되고 가드는 조용히 초록이 된다.
     ///
@@ -799,10 +823,11 @@ mod forbidden_lock_guard {
         for (name, _) in FORBIDDEN_LOCKS {
             let found = files.iter().any(|path| {
                 normalized(path).is_some_and(|masked| {
-                    masked
-                        .lines()
-                        .filter(|l| !l.trim_start().starts_with("//"))
-                        .any(|l| locks_named(l, name))
+                    // 문 단위로 잇는다 — `self\n.handle_writer\n.lock()` 처럼 수신자가
+                    // 쪼개진 락은 줄 단위로는 안 보인다.
+                    statement_spans(&masked)
+                        .iter()
+                        .any(|(_, stmt)| locks_named(stmt, name))
                 })
             });
             assert!(
@@ -810,5 +835,86 @@ mod forbidden_lock_guard {
                 "금지 목록의 `{name}` 락이 트리에 없다 — 목록이 낡았다"
             );
         }
+    }
+
+    /// 명부의 술어를 **타입으로** 못박는다 — 프레임 스트림 타입([`FORBIDDEN_STREAM_TYPES`])을
+    /// 감싼 락이 새로 생기면, 그 이름이 무엇이든 [`FORBIDDEN_LOCKS`] 에 있어야 한다.
+    ///
+    /// 이름 목록만 두면 "셋째(다음 스트림 락)는 안 걸린다"(R426). 이 테스트가 선언을
+    /// 타입으로 훑어, 명부에 없는 이름이 프레임 타입을 감싸는 순간 실패한다 — 명부가
+    /// 조용히 낡는 것을 막는다. 익명 자리(enum variant 등 `이름:` 없는 선언)는 바인딩
+    /// 이름이 없어 사용처(`writer`/skip-report)로 덮이므로 여기서 세지 않는다.
+    #[test]
+    fn stream_typed_lock_names_are_all_listed() {
+        let root = repo_root();
+        let files = rust_sources(&root);
+        let listed: std::collections::BTreeSet<&str> =
+            FORBIDDEN_LOCKS.iter().map(|(n, _)| *n).collect();
+
+        let mut found_any = false;
+        let mut missing = std::collections::BTreeSet::new();
+        for path in &files {
+            let Some(masked) = normalized(path) else {
+                continue;
+            };
+            for line in masked.lines() {
+                let t = line.trim_start();
+                if t.starts_with("//") {
+                    continue;
+                }
+                let Some(at) = FORBIDDEN_STREAM_TYPES
+                    .iter()
+                    .find_map(|ty| line.find(&format!("Mutex<{ty}>")))
+                else {
+                    continue;
+                };
+                // 바인딩 이름은 `이름: <…Mutex<stream>…>` 형태(필드·파라미터)의 그 콜론
+                // **앞** 식별자다. `Mutex<stream>` 앞부분에서 바인딩 콜론(경로 `::` 아닌
+                // 단일 `:`)을 찾는다 — 반환 타입(`-> Result<…Mutex<…>, …mpsc::…>`)에는
+                // 앞쪽에 바인딩 콜론이 없어 익명으로 걸러진다.
+                let prefix = &line[..at];
+                let bytes = prefix.as_bytes();
+                let mut colon = None;
+                for i in 0..bytes.len() {
+                    if bytes[i] == b':'
+                        && (i == 0 || bytes[i - 1] != b':')
+                        && (i + 1 >= bytes.len() || bytes[i + 1] != b':')
+                    {
+                        colon = Some(i);
+                    }
+                }
+                let Some(ci) = colon else {
+                    continue;
+                };
+                let name: String = prefix[..ci]
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                if name.is_empty() {
+                    continue;
+                }
+                found_any = true;
+                if !listed.contains(name.as_str()) {
+                    let rel = path.strip_prefix(&root).unwrap_or(path);
+                    missing.insert(format!("{}: {name}", rel.display()));
+                }
+            }
+        }
+        assert!(
+            found_any,
+            "프레임 스트림 타입을 감싼 락 선언을 하나도 못 찾았다 — 스캔이 죽었거나 \
+             FORBIDDEN_STREAM_TYPES 의 타입명이 트리와 어긋났다"
+        );
+        assert!(
+            missing.is_empty(),
+            "프레임 스트림 타입({:?})을 감싼 락인데 FORBIDDEN_LOCKS 에 이름이 없다 — \
+             복구가 오답인 자리가 명부 밖에 생겼다. 이름을 명부에 넣어라:\n{}",
+            FORBIDDEN_STREAM_TYPES,
+            missing.into_iter().collect::<Vec<_>>().join("\n")
+        );
     }
 }

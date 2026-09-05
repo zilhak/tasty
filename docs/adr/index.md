@@ -188,3 +188,4 @@
 | 0174 | [접근성 "모션 감소" 는 `Theme` 이 실어 나르고, 위젯의 기본값이 그것을 읽는다](0174-theme-carries-reduced-motion.md) | Accepted | 2026-09-05 | accessibility, theme, motion, widgets, defaults |
 | 0176 | [모션 지속시간은 `Millis` 로 `Theme` 경계를 건넌다](0176-motion-durations-cross-the-theme-boundary-as-millis.md) | Accepted | 2026-09-05 | design-tokens, motion, typed-values, theme, code-generation |
 | 0178 | [필요성이 트리거와 무관한 일은 부팅에 걸고, 기동만 지연에 둔다](0178-a-job-whose-need-is-independent-of-the-trigger-is-anchored-at-boot.md) | Accepted | 2026-09-05 | lifecycle, boot, plugin, lazy-init, source-guard, adr-0050, adr-0136, adr-0173 |
+| 0177 | [poison 복구가 금지되는 락은 이름이 아니라 프레임 경계 타입으로 판정한다](0177-recovery-forbidden-locks-are-judged-by-frame-boundary-type.md) | Accepted | 2026-09-05 | poison, locks, error-handling, guards, measurement, false-negative, adr-0129, adr-0155 |
