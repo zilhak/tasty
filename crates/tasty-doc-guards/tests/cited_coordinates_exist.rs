@@ -15,6 +15,23 @@
 //! 실재 파일로 조용히 해석되는** 인용, 남의 저장소(egui) 내부 경로를 우리 경로 형태로
 //! 적은 참조.
 //!
+//! ## 무엇을 훑는가 — "무엇을 검사하는가" 만큼 초록의 범위를 정한다
+//!
+//! 순회는 레포 전체다(바이너리·산출물 확장자와 가지치기 디렉토리만 뺀다). 한동안
+//! `.md` 만 훑었고, 그동안 소스·매니페스트 주석의 죽은 좌표는 **빨강 없이 살아
+//! 있었다** — 실측으로 스물 남짓이었다. 술어가 옳아도 훑지 않는 자리에서는 아무것도
+//! 말하지 않는다. 그래서 순회 범위를 판정 규칙과 같은 무게로 여기 적는다.
+//!
+//! 다만 축마다 훑는 범위가 다르고, 그 차이는 **문법이 다르기 때문**이다.
+//! 경로 축·디렉토리 축은 레포 경로 리터럴을 보므로 언어를 안 탄다 — 레포 전체를
+//! 훑는다. 반면 링크 축(`[a](b.md)`)과 인접 짝 축(`` `이름`(`경로`) ``)은 마크다운
+//! 표기라 `.md` 안에서만 그 뜻이다. Rust 의 `` [`Self::foo`] `` 는 같은 모양이지만
+//! intra-doc 링크로, 파일 경로가 아니다. 그 둘까지 넓히면 판정의 뜻이 파일 종류마다
+//! 달라지므로 넓히지 않는다.
+//!
+//! **비-`.md` 에서는 주석 줄만 본다.** [`citation_lines`] 가 그 경계다 — 코드가
+//! 만드는 문자열 안의 경로는 그 코드의 입력이지 읽는 사람에게 준 좌표가 아니다.
+//!
 //! ## 판정 규칙 — 문맥을 추론하지 않는다
 //!
 //! 이 가드는 문장의 뜻을 분류하지 않는다. 경로도 이름도 **리터럴**이고, 판정은
@@ -75,7 +92,14 @@ const ROOT_PREFIXES: &[&str] = &[
 ];
 
 /// 순회에서 통째로 가지치기할 디렉토리명.
-const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
+const PRUNE_DIRS: &[&str] = &[
+    "target",
+    "dist",
+    ".worktree",
+    ".git",
+    "node_modules",
+    "_site",
+];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
 /// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다.
@@ -231,10 +255,112 @@ fn scan_pairs(line: &str) -> Vec<(String, Vec<String>)> {
     out
 }
 
-/// 스캔 대상 `.md` 를 모은다.
+/// 순회에서 빼는 바이너리·산출물 확장자. 선례는
+/// `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` 의 같은 이름 상수다.
+const SKIP_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "icns", "pdf", "ttf", "otf", "woff", "woff2", "zip",
+    "gz", "xz", "tar", "wasm", "bin", "so", "dylib", "dll", "exe", "sig", "lock", "svg",
+];
+
+/// 파일 하나가 스캔 대상인가 — 바이너리·산출물 확장자만 뺀다(denylist 전수).
+fn is_scan_target(name: &str) -> bool {
+    let ext = name
+        .trim_start_matches('.')
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase());
+    match ext {
+        Some(e) => !SKIP_EXTS.contains(&e.as_str()),
+        None => true,
+    }
+}
+
+/// 확장자·파일명 → 그 언어의 줄 주석 접두. 목록에 없는 형식은 **판정하지 않는다**
+/// — 주석 문법을 모르면 산문과 데이터를 가를 수 없고, 못 가르면 데이터를 인용으로
+/// 읽어 거짓 빨강을 만든다.
+fn comment_prefixes(rel: &str) -> Option<&'static [&'static str]> {
+    let name = rel.rsplit('/').next().unwrap_or("");
+    let ext = name
+        .trim_start_matches('.')
+        .rsplit_once('.')
+        .map(|(_, e)| e);
+    match ext {
+        Some("rs") => Some(&["//"]),
+        Some("toml" | "sh" | "bash" | "yml" | "yaml" | "py" | "just") => Some(&["#"]),
+        Some("lua") => Some(&["--"]),
+        None if matches!(name, "Justfile" | "justfile" | "pre-commit" | "pre-push") => Some(&["#"]),
+        _ => None,
+    }
+}
+
+/// 판정할 줄을 고른다.
+///
+/// **`.md` 는 본문 전체가 산문이고, 소스는 주석만이 산문이다.** 코드가 만드는 문자열
+/// 안의 경로는 그 코드의 입력이지 읽는 사람에게 준 좌표가 아니다 — 컴파일러 에러
+/// 정규식이 드는 가짜 소스 이름, 워크플로 파서의 픽스처 이름, 생성 HTML 의 `href`
+/// 웹 경로가 전부 그 부류다. 실측으로 그 셋이 위반의 대부분이었다.
+///
+/// **이 주석 자신이 그 함정이다** — 예시를 레포 경로 꼴로 적으면 이 가드가 자기
+/// 설명을 인용으로 읽는다. 그래서 여기서는 형태로 든다.
+fn citation_lines<'a>(rel: &str, contents: &'a str) -> Vec<(usize, &'a str)> {
+    let lines = prose_lines(contents);
+    if rel.ends_with(".md") {
+        return lines;
+    }
+    let Some(prefixes) = comment_prefixes(rel) else {
+        return Vec::new();
+    };
+    lines
+        .into_iter()
+        .filter(|(_, l)| {
+            let t = l.trim_start();
+            prefixes.iter().any(|p| t.starts_with(p))
+        })
+        .collect()
+}
+
+/// 면제 — **(파일, 인용) 짝 단위**다. 파일 통째를 빼면 그 파일이 새로 들이는 진짜
+/// 죽은 좌표까지 조용히 통과한다.
+///
+/// 두 부류만 있다. ① 그 인용이 **예시**인 자리 — 가드·파서가 설명을 위해 지어낸
+/// 이름이라 실재하면 오히려 이상하다. ② 그 인용이 **빌드가 만드는 산출물**인 자리 —
+/// 소스 트리에는 없는 것이 정상이다.
+const ALLOWLIST: &[(&str, &str)] = &[
+    // ① 예시 — 워크플로 파싱 설명이 지어낸 가드 이름.
+    (
+        "crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs",
+        "tests/X.rs",
+    ),
+    // ① 예시 — 규칙 본문이 "이렇게 적으면 안 된다" 로 드는 이름.
+    (
+        "crates/tasty-doc-guards/tests/no_todo_file_citation.rs",
+        "docs/CLAUDE.md",
+    ),
+    // ① 예시 — 컴파일러 에러 줄 정규식의 샘플 입력.
+    ("crates/tasty-output/src/parsers/errors.rs", "src/foo.c"),
+    ("crates/tasty-output/src/parsers/errors.rs", "src/foo.ts"),
+    // ① 예시 — 터미널 링크 검출 설명이 드는 가상의 크레이트.
+    ("src/adapters/ui/terminal_link.rs", "crates/x/Cargo.toml"),
+    // ② 산출물 — 이 스크립트가 만들어 내는 공개키.
+    (
+        "scripts/gen-dev-key.sh",
+        "crates/tasty-host-plugin/keys/dev-pubkey.bin",
+    ),
+    // ② 산출물 — Pages 워크플로가 생성기 실행 전에 써 넣는다.
+    ("site/src/main.rs", "site/release.json"),
+];
+
+fn is_allowed(rel: &str, cited: &str) -> bool {
+    ALLOWLIST.contains(&(rel, cited))
+}
+
+/// 스캔 대상 파일을 모은다.
 fn gather(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
-        if path.extension().is_some_and(|e| e == "md") {
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(is_scan_target)
+        {
             out.push(path.to_path_buf());
         }
         return;
@@ -332,14 +458,17 @@ fn cited_repo_paths_resolve() {
     let docs = docs_of(root);
     assert!(
         !docs.is_empty(),
-        "스캔 대상 .md 가 0 이다 — 순회 경로가 틀어졌다"
+        "스캔 대상 파일이 0 이다 — 순회 경로가 틀어졌다"
     );
 
     let mut judged = 0usize;
     let mut violations = Vec::new();
     for (rel, contents) in &docs {
-        for (line_no, line) in prose_lines(contents) {
+        for (line_no, line) in citation_lines(rel, contents) {
             for cited in scan_paths(line) {
+                if is_allowed(rel, &cited) {
+                    continue;
+                }
                 judged += 1;
                 if resolve(root, rel, &cited).is_none() {
                     violations.push(format!("  {rel}:{line_no} — `{cited}`"));
@@ -348,7 +477,7 @@ fn cited_repo_paths_resolve() {
         }
     }
     assert!(
-        judged > 100,
+        judged > 2500,
         "판정한 경로 인용이 {judged} 개뿐이다 — 검출기가 죽었을 때도 이 테스트는 초록이 \
          되므로 모수를 함께 본다"
     );
@@ -358,7 +487,8 @@ fn cited_repo_paths_resolve() {
          보이지만 따라갈 곳이 없다. 판정 {judged} 회 중 {} 회:\n{}\n\
          고치는 법: (a) 옮겨졌으면 현재 경로로, (b) 남의 저장소 경로면 크레이트 이름을 \
          앞에 붙여(`egui/src/style.rs`) 우리 경로 형태에서 빼고, (c) 생성물이거나 실재한 \
-         적이 없으면 경로 인용 대신 서술로 적는다. 예외 목록은 두지 않는다 — 형태를 \
+         적이 없으면 경로 인용 대신 서술로 적는다. 면제는 [`ALLOWLIST`] 에 **(파일, 인용) \
+         짝**으로만 두고, 그 두 부류(예시 · 빌드 산출물) 밖은 형태를 \
          고치면 부류가 닫힌다.",
         violations.len(),
         violations.join("\n")
@@ -372,7 +502,7 @@ fn cited_repo_directories_resolve() {
     let mut judged = 0usize;
     let mut violations = Vec::new();
     for (rel, contents) in &docs {
-        for (line_no, line) in prose_lines(contents) {
+        for (line_no, line) in citation_lines(rel, contents) {
             for cited in scan_dirs(line) {
                 judged += 1;
                 if resolve_dir(root, rel, &cited).is_none() {
@@ -382,7 +512,7 @@ fn cited_repo_directories_resolve() {
         }
     }
     assert!(
-        judged > 50,
+        judged > 300,
         "판정한 디렉토리 인용이 {judged} 개뿐이다 — 검출기가 죽었을 때도 초록이 되므로 \
          모수를 함께 본다"
     );
@@ -405,6 +535,9 @@ fn names_paired_with_a_file_live_in_that_file() {
     let mut violations = Vec::new();
 
     for (rel, contents) in &docs {
+        if !rel.ends_with(".md") {
+            continue;
+        }
         for (line_no, line) in prose_lines(contents) {
             for (name, cited_paths) in scan_pairs(line) {
                 let resolved: Vec<PathBuf> = cited_paths
@@ -666,6 +799,9 @@ fn cited_markdown_links_resolve_from_their_own_document() {
         if LINK_EXEMPT_DOCS.contains(&rel.as_str()) {
             continue;
         }
+        if !rel.ends_with(".md") {
+            continue;
+        }
         for (line_no, line) in prose_lines(contents) {
             for target in scan_links(line) {
                 checked += 1;
@@ -753,4 +889,78 @@ fn a_link_is_resolved_next_to_the_document_that_cites_it() {
 /// 되는데 목록에는 "여기는 안 풀려도 된다" 는 신호가 남는다.
 fn root_has(rel: &str) -> bool {
     tasty_doc_guards::repo_root().join(rel).is_file()
+}
+
+/// `.md` 는 본문 전체가, 소스는 주석만이 판정 대상이다.
+#[test]
+fn only_comment_lines_of_a_source_file_are_read_as_citations() {
+    let src = "//! 좌표는 `src/a.rs` 다.\nlet re = \"src/b.rs\";\n// 그리고 `src/c.rs`.\n";
+    let picked: Vec<&str> = citation_lines("crates/x/src/lib.rs", src)
+        .into_iter()
+        .map(|(_, l)| l)
+        .collect();
+    assert_eq!(picked.len(), 2, "주석 두 줄만 골라야 한다: {picked:?}");
+    assert!(picked.iter().all(|l| l.trim_start().starts_with("//")));
+
+    // 같은 내용을 `.md` 로 주면 코드 줄까지 산문이다.
+    assert_eq!(citation_lines("docs/x.md", src).len(), 3);
+}
+
+/// 주석 문법을 모르는 형식은 **판정하지 않는다.** 모르는 채로 훑으면 데이터를
+/// 인용으로 읽어 거짓 빨강이 된다.
+#[test]
+fn a_format_whose_comment_syntax_is_unknown_is_not_judged() {
+    assert!(comment_prefixes("crates/x/src/lib.rs").is_some());
+    assert!(comment_prefixes("Cargo.toml").is_some());
+    assert!(comment_prefixes("scripts/x.sh").is_some());
+    assert!(comment_prefixes(".githooks/pre-commit").is_some());
+    assert!(comment_prefixes("site/index.html").is_none());
+    assert!(citation_lines("site/index.html", "<img src=\"assets/x.svg\">").is_empty());
+}
+
+/// 순회가 바이너리·산출물을 빼고 확장자 없는 파일은 담는가.
+#[test]
+fn the_traversal_skips_binaries_and_keeps_extensionless_files() {
+    assert!(is_scan_target("lib.rs"));
+    assert!(is_scan_target("Justfile"));
+    assert!(is_scan_target(".gitignore"));
+    assert!(!is_scan_target("icon.png"));
+    assert!(!is_scan_target("tasty-plugin.toml.sig"));
+    assert!(!is_scan_target("Cargo.lock"));
+}
+
+/// **면제 목록은 썩는다.** 가리키던 자리가 고쳐지거나 사라져도 항목은 남고, 남은
+/// 항목은 그 파일이 나중에 들이는 진짜 죽은 좌표를 조용히 덮는다. 그래서 항목마다
+/// ① 파일이 실재하고 ② 그 인용이 실제로 그 파일에서 나오고 ③ 지금도 안 풀리는지를
+/// 함께 본다 — 셋 중 하나라도 아니면 그 항목은 지워야 한다.
+#[test]
+fn every_allowlist_entry_still_fires() {
+    let root = &tasty_doc_guards::repo_root();
+    assert!(
+        !ALLOWLIST.is_empty(),
+        "면제 목록이 비었다 — 이 테스트가 아무것도 안 본다"
+    );
+    let mut stale = Vec::new();
+    for (rel, cited) in ALLOWLIST {
+        let Ok(contents) = std::fs::read_to_string(root.join(rel)) else {
+            stale.push(format!("  {rel} — 파일이 없다"));
+            continue;
+        };
+        let emitted = citation_lines(rel, &contents)
+            .iter()
+            .any(|(_, line)| scan_paths(line).iter().any(|c| c == cited));
+        if !emitted {
+            stale.push(format!("  {rel} — `{cited}` 가 더는 나오지 않는다"));
+            continue;
+        }
+        if resolve(root, rel, cited).is_some() {
+            stale.push(format!("  {rel} — `{cited}` 가 이제 실재한다"));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "면제 항목이 낡았다 — 지워라. {} 건:\n{}",
+        stale.len(),
+        stale.join("\n")
+    );
 }

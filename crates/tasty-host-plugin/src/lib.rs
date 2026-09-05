@@ -1,8 +1,8 @@
 //! Tasty plugin manager — 호스트 측 lifecycle/IPC routing/manifest registry.
 //!
-//! 본 crate 는 본 바이너리 `src/adapters/plugin/` 의 manager / handle_channel /
-//! process / listener / protocol / discovery / builtin / event_bus 등 다수
-//! 모듈을 흡수했다. host 본 바이너리 결합은 6 개 host_port trait
+//! 본 crate 가 manager / handle_channel / process / listener / protocol /
+//! discovery / builtin / event_bus 를 들고 있다 — 본 바이너리에 흩어져 있던 것을
+//! 흡수해 온 것이고, 그쪽에는 더 이상 남아 있지 않다. host 본 바이너리 결합은 6 개 host_port trait
 //! (SurfaceRegistry / FileFormatRegistryPort / FileHandlerRegistryPort /
 //! I18nNamespaceRegistrar / IpcHostFacade) + plugin_bridge/ 잔존 5 모듈로 격리.
 
