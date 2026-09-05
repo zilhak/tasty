@@ -19,6 +19,8 @@
 
 **바이너리 선택은 `spawn_diag::instance_bin()` 한 곳에서 한다.** 두 하네스(`tests/common`·`tests/webhook_common`)와 웹훅 CLI 러너가 모두 이 함수를 거친다 — 하네스마다 다른 바이너리를 고르면 같은 완주 안에서 클라이언트와 서버가 다른 빌드가 될 수 있다.
 
+**그 안에서 판정은 스위트 단위다** — `spawn_diag::daemon_kind()`. 인스턴스를 띄우는 스위트 중 **조합 의존 단언을 가진 것만** 자기 조합의 데몬을 요구하고(`DaemonKind::SameCombo`), 나머지는 헤드리스 데몬으로 충분하다(`HeadlessOk`). 명부는 `HEADLESS_OK_SUITES` 한 곳이고, 그것이 `EXPECTED_INSTANCE_TESTS` 와 갈리지 않는 것은 `tests/e2e_single_instance_guard.rs` 가 **양방향으로** 본다(분류 안 된 스위트 / 명부에만 있는 이름). 분류를 안 하면 안전한 쪽인 `SameCombo` 로 떨어진다 — 놓치면 최적화를 잃을 뿐 틀린 빨강은 안 난다.
+
 **로컬 탈출구 — `TASTY_E2E_BIN`.** 워크트리 여러 개가 같은 GPU 를 다투는 상황에서 IPC 전용 스위트를 GPU 밖으로 뺄 수 있다. 미리 빌드해 둔 headless 바이너리의 경로를 주면 하네스가 그것을 띄운다.
 
 ```
@@ -50,9 +52,9 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 
 **이 탈출구의 바이너리를 CI 산출물과 같다고 전제하지 마라.** 위 절차는 `--workspace` 없이 빌드한다. 워크스페이스 feature 통합은 root 패키지까지 닿아서, `--workspace` 유무만 다르게 두 번 빌드하면 root 바이너리의 cksum 이 갈린다(실측). 번들을 따로 복사하므로 이 스위트들의 판정에는 영향이 없지만, **바이너리 동일성을 전제로 하는 판정**(재현 빌드 비교 등)에는 쓰지 마라.
 
-**★ 이 탈출구는 CI 가 통과시키는 테스트도 깨뜨린다 — 조합이 교차하기 때문이다.** `TASTY_E2E_BIN` 은 **데몬만** 다른 조합으로 바꾼다. 테스트 바이너리는 여전히 자기 조합으로 컴파일돼 있어서, 데몬의 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 그 단언이 **구조적으로 뒤집힌다**. `tests/e2e_tests.rs` 의 `..._answers_in_both_combos` 계열이 그 형태다 — gui 로 컴파일된 쪽이 "gui 는 이 메서드에 답한다" 를 단언하는데 상대는 headless 데몬이라 `-32601` 이 온다.
+**★ 조합 교차는 스위트 단위 판정으로 닫혔다.** `TASTY_E2E_BIN` 은 **데몬만** 다른 조합으로 바꾼다. 테스트 바이너리는 여전히 자기 조합으로 컴파일돼 있어서, 데몬의 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 그 단언이 **구조적으로 뒤집힌다** — `tests/e2e_tests.rs` 의 `..._answers_in_both_combos` 계열이 그 형태다. 그래서 **그런 단언을 가진 스위트는 override 를 받지 않는다**(`daemon_kind()`). override 를 켜도 `e2e_tests` 는 자기 조합의 데몬을 그대로 띄우고, GPU 부팅을 건너뛰는 것은 나머지 스위트다.
 
-실측(2026-09-05, 인스턴스 11 스위트를 gui 테스트 바이너리 + headless 데몬으로): 스위트 단위 **10 / 11 통과**, `e2e_tests` 만 30 passed / 5 failed. 그 5 중 **4 건이 조합 교차**이고(`an_engine_query_that_reads_no_window_answers_in_both_combos` · `app_layer_methods_that_need_no_window_answer_in_both_combos` · `debug_surfaces_that_read_no_window_answer_in_both_combos` · `a_request_naming_an_unowned_target_is_rejected`), 나머지 1 건이 `multi_window_owner_routing`(실제 창). **앞의 4 건은 동종 조합에서는 양쪽 다 통과한다** — CI headless 잡이 `--skip` 하지 않고 통과시키는 것이 그 증거다. 즉 이 4 건은 제품 결함도 headless 미배선도 아니고 **탈출구 자신의 대가**다. 아래 `--skip` 목록과 혼동하지 마라: 저것은 조합과 무관하게 빠지는 것들이고, 이것은 조합을 교차시켰을 때만 생긴다.
+그 판정의 근거가 된 실측(2026-09-05, 스위트 단위 판정을 넣기 **전**, 인스턴스 11 스위트를 gui 테스트 바이너리 + headless 데몬으로): 스위트 단위 **10 / 11 통과**, `e2e_tests` 만 30 passed / 5 failed. 그 5 중 **4 건이 조합 교차**이고(`an_engine_query_that_reads_no_window_answers_in_both_combos` · `app_layer_methods_that_need_no_window_answer_in_both_combos` · `debug_surfaces_that_read_no_window_answer_in_both_combos` · `a_request_naming_an_unowned_target_is_rejected`), 나머지 1 건이 `multi_window_owner_routing`(실제 창). **앞의 4 건은 동종 조합에서는 양쪽 다 통과한다** — CI headless 잡이 `--skip` 하지 않고 통과시키는 것이 그 증거다. 즉 이 4 건은 제품 결함도 headless 미배선도 아니고 **탈출구 자신의 대가**였다 — 지금은 `e2e_tests` 가 override 를 안 받으므로 나지 않는다. `multi_window_owner_routing` 도 같은 이유로 함께 해소된다. 아래 `--skip` 목록과 혼동하지 마라: 저것은 조합과 무관하게 빠지는 것들이고, 이것은 조합을 교차시켰을 때만 생긴다.
 
 **override 로도 통과하지 않는 스위트가 있다.** headless 데몬은 GUI 바이너리와 IPC 표면이 다르다 — 실제 창이 검증 대상인 스위트, 그리고 headless 에 아직 배선되지 않은 경로에 의존하는 스위트가 그렇다. 어느 것이 왜 빠지는지는 `.github/workflows/crossplatform-check.yml` 의 headless 스텝 주석이 `--skip` 목록과 함께 사유를 적어 둔다 — **여기 복제하지 않는다**(사유가 갈리면 어느 쪽이 정본인지 알 수 없게 된다).
 

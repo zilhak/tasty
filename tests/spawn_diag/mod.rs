@@ -98,25 +98,91 @@ pub fn init_test_tracing() {
 /// IPC 표면 차이로 오독된다. 그래서 override 절차는 레포 안 target + `--workspace` 둘 다를
 /// 요구한다 (`docs/dev-guide/e2e-tests.md` §0-1 — 세 팔 실측표가 두 조건을 따로 가른다).
 ///
-/// **함정 4**: 이 override 는 **데몬만** 조합을 바꾼다. 테스트 바이너리는 자기 조합으로
-/// 컴파일된 채라, 데몬 동작을 `cfg(feature = "gui")` 로 갈라 단언하는 테스트는 단언이
-/// 뒤집힌다. 동종 조합에서는 양쪽 다 통과하는 테스트가 여기서만 깨진다 — 제품 결함으로
-/// 읽지 마라 (§0-1 "조합이 교차하기 때문이다").
+/// **함정 4 (닫혔다)**: 이 override 는 **데몬만** 조합을 바꾼다. 테스트 바이너리는
+/// 자기 조합으로 컴파일된 채라, 데몬 동작을 `cfg(feature = "gui")` 로 갈라 단언하는
+/// 테스트는 단언이 구조적으로 뒤집힌다. 그래서 **그런 단언을 가진 스위트는 override 를
+/// 받지 않는다** — [`daemon_kind`] 가 스위트별로 가르고, `e2e_tests` 가 그 하나다.
+/// 실측 2026-09-05(닫기 전): gui 테스트 바이너리 + 헤드리스 데몬으로 11 스위트를 돌려
+/// `e2e_tests` 만 5 건 깨졌고, 그중 4 건이 조합 교차였다. 지금은 그 스위트가 자기
+/// 조합의 데몬을 그대로 띄우므로 그 4 건이 나지 않는다.
 ///
 /// 존재하지 않는 경로를 주면 spawn 이 "그냥 실패" 하는 대신 **여기서** 죽는다 —
 /// 30 초를 기다린 뒤 port file 미작성으로 오진되는 것을 막는다.
 pub fn instance_bin() -> std::ffi::OsString {
     let from_env = std::env::var_os(INSTANCE_BIN_ENV);
-    let resolved = resolve_instance_bin(from_env.as_deref(), env!("CARGO_BIN_EXE_tasty"));
-    if from_env.is_some() && !std::path::Path::new(&resolved).is_file() {
+    // 경로 검증은 **이 스위트가 override 를 쓰든 안 쓰든** 한다. 오타를 쓴 사람은
+    // 어느 스위트를 돌리든 그 자리에서 알아야 하고, 안 그러면 "왜 안 듣지" 가 된다.
+    if let Some(v) = from_env.as_deref()
+        && !v.is_empty()
+        && !std::path::Path::new(v).is_file()
+    {
         panic!(
             "{INSTANCE_BIN_ENV} 가 가리키는 경로에 실행 파일이 없다: {}\n\
              별도 CARGO_TARGET_DIR 로 빌드한 산출물의 절대경로여야 한다 — \
              docs/dev-guide/e2e-tests.md",
-            resolved.to_string_lossy()
+            std::path::Path::new(v).display()
         );
     }
-    resolved
+    let effective = match daemon_kind() {
+        // 조합 의존 단언을 가진 스위트는 override 를 **안 받는다** — 아래 함정 4 참조.
+        DaemonKind::SameCombo => None,
+        DaemonKind::HeadlessOk => from_env,
+    };
+    resolve_instance_bin(effective.as_deref(), env!("CARGO_BIN_EXE_tasty"))
+}
+
+/// 이 스위트가 어떤 데몬을 원하는가.
+///
+/// 두 값의 차이는 **조합 의존 단언을 가지는가** 하나다. 가진 스위트는 데몬이
+/// 테스트 바이너리와 같은 조합이어야 그 단언이 뜻을 갖고, 안 가진 스위트는
+/// 헤드리스 데몬으로 충분하다 — 그리고 그러면 그 스위트는 GUI 부팅을 통째로
+/// 건너뛴다(창 + wgpu 디바이스 + boot 상태기계).
+pub enum DaemonKind {
+    /// 데몬이 **테스트 바이너리와 같은 조합**이어야 한다. override 를 무시한다.
+    SameCombo,
+    /// IPC / attach 스트림만 쓴다 — 헤드리스 데몬으로 충분하다.
+    HeadlessOk,
+}
+
+/// 인스턴스를 띄우는 스위트 중 **헤드리스 데몬으로 충분한 것들.**
+///
+/// 여기 없는 스위트는 [`DaemonKind::SameCombo`] 로 떨어진다 — **모르는 것은 안전한
+/// 쪽으로 보낸다.** 새 스위트가 조합 의존 단언을 갖고 들어왔는데 목록이 기본으로
+/// 헤드리스면 override 를 켠 사람에게 **틀린 빨강**이 가지만, 반대 방향의 누락은
+/// "최적화를 놓친다" 로 끝난다. 두 오류가 비대칭이라 기본값을 이쪽으로 둔다.
+///
+/// 명부가 `EXPECTED_INSTANCE_TESTS` 와 어긋나지 않는 것은
+/// `tests/e2e_single_instance_guard.rs` 가 본다.
+const HEADLESS_OK_SUITES: &[&str] = &[
+    "attach_attention_loopback",
+    "attach_convert_cwd_loopback",
+    "attach_git_query_loopback",
+    "attach_list_dir_loopback",
+    "attach_local_creation_tap",
+    "attach_silent_disconnect",
+    "hook_env_integration",
+    "hooks_detection_e2e",
+    "shared_instance_harness",
+    "soak_memory",
+    "webhook_integration",
+];
+
+/// 이 스위트의 판정. `CARGO_CRATE_NAME` 은 통합 테스트에서 **test 타깃 이름**으로
+/// 확장되고(실측), 이 모듈은 각 테스트 바이너리에 함께 컴파일되므로 스위트마다
+/// 다른 값이 된다.
+///
+/// **`e2e_tests` 만 [`DaemonKind::SameCombo`] 다.** 실측 2026-09-05: 인스턴스를 띄우는
+/// 11 스위트 중 `cfg(feature = "gui")` 계열 사이트를 가진 것은 `e2e_tests.rs` 하나였고
+/// (10 사이트), 나머지 10 개는 각 0 이었다. 실행 쪽 확인도 있다 —
+/// `docs/dev-guide/e2e-tests.md` §0-1 이 gui 테스트 바이너리 + 헤드리스 데몬으로
+/// 11 스위트를 돌려 10 개가 통과하고 `e2e_tests` 만 깨진 것을 기록해 두었다.
+/// `gui_tests` 는 애초에 이 경로를 안 쓴다(`BIN_SELECTION_ALLOWLIST`).
+pub fn daemon_kind() -> DaemonKind {
+    if HEADLESS_OK_SUITES.contains(&env!("CARGO_CRATE_NAME")) {
+        DaemonKind::HeadlessOk
+    } else {
+        DaemonKind::SameCombo
+    }
 }
 
 /// [`instance_bin`] 의 선택 규칙만 떼어낸 것 — 환경변수를 건드리지 않고 시험할 수

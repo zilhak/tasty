@@ -374,3 +374,63 @@ fn both_allowlists_point_at_test_files_that_exist() {
         "면제가 없는 테스트 파일을 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 지워라: {missing:?}"
     );
 }
+
+/// 네 번째 축 — **스위트별 데몬 판정의 명부가 이 파일의 명부와 갈리지 않는가.**
+///
+/// `tests/spawn_diag/mod.rs` 의 `HEADLESS_OK_SUITES` 는 "인스턴스를 띄우는 파일이
+/// 무엇인가" 를 아는 **두 번째 자리**다. 이 파일 모듈 doc 이 축 ③을 여기 둔 이유가
+/// 그대로 적용된다 — 그 자리가 둘이 되면 둘이 갈리고, 갈린 쪽은 조용하다.
+/// 오타 난 이름은 명부에 없는 것으로 취급돼 `SameCombo` 로 떨어지므로 **아무 에러 없이
+/// 최적화만 사라진다.**
+///
+/// 그래서 **양방향으로 본다**: 명부에 없는 인스턴스 스위트가 있으면(=분류를 안 했다)
+/// 실패하고, 명부에만 있고 실재하지 않는 이름이 있어도(=오타·이름 변경) 실패한다.
+/// 한쪽만 보면 늘어나는 것과 썩는 것 중 하나를 놓친다.
+#[test]
+fn daemon_kind_roster_matches_instance_test_roster() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src = std::fs::read_to_string(root.join("tests/spawn_diag/mod.rs"))
+        .expect("spawn_diag 를 읽을 수 있어야 한다");
+    let body = src
+        .split_once("const HEADLESS_OK_SUITES: &[&str] = &[")
+        .and_then(|(_, rest)| rest.split_once("];"))
+        .map(|(body, _)| body)
+        .expect("HEADLESS_OK_SUITES 명부를 못 찾았다 — 이름이 바뀌었으면 이 가드도 함께 고쳐라");
+    let headless_ok: BTreeSet<String> = body
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect();
+
+    // 조합 의존 단언을 가져 자기 조합의 데몬이 필요한 것들. `gui_tests` 는 이 경로를
+    // 아예 안 쓰지만(BIN_SELECTION_ALLOWLIST) 데몬이 gui 여야 하는 것은 같다.
+    let same_combo: BTreeSet<String> = ["e2e_tests", "gui_tests"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+
+    let instance_suites: BTreeSet<String> = EXPECTED_INSTANCE_TESTS
+        .iter()
+        .map(|p| {
+            Path::new(p)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+
+    let classified: BTreeSet<String> = headless_ok.union(&same_combo).cloned().collect();
+    let unclassified: Vec<&String> = instance_suites.difference(&classified).collect();
+    let stale: Vec<&String> = classified.difference(&instance_suites).collect();
+
+    assert!(
+        unclassified.is_empty() && stale.is_empty(),
+        "스위트별 데몬 판정 명부가 EXPECTED_INSTANCE_TESTS 와 갈렸다. 새 인스턴스 스위트는 \
+         `spawn_diag::HEADLESS_OK_SUITES` 에 넣거나(IPC/attach 만 쓴다) 조합 의존 단언이 \
+         있으면 이 테스트의 same_combo 에 넣어라 — 분류를 안 하면 안전한 쪽(SameCombo)으로 \
+         떨어져 GPU 부팅을 계속 탄다. 원칙: {DOC}\n\
+         \x20 분류 안 된 스위트: {unclassified:?}\n\x20 명부에만 있는 이름: {stale:?}"
+    );
+}
