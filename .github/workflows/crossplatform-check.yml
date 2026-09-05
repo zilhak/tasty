@@ -200,6 +200,17 @@ jobs:
       - name: cargo clippy (headless)
         run: cargo clippy --workspace --all-targets --no-default-features --locked
 
+      # 이 러너의 디스크는 아무 데도 안 보인다. 자기 머신에서 잰 값은 대신 못 쓴다 —
+      # 이 잡이 그 러너에서 가장 큰 `target/` 을 소유하므로 여기서 재는 것이 맞다.
+      # `continue-on-error` 로 두는 이유: 이 줄은 진단이지 게이트가 아니다. 여기서
+      # 실패해 잡을 빨갛게 만들면 그 빨강이 컴파일·테스트의 빨강을 가린다.
+      - name: disk (diagnostic)
+        continue-on-error: true
+        run: |
+          df -h .
+          du -sh target 2>/dev/null || echo "target 없음"
+          du -sh ~/.cargo 2>/dev/null || true
+
   # not-debug(release) 컴파일 정합성과 Linux gui(default feature) 컴파일의 **유일한 자동
   # 채널**이다. 한 스텝이 지금 아무 잡도 안 보던 두 사각을 함께 닫는다:
   #  ① not-debug 컴파일 — 쓰는 자리가 cfg(debug_assertions) 안이라 release 에서 사라지는
