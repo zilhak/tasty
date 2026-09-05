@@ -28,3 +28,39 @@ sandbox_hint = "⚠ sandbox init appears to have failed (RTM_NEWADDR detected) �
 
 [codex.reboot]
 notice = "tasty codex reboot: this session was restarted by tasty's reboot feature (codex resume resumes the same session). The previous turn may have been cut off — check the last work state before continuing."
+malformed_session_id = "surface {surface} has malformed codex-session-id meta: {value}"
+screen_unreadable = "cannot read the screen of surface {surface}"
+lock_poisoned = "reboot in-flight lock poisoned: {detail}"
+already_in_progress = "reboot already in progress for surface {surface}"
+spawn_thread_failed = "failed to spawn the reboot thread: {detail}"
+no_active_session = "no active codex session on surface {surface} (codex-session-id meta not set — are tasty hooks installed and trusted? run `tasty codex install`, then approve via /hooks in codex)"
+missing_surface = "Missing required 'surface' parameter"
+surface_not_a_number = "'surface' was given as {raw} — it must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated id names a different, possibly real, target"
+
+[codex.params]
+missing = "Missing required '{key}' parameter"
+not_a_number = "'{key}' was given as {raw} — it must be a whole number that fits in 32 bits. Refusing rather than truncating it: a truncated id names a different, possibly real, target"
+invalid_choice = "invalid '{flag}' value '{value}' (expected one of: {valid})"
+full_auto_conflict = "'full_auto' cannot be combined with 'approval'/'sandbox' — it already bypasses both"
+missing_message = "Missing required 'message' parameter"
+missing_text = "Missing required 'text' parameter"
+missing_event = "Missing required 'event' parameter"
+
+[codex.hook]
+requires_surface = "hook requires --surface to identify the child"
+unknown_event = "unknown hook event '{event}' (supported: stop, prompt-submit, session-start)"
+
+[codex.launch]
+workspace_create_missing_id = "host workspace.create response is missing 'id': {resp}"
+
+[codex.spawn]
+missing_child_surface_id = "host terminal.spawn response is missing 'child_surface_id': {resp}"
+
+[codex.respawn]
+missing_child_surface_id = "host terminal.respawn response is missing 'child_surface_id': {resp}"
+
+[codex.install]
+mkdir_failed = "could not create the codex config directory: {detail}"
+no_home = "HOME is not set — cannot locate ~/.codex/config.toml"
+encode_failed = "could not encode the codex config as TOML: {detail}"
+write_failed = "could not write the codex config file: {detail}"

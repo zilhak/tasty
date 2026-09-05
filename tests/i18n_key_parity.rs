@@ -556,14 +556,81 @@ fn brace_counts(line: &str) -> (i32, i32) {
     (opens, closes)
 }
 
-/// 한 줄에서 `t("k")` / `t_fmt("k", ..)` / `t_fmt2("k", ..)` / `t_args("k", ..)` 의
-/// 리터럴 키를 전부 뽑는다. 함수명 앞은 식별자 문자가 아니어야 한다(`fmt(` / `not(` 배제).
-fn literal_keys(line: &str) -> Vec<String> {
-    const CALLS: &[&str] = &["t_fmt2(", "t_fmt(", "t_args(", "t("];
+/// 번역 진입점 이름을 **소스에서 도출한다** — host 자유 함수(`tasty-i18n`)와 plugin 쪽
+/// `Translator` 메서드(`tasty-plugin-sdk`) 양쪽.
+///
+/// 손으로 적은 목록으로 두면 **진입점을 하나 더 만드는 커밋이 이 스캔을 조용히 눈멀게
+/// 한다.** 실제로 그랬다: 목록이 `t` / `t_fmt` / `t_fmt2` / `t_args` 넷이라 SDK 의
+/// `t_replace` 와 host 의 `t_fmt_fit` 로 적힌 키는 이 검사를 통과했고, 그 자리에
+/// 오타를 넣어도 초록이었다(변이로 확인). 오타난 키는 `Translator` 가 **키 문자열을
+/// 그대로 돌려주므로** 사용자 화면에 `codex.reboot.screen_unreadableX` 가 나간다.
+fn translation_entry_points() -> BTreeSet<String> {
+    const SOURCES: &[&str] = &[
+        "crates/tasty-i18n/src/lib.rs",
+        "crates/tasty-plugin-sdk/src/i18n.rs",
+    ];
+    let mut out = BTreeSet::new();
+    for rel in SOURCES {
+        let path = root().join(rel);
+        let text =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{rel} 을 못 읽었다: {e}"));
+        for line in text.lines() {
+            let Some(after) = line.trim_start().strip_prefix("pub fn ") else {
+                continue;
+            };
+            let name: String = after
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            // 번역 진입점은 전부 `t` 로 시작하고 첫 인자가 key 다.
+            if name == "t" || name.starts_with("t_") {
+                out.insert(name);
+            }
+        }
+    }
+    out
+}
+
+/// 진입점 수의 하한 — 도출이 0 건이면 아래 스캔이 아무 키도 못 찾고 조용히 통과한다.
+/// 값의 근거: 2026-09-05 실측 6(`t` · `t_args` · `t_fmt` · `t_fmt2` · `t_fmt_fit` ·
+/// `t_replace`).
+const MIN_ENTRY_POINTS: usize = 5;
+
+/// 도출이 살아 있다 — 진입점을 하나도 못 찾으면 이 파일의 소스 스캔 전체가 무의미하다.
+#[test]
+fn the_entry_point_derivation_is_alive() {
+    let found = translation_entry_points();
+    assert!(
+        found.len() >= MIN_ENTRY_POINTS,
+        "번역 진입점을 {} 개밖에 못 찾았다(하한 {MIN_ENTRY_POINTS}, 2026-09-05 실측 6): \
+         {found:?} — `pub fn t…` 의 형태가 바뀌었으면 도출기를 고쳐라",
+        found.len()
+    );
+    for expected in ["t", "t_fmt", "t_args", "t_replace"] {
+        assert!(
+            found.contains(expected),
+            "`{expected}` 가 도출에서 빠졌다: {found:?}"
+        );
+    }
+}
+
+/// 한 줄에서 번역 진입점의 **리터럴 키**를 전부 뽑는다. 함수명 앞은 식별자 문자가
+/// 아니어야 한다(`fmt(` / `not(` 배제).
+///
+/// `next` 는 **다음 줄**이다 — 인자가 여럿인 호출은 rustfmt 가 여는 괄호에서 줄을
+/// 끊어 키를 다음 줄로 밀어낸다(`tr.t_replace(` 뒤 개행). 한 줄만 보던 판정은 그
+/// 형태를 전부 "동적 키" 로 흘려보냈다. 실측(2026-09-05): 키가 같은 줄에 있는 자리
+/// 1344 · 다음 줄로 밀린 자리 102 — 전체의 7 % 가 안 보이던 셈이다.
+fn literal_keys(line: &str, next: Option<&str>) -> Vec<String> {
+    // 긴 이름부터 본다 — `t(` 를 먼저 찾으면 `t_fmt(` 안의 `t` 를 집는 일은 없지만,
+    // 순서를 고정해 두는 편이 나중에 형태가 늘어도 안전하다.
+    let mut names: Vec<String> = translation_entry_points().into_iter().collect();
+    names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+    let calls: Vec<String> = names.iter().map(|n| format!("{n}(")).collect();
     let mut keys = Vec::new();
-    for call in CALLS {
+    for call in &calls {
         let mut from = 0;
-        while let Some(pos) = line[from..].find(call) {
+        while let Some(pos) = line[from..].find(call.as_str()) {
             let start = from + pos;
             from = start + call.len();
             let preceded_by_ident = line[..start]
@@ -573,7 +640,13 @@ fn literal_keys(line: &str) -> Vec<String> {
             if preceded_by_ident {
                 continue;
             }
-            let rest = line[from..].trim_start();
+            let same_line = line[from..].trim_start();
+            // 여는 괄호에서 줄이 끊겼으면 키는 다음 줄에 있다.
+            let rest = if same_line.is_empty() {
+                next.map(str::trim_start).unwrap_or("")
+            } else {
+                same_line
+            };
             let Some(after_quote) = rest.strip_prefix('"') else {
                 continue; // 변수·format! — 동적 키
             };
@@ -584,6 +657,38 @@ fn literal_keys(line: &str) -> Vec<String> {
         }
     }
     keys
+}
+
+/// 줄바꿈 뒤로 밀린 키를 본다 — 그리고 **동적 키를 리터럴로 오인하지 않는다.**
+///
+/// 뒤엣것이 이 판정의 위험한 쪽이다: 다음 줄을 무조건 읽으면 `t(key_var)` 같은 자리에서
+/// 엉뚱한 줄의 문자열을 키로 집어 존재하지 않는 키를 신고한다(거짓 양성). 그래서
+/// 앞 줄의 인자 자리가 **비었을 때만** 다음 줄을 본다.
+#[test]
+fn a_key_wrapped_to_the_next_line_is_still_seen() {
+    let found = literal_keys(
+        "        return Err(IpcMethodError::new(tr.t_replace(",
+        Some("            \"codex.reboot.screen_unreadable\","),
+    );
+    assert_eq!(
+        found,
+        vec!["codex.reboot.screen_unreadable".to_string()],
+        "여는 괄호에서 줄이 끊긴 호출의 키를 못 봤다"
+    );
+
+    // 같은 줄에 인자가 이미 있으면 다음 줄은 보지 않는다.
+    let dynamic = literal_keys("    tr.t(key_var);", Some("    \"not.a.key\","));
+    assert!(
+        dynamic.is_empty(),
+        "동적 키인데 다음 줄의 문자열을 키로 집었다: {dynamic:?}"
+    );
+
+    // 인자 자리가 비었는데 다음 줄도 리터럴이 아니면 여전히 동적 키다.
+    let still_dynamic = literal_keys("    tr.t(", Some("        key_var,"));
+    assert!(
+        still_dynamic.is_empty(),
+        "다음 줄이 변수인데 키를 만들어 냈다: {still_dynamic:?}"
+    );
 }
 
 #[test]
@@ -604,7 +709,8 @@ fn literal_translation_keys_exist_in_catalog() {
         };
         let rel = rel_of(file);
         let mut tests = TestRegion::default();
-        for (idx, line) in contents.lines().enumerate() {
+        let lines: Vec<&str> = contents.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
             if tests.skip(line) {
                 continue;
             }
@@ -612,7 +718,7 @@ fn literal_translation_keys_exist_in_catalog() {
             if trimmed.starts_with("//") {
                 continue;
             }
-            for key in literal_keys(line) {
+            for key in literal_keys(line, lines.get(idx + 1).copied()) {
                 if known.contains(&key) {
                     continue;
                 }

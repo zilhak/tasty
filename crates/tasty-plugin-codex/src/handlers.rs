@@ -21,10 +21,26 @@ use tasty_plugin_agent_common::params::forward;
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
-/// 응답 매핑 헬퍼: HostHandle::call 결과를 IpcMethodError로 변환.
+/// 번역된 틀에 `{토큰}` 을 채운다. `Translator::t_replace` 는 토큰 하나만 받으므로
+/// 둘 이상인 문구를 위해 둔다 — 호출자가 `.replace` 사슬을 손으로 쓰면 한 토큰을
+/// 빠뜨려도 컴파일이 통과해 `{surface}` 가 그대로 사용자에게 나간다.
+pub(crate) fn t_args(tr: &Translator, key: &str, pairs: &[(&str, &str)]) -> String {
+    let mut out = tr.t(key).to_string();
+    for (token, value) in pairs {
+        out = out.replace(token, value);
+    }
+    out
+}
+
+/// 응답 매핑 헬퍼: `HostHandle::call` 결과를 `IpcMethodError` 로 변환.
+///
+/// **문구를 다시 감싸지 않는다.** `PluginError::HostCall` 의 Display 가 이미
+/// `host call '<method>' failed: <message>` 라, 여기서 같은 틀로 한 번 더 감싸면
+/// 사용자에게 그 접두가 두 번 나간다(실측: `host call 'terminal.tell' failed:
+/// host call 'call#1' failed: no live surface 9999`). 형제 plugin(claude)은
+/// 처음부터 `From` 만 쓴다.
 fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
-    host.call(method, params)
-        .map_err(|e| IpcMethodError::new(format!("host call '{method}' failed: {e}")))
+    host.call(method, params).map_err(IpcMethodError::from)
 }
 
 /// 필수 u32 파라미터를 읽는다 — **없는 것과 잘못된 것을 가른다.**
@@ -36,17 +52,25 @@ fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, Ip
 /// 메시지도 가른다. 키가 아예 없는 것은 호출자가 인자를 빠뜨린 것이고, 값이 왔는데
 /// 안 읽히는 것은 오타이거나 타입이 틀린 것이다 — "missing" 이라고 답하면 호출자가
 /// 자기가 준 값을 안 의심한다.
-fn require_u32(params: &Value, key: &str) -> Result<u32, IpcMethodError> {
+pub(crate) fn require_u32(
+    params: &Value,
+    key: &str,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
     let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
-        return Err(IpcMethodError::invalid_params(&format!("missing '{key}'")));
+        return Err(IpcMethodError::invalid_params(&tr.t_replace(
+            "codex.params.missing",
+            "{key}",
+            key,
+        )));
     };
     raw.as_u64()
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| {
-            IpcMethodError::invalid_params(&format!(
-                "'{key}' was given as {raw} — it must be a whole number that fits in 32 bits. \
-                 Refusing rather than truncating it: a truncated id names a different, \
-                 possibly real, target"
+            IpcMethodError::invalid_params(&t_args(
+                tr,
+                "codex.params.not_a_number",
+                &[("{key}", key), ("{raw}", &raw.to_string())],
             ))
         })
 }
@@ -124,13 +148,23 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>, policy_args: &str) 
 const VALID_APPROVAL_POLICIES: &[&str] = &["untrusted", "on-request", "never"];
 const VALID_SANDBOX_MODES: &[&str] = &["read-only", "workspace-write", "danger-full-access"];
 
-fn validate_choice(flag_name: &str, value: &str, valid: &[&str]) -> Result<(), IpcMethodError> {
+fn validate_choice(
+    flag_name: &str,
+    value: &str,
+    valid: &[&str],
+    tr: &Translator,
+) -> Result<(), IpcMethodError> {
     if valid.contains(&value) {
         Ok(())
     } else {
-        Err(IpcMethodError::invalid_params(&format!(
-            "invalid '{flag_name}' value '{value}' (expected one of: {})",
-            valid.join(", ")
+        Err(IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.invalid_choice",
+            &[
+                ("{flag}", flag_name),
+                ("{value}", value),
+                ("{valid}", &valid.join(", ")),
+            ],
         )))
     }
 }
@@ -171,6 +205,7 @@ fn global_policy_default<H: HostCall>(host: &H, storage_key: &str) -> Option<Str
 pub(crate) fn resolve_policy_args<H: HostCall>(
     host: &H,
     params: &Value,
+    tr: &Translator,
 ) -> Result<String, IpcMethodError> {
     let full_auto = params
         .get("full_auto")
@@ -182,7 +217,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     if full_auto {
         if approval.is_some() || sandbox.is_some() {
             return Err(IpcMethodError::invalid_params(
-                "'full_auto' cannot be combined with 'approval'/'sandbox' — it already bypasses both",
+                tr.t("codex.params.full_auto_conflict"),
             ));
         }
         return Ok("--dangerously-bypass-approvals-and-sandbox".to_string());
@@ -190,7 +225,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
 
     let approval = match approval {
         Some(v) => {
-            validate_choice("approval", &v, VALID_APPROVAL_POLICIES)?;
+            validate_choice("approval", &v, VALID_APPROVAL_POLICIES, tr)?;
             Some(v)
         }
         None => Some(
@@ -200,7 +235,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     };
     let sandbox = match sandbox {
         Some(v) => {
-            validate_choice("sandbox", &v, VALID_SANDBOX_MODES)?;
+            validate_choice("sandbox", &v, VALID_SANDBOX_MODES, tr)?;
             Some(v)
         }
         None => global_policy_default(host, "default_sandbox_mode"),
@@ -216,7 +251,11 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     Ok(parts.join(" "))
 }
 
-pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_launch(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let workspace_name = params
         .get("workspace")
         .and_then(|v| v.as_str())
@@ -238,8 +277,10 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
         .get("id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "workspace.create response missing 'id': {ws_result}"
+            IpcMethodError::new(tr.t_replace(
+                "codex.launch.workspace_create_missing_id",
+                "{resp}",
+                &ws_result.to_string(),
             ))
         })? as u32;
     let surface_id = ws_result
@@ -248,7 +289,7 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let policy_args = resolve_policy_args(host, &params)?;
+        let policy_args = resolve_policy_args(host, &params, tr)?;
         let cmd = make_codex_command(sid, task.as_deref(), &policy_args);
         host_call(
             host,
@@ -264,9 +305,13 @@ pub fn handle_launch(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
     }))
 }
 
-pub fn handle_parent(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_parent(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     // 호스트 registry 가 parent 매핑의 SoT — 그대로 위임.
-    let surface = require_u32(&params, "surface")?;
+    let surface = require_u32(&params, "surface", tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -274,17 +319,25 @@ pub fn handle_parent(host: &HostHandle, params: Value) -> Result<Value, IpcMetho
 /// `codex` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
 /// namespace 밖을 참조할 수 없어서다(결정 2) — `codex.spawn` 기본 전략이 이
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
-pub fn handle_state(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let surface = require_u32(&params, "surface")?;
+pub fn handle_state(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface = require_u32(&params, "surface", tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
-pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let surface_id = require_u32(&params, "surface")?;
+pub fn handle_tell(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let surface_id = require_u32(&params, "surface", tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_message")))?;
     // 개행/제출 규칙(단일라인 평문 / 멀티라인 bracketed paste + 별도 `\r`)은 호스트
     // `terminal.tell` 이 동일하게 처리한다 → 본문 포맷을 재구현하지 않고 위임.
     let resp = host_call(
@@ -296,7 +349,7 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
     // caller_surface 는 dynamic CLI 가 `TASTY_SURFACE_ID` 로 자동 채운다(명시
     // --caller-surface 도 허용). 없으면(예: 호스트가 직접 IPC 호출) 완료 알림을
     // 등록하지 않는다 — 누구에게 알릴지 모르므로.
-    if let Ok(caller) = require_u32(&params, "caller_surface") {
+    if let Ok(caller) = require_u32(&params, "caller_surface", tr) {
         register_notify_hooks(host, surface_id, caller, "tell");
     }
 
@@ -308,7 +361,7 @@ pub fn handle_spawn(
     tr: &Translator,
     params: Value,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface = require_u32(&params, "surface")?;
+    let parent_surface = require_u32(&params, "surface", tr)?;
     let prompt = optional_str(&params, "prompt");
 
     // 1) 호스트 registry 에 자식 등록 + soft 점유 + tab 생성 (command 미전송).
@@ -321,13 +374,15 @@ pub fn handle_spawn(
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "terminal.spawn response missing 'child_surface_id': {resp}"
+            IpcMethodError::new(tr.t_replace(
+                "codex.spawn.missing_child_surface_id",
+                "{resp}",
+                &resp.to_string(),
             ))
         })?;
 
     // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
-    let policy_args = resolve_policy_args(host, &params)?;
+    let policy_args = resolve_policy_args(host, &params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -464,8 +519,8 @@ pub fn handle_notify_caller<H: HostCall>(
     tr: &Translator,
     params: Value,
 ) -> Result<Value, IpcMethodError> {
-    let caller = require_u32(&params, "caller")?;
-    let target = require_u32(&params, "target")?;
+    let caller = require_u32(&params, "caller", tr)?;
+    let target = require_u32(&params, "target", tr)?;
     let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
     let message = notify_caller_message(tr, &kind, target);
     // 샌드박스 초기화 실패 힌트(docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트
@@ -593,6 +648,8 @@ fn build_spawn_warning(
     Some(msg)
 }
 
+/// `tr` 를 받지 않는 유일한 핸들러다 — 이 함수가 만드는 문구가 하나도 없다.
+/// 형태를 맞추려고 안 쓰는 인자를 두면 다음 사람이 "여기도 번역할 것이 있다" 로 읽는다.
 pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
     host_call(
         host,
@@ -601,25 +658,37 @@ pub fn handle_children(host: &HostHandle, params: Value) -> Result<Value, IpcMet
     )
 }
 
-pub fn handle_broadcast(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_broadcast(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'text'"))?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_text")))?;
     let mut bp = forward(&params, &["surface", "role"]);
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
-pub fn handle_kill(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child")?;
+pub fn handle_kill(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child", tr)?;
     let mut kp = forward(&params, &["surface"]);
     kp.insert("child".into(), json!(child));
     host_call(host, "terminal.kill", Value::Object(kp))
 }
 
-pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child")?;
+pub fn handle_respawn(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let child = require_u32(&params, "child", tr)?;
     let prompt = optional_str(&params, "prompt");
 
     // 1) 호스트 registry 위임: cwd 있으면 PTY 교체, 없으면 Ctrl-C. role/nickname/cwd
@@ -633,13 +702,15 @@ pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMeth
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "terminal.respawn response missing 'child_surface_id': {resp}"
+            IpcMethodError::new(tr.t_replace(
+                "codex.respawn.missing_child_surface_id",
+                "{resp}",
+                &resp.to_string(),
             ))
         })?;
 
     // 2) codex 특화 기동 명령 재전송.
-    let policy_args = resolve_policy_args(host, &params)?;
+    let policy_args = resolve_policy_args(host, &params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -657,14 +728,18 @@ pub fn handle_respawn(host: &HostHandle, params: Value) -> Result<Value, IpcMeth
 /// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
 /// codex 의 wire schema 와 호환되어야 한다. 모든 필드가 optional 이므로 empty
 /// object 는 "no decision, continue normally" 의미.
-pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodError> {
+pub fn handle_hook(
+    host: &HostHandle,
+    params: Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'event'"))?;
-    let surface_id = require_u32(&params, "surface")
-        .map_err(|_| IpcMethodError::invalid_params("hook requires --surface to identify child"))?;
-    let new_state = hook_event_to_state(event)?;
+        .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_event")))?;
+    let surface_id = require_u32(&params, "surface", tr)
+        .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
+    let new_state = hook_event_to_state(event, tr)?;
     // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
     // 오면 reboot/복원용 세션 meta 를 기록한다. codex 에는 SessionEnd hook 이
     // 없어 unset 경로는 없다 — 다음 session-start 가 덮어쓴다. resume 기동도
@@ -704,25 +779,32 @@ pub fn handle_hook(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
 }
 
 /// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
-fn hook_event_to_state(event: &str) -> Result<&'static str, IpcMethodError> {
+fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, IpcMethodError> {
     match event {
         "stop" => Ok("idle"),
         "prompt-submit" | "session-start" => Ok("active"),
-        other => Err(IpcMethodError::invalid_params(&format!(
-            "unknown hook event '{other}' (supported: stop, prompt-submit, session-start)"
+        other => Err(IpcMethodError::invalid_params(&tr.t_replace(
+            "codex.hook.unknown_event",
+            "{event}",
+            other,
         ))),
     }
 }
 
-pub fn handle_install() -> Result<Value, IpcMethodError> {
-    let path = codex_config_toml_path()?;
+pub fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
+    let path = codex_config_toml_path(tr)?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| IpcMethodError::new(format!("mkdir failed: {e}")))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            IpcMethodError::new(tr.t_replace(
+                "codex.install.mkdir_failed",
+                "{detail}",
+                &e.to_string(),
+            ))
+        })?;
     }
     let existing = read_toml_or_default(&path);
     let merged = merge_install(existing);
-    write_toml(&path, &merged)?;
+    write_toml(&path, &merged, tr)?;
     let trusted = codex_hooks_all_trusted();
     let mut resp = json!({
         "installed": true,
@@ -742,14 +824,14 @@ Enter → t → Esc → Down. Trust persists per-machine."
     Ok(resp)
 }
 
-pub fn handle_uninstall() -> Result<Value, IpcMethodError> {
-    let path = codex_config_toml_path()?;
+pub fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError> {
+    let path = codex_config_toml_path(tr)?;
     if !path.exists() {
         return Ok(json!({ "uninstalled": true, "path": path.to_string_lossy(), "noop": true }));
     }
     let existing = read_toml_or_default(&path);
     let cleaned = remove_install(existing);
-    write_toml(&path, &cleaned)?;
+    write_toml(&path, &cleaned, tr)?;
     Ok(json!({ "uninstalled": true, "path": path.to_string_lossy() }))
 }
 
@@ -804,11 +886,15 @@ const HOOK_EVENTS: &[(&str, &str, &str)] = &[
     ("SessionStart", "session-start", "session_start"),
 ];
 
-fn codex_config_toml_path() -> Result<PathBuf, IpcMethodError> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .ok_or_else(|| IpcMethodError::new("HOME env var not set"))?;
-    Ok(PathBuf::from(home).join(".codex").join("config.toml"))
+/// 경로만 계산한다 — 실패를 문구로 만들지 않으므로 `Translator` 가 없는 자리에서도
+/// 쓸 수 있다(`codex_hooks_all_trusted` 는 실패를 그냥 `false` 로 접는다).
+fn config_toml_path_opt() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    Some(PathBuf::from(home).join(".codex").join("config.toml"))
+}
+
+fn codex_config_toml_path(tr: &Translator) -> Result<PathBuf, IpcMethodError> {
+    config_toml_path_opt().ok_or_else(|| IpcMethodError::new(tr.t("codex.install.no_home")))
 }
 
 fn read_toml_or_default(path: &Path) -> toml::Value {
@@ -819,10 +905,13 @@ fn read_toml_or_default(path: &Path) -> toml::Value {
     }
 }
 
-fn write_toml(path: &Path, value: &toml::Value) -> Result<(), IpcMethodError> {
-    let text = toml::to_string_pretty(value)
-        .map_err(|e| IpcMethodError::new(format!("encode failed: {e}")))?;
-    std::fs::write(path, text).map_err(|e| IpcMethodError::new(format!("write failed: {e}")))
+fn write_toml(path: &Path, value: &toml::Value, tr: &Translator) -> Result<(), IpcMethodError> {
+    let text = toml::to_string_pretty(value).map_err(|e| {
+        IpcMethodError::new(tr.t_replace("codex.install.encode_failed", "{detail}", &e.to_string()))
+    })?;
+    std::fs::write(path, text).map_err(|e| {
+        IpcMethodError::new(tr.t_replace("codex.install.write_failed", "{detail}", &e.to_string()))
+    })
 }
 
 fn hook_command(event_kebab: &str) -> String {
@@ -928,7 +1017,7 @@ fn merge_install(mut value: toml::Value) -> toml::Value {
 /// 이 여부와 무관하게 hook 을 fire 시키므로, 이 함수는 이제 `handle_install` 의
 /// 안내 문구(수동 승인 상태 표시)에만 쓰인다 — 실제 hook 동작에는 영향 없음.
 fn codex_hooks_all_trusted() -> bool {
-    let Ok(path) = codex_config_toml_path() else {
+    let Some(path) = config_toml_path_opt() else {
         return false;
     };
     let value = read_toml_or_default(&path);
@@ -992,24 +1081,50 @@ mod tests {
 
     /// `require_u32` 의 **네 갈래**를 픽스처로 못박는다. 실재하는 surface id 를 쓰지
     /// 않는 이유: 그 id 가 사라지거나 바뀌면 이 회귀가 조용히 뜻을 잃는다.
+    ///
+    /// **문구가 아니라 키로 단정한다.** 이 메시지들은 번역되므로 영어 조각(`missing` ·
+    /// `32 bits`)으로 갈래를 가르면 로케일이 바뀌는 순간 이 테스트가 뜻을 잃는다 —
+    /// 그런데 그 실패는 그 언어에서만 나타나 한 언어만 보는 완주로는 안 잡힌다.
+    fn absent_msg(tr: &Translator, key: &str) -> String {
+        tr.t_replace("codex.params.missing", "{key}", key)
+    }
+
+    fn malformed_msg(tr: &Translator, key: &str, raw: &str) -> String {
+        t_args(
+            tr,
+            "codex.params.not_a_number",
+            &[("{key}", key), ("{raw}", raw)],
+        )
+    }
+
     #[test]
     fn require_u32_separates_absent_from_malformed_and_refuses_to_truncate() {
+        let tr = test_translator();
         // ① 키 없음 — 호출자가 인자를 빠뜨렸다.
-        let e = require_u32(&json!({}), "surface").unwrap_err();
-        assert!(format!("{e:?}").contains("missing"), "{e:?}");
+        let e = require_u32(&json!({}), "surface", &tr).unwrap_err();
+        assert!(e.message.contains(&absent_msg(&tr, "surface")), "{e:?}");
 
         // ② 정상 — 경계값이 그대로 통과한다.
-        assert_eq!(require_u32(&json!({ "surface": 0 }), "surface").unwrap(), 0);
         assert_eq!(
-            require_u32(&json!({ "surface": u32::MAX }), "surface").unwrap(),
+            require_u32(&json!({ "surface": 0 }), "surface", &tr).unwrap(),
+            0
+        );
+        assert_eq!(
+            require_u32(&json!({ "surface": u32::MAX }), "surface", &tr).unwrap(),
             u32::MAX
         );
 
-        // ③ 숫자가 아니다 — 거부하고, "missing" 이라고 답하지 않는다.
-        let e = require_u32(&json!({ "surface": "conductor" }), "surface").unwrap_err();
-        let m = format!("{e:?}");
-        assert!(m.contains("32 bits"), "{m}");
-        assert!(!m.contains("missing"), "값이 왔는데 없다고 답한다: {m}");
+        // ③ 숫자가 아니다 — 거부하고, "없다" 라고 답하지 않는다.
+        let e = require_u32(&json!({ "surface": "conductor" }), "surface", &tr).unwrap_err();
+        let m = e.message.clone();
+        assert!(
+            m.contains(&malformed_msg(&tr, "surface", "\"conductor\"")),
+            "{m}"
+        );
+        assert!(
+            !m.contains(&absent_msg(&tr, "surface")),
+            "값이 왔는데 없다고 답한다: {m}"
+        );
 
         // ④ ★ 범위 초과 — 자르면 **다른 surface** 가 된다. u32::MAX + 2 는 1 로,
         //    5_000_000_000 은 705_032_704 로 잘린다. 둘 다 실재할 수 있는 id 다.
@@ -1018,20 +1133,42 @@ mod tests {
             u64::from(u32::MAX) + 2,
             5_000_000_000,
         ] {
-            let e = require_u32(&json!({ "surface": over }), "surface").unwrap_err();
-            assert!(format!("{e:?}").contains("32 bits"), "{over} 가 안 걸린다");
+            let e = require_u32(&json!({ "surface": over }), "surface", &tr).unwrap_err();
+            assert!(
+                e.message
+                    .contains(&malformed_msg(&tr, "surface", &over.to_string())),
+                "{over} 가 안 걸린다"
+            );
         }
 
         // 음수도 같은 갈래다 — `as_u64()` 가 못 읽는다.
-        assert!(require_u32(&json!({ "surface": -1 }), "surface").is_err());
+        assert!(require_u32(&json!({ "surface": -1 }), "surface", &tr).is_err());
+    }
+
+    /// 갈래를 가르는 두 문구가 **세 로케일 모두에서 서로 다르다.** 한 언어에서만
+    /// 갈리면 다른 언어 사용자는 "인자를 빠뜨렸다" 와 "값이 틀렸다" 를 구분할 수 없다.
+    #[test]
+    fn the_two_branches_stay_distinguishable_in_every_locale() {
+        for locale in ["en", "ko", "ja"] {
+            let tr = test_translator_for(locale);
+            let absent = absent_msg(&tr, "surface");
+            let malformed = malformed_msg(&tr, "surface", "5000000000");
+            assert_ne!(absent, malformed, "{locale}: 두 갈래의 문구가 같다");
+            assert!(!absent.contains("{key}"), "{locale}: 토큰이 안 채워졌다");
+            assert!(
+                !malformed.contains("{key}") && !malformed.contains("{raw}"),
+                "{locale}: 토큰이 안 채워졌다 — {malformed}"
+            );
+        }
     }
 
     /// `null` 은 **값이 왔다**가 아니라 **안 왔다**로 읽는다 — JSON 직렬화가 빈 슬롯을
     /// `null` 로 채우는 경우가 있어서, 이것을 오타로 취급하면 정상 경로가 막힌다.
     #[test]
     fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
-        let e = require_u32(&json!({ "surface": Value::Null }), "surface").unwrap_err();
-        assert!(format!("{e:?}").contains("missing"), "{e:?}");
+        let tr = test_translator();
+        let e = require_u32(&json!({ "surface": Value::Null }), "surface", &tr).unwrap_err();
+        assert!(e.message.contains(&absent_msg(&tr, "surface")), "{e:?}");
     }
 
     /// 이 crate 의 `lang/` 를 en 으로 로드한 번역기 — 런타임에 호스트가 주입하는
@@ -1124,7 +1261,10 @@ mod tests {
         // 않아도 무조건 "never" 로 떨어져야 한다.
         // sandbox 는 그 자체로 정지를 유발하지 않으므로 기존대로 미설정 시 빈 채로 둔다.
         let host = MockHost::new();
-        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
+        assert_eq!(
+            resolve_policy_args(&host, &json!({}), &test_translator()).unwrap(),
+            "-a never"
+        );
     }
 
     #[test]
@@ -1132,7 +1272,7 @@ mod tests {
         let host = MockHost::new();
         let params = json!({ "approval": "never", "sandbox": "read-only" });
         assert_eq!(
-            resolve_policy_args(&host, &params).unwrap(),
+            resolve_policy_args(&host, &params, &test_translator()).unwrap(),
             "-a never -s read-only"
         );
     }
@@ -1140,14 +1280,16 @@ mod tests {
     #[test]
     fn resolve_policy_args_rejects_invalid_approval_value() {
         let host = MockHost::new();
-        let err = resolve_policy_args(&host, &json!({ "approval": "yolo" })).unwrap_err();
+        let err = resolve_policy_args(&host, &json!({ "approval": "yolo" }), &test_translator())
+            .unwrap_err();
         assert!(format!("{err:?}").contains("invalid 'approval'"));
     }
 
     #[test]
     fn resolve_policy_args_rejects_invalid_sandbox_value() {
         let host = MockHost::new();
-        let err = resolve_policy_args(&host, &json!({ "sandbox": "yolo" })).unwrap_err();
+        let err = resolve_policy_args(&host, &json!({ "sandbox": "yolo" }), &test_translator())
+            .unwrap_err();
         assert!(format!("{err:?}").contains("invalid 'sandbox'"));
     }
 
@@ -1156,7 +1298,7 @@ mod tests {
         let host = MockHost::new();
         let params = json!({ "full_auto": true });
         assert_eq!(
-            resolve_policy_args(&host, &params).unwrap(),
+            resolve_policy_args(&host, &params, &test_translator()).unwrap(),
             "--dangerously-bypass-approvals-and-sandbox"
         );
     }
@@ -1165,7 +1307,7 @@ mod tests {
     fn resolve_policy_args_full_auto_rejects_combination_with_approval() {
         let host = MockHost::new();
         let params = json!({ "full_auto": true, "approval": "never" });
-        let err = resolve_policy_args(&host, &params).unwrap_err();
+        let err = resolve_policy_args(&host, &params, &test_translator()).unwrap_err();
         assert!(format!("{err:?}").contains("full_auto"));
     }
 
@@ -1175,7 +1317,7 @@ mod tests {
         host.set_setting("default_approval_policy", "never");
         host.set_setting("default_sandbox_mode", "workspace-write");
         assert_eq!(
-            resolve_policy_args(&host, &json!({})).unwrap(),
+            resolve_policy_args(&host, &json!({}), &test_translator()).unwrap(),
             "-a never -s workspace-write"
         );
     }
@@ -1186,7 +1328,7 @@ mod tests {
         host.set_setting("default_approval_policy", "never");
         let params = json!({ "approval": "on-request" });
         assert_eq!(
-            resolve_policy_args(&host, &params).unwrap(),
+            resolve_policy_args(&host, &params, &test_translator()).unwrap(),
             "-a on-request"
         );
     }
@@ -1198,21 +1340,33 @@ mod tests {
         // 되돌아가지 않는다(의도된 동작, 위 resolve_policy_args 문서 주석 참고).
         let host = MockHost::new();
         host.set_setting("default_approval_policy", "inherit");
-        assert_eq!(resolve_policy_args(&host, &json!({})).unwrap(), "-a never");
+        assert_eq!(
+            resolve_policy_args(&host, &json!({}), &test_translator()).unwrap(),
+            "-a never"
+        );
     }
 
     #[test]
     fn hook_event_to_state_maps_known_events() {
-        assert_eq!(hook_event_to_state("stop").unwrap(), "idle");
-        assert_eq!(hook_event_to_state("prompt-submit").unwrap(), "active");
-        assert_eq!(hook_event_to_state("session-start").unwrap(), "active");
+        assert_eq!(
+            hook_event_to_state("stop", &test_translator()).unwrap(),
+            "idle"
+        );
+        assert_eq!(
+            hook_event_to_state("prompt-submit", &test_translator()).unwrap(),
+            "active"
+        );
+        assert_eq!(
+            hook_event_to_state("session-start", &test_translator()).unwrap(),
+            "active"
+        );
     }
 
     #[test]
     fn hook_event_to_state_rejects_unsupported() {
         // notification / session-end / subagent-stop 은 codex 가 fire 하지 않으므로
         // 거부 (silent no-op 대신 invalid_params).
-        let err = hook_event_to_state("notification").unwrap_err();
+        let err = hook_event_to_state("notification", &test_translator()).unwrap_err();
         assert!(format!("{err:?}").contains("unknown hook event"));
     }
 
@@ -1322,39 +1476,10 @@ mod tests {
         }
     }
 
-    /// 키가 카탈로그에 실제로 존재해야 한다 — `Translator` 는 미스 시 키 자체를
-    /// 돌려주므로, 이 단정이 없으면 오타난 키가 "번역된 것처럼" 통과한다.
-    #[test]
-    fn spawn_warning_keys_exist_in_every_bundled_locale() {
-        let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
-        for locale in ["en", "ko", "ja"] {
-            let tr = Translator::load(&lang_dir, locale);
-            for key in [
-                "codex.spawn_warning.total",
-                "codex.spawn_warning.idle",
-                "codex.spawn_warning.stale",
-            ] {
-                assert_ne!(tr.t(key), key, "{locale}: {key} 누락");
-            }
-            // 플레이스홀더 이름이 로케일마다 어긋나면 치환이 조용히 실패한다.
-            assert!(
-                tr.t("codex.spawn_warning.total").contains("{total}"),
-                "{locale}"
-            );
-            assert!(
-                tr.t("codex.spawn_warning.total").contains("{threshold}"),
-                "{locale}"
-            );
-            assert!(
-                tr.t("codex.spawn_warning.idle").contains("{indices}"),
-                "{locale}"
-            );
-            assert!(
-                tr.t("codex.spawn_warning.stale").contains("{indices}"),
-                "{locale}"
-            );
-        }
-    }
+    // 카탈로그 정합(세 로케일의 키 집합 · 플레이스홀더 이름 · 소스가 부르는 키의 실재)은
+    // **레포 전역 가드 `tests/i18n_key_parity.rs` 가 이미 본다** — 번들 plugin 의
+    // `lang/` 을 전부 훑으므로 여기 사본을 두지 않는다. 그 가드는 통합 타깃이라
+    // 자동 실행이 헤드리스 조합에서만 일어난다(`docs/dev-guide/ci-gates.md`).
 
     /// `heuristic` stale 은 제외된다 — SIGSTOP·긴 추론과 구별되지 않아 일하는
     /// 자식을 respawn 하라고 권하게 된다. 확정(`foreground_is_shell`)만 센다.

@@ -28,3 +28,39 @@ sandbox_hint = "⚠ sandbox の初期化に失敗した可能性があります(
 
 [codex.reboot]
 notice = "tasty codex reboot : このセッションは tasty の reboot 機能で再起動されました(codex resume で同一セッションを再開)。直前のターンが途中で切れている可能性があるため、最後の作業状態を確認してから続行してください。"
+malformed_session_id = "surface {surface} の codex-session-id meta の形式が不正です: {value}"
+screen_unreadable = "surface {surface} の画面を読み取れません"
+lock_poisoned = "reboot in-flight ロックが poison しました: {detail}"
+already_in_progress = "surface {surface} の reboot はすでに進行中です"
+spawn_thread_failed = "reboot スレッドを起動できませんでした: {detail}"
+no_active_session = "surface {surface} にアクティブな codex セッションがありません (codex-session-id meta 未設定 — tasty hook が導入・信頼されているか確認してください。`tasty codex install` の後 codex の /hooks で承認)"
+missing_surface = "必須パラメータ 'surface' がありません"
+surface_not_a_number = "'surface' に {raw} が渡されました — 32ビットに収まる整数である必要があります。切り捨てず拒否します: 切り捨てられた id は実在しうる別の対象を指します"
+
+[codex.params]
+missing = "必須パラメータ '{key}' がありません"
+not_a_number = "'{key}' に {raw} が渡されました — 32ビットに収まる整数である必要があります。切り捨てず拒否します: 切り捨てられた id は実在しうる別の対象を指します"
+invalid_choice = "'{flag}' の値 '{value}' は不正です (指定可能: {valid})"
+full_auto_conflict = "'full_auto' は 'approval'/'sandbox' と併用できません — すでに両方を迂回します"
+missing_message = "必須パラメータ 'message' がありません"
+missing_text = "必須パラメータ 'text' がありません"
+missing_event = "必須パラメータ 'event' がありません"
+
+[codex.hook]
+requires_surface = "hook には対象の子を特定する --surface が必要です"
+unknown_event = "不明な hook イベント '{event}' (対応: stop, prompt-submit, session-start)"
+
+[codex.launch]
+workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません: {resp}"
+
+[codex.spawn]
+missing_child_surface_id = "ホストの terminal.spawn 応答に 'child_surface_id' がありません: {resp}"
+
+[codex.respawn]
+missing_child_surface_id = "ホストの terminal.respawn 応答に 'child_surface_id' がありません: {resp}"
+
+[codex.install]
+mkdir_failed = "codex 設定ディレクトリを作成できませんでした: {detail}"
+no_home = "HOME が設定されていません — ~/.codex/config.toml の場所を特定できません"
+encode_failed = "codex 設定を TOML に変換できませんでした: {detail}"
+write_failed = "codex 設定ファイルを書き込めませんでした: {detail}"

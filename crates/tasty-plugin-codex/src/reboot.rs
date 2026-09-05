@@ -90,37 +90,50 @@ pub(crate) fn handle_reboot(
     tr: &Translator,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface(params)?;
+    let surface_id = require_surface(params, tr)?;
     let (delay_secs, extra_prompt) = parse_options(params);
     // resume 명령에 붙일 승인/샌드박스 정책(docs/plugins/codex/index.md 의 승인/샌드박스
     // 정책 플래그 절 참조) — spawn/launch/respawn 과 동일한 우선순위(호출별 override >
     // 전역 기본값 > codex 자체 기본값)로 해석한다.
-    let policy_args = resolve_policy_args(host, params)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
 
     // 요청 시점 캡처.
-    let session_id = fetch_session_id(host, surface_id)?;
+    let session_id = fetch_session_id(host, surface_id, tr)?;
     if !is_safe_session_id(&session_id) {
-        return Err(IpcMethodError::new(format!(
-            "surface {surface_id} has malformed codex-session-id meta: {session_id:?}"
+        return Err(IpcMethodError::new(crate::handlers::t_args(
+            tr,
+            "codex.reboot.malformed_session_id",
+            &[
+                ("{surface}", &surface_id.to_string()),
+                ("{value}", &format!("{session_id:?}")),
+            ],
         )));
     }
 
     // 마커 기준 카운트도 요청 시점에 스냅샷 — 과거 exit/기동 잔상에 속지 않기 위함.
     let Some(screen) = screen_text(host, surface_id) else {
-        return Err(IpcMethodError::new(format!(
-            "cannot read screen of surface {surface_id}"
+        return Err(IpcMethodError::new(tr.t_replace(
+            "codex.reboot.screen_unreadable",
+            "{surface}",
+            &surface_id.to_string(),
         )));
     };
     let exit_c0 = count_occurrences(&screen, EXIT_MARKER);
     let banner_c0 = count_occurrences(&screen, BANNER_MARKER);
 
     {
-        let mut set = inflight
-            .lock()
-            .map_err(|e| IpcMethodError::new(format!("reboot in-flight lock poisoned: {e}")))?;
+        let mut set = inflight.lock().map_err(|e| {
+            IpcMethodError::new(tr.t_replace(
+                "codex.reboot.lock_poisoned",
+                "{detail}",
+                &e.to_string(),
+            ))
+        })?;
         if !set.insert(surface_id) {
-            return Err(IpcMethodError::new(format!(
-                "reboot already in progress for surface {surface_id}"
+            return Err(IpcMethodError::new(tr.t_replace(
+                "codex.reboot.already_in_progress",
+                "{surface}",
+                &surface_id.to_string(),
             )));
         }
     }
@@ -159,8 +172,10 @@ pub(crate) fn handle_reboot(
             &INFLIGHT_POISON_REPORTED,
         )
         .remove(&surface_id);
-        return Err(IpcMethodError::new(format!(
-            "failed to spawn reboot thread: {e}"
+        return Err(IpcMethodError::new(tr.t_replace(
+            "codex.reboot.spawn_thread_failed",
+            "{detail}",
+            &e.to_string(),
         )));
     }
 
@@ -173,44 +188,53 @@ pub(crate) fn handle_reboot(
 
 /// `surface` / `surface_id` 중 먼저 온 것을 읽는다 — `handlers::require_u32` 와 같은
 /// 이유로 **자르지 않는다**(범위 초과가 남의 surface id 가 된다).
-fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
+fn require_surface(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
     let Some(raw) = params
         .get("surface")
         .or_else(|| params.get("surface_id"))
         .filter(|v| !v.is_null())
     else {
         return Err(IpcMethodError::invalid_params(
-            "Missing required 'surface' parameter",
+            tr.t("codex.reboot.missing_surface"),
         ));
     };
     raw.as_u64()
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| {
-            IpcMethodError::invalid_params(&format!(
-                "'surface' was given as {raw} — it must be a whole number that fits in 32 bits. \
-                 Refusing rather than truncating it: a truncated id names a different, \
-                 possibly real, target"
+            IpcMethodError::invalid_params(&tr.t_replace(
+                "codex.reboot.surface_not_a_number",
+                "{raw}",
+                &raw.to_string(),
             ))
         })
 }
 
 /// surface meta 에서 codex session id 를 읽는다. 없으면 에러 — hook 미설치/미trust
 /// 이거나 그 surface 에서 codex session-start hook 이 아직 발화하지 않은 것.
-fn fetch_session_id(host: &HostHandle, surface_id: u32) -> Result<String, IpcMethodError> {
+fn fetch_session_id(
+    host: &HostHandle,
+    surface_id: u32,
+    tr: &Translator,
+) -> Result<String, IpcMethodError> {
+    // 호스트 에러는 `PluginError::HostCall` 의 Display 가 이미
+    // `host call '<method>' failed: <message>` 라 다시 감싸지 않는다 — 감싸면 그
+    // 접두가 사용자에게 두 번 나간다(`handlers::host_call` 의 같은 주석 참조).
     let resp = host
         .call(
             "surface.meta.get",
             json!({ "surface_id": surface_id, "key": "codex-session-id" }),
         )
-        .map_err(|e| IpcMethodError::new(format!("host call 'surface.meta.get' failed: {e}")))?;
+        .map_err(IpcMethodError::from)?;
     let session_id = resp
         .get("value")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
     if session_id.is_empty() {
-        return Err(IpcMethodError::new(format!(
-            "no active codex session on surface {surface_id} (codex-session-id meta not set — are tasty hooks installed and trusted? run `tasty codex install`, then approve via /hooks in codex)"
+        return Err(IpcMethodError::new(tr.t_replace(
+            "codex.reboot.no_active_session",
+            "{surface}",
+            &surface_id.to_string(),
         )));
     }
     Ok(session_id)
@@ -506,16 +530,34 @@ mod tests {
 
     #[test]
     fn require_surface_accepts_both_keys() {
-        assert_eq!(require_surface(&json!({ "surface": 7 })).unwrap(), 7);
-        assert_eq!(require_surface(&json!({ "surface_id": 9 })).unwrap(), 9);
-        assert!(require_surface(&json!({})).is_err());
+        assert_eq!(
+            require_surface(&json!({ "surface": 7 }), &test_translator_for("en")).unwrap(),
+            7
+        );
+        assert_eq!(
+            require_surface(&json!({ "surface_id": 9 }), &test_translator_for("en")).unwrap(),
+            9
+        );
+        assert!(require_surface(&json!({}), &test_translator_for("en")).is_err());
 
         // 자르지 않는다 — `u32::MAX + 2` 를 자르면 1 이 되고, 그것은 실재할 수 있는
         // 다른 surface 의 id 다. `handlers::require_u32` 와 같은 갈래.
-        assert!(require_surface(&json!({ "surface": u64::from(u32::MAX) + 2 })).is_err());
-        assert!(require_surface(&json!({ "surface": "conductor" })).is_err());
+        assert!(
+            require_surface(
+                &json!({ "surface": u64::from(u32::MAX) + 2 }),
+                &test_translator_for("en")
+            )
+            .is_err()
+        );
+        assert!(
+            require_surface(
+                &json!({ "surface": "conductor" }),
+                &test_translator_for("en")
+            )
+            .is_err()
+        );
         assert_eq!(
-            require_surface(&json!({ "surface": u32::MAX })).unwrap(),
+            require_surface(&json!({ "surface": u32::MAX }), &test_translator_for("en")).unwrap(),
             u32::MAX
         );
     }
