@@ -9,7 +9,9 @@
 //! 유일하다** — `IdGenerator.category` 가 공유 카운터다. 그래서 `list` 는 여기서
 //! 단일 engine 만 읽고, 전 창 합산은 `app::dispatch::list_global` 이 이 함수를 창마다
 //! 불러 합친다. 모든 engine 에 상수로 있는 예약 `normal`(id 0) 만 거기서 한 줄로
-//! 접는다.
+//! 접는다. `rename`/`delete` 는 `"id"` 로 소유 창이 지목되므로 포커스에 안 걸린다.
+//! 남은 창 의존은 `create`(새 카테고리가 포커스된 창의 engine 에 생기고, 그 창의
+//! 워크스페이스만 소속될 수 있다)와 `move`(index 가 창 안의 위치다) 둘이다.
 
 use super::params::{self, p_try};
 use serde_json::json;

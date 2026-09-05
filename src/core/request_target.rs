@@ -25,6 +25,11 @@ pub(crate) enum Kind {
     Hook,
     /// output observer — `engine.observer_router` 소유.
     Observer,
+    /// workspace category — `engine.categories` 소유. 예약된 `normal`(id 0)은 **모든
+    /// engine 에 상수로 존재**하므로 이 kind 로 풀지 않는다(어느 창인지 정해지지 않는다).
+    /// 그래도 되는 이유: normal 은 rename · delete · move 가 전부 거부하는 항목이라
+    /// 애초에 어떤 요청의 대상이 아니다.
+    Category,
 }
 
 impl Kind {
@@ -38,6 +43,7 @@ impl Kind {
             Kind::HeadlessPty => "headless pty",
             Kind::Hook => "surface hook",
             Kind::Observer => "output observer",
+            Kind::Category => "workspace category",
         }
     }
 }
@@ -135,6 +141,26 @@ pub(crate) fn method_scoped_resource_id(
     //
     // `"id"` 가 없는 형태(`index` 로 지목)는 여기서 `None` 이 되어 종전 경로를 탄다 —
     // index 는 창 안에서의 위치라 창을 건너 해석할 수 있는 값이 아니다.
+    // `workspace_category.rename` / `.delete` 의 `"id"` 는 카테고리 id 다. 카테고리 id 는
+    // 공유 카운터(`IdGenerator.category`)가 1 부터 발급해 engine 을 건너 유일하다 —
+    // 실측(2026-09-05, 창 둘): 비포커스 창이 가진 카테고리를 지목한 rename 이
+    // "category not found" 로 실패했고 포커스를 옮기면 성공했다.
+    //
+    // **`normal`(id 0)은 뺀다.** 그것만은 모든 engine 에 상수로 있어 id 로 창이
+    // 정해지지 않는다. 빼도 잃는 것이 없다 — normal 은 rename·delete 가 `IsNormal` 로
+    // 거부하는 항목이라 대상이 될 일이 없고, 여기서 `None` 이 되면 종전 경로가 그
+    // 거절 문구를 그대로 낸다.
+    if matches!(
+        method,
+        "workspace_category.rename" | "workspace_category.delete"
+    ) {
+        return numeric(params, "id")
+            .filter(|id| *id != u64::from(crate::model::NORMAL_CATEGORY_ID))
+            .map(|id| ResourceId {
+                kind: Kind::Category,
+                id,
+            });
+    }
     if matches!(method, "workspace.close" | "workspace.update") {
         return numeric(params, "id").map(|id| ResourceId {
             kind: Kind::Workspace,
@@ -175,6 +201,7 @@ pub(crate) fn engine_has_resource(engine: &crate::core::CoreState, rid: Resource
             .iter()
             .any(|h| h.id == rid.id),
         Kind::Observer => engine.observer_router.info(rid.id).is_some(),
+        Kind::Category => narrow.is_some_and(|id| engine.category_index(id).is_some()),
     }
 }
 
@@ -269,6 +296,33 @@ mod tests {
             rid(&json!({ "parent": 42, "workspace": "5" })),
             ("parent", Kind::Surface, 42)
         ));
+    }
+
+    /// `workspace_category.rename`/`.delete` 의 `"id"` 는 카테고리를 지목한다 —
+    /// **예약된 `normal`(id 0)만 빼고.**
+    ///
+    /// 카테고리 id 는 공유 카운터가 1 부터 발급해 engine 을 건너 유일하지만 `normal` 만
+    /// 모든 engine 에 상수로 있다. 그것까지 지목으로 치면 "어느 창의 normal 인가" 가
+    /// 정해지지 않는다. 빼도 잃는 것이 없다 — normal 은 rename·delete 가 거부하는
+    /// 항목이라 대상이 될 일이 없고, 그 거절 문구는 종전 경로가 그대로 낸다.
+    #[test]
+    fn category_id_routes_only_for_category_methods_and_never_for_normal() {
+        let p = json!({ "id": 4, "name": "x" });
+        for m in ["workspace_category.rename", "workspace_category.delete"] {
+            let rid = method_scoped_resource_id(m, &p).expect("대상이 잡혀야 한다");
+            assert!(matches!(rid.kind, Kind::Category), "{m}");
+            assert_eq!(rid.id, 4);
+        }
+        // 예약 카테고리는 지목 대상이 아니다.
+        for m in ["workspace_category.rename", "workspace_category.delete"] {
+            assert!(
+                method_scoped_resource_id(m, &json!({ "id": 0, "name": "x" })).is_none(),
+                "{m} 이 normal 을 지목으로 쳤다 — 창이 정해지지 않는다"
+            );
+        }
+        // 같은 `"id"` 키를 쓰는 다른 메서드로 새지 않는다.
+        assert!(method_scoped_resource_id("workspace_category.create", &p).is_none());
+        assert!(method_scoped_resource_id("memory.get", &p).is_none());
     }
 
     /// `workspace.close`/`workspace.update` 의 `"id"` 는 workspace 를 지목한다.
