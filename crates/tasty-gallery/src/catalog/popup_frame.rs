@@ -17,7 +17,13 @@ use tasty_type_geometry::length::LogicalPx;
 /// 본체 popup 상수 — 제목바 높이.
 pub const TITLE_BAR_HEIGHT: LogicalPx = LogicalPx(28.0);
 /// 본체 popup 상수 — 콘텐츠 상/하 여백.
-pub const CONTENT_MARGIN: LogicalPx = LogicalPx(4.0);
+///
+/// 본체(`adapters::ui::popup::content_margin`)는 이 자리를 `Theme.spacing_xs` 에서
+/// 읽는다. 여기서는 같은 값을 그 토큰의 정본(`semantic.space-xs` = `primitive.size-4`)
+/// 에서 직접 가져온다 — 갤러리의 `Theme` 은 `with_colors` 로만 만들어져 zoom 재굽기를
+/// 거치지 않으므로(스케일 세그는 egui `set_zoom_factor` 쪽이다) 두 경로의 값이 같고,
+/// 리터럴 사본을 둘 이유가 없다.
+pub const CONTENT_MARGIN: LogicalPx = tasty_design_tokens::generated::semantic::SPACE_XS;
 /// 본체 popup 상수 — 타이틀바 우측 버튼 한 변.
 pub const TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
 /// 본체 popup 상수 — 타이틀바 우측 끝과 close 버튼 사이 여백.
