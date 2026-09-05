@@ -267,8 +267,13 @@ done | sort | uniq -c
 
 | | 개수 | 채널 |
 |---|---|---|
-| 필터 없는 채널을 가진 것 | 15 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
+| 필터 없는 채널을 가진 것 | 17 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
 | `check-headless` 만 가진 것 | 34 | `crossplatform-check.yml` 의 `paths-ignore` 뒤 |
+
+**이 수는 술어 자신을 세지 않는다.** 술어가 `"Command::new"` 같은 표지를 문자열로 찾는데,
+그 표지를 **리터럴로 담은 파일**(술어를 구현한 가드들)은 자기 표지에 걸려 모수에서 빠진다.
+실측 17 은 그 둘을 뺀 값이다 — 세는 쪽을 고치려면 `mask-source` 처럼 코드와 문자열을
+가르는 판정기가 먼저 있어야 한다.
 
 **필터가 구멍이 되는 것은 그중 1 뿐이다.** 뒤 34 중 28 은 읽는 경로에 무시 대상이 하나도
 없고(그 경로가 안 바뀐 push 에서는 판정이 바뀔 수 없다), 4 는 경로 리터럴 없이
@@ -302,6 +307,27 @@ done | sort | uniq -c
 `PARTIALLY_FILTERED` 에 사유와 함께 등재되며 명부는 양방향으로 고정된다(새로 생겨도,
 사라졌는데 남아 있어도 실패). `doc-guards.yml` 은 경로 필터가 없으므로 이 관측자는
 문서만 담은 push 에서도 돈다.
+
+★ **그 관측자는 자기 채널을 재지 않고 가정한다 — 그것을 재는 것이 따로 있다.**
+`filtered_guards_are_not_totally_blind` 는 `crates/tasty-doc-guards/tests/` 를 상수
+(`FILTER_FREE_DIR`)로 **건너뛴다.** 거기 채널이 있다고 전제하는 것이지 확인하는 것이 아니다.
+그 전제가 깨지는 형태를 변이로 재 봤다(2026-09-05) — ① `doc-guards.yml` 의 `push:` 에
+`paths:` 를 달기 ② 그 잡의 호출을 `--test <이름>` 하나로 좁히기 ③ 그 잡을
+`if: github.event_name == 'workflow_dispatch'` 로 수동 전용으로 만들기. **셋 다 그때 있던
+판정기 전부에서 살아남았다**: 위 관측자는 이 디렉토리를 건너뛰고,
+`ci_channel_claims_match_workflows` 의 `automatic_job_bodies` 는 **경로 필터를 아예
+모델하지 않으며**(`push:` 만 있으면 자동으로 센다), `src/source_guards` 의
+`EXPECTED_TEST_INVOCATIONS` 는 파일별 **호출 건수**만 고정한다(필터가 붙어도, 호출이
+좁아져도 건수는 1 그대로다).
+
+`crates/tasty-doc-guards/tests/filter_free_channel_still_exists.rs` 가 그 셋을 닫는다.
+판정은 **이름이 아니라 성질**이다 — "`doc-guards.yml` 이 있는가" 가 아니라 "경로 필터
+없이 매 push 도는 잡 중 이 패키지를 **좁히지 않고** 돌리는 것이 있는가". 워크플로 이름이
+바뀌거나 잡이 다른 파일로 옮겨가도 채널이 남아 있으면 통과한다. 트리거 판독은
+`tasty_doc_guards::workflow_triggers` 한 벌을 위 관측자와 함께 쓴다 — 주석과 트리거 키를
+구조로 가르고(문자열 `contains` 로 세면 다른 워크플로의 필터를 *설명하는* 주석이 필터로
+읽힌다. 실측으로 정확히 한 파일이 그 형태였고 하필 `doc-guards.yml` 이었다), 태그 전용
+push(`release.yml`)를 매 push 채널로 세지 않는다.
 
 **덮는 채널도 그 관측자가 읽는다.** 경로 필터 없는 워크플로가 `--test <이름>` 으로 지목하는
 타깃은 면제된다 — 그 명부 역시 워크플로 파일에서 읽으므로 손으로 갱신하지 않는다. 손 명부는
