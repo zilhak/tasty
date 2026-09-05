@@ -19,7 +19,6 @@ use crate::ipc::server::IpcCommand;
 /// 가 `!Sync` 라 `Sync` bound 는 부착할 수 없다.
 pub trait IpcServerPort: Send {
     /// 큐에서 IPC command 1 개 비차단으로 꺼낸다.
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     fn try_recv(&self) -> Result<IpcCommand, mpsc::TryRecvError>;
     /// 서버가 listen 중인 포트 (debug/log 표시용).
     fn port(&self) -> u16;

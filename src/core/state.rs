@@ -595,7 +595,6 @@ pub struct CoreState {
     /// 별도 레지스트리로 들지 않는다 — 살아있는 engine 들의 이 필드를 모은 집합이
     /// 곧 점유 집합이다(`App::occupied_layout_slots`). `src/core/attach.rs` 의
     /// `OccupancyRegistry` 와 같은 성격이라 재시작 시 전부 free 로 환원된다.
-    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) layout_slot: Option<crate::core::layout_persistence::LayoutSlotId>,
     /// 점유한 슬롯을 **덮어쓰면 안 되는가.** 부팅 때 그 슬롯을 읽지 못했으면(권한·IO
     /// 오류, 이 빌드가 모르는 미래 version) 사용자의 창 구성이 디스크에 그대로 남아

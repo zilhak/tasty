@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! Preset → live workspace/tab/pane 적용.
 //!
 //! `tasty-presets` 의 데이터 모델을 받아 엔진의 mutable 상태에 instance 를 끼워넣는다.

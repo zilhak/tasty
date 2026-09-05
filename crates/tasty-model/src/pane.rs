@@ -27,7 +27,6 @@ pub struct Pane {
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
     /// Horizontal scroll offset for the tab bar (in logical pixels).
-    #[cfg_attr(test, allow(dead_code))]
     pub tab_scroll_offset: f32,
 }
 

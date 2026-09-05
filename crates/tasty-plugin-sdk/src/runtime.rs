@@ -197,7 +197,6 @@ fn connect_handle_channel(env: &PluginEnv) -> Option<HandleClient> {
 
 /// 보조 채널이 살아 있으면 reader thread 를 띄우고 `HostHandle` 에 writer 를 연결한다.
 /// `host` 를 값으로 받아 `with_handle_channel` 로 재구성한 뒤 되돌려준다(소유권 왕복).
-#[cfg_attr(not(unix), allow(unused_mut))]
 fn spawn_handle_reader(
     mut host: HostHandle,
     handle_client: Option<HandleClient>,
