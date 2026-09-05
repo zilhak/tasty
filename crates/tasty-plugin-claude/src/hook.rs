@@ -529,6 +529,23 @@ pub(crate) fn apply_session_start_profile(
     }));
 }
 
+/// host 호출을 쏘고 **실패해도 계속 간다** — 이 함수는 절대 전파하지 않는다.
+///
+/// 전파하면 안 되는 이유는 호출부의 순서다. `handle_claude_hook` 은 이 루프 *뒤에*
+/// 로컬 정리를 한다(session-end 의 `checklist::remove_state_for_session` ·
+/// `profile_attach::mark_ended`, session-start 의 `store`/`sweep`). 그 넷은
+/// 파일시스템만 만지므로 surface 가 없어도 정의되는 일인데, 여기서 `?` 로 끊으면
+/// **surface 가 사라진 바로 그때** 건너뛴다 — 정리가 필요한 유일한 경우에만 정리가
+/// 안 도는 셈이다.
+///
+/// 게다가 그 경우는 예외가 아니라 상례다: 탭을 닫으면 호스트가 레이아웃에서 surface
+/// 를 먼저 지우고 그 다음 PTY 를 떨구므로, PTY 사망이 발화시키는 `session-end` 훅은
+/// **언제나** 이미 없는 surface 를 가리킨다.
+///
+/// codex 의 `handle_hook` 이 `terminal.set_state` 실패를 전파하는 것은 표류가 아니라
+/// 같은 규칙의 반대편이다 — 거기엔 호출 뒤에 지킬 로컬 상태가 없다. 규칙 전문은
+/// [error-handling](../../../docs/dev-guide/error-handling.md)
+/// "plugin 핸들러의 host 호출 — 전파와 최선노력".
 fn deliver(host: &HostHandle, call: &HostCall) {
     let (method, params) = match call {
         HostCall::SetState { surface_id, state } => (

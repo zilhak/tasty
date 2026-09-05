@@ -817,6 +817,13 @@ pub fn handle_hook(
             }
         }
     }
+    // 이 호출만 전파한다 — 뒤에 지켜야 할 로컬 상태가 없기 때문이다(이어지는
+    // `fire_hook` 은 그 자체가 최선노력이다). state 주입이 이 핸들러가 하는 일의
+    // 전부라, 실패를 호출자에게 알리는 편이 참이다. claude 의 `deliver` 가 반대로
+    // 하나도 전파하지 않는 것은 그쪽이 host 호출 *뒤에* 로컬 정리를 하기 때문이며,
+    // 두 판정은 같은 규칙의 양끝이다 —
+    // [error-handling](../../../docs/dev-guide/error-handling.md)
+    // "plugin 핸들러의 host 호출 — 전파와 최선노력".
     host_call(
         host,
         "terminal.set_state",

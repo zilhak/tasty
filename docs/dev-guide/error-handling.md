@@ -149,6 +149,37 @@ let _ = tx.send(msg);
 **컴파일은 자동으로 검사되고 실행은 수동**이다. 어느 검사가 언제 도는지는
 [ci-gates](ci-gates.md) 가 정본이다 — 여기에 채널 표를 복제하지 않는다.
 
+## plugin 핸들러의 host 호출 — 전파와 최선노력
+
+plugin 이 `host.call(...)` 로 호스트를 부르다 실패했을 때 그 실패를 IPC 응답으로
+**전파할지**(`?`) 로그만 남기고 **계속 갈지**(`warn!`)는 취향이 아니다. 판정은 하나다.
+
+> **그 호출 뒤에 이 핸들러가 지켜야 할 로컬 상태가 있는가.** 있으면 최선노력, 없으면 전파.
+
+`?` 로 끊으면 뒤따르는 로컬 작업이 **호출이 실패한 그 경우에만** 건너뛰어진다. 그 로컬
+작업이 "대상이 사라졌을 때의 정리" 라면, 정리가 필요한 유일한 경우에만 정리가 안 돈다.
+
+저장소의 두 실례가 이 규칙의 양끝이다.
+
+| 핸들러 | 호출 뒤 로컬 작업 | 판정 |
+|---|---|---|
+| `tasty-plugin-claude` 의 `handle_claude_hook` | `checklist::remove_state_for_session` · `profile_attach::mark_ended`/`store`/`sweep` — 파일시스템만 만져 surface 없이도 정의된다 | 전부 최선노력(`deliver` 가 `warn!` 하고 계속) |
+| `tasty-plugin-codex` 의 `handle_hook` | 없다(이어지는 `fire_hook` 자체가 최선노력) | `terminal.set_state` 만 전파 |
+
+그래서 **두 핸들러가 죽은 surface 에 다르게 답하는 것은 표류가 아니라 의도된 비대칭**
+이다 — 같은 훅 이벤트에 claude 는 `ok` 를, codex 는 `-32602` 를 낸다.
+
+claude 쪽이 상례라는 점이 이 비대칭을 굳힌다. 탭을 닫으면 호스트가 레이아웃에서
+surface 를 먼저 지우고(`close_surface_by_id_inner`) 그 다음 PTY 를 떨구므로
+(`cleanup_surface` → `drop_terminal`), PTY 사망이 발화시키는 `session-end` 훅은 **언제나**
+이미 없는 surface 를 가리킨다. 그 경로를 거절로 바꾸면 정상 종료마다 에이전트에게
+실패가 돌아가고, 동시에 orphan 정리가 사라진다 — 잃는 것이 둘이다.
+
+대신 최선노력 쪽에는 대가가 있다: **응답이 그 사실을 말하지 않는다.** claude 의 훅 응답은
+host 호출이 전부 실패해도 surface 가 살아 있을 때와 바이트가 같고, 실패의 유일한 흔적은
+`warn!` 로그다. 호출자가 반영 여부를 알아야 하는 새 핸들러라면 최선노력을 고르기 전에
+그 점부터 정한다.
+
 ## 락 poison (`Mutex` / `RwLock`)
 
 poison 은 **"다른 스레드가 이 락을 든 채 패닉했다"** 는 사실만 알려준다. 보호 중인 데이터가
