@@ -181,3 +181,4 @@
 | 0168 | [파일 SLOC 임계 1000 은 유도되지 않는다 — 유지의 근거는 발화율 곡선이고, 동결은 한 방향만 잠겨 있다](0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md) | Accepted | 2026-09-05 | complexity-gate, threshold, ratchet, measurement, adr-0037, adr-0131, adr-0165 |
 | 0169 | [길이 타입의 튜플 생성자는 봉인하지 않는다 — 탈출구가 곧 같은 단언이기 때문](0169-the-tuple-constructor-of-length-types-stays-open.md) | Accepted | 2026-09-05 | typed-length, geometry, guards, dpi, sealing, census |
 | 0170 | [e2e 데몬은 스위트 단위로 고르고, 배선은 만들되 기본으로 켜지 않는다](0170-e2e-daemon-is-chosen-per-suite-and-off-by-default.md) | Accepted | 2026-09-05 | testing, e2e, harness, gpu, headless, build |
+| 0171 | [호스트가 준 오류 코드는 plugin 경계를 넘어 살아남는다 — ADR-0153 의 "한 겹 감싸짐" 조항 개정](0171-a-host-error-code-survives-the-plugin-boundary.md) | Accepted | 2026-09-05 | ipc, error-codes, plugin, sdk, wire-protocol, partial-amendment, adr-0153, adr-0154, adr-0163, adr-0167 |

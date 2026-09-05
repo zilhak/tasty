@@ -126,6 +126,7 @@ dispatch 가 self-call trampoline 으로 host 에 되돌려 준다.**
 
 ## References
 
+- 부분 개정: [0171](0171-a-host-error-code-survives-the-plugin-boundary.md) (Consequences 의 "한 겹 감싸짐" 조항 개정 — 감싸짐 자체는 그대로이고 코드가 뭉개지는 것만 고쳤다)
 - [ADR-0140](0140-host-ipc-prefixes-are-reserved-where-they-can-be-enforced.md) — 이
   예외를 남긴 결정
 - [ADR-0143](0143-a-named-target-is-checked-before-the-engine-in-headless.md) — 같은

@@ -2008,6 +2008,7 @@ trusted_hash = "sha256:xyz"
                     None => Err(tasty_plugin_sdk::PluginError::HostCall {
                         method: method.to_string(),
                         message: "no screen_text set (mock soft-fail)".to_string(),
+                        code: None,
                     }),
                 },
                 _ => Ok(json!({})),

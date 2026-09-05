@@ -51,6 +51,8 @@
 
 ### Changed
 
+- **plugin 을 거쳐 온 실패가 호스트가 준 오류 코드를 그대로 낸다.** 종전에는 전부 `-32000`(server error)이 됐다 — 호스트가 `-32602`("인자를 고쳐라")로 거절한 것까지 그랬다. 두 코드는 호출자(에이전트 포함)의 **재시도 정책을 반대로** 가른다: 앞엣것은 인자를 고쳐 다시 걸고, 뒤엣것은 호스트 사정이라 재시도가 무의미하다. 실측(claude·codex 의 inbound 26 건에 없는 surface 를 지목): 감싸진 `-32000` **11 건 → 0**. 문구는 그대로다(`host call '<call#N>' failed: <호스트 사유>` — 한 겹 감싸지는 것은 plugin 을 거쳤다는 사실이라 유지한다). 같은 잘못된 대상이 **owner plugin 의 기동 여부에 따라** 다른 코드를 받던 것도 함께 사라진다 — plugin 이 떠 있으면 `-32000`, 없으면 `-32602` 였다. `ipc.result` 와이어에 `error_code` 가 붙지만 양방향 호환이라 구버전 SDK 로 빌드된 plugin 은 영향받지 않는다. 근거·대안·재검토 조건은 [ADR-0171](docs/adr/0171-a-host-error-code-survives-the-plugin-boundary.md)([ADR-0153](docs/adr/0153-a-bundled-namespace-hands-host-methods-back.md) 의 한 조항 개정).
+
 - **표에 등재된 이름을 이 빌드가 라우팅하지 못할 때 오타와 다른 코드로 답한다.** 종전에는 둘 다 `-32601 Method not found` 였다 — 헤드리스 데몬에서 `window.creat`(오타)와 `window.create`(표에 있고 이 빌드엔 arm 이 없다)의 응답이 코드·메시지·`data` 까지 바이트 단위로 같았다. `-32601` 은 호출자를 **이름을 의심하는 쪽**으로 보내는데 그 방향에는 고칠 것이 없다. 이제 뒤엣것은 `-32017 method '<name>' is registered but this binary has no dispatch arm for it: it is gated out of this build combination (headless / release)` 로 답하고, 호출자는 이름이 아니라 **빌드 조합**을 본다. 플랫폼 축(`-32015`)·주체 축(`-32016`)에 이어 같은 거짓을 가르는 세 번째이고, 등재되지 않은 이름은 그대로 `-32601` 이다. gui 조합은 등재 326 개 전수 프로브에서 `-32017` 이 **0** 건이다(전부 라우팅된다) — 바뀌는 것은 헤드리스뿐이다. 근거·대안·재검토 조건은 [ADR-0167](docs/adr/0167-a-registered-name-answers-whether-it-is-in-this-binary.md).
 
 - `tasty debug raw-key` · `tasty debug switch-input-source` 의 도움말이 **macOS GUI 빌드 전용**임을 첫 줄에서 밝힌다. 두 명령은 앞으로도 모든 플랫폼에서 도움말에 뜨고 요청을 받는다 — 숨기면 "그런 명령 없음" 이 되어 이름을 의심하게 만드는데 이름은 맞기 때문이다. 다른 조합에서는 `-32015` 와 사유가 즉시 돌아오고 CLI 가 그 메시지를 그대로 출력한다.

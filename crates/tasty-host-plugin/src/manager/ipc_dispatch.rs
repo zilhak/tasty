@@ -24,12 +24,18 @@ impl PluginManager {
     }
 
     /// 라우터가 처리한 결과를 plugin에 송신.
+    ///
+    /// `error_code` 는 호스트가 준 JSON-RPC 코드다. **버리면 plugin 을 거쳐 나온 응답이
+    /// 전부 `-32000`(server error)이 된다** — 호스트가 "인자를 고쳐라"(`-32602`)로
+    /// 거절한 것까지 그렇게 되어, 호출자가 재시도 정책을 반대로 고른다.
+    /// 코드가 없는 실패(문자열만 있는 내부 경로)는 `None` 을 준다.
     pub fn send_ipc_result(
         &mut self,
         plugin_id: &str,
         call_id: u64,
         result: Option<serde_json::Value>,
         error: Option<String>,
+        error_code: Option<i32>,
     ) {
         let req = PluginRequest {
             method: protocol::METHOD_IPC_RESULT.to_string(),
@@ -37,6 +43,7 @@ impl PluginManager {
                 call_id,
                 result,
                 error,
+                error_code,
             })
             .unwrap_or(serde_json::Value::Null),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
@@ -93,7 +100,7 @@ impl PluginManager {
         let plugin_id = match self.validate_namespace_call(method, Some(caller_plugin_id)) {
             Ok(id) => id,
             Err((_code, msg)) => {
-                self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg));
+                self.send_ipc_result(caller_plugin_id, call_id, None, Some(msg), None);
                 return;
             }
         };
@@ -411,7 +418,7 @@ impl PluginManager {
                 caller_plugin_id,
                 call_id,
             } => {
-                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message));
+                self.send_ipc_result(&caller_plugin_id, call_id, None, Some(message), None);
             }
         }
     }
@@ -433,7 +440,7 @@ impl PluginManager {
                 caller_plugin_id,
                 call_id,
             } => {
-                self.send_ipc_result(&caller_plugin_id, call_id, Some(result), None);
+                self.send_ipc_result(&caller_plugin_id, call_id, Some(result), None, None);
             }
         }
     }
@@ -562,7 +569,7 @@ impl PluginManager {
                     call_id,
                     ..
                 }) => {
-                    self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg));
+                    self.send_ipc_result(&caller_plugin_id, call_id, None, Some(msg), None);
                 }
                 Some(PendingRequestKind::ExtensionPreIpcHook { final_caller, .. })
                 | Some(PendingRequestKind::ExtensionPostIpcHook { final_caller, .. })

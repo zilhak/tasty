@@ -171,6 +171,24 @@ params 를 담는 **이름**이 규약(`params` / `_params`, 또는 살아 있�
 | 이 바이너리에 안 들어 있다 | `-32017` | 빌드 조합을 본다 |
 | 이름이 틀렸다 | `-32601` | 이름을 고친다 |
 
+### plugin 을 거쳐 온 실패도 호스트가 준 코드를 그대로 낸다
+
+plugin namespace 의 메서드는 owner plugin 으로 forward 되고, plugin 은 자기 일을 하려고
+호스트 메서드를 되부른다(`claude.parent` → `terminal.parent`). 그 되부름이 거절되면 사유가
+plugin 을 거쳐 원래 호출자에게 돌아오는데, **코드는 그 왕복을 넘어 살아남는다.**
+
+    claude.parent {"surface_id": 999}
+    → -32602  host call 'call#4' failed: no live surface 999 (named by 'terminal.parent'); …
+
+문구는 한 겹 감싸진다(`host call '<call#N>' failed:` 접두). 그건 plugin 을 거쳤다는 사실
+그대로이고 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 정한
+바다. **코드는 안 감싼다** — `-32602`("인자를 고쳐라")가 `-32000`("서버 사정")이 되면
+호출자가 재시도 정책을 반대로 고른다. 근거는
+[ADR-0171](../adr/0171-a-host-error-code-survives-the-plugin-boundary.md).
+
+호스트가 코드를 안 준 실패(plugin 내부 오류, SDK 의 연결·인코딩 오류)는 종전대로
+`-32000` 이다.
+
 ### debug 표에 있는데 CLI 가 없는 메서드
 
 원칙 2 는 debug 빌드의 에이전트 표면에도 걸린다 — `debug.*` 는 release 에 없을 뿐,

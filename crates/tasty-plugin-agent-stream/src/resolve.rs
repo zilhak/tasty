@@ -92,12 +92,14 @@ pub fn session_id_for_surface<H: HostCall>(
 /// `true` 로 떨어진다 — 살아 있는 대상을 없다고 말하지 않는 쪽으로 틀린다.
 ///
 /// 판정을 문자열로 하는 이유: 규약의 정본은 [`tasty_utils::target`] 이고 판정도 거기
-/// [`tasty_utils::target::says_no_live_target`] 에 있는데(만드는 쪽과 붙여 두어야
-/// 문구가 바뀔 때 왕복이 먼저 깨진다), plugin 은 별도 프로세스이고
-/// SDK 의 [`tasty_plugin_sdk::PluginError::HostCall`] 은 **코드 없이 메시지만** 실어
-/// 온다. 즉 지금은 문자열이 유일한 채널이다. 본체가 문구를 바꾸면 이 판정은 조용히
-/// "모름" 쪽으로 떨어진다(살아 있다고 답한다) — 좁게 틀리는 방향이라 안전하지만,
-/// 근본 해법은 그 거절을 SDK 가 형태로 노출하는 것이다.
+/// [`tasty_utils::target::says_no_live_target`] 에 있다 — 만드는 쪽과 붙여 두어야 문구가
+/// 바뀔 때 왕복이 먼저 깨진다. 본체가 문구를 바꾸면 이 판정은 조용히 "모름" 쪽으로
+/// 떨어진다(살아 있다고 답한다) — 좁게 틀리는 방향이라 안전하다.
+///
+/// [`tasty_plugin_sdk::PluginError::HostCall`] 은 이제 호스트가 준 코드도 함께 싣는다
+/// (ADR-0171). 다만 그 코드로는 **이 판정을 못 한다** — `-32602` 는 "인자가 틀렸다" 이지
+/// "그 대상이 없다" 가 아니고, 여기서 갈라야 하는 것은 "없다는 답" 과 "모름" 이다.
+/// 코드가 그 구분을 실으려면 대상 부재 전용 코드가 있어야 하고, 그건 별개 결정이다.
 pub fn surface_exists<H: HostCall>(host: &H, surface_id: u32) -> bool {
     match host.call("surface.locate", json!({ "surface_id": surface_id })) {
         Ok(r) => r.get("exists").and_then(Value::as_bool).unwrap_or(true),

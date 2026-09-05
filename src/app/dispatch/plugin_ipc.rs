@@ -25,9 +25,12 @@ impl App {
             let caller = Self::plugin_caller(&call);
             let request = Self::plugin_call_request(&call);
             if let Some(resp) = self.gates_before_routing(&request, &caller) {
-                let msg = resp.error.map(|e| e.message);
+                let (msg, code) = match resp.error {
+                    Some(e) => (Some(e.message), Some(e.code)),
+                    None => (None, None),
+                };
                 if let Some(mgr) = self.plugin_manager.as_mut() {
-                    mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg);
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
                 }
                 continue;
             }
@@ -87,7 +90,7 @@ impl App {
                     Ok(r) => (serde_json::to_value(&r).ok(), None),
                     Err(e) => (None, Some(e)),
                 };
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
         }
     }
 
@@ -132,7 +135,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
         }
     }
 
@@ -161,7 +164,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
         }
     }
 
@@ -193,7 +196,7 @@ impl App {
             }
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
         }
     }
 
@@ -202,12 +205,15 @@ impl App {
         let caller = Self::plugin_caller(call);
         let request = Self::plugin_call_request(call);
         let response = self.dispatch_with_caller(&request, &caller);
-        let (result, error) = match response.error {
-            Some(err) => (None, Some(err.message)),
-            None => (response.result, None),
+        // 코드를 함께 넘긴다. 여기서 버리면 plugin 이 그 실패를 `?` 로 흘릴 때 외부
+        // 호출자가 받는 코드가 전부 `-32000` 이 된다 — 호스트가 "인자를 고쳐라"
+        // (`-32602`)로 거절한 것까지 "서버 사정" 으로 바뀐다.
+        let (result, error, code) = match response.error {
+            Some(err) => (None, Some(err.message), Some(err.code)),
+            None => (response.result, None, None),
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
         }
     }
 

@@ -455,7 +455,13 @@ fn handle_ipc_result_request(
 ) {
     match serde_json::from_value::<IpcCallResult>(req.params.clone()) {
         Ok(parsed) => {
-            deliver_ipc_result(pending, parsed.call_id, parsed.result, parsed.error);
+            deliver_ipc_result(
+                pending,
+                parsed.call_id,
+                parsed.result,
+                parsed.error,
+                parsed.error_code,
+            );
         }
         Err(e) => {
             tracing::warn!("ipc.result parse error: {e}");

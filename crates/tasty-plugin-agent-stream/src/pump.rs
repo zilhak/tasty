@@ -296,6 +296,7 @@ mod tests {
             match method {
                 "surface.locate" => Err(PluginError::HostCall {
                     method: method.to_string(),
+                    code: None,
                     message: format!(
                         "no live surface {sid} (named by 'surface.locate'); list the resource \
                          to get a live id — a named target is never resolved by focus"

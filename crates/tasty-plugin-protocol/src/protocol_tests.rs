@@ -473,3 +473,41 @@ fn texture_chain_fields_default_for_legacy_json() {
     let parsed: SurfaceSetContextParams = serde_json::from_str(legacy_ctx).unwrap();
     assert!(!parsed.need_full_textures);
 }
+
+/// `ipc.result` 의 새 `error_code` 는 **구버전과 양방향 호환**이다.
+///
+/// 이 필드는 host → plugin 와이어에 나중에 붙었다. 구버전 SDK 로 빌드된 plugin 은 이
+/// 필드를 모른 채 읽고, 구버전 호스트는 이 필드를 안 보낸다 — 두 방향 다 깨지지 않아야
+/// 한다. `#[serde(default)]` 와 `skip_serializing_if` 가 그것을 진다.
+#[test]
+fn ipc_call_result_error_code_is_optional_in_both_directions() {
+    use crate::protocol::IpcCallResult;
+
+    // 구버전 호스트가 보낸 모양 — 필드가 아예 없다.
+    let old: IpcCallResult = serde_json::from_str(r#"{"call_id":1,"error":"denied"}"#)
+        .expect("구버전 모양을 읽어야 한다");
+    assert_eq!(old.error_code, None);
+    assert_eq!(old.error.as_deref(), Some("denied"));
+
+    // 코드가 없으면 와이어에도 안 실린다 — 구버전 plugin 이 낯선 키를 안 본다.
+    let none = IpcCallResult {
+        call_id: 2,
+        result: None,
+        error: Some("denied".into()),
+        error_code: None,
+    };
+    let s = serde_json::to_string(&none).unwrap();
+    assert!(!s.contains("error_code"), "{s}");
+
+    // 있으면 실리고 되읽힌다.
+    let some = IpcCallResult {
+        call_id: 3,
+        result: None,
+        error: Some("no live surface 999".into()),
+        error_code: Some(-32602),
+    };
+    let s = serde_json::to_string(&some).unwrap();
+    assert!(s.contains("\"error_code\":-32602"), "{s}");
+    let back: IpcCallResult = serde_json::from_str(&s).unwrap();
+    assert_eq!(back.error_code, Some(-32602));
+}

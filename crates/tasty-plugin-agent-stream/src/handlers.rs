@@ -980,6 +980,7 @@ mod tests {
                 "surface.locate" | "surface.meta.get" => Err(PluginError::HostCall {
                     method: method.to_string(),
                     message: tasty_utils::target::unowned_target_message("surface", sid, method),
+                    code: None,
                 }),
                 other => panic!("unexpected host call {other}"),
             }

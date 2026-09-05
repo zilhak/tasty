@@ -756,6 +756,7 @@ mod tests {
                     None => Err(tasty_plugin_sdk::PluginError::HostCall {
                         method: method.to_string(),
                         message: "host down".into(),
+                        code: None,
                     }),
                 },
                 "terminal.parent" => match self.parent_status {
@@ -764,6 +765,7 @@ mod tests {
                     None => Err(tasty_plugin_sdk::PluginError::HostCall {
                         method: method.to_string(),
                         message: "host down".into(),
+                        code: None,
                     }),
                 },
                 other => panic!("unexpected host call: {other}"),

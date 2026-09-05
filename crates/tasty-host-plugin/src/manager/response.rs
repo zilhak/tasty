@@ -70,9 +70,16 @@ impl PluginManager {
                 caller_plugin_id,
                 call_id,
             } => {
-                // plugin caller에는 ipc.result로 회신. error_code는 plugin 측이
-                // 받은 표준 form 그대로(메시지에 합쳐서 전달).
-                self.send_ipc_result(&caller_plugin_id, call_id, resp.result, resp.error);
+                // plugin caller에는 ipc.result로 회신. 코드도 함께 간다 — 같은 함수의
+                // namespace 갈래(위)가 이미 `resp.error_code` 를 쓰고 있었고, 이쪽만
+                // 버리면 plugin 을 거쳐 나온 응답이 전부 `-32000` 이 된다.
+                self.send_ipc_result(
+                    &caller_plugin_id,
+                    call_id,
+                    resp.result,
+                    resp.error,
+                    resp.error_code,
+                );
             }
             PendingRequestKind::ExtensionPreIpcHook {
                 target_plugin_id,

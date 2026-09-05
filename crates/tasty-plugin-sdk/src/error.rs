@@ -46,8 +46,19 @@ pub enum PluginError {
     HandshakeTimeout,
 
     /// 호스트 호출 응답에 호스트가 명시한 에러.
+    ///
+    /// `code` 는 호스트가 준 JSON-RPC 코드다. **표시 문구에는 안 들어간다** —
+    /// 이 메시지 모양을 읽는 소비자가 이미 있고(예: agent-stream 의 "그런 surface 는
+    /// 없다" 판정), 코드를 더하는 것이 그 판정을 깨서는 안 된다. 코드는
+    /// [`crate::plugin::IpcMethodError`] 로 변환될 때 쓰인다.
+    ///
+    /// `None` 은 "호스트가 코드를 안 줬다" 이고, 그때만 server error(-32000)로 떨어진다.
     #[error("host call '{method}' failed: {message}")]
-    HostCall { method: String, message: String },
+    HostCall {
+        method: String,
+        message: String,
+        code: Option<i32>,
+    },
 
     /// 호스트 호출이 timeout 안에 응답을 받지 못함.
     #[error("host call '{method}' timed out after {timeout:?}")]

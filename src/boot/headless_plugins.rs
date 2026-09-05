@@ -306,9 +306,12 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         // 게이트가 그 함수 안에만 있으면 그 갈래만 권한·cap·rate·audit 를 통째로
         // 건너뛴다.
         if let Some(resp) = gates_before_intercept(app, state, engine, &request, &caller) {
-            let msg = resp.error.map(|e| e.message);
+            let (msg, code) = match resp.error {
+                Some(e) => (Some(e.message), Some(e.code)),
+                None => (None, None),
+            };
             if let Some(mgr) = app.plugin_manager.as_mut() {
-                mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg);
+                mgr.send_ipc_result(&call.plugin_id, call.call_id, None, msg, code);
             }
             continue;
         }
@@ -324,7 +327,7 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
                         Ok(r) => (serde_json::to_value(&r).ok(), None),
                         Err(e) => (None, Some(e)),
                     };
-                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+                mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, None);
             }
             continue;
         }
@@ -340,12 +343,13 @@ fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engin
         // `docs/adr/0111-headless-drains-the-intent-queue.md`.
         crate::intent::headless::drain_pending_intents(&mut app.core, state, engine);
         crate::intent::headless::drain_pending_host_events(&app.core, state, engine);
-        let (result, error) = match response.error {
-            Some(err) => (None, Some(err.message)),
-            None => (response.result, None),
+        // gui 갈래(`src/app/dispatch/plugin_ipc.rs`)와 같은 계약 — 코드를 함께 넘긴다.
+        let (result, error, code) = match response.error {
+            Some(err) => (None, Some(err.message), Some(err.code)),
+            None => (response.result, None, None),
         };
         if let Some(mgr) = app.plugin_manager.as_mut() {
-            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+            mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error, code);
         }
     }
 }
