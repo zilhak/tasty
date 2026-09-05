@@ -2,6 +2,7 @@
 name = "tasty-doc-guards"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 # 의존 0 이 이 크레이트의 존재 이유다 — ADR-0138. 여기에 의존을 하나라도 더하면
 # 그 결정의 전제가 사라진다.
