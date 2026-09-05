@@ -260,7 +260,7 @@ pub(crate) fn pump_ipc(
         }
         // 2d) plugin namespace forward — **engine 에 묻기 전에** 정한다. gui 가
         //     라우터 step 5 에서 같은 자리를 잡는 것과 같은 순서이고, 재료도 같은
-        //     `mgr.ipc_namespaces.resolve` 하나다.
+        //     `mgr.namespace_owner` 하나다.
         //
         //     예전에는 이 판정이 engine 응답 **뒤**에 있었고 "engine 이 못 답했나" 를
         //     오류 코드로 물었다. 그 형태는 종단이 내는 코드를 라우팅 신호로 고정해,
@@ -315,7 +315,7 @@ fn forward_to_plugin_namespace(
     let owns = app
         .plugin_manager
         .as_ref()
-        .is_some_and(|mgr| mgr.ipc_namespaces.resolve(&cmd.request.method).is_some());
+        .is_some_and(|mgr| mgr.namespace_owner(&cmd.request.method).is_some());
     if !owns {
         return false;
     }

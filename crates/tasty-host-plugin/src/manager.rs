@@ -338,7 +338,7 @@ pub struct PluginManager {
     /// 와 "지금 떠 있는가" 는 다른 물음이고, 뒤엣것은 `processes` 가 답한다(안 떠 있으면
     /// `-32002`). 이 표는 `packages` 에서 유도되므로 `packages` 를 바꾸는 자리는
     /// [`PluginManager::refresh_packages`] 를 거쳐야 한다.
-    pub ipc_namespaces: IpcNamespaceRegistry,
+    ipc_namespaces: IpcNamespaceRegistry,
     /// plugin id → (buffer id → 매핑 영역). 호스트가 `host.shared_buffer.create`로
     /// 발급한 영역의 매핑 유지(=OS region keep-alive)와 dirty 수신 시 lookup용.
     /// plugin process가 종료/재시작되면 해당 plugin 슬롯이 통째로 drop되어

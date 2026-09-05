@@ -24,6 +24,16 @@ impl PluginManager {
         self.rejected.len() + health
     }
 
+    /// 이 메서드 이름의 namespace 를 가진 plugin id — 없으면 host 것이다.
+    ///
+    /// 소유 표(`ipc_namespaces`)는 **설치된 매니페스트에서 유도되는 값**이라 밖에서
+    /// 바뀌면 낡는다(ADR-0173). 그래서 표 자체는 크레이트 밖으로 안 열고, 밖이
+    /// 실제로 묻는 것 하나만 창구로 낸다 — 이 물음은 **소유**만 답한다. "지금 떠
+    /// 있는가" 는 다른 물음이고 `is_running` 이 답한다.
+    pub fn namespace_owner(&self, method: &str) -> Option<&str> {
+        self.ipc_namespaces.resolve(method)
+    }
+
     /// 한 extension 의 상태 — 밖에서 `extensions` 를 직접 만지지 않게 하는 읽기 창구.
     ///
     /// 이 필드는 packages + config 에서 **유도되는 값**이라 밖에서 바뀌면 낡는다.

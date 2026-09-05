@@ -89,6 +89,8 @@ const DERIVED: &[Derived] = &[
         home: HOST_PLUGIN_LIFECYCLE,
     },
     Derived {
+        // `extensions` 와 같이 **구조로 닫혔다** — 크레이트 밖에서는 안 보이고, 밖이
+        // 묻던 하나(`resolve`)는 `namespace_owner` 로 나간다. 남은 범위는 안쪽뿐이다.
         what: "namespace 소유 표(packages 에서 유도)",
         field: ".ipc_namespaces",
         verbs: &[".register(", ".unregister(", ".unregister_plugin(", " ="],

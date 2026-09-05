@@ -16,7 +16,7 @@ impl App {
         // owner plugin 으로 forward. 응답은 plugin 이 줄 때까지 보류되며 다음 tick 에서
         // `plugin_manager.handle_plugin_response` 가 client 에 회신.
         if let Some(mgr) = self.plugin_manager.as_mut()
-            && mgr.ipc_namespaces.resolve(&cmd.request.method).is_some()
+            && mgr.namespace_owner(&cmd.request.method).is_some()
         {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             mgr.forward_namespace_call(
