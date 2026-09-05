@@ -38,6 +38,15 @@ const ATTN_REASON_LABEL_SIZE: LogicalPx = LogicalPx(10.5);
 /// 묶을지가 판단 항목이라 primitive 값을 그대로 이름 붙여 둔다.
 const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
+/// severity 점의 지름. 스케일 밖(7) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고,
+/// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
+/// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
+/// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다.
+/// **같은 7 을 `crates/tasty-ui-widgets/src/status_bar.rs` 의 `DOT_SIZE` 도 쓴다** —
+/// 무관한 두 크레이트가 독립적으로 고른 값이라 드리프트가 아니라 역할일 가능성이 높고,
+/// 그 판단이 서면 둘이 한 토큰으로 모인다.
+const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
+
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
@@ -133,7 +142,11 @@ pub(super) fn draw_attention_tab(
                     );
                     // 우측 severity dot.
                     let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
-                    ui.painter().circle_filled(dot_center, 3.5, color);
+                    ui.painter().circle_filled(
+                        dot_center,
+                        ATTN_STATUS_DOT_SIZE.value() * 0.5,
+                        color,
+                    );
                     if resp.clicked() {
                         ui_state.attention_selected_id = Some(entry.id.clone());
                     }
@@ -367,8 +380,12 @@ fn draw_action_bar(
             "plugins.attn_needs_review"
         };
         ui.painter().circle_filled(
-            ui.cursor().min + egui::vec2(3.5, ui.text_style_height(&egui::TextStyle::Body) / 2.0),
-            3.5,
+            ui.cursor().min
+                + egui::vec2(
+                    ATTN_STATUS_DOT_SIZE.value() * 0.5,
+                    ui.text_style_height(&egui::TextStyle::Body) / 2.0,
+                ),
+            ATTN_STATUS_DOT_SIZE.value() * 0.5,
             color,
         );
         // 디자인 값 11px 은 off-grid — 4px 그리드의 가장 가까운 값인 spacing_md(12)로 snap.
