@@ -120,6 +120,10 @@ pub struct OccupancyRegistry {
     /// 표시" 만 필요하므로 surface_locks 가 아니라 이 맵으로 관리한다.
     surface_to_workspace: HashMap<SurfaceId, WorkspaceId>,
     next_seq: u64,
+    /// **이미 끊긴 것으로 확인된 client** — 아직 그 배치의 정리 단계가 오지 않았을 뿐이다.
+    /// [`Self::mark_clients_disconnected`] 가 채우고 [`Self::release_all_for_client`] 가
+    /// 비운다. 그래서 한 배치 안에서만 값을 갖는다(누적되지 않는다).
+    dead_clients: std::collections::HashSet<AttachClientId>,
     /// force-detach 통지용 push 핸들(단계 1 StreamHub). App 부팅 시 주입.
     /// `None`(테스트/미주입)이면 통지는 no-op + lock 만 free 환원. **hard 전용** —
     /// soft 는 이 경로에 진입하지 않는다.
@@ -271,13 +275,17 @@ impl OccupancyRegistry {
         surface_id: SurfaceId,
         client_id: AttachClientId,
     ) -> Result<AttachLock, AttachError> {
-        if let Some(existing) = self.surface_locks.get(&surface_id) {
+        if let Some(existing) = self.surface_locks.get(&surface_id).copied() {
             if existing.holder == client_id {
-                return Ok(*existing); // 멱등 재-acquire
+                return Ok(existing); // 멱등 재-acquire
             }
-            return Err(AttachError::AlreadyAttached {
-                holder: existing.holder,
-            });
+            // 같은 배치에서 이미 끊긴 holder 는 막지 못한다
+            // ([`Self::mark_clients_disconnected`]).
+            if !self.evict_if_dead(existing.holder) {
+                return Err(AttachError::AlreadyAttached {
+                    holder: existing.holder,
+                });
+            }
         }
         self.next_seq += 1;
         let lock = AttachLock {
@@ -310,6 +318,52 @@ impl OccupancyRegistry {
         let lock = self.surface_locks.remove(&surface_id)?;
         self.notify_detached(lock.holder, "force_detach");
         Some(lock.holder)
+    }
+
+    /// **이 client 들은 이미 끊겼다** — 아직 그 배치의 정리 단계가 오지 않았을 뿐이다.
+    ///
+    /// pump 한 배치의 적용 순서는 **attach 결선이 먼저, 끊김 정리가 마지막**이다
+    /// (`src/boot/headless_stream.rs` 모듈 주석이 그 순서를 계약으로 선언하고, gui 의
+    /// `App::apply_stream_outcome` 도 같은 순서다). 그 계약에는 이유가 있다 — 끊긴
+    /// client 가 죽기 직전에 보낸 입력 프레임은 그 client 의 점유가 살아 있는 동안
+    /// 적용돼야 하고, 그러려면 lock 해제가 입력 적용보다 뒤여야 한다.
+    ///
+    /// 그런데 그 순서만 두면 **같은 배치에 실린 제3자의 재attach 가 이미 죽은 holder
+    /// 에게 막힌다**: 서버는 같은 배치의 끝에서 그 점유를 놓을 것을 이미 알면서도
+    /// `already_attached` 를 돌려준다. 그 거절은 client 쪽에서 *영구* 충돌로 분류돼
+    /// 재연결 backoff 를 최대 간격으로 고정한다
+    /// (`crate::app::auto_attach` 의 `on_reconnect_attempt_failed`) — 끊기자마자
+    /// 다시 붙는 정상 재연결이 가장 오래 기다리게 된다.
+    ///
+    /// 그래서 순서를 바꾸는 대신 **상태 전이를 거부**한다: 죽었다고 표시된 holder 의
+    /// lock 은 다음 acquire 가 걸려 넘어질 대상이 아니라, 그 자리에서 회수할 대상이다
+    /// (`acquire` · `acquire_workspace`). 경쟁하는 acquire 가 없으면 lock 은 그대로
+    /// 남아 그 client 의 잔여 입력이 정상 처리되고, 배치 끝의
+    /// [`Self::release_all_for_client`] 가 lock 과 표시를 함께 지운다.
+    ///
+    /// **부하와 무관하다** — 창을 좁힌 것이 아니라, 같은 배치에 실렸는지만 본다.
+    pub fn mark_clients_disconnected(&mut self, clients: &[AttachClientId]) {
+        self.dead_clients.extend(clients.iter().copied());
+    }
+
+    /// 죽은 holder 인가. [`Self::mark_clients_disconnected`] 참조.
+    fn is_dead(&self, client_id: AttachClientId) -> bool {
+        self.dead_clients.contains(&client_id)
+    }
+
+    /// acquire 를 막고 선 holder 가 **이미 끊긴 것**이면 그 자리에서 점유를 회수한다.
+    /// 반환: 회수했는가(= 이 holder 는 더 이상 막지 못한다).
+    ///
+    /// 회수는 경쟁이 실제로 있을 때만 한다 — 경쟁이 없으면 lock 은 배치 끝까지 남아
+    /// 그 client 의 잔여 입력 프레임이 정상 처리된다(끊김 정리를 마지막에 두는
+    /// 계약의 목적). 경쟁이 있으면 그 잔여 입력은 어차피 주인이 바뀐 자원으로 가므로
+    /// 버리는 것이 맞다.
+    fn evict_if_dead(&mut self, holder: AttachClientId) -> bool {
+        if !self.is_dead(holder) {
+            return false;
+        }
+        self.release_all_for_client(holder);
+        true
     }
 
     /// stream client 연결 종료(EOF) 시 그 client 의 모든 lock 해제. 이미 끊긴
@@ -349,6 +403,9 @@ impl OccupancyRegistry {
             self.surface_locks.remove(sid);
             released.push(*sid);
         }
+        // 이 배치의 "죽었다" 표시는 여기서 수명을 다한다 — lock 이 실제로 사라졌으니
+        // 더 이상 회수 대상이 아니다. 표시를 남기면 재사용된 client_id 가 잘못 죽는다.
+        self.dead_clients.remove(&client_id);
         released
     }
 
@@ -409,17 +466,22 @@ impl OccupancyRegistry {
         members: &[SurfaceId],
         client_id: AttachClientId,
     ) -> Result<AttachLock, AttachError> {
-        if let Some(existing) = self.workspace_locks.get(&workspace_id) {
+        if let Some(existing) = self.workspace_locks.get(&workspace_id).copied() {
             if existing.holder == client_id {
-                return Ok(*existing); // 멱등 재-acquire
+                return Ok(existing); // 멱등 재-acquire
             }
-            return Err(AttachError::AlreadyAttached {
-                holder: existing.holder,
-            });
+            // 같은 배치에서 이미 끊긴 holder 는 막지 못한다
+            // ([`Self::mark_clients_disconnected`]).
+            if !self.evict_if_dead(existing.holder) {
+                return Err(AttachError::AlreadyAttached {
+                    holder: existing.holder,
+                });
+            }
         }
         for s in terminals {
-            if let Some(l) = self.surface_locks.get(s)
+            if let Some(l) = self.surface_locks.get(s).copied()
                 && l.holder != client_id
+                && !self.evict_if_dead(l.holder)
             {
                 return Err(AttachError::AlreadyAttached { holder: l.holder });
             }
@@ -841,5 +903,161 @@ mod tests {
         assert!(String::from_utf8_lossy(&f1.payload).contains("force_detached"));
         let f2 = rx.recv().unwrap();
         assert_eq!(f2.tag, StreamTag::Detach);
+    }
+    // ─── 같은 배치의 끊김과 재attach (순서 계약) ──────────────────────────
+    //
+    // 합성 픽스처만 쓴다(실제 서버·소켓 없음). 재현하려는 것이 *타이밍*이 아니라
+    // pump 가 **정적으로 선언한 적용 순서**이기 때문이다 — `apply` 는 attach 결선을
+    // 먼저, 끊김 정리를 마지막에 부른다. 그래서 한 배치에 "C1 끊김" 과 "C2 attach"
+    // 가 함께 실리면, C2 의 acquire 는 항상 C1 의 lock 을 본다. 부하는 그 두 개가
+    // 한 배치에 실릴 확률만 바꾼다 — 결함 자체는 확률이 아니다.
+
+    /// 같은 배치에 실린 재attach 는 **이미 끊긴** holder 에게 막히지 않는다.
+    #[test]
+    fn a_dead_holder_does_not_block_a_workspace_reattach_in_the_same_batch() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1)
+            .unwrap();
+
+        // pump 가 배치 머리에서 알려준다: client 1 은 이미 끊겼다.
+        reg.mark_clients_disconnected(&[1]);
+
+        let lock = reg
+            .acquire_workspace(100, &[10, 11], &[10, 11, 12], 2)
+            .expect("끊긴 holder 는 재attach 를 막지 못한다");
+        assert_eq!(lock.holder, 2);
+        // 인수인계가 절반만 되면 안 된다 — 터미널 lock 도 새 holder 여야 한다.
+        assert_eq!(
+            reg.holder(10),
+            Some(2),
+            "surface 10 의 holder 도 넘어와야 한다"
+        );
+        assert_eq!(
+            reg.holder(11),
+            Some(2),
+            "surface 11 의 holder 도 넘어와야 한다"
+        );
+        // 비-터미널 멤버도 새 holder 아래로 넘어온다(반환값은 workspace id 가 아니라
+        // 그 workspace 의 holder client id 다).
+        assert_eq!(reg.workspace_holder_of(12), Some(2));
+    }
+
+    /// surface 단위 점유도 같다.
+    #[test]
+    fn a_dead_holder_does_not_block_a_surface_reattach_in_the_same_batch() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire(10, 1).unwrap();
+        reg.mark_clients_disconnected(&[1]);
+        assert_eq!(
+            reg.acquire(10, 2)
+                .expect("끊긴 holder 는 막지 못한다")
+                .holder,
+            2
+        );
+    }
+
+    /// **대조군** — 살아 있는 holder 는 여전히 막는다. 이쪽이 무너지면 위 두 개는
+    /// "점유를 없앴다" 는 뜻이 된다.
+    #[test]
+    fn a_live_holder_still_blocks_a_reattach() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_workspace(100, &[10], &[10], 1).unwrap();
+        reg.acquire(20, 3).unwrap();
+        // 끊긴 것은 *다른* client 다 — 표시가 있다고 아무나 뚫리면 안 된다.
+        reg.mark_clients_disconnected(&[9]);
+        assert_eq!(
+            reg.acquire_workspace(100, &[10], &[10], 2).unwrap_err(),
+            AttachError::AlreadyAttached { holder: 1 }
+        );
+        assert_eq!(
+            reg.acquire(20, 4).unwrap_err(),
+            AttachError::AlreadyAttached { holder: 3 }
+        );
+    }
+
+    /// 배치 **끝**의 정리는 그 사이에 들어온 새 holder 를 쫓아내지 않는다.
+    /// (`release_all_for_client` 는 holder 로 거르므로 성립한다 — 그 성질을 값으로 박는다.)
+    #[test]
+    fn the_batch_end_cleanup_does_not_evict_the_new_holder() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire_workspace(100, &[10], &[10, 12], 1).unwrap();
+        reg.mark_clients_disconnected(&[1]);
+        reg.acquire_workspace(100, &[10], &[10, 12], 2).unwrap();
+
+        // 배치 마지막 단계: 끊긴 client 정리.
+        reg.release_all_for_client(1);
+
+        assert_eq!(reg.holder(10), Some(2), "새 holder 가 살아 있어야 한다");
+        assert_eq!(reg.workspace_holder_of(12), Some(2));
+    }
+
+    /// "죽었다" 표시는 그 배치를 넘어 살지 않는다 — client_id 는 재사용된다.
+    #[test]
+    fn the_dead_mark_does_not_outlive_its_batch() {
+        let mut reg = OccupancyRegistry::new();
+        reg.acquire(10, 1).unwrap();
+        reg.mark_clients_disconnected(&[1]);
+        reg.release_all_for_client(1); // 배치 끝 정리 = 표시 소멸
+
+        // 같은 번호를 다시 쓰는 새 연결이 정상 점유하고, 그 점유는 유효해야 한다.
+        reg.acquire(10, 1).unwrap();
+        assert_eq!(
+            reg.acquire(10, 2).unwrap_err(),
+            AttachError::AlreadyAttached { holder: 1 },
+            "표시가 남아 있으면 살아 있는 holder 가 죽은 것으로 취급된다"
+        );
+    }
+    /// **배선 가드** — 두 pump 가 실제로 배치 머리에서 표시하는가.
+    ///
+    /// 위 테스트들은 *규칙*(죽은 holder 는 못 막는다)을 고정한다. 그런데 규칙이 맞아도
+    /// 두 이벤트 루프가 `mark_clients_disconnected` 를 안 부르면 아무것도 안 빨개진다 —
+    /// 그 배선을 지우는 뮤테이션이 살아남는다는 뜻이다. 배선은 `App`/`AppState` 를
+    /// 세워야 실행으로 볼 수 있어 단위 테스트로 잡히지 않으므로, **호출 순서를 소스에서**
+    /// 읽어 고정한다(레포에 선례가 있다 — `crate::dpi_conversion_guard`).
+    ///
+    /// 이 가드가 잡는 것과 못 잡는 것을 갈라 둔다: **호출이 사라지거나 attach 결선
+    /// 뒤로 밀리면** 잡는다. **다른 이름의 함수로 우회하면** 못 잡는다 — 그 경우는
+    /// 위 규칙 테스트가 여전히 초록이므로 이 가드가 유일한 채널이었다는 뜻이고,
+    /// 그래서 판정 대상 두 자리를 아래에 **이름으로** 못 박는다(파일이 사라지면 실패).
+    #[test]
+    fn both_pumps_mark_disconnects_before_applying_attach_requests() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        // (파일, 배치 적용 함수, 표시 호출, attach 결선 호출)
+        let sites = [
+            (
+                "src/boot/headless_stream.rs",
+                "fn apply(",
+                "mark_clients_disconnected(",
+                "apply_attach_requests(",
+            ),
+            (
+                "src/app/event_handler.rs",
+                "fn apply_stream_outcome(",
+                "mark_disconnected_clients(",
+                "apply_attach_requests_batch(",
+            ),
+        ];
+        let mut checked = 0usize;
+        for (rel, func, mark, attach) in sites {
+            let src = std::fs::read_to_string(root.join(rel))
+                .unwrap_or_else(|e| panic!("{rel} 를 못 읽었다 — 파일이 옮겨졌나: {e}"));
+            let start = src
+                .find(func)
+                .unwrap_or_else(|| panic!("{rel} 에 `{func}` 가 없다 — 적용 함수가 바뀌었다"));
+            let body = &src[start..];
+            let m = body
+                .find(mark)
+                .unwrap_or_else(|| panic!("{rel}::{func} 가 `{mark}` 를 부르지 않는다 — 같은 배치의 재attach 가 죽은 holder 에게 막힌다"));
+            let a = body
+                .find(attach)
+                .unwrap_or_else(|| panic!("{rel}::{func} 에서 `{attach}` 를 못 찾았다"));
+            assert!(
+                m < a,
+                "{rel}::{func}: 끊김 표시가 attach 결선보다 뒤에 있다(표시 {m} > 결선 {a}) — \
+                 순서가 뒤집히면 이 규칙은 아무것도 막지 못한다"
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 2, "두 조합의 pump 를 모두 봐야 한다");
     }
 }

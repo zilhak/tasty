@@ -1569,6 +1569,23 @@ impl App {
     /// stream client 들이 끊겼을 때 그들이 잡고 있던 attach lock 을 모든 engine
     /// (활성 main view + parked)에서 자동 해제한다(attach/detach 단계 3 EOF 해제).
     /// 한 client_id 는 한 engine 에만 lock 을 가지므로 전 engine 순회는 멱등·안전.
+    /// 배치 머리에서 "이 client 들은 이미 끊겼다" 를 각 engine 에 알린다. 실제 해제는
+    /// 배치 끝의 [`Self::release_attach_for_disconnected`] 가 한다 — 표시와 해제를
+    /// 나누는 이유는 `OccupancyRegistry::mark_clients_disconnected` 에 있다.
+    pub(crate) fn mark_disconnected_clients(&mut self, clients: &[u32]) {
+        if clients.is_empty() {
+            return;
+        }
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                main.core_state.attach.mark_clients_disconnected(clients);
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.attach.mark_clients_disconnected(clients);
+        }
+    }
+
     pub(crate) fn release_attach_for_disconnected(&mut self, clients: &[u32]) {
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
@@ -1603,6 +1620,12 @@ impl App {
         // StreamHub 는 Arc clone(저렴) — 필드 동시 차용 회피용.
         let hub = self.stream_hub.clone();
 
+        // 배치 **머리**에서 끊김을 *표시* 한다(해제는 여전히 마지막). 이 한 줄이 없으면
+        // 같은 배치에 실린 재attach 가 배치 끝에서 사라질 holder 에게 `already_attached`
+        // 로 거절된다 — 근거·대안은 `OccupancyRegistry::mark_clients_disconnected`.
+        // headless 는 `boot::headless_stream::apply` 가 같은 함수를 부른다(규칙 하나,
+        // 소유자 하나).
+        self.mark_disconnected_clients(&outcome.disconnected);
         self.apply_attach_requests_batch(outcome.attach_requests, &hub);
         self.apply_workspace_attach_requests_batch(outcome.workspace_attach_requests, &hub);
         self.apply_input_frames_batch(outcome.input_frames);

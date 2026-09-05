@@ -7,8 +7,11 @@
 //! 모여 있었다**(332 줄, 인지 복잡도의 대부분).
 //!
 //! **적용 순서가 계약이다.** plugin manager lazy 초기화가 attach 결선보다 앞서야 하고,
-//! 연결 종료 정리는 마지막이어야 한다(그 앞의 어떤 처리도 이미 끊긴 client 를 보면 안
-//! 된다). [`apply`] 의 호출 순서가 그 계약이며, 각 함수는 자기 벡터를
+//! 연결 종료 *정리*는 마지막이어야 한다 — 끊긴 client 가 죽기 직전 보낸 입력 프레임은
+//! 그 client 의 점유가 살아 있는 동안 적용돼야 하기 때문이다. 다만 정리가 마지막이라는
+//! 것과 **끊겼다는 사실을 마지막에 안다**는 것은 다르다: 그 사실은 배치 머리에서
+//! `mark_clients_disconnected` 로 먼저 알린다. 안 그러면 같은 배치에 실린 제3자의
+//! 재attach 가, 이 배치 끝에서 놓을 것이 확정된 holder 에게 막힌다. [`apply`] 의 호출 순서가 그 계약이며, 각 함수는 자기 벡터를
 //! `std::mem::take` 로 비워 간다 — 벡터를 인자로 풀어 넘기지 않는 이유는 그중 하나가
 //! 7-튜플이라 시그니처가 계약보다 커지기 때문이다.
 
@@ -37,6 +40,12 @@ fn apply(app: &mut App, state: &mut AppState, engine: &mut CoreState, outcome: &
     if !outcome.attach_requests.is_empty() || !outcome.workspace_attach_requests.is_empty() {
         super::headless_plugins::ensure_plugin_manager(app, engine);
     }
+    // 배치 **머리**에서 끊김을 *표시* 한다(해제는 여전히 마지막). 이 한 줄이 없으면
+    // 같은 배치에 실린 재attach 가 배치 끝에서 사라질 holder 에게 `already_attached`
+    // 로 거절된다 — 근거·대안은 `OccupancyRegistry::mark_clients_disconnected`.
+    engine
+        .attach
+        .mark_clients_disconnected(&outcome.disconnected);
     apply_attach_requests(app, engine, outcome);
     apply_input_frames(app, engine, outcome);
     apply_structural_ops(app, state, engine, outcome);
