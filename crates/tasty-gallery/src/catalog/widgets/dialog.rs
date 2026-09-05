@@ -183,12 +183,15 @@ pub fn field(
 pub fn scrim_backdrop(
     ui: &mut egui::Ui,
     theme: &Theme,
-    width: f32,
-    height: f32,
-    top_space: f32,
+    width: LogicalPx,
+    height: LogicalPx,
+    top_space: LogicalPx,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width.value(), height.value()),
+        egui::Sense::hover(),
+    );
     let p = ui.painter_at(rect);
     // faux app (bg-app).
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
@@ -202,7 +205,7 @@ pub fn scrim_backdrop(
             .max_rect(rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
     );
-    child.add_space(top_space);
+    child.add_space(top_space.value());
     add(&mut child);
 }
 
@@ -215,9 +218,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             scrim_backdrop(
                 ui,
                 theme,
-                theme.measure_sm.value(),
-                SCRIM_STAGE_H.value(),
-                64.0,
+                theme.measure_sm,
+                SCRIM_STAGE_H,
+                LogicalPx(64.0),
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, panel_fill(theme), |ui| {
                         region_sym(
@@ -239,9 +242,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             scrim_backdrop(
                 ui,
                 theme,
-                theme.measure_sm.value(),
-                SCRIM_STAGE_H.value(),
-                28.0,
+                theme.measure_sm,
+                SCRIM_STAGE_H,
+                LogicalPx(28.0),
                 |ui| {
                     frame_card(ui, theme, FRAME_CARD_W, raised_fill(theme), |ui| {
                         region_sym(
