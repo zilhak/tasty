@@ -313,6 +313,15 @@ check_egui_window() {
 #                                       들일 수 없고, 진단은 stdout/stderr 가 인터페이스다.
 #                                       (`src/` 의 나머지는 예외가 아니다 — 라이브러리는
 #                                       아무것도 출력하지 않는다)
+#   - crates/tasty-doc-guards/tests/* : 같은 크레이트의 통합 테스트 타깃 — 출하 바이너리에
+#                                       없으니 위 규칙의 술어("라이브러리는 아무것도
+#                                       출력하지 않는다")가 애초에 안 닿는다. tracing 을
+#                                       못 들이는 것은 **크레이트 속성**이라 bins 와 같은
+#                                       사유가 글자 그대로 성립한다. 여기서 찍는 것은
+#                                       가드가 센 **모수**이고, 그것이 없으면 하한 단정만
+#                                       남아 "0" 이 안 봐서 0 인지 정말 없어서 0 인지가
+#                                       안 갈린다. bins 만 면제하고 tests 를 뺀 것은 의도가
+#                                       아니라 누락이었다.
 # 그 외 .rs 파일은 tracing::info!/warn!/error! 사용.
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
@@ -329,6 +338,7 @@ check_println() {
             crates/tasty-latency-control/*) continue ;;
             src/source_guards/*) continue ;;
             crates/tasty-doc-guards/src/bin/*) continue ;;
+            crates/tasty-doc-guards/tests/*) continue ;;
         esac
         local violation
         violation=$(git diff --cached -U0 -- "$f" \
