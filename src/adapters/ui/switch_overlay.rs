@@ -10,25 +10,19 @@
 //!    구현 없음). 사이드바 draw 경로용 egui modifier 래퍼 [`workspace_switch_held`] 도 이
 //!    함수를 통해 판정한다. 탭 draw 경로가 매 프레임 읽는 스냅샷은 [`SwitchOverlayState`]
 //!    (focused pane 한정 표시를 위해 `pane_id` 를 함께 담는다).
-//! 2. **키캡 그리기** ([`paint_keycap`]) — 갤러리 `switch_overlay::num_cap` 형상과 동일
-//!    (본체 `kbd()` 키캡 + active accent 변종). 좌표 painting 이라 탭 스트립·사이드바
-//!    어디서든 정해진 slot 에 그릴 수 있다.
+//! 2. **키캡 자리 잡기** ([`keycap_size`] · [`paint_keycap`]) — 탭 스트립·사이드바가
+//!    정해진 slot 에 겹쳐 그릴 수 있도록 좌표를 받는 얇은 배선. **모양은 여기 없다** —
+//!    `tasty_ui_widgets::paint_num_keycap` 한 벌이고 갤러리 specimen 도 같은 함수를
+//!    부른다. 치수도 `switch-overlay-*` 토큰에서만 온다(지역 상수 금지 — 아래).
 //!
 //! **사용자↔에이전트 분리**: modifier 상태는 egui `ctx.input(...).modifiers` — 실제 사용자
 //! 키 입력(winit→egui raw_input)만 반영한다. IPC/CLI/에이전트 경로는 egui raw_input 에
 //! 주입할 수 없으므로 이 오버레이를 강제 표시할 수 없다(순수 미리보기).
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::input::shortcuts::modifier_hint::Combo;
 use crate::settings::KeybindingSettings;
-
-/// 키캡 한 변 (= 디자인 `switch-overlay-size` = `kbd-size` = size-16). 갤러리 num_cap·
-/// 본체 `kbd()`(chip.rs `KBD_HEIGHT`) 와 동일.
-const KEYCAP_SIZE: LogicalPx = LogicalPx(16.0);
-/// 키캡 하단 3D edge (= `switch-overlay-shadow-depth` = size-2). chip.rs `KBD_BOTTOM_BORDER`.
-const KEYCAP_BOTTOM_BORDER: LogicalPx = LogicalPx(2.0);
 
 /// 현재 눌린 modifier 가 가리키는 switch-number overlay 의 대상.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,15 +158,21 @@ pub fn category_digit(kb: &KeybindingSettings, index: usize) -> Option<&str> {
 }
 
 /// 키캡 한 변(px) — 우측정렬·중앙정렬 배치 계산용(카테고리 헤더/레일 키캡).
-pub fn keycap_size() -> f32 {
-    KEYCAP_SIZE.value()
+///
+/// **테마에서 온다.** `switch-overlay-size` 는 `ui_zoom` 이 곱해진 값이라, 여기 16 을
+/// 다시 적으면 배율에서만 갈린다 — 기본 배율에서는 두 값이 같아 눈에도 테스트에도
+/// 안 잡히고, 사용자가 UI 를 키우는 순간 갤러리만 커진다.
+pub fn keycap_size(theme: &Theme) -> f32 {
+    theme.switch_overlay_size().value()
 }
 
-/// 한 자리 숫자 키캡을 `center` 기준 16px slot 에 그린다.
+/// 한 자리 숫자 키캡을 `center` 기준 slot 에 그린다.
 ///
-/// `active`(현재 탭/워크스페이스) = `accent_primary()` fill + `text_on_accent()` 숫자,
-/// 비active = `surface_raised` fill + `border_strong` edge + `text_secondary` 숫자 (본체
-/// `kbd()` 키캡과 동일 레시피). 갤러리 `switch_overlay::num_cap` 와 1:1.
+/// **그림은 여기 없다** — `tasty_ui_widgets::paint_num_keycap` 한 벌이고 갤러리
+/// specimen 도 같은 함수를 부르므로 두 화면이 갈릴 수 없다. 여기에 형상을 다시 적으면
+/// 그 순간 두 벌이 되고, 갈리는 첫 축은 배율이다: `switch-overlay-*` 치수는 `ui_zoom`
+/// 을 타는데 손으로 박은 상수는 안 탄다. `keycap_side_is_a_theme_token_not_a_local_constant`
+/// 와 `this_file_does_not_paint_the_keycap_itself` 가 그 두 형태를 각각 못박는다.
 ///
 /// `alpha` 는 등장 페이드 계수(0..=1) — modifier 홀드 시작 시 `motion-ui-fast`(90ms)
 /// 동안 0→1 로 올라온다. UI 오버레이 chrome 한정 모션이며 터미널 grid 0ms 불변식과
@@ -185,51 +185,7 @@ pub fn paint_keycap(
     active: bool,
     alpha: f32,
 ) {
-    let rect =
-        egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE.value(), KEYCAP_SIZE.value()));
-    let radius = theme.corner_radius_sm.value();
-    let bw = theme.border_width.value();
-    let (fill, edge, fg): (egui::Color32, egui::Color32, egui::Color32) = if active {
-        (
-            theme.accent_primary().into(),
-            theme.accent_primary().into(),
-            theme.text_on_accent().into(),
-        )
-    } else {
-        (
-            theme.surface_raised().into(),
-            theme.border_strong().into(),
-            theme.text_secondary().into(),
-        )
-    };
-    // 등장 페이드 — 세 색에 동일 알파 적용(키캡 전체가 함께 떠오름).
-    let (fill, edge, fg) = (
-        fill.gamma_multiply(alpha),
-        edge.gamma_multiply(alpha),
-        fg.gamma_multiply(alpha),
-    );
-    painter.rect_filled(rect, radius, fill);
-    painter.rect_stroke(
-        rect,
-        radius,
-        egui::Stroke::new(bw, edge),
-        egui::StrokeKind::Inside,
-    );
-    // 하단 2px edge — Kbd 키캡과 동일.
-    painter.line_segment(
-        [
-            egui::pos2(rect.left() + radius, rect.bottom() - bw),
-            egui::pos2(rect.right() - radius, rect.bottom() - bw),
-        ],
-        egui::Stroke::new(KEYCAP_BOTTOM_BORDER.value(), edge),
-    );
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        digit,
-        egui::FontId::monospace(theme.font_size_micro.value()),
-        fg,
-    );
+    tasty_ui_widgets::paint_num_keycap(painter, theme, center, digit, active, alpha);
 }
 
 /// switch-number overlay 등장 페이드 계수(0..=1).
@@ -505,5 +461,47 @@ mod tests {
         kb.set_workspace_slot_key(2, "w");
         assert_eq!(workspace_digit(&kb, 2), Some("w"));
         assert_eq!(workspace_digit(&kb, 0), Some("1"));
+    }
+
+    /// 키캡 한 변은 **토큰**에서 온다 — 지역 상수로 되박으면 `ui_zoom` 에서 갈린다.
+    ///
+    /// 기본 배율만 재면 상수와 토큰이 같은 값이라 통과한다. 그래서 배율을 두 개 잡고
+    /// **함께 움직이는가**를 묻는다.
+    #[test]
+    fn keycap_side_is_a_theme_token_not_a_local_constant() {
+        let one = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let two = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 2.0);
+        assert_eq!(keycap_size(&one), one.switch_overlay_size().value());
+        assert_eq!(keycap_size(&two), two.switch_overlay_size().value());
+        assert!(
+            keycap_size(&two) > keycap_size(&one),
+            "배율을 안 타면 지역 상수로 되돌아간 것이다"
+        );
+    }
+
+    /// 이 파일은 키캡을 **직접 그리지 않는다** — 그림은 `tasty_ui_widgets` 한 벌이다.
+    ///
+    /// 술어를 "두 그림이 같은가" 가 아니라 **"그림이 하나뿐인가"** 로 세운다. 같은지를
+    /// 물으면 두 벌이 있어도 초록일 수 있어, 갈리기 시작한 뒤에야 빨개진다.
+    ///
+    /// 스캔 대상이 **이 파일 자신**이라 주석·문자열을 그대로 두면 설명하려고 적은
+    /// 이름이 위반으로 잡힌다 — 그래서 `mask_non_code` 로 덮은 사본 위에서만 판정한다.
+    /// 위 바늘들이 이 테스트 본문에 리터럴로 적혀 있어도 자기를 잡지 않는 이유다.
+    #[test]
+    fn this_file_does_not_paint_the_keycap_itself() {
+        let code = crate::source_guards::mask_non_code(include_str!("switch_overlay.rs"));
+        for needle in [
+            "rect_filled",
+            "rect_stroke",
+            "line_segment",
+            "circle_filled",
+            "layout_no_wrap",
+        ] {
+            assert!(
+                !code.contains(needle),
+                "`{needle}` 호출이 이 파일에 있다 — 키캡 형상이 두 벌이 됐다. \
+                 tasty_ui_widgets::paint_num_keycap 에 위임해라"
+            );
+        }
     }
 }

@@ -206,52 +206,85 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
 
 /// 단일 숫자 키캡 (디자인 `overlays/NumCap` — switch-number overlay).
 ///
-/// `kbd()` 의 단일 키캡 시각을 그대로 따르되 `active` 면 accent fill 로 교체한다.
-/// modifier 홀드 중 탭/워크스페이스의 leading indicator 를 제자리 교체하는 용도라
-/// 16×16 고정. core `kbd()` 와 시각 기준(상수·하단 2px·radius)을 공유한다.
-///
-/// - inactive: `surface_raised` fill + `border_strong` 엣지 + `text_secondary` 숫자.
-/// - active: `accent_primary` fill/엣지 + `text_on_accent` 숫자.
+/// `Ui` 에 한 변 `switch-overlay-size` 인 정사각 자리를 할당하고 그 중심에
+/// [`paint_num_keycap`] 으로 그린다 — **그림은 그쪽 한 벌**이고 여기는 자리 계산만
+/// 한다. 이미 정해진 좌표에 겹쳐 그려야 하는 쪽은 [`paint_num_keycap`] 을 직접 부른다.
 pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -> egui::Response {
-    // inactive 는 `kbd-*` component 색 대응. active accent 는 chip component 토큰
-    // 없어 semantic 유지.
+    let side = theme.switch_overlay_size().value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    paint_num_keycap(ui.painter(), theme, rect.center(), digit, active, 1.0);
+    resp
+}
+
+/// 숫자 키캡 한 장을 **좌표에 직접** 그린다 — [`num_keycap`] 이 레이아웃에 자리를
+/// 잡아 부르는 것과 같은 그림이다.
+///
+/// 이 갈래가 필요한 이유는 소비처가 둘이고 **레이아웃 여부가 다르기 때문**이다.
+/// 갤러리 specimen 은 `Ui` 안에 자리를 할당해 그리고, 본체 switch-number overlay 는
+/// 탭 스트립·사이드바 행 위에 이미 정해진 좌표로 겹쳐 그린다(그래서 알파 페이드도
+/// 필요하다). 모양이 아니라 **놓는 방식**이 다르므로, 갈리는 것은 자리 계산까지고
+/// 그림은 여기 한 벌이다.
+///
+/// `alpha` 는 등장 페이드 계수(0..=1) — 채움·엣지·글자에 같은 값이 걸려 키캡 전체가
+/// 함께 떠오른다.
+///
+/// 색과 두 치수(한 변·하단 두께)는 `switch-overlay-*` component 토큰을 읽는다 —
+/// 이 컴포넌트가 자기 토큰 집합을 가지므로 semantic 을 직접 읽지 않는다. 디자인이
+/// 키캡만 다시 칠하면 여기만 바뀐다. radius 와 글자 크기는 그 집합에 없어
+/// `kbd-*` 를 그대로 쓴다(`switch-overlay-*` 자신이 `kbd-*` 의 별칭이다).
+pub fn paint_num_keycap(
+    painter: &egui::Painter,
+    theme: &Theme,
+    center: egui::Pos2,
+    digit: &str,
+    active: bool,
+    alpha: f32,
+) {
     let (fill, border, fg) = if active {
-        let accent = theme.accent_primary().to_egui();
-        (accent, accent, theme.text_on_accent().to_egui())
+        (
+            theme.switch_overlay_active_bg().to_egui(),
+            theme.switch_overlay_active_bg().to_egui(),
+            theme.switch_overlay_active_fg().to_egui(),
+        )
     } else {
         (
-            theme.kbd_bg().to_egui(),
-            theme.kbd_border().to_egui(),
-            theme.kbd_fg().to_egui(),
+            theme.switch_overlay_bg().to_egui(),
+            theme.switch_overlay_border().to_egui(),
+            theme.switch_overlay_fg().to_egui(),
         )
     };
+    let (fill, border, fg) = (
+        fill.gamma_multiply(alpha),
+        border.gamma_multiply(alpha),
+        fg.gamma_multiply(alpha),
+    );
+    let side = theme.switch_overlay_size().value();
     let radius = theme.kbd_radius().value();
     let bw = theme.border_width.value();
-    let micro = theme.kbd_font_size().value();
-    let kbd_h = theme.kbd_size().value();
-    let bottom_border = theme.kbd_shadow_depth().value();
-    let galley =
-        ui.painter()
-            .layout_no_wrap(digit.to_owned(), mono(micro), egui::Color32::PLACEHOLDER);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(kbd_h, kbd_h), egui::Sense::hover());
-    ui.painter().rect_filled(rect, radius, fill);
+    let bottom_border = theme.switch_overlay_shadow_depth().value();
+    let rect = egui::Rect::from_center_size(center, egui::vec2(side, side));
+    painter.rect_filled(rect, radius, fill);
     // 키캡 하단 보더 2px 강조 → 윗변 1px, 아랫변 2px 로 따로 그린다 (kbd 와 동일).
-    ui.painter().rect_stroke(
+    painter.rect_stroke(
         rect,
         radius,
         egui::Stroke::new(bw, border),
         egui::StrokeKind::Inside,
     );
-    ui.painter().line_segment(
+    painter.line_segment(
         [
             egui::pos2(rect.left() + radius, rect.bottom() - bw),
             egui::pos2(rect.right() - radius, rect.bottom() - bw),
         ],
         egui::Stroke::new(bottom_border, border),
     );
+    let galley = painter.layout_no_wrap(
+        digit.to_owned(),
+        mono(theme.kbd_font_size().value()),
+        egui::Color32::PLACEHOLDER,
+    );
     let pos = rect.center() - galley.rect.size() * 0.5;
-    ui.painter().galley(pos, galley, fg);
-    resp
+    painter.galley(pos, galley, fg);
 }
 
 /// Kbd — 키캡 시퀀스. `keys` 는 `"+"` 로 분할(예: `"Ctrl+K"`), 각 키를 키캡으로.

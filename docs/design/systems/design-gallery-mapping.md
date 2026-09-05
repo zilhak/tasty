@@ -106,7 +106,7 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
-| `NumCap`(키캡) | `num_cap` (헬퍼) — 본체 `kbd()`(`chip.rs`) 형상 재현 + active accent 변종 | ✅ `switch_overlay::paint_keycap` (공통, P2a) |
+| `NumCap`(키캡) | `num_cap` (헬퍼) — 공용 위젯 `tasty_ui_widgets::num_keycap` 호출 | ✅ `switch_overlay::paint_keycap` (공통, P2a) — 같은 그림을 `paint_num_keycap` 으로 호출 |
 | `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar.rs` `draw_pane_tab_bars_view` (leading 교체, P2a) |
 | `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (status dot 교체, P2b) |
 | `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
@@ -148,11 +148,13 @@ discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 �
 approval 사이(디자인 순서와 동일). 3 specimen(tab / workspace / category), workspace·category 는 released /
 held-full / released-rail / held-rail cluster.
 
-**키캡 형상 재현 근거**: 본체 `kbd()` 는 inline egui 위젯(자체 allocate)이라 탭 스트립/사이드바
-중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서 tab_bar/sidebar specimen 과 동일하게
-painter + Theme 토큰으로 키캡을 좌표 painting 한다(`num_cap`). 레시피는 `chip.rs` 와 1:1
-(corner_radius_sm / border_width / 하단 2px / font_size_micro / surface_raised·border_strong·
-text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme 필드 없음(P0 확정).
+**왜 painter 갈래가 따로 있나**: 본체 `kbd()`·`num_keycap()` 은 inline egui 위젯(자체
+allocate)이라 탭 스트립/사이드바 중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서
+`chip.rs` 가 그림을 `paint_num_keycap(painter, theme, center, ..)` 로 뽑아 두고, `num_keycap`
+은 자리를 할당해 그것을 부르고 본체 `paint_keycap` 은 좌표를 넘겨 그것을 부른다 — **갈리는
+것은 자리 계산까지고 형상은 한 벌**이라 레시피 동기화가 필요 없다. 색·치수는
+`switch-overlay-*` component 토큰(전부 `kbd-*` 별칭, active 만 accent_primary /
+text_on_accent)에서 온다. 신규 Theme 필드 없음(P0 확정).
 
 ## preset demo-layout (Overlays)
 
@@ -233,6 +235,7 @@ kind 소스로 쓴다.
 | 디자인 canonical | 공용 crate view | 본체 wrapper | 갤러리 specimen |
 |---|---|---|---|
 | `ui_kits/terminal/work.jsx` `StatusBar` (하단 24px 바, 좌 컨텍스트 / 우 액션) | `tasty_ui_widgets::draw_status_bar_view` (`crates/tasty-ui-widgets/src/status_bar.rs`, `StatusBarData`→`StatusBarDrawResult`) | `src/adapters/ui/status_bar.rs::draw_status_bar` (Area·z-order·i18n 라벨 주입·action 적용) | `statusbar` (Layouts › Status bar, `components/status_bar.rs::draw`) |
+| `gallery/overlays.jsx` `NumCap` (16px 숫자 키캡) | `tasty_ui_widgets::paint_num_keycap` (`crates/tasty-ui-widgets/src/chip.rs`; 레이아웃 갈래는 같은 파일의 `num_keycap`) | `src/adapters/ui/switch_overlay.rs::paint_keycap` (slot 좌표·등장 페이드 alpha) | `switch-overlay` (Overlays, `components/switch_overlay.rs::keycap_at`) |
 
 crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::Area` 와 `LayerId`
 (부유 배치·z-order 는 본체 정책), i18n 라벨·tooltip 문자열(위젯 crate 는 `tasty-i18n`

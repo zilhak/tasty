@@ -332,7 +332,7 @@ mod sloc_gate_skip_proxy;
 
 /// 주석·문자열·문자 리터럴을 공백으로 덮은 사본을 만든다. 줄바꿈은 그대로 두므로
 /// 결과 문자열의 줄 번호는 원본과 같다. 라이프타임 틱(`'a`)은 문자 리터럴과 구분한다.
-fn mask_non_code(src: &str) -> String {
+pub(crate) fn mask_non_code(src: &str) -> String {
     let chars: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
     let mut i = 0usize;

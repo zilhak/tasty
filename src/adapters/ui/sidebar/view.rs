@@ -479,7 +479,7 @@ pub fn draw_full_sidebar_view(
                                 props.category_switch_held,
                             );
                             let pad = th.spacing_sm.value();
-                            let half = crate::adapters::ui::switch_overlay::keycap_size() / 2.0;
+                            let half = crate::adapters::ui::switch_overlay::keycap_size(th) / 2.0;
                             let center =
                                 egui::pos2(header.rect.max.x - pad - half, header.rect.center().y);
                             crate::adapters::ui::switch_overlay::paint_keycap(
