@@ -101,12 +101,12 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `Spec.draw` 는 `(ui, &Th
 ## switch_overlay (Overlays)
 
 디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw 는 **P2 예정**
-(`src/adapters/ui/.../tab_bar.rs` 탭 스트립 + `sidebar/{full,collapsed}.rs`). 갤러리 specimen
+(`src/adapters/ui/tab_bar.rs` 탭 스트립 + `sidebar/{full,collapsed}.rs`). 갤러리 specimen
 은 P1 에서 본체보다 먼저 추가됨 (gallery-first, ADR-0020).
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
-| `NumCap`(키캡) | `num_cap` (헬퍼) — 본체 `kbd()`(`chip.rs`) 형상 재현 + active accent 변종 | ✅ `switch_overlay::paint_keycap` (공통, P2a) |
+| `NumCap`(키캡) | `num_cap` (헬퍼) — 공용 위젯 `tasty_ui_widgets::num_keycap` 호출 | ✅ `switch_overlay::paint_keycap` (공통, P2a) — 같은 그림을 `paint_num_keycap` 으로 호출 |
 | `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar.rs` `draw_pane_tab_bars_view` (leading 교체, P2a) |
 | `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (status dot 교체, P2b) |
 | `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
@@ -148,11 +148,13 @@ discoverability 는 modifier-hint 패널의 `HintRole::CategorySwitch`(폴더 �
 approval 사이(디자인 순서와 동일). 3 specimen(tab / workspace / category), workspace·category 는 released /
 held-full / released-rail / held-rail cluster.
 
-**키캡 형상 재현 근거**: 본체 `kbd()` 는 inline egui 위젯(자체 allocate)이라 탭 스트립/사이드바
-중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서 tab_bar/sidebar specimen 과 동일하게
-painter + Theme 토큰으로 키캡을 좌표 painting 한다(`num_cap`). 레시피는 `chip.rs` 와 1:1
-(corner_radius_sm / border_width / 하단 2px / font_size_micro / surface_raised·border_strong·
-text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme 필드 없음(P0 확정).
+**왜 painter 갈래가 따로 있나**: 본체 `kbd()`·`num_keycap()` 은 inline egui 위젯(자체
+allocate)이라 탭 스트립/사이드바 중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서
+`chip.rs` 가 그림을 `paint_num_keycap(painter, theme, center, ..)` 로 뽑아 두고, `num_keycap`
+은 자리를 할당해 그것을 부르고 본체 `paint_keycap` 은 좌표를 넘겨 그것을 부른다 — **갈리는
+것은 자리 계산까지고 형상은 한 벌**이라 레시피 동기화가 필요 없다. 색·치수는
+`switch-overlay-*` component 토큰(전부 `kbd-*` 별칭, active 만 accent_primary /
+text_on_accent)에서 온다. 신규 Theme 필드 없음(P0 확정).
 
 ## preset demo-layout (Overlays)
 
@@ -233,6 +235,7 @@ kind 소스로 쓴다.
 | 디자인 canonical | 공용 crate view | 본체 wrapper | 갤러리 specimen |
 |---|---|---|---|
 | `ui_kits/terminal/work.jsx` `StatusBar` (하단 24px 바, 좌 컨텍스트 / 우 액션) | `tasty_ui_widgets::draw_status_bar_view` (`crates/tasty-ui-widgets/src/status_bar.rs`, `StatusBarData`→`StatusBarDrawResult`) | `src/adapters/ui/status_bar.rs::draw_status_bar` (Area·z-order·i18n 라벨 주입·action 적용) | `statusbar` (Layouts › Status bar, `components/status_bar.rs::draw`) |
+| `gallery/overlays.jsx` `NumCap` (16px 숫자 키캡) | `tasty_ui_widgets::paint_num_keycap` (`crates/tasty-ui-widgets/src/chip.rs`; 레이아웃 갈래는 같은 파일의 `num_keycap`) | `src/adapters/ui/switch_overlay.rs::paint_keycap` (slot 좌표·등장 페이드 alpha) | `switch-overlay` (Overlays, `components/switch_overlay.rs::keycap_at`) |
 
 crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::Area` 와 `LayerId`
 (부유 배치·z-order 는 본체 정책), i18n 라벨·tooltip 문자열(위젯 crate 는 `tasty-i18n`
@@ -251,23 +254,51 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
 
-## Layouts — plugins window (1-depth idiom)
+## Overlays — plugins window
 
 디자인 `ui_kits/terminal/overlays/plugins_window.jsx` (820×540 모달) ↔ 본체 `src/view/plugins/`
-↔ 갤러리 `1 depth (Plugins idiom)` (Layouts). 본체 binary 의존 0 — 로컬 mock 데이터로 시각 복제.
+↔ 갤러리 `Plugins manager window` (Overlays). 본체 binary 의존 0 — 로컬 mock 데이터로 시각 복제.
 
-| 디자인 jsx 컴포넌트 | 갤러리 함수 (`widgets/layout_1depth.rs`) | 비고 |
+본체는 `TopBottomPanel`/`SidePanel` 을 `Context` 에 직접 붙여 창 전체를 채우므로 갤러리가 그
+함수를 호출할 수 없다 — 같은 구조를 rect 기준으로 전사한다. 전사할 고정 창 크기가 본체에
+없어서 무대 크기는 토큰으로 조립한다(`LIST_W + measure_md` × `measure_sm`). 디자인의 820×540
+은 여기 들어오지 않는다. (Layouts 의 `1-depth (general shell)` specimen
+`crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` 은 이 창이 아니라 **리스트→상세
+배치 관용구 자체**를 보이는 별개 specimen 이다.)
+
+| 디자인 jsx 컴포넌트 | 본체 | 갤러리 함수 (`crates/tasty-gallery/src/catalog/components/plugins_window.rs`) |
 |---|---|---|
-| `PluginsWindow`(container) | `draw_modal` | 820×540 고정, 48px 헤더 |
-| header + `Seg` 세그먼트 | `draw_header` / `draw_segments` | Installed \| Attention(danger badge) \| Add |
-| installed list+detail | `draw_installed` (`with_list_panel`/`with_detail`) | 288 리스트 + 디테일 + 액션바 |
-| `AttentionPanel` (4케이스) | `draw_attention` / `reason_banner` / `reason_detail` | unknown-key·signature-invalid·permissions-changed·health-error |
-| `AddPluginForm` (trust 흐름) | `draw_add` (`add_path_picker`/`add_manifest_preview`) | 매니페스트 프리뷰 + 미신뢰 배너 + Trust & add |
-| `PluginAvatar` | `cat_avatar` / `draw_avatar` | color-mix → `mix`/`alpha` 헬퍼 |
+| `PluginsWindow`(container) | `src/view/plugins/ui.rs` `draw_plugins_panel` | `window` + `stage_size` — 탭 상태 `Tab`(Installed / Attention / Add{preview}) 로 본문이 갈린다 |
+| header + `Seg` 세그먼트 | 같음(헤더 밴드) | `header` / `segment_tab` — Installed \| Attention(danger 배지) \| Add plugin. 필터 입력은 Installed 탭에서만 |
+| installed list+detail | `src/view/plugins/ui/list.rs` `draw_list_tab` | `plugins_window/installed.rs`: `list_pane` / `detail_pane` — 상세 블록 열셋 전량(빈 상태 · health error 박스 · Status/Configure · Surface kinds · Permissions · Commands · Install path/Log · Uninstall 2 분기 포함) |
+| `AttentionPanel` (4케이스) | `src/view/plugins/ui/attention.rs` `draw_attention_tab` | `plugins_window/attention.rs`: `list_pane` / `detail_pane` / `banner` / `reason_detail` / `action_bar` / `reason_cards` |
+| `AddPluginForm` (trust 흐름) | `src/view/plugins/ui/add.rs` `draw_add_tab` | `plugins_window/add.rs`: `input_pane` / `preview_pane` / `untrusted_warning` |
+| `PluginAvatar` | (없음) | (없음) — 디자인에만 있는 컴포넌트다 |
 
-검증: `TASTY_GALLERY_SHOT=31:<png>` (Installed)·기본탭 임시 변경으로 Attention 4케이스/Add 캡처.
-좌표 ±1px(모달 820×540, 헤더 48, 리스트 288), RGB 정확(bg_sidebar/bg_panel/border_strong). 화면전용
-고정값(820/540/48/288/26/14/22)은 token-policy §c verbatim const, 브랜드 마크색은 테마불변 const.
+severity 는 본체 `src/view/plugins/ui.rs` `is_danger` 를 따른다 — 서명 계열만 danger, 권한
+변경·런타임 오류는 warning. Installed 목록의 health dot 과는 다른 축이다(health dot 은 실행 중
+실패 하나만 본다).
+
+검증: specimen 이 여덟 상태(Installed 넷 — 선택 · health error · 무선택 · uninstall 확인,
+Attention 둘 — 목록 있음 · 빈 상태, Add 둘 — 경로입력 · 매니페스트 프리뷰)를 세로로 모두
+그리므로 탭 전환 없이 대조한다. Installed 무대만 상세가 길어 `measure_xl` 로 높다 — 본체는
+그 자리를 `ScrollArea` 로 접지만 갤러리는 접으면 캡처에서 사라진다. 페이지는 Overlays(idx 3)
+이고 이 섹션은 그 페이지 맨 아래라 스크롤 오프셋을 준다 — 정확한 y 는 위에 섹션이 늘면 밀리므로
+오프셋 몇 개를 한 배치로 훑어 고른다([screenshot-methods](../../ai-verification/screenshot-methods.md)).
+
+```bash
+TASTY_GALLERY_SIZE=1400x2500 TASTY_GALLERY_SHOT="3@36500:/abs/a.png,3@39000:/abs/b.png,3@41500:/abs/c.png" \
+  ./target/debug/tasty-gallery
+```
+
+본체 대조는 Plugins 창을 띄우고 그 창 id 로 찍는다. 이 창은 사이드바 버튼에서만 열리고 그
+경로를 여는 IPC 가 없으므로(원칙 1 — 사용자 조작 재현은 release 에 없다), 열기는 창 클릭으로
+한다. 창 제목은 `Tasty Plugins` 다([screenshot-methods](../../ai-verification/screenshot-methods.md)
+의 창 제목 표).
+
+```bash
+tasty screenshot --path /abs/host.png --window <Tasty Plugins 창 id>
+```
 
 ## Specimen 공용 헬퍼 (dedup)
 
@@ -275,7 +306,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 
 | 헬퍼 | 제공 | 쓰는 곳 |
 |---|---|---|
-| `specimen.rs` | `caption` / `case_title` | 전 prim_* + rename_popup·sidebar |
+| `spec.rs` | `section` / `spec` / `stage`(`StageVariant`) / `cluster` / `meta`(`TokenChip`) / `note` / `do_` / `dont` | 카탈로그 106 개 `.rs` 중 96 개 |
 | `toast_card.rs` | `accent_color` / `draw_card` (`CardColors`) | toast(components/widgets) |
 | `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: close X / 전체화면 `fit`) | approval · convert · file_handler_picker · dialog · fullscreen_stage |
 
@@ -300,7 +331,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/AutoComplete` | `AutoComplete` / `autocomplete_dropdown` (Input 트리거 + menu container + MenuItem 행 middle-ellipsis + substring 필터 + match highlight + max-height 스크롤) | `prim_autocomplete` | ✓ gallery |
 | `plugins.jsx/PathField`(:59) | `PathField` / `PathFieldOutcome` (AutoComplete 트리거 + Go IconButton, 편집/이동/원복 결정 = markdown `addr_outcome` 포팅, idle=secondary/editing=primary) | `prim_path_field` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
-| `feedback/Spinner` | `Spinner`(size/color/reduced_motion) | `prim_spinner` | ✓ port_scanner(loading) |
+| `feedback/Spinner` | `Spinner`(size/color, 모션은 `Theme` 이 결정 · reduced_motion 은 override) | `prim_spinner` | ✓ port_scanner(loading) |
 | `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` | — |
 | `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` | — |
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
@@ -326,6 +357,16 @@ env 일회성 캡처가 격리 자동검증 경로다.
 상위 화면 idiom 데모. 본체 binary 의존 0 — layout·색·폰트·간격은 Theme 토큰, 상태는
 thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 
+### 1 depth (general list → detail)
+
+`crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs`(`onedepth`). **대응하는 본체
+함수가 없다** — 특정 창이 아니라 좌측 고정 리스트(200) → 우측 detail 배치 관용구 자체를
+보이는 데모다. Plugins 창의 미러는 이것이 아니라
+`crates/tasty-gallery/src/catalog/components/plugins_window.rs` 이고, 그쪽은 목록 폭을 본체와
+같은 접근자 `Theme::plugins_side_panel_width`(240)에서 읽고 행 높이도 40 이다(위
+[Overlays — plugins window](#overlays--plugins-window) 절). 필터가 놓이는 자리도 다르다 —
+본체 Plugins 창의 필터는 헤더 밴드 우측이고 이 idiom 데모는 목록 안이다.
+
 ### 2 depth (Settings idiom)
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx` ↔ 본체
@@ -337,16 +378,16 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
 않는 일반 2-depth idiom(168/40, 토큰 도출)이다 — 혼동 금지.
 
-| 디자인 jsx 컴포넌트 | tasty 함수 (갤러리) | 비고 |
-|---|---|---|
-| `SettingsWindow`(container, 824×472) | `draw` | 모달 고정폭 `MODAL_W/H` |
-| L1 top tabs (underline) | `draw_top_tabs` → `horizontal_tab_bar_with_arrows` | `gallery-alignment §3`: underline fork 금지, scroll-arrows 공유 위젯 유지 (underline = 스킨) |
-| L2 sidebar(필터+리스트, 200) | `draw_split` → `two_depth_layout_filtered` | 필터 Input + sub-section 리스트. 패널 폭은 공유 위젯값(`tab_width` 150) — 디자인 settings sidebar 200 과 차이는 공유 위젯 fork 회피로 미적용 |
-| `Row`(label-150 + 컨트롤) | `form_row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(2행 — `close_active`/`quit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
-| `Mono`(섹션 헤딩) | `section_heading` | micro(10)·uppercase·text-muted |
-| `Note` | `note` | `measure-md`(400) 폭·text-muted |
-| 색 스와치(16, radius 2) | `swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
-| footer Cancel/Save | `draw_bottom_buttons` | ghost/primary, gap 8 |
+| 디자인 jsx 컴포넌트 | 본체 (`src/view/settings/ui.rs`) | 갤러리 (`components/settings.rs`) | 비고 |
+|---|---|---|---|
+| `SettingsWindow`(container, 824×472) | `draw_settings_panel` | `draw` | 모달 고정폭 `MODAL_W/H` |
+| L1 top tabs (underline) | `draw_l1_tab_band` | `l1_band` / `l1_tab` | `gallery-alignment §3`: underline fork 금지 (underline = 스킨). **공유 위젯을 쓰지 않는다** — 양쪽 다 자기 `Frame` 으로 밴드를 그린다. 좌측 타이틀·세로 구분선이 탭과 같은 줄에 들어가야 해서 탭만 담는 컨테이너에 안 맞는다 |
+| L2 sidebar(필터+리스트, 200) | `draw_l2_sidebar` | `l2_sidebar` / `l2_item` | 필터 Input + sub-section 리스트. **양쪽 다 200** 이고 공유 위젯을 쓰지 않는다 — 본체는 모달 셸이 소유하는 `SidePanel`(오른쪽 1px vline), 갤러리는 같은 폭의 `Frame`. `tasty_ui_widgets::two_depth_layout_filtered` 는 콘텐츠 안에 놓이는 둥근 테두리 패널(`SUB_TAB_PANEL_WIDTH` 150)이라 **다른 idiom** 이다 |
+| `Row`(label-150 + 컨트롤) | 공통 헬퍼 없음 — 탭마다 따로(`tabs/remote_transfer.rs` `settings_row` · `tabs/appearance.rs` `plugin_setting_row` 등) | `row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(2행 — `close_active`/`quit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
+| `Mono`(섹션 헤딩) | — | `mono` | micro(10)·uppercase·text-muted |
+| `Note` | — | `note` | `measure-md`(400) 폭·text-muted |
+| 색 스와치(16, radius 2) | — | `theme_swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
+| footer Cancel/Save | `draw_settings_footer` | `footer` | ghost/primary, gap 8 |
 
 form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen const, 디자인
 `tokens/semantic.css` 미러). content 는 Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다

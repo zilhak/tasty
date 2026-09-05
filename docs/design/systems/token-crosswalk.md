@@ -66,6 +66,54 @@ vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-de
 - DTCG semantic **색** 토큰 ↔ Rust 접근자 전수표. 과거 이 문서가 "Rust 미대응"으로 꼽았던 것 중 `text-on-accent` → `Theme::text_on_accent()`, `radius-sm` → `SIZING.corner_radius_sm` 은 **이미 구현되어 있다** (stale 정정). `radius-pill`/`motion-*`/`ui-scale-*`/`brand-*` 등은 여전히 Theme 표면 부재 — 색은 시리즈 05, component 색 접근자는 시리즈 04 에서 결정.
 - component tier(버튼/입력/탭/토스트…) ↔ 호출처 매핑, SIZING 소비처의 토큰 참조 전환 (시리즈 02).
 
+### ★ 시리즈 02 착수 전 필독 — 그 전환에는 **픽셀 변경이 섞여 있다**
+
+**이 시리즈는 "연결" 이 아니라 부분적으로 재디자인이다.** vendor 된 값과 그 자리가 지금
+그리는 값이 다르면 연결하는 순간 화면이 바뀌고, 그건 전환이 아니라 **디자인 결정**이라
+전환 커밋이 곁다리로 할 수 없다. **현재 다섯이 확인됐고 나머지는 미측정이다** — 그 둘을
+같이 읽어라. 다섯은 상한이 아니라 지금까지 연 자리의 수다.
+
+**같은 형태를 이 레포는 이미 한 번 겪었다** — 폰트 축에서 "값이 바뀌는 치환은 하나도
+없다" 는 주장과 함께 올라온 묶음에 실제로는 ±0.5~1.0 변경이 10 자리 섞여 있었고,
+그 결과가 [ADR-0126](../../adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md) 이다.
+그 ADR 의 결론(스케일 밖 값은 스냅하지 않고 사유를 적은 명명 const 로 둔다)은 폰트 ·
+코너 반경 · 점 치수 세 축에 적용돼 있다.
+
+**전환 전에 값 대조부터 한다.** 접근자를 부르기 전에 그 자리가 지금 그리는 값을 재고,
+토큰 값과 다르면 연결하지 말고 디자인 판단을 받는다.
+
+실측(2026-09-05, 치수 접근자 208): 접근자 이름으로 불리는 것 125 · **base 필드 이름으로
+불리는 것 53** · 자체 계산이면서 아무 이름으로도 안 불리는 것 30.
+
+★ **"안 불리는 접근자" 를 세는 것으로는 이 위험을 못 잰다.** 접근자가 안 불려도 같은 값이
+base 필드 이름으로 이미 불리고 있을 수 있고(예: `titlebar-caption-width` ↔ `caption_width`),
+반대로 **base 이름으로 불리고 있어도 그 컴포넌트 자리는 다른 값을 그리고 있을 수 있다.**
+아래 표의 `tab-dot-size` 와 `toast-gap` 이 정확히 뒤쪽이다 — 둘 다 "불리는" 쪽에 있는데
+자리는 어긋난다. **호출 여부와 값 일치는 독립이다.**
+
+값이 어긋나는 것으로 **확인된** 자리는 다섯이다.
+
+| 토큰 | 토큰 값 | 지금 그리는 값 | 자리 |
+|---|---|---|---|
+| `component.tab-dot-size` | 8 | **6** | `src/adapters/ui/tab_bar.rs` (`TAB_BUSY_DOT_SIZE`) |
+| `component.status-dot-size` (+ `badge-`/`tag-`/`tab-` 별칭) | 8 | **7** | `crates/tasty-ui-widgets/src/status_bar.rs` (`DOT_SIZE`) |
+| `component.status-dot-attached-ring-width` | 2 | **1.5** | `src/adapters/ui/sidebar/view.rs` (`ATTACHED_OUTLINE_WIDTH`) |
+| `component.status-dot-attached-ring-offset` | 2 | **1.5** | 같은 자리 (ring 반경 계산) |
+| `component.toast-gap` | 8 | **6** | `crates/tasty-ui-widgets/src/tokens.rs` (`TOAST_GAP`) |
+
+**마지막 줄은 소스가 반대로 적고 있다** — `TOAST_GAP` 의 doc 은 "4px 그리드 밖(6)이라
+**대응 토큰이 없다**" 인데, `component.toast-gap` 이 `{semantic.space-sm}` = 8 로 존재한다.
+그리드 스텝에서 6 을 못 찾은 것이 "토큰이 없다" 로 적힌 것이다. **그리드 스케일에 없는
+것과 컴포넌트 토큰이 없는 것은 다른 물음이다.**
+
+나머지는 **미측정**이다 — 0 이 아니라 안 잰 것이다. 이름이 같은 const 를 기계로 대조해
+봤지만 `GAP` · `POPUP_WIDTH` · `MIN_HEIGHT` 같은 흔한 이름이 무관한 토큰에 무더기로 걸려
+(예: `component.transfer-popup-width` ↔ 파일 피커의 `POPUP_WIDTH`) 그 수는 위험의 크기가
+아니라 이름 충돌의 크기였다. **이 축의 판정은 이름이 아니라 정의를 열어야 선다.**
+
+**다섯 중 넷은 소스에 이미 기록돼 있었다 — 각 상수의 doc 주석에.** 그런데 전환을 하는 쪽은
+상수 주석이 아니라 이 문서를 읽는다. 그래서 여기 옮겨 적는다.
+
 ## 관련
 
 - [theme.md](theme.md) — Theme 2계층 모델 + UI 디자인 규칙

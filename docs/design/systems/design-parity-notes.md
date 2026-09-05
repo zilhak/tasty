@@ -236,12 +236,16 @@ State 컬럼 `Column::exact(140)` + `.clip(true)` 미적용. tasty 폰트가 디
 LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 flex(addr/proc)에서
 양보해야 하며, 이는 폰트 메트릭 보정(디자인 변경 아님). 현재는 디자인 140 유지 + 클립.
 
-## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → 파라미터로 받음
+## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → `Theme` 이 실어 나름
 
 - **증상**: 디자인 Spinner 는 `prefers-reduced-motion` 에서 회전을 멈추고 3-dot fallback 을
   쓰는데, egui 엔 그 매체 질의가 없다.
-- **처방**: `Spinner` 가 `reduced_motion: bool` 을 호출부 파라미터(빌더)로 받는다(StatusDot
-  의 pulse 와 동일 패턴 — 모션 결정을 호출측이 소유). true 면 정지 3-dot.
+- **처방**: 설정값(`accessibility.reduced_motion`)을 `Theme.reduced_motion` 에 실어 나르고,
+  `Spinner` 의 **기본 동작이 그것을 읽는다**. true 면 정지 3-dot. 빌더
+  `Spinner::reduced_motion(bool)` 은 남아 있지만 이제 **설정을 무시하는 override** 이며,
+  두 상태를 나란히 보여야 하는 갤러리 specimen 전용이다.
+- **왜 파라미터가 아닌가**: 종전엔 호출부 파라미터였고, 그러자 실제로 넘기는 자리가 레포
+  전체에 하나도 없어 설정을 켜도 스피너가 돌았다([ADR-0174](../../adr/0174-theme-carries-reduced-motion.md)).
 - **근거**: `crates/tasty-ui-widgets/src/spinner.rs`.
 
 ## Button variant — egui 엔 CSS variant 없음 → fill/stroke 수동 조합
@@ -309,19 +313,29 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   키캡이 "G + Alt + Ctrl" 로 뒤집혀 렌더된다.
 - **원인(검증)**: egui `Ui::horizontal` 은 부모의 `prefer_right_to_left()` 를 상속한다. RTL
   부모 안에서 `kbd`(내부 `ui.horizontal` 사용) 를 호출하면 키캡 시퀀스가 RTL 로 배치된다.
-- **처방**: 우측정렬은 RTL 레이아웃이 아니라 *폭을 직접 재서* spacer 로 민다 — `kbd_width()`
-  로 폭 측정 → `add_space(available - w)` → LTR 그대로 `kbd` 호출. (chip.rs 의 키캡 min16 /
-  pad-x4 / gap3 / micro 폰트 상수를 미러해 폭 계산.)
-- **근거**: `crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` (plugins Command 행).
+- **처방**: RTL 레이아웃은 그대로 쓰되 **그 안에 들어가는 키캡을 하나로 제한한다.** 키캡이
+  하나면 시퀀스가 없으므로 역전될 것이 없다. 여러 키캡의 조합(chord)은 RTL 밖에서 그린다.
+- **근거**: 우측 Kbd 를 그리는 두 자리가 모두 이 형태다 —
+  `crates/tasty-gallery/src/catalog/components/modifier_hint.rs`(`hint_row`, 행 키캡은
+  `sec.chord` 접두를 뗀 leaf 한 개) 와 `src/adapters/ui/modifier_hint_overlay.rs`(`draw_row`,
+  `binding_leaf` 가 modifier 를 벗긴 leaf 한 개). 조합 전체를 보여주는 자리는 RTL 밖의
+  `chord_head` 이고, 그래서 `kbd_parts` 가 부모 RTL 을 상속해도 뒤집힐 시퀀스가 없다.
+  폭을 재서 spacer 로 미는 방식은 채택되지 않았다(그런 헬퍼는 저장소에 없다).
 
 ## color-mix(in srgb …) 재현 — lerp / alpha 헬퍼
 
 - **증상**: 디자인이 아바타·배너에 `color-mix(in srgb, C 18%, surface)`(불투명 블렌드)와
   `color-mix(in srgb, C 11%, transparent)`(알파 감소)를 쓴다. egui 엔 color-mix 가 없다.
-- **처방**: 두 케이스를 분리. 불투명 블렌드 = srgb 바이트 선형보간 `mix(a,b,t)`. transparent
-  믹스 = `Color32::from_rgba_unmultiplied(r,g,b, t*255)` (= C 를 알파 t 로). 후자는 Tag 위젯의
+- **처방**: 두 케이스를 분리. 불투명 블렌드 = srgb 바이트 선형보간 `mix_srgb(a, ratio, b)`
+  (비율이 가운데 인자다 — `a` 를 `ratio` 만큼 `b` 에 섞고, 결과 알파는 배경 `b` 의 것을 따른다).
+  transparent 믹스 = 색은 그대로 두고 알파만 얹는다(= C 를 알파 t 로). 후자는 Tag 위젯의
   `gamma_multiply(0.4)`(=border 40% transparent) 와 같은 의도.
-- **근거**: `crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` (plugins `mix`/`alpha`).
+- **근거**: 두 케이스가 각각 구현돼 있다. 불투명 블렌드는
+  `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb(a, ratio, b)` — 그 파일의 wash
+  접근자들이 유일한 호출자다. 알파 감소는 `HexColor::with_alpha`(`crates/tasty-type-appearance/src/color.rs`)
+  로 상수 알파를 얹는 형태이고, 최종 변환이 `Color32::from_rgba_unmultiplied` 다
+  (`HexColor::to_egui`, 같은 파일). Tag 의 `gamma_multiply(0.4)` 는
+  `crates/tasty-ui-widgets/src/chip.rs` 의 `TagVariant::Info` 보더에 살아 있다.
 
 ---
 

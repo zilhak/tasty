@@ -13,8 +13,8 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
 | `config.toml` | TOML | 사용자 설정(셸·외관·단축키·언어 등) | 사용자 | `crates/tasty-settings/` |
 | `remote-profiles.toml` (+ `passkeys.toml`) | TOML | 원격 접속 프로필(`ssh`/`tasty-attach` kind) + 자격증명 — `config.toml` 과 분리해 손편집 보존 | 사용자 | `crates/tasty-remote-profiles/` |
 | `file-handlers.toml` | TOML | 파일 detector / handler / 확장자 매핑 | 사용자 | `src/file/handler/` |
-| `themes/<id>.toml` | TOML | 테마 (id = 파일명 stem) | 사용자 / 앱 | `crates/tasty-settings/appearance.rs` |
-| `bashrc` / `bashrc.default` | 쉘 스크립트 | 컴파일된 빌트인 rc (tasty 모드 / default 모드) — 셸을 `--rcfile` 로 띄움 | 앱 (빌드 산출물) | `crates/tasty-settings/general.rs` |
+| `themes/<id>.toml` | TOML | 테마 (id = 파일명 stem) | 사용자 / 앱 | `crates/tasty-settings/src/appearance.rs` |
+| `bashrc` / `bashrc.default` | 쉘 스크립트 | 컴파일된 빌트인 rc (tasty 모드 / default 모드) — 셸을 `--rcfile` 로 띄움 | 앱 (빌드 산출물) | `crates/tasty-settings/src/general.rs` |
 | `bashrc.user` | 쉘 스크립트 | 사용자가 직접 편집하는 fragment (빌트인 사이에 끼워짐) | 사용자 | 〃 |
 | `presets/{workspace,tab,pane}/<name>.toml` | TOML | 레이아웃 프리셋 (탭/패인/서피스 구조) | 사용자 / 앱 | `crates/tasty-presets/` |
 
@@ -49,7 +49,7 @@ CREATE TABLE recent_markdown (   -- 최근 연 Markdown 경로
 - **경로 dedup**: 같은 파일의 다른 표기(구분자 `\`↔`/`, `\\?\` verbatim, `.`/`..`,
   Windows 대소문자 차)를 정규화 키(`strip_verbatim_prefix`+`lexically_normalize`+Windows
   case fold)로 접는다. PK 는 여전히 raw path(표시·열기용)이며 정규화 키는 비교 전용.
-  `add_markdown` 이 같은 키의 옛 행을 제거 후 저장하고, `load()` 는 마이그레이션 체인이
+  `RecentFiles::add` 가 같은 키의 옛 행을 제거 후 저장하고, `load()` 는 마이그레이션 체인이
   없는 fresh-start 정책이라 로드 시 1회 정규화 dedup 패스로 기존 중복을 접는다.
 - **기록 진입점**: markdown-open 이 수렴하는 인텐트 계층(`Intent::NewTab`/
   `ConvertSurface`, file-dispatch 직접 `CreateTab`)에서 `AppState::record_recent_markdown`

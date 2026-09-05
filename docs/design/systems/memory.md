@@ -61,6 +61,16 @@ tasty memory goal {set|get|clear} [--surface <id>]                        # surf
 
 `--owner` 플래그는 없다. 특정 plugin 의 regular entry 만 보려면 응답의 owner 를 grep/jq 로 사후 필터.
 
+regular 와 secret 은 **짝마다 같은 params 를 받는다** — 핸들러가 같은 키를 읽고, secret 쪽은
+owner 자동 부착과 응답의 owner 생략만 다르다. 그래서 **CLI 플래그도 짝마다 같게 유지한다.**
+한쪽에만 플래그를 더하면 서버는 받는데 CLI 로는 닿을 길이 없는 자리가 생기고, 그 어긋남은
+두 `--help` 를 나란히 놓고 읽기 전에는 보이지 않는다.
+
+scope 선택자(`--scope` 와 alias 다섯)는 두 계열의 모든 자리가 **한 벌을 공유한다**. 자리마다
+따로 적으면 설명·충돌 규칙이 자리 수만큼 갈린다 — `crates/tasty-cli/src/commands/memory.rs`
+의 `ScopeArgs` 가 그 한 벌이고, 같은 파일의 테스트가 모든 자리에서 여섯이 온전한지·설명이
+있는지·서로 배타인지를 clap 명령 트리에서 직접 확인한다.
+
 ## 스코프 확장 구조
 
 같은 store 위에 도메인별 구조가 예약 키로 얹혀 IPC 로 제공된다. owner 규칙은 전부 regular 와 동일.
