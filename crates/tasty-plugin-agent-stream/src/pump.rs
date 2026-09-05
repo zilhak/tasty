@@ -67,26 +67,39 @@ pub fn tail_loop(registry: Shared, host: HostHandle) {
     loop {
         std::thread::sleep(TICK);
         tick_count += 1;
-        // 루트는 매 tick 다시 계산한다 — 홈 디렉토리 확인 실패 등이 영구 상태가 되지
-        // 않게(설정이 뒤늦게 갖춰지면 그 tick 부터 정상 동작한다).
-        let root = resolve::transcript_root();
-        if tick_count.is_multiple_of(VERIFY_EVERY) {
-            verify_targets(&registry, &host, root.as_deref());
-        }
-        pump_all(&registry, root.as_deref());
-        match registry.lock() {
-            Ok(mut reg) => {
-                // 활동 없이 오래 열린 correlation 턴을 닫는다(막힌 턴 안전망). pump 직후에
-                // 돌려 방금 들어온 이벤트가 활동 시각을 이미 갱신한 뒤 판정하게 한다.
-                reg.sweep_stale_turns(std::time::Instant::now());
-                reg.save_if_dirty();
-            }
-            Err(e) => {
-                tracing::error!("agent-stream registry mutex poisoned: {e}");
-                return;
-            }
+        if tick(&registry, &host, tick_count).is_break() {
+            return;
         }
     }
+}
+
+/// tail 루프의 한 tick. `Break` 를 돌려주면 **수집 스레드가 끝난다** — 그러니 회복
+/// 가능한 사정으로는 절대 `Break` 를 돌려주지 않는다.
+///
+/// 루프 본문을 함수로 가른 이유는 **중단 여부를 실행으로 판정하기 위해서**다. 본문이
+/// `loop` 안에 있으면 "poison 에서 루프가 살아남는가" 를 묻는 테스트를 쓸 수 없다 —
+/// 무한 루프를 부를 수 없기 때문이다. 그래서 그 자리에 있던 결함이
+/// `pump_all`/`verify_targets` 를 각각 고친 뒤에도 **그 다음 줄에서 그대로 남아 있었다**:
+/// 두 함수가 poison 을 복구하며 수집을 이어가도, 같은 tick 의 sweep 이 `return` 해
+/// 스레드가 죽었다. 두 함수의 회귀 테스트는 그 둘을 직접 부르므로 초록이었다.
+fn tick<H: HostCall>(registry: &Shared, host: &H, tick_count: u64) -> std::ops::ControlFlow<()> {
+    // 루트는 매 tick 다시 계산한다 — 홈 디렉토리 확인 실패 등이 영구 상태가 되지
+    // 않게(설정이 뒤늦게 갖춰지면 그 tick 부터 정상 동작한다).
+    let root = resolve::transcript_root();
+    if tick_count.is_multiple_of(VERIFY_EVERY) {
+        verify_targets(registry, host, root.as_deref());
+    }
+    pump_all(registry, root.as_deref());
+    {
+        // `lock_registry` 로 복구한다 — 임계구역이 registry 자료구조 조작뿐이라는 것은
+        // 위 두 함수와 같고(그래서 복구가 맞고), 관측은 그 헬퍼의 1 회 보고가 갖는다.
+        let mut reg = lock_registry(registry);
+        // 활동 없이 오래 열린 correlation 턴을 닫는다(막힌 턴 안전망). pump 직후에
+        // 돌려 방금 들어온 이벤트가 활동 시각을 이미 갱신한 뒤 판정하게 한다.
+        reg.sweep_stale_turns(std::time::Instant::now());
+        reg.save_if_dirty();
+    }
+    std::ops::ControlFlow::Continue(())
 }
 
 /// 호스트에 대상 생존과 세션 id 를 되묻는다. lock 은 IPC **바깥**에서만 잡는다.
@@ -346,6 +359,60 @@ mod tests {
         assert!(
             !collected.is_empty(),
             "poison 이후에도 tail 이 이벤트를 만들어야 한다"
+        );
+    }
+
+    /// poison 이어도 **수집 스레드가 끝나지 않는다.**
+    ///
+    /// 위 `a_poisoned_registry_does_not_stop_the_tail_loop` 은 `pump_all` 을 직접 부른다.
+    /// 그래서 `pump_all` 이 복구하는 한 초록인데, 그 tick 의 **다음 줄**이 poison 에
+    /// `return` 하면 스레드가 죽어 수집은 그래도 영구히 멈춘다. 그 상태에서도 저 테스트는
+    /// 초록이었다 — 그래서 이 테스트가 따로 필요하다. 여기서는 루프 본문 전체(`tick`)를
+    /// 부르고, 묻는 것은 "패닉하지 않는가" 가 아니라 **루프가 계속되는가**다.
+    #[test]
+    fn a_poisoned_registry_does_not_end_the_tail_thread() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, b"").expect("create");
+        let registry = shared_with(&path);
+
+        let poisoner = Arc::clone(&registry);
+        std::thread::spawn(move || {
+            let _guard = poisoner.lock().expect("fresh lock");
+            panic!("poison the registry on purpose");
+        })
+        .join()
+        .expect_err("패닉한 스레드는 Err 로 join 된다");
+        assert!(registry.is_poisoned(), "전제: 락이 poison 이다");
+
+        let host = StubHost {
+            exists: true,
+            session: Some("sess".into()),
+        };
+        append(&path, &(assistant_line("u1", "hello", "end_turn") + "\n"));
+
+        // tick_count=1 은 verify 주기가 아니다(VERIFY_EVERY=10) — 이 단언이 보는 것은
+        // pump 와 sweep 이지 호스트 왕복이 아니다.
+        assert_eq!(
+            tick(&registry, &host, 1),
+            std::ops::ControlFlow::Continue(()),
+            "poison 은 회복 가능한 사정이다 — 여기서 Break 를 돌려주면 수집 스레드가 끝난다"
+        );
+        // 한 번만 살아남는 것으로는 부족하다 — poison 은 sticky 라 다음 tick 도 같은
+        // 자리를 다시 만난다.
+        assert_eq!(
+            tick(&registry, &host, 2),
+            std::ops::ControlFlow::Continue(()),
+            "sticky poison 이라 다음 tick 도 같은 자리를 만난다"
+        );
+
+        let collected = lock_registry(&registry).poll_json(None, 0, 1000)["events"]
+            .as_array()
+            .expect("array")
+            .clone();
+        assert!(
+            !collected.is_empty(),
+            "루프가 계속됐다면 그 사이 수집도 됐어야 한다"
         );
     }
 
