@@ -136,7 +136,7 @@
 | 0123 | [계층 가드는 `#[cfg(test)]` 전용 모듈을 범위 밖으로 둔다 — 면제는 전제(cfg 게이트)와 stale 을 함께 검사한다](0123-layering-guard-excludes-cfg-test-modules.md) | Accepted | 2026-09-05 | layering, guards, testing, tasty-cli, adr-0105 |
 | 0124 | [빈 값이 "번역 없음" 이라는 규칙은 로드 경로와 무관하다 — 언어팩과 내장 오버라이드가 같은 규칙을 쓰고, 폴백 대상만 다르다](0124-blank-value-rule-is-load-path-independent.md) | Accepted | 2026-09-04 | i18n, language-pack, blank-value, unicode, trim, adr-0114 |
 | 0125 | [카테고리 착지점은 id 를 들고, 재정렬 축은 제거 축과 같은 초크포인트로 모은다](0125-category-landing-points-hold-ids.md) | Accepted | 2026-09-05 | focus, workspace, reorder, index-vs-id, cascade, invariant, adr-0113 |
-| 0126 | [스케일 밖 값은 토큰으로 스냅하지 않는다 — `.5` 폰트 값은 토큰이 될 수 없다](0126-off-scale-font-values-are-not-snapped-to-tokens.md) | Accepted | 2026-09-04 | theme, design-tokens, font-size, corner-radius, zoom, guards, adr-0033 |
+| 0126 | [스케일 밖 값은 토큰으로 스냅하지 않는다 — `.5` 폰트 값은 토큰이 될 수 없다](0126-off-scale-font-values-are-not-snapped-to-tokens.md) | Accepted | 2026-09-04 | theme, design-tokens, font-size, corner-radius, status-dot, zoom, guards, adr-0033 |
 | 0127 | [e2e 하네스가 띄울 바이너리는 한 곳에서 정한다 — 기본 조합의 GPU 종속은 `App` 이분이 선행이다](0127-e2e-harness-binary-selection.md) | Accepted | 2026-09-04 | testing, e2e, headless, gpu, feature-flags, cargo, harness, adr-0090 |
 | 0128 | [DPI 변환 정합은 타입 봉인이 아니라 소스 스캔 가드로 지킨다](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) | Accepted | 2026-09-04 | typed-length, dpi, guard, scale-factor, geometry, drift-guard |
 | 0129 | [확률적 테스트 실패(flake)의 부류별 표준 처방](0129-flaky-test-classes-and-standard-fixes.md) | Proposed | 2026-09-04 | testing, flaky-tests, ci, concurrency, test-isolation, guards, cfg-feature-gate, source-scan-guard, adr-0128, adr-0105 |
