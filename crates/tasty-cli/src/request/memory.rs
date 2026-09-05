@@ -282,3 +282,62 @@ use cache::memory_cache_command_to_method_params;
 use goal::memory_goal_command_to_method_params;
 use plan::memory_plan_command_to_method_params;
 use secret::memory_secret_command_to_method_params;
+
+/// `memory list` ↔ `memory secret list` 가 같은 인자에 같은 params 를 낸다.
+///
+/// 이 자리의 결함은 "갈렸다" 가 아니라 **처음부터 덜 복제됐고 아무도 안 봤다** 였다 —
+/// `memory.secret.list` 핸들러는 `since`/`until`/`offset` 을 처음부터 읽는데 CLI 의 secret
+/// 경로는 셋을 한 번도 보낸 적이 없다. 코드를 공유하는 것으로는 그 형태가 안 잡힌다(덜
+/// 복제된 쪽에 맞춰 공유물이 쓰였을 것이다). 잡히는 것은 **두 자리에 같은 것을 넣어 보고
+/// 나온 것을 대조하는** 술어뿐이다.
+#[cfg(test)]
+mod list_filter_parity {
+    use clap::Parser;
+
+    /// 두 계열이 함께 받아야 하는 list 필터 전부. 값까지 준다.
+    const LIST_ARGS: [&str; 11] = [
+        "--global", "--prefix", "p", "--limit", "3", "--since", "5", "--until", "9", "--offset",
+        "2",
+    ];
+
+    fn list_params(secret: bool) -> serde_json::Value {
+        let mut argv = vec!["tasty", "memory"];
+        if secret {
+            argv.push("secret");
+        }
+        argv.push("list");
+        argv.extend(LIST_ARGS);
+        let cli = crate::Cli::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("`{}` 파싱 실패:\n{e}", argv.join(" ")));
+        match cli.command.expect("서브커맨드가 있어야 한다") {
+            crate::Commands::Memory { command } => {
+                super::memory_command_to_method_params(&command).1
+            }
+            _ => unreachable!("memory 서브커맨드가 아니다"),
+        }
+    }
+
+    #[test]
+    fn the_two_list_commands_take_the_same_filters_and_send_the_same_params() {
+        assert_eq!(
+            list_params(false),
+            list_params(true),
+            "`memory list` 와 `memory secret list` 가 같은 인자에 다른 params 를 낸다. \
+             두 계열의 핸들러는 짝마다 같은 키를 읽으므로, CLI 한쪽만 자라면 서버는 받는데 \
+             CLI 로는 닿을 길이 없는 자리가 생긴다."
+        );
+    }
+
+    #[test]
+    fn every_list_filter_reaches_the_params_with_its_value() {
+        let p = list_params(true);
+        for (k, v) in [("limit", 3), ("since", 5), ("until", 9), ("offset", 2)] {
+            assert_eq!(
+                p.get(k).and_then(serde_json::Value::as_i64),
+                Some(v),
+                "`--{k}` 가 params 에 안 실린다: {p}"
+            );
+        }
+        assert_eq!(p.get("prefix").and_then(|v| v.as_str()), Some("p"));
+    }
+}
