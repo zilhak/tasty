@@ -11,17 +11,22 @@
 //! (`DemoLayout::show_edit`)를 토글한다(Edit↔Done). rename·duplicate·delete 는
 //! 기존 store API 에 직결돼 동작한다.
 
+pub mod demo_layout;
+mod toolbar;
+
 use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, PresetSurfaceLayout};
 use tasty_settings::KeybindingSettings;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant};
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::tokens::STRUCT_GAP_1;
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
+
+use toolbar::{apply_toolbar_actions, draw_toolbar_editing, draw_toolbar_view};
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::input::shortcuts::any_binding_pressed_egui;
 use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
 use crate::i18n::{t, t_fmt};
-
-pub mod demo_layout;
 
 use demo_layout::{DemoLayout, KindCatalog, ShortcutAction, ShowOutcome};
 
@@ -60,25 +65,23 @@ fn match_preset_shortcut(
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preset-window 셸 전용 치수 — specimen 전사).
 /// 좌측 리스트 폭.
-const LIST_WIDTH: f32 = 196.0;
+const LIST_WIDTH: LogicalPx = LogicalPx(196.0);
 /// 우측 detail 툴바 높이.
-const TOOLBAR_HEIGHT: f32 = 44.0;
+const TOOLBAR_HEIGHT: LogicalPx = LogicalPx(44.0);
 /// 리스트 row 상하 padding.
-const ROW_PAD_Y: f32 = 7.0;
+const ROW_PAD_Y: LogicalPx = LogicalPx(7.0);
 /// 리스트 row 좌우 padding (좌측 accent bar 다음 텍스트 들여쓰기).
-const ROW_PAD_X: f32 = 9.0;
-/// row 안 name↔subtitle 세로 gap.
-const ROW_GAP: f32 = 1.0;
+const ROW_PAD_X: LogicalPx = LogicalPx(9.0);
 /// 리스트 내부 좌우 inset (row 가 패널 가장자리에 붙지 않게).
-const LIST_INSET: f32 = 6.0;
+const LIST_INSET: LogicalPx = LogicalPx(6.0);
 /// rename 인라인 입력 폭.
-const RENAME_W: f32 = 150.0;
+pub(super) const RENAME_W: LogicalPx = LogicalPx(150.0);
 /// 툴바 separator 높이.
-const TOOLBAR_SEP_H: f32 = 18.0;
+pub(super) const TOOLBAR_SEP_H: LogicalPx = LogicalPx(18.0);
 
 /// rename 인라인 편집 상태 (egui temp memory 에 보관 — 프레임 간 유지).
 #[derive(Clone)]
-struct RenameState {
+pub(super) struct RenameState {
     kind: PresetKind,
     original: String,
     buffer: String,
@@ -89,7 +92,7 @@ struct RenameState {
 /// (`{kind}:{name}`)가 바뀌면 store 값으로 재초기화한다. subtitle 은 Workspace 만
 /// 실제 필드를 가지며 Tab/Pane 은 구조 파생이라 편집 불가(버퍼 미사용).
 #[derive(Clone, Default)]
-struct EditMetaState {
+pub(super) struct EditMetaState {
     key: String,
     name: String,
     subtitle: String,
@@ -135,6 +138,7 @@ fn persist_layout(
                 return Ok(());
             };
             p.layout = node;
+            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
             store.save_workspace_overwrite(p)
         }
         PresetKind::Tab => {
@@ -145,6 +149,7 @@ fn persist_layout(
                 return Ok(());
             };
             p.tab.layout = surf;
+            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
             store.save_tab_overwrite(p)
         }
         PresetKind::Pane => {
@@ -155,6 +160,7 @@ fn persist_layout(
                 return Ok(());
             };
             p.pane = pane;
+            // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
             store.save_pane_overwrite(p)
         }
     }
@@ -200,7 +206,11 @@ fn count_label(n: usize, one_key: &str, many_key: &str) -> String {
 
 /// 편집 가능한 **실제** subtitle 필드값(Workspace 만 보유). Tab/Pane 은 구조 파생
 /// subtitle 이라 편집 불가 → 빈 문자열.
-fn workspace_subtitle_field(store: &PresetStore, kind: PresetKind, name: &str) -> String {
+pub(super) fn workspace_subtitle_field(
+    store: &PresetStore,
+    kind: PresetKind,
+    name: &str,
+) -> String {
     if kind == PresetKind::Workspace {
         store
             .get_workspace(name)
@@ -292,6 +302,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
     use tasty_presets::{PanePreset, TabPreset, WorkspacePreset};
     let name = store.unique_name(kind, kind.as_str());
     let result = match kind {
+        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
         PresetKind::Workspace => store.save_workspace(WorkspacePreset {
             name: name.clone(),
             subtitle: String::new(),
@@ -300,6 +311,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
                 pane: minimal_pane(),
             },
         }),
+        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
         PresetKind::Tab => store.save_tab(TabPreset {
             name: name.clone(),
             tab: tasty_presets::PresetTab {
@@ -307,6 +319,7 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
                 layout: minimal_surface(),
             },
         }),
+        // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
         PresetKind::Pane => store.save_pane(PanePreset {
             name: name.clone(),
             pane: minimal_pane(),
@@ -322,12 +335,17 @@ fn create_minimal(store: &mut PresetStore, kind: PresetKind) -> Option<String> {
 }
 
 /// 기존 preset 의 복사본을 만들어 저장하고, 새 이름을 반환한다. 실패 시 `None`.
-fn duplicate_preset(store: &mut PresetStore, kind: PresetKind, name: &str) -> Option<String> {
+pub(super) fn duplicate_preset(
+    store: &mut PresetStore,
+    kind: PresetKind,
+    name: &str,
+) -> Option<String> {
     let new_name = store.unique_name(kind, &format!("{name}-copy"));
     let result = match kind {
         PresetKind::Workspace => match store.get_workspace(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
+                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
                 store.save_workspace(p)
             }
             None => return None,
@@ -335,6 +353,7 @@ fn duplicate_preset(store: &mut PresetStore, kind: PresetKind, name: &str) -> Op
         PresetKind::Tab => match store.get_tab(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
+                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
                 store.save_tab(p)
             }
             None => return None,
@@ -342,6 +361,7 @@ fn duplicate_preset(store: &mut PresetStore, kind: PresetKind, name: &str) -> Op
         PresetKind::Pane => match store.get_pane(name).cloned() {
             Some(mut p) => {
                 p.name = new_name.clone();
+                // intent-exempt: [결과사용] 응답이 필요한 mutate 는 Core method(sync 리턴) — 저장 결과를 호출부가 토스트로 쓴다
                 store.save_pane(p)
             }
             None => return None,
@@ -366,16 +386,16 @@ fn draw_list_row(
     sub: &str,
     selected: bool,
 ) -> egui::Response {
-    let name_h = theme.font_size_body.value();
-    let sub_h = theme.font_size_caption.value();
-    let row_h = ROW_PAD_Y * 2.0 + name_h + ROW_GAP + sub_h;
+    let name_h = theme.font_size_body;
+    let sub_h = theme.font_size_caption;
+    let row_h = ROW_PAD_Y.scaled(2.0) + name_h + STRUCT_GAP_1 + sub_h;
     let (full, resp) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), row_h),
+        egui::vec2(ui.available_width(), row_h.value()),
         egui::Sense::click(),
     );
     let rect = egui::Rect::from_min_max(
-        egui::pos2(full.min.x + LIST_INSET, full.min.y),
-        egui::pos2(full.max.x - LIST_INSET, full.max.y),
+        egui::pos2(full.min.x + LIST_INSET.value(), full.min.y),
+        egui::pos2(full.max.x - LIST_INSET.value(), full.max.y),
     );
     let radius = theme.corner_radius_sm.value();
     let p = ui.painter_at(full);
@@ -394,22 +414,22 @@ fn draw_list_row(
     } else {
         theme.text_secondary().to_egui()
     };
+    // 두 줄의 좌측 기준선. 이름줄 아래로 `name_h + STRUCT_GAP_1` 만큼 내려 부제를 둔다.
+    let text_x = rect.min.x + ROW_PAD_X.value();
+    let name_y = rect.min.y + ROW_PAD_Y.value();
     p.text(
-        egui::pos2(rect.min.x + ROW_PAD_X, rect.min.y + ROW_PAD_Y),
+        egui::pos2(text_x, name_y),
         egui::Align2::LEFT_TOP,
         name,
-        egui::FontId::proportional(name_h),
+        egui::FontId::proportional(name_h.value()),
         name_color,
     );
     // painter_at 가 full 로 clip → 긴 subtitle 도 row 밖으로 넘치지 않는다.
     p.text(
-        egui::pos2(
-            rect.min.x + ROW_PAD_X,
-            rect.min.y + ROW_PAD_Y + name_h + ROW_GAP,
-        ),
+        egui::pos2(text_x, name_y + (name_h + STRUCT_GAP_1).value()),
         egui::Align2::LEFT_TOP,
         sub,
-        egui::FontId::monospace(sub_h),
+        egui::FontId::monospace(sub_h.value()),
         theme.text_muted().to_egui(),
     );
     if resp.hovered() {
@@ -541,21 +561,24 @@ struct PresetPanelRects {
 fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
     let body = ui.available_rect_before_wrap();
     let bw = theme.border_width.value();
-    let list_rect = egui::Rect::from_min_size(body.min, egui::vec2(LIST_WIDTH, body.height()));
-    let detail_rect =
-        egui::Rect::from_min_max(egui::pos2(body.min.x + LIST_WIDTH, body.min.y), body.max);
+    let list_rect =
+        egui::Rect::from_min_size(body.min, egui::vec2(LIST_WIDTH.value(), body.height()));
+    let detail_rect = egui::Rect::from_min_max(
+        egui::pos2(body.min.x + LIST_WIDTH.value(), body.min.y),
+        body.max,
+    );
     let painter = ui.painter();
     painter.rect_filled(list_rect, 0.0, theme.bg_sidebar().to_egui());
     painter.rect_filled(detail_rect, 0.0, theme.bg_panel().to_egui());
     painter.vline(
-        body.min.x + LIST_WIDTH,
+        body.min.x + LIST_WIDTH.value(),
         body.y_range(),
         egui::Stroke::new(bw, theme.separator.to_egui()),
     );
 
     let toolbar_rect = egui::Rect::from_min_size(
         detail_rect.min,
-        egui::vec2(detail_rect.width(), TOOLBAR_HEIGHT),
+        egui::vec2(detail_rect.width(), TOOLBAR_HEIGHT.value()),
     );
     let preview_rect = egui::Rect::from_min_max(
         egui::pos2(detail_rect.min.x, toolbar_rect.max.y),
@@ -597,7 +620,7 @@ fn draw_preset_list(
         lui.set_clip_rect(list_rect);
         lui.add_space(theme.spacing_sm.value());
         lui.horizontal(|ui| {
-            ui.add_space(LIST_INSET);
+            ui.add_space(LIST_INSET.value());
             let count = t_fmt("preset.header.count", &rows.len().to_string());
             ui.label(
                 egui::RichText::new(count.to_uppercase())
@@ -606,7 +629,7 @@ fn draw_preset_list(
                     .color(theme.text_muted().to_egui()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(LIST_INSET);
+                ui.add_space(LIST_INSET.value());
                 if IconButton::new()
                     .variant(IconButtonVariant::Ghost)
                     .size(ControlSize::Sm)
@@ -655,329 +678,8 @@ fn draw_preset_list(
     }
 }
 
-/// [`draw_toolbar_editing`] 이 만들어낸 편집 메타 버퍼 + Done 클릭 여부.
-struct ToolbarEditingOutcome {
-    edit_meta: Option<EditMetaState>,
-    done_clicked: bool,
-}
-
-/// 편집 상태 툴바: name/subtitle 인라인 입력 + Done 버튼.
-#[allow(clippy::too_many_arguments)]
-fn draw_toolbar_editing(
-    ui: &mut egui::Ui,
-    ctx: &egui::Context,
-    store: &mut PresetStore,
-    theme: &Theme,
-    kind: PresetKind,
-    name: &str,
-    selected: &mut Option<String>,
-    toasts: &mut ToastManager,
-    edit_meta_id: egui::Id,
-) -> ToolbarEditingOutcome {
-    let key = format!("{}:{}", kind.as_str(), name);
-    let mut meta = ctx
-        .data_mut(|d| d.get_temp::<EditMetaState>(edit_meta_id))
-        .filter(|m| m.key == key)
-        .unwrap_or_else(|| EditMetaState {
-            key: key.clone(),
-            name: name.to_string(),
-            subtitle: workspace_subtitle_field(store, kind, name),
-        });
-
-    // name input — lost_focus 시 rename 커밋.
-    let name_resp = ui.add(
-        egui::TextEdit::singleline(&mut meta.name)
-            .desired_width(RENAME_W)
-            .id(egui::Id::new(("preset_edit_name", kind.as_str()))),
-    );
-    if name_resp.lost_focus() {
-        commit_editing_name(store, kind, name, &mut meta, selected, toasts);
-    }
-
-    // subtitle input — Workspace 만(실제 필드). changed 시 즉시 저장.
-    if kind == PresetKind::Workspace {
-        let sub_resp = ui.add(
-            egui::TextEdit::singleline(&mut meta.subtitle)
-                .desired_width(RENAME_W)
-                .hint_text(t("preset.edit.subtitle_hint"))
-                .id(egui::Id::new("preset_edit_subtitle")),
-        );
-        if sub_resp.changed() {
-            commit_editing_subtitle(store, name, &meta, toasts);
-        }
-    }
-
-    let done_clicked = draw_toolbar_done_button(ui, theme);
-
-    ToolbarEditingOutcome {
-        edit_meta: Some(meta),
-        done_clicked,
-    }
-}
-
-/// 편집 name 필드가 focus 를 잃었을 때 rename 을 커밋한다. 빈 이름은 거부하고
-/// 되돌리며, rename 실패는 toast 로 알리고 원래 이름으로 되돌린다.
-fn commit_editing_name(
-    store: &mut PresetStore,
-    kind: PresetKind,
-    name: &str,
-    meta: &mut EditMetaState,
-    selected: &mut Option<String>,
-    toasts: &mut ToastManager,
-) {
-    let buf = meta.name.trim().to_string();
-    if buf.is_empty() {
-        meta.name = name.to_string(); // 빈 이름 거부 — 되돌림.
-        return;
-    }
-    if buf == name {
-        return;
-    }
-    match store.rename(kind, name, &buf) {
-        Ok(()) => {
-            *selected = Some(buf.clone());
-            meta.key = format!("{}:{}", kind.as_str(), buf);
-            meta.name = buf;
-        }
-        Err(e) => {
-            tracing::warn!("preset rename failed: {e}");
-            toasts.push(
-                t("preset.toast.rename_failed"),
-                ToastKind::Error,
-                ToastScope::Window,
-            );
-            meta.name = name.to_string();
-        }
-    }
-}
-
-/// 편집 subtitle 필드가 바뀌면 즉시 store/disk 에 write-through(auto-save).
-fn commit_editing_subtitle(
-    store: &mut PresetStore,
-    name: &str,
-    meta: &EditMetaState,
-    toasts: &mut ToastManager,
-) {
-    let Some(mut p) = store.get_workspace(name).cloned() else {
-        return;
-    };
-    p.subtitle = meta.subtitle.clone();
-    if let Err(e) = store.save_workspace_overwrite(p) {
-        tracing::warn!("preset subtitle save failed: {e}");
-        toasts.push(
-            t("preset.toast.save_failed"),
-            ToastKind::Error,
-            ToastScope::Window,
-        );
-    }
-}
-
-/// Done(primary) 버튼 + "saved automatically" affordance. 클릭 여부를 반환.
-fn draw_toolbar_done_button(ui: &mut egui::Ui, theme: &Theme) -> bool {
-    let mut done_clicked = false;
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // Done (primary) — 우측 끝.
-        if Button::new(t("preset.toolbar.done"))
-            .variant(ButtonVariant::Primary)
-            .size(ControlSize::Sm)
-            .show(ui, theme)
-            .clicked()
-        {
-            done_clicked = true;
-        }
-        // "saved automatically" affordance — Save 버튼 없음을 명시.
-        ui.label(
-            egui::RichText::new(t("preset.toolbar.saved"))
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        );
-    });
-    done_clicked
-}
-
-/// [`draw_toolbar_view`] 의 버튼 클릭 결과.
-struct ToolbarViewClicks {
-    rename_clicked: bool,
-    duplicate_clicked: bool,
-    delete_clicked: bool,
-    edit_clicked: bool,
-}
-
-/// 일반(비-편집) 상태 툴바: rename 인라인 입력 또는 name/subtitle 라벨 + Edit·
-/// delete·duplicate·rename 아이콘 버튼.
-fn draw_toolbar_view(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    store: &mut PresetStore,
-    kind: PresetKind,
-    name: &str,
-    detail_sub: &str,
-    rename: &mut Option<RenameState>,
-    selected: &mut Option<String>,
-) -> ToolbarViewClicks {
-    let renaming = rename
-        .as_ref()
-        .is_some_and(|r| r.kind == kind && r.original == name);
-    if renaming {
-        let r = rename.as_mut().unwrap();
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut r.buffer)
-                .desired_width(RENAME_W)
-                .id(egui::Id::new(("preset_rename_input", kind.as_str()))),
-        );
-        if r.request_focus {
-            resp.request_focus();
-            r.request_focus = false;
-        }
-        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        if esc {
-            *rename = None; // 취소
-        } else if resp.lost_focus() {
-            // 커밋: 이름이 바뀌었으면 rename, 아니면 그냥 닫기.
-            let buf = r.buffer.trim().to_string();
-            if !buf.is_empty() && buf != r.original {
-                match store.rename(kind, &r.original, &buf) {
-                    Ok(()) => *selected = Some(buf),
-                    Err(e) => tracing::warn!("preset rename failed: {e}"),
-                }
-            }
-            *rename = None;
-        }
-    } else {
-        ui.label(egui::RichText::new(name).strong());
-        ui.label(
-            egui::RichText::new(detail_sub)
-                .monospace()
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        );
-    }
-
-    let mut rename_clicked = false;
-    let mut duplicate_clicked = false;
-    let mut delete_clicked = false;
-    let mut edit_clicked = false;
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // 우측 끝부터: Edit · | · delete · duplicate · rename.
-        if Button::new(t("preset.toolbar.edit"))
-            .variant(ButtonVariant::Secondary)
-            .size(ControlSize::Sm)
-            .leading_icon(&|ui, rect, c| icons::EDIT.image(rect.width(), c).paint_at(ui, rect))
-            .show(ui, theme)
-            .clicked()
-        {
-            edit_clicked = true;
-        }
-        // separator.
-        ui.add_space(theme.spacing_xs.value());
-        let bw = theme.border_width.value();
-        let (sep_rect, _) =
-            ui.allocate_exact_size(egui::vec2(bw.max(1.0), TOOLBAR_SEP_H), egui::Sense::hover());
-        ui.painter()
-            .rect_filled(sep_rect, 0.0, theme.separator.to_egui());
-        ui.add_space(theme.spacing_xs.value());
-
-        if IconButton::new()
-            .variant(IconButtonVariant::Ghost)
-            .size(ControlSize::Sm)
-            .show(ui, theme, &|ui, rect, c| {
-                icons::TRASH.image(rect.width(), c).paint_at(ui, rect)
-            })
-            .on_hover_text(t("preset.toolbar.delete"))
-            .clicked()
-        {
-            delete_clicked = true;
-        }
-        if IconButton::new()
-            .variant(IconButtonVariant::Ghost)
-            .size(ControlSize::Sm)
-            .show(ui, theme, &|ui, rect, c| {
-                icons::CLIPBOARD.image(rect.width(), c).paint_at(ui, rect)
-            })
-            .on_hover_text(t("preset.toolbar.duplicate"))
-            .clicked()
-        {
-            duplicate_clicked = true;
-        }
-        if IconButton::new()
-            .variant(IconButtonVariant::Ghost)
-            .size(ControlSize::Sm)
-            .show(ui, theme, &|ui, rect, c| {
-                icons::EDIT.image(rect.width(), c).paint_at(ui, rect)
-            })
-            .on_hover_text(t("preset.toolbar.rename"))
-            .clicked()
-        {
-            rename_clicked = true;
-        }
-    });
-
-    ToolbarViewClicks {
-        rename_clicked,
-        duplicate_clicked,
-        delete_clicked,
-        edit_clicked,
-    }
-}
-
-/// Edit↔Done 토글 + rename/duplicate/delete 클릭을 store/editing/selected 에 반영.
-#[allow(clippy::too_many_arguments)]
-fn apply_toolbar_actions(
-    ctx: &egui::Context,
-    store: &mut PresetStore,
-    kind: PresetKind,
-    current: &Option<String>,
-    editing: &mut bool,
-    selected_node: &mut Option<usize>,
-    selected: &mut Option<String>,
-    rename: &mut Option<RenameState>,
-    clicks: PresetToolbarClicks,
-) {
-    // Edit↔Done 토글 — 진입/이탈 시 선택 노드 초기화.
-    if clicks.edit_clicked {
-        *editing = true;
-        *selected_node = None;
-        *rename = None;
-        ctx.request_repaint();
-    }
-    if clicks.done_clicked {
-        *editing = false;
-        *selected_node = None;
-        ctx.request_repaint();
-    }
-
-    let Some(name) = current.clone() else {
-        return;
-    };
-    if clicks.rename_clicked {
-        *rename = Some(RenameState {
-            kind,
-            original: name.clone(),
-            buffer: name.clone(),
-            request_focus: true,
-        });
-        ctx.request_repaint();
-    }
-    if clicks.duplicate_clicked
-        && let Some(n) = duplicate_preset(store, kind, &name)
-    {
-        *selected = Some(n);
-        ctx.request_repaint();
-    }
-    if clicks.delete_clicked {
-        match store.delete(kind, &name) {
-            Ok(()) => {
-                *selected = None;
-                *rename = None;
-                ctx.request_repaint();
-            }
-            Err(e) => tracing::warn!("preset delete failed: {e}"),
-        }
-    }
-}
-
 /// [`apply_toolbar_actions`] 에 전달할 이번 프레임 툴바 클릭 결과 묶음.
-struct PresetToolbarClicks {
+pub(super) struct PresetToolbarClicks {
     edit_clicked: bool,
     done_clicked: bool,
     rename_clicked: bool,

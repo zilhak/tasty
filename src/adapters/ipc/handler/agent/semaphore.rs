@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
@@ -30,7 +31,7 @@ pub fn handle_semaphore_create(
         Ok(n) => n,
         Err(e) => return e,
     };
-    let permits = match params.get("permits").and_then(|v| v.as_u64()) {
+    let permits = match p_try!(params::opt_int::<u64>(params, "permits", &id)) {
         Some(c) if c <= u32::MAX as u64 => c as u32,
         _ => {
             return JsonRpcResponse::invalid_params(
@@ -61,7 +62,7 @@ pub fn handle_semaphore_set_permits(
         Ok(n) => n,
         Err(e) => return e,
     };
-    let permits = match params.get("permits").and_then(|v| v.as_u64()) {
+    let permits = match p_try!(params::opt_int::<u64>(params, "permits", &id)) {
         Some(c) if c <= u32::MAX as u64 => c as u32,
         _ => {
             return JsonRpcResponse::invalid_params(
@@ -96,14 +97,9 @@ pub fn handle_semaphore_acquire(
         Some(h) if !h.is_empty() => h.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'holder'"),
     };
-    let ttl_ms = match params.get("ttl_ms") {
-        None | Some(Value::Null) => None,
-        Some(v) => match v.as_u64() {
-            Some(t) => Some(t),
-            None => {
-                return JsonRpcResponse::invalid_params(id, "Invalid 'ttl_ms' (must be u64)");
-            }
-        },
+    let ttl_ms = match params::opt_int::<u64>(params, "ttl_ms", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     match core.semaphore_acquire(workspace_id, &name, &holder, ttl_ms, now_ms()) {
         Ok(outcome) => serialize(id, outcome),

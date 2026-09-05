@@ -1,7 +1,7 @@
 //! Webview(html) surface 의 **host chrome** egui 렌더.
 //!
 //! `rendering = "webview"` kind 의 surface 는 host 가 OS-level native WebView overlay
-//! 를 위에 붙인다(`src/host_api/webview/*`, `engine/surface_registry/webview_kind.rs`).
+//! 를 위에 붙인다(`src/host_api/webview/*`, `src/core/surface_registry/webview_kind.rs`).
 //! 실제 페이지 픽셀은 OS WebView 가 그리므로 콘텐츠는 토큰 무관 — host 가 토큰으로
 //! 책임지는 것은 overlay 가 붙기 전/숨겨질 때의 *chrome* 뿐이다.
 //!

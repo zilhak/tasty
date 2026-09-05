@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
@@ -30,7 +31,7 @@ pub fn handle_rate_limit_set(
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'metric'"),
     };
-    let limit = match params.get("limit").and_then(|v| v.as_u64()) {
+    let limit = match p_try!(params::opt_int::<u64>(params, "limit", &id)) {
         Some(c) if c >= 1 && c <= u32::MAX as u64 => c as u32,
         _ => {
             return JsonRpcResponse::invalid_params(
@@ -39,7 +40,7 @@ pub fn handle_rate_limit_set(
             );
         }
     };
-    let per_ms = match params.get("per_ms").and_then(|v| v.as_u64()) {
+    let per_ms = match p_try!(params::opt_int::<u64>(params, "per_ms", &id)) {
         Some(c) if c >= 1 => c,
         _ => {
             return JsonRpcResponse::invalid_params(
@@ -48,7 +49,7 @@ pub fn handle_rate_limit_set(
             );
         }
     };
-    let burst = match params.get("burst").and_then(|v| v.as_u64()) {
+    let burst = match p_try!(params::opt_int::<u64>(params, "burst", &id)) {
         Some(c) if c <= u32::MAX as u64 => Some(c as u32),
         Some(_) => {
             return JsonRpcResponse::invalid_params(id, "'burst' exceeds u32::MAX");

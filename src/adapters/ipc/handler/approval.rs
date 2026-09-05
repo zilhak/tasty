@@ -108,10 +108,11 @@ pub(super) fn persist_record_via_arc(
         expires_at: None,
         cas: None,
     };
-    let mut guard = match memory.lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
-    };
+    let mut guard = crate::poison::recover_mutex(
+        memory.lock(),
+        crate::core::MEMORY_WHAT,
+        &crate::core::MEMORY_POISONED,
+    );
     if let Err(e) = guard.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts) {
         tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
     }

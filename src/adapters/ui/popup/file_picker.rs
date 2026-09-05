@@ -1,5 +1,5 @@
 //! Native file picker popup (04) — Tasty 자체 "파일 열기" 다이얼로그. 로컬/원격
-//! (attach mirror workspace) 겸용 select-and-confirm 다이얼로그로, `fs.pick_file`
+//! (attach mirror workspace) 겸용 select-and-confirm 다이얼로그로, OS native 다이얼로그
 //! (ADR-0042, native OS 다이얼로그 host 위임)이 원격 개념을 가질 수 없다는 근본
 //! 한계를 신규 ADR(`docs/adr/0046-*.md`)로 보완한다.
 //!
@@ -26,13 +26,14 @@
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 
 /// 경로 breadcrumb 의 구분자 글리프. 아이콘 스케일 밖(13) — 스케일의 12 와 14 사이다.
 /// 어느 쪽으로 맞출지는 디자인 판단이라 스냅하지 않고 이름을 붙여 둔다(ADR-0126 과 같은
 /// 처리). 갤러리 specimen 이 같은 값을 같은 이름으로 갖는다.
-const CRUMB_GLYPH: f32 = 13.0;
+const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::{AppState, FilePickerResult, FpLoadState};
@@ -41,8 +42,8 @@ use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Spi
 
 pub const FILE_PICKER_POPUP_ID: &str = "file_picker";
 
-const POPUP_WIDTH: f32 = 640.0;
-const POPUP_HEIGHT: f32 = 480.0;
+const POPUP_WIDTH: LogicalPx = LogicalPx(640.0);
+const POPUP_HEIGHT: LogicalPx = LogicalPx(480.0);
 
 // 중앙 블록 치수는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 같은 이디엄을 쓰는
 // `remote_attach` popup 과 갤러리 specimen 둘이 같은 상수를 읽는다.
@@ -55,7 +56,7 @@ const LIST_DIR_SOFT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// PopupDef.sizer — 고정 640×480(gallery specimen `FRAME_W`/`FRAME_H`).
 pub fn picker_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
-    egui::vec2(POPUP_WIDTH, POPUP_HEIGHT)
+    egui::vec2(POPUP_WIDTH.value(), POPUP_HEIGHT.value())
 }
 
 /// 목록 한 행의 시각 입력. `DirEntryInfo` 를 그대로 쓰지 않는 이유는
@@ -181,7 +182,7 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
         ui.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
         for (i, crumb) in props.crumbs.iter().enumerate() {
             if i > 0 {
-                ui.add(icons::CHEVRON_RIGHT.image(CRUMB_GLYPH, th.text_disabled().into()));
+                ui.add(icons::CHEVRON_RIGHT.image(CRUMB_GLYPH.value(), th.text_disabled().into()));
             }
             let is_current = i + 1 == props.crumbs.len();
             let color = if is_current {
@@ -226,12 +227,13 @@ pub fn draw_file_picker_view(ui: &mut egui::Ui, props: &FilePickerProps<'_>) -> 
     hline(ui, th);
 
     // ── Body ─────────────────────────────────────────────────────────
-    let body_height = (POPUP_HEIGHT - 44.0 - 36.0 - 84.0).max(60.0);
+    let body_height =
+        (POPUP_HEIGHT - LogicalPx(44.0) - LogicalPx(36.0) - LogicalPx(84.0)).max(LogicalPx(60.0));
     match &props.state {
         FpViewState::Loaded => {
             egui::ScrollArea::vertical()
                 .id_salt("file_picker_list")
-                .max_height(body_height)
+                .max_height(body_height.value())
                 .show(ui, |ui| {
                     for entry in props.entries {
                         let selected = props.selected.iter().any(|s| s == &entry.name);
@@ -414,7 +416,7 @@ enum CenterGlyph {
 fn center_state(
     ui: &mut egui::Ui,
     th: &Theme,
-    body_height: f32,
+    body_height: LogicalPx,
     glyph: CenterGlyph,
     heading: &str,
     body_text: Option<&str>,
@@ -422,10 +424,15 @@ fn center_state(
 ) -> bool {
     let mut clicked = false;
     ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), body_height),
+        egui::vec2(ui.available_width(), body_height.value()),
         egui::Layout::top_down(egui::Align::Center),
         |ui| {
-            ui.add_space((body_height - CENTER_BLOCK_H).max(0.0) * 0.5);
+            ui.add_space(
+                (body_height - LogicalPx(CENTER_BLOCK_H))
+                    .max(LogicalPx(0.0))
+                    .scaled(0.5)
+                    .value(),
+            );
             ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
             match glyph {
                 CenterGlyph::Spinner => {
@@ -442,7 +449,7 @@ fn center_state(
                     .color(th.text_primary()),
             );
             if let Some(b) = body_text {
-                ui.set_max_width(340.0);
+                ui.set_max_width(th.file_picker_note_max_width().value());
                 ui.label(
                     egui::RichText::new(b)
                         .size(th.font_size_caption.value())
@@ -480,12 +487,21 @@ fn host_badge(ui: &mut egui::Ui, th: &Theme, host: &str) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let radius = th.corner_radius.value();
     let info_color: egui::Color32 = info.into();
-    ui.painter()
-        .rect_filled(rect, radius, info_color.gamma_multiply(0.14));
+    // info 배지의 채움/테두리 짝. 대응 토큰 없음.
+    const INFO_BADGE_FILL_OPACITY: f32 = 0.14;
+    const INFO_BADGE_STROKE_OPACITY: f32 = 0.45;
+    ui.painter().rect_filled(
+        rect,
+        radius,
+        info_color.gamma_multiply(INFO_BADGE_FILL_OPACITY),
+    );
     ui.painter().rect_stroke(
         rect,
         radius,
-        egui::Stroke::new(th.border_width.value(), info_color.gamma_multiply(0.45)),
+        egui::Stroke::new(
+            th.border_width.value(),
+            info_color.gamma_multiply(INFO_BADGE_STROKE_OPACITY),
+        ),
         egui::StrokeKind::Inside,
     );
     let gy = egui::Rect::from_min_size(

@@ -4,6 +4,7 @@
 //! resolve_inherit_cwd_from_surface 경로에서 자동 활용.
 //! webview::handle_set_url 과 동일 패턴 — `&CoreState` (immutable) 로 충분.
 
+use crate::adapters::ipc::handler::params::require_u32;
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -16,9 +17,9 @@ pub fn handle_set_cwd(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let sid = match params.get("surface_id").and_then(|v| v.as_u64()) {
-        Some(s) => s as u32,
-        None => return JsonRpcResponse::invalid_params(id, "missing 'surface_id'"),
+    let sid = match require_u32(params, "surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let cwd = match params.get("cwd") {
         Some(Value::Null) | None => None,

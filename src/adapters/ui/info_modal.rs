@@ -16,6 +16,7 @@ use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::vspace;
 
 /// 모달 [확인] 시 동작.
@@ -37,6 +38,7 @@ pub enum InfoModalButtonAction {
     /// 현재 유일한 생산자가 macOS 전용 안내(Full Disk Access)라 다른 OS 에서는
     /// 아무도 만들지 않는다. `GeneralSubTab::Display` 와 동일하게 variant 자체는
     /// 플랫폼 공통으로 두고 경고만 억제한다 — 그리는 쪽은 어느 OS 에서든 컴파일된다.
+    // 이유: 유일한 생산자가 macOS 전용 안내라 다른 OS 빌드엔 생성처가 없다(위 문단).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenExternal(String),
 }
@@ -59,9 +61,9 @@ pub struct InfoModal {
 }
 
 pub const INFO_MODAL_ID: &str = "info_modal";
-const DEFAULT_WIDTH: f32 = 440.0;
-const MIN_HEIGHT: f32 = 140.0;
-const MAX_HEIGHT: f32 = 360.0;
+const DEFAULT_WIDTH: LogicalPx = LogicalPx(440.0);
+const MIN_HEIGHT: LogicalPx = LogicalPx(140.0);
+const MAX_HEIGHT: LogicalPx = LogicalPx(360.0);
 
 /// 큐에 modal 한 건을 추가하고 popup을 연다. 이미 열려 있으면 큐만 추가.
 ///
@@ -101,9 +103,13 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
     let line_h = theme::theme().font_size_body.value() * 1.5;
     let body_h = approx_lines * line_h;
-    let total_h = (popup::title_bar_height() + popup::content_margin() * 2.0 + body_h + 48.0)
-        .clamp(MIN_HEIGHT, MAX_HEIGHT);
-    egui::vec2(DEFAULT_WIDTH, total_h)
+    let total_h = (popup::title_bar_height()
+        + popup::content_margin().scaled(2.0)
+        + LogicalPx(body_h)
+        + LogicalPx(48.0))
+    .min(MAX_HEIGHT)
+    .max(MIN_HEIGHT);
+    egui::vec2(DEFAULT_WIDTH.value(), total_h.value())
 }
 
 /// PopupDef::on_close 진입점 — X 버튼(또는 그 외 draw_fn 을 우회하는 닫힘 경로)로
@@ -126,6 +132,7 @@ pub fn on_close_info_modal(
         std::process::exit(code);
     }
     if !state.dialogs.info_modal_queue.is_empty() {
+        // intent-exempt: popup 자기-close cleanup — 이 함수가 on_close 훅이라 여기서 큐의 다음 항목을 잇는다
         state.popups.open_centered_focused(INFO_MODAL_ID);
     }
 }

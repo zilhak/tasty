@@ -12,11 +12,17 @@
 
 use super::view::{TitlebarAction, TitlebarProps};
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 글리프 한 변 크기 (logical points). 46px 버튼 안의 중앙 ~10px 박스.
-const GLYPH: f32 = 10.0;
+///
+/// **아이콘 글리프 스케일 밖(10)** — 그 스케일은 12 · 14 · 15 · 16 이고 10 은 없다.
+/// `primitive.font-size-10` 이 있지만 그건 텍스트 가족이라 글리프 치수의 근거가 되지
+/// 않는다(ADR-0126 "판정은 가족별로 한다"). 인접 tier(12)로 맞추는 것은 값이 바뀌는
+/// 디자인 변경이라 스냅하지 않고 이름과 사유만 둔다.
+const GLYPH: LogicalPx = LogicalPx(10.0);
 /// 글리프 스트로크 굵기 (logical points). UI kit 1px 보더 관습과 동일.
-const GLYPH_STROKE: f32 = 1.0;
+const GLYPH_STROKE: LogicalPx = LogicalPx(1.0);
 
 /// 캡션 클러스터(min·max·close 3버튼) 전체 폭 (logical points).
 /// `view.rs` 의 우측 슬롯 carve-out + 드래그 rect 계산에 쓰인다.
@@ -115,16 +121,22 @@ fn paint_glyph(
     color: egui::Color32,
 ) {
     let h = GLYPH / 2.0;
-    let stroke = egui::Stroke::new(GLYPH_STROKE, color);
+    let stroke = egui::Stroke::new(GLYPH_STROKE.value(), color);
     match kind {
         Glyph::Minimize => {
             // 중앙 수평선.
-            painter.line_segment([egui::pos2(c.x - h, c.y), egui::pos2(c.x + h, c.y)], stroke);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - h.value(), c.y),
+                    egui::pos2(c.x + h.value(), c.y),
+                ],
+                stroke,
+            );
         }
         Glyph::Maximize if !maximized => {
             // 단일 사각형 외곽선.
             painter.rect_stroke(
-                egui::Rect::from_center_size(c, egui::vec2(GLYPH, GLYPH)),
+                egui::Rect::from_center_size(c, egui::vec2(GLYPH.value(), GLYPH.value())),
                 0.0,
                 stroke,
                 egui::StrokeKind::Inside,
@@ -132,27 +144,41 @@ fn paint_glyph(
         }
         Glyph::Maximize => {
             // restore: 앞 사각형(좌하) + 뒤 사각형(우상)으로 겹침을 표현.
-            let s = GLYPH - 2.0;
+            let s = GLYPH - LogicalPx(2.0);
             let off = 2.0;
-            let front =
-                egui::Rect::from_min_size(egui::pos2(c.x - h, c.y - h + off), egui::vec2(s, s));
+            let front = egui::Rect::from_min_size(
+                egui::pos2(c.x - h.value(), c.y - h.value() + off),
+                egui::vec2(s.value(), s.value()),
+            );
             painter.rect_stroke(front, 0.0, stroke, egui::StrokeKind::Inside);
             // 뒤 사각형은 우상단 모서리만 보이도록 ㄱ자 두 선분으로 그린다.
-            let bx0 = front.left() + off;
+            let bx0 = LogicalPx(front.left() + off);
             let bx1 = bx0 + s;
             let by0 = front.top() - off;
             let by1 = front.top();
-            painter.line_segment([egui::pos2(bx0, by0), egui::pos2(bx1, by0)], stroke);
-            painter.line_segment([egui::pos2(bx1, by0), egui::pos2(bx1, by1)], stroke);
+            painter.line_segment(
+                [egui::pos2(bx0.value(), by0), egui::pos2(bx1.value(), by0)],
+                stroke,
+            );
+            painter.line_segment(
+                [egui::pos2(bx1.value(), by0), egui::pos2(bx1.value(), by1)],
+                stroke,
+            );
         }
         Glyph::Close => {
             // X (두 대각선).
             painter.line_segment(
-                [egui::pos2(c.x - h, c.y - h), egui::pos2(c.x + h, c.y + h)],
+                [
+                    egui::pos2(c.x - h.value(), c.y - h.value()),
+                    egui::pos2(c.x + h.value(), c.y + h.value()),
+                ],
                 stroke,
             );
             painter.line_segment(
-                [egui::pos2(c.x - h, c.y + h), egui::pos2(c.x + h, c.y - h)],
+                [
+                    egui::pos2(c.x - h.value(), c.y + h.value()),
+                    egui::pos2(c.x + h.value(), c.y - h.value()),
+                ],
                 stroke,
             );
         }

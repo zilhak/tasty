@@ -1,7 +1,7 @@
 //! `git_viewer.*` IPC — git-viewer plugin이 mirror(attach) workspace에서 원격 git
 //! 조회를 트리거하는 진입점(`docs/adr/0056-git-viewer-remote-attach-git-query-channel.md`).
 //!
-//! `fs.pick_file`(ADR-0042)과 달리 이 호출은 **동기로 결과를 내지 않는다** — 실제
+//! 이 호출은 **동기로 결과를 내지 않는다** — 실제
 //! 조회가 attach Control 채널 왕복(다른 프로세스·다른 머신일 수 있는 원격 tasty)을
 //! 거쳐야 하므로, 이 핸들러는 요청을 `CoreState::pending_git_query_forward` 에 큐잉하고
 //! `request_id` 만 즉시 회신한다(accept). 실제 결과는 attach 응답 도착 후

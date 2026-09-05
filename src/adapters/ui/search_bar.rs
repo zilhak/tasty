@@ -4,6 +4,7 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
+use tasty_type_geometry::length::LogicalPx;
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -14,7 +15,7 @@ use tasty_terminal::search::{SearchError, SearchOptions};
 
 /// 매치 카운터(`3/17`) 폰트. DTCG primitive `font-size-12` 는 있으나 semantic role 이
 /// 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
-const COUNTER_FONT_PRIMITIVE_12: f32 = 12.0;
+const COUNTER_FONT_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
@@ -207,7 +208,7 @@ fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     );
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
-        egui::FontId::proportional(COUNTER_FONT_PRIMITIVE_12),
+        egui::FontId::proportional(COUNTER_FONT_PRIMITIVE_12.value()),
         color,
     );
     let pos = rect.center() - galley.size() * 0.5;
@@ -270,8 +271,11 @@ fn nav_button(
     tooltip: impl Into<egui::WidgetText>,
 ) -> bool {
     let (rect, resp) = icon_button_frame(ui, theme, enabled, false);
+    // disabled 아이콘 버튼 톤. `opacity_disabled`(0.5)와 값이 다르다 — 이 자리를
+    // 그 토큰으로 보낼지는 디자인 판단이라 값에 이름만 둔다.
+    const ICON_BUTTON_DISABLED_OPACITY: f32 = 0.45;
     let color: egui::Color32 = if !enabled {
-        egui::Color32::from(theme.text_secondary()).gamma_multiply(0.45)
+        egui::Color32::from(theme.text_secondary()).gamma_multiply(ICON_BUTTON_DISABLED_OPACITY)
     } else if resp.hovered() {
         theme.text_primary().into()
     } else {

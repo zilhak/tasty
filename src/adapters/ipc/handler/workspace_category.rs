@@ -5,9 +5,15 @@
 //! 상태라 IPC 에 노출하지 않는다. 따라서 본 핸들러의 어떤 연산도 사용자 active/포커스를
 //! 바꾸지 않는다 — delete/move 시 워크스페이스 전역 인덱스가 불변이므로 active 도 불변.
 //!
-//! 카테고리 데이터는 per-engine(CoreState.categories) 이며, list 는 dispatch 된 단일
-//! engine 을 읽는다(전 윈도우 집계 시 normal 이 중복 노출되므로 단일 engine 으로 한정).
+//! 카테고리 데이터는 per-engine(`CoreState.categories`) 이지만 **id 는 창을 건너
+//! 유일하다** — `IdGenerator.category` 가 공유 카운터다. 그래서 `list` 는 여기서
+//! 단일 engine 만 읽고, 전 창 합산은 `app::dispatch::list_global` 이 이 함수를 창마다
+//! 불러 합친다. 모든 engine 에 상수로 있는 예약 `normal`(id 0) 만 거기서 한 줄로
+//! 접는다. `rename`/`delete` 는 `"id"` 로 소유 창이 지목되므로 포커스에 안 걸린다.
+//! 남은 창 의존은 `create`(새 카테고리가 포커스된 창의 engine 에 생기고, 그 창의
+//! 워크스페이스만 소속될 수 있다)와 `move`(index 가 창 안의 위치다) 둘이다.
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::core::state::CategoryOpError;
@@ -64,7 +70,7 @@ pub fn handle_rename(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let Some(cat_id) = params.get("id").and_then(|v| v.as_u64()) else {
+    let Some(cat_id) = p_try!(params::opt_int::<u64>(params, "id", &id)) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
     };
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
@@ -85,10 +91,11 @@ pub fn handle_delete(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let Some(cat_id) = params.get("id").and_then(|v| v.as_u64()) else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
+    let cat_id = match super::params::require_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
-    match engine.delete_category(cat_id as u32) {
+    match engine.delete_category(cat_id) {
         Ok(()) => {
             engine.mark_layout_dirty();
             JsonRpcResponse::success(id, json!({ "deleted": true, "id": cat_id }))
@@ -98,16 +105,40 @@ pub fn handle_delete(
 }
 
 /// 카테고리 순서 이동(reorder). normal(0번) 위치 고정 — from/to == 0 거부.
+///
+/// 대상은 **`id` 로 지목한다** — 카테고리 id 는 engine 을 건너 유일해서 라우팅이 주인
+/// 창을 짚는다(`normal` 만 예외인데 그건 애초에 이동이 거부된다). `from_index` 는 창
+/// 안의 위치라 창이 안 정해지므로 그 형태는 포커스된 창에 떨어진다 — 종전 호출을 위해
+/// 남겨 두었고 둘을 함께 주면 거절한다. `to_index` 는 지목된 창 안에서의 목적지다.
 pub fn handle_move(
     engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let from = match params.get("from_index").and_then(|v| v.as_u64()) {
-        Some(f) => f as usize,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
+    let named = p_try!(params::opt_int::<u64>(params, "id", &id));
+    let from_index = p_try!(params::opt_int::<u64>(params, "from_index", &id));
+    let from = match (named, from_index) {
+        (Some(_), Some(_)) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "give either 'id' (the category to move) or 'from_index', not both",
+            );
+        }
+        (Some(cat_id), None) => match engine.category_index(cat_id as u32) {
+            Some(i) => i,
+            None => {
+                return JsonRpcResponse::invalid_params(
+                    id,
+                    format!("no workspace category {cat_id}"),
+                );
+            }
+        },
+        (None, Some(f)) => f as usize,
+        (None, None) => {
+            return JsonRpcResponse::invalid_params(id, "Missing 'id' or 'from_index' parameter");
+        }
     };
-    let to = match params.get("to_index").and_then(|v| v.as_u64()) {
+    let to = match p_try!(params::opt_int::<u64>(params, "to_index", &id)) {
         Some(t) => t as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };

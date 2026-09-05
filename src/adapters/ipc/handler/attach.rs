@@ -10,6 +10,7 @@
 //! (원칙 1①). attach 제어는 *에이전트 행동*(ID 지정·입력 시뮬레이션 아님)이라 release
 //! 빌드에 노출된다.
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::core::CoreState;
@@ -21,13 +22,7 @@ fn require_client_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("client_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'client_id' parameter")
-        })
+    super::params::require_u32(params, "client_id", id)
 }
 
 /// `attach.acquire` { surface_id, client_id } → 배타 lock 획득(동시 attach 거부).
@@ -118,13 +113,10 @@ pub(crate) fn handle_force_detach_workspace(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let workspace_id = match params.get("workspace_id").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
-        None => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                "Missing required 'workspace_id' parameter",
-            );
+    let workspace_id = match super::params::require_u32(params, "workspace_id", &id) {
+        Ok(v) => v,
+        Err(e) => {
+            return e;
         }
     };
     let holder = engine.attach.force_detach_workspace(workspace_id);
@@ -150,15 +142,13 @@ pub(crate) fn handle_into_gui(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let port = match params.get("port").and_then(|v| v.as_u64()) {
+    let port = match p_try!(params::opt_int::<u64>(params, "port", &id)) {
         Some(v) if v <= u16::MAX as u64 => v as u16,
         _ => return JsonRpcResponse::invalid_params(id, "Missing/invalid 'port' parameter"),
     };
-    let workspace = match params.get("workspace").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
-        None => {
-            return JsonRpcResponse::invalid_params(id, "Missing required 'workspace' parameter");
-        }
+    let workspace = match super::params::require_u32(params, "workspace", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     engine.pending_gui_attach.push((port, workspace));
     JsonRpcResponse::success(

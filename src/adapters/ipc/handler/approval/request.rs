@@ -1,6 +1,7 @@
 //! `approval` IPC: request 도메인.
 
 use super::*;
+use crate::adapters::ipc::handler::params::{self, p_try};
 
 pub fn handle_request(
     core: &mut crate::core::Core,
@@ -58,7 +59,7 @@ pub fn handle_request(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
-    let timeout_ms = params.get("timeout_ms").and_then(|v| v.as_u64());
+    let timeout_ms = p_try!(params::opt_int::<u64>(params, "timeout_ms", &id));
 
     let severity = match params.get("severity").and_then(|v| v.as_str()) {
         None => Severity::Info,
@@ -73,10 +74,11 @@ pub fn handle_request(
         },
     };
 
-    let workspace_id = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    let workspace_id =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        }
         .or_else(|| {
             // 미지정이면 활성 워크스페이스로 fallback (편의).
             engine
@@ -85,10 +87,11 @@ pub fn handle_request(
                 .map(|ws| ws.id)
         });
 
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "surface_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
 

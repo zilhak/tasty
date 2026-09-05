@@ -1,5 +1,6 @@
 //! `memory.cache.*` IPC handlers.
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::cache as cache_mod;
 
@@ -30,7 +31,7 @@ pub fn handle_cache_put(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let ttl_secs = match params.get("ttl_secs").and_then(|v| v.as_u64()) {
+    let ttl_secs = match p_try!(params::opt_int::<u64>(params, "ttl_secs", &id)) {
         Some(n) => n,
         None => {
             return JsonRpcResponse::invalid_params(id, "Missing 'ttl_secs' (>0)");

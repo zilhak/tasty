@@ -1,5 +1,6 @@
 //! `memory.secret.*` IPC handlers (secret 영역).
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::{ListOpts, PutOpts};
 
@@ -34,8 +35,8 @@ pub fn handle_secret_put(
         Err(e) => return e,
     };
     let opts = PutOpts {
-        expires_at: params.get("expires_at").and_then(|v| v.as_i64()),
-        cas: params.get("cas").and_then(|v| v.as_u64()),
+        expires_at: p_try!(params::opt_i64(params, "expires_at", &id)),
+        cas: p_try!(params::opt_int::<u64>(params, "cas", &id)),
     };
     let owner = caller.owner().to_string();
 
@@ -85,7 +86,7 @@ pub fn handle_secret_delete(
         Ok(k) => k.to_string(),
         Err(e) => return e,
     };
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.delete_secret(&owner, &scope, &key, cas)) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
@@ -110,16 +111,10 @@ pub fn handle_secret_list(
             .get("prefix")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        limit: params
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
-        since: params.get("since").and_then(|v| v.as_i64()),
-        until: params.get("until").and_then(|v| v.as_i64()),
-        offset: params
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize),
+        limit: p_try!(params::opt_int::<usize>(params, "limit", &id)),
+        since: p_try!(params::opt_i64(params, "since", &id)),
+        until: p_try!(params::opt_i64(params, "until", &id)),
+        offset: p_try!(params::opt_int::<usize>(params, "offset", &id)),
     };
     let owner = caller.owner().to_string();
     match core.with_memory(|s| s.list_secret(&owner, &scope, &opts)) {

@@ -190,7 +190,7 @@ pub fn draw_tutorial_overlay(
     let title = t(step.title_key);
     let body = t(step.body_key);
     let size = egui::vec2(
-        callout::CALLOUT_W,
+        callout::CALLOUT_W.value(),
         callout::callout_height(ctx, theme, body),
     );
     let placement = callout::place_callout(

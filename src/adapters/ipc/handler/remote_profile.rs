@@ -5,6 +5,7 @@
 //! `~/.tasty/remote-profiles.toml` 를 IPC 로도 노출한다. 프로필은 비밀을 담지 않고
 //! passkey 를 이름으로 참조만 한다. 포커스 비의존(원칙 3): 대상을 `name` 으로 지정.
 
+use super::params::{self, p_try};
 use serde_json::{Value, json};
 
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -119,10 +120,8 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
         if let Some(user) = params.get("user").and_then(|v| v.as_str()) {
             p.set_field("user", user.to_string());
         }
-        if let Some(port) = params
-            .get("port")
-            .and_then(|v| v.as_u64())
-            .filter(|v| *v <= u16::MAX as u64)
+        if let Some(port) =
+            p_try!(params::opt_int::<u64>(params, "port", &id)).filter(|v| *v <= u16::MAX as u64)
         {
             p.set_field("port", port.to_string());
         }

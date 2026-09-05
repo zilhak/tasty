@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
@@ -30,7 +31,7 @@ pub fn handle_barrier_create(
         Ok(n) => n,
         Err(e) => return e,
     };
-    let count_required = match params.get("count_required").and_then(|v| v.as_u64()) {
+    let count_required = match p_try!(params::opt_int::<u64>(params, "count_required", &id)) {
         Some(c) if c <= u32::MAX as u64 => c as u32,
         _ => {
             return JsonRpcResponse::invalid_params(
@@ -39,7 +40,7 @@ pub fn handle_barrier_create(
             );
         }
     };
-    let timeout_ms = params.get("timeout_ms").and_then(|v| v.as_u64());
+    let timeout_ms = p_try!(params::opt_int::<u64>(params, "timeout_ms", &id));
     match core.barrier_create(workspace_id, name, count_required, timeout_ms, now_ms()) {
         Ok(b) => serialize(id, b),
         Err(e) => agent_err_to_response(id, e),

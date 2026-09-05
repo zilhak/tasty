@@ -7,7 +7,5 @@
 
 // 본체 소비처가 실제 쓰는 것만 재노출한다(MELON_FLESH 는 워드마크 렌더 안에서만
 // 쓰여 본체 직접 소비가 없다 — 필요하면 `tasty_ui_widgets::brand::MELON_FLESH`).
-pub use tasty_ui_widgets::brand::{
-    LOGO_PNG, LOGO_URI, PHASE_SLOT_HEIGHT, SPINNER_SIZE, WORDMARK_FONT_SIZE, WORDMARK_ICON_SIZE,
-    draw_wordmark,
-};
+// 락업 치수는 여기 없다 — `Theme` 의 `loading_screen_*` / `sidebar_*` 접근자에서 온다.
+pub use tasty_ui_widgets::brand::{LOGO_PNG, LOGO_URI, draw_wordmark};

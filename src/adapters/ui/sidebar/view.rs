@@ -7,6 +7,7 @@
 
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
 use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 
@@ -16,7 +17,7 @@ use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
 /// (theme.md "painter 전사 글리프") 재사용하지 않는다. 컴포넌트 토큰
 /// `status-dot-attached-ring-width` 는 2px 로 정의돼 있어 이 값과 어긋나며, 맞추려면
 /// ring 반경 계산(offset·stroke 절반)을 함께 다시 잡아야 해 디자인 확인이 선행한다.
-const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
+const ATTACHED_OUTLINE_WIDTH: LogicalPx = LogicalPx(1.5);
 
 // ── 디자인 스케일 밖 폰트 크기 ──────────────────────────────────────────────
 //
@@ -27,10 +28,20 @@ const ATTACHED_OUTLINE_WIDTH: f32 = 1.5;
 
 /// alert 배지 안의 숫자. 스케일 밖(9.5) — `badge_font_size()`(micro 10)와 0.5 차이라
 /// 스냅하고 싶어지는 자리지만, 그 0.5 는 어떤 zoom 에서도 사라지지 않는다.
-const ALERT_BADGE_FONT_SIZE: f32 = 9.5;
+const ALERT_BADGE_FONT_SIZE: LogicalPx = LogicalPx(9.5);
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0126 대로 **이름에 primitive 임을 남긴다**.
-const GHOST_WS_NAME_PRIMITIVE_12: f32 = 12.0;
+const GHOST_WS_NAME_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
+
+/// 접힌 사이드바 rail 의 상태 점 지름. 스케일 밖(6) — 점 치수 토큰은
+/// `status-dot-size`(8) 하나뿐이라 그리로 보내면 배율 1 에서 픽셀이 바뀐다
+/// (`docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다).
+/// 같은 파일의 확장 사이드바 점(`badge_dot_size`, 8)과 값이 다른 것은 rail 이 52px 폭이라
+/// 같은 크기를 못 쓰기 때문이다.
+///
+/// **같은 6 을 `src/adapters/ui/tab_bar.rs` 의 busy 점도 쓴다** — 무관한 두 화면이
+/// 독립적으로 고른 값이라, 판단이 서면 둘이 한 이름으로 모인다.
+const RAIL_STATUS_DOT_SIZE: LogicalPx = LogicalPx(6.0);
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
@@ -242,7 +253,7 @@ fn paint_alert_badge(
     let h = 15.0;
     let galley = ui.painter().layout_no_wrap(
         count.to_string(),
-        egui::FontId::proportional(ALERT_BADGE_FONT_SIZE),
+        egui::FontId::proportional(ALERT_BADGE_FONT_SIZE.value()),
         egui::Color32::from(th.text_on_accent()),
     );
     let pad = 4.0;
@@ -478,7 +489,7 @@ pub fn draw_full_sidebar_view(
                                 props.category_switch_held,
                             );
                             let pad = th.spacing_sm.value();
-                            let half = crate::adapters::ui::switch_overlay::keycap_size() / 2.0;
+                            let half = crate::adapters::ui::switch_overlay::keycap_size(th) / 2.0;
                             let center =
                                 egui::pos2(header.rect.max.x - pad - half, header.rect.center().y);
                             crate::adapters::ui::switch_overlay::paint_keycap(
@@ -652,14 +663,16 @@ pub fn draw_full_sidebar_view(
                             ),
                             first_rect.size(),
                         );
-                        let ghost_bg = th.surface_raised().with_alpha(180).to_egui();
-                        let ghost_fg = th.text_primary().with_alpha(180).to_egui();
+                        // 드래그 중 따라다니는 고스트는 반투명이다. 대응 토큰 없음.
+                        const DRAG_GHOST_ALPHA: u8 = 180;
+                        let ghost_bg = th.surface_raised().with_alpha(DRAG_GHOST_ALPHA).to_egui();
+                        let ghost_fg = th.text_primary().with_alpha(DRAG_GHOST_ALPHA).to_egui();
                         ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
                         ui.painter().text(
                             ghost_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             &ws.name,
-                            egui::FontId::proportional(GHOST_WS_NAME_PRIMITIVE_12),
+                            egui::FontId::proportional(GHOST_WS_NAME_PRIMITIVE_12.value()),
                             ghost_fg,
                         );
                     }
@@ -1396,7 +1409,7 @@ fn draw_collapsed_avatar(
     // 우상단 dot — notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring,
     // mirror 는 우하단 corner chip(아래) 로 분리 — dot 은 실행상태 전용
     // (디자인 2026-07-02 workspace-mirror-indicator: sky "remote" fill 제거).
-    let dot_radius = 3.0;
+    let dot_radius = RAIL_STATUS_DOT_SIZE.value() * 0.5;
     let dot_pad = 4.0;
     let dot_center = egui::pos2(
         rect.max.x - dot_pad - dot_radius,
@@ -1426,7 +1439,7 @@ fn draw_collapsed_avatar(
         ui.painter().rect_stroke(
             rect,
             4.0,
-            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
+            egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1533,16 +1546,20 @@ fn draw_workspace_card(
                     // divergence: idle status dot. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
                     th.text_placeholder().into()
                 };
+                // 지름은 `badge-dot-size` 에서 온다 — 여기 4 를 박으면 같은 슬롯에
+                // 겹쳐 그려지는 키캡만 `ui_zoom` 을 타서 배율에서 둘이 갈린다.
+                // `tasty_ui_widgets::paint_badge_dot` 을 부르지 못하는 이유는 색뿐이다:
+                // idle 색 `text_placeholder` 에 대응하는 `BadgeVariant` 가 없다.
+                let dot_r = th.badge_dot_size().value() * 0.5;
                 ui.painter()
-                    .circle_filled(dot_rect.center(), 4.0, dot_color);
+                    .circle_filled(dot_rect.center(), dot_r, dot_color);
                 // attached → dot 을 감싸는 lavender ring. 디자인 CSS outline 1.5px +
-                // outline-offset 1.5px: dot 반지름(4) + offset(1.5) + stroke 절반(0.75)
-                // = ring 중심 반지름 6.25, 굵기 1.5.
+                // outline-offset 1.5px: dot 반지름 + offset(1.5) + stroke 절반(0.75).
                 if ws.attached {
                     ui.painter().circle_stroke(
                         dot_rect.center(),
-                        6.25,
-                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH, th.border_attached()),
+                        dot_r + 1.5 + ATTACHED_OUTLINE_WIDTH.value() * 0.5,
+                        egui::Stroke::new(ATTACHED_OUTLINE_WIDTH.value(), th.border_attached()),
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {

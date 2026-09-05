@@ -200,7 +200,7 @@ pub enum CaptureUploadMsg {
 /// remote/holder side to list a directory. See [`PumpOutcome::list_dir_requests`]
 /// doc for why this lives outside `StreamControl`. Trust model matches the (03)
 /// capture-upload channel: "attach occupancy = trust", no separate `FsRead`-style
-/// permission gate (the local `fs.pick_file` IPC method's gate does not apply here
+/// permission gate (a local plugin IPC method's gate does not apply here
 /// — see ADR-0042/0046).
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]

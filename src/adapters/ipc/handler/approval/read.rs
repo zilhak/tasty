@@ -1,6 +1,7 @@
 //! `approval` IPC: read 도메인.
 
 use super::*;
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 
 pub fn handle_cancel(
@@ -40,7 +41,7 @@ pub fn await_blocking(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(rpc_id, "Missing 'id'"),
     };
-    let timeout_ms = match params.get("timeout_ms").and_then(|v| v.as_u64()) {
+    let timeout_ms = match p_try!(params::opt_int::<u64>(params, "timeout_ms", &rpc_id)) {
         Some(0) => None,
         Some(v) => Some(v),
         None => store.get(&req_id).and_then(|r| r.request.timeout_ms),
@@ -109,10 +110,11 @@ pub fn handle_list(
     params: &Value,
 ) -> JsonRpcResponse {
     let state_filter = params.get("state").and_then(|v| v.as_str());
-    let workspace_filter = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let workspace_filter =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
     let mut records = engine.approval_store.list();
     if let Some(f) = state_filter {
@@ -153,12 +155,13 @@ pub fn handle_history(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let since = params.get("since").and_then(|v| v.as_i64());
-    let until = params.get("until").and_then(|v| v.as_i64());
-    let workspace_filter = params
-        .get("workspace_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let since = p_try!(params::opt_i64(params, "since", &id));
+    let until = p_try!(params::opt_i64(params, "until", &id));
+    let workspace_filter =
+        match crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", &id) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
     let requester_filter = params
         .get("requester_id")
         .and_then(|v| v.as_str())
@@ -171,10 +174,7 @@ pub fn handle_history(
         .get("state")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
+    let limit = p_try!(params::opt_int::<usize>(params, "limit", &id));
 
     let scopes: Vec<String> = match core.with_memory(|s| s.scopes()) {
         Ok(s) => s,

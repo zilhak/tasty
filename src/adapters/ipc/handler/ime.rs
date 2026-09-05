@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use super::params::{self, p_try};
 use crate::view::main::MainView;
 use crate::view::main::ime as window_ime;
 use crate::view::ui::View as _;
@@ -53,9 +54,7 @@ fn handle_ime_preedit(
         return JsonRpcResponse::success(id, json!({ "preedit_active": false }));
     }
 
-    let cursor = params
-        .get("cursor")
-        .and_then(|v| v.as_u64())
+    let cursor = p_try!(params::opt_int::<u64>(params, "cursor", &id))
         .map(|c| (c as usize, (c as usize) + text.len()));
 
     let text_for_response = text.clone();

@@ -18,6 +18,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tasty_type_geometry::length::LogicalPx;
 
 use tasty_remote::browse::{self as remote_browse, RemoteWorkspace};
 use tasty_remote_profiles::RemoteProfiles;
@@ -41,18 +42,17 @@ const UI_MEMORY_ID: &str = "remote_attach.ui";
 const ATTACH_KIND: &str = "tasty-attach";
 
 // ── 레이아웃 고정 치수 (디자인 raw px — 화면 전용) ──
-const LEFT_W: f32 = 240.0;
-const HEADER_H: f32 = 47.0;
-const FOOTER_H: f32 = 49.0;
+const LEFT_W: LogicalPx = LogicalPx(240.0);
+const HEADER_H: LogicalPx = LogicalPx(47.0);
+const FOOTER_H: LogicalPx = LogicalPx(49.0);
 
 // 중앙 블록 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다.
 use tasty_ui_widgets::tokens::{CENTER_GLYPH_SIZE, STRUCT_GAP_2};
-const CAPS_H: f32 = 30.0;
-const PROFILE_ROW_H: f32 = 50.0;
-const WS_ROW_H: f32 = 34.0;
-const BADGE_H: f32 = 16.0;
-const HEADER_PAD_L: f32 = 14.0;
-const SELECT_BAR_W: f32 = 2.0;
+const CAPS_H: LogicalPx = LogicalPx(30.0);
+const PROFILE_ROW_H: LogicalPx = LogicalPx(50.0);
+const WS_ROW_H: LogicalPx = LogicalPx(34.0);
+const BADGE_H: LogicalPx = LogicalPx(16.0);
+const HEADER_PAD_L: LogicalPx = LogicalPx(14.0);
 
 /// 생성 왕복 중 아래 ws 목록의 불투명도 — 목록을 지우지 않고 물러나게만 한다.
 const LIST_DIM_WHILE_CREATING: f32 = 0.5;
@@ -622,15 +622,16 @@ pub fn draw_remote_attach_popup(
     let mut do_connect = false;
 
     // ── 헤더 ──
-    let header_rect = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), HEADER_H));
+    let header_rect =
+        egui::Rect::from_min_size(full.min, egui::vec2(full.width(), HEADER_H.value()));
     if draw_header(ui, &th, header_rect) {
         close = true;
     }
 
     // ── footer ──
     let footer_rect = egui::Rect::from_min_size(
-        egui::pos2(full.left(), full.bottom() - FOOTER_H),
-        egui::vec2(full.width(), FOOTER_H),
+        egui::pos2(full.left(), full.bottom() - FOOTER_H.value()),
+        egui::vec2(full.width(), FOOTER_H.value()),
     );
 
     // ── body(2-pane) ──
@@ -638,10 +639,12 @@ pub fn draw_remote_attach_popup(
         egui::pos2(full.left(), header_rect.bottom()),
         egui::pos2(full.right(), footer_rect.top()),
     );
-    let left_rect =
-        egui::Rect::from_min_size(body_rect.min, egui::vec2(LEFT_W, body_rect.height()));
+    let left_rect = egui::Rect::from_min_size(
+        body_rect.min,
+        egui::vec2(LEFT_W.value(), body_rect.height()),
+    );
     let right_rect = egui::Rect::from_min_max(
-        egui::pos2(body_rect.left() + LEFT_W, body_rect.top()),
+        egui::pos2(body_rect.left() + LEFT_W.value(), body_rect.top()),
         body_rect.max,
     );
     // 좌 pane 배경(bg-sidebar) + borderRight separator.
@@ -720,7 +723,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + HEADER_PAD_L, rect.top()),
+        egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
         egui::pos2(rect.right() - th.spacing_sm.value(), rect.bottom()),
     );
     let mut close = false;
@@ -774,8 +777,10 @@ fn draw_left_pane(
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     // caps 헤더.
     caps_header(&mut col, th, t("remote_attach.attach_profiles"), None);
-    let list_rect =
-        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
+    let list_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
+        rect.max,
+    );
     let mut list = col.new_child(
         egui::UiBuilder::new()
             .max_rect(list_rect)
@@ -795,7 +800,7 @@ fn draw_left_pane(
                                 ui.max_rect().left() + th.spacing_md.value(),
                                 ui.cursor().top(),
                             ),
-                            egui::vec2(LEFT_W - th.spacing_md.value() * 2.0, 40.0),
+                            egui::vec2((LEFT_W - th.spacing_md.scaled(2.0)).value(), 40.0),
                         ))
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
@@ -818,10 +823,14 @@ fn draw_left_pane(
 
 fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool) -> bool {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H), egui::Sense::click());
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(w, PROFILE_ROW_H.value()), egui::Sense::click());
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W, rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if resp.hovered() {
         ui.painter()
@@ -1022,8 +1031,10 @@ fn draw_ws_list(
         t("remote_attach.remote_workspaces"),
         Some(profile_name),
     );
-    let list_rect =
-        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + CAPS_H), rect.max);
+    let list_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
+        rect.max,
+    );
     let mut list = col.new_child(
         egui::UiBuilder::new()
             .max_rect(list_rect)
@@ -1098,10 +1109,13 @@ fn new_ws_row(
     } else {
         egui::Sense::click()
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), sense);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W, rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !creating && resp.hovered() {
         ui.painter()
@@ -1215,9 +1229,10 @@ fn dot_slot_glyph(
     }
 }
 
-/// ws 행의 실행 dot — 같은 슬롯 안에 그린다. `status_dot` 은 라벨이 비어도 dot 뒤에
-/// 자기 gap 을 할당하므로 그대로 부르면 이름 열이 새 행보다 밀린다. 슬롯을 먼저 잡고
-/// 그 안의 child 에 그려서, 위젯이 삼키는 여백이 정렬선에 새지 않게 한다.
+/// ws 행의 실행 dot — `dot_slot` 안에 그린다. 슬롯을 거치는 이유는 **열 정렬**이다:
+/// 같은 슬롯을 `dot_slot_glyph` 도 쓰므로 실행 dot 행과 새 행의 이름 열이 같은 x 에서
+/// 시작한다. (`status_dot` 자신은 라벨이 비면 dot 폭만 할당하므로 여기서 되뺄 여백은
+/// 없다 — `crates/tasty-ui-widgets/tests/status_dot_width.rs` 가 그 계약을 못박는다.)
 fn dot_slot_status(ui: &mut egui::Ui, th: &Theme, kind: StatusKind, pulse: bool) {
     let slot = dot_slot(ui, th);
     let mut c = ui.new_child(
@@ -1299,10 +1314,13 @@ fn ws_row(ui: &mut egui::Ui, th: &Theme, w: &RemoteWorkspace, selected: bool) ->
     } else {
         egui::Sense::click()
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H), sense);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(SELECT_BAR_W, rect.height()));
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(th.tab_indicator_width.value(), rect.height()),
+        );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     } else if !disabled && resp.hovered() {
         ui.painter()
@@ -1499,7 +1517,7 @@ fn draw_footer(
 /// caps 헤더 — mono micro uppercase muted. `suffix` 있으면 "· {suffix}" 를 붙인다.
 fn caps_header(ui: &mut egui::Ui, th: &Theme, label: &str, suffix: Option<&str>) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), CAPS_H),
+        egui::vec2(ui.available_width(), CAPS_H.value()),
         egui::Sense::hover(),
     );
     let base_x = rect.left() + th.spacing_md.value();
@@ -1543,7 +1561,7 @@ fn badge(
     let icon_gap = th.spacing_xs.value();
     let icon_w = if warn_icon { icon_sz + icon_gap } else { 0.0 };
     let w = pad_x * 2.0 + icon_w + galley.rect.width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, BADGE_H.value()), egui::Sense::hover());
     let radius = th.corner_radius_sm.value();
     ui.painter()
         .rect_filled(rect, radius, color.gamma_multiply(fill_a));
@@ -1570,6 +1588,9 @@ fn badge(
 }
 
 #[cfg(test)]
+// 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다(전수 가드가 제외한다) —
+// 여기 경고는 조치 대상이 될 수 없어 프로덕션 신호만 가린다. error-handling.md.
+#[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
 

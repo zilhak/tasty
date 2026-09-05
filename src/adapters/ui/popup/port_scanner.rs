@@ -20,6 +20,7 @@
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::mpsc;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
@@ -1351,7 +1352,7 @@ fn draw_column_chooser(
         &resp,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
-            ui.set_min_width(180.0);
+            ui.set_min_width(th.port_columns_menu_min_width().value());
             ui.label(
                 egui::RichText::new(props.label_columns_menu_title)
                     .color(th.text_muted())
@@ -1488,7 +1489,7 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
         egui::AboveOrBelow::Below,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
-            ui.set_min_width(216.0);
+            ui.set_min_width(th.port_state_menu_min_width().value());
             ui.label(
                 egui::RichText::new(props.label_state_filter_title)
                     .color(th.text_muted())
@@ -1501,7 +1502,7 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             let mut draft = read_state_draft(ui.ctx());
             let mut draft_changed = false;
             egui::ScrollArea::vertical()
-                .max_height(168.0)
+                .max_height(th.port_state_menu_max_height().value())
                 .show(ui, |ui| {
                     for st in present {
                         // shown 집합 → checked = 포함(remote_tool 의 !contains 와 반대).
@@ -1615,11 +1616,11 @@ const FAV_COL_WIDTH: f32 = 28.0;
 
 /// 로딩 줄 스피너의 한 변. 값은 아이콘 스케일 md(16)와 같지만 아이콘 글리프가 아니라
 /// 스피너 지름이라 그 토큰을 쓰지 않고 이름을 따로 둔다.
-const LOADING_SPINNER_SIZE: f32 = 16.0;
+const LOADING_SPINNER_SIZE: LogicalPx = LogicalPx(16.0);
 
 /// 즐겨찾기 리스트 스크롤 cap(design "5행 × 22px = 110 ≤ 112 cap") — 5행이 꽉 채워도
 /// 스크롤 시작 전 여유 2px 를 남겨 스크롤 가능함을 암시한다.
-const FAVORITES_LIST_MAX_H: f32 = 112.0;
+const FAVORITES_LIST_MAX_H: LogicalPx = LogicalPx(112.0);
 
 /// `PortStar` (design `PortStar`) — 22×22(`item_height_tree`) 별 토글. `on` 이면 채운
 /// `STAR_FILL` + accent-warning(Explorer 즐겨찾기와 동일 골드), 아니면 outline `STAR`
@@ -1707,8 +1708,16 @@ fn draw_favorites_section(
                         let sz = th.icon_glyph_size_sm.value();
                         let (r, _) =
                             ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                        // 즐겨찾기 별 아이콘 톤. 대응 토큰 없음 — 같은 아이콘이 두 곳에서
+                        // 서로 다른 값을 쓴다(수렴은 디자인 판단).
+                        const FAV_STAR_ICON_OPACITY: f32 = 0.37;
                         icons::STAR
-                            .image(sz, th.text_muted().to_egui().gamma_multiply(0.37))
+                            .image(
+                                sz,
+                                th.text_muted()
+                                    .to_egui()
+                                    .gamma_multiply(FAV_STAR_ICON_OPACITY),
+                            )
                             .paint_at(ui, r);
                         ui.label(
                             egui::RichText::new(props.label_favorites_empty)
@@ -1721,7 +1730,7 @@ fn draw_favorites_section(
             } else {
                 egui::ScrollArea::vertical()
                     .id_salt("port_scanner.favorites_scroll")
-                    .max_height(FAVORITES_LIST_MAX_H)
+                    .max_height(FAVORITES_LIST_MAX_H.value())
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         for fav in props.favorites {
@@ -1848,7 +1857,7 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         ui.horizontal(|ui| {
             ui.add(
                 egui::Spinner::new()
-                    .size(LOADING_SPINNER_SIZE)
+                    .size(LOADING_SPINNER_SIZE.value())
                     .color(th.text_muted()),
             );
             ui.label(

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 
 use crate::core::Core;
@@ -514,18 +515,17 @@ pub fn await_task_blocking(
     };
     // 생략 시 기본 10분(잠정) — 명시적 0 만 무한 대기로 우회.
     let timeout_ms = Some(
-        params
-            .get("timeout_ms")
-            .and_then(|v| v.as_u64())
+        p_try!(params::opt_int::<u64>(params, "timeout_ms", &rpc_id))
             .unwrap_or(DEFAULT_TASK_AWAIT_TIMEOUT_MS),
     );
 
     // 1. 현 state snapshot.
     let snap_opt: Option<TerminalSnapshot> = {
-        let mut guard = match memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut guard = crate::poison::recover_mutex(
+            memory.lock(),
+            crate::core::MEMORY_WHAT,
+            &crate::core::MEMORY_POISONED,
+        );
         let store = tasty_agent::TaskStore::new(&mut *guard, HOST_OWNER, agent_seq.as_ref());
         match store.get(workspace_id, &task_id) {
             Ok(Some(t)) => Some(TerminalSnapshot {
@@ -712,12 +712,7 @@ pub fn handle_task_graph(
 /// (원칙 3, 포커스 독립성). 잘못된 타입이 오면 조용히 전체 순회로 떨어지지 않고
 /// invalid_params 로 거절한다.
 fn optional_workspace_id_param(params: &Value, id: &Value) -> Result<Option<u32>, JsonRpcResponse> {
-    match params.get("workspace_id") {
-        None | Some(Value::Null) => Ok(None),
-        Some(v) => v.as_u64().map(|w| Some(w as u32)).ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "'workspace_id' must be a number")
-        }),
-    }
+    crate::adapters::ipc::handler::params::optional_u32(params, "workspace_id", id)
 }
 
 /// `include_tasks=false`(기본)면 `task_ids` 를 응답에서 뺀다 — 목록 화면은 요약만
@@ -981,10 +976,10 @@ pub fn handle_task_set_result(
             return JsonRpcResponse::invalid_params(id, "Missing 'state' ('succeeded' | 'failed')");
         }
     };
-    let exit_code = params
-        .get("exit_code")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
+    let exit_code = p_try!(
+        params::read_signed::<i32>(params, "exit_code")
+            .map_err(|msg| JsonRpcResponse::invalid_params(id.clone(), msg))
+    );
     let output = params.get("output").cloned();
     let error = params
         .get("error")
@@ -1081,12 +1076,14 @@ pub fn handle_task_delete(
 /// 상태 목록은 빈 값을 "필터 없음" 으로 접지 않는다 — `{"states": []}` 은
 /// "고른 상태가 없음 = 매칭 없음" 이지 "상태 무관 전체" 가 아니다(아래
 /// `handle_task_purge` doc 참조 — `task_list` 와 의미가 반대인 이유).
-fn purge_filter_from_params(params: &Value, now_ms: u64) -> TaskPurgeFilter {
-    TaskPurgeFilter {
+/// `Result` 를 반환하는 이유: 잘못된 `older_than_ms` 를 `None` 으로 만들면 **필터 없음**
+/// 과 구별되지 않아, 사용자가 지정한 것보다 **넓은 범위가 삭제 후보**가 된다.
+fn purge_filter_from_params(params: &Value, now_ms: u64) -> Result<TaskPurgeFilter, String> {
+    Ok(TaskPurgeFilter {
         states: state_names_param_keep_empty(params, "states"),
-        older_than_ms: params.get("older_than_ms").and_then(|v| v.as_u64()),
+        older_than_ms: params::read_int::<u64>(params, "older_than_ms")?,
         now_ms,
-    }
+    })
 }
 
 /// task 일괄 삭제 — 상태 이름 목록(`states`, `TaskState::name()`
@@ -1114,7 +1111,10 @@ pub fn handle_task_purge(
         .get("dry_run")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let filter = purge_filter_from_params(params, now_ms());
+    let filter = match purge_filter_from_params(params, now_ms()) {
+        Ok(f) => f,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    };
     match core.task_purge(engine, workspace_id, filter, dry_run) {
         Err(e) => agent_err_to_response(id, e),
         Ok(plan) => JsonRpcResponse::success(
@@ -1727,7 +1727,7 @@ mod purge_state_filter_tests {
                 })
                 .expect("create");
         }
-        let filter = purge_filter_from_params(params, 100_000);
+        let filter = purge_filter_from_params(params, 100_000).expect("픽스처 params 는 정상");
         store.plan_sweep(1, &filter).expect("plan_sweep")
     }
 

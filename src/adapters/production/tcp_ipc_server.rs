@@ -1,8 +1,7 @@
 //! Production adapter — `TcpIpcServer`. TCP listener + mpsc channel + accept
 //! thread 로 JSON-RPC 요청을 받는다. Hub 가 `Box<dyn IpcServerPort>` 로 보유.
 //!
-//! 옛 `src/adapters/ipc/server.rs::IpcServer` 의 본문이 D.3.D.2.b 에서 이곳으로
-//! 정식 이전. wire 타입 (`IpcCommand` / `IpcWaker` / `send_response`) 은 옛
+//! wire 타입 (`IpcCommand` / `IpcWaker` / `send_response`) 은 옛
 //! 위치 (`crate::ipc::server`) 에 잔존 — wire 형식과 강결합이라 trait 옆이 아니라
 //! wire 모듈에 두는 게 자연스럽다 (verify 자율 결정).
 

@@ -13,7 +13,6 @@
 //! 손이 왕복하지 않고, `dag-chrome-bg`/`-border` 도 그 덩어리를 위한 토큰이다.
 
 use tasty_dag_layout::GraphLayout;
-use tasty_design_tokens::generated::semantic::ICON_SIZE_SM;
 use tasty_model::DagDirection;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -125,7 +124,10 @@ fn identity_group(
 ) {
     // 이 띠가 무엇에 대한 것인지 알리는 글리프. 탭 제목이 없는 popup 자리에서도
     // 같은 화면임을 알아보는 손잡이다.
-    ui.add(icons::GIT_TREE.image(ICON_SIZE_SM.value(), theme.dag_chrome_fg().to_egui()));
+    ui.add(icons::GIT_TREE.image(
+        theme.icon_glyph_size_sm.value(),
+        theme.dag_chrome_fg().to_egui(),
+    ));
     hspace(ui, theme.spacing_xs);
     if let Some(picked) = dag_picker(ui, theme, data) {
         *action = Some(ChromeAction::SelectDag(picked));
@@ -378,7 +380,7 @@ fn cluster_cell(
     } else {
         theme.text_disabled()
     };
-    let side = ICON_SIZE_SM.value();
+    let side = theme.icon_glyph_size_sm.value();
     icon.image(side, color.to_egui()).paint_at(
         ui,
         egui::Rect::from_center_size(rect.center(), egui::vec2(side, side)),
@@ -409,11 +411,18 @@ fn draw_zoom_cluster(
         egui::StrokeKind::Inside,
     );
 
-    let side = theme.dag_chrome_height().value();
+    let side = theme.dag_chrome_height();
     let mut x = rect.min.x;
-    let mut cell = |w: f32| {
-        let r = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(w, side));
-        x += w;
+    // 폭을 `LogicalPx` 로 받는다. 호출 인자가 전부 Theme 값이거나 명명 길이 상수라
+    // 여기서 받으면 그 값들이 벗겨지지 않은 채 들어오고, 벗기는 자리가 egui 로 나가는
+    // 이 본문 안으로 모인다. 벗기기 총수는 거의 그대로다(이 파일 53 → 52) — 얻는 것은
+    // 개수가 아니라 위치다.
+    let mut cell = |w: LogicalPx| {
+        let r = egui::Rect::from_min_size(
+            egui::pos2(x, rect.min.y),
+            egui::vec2(w.value(), side.value()),
+        );
+        x += w.value();
         r
     };
 
@@ -431,7 +440,7 @@ fn draw_zoom_cluster(
         action = Some(ChromeAction::Zoom(-1.0));
     }
     if !compact {
-        let readout = cell(ZOOM_READOUT_WIDTH.value());
+        let readout = cell(ZOOM_READOUT_WIDTH);
         ui.painter().text(
             readout.center(),
             egui::Align2::CENTER_CENTER,
@@ -453,7 +462,7 @@ fn draw_zoom_cluster(
         action = Some(ChromeAction::Zoom(1.0));
     }
 
-    let sep = cell(theme.border_width.value());
+    let sep = cell(theme.border_width);
     ui.painter().rect_filled(sep, 0.0, border);
 
     if cluster_cell(
@@ -514,7 +523,7 @@ pub fn draw_cycle_banner(ui: &mut egui::Ui, theme: &Theme, cycle: &[String]) {
         .show(ui, |ui| {
             ui.set_height(theme.dag_cycle_height().value());
             ui.horizontal_centered(|ui| {
-                ui.add(icons::ALERT_TRIANGLE.image(ICON_SIZE_SM.value(), fg));
+                ui.add(icons::ALERT_TRIANGLE.image(theme.icon_glyph_size_sm.value(), fg));
                 hspace(ui, theme.spacing_sm);
                 ui.label(
                     egui::RichText::new(t_fmt("dag.cycle.lead", &cycle.len().to_string()))

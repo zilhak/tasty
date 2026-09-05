@@ -2,14 +2,18 @@
 
 use crate::adapters::ui::LayoutContext;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use super::occlusion::{Occluder, PointOwnership, point_ownership};
 use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
 
 /// 리사이즈 테두리 밴드 폭(px). popup_rect 가장자리 안쪽 이 폭 안에서 누르면 리사이즈.
-const RESIZE_BAND: f32 = 6.0;
+const RESIZE_BAND: LogicalPx = LogicalPx(6.0);
 
 /// 포인터가 rect 의 어느 테두리 밴드에 있는지 판정. 어느 엣지에도 안 닿으면 None.
+///
+/// `band` 가 `LogicalPx` 가 아닌 이유: 본문이 전부 egui `Rect`/`Pos2` 산술이라, 타입을
+/// 받으면 호출 한 자리에서 벗기던 것을 본문 네 자리에서 벗기게 된다.
 fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<ResizeEdges> {
     let left = pos.x <= rect.min.x + band;
     let right = pos.x >= rect.max.x - band;
@@ -175,7 +179,7 @@ impl PopupManager {
                     {
                         hovered_fullscreen = Some((popup.id, stage));
                     } else if popup.resizable
-                        && let Some(edges) = resize_edges_at(rect, pos, RESIZE_BAND)
+                        && let Some(edges) = resize_edges_at(rect, pos, RESIZE_BAND.value())
                     {
                         hovered_resize = Some((popup.id, edges));
                     } else if let Some(handle) = popup.effective_drag_handle_rect(ctx)

@@ -17,6 +17,7 @@
 //!   못 쓰고 자기 소유(`<plugin_id>/…`) hook 핸들러 id 만 바인딩할 수 있다. 시퀀스
 //!   정의는 owner(Local) 전용 채널로 유지된다.
 
+use super::params::{self, p_try};
 use serde_json::json;
 
 use crate::hook_handler::{
@@ -200,18 +201,16 @@ fn parse_lifetime(params: &serde_json::Value) -> Result<Lifetime, String> {
         Persistence::Temporary
     };
 
-    // CLI 는 미지정 optional 을 JSON null 로 보내므로 null 은 "부재" 로 취급한다.
-    let ttl = params.get("ttl_secs").filter(|v| !v.is_null());
-    let count = params.get("count").filter(|v| !v.is_null());
+    // CLI 는 미지정 optional 을 JSON null 로 보내므로 null 은 "부재" 로 취급한다 —
+    // 그 판정은 `params` 관문이 든다(부재와 형식 오류를 가르는 자리도 거기다).
+    let ttl = params::read_int::<u64>(params, "ttl_secs")?;
+    let count = params::read_int::<u64>(params, "count")?;
 
     let limit = match (ttl, count) {
         (Some(_), Some(_)) => {
             return Err("specify at most one of 'ttl_secs' or 'count', not both".to_string());
         }
-        (Some(ttl), None) => {
-            let secs = ttl
-                .as_u64()
-                .ok_or_else(|| "'ttl_secs' must be a positive integer".to_string())?;
+        (Some(secs), None) => {
             if secs == 0 {
                 return Err("'ttl_secs' must be greater than 0".to_string());
             }
@@ -219,10 +218,7 @@ fn parse_lifetime(params: &serde_json::Value) -> Result<Lifetime, String> {
                 deadline_unix: now_unix().saturating_add(secs),
             }
         }
-        (None, Some(count)) => {
-            let remaining = count
-                .as_u64()
-                .ok_or_else(|| "'count' must be a positive integer".to_string())?;
+        (None, Some(remaining)) => {
             if remaining == 0 {
                 return Err("'count' must be greater than 0".to_string());
             }
@@ -299,16 +295,15 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
 /// 포트는 **설정값 only**(자동 폴백 없음). 유효 범위 1..=65535.
 pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
     // CLI 는 미지정 필드를 JSON null 로 보내므로 null 을 "조회" 로 취급한다.
-    match params.get("port").filter(|v| !v.is_null()) {
+    // 폭(`u16`)을 판정에 맡긴다 — 종전에는 `as_u64()` 로 받아 범위를 손으로 보고
+    // `as u16` 으로 잘랐다. 잘린 포트는 **다른 포트**이고 1..=65535 검사를 이미 통과한
+    // 뒤였다.
+    match p_try!(params::opt_int::<u16>(params, "port", &id)) {
         // ── 설정 ──
-        Some(raw) => {
-            let Some(n) = raw.as_u64() else {
-                return JsonRpcResponse::invalid_params(id, "'port' must be an integer 1..=65535");
-            };
-            if !(1..=65535).contains(&n) {
+        Some(port) => {
+            if port == 0 {
                 return JsonRpcResponse::invalid_params(id, "'port' must be in range 1..=65535");
             }
-            let port = n as u16;
             if let Err(e) = webhook::config::set_port(port) {
                 return JsonRpcResponse::internal_error(
                     id,

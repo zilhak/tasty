@@ -92,8 +92,9 @@ pub fn handle_cap_set(
     if let Err(e) = validate_metric(&metric) {
         return JsonRpcResponse::invalid_params(id, e.to_string());
     }
-    let threshold = match params.get("threshold").and_then(|v| v.as_f64()) {
-        Some(t) if t > 0.0 => t,
+    let threshold = match crate::adapters::ipc::handler::params::opt_f64(params, "threshold", &id) {
+        Ok(Some(t)) if t > 0.0 => t,
+        Err(e) => return e,
         _ => {
             return JsonRpcResponse::invalid_params(id, "'threshold' must be a positive number");
         }

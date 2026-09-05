@@ -82,3 +82,8 @@ pub fn handle_open(
 // close 큐로 합류해야 `cancel_child_file_picker` 연쇄 정리가 돌기 때문에(ADR-0084)
 // `App::enqueue_plugin_popup_close` 를 거치는 App-level glue 로 옮겼다
 // (`src/app/ipc/debug_methods.rs`, `debug.plugin_banner.*` 와 같은 이유·같은 위치).
+//
+// 위 둘 중 헤드리스가 답하는 것은 `handle_list` 뿐이다. `handle_open` 은 컴파일은
+// 되지만 열지 않았다 — 헤드리스에는 plugin popup 을 **닫는 경로가 하나도 없다**
+// (debug close 도, plugin 자신의 release `popup.close` 도 gui 게이트 안의
+// `app::dispatch` 에 산다). open 만 열면 그 빌드에서 닫을 수 없는 인스턴스가 남는다.

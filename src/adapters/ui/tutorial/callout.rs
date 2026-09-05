@@ -8,18 +8,31 @@
 //! `Button` 재사용, 색·간격·반경은 `Theme` 토큰.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, vspace};
 
 use crate::i18n::t;
 
 /// 244px 고정폭(i18n 가변폭은 세로로 흡수).
-pub const CALLOUT_W: f32 = 244.0;
+pub const CALLOUT_W: LogicalPx = LogicalPx(244.0);
 /// tail 삼각 크기(12px diamond 전사).
-const TAIL: f32 = 12.0;
+const TAIL: LogicalPx = LogicalPx(12.0);
 /// up/down tail 의 좌측 기준 앵커 offset(디자인 left:28).
-const TAIL_OFF_H: f32 = 28.0;
+const TAIL_OFF_H: LogicalPx = LogicalPx(28.0);
 /// left/right tail 의 상단 기준 앵커 offset(디자인 top:24).
-const TAIL_OFF_V: f32 = 24.0;
+const TAIL_OFF_V: LogicalPx = LogicalPx(24.0);
+
+/// 스텝 레일 점의 지름. 스케일 밖(5) — 점 치수 토큰은 `status-dot-size`(8) 하나뿐이고
+/// 그 토큰은 `zoomed()` 를 타 배율 0.85 / 1.0 / 1.2 에서 7 / 8 / 10 이 된다. 여기를
+/// 8 로 보내면 배율 1 에서 픽셀이 바뀐다 — 스냅이 아니라 값 변경이라
+/// `docs/adr/0126-off-scale-font-values-are-not-snapped-to-tokens.md` 대로 이름만 붙인다.
+/// **같은 5 를 `src/view/settings/ui/tabs/appearance.rs` 의 `COLOR_OVERRIDE_DOT_SIZE`
+/// 도 쓴다** — 무관한 두 화면이 독립적으로 고른 값이라 드리프트가 아니라 역할일
+/// 가능성이 높고, 그 판단이 서면 둘이 한 토큰으로 모인다.
+///
+/// 이것은 상태 점이 아니라 **진행 표시(pagination)** 점이다 — 위 두 자리가 한 토큰으로
+/// 모이더라도 이 자리가 거기 속하는지는 별개 물음이다.
+const STEP_RAIL_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 
 /// 마커가 말풍선의 어느 쪽에 있는지 = tail 방향.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -36,7 +49,7 @@ pub struct Placement {
     pub pos: egui::Pos2,
     pub tail: Tail,
     /// up/down 이면 좌측에서의 x offset, left/right 이면 상단에서의 y offset.
-    pub tail_offset: f32,
+    pub tail_offset: LogicalPx,
 }
 
 fn fits(rect: egui::Rect, safe: egui::Rect) -> bool {
@@ -59,19 +72,28 @@ pub fn place_callout(
     let safe_rect = screen.shrink(safe);
     // 후보 pos + tail (선호순서).
     let below = (
-        egui::pos2(marker.center().x - TAIL_OFF_H, marker.bottom() + gap),
+        egui::pos2(
+            marker.center().x - TAIL_OFF_H.value(),
+            marker.bottom() + gap,
+        ),
         Tail::Up,
     );
     let above = (
-        egui::pos2(marker.center().x - TAIL_OFF_H, marker.top() - gap - size.y),
+        egui::pos2(
+            marker.center().x - TAIL_OFF_H.value(),
+            marker.top() - gap - size.y,
+        ),
         Tail::Down,
     );
     let right = (
-        egui::pos2(marker.right() + gap, marker.center().y - TAIL_OFF_V),
+        egui::pos2(marker.right() + gap, marker.center().y - TAIL_OFF_V.value()),
         Tail::Left,
     );
     let left = (
-        egui::pos2(marker.left() - gap - size.x, marker.center().y - TAIL_OFF_V),
+        egui::pos2(
+            marker.left() - gap - size.x,
+            marker.center().y - TAIL_OFF_V.value(),
+        ),
         Tail::Right,
     );
 
@@ -92,8 +114,12 @@ pub fn place_callout(
 
     // tail 은 마커 중심을 계속 조준 — offset 재계산 + tail 범위로 clamp.
     let tail_offset = match tail {
-        Tail::Up | Tail::Down => (marker.center().x - pos.x).clamp(TAIL, size.x - TAIL),
-        Tail::Left | Tail::Right => (marker.center().y - pos.y).clamp(TAIL, size.y - TAIL),
+        Tail::Up | Tail::Down => {
+            LogicalPx(marker.center().x - pos.x).clamp(TAIL, LogicalPx(size.x) - TAIL)
+        }
+        Tail::Left | Tail::Right => {
+            LogicalPx(marker.center().y - pos.y).clamp(TAIL, LogicalPx(size.y) - TAIL)
+        }
     };
 
     Placement {
@@ -106,7 +132,7 @@ pub fn place_callout(
 /// 말풍선 높이 추정(배치용) — 본문 galley 높이 + 고정 라인/패딩. egui Area 는
 /// 세로 auto-size 지만 배치(above/clamp)에는 사전 높이가 필요하다.
 pub fn callout_height(ctx: &egui::Context, theme: &Theme, body: &str) -> f32 {
-    let content_w = CALLOUT_W - 2.0 * theme.spacing_lg.value();
+    let content_w = (CALLOUT_W - theme.spacing_lg.scaled(2.0)).value();
     let body_h = ctx.fonts(|f| {
         f.layout(
             body.to_string(),
@@ -172,7 +198,7 @@ pub fn draw_callout(
                     bottom: theme.spacing_md.value() as i8,
                 })
                 .show(ui, |ui| {
-                    ui.set_width(CALLOUT_W - 2.0 * theme.spacing_lg.value());
+                    ui.set_width((CALLOUT_W - theme.spacing_lg.scaled(2.0)).value());
                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                     // step / total.
                     ui.label(
@@ -206,9 +232,15 @@ pub fn draw_callout(
                             } else {
                                 theme.surface_active().to_egui()
                             };
-                            let (r, _) =
-                                ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
-                            ui.painter().circle_filled(r.center(), 2.5, c);
+                            let (r, _) = ui.allocate_exact_size(
+                                egui::vec2(STEP_RAIL_DOT_SIZE.value(), STEP_RAIL_DOT_SIZE.value()),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().circle_filled(
+                                r.center(),
+                                STEP_RAIL_DOT_SIZE.value() * 0.5,
+                                c,
+                            );
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let next_label = if last {
@@ -267,35 +299,35 @@ fn paint_tail(p: &egui::Painter, bubble: egui::Rect, theme: &Theme, pl: Placemen
     let off = pl.tail_offset;
     let (a, b, apex) = match pl.tail {
         Tail::Up => {
-            let cx = bubble.min.x + off;
+            let cx = LogicalPx(bubble.min.x) + off;
             (
-                egui::pos2(cx - h, bubble.min.y),
-                egui::pos2(cx + h, bubble.min.y),
-                egui::pos2(cx, bubble.min.y - h),
+                egui::pos2((cx - h).value(), bubble.min.y),
+                egui::pos2((cx + h).value(), bubble.min.y),
+                egui::pos2(cx.value(), bubble.min.y - h.value()),
             )
         }
         Tail::Down => {
-            let cx = bubble.min.x + off;
+            let cx = LogicalPx(bubble.min.x) + off;
             (
-                egui::pos2(cx - h, bubble.max.y),
-                egui::pos2(cx + h, bubble.max.y),
-                egui::pos2(cx, bubble.max.y + h),
+                egui::pos2((cx - h).value(), bubble.max.y),
+                egui::pos2((cx + h).value(), bubble.max.y),
+                egui::pos2(cx.value(), bubble.max.y + h.value()),
             )
         }
         Tail::Left => {
-            let cy = bubble.min.y + off;
+            let cy = LogicalPx(bubble.min.y) + off;
             (
-                egui::pos2(bubble.min.x, cy - h),
-                egui::pos2(bubble.min.x, cy + h),
-                egui::pos2(bubble.min.x - h, cy),
+                egui::pos2(bubble.min.x, (cy - h).value()),
+                egui::pos2(bubble.min.x, (cy + h).value()),
+                egui::pos2(bubble.min.x - h.value(), cy.value()),
             )
         }
         Tail::Right => {
-            let cy = bubble.min.y + off;
+            let cy = LogicalPx(bubble.min.y) + off;
             (
-                egui::pos2(bubble.max.x, cy - h),
-                egui::pos2(bubble.max.x, cy + h),
-                egui::pos2(bubble.max.x + h, cy),
+                egui::pos2(bubble.max.x, (cy - h).value()),
+                egui::pos2(bubble.max.x, (cy + h).value()),
+                egui::pos2(bubble.max.x + h.value(), cy.value()),
             )
         }
     };
@@ -348,11 +380,11 @@ mod tests {
         // clamp 후에도 tail offset 은 [TAIL, w-TAIL] 범위 내에서 마커 중심을 향한다.
         let marker = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(40.0, 40.0));
         let p = place_callout(marker, SIZE, screen(), 12.0, 8.0);
-        assert!(p.tail_offset >= TAIL && p.tail_offset <= SIZE.x - TAIL);
+        assert!(p.tail_offset >= TAIL && p.tail_offset <= LogicalPx(SIZE.x) - TAIL);
         // 마커 중심 x 는 pos.x + tail_offset 근처.
-        let aim_x = p.pos.x + p.tail_offset;
+        let aim_x = LogicalPx(p.pos.x) + p.tail_offset;
         assert!(
-            (aim_x - marker.center().x).abs() <= SIZE.x,
+            (aim_x - LogicalPx(marker.center().x)).abs() <= LogicalPx(SIZE.x),
             "tail aims near marker center"
         );
     }

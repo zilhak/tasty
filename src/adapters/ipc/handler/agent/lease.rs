@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_agent::LeaseMode;
@@ -53,7 +54,7 @@ pub fn handle_lease_acquire(
         Ok(h) => h,
         Err(e) => return e,
     };
-    let ttl_ms = params.get("ttl_ms").and_then(|v| v.as_u64());
+    let ttl_ms = p_try!(params::opt_int::<u64>(params, "ttl_ms", &id));
     let mode = match params
         .get("mode")
         .and_then(|v| v.as_str())

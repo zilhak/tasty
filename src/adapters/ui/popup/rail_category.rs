@@ -14,15 +14,14 @@ use crate::i18n::t;
 use crate::intent::Intent;
 use crate::state::AppState;
 use crate::theme;
+use tasty_type_geometry::length::LogicalPx;
 
 pub const RAIL_CATEGORY_POPUP_ID: &str = "rail_category";
 
 /// 팝업 폭 (디자인 minWidth 176).
-const POPUP_WIDTH: f32 = 176.0;
-/// 메뉴 항목 한 줄 높이 (디자인 28px 행). draw 와 sizer 가 공유.
-const ITEM_HEIGHT: f32 = 28.0;
+const POPUP_WIDTH: LogicalPx = LogicalPx(176.0);
 /// 헤더(이름) 영역 높이 — 라벨 + 상하 패딩 + 하단 보더.
-const HEADER_HEIGHT: f32 = 30.0;
+const HEADER_HEIGHT: LogicalPx = LogicalPx(30.0);
 
 /// 현재 대상 카테고리가 접혀 있는지 등 팝업 렌더에 필요한 스냅샷.
 struct Target {
@@ -58,7 +57,10 @@ fn menu_row(
     danger: bool,
 ) -> bool {
     let width = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(width, th.item_height_interactive.value()),
+        egui::Sense::click(),
+    );
     let radius = th.corner_radius.value();
     if resp.hovered() {
         ui.painter()
@@ -73,12 +75,15 @@ fn menu_row(
     };
     let icon_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.min.x + 8.0, rect.center().y - icon_size / 2.0),
+        egui::pos2(
+            rect.min.x + th.spacing_sm.value(),
+            rect.center().y - icon_size / 2.0,
+        ),
         egui::vec2(icon_size, icon_size),
     );
     icon.image(icon_size, color).paint_at(ui, icon_rect);
     ui.painter().text(
-        egui::pos2(icon_rect.max.x + 8.0, rect.center().y),
+        egui::pos2(icon_rect.max.x + th.spacing_sm.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(th.font_size_body.value()),
@@ -112,10 +117,15 @@ pub fn draw_rail_category_popup(
 
     // ── 비클릭 카테고리 이름 헤더 (라벨만 + 하단 보더 — count 표기 없음). ──
     let width = ui.available_width();
-    let (header_rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, HEADER_HEIGHT), egui::Sense::hover());
+    let (header_rect, _) = ui.allocate_exact_size(
+        egui::vec2(width, HEADER_HEIGHT.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().text(
-        egui::pos2(header_rect.min.x + 8.0, header_rect.center().y),
+        egui::pos2(
+            header_rect.min.x + th.spacing_sm.value(),
+            header_rect.center().y,
+        ),
         egui::Align2::LEFT_CENTER,
         &target.label,
         egui::FontId::proportional(th.font_size_body.value()),
@@ -211,20 +221,30 @@ pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) ->
         .unwrap_or(true);
     let rows = if reserved { 2u32 } else { 4u32 };
     let mut content_h = HEADER_HEIGHT
-        + th.spacing_xs.value()
-        + rows as f32 * ITEM_HEIGHT
-        + (rows.saturating_sub(1)) as f32 * th.spacing_xs.value();
+        + th.spacing_xs
+        + th.item_height_interactive.scaled(rows as f32)
+        + th.spacing_xs.scaled((rows.saturating_sub(1)) as f32);
     if !reserved {
         // separator(border_width) + 상하 spacing_xs.
-        content_h += th.border_width.value() + th.spacing_xs.value() * 2.0;
+        content_h += th.border_width + th.spacing_xs.scaled(2.0);
     }
-    egui::vec2(POPUP_WIDTH, popup::content_margin() * 2.0 + content_h + 1.0)
+    // `+ 1` 은 디자인 값이 아니라 반올림 안전 여유다(`popup/convert.rs` 의
+    // `safety_margin` 과 같은 것). 값이 우연히 `size-1` 과 같을 뿐이라 토큰으로
+    // 바꾸지 않는다 — 바꾸면 이름이 뜻을 속인다.
+    egui::vec2(
+        POPUP_WIDTH.value(),
+        (popup::content_margin().scaled(2.0) + content_h + LogicalPx(1.0)).value(),
+    )
 }
 
 /// PopupDef.default_size — register 시점 placeholder. sizer 가 매 프레임 재계산.
 pub fn rail_category_default_size() -> egui::Vec2 {
+    let th = theme::theme();
     egui::vec2(
-        POPUP_WIDTH,
-        popup::content_margin() * 2.0 + HEADER_HEIGHT + 2.0 * ITEM_HEIGHT,
+        POPUP_WIDTH.value(),
+        (popup::content_margin().scaled(2.0)
+            + HEADER_HEIGHT
+            + th.item_height_interactive.scaled(2.0))
+        .value(),
     )
 }

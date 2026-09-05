@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -19,11 +20,8 @@ pub(crate) fn handle_commands(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
-    let since = params.get("since").and_then(|v| v.as_i64());
+    let limit = p_try!(params::opt_int::<usize>(params, "limit", &id));
+    let since = p_try!(params::opt_i64(params, "since", &id));
     let entries = match read_command_entries(core, surface_id, limit, since) {
         Ok(v) => v,
         Err(e) => return e.into_response(id),
@@ -63,7 +61,7 @@ pub(crate) fn handle_command_at(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let index = match params.get("index").and_then(|v| v.as_i64()) {
+    let index = match p_try!(params::opt_i64(params, "index", &id)) {
         Some(i) => i,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };

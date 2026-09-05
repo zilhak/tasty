@@ -30,10 +30,10 @@
 //! 그때 temp memory 에 적어 두고 훅이 그것을 읽어 지운다(egui 내부 id 규칙을
 //! 재현하지 않는다).
 
-use super::{StageAction, StageId};
+use super::StageAction;
 
 /// 알림 무대 id. `PopupDef.fullscreen_stage` 와 debug IPC 가 이 값을 가리킨다.
-pub(crate) const NOTIFICATIONS_STAGE_ID: StageId = "notifications";
+pub(crate) use crate::fullscreen_stages::NOTIFICATIONS_STAGE_ID;
 
 /// 콘텐츠 자체 상태(스크롤)의 egui id 를 적어 두는 temp memory 슬롯.
 fn scroll_id_slot() -> egui::Id {
@@ -77,7 +77,7 @@ pub(crate) fn draw(
 
     // 콘텐츠 — popup 과 **같은** 형상 함수. 무대가 popup 기하를 하나도 넘기지 않는
     // 것이 이 함수가 무대에서도 성립하는 근거다.
-    let content_rect = frame.shrink(crate::adapters::ui::popup::content_margin());
+    let content_rect = frame.shrink(crate::adapters::ui::popup::content_margin().value());
     let mut content = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
     let scroll_id = content_scroll_id(&content);
     content

@@ -1,3 +1,4 @@
+use super::params::require_u32;
 use serde_json::json;
 
 use crate::state::AppState;
@@ -12,17 +13,17 @@ pub fn handle_message_send(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let to = match params.get("to_surface_id").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'to_surface_id'"),
+    let to = match require_u32(params, "to_surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let content = match params.get("content").and_then(|v| v.as_str()) {
         Some(v) => v.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'content'"),
     };
-    let from = match params.get("from_surface_id").and_then(|v| v.as_u64()) {
-        Some(f) => f as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_surface_id'"),
+    let from = match require_u32(params, "from_surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     let msg_id = core.send_surface_message(engine, from, to, content);
     JsonRpcResponse::success(
@@ -42,10 +43,10 @@ pub fn handle_message_read(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let from = params
-        .get("from_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let from = match super::params::optional_u32(params, "from_surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     let peek = params
         .get("peek")
         .and_then(|v| v.as_bool())

@@ -1,6 +1,7 @@
 //! `output.observe_*` IPC 핸들러. 모든 mutate / read 는 `Core` wrapper 를 거친다
 //! (`core.observer_*`) — handler 는 *engine 직접 mutate 금지* (Phase D 원칙).
 
+use super::params::{self, p_try};
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -39,7 +40,7 @@ pub fn handle_observe_stop(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let observer_id = match params.get("observer_id").and_then(|v| v.as_u64()) {
+    let observer_id = match p_try!(params::opt_int::<u64>(params, "observer_id", &id)) {
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
     };
@@ -66,7 +67,7 @@ pub fn handle_observe_info(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    let observer_id = match params.get("observer_id").and_then(|v| v.as_u64()) {
+    let observer_id = match p_try!(params::opt_int::<u64>(params, "observer_id", &id)) {
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
     };
@@ -77,10 +78,7 @@ pub fn handle_observe_info(
 }
 
 fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+    let surface_id = super::params::read_u32(params, "surface_id")?;
 
     let parsers: Vec<String> = match params.get("parsers") {
         None | Some(Value::Null) => Vec::new(),
@@ -137,11 +135,8 @@ fn parse_spec(params: &Value) -> Result<ObserverSpec, String> {
         .ok_or_else(|| "'sink.type' must be 'memory' or 'file'".to_string())?;
     let sink = match sink_type {
         "memory" => {
-            let max_records = sink_obj
-                .get("max_records")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(10_000);
+            let max_records =
+                super::params::read_int::<usize>(sink_obj, "max_records")?.unwrap_or(10_000);
             SinkSpec::Memory { max_records }
         }
         "file" => {

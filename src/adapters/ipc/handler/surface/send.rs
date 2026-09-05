@@ -1,3 +1,4 @@
+use crate::adapters::ipc::handler::params::require_u32;
 use serde_json::json;
 
 use crate::state::AppState;
@@ -347,9 +348,9 @@ pub(crate) fn handle_surface_send_to(
         Some(t) => t.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
-    let surface_id = match params.get("surface_id").and_then(|v| v.as_u64()) {
-        Some(sid) => sid as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
+    let surface_id = match require_u32(params, "surface_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
     match dispatch_send(
         core,

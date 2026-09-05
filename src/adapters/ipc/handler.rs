@@ -1,9 +1,3 @@
-// IPC handler 트리는 JSON-RPC public API surface. gui 빌드는 app::ipc::routing
-// 경유로 호출하지만, headless 빌드는 run_headless 의 IPC dispatch 와이어링이
-// 미구현이라 호출자 없음. 본질적 library API 이므로 *headless 한정* dead_code/
-// unused_imports 침묵 — gui 빌드에선 검사 그대로.
-#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
-
 #[cfg(test)]
 mod cli_entry_tests;
 mod completion_strategy;
@@ -18,11 +12,10 @@ mod debug_terminal;
 mod file_handler;
 #[cfg(feature = "gui")]
 mod file_picker;
-#[cfg(feature = "gui")]
-mod fs;
 mod git_viewer;
 mod hook_handler;
-mod hooks;
+// `list_global` 이 두 hook 목록을 합산하므로 크레이트 안에서 보여야 한다.
+pub(crate) mod hooks;
 #[cfg(feature = "gui")]
 mod image;
 #[cfg(all(debug_assertions, target_os = "macos", feature = "gui"))]
@@ -33,11 +26,14 @@ mod memory;
 mod message;
 mod meta;
 mod notification;
-mod output;
+// `pane`/`surface`/`workspace` 와 같은 이유로 열려 있다 — 창 소유 자원의 list 를
+// 호스트가 전 창 합산으로 답하기 때문(`app/dispatch/list_global.rs`).
+pub(crate) mod output;
 pub(crate) mod pane;
+pub(crate) mod params;
 mod passkey;
 mod preset;
-mod pty;
+pub(crate) mod pty;
 mod recent;
 mod remote_profile;
 mod settings;
@@ -45,6 +41,7 @@ pub(crate) mod surface;
 pub(crate) mod tab;
 mod telemetry;
 mod terminal;
+pub(crate) mod theme;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod tool;
 mod webhook;
@@ -60,7 +57,10 @@ pub mod audit;
 #[cfg(all(debug_assertions, feature = "gui"))]
 pub mod ime;
 pub mod plugin;
-#[cfg(all(debug_assertions, feature = "gui"))]
+// gui 게이트를 뗐다 — 이 모듈의 `handle_list`/`handle_open` 은 `PluginManager` 만
+// 읽는다(창도 egui 도 안 본다). gui 를 요구하면 헤드리스 데몬이 자기 plugin popup 을
+// 조회할 수단을 잃는다. 파일 자신의 `#![cfg(debug_assertions)]` 와 이제 일치한다.
+#[cfg(debug_assertions)]
 pub mod popup;
 pub mod session;
 
@@ -72,22 +72,43 @@ use crate::core::CoreState;
 use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+
+/// macOS GUI 빌드에서만 뜻이 있는 메서드를 다른 조합에서 불렀을 때의 답.
+///
+/// `-32601`("그런 메서드 없음")과 다른 코드를 쓰는 이유: 메서드는 **있다**. 표에
+/// 등재돼 있고 CLI 도 내놓는다 — 이 플랫폼이 못 할 뿐이다. 호출자가 "오타" 와
+/// "여기선 안 됨" 을 구별할 수 있어야 고칠 방법이 갈린다.
+///
+/// cfg 가 **쓰는 자리와 같아야 한다** — macOS gui 빌드에서는 그 arm 이 없어 이 상수도
+/// 안 쓰이고, 이 크레이트는 dead_code 를 deny 한다. 그 조합은 여기서 빌드할 수 없으므로
+/// (실측: macOS 크로스 체크가 libsqlite3-sys 에서 멈춘다) 컴파일러가 아니라 이 짝
+/// 맞춤이 유일한 방어다.
+///
+/// **축이 둘이다.** 쓰는 자리는 `debug_assertions` 로 게이트된 debug 라우터 안에 있으므로
+/// 플랫폼 축만 맞추면 release 에서 상수만 남아 `cargo build --release` 가 통째로 깨진다
+/// (실측). 그 조합은 자동 채널이 없어서 — `docs/dev-guide/ci-gates.md` 가 release bin 을
+/// 보는 잡이 없다고 적는다 — 여기서 안 맞추면 아무 데서도 안 잡힌다.
+#[cfg(all(debug_assertions, not(all(target_os = "macos", feature = "gui"))))]
+const PLATFORM_ONLY_MACOS_GUI: &str = "input reproduction over the OS event stream is macOS-only and needs the gui build \
+     (CGEventPost / TISSelectInputSource have no equivalent here)";
 use crate::state::AppState;
 
 /// caller가 명시된 라우터 진입점. CLI/네트워크 IPC는 [`CallerContext::Local`],
 /// plugin process가 호출한 명령은 [`CallerContext::Plugin`]을 전달한다.
 ///
 /// 라우터 구조:
-/// 1. **engine 핸들러** (`route_engine_handler`): AppState UI 필드를 만지지 않는
-///    핸들러 60+개. `&mut AppState`를 받지만 본문이 `state.engine`만 접근하거나
-///    AppState 메서드(현재는 engine-only)만 호출한다. 단계 07에서 plugin 권한
-///    게이트가 이 진입점에서 동작한다.
-/// 2. **GUI 의존 핸들러** (`route_gui_handler`): UI state(popups/dialogs/active_workspace)
-///    를 만져야 하는 소수 핸들러. 권한 게이트 대상 외부.
-/// 3. **debug 핸들러** (`route_debug_handler`): debug build 전용. release에서는 정의 안 됨.
+/// 1. **engine 핸들러** (`route_engine_handler`): 등록된 핸들러 전부. `&mut AppState`
+///    를 받지만 본문이 `state.engine` 만 접근하거나 AppState 메서드만 호출한다.
+/// 2. **debug 핸들러** (`route_debug_handler`): debug build 전용. release 에서는 정의 안 됨.
 ///
-/// 권한 게이트는 라우터의 가장 바깥에서 한 번만 실행된다. plugin이 호출한
-/// 명령이 권한을 통과하지 못하면 `permission_denied` 에러로 즉시 회신.
+/// 게이트 3종(권한 / telemetry cap / rate limit)은 라우팅보다 **먼저** 돈다. plugin 이
+/// 호출한 명령이 권한을 통과하지 못하면 `permission_denied` 로 즉시 회신한다.
+///
+/// 이 함수에 **도달하기 전에** 끝나는 경로도 있다 — GUI 앱의
+/// `App::dispatch_with_caller` 는 list 합산 응답 등을 여기 오기 전에 돌려준다. 그래서
+/// 같은 게이트가 그쪽 진입부에서도 돈다. 중복이 아니라 **경계가 둘**인 것이고, 거부는
+/// 바깥에서 단락되므로 안쪽 게이트가 다시 돌지 않는다. 그 순서를 지키는 계약은 가드
+/// `every_routing_entry_gates_before_it_answers` 가 소유한다.
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -133,7 +154,7 @@ pub fn handle_with_caller(
         return resp;
     }
 
-    JsonRpcResponse::method_not_found(id, &request.method)
+    JsonRpcResponse::unrouted_for_external_caller(id, &request.method)
 }
 
 /// method alias 정규화 + deprecated 경고 + 라우팅용 request 구성.
@@ -162,7 +183,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 }
 
 /// 권한 게이트: caller 가 `canonical` 을 호출할 권한이 없으면 거부 응답 + audit Deny.
-fn check_permission_gate(
+pub(crate) fn check_permission_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -194,7 +215,7 @@ fn check_permission_gate(
 /// 텔레메트리 cap 차단 게이트: triggered + (Pause|RequireApproval) 인 cap 이 있는
 /// plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
 /// `telemetry.cap.reset` 으로 해제 가능.
-fn check_cap_gate(
+pub(crate) fn check_cap_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -228,7 +249,7 @@ fn check_cap_gate(
 /// 자체는 제외 (영구 차단 방지). throttled 호출은 `record_ipc_call` 을 건너
 /// 뛰므로 `ipc_calls` telemetry 이벤트로 카운트되지 않는다 — throttle 추적은
 /// `RateLimit.throttled_count` 가 담당.
-fn check_rate_limit_gate(
+pub(crate) fn check_rate_limit_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
     caller: &CallerContext,
@@ -400,12 +421,18 @@ fn hard_occupied_structural_guard(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Option<JsonRpcResponse> {
+    // 이 조회는 **어느 워크스페이스의 상태를 볼지**만 고른다. 잘못된 값의 오류를 여기서
+    // 버리는 것은(`.ok().flatten()`) 대상 없음으로 흘려보내기 위해서다 — 그 뒤 핸들러의
+    // `require_*` 가 같은 값을 다시 읽고 **이유를 붙여 거절**한다. 중요한 것은 자르지
+    // 않는 것이다: 자르면 `None` 이 아니라 실재하는 다른 대상이 되어 라우팅이 성공한다.
     let ws_idx: usize = match method {
         "split" => {
-            let target_pane = params
-                .get("target_pane")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
+            // 자르지 않는다 — 자르면 `None` 이 아니라 **실재하는 다른 pane** 이 되어
+            // 라우팅이 성공한다. 범위 밖은 종전대로 대상 없음으로 흘려보내고, 그 뒤
+            // 핸들러의 `require_*` 가 이유를 붙여 거절한다.
+            let target_pane = params::read_int::<u32>(params, "target_pane")
+                .ok()
+                .flatten();
             let target_surface = pane::resolve_surface_target(state, params);
             target_pane
                 .and_then(|pid| engine.find_workspace_index_for_pane(pid))
@@ -417,35 +444,25 @@ fn hard_occupied_structural_guard(
         }
         // 워크스페이스 통째 닫기 — 대상 자체가 workspace 라 id/index 를 그대로 쓴다.
         "workspace.close" => {
-            if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-                engine
-                    .workspaces
-                    .iter()
-                    .position(|w| w.id == ws_id as u32)?
+            if let Some(ws_id) = params::read_int::<u32>(params, "id").ok().flatten() {
+                engine.workspaces.iter().position(|w| w.id == ws_id)?
             } else {
-                params.get("index").and_then(|v| v.as_u64())? as usize
+                params::read_int::<usize>(params, "index").ok().flatten()?
             }
         }
         "tab.create" | "pane.close" | "tab.move" => {
-            let pane_id = params
-                .get("pane_id")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32)?;
+            let pane_id = params::read_int::<u32>(params, "pane_id").ok().flatten()?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
         "tab.close" => {
-            let tab_id = params
-                .get("tab_id")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32)?;
+            let tab_id = params::read_int::<u32>(params, "tab_id").ok().flatten()?;
             let pane_id = engine.find_pane_for_tab(tab_id)?;
             engine.find_workspace_index_for_pane(pane_id)?
         }
         "surface.close" | "markdown.navigate" | "image.open" => {
-            let surface_id = params
-                .get("surface_id")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32)?;
+            let surface_id = params::read_int::<u32>(params, "surface_id")
+                .ok()
+                .flatten()?;
             engine
                 .find_workspace_index_for_surface(surface_id)
                 .map(|(i, _)| i)?
@@ -692,8 +709,7 @@ fn route_engine_handler(
         "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),
         // webview-kind surface(예: markdown) 는 egui-mesh 와 달리 `surface.set_context` 를
         // 받지 않아 Theme 이 자동으로 밀리지 않는다 — 이 read-only 조회가 그 대체 경로다.
-        #[cfg(feature = "gui")]
-        "theme.query" => webview::handle_theme_query(state, engine, id),
+        "theme.query" => theme::handle_query(engine, id),
         // tree
         "tree" => handle_tree(state, engine, id),
         // message
@@ -728,18 +744,13 @@ fn route_engine_handler(
         // plugin 이 kind="markdown" 으로 trampoline). 읽기 전용, 순수 데이터 조회라
         // gui-gate 불필요(headless 포함 항상 존재). host 는 특정 kind 를 모른다.
         "recent.query" => recent::handle_query(state, id, request.params.clone()),
-        // native 파일 선택 다이얼로그(rfd) 위임 — plugin 이 자기 프로세스에서 못 여는
-        // host UI 스레드 자원. host 는 특정 kind 를 모른 채 filters 만 받아 대행한다
-        // (파일열기 팝업 플러그인化의 유일 generic 갭, ADR-0042). rfd 는 gui feature.
-        #[cfg(feature = "gui")]
-        "fs.pick_file" => fs::handle_pick_file(id, &request.params),
         // (docs/adr/0056-git-viewer-remote-attach-git-query-channel.md) git-viewer
         // 원격 조회 트리거 — mirror workspace/attach 세션은
         // gui 빌드에서만 존재하지만, 핸들러 자체는 CoreState 큐잉만 하므로 headless
         // 에서도 안전하게 컴파일된다(호출자가 없을 뿐).
         "git_viewer.query" => git_viewer::handle_query(engine, id, &request.params),
         // (ADR-0058) plugin 이 host 소유 file_picker popup 을 연다. popup 을
-        // 여는 UI state 변경이라 fs.pick_file 과 동일하게 gui feature 전용.
+        // 여는 UI state 변경이라 gui feature 전용.
         #[cfg(feature = "gui")]
         "file_picker.trigger" => {
             file_picker::handle_trigger(state, engine, caller, id, &request.params)
@@ -1150,6 +1161,17 @@ fn route_debug_handler(
         }
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.raw_key" => input_source::handle_raw_key(state, engine, id, &request.params),
+        // 위 둘의 짝. 이 플랫폼·조합에서 **왜** 못 하는지를 말한다.
+        //
+        // 등재(`DEBUG_METHODS`)와 CLI 서브커맨드는 플랫폼 조건이 없다 — 이 저장소에서
+        // 그 두 층은 플랫폼 균일하고(실측: 두 파일에 `target_os` 게이트 0 건) 차이는
+        // 여기 dispatch 층에 둔다. 그래서 arm 이 없으면 `tasty debug raw-key` 가
+        // 도움말에 뜨는데 `-32601`("그런 메서드 없음")로 끝난다 — 메서드는 있고
+        // 이 플랫폼이 못 할 뿐이라 그 답은 거짓이다.
+        #[cfg(not(all(target_os = "macos", feature = "gui")))]
+        "surface.switch_input_source" | "surface.raw_key" => {
+            JsonRpcResponse::error(id.clone(), -32015, PLATFORM_ONLY_MACOS_GUI)
+        }
         // 아래 셋은 gui feature 게이트가 없다 — 핸들러 본체가 gui 전용 필드를
         // 하나도 안 만져서 headless debug 데몬에도 등록된다(`debug_nav` 모듈 doc).
         "debug.close_workspace" => {
@@ -1212,13 +1234,12 @@ pub(super) fn require_surface_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    let raw = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .and_then(|v| u32::try_from(v).ok())
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'surface_id' parameter")
-        })?;
+    // 키가 없는 것과 값이 잘못된 것을 가른다 — 값이 왔는데 "missing" 이라고 답하면
+    // 호출자가 자기가 준 값을 안 의심한다(`handler/params.rs`).
+    let raw = match params::require_u32(params, "surface_id", id) {
+        Ok(v) => v,
+        Err(e) => return Err(e),
+    };
     if !crate::core::pty_registry::is_surface_id_space(raw) {
         return Err(JsonRpcResponse::invalid_params(
             id.clone(),
@@ -1233,21 +1254,18 @@ fn require_pane_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'pane_id' parameter")
-        })
+    params::require_u32(params, "pane_id", id)
 }
 
 /// Extract optional caller_surface_id from params.
+///
+/// 오류를 버린다 — 이 값은 **부가 정보**(알림을 누구에게 돌려줄지)라 대상 선택에
+/// 안 쓰이고, 여기서 거절하면 본 작업까지 막힌다. 다만 판정 자체는 공용 자리를
+/// 지난다(자르기가 일어나지 않는다).
 pub(super) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
-    params
-        .get("caller_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+    params::read_int::<u32>(params, "caller_surface_id")
+        .ok()
+        .flatten()
 }
 
 /// Check if a surface belongs to a pane (directly or in any tab).

@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use super::params::{self, p_try};
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -9,13 +10,9 @@ fn require_tab_id(
     params: &serde_json::Value,
     id: &serde_json::Value,
 ) -> Result<u32, JsonRpcResponse> {
-    params
-        .get("tab_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'tab_id' parameter")
-        })
+    params::opt_int::<u32>(params, "tab_id", id)?.ok_or_else(|| {
+        JsonRpcResponse::invalid_params(id.clone(), "Missing required 'tab_id' parameter")
+    })
 }
 
 pub fn handle_tab_list(
@@ -231,11 +228,11 @@ pub fn handle_tab_move(
         Ok(pid) => pid,
         Err(e) => return e,
     };
-    let from = match params.get("from_index").and_then(|v| v.as_u64()) {
+    let from = match p_try!(params::opt_int::<u64>(params, "from_index", &id)) {
         Some(f) => f as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
     };
-    let to = match params.get("to_index").and_then(|v| v.as_u64()) {
+    let to = match p_try!(params::opt_int::<u64>(params, "to_index", &id)) {
         Some(t) => t as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };

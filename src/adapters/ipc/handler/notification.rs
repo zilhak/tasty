@@ -44,16 +44,19 @@ pub fn handle_notification_create(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let surface_id = params
-        .get("surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .unwrap_or(0);
+    let surface_id = match super::params::optional_u32(params, "surface_id", &id) {
+        Ok(v) => v.unwrap_or(0),
+        Err(e) => return e,
+    };
 
     // workspace_id 결정 — CLAUDE.md "포커스 독립성" 원칙: IPC는 사용자 포커스에
     // 의존하지 않아야 한다. workspace_id를 명시하지 않으면 다음 순으로 결정.
-    let ws_id = match params.get("workspace_id").and_then(|v| v.as_u64()) {
-        Some(v) => v as u32,
+    let ws_param = match super::params::optional_u32(params, "workspace_id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let ws_id = match ws_param {
+        Some(v) => v,
         None => {
             // 1. surface_id가 주어지면 그 surface가 속한 워크스페이스로 라우팅
             if surface_id > 0 {

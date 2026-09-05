@@ -1,5 +1,6 @@
 //! `memory.plan.*` IPC handlers.
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::plan as plan_mod;
 
@@ -161,11 +162,8 @@ pub fn handle_plan_add_step(
         Ok(s) => s,
         Err(e) => return e,
     };
-    let position = params
-        .get("position")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as usize);
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let position = p_try!(params::opt_int::<u64>(params, "position", &id)).map(|n| n as usize);
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| {
         plan_mod::plan_add_step(s, &owner, workspace_id, &plan_id, step, position, cas)
@@ -195,7 +193,7 @@ pub fn handle_plan_remove_step(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| {
         plan_mod::plan_remove_step(s, &owner, workspace_id, &plan_id, &step_id, cas)
@@ -250,7 +248,7 @@ pub fn handle_plan_update_step(
             }
         }
     };
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core.with_memory(|s| {
         plan_mod::plan_update_step(

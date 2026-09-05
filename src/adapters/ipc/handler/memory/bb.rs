@@ -1,5 +1,6 @@
 //! `memory.bb.*` (blackboard) IPC handlers.
 
+use crate::adapters::ipc::handler::params::{self, p_try};
 use serde_json::{Value, json};
 use tasty_memory::blackboard;
 
@@ -58,7 +59,7 @@ pub fn handle_bb_put(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core
         .with_memory(|s| blackboard::bb_put(s, &owner, workspace_id, &name, &field, &value, cas))
@@ -163,7 +164,7 @@ pub fn handle_bb_delete_field(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    let cas = params.get("cas").and_then(|v| v.as_u64());
+    let cas = p_try!(params::opt_int::<u64>(params, "cas", &id));
     let owner = caller.owner().to_string();
     match core
         .with_memory(|s| blackboard::bb_delete_field(s, &owner, workspace_id, &name, &field, cas))

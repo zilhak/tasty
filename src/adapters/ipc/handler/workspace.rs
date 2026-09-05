@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use super::params::{self, p_try};
 use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -7,29 +8,31 @@ use tasty_ipc::protocol::JsonRpcResponse;
 /// 단계 7 — workspace.create/update params 에서 SSH attach 매핑을 파싱한다.
 /// `attach_profile`(저장 프로필) 우선, 없으면 `attach_ssh`(1회성 인라인).
 /// 둘 다 없으면 None(매핑 없음).
-fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMapping> {
-    let remote_workspace = params
-        .get("attach_remote_workspace")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
+/// `Result` 를 반환하는 이유: 잘못된 `attach_remote_workspace` 를 `None` 으로 만들면
+/// **매핑 없음**과 구별되지 않아, 사용자가 지정한 원격 워크스페이스 대신 매핑 없이
+/// 조용히 진행된다.
+fn parse_attach_mapping(
+    params: &serde_json::Value,
+) -> Result<Option<WorkspaceAttachMapping>, String> {
+    let remote_workspace = params::read_int::<u32>(params, "attach_remote_workspace")?;
     if let Some(name) = params
         .get("attach_profile")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     {
-        return Some(WorkspaceAttachMapping {
+        return Ok(Some(WorkspaceAttachMapping {
             target: WorkspaceAttachTarget::Profile {
                 name: name.to_string(),
             },
             remote_workspace,
-        });
+        }));
     }
     if let Some(host) = params
         .get("attach_ssh")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     {
-        return Some(WorkspaceAttachMapping {
+        return Ok(Some(WorkspaceAttachMapping {
             target: WorkspaceAttachTarget::Inline {
                 host: host.to_string(),
                 remote_tasty: None,
@@ -37,9 +40,9 @@ fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMap
                 port_file: None,
             },
             remote_workspace,
-        });
+        }));
     }
-    None
+    Ok(None)
 }
 
 /// `attach_ssh` host 가 self(loopback) 대상(`127.0.0.1:PORT`/`localhost:PORT`/
@@ -88,21 +91,8 @@ fn resolve_category_param(
     engine: &crate::core::CoreState,
     params: &serde_json::Value,
 ) -> Result<Option<crate::model::WorkspaceCategoryId>, String> {
-    let Some(v) = params.get("category") else {
+    let Some(token) = params::read_id_or_name(params, "category")? else {
         return Ok(None);
-    };
-    if v.is_null() {
-        return Ok(None);
-    }
-    let token = if let Some(n) = v.as_u64() {
-        n.to_string()
-    } else if let Some(s) = v.as_str() {
-        if s.trim().is_empty() {
-            return Ok(None);
-        }
-        s.to_string()
-    } else {
-        return Err("'category' must be a category id (number) or name (string)".to_string());
     };
     match engine.resolve_category(&token) {
         Some(id) => Ok(Some(id)),
@@ -276,7 +266,10 @@ pub fn handle_workspace_create(
     }
 
     // 단계 7 — SSH attach 매핑 설정(있으면). layout.json 영속을 위해 dirty 표시.
-    if let Some(mapping) = parse_attach_mapping(params) {
+    if let Some(mapping) = match parse_attach_mapping(params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    } {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
         engine.mark_layout_dirty();
     }
@@ -310,9 +303,15 @@ pub fn handle_workspace_update(
         return resp;
     }
     // workspace_id resolve — `id` 우선, 없으면 `index` 로 lookup.
-    let workspace_id = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        ws_id as u32
-    } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+    // `id` 가 **왔는데 잘못된** 경우 `index` 로 흘러내리지 않는다 — 흘러내리면 오타
+    // 하나가 엉뚱한 워크스페이스를 성공적으로 가리킨다.
+    let id_param = match super::params::optional_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let workspace_id = if let Some(ws_id) = id_param {
+        ws_id
+    } else if let Some(i) = p_try!(params::opt_int::<u64>(params, "index", &id)) {
         let idx = i as usize;
         if idx >= engine.workspaces.len() {
             return JsonRpcResponse::invalid_params(
@@ -397,7 +396,10 @@ pub fn handle_workspace_update(
     if clear {
         engine.workspaces[index].set_attach_mapping(None);
         engine.mark_layout_dirty();
-    } else if let Some(mapping) = parse_attach_mapping(params) {
+    } else if let Some(mapping) = match parse_attach_mapping(params) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    } {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
         engine.mark_layout_dirty();
     }
@@ -441,15 +443,18 @@ pub fn handle_workspace_close(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let ws_idx = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        let ws_id = ws_id as u32;
+    let id_param = match super::params::optional_u32(params, "id", &id) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let ws_idx = if let Some(ws_id) = id_param {
         match engine.workspaces.iter().position(|w| w.id == ws_id) {
             Some(i) => i,
             None => {
                 return JsonRpcResponse::invalid_params(id, format!("Workspace {ws_id} not found"));
             }
         }
-    } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+    } else if let Some(i) = p_try!(params::opt_int::<u64>(params, "index", &id)) {
         let idx = i as usize;
         if idx >= engine.workspaces.len() {
             return JsonRpcResponse::invalid_params(
@@ -532,6 +537,13 @@ pub fn handle_workspace_close(
     JsonRpcResponse::success(id, json!({ "closed": closed, "id": workspace_id }))
 }
 
+/// 워크스페이스 순서 이동.
+///
+/// 대상은 **`id` 로 지목한다** — workspace id 는 engine 을 건너 유일해서 라우팅이 주인
+/// 창을 짚는다. `from_index` 는 창 안의 위치라 창이 정해지지 않으므로, 그 형태로 부르면
+/// 포커스된 창에 떨어진다(`docs/design/policies/focus.md`). 종전 호출을 깨지 않으려고
+/// 남겨 두었고 둘을 함께 주면 거절한다 — 어긋났을 때 조용히 한쪽을 고르지 않는다.
+/// `to_index` 는 지목된 창 **안에서의** 목적지라 창이 정해진 뒤에는 뜻이 분명하다.
 pub fn handle_workspace_move(
     core: &mut crate::core::Core,
     state: &mut AppState,
@@ -539,11 +551,28 @@ pub fn handle_workspace_move(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let from = match params.get("from_index").and_then(|v| v.as_u64()) {
-        Some(f) => f as usize,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'from_index' parameter"),
+    let named = p_try!(params::opt_int::<u64>(params, "id", &id));
+    let from_index = p_try!(params::opt_int::<u64>(params, "from_index", &id));
+    let from = match (named, from_index) {
+        (Some(_), Some(_)) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "give either 'id' (the workspace to move) or 'from_index', not both",
+            );
+        }
+        (Some(ws_id), None) => match engine.find_workspace_index_for_id(ws_id as u32) {
+            Some(i) => i,
+            // 라우팅이 주인 창으로 보냈으므로 여기 없으면 그 id 가 죽은 것이다.
+            None => {
+                return JsonRpcResponse::invalid_params(id, format!("no workspace {ws_id}"));
+            }
+        },
+        (None, Some(f)) => f as usize,
+        (None, None) => {
+            return JsonRpcResponse::invalid_params(id, "Missing 'id' or 'from_index' parameter");
+        }
     };
-    let to = match params.get("to_index").and_then(|v| v.as_u64()) {
+    let to = match p_try!(params::opt_int::<u64>(params, "to_index", &id)) {
         Some(t) => t as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
