@@ -111,6 +111,7 @@ impl PlatformWebView {
 
         // SAFETY: 방금 만든 x11_window를 같은 display에 map → sync. 단일 thread, 같은 호출.
         //
+        // 근거·재검토 조건: docs/adr/0157-a-null-gdk-window-is-a-value-not-a-crash.md
         // `XFlush` 가 아니라 `XSync` 인 것이 핵심이다 — 아래에서 이 창을 조회하는
         // 것은 **GDK 자기 연결**이고, 창을 만든 것은 winit 의 연결이다. `XFlush` 는
         // 소켓에 쓰기만 하고 서버가 처리했는지는 안 기다리므로, 두 연결 사이에

@@ -19,6 +19,9 @@
 //!
 //! 이 모듈이 있는 한 `foreign_new_for_display` 를 다시 부르면 안 된다.
 //! [`tests::panicking_binding_has_no_call_site`] 가 그것을 검사한다.
+//!
+//! 결정 근거·대안·재검토 조건, 그리고 **이 가드들이 무엇을 안 지키는지**는
+//! `docs/adr/0157-a-null-gdk-window-is-a-value-not-a-crash.md`.
 
 use gtk::glib::translate::ToGlibPtr;
 
@@ -148,6 +151,53 @@ mod tests {
         // ffi 이름은 `::` 가 앞에 없으므로 대상이 아니다 — 이것이 면제가 아니라
         // 패턴의 성질이라는 것을 붙박는다.
         assert!(!mask_non_code(ffi).contains("::foreign_new_for_display"));
+    }
+
+    /// ADR-0157 의 **전제**를 검사한다. 결정이 아니라 전제라, 이게 깨지면
+    /// "고쳐라" 가 아니라 **"ADR 을 다시 열어라"** 다.
+    ///
+    /// 전제 둘:
+    /// ① 창을 만드는 연결과 그것을 조회하는 연결이 **다르다** — 만들 때는 winit 의
+    ///    `display_handle()` 에서 얻은 `Display*` 를, 조회할 때는 GDK 자기
+    ///    디스플레이(`gtk::gdk::Display::default()`)를 쓴다.
+    /// ② 그래서 그 사이에 **왕복**(`XSync`)이 있어야 한다. `XFlush` 는 보내기만 한다.
+    ///
+    /// 연결이 하나가 되면 ②의 근거가 사라진다. 그때 `XSync` 를 그냥 지우는 것이
+    /// 아니라 결정을 다시 여는 것이 맞다 — 왜 하나가 됐는지가 새 전제이기 때문이다.
+    #[test]
+    fn adr_0157_two_connection_premise_still_holds() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_api/webview/linux.rs");
+        let text = std::fs::read_to_string(&path).expect("webview/linux.rs 를 읽지 못했다");
+        let code: Vec<String> = text.lines().map(mask_non_code).collect();
+        // 0 이 통과가 되지 않게 모수를 먼저 세운다.
+        assert!(
+            code.len() > 200,
+            "스캔한 줄이 {} 뿐이다 — 경로가 틀렸다",
+            code.len()
+        );
+        let at = |needle: &str| code.iter().position(|l| l.contains(needle));
+
+        let reopen = "— ADR-0157 의 전제가 바뀌었다. 고치지 말고                       docs/adr/0157-a-null-gdk-window-is-a-value-not-a-crash.md 를 다시 열어라";
+
+        // ① 연결이 둘이다.
+        assert!(
+            at("display_handle()").is_some(),
+            "창을 만드는 연결을 winit 에서 얻지 않는다 {reopen}"
+        );
+        assert!(
+            at("gtk::gdk::Display::default()").is_some(),
+            "조회하는 연결이 GDK 자기 디스플레이가 아니다 {reopen}"
+        );
+
+        // ② 생성과 조회 사이에 왕복이 있다.
+        let create = at("XCreateSimpleWindow").expect(&format!("창 생성이 없다 {reopen}"));
+        let sync = at("XSync").expect(&format!("생성과 조회 사이의 왕복이 없다 {reopen}"));
+        let wrap = at("foreign_gdk_window(").expect(&format!("GDK 조회가 없다 {reopen}"));
+        assert!(
+            create < sync && sync < wrap,
+            "왕복이 생성과 조회 사이에 있지 않다 (create={create}, sync={sync}, wrap={wrap}) {reopen}"
+        );
     }
 
     /// 패닉하는 바인딩(`foreign_new_for_display`)은 호출부가 없어야 한다.
