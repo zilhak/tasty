@@ -14,25 +14,32 @@
 //! 쓰면 공유 인스턴스 위에서 다른 테스트와 격리된다. TTL 만료를 기다리느라 오래
 //! 걸리는 테스트이므로 인스턴스를 새로 띄우지 않는 편이 특히 이득이다.
 //!
-//! **이 테스트가 실제로 실행하는 서버 경로**: `common::shared()`
-//! 는 하네스가 고른 바이너리(`spawn_diag::instance_bin`)를 그대로
-//! 실행한다 — 즉 `cargo test` 의 기본 feature(`default = ["gui"]`) 로 빌드된
-//! **GUI 이벤트 루프 경로**(`src/app/event_handler.rs` 의 `StreamInbound::Disconnected`
-//! → `release_attach_for_disconnected` → `release_all_for_client`)만 실제로
-//! 구동·검증한다. `src/boot.rs::run_headless`(`--no-default-features` 전용,
-//! disconnect → `release_all_for_client` 호출부는 `src/boot.rs:435-436`)는 이
-//! 테스트로 실행되지 않는다 — 이 프로젝트에 `cargo test` 로 headless 런타임을
-//! 실제 기동하는 경로 자체가 없기 때문(`--no-default-features` 는
-//! `crossplatform-check.yml` 에서 `cargo check` 로만 쓰인다).
+//! **이 테스트가 실제로 실행하는 서버 경로는 빌드 조합이 정한다.** `common::shared()`
+//! 가 띄우는 것은 `spawn_diag::instance_bin`, 곧 `CARGO_BIN_EXE_tasty` — **이 테스트를
+//! 빌드한 그 feature 로 빌드된 자기 바이너리**다. 그래서 기본 조합에서는 GUI 이벤트
+//! 루프(`src/app/event_handler.rs::apply_stream_outcome`)가, `--no-default-features`
+//! 에서는 headless 부팅 진입점(`src/boot.rs::run_headless` → `boot/headless_stream.rs`)이
+//! 실제로 뜬다. 두 경로 모두 실행으로 검증된다.
 //!
-//! headless 경로가 GUI 경로와 동일하게 동작한다는 근거는 **코드 리딩에 의한
-//! 정적 확인**이다 — 실제 lock 해제를 수행하는 `OccupancyRegistry::
-//! release_all_for_client`(`src/core/attach.rs`)와 disconnect 를 감지하는
-//! `tcp_ipc_server.rs`/`stream_hub.rs` 는 `#[cfg(feature = "gui")]` 분기 없이
-//! GUI/headless 양쪽 빌드에 동일하게 컴파일되는 공유 코드이고, `boot.rs` 의
-//! headless 분기는 그 공유 함수를 그대로 호출할 뿐 별도 로직을 갖지 않는다.
-//! 이 확인은 이 test 가 실행 시점에 보장하는 것이 아니라 리뷰 시점의 코드
-//! 검토 결과다 — 회귀가 나면 이 test 는 GUI 경로만 잡아낸다.
+//! 한때 여기에 "이 프로젝트엔 `cargo test` 로 headless 런타임을 기동하는 경로가 없고
+//! `--no-default-features` 는 `cargo check` 로만 쓰인다" 고 적혀 있었다. **둘 다 사실이
+//! 아니다** — `crossplatform-check.yml` 의 `check-headless` 잡은 `cargo check (headless)`
+//! 와 별도로 `cargo test --workspace --no-default-features --locked --no-fail-fast` 스텝을
+//! 돌리고, 그 스텝이 이 파일도 헤드리스로 세워 돌린다. 실측(2026-09-05): 이 타깃을
+//! `--no-default-features` 로 빌드해 30 회 실행(그중 5 회는 인위 부하 아래) — 28 회
+//! `13 passed`, 2 회 실패. 실패한 2 회는 **이 결함과 무관한 다른 테스트**
+//! (`self_attach_is_rejected_before_it_can_take_occupancy` — IPC 왕복 시간에 벽시계
+//! 상한을 건 단언이라 부하에 흔들린다. 실측 왕복 10.6s vs 상한 2s)였고, 그중 한 회는
+//! 실패 목록을 저장하지 못해 그 회의 전체 목록은 확인하지 못했다. 낡은 서술을 믿으면
+//! 헤드리스 쪽 회귀를 "이 테스트가 못 보는 것" 으로 오분류하게 된다.
+//!
+//! **끊김 처리의 순서 계약**은 두 경로가 각자 갖는다(gui `apply_stream_outcome`,
+//! headless `boot/headless_stream.rs::apply`). 그 순서가 어긋나면 같은 배치의 재attach 가
+//! 이미 죽은 holder 에게 `already_attached` 로 막히는데, 그 결함은 이 파일의 어떤
+//! 테스트로도 안 보인다(실측: 결함을 되살린 뮤테이션에서 이 타깃 3 회 전부 `13 passed`).
+//! 판정은 `src/core/attach.rs` 의 합성 회귀와 배선 가드
+//! (`both_pumps_mark_disconnects_before_applying_attach_requests`)가 갖는다 —
+//! 근거는 `docs/adr/0157-a-disconnected-holder-does-not-block-a-reattach.md`.
 
 mod attach_common;
 mod common;
