@@ -18,6 +18,7 @@ use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, Prese
 use tasty_settings::KeybindingSettings;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 
 use toolbar::{apply_toolbar_actions, draw_toolbar_editing, draw_toolbar_view};
@@ -71,8 +72,6 @@ const TOOLBAR_HEIGHT: LogicalPx = LogicalPx(44.0);
 const ROW_PAD_Y: LogicalPx = LogicalPx(7.0);
 /// 리스트 row 좌우 padding (좌측 accent bar 다음 텍스트 들여쓰기).
 const ROW_PAD_X: LogicalPx = LogicalPx(9.0);
-/// row 안 name↔subtitle 세로 gap.
-const ROW_GAP: LogicalPx = LogicalPx(1.0);
 /// 리스트 내부 좌우 inset (row 가 패널 가장자리에 붙지 않게).
 const LIST_INSET: LogicalPx = LogicalPx(6.0);
 /// rename 인라인 입력 폭.
@@ -389,7 +388,7 @@ fn draw_list_row(
 ) -> egui::Response {
     let name_h = theme.font_size_body;
     let sub_h = theme.font_size_caption;
-    let row_h = ROW_PAD_Y.scaled(2.0) + name_h + ROW_GAP + sub_h;
+    let row_h = ROW_PAD_Y.scaled(2.0) + name_h + STRUCT_GAP_1 + sub_h;
     let (full, resp) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), row_h.value()),
         egui::Sense::click(),
@@ -415,7 +414,7 @@ fn draw_list_row(
     } else {
         theme.text_secondary().to_egui()
     };
-    // 두 줄의 좌측 기준선. 이름줄 아래로 `name_h + ROW_GAP` 만큼 내려 부제를 둔다.
+    // 두 줄의 좌측 기준선. 이름줄 아래로 `name_h + STRUCT_GAP_1` 만큼 내려 부제를 둔다.
     let text_x = rect.min.x + ROW_PAD_X.value();
     let name_y = rect.min.y + ROW_PAD_Y.value();
     p.text(
@@ -427,7 +426,7 @@ fn draw_list_row(
     );
     // painter_at 가 full 로 clip → 긴 subtitle 도 row 밖으로 넘치지 않는다.
     p.text(
-        egui::pos2(text_x, name_y + (name_h + ROW_GAP).value()),
+        egui::pos2(text_x, name_y + (name_h + STRUCT_GAP_1).value()),
         egui::Align2::LEFT_TOP,
         sub,
         egui::FontId::monospace(sub_h.value()),

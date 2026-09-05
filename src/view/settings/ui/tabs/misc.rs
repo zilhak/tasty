@@ -23,13 +23,11 @@ use crate::settings::{AUTO_TRIGGER_EVENTS, AutoTrigger, KeybindingSettings, Sett
 #[cfg(windows)] // tastyrc 섹션(Windows 전용)에서만 사용.
 use tasty_ui_widgets::vspace;
 
-/// name→path→help 행 사이 hairline 간격 (디자인 `gap: 2` — 4px 그리드 하위).
-const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 /// changed 배지 고정 높이 (디자인 `height: 16`).
 const BADGE_HEIGHT: LogicalPx = LogicalPx(16.0);
 // 빈 상태 글리프 크기는 `tasty-ui-widgets::tokens` 가 단일 출처다 — 갤러리
 // specimen(`components/script_manager.rs`)이 같은 상수를 읽는다.
-use tasty_ui_widgets::tokens::EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH;
+use tasty_ui_widgets::tokens::{EMPTY_STATE_GLYPH_SIZE as EMPTY_GLYPH, STRUCT_GAP_2};
 /// Add card 라벨 컬럼 폭 (디자인 `width: 100`).
 const ADD_LABEL_W: LogicalPx = LogicalPx(100.0);
 
@@ -153,7 +151,7 @@ pub fn draw_scripts_subtab(
                 st.confirm_id = None;
             }
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
+                ui.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
                 ui.label(
                     egui::RichText::new(t("settings.misc.scripts"))
                         .size(th.font_size_max.value())
@@ -258,7 +256,7 @@ fn draw_script_row(
         ui.spacing_mut().item_spacing.x = th.spacing_md.value();
         // 좌: script 글리프 16 · text-muted · margin-top 2.
         ui.vertical(|ui| {
-            ui.add_space(ROW_LINE_GAP.value());
+            ui.add_space(STRUCT_GAP_2.value());
             let (rect, _) = ui.allocate_exact_size(
                 egui::vec2(th.icon_glyph_size_md.value(), th.icon_glyph_size_md.value()),
                 egui::Sense::hover(),
@@ -391,7 +389,7 @@ fn draw_script_row(
 
                 // 남은 좌측 폭 = 중앙 컬럼(name/path/help).
                 ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
+                    ui.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                         ui.label(
