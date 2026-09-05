@@ -9,7 +9,7 @@
 Plugin 매니페스트(`tasty-plugin.toml`)는 CLI 인자마다 타입을 선언한다. 현재 선언된
 분포는 `string` 79 · `u32` 55 · `process` 9 · `bool` 7 · `file_path` 2 · `url` 1 ·
 `i64` 1 이다(추적 파일 기준 실측). 이 중 **숫자 타입 56개**(`u32` 55 + `i64` 1)가
-동적 CLI 빌더(`crates/tasty-cli/src/dynamic.rs`)의 같은 변환 경로를 지난다.
+동적 CLI 의 값 강제 층(`crates/tasty-cli/src/dynamic/stdin.rs`)의 같은 변환 경로를 지난다.
 
 그 경로가 변환 실패를 `.ok()` 로 흘렸다. 사용자가 `--surface abc` 를 주면
 `parse::<u32>()` 가 `None` 이 되고, 그 인자는 **애초에 주어지지 않은 것과 구별되지
@@ -111,7 +111,8 @@ exit 0 을 받고 다른 surface 에 보냈다고 믿는다.
 
 ## References
 
-- `crates/tasty-cli/src/dynamic.rs` — 동적 CLI 빌더의 값 추출 경로와 `surface` 기본값 주입
+- `crates/tasty-cli/src/dynamic/stdin.rs` — 동적 CLI 의 값 추출·타입 강제 경로
+- `crates/tasty-cli/src/dynamic/request.rs` — 그 값으로 요청을 조립하며 넣는 `surface` 기본값
 - `crates/tasty-plugin-claude/src/hook.rs` — IPC 층의 같은 구분(파라미터 오류 vs 부재)
 - [`docs/dev-guide/plugin-development.md`](../dev-guide/plugin-development.md) — 매니페스트 인자 선언
 - [`docs/dev-guide/i18n.md`](../dev-guide/i18n.md) — 에러 문구의 번역 키 정책
