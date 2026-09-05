@@ -88,7 +88,7 @@ panic: gdk-0.18.2/src/auto/window.rs:20  assertion failed: !ptr.is_null()
 |---|---|---|
 | 1(패닉 바인딩 금지) | **지킨다.** 레포 전체 소스 스캔으로 호출부 0 을 강제 | `panicking_binding_has_no_call_site` |
 | 1(NULL → `Err`) | **지킨다.** null 포인터가 패닉이 아니라 `Err` 임을 합성 입력으로 | `null_pointer_becomes_an_error_not_a_panic` |
-| 2(`XSync` 그 줄) | **지킨다.** 생성·왕복·조회의 존재와 **순서**를 검사 | `adr_0157_two_connection_premise_still_holds` |
+| 2(`XSync` 그 줄) | **지킨다.** 생성·왕복·조회의 존재와 **순서**를 검사 | `adr_0159_two_connection_premise_still_holds` |
 | 2(경합이 없다는 **성질**) | **못 지킨다.** 아래 참조 | — |
 | 3(실패 경로의 창 정리) | **못 지킨다.** 아래 참조 | — |
 
@@ -108,7 +108,7 @@ panic: gdk-0.18.2/src/auto/window.rs:20  assertion failed: !ptr.is_null()
 1. **연결이 하나가 된다.** 자식창을 GDK 의 디스플레이로 직접 만들거나, winit 이 GDK 와
    연결을 공유하게 되면 `XSync` 의 근거가 사라진다. 그때 `XSync` 를 그냥 지우는 것이
    아니라 이 결정을 다시 연다 — **왜 하나가 됐는지가 새 전제이기 때문이다.**
-   이 트리거는 가드가 있다: `adr_0157_two_connection_premise_still_holds` 가 두 연결의
+   이 트리거는 가드가 있다: `adr_0159_two_connection_premise_still_holds` 가 두 연결의
    출처와 왕복의 순서를 검사하고, 깨지면 "고치지 말고 이 ADR 을 다시 열어라" 로 실패한다.
 2. **gdkx11 이 NULL 에서 `assert!` 하지 않게 바뀐다.** 그러면 `*-sys` 직접 호출과
    `unsafe` 블록이 불필요해지고, 안전 바인딩으로 되돌리는 것이 맞다.

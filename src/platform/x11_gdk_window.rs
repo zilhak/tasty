@@ -165,7 +165,7 @@ mod tests {
     /// 연결이 하나가 되면 ②의 근거가 사라진다. 그때 `XSync` 를 그냥 지우는 것이
     /// 아니라 결정을 다시 여는 것이 맞다 — 왜 하나가 됐는지가 새 전제이기 때문이다.
     #[test]
-    fn adr_0157_two_connection_premise_still_holds() {
+    fn adr_0159_two_connection_premise_still_holds() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_api/webview/linux.rs");
         let text = std::fs::read_to_string(&path).expect("webview/linux.rs 를 읽지 못했다");
@@ -178,7 +178,10 @@ mod tests {
         );
         let at = |needle: &str| code.iter().position(|l| l.contains(needle));
 
-        let reopen = "— ADR-0159 의 전제가 바뀌었다. 고치지 말고                       docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md 를 다시 열어라";
+        let reopen = concat!(
+            "— ADR-0159 의 전제가 바뀌었다. 고치지 말고 ",
+            "docs/adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md 를 다시 열어라"
+        );
 
         // ① 연결이 둘이다.
         assert!(
@@ -191,9 +194,9 @@ mod tests {
         );
 
         // ② 생성과 조회 사이에 왕복이 있다.
-        let create = at("XCreateSimpleWindow").expect(&format!("창 생성이 없다 {reopen}"));
-        let sync = at("XSync").expect(&format!("생성과 조회 사이의 왕복이 없다 {reopen}"));
-        let wrap = at("foreign_gdk_window(").expect(&format!("GDK 조회가 없다 {reopen}"));
+        let create = at("XCreateSimpleWindow").unwrap_or_else(|| panic!("창 생성이 없다 {reopen}"));
+        let sync = at("XSync").unwrap_or_else(|| panic!("생성과 조회 사이의 왕복이 없다 {reopen}"));
+        let wrap = at("foreign_gdk_window(").unwrap_or_else(|| panic!("GDK 조회가 없다 {reopen}"));
         assert!(
             create < sync && sync < wrap,
             "왕복이 생성과 조회 사이에 있지 않다 (create={create}, sync={sync}, wrap={wrap}) {reopen}"
