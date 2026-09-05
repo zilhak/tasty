@@ -5,7 +5,7 @@
 //! payload를 꺼내 자기가 관심 있는 타입으로 `from_value`해 사용한다.
 //!
 //! 각 타입의 이벤트 키·발화 시점·scope·안정성 등급은
-//! `docs/agent-guide/event-catalog.md`가 SoT다.
+//! `docs/reference/event-catalog.md`가 SoT다.
 
 use serde::{Deserialize, Serialize};
 

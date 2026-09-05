@@ -29,7 +29,7 @@ fn no_duplicate_method_names() {
     }
 }
 
-/// 모든 등록 메서드는 명명 규칙을 따라야 한다 (docs/dev-guide/cli-naming.md):
+/// 모든 등록 메서드는 명명 규칙을 따라야 한다 (docs/dev-guide/api-conventions.md):
 ///
 /// 1. `<namespace>.<verb>` 또는 `<namespace>.<sub>.<verb>` 3단까지
 /// 2. 또는 [`ROOT_EXCEPTIONS`]에 등록된 root 메서드
