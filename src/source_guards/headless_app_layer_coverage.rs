@@ -297,7 +297,29 @@ fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
                 .iter()
                 .any(|e| e.ends_with('.') && item.starts_with(*e))
     };
-    let missing: Vec<&String> = gui.iter().filter(|m| !covered(m)).collect();
+    // gui 라우터가 `starts_with("debug.popup.")` 로 갈래를 받으면 그 갈래 리터럴 자체가
+    // 항목으로 뽑힌다. 그것은 메서드 이름이 아니라 **라우터의 모양**이라, 그 아래 구체
+    // 이름이 전부 덮였으면 갈래도 덮인 것이다. 이 규칙이 없으면 갈래를 갈라 적는 순간
+    // 갈래 리터럴 하나 때문에 사유를 또 요구하고, 그 사유가 다시 갈래 전체를 덮어
+    // ②(낡은 갈래 사유)를 되살린다.
+    let concrete_under = |p: &str| -> Vec<&String> {
+        gui.iter()
+            .filter(|m| m.as_str() != p && m.starts_with(p) && !m.ends_with('.'))
+            .collect()
+    };
+    let missing: Vec<&String> = gui
+        .iter()
+        .filter(|m| {
+            if covered(m) {
+                return false;
+            }
+            if m.ends_with('.') {
+                let under = concrete_under(m);
+                return under.is_empty() || !under.iter().all(|c| covered(c));
+            }
+            true
+        })
+        .collect();
     assert!(
         missing.is_empty(),
         "gui 의 debug step 이 답하는데 헤드리스는 답하지도, 왜 못 답하는지 적혀 있지도 \
@@ -307,14 +329,22 @@ fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
     );
 
     // 낡은 사유 — 헤드리스가 실제로 답하는데 못 답한다고 적혀 있는 것.
+    // 낡은 사유. 이름이 정확히 답해지는 경우뿐 아니라, **갈래 사유(`x.y.` 로 끝나는
+    // 것) 아래를 헤드리스가 하나라도 답하면** 그 사유는 이미 거짓이다. 이 두 번째
+    // 형태가 없으면 갈래의 일부만 열었을 때 사유가 "전부 못 답한다" 라고 말하는 채로
+    // 초록이 유지된다 — 채널은 도는데 술어가 그 차이를 안 보는 자리다.
     let stale: Vec<&str> = DEBUG_NOT_IN_HEADLESS
         .iter()
         .map(|(m, _)| *m)
-        .filter(|m| headless.contains(*m))
+        .filter(|m| {
+            headless.contains(*m)
+                || (m.ends_with('.') && headless.iter().any(|h| h.starts_with(*m)))
+        })
         .collect();
     assert!(
         stale.is_empty(),
-        "헤드리스가 실제로 답하는데 사유가 아직 못 답한다고 말한다: {stale:?}"
+        "헤드리스가 실제로 답하는데 사유가 아직 못 답한다고 말한다(갈래 사유면 그 아래 \
+         하나만 답해도 거짓이다 — 갈래를 이름별로 갈라 적어라): {stale:?}"
     );
 
     for (method, reason) in DEBUG_NOT_IN_HEADLESS {
