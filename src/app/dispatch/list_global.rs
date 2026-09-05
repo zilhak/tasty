@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::app::App;
 use crate::ipc as host_ipc;
-use crate::ipc::handler::{output, pane, pty, surface, workspace};
+use crate::ipc::handler::{output, pane, pty, surface, workspace, workspace_category};
 use crate::ipc::protocol::JsonRpcResponse;
 
 impl App {
@@ -45,8 +45,28 @@ impl App {
             "output.observe_list" => Some(self.collect_field(id, "observers", |c, s, e, id| {
                 output::handle_observe_list(c, s, e, id)
             })),
+            "workspace_category.list" => Some(self.collect_categories(id)),
             _ => None,
         }
+    }
+
+    /// 카테고리 목록을 합치되 예약 카테고리 `normal` 은 **한 줄로 접는다.**
+    ///
+    /// 카테고리 id 는 이미 창을 건너 유일하다(`IdGenerator.category` 가 공유 카운터이고
+    /// 1 부터 발급한다). 겹치는 것은 **모든 engine 에 상수로 존재하는 `normal`(id 0)**
+    /// 하나뿐이라, 그것만 접으면 합친 목록의 id 가 다시 키가 된다.
+    ///
+    /// **접어도 지목을 잃지 않는다** — `normal` 은 rename · delete · move 가 전부
+    /// 거부하는 예약 항목이라(`CategoryOpError::IsNormal`, move 는 index 0 고정) 애초에
+    /// 어떤 요청의 대상이 아니다. 그래서 "어느 창의 normal 인가" 라는 물음이 생기지
+    /// 않는다.
+    fn collect_categories(&mut self, id: serde_json::Value) -> JsonRpcResponse {
+        let rows = self.merge(
+            &id,
+            |_c, s, e, id| workspace_category::handle_list(s, e, id),
+            None,
+        );
+        JsonRpcResponse::success(id, json!(fold_normal(rows)))
     }
 
     /// 결과가 **맨 배열**인 list 를 합친다.
@@ -125,5 +145,115 @@ impl App {
             take(f(core, s, e, id.clone()), &mut combined);
         }
         combined
+    }
+}
+
+/// 여러 engine 에서 온 카테고리 행에서 `normal` 을 하나로 접는다.
+///
+/// 접힌 줄의 각 필드가 무엇을 뜻하는지 정한다 — 지어내지 않는다.
+/// - `workspace_count`: 전 창 **합**. 각 창의 normal 이 담은 워크스페이스 전부다.
+/// - `index`: `0`. normal 은 모든 engine 에서 위치가 고정이라(`move` 가 index 0 을
+///   거부한다) 창을 안 골라도 참이다.
+/// - `collapsed`: **모든 창에서 접혀 있을 때만** `true`. 한 창을 골라 그 값을 쓰면
+///   나머지 창에 대해 거짓이 되므로, 집합의 성질로 답한다.
+///
+/// normal 이 아닌 행은 그대로 둔다 — id 가 창을 건너 유일해서 그 자체로 키다. 다만
+/// `index` 는 **그 행이 온 창 안에서의 위치**라 합친 목록에서는 값이 반복될 수 있다.
+fn fold_normal(rows: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let mut count: u64 = 0;
+    let mut collapsed = true;
+    let mut seen_normal = false;
+    let mut rest: Vec<serde_json::Value> = Vec::new();
+    let mut name = "normal".to_string();
+    for row in rows {
+        if row.get("is_normal").and_then(|v| v.as_bool()) != Some(true) {
+            rest.push(row);
+            continue;
+        }
+        seen_normal = true;
+        count += row
+            .get("workspace_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        collapsed &= row
+            .get("collapsed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if let Some(n) = row.get("name").and_then(|v| v.as_str()) {
+            name = n.to_string();
+        }
+    }
+    if !seen_normal {
+        return rest;
+    }
+    let mut out = Vec::with_capacity(rest.len() + 1);
+    out.push(json!({
+        "id": 0,
+        "name": name,
+        "index": 0,
+        "collapsed": collapsed,
+        "is_normal": true,
+        "workspace_count": count,
+    }));
+    out.extend(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fold_normal;
+    use serde_json::json;
+
+    fn cat(id: u32, is_normal: bool, count: u64, collapsed: bool) -> serde_json::Value {
+        json!({
+            "id": id,
+            "name": if is_normal { "normal" } else { "work" },
+            "index": 0,
+            "collapsed": collapsed,
+            "is_normal": is_normal,
+            "workspace_count": count,
+        })
+    }
+
+    /// 창 둘에서 온 목록: normal 이 하나로 접히고 개수는 합해진다.
+    #[test]
+    fn normal_folds_into_one_row_carrying_the_summed_count() {
+        let rows = vec![
+            cat(0, true, 2, false),
+            cat(1, false, 1, false),
+            cat(0, true, 3, false),
+            cat(2, false, 0, false),
+        ];
+        let out = fold_normal(rows);
+        assert_eq!(out.len(), 3, "normal 이 접히지 않았다: {out:?}");
+        assert_eq!(out[0]["is_normal"], json!(true), "normal 이 맨 앞이 아니다");
+        assert_eq!(out[0]["workspace_count"], json!(5));
+        assert_eq!(out[0]["index"], json!(0));
+        // 나머지는 id 가 유일하므로 그대로 남는다.
+        let ids: Vec<u64> = out.iter().map(|r| r["id"].as_u64().expect("id")).collect();
+        assert_eq!(ids, vec![0, 1, 2]);
+    }
+
+    /// `collapsed` 는 **전부 접혀 있을 때만** true — 한 창의 값을 대표로 쓰지 않는다.
+    #[test]
+    fn collapsed_is_true_only_when_every_window_has_it_collapsed() {
+        assert_eq!(
+            fold_normal(vec![cat(0, true, 0, true), cat(0, true, 0, true)])[0]["collapsed"],
+            json!(true)
+        );
+        assert_eq!(
+            fold_normal(vec![cat(0, true, 0, true), cat(0, true, 0, false)])[0]["collapsed"],
+            json!(false),
+            "한 창이라도 펼쳐져 있으면 접혔다고 답하면 안 된다"
+        );
+    }
+
+    /// normal 이 없는 입력(창이 하나도 없거나 목록이 빈 경우)에 빈 normal 을 지어내지 않는다.
+    #[test]
+    fn no_normal_row_is_invented_when_none_was_listed() {
+        assert!(fold_normal(vec![]).is_empty());
+        let only_other = fold_normal(vec![cat(1, false, 1, false)]);
+        assert_eq!(only_other.len(), 1);
+        assert_eq!(only_other[0]["id"], json!(1));
     }
 }
