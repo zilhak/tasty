@@ -290,6 +290,10 @@ fn flatten(yaml: &str) -> String {
 /// 이 함정에 걸렸다(2026-09-05): `test.yml` 은 필터가 없고 `cargo test --workspace` 를
 /// 들고 있지만 그 잡은 수동 전용이라, 잡을 안 가른 첫 판에서 판정이 **잘못된 이유로**
 /// 초록이었다.
+/// **잡 헤더 판정은 2 칸 들여쓰기 관례에 매달려 있다.** 관례를 깨는 워크플로가 오면
+/// 잡 헤더가 하나도 안 잡혀 파일 전체가 한 덩어리가 되고, 그러면 그 안의 수동 전용
+/// 조건 하나가 **파일 전체의 호출을 통째로** 지운다 — 또 줄이는 방향이다.
+/// 실측(2026-09-05): 레포의 워크플로 11 개가 전부 2 칸이라 지금은 안 걸린다.
 fn automatic_job_bodies(yaml: &str) -> Vec<String> {
     let mut bodies = Vec::new();
     let mut current = String::new();
@@ -313,6 +317,20 @@ fn automatic_job_bodies(yaml: &str) -> Vec<String> {
     if !current.is_empty() {
         bodies.push(current);
     }
+    // ★ **이 술어는 줄이는 방향으로 틀린다** — 그 방향의 오차는 언제나 더 초록이라
+    // 안 보인다. 문자열이 들어 있기만 하면 버리므로, `if:` 가 **분리(∨)** 인 잡도
+    // 수동 전용으로 센다. 실측(2026-09-05): `release.yml` 의 빌드 잡 4 개가 그 형태다
+    // (`always() && (needs... == 'success' || event_name == 'workflow_dispatch')`) —
+    // 태그 push 에서도 도는데 여기서 버려진다.
+    //
+    // **오늘 그 누락의 효과는 0 이고, 그 0 을 쟀다**: `release.yml` 에는 `cargo test`
+    // 호출이 하나도 없어서 커버리지에 기여할 것이 애초에 없고, 그 파일은 태그 전용이라
+    // [`push_trigger`] 단계에서 이미 빠진다. 그래서 지금 고치지 않는다 — 다만 그 파일이
+    // 언젠가 `cargo test` 를 들이면 **조용히** 안 보이게 된다. 그때는 술어를 "순수 조건
+    // (`if: github.event_name == 'workflow_dispatch'`)일 때만 버린다" 로 좁혀라.
+    //
+    // 같은 술어를 `ci_channel_claims_match_workflows` 도 쓴다. 답을 둘로 만들지 않으려고
+    // 형태를 맞춰 둔 것이고, 위 한계도 그대로 공유한다.
     bodies
         .into_iter()
         .filter(|b| !b.contains("github.event_name == 'workflow_dispatch'"))
