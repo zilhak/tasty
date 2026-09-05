@@ -32,7 +32,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
 /// 매니페스트 + granted 를 다시 교집합하여 manager 의 in-memory 권한 set 을 갱신.
 fn refresh_plugin_permissions(mgr: &mut PluginManager, plugin_id: &str) {
     let Some(pkg) = mgr
-        .packages
+        .packages()
         .iter()
         .find(|p| p.manifest.id == plugin_id)
         .cloned()
@@ -297,7 +297,7 @@ impl App {
             anyhow::bail!("unknown permission '{token}'");
         }
         let pkg = mgr
-            .packages
+            .packages()
             .iter()
             .find(|p| p.manifest.id == plugin_id)
             .cloned()
@@ -410,7 +410,7 @@ impl App {
         let mut events: Vec<CoreEvent> = Vec::new();
 
         for (plugin_id, _) in &hello_pairs {
-            if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+            if let Some(pkg) = mgr.packages().iter().find(|p| &p.manifest.id == plugin_id) {
                 let keys: Vec<String> = pkg
                     .manifest
                     .contributes
@@ -429,7 +429,7 @@ impl App {
             let tx = mgr.host_cmd_tx.clone();
             for (plugin_id, version) in &hello_pairs {
                 if let Some(pkg) = mgr
-                    .packages
+                    .packages()
                     .iter()
                     .find(|p| &p.manifest.id == plugin_id)
                     .cloned()

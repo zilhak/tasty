@@ -1,6 +1,6 @@
 //! Plugin 메타데이터 조회: extension 재집계, tool / popup contribute 평탄 뷰.
 
-use super::{PluginManager, PluginPopupEntry};
+use super::{PluginManager, PluginPackage, PluginPopupEntry};
 
 impl PluginManager {
     /// spawn 이 윈도우 내 반복 실패하여 자동 비활성화된 plugin 인지.
@@ -22,6 +22,17 @@ impl PluginManager {
             })
             .count();
         self.rejected.len() + health
+    }
+
+    /// 설치된 plugin 패키지 목록 — 읽기 전용 창구.
+    ///
+    /// 이 값은 **디스크에서 재발견되는 원본**이고, 여기서 `ipc_namespaces` ·
+    /// `extensions` 가 유도된다. 밖에서 목록만 바꾸면 그 유도들이 낡으므로
+    /// (실제로 `plugin.remove` 가 그렇게 해서 지운 plugin 의 prefix 가 소유 표에
+    /// 남았다) 쓰기는 크레이트 밖으로 열지 않는다. 바꾸려면
+    /// [`PluginManager::refresh_packages`] 를 거친다.
+    pub fn packages(&self) -> &[PluginPackage] {
+        &self.packages
     }
 
     /// 이 메서드 이름의 namespace 를 가진 plugin id — 없으면 host 것이다.

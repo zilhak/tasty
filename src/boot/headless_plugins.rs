@@ -177,7 +177,7 @@ fn register_hook_events(
     hello_pairs: &[(String, String)],
 ) {
     for (plugin_id, _) in hello_pairs {
-        if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+        if let Some(pkg) = mgr.packages().iter().find(|p| &p.manifest.id == plugin_id) {
             let keys: Vec<String> = pkg
                 .manifest
                 .contributes
@@ -202,7 +202,7 @@ fn register_surface_kinds(
 ) {
     for (plugin_id, _version) in hello_pairs {
         if let Some(pkg) = mgr
-            .packages
+            .packages()
             .iter()
             .find(|p| &p.manifest.id == plugin_id)
             .cloned()

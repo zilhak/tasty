@@ -10,7 +10,7 @@ impl App {
             return plugins_ui::PluginsSnapshot::default();
         };
         let plugins = mgr
-            .packages
+            .packages()
             .iter()
             .map(|pkg| {
                 let id = &pkg.manifest.id;
@@ -89,7 +89,7 @@ impl App {
                 health_detail: None,
             })
             .collect();
-        attention.extend(mgr.packages.iter().filter_map(|pkg| {
+        attention.extend(mgr.packages().iter().filter_map(|pkg| {
             let id = &pkg.manifest.id;
             // 사용자가 직접 끈 plugin 은 정상 종료 — error 아님.
             if !mgr.is_auto_disabled(id) || mgr.config.is_disabled(id) {

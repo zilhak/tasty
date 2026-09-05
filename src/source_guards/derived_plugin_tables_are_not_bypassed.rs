@@ -81,6 +81,9 @@ const HOST_PLUGIN_LIFECYCLE: &str = "crates/tasty-host-plugin/src/manager/lifecy
 
 const DERIVED: &[Derived] = &[
     Derived {
+        // 이것도 **구조로 닫혔다** — 밖에는 읽기 창구 `packages()` 만 있다. 명부에
+        // 남기는 이유는 크레이트 **안**이고, 실제 결함이 났던 자리(`plugin.remove`)는
+        // 이제 밖이라 컴파일러가 먼저 막는다.
         what: "설치 목록(디스크에서 재발견된다)",
         field: ".packages",
         verbs: &[

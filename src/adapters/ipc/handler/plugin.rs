@@ -20,7 +20,7 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
         None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
     };
     let arr: Vec<Value> = mgr
-        .packages
+        .packages()
         .iter()
         .map(|p| {
             json!({
@@ -47,7 +47,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
         Some(s) => s.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
     };
-    let pkg = match mgr.packages.iter().find(|p| p.manifest.id == plugin_id) {
+    let pkg = match mgr.packages().iter().find(|p| p.manifest.id == plugin_id) {
         Some(p) => p,
         None => {
             return JsonRpcResponse::error(
@@ -238,7 +238,7 @@ pub fn handle_extension_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcR
         .extensions_iter()
         .map(|(ext_id, state)| {
             let target_id = mgr
-                .packages
+                .packages()
                 .iter()
                 .find(|p| p.manifest.id == ext_id)
                 .and_then(|p| p.manifest.extends.as_ref().map(|e| e.plugin_id.clone()));
@@ -311,7 +311,7 @@ pub fn handle_permissions(
         Some(s) => s.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'id' parameter"),
     };
-    let pkg = match mgr.packages.iter().find(|p| p.manifest.id == plugin_id) {
+    let pkg = match mgr.packages().iter().find(|p| p.manifest.id == plugin_id) {
         Some(p) => p,
         None => {
             return JsonRpcResponse::error(
