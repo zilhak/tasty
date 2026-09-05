@@ -78,6 +78,13 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
         "crates/tasty-cli/src/help.rs",
         "clap 도움말 보강 출력 — clap 의 영어 about 텍스트와 한 화면에 섞여 나오므로 같은 언어(i18n.md clap 예외)",
     ),
+    (
+        "crates/tasty-doc-guards/src/bin/",
+        "게이트 스크립트가 부르는 개발 도구 — 사용자 배포 표면이 아니고, 이 크레이트는 \
+         의존이 0 인 것이 존재 이유라(ADR-0138) 번역 테이블을 들일 수도 없다. 진단은 \
+         게이트 로그로 나가 개발자만 읽는다 (`crates/tasty-tui-simulator/` 와 같은 근거). \
+         **`src/bin/` 만이다** — 이 크레이트의 라이브러리는 아무것도 출력하지 않는다",
+    ),
 ];
 
 /// 리터럴 그대로 허용하는 토큰 — 번역하면 의미가 변하는 고유명사·식별자(i18n.md).
