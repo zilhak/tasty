@@ -13,7 +13,7 @@ use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -39,6 +39,12 @@ static HANDLE_STATE_POISONED: AtomicBool = AtomicBool::new(false);
 const HANDLE_STATE_WHAT: &str = "plugin aux handle stream state";
 static DIRTY_RECTS_POISONED: AtomicBool = AtomicBool::new(false);
 const DIRTY_RECTS_WHAT: &str = "plugin dirty-rects map";
+
+// HandleStream 락은 위 셋과 반대다 — 임계구역이 소켓에 프레임을 쓰므로 락을 든 채 죽은
+// 스레드가 반쪽 프레임을 남길 수 있다. poison 을 `into_inner` 로 복구해 이어 쓰면 프레이밍이
+// 깨진다(= `writer` 가 FORBIDDEN_LOCKS 에 있는 것과 같은 이유). 그래서 복구하지 않고 이
+// 연산을 건너뛰되, 조용히는 아니다 — 첫 1 회 보고한다(aux_reader_loop 의 pong 과 같은 판단).
+static WITH_HANDLE_STREAM_POISONED: AtomicBool = AtomicBool::new(false);
 
 /// 보조 채널 stream을 mailbox에서 가져올 때 첫 호출 한도. plugin SDK가 HandleClient::connect
 /// 완료 → 호스트 accept thread가 stream을 우편함에 채울 때까지 ms 단위 정도면 충분하지만,
@@ -202,7 +208,18 @@ impl PluginProcess {
         F: FnOnce(&mut HandleStream) -> R,
     {
         let arc = self.ensure_handle_stream()?;
-        let mut g = arc.lock().ok()?;
+        let mut g = match arc.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                if !WITH_HANDLE_STREAM_POISONED.swap(true, Ordering::Relaxed) {
+                    tracing::error!(
+                        "plugin aux handle stream lock poisoned — skipping this shared-buffer op; \
+                         a thread panicked mid-frame and continuing would corrupt framing"
+                    );
+                }
+                return None;
+            }
+        };
         Some(f(&mut g))
     }
 
