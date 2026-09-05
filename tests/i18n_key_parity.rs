@@ -22,7 +22,14 @@
 //!   `t_fmt2("…")` / `t_args("…")` 의 리터럴 첫 인자가 카탈로그(루트 + plugin en)에
 //!   존재한다. `format!` 으로 만드는 동적 키는 대상이 아니다.
 //! - **카탈로그 키의 소비자**(역방향, 카탈로그 → 소스) — 카탈로그의 키를 드는 자리가
-//!   추적 파일 어딘가에 있다. 없으면 [`ORPHAN_KEYS`] 명부와 정확히 대조한다.
+//!   **코드(`.rs`)나 매니페스트(`.toml`)의 코드 줄**에 있다. 없으면 [`ORPHAN_KEYS`]
+//!   명부와 정확히 대조한다. **산문(문서·주석)은 소비자가 아니다** — 근거는
+//!   [`consumer_files`] 와 [`code_lines`].
+//!
+//! **두 방향은 검사 둘이다 — 심각도가 다르기 때문이다.** 누락(소스가 드는데 카탈로그에
+//! 없다)은 화면에 raw 키가 뜨는 **시끄러운** 결함이고, 고아(카탈로그에 있는데 아무도
+//! 안 든다)는 아무 증상이 없는 **조용한** 결함이다. 하나로 합치면 빨강 하나가 두 성질을
+//! 뜻하게 되고, 급한 쪽을 뒤쪽 목록에 섞어 버린다. 그래서 검사도 명부도 따로 둔다.
 //!
 //! **왜 두 방향을 다 보는가.** 한 방향짜리 집합 차분은 **이동과 손실을 못 가른다.**
 //! 유일한 호출부가 지워져 키가 고아가 되는 형태에서 순방향은 초록이다 — 소스에 그 키가
@@ -794,16 +801,22 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
 /// 카탈로그에만 남았다.
 ///
 /// **소비자가 `.rs` 만이 아니다.** plugin 매니페스트의 `description_i18n_key` 가 키를
-/// 문자열로 든다. 그래서 이 검사는 순방향처럼 소스 리터럴을 파싱하지 않고, **추적 파일
-/// 전량에서 키 문자열이 언급되는지**를 본다 — 판정을 느슨한 쪽으로 몰아, 고아라고
-/// 말하는 것에 대해서만 확신을 갖는다.
+/// 문자열로 든다. 그래서 이 검사는 순방향처럼 소스 리터럴을 파싱하지 않고, **코드와
+/// 매니페스트의 코드 줄에서 키 문자열이 언급되는지**를 본다 — 판정을 느슨한 쪽으로
+/// 몰아, 고아라고 말하는 것에 대해서만 확신을 갖는다.
+///
+/// **다만 느슨함의 한계가 있다.** 처음에는 추적 파일 전량을 말뭉치로 썼는데, 그러면
+/// 키 이름을 **설명하는** 문서·주석이 그 키를 소비로 만들어 이 검사가 찾으려는 고아를
+/// 가린다(실측 셋 — [`consumer_files`] 참조). 위 사유가 요구하는 것은 `.toml` 이지
+/// 산문이 아니므로, 산문만 뺐다.
 ///
 /// **동적 조립은 소스에서 도출한다.** `format!("convert_popup.{kind}")` 처럼 조립되는
 /// 키는 완성형이 소스에 없다. 허용목록으로 적지 않고 [`dynamic_key_templates`] 가
 /// 소스에서 그 형태를 찾아낸다 — 새 동적 키 갈래가 생겨도 이 검사가 거짓 양성을 내지
 /// 않는다.
 
-/// 카탈로그에 있는데 **아무 추적 파일도 문자열로 안 드는** 키. 뒷값은 지금까지 짚은
+/// 카탈로그에 있는데 **코드도 매니페스트도 안 드는** 키(산문의 언급은 소비가 아니다).
+/// 뒷값은 지금까지 짚은
 /// 사유다. 이 명부는 **정확히 같아야** 한다 — 새 고아가 생기면 늘어서 실패하고, 고아가
 /// 아니게 되면 남아서 실패한다(줄어드는 쪽도 실패시키는 이유: 남는 여유가 곧 안 보는
 /// 구간이다).
@@ -872,6 +885,15 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
         "explorer.popup.rename.rename",
         "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "explorer.tab.close",
+        "호출부 0 — 갤러리 모듈 주석이 이 키를 \"i18n 키 후보(본체)\" 로만 든다. \
+         소비가 아니라 언급이고, 그 언급이 말뭉치에 있던 동안 고아로 안 잡혔다",
+    ),
+    (
+        "explorer.tab.new",
+        "호출부 0 — `explorer.tab.close` 와 같은 자리, 같은 사유",
     ),
     (
         "explorer.select_file",
@@ -952,6 +974,11 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
         "settings.appearance.sidebar_width_label",
         "호출부 0 — 사라진 시점은 아직 안 짚었다",
+    ),
+    (
+        "settings.appearance.theme_label",
+        "호출부 0 — `docs/dev-guide/i18n.md` 의 키 이름 규칙 **예시**가 유일한 언급이다. \
+         문서를 말뭉치에서 빼기 전까지 그 예시가 이 키를 소비로 보이게 했다",
     ),
     (
         "settings.appearance.tab_font_size_label",
@@ -1110,14 +1137,24 @@ fn is_dynamically_assembled(key: &str, templates: &BTreeSet<(String, String)>) -
     })
 }
 
-/// 카탈로그 키를 문자열로 들 수 있는 추적 파일 전량 — `lang/{en,ko,ja}.toml` 자신만 뺀다.
-/// 확장자로 바이너리를 거르고, 빌드 산출물·git 내부·gitignore 된 로컬 폴더는 건너뛴다.
+/// 카탈로그 키를 **프로그램이 읽게 만들 수 있는** 추적 파일 — 코드(`.rs`)와
+/// 매니페스트(`.toml`) 둘이다. 빌드 산출물·git 내부·gitignore 된 로컬 폴더는 건너뛴다.
+///
+/// **산문은 소비자가 아니다.** 처음에는 추적 파일 전량을 말뭉치로 썼고, 그 이유는
+/// "소비자가 `.rs` 만이 아니다"(plugin 매니페스트의 `description_i18n_key`)였다. 그
+/// 사유는 `.toml` 을 요구하지 산문을 요구하지 않는다. 산문까지 넣으면 **키 이름을
+/// 언급하기만 해도 소비로 세어져** 이 검사가 찾으려는 것을 그 언급이 가린다 —
+/// 실측으로 셋이 그렇게 숨어 있었다: `settings.appearance.theme_label` 은
+/// `docs/dev-guide/i18n.md` 의 **키 이름 규칙 예시**가, `explorer.tab.new` ·
+/// `explorer.tab.close` 는 갤러리 모듈 주석의 **"i18n 키 후보"** 라는 말이 덮고 있었다.
+/// 셋 다 호출부가 0 이다.
+///
+/// **차단이 아니라 허용으로 적는 이유는 실패 방향이다.** 새 갈래가 생겼을 때 —
+/// 허용목록이면 그 갈래의 키가 고아로 **시끄럽게** 신고되고, 차단목록이면 새 산문
+/// 확장자가 조용히 고아를 덮는다. 이 검사의 사각은 조용한 쪽이라 시끄러운 쪽을 고른다.
 fn consumer_files() -> Vec<PathBuf> {
     const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules"];
-    const SKIP_EXT: &[&str] = &[
-        "png", "jpg", "jpeg", "gif", "webp", "ico", "ttf", "otf", "woff", "woff2", "wasm", "pdf",
-        "bin", "zip", "gz",
-    ];
+    const CONSUMER_EXT: &[&str] = &["rs", "toml"];
     let mut out = Vec::new();
     let mut stack = vec![root().to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -1152,7 +1189,7 @@ fn consumer_files() -> Vec<PathBuf> {
                 .extension()
                 .map(|e| e.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
-            if SKIP_EXT.contains(&ext.as_str()) {
+            if !CONSUMER_EXT.contains(&ext.as_str()) {
                 continue;
             }
             out.push(path);
@@ -1170,6 +1207,46 @@ fn all_english_keys() -> BTreeSet<String> {
     keys
 }
 
+/// 주석을 뺀 줄들. **주석은 산문이라 소비가 아니다** — 키 이름을 설명하는 주석이
+/// 그 키를 "쓰이는 키" 로 만들면, 이 검사가 찾으려는 고아를 그 설명이 가린다.
+///
+/// 소비하는 자리는 언제나 코드다: 리터럴 호출이면 문자열이 코드 줄에 있고, 동적
+/// 조립이면 [`dynamic_key_templates`] 가 따로 본다. 그래서 주석을 빼도 진짜 소비자를
+/// 잃지 않는다.
+///
+/// 사거리는 정직하게 적는다 — 줄 단위 판정이라 `/* … */` 블록은 `rs` 에서만, 그것도
+/// 여는 줄부터 닫는 줄까지 통째로 본다. 문자열 안의 `//`(예: URL)는 줄 **앞**이 아니면
+/// 주석으로 세지 않으므로 코드로 남는다.
+fn code_lines(text: &str, rs: bool) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut in_block = false;
+    for line in text.lines() {
+        let t = line.trim_start();
+        if rs {
+            if in_block {
+                if t.contains("*/") {
+                    in_block = false;
+                }
+                continue;
+            }
+            if t.starts_with("//") {
+                continue;
+            }
+            if t.starts_with("/*") {
+                if !t.contains("*/") {
+                    in_block = true;
+                }
+                continue;
+            }
+        } else if t.starts_with('#') {
+            // TOML 주석. `#` 로 시작하는 `.rs` 줄은 속성(`#[derive]`)이라 코드다.
+            continue;
+        }
+        out.push(line);
+    }
+    out
+}
+
 #[test]
 fn every_catalog_key_has_a_consumer() {
     let keys = all_english_keys();
@@ -1185,11 +1262,14 @@ fn every_catalog_key_has_a_consumer() {
         files += 1;
         // 하이픈도 토큰 글자다 — `file_handler.host.markdown-viewer` 처럼 plugin id 를
         // 담는 키가 있어서, 빼면 그 키가 쪼개져 거짓 고아가 된다(실측으로 걸렸다).
-        for token in
-            text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'))
-        {
-            if token.contains('.') && token.len() > 2 {
-                tokens.insert(token.to_string());
+        let rs = path.extension().is_some_and(|e| e == "rs");
+        for line in code_lines(&text, rs) {
+            for token in line
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'))
+            {
+                if token.contains('.') && token.len() > 2 {
+                    tokens.insert(token.to_string());
+                }
             }
         }
     }
@@ -1253,6 +1333,84 @@ fn every_catalog_key_has_a_consumer() {
             .collect::<Vec<_>>()
             .join("\n"),
     );
+}
+
+/// 산문에만 이름이 적힌 키는 여전히 고아다 — [`code_lines`] 의 양극.
+///
+/// 이 회귀가 없으면 주석 걸러내기가 죽어도 검사는 초록으로 남는다(말뭉치가 넓어질 뿐
+/// 오류가 아니므로). 그때 잃는 것은 정확히 이 검사의 존재 이유다.
+#[test]
+fn a_key_named_only_in_prose_is_not_a_consumer() {
+    let rs = "// 이 키는 `demo.only.in_comment` 다\nlet k = \"demo.in_code\";\n";
+    let kept: Vec<&str> = code_lines(rs, true);
+    assert_eq!(kept.len(), 1, "코드 줄 하나만 남아야 한다: {kept:?}");
+    assert!(kept[0].contains("demo.in_code"));
+
+    // 블록 주석도 통째로 빠진다.
+    let block = "/*\n demo.in_block\n*/\nlet k = \"demo.after_block\";\n";
+    let kept: Vec<&str> = code_lines(block, true);
+    assert_eq!(kept.len(), 1, "블록 주석이 안 걸러졌다: {kept:?}");
+    assert!(kept[0].contains("demo.after_block"));
+
+    // `.rs` 의 `#` 는 속성이라 **코드다** — TOML 규칙을 그대로 쓰면 소비자를 잃는다.
+    let attr = "#[derive(Debug)]\nstruct S;\n";
+    assert_eq!(code_lines(attr, true).len(), 2, "속성 줄을 주석으로 셌다");
+
+    // TOML 은 반대 — `#` 가 주석이다.
+    let toml = "# demo.toml_comment\ndescription_i18n_key = \"demo.toml_code\"\n";
+    let kept: Vec<&str> = code_lines(toml, false);
+    assert_eq!(kept.len(), 1, "TOML 주석이 안 걸러졌다: {kept:?}");
+    assert!(kept[0].contains("demo.toml_code"));
+}
+
+/// 말뭉치가 **코드와 매니페스트뿐**이다 — 확장자 허용목록이 실제로 동작하는지.
+///
+/// 비영 대조를 같은 테스트에 둔다: 레포에 `.md` 가 실재하는데 말뭉치에 하나도 없다는
+/// 것을 함께 단정해야, 0 이 "필터가 도는 증거" 이지 "순회가 죽은 증거" 가 아니다.
+#[test]
+fn the_consumer_corpus_holds_code_and_manifests_only() {
+    let files = consumer_files();
+    assert!(files.len() > 100, "말뭉치가 {} 개뿐이다", files.len());
+    let bad: Vec<String> = files
+        .iter()
+        .filter(|p| !p.extension().is_some_and(|e| e == "rs" || e == "toml"))
+        .map(|p| rel_of(p))
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "코드도 매니페스트도 아닌 소비자 파일: {bad:?}"
+    );
+
+    let mut md = 0usize;
+    let mut all = Vec::new();
+    gather_any(root(), &mut all);
+    for p in &all {
+        if p.extension().is_some_and(|e| e == "md") {
+            md += 1;
+        }
+    }
+    assert!(md > 50, "레포에 `.md` 가 {md} 개뿐이다 — 순회가 죽었다");
+}
+
+/// 확장자 무관 순회. 위 비영 대조 전용이다 — 말뭉치와 같은 함수를 쓰면 필터가 죽었을 때
+/// 대조도 함께 죽어 0 을 0 으로 확인하게 된다.
+fn gather_any(dir: &Path, out: &mut Vec<PathBuf>) {
+    const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules"];
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if path.is_dir() {
+            if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
+                continue;
+            }
+            gather_any(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
 }
 
 /// 명부의 항목이 **실재하는 카탈로그 키**여야 한다. 키를 지우면서 명부를 안 지우면
