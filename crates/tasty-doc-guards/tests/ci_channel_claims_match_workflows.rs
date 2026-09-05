@@ -1230,6 +1230,32 @@ fn word_offsets(text: &str, name: &str) -> Vec<usize> {
     found
 }
 
+/// 실패 메시지에 공통으로 붙는 **판정 범위** 한 줄.
+///
+/// [`claim_scope`] 의 doc 이 이미 정확히 적고 있다. 문제는 그것을 읽는 사람이 이 파일을
+/// 여는 사람뿐이라는 것이다 — 빨간 것을 보는 저자는 자기 문서를 연다. 범위가 줄 단위라고
+/// 짐작하면 "이 줄에는 그런 말 없는데" 에서 멈춘다.
+const SCOPE_NOTE: &str = "\n\n  [범위] 이 판정기가 보는 것은 줄이 아니라 **마크다운 항목 \
+    하나**다 — 표는 그 행, 목록은 그 항목(들여쓴 이어짐 포함), 산문은 빈 줄 사이 한 문단, \
+    Rust 는 이어진 주석 블록. 그래서 같은 항목 안에 있으면 다른 문장에 적힌 표지도 함께 \
+    읽히고, 항목을 가르면 갈라진다.";
+
+/// 그 옆의 두 번째 줄 — **주어를 단정하지 않는다**는 자백.
+///
+/// 이 사실도 소스에는 있었다(`absence_offsets` 의 주석: "어느 지목이 이 문장의 주어인지는
+/// 이 판정기가 알 수 없다"). 정직하지만 저자에게 닿지 않는 자리에 있었다. 그래서 저자는
+/// 빨간 것을 보고도 **문장을 고칠지 인용을 옮길지 정하지 못한다** — 판정기가 둘 중 어느
+/// 쪽을 지목한 것인지 말해주지 않으니, 고른 쪽이 맞는지도 알 수 없다. 실측으로 그 형태가
+/// 났다(2026-09-06, 다른 레인의 저자). 아는 자리와 필요한 자리가 다르면 아는 것만으로는
+/// 아무 일도 안 일어난다.
+///
+/// 처방을 **둘 다** 적는 이유가 여기 있다. 하나만 적으면 판정기가 모르는 것을 아는 척하게
+/// 되고, 그 척은 틀린 쪽을 고치게 만든다.
+const SUBJECT_NOTE: &str = "\n  [주어] 이 판정기는 그 범위 안의 **어느 지목이 문제 문장의 \
+    주어인지 단정하지 않는다** — 뒤에 덧붙인 선례·참조 지목도 같은 범위로 들어온다. 그러니 \
+    처방이 둘이고, 어느 쪽인지는 저자만 안다: (가) 항목을 갈라 채널 주장과 다른 지목을 서로 \
+    다른 항목에 두거나, (나) 채널 주장 자체를 사실에 맞게 고쳐라.";
+
 /// 주장이 놓인 **한 서술의 범위** — 표는 그 행, 산문은 그 문단, Rust 는 이어진 주석
 /// 블록. 면제도 표지 탐색도 이 범위에서 한다.
 ///
@@ -1429,7 +1455,7 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
         "전체 스위트(`cargo test --workspace`)는 자동으로 돌지 않는다 — `test.yml` 의 \
          `test-linux-x64` 는 `workflow_dispatch` 전용이다. 아래는 그것을 CI 강제 장치로 \
          서술한 자리다. 실제 채널은 `docs/dev-guide/ci-gates.md` 를 보고, 서술을 \
-         '자동 채널 없음' 으로 고쳐라:\n  {}",
+         '자동 채널 없음' 으로 고쳐라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1481,7 +1507,7 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
         "자동 잡이 이름을 지목해 돌리는 통합 테스트는 {automatic:?} 뿐이다(나머지 자동 \
          테스트는 `--lib --bins` = 유닛 뿐). 아래는 그 밖의 통합 테스트를 CI 강제 장치로 \
          서술한 자리다. 문장을 지우지 말고, 그 문장이 전하려던 사실은 남긴 채 채널 주장만 \
-         `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}",
+         `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1528,7 +1554,7 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
         violations.is_empty(),
         "아래는 **lib 유닛 테스트**를 두고 자동 채널의 부재를 적은 자리다. 그 테스트는 \
          `crossplatform-check.yml` 의 `cargo test --workspace --lib --bins`(main push · PR)로 \
-         자동으로 돈다 — 서술이 사실보다 약하다. 채널 정본은 `docs/dev-guide/ci-gates.md`:\n  {}",
+         자동으로 돈다 — 서술이 사실보다 약하다. 채널 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1609,7 +1635,7 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     assert!(
         violations.is_empty(),
         "아래는 통합 테스트를 두고 자동 채널의 부재를 적었지만, 그 테스트가 실제로는 \
-         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}",
+         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1699,7 +1725,7 @@ fn the_theme_table_keeps_the_two_channels_apart() {
         let window = claim_scope(&text, at);
         assert!(
             COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다",
+            "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다{SCOPE_NOTE}",
             path.display(),
             line_of(&text, at)
         );
@@ -1714,7 +1740,7 @@ fn the_theme_table_keeps_the_two_channels_apart() {
         let window = claim_scope(&text, at);
         assert!(
             AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — lib 유닛 테스트인데 자동 채널이 적혀 있지 않다(사실보다 약하다)",
+            "{}:{} — lib 유닛 테스트인데 자동 채널이 적혀 있지 않다(사실보다 약하다){SCOPE_NOTE}",
             path.display(),
             line_of(&text, at)
         );
