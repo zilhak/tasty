@@ -177,7 +177,7 @@ fn normalize_header_value(s: &str) -> String {
 ///   정확히 그 형태이고 접두 일치는 그것을 통과시킨다. 이 가드가 막으려는 사고가 바로
 ///   그것이므로(0042 는 그 반대 방향이었다 — 행이 `Accepted` 로 남았다) 여기서 뺀다.
 ///
-/// 오늘 이 두 형태의 실물은 0 이다(행 181 중 빈 칸 0 · 맨 `Superseded` 0). 0 인 것과
+/// 오늘 이 두 형태의 실물은 0 이다(행 186 중 빈 칸 0 · 맨 `Superseded` 0). 0 인 것과
 /// 막는 것이 있는 것은 다르다 — 이 함수가 그 차이다.
 fn tolerated_too_much(want: &str, got: &str) -> Option<&'static str> {
     if got.trim().is_empty() {
