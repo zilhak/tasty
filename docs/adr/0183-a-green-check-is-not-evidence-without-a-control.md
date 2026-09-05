@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-06
-- **Tags**: guards, measurement, control, testing, mutation, false-green, r433, r453, r459, r461, r462, r472, r473, r475, r476, r480, r491, adr-0129, adr-0139, adr-0180, adr-0181
+- **Tags**: guards, measurement, control, testing, mutation, false-green, r433, r453, r459, r461, r462, r472, r473, r475, r476, r480, r491, r497, adr-0129, adr-0139, adr-0180, adr-0181
 
 ## Context
 
@@ -106,6 +106,13 @@
 고쳐졌다" 가 아니다.** 부풀림이든 불변이든, 그 수를 사건에 귀속하기 전에 **그것이 무엇을
 세는지**를 먼저 묻는다(R472·R473·R475·R476). 네 번 독립으로 났다는 것이 이 물음이 반사로
 박혀 있지 않다는 신호다(R451).
+
+**★ 모수의 실물은 pathspec 이다**(R497, 705·708). 같은 diff 를 pathspec 만 바꿔 재면 수가
+달라지고, **셋 다 맞다** — 물음이 다를 뿐이다. host-plugin↔ipc 로 파일 하나가 옮겨간 회차의
+`#[test]` 증감: `host-plugin/` 만 보면 +7/−9(rename 이 **삭제**로 보임) · 두 크레이트를 함께
+보면 +7/−4(rename 으로 **접힘**) · `ipc/` 만 보면 +5/−0(rename 이 **추가**로 보임). "잃었는가"
+의 옳은 모수는 **두 크레이트를 함께**다. **감소를 볼 때는 pathspec 을 넓혀 한 번 더 재라** —
+좁은 모수의 감소는 이동을 손실로 오독한다.
 
 ### 자기를 지우라고 말하는 빨강 — 처방을 따라가면 보호가 사라진다
 
