@@ -2833,6 +2833,10 @@ enum TextWrap {
     /// 가용 폭에서 여러 줄로 줄바꿈(`Label::wrap()` 과 동형).
     Wrap,
     /// 지정 폭에서 한 줄로 말줄임(`Label::truncate()` 과 동형) — `…` 로 elide.
+    ///
+    /// 폭이 `LogicalPx` 가 아닌 이유: 이 값은 곧장 egui `LayoutJob::wrap.max_width` 로
+    /// 들어간다. 타입을 붙이면 만드는 자리 하나에서 벗기던 것을 쓰는 자리 하나에서
+    /// 벗기게 될 뿐이라 총수가 그대로다.
     Truncate(f32),
 }
 

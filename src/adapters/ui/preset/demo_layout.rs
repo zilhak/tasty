@@ -35,7 +35,7 @@ use crate::i18n::t;
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preview 전용 치수 — specimen 과 동일).
 /// 상위(pane) divider = bordered 카드 사이 bg-app 공백.
-const PANE_GAP: f32 = 5.0;
+const PANE_GAP: LogicalPx = LogicalPx(5.0);
 /// mini tab strip height.
 const STRIP_H: LogicalPx = LogicalPx(20.0);
 /// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
@@ -49,6 +49,10 @@ const TAB_PAD_X: f32 = 9.0;
 /// mini tab 아이콘↔라벨 gap.
 const TAB_GAP: f32 = 5.0;
 /// mini tab close `×` 히트영역 한 변(14×14).
+// 이 탭 치수 다섯(`TAB_PAD_X`·`TAB_GAP`·`CLOSE_MARGIN`·`CLOSE_HIT`·`CLOSE_TAB_PAD`)은
+// 한 식으로 더해져 탭 폭을 만든다. 하나만 `LogicalPx` 로 바꾸면 그 덧셈 한복판에서
+// `.value()` 로 벗겨야 해서, 타입을 넓히는 대신 타입을 버리는 자리를 만든다.
+// 다섯을 함께 옮길 때 같이 옮긴다.
 const CLOSE_HIT: f32 = 14.0;
 /// close `×` 왼쪽 margin(라벨과의 간격).
 const CLOSE_MARGIN: f32 = 1.0;
@@ -2232,7 +2236,7 @@ fn draw_pane_tree(
             second,
         } => {
             // divider(PANE_GAP)는 칠하지 않는다 — bg-app 공백이 무거운 상위 divider.
-            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, PANE_GAP);
+            let (r1, _gap, r2) = split_rects(rect, *row, *ratio, PANE_GAP.value());
             draw_pane_tree(ui, theme, r1, first, cx);
             draw_pane_tree(ui, theme, r2, second, cx);
         }

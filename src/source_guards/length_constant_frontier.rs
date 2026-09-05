@@ -49,7 +49,7 @@ use super::{mask_non_code, rust_sources};
 /// 아직 전환하지 않은 영역과 그 시점의 건수. 건수는 상한이라 전선은 줄어들 수만 있다.
 const FRONTIER: (&str, usize, &str) = (
     "src/adapters/ui/",
-    43,
+    41,
     "산술에 섞이거나 함수 경계를 넘는 부류라 시그니처와 함께 닫아야 한다",
 );
 

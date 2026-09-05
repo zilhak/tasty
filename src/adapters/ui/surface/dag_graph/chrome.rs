@@ -411,11 +411,18 @@ fn draw_zoom_cluster(
         egui::StrokeKind::Inside,
     );
 
-    let side = theme.dag_chrome_height().value();
+    let side = theme.dag_chrome_height();
     let mut x = rect.min.x;
-    let mut cell = |w: f32| {
-        let r = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(w, side));
-        x += w;
+    // 폭을 `LogicalPx` 로 받는다. 호출 인자가 전부 Theme 값이거나 명명 길이 상수라
+    // 여기서 받으면 그 값들이 벗겨지지 않은 채 들어오고, 벗기는 자리가 egui 로 나가는
+    // 이 본문 안으로 모인다. 벗기기 총수는 거의 그대로다(이 파일 53 → 52) — 얻는 것은
+    // 개수가 아니라 위치다.
+    let mut cell = |w: LogicalPx| {
+        let r = egui::Rect::from_min_size(
+            egui::pos2(x, rect.min.y),
+            egui::vec2(w.value(), side.value()),
+        );
+        x += w.value();
         r
     };
 
@@ -433,7 +440,7 @@ fn draw_zoom_cluster(
         action = Some(ChromeAction::Zoom(-1.0));
     }
     if !compact {
-        let readout = cell(ZOOM_READOUT_WIDTH.value());
+        let readout = cell(ZOOM_READOUT_WIDTH);
         ui.painter().text(
             readout.center(),
             egui::Align2::CENTER_CENTER,
@@ -455,7 +462,7 @@ fn draw_zoom_cluster(
         action = Some(ChromeAction::Zoom(1.0));
     }
 
-    let sep = cell(theme.border_width.value());
+    let sep = cell(theme.border_width);
     ui.painter().rect_filled(sep, 0.0, border);
 
     if cluster_cell(
