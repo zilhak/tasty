@@ -22,6 +22,35 @@
 //!
 //! 개발자 표면(assert / panic / `tracing::*`)은 대상이 아니다 — 이 저장소는 그 문구를
 //! 한국어로 쓰는 것이 관례이고, 사용자에게 안 나간다.
+//!
+//! ## 무엇이 "프로덕션 코드" 인가 — 이름이 아니라 성질로 가른다
+//!
+//! 처음 판정은 세 자리를 **줄 위치·파일명**으로 어림잡았고, 셋 다 틀렸다:
+//!
+//! - **`#[cfg(test)]` 를 만나면 `break`** 했다. 파일 끝의 `mod tests` 만 있다고 가정한
+//!   것인데, `#[cfg(test)] fn` 헬퍼가 파일 중간에 있으면 그 뒤의 **프로덕션 코드까지**
+//!   통째로 시야 밖이 된다. 실측(2026-09-05): 첫 `#[cfg(test)]` 뒤 13864 줄 중
+//!   **2606 줄이 프로덕션**이었고 그중 2369 줄이 `markdown/render.rs` 한 파일이다.
+//! - **테스트 전용 모듈을 `*_tests.rs` 라는 이름으로만** 알아봤다. `#[cfg(test)] mod
+//!   tests;` 로 선언된 `src/tests.rs` 는 그 이름에 안 걸려 **테스트 코드가 프로덕션으로**
+//!   판정됐다(train44 가 그렇게 빨개졌다 — `markdown/src/tests.rs` 의 `assert!` 메시지).
+//! - **진단 호출을 한 줄로만** 알아봤다. 인자가 여럿인 `assert!` 는 rustfmt 가 메시지를
+//!   다음 줄로 밀어내므로 그 줄만 보면 진단인 줄 모른다.
+//!
+//! 그래서 지금은 셋 다 성질로 판정한다 — `#[cfg(test)]` 가 **실제로 덮는 줄 범위**
+//! ([`cfg_span`]), **선언상 출하되지 않는 파일**
+//! ([`super::sloc_gate_skip_proxy::test_only_files`] 를 공유한다 — 전이 폐쇄와
+//! `#[path]` · `cfg(all(test, …))` 까지 그쪽이 이미 본다), 그리고 괄호 수지로 잡은
+//! **진단 호출 범위**. 셋 다 소스에서 도출하므로 손 목록이 없다.
+//!
+//! 셋 중 가운데 것은 이 트리에서 **아직 공허하다** — 번들 plugin 에 그 형태의 선언이
+//! 0 개다. 배선은 있고 모수가 없다. 그 구분을 본문 단정 옆에 적어 둔다.
+
+/// `#[cfg(...)]` 의 실제 줄 범위. 통합 테스트 두 개가 이미 쓰는 모듈을 **사본 없이**
+/// 함께 쓴다 — 그 모듈 자신의 설명대로 "사본이 둘이면 갈리고, 갈린 쪽은 조용하다".
+/// 통합 타깃은 서로를 import 할 수 없어 `mod` 로 붙이는 형태이고, 여기서도 같다.
+#[path = "../../tests/cfg_span/mod.rs"]
+mod cfg_span;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -36,21 +65,111 @@ const MANIFEST_NAME: &str = "tasty-plugin.toml";
 /// 안 보고 통과한다. 값의 근거: 2026-09-05 실측 9(매니페스트를 가진 크레이트).
 const MIN_PLUGINS: usize = 8;
 
-/// 개발자 표면 — 이 호출 안의 문구는 사용자에게 안 나간다.
-fn is_diagnostic(line: &str) -> bool {
-    const MARKERS: &[&str] = &[
-        "assert",
-        "panic!",
-        "unreachable!",
-        ".expect(",
-        "tracing::",
-        "warn!",
-        "info!",
-        "error!",
-        "debug!",
-        "trace!",
-    ];
-    MARKERS.iter().any(|m| line.contains(m))
+/// 개발자 표면 — 이 호출 **안**의 문구는 사용자에게 안 나간다.
+const DIAGNOSTIC_MARKERS: &[&str] = &[
+    "assert",
+    "panic!",
+    "unreachable!",
+    ".expect(",
+    "tracing::",
+    "warn!",
+    "info!",
+    "error!",
+    "debug!",
+    "trace!",
+];
+
+/// 한 줄의 괄호 수지. 문자열·문자 리터럴·줄 주석 안은 세지 않는다
+/// ([`cfg_span::brace_delta`] 와 같은 이유 — 문자열 속 `)` 에 속으면 진단 호출이
+/// 일찍 닫히고 그 뒤의 메시지 줄이 전달 문구로 보인다).
+fn paren_delta(line: &str) -> i32 {
+    let b = line.as_bytes();
+    let mut depth = 0i32;
+    let mut i = 0usize;
+    let mut in_str = false;
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == b'/' && i + 1 < b.len() && b[i + 1] == b'/' {
+            break;
+        }
+        if c == b'"' {
+            in_str = true;
+        } else if c == b'\'' {
+            let esc = i + 1 < b.len() && b[i + 1] == b'\\';
+            let end = if esc { i + 3 } else { i + 2 };
+            if end < b.len() && b[end] == b'\'' {
+                i = end + 1;
+                continue;
+            }
+        } else if c == b'(' {
+            depth += 1;
+        } else if c == b')' {
+            depth -= 1;
+        }
+        i += 1;
+    }
+    depth
+}
+
+/// 진단 호출이 **덮는 줄**을 표시한다 — 여는 줄부터 괄호 수지가 0 으로 돌아올 때까지.
+///
+/// 한 줄만 보던 판정은 `assert!(\n    cond,\n    "메시지",\n);` 형태에서 메시지 줄을
+/// 전달 문구로 오인했다. 인자가 여럿이면 rustfmt 가 늘 그 모양으로 접는다.
+fn diagnostic_lines(lines: &[&str]) -> Vec<bool> {
+    let mut out = vec![false; lines.len()];
+    let mut i = 0usize;
+    while i < lines.len() {
+        if !DIAGNOSTIC_MARKERS.iter().any(|m| lines[i].contains(m)) {
+            i += 1;
+            continue;
+        }
+        out[i] = true;
+        let mut depth = paren_delta(lines[i]);
+        let mut j = i;
+        while depth > 0 && j + 1 < lines.len() {
+            j += 1;
+            out[j] = true;
+            depth += paren_delta(lines[j]);
+        }
+        i = j + 1;
+    }
+    out
+}
+
+/// 한 소스에서 걸리는 (줄번호, 리터럴). **순수 함수** — 합성 입력으로 변이를 찌른다.
+///
+/// 세 가지를 뺀다: 주석 줄 · **진단 호출 범위** · **`#[cfg(test)]` 가 덮는 범위**.
+/// 뒤의 둘은 한 줄이 아니라 범위다 — 그 차이가 이 판정의 전부다(모듈 문서 참조).
+pub(crate) fn locale_specific_literals(src: &str) -> Vec<(usize, String)> {
+    let lines: Vec<&str> = src.lines().collect();
+    let gated = cfg_span::cfg_gated_lines(&lines, "test");
+    let diagnostic = diagnostic_lines(&lines);
+    let mut out = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if gated[idx] || diagnostic[idx] {
+            continue;
+        }
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        for lit in string_literals(line) {
+            if lit.chars().any(is_cjk) {
+                out.push((idx + 1, lit));
+            }
+        }
+    }
+    out
 }
 
 fn is_cjk(c: char) -> bool {
@@ -61,33 +180,6 @@ fn is_cjk(c: char) -> bool {
         | 0x4E00..=0x9FFF // CJK Unified Ideographs
         | 0xAC00..=0xD7A3 // Hangul Syllables
     )
-}
-
-/// 한 소스에서 걸리는 (줄번호, 리터럴). **순수 함수** — 합성 입력으로 변이를 찌른다.
-///
-/// 세 가지를 뺀다: 주석 줄 · 진단 호출 줄 · `#[cfg(test)]` 이후 전부. 마지막 것은
-/// 테스트가 로케일 문구를 단정에 그대로 쓰는 것이 정상이기 때문이다(그 단정이 곧
-/// "이 로케일에서 이렇게 나온다" 는 검증이다).
-pub(crate) fn locale_specific_literals(src: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    for (idx, line) in src.lines().enumerate() {
-        if line.starts_with("#[cfg(test)]") {
-            break;
-        }
-        let t = line.trim_start();
-        if t.starts_with("//") {
-            continue;
-        }
-        if is_diagnostic(line) {
-            continue;
-        }
-        for lit in string_literals(line) {
-            if lit.chars().any(is_cjk) {
-                out.push((idx + 1, lit));
-            }
-        }
-    }
-    out
 }
 
 /// 한 줄의 문자열 리터럴들. 이스케이프된 따옴표는 건너뛴다.
@@ -153,9 +245,7 @@ fn rs_files(dir: &Path) -> Vec<PathBuf> {
             let p = entry.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.extension().is_some_and(|e| e == "rs")
-                && !p.to_string_lossy().ends_with("_tests.rs")
-            {
+            } else if p.extension().is_some_and(|e| e == "rs") {
                 out.push(p);
             }
         }
@@ -173,16 +263,28 @@ fn no_bundled_plugin_ships_a_locale_specific_literal() {
          실측 9). 탐색이 죽으면 이 가드는 아무것도 안 보고 통과한다",
         srcs.len()
     );
+    // 출하 여부는 **선언**이 정한다 — 파일명이 아니라. 판정기는 형제 가드와 공유한다
+    // (전이 폐쇄 · `#[path]` · `cfg(all(test, …))` 까지 본다).
+    let root = repo_root();
+    let test_only = super::sloc_gate_skip_proxy::test_only_files();
     let mut files = 0usize;
+    let mut skipped = 0usize;
+    let mut scanned: Vec<PathBuf> = Vec::new();
     let mut hits: Vec<String> = Vec::new();
     for dir in &srcs {
         for f in rs_files(dir) {
+            let rel = f.strip_prefix(&root).unwrap_or(&f).to_path_buf();
+            if test_only.contains(&rel) {
+                skipped += 1;
+                continue;
+            }
+            scanned.push(rel);
             files += 1;
             let src = std::fs::read_to_string(&f)
                 .unwrap_or_else(|e| panic!("{} 을 읽지 못했다: {e}", f.display()))
                 .replace("\r\n", "\n");
             let rel = f
-                .strip_prefix(repo_root())
+                .strip_prefix(&root)
                 .unwrap_or(&f)
                 .to_string_lossy()
                 .to_string();
@@ -194,7 +296,25 @@ fn no_bundled_plugin_ships_a_locale_specific_literal() {
     }
     assert!(
         files >= 10,
-        "plugin 소스를 {files} 개밖에 못 걸었다 — 파일 수집이 죽었다"
+        "plugin 소스를 {files} 개밖에 못 걸었다 — 파일 수집이 죽었다 \
+         (테스트 전용 선언으로 뺀 것 {skipped} 개)"
+    );
+    // 배선 자체를 못 박는다 — 위 필터를 지우면 이 단정이 운다.
+    //
+    // **다만 지금은 공허하다.** 이 트리의 번들 plugin 중 `#[cfg(test)] mod x;` 로 파일을
+    // 분리한 것이 아직 0 개라(위 `skipped`), 필터를 지워도 교집합이 빈 채다. 첫 선언이
+    // 들어오는 순간 실효가 된다 — 그리고 그 순간이 바로 이 필터가 필요해지는 순간이다.
+    // 공허함을 감추지 않는 이유는 "초록" 과 "재지 못했다" 가 다른 사실이기 때문이다.
+    let leaked: Vec<String> = scanned
+        .iter()
+        .filter(|p| test_only.contains(*p))
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "`#[cfg(test)]` 로 선언된 파일이 프로덕션으로 스캔됐다 — 출하 여부 판정이 \
+         배선에서 빠졌다:\n  {}",
+        leaked.join("\n  ")
     );
     assert!(
         hits.is_empty(),
@@ -239,6 +359,62 @@ mod tests {
         "`#[cfg(test)]` 이후를 집었다: {lits:?}"
     );
     assert!(!lits.contains("plain english"), "영어까지 집었다: {lits:?}");
+}
+
+/// **이 가드가 빨개졌던 이유** — `#[cfg(test)]` 뒤의 프로덕션 코드를 다시 본다.
+///
+/// 옛 판정은 첫 `#[cfg(test)]` 에서 `break` 했다. 파일 중간의 테스트 헬퍼 하나가
+/// 그 뒤 전부를 시야에서 지웠다 — 실측 2606 줄(그중 2369 줄이 `markdown/render.rs`).
+#[test]
+fn production_code_after_a_test_helper_is_still_scanned() {
+    let src = "\
+#[cfg(test)]
+fn helper() -> &'static str { \"테스트 헬퍼 문구\" }
+
+fn shipped() { notify(\"배포되는 문구\"); }
+";
+    let lits: BTreeSet<String> = locale_specific_literals(src)
+        .into_iter()
+        .map(|(_, l)| l)
+        .collect();
+    assert!(
+        lits.contains("배포되는 문구"),
+        "테스트 헬퍼 뒤의 프로덕션 문구를 놓쳤다 — 판정이 첫 `#[cfg(test)]` 에서 멈췄다: \
+         {lits:?}"
+    );
+    assert!(
+        !lits.contains("테스트 헬퍼 문구"),
+        "게이트 안의 헬퍼를 집었다: {lits:?}"
+    );
+}
+
+/// 진단 호출이 여러 줄에 걸쳐도 그 **안**이다.
+///
+/// train44 를 빨갛게 만든 형태가 이것이다: 인자가 여럿인 `assert!` 는 rustfmt 가 메시지를
+/// 다음 줄로 접고, 한 줄만 보던 판정은 그 줄을 전달 문구로 읽었다.
+#[test]
+fn a_wrapped_assert_message_is_still_a_diagnostic() {
+    let src = "\
+fn f() {
+    assert!(
+        cond,
+        \"삭제가 error 상태로 감지되어야 한다\"
+    );
+    notify(\"사용자에게 나가는 문구\");
+}
+";
+    let lits: BTreeSet<String> = locale_specific_literals(src)
+        .into_iter()
+        .map(|(_, l)| l)
+        .collect();
+    assert!(
+        !lits.contains("삭제가 error 상태로 감지되어야 한다"),
+        "줄바꿈된 단정 메시지를 전달 문구로 읽었다: {lits:?}"
+    );
+    assert!(
+        lits.contains("사용자에게 나가는 문구"),
+        "단정이 닫힌 뒤까지 진단으로 삼켰다 — 반대 방향으로 눈이 멀었다: {lits:?}"
+    );
 }
 
 /// 이스케이프된 따옴표가 리터럴 경계를 흔들지 않는다.

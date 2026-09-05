@@ -259,7 +259,11 @@ fn path_attr_value(raw_line: &str) -> Option<String> {
 }
 
 /// 선언상 **출하되지 않는** 파일 집합. 부모가 test 게이트면 자식도 안 나간다(전이 폐쇄).
-fn test_only_files() -> BTreeSet<PathBuf> {
+///
+/// 형제 가드(`plugin_locale_specific_literals`)도 같은 물음을 갖는다 — "이 파일은
+/// 출하되는가". 사본을 만들면 두 답이 갈리고 갈린 쪽은 조용하므로 여기 하나를 나눠 쓴다.
+/// 반환 경로는 **레포 상대**다(`rust_sources` 의 형태).
+pub(super) fn test_only_files() -> BTreeSet<PathBuf> {
     let edges = declaration_edges();
     fn walk(
         p: &PathBuf,
