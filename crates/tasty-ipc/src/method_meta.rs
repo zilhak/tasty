@@ -687,9 +687,11 @@ pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[];
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
 /// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.
 ///
-/// host-plugin 의 plugin lifecycle (`start_plugin_internal` / `disable` /
-/// `pump`) 가 [`register_plugin_prefix`] / [`unregister_plugin_prefix`] 로
-/// 동기 갱신한다.
+/// host-plugin 이 **설치된 매니페스트에서 소유 표를 다시 만들 때** 이 미러도 같은
+/// 자리에서 함께 갱신한다(`PluginManager::refresh_packages` 안). plugin 의 기동·종료가
+/// 아니라 **설치 상태**가 재료라, plugin 이 안 떠 있어도 소유는 유지된다 — 실행 여부는
+/// 다른 물음이고 라우터가 `-32002` 로 따로 답한다. 근거는
+/// `docs/adr/0173-namespace-resolution-reads-the-manifest-not-the-process-table.md`.
 static PLUGIN_PREFIXES: OnceLock<RwLock<HashMap<String, MethodMeta>>> = OnceLock::new();
 
 fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
