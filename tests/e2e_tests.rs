@@ -1509,14 +1509,16 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
         // 조회만이다. 같은 갈래의 `debug.popup.open` 은 아래 음성 대조에 있다 —
         // 헤드리스에 닫는 경로가 없어 여는 것만 열면 안 된다.
         "debug.popup.list",
+        // 같은 형태. 무대 표를 gui 무관 메타와 그리기 함수로 가른 뒤 조회만 연다.
+        "debug.fullscreen.list",
     ] {
         let resp = tasty.call_raw(method, json!({}));
         let code = resp["error"]["code"].as_i64();
         assert_ne!(
             code,
             Some(-32601),
-            "`{method}` 가 읽는 것은 `App` 의 lua_engine/plugin_manager 뿐이다 — 두 조합의 \
-             debug 빌드에서 라우팅돼야 한다: {resp}"
+            "`{method}` 가 읽는 것은 `App` 의 lua_engine/plugin_manager, 또는 gui 무관 정적 \
+             표뿐이다 — 두 조합의 debug 빌드에서 라우팅돼야 한다: {resp}"
         );
     }
 
@@ -1529,7 +1531,13 @@ fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
     //                      닫는 경로가 하나도 없다(debug close 도, plugin 자신의
     //                      release `popup.close` 도 gui 게이트 안이다). 여는 것만
     //                      열면 닫을 수 없는 상태가 남는다.
-    for method in ["debug.tool.list", "debug.popup.open"] {
+    //   `debug.fullscreen.open` 같은 갈래의 `list` 는 위에서 답하는데 이쪽은 아니다 —
+    //                      `pick_debug_window` 로 창을 지목한다. 무대는 창 단위다.
+    for method in [
+        "debug.tool.list",
+        "debug.popup.open",
+        "debug.fullscreen.open",
+    ] {
         let resp = tasty.call_raw(method, json!({}));
         let code = resp["error"]["code"].as_i64();
         #[cfg(feature = "gui")]

@@ -140,6 +140,17 @@ pub(crate) fn pump_ipc(
                 send_response(&cmd.response_tx, resp);
                 continue;
             }
+            // 등록된 전체화면 무대 **조회**. 읽는 것이 gui 무관 메타 표뿐이라 창이
+            // 없어도 답이 정의된다(gui 와 같은 함수를 부른다).
+            //
+            // 같은 갈래의 `open`/`close`/`state` 는 여기 없다 — 셋 다
+            // `pick_debug_window` 로 창을 지목한다. 무대는 창 단위라 창이 없으면 답이
+            // 정의되지 않는다. "컴파일되는가" 와 "열어도 되는가" 는 다른 물음이다.
+            if cmd.request.method == "debug.fullscreen.list" {
+                let resp = crate::core::app_surface_debug::fullscreen_list(rpc_id);
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
             if cmd.request.method == "debug.extension.invoke_hook" {
                 super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
                 crate::ipc::handler::debug_plugin::handle_extension_invoke_hook(

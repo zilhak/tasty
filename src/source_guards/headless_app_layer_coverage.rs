@@ -272,14 +272,8 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
          `self.view.views` 를 순회한다. view 가 없다",
     ),
     // `debug.fullscreen.` 을 갈래 한 줄로 두지 않는다 — 그 안에서 판정이 갈린다.
-    // `list` 는 창을 안 읽고 정적 무대 표만 읽는데, 그 표(`StageDef`)가 `draw_fn` 을
-    // 필드로 갖는 gui 타입이라 헤드리스가 읽을 수 없다. 나머지 셋과 사유가 다르다.
-    (
-        "debug.fullscreen.list",
-        "창을 안 읽는다 — 정적 무대 표(`adapters::ui::fullscreen::defs::all_defs`)만 읽는다. \
-         그런데 그 표의 `StageDef` 가 `draw_fn`(egui 그리기 함수)을 필드로 가져 표 자체가 \
-         gui 타입이다. 열려면 표를 (id·title_key) 메타와 그리기 함수로 가르는 것이 선행이다",
-    ),
+    // `list` 는 여기 없다: 무대 표를 메타와 그리기 함수로 가른 뒤 헤드리스가 답한다.
+    // 남은 셋은 창을 지목해야 해서 답이 정의되지 않는다.
     (
         "debug.fullscreen.open",
         "무대는 창 단위다 — `pick_debug_window` 로 `self.view.views` 에서 창을 지목한다",
