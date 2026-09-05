@@ -247,7 +247,13 @@ fn token_value(semantic: &str, primitive: &str, token: &str) -> Option<(String, 
 }
 
 fn read(rel: &str) -> String {
-    mask_non_code(&std::fs::read_to_string(super::repo_root().join(rel)).unwrap_or_default())
+    mask_non_code(&read_raw(rel))
+}
+
+/// 마스크 **안 한** 원문. doc 에 무엇이 적혔는지를 묻는 자리에만 쓴다 — [`read`] 는
+/// 주석을 지우므로 그 물음이 통째로 사라진다(실측으로 그 함정을 밟았다).
+fn read_raw(rel: &str) -> String {
+    std::fs::read_to_string(super::repo_root().join(rel)).unwrap_or_default()
 }
 
 /// 한 쪽을 값 하나 + 좌표 한 줄로 푼다. 좌우가 같은 함수를 지나므로 방향이 뒤집힌 사본도
@@ -361,15 +367,27 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
 ///
 /// 이 명부가 [`COPIED`] 의 금지문에 적어 둔 예외의 실물이다. 쌍이 아니라 사본이 사라진
 /// 형태라 비교할 두 값이 없다.
-const SHARES_ONE_ITEM: &[(&str, &str, &str)] = &[(
+/// (갤러리 파일, 갤러리 상수, **두 쪽이 함께 읽는 토큰**, 그 토큰을 읽는 본체 파일, 사유).
+///
+/// 앞의 셋째·넷째 칸은 사유를 **기계가 다시 물을 수 있게** 하려고 있다. 산문만 있으면
+/// 그 전제가 거짓이 되어도 표는 그대로 남아 면제만 살아남는다 — 이름·경로로 면제하는
+/// 표의 공통 약점이다([`the_checkable_roster_premises_still_hold`]).
+const SHARES_ONE_ITEM: &[(&str, &str, &str, &str, &str)] = &[(
     GALLERY_POPUP_FRAME,
     "TITLE_BTN_SIZE",
+    "tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE",
+    "src/adapters/ui/popup.rs",
     "본체와 갤러리가 둘 다 `tasty_ui_widgets::tokens::POPUP_TITLE_BTN_SIZE` 를 읽는다",
 )];
 
 /// 자백하면서 **다르다고 밝힌** 자리. 사본이 아니라 의도된 차이다.
-const DECLARED_DIFFERENT: &[(&str, &str, &str)] = &[(
+/// (갤러리 파일, 갤러리 상수, **본체에 있으면 이 사유가 무너지는 이름**, 사유).
+///
+/// 셋째 칸이 사유의 반증 조건이다 — "같은 치수가 아니다" 는 본체에 대응하는 이름이 생기는
+/// 순간 다시 봐야 한다. 그것만 기계가 묻는다.
+const DECLARED_DIFFERENT: &[(&str, &str, &str, &str)] = &[(
     "crates/tasty-gallery/src/catalog/components/script_manager.rs",
+    "FRAME_MAX_W",
     "FRAME_MAX_W",
     "본체는 settings content 폭을 상속하고 갤러리 미러만 카드로 감싸 bound 한다 — \
      같은 치수가 아니라는 것을 그 자리가 스스로 적는다",
@@ -461,10 +479,10 @@ fn every_gallery_constant_that_claims_a_host_dimension_is_accounted_for() {
         });
         let shared = SHARES_ONE_ITEM
             .iter()
-            .any(|(f, n, _)| *f == rel && *n == name);
+            .any(|(f, n, ..)| *f == rel && *n == name);
         let different = DECLARED_DIFFERENT
             .iter()
-            .any(|(f, n, _)| *f == rel && *n == name);
+            .any(|(f, n, ..)| *f == rel && *n == name);
         if !in_roster && !shared && !different {
             unaccounted.push(format!("  {rel}:{line}  {name}"));
         }
@@ -491,6 +509,176 @@ fn every_gallery_constant_that_claims_a_host_dimension_is_accounted_for() {
         COPIED.len(),
         SHARES_ONE_ITEM.len(),
         DECLARED_DIFFERENT.len()
+    );
+}
+
+/// `const NAME: ... = <초기화식>;` 의 초기화식 원문.
+fn initializer_of(masked: &str, name: &str) -> Option<String> {
+    let (_, line) = find_const_line(masked, name)?;
+    Some(
+        line.split_once('=')?
+            .1
+            .trim()
+            .trim_end_matches(';')
+            .trim()
+            .to_string(),
+    )
+}
+
+/// 갤러리 전체에서 그 상수가 **아직도 본체를 지목하고 있는가**.
+///
+/// 명부의 행이 사는 근거는 그 자리가 스스로 "본체" 라고 적었다는 것이다. 그 낱말을 지우면
+/// 계상 판정에서 사라지고, 명부의 행만 남아 아무 자리도 안 지키게 된다 — 계상 판정이
+/// 실패문에서 "그건 이행이 아니다" 라고 경고하는 바로 그 회피다. **명부에 오른 자리에
+/// 한해서는** 그 회피를 여기서 빨갛게 만든다(명부에 오른 적 없는 자리는 여전히 안 보인다).
+fn still_claims_a_host_counterpart(rel: &str, name: &str) -> bool {
+    sites_that_claim_a_host_counterpart(&tasty_doc_guards::source_text::mask_literals(&read_raw(
+        rel,
+    )))
+    .iter()
+    .any(|(_, n)| n == name)
+}
+
+/// **면제 명부의 사유 중 기계로 확인할 수 있는 것을 확인한다.**
+///
+/// 면제의 근거가 산문이면, 근거가 거짓이 되어도 표는 그대로 남아 **면제만 살아남는다.**
+/// 이 파일이 남에게 요구하는 것이 정확히 그것인데(계상 판정의 실패문 참조) 정작 자기
+/// 명부 셋은 아무도 안 봤다. 실측으로 보였다: 갤러리 `TITLE_BTN_SIZE` 를
+/// `LogicalPx::new(20.0)` 리터럴로 바꿔도 계상 판정은 **1 passed**, 출력이 글자까지
+/// 같았다. 계상 판정이 묻는 것은 "명부에 있는가" 뿐이라 그 자리가 토큰을 읽든 수를 박든
+/// 초록이다.
+///
+/// # 셋을 갈라서 — 검사되는 것과 안 되는 것
+///
+/// - **`SHARES_ONE_ITEM`** — 전제가 사실 진술이다("둘 다 이 토큰을 읽는다"). 여기서 셋을
+///   묻는다: 갤러리 초기화식이 **경로식**인가, 본체가 **코드에서**(주석이 아니라) 같은
+///   토큰을 부르는가, 그 토큰이 실재하고 값을 읽을 수 있는가.
+/// - **`DECLARED_DIFFERENT`** — 전제의 절반만 사실 진술이다. **검사하는 쪽**: 본체에
+///   대응하는 이름이 없다(생기면 "의도적 차이" 를 다시 봐야 한다) · 갤러리 쪽은 여전히
+///   리터럴이다. **검사 못 하는 쪽**: "본체는 settings content 폭을 상속한다" 는 의미
+///   판단이라 여기서 묻지 않는다 — 못 묻는다는 것을 적어 둔다.
+/// - **`COPIED`** — 전제가 [`Side`] 의 모양 자체이고, 그 모양은
+///   [`resolve`] 가 이미 매 회차 강제한다(`Alias` 가 리터럴이 되면 panic, `ThemeSum` 의
+///   파일이 그 필드를 안 부르면 assert, `Lit` 이 경로식이 되면 값 파싱이 실패한다).
+///   그래서 여기서 다시 묻지 않는다. **검사 못 하는 것 둘**: 행의 첫 칸(무엇인가)은
+///   산문이고, "이 본체 자리가 **그 갤러리 자리의 짝**이다" 라는 지목은 이 모듈이 이름
+///   바늘을 버린 이유 그대로 기계로 못 정한다.
+///
+/// 셋을 다 검사 가능하게 만들려고 비틀지 않았다. 산문이 필요한 자리는 산문으로 두고,
+/// **산문이라는 것을 적는다.**
+///
+/// # R544 — 빨개졌을 때 가장 싼 초록화 경로
+///
+/// `SHARES_ONE_ITEM` 이 빨개지는 경로는 "갤러리가 토큰을 그만 읽는다" 이고, 그때 가장 싼
+/// 초록화는 **명부 행을 `COPIED` 로 옮기는 것**이다 — 그러면 값 비교가 켜지므로 보호가
+/// 줄지 않고 늘어난다. 행을 그냥 지우면 계상 판정이 빨개진다. 남은 싼 길 하나는 doc 에서
+/// "본체" 를 지우는 것인데, 명부에 오른 자리에 한해 [`still_claims_a_host_counterpart`]
+/// 가 그것을 빨갛게 만든다. **명부에 오른 적 없는 자리는 여전히 그 길로 빠져나간다** —
+/// 계상 판정의 doc 이 적어 둔 구멍이고, 여기서 좁혀지지 않는다.
+#[test]
+fn the_checkable_roster_premises_still_hold() {
+    assert!(
+        !SHARES_ONE_ITEM.is_empty() && !DECLARED_DIFFERENT.is_empty(),
+        "명부 둘 중 하나가 비었다 — 비면 아래 반복문이 통째로 안 돌고 이 시험은 공허한 \
+         초록이 된다"
+    );
+
+    for (gallery_file, name, token_path, host_file, reason) in SHARES_ONE_ITEM {
+        let short = token_path.rsplit("::").next().expect("토큰 경로");
+
+        // ① 갤러리 쪽이 **값을 되풀이하지 않고 토큰을 가리키는가.** 이것이 "사본이 아니다"
+        //    라는 사유의 본체다. 리터럴로 바뀌면 그 순간 사본이 하나 생긴 것이다.
+        let init = initializer_of(&read(gallery_file), name).unwrap_or_else(|| {
+            panic!("`{gallery_file}` 에서 `{name}` 의 초기화식을 못 읽었다 — 이름이 바뀌었으면 명부를 따라 고쳐라")
+        });
+        assert!(
+            init.contains("::") && init.ends_with(short),
+            "`{gallery_file}:{name}` 이 더 이상 `{token_path}` 를 가리키지 않는다 \
+             (초기화식: `{init}`). `SHARES_ONE_ITEM` 의 사유가 거짓이 됐다 — \
+             \"{reason}\".\n\
+             이제 두 쪽이 **같은 항목 하나를 읽는 것이 아니라** 사본이 하나 생긴 것이다. \
+             이 행을 `COPIED` 로 옮겨 값 비교를 켜라(그게 보호를 늘리는 쪽이다)."
+        );
+
+        // ② 본체가 그 토큰을 **코드에서** 부르는가. 주석까지 세면 호출을 지우고 언급만
+        //    남겨도 초록이라, 마스크한 사본에서 묻는다 — 실제로 그 파일은 바로 윗줄
+        //    주석에서 같은 이름을 언급한다.
+        assert!(
+            read(host_file).contains(token_path),
+            "`{host_file}` 이 코드에서 `{token_path}` 를 안 부른다 — 본체가 그 항목을 \
+             그만 읽었으면 두 쪽이 공유한다는 사유가 거짓이 됐다"
+        );
+
+        // ③ 그 항목이 실재하고 값을 읽을 수 있는가 — 비영 대조. 못 읽으면 위 둘이 \
+        //    이름만 맞춘 것이 된다.
+        let tokens = read("crates/tasty-ui-widgets/src/tokens.rs");
+        let (_, value) = const_site(&tokens, short).unwrap_or_else(|| {
+            panic!("`{short}` 가 위젯 토큰에 없거나 값을 못 읽었다 — 두 쪽이 읽는다는 그 항목이 실재해야 사유가 선다")
+        });
+        assert!(
+            value > 0.0,
+            "`{short}` 의 값을 {value} 로 읽었다 — 파서가 죽었으면 위 판정들이 이름만 \
+             맞춘 채 초록이 된다"
+        );
+
+        assert!(
+            still_claims_a_host_counterpart(gallery_file, name),
+            "`{gallery_file}:{name}` 의 doc 이 더 이상 본체를 지목하지 않는다 — 낱말을 \
+             지우면 계상 판정에서 사라지고 이 명부 행만 남는다. 그건 이행이 아니다"
+        );
+    }
+
+    for (gallery_file, name, falsifier, reason) in DECLARED_DIFFERENT {
+        // ① 갤러리 쪽은 여전히 자기 값을 든다 — 토큰을 읽기 시작했으면 "다른 치수" 가
+        //    아니라 공유가 된 것이고, 그때는 `SHARES_ONE_ITEM` 이 맞는 자리다.
+        let gallery = read(gallery_file);
+        assert!(
+            const_site(&gallery, name).is_some(),
+            "`{gallery_file}:{name}` 이 리터럴 치수가 아니다 — `DECLARED_DIFFERENT` 의 \
+             전제(\"갤러리 미러만 bound 한다\")가 흔들렸다. 사유: \"{reason}\""
+        );
+
+        // ② 본체에 같은 이름의 치수가 생겼는가 — 사유의 **반증 조건**이다. 생기면
+        //    "의도적 차이" 인지 다시 봐야 한다.
+        let mut host_hits = Vec::new();
+        let mut host_files = 0usize;
+        for (rel_path, raw) in super::rust_sources() {
+            if !rel_path.starts_with("src/") {
+                continue;
+            }
+            host_files += 1;
+            if let Some((line, _)) = const_site(&mask_non_code(&raw), falsifier) {
+                host_hits.push(format!("  {}:{line}", rel_path.to_string_lossy()));
+            }
+        }
+        assert!(
+            host_files >= 200,
+            "본체 소스를 {host_files} 개밖에 못 골랐다(하한 200) — 순회가 좁아지면 \
+             \"본체에 없다\" 가 안 봐서 나온 0 이 된다"
+        );
+        assert!(
+            host_hits.is_empty(),
+            "본체에 `{falsifier}` 라는 치수가 생겼다:\n{}\n\n\
+             `DECLARED_DIFFERENT` 의 사유(\"{reason}\")는 본체에 대응하는 이름이 없다는 \
+             것에 기대고 있었다. 같은 치수면 `COPIED` 로 옮기고, 여전히 다른 치수면 \
+             사유를 그 자리에 맞게 다시 써라",
+            host_hits.join("\n")
+        );
+
+        assert!(
+            still_claims_a_host_counterpart(gallery_file, name),
+            "`{gallery_file}:{name}` 의 doc 이 더 이상 본체를 지목하지 않는다 — 명부 행만 \
+             남고 계상 판정은 그 자리를 못 보게 된다"
+        );
+    }
+
+    // 반증 조건 검사의 비영 대조 — 같은 술어가 **있는 것은 찾는다**. 이게 없으면 위
+    // `host_hits.is_empty()` 가 "파서가 죽어서 0" 인 것과 구분되지 않는다.
+    let known = read("src/adapters/ui/info_modal.rs");
+    assert!(
+        const_site(&known, "FOOTER_ROOM").is_some(),
+        "본체에 있는 것이 확실한 `FOOTER_ROOM` 도 못 찾았다 — 술어가 죽었으면 위의 \
+         \"본체에 없다\" 는 전부 안 봐서 나온 0 이다"
     );
 }
 
