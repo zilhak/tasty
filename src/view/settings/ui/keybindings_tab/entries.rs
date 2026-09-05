@@ -66,8 +66,14 @@ pub(super) fn draw_keybinding_entries(
     const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
     const ADD_BUTTON_WIDTH: LogicalPx = LogicalPx(32.0);
     const LABEL_GAP: LogicalPx = LogicalPx(12.0);
-    const ROW_GAP: LogicalPx = LogicalPx(4.0);
-    const HELP_HINT_GAP: LogicalPx = LogicalPx(4.0);
+    // 행 간격과 라벨↔`(?)` 간격은 `Theme.spacing_xs` 에서 읽는다. 종전에는 둘 다
+    // `LogicalPx(4.0)` 평상수였는데, **이웃이 이미 배율을 탄다**: 이 서브탭을 감싸는
+    // `keybindings_tab.rs` 의 세로 리듬이 `vspace(th.spacing_xs)` 이고, `(?)` 슬롯의
+    // 아이콘 폭은 바로 아래에서 `th.icon_glyph_size_sm` 로 잡는다. 평상수만 배율을
+    // 안 타면 1.2 에서 그 리듬과 슬롯이 어긋난다 — 값이 아니라 **어느 이름을 부르는가**
+    // 가 배율 동작을 정한다(`tasty-ui-widgets` 의 `STRUCT_GAP_*` 주석과 같은 규칙).
+    let row_gap = th.spacing_xs;
+    let help_hint_gap = th.spacing_xs;
 
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
@@ -80,7 +86,7 @@ pub(super) fn draw_keybinding_entries(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.label(t(label_key));
-                    ui.add_space(HELP_HINT_GAP.value());
+                    ui.add_space(help_hint_gap.value());
                     if let Some(desc_key) = desc_key {
                         HelpHint::new(t(desc_key))
                             .placement(TooltipPlacement::Bottom)
@@ -94,7 +100,7 @@ pub(super) fn draw_keybinding_entries(
 
             // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(ROW_GAP.value(), ROW_GAP.value());
+                ui.spacing_mut().item_spacing = egui::vec2(row_gap.value(), row_gap.value());
 
                 let bindings_len = keybindings
                     .get_bindings(field_id)
@@ -191,6 +197,6 @@ pub(super) fn draw_keybinding_entries(
                 }
             });
         });
-        ui.add_space(ROW_GAP.value());
+        ui.add_space(row_gap.value());
     }
 }
