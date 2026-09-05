@@ -42,7 +42,6 @@ use tasty_ui_widgets::vspace;
 const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
 const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
 const LABEL_GAP: LogicalPx = LogicalPx(12.0);
-const ROW_GAP: LogicalPx = LogicalPx(4.0);
 
 /// 이 섹션이 편집하는 quick-switch 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -515,7 +514,10 @@ fn slot_row(
             });
         }
     });
-    ui.add_space(ROW_GAP.value());
+    // 행 간격은 `Theme.spacing_xs` 에서 읽는다. 이 행들을 쌓는 섹션이 이미
+    // `vspace(ui, th.spacing_xs)` 로 배율을 타므로, 여기만 평상수면 1.2 에서
+    // 같은 4 가 5 와 4 로 갈린다.
+    ui.add_space(th.spacing_xs.value());
 }
 
 /// 녹화된 키(bare 또는 개별 지정 콤보)를 소비해 슬롯에 반영. 충돌 시 기존
