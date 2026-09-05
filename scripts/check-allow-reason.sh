@@ -142,8 +142,10 @@ if [ "$count" -gt "$CAP" ]; then
     printf '%s' "$report"
     echo
     echo "근거 없는 #[allow(...)] 가 늘었다: ${count} > 상한 ${CAP}."
-    echo "새로 붙인 억제에 근거 주석(reason: / complexity-exempt: / SAFETY)을 같은 줄이나"
-    echo "직전 줄에 달아라. 상한을 올려서 통과시키지 마라 — 래칫은 한 방향으로만 돈다."
+    echo "새로 붙인 억제에 근거 주석(reason: / 이유: / complexity-exempt: / SAFETY)을"
+    echo "같은 줄이거나, 그 억제 바로 위로 이어지는 주석 블록 안에 달아라 — 그 블록은"
+    echo "빈 줄이나 주석 아닌 줄에서 끊긴다(줄 수 제한은 없다)."
+    echo "상한을 올려서 통과시키지 마라 — 래칫은 한 방향으로만 돈다."
     exit 1
 fi
 
