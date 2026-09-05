@@ -129,38 +129,76 @@ const PRUNE_DIRS: &[&str] = &["target", ".git"];
 
 /// 순회가 실제로 트리를 봤음을 보장하는 하한.
 ///
-/// 실측 2026-09-06: `src/` 의 `.rs` 는 589 개다. 하한은 그 절반 아래로 잡는다 —
+/// 실측 2026-09-06: `src/` 의 `.rs` 는 591 개다. 하한은 그 절반 아래로 잡는다 —
 /// 파일이 줄어드는 정상적인 변경에는 걸리지 않으면서, 순회가 통째로 비는 사고
 /// (스캔 루트 오타 · `read_dir` 실패 · 가지치기 폭주)는 잡는다.
 const MIN_SCANNED: usize = 300;
 
+/// 순회가 닿아야 할 최소 깊이(`src` 를 1 로 센 경로 성분 수).
+///
+/// [`MIN_SCANNED`] 는 **총량만** 본다 — 재귀가 중간에 멈춰도 얕은 파일만으로 그 하한을
+/// 넘길 수 있다. 실측 2026-09-06: 깊이 4 이하가 408 개라 그것만으로 하한 300 을 넘는다.
+/// 그 사고를 잡는 것이 이 값이다. 실측 최대 깊이는 6 이고 깊이 5 이상이 183 개다.
+const MIN_DEPTH: usize = 5;
+
+/// 순회 도달을 고정하는 앵커. **[`ALLOWED_PATHS`] 와 분리한다 — 물음이 다르다.**
+///
+/// 저쪽은 "이 파일은 참조해도 되는가"(면제)를 묻고 여기는 "순회가 거기 닿았는가"를
+/// 묻는다. 한때 앵커를 `ALLOWED_PATHS` 에서 파생시켰는데, 그러면 **면제를 줄이는 정당한
+/// 청소가 순회 확인을 조용히 없앤다**: 실측 2026-09-06 기준 그 목록의 `src/main.rs` 와
+/// `src/boot.rs` 는 `tasty_cli::` 참조가 0 건이라, 목록에서 지워도 새 위반이 안 생기고
+/// 앵커만 사라진다.
+///
+/// 이 파일을 고른 것은 이름이 좋아서가 아니라 **구조적으로 불멸**이기 때문이다 — 루트
+/// `Cargo.toml` 에 `[[bin]]` 선언이 없으므로 cargo 의 기본 규칙에서 이것이 바이너리
+/// 진입점이고, 없으면 크레이트가 빌드되지 않는다.
+const WALK_ANCHOR: &str = "src/main.rs";
+
 /// 순회 깊이가 하한을 넘는지 판정한다.
 ///
-/// 본 테스트와 대조 테스트가 **같은 판정기**를 부르게 하려고 함수로 뺐다.
-/// 대조가 `assert!` 를 복제하면 둘이 갈라져도 아무도 모른다.
-fn walk_is_deep_enough(scanned: usize) -> Result<(), String> {
-    if scanned >= MIN_SCANNED {
+/// 하한을 **인자로** 받는다. 본 테스트와 대조가 같은 판정기를 부르게 하려는 것이 하나고,
+/// 대조가 다른 값으로도 불러 **이 판정의 전부가 그 상수임을 보이게** 하려는 것이 둘이다.
+fn walk_is_deep_enough(scanned: usize, floor: usize) -> Result<(), String> {
+    if scanned >= floor {
         return Ok(());
     }
     Err(format!(
-        "`src/` 순회가 {scanned} 개만 모았다(하한 {MIN_SCANNED}) — 이 상태에서는 \
-         아래의 \"위반 0\" 이 위반이 없어서 0 인지 순회가 아무것도 안 봐서 0 인지 \
-         구분되지 않는다. 스캔 루트·가지치기·`read_dir` 실패를 확인하라"
+        "`src/` 순회가 {scanned} 개만 모았다(하한 {floor}) — 이 상태에서 아래의 \
+         \"위반 0\" 은 위반이 없다는 뜻이 아니라 아무것도 안 봤다는 뜻이다.\n\
+         ★ 하한을 내려서 통과시키지 마라 — 순회가 죽은 것을 그대로 승인하는 것이다.\n\
+         스캔 루트·가지치기·`read_dir` 실패를 먼저 확인하라. 파일이 정말 줄어서 이 값이 \
+         높아진 것이라면 내려도 되지만 순서가 있다: (1) `find src -name '*.rs' | wc -l` \
+         로 실제 수를 센다 (2) 그 절반 아래로 다시 잡는다 (3) 잰 날과 함께 주석에 적는다."
     ))
 }
 
-/// `anchors` 중 순회 결과에 나타나지 않은 것.
-///
-/// 하한은 **총량만** 본다 — 한 가지가 통째로 빠져도 나머지가 하한을 채우면 안 걸린다.
-/// 그래서 반드시 순회에 들어와야 하는 파일을 이름으로 함께 고정한다. 여기서 묻는 것은
-/// 그 파일이 **실재하는가**(그건 [`allowed_paths_point_at_paths_that_exist`] 가 본다)가
-/// 아니라 **순회가 거기 닿았는가** 다.
-fn unreached_anchors<'a>(anchors: &[&'a str], scanned: &[String]) -> Vec<&'a str> {
-    anchors
-        .iter()
-        .copied()
-        .filter(|a| !scanned.iter().any(|s| s == a))
-        .collect()
+/// 순회가 충분히 깊이 내려갔는지 판정한다. 하한과 같은 이유로 최소 깊이를 인자로 받는다.
+fn walk_descends_far_enough(rels: &[String], min_depth: usize) -> Result<(), String> {
+    let deepest = rels.iter().map(|r| r.split('/').count()).max().unwrap_or(0);
+    if deepest >= min_depth {
+        return Ok(());
+    }
+    Err(format!(
+        "`src/` 순회가 깊이 {deepest} 까지만 내려갔다(최소 {min_depth}) — 총량 하한은 \
+         얕고 넓은 순회를 통과시키므로 이것이 따로 필요하다. 재귀가 중간에 멈추지 \
+         않았는지 확인하라.\n\
+         ★ 이 값을 내려서 통과시키지 마라. 트리가 정말 얕아졌으면 \
+         `find src -name '*.rs' | awk -F/ '{{print NF}}' | sort -n | tail -1` 로 실제 \
+         최대 깊이를 재고 그보다 한 단계 아래로 잡아라."
+    ))
+}
+
+/// 앵커가 순회 결과에 나타났는지 판정한다.
+fn walk_reached_anchor(rels: &[String], anchor: &str) -> Result<(), String> {
+    if rels.iter().any(|r| r == anchor) {
+        return Ok(());
+    }
+    Err(format!(
+        "순회가 `{anchor}` 에 닿지 않았다 — 그 파일은 이 크레이트의 바이너리 진입점이라 \
+         실재가 보장된다. 순회 결과에 없으면 그 가지를 통째로 못 본 것이다.\n\
+         ★ 이 앵커를 지워서 통과시키지 마라 — 순회 확인이 통째로 사라진다. 진입점이 \
+         정말 옮겨졌으면 `WALK_ANCHOR` 를 새 진입점으로 **바꿔라**(비우지 마라)."
+    ))
 }
 
 fn is_allowed(rel: &str) -> bool {
@@ -212,22 +250,18 @@ fn src_does_not_reference_tasty_cli() {
 
     // 아래 판정들은 전부 "순회가 모은 것" 위에서 돌아간다. 그 순회가 비면 모든
     // 판정이 조용히 통과한다 — 그러니 위반을 세기 전에 인구를 먼저 확인한다.
-    if let Err(why) = walk_is_deep_enough(files.len()) {
-        panic!("{why}");
-    }
+    // 셋이 서로 다른 사고를 잡는다: 총량(빈 순회) · 깊이(중간에 멈춘 재귀) ·
+    // 앵커(특정 가지 누락).
     let scanned: Vec<String> = files.iter().map(|f| rel_of(f, root)).collect();
-    let anchors: Vec<&str> = ALLOWED_PATHS
-        .iter()
-        .copied()
-        .filter(|p| !p.ends_with('/'))
-        .collect();
-    let unreached = unreached_anchors(&anchors, &scanned);
-    assert!(
-        unreached.is_empty(),
-        "순회가 다음 파일에 닿지 않았다 — 실재하는데 순회 결과에 없으면 그 가지를 \
-         통째로 못 본 것이다(하한만으로는 안 잡힌다):\n  {}",
-        unreached.join("\n  ")
-    );
+    for check in [
+        walk_is_deep_enough(files.len(), MIN_SCANNED),
+        walk_descends_far_enough(&scanned, MIN_DEPTH),
+        walk_reached_anchor(&scanned, WALK_ANCHOR),
+    ] {
+        if let Err(why) = check {
+            panic!("{why}");
+        }
+    }
 
     // 두 목록이 겹치면 "베이스라인을 비운다" 가 성립하지 않는다 — 영구 허용
     // 항목은 실제 위반이 남아 있어도 역방향 검사에 걸리지 않기 때문이다.
@@ -386,12 +420,17 @@ fn allowed_paths_point_at_paths_that_exist() {
     );
 }
 
-/// 인구 확인 둘이 **판별력이 있는지** 고정한다.
+/// 인구 확인 셋이 **판별력이 있는지**, 그리고 **무엇 때문에 판별하는지** 고정한다.
 ///
-/// 하한과 앵커 확인을 `assert!` 하나씩으로만 두면 초록일 때 그것들이 무엇을 걸러냈는지
-/// 안 보인다 — 아무거나 통과시키는 판정도 똑같이 초록이다. 그래서 두 판정기를 실제
-/// 트리와 **빈 순회** 양쪽에 걸어 갈래를 둘 다 태운다. 이 파일의 기존 대조
+/// 판정을 `assert!` 하나씩으로만 두면 초록일 때 그것들이 무엇을 걸러냈는지 안 보인다 —
+/// 아무거나 통과시키는 판정도 똑같이 초록이다. 그래서 세 판정기를 실제 트리와 **빈 순회**
+/// 양쪽에 걸어 갈래를 둘 다 태운다. 이 파일의 기존 대조
 /// [`the_cfg_test_precondition_check_discriminates`] 와 같은 형태다.
+///
+/// **그리고 대조군 자신도 잰다.** 대조를 두었다는 것이 그 대조가 작동한다는 뜻은 아니다.
+/// 여기서는 각 판정기를 **무력한 값**으로도 불러, 그 판정의 전부가 상수라는 것을 코드가
+/// 말하게 한다 — 상수를 내리는 것이 곧 판정을 끄는 것이라는 사실을 산문이 아니라 실행으로
+/// 고정하는 것이다. 그래야 실패문에 박은 금지가 근거를 갖는다.
 #[test]
 fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -401,34 +440,48 @@ fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
     let walked_rels: Vec<String> = walked.iter().map(|f| rel_of(f, root)).collect();
 
     // 반대편은 존재하지 않는 루트다. `gather` 는 `read_dir` 실패를 삼키고 빈 목록을
-    // 돌려주는데, 그것이 바로 이 두 판정이 겨냥하는 사고의 형태다.
+    // 돌려주는데, 그것이 바로 이 세 판정이 겨냥하는 사고의 형태다.
     let mut empty = Vec::new();
     gather(&root.join("src-no-such-directory"), &mut empty);
     let empty_rels: Vec<String> = empty.iter().map(|f| rel_of(f, root)).collect();
 
+    // --- 갈래 둘: 실제 트리는 통과하고 빈 순회는 거부된다 ---
     assert!(
-        walk_is_deep_enough(walked.len()).is_ok(),
+        walk_is_deep_enough(walked.len(), MIN_SCANNED).is_ok(),
         "실제 `src/` 순회({} 개)를 하한이 거부한다 — 하한이 트리보다 높다",
         walked.len()
     );
     assert!(
-        walk_is_deep_enough(empty.len()).is_err(),
+        walk_is_deep_enough(empty.len(), MIN_SCANNED).is_err(),
         "빈 순회({} 개)를 하한이 통과시킨다 — 하한에 판별력이 없다",
         empty.len()
     );
-
-    let anchors: Vec<&str> = ALLOWED_PATHS
-        .iter()
-        .copied()
-        .filter(|p| !p.ends_with('/'))
-        .collect();
     assert!(
-        unreached_anchors(&anchors, &walked_rels).is_empty(),
-        "실제 순회가 앵커 전부에 닿았는데 미도달로 센다"
+        walk_descends_far_enough(&walked_rels, MIN_DEPTH).is_ok(),
+        "실제 `src/` 순회를 깊이 판정이 거부한다 — 최소 깊이가 트리보다 깊다"
     );
-    assert_eq!(
-        unreached_anchors(&anchors, &empty_rels).len(),
-        anchors.len(),
-        "빈 순회인데 미도달 앵커가 전부로 안 잡힌다 — 앵커 확인에 판별력이 없다"
+    assert!(
+        walk_descends_far_enough(&empty_rels, MIN_DEPTH).is_err(),
+        "빈 순회를 깊이 판정이 통과시킨다 — 깊이 판정에 판별력이 없다"
+    );
+    assert!(
+        walk_reached_anchor(&walked_rels, WALK_ANCHOR).is_ok(),
+        "실제 순회가 앵커에 닿았는데 못 닿았다고 한다"
+    );
+    assert!(
+        walk_reached_anchor(&empty_rels, WALK_ANCHOR).is_err(),
+        "빈 순회인데 앵커에 닿았다고 한다 — 앵커 확인에 판별력이 없다"
+    );
+
+    // --- 대조군 자신: 판정력이 어디서 오는가 ---
+    // 무력한 값으로 부르면 같은 빈 순회가 통과한다. 즉 이 판정들의 전부가 그 상수이고,
+    // 상수를 내리는 것은 판정을 끄는 것과 같다. 실패문의 금지는 이 사실에 근거한다.
+    assert!(
+        walk_is_deep_enough(empty.len(), 0).is_ok(),
+        "하한 0 으로도 빈 순회가 거부된다 — 판정이 하한 인자를 안 보고 있다"
+    );
+    assert!(
+        walk_descends_far_enough(&empty_rels, 0).is_ok(),
+        "최소 깊이 0 으로도 빈 순회가 거부된다 — 판정이 깊이 인자를 안 보고 있다"
     );
 }
