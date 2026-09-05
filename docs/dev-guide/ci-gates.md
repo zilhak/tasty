@@ -579,10 +579,50 @@ positive control(일부러 미사용 항목을 심어 그 조합의 잡이 잡�
 
 | 검사 | 명령 | 누가 언제 |
 |---|---|---|
-| 전체 스위트 | `cargo test --workspace --locked` | 병합 후 main 에서 conductor 1회. `test.yml` 의 `test-linux-x64` 잡을 수동 실행해도 같다 |
-| Linux x64 gui 컴파일 | (위 전체 스위트에 포함) | 상동 — 이것만 보는 자동 잡은 없다 |
+| 전체 스위트 | `cargo test --workspace --locked` | 병합 후 main 에서 conductor 1회. `test.yml` 의 `test-linux-x64` 잡을 수동 실행해도 같다. **그것이 자동 채널 위로 새로 사는 것은 아래에서 잰 대로 1 건이다** |
+| Linux x64 gui 컴파일 | — | **더 이상 여기 없다.** `check-headless` 의 `cargo test (linux, gui, unit)` 스텝이 main push 마다 본다 |
 | 기본 조합 clippy (Linux) | `cargo clippy --workspace --all-targets --locked` | 각 작업 lane. CI 에서 이 조합을 보는 것은 Windows 잡뿐이다 |
 | dist 산출물 빌드 | `scripts/build-*.sh` | `build-check.yml` 수동 실행 |
+
+### 남은 것은 둘이고, 둘 다 **디스플레이를 요구한다** (2026-09-05 실측)
+
+Linux gui 유닛 스텝이 붙은 뒤 모수를 다시 잡았다 — 술어가 바뀌면 모수도 다시 잡는다.
+세는 방법은 두 조합의 명부를 실제로 뽑아 차분하는 것이다(위 "조합 격자의 빈 칸" 의 절차).
+
+    기본 feature 통합 타깃 96 / headless 통합 타깃 95      차 = gui_tests 하나
+    기본 feature 통합 항목 723 / headless 통합 항목 691
+      → gui_tests(33) 를 빼면 **기본에만 있는 항목 0**, headless 에만 있는 것 1
+
+즉 **통합 테스트에는 조합 사각이 없다.** 남은 칸은 정확히 둘이다:
+
+1. **`multi_window_owner_routing` 1 건** — `check-headless` 가 이름으로 `--skip` 한다
+   (사유는 그 워크플로 주석). 이 하나가 "전체 스위트를 자동으로 올리면 새로 사는 것" 의
+   전부다. **Xvfb 아래에서는 통과한다**(실측 2.77s) — 디스플레이 없이는 기본 feature
+   e2e 하네스가 0.10s 만에 죽는다. 즉 이 칸은 *배선 불가*가 아니라 *디스플레이 비용*이다.
+2. **`tests/gui_tests.rs` 33 건** — 33 개 전부 `#[ignore]` 라 조합을 바꿔도 안 돈다.
+
+두 번째가 왜 "성질" 인지는 실제로 돌려 봐야 갈린다. 돌려 봤고, 막는 것이 셋이었다:
+
+- **부모의 `TASTY_SURFACE_ID` 상속** — 자식이 help 만 찍고 죽는다. 하네스 결함이었고
+  고쳤다(`tests/gui_common/mod.rs`). 이것만 남으면 이 스위트는 *지시받은 대로 돌린
+  사람에게 100% 실패*한다 — 이 저장소의 에이전트는 전부 tasty 안에서 돈다.
+- **`TASTY_HOME` 을 격리하지 않는다** — 그대로 돌리면 개발자의 **살아 있는 세션**을
+  띄워 몬다(실측: `workspace_count: 7, tab_count: 25` 가 그대로 보였다. 격리하면 1/1).
+  e2e 하네스는 격리하고 이쪽은 안 한다.
+- **입력 주입이 창에 안 닿는다** — 위 둘을 치우고 Xvfb 에서 부팅까지 가도 "ws created"
+  대기가 상한까지 간다. **창 관리자(openbox)를 띄워도 같다** — 즉 원인이 "WM 이 없어서"
+  하나로 좁혀지지 않는다.
+
+그래서 이 칸은 **디스플레이만 주면 풀리는 종류가 아니다.** 세 번째가 무엇인지는
+안 쟀다(R16) — 이 축이 묻는 것은 채널이지 그 스위트의 건강이 아니다. 재는 명령:
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY TASTY_HOME=/tmp/gtiso \
+  xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+  cargo test --workspace --locked --test gui_tests -- --ignored --test-threads=1
+```
+
+**`TASTY_HOME` 격리를 빼지 마라** — 빼면 그 명령이 네 실제 세션을 몬다.
 
 ### 자동 채널이 없는 것이 **결함이 아닌** 갈래
 
