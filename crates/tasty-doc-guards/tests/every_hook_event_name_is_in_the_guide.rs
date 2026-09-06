@@ -117,9 +117,11 @@ fn guide_text(root: &Path) -> String {
 
     let mut out = String::new();
     for w in walked {
-        let Ok(text) = std::fs::read_to_string(&w.path) else {
-            continue;
-        };
+        // 읽기 실패를 건너뛰면 순회 하한을 통과한 채로 본문만 비는 길이 남는다 — 하한이
+        // 세는 것은 **찾은** 파일이지 **읽은** 파일이 아니다. 그 상태의 "미스 0" 은 순회가
+        // 죽었을 때와 같은 거짓 초록이라, 여기서 시끄럽게 죽는다.
+        let text = std::fs::read_to_string(&w.path)
+            .unwrap_or_else(|e| panic!("가이드 원본을 읽지 못했다: {} — {e}", w.path.display()));
         out.push_str(&text);
         out.push('\n');
     }
