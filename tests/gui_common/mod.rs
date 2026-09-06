@@ -41,6 +41,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 static SHARED_INSTANCE: OnceLock<Mutex<GuiTestInstance>> = OnceLock::new();
 static CLEANUP_PID: AtomicU32 = AtomicU32::new(0);
+/// 공유 인스턴스의 격리 홈. **`Drop` 으로는 못 지운다** — `SHARED_INSTANCE` 는 `static`
+/// 이고 Rust 는 static 을 프로세스 종료 시 drop 하지 않는다. 그래서 정리를 `Drop` 에만
+/// 두면 이 하네스에서는 **한 번도 안 돈다**. 실측: 그 상태로 14 회 돌려 `/tmp` 에
+/// 1.1 GB × 14 = 15 GB 가 남았다(번들 plugin 사본이 홈마다 들어간다). PID kill 과 같은
+/// atexit 콜백에 함께 태운다.
+static CLEANUP_HOME: OnceLock<PathBuf> = OnceLock::new();
 /// 첫 spawn 이 실패했을 때 뒤 테스트가 **실제로 다시 프로세스를 띄우는 것**을 막는다.
 /// 기전은 `spawn_diag` 에 있고 상태만 여기 둔다 — 이유는 그쪽 doc 주석 참조.
 /// 형제 하네스 `tests/common` 은 같은 래치를 자기 안에 손으로 갖고 있다(그 파일은
@@ -59,6 +65,10 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
         SPAWN_LATCH.succeeded();
         // Register atexit to kill tasty when the test process exits
         CLEANUP_PID.store(inst.process_id(), Ordering::Relaxed);
+        // reason: `set` 은 이미 값이 있을 때만 `Err` 인데, 이 자리는 `get_or_init`
+        // 클로저 안이라 프로세스당 한 번만 돈다. 두 번째 호출이 있다면 그것은 이 설계가
+        // 깨진 것이고, 그때도 먼저 넣은 경로가 유효하므로 덮어쓰지 않는 것이 옳다.
+        let _ = CLEANUP_HOME.set(inst.isolated_home.clone());
         extern "C" fn on_exit() {
             let pid = CLEANUP_PID.load(Ordering::Relaxed);
             if pid != 0 {
@@ -76,6 +86,12 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
                 unsafe {
                     libc::kill(pid as i32, libc::SIGTERM);
                 }
+            }
+            if let Some(home) = CLEANUP_HOME.get() {
+                // reason: 정리 실패가 시험 판정을 바꾸지 않는다 — 이미 끝난 회차의 임시
+                // 디렉터리이고, 남아도 다음 회차는 자기 `unique` 로 새 경로를 쓴다.
+                // atexit 안이라 패닉시킬 수도 없다.
+                let _ = std::fs::remove_dir_all(home);
             }
         }
         // SAFETY: atexit는 process-lifetime callback을 등록. on_exit는 'static fn 포인터.
