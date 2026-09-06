@@ -91,7 +91,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 자동 +1 절차와 릴리스 절차 전체: [`docs/dev-guide/release.md`](docs/dev-guide/release.md).
 
-> **패치 버전 bump 는 발행된 값을 정하는 일이다.** 실행 중 tasty 에 번들 plugin 변경을 **재시작 없이** 반영하는 `upgrade-builtins` 재sync 자체는 버전과 무관하게 동작한다 — 같은 버전이어도 **내용이 다르면 파일을 옮긴다**(2026-09-07 부터: 판정이 mtime 이 아니라 내용이다). bump 가 정하는 것은 반영 여부가 아니라 **그 산출물이 어느 버전으로 발행됐는가**이고, 그래서 같은 버전에 두 산출물이 생기는 상태는 여전히 금지다. 반영 절차 전체는 [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md) §9.1.
+> **패치 버전 bump 는 발행된 값을 정하는 일이다.** 실행 중 tasty 에 번들 plugin 변경을 **재시작 없이** 반영하는 `upgrade-builtins` 재sync 는 **버전이 갈래를 고르고 그 갈래 안에서 내용이 판정한다**(2026-09-07 부터: 판정이 mtime 이 아니라 내용이다). 갈래는 셋이다 — 같은 버전이면 **내용이 다른 파일만 옮기고**, 번들이 높으면 전량 덮어쓰고, **설치본이 번들보다 높으면 내용을 아예 안 보고 건너뛴다**(그 경우만 `--force` 로 내린다). 즉 "버전을 올려야 반영된다" 는 거짓이지만 "버전과 무관하다" 도 과장이다. bump 가 정하는 것은 반영 여부가 아니라 **그 산출물이 어느 버전으로 발행됐는가**이고, 그래서 같은 버전에 두 산출물이 생기는 상태는 여전히 금지다. 반영 절차 전체는 [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md) §9.1.
 
 ## 빌드
 

@@ -15,7 +15,9 @@
 //! 위 2 는 **첫 설치**만 설명한다. 첫 복사 이후 플러그인 코드/매니페스트를 고쳤을
 //! 때 **호스트 재시작 없이** 실행 중 tasty 에 반영하는 절차(재빌드 → `upgrade-builtins`
 //! 재sync → `disable`/`enable` respawn)는 `docs/dev-guide/plugin-development.md` §9.1
-//! 참조. 재sync 는 매니페스트 `version` 을 올렸을 때만 일어난다(same-version skip).
+//! 참조. 재sync 는 **버전이 갈래를 고르고 그 갈래 안에서 내용이 판정한다**: 같은 버전이면
+//! 내용이 다른 파일만 옮기고, 번들이 높으면 전량 덮어쓰고, **설치본이 더 높으면 내용을 안
+//! 보고 건너뛴다**(그 경우만 `upgrade-builtins --force` 로 내린다).
 
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -146,7 +148,8 @@ pub fn is_builtin_plugin(id: &str) -> bool {
 pub(crate) enum BuiltinUpgradeDecision {
     /// 변경 없음 (installed >= bundle, 또는 bundle 매니페스트 corrupt).
     Skip,
-    /// 같은 semver — mtime 기반 idempotent sync 만 수행 (dev workspace hotfix).
+    /// 같은 semver — **내용 기반** idempotent sync (dev workspace hotfix). mtime 은 안 본다:
+    /// 시각이 보존된 채 배포된 파일(`cp -p`·아카이브 해제)도 내용이 다르면 반영해야 한다.
     ResyncSameVersion,
     /// bundle > installed — 디렉토리 전체를 mtime 무시하고 덮어씀.
     UpgradeVersion {
