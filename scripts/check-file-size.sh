@@ -83,12 +83,18 @@ trap 'rm -rf "$STRIPPED"' EXIT
 TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json src crates)" || {
     echo "tokei 실행 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
-# tokei JSON → "code<TAB>path" (code SLOC > THRESHOLD 인 Rust 파일). 파일 report 는
+# tokei JSON → "code<TAB>path" (Rust 파일 **전부**, code 내림차순). 파일 report 는
 # 최상위 "Rust".reports 에 평면으로 담긴다(children 은 임베드 언어 집계라 무시).
-OVER_RAW="$(printf '%s' "$TOKEI_JSON" | THRESHOLD="$THRESHOLD" "$PY" -c '
-import json, os, sys
+#
+# **임계 비교를 파이썬에서 셸로 옮겼다 — 판정은 그대로다.** 위반은 여전히
+# "code > THRESHOLD 이면서 skip 도 allowlist 도 아닌 것" 이다. 옮긴 이유는 계측이다:
+# 파이썬이 임계 초과만 내보내면 **임계까지 얼마나 남았는지를 아무도 모른다**. 초록일 때
+# 값을 못 찍는 게이트는 "여유 0" 과 "여유 900" 이 같은 얼굴이라, 어느 쪽인지 모른 채
+# 커밋하게 된다. 내림차순이므로 skip/allowlist 를 걷어낸 첫 임계 이하 파일이 곧 최댓값이고,
+# 그래서 allowlist 조회는 목록 앞부분에서 멈춘다(전수 조회가 아니다).
+ROWS_RAW="$(printf '%s' "$TOKEI_JSON" | "$PY" -c '
+import json, sys
 sys.stdout.reconfigure(newline="\n")  # Windows text 모드의 \n→\r\n 변환 방지
-th = int(os.environ["THRESHOLD"])
 try:
     rust = json.load(sys.stdin).get("Rust", {})
 except Exception as e:
@@ -98,23 +104,32 @@ reports = rust.get("reports", [])
 if not reports:
     print("tokei 가 Rust 파일을 하나도 보고하지 않았다 — 측정 실패로 읽는다", file=sys.stderr)
     sys.exit(3)
-for r in reports:
-    code = r["stats"]["code"]
-    if code > th:
-        print(str(code) + "\t" + r["name"].replace("\\", "/"))
+rows = sorted(
+    ((r["stats"]["code"], r["name"].replace("\\", "/")) for r in reports),
+    key=lambda cn: -cn[0],
+)
+for code, name in rows:
+    print(str(code) + "\t" + name)
 ')" || {
     echo "SLOC 측정 실패 — 게이트를 통과로 읽지 않는다"; exit 2; }
 
-mapfile -t over <<< "$OVER_RAW"
+mapfile -t rows <<< "$ROWS_RAW"
 
 violations=()
-for line in "${over[@]}"; do
+max_code=""   # 게이트가 실제로 판정하는 파일 중 임계 이하 최댓값(내림차순이라 첫 건)
+max_path=""
+for line in "${rows[@]}"; do
     line="${line%$'\r'}"  # 방어적 CR 제거(플랫폼 무관)
     [ -z "$line" ] && continue
+    code="${line%%$'\t'*}"
     path="${line#*$'\t'}"
     skip "$path" && continue
     grep -qxF "$path" "$ALLOWLIST" 2>/dev/null && continue
-    violations+=("$line")
+    if [ "$code" -gt "$THRESHOLD" ]; then
+        violations+=("$line")
+    elif [ -z "$max_code" ]; then
+        max_code="$code"; max_path="$path"
+    fi
 done
 
 if [ "${#violations[@]}" -gt 0 ]; then
@@ -125,4 +140,10 @@ if [ "${#violations[@]}" -gt 0 ]; then
     exit 1
 fi
 
-echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip)."
+# 초록일 때도 값을 찍는다 — 여유가 0 인지 900 인지가 통과/실패에 안 나타난다.
+# 판정에는 안 들어간다: 상한이 아니라 보고다.
+if [ -n "$max_code" ]; then
+    echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 최대 ${max_code} (${max_path}) · 임계까지 $((THRESHOLD - max_code))"
+else
+    echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 여유 미상 — 판정 대상 파일이 없다."
+fi
