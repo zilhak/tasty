@@ -175,7 +175,8 @@ impl GuiTestInstance {
         // TASTY_DEBUG_SUPPRESS_NATIVE_MENU: egui 프레임이 세우는 컨텍스트 메뉴(explorer 등)를
         // 블로킹 native 팝업 없이 `debug_captured_menu` 로 포획하게 해, headless 에서
         // `debug.pending_menu` 로 관찰 가능케 한다(debug 격리, release 미노출).
-        let mut process = Command::new(env!("CARGO_BIN_EXE_tasty"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tasty"));
+        command
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("TASTY_DEBUG_SUPPRESS_NATIVE_MENU", "1")
@@ -212,9 +213,14 @@ impl GuiTestInstance {
             .env_remove("TASTY_SURFACE_ID")
             .env_remove("TASTY_AGENT_ID")
             .env_remove("TASTY_SESSION_TOKEN")
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("failed to spawn tasty GUI");
+            .stderr(std::process::Stdio::piped());
+
+        // 이 스위트가 번들 plugin 을 안 부르면 빈 번들 루트를 준다 — 형제 하네스 둘이
+        // 이미 하는 것이고, 이 하네스만 안 하고 있었다. 안 하면 부팅마다 격리 홈에
+        // 번들 전량(debug 45 파일 ≈ 1.1 GB)을 복사한다. 명부·판정은 `spawn_diag` 한 곳이다.
+        spawn_diag::apply_bundle_opt_in(&mut command);
+
+        let mut process = command.spawn().expect("failed to spawn tasty GUI");
 
         // stderr 를 링에 담고 마지막 줄의 시각을 남긴다 — `tests/common`·`tests/webhook_common`
         // 과 같은 형태다. 이 하네스만 **셋 다 없었다**: 꼬리도, 죽은 자식 판정도, 느림/멈춤
