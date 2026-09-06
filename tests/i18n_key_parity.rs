@@ -67,7 +67,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-const LANGS: &[&str] = &["en", "ko", "ja"];
+/// 검사 대상 언어 — **로더의 정본을 그대로 쓴다**(사본을 만들지 않는다).
+///
+/// 이 목록이 손으로 적혀 있으면, 로더가 임베드하는 언어와 이 가드가 검사하는 언어가
+/// 말없이 갈릴 수 있다. 갈려도 **아무것도 빨개지지 않는다** — 목록에서 빠진 언어는
+/// 실패를 만드는 것이 아니라 **검사를 안 받기** 때문이다(조용한 통과).
+///
+/// 그래서 참조로 바꾼다. 다만 참조만으로는 정본 **자신**이 디스크와 어긋나는 것을 못
+/// 잡는다 — 그쪽은 [`builtin_codes_match_the_language_files_on_disk`] 가 본다.
+const LANGS: &[&str] = &tasty_i18n::BUILTIN_CODES;
 
 /// ko/ja 값이 en 과 같아도 되는 키 — (키, 적용 언어, 이유). 이유가 없는 항목은 넣지
 /// 않는다. 형태로 자동 예외되는 값(기호만·약어·경로·명령·수식키 이름)은 등록이 필요 없다.
@@ -227,6 +235,65 @@ fn rel_of(file: &Path) -> String {
         .unwrap_or(file)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+/// 정본(`BUILTIN_CODES`)이 **디스크와** 맞는지 본다 — 밖의 고정점과 견주는 단정 하나.
+///
+/// 이 파일의 나머지 검사는 전부 카탈로그를 **서로** 견준다. 그래서 목록 자신이 현실과
+/// 어긋나면 아무도 모른다: 목록에서 빠진 언어는 실패를 만드는 것이 아니라 검사를 안
+/// 받는다. 넷이 함께 틀리면 넷을 아무리 견줘도 안 걸린다.
+///
+/// 그래서 한 번은 밖을 본다. 루트 `lang/*.toml` 의 파일 이름이 그 고정점이다 —
+/// `include_str!` 이 실제로 집어 오는 것이 그 파일들이기 때문이다.
+///
+/// 순서까지 본다. 이 파일의 여러 검사가 `LANGS[1..]` 을 "영어가 아닌 것" 으로 쓰므로,
+/// 0 번이 영어가 아니게 되면 **엉뚱한 기준과 비교하면서 초록**이 된다.
+#[test]
+fn builtin_codes_match_the_language_files_on_disk() {
+    let dir = root().join("lang");
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    let on_disk: BTreeSet<String> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("toml"))
+        .filter_map(|p| {
+            p.file_stem()
+                .and_then(|n| n.to_str())
+                .map(std::string::ToString::to_string)
+        })
+        .collect();
+
+    // 비영 대조 — 디렉토리를 못 읽었거나 확장자 필터가 틀리면 아래 비교는 "정본이
+    // 비었다" 와 구별되지 않는다.
+    assert!(
+        !on_disk.is_empty(),
+        "{} 에서 `.toml` 을 하나도 못 찾았다 — 경로나 필터가 틀렸다. 그러면 아래 비교는 \
+         아무것도 안 잰다",
+        dir.display()
+    );
+
+    let declared: BTreeSet<String> = tasty_i18n::BUILTIN_CODES
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+
+    assert_eq!(
+        declared,
+        on_disk,
+        "`tasty_i18n::BUILTIN_CODES` 와 `lang/*.toml` 이 어긋난다.\n           정본에만: {:?}\n  디스크에만: {:?}\n\n         디스크에만 있는 것은 **검사를 통째로 안 받는 카탈로그**다(빨개지지 않는다). \
+         정본에만 있는 것은 로더가 못 여는 언어다. 어느 쪽이든 한쪽을 맞춰라",
+        declared.difference(&on_disk).collect::<Vec<_>>(),
+        on_disk.difference(&declared).collect::<Vec<_>>()
+    );
+
+    assert_eq!(
+        tasty_i18n::BUILTIN_CODES.first(),
+        Some(&"en"),
+        "`BUILTIN_CODES` 의 0 번이 영어가 아니다. 이 파일의 여러 검사가 `LANGS[1..]` 을 \
+         \"영어가 아닌 것\" 으로 쓰므로, 순서가 바뀌면 **엉뚱한 기준과 비교하면서 초록**이 \
+         된다"
+    );
 }
 
 /// 카탈로그 디렉토리 — 루트 `lang/` + `crates/tasty-plugin-*/lang/`(존재하는 것만).
