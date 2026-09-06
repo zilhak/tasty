@@ -204,10 +204,12 @@ pub(crate) fn decide_builtin_upgrade(
     }
 }
 
-/// dest 의 모든 파일을 src 기준으로 강제 교체 (mtime 무시).
-/// src 에 없는 dest 의 파일/디렉토리는 *제거* — 옛 버전의 잔존 파일 정리.
-fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dest)?;
+/// dest 에 있는데 src 에 없는 항목을 제거한다 — **이 층만** 본다(재귀는 호출자가 한다).
+///
+/// **복사 정책과 독립이다.** 이 단계의 값은 src 목록과 dest 목록의 *차집합*이라 복사를
+/// 얼마나 하든 같다. 한 함수에 묶여 있으면 복사 정책을 바꿀 때 청소가 함께 사라지는데,
+/// 그 소실은 조용하다 — 옛 잔존 파일은 어떤 단정도 안 건드리고 사용자 홈에서만 쌓인다.
+fn prune_dest_not_in_src(src: &Path, dest: &Path) -> std::io::Result<()> {
     let src_names: HashSet<OsString> = std::fs::read_dir(src)?
         .filter_map(|e| e.ok())
         .map(|e| e.file_name())
@@ -222,6 +224,15 @@ fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+/// dest 의 모든 파일을 src 기준으로 강제 교체 (mtime 무시).
+/// src 에 없는 dest 의 파일/디렉토리는 *제거* — 옛 버전의 잔존 파일 정리
+/// ([`prune_dest_not_in_src`], 층마다 돈다).
+fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    prune_dest_not_in_src(src, dest)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let dest_path = dest.join(entry.file_name());
@@ -1463,6 +1474,34 @@ mod tests {
         assert_eq!(
             decide_builtin_upgrade(None, Some(&bundle), false),
             BuiltinUpgradeDecision::ResyncSameVersion
+        );
+    }
+
+    #[test]
+    fn prune_removes_only_what_src_lacks_and_copies_nothing() {
+        // 청소 **단독** 단정. 이 시험이 없으면 "복사 정책을 바꿨더니 청소가 조용히
+        // 사라졌다" 를 아무것도 못 잡는다 — 잔존 파일은 다른 단정을 안 건드린다.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(dest.join("gone-dir")).unwrap();
+        std::fs::write(src.join("keep"), "src-side").unwrap();
+        std::fs::write(dest.join("keep"), "dest-side").unwrap();
+        std::fs::write(dest.join("stale"), "remove me").unwrap();
+        std::fs::write(dest.join("gone-dir/inner"), "remove me too").unwrap();
+
+        prune_dest_not_in_src(&src, &dest).unwrap();
+
+        assert!(!dest.join("stale").exists(), "src 에 없는 파일이 남았다");
+        assert!(
+            !dest.join("gone-dir").exists(),
+            "src 에 없는 디렉터리가 남았다"
+        );
+        // 청소는 **복사를 하지 않는다** — 이름이 겹치는 파일의 내용은 그대로여야 한다.
+        assert_eq!(
+            std::fs::read_to_string(dest.join("keep")).unwrap(),
+            "dest-side"
         );
     }
 
