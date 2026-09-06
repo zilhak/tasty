@@ -442,3 +442,116 @@ fn daemon_kind_roster_matches_instance_test_roster() {
          \x20 분류 안 된 스위트: {unclassified:?}\n\x20 명부에만 있는 이름: {stale:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 격리 홈 축 — 하네스가 무엇을 띄우는가와 **어디에 띄우는가**는 다른 물음이다
+// ---------------------------------------------------------------------------
+
+/// 인스턴스를 띄우는 호출 형태. `concat!` 로 쪼갠 이유는 [`BIN_SELECTION_MARKER`] 와
+/// 같다 — 이 가드 파일 자신이 자기 패턴에 걸리면 "가드 파일 제외" 라는 면제가 하나 더
+/// 필요해진다.
+const SPAWN_FORMS: &[&str] = &[
+    concat!("Command::new(spawn_diag::", "instance_bin())"),
+    concat!("Command::new(env!(\"CARGO_BIN_EXE_", "tasty\"))"),
+];
+
+/// 그 spawn 이 전용 tasty 루트를 세우는가.
+const ISOLATED_HOME_MARKER: &str = concat!(".env(\"TASTY_", "HOME\"");
+
+/// 스캔이 살아 있는지 보는 하한. 지금 실제 spawn 자리는 5 다
+/// (`gui_common` 1 · `common` 1 · `webhook_common` 2 · `cli_stdout_broken_pipe` 1).
+/// 경로 계산이 틀려 대상이 0 개가 되면 **가드가 조용히 초록**이 되는데, 그것을 잡는
+/// 유일한 장치다. 자리를 지웠으면 이 수도 함께 내려라.
+const ISOLATED_HOME_MIN_SPAWNS: usize = 5;
+
+/// 한 소스의 (spawn 자리 수, 전용 홈 지정 수).
+fn spawn_and_home_counts(src: &str) -> (usize, usize) {
+    let spawns = SPAWN_FORMS.iter().map(|f| src.matches(f).count()).sum();
+    (spawns, src.matches(ISOLATED_HOME_MARKER).count())
+}
+
+/// 하네스가 띄우는 tasty 는 **전용 tasty 루트**를 받아야 한다.
+///
+/// 안 받으면 자식은 이 머신에서 tasty 를 실제로 쓰는 사람의 홈을 쓴다 — 번들 plugin 을
+/// 거기 설치하고, 거기 저장된 레이아웃을 **복원한다.** 뒤쪽이 조용한 쪽이다: 복원된
+/// workspace 에는 surface 가 여럿인데 화면에 자리(rect)를 가진 것은 활성 탭 하나뿐이라,
+/// 그 자리를 안 겨눈 마우스 주입은 **아무 일도 안 하고 성공처럼 보인다.** 그러면 시험은
+/// 빈 출력을 "보고가 없다" 로 읽고, 음성 단정(`!contains(..)`)은 **그 빈 출력 때문에
+/// 오히려 통과한다.** 실측(같은 커밋·같은 Xvfb, 이 변수 하나만 바꿈): 실제 홈에서는
+/// 주입 6 회가 전부 무효였고 격리 홈에서는 6 회가 전부 유효했다.
+///
+/// 이 축이 오래 안 걸린 이유는 소비 스위트(`tests/gui_tests.rs`)가 전수 `#[ignore]` 라
+/// **자동 채널에서 한 번도 안 돌기 때문**이다. 사람이 손으로 돌릴 때만 드러난다.
+///
+/// **이 가드가 답하지 않는 것**: 판정 단위가 **파일**이지 호출 자리가 아니다. 한 파일에
+/// spawn 이 둘이고 전용 홈 지정도 둘인데 그중 한 짝이 어긋나 있으면 통과한다. 자리 단위로
+/// 묶으려면 구문 분석이 필요하고, 그 비용은 지금 이 축이 잡으려는 결함(하네스가 통째로
+/// 안 세우는 것)에 비해 크다. 파일 안에서 짝이 어긋나는 형태가 실제로 나오면 그때 좁혀라.
+#[test]
+fn every_harness_spawn_gets_its_own_tasty_home() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tests_dir = root.join("tests");
+    let mut total_spawns = 0usize;
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (rel, src) in all_test_sources(&tests_dir) {
+        let (spawns, homes) = spawn_and_home_counts(&src);
+        if spawns == 0 {
+            continue;
+        }
+        total_spawns += spawns;
+        if homes < spawns {
+            offenders.push(format!("{rel} — spawn {spawns} · 전용 홈 지정 {homes}"));
+        }
+    }
+
+    assert!(
+        total_spawns >= ISOLATED_HOME_MIN_SPAWNS,
+        "spawn 자리를 {total_spawns} 개밖에 못 찾았다(하한 {ISOLATED_HOME_MIN_SPAWNS}). \
+         스캔이 죽었거나 호출 형태가 바뀐 것이다 — 0 건은 초록이 아니라 미측정이다."
+    );
+    assert!(
+        offenders.is_empty(),
+        "하네스가 전용 tasty 루트 없이 인스턴스를 띄운다 — 그 회차는 사용자의 진짜 홈에 \
+         설치하고 거기 저장된 레이아웃을 복원한다:\n\x20 {offenders:?}"
+    );
+}
+
+/// 아래 대조들은 픽스처를 **마커 상수에서 만든다.** 손으로 적으면 이 가드 파일의 원문에
+/// 그 형태가 그대로 존재하게 되어 스캔이 자기 픽스처를 하네스 spawn 으로 센다(실측:
+/// 처음에 그렇게 짜서 이 파일이 `spawn 4 · 홈 0` 인 위반자로 나왔다). 그러면 두 가지가
+/// 동시에 망가진다 — 면제를 하나 더 만들어야 하고, [`ISOLATED_HOME_MIN_SPAWNS`] 하한이
+/// **픽스처만으로도 채워져** 마커가 실제 코드와 어긋나도 초록이 된다.
+#[test]
+fn detects_a_spawn_that_never_sets_a_tasty_home() {
+    let src = format!("let c = {};\nc.env(\"HOME\", &h);\n", SPAWN_FORMS[0]);
+    let (spawns, homes) = spawn_and_home_counts(&src);
+    assert_eq!((spawns, homes), (1, 0), "spawn 은 세고 홈은 못 찾아야 한다");
+}
+
+#[test]
+fn detects_a_second_spawn_that_the_first_home_does_not_cover() {
+    let src = format!(
+        "{}{}, &h);\n{};\n",
+        SPAWN_FORMS[0], ISOLATED_HOME_MARKER, SPAWN_FORMS[1]
+    );
+    let (spawns, homes) = spawn_and_home_counts(&src);
+    assert!(
+        homes < spawns,
+        "두 번째 spawn 이 홈 없이 늘면 걸려야 한다: spawn {spawns} · 홈 {homes}"
+    );
+}
+
+#[test]
+fn does_not_flag_a_spawn_that_sets_its_own_home() {
+    let src = format!("{}{}, &iso);\n", SPAWN_FORMS[0], ISOLATED_HOME_MARKER);
+    let (spawns, homes) = spawn_and_home_counts(&src);
+    assert!(homes >= spawns, "짝이 맞으면 위반이 아니다");
+}
+
+#[test]
+fn does_not_flag_prose_that_merely_names_the_isolated_home() {
+    let src = "//! 하네스는 전용 tasty 루트를 세운다. 그 자리는 spawn 이 아니다.\n";
+    let (spawns, _) = spawn_and_home_counts(src);
+    assert_eq!(spawns, 0, "산문은 spawn 자리가 아니다");
+}
