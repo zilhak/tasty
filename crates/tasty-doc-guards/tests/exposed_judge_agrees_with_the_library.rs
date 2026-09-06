@@ -36,6 +36,14 @@ use tasty_doc_guards::workflow_triggers::{
 
 /// 워크플로 행 수의 하한. 실측 11 (2026-09-05). 출력이 비면 대조가 공허해진다.
 ///
+/// ★ **다만 그 "빈" 은 두 갈래이고 여기가 지키는 것은 한쪽뿐이다**(실측 2026-09-07,
+/// [`the_row_floor_sees_a_collapsed_collection`] 의 세 칸):
+/// · 코퍼스가 빔(워크플로 0 개) — **여기까지 안 온다.** 판정기가 "워크플로가 0 개다 —
+///   빈 모수를 0 으로 돌려주지 않는다" 로 rc 2 를 내고, 위 시험은 그 앞의 `rc == 0`
+///   단정에서 죽는다.
+/// · 파일은 있는데 행이 덜 나옴(출력 배선이 죽음) — 그때 rc 는 **0** 이라 이 하한 말고는
+///   아무도 안 본다. **이 하한의 실제 몫이 그쪽이다.**
+///
 /// **판별식** — 이 수의 독립 출처는 **워크플로 파일 개수**다. 노출 바이너리는 파일 하나에
 /// 행 하나를 내므로 둘이 같아야 한다:
 ///
@@ -198,4 +206,133 @@ fn the_freshness_probe_answers() {
         rc, 0,
         "방금 지은 판정기가 신선하지 않다고 답했다 — 지문 배선이 깨졌다: {stderr}"
     );
+}
+
+/// `MIN_ROWS` 의 **양성 대조** — 모수가 하한 아래로 떨어지는 코퍼스를 만들고, 이 파일의
+/// 두 단정(행 하한 · "양쪽 답이 다 나온다")이 실제로 그것을 말하는지 묻는다.
+///
+/// **꺼내는 리팩터가 필요 없었다.** 판정기는 뿌리를 이미 인자로 받는다(프로세스 경계라
+/// 함수 인자보다 먼저 열려 있었다). 그래서 이 자리는 대조만 붙이면 된다.
+///
+/// 두 단정은 **독립이고 서로를 안 가려 준다.** 그것을 네 칸으로 보인다 — 한 칸만 세우면
+/// 둘 중 어느 쪽이 잡았는지 못 가른다:
+///
+/// ```text
+///                     행 하한(8)   짝(필터 있음·없음 각 1 이상)
+///   레포 뿌리            통과        통과      ← 실물, 위 본 시험이 도는 상태
+///   ① 필터유 1 + 무 1    실패        통과      ← 하한만 잡는다
+///   ② 필터유 9           통과        실패      ← 짝만 잡는다
+///   ③ 빈 디렉터리        (도달 안 함)          ← 판정기 자신이 rc 2 로 먼저 막는다
+/// ```
+///
+/// ★ ③ 이 상수 doc 을 한 칸 좁힌다. "출력이 비면 대조가 공허하다" 는 맞지만, **코퍼스가
+/// 빈 경로는 여기까지 안 온다** — 판정기가 "워크플로가 0 개다 — 빈 모수를 0 으로 돌려주지
+/// 않는다" 로 rc 2 를 낸다. 그러니 이 하한이 실제로 지키는 것은 **부분 붕괴**다: 파일은
+/// 있는데 행이 덜 나오는 상태(출력 배선이 죽는 형태)이고, 그때 rc 는 0 이라 하한 말고는
+/// 아무도 안 본다.
+#[test]
+fn the_row_floor_sees_a_collapsed_collection() {
+    let root =
+        std::env::temp_dir().join(format!("tasty-rowfloor-{}-{}", std::process::id(), line!()));
+    let dir = root.join(".github/workflows");
+
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let reset = || {
+        // 지우고 다시 만든다. 없어서 나는 실패는 정보가 아니다.
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&dir).expect("임시 디렉토리를 못 만들었다");
+    };
+
+    // 워크플로 하나를 놓는다. `filtered` 가 경로 필터 유무를 가른다.
+    let plant = |name: &str, filtered: bool| {
+        let on = if filtered {
+            "  push:\n    paths:\n      - 'src/**'\n"
+        } else {
+            "  push:\n    branches: [main]\n"
+        };
+        std::fs::write(
+            dir.join(name),
+            format!(
+                "name: {name}\non:\n{on}jobs:\n  a:\n    runs-on: ubuntu-latest\n    \
+                 steps:\n      - run: cargo test --workspace\n"
+            ),
+        )
+        .expect("쓰기 실패");
+    };
+
+    // 위 본 시험과 **같은 독법**으로 센다 — 여기서 두 번째 독법을 만들면 이 대조가
+    // 무엇을 재는지가 본 시험과 갈린다.
+    let measure = || -> (i32, usize, usize, usize) {
+        let (rc, stdout, _) = run(&[&root.to_string_lossy()]);
+        let (mut rows, mut filtered, mut unfiltered) = (0usize, 0usize, 0usize);
+        for line in stdout.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() != 6 {
+                continue;
+            }
+            rows += 1;
+            if f[2] == "yes" {
+                filtered += 1;
+            } else if f[1] == "yes" {
+                unfiltered += 1;
+            }
+        }
+        (rc, rows, filtered, unfiltered)
+    };
+
+    // ③ 빈 코퍼스 — 하한이 아니라 **판정기 자신**이 막는다. 이 칸이 없으면 상수 doc 이
+    //    말하는 "출력이 비면" 을 이 하한의 몫으로 잘못 읽게 된다.
+    reset();
+    let (rc, rows, _, _) = measure();
+    assert_eq!(
+        rc, 2,
+        "빈 모수를 0 으로 돌려주면 대조가 공허해진다 — 판정기가 거절해야 한다"
+    );
+    assert_eq!(
+        rows, 0,
+        "거절했는데 행이 나오면 rc 와 출력이 다른 말을 하는 것이다"
+    );
+
+    // ① 하한만 잡는 칸 — 짝은 만족하는데 수가 모자란다.
+    reset();
+    plant("unfiltered.yml", false);
+    plant("filtered.yml", true);
+    let (rc, rows, filtered, unfiltered) = measure();
+    assert_eq!(
+        rc, 0,
+        "필터 유무가 하나씩 있는 코퍼스는 판정기가 답해야 한다"
+    );
+    assert_eq!(
+        rows, 2,
+        "놓은 만큼 행이 나와야 한다 — 아니면 이 대조가 판정기를 안 본다"
+    );
+    assert!(
+        filtered > 0 && unfiltered > 0,
+        "짝 단정은 이 칸에서 **통과**해야 한다 — 그래야 아래 하한 미달이 짝 덕이 아님이 갈린다"
+    );
+    assert!(
+        rows < MIN_ROWS,
+        "이 칸이 하한 위면 '하한이 무너진 상태' 를 한 번도 안 만든 것이다"
+    );
+
+    // ② 짝만 잡는 칸 — 수는 하한을 넘는데 한쪽 답만 나온다. 하한 하나로는 못 보는 형태다.
+    reset();
+    for i in 1..=9 {
+        plant(&format!("f{i}.yml"), true);
+    }
+    let (rc, rows, filtered, unfiltered) = measure();
+    assert_eq!(rc, 0, "판정기가 답해야 한다");
+    assert!(
+        rows >= MIN_ROWS,
+        "이 칸은 하한을 **넘어야** 한다 — 넘지 않으면 아래 짝 미달이 하한에 가린다"
+    );
+    assert!(
+        filtered > 0 && unfiltered == 0,
+        "필터 있는 것만 놓았는데 필터 없는 것이 세어지면 이 대조가 종류를 안 가르는 것이다 \
+         (필터 {filtered} · 필터없음 {unfiltered})"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
 }
