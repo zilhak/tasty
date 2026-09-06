@@ -79,6 +79,9 @@ fn indent(line: &str) -> usize {
     line.len() - line.trim_start().len()
 }
 
+/// **답하는 물음**: 이 워크플로의 `push:` 가 매 push 도는가 — 경로 필터가 붙었는가,
+/// 태그 전용인가.
+///
 /// 워크플로 본문에서 `push:` 트리거의 모양을 읽는다.
 ///
 /// `None` 은 "필터가 없다" 가 아니라 **"이 판독기가 못 읽는 모양이다"** 다.
@@ -261,6 +264,16 @@ pub struct FilterFreeCoverage {
 /// 호출을 특정 타깃/종류로 좁히는 플래그.
 const NARROWING: &[&str] = &["--test", "--lib", "--bins", "--bin", "--doc", "--example"];
 
+/// 한 `cargo test` 호출이 타깃/종류로 좁혀졌는가.
+///
+/// 판정을 함수로 꺼낸 이유는 **부를 수 있게** 하기 위해서다. 목록이 순회 안에 인라인으로
+/// 박혀 있으면 그 목록을 검사하려면 워크플로 디렉토리를 통째로 픽스처로 지어야 하고,
+/// 그러면 아무도 안 짓는다 — 실측(2026-09-06): 이 목록에서 `--test` 를 지워도 이 크레이트
+/// 전체가 초록이었는데, 그 플래그가 **유일한 좁힘 근거**인 자동 잡이 그때 둘 있었다.
+fn narrows(inv: &str) -> bool {
+    inv.split_whitespace().any(|w| NARROWING.contains(&w))
+}
+
 /// 주석·스텝 이름을 지우고 한 줄로 편다.
 ///
 /// 스텝 이름을 지우는 이유는 이 레포의 스텝 이름이 명령을 그대로 쓰기 때문이다
@@ -290,7 +303,19 @@ fn flatten(yaml: &str) -> String {
 /// 이 함정에 걸렸다(2026-09-05): `test.yml` 은 필터가 없고 `cargo test --workspace` 를
 /// 들고 있지만 그 잡은 수동 전용이라, 잡을 안 가른 첫 판에서 판정이 **잘못된 이유로**
 /// 초록이었다.
-fn automatic_job_bodies(yaml: &str) -> Vec<String> {
+/// **답하는 물음**: 이 워크플로의 잡 중 **자동 회차에 도는 것**은 어느 것인가.
+/// (수동 전용 조건이 붙은 잡을 뺀 나머지. 트리거·경로필터는 [`push_trigger`] 가 본다.)
+///
+/// **밖에서 부를 수 있게 `pub` 이다.** 이 판정을 셸이나 일회용 스크립트로 흉내 내면
+/// 갈린다 — 실측(2026-09-05): 이 레포에서 하루에 세 레인이 각자 미러를 만들었고 셋 다
+/// 원본과 다른 답을 냈다. 갈리는 방향은 대체로 **덜 잡는 쪽**이라 조용하다.
+/// 부르는 길은 `workflow-channels` 판정기 바이너리다.
+///
+/// **잡 헤더 판정은 2 칸 들여쓰기 관례에 매달려 있다.** 관례를 깨는 워크플로가 오면
+/// 잡 헤더가 하나도 안 잡혀 파일 전체가 한 덩어리가 되고, 그러면 그 안의 수동 전용
+/// 조건 하나가 **파일 전체의 호출을 통째로** 지운다 — 또 줄이는 방향이다.
+/// 실측(2026-09-05): 레포의 워크플로 11 개가 전부 2 칸이라 지금은 안 걸린다.
+pub fn automatic_job_bodies(yaml: &str) -> Vec<String> {
     let mut bodies = Vec::new();
     let mut current = String::new();
     let mut in_jobs = false;
@@ -313,6 +338,20 @@ fn automatic_job_bodies(yaml: &str) -> Vec<String> {
     if !current.is_empty() {
         bodies.push(current);
     }
+    // ★ **이 술어는 줄이는 방향으로 틀린다** — 그 방향의 오차는 언제나 더 초록이라
+    // 안 보인다. 문자열이 들어 있기만 하면 버리므로, `if:` 가 **분리(∨)** 인 잡도
+    // 수동 전용으로 센다. 실측(2026-09-05): `release.yml` 의 빌드 잡 4 개가 그 형태다
+    // (`always() && (needs... == 'success' || event_name == 'workflow_dispatch')`) —
+    // 태그 push 에서도 도는데 여기서 버려진다.
+    //
+    // **오늘 그 누락의 효과는 0 이고, 그 0 을 쟀다**: `release.yml` 에는 `cargo test`
+    // 호출이 하나도 없어서 커버리지에 기여할 것이 애초에 없고, 그 파일은 태그 전용이라
+    // [`push_trigger`] 단계에서 이미 빠진다. 그래서 지금 고치지 않는다 — 다만 그 파일이
+    // 언젠가 `cargo test` 를 들이면 **조용히** 안 보이게 된다. 그때는 술어를 "순수 조건
+    // (`if: github.event_name == 'workflow_dispatch'`)일 때만 버린다" 로 좁혀라.
+    //
+    // 같은 술어를 `ci_channel_claims_match_workflows` 도 쓴다. 답을 둘로 만들지 않으려고
+    // 형태를 맞춰 둔 것이고, 위 한계도 그대로 공유한다.
     bodies
         .into_iter()
         .filter(|b| !b.contains("github.event_name == 'workflow_dispatch'"))
@@ -336,6 +375,8 @@ fn cargo_test_invocations(flat: &str) -> Vec<&str> {
     out
 }
 
+/// **답하는 물음**: 경로 필터 없이 매 push 도는 잡이 어느 테스트 타깃을 덮는가.
+///
 /// 워크플로 디렉토리 전체에서 [`FilterFreeCoverage`] 를 읽는다.
 ///
 /// `on:` 을 못 읽는 워크플로가 있으면 `Err` 로 그 이름들을 낸다 — **판정 불가는 통과가
@@ -382,7 +423,7 @@ pub fn filter_free_coverage(
                         out.named.insert(w[1].to_string());
                     }
                 }
-                if words.iter().any(|w| NARROWING.contains(w)) {
+                if narrows(inv) {
                     continue;
                 }
                 for w in words.windows(2) {
@@ -454,13 +495,141 @@ mod coverage_tests {
         );
     }
 
-    /// 좁힘 없이 패키지를 부르는 잡이 있다 — 그것이 문서 가드들의 채널이다.
+    /// ★ **분할 규칙 자체를 시험한다 — 잡이 둘일 때만 시험된다.**
+    ///
+    /// 이 단정이 없던 동안 잡 헤더 규칙(2 칸 들여쓰기)을 3 칸으로 바꾸는 변이가
+    /// **아무 테스트도 못 죽였다**(실측 2026-09-05). 이유는 단순하다 — 그때 있던
+    /// 픽스처가 전부 **잡 하나짜리**였다. 잡이 하나면 헤더를 못 찾아 파일 전체가 한
+    /// 덩어리가 돼도 개수가 1 로 같다. 규칙이 시험되려면 잡이 둘이어야 한다.
+    ///
+    /// 그리고 둘일 때 진짜 위험이 드러난다: 헤더를 못 찾으면 **수동 전용 잡 하나가
+    /// 같은 파일의 자동 잡을 함께 지운다.** 아래가 그 형태다.
     #[test]
-    fn the_doc_guard_package_has_a_filter_free_channel() {
+    fn two_jobs_split_and_a_manual_one_does_not_silence_the_automatic_one() {
+        let yaml = "on:\n  push:\n    branches: [main]\njobs:\n  auto:\n    steps:\n      \
+                    - run: cargo test -p alpha\n  manual:\n    if: github.event_name == \
+                    'workflow_dispatch'\n    steps:\n      - run: cargo test -p beta\n";
+        let bodies = automatic_job_bodies(yaml);
+        assert_eq!(
+            bodies.len(),
+            1,
+            "잡 둘 중 자동인 하나만 남아야 한다 — 0 이면 헤더를 못 찾아 파일이 한 덩어리가 \
+             되고 수동 전용 조건이 자동 잡까지 지운 것이다: {bodies:?}"
+        );
+        assert!(
+            bodies[0].contains("cargo test -p alpha"),
+            "자동 잡의 명령이 사라졌다: {bodies:?}"
+        );
+        assert!(
+            !bodies.iter().any(|b| b.contains("cargo test -p beta")),
+            "수동 전용 잡의 명령이 자동 채널로 새어 들어왔다: {bodies:?}"
+        );
+    }
+
+    /// 레포에서도 같은 것을 묻는다 — 픽스처만으로는 관례가 실제로 그러한지 모른다.
+    ///
+    /// 잡이 여럿인 워크플로가 실재하므로 **잡 본문 총수 > 워크플로 파일 수** 여야 한다.
+    /// 헤더 규칙이 깨지면 파일마다 최대 하나가 되어 이 부등식이 무너진다.
+    #[test]
+    fn the_repo_has_more_automatic_job_bodies_than_workflow_files() {
+        let dir = crate::repo_root().join(".github/workflows");
+        let mut files = 0usize;
+        let mut bodies = 0usize;
+        for e in std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            .flatten()
+        {
+            let p = e.path();
+            if !p.extension().is_some_and(|x| x == "yml" || x == "yaml") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            files += 1;
+            bodies += automatic_job_bodies(&text).len();
+        }
+        assert!(
+            files >= 8,
+            "워크플로를 {files} 개밖에 못 읽었다 — 모수가 깨졌다"
+        );
+        assert!(
+            bodies > files,
+            "잡 본문 {bodies} 개 ≤ 워크플로 {files} 개 — 잡이 여럿인 워크플로가 실재하는데 \
+             파일마다 하나 이하로 나왔다. 헤더 규칙이 깨져 파일이 한 덩어리가 된 것이다"
+        );
+    }
+
+    /// 좁힘 없이 패키지를 부르는 잡이 있다 — 그것이 문서 가드들의 채널이다.
+    ///
+    /// ★ **양쪽을 함께 묻는다.** "덮인다" 만 재면 [`FilterFreeCoverage::covers`] 가 항상
+    /// 참을 내도 통과한다 — 그리고 그 고장은 이 판독을 쓰는 모든 가드를 한꺼번에
+    /// 무력화한다(덮였다고 답하면 사각이 0 이 되어 전부 초록이다). 한 방향만 재면
+    /// 무정보다.
+    #[test]
+    fn the_coverage_answers_both_yes_and_no() {
         let c = coverage();
         assert!(
             c.covers("no_checkbox_in_docs", "tasty-doc-guards"),
             "`tasty-doc-guards` 가 필터 없는 채널에 안 덮인다: {c:?}"
+        );
+        assert!(
+            !c.covers("a_target_no_workflow_names", "tasty-plugin-markdown"),
+            "아무 워크플로도 이름으로 부르지 않고 그 패키지를 좁힘 없이 돌리지도 않는데 \
+             덮였다고 답했다. 판독이 한쪽으로만 답하는 상태이거나, 필터 없는 잡이 새로 \
+             `--workspace` 를 돌기 시작한 것이다(그러면 이 판독을 쓰는 사각 탐지가 전부 \
+             공허해지므로 그 자리에서 다시 판단해야 한다): {c:?}"
+        );
+    }
+
+    /// [`NARROWING`] 의 성분마다, 그 성분 **하나만** 든 호출이 좁힘으로 읽히는가.
+    ///
+    /// 조각을 상수에서 만들지 않고 **손으로 적는다.** 목록을 순회해 조각을 지으면 오타 난
+    /// 항목(`--tesst`)도 자기 자신과는 맞아 통과한다 — 그러면 이 테스트가 목록의 사본이 될
+    /// 뿐 목록을 검사하지 않는다.
+    ///
+    /// 조각마다 성분을 **하나만** 담는다. 둘을 담으면 하나를 지워도 다른 하나가 받쳐 주어
+    /// 그 지움이 조용해진다.
+    ///
+    /// 실측 2026-09-06: 이 테스트가 없을 때 `NARROWING` 에서 `--test` 를 지워도
+    /// `cargo test -p tasty-doc-guards` 는 초록이었다(rc=0). 레포 판정이 안 죽는 이유는
+    /// 좁힘 판정이 **느슨해지는 방향**이라 위반 목록이 비기 때문이다 — 하한은 순회가
+    /// 죽는 방향만 본다. 그때 `--test` 가 유일한 좁힘 근거인 자동 잡은 둘이었다.
+    #[test]
+    fn every_narrowing_flag_is_actually_read_as_narrowing() {
+        let cases: [(&str, &str); 6] = [
+            ("--test", "cargo test --workspace --locked --test e2e_tests"),
+            ("--lib", "cargo test --workspace --locked --lib"),
+            ("--bins", "cargo test --workspace --locked --bins"),
+            ("--bin", "cargo test --workspace --locked --bin tasty"),
+            ("--doc", "cargo test --workspace --locked --doc"),
+            (
+                "--example",
+                "cargo test --workspace --locked --example demo",
+            ),
+        ];
+        for (flag, inv) in cases {
+            assert!(
+                narrows(inv),
+                "`{flag}` 하나로 좁힌 호출을 좁힘으로 안 읽는다. 그 성분이 목록에서 \
+                 빠졌거나 철자가 틀렸다 — 그러면 그 플래그로만 좁힌 자동 잡이 **전체 \
+                 스위트**로 읽히고, 이 판독을 쓰는 사각 탐지가 그 잡을 통째로 잘못 센다"
+            );
+        }
+    }
+
+    /// 음성 대조 — 좁힘이 없는 호출을 좁힘으로 읽으면 위 판정이 공허해진다.
+    #[test]
+    fn an_unnarrowed_invocation_is_not_read_as_narrowed() {
+        assert!(
+            !narrows("cargo test --workspace --locked --no-fail-fast"),
+            "좁힘 플래그가 없는데 좁혀졌다고 읽었다 — 이 술어가 늘 참을 내면 필터 없는 \
+             채널이 하나도 안 세어지고, 모든 타깃이 '안 덮였다' 로 뒤집힌다"
+        );
+        assert!(
+            !narrows("cargo test --workspace --locked -p tasty-doc-guards"),
+            "`-p` 는 패키지 선택이지 타깃 좁힘이 아니다 — 좁힘으로 읽으면 그 패키지를 \
+             통째로 도는 잡이 커버리지에서 빠진다"
         );
     }
 }

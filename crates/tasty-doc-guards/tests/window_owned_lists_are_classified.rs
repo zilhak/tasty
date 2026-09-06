@@ -128,8 +128,8 @@ const ROSTER: &[(&str, Class, &str)] = &[
     // 그 대조가 없던 동안 이 명부는 `.list` 27 중 13 만 덮고 있었다.
     (
         "image.list",
-        PerEngineNotAggregated,
-        "`engine.workspaces` 를 순회한다 — 창 소유인데 합산에 없다. 다만 `tasty-plugin-image` 가 `image` prefix 를 선언하고 namespace forward 가 `dispatch_list_global` 앞이라 이 host 핸들러에 요청이 닿는지부터가 별개 축이다(plugin 이 host 메서드를 그림자로 덮는 형태)",
+        Aggregated,
+        "`engine.workspaces` 를 순회한다. 항목의 키가 `surface_id` 라 창을 건너 유일하다(`surface.list` 와 같은 근거). 외부 호출은 plugin namespace forward 가 먼저 집지만 plugin 이 trampoline 으로 host 에 되돌리고 그 되돌림이 합산을 지난다",
     ),
     (
         "completion_strategy.list",
@@ -394,7 +394,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .filter(|(_, c, _)| *c == PerEngineNotAggregated)
         .count();
     assert_eq!(
-        open, 4,
+        open, 3,
         "창별인데 합산 안 되는 항목의 수가 바뀌었다. 고쳤으면 갈래를 옮기고 이 수를 \
          함께 내려라 — 남겨 두면 다음 사람이 이미 닫힌 것을 다시 센다."
     );

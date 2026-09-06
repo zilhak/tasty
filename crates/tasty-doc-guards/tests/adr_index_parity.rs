@@ -12,6 +12,19 @@
 //! 네 가지를 본다 — **번호 유일성**, 파일↔인덱스 **양방향** 대응, 그리고 문서 안의
 //! `# ADR-NNNN` 제목이 자기 파일명과 같은지. 마지막 것은 번호를 옮길 때 파일명만 바꾸고
 //! 본문 제목을 안 고치는 형태를 잡는다.
+//!
+//! ## 인덱스 행이 거울처럼 싣는 값
+//!
+//! 인덱스 행은 ADR 헤더의 `Status`·`Date` 를 **복사**한다. 값이 두 곳에 있고 함께
+//! 움직여야 하는데, 움직이는 것은 대개 한 곳뿐이다 — 재sync 나 부분 개정에서 본문만
+//! 올라가고 행은 첫 커밋 값으로 남는다. 실측(2026-09-06, 모수 179): `Date` 는 179/179
+//! 가 같았고 `Status` 는 **한 건이 어긋나 있었다**(0042 — 본문 `Superseded by ADR-0162`,
+//! 행 `Accepted`). 그 한 건은 이 가드를 켜는 커밋에서 함께 고쳤다.
+//!
+//! **`Title` 과 `Tags` 는 일부러 안 본다.** 같은 짝인데 열마다 관계가 다르다 — 본문
+//! 제목은 강조 마커(`**…**`)를 쓰고 행은 안 쓰며, `Tags` 는 **행이 본문의 상위집합인
+//! 경우가 12 건**이라 등호도 접두도 아니다. 정규화 없이 넣으면 오탐이 21 건이고,
+//! 오탐이 그만큼이면 가드를 아무도 안 믿는다. 두 열의 정규화 규칙이 서면 그때 넣는다.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -22,6 +35,17 @@ const INDEX: &str = "docs/adr/index.md";
 /// ADR 수의 하한 — **연기 검사**다. 목록이 비면 아래 집합 대조는 빈 집합끼리라
 /// 그냥 통과한다. 값의 근거: 2026-09-05 실측 153 건.
 const MIN_ADRS: usize = 120;
+
+/// 본문이 `Superseded by NNNN` 인 ADR 수의 하한 — **연기 검사**다.
+///
+/// [`tolerated_too_much`] 의 "행이 대체 ADR 번호를 잃었다" 갈래는 본문에 그 형태가
+/// 있어야만 밟힌다. 하나도 없으면 그 갈래는 한 번도 안 돌고, 그때의 초록은 "위반이
+/// 없다" 가 아니라 **"볼 것이 없었다"** 다 — 두 초록은 값이 같고 뜻이 다르다.
+///
+/// 값의 근거: 2026-09-06 실측 5 건(0015 · 0018 · 0040 · 0042 · 0066).
+/// 나머지 갈래인 "행의 상태 칸이 비었다" 는 실물이 0 이라 하한을 둘 수 없다 —
+/// 그쪽은 변이 팔로만 확인된다.
+const MIN_SUPERSEDED: usize = 3;
 
 fn repo_root() -> PathBuf {
     // 이 크레이트는 `crates/tasty-doc-guards` 다 — 레포 루트는 두 단계 위.
@@ -61,8 +85,20 @@ fn adr_files() -> BTreeMap<String, String> {
     out
 }
 
-/// 인덱스 표의 `| NNNN | [제목](파일명) | …` 행에서 (번호, 파일명) 을 뽑는다.
-fn index_rows() -> Vec<(String, String)> {
+/// 인덱스 표의 한 행에서 뽑아낸 값들.
+struct IndexRow {
+    num: String,
+    file: String,
+    status: String,
+    date: String,
+}
+
+/// 인덱스 표의 `| NNNN | [제목](파일명) | Status | Date | Tags |` 행을 읽는다.
+///
+/// 독법은 여기 하나다. 열이 더 필요해지면 이 함수를 넓히고, **두 번째 독법을 만들지
+/// 않는다** — 같은 표를 두 방법으로 읽으면 답이 갈리고, 갈린 답 중 어느 것이 옳은지는
+/// 표를 다시 읽어야 알게 된다.
+fn index_rows() -> Vec<IndexRow> {
     let mut out = Vec::new();
     for line in read(INDEX).lines() {
         let Some(rest) = line.strip_prefix("| ") else {
@@ -76,9 +112,115 @@ fn index_rows() -> Vec<(String, String)> {
         let Some(at) = rest.find("](") else { continue };
         let after = &rest[at + 2..];
         let Some(end) = after.find(')') else { continue };
-        out.push((num, after[..end].to_string()));
+        let file = after[..end].to_string();
+        // 링크를 닫는 `)` 뒤부터가 Status | Date | Tags 다. 제목 안에 `|` 가 들어갈 수
+        // 있으므로 앞에서부터 세지 않고 **링크 뒤**에서 센다.
+        let tail: Vec<&str> = after[end + 1..].split('|').collect();
+        let cell = |i: usize| {
+            tail.get(i)
+                .map(|c| c.trim().to_string())
+                .unwrap_or_default()
+        };
+        out.push(IndexRow {
+            num,
+            file,
+            status: cell(1),
+            date: cell(2),
+        });
     }
     out
+}
+
+/// 인덱스 행이 본문 헤더의 값을 그대로 싣는지 볼 때 쓰는 정규화.
+///
+/// 본문은 같은 값을 인라인 링크로 적을 수 있다(`Superseded by [0032](0032-….md)`).
+/// 행은 링크 없이 적는다. 그 차이는 표기이지 값이 아니므로 링크를 벗기고, `ADR-`
+/// 접두와 잉여 공백도 지운다.
+fn normalize_header_value(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(']') else {
+            out.push_str(&rest[open..]);
+            return squeeze(&out);
+        };
+        out.push_str(&after[..close]);
+        let tail = &after[close + 1..];
+        rest = match tail.strip_prefix('(') {
+            // 링크 대상은 통째로 버린다.
+            Some(target) => match target.find(')') {
+                Some(e) => &target[e + 1..],
+                None => "",
+            },
+            None => tail,
+        };
+    }
+    out.push_str(rest);
+    squeeze(&out)
+}
+
+/// 접두 일치가 **관용해서는 안 되는** 두 형태.
+///
+/// 행은 본문 `Status` 의 앞부분만 실을 수 있다 — 본문은 ` — ` 뒤에 사유를 붙이고 행은
+/// 그것을 버린다. 그런데 그 절단 지점이 관례로 정해져 있지 않다(실측 2026-09-06):
+/// 0015 는 `(부분)` 을 빼고 0040 은 넣으며, 0027 은 괄호절 전체를 뺀다. 그래서 동일성
+/// 비교로 바꾸면 그 셋이 오탐이 된다 — 정규형이 실제로 없는 것을 있다고 가정하는 셈이다.
+///
+/// 관용은 두되, **잃으면 안 되는 것**만 뺀다.
+///
+/// - 행이 비면 `starts_with("")` 이 항상 참이라 그 행은 무슨 값이든 통과한다. 빈 칸은
+///   읽는 사람에게 "상태 없음" 이라 통과시킬 값이 아니다.
+/// - 본문이 다른 ADR 을 가리키는데(`Superseded by NNNN`) 행이 그 번호를 잃으면, 인덱스만
+///   읽는 사람은 **어디로 갔는지 모른 채** 죽은 결정을 본다. 상태 이름만 남기는 것이
+///   정확히 그 형태이고 접두 일치는 그것을 통과시킨다. 이 가드가 막으려는 사고가 바로
+///   그것이므로(0042 는 그 반대 방향이었다 — 행이 `Accepted` 로 남았다) 여기서 뺀다.
+///
+/// 이 두 형태의 실물은 오늘 0 이다(빈 칸 0 · 맨 `Superseded` 0). 모수는 실행마다
+/// 바뀌므로 여기 안 적는다 — 스캔 테스트가 `-- --nocapture` 로 그 줄을 싣는다. 0 인 것과
+/// 막는 것이 있는 것은 다르다 — 이 함수가 그 차이다.
+fn tolerated_too_much(want: &str, got: &str) -> Option<&'static str> {
+    if got.trim().is_empty() {
+        return Some("행의 상태 칸이 비었다");
+    }
+    // 상태 **이름 전체**를 실어야 한다. 접두만 요구하면 본문 `Accepted` 에 행 `A` 가
+    // 통과한다 — "칸을 채워라" 를 최소로 이행한 결과가 정확히 그것이고, 그러면 이
+    // 검사가 지키려던 것이 남지 않는다. 뒤쪽(사유·괄호절)은 여전히 잘라도 된다.
+    if first_word(want) != first_word(got) {
+        return Some("행이 상태 이름의 일부만 싣고 있다");
+    }
+    let num = superseder(want)?;
+    (!got.contains(&num)).then_some("행이 대체한 ADR 번호를 잃었다")
+}
+
+/// 공백 앞까지. 값이 비면 빈 문자열.
+fn first_word(v: &str) -> &str {
+    v.split_whitespace().next().unwrap_or("")
+}
+
+/// `Superseded by 0162 …` 에서 `0162`. [`normalize_header_value`] 를 거친 값이라
+/// 링크와 `ADR-` 는 이미 벗겨져 있다.
+fn superseder(want: &str) -> Option<String> {
+    let rest = want.strip_prefix("Superseded by ")?;
+    let num: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    (num.len() == 4).then_some(num)
+}
+
+fn squeeze(s: &str) -> String {
+    s.replace("ADR-", "")
+        .replace('`', "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 본문 헤더의 `- **<이름>**: <값>` 한 줄을 읽는다.
+fn header_field(body: &str, name: &str) -> Option<String> {
+    let want = format!("- **{name}**:");
+    body.lines()
+        .find_map(|l| l.trim_start().strip_prefix(&want))
+        .map(|v| v.trim().to_string())
 }
 
 /// 한 번호는 한 ADR 만 가리킨다.
@@ -93,7 +235,7 @@ fn an_adr_number_names_exactly_one_document() {
     );
 
     let mut seen: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (num, file) in &rows {
+    for IndexRow { num, file, .. } in &rows {
         seen.entry(num).or_default().push(file);
     }
     let dupes: Vec<String> = seen
@@ -120,7 +262,7 @@ fn every_adr_file_has_a_row_and_every_row_has_a_file() {
         files.len()
     );
     let rows = index_rows();
-    let row_files: BTreeSet<&str> = rows.iter().map(|(_, f)| f.as_str()).collect();
+    let row_files: BTreeSet<&str> = rows.iter().map(|r| r.file.as_str()).collect();
     let disk: BTreeSet<&str> = files.values().map(|f| f.as_str()).collect();
 
     let missing_row: Vec<&&str> = disk.difference(&row_files).collect();
@@ -157,5 +299,179 @@ fn the_heading_number_matches_the_file_name() {
         wrong.is_empty(),
         "파일명 번호와 본문 제목 번호가 다르다:\n  {}",
         wrong.join("\n  ")
+    );
+}
+
+/// 인덱스 행의 `Status`·`Date` 가 그 ADR 본문 헤더의 값과 같은지 본다.
+///
+/// 두 곳에 있고 함께 움직여야 하는 값인데, 재sync·부분 개정에서는 본문만 올라가고
+/// 행이 첫 커밋 값으로 남는다. 그때 인덱스만 읽는 사람은 죽은 결정을 살아 있는 것으로
+/// 읽는다 — 실제로 0042 가 그 상태였다(본문 Superseded, 행 Accepted).
+///
+/// 표기 차이는 값 차이가 아니다: 본문은 `Superseded by [0032](0032-….md)` 처럼 인라인
+/// 링크를 쓸 수 있고 행은 안 쓴다. 그래서 링크를 벗기고 `ADR-` 접두를 지운 뒤 비교한다.
+/// 그러고도 본문이 사유를 덧붙이는 경우가 있어(`Superseded by 0052 (부분) — …`)
+/// **행이 본문의 접두인지**를 묻는다 — 행은 본문의 짧은 형태다.
+/// 판정 술어를 **직접** 부르는 대조. 위의 스캔 테스트만으로는 이 갈래들이 지켜지지
+/// 않는다 — 실측 2026-09-06: `tolerated_too_much` 를 항상 `None` 으로 바꿔도 스캔은
+/// 초록이었다(rc=0 · F=0). 코퍼스(`docs/adr/`)를 흔들면 갈래가 밟히지만 그 변이는
+/// 원복하면 사라져 회귀에 안 남는다. 그래서 갈래마다 여기서 한 번 더 묻는다.
+///
+/// 같은 크레이트의 `temp_path` 는 이 형태를 12 개 갖고 있고, 그래서 그쪽은 판정을
+/// 느슨하게 바꾸면 유닛이 빨개진다. 이 파일에는 0 이었다 — 그 차이가 구멍이었다.
+#[test]
+fn the_status_verdicts_each_have_their_own_reason() {
+    // 빈 칸 — 최소 이행이 "아무거나 채운다" 가 되면 안 된다.
+    assert_eq!(
+        tolerated_too_much("Accepted", ""),
+        Some("행의 상태 칸이 비었다")
+    );
+    assert_eq!(
+        tolerated_too_much("Accepted", "   "),
+        Some("행의 상태 칸이 비었다")
+    );
+
+    // 한 글자 — 접두이긴 하지만 상태 **이름**이 아니다. 빈 칸 처방의 최소 이행이
+    // 정확히 이 형태였다.
+    assert_eq!(
+        tolerated_too_much("Accepted", "A"),
+        Some("행이 상태 이름의 일부만 싣고 있다")
+    );
+    assert_eq!(
+        tolerated_too_much("Superseded by 0162", "Sup"),
+        Some("행이 상태 이름의 일부만 싣고 있다")
+    );
+
+    // 이름은 맞는데 대체한 번호를 잃었다 — 인덱스만 읽는 사람이 어디로 갔는지 모른다.
+    assert_eq!(
+        tolerated_too_much("Superseded by 0162", "Superseded"),
+        Some("행이 대체한 ADR 번호를 잃었다")
+    );
+
+    // 뒤쪽을 자르는 것은 허용이다. 이름이 같고 번호가 남아 있으면 통과한다.
+    assert_eq!(tolerated_too_much("Accepted", "Accepted"), None);
+    assert_eq!(tolerated_too_much("Accepted (부분 적용)", "Accepted"), None);
+    assert_eq!(
+        tolerated_too_much("Superseded by 0162 — 사유", "Superseded by 0162"),
+        None
+    );
+}
+
+/// `superseder` 는 네 자리 번호만 인정한다. 이 갈래가 죽으면 위의 "번호를 잃었다" 가
+/// 영영 안 밟히고, `MIN_SUPERSEDED` 하한이 그것을 대신 잡아 주지 않는다 — 하한은
+/// **본문에 그 형태가 몇 개 있나**를 볼 뿐 판정이 사는지는 안 본다.
+#[test]
+fn a_superseder_is_a_four_digit_number_or_nothing() {
+    assert_eq!(superseder("Superseded by 0162"), Some("0162".to_string()));
+    assert_eq!(
+        superseder("Superseded by 0162 — 사유가 뒤에 붙는다"),
+        Some("0162".to_string())
+    );
+    assert_eq!(superseder("Accepted"), None);
+    assert_eq!(superseder("Superseded by 162"), None); // 세 자리는 아니다
+    assert_eq!(superseder("superseded by 0162"), None); // 대소문자가 다르면 아니다
+}
+
+/// 첫 낱말은 공백 앞까지다. 값이 비면 빈 문자열이고, 그때는 빈 칸 갈래가 먼저 잡는다.
+#[test]
+fn the_first_word_stops_at_whitespace() {
+    assert_eq!(first_word("Accepted"), "Accepted");
+    assert_eq!(first_word("Superseded by 0162"), "Superseded");
+    assert_eq!(first_word("  Accepted  (부분)"), "Accepted");
+    assert_eq!(first_word(""), "");
+    assert_eq!(first_word("   "), "");
+}
+
+#[test]
+fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
+    let rows = index_rows();
+    let files = adr_files();
+    let mut checked_status = 0usize;
+    let mut checked_date = 0usize;
+    let mut superseded_seen = 0usize;
+    let mut prefix_ok = 0usize;
+    let mut drift: Vec<String> = Vec::new();
+
+    for row in &rows {
+        let Some(name) = files.get(&row.num) else {
+            // 파일 없는 행은 `every_adr_file_has_a_row_and_every_row_has_a_file` 이 잡는다.
+            continue;
+        };
+        let body = read(&format!("{ADR_DIR}/{name}"));
+
+        if let Some(v) = header_field(&body, "Status") {
+            checked_status += 1;
+            let want = normalize_header_value(&v);
+            let got = normalize_header_value(&row.status);
+            if superseder(&want).is_some() {
+                superseded_seen += 1;
+            }
+            let verdict = if want.starts_with(&got) {
+                prefix_ok += 1;
+                tolerated_too_much(&want, &got)
+            } else {
+                Some("행이 본문의 접두가 아니다")
+            };
+            if let Some(why) = verdict {
+                drift.push(format!(
+                    "{} Status — {why}: 본문 {:?} · 행 {:?}",
+                    row.num,
+                    want.chars().take(60).collect::<String>(),
+                    got
+                ));
+            }
+        }
+        if let Some(v) = header_field(&body, "Date") {
+            checked_date += 1;
+            let want = normalize_header_value(&v);
+            let got = normalize_header_value(&row.date);
+            if want != got {
+                drift.push(format!("{} Date — 본문 {want:?} · 행 {got:?}", row.num));
+            }
+        }
+    }
+
+    // ★ 아래 하한들은 **하한이지 모수가 아니다.** "표류 0" 이 안 봐서 0 인지 정말
+    // 없어서 0 인지는 그 초록만으로 안 갈린다(R473 형태). 그래서 모수를 여기서 싣는다.
+    // libtest 는 통과한 테스트의 출력을 삼키므로 `-- --nocapture` 로 읽는다.
+    // `tracing` 은 여기서 못 쓴다 — 이 크레이트는 의존이 0 인 것이 존재 이유라
+    // (ADR-0138) subscriber 자체가 없다.
+    // 단정보다 **앞**에 둔다: 빨간 경로에서도 모수가 남아야 한다.
+    eprintln!(
+        "[adr-index-parity] 행 {} · Status 대조 {checked_status} · Date 대조 {checked_date} \
+         · 접두 통과 {prefix_ok} · 대체 형태 {superseded_seen} · 표류 {}",
+        rows.len(),
+        drift.len()
+    );
+
+    // 0 을 통과로 만들지 않는다 — 열 하나가 안 읽히면 그 갈래는 조용히 빈다.
+    // 두 열을 따로 센다: 한 열의 독법이 죽어도 다른 열의 수가 그것을 안 가린다.
+    assert!(
+        checked_status >= MIN_ADRS,
+        "Status 를 {checked_status} 건밖에 못 읽었다(하한 {MIN_ADRS}) — \
+         행이나 헤더 독법이 죽었으면 아래 초록은 거짓이다"
+    );
+    assert!(
+        checked_date >= MIN_ADRS,
+        "Date 를 {checked_date} 건밖에 못 읽었다(하한 {MIN_ADRS}) — \
+         행이나 헤더 독법이 죽었으면 아래 초록은 거짓이다"
+    );
+    assert!(
+        superseded_seen >= MIN_SUPERSEDED,
+        "본문이 다른 ADR 을 가리키는 행을 {superseded_seen} 건밖에 못 봤다 \
+         (하한 {MIN_SUPERSEDED}) — 그 형태가 없으면 '행이 대체 번호를 잃었다' \
+         갈래가 한 번도 안 밟히고, 그때의 초록은 위반이 없다는 뜻이 아니다. \
+         ★ 이 하한을 내려서 통과시키지 마라 — 내리면 그 갈래가 밟히는지를 아무도 \
+         안 지킨다. 본문에서 그 형태가 정말 사라졌으면 갈래도 함께 지워라"
+    );
+
+    assert!(
+        drift.is_empty(),
+        "인덱스 행이 본문 헤더와 다른 값을 싣고 있다 {} 건. \
+         ★ 본문이 정본이다 — 행을 본문에 맞춰라. 본문을 행에 맞추지 마라: \
+         그렇게 해도 초록은 되지만, 인덱스만 읽는 사람은 죽은 결정을 살아 있는 것으로 \
+         읽고 그 결정이 어디로 갔는지까지 잃는다:\n  {}",
+        drift.len(),
+        drift.join("\n  ")
     );
 }

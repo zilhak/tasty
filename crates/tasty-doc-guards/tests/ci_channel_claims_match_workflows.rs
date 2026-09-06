@@ -75,6 +75,27 @@
 //!   시스템은 워크플로를 읽어서는 보이지 않는다. 그래서 이 가드의 "자동으로 돌지
 //!   않는다" 는 **워크플로 채널에 한한 말**이고, "아무도 안 막는다" 는 뜻이 아니다.
 //! - **문서 밖의 주장** — 커밋 메시지·PR 본문·티켓은 스캔 대상이 아니다.
+//! - **주어가 테스트 타깃이 아닌 부재 주장** — 이 가드의 주어 부류는 **이름이 지목된
+//!   테스트 타깃**(`tests/X.rs` · `--test X`)이다. 그래서 같은 표지를 **워크플로 파일**이나
+//!   **패키지 단위 호출**에 붙이면 조용히 통과한다. 셋을 변이로 갈랐다(2026-09-06):
+//!
+//!   ```text
+//!   주어 = 워크플로 파일   "(`plugin-version-check.yml` 은 <부재 표지>)"   -> 52 초록 (안 잡힘)
+//!   주어 = 패키지 호출     "| 문서 가드 (<부재 표지>) | cargo test -p … |"  -> 52 초록 (안 잡힘)
+//!   주어 = 통합 테스트 이름 (대조군 — 실재하는 타깃 하나에 같은 표지)       -> 빨강 ✔
+//!   ```
+//!
+//!   (위에서 `<부재 표지>` 라고 쓴 자리에는 [`ABSENCE_MARKERS`] 의 문구가 그대로 들어간다.
+//!   셋째 줄만 이 판정기가 잡았고, 그것이 **대조군이 반응한다는 증거**다 — 앞의 둘이
+//!   안 잡힌 것은 대조군 고장이 아니라 주어 부류 밖이라는 뜻이다. 이 문단이 표지를
+//!   실물 이름 옆에 그대로 적으면 그 자체가 거짓 주장이 되어 이 판정기가 문단을 잡는다.
+//!   실제로 처음 적을 때 그렇게 잡혔고, 처방 (나)로 고쳤다.)
+//!
+//!   앞의 둘이 사각이다. 그러니 **"이 가드가 채널 주장을 지킨다" 는 문장은 범위를 넘는다**
+//!   — 지키는 것은 *테스트 타깃에 대한* 채널 주장이다. 워크플로·스크립트 게이트를 두고
+//!   "자동 채널 없음" 이라 적으면 아무도 안 본다(R477: 가드가 있다 ≠ 가드가 덮는다).
+//!   메우려면 주어 부류를 워크플로 이름까지 넓혀야 하는데, 그러면 워크플로를 *언급만* 하는
+//!   문장이 전부 후보가 되어 오탐이 지배한다 — 그 판별식을 먼저 짓기 전에는 넓히지 마라.
 //!
 //! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**(R16). 아래 셋은 이 축의 채널
 //! 모델이 딛고 선 사실인데, 이 레포에서 실행으로 확인할 방법이 없다. (부재의 주어는 아래
@@ -116,7 +137,33 @@
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
 
+//! ## 이 파일의 테스트 42 개가 각각 무엇을 재는가
+//!
+//! **5 개만 레포를 본다** — `no_file_claims_ci_runs_the_full_suite_while_it_does_not` ·
+//! `no_file_claims_ci_enforces_an_integration_test_it_does_not_run` ·
+//! `no_file_denies_the_automatic_channel_a_lib_test_actually_has` ·
+//! `no_file_denies_a_channel_an_integration_test_actually_has` ·
+//! `the_theme_table_keeps_the_two_channels_apart`. 이 다섯이 이 가드의 **판정**이다.
+//! 나머지 37 은 그 판정이 쓰는 **헬퍼의 자기검사**로, 임시 디렉토리에 픽스처를 지어
+//! 판독기가 그 형태를 어떻게 읽는지 고정한다. 둘은 다른 것을 잰다 — 37 이 초록이라는
+//! 것은 판독기가 픽스처대로 읽는다는 뜻이지, 레포에 대한 판정이 옳다는 뜻이 아니다.
+//!
+//! ★ **그 37 이 잡 분할 규칙을 시험하지 않았다.** 실측(2026-09-05): 라이브러리의 잡 헤더
+//! 규칙(2 칸 들여쓰기)을 3 칸으로 바꾸는 변이가 이 파일의 42 개를 **하나도 못 죽였다.**
+//! 이유는 픽스처가 전부 **잡 하나짜리**여서다 — 잡이 하나면 헤더를 못 찾아 파일 전체가
+//! 한 덩어리가 돼도 개수가 1 로 같다. 그 변이를 죽이는 단정은
+//! `tasty_doc_guards::workflow_triggers` 의 단위 테스트에 있다(잡 둘 · 레포 부등식).
+//! 판정이 사는 곳에 그 판정의 시험을 두는 것이고, 여기서 한 번 더 세지 않는다.
+//!
+//! ★ 그리고 위 다섯 중 둘은 **오늘 조기 반환한다**: `check-headless` 가 좁혀지지 않은
+//! `cargo test --workspace` 를 돌기 때문에 "통합 테스트가 전부 자동으로 돈다" 가 참이 되고,
+//! 그 축은 스스로 잠잠해진다. 설계된 동작이지만, 그 둘의 초록을 커버리지 근거로 읽으면
+//! 안 된다 — 초록이 "덮였고 위반이 없다" 와 "볼 것이 없어 안 봤다" 둘 다와 양립한다.
+//!
+
 use std::path::{Path, PathBuf};
+
+use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
 
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
 /// 아니다. 해석과 검증을 [`tasty_doc_guards::repo_root`] 한 곳에 모은다(ADR-0138).
@@ -125,6 +172,13 @@ fn repo_root() -> PathBuf {
 }
 
 /// 스캔에서 제외할 디렉토리 — 빌드 산출물과 커밋되지 않는 로컬 폴더.
+///
+/// ★ **이 목록의 위험한 방향은 더하는 쪽이다.** 가지치기 명부라 원소를 지우면 훑는 범위가
+/// 늘어나 더 엄격해진다 — 그 변이가 초록인 것은 구멍이 아니라 방향이 반대인 것이다.
+/// 느슨해지는 변이는 항목을 **더하는** 것이고, 그 방향에는 계측기가 있다: 실측
+/// (2026-09-06) `"docs"` 를 더하면 스위트가 **51 통과 / 1 실패**로 빨개진다
+/// (`the_gui_ignored_layer_has_no_single_value` 가 먼저 반응한다). 모든 추가가 잡힌다는
+/// 뜻은 아니다 — 잰 것은 그 한 자리다.
 const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 
 /// 텍스트로 읽을 확장자.
@@ -166,6 +220,12 @@ const ABSENCE_MARKERS: &[&str] = &[
 /// `tests/macos_bundle_codesign.rs` 는 명령과 "채널" 을 다른 줄에 뒀다. 줄로 끊어 보면
 /// 그런 주장이 그대로 빠져나간다. 그래서 인용 지점 앞뒤 창을 한 덩어리로 읽는다.
 /// CI 가 자동으로 돌린다는 뜻으로 읽히는 표지.
+///
+/// ★ 원소마다 하중이 같지 않다. 실측(2026-09-06, 추적 `*.md`·`*.yml` 전역) `"(CI)"` 는
+/// **실물이 0 회**다 — 그 원소를 지워도 아무 값이 안 움직인다. 그것을 "안 막는 조각" 으로
+/// 읽지 마라: **0 인 것과 막는 것이 없는 것은 다르다.** 내일 그 형태의 서술이 오면 이
+/// 조각이 지켜야 한다. 다만 오늘 변이로 이 원소의 하중을 잴 수는 없다는 사실을 값으로
+/// 적어 둔다(그 변이의 rc=0 은 초록이 아니라 미측정이다).
 const CI_MARKERS: &[&str] = &[
     "(CI)",
     "CI 강제",
@@ -183,6 +243,9 @@ const CI_MARKERS: &[&str] = &[
 /// [`CI_MARKERS`] 와 목록이 다르다. 저기엔 `test.yml` 같은 **참조**가 들어 있는데,
 /// 워크플로를 가리키는 것 자체는 주장이 아니다 — 명령이 함께 있을 때만 주장이 된다.
 /// 이 축은 명령이 없으므로 "강제한다/잡는다" 는 **집행 주장**만 표지로 삼는다.
+///
+/// ★ [`CI_MARKERS`] 와 같은 사정이 여기에도 있다. 실측(2026-09-06, 같은 모수) `"CI 강제"`
+/// 는 실물이 **0 회**다 — 변이가 값을 못 움직인다. 미측정이지 초록이 아니다.
 const ENFORCE_MARKERS: &[&str] = &[
     "CI 강제",
     "CI 에서 강제",
@@ -247,6 +310,12 @@ fn absence_exempts(scope: &str) -> bool {
 }
 
 /// lib 유닛 테스트 이름 추출의 하한 — 추출이 깨지면 역방향 검사가 통째로 잠잠해진다.
+///
+/// ★ 이 하한이 잡는 것은 **붕괴이지 침식이 아니다.** 실측(2026-09-06) 추출값은 **5130**
+/// 이고 하한은 100 이다 — 51 배 여유라, 추출이 98% 줄어도 이 단정은 통과한다. 그래도
+/// 100 을 유지하는 이유는 이 자리가 막는 고장의 실제 모양이 "0 에 가깝게 떨어진다" 이기
+/// 때문이다(파싱이 깨지면 부분적으로 세지 않는다). 침식을 잡고 싶으면 하한이 아니라
+/// **직전 값과의 차분**이 필요하고, 그건 이 파일이 가진 도구가 아니다.
 const MIN_LIB_TESTS: usize = 100;
 
 /// 스캔 하한 — 수집이나 인용 추출이 조용히 줄어드는 것을 잡는다.
@@ -255,6 +324,17 @@ const MIN_LIB_TESTS: usize = 100;
 /// 둘을 구분하지 않으면 스캔이 깨진 날 초록이 뜬다.
 const MIN_SCANNED_FILES: usize = 400;
 /// 같은 이유의 하한 — 통합 테스트 파일 인용 지점 수.
+///
+/// ★ **이 하한은 오늘 도달하지 않는다.** 이것을 쥔 유일한 자리
+/// [`no_file_claims_ci_enforces_an_integration_test_it_does_not_run`] 이 그 앞에서
+/// 일찍 반환하기 때문이다 — 자동 잡 하나(`check-headless`)가 좁혀지지 않은
+/// `cargo test` 를 돌려서 `integration_tests_run_automatically` 가 `None` 을 낸다.
+///
+/// 실측(2026-09-06): 이 값을 999999 로 올려도 스위트는 **52 통과 / 0 실패**였다. 값을
+/// 안 움직이는 변이가 곧 그 자리가 안 도는 증거다. 이 수를 "지키는 하한" 으로 읽지 마라 —
+/// 지금은 **휴면 팔에 딸린 죽은 상수**이고, 그 사실을 값으로 적어 두는 것이 이 주석이다.
+/// 팔이 왜 휴면인지와 그 휴면이 무엇을 삼키는지는
+/// [`the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists`] 에 있다.
 const MIN_TEST_CITATIONS: usize = 40;
 
 /// 인용된 명령이 **좁혀진 조합**인가 — `--lib`/`--bins`/`--test` 로 좁힌 형태는 실제로
@@ -345,7 +425,7 @@ fn is_workflow_file(path: &Path) -> bool {
     )
 }
 
-fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
+fn automatic_job_bodies_of_dir(workflows: &Path) -> Vec<String> {
     let mut bodies = Vec::new();
     let Ok(entries) = std::fs::read_dir(workflows) else {
         panic!("워크플로 디렉토리를 읽지 못했다: {}", workflows.display());
@@ -374,35 +454,13 @@ fn automatic_job_bodies(workflows: &Path) -> Vec<String> {
         {
             continue;
         }
-        let mut in_jobs = false;
-        let mut current = String::new();
-        for line in text.lines() {
-            if line.starts_with("jobs:") {
-                in_jobs = true;
-                continue;
-            }
-            if !in_jobs {
-                continue;
-            }
-            let is_job_head = line.starts_with("  ")
-                && !line.starts_with("   ")
-                && line.trim_end().ends_with(':');
-            if is_job_head {
-                if !current.is_empty() {
-                    bodies.push(std::mem::take(&mut current));
-                }
-            }
-            current.push_str(line);
-            current.push('\n');
-        }
-        if !current.is_empty() {
-            bodies.push(current);
-        }
+        // 잡 분할과 수동 전용 제외는 **라이브러리 한 벌**이 한다. 한때 여기 사본이
+        // 있었고 lib 판과 문자 그대로 같았다 — 같은 물음에 답이 둘이면 갈릴 때까지만
+        // 같다. 파일 단위 트리거 판정(바로 위)은 이 가드의 물음("자동 채널이 있는가")에
+        // 속하므로 여기 남는다. lib 쪽은 "매 push 도는가" 라 판정이 더 좁다.
+        bodies.extend(automatic_job_bodies(&text));
     }
     bodies
-        .into_iter()
-        .filter(|body| !body.contains("github.event_name == 'workflow_dispatch'"))
-        .collect()
 }
 
 /// 한 잡 본문이 **좁혀지지 않은** `cargo test --workspace` 를 돌리는가.
@@ -570,7 +628,7 @@ impl Combo {
 /// 자동 잡의 `cargo test` 호출들 — (조합, 인자 꼬리).
 fn automatic_test_invocations(root: &Path) -> Vec<(Combo, String)> {
     let mut out = Vec::new();
-    for body in automatic_job_bodies(&root.join(".github/workflows")) {
+    for body in automatic_job_bodies_of_dir(&root.join(".github/workflows")) {
         for tail in cargo_test_tails(&body) {
             let combo = if tail.contains("--no-default-features") {
                 Combo::Headless
@@ -588,15 +646,34 @@ fn automatic_test_invocations(root: &Path) -> Vec<(Combo, String)> {
 /// `None` 은 "이 축이 성립하지 않는다" 는 뜻이다 — 자동 잡 중 하나가 좁혀지지 않은
 /// `cargo test` 를 돌리면 통합 테스트가 전부 자동으로 도는 것이므로 어떤 인용도 거짓이
 /// 아니다. 그때 이 가드는 첫 번째 축과 같은 방식으로 스스로 잠잠해진다.
+/// 이 `cargo test` 호출이 **일부로 좁혀졌는가** — 타깃으로든 패키지로든.
+///
+/// ★ `-p` / `--package` 를 세지 않던 때가 있었고, 그래서 `cargo test -p tasty-doc-guards`
+/// 하나가 [`integration_tests_run_automatically`] 를 `None` 으로 만들었다. 그 `None` 의
+/// 뜻은 "통합 테스트가 **전부** 자동으로 돈다" 라서, 한 패키지만 도는 호출이 그 결론을
+/// 낸 것은 틀린다 — 그리고 그 틀림의 결과는 판정 둘이 **조용히 조기 반환**하는 것이다.
+/// 실측으로 잡았다(2026-09-05): 잠잠하게 만든 호출에 `--workspace` 가 있는지 **다른
+/// 성질로** 물었더니 없었다.
+///
+/// 함수로 뺀 이유는 [`the_self_silencing_axis_names_what_silenced_it`] 이 같은 판정을
+/// 물어야 하기 때문이다. 거기서 다시 쓰면 사본이 되고, 사본은 원본보다 단순해서 **덜
+/// 잡는 쪽으로** 갈린다 — 그러면 "축이 왜 잠잠한가" 를 묻는 검사가 틀린 답으로 안심시킨다.
+fn tail_is_narrowed(tail: &str) -> bool {
+    tail.split_whitespace().any(|w| {
+        w.starts_with("--lib")
+            || w.starts_with("--bins")
+            || w == "--test"
+            || w == "-p"
+            || w == "--package"
+    })
+}
+
 fn integration_tests_run_automatically(root: &Path) -> Option<std::collections::BTreeSet<String>> {
     let mut named = std::collections::BTreeSet::new();
     {
         for (_combo, tail) in automatic_test_invocations(root) {
             let words: Vec<&str> = tail.split_whitespace().collect();
-            let narrowed = words
-                .iter()
-                .any(|w| w.starts_with("--lib") || w.starts_with("--bins") || *w == "--test");
-            if !narrowed {
+            if !tail_is_narrowed(&tail) {
                 return None;
             }
             for pair in words.windows(2) {
@@ -615,6 +692,10 @@ fn integration_tests_run_automatically(root: &Path) -> Option<std::collections::
 /// 조용히 기본값으로 읽으면 채널 수가 틀리고, 채널 수가 틀린 가드는 **틀린 근거로 남의
 /// 서술을 고발한다.** 그래서 모델을 못 세우면 초록이 아니라 빨강이다 — 계측기의 고장이
 /// "이상 없음" 으로 읽히면 그건 계측기가 아니다.
+///
+/// ★ 실측(2026-09-06) 워크플로에 `--features`·`--all-features` 는 **둘 다 0 회**다. 이
+/// 목록은 오늘 아무것도 안 걸러낸다 — 그래도 두는 이유가 위 문단이다. 하중이 0 인 것과
+/// 하중을 안 받는 것은 다르고, 이 자리는 **앞으로 올 형태**를 막으려고 미리 놓은 것이다.
 const UNMODELLED_TEST_FLAGS: &[&str] = &["--features", "--all-features"];
 
 /// 그 자리가 **조합을 한정해서** 채널을 말하고 있는가.
@@ -796,6 +877,122 @@ fn test_fn_names(text: &str) -> Vec<String> {
         }
     }
     names
+}
+
+/// `#[test]` 이름과 그 자리에 `#[ignore]` 가 붙었는지.
+///
+/// [`test_fn_names`] 와 갈라 두는 이유: 저쪽은 "이 타깃에 어떤 테스트가 있나" 를 묻고
+/// 이쪽은 "그 테스트가 **평범한 `cargo test` 로 도는가**" 를 묻는다. 두 물음의 답이
+/// 다르고, 뒤쪽을 앞쪽으로 대신하면 `#[ignore]` 33 건이 "돈다" 로 세어진다 —
+/// **모수를 줄이는 방향의 어긋남은 언제나 초록으로 나오므로** 아무도 안 본다.
+fn test_fns_with_ignore(text: &str) -> Vec<(String, bool)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim() != "#[test]" {
+            continue;
+        }
+        let mut ignored = false;
+        for next in lines.iter().skip(i + 1).take(4) {
+            let t = next.trim_start();
+            if t.starts_with("#[ignore") {
+                ignored = true;
+                continue;
+            }
+            let t = t.strip_prefix("async ").unwrap_or(t);
+            if let Some(rest) = t.strip_prefix("fn ")
+                && let Some(name) = rest.split(['(', '<']).next()
+                && !name.is_empty()
+            {
+                out.push((name.to_string(), ignored));
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// 줄바꿈·연속 공백을 한 칸으로 접은 사본. 마크다운 본문은 문장이 여러 줄에 걸쳐
+/// 접히므로, 문구를 원문에서 그대로 찾으면 **있는 것을 없다고** 판정한다(실측으로 밟았다).
+fn unwrapped(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// "N 통과" 꼴 — 숫자와 통과/passed 가 붙어 있는 자리.
+fn states_a_pass_count(flat: &str) -> bool {
+    let bytes: Vec<char> = flat.chars().collect();
+    for marker in ["통과", "passed"] {
+        let mut from = 0;
+        while let Some(pos) = flat[from..].find(marker) {
+            let at = from + pos;
+            from = at + marker.len();
+            let head = flat[..at].chars().count();
+            let lo = head.saturating_sub(6);
+            if bytes[lo..head].iter().any(|c| c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 마크다운 **절** 단위로 "gui 스위트의 통과 수를 적었다" 를 찾는다. 반환은 1-기반 줄 번호.
+///
+/// ## 왜 파일 단위가 아니라 절 단위인가
+///
+/// 파일 단위로 물으면 한 문서 안의 **무관한 두 문장**이 서로를 위반으로 만든다. 실측으로
+/// 밟았다 — `docs/dev-guide/e2e-tests.md` 는 스위트 단위 통과 수를 앞 절에 적고
+/// `gui_tests` 는 3.5k 자 뒤의 다른 절에서 언급하는데, 둘은 같은 것을 말하지 않는다.
+/// 반대로 "N 자 이내" 같은 문자 창을 쓰면 그 N 이 곧 마법의 수가 된다. 문서의 heading
+/// 구조가 이미 범위를 주고 있으므로 그것을 쓴다.
+///
+/// ## 두 범위를 다르게 잡는다 — 위반은 좁게, 면제는 넓게
+///
+/// 위반은 **고유 범위**(다음 heading 직전까지, 하위 절 제외)에서 찾고, 표지는
+/// **포함 범위**(같거나 얕은 다음 heading 직전까지, 하위 절 포함)에서 찾는다. 수를 적은
+/// 절 바로 아래에 "그 수가 왜 단일 값이 아닌가" 를 푸는 하위 절을 두는 것은 정상적인
+/// 문서 구조다 — 그것을 위반으로 세면 규칙이 잘 쓴 글을 벌한다. 반대로 **옆 절**의 표지는
+/// 끌어오지 않는다(그 함정은 이 파일의 다른 가드에서 실측으로 두 번 샜다).
+fn gui_pass_counts_missing_marker(text: &str, marker: &str) -> Vec<usize> {
+    let lines: Vec<&str> = text.lines().collect();
+    // (시작 줄, heading 레벨). 첫 heading 앞의 머리말은 자식을 가질 수 없으므로 가장 깊은
+    // 레벨로 두어 고유 범위와 포함 범위가 같아지게 한다.
+    let mut heads: Vec<(usize, usize)> = vec![(0, usize::MAX)];
+    let mut fence = false;
+    for (i, ln) in lines.iter().enumerate() {
+        if ln.trim_start().starts_with("```") {
+            fence = !fence;
+            continue;
+        }
+        if fence {
+            continue;
+        }
+        // 마크다운은 들여쓰기 3칸까지를 heading 으로 보고 4칸부터는 코드 블록으로 본다.
+        let indent = ln.len() - ln.trim_start_matches(' ').len();
+        let body = &ln[indent..];
+        let hashes = body.chars().take_while(|c| *c == '#').count();
+        if indent <= 3 && (1..=6).contains(&hashes) && body.chars().nth(hashes) == Some(' ') {
+            heads.push((i, hashes));
+        }
+    }
+
+    let mut out = Vec::new();
+    for (k, &(start, level)) in heads.iter().enumerate() {
+        let own_end = heads.get(k + 1).map_or(lines.len(), |&(i, _)| i);
+        let own = unwrapped(&lines[start..own_end].join("\n"));
+        if !own.contains("gui_tests") || !states_a_pass_count(&own) {
+            continue;
+        }
+        let scope_end = heads[k + 1..]
+            .iter()
+            .find(|&&(_, l)| l <= level)
+            .map_or(lines.len(), |&(i, _)| i);
+        let scope = unwrapped(&lines[start..scope_end].join("\n"));
+        if !scope.contains(marker) {
+            out.push(start + 1);
+        }
+    }
+    out
 }
 
 /// 통합 테스트 타깃 이름 -> 그 소스 경로.
@@ -1207,6 +1404,36 @@ fn word_offsets(text: &str, name: &str) -> Vec<usize> {
     found
 }
 
+/// 실패 메시지에 공통으로 붙는 **판정 범위** 한 줄.
+///
+/// [`claim_scope`] 의 doc 이 이미 정확히 적고 있다. 문제는 그것을 읽는 사람이 이 파일을
+/// 여는 사람뿐이라는 것이다 — 빨간 것을 보는 저자는 자기 문서를 연다. 범위가 줄 단위라고
+/// 짐작하면 "이 줄에는 그런 말 없는데" 에서 멈춘다.
+const SCOPE_NOTE: &str = "\n\n  [범위] 이 판정기가 보는 것은 줄이 아니라 **마크다운 항목 \
+    하나**다 — 표는 그 행, 목록은 그 항목(들여쓴 이어짐 포함), 산문은 빈 줄 사이 한 문단, \
+    Rust 는 이어진 주석 블록. 그래서 같은 항목 안에 있으면 다른 문장에 적힌 표지도 함께 \
+    읽히고, 항목을 가르면 갈라진다.";
+
+/// 그 옆의 두 번째 줄 — **주어를 단정하지 않는다**는 자백.
+///
+/// 이 사실도 소스에는 있었다(`absence_offsets` 의 주석: "어느 지목이 이 문장의 주어인지는
+/// 이 판정기가 알 수 없다"). 정직하지만 저자에게 닿지 않는 자리에 있었다. 그래서 저자는
+/// 빨간 것을 보고도 **문장을 고칠지 인용을 옮길지 정하지 못한다** — 판정기가 둘 중 어느
+/// 쪽을 지목한 것인지 말해주지 않으니, 고른 쪽이 맞는지도 알 수 없다. 실측으로 그 형태가
+/// 났다(2026-09-06, 다른 레인의 저자). 아는 자리와 필요한 자리가 다르면 아는 것만으로는
+/// 아무 일도 안 일어난다.
+///
+/// 처방을 **둘 다** 적는 이유가 여기 있다. 하나만 적으면 판정기가 모르는 것을 아는 척하게
+/// 되고, 그 척은 틀린 쪽을 고치게 만든다.
+const SUBJECT_NOTE: &str = "\n  [주어] 이 판정기는 그 범위 안의 **어느 지목이 문제 문장의 \
+    주어인지 단정하지 않는다** — 뒤에 덧붙인 선례·참조 지목도 같은 범위로 들어온다. 그러니 \
+    처방이 둘이고, 어느 쪽인지는 저자만 안다: (가) 항목을 갈라 채널 주장과 다른 지목을 서로 \
+    다른 항목에 두거나, (나) 채널 주장 자체를 사실에 맞게 고쳐라.\n  \
+    ★ (가)는 **그 지목이 이 문장의 주어가 아닐 때만** 옳다. 주어인데 항목만 가르면 이 \
+    판정기는 조용해지고 **거짓 문장은 그대로 남는다** — 그건 고친 것이 아니라 가드를 끈 \
+    것이다. 그러니 가르기 전에 물어라: 이 문장이 채널의 부재를 말하는 대상이 정말 그 \
+    지목이 아닌가. 맞다면 (나)뿐이다.";
+
 /// 주장이 놓인 **한 서술의 범위** — 표는 그 행, 산문은 그 문단, Rust 는 이어진 주석
 /// 블록. 면제도 표지 탐색도 이 범위에서 한다.
 ///
@@ -1406,7 +1633,7 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
         "전체 스위트(`cargo test --workspace`)는 자동으로 돌지 않는다 — `test.yml` 의 \
          `test-linux-x64` 는 `workflow_dispatch` 전용이다. 아래는 그것을 CI 강제 장치로 \
          서술한 자리다. 실제 채널은 `docs/dev-guide/ci-gates.md` 를 보고, 서술을 \
-         '자동 채널 없음' 으로 고쳐라:\n  {}",
+         '자동 채널 없음' 으로 고쳐라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1426,7 +1653,10 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
     collect_files(&root, &mut files);
     assert!(
         files.len() >= MIN_SCANNED_FILES,
-        "스캔한 파일이 {}개뿐이다(하한 {MIN_SCANNED_FILES}) — 수집이 줄었다",
+        "스캔한 파일이 {}개뿐이다(하한 {MIN_SCANNED_FILES}) — 수집이 줄었다.\n\
+         ★ 이 수를 내려서 통과시키지 마라. 먼저 가른다 — (1) `SKIP_DIRS` 에 항목이 늘었나 \
+         (2) `TEXT_EXTS` 가 줄었나 (3) 레포에서 그만큼의 파일이 실제로 사라졌나. \
+         (1)·(2) 면 수선은 그것을 되돌리는 것이고, (3) 일 때만 하한을 내린다.",
         files.len()
     );
 
@@ -1448,7 +1678,10 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
 
     assert!(
         citations >= MIN_TEST_CITATIONS,
-        "통합 테스트 인용을 {citations}개밖에 못 찾았다(하한 {MIN_TEST_CITATIONS}) — 추출이 깨졌다"
+        "통합 테스트 인용을 {citations}개밖에 못 찾았다(하한 {MIN_TEST_CITATIONS}) — 추출이 \
+         깨졌다.\n★ 이 수를 내려서 통과시키지 마라. 이 자리에 도달했다는 것 자체가 사건이다 — \
+         이 팔은 오랫동안 휴면이었고(아래 상수 주석), 깨어났다는 뜻이다. 먼저 \
+         `integration_tests_run_automatically` 가 왜 이제 `Some` 을 내는지 확인해라."
     );
 
     violations.sort();
@@ -1458,7 +1691,7 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
         "자동 잡이 이름을 지목해 돌리는 통합 테스트는 {automatic:?} 뿐이다(나머지 자동 \
          테스트는 `--lib --bins` = 유닛 뿐). 아래는 그 밖의 통합 테스트를 CI 강제 장치로 \
          서술한 자리다. 문장을 지우지 말고, 그 문장이 전하려던 사실은 남긴 채 채널 주장만 \
-         `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}",
+         `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1479,7 +1712,11 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
     let lib_tests = lib_test_names(&root);
     assert!(
         lib_tests.len() >= MIN_LIB_TESTS,
-        "lib 테스트 이름을 {}개밖에 못 찾았다(하한 {MIN_LIB_TESTS}) — 추출이 깨졌다",
+        "lib 테스트 이름을 {}개밖에 못 찾았다(하한 {MIN_LIB_TESTS}) — 추출이 깨졌다.\n\
+         ★ 이 수를 내려서 통과시키지 마라. 가르는 법: `#[test]` 를 담은 크레이트가 정말 \
+         그만큼 줄었는지를 먼저 세라(`cargo test --workspace --lib` 의 test result 합). \
+         모수가 정말 줄었으면 하한을 내리고, 수가 그대로인데 추출만 0 에 가까우면 \
+         `lib_test_names` 의 파싱이 깨진 것이다 — 그때 하한을 내리면 그 고장이 초록이 된다.",
         lib_tests.len()
     );
 
@@ -1505,7 +1742,7 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
         violations.is_empty(),
         "아래는 **lib 유닛 테스트**를 두고 자동 채널의 부재를 적은 자리다. 그 테스트는 \
          `crossplatform-check.yml` 의 `cargo test --workspace --lib --bins`(main push · PR)로 \
-         자동으로 돈다 — 서술이 사실보다 약하다. 채널 정본은 `docs/dev-guide/ci-gates.md`:\n  {}",
+         자동으로 돈다 — 서술이 사실보다 약하다. 채널 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1547,7 +1784,10 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     collect_files(&root, &mut files);
     assert!(
         files.len() >= MIN_SCANNED_FILES,
-        "스캔한 파일이 {}개다(하한 {MIN_SCANNED_FILES}) — 수집이 조용히 줄었다",
+        "스캔한 파일이 {}개다(하한 {MIN_SCANNED_FILES}) — 수집이 조용히 줄었다.\n\
+         ★ 이 수를 내려서 통과시키지 마라. 먼저 가른다 — (1) `SKIP_DIRS` 에 항목이 늘었나 \
+         (2) `TEXT_EXTS` 가 줄었나 (3) 레포에서 그만큼의 파일이 실제로 사라졌나. \
+         (1)·(2) 면 수선은 그것을 되돌리는 것이고, (3) 일 때만 하한을 내린다.",
         files.len()
     );
 
@@ -1586,7 +1826,198 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     assert!(
         violations.is_empty(),
         "아래는 통합 테스트를 두고 자동 채널의 부재를 적었지만, 그 테스트가 실제로는 \
-         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}",
+         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
+        violations.join("\n  ")
+    );
+}
+
+// ─── gui 칸의 채널 주장 — 세 층, 세 테스트 ─────────────────────────────────────
+//
+// 셋을 **한 테스트 안의 세 단정**으로 두지 않는다. 그러면 앞 단정이 죽는 순간 뒤 단정은
+// 아예 안 돌아서, 한 번에 하나씩만 판정된다 — 뭉친 주장의 다른 얼굴이다. 함수를 갈라야
+// 세 층이 서로를 가리지 않는다.
+//
+// 뭉치면 왜 나쁜가: 한 주장으로 두면 셋 중 하나만 참이어도 통과하고, 그 통과가 칸의
+// 크기를 부풀린다. 실측으로 그 형태가 났다 — 셋을 뭉쳐 세면 "디스플레이가 사는 것" 이
+// 1 이 아니라 11 로 보인다. 그리고 **모수를 줄이는 방향의 어긋남은 언제나 초록**이라
+// (`#[ignore]` 33 건을 "돈다" 로 세는 쪽), 뭉친 주장은 틀린 채로 조용히 산다.
+//
+// 세 층은 답의 **종류**가 서로 다르다 — 그래서 셋을 같은 단위로 셀 수 없다:
+//   층 1 은 이름 하나(값이 1), 층 2 는 전수 성질(값이 0), 층 3 은 **값이 없다**.
+
+/// 층 1 — 디스플레이가 살리는 것은 `#[ignore]` 가 **아닌** 그 하나다.
+///
+/// `multi_window_owner_routing` 은 무시 표시가 없는데도 창이 없어 못 돌던 테스트다.
+/// 지금 그것을 살리는 자동 채널은 이름을 지목한 스텝 하나뿐이라, 그 스텝이 사라지면
+/// 이 층의 값은 1 이 아니라 0 이 된다.
+///
+/// ## 이 층만 **워크플로 파서에 기댄다** — 그 파서의 잡 분할은 이제 고정돼 있다
+///
+/// 뒤의 두 층은 소스와 문서만 읽는데, 이 층은 `automatic_test_invocations` 를 거쳐
+/// `automatic_job_bodies` 의 **2 칸 들여쓰기 = 잡 헤더** 규칙에 기댄다. 그 규칙을
+/// 3 칸으로 깨뜨리는 변이를 실제로 쏴 봤다:
+///
+/// ```text
+/// 원본(2칸)   bodies 16   invocations 6
+/// 변이(3칸)   bodies  8   invocations 5   ← 잡 절반과 호출 하나가 사라진다
+/// ```
+///
+/// 그런데도 이 파일의 테스트는 **하나도 안 죽었다.** 이 층이 초록이었던 것은 사라진
+/// 호출이 마침 이 층이 지목하는 것이 아니었기 때문이지, 파서가 맞아서가 아니다.
+/// 그러니 지금 이 층이 말할 수 있는 것은 "가드가 본다" 가 아니라 **"가드가 본다고
+/// 되어 있다"** 다 — 초록은 "덮였다" 와 "안 덮여서 볼 수 없다" 둘 다와 양립한다.
+///
+/// **그 단정이 지금 섰다 — 다만 이 파일 밖이다.** 같은 변이를 패키지 전체에 다시 쏘면
+/// 넷이 죽는다(`workflow_triggers` 의 잡 분할·접힌 스칼라·잡 수 하한 셋과
+/// `no_filtered_scan_guard_reads_only_ignored_paths`). 그러니 이 층의 문장은 다시
+/// "가드가 본다" 로 쓸 수 있다.
+///
+/// ★ **다만 모수를 옮겨 적지 마라.** 이 파일만 돌리면 그 변이에서 여전히 **전부 초록**이다
+/// (실측 2026-09-06: 이 파일 52 초록 / 패키지 4 실패). 즉 파서가 고정된 것은 **패키지
+/// 모수에서**이고, 이 파일 하나를 근거로는 여전히 아무것도 말할 수 없다. 위의 두 표는
+/// 그래서 지운 게 아니라 남겨 둔다 — 무엇이 왜 초록인지가 층 1 의 실제 성질이다.
+#[test]
+fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
+    const THE_ONE: &str = "multi_window_owner_routing";
+    let root = repo_root();
+
+    let e2e = integration_target_path(&root, "e2e_tests").expect("tests/e2e_tests.rs 가 없다");
+    let e2e_text = std::fs::read_to_string(&e2e).expect("e2e_tests.rs 를 읽지 못했다");
+    let e2e_fns = test_fns_with_ignore(&e2e_text);
+    assert!(
+        e2e_fns.len() > 10,
+        "e2e_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽으면 아래 판정이 \
+         언제나 참이 된다(R435)",
+        e2e_fns.len()
+    );
+    let one = e2e_fns
+        .iter()
+        .find(|(n, _)| n == THE_ONE)
+        .expect("층 1 의 그 하나가 사라졌다 — 이름이 바뀌었으면 이 층의 값을 다시 세라");
+    assert!(
+        !one.1,
+        "`{THE_ONE}` 에 `#[ignore]` 가 붙었다. 그러면 이 층이 사는 것은 1 이 아니라 0 이고, \
+         그 잡의 스텝은 아무것도 안 돌린다"
+    );
+
+    let invocations = automatic_test_invocations(&root);
+    assert!(
+        !invocations.is_empty(),
+        "자동 잡의 `cargo test` 호출을 하나도 못 뽑았다 — 추출이 죽었다(R435)"
+    );
+    let selected = invocations.iter().any(|(_, tail)| {
+        let (filters, exact) = positive_filters(tail);
+        filters.iter().any(|f| {
+            if exact {
+                f == THE_ONE
+            } else {
+                THE_ONE.contains(f.as_str())
+            }
+        })
+    });
+    assert!(
+        selected,
+        "층 1 의 그 하나를 이름으로 지목해 돌리는 자동 스텝이 없다. 그것이 이 층의 \
+         **유일한** 채널이라(다른 잡은 `--skip` 하거나 창이 없다) 스텝이 사라지면 값은 0 이다"
+    );
+}
+
+/// 층 2 — gui 스위트가 요구하는 것은 디스플레이가 아니라 **플래그**다.
+///
+/// `gui_tests` 는 전수 `#[ignore]` 라, 창이 있어도 평범한 `cargo test` 는 한 건도 안
+/// 돌린다(R417: `#[ignore]` 는 실행만 막고 컴파일은 막지 않는다). 여기서 무시 표시가
+/// 하나라도 빠지면 그 테스트는 **어느 자동 잡도 안 보는데** 아무도 그 사실을 모른다.
+#[test]
+fn the_gui_suite_needs_a_flag_not_a_display() {
+    let root = repo_root();
+    let gui = integration_target_path(&root, "gui_tests").expect("tests/gui_tests.rs 가 없다");
+    let gui_text = std::fs::read_to_string(&gui).expect("gui_tests.rs 를 읽지 못했다");
+    let gui_fns = test_fns_with_ignore(&gui_text);
+    assert!(
+        gui_fns.len() > 10,
+        "gui_tests 에서 테스트를 {}건밖에 못 뽑았다 — 추출이 죽었다(R435)",
+        gui_fns.len()
+    );
+    let running: Vec<&String> = gui_fns
+        .iter()
+        .filter(|(_, ig)| !ig)
+        .map(|(n, _)| n)
+        .collect();
+    assert!(
+        running.is_empty(),
+        "`gui_tests` 에 `#[ignore]` 없는 테스트가 생겼다: {running:?}\n\
+         그러면 이 층의 서술('디스플레이가 있어도 한 건도 안 돈다')이 거짓이 되고, \
+         그 테스트는 **어느 자동 잡도 안 보는데** 아무도 그 사실을 모른다"
+    );
+}
+
+/// 층 3 — `--ignored` 를 줘도 나오는 수에는 **단일 값이 없다.** 값 대신 그 단정을 지킨다.
+///
+/// 이 칸에는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
+/// 나쁘다(ADR-0139). 실제로 계기마다 답이 다르고 **서로 반대 방향으로** 흔들린다:
+/// 한 프로세스로 돌리면 한 panic 이 공유 인스턴스를 오염시켜 뒤를 다 죽이고, 프로세스를
+/// 가르면 그 오염은 사라지지만 순서·상태에 기대던 것들이 대신 죽는다.
+///
+/// 그래서 지키는 것은 수가 아니라 **"단일 값이 없다" 는 단정 자체**다. 통과 수를 적은
+/// 절은 그 절이나 그 하위 절에 단정을 함께 담아야 한다 — 누가 수만 채워 넣으면 빨개진다.
+///
+/// **은퇴 조건**을 함께 박는다. 수가 흔들리는 원인(lock 뒤의 단일 공유 인스턴스)이
+/// 사라지면 수가 안정될 수 있고, 그때까지 이 규칙이 남으면 없는 병을 지키게 된다.
+#[test]
+fn the_gui_ignored_layer_has_no_single_value() {
+    const MARKER: &str = "단일 값이 없다";
+    const CLAIM_DOC: &str = "docs/dev-guide/ci-gates.md";
+    let root = repo_root();
+
+    let common = root.join("tests/gui_common/mod.rs");
+    let common_text = std::fs::read_to_string(&common).expect("tests/gui_common/mod.rs 가 없다");
+    assert!(
+        common_text.contains("Mutex") && common_text.contains(".lock()"),
+        "gui 하네스의 공유 인스턴스(lock 뒤의 단일 인스턴스)가 사라졌다. 그것이 수를 \
+         흔들던 원인이므로, 이 층의 '{MARKER}' 가 아직 참인지 다시 재라 — 참이 아니게 \
+         됐으면 이 층 규칙과 문서의 표기를 함께 걷어라"
+    );
+
+    let mut files = Vec::new();
+    collect_files(&root, &mut files);
+    let mut scanned = 0usize;
+    let mut carries_marker = false;
+    let mut violations = Vec::new();
+    for file in &files {
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        if !rel_str.ends_with(".md") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        if !unwrapped(&text).contains("gui_tests") {
+            continue;
+        }
+        scanned += 1;
+        if rel_str == CLAIM_DOC {
+            carries_marker = unwrapped(&text).contains(MARKER);
+        }
+        for line in gui_pass_counts_missing_marker(&text, MARKER) {
+            violations.push(format!("{rel_str}:{line}"));
+        }
+    }
+    assert!(
+        scanned > 0,
+        "`gui_tests` 를 언급하는 문서를 하나도 못 찾았다 — 수집이 죽었다(R435)"
+    );
+    assert!(
+        carries_marker,
+        "{CLAIM_DOC} 에서 '{MARKER}' 가 사라졌다. 그 단정이 이 층의 **값 자리**라, \
+         없어지면 이 판정은 지킬 것이 없는 채로 언제나 초록이 된다(R435)"
+    );
+    assert!(
+        violations.is_empty(),
+        "아래 절이 gui 스위트의 통과 수를 적으면서 '{MARKER}' 는 안 적었다. 그 수는 \
+         계기(한 프로세스인가 갈랐는가)마다 다르고 서로 반대 방향으로 흔들리므로, \
+         수만 남으면 읽는 쪽이 그것을 커버리지로 읽는다. 그 절이나 그 하위 절에 \
+         단정을 함께 담아라:\n  {}",
         violations.join("\n  ")
     );
 }
@@ -1603,6 +2034,65 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
 /// 문장을 요구하고 있었다. 이제 요구하는 것은 **조합 한정 표지**다. 두 행의 차이는
 /// 여전히 남는다: lib 유닛 테스트는 두 조합 모두에서 돌고, 통합 테스트는 헤드리스
 /// 조합에서만 돈다.
+/// ★ **축이 스스로 잠잠해졌다면, 그 근거가 실재하는지 묻는다** — 초록의 이유를 묻는 것이다.
+///
+/// 이 파일의 판정 다섯 중 둘은 [`integration_tests_run_automatically`] 가 `None` 이면
+/// 조기 반환한다. `None` 의 뜻은 "좁혀지지 않은 자동 호출이 있다 = 통합 테스트가 전부
+/// 자동으로 돈다" 이고, 그때는 검사할 것이 없는 게 맞다.
+///
+/// **그런데 같은 `None` 이 판독이 깨져도 난다.** 좁힘은 `--test <이름>` 같은 플래그로
+/// 판정하는데, 이 레포의 `test.yml` 은 그것을 **접힌 스칼라(`>`)로 여러 줄에 걸쳐** 쓴다.
+/// 평탄화가 깨지면 그 플래그들이 사라져 좁혀지지 않은 호출로 보이고, 그러면 판정 둘이
+/// **틀린 이유로** 잠잠해진다 — 그리고 그 둘은 조용히 초록이다. 초록은 "덮였고 위반이
+/// 없다" 와 "볼 것이 없어 안 봤다" 둘 다와 양립하므로, 잠잠해진 이유를 여기서 확인한다.
+#[test]
+fn the_self_silencing_axis_names_what_silenced_it() {
+    let root = repo_root();
+    if integration_tests_run_automatically(&root).is_some() {
+        // 축이 살아 있다 — 두 판정이 실제로 돌므로 여기서 볼 것이 없다.
+        return;
+    }
+
+    let invocations = automatic_test_invocations(&root);
+    assert!(
+        !invocations.is_empty(),
+        "자동 잡의 `cargo test` 호출을 하나도 못 읽었다 — 판독이 깨졌다. 이 상태에서 나온 \
+         판정은 무엇도 안 본 것이다"
+    );
+    let unnarrowed: Vec<&String> = invocations
+        .iter()
+        .filter(|(_, tail)| !tail_is_narrowed(tail))
+        .map(|(_, tail)| tail)
+        .collect();
+    assert!(
+        !unnarrowed.is_empty(),
+        "판정 둘이 스스로 잠잠해졌는데(`integration_tests_run_automatically` 가 `None`) \
+         그 근거가 되는 좁혀지지 않은 자동 호출이 하나도 없다 — 판독이 깨졌다"
+    );
+
+    // ★ **근거를 좁힘 판정으로 다시 묻지 않는다.** 그러면 `None` 을 만든 그 술어로 그
+    // `None` 을 정당화하는 동어반복이 된다 — 술어가 깨지면 둘이 함께 틀리고 초록이다.
+    // 실측으로 그 형태를 한 번 썼다가 변이가 안 죽어서 잡았다(2026-09-05). 그래서
+    // **다른 성질**로 묻는다: 잠잠하게 만든 그 호출이 정말 전체 스위트를 돌리는가.
+    //
+    // 확인만이 아니라 교정이기도 하다 — `-p` 도 `--workspace` 도 없는 `cargo test` 는
+    // 루트 패키지만 돌린다. 그것을 "통합 테스트가 전부 자동으로 돈다" 의 근거로 쓰면
+    // 애초에 틀린다.
+    let not_whole: Vec<String> = unnarrowed
+        .iter()
+        .filter(|tail| !tail.split_whitespace().any(|w| w == "--workspace"))
+        .map(|tail| format!("cargo test{tail}"))
+        .collect();
+    assert!(
+        not_whole.is_empty(),
+        "판정 둘을 잠잠하게 만든 호출이 **전체 스위트가 아니다**(`--workspace` 가 없다). \
+         좁힘 판독이 깨져 좁혀진 호출을 좁혀지지 않은 것으로 읽었거나, 루트 패키지만 도는 \
+         호출을 전체 스위트로 센 것이다. 어느 쪽이든 그 둘의 초록은 '위반이 없다' 가 \
+         아니라 '안 봤다' 다:\n  {}",
+        not_whole.join("\n  ")
+    );
+}
+
 #[test]
 fn the_theme_table_keeps_the_two_channels_apart() {
     let path = repo_root().join("docs/design/systems/theme.md");
@@ -1617,7 +2107,11 @@ fn the_theme_table_keeps_the_two_channels_apart() {
         let window = claim_scope(&text, at);
         assert!(
             COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다",
+            "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다.\n  \
+             ★ 이 판정기가 보는 것은 **표지가 있는가**뿐이고 그 표지가 **맞는가**는 \
+             안 본다. 그러니 아무 표지나 붙이면 빨강은 사라지지만 그 행은 이제 \
+             **틀린 조합을 단언한다** — 없던 것보다 나쁘다. 그 타깃이 실제로 도는 \
+             조합을 `docs/dev-guide/ci-gates.md` 에서 확인하고 그것을 적어라.{SCOPE_NOTE}",
             path.display(),
             line_of(&text, at)
         );
@@ -1632,7 +2126,7 @@ fn the_theme_table_keeps_the_two_channels_apart() {
         let window = claim_scope(&text, at);
         assert!(
             AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — lib 유닛 테스트인데 자동 채널이 적혀 있지 않다(사실보다 약하다)",
+            "{}:{} — lib 유닛 테스트인데 자동 채널이 적혀 있지 않다(사실보다 약하다){SCOPE_NOTE}",
             path.display(),
             line_of(&text, at)
         );
@@ -1663,6 +2157,71 @@ fn no_named_tests() -> std::collections::BTreeSet<String> {
 
 fn named(names: &[&str]) -> std::collections::BTreeSet<String> {
     names.iter().map(|s| (*s).to_string()).collect()
+}
+
+/// 층 3 의 판정기를 겨냥한 변이 — 절 범위가 맞게 잘리는가.
+///
+/// 표지를 조각으로 조립하지 않고 그대로 적는다: 이 판정기는 `.md` 만 훑으므로 `.rs` 인
+/// 이 파일 자신은 대상이 아니다.
+const NO_SINGLE_VALUE: &str = "단일 값이 없다";
+
+#[test]
+fn a_pass_count_in_an_unrelated_section_is_not_a_gui_claim() {
+    // 실측한 오탐의 축소판 — 통과 수와 `gui_tests` 가 서로 다른 절에 있다.
+    let text = concat!(
+        "## 어느 바이너리를 띄우는가\n\n스위트 단위 10 / 11 통과.\n\n",
+        "## 시나리오 하나에 테스트 하나\n\n`gui_tests` 는 전수 무시다.\n"
+    );
+    assert!(
+        gui_pass_counts_missing_marker(text, NO_SINGLE_VALUE).is_empty(),
+        "무관한 두 절이 서로를 위반으로 만들었다"
+    );
+}
+
+#[test]
+fn a_pass_count_beside_gui_tests_without_the_marker_is_caught() {
+    let text = "# 머리\n\n## 남은 칸\n\n`gui_tests` 는 11 통과다.\n";
+    assert_eq!(
+        gui_pass_counts_missing_marker(text, NO_SINGLE_VALUE),
+        vec![3],
+        "같은 절에서 수만 적은 자리를 못 잡았다"
+    );
+}
+
+#[test]
+fn a_marker_in_a_child_section_qualifies_the_parent() {
+    // 수를 적은 절 **아래**에 그 수가 왜 단일 값이 아닌지를 푸는 하위 절을 두는 것은
+    // 정상적인 문서 구조다. 이것을 위반으로 세면 규칙이 잘 쓴 글을 벌한다.
+    let text = format!(
+        "## 남은 칸\n\n`gui_tests` 는 11 통과다.\n\n### 왜 그 수가 흔들리나\n\n이 칸에는 {NO_SINGLE_VALUE}.\n"
+    );
+    assert!(
+        gui_pass_counts_missing_marker(&text, NO_SINGLE_VALUE).is_empty(),
+        "하위 절의 단정이 부모 절을 못 덮었다"
+    );
+}
+
+#[test]
+fn a_marker_in_a_sibling_section_does_not_exempt() {
+    let text = format!(
+        "## 남은 칸\n\n`gui_tests` 는 11 통과다.\n\n## 다른 칸\n\n이 칸에는 {NO_SINGLE_VALUE}.\n"
+    );
+    assert_eq!(
+        gui_pass_counts_missing_marker(&text, NO_SINGLE_VALUE),
+        vec![1],
+        "옆 절의 단정이 면제로 작동했다"
+    );
+}
+
+#[test]
+fn a_heading_inside_a_fence_does_not_split_a_section() {
+    let text = format!(
+        "## 남은 칸\n\n```sh\n# gui_tests 를 이렇게 돈다\n```\n\n`gui_tests` 는 11 통과이고 이 칸에는 {NO_SINGLE_VALUE}.\n"
+    );
+    assert!(
+        gui_pass_counts_missing_marker(&text, NO_SINGLE_VALUE).is_empty(),
+        "코드 펜스 안의 `#` 주석을 heading 으로 읽어 절을 갈랐다"
+    );
 }
 
 #[test]
@@ -2521,7 +3080,7 @@ const AUTOMATIC_FULL: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n 
 fn a_workflow_is_read_under_either_extension() {
     for (name, file) in [("yml", "ci.yml"), ("yaml", "ci.yaml")] {
         let dir = workflow_dir(name, &[(file, AUTOMATIC_FULL)]);
-        let bodies = automatic_job_bodies(&dir);
+        let bodies = automatic_job_bodies_of_dir(&dir);
         assert_eq!(bodies.len(), 1, "{file} 을 워크플로로 읽지 않았다");
         assert!(bodies[0].contains("cargo test --workspace"));
         // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -2531,7 +3090,7 @@ fn a_workflow_is_read_under_either_extension() {
     // 워크플로가 아닌 확장자는 들어오지 않는다 — 모수를 넓히는 것과 아무거나 읽는 것은 다르다.
     let dir = workflow_dir("other", &[("notes.md", AUTOMATIC_FULL)]);
     assert!(
-        automatic_job_bodies(&dir).is_empty(),
+        automatic_job_bodies_of_dir(&dir).is_empty(),
         "워크플로가 아닌 파일을 잡 본문으로 읽었다"
     );
     // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -2546,7 +3105,7 @@ fn widening_the_extension_does_not_widen_the_trigger_rule() {
     for (name, file) in [("m-yml", "manual.yml"), ("m-yaml", "manual.yaml")] {
         let dir = workflow_dir(name, &[(file, manual)]);
         assert!(
-            automatic_job_bodies(&dir).is_empty(),
+            automatic_job_bodies_of_dir(&dir).is_empty(),
             "{file}: 수동 전용 워크플로가 자동 잡으로 들어왔다"
         );
         // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -2583,5 +3142,96 @@ fn only_the_file_that_defines_the_name_is_exempt() {
         weak_absence_offsets(refers, "crates/x/src/lib.rs", &libs).len(),
         1,
         "남의 이름을 부른 모듈 doc 이 경로 면제로 빠졌다"
+    );
+}
+
+/// 표지 세 개를 **리터럴 조각으로** 박는다 — [`AFFIRMATIVE_RUN_MARKERS`] 의 원소가
+/// 조용히 사라지는 것을 막는다.
+///
+/// 왜 목록을 순회해서 쓰지 않는가: 순회로 조각을 지으면 원소를 지웠을 때 조각도 함께
+/// 사라져 단정이 **자기 자신과** 맞는다. 그러면 이 테스트는 목록의 사본일 뿐이고, 목록이
+/// 줄어드는 사고를 하나도 못 잡는다. 그래서 조각을 손으로 적고, 조각당 성분 하나만 담는다.
+///
+/// 왜 하필 이 목록인가(실측 2026-09-06): `"자동으로 돈다"` 하나만으로 면제가 무효가 되는
+/// 서술이 **5** 개이고, 그 다섯 중 형제 표지가 함께 있는 것은 **0** 이다. 그런데 그 원소를
+/// 지워도 스위트는 **52 통과 / 0 실패**였다 — 하중을 받는 원소인데 아무 단정이 그것을 안
+/// 지키고 있었다. 방향도 나쁜 쪽이다: 원소가 빠지면 [`absence_exempts`] 가 더 자주 참이
+/// 되어 면제가 늘고 위반이 준다. 즉 **조용해지는 방향**의 고장이었다.
+#[test]
+fn each_affirmative_run_marker_is_pinned_by_a_literal() {
+    for fragment in ["자동으로 돈다", "자동으로 돌린다", "✅ 자동"] {
+        assert!(
+            AFFIRMATIVE_RUN_MARKERS.contains(&fragment),
+            "`AFFIRMATIVE_RUN_MARKERS` 에서 {fragment:?} 가 사라졌다. 이 목록이 줄면 \
+             `absence_exempts` 의 면제가 넓어져 위반이 조용히 준다.\n\
+             ★ 이 리터럴을 지워서 통과시키지 마라 — 그것은 목록과 단정을 함께 지우는 \
+             것이라 사고를 사고인 채로 통과시킨다. 표지를 정말 폐기하려면 그 표지에 \
+             기대던 서술이 몇 개였는지 먼저 세고, 그 수를 이 주석에 값으로 남겨라."
+        );
+    }
+}
+
+/// 자동 잡의 `--skip` 명부가 넓어지는 것을 막는 상한.
+///
+/// [`no_file_claims_ci_enforces_an_integration_test_it_does_not_run`] 이 휴면인 근거는
+/// "자동 잡 하나가 좁혀지지 않은 `cargo test` 를 돌리니 통합 테스트가 전부 자동으로
+/// 돈다" 는 것이다. 그 전제는 `--skip` 만큼 거짓이다 — 이름이 하나 늘 때마다 휴면이
+/// 삼키는 범위가 그만큼 는다.
+const MAX_SKIPPED_IN_UNNARROWED: usize = 1;
+
+/// 집행 검사 팔의 **휴면에 근거가 있는지**를 값으로 붙든다.
+///
+/// 이 파일에서 가장 조용한 자리다. 그 팔은 오늘 한 줄도 안 돌고(실측: [`MIN_TEST_CITATIONS`]
+/// 를 999999 로 올려도 52 통과 / 0 실패), 그 사실이 어디에도 안 적혀 있었다. 안 도는 것
+/// 자체는 정당할 수 있다 — 정당하지 않은 것은 **안 도는 줄 모르는 것**이다.
+#[test]
+fn the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists() {
+    let root = repo_root();
+    let dormant = integration_tests_run_automatically(&root).is_none();
+
+    let unnarrowed: Vec<(Combo, String)> = automatic_test_invocations(&root)
+        .into_iter()
+        .filter(|(_, tail)| !tail_is_narrowed(tail))
+        .collect();
+
+    if !dormant {
+        assert!(
+            unnarrowed.is_empty(),
+            "팔이 깨어났는데 좁혀지지 않은 자동 호출이 아직 있다 — 판정이 서로 어긋난다"
+        );
+        return;
+    }
+
+    assert!(
+        !unnarrowed.is_empty(),
+        "집행 검사 팔이 휴면인데 그 근거(좁혀지지 않은 자동 `cargo test`)가 워크플로에 \
+         없다. 근거 없는 휴면은 미측정이다 — `integration_tests_run_automatically` 가 \
+         왜 `None` 을 내는지 먼저 확인해라."
+    );
+
+    // 휴면의 근거가 삼키는 것: 그 호출이 이름으로 건너뛰는 테스트들.
+    let mut skipped: Vec<String> = Vec::new();
+    for (_, tail) in &unnarrowed {
+        let words: Vec<&str> = tail.split_whitespace().collect();
+        for pair in words.windows(2) {
+            if pair[0] == "--skip" {
+                skipped.push(pair[1].to_string());
+            }
+        }
+    }
+    skipped.sort();
+    skipped.dedup();
+
+    assert!(
+        skipped.len() <= MAX_SKIPPED_IN_UNNARROWED,
+        "좁혀지지 않은 자동 호출이 이름으로 건너뛰는 테스트가 {}개다(상한 \
+         {MAX_SKIPPED_IN_UNNARROWED}): {skipped:?}\n\
+         이 팔은 '통합 테스트가 전부 자동으로 돈다' 를 근거로 휴면인데, 건너뛴 이름은 \
+         그 전제 밖이다 — 아무 자동 채널도 그것을 안 돌리고, 이 팔도 그것을 안 본다.\n\
+         ★ 이 상한을 올려서 통과시키지 마라. 먼저 가른다 — 새 `--skip` 이 (가) 그 조합에서 \
+         원리적으로 못 도는 것인가(그러면 다른 조합의 자동 잡이 그것을 도는지 확인해 \
+         `ci-gates.md` 에 채널을 적는다), (나) 불안정해서 뺀 것인가(그러면 상한이 아니라 \
+         그 불안정이 사건이다). 상한을 올리는 것은 (가) 를 확인하고 채널을 적은 뒤다.",
+        skipped.len()
     );
 }

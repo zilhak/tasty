@@ -42,6 +42,14 @@ use tasty_doc_guards::repo_root;
 const SCAN_ROOTS: &[&str] = &["src", "crates", "tests"];
 
 // 실측(2026-09-05, 루트 tests/ 편입 후): files=1257 · mutations=25 · serialized=25 · bare=0.
+//
+// ★ 셋은 **연기 검사**다. 하한 밑으로 내려갔을 때 세계가 둘이고(모수가 정말 줄었다 /
+// 수집이 깨졌다) 가장 싼 수선이 값을 내리는 것이라, 가르는 법을 안 적으면 언제나
+// 앞쪽으로 읽힌다. 그래서 각 메시지가 그 축의 **판별식**을 싣는다.
+// ★★ 이 셋에는 다른 가드에 없는 판별 수단이 하나 더 있다 — **보존식**이다:
+//   `serialized + bare = mutations`. 실측에서 bare=0 이라 두 수가 정확히 같다.
+//   그 등식이 깨지는 방식이 어느 판정이 죽었는지를 말해 준다.
+// 규율 전문은 docs/dev-guide/guard-population.md 의 "하한에는 판별식이 붙어야 한다".
 const MIN_FILES: usize = 1100;
 const MIN_MUTATIONS: usize = 15;
 const MIN_SERIALIZED: usize = 15;
@@ -54,19 +62,50 @@ fn every_test_env_mutation_is_serialized() {
     // ── 자기-공허 방지: 갈래마다 선다 ──────────────────────────────────────────
     assert!(
         c.files_scanned >= MIN_FILES,
-        "훑은 파일이 {} 개뿐이다(하한 {MIN_FILES}) — 순회가 죽었으면 아래 초록은 거짓이다",
+        "훑은 파일이 {} 개뿐이다(하한 {MIN_FILES}) — 순회가 죽었으면 아래 초록은 \
+         거짓이다.\n  \
+         [판별식] 이 가드의 뿌리는 `src`·`crates`·`tests` 셋이고, 형제 가드 \
+         `no_silent_poison_recovery` 는 **`tests` 를 안 훑는다**. 두 수를 나란히 봐라 — \
+         이 수는 저 수보다 루트 `tests/` 의 `.rs` 개수만큼 커야 한다. 둘이 가까워졌으면 \
+         `tests` 뿌리가 순회에서 빠진 것이고(이름이 바뀌면 예외가 아니라 0 개 \
+         디렉터리가 된다), 둘이 **함께** 줄었으면 레포가 정말 줄어든 것이다.\n  \
+         ★ 형제 수를 안 보고 이 값만 내리지 마라 — 뿌리 하나가 통째로 빠진 것을 \
+         '레포가 줄었다' 로 읽게 된다.\n  \
+         [정말 줄었으면] 무엇이 없어졌는지 위 실측 주석에 적고 값을 내려라.",
         c.files_scanned
     );
     assert!(
         c.mutations >= MIN_MUTATIONS,
         "test 맥락 env/cwd 변형을 {} 곳만 집었다(하한 {MIN_MUTATIONS}) — 변형 판정 또는 \
-         cfg(test) 판정이 죽었을 수 있다",
+         cfg(test) 판정이 죽었을 수 있다.\n  \
+         [판별식] 이 수는 **두 판정의 곱**이라(무엇이 변형인가 × 그것이 test 맥락인가) \
+         떨어졌다는 사실만으로는 어느 쪽인지 안 갈린다. 유닛이 두 축을 따로 쥐고 있으니 \
+         부르면 갈린다 — `cargo test -p tasty-doc-guards --lib env_isolation`: \
+         `a_bare_set_var_in_test_code_is_caught` 와 `set_current_dir_is_also_covered` 가 \
+         변형 축, `a_production_env_mutation_is_out_of_scope` 와 \
+         `a_mutation_in_a_test_only_file_is_in_scope` 가 맥락 축이다. \
+         전부 초록인데 이 수가 줄었으면 두 판정 다 살아 있고 그런 코드가 정말 준 것이다.\n  \
+         ★ 어느 축이 죽었는지 안 가르고 이 값만 내리지 마라.\n  \
+         [정말 줄었으면] 어느 자리가 없어졌는지 적고 값을 내려라 — 이 수가 주는 것은 \
+         대개 좋은 방향이다(테스트가 프로세스 전역을 덜 만진다는 뜻).",
         c.mutations
     );
     assert!(
         c.serialized >= MIN_SERIALIZED,
         "직렬화로 통과한 자리가 {} 곳뿐이다(하한 {MIN_SERIALIZED}) — 직렬화 인식이 죽으면 \
-         이 수가 떨어지고 그 자리들이 거짓 위반이 된다",
+         이 수가 떨어지고 그 자리들이 거짓 위반이 된다.\n  \
+         [판별식] **보존식으로 먼저 갈라라**: `serialized + bare = mutations` 다. \
+         이 수가 줄었는데 바로 아래 `bare` 가 그만큼 늘었으면 인식이 죽어 정상 자리가 \
+         거짓 위반이 된 것이고(그때는 실판정이 시끄러워지므로 이 하한까지 올 일이 \
+         드물다), 이 수와 `mutations` 가 **함께** 줄고 `bare` 가 여전히 비었으면 그 \
+         자리들이 정말 없어진 것이다.\n  \
+         그다음 인식 자체는 유닛이 쥔다 — `--lib env_isolation` 의 \
+         `a_lock_in_scope_passes` · `a_marker_comment_passes` · \
+         `a_single_test_containment_marker_passes`, 그리고 음성 쪽 \
+         `a_marker_inside_a_string_does_not_count`. 마지막 것이 특히 중요하다: \
+         그것이 죽으면 인식이 **너무 많이** 통과시켜 이 수가 오히려 커진다.\n  \
+         ★ 보존식을 안 맞춰 보고 이 값만 내리지 마라.\n  \
+         [정말 줄었으면] 없어진 자리를 적고 값을 내려라.",
         c.serialized
     );
 

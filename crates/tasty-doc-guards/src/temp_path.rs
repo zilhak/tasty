@@ -11,8 +11,9 @@
 //! "이 이름은 유일해야 하는가?" 는 **의도**를 읽어야 답한다 — 소스만 보고 못 푼다
 //! (사용자 config 는 일부러 공유한다). 그래서 방향을 뒤집는다: **기본값은 "유니크화돼야
 //! 한다"** 이고, 의도된 공유는 **예외**다. 예외는 명부가 아니라 **그 자리에 사유**로
-//! 적는다(`이유:`/`reason:`, [`crate::…`] 가 아니라 `check-allow-reason` 이 쓰는 마커
-//! 관례를 그대로 빌린다). 의미 판단이 가드에서 소스로 옮겨가고, 그 자리가 그 판단을 할
+//! 적는다(`이유:`/`reason:`/`사유:` — 마커를 쓰는 발상은 `check-allow-reason` 에서
+//! 왔지만, **그 가드와 같다고 주장하지 않는다**. 아래 [`REASON_TOKENS`] 참조).
+//! 의미 판단이 가드에서 소스로 옮겨가고, 그 자리가 그 판단을 할
 //! 수 있는 유일한 자리다. 명부를 안 쓰는 이유: 명부는 자기 대상을 이름으로 지목해
 //! "쓰이는 것" 으로 만들고(R395), 정당한 예외가 구조적인 곳에서는 지키려는 표보다 빨리
 //! 썩는다(R380).
@@ -42,6 +43,31 @@
 //!   `.join(` 이 없으면 읽기 전용 사용과 구분되지 않아 보지 않는다.
 //! - 소스에 리터럴로 안 보이는 이름(런타임 조합 문자열, 외부 도구가 짓는 이름)은 텍스트
 //!   스캔의 사거리 밖이다.
+//!
+//! ## ★ 레포 스캔은 이 판정이 죽는 것을 **못 본다** — 아래 유닛 대조가 본다
+//!
+//! 실측 2026-09-06, 변이 여섯을 걸어 두 타깃을 따로 돌린 값이다. 세는 단위는
+//! **빨개진 테스트 수**이고, 스캔은 `--test no_unshared_fixed_temp_path`(테스트 1 개),
+//! 유닛은 `--lib temp_path`(테스트 12 개)다.
+//!
+//! | 변이 | 스캔 | 유닛 |
+//! |---|---|---|
+//! | `builds_path` 를 항상 false | 빨강 — 다만 `MIN_SITES` 하한이 잡는다 | 9 / 12 |
+//! | `uniquified` 를 항상 true | 빨강 — 다만 `MIN_REASONED` 하한이 잡는다 | 5 / 12 |
+//! | `reasoned` 를 항상 true | **초록. 조용하다.** | 4 / 12 |
+//!
+//! 셋째가 이 모듈의 존재 이유를 통째로 무력화하는 변이인데 **레포 스캔은 초록**이다.
+//! 하한들은 순회가 죽는 방향만 보고 판정이 느슨해지는 방향은 안 본다. 둘째가 잡힌
+//! 것도 설계가 아니라 파이프라인 순서의 부수효과다 — `uniquified` 가 먼저 삼켜
+//! `reasoned` 가 0 이 되고 그 하한이 걸린다.
+//!
+//! **그래서 이 모듈의 보호는 아래 `#[cfg(test)] mod tests` 열두 개에 있다.** 스캔
+//! 하나만 보고 "덮여 있다" 고 읽지 마라. 스캔에 상한을 다는 처방은 쓰지 않는다 —
+//! 정당한 증가마다 값을 고쳐야 해서, 값을 고치는 것이 가장 싼 수선인 자리를 하나 더
+//! 만들 뿐이다.
+//!
+//! 마스킹은 양방향으로 쟀다(같은 한 줄을 세 형태로 심고 스캔을 돌렸다):
+//! 진짜 코드는 잡히고(rc=101, 그 파일을 지목), 문자열 리터럴 안과 주석 안은 안 잡힌다.
 
 use std::path::Path;
 
@@ -60,13 +86,49 @@ const UNIQ_TOKENS: &[&str] = &[
     "SystemTime",
 ];
 
-/// 의도된 공유임을 그 자리에 밝히는 사유 마커(`check-allow-reason` 과 같은 관례).
+/// 의도된 공유임을 그 자리에 밝히는 사유 마커.
+///
+/// ★ **여기는 한때 "`check-allow-reason` 과 같은 관례" 라고 적혀 있었고, 그 문장은
+/// 틀렸다.** 실측: 그 셸 게이트의 마커는 `reason:|이유:|complexity-exempt:|SAFETY` 라
+/// `사유:` 가 없고, 이쪽에는 뒤의 둘이 없다. 사유의 **위치** 규칙도 갈려 있었다(아래
+/// [`reason_is_attached`]). 즉 두 축 모두에서 달랐는데 문서만 같다고 말했다.
+///
+/// ★ **무엇이 그 동일성을 지키는가 — 아무것도 지키지 않는다.** 한쪽은 awk, 한쪽은
+/// Rust 이고 둘을 맞대는 가드가 없다. 그래서 이 문서는 동일성을 **다시 주장하지
+/// 않는다** — 검증되지 않는 동일성 주장이 바로 그 표류를 만든 원인이다. 각 가드는
+/// 자기 규칙을 자기 자리에 적고, 저자는 자기가 걸린 가드의 실패 메시지를 읽는다.
 const REASON_TOKENS: &[&str] = &["이유:", "reason:", "사유:"];
 
 /// `temp_dir()` 호출 줄에서 경로를 짓는 `.join(` 을 찾을 때 보는 창.
 const JOIN_WINDOW: usize = 6;
-/// 사유 마커를 찾을 때 그 자리 위로 보는 창(붙은 주석 블록).
-const REASON_LOOKBACK: usize = 4;
+/// 사유가 그 자리에 **붙어 있는지**를 정하는 규칙: 그 자리 줄 자신과, 위로 이어지는
+/// 주석 줄 전부. 빈 줄이나 코드 줄에서 끊긴다.
+///
+/// 한때 이 자리는 고정 4 줄 창이었다. 그것은 "붙었다" 의 좁은 판이 아니라 **다른
+/// 술어**였다 — 붙어 있어도 5 줄 위면 거부하고, 빈 줄과 코드 줄로 끊겨 있어도 3 줄
+/// 위면 인정했다. 부분집합 관계가 아니라 서로 어긋난 집합이라, 저자가 어느 관례를
+/// 배웠든 틀릴 수 있었다.
+fn reason_is_attached(
+    raw: &[&str],
+    comments: &[&str],
+    idx: usize,
+    has_token: impl Fn(&str) -> bool,
+) -> bool {
+    if has_token(comments[idx]) {
+        return true;
+    }
+    let mut j = idx;
+    while j > 0 {
+        j -= 1;
+        if !raw[j].trim_start().starts_with("//") {
+            return false;
+        }
+        if has_token(comments[j]) {
+            return true;
+        }
+    }
+    false
+}
 
 /// 한 파일을 분류한 결과. 줄 번호는 0 기반(`temp_dir()` 이 있는 줄).
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -79,6 +141,12 @@ pub struct FileClass {
     pub reasoned: Vec<usize>,
     /// 그중 유니크화도 사유도 없는 줄 — 고정 이름 공유(위반).
     pub silent: Vec<usize>,
+    /// 창 안에 `.join(` 이 없어 **자리로도 안 세어진** `temp_dir()` 줄.
+    ///
+    /// 대부분은 정당하다 — 디렉터리를 그대로 넘기는 읽기 전용 용법이다. 그러나 창을
+    /// 넘겨 경로를 짓는 자리도 여기로 떨어지고, 그쪽은 **검사 없이 통과한다.** 두 부류가
+    /// 한 칸에 섞여 있어 소스만으로 못 가르므로, 수를 세어 **늘어나는 것**을 본다.
+    pub unpaired: Vec<usize>,
 }
 
 /// masked 코드 줄들과 masked 주석 줄들로 temp 경로 자리를 분류한다.
@@ -101,6 +169,7 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
         // 창 안에서 경로를 짓는가. 안 지으면(읽기 전용·먼 곳에서 join) 보지 않는다.
         let builds_path = (idx..=hi).any(|j| code[j].contains(".join("));
         if !builds_path {
+            out.unpaired.push(idx);
             continue;
         }
         out.sites.push(idx);
@@ -113,9 +182,10 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
             out.uniquified.push(idx);
             continue;
         }
-        // 사유는 붙은 주석 블록(위) + 경로 짓는 창(아래)에서 찾는다.
-        let lo = idx.saturating_sub(REASON_LOOKBACK);
-        let reasoned = (lo..=hi).any(|j| REASON_TOKENS.iter().any(|t| comments[j].contains(t)));
+        // 사유는 그 자리에 붙어 있어야 한다 — 같은 줄이거나, 위로 이어지는 주석 블록 안.
+        let reasoned = reason_is_attached(&raw, &comments, idx, |line| {
+            REASON_TOKENS.iter().any(|t| line.contains(t))
+        });
         if reasoned {
             out.reasoned.push(idx);
         } else {
@@ -192,6 +262,8 @@ pub struct Census {
     pub sites: usize,
     pub uniquified: usize,
     pub reasoned: usize,
+    /// 창 안에 `.join(` 이 없어 자리로 안 세어진 `temp_dir()` 줄의 수.
+    pub unpaired: usize,
     /// `"레포상대경로:1기반줄: 원문"` 형태의 위반 목록.
     pub silent: Vec<String>,
 }
@@ -212,6 +284,7 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
         c.sites += fc.sites.len();
         c.uniquified += fc.uniquified.len();
         c.reasoned += fc.reasoned.len();
+        c.unpaired += fc.unpaired.len();
         for &idx in &fc.silent {
             let text = raw_lines.get(idx).map(|s| s.trim()).unwrap_or("");
             c.silent
@@ -246,6 +319,79 @@ mod tests {
             1,
             "유니크화·사유 없는 고정 이름을 잡아야 한다"
         );
+    }
+
+    /// **인정하는 유니크화 성분 하나하나가 실제로 인식되는지** 묻는다.
+    ///
+    /// 실측 2026-09-06: 이 테스트가 없을 때 [`UNIQ_TOKENS`] 아홉 중 **여덟을 통째로
+    /// 지워도** 레포 스캔(`--test no_unshared_fixed_temp_path`)도 이 모듈의 유닛
+    /// 열둘도 전부 초록이었다. 오늘 레포에서 그 여덟이 **유일 근거인 자리가 0** 이라
+    /// 수가 안 움직이기 때문이다 — 하중을 받는 것은 `process::id` 하나뿐이었다.
+    /// 값을 움직이는 변이는 이미 여럿이 잡는다. **값이 안 움직이는 변이를 잡는 것이
+    /// 이 테스트의 전부다.**
+    ///
+    /// 조각을 상수에서 만들지 않고 **손으로 적는다.** 목록을 순회해 조각을 지으면
+    /// 오타가 난 항목(`NamedTempFilee`)도 자기 자신과는 맞아 통과한다 — 그러면 이
+    /// 테스트가 목록의 사본이 될 뿐 목록을 검사하지 않는다.
+    ///
+    /// 조각마다 성분을 **하나만** 담는다. 둘을 담으면 하나를 지워도 다른 하나가
+    /// 받쳐 주어 그 지움이 조용해진다.
+    ///
+    /// 여기 여덟뿐인 이유: `process::id` 는 아래 세 테스트가 이미 이름으로 부른다.
+    /// 확인했다 — 아홉을 하나씩 빼면 전부 빨개지고, 여덟은 이 테스트가 성분 이름을
+    /// 대며 잡고 `process::id` 는 그 셋이 잡는다.
+    #[test]
+    fn every_recognized_uniquifier_is_actually_recognized() {
+        let cases: [(&str, &str); 8] = [
+            (
+                "TempDir",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let d = TempDir::new_in(&base).unwrap();\n}",
+            ),
+            (
+                "tempfile",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let b = tempfile::Builder::new().tempdir_in(&base).unwrap();\n}",
+            ),
+            (
+                "tempdir(",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let d = tempdir().unwrap();\n}",
+            ),
+            (
+                "NamedTempFile",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let h = NamedTempFile::new_in(&base).unwrap();\n}",
+            ),
+            (
+                "pid",
+                "fn f() {\n    let p = std::env::temp_dir().join(format!(\"tasty-{}\", pid));\n}",
+            ),
+            (
+                "path_for",
+                "fn f() {\n    let p = std::env::temp_dir().join(path_for(\"tasty\"));\n}",
+            ),
+            (
+                "nanos",
+                "fn f() {\n    let p = std::env::temp_dir().join(format!(\"tasty-{}\", nanos()));\n}",
+            ),
+            (
+                "SystemTime",
+                "fn f() {\n    let base = std::env::temp_dir().join(\"tasty\");\n    let t = SystemTime::now();\n}",
+            ),
+        ];
+        for (name, src) in cases {
+            let fc = classify_src(src);
+            assert_eq!(
+                fc.sites.len(),
+                1,
+                "{name}: 조각이 경로 짓는 자리 하나를 내야 한다 — 안 그러면 아래 단정이 \
+                 공허하다"
+            );
+            assert!(
+                fc.silent.is_empty(),
+                "{name} 을 유니크화로 인정하지 않는다. 이 성분을 목록에서 뺐거나 철자를 \
+                 바꿨으면 모듈 문서의 등급표도 함께 고쳐라 — 문서는 이것을 인정한다고 \
+                 말하고 있다"
+            );
+            assert_eq!(fc.uniquified.len(), 1, "{name}: 유니크화 한 곳이어야 한다");
+        }
     }
 
     /// pid 를 섞으면 유니크화로 통과한다.
@@ -325,12 +471,50 @@ mod tests {
         assert!(fc.silent.is_empty());
     }
 
+    /// `사유:` 도 마커다. 실측 2026-09-06: 이 테스트가 없을 때 [`REASON_TOKENS`] 에서
+    /// `사유:` 를 빼도 레포 스캔의 수(reasoned=7)가 안 움직이고 유닛 열셋도 전부
+    /// 초록이었다 — 오늘 레포에 `사유:` 만으로 통과하는 자리가 없기 때문이다.
+    /// 나머지 둘은 잡힌다(`이유:` 는 코퍼스와 유닛 둘 다, `reason:` 은 유닛이).
+    /// 이 마커가 목록에 있다는 것은 문서가 **주장**하는 것이므로 그 주장을 여기서 건다.
+    #[test]
+    fn a_korean_sayu_marker_also_passes() {
+        let fc = classify_src(
+            "fn f() {\n    // 사유: 프로필 사이에 일부러 공유한다.\n    let p = std::env::temp_dir().join(\"tasty-shared\");\n}",
+        );
+        assert!(
+            fc.silent.is_empty(),
+            "`사유:` 를 사유 마커로 인정하지 않는다 — 목록에서 뺐으면 모듈 문서의 \
+             마커 목록도 함께 고쳐라"
+        );
+        assert_eq!(fc.reasoned.len(), 1);
+    }
+
     /// 경로를 안 짓는 `temp_dir()`(읽기 전용·전달)은 보지 않는다.
     #[test]
     fn a_bare_temp_dir_without_join_is_ignored() {
         let fc =
             classify_src("fn f() {\n    let dir = std::env::temp_dir();\n    read_only(dir);\n}");
         assert!(fc.sites.is_empty(), "join 이 없으면 자리로 세지 않는다");
+    }
+
+    /// 사유는 붙은 주석 블록 **어디에 있어도** 인정된다 — 줄 수 제한이 없다.
+    /// 한때 고정 4 줄 창이라 이 배치(첫 줄, 거리 8)가 거부됐다.
+    #[test]
+    fn a_reason_at_the_top_of_the_attached_block_counts() {
+        let fc = classify_src(
+            "fn f() {\n    // 이유: 공유가 의도다.\n    // 둘\n    // 셋\n    // 넷\n    // 다섯\n    // 여섯\n    // 일곱\n    let p = std::env::temp_dir().join(\"fixed-a\");\n}",
+        );
+        assert!(fc.silent.is_empty(), "붙은 블록의 첫 줄에 있는 사유");
+    }
+
+    /// 빈 줄이나 코드 줄에서 끊긴 **블록 밖**의 사유는 인정하지 않는다. 고정 4 줄
+    /// 창은 이것을 인정했다 — 창이 "붙었다" 를 재지 않았다는 증거다.
+    #[test]
+    fn a_reason_outside_the_attached_block_does_not_count() {
+        let fc = classify_src(
+            "fn f() {\n    // 이유: 공유가 의도다.\n\n    let q = 1;\n    let p = std::env::temp_dir().join(\"fixed-b\");\n}",
+        );
+        assert_eq!(fc.silent.len(), 1, "블록 밖의 사유는 안 센다");
     }
 
     /// 사유가 문자열 안에만 있으면 인정하지 않는다(주석 마스크가 문자열을 덮는다).

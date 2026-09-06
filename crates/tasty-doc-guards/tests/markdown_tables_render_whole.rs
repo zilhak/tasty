@@ -70,7 +70,10 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         // 그 파일이 가지치기를 빠져나가 모집단에 들고, 같은 커밋이 worktree 와 메인
         // 체크아웃에서 서로 다른 파일을 보게 된다. 모집단이 환경을 읽으면 답도
         // 언젠가 환경을 읽는다.
-        if is_pruned(name) {
+        // 이름은 성질이 아니다 — `CARGO_TARGET_DIR` 로 다른 이름을 준 빌드
+        // 디렉토리는 이름 목록에 안 걸린다. 표식 판정을 **보태서** 부른다(흉내
+        // 내지 않는다): 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+        if is_pruned(name) || tasty_doc_guards::is_build_cache_dir(&p) {
             continue;
         }
         gather(&p, root, out);

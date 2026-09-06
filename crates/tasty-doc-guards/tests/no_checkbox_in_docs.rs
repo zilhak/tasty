@@ -19,7 +19,15 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(docs 스캔 구조) · `tests/no_emoji_in_source.rs`.
 
-use std::path::{Path, PathBuf};
+// 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
+// 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다
+// — docs/dev-guide/error-handling.md.
+#![allow(clippy::let_underscore_must_use)]
+
+use std::path::Path;
+use tasty_doc_guards::floored_walk::{
+    Descend, Floor, Pick, Walked, walk_dirs_with_floor, walk_with_floor,
+};
 
 /// 스캔에서 제외할 파일(repo-relative). 현재 비어 있다 — 규칙 본문은 금지 형태를
 /// 행 시작 목록으로 쓰지 않는 방식으로 이 가드를 통과하므로 등록할 파일이 없다.
@@ -27,23 +35,18 @@ use std::path::{Path, PathBuf};
 /// 생기면 여기에 등록한다.
 const ALLOWLIST_FILES: &[&str] = &[];
 
-/// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·워크트리·VCS·의존성 +
-/// gitignored 로컬 작업 폴더(worktree 에서는 레포 밖으로 향하는 심볼릭 링크일 수 있다).
-const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
-
-/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
-/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
-/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
-const LOCAL_HEAD: &str = "claude";
-const LOCAL_TAIL: &str = "-workspace";
-
-/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
-fn is_pruned(name: &str) -> bool {
-    PRUNE_DIRS.contains(&name)
-        || name
-            .strip_prefix('.')
-            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
-}
+/// 순회가 실제로 `docs/` 를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
+/// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
+const DOCS_FLOOR: Floor = Floor {
+    min: 250,
+    measured: 380,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 `docs/` 아래 `.md` 문서의 수다. 문서는 ADR 이 쌓이면서 단조 \
+                   증가해 왔고, 한 번에 수십 개가 사라지는 변경은 없었다 — 그래서 여유를 \
+                   좁게 둔다. 넓게 두면 순회가 절반 죽어도 통과하는데, 이 가드가 겨냥하는 \
+                   사고가 정확히 그것(순회 루트 오타 · 재귀 중단)이라 넓은 여유는 가드를 \
+                   자기 목적에서 멀어지게 한다.",
+};
 
 /// 행이 마크다운 체크박스 목록 항목으로 시작하는지.
 /// 선행 공백 · 목록 마커 · 공백(1 개 이상) · `[` · (공백|x|X) · `]` 순서만 본다. `]` 뒤는 보지 않는다.
@@ -66,63 +69,51 @@ fn is_checkbox_item(line: &str) -> bool {
     rest.starts_with(']')
 }
 
-/// 스캔 대상 파일인지 — repo-relative 경로 기준. `docs/` 하위 `.md` 전부.
-fn is_scan_target(rel: &str) -> bool {
+/// 체크박스를 금지할 문서인지 — `docs/` 하위 `.md` 전부.
+///
+/// 이름을 물음으로 적는다: 다른 가드의 같은 이름 `is_scan_target` 들과 grep 에서 뭉쳐
+/// 보이지만, 이 가드의 물음은 "체크박스 검사 대상 문서인가" 로 그들과 다르다 — 다른
+/// 물음이라 위임할 정본이 없다(ADR-0180: 같은 이름 다른 물음은 이름을 갈라 세운다).
+fn is_checkbox_doc(rel: &str) -> bool {
     rel.starts_with("docs/") && rel.ends_with(".md")
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상 파일을 모은다. `is_pruned` 는 가지치기.
-fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
-    if path.is_file() {
-        let rel = rel_of(path, root);
-        if is_scan_target(&rel) {
-            out.push(path.to_path_buf());
-        }
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        // ★ **이름으로 하는 가지치기는 종류를 묻지 않는다.** worktree 에서 `.git` 은
-        // 디렉토리가 아니라 `gitdir:` 한 줄이 든 **파일**이다 — 종류를 먼저 물으면
-        // 그 파일이 가지치기를 빠져나가 모집단에 들고, 같은 커밋이 worktree 와 메인
-        // 체크아웃에서 서로 다른 파일을 보게 된다. 모집단이 환경을 읽으면 답도
-        // 언젠가 환경을 읽는다.
-        if is_pruned(name) {
-            continue;
-        }
-        gather(&p, root, out);
-    }
-}
-
-fn rel_of(file: &Path, root: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+/// `docs/` 아래 스캔 대상을 모은다.
+///
+/// **가지치기가 없다.** 순회 루트가 `docs/` 하나이고 빌드 산출물도 로컬 작업 폴더도
+/// 전부 그 밖에 있다. 죽은 가지는 코드가 없는 것보다 나쁘다 — 읽는 사람에게 "이
+/// 가드는 그 경우를 고려했다" 는 거짓 안심을 주면서 그 판정은 한 번도 돌지 않는다.
+///
+/// **그 사실은 여기 적힌 문장이 아니라 `docs_holds_no_prunable_directory` 가 지킨다.**
+/// 한때 이름 기반 가지치기가 이 자리에 있었고 지울 때 근거로 쓴 것은 "한 번도 참이
+/// 된 적이 없다" 였다 — 그 값은 적는 순간 낡고, 낡아도 아무도 모른다. 그래서 값을
+/// 문장으로 남기지 않고 재는 법을 테스트로 남긴다: `docs/` 아래에 가지쳐야 할
+/// 디렉토리가 처음 생기는 날 이 순회는 그것을 그대로 들여다보고 그 아래 `.md` 까지
+/// 검사 대상으로 삼는데, 그날 빨개지는 것은 이 주석이 아니라 그 테스트다.
+///
+/// 하한은 공용 순회가 강제한다 — 여기서 빠뜨릴 수 없고, 실패문도 거기서 나온다.
+fn gather_docs(root: &Path) -> Result<Vec<Walked>, String> {
+    walk_with_floor(
+        &root.join("docs"),
+        root,
+        &DOCS_FLOOR,
+        Descend::Everything,
+        &|found| is_checkbox_doc(&found.rel),
+    )
 }
 
 #[test]
 fn no_checkbox_in_docs() {
     let root = &tasty_doc_guards::repo_root();
-    let mut files = Vec::new();
-    gather(&root.join("docs"), root, &mut files);
-    files.sort();
-    assert!(
-        !files.is_empty(),
-        "docs/ 아래 스캔 대상 .md 가 하나도 없다 — 순회 경로가 잘못됐다"
-    );
+    let files = gather_docs(root).unwrap_or_else(|why| panic!("{why}"));
 
     let mut violations = Vec::new();
-    for file in files {
-        let rel = rel_of(&file, root);
+    for file in &files {
+        let rel = &file.rel;
         if ALLOWLIST_FILES.contains(&rel.as_str()) {
             continue;
         }
-        let Ok(contents) = std::fs::read_to_string(&file) else {
+        let Ok(contents) = std::fs::read_to_string(&file.path) else {
             continue; // 비-UTF8 은 마크다운 문서가 아니다.
         };
         for (i, line) in contents.lines().enumerate() {
@@ -172,4 +163,147 @@ fn checkbox_matcher_hits_only_line_start_list_items() {
     assert!(!is_checkbox_item("-[ ] no space after marker"));
     assert!(!is_checkbox_item("[ ] no list marker"));
     assert!(!is_checkbox_item(""));
+}
+
+/// `docs/` 아래에 있으면 안 되는 디렉토리 이름 — 빌드 산출물과 워크트리·git 내부.
+///
+/// **이 목록은 가지치기를 하지 않는다.** `gather` 가 무가지 순회라는 사실을 지키기
+/// 위해서만 존재한다 — 값이 아니라 재는 법이다.
+const PRUNABLE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
+
+/// gitignored 로컬 작업 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조
+/// 금지(`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// 아니라 판정 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+const LOCAL_HEAD: &str = "claude";
+const LOCAL_TAIL: &str = "-workspace";
+
+/// 디렉토리 이름이 순회에서 가지쳐야 할 것인지 — 빌드 산출물 이름 또는 선행 `.` 이
+/// 붙은 로컬 작업 폴더. 두 갈래는 서로 다른 축이라 둘 다 대조가 필요하다.
+fn is_prunable_dir(name: &str) -> bool {
+    PRUNABLE_DIRS.contains(&name)
+        || name
+            .strip_prefix('.')
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
+}
+
+/// `docs/` 아래 디렉토리 순회의 하한. 여기서 하한은 **모은 수가 아니라 훑은 수**에
+/// 걸린다 — 가지쳐야 할 디렉토리가 0 개인 것이 이 가드가 지키려는 정상 상태다.
+const DOCS_DIR_FLOOR: Floor = Floor {
+    min: 50,
+    measured: 87,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 `docs/` 아래 디렉토리 수다. 문서 디렉토리는 카테고리라 \
+                   개별 문서보다 훨씬 천천히 움직이지만, 카테고리 하나를 접으면 그 아래가 \
+                   통째로 사라져 한 번에 여럿이 준다 — 그래서 여유를 중간쯤 둔다.",
+};
+
+/// `root` 하위를 순회하며 `is_prunable_dir` 이 참인 디렉토리를 모은다.
+/// 가지친 자리 아래로도 계속 내려간다 — 세는 것이 목적이지 자르는 것이 아니다.
+///
+/// 하한을 **인자로** 받는다. 본 테스트와 대조가 같은 순회를 부르되 대조는 작은 트리를
+/// 쓰기 때문이다 — 하한을 상수로 박으면 대조가 그 하한에 걸려 다른 순회를 짜게 되고,
+/// 그러면 대조가 본 테스트와 다른 것을 재게 된다.
+fn prunable_dirs_under(root: &Path, rel_root: &Path, floor: &Floor) -> Result<Vec<String>, String> {
+    walk_dirs_with_floor(root, rel_root, floor, &|found| {
+        let name = found
+            .path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        if is_prunable_dir(&name) {
+            Pick::Take
+        } else {
+            Pick::Skip
+        }
+    })
+    .map(|dirs| dirs.into_iter().map(|d| d.rel).collect())
+}
+
+#[test]
+fn docs_holds_no_prunable_directory() {
+    let root = &tasty_doc_guards::repo_root();
+    let found = prunable_dirs_under(&root.join("docs"), root, &DOCS_DIR_FLOOR)
+        .unwrap_or_else(|why| panic!("{why}"));
+    assert!(
+        found.is_empty(),
+        "docs/ 아래에 순회에서 가지쳐야 할 디렉토리가 있다 — 이 가드의 순회(`gather`)는 \
+         가지치기를 하지 않으므로 그 안의 `.md` 까지 체크박스 검사 대상이 된다.\n\
+         셋 중 하나를 골라라. (1) 그 디렉토리를 `docs/` 밖으로 옮긴다. (2) 그 안의 문서도 \
+         검사 대상이 맞다면 이 테스트를 지우고 `gather` 주석의 무가지 근거를 다시 쓴다. \
+         (3) 검사 대상이 아니라면 `gather` 에 가지치기를 되살리고 이 테스트를 그 가지의 \
+         대조로 바꾼다.\n\
+         PRUNABLE_DIRS 에서 이름을 빼거나 이 테스트를 지워서 통과시키지 마라 — 그러면 \
+         `gather` 가 가지 없이 도는 것이 옳다는 사실을 지키는 것이 아무것도 안 남는다.\n\
+         빨간 경로가 네 변경과 무관해 보이면 먼저 만든 쪽을 찾아라 — 이 검사는 레포 실물 \
+         `docs/` 를 보고, 함께 도는 다른 테스트 바이너리가 거기에 디렉토리를 만들면 그 \
+         타깃의 뒷정리 누락이 여기서 빨개진다: \
+         grep -rn --include='*.rs' create_dir tests crates | grep docs\n{}",
+        found.join("\n")
+    );
+}
+
+#[test]
+fn the_prunable_check_reacts_to_a_planted_tree() {
+    // 술어 축 — 두 갈래가 각각 산다.
+    assert!(is_prunable_dir("target"), "빌드 산출물 이름을 안 잡는다");
+    assert!(
+        is_prunable_dir("node_modules"),
+        "빌드 산출물 이름을 안 잡는다"
+    );
+    assert!(
+        is_prunable_dir(&format!(".{LOCAL_HEAD}")),
+        "선행 `.` 로컬 작업 폴더를 안 잡는다"
+    );
+    assert!(
+        is_prunable_dir(&format!(".{LOCAL_HEAD}{LOCAL_TAIL}")),
+        "선행 `.` 로컬 작업 폴더를 안 잡는다"
+    );
+    assert!(
+        !is_prunable_dir("adr"),
+        "평범한 docs 하위 디렉토리를 잡는다"
+    );
+    assert!(
+        !is_prunable_dir("targets"),
+        "이름이 겹치는 다른 디렉토리를 잡는다"
+    );
+
+    // 순회 축 — 실제 디렉토리를 심어서 부른다. 술어만 부르면 순회가 죽어도 초록이다.
+    let stamp = format!(
+        "tasty-checkbox-guard-probe-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let base = std::env::temp_dir().join(stamp);
+    let docs = base.join("docs");
+    std::fs::create_dir_all(docs.join("guide").join("target").join("deep")).unwrap();
+    std::fs::create_dir_all(docs.join(format!(".{LOCAL_HEAD}"))).unwrap();
+    std::fs::create_dir_all(docs.join("adr")).unwrap();
+
+    // 대조는 심은 트리를 쓰므로 하한도 그 트리의 것이다. 본 테스트와 **같은 순회**를
+    // 부르되 하한만 갈아 끼운다 — 대조가 다른 순회를 짜면 본 테스트가 쓰는 것을 안 재게 된다.
+    let probe_floor = Floor {
+        min: 3,
+        measured: 5,
+        measured_on: "2026-09-06",
+        why_this_gap: "심은 트리라 수가 고정이다. 하한을 실측보다 낮춰 두는 것은 이 대조가                        트리 모양의 사소한 변경에 깨지지 않게 하려는 것뿐이다.",
+    };
+    let found = prunable_dirs_under(&docs, &base, &probe_floor)
+        .unwrap_or_else(|why| panic!("대조 트리 순회가 하한에 걸렸다: {why}"));
+    // 정리 실패는 무시한다 — 판정은 위에서 이미 끝났고, 여기서 `?` 나 `unwrap` 을
+    // 쓰면 임시 디렉토리 삭제 실패가 가드의 빨강으로 둔갑한다. 남아도 임시 경로다.
+    let _ = std::fs::remove_dir_all(&base);
+
+    assert_eq!(
+        found,
+        vec![
+            format!("docs/.{LOCAL_HEAD}"),
+            "docs/guide/target".to_string()
+        ],
+        "심은 트리에서 가지칠 디렉토리를 정확히 두 개 집어야 한다 — 얕은 자리만 보거나 \
+         평범한 디렉토리까지 집으면 이 목록이 달라진다"
+    );
 }
