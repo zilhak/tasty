@@ -128,7 +128,7 @@ restored. Check with `tasty list workspaces` before you close.
 ```sh
 tasty surface cursor-position --surface 42     # which row and column the cursor sits at
 tasty surface foreground-process --surface 42  # what is running in front (a shell means idle)
-tasty surface mouse-tracking --surface 42      # whether the program inside grabbed the mouse
+tasty surface mouse-tracking --surface 42      # whether the program grabbed the mouse, and whether tasty honours it
 tasty surface locate --surface 42              # the pane it belongs to, and whether it still exists
 tasty surface respawn-terminal --surface 42    # restart the shell, keeping the surface in place
 tasty surface fire-hook --surface 42 --event process-exit    # fire a hook yourself

@@ -1058,7 +1058,7 @@ impl MainView {
         surface_id: u32,
         actual: tasty_terminal::MouseTrackingMode,
     ) -> tasty_terminal::MouseTrackingMode {
-        effective_click_tracking_decision(
+        crate::state::mouse::effective_click_tracking_decision(
             self.core_state.attach.is_hard_occupied(surface_id),
             self.core_state
                 .is_surface_mouse_capture_disabled(surface_id),
@@ -1467,21 +1467,6 @@ fn left_click_local_select(
     tracking == tasty_terminal::MouseTrackingMode::None || shift || bypass_active
 }
 
-/// `effective_click_tracking`(MainView 메서드)의 순수 결정 로직. hard 점유(readonly)
-/// 이거나 마우스 캡처 블랙리스트에 걸리면 실제 트래킹 모드와 무관하게 `None`으로
-/// 격하한다 — 그래야 `left_click_local_select`가 항상 로컬 선택으로 떨어진다.
-fn effective_click_tracking_decision(
-    is_hard_occupied: bool,
-    capture_disabled: bool,
-    actual: tasty_terminal::MouseTrackingMode,
-) -> tasty_terminal::MouseTrackingMode {
-    if is_hard_occupied || capture_disabled {
-        tasty_terminal::MouseTrackingMode::None
-    } else {
-        actual
-    }
-}
-
 /// `try_begin_os_resize`(MainView 메서드, `#[cfg(not(target_os = "macos"))]`)가 가장자리
 /// margin 안의 좌클릭 press 에서 OS 리사이즈를 **양보해야 하는지** 뽑아낸 순수 로직.
 /// 참이면 `resize_direction_at`이 방향을 찾아도 리사이즈를 시작하지 않고 일반 클릭
@@ -1852,47 +1837,8 @@ mod right_click_tests {
 
 #[cfg(test)]
 mod left_click_tests {
-    use super::{effective_click_tracking_decision, left_click_local_select};
+    use super::left_click_local_select;
     use tasty_terminal::MouseTrackingMode;
-
-    #[test]
-    fn hard_occupied_forces_tracking_none_even_if_actually_on() {
-        // hard 점유(readonly): live 트래킹이 켜져 있어도(AllMotion 등) 항상 None 으로
-        // 격하해 로컬 선택으로 떨어져야 한다 — 조용한 무동작(앱 보고 스킵)을 방지.
-        assert_eq!(
-            effective_click_tracking_decision(true, false, MouseTrackingMode::AllMotion),
-            MouseTrackingMode::None
-        );
-        assert_eq!(
-            effective_click_tracking_decision(true, false, MouseTrackingMode::CellMotion),
-            MouseTrackingMode::None
-        );
-    }
-
-    #[test]
-    fn hard_occupied_and_capture_disabled_both_force_none() {
-        // 두 조건은 or — 어느 한쪽만 참이어도 None.
-        assert_eq!(
-            effective_click_tracking_decision(true, true, MouseTrackingMode::Click),
-            MouseTrackingMode::None
-        );
-        assert_eq!(
-            effective_click_tracking_decision(false, true, MouseTrackingMode::Click),
-            MouseTrackingMode::None
-        );
-    }
-
-    #[test]
-    fn not_occupied_and_not_disabled_keeps_actual_tracking() {
-        assert_eq!(
-            effective_click_tracking_decision(false, false, MouseTrackingMode::CellMotion),
-            MouseTrackingMode::CellMotion
-        );
-        assert_eq!(
-            effective_click_tracking_decision(false, false, MouseTrackingMode::None),
-            MouseTrackingMode::None
-        );
-    }
 
     #[test]
     fn tracking_on_shift_press_starts_local_select() {

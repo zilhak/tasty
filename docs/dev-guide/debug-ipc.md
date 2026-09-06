@@ -183,6 +183,15 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 에이전트는 마우스 시퀀스를 보낼지 텍스트를 보낼지 정할 수 없고, 드래그 선택이 왜 안 먹는지도
 가릴 수 없다. `surface.foreground_process`(셸이 유휴인가)와 같은 자리다.
 
+★ 그리고 **그 release 표면은 두 값을 낸다.** 터미널 레지스터가 무엇인지(`terminal_mode`)와
+마우스 핸들러가 그것을 존중하는지(`effective_click_mode`)는 다른 물음이고, 사이에 격하가
+하나 있다 — hard 점유이거나 전경 프로세스가 마우스 캡처 블랙리스트에 걸리면 핸들러는 실제
+모드와 무관하게 `None` 으로 취급한다(`crate::state::mouse::effective_click_tracking_decision`).
+한 값으로 뭉개면 **낱말 하나가 두 축을 덮고**, 두 축이 어긋나는 기계에서 관측면이 거꾸로
+읽힌다("터미널이 all_motion 인데 보고 0" 을 제품 결함으로 읽지만 사실은 격하가 정상 동작한
+것이다). 그 격하 판정은 소비자가 둘(라우팅·관측면)이라 gui 게이트 밖(`src/state/mouse.rs`)에
+두고 **같은 함수를 부른다** — 복제하지 않는 것은 위 `debug.glyph_color`/`cell_palette` 와 같은 처방이다.
+
 **이 판정은 자동으로 안 난다.** `tests/ipc_release_table_excludes_input_reproduction.rs` 의
 이름 규칙(`inject`·`raw_key`·`switch_input_source`·`ime_`·`simulate`)은 이 이름을 안 잡는다 —
 그 가드가 스스로 적어 둔 사각지대("이름에 단서가 없고 debug CLI 진입점도 없는 새 release
