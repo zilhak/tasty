@@ -1,8 +1,9 @@
 name: Script Gates
 
-# `scripts/` 의 셸 게이트 중 **텍스트 스캔** 둘을 돌린다.
-#   - check-intent-discipline.sh : Intent 큐를 우회한 도메인 직접 mutation
-#   - check-allow-reason.sh      : 사유 없는 `#[allow(...)]`
+# `scripts/` 의 셸 게이트 중 **텍스트 스캔** 셋을 돌린다.
+#   - check-intent-discipline.sh   : Intent 큐를 우회한 도메인 직접 mutation
+#   - check-allow-reason.sh        : 사유 없는 `#[allow(...)]`
+#   - check-shared-walk-ratchet.sh : 공용 순회를 안 거치는 직접 `read_dir`
 #
 # 둘 다 등록 이래 **어떤 자동 채널에도 없었다.** 그 사이 intent 쪽은 위반 50 건을
 # 쌓은 채 빨갛게 있었고(문서 셋은 그것을 살아 있는 게이트로 인용하고 있었다),
@@ -23,11 +24,12 @@ on:
   #
   # `paths-ignore` 를 complexity-check 에서 그대로 베끼지 않고 **스캔 대상을 먼저
   # 확인했다**: 두 스크립트 모두 `.rs` 만 읽는다
-  #   check-intent-discipline.sh : find src -name '*.rs'
-  #   check-allow-reason.sh      : rg --files -g '*.rs' crates src
-  # `site/` 에 `.rs` 가 있지만 두 스캔의 대상 밖(`src`·`crates` 만 본다)이라
-  # `site/**` 를 건너뛰어도 사각이 생기지 않는다. 문서만 담은 push 는 두 판정을
-  # 바꿀 수 없다.
+  #   check-intent-discipline.sh   : find src -name '*.rs'
+  #   check-allow-reason.sh        : rg --files -g '*.rs' crates src
+  #   check-shared-walk-ratchet.sh : git ls-files tests/*.rs crates/*/tests/*.rs
+  # `site/` 에 `.rs` 가 있지만 세 스캔의 대상 밖이라 `site/**` 를 건너뛰어도 사각이
+  # 생기지 않는다(앞 둘은 `src`·`crates` 만 보고, 셋째는 통합 테스트 디렉토리만 본다).
+  # 문서만 담은 push 는 세 판정을 바꿀 수 없다.
   push:
     branches: [main]
     paths-ignore:
@@ -69,3 +71,10 @@ jobs:
       - name: Allow reason (ratchet)
         if: always()
         run: bash scripts/check-allow-reason.sh
+
+      # 같은 형태의 래칫이지만 **세는 대상이 다르다**: 공용 순회를 안 거치고 직접 트리를
+      # 훑는 자리다. `if: always()` 인 이유도 위와 같다 — 앞 게이트가 죽으면 이 줄이 아예
+      # 안 나오고, 없는 줄은 `0 failed` 로도 안 보인다.
+      - name: Shared walk (ratchet)
+        if: always()
+        run: bash scripts/check-shared-walk-ratchet.sh
