@@ -66,6 +66,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
 /// 검사 대상 언어 — **로더의 정본을 그대로 쓴다**(사본을 만들지 않는다).
 ///
@@ -230,12 +231,31 @@ fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// repo-relative 경로 — 구분자는 어느 플랫폼에서든 `/`.
+///
+/// 직접 펴지 않고 [`normalized_rel`] 을 부른다. 같은 네 줄을 여기 다시 쓰면 두 사본을
+/// 같게 유지하는 것이 아무것도 없고, 어긋난 쪽은 빨강이 아니라 **조용한 0** 을 낸다 —
+/// Windows 에서 구분자가 `\` 로 나오면 소스에 박힌 `/` 리터럴과 비교가 모조리 빗나가고
+/// 가드는 "위반 없음" 으로 보고한다. `floored_walk_consumers_do_not_renormalize` 가
+/// 이 자리를 집행한다.
 fn rel_of(file: &Path) -> String {
-    file.strip_prefix(root())
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+    normalized_rel(file, root())
 }
+
+/// [`builtin_codes_match_the_language_files_on_disk`] 의 순회 하한.
+///
+/// 하한을 실측값에 붙이지 않는다. 이 모수는 **지원 언어 수**이고 그 값 자체가 그 시험이
+/// 단정하는 대상이라, 하한을 3 으로 잡으면 언어를 하나 빼는 정당한 변경이 "순회가 죽었다"
+/// 로 잘못 진단된다 — 그때 실제로 봐야 할 것은 `BUILTIN_CODES` 와 어긋나는가다. 그래서
+/// 여기서 하한이 보는 것은 순회 자체의 생존뿐이고, 값의 정합은 그 아래 `assert_eq!` 가 본다.
+const LANG_DIR_FLOOR: Floor = Floor {
+    min: 1,
+    measured: 3,
+    measured_on: "2026-09-07",
+    why_this_gap: "이 모수는 지원 언어 수이고, 그 값 자체가 이 시험이 단정하는 대상이다. \
+                   하한을 실측 3 에 붙이면 언어를 하나 빼는 정당한 변경이 순회 사망으로 \
+                   잘못 진단된다. 여기서 하한은 순회 생존만 본다.",
+};
 
 /// 정본(`BUILTIN_CODES`)이 **디스크와** 맞는지 본다 — 밖의 고정점과 견주는 단정 하나.
 ///
@@ -251,27 +271,25 @@ fn rel_of(file: &Path) -> String {
 #[test]
 fn builtin_codes_match_the_language_files_on_disk() {
     let dir = root().join("lang");
-    let entries =
-        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
-    let on_disk: BTreeSet<String> = entries
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("toml"))
-        .filter_map(|p| {
-            p.file_stem()
-                .and_then(|n| n.to_str())
-                .map(std::string::ToString::to_string)
-        })
-        .collect();
 
-    // 비영 대조 — 디렉토리를 못 읽었거나 확장자 필터가 틀리면 아래 비교는 "정본이
-    // 비었다" 와 구별되지 않는다.
-    assert!(
-        !on_disk.is_empty(),
-        "{} 에서 `.toml` 을 하나도 못 찾았다 — 경로나 필터가 틀렸다. 그러면 아래 비교는 \
-         아무것도 안 잰다",
-        dir.display()
-    );
+    // 비영 대조를 공용 순회가 만든다. 경로가 틀렸거나 확장자 필터가 빗나가면 아래 비교는
+    // "정본이 비었다" 와 구별되지 않는데, 그 구별을 소비자마다 손으로 다시 쓰면 언젠가 한
+    // 곳이 빠뜨리고 빠뜨린 쪽은 조용하다(`tasty_doc_guards::floored_walk` 모듈 주석).
+    let walked = walk_with_floor(
+        &dir,
+        &dir,
+        &LANG_DIR_FLOOR,
+        // `lang/` 아래에는 가지칠 것이 없다 — 카탈로그 파일만 평평하게 놓인다.
+        Descend::Everything,
+        &|w: &Walked| w.rel.ends_with(".toml"),
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
+
+    let on_disk: BTreeSet<String> = walked
+        .iter()
+        .filter_map(|w| w.rel.strip_suffix(".toml"))
+        .map(std::string::ToString::to_string)
+        .collect();
 
     let declared: BTreeSet<String> = tasty_i18n::BUILTIN_CODES
         .iter()
