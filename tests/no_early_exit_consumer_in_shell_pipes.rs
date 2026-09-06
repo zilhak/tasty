@@ -62,18 +62,31 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 ///
 /// 고정 개수의 두 용도 중 **연기 검사** 쪽이다: 모수를 이 수로 고정하는 것이 아니라,
 /// 경로가 어긋나 0 을 내는 것을 막는 하한이다.
-const MIN_SHELL_SCRIPTS: usize = 15;
+///
+/// # 이 파일의 이름 규약 — `_SCAN_FLOOR`
+///
+/// 이 파일의 세 상수는 한때 전부 `MIN_` 으로 시작했다. 그 접두는 **두 가지를 안 가른다**:
+///
+/// - "수집이 이만큼은 됐는가" (연기 검사 — 값이 낮으면 순회가 죽은 것이다)
+/// - "정책이 이만큼을 요구한다" (요구 사항 — 값이 낮으면 우리가 덜 만든 것이다)
+///
+/// 앞쪽은 값이 내려가면 **계측기**를 의심해야 하고 뒤쪽은 **대상**을 의심해야 한다.
+/// 이름이 그것을 안 가르면 다음 사람이 틀린 쪽을 먼저 본다. 이 파일의 셋은 전부 앞쪽이라
+/// `_SCAN_FLOOR` 로 통일했다 — 공용 순회의 [`tasty_doc_guards::floored_walk::Floor`] 가
+/// 같은 물음에 붙인 이름이고, 같은 물음에는 같은 낱말을 쓴다.
+/// 정책 요구를 뜻하는 수를 나중에 두게 되면 그때는 `REQUIRED_` 로 시작해라.
+const SHELL_SCRIPT_SCAN_FLOOR: usize = 15;
 
 /// 워크플로 수집 하한 — 같은 이유로, 경로가 어긋나 0 을 내는 것을 막는다.
 ///
 /// **이 값은 워크플로 수의 하한이다.** [`shell_carriers`] 가 내는 집합의 하한이 아니다 —
-/// 그쪽은 Justfile 을 더한 것이라 모수가 다르고, 자기 이름을 갖는다([`MIN_SHELL_CARRIERS`]).
-const MIN_WORKFLOWS: usize = 8;
+/// 그쪽은 Justfile 을 더한 것이라 모수가 다르고, 자기 이름을 갖는다([`SHELL_CARRIER_SCAN_FLOOR`]).
+const WORKFLOW_SCAN_FLOOR: usize = 8;
 
 /// 셸을 담는 자리의 하한 — [`shell_carriers`] 가 내는 집합의 크기.
 ///
-/// **모수가 [`MIN_WORKFLOWS`] 와 다르다.** 여기 담기는 것은 Justfile 하나 + 워크플로
-/// 전부다. 한때 이 자리가 `MIN_WORKFLOWS` 를 빌려 썼는데, 그러면 재는 수와 이름이
+/// **모수가 [`WORKFLOW_SCAN_FLOOR`] 와 다르다.** 여기 담기는 것은 Justfile 하나 + 워크플로
+/// 전부다. 한때 이 자리가 `WORKFLOW_SCAN_FLOOR` 를 빌려 썼는데, 그러면 재는 수와 이름이
 /// 가리키는 수가 달라 값을 고칠 때 어느 모수를 고쳤는지 못 읽는다.
 ///
 /// 값의 근거: 2026-09-06 실측 **12**(Justfile 1 + `.github/workflows` 의 yml 11).
@@ -85,7 +98,7 @@ const MIN_WORKFLOWS: usize = 8;
 /// Justfile 을 **이름으로** 확인하고 워크플로 수를 디스크와 **같은지**로 확인한다. 이름과
 /// 등호가 부등호보다 강하다. 그러니 이 값의 몫은 하나뿐이다: 아래 루프가 얇은 인구 위에서
 /// 돌기 전에 그 자리에서 멈추는 것.
-const MIN_SHELL_CARRIERS: usize = 9;
+const SHELL_CARRIER_SCAN_FLOOR: usize = 9;
 
 /// 수집 결과가 **믿을 만한가** — 판정을 순수 함수로 뽑아 합성 입력으로 찌를 수 있게 한다.
 ///
@@ -93,7 +106,7 @@ const MIN_SHELL_CARRIERS: usize = 9;
 /// 않는다. 특히 0 을 넣었을 때 거짓이 되는지가 이 가드의 핵심인데, 그것을 확인하는 유일한
 /// 길이 실제로 수집을 깨뜨려 보는 것이 되어 버린다.
 fn scan_is_credible(found: usize) -> bool {
-    found >= MIN_SHELL_SCRIPTS
+    found >= SHELL_SCRIPT_SCAN_FLOOR
 }
 
 /// 따옴표 밖의 `#` 부터 줄 끝까지 잘라낸다.
@@ -376,8 +389,8 @@ fn shell_carriers(root: &Path) -> Vec<(String, Vec<(usize, String)>)> {
         .collect();
     wf_files.sort();
     assert!(
-        wf_files.len() >= MIN_WORKFLOWS,
-        "워크플로를 {}개밖에 못 찾았다(하한 {MIN_WORKFLOWS}) — 수집이 깨졌다.\n\
+        wf_files.len() >= WORKFLOW_SCAN_FLOOR,
+        "워크플로를 {}개밖에 못 찾았다(하한 {WORKFLOW_SCAN_FLOOR}) — 수집이 깨졌다.\n\
          ★ 판별 — 이 자리는 갈래가 하나뿐이다. 바로 위에서 `read_dir` 실패는 이미 panic 으로 걸러 \
          냈으니, 여기까지 와서 수가 모자란 것은 **디렉토리는 열렸는데 그 안에 정말 적은 것**이다. \
          밖에서 세는 값이 같아야 한다:\n\
@@ -412,7 +425,7 @@ fn no_shell_script_pipes_into_an_early_exit_consumer() {
     collect_shell_scripts(&root, &mut files);
     assert!(
         scan_is_credible(files.len()),
-        "셸 스크립트를 {}개밖에 못 찾았다(하한 {MIN_SHELL_SCRIPTS}) — 수집이 깨졌다. \
+        "셸 스크립트를 {}개밖에 못 찾았다(하한 {SHELL_SCRIPT_SCAN_FLOOR}) — 수집이 깨졌다. \
          위반 0 이 '깨끗하다' 가 아니라 '아무것도 안 봤다' 일 수 있다.\n\
          ★ 판별 — 이 모수는 **내용(shebang)으로** 고른 집합이고, 확장자로 고른 집합이 그 짝이다:\n\
              git ls-files '*.sh' '*.bash' | wc -l\n\
@@ -547,8 +560,8 @@ fn the_scan_refuses_to_report_zero_from_an_empty_input() {
     // 그리고 그 "위반 0" 이 초록으로 새지 않도록 막는 것이 하한이다 — **0 이 안 통과하는
     // 것**이 요점이고, 그것을 여기서 직접 잰다. 하한을 0 으로 낮추면 이 단언이 죽는다.
     assert!(!scan_is_credible(0));
-    assert!(!scan_is_credible(MIN_SHELL_SCRIPTS - 1));
-    assert!(scan_is_credible(MIN_SHELL_SCRIPTS));
+    assert!(!scan_is_credible(SHELL_SCRIPT_SCAN_FLOOR - 1));
+    assert!(scan_is_credible(SHELL_SCRIPT_SCAN_FLOOR));
 }
 
 #[test]
@@ -556,8 +569,8 @@ fn no_shell_carrier_pipes_into_an_early_exit_consumer() {
     let root = repo_root();
     let carriers = shell_carriers(&root);
     assert!(
-        carriers.len() >= MIN_SHELL_CARRIERS,
-        "셸을 담는 자리를 {}개밖에 못 찾았다(하한 {MIN_SHELL_CARRIERS}) — 수집이 깨졌다.\n\
+        carriers.len() >= SHELL_CARRIER_SCAN_FLOOR,
+        "셸을 담는 자리를 {}개밖에 못 찾았다(하한 {SHELL_CARRIER_SCAN_FLOOR}) — 수집이 깨졌다.\n\
          ★ 판별 — 이 모수는 Justfile 하나 + 워크플로 전부이고, 그 차가 곧 판별식이다. [`shell_carriers`] 는 워크플로 앞에 Justfile 하나를 \
          담고, 그 자리는 `if let Ok(text)` 라 **읽기에 실패하면 조용히 빠진다.** 그러니:\n\
              carriers.len() - (`.github/workflows` 의 yml/yaml 수) 는 정확히 1 이어야 한다.\n\
