@@ -39,6 +39,18 @@ const WORKFLOW_FLOOR: Floor = Floor {
                    줄어든 게 아니라 순회 루트가 어긋난 것이다.",
 };
 
+/// 잡 하한. [`WORKFLOW_FLOOR`] 와 **모수가 다르다** — 저쪽은 `.yml` 파일 수이고 여기는
+/// 그 파일들에서 뽑아낸 **자동 잡의 수**다. 파일은 다 읽혔는데 잡 헤더 판독이 깨지면
+/// 저쪽은 통과하고 여기가 잡는다(그 판독은 2 칸 들여쓰기 관례에 매달려 있다 —
+/// `automatic_job_bodies` 의 doc 참조). 두 하한이 같은 8 인 것은 우연이다.
+const JOB_FLOOR: Floor = Floor {
+    min: 8,
+    measured: 20,
+    measured_on: "2026-09-07",
+    why_this_gap: "잡은 워크플로마다 하나에서 넷까지라 파일 수보다 흔들린다. 그래도 \
+                   8 아래는 파일이 줄어든 것이 아니라 잡 헤더 판독이 깨진 것이다.",
+};
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -100,9 +112,11 @@ fn runs_on_ubuntu(body: &str) -> bool {
 fn the_compile_channel_for_guard_tests_still_exists_on_windows() {
     let jobs = automatic_jobs();
     assert!(
-        jobs.len() >= 8,
-        "자동 잡을 {} 개밖에 못 읽었다(하한 8) — 파싱이 깨지면 아래 판정이 전부 공허하다",
-        jobs.len()
+        jobs.len() >= JOB_FLOOR.min,
+        "자동 잡을 {} 개밖에 못 읽었다(하한 {}) — {}",
+        jobs.len(),
+        JOB_FLOOR.min,
+        JOB_FLOOR.why_this_gap
     );
 
     let compilers: Vec<&str> = jobs
