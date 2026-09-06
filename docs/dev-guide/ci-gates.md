@@ -664,6 +664,36 @@ done | wc -l
 [ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) 가 수에
 대해 말한 것과 같은 이유로, 검증 주장도 그 출처를 잃으면 낡은 채로 읽힌다.
 
+### 같은 파일이라도 **컴파일 채널과 실행 채널이 다르다** — 결론에 둘을 갈라 적는다
+
+`crates/tasty-doc-guards/tests/*` 가 그 형태다.
+
+- **컴파일 축은 채널이 있다.** Windows 잡의 `cargo clippy --workspace --all-targets` 가 이
+  크레이트의 통합 테스트를 타깃으로 잡는다. 플랫폼 API 를 분기 없이 쓰면 거기서 죽는다 —
+  실제로 `std::os::unix::fs::symlink` 를 분기 없이 쓴 시험이 `E0433` 으로 잡혔다.
+- **실행 축은 채널이 없다.** 이 통합 테스트를 **실행하는** 자동 잡은 `doc-guards.yml`
+  하나이고 `ubuntu-latest` 다. Windows 잡의 테스트 명령은 `--lib --bins` 라 여기 안 닿는다.
+
+그래서 "이 크레이트는 Windows 에서 안 돈다" 도 "돈다" 도 둘 다 반쪽이다. 결론을 쓸 때
+**어느 축인지 말한다.**
+
+푸시 전에 컴파일 축을 직접 재는 명령:
+
+```bash
+cargo check -p tasty-doc-guards --all-targets --target x86_64-pc-windows-msvc
+```
+
+★ **타깃이 안 깔렸으면 그 빨강은 코드 결함이 아니라 미측정이다.** `std` 를 못 찾는 실패와
+소스의 실패를 같은 칸에 적지 마라(`rustup target add x86_64-pc-windows-msvc`).
+
+실행 축에 남는 미측정을 좁히려면 그 크레이트 안에서 **플랫폼이 답을 가를 수 있는 자리**를
+세면 된다. 경로 구분자 축은 그렇게 셌고 지금 0 이다 — 판정에 쓰이는 레포 상대 경로는 전부
+공용 정규화나 손 정규화를 거치거나 성분 하나짜리 이름이고, 나머지 평탄화는 진단 문자열이라
+구분자가 **찍히는 글자만** 바꾼다. 세는 술어는
+[`repo_relative_paths`](../../src/source_guards/repo_relative_paths.rs) 가 들고 있고, 그
+가드는 bin 이라 Windows 의 `--bins` 로도 돈다. 줄 축은 `str::lines()` 가 후행 `\r` 를
+떼므로 그 함수를 쓰는 자리는 CRLF 에 안 흔들린다 — `split('\n')` 을 쓰는 자리만 따로 본다.
+
 ### macOS 유닛 테스트의 비용은 이 잡의 시간이 아니다
 
 `check-macos` 는 오래 `cargo check` 하나뿐이었고, 그래서 **macOS 로 게이트된 유닛 테스트는
