@@ -47,6 +47,15 @@ static CLEANUP_PID: AtomicU32 = AtomicU32::new(0);
 /// 1.1 GB × 14 = 15 GB 가 남았다(번들 plugin 사본이 홈마다 들어간다). PID kill 과 같은
 /// atexit 콜백에 함께 태운다.
 static CLEANUP_HOME: OnceLock<PathBuf> = OnceLock::new();
+/// 공유 인스턴스의 port 파일. 홈과 **같은 이유로** 여기 있어야 한다 — `Drop` 은 이
+/// 하네스에서 안 돈다.
+///
+/// 이것만 빠져 있었다. 실측 2026-09-07: `/tmp` 에 죽은 `tasty-gui-test-*.port` **112 개**,
+/// 남은 `tasty-gui-test-home-*` **0 개** — 홈은 지워지고 port 파일만 쌓인 자국이다.
+/// 그 잔해가 계기를 망친다: 실행 중인 인스턴스를 글롭(`/tmp/tasty-gui-test-*.port`)으로
+/// 찾으면 죽은 파일이 전부 잡혀 `Connection refused` 만 나오고, 그 증상은 "대상이 없다"
+/// 가 아니라 **"대상이 있는데 안 붙는다"** 로 보여 계기가 아니라 표적을 의심하게 만든다.
+static CLEANUP_PORT: OnceLock<PathBuf> = OnceLock::new();
 /// 첫 spawn 이 실패했을 때 뒤 테스트가 **실제로 다시 프로세스를 띄우는 것**을 막는다.
 /// 기전은 `spawn_diag` 에 있고 상태만 여기 둔다 — 이유는 그쪽 doc 주석 참조.
 /// 형제 하네스 `tests/common` 은 같은 래치를 자기 안에 손으로 갖고 있다(그 파일은
@@ -69,6 +78,8 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
         // 클로저 안이라 프로세스당 한 번만 돈다. 두 번째 호출이 있다면 그것은 이 설계가
         // 깨진 것이고, 그때도 먼저 넣은 경로가 유효하므로 덮어쓰지 않는 것이 옳다.
         let _ = CLEANUP_HOME.set(inst.isolated_home.clone());
+        // 위와 같은 이유(첫 호출에서 한 번만 돈다)로 `set` 의 `Err` 은 무시한다.
+        let _ = CLEANUP_PORT.set(inst.port_file.clone());
         extern "C" fn on_exit() {
             let pid = CLEANUP_PID.load(Ordering::Relaxed);
             if pid != 0 {
@@ -92,6 +103,11 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
                 // 디렉터리이고, 남아도 다음 회차는 자기 `unique` 로 새 경로를 쓴다.
                 // atexit 안이라 패닉시킬 수도 없다.
                 let _ = std::fs::remove_dir_all(home);
+            }
+            if let Some(port) = CLEANUP_PORT.get() {
+                // reason: 위와 같다. 다만 이쪽은 남았을 때의 값이 다르다 — 홈은 디스크만
+                // 먹지만 port 파일은 **다음 사람의 계기를 망친다**(위 `CLEANUP_PORT` 주석).
+                let _ = std::fs::remove_file(port);
             }
         }
         // SAFETY: atexit는 process-lifetime callback을 등록. on_exit는 'static fn 포인터.
