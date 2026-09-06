@@ -155,6 +155,15 @@ const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
 ];
 
 /// 코퍼스 하한 — 스캔이 비면 위반도 0 이 되어 가드가 조용히 통과한다.
+/// 실측 2026-09-07: **186**(하한 150, 여유 36). 루트별로는 `src/view` 55 ·
+/// `src/adapters/ui` 90 · `src/gfx/gpu` 8 · `crates/tasty-ui-widgets/src` 32 ·
+/// `crates/tasty-egui-theme/src` 1 이다.
+///
+/// 이 수 아래로 내려가면 **큰 루트 하나가 통째로 안 걷힌 것**이다 — 위 분해에서 36 을
+/// 넘는 루트는 셋뿐이라 그중 하나가 빠져야 여기 걸린다. 작은 둘(8·1)이 사라지는 것은
+/// 이 하한이 **못 본다**: 그쪽은 루트마다 따로 확인하는
+/// `the_scan_roots_are_directories` 의 몫이고, 지금 그 시험은 `src/gfx/gpu` 하나만
+/// 걷어 본다. 나머지 넷은 어느 쪽도 개별로는 안 본다.
 const MIN_LENGTH_SETTER_SCANNED_FILES: usize = 150;
 
 /// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
