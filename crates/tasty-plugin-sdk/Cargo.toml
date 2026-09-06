@@ -13,6 +13,9 @@ serde_json = "1"
 toml = "0.8"
 tracing = "0.1"
 tasty-utils = { path = "../tasty-utils" }
+# i18n 평탄화 규칙 한 벌을 host 와 공유한다(src/i18n.rs 참조). 새 전이 의존은 없다 —
+# 이 크레이트가 이미 toml·tracing·tasty-utils 를 갖고 있고 tasty-i18n 은 그 셋만 쓴다.
+tasty-i18n = { path = "../tasty-i18n" }
 anyhow = "1"
 thiserror = "1"
 
