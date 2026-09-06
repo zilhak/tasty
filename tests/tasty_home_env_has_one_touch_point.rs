@@ -105,7 +105,11 @@ fn violations_in(raw: &str) -> Vec<(usize, &'static str)> {
             out.push((i + 1, "env 쓰기"));
         }
         if code.contains(LOCK_IDENT) {
-            out.push((i + 1, "락 직접 획득"));
+            // 이 갈래의 뜻은 락이 모듈 비공개가 되면서 바뀌었다. 밖에서 **획득**하는 것은
+            // 이제 컴파일러가 막으므로 컴파일되는 트리에는 그 형태가 없다. 남는 것은
+            // **같은 이름의 두 번째 락을 따로 세우는 것**이고, 그것은 직렬화를 획득 공유와
+            // 똑같이 깨뜨리면서 타입으로는 안 잡힌다.
+            out.push((i + 1, "같은 이름의 락을 따로 세웠다"));
         }
     }
     out
@@ -155,9 +159,12 @@ fn tasty_home_env_is_only_touched_through_the_guard() {
     );
     assert!(
         offenders.is_empty(),
-        "`TASTY_HOME`/`HOME` env 변경과 `{LOCK_IDENT}` 획득은 `{OWNER}` 의 \
-         `TastyHomeGuard` 를 통해서만 한다. 그 타입을 안 거치면 획득과 복원이 갈라져, \
-         패닉한 테스트가 오염된 env 를 같은 프로세스의 뒤 테스트에 물려준다. \
+        "`TASTY_HOME`/`HOME` env 변경은 `{OWNER}` 의 `TastyHomeGuard` 를 통해서만 한다. \
+         그 타입을 안 거치면 획득과 복원이 갈라져, 패닉한 테스트가 오염된 env 를 같은 \
+         프로세스의 뒤 테스트에 물려준다. 그리고 `{LOCK_IDENT}` 라는 이름의 락을 **따로** \
+         세우지 마라 — 락이 둘이면 서로를 안 기다려서, 직렬화는 한 개도 없는 것과 같아진다. \
+         (밖에서 그 락을 **획득**하는 것은 이제 컴파일러가 막는다. 여기서 보는 것은 \
+         타입이 못 보는 나머지 절반이다.) \
          위반:\n{}",
         offenders.join("\n")
     );
@@ -216,8 +223,16 @@ fn the_detector_counts_code_not_prose() {
     // 진짜 호출 — 잡힌다.
     let hit = "fn f() { unsafe { std::env::set_var(\"TASTY_HOME\", \"/tmp\") }; }";
     assert_eq!(violations_in(hit).len(), 1, "진짜 env 쓰기를 놓쳤다");
+    // 이 픽스처는 **문자열**이라 컴파일되지 않는다 — 그래서 락의 가시성과 무관하게
+    // 늘 잡힌다. 증명하는 것은 "탐지기가 이 이름을 코드에서 센다" 까지이고, "그 형태가
+    // 트리에 존재할 수 있다" 는 증명하지 않는다. 둘을 섞으면 승급으로 뜻이 바뀐 것을
+    // 초록이 가린다.
     let lock_hit = "fn f() { let _g = TASTY_HOME_ENV_LOCK.lock(); }";
-    assert_eq!(violations_in(lock_hit).len(), 1, "진짜 락 획득을 놓쳤다");
+    assert_eq!(
+        violations_in(lock_hit).len(),
+        1,
+        "락 이름을 코드에서 못 셌다"
+    );
 
     // 주석 — 안 잡힌다.
     let prose = "// set_var(\"TASTY_HOME\") 은 여기서 하지 않는다. TASTY_HOME_ENV_LOCK 도.";
