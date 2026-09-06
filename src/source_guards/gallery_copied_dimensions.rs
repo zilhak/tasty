@@ -433,6 +433,18 @@ fn sites_that_claim_a_host_counterpart(src: &str) -> Vec<(usize, String)> {
 /// 이름인데 사본인 자리). 여기서는 **그 자리가 스스로 적은 문장**을 읽고, 그 문장이
 /// 명부에서 해소되는지를 묻는다 — 내용 판별자다.
 ///
+/// # ★ 전제를 묻는 것은 **이 시험이 아니다**
+///
+/// 여기는 "명부에 걸렸는가" 만 묻는다. 그 명부의 사유가 아직 참인지는 옆의
+/// [`the_checkable_roster_premises_still_hold`] 가 묻고, 모집단이 낱말 하나로 사라지지
+/// 않는지는 [`the_confessed_population_is_pinned_by_name_not_by_prose`] 가 묻는다.
+///
+/// **이름을 여기 적어 두는 이유가 있다.** 시험 하나만 이름으로 집어 쏘면 옆 시험이 안
+/// 보인다 — 실측(2026-09-06): 다른 lane 이 갤러리 상수를 리터럴로 바꾸는 변이를 쏘고
+/// 이 시험만 필터로 돌려 "1 passed" 를 받았다. 그 변이는 옆 시험이 이미 죽이고 있었다.
+/// 모듈 이름으로 돌리면 셋이 함께 돈다:
+/// `cargo test --bin tasty gallery_copied_dimensions`.
+///
 /// # 이 판별자가 못 보는 것
 ///
 /// **자백 안 한 사본은 안 보인다.** 갤러리 `preset_editor::LEAF_ICON_ONLY_MIN` 이 그
