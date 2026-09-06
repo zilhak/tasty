@@ -36,13 +36,17 @@ const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modul
 const LOCAL_HEAD: &str = "claude";
 const LOCAL_TAIL: &str = "-workspace";
 
-/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 작업 폴더(플러그인
-/// 매니페스트의 스테이징 사본이 있어 소스가 아니다).
+/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더 **둘 다**.
+///
+/// 작업 폴더 쪽(꼬리가 붙은 이름)만 자르던 자리다. 세션 설정 폴더 쪽도 gitignored 라
+/// 같은 근거로 순회 대상이 아닌데 빠져 있었고, 같은 물음에 답하는 다른 사본들과
+/// 집합이 하나 어긋나 있었다(2026-09-06 실측). 이 커밋으로 순회가 **줄어들지만**
+/// 오늘 결과는 불변이다 — 그 폴더 아래 `.rs` 가 0 개다.
 fn is_pruned(name: &str) -> bool {
     PRUNE_DIRS.contains(&name)
         || name
             .strip_prefix('.')
-            .is_some_and(|rest| rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
 /// 금지 코드포인트인지 — 픽토그래픽 이모지(1F000..1FAFF) + regional indicator(1F1E6..1F1FF).
@@ -90,7 +94,10 @@ fn gather(path: &Path, root: &Path, out: &mut Vec<PathBuf>) {
         let p = entry.path();
         if p.is_dir() {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if is_pruned(name) {
+            // 이름은 성질이 아니다 — `CARGO_TARGET_DIR` 로 다른 이름을 준 빌드
+            // 디렉토리는 이름 목록에 안 걸린다. 표식 판정을 **보태서** 부른다(흉내
+            // 내지 않는다): 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+            if is_pruned(name) || tasty_doc_guards::is_build_cache_dir(&p) {
                 continue;
             }
         }
@@ -146,7 +153,15 @@ fn no_emoji_in_source() {
     assert!(
         scan_is_credible(files.len()),
         "스캔 대상이 {}개다(하한 {MIN_SCANNED_FILES}) — 순회가 깨졌다. 위반 0 은 이 상태에서 \
-         아무 뜻도 없다",
+         아무 뜻도 없다.\n\
+         ★ 판별 — [`is_scan_target`] 이 고르는 집합은 git 도 셀 수 있다. 밖에서 한 번 세라:\n\
+             git ls-files 'src/*.rs' 'crates/*/src/*.rs' 'crates/*/tests/*.rs' | wc -l\n\
+         두 수는 같지 않다(가지치기 때문에 git 쪽이 크다 — 2026-09-06 실측 1226 대 순회 1120). \
+         **같은가가 아니라 함께 움직이는가**를 봐라. 둘 다 줄었으면 레포가 정말 줄어든 것이고, \
+         git 쪽은 그대로인데 여기만 줄었으면 순회가 깨진 것이다.\n\
+         ★ 이 하한을 내려서 통과시키지 마라 — 내리면 이 가드는 '이모지가 없다' 가 아니라 \
+         '안 봤다' 를 같은 초록으로 보고하게 된다.\n\
+         레포가 정말 줄었으면 위 명령으로 다시 세고 값과 근거 날짜를 함께 갱신하라.",
         files.len()
     );
 

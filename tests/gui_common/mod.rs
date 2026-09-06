@@ -41,14 +41,34 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 static SHARED_INSTANCE: OnceLock<Mutex<GuiTestInstance>> = OnceLock::new();
 static CLEANUP_PID: AtomicU32 = AtomicU32::new(0);
+/// 공유 인스턴스의 격리 홈. **`Drop` 으로는 못 지운다** — `SHARED_INSTANCE` 는 `static`
+/// 이고 Rust 는 static 을 프로세스 종료 시 drop 하지 않는다. 그래서 정리를 `Drop` 에만
+/// 두면 이 하네스에서는 **한 번도 안 돈다**. 실측: 그 상태로 14 회 돌려 `/tmp` 에
+/// 1.1 GB × 14 = 15 GB 가 남았다(번들 plugin 사본이 홈마다 들어간다). PID kill 과 같은
+/// atexit 콜백에 함께 태운다.
+static CLEANUP_HOME: OnceLock<PathBuf> = OnceLock::new();
+/// 첫 spawn 이 실패했을 때 뒤 테스트가 **실제로 다시 프로세스를 띄우는 것**을 막는다.
+/// 기전은 `spawn_diag` 에 있고 상태만 여기 둔다 — 이유는 그쪽 doc 주석 참조.
+/// 형제 하네스 `tests/common` 은 같은 래치를 자기 안에 손으로 갖고 있다(그 파일은
+/// 이 lane 소유가 아니라 여기서 옮기지 않았다). 그쪽도 이 타입으로 모으면 정의가 하나가 된다.
+static SPAWN_LATCH: spawn_diag::SpawnOnceLatch = spawn_diag::SpawnOnceLatch::new();
 
 /// Acquire the shared GUI test instance.
 /// The first call spawns the tasty process; subsequent calls reuse it.
 pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
     let guard = SHARED_INSTANCE.get_or_init(|| {
+        // ★ 이 클로저는 panic 하면 `OnceLock` 을 **미초기화로 남긴다** — 다음 테스트가
+        // 그대로 다시 돈다. 실측(디스플레이 없이 6 건): spawn 시도 6 회, 패닉 자리 1 곳.
+        // 래치를 spawn **앞**에 두는 것이 요점이다 — 두 번째 프로세스를 띄우기 전에 막는다.
+        SPAWN_LATCH.entering("gui 공유 인스턴스");
         let inst = GuiTestInstance::spawn();
+        SPAWN_LATCH.succeeded();
         // Register atexit to kill tasty when the test process exits
         CLEANUP_PID.store(inst.process_id(), Ordering::Relaxed);
+        // reason: `set` 은 이미 값이 있을 때만 `Err` 인데, 이 자리는 `get_or_init`
+        // 클로저 안이라 프로세스당 한 번만 돈다. 두 번째 호출이 있다면 그것은 이 설계가
+        // 깨진 것이고, 그때도 먼저 넣은 경로가 유효하므로 덮어쓰지 않는 것이 옳다.
+        let _ = CLEANUP_HOME.set(inst.isolated_home.clone());
         extern "C" fn on_exit() {
             let pid = CLEANUP_PID.load(Ordering::Relaxed);
             if pid != 0 {
@@ -67,6 +87,12 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
                     libc::kill(pid as i32, libc::SIGTERM);
                 }
             }
+            if let Some(home) = CLEANUP_HOME.get() {
+                // reason: 정리 실패가 시험 판정을 바꾸지 않는다 — 이미 끝난 회차의 임시
+                // 디렉터리이고, 남아도 다음 회차는 자기 `unique` 로 새 경로를 쓴다.
+                // atexit 안이라 패닉시킬 수도 없다.
+                let _ = std::fs::remove_dir_all(home);
+            }
         }
         // SAFETY: atexit는 process-lifetime callback을 등록. on_exit는 'static fn 포인터.
         // shared() 첫 호출 시 한 번만 등록되며 (OnceLock get_or_init), 중복 등록 없음.
@@ -75,7 +101,17 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
         }
         Mutex::new(inst)
     });
-    guard.lock().unwrap()
+    // 오염된 락에서 복구한다 — `.unwrap()` 이면 **한 건의 패닉이 나머지 전부를 죽인다.**
+    // 이 인스턴스는 33 건이 공유하므로, 한 테스트가 단정에서 죽으면 그 뒤의 모든 테스트가
+    // 자기 물음을 묻지도 못하고 `PoisonError` 로 실패한다 — 실측: 진짜 실패 1 건이
+    // 화면에 31 건으로 나왔다. 그러면 회차가 세는 수가 사건 수가 아니게 되고,
+    // "격리하면 도는가" 같은 물음에 그 수로 답할 수 없다.
+    // 복구가 안전한 이유: 보호 대상은 자식 프로세스 핸들과 Enigo 뿐이라 테스트 단정의
+    // 패닉이 그 둘의 불변식을 깨지 않는다. 인스턴스가 실제로 죽었으면 뒤 테스트는
+    // 자기 자리에서 자기 이유로 실패한다 — 그것이 오염 실패보다 정확하다.
+    guard
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 // --- GuiTestInstance ---
@@ -85,6 +121,8 @@ pub struct GuiTestInstance {
     process: Child,
     port: u16,
     port_file: PathBuf,
+    /// 이 인스턴스 전용 `TASTY_HOME`. `Drop` 이 지운다.
+    isolated_home: PathBuf,
     pub enigo: Enigo,
     #[cfg(target_os = "windows")]
     hwnd: HWND,
@@ -120,14 +158,18 @@ impl GuiTestInstance {
     /// Spawn a tasty GUI instance for testing.
     /// Waits for the window to appear and focuses it.
     pub fn spawn() -> Self {
-        let port_file = std::env::temp_dir().join(format!(
-            "tasty-gui-test-{}-{}.port",
+        let unique = format!(
+            "{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        );
+        let port_file = std::env::temp_dir().join(format!("tasty-gui-test-{unique}.port"));
+
+        // 이 인스턴스 전용 tasty 루트. 형제 하네스 둘이 가진 것을 이 하나만 안 가졌다.
+        let isolated_home = std::env::temp_dir().join(format!("tasty-gui-test-home-{unique}"));
 
         // Launch tasty in GUI mode with port-file for IPC.
         // TASTY_DEBUG_SUPPRESS_NATIVE_MENU: egui 프레임이 세우는 컨텍스트 메뉴(explorer 등)를
@@ -137,6 +179,23 @@ impl GuiTestInstance {
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("TASTY_DEBUG_SUPPRESS_NATIVE_MENU", "1")
+            // ★ 전용 tasty 루트. 이것이 없으면 자식은 **사용자의 진짜 `~/.tasty-debug`** 를
+            // 쓴다 — 번들 plugin 을 거기 설치하고, 거기 저장된 레이아웃을 **복원한다.**
+            // 뒤쪽이 이 스위트의 마우스 판정을 통째로 무효로 만들고 있었다: 복원된
+            // workspace 에는 surface 가 여럿인데 rect 를 가진 것은 **활성 탭 하나**이고,
+            // `first_surface_id()` 가 집는 것은 배경 탭이다. 그러면
+            // `debug_inject_mesh_pointer` 가 `surface_rect_by_id == None` 으로 **false** 를
+            // 내고 아무 일도 안 일어난다 — 시험은 그 빈 출력을 "보고가 없다" 로 읽는다.
+            //
+            // 실측(같은 Xvfb·같은 커밋, `TASTY_HOME` 하나만 바꿈):
+            //     실제 홈  active_ws surface 26 · injected false · 보고 ""
+            //     격리 홈  active_ws surface  1 · injected true  · 보고 `\e[<35;48;23M…`
+            //
+            // ☆ `HOME` 은 **일부러 격리하지 않는다.** 형제 `tests/common` 은 그것까지
+            // 하지만 거기엔 짝이 되는 격리 config 작성이 함께 있다(shell auto-detect 를
+            // 막아 port file 이 반드시 써지게 한다). 그 짝 없이 `HOME` 만 옮기면 shell
+            // setup 모드로 빠질 수 있고, 그 조합은 여기서 **재지 않았다.** 재고 나서 옮긴다.
+            .env("TASTY_HOME", &isolated_home)
             // **부모 세션의 `TASTY_*` 를 끊는다.** 이 값들이 들어오면 자식은 자기가
             // 다른 tasty 안에서 도는 CLI 라고 판단해 **GUI 를 안 띄우고 help 를 찍고
             // 종료한다**(실측: 지우면 같은 바이너리가 port file 을 쓴다). 형제 하네스
@@ -228,6 +287,7 @@ impl GuiTestInstance {
             process,
             port,
             port_file,
+            isolated_home,
             enigo,
             #[cfg(target_os = "windows")]
             hwnd,
@@ -650,6 +710,10 @@ impl Drop for GuiTestInstance {
         }
         let _ = self.process.wait();
         let _ = std::fs::remove_file(&self.port_file);
+        // reason: 정리 실패가 시험 판정을 바꾸지 않는다 — 이미 끝난 인스턴스의 임시
+        // 디렉터리이고, 지우다 실패해도 `/tmp` 에 남을 뿐이라 다음 회차는 자기 `unique`
+        // 로 새 경로를 쓴다. 여기서 패닉하면 진짜 실패 원인을 정리 오류가 덮는다.
+        let _ = std::fs::remove_dir_all(&self.isolated_home);
     }
 }
 

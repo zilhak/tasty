@@ -1035,7 +1035,17 @@ fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
     assert!(
         scanned >= MIN_LENGTH_SETTER_SCANNED_FILES,
         "스캔 파일이 {scanned}개뿐이다(하한 {MIN_LENGTH_SETTER_SCANNED_FILES}) — \
-         코퍼스가 비면 위반도 0 이다"
+         코퍼스가 비면 위반도 0 이다.\n\
+         ★ 판별은 이미 위에 있다 — 이 순회는 [`LENGTH_SETTER_SCAN_ROOTS`] 를 하나씩 돌면서 \
+         **루트마다** 빈 것을 따로 잡는다. 그러니 여기까지 왔다는 것은 어느 루트도 비지 \
+         않았다는 뜻이고, 남는 갈래는 하나다: 루트들이 다 살아 있는데 합이 줄었다.\n\
+         밖에서 세는 법:\n\
+             find src/view src/adapters/ui src/gfx/gpu crates/tasty-ui-widgets/src \
+                  crates/tasty-egui-theme/src -name '*.rs' | wc -l\n\
+         2026-09-06 실측 185. 그 수도 같이 줄었으면 UI 코드가 정말 줄어든 것이다.\n\
+         ★ 이 하한을 내려서 통과시키지 마라 — 이 축이 겨냥하는 것은 새로 들어오는 리터럴이라, \
+         코퍼스가 좁아진 만큼 정확히 그만큼이 안 보이게 된다.\n\
+         루트가 정당하게 옮겨 갔으면 하한이 아니라 [`LENGTH_SETTER_SCAN_ROOTS`] 를 고쳐라."
     );
     out.sort();
     out

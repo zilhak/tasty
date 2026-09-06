@@ -52,19 +52,32 @@ fn claim_workspace(name: &str) -> u64 {
         "격리 헬퍼가 만든 workspace 가 목록의 [0] 이면 안 된다: {listed:?}"
     );
 
-    let mut observed = OBSERVED.lock().unwrap();
-    for (port, prev_ws) in observed.iter() {
+    // ★ **가드를 쥔 채로 단정하지 않는다.** 이 `static` 은 이 바이너리의 모든 `#[test]` 가
+    // 공유하는데, 잠금을 든 채 아래 단정이 터지면 되감기 중에 가드가 떨어지며 뮤텍스가
+    // **오염된다.** 그러면 이후 테스트는 자기 실패가 아니라 `PoisonError` 로 죽고,
+    // 진짜 실패 하나가 테스트 수만큼의 실패로 불어난다(같은 형태를 `tests/gui_common`
+    // 에서 실측했다 — 실패 1 건이 31 건으로 나왔다).
+    //
+    // 오염을 견디는 것(`unwrap_or_else(into_inner)`)이 아니라 **만들지 않는 쪽**을 쓴다:
+    // 값을 꺼내고 기록한 뒤 가드를 이 블록 끝에서 떨어뜨리고, 단정은 그 밖에서 한다.
+    // 잠금이 사는 구간에는 패닉할 수 있는 코드가 없다.
+    let previously_observed = {
+        let mut observed = OBSERVED.lock().unwrap();
+        let snapshot = observed.clone();
+        observed.push((tasty.port(), ws.id));
+        snapshot
+    };
+    for (port, prev_ws) in previously_observed {
         assert_eq!(
-            *port,
+            port,
             tasty.port(),
             "shared() 호출마다 다른 port 가 보인다 — 인스턴스가 재사용되지 않음"
         );
         assert_ne!(
-            *prev_ws, ws.id,
+            prev_ws, ws.id,
             "격리 헬퍼가 다른 테스트와 같은 workspace 를 돌려줬다"
         );
     }
-    observed.push((tasty.port(), ws.id));
 
     ws.id
 }

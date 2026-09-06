@@ -30,7 +30,8 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(구조 템플릿) · `tests/no_emoji_in_source.rs`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
 /// 금지 패턴 — 크레이트 경로 참조. `use` / 타입 위치 / 주석 어디에 있든 잡는다.
 const FORBIDDEN: &str = "tasty_cli::";
@@ -91,7 +92,7 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
     let Some((parent_rel, src)) = candidates.iter().find_map(|c| {
         std::fs::read_to_string(c)
             .ok()
-            .map(|s| (rel_of(c, root), s))
+            .map(|s| (normalized_rel(c, root), s))
     }) else {
         return Err(format!("{rel}: 부모 모듈 파일을 찾지 못했다"));
     };
@@ -123,9 +124,67 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
     }
 }
 
-/// 순회에서 통째로 가지치기할 디렉토리명. 빌드 산출물·VCS 가 `src/` 안에
-/// 섞여 들어와도 스캔이 새지 않게 한다.
-const PRUNE_DIRS: &[&str] = &["target", ".git"];
+/// 순회가 실제로 트리를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
+/// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
+const SRC_FLOOR: Floor = Floor {
+    min: 300,
+    measured: 591,
+    measured_on: "2026-09-06",
+    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수이고, 그것을 움직이는 것은 주로 크레이트 \
+                   분해다 — 한 번에 수십 개가 `crates/` 로 옮겨 가므로 좁은 여유는 정상적인 \
+                   이동에 빨개지고, 그러면 사람이 하한을 내리는 습관을 들인다. 절반쯤 벌려 \
+                   두고 통째로 비는 사고만 잡는다. 얕고 넓은 순회는 이 값이 아니라 깊이와 \
+                   앵커가 막으므로 여유가 넓어도 그쪽은 안 새 나간다.",
+};
+
+/// 순회가 닿아야 할 최소 깊이(`src` 를 1 로 센 경로 성분 수).
+///
+/// [`SRC_FLOOR`] 는 **총량만** 본다 — 재귀가 중간에 멈춰도 얕은 파일만으로 그 하한을
+/// 넘길 수 있다. 실측 2026-09-06: 깊이 4 이하가 408 개라 그것만으로 하한 300 을 넘는다.
+/// 그 사고를 잡는 것이 이 값이다. 실측 최대 깊이는 6 이고 깊이 5 이상이 183 개다.
+const MIN_DEPTH: usize = 5;
+
+/// 순회 도달을 고정하는 앵커. **[`ALLOWED_PATHS`] 와 분리한다 — 물음이 다르다.**
+///
+/// 저쪽은 "이 파일은 참조해도 되는가"(면제)를 묻고 여기는 "순회가 거기 닿았는가"를
+/// 묻는다. 한때 앵커를 `ALLOWED_PATHS` 에서 파생시켰는데, 그러면 **면제를 줄이는 정당한
+/// 청소가 순회 확인을 조용히 없앤다**: 실측 2026-09-06 기준 그 목록의 `src/main.rs` 와
+/// `src/boot.rs` 는 `tasty_cli::` 참조가 0 건이라, 목록에서 지워도 새 위반이 안 생기고
+/// 앵커만 사라진다.
+///
+/// 이 파일을 고른 것은 이름이 좋아서가 아니라 **구조적으로 불멸**이기 때문이다 — 루트
+/// `Cargo.toml` 에 `[[bin]]` 선언이 없으므로 cargo 의 기본 규칙에서 이것이 바이너리
+/// 진입점이고, 없으면 크레이트가 빌드되지 않는다.
+const WALK_ANCHOR: &str = "src/main.rs";
+
+/// 순회가 충분히 깊이 내려갔는지 판정한다. 하한과 같은 이유로 최소 깊이를 인자로 받는다.
+fn walk_descends_far_enough(rels: &[String], min_depth: usize) -> Result<(), String> {
+    let deepest = rels.iter().map(|r| r.split('/').count()).max().unwrap_or(0);
+    if deepest >= min_depth {
+        return Ok(());
+    }
+    Err(format!(
+        "`src/` 순회가 깊이 {deepest} 까지만 내려갔다(최소 {min_depth}) — 총량 하한은 \
+         얕고 넓은 순회를 통과시키므로 이것이 따로 필요하다. 재귀가 중간에 멈추지 \
+         않았는지 확인하라.\n\
+         ★ 이 값을 내려서 통과시키지 마라. 트리가 정말 얕아졌으면 \
+         `find src -name '*.rs' | awk -F/ '{{print NF}}' | sort -n | tail -1` 로 실제 \
+         최대 깊이를 재고 그보다 한 단계 아래로 잡아라."
+    ))
+}
+
+/// 앵커가 순회 결과에 나타났는지 판정한다.
+fn walk_reached_anchor(rels: &[String], anchor: &str) -> Result<(), String> {
+    if rels.iter().any(|r| r == anchor) {
+        return Ok(());
+    }
+    Err(format!(
+        "순회가 `{anchor}` 에 닿지 않았다 — 그 파일은 이 크레이트의 바이너리 진입점이라 \
+         실재가 보장된다. 순회 결과에 없으면 그 가지를 통째로 못 본 것이다.\n\
+         ★ 이 앵커를 지워서 통과시키지 마라 — 순회 확인이 통째로 사라진다. 진입점이 \
+         정말 옮겨졌으면 `WALK_ANCHOR` 를 새 진입점으로 **바꿔라**(비우지 마라)."
+    ))
+}
 
 fn is_allowed(rel: &str) -> bool {
     ALLOWED_PATHS.iter().any(|p| {
@@ -137,42 +196,42 @@ fn is_allowed(rel: &str) -> bool {
     })
 }
 
-/// `path` 하위를 재귀 순회하며 스캔 대상(`.rs`)을 모은다.
-fn gather(path: &Path, out: &mut Vec<PathBuf>) {
-    if path.is_file() {
-        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            out.push(path.to_path_buf());
-        }
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if PRUNE_DIRS.contains(&name) {
-                continue;
-            }
-        }
-        gather(&p, out);
-    }
+/// 스캔 대상인지 — `.rs` 파일 하나.
+fn is_scan_target(found: &Walked) -> bool {
+    found.rel.ends_with(".rs")
 }
 
-fn rel_of(file: &Path, root: &Path) -> String {
-    file.strip_prefix(root)
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+/// `src/` 를 순회한다. 가지치기는 이름이 아니라 **성질**로 한다 — 빌드 산출물 디렉토리의
+/// 이름은 `CARGO_TARGET_DIR` 하나로 무엇이든 될 수 있어서 이름 목록은 그것을 못 따라간다.
+/// 하한은 공용 순회가 강제하므로 여기서 빠뜨릴 수 없다.
+fn walk_src(root: &Path) -> Result<Vec<Walked>, String> {
+    walk_with_floor(
+        &root.join("src"),
+        root,
+        &SRC_FLOOR,
+        Descend::SkipBuildCaches,
+        &is_scan_target,
+    )
 }
 
 #[test]
 fn src_does_not_reference_tasty_cli() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = Vec::new();
-    gather(&root.join("src"), &mut files);
-    files.sort();
+
+    // 아래 판정들은 전부 "순회가 모은 것" 위에서 돌아간다. 그 순회가 비면 모든
+    // 판정이 조용히 통과한다 — 그러니 위반을 세기 전에 인구를 먼저 확인한다.
+    // 셋이 서로 다른 사고를 잡는다: 총량(빈 순회) · 깊이(중간에 멈춘 재귀) ·
+    // 앵커(특정 가지 누락). 총량은 공용 순회가 자기 실패문과 함께 본다.
+    let files = walk_src(root).unwrap_or_else(|why| panic!("{why}"));
+    let scanned: Vec<String> = files.iter().map(|f| f.rel.clone()).collect();
+    for check in [
+        walk_descends_far_enough(&scanned, MIN_DEPTH),
+        walk_reached_anchor(&scanned, WALK_ANCHOR),
+    ] {
+        if let Err(why) = check {
+            panic!("{why}");
+        }
+    }
 
     // 두 목록이 겹치면 "베이스라인을 비운다" 가 성립하지 않는다 — 영구 허용
     // 항목은 실제 위반이 남아 있어도 역방향 검사에 걸리지 않기 때문이다.
@@ -218,12 +277,12 @@ fn src_does_not_reference_tasty_cli() {
     let mut new_violations = Vec::new();
     let mut baseline_hit = Vec::new();
     let mut test_only_hit = Vec::new();
-    for file in files {
-        let rel = rel_of(&file, root);
+    for file in &files {
+        let rel = &file.rel;
         if is_allowed(&rel) {
             continue;
         }
-        let Ok(contents) = std::fs::read_to_string(&file) else {
+        let Ok(contents) = std::fs::read_to_string(&file.path) else {
             continue; // 비-UTF8 은 경로 참조를 담을 수 없다.
         };
         let mut hits = Vec::new();
@@ -328,5 +387,66 @@ fn allowed_paths_point_at_paths_that_exist() {
     assert!(
         missing.is_empty(),
         "면제가 없는 경로를 가리킨다 — 옮겼으면 항목도 옮기고, 사라졌으면 항목을 지워라: {missing:?}"
+    );
+}
+
+/// 인구 확인 셋이 **판별력이 있는지**, 그리고 **무엇 때문에 판별하는지** 고정한다.
+///
+/// 판정을 `assert!` 하나씩으로만 두면 초록일 때 그것들이 무엇을 걸러냈는지 안 보인다 —
+/// 아무거나 통과시키는 판정도 똑같이 초록이다. 그래서 세 판정기를 실제 트리와 **빈 순회**
+/// 양쪽에 걸어 갈래를 둘 다 태운다. 이 파일의 기존 대조
+/// [`the_cfg_test_precondition_check_discriminates`] 와 같은 형태다.
+///
+/// **그리고 대조군 자신도 잰다.** 대조를 두었다는 것이 그 대조가 작동한다는 뜻은 아니다.
+/// 여기서는 각 판정기를 **무력한 값**으로도 불러, 그 판정의 전부가 상수라는 것을 코드가
+/// 말하게 한다 — 상수를 내리는 것이 곧 판정을 끄는 것이라는 사실을 산문이 아니라 실행으로
+/// 고정하는 것이다. 그래야 실패문에 박은 금지가 근거를 갖는다.
+#[test]
+fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    let walked = walk_src(root).expect("실제 `src/` 순회가 하한에 걸렸다");
+    let walked_rels: Vec<String> = walked.iter().map(|f| f.rel.clone()).collect();
+
+    // 반대편은 존재하지 않는 루트다. 순회는 `read_dir` 실패를 삼키고 빈 목록을 만드는데,
+    // 그것이 바로 이 판정들이 겨냥하는 사고의 형태다. 총량은 공용 순회가 막으므로
+    // 여기서는 그것이 실제로 막는지만 확인하고, 깊이·앵커는 빈 목록으로 따로 잰다.
+    let dead = walk_with_floor(
+        &root.join("src-no-such-directory"),
+        root,
+        &SRC_FLOOR,
+        Descend::SkipBuildCaches,
+        &is_scan_target,
+    );
+    assert!(
+        dead.is_err(),
+        "존재하지 않는 루트를 순회했는데 통과했다 — 총량 하한이 안 걸린다"
+    );
+    let empty_rels: Vec<String> = Vec::new();
+
+    // --- 갈래 둘: 실제 트리는 통과하고 빈 순회는 거부된다 ---
+    assert!(
+        walk_descends_far_enough(&walked_rels, MIN_DEPTH).is_ok(),
+        "실제 `src/` 순회를 깊이 판정이 거부한다 — 최소 깊이가 트리보다 깊다"
+    );
+    assert!(
+        walk_descends_far_enough(&empty_rels, MIN_DEPTH).is_err(),
+        "빈 순회를 깊이 판정이 통과시킨다 — 깊이 판정에 판별력이 없다"
+    );
+    assert!(
+        walk_reached_anchor(&walked_rels, WALK_ANCHOR).is_ok(),
+        "실제 순회가 앵커에 닿았는데 못 닿았다고 한다"
+    );
+    assert!(
+        walk_reached_anchor(&empty_rels, WALK_ANCHOR).is_err(),
+        "빈 순회인데 앵커에 닿았다고 한다 — 앵커 확인에 판별력이 없다"
+    );
+
+    // --- 대조군 자신: 판정력이 어디서 오는가 ---
+    // 무력한 값으로 부르면 같은 빈 순회가 통과한다. 즉 이 판정들의 전부가 그 상수이고,
+    // 상수를 내리는 것은 판정을 끄는 것과 같다. 실패문의 금지는 이 사실에 근거한다.
+    assert!(
+        walk_descends_far_enough(&empty_rels, 0).is_ok(),
+        "최소 깊이 0 으로도 빈 순회가 거부된다 — 판정이 깊이 인자를 안 보고 있다"
     );
 }

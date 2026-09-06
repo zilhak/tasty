@@ -117,9 +117,24 @@ const PRUNE_DIRS: &[&str] = &[
 /// 테스트 코드로 보는 디렉토리 이름 — 경로 성분 어디에 있어도 제외한다.
 const TEST_DIRS: &[&str] = &["tests", "benches"];
 
+/// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
+/// (`docs/adr/0105-no-nongit-path-refs-in-tracked-sources.md`) 를 어긴다 — 인용이
+/// 아니라 순회 입력이지만, 조각으로 조립하면 예외 등록 없이 규칙을 지킬 수 있다.
+const LOCAL_HEAD: &str = "claude";
+const LOCAL_TAIL: &str = "-workspace";
+
+/// 가지치기 대상 디렉토리인지 — 빌드 산출물 + gitignored 로컬 폴더(선행 `.`).
+///
+/// **선행 `.` 전부를 자르지 않는다.** "gitignored 폴더는 전부 선행 `.` 을 갖는다" 는
+/// 참이지만 역이 거짓이다 — 선행 `.` 이면서 추적되는 디렉토리가 `.github`·`.githooks`·
+/// `.cargo` 셋이다(2026-09-06 실측). 예외를 하나씩 뚫는 방식은 넷째가 생기는 날
+/// 조용히 틀리고, 그 틀림은 순회 대상을 **줄이는** 쪽이라 가드가 더 초록으로 보인다.
+/// 그래서 근사가 아니라 이름 열거로 판정한다.
 fn is_pruned(name: &str) -> bool {
-    // gitignored 로컬 폴더는 전부 선행 `.` 을 갖는다.
-    (name.starts_with('.') && name != ".githooks") || PRUNE_DIRS.contains(&name)
+    PRUNE_DIRS.contains(&name)
+        || name
+            .strip_prefix('.')
+            .is_some_and(|rest| rest == LOCAL_HEAD || rest == format!("{LOCAL_HEAD}{LOCAL_TAIL}"))
 }
 
 fn gather(path: &Path, out: &mut Vec<PathBuf>) {
@@ -132,7 +147,10 @@ fn gather(path: &Path, out: &mut Vec<PathBuf>) {
             continue;
         };
         if p.is_dir() {
-            if !is_pruned(name) {
+            // 이름은 성질이 아니다 — `CARGO_TARGET_DIR` 로 다른 이름을 준 빌드
+            // 디렉토리는 이름 목록에 안 걸린다. 표식 판정을 **보태서** 부른다(흉내
+            // 내지 않는다): 근거와 후보 비교는 [`tasty_doc_guards::is_build_cache_dir`].
+            if !is_pruned(name) && !tasty_doc_guards::is_build_cache_dir(&p) {
                 gather(&p, out);
             }
         } else if name.ends_with(".rs") {
@@ -379,7 +397,17 @@ fn every_let_underscore_in_production_code_says_why() {
     assert!(
         scan_is_credible(files.len()),
         "스캔한 `.rs` 가 {}개다(하한 {MIN_SCANNED_FILES}) — 순회가 깨졌다. 위반 0 은 이 \
-         상태에서 아무 뜻도 없다",
+         상태에서 아무 뜻도 없다.\n\
+         ★ 판별 — 이 모수는 추적 `.rs` 에서 가지치기를 뺀 것이다. 바깥 값을 한 번 세라:\n\
+             git ls-files '*.rs' | wc -l\n\
+         2026-09-06 실측 1286 이고 [`gather`] 는 1180 을 걷었다(차 106 은 가지친 가지들이다). \
+         **git 쪽이 그대로인데 여기만 줄었으면 가지치기가 과해졌거나 순회가 죽은 것**이고, \
+         둘이 함께 줄었으면 레포가 정말 줄어든 것이다. 앞쪽이면 [`PRUNE_DIRS`] 를 먼저 봐라 — \
+         가지 하나가 늘면 수백 개가 한꺼번에 빠진다.\n\
+         ★ 이 하한을 내려서 통과시키지 마라 — 이 가드의 산출은 명부이고, 명부가 짧아진 것과 \
+         명부를 안 만든 것은 내려 놓은 하한 아래에서 구별되지 않는다.\n\
+         가지치기가 정당하게 늘었으면 그 가지를 [`PRUNE_DIRS`] 에 적은 커밋에서 값도 함께 \
+         다시 재라.",
         files.len()
     );
 

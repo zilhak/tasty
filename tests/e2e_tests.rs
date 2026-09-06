@@ -874,7 +874,31 @@ fn headless_pty_spawn_write_wait_kill() {
             break w;
         }
         if wait_start.elapsed() > Duration::from_secs(10) {
-            panic!("pty.wait 가 종료를 감지하지 못함: {w:?}");
+            // 첫째 자리(pty.rs exit_wait_failure)와 같은 수준으로 말하게 한다 — IPC 경계라
+            // 그 함수를 공유하진 못하므로 pty.read 로 같은 관측(화면·scrollback·alt)을 꺼낸다.
+            // 상한(10s)·폴링·단정은 안 건드리고, 실패했을 때 무엇을 말하는가만 넓힌다.
+            let r = tasty.call("pty.read", json!({ "id": pty_id }));
+            let screen = r["text"].as_str().unwrap_or("<pty.read 실패>");
+            let tail: String = screen
+                .chars()
+                .rev()
+                .take(48)
+                .collect::<Vec<char>>()
+                .into_iter()
+                .rev()
+                .collect();
+            panic!(
+                "pty.wait 가 종료를 감지하지 못함: {w:?} — 관측(pty.read): 화면 {}(scrollback={}, \
+                 alt_screen={}), 꼬리=\"{}\"",
+                if screen.trim().is_empty() {
+                    "빈 채 — 셸이 아무것도 안 뱉음(exec 미기동 쪽)"
+                } else {
+                    "내용 있음 — 셸은 떴다(우리가 쓴 것이 안 들어갔거나 안 죽는 쪽)"
+                },
+                r["scrollback_len"],
+                r["alt_screen"],
+                tail.escape_default(),
+            );
         }
         std::thread::sleep(Duration::from_millis(50));
     };
