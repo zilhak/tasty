@@ -52,7 +52,7 @@ pub(super) fn handle_debug_switch_tab(
 /// (`src/view/main/redraw.rs` 의 native 메뉴 응답 `Some(6)`) 재현. release 미노출.
 ///
 /// release IPC 의 `surface.close` 로는 이 경로에 도달할 수 없다 — cascade close 는
-/// **탭/패인이 하나만 남았을 때만** workspace 단계까지 올라가므로 cleanup 대상이
+/// **탭/페인이 하나만 남았을 때만** workspace 단계까지 올라가므로 cleanup 대상이
 /// 항상 surface 1개다. "탭이 많은 워크스페이스를 통째로 닫는" 비용(close 계측
 /// `path="gui"`)은 이 메뉴 항목으로만 발생하고, 그래서 계측 기준선을 잡으려면
 /// 이 항목을 재현할 수단이 필요하다.

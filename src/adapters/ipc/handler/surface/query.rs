@@ -102,6 +102,108 @@ pub(crate) fn handle_cursor_position(
     }
 }
 
+/// 터미널이 지금 **마우스를 잡고 있는가**, 잡고 있다면 어느 레벨인가 — 그리고
+/// **마우스 핸들러가 그것을 존중하는가.**
+///
+/// **축이 둘이라 값도 둘이다.** 터미널의 레지스터가 무엇인지와, 클릭·드래그·hover 가
+/// 실제로 앱에 갈지는 **다른 물음**이다. 사이에 격하가 하나 있다 — hard 점유(readonly)
+/// 이거나 전경 프로세스가 마우스 캡처 블랙리스트에 걸리면 핸들러는 실제 모드와 무관하게
+/// `None` 으로 취급한다([`crate::state::mouse::effective_click_tracking_decision`]).
+///
+/// 그래서 한 값으로 뭉개지 않는다. 뭉개면 **낱말 하나가 두 축을 덮고**, 그 둘이 어긋나는
+/// 기계에서 관측면이 거꾸로 읽힌다 — "터미널이 all_motion 인데 보고가 0 이다" 를 제품
+/// 결함으로 읽게 되지만 사실은 격하가 정상 동작한 것이다. **둘이 어긋나는 것 자체가
+/// 신호**라 둘 다 낸다.
+///
+/// | 필드 | 무엇을 답하나 |
+/// |---|---|
+/// | `terminal_mode` · `terminal_tracking` | 터미널 레지스터의 실효 레벨(DECSET 1000/1002/1003) |
+/// | `sgr` | 1006(SGR 확장 좌표) 여부 |
+/// | `effective_click_mode` · `effective_click_tracking` | 클릭 축에서 핸들러가 실제로 존중할 레벨 |
+/// | `degraded_by` | 격하 사유들. 빈 배열이면 두 축이 일치한다 |
+///
+/// **이 값이 답하지 못하는 것**(R582):
+/// - **개별 레지스터**(1000/1002/1003 각각)는 안 낸다. `terminal_mode` 는 실효 레벨이라
+///   "1003 을 끄지 않은 채 1002 를 켰다" 는 이 값으로 구분되지 않는다 — 그 구분은
+///   `tasty-terminal` 의 단위 시험이 갖고 있다.
+/// - **휠은 이 격하의 대상이 아니다.** `effective_click_*` 는 이름 그대로 **클릭 축**이고,
+///   캡처 블랙리스트에 걸린 surface 도 휠은 계속 앱에 보고한다. 즉
+///   `effective_click_tracking == false` 여도 휠 보고는 살아 있을 수 있다.
+/// - **보고가 실제로 PTY 로 나갔는지**는 안 낸다. 이 값은 결정의 입력이지 결과가 아니다.
+pub(crate) fn handle_mouse_tracking(
+    _state: &AppState,
+    engine: &crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let surface_id = match require_surface_id(params, &id) {
+        Ok(sid) => sid,
+        Err(e) => return e,
+    };
+    let Some(terminal) = engine.find_terminal_by_id(surface_id) else {
+        return JsonRpcResponse::invalid_params(id, format!("Surface {surface_id} not found"));
+    };
+    JsonRpcResponse::success(
+        id,
+        mouse_tracking_report(
+            surface_id,
+            terminal.mouse_tracking(),
+            terminal.sgr_mouse(),
+            engine.attach.is_hard_occupied(surface_id),
+            engine.is_surface_mouse_capture_disabled(surface_id),
+        ),
+    )
+}
+
+/// `mode` 가 이 값일 때만 `tracking` 이 거짓이다. 두 필드가 같은 곳에서 나오도록
+/// 상수를 하나 둔다 — 문자열을 양쪽에 손으로 적으면 한쪽만 고쳐도 컴파일된다.
+const NO_MOUSE_TRACKING: &str = "none";
+
+/// 응답 본문을 **순수 함수로** 만든다. 핸들러는 `CoreState` 를 요구해서 시험이 못 부르고,
+/// 그러면 두 축이 실제로 갈리는지가 무대조로 남는다 — 이 채널이 존재하는 이유가 바로
+/// 그 갈림이라 그건 답이 아니다.
+fn mouse_tracking_report(
+    surface_id: u32,
+    terminal_mode: tasty_terminal::MouseTrackingMode,
+    sgr: bool,
+    hard_occupied: bool,
+    capture_disabled: bool,
+) -> serde_json::Value {
+    let effective = crate::state::mouse::effective_click_tracking_decision(
+        hard_occupied,
+        capture_disabled,
+        terminal_mode,
+    );
+    let mut degraded_by: Vec<&str> = Vec::new();
+    if hard_occupied {
+        degraded_by.push("hard_occupied");
+    }
+    if capture_disabled {
+        degraded_by.push("mouse_capture_disabled");
+    }
+    let terminal_label = mouse_tracking_label(terminal_mode);
+    let effective_label = mouse_tracking_label(effective);
+    json!({
+        "surface_id": surface_id,
+        "terminal_mode": terminal_label,
+        "terminal_tracking": terminal_label != NO_MOUSE_TRACKING,
+        "sgr": sgr,
+        "effective_click_mode": effective_label,
+        "effective_click_tracking": effective_label != NO_MOUSE_TRACKING,
+        "degraded_by": degraded_by,
+    })
+}
+
+/// 실효 레벨을 응답 문자열로. **순수 함수라 시험이 직접 부른다.**
+fn mouse_tracking_label(mode: tasty_terminal::MouseTrackingMode) -> &'static str {
+    match mode {
+        tasty_terminal::MouseTrackingMode::None => NO_MOUSE_TRACKING,
+        tasty_terminal::MouseTrackingMode::Click => "click",
+        tasty_terminal::MouseTrackingMode::CellMotion => "cell_motion",
+        tasty_terminal::MouseTrackingMode::AllMotion => "all_motion",
+    }
+}
+
 /// 터미널 PTY의 전경(foreground) 프로세스 이름/PID 조회.
 /// 플러그인이 `claude` 같은 자식 프로세스가 살아있는지 판단하기 위해 사용한다.
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
@@ -251,5 +353,103 @@ mod tests {
         assert_eq!(out["scrollback_len"], json!(402));
         assert_eq!(out["alt_screen"], json!(false));
         assert_eq!(out["id"], json!(3), "pty.read 의 키도 보존한다");
+    }
+
+    /// ★★ **두 축이 실제로 갈린다.** 이 채널의 존재 이유가 그 갈림인데, 오늘 이 기계에서는
+    /// 두 블랙리스트가 비어 있어 두 값이 **우연히 일치**한다 — 그러면 한 축만 내는 구현도
+    /// 모든 관측을 통과한다(실제로 첫 판이 그랬다). 그래서 격하 입력을 참으로 만든 자리에서
+    /// 두 값이 갈리는지를 시험이 직접 만든다.
+    ///
+    /// 양방향인 이유: 갈리는 쪽만 보면 "언제나 none 으로 격하한다" 는 구현이 통과하고,
+    /// 일치하는 쪽만 보면 격하를 아예 안 하는 구현이 통과한다. 둘 다 이 관측면을 무용하게
+    /// 만든다.
+    #[test]
+    fn the_two_axes_split_when_the_handler_degrades_and_agree_when_it_does_not() {
+        use tasty_terminal::MouseTrackingMode as M;
+
+        // ① 격하 없음 — 두 축이 같고, 사유 목록이 비어 있다.
+        let plain = mouse_tracking_report(7, M::AllMotion, true, false, false);
+        assert_eq!(plain["terminal_mode"], json!("all_motion"));
+        assert_eq!(plain["effective_click_mode"], json!("all_motion"));
+        assert_eq!(plain["effective_click_tracking"], json!(true));
+        assert_eq!(plain["degraded_by"], json!([]), "격하가 없으면 사유도 없다");
+
+        // ② 캡처 블랙리스트 — 터미널은 그대로인데 핸들러가 안 존중한다.
+        let blacklisted = mouse_tracking_report(7, M::AllMotion, true, false, true);
+        assert_eq!(
+            blacklisted["terminal_mode"],
+            json!("all_motion"),
+            "격하는 터미널 레지스터를 바꾸지 않는다 — 바꾸면 두 축을 낸 뜻이 없다"
+        );
+        assert_eq!(
+            blacklisted["effective_click_mode"],
+            json!("none"),
+            "핸들러 축이 안 갈렸다 — 이 관측면은 격하를 못 보고, 그러면 보고 0 이 \
+             제품 결함으로 거꾸로 읽힌다"
+        );
+        assert_eq!(blacklisted["effective_click_tracking"], json!(false));
+        assert_eq!(
+            blacklisted["degraded_by"],
+            json!(["mouse_capture_disabled"])
+        );
+
+        // ③ hard 점유 — 다른 입력도 같은 갈림을 만들고, 사유가 그것을 구분한다.
+        let occupied = mouse_tracking_report(7, M::CellMotion, false, true, false);
+        assert_eq!(occupied["terminal_mode"], json!("cell_motion"));
+        assert_eq!(occupied["effective_click_mode"], json!("none"));
+        assert_eq!(
+            occupied["degraded_by"],
+            json!(["hard_occupied"]),
+            "사유가 뭉개지면 두 격하가 같은 얼굴이 된다 — 처방이 다른데"
+        );
+
+        // ④ 둘 다 — 사유가 둘 다 실린다(or 로 뭉개지 않는다).
+        let both = mouse_tracking_report(7, M::Click, false, true, true);
+        assert_eq!(
+            both["degraded_by"],
+            json!(["hard_occupied", "mouse_capture_disabled"])
+        );
+
+        // ⑤ ★ 반대 방향 — 트래킹이 꺼져 있으면 격하가 참이어도 **사유만 남고** 두 축은
+        //    여전히 같다. 이것이 없으면 "격하 입력이 참이면 무조건 갈린다" 는 잘못된
+        //    읽기가 남는다.
+        let off = mouse_tracking_report(7, M::None, false, false, true);
+        assert_eq!(off["terminal_mode"], json!("none"));
+        assert_eq!(off["effective_click_mode"], json!("none"));
+        assert_eq!(off["terminal_tracking"], json!(false));
+        assert_eq!(off["effective_click_tracking"], json!(false));
+    }
+
+    /// 네 레벨이 **서로 다른 이름**을 갖고, `tracking` 이 정확히 `None` 에서만 거짓이다.
+    ///
+    /// 양방향인 이유: 사상이 전부 같은 문자열을 돌려줘도(예: 실수로 `_ => "none"`)
+    /// "None 이 none 이다" 만 보는 단정은 통과한다. 그러면 이 관측면은 늘 "트래킹 꺼짐"
+    /// 을 보고하게 되고, **그것이 이 메서드가 존재하는 이유 자체를 배신한다** —
+    /// 이 값은 "트래킹이 안 켜졌다" 와 "켜졌는데 보고가 없다" 를 가르려고 만든 것이다.
+    #[test]
+    fn every_tracking_level_reports_a_name_of_its_own() {
+        use tasty_terminal::MouseTrackingMode as M;
+        let all = [M::None, M::Click, M::CellMotion, M::AllMotion];
+        let labels: Vec<&str> = all.iter().copied().map(mouse_tracking_label).collect();
+
+        let mut distinct = labels.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            all.len(),
+            "레벨 넷이 이름 {labels:?} 로 뭉갰다 — 뭉개진 레벨은 이 관측면에서 사라진다"
+        );
+
+        assert_eq!(mouse_tracking_label(M::None), NO_MOUSE_TRACKING);
+        // ★ 반대 방향 — 나머지 셋은 하나도 그 값이 아니어야 한다. 이것이 없으면
+        //   `tracking` 이 항상 거짓인 구현도 위 단정을 통과한다.
+        for mode in [M::Click, M::CellMotion, M::AllMotion] {
+            assert_ne!(
+                mouse_tracking_label(mode),
+                NO_MOUSE_TRACKING,
+                "{mode:?} 가 트래킹 꺼짐으로 보고된다"
+            );
+        }
     }
 }

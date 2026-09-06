@@ -39,8 +39,6 @@ const LIST_MIN_HEIGHT: LogicalPx = ITEM_HEIGHT.scaled(4.0); // 빈 list 도 시�
 const LIST_MAX_HEIGHT: LogicalPx = ITEM_HEIGHT.scaled(10.0);
 const HEADER_HEIGHT: LogicalPx = LogicalPx(36.0); // 대상/형식 두 줄
 const BUTTON_ROW_HEIGHT: LogicalPx = LogicalPx(28.0);
-const VERTICAL_PADDING: LogicalPx = LogicalPx(8.0);
-const HORIZONTAL_MARGIN: LogicalPx = LogicalPx(8.0);
 
 /// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 전체 경로 포함.
 /// 타이틀바 폭에 맞춘 겹침 방지(elide)는 `popup/draw.rs`(모든 popup 공통)가 전담하므로
@@ -54,6 +52,7 @@ pub fn picker_title(state: &AppState, _engine: &crate::core::CoreState) -> Strin
 
 /// PopupDef.sizer — 후보/recent list 길이에 따라 높이 조절.
 pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
+    let th = theme::theme();
     let (cand_n, recent_n) = match &state.dialogs.file_handler_picker {
         Some(p) => (p.candidates.len(), p.recent.len()),
         None => (0, 0),
@@ -65,7 +64,7 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
         .min(LIST_MAX_HEIGHT);
 
     let content_height =
-        HEADER_HEIGHT + VERTICAL_PADDING + list_height + VERTICAL_PADDING + BUTTON_ROW_HEIGHT;
+        HEADER_HEIGHT + th.spacing_sm.scaled(2.0) + list_height + BUTTON_ROW_HEIGHT;
 
     egui::vec2(
         POPUP_WIDTH.value(),
@@ -141,7 +140,7 @@ pub fn draw_file_handler_picker_view(
 
     // Horizontal margin
     let available = ui.available_rect_before_wrap();
-    let inner_rect = available.shrink2(egui::vec2(HORIZONTAL_MARGIN.value(), 0.0));
+    let inner_rect = available.shrink2(egui::vec2(th.spacing_sm.value(), 0.0));
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let ui = &mut child_ui;
 
@@ -158,7 +157,7 @@ pub fn draw_file_handler_picker_view(
             .color(th.text_muted()),
     );
 
-    ui.add_space(VERTICAL_PADDING.value());
+    ui.add_space(th.spacing_sm.value());
 
     // ── 빈 상태 (handler 0개) ─────────────────────────────────────────
     let is_empty = props.candidates.is_empty() && props.recent.is_empty();
@@ -169,7 +168,7 @@ pub fn draw_file_handler_picker_view(
                 .size(th.font_size_body.value())
                 .color(th.text_secondary()),
         );
-        ui.add_space(VERTICAL_PADDING.value());
+        ui.add_space(th.spacing_sm.value());
         let mut cancel_clicked = false;
         let mut open_settings_clicked = false;
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -250,7 +249,7 @@ pub fn draw_file_handler_picker_view(
         });
     });
 
-    ui.add_space(VERTICAL_PADDING.value());
+    ui.add_space(th.spacing_sm.value());
 
     // ── 버튼 row ──────────────────────────────────────────────────────
     let mut open_clicked = false;
@@ -309,7 +308,7 @@ fn draw_handler_list(
 
         ui.painter().text(
             egui::pos2(
-                rect.min.x + 4.0,
+                rect.min.x + th.spacing_xs.value(),
                 rect.center().y - th.font_size_caption.value() / 2.0,
             ),
             egui::Align2::LEFT_TOP,

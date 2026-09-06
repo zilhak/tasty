@@ -455,6 +455,7 @@ mod tests {
         elapsed: std::time::Duration,
         budget: std::time::Duration,
         still_registered: bool,
+        observed: &str,
     ) -> String {
         if !still_registered {
             return format!(
@@ -464,10 +465,12 @@ mod tests {
             );
         }
         if elapsed >= budget {
+            // 재현 불가능한 러너(macOS CI)에서 이 갈래가 걸리면 붙어서 못 본다. 그래서
+            // 실패 자리가 스스로 갈리게 관측 사실을 함께 싣는다(정상 경로에선 안 꺼낸다).
             return format!(
                 "headless pty {pty_id} 가 예산 {budget:?} 안에 종료하지 않았다\
                  (경과 {elapsed:?}). exit-watcher 가 cell 을 못 채웠거나 자식이 \
-                 실제로 안 죽었다 — 어느 쪽인지는 이 자리에서 안 갈린다"
+                 실제로 안 죽었다 — {observed}"
             );
         }
         format!(
@@ -489,16 +492,58 @@ mod tests {
                 "exit_code": exit.code,
                 "success": exit.success,
             }),
-            None => panic!(
-                "{}",
-                exit_wait_failure(
-                    pty_id,
-                    started.elapsed(),
-                    EXIT_WAIT_BUDGET,
-                    engine.pty_registry.contains(pty_id),
+            None => {
+                let elapsed = started.elapsed();
+                let still_registered = engine.pty_registry.contains(pty_id);
+                // 실패 갈래에서만 관측을 꺼낸다 — Some(exit) 정상 경로는 이 줄에 안 온다.
+                let observed = observed_pty_state(engine, pty_id);
+                panic!(
+                    "{}",
+                    exit_wait_failure(
+                        pty_id,
+                        elapsed,
+                        EXIT_WAIT_BUDGET,
+                        still_registered,
+                        &observed
+                    )
                 )
-            ),
+            }
         }
+    }
+
+    /// 실패 갈래 진단 — pty 화면에서 **관측된 사실**을 한 줄로. 정상 경로에선 호출되지
+    /// 않으므로 이 비용은 실패 때만 든다.
+    ///
+    /// 붙일 후보 셋 중 실제로 꺼낼 수 있는 것만 담는다. registry·terminal 어디도 마스터에서
+    /// 읽은 **raw 바이트 수**나 write **누적 바이트**를 들지 않아, ① 의 정확한 바이트 수와
+    /// ③(write 바이트)은 못 꺼낸다. 대신 ② 화면 꼬리와, ① 의 근사(렌더된 화면이 비었는가 +
+    /// scrollback 줄 수)를 싣는다 — "셸이 프롬프트조차 안 뱉었나(exec 미기동)" 대 "떴는데 우리가
+    /// 쓴 것이 안 들어갔나" 를 이 값으로 가른다.
+    fn observed_pty_state(engine: &CoreState, pty_id: u32) -> String {
+        let Some(t) = engine.find_terminal_by_id(pty_id) else {
+            return "관측: terminal 없음(registry/store desync — 화면을 못 읽었다)".to_string();
+        };
+        let screen = t.screen_text(false);
+        let visible = screen.trim_end();
+        let tail: String = visible
+            .chars()
+            .rev()
+            .take(48)
+            .collect::<Vec<char>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let shell = if visible.trim().is_empty() {
+            "빈 채 — 셸이 아무것도 안 뱉음(exec 미기동/셸 안 뜬 쪽)"
+        } else {
+            "내용 있음 — 셸은 떴다(우리가 쓴 것이 안 들어갔거나 안 죽는 쪽)"
+        };
+        format!(
+            "관측: 화면 {shell}(scrollback {sb} 줄, alt-screen {alt}), 꼬리=\"{tail}\"",
+            sb = t.scrollback_len(),
+            alt = t.is_alternate_screen(),
+            tail = tail.escape_default(),
+        )
     }
 
     #[test]
@@ -506,20 +551,25 @@ mod tests {
         let budget = std::time::Duration::from_secs(30);
 
         // 대상이 없다 — 경과가 짧고, 상한 인상이 처방이 아니라고 적힌다.
-        let gone = exit_wait_failure(7, std::time::Duration::from_millis(1), budget, false);
+        let gone = exit_wait_failure(7, std::time::Duration::from_millis(1), budget, false, "");
         assert!(gone.contains("레지스트리에 없다"), "{gone}");
         assert!(gone.contains("처방이 아니다"), "{gone}");
 
-        // 양방향 — 예산을 다 쓴 쪽은 그 문장을 쓰지 않는다.
-        let spent = exit_wait_failure(7, budget, budget, true);
+        // 양방향 — 예산을 다 쓴 쪽은 그 문장을 쓰지 않는다. 그리고 이 갈래는 관측을 담는다
+        // (재현 불가 러너에서 스스로 갈리게).
+        let spent = exit_wait_failure(7, budget, budget, true, "관측: 화면 빈 채 — X, 꼬리=\"$\"");
         assert!(spent.contains("예산"), "{spent}");
+        assert!(
+            spent.contains("관측:"),
+            "예산 갈래가 관측을 안 담았다: {spent}"
+        );
         assert!(
             !spent.contains("레지스트리에 없다"),
             "대상이 있는데 없다고 적었다: {spent}"
         );
 
         // 세 번째 갈래 — 있는데 예산도 안 썼다. 일어나면 안 되는 조합이라 그렇게 적는다.
-        let odd = exit_wait_failure(7, std::time::Duration::from_millis(1), budget, true);
+        let odd = exit_wait_failure(7, std::time::Duration::from_millis(1), budget, true, "");
         assert!(odd.contains("일어나면 안 된다"), "{odd}");
         assert!(
             !odd.contains("레지스트리에 없다") && !odd.contains("안에 종료하지 않았다"),

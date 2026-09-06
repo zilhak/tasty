@@ -333,13 +333,13 @@ impl PopupManager {
             }
         }
 
-        // Handle request_top — scope rect 상단 가로 중앙 정렬 (margin 8px).
+        // Handle request_top — scope rect 상단 가로 중앙 정렬 (margin = spacing-sm).
         for popup in &mut self.popups {
             if popup.request_top && popup.open {
                 let anchor_rect = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
                 popup.pos = egui::pos2(
                     anchor_rect.center().x - popup.size.x / 2.0,
-                    anchor_rect.min.y + 8.0,
+                    anchor_rect.min.y + th.spacing_sm.value(),
                 );
                 popup.request_top = false;
             }

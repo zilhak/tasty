@@ -120,8 +120,10 @@ pub fn draw_explorer(
         tab_strip(ui, theme, panel, &mut action);
         toolbar(ui, theme, panel, view, id_suffix, recent_dirs, &mut action);
         // toolbar ↔ content 구분선.
-        let (sep_rect, _) =
-            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        let (sep_rect, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), theme.border_width.value()),
+            egui::Sense::hover(),
+        );
         ui.painter().hline(
             sep_rect.x_range(),
             sep_rect.center().y,
@@ -141,7 +143,7 @@ pub fn draw_explorer(
                 );
                 // 사이드바 ↔ content 세로 구분선.
                 let (vrect, _) = ui.allocate_exact_size(
-                    egui::vec2(1.0, ui.available_height()),
+                    egui::vec2(theme.border_width.value(), ui.available_height()),
                     egui::Sense::hover(),
                 );
                 ui.painter().vline(
