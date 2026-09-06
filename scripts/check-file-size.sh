@@ -143,7 +143,7 @@ fi
 # 초록일 때도 값을 찍는다 — 여유가 0 인지 900 인지가 통과/실패에 안 나타난다.
 # 판정에는 안 들어간다: 상한이 아니라 보고다.
 if [ -n "$max_code" ]; then
-    echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 최대 ${max_code} (${max_path}) · 임계까지 $((THRESHOLD - max_code))"
+    echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 가장 큰 판정 대상 ${max_code} 줄 (${max_path}) / 임계 ${THRESHOLD} — 남은 여유 $((THRESHOLD - max_code))"
 else
     echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 여유 미상 — 판정 대상 파일이 없다."
 fi
