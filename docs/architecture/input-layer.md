@@ -157,7 +157,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 `has_egui_overlay_open` 에 무대가 들어가 있어도 나머지 둘은 각자의 식을 본다 — 그 함수의
 프로덕션 소비처는 WebView 표시 하나뿐이다. 게다가 `keyboard_overlay_open()` 은 **정의가
 하나인데 소비 지점이 다섯**이고, 그 다섯이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
-무대는 지점마다 명시적으로 배선한다 — 아래 일곱 곳이 전부다.
+무대는 지점마다 명시적으로 배선한다 — 아래 여덟 곳이 전부다.
 
 | # | 지점 | 무대 항 | 근거 |
 |---|------|--------|------|
@@ -168,6 +168,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 | 5 | `src/app/webview_keys.rs` native webview 포워딩 키 | `\|\| fullscreen_stage_active()` | 필수. webview 자식 창에서 올라온 키는 winit `KeyboardInput` 경로를 타지 않아 2 의 0단계 게이트를 거치지 않는다([ADR-0102](../adr/0102-webview-key-forwarding.md)) |
 | 6 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
 | 7 | `has_egui_overlay_open()` 정의 | 정의에 포함 | WebView 가 무대 위로 뚫고 나오지 못하게 |
+| 8 | `src/adapters/ipc/handler/debug_state.rs` `ui.state` 의 `keyboard_shortcuts_gated` | `fullscreen_stage_active() \|\|` | 게이트가 아니라 **게이트의 보고**다. 그래도 무대 항이 필요하다 — 이 필드가 답하는 물음이 "단축키가 매처에 닿았는가" 인데, 무대는 2 의 0단계에서 먼저 소비한다. 무대 항을 빼면 무대 중에 거짓으로 "안 막혔다" 를 말하고, 그러면 시험이 왜 단축키가 안 먹었는지를 다시 못 보게 된다 |
 
 1·3·4·5 가 같은 항을 각자 OR 하는 모양이라 "`keyboard_overlay_open()` 정의 안으로 넣으면
 되지 않나" 가 자연스러운 질문이다. 넣지 않은 이유는 2 다 — 그 지점은 무대에 대해 다른

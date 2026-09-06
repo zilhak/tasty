@@ -379,6 +379,7 @@ fn every_overlay_open_composite_is_stage_aware() {
     assert_eq!(
         seen,
         vec![
+            "src/adapters/ipc/handler/debug_state.rs".to_string(),
             "src/app/plugin_glue/shortcut.rs".to_string(),
             "src/app/webview_keys.rs".to_string(),
             "src/view/main.rs".to_string(),

@@ -44,7 +44,13 @@ pub(super) fn handle_ui_state(
     //
     // 판정을 여기서 다시 쓰지 않고 소비처와 **같은 함수**를 부른다. 사본을 두면 게이트가
     // 바뀔 때 둘이 어긋나고, 어긋난 쪽은 조용하다.
-    let keyboard_shortcuts_gated = state.keyboard_overlay_open();
+    //
+    // 무대 항이 함께 들어가는 이유: 단축키가 매처에 닿으려면 **둘 다** 열려 있어야 한다.
+    // `handle_keyboard_input` 은 0 단계에서 전체화면 무대를 먼저 소비하고
+    // (`try_consume_fullscreen_stage_key`) 4 단계에서 오버레이를 본다. 오버레이만 보면
+    // 이 필드가 이름이 약속한 것의 절반만 답하고, **무대 중에는 거짓으로 "안 막혔다"** 를
+    // 말한다 — 그러면 이 필드를 넣은 이유(왜 단축키가 안 먹었는지)가 그 경우에 사라진다.
+    let keyboard_shortcuts_gated = state.fullscreen_stage_active() || state.keyboard_overlay_open();
     JsonRpcResponse::success(
         id,
         json!({
