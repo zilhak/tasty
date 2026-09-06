@@ -1638,6 +1638,28 @@ mod tests {
         f.set_modified(t).unwrap();
     }
 
+    /// 판정 기준으로 쓰는 **알려진 옛 시각**. 1970 + 1e6 초 = 1970-01-12.
+    ///
+    /// 시험이 "다시 쓰였나" 를 물을 때 두 스냅샷의 mtime 을 서로 비교하면 파일시스템 틱에
+    /// 의존한다 — 두 쓰기가 같은 틱에 들어가면 나노초까지 같아서 **다시 썼는데도 같다**로
+    /// 읽힌다(CI 러너에서 실제로 났다. 우리 디스크는 틱이 잘게 나뉘어 초록이었다).
+    /// 대신 쓰기 전에 dest 를 이 값으로 찍어 두면, 다시 쓰인 파일은 "지금" 이 되어 이 값과
+    /// **반드시** 다르고 안 쓰인 파일은 이 값 **그대로**다. 해상도와 무관해진다.
+    fn stale_stamp() -> std::time::SystemTime {
+        std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000)
+    }
+
+    /// dest 의 모든 파일 mtime 을 [`stale_stamp`] 로 찍는다.
+    ///
+    /// ☆ 곁효과가 하나 있고 그게 이롭다 — 이러면 dest 가 src 보다 **오래된** 상태가 된다.
+    /// mtime 을 보는 정책이라면 그것만으로 전량 재복사를 하므로, 아래 단정들은 "내용으로
+    /// 판정한다" 까지 함께 묻게 된다.
+    fn stamp_all_stale(dir: &std::path::Path) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            set_mtime(&e.unwrap().path(), stale_stamp());
+        }
+    }
+
     fn mtimes(dir: &std::path::Path) -> Vec<(std::ffi::OsString, std::time::SystemTime)> {
         let mut v: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
@@ -1665,6 +1687,9 @@ mod tests {
         let first = mtimes(&dest);
         sync_dir_by_content(&src, &dest).unwrap();
 
+        // ☆ 이 단정은 방향이 반대라 틱 해상도에 안 걸린다 — 아무것도 안 썼으면 참이다.
+        // 다만 **거짓 초록**은 남는다(다시 썼는데 같은 틱이면 같은 값이 나온다). 그 축은
+        // 이 수리의 물음이 아니라 별개 물음이라 여기서 안 건드린다.
         assert_eq!(first, mtimes(&dest), "두 번째 동기화가 파일을 다시 썼다");
     }
 
@@ -1703,7 +1728,9 @@ mod tests {
         std::fs::write(src.join("changed"), "before").unwrap();
         std::fs::write(src.join("untouched"), "same").unwrap();
         sync_dir_by_content(&src, &dest).unwrap();
-        let before = mtimes(&dest);
+        // 두 스냅샷을 서로 비교하지 않는다 — 같은 틱에 들어가면 다시 써도 같은 값이 나온다.
+        // 대신 **알려진 옛 시각**을 기준으로 삼는다(`stale_stamp` 주석).
+        stamp_all_stale(&dest);
 
         std::fs::write(src.join("changed"), "after!").unwrap(); // 같은 크기, 다른 내용
         sync_dir_by_content(&src, &dest).unwrap();
@@ -1716,10 +1743,14 @@ mod tests {
         let m = |v: &[(std::ffi::OsString, std::time::SystemTime)], n: &str| {
             v.iter().find(|(k, _)| k == n).unwrap().1
         };
-        assert_ne!(m(&before, "changed"), m(&after, "changed"));
+        assert_ne!(
+            m(&after, "changed"),
+            stale_stamp(),
+            "바뀐 파일이 옛 시각 그대로다 — 다시 안 썼다"
+        );
         assert_eq!(
-            m(&before, "untouched"),
             m(&after, "untouched"),
+            stale_stamp(),
             "안 바뀐 파일이 다시 쓰였다"
         );
     }
