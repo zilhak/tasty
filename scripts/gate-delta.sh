@@ -38,6 +38,11 @@
 #   구분하지 않는다 — 병합 예측에는 그 구분이 필요 없기 때문이다(누적 diff 는 최종 상태만
 #   본다). 그 구분이 필요한 물음은 **lane 의 이력**이고, 그건 다른 계기로 재야 한다.
 #
+# ★ 잴 수 있는 게이트는 **값을 `… : <수>건 (상한 <수>)` 형식으로 찍는 것**뿐이다. 그 밖은
+#   못 잰다고 말하고 실패한다 — 값을 지어내지 않는다. 그리고 판정기를 `scripts/lib/judge-bin.sh`
+#   의 `resolve_judge` 로 찾지 않는 게이트는 환경변수를 안 읽고 자기 트리의 `target/` 만 보므로
+#   **새 워크트리에서 그냥 죽는다**(그때도 값이 없으니 못 잰다고 나온다).
+#
 # 사용: scripts/gate-delta.sh <base-rev> [게이트 스크립트...]
 #   기본 게이트: check-shared-walk-ratchet.sh · check-allow-reason.sh (여유 0 인 둘)
 #
@@ -106,6 +111,7 @@ read_value() {
 }
 
 status=0
+measured=0
 printf '%-34s %8s %8s %8s   %s\n' "게이트" "base" "HEAD" "delta" "상한"
 for g in "${GATES[@]}"; do
     [ -f "$ROOT/scripts/$g" ] || { echo "[delta] 없는 게이트: $g" >&2; exit 2; }
@@ -130,10 +136,17 @@ for g in "${GATES[@]}"; do
 
     h_v=$(read_value "$h_out"); b_v=$(read_value "$b_out")
     if [ -z "$h_v" ] || [ -z "$b_v" ]; then
-        echo "[delta] $g — 값 줄을 못 읽었다(HEAD='$h_v' base='$b_v'). 게이트의 출력 형식이 바뀌었나." >&2
+        echo "[delta] $g — 값을 못 읽었다(HEAD='$h_v' base='$b_v'). 이 도구는 **값을 안 낸다**." >&2
+        echo "        이 도구가 읽는 것은 \`… : <수>건 (상한 <수>)\` 형식 한 가지다. 사유는 셋 중 하나다:" >&2
+        echo "        ① 그 게이트가 다른 형식으로 값을 찍는다(예: 합/예산/여유) — 이 도구로는 못 잰다." >&2
+        echo "        ② 그 게이트가 값을 아예 안 찍는다(순수 통과/실패) — 잴 것이 없다." >&2
+        echo "        ③ base 쪽에서 게이트가 죽었다. 판정기를 \`scripts/lib/judge-bin.sh\` 의" >&2
+        echo "           resolve_judge 로 안 찾는 게이트는 환경변수를 안 읽고 자기 트리의" >&2
+        echo "           target/ 만 보므로, 새 워크트리에서 그냥 죽는다." >&2
         status=1
         continue
     fi
+    measured=1
     hc=${h_v%% *}; cap=${h_v##* }; bc=${b_v%% *}; bcap=${b_v##* }
     d=$((hc - bc))
     note=""
@@ -152,7 +165,11 @@ done
 
 echo
 echo "base $BASE_SHA · HEAD $HEAD_SHA · dirty $(git status --porcelain | wc -l | tr -d ' ')"
-echo "계기: **재측정(확정)** — 양쪽 트리에서 게이트를 그대로 다시 돌려 뺐다."
-echo "      (diff 를 grep 해서 낸 delta 는 확정이 아니라 **하한**이다 — 이 도구의 값과 섞어 적지 마라.)"
+if [ "$measured" -eq 1 ]; then
+    echo "계기: **재측정(확정)** — 양쪽 트리에서 게이트를 그대로 다시 돌려 뺐다."
+    echo "      (diff 를 grep 해서 낸 delta 는 확정이 아니라 **하한**이다 — 이 도구의 값과 섞어 적지 마라.)"
+else
+    echo "계기: **없다** — 위에서 아무 값도 못 얻었다. 이 줄을 delta 0 으로 적지 마라."
+fi
 echo "보고 형식: rc + 값 + delta(계기) + 어느 상태에서 뽑았는지(tip · dirty) + 게이트별 tip."
 exit "$status"
