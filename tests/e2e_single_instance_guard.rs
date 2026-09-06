@@ -555,3 +555,65 @@ fn does_not_flag_prose_that_merely_names_the_isolated_home() {
     let (spawns, _) = spawn_and_home_counts(src);
     assert_eq!(spawns, 0, "산문은 spawn 자리가 아니다");
 }
+
+/// 스캔 마커 중 **따옴표를 품지 않은 것**은 소스 원문에 그대로 적히므로, 이 파일이
+/// 자기 상수를 하네스 코드로 세게 된다. 실측으로 그렇게 났다 — 처음엔 이 파일이
+/// `spawn 4 · 전용 홈 지정 0` 인 위반자로 나왔다. 그래서 그런 마커는 `concat!` 로
+/// 쪼갠다. 쪼개면 원문에 연속 형태가 없어 자기 매칭이 사라진다.
+///
+/// **따옴표를 품은 마커는 다르다** — 소스에서는 `\"` 로 이스케이프되어 런타임 값과
+/// 글자가 달라지므로, 쪼개지 않아도 자기 매칭이 원리적으로 안 일어난다. 그쪽의 쪼갬은
+/// 형태를 맞춰 둔 것이지 이 결함을 막는 장치가 아니다. **두 부류를 섞어 "쪼개서 안전하다"
+/// 로 적으면 따옴표 없는 마커가 새로 붙었을 때 같은 근거로 안 쪼개게 된다.**
+///
+/// 그리고 **쪼갬은 주석만으로는 안 지켜진다.** 다음 사람이 "왜 나눠 놨지" 하며 합치면
+/// 조용히 되돌아가고, 그 순간 이 파일이 자기 상수 때문에 위반자가 된다. 그래서 쪼갬이
+/// 살아 있는지를 **시험이 묻는다.** 대안이었던 "이 파일을 순회에서 빼기" 를 안 쓴 이유는
+/// 그 면제가 **이 파일에 나중에 붙는 모든 축까지 덮기** 때문이다(726 이 짚었다).
+/// 선례: `crates/tasty-doc-guards/tests/complexity_allowlist_docs_parity.rs` 의
+/// `the_needle_is_not_written_whole_in_this_file`.
+#[test]
+fn the_quoteless_scan_markers_are_not_written_whole_in_this_file() {
+    let src = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join(SELF_FILE),
+    )
+    .expect("자기 소스 read 실패");
+
+    // 따옴표가 없으면 런타임 값 == 소스에 적히는 글자다. 그 부류만 자기 매칭을 낸다.
+    let quoteless: Vec<(&str, &str)> = [
+        ("SPAWN_FORMS[0]", SPAWN_FORMS[0]),
+        ("SPAWN_FORMS[1]", SPAWN_FORMS[1]),
+        ("BIN_SELECTION_MARKER", BIN_SELECTION_MARKER),
+        ("ISOLATED_HOME_MARKER", ISOLATED_HOME_MARKER),
+    ]
+    .into_iter()
+    .filter(|(_, needle)| !needle.contains('"'))
+    .collect();
+
+    // ★ 비영 대조 ① — 판정 대상이 0 건이면 아래 단정은 자극과 무관하게 초록이다.
+    assert!(
+        !quoteless.is_empty(),
+        "비영 대조 실패 — 따옴표 없는 마커가 하나도 없다. 그러면 아래 통과는 쪼갬의 \
+         증거가 아니라 **아무것도 안 봤다**는 뜻이다."
+    );
+
+    let whole: Vec<String> = quoteless
+        .iter()
+        .filter(|(_, needle)| src.contains(*needle))
+        .map(|(label, needle)| format!("{label} = {needle:?}"))
+        .collect();
+    assert!(
+        whole.is_empty(),
+        "따옴표 없는 스캔 마커가 원문에 통째로 있다 — `concat!` 쪼갬을 되돌리지 마라. \
+         되돌리면 이 가드가 자기 상수를 하네스 spawn 으로 센다. 되돌린 것: {whole:?}"
+    );
+
+    // ★ 비영 대조 ② — `contains` 로 이 파일에서 무언가를 실제로 찾을 수 있음을 보인다.
+    //   찾는 법 자체가 죽어 있으면 위 초록은 증거가 아니다. 조각은 원문에 반드시 있다.
+    assert!(
+        src.contains("Command::new(spawn_diag::"),
+        "비영 대조 실패 — 조각조차 원문에서 못 찾는다. 탐색법이 죽었다."
+    );
+}
