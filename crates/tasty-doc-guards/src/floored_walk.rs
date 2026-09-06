@@ -462,6 +462,11 @@ mod tests {
 
     /// 링크를 안 따라간다는 것은 **양방향으로** 재야 한다. 링크 너머 파일이 안 세어지는
     /// 것만 보면 "링크를 안 따라갔다" 와 "거기 파일이 없다" 가 구별되지 않는다.
+    /// unix 전용이다 — Windows 의 `symlink_dir` 은 개발자 모드나 관리자 권한을 요구해서
+    /// CI 러너에서 권한 오류로 죽는다. 그것은 "링크를 따라갔다" 와 다른 실패라 여기서
+    /// 재면 판정이 흐려진다. 이 성질을 Windows 에서 재는 채널은 **없다** — 순회가 링크를
+    /// 안 따라간다는 것은 unix 에서만 확인된다.
+    #[cfg(unix)]
     #[test]
     fn symlinks_are_not_followed_out_of_the_tree() {
         let outside = Tree::new(&["beyond.rs"], &[]);
