@@ -26,8 +26,11 @@ doc comment 의 언급은 사용이 아니다.
 
 번들 스테이징을 **opt-in** 으로 한다. 하네스는 기본적으로 빈 디렉터리를 번들 루트로
 지정하고(`TASTY_BUILTIN_PLUGINS_DIR`), plugin 을 실제로 호출하는 스위트만 명부에 올린다.
-명부와 판정은 `tests/spawn_diag` 한 곳에 두고 `tests/common` 과 `tests/webhook_common` 이
-공유한다.
+명부와 판정은 `tests/spawn_diag` 한 곳에 두고 **인스턴스를 띄우는 하네스 전부**가 그것을
+거친다. 수를 여기 박지 않는다 — 이 문장이 처음 쓰일 때 손에 있던 하네스가 둘이었고 셋째가
+그 밖에 남았다(아래 "사실 정정" 참조). 지금 그 "전부" 를 기계가 묻는다:
+`tests/e2e_single_instance_guard.rs` 의 `every_booting_harness_goes_through_the_bundle_opt_in`
+이 소스에서 부팅 하네스를 뽑아 opt-in 호출을 요구한다.
 
 **제품 코드는 건드리지 않는다.** `bundle_root()` 가 그 환경변수를 최우선으로 보는
 기존 동작을 쓸 뿐이고, 설치 경로(`install_builtins_if_needed` → `overwrite_builtin_dir`)에는
@@ -98,8 +101,21 @@ binary 하나다.** 그래서 테스트 함수 안에서 opt-in 을 부르면 �
 - `tests/gui_common` 이 격리 홈을 갖게 되어 그 스위트도 이 정책의 대상이 될 때.
 - 동시 러너 수 대비 효과를 실제로 측정했고, 그 값이 이 결정을 지지하지 않을 때.
 
+## 사실 정정 (2026-09-07)
+
+Decision 이 소비자를 `tests/common` 과 `tests/webhook_common` **둘로** 적었는데, 인스턴스를
+띄우는 하네스는 그때도 **셋**이었다. 빠진 것은 `tests/gui_common` 이고, 그래서 `gui_tests` 는
+이 ADR 이 "번들을 안 부르는 11" 로 센 스위트이면서도 계속 번들 전량을 스테이징했다(실측 격리
+홈 최대 1155 MB — 이 ADR 이 적은 개선 전 값 1148 MB 와 같은 자리다). 결정은 안 바뀐다.
+바뀐 것은 결정을 적은 문장이 소비자를 다 안 셌다는 사실이고, 그 문장을 수 대신 "전부" 로
+고치면서 그것을 지키는 가드를 함께 세웠다.
+
 ## References
 
 - `crates/tasty-host-plugin/src/builtin.rs` — `bundle_root()` 의 우선순위와 설치 단계
 - `tests/spawn_diag/mod.rs` — 명부와 판정
+- `tests/e2e_single_instance_guard.rs` — "부팅 하네스는 전부 opt-in 을 거친다" 를 묻는 가드
+- [ADR-0191](0191-two-local-files-are-compared-bytewise-not-hashed.md) — **다른 층**이다.
+  그쪽은 *두 번째 이후* 부팅의 쓰기를 없애고, 이 ADR 은 **첫 스테이징**을 없앤다. 격리 홈은
+  스위트마다 새로 만들어지므로 거기서는 언제나 첫 스테이징이다 — 서로를 대체하지 않는다
 - [ADR-0166](0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md) — plugin 판정을 이름이 아니라 산출물로 하는 같은 원칙
