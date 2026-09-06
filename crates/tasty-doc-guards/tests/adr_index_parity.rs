@@ -507,3 +507,102 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
         drift.join("\n  ")
     );
 }
+
+/// `MIN_ADRS` 의 **양성 대조** — 모수가 하한 아래로 떨어지는 코퍼스를 만들고, 이 파일의
+/// 두 수집기가 실제로 그것을 말하는지 묻는다.
+///
+/// 하한이 있다는 것과 그 하한이 옳다는 것은 다르다. 위 세 시험은 전부 **레포 자신**을
+/// 읽으므로 수집이 죽는 상황이 여기서는 한 번도 안 만들어진다 — 그 초록은 "수집이
+/// 산다" 가 아니라 "레포에 ADR 이 많다" 만 말한다.
+///
+/// 상수 doc 이 말하는 **네 수가 갈리는 형태**를 칸으로 만든다. 두 수집기가 독립이라
+/// 한쪽만 죽는 것이 실제 사고 모양이고(인덱스가 밀림 / 디렉터리를 못 읽음), 한쪽만
+/// 보는 대조는 그것을 못 가른다.
+///
+/// 비영 대조를 함께 세운다 — 3/3 을 세는 칸이 있어야 앞 칸의 0 이 **구조의 0**(코퍼스가
+/// 비었다)이지 **술어의 0**(수집기가 입력을 안 본다)이 아님이 갈린다.
+#[test]
+fn the_adr_floor_sees_a_collapsed_collection() {
+    let root =
+        std::env::temp_dir().join(format!("tasty-adrfloor-{}-{}", std::process::id(), line!()));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join(ADR_DIR);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리를 못 만들었다");
+    std::fs::write(root.join(INDEX), "").expect("쓰기 실패");
+
+    // ① 둘 다 비었다 — 하한이 잡아야 하는 상태.
+    assert_eq!(
+        adr_files(&root).len(),
+        0,
+        "뿌리가 비었는데 0 이 아니면 이 수집기는 인자를 안 보고 레포를 읽는 것이다"
+    );
+    assert_eq!(
+        index_rows(&root).len(),
+        0,
+        "인덱스가 비었는데 0 이 아니면 이 독법은 인자를 안 보고 레포를 읽는 것이다"
+    );
+
+    // ② 표 머리글은 행이 아니다. 이것을 세면 인덱스가 통째로 밀려도 수가 안 떨어진다.
+    std::fs::write(
+        root.join(INDEX),
+        "| 번호 | 제목 | Status | Date | Tags |\n|---|---|---|---|---|\n",
+    )
+    .expect("쓰기 실패");
+    assert_eq!(
+        index_rows(&root).len(),
+        0,
+        "머리글·구분줄을 ADR 행으로 세면 빈 인덱스가 하한을 통과한다"
+    );
+
+    // ③ 파일만 있고 행이 없다 — 두 수가 **갈리는** 칸. 상수 doc 의 "넷이 갈리면 독법이
+    //    고장 난 것" 이 실제로 갈리는지를 여기서 본다.
+    for (num, slug) in [("0001", "a"), ("0002", "b"), ("0003", "c")] {
+        std::fs::write(dir.join(format!("{num}-{slug}.md")), "").expect("쓰기 실패");
+    }
+    assert_eq!(
+        adr_files(&root).len(),
+        3,
+        "디렉터리를 안 읽으면 파일 수가 0 에 머문다"
+    );
+    assert_eq!(
+        index_rows(&root).len(),
+        0,
+        "행이 없는데 행 수가 늘면 두 수가 서로를 가려 준다 — 그러면 한쪽이 죽어도 하한이 안 걸린다"
+    );
+
+    // ④ 비영 대조 — 행을 넣으면 두 수가 같이 3 이 된다. 앞 칸들의 0 이 구조의 0 이었음이
+    //    여기서 갈린다.
+    let mut index = String::from("| 번호 | 제목 | Status | Date | Tags |\n|---|---|---|---|---|\n");
+    for (num, slug) in [("0001", "a"), ("0002", "b"), ("0003", "c")] {
+        index.push_str(&format!(
+            "| {num} | [제목]({num}-{slug}.md) | Accepted | 2026-09-07 | tag |\n"
+        ));
+    }
+    std::fs::write(root.join(INDEX), &index).expect("쓰기 실패");
+    assert_eq!(adr_files(&root).len(), 3, "파일 수가 흔들리면 안 된다");
+    assert_eq!(
+        index_rows(&root).len(),
+        3,
+        "행이 셋인데 3 이 아니면 독법이 죽은 것이다 — 그때 앞 칸의 0 은 코퍼스가 아니라 독법 탓이다"
+    );
+
+    // ⑤ 반대 방향 — 번호가 아닌 `.md` 를 세면 모수가 부풀고, 부푼 만큼 하한이 무뎌진다.
+    //    `index.md` 는 이미 이 디렉터리에 있고 `template.md` 를 하나 더 놓는다.
+    std::fs::write(dir.join("template.md"), "").expect("쓰기 실패");
+    assert_eq!(
+        adr_files(&root).len(),
+        3,
+        "앞 네 자리가 숫자가 아닌 `.md` 를 ADR 로 세면 하한이 그만큼 헐거워진다"
+    );
+
+    // ⑥ 그리고 이 코퍼스는 하한 아래다 — 위 세 시험이 이 뿌리를 읽었다면 빨개진다.
+    assert!(
+        adr_files(&root).len() < MIN_ADRS && index_rows(&root).len() < MIN_ADRS,
+        "이 대조가 하한 위에 있으면 '하한이 무너진 상태' 를 한 번도 안 만든 것이다"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
+}
