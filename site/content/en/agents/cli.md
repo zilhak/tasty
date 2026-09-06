@@ -1,4 +1,4 @@
-<!-- source-hash: 0229a7e31ad7 -->
+<!-- source-hash: 37f767399849 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
