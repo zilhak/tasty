@@ -458,8 +458,10 @@ const SPAWN_FORMS: &[&str] = &[
 /// 그 spawn 이 전용 tasty 루트를 세우는가.
 const ISOLATED_HOME_MARKER: &str = concat!(".env(\"TASTY_", "HOME\"");
 
-/// 스캔이 살아 있는지 보는 하한. 지금 실제 spawn 자리는 5 다
-/// (`gui_common` 1 · `common` 1 · `webhook_common` 2 · `cli_stdout_broken_pipe` 1).
+/// 스캔이 살아 있는지 보는 하한. 실측 2026-09-07: **5**(하한 5, 여유 0) —
+/// `gui_common` 1 · `common` 1 · `webhook_common` 2 · `cli_stdout_broken_pipe` 1.
+/// 여유 0 은 여기서 의도한 값이다: 자리가 하나 줄면 빨개지고, 그때 아래 문장대로
+/// 이 수를 함께 내린다. 줄어든 것이 삭제인지 스캔 고장인지는 사람이 가른다.
 /// 경로 계산이 틀려 대상이 0 개가 되면 **가드가 조용히 초록**이 되는데, 그것을 잡는
 /// 유일한 장치다. 자리를 지웠으면 이 수도 함께 내려라.
 const ISOLATED_HOME_MIN_SPAWNS: usize = 5;
