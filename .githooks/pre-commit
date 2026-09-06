@@ -28,8 +28,10 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# staged 된 .rs 파일 목록
-STAGED_RS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.rs$' || true)
+# staged 된 파일 목록. `.rs` 목록은 여기서 갈라 낸다 — 두 값이 **같은 한 번의 조회**에서
+# 나와야 아래 통과 줄이 찍는 모수가 검사들이 실제로 순회한 것과 같다.
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACM || true)
+STAGED_RS=$(printf '%s\n' "$STAGED_ALL" | grep -E '\.rs$' || true)
 
 red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
@@ -548,5 +550,37 @@ if [ "$FAIL" -ne 0 ]; then
     exit 1
 fi
 
-green "✓ pre-commit 검사 통과"
+# ────────────────────────────────────────────────────────────
+# 통과 줄에 **모수**를 붙인다.
+#
+# 이 훅의 각 구역은 자기 모수를 머리 주석에 적어 뒀다(`[파일 전체]` · `[diff 추가 라인]`
+# · `[staged]`). 그런데 그 표기는 판정의 **정의** 옆에 있고, 커밋하는 사람이 보는 것은
+# 판정의 **출력** — 모수가 없는 한 줄이었다. 그래서 초록이 "staged 범위가 깨끗하다" 가
+# 아니라 "트리가 깨끗하다" 로 읽혔다. 실제로 그렇게 읽혀서, 추적 안 되는 쓰레기 파일이
+# 훅을 초록으로 통과한 채 남았다(레포 전체를 훑는 doc-guards 가드가 나중에 잡았다).
+#
+# 값은 **새로 세지 않는다.** 위에서 검사들에게 넘긴 바로 그 목록의 길이를 쓴다 — 여기서
+# git 을 다시 부르면 그 계수기가 판정과 다른 모수를 갖게 되고, 그러면 이 줄이 고치려던
+# 병을 이 줄이 다시 만든다.
+#
+# 세 구역(P.1 · W.1 · W.2)은 **필터가 다르다**(ACMRD · ACMR · A). 그 수는 여기서 안
+# 찍는다 — 안 가진 값을 찍느니 안 찍는 것이 낫다. 그래서 아래 수에 "ACM 기준" 을 단다.
+# ────────────────────────────────────────────────────────────
+count() { [ -z "$1" ] && echo 0 || printf '%s\n' "$1" | wc -l | tr -d ' '; }
+
+green "✓ pre-commit 검사 통과 (모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — ACM 기준)"
+
+# 그리고 **여집합**을 한 줄 더 찍는다 — 있을 때만.
+#
+# 위 수만으로는 부족했다(실측): 추적 안 되는 쓰레기 파일을 놓아도 통과 줄이 **글자 하나
+# 안 바뀐다.** 범위를 말해 주기는 하지만 그 문장이 늘 같아서 벽지가 된다. 초록을 "트리가
+# 깨끗하다" 로 읽는 것을 막으려면 출력이 **그 상황에 반응**해야 한다.
+#
+# ★ 이 수는 **어느 검사의 모수도 아니다.** 모든 모수의 **밖**이다 — 그래서 위의 수들과
+#   달라도 어긋난 것이 아니다. 라벨에 그 사실을 적는다.
+untracked=$(git status --porcelain --untracked-files=normal 2>/dev/null | grep -c '^??' || true)
+if [ "$untracked" -gt 0 ]; then
+    yellow "  ↳ 추적 안 되는 파일 $untracked 개는 **위 모수 밖**이다 — 이 초록이 말하지 않는 것이다."
+    yellow "     의도한 것이 아니면 \`git status --porcelain\` 로 봐라. 트리 전체는 \`cargo test -p tasty-doc-guards\`."
+fi
 exit 0
