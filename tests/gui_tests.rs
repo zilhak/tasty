@@ -1165,6 +1165,13 @@ fn right_click_opens_terminal_menu() {
         .expect("a focused terminal surface");
 
     inst.inject_mouse(sid, 0.5, 0.5, "press", 2);
+    // ★ release 까지 줘야 한다. Linux 는 컨텍스트 메뉴를 **`Released` 에서** 연다 —
+    // 버튼이 눌린 채로 GTK `popup_at_rect` 를 부르면 팝업을 realize/map 하지 않고
+    // 조용히 no-op 하기 때문이다(`src/view/main/mouse.rs` 의 `open_button_state`).
+    // 그래서 press 만 주는 것은 제품이 옳은데도 실패하는 자극이다.
+    // macOS/Windows 는 press 에서 열지만, 그쪽에서도 release 를 더 주는 것은 무해하다
+    // (메뉴는 press 에서 이미 서고 release 는 그 뒤에 온다).
+    inst.inject_mouse(sid, 0.5, 0.5, "release", 2);
     settle();
 
     let menu = inst.debug_pending_menu();
