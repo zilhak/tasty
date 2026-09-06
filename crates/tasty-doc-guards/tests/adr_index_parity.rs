@@ -34,6 +34,31 @@ const INDEX: &str = "docs/adr/index.md";
 
 /// ADR 수의 하한 — **연기 검사**다. 목록이 비면 아래 집합 대조는 빈 집합끼리라
 /// 그냥 통과한다. 값의 근거: 2026-09-05 실측 153 건.
+///
+/// **판별식** — 이 상수 하나가 **세 시험의 네 수**를 지킨다. 그 넷은 서로 독립으로 재는데
+/// **정상이면 전부 같은 값**이다. 그래서 넷을 나란히 읽는 것이 곧 이 하한의 검사다:
+///
+/// ```text
+/// cargo test -p tasty-doc-guards --test adr_index_parity -- --nocapture
+///   → [ADR 인덱스] ADR 파일 <N> · 하한 120        (every_adr_file_has_a_row…)
+///   → [ADR 인덱스] 인덱스 행 <N> · 하한 120        (an_adr_number_names_exactly_one_document)
+///   → [adr-index-parity] 행 <N> · Status 대조 <N> · Date 대조 <N> · …
+///                                                 (an_index_row_carries_the_same_status…)
+/// ```
+///
+/// ★ **넷이 갈리면 하한이 아니라 독법이 고장 난 것이다.** 파일 수와 인덱스 행 수가 다르면
+/// 인덱스가 밀린 것이고, 그 둘이 같은데 Status/Date 대조 수만 낮으면 헤더 독법이 죽은 것이다.
+/// 그 구분은 이 하한이 못 한다 — 하한은 "넷 다 0 은 아니다" 까지만 말한다.
+///
+/// 실측 2026-09-07(`de0572359`): **네 수가 전부 190** 이다(09-05 의 153 에서 늘었다).
+/// 하한이 120 이라 **여유가 70** 이다 — 술어가 3 분의 1 만 남아도 통과한다는 뜻이다.
+/// 값을 올릴지는 하한 조이기라는 별개 축이라 여기서는 실측만 남긴다.
+///
+/// **이 수를 내려서 초록을 만들지 마라.** 이 자리의 하한은 대조군이 살아 있는지만 보는
+/// 연기 검사라, 내리면 아래 집합 대조들이 더 작은 집합에서만 참이 되면서 색은 안 변한다.
+///
+/// 정당한 수선: ADR 을 실제로 지웠으면 이 수를 함께 내려라. 그때 **위 네 수를 함께 봐라** —
+/// 넷이 같이 줄었으면 지운 것이고, 하나만 줄었으면 지운 것이 아니라 독법이 깨진 것이다.
 const MIN_ADRS: usize = 120;
 
 /// 본문이 `Superseded by NNNN` 인 ADR 수의 하한 — **연기 검사**다.
@@ -227,6 +252,9 @@ fn header_field(body: &str, name: &str) -> Option<String> {
 #[test]
 fn an_adr_number_names_exactly_one_document() {
     let rows = index_rows();
+    // R445 — 측정값은 단정보다 앞에. 이 파일의 세 시험이 같은 하한을 쓰고 서로 다른 수를
+    // 재므로, 그 수들을 나란히 읽는 것이 곧 하한의 판별식이다(상수 doc 참조).
+    println!("[ADR 인덱스] 인덱스 행 {} · 하한 {MIN_ADRS}", rows.len());
     assert!(
         rows.len() >= MIN_ADRS,
         "인덱스에서 ADR 행을 {} 개밖에 못 뽑았다(하한 {MIN_ADRS}, 2026-09-05 실측 153). \
@@ -256,6 +284,7 @@ fn an_adr_number_names_exactly_one_document() {
 #[test]
 fn every_adr_file_has_a_row_and_every_row_has_a_file() {
     let files = adr_files();
+    println!("[ADR 인덱스] ADR 파일 {} · 하한 {MIN_ADRS}", files.len());
     assert!(
         files.len() >= MIN_ADRS,
         "ADR 파일이 {} 개뿐이다(하한 {MIN_ADRS})",
