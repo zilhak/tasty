@@ -463,3 +463,58 @@ fn no_filtered_scan_guard_reads_only_ignored_paths() {
             .join("\n  ")
     );
 }
+
+/// [`MIN_SCANNED`] 의 **양성 대조** — 이 수가 죽는 경로 **둘 다**를 건다.
+///
+/// 이 수는 누적 변수처럼 보이지만 실은 두 함수의 합성이다:
+/// `integration_targets(root)` 가 모수를 뽑고 `is_pure_source_scan(src)` 가 그중 셀 것을
+/// 고른다. **둘 다 이미 인자를 받으므로 꺼낼 것이 없다** — 처음에 이 자리를 "루프 누적이라
+/// 인위 축소 지점이 없다" 로 분류했는데, 그것은 누적 변수의 **선언 자리**를 보고 값이
+/// **어디서 오는지**를 안 본 것이었다.
+///
+/// 순회가 죽으면 수가 떨어지고(하한이 본다), 술어가 느슨해지면 수가 **는다**(하한이 못 본다).
+/// 그래서 아래 둘째 묶음이 필요하다 — 하한만으로는 그 방향을 영영 못 본다.
+#[test]
+fn the_scanned_floor_sees_both_ways_it_can_die() {
+    // ① 순회 — 빈 뿌리에서 0 이어야 한다.
+    let root = std::env::temp_dir().join(format!(
+        "tasty-scannedfloor-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("tests")).expect("임시 디렉토리를 못 만들었다");
+    assert_eq!(
+        integration_targets(&root).len(),
+        0,
+        "빈 뿌리에서 0 이 아니면 이 순회는 입력을 안 보는 것이다"
+    );
+
+    // 비영 대조 — 이 순회가 언제나 0 을 내는 것은 아니다.
+    std::fs::write(root.join("tests/a.rs"), "").expect("쓰기 실패");
+    assert_eq!(
+        integration_targets(&root).len(),
+        1,
+        "타깃을 못 세면 위 0 은 순회가 늘 죽어 있다는 뜻이라 아무것도 안 지킨다"
+    );
+
+    // ② 술어 — 굳으면 수가 **늘어서** 하한을 더 여유롭게 통과한다.
+    assert!(
+        is_pure_source_scan("let s = std::fs::read_to_string(p);"),
+        "레포를 읽는 소스를 놓치면 이 수가 실제보다 작아진다"
+    );
+    assert!(
+        !is_pure_source_scan("Command::new(\"tasty\"); read_to_string(p);"),
+        "인스턴스를 띄우는 소스까지 세면 이 수가 부풀고, 부푼 만큼 하한이 무뎌진다 — \
+         하한은 늘어나는 방향을 보지 않으므로 이 칸이 유일한 방어다"
+    );
+    assert!(
+        !is_pure_source_scan("fn main() {}"),
+        "아무것도 안 읽는 소스를 세면 모수의 뜻이 달라진다"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
+}

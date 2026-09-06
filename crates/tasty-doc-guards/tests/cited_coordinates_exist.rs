@@ -1184,3 +1184,40 @@ fn every_allowlist_entry_still_fires() {
         stale.join("\n")
     );
 }
+
+/// [`MIN_LINKS`] 의 **양성 대조** — 수집이 죽으면 이 수가 떨어지나.
+///
+/// 이 수도 누적 변수가 아니라 합성이다: `docs_of(root)` 가 문서를 모으고
+/// `prose_lines` · `scan_links` 가 그 안에서 링크를 뽑는다. **뒤 둘은 이미 대조가 있다**
+/// (`the_link_scanner_reads_only_repo_local_link_targets` ·
+/// `a_link_is_resolved_next_to_the_document_that_cites_it`). 없던 것은 앞의 수집 하나뿐이라
+/// 그것만 채운다 — `docs_of` 는 이 파일의 시험 넷이 쓰므로 이 대조는 그 넷 전부를 받친다.
+#[test]
+fn the_link_floor_sees_a_collapsed_collection() {
+    let root = std::env::temp_dir().join(format!(
+        "tasty-linkfloor-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("임시 디렉토리를 못 만들었다");
+
+    assert_eq!(
+        docs_of(&root).len(),
+        0,
+        "빈 뿌리에서 0 이 아니면 이 수집기는 입력을 안 보는 것이고, 그러면 하한도 이 파일의 \
+         다른 시험 넷도 무엇을 훑는지 모른 채 초록이 된다"
+    );
+
+    // 비영 대조 — 언제나 0 을 내는 것은 아니다.
+    std::fs::write(root.join("a.md"), "[x](b.md)\n").expect("쓰기 실패");
+    assert!(
+        !docs_of(&root).is_empty(),
+        "문서를 하나도 못 모으면 위 0 은 수집기가 늘 죽어 있다는 뜻이라 아무것도 안 지킨다"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
+}
