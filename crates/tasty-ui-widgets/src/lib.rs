@@ -29,12 +29,14 @@ mod autocomplete;
 pub mod brand;
 mod button;
 mod chip;
+mod chrome_slot;
 mod control;
 mod drilldown;
 mod help_hint;
 mod horizontal_tab_bar;
 mod icon_button;
 mod input;
+mod keyboard_cursor;
 mod language_select;
 mod listctrl;
 mod menu_item;
@@ -62,6 +64,7 @@ pub use chip::{
     BadgeVariant, KbdKey, TagVariant, badge, badge_dot, kbd, kbd_parts, num_keycap,
     paint_badge_dot, paint_num_keycap, tag, tag_width,
 };
+pub use chrome_slot::top_right_inset_square;
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use help_hint::HelpHint;
@@ -73,7 +76,7 @@ pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use menu_item::{MenuItemVariant, menu_item, menu_separator};
 pub use multi_select::{
     MultiSelectAllToggle, MultiSelectLabels, multi_select, multi_select_popup_id,
-    multi_select_summary,
+    multi_select_summary, popup_chrome_width,
 };
 pub use path_field::{PathField, PathFieldOutcome};
 pub use segmented::segmented;

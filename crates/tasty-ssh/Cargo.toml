@@ -18,10 +18,5 @@ tracing = "0.1"
 # Error handling
 anyhow = "1"
 
-[dev-dependencies]
-# 지연 단정의 대조군(ADR-0181). 이 크레이트의 지연 단정은 자식 프로세스 뒤에 줄 서므로
-# spawn 계열 대조군을 쓴다 — 스케줄러 계열은 fork/exec 포화를 못 본다.
-tasty-latency-control = { path = "../tasty-latency-control" }
-
 [lints]
 workspace = true

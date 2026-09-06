@@ -1027,7 +1027,10 @@ fn address_bar(ui: &mut egui::Ui, theme: &Theme) {
                         theme.border_default().to_egui(),
                     ))
                     .corner_radius(theme.corner_radius.value())
-                    .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 4))
+                    .inner_margin(egui::Margin::symmetric(
+                        theme.spacing_sm.value() as i8,
+                        theme.spacing_xs.value() as i8,
+                    ))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let sz = theme.font_size_caption.value();

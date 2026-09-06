@@ -189,7 +189,10 @@ pub fn draw(
         title_bg,
     );
     painter.text(
-        egui::pos2(title_rect.min.x + 8.0, title_rect.center().y),
+        egui::pos2(
+            title_rect.min.x + theme.spacing_sm.value(),
+            title_rect.center().y,
+        ),
         egui::Align2::LEFT_CENTER,
         title,
         egui::FontId::proportional(theme.font_size_body.value()),

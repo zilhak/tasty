@@ -28,6 +28,7 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
+use crate::keyboard_cursor;
 
 /// 후보 필터 모드.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,12 +247,14 @@ impl<'a> AutoComplete<'a> {
             };
         }
         // active 이동·드롭다운 렌더는 실제 포커스(열림)일 때만. 닫히는 프레임엔 스킵.
+        // 커서 규약(끝에서 순환·첫 오픈은 진행 방향 끝)은 [`crate::keyboard_cursor`] 한 벌을
+        // 부른다 — 여기엔 비활성 행 개념이 없어 마스크는 `None`.
         if focused {
             if down {
-                *active = step_active(*active, n, true);
+                *active = keyboard_cursor::step_active(*active, n, None, true);
             }
             if up {
-                *active = step_active(*active, n, false);
+                *active = keyboard_cursor::step_active(*active, n, None, false);
             }
         }
 
@@ -490,29 +493,6 @@ fn row_font(theme: &Theme, mono: bool) -> egui::FontId {
     }
 }
 
-/// keyboard-active 인덱스 한 칸 이동(wrap-around). 첫 오픈(`None`)에서 아래=0, 위=마지막.
-fn step_active(cur: Option<usize>, n: usize, forward: bool) -> Option<usize> {
-    if n == 0 {
-        return None;
-    }
-    Some(match cur {
-        None => {
-            if forward {
-                0
-            } else {
-                n - 1
-            }
-        }
-        Some(i) => {
-            if forward {
-                (i + 1) % n
-            } else {
-                (i + n - 1) % n
-            }
-        }
-    })
-}
-
 /// 후보를 질의로 좁힌다(대소문자 무시). 질의가 비었거나 `None` 모드면 전체를 반환.
 /// 순서는 원본 순서 보존. 반환은 **가시 목록**이며 `Pick` 은 이 목록의 문자열을 돌려준다.
 fn filter_entries<'a>(entries: &[&'a str], query: &str, mode: MatchMode) -> Vec<&'a str> {
@@ -587,20 +567,6 @@ fn elide_middle(text: &str, max_w: f32, measure: impl Fn(&str) -> f32) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn step_active_wraps_and_starts_from_edge() {
-        // 첫 오픈: 아래=최상단, 위=최하단.
-        assert_eq!(step_active(None, 3, true), Some(0));
-        assert_eq!(step_active(None, 3, false), Some(2));
-        // 이동 + wrap-around.
-        assert_eq!(step_active(Some(0), 3, true), Some(1));
-        assert_eq!(step_active(Some(2), 3, true), Some(0));
-        assert_eq!(step_active(Some(0), 3, false), Some(2));
-        // 빈 목록은 active 없음.
-        assert_eq!(step_active(None, 0, true), None);
-        assert_eq!(step_active(Some(0), 0, false), None);
-    }
 
     #[test]
     fn elide_middle_keeps_head_and_tail() {

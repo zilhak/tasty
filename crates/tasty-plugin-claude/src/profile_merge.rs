@@ -219,10 +219,12 @@ mod tests {
         assert!(deny.iter().any(|v| v == "Bash"));
     }
 
+    /// allow 에 **둘**을 둔다. 하나만 두면 "deny 된 것만 뺐다" 와 "allow 를 통째로
+    /// 비웠다" 가 같은 관측이 되고, 권한 병합에서 그 둘은 전혀 다른 사고다.
     #[test]
     fn deny_beats_allow_regardless_of_profile_order() {
         let deny_profile = json!({"permissions": {"deny": ["Bash"]}});
-        let allow_profile = json!({"permissions": {"allow": ["Bash"]}});
+        let allow_profile = json!({"permissions": {"allow": ["Bash", "Read"]}});
         let (merged, _) = merge_contents(&[
             ("allow".into(), allow_profile),
             ("deny".into(), deny_profile),
@@ -230,6 +232,8 @@ mod tests {
         .unwrap();
         let allow = merged["permissions"]["allow"].as_array().unwrap();
         assert!(!allow.iter().any(|v| v == "Bash"));
+        // deny 와 무관한 항목은 allow 에 남는다.
+        assert!(allow.iter().any(|v| v == "Read"));
     }
 
     #[test]

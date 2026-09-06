@@ -1,13 +1,36 @@
 //! `method_meta` 단위 테스트.
 
 use crate::method_meta::{
-    METHOD_TABLE, PREFIX_RULES, clear_plugin_prefixes_for_tests, is_registered_plugin_prefix,
-    method_meta, plugin_prefixes, register_plugin_prefix, unregister_plugin_prefix,
+    METHOD_TABLE, PREFIX_RULES, is_registered_plugin_prefix, method_meta, test_namespace_table,
 };
 use tasty_plugin_manifest::Permission;
 
-/// runtime registry 가 process-global 이라 동일 binary 안에서 병렬 test 가
-/// PLUGIN_PREFIXES 를 동시 변형하지 못하게 직렬화.
+/// 표를 조작하는 테스트가 쓰는 가짜 소유자. 소유는 plugin 단위라 prefix 만으로는
+/// 등록할 수 없다 — 표가 답하는 물음이 "누가 소유하나" 이기 때문이다.
+const TEST_OWNER: &str = "com.test.namespace";
+
+fn ns_write() -> std::sync::RwLockWriteGuard<'static, crate::ipc_namespace::IpcNamespaceRegistry> {
+    test_namespace_table()
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+fn ns_clear() {
+    ns_write().clear();
+}
+
+fn ns_register(prefix: &str) {
+    ns_write()
+        .register(TEST_OWNER, prefix)
+        .expect("test prefix must be free");
+}
+
+fn ns_unregister(_prefix: &str) {
+    ns_write().unregister_plugin(TEST_OWNER);
+}
+
+/// 표가 process-global 이라 동일 binary 안에서 병렬 test 가
+/// 표를 동시 변형하지 못하게 직렬화.
 static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn test_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -393,44 +416,44 @@ fn request_permission_is_plugin_callable_with_approval() {
 #[test]
 fn plugin_prefix_registration_resolves() {
     let _g = test_lock();
-    clear_plugin_prefixes_for_tests();
-    register_plugin_prefix("codex");
+    ns_clear();
+    ns_register("codex");
     let m = method_meta("codex.spawn").expect("registered via runtime");
     assert!(m.plugin_callable);
     assert!(m.required.is_empty());
-    clear_plugin_prefixes_for_tests();
+    ns_clear();
 }
 
 #[test]
 fn plugin_prefix_unregister_removes() {
     let _g = test_lock();
-    clear_plugin_prefixes_for_tests();
-    register_plugin_prefix("codex");
-    unregister_plugin_prefix("codex");
+    ns_clear();
+    ns_register("codex");
+    ns_unregister("codex");
     assert!(method_meta("codex.spawn").is_none());
 }
 
 #[test]
 fn static_table_wins_over_plugin_prefix() {
     let _g = test_lock();
-    clear_plugin_prefixes_for_tests();
-    register_plugin_prefix("image");
+    ns_clear();
+    ns_register("image");
     let m = method_meta("image.open").expect("static");
     assert!(m.required.contains(&Permission::SurfaceWrite));
-    clear_plugin_prefixes_for_tests();
+    ns_clear();
 }
 
 #[test]
 fn plugin_prefix_idempotent_register() {
     let _g = test_lock();
-    clear_plugin_prefixes_for_tests();
-    register_plugin_prefix("codex");
-    register_plugin_prefix("codex");
+    ns_clear();
+    ns_register("codex");
+    ns_register("codex");
     let m = method_meta("codex.spawn").expect("still registered");
     assert!(m.plugin_callable);
-    unregister_plugin_prefix("codex");
+    ns_unregister("codex");
     assert!(method_meta("codex.spawn").is_none());
-    clear_plugin_prefixes_for_tests();
+    ns_clear();
 }
 
 #[test]
@@ -459,21 +482,21 @@ fn audit_methods_are_local_only() {
 #[test]
 fn a_poisoned_prefix_registry_still_blocks_the_owner_bypass() {
     let _g = test_lock();
-    clear_plugin_prefixes_for_tests();
+    ns_clear();
 
     let panicked = std::thread::spawn(|| {
-        let _held = plugin_prefixes().write().expect("not poisoned yet");
+        let _held = test_namespace_table().write().expect("not poisoned yet");
         panic!("poison the prefix registry");
     })
     .join();
     assert!(panicked.is_err(), "the helper thread must have panicked");
     assert!(
-        plugin_prefixes().read().is_err(),
+        test_namespace_table().read().is_err(),
         "the registry lock must actually be poisoned now"
     );
 
     // 등록도 poison 이후에 한다 — 그래야 읽기 경로와 쓰기 경로가 **둘 다** 겨냥된다.
-    register_plugin_prefix("codex");
+    ns_register("codex");
     assert!(
         is_registered_plugin_prefix("codex"),
         "a poisoned registry must not report a registered prefix as free — that opens the \
@@ -486,12 +509,12 @@ fn a_poisoned_prefix_registry_still_blocks_the_owner_bypass() {
         "prefix lookup must survive the poison too"
     );
 
-    unregister_plugin_prefix("codex");
+    ns_unregister("codex");
     assert!(
         !is_registered_plugin_prefix("codex"),
         "writes must land on a poisoned registry as well, or a dead plugin keeps its namespace"
     );
-    clear_plugin_prefixes_for_tests();
+    ns_clear();
 }
 
 /// 종단 응답의 셋째 갈래는 **정확 표 조회**로 갈린다 — prefix fallback 을 타면 안 된다.
@@ -507,8 +530,8 @@ fn a_poisoned_prefix_registry_still_blocks_the_owner_bypass() {
 #[test]
 fn the_unrouted_third_branch_asks_the_exact_table_not_the_prefix_fallback() {
     let _g = test_lock();
-    clear_plugin_prefixes_for_tests();
-    register_plugin_prefix("zzztestns");
+    ns_clear();
+    ns_register("zzztestns");
 
     let name = "zzztestns.whatever";
     assert!(
@@ -534,5 +557,5 @@ fn the_unrouted_third_branch_asks_the_exact_table_not_the_prefix_fallback() {
     );
     assert_eq!(resp.error.expect("에러여야 한다").code, -32017);
 
-    unregister_plugin_prefix("zzztestns");
+    ns_unregister("zzztestns");
 }

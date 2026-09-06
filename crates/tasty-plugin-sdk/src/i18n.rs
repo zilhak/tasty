@@ -76,29 +76,25 @@ impl Translator {
     }
 }
 
-/// 재귀 toml table → 평면 dot-key 평탄화. host의 `Translations::parse_toml_into`와 동일.
+/// 재귀 toml table → 평면 dot-key 평탄화.
+///
+/// **host 의 규칙을 그대로 부른다 — 여기에 사본을 두지 않는다.** 예전에는 같은 재귀가
+/// 이 파일에 복사돼 있었고 주석이 "host 의 `Translations::parse_toml_into` 와 동일" 이라고
+/// 주장했는데, 둘을 같게 잡아 주는 것이 그 주석뿐이었다. 그 상태에서 무엇이 안 잡히는지
+/// 실측했다(2026-09-06): 사본에 정수 leaf 도 키로 세게 하는 변이를 넣어도 이 크레이트와
+/// 소비 plugin 의 시험 **443 건이 전부 초록**이었고, 반대로 host 규칙을 통째로 망가뜨려도
+/// 이 크레이트의 시험 39 건이 전부 초록이었다. **양방향으로 아무 결합이 없었다.**
+///
+/// 갈리면 무엇이 깨지는가: plugin 은 자기 `lang/` 을 이 함수로 펴서 `t()` 를 풀고,
+/// 카탈로그 정합 가드(`tests/i18n_key_parity.rs`)는 **host 규칙으로** 같은 파일을 편다.
+/// 두 규칙이 갈리면 가드가 검사한 키 집합과 plugin 이 실제로 푸는 키 집합이 달라진다 —
+/// 그 어긋남은 **가드가 초록인 채로** 생긴다.
+///
+/// `tasty-i18n` 을 의존에 더해도 새 전이 의존은 없다. 이 크레이트는 그것이 쓰는
+/// `toml` · `tracing` · `tasty-utils` 를 이미 전부 갖고 있다.
 fn parse_toml_into(map: &mut HashMap<String, String>, source: &str) {
-    if let Ok(value) = source.parse::<toml::Value>()
-        && let Some(table) = value.as_table()
-    {
-        flatten(map, "", table);
-    }
-}
-
-fn flatten(map: &mut HashMap<String, String>, prefix: &str, table: &toml::value::Table) {
-    for (k, v) in table {
-        let key = if prefix.is_empty() {
-            k.clone()
-        } else {
-            format!("{prefix}.{k}")
-        };
-        match v {
-            toml::Value::Table(inner) => flatten(map, &key, inner),
-            toml::Value::String(s) => {
-                map.insert(key, s.clone());
-            }
-            _ => {}
-        }
+    if let Ok(value) = source.parse::<toml::Value>() {
+        tasty_i18n::flatten_catalog_toml("", &value, map);
     }
 }
 

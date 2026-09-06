@@ -514,7 +514,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                 ui,
                                 theme,
                                 1,
-                                "워크스페이스 · 패인 · 탭 · 서피스",
+                                "워크스페이스 · 페인 · 탭 · 서피스",
                                 "화면 구조 4개 기본 개념.",
                                 true,
                                 scaled,
@@ -543,7 +543,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
                                     theme,
                                     4,
                                     "프리셋 & 워크스페이스 레이아웃",
-                                    "패인 배치를 저장·복원.",
+                                    "페인 배치를 저장·복원.",
                                     false,
                                     false,
                                 );
@@ -704,7 +704,7 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
                 2,
                 5,
                 "탭 헤더",
-                "패인 상단의 이 띠에서 탭을 전환·추가·닫습니다.",
+                "페인 상단의 이 띠에서 탭을 전환·추가·닫습니다.",
                 false,
             );
         });
@@ -715,8 +715,8 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
                 Tail::Down,
                 3,
                 5,
-                "패인",
-                "탭 하나가 열리는 이 사각 영역이 패인입니다.",
+                "페인",
+                "탭 하나가 열리는 이 사각 영역이 페인입니다.",
                 false,
             );
         });
@@ -728,7 +728,7 @@ pub fn draw_callout(ui: &mut egui::Ui, theme: &Theme) {
                 4,
                 5,
                 "서피스",
-                "패인 안에서 실제 터미널·마크다운이 그려지는 면.",
+                "페인 안에서 실제 터미널·마크다운이 그려지는 면.",
                 false,
             );
         });

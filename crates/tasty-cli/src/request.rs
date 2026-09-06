@@ -242,6 +242,10 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 "surface.cursor_position",
                 serde_json::json!({ "surface_id": surface }),
             ),
+            SurfaceCommands::MouseTracking { surface } => (
+                "surface.mouse_tracking",
+                serde_json::json!({ "surface_id": surface }),
+            ),
             SurfaceCommands::ForegroundProcess { surface } => (
                 "surface.foreground_process",
                 serde_json::json!({ "surface_id": surface }),

@@ -116,12 +116,33 @@ fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
         .expect("팝업 Area 가 배치되지 않았다 — 열리지 않았을 가능성")
 }
 
-/// 팝업 프레임(`Frame::popup`)이 본문 바깥에 더하는 가로 여유 — margin 양쪽 + 보더 양쪽.
-/// 위젯 쪽 `popup_chrome_width` 와 같은 계산이다.
+/// 팝업 프레임이 본문 바깥에 더하는 가로 여유 — 위젯이 쓰는 **그 함수를 부른다.**
+///
+/// 예전에는 같은 산술을 여기에 다시 적고 "위젯 쪽 `popup_chrome_width` 와 같은 계산"
+/// 이라고 주석에 적었는데, 지키는 것이 없었다. 게다가 그 사본은 `Style::default()` 를
+/// 쓰고 위젯은 `ui.style()` 을 써서 **산술이 같아도 입력이 달랐다** — 두 값이 우연히
+/// 같을 때만 참인 문장이었다.
+///
+/// ★ 다만 이 값은 아래 단정들에서 **지지항이 아니다.** 상한에 더하는 여유로만 쓰이고,
+/// 실측치가 상한에서 그보다 멀리 떨어져 있다. 그러니 이 함수를 고쳐도 초록인 것은
+/// **덮였다는 뜻이 아니다** — 여기 있는 이유는 상한을 "본문 상한 + 프레임 여유" 로
+/// **읽히게** 쓰기 위해서이지 그 여유를 검사하기 위해서가 아니다.
+///
+/// 그 사실은 값을 박지 않고 **재는 법으로** 남긴다(여유가 얼마나 남는지는 테마·폰트에
+/// 따라 변한다). `popup_chrome_width` 의 계수를 흔들고 이 파일을 돌려라 —
+/// **키우는 쪽만 재면 안 된다**(여유가 넓어지는 방향은 언제나 더 초록이라 무정보다):
+///
+/// ```text
+/// f=crates/tasty-ui-widgets/src/multi_select.rs
+/// for k in 0.0 1.0 4.0; do
+///   sed -i "s/+ [0-9.]* \* frame.stroke.width/+ $k * frame.stroke.width/" $f
+///   out=$(cargo test -p tasty-ui-widgets --test multi_select_menu_bounds 2>&1); echo "$k rc=$?"
+/// done   # 끝나면 2.0 으로 되돌린다
+/// ```
+///
+/// 하나라도 빨개지면 그때부터는 지지항이니 이 문단을 지워라.
 fn chrome() -> f32 {
-    let style = egui::Style::default();
-    let frame = egui::Frame::popup(&style);
-    frame.total_margin().sum().x + 2.0 * frame.stroke.width
+    tasty_ui_widgets::popup_chrome_width(&egui::Style::default())
 }
 
 #[test]

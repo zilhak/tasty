@@ -19,7 +19,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, top_right_inset_square};
 
 use super::glyph;
 use crate::catalog::popup_frame::{self, TitleButtons};
@@ -54,11 +54,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 프레임에는 CSD 타이틀바가 없어 이 버튼이 유일한 마우스 탈출 수단이다.
         // 본체(`fullscreen.rs::draw_exit_button`)와 같은 위젯·같은 글리프를 쓴다:
         // ghost `IconButton`(md) + canonical `close`. hover 오버레이도 위젯이 낸다.
+        // **자리도 같은 함수가 낸다** — 위치 공식을 되풀이하면 값이 다 토큰에서 와도
+        // 공식만 갈릴 수 있고, 그때는 아무 데도 안 운다.
         let side = ControlSize::Md.height(theme);
-        let exit = egui::Rect::from_min_size(
-            egui::pos2(rect.right() - pad - side, rect.top() + pad),
-            egui::Vec2::splat(side),
-        );
+        let exit = top_right_inset_square(rect, pad, side);
         ui.scope_builder(egui::UiBuilder::new().max_rect(exit), |ui| {
             IconButton::new()
                 .variant(IconButtonVariant::Ghost)

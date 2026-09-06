@@ -355,11 +355,15 @@ mod tests {
         found
     }
 
+    /// surface **둘**을 넣는다. 하나만 넣으면 `destroy_surface` 가 맵을 통째로 비워도
+    /// 이 시험은 초록이라, "7 을 지웠다" 와 "전부 지웠다" 가 안 갈린다.
     #[test]
     fn destroy_clears_state() {
         let mut p = MeshDemoPlugin::default();
         p.clicks.insert(7, 3);
+        p.clicks.insert(8, 1);
         p.destroy_surface(7);
         assert!(!p.clicks.contains_key(&7));
+        assert_eq!(p.clicks.get(&8), Some(&1));
     }
 }

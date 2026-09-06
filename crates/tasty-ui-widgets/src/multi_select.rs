@@ -1,14 +1,26 @@
 //! `MultiSelect` — 다중선택 드롭다운 (디자인 `components/forms/Select` 계열).
 //!
-//! 닫힌 트리거는 [`crate::select`] 와 **같은 토큰**(`select_height` / `select_padding_x`
-//! / `select_radius` / `select_font_size` / `select_chevron_room` / `select_fg` /
-//! `select_chevron_fg`)을 쓴다 — 같은 폼에 나란히 놓였을 때 높이·보더·폰트가 어긋나면
-//! 안 되기 때문이다. 다른 것은 셋뿐이다.
+//! 닫힌 트리거의 **형상은 [`crate::select`] 와 한 벌을 공유한다** — 자리 잡기는
+//! [`crate::select::alloc_trigger`], 박스는 [`crate::select::paint_trigger_box`] 를
+//! 둘이 함께 부른다. 주석으로 "같은 토큰을 쓴다" 고 적는 대신 원문을 하나로 둔 것이라,
+//! 같은 폼에 나란히 놓인 두 컨트롤의 높이·배경·반경·선굵기가 갈릴 자리가 없다.
+//!
+//! 다른 것은 넷이다.
 //!
 //! 1. 팝업 본문이 라디오(`selectable_label`)가 아니라 [`crate::checkbox`] 행이다.
 //! 2. close behavior 가 `CloseOnClickOutside` 다 — 항목을 **연속으로** 토글해야 하므로
 //!    하나 눌렀다고 닫히면 쓸 수 없다.
 //! 3. 트리거 텍스트가 값 하나가 아니라 **요약 라벨**이다(0개 / N개 / 전부 3갈래).
+//! 4. ★ **보더 색 갈래가 하나 더 있다** — 이 위젯은 키보드로 끝까지 조작되므로 열렸거나
+//!    포커스를 가졌을 때 `select_border_focus` 를 쓴다. `select` 에는 그 갈래가 없는데,
+//!    그쪽이 빠뜨린 것이 아니라 **애초에 키보드로 조작되지 않기 때문**이다
+//!    (`Sense::click()` 만 받고 키를 하나도 안 읽는다). 그래서 보더 **색**만 공용 헬퍼가
+//!    아니라 호출자가 정한다.
+//!
+//! ★ 위 목록이 "넷뿐" 이라는 것은 **아무것도 지키지 않는다.** 어느 한쪽이 기능을 하나
+//! 얻으면 그 순간 조용히 거짓이 된다(실제로 4 번이 그렇게 빠져 있었다). 지킬 수 있는 것은
+//! 위의 *같음*(공용 헬퍼를 부른다 — 구조가 지킨다)이고, 이 *다름*의 목록은 읽는 사람을
+//! 위한 안내이지 단정이 아니다.
 //!
 //! **요약 문구는 이 crate 가 소유하지 않는다.** 위젯 crate 는 i18n 을 의존하지 않아
 //! 번역을 가질 수 없다 — 호출자가 [`MultiSelectLabels`] 로 세 문구를 주입하고, 어느
@@ -26,7 +38,8 @@
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::select::paint_chevron;
+use crate::keyboard_cursor::{edge_enabled, row_enabled, step_active};
+use crate::select::{alloc_trigger, paint_chevron, paint_trigger_box};
 
 /// 트리거 요약 라벨 3갈래. 문구는 호출자(=i18n 을 가진 쪽)가 주입한다.
 ///
@@ -35,7 +48,14 @@ use crate::select::paint_chevron;
 pub struct MultiSelectLabels<'a> {
     /// 아무것도 선택되지 않았을 때. 옵션이 0 개일 때도 이 문구다.
     pub none: &'a str,
-    /// 일부만 선택됐을 때. **`{}` 가 선택 개수로 치환된다**(본체 `t_fmt` 와 같은 규약).
+    /// 일부만 선택됐을 때. **첫 `{}` 하나만** 선택 개수로 치환된다(`replacen(…, 1)`).
+    ///
+    /// ★ 이름이 같은 함수가 저장소에 둘이고 **규칙이 다르다** — 여기가 따르는 것은
+    /// `tasty-plugin-sdk` 의 `t_fmt`(첫 하나)이고, 본체가 부르는 `tasty_i18n::t_fmt` 는
+    /// `replace` 라 **전부** 치환한다. 그래서 `{}` 를 둘 넣은 번역문은 이 위젯과 본체의
+    /// 다른 문자열이 서로 다르게 렌더된다. 위젯 crate 는 i18n 을 의존할 수 없어 부를 수
+    /// 없고(모듈 문서 참조), 그래서 이 문장은 주석에 머문다 — 저쪽이 바뀌면 여기는 조용히
+    /// 낡는다. 이름으로 지목하면 어느 쪽인지가 안 정해지므로 **경로로** 적는다.
     pub some: &'a str,
     /// 전부 선택됐을 때. 개수를 쓰지 않는 별도 문구라 치환 자리가 없다.
     pub all: &'a str,
@@ -89,15 +109,18 @@ pub fn multi_select_popup_id(ui: &egui::Ui, id_salt: &str) -> egui::Id {
 ///
 /// max-width 는 **메뉴 상자 전체**의 상한이므로 본문 폭 상한을 구하려면 이만큼 빼야
 /// 한다(`egui::popup_below_widget` 이 `Frame::popup` 을 쓰는 것과 같은 계산).
-fn popup_chrome_width(ui: &egui::Ui) -> f32 {
-    let frame = egui::Frame::popup(ui.style());
+/// 팝업 프레임이 본문 바깥에 더하는 가로 여유 — margin 양쪽 + 보더 양쪽.
+///
+/// 공개하는 이유는 **바깥에서 같은 계산을 다시 쓰지 않게** 하기 위해서다. 이 값을 손으로
+/// 다시 구하면 `egui::Frame::popup` 의 구성이 바뀔 때 한쪽만 따라가고, 그 갈림은 폭이
+/// 어긋나는 것으로만 드러난다(아무것도 안 운다).
+///
+/// ★ `style` 을 인자로 받는다 — 계산이 같아도 **입력이 다르면 값이 다르다.** 위젯은
+/// `ui.style()` 로 부르므로, 밖에서 부르는 쪽도 자기가 실제로 쓰는 style 을 줘야 한다
+/// (`Style::default()` 를 주고 "같은 계산" 이라 적으면 그 문장은 산술만 참이다).
+pub fn popup_chrome_width(style: &egui::Style) -> f32 {
+    let frame = egui::Frame::popup(style);
     frame.total_margin().sum().x + 2.0 * frame.stroke.width
-}
-
-/// 행 `i` 가 토글 가능한가 — 마스크가 없거나 짧으면 그 행은 활성이다(호출부가
-/// 마스크를 안 주는 흔한 경우가 곧 "전부 활성").
-fn row_enabled(disabled: Option<&[bool]>, i: usize) -> bool {
-    !disabled.and_then(|d| d.get(i)).copied().unwrap_or(false)
 }
 
 /// 키보드 커서(active 행)의 저장 키 — 팝업 id 에서 파생해 인스턴스마다 독립이다.
@@ -144,44 +167,6 @@ fn take_nav_keys(ui: &egui::Ui) -> NavKeys {
         close: i.consume_key(none, egui::Key::Escape),
         tab: i.key_pressed(egui::Key::Tab),
     })
-}
-
-/// 진행 방향의 첫 **토글 가능한** 행. 전부 비활성이거나 목록이 비면 `None`.
-///
-/// `Home`/`End` 의 종착이자, 아직 커서가 없을 때 방향키가 들어오는 자리다.
-fn edge_enabled(n: usize, disabled: Option<&[bool]>, forward: bool) -> Option<usize> {
-    if forward {
-        (0..n).find(|i| row_enabled(disabled, *i))
-    } else {
-        (0..n).rev().find(|i| row_enabled(disabled, *i))
-    }
-}
-
-/// 방향키 한 번의 active 이동 — 비활성 행은 건너뛰고 목록 끝에서 순환한다
-/// ([`crate::AutoComplete`] 키보드 커서와 같은 규약). 짚을 행이 없으면 `None`.
-fn step_active(
-    active: Option<usize>,
-    n: usize,
-    disabled: Option<&[bool]>,
-    forward: bool,
-) -> Option<usize> {
-    if n == 0 {
-        return None;
-    }
-    let Some(start) = active else {
-        return edge_enabled(n, disabled, forward);
-    };
-    let start = start.min(n - 1);
-    // k = n 이면 제자리로 돌아온다 — "활성 행이 자기 하나뿐" 인 경우까지 덮는다.
-    (1..=n)
-        .map(|k| {
-            if forward {
-                (start + k) % n
-            } else {
-                (start + n - k) % n
-            }
-        })
-        .find(|i| row_enabled(disabled, *i))
 }
 
 /// 이번 프레임에 팝업 상자 **안쪽**에서 포인터 press 가 났는가.
@@ -324,10 +309,8 @@ pub fn multi_select(
     width: f32,
     enabled: bool,
 ) -> bool {
-    let height = theme.select_height().value();
+    // 높이·반경·선굵기는 공용 헬퍼(`alloc_trigger`·`paint_trigger_box`)가 읽는다.
     let pad_x = theme.select_padding_x().value();
-    let radius = theme.select_radius().value();
-    let bw = theme.border_width.value();
     let body = theme.select_font_size().value();
     let chevron_room = theme.select_chevron_room().value();
 
@@ -380,12 +363,7 @@ pub fn multi_select(
         }
     }
 
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    let (rect, resp) = alloc_trigger(ui, theme, width, enabled);
     let dim = |c: egui::Color32| {
         if enabled {
             c
@@ -408,13 +386,7 @@ pub fn multi_select(
     } else {
         theme.select_border()
     };
-    ui.painter().rect(
-        rect,
-        radius,
-        dim(theme.select_bg().to_egui()),
-        egui::Stroke::new(bw, dim(border.to_egui())),
-        egui::StrokeKind::Inside,
-    );
+    paint_trigger_box(ui.painter(), theme, rect, border, enabled);
 
     // 요약 라벨 — 가용 폭(좌 padding ~ chevron 앞) 초과 시 말줄임으로 border/chevron
     // 침범 방지(select 와 동일 규칙). 0 개 선택은 placeholder 톤으로 "아직 안 골랐다" 를
@@ -509,7 +481,7 @@ pub fn multi_select(
         all_toggle_width(ui, theme, t.select_all).max(all_toggle_width(ui, theme, t.clear_all))
     });
     let widest_row = widest_option.max(widest_all_toggle);
-    let menu_chrome = popup_chrome_width(ui);
+    let menu_chrome = popup_chrome_width(ui.style());
     let menu_min = width;
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
     let menu_width = widest_row.clamp(menu_min, menu_max);
@@ -592,55 +564,4 @@ pub fn multi_select(
     }
     ui.data_mut(|d| d.insert_temp(active_id, active));
     changed
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn step_active_wraps_and_skips_disabled() {
-        // 마스크 없음 — 끝에서 순환.
-        assert_eq!(step_active(None, 3, None, true), Some(0));
-        assert_eq!(step_active(None, 3, None, false), Some(2));
-        assert_eq!(step_active(Some(2), 3, None, true), Some(0));
-        assert_eq!(step_active(Some(0), 3, None, false), Some(2));
-        // 가운데가 비활성이면 건너뛴다(양방향).
-        let d = [false, true, false];
-        assert_eq!(step_active(Some(0), 3, Some(&d), true), Some(2));
-        assert_eq!(step_active(Some(2), 3, Some(&d), false), Some(0));
-        // 아직 커서가 없을 때도 비활성 끝은 피한다.
-        let edges = [true, false, true];
-        assert_eq!(step_active(None, 3, Some(&edges), true), Some(1));
-        assert_eq!(step_active(None, 3, Some(&edges), false), Some(1));
-    }
-
-    #[test]
-    fn step_active_degenerate() {
-        // 목록이 비면 짚을 곳이 없다.
-        assert_eq!(step_active(None, 0, None, true), None);
-        assert_eq!(step_active(Some(0), 0, None, false), None);
-        // 전부 비활성도 마찬가지.
-        let all = [true, true];
-        assert_eq!(step_active(None, 2, Some(&all), true), None);
-        assert_eq!(step_active(Some(0), 2, Some(&all), true), None);
-        // 활성 행이 자기 하나뿐이면 제자리.
-        let one = [false, true];
-        assert_eq!(step_active(Some(0), 2, Some(&one), true), Some(0));
-        assert_eq!(step_active(Some(0), 2, Some(&one), false), Some(0));
-        // 목록이 줄어들어 범위를 벗어난 커서도 마지막 행 기준으로 이어진다.
-        assert_eq!(step_active(Some(9), 2, None, true), Some(0));
-    }
-
-    #[test]
-    fn edge_enabled_finds_the_outermost_toggleable_row() {
-        let d = [true, false, false, true];
-        assert_eq!(edge_enabled(4, Some(&d), true), Some(1));
-        assert_eq!(edge_enabled(4, Some(&d), false), Some(2));
-        assert_eq!(edge_enabled(4, None, true), Some(0));
-        assert_eq!(edge_enabled(4, None, false), Some(3));
-        assert_eq!(edge_enabled(0, None, true), None);
-        let all = [true, true];
-        assert_eq!(edge_enabled(2, Some(&all), false), None);
-    }
 }

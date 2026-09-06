@@ -851,6 +851,35 @@ fn feed_bytes_reports_change() {
     assert!(t.feed_bytes(b"x"), "text feed changes the surface");
 }
 
+/// `try_take_events` 는 **상태 락을 못 잡으면 건너뛴다** — 그 성질이 ADR-0002 의 근거이고
+/// 호스트의 이벤트 배수(`CoreState::collect_events`)가 그 위에 서 있다. 성질 자체를 재는
+/// 대조가 여태 없었다.
+///
+/// 없으면 무엇이 조용해지는가: 누군가 이 함수를 막는 take 로 바꿔도 **호스트는 초록**이다
+/// (건너뛰지 않으면 이벤트는 오히려 더 많이 잡힌다). 그리고 반대 방향의 대가 — 한 번만
+/// 묻는 호출자에게 이 건너뜀이 **유실로 보인다**는 것 — 도 아무 데도 안 적혀 있어서,
+/// `src/state/tests.rs` 의 OSC 133 시험이 그 자리에서 확률적으로 깨졌다(전수 42 회 중 1 회).
+#[test]
+fn try_take_events_skips_while_the_state_lock_is_held_but_take_events_waits() {
+    let mut t = Terminal::new_detached(40, 12);
+    t.feed_bytes(b"\x1b]133;D;0\x07");
+
+    let held = std::sync::Arc::clone(&t.state);
+    let guard = held.lock().expect("아직 성한 락");
+    assert!(
+        t.try_take_events().is_none(),
+        "락을 쥐고 있는 동안 `try_take_events` 는 건너뛴다 — 이 성질이 없으면 입력 스레드가 \
+         바쁜 파서 스레드들과 직렬화된다(ADR-0002)"
+    );
+    drop(guard);
+
+    assert!(
+        !t.take_events().is_empty(),
+        "건너뛴 이벤트는 **버려진 것이 아니라 버퍼에 남아** 있다 — 막는 take 는 그것을 집는다. \
+         비어 있으면 건너뜀이 곧 유실이라는 뜻이고, 그러면 위 성질의 대가가 설계가 아니라 버그다"
+    );
+}
+
 #[test]
 fn detached_input_forwards_to_sink() {
     use std::sync::mpsc;

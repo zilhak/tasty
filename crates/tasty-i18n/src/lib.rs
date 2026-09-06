@@ -275,7 +275,7 @@ pub struct LanguagePack {
     strings: HashMap<String, String>,
 }
 
-/// `flatten_toml` 호출 계수기 — **테스트 전용**.
+/// [`flatten_catalog_toml`] 호출 계수기 — **테스트 전용**.
 ///
 /// 발견 경로가 문자열 키를 flatten 하지 않는다는 것을 시간이 아니라 사실로 확인한다.
 /// 시간 비교는 부하에 따라 흔들려 회귀 신호가 되지 못한다. 스레드 로컬이라 테스트
@@ -298,6 +298,44 @@ mod flatten_probe {
 
     pub(super) fn count() -> usize {
         CALLS.with(Cell::get)
+    }
+}
+
+/// 카탈로그 TOML 트리를 점 키로 평탄화한다 — `[settings.tab] general = "General"` 이
+/// `settings.tab.general` 이 된다. **문자열 leaf 만 카탈로그 항목이고**, 그 밖의 leaf
+/// (정수·불리언·배열·날짜)는 키를 만들지 않는다.
+///
+/// **왜 `pub` 인가.** 이 규칙이 "무엇이 번역 키인가" 의 정의이고, 그 정의를 쓰는 곳이
+/// 로더 하나가 아니다 — 정합 가드 `tests/i18n_key_parity.rs` 가 세 언어 파일의 키
+/// 집합을 비교하려면 같은 규칙으로 펴야 한다. 그 가드는 원래 같은 재귀를 **자기
+/// 파일에 복사해** 두고 주석으로 "로더와 같은 규칙" 이라고 적어 두었는데, 둘을 같게
+/// 잡아 주는 것이 그 주석뿐이었다. 로더가 leaf 취급을 바꾸면 가드는 옛 규칙으로 펴고,
+/// 그 어긋남은 **가드가 초록인 채로** 생긴다(가드가 못 보는 키는 parity 검사에도 안
+/// 올라온다). 그래서 사본을 지우고 이 함수를 부르게 했다 — 규칙이 하나면 갈라질 수 없다.
+///
+/// 노출은 그 호출을 위한 것이지 plugin·CLI 가 쓰라는 API 가 아니다. 다만 `doc(hidden)`
+/// 은 붙이지 않는다 — 무엇이 키가 되는지는 번역 파일을 쓰는 사람이 알아야 하는 규칙이다.
+///
+/// `map` 에 **누적**한다(덮어쓴다). 로더가 base(en) 위에 로케일을 겹치는 데 그대로 쓴다.
+pub fn flatten_catalog_toml(prefix: &str, value: &toml::Value, map: &mut HashMap<String, String>) {
+    #[cfg(test)]
+    flatten_probe::note();
+    match value {
+        toml::Value::Table(table) => {
+            for (key, val) in table {
+                let full_key = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{}.{}", prefix, key)
+                };
+                flatten_catalog_toml(&full_key, val, map);
+            }
+        }
+        toml::Value::String(s) => {
+            map.insert(prefix.to_string(), s.clone());
+        }
+        // Ignore non-string leaf values
+        _ => {}
     }
 }
 
@@ -434,7 +472,7 @@ pub fn load_pack(path: &Path, code: &str) -> Result<LanguagePack, PackError> {
     // 한 번 더 복제한 뒤 그 사본에서 `font` 만 지웠다.
     table.remove("font");
     let mut strings = HashMap::new();
-    Translations::flatten_toml("", &toml::Value::Table(table), &mut strings);
+    flatten_catalog_toml("", &toml::Value::Table(table), &mut strings);
     drop_blank_values_warned(
         &mut strings,
         &format!("language pack '{code}' at {}", path.display()),
@@ -744,7 +782,7 @@ impl Translations {
         // 오버레이를 따로 모아 빈 값을 걷어낸 뒤 합친다 — `strings` 에 바로 flatten
         // 하면 빈 값이 내장 문자열을 이미 덮어써서 되돌릴 수 없다.
         let mut overlay = HashMap::new();
-        Self::flatten_toml("", &value, &mut overlay);
+        flatten_catalog_toml("", &value, &mut overlay);
         drop_blank_values_warned(
             &mut overlay,
             &format!("user override {}", path.display()),
@@ -820,29 +858,7 @@ impl Translations {
     /// e.g., [settings.tab] general = "General" -> "settings.tab.general" = "General"
     fn parse_toml_into(map: &mut HashMap<String, String>, toml_str: &str) {
         if let Ok(value) = toml_str.parse::<toml::Value>() {
-            Self::flatten_toml("", &value, map);
-        }
-    }
-
-    fn flatten_toml(prefix: &str, value: &toml::Value, map: &mut HashMap<String, String>) {
-        #[cfg(test)]
-        flatten_probe::note();
-        match value {
-            toml::Value::Table(table) => {
-                for (key, val) in table {
-                    let full_key = if prefix.is_empty() {
-                        key.clone()
-                    } else {
-                        format!("{}.{}", prefix, key)
-                    };
-                    Self::flatten_toml(&full_key, val, map);
-                }
-            }
-            toml::Value::String(s) => {
-                map.insert(prefix.to_string(), s.clone());
-            }
-            // Ignore non-string leaf values
-            _ => {}
+            flatten_catalog_toml("", &value, map);
         }
     }
 
