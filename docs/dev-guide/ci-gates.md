@@ -16,22 +16,227 @@
 
 ## 자동으로 도는 것
 
-| 검사 | 명령 | 채널 | 트리거 |
-|---|---|---|---|
-| 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 |
-| SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 |
-| macOS 컴파일 | `cargo check --workspace --locked` | `crossplatform-check.yml` (self-hosted macOS) | main push · PR · 수동 |
-| Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 |
-| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 |
-| **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 |
-| 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) |
-| 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
-| 동결 총합 래칫 | `bash scripts/check-frozen-sum-ratchet.sh` | `complexity-check.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동 |
-| Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
-| 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 |
-| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다 |
-| 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동 |
-| 사이트 생성 — 가이드 링크 · `ORDER` 누락 | `cargo run --release --manifest-path site/Cargo.toml -- --strict` | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 |
+| 검사 | 명령 | 채널 | 트리거 | 등급 |
+|---|---|---|---|---|
+| 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
+| SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
+| macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [실측] |
+| Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [배선] |
+| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
+| **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
+| 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) | [실측] |
+| 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| 동결 총합 래칫 | `bash scripts/check-frozen-sum-ratchet.sh` | `complexity-check.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| Intent 규율 | `bash scripts/check-intent-discipline.sh` — **`mask-source` 판정기를 먼저 짓는다** | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| 사유 없는 `#[allow]` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-allow-reason.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
+| 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동 | [실측] |
+| 사이트 생성 — 가이드 링크 · `ORDER` 누락 | `cargo run --release --manifest-path site/Cargo.toml -- --strict` | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
+
+### 등급 — 이 표의 각 행이 무엇까지 말하는가
+
+프로젝트 규칙이 요구하는 구분("배선돼 있다는 것과 초록이라는 것은 다르다")을 행마다 붙인
+것이다. 등급은 셋이고, **셋째는 칸에 안 찍는다.**
+
+- **[배선]** — `.github/workflows/` 의 작업 트리 파일이 그 조합을 배선했다. 그뿐이다.
+  초록인지는 이 등급이 말하지 않는다.
+- **[실측]** — 그 채널이 **실제로 초록인 것을 본 적이 있다.** ★ **과거형 사실이지 현재
+  상태가 아니다.** 관측은 언제나 **어느 한 회차의 값**이고, 이 등급이 말하는 것은 "그때
+  초록이었다" 뿐이다. 그래서 낡지 않는다(한 번 참이면 계속 참이다) — 그리고 같은 이유로
+  **지금 초록이라는 근거로 쓸 수 없다.** 지금이 궁금하면 아래 [미측정] 의 명령으로 그
+  자리에서 재라. 출처는 둘이다:
+  - 2026-09-06 회차에서 conductor 가 확인한 여섯 워크플로
+    (Test · Format · Complexity · Script Gates · Plugin Version · Doc Guards).
+  - 공급망: 같은 날 `7695667a9` 에서 두 워크스페이스 크레이트에 `license` 필드를 넣어
+    통과한 것을 conductor 가 확인했다(그 전에는 `error[unlicensed]` 로 빨갰다).
+- **[미측정]** — 그 행의 잡이 **빨간 동안**의 등급이다. 잡이 빨간 동안 그 잡이 배선한
+  커버리지는 실패가 아니라 **안 본 것**이다. 이것만 칸에 안 찍는 이유는 커밋마다 바뀌는
+  값이기 때문이다([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)) —
+  찍으면 그날로 낡는다. 대신 **읽는 사람이 그 자리에서 판정한다**:
+
+  ```bash
+  gh run list --limit 10
+  gh run view <run-id> --json jobs --jq '.jobs[] | "\(.conclusion) \(.name)"'
+  ```
+
+  잡 단위로 읽어야 한다 — 워크플로 결론은 잡 하나만 빨개도 빨강이라, 잡이 여럿인
+  `crossplatform-check` 에서는 나머지가 초록인 것이 안 보인다.
+- **등급 미정** — 초록을 본 적이 없고 배선만으로 판단하기도 곤란한 행. 모른다고 적는 것이
+  [배선]이라 적는 것보다 정직하다.
+
+★ **등급이 답하지 않는 물음이 하나 더 있다: 그 채널이 무엇을 모수로 재는가.**
+`plugin-version-check.yml` 이 그 실물이다. 이 채널은 [실측]이 맞지만, 그것이 재는 범위는
+**직전 push 지점부터 지금까지**이고 lane 이 로컬에서 돌리는 `--staged` 검사가 재는 범위는
+**그 커밋 하나**다. 두 물음이 다르다 — 앞은 "발행된 값과 지금 내용이 짝이 맞나", 뒤는
+"내 커밋이 버전을 올렸나". 그래서 **모든 lane 이 자기 기준으로 통과하고도 통합 지점에서
+빨개질 수 있다.** 실측으로 그 형태가 났다(한 크레이트 변경이 세 번들 plugin 의 워크스페이스
+의존 폐포 안이라 산출물이 달라진 경우 —
+[ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)).
+누구의 잘못도 아니다. **그 판정은 병합하는 쪽이 `--range <직전 push> HEAD` 로 한다.**
+등급을 올려도 이 어긋남은 안 사라진다 — 등급의 축이 아니라 **모수의 축**이기 때문이다.
+
+**판정(2026-09-06): 두 모수를 다 둔다.** 한쪽을 없애면 각각 이렇게 깨진다 —
+`--staged` 를 없애면 **push 전에 답할 수 있는 채널이 사라지고**(발행 판정은 push 지점을
+아는 쪽만 할 수 있다), `--range` 를 없애면 **분할 착지에서 같은 버전 아래 두 산출물**이
+남는다. 비대칭이 선택을 정한다: `--staged` 의 과잉 요구는 **버전이 부푸는 것**으로 끝나고,
+`--range` 의 부재는 **재시작 전에는 영영 반영 안 되는 조용한 실패**다.
+
+실측이 그 과잉을 값으로 보여 준다 — 한 lane 의 커밋에서 `--staged` 는 위반 3, 같은
+내용에 대해 `--range <직전 push> HEAD` 는 통과였다. **둘째 bump 는 산출물이 요구한 것이
+아니라 모수가 요구한 것**이다.
+
+그래서 고친 것은 모수가 아니라 **메시지**다(R504 — 판별식이 메시지 밖의 지식을 요구하면
+안 된다). `--staged` 로 걸렸을 때 스크립트가 이제 스스로 말한다: 자기가 본 범위가
+"이 커밋 하나" 라는 것, 발행이 묻는 범위는 다르다는 것, 그리고 처방 둘 —
+**(가) 앞 bump 커밋에 합치거나 (나) 한 번 더 올리고 최종 값은 병합하는 쪽이 정한다**.
+
+그리고 이건 **일회성이 아니다.** 같은 형태가 하루 안에 두 번 났고(통합 회차의 게이트
+빨강 하나, 그리고 다른 lane 이 자기 검사로 스스로 다시 잡은 것 하나), 둘 다 원인이 같다 —
+`tasty-ui-widgets` 처럼 여러 번들 plugin 이 링크하는 워크스페이스 크레이트를 고치면
+그 폐포 안의 plugin 산출물이 전부 달라진다. 그러니 **그 크레이트를 건드리는 회차마다
+나온다고 보고 통합 지점에서 `--range` 로 다시 재는 것**이 정상 절차다.
+
+★ **모수의 둘째 형태 — 그 채널에서 조건이 아예 안 생기는 가드.**
+`crates/tasty-doc-guards/tests/build_cache_markers_are_name_prunable.rs` 가 실물이다. 이
+가드는 레포를 순회해 빌드 캐시 표식이 이름 제외 밖에 있는지 본다. 그런데 그 표식을 만드는
+디렉토리는 **문서화된 e2e 절차를 로컬에서 돌린 사람에게만** 생긴다 — CI 는 그 절차를 안
+돌아서 그 디렉토리가 없다. 그래서 **이 가드는 CI 에서 영원히 초록이다.** 빨강은 절차를
+따른 사람의 기계에서만 난다.
+
+이건 "가드는 있는데 돌릴 채널이 없다"(아래 [사람이 돌리는 것](#사람이-돌리는-것-자동-채널-없음))와 다르다. 거기는 가드가 있고 돌릴
+채널이 없다. 여기는 **채널이 있고 그 채널에서 트리거 조건이 절대 안 생긴다.** 그리고
+**등급이 아니다** — 등급 축은 "무엇이 지키는가" 하나이고, 이건 그 가드가 **무엇을 모수로
+훑었는가**의 문제다. 위 plugin-version 과 같은 부류다(R476/R497).
+
+판정: **"CI 에서 영원히 초록" 은 그 축에서 초록이 아니라 미측정이다.** 빈 모수를 훑은
+초록과 실제로 판정한 초록이 같은 줄로 보이기 때문이다.
+
+⇒ 집행: **모수가 환경마다 달라질 수 있는 가드는 자기가 훑은 수를 노출한다.** 위 가드는
+이미 그렇게 한다(`MIN_DIRS_WALKED` 하한 + 실패문이 순회 수를 찍는다). 그 수가 없으면
+"안전하다" 와 "애초에 못 봤다" 가 구별되지 않는다.
+
+⇒ 그리고 여기서 나오는 일반형: **"doc-guards 초록" 은 기계마다 모수가 다르다.** 여러
+사람이 같은 타깃의 수를 세다 값이 어긋나면 **그 차이를 자기 커밋에 귀속시키지 마라** —
+먼저 그 가드의 모수가 기계에 의존하는지 물어라. 실측으로 그 형태가 났다(한 워크트리에서만
+84/1, 원인은 그 기계에만 있던 9.7 GB 짜리 e2e 캐시 디렉토리였다).
+
+★ **처방을 낼 때 그 처방을 잴 수 있는 채널의 이름을 함께 적는다.** 채널이 없으면
+**"없다" 고 적는다** — 있는 척하는 단정보다 낫다. 이 문서가 채널의 정본이므로 그 이름은
+여기서 고른다.
+
+실측(2026-09-06)이 이 규율을 값으로 만들었다. Windows 잡만 빨간 결함이 있었고, 원인은
+스캐너가 경로 구분자를 플랫폼 것 그대로 낸 것이었다. **그 처방은 Linux 에서 검증할 수
+없다** — 고치기 전에도 Linux 는 `/` 를 내므로 세 leg(full · unit · headless)은 처방 전에도
+초록이었고 처방 뒤에도 초록이다. 증거는 `check-windows` 하나뿐이었고 그것이 답했다.
+
+⇒ 만약 "검증했다" 를 적으려고 **Linux 에서 도는 단정**을 하나 붙였으면 그 초록은 처방
+전후로 똑같았을 것이다. 검증했다고 적힌 채 아무것도 안 잰 상태가 남는다. 그러니
+**잴 수 없는 자리에 계기를 달지 마라** — 그 자리에는 계기 대신 "이 축의 채널은
+`<잡 이름>` 하나다" 를 적는다.
+
+★ **한 규칙에 채널이 둘 다 붙지는 않는다 — 축을 잘라서 절반만 붙인다.** `CLAUDE.md` 의
+"문서 갱신 (필수)" 는 사용자에게 보이는 동작(메뉴 · 단축키 · 설정 키 · CLI 명령 · 설치
+절차)이 바뀌면 가이드도 같은 커밋에서 갱신하라고 요구한다. 그 다섯을 하나씩 재 보면
+**같은 규칙 안에서 채널이 갈린다.**
+
+| 축 | 두 쪽이 같은 어휘를 쓰는가 | 채널 |
+|---|---|---|
+| CLI 명령 | 쓴다 — 양쪽 다 `tasty <명령>` | `crates/tasty-doc-guards/tests/every_cli_command_is_classified_in_the_guide.rs` |
+| 설치 절차 · **산출물 파일명** | 쓴다 — 버전 자리만 `${VERSION}` ↔ `{ver}` | `crates/tasty-doc-guards/tests/every_released_artifact_is_named_in_the_guide.rs` |
+| 설치 절차 · **절차 본문** | 안 쓴다 — 소스는 WiX 선언과 스크립트 내부 변수, 가이드는 산문 | **없다** |
+| 훅 이벤트 이름 | 쓴다 — 사용자가 `--event <이름>` 으로 직접 친다 | `crates/tasty-doc-guards/tests/every_hook_event_name_is_in_the_guide.rs` |
+| 설정 키 · **절 이름** | 쓴다 — 양쪽 다 `[general]` 같은 식별자 | `crates/tasty-doc-guards/tests/settings_and_menu_names_reach_the_guide.rs` |
+| 메뉴 · **컨텍스트 메뉴 항목** | 쓴다 — 가이드가 `lang/ko.toml` 값을 글자 그대로 인용한다 | 같은 파일 |
+| 설정 키 · **필드 이름** | 안 쓴다 — 아래 | **없다** |
+| 메뉴 · **macOS 애플리케이션 메뉴** | 안 쓴다 — 아래 | **없다** |
+| 단축키 | 안 쓴다 — 설정은 `alt+up`, 가이드는 `Alt+↑` 에 산문 등가("`Alt` 도 됨")까지 | **없다** |
+
+단축키 축을 재 봤다(실측 2026-09-06): `preset_tasty()` 가 내는 (필드, 조합) 55 쌍 중 47 이
+가이드에 그대로 있고, 나머지 8 은 전부 **표기 변형**이었다 — 가이드가 틀린 것이 아니라
+같은 것을 다르게 적는다. 여기에 문자열 대조 가드를 놓으면 가장 싼 초록화 경로가 **가이드를
+설정 파일 어휘로 고쳐 쓰는 것**이 된다. 그건 보호 대상을 깎는다.
+
+**설정 필드 축과 macOS 앱 메뉴 축도 재고 접었다**(실측 2026-09-06).
+
+- **설정 필드** — 코드에 *사용자가 고르는 값*과 *내부 영속 슬롯*을 가르는 표시가 없다.
+  `theme_base`(테마 색 덤프) · `sidebar_width`(드래그 결과) · `macos_fda_notice_shown`
+  (다시 보지 않기 플래그)이 사용자 항목과 같은 구조체에 나란히 있다. 이름으로 가르려고
+  `lang/ko.toml` 의 `_label` 접미사를 써 보면 119 중 **91** 이 가이드에 있고 남는 23 은
+  대부분 누락이 아니라 어휘 차이다(가이드 "페인 분할 (좌우 / 상하)" ↔ `lang` "페인 수직
+  분할" · "페인 수평 분할"). 대조를 놓으면 그 23 을 고발하고, 가장 싼 초록화는 가이드를
+  코드 어휘로 고쳐 쓰는 것이 된다.
+- **macOS 애플리케이션 메뉴** — 11 항목 중 가이드에 4. 없는 7 중 셋은 제목이 **형식
+  문자열**(`{} 정보`)이라 문자열 대조가 원리적으로 못 맞히고, 나머지는 `make_std_item` 으로
+  만드는 **OS 표준 항목**(가리기 · 모두 보기 등)이라 가이드가 안 적는 것이 옳다. 남는 모수는
+  한 자리이고 그것도 macOS 에만 있다(Windows·Linux 는 등록 자리가 0 이라 거기 초록은
+  "잴 것이 없다" 다).
+
+⇒ 반대로 **컨텍스트 메뉴 축은 실측 23/23 이 이미 맞아 있었다.** 가이드가 그 이름들을
+`lang/ko.toml` 값 그대로 인용한다 — 같은 "메뉴" 라는 낱말 아래 두 축의 답이 정반대다.
+
+★ **이 기준을 재기 전에 예측으로 걸어 봤다 — 세 축에서 셋 다 맞았다**(2026-09-06,
+훅 이벤트 · 원격 프로필 플래그 · 테마 파일 키). 사후설명이 아니라는 증거다. 다만 **한 축은
+답이 맞고 이유가 틀렸다**: "가이드의 그 장이 파일 고치기 장인가" 로 예측했는데, 원격 장은
+파일 고치기 장이 아니라 **CLI 장**이었고 어휘가 공유된 진짜 이유는 그 문자열을 사용자가
+**타이핑한다**는 것이었다. 그래서 술어를 이렇게 적는다 — **개념에 사용자 노출 표기가
+있는가**(치거나 눈으로 대조하는 문자열인가), 장의 성격이 아니다.
+
+★★ **모수를 소스의 내부 이름에서 뽑지 마라 — 거짓 미스가 난다.** 같은 회차에 두 번 밟았다:
+`remote_tasty` 로 재면 가이드 적중 **0/4** 인데 사용자가 실제로 치는 표기 `--remote-tasty`
+로 재면 **4/4** 이고, `ThemeColors` 구조체 필드로 재면 **30/47** 인데 디스크 형태
+(`ansi_black` → `[ansi] black`)로 재면 전부 일치다. 내부 이름으로 재는 가드는 **잘 쓴
+문서를 고발하고**, 그때 가장 싼 초록화는 문서를 내부 이름으로 고쳐 쓰는 것이 된다.
+
+⇒ 그래서 판정은 "기계적으로 잴 수 있는가" 가 아니라 **"두 쪽이 같은 어휘를 쓰는가"** 이고,
+그 다음이 **"빨개졌을 때 가장 싼 초록화 경로가 보호 대상을 깎는가"** 다. 둘 중 하나라도
+걸리면 계기 대신 이 표에 **"없다"** 를 적는다.
+
+★ **빨강을 귀속하기 전에 절차가 하나 있다.** 한 조합에서만 난 빨강은 직전 회차에
+귀속하기 전에 **같은 커밋으로 그 잡을 재실행해 대조군을 만든다** — 재실행이 빨강이면
+결정론, 초록이면 그 회차에 귀속되지 않는다. 언제 재실행을 쓰고 언제 안 쓰는지(자리가 이미
+지목된 빨강 · 회차가 그 자리를 실제로 건드린 빨강은 쓰지 않는다), 그리고 재실행이 초록이어도
+사건이 안 닫히는 이유는 [ADR-0188](../adr/0188-a-red-is-not-attributed-until-a-rerun-control-answers.md).
+그 잡이 **지금** 무엇인지는 값이 아니라 아래 `gh` 명령으로 잰다.
+
+★ **모수의 셋째 형태 — 빨강을 진단할 때 좁히는 축.** 한 조합에서만 나는 실패를 진단할
+때 사람은 자동으로 **"이번에 무엇이 바뀌었나"** 로 좁힌다. 그 좁힘은 자주 틀린다. 실측
+(2026-09-06): macOS 잡의 `--lib --bins` 스텝이 빨개졌고, 여덟 사람이 그 회차가 바꾼
+`src/` 파일 14 개로 좁혔다. 좁힘 자체는 정확했다 — 그런데 **터진 자리를 그 회차는 한 번도
+안 건드렸다**(`git log <before>..<after> -- <그 파일>` = 0 커밋).
+
+바뀐 것은 그 파일이 아니라 **같은 바이너리에서 함께 도는 형제의 수**였다(같은 조합의
+`--bin tasty` 가 2329 → 2341). 형제는 프로세스 전역을 공유한다 — 환경변수, 전역 락,
+스레드, fd, 포트. 그래서 **좁히는 축은 "무엇이 바뀌었나" 가 아니라 "무엇이 같은
+프로세스에서 함께 도는가" 다.**
+
+같은 자리에서 부하 가설도 수로 갈렸다. 부하가 원인이면 **형제도 함께 느려져야 한다**:
+
+    회차 73  2329 passed 0 failed  10.55s
+    회차 74  2341 passed 1 failed  30.07s   ← 예산 30s 정각
+
+형제 2341 개는 예전 속도로 끝났고 늘어난 19.5 s 는 **걸린 하나의 예산 소진분**이다.
+⇒ 러너가 느려진 것이 아니다. **가설이 요구하는 값이 안 나오면 그 가설은 반증된 것이다.**
+
+그리고 이 진단이 한 줄로 갈린 것은 **판별 메시지가 갈래를 나눠 뒀기 때문**이다 — 그
+단정은 "레지스트리에서 사라졌다" 와 "종료 신호가 안 왔다" 를 다른 문구로 냈고, 나온 문구가
+후자라 자리가 즉시 좁혀졌다. 실패 메시지에 값을 싣는 것이 그 자리에서 값을 낸다.
+
+★ **등급은 "무엇이 지키는가" 한 축만 잰다.** 그 가드가 **옳은 곳을 지목하는가**는 다른
+축이고, 여기 칸으로 안 들어간다. 빨강이 났는데 그 이유가 흔든 자리를 안 가리키면, 그
+이유가 시키는 처방을 따를수록 보호가 사라질 수 있다 — 그런 가드도 이 표에서는 여전히
+[가드]다. 실제로 이 저장소에 그 형태가 있었다: `ci_channel_claims_match_workflows` 의
+실패 메시지가 **판정 범위와 "주어를 단정하지 않는다"** 를 말하지 않아, 저자가 문장을 고칠지
+인용을 옮길지 못 정한 채 멈췄다. 등급을 올려도 그 결함은 안 사라진다. **처방은 등급이
+아니라 메시지에 있다.**
+
+★ **한 잡의 빨강이 다른 사람의 측정을 지운다.** 실측(2026-09-06): `check-headless` 의 앞
+스텝이 죽자 뒤의 gui 스텝 둘과 디스크 진단이 통째로 **skipped** 됐고, 그 회차에 그 조합은
+존재하지 않았는데 로그에는 실패로도 안 남았다 — 줄 자체가 없어서 조용하다. 그래서
+`crossplatform-check` 의 네 행이 [배선]에 머무는 것은 배선이 부실해서가 아니라, 그 잡이
+빨간 동안 그 커버리지가 **미측정으로 떨어지기 때문**이다. 스텝이 건너뛰어지지 않게 하는
+쪽의 처방은 아래 [그 잡이 초록인가](#그-잡이-초록인가-그리고-그-결과가-읽히는가) 절에 있다.
+
 
 **문서만 담은 push 는 세 크로스플랫폼 잡을 발사하지 않는다.** `crossplatform-check.yml` 의
 push 트리거에 `paths-ignore`(`docs/**` · `site/**` · `**/*.md`)가 걸려 있다. 컴파일 입력이
@@ -259,15 +464,34 @@ done | sort | uniq -c
 
 소스를 런타임에 읽어 대조하는 가드는 **실행되지 않으면 존재하지 않는 것과 같다** — 컴파일이
 통과했다는 사실은 그 가드가 무엇을 발견했는지에 대해 아무것도 말하지 않는다. 그래서 이
-부류만 따로 센다(2026-09-05, 작업 트리 기준).
+부류만 따로 센다(2026-09-06 재측정, 작업 트리 기준).
 
-모수는 **46** 이다 — 통합 타깃 93 중 레포 파일을 런타임에 읽으면서 프로세스는 띄우지 않는
-것. 재는 명령은 아래. (2026-09-05 재측정. 직전 값은 43/88 이었고, 그 사이 늘어난 것이다 —
-이 수는 커밋마다 바뀌므로 값이 아니라 **재는 법**이 정본이다.)
+모수는 **아래 표의 합**이다 — 통합 타깃 중 레포 파일을 런타임에 읽으면서 프로세스는 띄우지
+않는 것. 여기에 총합을 따로 적지 않는다. 적으면 같은 수가 두 곳에 있게 되고, 늘어날 때
+한 곳만 움직인다 — 실측으로 그 형태가 났다(2026-09-06): 표는 15 에서 17 로 갱신됐는데 위에
+적혀 있던 모수는 46 에 멈춰 있었고, 그때 실제 값은 51 이었다. 표의 두 행이 곧 분할이므로,
+행이 갱신되면 합도 함께 갱신된다.
+
+**재는 법이 정본이다**(이 수는 커밋마다 바뀐다). 술어를 흉내 내지 말고 그 자리에서 부른다 —
+하한을 잠깐 터무니없이 올리면 판정기가 자기가 센 값을 실패 메시지에 적는다:
+
+```bash
+# 모수(필터 뒤까지 포함한 순수 스캔 가드 전체)
+sed -i 's/MIN_SCANNED: usize = 45/MIN_SCANNED: usize = 999/' \
+  crates/tasty-doc-guards/tests/filtered_guards_are_not_totally_blind.rs
+cargo test -p tasty-doc-guards --test filtered_guards_are_not_totally_blind
+# 첫 행(필터 없는 채널을 가진 것)
+sed -i 's/MIN_GUARDED: usize = 12/MIN_GUARDED: usize = 999/' \
+  crates/tasty-doc-guards/tests/filter_free_channel_still_exists.rs
+cargo test -p tasty-doc-guards --test filter_free_channel_still_exists
+```
+
+역-sed 로 되돌린다(`git checkout` 은 같은 파일의 미커밋 작업까지 지운다). 둘째 행은 첫 값에서
+첫 행을 뺀 것이다.
 
 | | 개수 | 채널 |
 |---|---|---|
-| 필터 없는 채널을 가진 것 | 17 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
+| 필터 없는 채널을 가진 것 | 23 | `crates/tasty-doc-guards/tests/` — `doc-guards.yml` 은 경로 필터가 없다 |
 | `check-headless` 만 가진 것 | 34 | `crossplatform-check.yml` 의 `paths-ignore` 뒤 |
 
 **이 수는 술어 자신을 세지 않는다.** 술어가 `"Command::new"` 같은 표지를 문자열로 찾는데,
@@ -323,7 +547,26 @@ done | sort | uniq -c
 `crates/tasty-doc-guards/tests/filter_free_channel_still_exists.rs` 가 그 셋을 닫는다.
 판정은 **이름이 아니라 성질**이다 — "`doc-guards.yml` 이 있는가" 가 아니라 "경로 필터
 없이 매 push 도는 잡 중 이 패키지를 **좁히지 않고** 돌리는 것이 있는가". 워크플로 이름이
-바뀌거나 잡이 다른 파일로 옮겨가도 채널이 남아 있으면 통과한다. 트리거 판독과 커버리지 수집은
+바뀌거나 잡이 다른 파일로 옮겨가도 채널이 남아 있으면 통과한다. ★ **그 판정은 밖에서 부를 수 있다 — 흉내 내지 마라.** `workflow-channels` 판정기
+바이너리가 워크플로마다 한 줄(`<파일> push path_filtered tags_only 자동잡 수동전용잡`)과
+커버리지 세 줄(`named=` · `packages=` · `whole_workspace=`)을 낸다. 다른 판정기들과 같은
+관례다 — `scripts/lib/judge-bin.sh` 의 `resolve_judge` 로 찾고 `--check-fresh` 로 신선도를
+묻는다.
+
+```bash
+cargo build -p tasty-doc-guards --bin workflow-channels
+./target/debug/workflow-channels .
+```
+
+**여는 이유는 사본이 갈리기 때문이다.** 실측(2026-09-05): 하루에 세 레인이 각자 이
+판정을 흉내 냈고 셋 다 원본과 다른 답을 냈다 — 그중 하나는 `paths-ignore` 를 **가진**
+워크플로를 "필터 없음" 으로 냈다. ★ 갈리는 방향은 대체로 **덜 잡는 쪽**이라 조용하다.
+`crates/tasty-doc-guards/tests/exposed_judge_agrees_with_the_library.rs` 가 노출본과
+라이브러리가 같은 답을 내는지 계속 묻는다(하한 포함) — 그것이 없으면 노출본 자신이 또
+하나의 사본이 된다. **다만 그 대조는 갈림만 본다**: 둘이 함께 틀리면 일치하므로 초록이다.
+옳음은 내용을 단정하는 가드들이 진다.
+
+트리거 판독과 커버리지 수집은
 `tasty_doc_guards::workflow_triggers` 한 벌을 위 관측자와 함께 쓴다 — 주석과 트리거 키를
 구조로 가르고(문자열 `contains` 로 세면 다른 워크플로의 필터를 *설명하는* 주석이 필터로
 읽힌다. 실측으로 정확히 한 파일이 그 형태였고 하필 `doc-guards.yml` 이었다), 태그 전용
@@ -408,6 +651,164 @@ done | wc -l
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
 
+### 처방을 낼 때는 그 처방을 재는 채널의 이름을 함께 적는다
+
+어떤 성질은 **한 플랫폼에서만 관측된다.** 그 성질의 처방을 다른 플랫폼에서 도는 단정으로
+"검증했다" 고 적으면, 그 단정은 처방 전후로 똑같이 초록이다 — 검증했다고 적히고 실제로는
+아무것도 재지 않은 상태가 남는다.
+
+실례가 경로 구분자다. `Path::strip_prefix` 는 그 플랫폼의 구분자를 남기고, 그 결과를
+문자열로 펴서 소스에 박힌 `/` 리터럴과 맞추면 Windows 에서만 어긋난다. 어긋남은 예외가
+아니라 **조용한 0** 이라 조회가 전부 빗나간 채 "위반 0" 이 나온다. Linux·macOS 는 고치기
+전에도 `/` 를 내므로 세 게이트(full·unit·headless)가 처방 전후로 똑같이 초록이었고,
+답한 채널은 `check-windows` 하나였다.
+
+그래서 두 가지를 나눠 적는다.
+
+- **성질을 재는 채널** — 구분자 정규화가 살아 있는지 묻는 단정은
+  `crates/tasty-doc-guards/src/source_text.rs` 의 유닛 테스트에 있고, 그것을 **실행하는
+  채널은 `check-windows` 하나다**(`--lib --bins`). 그 단정 자리에 채널 이름을 함께
+  적어 둔다 — 안 적으면 다음 사람이 Linux 의 초록을 증거로 읽는다.
+- **형태를 재는 채널** — 잴 수 없는 성질은 잴 수 있는 형태로 옮긴다.
+  `src/source_guards/repo_relative_paths.rs` 는 구분자를 재지 않고, 레포 상대 경로를
+  문자열로 펴는 자리가 공용 정규화(`source_text::repo_relative`)를 지나는지를 본다.
+  형태는 소스에 있으니 **어느 플랫폼에서든 같은 답**이 나오고, 그래서 이 가드는 유닛
+  타깃이 도는 모든 조합에서 채널을 갖는다.
+
+채널이 없으면 **"없다" 고 적는다.** 있는 척하는 단정보다 낫다 —
+[ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) 가 수에
+대해 말한 것과 같은 이유로, 검증 주장도 그 출처를 잃으면 낡은 채로 읽힌다.
+
+### 같은 파일이라도 **컴파일 채널과 실행 채널이 다르다** — 결론에 둘을 갈라 적는다
+
+`crates/tasty-doc-guards/tests/*` 가 그 형태다.
+
+- **컴파일 축은 채널이 있다.** Windows 잡의 `cargo clippy --workspace --all-targets` 가 이
+  크레이트의 통합 테스트를 타깃으로 잡는다. 플랫폼 API 를 분기 없이 쓰면 거기서 죽는다 —
+  실제로 `std::os::unix::fs::symlink` 를 분기 없이 쓴 시험이 `E0433` 으로 잡혔다.
+- **실행 축은 채널이 없다.** 이 통합 테스트를 **실행하는** 자동 잡은 `doc-guards.yml`
+  하나이고 `ubuntu-latest` 다. Windows 잡의 테스트 명령은 `--lib --bins` 라 여기 안 닿는다.
+
+그래서 "이 크레이트는 Windows 에서 안 돈다" 도 "돈다" 도 둘 다 반쪽이다. 결론을 쓸 때
+**어느 축인지 말한다.**
+
+푸시 전에 컴파일 축을 직접 재는 명령:
+
+```bash
+cargo check -p tasty-doc-guards --all-targets --target x86_64-pc-windows-msvc
+```
+
+★ **타깃이 안 깔렸으면 그 빨강은 코드 결함이 아니라 미측정이다.** `std` 를 못 찾는 실패와
+소스의 실패를 같은 칸에 적지 마라(`rustup target add x86_64-pc-windows-msvc`).
+
+실행 축에 남는 미측정을 좁히려면 그 크레이트 안에서 **플랫폼이 답을 가를 수 있는 자리**를
+세면 된다. 경로 구분자 축은 그렇게 셌고 지금 0 이다 — 판정에 쓰이는 레포 상대 경로는 전부
+공용 정규화나 손 정규화를 거치거나 성분 하나짜리 이름이고, 나머지 평탄화는 진단 문자열이라
+구분자가 **찍히는 글자만** 바꾼다. 세는 술어는
+[`repo_relative_paths`](../../src/source_guards/repo_relative_paths.rs) 가 들고 있고, 그
+가드는 bin 이라 Windows 의 `--bins` 로도 돈다. 줄 축은 `str::lines()` 가 후행 `\r` 를
+떼므로 그 함수를 쓰는 자리는 CRLF 에 안 흔들린다 — `split('\n')` 을 쓰는 자리만 따로 본다.
+
+### macOS 유닛 테스트의 비용은 이 잡의 시간이 아니다
+
+`check-macos` 는 오래 `cargo check` 하나뿐이었고, 그래서 **macOS 로 게이트된 유닛 테스트는
+컴파일만 되고 아무도 안 돌렸다.** 지금은 같은 잡에 `--lib --bins` 스텝이 붙어 있다.
+
+**비용을 그 잡의 시간으로 재면 틀린다.** 잡들은 병렬이고 워크플로 벽시계는 **최댓값**이다.
+그러므로 이 스텝이 사람을 기다리게 하는 시간은 **macOS 잡이 임계경로 잡을 넘는지**로만
+정해진다 — 넘지 않는 동안은 **0** 이다. 수를 여기 적지 않는다
+([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)) — 잡 시간은
+커밋마다 바뀐다. 적을 것은 관계와 **재는 법**이다:
+
+```bash
+# 회차 하나의 잡별 시간 — 최댓값이 임계경로다
+gh run list --workflow=crossplatform-check.yml --limit 5 --json databaseId,conclusion
+gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs \
+  --jq '.jobs[] | "\(.name) \(.started_at) \(.completed_at)"'
+# 한 잡 안의 스텝별 시간
+gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
+  --jq '.steps[] | "\(.name) \(.started_at) \(.completed_at)"'
+```
+
+★ **러너를 새로 점유하지 않고 잰다.** 이 두 수는 과거 실행에 이미 들어 있다 —
+`workflow_dispatch` 로 새로 돌리면 재는 행위 자체가 그 비용을 한 번 치른다.
+
+★ **이 판단이 뒤집히는 조건**(재검토 트리거): self-hosted macOS 러너는 **한 대**다.
+`concurrency` + `cancel-in-progress` 가 **같은 ref** 의 연속 push 를 취소해 주므로 지금은
+직렬화가 안 일어난다. 그러나 **서로 다른 ref 둘이 동시에 밀리면** 그 취소가 안 걸려 macOS
+잡이 직렬로 쌓이고, 그때 macOS 가 새 임계경로가 될 수 있다. 레인이 각자 push 하기 시작하면
+그 조건이 성립한다 — 그때 위 명령으로 다시 재고 이 스텝을 유지할지 판단한다.
+
+### macOS 잡의 fd 예산 — 여유가 남아 있는지 단정한다
+
+같은 잡의 `fd budget` 스텝이 `ulimit -n` · `ulimit -Hn` ·
+`sysctl -n kern.maxfilesperproc kern.maxfiles` 를 찍고, **soft 상한이 4096 미만이면
+실패한다.**
+
+왜 이 자리에 단정이 있나: 그 다음 스텝의 바이너리는 `test_state()` 를 쓰는 시험마다
+실제 PTY 와 자식 셸을 띄운다([unit-test-isolation](unit-test-isolation.md) §8). 여유가
+사라지면 증상은 여기가 아니라 **아래 유닛 테스트 스텝이 EMFILE 로 깨지는 것**으로 나타나고,
+그 빨강은 원인을 안 말한다. 이 단정은 그때 원인 자리에서 먼저 터지라고 있다.
+
+그리고 그 여유는 **우리가 정한 것이 아니라 러너 이미지가 준 것**이다. 이 레포는 워크플로
+어디에서도 `ulimit` 을 설정하지 않는다(그 스텝도 읽기만 한다). 그래서 이미지가 바뀌면
+여유는 아무 커밋 없이 사라질 수 있다 — 단정이 없으면 그 변화를 아무도 안 본다.
+
+#### 측정값 (2026-09-06 · run 33994212447 · commit `5d00e2641`)
+
+    macOS self-hosted 러너   soft 10240 · hard unlimited
+                             kern.maxfilesperproc 122880 · kern.maxfiles 245760
+    Linux 최고 fd(실측)      966 (기본 병렬도) · 1157 (`--test-threads 3`)
+
+⇒ 약 9 배 여유. **이 값 때문에 fd 축이 닫혔다.**
+
+★ **두 Linux 수는 방향이 뒤집혀 있다 — 그리고 그 방향은 아직 안 풀렸다.** 병렬도를
+줄였는데(`--test-threads 3`) 최고 fd 가 **올라갔다**(966 → 1157).
+[unit-test-isolation](unit-test-isolation.md) §8 을 곧이곧대로 읽으면 반대가 나온다 —
+거기 적힌 것은 "spawn 총수는 병렬도에 안 움직이고, 바뀌는 것은 동시에 살아 있는 수뿐"
+이다. 그 읽기가 맞다면 스레드를 줄일 때 최고치는 내려가야 한다.
+
+확인한 것 둘: 회수 경로 `sweep_idle_ptys` 의 프로덕션 호출자는 **headless 부팅 루프
+(`src/boot.rs`) 하나뿐**이고 테스트 바이너리는 그 루프에 안 들어간다. 그리고 idle TTL
+기본값은 **5 분**이라 런 길이보다 길 수 있다. 즉 런 도중 회수가 그 경로로는 안 일어난다.
+그래도 그것만으로 **오르는** 방향은 안 나온다 — 회수가 전혀 없으면 최고치는 병렬도와
+무관하게 같아야 하지 총수보다 커지지 않는다.
+
+⇒ 그러니 **"병렬도를 낮춰 fd 를 아낀다" 를 이 수로 정당화하지 마라.** 실측이 반대
+방향이고, 왜 그런지는 아직 안 쟀다. 미측정이지 "효과 없음" 이 아니다.
+
+값을 여기 적는 이유: CI 로그는 90 일 뒤 사라지고, 사라지는 곳에만 있는 값은 다음 사람에게
+없는 값이다. 대신 **측정일과 측정 대상을 함께** 박는다 — 이 수는 커밋이 아니라 러너
+이미지와 스위트 크기를 따라가므로, 날짜 없이 적으면 낡은 줄 모르고 근거로 쓰인다
+([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+
+#### 다시 재는 법
+
+```bash
+# 러너 쪽 상한 — 잡 로그에서
+gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs | grep -A 4 'fd budget'
+
+# 우리 쪽 최고 fd — 테스트 바이너리를 직접 띄우고 /proc 를 표본한다
+cargo test --bin tasty --no-run          # 바이너리 경로를 찍는다
+# 그 경로를 백그라운드로 띄우고, 도는 동안 `ls /proc/<pid>/fd | wc -l` 의 최댓값을 잡는다
+```
+
+단정이 터지면 하한을 내리지 마라 — 재야 할 것은 그 시점의 **실제 최고 fd** 다. 위 두 수를
+다시 재서 여유가 정말 남아 있으면 그때 하한을 정하고, 이 절의 측정값과 날짜를 함께 고친다.
+
+#### 안 쟀다 — macOS 쪽 **최고 fd**, 그리고 재려면 무엇이 필요한가
+
+위 여유 판정은 **러너 상한 대 Linux 최고치**의 비교다. 같은 스위트가 macOS 에서 실제로 몇
+개까지 여는지는 **안 쟀다.** 안 쟀다와 잴 채널이 없다는 다르므로, 무엇이 있어야 재지는지를
+적어 둔다.
+
+- **계기** — macOS 엔 `/proc` 이 없어 위 Linux 절차를 그대로 못 쓴다. 테스트 바이너리를
+  백그라운드로 띄우고 도는 동안 `lsof -p <pid> | wc -l` 을 표본하는 스텝이 그 자리를 대신한다.
+- **값을 남길 자리** — 그 스텝의 출력은 잡 로그에만 남고 90 일 뒤 사라진다. 위 "측정값" 절처럼
+  **커밋되는 자리로 옮기는 절차**가 함께 있어야 한다.
+
+계기만 있고 옮길 자리가 없으면 다음 사람은 다시 안 재진 상태에서 시작한다 — 그래서 둘이 한 쌍이다.
+
 ### 조합 격자의 빈 칸 — Linux + gui + debug (지금은 채워져 있다)
 
 유닛 테스트가 "두 조합 모두" 라고 말할 때 그 둘은 **Windows + gui + debug** 와
@@ -421,10 +822,23 @@ done | wc -l
 
 | | debug | release |
 |---|---|---|
-| macOS + gui | `check-macos`(컴파일) | — |
-| Windows + gui | `check-windows`(컴파일 + 유닛) | — |
-| Linux + headless | `check-headless`(컴파일 + 전체) | — |
-| **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) | `check-release`(컴파일) |
+| macOS + gui | `check-macos`(컴파일 + `--lib --bins` 유닛) **[실측]** | — |
+| Windows + gui | `check-windows`(컴파일 + 유닛) **[실측]** | — |
+| Linux + headless | `check-headless`(컴파일 + 전체) **[실측]** | — |
+| **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) **[실측]** | `check-release`(컴파일) **[배선]** |
+
+★ **등급의 출처**(위 "등급" 절의 정의 그대로 — 과거형 사실이다): 성공 회차 둘의 잡·스텝
+결론을 직접 읽었다. 거기서 `cargo test (linux, gui, unit)` 은 **success** 였고, 그것이
+**Linux + gui + debug 칸이 배선을 넘어 실측으로 올라간 근거**다. macOS 칸도 같은 방식으로
+올랐다 — 그 스텝이 처음 도는 회차에서 `cargo test (macos, gui, unit)` 이 **success** 였다.
+(과거값이라 값으로 적는다. **지금 초록인가**는 현재형이므로 아래 명령으로 그 자리에서 재라.)
+
+★ **판정은 잡이 아니라 스텝까지 본다.** 잡이 초록이어도 그 안의 스텝이 `skipped` 일 수 있고,
+그때 그 칸은 그 회차에 존재하지 않는다 — 실제로 이 저장소에서 그 형태가 났다(아래
+"그 잡이 초록인가" 절). 그러니 [실측]으로 올릴 때 근거는 **그 스텝의 `conclusion`** 이지
+잡의 결론이 아니다. 재는 법은
+위 [비용 절](#macos-유닛-테스트의-비용은-이-잡의-시간이-아니다)의 `gh api` 두 줄과 같고,
+`.steps[]` 의 `conclusion` 을 보면 된다.
 
 빈 칸은 테스트만이 아니라 **컴파일**도 비어 있다. 그 칸에만 있는 코드가 실재한다 —
 `src/platform/native_menu/linux.rs` 는 `#[cfg(feature = "gui")]` 아래 Linux 전용이면서
@@ -633,6 +1047,18 @@ Linux gui 유닛 스텝이 붙은 뒤 모수를 다시 잡았다 — 술어가 �
    (사유는 그 워크플로 주석). 이 하나가 "전체 스위트를 자동으로 올리면 새로 사는 것" 의
    전부다. **Xvfb 아래에서는 통과한다**(실측 2.77s) — 디스플레이 없이는 기본 feature
    e2e 하네스가 0.10s 만에 죽는다. 즉 이 칸은 *배선 불가*가 아니라 *디스플레이 비용*이다.
+
+   그 `--skip` 의 사유는 **논증이 아니라 실측이다**(2026-09-06). headless 조합에서 그
+   타깃만 돌리면 제품 자신의 진단(`-32017`)이 `window.create` 가 이 조합에서 dispatch
+   arm 째로 빠졌다고 말한다. 항목별 사유는 `src/source_guards/headless_app_layer_coverage.rs`
+   의 명부가 들고 소스 가드가 지킨다.
+
+   ★ 그리고 이 칸 옆에 오래 있던 미측정 하나가 닫혔다 — **이 러너에 `xvfb-run` 이 있다**
+   (2026-09-06 · run 33994212447 · commit `5d00e2641`). 그 회차에 관측용 gui/Xvfb 스텝이
+   **처음으로 실제 실행**됐고 그 테스트가 통과했다. 그 전 세 회차는 앞 스텝의 실패·취소로
+   `skipped` 라 물음이 던져지지도 않았다. 그래서 그 스텝의 승격 조건 둘 중 앞엣것
+   (러너에 `xvfb-run` 이 있는가)은 충족됐고, 남은 것은 **연속 N 회 초록**이다.
+   N 은 아직 정하지 않았다 — 초록 한 번으로 정하면 그 수는 관측이 아니라 선호가 된다.
 2. **`tests/gui_tests.rs` 33 건** — 33 개 전부 `#[ignore]` 라 조합을 바꿔도 안 돈다.
 
 두 번째가 왜 "성질" 인지는 실제로 돌려 봐야 갈린다. 돌려 봤고, 막는 것이 셋이었다:
@@ -656,7 +1082,115 @@ Linux gui 유닛 스텝이 붙은 뒤 모수를 다시 잡았다 — 술어가 �
 
 그래서 이 칸은 **디스플레이만 주면 풀리는 종류가 아니다.** "N 통과" 를 커버리지로 인용하지
 마라 — 계기(한 프로세스인가 갈랐는가)와 디스플레이(전용인가 공유인가)를 같이 적어야 뜻이
-생긴다. 재는 명령:
+생긴다.
+
+#### 이 칸은 세 층이고, 셋째에는 **단일 값이 없다**
+
+한 덩어리로 세면 칸의 크기가 열 배로 부푼다. 층마다 답의 **종류**가 다르다:
+
+| 층 | 값 |
+|---|---|
+| 디스플레이가 사는 것 | **1** — `multi_window_owner_routing`. `#[ignore]` 가 아닌데 창이 없어 못 돌았다 |
+| 디스플레이가 **못 사는** 것 | **33** — `gui_tests` 전부가 `#[ignore]` 라, 디스플레이가 있어도 평범한 `cargo test` 는 한 건도 안 돈다. 이쪽이 요구하는 것은 디스플레이가 아니라 **플래그**다 |
+| `-- --ignored` 를 줘도 나오는 수 | **단일 값이 없다** — 계기마다 다르고 서로 반대 방향으로 흔들린다 |
+
+**앞의 둘은 "얼마인가" 에 답이 있고 셋째는 답이 없다.** 뭉쳐서 세면 셋째가 앞의 둘과 같은
+종류의 수처럼 보인다. 값이 없다는 것을 값 자리에 적는 것이 정직한 칸이다.
+
+셋째 칸의 수를 인용할 때는 **반드시 계기를 함께** 적는다. 그 규율은
+`crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` 가 집행하는데,
+**층마다 테스트를 따로 둔다** — 한 테스트 안의 세 단정으로 두면 앞이 죽는 순간 뒤가 아예
+안 돌아서 한 번에 하나씩만 판정된다:
+
+| 층 | 집행하는 테스트 |
+|---|---|
+| 디스플레이가 사는 것 | `the_gui_layer_a_display_revives_is_exactly_the_one_named_test` |
+| 디스플레이가 못 사는 것 | `the_gui_suite_needs_a_flag_not_a_display` |
+| `--ignored` 를 줘도 나오는 수 | `the_gui_ignored_layer_has_no_single_value` |
+
+#### ★ 스텝은 앞 스텝이 죽으면 **안 돈다** — 배선돼 있는데 채널이 없는 회차
+
+잡 단위로 읽는 것만으로는 부족하다. **한 잡 안에서도** 앞 스텝이 실패하면 뒤 스텝은
+`skipped` 가 되고, 그 회차에 그 스텝이 배선한 조합은 **존재하지 않는다.** 그런데 로그에는
+실패로도 안 남는다 — 줄 자체가 없다.
+
+실측(run 33982090607, `check-headless`):
+
+    success  cargo check (headless)
+    failure  cargo test (headless)          ← 여기서 죽고
+    skipped  cargo clippy (headless)
+    skipped  cargo test (linux, gui, unit)
+    skipped  cargo test (linux, gui, e2e)
+    skipped  disk (diagnostic)
+
+`continue-on-error` 로는 이것을 못 막는다. 그 플래그는 **자기 실패**를 무해하게 만들 뿐,
+앞 스텝의 실패로 건너뛰어지는 것은 막지 못한다. 건너뛰지 않게 하려면 `if: !cancelled()`
+가 필요하다.
+
+★ 그래서 **없음을 두 갈래로 갈라라**: "그 스텝이 안 돌았다" 와 "돌았는데 결과가 없다"
+는 다른 판정이다. 위 회차에서 `command -v xvfb-run` 줄이 없는 것은 러너에 `xvfb-run` 이
+없다는 증거가 **아니다** — 그 줄이 있는 스텝이 안 돌았을 뿐이고, 그 물음은 여전히
+미측정이다. 진단 줄은 **빨간 회차에서 가장 필요한데**, 건너뛰면 정확히 그때만 없다.
+
+##### 그 진단은 세 회차 내리 **0 회** 였다 (과거값) — 그리고 네 번째에 답이 나왔다
+
+두 시제를 갈라 적는다. **과거값은 값으로 적어도 낡지 않는다**; 현재형은 명령으로만 적는다
+([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+
+- **과거값**: 그 스텝이 존재한 **첫 세 회차**에서는 `command -v xvfb-run` 의 결과 줄이 한 번도
+  안 나왔다 — 셋 다 `skipped` 였다(앞의 `cargo test (headless)` 가 실패하거나 취소돼서다).
+  그보다 앞선 회차들에는 그 스텝이 **아예 없었다**(스텝 목록에 줄이 없다). 즉 그때의 "0 회" 는
+  두 가지가 합쳐진 값이었다: 스텝이 없던 구간 + 있었지만 건너뛰어진 구간.
+- **현재형 물음**: *이 러너에 `xvfb-run` 이 있는가.* — **닫혔다: 있다.** run 33994212447
+  (2026-09-06 · commit `5d00e2641`)에서 그 스텝이 **처음으로 실제 실행**됐다(위 "남은 것은
+  둘이고" 절의 같은 관측이다 — 한 물음에 두 자리가 다른 답을 들지 않게 여기서도 같은 값을 적는다).
+- ★ 그래서 이 절이 남기는 교훈은 뒤집히지 않았다: 세 번의 `skipped` 는 "없다" 의 증거가
+  **아니었다.** 물음이 안 던져졌던 것뿐이고, 던지자 답이 나왔다. 그때 세 번을 근거로 "없다" 라고
+  적었더라면 **그 줄은 지금 틀린 채로 남아 있었을 것이다.**
+- **처방이 이미 있고, 아직 안 돌았다**: `if: !cancelled()` 가 그 건너뜀을 막는다. 그러나
+  그 수정이 main 에서 한 번 돌기 전까지 위 0 은 안 움직인다. **"다음 회차에 답이 나온다" 는
+  예측은 세 번 빗나갔다** — 예측을 반복해 적는 대신, 답이 나오는 **조건**을 적는다.
+
+재는 법(러너를 새로 점유하지 않는다 — 과거 실행에 이미 들어 있다):
+
+```bash
+gh api repos/<owner>/<repo>/actions/runs/<run-id>/jobs \
+  --jq '.jobs[] | select(.name=="check-headless") | .id'
+gh api repos/<owner>/<repo>/actions/jobs/<job-id> \
+  --jq '.steps[] | "\(.conclusion) \(.name)"'
+```
+
+★ 그 목록에서 **줄이 아예 없는 것**과 `skipped` 는 다르다. 앞은 그 회차의 워크플로에 그
+스텝이 없었다는 뜻이고, 뒤는 있었는데 안 돌았다는 뜻이다. 둘을 섞으면 "0 회" 의 원인을
+하나로 착각한다.
+
+#### 세 층 중 하나만 **워크플로 파서에 기댄다** — 그 파서는 이제 고정돼 있다
+
+층 2·3 은 소스(`tests/gui_tests.rs`)와 문서만 읽어서, 워크플로를 어떻게 읽든 답이
+안 바뀐다. **층 1 만** 워크플로에서 "무엇이 자동으로 도는가" 를 뽑아 쓴다. 그 추출의
+잡 분할 규칙(2 칸 들여쓰기 = 잡 헤더)을 3 칸으로 깨뜨리는 변이를 쏘면 잡 절반과 호출
+하나가 사라지는데(`bodies 16→8`, `invocations 6→5`), 그 가드의 테스트는 하나도 안
+죽는다. 사라진 호출이 마침 층 1 이 지목하는 것이 아니었을 뿐이다.
+
+그래서 **층 1 에 대해서만** 문장을 약하게 쓴다 — "가드가 본다" 가 아니라 **"가드가
+본다고 되어 있다"**. 초록은 "덮였다" 와 "안 덮여서 볼 수 없다" 둘 다와 양립하므로,
+잡 분할을 고정하는 단정이 서기 전까지 그 초록은 층 1 이 옳다는 증거가 아니다.
+**그 단정이 지금 섰다.** 같은 변이를 패키지 전체(`cargo test -p tasty-doc-guards`)에 쏘면
+넷이 죽는다 — 잡 분할·접힌 스칼라·잡 수 하한, 그리고 필터 뒤 명부 래칫. 그래서 층 1 의
+문장도 다시 "가드가 본다" 로 쓴다.
+
+★ **모수를 옮겨 적지 않는다.** 그 가드 파일 **하나만** 돌리면 같은 변이에서 여전히 전부
+초록이다(실측 2026-09-06: 그 파일 52 초록 / 패키지 4 실패). 파서가 고정된 것은 **패키지
+모수에서**다. 위 문단의 표를 지우지 않고 남기는 이유가 그것이다 — "무엇이 왜 초록인가" 가
+이 층의 실제 성질이고, 그것을 지우면 다음 사람은 파일 하나를 돌려 보고 고정됐다고 읽는다.
+
+셋째는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
+나쁘다([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)).
+대신 **"단일 값이 없다" 는 단정 자체**를 지킨다: gui 스위트의 통과 수를 적은 **절**은 그
+절이나 그 하위 절에 그 단정을 함께 담아야 한다. 범위가 파일이 아니라 절인 이유는, 파일로
+물으면 한 문서 안의 무관한 두 문장이 서로를 위반으로 만들기 때문이다(실측으로 밟았다).
+
+재는 명령:
 
 ```bash
 env -u DISPLAY -u WAYLAND_DISPLAY TASTY_HOME=/tmp/gtiso \

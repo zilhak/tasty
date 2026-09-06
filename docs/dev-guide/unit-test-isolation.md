@@ -254,3 +254,73 @@ cargo test --workspace --lib --bins --no-default-features --locked -- --list | g
 목록은 동명 타깃이 dedup 된다 — 타깃별로 가르려면 `2>&1` 로 stderr 의 `Running` 줄을 함께
 받는다. 그리고 검사가 "위반 0" 을 냈을 때는 그것이 "위반 없음" 인지 "그 검사가 대상을 스캔
 범위에 안 넣어 아무것도 안 본 것" 인지 — 검사가 실제로 본 모수를 함께 확인해 가른다.
+
+## 8. 공유 픽스처 `test_state()` 는 **진짜 프로세스를 띄운다**
+
+`src/state/tests.rs` 의 `test_state()` / `test_state_with_memory()` 는 유닛 테스트가
+`AppState` + `CoreState` 한 쌍을 얻는 표준 통로다. 그 안에서 `CoreState::new` 이 도는데,
+이 생성자는 **기본 워크스페이스를 만들면서 실제 PTY 를 열고 실제 셸을 fork 한다**
+(`Pane::spawn_terminal` → `tasty_terminal::Terminal::new` → `portable_pty` →
+`std::process::Command::spawn`).
+
+그러니 이 픽스처를 쓰면 그 시험은 **파일 몇 개를 읽는 시험이 아니라 프로세스를 하나
+띄우는 시험**이다. 따라오는 것:
+
+- 자식 셸 프로세스 하나와 그 PTY(master `/dev/ptmx` + slave `/dev/pts/N`).
+- PTY 마다 exit-watcher OS 스레드 하나(`src/core/pty_registry.rs`).
+- `std::process::Command::spawn` 이 exec 결과를 부모에게 알리려고 내부에서 만드는
+  AF_UNIX SEQPACKET socketpair 한 쌍. **이것은 우리 코드의 채널이 아니다** — 그래서
+  "socketpair 한 번 = 자식 프로세스 spawn 한 번" 이라는 등식이 성립하고, 아래 명령이
+  spawn 횟수를 그대로 센다.
+
+### 몇 번 띄우는지는 이렇게 센다
+
+```bash
+cargo test --bin tasty --no-run                       # 테스트 바이너리 경로를 찍는다
+strace -f -e trace=socketpair -o /tmp/sp.txt <그 경로>
+grep -c 'socketpair(AF_UNIX' /tmp/sp.txt
+```
+
+수를 여기 적지 않는다([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md))
+— 시험이 늘면 같이 는다. 이 수의 성질만 적어 둘 값이 있다: **병렬도에 안 움직인다.**
+`--test-threads` 를 바꿔도 호출 총수는 같다(바뀌는 것은 동시에 살아 있는 수뿐이다).
+그래서 이 한 수는 "얼마나 많이 띄우는가" 만 재고 "얼마나 겹치는가" 에 오염되지 않는다.
+
+#### 안 쟀다 — 그 총수의 **귀속**, 그리고 재려면 무엇이 필요한가
+
+총수는 위 명령이 답하지만 **어느 시험이 그중 몇을 띄우는지**는 안 쟀다. 호출 스택이 필요한데
+`strace -k` 는 이 환경의 빌드에 없다. 다만 계기를 바꾸지 않고도 갈 길이 있다 — 위 성질(총수가
+병렬도에 안 움직인다)에서 **집합을 쪼개 각각 세면 합이 총수와 같다**가 따라온다. 그러니 필요한
+것은 새 계기가 아니라 **분할**이다: 테스트 이름을 모듈 접두로 나눠 같은 명령을 부분집합마다
+돌리고, 부분의 합이 총수와 맞는지로 분할이 샜는지 확인한다. 스택이 꼭 필요하면 libunwind 를
+붙인 `strace -k` 빌드나 gdb `catch syscall` + backtrace 가 대안이다.
+
+#### 안 쟀다 — **동시에** 살아 있는 fd 의 곡선
+
+위 총수와 **다른 물음**이다(저쪽은 "몇 번", 이쪽은 "몇 겹"). 병렬도를 올릴 때 동시 생존 fd 가
+어디서 꺾이는지는 안 쟀다. 재려면 둘이 필요하다.
+
+- `--test-threads` 를 1·2·4·8·… 로 올리며 같은 표본을 돌려 **최댓값 곡선**을 얻는다. 한 점만
+  재면 꺾임이 안 보인다.
+- 꺾이는 지점에서 fd 를 **종류별**(pts · socket · pipe)로 나눠 센다. 어느 자원이 상한을
+  만드는지는 총수가 아니라 그 나눔이 답한다.
+
+★ 곡선이 평평해 보이면 그것을 결론으로 쓰기 전에 계기부터 의심한다 — 폴링은 수명이 짧은 fd 를
+놓친다. `strace -e trace=openat,close` 로 열림·닫힘을 시간축에 붙여 재구성하면 폴링이 놓친
+것이 있는지 갈린다.
+
+### 그 spawn 을 건너뛰는 길
+
+생성자 안에는 있다 — `pending_layout_restore` 가 차 있으면 기본 워크스페이스를 안 만들고,
+따라서 셸도 안 띄운다. 그 자리를 채우는 것은 `restore_layout` 설정이 켜져 있고 `layout_slot`
+이 실제로 읽히는 경우뿐이다.
+
+**그러나 테스트에서 닿는 길은 아니다.** `CoreState::new` 은 `layout_slot` 에 `None` 을
+넘기므로 그 가지가 아예 안 돈다. 지금 유닛 테스트가 이 spawn 을 피하는 수단은 **없다** —
+`test_state()` 를 안 쓰는 것 말고는.
+
+### 왜 이것이 격리 문서에 있나
+
+§7 형태 B(프로세스 밖 OS 자원)의 모집단이 눈에 보이는 것보다 넓기 때문이다. PTY·자식
+프로세스를 다루는 시험만 그 자원을 잡는 것이 아니라, **이 픽스처를 쓰는 모든 시험**이 잡는다.
+어떤 시험이 그 자원을 만지는지 이름으로 짐작하면 틀린다 — `test_state()` 를 부르는지로 본다.

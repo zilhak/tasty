@@ -188,6 +188,35 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
 | `TASTY_SURFACE_ID` | 제거 | 부모가 tasty 안일 때 augmented-help 분기 차단 |
 | `TASTY_LOG` | 본체 기본 필터와 **같은 모양** (`warn,wgpu_hal=error,wgpu_core=error,naga=error,egui_winit::clipboard=off`, 웹훅 하네스는 뒤에 `,tasty::webhook::listener=info`). 정의 자리는 `tests/spawn_diag` 의 `LOG_ENV`/`LOG_FILTER` 하나다 | child stderr 폭주에 의한 OS pipe backpressure 회피 + host 의 `TASTY_LOG` 누수 차단. 본체가 읽는 변수는 `TASTY_LOG` 다 — `RUST_LOG` 는 무시된다([crash-diagnostics](crash-diagnostics.md)). **`warn` 한 단어만 주면 안 된다** — 지정하는 순간 본체 기본 필터가 통째로 대체돼 `wgpu_hal=error` 등 억제가 풀리고 로그가 오히려 늘어난다(실측: 미지정 7줄 · `warn` 12줄 · 이 값 7줄) |
 
+### 번들 plugin 은 opt-in 이다
+
+격리 HOME 은 매번 빈 상태로 시작하므로, host 가 부팅할 때 번들 plugin 9 개를 통째로
+새로 복사한다 — debug 빌드에서 부팅당 약 1.1 GB 다. 그런데 인스턴스를 띄우는 스위트
+대부분은 plugin 을 한 번도 호출하지 않는다.
+
+그래서 하네스는 **기본적으로 빈 디렉터리를 번들 루트로 지정**하고
+(`TASTY_BUILTIN_PLUGINS_DIR`), plugin 을 실제로 호출하는 스위트만 명부에 올린다.
+명부는 `tests/spawn_diag` 에 하나로 두고 `tests/common` 과 `tests/webhook_common` 이 쓴다.
+
+- **명부에 무엇을 넣을지는 이름이 아니라 성질로 정한다** — plugin 네임스페이스를
+  호출하는가, plugin 이 뒷받침하는 surface 타입을 여는가. 이름 모양으로 고르면 샌다:
+  `explorer` 는 plugin 처럼 생겼지만 호스트 view 이고, `webhook.*` 는 메서드 메타에
+  `plugin` 권한 등급이 붙어 있지만 핸들러는 host 다.
+- **빠뜨리면 조용히 넘어가지 않는다** — 그 스위트의 plugin 호출이
+  `-32601 Method not found` 로 실패해 그 자리에서 빨개진다. 반대 극성(기본 스테이징 +
+  예외 명부)은 명부가 낡아도 초록이라 비용만 조용히 자란다.
+- 판정은 **테스트 바이너리 단위**다. 공유 인스턴스가 프로세스당 `OnceLock` 이라
+  (§2) 테스트 함수 안에서 정하면 먼저 도는 테스트가 초기화를 가져가 경합한다.
+
+실측(같은 스위트를 번들만 바꿔 잰 대조): 격리 홈 최대 **1148 MB → 4 MB**.
+명부가 실제로 가르는지는 따로 본다 — 명부 밖 `attach_silent_disconnect` 4 MB,
+명부 안 `e2e_tests` 1160 MB. **초록만으로는 판정이 안 된다**: 명부 밖 스위트는
+지렛대가 걸리든 안 걸리든 통과하므로, 통과는 두 경우 모두와 양립한다.
+**벽시계는 74 s → 74 s 로 안 줄었다** — 이 조치가 지우는 것은 그 스위트의 시간이 아니라
+그 스위트가 만드는 dirty page 이고, 그 부담은 같은 박스에서 동시에 도는 다른 러너가 진다.
+동시 러너 수 대비 효과는 측정하지 않았다. 근거와 대안은
+[ADR-0182](../adr/0182-test-instances-do-not-stage-bundled-plugins-by-default.md).
+
 격리 HOME 에 사전 작성하는 파일:
 
 | 파일 | 내용 | 이유 |

@@ -174,6 +174,29 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 - **외부 표면에 남는 cfg 가드는 router 분기 한 줄** (위 라우팅 코드의 `#[cfg(debug_assertions)] route_debug_handler(...)`).
 - **삭제 가능성 테스트**: debug 파일을 지웠을 때 cfg-guard 호출처 몇 줄 제거 외에 다른 변경이 필요하면 격리가 깨진 것이다.
 
+### 마우스를 다룬다고 debug 가 아니다 — 가르는 것은 조작이냐 상태 읽기냐
+
+`debug.inject_window_mouse` 는 debug 고 `surface.mouse_tracking` 은 release 다. 이름이 둘 다
+마우스지만 축이 다르다 — 앞은 **사용자 조작을 재현**하고, 뒤는 **터미널이 지금 어떤 상태인가**를
+읽는다. 원칙 1 의 물음("에이전트가 자기 작업에 필요한가 vs 사용자 조작을 재현하는가")에
+`surface.mouse_tracking` 은 앞쪽으로 답한다: 안의 프로그램이 마우스를 잡았는지 모르면
+에이전트는 마우스 시퀀스를 보낼지 텍스트를 보낼지 정할 수 없고, 드래그 선택이 왜 안 먹는지도
+가릴 수 없다. `surface.foreground_process`(셸이 유휴인가)와 같은 자리다.
+
+★ 그리고 **그 release 표면은 두 값을 낸다.** 터미널 레지스터가 무엇인지(`terminal_mode`)와
+마우스 핸들러가 그것을 존중하는지(`effective_click_mode`)는 다른 물음이고, 사이에 격하가
+하나 있다 — hard 점유이거나 전경 프로세스가 마우스 캡처 블랙리스트에 걸리면 핸들러는 실제
+모드와 무관하게 `None` 으로 취급한다(`crate::state::mouse::effective_click_tracking_decision`).
+한 값으로 뭉개면 **낱말 하나가 두 축을 덮고**, 두 축이 어긋나는 기계에서 관측면이 거꾸로
+읽힌다("터미널이 all_motion 인데 보고 0" 을 제품 결함으로 읽지만 사실은 격하가 정상 동작한
+것이다). 그 격하 판정은 소비자가 둘(라우팅·관측면)이라 gui 게이트 밖(`src/state/mouse.rs`)에
+두고 **같은 함수를 부른다** — 복제하지 않는 것은 위 `debug.glyph_color`/`cell_palette` 와 같은 처방이다.
+
+**이 판정은 자동으로 안 난다.** `tests/ipc_release_table_excludes_input_reproduction.rs` 의
+이름 규칙(`inject`·`raw_key`·`switch_input_source`·`ime_`·`simulate`)은 이 이름을 안 잡는다 —
+그 가드가 스스로 적어 둔 사각지대("이름에 단서가 없고 debug CLI 진입점도 없는 새 release
+메서드의 의미 판단")가 정확히 이 자리다. 그래서 판정 근거를 여기 남긴다.
+
 ### 예외: 데이터 구조의 dev-only 필드
 
 매니페스트나 빌트인 spec 처럼 **데이터 구조의 필드 하나만 dev 전용**인 경우는 분리 대상이 아니다(예: `BuiltinSpec` 의 `#[cfg(debug_assertions)] crate_dir`). *디버그 동작* 이 아니라 *dev 빌드 데이터 차이* 라 같은 룰을 적용하면 구조가 찢어진다.
