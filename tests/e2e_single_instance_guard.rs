@@ -572,6 +572,13 @@ fn does_not_flag_prose_that_merely_names_the_isolated_home() {
 /// 그 면제가 **이 파일에 나중에 붙는 모든 축까지 덮기** 때문이다(726 이 짚었다).
 /// 선례: `crates/tasty-doc-guards/tests/complexity_allowlist_docs_parity.rs` 의
 /// `the_needle_is_not_written_whole_in_this_file`.
+///
+/// ★ **소스 텍스트를 읽는 시험에는 변이가 선택이 아니라 필수다.** 이 시험의 첫 판은
+/// 런타임 값을 그대로 `src.contains` 했고 **초록이었다.** 그런데 Rust 소스에서 문자열
+/// 리터럴은 `\"` 로 이스케이프되어 적히므로 런타임 값의 글자가 원문에 **절대 안 나온다**
+/// — `contains` 가 항상 거짓이라 단정이 항상 참이었다. 시험도 대상도 게이트도 전부
+/// 초록이고 빨간 곳이 아무 데도 없었다. **쪼갬을 되돌리는 변이를 넣어 그것이 살아남는
+/// 것을 보고서야** 알았다. 이 파일을 고칠 때는 변이를 한 번 넣어 빨간지 확인해라.
 #[test]
 fn the_quoteless_scan_markers_are_not_written_whole_in_this_file() {
     let src = std::fs::read_to_string(
