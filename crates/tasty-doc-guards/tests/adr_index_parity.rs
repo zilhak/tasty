@@ -27,7 +27,7 @@
 //! 오탐이 그만큼이면 가드를 아무도 안 믿는다. 두 열의 정규화 규칙이 서면 그때 넣는다.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const ADR_DIR: &str = "docs/adr";
 const INDEX: &str = "docs/adr/index.md";
@@ -81,16 +81,16 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn read(rel: &str) -> String {
-    let p = repo_root().join(rel);
+fn read(root: &Path, rel: &str) -> String {
+    let p = root.join(rel);
     std::fs::read_to_string(&p)
         .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
         .replace("\r\n", "\n")
 }
 
 /// 앞 네 자리가 숫자인 `.md` 만 ADR 로 센다 — `index.md` · `template.md` 는 빠진다.
-fn adr_files() -> BTreeMap<String, String> {
-    let dir = repo_root().join(ADR_DIR);
+fn adr_files(root: &Path) -> BTreeMap<String, String> {
+    let dir = root.join(ADR_DIR);
     let mut out = BTreeMap::new();
     for entry in std::fs::read_dir(&dir).expect("docs/adr 를 읽을 수 없다") {
         let name = entry.expect("디렉터리 항목").file_name();
@@ -123,9 +123,9 @@ struct IndexRow {
 /// 독법은 여기 하나다. 열이 더 필요해지면 이 함수를 넓히고, **두 번째 독법을 만들지
 /// 않는다** — 같은 표를 두 방법으로 읽으면 답이 갈리고, 갈린 답 중 어느 것이 옳은지는
 /// 표를 다시 읽어야 알게 된다.
-fn index_rows() -> Vec<IndexRow> {
+fn index_rows(root: &Path) -> Vec<IndexRow> {
     let mut out = Vec::new();
-    for line in read(INDEX).lines() {
+    for line in read(root, INDEX).lines() {
         let Some(rest) = line.strip_prefix("| ") else {
             continue;
         };
@@ -251,7 +251,7 @@ fn header_field(body: &str, name: &str) -> Option<String> {
 /// 한 번호는 한 ADR 만 가리킨다.
 #[test]
 fn an_adr_number_names_exactly_one_document() {
-    let rows = index_rows();
+    let rows = index_rows(&repo_root());
     // R445 — 측정값은 단정보다 앞에. 이 파일의 세 시험이 같은 하한을 쓰고 서로 다른 수를
     // 재므로, 그 수들을 나란히 읽는 것이 곧 하한의 판별식이다(상수 doc 참조).
     println!("[ADR 인덱스] 인덱스 행 {} · 하한 {MIN_ADRS}", rows.len());
@@ -283,14 +283,15 @@ fn an_adr_number_names_exactly_one_document() {
 /// 파일과 인덱스 행이 **양방향으로** 대응한다.
 #[test]
 fn every_adr_file_has_a_row_and_every_row_has_a_file() {
-    let files = adr_files();
+    let root = repo_root();
+    let files = adr_files(&root);
     println!("[ADR 인덱스] ADR 파일 {} · 하한 {MIN_ADRS}", files.len());
     assert!(
         files.len() >= MIN_ADRS,
         "ADR 파일이 {} 개뿐이다(하한 {MIN_ADRS})",
         files.len()
     );
-    let rows = index_rows();
+    let rows = index_rows(&root);
     let row_files: BTreeSet<&str> = rows.iter().map(|r| r.file.as_str()).collect();
     let disk: BTreeSet<&str> = files.values().map(|f| f.as_str()).collect();
 
@@ -312,9 +313,10 @@ fn every_adr_file_has_a_row_and_every_row_has_a_file() {
 /// 사람만 틀린 값을 갖게 된다. 파일 목록만 보는 판정으로는 안 잡힌다.
 #[test]
 fn the_heading_number_matches_the_file_name() {
+    let root = repo_root();
     let mut wrong = Vec::new();
-    for (num, name) in adr_files() {
-        let body = read(&format!("{ADR_DIR}/{name}"));
+    for (num, name) in adr_files(&root) {
+        let body = read(&root, &format!("{ADR_DIR}/{name}"));
         let Some(head) = body.lines().find(|l| l.starts_with("# ADR-")) else {
             wrong.push(format!("{name} — `# ADR-…` 제목 줄이 없다"));
             continue;
@@ -413,8 +415,9 @@ fn the_first_word_stops_at_whitespace() {
 
 #[test]
 fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
-    let rows = index_rows();
-    let files = adr_files();
+    let root = repo_root();
+    let rows = index_rows(&root);
+    let files = adr_files(&root);
     let mut checked_status = 0usize;
     let mut checked_date = 0usize;
     let mut superseded_seen = 0usize;
@@ -426,7 +429,7 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
             // 파일 없는 행은 `every_adr_file_has_a_row_and_every_row_has_a_file` 이 잡는다.
             continue;
         };
-        let body = read(&format!("{ADR_DIR}/{name}"));
+        let body = read(&root, &format!("{ADR_DIR}/{name}"));
 
         if let Some(v) = header_field(&body, "Status") {
             checked_status += 1;
