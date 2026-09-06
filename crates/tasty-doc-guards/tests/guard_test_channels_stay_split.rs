@@ -23,10 +23,21 @@
 
 use std::path::PathBuf;
 
+use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
 use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
 
 /// 이 주장이 사는 자리. 빨개졌을 때 고칠 곳을 실패문이 지목한다.
 const DOC: &str = "docs/dev-guide/ci-gates.md";
+
+/// 워크플로 순회의 하한. 이 아래로 모이면 순회가 죽은 것으로 본다.
+const WORKFLOW_FLOOR: Floor = Floor {
+    min: 8,
+    measured: 11,
+    measured_on: "2026-09-07",
+    why_this_gap: "이 모수는 `.github/workflows/*.yml` 의 수다. 워크플로는 통합할 때 \
+                   가끔 합쳐지므로 몇 개는 줄 수 있지만, 8 아래로 떨어지는 것은 파일이 \
+                   줄어든 게 아니라 순회 루트가 어긋난 것이다.",
+};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -38,24 +49,22 @@ fn repo_root() -> PathBuf {
 
 /// 자동 회차에 도는 잡의 본문 전부.
 fn automatic_jobs() -> Vec<(String, String)> {
-    let dir = repo_root().join(".github/workflows");
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("워크플로 디렉토리를 못 읽었다: {} — {e}", dir.display()));
+    let root = repo_root();
+    let dir = root.join(".github/workflows");
+    // 공용 순회를 쓴다. 직접 `read_dir` 하면 디렉토리가 비거나 못 읽혔을 때 "위반 0" 이
+    // 나오고, 그것은 위반이 없다는 뜻이 아니라 아무것도 안 봤다는 뜻이다.
+    let walked = walk_with_floor(&dir, &dir, &WORKFLOW_FLOOR, Descend::Everything, &|w| {
+        w.rel.ends_with(".yml")
+    })
+    .unwrap_or_else(|why| panic!("{why}"));
+
     let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_none_or(|e| e != "yml") {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let Ok(text) = std::fs::read_to_string(&path) else {
+    for w in walked {
+        let Ok(text) = std::fs::read_to_string(&w.path) else {
             continue;
         };
         for body in automatic_job_bodies(&text) {
-            out.push((name.clone(), body));
+            out.push((w.rel.clone(), body));
         }
     }
     out
