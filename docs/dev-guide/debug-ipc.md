@@ -38,7 +38,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 | method | params | 설명 |
 |--------|--------|------|
-| `ui.state` | `{}` | 현재 UI 상태(settings_open, popup, 활성 workspace/pane/tab 수 등) 덤프 |
+| `ui.state` | `{}` | 현재 UI 상태 덤프 — `settings_open` · popup · `active_workspace` · `workspace_count` · `pane_count` · `tab_count` · `active_tab`(포커스된 pane 의 활성 탭 인덱스. 수만으로는 **탭 전환이 안 보여서** 있는 축이다) |
 | `debug.info` | `{}` | 실행 중 인스턴스 debug 정보 |
 | `debug.cell_info` | `surface_id, row, col` | 셀 단위 렌더 속성(텍스트, fg/bg, bold/italic/underline …) |
 | `debug.screen_attrs` | `surface_id, row` | 한 행 전체 셀 속성 |

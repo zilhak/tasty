@@ -25,11 +25,12 @@ pub(super) fn handle_ui_state(
     let ws = state.active_workspace(engine);
     let pane_count = ws.pane_layout().all_pane_ids().len();
     let focused_pane_id = ws.focused_pane;
-    let tab_count = ws
-        .pane_layout()
-        .find_pane(focused_pane_id)
-        .map(|p| p.tabs.len())
-        .unwrap_or(0);
+    let focused_pane = ws.pane_layout().find_pane(focused_pane_id);
+    let tab_count = focused_pane.map(|p| p.tabs.len()).unwrap_or(0);
+    // 탭 **전환**은 수로 안 보인다 — `tab_count` 는 전환해도 그대로다. 그래서 전환을
+    // 재는 시험은 관측할 것이 없어 고정 sleep 으로 대신하게 되고, 그러면 전환이 아예
+    // 안 일어나도 통과한다. 활성 탭 인덱스가 그 관측 축이다.
+    let active_tab = focused_pane.map(|p| p.active_tab).unwrap_or(0);
     #[cfg(feature = "gui")]
     let notification_panel_open = state.popups.is_open("notifications");
     #[cfg(not(feature = "gui"))]
@@ -43,6 +44,7 @@ pub(super) fn handle_ui_state(
             "workspace_count": engine.workspaces.len(),
             "pane_count": pane_count,
             "tab_count": tab_count,
+            "active_tab": active_tab,
         }),
     )
 }
