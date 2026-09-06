@@ -10,7 +10,13 @@ use std::sync::{Mutex, MutexGuard};
 /// 먼저 획득해야 서로 간섭 없이 안전하다.
 ///
 /// 직접 잡을 일은 없다 — [`TastyHomeGuard`] 가 락 획득과 원값 복원을 함께 맡는다.
-pub(crate) static TASTY_HOME_ENV_LOCK: Mutex<()> = Mutex::new(());
+///
+/// ★ **그 문장을 컴파일러가 지킨다.** 이 static 은 모듈 비공개다(`pub(crate)` 가 아니다) —
+/// 밖에서 이름을 부르면 컴파일 오류다. 종전에는 소스 스캔 하나가 그 일을 대신했는데,
+/// 텍스트로 재는 것보다 **못 쓰게 만드는 것**이 싸고 확실하다. 넓히려면 먼저 물어라:
+/// 락만 손에 넣고 값을 직접 바꾸는 경로가 생기면 [`TastyHomeGuard`] 가 묶은 셋(락 ·
+/// 이전 값 보관 · `Drop` 복원) 중 뒤 둘이 빠지고, 그 오염은 단독 실행에서 재현되지 않는다.
+static TASTY_HOME_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// 테스트가 `TASTY_HOME` 을 임시 디렉토리로 갈아끼우는 동안 쓰는 RAII 가드.
 ///

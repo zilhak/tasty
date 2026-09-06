@@ -27,18 +27,21 @@
 //! |---|---|---|
 //! | 키 범위 | 홈 키를 **이름으로** 든 줄만 본다 | 키를 안 가리고 env 변형 전부를 본다 |
 //! | 프로덕션 예외 | 필요 없다(키로 좁혀 안 걸린다) | 명부 + **사유 재검사**가 필요하다 |
-//! | 락 축 | 락이 `static`(비공개)이라 **컴파일러가** 막는다 | 락이 `pub(crate)` 라 텍스트로 막는다 |
+//! | 락 축 | 락이 `static`(비공개)이라 **컴파일러가** 막는다 | **같다**(아래 ★) |
 //! | 순회 | 자기 크레이트를 자기가 `read_dir` | 공용 스캐너(모수가 git 목록과 못 박혀 있다) |
 //!
 //! **양방향인 이유**: 키로 좁힌 쪽은 키가 변수로 들어간 자리를 못 본다(본체
 //! `boot/locale.rs` 가 그 모양이다 — 그래서 이쪽은 좁힐 수 없었다). 반대로 키를 안 가린
 //! 쪽은 예외가 필요해지고, 예외는 그 자체가 도망길이라 사유를 다시 묻는 장치가 따라붙는다.
 //!
-//! ★ **락 축의 비대칭에는 더 싼 답이 있다.** 저쪽은 락이 `static`(모듈 비공개)이라 밖에서
-//! 이름을 부르는 것 자체가 **컴파일 오류**다. 여기 락은 `pub(crate)` 라 텍스트 스캔이 그
-//! 일을 대신한다. 가시성을 좁히면 아래 두 번째 시험이 구조적으로 불필요해진다 — 지금
-//! 그 락을 이 파일 밖에서 부르는 자리는 0 이므로 한 낱말 변경이다. **이 회차에서는 안
-//! 했다**(읽고 적는 범위였다). 하게 되면 그때 이 절과 그 시험을 함께 지운다.
+//! ★ **락 축의 비대칭은 닫혔다 — 가드를 지우는 쪽으로.** 저쪽은 락이 `static`(모듈
+//! 비공개)이라 밖에서 이름을 부르는 것 자체가 **컴파일 오류**다. 여기 락은 `pub(crate)`
+//! 였고 소스 스캔 하나가 그 일을 대신하고 있었다. 가시성을 좁혀 **그 시험을 지웠다** —
+//! 텍스트로 재는 것보다 못 쓰게 만드는 것이 싸고 확실하다.
+//!
+//! 지울 수 있었던 근거: 그 락을 `src/test_support.rs` 밖에서 부르는 자리가 **0** 이라
+//! 한 낱말 변경이었다. 지운 뒤 검수로 그 우회 프로브를 다시 쏘았고, 이번엔 시험이 아니라
+//! **컴파일**이 거부한다.
 //!
 //! # 이 가드가 못 보는 것
 //!
@@ -155,43 +158,5 @@ fn tasty_home_is_only_changed_through_the_test_support_guard() {
     println!(
         "[홈 env 문] 훑은 본체 소스 {files} · 문 밖 변경 {} (전부 면제)",
         hits.len()
-    );
-}
-
-/// **락만 손으로 잡는 것도 막는다.**
-///
-/// [`TastyHomeGuard`] 의 doc 이 "직접 잡을 일은 없다 — 가드가 락 획득과 원값 복원을 함께
-/// 맡는다" 고 적는다. 그 문장을 지키는 것이 없었다. 락을 손으로 잡으면 위 시험의 그물
-/// (`set_var` 호출)에는 걸리지만, 그 자리가 `EnvVarGuard` 로 값을 바꾸면 걸리지 않는다 —
-/// 복원은 되지만 임시 디렉토리 없이 실제 홈을 가리키게 될 수 있다.
-#[test]
-fn the_home_env_lock_is_only_taken_inside_its_own_module() {
-    let mut takers = Vec::new();
-    let mut files = 0usize;
-    for (rel_path, raw) in super::rust_sources() {
-        if !rel_path.starts_with("src/") {
-            continue;
-        }
-        files += 1;
-        let rel = rel_path.to_string_lossy().to_string();
-        if rel == DOOR {
-            continue;
-        }
-        for (i, line) in mask_non_code(&raw).lines().enumerate() {
-            if line.contains("TASTY_HOME_ENV_LOCK") {
-                takers.push(format!("  {rel}:{}", i + 1));
-            }
-        }
-    }
-    assert!(
-        files >= 200,
-        "순회가 {files} 개로 좁다 — 위 0 이 공허해진다"
-    );
-    assert!(
-        takers.is_empty(),
-        "`{DOOR}` 밖에서 `TASTY_HOME_ENV_LOCK` 을 이름으로 부르는 자리가 {} 개다:\n{}\n\n\
-         그 락은 `TastyHomeGuard` 가 잡는다. 손으로 잡는 것은 그 가드를 우회하는 첫 걸음이다",
-        takers.len(),
-        takers.join("\n")
     );
 }
