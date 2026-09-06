@@ -554,8 +554,18 @@ fn test_pane_split_speed() {
 fn test_keyboard_not_sent_to_terminal_when_settings_open() {
     let mut inst = shared();
 
+    // ★ mark/read 는 `surface_id` 가 **필수**다(`handler/surface/mark.rs` 의
+    // `require_surface_id` — 포커스 기반 기본값이 없다, 원칙 3). 생략하면 격리 여부와
+    // 무관하게 `-32602 missing 'surface_id'` 로 첫 줄에서 죽는다.
+    // `first_surface_id()` 는 쓰지 않는다 — `surface.list` 의 **첫** 항목이라 대상이
+    // 활성 터미널이라는 보장이 없다(마우스 축에서 실측으로 밟은 함정이다).
+    // settings 를 **열기 전에** 잡는다: 오버레이가 뜬 뒤에는 포커스 개념이 달라진다.
+    let sid = inst
+        .debug_focused_surface()
+        .expect("mark 를 찍을 포커스된 surface");
+
     // Set a mark so we can check terminal output
-    inst.call("surface.set_mark", serde_json::json!({}));
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
 
     // Open settings
     inst.press_ctrl(Key::Unicode(','));
@@ -568,7 +578,7 @@ fn test_keyboard_not_sent_to_terminal_when_settings_open() {
     // Check terminal did not receive the text
     let result = inst.call(
         "surface.read_since_mark",
-        serde_json::json!({ "strip_ansi": true }),
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
     );
     let output = result["text"].as_str().unwrap_or("");
     assert!(
@@ -588,13 +598,13 @@ fn test_keyboard_not_sent_to_terminal_when_settings_open() {
     // 일어났다" 다. 그래서 같은 회차·같은 인스턴스에서 **경로가 살아 있음**을 보인다.
     // 형제 `test_keyboard_sent_to_terminal_when_no_overlay` 가 이 형태를 갖고 있는데,
     // 그 증거가 다른 시험에 있으면 이 시험을 단독으로 돌릴 때는 아무 보장이 없다.
-    inst.call("surface.set_mark", serde_json::json!({}));
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
     inst.type_text("echo overlay_control_marker");
     inst.press_key(Key::Return);
     std::thread::sleep(Duration::from_millis(1000));
     let control = inst.call(
         "surface.read_since_mark",
-        serde_json::json!({ "strip_ansi": true }),
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
     );
     let control = control["text"].as_str().unwrap_or("");
     assert!(
@@ -619,8 +629,16 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
     // Wait for shell to be ready
     std::thread::sleep(Duration::from_millis(500));
 
+    // ★ mark/read 의 `surface_id` 는 필수다(위 형제 시험의 주석 참조). 여기서는 잡는
+    // **시점**이 중요하다 — workspace 를 만든 **뒤**에 잡아야 그 새 터미널을 가리킨다.
+    // 앞에서 잡으면 직전 workspace 의 터미널이라 이 시험이 재려는 대상이 아니고,
+    // `first_surface_id()` 도 같은 이유로 쓸 수 없다(`surface.list` 의 첫 항목이다).
+    let sid = inst
+        .debug_focused_surface()
+        .expect("새 workspace 의 포커스된 surface");
+
     // Set mark
-    inst.call("surface.set_mark", serde_json::json!({}));
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
 
     // Type some text
     inst.type_text("echo gui_test_marker");
@@ -631,7 +649,7 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
 
     let result = inst.call(
         "surface.read_since_mark",
-        serde_json::json!({ "strip_ansi": true }),
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
     );
     let output = result["text"].as_str().unwrap_or("");
     assert!(
