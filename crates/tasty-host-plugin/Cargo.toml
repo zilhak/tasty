@@ -47,6 +47,10 @@ wasm-poc = []
 
 [dev-dependencies]
 tempfile = "3"
+# 로그 **레벨**을 시험이 관측하려고 쓴다 — "설치본이 번들보다 앞섰다" 는 경고가 실제로 warn
+# 으로 나가는지, 같은 버전일 때는 안 나가는지를 문자열이 아니라 이벤트로 확인한다
+# (`log_builtin_skip`). 정규 의존이 아니라 산출물에는 안 들어간다.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 테스트에서만 tasty_home() 스레드 로컬 override 훅(push/pop_home_override)을 켠다.
 # resolver v3(edition 2024) 가 이 dev-dep feature 를 정규(lib/release) 빌드로 통일하지
 # 않으므로 release 산출물에는 훅이 남지 않는다 — 그 비누출은 cargo tree 로 관측

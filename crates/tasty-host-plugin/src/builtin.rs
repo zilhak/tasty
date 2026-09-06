@@ -660,7 +660,7 @@ fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path
     let bundle_v = read_bundle_version(src);
     match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), false) {
         BuiltinUpgradeDecision::Skip => {
-            log_builtin_up_to_date(spec.id, installed_v.as_ref(), bundle_v.as_ref());
+            log_builtin_skip(spec.id, installed_v.as_ref(), bundle_v.as_ref());
             false
         }
         BuiltinUpgradeDecision::ResyncSameVersion => run_dir_sync_step(
@@ -685,17 +685,60 @@ fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path
     }
 }
 
-fn log_builtin_up_to_date(
+/// `Skip` 갈래에 오는 두 경우. 이름이 하나면 뒤쪽이 앞쪽 뒤에 숨는다.
+#[derive(Debug, PartialEq, Eq)]
+enum SkipCase {
+    /// 설치본과 번들이 같은 버전 — 진짜로 최신이다.
+    UpToDate,
+    /// 설치본이 번들보다 **높다.** 최신이 아니라 번들보다 **앞선** 것이고, 이번 부팅은
+    /// 번들을 반영하지 않는다.
+    InstalledAheadOfBundle,
+}
+
+/// 버전 두 개로 `Skip` 의 경우를 가른다. 판정을 로그에서 떼어내 시험이 직접 부를 수 있게 한다.
+fn classify_skip(
+    installed_v: Option<&semver::Version>,
+    bundle_v: Option<&semver::Version>,
+) -> SkipCase {
+    match (installed_v, bundle_v) {
+        (Some(i), Some(b)) if i > b => SkipCase::InstalledAheadOfBundle,
+        _ => SkipCase::UpToDate,
+    }
+}
+
+/// `Skip` 갈래의 로그.
+///
+/// ## 왜 한 문장이면 안 되나
+///
+/// 이 자리는 예전에 두 경우를 `up-to-date` 한 문장에 뭉쳐 `debug!` 로 흘렸다. release 파일
+/// 로그는 warn 이상만 남으므로, **설치본이 번들보다 높아 이번 부팅이 번들을 안 쓴 사실이
+/// 어디에도 안 남았다.** 빌드 쪽에는 이미 같은 함정의 경고가 있다("낡은 채로 조용히
+/// 실행된다") — 이건 그 설치 경로 판이고, worktree 를 여러 개 두고 서로 다른 tip 에서
+/// 부팅하면 실제로 다른 worktree 가 설치한 바이너리를 조용히 쓰게 된다.
+///
+/// 그래서 앞선 경우는 **warn** 으로 올리고, 문장에서 "up-to-date" 를 뺀다(최신이 아니라
+/// 앞선 것이다). 되돌리는 수단을 문장 안에 이름으로 넣어, 로그만 보고 조치할 수 있게 한다.
+fn log_builtin_skip(
     id: &str,
     installed_v: Option<&semver::Version>,
     bundle_v: Option<&semver::Version>,
 ) {
-    tracing::debug!(
-        "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
-        id,
-        installed_v.map(|v| v.to_string()),
-        bundle_v.map(|v| v.to_string()),
-    );
+    match classify_skip(installed_v, bundle_v) {
+        SkipCase::UpToDate => tracing::debug!(
+            "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
+            id,
+            installed_v.map(|v| v.to_string()),
+            bundle_v.map(|v| v.to_string()),
+        ),
+        SkipCase::InstalledAheadOfBundle => tracing::warn!(
+            "builtin '{}' installed v{:?} is ahead of bundle v{:?} — this boot keeps the \
+             installed copy and does NOT apply the bundle; run \
+             `tasty plugin upgrade-builtins --force` to overwrite it",
+            id,
+            installed_v.map(|v| v.to_string()),
+            bundle_v.map(|v| v.to_string()),
+        ),
+    }
 }
 
 fn log_builtin_force_overwrite(
@@ -1700,6 +1743,72 @@ mod tests {
             "bbbb",
             "src 가 더 오래된 mtime 이라고 새 내용을 건너뛰었다"
         );
+    }
+
+    /// 이 스코프 동안 나가는 tracing 이벤트를 문자열로 모은다. 레벨을 **이름이 아니라
+    /// 실제 이벤트**로 확인하려는 것이라, 판정 함수를 다시 부르는 대조가 되지 않는다.
+    fn capture_logs(f: impl FnOnce()) -> String {
+        use std::sync::{Arc, Mutex};
+        #[derive(Clone)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf(Arc::new(Mutex::new(Vec::new())));
+        let sink = buf.clone();
+        let sub = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(move || sink.clone())
+            .finish();
+        tracing::subscriber::with_default(sub, f);
+        let out = buf.0.lock().unwrap().clone();
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[test]
+    fn a_home_copy_ahead_of_the_bundle_is_warned_not_hidden() {
+        // release 파일 로그는 warn 이상만 남는다. 이 경우가 debug 로 나가면 "이번 부팅이
+        // 번들을 안 썼다" 가 어디에도 안 남는다 — 그 침묵이 이 시험이 겨누는 것이다.
+        let (i, b) = (v("0.1.60"), v("0.1.59"));
+        let logs = capture_logs(|| log_builtin_skip("com.tasty.x", Some(&i), Some(&b)));
+
+        assert!(logs.contains("WARN"), "warn 으로 안 나갔다: {logs}");
+        assert!(
+            logs.contains("upgrade-builtins --force"),
+            "되돌리는 수단이 문장에 없다: {logs}"
+        );
+        assert!(
+            !logs.contains("up-to-date"),
+            "최신이 아니라 앞선 것이다: {logs}"
+        );
+    }
+
+    #[test]
+    fn an_equal_version_stays_quiet() {
+        // 반대 팔 — 진짜 up-to-date 까지 warn 으로 올리면 경고가 배경 소음이 된다.
+        let (i, b) = (v("0.1.60"), v("0.1.60"));
+        let logs = capture_logs(|| log_builtin_skip("com.tasty.x", Some(&i), Some(&b)));
+
+        assert!(
+            !logs.contains("WARN"),
+            "같은 버전인데 warn 이 나갔다: {logs}"
+        );
+        assert!(logs.contains("up-to-date"), "아무것도 안 남았다: {logs}");
+    }
+
+    #[test]
+    fn a_missing_version_is_not_read_as_ahead() {
+        // 매니페스트를 못 읽으면 `None` 이 온다. 그것을 "앞섰다" 로 읽으면 손상된 설치가
+        // 경고를 쏟는다 — 그 경우는 조용한 쪽으로 물러난다.
+        let b = v("0.1.59");
+        assert_eq!(classify_skip(None, Some(&b)), SkipCase::UpToDate);
+        assert_eq!(classify_skip(Some(&b), None), SkipCase::UpToDate);
     }
 
     #[test]
