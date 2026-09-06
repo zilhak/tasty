@@ -1242,13 +1242,22 @@ fn right_click_explorer_never_falls_back_to_surface_menu() {
     }
 }
 
-/// 트래킹을 켜고 수신 바이트를 화면에 노출시킨다(`cat -v` 로 ESC 가 `^[` 로 보인다).
-/// 셸 프롬프트가 자리를 잡을 시간을 준 뒤 mark 를 찍는 것은 호출자 몫이다.
+/// 트래킹을 **이 모드 하나로** 맞추고 수신 바이트를 화면에 노출시킨다(`cat -v` 로 ESC 가
+/// `^[` 로 보인다). 셸 프롬프트가 자리를 잡을 시간을 준 뒤 mark 를 찍는 것은 호출자 몫이다.
+///
+/// ★ 켜기 전에 셋을 **끈다.** 1000/1002/1003 은 서로를 대체하지 않는 **독립 레지스터**이고
+/// 실효 레벨은 켜진 것 중 **가장 넓은 것**이다(`MouseTrackingRegisters::effective`).
+/// 끄지 않으면 1003 뒤에 1002 를 요청해도 AllMotion 이 남아, "1002 는 버튼 없는 hover 를
+/// 보고하지 않는다" 같은 단정이 **제품이 옳은데도** 실패한다. 이름이 `enable_` 이라
+/// 호출자는 "이 모드가 된다" 로 읽는다 — 그 이름이 참이 되게 헬퍼가 맞춘다.
+/// 호출자가 다섯이라 자리마다 끄는 줄을 넣는 것이 아니라 여기서 한 번 한다.
 #[cfg(test)]
 fn enable_mouse_tracking(inst: &gui_common::GuiTestInstance, sid: u64, mode: &str) {
     inst.call(
         "surface.send",
-        json!({ "surface_id": sid, "text": format!("printf '\\e[?{mode}h\\e[?1006h'; cat -v\n") }),
+        json!({ "surface_id": sid, "text": format!(
+            "printf '\\e[?1000l\\e[?1002l\\e[?1003l\\e[?{mode}h\\e[?1006h'; cat -v\n"
+        ) }),
     );
     std::thread::sleep(Duration::from_millis(400));
 }
