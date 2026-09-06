@@ -27,6 +27,17 @@
 # 아니라 **측정 도구**라(인자 없이 부르면 판정이 아니라 사용법과 `exit 2` 다), 그 glob 에
 # 들어가면 남의 루프에서 **빨간 게이트로 보인다**. 발견 술어를 안 더럽히는 쪽을 골랐다.
 #
+# ★ delta 가 **더해지는가**는 게이트마다 다르다 — Σdelta 로 병합을 예측하기 전에 물어라.
+#   · 바늘이 **줄 단위**면 더해진다(`check-allow-reason.sh` 가 그렇다).
+#   · 바늘의 좌변이 **파일 집합**이면 안 더해진다(`check-shared-walk-ratchet.sh` 가 그렇다 —
+#     좌변이 `git ls-files` 로 고른 목록이라, 두 갈래가 **같은 파일을** 각각 고쳐 합쳐지면
+#     delta 합과 실측이 어긋날 수 있다). 그 게이트에서 예측이 어긋나면 "예측 못 한
+#     상호작용" 이라고 적기 전에 **같은 파일을 둘이 만졌는가**를 먼저 물어라.
+#
+# ☆ 이 도구는 base 와 HEAD **두 끝점**만 본다. 넣었다 뺀 것(상쇄된 0)과 안 건드린 0 을
+#   구분하지 않는다 — 병합 예측에는 그 구분이 필요 없기 때문이다(누적 diff 는 최종 상태만
+#   본다). 그 구분이 필요한 물음은 **lane 의 이력**이고, 그건 다른 계기로 재야 한다.
+#
 # 사용: scripts/gate-delta.sh <base-rev> [게이트 스크립트...]
 #   기본 게이트: check-shared-walk-ratchet.sh · check-allow-reason.sh (여유 0 인 둘)
 #
@@ -123,14 +134,25 @@ for g in "${GATES[@]}"; do
         status=1
         continue
     fi
-    hc=${h_v%% *}; cap=${h_v##* }; bc=${b_v%% *}
+    hc=${h_v%% *}; cap=${h_v##* }; bc=${b_v%% *}; bcap=${b_v##* }
     d=$((hc - bc))
     note=""
     [ "$h_fb" -eq 1 ] && note=" ★ 양쪽 다 폴백(원문 세기) — 더 많이 세는 값끼리의 뺄셈이다"
+    # 상한이 움직였는가. **여유 0 인 양방향 래칫에서는 이것이 delta 보다 먼저 오는 물음이다** —
+    # 그런 게이트는 `rc=0 ⟺ 값 == 상한` 이고 상한은 커밋된 상수라, 상한을 안 건드린 갈래의
+    # rc=0 은 **정의상** delta 0 이다(그때 이 도구는 잉여다). 반대로 상한이 움직였으면
+    # 양쪽 rc=0 이어도 값이 옮겨간 것이라, 그때부터 delta 가 필요하다.
+    if [ "$cap" != "$bcap" ]; then
+        note="$note ★ 상한이 움직였다($bcap → $cap) — rc 만으로는 값이 안 고정된다"
+    elif [ "$hc" = "$cap" ] && [ "$bc" = "$bcap" ]; then
+        note="$note ☆ 양끝이 상한에 붙어 있고 상한이 그대로다 — 이 게이트는 rc 로 충분했다"
+    fi
     printf '%-34s %8s %8s %+8d   %s%s\n' "$g" "$bc" "$hc" "$d" "$cap" "$note"
 done
 
 echo
 echo "base $BASE_SHA · HEAD $HEAD_SHA · dirty $(git status --porcelain | wc -l | tr -d ' ')"
-echo "보고 형식: rc + 값 + delta + 어느 상태에서 뽑았는지(tip · dirty)."
+echo "계기: **재측정(확정)** — 양쪽 트리에서 게이트를 그대로 다시 돌려 뺐다."
+echo "      (diff 를 grep 해서 낸 delta 는 확정이 아니라 **하한**이다 — 이 도구의 값과 섞어 적지 마라.)"
+echo "보고 형식: rc + 값 + delta(계기) + 어느 상태에서 뽑았는지(tip · dirty) + 게이트별 tip."
 exit "$status"
