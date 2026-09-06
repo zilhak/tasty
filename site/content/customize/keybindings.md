@@ -37,18 +37,18 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 
 카테고리 단축키는 **설정** > **일반** > **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> 를 켰을 때만 동작합니다.
 
-### 패인 · 탭 · 서피스
+### 페인 · 탭 · 서피스
 
 | 하는 일 | Windows · Linux | macOS |
 |---------|-----------------|-------|
-| 패인 분할 (좌우 / 상하) | `Alt+E` / `Alt+Shift+E` | `Cmd+E` / `Cmd+Shift+E` |
-| 다음 · 이전 패인 | `Ctrl+]` · `Ctrl+[` | `Ctrl+]` · `Ctrl+[` |
-| 패인 닫기 | `Ctrl+Shift+W` | `Ctrl+Shift+W` |
+| 페인 분할 (좌우 / 상하) | `Alt+E` / `Alt+Shift+E` | `Cmd+E` / `Cmd+Shift+E` |
+| 다음 · 이전 페인 | `Ctrl+]` · `Ctrl+[` | `Ctrl+]` · `Ctrl+[` |
+| 페인 닫기 | `Ctrl+Shift+W` | `Ctrl+Shift+W` |
 | 새 탭 | `Alt+T` | `Cmd+T` |
 | n 번 탭으로 | `Ctrl+1` ~ `Ctrl+0` | `Ctrl+1` ~ `Ctrl+0` |
 | 다음 · 이전 탭 | `Ctrl+L` · `Ctrl+H` | `Ctrl+L` · `Ctrl+H` |
 | 탭 이름 변경 | `F2` | `F2` |
-| 활성 항목 닫기 (탭 → 패인 → 워크스페이스 순) | `Ctrl+W` | `Ctrl+W` |
+| 활성 항목 닫기 (탭 → 페인 → 워크스페이스 순) | `Ctrl+W` | `Ctrl+W` |
 | 닫은 항목 복원 | `Ctrl+Shift+T` | `Ctrl+Shift+T` |
 | 서피스 분할 (좌우 / 상하) | `Alt+D` / `Alt+Shift+D` | `Cmd+D` / `Cmd+Shift+D` |
 | 다음 · 이전 서피스 | `Alt+]` · `Alt+[` | `Cmd+]` · `Cmd+[` |
@@ -93,7 +93,7 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 - **종료** <!-- en: Quit --> · **즉시 종료** <!-- en: Immediate quit --> · **백그라운드로 최소화** <!-- en: Minimize to background --> (Mac 프리셋은 `Cmd+Q` · `Cmd+M`, Linux 프리셋은 `Ctrl+Q` 가 들어 있습니다)
 - **다음 탭** · **이전 탭** 의 자유 조합 (`Ctrl+Tab` 이 OS 와 겹쳐 비워 둠 — 번호 전환의 `Ctrl+L` · `Ctrl+H` 는 동작합니다)
 - **마크다운 열기** · **탐색기 열기** · **마크다운으로 전환** · **탐색기로 전환**
-- **워크스페이스 · 탭 · 패인 프리셋 적용**, **카테고리 전체 접기/펴기**
+- **워크스페이스 · 탭 · 페인 프리셋 적용**, **카테고리 전체 접기/펴기**
 - **윈도우 최소화** · **윈도우 최대화/확대** · **윈도우 닫기**
 - Git 뷰어 열기 (플러그인)
 
@@ -104,8 +104,8 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 | 프리셋 | 기준 | Tasty 프리셋과 다른 점 |
 |--------|------|------------------------|
 | **Tasty** (기본) | 자체 | 위 표. 복사 · 붙여넣기 · 줌은 세 OS 관례를 모두 묶어 둡니다 |
-| **Mac** | iTerm2 · Terminal.app | `Cmd` 중심. 설정 `Cmd+,` · 알림 `Cmd+Shift+I` · 사이드바 `Cmd+Shift+B` / `Cmd+B` · 명령 팔레트 `Cmd+Shift+P` · 복사/붙여넣기 `Cmd+C` / `Cmd+V` 만 · 종료 `Cmd+Q` · 백그라운드 `Cmd+M`. **활성 항목 닫기** 와 **워크스페이스 닫기** 는 비어 있고 패인 닫기는 `Cmd+Shift+W` |
-| **Windows** | Windows Terminal | 패인 분할 `Alt+Shift+E` / `Alt+Shift+D`, 서피스 분할 `Alt+D` / `Alt+E` · 새 창 `Ctrl+Shift+N` · 복사/붙여넣기 `Ctrl+C` / `Ctrl+V` 만 |
+| **Mac** | iTerm2 · Terminal.app | `Cmd` 중심. 설정 `Cmd+,` · 알림 `Cmd+Shift+I` · 사이드바 `Cmd+Shift+B` / `Cmd+B` · 명령 팔레트 `Cmd+Shift+P` · 복사/붙여넣기 `Cmd+C` / `Cmd+V` 만 · 종료 `Cmd+Q` · 백그라운드 `Cmd+M`. **활성 항목 닫기** 와 **워크스페이스 닫기** 는 비어 있고 페인 닫기는 `Cmd+Shift+W` |
+| **Windows** | Windows Terminal | 페인 분할 `Alt+Shift+E` / `Alt+Shift+D`, 서피스 분할 `Alt+D` / `Alt+E` · 새 창 `Ctrl+Shift+N` · 복사/붙여넣기 `Ctrl+C` / `Ctrl+V` 만 |
 | **Linux** | GNOME Terminal | Windows 프리셋과 같되 복사/붙여넣기/잘라내기 `Ctrl+Shift+C` / `Ctrl+Shift+V` / `Ctrl+Shift+X` · 종료 `Ctrl+Q` |
 
 적용 절차:
@@ -167,6 +167,6 @@ tab_switch_prev_key = "h"
 ## 다음 읽을 것
 
 - [설정](settings.md) — 설정 창 구조와 `config.toml`.
-- [패인 · 탭 · 분할](../using/panes-tabs-splits.md) — 위 표의 분할 · 이동 동작이 실제로 무엇을 하는지.
+- [페인 · 탭 · 분할](../using/panes-tabs-splits.md) — 위 표의 분할 · 이동 동작이 실제로 무엇을 하는지.
 - [터미널 다루기](../using/terminal.md) — 복사 모드 · 검색 · 마우스 캡처.
 - [Lua 스크립트](scripts.md) — **스크립트 실행** 서브탭에 붙일 스크립트를 등록하는 법.

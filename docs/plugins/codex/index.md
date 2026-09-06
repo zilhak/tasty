@@ -16,7 +16,7 @@
 
 ## 내부 동작
 
-- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 패인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치).
+- **cli `codex`** (`tasty codex …`) — 서브커맨드: `launch` · `spawn`(자식, 페인 분할) · `children`/`parent` · `tell`(메시지 전송, 줄바꿈 보존·자동 제출) · `notify-caller`(내부용, 아래) · `broadcast` · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `hook`(stop/prompt-submit/session-start). `install`/`uninstall`(Tasty 훅을 Codex CLI 설정에 설치).
 - **ipc_namespace `codex`** — 위 동작의 IPC 표면.
 - **event_subscribe** `surface.closed` — 인스턴스 상태 정리.
 - **hook 명령은 OS 별 셸 구문으로 설치된다** — Codex 는 hook 명령을 Windows 에선 PowerShell, 그 외에선 POSIX sh 로 실행하므로, `install` 이 Windows 에는 `if ($env:TASTY_SURFACE_ID) { $input | tasty codex hook … }` 형태(PS), 그 외에는 `if [ -n "$TASTY_SURFACE_ID" ]; then tasty codex hook … --surface $TASTY_SURFACE_ID || true; fi` 형태(POSIX)를 발행한다. POSIX 쪽은 가드와 실패 처리가 분리돼 있다 — 바깥 `if` 는 tasty 밖 환경(`$TASTY_SURFACE_ID` 미설정)을 무소음 exit 0 으로 처리하고, 안쪽 `|| true` 는 hook 명령 실패만 담당한다(codex 턴을 막지 않기 위해 exit 0 유지). 실패 자체는 `<tasty_home>/hook-failures.log` 에 기록된다([ADR-0075](../../adr/0075-agent-hook-delivery-failure-record.md)). **명령 문자열이 바뀌었으므로 기존 사용자는 `tasty codex install` 재실행이 필요하다** — 재실행은 marker(`tasty codex hook`) 로 옛 entry 를 걷어내고 새 entry 를 넣으므로 중복되지 않는다. codex 는 hook command 해시가 바뀌면 trust 를 무효화하지만, tasty 는 모든 codex 인스턴스를 `--dangerously-bypass-hook-trust` 로 띄우므로 실제 발화에는 영향이 없다(`install` 응답의 trust 표시만 `needs_review` 로 바뀔 수 있다). hook 은 Codex 가 stdin 으로 주는 JSON payload 의 `session_id` 를 읽어 surface meta(`codex-session-id`, `restore.command`)에 기록한다 — `reboot` 와 세션 복원이 이 meta 를 소비한다. 설치 대상은 아래 3개뿐이다([claude](../claude/index.md)의 6개보다 적음 — Codex 에는 `Notification`/`SessionEnd` 에 대응하는 hook 이벤트가 없다):
@@ -48,7 +48,7 @@
 
 ## Acceptance Criteria
 
-- Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 패인 분할로 생성되고 CLI 는 즉시 반환된다.
+- Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 페인 분할로 생성되고 CLI 는 즉시 반환된다.
 - Given 자식 When `tasty codex tell <msg>` Then 줄바꿈 보존하며 메시지가 전송·제출되고 CLI 는 즉시 반환된다.
 - Given `spawn`/`tell` 로 등록된 완료 대기 When 대상이 idle 또는 exited 에 도달 Then caller surface 에 알림이 주입되고 형제 hook 이 정리된다. exited 가 아니었다면(=idle) 형제 hook 이 재등록돼 이후 상태 전환에도 계속 알림이 온다.
 </content>

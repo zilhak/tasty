@@ -16,7 +16,7 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
 | `themes/<id>.toml` | TOML | 테마 (id = 파일명 stem) | 사용자 / 앱 | `crates/tasty-settings/src/appearance.rs` |
 | `bashrc` / `bashrc.default` | 쉘 스크립트 | 컴파일된 빌트인 rc (tasty 모드 / default 모드) — 셸을 `--rcfile` 로 띄움 | 앱 (빌드 산출물) | `crates/tasty-settings/src/general.rs` |
 | `bashrc.user` | 쉘 스크립트 | 사용자가 직접 편집하는 fragment (빌트인 사이에 끼워짐) | 사용자 | 〃 |
-| `presets/{workspace,tab,pane}/<name>.toml` | TOML | 레이아웃 프리셋 (탭/패인/서피스 구조) | 사용자 / 앱 | `crates/tasty-presets/` |
+| `presets/{workspace,tab,pane}/<name>.toml` | TOML | 레이아웃 프리셋 (탭/페인/서피스 구조) | 사용자 / 앱 | `crates/tasty-presets/` |
 
 - **plugin 데이터는 여기 없다.** 각 plugin 은 자기 `TASTY_PLUGIN_DATA_DIR` 아래에 보관한다 (예: explorer 의 북마크 = `<data_dir>/bookmarks.json`). host `state.db` 에 plugin 데이터를 넣지 않는다.
 

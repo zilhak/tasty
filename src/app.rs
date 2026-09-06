@@ -140,7 +140,7 @@ pub(crate) struct App {
     pub(crate) shell_setup_gpu: Option<GpuState>,
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_window: Option<Arc<Window>>,
-    // Boot error mode (엔진 생성 실패인데 GPU·창은 살아있을 때). shell setup 과 같은
+    // Boot error mode (엔진 생성 실페인데 GPU·창은 살아있을 때). shell setup 과 같은
     // 구조로 실패 화면을 그린 채 유지하다 사용자가 종료를 누르면 exit(1) 한다.
     // GPU 부재·창 생성 실패는 그릴 수단이 없어 이 경로가 아니다(진단 후 즉시 exit).
     // 근거: ADR-0117 재검토 트리거.

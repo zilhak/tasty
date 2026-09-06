@@ -1,5 +1,5 @@
 //! ID → 컬렉션 entry lookup 헬퍼. surface / pane / tab / terminal / workspace 가
-//! 어느 워크스페이스/패인에 속해 있는지 찾아 (&T, &mut T) 또는 인덱스 형태로 반환.
+//! 어느 워크스페이스/페인에 속해 있는지 찾아 (&T, &mut T) 또는 인덱스 형태로 반환.
 
 use super::CoreState;
 

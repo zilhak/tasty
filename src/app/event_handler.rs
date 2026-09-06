@@ -1209,7 +1209,7 @@ impl App {
         }
     }
 
-    /// 부팅 실패 화면 진입 — 엔진 생성 실패인데 GPU·창은 살아있을 때. window/gpu
+    /// 부팅 실패 화면 진입 — 엔진 생성 실페인데 GPU·창은 살아있을 때. window/gpu
     /// 소유권을 `self` 로 넘기고 첫 프레임을 그려 창을 보인다(런처로 실행해 stderr 를
     /// 못 보는 사용자에게도 진단이 닿게). 이후는 `handle_boot_error_window_event` 가
     /// 구동한다. shell setup 진입(`enter_shell_setup_mode`)과 같은 구조다.

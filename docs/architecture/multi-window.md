@@ -26,7 +26,7 @@ View (sealed trait, : sealed::Sealed + std::any::Any)
 │   ├── QuitView       (종료 확인 모달)
 │   └── PluginsView    (plugin 매니저 모달)
 └── (그 외 — View + sealed::Sealed 직접 구현)
-    ├── MainView       (터미널 호스트 — 워크스페이스/패인/탭/서피스)
+    ├── MainView       (터미널 호스트 — 워크스페이스/페인/탭/서피스)
     └── PresetView     (프리셋 편집기, modeless)
 ```
 

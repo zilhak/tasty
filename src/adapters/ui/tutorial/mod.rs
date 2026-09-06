@@ -31,7 +31,7 @@ pub enum MarkerTarget {
     ContentArea,
     /// 탭 헤더 = focused pane 상단 `tab_bar_height` 띠.
     TabHeader,
-    /// 패인 = focused pane rect.
+    /// 페인 = focused pane rect.
     Pane,
     /// 서피스 = focused surface rect.
     Surface,
@@ -51,7 +51,7 @@ pub struct Topic {
     pub steps: &'static [Step],
 }
 
-/// 첫 주제 = "워크스페이스 · 패인 · 탭 · 서피스" 4 step. (향후 주제는 여기 추가.)
+/// 첫 주제 = "워크스페이스 · 페인 · 탭 · 서피스" 4 step. (향후 주제는 여기 추가.)
 static TOPICS: &[Topic] = &[Topic {
     title_key: "tutorial.topic_basics_title",
     desc_key: "tutorial.topic_basics_desc",

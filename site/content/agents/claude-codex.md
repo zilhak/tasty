@@ -37,7 +37,7 @@ Codex 는 `--approval untrusted|on-request|never`, `--sandbox read-only|workspac
 
 ## 3. 자식 에이전트 부리기 (spawn / tell)
 
-Claude Code 세션 안에서 다음처럼 자식을 띄웁니다. 자식은 지정한 워크스페이스의 패인에 새 탭으로 생기고, 부모-자식 관계가 기록됩니다.
+Claude Code 세션 안에서 다음처럼 자식을 띄웁니다. 자식은 지정한 워크스페이스의 페인에 새 탭으로 생기고, 부모-자식 관계가 기록됩니다.
 
 ```sh
 tasty claude spawn --workspace workers --cwd ~/proj --role tester --nickname t1 \
@@ -49,7 +49,7 @@ tasty codex spawn --workspace workers --cwd ~/proj --sandbox read-only \
 | 옵션 | 뜻 |
 |---|---|
 | `--workspace <ID 또는 이름>` | 필수. 자식이 들어갈 워크스페이스 |
-| `--pane <ID>` | 워크스페이스의 특정 패인 (기본: 첫 패인) |
+| `--pane <ID>` | 워크스페이스의 특정 페인 (기본: 첫 페인) |
 | `--cwd <경로>` | 자식의 작업 디렉토리 |
 | `--role <라벨>` | 역할 라벨. `broadcast --role` 로 골라 보낼 때 씀 |
 | `--nickname <이름>` | 탭에 표시할 이름 |

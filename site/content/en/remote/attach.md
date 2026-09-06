@@ -1,4 +1,4 @@
-<!-- source-hash: bf7f4e022bda -->
+<!-- source-hash: d46134ec316a -->
 # Remote attach
 
 Bring a Workspace from a Tasty running on another machine into your own Tasty as a **mirror**, view it, and operate it. Connection and authentication are left entirely to SSH, so if you can SSH into that machine, you can attach too.
