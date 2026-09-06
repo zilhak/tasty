@@ -1684,13 +1684,19 @@ mod tests {
         std::fs::write(src.join("tasty-plugin.toml"), "version = \"0.1.0\"").unwrap();
 
         sync_dir_by_content(&src, &dest).unwrap();
+        // ★ 옛 시각으로 찍고 나서 묻는다. 이 단정은 방향이 반대라 **거짓 빨강**은 못 만들지만
+        // **거짓 초록**은 만든다 — 다시 썼는데 두 쓰기가 같은 틱이면 값이 같아 통과한다.
+        // 그쪽이 더 위험하다: 안 보이기 때문이고, 이 시험은 위 주석대로 "이 변경의 값 자체"
+        // 라서 그 러너에서는 아무것도 안 재게 된다.
+        stamp_all_stale(&dest);
         let first = mtimes(&dest);
         sync_dir_by_content(&src, &dest).unwrap();
 
-        // ☆ 이 단정은 방향이 반대라 틱 해상도에 안 걸린다 — 아무것도 안 썼으면 참이다.
-        // 다만 **거짓 초록**은 남는다(다시 썼는데 같은 틱이면 같은 값이 나온다). 그 축은
-        // 이 수리의 물음이 아니라 별개 물음이라 여기서 안 건드린다.
         assert_eq!(first, mtimes(&dest), "두 번째 동기화가 파일을 다시 썼다");
+        assert!(
+            mtimes(&dest).iter().all(|(_, t)| *t == stale_stamp()),
+            "옛 시각이 그대로여야 한다 — 하나라도 '지금' 이면 다시 쓴 것이다"
+        );
     }
 
     #[test]
