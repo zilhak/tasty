@@ -201,3 +201,4 @@
 | 0188 | [빨강은 재실행 대조가 답하기 전까지 귀속하지 않는다](0188-a-red-is-not-attributed-until-a-rerun-control-answers.md) | Accepted | 2026-09-06 | ci, measurement, control, attribution, flaky, rerun, bias, adr-0183, adr-0139 |
 | 0189 | [목록의 원소는 조각으로 박는다 — 등급을 매긴 판단은 지키는 것이 있어야 주장이 된다](0189-a-list-element-is-pinned-by-a-literal-snippet.md) | Proposed | 2026-09-06 | guards, mutation-testing, census, positive-control, r510, r515, r537, r538, adr-0139, adr-0183 |
 | 0190 | [집행 등급은 채널 존재와 효과 둘로 갈린다 — 가드가 있다는 것이 막는다는 뜻은 아니다](0190-a-guard-that-exists-is-not-one-that-blocks.md) | Accepted | 2026-09-06 | guards, principles, enforcement, effect, mirror, polarity, blockage, vocabulary, r574, r491, r488, adr-0186, adr-0184, adr-0185, adr-0180 |
+| 0191 | [로컬에 둘 다 있는 파일은 해시하지 않고 바이트로 비교한다](0191-two-local-files-are-compared-bytewise-not-hashed.md) | Accepted | 2026-09-07 | plugin, install, performance, measurement, hashing, cold-cache, adr-0182, adr-0139 |

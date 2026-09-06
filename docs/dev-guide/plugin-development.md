@@ -300,6 +300,9 @@ tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재s
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 ```
 
+내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은
+[ADR-0191](../adr/0191-two-local-files-are-compared-bytewise-not-hashed.md).
+
 **4) 실행 중 tasty 에 대해 실동작 검증**
 ```bash
 tasty <plugin-cli> --help             # 새 서브커맨드/매니페스트 반영 확인
