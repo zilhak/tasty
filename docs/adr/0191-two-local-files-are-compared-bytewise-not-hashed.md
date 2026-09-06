@@ -23,6 +23,24 @@ mtime 을 본 적이 없다.
 ②는 처음에 잘못 답했다. "mtime 을 믿지 마라" 를 **해시하라**로 옮겨 양쪽 sha256 을 비교하는
 구현이 한 번 착지했다. 부팅 비용을 재라는 지시를 실행하다 그 커밋 자신이 회귀였음이 드러났다.
 
+### 위층 물음은 이미 답이 적혀 있다 — "왜 mtime 이 아닌가"
+
+같은 판정 축의 한 칸 위 물음을 이 저장소가 다른 자리에서 이미 닫아 뒀다.
+`crates/tasty-doc-guards/src/freshness.rs` 의 머리말 "왜 mtime 이 아닌가" 는 판정기가
+자기 신선도를 물을 때 mtime 을 쓰지 않는 이유를 적는다 — **내용이 같아도 git 이 파일을 다시
+쓰기만 하면 낡은 것으로 나오고**, 브랜치를 되잡았다가 체리픽으로 되돌리는 이 저장소의 표준
+절차가 정확히 그 왕복이라 경고가 상시 켜진다는 것이다.
+
+방향이 반대인 같은 결함이다. 그쪽은 **내용이 같은데 mtime 이 달라져** 거짓 낡음을 만들고,
+이 ADR 이 겨눈 설치 경로는 **내용이 다른데 mtime 이 같아** 거짓 최신을 만든다. 두 방향 다
+mtime 이 내용의 대리값으로 못 쓰인다는 한 사실에서 나온다.
+
+그래서 판정 축의 계보는 이렇게 읽는다:
+
+    mtime 이 아니다  (freshness.rs — 위층, 이미 결정됨)
+      → 내용이다      (이 ADR 의 설치 경로)
+        → 해시가 아니라 바이트다  (이 ADR 이 정하는 칸)
+
 ## Decision
 
 **설치 판정은 내용으로 하고, 그 내용 비교는 해시가 아니라 바이트로 한다.**
@@ -120,5 +138,7 @@ release 파일 로그가 warn 이상만 남기므로 debug 로 두면 "이번 �
   인스턴스에 번들 변경을 반영하는 절차.
 - [ADR-0139](0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md) — 위 표의 값에
   측정 조건(더운 캐시·회수·날짜)을 붙여 적는 근거.
+- `crates/tasty-doc-guards/src/freshness.rs` — "왜 mtime 이 아닌가". 같은 판정 축의 위층
+  물음이고, 반대 방향의 같은 결함(내용이 같은데 mtime 이 달라지는 쪽)을 적는다.
 - `crates/tasty-host-plugin/src/builtin.rs` — `sync_dir_by_content` ·
   `copy_file_if_content_differs` · `files_differ_bytewise`.
