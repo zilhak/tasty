@@ -230,6 +230,9 @@ TASTY_E2E_BIN=$PWD/target-e2e-headless/debug/tasty cargo test --test shared_inst
   (§2) 테스트 함수 안에서 정하면 먼저 도는 테스트가 초기화를 가져가 경합한다.
 
 실측(같은 스위트를 번들만 바꿔 잰 대조): 격리 홈 최대 **1148 MB → 4 MB**.
+★ 그 "같은 스위트" 가 **어느 스위트인지는 기록에 없고**, 바로 아래 1160 의 `e2e_tests` 와는
+**다른 스위트**다 — 두 수를 한 계열로 읽지 마라. 근거와 못 좁힌 이유는 [ADR-0182](../adr/0182-test-instances-do-not-stage-bundled-plugins-by-default.md)
+의 "격리 홈 최대라는 이름의 세 값" 이 정본이고 여기 복제하지 않는다.
 명부가 실제로 가르는지는 따로 본다 — 명부 밖 `attach_silent_disconnect` 4 MB,
 명부 안 `e2e_tests` 1160 MB. **초록만으로는 판정이 안 된다**: 명부 밖 스위트는
 지렛대가 걸리든 안 걸리든 통과하므로, 통과는 두 경우 모두와 양립한다.
