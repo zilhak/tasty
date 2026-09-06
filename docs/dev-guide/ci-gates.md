@@ -144,7 +144,8 @@
 |---|---|---|
 | CLI 명령 | 쓴다 — 양쪽 다 `tasty <명령>` | `crates/tasty-doc-guards/tests/every_cli_command_is_classified_in_the_guide.rs` |
 | 설치 절차 · **산출물 파일명** | 쓴다 — 버전 자리만 `${VERSION}` ↔ `{ver}` | `crates/tasty-doc-guards/tests/every_released_artifact_is_named_in_the_guide.rs` |
-| 설치 절차 · **절차 본문** | 안 쓴다 — 소스는 WiX 선언과 스크립트 내부 변수, 가이드는 산문 | **없다** |
+| 설치 절차 · **설치 사실**(위치 · 의존) | 쓴다 — 셋으로 갈린다(아래) | `crates/tasty-doc-guards/tests/install_facts_match_the_packaging_sources.rs` |
+| 설치 절차 · **절차 본문**(순서 · 명령) | 안 쓴다 — 원본이 배포판 관례라 저장소에 없다 | **없다** |
 | 훅 이벤트 이름 | 쓴다 — 사용자가 `--event <이름>` 으로 직접 친다 | `crates/tasty-doc-guards/tests/every_hook_event_name_is_in_the_guide.rs` |
 | 설정 키 · **절 이름** | 쓴다 — 양쪽 다 `[general]` 같은 식별자 | `crates/tasty-doc-guards/tests/settings_and_menu_names_reach_the_guide.rs` |
 | 메뉴 · **컨텍스트 메뉴 항목** | 쓴다 — 가이드가 `lang/ko.toml` 값을 글자 그대로 인용한다 | 같은 파일 |
@@ -158,6 +159,23 @@
 설정 파일 어휘로 고쳐 쓰는 것**이 된다. 그건 보호 대상을 깎는다.
 
 **설정 필드 축과 macOS 앱 메뉴 축도 재고 접었다**(실측 2026-09-06).
+
+★★ **설치 절차 축은 앞 판정을 뒤집었다**(재측정 2026-09-07). 2026-09-06 에 절차 본문을 "소스가 WiX 선언과 스크립트 내부 변수라 공통 어휘가 없다" 로 접었는데, 다시 재니 **셋으로 갈렸다** — 앞 판정은 셋째 하나를 보고 전체를 덮은 것이었다.
+
+- **어휘가 그대로 같다** — `/usr/bin/tasty`(rpm 의 `dest`) · `libvulkan1`(deb 의 `recommends`) ·
+  `vulkan-loader`(rpm 의 requires 키). 셋 다 가이드에 글자 그대로 있다.
+- **한 홉 변환으로 같다** — Windows 경로는 `wix/main.wxs` 의 `Name=` 사슬(`tasty` · `bin` ·
+  `tasty.exe`)을 이어야 나온다. 같은 파일 안에서도 형식마다 문법이 다르다: deb 는 배열형
+  `["target/release/tasty", "usr/bin/", "755"]`(목적지가 **디렉토리**)이고 rpm 은 표형
+  `dest = "/usr/bin/tasty"`(전체 경로)다. 하나만 보면 다른 하나가 바뀌어도 조용하다.
+- **소스에 없다** — glibc 하한(`GLIBC_2.39`)은 저장소 문자열 0 이고 **빌드 러너 이미지**가
+  정한다. 절차 본문(설치 순서 · `sudo apt remove tasty`)도 원본이 배포판 관례다.
+
+⇒ 이 축이 단축키 축과 갈린 지점: 설치 경로에는 **두 어휘가 없다.** `/usr/bin/tasty` 는
+하나뿐이고 어긋나면 그냥 틀린 것이라, 가장 싼 초록화가 가이드를 **참값으로** 고치는 것이다.
+단축키는 설정 어휘와 읽는 표기가 일부러 다르고, 거기서는 같은 초록화가 가이드를 기계
+어휘로 끌어내린다.
+
 
 - **설정 필드** — 코드에 *사용자가 고르는 값*과 *내부 영속 슬롯*을 가르는 표시가 없다.
   `theme_base`(테마 색 덤프) · `sidebar_width`(드래그 결과) · `macos_fda_notice_shown`
