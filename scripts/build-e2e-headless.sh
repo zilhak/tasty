@@ -68,8 +68,11 @@ if [ -z "$bin_mtime" ]; then
   echo "$BIN 의 mtime 을 못 읽었다 — 낡음 판정을 할 수 없다." >&2
   exit 1
 fi
-stale=$(find "$ROOT/src" "$ROOT/crates" -name '*.rs' -printf '%T@ %p\n' 2>/dev/null |
-  awk -v b="$bin_mtime" '$1 >= b { print $2; exit }')
+# ★ 파이프로 잇지 않는다 — 오른쪽 awk 가 첫 일치에서 `exit` 하는 **조기 종료 소비자**라,
+# 파이프면 왼쪽 `find` 가 SIGPIPE 로 죽고 `pipefail` 아래에서 **찾았는데 실패**가 된다.
+# producer 를 변수로 받아 히어스트링으로 넘긴다(비용 0).
+all_src_mtimes=$(find "$ROOT/src" "$ROOT/crates" -name '*.rs' -printf '%T@ %p\n' 2>/dev/null)
+stale=$(awk -v b="$bin_mtime" '$1 >= b { print $2; exit }' <<<"$all_src_mtimes")
 if [ -n "$stale" ]; then
   echo "빌드 직후인데 $stale 이 더 새것이다 — 빌드 중에 소스가 바뀌었다. 다시 돌려라." >&2
   exit 1
