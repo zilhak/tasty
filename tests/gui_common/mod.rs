@@ -105,6 +105,8 @@ pub struct GuiTestInstance {
     process: Child,
     port: u16,
     port_file: PathBuf,
+    /// 이 인스턴스 전용 `TASTY_HOME`. `Drop` 이 지운다.
+    isolated_home: PathBuf,
     pub enigo: Enigo,
     #[cfg(target_os = "windows")]
     hwnd: HWND,
@@ -140,14 +142,18 @@ impl GuiTestInstance {
     /// Spawn a tasty GUI instance for testing.
     /// Waits for the window to appear and focuses it.
     pub fn spawn() -> Self {
-        let port_file = std::env::temp_dir().join(format!(
-            "tasty-gui-test-{}-{}.port",
+        let unique = format!(
+            "{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        );
+        let port_file = std::env::temp_dir().join(format!("tasty-gui-test-{unique}.port"));
+
+        // 이 인스턴스 전용 tasty 루트. 형제 하네스 둘이 가진 것을 이 하나만 안 가졌다.
+        let isolated_home = std::env::temp_dir().join(format!("tasty-gui-test-home-{unique}"));
 
         // Launch tasty in GUI mode with port-file for IPC.
         // TASTY_DEBUG_SUPPRESS_NATIVE_MENU: egui 프레임이 세우는 컨텍스트 메뉴(explorer 등)를
@@ -157,6 +163,23 @@ impl GuiTestInstance {
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("TASTY_DEBUG_SUPPRESS_NATIVE_MENU", "1")
+            // ★ 전용 tasty 루트. 이것이 없으면 자식은 **사용자의 진짜 `~/.tasty-debug`** 를
+            // 쓴다 — 번들 plugin 을 거기 설치하고, 거기 저장된 레이아웃을 **복원한다.**
+            // 뒤쪽이 이 스위트의 마우스 판정을 통째로 무효로 만들고 있었다: 복원된
+            // workspace 에는 surface 가 여럿인데 rect 를 가진 것은 **활성 탭 하나**이고,
+            // `first_surface_id()` 가 집는 것은 배경 탭이다. 그러면
+            // `debug_inject_mesh_pointer` 가 `surface_rect_by_id == None` 으로 **false** 를
+            // 내고 아무 일도 안 일어난다 — 시험은 그 빈 출력을 "보고가 없다" 로 읽는다.
+            //
+            // 실측(같은 Xvfb·같은 커밋, `TASTY_HOME` 하나만 바꿈):
+            //     실제 홈  active_ws surface 26 · injected false · 보고 ""
+            //     격리 홈  active_ws surface  1 · injected true  · 보고 `\e[<35;48;23M…`
+            //
+            // ☆ `HOME` 은 **일부러 격리하지 않는다.** 형제 `tests/common` 은 그것까지
+            // 하지만 거기엔 짝이 되는 격리 config 작성이 함께 있다(shell auto-detect 를
+            // 막아 port file 이 반드시 써지게 한다). 그 짝 없이 `HOME` 만 옮기면 shell
+            // setup 모드로 빠질 수 있고, 그 조합은 여기서 **재지 않았다.** 재고 나서 옮긴다.
+            .env("TASTY_HOME", &isolated_home)
             // **부모 세션의 `TASTY_*` 를 끊는다.** 이 값들이 들어오면 자식은 자기가
             // 다른 tasty 안에서 도는 CLI 라고 판단해 **GUI 를 안 띄우고 help 를 찍고
             // 종료한다**(실측: 지우면 같은 바이너리가 port file 을 쓴다). 형제 하네스
@@ -248,6 +271,7 @@ impl GuiTestInstance {
             process,
             port,
             port_file,
+            isolated_home,
             enigo,
             #[cfg(target_os = "windows")]
             hwnd,
@@ -670,6 +694,10 @@ impl Drop for GuiTestInstance {
         }
         let _ = self.process.wait();
         let _ = std::fs::remove_file(&self.port_file);
+        // reason: 정리 실패가 시험 판정을 바꾸지 않는다 — 이미 끝난 인스턴스의 임시
+        // 디렉터리이고, 지우다 실패해도 `/tmp` 에 남을 뿐이라 다음 회차는 자기 `unique`
+        // 로 새 경로를 쓴다. 여기서 패닉하면 진짜 실패 원인을 정리 오류가 덮는다.
+        let _ = std::fs::remove_dir_all(&self.isolated_home);
     }
 }
 
