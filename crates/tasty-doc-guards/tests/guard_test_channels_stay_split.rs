@@ -43,6 +43,10 @@ const WORKFLOW_FLOOR: Floor = Floor {
 /// 그 파일들에서 뽑아낸 **자동 잡의 수**다. 파일은 다 읽혔는데 잡 헤더 판독이 깨지면
 /// 저쪽은 통과하고 여기가 잡는다(그 판독은 2 칸 들여쓰기 관례에 매달려 있다 —
 /// `automatic_job_bodies` 의 doc 참조). 두 하한이 같은 8 인 것은 우연이다.
+///
+/// ☆ **이 하한도 읽기의 죽음까지는 못 막는다.** 파일이 **전부** 안 읽히면 잡이 0 이라
+/// 여기서 걸리지만, 열한 중 셋만 못 읽히면 잡 수가 8 위에 남아 그대로 통과한다 —
+/// 그 부분적 실명을 막는 것은 하한이 아니라 `automatic_jobs` 의 읽기 실패 패닉이다.
 const JOB_FLOOR: Floor = Floor {
     min: 8,
     measured: 20,
@@ -72,9 +76,17 @@ fn automatic_jobs() -> Vec<(String, String)> {
 
     let mut out = Vec::new();
     for w in walked {
-        let Ok(text) = std::fs::read_to_string(&w.path) else {
-            continue;
-        };
+        // ★ **읽기 실패를 넘기지 않는다.** 하한은 **순회**의 죽음을 막지 **읽기**의 죽음을
+        // 안 막는다 — `continue` 로 넘기면 파일 셋이 안 읽혀도 순회 하한은 그대로 통과하고
+        // 본문만 빈다. 그러면 아래 단정들은 "그 잡이 없다" 가 아니라 "그 잡을 안 봤다" 를
+        // 근거로 판정한다. 여기 오는 경로는 순회가 방금 찾아낸 것이라 못 읽는 것은 평범한
+        // 조건이 아니다.
+        let text = std::fs::read_to_string(&w.path).unwrap_or_else(|e| {
+            panic!(
+                "워크플로 {} 를 못 읽었다: {e}\n                 순회 하한은 통과했는데 본문이 비면 아래 단정은 미측정을 통과로 센다.",
+                w.rel
+            )
+        });
         for body in automatic_job_bodies(&text) {
             out.push((w.rel.clone(), body));
         }
