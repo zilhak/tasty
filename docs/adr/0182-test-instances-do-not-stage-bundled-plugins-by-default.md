@@ -30,8 +30,8 @@ doc comment 의 언급은 사용이 아니다.
 공유한다.
 
 **제품 코드는 건드리지 않는다.** `bundle_root()` 가 그 환경변수를 최우선으로 보는
-기존 동작을 쓸 뿐이고, 설치 경로(`copy_if_newer`)에는 서명·업그레이드 판정이 얹혀 있어
-테스트 사정으로 바꿀 자리가 아니다.
+기존 동작을 쓸 뿐이고, 설치 경로(`install_builtins_if_needed` → `overwrite_builtin_dir`)에는
+서명·업그레이드 판정이 얹혀 있어 테스트 사정으로 바꿀 자리가 아니다.
 
 ## Consequences
 
