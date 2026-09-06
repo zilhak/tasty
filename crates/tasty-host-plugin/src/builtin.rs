@@ -584,9 +584,18 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
 
 /// `install_builtins_if_needed` Step 1 — 번들에서 복사/갱신.
 ///
-/// builtin은 호스트 소유 리소스이므로(사용자가 직접 편집하는 용도가 아님) 버전/mtime
-/// 비교 없이 번들본으로 **항상 무조건 덮어쓴다** — dev(`just run`)·배포(dmg) 모두 동일
-/// 정책이라, 새 빌드/설치를 띄우면 plugin 버전 bump 여부와 무관하게 최신 번들이 반영된다.
+/// builtin 은 호스트 소유 리소스다(사용자가 직접 편집하는 용도가 아니다). 그래서 부팅마다
+/// 번들 쪽으로 맞추되, **무엇을 쓸지는 판정한다** — dest 가 없으면 통째로 복사하고, 있으면
+/// [`install_builtin_overwrite_present`] 가 버전으로 갈래를 고른 뒤 같은 버전 갈래에서는
+/// **내용**으로 파일 단위 판정을 한다([`sync_dir_by_content`]). mtime 은 어느 갈래에도 없다.
+/// dev(`just run`)·배포(dmg) 모두 같은 경로다.
+///
+/// **버전 bump 없이 내용만 고친 plugin 도 반영된다** — 같은 버전 갈래가 내용을 보기 때문이다.
+/// 반영 안 되는 경우가 하나 남는다: **설치본이 번들보다 높은 버전일 때는 건너뛴다.** 예전에는
+/// 이 자리에 force 가 박혀 있어 그 경우까지 덮어썼는데, force 를 걷어내며 원래의 판정
+/// (`installed >= bundle` → Skip)이 살아났다. 낡은 브랜치의 빌드를 띄우면 홈에 남은 더 높은
+/// 버전이 유지된다는 뜻이고, 그때 되돌리는 수단은 `tasty plugin upgrade-builtins --force` 다.
+///
 /// 단 사용자가 명시 제거한 builtin(`is_builtin_removed`)은 복원하지 않는다.
 ///
 /// 반환값: `true` 면 항목별 실패(warn 후 계속) — caller 는 Step 2 를 건너뛰고 다음 spec.
