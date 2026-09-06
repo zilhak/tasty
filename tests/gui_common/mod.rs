@@ -443,6 +443,9 @@ impl GuiTestInstance {
         let result = self.call("ui.state", serde_json::json!({}));
         UiState {
             settings_open: result["settings_open"].as_bool().unwrap_or(false),
+            keyboard_shortcuts_gated: result["keyboard_shortcuts_gated"]
+                .as_bool()
+                .unwrap_or(false),
             notification_panel_open: result["notification_panel_open"].as_bool().unwrap_or(false),
             workspace_count: result["workspace_count"].as_u64().unwrap_or(0) as usize,
             active_workspace: result["active_workspace"].as_u64().unwrap_or(0) as usize,
@@ -836,6 +839,13 @@ impl Drop for GuiTestInstance {
 #[derive(Debug, Clone)]
 pub struct UiState {
     pub settings_open: bool,
+    /// 단축키 경로가 **막혀 있는가**. `handle_keyboard_input` 은 오버레이가 열려 있으면
+    /// 단축키를 아예 안 소비하는데, 그 게이트를 여는 조건이 넷이고 `settings_open` 은
+    /// 그중 하나다. 이 필드가 없으면 실패 메시지가 "안 먹었다" 까지만 말하고 **왜인지를
+    /// 못 말한다** — 도착 카나리아가 죽은 회차가 그 자리였다.
+    #[allow(dead_code)]
+    // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
+    pub keyboard_shortcuts_gated: bool,
     pub notification_panel_open: bool,
     pub workspace_count: usize,
     pub active_workspace: usize,

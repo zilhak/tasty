@@ -35,10 +35,21 @@ pub(super) fn handle_ui_state(
     let notification_panel_open = state.popups.is_open("notifications");
     #[cfg(not(feature = "gui"))]
     let notification_panel_open = false;
+    // 단축키가 **소비되는지 자체**를 노출한다. `handle_keyboard_input` 은 오버레이가 열려
+    // 있으면 단축키 경로에 아예 안 들어가는데(`view/main/keyboard.rs`), 그 게이트를 여는
+    // 네 조건 중 `settings_open` 하나만 여기 보였다. 나머지 셋(입력 dialog · 포커스된 host
+    // popup · plugin popup)이 걸려 있으면 시험은 "단축키가 안 먹는다" 만 보고 **왜인지는
+    // 못 본다** — 실측으로 그 자리에 걸렸다: 공유 인스턴스가 오염된 회차에서 도착 카나리아가
+    // 죽었는데 실패 메시지가 원인을 못 담았다.
+    //
+    // 판정을 여기서 다시 쓰지 않고 소비처와 **같은 함수**를 부른다. 사본을 두면 게이트가
+    // 바뀔 때 둘이 어긋나고, 어긋난 쪽은 조용하다.
+    let keyboard_shortcuts_gated = state.keyboard_overlay_open();
     JsonRpcResponse::success(
         id,
         json!({
             "settings_open": state.settings_open,
+            "keyboard_shortcuts_gated": keyboard_shortcuts_gated,
             "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace,
             "workspace_count": engine.workspaces.len(),
