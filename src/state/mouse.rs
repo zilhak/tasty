@@ -222,3 +222,73 @@ impl AppState {
         updated
     }
 }
+
+/// 클릭 축 트래킹의 **순수 결정 로직** — 터미널이 켜 둔 트래킹을 마우스 핸들러가
+/// 실제로 존중할지 정한다. hard 점유(readonly)이거나 마우스 캡처 블랙리스트에 걸리면
+/// 실제 모드와 무관하게 `None` 으로 격하한다. 그래야 `left_click_local_select` 가 항상
+/// 로컬 선택으로 떨어진다.
+///
+/// **왜 gui 게이트 밖에 있나.** 소비자가 둘이다 — `view::main::mouse`(실제 라우팅)와
+/// `surface.mouse_tracking` IPC(관측면). 관측면이 이 격하를 못 보면 "터미널이 켰다" 를
+/// "핸들러가 존중한다" 로 읽게 되고, 그 둘은 블랙리스트가 빈 기계에서만 우연히 같다.
+/// 복제하지 않고 함수를 게이트 밖으로 올린 것은 `cell_palette` 와 같은 처방이다
+/// (`docs/dev-guide/debug-ipc.md` — 렌더러와 **같은 함수**를 부르는 것이 정의라 복제는 답이 아니다).
+pub fn effective_click_tracking_decision(
+    is_hard_occupied: bool,
+    capture_disabled: bool,
+    actual: tasty_terminal::MouseTrackingMode,
+) -> tasty_terminal::MouseTrackingMode {
+    if is_hard_occupied || capture_disabled {
+        tasty_terminal::MouseTrackingMode::None
+    } else {
+        actual
+    }
+}
+
+#[cfg(test)]
+mod effective_click_tracking_tests {
+    //! 격하 판정의 대조. **함수와 같은 자리에 둔다** — 함수는 gui 게이트 밖으로 올렸는데
+    //! 시험만 `view::main::mouse`(gui) 에 남기면 헤드리스 조합의 모수가 이 대조를 안 담아,
+    //! 그 조합에서는 무대조인 채로 초록이 된다.
+    use super::effective_click_tracking_decision;
+    use tasty_terminal::MouseTrackingMode;
+
+    #[test]
+    fn hard_occupied_forces_tracking_none_even_if_actually_on() {
+        // hard 점유(readonly): live 트래킹이 켜져 있어도(AllMotion 등) 항상 None 으로
+        // 격하해 로컬 선택으로 떨어져야 한다 — 조용한 무동작(앱 보고 스킵)을 방지.
+        assert_eq!(
+            effective_click_tracking_decision(true, false, MouseTrackingMode::AllMotion),
+            MouseTrackingMode::None
+        );
+        assert_eq!(
+            effective_click_tracking_decision(true, false, MouseTrackingMode::CellMotion),
+            MouseTrackingMode::None
+        );
+    }
+
+    #[test]
+    fn hard_occupied_and_capture_disabled_both_force_none() {
+        // 두 조건은 or — 어느 한쪽만 참이어도 None.
+        assert_eq!(
+            effective_click_tracking_decision(true, true, MouseTrackingMode::Click),
+            MouseTrackingMode::None
+        );
+        assert_eq!(
+            effective_click_tracking_decision(false, true, MouseTrackingMode::Click),
+            MouseTrackingMode::None
+        );
+    }
+
+    #[test]
+    fn not_occupied_and_not_disabled_keeps_actual_tracking() {
+        assert_eq!(
+            effective_click_tracking_decision(false, false, MouseTrackingMode::CellMotion),
+            MouseTrackingMode::CellMotion
+        );
+        assert_eq!(
+            effective_click_tracking_decision(false, false, MouseTrackingMode::None),
+            MouseTrackingMode::None
+        );
+    }
+}

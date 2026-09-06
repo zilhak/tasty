@@ -128,13 +128,40 @@ fn plugin_poll_method_outside_own_namespace_is_dropped() {
     assert!(reg.get(&CompletionStrategyId::new("acme/evil")).is_none());
 }
 
+/// 소유 표는 **부팅 때 1 회 설치**된다(운영에서는 `PluginManager` 가 넘긴다). 이
+/// 테스트 바이너리에는 그 매니저가 없으므로 여기서 자기 표를 설치하고 그 핸들로
+/// 내용을 넣는다 — 예전의 `register_plugin_prefix` 같은 전역 변형자를 안 쓴다.
+fn installed_test_table()
+-> &'static std::sync::Arc<std::sync::RwLock<tasty_ipc::ipc_namespace::IpcNamespaceRegistry>> {
+    static TABLE: std::sync::OnceLock<
+        std::sync::Arc<std::sync::RwLock<tasty_ipc::ipc_namespace::IpcNamespaceRegistry>>,
+    > = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let table = std::sync::Arc::new(std::sync::RwLock::new(
+            tasty_ipc::ipc_namespace::IpcNamespaceRegistry::new(),
+        ));
+        assert!(
+            tasty_ipc::method_meta::install_namespace_table(std::sync::Arc::clone(&table)),
+            "다른 곳이 먼저 표를 설치했다 — 그러면 이 테스트가 넣는 prefix 는 해소에 안 쓰인다"
+        );
+        table
+    })
+}
+
 #[test]
 fn host_poll_method_inside_registered_plugin_prefix_is_dropped() {
-    tasty_ipc::method_meta::register_plugin_prefix("cstest_acme");
+    installed_test_table()
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .register("com.test.cstest", "cstest_acme")
+        .expect("test prefix must be free");
     let reg = CompletionStrategyRegistry::new();
     reg.install_host_defaults(&poll_toml("h1", 100, "cstest_acme.wait", ""));
     assert!(reg.get(&CompletionStrategyId::new("host/h1")).is_none());
-    tasty_ipc::method_meta::unregister_plugin_prefix("cstest_acme");
+    installed_test_table()
+        .write()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .unregister_plugin("com.test.cstest");
 }
 
 #[test]

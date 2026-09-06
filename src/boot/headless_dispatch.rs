@@ -315,7 +315,7 @@ fn forward_to_plugin_namespace(
     let owns = app
         .plugin_manager
         .as_ref()
-        .is_some_and(|mgr| mgr.namespace_owner(&cmd.request.method).is_some());
+        .is_some_and(|mgr| mgr.owns_namespace(&cmd.request.method));
     if !owns {
         return false;
     }

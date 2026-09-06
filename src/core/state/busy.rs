@@ -380,14 +380,23 @@ mod tests {
 
     /// surface 가 닫혀 더 이상 foreground 가 resolve 되지 않으면 generation 엔트리도
     /// `foreground_names` 와 동일하게 정리된다(stale 잔류 방지).
+    ///
+    /// ★ **살아 있는 surface 8 을 함께 둔다.** `new_names` 가 비면 프로덕션의
+    /// `retain(|sid, _| new_names.contains_key(sid))` 는 그 입력에서 `clear()` 와
+    /// 글자 그대로 같은 함수가 되고, 그러면 "안 보이는 것만 솎는다" 와 "전부 지운다" 가
+    /// 구별되는 관측을 하나도 안 만든다 — 변이를 돌려볼 것도 없이 두 구현이 이미 같다.
+    /// 8 이 살아남는다는 단정이 그 둘을 가른다(덤으로 bump 갈래도 함께 잡힌다).
     #[test]
     fn foreground_generation_prunes_entries_for_surfaces_no_longer_resolved() {
         let mut gens = std::collections::HashMap::new();
+        gens.insert(8u32, 0u64);
         gens.insert(9u32, 3u64);
         let old = std::collections::HashMap::new();
-        let new = std::collections::HashMap::new(); // surface 9 더 이상 관측 안 됨.
+        // surface 8 은 계속 관측되고, 9 는 더 이상 안 보인다.
+        let new = std::collections::HashMap::from([(8u32, "sh".to_string())]);
         super::bump_foreground_generations(&mut gens, &old, &new);
         assert!(!gens.contains_key(&9));
+        assert_eq!(gens.get(&8), Some(&1));
     }
 
     /// `foreground_generation` 접근자는 캐시를 그대로 읽고, 관측 전 surface 는 0.

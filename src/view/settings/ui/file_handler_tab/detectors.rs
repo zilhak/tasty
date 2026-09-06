@@ -34,7 +34,7 @@ pub(super) fn draw_detectors(
         egui::Grid::new("file_handler_detectors_grid")
             .num_columns(5)
             .striped(true)
-            .spacing(egui::vec2(12.0, 4.0))
+            .spacing(egui::vec2(th.spacing_md.value(), th.spacing_xs.value()))
             .show(ui, |ui| {
                 ui.strong(t("settings.file_handler.detectors.col_status"));
                 ui.strong(t("settings.file_handler.detectors.col_id"));
@@ -119,12 +119,12 @@ fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
         return;
     }
     egui::Frame::new()
-        .inner_margin(egui::vec2(8.0, 4.0))
+        .inner_margin(egui::vec2(th.spacing_sm.value(), th.spacing_xs.value()))
         .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
         .show(ui, |ui| {
             egui::Grid::new("file_handler_detectors_add_grid")
                 .num_columns(2)
-                .spacing(egui::vec2(8.0, 4.0))
+                .spacing(egui::vec2(th.spacing_sm.value(), th.spacing_xs.value()))
                 .show(ui, |ui| {
                     ui.label(t("settings.file_handler.detectors.field_id"));
                     ui.add(

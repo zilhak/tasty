@@ -14,7 +14,9 @@ use serde_json::json;
 
 use crate::app::App;
 use crate::ipc as host_ipc;
-use crate::ipc::handler::{hooks, output, pane, pty, surface, workspace, workspace_category};
+use crate::ipc::handler::{
+    hooks, image, output, pane, pty, surface, workspace, workspace_category,
+};
 use crate::ipc::protocol::JsonRpcResponse;
 
 impl App {
@@ -52,6 +54,21 @@ impl App {
             "output.observe_list" => Some(self.collect_field(id, "observers", |c, s, e, id| {
                 output::handle_observe_list(c, s, e, id)
             })),
+            // `image.list` 도 `engine.workspaces` 를 순회한다 — 창 소유인데 여기 없었다.
+            //
+            // **이 자리에 요청이 어떻게 닿는지가 다른 list 와 다르다.** `image` 는
+            // 번들 plugin 이 점유한 namespace 라 외부 호출은 step 5 의 namespace
+            // forward 에서 plugin 으로 넘어가고, 그 forward 는 이 합산보다 **먼저**
+            // 돈다. plugin 은 `image.list` 를 자기가 답하지 않고 trampoline 으로
+            // host 에 되돌린다(`host.call`) — 그 되돌림은 `dispatch_with_caller` 로
+            // 들어오고 거기서는 forward 단계가 없어 이 합산을 지난다. 즉 host 가
+            // 합산해야 plugin 을 거쳐 온 답도 전 창을 본다.
+            //
+            // id 가 창을 건너 유일하다: 항목의 키는 `surface_id` 이고 surface id 는
+            // `IdGenerator` 공유다(`surface.list` 가 합산인 근거와 같다).
+            "image.list" => {
+                Some(self.collect_field(id, "entries", |_c, s, e, id| image::handle_list(s, e, id)))
+            }
             "workspace_category.list" => Some(self.collect_categories(id)),
             // 두 hook 표면은 **id 공간이 공유로 바뀐 뒤에야** 합산이 뜻을 갖는다. 그 전에는
             // 두 창의 훅이 똑같이 id 1 을 받아, 합친 목록에 같은 id 가 둘 실려 호출자가

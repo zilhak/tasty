@@ -1,9 +1,27 @@
 //! Quit 모달 — close_behavior=="ask" 경로의 확인 다이얼로그.
 
+use tasty_type_geometry::length::LogicalPx;
 use winit::event_loop::ActiveEventLoop;
 
 use crate::AppEvent;
 use crate::app::App;
+
+/// 종료 확인 창의 크기.
+///
+/// 이름을 주는 이유는 **갤러리 specimen 이 같은 수를 되풀이하기 때문**이다
+/// (`catalog/components/quit_modal.rs` 의 `WINDOW_W`/`WINDOW_H` 가 "본체
+/// `open_quit_modal` 의 창 크기" 라고 적는다). 인자 자리에 박힌 리터럴은 그 사본이
+/// 가리킬 좌표가 없어서, 갈라져도 양쪽 어디에도 신호가 안 남는다. 이름이 생기면
+/// `source_guards::gallery_copied_dimensions` 가 그 쌍을 잡는다.
+///
+/// **토큰으로 못 바꾼다.** 이건 UI 안의 간격·크기가 아니라 **OS 창의 바깥 크기**다.
+/// 테마 값에 묶으면 테마를 바꿀 때 창이 따라 커지는데 그건 이 자리가 뜻하는 바가 아니다
+/// (`size-*` 스케일에 400·200 이 있는 것은 우연이다). `on_scale_length_literal` 의
+/// `src/` 몫이 이 둘만큼 오른 것은 **새 위반이 생겨서가 아니라** 종전에
+/// `LogicalSize::new(400, 200)` 이라는 세지 않는 형태로 숨어 있던 값 둘이 이름을 얻어
+/// 보이게 됐기 때문이다.
+const WINDOW_W: LogicalPx = LogicalPx(400.0);
+const WINDOW_H: LogicalPx = LogicalPx(200.0);
 
 impl App {
     pub(crate) fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
@@ -83,7 +101,10 @@ impl App {
 
         let mut attrs = WindowAttributes::default()
             .with_title("Tasty")
-            .with_inner_size(winit::dpi::LogicalSize::new(400, 200))
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                WINDOW_W.value(),
+                WINDOW_H.value(),
+            ))
             .with_resizable(false)
             .with_visible(false);
         if let Some(icon) = crate::app_icon::winit_window_icon() {
