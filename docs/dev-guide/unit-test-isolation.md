@@ -295,6 +295,19 @@ grep -c 'socketpair(AF_UNIX' /tmp/sp.txt
 돌리고, 부분의 합이 총수와 맞는지로 분할이 샜는지 확인한다. 스택이 꼭 필요하면 libunwind 를
 붙인 `strace -k` 빌드나 gdb `catch syscall` + backtrace 가 대안이다.
 
+분할의 모양은 이렇다 — 필터 하나가 부분집합 하나이고, 부분마다 위 명령을 그대로 돌린다.
+
+```bash
+BIN=<위 --no-run 이 찍은 경로>
+"$BIN" --list | sed -n 's/: test$//p' | cut -d: -f1 | sort -u   # 모듈 접두 목록
+# 접두마다:
+strace -f -e trace=socketpair -o /tmp/sp-<접두>.txt "$BIN" <접두>
+grep -c 'socketpair(AF_UNIX' /tmp/sp-<접두>.txt
+```
+
+**합이 총수와 다르면 분할이 샌 것이다** — 접두가 겹치거나(같은 시험을 두 번 셌다) 어느 접두에도
+안 걸린 시험이 있다. 그때는 귀속을 읽지 말고 분할부터 고친다.
+
 #### 안 쟀다 — **동시에** 살아 있는 fd 의 곡선
 
 위 총수와 **다른 물음**이다(저쪽은 "몇 번", 이쪽은 "몇 겹"). 병렬도를 올릴 때 동시 생존 fd 가
