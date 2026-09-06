@@ -638,25 +638,34 @@ fn install_builtin_fresh_copy(spec: &BuiltinSpec, src: &Path, dest: &Path) -> bo
     false
 }
 
-/// already-present builtin 을 번들 대비 갱신 (install 경로는 항상 force=true → 무조건 덮어씀).
+/// already-present builtin 을 번들 대비 갱신.
+///
+/// **force 를 넘기지 않는다.** 예전에는 여기서 `true` 를 박아 판정이 항상 `ForceOverwrite` 로
+/// 떨어졌고, 그래서 같은 번들로 재부팅해도 번들 전량(debug 45 파일 ≈ 1.1 GB)을 다시 썼다. 그때
+/// 쓰기를 정당화한 것은 "mtime 이 거짓일 수 있다" 였는데, 지금은 같은 버전 갈래가 mtime 이 아니라
+/// **내용**으로 판정하므로([`sync_dir_by_content`]) 그 보험이 필요 없다.
+///
 /// 반환값: `true` 면 실패(warn 후 계속) — caller 는 Step 2 skip.
 fn install_builtin_overwrite_present(spec: &BuiltinSpec, src: &Path, dest: &Path) -> bool {
     let installed_v = read_installed_version(dest);
     let bundle_v = read_bundle_version(src);
-    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), true) {
+    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), false) {
         BuiltinUpgradeDecision::Skip => {
             log_builtin_up_to_date(spec.id, installed_v.as_ref(), bundle_v.as_ref());
             false
         }
-        BuiltinUpgradeDecision::ResyncSameVersion => {
-            run_dir_sync_step(|| sync_dir_recursive_if_newer(src, dest), spec.id, "resync")
-        }
+        BuiltinUpgradeDecision::ResyncSameVersion => run_dir_sync_step(
+            || sync_dir_by_content(src, dest).map(|_| ()),
+            spec.id,
+            "resync",
+        ),
         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
             tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
             run_dir_sync_step(|| overwrite_builtin_dir(src, dest), spec.id, "upgrade")
         }
         BuiltinUpgradeDecision::ForceOverwrite => {
-            // TASTY_FORCE_BUILTIN_OVERWRITE 경로 — 버전/mtime 무시하고 덮어쓴다.
+            // `tasty plugin upgrade-builtins --force` 만 여기 온다 — 버전·내용 무시하고
+            // 통째로 덮어쓴다. 부팅 경로는 force 를 안 넘기므로 이 팔에 오지 않는다.
             log_builtin_force_overwrite(spec.id, installed_v.as_ref(), bundle_v.as_ref());
             run_dir_sync_step(
                 || overwrite_builtin_dir(src, dest),
@@ -1074,27 +1083,36 @@ fn apply_builtin_upgrade_decision(
             changed: false,
         },
         BuiltinUpgradeDecision::ResyncSameVersion => {
-            if let Err(e) = sync_dir_recursive_if_newer(src, dest) {
-                return SpecUpgrade {
-                    item: BuiltinUpgradeItem {
-                        id: spec.id.into(),
-                        action: BuiltinUpgradeAction::Failed {
-                            reason: e.to_string(),
+            let wrote = match sync_dir_by_content(src, dest) {
+                Ok(w) => w,
+                Err(e) => {
+                    return SpecUpgrade {
+                        item: BuiltinUpgradeItem {
+                            id: spec.id.into(),
+                            action: BuiltinUpgradeAction::Failed {
+                                reason: e.to_string(),
+                            },
                         },
-                    },
-                    changed: false,
-                };
-            }
+                        changed: false,
+                    };
+                }
+            };
             SpecUpgrade {
                 item: BuiltinUpgradeItem {
                     id: spec.id.into(),
                     action: BuiltinUpgradeAction::Skipped {
                         installed_version: installed_v.map(|v| v.to_string()),
                         bundle_version: bundle_v.map(|v| v.to_string()),
-                        reason: "same-version (mtime resync)".into(),
+                        reason: if wrote {
+                            "same-version (content resync: files rewritten)".into()
+                        } else {
+                            "same-version (content resync: nothing to write)".into()
+                        },
                     },
                 },
-                changed: false,
+                // 버전은 그대로여도 **파일이 바뀌었으면 바뀐 것**이다. 이 값이 false 로 고정돼
+                // 있으면 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
+                changed: wrote,
             }
         }
         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
@@ -1295,29 +1313,70 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// `copy_dir_recursive`의 idempotent 버전. `src`의 각 파일이 `dst`보다 더 새것일
 /// 때만 복사한다. 사용자 디렉터리에 이미 설치된 builtin을 번들 최신본으로 갱신할
 /// 때 사용 — 동일한 manifest는 건너뛰고, 매니페스트/바이너리 변경분만 반영한다.
-fn sync_dir_recursive_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
+/// 번들 → 설치 디렉터리 동기화. **내용이 다른 파일만** 쓰고, src 에 없는 dest 항목은 층마다
+/// 지운다([`prune_dest_not_in_src`]).
+///
+/// **mtime 을 판정에 쓰지 않는다.** 예전에는 이 자리가 mtime 비교였고, 그러면 번들 쪽 mtime 이
+/// 거짓일 때(`cp -p`·아카이브 해제처럼 mtime 을 보존하는 경로) **새 파일을 건너뛴다.** 그
+/// 위험 때문에 부팅 경로는 아예 무조건 덮어쓰기를 골랐었고, 그 대가가 같은 번들로 재부팅해도
+/// 번들 전량을 다시 쓰는 것이었다. 내용으로 판정하면 둘 다 필요 없다.
+///
+/// 반환값은 **무엇이든 썼는가**다. 호출자가 그 값으로 "같은 버전인데 내용이 바뀌었다" 를
+/// 보고·재기동 판정에 쓴다 — 안 돌려주면 그 사실이 이 함수 안에서 사라진다.
+fn sync_dir_by_content(src: &Path, dst: &Path) -> std::io::Result<bool> {
     std::fs::create_dir_all(dst)?;
+    prune_dest_not_in_src(src, dst)?;
+    let mut wrote = false;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let ty = entry.file_type()?;
         let dest_path = dst.join(entry.file_name());
         if ty.is_dir() {
-            sync_dir_recursive_if_newer(&entry.path(), &dest_path)?;
+            wrote |= sync_dir_by_content(&entry.path(), &dest_path)?;
         } else {
-            copy_file_if_newer(&entry.path(), &dest_path)?;
+            wrote |= copy_file_if_content_differs(&entry.path(), &dest_path)?;
         }
     }
-    Ok(())
+    Ok(wrote)
 }
 
-fn copy_file_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(src), std::fs::metadata(dst))
-        && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dst_meta.modified())
-        && sm <= dm
-    {
-        return Ok(());
+/// 내용이 다를 때만 복사. 판정 순서가 **비용 순서**이고, 어느 단계에도 mtime 이 없다.
+///
+/// 1. dest 가 없다 → 복사
+/// 2. 크기가 다르다 → 복사 (해시 불필요 — 재빌드는 대개 여기서 걸린다)
+/// 3. 크기가 같다 → 양쪽 sha256 비교
+///
+/// "크기와 mtime 이 둘 다 같으면 해시를 생략" 하는 지름길은 **넣지 않는다.** 그 한 줄이
+/// mtime 을 판정에 도로 들여서, 번들 mtime 이 거짓이고 크기까지 같은 경우에 이 함수가 사려던
+/// 내성이 사라진다 — 그리고 그 사라짐은 조용하다(거짓 mtime 이 실제로 올 때까지 증상이 없다).
+fn copy_file_if_content_differs(src: &Path, dst: &Path) -> std::io::Result<bool> {
+    if !file_content_differs(src, dst)? {
+        return Ok(false);
     }
-    copy_atomic(src, dst)
+    copy_atomic(src, dst)?;
+    Ok(true)
+}
+
+/// [`copy_file_if_content_differs`] 의 판정부. dest 를 못 읽으면 "다르다" 로 답한다 —
+/// 그래야 읽기 실패가 **안 쓰는 쪽**이 아니라 쓰는 쪽으로 물러난다.
+fn file_content_differs(src: &Path, dst: &Path) -> std::io::Result<bool> {
+    let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(src), std::fs::metadata(dst)) else {
+        return Ok(true);
+    };
+    if src_meta.len() != dst_meta.len() {
+        return Ok(true);
+    }
+    Ok(file_sha256(src)? != file_sha256(dst)?)
+}
+
+/// 파일 하나의 sha256. 통째로 읽지 않고 버퍼로 흘려 넣는다 — 번들 바이너리는 debug 에서
+/// 파일 하나가 수백 MB 다.
+fn file_sha256(path: &Path) -> std::io::Result<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    Ok(hasher.finalize().into())
 }
 
 #[cfg(test)]
@@ -1475,6 +1534,144 @@ mod tests {
             decide_builtin_upgrade(None, Some(&bundle), false),
             BuiltinUpgradeDecision::ResyncSameVersion
         );
+    }
+
+    /// 파일의 mtime 을 강제로 세운다 — `cp -p`·아카이브 해제가 하는 일과 같은 결과.
+    fn set_mtime(path: &std::path::Path, t: std::time::SystemTime) {
+        let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        f.set_modified(t).unwrap();
+    }
+
+    fn mtimes(dir: &std::path::Path) -> Vec<(std::ffi::OsString, std::time::SystemTime)> {
+        let mut v: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| {
+                let e = e.unwrap();
+                (e.file_name(), e.metadata().unwrap().modified().unwrap())
+            })
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    }
+
+    #[test]
+    fn second_sync_of_the_same_bundle_writes_nothing() {
+        // 이 시험이 이 변경의 값 자체다 — 같은 번들로 두 번 돌면 두 번째는 아무것도 안 쓴다.
+        // 판정은 mtime 스냅샷 차분이다(쓰였으면 mtime 이 움직인다).
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("bin"), "content").unwrap();
+        std::fs::write(src.join("tasty-plugin.toml"), "version = \"0.1.0\"").unwrap();
+
+        sync_dir_by_content(&src, &dest).unwrap();
+        let first = mtimes(&dest);
+        sync_dir_by_content(&src, &dest).unwrap();
+
+        assert_eq!(first, mtimes(&dest), "두 번째 동기화가 파일을 다시 썼다");
+    }
+
+    #[test]
+    fn the_sync_reports_whether_it_wrote() {
+        // 이 반환값이 `upgrade-builtins` 의 보고문과 재기동 판정을 정한다. 늘 false 면
+        // 같은 버전으로 내용만 고친 plugin 이 재기동 대상에서 조용히 빠진다.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("bin"), "one").unwrap();
+
+        assert!(
+            sync_dir_by_content(&src, &dest).unwrap(),
+            "첫 설치가 false 를 냈다"
+        );
+        assert!(
+            !sync_dir_by_content(&src, &dest).unwrap(),
+            "안 쓴 회차가 true 를 냈다"
+        );
+
+        std::fs::write(src.join("bin"), "two").unwrap();
+        assert!(
+            sync_dir_by_content(&src, &dest).unwrap(),
+            "내용이 바뀐 회차가 false 를 냈다"
+        );
+    }
+
+    #[test]
+    fn only_the_changed_file_is_rewritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("changed"), "before").unwrap();
+        std::fs::write(src.join("untouched"), "same").unwrap();
+        sync_dir_by_content(&src, &dest).unwrap();
+        let before = mtimes(&dest);
+
+        std::fs::write(src.join("changed"), "after!").unwrap(); // 같은 크기, 다른 내용
+        sync_dir_by_content(&src, &dest).unwrap();
+
+        let after = mtimes(&dest);
+        assert_eq!(
+            std::fs::read_to_string(dest.join("changed")).unwrap(),
+            "after!"
+        );
+        let m = |v: &[(std::ffi::OsString, std::time::SystemTime)], n: &str| {
+            v.iter().find(|(k, _)| k == n).unwrap().1
+        };
+        assert_ne!(m(&before, "changed"), m(&after, "changed"));
+        assert_eq!(
+            m(&before, "untouched"),
+            m(&after, "untouched"),
+            "안 바뀐 파일이 다시 쓰였다"
+        );
+    }
+
+    #[test]
+    fn a_lying_mtime_does_not_hide_a_different_file() {
+        // ★ 이 변경의 존재 이유. src 가 dest 보다 **오래된** mtime 을 갖고 크기까지 같은데
+        // 내용이 다르다 — mtime 판정이면 건너뛰고, 내용 판정이면 복사한다.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("bin"), "aaaa").unwrap();
+        sync_dir_by_content(&src, &dest).unwrap();
+
+        std::fs::write(src.join("bin"), "bbbb").unwrap(); // 같은 크기
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        set_mtime(&src.join("bin"), old);
+
+        sync_dir_by_content(&src, &dest).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("bin")).unwrap(),
+            "bbbb",
+            "src 가 더 오래된 mtime 이라고 새 내용을 건너뛰었다"
+        );
+    }
+
+    #[test]
+    fn content_sync_still_removes_what_the_bundle_dropped() {
+        // 청소가 복사 정책과 함께 사라지지 않았는지 — 정책이 바뀐 자리에서 다시 묻는다.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("keep"), "keep").unwrap();
+        std::fs::write(src.join("dropped"), "gone soon").unwrap();
+        sync_dir_by_content(&src, &dest).unwrap();
+        assert!(dest.join("dropped").exists());
+
+        std::fs::remove_file(src.join("dropped")).unwrap();
+        sync_dir_by_content(&src, &dest).unwrap();
+
+        assert!(
+            !dest.join("dropped").exists(),
+            "번들에서 빠진 파일이 남았다"
+        );
+        assert!(dest.join("keep").exists());
     }
 
     #[test]

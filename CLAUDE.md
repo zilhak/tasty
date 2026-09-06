@@ -78,7 +78,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
   - **판정 기준은 파일이 staged 되었는가가 아니라 내용이 달라졌는가다.** 대상 경로는 `src/`·`lang/`·`assets/`·`Cargo.toml`·`tasty-plugin.toml`·`build.rs` 이고, 그중 `.rs` 는 **rustfmt 로 정규화한 뒤** 비교한다. **두 toml 에서는 `version` 줄 한 줄을 증거에서 뺀다** — 판정하는 값 자신을 증거로 쓰면 값을 되돌리는 커밋이 또 한 번의 bump 를 요구하는 순환이 된다(분할 착지에서 병합하는 쪽이 값을 다시 정하는 것은 규칙이 정상으로 규정한 흐름이다). 나머지 줄(feature·의존·bin 선언)은 그대로 본다. 그래서 워크스페이스 전역 `cargo fmt` 정리는 plugin bump 를 요구하지 않는다. 문서(`*.md`)·러너 스크립트 등 산출물 밖 파일도 마찬가지다. 근거·측정·대안·재검토 조건은 [`docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md`](docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md). **파일 수 문턱("큰 커밋은 sweep 이니 봐준다")은 쓰지 않는다** — 그 수는 문턱값과 세는 대상에 따라 2 배 흔들려 재현되지 않는다.
   - **주석만 바뀐 변경은 이 판정에 걸린다**(rustfmt 는 주석을 지우지 않는다). 알려진 오탐이고, 그때는 patch 를 올리거나 사유를 밝히고 넘어간다 — 자동으로 봐주지 않는 이유는 정규식 주석 제거가 raw string 안의 `//` 를 잘못 지워 **거짓 음성**을 만들기 때문이다.
   - **한 lane 에서 한 번 올리면 된다 — 단 그 lane 이 한 번에 착지할 때만.** 판정은 커밋마다가 아니라 `main` 대비 두 끝점으로 한다 — 목적이 라이브 반영이라 재sync 는 한 번 올라가면 동작하고, 이 기준은 `--amend`·rebase 에도 흔들리지 않는다.
-  - **★ lane 이 여러 번에 나뉘어 착지하면 위 기준이 깨진다.** 두 lane 이 서로 다른 base 에서 같은 값으로 올릴 수 있고, 앞쪽이 먼저 push 되면 **그 값은 앞쪽 내용으로 이미 발행된다.** 뒤쪽은 버전 줄이 이미 그 값이라 아무 변화도 안 만들고, 같은 버전 아래 **두 개의 다른 산출물**이 남는다. `upgrade-builtins` 는 same-version skip 이라 이미 그 버전을 받은 인스턴스는 뒤쪽 변경을 **재시작 없이는 영영 못 받는다** — 빌드도 테스트도 초록인데 반영만 안 된다.
+  - **★ lane 이 여러 번에 나뉘어 착지하면 위 기준이 깨진다.** 두 lane 이 서로 다른 base 에서 같은 값으로 올릴 수 있고, 앞쪽이 먼저 push 되면 **그 값은 앞쪽 내용으로 이미 발행된다.** 뒤쪽은 버전 줄이 이미 그 값이라 아무 변화도 안 만들고, 같은 버전 아래 **두 개의 다른 산출물**이 남는다. 그 상태가 조용한 이유는 **버전 줄이 발행된 값을 정하기 때문**이다 — 재sync 가 파일을 옮겨 주더라도, 같은 버전 문자열이 서로 다른 두 산출물을 가리키는 상태는 남는다(`plugin.list`·업그레이드 판정·배포 아카이브가 그 문자열을 믿는다). 빌드도 테스트도 초록인데 **무엇이 발행됐는지가 값으로 안 남는다.**
     - 그래서 **lane 의 `--staged` 검사는 이 물음에 원리적으로 답하지 못한다.** 그 검사는 "내 커밋이 버전을 올렸나" 를 보는데, 물어야 할 것은 **"발행된 값과 지금 내용이 짝이 맞나"** 다. lane 의 base 가 낡으면 통과도 낡는다.
     - 판정의 올바른 범위는 **직전 push 지점 → 현재**다. 병합하는 쪽(통합 회차)이 그 범위로 `check-plugin-version-bump.sh --range <직전 push> HEAD` 를 돌려야 잡힌다. lane 은 자기 base 기준 값을 **보고만** 하고, 최종 값은 병합하는 쪽이 정한다.
     - 실측 2026-09-05: 이 형태가 하루에 두 번 났다(`tasty-plugin-claude` 0.1.59 · `tasty-plugin-markdown` 0.1.63). 두 번 다 lane 은 규칙대로 했고 규칙이 분할 병합을 안 다룬 것이다.
@@ -91,7 +91,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 자동 +1 절차와 릴리스 절차 전체: [`docs/dev-guide/release.md`](docs/dev-guide/release.md).
 
-> **패치 버전 bump 는 라이브 반영의 조건이기도 하다.** 실행 중 tasty 에 번들 plugin 변경을 **재시작 없이** 반영하는 `upgrade-builtins` 재sync 는 매니페스트 `version` 이 올라갔을 때만 동작한다(same-version skip). 반영 절차 전체는 [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md) §9.1.
+> **패치 버전 bump 는 발행된 값을 정하는 일이다.** 실행 중 tasty 에 번들 plugin 변경을 **재시작 없이** 반영하는 `upgrade-builtins` 재sync 자체는 버전과 무관하게 동작한다 — 같은 버전이어도 **내용이 다르면 파일을 옮긴다**(2026-09-07 부터: 판정이 mtime 이 아니라 내용이다). bump 가 정하는 것은 반영 여부가 아니라 **그 산출물이 어느 버전으로 발행됐는가**이고, 그래서 같은 버전에 두 산출물이 생기는 상태는 여전히 금지다. 반영 절차 전체는 [`docs/dev-guide/plugin-development.md`](docs/dev-guide/plugin-development.md) §9.1.
 
 ## 빌드
 

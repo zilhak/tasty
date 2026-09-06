@@ -293,8 +293,10 @@ cargo build --release -p tasty-plugin-<name>      # 실행 중 tasty 와 같은 
 ```bash
 tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .exe 를 잠가 upgrade 가 'os error 5(액세스 거부)'
 tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
-#   ※ version 을 안 올린 변경(예: 임베드 JS/텍스트만, 바이너리 내용만 변경)은 same-version 이라 skip →
-#      'tasty plugin upgrade-builtins --force' 로 동일버전 덮어쓰기.
+#   ※ version 을 안 올려도 반영된다 — 같은 버전 갈래는 **내용으로** 판정해 다른 파일만 옮긴다
+#      (2026-09-07 부터. 그전에는 mtime 비교였고, `cp -p`·아카이브처럼 mtime 이 보존되면 조용히 건너뛰었다).
+#      보고문은 여전히 'skipped' 로 나오지만 사유가 갈린다 — 'content resync: files rewritten' 이면 옮긴 것이고
+#      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **내용까지 같은데도** 다시 쓸 때만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 ```
 
