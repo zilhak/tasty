@@ -1,8 +1,8 @@
 # 설정
 
-이 페이지를 읽으면 설정 창의 구조와 각 탭에 무엇이 있는지, 그리고 같은 내용이 `~/.tasty/config.toml` 에 어떻게 저장되는지 알게 됩니다. 단축키와 테마는 각각 [단축키](keybindings.md) · [테마](themes.md) 에서 따로 다룹니다.
+이 페이지를 읽으면 설정 윈도우의 구조와 각 탭에 무엇이 있는지, 그리고 같은 내용이 `~/.tasty/config.toml` 에 어떻게 저장되는지 알게 됩니다. 단축키와 테마는 각각 [단축키](keybindings.md) · [테마](themes.md) 에서 따로 다룹니다.
 
-## 설정 창 열기
+## 설정 윈도우 열기
 
 사이드바 맨 아래 **설정** <!-- en: Settings --> 버튼을 누르거나 `Ctrl+,` 를 누릅니다.
 
@@ -30,7 +30,7 @@
 
 | 섹션 | 항목 |
 |------|------|
-| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **휠 스크롤 거리** <!-- en: Wheel scroll distance --> (10~200pt, 기본 50) — 휠 한 칸이 스크롤하는 거리이며 창 안 모든 곳에 같이 적용됩니다 · **언어** (English / 한국어 / 日本語 + 설치한 [언어팩](#언어-추가하기-언어팩)) |
+| **일반** | **시작 시 레이아웃 복원** <!-- en: Restore layout on startup --> · **재시작 시 Surface 내용 복원** <!-- en: Restore surface content on restart --> (터미널 스크롤백) · **워크스페이스 카테고리(폴더)** <!-- en: Workspace categories (folders) --> · **다음/이전 워크스페이스가 카테고리 경계를 넘음** <!-- en: Next/prev workspace crosses categories --> · **종료 동작** <!-- en: Close behavior --> (물어보기 / 백그라운드로 최소화 / 종료) · **휠 스크롤 거리** <!-- en: Wheel scroll distance --> (10~200pt, 기본 50) — 휠 한 칸이 스크롤하는 거리이며 윈도우 안 모든 곳에 같이 적용됩니다 · **언어** (English / 한국어 / 日本語 + 설치한 [언어팩](#언어-추가하기-언어팩)) |
 | **알림** <!-- en: Notifications --> | **알림 활성화** <!-- en: Notifications enabled --> · **소리** <!-- en: Sound --> · **알림 병합 간격 (ms)** <!-- en: Coalesce interval (ms) --> |
 | **접근성** <!-- en: Accessibility --> | **모션 줄이기** <!-- en: Reduced motion --> (토스트·오버레이 페이드, 로딩 스피너 회전, 모달 흔들기를 끕니다) · **수정자 키 힌트 표시** <!-- en: Show modifier key hints --> |
 | **오버레이** <!-- en: Overlay --> | **토스트 표시 시간** <!-- en: Toast duration --> (1~10초) |
@@ -125,7 +125,7 @@ cancel = "Annuler"
 
 ### 고르기
 
-설정 창 › **일반** › **언어** 목록에 팩이 함께 나옵니다. 고르고 **저장** 한 다음 Tasty 를
+설정 윈도우 › **일반** › **언어** 목록에 팩이 함께 나옵니다. 고르고 **저장** 한 다음 Tasty 를
 다시 시작하면 적용됩니다.
 
 ### 이미 들어 있는 언어의 문구만 바꾸고 싶다면
@@ -140,8 +140,8 @@ cancel = "Annuler"
 ### 잘 안 될 때
 
 - **목록에 안 보입니다** — 폴더 이름이 언어 코드인지, 그 안의 파일 이름이 정확히
-  `pack.toml` 인지, `[font]` 이 있는지 확인합니다. 설정 창을 닫았다가 다시 엽니다
-  (목록은 창을 열 때 한 번 읽습니다). `pack.toml` 은 **2 MiB 를 넘을 수 없습니다** — 내장
+  `pack.toml` 인지, `[font]` 이 있는지 확인합니다. 설정 윈도우를 닫았다가 다시 엽니다
+  (목록은 윈도우를 열 때 한 번 읽습니다). `pack.toml` 은 **2 MiB 를 넘을 수 없습니다** — 내장
   언어 파일이 100 KiB 도 안 되므로 정상적인 번역은 여기 걸리지 않습니다.
 - **영어로 뜨고 경고가 나옵니다** — 고른 언어의 팩을 찾지 못했거나 파일이 잘못됐다는
   뜻입니다. 경고에 어느 경로를 찾았는지 나옵니다. **설정은 그대로 남으므로**, 팩을 고쳐
@@ -150,7 +150,7 @@ cancel = "Annuler"
 
 ## 설정 파일 `~/.tasty/config.toml`
 
-설정 창의 내용은 전부 이 파일 하나에 저장됩니다. 없는 키는 기본값으로 읽히므로 필요한 것만 적어도 됩니다.
+설정 윈도우의 내용은 전부 이 파일 하나에 저장됩니다. 없는 키는 기본값으로 읽히므로 필요한 것만 적어도 됩니다.
 
 ```toml
 [general]
@@ -212,9 +212,9 @@ max_mb = 500
 new_tab = ["alt+t"]              # 나머지는 keybindings.md
 ```
 
-- `[appearance]` 아래에는 이 밖에도 테마 색 전체(`theme_base`)와 색상 탭에서 덮어쓴 값(`theme_overrides`)이 저장됩니다. 손으로 고치기보다 설정 창을 쓰는 편이 안전합니다.
+- `[appearance]` 아래에는 이 밖에도 테마 색 전체(`theme_base`)와 색상 탭에서 덮어쓴 값(`theme_overrides`)이 저장됩니다. 손으로 고치기보다 설정 윈도우를 쓰는 편이 안전합니다.
 - `[plugin_settings."com.tasty.html"]` 처럼 플러그인 설정 페이지의 값은 플러그인 id 를 키로 한 절에 들어갑니다.
-- Tasty 는 실행 중에 이 파일을 감시하지 않습니다. 손으로 고친 값은 다음 시작 때 읽히고, 그 전에 설정 창에서 저장하면 파일 전체가 다시 쓰여 손편집이 사라집니다. 파일을 직접 편집할 때는 Tasty 를 종료한 뒤 합니다.
+- Tasty 는 실행 중에 이 파일을 감시하지 않습니다. 손으로 고친 값은 다음 시작 때 읽히고, 그 전에 설정 윈도우에서 저장하면 파일 전체가 다시 쓰여 손편집이 사라집니다. 파일을 직접 편집할 때는 Tasty 를 종료한 뒤 합니다.
 
 원격 전송 항목만은 CLI 로도 읽고 쓸 수 있습니다.
 
@@ -241,4 +241,4 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 
 - [단축키](keybindings.md) — 기본 표 · 프리셋 · 녹화.
 - [테마](themes.md) — 테마 전환 · 색 덮어쓰기 · 직접 만들기.
-- [플러그인](../plugins/index.md) — 플러그인 설정 페이지와 관리 창.
+- [플러그인](../plugins/index.md) — 플러그인 설정 페이지와 관리 윈도우.

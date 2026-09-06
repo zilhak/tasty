@@ -1,4 +1,4 @@
-<!-- source-hash: ecccfaceed71 -->
+<!-- source-hash: 0815802c0ef4 -->
 # Plugins
 
 After reading this page you will know what each plugin bundled with Tasty does, and how to install · disable · check permissions with the plugin window and the `tasty plugin` command.

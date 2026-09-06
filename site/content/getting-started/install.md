@@ -70,11 +70,11 @@ Expand-Archive tasty-{ver}-windows-x64.zip -DestinationPath tasty
 
 첫 실행 시 "Windows 의 PC 보호" 경고가 뜹니다(코드 서명이 없어서입니다). **추가 정보 → 실행** 을 누르면 됩니다.
 
-Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 없으면 설정 창에서 "Git Bash를 찾을 수 없습니다" 안내가 뜨므로, 먼저 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다.
+Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 없으면 설정 윈도우에서 "Git Bash를 찾을 수 없습니다" 안내가 뜨므로, 먼저 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다.
 
 ## 첫 실행
 
-- 창이 열리면 워크스페이스 하나와 터미널 하나가 준비돼 있습니다. 화면 구성은 [첫 화면 둘러보기](first-look.md).
+- 윈도우가 열리면 워크스페이스 하나와 터미널 하나가 준비돼 있습니다. 화면 구성은 [첫 화면 둘러보기](first-look.md).
 - UI 언어의 기본값은 영어입니다. 한국어로 바꾸려면 **설정** > **일반** <!-- en: General --> > **언어** <!-- en: Language --> 에서 한국어를 고르고 저장한 뒤 Tasty 를 다시 시작합니다. `~/.tasty/config.toml` 에 직접 쓸 수도 있습니다:
 
 ```toml
@@ -82,7 +82,7 @@ Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 
 language = "ko"
 ```
 
-터미널에서 설치가 잘 됐는지 확인합니다. 두 번째 명령은 Tasty 창이 떠 있어야 응답합니다.
+터미널에서 설치가 잘 됐는지 확인합니다. 두 번째 명령은 Tasty 윈도우가 떠 있어야 응답합니다.
 
 ```sh
 tasty --version      # 예: tasty 0.10.2

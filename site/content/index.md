@@ -1,6 +1,6 @@
 # Tasty 가이드
 
-Tasty 는 Windows · macOS · Linux 에서 똑같이 동작하는 GPU 가속 터미널입니다. 한 창 안에 여러 워크스페이스를 두고, 각 워크스페이스를 페인 · 탭 · 분할로 나눠 씁니다. 사람이 키보드로 하는 거의 모든 일을 `tasty` CLI 로도 할 수 있어서, Claude Code · Codex 같은 AI 코딩 에이전트가 터미널을 직접 다루게 만들 수 있습니다.
+Tasty 는 Windows · macOS · Linux 에서 똑같이 동작하는 GPU 가속 터미널입니다. 한 윈도우 안에 여러 워크스페이스를 두고, 각 워크스페이스를 페인 · 탭 · 분할로 나눠 씁니다. 사람이 키보드로 하는 거의 모든 일을 `tasty` CLI 로도 할 수 있어서, Claude Code · Codex 같은 AI 코딩 에이전트가 터미널을 직접 다루게 만들 수 있습니다.
 
 이 가이드는 Tasty 를 받아서 설치하고 쓰는 사람을 위한 문서입니다. 처음이라면 위에서부터 차례로 읽습니다. 특정 기능만 찾는다면 아래 목차에서 바로 들어갑니다.
 
@@ -19,7 +19,7 @@ Tasty 는 Windows · macOS · Linux 에서 똑같이 동작하는 GPU 가속 터
 ## 내 취향대로
 
 - [단축키](customize/keybindings.md) — 기본 단축키 표, 프리셋, 바꾸는 법.
-- [설정](customize/settings.md) — 설정 창과 `~/.tasty/config.toml` 의 주요 항목.
+- [설정](customize/settings.md) — 설정 윈도우와 `~/.tasty/config.toml` 의 주요 항목.
 - [테마](customize/themes.md) — 번들 테마, 전환, 직접 만들기.
 - [Lua 스크립트](customize/scripts.md) — 스크립트 등록, 단축키와 이벤트로 자동 실행.
 

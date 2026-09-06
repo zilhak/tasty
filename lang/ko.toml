@@ -36,24 +36,24 @@ body = "시작할 때 터미널 엔진을 만들지 못했습니다. 대개 conf
 hint = "config.toml 의 general.shell 값이 실제로 존재하는 셸을 가리키는지 확인한 뒤 다시 실행하세요."
 
 [boot.window_error]
-title = "창을 열 수 없음"
-body = "첫 창을 만들지 못했습니다. 상세: {}"
+title = "윈도우를 열 수 없음"
+body = "첫 윈도우를 만들지 못했습니다. 상세: {}"
 hint = "디스플레이·컴포지터와 그래픽 드라이버를 확인한 뒤 다시 실행하세요."
 
 [window_error.new_window]
-title = "새 창을 열 수 없음"
-body = "새 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+title = "새 윈도우를 열 수 없음"
+body = "새 윈도우를 열지 못해 취소했습니다. 다른 윈도우의 작업은 그대로 유지됩니다. 원인: {}"
 
 [window_error.settings]
-title = "설정 창을 열 수 없음"
-body = "설정 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+title = "설정 윈도우를 열 수 없음"
+body = "설정 윈도우를 열지 못해 취소했습니다. 다른 윈도우의 작업은 그대로 유지됩니다. 원인: {}"
 
 [window_error.plugins]
-title = "플러그인 창을 열 수 없음"
-body = "플러그인 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+title = "플러그인 윈도우를 열 수 없음"
+body = "플러그인 윈도우를 열지 못해 취소했습니다. 다른 윈도우의 작업은 그대로 유지됩니다. 원인: {}"
 
 [window_error.quit_confirm]
-skipped = "확인 창을 열 수 없어 확인 없이 종료합니다."
+skipped = "확인 윈도우를 열 수 없어 확인 없이 종료합니다."
 
 [plugins]
 title = "플러그인"
@@ -290,7 +290,7 @@ close_behavior_quit = "종료"
 language_label = "언어:"
 language_restart_notice = "언어 변경은 재시작 후 적용됩니다."
 language_missing_suffix = "(없음)"
-wheel_line_scroll_desc = "휠을 한 칸 굴렸을 때 스크롤되는 거리. 창 안 어디서나 같은 거리로 움직입니다 — plugin 표면·popup·설정과 사이드바 목록 모두."
+wheel_line_scroll_desc = "휠을 한 칸 굴렸을 때 스크롤되는 거리. 윈도우 안 어디서나 같은 거리로 움직입니다 — plugin 표면·popup·설정과 사이드바 목록 모두."
 alt_display_style_label = "Alt 키 표시:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -854,10 +854,10 @@ pack_invalid = "언어팩 '{}' 을 불러오지 못해 영어로 표시합니다
 [persistence.warn]
 settings_unparsable = "{} 을 읽지 못해 기본 설정으로 시작했습니다. 원본은 옆에 .bak 파일로 보관합니다."
 settings_locked = "설정 파일을 읽지 못했습니다. 파일을 덮어쓰지 않도록 설정 저장을 중단했습니다. 파일을 고치거나 옮긴 뒤 다시 시작하세요."
-layout_unparsable = "저장된 창 배치를 읽지 못해 새 배치로 시작했습니다. 저장된 파일은 옆에 .bak 파일로 보관합니다."
-layout_locked = "저장된 창 배치를 읽지 못해 기본 배치로 시작했습니다. 저장된 배치는 덮어쓰지 않습니다."
+layout_unparsable = "저장된 윈도우 배치를 읽지 못해 새 배치로 시작했습니다. 저장된 파일은 옆에 .bak 파일로 보관합니다."
+layout_locked = "저장된 윈도우 배치를 읽지 못해 기본 배치로 시작했습니다. 저장된 배치는 덮어쓰지 않습니다."
 settings_unparsable_blocked = "{} 옆에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 설정이 저장됩니다. 그 파일을 읽지 못했고 옆으로 옮기지도 못해 기본 설정으로 시작했습니다."
-layout_unparsable_blocked = "layouts 폴더에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 창 배치가 저장됩니다. 저장된 배치를 읽지 못했고 옆으로 옮기지도 못했습니다."
+layout_unparsable_blocked = "layouts 폴더에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 윈도우 배치가 저장됩니다. 저장된 배치를 읽지 못했고 옆으로 옮기지도 못했습니다."
 
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
@@ -1688,7 +1688,7 @@ empty_none_hint = "의존 관계로 묶인 작업이 여기에 표시됩니다."
 empty_filtered = "일치하는 DAG 없음"
 empty_filtered_hint = "다른 조건으로 찾아보세요."
 
-# 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
+# 전체화면 무대(fullscreen stage) — 윈도우 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "전체화면"
 

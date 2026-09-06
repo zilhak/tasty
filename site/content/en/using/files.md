@@ -1,4 +1,4 @@
-<!-- source-hash: 7776c5b83a56 -->
+<!-- source-hash: c9e4e22eea99 -->
 # Opening files
 
 After reading this page you will know how to open and work with files in non-terminal Surfaces — Explorer · Markdown · image · HTML — and how to open the window that shows git status.

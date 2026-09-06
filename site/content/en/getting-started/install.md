@@ -1,4 +1,4 @@
-<!-- source-hash: 0b979b4a2c01 -->
+<!-- source-hash: f1c18fd34165 -->
 # Install
 
 Follow this page to download and install the Tasty build for your OS, launch it for the first time, and confirm it works. How to update and uninstall is here too.

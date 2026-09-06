@@ -1,4 +1,4 @@
-<!-- source-hash: 922186956109 -->
+<!-- source-hash: 3c587dedf02c -->
 # Troubleshooting
 
 This page is where you look up the cause and the fix by symptom when you get stuck using Tasty. Once you know what gets written where, most problems narrow down to opening a single file.

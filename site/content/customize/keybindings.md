@@ -74,11 +74,11 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 
 `Ctrl+C` 는 선택한 텍스트가 있으면 복사하고, 없으면 평소처럼 실행 중인 프로그램을 중단합니다.
 
-### 창 · 도구
+### 윈도우 · 도구
 
 | 하는 일 | Windows · Linux | macOS |
 |---------|-----------------|-------|
-| 새 창 | `Alt+Shift+N` | `Cmd+Shift+N` |
+| 새 윈도우 | `Alt+Shift+N` | `Cmd+Shift+N` |
 | 설정 열기/닫기 | `Ctrl+,` | `Ctrl+,` |
 | 알림 열기/닫기 | `Ctrl+Shift+I` | `Ctrl+Shift+I` |
 | DAG 목록 열기/닫기 | `Ctrl+Shift+G` | `Ctrl+Shift+G` |
@@ -105,7 +105,7 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 |--------|------|------------------------|
 | **Tasty** (기본) | 자체 | 위 표. 복사 · 붙여넣기 · 줌은 세 OS 관례를 모두 묶어 둡니다 |
 | **Mac** | iTerm2 · Terminal.app | `Cmd` 중심. 설정 `Cmd+,` · 알림 `Cmd+Shift+I` · 사이드바 `Cmd+Shift+B` / `Cmd+B` · 명령 팔레트 `Cmd+Shift+P` · 복사/붙여넣기 `Cmd+C` / `Cmd+V` 만 · 종료 `Cmd+Q` · 백그라운드 `Cmd+M`. **활성 항목 닫기** 와 **워크스페이스 닫기** 는 비어 있고 페인 닫기는 `Cmd+Shift+W` |
-| **Windows** | Windows Terminal | 페인 분할 `Alt+Shift+E` / `Alt+Shift+D`, 서피스 분할 `Alt+D` / `Alt+E` · 새 창 `Ctrl+Shift+N` · 복사/붙여넣기 `Ctrl+C` / `Ctrl+V` 만 |
+| **Windows** | Windows Terminal | 페인 분할 `Alt+Shift+E` / `Alt+Shift+D`, 서피스 분할 `Alt+D` / `Alt+E` · 새 윈도우 `Ctrl+Shift+N` · 복사/붙여넣기 `Ctrl+C` / `Ctrl+V` 만 |
 | **Linux** | GNOME Terminal | Windows 프리셋과 같되 복사/붙여넣기/잘라내기 `Ctrl+Shift+C` / `Ctrl+Shift+V` / `Ctrl+Shift+X` · 종료 `Ctrl+Q` |
 
 적용 절차:
@@ -113,7 +113,7 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 1. **설정** > **단축키** > **프리셋** 목록에서 프리셋 행을 클릭합니다. 지금 쓰는 프리셋에는 **Active** 표시가 붙어 있습니다.
 2. 상세 화면의 **기능** <!-- en: Action --> / **현재** <!-- en: Current --> / 프리셋 열 3단 표에서 바뀌는 행을 확인합니다.
 3. 오른쪽 위 **적용** <!-- en: Apply --> 을 누릅니다. 아직 파일에는 저장되지 않습니다.
-4. 창 아래 **저장** <!-- en: Save --> 을 누릅니다.
+4. 윈도우 아래 **저장** <!-- en: Save --> 을 누릅니다.
 
 프리셋을 적용하면 직접 고쳐 둔 단축키는 모두 프리셋 값으로 돌아갑니다.
 
@@ -166,7 +166,7 @@ tab_switch_prev_key = "h"
 
 ## 다음 읽을 것
 
-- [설정](settings.md) — 설정 창 구조와 `config.toml`.
+- [설정](settings.md) — 설정 윈도우 구조와 `config.toml`.
 - [페인 · 탭 · 분할](../using/panes-tabs-splits.md) — 위 표의 분할 · 이동 동작이 실제로 무엇을 하는지.
 - [터미널 다루기](../using/terminal.md) — 복사 모드 · 검색 · 마우스 캡처.
 - [Lua 스크립트](scripts.md) — **스크립트 실행** 서브탭에 붙일 스크립트를 등록하는 법.

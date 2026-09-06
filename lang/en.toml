@@ -1715,7 +1715,7 @@ empty_none_hint = "Tasks grouped by dependency appear here."
 empty_filtered = "No matching DAGs"
 empty_filtered_hint = "Try a different filter."
 
-# 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
+# 전체화면 무대(fullscreen stage) — 윈도우 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "Fullscreen"
 

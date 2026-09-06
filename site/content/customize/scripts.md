@@ -1,6 +1,6 @@
 # Lua 스크립트
 
-작은 Lua 스크립트를 등록해 단축키로 실행하거나, 창·워크스페이스·탭이 생기고 사라지는 순간에 자동으로 실행합니다. 스크립트는 tasty 를 정해진 통로로만 다루고 전용 스레드에서 돌기 때문에, 스크립트가 멈춰도 창은 멈추지 않습니다.
+작은 Lua 스크립트를 등록해 단축키로 실행하거나, 윈도우·워크스페이스·탭이 생기고 사라지는 순간에 자동으로 실행합니다. 스크립트는 tasty 를 정해진 통로로만 다루고 전용 스레드에서 돌기 때문에, 스크립트가 멈춰도 윈도우는 멈추지 않습니다.
 
 부팅할 때 자동으로 불러오는 파일은 없습니다. 등록하고 트리거를 붙인 스크립트만 실행됩니다.
 
@@ -24,15 +24,15 @@
 | 이벤트 | 언제 |
 |---|---|
 | `tasty.startup.post` | tasty 가 다 뜬 직후 |
-| `window.create.post` · `window.delete.post` | 창이 생기고 닫힐 때 |
+| `window.create.post` · `window.delete.post` | 윈도우가 생기고 닫힐 때 |
 | `workspace.create.post` · `workspace.delete.post` | 워크스페이스가 생기고 닫힐 때 |
-| `workspace.change.post` | 워크스페이스 이름·설명을 창에서 직접 바꿨을 때 |
+| `workspace.change.post` | 워크스페이스 이름·설명을 윈도우에서 직접 바꿨을 때 |
 | `tab.create.post` · `tab.delete.post` | 탭이 생기고 닫힐 때 |
-| `tab.change.post` | 탭 이름을 창에서 직접 바꿨을 때 |
+| `tab.change.post` | 탭 이름을 윈도우에서 직접 바꿨을 때 |
 | `pane.create.post` · `pane.delete.post` | 페인이 생기고 닫힐 때 |
 | `surface.create.post` · `surface.delete.post` | 서피스가 생기고 닫힐 때 |
 
-이름을 바꾸는 두 이벤트는 **창에서 직접 바꾼 경우에만** 발화합니다. CLI 로 바꾼 이름은 발화하지 않습니다.
+이름을 바꾸는 두 이벤트는 **윈도우에서 직접 바꾼 경우에만** 발화합니다. CLI 로 바꾼 이름은 발화하지 않습니다.
 
 자동 실행 스크립트가 CLI 로 또 다른 이벤트를 일으키면 연쇄가 될 수 있습니다. 이걸 막는 장치가 있어서, 자동 실행이 도는 동안과 끝난 직후에는 새 자동 실행이 잠깐 억제됩니다.
 
@@ -42,7 +42,7 @@ tasty 는 다음만 제공합니다. 그 밖에 tasty 내부를 직접 건드릴
 
 | 함수 | 하는 일 |
 |---|---|
-| `tasty.tree()` | 창 · 워크스페이스 · 탭 · 서피스 구조를 테이블로 읽습니다. 읽기 전용 사본입니다 |
+| `tasty.tree()` | 윈도우 · 워크스페이스 · 탭 · 서피스 구조를 테이블로 읽습니다. 읽기 전용 사본입니다 |
 | `tasty.run_cli(args)` | `tasty` 명령을 실행합니다. 문자열 하나 또는 문자열 테이블을 넘깁니다 |
 | `tasty.log(msg)` · `tasty.warn(msg)` | 로그에 남깁니다 |
 | `tasty.on(event, cb)` | 이벤트가 날 때 호출될 함수를 등록합니다. 보기만 할 수 있고 tasty 의 동작을 바꾸지는 못합니다 |
@@ -87,5 +87,5 @@ TASTY_LOG=tasty_lua=debug tasty
 ## 다음 읽을 것
 
 - [단축키](keybindings.md) — 조합 지정과 프리셋
-- [설정](settings.md) — 설정 창 전체와 설정 파일 위치
+- [설정](settings.md) — 설정 윈도우 전체와 설정 파일 위치
 - [CLI 로 tasty 다루기](../agents/cli.md) — `tasty.run_cli` 로 부를 수 있는 명령
