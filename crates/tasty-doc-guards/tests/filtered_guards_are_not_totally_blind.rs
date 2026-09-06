@@ -39,6 +39,11 @@
 //! 커밋들이 한 push 였는지가 git 에 없기 때문이다. 그 축을 재는 법은 위 문서에 명령으로
 //! 적어 뒀고, 자동 채널은 없다.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::workflow_triggers::filter_free_coverage;

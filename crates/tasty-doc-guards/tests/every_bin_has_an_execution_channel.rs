@@ -40,6 +40,11 @@
 //! `git diff` 를 쓰면 안 된다. 추적 대상이 아니라 무엇을 고쳐도 빈 출력이라, "변이가
 //! 적용됐다" 를 재는 자리가 조용히 무력해진다. 원문 사본과 대조하거나 치환 횟수를 세라.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 

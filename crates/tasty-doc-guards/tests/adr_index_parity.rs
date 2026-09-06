@@ -26,6 +26,11 @@
 //! 경우가 12 건**이라 등호도 접두도 아니다. 정규화 없이 넣으면 오탐이 21 건이고,
 //! 오탐이 그만큼이면 가드를 아무도 안 믿는다. 두 열의 정규화 규칙이 서면 그때 넣는다.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 

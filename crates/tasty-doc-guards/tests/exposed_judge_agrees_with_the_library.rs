@@ -26,6 +26,11 @@
 //! 행 수 하한과 "양쪽 답이 다 나온다"(필터 있는 것과 없는 것이 각각 하나 이상)를 함께
 //! 단정해, 판정기가 한쪽으로만 답하는 상태를 통과로 읽지 않는다.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::Command;

@@ -28,6 +28,11 @@
 //! `**/*.md`) 밖이라, 필터가 붙는 그 push 에서 `check-headless` 가 전체 스위트를 돌며
 //! 이 타깃을 실행한다. 즉 자기 채널이 사라지는 변경은 다른 채널이 본다.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::workflow_triggers::filter_free_coverage;
