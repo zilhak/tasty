@@ -748,6 +748,11 @@ mod gallery_widget_coverage;
 #[cfg(test)]
 mod repo_relative_paths;
 
+/// 본체에서 `TASTY_HOME` 을 바꾸는 문이 하나인지 본다. 리포 전역 env 가드는 *직렬화를
+/// 밝혔는가* 를 묻고, 그 물음은 락만 손으로 잡은 자리에 **참**이라 통과한다.
+#[cfg(test)]
+mod home_env_has_one_door;
+
 mod headless_app_layer_coverage;
 
 #[cfg(test)]
