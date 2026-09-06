@@ -21,9 +21,9 @@
 | 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
 | macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [실측] |
-| Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [배선] |
-| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
-| **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [배선] |
+| Windows lint + 단위테스트 | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [실측] |
+| headless 컴파일 · **전체 스위트** · lint | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
+| **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push · PR · 수동 | [실측] |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0138](../adr/0138-doc-guards-live-in-a-dependency-free-crate.md)) | [실측] |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 동결 총합 래칫 | `bash scripts/check-frozen-sum-ratchet.sh` | `complexity-check.yml` (self-hosted Linux X64, 같은 잡) | main push(문서·site 제외) · PR · 수동 | [실측] |
@@ -50,6 +50,19 @@
     (Test · Format · Complexity · Script Gates · Plugin Version · Doc Guards).
   - 공급망: 같은 날 `7695667a9` 에서 두 워크스페이스 크레이트에 `license` 필드를 넣어
     통과한 것을 conductor 가 확인했다(그 전에는 `error[unlicensed]` 로 빨갰다).
+  - `crossplatform-check` 의 네 잡: run 34062607769 (`7ee6b0678`, 2026-09-06T21:58:01Z) 에서
+    `check-macos` · `check-headless` · `check-windows` · `check-release` 가 **넷 다 success**
+    인 것을 conductor 가 **잡 줄로** 읽었다.
+
+  ★ **출처로 쓸 수 있는 값은 잡 줄(또는 스텝 줄)로 읽은 것이지 워크플로 줄이 아니다.**
+  워크플로 결론은 잡 하나만 빨개도 빨강이라 [실측]을 **과소**로 만든다 — `crossplatform-check`
+  가 정확히 그 형태다(잡 넷). 같은 함정이 아래 [미측정] 에도 있어서 정의 머리에 올려 적는다.
+
+  ★ **입도는 그 행의 주어를 따른다.** 이 표의 행은 **잡**을 주어로 하므로(행이 그 잡의
+  명령을 적는다) 잡 결론이 맞는 입도다. 주어가 **스텝**인 칸 — 아래 debug/release 행렬의
+  `check-headless` 의 gui 스텝 같은 것 — 은 스텝 결론으로 읽어야 한다. 잡이 초록이어도
+  그 안의 스텝이 `skipped` 일 수 있고, 그때 그 칸은 그 회차에 존재하지 않는다.
+  **두 입도를 섞지 마라** — 섞으면 한쪽은 과소, 다른 쪽은 과대가 된다.
 - **[미측정]** — 그 행의 잡이 **빨간 동안**의 등급이다. 잡이 빨간 동안 그 잡이 배선한
   커버리지는 실패가 아니라 **안 본 것**이다. 이것만 칸에 안 찍는 이유는 커밋마다 바뀌는
   값이기 때문이다([ADR-0139](../adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md)) —
@@ -876,7 +889,7 @@ cargo test --bin tasty --no-run          # 바이너리 경로를 찍는다
 | macOS + gui | `check-macos`(컴파일 + `--lib --bins` 유닛) **[실측]** | — |
 | Windows + gui | `check-windows`(컴파일 + 유닛) **[실측]** | — |
 | Linux + headless | `check-headless`(컴파일 + 전체) **[실측]** | — |
-| **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) **[실측]** | `check-release`(컴파일) **[배선]** |
+| **Linux + gui** | `check-headless` 의 gui 스텝(컴파일 + `--lib --bins` 유닛) **[실측]** | `check-release`(컴파일) **[실측]** |
 
 ★ **등급의 출처**(위 "등급" 절의 정의 그대로 — 과거형 사실이다): 성공 회차 둘의 잡·스텝
 결론을 직접 읽었다. 거기서 `cargo test (linux, gui, unit)` 은 **success** 였고, 그것이
