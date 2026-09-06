@@ -1951,6 +1951,61 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
     );
 }
 
+/// gui 하네스의 두 증폭기가 아직 사는가 — `(A, B)`.
+///
+/// ## 왜 수가 아니라 **자리**로 묻는가
+///
+/// 앞 판은 `common_text.contains("Mutex") && common_text.contains(".lock()")` 였다.
+/// 그 단정은 **거짓이 될 수 없다.** 그 파일에는 stderr 링 버퍼와 `last_at` 같은 다른
+/// 뮤텍스가 따로 있어서, 공유 인스턴스가 통째로 사라져도 `Mutex` 와 `.lock()` 은 남는다
+/// (실측 2026-09-07: `Mutex` 11 · `.lock()` 5 · `.lock().unwrap()` 4 — 전부 다른 뮤텍스).
+/// 즉 **은퇴를 알려야 할 트립와이어가 영영 안 울린다.** 조용한 1 이다.
+///
+/// 그래서 바늘을 수에서 자리로 옮긴다. 무관한 뮤텍스가 몇 개 늘든 답이 안 흔들린다.
+///
+/// ## 증폭기가 둘이고 배타다
+///
+/// - **B** — 뮤텍스 오염 연쇄. spawn 성공 뒤 본문 패닉이면 **가짜 실패** N 개.
+///   접근자의 첫 락이 `into_inner()` 로 회수하면 걷힌 것이다.
+/// - **A** — `get_or_init` 재시도. 초기화 클로저가 패닉하면 `OnceLock` 이 미초기화로
+///   남아 다음 테스트가 **실제로 재spawn** 한다. 형제 하네스(`tests/common/mod.rs`)는
+///   `SHARED_SPAWN_FAILED.swap(true, …)` 로 첫 실패를 래치해 그것을 막는다.
+///
+/// ★ 바늘을 `swap(true` 로 좁힌 이유: 넓게 `load(`·`swap(` 로 잡으면 같은 클로저 안의
+/// 무관한 `CLEANUP_PID.load(Ordering::Relaxed)` 가 걸려 **래치가 있다고 오답**한다.
+/// 래치의 성질은 "읽는다" 가 아니라 "첫 실패를 표시하고 그 사실을 되돌려 받는다" 이고,
+/// `swap(true` 가 정확히 그 자리다.
+///
+/// `None` 은 "구조가 바뀌어 못 찾았다" 이고 **판정 불가 = 실패**로 다룬다(R435).
+fn gui_amplifiers_live(src: &str) -> Option<(bool, bool)> {
+    let at = src.find("static SHARED_INSTANCE")?;
+    let tail = &src[at..];
+    let init = tail.find("get_or_init")?;
+    let open = init + tail[init..].find('{')?;
+    let mut depth = 0usize;
+    let mut close = None;
+    for (i, c) in tail[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(open + i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let closure = &tail[open..=close?];
+    let a_live = !closure.contains("swap(true");
+
+    let lock = tail.find(".lock()")?;
+    let window = &tail[lock..(lock + 160).min(tail.len())];
+    let b_live = !window.contains("into_inner()");
+    Some((a_live, b_live))
+}
+
 /// 층 3 — `--ignored` 를 줘도 나오는 수에는 **단일 값이 없다.** 값 대신 그 단정을 지킨다.
 ///
 /// 이 칸에는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
@@ -1961,8 +2016,10 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
 /// 그래서 지키는 것은 수가 아니라 **"단일 값이 없다" 는 단정 자체**다. 통과 수를 적은
 /// 절은 그 절이나 그 하위 절에 단정을 함께 담아야 한다 — 누가 수만 채워 넣으면 빨개진다.
 ///
-/// **은퇴 조건**을 함께 박는다. 수가 흔들리는 원인(lock 뒤의 단일 공유 인스턴스)이
-/// 사라지면 수가 안정될 수 있고, 그때까지 이 규칙이 남으면 없는 병을 지키게 된다.
+/// **은퇴 조건**을 함께 박는다. 수를 흔드는 원인이 사라지면 수가 안정될 수 있고,
+/// 그때까지 이 규칙이 남으면 없는 병을 지키게 된다. 조건은 [`gui_amplifiers_live`] 가
+/// **자리로** 판정한다 — 둘 중 하나만 살아도 이 층은 옳다. 2026-09-07 현재 B 는 걷혔고
+/// A 가 산다. A 를 고치는 순간 이 단정이 울리는데, **울려야 할 때가 정확히 그때다.**
 #[test]
 fn the_gui_ignored_layer_has_no_single_value() {
     const MARKER: &str = "단일 값이 없다";
@@ -1971,11 +2028,15 @@ fn the_gui_ignored_layer_has_no_single_value() {
 
     let common = root.join("tests/gui_common/mod.rs");
     let common_text = std::fs::read_to_string(&common).expect("tests/gui_common/mod.rs 가 없다");
+    let (a_live, b_live) = gui_amplifiers_live(&common_text).expect(
+        "gui 하네스의 공유 인스턴스 표지를 못 찾았다 — 구조가 바뀌었으면 이 층을 다시 재라. \
+         판정 불가는 통과가 아니라 실패다(R435)",
+    );
     assert!(
-        common_text.contains("Mutex") && common_text.contains(".lock()"),
-        "gui 하네스의 공유 인스턴스(lock 뒤의 단일 인스턴스)가 사라졌다. 그것이 수를 \
-         흔들던 원인이므로, 이 층의 '{MARKER}' 가 아직 참인지 다시 재라 — 참이 아니게 \
-         됐으면 이 층 규칙과 문서의 표기를 함께 걷어라"
+        a_live || b_live,
+        "gui 하네스의 증폭기가 **둘 다** 걷혔다. 그것들이 수를 흔들던 원인이므로, 이 층의 \
+         '{MARKER}' 가 아직 참인지 다시 재라 — 참이 아니게 됐으면 이 층 규칙과 문서의 \
+         표기를 함께 걷어라"
     );
 
     let mut files = Vec::new();
