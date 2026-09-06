@@ -14,7 +14,7 @@
 //! 칸 셋 · 팔 셋으로 쟀다(`cargo build -p tasty-i18n`, mtime 을 이름으로 관측):
 //!
 //! ```text
-//!                        무변경 재빌드   ko.toml touch   lang/fr.toml 신설
+//!                        무변경 재빌드   ko.toml touch   lang 에 새 파일 신설
 //! 현행(파일 셋 감시)      안 움직임       rlib 움직임      안 움직임
 //! main() 비움            **rlib 움직임**  rlib 움직임      안 움직임
 //! 디렉토리 감시          안 움직임       rlib 움직임      **rlib 움직임**
