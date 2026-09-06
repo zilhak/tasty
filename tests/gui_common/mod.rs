@@ -620,6 +620,39 @@ impl GuiTestInstance {
         std::thread::sleep(Duration::from_millis(200));
     }
 
+    /// Press Alt+Shift + a key.
+    ///
+    /// **소문자 `key` 를 넘겨라.** 대문자 char 로 Shift 를 대신할 수 없다 — `enigo` 의
+    /// `Key::Unicode` 는 keysym 을 **레벨 0 에서만** 찾고(못 찾으면 미사용 keycode 에
+    /// 새로 바인딩한다) Shift 를 합성하지 않는다. 그래서 `press_alt(Unicode('W'))` 는
+    /// Shift 없는 'W' 이벤트가 되고, 수정자를 정확히 비교하는 매처
+    /// (`src/adapters/ui/input/shortcuts/binding.rs`)에서 `alt+shift+w` 가 아니라
+    /// **`alt+w` 에 닿는다.** 이 헬퍼는 그 통로를 구조로 막는다: 대소문자는 수정자가 아니다.
+    pub fn press_alt_shift(&mut self, key: Key) {
+        self.focus();
+        std::thread::sleep(Duration::from_millis(50));
+        self.enigo
+            .key(Key::Alt, Direction::Press)
+            .expect("alt press failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(Key::Shift, Direction::Press)
+            .expect("shift press failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(key, Direction::Click)
+            .expect("key click failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(Key::Shift, Direction::Release)
+            .expect("shift release failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(Key::Alt, Direction::Release)
+            .expect("alt release failed");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
     /// Press Alt + a key.
     pub fn press_alt(&mut self, key: Key) {
         self.focus();

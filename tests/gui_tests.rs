@@ -256,8 +256,8 @@ fn test_new_workspace_ctrl_shift_n() {
     let mut inst = shared();
     let initial_count = inst.ui_state().workspace_count;
 
-    // Ctrl+Shift+N to create new workspace
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    // Alt+N to create new workspace (preset: new_workspace)
+    inst.press_alt(Key::Unicode('n'));
 
     let state = inst.wait_for_ui("workspace count increased", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count + 1
@@ -265,7 +265,7 @@ fn test_new_workspace_ctrl_shift_n() {
     assert_eq!(state.workspace_count, initial_count + 1);
 
     // Cleanup: close the workspace we created (Alt+Shift+W)
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("workspace closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count
     });
@@ -278,7 +278,7 @@ fn test_workspace_switch_alt_number() {
 
     // Create a fresh workspace for this test
     let initial_count = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("new ws", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count + 1
     });
@@ -302,7 +302,7 @@ fn test_workspace_switch_alt_number() {
     });
 
     // Cleanup: close the test workspace
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count
     });
@@ -317,7 +317,7 @@ fn test_workspace_creation_speed() {
     let elapsed = measure_ui_latency(
         &mut inst,
         "workspace creation speed",
-        |i| i.press_ctrl_shift(Key::Unicode('n')),
+        |i| i.press_alt(Key::Unicode('n')),
         |s| s.workspace_count == initial_count + 1,
     );
 
@@ -330,7 +330,7 @@ fn test_workspace_creation_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count
     });
@@ -347,7 +347,7 @@ fn test_new_tab_ctrl_shift_t() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -361,7 +361,7 @@ fn test_new_tab_ctrl_shift_t() {
     assert_eq!(state.tab_count, 2);
 
     // Cleanup: close the test workspace
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -374,7 +374,7 @@ fn test_close_tab_ctrl_w() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -389,7 +389,7 @@ fn test_close_tab_ctrl_w() {
     assert_eq!(state.tab_count, 1);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -402,7 +402,7 @@ fn test_tab_creation_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -423,7 +423,7 @@ fn test_tab_creation_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -440,20 +440,20 @@ fn test_pane_split_vertical_ctrl_shift_e() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
 
     assert_eq!(inst.ui_state().pane_count, 1);
 
-    // Ctrl+Shift+E for vertical pane split
-    inst.press_ctrl_shift(Key::Unicode('e'));
+    // Alt+E for vertical pane split (preset: split_pane_vertical)
+    inst.press_alt(Key::Unicode('e'));
     let state = inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
     assert_eq!(state.pane_count, 2);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -466,18 +466,18 @@ fn test_pane_split_horizontal_ctrl_shift_o() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
 
-    // Ctrl+Shift+O for horizontal pane split
-    inst.press_ctrl_shift(Key::Unicode('o'));
+    // Alt+Shift+E for horizontal pane split (preset: split_pane_horizontal)
+    inst.press_alt_shift(Key::Unicode('e'));
     let state = inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
     assert_eq!(state.pane_count, 2);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -490,13 +490,13 @@ fn test_close_pane_ctrl_shift_w() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
 
     // Split first
-    inst.press_ctrl_shift(Key::Unicode('e'));
+    inst.press_alt(Key::Unicode('e'));
     inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
 
     // Close the active pane
@@ -505,7 +505,7 @@ fn test_close_pane_ctrl_shift_w() {
     assert_eq!(state.pane_count, 1);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -518,7 +518,7 @@ fn test_pane_split_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -526,7 +526,7 @@ fn test_pane_split_speed() {
     let elapsed = measure_ui_latency(
         &mut inst,
         "pane split speed",
-        |i| i.press_ctrl_shift(Key::Unicode('e')),
+        |i| i.press_alt(Key::Unicode('e')),
         |s| s.pane_count == 2,
     );
 
@@ -539,7 +539,7 @@ fn test_pane_split_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -621,7 +621,7 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
 
     // Create a test workspace so we have a clean terminal
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -659,7 +659,7 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -718,7 +718,7 @@ fn test_full_workflow_workspace_pane_tab() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -733,11 +733,11 @@ fn test_full_workflow_workspace_pane_tab() {
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
     // Split pane
-    inst.press_ctrl_shift(Key::Unicode('e'));
+    inst.press_alt(Key::Unicode('e'));
     inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
 
     // Create another workspace
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws+1", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 2
     });
@@ -763,12 +763,12 @@ fn test_full_workflow_workspace_pane_tab() {
 
     // Cleanup: close both test workspaces
     // Close current workspace
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws-1", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
     // Close the other test workspace (now active)
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws restored", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -825,7 +825,7 @@ fn test_workspace_switch_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -868,7 +868,7 @@ fn test_workspace_switch_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -881,7 +881,7 @@ fn test_tab_switch_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -931,7 +931,7 @@ fn test_tab_switch_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -963,7 +963,7 @@ fn test_tab_switch_speed() {
 fn test_ime_preedit_flushed_on_non_popup_shortcut() {
     let mut inst = shared();
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -1001,7 +1001,7 @@ fn test_ime_preedit_flushed_on_non_popup_shortcut() {
 
     // Cleanup: 사이드바 원복 + 워크스페이스 닫기.
     inst.press_ctrl(Key::Unicode('b'));
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -1015,7 +1015,7 @@ fn test_ime_preedit_flushed_on_non_popup_shortcut() {
 fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
     let mut inst = shared();
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -1080,7 +1080,7 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
 
     // Cleanup: search_bar 닫기 + 워크스페이스 닫기.
     inst.press_key(Key::Escape);
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
