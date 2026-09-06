@@ -183,8 +183,8 @@ fn no_repo_relative_path_is_flattened_without_normalizing_the_separator() {
     let hand = sites.iter().filter(|s| s.kind == Kind::Hand).count();
     let helper = sites.iter().filter(|s| s.kind == Kind::Helper).count();
     assert_eq!(
-        hand, 27,
-        "손으로 `replace('\\\\', \"/\")` 를 붙인 자리가 {hand} 개다(기록 27). 늘었으면 \
+        hand, 26,
+        "손으로 `replace('\\\\', \"/\")` 를 붙인 자리가 {hand} 개다(기록 26). 늘었으면 \
          규칙이 한 벌 더 복제된 것이고, 줄었으면 helper 로 옮긴 만큼 이 수를 내려라 — \
          남는 여유가 곧 안 보는 구간이다"
     );
