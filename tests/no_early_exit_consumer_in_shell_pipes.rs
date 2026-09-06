@@ -65,7 +65,27 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "_site", "node_modules"];
 const MIN_SHELL_SCRIPTS: usize = 15;
 
 /// 워크플로 수집 하한 — 같은 이유로, 경로가 어긋나 0 을 내는 것을 막는다.
+///
+/// **이 값은 워크플로 수의 하한이다.** [`shell_carriers`] 가 내는 집합의 하한이 아니다 —
+/// 그쪽은 Justfile 을 더한 것이라 모수가 다르고, 자기 이름을 갖는다([`MIN_SHELL_CARRIERS`]).
 const MIN_WORKFLOWS: usize = 8;
+
+/// 셸을 담는 자리의 하한 — [`shell_carriers`] 가 내는 집합의 크기.
+///
+/// **모수가 [`MIN_WORKFLOWS`] 와 다르다.** 여기 담기는 것은 Justfile 하나 + 워크플로
+/// 전부다. 한때 이 자리가 `MIN_WORKFLOWS` 를 빌려 썼는데, 그러면 재는 수와 이름이
+/// 가리키는 수가 달라 값을 고칠 때 어느 모수를 고쳤는지 못 읽는다.
+///
+/// 값의 근거: 2026-09-06 실측 **12**(Justfile 1 + `.github/workflows` 의 yml 11).
+/// 여유를 셋 둔다 — 워크플로는 하나씩 늘고 줄지 한꺼번에 움직이지 않으므로, 넓은 여유는
+/// 수집이 절반 죽어도 통과시킨다.
+///
+/// ★ **이 하한이 이 파일에서 가장 약한 검사라는 것을 함께 적는다.** 같은 물음의 더 강한
+/// 형태가 [`the_carrier_set_covers_the_justfile_and_every_workflow`] 에 있다 — 거기서는
+/// Justfile 을 **이름으로** 확인하고 워크플로 수를 디스크와 **같은지**로 확인한다. 이름과
+/// 등호가 부등호보다 강하다. 그러니 이 값의 몫은 하나뿐이다: 아래 루프가 얇은 인구 위에서
+/// 돌기 전에 그 자리에서 멈추는 것.
+const MIN_SHELL_CARRIERS: usize = 9;
 
 /// 수집 결과가 **믿을 만한가** — 판정을 순수 함수로 뽑아 합성 입력으로 찌를 수 있게 한다.
 ///
@@ -536,20 +556,18 @@ fn no_shell_carrier_pipes_into_an_early_exit_consumer() {
     let root = repo_root();
     let carriers = shell_carriers(&root);
     assert!(
-        carriers.len() > MIN_WORKFLOWS,
-        "셸을 담는 자리를 {}개밖에 못 찾았다 — 수집이 깨졌다.\n\
-         ★ 먼저 적을 것 — 이 자리의 하한은 **다른 모수의 이름을 빌려 쓰고 있다.** \
-         `MIN_WORKFLOWS` 는 워크플로 수의 하한인데 여기서 재는 것은 Justfile 을 더한 \
-         '셸을 담는 자리' 다. 두 모수가 다르므로 이 수는 저 이름의 함수가 아니다.\n\
-         ★ 판별 — 그 차이가 곧 판별식이다. [`shell_carriers`] 는 워크플로 앞에 Justfile 하나를 \
+        carriers.len() >= MIN_SHELL_CARRIERS,
+        "셸을 담는 자리를 {}개밖에 못 찾았다(하한 {MIN_SHELL_CARRIERS}) — 수집이 깨졌다.\n\
+         ★ 판별 — 이 모수는 Justfile 하나 + 워크플로 전부이고, 그 차가 곧 판별식이다. [`shell_carriers`] 는 워크플로 앞에 Justfile 하나를 \
          담고, 그 자리는 `if let Ok(text)` 라 **읽기에 실패하면 조용히 빠진다.** 그러니:\n\
              carriers.len() - (`.github/workflows` 의 yml/yaml 수) 는 정확히 1 이어야 한다.\n\
          0 이면 Justfile 이 조용히 빠진 것이고(파일이 있는지부터 봐라), 1 인데 전체가 모자라면 \
          워크플로가 준 것이라 [`shell_carriers`] 안쪽 하한이 먼저 말했어야 한다.\n\
-         ★ 이 수를 내려서 통과시키지 마라 — 이 단언이 잡는 좁은 구간은 '워크플로는 하한을 \
-         겨우 채웠는데 Justfile 이 사라진' 경우 하나뿐이고, 내리면 그 하나가 없어진다.\n\
-         Justfile 이 정말 없어졌으면 이 자리의 모수를 따로 이름 붙여 선언해라 — 남의 이름을 \
-         빌린 채로 값만 고치면 다음 사람이 어느 모수를 고쳤는지 못 읽는다.",
+         ★ 이 수를 내려서 통과시키지 마라 — 이 단언의 몫은 아래 루프가 얇은 인구 \
+         위에서 돌기 전에 멈추는 것 하나뿐이고, 내리면 그 하나가 없어진다.\n\
+         그리고 여기서 멈췄다면 `the_carrier_set_covers_the_justfile_and_every_workflow` 가 \
+         **먼저** 빨개졌어야 한다 — 그쪽이 Justfile 을 이름으로, 워크플로를 디스크와 등호로 \
+         본다. 그 시험이 초록인데 여기가 빨갛다면 둘의 모수가 갈라진 것이니 그것부터 봐라.",
         carriers.len()
     );
 
