@@ -90,7 +90,7 @@ flake 를 위 부류로 판정하고 부류별 표준 처방을 적용한다.
 **형태 A (프로세스 내 전역 공유 상태) — 모듈 전용 `static TEST_LOCK: Mutex<()>` 로
 직렬화한다.** reset+mutate+assert 시퀀스를 하나의 임계구역으로 묶어, `reset` 헬퍼가
 락 가드를 반환하고 각 테스트가 그것을 함수 끝까지 유지한다. 이것은 이미 이 저장소가
-네 곳(`plugin_defaults` · `method_meta` 의 `PLUGIN_PREFIXES` · `webhook/registry` 의
+네 곳(`plugin_defaults` · `method_meta` 의 namespace 소유 표 · `webhook/registry` 의
 `STATE` · env-var 락들)에서 쓰는 in-repo 패턴이며, 외부 크레이트(`serial_test`) 의존이
 필요 없다.
 
