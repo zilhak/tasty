@@ -335,7 +335,10 @@ mod platform_uniform_layers {
             let masked = crate::source_guards::mask_non_code(&raw);
             for (i, line) in masked.lines().enumerate() {
                 if line.contains("target_os") {
-                    let rel = f.strip_prefix(&root).unwrap_or(f).display();
+                    let rel = tasty_doc_guards::source_text::repo_relative(
+                        f.strip_prefix(&root).unwrap_or(f),
+                    );
+                    let rel = rel.display();
                     hits.push(format!("{rel}:{}", i + 1));
                 }
             }

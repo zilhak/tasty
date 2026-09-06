@@ -264,7 +264,11 @@ fn no_bundled_plugin_ships_a_locale_specific_literal() {
     let mut hits: Vec<String> = Vec::new();
     for dir in &srcs {
         for f in rs_files(dir) {
-            let rel = f.strip_prefix(&root).unwrap_or(&f).to_path_buf();
+            // `test_only` 의 원소는 공용 스캐너가 낸 것이라 구분자가 언제나 `/` 다.
+            // 여기서 손으로 만든 경로를 그대로 쓰면 Windows 에서 **한 건도 안 맞고**,
+            // 그 어긋남은 예외가 아니라 조용한 0 이다 — 필터가 통째로 꺼진 채 초록이 된다.
+            let rel =
+                tasty_doc_guards::source_text::repo_relative(f.strip_prefix(&root).unwrap_or(&f));
             if test_only.contains(&rel) {
                 skipped += 1;
                 continue;
@@ -274,11 +278,10 @@ fn no_bundled_plugin_ships_a_locale_specific_literal() {
             let src = std::fs::read_to_string(&f)
                 .unwrap_or_else(|e| panic!("{} 을 읽지 못했다: {e}", f.display()))
                 .replace("\r\n", "\n");
-            let rel = f
-                .strip_prefix(&root)
-                .unwrap_or(&f)
-                .to_string_lossy()
-                .to_string();
+            let rel =
+                tasty_doc_guards::source_text::repo_relative(f.strip_prefix(&root).unwrap_or(&f))
+                    .to_string_lossy()
+                    .to_string();
             for (line, lit) in locale_specific_literals(&src) {
                 let shown: String = lit.chars().take(60).collect();
                 hits.push(format!("{rel}:{line}  {shown}"));

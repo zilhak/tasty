@@ -632,11 +632,15 @@ const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
 /// 호출이 하나 늘었고, 이 표가 **파일별**이라 그 사실이 "어느 파일에 생겼는가" 로 드러났다
 /// — 총계였으면 다른 파일에서 하나 줄어든 것과 구별되지 않았다.
 const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
-    // 4 = Windows 유닛 · headless 전체 스위트 · Linux gui 유닛 · Linux gui e2e 1 건.
-    // 뒤의 둘이 조합 격자의 Linux×gui×debug 칸을 덮는다. 마지막 것은 아직 게이트가
-    // 아니라 관측용(`continue-on-error`)이고, 승격 조건은 그 스텝 주석에 있다
+    // 5 = macOS 유닛 · Windows 유닛 · headless 전체 스위트 · Linux gui 유닛 · Linux gui
+    // e2e 1 건. 가운데 둘이 조합 격자의 Linux×gui×debug 칸을 덮는다. 마지막 것은 아직
+    // 게이트가 아니라 관측용(`continue-on-error`)이고, 승격 조건은 그 스텝 주석에 있다
     // (docs/dev-guide/ci-gates.md).
-    ("crossplatform-check.yml", 4),
+    //
+    // macOS 것이 다섯 번째다. 그 전까지 그 잡은 `cargo check` 하나뿐이라 macOS 로 게이트된
+    // 유닛 테스트는 **컴파일만 되고 아무도 안 돌렸다**. 비용이 이 잡의 시간이 아니라
+    // 워크플로 벽시계(= 잡 최댓값)라는 판단과 그것이 뒤집히는 조건은 ci-gates.md 에 있다.
+    ("crossplatform-check.yml", 5),
     ("doc-guards.yml", 1),
     ("test.yml", 3),
 ];
@@ -714,14 +718,43 @@ mod jobs_anchored_at_boot;
 /// 이름에 가진 구현이 가려진다.
 mod derived_plugin_tables_are_not_bypassed;
 
-mod builtin_plugin_roster;
-mod bundled_plugin_namespace_coverage;
 /// 번들 plugin 명부가 적힌 다섯 자리(cfg 두 갈래 · 매니페스트 실물 · 문서 두 곳)가
 /// 같은 집합인지 본다. 자리가 여럿인 것이 아니라 잇는 것이 없는 것이 결함이다.
+mod builtin_plugin_roster;
+mod bundled_plugin_namespace_coverage;
+
+/// 갤러리 specimen 이 **되풀이한 본체 치수**가 아직 같은지 본다. 위 가드가 "specimen 이
+/// 있는가" 라면 이쪽은 "그 specimen 이 적어 놓은 수가 본체 값과 같은가" 다.
+#[cfg(test)]
+mod gallery_copied_dimensions;
+
+/// 본체 등록처(popup `all_defs` · 무대 `all_metas`)에 있는 것이 갤러리 카탈로그에도
+/// 있는지 본다. gallery-first 는 불가침 원칙인데 그것을 어겼을 때 빨개지는 것이 0 이었다.
+#[cfg(test)]
+mod gallery_specimen_parity;
+
+/// 갤러리가 되풀이한 본체 **규칙**(어떤 갈래가 무엇으로 가는가)이 아직 같은지 본다.
+/// 위 가드가 되풀이한 **수**를 보는 것과 물음이 다르다.
+#[cfg(test)]
+mod gallery_copied_rules;
+
+/// 재수출된 공용 위젯을 갤러리가 한 번이라도 부르는지 본다. 위 두 가드가 popup 과 무대를
+/// 덮으면서 **공용 위젯은 등록처가 없어 못 덮는다**고 적어 둔 자리다.
+#[cfg(test)]
+mod gallery_widget_coverage;
+
+/// 레포 상대 경로를 문자열로 펴는 자리가 구분자를 정규화하는지 본다. 성질(구분자)은
+/// Linux 에서 못 재므로 **형태**(정규화를 거치는가)를 본다.
+#[cfg(test)]
+mod repo_relative_paths;
+
+/// 본체에서 `TASTY_HOME` 을 바꾸는 문이 하나인지 본다. 리포 전역 env 가드는 *직렬화를
+/// 밝혔는가* 를 묻고, 그 물음은 락만 손으로 잡은 자리에 **참**이라 통과한다.
+#[cfg(test)]
+mod home_env_has_one_door;
+
 mod headless_app_layer_coverage;
 
-/// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
-/// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.
 #[cfg(test)]
 mod length_constant_frontier;
 
@@ -730,8 +763,9 @@ mod length_constant_frontier;
 #[cfg(test)]
 mod test_gate;
 
-/// 값이 `size-*` 스케일 안인데 숫자로 쓴 길이 자리를 센다. 위 가드가 선언의 **타입**을
-/// 묻는다면 이쪽은 값의 **출처**를 묻는다 — 토큰이 움직여도 안 따라가는 자리다.
+/// 값이 `size-*` 스케일 안인데 숫자로 쓴 길이 자리를 센다. `length_constant_frontier` 가
+/// 선언의 **타입**을 묻는다면 이쪽은 값의 **출처**를 묻는다 — 토큰이 움직여도 안 따라가는
+/// 자리다. (자리로 가리키면 사이에 모듈이 하나 끼는 순간 다른 것을 가리킨다 — 실제로 그랬다.)
 #[cfg(test)]
 mod on_scale_length_literal;
 
@@ -744,6 +778,8 @@ mod plugin_only_dispatch_parity;
 /// 번들 plugin 프로덕션 코드에 로케일 고정(CJK) 문구가 박혀 있는지 본다. 박힌 문구는
 /// 어떤 로케일 설정에서도 그 언어로만 나간다.
 mod plugin_locale_specific_literals;
+/// 포트 발견 모드 명부가 적힌 세 자리(코드 상수 · ko/en 가이드)가 같은 값을
+/// 열거하는지 본다. ko/en 쌍이지만 첫 열이 균질해 집합 동등이 정의되는 자리다.
 mod port_mode_roster;
 
 /// 기하를 내주는 debug 관측면 둘(popup · banner)이 같은 키 모양으로 내는지, 그리고

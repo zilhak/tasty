@@ -69,6 +69,23 @@ const ANCHORS: &[Anchor] = &[
         func: "fn build_plugin_manager",
     },
     Anchor {
+        // 소유 표를 **해소하는 crate 에 넘기는** 일. 이 설치가 없으면 `method_meta` 는
+        // 어떤 plugin prefix 도 모르는 채로 남아 plugin namespace 메서드가 권한 검사에서
+        // "모르는 메서드" 가 된다 — 그리고 그 실패는 조합마다 다르게 난다.
+        job: "namespace 소유 표 설치",
+        call: "install_namespace_table",
+        combo: "headless",
+        file: "src/boot.rs",
+        func: "fn run_headless",
+    },
+    Anchor {
+        job: "namespace 소유 표 설치",
+        call: "install_namespace_table",
+        combo: "gui",
+        file: "src/app/window_lifecycle.rs",
+        func: "fn build_plugin_manager",
+    },
+    Anchor {
         job: "agent 재시작 정화·핸들 재적재",
         call: "purge_stale_agent_state_on_boot",
         combo: "headless",

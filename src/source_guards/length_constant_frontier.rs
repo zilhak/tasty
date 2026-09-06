@@ -71,7 +71,7 @@
 //! 목록이 조용히 비는 것(오타 난 경로 · 사라진 크레이트)은 0 을 통과로 만든다. 그
 //! 공허를 [`every_scanned_unit_actually_has_files`] 가 따로 막는다.
 
-use super::test_gate::{blank_test_modules, test_gated_files};
+use super::test_gate::blank_test_modules;
 use super::{mask_non_code, rust_sources};
 
 /// 이 가드가 세는 단위(레포 상대 경로 접두사). 여기 없는 것은 0 이 아니라 미측정이다.
@@ -163,11 +163,16 @@ fn parse_bare_float_const(line: &str) -> Option<(String, String)> {
 /// 레포 전수 스캔 — (경로, 줄번호, 이름).
 fn scan() -> Vec<(String, usize, String)> {
     let files = rust_sources();
-    let gated = test_gated_files(&files);
+    // 파일 단위 판정("이 파일이 출하되나")은 `shipping_scope` 의 일이다 — 선언 간선의
+    // 전이 폐쇄를 따르고 `#[path]` 도 푼다. 여기서 다시 세지 않는다.
+    let gated = tasty_doc_guards::shipping_scope::test_only_files(&super::repo_root(), &files);
     let mut out = Vec::new();
-    for (rel, text) in &files {
-        let rel = rel.to_string_lossy().replace('\\', "/");
-        if !SCANNED.iter().any(|root| rel.starts_with(root)) || gated.contains(&rel) {
+    for (path, text) in &files {
+        if gated.contains(path) {
+            continue;
+        }
+        let rel = path.to_string_lossy().replace('\\', "/");
+        if !SCANNED.iter().any(|root| rel.starts_with(root)) {
             continue;
         }
         for (line, name) in length_constants(&mask_non_code(text)) {
