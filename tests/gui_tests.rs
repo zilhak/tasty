@@ -582,6 +582,26 @@ fn test_keyboard_not_sent_to_terminal_when_settings_open() {
     inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
         !s.settings_open
     });
+
+    // ★ 비영 대조 — 위 단정은 `!contains(..)` 하나뿐이라, 타이핑이 **아무 데도** 안 가면
+    // 그것만으로도 초록이 된다. 그 초록은 "settings 가 막았다" 가 아니라 "아무 일도 안
+    // 일어났다" 다. 그래서 같은 회차·같은 인스턴스에서 **경로가 살아 있음**을 보인다.
+    // 형제 `test_keyboard_sent_to_terminal_when_no_overlay` 가 이 형태를 갖고 있는데,
+    // 그 증거가 다른 시험에 있으면 이 시험을 단독으로 돌릴 때는 아무 보장이 없다.
+    inst.call("surface.set_mark", serde_json::json!({}));
+    inst.type_text("echo overlay_control_marker");
+    inst.press_key(Key::Return);
+    std::thread::sleep(Duration::from_millis(1000));
+    let control = inst.call(
+        "surface.read_since_mark",
+        serde_json::json!({ "strip_ansi": true }),
+    );
+    let control = control["text"].as_str().unwrap_or("");
+    assert!(
+        control.contains("overlay_control_marker"),
+        "비영 대조 실패 — settings 를 닫은 뒤에도 타이핑이 터미널에 안 닿는다. \
+         그러면 위 초록은 settings 가 막았다는 증거가 아니다. Got: {control}"
+    );
 }
 
 #[test]
@@ -852,16 +872,26 @@ fn test_tab_switch_speed() {
     inst.press_ctrl_shift(Key::Unicode('t'));
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
+    // ★ 고정 sleep 이 아니라 **관측**을 잰다. sleep 을 재면 그 값은 늘 sleep 길이라
+    // Ctrl+Tab 이 아무 일도 안 해도 상한 아래로 통과한다 — 형제
+    // `test_workspace_switch_speed` 가 처음부터 옳은 형태(`wait_for_ui`)를 갖고 있다.
+    // 관측 축은 `active_tab` 이다: `tab_count` 는 전환해도 안 변해서 못 쓴다.
     let mut latencies = Vec::new();
     for _ in 0..5 {
+        let from = inst.ui_state().active_tab;
         let start = Instant::now();
         inst.press_ctrl(Key::Tab);
-        std::thread::sleep(Duration::from_millis(100));
+        inst.wait_for_ui("tab forward", Duration::from_secs(3), move |s| {
+            s.active_tab != from
+        });
         latencies.push(start.elapsed());
 
+        let from = inst.ui_state().active_tab;
         let start = Instant::now();
         inst.press_ctrl_shift(Key::Tab);
-        std::thread::sleep(Duration::from_millis(100));
+        inst.wait_for_ui("tab back", Duration::from_secs(3), move |s| {
+            s.active_tab != from
+        });
         latencies.push(start.elapsed());
     }
 

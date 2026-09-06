@@ -367,6 +367,7 @@ impl GuiTestInstance {
             active_workspace: result["active_workspace"].as_u64().unwrap_or(0) as usize,
             pane_count: result["pane_count"].as_u64().unwrap_or(0) as usize,
             tab_count: result["tab_count"].as_u64().unwrap_or(0) as usize,
+            active_tab: result["active_tab"].as_u64().unwrap_or(0) as usize,
         }
     }
 
@@ -726,4 +727,7 @@ pub struct UiState {
     pub active_workspace: usize,
     pub pane_count: usize,
     pub tab_count: usize,
+    /// 포커스된 pane 의 활성 탭 인덱스. **`tab_count` 로는 전환이 안 보인다** — 전환해도
+    /// 수가 그대로라, 전환을 재려면 이 축이 필요하다.
+    pub active_tab: usize,
 }
