@@ -2022,6 +2022,97 @@ fn the_gui_ignored_layer_has_no_single_value() {
     );
 }
 
+/// 층 4 — 층 2·3 의 서술이 **워크플로와 같은 방향을 가리키는가.**
+///
+/// 층 2 는 `tests/gui_tests.rs` **소스만** 읽는다(전수가 `#[ignore]` 인가). 그래서 워크플로
+/// 쪽에서 누가 `-- --ignored` 를 넣으면 층 2 는 그대로 통과하는데 그 층의 서술
+/// ("디스플레이가 있어도 한 건도 안 돈다")은 **거짓이 된다.** 소스와 문서만 보는 층들이
+/// 워크플로의 변화에 대해 원리적으로 눈이 먼 자리다.
+///
+/// 이 층은 **결정을 선취하지 않는다.** "채널이 있어야 한다" 도 "없어야 한다" 도 아니고
+/// **두 쪽이 같은 방향인가**만 묻는다. 채널을 넣기로 하면 문서가 부정 표지를 걷어야 하고,
+/// 안 넣기로 하면 그 표지가 그 결정을 지키는 자리가 된다 — 등급은 누가 그것을 지키는가가
+/// 있어야 등급이다.
+///
+/// ☆ **수동 잡은 안 본다 — 의도된 것이다.** 물음이 "**자동** 채널이 있는가" 이므로
+/// [`automatic_job_bodies_of_dir`] 가 `workflow_dispatch` 전용 잡을 걸러낸다. 실측으로
+/// 밟았다: `test.yml` 의 `test-linux-x64` 에 `--ignored` 를 심는 첫 양성 대조가 **안 죽었고**,
+/// 원인은 판정이 아니라 그 잡이 수동 전용이라는 사실이었다(R522 — 대조가 안 죽으면
+/// 표적보다 **모형**을 먼저 의심한다). 자동 잡에 다시 심으니 죽는다.
+/// ⇒ 그 잡에 `-- --ignored` 를 얹는 선택지를 고르면 이 층은 잠잠하다. 그때 낡는 것은
+/// 이 층의 문장이 아니라 "담는다 ≠ 돌린다" 쪽이고, 그건 배치별 표가 갖는다.
+///
+/// ☆ **이 층이 못 잡는 것을 적어 둔다.** 채널이 생겼는데 문서가 부재 표지를 **걷기만**
+/// 하고 그 채널을 서술하지 않으면 여기는 통과한다 — 두 쪽이 모순은 아니기 때문이다.
+/// 그 자리(무엇을 어느 트리거·러너로 돌리는지)는 이 파일의 다른 축들과 `ci-gates.md` 의
+/// 배치별 표가 맡는다. 여기서 그것까지 요구하면 표현을 고정하게 되고, 그러면 문장을
+/// 다듬을 때마다 빨개진다.
+///
+/// **두 팔이 다 죽어야 방향을 재는 것이다.** 워크플로에 `--ignored` 를 심어도 빨개지고,
+/// 문서의 부재 표지를 걷어도 빨개진다. 한쪽만 죽으면 이 시험이 재는 것은 방향이 아니라
+/// 그 한쪽의 존재다.
+#[test]
+fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
+    const ABSENCE_CLAIM: &str = "`gui_tests` 에 자동 채널이 없다";
+    const CLAIM_DOC: &str = "docs/dev-guide/ci-gates.md";
+    let root = repo_root();
+
+    let bodies = automatic_job_bodies_of_dir(&root.join(".github/workflows"));
+    assert!(
+        bodies.len() >= 8,
+        "자동 잡을 {}개밖에 못 읽었다 — 판독이 죽으면 `--ignored` 가 있어도 0 이 나오고 \
+         이 층은 언제나 '부재' 쪽으로 판정한다(R435)",
+        bodies.len()
+    );
+
+    // 주석을 뗀 사본에서 센다. 물음이 "명령에 있는가" 이므로 사본도 명령만 남은 것이어야
+    // 한다 — 그 규칙을 *설명하는* 주석이 명령으로 읽히면 없는 채널이 있는 것으로 잡힌다.
+    let firing: Vec<String> = bodies
+        .iter()
+        .flat_map(|b| run_commands(b))
+        .map(|c| {
+            c.lines()
+                .map(|l| match l.find('#') {
+                    Some(at) => &l[..at],
+                    None => l,
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|c| c.contains("--ignored"))
+        .collect();
+
+    let doc_text = std::fs::read_to_string(root.join(CLAIM_DOC))
+        .unwrap_or_else(|e| panic!("{CLAIM_DOC} 를 읽지 못했다: {e}"));
+    assert!(
+        doc_text.contains("gui_tests"),
+        "{CLAIM_DOC} 이 `gui_tests` 를 아예 언급하지 않는다 — 읽기가 죽었거나 문서가 \
+         통째로 바뀌었다. 어느 쪽이든 아래 방향 판정은 뜻이 없다(R435)"
+    );
+    let says_absent = unwrapped(&doc_text).contains(ABSENCE_CLAIM);
+
+    if firing.is_empty() {
+        assert!(
+            says_absent,
+            "워크플로의 자동 잡 어디에도 `--ignored` 가 없는데 {CLAIM_DOC} 에서 \
+             '{ABSENCE_CLAIM}' 표지가 사라졌다.\n\
+             그 표지가 이 방향의 **값 자리**다 — 없으면 이 층은 지킬 것이 없는 채로 \
+             언제나 초록이 된다. 채널을 안 두기로 한 결정이면 그 문장을 되살리고, \
+             표현을 바꿨으면 이 상수도 함께 옮겨라"
+        );
+    } else {
+        assert!(
+            !says_absent,
+            "자동 잡이 `--ignored` 를 넘긴다 — 즉 `gui_tests` 에 자동 실행 채널이 \
+             생겼다:\n  {}\n\
+             그런데 {CLAIM_DOC} 은 아직 '{ABSENCE_CLAIM}' 라고 적고 있다.\n\
+             채널을 넣는 결정의 부수효과로 문서가 조용히 거짓이 되는 자리다 — \
+             그 서술과 등급을 함께 고쳐라(무엇을 어느 트리거·러너로 돌리는지까지)",
+            firing.join("\n  ")
+        );
+    }
+}
+
 /// 회귀 케이스 — **한 표 안에서 채널이 갈리는 행들.**
 ///
 /// `docs/design/systems/theme.md` 의 토큰 규칙 표는 네 자리에서 가드를 인용하는데, 셋은
