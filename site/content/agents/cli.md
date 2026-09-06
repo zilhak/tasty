@@ -17,14 +17,14 @@ tasty list info            # 버전·워크스페이스 수 등 — 접속 확�
 
 ## 용어와 ID
 
-Tasty 의 화면은 **워크스페이스 > 패인 > 탭 > 서피스** 순으로 겹쳐 있습니다. 서피스(surface)가 터미널 하나입니다. CLI 의 모든 대상은 이 ID 로 직접 지정합니다 — 어느 창이 포커스돼 있든 결과가 같습니다.
+Tasty 의 화면은 **워크스페이스 > 페인 > 탭 > 서피스** 순으로 겹쳐 있습니다. 서피스(surface)가 터미널 하나입니다. CLI 의 모든 대상은 이 ID 로 직접 지정합니다 — 어느 창이 포커스돼 있든 결과가 같습니다.
 
 ```sh
 tasty list tree            # 전체 계층을 트리로
 tasty list workspaces      # 워크스페이스 목록
 tasty list surfaces        # 서피스(터미널) 목록 — 전 워크스페이스
-tasty list panes           # 패인 목록
-tasty list tabs --pane 3   # 특정 패인의 탭
+tasty list panes           # 페인 목록
+tasty list tabs --pane 3   # 특정 페인의 탭
 ```
 
 `list tree` 는 분할 구조까지 보여줍니다. 포커스된 서피스에는 `*focus` 가 붙습니다.
@@ -37,7 +37,7 @@ tasty list tabs --pane 3   # 특정 패인의 탭
       └─ surface:418 (markdown)
 ```
 
-`list workspaces` 의 행은 `이름 (id:N) (패인 수)` 형식입니다. 활성 워크스페이스에는 `*`, 원격 mirror 에는 `[mirror]` 가 붙습니다 ([원격 attach](../remote/attach.md)).
+`list workspaces` 의 행은 `이름 (id:N) (페인 수)` 형식입니다. 활성 워크스페이스에는 `*`, 원격 mirror 에는 `[mirror]` 가 붙습니다 ([원격 attach](../remote/attach.md)).
 
 ## 기본 패턴: 마크 → 보내기 → 마크 이후 읽기
 
@@ -99,8 +99,8 @@ fish 등 다른 셸은 직접 셸 통합을 설치하지 않으면 빈 목록이
 ```sh
 tasty new workspace --name build --cwd ~/proj          # 새 워크스페이스
 tasty split --level surface --target-surface this --direction vertical   # 내 서피스를 좌우 분할
-tasty split --level pane --target-pane 3 --direction horizontal          # 패인 분할
-tasty new tab --pane 3 --cwd ~/proj                     # 패인에 새 탭
+tasty split --level pane --target-pane 3 --direction horizontal          # 페인 분할
+tasty new tab --pane 3 --cwd ~/proj                     # 페인에 새 탭
 tasty close surface --surface 99                        # 서피스 닫기
 tasty close tab --tab 12
 tasty close workspace --id 3                            # 워크스페이스를 통째로 (안의 탭·서피스까지)
@@ -126,7 +126,8 @@ tasty close self                                        # 지금 이 서피스 �
 ```sh
 tasty surface cursor-position --surface 42     # 커서가 몇 행 몇 열에 있나
 tasty surface foreground-process --surface 42  # 지금 앞에서 도는 프로그램 (셸이면 유휴)
-tasty surface locate --surface 42              # 이 서피스가 속한 패인, 그리고 아직 살아 있는지
+tasty surface mouse-tracking --surface 42      # 안의 프로그램이 마우스를 잡았나, 그리고 tasty 가 그걸 존중하나
+tasty surface locate --surface 42              # 이 서피스가 속한 페인, 그리고 아직 살아 있는지
 tasty surface respawn-terminal --surface 42    # 자리를 유지한 채 셸만 다시 띄우기
 tasty surface fire-hook --surface 42 --event process-exit    # 훅을 직접 발화
 tasty surface fire-hook --surface 42 --event idle-timeout:300 # 초 단위가 붙는 이벤트도 있음
@@ -185,6 +186,81 @@ tasty read queue --surface 42            # 가장 오래된 메시지 하나 꺼
 tasty read queue --surface 42 --peek     # 꺼내지 않고 보기
 tasty read queue --surface 42 --clear    # 전부 비움
 ```
+
+## 자식 터미널을 에이전트처럼 굴리기
+
+한 워크스페이스 안에 자식 터미널을 띄워 명령을 돌리고, 메시지를 보내고, 목록을 보고, 끝나면
+정리합니다. Claude · Codex 만이 아니라 **아무 프로그램이나** 이렇게 굴릴 수 있습니다
+(Claude · Codex 는 [전용 명령](claude-codex.md)이 같은 일에 세션 관리를 더 얹은 것입니다).
+
+```sh
+tasty terminal spawn --workspace build --command "cargo watch -x test\r" --cwd ~/proj --role worker
+tasty terminal children                        # 내 밑의 자식 목록
+tasty terminal tell "y\r" --surface 57         # 자식에게 입력 보내기 (줄바꿈 보존, 자동 제출)
+tasty terminal broadcast "git pull\r" --role worker   # 역할이 같은 자식 전부에게
+tasty terminal kill --child 1                   # 자식을 인덱스로 종료
+```
+
+`spawn` 은 바로 반환되고, 자식이 유휴 · 입력 대기 · 종료 상태가 되면 부모 서피스로 알림이 옵니다 —
+기다리는 명령을 따로 돌릴 필요가 없습니다. `--role` 로 이름표를 붙이면 `broadcast` 로 묶어 보냅니다.
+
+## 화면 없는 PTY
+
+탭도 화면도 없이 프로그램을 진짜 PTY(가상 터미널) 위에서 돌립니다. 화면에 자리를 차지하지 않고
+TTY 가 필요한 명령을 스크립트로 굴릴 때 씁니다. `spawn` 이 돌려주는 id 로 입력을 넣고 화면을 읽습니다.
+
+```sh
+tasty pty spawn --cwd ~/proj -- python3         # 명령을 PTY 로 띄우고 id 를 받음
+tasty pty write --id 3 "print(1+1)\n"           # 표준 입력으로 보내기 (줄바꿈이 곧 제출)
+tasty pty read --id 3 --lines 20                # 지금 화면의 마지막 20줄
+tasty pty list                                  # 떠 있는 PTY 목록
+tasty pty kill --id 3                            # 종료
+```
+
+## 에이전트가 함께 쓰는 메모리
+
+같은 Tasty 안의 여러 에이전트가 값을 주고받는 키-값 저장소입니다. 범위(전역 · 서피스 · 워크스페이스 ·
+창 · 계정)를 골라 저장하고, 시간이 지나면 사라지게 하거나(TTL) 겹쳐쓰기를 막을(CAS) 수 있습니다.
+
+```sh
+tasty memory put --workspace 7 --key build/status --value running --ttl 600
+tasty memory get --workspace 7 --key build/status
+tasty memory list --workspace 7 --prefix build/
+tasty memory delete --workspace 7 --key build/status
+```
+
+`--global` · `--surface 3` · `--window 42` · `--account me` 로 범위를 바꿉니다. 값이 JSON 이면
+JSON 으로, 아니면 문자열로 저장합니다.
+
+## 출력에서 신호 뽑기 (관찰자)
+
+터미널 출력이 흘러가는 것을 지켜보다가 경로 · URL · 종료 코드 · 프롬프트 경계 같은 **구조화된 신호**만
+골라 모읍니다. 사람이 화면을 지켜보지 않아도 스크립트가 그 신호에 반응하게 만들 때 씁니다.
+
+```sh
+tasty output observe start --surface 42 --parsers exit_code,url --sink file
+tasty output observe list                        # 지금 도는 관찰자 목록
+tasty output observe info --observer 1           # 하나의 상태·수집 수
+tasty output observe stop --observer 1
+```
+
+`--sink memory` 는 메모리 링버퍼에, `--sink file` 은 파일에 모읍니다. `--parsers` 를 비우면 기본
+파서(경로 · URL · 프롬프트 경계 · 종료 코드)가 다 켜집니다.
+
+## 에이전트 활동 계측
+
+여러 에이전트가 자기 활동을 숫자로 기록하고(토큰 수 · 호출 수 등), 그것을 합계 · 시계열 · 상위
+순위로 들여다봅니다. 함대 전체가 무엇을 얼마나 하고 있는지 한눈에 볼 때 씁니다.
+
+```sh
+tasty telemetry record --metric tokens --value 1200 --tags '{"model":"opus"}'
+tasty telemetry summary --metric tokens           # 합계·건수
+tasty telemetry top --by agent --metric tokens    # 에이전트별 상위
+tasty telemetry timeseries --metric tokens --window 1h
+```
+
+`record` 는 부르는 쪽을 에이전트로 자동 귀속합니다(`TASTY_AGENT_ID`). 여러 값을 순서까지 지켜
+한 번에 넣으려면 `tasty telemetry record-batch` 를 씁니다.
 
 ## 그 밖의 조회·설정
 

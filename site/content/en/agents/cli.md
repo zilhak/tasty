@@ -1,4 +1,4 @@
-<!-- source-hash: 72f4700ff6e2 -->
+<!-- source-hash: e45db207e7dc -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -128,6 +128,7 @@ restored. Check with `tasty list workspaces` before you close.
 ```sh
 tasty surface cursor-position --surface 42     # which row and column the cursor sits at
 tasty surface foreground-process --surface 42  # what is running in front (a shell means idle)
+tasty surface mouse-tracking --surface 42      # whether the program grabbed the mouse, and whether tasty honours it
 tasty surface locate --surface 42              # the pane it belongs to, and whether it still exists
 tasty surface respawn-terminal --surface 42    # restart the shell, keeping the surface in place
 tasty surface fire-hook --surface 42 --event process-exit    # fire a hook yourself
@@ -187,6 +188,71 @@ tasty read queue --surface 42            # pop the oldest message
 tasty read queue --surface 42 --peek     # look without popping
 tasty read queue --surface 42 --clear    # empty everything
 ```
+
+## Running child terminals like agents
+
+Spawn a child terminal inside a workspace to run a command, send it messages, list them, and clean up when it finishes. This works for **any program**, not only Claude · Codex (their [dedicated commands](claude-codex.md) do the same thing with session management layered on top).
+
+```sh
+tasty terminal spawn --workspace build --command "cargo watch -x test\r" --cwd ~/proj --role worker
+tasty terminal children                        # children under me
+tasty terminal tell "y\r" --surface 57         # send input to a child (line breaks kept, submitted automatically)
+tasty terminal broadcast "git pull\r" --role worker   # to every child with the same role
+tasty terminal kill --child 1                   # kill a child by index
+```
+
+`spawn` returns immediately, and when a child goes idle · waits for input · exits, a notification comes back to the parent surface — there is no separate command to wait on. Tag children with `--role` to address them together with `broadcast`.
+
+## Headless PTY
+
+Run a program on a real PTY (pseudo-terminal) with no tab and no screen. Use it when a command needs a TTY but you drive it from a script without taking up screen space. Feed input and read the screen by the id that `spawn` returns.
+
+```sh
+tasty pty spawn --cwd ~/proj -- python3         # start a command on a PTY and get its id
+tasty pty write --id 3 "print(1+1)\n"           # send to stdin (a newline submits)
+tasty pty read --id 3 --lines 20                # the last 20 lines on the screen right now
+tasty pty list                                  # PTYs that are up
+tasty pty kill --id 3                            # stop it
+```
+
+## Memory shared between agents
+
+A key-value store where several agents in the same Tasty exchange values. Pick a scope (global · surface · workspace · window · account) to store under, and optionally let entries expire (TTL) or guard against overwrites (CAS).
+
+```sh
+tasty memory put --workspace 7 --key build/status --value running --ttl 600
+tasty memory get --workspace 7 --key build/status
+tasty memory list --workspace 7 --prefix build/
+tasty memory delete --workspace 7 --key build/status
+```
+
+Switch scope with `--global` · `--surface 3` · `--window 42` · `--account me`. A value that parses as JSON is stored as JSON, otherwise as a string.
+
+## Pulling signals out of the output (observers)
+
+Watch the output as it scrolls past and collect only the **structured signals** — paths · URLs · exit codes · prompt boundaries. Use it so a script can react to those signals without a person watching the screen.
+
+```sh
+tasty output observe start --surface 42 --parsers exit_code,url --sink file
+tasty output observe list                        # observers running now
+tasty output observe info --observer 1           # one observer's state and collected count
+tasty output observe stop --observer 1
+```
+
+`--sink memory` collects into an in-memory ring buffer, `--sink file` into a file. Leave `--parsers` empty and the default parsers (paths · URLs · prompt boundaries · exit codes) are all on.
+
+## Measuring agent activity
+
+Several agents record their own activity as numbers (token counts · call counts and so on), and you look at it as sums · time series · top rankings. Use it to see at a glance what the whole fleet is doing and how much.
+
+```sh
+tasty telemetry record --metric tokens --value 1200 --tags '{"model":"opus"}'
+tasty telemetry summary --metric tokens           # sum and count
+tasty telemetry top --by agent --metric tokens    # top by agent
+tasty telemetry timeseries --metric tokens --window 1h
+```
+
+`record` attributes the call to the caller automatically (`TASTY_AGENT_ID`). To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
 
 ## Other queries and settings
 

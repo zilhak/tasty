@@ -1,4 +1,4 @@
-<!-- source-hash: f58eb509fa0c -->
+<!-- source-hash: 9b872987bfeb -->
 # A first look
 
 After reading this page you will know what each part of the Tasty window is and what it is called. Every later page uses these terms.
