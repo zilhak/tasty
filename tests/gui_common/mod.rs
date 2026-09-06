@@ -322,7 +322,66 @@ impl GuiTestInstance {
                 app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
             }
         }
+        #[cfg(target_os = "linux")]
+        self.focus_x11();
         std::thread::sleep(Duration::from_millis(100));
+    }
+
+    /// X11 에서 이 인스턴스의 창에 입력 포커스를 준다.
+    ///
+    /// `enigo` 는 *그 순간 OS 포커스를 가진 무엇* 에 키를 넣는다. WM 이 없는 Xvfb 에는
+    /// 포커스를 옮겨 주는 주체가 아예 없으므로, 여기서 안 주면 키 자극이 이 창에
+    /// 도달했는지 자체가 안 정해진다. `windowactivate` 는 WM 에 요청하는 것이라 WM
+    /// 없는 디스플레이에서 실패하므로 `windowfocus` 를 쓴다.
+    ///
+    /// 창 고르기: 한 프로세스가 여러 X 창을 가질 수 있어(작은 보조 창이 섞인다) pid 로
+    /// 찾은 것 중 **넓이가 가장 큰 것**을 고른다.
+    #[cfg(target_os = "linux")]
+    fn focus_x11(&self) {
+        use std::process::Command;
+        let pid = self.process.id().to_string();
+        // 못 하면 **크게** 죽는다. 조용히 넘어가면 뒤따르는 키 단정이 전부 "자극이
+        // 도착했는가" 를 안 정한 채 색을 내고, 그 색은 제품이 아니라 하네스를 잰다 —
+        // 이 분기가 생긴 이유가 정확히 그 사고다.
+        let found = Command::new("xdotool")
+            .args(["search", "--pid", &pid])
+            .output()
+            .expect("xdotool 을 못 돌렸다 — Linux gui 스위트는 창 포커스를 이것으로 준다");
+        let mut best: Option<(u64, String)> = None;
+        for wid in String::from_utf8_lossy(&found.stdout).lines() {
+            let wid = wid.trim();
+            if wid.is_empty() {
+                continue;
+            }
+            let Ok(geom) = Command::new("xdotool")
+                .args(["getwindowgeometry", wid])
+                .output()
+            else {
+                continue;
+            };
+            let text = String::from_utf8_lossy(&geom.stdout);
+            let Some(dims) = text.split("Geometry:").nth(1) else {
+                continue;
+            };
+            let dims = dims.split_whitespace().next().unwrap_or("");
+            let mut parts = dims.split('x');
+            let (Some(w), Some(h)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let (Ok(w), Ok(h)) = (w.trim().parse::<u64>(), h.trim().parse::<u64>()) else {
+                continue;
+            };
+            let area = w * h;
+            if best.as_ref().is_none_or(|(a, _)| area > *a) {
+                best = Some((area, wid.to_string()));
+            }
+        }
+        let (_, wid) = best.unwrap_or_else(|| panic!("pid {pid} 의 X 창을 못 찾았다"));
+        let status = Command::new("xdotool")
+            .args(["windowfocus", &wid])
+            .status()
+            .expect("xdotool windowfocus 를 못 돌렸다");
+        assert!(status.success(), "xdotool windowfocus {wid} 실패: {status}");
     }
 
     /// Send a JSON-RPC request and return the result.
