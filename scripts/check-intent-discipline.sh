@@ -5,6 +5,16 @@
 # 정책 근거: docs/design/flows/action-dispatch.md
 # 채널: .github/workflows/script-gates.yml (main push · PR)
 #
+# ── 종료 코드: 0 통과 · 1 위반 · **2 판정 불가** ──────────────────────────
+# 2 를 고른 것은 다수결이 아니라 **근거의 유무**로 갈랐다. 이 레포의 게이트들이 판정
+# 불가에 쓰는 코드가 1 · 2 · 3 으로 흩어져 있는데, 근거가 글로 적힌 것은 2 뿐이다
+# (scripts/check-file-size.sh: 측정 실패는 위반과도 구분한다). 3 은 한 자리뿐이고
+# 근거가 없다. 1 은 위반과 안 갈려서 CI 에서 "이 회차에 무엇을 했는가" 가 안 나온다.
+# 그리고 이 파일은 **이미 같은 뜻으로 2 를 쓴다**(아래 면제 경로 실재 검사 — 그쪽도
+# "조용히 무시되고 쌓인다" 를 막는 자리다). 새 표기를 만들지 않는다: 같은 물음의 답이
+# 표기마다 흩어지면 다음 게이트를 쓰는 사람이 규칙을 **볼 수는 있어도 복사할 대상을
+# 못 고른다.**
+#
 # ── 술어의 성질 (되돌리지 마라) ──────────────────────────────────────────
 # 이 검사는 **텍스트 스캔**이라 타입을 모른다. 그래서 오탐이 나는 자리를 세 가지로
 # 나눠 각각 다르게 막는다. 셋을 하나로 합치면(예: 파일 통째 제외) 그 파일의 다른
@@ -113,6 +123,19 @@ if [ -n "$MASK_BIN" ]; then
 else
     echo "[intent-discipline] 원문에서 본다 — 문자열·주석 안의 호출까지 세어진다." >&2
 fi
+
+# ── 안 본 것과 없는 것을 가른다 ────────────────────────────────────────────
+# 이 게이트는 잔여 0 을 요구하는 hard-fail 이다. 그래서 좌변이 비면 위반이 0 이 되고
+# **조용히 통과한다** — 래칫과 달리 빨개질 하한이 없다. 0 이 "직접 mutation 호출이
+# 없다" 인지 "아무것도 안 봤다" 인지 가르는 자리가 없었다. 종료 코드 2 의 근거는 머리말.
+SRC_LIST=$(find "$SCAN_ROOT/src" -name '*.rs' -type f 2>/dev/null || true)
+if [ -z "$SRC_LIST" ]; then
+    echo "src/ 아래에서 .rs 를 하나도 못 찾았다 — 좌변이 깨졌다. 이 상태의 0 은 '직접"
+    echo "mutation 호출이 없다' 가 아니라 '아무것도 안 봤다' 다. 통과로 읽지 마라."
+    echo "  훑으려던 뿌리: $SCAN_ROOT/src"
+    exit 2
+fi
+SRC_COUNT=$(printf '%s\n' "$SRC_LIST" | wc -l)
 
 matches=$(find "$SCAN_ROOT/src" -name '*.rs' -type f -print0 \
   | xargs -0 awk -v exempt_all="$exempt_all_re" -v exempt_pane="$exempt_pane_re" \
@@ -247,4 +270,7 @@ if [ -n "$claim_fail" ]; then
     exit 1
 fi
 
-echo "Intent discipline check passed."
+# 초록일 때도 **무엇을 몇 개 봤는지** 찍는다. 수를 안 찍으면 이 게이트의 초록은
+# "위반이 없다" 와 "아무것도 안 봤다" 가 화면에서 같은 모양이 된다 — 위 판정 불가가
+# 막는 것은 좌변이 **완전히** 빈 경우뿐이고, 반쯤 줄어든 좌변은 이 수를 봐야 보인다.
+echo "Intent discipline check passed — src/ 의 .rs ${SRC_COUNT}개를 훑어 위반 0."
