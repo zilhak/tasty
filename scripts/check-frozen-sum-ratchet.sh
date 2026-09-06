@@ -44,7 +44,7 @@ die() { echo "$1"; echo "(측정이 안 됐으므로 게이트를 통과로 읽�
 # 맞물리려면 여유가 그 임계와 같아야 하고, 그래서 적지 않고 읽어 온다.
 SLACK="$(sed -n 's/^THRESHOLD=\([0-9][0-9]*\)$/\1/p' "$SIZE_GATE")"
 SLACK="${SLACK%%$'\n'*}"
-[ -n "$SLACK" ] || die "check-file-size.sh 에서 THRESHOLD 를 못 읽었다 — 여유를 정할 수 없다."
+[ -n "$SLACK" ] || die "check-file-size.sh 에서 THRESHOLD 를 못 읽었다 — 띠 너비를 정할 수 없다."
 
 BUDGET="$(sed -n 's/^#[[:space:]]*frozen-sum-budget:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$ALLOWLIST")"
 BUDGET="${BUDGET%%$'\n'*}"
@@ -61,13 +61,16 @@ done
 [ -n "$PY" ] || die "python 미설치: tokei JSON 파싱에 python3 필요"
 
 # 판정기는 여기서 빌드하지 않는다 — 중첩 cargo 가 빌드 디렉토리 잠금에서 서로를 기다린다.
-STRIP_BIN="${TASTY_STRIP_CFG_TEST_BIN:-}"
-if [ -z "$STRIP_BIN" ]; then
-    for cand in "$ROOT/target/debug/strip-cfg-test" "$ROOT/target/release/strip-cfg-test"; do
-        [ -x "$cand" ] && { STRIP_BIN="$cand"; break; }
-    done
-fi
-[ -n "$STRIP_BIN" ] || die "strip-cfg-test 가 없다 — cargo build -p tasty-doc-guards --bin strip-cfg-test"
+#
+# 찾기를 여기서 다시 쓰지 않고 공용 `resolve_judge` 를 부른다. 손으로 쓴 `[ -x ]` 판은
+# **있기만 하면 쓴다** — 소스가 앞서 나간 낡은 바이너리도 그대로 쓴다. 그러면 옛 규칙으로
+# 잰 값이 나오고, 이 게이트는 여유가 넉넉해서(파일 하나 몫) **그 값이 조용히 통과한다.**
+# 실측: 판정기를 낡게 만들면 이 게이트는 rc=0 으로 값을 냈고, 같은 트리에서
+# `resolve_judge` 를 쓰는 파일 SLOC 게이트는 rc=2(판정 불가)로 떨어졌다.
+# `resolve_judge` 는 환경변수로 경로를 **줘도** `--check-fresh` 를 돌려 낡음을 없음으로 다룬다.
+. "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
+STRIP_BIN="$(resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT")"
+[ -n "$STRIP_BIN" ] || die "strip-cfg-test 를 못 쓴다(없거나 낡았다) — cargo build -p tasty-doc-guards --bin strip-cfg-test"
 
 STRIPPED="$(mktemp -d)"
 trap 'rm -rf "$STRIPPED"' EXIT
@@ -116,7 +119,7 @@ CEILING=$((BUDGET + SLACK))
 
 if [ "$SUM" -gt "$CEILING" ]; then
     echo "동결 총합 래칫 위반: 동결 파일들의 출하 SLOC 합이 예산을 넘었다."
-    echo "  합 $SUM  >  예산 $BUDGET + 여유 $SLACK = $CEILING"
+    echo "  합 $SUM  >  예산 $BUDGET + 띠 $SLACK = 천장 $CEILING"
     echo
     echo "  큰 것부터:"
     shown=0
@@ -150,4 +153,8 @@ if [ "$SUM" -lt "$BUDGET" ]; then
     exit 1
 fi
 
-echo "동결 총합 래칫 통과 (합 $SUM, 예산 $BUDGET + 여유 $SLACK)."
+# 한 이름이 두 물음에 답하지 않게 한다. **띠**($SLACK)는 상수 — 파일 하나가 새로 동결돼도
+# 천장을 안 넘게 하는 폭이고 파일 SLOC 게이트의 THRESHOLD 다. **남은 여유**는 변수이고
+# 판단에 쓰는 값이다. 통과줄이 식을 떼고 "여유 $SLACK" 만 남기면 그 상수가 남은 여유로
+# 읽힌다 — 실제로 lane 이 924 를 보고하는데 이 줄은 1000 을 찍는 어긋남이 났다.
+echo "동결 총합 래칫 통과 (합 $SUM / 천장 $CEILING = 예산 $BUDGET + 띠 $SLACK — 남은 여유 $((CEILING - SUM)))."
