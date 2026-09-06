@@ -186,6 +186,35 @@ const ROSTER: &[(&str, Class, &str)] = &[
 /// 여기 셋은 같은 잣대로 재지 않는다 — 다만 범위 밖이라는 것을 **적어 둬야**
 /// 다음 사람이 누락과 못 가른다.
 /// 명부 항목 수 하한 — 중복 검사의 모수가 비면 "중복 없음" 은 언제나 참이다.
+///
+/// **판별식** — 이 수는 `ROSTER` 와 `OUT_OF_SCOPE` 의 메서드 이름 합집합 크기다. 그리고
+/// **그 값이 옳은지는 이 하한이 아니라 같은 파일의 세 양방향 시험이 답한다**:
+///
+/// ```text
+/// every_aggregated_entry_is_actually_in_the_aggregator   명부 → 합산기
+/// the_aggregator_has_nothing_the_roster_does_not_know    합산기 → 명부
+/// the_roster_covers_every_list_method_in_the_dispatch_table  디스패치 표 → 명부
+/// ```
+///
+/// 그 셋이 초록인 동안 이 수는 `src/app/dispatch/list_global.rs` 의 합산 집합과 맞물려
+/// 있다. **그래서 이 하한이 지키는 것은 값의 정확성이 아니라 그 셋이 공허하지 않다는 것뿐이다.**
+///
+/// ```text
+/// cargo test -p tasty-doc-guards --test window_owned_lists_are_classified -- --nocapture
+///   → [창 소유 목록] 명부 항목 <N> · 하한 25
+/// ```
+///
+/// 실측 2026-09-07(`de0572359`): **29** = `ROSTER` 26 + `OUT_OF_SCOPE` 3. 여유 4.
+///
+/// ★ 분해가 필요한 이유: `OUT_OF_SCOPE` 는 debug IPC 처럼 **의도적으로 범위 밖**인 것을
+/// 담는다. 그쪽이 늘어서 합이 유지되면 실제 검사 대상(`ROSTER`)은 줄었는데 이 수는 안
+/// 움직인다 — 합만 보면 그 이동이 안 보인다. 줄었을 때는 **어느 쪽이 줄었는지부터** 세라.
+///
+/// **이 수를 내려서 초록을 만들지 마라.** 위 세 양방향 시험이 더 작은 명부에 대해서만
+/// 참이 되면서 색은 그대로다.
+///
+/// 정당한 수선: 메서드를 실제로 없앴으면 이 수를 함께 내려라 — `ROSTER` 와 `OUT_OF_SCOPE`
+/// 각각의 크기를 함께 적어야 다음 사람이 이동과 삭제를 가를 수 있다.
 const MIN_LISTED: usize = 25;
 
 const OUT_OF_SCOPE: &[(&str, &str)] = &[
@@ -293,6 +322,10 @@ fn no_method_is_listed_twice() {
     for (m, _) in OUT_OF_SCOPE {
         seen.entry(m).or_default().push("OUT_OF_SCOPE".to_string());
     }
+    println!(
+        "[창 소유 목록] 명부 항목 {} · 하한 {MIN_LISTED}",
+        seen.len()
+    );
     assert!(
         seen.len() >= MIN_LISTED,
         "명부에서 {} 항목밖에 못 읽었다(하한 {MIN_LISTED}) — 모수가 비면 중복은 언제나 0 이다",
