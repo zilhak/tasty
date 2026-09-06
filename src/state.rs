@@ -288,9 +288,31 @@ pub struct AppState {
         tasty_utils::id::WorkspaceCategoryId,
         tasty_utils::id::WorkspaceId,
     >,
-    /// Whether the settings window is open.
+    /// 설정 모달 **열기 요청** 플래그 — "열려 있는가" 가 아니다.
+    ///
+    /// 세우는 자리는 사이드바 버튼 경로 하나뿐이고(`adapters/ui/draw.rs` 의
+    /// `settings_clicked`), 다음 프레임에 `view/main/redraw.rs` 의
+    /// `dispatch_pending_modal_opens` 가 **소비하며 즉시 false 로 되돌린다**
+    /// (`view/main/keyboard.rs` 의 escape 처리도 지운다). 그래서 이 값이 한
+    /// 프레임 넘게 true 인 적이 없다.
+    ///
+    /// 키보드 단축키 경로는 이 필드를 **아예 안 거친다** —
+    /// `adapters/ui/input/shortcuts/keybinding.rs` 가 `AppEvent::OpenSettings` 를
+    /// 보내고 `app/modal/settings.rs` 가 별도 winit 창을 만든다.
+    /// ⇒ **창이 떠 있는지를 이 필드로는 관측할 수 없다.** 그걸 물어야 하면
+    ///    `view::View::is_modal_active()`(= `active_modal_id`)를 봐라. 그 값은
+    ///    모달 등록에서 세워져 닫힐 때까지 남는다.
+    ///
+    /// 이름을 고치거나 의미를 정리하려면 `has_egui_overlay_open()` 의 판정이
+    /// 선행이다 — 그쪽이 이 플래그를 `plugins_open` 과 함께 읽고 WebView 가리기에
+    /// 쓴다. 설정 모달이 별도 창이라 지금 동작이 옳을 수도 있는데, 아직 안 봤다.
     pub(crate) settings_open: bool,
-    /// Whether the plugins window is open.
+    /// plugins 모달 **열기 요청** 플래그 — `settings_open` 과 같은 생애다.
+    /// 사이드바 경로만 세우고 같은 `dispatch_pending_modal_opens` 가 다음
+    /// 프레임에 소비하며 false 로 되돌린다.
+    ///
+    /// ⇒ plugins 창을 키보드로 여는 시험은 **아직 없다.** 쓰는 순간 이 필드로는
+    ///    관측이 안 돼 설정 쪽과 똑같이 죽는다. 그때는 시험이 아니라 채널을 고쳐라.
     pub(crate) plugins_open: bool,
     /// Persistent UI state for the settings window.
     #[cfg(feature = "gui")]
