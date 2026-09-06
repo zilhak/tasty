@@ -169,6 +169,16 @@ if [ "$count" -gt "$CAP" ]; then
     printf '%s' "$report"
     echo
     echo "근거 없는 #[allow(...)] 가 늘었다: ${count} > 상한 ${CAP}."
+    if [ "$DET_ROOT" = "$ROOT" ]; then
+        echo
+        echo "★ 다만 이 값은 **판정기 없이 원문에서 센 값**이다(위 stderr 참조). 그러면 문자열·"
+        echo "  주석 안의 억제 형태까지 세어져 실측으로 +2 가 붙는다 — 그 +2 는 회귀의 크기가"
+        echo "  아니라 **세는 사본이 바뀐 폭**이다. 회귀를 판정하기 전에 먼저 판정기를 지어라:"
+        echo "      cargo build -p tasty-doc-guards --bin mask-source"
+        echo "      target/debug/mask-source --check-fresh ."
+        echo "  낡은 판정기도 없는 것으로 다뤄지므로 --check-fresh 가 rc=0 이어야 값이 유효하다."
+        echo
+    fi
     echo "새로 붙인 억제에 근거 주석(reason: / 이유: / complexity-exempt: / SAFETY)을"
     echo "같은 줄이거나, 그 억제 바로 위로 이어지는 주석 블록 안에 달아라 — 그 블록은"
     echo "빈 줄이나 주석 아닌 줄에서 끊긴다(줄 수 제한은 없다)."

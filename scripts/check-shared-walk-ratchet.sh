@@ -179,6 +179,16 @@ if [ "$count" -gt "$CAP" ]; then
     printf '%s' "$report"
     echo
     echo "직접 순회가 늘었다: ${count} > 상한 ${CAP}."
+    if [ "$SCAN_ROOT" = "$ROOT" ]; then
+        echo
+        echo "★ 다만 이 값은 **판정기 없이 원문에서 센 값**이다(위 stderr 참조). 그러면 주석과"
+        echo "  문자열 안의 언급까지 세어져 실측으로 +2 가 붙는다 — 그 +2 는 회귀의 크기가"
+        echo "  아니라 **세는 사본이 바뀐 폭**이다. 회귀를 판정하기 전에 먼저 판정기를 지어라:"
+        echo "      cargo build -p tasty-doc-guards --bin mask-source"
+        echo "      target/debug/mask-source --check-fresh ."
+        echo "  낡은 판정기도 없는 것으로 다뤄지므로 --check-fresh 가 rc=0 이어야 값이 유효하다."
+        echo
+    fi
     echo "새 순회를 tasty_doc_guards::floored_walk::walk_with_floor 로 옮겨라 — 거기서는"
     echo "하한이 인자라 빠뜨릴 수 없고, 실패문과 '하한을 내려서 통과시키지 마라' 는"
     echo "금지를 공용 함수가 만든다. 파일을 모으면 walk_with_floor, 디렉토리를 모으면"
