@@ -161,3 +161,57 @@ fn the_detector_separates_an_undeclared_mechanism_from_the_declared_one() {
         "주석 안의 언급은 그 수단을 쓰는 것이 아니다"
     );
 }
+
+/// [`MIN_TARGETS`] 의 **양성 대조** — 수집이 죽으면 이 수가 하한 밑으로 떨어지나.
+///
+/// 이 수집기는 **두 뿌리**를 훑는다(`tests/` 와 `crates/*/tests/`). 상수 doc 에 "두 뿌리를
+/// 따로 세라 — 합만 보면 한쪽이 죽고 다른 쪽이 늘어난 것을 못 가른다" 고 적었는데,
+/// 그 말이 성립하려면 **두 뿌리가 각각 실제로 읽히는지**가 먼저다. 칸을 그렇게 나눈다.
+#[test]
+fn the_target_floor_sees_a_collapsed_collection() {
+    let root = std::env::temp_dir().join(format!(
+        "tasty-targetfloor-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("임시 디렉토리를 못 만들었다");
+
+    assert_eq!(
+        integration_test_targets(&root).len(),
+        0,
+        "뿌리가 비었는데 0 이 아니면 이 수집기는 입력을 안 보는 것이다"
+    );
+
+    // 뿌리 ① — 레포 루트의 tests/
+    std::fs::create_dir_all(root.join("tests")).expect("생성 실패");
+    std::fs::write(root.join("tests/a.rs"), "").expect("쓰기 실패");
+    assert_eq!(
+        integration_test_targets(&root).len(),
+        1,
+        "루트 뿌리를 안 읽으면 상수 doc 의 '루트 + 크레이트' 분해가 거짓이 된다"
+    );
+
+    // 확장자가 아닌 것은 타깃이 아니다 — 이것이 섞이면 수가 실제보다 커진다.
+    std::fs::write(root.join("tests/notes.md"), "").expect("쓰기 실패");
+    assert_eq!(
+        integration_test_targets(&root).len(),
+        1,
+        "`.rs` 가 아닌 파일을 세면 모수가 부풀고, 부푼 만큼 하한이 무뎌진다"
+    );
+
+    // 뿌리 ② — crates/*/tests/
+    std::fs::create_dir_all(root.join("crates/x/tests")).expect("생성 실패");
+    std::fs::write(root.join("crates/x/tests/b.rs"), "").expect("쓰기 실패");
+    assert_eq!(
+        integration_test_targets(&root).len(),
+        2,
+        "크레이트 뿌리를 안 읽으면 한쪽만 세면서 하한을 통과하게 된다 — 이 축이 잡으려는 \
+         '수집이 절반 죽는' 형태가 정확히 그것이다"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -191,3 +191,64 @@ fn the_move_target_and_the_guarded_channel_are_the_same_directory() {
          아무 채널도 없는 곳에 착지한다"
     );
 }
+
+/// [`MIN_GUARDED`] 의 **양성 대조** — 수집이 죽으면 이 수가 하한 밑으로 떨어지나.
+///
+/// 그리고 이 수집기는 하나가 아니라 **두 술어의 곱**이라(읽는가 AND spawn 안 하는가),
+/// 어느 한쪽이 굳어도 수가 틀어진다. 그래서 칸을 넷 둔다 — 빈 입력 · 읽지 않는 파일 ·
+/// 읽으면서 spawn 하는 파일 · 세는 파일. 마지막 칸이 비영 대조다(R56): 앞 셋만 있으면
+/// "이 수집기는 언제나 0 을 낸다" 와 구별되지 않는다.
+#[test]
+fn the_guarded_floor_sees_a_collapsed_collection() {
+    let root = std::env::temp_dir().join(format!(
+        "tasty-guardedfloor-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join(GUARD_DIR);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리를 못 만들었다");
+
+    assert_eq!(
+        guarded_targets(&root).len(),
+        0,
+        "빈 디렉토리에서 0 이 아니면 이 수집기는 입력을 안 보는 것이다"
+    );
+
+    // 읽지 않는 파일 — 세면 안 된다.
+    std::fs::write(dir.join("inert.rs"), "fn main() {}\n").expect("쓰기 실패");
+    assert_eq!(
+        guarded_targets(&root).len(),
+        0,
+        "레포를 읽지 않는 파일을 세면 이 수가 실제보다 커지고, 하한은 그것을 못 본다"
+    );
+
+    // 읽지만 인스턴스를 띄우는 파일 — 이 축의 대상이 아니다.
+    std::fs::write(
+        dir.join("spawner.rs"),
+        "fn main() { let _ = read_to_string(\"x\"); Command::new(\"y\"); }\n",
+    )
+    .expect("쓰기 실패");
+    assert_eq!(
+        guarded_targets(&root).len(),
+        0,
+        "spawn 하는 파일까지 세면 '순수 스캔 가드' 라는 모수의 뜻이 달라진다"
+    );
+
+    // 비영 대조 — 읽고 spawn 하지 않는 파일은 세어져야 한다.
+    std::fs::write(
+        dir.join("pure.rs"),
+        "fn main() { let _ = read_to_string(\"x\"); }\n",
+    )
+    .expect("쓰기 실패");
+    assert_eq!(
+        guarded_targets(&root).len(),
+        1,
+        "순수 스캔 가드를 못 세면 위 세 칸은 수집기가 늘 0 이라는 뜻이라 아무것도 안 지킨다"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
+}
