@@ -170,9 +170,21 @@ fn repo_roots() -> Vec<std::path::PathBuf> {
 /// 첫 하나에서 멈춘다 — 몇 개가 새것인지는 판정에 필요 없고, 전수로 훑으면 회차마다
 /// 무는 비용이 된다. 실측 10~14 ms(`find` 등가).
 ///
+/// **동률(`==`)은 새것으로 센다.** 소스 mtime 이 바이너리와 **같은 눈금**에 떨어지면
+/// 순서를 알 수 없다 — 그 소스가 링크 전에 쓰였는지 후에 쓰였는지 파일시스템이 답을
+/// 안 준다. 엄격 초과(`>`)로 재면 그 판정 불가가 **조용히 "안 낡았다" 로 흡수되고**,
+/// 이 판정이 막으려는 바로 그것(옛 코드에 대고 재는 것, 오진이 양방향)이 통과한다.
+/// 실측: 소스와 바이너리를 같은 값으로 찍으면 `>` 는 못 봤다 —
+/// [`tests::a_source_stamped_to_the_same_tick_is_still_seen`] 가 그 자리를 잡는다.
+/// 반대 방향의 비용은 **다시 빌드 한 번**이고, 아래 패닉이 끄는 법까지 알려 준다.
+/// 판정 불가를 실패 방향으로 보내는 같은 극성 선택이 ADR-0182 의 명부에도 있다.
+///
 /// **mtime 을 못 읽는 경로는 "새것 아님" 으로 넘긴다.** 판정 불가를 빨강으로 만들면
 /// 권한·심볼릭 링크 같은 환경 차이가 곧바로 거짓 빨강이 되는데, 이 판정의 목적은
 /// 낡은 것을 잡는 것이지 파일시스템을 검사하는 것이 아니다.
+/// ★ 이 갈래는 **선언된 거짓 음성**이고 결함이 아니다 — 다만 "빌드 스크립트가 먼저
+/// 걸러 준다" 로 셈하지 마라. 그쪽도 같은 mtime 을 보므로 **읽을 수 없는 파일은 두 층
+/// 모두 못 본다.** 받쳐 주는 층이 없는 갈래다.
 fn source_newer_than(
     bin: &std::path::Path,
     roots: Vec<std::path::PathBuf>,
@@ -194,7 +206,7 @@ fn source_newer_than(
             }
             let newer = std::fs::metadata(&p)
                 .and_then(|m| m.modified())
-                .map(|m| m > bin_mtime)
+                .map(|m| m >= bin_mtime)
                 .unwrap_or(false);
             if newer {
                 return Some(p);
@@ -696,20 +708,57 @@ mod tests {
     ///
     /// 양방향: 새 소스가 있으면 잡고, 없으면 안 잡는다. 그리고 `.rs` 가 아닌 새 파일은
     /// 데몬 동작을 안 바꾸므로 잡지 않는다 — 그것까지 잡으면 문서만 고쳐도 빨개진다.
-    #[test]
-    fn a_stale_override_binary_is_detected_and_a_fresh_one_is_not() {
+    /// 판정 기준으로 쓰는 **알려진 값**. 1970 + 1e6 초 = 1970-01-12.
+    ///
+    /// 시험이 "어느 쪽이 새것인가" 를 물을 때 두 파일을 **지금** 으로 쓰고 견주면
+    /// 파일시스템 눈금에 의존한다 — 같은 눈금에 들어가면 나노초까지 같아진다. 대신
+    /// 양쪽을 이 값으로 찍고 필요한 쪽만 옮기면 눈금 크기와 무관해진다.
+    fn known_stamp() -> std::time::SystemTime {
+        std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000)
+    }
+
+    fn stamp(path: &std::path::Path, t: std::time::SystemTime) {
+        let f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("탐침 파일을 열 수 있어야 한다");
+        f.set_modified(t).expect("mtime 을 찍을 수 있어야 한다");
+    }
+
+    /// 탐침 디렉토리. 같은 프로세스에서 여러 시험이 쓰므로 이름에 용도를 넣는다 —
+    /// 하나로 공유하면 한 시험의 정리가 다른 시험의 파일을 지운다.
+    fn probe_dir(what: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "tasty-stale-probe-{}-{:?}",
+            "tasty-{what}-probe-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         ));
+        // 앞 회차의 잔해가 있으면 지운다. 없는 것이 정상이라 실패를 안 올린다 —
+        // 여기서 빨개지면 판정과 무관한 이유가 된다.
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// 시계 대신 **스탬프**로 앞뒤를 만든다.
+    ///
+    /// 전에는 `sleep(20 ms)` 로 간격을 벌렸다. 그것은 눈금이 잘게 나뉜 기계에서만
+    /// 맞는다 — 눈금이 1 초인 파일시스템에서는 20 ms 뒤에 쓴 파일이 바이너리와 **같은
+    /// 값**이 되고, 그러면 가운데 단정(`.md` 는 안 센다)이 **이유가 바뀐 채 통과한다**:
+    /// 확장자로 걸러서가 아니라 안 새것이라서 `None` 이 된다. 거짓 초록이다.
+    /// 지금은 `.md` 를 바이너리보다 **확실히 새것으로 찍으므로**, 확장자 거름이 무너지면
+    /// 그 자리가 빨개진다.
+    #[test]
+    fn a_stale_override_binary_is_detected_and_a_fresh_one_is_not() {
+        let dir = probe_dir("stale");
         let src = dir.join("src");
         std::fs::create_dir_all(&src).expect("탐침 디렉토리를 만들 수 있어야 한다");
         let bin = dir.join("tasty");
         std::fs::write(&bin, b"bin").expect("가짜 바이너리를 쓸 수 있어야 한다");
+        stamp(&bin, known_stamp());
+        let newer = known_stamp() + std::time::Duration::from_secs(1);
 
         assert_eq!(
             source_newer_than(&bin, vec![src.clone()]),
@@ -717,9 +766,9 @@ mod tests {
             "소스가 하나도 없으면 낡지 않았다"
         );
 
-        // 바이너리보다 확실히 새것이 되게 한다 — 파일시스템 mtime 해상도가 거칠 수 있다.
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        std::fs::write(src.join("notes.md"), b"x").expect("문서를 쓸 수 있어야 한다");
+        let notes = src.join("notes.md");
+        std::fs::write(&notes, b"x").expect("문서를 쓸 수 있어야 한다");
+        stamp(&notes, newer);
         assert_eq!(
             source_newer_than(&bin, vec![src.clone()]),
             None,
@@ -727,15 +776,58 @@ mod tests {
              빨개진다"
         );
 
-        std::fs::write(src.join("app.rs"), b"fn main() {}").expect("소스를 쓸 수 있어야 한다");
+        let app = src.join("app.rs");
+        std::fs::write(&app, b"fn main() {}").expect("소스를 쓸 수 있어야 한다");
+        stamp(&app, newer);
         assert_eq!(
             source_newer_than(&bin, vec![src.clone()]).as_deref(),
-            Some(src.join("app.rs").as_path()),
+            Some(app.as_path()),
             "바이너리보다 새로운 `.rs` 가 있으면 그 경로를 대야 한다"
         );
 
         // 탐침 디렉토리는 판정에 안 쓰이므로 정리 실패를 무시한다 — 남아도 temp 이고,
         // 여기서 실패를 올리면 판정과 무관한 이유로 빨개진다.
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 소스와 바이너리가 **같은 눈금**에 떨어져도 봐야 한다.
+    ///
+    /// 고치기 전 이 자리는 `left: None` 이었다 — 엄격 초과(`>`)가 동률을 "안 낡았다" 로
+    /// 흡수했다. 그 흡수는 **거짓 음성이자 곧 거짓 초록**이다: 낡은 데몬은 정상 부팅해
+    /// 정상 응답하므로 그 스위트는 옛 코드에 대해 통과하거나 실패하고, 그 오진은 양방향이다.
+    ///
+    /// 시계에 안 기댄다 — 두 파일을 **같은 알려진 값**으로 찍는다. `sleep` 으로 간격을
+    /// 벌리는 완화와 다르다. 그쪽은 눈금 크기를 모르는 채 고른 수라 눈금이 더 거친
+    /// 기계에서 다시 뒤집힌다.
+    #[test]
+    fn a_source_stamped_to_the_same_tick_is_still_seen() {
+        let dir = probe_dir("tick");
+        let src = dir.join("src");
+        std::fs::create_dir_all(&src).expect("탐침 디렉토리를 만들 수 있어야 한다");
+        let bin = dir.join("tasty");
+        std::fs::write(&bin, b"bin").expect("가짜 바이너리를 쓸 수 있어야 한다");
+        let app = src.join("app.rs");
+        std::fs::write(&app, b"fn main() {}").expect("소스를 쓸 수 있어야 한다");
+
+        stamp(&bin, known_stamp());
+        stamp(&app, known_stamp());
+
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]).as_deref(),
+            Some(app.as_path()),
+            "같은 눈금에 떨어진 소스를 못 보면 낡은 바이너리가 조용히 통과한다"
+        );
+
+        // 음성 대조: 바이너리를 한 눈금 뒤로 보내면 안 걸려야 한다. 이것이 없으면
+        // 위 단정은 "무엇이든 걸린다" 로도 통과한다.
+        stamp(&bin, known_stamp() + std::time::Duration::from_secs(1));
+        assert_eq!(
+            source_newer_than(&bin, vec![src.clone()]),
+            None,
+            "바이너리가 더 새것이면 낡지 않았다"
+        );
+
+        // 탐침 디렉토리는 판정에 안 쓰이므로 정리 실패를 무시한다 — 남아도 temp 이다.
         let _ = std::fs::remove_dir_all(&dir);
     }
 
