@@ -39,6 +39,9 @@ SIZE_GATE="$ROOT/scripts/check-file-size.sh"
 die() { echo "$1"; echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"; exit 2; }
 
 # 여유는 파일 임계와 같은 값이다 — 외우지 않고 그 게이트에서 읽는다.
+# 그 값이어야 하는 이유: 이 폭만큼의 구간은 **아무도 안 보는 구간이 아니라**
+# `check-file-size.sh` 가 파일 단위로 보는 구간이다. 둘이 구멍도 겹침도 없이
+# 맞물리려면 여유가 그 임계와 같아야 하고, 그래서 적지 않고 읽어 온다.
 SLACK="$(sed -n 's/^THRESHOLD=\([0-9][0-9]*\)$/\1/p' "$SIZE_GATE")"
 SLACK="${SLACK%%$'\n'*}"
 [ -n "$SLACK" ] || die "check-file-size.sh 에서 THRESHOLD 를 못 읽었다 — 여유를 정할 수 없다."
