@@ -52,38 +52,40 @@ pub(super) fn handle_ui_state(
     // 말한다 — 그러면 이 필드를 넣은 이유(왜 단축키가 안 먹었는지)가 그 경우에 사라진다.
     let keyboard_shortcuts_gated = state.fullscreen_stage_active() || state.keyboard_overlay_open();
 
-    // ★ 그리고 **어느 항이 참인지**를 이름으로 함께 찍는다. 위 필드는 다섯 항을 `||` 로
-    // 뭉치므로 "막혔다" 까지만 말하고 **무엇이 막았는지는 말하지 않는다.** 실측으로 그
-    // 자리에 걸렸다 — 한 스위트가 어느 지점부터 21 건 연속 `true` 였는데, 그 값만으로는
-    // 다섯 중 무엇이 열린 채 남았는지 못 골랐다. 계기가 "막혔다" 를 새로 알려주고도
-    // **다음 물음 앞에서 침묵**하면, 그 다음 회차도 같은 값을 다시 재게 된다.
+    // ★ 그리고 다섯 항을 **각각** 찍는다. 위 합성값은 `||` 로 뭉치므로 "막혔다" 까지만
+    // 말하고 **무엇이 막았는지는 말하지 않는다.** 실측으로 그 자리에 걸렸다 — GUI 스위트
+    // 한 회차가 어느 지점부터 21 건 연속 `true` 였는데, 그 값만으로는 다섯 중 무엇이 열린
+    // 채 남았는지 고를 수 없었다. 합성값을 넣은 이유가 "왜 안 먹었는가" 였는데, 정작 원인이
+    // 하나로 안 좁혀지는 회차에서 침묵한 것이다.
     //
-    // 이름은 술어의 **매개변수 이름 그대로**다(`state::keyboard_overlay_open`). 여기 목록은
-    // 판정의 사본이라 술어가 바뀌면 조용히 낡을 수 있다 — 그래서 그 정합을
-    // `tests/fullscreen_stage_input_gate.rs` 가 원문 대조로 강제한다.
-    let mut keyboard_gate_terms: Vec<&'static str> = Vec::new();
-    if state.fullscreen_stage_active() {
-        keyboard_gate_terms.push("fullscreen_stage");
-    }
-    if state.settings_open {
-        keyboard_gate_terms.push("settings_open");
-    }
-    if state.has_input_dialog_open() {
-        keyboard_gate_terms.push("input_dialog_open");
-    }
+    // **참인 것만 나열하지 않고 거짓도 값으로 낸다.** 이름만 나열하면 "그 항이 거짓이라
+    // 빠졌다" 와 "보고가 그 항을 아예 모른다" 가 같은 모양이 된다 — 안 돈 것과 통과한 것이
+    // 같은 줄을 만드는 그 형태다. 다섯 칸이 항상 차 있으면 그 둘이 갈린다.
+    //
+    // 합성값은 그대로 둔다. 더하는 것이지 바꾸는 것이 아니다 — 기존 소비자가 있다.
+    //
+    // 이름은 술어 `state::keyboard_overlay_open` 의 **매개변수 이름 그대로**다. 이 다섯은
+    // 판정의 사본이라 술어에 항이 늘면 조용히 낡는다 — 그러면 새 항이 막은 회차에서
+    // 다섯 칸이 전부 `false` 인데 합성값만 `true` 인, 원인 없는 보고가 남는다. 그래서 정합을
+    // `tests/fullscreen_stage_input_gate.rs` 가 원문 대조로 강제한다(이름이 일치해야 한다).
+    //
+    // 무대 항은 술어 밖이다 — `handle_keyboard_input` 이 0 단계에서 따로 소비하므로
+    // 매개변수로는 안 잡힌다. 그래서 따로 센다.
     #[cfg(feature = "gui")]
-    if state.popups.has_focused() {
-        keyboard_gate_terms.push("host_popup_focused");
-    }
-    if state.plugin_popup_open {
-        keyboard_gate_terms.push("plugin_popup_open");
-    }
+    let host_popup_focused = state.popups.has_focused();
+    #[cfg(not(feature = "gui"))]
+    let host_popup_focused = false;
+
     JsonRpcResponse::success(
         id,
         json!({
             "settings_open": state.settings_open,
             "keyboard_shortcuts_gated": keyboard_shortcuts_gated,
-            "keyboard_gate_terms": keyboard_gate_terms,
+            "gate_fullscreen_stage_active": state.fullscreen_stage_active(),
+            "gate_settings_open": state.settings_open,
+            "gate_input_dialog_open": state.has_input_dialog_open(),
+            "gate_host_popup_focused": host_popup_focused,
+            "gate_plugin_popup_open": state.plugin_popup_open,
             "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace,
             "workspace_count": engine.workspaces.len(),

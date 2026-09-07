@@ -446,14 +446,15 @@ impl GuiTestInstance {
             keyboard_shortcuts_gated: result["keyboard_shortcuts_gated"]
                 .as_bool()
                 .unwrap_or(false),
-            keyboard_gate_terms: result["keyboard_gate_terms"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            gate_terms: GateTerms {
+                fullscreen_stage_active: result["gate_fullscreen_stage_active"]
+                    .as_bool()
+                    .unwrap_or(false),
+                settings_open: result["gate_settings_open"].as_bool().unwrap_or(false),
+                input_dialog_open: result["gate_input_dialog_open"].as_bool().unwrap_or(false),
+                host_popup_focused: result["gate_host_popup_focused"].as_bool().unwrap_or(false),
+                plugin_popup_open: result["gate_plugin_popup_open"].as_bool().unwrap_or(false),
+            },
             notification_panel_open: result["notification_panel_open"].as_bool().unwrap_or(false),
             workspace_count: result["workspace_count"].as_u64().unwrap_or(0) as usize,
             active_workspace: result["active_workspace"].as_u64().unwrap_or(0) as usize,
@@ -844,6 +845,23 @@ impl Drop for GuiTestInstance {
 }
 
 /// Snapshot of UI overlay state, queried via IPC.
+/// 단축키 게이트를 이루는 다섯 항 — **거짓도 값으로 담는다.**
+///
+/// 참인 것만 나열하면 "그 항이 거짓이라 빠졌다" 와 "보고가 그 항을 아예 모른다" 가
+/// 같은 모양이 된다. 다섯 칸이 항상 차 있으면 그 둘이 갈린다.
+///
+/// 이름은 술어 `state::keyboard_overlay_open` 의 매개변수 그대로다(무대 항만 술어 밖).
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+// reason: 실패 메시지(`Debug`)로 읽히는 진단 구조다. 코드가 분기에 쓰지 않는다.
+pub struct GateTerms {
+    pub fullscreen_stage_active: bool,
+    pub settings_open: bool,
+    pub input_dialog_open: bool,
+    pub host_popup_focused: bool,
+    pub plugin_popup_open: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct UiState {
     pub settings_open: bool,
@@ -854,12 +872,12 @@ pub struct UiState {
     #[allow(dead_code)]
     // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
     pub keyboard_shortcuts_gated: bool,
-    /// 그중 **무엇이** 막았는가 — 술어의 매개변수 이름 그대로다. 위 bool 은 다섯 항을
-    /// `||` 로 뭉치므로 "막혔다" 까지만 말한다. 실측으로 한 회차가 21 건 연속 `true` 였는데
-    /// 그 값만으로는 다섯 중 무엇이 열린 채 남았는지 못 골랐다 — 그 물음이 이 필드다.
+    /// 그중 **무엇이** 막았는가. 위 bool 은 다섯 항을 `||` 로 뭉치므로 "막혔다" 까지만
+    /// 말한다 — 실측으로 한 회차가 21 건 연속 `true` 였는데 그 값만으로는 다섯 중 무엇이
+    /// 열린 채 남았는지 못 골랐다.
     #[allow(dead_code)]
     // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
-    pub keyboard_gate_terms: Vec<String>,
+    pub gate_terms: GateTerms,
     pub notification_panel_open: bool,
     pub workspace_count: usize,
     pub active_workspace: usize,

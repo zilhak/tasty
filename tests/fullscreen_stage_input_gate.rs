@@ -428,18 +428,18 @@ fn enclosing_expr(src: &str, at: usize) -> &str {
     &src[start..end]
 }
 
-/// 게이트의 **항 이름 목록**이 술어와 함께 낡지 않게 한다.
+/// 게이트의 **항별 보고 칸**이 술어와 함께 낡지 않게 한다.
 ///
 /// `ui.state` 는 "단축키가 막혔는가" 를 하나의 bool 로 찍고, 그 옆에 **어느 항이
-/// 참인가**를 이름으로 나열한다. 뒤쪽은 술어의 사본이라 술어에 항이 하나 늘면 조용히
-/// 낡는다 — 그러면 새 항이 막은 회차에서 목록이 **비어 있는 채로 "막혔다"** 를 말하고,
+/// 참인가**를 항마다 한 칸씩 낸다. 뒤쪽은 술어의 사본이라 술어에 항이 하나 늘면 조용히
+/// 낡는다 — 그러면 새 항이 막은 회차에서 다섯 칸이 **전부 거짓인 채로 "막혔다"** 를 말하고,
 /// 그 필드를 넣은 이유(무엇이 막았는가)가 바로 그 경우에 사라진다.
 ///
 /// 그래서 사본을 금지하는 대신 **원문과 대조**한다: 술어의 매개변수 이름이 그대로 항
 /// 이름이므로, 서명에서 이름을 뽑아 목록에 다 있는지 본다. 무대 항은 술어 밖(별도 호출)
 /// 이라 따로 센다.
 #[test]
-fn the_gate_term_list_names_every_predicate_parameter() {
+fn the_gate_report_has_a_slot_for_every_predicate_parameter() {
     let state = read("src/state.rs");
     let sig_at = only_at(
         &state,
@@ -462,15 +462,15 @@ fn the_gate_term_list_names_every_predicate_parameter() {
     let reporter = read("src/adapters/ipc/handler/debug_state.rs");
     for p in &params {
         assert!(
-            reporter.contains(&format!("keyboard_gate_terms.push(\"{p}\")")),
-            "게이트 항 `{p}` 이 `ui.state` 의 항 목록에 없다. 술어에 항이 늘었으면 \
-             `debug_state.rs` 의 `keyboard_gate_terms` 에도 같은 이름으로 더해라 — \
-             안 더하면 그 항이 막은 회차에서 목록이 빈 채로 '막혔다' 를 말한다."
+            reporter.contains(&format!("\"gate_{p}\":")),
+            "게이트 항 `{p}` 이 `ui.state` 의 보고에 없다. 술어에 항이 늘었으면 \
+             `debug_state.rs` 에 `gate_{p}` 칸도 더해라 — 안 더하면 그 항이 막은 회차에서 \
+             다섯 칸이 전부 거짓인데 합성값만 참인, 원인 없는 보고가 남는다."
         );
     }
     assert!(
-        reporter.contains("keyboard_gate_terms.push(\"fullscreen_stage\")"),
-        "무대 항이 목록에 없다. 무대는 술어 밖에서 별도로 소비되므로(0 단계) \
-         술어 매개변수로는 안 잡힌다 — 목록에서 빠지면 무대 중의 막힘이 이름 없이 남는다."
+        reporter.contains("\"gate_fullscreen_stage_active\":"),
+        "무대 항이 보고에 없다. 무대는 술어 밖에서 별도로 소비되므로(0 단계) \
+         술어 매개변수로는 안 잡힌다 — 빠지면 무대 중의 막힘이 이름 없이 남는다."
     );
 }
