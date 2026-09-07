@@ -1,4 +1,4 @@
-<!-- source-hash: 6369ebdb82da -->
+<!-- source-hash: 36239cf9cc6c -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
