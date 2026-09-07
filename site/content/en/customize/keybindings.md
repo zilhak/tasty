@@ -1,4 +1,4 @@
-<!-- source-hash: 36239cf9cc6c -->
+<!-- source-hash: d0d778d2c447 -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
@@ -145,17 +145,17 @@ Recording rules:
 
 ## Keybindings do nothing while a popup has focus
 
-While a window that takes input — the search bar, the file picker, the command palette — **has
+While a popup that takes input — the search bar, the file picker, the command palette — **has
 focus, no keybinding works at all.** That is deliberate: you would not want `Alt+W` to close a
-surface while you are typing into the search bar. If such a window is merely open and does not
+surface while you are typing into the search bar. If such a popup is merely open and does not
 have focus, keybindings work as usual.
 
 There are two ways out.
 
-- **`Esc`** — releases the focused window. Windows of the kind that close when you click outside
-  them close as well; the others stay open and merely lose focus. Other windows that are open
+- **`Esc`** — releases the focused popup. Popups of the kind that close when you click outside
+  them close as well; the others stay open and merely lose focus. Other popups that are open
   but not focused are left alone.
-- **Click outside the window** — same result as `Esc`.
+- **Click outside the popup** — same result as `Esc`.
 
 While the settings window or the notification panel is open, `Esc` closes that one first.
 
