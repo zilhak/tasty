@@ -42,7 +42,7 @@ const MIN_MTIME_WRITE_SITES: usize = 1;
 
 /// mtime 쓰기 호출이 **어느 파일에 몇 곳** 있는지 고정한다 — 건수 고정이다.
 ///
-/// ## 모수: 4 → 1 → **2** — 그리고 그때마다 이 표의 역할이 바뀐다
+/// ## 모수: 4 → 1 → 2 → **3** — 그리고 그때마다 이 표의 역할이 바뀐다
 ///
 /// 원래 이 표가 겨눈 것은 "하한 1 대 실측 4" 의 틈이었다. 네 사이트는 claude/codex
 /// plugin 의 **같은 테스트가 두 벌 복제된 것**이었고, 세 곳이 조용히 사라져도 하한은
@@ -79,9 +79,21 @@ const MIN_MTIME_WRITE_SITES: usize = 1;
 /// 더하면 이 표는 안 움직인다. `a_same_file_swap_is_not_distinguished` 가 그 한계를
 /// 고정한다 — 나중에 판정기가 그것을 가르게 된다면 결함을 고친 것이 아니라 **이 결정을
 /// 바꾼 것**이므로 그 테스트를 함께 고쳐야 한다.
+/// ## 사이트가 셋이 된 이유 (2026-09-07 실측 3)
+///
+/// markdown 감시자가 mtime 대신 **내용 지문**으로 판정하게 바뀌면서, 그 판정이 *같은 mtime
+/// 으로 다시 쓴 파일*을 보는지를 시험이 물어야 했다. 그러려면 다시 쓴 뒤 mtime 을 **원래
+/// 값으로 되돌려야** 하고, 그것이 `watch.rs` 의 사이트다. 여기도
+/// `OpenOptions::new().write(true)` 로 연다 — 이 가드가 겨누는 함정은 그 자리에도 그대로
+/// 적용된다.
+///
+/// ☆ 두 사이트(`builtin.rs` · `watch.rs`)가 **같은 이유로** 생겼다: 판정을 시계에서 내용으로
+/// 옮기면, 그 판정이 시계에 안 속는다는 것을 보이려고 시험이 시계를 거짓으로 세운다. 그
+/// 형태가 또 오면 이 표에 줄이 하나 더 는다 — 그때 이 문단을 늘려라.
 const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
     ("crates/tasty-host-plugin/src/builtin.rs", 1),
     ("crates/tasty-plugin-agent-common/src/prompt_file.rs", 1),
+    ("crates/tasty-plugin-markdown/src/watch.rs", 1),
 ];
 
 /// 레포를 훑어 `파일 → 사이트 수` 를 만든다. 본 판정과 변이가 같은 것을 쓴다.
