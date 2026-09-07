@@ -118,8 +118,8 @@ impl Plugin for ClaudePlugin {
                 &ctx.host,
                 self.plugin_data_dir.as_deref(),
                 &self.checklist_body,
-                &self.translator,
                 &ctx.params,
+                &self.translator,
             ),
             "claude.checklist_enable" => checklist::handle_enable(
                 self.plugin_data_dir.as_deref(),

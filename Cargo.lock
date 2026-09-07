@@ -6010,7 +6010,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.72"
+version = "0.1.73"
 dependencies = [
  "anyhow",
  "directories",
@@ -6051,7 +6051,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.50"
+version = "0.1.51"
 dependencies = [
  "anyhow",
  "serde_json",

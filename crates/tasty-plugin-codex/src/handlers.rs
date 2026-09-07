@@ -416,8 +416,8 @@ pub(crate) fn handle_tell(
 
 pub(crate) fn handle_spawn(
     host: &HostHandle,
-    tr: &Translator,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let parent_surface = require_target_surface(params, tr)?;
     let prompt = optional_str(params, "prompt");
@@ -578,8 +578,8 @@ fn register_notify_hooks<H: HostCall>(
 /// spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다.
 pub(crate) fn handle_notify_caller<H: HostCall>(
     host: &H,
-    tr: &Translator,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let caller = require_u32(params, "caller", tr)?;
     let target = require_u32(params, "target", tr)?;
@@ -2352,8 +2352,8 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
-            &test_translator(),
             &json!({ "caller": caller, "target": target, "kind": "tell" }),
+            &test_translator(),
         )
         .unwrap();
         assert_eq!(
@@ -2366,8 +2366,8 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
-            &test_translator(),
             &json!({ "caller": caller, "target": target, "kind": "tell" }),
+            &test_translator(),
         )
         .unwrap();
         assert_eq!(
@@ -2390,8 +2390,8 @@ trusted_hash = "sha256:xyz"
         host.mark_dead(target);
         handle_notify_caller(
             &host,
-            &test_translator(),
             &json!({ "caller": caller, "target": target, "kind": "spawn" }),
+            &test_translator(),
         )
         .unwrap();
 

@@ -71,13 +71,13 @@ impl Plugin for CodexPlugin {
         } = ctx;
         match method.as_str() {
             "codex.launch" => handlers::handle_launch(&host, &params, &self.translator),
-            "codex.spawn" => handlers::handle_spawn(&host, &self.translator, &params),
+            "codex.spawn" => handlers::handle_spawn(&host, &params, &self.translator),
             "codex.children" => handlers::handle_children(&host, &params, &self.translator),
             "codex.parent" => handlers::handle_parent(&host, &params, &self.translator),
             "codex.state" => handlers::handle_state(&host, &params, &self.translator),
             "codex.tell" => handlers::handle_tell(&host, &params, &self.translator),
             "codex.notify_caller" => {
-                handlers::handle_notify_caller(&host, &self.translator, &params)
+                handlers::handle_notify_caller(&host, &params, &self.translator)
             }
             "codex.broadcast" => handlers::handle_broadcast(&host, &params, &self.translator),
             "codex.kill" => handlers::handle_kill(&host, &params, &self.translator),
@@ -86,7 +86,7 @@ impl Plugin for CodexPlugin {
             "codex.uninstall" => handlers::handle_uninstall(&self.translator),
             "codex.hook" => handlers::handle_hook(&host, &params, &self.translator),
             "codex.reboot" => {
-                reboot::handle_reboot(&self.rebooting, &host, &self.translator, &params)
+                reboot::handle_reboot(&self.rebooting, &host, &params, &self.translator)
             }
             other => Err(IpcMethodError::not_found(other)),
         }
