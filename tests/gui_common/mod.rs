@@ -446,6 +446,14 @@ impl GuiTestInstance {
             keyboard_shortcuts_gated: result["keyboard_shortcuts_gated"]
                 .as_bool()
                 .unwrap_or(false),
+            keyboard_gate_terms: result["keyboard_gate_terms"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
             notification_panel_open: result["notification_panel_open"].as_bool().unwrap_or(false),
             workspace_count: result["workspace_count"].as_u64().unwrap_or(0) as usize,
             active_workspace: result["active_workspace"].as_u64().unwrap_or(0) as usize,
@@ -846,6 +854,12 @@ pub struct UiState {
     #[allow(dead_code)]
     // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
     pub keyboard_shortcuts_gated: bool,
+    /// 그중 **무엇이** 막았는가 — 술어의 매개변수 이름 그대로다. 위 bool 은 다섯 항을
+    /// `||` 로 뭉치므로 "막혔다" 까지만 말한다. 실측으로 한 회차가 21 건 연속 `true` 였는데
+    /// 그 값만으로는 다섯 중 무엇이 열린 채 남았는지 못 골랐다 — 그 물음이 이 필드다.
+    #[allow(dead_code)]
+    // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
+    pub keyboard_gate_terms: Vec<String>,
     pub notification_panel_open: bool,
     pub workspace_count: usize,
     pub active_workspace: usize,

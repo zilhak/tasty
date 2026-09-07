@@ -51,11 +51,39 @@ pub(super) fn handle_ui_state(
     // 이 필드가 이름이 약속한 것의 절반만 답하고, **무대 중에는 거짓으로 "안 막혔다"** 를
     // 말한다 — 그러면 이 필드를 넣은 이유(왜 단축키가 안 먹었는지)가 그 경우에 사라진다.
     let keyboard_shortcuts_gated = state.fullscreen_stage_active() || state.keyboard_overlay_open();
+
+    // ★ 그리고 **어느 항이 참인지**를 이름으로 함께 찍는다. 위 필드는 다섯 항을 `||` 로
+    // 뭉치므로 "막혔다" 까지만 말하고 **무엇이 막았는지는 말하지 않는다.** 실측으로 그
+    // 자리에 걸렸다 — 한 스위트가 어느 지점부터 21 건 연속 `true` 였는데, 그 값만으로는
+    // 다섯 중 무엇이 열린 채 남았는지 못 골랐다. 계기가 "막혔다" 를 새로 알려주고도
+    // **다음 물음 앞에서 침묵**하면, 그 다음 회차도 같은 값을 다시 재게 된다.
+    //
+    // 이름은 술어의 **매개변수 이름 그대로**다(`state::keyboard_overlay_open`). 여기 목록은
+    // 판정의 사본이라 술어가 바뀌면 조용히 낡을 수 있다 — 그래서 그 정합을
+    // `tests/fullscreen_stage_input_gate.rs` 가 원문 대조로 강제한다.
+    let mut keyboard_gate_terms: Vec<&'static str> = Vec::new();
+    if state.fullscreen_stage_active() {
+        keyboard_gate_terms.push("fullscreen_stage");
+    }
+    if state.settings_open {
+        keyboard_gate_terms.push("settings_open");
+    }
+    if state.has_input_dialog_open() {
+        keyboard_gate_terms.push("input_dialog_open");
+    }
+    #[cfg(feature = "gui")]
+    if state.popups.has_focused() {
+        keyboard_gate_terms.push("host_popup_focused");
+    }
+    if state.plugin_popup_open {
+        keyboard_gate_terms.push("plugin_popup_open");
+    }
     JsonRpcResponse::success(
         id,
         json!({
             "settings_open": state.settings_open,
             "keyboard_shortcuts_gated": keyboard_shortcuts_gated,
+            "keyboard_gate_terms": keyboard_gate_terms,
             "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace,
             "workspace_count": engine.workspaces.len(),
