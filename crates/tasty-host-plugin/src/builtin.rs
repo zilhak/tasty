@@ -449,13 +449,50 @@ fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// src가 dest보다 더 최신이거나 dest가 없으면 복사. 이미 같거나 dest가 더 최신이면 no-op.
+/// src가 dest보다 더 최신이거나 dest가 없으면 복사. dest가 더 새것이면 no-op이고,
+/// **mtime이 같으면 내용으로 판정한다.**
+///
+/// ## 동률에서 왜 내용을 보나
+///
+/// 전에는 `sm <= dm`이 곧 no-op이었다. 그 한 줄이 두 가지를 한꺼번에 흡수했다.
+///
+/// - **같은 눈금**에 떨어진 두 파일은 순서를 알 수 없다. 판정 불가를 "안 바뀜"으로 읽는다.
+/// - 더 나쁜 쪽: `cp -p`·아카이브 해제·rsync는 mtime을 **원본 것으로 되돌린다.** 그래서
+///   시각이 같고 **내용이 다른** 파일이 정확히 이 갈래로 들어온다. 우리 배포 경로의
+///   실제 형태다.
+///
+/// 그 흡수의 대가는 조용하다 — 낡은 plugin 바이너리가 최신 매니페스트를 달고 설치되고,
+/// 그것은 **정상 부팅해 정상 응답한다**(`manager::pump`의 version drift 경고가 그
+/// 회귀를 적어 두고 있다). 그래서 동률은 skip이 아니라 **비교의 방아쇠**로 쓴다.
+///
+/// ## 왜 전량 비교가 아닌가 — 실측
+///
+/// 형제 경로(홈 설치)는 [`sync_dir_by_content`]로 **항상** 내용을 본다. 여기서 같은 것을
+/// 하면 debug 번들 기준 양쪽 2.31 GB를 매 부팅 읽는다: 더운 캐시 **1.09 s**, 찬 캐시
+/// **1.56 s**(페이지를 `posix_fadvise(DONTNEED)`로 비우고 잰 값. 같은 계기로 262 MB
+/// 파일 하나가 찬 0.228 s / 더운 0.020 s라 비움이 실제로 들었다). 부팅은 대개 찬 캐시라
+/// 그 값을 그대로 문다.
+///
+/// 동률에서만 비교하면 그 비용이 **정상 흐름에 안 붙는다** — 재빌드한 파일은 mtime이
+/// 앞서므로 읽지 않고 복사하고, 안 바뀐 파일은 dest가 더 새것이라 읽지 않고 건너뛴다.
+/// 읽는 것은 시각이 정확히 겹친 파일뿐이고, 그것이 위 두 갈래가 사는 자리다.
+///
+/// ## 남는 구멍 (선언한다)
+///
+/// **dest가 더 새것인데 내용이 다른 경우는 여전히 못 본다.** dest는 이 함수만 쓰므로
+/// 그 mtime은 복사 시각이고, src가 나중에 **더 옛 시각을 달고** 바뀌어야 성립한다
+/// (`-p`를 단 복원 등). 그 갈래를 닫으려면 전량 비교로 돌아가야 하고, 위 값이 그 대가다.
 fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
     if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest))
         && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified())
-        && sm <= dm
     {
-        return Ok(());
+        if sm < dm {
+            return Ok(());
+        }
+        // 판정 불가(읽기 실패)는 복사 쪽으로 보낸다 — "같다"고 **확인된** 때만 건너뛴다.
+        if sm == dm && matches!(file_content_differs(src, dest), Ok(false)) {
+            return Ok(());
+        }
     }
     copy_atomic(src, dest)
 }
@@ -1670,6 +1707,52 @@ mod tests {
             .collect();
         v.sort_by(|a, b| a.0.cmp(&b.0));
         v
+    }
+
+    /// 스테이징 경로(`copy_if_newer`)의 동률 갈래 — **세 방향을 한 자리에서 묻는다.**
+    ///
+    /// 시계에 안 기댄다: 두 파일을 **같은 알려진 값**으로 찍는다. `cp -p`·아카이브 해제·
+    /// rsync 가 mtime 을 원본 것으로 되돌린 상태가 정확히 이 모양이다.
+    #[test]
+    fn a_staged_copy_with_the_same_mtime_is_judged_by_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+
+        // ① 시각이 같고 내용이 다르다 → 복사해야 한다.
+        std::fs::write(&src, "new").unwrap();
+        std::fs::write(&dest, "old").unwrap();
+        set_mtime(&src, stale_stamp());
+        set_mtime(&dest, stale_stamp());
+        copy_if_newer(&src, &dest).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&dest).unwrap(),
+            "new",
+            "시각이 같고 내용이 다르면 복사해야 한다 — 이 갈래가 낡은 바이너리를 들여보냈다"
+        );
+
+        // ② 시각도 내용도 같다 → 안 써야 한다. 판정은 옛 스탬프가 남아 있는가로 한다.
+        set_mtime(&src, stale_stamp());
+        set_mtime(&dest, stale_stamp());
+        copy_if_newer(&src, &dest).unwrap();
+        assert_eq!(
+            std::fs::metadata(&dest).unwrap().modified().unwrap(),
+            stale_stamp(),
+            "같은 내용을 다시 쓰면 안 된다 — 옛 시각이 그대로여야 한다"
+        );
+
+        // ③ **선언한 구멍**: dest 가 더 새것이면 내용을 안 본다. 이 단정은 결함을 막는
+        // 것이 아니라 **범위를 고정한다** — 넓히려면 전량 비교로 돌아가야 하고 그 대가는
+        // `copy_if_newer` 의 doc 에 값으로 적혀 있다.
+        std::fs::write(&src, "newer content").unwrap();
+        set_mtime(&src, stale_stamp());
+        set_mtime(&dest, stale_stamp() + std::time::Duration::from_secs(1));
+        copy_if_newer(&src, &dest).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&dest).unwrap(),
+            "new",
+            "dest 가 더 새것이면 내용을 안 본다 — 선언된 구멍이다"
+        );
     }
 
     #[test]
