@@ -74,7 +74,7 @@ fn tasty_hook_marker(event_token: &str) -> String {
 /// 으로 기존 entry 를 찾는다. 이 형태는 그 substring 을 그대로 포함하므로 기존
 /// 설치본의 in-place upgrade 경로가 계속 발동한다(깨지면 옛 entry 가 남은 채 새
 /// entry 가 추가돼 hook 이 두 번 발화한다).
-pub fn tasty_guarded_command(argv: &str) -> String {
+pub(crate) fn tasty_guarded_command(argv: &str) -> String {
     format!("if [ -n \"$TASTY_SURFACE_ID\" ]; then {argv} || true; fi")
 }
 
@@ -88,7 +88,7 @@ fn tasty_hook_command(event_token: &str) -> String {
     tasty_guarded_command(&format!("tasty claude hook {event_token}"))
 }
 
-pub fn claude_settings_path(tr: &Translator) -> Result<PathBuf> {
+pub(crate) fn claude_settings_path(tr: &Translator) -> Result<PathBuf> {
     let base = directories::BaseDirs::new()
         .ok_or_else(|| anyhow::anyhow!(tr.t("claude.install.no_home_dir").to_string()))?;
     Ok(base.home_dir().join(".claude").join("settings.json"))
@@ -112,7 +112,7 @@ fn entry_matches_marker(entry: &Value, marker: &str) -> bool {
 /// 비-테스트 빌드에서 유일한 호출자가 `is_tasty_stop_hook_installed`(그 자체도
 /// 실사용처 없음)뿐이라 함께 개별 억제한다. 테스트에서는 직접 호출된다.
 #[allow(dead_code)]
-pub fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str) -> bool {
+pub(crate) fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str) -> bool {
     let Some(hooks) = root.get("hooks").and_then(|h| h.as_object()) else {
         return false;
     };
@@ -126,7 +126,7 @@ pub fn is_marker_installed_in_value(root: &Value, event_name: &str, marker: &str
 /// 없으면 false. 별도 노출 함수로 만들어졌으나 실사용 소비자가 생긴 적이
 /// 없다 — 삭제 대신 유지, 개별 억제만 부여.
 #[allow(dead_code)]
-pub fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
+pub(crate) fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
     let path = claude_settings_path(tr)?;
     if !path.exists() {
         return Ok(false);
@@ -138,7 +138,10 @@ pub fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
 }
 
 /// settings.json 루트 값에 hook을 idempotent하게 추가.
-pub fn install_hooks_in_value(root: &mut Value, tr: &Translator) -> Result<Vec<&'static str>> {
+pub(crate) fn install_hooks_in_value(
+    root: &mut Value,
+    tr: &Translator,
+) -> Result<Vec<&'static str>> {
     let root_obj = root.as_object_mut().ok_or_else(|| {
         anyhow::anyhow!(tr.t("claude.install.settings_root_not_object").to_string())
     })?;
@@ -219,7 +222,7 @@ pub fn install_hooks_in_value(root: &mut Value, tr: &Translator) -> Result<Vec<&
 }
 
 /// settings.json 루트 값에서 tasty hook entry를 제거.
-pub fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
+pub(crate) fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
     let Some(root_obj) = root.as_object_mut() else {
         return Vec::new();
     };
@@ -263,7 +266,7 @@ pub fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> {
 }
 
 /// `claude.install` IPC 핸들러. ~/.claude/settings.json을 idempotent하게 갱신.
-pub fn run_install(tr: &Translator) -> Result<Vec<&'static str>> {
+pub(crate) fn run_install(tr: &Translator) -> Result<Vec<&'static str>> {
     let path = claude_settings_path(tr)?;
 
     let mut root: Value = if path.exists() {
@@ -287,7 +290,7 @@ pub fn run_install(tr: &Translator) -> Result<Vec<&'static str>> {
 }
 
 /// `claude.uninstall` IPC 핸들러. 파일이 없으면 빈 목록 반환.
-pub fn run_uninstall(tr: &Translator) -> Result<Vec<&'static str>> {
+pub(crate) fn run_uninstall(tr: &Translator) -> Result<Vec<&'static str>> {
     let path = claude_settings_path(tr)?;
     if !path.exists() {
         return Ok(Vec::new());

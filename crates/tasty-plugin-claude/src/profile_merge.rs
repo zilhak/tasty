@@ -52,7 +52,9 @@ const HARD_REJECT_SCALAR_PATHS: &[&str] = &["$.permissions.defaultMode"];
 /// `contents`(각 프로필의 JSON 최상위 object, 등록 순서)를 순서대로 접어 하나의
 /// object 로 만든다. 발생한 경고(스칼라 last-wins 충돌 등)는 반환값에 모아
 /// 호출자가 로그로 남긴다. 비어 있으면 빈 object 를 반환.
-pub fn merge_contents(contents: &[(String, Value)]) -> Result<(Value, Vec<String>), MergeError> {
+pub(crate) fn merge_contents(
+    contents: &[(String, Value)],
+) -> Result<(Value, Vec<String>), MergeError> {
     let mut warnings = Vec::new();
     let mut acc = Value::Object(serde_json::Map::new());
     for (label, v) in contents {

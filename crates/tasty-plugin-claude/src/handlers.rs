@@ -102,7 +102,23 @@ pub(crate) fn optional_target_surface(
     })
 }
 
-pub(crate) fn require_surface_id(params: &Value, tr: &Translator) -> Result<u32, IpcMethodError> {
+/// 대상 surface — 없으면 거절한다. 판정은 [`optional_target_surface`] 와 같다.
+///
+/// **이름이 `require_surface_id` 가 아닌 이유.** 이 함수는 `surface` 와 `surface_id`
+/// **두 키를 한 필드로** 읽는다. 그런데 이 저장소에는 그 이름이 이미 있고, 거기서는
+/// `surface_id` **한 키만** 읽는다(`src/adapters/ipc/handler.rs` 의 호스트 헬퍼와
+/// `tasty-plugin-sdk` 의 런타임 헬퍼). 그래서 여기서 그 이름을 쓰면 **한 이름이 두 술어를
+/// 가리키고**, 두 키의 어긋남이 조용히 지나가던 것이 바로 그 형태였다 — raw IPC 가
+/// `surface_id` 로 지목한 호출이 대상 없는 호출이 되어 호스트의 유일-parent 폴백에
+/// 떨어졌다. 수리는 코드에 남지만 오해는 이름에 남는다.
+///
+/// 실패 문구의 키는 `missing_surface_id` 로 **그대로 둔다** — `missing_target_surface`
+/// 는 같은 표에서 이미 다른 뜻이다(`target_surface` 라는 **literal 파라미터**를 받는
+/// 메서드용). 문구 자체는 두 키를 다 대고 있어 참이다.
+pub(crate) fn require_target_surface(
+    params: &Value,
+    tr: &Translator,
+) -> Result<u32, IpcMethodError> {
     optional_target_surface(params, tr)?
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_surface_id")))
 }
@@ -292,7 +308,7 @@ pub(crate) fn handle_tell(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface_id(params, tr)?;
+    let surface_id = require_target_surface(params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
@@ -623,7 +639,7 @@ pub(crate) fn handle_respawn(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_surface_id(params, tr)?;
+    let parent_surface_id = require_target_surface(params, tr)?;
     let child_index = require_child_index(params, tr)?;
     let prompt = params
         .get("prompt")
@@ -691,7 +707,7 @@ pub(crate) fn handle_child_profile(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_surface_id(params, tr)?;
+    let parent_surface_id = require_target_surface(params, tr)?;
     // `--child` 는 항상 필수다 — 생략을 caller 자신으로 해석하면 `reboot --profile`
     // 과 창구가 겹친다.
     let child_index = require_child_index(params, tr)?;
@@ -829,7 +845,7 @@ pub(crate) fn handle_spawn(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_surface_id(params, tr)?;
+    let parent_surface_id = require_target_surface(params, tr)?;
     let prompt = params
         .get("prompt")
         .and_then(|v| v.as_str())
@@ -967,7 +983,7 @@ pub(crate) fn handle_parent(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface = require_surface_id(params, tr)?;
+    let surface = require_target_surface(params, tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -980,7 +996,7 @@ pub(crate) fn handle_state(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface = require_surface_id(params, tr)?;
+    let surface = require_target_surface(params, tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
@@ -1048,28 +1064,28 @@ mod tests {
         );
     }
 
-    /// `require_surface_id` / `require_child_index` 의 **네 갈래**를 픽스처로 못박는다.
+    /// `require_target_surface` / `require_child_index` 의 **네 갈래**를 픽스처로 못박는다.
     /// 실재하는 surface id 를 쓰지 않는다 — 그 id 가 사라지면 회귀가 뜻을 잃는다.
     #[test]
     fn required_u32_params_separate_absent_from_malformed_and_refuse_to_truncate() {
         let tr = test_translator();
 
         // ① 키 없음.
-        assert!(require_surface_id(&json!({}), &tr).is_err());
+        assert!(require_target_surface(&json!({}), &tr).is_err());
         assert!(require_child_index(&json!({}), &tr).is_err());
 
         // ② 정상 — 경계값이 그대로 통과한다.
         assert_eq!(
-            require_surface_id(&json!({ "surface_id": 0 }), &tr).unwrap(),
+            require_target_surface(&json!({ "surface_id": 0 }), &tr).unwrap(),
             0
         );
         assert_eq!(
-            require_surface_id(&json!({ "surface_id": u32::MAX }), &tr).unwrap(),
+            require_target_surface(&json!({ "surface_id": u32::MAX }), &tr).unwrap(),
             u32::MAX
         );
 
         // ③ 숫자가 아니다 — 거부하고, "missing" 이라고 답하지 않는다.
-        let e = require_surface_id(&json!({ "surface_id": "conductor" }), &tr).unwrap_err();
+        let e = require_target_surface(&json!({ "surface_id": "conductor" }), &tr).unwrap_err();
         let m = format!("{e:?}");
         assert!(m.contains("32 bits"), "{m}");
         assert!(!m.contains("Missing"), "값이 왔는데 없다고 답한다: {m}");
@@ -1081,13 +1097,13 @@ mod tests {
             5_000_000_000,
         ] {
             assert!(
-                require_surface_id(&json!({ "surface_id": over }), &tr).is_err(),
+                require_target_surface(&json!({ "surface_id": over }), &tr).is_err(),
                 "{over} 가 안 걸린다"
             );
             assert!(require_child_index(&json!({ "child_index": over }), &tr).is_err());
         }
 
-        assert!(require_surface_id(&json!({ "surface_id": -1 }), &tr).is_err());
+        assert!(require_target_surface(&json!({ "surface_id": -1 }), &tr).is_err());
     }
 
     /// `null` 슬롯은 **안 왔다**로 읽는다 — 직렬화가 빈 슬롯을 `null` 로 채우는 경우가
@@ -1095,7 +1111,7 @@ mod tests {
     #[test]
     fn a_null_slot_reads_as_absent_not_as_a_malformed_value() {
         let tr = test_translator();
-        let e = require_surface_id(&json!({ "surface_id": Value::Null }), &tr).unwrap_err();
+        let e = require_target_surface(&json!({ "surface_id": Value::Null }), &tr).unwrap_err();
         assert!(format!("{e:?}").contains("Missing"), "{e:?}");
     }
 

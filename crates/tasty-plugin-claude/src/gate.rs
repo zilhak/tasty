@@ -186,7 +186,7 @@ pub struct GateSummary {
 /// 이유는 로케일별로 달라야 하기 때문이고, 그 본문이 센티넬을 포함한다는 불변식은
 /// `checklist.rs` 의 `checklist_body_contains_sentinel_in_every_locale` 이 컴파일
 /// 타임에 강제한다(사용자 등록 본문에는 같은 불변식을 [`register`] 가 런타임에 건다).
-pub fn host_default_gate(short_name: &str, tr: &Translator) -> Option<(GateDef, String)> {
+pub(crate) fn host_default_gate(short_name: &str, tr: &Translator) -> Option<(GateDef, String)> {
     match short_name {
         DEFAULT_GATE_NAME => Some((
             GateDef {
@@ -340,7 +340,7 @@ fn stop_hook_profile(short_name: &str) -> Value {
 ///
 /// 검증은 파일을 하나라도 쓰기 **전에** 전부 끝낸다 — 정의만 쓰고 본문에서 실패하면
 /// 본문 없는 게이트가 남는다.
-pub fn register(
+pub(crate) fn register(
     data_dir: Option<&Path>,
     short_name: &str,
     body_path: &Path,
@@ -415,7 +415,7 @@ pub fn register(
 /// 같은 이름으로 재등록했을 때 과거의 켜짐 상태와 라운드 카운터가 부활해,
 /// "지웠다 새로 만든 게이트" 가 이전 상태를 물려받는 놀라운 동작이 된다. 이
 /// 정리는 실패해도 unregister 자체를 실패시키지 않는다(`warn!` 만).
-pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateError> {
+pub(crate) fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateError> {
     // 이름이 그대로 파일명이 되므로 삭제도 등록과 같은 관문을 통과해야 한다 —
     // 검증 없이 경로를 조립하면 `../` 로 data_dir 밖 파일을 지울 수 있다.
     if !is_valid_short_name(short_name) {
@@ -452,7 +452,7 @@ pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), GateE
 ///
 /// `data_dir` 이 `None` 이어도 host 기본 게이트는 조회된다 — 조회는 저장소를
 /// 요구하지 않는다(등록/해제만 명시적 에러).
-pub fn show(
+pub(crate) fn show(
     data_dir: Option<&Path>,
     short_name: &str,
     tr: &Translator,
@@ -492,7 +492,7 @@ pub fn show(
 ///
 /// 사용자가 host 기본 게이트와 같은 이름으로 등록했으면 그 이름은 **user 항목으로만**
 /// 나온다 — 같은 이름이 두 줄로 보이면 어느 쪽이 실효인지 목록만 봐서는 알 수 없다.
-pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary> {
+pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<GateSummary> {
     let user_names: Vec<String> = data_dir.map(registered_names).unwrap_or_default();
 
     let mut out: Vec<GateSummary> = Vec::new();

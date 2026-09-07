@@ -40,7 +40,7 @@ use serde_json::{Value, json};
 use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
-use crate::handlers::require_surface_id;
+use crate::handlers::require_target_surface;
 
 /// in-flight 집합의 락. 임계구역이 `HashSet<u32>` 의 insert/remove 뿐이라 패닉이 지나가도
 /// 남는 값이 성립한다 — 복구가 답이다.
@@ -96,7 +96,7 @@ pub(crate) fn handle_reboot(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface_id(params, tr)?;
+    let surface_id = require_target_surface(params, tr)?;
     reboot_surface(inflight, host, surface_id, params, data_dir, tr)
 }
 
@@ -116,9 +116,12 @@ pub(crate) fn reboot_surface(
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let (delay_secs, extra_prompt) = parse_options(params);
-    // host 왕복 없이 판정 가능한 프로필 검증(상호배타 · 이름 해석 · 파일 파싱)은
-    // 전부 여기서 끝낸다 — 뒤따르는 어떤 부수효과(meta 갱신 · Ctrl+C 시퀀스)보다
-    // 앞이라, 잘못된 인자로는 대상이 죽지 않는다.
+    // ★ **이 순서가 계약이다.** host 왕복 없이 판정 가능한 프로필 검증(상호배타 ·
+    // 이름 해석 · 파일 파싱)은 전부 여기서 끝낸다 — 뒤따르는 어떤 부수효과(세션 조회 ·
+    // meta 갱신 · Ctrl+C 시퀀스)보다 **앞**이라, 잘못된 인자로는 대상이 죽지 않는다.
+    // 뒤로 밀면 오타난 프로필 이름 하나로 멀쩡한 claude 세션에 Ctrl+C 가 나간 뒤에야
+    // 거부된다 — 화면에는 "실패했다" 만 보이고 그 사이 죽은 것은 안 보인다.
+    // 지키는 것은 `preflight_profile_runs_before_any_host_roundtrip` 이다.
     let (profile_action, preresolved) = preflight_profile(params, data_dir, tr)?;
 
     // 요청 시점 캡처 (session-end 가 meta 를 지우기 전).
@@ -263,9 +266,11 @@ pub(crate) fn parse_profile_option(
 /// 프로필 인자를 **host 를 건드리지 않고** 끝까지 검증한다 — 상호배타 판정
 /// (`parse_profile_option`), 등록 이름 해석, 그리고 결과 파일의 존재+JSON 파싱.
 ///
-/// [`reboot_surface`] 가 세션 조회보다도 먼저 이걸 부르는 이유는 실패 지점을
-/// 앞으로 당기기 위해서다: 여기서 거부되면 surface meta 도 안 바뀌고 Ctrl+C 도
-/// 안 나가므로, 오타난 프로필 이름 하나로 멀쩡한 (자식) 세션이 죽는 일이 없다.
+/// [`reboot_surface`] 가 세션 조회보다도 먼저 이걸 부른다 — **그 순서 계약의 자리는
+/// 여기가 아니라 그 호출부**다(순서를 정하는 것은 이 함수가 아니라 거기 배치다).
+/// 계약 본문과 무엇이 그것을 지키는지는 거기 적혀 있다. 앞으로 당기는 이유만 적으면:
+/// 여기서 거부되면 surface meta 도 안 바뀌고 Ctrl+C 도 안 나가므로, 오타난 프로필
+/// 이름 하나로 멀쩡한 (자식) 세션이 죽는 일이 없다.
 ///
 /// `Keep`(무인자 승계)만 surface meta 를 읽어야 해서 여기서 후보를 못 정한다 —
 /// `None` 을 돌려주고 [`resolve_and_apply_profile`] 이 이어서 해석한다.
@@ -798,11 +803,71 @@ mod tests {
         Translator::load(&lang_dir, "en")
     }
 
-    // ── 프로필 인자 preflight (todo/52 확인 절차 3·4번) ──
+    // ── 프로필 인자 preflight ──
     //
     // `preflight_profile` 은 `host` 를 **인자로 받지 않는다** — 시그니처 자체가
     // "여기서 거부되면 Ctrl+C 도 meta 갱신도 일어날 수 없다" 는 보증이다.
-    // `reboot_surface` 가 세션 조회보다도 먼저 이 함수를 부른다.
+    // 그 보증이 못 하는 것이 하나 있다: **부르는 순서**. 시그니처는 이 함수 안에서
+    // host 를 못 만지게 할 뿐, `reboot_surface` 가 세션 조회를 먼저 하는 것을 막지
+    // 않는다. 그 순서를 무는 것이 아래 시험이다.
+
+    /// `reboot_surface` 안에서 `preflight_profile` 이 **첫 host 왕복보다 앞**인지.
+    ///
+    /// 어기면 무엇이 깨지는가: 오타난 프로필 이름 하나로 멀쩡한 claude 세션에 Ctrl+C 가
+    /// 나간 뒤에야 거부된다. 화면에는 "실패했다" 만 보이고 그 사이 죽은 것은 안 보인다 —
+    /// 컴파일도 되고 나머지 시험도 통과한다 — 실측: 두 호출을 맞바꾸는 변이에서 이 크레이트
+    /// 전체와 `tasty-doc-guards` 를 돌려도 죽는 것이 이 시험 하나뿐이었다.
+    ///
+    /// **왜 소스 텍스트를 읽나**: 이 순서는 `host` 를 세워야 실행으로 볼 수 있어 단위
+    /// 시험으로 안 잡힌다. 레포에 선례가 있다(`src/core/attach.rs` 의 두 pump 순서 가드).
+    ///
+    /// **왜 루트의 `src/source_guards/` 가 아니라 여기 인라인인가**: 거기 두면 이 파일을
+    /// 고치는 lane 이 `-p tasty-plugin-claude` 를 돌려도 판정을 못 받는다(그 가드는
+    /// `-p tasty` 에서만 돈다) — 소유자가 자기 작업 중에 못 보는 가드가 되는 부류다.
+    /// 여기 두면 1 초대에 같은 판정이 난다. 대신 찾기가 나빠지는 값을 치르므로, 집(위
+    /// 호출부 주석)이 이 시험의 이름을 명시해 둔다.
+    #[test]
+    fn preflight_profile_runs_before_any_host_roundtrip() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/reboot.rs"),
+        )
+        .expect("자기 소스를 못 읽었다")
+        .replace("\r\n", "\n");
+        let sig = "pub(crate) fn reboot_surface(";
+        let at = src
+            .find(sig)
+            .expect("`reboot_surface` 가 없다 — 이름이 바뀌었다");
+        // 중괄호 균형으로 본문을 자른다(들여쓰기·rustfmt 스타일에 안 기댄다).
+        let open = src[at..].find('{').expect("본문 여는 괄호가 없다") + at;
+        let mut depth = 0usize;
+        let mut end = None;
+        for (i, c) in src[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(open + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let body = &src[open..end.expect("본문 닫는 괄호를 못 찾았다")];
+        let pre = body
+            .find("preflight_profile(params")
+            .expect("`reboot_surface` 가 `preflight_profile` 을 부르지 않는다 — 검증이 사라졌다");
+        let host_call = body
+            .find("fetch_session_id(host")
+            .expect("`reboot_surface` 에서 첫 host 왕복(`fetch_session_id`)을 못 찾았다");
+        assert!(
+            pre < host_call,
+            "preflight 가 첫 host 왕복보다 뒤에 있다(preflight {pre} > host {host_call}) — \
+             잘못된 프로필 인자로도 세션 조회가 먼저 나가고, 그 뒤 거부는 이미 건드린 \
+             것을 되돌리지 못한다"
+        );
+    }
 
     #[test]
     fn preflight_rejects_profile_and_profile_file_together() {

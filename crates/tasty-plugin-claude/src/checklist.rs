@@ -533,8 +533,8 @@ pub(crate) fn handle_checklist_hook(
     host: &HostHandle,
     data_dir: Option<&Path>,
     checklist_body: &str,
-    tr: &Translator,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     hook_response(
         data_dir,

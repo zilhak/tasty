@@ -182,7 +182,7 @@ fn parse_names(names_csv: &str) -> Result<Vec<String>, ProfileError> {
 /// object 인지 검증한 뒤 `registered/<short_name>.json` 에 복사본을 쓴다 —
 /// 원본이 나중에 옮겨지거나 지워져도 레지스트리는 영향받지 않는다.
 /// 이미 등록된 이름이면 내용을 덮어쓴다(재등록으로 갱신하는 것이 정상 사용).
-pub fn register(
+pub(crate) fn register(
     data_dir: Option<&Path>,
     short_name: &str,
     source_path: &Path,
@@ -224,7 +224,7 @@ pub fn register(
 }
 
 /// `short_name` 등록을 해제한다. 없으면 `UnknownProfile`.
-pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), ProfileError> {
+pub(crate) fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), ProfileError> {
     let data_dir = require_data_dir(data_dir)?;
     let path = registered_file(data_dir, short_name);
     if !path.is_file() {
@@ -241,7 +241,7 @@ pub fn unregister(data_dir: Option<&Path>, short_name: &str) -> Result<(), Profi
 /// prefix(`"user"`/`"host"`)는 실제로 어느 출처에서 읽었는지를 그대로 반영한다 —
 /// 사용자 등록이 없어 host 기본값으로 fallback 됐는데도 `"user/..."` 라고 답하면
 /// 호출자가 실체와 다른 id 로 착각한다.
-pub fn show_registered(
+pub(crate) fn show_registered(
     data_dir: Option<&Path>,
     short_name: &str,
     tr: &Translator,
@@ -271,7 +271,7 @@ pub fn show_registered(
 /// 등록된 사용자 프로필 전체 + 내장 훅 listing 항목을 함께 나열한다
 /// (`priority` 개념이 필요 없는 단순 목록이라 owner tie-break 없이 owner→id
 /// 순으로만 정렬 — host 를 먼저 보여줘 "항상 켜져 있는 것"이 먼저 눈에 띄게 한다).
-pub fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
+pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSummary> {
     let mut out: Vec<ProfileSummary> = MANAGED_HOOKS
         .iter()
         .map(|(claude_event, token, matcher)| ProfileSummary {
@@ -350,7 +350,7 @@ fn short_names_in(dir: &Path) -> Vec<String> {
 /// 머지해 `generated/` 에 실체화한 뒤 그 경로를 반환한다. 이름이 하나뿐이어도
 /// 항상 이 경로를 통해 `generated/` 에 다시 쓴다 — attach 경로가 단수/복수로
 /// 갈라지지 않게 하기 위함(등록 내용이 바뀐 뒤 재부착 시에도 최신 내용 보장).
-pub fn resolve_names(
+pub(crate) fn resolve_names(
     data_dir: Option<&Path>,
     names_csv: &str,
     tr: &Translator,
@@ -489,7 +489,7 @@ pub(crate) fn handle_current(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = crate::handlers::require_surface_id(params, tr)?;
+    let surface_id = crate::handlers::require_target_surface(params, tr)?;
     let attached = crate::reboot::attached_profile_summary(host, surface_id);
     let builtins: Vec<Value> = list(data_dir, tr)
         .iter()

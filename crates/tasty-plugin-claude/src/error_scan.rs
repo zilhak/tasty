@@ -66,7 +66,7 @@ const STALL_NOTIFY_COOLDOWN: Duration = Duration::from_secs(300);
 pub(crate) const STALLED_EVENT: &str = "claude-error-stalled";
 
 /// `text`(ANSI-stripped 권장)에 알려진 Claude 에러 패턴이 포함됐는지.
-pub fn detect_claude_error(text: &str) -> bool {
+pub(crate) fn detect_claude_error(text: &str) -> bool {
     if text.is_empty() {
         return false;
     }
@@ -113,7 +113,7 @@ pub enum ScanTarget {
 /// - 스캔 자체(`scan_one`)를 건너뛰면 기능이 조용히 아무것도 안 한다.
 ///
 /// poison 은 sticky 라 넷 다 일회성이 아니라 영구적이다.
-pub fn lock_scanner(
+pub(crate) fn lock_scanner(
     scanner: &std::sync::Mutex<ErrorScanner>,
 ) -> std::sync::MutexGuard<'_, ErrorScanner> {
     const WHAT: &str = "the claude error scanner";
