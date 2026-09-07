@@ -30,6 +30,10 @@ use std::path::{Path, PathBuf};
 /// 사본이 있어야 하는 **유일한** 자리. 여기서 벗어난 사본이 생기면 실패한다.
 const EXPECTED: [&str; 1] = ["crates/tasty-ansi/src/lib.rs"];
 
+/// 이 파일 자신의 자리(레포 루트 기준). 검출 패턴을 raw 리터럴로 들고 있어 자기 자신이
+/// 사본으로 잡히므로 판정에서 뺀다 — 근거는 아래 사용처 주석에 있다.
+const SELF_PATH: &str = "crates/tasty-doc-guards/tests/strip_ansi_regex_parity.rs";
+
 /// raw 문자열 리터럴 본문을 뽑는다. 여는 `r"` 부터 다음 `"` 까지 — 정규식 안에
 /// `"` 가 없다는 전제이며, 그 전제가 깨지면 아래 `starts_with` 검사에서 걸린다.
 ///
@@ -77,6 +81,28 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
     collect(&root.join("crates"), &mut found);
     collect(&root.join("src"), &mut found);
     found.sort();
+
+    // **자기 자신은 뺀다.** 이 가드는 루트 `tests/` 에 살 때 판정 대상(`crates/` · `src/`)
+    // 밖이었다. 의존 0 크레이트로 옮기면서 대상 **안으로** 들어왔고, 검출 패턴을 raw
+    // 리터럴로 들고 있으니 자기를 두 번째·세 번째 사본으로 센다. 여기서 빼는 것은 판정을
+    // 좁히는 것이 아니라 **옮기기 전 모수를 그대로 유지하는 것**이다.
+    //
+    // 뺀 건수를 단정한다 — 파일이 옮겨지거나 이름이 바뀌면 이 면제가 조용히 0 건이 되고,
+    // 그러면 자기 사본이 다시 세어져 이 가드가 영원히 빨개진다. 그때는 여기서 죽는 것이
+    // 맞다(면제가 안 걸렸다는 것을 값으로 말한다).
+    let before = found.len();
+    found.retain(|(path, _)| {
+        path.strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
+            != SELF_PATH
+    });
+    assert!(
+        before > found.len(),
+        "자기 면제가 0 건이다 — `SELF_PATH`({SELF_PATH})가 이 파일의 실제 자리와 어긋났다. \
+         옮겼거나 이름이 바뀐 것이니 그 상수를 고쳐라."
+    );
 
     // 모수를 먼저 확정한다. 0 건이면 "전부 같다" 가 공허하게 참이 된다.
     let paths: Vec<String> = found
