@@ -453,6 +453,16 @@ impl WebhookInstance {
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > SPAWN_PORT_TIMEOUT {
+                // 락을 `panic!` 인자 안에서 잡으면 임시 가드가 되감기 끝까지 살아 있어 이
+                // Mutex 가 오염되고, stderr drain 스레드가 다음 `lock()` 에서 죽는다 —
+                // **이후 실패의 stderr tail 이 조용히 사라진다.** 형제 하네스와 같은 수선이다.
+                //
+                // 이유: 오염을 이어받아도 값은 옳다 — 보호 대상이 `Option<Instant>` 한 칸뿐이다.
+                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 교착이다.
+                let last_stderr_age = stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -460,7 +470,7 @@ impl WebhookInstance {
                         SPAWN_PORT_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }
