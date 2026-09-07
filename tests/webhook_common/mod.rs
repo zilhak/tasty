@@ -514,6 +514,14 @@ impl WebhookInstance {
                 break;
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
+                // 위 포트 타임아웃과 같은 이유 — 가드를 `panic!` 인자 밖에서 떨어뜨린다.
+                // 여기서 오염시키면 죽는 것은 stderr drain 스레드이고, 그 손실은 F 를
+                // 안 늘리므로 조용하다.
+                let last_stderr_age = instance
+                    .stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -521,7 +529,7 @@ impl WebhookInstance {
                         SPAWN_SHELL_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES),
-                        instance.stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }
