@@ -8,7 +8,7 @@
 
 design-tokens 시리즈는 "UI 는 primitive 색(Catppuccin 원색: `crust`/`surface0`/`subtext0`/`blue` …)을 직접 읽지 않고 **semantic role 접근자**(`bg_app()`/`surface_raised()`/`text_muted()`/`accent_primary()`/`border_default()` …)만 읽는다"는 디자인 계약을 세웠다. 이유는 role 토큰이 SoT 가 되면, 디자인이 나중에 role 별로 색을 갈라도(예: `border-focus` ≠ `accent-primary`) 호출처 수정 없이 전파되고, "같은 색·다른 의미"의 다의성이 코드에 표현되기 때문이다.
 
-접근자는 `crates/tasty-type-appearance/src/semantic_color_generated.rs` 에 DTCG(`dtcg/tasty.tokens.json`)에서 codegen 된다. host UI 계층(`src/view`, `src/adapters/ui`, `src/gfx/gpu/shell_setup.rs`)은 전수 이식 완료 + 소스 스캔 가드(`tests/design_token_adherence.rs::no_primitive_color_field_access_in_host_ui`)로 재유입을 CI 차단했다(design-tokens-05-C).
+접근자는 `crates/tasty-type-appearance/src/semantic_color_generated.rs` 에 DTCG(`dtcg/tasty.tokens.json`)에서 codegen 된다. host UI 계층(`src/view`, `src/adapters/ui`, `src/gfx/gpu/shell_setup.rs`)은 전수 이식 완료 + 소스 스캔 가드(`crates/tasty-doc-guards/tests/design_token_adherence.rs::no_primitive_color_field_access_in_host_ui`)로 재유입을 CI 차단했다(design-tokens-05-C).
 
 마지막 잔여는 **재사용 위젯 크레이트 `tasty-ui-widgets`** 였다 — chip·status_dot·menu_item·two_depth·tree_row·table 에 `theme.subtext0`/`theme.surface0`/`theme.crust`/`theme.text`/`theme.surface1` 직접 접근 9곳. 여기서 갈렸다: **"범용 위젯은 앱의 semantic role 을 몰라야 하니 primitive 접근이 정당한 레이어"인가, 아니면 위젯도 이식 대상인가.**
 
@@ -47,5 +47,5 @@ design-tokens 시리즈는 "UI 는 primitive 색(Catppuccin 원색: `crust`/`sur
 - `docs/design/systems/theme.md` — "Semantic 접근자 우선"(집행 체계·보류 해제 기록)
 - `crates/tasty-type-appearance/src/semantic_color_generated.rs` — role 접근자 codegen 산출물
 - `crates/tasty-design-tokens/dtcg/tasty.tokens.json` · `crates/tasty-design-tokens/src/dtcg.rs` — 토큰 SoT + 매핑표
-- `tests/design_token_adherence.rs` — `no_primitive_color_field_access_in_host_ui` 가드(스코프에 ui-widgets 편입)
+- `crates/tasty-doc-guards/tests/design_token_adherence.rs` — `no_primitive_color_field_access_in_host_ui` 가드(스코프에 ui-widgets 편입)
 - [ADR-0020](0020-gallery-complete-component-source.md) — 갤러리 = 컴포넌트 완전 출처(팔레트 데모 제외 근거)

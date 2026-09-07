@@ -22,7 +22,7 @@ IPC transport 로 **`127.0.0.1` loopback TCP** 를 쓴다. 서버는 동적 포�
 
 ## Consequences
 
-- **얻은 것**: 세 OS 동일 코드 경로 — named pipe / unix socket 의 플랫폼별 권한 분기를 회피한다. 동적 포트라 고정 포트 충돌이 구조적으로 없다 (OS 가 빈 포트를 할당). 포트 파일 디스커버리로 클라이언트가 서버 인스턴스를 찾는다.
+- **얻은 것**: 세 OS 동일 코드 경로 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다) — 분기가 소스에 없다는 것은 소스로 참이고, 세 조합이 컴파일되는 것은 그 채널이 본다 — named pipe / unix socket 의 플랫폼별 권한 분기를 회피한다. 동적 포트라 고정 포트 충돌이 구조적으로 없다 (OS 가 빈 포트를 할당). 포트 파일 디스커버리로 클라이언트가 서버 인스턴스를 찾는다.
 - **잃은 것**: 같은 OS user 의 임의 프로세스가 포트만 알면 `Local` caller 로 붙어 `_host` 권한을 얻는다 (`memory.md` "위협 모델"). 단일 사용자 가정 하에서는 OS user 격리와 trust boundary 가 일치하므로 수용하지만, 공유 머신/멀티테넌트에서는 깨진다.
 - **운영 비용 / 유지 부담**: 포트 파일 생명주기 관리 (서버 Drop 시 삭제). loopback TCP 는 unix socket file mode 0600 / named pipe ACL 같은 user-level owner 분리를 제공하지 못한다 — 이 격차는 의식적으로 미구현 상태로 둔다 (아래 Reconsideration 참조).
 
@@ -44,6 +44,6 @@ IPC transport 로 **`127.0.0.1` loopback TCP** 를 쓴다. 서버는 동적 포�
 
 - [`design/systems/memory.md`](../design/systems/memory.md) — "보안·신뢰 모델" 위협 모델 (IPC transport trust boundary)
 - [`index.md`](../index.md) (docs 루트) — 기술 스택 표의 IPC 항목 (TCP 127.0.0.1 동적 포트, `~/.tasty/tasty.port`)
-- 코드: `crates/tasty-ipc/src/{port_file,server,method_meta}.rs`, `src/adapters/production/tcp_ipc_server.rs:47` (`bind("127.0.0.1:0")`)
+- 코드: `crates/tasty-ipc/src/{port_file,server,method_meta}.rs`, `src/adapters/production/tcp_ipc_server.rs` (`bind("127.0.0.1:0")`)
 - `src/core/attach.rs` decision 5 / `crates/tasty-ipc/src/method_meta.rs:256` — attach 보안의 SSH + loopback 위임 (동일 신뢰 모델)
 - 관련: [`0005-memory-secret-not-a-vault.md`](0005-memory-secret-not-a-vault.md) — 같은 trust boundary 위에서 secret 저장 보호 범위를 정한 결정

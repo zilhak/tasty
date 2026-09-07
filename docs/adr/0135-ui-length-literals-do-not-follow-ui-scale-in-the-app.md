@@ -50,7 +50,7 @@ ADR-0126 이 이미 "명명 const 는 `zoomed()` 밖이라 배율을 안 탄다"
   전역 타입의 표면이 된다. 디자인 export 가 갱신되기 전까지의 임시 거처다.
 - **운영 비용**: 새 컨테이너 치수를 넣을 때 접근자를 하나 추가해야 한다. 가드가 접근자
   **안**만 보므로, 호출부에 리터럴을 직접 적는 새 자리는 이 가드가 못 잡는다 —
-  그쪽은 `tests/design_token_adherence.rs` 의 접두 목록이 맡을 축이고 지금은 열려 있다.
+  그쪽은 `crates/tasty-doc-guards/tests/design_token_adherence.rs` 의 접두 목록이 맡을 축이고 지금은 열려 있다.
 
 ## Alternatives Considered
 

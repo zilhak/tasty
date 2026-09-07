@@ -102,7 +102,7 @@ done | wc -l                                    # 51
 
 경로 목록이 위 형태를 지키는지를 가드 자신이 확인한다. 되돌리는 편집이 조용히 통과하지
 않게 하는 것이 목적이고, 그 테스트가 없으면 되돌림은 diff 에서 한 줄로 보일 뿐이다.
-`tests/design_token_adherence.rs` 의 `the_gpu_scan_root_is_a_directory_not_a_file` 이 그
+`crates/tasty-doc-guards/tests/design_token_adherence.rs` 의 `the_gpu_scan_root_is_a_directory_not_a_file` 이 그
 형태다 — 루트가 디렉토리인지, 그리고 **그 루트가 실제로 파일을 걷어 오는지**를 함께 본다
 (경로가 틀리면 예외가 아니라 조용히 0이 되고, 0인 모수는 언제나 초록이다).
 
@@ -122,8 +122,8 @@ done | wc -l                                    # 51
   | `src/source_guards/mod.rs` | 900 | "1100 남짓" |
   | `crates/tasty-host-plugin/src/test_support.rs` | 20 | 37 |
   | `crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` | 400 | 미기록 |
-  | `tests/let_underscore_documented.rs` | 700 | 1180 |
-  | `tests/no_emoji_in_source.rs` | 700 | 1120 |
+  | `crates/tasty-doc-guards/tests/let_underscore_documented.rs` | 700 | 1180 |
+  | `crates/tasty-doc-guards/tests/no_emoji_in_source.rs` | 700 | 1120 |
 
   오른쪽 칸은 **그 가드 자신의 doc 이 적어 둔 값**이지 이 표를 쓰며 잰 값이 아니다 —
   둘을 섞으면 다음 사람이 표를 측정 결과로 읽는다. "미기록" 둘은 아래 ③이 요구하는
@@ -149,7 +149,7 @@ done | wc -l                                    # 51
 가드 문서에 적는다.
 
 **두 가드가 같은 축을 보면 그 둘의 모수가 같다는 것도 고정 대상이다.**
-`src/design_token_guard.rs` 와 `tests/design_token_adherence.rs` 는 같은 축을 보고 doc 에
+`src/design_token_guard.rs` 와 `crates/tasty-doc-guards/tests/design_token_adherence.rs` 는 같은 축을 보고 doc 에
 "갈라지면 안 된다" 고 적혀 있었는데 **실제로 갈라졌고 그동안 양쪽 다 초록이었다.** 상수를
 공유할 수 없으므로(통합 테스트 아이템은 본체 crate 에서 안 보인다) 한쪽이 다른 쪽 소스를
 읽어 대조한다 — `the_two_sister_guards_scan_the_same_roots` 가 그것이다.
@@ -166,7 +166,7 @@ done | wc -l                                    # 51
   그 값이 0이면 그대로 넣는다.
 - **강제 범위 — 네 자리는 기계가 보고 나머지는 아무도 안 본다.** 위 ②는 그 가드 파일
   안에서만 성립한다. 기계가 보는 판정은 넷이다:
-  `the_gpu_scan_root_is_a_directory_not_a_file`(`tests/design_token_adherence.rs` —
+  `the_gpu_scan_root_is_a_directory_not_a_file`(`crates/tasty-doc-guards/tests/design_token_adherence.rs` —
   통합 타깃이라 헤드리스 잡)과 `the_two_sister_guards_scan_the_same_roots`
   (`src/design_token_guard.rs`), `every_scan_unit_contributes_at_least_one_file`
   (`src/source_guards/mod.rs`), `the_scan_population_matches_what_git_lists`
@@ -251,5 +251,5 @@ done | wc -l                                    # 51
 - [ADR-0128](0128-dpi-conversion-guarded-by-source-scan-not-sealed-types.md) — 타입 봉인
   대신 소스 스캔 가드를 고른 결정. **그 가드도 자기 모수를 갖는다** — 이 ADR 의 ①②가
   그쪽에도 그대로 걸린다
-- `tests/design_token_adherence.rs` — `SCAN_ROOTS` · `COLOR_SCAN_ROOTS` ·
+- `crates/tasty-doc-guards/tests/design_token_adherence.rs` — `SCAN_ROOTS` · `COLOR_SCAN_ROOTS` ·
   `GLYPH_SCAN_ROOTS` 와 `the_gpu_scan_root_is_a_directory_not_a_file`

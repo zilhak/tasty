@@ -69,7 +69,7 @@ UA 가 소비** 는 채택하고, **"요소를 뷰포트 크기로 리레이아�
   되는** 세 가지 — offscreen surface 스크린샷 · window 스크린샷 캡처+present · attach mesh
   relay.
 - **운영 비용**: 무대 분기의 **위치**가 계약이다. 위아래 어느 쪽으로 밀어도 조용히 죽는 기능이
-  있어(아래 표) 코드 주석 + `tests/fullscreen_stage_render_gate.rs` 구조 가드로 고정했다.
+  있어(아래 표) 코드 주석 + `crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs` 구조 가드로 고정했다.
 
 | 분기 위치 | 결과 |
 |-----------|------|

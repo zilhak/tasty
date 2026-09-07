@@ -43,7 +43,7 @@
 
 - **얻은 것**: 에이전트가 `window.create` 의 실제 성공/실패와 새 창 id 를 받는다 — "열렸다고 믿었는데 아니었다" 가 사라진다. 실패가 요청자에게 가므로 사용자 화면을 오염시키던 toast 를 제거해 원칙 1 을 회복한다. `IpcCompletion` 은 한 벌로 공유되어 이후 다른 release+실패가능 스케줄 op 도 같은 계약으로 붙는다.
 - **잃은 것**: `AppEvent::CreateWindow` 가 `Option<IpcCompletion>` 을 싣게 되어 모든 producer(menu/단축키/tray/macOS delegate)가 `None` 을 명시한다. IPC 응답이 defer 되므로, 완료 채널이 응답 없이 drop 되면(예: 이벤트 루프 종료) 요청자는 무한 대기가 아니라 disconnect 를 본다(`SyncSender` drop → receiver `Err`) — 이 성질을 단위 테스트로 고정했다.
-- **회귀 방어**: 이 경로는 winit `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다(ADR-0117 과 같은 제약). 세 겹으로 고정한다 — ⑴ `IpcCompletion` 의 완료 동작은 단위 테스트(`src/app/event.rs` — reply_ok/reply_err/drop-disconnect), ⑵ `create_new_window` 이 `Result` 를 반환한다는 사실은 **타입 시스템**(void 로 되돌리면 전 호출자가 컴파일 실패)과 소스 가드, ⑶ window.create 가 완료 채널로 배선된 채 유지되는지는 소스 형태 가드(`tests/ipc_window_create_returns_outcome.rs`) + dead-code lint(fire-and-forget 로 되돌리면 `IpcCompletion` 이 미사용이 되어 `-D dead-code` 로 빌드 실패).
+- **회귀 방어**: 이 경로는 winit `ActiveEventLoop` 가 있어야 돌아가 행동 테스트로 감쌀 수 없다(ADR-0117 과 같은 제약). 세 겹으로 고정한다 — ⑴ `IpcCompletion` 의 완료 동작은 단위 테스트(`src/app/event.rs` — reply_ok/reply_err/drop-disconnect), ⑵ `create_new_window` 이 `Result` 를 반환한다는 사실은 **타입 시스템**(void 로 되돌리면 전 호출자가 컴파일 실패)과 소스 가드, ⑶ window.create 가 완료 채널로 배선된 채 유지되는지는 소스 형태 가드(`crates/tasty-doc-guards/tests/ipc_window_create_returns_outcome.rs`) + dead-code lint(fire-and-forget 로 되돌리면 `IpcCompletion` 이 미사용이 되어 `-D dead-code` 로 빌드 실패).
 
 ## Alternatives Considered
 
@@ -68,4 +68,4 @@
 - `src/app/event.rs` — `IpcCompletion` 완료 채널
 - `src/app/window_lifecycle.rs` — `create_new_window`(Result 반환) · `notify_window_creation_failed`
 - `src/app/ipc/app_methods.rs` — `window.create` / `view.create` IPC 핸들러(응답 defer)
-- `tests/ipc_window_create_returns_outcome.rs` — 완료 채널 배선 소스 가드
+- `crates/tasty-doc-guards/tests/ipc_window_create_returns_outcome.rs` — 완료 채널 배선 소스 가드

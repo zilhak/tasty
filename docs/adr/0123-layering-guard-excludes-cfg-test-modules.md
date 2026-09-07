@@ -6,7 +6,7 @@
 
 ## Context
 
-`tests/layering.rs` 는 본체(`src/`)가 `tasty-cli` 크레이트를 직접 참조하면 실패한다.
+`crates/tasty-doc-guards/tests/layering.rs` 는 본체(`src/`)가 `tasty-cli` 크레이트를 직접 참조하면 실패한다.
 목적은 의존 방향의 역전을 막는 것이다 — GUI 런타임·IPC 핸들러·앱 상태가 CLI 진입
 계층 내부를 들여다보면, CLI 타입 변경이 GUI 를 깨고 재사용 목적의 로직이 CLI 안에
 눌러앉는다. 가드가 없으면 위반이 컴파일 에러로 잡히지 않는다 — `src/adapters/cli.rs`
@@ -98,6 +98,6 @@
 
 ## References
 
-- `tests/layering.rs` — 가드 본체(세 목록과 두 방향 검사).
+- `crates/tasty-doc-guards/tests/layering.rs` — 가드 본체(세 목록과 두 방향 검사).
 - `crates/tasty-doc-guards/tests/no_todo_file_citation.rs` — `(경로, 사유)` 쌍 면제 목록의 선례.
 - [ADR-0105](0105-no-nongit-path-refs-in-tracked-sources.md) — 추적 소스의 참조 규칙.

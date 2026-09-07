@@ -34,7 +34,7 @@ context 를 직접 돌려 동기 계약을 흉내 냈다. 이 루프가 도는 �
 ## Decision
 
 `show_context_menu` 의 반환형을 세 OS 모두 `MenuOutcome { Ready(Option<u32>),
-Pending(MenuHandle) }` 으로 통일한다. **API 형태(=호출 규약과 호출부 코드 모양)는 통일하되,
+Pending(MenuHandle) }` 으로 통일한다 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다) — 타입이 소스에 하나뿐이라 모양은 소스로 참이고, 세 조합이 실제로 컴파일되는 것을 그 채널이 본다. **API 형태(=호출 규약과 호출부 코드 모양)는 통일하되,
 언제 해소되는지는 플랫폼별로 다르다는 것을 타입으로 드러낸다.**
 
 - macOS / Windows: 기존 구현을 그대로 두고 결과를 `Ready` 로 감싸기만 한다. 호출부에서 볼 때

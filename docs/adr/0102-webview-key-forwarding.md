@@ -11,6 +11,23 @@
 (X11 child window + WebKitGTK / WKWebView subview / child HWND + WebView2). 그 자식이
 키보드 입력을 받으면 winit 최상위 창은 `WindowEvent::KeyboardInput` 을 받지 못한다.
 
+> **출처 — OS 마다 다르다.** 아래 셋은 접히지 않는다.
+>
+> - **Linux — 실측이다.** 2026-09-07, Xvfb + WebKitGTK 4.1 에서 같은 창을 두 채널로 동시에
+>   찍어 갈랐다: wgpu 스왑체인 readback(`ui.screenshot`)에는 host 가 그린 경계 배경
+>   ("WebView region" + URL)만 담기고 OS 화면 캡처(`scrot`)에만 렌더된 페이지가 나왔다.
+>   **스왑체인 밖의 별개 OS 창이라는 것이 그 차이다**(채널별 대상 표는
+>   [`ai-verification/screenshot-methods`](../ai-verification/screenshot-methods.md)).
+> - **macOS — 안 쟀다.** 이 문장을 참으로 만드는 것은 백엔드가 따로 있다는 **소스 모양**
+>   (`src/host_api/webview/macos.rs` 의 WKWebView subview)과, 그 조합이 컴파일된다는 것
+>   (`.github/workflows/crossplatform-check.yml` 의 `check-macos`)뿐이다. 그 잡은 컴파일까지만
+>   본다 — 자식 뷰가 실제로 별개 창으로 그려지는지는 **그 채널 밖이다**.
+> - **Windows — 안 쟀다.** 같은 모양이다(`.../windows.rs` 의 child HWND + WebView2 ·
+>   `check-windows`). 컴파일까지만이라는 한계도 같다.
+>
+> **다시 재려면**: macOS·Windows 각각에서 GUI 를 띄우고 webview surface 를 연 뒤 같은 두 채널로
+> 동시에 찍어 대조한다 — Linux 에서 한 것과 같은 절차다.
+
 그 결과 tasty 의 전역 단축키 경로(`view/main/keyboard.rs` → `adapters/ui/input/shortcuts/`)가
 **통째로 도달 불가능**해진다. Linux/X11 debug 인스턴스(Xvfb, WM 없음)에서 실측한 경계는
 다음과 같았다.
@@ -159,7 +176,7 @@ macOS 의 회수 대상은 `nil` 이 아니라 **창의 `contentView`(= winit �
   webview 가 숨겨지거나 창이 최소화/비활성이 되면 tick 은 취소된다 — 배경 인스턴스가
   상시로 깨지 않게 하는 것이 조건의 목적이다. **Linux 한정은 조건부 컴파일이 아니라
   런타임 arm 분기다**: `Tick::WebviewKeyPoll` 변형과 `WEBVIEW_KEY_POLL_INTERVAL` 은
-  `#[cfg(feature = "gui")]` 로만 게이트돼 세 OS 모두 컴파일되고, `reschedule_webview_key_poll`
+  `#[cfg(feature = "gui")]` 로만 게이트돼 세 OS 모두 컴파일되고 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다), `reschedule_webview_key_poll`
   안의 `let arm = needs_poll && cfg!(target_os = "linux")` 가 Linux 에서만 tick 을 세운다
   (non-Linux 는 조건과 무관하게 `hub.cancel` 만 탄다). `cfg!` 는 컴파일타임 상수라
   최적화 단계에서 접히므로 macOS/Windows 의 폴링 비용은 실질 0 이고, native 키 콜백이

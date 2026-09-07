@@ -53,7 +53,7 @@ stderr(터미널에서 실행한 사용자에게 보임)와 **공유 로그 파�
 > 나 창 자체가 없어 화면을 띄울 수단이 없으므로 진단 후 `exit(1)` 를 유지한다(그 두
 > 경우의 "보이는 안내" 는 OS 네이티브 다이얼로그가 필요한 3-플랫폼 작업이라 별건으로
 > 남긴다). 회귀 방어: 단위 테스트(`boot_engine_error_info` 세 진단이 distinct) +
-> 소스 형태 가드(`tests/boot_engine_failure_stays_visible.rs`).
+> 소스 형태 가드(`crates/tasty-doc-guards/tests/boot_engine_failure_stays_visible.rs`).
 
 **2. 새 창 · 설정 · 플러그인 모달 — 그 창만 취소하고 안내.** 이미 떠 있는 창들은 건드리지
 않는다. 안내는 실패한 창이 아니라 **살아 있는 메인 창**에 띄운다(실패한 창은 엔진도 GPU 도
@@ -111,7 +111,7 @@ degraded 라 남는 수단이 프로세스 강제 종료뿐이다. 사용자가 
 - **회귀 방어**: 이 경로들은 winit `ActiveEventLoop` 와 GPU 상태가 있어야 돌아가 행동
   테스트로 감쌀 수 없다. 그래서 두 겹으로 고정한다 — 테스트 가능한 seam 은 단위 테스트
   (엔진 생성이 잘못된 셸에서 `Err` 를 내는지, `ThreadSpawn` 이 JSON-RPC 에러로 매핑되는지),
-  감쌀 수 없는 분기는 소스 형태 가드(`tests/no_panic_in_window_creation.rs`)로 막는다.
+  감쌀 수 없는 분기는 소스 형태 가드(`crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs`)로 막는다.
 
 ## Alternatives Considered
 
@@ -165,4 +165,4 @@ degraded 라 남는 수단이 프로세스 강제 종료뿐이다. 사용자가 
 - [`docs/identity.md`](../identity.md) — 핵심 원칙 1 (사용자 행동 ↔ 에이전트 행동 분리)
 - [`docs/design/flows/action-dispatch.md`](../design/flows/action-dispatch.md) — origin 별
   정책 차이. dispatcher 는 origin 정책을 강제하지 않고 호출자가 mode 를 고른다
-- `tests/no_panic_in_window_creation.rs` — 창·모달 생성 경로 패닉 재유입 가드
+- `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs` — 창·모달 생성 경로 패닉 재유입 가드

@@ -118,7 +118,7 @@ GUI 를 요구한다고 판정됐지만, 실제로 GUI 에 묶여 있던 것은 
 이로써 **skip 의 단위가 파일에서 테스트로 내려왔다** — 개정이 규정한 형태가 워크플로에
 실물로 존재하게 된 것이고, 명명 skip 1 건은 이제 "GUI 요구" 라는 사유를 정확히 하나의
 테스트에만 적용한다. 이름의 정확성(죽은 skip / 과대 매칭)은
-`tests/headless_skip_names_are_exact.rs` 가 강제한다.
+`crates/tasty-doc-guards/tests/headless_skip_names_are_exact.rs` 가 강제한다.
 
 **Decision 본문은 열지 않는다.** 띄울 바이너리를 한 곳에서 정한다는 것, 기본(gui) 조합의
 GPU 종속을 유지한다는 것, 대안 A·B 를 막는 이유 — 셋 다 이 개정과 무관하게 그대로다.

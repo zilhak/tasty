@@ -11,7 +11,7 @@ CLAUDE.md 의 plugin 버전 정책은 트리거와 목적이 서로 다르게 �
 - **트리거(선언)**: "한 커밋에 특정 plugin 디렉토리의 파일이 **하나라도 staged** 되어 있으면 그 plugin 의 패치를 +1 한다."
 - **목적**: 라이브 반영. `upgrade-builtins` 재sync 는 매니페스트 `version` 이 올랐을 때만 동작한다(**same-version skip**).
 
-둘은 같지 않다. `style: cargo fmt` 같은 워크스페이스 전역 정리는 트리거에 걸리지만 반영할 동작 변경이 없고, 반대로 기능이 실제로 바뀌었는데 version 이 그대로인 커밋은 목적에 정확히 걸린다. 그리고 **어느 쪽도 자동으로 판정되지 않았다** — `tests/plugin_manifest_version_parity.rs` 는 *한 트리 안* 에서 `Cargo.toml` ↔ `tasty-plugin.toml` 이 같은지만 보고, "직전보다 올랐는가" 는 git 을 읽어야 하므로 아무도 안 봤다.
+둘은 같지 않다. `style: cargo fmt` 같은 워크스페이스 전역 정리는 트리거에 걸리지만 반영할 동작 변경이 없고, 반대로 기능이 실제로 바뀌었는데 version 이 그대로인 커밋은 목적에 정확히 걸린다. 그리고 **어느 쪽도 자동으로 판정되지 않았다** — `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs` 는 *한 트리 안* 에서 `Cargo.toml` ↔ `tasty-plugin.toml` 이 같은지만 보고, "직전보다 올랐는가" 는 git 을 읽어야 하므로 아무도 안 봤다.
 
 ### 측정 1 — 파일 수 문턱은 분류 기준이 못 된다
 
@@ -120,7 +120,7 @@ CLAUDE.md 의 plugin 버전 정책은 트리거와 목적이 서로 다르게 �
 - **주석 전용 오탐이 실제로 사람을 막기 시작하면** — 판정: 이 게이트에 걸려 `--no-verify` 로 넘긴 커밋이 관측되거나, 주석만 바꾼 커밋에서 patch 가 올라간 사례가 쌓이면. 그때는 정규식이 아니라 **렉서 수준** 주석 제거를 검토한다(정규식은 거짓 음성 방향으로 실패하므로 채택하지 않는다).
 - **rustfmt 정규화가 진짜 변경을 삼킨 사례가 하나라도 나오면** — 지금 측정에서는 0 이다(배제된 6 쌍이 전부 `style:` 커밋). 하나라도 나오면 판별식을 다시 연다.
 - **`upgrade-builtins` 라이브 반영 사고가 이 게이트를 통과한 뒤에도 보고되면** — 판별식이 산출물 변화를 다 못 본다는 뜻이다. 특히 `lang/`·`assets/` 밖의 새 산출물 경로가 생겼는지 본다.
-- **plugin 이 `Cargo.toml` 과 매니페스트를 lockstep 으로 두는 규칙이 바뀌면** — 지금은 `tests/plugin_manifest_version_parity.rs` 가 그것을 강제하므로 판정이 매니페스트 하나만 봐도 충분하다. 그 전제가 깨지면 두 값을 따로 봐야 한다.
+- **plugin 이 `Cargo.toml` 과 매니페스트를 lockstep 으로 두는 규칙이 바뀌면** — 지금은 `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs` 가 그것을 강제하므로 판정이 매니페스트 하나만 봐도 충분하다. 그 전제가 깨지면 두 값을 따로 봐야 한다.
 - **`Cargo.toml` 최상위에 `version =` 이 둘 이상 생기면** — 지금은 번들 plugin·공유 크레이트·루트를 통틀어 0 이다(실측). `[dependencies.foo]` 절을 쓰면 그 안의 `version` 도 열 0 에 온다. 그래도 읽는 쪽과 빼는 쪽이 같은 줄을 가리키므로 판정은 갈리지 않지만, 그 의존 버전 변경이 증거에서 빠지게 된다 — 그때는 술어를 `[package]` 절 안으로 좁힌다.
 - **워크스페이스 edition 이 바뀌면** — 스크립트는 루트 `Cargo.toml` 에서 edition 을 읽으므로 자동 추종하지만, rustfmt 가 옛 소스를 못 파싱하기 시작하면 원문 비교로 떨어져 오탐이 늘 수 있다.
 
@@ -130,4 +130,4 @@ CLAUDE.md 의 plugin 버전 정책은 트리거와 목적이 서로 다르게 �
 - [dev-guide/ci-gates.md](../dev-guide/ci-gates.md) — 어느 검사가 언제 도는지의 정본
 - [dev-guide/plugin-development.md](../dev-guide/plugin-development.md) §9.1 — `upgrade-builtins` 재sync 와 same-version skip
 - `scripts/check-plugin-version-bump.sh` — 판정의 유일한 자리
-- `tests/plugin_manifest_version_parity.rs` — 한 트리 안 `Cargo.toml` ↔ 매니페스트 정합
+- `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs` — 한 트리 안 `Cargo.toml` ↔ 매니페스트 정합

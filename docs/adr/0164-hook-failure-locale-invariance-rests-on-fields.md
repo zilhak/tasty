@@ -12,7 +12,7 @@
 언어 조항이 하나 붙어 있다 — *`reason` 의 **값**은 사용자 로케일과 무관한 영어 고정이다.*
 근거로 적힌 것은 "이 파일은 사후에 — 사람이 아니라 에이전트가 — 알려진 실패 패턴과
 대조하며 읽는다" 였고, 집행 수단으로 `DiagnosticEnglish` 타입과
-`tests/hook_failure_reason_stays_english.rs` 소스 가드를 세웠다.
+`crates/tasty-doc-guards/tests/hook_failure_reason_stays_english.rs` 소스 가드를 세웠다.
 
 **그 조항은 쓰인 날 이미 거짓이었다.**
 
@@ -135,6 +135,6 @@ loopback connect 3 초 상한. 어느 것도 이 ADR 이 건드리지 않는다.
 - 개정 대상: [ADR-0075](0075-agent-hook-delivery-failure-record.md) (`reason` 의 값을 로케일 무관 영어로 고정한 언어 조항).
 - 개정 패턴 선례: [ADR-0030](0030-image-egui-mesh-bitmap-texture.md) (ADR-0028 의 image Canvas-하이브리드 조항만 부분 개정하고 나머지는 유효로 남긴 방식).
 - 코드 근거: `crates/tasty-cli/src/hook_failure.rs`(`format_line` · `DiagnosticEnglish` · `is_hook_method`), `crates/tasty-cli/src/run.rs`(`run_dynamic_client` 의 세 실패 지점), `crates/tasty-ipc/src/client.rs`(`JsonRpcCallError`).
-- 가드: `tests/hook_failure_reason_stays_english.rs`(CLI 가 만드는 두 갈래만 덮는다는 것을 그 파일 문서가 명시한다).
+- 가드: `crates/tasty-doc-guards/tests/hook_failure_reason_stays_english.rs`(CLI 가 만드는 두 갈래만 덮는다는 것을 그 파일 문서가 명시한다).
 - 이력 커밋: `ecaea2cb`(claude IPC 오류가 `Translator` 를 타기 시작), `db580653`(ADR-0075 최초), `faa4b583`(언어 조항 삽입 + 타입·가드).
 - 관련: [ADR-0103](0103-plugin-locale-via-host-process-env.md)(plugin 로케일은 host 프로세스 env 로 전달), [i18n](../dev-guide/i18n.md) "plugin 이 돌려주는 IPC 에러 문구", [crash-diagnostics](../dev-guide/crash-diagnostics.md).

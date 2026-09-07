@@ -58,3 +58,4 @@
 - [ADR-0100](0100-agent-stream-sse-endpoint-exposure.md) — SSE 엔드포인트 노출 · 토큰 저장(평문·0600)
 - [`plugins/agent-stream`](../plugins/agent-stream/index.md) — 턴 correlation 절 · 등록 예시 · FE 계약
 - 코드: `crates/tasty-plugin-agent-stream/src/{registry,handlers,pump}.rs`, `src/hook_handler/exec.rs`(`substitute_params`/`execute_sequence`)
+- 위 "남은 상류 상한" 이 적어 둔 남용차단 쪽 빚(`401` 반복이 쿨다운으로 이어지지 않던 것)은 [ADR-0195](0195-abuse-counting-includes-rejected-tokens.md) 가 갚았다. body 바이트 상한은 그대로 남아 있다.

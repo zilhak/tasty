@@ -10,9 +10,10 @@
 
 ## Context
 
-UI 디자인 규칙은 "폰트 크기는 `Theme` 에서 가져온다"이고, `tests/design_token_adherence.rs`
-가드가 `FontId::*`/`RichText::size` 의 숫자 리터럴을 막는다(통합 테스트라 자동 실행은
-헤드리스 조합 하나에서만 일어난다 — 기본 조합의 자동 잡은 `--lib --bins` 라 못 본다,
+UI 디자인 규칙은 "폰트 크기는 `Theme` 에서 가져온다"이고, `crates/tasty-doc-guards/tests/design_token_adherence.rs`
+가드가 `FontId::*`/`RichText::size` 의 숫자 리터럴을 막는다(`doc-guards.yml` 이 main
+push · PR 마다 **경로 필터 없이** 그 크레이트를 통째로 돌리므로 두 조합 모두에서 자동으로
+돈다 — 그 크레이트로 옮겨 오기 전에는 헤드리스 조합 하나뿐이었다,
 [ci-gates](../dev-guide/ci-gates.md)). 리터럴을 걷어내는
 작업을 하다 보면 **대응 토큰이 없는 값**을 만난다 — 코드에서 자란 9.5 · 10.5 · 11.5 ·
 12.5 · 13.5, DTCG primitive 에는 있으나 semantic role 이 없어 `Theme` 필드가 없는 12 ·
@@ -121,7 +122,7 @@ zoom 을 타고 있었고 반경만 고정이었다.
 
 기계가 가르는 경계도 축마다 다르다. 폰트 축은 `no_named_const_copies_a_ui_font_token` 이
 "토큰 값과 같은 const" 를 잡는다. 반경 축에는 대응 가드가 아직 없다 — 지금 막는 것은
-`tests/design_token_adherence.rs` 의 인라인 리터럴(`.corner_radius(` ·
+`crates/tasty-doc-guards/tests/design_token_adherence.rs` 의 인라인 리터럴(`.corner_radius(` ·
 `CornerRadius::same(` 두 접두)까지이고, **값이 반경 토큰과 같은 명명 const** 는 열려 있다.
 그 형태가 실제로 나타나면 폰트 쪽 가드와 같은 모양으로 넓히면 된다.
 
@@ -466,7 +467,7 @@ UI scale 사본은 "안 불러서 **갈라졌다**" 다. 그 사본은 주석에
   "SIZING 에 대응이 없는 값". 스케일 밖 명명 const 가 사는 위치와 그 부류에 붙는 규칙
 - [ADR-0033](0033-ui-color-semantic-role-only.md) — 색은 semantic role 접근자로만
   읽는다. 같은 축(값이 아니라 토큰을 경유한다)의 색 쪽 결정
-- `tests/design_token_adherence.rs` — 폰트/선굵기/간격 리터럴 재유입 가드와 그 한계 목록
+- `crates/tasty-doc-guards/tests/design_token_adherence.rs` — 폰트/선굵기/간격 리터럴 재유입 가드와 그 한계 목록
 - `src/design_token_guard.rs` — 토큰 값을 복사한 명명 const 를 폰트 자리에서 막는 가드.
   관례(`tests/*.rs`)를 깨고 본체 crate 의 `#[cfg(test)]` 모듈에 둔 이유가 그 모듈 doc 에
   있다 — 통합 테스트는 헤드리스 조합 하나에서만 실행되고 기본 조합의 자동 잡은

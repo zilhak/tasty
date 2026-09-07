@@ -55,4 +55,5 @@ tasty 는 GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty
 - [ADR-0047](0047-shared-hook-handler-registry-source-gate.md) — 공유 훅 핸들러 레지스트리 + source 게이트(셸 웹훅 거부)
 - [ADR-0048](0048-webhook-http-tiny-http-blocking.md) — HTTP 레이어(tiny_http, blocking, TLS 위임)
 - [ADR-0004](0004-ipc-transport-tcp.md) — 제어용 IPC 의 loopback + owner 전권 신뢰 모델(대비되는 신뢰 경계)
+- 부분 개정: [0195](0195-abuse-counting-includes-rejected-tokens.md) (4중 방어선 4 — 남용차단의 집계 대상에 `401` 추가)
 - 코드: `src/webhook/{ack,auth,abuse,registry,listener}.rs`, `src/hook_handler/exec.rs`(`substitute_params`/`execute_sequence`), `src/adapters/ipc/handler/webhook.rs`
