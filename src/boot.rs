@@ -22,6 +22,7 @@ pub(crate) mod headless_plugins;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_stream;
 pub(crate) mod locale;
+pub(crate) mod locale_font;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
 pub(crate) mod trace;

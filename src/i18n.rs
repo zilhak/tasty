@@ -14,8 +14,8 @@ use std::path::Path;
 // 다운스트림이 없어 미사용 `pub use` 가 unused_imports 로 잡히므로 명시적 allow.
 #[allow(unused_imports)]
 pub use tasty_i18n::{
-    LanguageEntry, LoadOutcome, LoadReport, TOAST_MAX_CHARS, available_languages, current_language,
-    init, load_report, register_namespace, t, t_args, t_fmt, t_fmt_fit, t_fmt2,
+    FontDecl, LanguageEntry, LoadOutcome, LoadReport, TOAST_MAX_CHARS, available_languages,
+    current_language, init, load_report, register_namespace, t, t_args, t_fmt, t_fmt_fit, t_fmt2,
     unregister_namespace,
 };
 

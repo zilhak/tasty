@@ -31,9 +31,10 @@ pub(crate) struct ResolvedLocale {
     /// 영어로 폴백했으면 `en` — 설정값이 아니라 i18n 테이블이 실제로 담은 언어다.
     pub code: String,
     /// 언어팩이 제공하는 폰트 파일의 절대경로. 언어팩이 폰트를 제공하지 않거나
-    /// 내장 폰트를 쓰면 `None` — 이때 `TASTY_LOCALE_FONT` 는 설정하지 않는다(unset).
-    /// 언어팩 `[font]` 선언(`LoadOutcome::Pack { font, .. }`)을 실제 파일로 resolve 하는
-    /// 단계는 아직 없어 현재는 항상 `None` 이다.
+    /// (`builtin = true`) 내장 언어를 쓰면 `None` — 이때 `TASTY_LOCALE_FONT` 는
+    /// 설정하지 않는다(unset). 언어팩 `[font]` 선언을 실제 파일로 resolve·검증하는
+    /// 단계는 `init` 에서 `locale_font::resolve` 로 수행한다 — resolve 에 실패하면
+    /// (`Failed`) 경고만 하고 `None` 으로 둔다(문자열 자체는 폴백 없이 그대로 로드).
     pub font_file: Option<PathBuf>,
 }
 
@@ -84,7 +85,22 @@ pub(crate) fn init() {
         let lang_settings = crate::settings::Settings::load();
         let requested = normalize_code(&lang_settings.general.language);
         let report = crate::i18n::init(&requested);
-        let locale = ResolvedLocale::from_report(&report);
+        let mut locale = ResolvedLocale::from_report(&report);
+        // `[font]` 선언을 실제 파일로 resolve·검증한다(egui 가 보기 전에 깨진 폰트를
+        // 거른다). 실패는 폴백 없이 경고만 — 문자열은 그대로 뜨고 UI 폰트만 안 붙는다.
+        // GUI 의 사용자 향 경고 토스트는 부팅 후 `app::boot_machine` 이 별도로 낸다.
+        match crate::boot::locale_font::resolve(&report.outcome) {
+            crate::boot::locale_font::FontResolution::Resolved(path) => {
+                locale.font_file = Some(path);
+            }
+            crate::boot::locale_font::FontResolution::Failed { detail } => {
+                tracing::warn!(
+                    "locale '{}' declares a [font] that could not be resolved: {detail}",
+                    locale.code
+                );
+            }
+            crate::boot::locale_font::FontResolution::None => {}
+        }
         export_to_process_env(&locale);
     });
 }
