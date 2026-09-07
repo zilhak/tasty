@@ -46,7 +46,16 @@ cd "$REPO_ROOT"
 
 # staged 된 파일 목록. `.rs` 목록은 여기서 갈라 낸다 — 두 값이 **같은 한 번의 조회**에서
 # 나와야 아래 통과 줄이 찍는 모수가 검사들이 실제로 순회한 것과 같다.
-STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACM || true)
+#
+# ★ **`R`(이름 바뀜)이 들어가야 한다.** 없으면 **순수 rename 커밋의 모수가 0 이 되고**,
+#   이 값에서 조기 return 하는 검사 여섯(A.1 mod/use 순서 · A.2 `cargo fmt` · C.6 `let _`
+#   사유 · C.9 `egui::Window` · C.11 · C.12)이 **한 줄도 안 보고 초록을 낸다**(실측: 옮기기만
+#   한 커밋에서 `staged .rs 0 · staged 전체 0` 이 찍혔다). 옮긴 파일은 내용이 같아도 **자리가
+#   달라진다** — mod/use 순서와 크레이트 귀속은 자리가 정한다.
+# ★ **`D`(지움)는 일부러 뺀다.** 위 검사들은 전부 **파일을 연다** — 지워진 경로를 열면 없는
+#   파일이고, 그것을 실패로 셀지 통과로 셀지가 또 갈린다. 지움을 봐야 하는 것은 파일을 안
+#   여는 검사들(P.1·W.1)이고 그쪽은 자기 자리에서 `ACMRD`·`ACMR` 로 따로 묻는다.
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACMR || true)
 STAGED_RS=$(printf '%s\n' "$STAGED_ALL" | grep -E '\.rs$' || true)
 
 red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
@@ -657,13 +666,13 @@ fi
 # ────────────────────────────────────────────────────────────
 count() { [ -z "$1" ] && echo 0 || printf '%s\n' "$1" | wc -l | tr -d ' '; }
 
-green "✓ pre-commit 검사 통과 (검사 $RAN/$defined 돌았다 · 모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — 더해지거나 고쳐진 것)"
+green "✓ pre-commit 검사 통과 (검사 $RAN/$defined 돌았다 · 모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — 더해지거나 고쳐지거나 이름이 바뀐 것)"
 
 # 넓은 쪽과의 차이. 0 이면 안 찍는다 — 이 줄이 **상황에 반응해야** 뜻이 산다.
 STAGED_WIDE=$(git diff --cached --name-only --diff-filter=ACMRD || true)
 wide_extra=$(( $(count "$STAGED_WIDE") - $(count "$STAGED_ALL") ))
 if [ "$wide_extra" -gt 0 ]; then
-    yellow "  ↳ 이름만 바뀌거나 지워진 것 $wide_extra 개는 **위 수 밖**이다 — P.1 과 W.1 은 그것도 본다."
+    yellow "  ↳ 지워진 것 $wide_extra 개는 **위 수 밖**이다 — 파일을 여는 검사는 그것을 못 본다. P.1 이 본다."
 fi
 
 # 그리고 **여집합**을 한 줄 더 찍는다 — 있을 때만.
