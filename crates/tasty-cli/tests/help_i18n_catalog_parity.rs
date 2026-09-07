@@ -122,8 +122,9 @@ fn help_translation_coverage_does_not_shrink() {
         .count();
     assert!(
         covered >= COVERAGE_FLOOR,
-        "도움말 번역 커버리지가 줄었다: {covered} < 하한 {COVERAGE_FLOOR}. \
-         키를 지웠으면 이 하한도 같이 내려라 — 남는 여유가 곧 안 보는 구간이다."
+        "도움말 번역 커버리지가 줄었다: {covered} / {} 자리 < 하한 {COVERAGE_FLOOR}. \
+         키를 지웠으면 이 하한도 같이 내려라 — 남는 여유가 곧 안 보는 구간이다.",
+        all.len()
     );
     assert!(
         !all.is_empty(),
