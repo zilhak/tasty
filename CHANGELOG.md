@@ -97,6 +97,8 @@
 
 ### Fixed
 
+- **`--help` 에서 설명이 비어 있던 명령 셋** — `tasty list queue` · `tasty set global-hook` · `tasty telemetry record` 는 명령 목록에 이름만 나오고 설명 칸이 비어 있었다. 앞의 둘은 설명이 실제로는 **한 칸 위 명령에 붙어** 있어서, 비는 것과 동시에 `tasty list theme` · `tasty telemetry record-batch` 는 남의 설명까지 이어 붙여 내보냈다. 셋 다 제자리를 찾았고 `set global-hook` 은 없던 설명이 생겼다.
+
 - **`image.list` 가 포커스된 창의 이미지만 답하던 것** — 열린 image surface 목록은 한 engine(=한 창)의 워크스페이스만 순회했다. 창이 둘이면 다른 창에서 연 이미지가 목록에서 **에러 없이 사라진다** — `surface.list`·`pty.list` 가 이미 겪고 고친 형태다. 이 자리는 한 가지가 달랐다: `image` 는 번들 plugin 이 점유한 namespace 라 외부 호출이 plugin 으로 먼저 넘어가는데, plugin 이 `image.list` 를 host 로 되돌리고 그 되돌림이 호스트의 합산 지점을 지난다. 즉 **plugin 이 앞에 선다는 것이 합산 면제의 근거가 아니었다.** 이제 전 창(main + parked)의 항목을 합쳐 답한다 — 항목의 키인 `surface_id` 는 창을 건너 유일하므로 합친 목록에서도 그대로 지목할 수 있다.
 
 - **`tasty plugin remove` 로 지운 기본 제공 플러그인이 다음 실행에 되살아나던 것** — 제거를 영속시키는 기록(`plugins.toml` 의 `removed_builtins`)이 설정 모달의 **Uninstall 에만** 걸려 있었고, CLI·IPC 경로는 그 기록을 안 남겼다. 그래서 같은 "제거" 가 GUI 로 하면 영구, 명령으로 하면 다음 실행에 **꺼진 채로 부활**이었다 — 제거되지도 않고 동작하지도 않는 상태. 사용자 가이드는 처음부터 "제거한 기본 플러그인은 다음 실행 때 다시 설치되지 않습니다" 라고 적고 있었으므로, 명령 쪽이 문서와 어긋나 있었다. 이제 두 경로가 같은 본문을 지나며 기록을 남긴다. 되살리는 방법은 종전과 같다 — `tasty plugin upgrade-builtins --restore-removed <id>`. 되살린 플러그인은 **켜진 상태**로 온다(제거가 남기던 비활성 자국도 함께 정리한다).

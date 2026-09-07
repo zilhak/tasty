@@ -97,3 +97,57 @@ fn no_key_is_a_prefix_of_another() {
         bad.join("\n")
     );
 }
+
+// ========== 번역 이전의 결함 — 설명이 아예 없는 자리 ==========
+//
+// 슬롯 걷기는 **있는 문자열**만 센다. 그래서 `about` 이 없는 서브커맨드는 이 파일의
+// 다른 술어 어디에도 안 걸린다 — 빈 문자열이 아니라 **자리 자체가 없기** 때문이다.
+// 그 조용함이 실물로 새어 나온 적이 있다: `tasty list` 의 `queue` 는 doc 주석이 한 칸
+// 위 variant 에 붙어 있어서 `--help` 에 설명이 빈칸으로 나왔고, 같은 실수로 `theme` 은
+// 남의 설명까지 이어 붙여 내보냈다. 번역은 그것을 못 고친다 — 번역할 원문이 없다.
+
+/// `about` 이 없는 서브커맨드 자리를 모은다. `help` 는 clap 내장이라 뺀다.
+fn about_holes(cmd: &clap::Command, path: &str, seen: &mut usize, out: &mut Vec<String>) {
+    for sub in cmd.get_subcommands() {
+        let name = sub.get_name();
+        if name == "help" {
+            continue;
+        }
+        let here = if path.is_empty() {
+            name.to_string()
+        } else {
+            format!("{path} {name}")
+        };
+        *seen += 1;
+        if sub.get_about().is_none() {
+            out.push(here.clone());
+        }
+        about_holes(sub, &here, seen, out);
+    }
+}
+
+/// 모수 고정 — 걷기가 깨져 0 자리를 보면 이 술어는 공짜로 초록이다(ADR-0133).
+/// 하한이다: 명령은 늘 수 있고, 줄면 그때 이 줄이 먼저 말한다.
+const MIN_SUBCOMMANDS: usize = 200;
+
+#[test]
+fn every_subcommand_carries_an_about() {
+    let cmd = tasty_cli::Cli::command();
+    let mut seen = 0usize;
+    let mut holes = Vec::new();
+    about_holes(&cmd, "", &mut seen, &mut holes);
+
+    assert!(
+        seen >= MIN_SUBCOMMANDS,
+        "서브커맨드를 {seen} 개만 봤다(하한 {MIN_SUBCOMMANDS}) — 걷기가 깨졌다. \
+         이 술어는 볼 것이 없으면 공짜로 초록이다."
+    );
+    assert!(
+        holes.is_empty(),
+        "설명(`about`) 이 없는 서브커맨드가 있다: {holes:#?}\n\
+         `--help` 목록에서 그 줄은 이름만 나오고 설명 칸이 빈다. 흔한 원인은 doc 주석이 \
+         **바로 아래 항목**에 귀속된다는 것을 놓치고 한 칸 위 variant 에 붙인 것이다 — \
+         그러면 위 항목은 남의 설명까지 이어 붙여 내보내고 아래 항목은 빈다. \
+         번역으로는 못 고친다: 원문이 없으면 슬롯도 없고, 슬롯이 없으면 번역할 자리가 없다."
+    );
+}
