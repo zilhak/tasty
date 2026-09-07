@@ -309,7 +309,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     Ok(parts.join(" "))
 }
 
-pub fn handle_launch(
+pub(crate) fn handle_launch(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -363,7 +363,7 @@ pub fn handle_launch(
     }))
 }
 
-pub fn handle_parent(
+pub(crate) fn handle_parent(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -377,7 +377,7 @@ pub fn handle_parent(
 /// `codex` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
 /// namespace 밖을 참조할 수 없어서다(결정 2) — `codex.spawn` 기본 전략이 이
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
-pub fn handle_state(
+pub(crate) fn handle_state(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -386,7 +386,7 @@ pub fn handle_state(
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
-pub fn handle_tell(
+pub(crate) fn handle_tell(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -414,7 +414,7 @@ pub fn handle_tell(
     Ok(resp)
 }
 
-pub fn handle_spawn(
+pub(crate) fn handle_spawn(
     host: &HostHandle,
     tr: &Translator,
     params: &Value,
@@ -576,7 +576,7 @@ fn register_notify_hooks<H: HostCall>(
 /// "누가 먼저 fire했는지" 판별이 전혀 필요 없다. 정리는 `hook.list`(surface 필터) +
 /// command 문자열 일치로 하며, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에
 /// spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다.
-pub fn handle_notify_caller<H: HostCall>(
+pub(crate) fn handle_notify_caller<H: HostCall>(
     host: &H,
     tr: &Translator,
     params: &Value,
@@ -708,7 +708,7 @@ fn build_spawn_warning(
     Some(msg)
 }
 
-pub fn handle_children(
+pub(crate) fn handle_children(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -718,7 +718,7 @@ pub fn handle_children(
     host_call(host, "terminal.children", Value::Object(cp))
 }
 
-pub fn handle_broadcast(
+pub(crate) fn handle_broadcast(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -733,7 +733,7 @@ pub fn handle_broadcast(
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
-pub fn handle_kill(
+pub(crate) fn handle_kill(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -745,7 +745,7 @@ pub fn handle_kill(
     host_call(host, "terminal.kill", Value::Object(kp))
 }
 
-pub fn handle_respawn(
+pub(crate) fn handle_respawn(
     host: &HostHandle,
     params: &Value,
     tr: &Translator,
@@ -794,7 +794,7 @@ pub fn handle_respawn(
 /// 호스트를 트레이트로 받는다 — 이 핸들러가 세는 수가 시험 가능해야 하기 때문이다.
 /// 같은 파일의 `handle_notify_caller` 는 이미 그 이음매를 갖고 있었고 이 자리만 구체
 /// 타입을 받고 있었다.
-pub fn handle_hook<H: HostCall>(
+pub(crate) fn handle_hook<H: HostCall>(
     host: &H,
     params: &Value,
     tr: &Translator,
@@ -874,7 +874,7 @@ fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, Ipc
     }
 }
 
-pub fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
     let path = codex_config_toml_path(tr)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
@@ -907,7 +907,7 @@ Enter → t → Esc → Down. Trust persists per-machine."
     Ok(resp)
 }
 
-pub fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError> {
     let path = codex_config_toml_path(tr)?;
     if !path.exists() {
         return Ok(json!({ "uninstalled": true, "path": path.to_string_lossy(), "noop": true }));
