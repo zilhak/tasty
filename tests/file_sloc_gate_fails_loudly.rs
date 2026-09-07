@@ -41,8 +41,17 @@ fn run_gate_with(body: &str) -> i32 {
     run_gate(body, "mkdir -p \"$1\"\nexit 0")
 }
 
-/// tokei 스텁과 판정기(strip-cfg-test) 스텁을 함께 주입하고 게이트를 돌린다.
+/// tokei 스텁과 판정기 스텁을 주입하고 게이트를 돌려 **종료코드만** 얻는다.
 fn run_gate(tokei_body: &str, strip_body: &str) -> i32 {
+    run_gate_full(tokei_body, strip_body).0
+}
+
+/// 종료코드와 표준출력을 함께 얻는다.
+///
+/// 경고 띠(`WARN_BAND`)는 **rc 에 안 들어가므로 종료코드로는 관측이 안 된다** — 띠가
+/// 조용히 사라져도 위 테스트들은 전부 초록이다. 그래서 그 칸만 출력을 본다. 단정은
+/// 안정된 조각(`경고(900↑)` 와 경로)만 걸고 문장 전체를 걸지 않는다.
+fn run_gate_full(tokei_body: &str, strip_body: &str) -> (i32, String) {
     let dir = stub_dir(tokei_body);
     let strip = dir.path().join("strip-cfg-test");
     fs::write(&strip, format!("#!/bin/sh\n{strip_body}\n")).expect("판정기 스텁 작성");
@@ -60,7 +69,10 @@ fn run_gate(tokei_body: &str, strip_body: &str) -> i32 {
         .current_dir(root)
         .output()
         .expect("게이트 실행");
-    out.status.code().unwrap_or(-1)
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
 }
 
 /// tokei 가 정상 동작해 임계 이하만 보고하는 JSON.
@@ -170,4 +182,59 @@ fn a_missing_stripper_is_not_a_pass() {
         .output()
         .expect("게이트 실행");
     assert_eq!(out.status.code(), Some(2));
+}
+
+// ── 경고 띠 (900↑) ────────────────────────────────────────────────────────
+//
+// 임계만 있으면 게이트는 아무 말도 안 하다가 갑자기 막는다. 실측(2026-09-07)에서
+// 임계 이하 최댓값 999 뒤에 997·997·995 가 붙어 있었고 900 대가 아홉이었는데,
+// 통과할 때 수를 안 찍어 아무도 몰랐다. 띠는 그 상태를 값으로 낸다.
+
+/// 띠 안(950) 하나. 임계 미만이라 위반이 아니다.
+const IN_WARN_BAND: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_warn.rs","stats":{"code":950}}]}}'"#;
+
+/// 띠 바로 아래(899). 대조군용.
+const BELOW_WARN_BAND: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_ok.rs","stats":{"code":899}}]}}'"#;
+
+/// 위반과 경고가 한 트리에 함께 있는 경우 — 둘이 갈리는지 본다.
+const VIOLATION_AND_WARNING: &str = r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_violation.rs","stats":{"code":9999}},{"name":"src/zz_stub_warn.rs","stats":{"code":950}}]}}'"#;
+
+#[test]
+fn nothing_in_the_band_prints_no_warning_section() {
+    // ⓪ 대조군. 이게 없으면 아래 두 테스트는 "경고 절을 항상 찍는 게이트" 로도 통과한다.
+    let (code, out) = run_gate_full(BELOW_WARN_BAND, "mkdir -p \"$1\"\nexit 0");
+    assert_eq!(code, 0, "899 는 임계 미만이라 통과여야 한다");
+    assert!(
+        out.contains("경고(900↑) 0"),
+        "경고 0 을 값으로 찍어야 한다 — 침묵은 '띠가 없다' 와 구분이 안 된다: {out}"
+    );
+    assert!(
+        !out.contains("경고 —"),
+        "띠에 든 파일이 없으면 경고 목록 절을 내지 않는다: {out}"
+    );
+}
+
+#[test]
+fn the_warning_band_names_the_file_and_keeps_the_exit_code() {
+    let (code, out) = run_gate_full(IN_WARN_BAND, "mkdir -p \"$1\"\nexit 0");
+    assert_eq!(code, 0, "경고는 rc 에 안 들어간다 — 띠 안이어도 통과다");
+    assert!(out.contains("경고(900↑) 1"), "경고 수를 찍어야 한다: {out}");
+    assert!(
+        out.contains("src/zz_stub_warn.rs"),
+        "경고는 **이름으로** 나와야 한다 — 수만 나오면 어느 파일인지 아무도 모른다: {out}"
+    );
+}
+
+#[test]
+fn a_violation_and_a_warning_stay_separate() {
+    // 같은 트리에 둘이 있으면 서로 다른 칸으로 세어야 한다. 한 칸으로 뭉치면
+    // "임계초과 2" 가 되어 위반 수가 부풀고, 그 수를 보고 lane 이 잘못 움직인다.
+    let (code, out) = run_gate_full(VIOLATION_AND_WARNING, "mkdir -p \"$1\"\nexit 0");
+    assert_eq!(code, 1, "임계 초과가 있으면 여전히 exit 1 이다");
+    assert!(
+        out.contains("임계초과 1") && out.contains("경고(900↑) 1"),
+        "위반과 경고가 서로 다른 칸이어야 한다: {out}"
+    );
 }
