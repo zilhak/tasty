@@ -544,7 +544,10 @@ impl PluginManager {
     ///
     /// 요청을 먼저 전부 뿌리는 것이 대기 겹침의 전제다. 요청은 각 plugin 의
     /// `req_tx` 에 들어가므로, 앞서 dispatch 된 `surface.closed` 들보다 뒤에
-    /// 놓인다는 채널 순서 계약(`src/app/shutdown_cascade.rs`)은 그대로 유지된다.
+    /// 놓인다는 채널 순서 계약은 그대로 유지된다. 그 계약의 자리는
+    /// `src/app/shutdown_machine.rs` 의 `shutdown_step_closing_surfaces` 이고
+    /// (전에는 `shutdown_cascade.rs` 를 가리켰는데 거기는 집행 자리가 아니다),
+    /// 값으로 무는 것은 그 레포의 `source_guards::shutdown_channel_order` 다.
     ///
     /// 반환 후에는 [`Self::poll_shutdown_all`] 이 true 를 반환할 때까지 폴링해야
     /// 자식이 회수된다(폴링 없이 매니저가 drop 되면 남은 자식은 즉시 kill 된다).

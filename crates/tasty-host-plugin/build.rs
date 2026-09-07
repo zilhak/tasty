@@ -40,8 +40,13 @@ fn main() {
     let release_key = Path::new("keys/release-pubkey.bin");
     let dev_key = Path::new("keys/dev-pubkey.bin");
 
-    println!("cargo:rerun-if-changed=keys/release-pubkey.bin");
-    println!("cargo:rerun-if-changed=keys/dev-pubkey.bin");
+    // 파일이 아니라 **디렉토리**를 건다. `keys/release-pubkey.bin` 은 **없는 것이 정상
+    // 상태**이고(ADR-0051 — 영구 신뢰 루트를 두지 않는다), 없는 경로에 걸린
+    // `rerun-if-changed` 는 cargo 가 이 build script 를 **언제나 stale 로** 본다.
+    // 그러면 무변화 cargo 호출마다 host-plugin → cli → tasty 가 다시 컴파일되고 전 타깃이
+    // relink 된다. 디렉토리는 실재하고 cargo 가 그 아래를 훑으므로, 두 키의 **내용 변경도
+    // 새 키의 등장도** 그대로 잡힌다 — 감시 범위를 줄이지 않고 stale 만 없앤다.
+    println!("cargo:rerun-if-changed=keys");
     println!("cargo:rerun-if-env-changed=PROFILE");
 
     // OUT_DIR 로 두 pubkey 를 staging. include_bytes! 가 이 경로를 참조한다.

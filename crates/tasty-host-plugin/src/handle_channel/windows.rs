@@ -12,6 +12,12 @@
 //! HandleAttach 전송이 데드락된다. `FILE_FLAG_OVERLAPPED` + per-op event 로 read/write
 //! 를 비직렬화해 이를 푼다. 각 stream 은 자기 event 를 소유하므로 서로 간섭하지 않는다.
 
+// 이유: 이 파일 전체가 Win32 FFI 경계라 unsafe op 이 한 블록에 묶이는 것이 구조다 —
+//       raw 포인터·핸들을 넘기는 호출은 그 사이에 안전한 문장을 끼울 자리가 없다.
+//       그래서 자리마다 같은 사유를 반복하는 대신 파일 단위로 면제한다.
+//       ★ 이 파일이 FFI 묶음이 아니게 되면(래퍼가 안전한 타입을 노출하게 되면)
+//         이 줄을 지워라 — 파일 단위 면제는 그 안의 새 위반도 함께 가린다.
+#![allow(clippy::multiple_unsafe_ops_per_block)]
 #![cfg(windows)]
 
 use std::io::{self, Read, Write};
