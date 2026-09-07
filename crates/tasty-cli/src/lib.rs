@@ -18,6 +18,7 @@ pub mod dispatch;
 pub mod dynamic;
 pub mod format;
 pub mod help;
+pub mod help_i18n;
 pub mod hook_failure;
 pub mod local;
 pub mod out;
@@ -39,6 +40,11 @@ pub use tasty_ssh as ssh;
 
 pub use commands::*;
 pub use help::{format_parse_error, print_augmented_help, print_command_tree};
+// 번역이 적용된 clap 트리. 프로덕션은 `Cli::command()` 대신 이것을 쓴다 — 근거는
+// `help_i18n::command`. 배경 설명이 한국어라 `///` 가 아니라 `//` 다: 이 파일은
+// `no_hardcoded_ui_strings` 의 clap 도움말 스캔 뿌리라, 게이트 밖 `///` 의 CJK 는
+// 부착 대상과 무관하게 걸린다.
+pub use help_i18n::command as localized_command;
 pub use run::{run_client, try_run_plugin_cli};
 
 #[derive(Parser)]
@@ -60,8 +66,9 @@ pub struct Cli {
     pub launch: bool,
 
     /// Run as headless terminal emulator (no GUI, IPC + PTY + plugin only).
-    /// With default features this skips the GUI boot; a no-default-features
-    /// build is always headless.
+    /// Only a no-default-features build is headless. A default-features (GUI)
+    /// build does NOT embed headless mode: this flag logs a warning and boots
+    /// the GUI anyway, so a window opens on whatever DISPLAY it inherits.
     #[arg(long, default_value_t = false)]
     pub headless: bool,
 
@@ -239,11 +246,27 @@ pub enum Commands {
         command: OutputCommands,
     },
     /// Human-handoff approval gates (request/respond/await/cancel/list/get)
+    ///
+    /// The live gate does not outlive the host. `request`, `respond`, `await`,
+    /// `cancel`, `list` and `get` all read one in-memory store that starts empty
+    /// on every boot, so a request that was pending when the host stopped is not
+    /// there afterwards — `list` will not show it and `await` on its id answers
+    /// "not found". What survives is the written record, which `history` reads
+    /// from the memory store. Treat `history` as the log and `list` as what is
+    /// answerable right now.
     Approval {
         #[command(subcommand)]
         command: ApprovalCommands,
     },
     /// Agent telemetry (record metrics, summary, timeseries, top-N)
+    ///
+    /// Two sources feed it: what an agent reports with `telemetry record`, and
+    /// one `ipc_calls` event the host writes per IPC call an agent makes, tagged
+    /// with the method name (host calls, `telemetry.*` and throttled calls are not
+    /// counted). Queries read the raw events and nothing else — there is no rollup
+    /// — and the store is trimmed to the most recent 20,000, so `--since` cannot
+    /// reliably reach past that. Anomaly records are trimmed separately: the most
+    /// recent 5,000, and at most 50 hours.
     Telemetry {
         #[command(subcommand)]
         command: TelemetryCommands,

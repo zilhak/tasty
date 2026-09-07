@@ -162,6 +162,12 @@ pub enum DebugCommands {
     /// click), for visual verification of the settings UI against the design.
     #[command(subcommand)]
     Settings(SettingsDebugCommands),
+    /// Active-modal close **request** (debug builds only).
+    /// Reproduces the user pressing the window close button on whichever modal
+    /// is up. Release `window.close` covers main views only — closing a modal is
+    /// a user action, not agent work.
+    #[command(subcommand)]
+    Modal(ModalDebugCommands),
     /// Arbitrary Lua injection into the host worker (debug builds only).
     /// Runs source in the isolated Lua worker (deadline-guarded, ADR-0031).
     /// Release builds have no such path — the user-input-only rule applies there.
@@ -336,12 +342,18 @@ pub enum ModifierHintDebugCommands {
     /// Inject a modifier hold (no flags = release). `--elapsed-ms` backdates the
     /// hold timer to instantly pass the reveal-delay gate.
     Hold {
+        /// Hold the ctrl axis.
         #[arg(long)]
         ctrl: bool,
+        /// Hold the `alt` token — the physical key differs by platform: Command on macOS, Alt elsewhere.
         #[arg(long)]
         alt: bool,
+        /// Hold the `option` token — real input raises it only on macOS (physical
+        /// Option); on other platforms no key produces it, so setting it here
+        /// forces a state that platform cannot otherwise reach.
         #[arg(long)]
         option: bool,
+        /// Hold the shift axis.
         #[arg(long)]
         shift: bool,
         /// Backdate the hold timer by this many ms (skip the reveal delay).
@@ -400,6 +412,14 @@ pub enum LuaDebugCommands {
         #[arg()]
         path: String,
     },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum ModalDebugCommands {
+    /// Send a close request to the active modal (no-op when none is up; the
+    /// response distinguishes the two via `closed`).
+    CloseRequest,
 }
 
 #[cfg(debug_assertions)]

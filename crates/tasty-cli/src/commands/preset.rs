@@ -12,15 +12,19 @@ pub enum PresetCommands {
     },
     /// Show a preset's JSON.
     Get {
+        /// Preset kind: workspace | tab | pane.
         #[arg(long)]
         kind: String,
+        /// Preset name to show.
         #[arg(long)]
         name: String,
     },
     /// Save a preset from a JSON file ("-" reads stdin).
     Save {
+        /// Preset kind: workspace | tab | pane.
         #[arg(long)]
         kind: String,
+        /// Preset name to write.
         #[arg(long)]
         name: String,
         /// Path to JSON file. "-" reads stdin.
@@ -32,22 +36,28 @@ pub enum PresetCommands {
     },
     /// Delete a preset.
     Delete {
+        /// Preset kind: workspace | tab | pane.
         #[arg(long)]
         kind: String,
+        /// Preset name to delete.
         #[arg(long)]
         name: String,
     },
     /// Rename a preset.
     Rename {
+        /// Preset kind: workspace | tab | pane.
         #[arg(long)]
         kind: String,
+        /// Existing preset name.
         #[arg(long)]
         from: String,
+        /// New preset name.
         #[arg(long)]
         to: String,
     },
     /// Capture current workspace / tab / pane into a preset.
     Capture {
+        /// Preset kind: workspace | tab | pane. Decides what `--source-id` names.
         #[arg(long)]
         kind: String,
         /// Source ID — workspace_id (kind=workspace), tab_id (kind=tab), or pane_id (kind=pane).
@@ -60,8 +70,10 @@ pub enum PresetCommands {
     },
     /// Apply a preset. Focus is not changed (focus-independent CLI).
     Apply {
+        /// Preset kind: workspace | tab | pane.
         #[arg(long)]
         kind: String,
+        /// Preset name to apply.
         #[arg(long)]
         name: String,
         /// For kind=tab: target pane ID.

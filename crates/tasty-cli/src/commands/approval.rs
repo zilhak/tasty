@@ -5,6 +5,11 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum ApprovalCommands {
     /// Request a new approval. Prints the new id on success.
+    ///
+    /// Nothing expires on its own. `--timeout-ms` is counted inside
+    /// `approval await`, and that call is the only thing that moves a request out
+    /// of `pending` on time — with no waiter the request stays pending however
+    /// long the timeout was, and `approval list --state pending` keeps showing it.
     Request {
         /// Title shown in the popup / notification.
         #[arg(long)]
@@ -16,7 +21,9 @@ pub enum ApprovalCommands {
         /// Defaults to `approve / deny` if omitted.
         #[arg(long)]
         choices: Option<String>,
-        /// Default choice key applied on timeout.
+        /// Choice key recorded when the request times out. The outcome is
+        /// `timed_out` carrying this key, credited to the system — not
+        /// `responded`, so `approval history --decision` does not match it.
         #[arg(long)]
         default_choice: Option<String>,
         /// Timeout in milliseconds. Caller may override at `await` time.
@@ -49,11 +56,13 @@ pub enum ApprovalCommands {
     },
     /// Cancel a pending approval (terminal).
     Cancel {
+        /// Approval id (`req_...`) to cancel.
         #[arg(long)]
         id: String,
     },
     /// Block until response / timeout / cancel. Prints the outcome as JSON.
     Await {
+        /// Approval id (`req_...`) to wait on.
         #[arg(long)]
         id: String,
         /// Override request's `timeout_ms`. 0 = use request's value (or wait forever).
@@ -62,6 +71,7 @@ pub enum ApprovalCommands {
     },
     /// Show a single approval record.
     Get {
+        /// Approval id (`req_...`) to show.
         #[arg(long)]
         id: String,
     },
@@ -109,6 +119,7 @@ pub enum ApprovalCommands {
 pub enum ApprovalSummaryCommands {
     /// Overwrite the workspace summary with `content` (or `@file`).
     Set {
+        /// Workspace whose summary is overwritten (focus-independent — required).
         #[arg(long)]
         workspace_id: u32,
         /// Inline content, or `@path` to read from a file.
@@ -117,6 +128,7 @@ pub enum ApprovalSummaryCommands {
     },
     /// Print the workspace summary.
     Get {
+        /// Workspace whose summary is printed (focus-independent — required).
         #[arg(long)]
         workspace_id: u32,
     },

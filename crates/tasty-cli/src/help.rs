@@ -2,7 +2,6 @@
 
 use anyhow::Result;
 
-use super::Cli;
 use super::dynamic;
 use crate::out::outln;
 
@@ -83,10 +82,8 @@ fn format_args(cmd: &clap::Command) -> String {
 
 /// Resolve the deepest matched command from raw CLI args.
 fn resolve_command_path() -> (clap::Command, String) {
-    use clap::CommandFactory;
-
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let root = Cli::command();
+    let root = crate::help_i18n::command();
     let mut current = root.clone();
     let mut matched_path: Vec<String> = Vec::new();
 
@@ -128,14 +125,12 @@ pub fn print_command_tree(version: &str) -> Result<()> {
 }
 
 fn print_command_tree_inner(version: &str) -> Result<()> {
-    use clap::CommandFactory;
-
     let entries = match tasty_host_plugin::plugin_root() {
         Some(root) => dynamic::discover_plugin_clis(&root),
         None => Vec::new(),
     };
     let cmd = if entries.is_empty() {
-        Cli::command()
+        crate::help_i18n::command()
     } else {
         dynamic::build_augmented_cli(&entries)
     };
@@ -250,13 +245,12 @@ pub fn print_augmented_help() -> Result<()> {
 }
 
 fn print_augmented_help_inner() -> Result<()> {
-    use clap::CommandFactory;
     let entries = match tasty_host_plugin::plugin_root() {
         Some(root) => dynamic::discover_plugin_clis(&root),
         None => Vec::new(),
     };
     let mut cmd = if entries.is_empty() {
-        Cli::command()
+        crate::help_i18n::command()
     } else {
         dynamic::build_augmented_cli(&entries)
     };

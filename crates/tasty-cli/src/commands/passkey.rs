@@ -28,18 +28,22 @@ pub enum PasskeyCommands {
     },
     /// List saved passkeys (name and kind only; values are never shown).
     List {
+        /// Print as JSON instead of a table.
         #[arg(long)]
         json: bool,
     },
     /// Show one passkey's name and kind (the value is never shown).
     Show {
+        /// Passkey name to show.
         #[arg(long)]
         name: String,
+        /// Print as JSON instead of a table.
         #[arg(long)]
         json: bool,
     },
     /// Remove a passkey (for the inline kind, the managed file is deleted too).
     Remove {
+        /// Passkey name to remove.
         #[arg(long)]
         name: String,
     },

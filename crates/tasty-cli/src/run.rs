@@ -156,6 +156,26 @@ fn run_dynamic_client(
     let mut conn = IpcConnection::new(stream)?;
     match conn.send(&request) {
         Ok(value) => {
+            // **성공 응답도 실패를 담을 수 있다.** 최선노력 host 호출을 가진 훅 핸들러는
+            // 조용히 실패한 호출 수를 `host_call_failures` 로 싣는다
+            // (docs/dev-guide/error-handling.md "최선노력의 대가는 치르되 값으로 노출한다").
+            // 그 수는 응답에 있으므로 여기 stdout 으로도 나가지만, 실사용에서 이 CLI 는
+            // 훅 명령 안에서 돌고 그 명령은 출력을 버린다 — 이 파일이 유일한 흔적이 되는
+            // 이유가 앞의 세 갈래와 같다.
+            if let Some(failures) = value
+                .get("host_call_failures")
+                .and_then(serde_json::Value::as_u64)
+                && failures > 0
+            {
+                hook_failure::record(
+                    &request.method,
+                    &request.params,
+                    None, // 호스트는 답했다 — JSON-RPC 에러가 아니다
+                    &hook_failure::DiagnosticEnglish::new_unchecked(format!(
+                        "response ok but {failures} host call(s) failed silently"
+                    )),
+                );
+            }
             outln!(
                 "{}",
                 serde_json::to_string_pretty(&value).unwrap_or_default()

@@ -15,18 +15,34 @@ pub enum PluginCommands {
         id: String,
     },
     /// Install a plugin from a directory containing tasty-plugin.toml.
+    ///
+    /// Two more things happen, and neither is asked about: every permission the
+    /// manifest declares is granted immediately, and the plugin is enabled and
+    /// started unless a disabled mark for that id is already on file. Inspect
+    /// `tasty-plugin.toml` first, or check afterwards with
+    /// `plugin permissions <id>` and `plugin revoke <id> <permission>`.
     Install {
         /// Path to plugin directory (must contain tasty-plugin.toml).
         path: String,
     },
     /// Remove an installed plugin by id.
+    ///
+    /// The whole plugin directory is deleted, so anything the plugin kept inside
+    /// it goes with it. For a built-in, removal is also recorded so the next boot
+    /// does not put it back — bringing it back is
+    /// `plugin upgrade-builtins --restore-removed <id>`, and it returns enabled.
     Remove {
         /// Plugin id (e.g. com.example.explorer).
         id: String,
     },
-    /// Re-sync all built-in plugins from the bundle. By default only upgrades
-    /// plugins whose bundled manifest version is greater than the installed one.
-    /// Use --force to overwrite same-or-older versions (recovery scenarios).
+    /// Re-sync all built-in plugins from the bundle.
+    ///
+    /// The manifest version picks the branch and content decides inside it: a
+    /// higher bundle version rewrites the whole directory, the same version
+    /// rewrites only what differs, and an installed version higher than the bundle
+    /// is skipped without reading content — `--force` is for that last branch.
+    /// Permissions newly declared by a built-in that changed are granted in the
+    /// same call.
     UpgradeBuiltins {
         /// Overwrite even when installed version >= bundle version.
         #[arg(long)]
@@ -46,9 +62,24 @@ pub enum PluginCommands {
         restart_running: bool,
     },
     /// Enable a disabled plugin and start it.
-    Enable { id: String },
+    Enable {
+        /// Plugin id.
+        id: String,
+    },
     /// Disable a plugin (graceful shutdown if running).
-    Disable { id: String },
+    ///
+    /// The mark is written to disk, so it survives a restart and a later
+    /// `plugin install` of the same id will not turn it back on. This is not an
+    /// uninstall: the directory stays and the plugin keeps its command namespace,
+    /// so `tasty <namespace> ...` answers `plugin ... is not running` rather than
+    /// reporting an unknown method. What does go away is everything the plugin
+    /// contributed — file detectors and handlers, hook handlers, completion
+    /// strategies, settings pages — so a file it used to open now takes another
+    /// route.
+    Disable {
+        /// Plugin id.
+        id: String,
+    },
     /// Print the contents of a plugin's log file.
     Logs {
         /// Plugin id.

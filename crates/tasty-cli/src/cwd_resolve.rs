@@ -238,12 +238,20 @@ mod tests {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                // 빌드 산출물·VCS 는 소스가 아니다. 커밋되지 않는 로컬 작업 폴더는
-                // clone·CI 에 없어 스캔에 잡히지 않으므로 이름으로 제외할 필요가 없다
-                // (그 이름을 여기 적으면 no_todo_file_citation P6 에 걸린다).
-                let skip = path
-                    .file_name()
-                    .is_some_and(|n| matches!(n.to_str(), Some("target" | ".git")));
+                // 빌드 산출물은 소스가 아니다. 점으로 시작하는 디렉토리도 아니다 —
+                // 추적되는 `.rs` 중 그 아래 있는 것은 0 개이므로(2026-09-08 실측:
+                // `git ls-files '*.rs' | grep -c '/\.\|^\.'`) 배제해도 판정이
+                // 안 줄고, `.git` 도 이 규칙에 흡수된다.
+                //
+                // ★ 이름이 아니라 형태로 거르는 이유: 커밋되지 않는 작업 폴더는
+                // clone·CI 에 없지만 **개발자의 작업 트리에는 있다.** 거기 소스 사본을
+                // 두면(마스킹 사본 등) 이 시험이 그것을 실물로 세어 빨개진다 — 실제로
+                // 그렇게 밟았다. 그 폴더 이름을 여기 적는 것은 다른 규율에 걸리므로,
+                // 이름을 안 적고도 서는 술어를 쓴다.
+                let skip = path.file_name().is_some_and(|n| {
+                    let n = n.to_string_lossy();
+                    n == "target" || n.starts_with('.')
+                });
                 if !skip {
                     scan_cwd_mutations(&path, base, out);
                 }

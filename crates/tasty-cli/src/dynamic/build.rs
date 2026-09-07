@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use clap::{Arg, ArgAction, Command, CommandFactory};
+use clap::{Arg, ArgAction, Command};
 
 use tasty_plugin_manifest::{CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest};
 
@@ -50,7 +50,7 @@ pub fn discover_plugin_clis(plugins_root: &Path) -> Vec<PluginCliEntry> {
 /// 호스트 정적 `Cli`에 plugin 서브커맨드를 추가한 `clap::Command`. `--help` 출력
 /// 통합과 동적 파싱에 공통 사용.
 pub fn build_augmented_cli(entries: &[PluginCliEntry]) -> Command {
-    let mut cmd = <crate::Cli as CommandFactory>::command();
+    let mut cmd = crate::help_i18n::command();
     let host = host_command_names(&cmd);
     for entry in entries {
         if host.contains(&entry.cli.name) {

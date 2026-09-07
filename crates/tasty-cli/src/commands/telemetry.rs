@@ -4,7 +4,6 @@ use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum TelemetryCommands {
-    /// Record a single metric event.
     /// Record several events in one call — they share one timestamp, so their
     /// order is preserved. Use this instead of a loop of `record` when the
     /// ordering between the events matters.
@@ -14,6 +13,7 @@ pub enum TelemetryCommands {
         #[arg(long)]
         events: String,
     },
+    /// Record a single metric event.
     Record {
         /// Metric name (lowercase `[a-z][a-z0-9_]*`, max 64).
         #[arg(long)]
@@ -36,10 +36,13 @@ pub enum TelemetryCommands {
     },
     /// Aggregate summary across events. Filters: metric, agent, workspace_id, since/until.
     Summary {
+        /// Only aggregate this metric (omitted = every metric).
         #[arg(long)]
         metric: Option<String>,
+        /// Only aggregate events recorded by this agent id.
         #[arg(long)]
         agent: Option<String>,
+        /// Only aggregate events bound to this workspace id.
         #[arg(long)]
         workspace_id: Option<u32>,
         /// Lower bound on unix ms (inclusive).
@@ -51,17 +54,22 @@ pub enum TelemetryCommands {
     },
     /// Window-bucketed timeseries. `--metric` is required.
     Timeseries {
+        /// Metric name to bucket (required).
         #[arg(long)]
         metric: String,
+        /// Only include events recorded by this agent id.
         #[arg(long)]
         agent: Option<String>,
+        /// Only include events bound to this workspace id.
         #[arg(long)]
         workspace_id: Option<u32>,
         /// Window size: 1m | 1h | 1d. Default: 1m.
         #[arg(long, default_value = "1m")]
         window: String,
+        /// Lower bound on unix ms (inclusive).
         #[arg(long)]
         since: Option<u64>,
+        /// Upper bound on unix ms (exclusive).
         #[arg(long)]
         until: Option<u64>,
     },
@@ -73,14 +81,19 @@ pub enum TelemetryCommands {
         /// Maximum entries. Default: 10.
         #[arg(long, default_value_t = 10)]
         limit: u64,
+        /// Only rank this metric (omitted = every metric).
         #[arg(long)]
         metric: Option<String>,
+        /// Only include events recorded by this agent id.
         #[arg(long)]
         agent: Option<String>,
+        /// Only include events bound to this workspace id.
         #[arg(long)]
         workspace_id: Option<u32>,
+        /// Lower bound on unix ms (inclusive).
         #[arg(long)]
         since: Option<u64>,
+        /// Upper bound on unix ms (exclusive).
         #[arg(long)]
         until: Option<u64>,
     },
@@ -118,6 +131,7 @@ pub enum TelemetryCommands {
 pub enum TelemetryAnomalyCommands {
     /// List persisted anomaly records. Optional filters.
     List {
+        /// Only list anomalies attributed to this agent id.
         #[arg(long)]
         agent: Option<String>,
         /// Kind filter: call_burst | slow_loop | rss_surge.
@@ -154,23 +168,28 @@ pub enum TelemetryCapCommands {
     },
     /// List caps. Optional `--agent` filter.
     List {
+        /// Only list caps that apply to this agent id.
         #[arg(long)]
         agent: Option<String>,
     },
     /// Remove a cap by id.
     Remove {
+        /// Cap id, as printed by `cap set` or `cap list`.
         #[arg(long)]
         id: String,
     },
     /// Show current cumulative value vs threshold for caps. Optional `--agent` filter.
     Status {
+        /// Only report caps that apply to this agent id.
         #[arg(long)]
         agent: Option<String>,
     },
     /// Reset the triggered state for matching caps. Provide `--id` or `--agent`.
     Reset {
+        /// Reset just this cap id.
         #[arg(long)]
         id: Option<String>,
+        /// Reset every cap that applies to this agent id.
         #[arg(long)]
         agent: Option<String>,
     },

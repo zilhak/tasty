@@ -13,6 +13,7 @@ use clap::Subcommand;
 pub enum RemoteProfileCommands {
     /// List saved profiles (ssh and tasty-attach).
     List {
+        /// Print as JSON instead of a table.
         #[arg(long)]
         json: bool,
         /// Filter by kind: ssh | tasty-attach.
@@ -21,12 +22,17 @@ pub enum RemoteProfileCommands {
     },
     /// Show the details of one profile.
     Show {
+        /// Profile name to show.
         #[arg(long)]
         name: String,
+        /// Print as JSON instead of a table.
         #[arg(long)]
         json: bool,
     },
     /// Add an ssh connection profile (connection details only, no attach spec).
+    ///
+    /// `attach` refuses this kind. To attach through this host, add a
+    /// tasty-attach profile that references it by name (`--ssh-ref`).
     AddSsh {
         /// Unique profile identifier.
         #[arg(long)]
@@ -100,16 +106,22 @@ pub enum RemoteProfileCommands {
     /// Update fields of an existing profile (only the given fields are
     /// overwritten). The kind is kept.
     Edit {
+        /// Profile name to update.
         #[arg(long)]
         name: String,
+        /// ssh destination: host | user@host | ssh config alias.
         #[arg(long)]
         host: Option<String>,
+        /// ssh user (when host has no user@ prefix).
         #[arg(long)]
         user: Option<String>,
+        /// ssh port.
         #[arg(long)]
         port: Option<u16>,
+        /// Identity file path (-i). Stored separately as a path-kind passkey.
         #[arg(long)]
         identity: Option<String>,
+        /// Extra ssh -o option (repeatable). Replaces the stored list rather than appending to it.
         #[arg(long = "option")]
         options: Vec<String>,
         /// tasty-attach: ssh profile to reference instead (by name).
@@ -127,23 +139,27 @@ pub enum RemoteProfileCommands {
         /// ssh: remote shell (powershell | cmd | bash | zsh | auto).
         #[arg(long)]
         shell: Option<String>,
+        /// Label shown in the UI.
         #[arg(long)]
         label: Option<String>,
     },
     /// Remove a profile (referenced passkeys are kept, since they may be shared).
     Remove {
+        /// Profile name to remove.
         #[arg(long)]
         name: String,
     },
     /// Re-detect a profile (ssh: probe the remote shell / tasty-attach: verify
     /// the remote port). Connects over SSH.
     Detect {
+        /// Profile name to re-detect.
         #[arg(long)]
         name: String,
     },
     /// List Host aliases from the local ssh config (`~/.ssh/config` plus
     /// Include files). Does not connect.
     ListLocal {
+        /// Print as JSON instead of a table.
         #[arg(long)]
         json: bool,
     },

@@ -36,7 +36,7 @@ pub use completion_strategy::CompletionStrategyCommands;
 pub use debug::{
     BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,
     FullscreenDebugCommands, HostPopupDebugCommands, InjectDebugCommands, LuaDebugCommands,
-    ModifierHintDebugCommands, PluginBannerDebugCommands, PopupDebugCommands,
+    ModalDebugCommands, ModifierHintDebugCommands, PluginBannerDebugCommands, PopupDebugCommands,
     SettingsDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::FileHandlerCommands;

@@ -76,6 +76,7 @@ pub enum MemoryCommands {
     Get {
         #[command(flatten)]
         scope: ScopeArgs,
+        /// Entry key within the scope.
         #[arg(long)]
         key: String,
     },
@@ -83,6 +84,7 @@ pub enum MemoryCommands {
     Delete {
         #[command(flatten)]
         scope: ScopeArgs,
+        /// Entry key within the scope.
         #[arg(long)]
         key: String,
         /// CAS version; if specified and mismatched, returns cas_conflict.
@@ -93,6 +95,7 @@ pub enum MemoryCommands {
     Exists {
         #[command(flatten)]
         scope: ScopeArgs,
+        /// Entry key within the scope.
         #[arg(long)]
         key: String,
     },
@@ -100,8 +103,10 @@ pub enum MemoryCommands {
     List {
         #[command(flatten)]
         scope: ScopeArgs,
+        /// Only keys starting with this prefix.
         #[arg(long)]
         prefix: Option<String>,
+        /// Maximum number of entries to return.
         #[arg(long)]
         limit: Option<usize>,
         /// Only entries with `updated_at >= since` (unix ms).
@@ -124,14 +129,19 @@ pub enum MemoryCommands {
         /// JSON literal (or quoted string) to compare for equality.
         #[arg(long)]
         equals: String,
+        /// Only keys starting with this prefix.
         #[arg(long)]
         prefix: Option<String>,
+        /// Maximum number of entries to return.
         #[arg(long)]
         limit: Option<usize>,
+        /// Only entries with `updated_at >= since` (unix ms).
         #[arg(long)]
         since: Option<i64>,
+        /// Only entries with `updated_at < until` (unix ms).
         #[arg(long)]
         until: Option<i64>,
+        /// Skip the first N matching entries (use with --limit for pagination).
         #[arg(long)]
         offset: Option<usize>,
     },
@@ -155,6 +165,7 @@ pub enum MemoryCommands {
     Count {
         #[command(flatten)]
         scope: ScopeArgs,
+        /// Only keys starting with this prefix.
         #[arg(long)]
         prefix: Option<String>,
     },
@@ -170,6 +181,13 @@ pub enum MemoryCommands {
     Gc,
     /// Secret memory store. CLI acts as `_host` owner; no --owner flag exists.
     /// Plugin secret areas are inaccessible from the CLI by design.
+    ///
+    /// Secret means "another owner cannot read it", and nothing beyond that. The
+    /// values sit as plain bytes in the same `memory.db`, so whoever can open
+    /// that file reads them — the separation is enforced on the IPC path, not on
+    /// disk. For something that has to survive that, use the OS keyring, or keep
+    /// the data in a file of its own with its own permissions and store only the
+    /// path here.
     Secret {
         #[command(subcommand)]
         command: MemorySecretCommands,
@@ -190,6 +208,11 @@ pub enum MemoryCommands {
         command: MemoryCacheCommands,
     },
     /// Goal — a single goal sentence per surface (`tasty.goal`).
+    ///
+    /// Nothing inherits it: a surface spawned from this one starts with no goal.
+    /// It carries no TTL because it needs none — the surface's whole memory scope
+    /// is dropped when the surface closes, and again at startup for surfaces that
+    /// were not restored, so a goal lives exactly as long as its surface.
     Goal {
         #[command(subcommand)]
         command: MemoryGoalCommands,
@@ -216,7 +239,6 @@ pub use secret::MemorySecretCommands;
 /// 아니라 같은 동작을 본다.
 #[cfg(test)]
 mod scope_selector_pin {
-    use clap::CommandFactory;
 
     const SCOPE_FLAGS: [&str; 6] = [
         "scope",
@@ -239,7 +261,7 @@ mod scope_selector_pin {
                 walk(&format!("{prefix} {}", sub.get_name()), sub, out);
             }
         }
-        let root = crate::Cli::command();
+        let root = crate::help_i18n::command();
         let memory = root
             .get_subcommands()
             .find(|c| c.get_name() == "memory")
@@ -337,7 +359,7 @@ mod scope_selector_pin {
                             argv.push("1".to_string());
                         }
                     }
-                    let kind = crate::Cli::command()
+                    let kind = crate::help_i18n::command()
                         .try_get_matches_from(&argv)
                         .err()
                         .map(|e| e.kind());

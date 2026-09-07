@@ -44,6 +44,7 @@ pub enum OutputObserveCommands {
     List,
     /// Show stats for a single observer
     Info {
+        /// Observer id (from `output observe list`).
         #[arg(long)]
         observer: u64,
     },
