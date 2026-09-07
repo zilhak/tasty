@@ -219,7 +219,7 @@ fn not_before_next_period(at: Instant, now: Instant, period: Duration) -> Instan
 ///
 /// `hub.once_at` 을 이 모듈에서 직접 부르지 않는다 — 새 `Tick` 이 추가될 때
 /// 바닥치기를 빠뜨리는 것이 이 버그 클래스의 재발 경로이기 때문이다.
-/// `tests/timer_deadline_hygiene.rs` 가 이 규칙을 소스 수준에서 강제한다.
+/// `crates/tasty-doc-guards/tests/timer_deadline_hygiene.rs` 가 이 규칙을 소스 수준에서 강제한다.
 ///
 /// `period` 는 그 키의 고유 cadence 다 — 상류가 멈춰도 최악이 "주기당 1회" 로
 /// 묶이도록 그 키가 정상 동작할 때의 간격을 넘겨준다.

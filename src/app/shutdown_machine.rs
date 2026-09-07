@@ -359,9 +359,20 @@ impl App {
     /// S3 + S3b — plugin 에 종료를 알리고 surface 를 정리한 뒤, plugin shutdown
     /// 요청까지 이 스텝 안에서 전부 뿌린다.
     ///
-    /// 요청 발송을 S4 대기와 같은 스텝에 두지 않는 이유는 채널 순서 계약이다 —
-    /// shutdown 요청은 `dispatch_pending_surface_lifecycle` 이 같은 `req_tx` 에
-    /// 넣어 둔 `surface.closed` **뒤에** 놓여야 한다.
+    /// ★ **이 채널 순서 계약의 자리는 여기다.** shutdown 요청은
+    /// `dispatch_pending_surface_lifecycle` 이 같은 `req_tx` 에 넣어 둔
+    /// `surface.closed` **뒤에** 놓여야 한다 — plugin worker 는 `req_tx` 를 순서대로
+    /// 소비하므로, 앞에 놓으면 worker 가 자기 surface 가 닫혔다는 것을 못 본 채 종료
+    /// 처리에 들어간다(열린 파일 flush·외부 프로세스 종료 같은 정리를 건너뛴다).
+    /// 그 상태는 조용하다 — 컴파일도 되고 종료도 되며 화면에도 로그에도 안 나온다.
+    ///
+    /// 계약을 지키는 것은 **이 함수 안의 호출 배치**이고, 그것을 값으로 무는 것은
+    /// `source_guards::shutdown_channel_order` 다. 요청 발송을 S4 대기 스텝으로 옮기면
+    /// 순서 자체는 유지되지만 대기 겹침이 사라진다 — 그것도 그 가드가 잡는다.
+    ///
+    /// 같은 계약을 언급하는 다른 두 자리(`shutdown_cascade.rs::begin_plugin_shutdown` ·
+    /// `tasty_host_plugin` 의 `begin_shutdown_all`)는 여기를 가리키기만 한다. 사본을
+    /// 셋 두면 하나를 옮길 때 나머지 둘이 낡는다.
     fn shutdown_step_closing_surfaces(&mut self) -> StepOutcome {
         self.emit_shutdown_initiated();
         self.shutdown_close_surfaces();

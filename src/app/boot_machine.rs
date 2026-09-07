@@ -539,15 +539,7 @@ impl App {
         // 자동 시작은 하지 않는다(결정 1). 첫 윈도우 등록(= client 노출) 전에
         // 1 회만 수행.
         self.core.purge_stale_agent_state_on_boot(&core_state);
-        // 렌더 경로(DAG surface 러너 배지)가 `Core` 없이도 러너 생사를 물을 수
-        // 있도록 같은 레지스트리 Arc 를 CoreState 에 심는다(memory 주입과 동형).
-        if core_state
-            .agent_runner_registry
-            .set(self.core.agent_runner_registry())
-            .is_err()
-        {
-            tracing::warn!("agent runner registry already injected into CoreState");
-        }
+        self.core.inject_agent_runner_registry(&core_state);
         Self::report_missing_full_disk_access(&mut state, &mut core_state.settings);
         self.register_window(gpu, state, core_state, window.clone());
         self.emit_startup_complete_event();
@@ -589,6 +581,16 @@ impl App {
         {
             state.toasts.push(
                 msg,
+                crate::adapters::ui::ToastKind::Warning,
+                crate::adapters::ui::ToastScope::Window,
+            );
+        }
+        // 언어팩이 `[font]` 을 선언했으나 resolve/검증에 실패한 경우도 같은 구조로 1회
+        // 알린다 — 폴백 언어와 무관한 별개 사유라 위 폴백 경고와 함께 뜰 수 있다. 사유
+        // 문자열은 경로를 담을 수 있어 토스트 캡에 맞춰 가운데를 생략한다(`t_fmt_fit`).
+        if let Some(detail) = crate::boot::locale::font_warning() {
+            state.toasts.push(
+                crate::i18n::t_fmt_fit("i18n.warn.font_unresolved", &detail),
                 crate::adapters::ui::ToastKind::Warning,
                 crate::adapters::ui::ToastScope::Window,
             );

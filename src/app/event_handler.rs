@@ -1066,7 +1066,16 @@ impl App {
             // 모달은 파킹 대상이 아니므로 그냥 drop.
             let drained: Vec<_> = self.view.views.drain().map(|(_, w)| w).collect();
             for w in drained {
-                if let Some(main_box) = crate::view::unbox_main(w) {
+                if let Some(mut main_box) = crate::view::unbox_main(w) {
+                    // 모달은 파킹 대상이 아니라 여기서 drop 된다(아래 `active_modal_id = None`).
+                    // 그 사실을 **파킹되는 상태의 거울에도** 반영한다 — 안 하면 dock 으로
+                    // 복귀했을 때 "모달이 열려 있다" 고 말하는 상태가 되살아나고, 그 값을
+                    // 되돌릴 경로는 없다(그 모달은 이미 없으므로 닫히지 않는다).
+                    main_box.state.active_modal_id = None;
+                    // 짝인 종류도 함께 — 이쪽만 남으면 복귀 뒤 "무언가 떠 있는데 무엇인지는
+                    // 직전 모달" 이 되어, 그 종류를 기다리는 소비자가 자기가 안 연 창을
+                    // 보고 통과한다. `tests/modal_state_has_one_writer.rs` 가 이 짝을 고정한다.
+                    main_box.state.active_modal_kind = None;
                     self.parked_states
                         .push((main_box.state, main_box.core_state));
                 }

@@ -38,6 +38,15 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // 활성 모달에 **창 닫기 요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의
+        // 재현이라 debug 전용이다. 위 `debug.settings.open` 의 짝처럼 보이지만 대상이
+        // 다르다: 그쪽은 설정 창만 열고, 이쪽은 **활성 모달이 무엇이든** 닫는다.
+        // release `window.close` 가 main view 만 대상으로 두고 모달을 명시적으로 뺀 것과
+        // 같은 선이다 — 모달을 닫는 것은 에이전트의 작업이 아니라 사용자 조작이다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method == "debug.modal.close_request" {
+            return self.ipc_handle_debug_modal_close_request(cmd);
+        }
         // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
         // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
         // 임의 Lua 주입 (debug 전용, ADR-0031) — App 소유 lua_engine 워커로 실행.
@@ -290,6 +299,41 @@ impl App {
                 "replaced": previous.is_some_and(|p| Some(p) != opened),
             }),
         )
+    }
+
+    /// `debug.modal.close_request` — 열려 있는 모달에 **창 닫기 요청**을 흘린다.
+    ///
+    /// 왜 필요한가: 설정 모달을 키보드로 닫는 경로가 없다(`SettingsView::handle_event`
+    /// 에 Escape 분기가 없고, `open_settings_modal` 은 이미 열려 있으면 그냥 return 해서
+    /// `Ctrl+,` 도 토글이 아니다). 남은 길은 창 닫기 요청과 egui 액션 둘인데, WM 없는
+    /// Xvfb 에는 앞의 것을 보낼 손이 없다 — 실측(2026-09-07): 창은 `WM_DELETE_WINDOW` 를
+    /// 광고하는데 `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러
+    /// winit 이 `GetGeometry` 에서 패닉했고, `wmctrl -i -c` 는 `_NET_CLOSE_WINDOW` 를
+    /// root 에 보내는 것이라 WM 이 없으면 아무도 처리하지 않는다(rc 0, 무효과).
+    ///
+    /// 그래서 그 요청이 **도달한 뒤의 처리**를 여기서 직접 부른다. 상위가
+    /// `ViewAction::Close` 를 받고 하는 일과 **같은 함수**다
+    /// (`handle_active_modal_window_event`). 건너뛰는 것은 `SettingsView` 의
+    /// `CloseRequested` arm 하나인데, 그 arm 이 하는 일은 `should_close` 를 세우고
+    /// `Close` 를 반환하는 것뿐이라 관측 가능한 차이가 없다 — 창이 그 직후 사라져서
+    /// 아무도 그 값을 읽지 않는다.
+    #[cfg(feature = "gui")]
+    fn ipc_handle_debug_modal_close_request(&mut self, cmd: &IpcCommand) -> IpcStep {
+        let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let was_open = self.view.active_modal_id.is_some();
+        if was_open {
+            self.close_active_modal();
+        }
+        send_response(
+            &cmd.response_tx,
+            host_ipc::protocol::JsonRpcResponse::success(
+                response_id,
+                // 열린 모달이 없었다는 것과 닫았다는 것을 **가른다.** 둘을 같은 모양으로
+                // 내면 호출자가 "닫혔다" 를 확인할 방법이 없다.
+                serde_json::json!({"closed": was_open}),
+            ),
+        );
+        IpcStep::Handled
     }
 
     fn debug_fullscreen_close(

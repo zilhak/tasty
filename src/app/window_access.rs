@@ -164,6 +164,9 @@ impl App {
     /// `attach_client::mirror_output_host`(mirror 이벤트 적용 대상 탐색)와 **같아야**
     /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생기고, 적용이
     /// 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
+    /// parked 쪽은 그 요구를 셋이 `attach_client::find_parked_with_workspace` 하나를
+    /// 부르는 것으로 만족시킨다(아래 `any_engine_has_workspace`). 창 있는 engine 쪽은
+    /// 아직 각자 훑는다 — borrow 모양이 셋 다 달라 같은 방식으로 못 묶는다.
     ///
     /// **`App.core_state` 는 의도적으로 제외한다.** 바로 위 `occupied_layout_slots`
     /// 는 `views`/`parked_states` 에 더해 그 자리(첫 MainView 등록 전 engine 이 임시로
@@ -331,16 +334,21 @@ fn find_workspace_by_name<'a>(
 /// 두 컬렉션을 별도 인자로 받는 이유는 "parked 도 본다"는 것이 이 술어의 요점이라
 /// 단위 테스트에서 두 축을 독립적으로 세울 수 있어야 하기 때문이다.
 ///
+/// parked 절반은 직접 훑지 않고 `attach_client::find_parked_with_workspace` 를 부른다 —
+/// mirror 이벤트의 적용·정리가 쓰는 바로 그 순회다. 이 판정과 그 둘의 범위가 같아야
+/// 한다는 요구(위 `mirror_workspace_engine_alive` 참조)를 주석이 아니라 **같은 함수**가
+/// 들게 한 것이다. 창 있는 engine 쪽만 여기서 훑는다.
+///
 /// `parked` 는 `App.parked_states` 와 **같은 타입**(`&[(AppState, CoreState)]`)으로
 /// 받는다 — 호출부가 `.map(|(_, e)| e)` 같은 어댑터를 끼우지 않고 필드를 그대로
 /// 넘기므로, 이 함수를 검증하는 테스트가 실제 배선까지 함께 덮는다.
 fn any_engine_has_workspace<'a>(
-    main: impl Iterator<Item = &'a crate::core::CoreState>,
+    mut main: impl Iterator<Item = &'a crate::core::CoreState>,
     parked: &'a [(crate::state::AppState, crate::core::CoreState)],
     workspace_id: u32,
 ) -> bool {
-    main.chain(parked.iter().map(|(_, e)| e))
-        .any(|e| e.has_workspace(workspace_id))
+    main.any(|e| e.has_workspace(workspace_id))
+        || super::attach_client::find_parked_with_workspace(parked, workspace_id).is_some()
 }
 
 /// `claim_free_layout_slot` 의 순수 본문 — 디스크에 실제로 존재하는 슬롯 파일

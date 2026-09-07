@@ -59,17 +59,12 @@ impl App {
         let snapshot = self.snapshot_plugins();
         let modal_window_id = window.id();
         let mut modal = view::PluginsView::new(gpu, window, snapshot);
-        #[cfg(windows)]
-        {
-            use crate::view::ui::View as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use crate::view::ui::View as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), modal_window_id);
+        crate::view::ui::present_first_frame(&mut modal);
+        self.open_modal(
+            Box::new(modal),
+            modal_window_id,
+            crate::state::ModalKind::Plugins,
+        );
         tracing::info!("opened plugins modal {:?}", modal_window_id);
     }
 }

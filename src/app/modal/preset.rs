@@ -43,16 +43,7 @@ impl App {
         let registry = self.any_main_engine().map(|e| e.surface_registry.clone());
         let window_id = window.id();
         let mut preset = view::PresetView::new(gpu, window, store, registry, keybindings);
-        #[cfg(windows)]
-        {
-            use crate::view::ui::View as _;
-            preset.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use crate::view::ui::View as _;
-            preset.mark_dirty();
-        }
+        crate::view::ui::present_first_frame(&mut preset);
         self.view.views.insert(window_id, Box::new(preset));
         self.preset_view_id = Some(window_id);
         tracing::info!("opened preset window {:?}", window_id);

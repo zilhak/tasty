@@ -1519,11 +1519,14 @@ fn remove_mirror_workspace_from_engine(
     true
 }
 
-/// `cleanup_mirror_workspace` 의 **parked 순회** — `App.parked_states` 를 앞에서부터
-/// 훑어 그 mirror 워크스페이스를 들고 있는 첫 engine 에서 정리를 수행하고 `true`.
-/// 어느 parked engine 에도 없으면 `false`(아무것도 건드리지 않는다).
+/// `cleanup_mirror_workspace` 의 **parked 순회** — 그 mirror 워크스페이스를 들고 있는
+/// 첫 parked engine 에서 정리를 수행하고 `true`. 어느 parked engine 에도 없으면
+/// `false`(아무것도 건드리지 않는다).
 ///
-/// 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫 항목에서 멈추면 안 된다.
+/// 순회 자체는 `find_parked_with_workspace` 에 맡긴다 — 적용 경로
+/// (`mirror_output_host`)와 **같은 함수**여야 판정이 살아 있다고 본 engine 을 정리가
+/// 못 찾는 어긋남이 생길 수 없다. 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫
+/// 항목에서 멈추면 안 되는데, 그 성질도 그 함수 하나에서만 지켜지면 된다.
 /// `App`(GUI 의존) 없이 `parked_states` 와 같은 타입을 그대로 받아, 이 순회 자체가
 /// 단위 테스트로 덮이게 한다.
 fn remove_mirror_workspace_from_parked(
@@ -1531,12 +1534,11 @@ fn remove_mirror_workspace_from_parked(
     local_workspace: u32,
     remote_to_local: &HashMap<u32, u32>,
 ) -> bool {
-    for (state, engine) in parked.iter_mut() {
-        if remove_mirror_workspace_from_engine(engine, state, local_workspace, remote_to_local) {
-            return true;
-        }
-    }
-    false
+    let Some(idx) = find_parked_with_workspace(parked, local_workspace) else {
+        return false;
+    };
+    let (state, engine) = &mut parked[idx];
+    remove_mirror_workspace_from_engine(engine, state, local_workspace, remote_to_local)
 }
 
 /// `apply_attach_client_output` 이 mirror 이벤트를 적용할 engine 의 위치 — 창 있는
@@ -1564,10 +1566,15 @@ fn mirror_output_host(
     })
 }
 
-/// `apply_attach_client_output` 의 **parked 순회** — 그 mirror 워크스페이스를 들고 있는
-/// 첫 parked engine 의 인덱스. 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫
-/// 항목만 보면 안 된다(`remove_mirror_workspace_from_parked` 와 동형).
-fn find_parked_with_workspace(
+/// mirror 워크스페이스를 들고 있는 **첫 parked engine 의 인덱스** — mirror 경로 셋이
+/// 함께 쓰는 유일한 parked 순회다: 적용(`apply_attach_client_output`) ·
+/// 정리(`remove_mirror_workspace_from_parked`) · 고아 판정
+/// (`window_access::mirror_workspace_engine_alive` 의 parked 절반). 셋의 순회 범위가
+/// 같아야 한다는 요구를 세 번 적는 대신 함수 하나로 만족시킨다 — 판정이 살아 있다고
+/// 본 engine 을 적용이나 정리가 못 찾는 어긋남이 형태상 생길 수 없다
+/// ([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
+/// 창을 여럿 닫으면 parked engine 도 여럿 쌓이므로 첫 항목만 보면 안 된다.
+pub(super) fn find_parked_with_workspace(
     parked: &[(crate::state::AppState, crate::core::CoreState)],
     local_workspace: u32,
 ) -> Option<usize> {

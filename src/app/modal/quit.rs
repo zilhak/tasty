@@ -141,19 +141,7 @@ impl App {
 
         let window_id = window.id();
         let mut modal = crate::view::QuitView::new(gpu, window);
-        // On Windows, hidden windows do not receive RedrawRequested events,
-        // so render the first frame immediately to make the modal visible.
-        // On other platforms, mark_dirty() + request_redraw() is sufficient.
-        #[cfg(windows)]
-        {
-            use crate::view::ui::View as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use crate::view::ui::View as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), window_id);
+        crate::view::ui::present_first_frame(&mut modal);
+        self.open_modal(Box::new(modal), window_id, crate::state::ModalKind::Quit);
     }
 }

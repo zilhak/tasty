@@ -130,8 +130,11 @@ impl App {
     /// 실제 자식 회수는 종료 상태 머신의 `StoppingPlugins` phase 가 폴링한다
     /// (`poll_shutdown_all`) — 그래야 대기 중에도 종료 프레임이 계속 돈다.
     ///
-    /// 앞선 단계 3 의 event.dispatch 들이 같은 `req_tx` 채널에 먼저 쌓였으므로
-    /// plugin worker 는 shutdown 처리 전에 surface.closed 들을 순서대로 받는다.
+    /// 이 호출이 `req_tx` 에 넣는 것이 **`surface.closed` 뒤여야 한다**는 채널 순서
+    /// 계약이 있다. 그 계약의 자리는 여기가 아니라 호출부인
+    /// `App::shutdown_step_closing_surfaces` 다 — 순서를 정하는 것이 이 함수가 아니라 그
+    /// 함수 안의 호출 배치이기 때문이다. 계약 본문과 무엇이 그것을 지키는지는 거기에
+    /// 있고, `source_guards::shutdown_channel_order` 가 값으로 문다.
     /// S4 / S4a 마커는 `PluginManager::poll_shutdown_all` 안에서 발화한다.
     pub(super) fn begin_plugin_shutdown(&mut self) {
         if let Some(mgr) = self.plugin_manager.as_mut() {

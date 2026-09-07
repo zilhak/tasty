@@ -77,20 +77,12 @@ impl App {
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
         modal.set_plugin_settings_pages(init.plugin_pages);
         self.apply_pending_tab_overrides(&mut modal);
-        // On Windows, hidden windows do not receive RedrawRequested events,
-        // so render the first frame immediately instead of waiting for the event loop.
-        // On other platforms, mark_dirty() + request_redraw() is sufficient.
-        #[cfg(windows)]
-        {
-            use crate::view::ui::View as _;
-            modal.render();
-        }
-        #[cfg(not(windows))]
-        {
-            use crate::view::ui::View as _;
-            modal.mark_dirty();
-        }
-        self.open_modal(Box::new(modal), modal_window_id);
+        crate::view::ui::present_first_frame(&mut modal);
+        self.open_modal(
+            Box::new(modal),
+            modal_window_id,
+            crate::state::ModalKind::Settings,
+        );
         tracing::info!("opened settings modal {:?}", modal_window_id);
     }
 
