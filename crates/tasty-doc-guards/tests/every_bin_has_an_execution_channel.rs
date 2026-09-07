@@ -40,12 +40,41 @@
 //! `git diff` 를 쓰면 안 된다. 추적 대상이 아니라 무엇을 고쳐도 빈 출력이라, "변이가
 //! 적용됐다" 를 재는 자리가 조용히 무력해진다. 원문 사본과 대조하거나 치환 횟수를 세라.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 const CRATE_DIR: &str = "crates/tasty-doc-guards";
 
 /// bin 이 이보다 적으면 수집이 깨진 것이다 — 모수가 0 이면 "전부 덮였다" 는 언제나 참이다.
+///
+/// **판별식** — 이 수가 지금도 옳은지는 서로 다른 두 출처를 대조해서 잰다:
+///
+/// ```text
+/// ls crates/tasty-doc-guards/src/bin/*.rs | wc -l    # 이 가드가 세는 것(파일)
+/// cargo metadata --no-deps …  kind 가 bin 인 target 수  # cargo 가 실제로 만드는 것
+/// ```
+///
+/// 실측 2026-09-07(`de0572359`): 둘 다 **3** 이다 — `mask-source` · `strip-cfg-test` ·
+/// `workflow-channels`. 이 하한도 3 이라 **여유가 0** 이고, 그것이 맞다: 하한은 실측과
+/// 붙어 있어야 예리하고, 벌어진 만큼이 곧 안 보는 구간이다.
+///
+/// ★ 이 하한이 왜 필요한지는 **세 번째 수**가 답한다 — `Cargo.toml` 의 `[[bin]]` 선언이
+/// **0** 이다. 이 크레이트는 cargo 의 자동 발견에만 기대고 있어서, `src/bin/` 에서 파일이
+/// 사라지면 bin 도 함께 조용히 사라진다. "셋이어야 한다" 고 적힌 곳이 레포 어디에도 없고,
+/// 그 침묵을 메우는 것이 이 수다.
+///
+/// **이 수를 내려서 초록을 만들지 마라.** 내리면 아래 전수 명제("모든 bin 이 실행 채널을
+/// 갖는다")가 사라진 bin 을 아예 안 세면서 통과한다 — 모수가 준 만큼 명제가 약해지는데
+/// 색은 그대로다.
+///
+/// 정당한 수선: bin 을 **실제로 지웠으면** 이 수도 같은 커밋에서 함께 내려라. 그때 위 두
+/// 출처를 다시 세서 값이 같은지 확인해라 — 파일만 지우고 빌드 산출물이 남아 있으면 두 수가
+/// 갈리고, 그 상태에서 고른 값은 둘 중 어느 쪽도 아니다.
 const MIN_BINS: usize = 3;
 
 /// 출력을 읽는다고 볼 표지. `status` 는 종료코드, `stdout` 은 내용이다.
@@ -295,4 +324,64 @@ fn running_a_bin_without_looking_is_not_reading_output() {
         "결과를 하나도 안 보는 소스를 '읽는다' 로 셌다 — 이 술어가 늘 참이면 \
          `no_executor_runs_the_bin_and_looks_away` 는 아무것도 안 지킨다"
     );
+}
+
+/// 유일한 임시 뿌리. `line!()` 까지 넣어 같은 파일의 여러 자리가 겹치지 않게 한다.
+fn probe_root(tag: &str, line: u32) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "tasty-binfloor-{tag}-{}-{line}",
+        std::process::id()
+    ));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+fn with_bins(tag: &str, line: u32, names: &[&str]) -> PathBuf {
+    let root = probe_root(tag, line);
+    let bin = root.join("src/bin");
+    std::fs::create_dir_all(&bin).expect("임시 디렉토리를 못 만들었다");
+    for n in names {
+        std::fs::write(bin.join(format!("{n}.rs")), "fn main() {}\n").expect("쓰기 실패");
+    }
+    root
+}
+
+/// [`MIN_BINS`] 의 **양성 대조** — 수집이 죽으면 이 수가 실제로 하한 밑으로 떨어지나.
+///
+/// 하한은 "수집이 깨지면 모수가 0 이 되고 그러면 전수 명제가 공허해진다" 를 막으려고 있다.
+/// 그 전제 — **수집이 깨지면 수가 준다** — 를 지금까지 아무도 안 봤다. 하한 옆에 붙은
+/// 판별식은 지금 값이 옳은지를 말하지, 이 계기가 반응하는지를 말하지 않는다.
+///
+/// 세 칸을 함께 두는 이유: 0 만 보이면 "이 함수는 언제나 0 을 낸다" 와 구별이 안 된다.
+/// 마지막 칸이 그 비영 대조다(R56).
+#[test]
+fn the_bin_floor_sees_a_collapsed_collection() {
+    let empty = with_bins("empty", line!(), &[]);
+    assert_eq!(
+        bin_names(&empty).len(),
+        0,
+        "빈 `src/bin` 에서 0 이 아니면 이 수집기는 입력을 안 보는 것이고, 그러면 하한이 \
+         지키는 것이 없다"
+    );
+
+    let one = with_bins("one", line!(), &["only"]);
+    assert!(
+        bin_names(&one).len() < MIN_BINS,
+        "부분적으로 죽어도 하한 밑으로 떨어져야 한다 — 그래야 하한이 그것을 말한다"
+    );
+
+    // 비영 대조: 이 수집기가 언제나 작은 수를 내는 것은 아니다.
+    let many = with_bins("many", line!(), &["a", "b", "c", "d"]);
+    assert!(
+        bin_names(&many).len() >= MIN_BINS,
+        "하한을 넘는 입력에서도 넘지 못하면 위 두 칸은 수집기가 늘 0 이라는 뜻이라 \
+         아무것도 안 지킨다"
+    );
+
+    for d in [empty, one, many] {
+        // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고,
+        // 여기서 죽으면 위 단정의 결과가 정리 오류에 가린다.
+        let _ = std::fs::remove_dir_all(d);
+    }
 }

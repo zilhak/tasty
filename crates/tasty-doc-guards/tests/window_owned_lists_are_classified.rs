@@ -185,9 +185,6 @@ const ROSTER: &[(&str, Class, &str)] = &[
 /// (CLAUDE.md 의 불가침 원칙 1). 포커스 독립성은 *에이전트 기능*에 거는 요구라
 /// 여기 셋은 같은 잣대로 재지 않는다 — 다만 범위 밖이라는 것을 **적어 둬야**
 /// 다음 사람이 누락과 못 가른다.
-/// 명부 항목 수 하한 — 중복 검사의 모수가 비면 "중복 없음" 은 언제나 참이다.
-const MIN_LISTED: usize = 25;
-
 const OUT_OF_SCOPE: &[(&str, &str)] = &[
     (
         "debug.tool.list",
@@ -282,6 +279,22 @@ fn every_entry_carries_a_reason() {
 /// 답을 든 채로 초록**이 된다. 실측으로 났다(`image.list` 병합).
 ///
 /// 어느 행이 옳은지는 이 가드가 못 정한다. 정하라고 말하는 것이 이 가드의 일이다.
+/// 같은 메서드가 두 행에 있지 않은지.
+///
+/// **하한이 없다.** 한때 `MIN_LISTED` 가 있었는데, 그 doc 이 스스로 적어 두었듯 그 수가
+/// 지키는 것은 값의 정확성이 아니라 **명부가 공허하지 않다는 것**뿐이었다. 그리고 그
+/// 공허는 여기서 볼 일이 아니다 — 명부가 비면 아래 셋 중 마지막이 먼저 빨개지고,
+/// 그쪽은 실제 소스를 훑으므로 **자기 스캔 하한**을 따로 갖고 있다:
+///
+/// ```text
+/// every_aggregated_entry_is_actually_in_the_aggregator       명부 → 합산기
+/// the_aggregator_has_nothing_the_roster_does_not_know        합산기 → 명부
+/// the_roster_covers_every_list_method_in_the_dispatch_table  디스패치 표 → 명부  ← 스캔 하한
+/// ```
+///
+/// 그래서 여기서는 수를 손으로 박지 않고 **명부에서 도출한다.** 도출한 기대값은 명부가
+/// 자라도 안 낡는다 — 손으로 박은 수는 자랄 때마다 누군가 올려야 하고, 안 올리면 그 차이가
+/// 곧 안 보는 구간이 된다.
 #[test]
 fn no_method_is_listed_twice() {
     let mut seen: std::collections::BTreeMap<&str, Vec<String>> = std::collections::BTreeMap::new();
@@ -293,18 +306,17 @@ fn no_method_is_listed_twice() {
     for (m, _) in OUT_OF_SCOPE {
         seen.entry(m).or_default().push("OUT_OF_SCOPE".to_string());
     }
-    assert!(
-        seen.len() >= MIN_LISTED,
-        "명부에서 {} 항목밖에 못 읽었다(하한 {MIN_LISTED}) — 모수가 비면 중복은 언제나 0 이다",
-        seen.len()
-    );
     let dupes: Vec<String> = seen
         .iter()
         .filter(|(_, wheres)| wheres.len() > 1)
         .map(|(m, wheres)| format!("  {m} — {}", wheres.join(" + ")))
         .collect();
-    assert!(
-        dupes.is_empty(),
+    // 서로 다른 이름 수가 두 명부의 항목 수 합과 같다는 것은 **중복이 없다는 것과
+    // 같은 말**이다(각 항목이 정확히 한 번씩 들어가므로). 기대값을 명부에서 도출하므로
+    // 명부가 자라도 이 수는 손볼 데가 없다.
+    assert_eq!(
+        seen.len(),
+        ROSTER.len() + OUT_OF_SCOPE.len(),
         "같은 메서드가 여러 행에 있다. 갈래가 둘이면 답도 둘이고, 다음 사람은 먼저 읽은 \
          쪽을 믿는다 — 어느 쪽이 옳은지 정해서 한 행만 남겨라:\n{}",
         dupes.join("\n")

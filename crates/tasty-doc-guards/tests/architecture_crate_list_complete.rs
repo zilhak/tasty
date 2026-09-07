@@ -17,7 +17,7 @@
 //! 역방향(문서에만 있고 디렉토리에 없는 이름)은 검사하지 않는다 — `tasty-tui-sim`
 //! 같은 바이너리 이름이 정당하게 등장한다.
 //!
-//! 선례: `tests/changelog_unreleased.rs` · `tests/plugin_manifest_version_parity.rs`.
+//! 선례: `tests/changelog_unreleased.rs` · `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs`.
 
 use std::path::PathBuf;
 

@@ -26,14 +26,44 @@
 //! 경우가 12 건**이라 등호도 접두도 아니다. 정규화 없이 넣으면 오탐이 21 건이고,
 //! 오탐이 그만큼이면 가드를 아무도 안 믿는다. 두 열의 정규화 규칙이 서면 그때 넣는다.
 
+// 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
+//       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
+//       `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 의 명부 순수성 판정이 그것을 막는다.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const ADR_DIR: &str = "docs/adr";
 const INDEX: &str = "docs/adr/index.md";
 
 /// ADR 수의 하한 — **연기 검사**다. 목록이 비면 아래 집합 대조는 빈 집합끼리라
 /// 그냥 통과한다. 값의 근거: 2026-09-05 실측 153 건.
+///
+/// **판별식** — 이 상수 하나가 **세 시험의 네 수**를 지킨다. 그 넷은 서로 독립으로 재는데
+/// **정상이면 전부 같은 값**이다. 그래서 넷을 나란히 읽는 것이 곧 이 하한의 검사다:
+///
+/// ```text
+/// cargo test -p tasty-doc-guards --test adr_index_parity -- --nocapture
+///   → [ADR 인덱스] ADR 파일 <N> · 하한 120        (every_adr_file_has_a_row…)
+///   → [ADR 인덱스] 인덱스 행 <N> · 하한 120        (an_adr_number_names_exactly_one_document)
+///   → [adr-index-parity] 행 <N> · Status 대조 <N> · Date 대조 <N> · …
+///                                                 (an_index_row_carries_the_same_status…)
+/// ```
+///
+/// ★ **넷이 갈리면 하한이 아니라 독법이 고장 난 것이다.** 파일 수와 인덱스 행 수가 다르면
+/// 인덱스가 밀린 것이고, 그 둘이 같은데 Status/Date 대조 수만 낮으면 헤더 독법이 죽은 것이다.
+/// 그 구분은 이 하한이 못 한다 — 하한은 "넷 다 0 은 아니다" 까지만 말한다.
+///
+/// 실측 2026-09-07(`de0572359`): **네 수가 전부 190** 이다(09-05 의 153 에서 늘었다).
+/// 하한이 120 이라 **여유가 70** 이다 — 술어가 3 분의 1 만 남아도 통과한다는 뜻이다.
+/// 값을 올릴지는 하한 조이기라는 별개 축이라 여기서는 실측만 남긴다.
+///
+/// **이 수를 내려서 초록을 만들지 마라.** 이 자리의 하한은 대조군이 살아 있는지만 보는
+/// 연기 검사라, 내리면 아래 집합 대조들이 더 작은 집합에서만 참이 되면서 색은 안 변한다.
+///
+/// 정당한 수선: ADR 을 실제로 지웠으면 이 수를 함께 내려라. 그때 **위 네 수를 함께 봐라** —
+/// 넷이 같이 줄었으면 지운 것이고, 하나만 줄었으면 지운 것이 아니라 독법이 깨진 것이다.
 const MIN_ADRS: usize = 120;
 
 /// 본문이 `Superseded by NNNN` 인 ADR 수의 하한 — **연기 검사**다.
@@ -56,16 +86,16 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn read(rel: &str) -> String {
-    let p = repo_root().join(rel);
+fn read(root: &Path, rel: &str) -> String {
+    let p = root.join(rel);
     std::fs::read_to_string(&p)
         .unwrap_or_else(|e| panic!("{rel} 을 읽지 못했다: {e}"))
         .replace("\r\n", "\n")
 }
 
 /// 앞 네 자리가 숫자인 `.md` 만 ADR 로 센다 — `index.md` · `template.md` 는 빠진다.
-fn adr_files() -> BTreeMap<String, String> {
-    let dir = repo_root().join(ADR_DIR);
+fn adr_files(root: &Path) -> BTreeMap<String, String> {
+    let dir = root.join(ADR_DIR);
     let mut out = BTreeMap::new();
     for entry in std::fs::read_dir(&dir).expect("docs/adr 를 읽을 수 없다") {
         let name = entry.expect("디렉터리 항목").file_name();
@@ -98,9 +128,9 @@ struct IndexRow {
 /// 독법은 여기 하나다. 열이 더 필요해지면 이 함수를 넓히고, **두 번째 독법을 만들지
 /// 않는다** — 같은 표를 두 방법으로 읽으면 답이 갈리고, 갈린 답 중 어느 것이 옳은지는
 /// 표를 다시 읽어야 알게 된다.
-fn index_rows() -> Vec<IndexRow> {
+fn index_rows(root: &Path) -> Vec<IndexRow> {
     let mut out = Vec::new();
-    for line in read(INDEX).lines() {
+    for line in read(root, INDEX).lines() {
         let Some(rest) = line.strip_prefix("| ") else {
             continue;
         };
@@ -226,7 +256,10 @@ fn header_field(body: &str, name: &str) -> Option<String> {
 /// 한 번호는 한 ADR 만 가리킨다.
 #[test]
 fn an_adr_number_names_exactly_one_document() {
-    let rows = index_rows();
+    let rows = index_rows(&repo_root());
+    // R445 — 측정값은 단정보다 앞에. 이 파일의 세 시험이 같은 하한을 쓰고 서로 다른 수를
+    // 재므로, 그 수들을 나란히 읽는 것이 곧 하한의 판별식이다(상수 doc 참조).
+    println!("[ADR 인덱스] 인덱스 행 {} · 하한 {MIN_ADRS}", rows.len());
     assert!(
         rows.len() >= MIN_ADRS,
         "인덱스에서 ADR 행을 {} 개밖에 못 뽑았다(하한 {MIN_ADRS}, 2026-09-05 실측 153). \
@@ -255,13 +288,15 @@ fn an_adr_number_names_exactly_one_document() {
 /// 파일과 인덱스 행이 **양방향으로** 대응한다.
 #[test]
 fn every_adr_file_has_a_row_and_every_row_has_a_file() {
-    let files = adr_files();
+    let root = repo_root();
+    let files = adr_files(&root);
+    println!("[ADR 인덱스] ADR 파일 {} · 하한 {MIN_ADRS}", files.len());
     assert!(
         files.len() >= MIN_ADRS,
         "ADR 파일이 {} 개뿐이다(하한 {MIN_ADRS})",
         files.len()
     );
-    let rows = index_rows();
+    let rows = index_rows(&root);
     let row_files: BTreeSet<&str> = rows.iter().map(|r| r.file.as_str()).collect();
     let disk: BTreeSet<&str> = files.values().map(|f| f.as_str()).collect();
 
@@ -283,9 +318,10 @@ fn every_adr_file_has_a_row_and_every_row_has_a_file() {
 /// 사람만 틀린 값을 갖게 된다. 파일 목록만 보는 판정으로는 안 잡힌다.
 #[test]
 fn the_heading_number_matches_the_file_name() {
+    let root = repo_root();
     let mut wrong = Vec::new();
-    for (num, name) in adr_files() {
-        let body = read(&format!("{ADR_DIR}/{name}"));
+    for (num, name) in adr_files(&root) {
+        let body = read(&root, &format!("{ADR_DIR}/{name}"));
         let Some(head) = body.lines().find(|l| l.starts_with("# ADR-")) else {
             wrong.push(format!("{name} — `# ADR-…` 제목 줄이 없다"));
             continue;
@@ -384,8 +420,9 @@ fn the_first_word_stops_at_whitespace() {
 
 #[test]
 fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
-    let rows = index_rows();
-    let files = adr_files();
+    let root = repo_root();
+    let rows = index_rows(&root);
+    let files = adr_files(&root);
     let mut checked_status = 0usize;
     let mut checked_date = 0usize;
     let mut superseded_seen = 0usize;
@@ -397,7 +434,7 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
             // 파일 없는 행은 `every_adr_file_has_a_row_and_every_row_has_a_file` 이 잡는다.
             continue;
         };
-        let body = read(&format!("{ADR_DIR}/{name}"));
+        let body = read(&root, &format!("{ADR_DIR}/{name}"));
 
         if let Some(v) = header_field(&body, "Status") {
             checked_status += 1;
@@ -474,4 +511,103 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
         drift.len(),
         drift.join("\n  ")
     );
+}
+
+/// `MIN_ADRS` 의 **양성 대조** — 모수가 하한 아래로 떨어지는 코퍼스를 만들고, 이 파일의
+/// 두 수집기가 실제로 그것을 말하는지 묻는다.
+///
+/// 하한이 있다는 것과 그 하한이 옳다는 것은 다르다. 위 세 시험은 전부 **레포 자신**을
+/// 읽으므로 수집이 죽는 상황이 여기서는 한 번도 안 만들어진다 — 그 초록은 "수집이
+/// 산다" 가 아니라 "레포에 ADR 이 많다" 만 말한다.
+///
+/// 상수 doc 이 말하는 **네 수가 갈리는 형태**를 칸으로 만든다. 두 수집기가 독립이라
+/// 한쪽만 죽는 것이 실제 사고 모양이고(인덱스가 밀림 / 디렉터리를 못 읽음), 한쪽만
+/// 보는 대조는 그것을 못 가른다.
+///
+/// 비영 대조를 함께 세운다 — 3/3 을 세는 칸이 있어야 앞 칸의 0 이 **구조의 0**(코퍼스가
+/// 비었다)이지 **술어의 0**(수집기가 입력을 안 본다)이 아님이 갈린다.
+#[test]
+fn the_adr_floor_sees_a_collapsed_collection() {
+    let root =
+        std::env::temp_dir().join(format!("tasty-adrfloor-{}-{}", std::process::id(), line!()));
+    // 앞선 실행의 잔여를 치운다 — 없는 것이 정상이라 실패가 정보가 아니다.
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join(ADR_DIR);
+    std::fs::create_dir_all(&dir).expect("임시 디렉토리를 못 만들었다");
+    std::fs::write(root.join(INDEX), "").expect("쓰기 실패");
+
+    // ① 둘 다 비었다 — 하한이 잡아야 하는 상태.
+    assert_eq!(
+        adr_files(&root).len(),
+        0,
+        "뿌리가 비었는데 0 이 아니면 이 수집기는 인자를 안 보고 레포를 읽는 것이다"
+    );
+    assert_eq!(
+        index_rows(&root).len(),
+        0,
+        "인덱스가 비었는데 0 이 아니면 이 독법은 인자를 안 보고 레포를 읽는 것이다"
+    );
+
+    // ② 표 머리글은 행이 아니다. 이것을 세면 인덱스가 통째로 밀려도 수가 안 떨어진다.
+    std::fs::write(
+        root.join(INDEX),
+        "| 번호 | 제목 | Status | Date | Tags |\n|---|---|---|---|---|\n",
+    )
+    .expect("쓰기 실패");
+    assert_eq!(
+        index_rows(&root).len(),
+        0,
+        "머리글·구분줄을 ADR 행으로 세면 빈 인덱스가 하한을 통과한다"
+    );
+
+    // ③ 파일만 있고 행이 없다 — 두 수가 **갈리는** 칸. 상수 doc 의 "넷이 갈리면 독법이
+    //    고장 난 것" 이 실제로 갈리는지를 여기서 본다.
+    for (num, slug) in [("0001", "a"), ("0002", "b"), ("0003", "c")] {
+        std::fs::write(dir.join(format!("{num}-{slug}.md")), "").expect("쓰기 실패");
+    }
+    assert_eq!(
+        adr_files(&root).len(),
+        3,
+        "디렉터리를 안 읽으면 파일 수가 0 에 머문다"
+    );
+    assert_eq!(
+        index_rows(&root).len(),
+        0,
+        "행이 없는데 행 수가 늘면 두 수가 서로를 가려 준다 — 그러면 한쪽이 죽어도 하한이 안 걸린다"
+    );
+
+    // ④ 비영 대조 — 행을 넣으면 두 수가 같이 3 이 된다. 앞 칸들의 0 이 구조의 0 이었음이
+    //    여기서 갈린다.
+    let mut index = String::from("| 번호 | 제목 | Status | Date | Tags |\n|---|---|---|---|---|\n");
+    for (num, slug) in [("0001", "a"), ("0002", "b"), ("0003", "c")] {
+        index.push_str(&format!(
+            "| {num} | [제목]({num}-{slug}.md) | Accepted | 2026-09-07 | tag |\n"
+        ));
+    }
+    std::fs::write(root.join(INDEX), &index).expect("쓰기 실패");
+    assert_eq!(adr_files(&root).len(), 3, "파일 수가 흔들리면 안 된다");
+    assert_eq!(
+        index_rows(&root).len(),
+        3,
+        "행이 셋인데 3 이 아니면 독법이 죽은 것이다 — 그때 앞 칸의 0 은 코퍼스가 아니라 독법 탓이다"
+    );
+
+    // ⑤ 반대 방향 — 번호가 아닌 `.md` 를 세면 모수가 부풀고, 부푼 만큼 하한이 무뎌진다.
+    //    `index.md` 는 이미 이 디렉터리에 있고 `template.md` 를 하나 더 놓는다.
+    std::fs::write(dir.join("template.md"), "").expect("쓰기 실패");
+    assert_eq!(
+        adr_files(&root).len(),
+        3,
+        "앞 네 자리가 숫자가 아닌 `.md` 를 ADR 로 세면 하한이 그만큼 헐거워진다"
+    );
+
+    // ⑥ 그리고 이 코퍼스는 하한 아래다 — 위 세 시험이 이 뿌리를 읽었다면 빨개진다.
+    assert!(
+        adr_files(&root).len() < MIN_ADRS && index_rows(&root).len() < MIN_ADRS,
+        "이 대조가 하한 위에 있으면 '하한이 무너진 상태' 를 한 번도 안 만든 것이다"
+    );
+
+    // 뒷정리 실패는 무시한다 — 임시 디렉토리라 남아도 다음 실행이 먼저 지우고, 여기서
+    // 죽으면 위 단정의 결과가 정리 오류에 가린다.
+    let _ = std::fs::remove_dir_all(&root);
 }

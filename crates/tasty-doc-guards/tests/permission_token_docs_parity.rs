@@ -14,7 +14,7 @@
 //! `surface.read` 같은 토큰과 `surface.list` 같은 IPC 메서드명이 섞여 있어, 구조적으로
 //! 구분할 방법이 없으면 오탐만 늘어난다.
 //!
-//! 선례: `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` · `tests/plugin_manifest_version_parity.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/architecture_crate_list_complete.rs` · `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs`.
 
 use std::path::PathBuf;
 

@@ -97,6 +97,64 @@
 //!   메우려면 주어 부류를 워크플로 이름까지 넓혀야 하는데, 그러면 워크플로를 *언급만* 하는
 //!   문장이 전부 후보가 되어 오탐이 지배한다 — 그 판별식을 먼저 짓기 전에는 넓히지 마라.
 //!
+//! - **네 번째 축의 좌변은 문단이다 — 제목이 워크플로를 들고 본문이 게이트를 드는 절은
+//!   모수 밖이다.** [`claim_scope`] 가 문단 단위라, 워크플로 이름과 게이트 이름이 서로
+//!   다른 문단에 있으면 둘이 한 범위에 **절대** 안 들어온다. 실측(2026-09-08): 그 형태가
+//!   1 곳이다 — `docs/dev-guide/ci-gates.md` 의 `### script-gates.yml — 배선한 날의 상태`
+//!   로, 본문이 그 워크플로의 셋 중 둘을 든다. 그 자리는 제목이 시점을 못박아 지금도
+//!   참이지만(그 절이 쓰인 커밋 시점에 그 워크플로의 스크립트가 정말 둘이었다), 같은
+//!   형태로 시점을 안 박은 절이 생기면 **아무도 안 본다.**
+//!
+//!   **줄바꿈 쪼개짐(위 절)과 헷갈리지 마라 — 다른 부류다.** 이 축의 표지는 공백 없는
+//!   워크플로 파일 이름이라 줄바꿈이 쪼갤 수 없다(실측 2026-09-08: 리터럴 전수 =
+//!   [`is_prose_line`] 통과 전수, 떨어진 것 0). 위 절의 "놓친 표지 7" 은 1~3 축의 여러
+//!   낱말짜리 표지에 대한 값이고 이 축의 모수가 아니다. 문단 경계는 이 축이 따로 갖는
+//!   좌변 밖이다.
+//!
+//! - **문턱을 낮추면 오탐만 는다 — 한 번 재고 안 낮췄다 (실측 2026-09-08).**
+//!   좌변의 두 겹은 [`no_file_lists_only_some_of_the_gates_a_workflow_runs`] 의 doc
+//!   주석에 있다. `c2cb93893` 트리에서 그 둘째 겹(자칭 두 모양)을 빼면 위반 **13**,
+//!   "하나라도" 문턱까지 빼면 위반 **30** 이 나왔고 **그중 진짜 위반은 0** 이었다(게이트마다 한 행씩인 정본 표 ·
+//!   게이트가 주어인 산문 · 이 파일 자신의 예시 주석). 위반 메시지의 처방("빠진
+//!   스크립트를 더해라")을 그 오탐에 따르면 정본 표의 **모든 행이 형제 게이트 이름을
+//!   베껴 갖게 된다 — 이 가드가 막으려는 바로 그 사본이다.** 그래서 좁은 좌변은 결함이
+//!   아니라 결정이다. 지금 몇 곳을 지키는지는 그 테스트가 `FUNNEL` 로 찍는다.
+//!
+//! # 경로를 문자열로 다루는 자리 — 전수 (2026-09-08)
+//!
+//! 이 파일은 경로를 문자열로 만들어 `/` 리터럴과 비교한다. Windows 에서 그 문자열은
+//! `\` 를 담고, 그러면 비교가 **실패도 예외도 아닌 조용한 오답**을 낸다 — 판정이
+//! 빗나간 채 초록이 뜬다. Linux 에서는 고치기 전에도 `/` 가 나오므로 **여기서는 절대
+//! 안 보인다.** 그래서 한 번 전수로 세고 명부를 남긴다. 다음 사람이 같은 걱정을 다시
+//! 하지 않도록, 그리고 새 자리가 이 명부에 없으면 바로 보이도록.
+//!
+//! 열셋이고, 부류가 다섯이다.
+//!
+//! 1. **[`normalized_rel`] 의 산출물** (7) — 이것이 정답 경로다. `\` 를 `/` 로 펴는
+//!    자리가 저장소에 하나만 남게 한다.
+//! 2. **이름 한 조각** (1) — `collect_files` 가 `file_name()` 을 문자열로 만들어 스킵
+//!    목록과 대조한다. 조각에는 구분자가 없어 두 OS 에서 같다.
+//! 3. **`components()` 조각 비교** (1) — `owning_package` 는 구분자를 문자열로 보지
+//!    않고 조각을 하나씩 꺼내 맞춘다. 두 OS 에서 같다.
+//! 4. **메시지 전용 `display()`** (3) — 실패문의 좌표와 panic 문구. 판정에 안 쓴다.
+//!    Windows 에서 `\` 로 찍히지만 그것이 그 자리의 옳은 표기다.
+//! 5. **손으로 벗긴 `rel`** (1) — **결함이었고 이번에 고쳤다.** 네 번째 축이
+//!    `strip_prefix(root).display().to_string()` 으로 만든 문자열을 `/` 리터럴과
+//!    비교했다. 모의로 재니(구분자만 `\` 로 바꿔) 판정이 2 → 4 로 늘고 그중 **2 가
+//!    거짓 위반**이었다 — 스크립트가 머리말에서 자기 이름을 드는 자리인데, 자기 이름을
+//!    빼는 [`own_name`] 이 `rel.rsplit('/')` 라 Windows 에서 아무것도 못 벗겨 자기소개가
+//!    실행 목록으로 읽혔다. 모수 자체도 흔들렸다(순회 디렉토리 스킵이 같은 이유로 빗나가
+//!    워크플로 파일까지 판정에 들어왔다).
+//!
+//! ★ **`floored_walk_consumers_do_not_renormalize` 는 이 결함을 못 잡는다.** 그것이 재는
+//! 것은 *정규화를 두 번 하는가*(손으로 다시 펴는가)이고, 5 는 *한 번도 안 한* 형태다.
+//! 두 물음은 다르고, 뒤엣것에는 아직 판정기가 없다 — 그래서 이 명부가 그 자리를 대신
+//! 지킨다. 새 순회 소비자를 더할 때는 [`normalized_rel`] 을 부르고 이 수를 갱신해라.
+//!
+//! **컴파일이 통과하는 것과 판정이 같은 것은 다르다.** Windows 타깃 clippy
+//! (`--target x86_64-pc-windows-gnu`)는 5 를 통과시켰다 — 그 자리는 타입이 맞고 문자열
+//! 비교도 합법이다. 앞엣것만 재는 명령으로 뒤엣것을 결론짓지 마라.
+//!
 //! **실행으로 판정할 수 없는 전제 — 자동 채널 없음**(R16). 아래 셋은 이 축의 채널
 //! 모델이 딛고 선 사실인데, 이 레포에서 실행으로 확인할 방법이 없다. (부재의 주어는 아래
 //! 세 전제이지 이 타깃의 실행 채널이 아니다.) 변이를 지어내지도
@@ -132,7 +190,7 @@
 //!   목록을 넓히는 것이 처방이다 — 이 방향의 오류는 조용하지 않다.
 
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
 // `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
@@ -163,6 +221,7 @@
 
 use std::path::{Path, PathBuf};
 
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
 
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
@@ -417,7 +476,51 @@ fn line_of(text: &str, offset: usize) -> usize {
 /// yml 을 파싱하지 않고 들여쓰기로 잡 경계를 잡는다 — 이 레포의 워크플로는 전부
 /// `jobs:` 아래 2 칸 들여쓰기의 평평한 잡 목록이고, 파싱기를 들이는 것보다 이 구조를
 /// 깨뜨렸을 때 눈에 띄는 편이 낫다.
+/// 워크플로 파일 순회 하한.
+///
+/// 이 가드의 축은 전부 "그 서술이 가리키는 자동 채널이 실재하는가" 를 묻는다. 순회가
+/// 죽어 워크플로를 하나도 못 모으면 **채널이 하나도 없는 것으로 판정**되고, 그러면
+/// 참인 서술이 위반으로 나가거나(거짓 고발) 축에 따라 조용히 통과한다. 둘 다 값이
+/// 아니다.
+const WORKFLOW_FLOOR: Floor = Floor {
+    min: 7,
+    measured: 11,
+    measured_on: "2026-09-07",
+    why_this_gap: "워크플로는 채널을 새로 배선하거나 접을 때만 움직이고 한 번에 하나씩이라 \
+                   모수가 느리다. 여유 4 는 잡 통합으로 몇 개가 접히는 폭을 견디되, 순회가 \
+                   죽어 절반 이하만 보이는 상태는 잡는다",
+};
+
+/// **호출자가 디렉토리를 정하는** 자리의 하한.
+///
+/// 하한을 함수가 아니라 **인자**로 받는 이유가 여기 있다. 하한은 함수의 성질이 아니라
+/// **모수의 성질**인데, 이 파일의 열거는 모수를 둘 갖는다 — 레포의 `.github/workflows`
+/// 와, 회귀 픽스처가 그 자리에서 파일 한 개로 만드는 임시 디렉토리다. 한쪽 값을 다른
+/// 쪽에 물리면 둘 중 하나가 늘 틀린다: 레포 하한(7)을 픽스처에 물리면 픽스처가 전부
+/// 죽고, 이 하한(1)을 레포 전용 자리에 물리면 순회가 열 개를 잃어도 초록이다.
+///
+/// **그래서 이 값으로 레포의 모수를 지키지 않는다.** 이 하한이 막는 것은 디렉토리를
+/// 아예 못 읽은 갈래 하나이고, 레포 쪽 기대치("자동 잡이 여덟 이상")는 그 모수를 아는
+/// 테스트가 자기 자리에서 따로 단정한다.
+const CALLER_SUPPLIED_FLOOR: Floor = Floor {
+    min: 1,
+    measured: 1,
+    measured_on: "2026-09-07",
+    why_this_gap: "이 자리의 모수는 호출자마다 달라서 여유라는 것이 정의되지 않는다 — \
+                   픽스처는 자기가 방금 쓴 파일 수를 알고 레포는 열한 개다. 공통으로 \
+                   참인 것은 비어 있으면 안 된다는 것 하나뿐이라 하한이 1 이다",
+};
+
 /// 그 경로가 워크플로 파일인가 — GitHub Actions 가 인정하는 두 확장자를 모두 본다.
+///
+/// GitHub Actions 는 `.yml` 과 `.yaml` 을 **둘 다** 워크플로로 읽는다. 한쪽만 보면 그
+/// 잡은 자동 채널 계산에서 통째로 빠지고, 그러면 이 가드의 축들이 모두 그 잡을 못 본
+/// 채 판정한다 — 실제보다 **약한** 채널을 가정하게 되므로 거짓 위반(참인 서술을 짚음)이
+/// 난다.
+///
+/// 이 파일 자신이 그 비대칭을 갖고 있었다: 스캔 대상 확장자([`TEXT_EXTS`])에는 `yaml`
+/// 이 있어서, `.yaml` 워크플로는 **문서로는 읽히고 워크플로로는 안 읽히는** 상태였다.
+/// 한 파일 안에서 두 모수가 어긋나 있으면 어느 쪽이 옳은지 읽는 사람이 판단할 수 없다.
 fn is_workflow_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
@@ -425,26 +528,27 @@ fn is_workflow_file(path: &Path) -> bool {
     )
 }
 
-fn automatic_job_bodies_of_dir(workflows: &Path) -> Vec<String> {
+/// 워크플로 디렉토리의 워크플로 파일 — 이 파일에서 그 디렉토리를 여는 **유일한** 자리.
+///
+/// 한때 순회가 둘이었다(자동 잡 본문을 모으는 쪽과 게이트 스크립트를 색인하는 쪽). 같은
+/// 물음에 답이 둘이면 갈릴 때까지만 같다 — 실제로 `.yaml` 을 받아들이는 판정이 한쪽에만
+/// 있던 적이 있다. 하한은 [`WORKFLOW_FLOOR`] 가 건다.
+fn workflow_files(workflows: &Path, floor: &Floor) -> Vec<Walked> {
+    // 하한은 **훑은 파일**에 걸고, 워크플로인가는 그 뒤에 거른다. 둘을 한 술어에 합치면
+    // "워크플로가 없어서 0" 과 "디렉토리를 못 읽어서 0" 이 같은 값이 된다 — 그리고 이
+    // 파일의 픽스처 중 하나는 워크플로가 **정말로** 0 인 것을 확인하는 자리라, 합쳐 두면
+    // 그 정상 케이스가 하한 미달로 죽는다.
+    walk_with_floor(workflows, workflows, floor, Descend::Everything, &|_| true)
+        .unwrap_or_else(|why| panic!("{why}"))
+        .into_iter()
+        .filter(|w| is_workflow_file(&w.path))
+        .collect()
+}
+
+fn automatic_job_bodies_of_dir(workflows: &Path, floor: &Floor) -> Vec<String> {
     let mut bodies = Vec::new();
-    let Ok(entries) = std::fs::read_dir(workflows) else {
-        panic!("워크플로 디렉토리를 읽지 못했다: {}", workflows.display());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        // GitHub Actions 는 `.yml` 과 `.yaml` 을 **둘 다** 워크플로로 읽는다. 여기서 한쪽만
-        // 보면 그 잡은 자동 채널 계산에서 통째로 빠지고, 그러면 이 가드의 세 축이 모두
-        // 그 잡을 못 본 채 판정한다 — 실제보다 **약한** 채널을 가정하게 되므로 거짓
-        // 위반(참인 서술을 짚음)이 난다.
-        //
-        // 이 파일 자신이 그 비대칭을 갖고 있었다: 스캔 대상 확장자([`TEXT_EXTS`])에는
-        // `yaml` 이 있어서, `.yaml` 워크플로는 **문서로는 읽히고 워크플로로는 안 읽히는**
-        // 상태였다. 한 파일 안에서 두 모수가 어긋나 있으면 어느 쪽이 옳은지 읽는 사람이
-        // 판단할 수 없다.
-        if !is_workflow_file(&path) {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
+    for w in workflow_files(workflows, floor) {
+        let text = std::fs::read_to_string(&w.path).unwrap_or_default();
         // 트리거 판정: `on:` 블록에 push/pull_request/schedule 중 하나라도 있으면 자동.
         let head: String = text
             .lines()
@@ -606,8 +710,9 @@ fn cargo_test_tails(body: &str) -> Vec<String> {
 /// 자동 잡이 테스트를 돌릴 때 쓰는 **feature 조합**.
 ///
 /// "자동 실행 채널이 있는가" 는 더 이상 단일 참·거짓이 아니다. 기본 조합의 자동 잡은
-/// `--lib --bins` 라 통합 테스트를 하나도 안 돌리고, 헤드리스 조합의 자동 잡은 전체
-/// 스위트를 돌린다. 하나로 뭉개면 어느 쪽으로 적어도 반쪽이 거짓이 된다.
+/// 통합 테스트를 **패키지로 지목한 것만** 돌리고(Windows 잡의 `-p tasty-shm -p
+/// tasty-doc-guards`), 헤드리스 조합의 자동 잡은 전체 스위트를 돌린다. 하나로 뭉개면
+/// 어느 쪽으로 적어도 반쪽이 거짓이 된다.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Combo {
     /// 기본 feature 조합 — 문서가 인용하는 `cargo test --workspace` 가 이것이다.
@@ -628,7 +733,10 @@ impl Combo {
 /// 자동 잡의 `cargo test` 호출들 — (조합, 인자 꼬리).
 fn automatic_test_invocations(root: &Path) -> Vec<(Combo, String)> {
     let mut out = Vec::new();
-    for body in automatic_job_bodies_of_dir(&root.join(".github/workflows")) {
+    // `root` 가 호출자가 정하는 값이다 — 이 파일의 회귀 픽스처가 합성 레포를 만들어
+    // 여기로 넣는다. 그래서 레포 모수(11)를 하한으로 물릴 수 없다.
+    for body in automatic_job_bodies_of_dir(&root.join(".github/workflows"), &CALLER_SUPPLIED_FLOOR)
+    {
         for tail in cargo_test_tails(&body) {
             let combo = if tail.contains("--no-default-features") {
                 Combo::Headless
@@ -1359,8 +1467,7 @@ fn lib_test_names(root: &Path) -> std::collections::BTreeSet<String> {
     collect_files(root, &mut files);
     let mut names = std::collections::BTreeSet::new();
     for file in files {
-        let rel = file.strip_prefix(root).unwrap_or(&file);
-        let rel = rel.to_string_lossy().replace('\\', "/");
+        let rel = normalized_rel(&file, root);
         if !rel.ends_with(".rs") || !(rel.starts_with("src/") || rel.contains("/src/")) {
             continue;
         }
@@ -1618,8 +1725,7 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
 
     let mut violations = Vec::new();
     for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let rel_str = normalized_rel(file, &root);
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
@@ -1663,8 +1769,7 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
     let mut citations = 0usize;
     let mut violations = Vec::new();
     for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let rel_str = normalized_rel(file, &root);
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
@@ -1688,8 +1793,9 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
     violations.dedup();
     assert!(
         violations.is_empty(),
-        "자동 잡이 이름을 지목해 돌리는 통합 테스트는 {automatic:?} 뿐이다(나머지 자동 \
-         테스트는 `--lib --bins` = 유닛 뿐). 아래는 그 밖의 통합 테스트를 CI 강제 장치로 \
+        "자동 잡이 이름을 지목해 돌리는 통합 테스트는 {automatic:?} 뿐이다(기본 조합의 \
+         나머지는 `--lib --bins` = 유닛, 그리고 패키지로 지목된 통합 타깃뿐). 아래는 \
+         그 밖의 통합 테스트를 CI 강제 장치로 \
          서술한 자리다. 문장을 지우지 말고, 그 문장이 전하려던 사실은 남긴 채 채널 주장만 \
          `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
         violations.join("\n  ")
@@ -1724,8 +1830,7 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
     collect_files(&root, &mut files);
     let mut violations = Vec::new();
     for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let rel_str = normalized_rel(file, &root);
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
@@ -1800,8 +1905,7 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     // 가르므로, 이 구분은 이름이 아니라 **소유 패키지**라는 성질이다.
     let mut class_channels = std::collections::BTreeSet::new();
     for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let rel_str = normalized_rel(file, &root);
         if !rel_str.ends_with(".rs") || !rel_str.starts_with("tests/") {
             continue;
         }
@@ -1812,8 +1916,7 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
 
     let mut violations = Vec::new();
     for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let rel_str = normalized_rel(file, &root);
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
@@ -1951,6 +2054,61 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
     );
 }
 
+/// gui 하네스의 두 증폭기가 아직 사는가 — `(A, B)`.
+///
+/// ## 왜 수가 아니라 **자리**로 묻는가
+///
+/// 앞 판은 `common_text.contains("Mutex") && common_text.contains(".lock()")` 였다.
+/// 그 단정은 **거짓이 될 수 없다.** 그 파일에는 stderr 링 버퍼와 `last_at` 같은 다른
+/// 뮤텍스가 따로 있어서, 공유 인스턴스가 통째로 사라져도 `Mutex` 와 `.lock()` 은 남는다
+/// (실측 2026-09-07: `Mutex` 11 · `.lock()` 5 · `.lock().unwrap()` 4 — 전부 다른 뮤텍스).
+/// 즉 **은퇴를 알려야 할 트립와이어가 영영 안 울린다.** 조용한 1 이다.
+///
+/// 그래서 바늘을 수에서 자리로 옮긴다. 무관한 뮤텍스가 몇 개 늘든 답이 안 흔들린다.
+///
+/// ## 증폭기가 둘이고 배타다
+///
+/// - **B** — 뮤텍스 오염 연쇄. spawn 성공 뒤 본문 패닉이면 **가짜 실패** N 개.
+///   접근자의 첫 락이 `into_inner()` 로 회수하면 걷힌 것이다.
+/// - **A** — `get_or_init` 재시도. 초기화 클로저가 패닉하면 `OnceLock` 이 미초기화로
+///   남아 다음 테스트가 **실제로 재spawn** 한다. 형제 하네스(`tests/common/mod.rs`)는
+///   `SHARED_SPAWN_FAILED.swap(true, …)` 로 첫 실패를 래치해 그것을 막는다.
+///
+/// ★ 바늘을 `swap(true` 로 좁힌 이유: 넓게 `load(`·`swap(` 로 잡으면 같은 클로저 안의
+/// 무관한 `CLEANUP_PID.load(Ordering::Relaxed)` 가 걸려 **래치가 있다고 오답**한다.
+/// 래치의 성질은 "읽는다" 가 아니라 "첫 실패를 표시하고 그 사실을 되돌려 받는다" 이고,
+/// `swap(true` 가 정확히 그 자리다.
+///
+/// `None` 은 "구조가 바뀌어 못 찾았다" 이고 **판정 불가 = 실패**로 다룬다(R435).
+fn gui_amplifiers_live(src: &str) -> Option<(bool, bool)> {
+    let at = src.find("static SHARED_INSTANCE")?;
+    let tail = &src[at..];
+    let init = tail.find("get_or_init")?;
+    let open = init + tail[init..].find('{')?;
+    let mut depth = 0usize;
+    let mut close = None;
+    for (i, c) in tail[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(open + i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let closure = &tail[open..=close?];
+    let a_live = !closure.contains("swap(true");
+
+    let lock = tail.find(".lock()")?;
+    let window = &tail[lock..(lock + 160).min(tail.len())];
+    let b_live = !window.contains("into_inner()");
+    Some((a_live, b_live))
+}
+
 /// 층 3 — `--ignored` 를 줘도 나오는 수에는 **단일 값이 없다.** 값 대신 그 단정을 지킨다.
 ///
 /// 이 칸에는 수를 박지 않는다 — 박으면 그 수가 곧 낡고, 낡은 수는 없는 수보다
@@ -1961,8 +2119,10 @@ fn the_gui_suite_needs_a_flag_not_a_display() {
 /// 그래서 지키는 것은 수가 아니라 **"단일 값이 없다" 는 단정 자체**다. 통과 수를 적은
 /// 절은 그 절이나 그 하위 절에 단정을 함께 담아야 한다 — 누가 수만 채워 넣으면 빨개진다.
 ///
-/// **은퇴 조건**을 함께 박는다. 수가 흔들리는 원인(lock 뒤의 단일 공유 인스턴스)이
-/// 사라지면 수가 안정될 수 있고, 그때까지 이 규칙이 남으면 없는 병을 지키게 된다.
+/// **은퇴 조건**을 함께 박는다. 수를 흔드는 원인이 사라지면 수가 안정될 수 있고,
+/// 그때까지 이 규칙이 남으면 없는 병을 지키게 된다. 조건은 [`gui_amplifiers_live`] 가
+/// **자리로** 판정한다 — 둘 중 하나만 살아도 이 층은 옳다. 2026-09-07 현재 B 는 걷혔고
+/// A 가 산다. A 를 고치는 순간 이 단정이 울리는데, **울려야 할 때가 정확히 그때다.**
 #[test]
 fn the_gui_ignored_layer_has_no_single_value() {
     const MARKER: &str = "단일 값이 없다";
@@ -1971,11 +2131,15 @@ fn the_gui_ignored_layer_has_no_single_value() {
 
     let common = root.join("tests/gui_common/mod.rs");
     let common_text = std::fs::read_to_string(&common).expect("tests/gui_common/mod.rs 가 없다");
+    let (a_live, b_live) = gui_amplifiers_live(&common_text).expect(
+        "gui 하네스의 공유 인스턴스 표지를 못 찾았다 — 구조가 바뀌었으면 이 층을 다시 재라. \
+         판정 불가는 통과가 아니라 실패다(R435)",
+    );
     assert!(
-        common_text.contains("Mutex") && common_text.contains(".lock()"),
-        "gui 하네스의 공유 인스턴스(lock 뒤의 단일 인스턴스)가 사라졌다. 그것이 수를 \
-         흔들던 원인이므로, 이 층의 '{MARKER}' 가 아직 참인지 다시 재라 — 참이 아니게 \
-         됐으면 이 층 규칙과 문서의 표기를 함께 걷어라"
+        a_live || b_live,
+        "gui 하네스의 증폭기가 **둘 다** 걷혔다. 그것들이 수를 흔들던 원인이므로, 이 층의 \
+         '{MARKER}' 가 아직 참인지 다시 재라 — 참이 아니게 됐으면 이 층 규칙과 문서의 \
+         표기를 함께 걷어라"
     );
 
     let mut files = Vec::new();
@@ -1984,8 +2148,7 @@ fn the_gui_ignored_layer_has_no_single_value() {
     let mut carries_marker = false;
     let mut violations = Vec::new();
     for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let rel_str = normalized_rel(file, &root);
         if !rel_str.ends_with(".md") {
             continue;
         }
@@ -2022,10 +2185,101 @@ fn the_gui_ignored_layer_has_no_single_value() {
     );
 }
 
+/// 층 4 — 층 2·3 의 서술이 **워크플로와 같은 방향을 가리키는가.**
+///
+/// 층 2 는 `tests/gui_tests.rs` **소스만** 읽는다(전수가 `#[ignore]` 인가). 그래서 워크플로
+/// 쪽에서 누가 `-- --ignored` 를 넣으면 층 2 는 그대로 통과하는데 그 층의 서술
+/// ("디스플레이가 있어도 한 건도 안 돈다")은 **거짓이 된다.** 소스와 문서만 보는 층들이
+/// 워크플로의 변화에 대해 원리적으로 눈이 먼 자리다.
+///
+/// 이 층은 **결정을 선취하지 않는다.** "채널이 있어야 한다" 도 "없어야 한다" 도 아니고
+/// **두 쪽이 같은 방향인가**만 묻는다. 채널을 넣기로 하면 문서가 부정 표지를 걷어야 하고,
+/// 안 넣기로 하면 그 표지가 그 결정을 지키는 자리가 된다 — 등급은 누가 그것을 지키는가가
+/// 있어야 등급이다.
+///
+/// ☆ **수동 잡은 안 본다 — 의도된 것이다.** 물음이 "**자동** 채널이 있는가" 이므로
+/// [`automatic_job_bodies_of_dir`] 가 `workflow_dispatch` 전용 잡을 걸러낸다. 실측으로
+/// 밟았다: `test.yml` 의 `test-linux-x64` 에 `--ignored` 를 심는 첫 양성 대조가 **안 죽었고**,
+/// 원인은 판정이 아니라 그 잡이 수동 전용이라는 사실이었다(R522 — 대조가 안 죽으면
+/// 표적보다 **모형**을 먼저 의심한다). 자동 잡에 다시 심으니 죽는다.
+/// ⇒ 그 잡에 `-- --ignored` 를 얹는 선택지를 고르면 이 층은 잠잠하다. 그때 낡는 것은
+/// 이 층의 문장이 아니라 "담는다 ≠ 돌린다" 쪽이고, 그건 배치별 표가 갖는다.
+///
+/// ☆ **이 층이 못 잡는 것을 적어 둔다.** 채널이 생겼는데 문서가 부재 표지를 **걷기만**
+/// 하고 그 채널을 서술하지 않으면 여기는 통과한다 — 두 쪽이 모순은 아니기 때문이다.
+/// 그 자리(무엇을 어느 트리거·러너로 돌리는지)는 이 파일의 다른 축들과 `ci-gates.md` 의
+/// 배치별 표가 맡는다. 여기서 그것까지 요구하면 표현을 고정하게 되고, 그러면 문장을
+/// 다듬을 때마다 빨개진다.
+///
+/// **두 팔이 다 죽어야 방향을 재는 것이다.** 워크플로에 `--ignored` 를 심어도 빨개지고,
+/// 문서의 부재 표지를 걷어도 빨개진다. 한쪽만 죽으면 이 시험이 재는 것은 방향이 아니라
+/// 그 한쪽의 존재다.
+#[test]
+fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
+    const ABSENCE_CLAIM: &str = "`gui_tests` 에 자동 채널이 없다";
+    const CLAIM_DOC: &str = "docs/dev-guide/ci-gates.md";
+    let root = repo_root();
+
+    let bodies = automatic_job_bodies_of_dir(&root.join(".github/workflows"), &WORKFLOW_FLOOR);
+    assert!(
+        bodies.len() >= 8,
+        "자동 잡을 {}개밖에 못 읽었다 — 판독이 죽으면 `--ignored` 가 있어도 0 이 나오고 \
+         이 층은 언제나 '부재' 쪽으로 판정한다(R435)",
+        bodies.len()
+    );
+
+    // 주석을 뗀 사본에서 센다. 물음이 "명령에 있는가" 이므로 사본도 명령만 남은 것이어야
+    // 한다 — 그 규칙을 *설명하는* 주석이 명령으로 읽히면 없는 채널이 있는 것으로 잡힌다.
+    let firing: Vec<String> = bodies
+        .iter()
+        .flat_map(|b| run_commands(b))
+        .map(|c| {
+            c.lines()
+                .map(|l| match l.find('#') {
+                    Some(at) => &l[..at],
+                    None => l,
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|c| c.contains("--ignored"))
+        .collect();
+
+    let doc_text = std::fs::read_to_string(root.join(CLAIM_DOC))
+        .unwrap_or_else(|e| panic!("{CLAIM_DOC} 를 읽지 못했다: {e}"));
+    assert!(
+        doc_text.contains("gui_tests"),
+        "{CLAIM_DOC} 이 `gui_tests` 를 아예 언급하지 않는다 — 읽기가 죽었거나 문서가 \
+         통째로 바뀌었다. 어느 쪽이든 아래 방향 판정은 뜻이 없다(R435)"
+    );
+    let says_absent = unwrapped(&doc_text).contains(ABSENCE_CLAIM);
+
+    if firing.is_empty() {
+        assert!(
+            says_absent,
+            "워크플로의 자동 잡 어디에도 `--ignored` 가 없는데 {CLAIM_DOC} 에서 \
+             '{ABSENCE_CLAIM}' 표지가 사라졌다.\n\
+             그 표지가 이 방향의 **값 자리**다 — 없으면 이 층은 지킬 것이 없는 채로 \
+             언제나 초록이 된다. 채널을 안 두기로 한 결정이면 그 문장을 되살리고, \
+             표현을 바꿨으면 이 상수도 함께 옮겨라"
+        );
+    } else {
+        assert!(
+            !says_absent,
+            "자동 잡이 `--ignored` 를 넘긴다 — 즉 `gui_tests` 에 자동 실행 채널이 \
+             생겼다:\n  {}\n\
+             그런데 {CLAIM_DOC} 은 아직 '{ABSENCE_CLAIM}' 라고 적고 있다.\n\
+             채널을 넣는 결정의 부수효과로 문서가 조용히 거짓이 되는 자리다 — \
+             그 서술과 등급을 함께 고쳐라(무엇을 어느 트리거·러너로 돌리는지까지)",
+            firing.join("\n  ")
+        );
+    }
+}
+
 /// 회귀 케이스 — **한 표 안에서 채널이 갈리는 행들.**
 ///
 /// `docs/design/systems/theme.md` 의 토큰 규칙 표는 네 자리에서 가드를 인용하는데, 셋은
-/// 통합 테스트(`tests/design_token_adherence.rs`)이고 하나는 lib 유닛 테스트다. 문자열만
+/// 통합 테스트(`crates/tasty-doc-guards/tests/design_token_adherence.rs`)이고 하나는 lib 유닛 테스트다. 문자열만
 /// 보고 일괄 처리하면 넷이 같아 보여서 **맞게 적힌 행까지 함께 지워진다.** 이 테스트는
 /// 그 표가 대상별로 갈린 상태를 유지하는지 고정한다.
 ///
@@ -2093,6 +2347,20 @@ fn the_self_silencing_axis_names_what_silenced_it() {
     );
 }
 
+/// `theme.md` 의 표가 **채널이 다른 두 가드를 섞어 적지 않는지** 본다.
+///
+/// ★ 이 시험의 전제가 2026-09-07 에 바뀌었다. 예전에는 대비가 "통합 테스트 = 조합 하나 ·
+/// lib 유닛 테스트 = 자동" 이었다. `design_token_adherence` 가 `crates/tasty-doc-guards`
+/// 로 옮겨 가면서 **그쪽도 자동으로 돈다** — `doc-guards.yml` 이 경로 필터 없이 그
+/// 크레이트를 통째로 돌린다. 그래서 지금의 대비는 조합이 아니라 **어느 워크플로냐**다.
+///
+/// 술어를 그만큼만 넓힌다: 통합 테스트 쪽은 (가) 도는 조합을 한정하거나 (나) **그 자동
+/// 채널을 이름으로 대고** 자동 실행을 서술해야 한다. 둘 다 채널을 말하는 문장이라, 넓힌
+/// 것이 아니라 **참인 형태가 둘이 된 것**이다. 막연한 "돈다" 는 여전히 안 통과한다 —
+/// (나)는 `doc-guards` 라는 이름과 서술어를 **함께** 요구한다.
+///
+/// **이 타깃이 또 옮겨지면 이 술어도 같이 옮겨라.** 여기 박힌 `doc-guards` 는 지금 그
+/// 타깃이 사는 자리이지 영구 사실이 아니다.
 #[test]
 fn the_theme_table_keeps_the_two_channels_apart() {
     let path = repo_root().join("docs/design/systems/theme.md");
@@ -2105,9 +2373,20 @@ fn the_theme_table_keeps_the_two_channels_apart() {
     );
     for at in integration {
         let window = claim_scope(&text, at);
+        let combo_qualified = COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m));
+        // 자동 채널을 **이름으로 대고** 자동 실행을 서술한 형태. 이름만 있거나 서술어만
+        // 있으면 안 된다 — 둘을 함께 요구해야 "어느 채널이" 라는 물음에 답이 된다.
+        //
+        // ★ 이름은 **워크플로 파일 이름**으로 묻는다. `"doc-guards"` 로 물으면 같은 항목에
+        // 적힌 **좌표**(`crates/tasty-doc-guards/tests/…`)가 그 조건을 충족해 버린다 —
+        // 변이로 실측했다(2026-09-07): 채널 이름을 "그 자동 잡" 으로 지워도 초록이었다.
+        // 가드가 묻는 것은 "그 타깃이 어디 사는가" 가 아니라 **"무엇이 그것을 돌리는가"** 다.
+        let channel_named = window.contains("doc-guards.yml")
+            && AUTOMATIC_CHANNEL_MARKERS.iter().any(|m| window.contains(m));
         assert!(
-            COMBO_QUALIFIED_MARKERS.iter().any(|m| window.contains(m)),
-            "{}:{} — 통합 테스트인데 어느 조합에서 도는지가 함께 적혀 있지 않다.\n  \
+            combo_qualified || channel_named,
+            "{}:{} — 통합 테스트인데 어느 조합에서 도는지도, 어느 자동 채널이 돌리는지도 \
+             함께 적혀 있지 않다.\n  \
              ★ 이 판정기가 보는 것은 **표지가 있는가**뿐이고 그 표지가 **맞는가**는 \
              안 본다. 그러니 아무 표지나 붙이면 빨강은 사라지지만 그 행은 이제 \
              **틀린 조합을 단언한다** — 없던 것보다 나쁘다. 그 타깃이 실제로 도는 \
@@ -3080,7 +3359,7 @@ const AUTOMATIC_FULL: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n 
 fn a_workflow_is_read_under_either_extension() {
     for (name, file) in [("yml", "ci.yml"), ("yaml", "ci.yaml")] {
         let dir = workflow_dir(name, &[(file, AUTOMATIC_FULL)]);
-        let bodies = automatic_job_bodies_of_dir(&dir);
+        let bodies = automatic_job_bodies_of_dir(&dir, &CALLER_SUPPLIED_FLOOR);
         assert_eq!(bodies.len(), 1, "{file} 을 워크플로로 읽지 않았다");
         assert!(bodies[0].contains("cargo test --workspace"));
         // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -3090,7 +3369,7 @@ fn a_workflow_is_read_under_either_extension() {
     // 워크플로가 아닌 확장자는 들어오지 않는다 — 모수를 넓히는 것과 아무거나 읽는 것은 다르다.
     let dir = workflow_dir("other", &[("notes.md", AUTOMATIC_FULL)]);
     assert!(
-        automatic_job_bodies_of_dir(&dir).is_empty(),
+        automatic_job_bodies_of_dir(&dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
         "워크플로가 아닌 파일을 잡 본문으로 읽었다"
     );
     // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -3105,7 +3384,7 @@ fn widening_the_extension_does_not_widen_the_trigger_rule() {
     for (name, file) in [("m-yml", "manual.yml"), ("m-yaml", "manual.yaml")] {
         let dir = workflow_dir(name, &[(file, manual)]);
         assert!(
-            automatic_job_bodies_of_dir(&dir).is_empty(),
+            automatic_job_bodies_of_dir(&dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
             "{file}: 수동 전용 워크플로가 자동 잡으로 들어왔다"
         );
         // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
@@ -3233,5 +3512,271 @@ fn the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists(
          `ci-gates.md` 에 채널을 적는다), (나) 불안정해서 뺀 것인가(그러면 상한이 아니라 \
          그 불안정이 사건이다). 상한을 올리는 것은 (가) 를 확인하고 채널을 적은 뒤다.",
         skipped.len()
+    );
+}
+
+// ── 세 번째 축 — 문서의 실행 목록이 워크플로가 부르는 것과 같은가 ─────────────
+
+/// 한 워크플로가 `run:` 으로 부르는 게이트 스크립트의 **파일 이름**들.
+///
+/// **열거를 복사해 갖고 있지 않다** — 이 파일의 다른 두 축과 같은 규칙이다. 목록을
+/// 러스트 상수로 두면 워크플로에 게이트를 하나 더할 때 그 상수가 안 따라가고, 그러면
+/// 이 가드가 **자기가 잡으려는 결함을 자기 안에 만든다.**
+fn gate_scripts_of_workflow(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    // `scripts/<이름>.sh` 형태만 본다. 게이트로 좁히는 것은 접두 `check-` 다 —
+    // 빌드 스크립트(`build-*.sh`)는 판정하지 않으므로 이 축의 물음 밖이다.
+    while let Some(at) = rest.find("scripts/check-") {
+        let tail = &rest[at + "scripts/".len()..];
+        let end = tail
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'))
+            .unwrap_or(tail.len());
+        let name = &tail[..end];
+        if name.ends_with(".sh") && !out.iter().any(|n| n == name) {
+            out.push(name.to_string());
+        }
+        rest = &rest[at + "scripts/".len()..];
+    }
+    out.sort();
+    out
+}
+
+/// 그 워크플로가 부르는 게이트 스크립트를 워크플로 **파일 이름**으로 색인한다.
+fn gate_scripts_by_workflow(workflows: &Path) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for w in workflow_files(workflows, &WORKFLOW_FLOOR) {
+        let text = std::fs::read_to_string(&w.path).unwrap_or_default();
+        let scripts = gate_scripts_of_workflow(&text);
+        if scripts.is_empty() {
+            continue;
+        }
+        // `rel` 은 워크플로 디렉토리 기준이라 여기서는 파일 이름과 같다. 문서가 드는
+        // 것도 파일 이름이므로 그대로 색인한다.
+        out.push((w.rel.clone(), scripts));
+    }
+    out.sort();
+    out
+}
+
+/// 문서의 한 서술이 워크플로를 이름으로 들면서 그 워크플로의 게이트 스크립트를
+/// **일부만** 들고 있는가.
+///
+/// ## 좌변은 **두 겹**이다 — 여기를 한 겹으로 읽으면 모수를 몇 배로 틀린다
+///
+/// 워크플로 이름은 실행 목록 밖에서도 쓰인다("그 워크플로는 run 이력이 0 건이었다").
+/// 그런 서술에 스크립트 목록을 요구하면 거짓 위반이 된다. 그래서 좁히는데, **한 번이
+/// 아니라 두 번 좁힌다.** 아래 본문의 두 `continue` 가 그것이고, 둘 다 좌변의 일부다.
+///
+/// 1. **하나라도 든 자리** — 그 워크플로의 게이트 스크립트를 하나도 안 들면 그 서술은
+///    실행 목록이 아니다. 조용히 통과한다.
+/// 2. **자칭 두 모양** — `named.len() >= 2 || workflow_is_subject`. 하나만 든 자리가
+///    전부 목록인 것은 아니다. 이 레포의 채널 서술은 압도적으로 **게이트가 주어**이고
+///    워크플로가 그 게이트의 속성이다(`| <축> | <스크립트> | <워크플로> |` — 실물 행은
+///    아래 본문 주석이 하나 들고 있고, 여기서 다시 베끼면 그 사본이 둘이 되면서 이 축의
+///    모수도 한 칸 는다). 그런 자리에 형제 게이트를 적으라고 요구하면 게이트마다
+///    한 행씩인 **정본 표의 모든 행이 형제 이름을 베껴 갖게 된다 — 이 가드가 막으려는
+///    바로 그 사본이다.** 그래서 워크플로가 주어로 앞에 오거나 스크립트를 둘 이상 든
+///    자리만 목록으로 친다.
+///
+/// **2 를 군더더기로 읽고 지우지 마라.** 그것 없이 재면 판정이 몇 배로 늘고 늘어난
+/// 것이 전부 오탐이다 — 값은 아래 모듈 주석의 "가드가 막지 못하는 것" 절에 날짜와 함께
+/// 있다. 지운 쪽이 조용한 것도 아니다: 위반이 무더기로 나오는데 그 처방이 사본을 만든다.
+///
+/// ## 그 좌변이 지금 몇 곳인가 — **여기 안 적는다, 테스트가 센다**
+///
+/// 깔때기(이름을 든 자리 → 하나라도 든 자리 → 실제 판정)의 수는 문서가 하나 늘 때마다
+/// 바뀐다. 적는 순간 낡는 부류라([ADR-0139](docs/adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md))
+/// 이 테스트가 셋을 직접 세어 `FUNNEL` 한 줄로 찍고, 모수 assert 도 그 셋을 함께 든다.
+/// 지금 값을 보려면:
+///
+/// ```text
+/// cargo test -p tasty-doc-guards --test ci_channel_claims_match_workflows \
+///   no_file_lists_only_some_of_the_gates_a_workflow_runs -- --nocapture
+/// ```
+///
+/// 반대로 **한 번 하고 마는 실측**(문턱을 낮추면 오탐이 몇이더냐 같은)은 커밋마다 바뀌는
+/// 값이 아니라 그 회차의 관측이라, 날짜를 붙여 산문에 남긴다. 두 부류를 같은 자리에
+/// 섞지 않는 것이 이 갈래의 요지다.
+///
+/// ## 실물 둘이 이 축을 세우게 했다 (2026-09-07)
+///
+/// 두 자리가 같은 형태로 어긋나 있었다 — 워크플로는 셋을 부르는데 문서는 둘을 들고,
+/// 다른 워크플로는 둘을 부르는데 문서는 하나를 들었다. **설명은 있고 돌리는 법이
+/// 없다.** 두 워크플로 · 두 문서에서 같은 형태로 났으니 우연이 아니다: 문서가 CI 를
+/// 서술할 때 워크플로 파일이 아니라 기억에서 쓴다.
+/// 파일이 자기 이름을 드는 것은 목록도 주장도 아니라 자기소개다.
+fn own_name(rel: &str) -> &str {
+    rel.rsplit('/').next().unwrap_or(rel)
+}
+
+#[test]
+fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
+    let root = &repo_root();
+    let index = gate_scripts_by_workflow(&root.join(".github/workflows"));
+    assert!(
+        !index.is_empty(),
+        "게이트 스크립트를 부르는 워크플로가 0 개다 — 순회나 추출이 죽었다. 이 상태의 \
+         '위반 0' 은 '문서가 맞다' 가 아니라 '아무것도 안 봤다' 다."
+    );
+
+    let mut files = Vec::new();
+    collect_files(root, &mut files);
+    files.sort();
+
+    let mut all_scripts: Vec<String> = index.iter().flat_map(|(_, s)| s.clone()).collect();
+    all_scripts.sort();
+    all_scripts.dedup();
+
+    let mut violations = Vec::new();
+    let mut misattributed: Vec<String> = Vec::new();
+    let mut judged = 0usize;
+    // 좌변 깔때기 — 위 doc 주석의 "여기 안 적는다, 테스트가 센다".
+    let mut mentions = 0usize; // 워크플로 이름을 든 산문 자리 (전수)
+    let mut named_any = 0usize; // 그중 그 워크플로의 게이트를 하나라도 든 자리
+    for path in &files {
+        // 경로를 손으로 벗기지 않는다 — [`normalized_rel`] 이 `\` 를 `/` 로 편다.
+        // 이 자리는 한때 `strip_prefix(root).display().to_string()` 이었고, 그 문자열은
+        // Windows 에서 `scripts\check-allow-reason.sh` 가 되어 아래 `/` 리터럴 비교가
+        // **조용히 빗나갔다** (실패가 아니라 오답이다 — 아래 모듈 주석 "경로를 문자열로
+        // 다루는 자리" 참조).
+        let rel = normalized_rel(path, root);
+        // 이 가드 자신은 판정 대상이 아니다 — 아래에서 워크플로 이름과 스크립트 이름을
+        // 산문으로 들지 않는 이유가 그것이다(들면 자기가 자기를 고발한다). 대신 경로
+        // 면제를 두지 않고 **소스의 산문만 본다**: 다른 두 축이 쓰는 규칙 그대로다.
+        // 워크플로 파일 자신은 판정 대상이 아니다 — 그것이 정본이고, 정본을 자기 사본과
+        // 대조하면 언제나 같거나(무의미) 파싱 사고다.
+        if rel.starts_with(".github/workflows/") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for (workflow, scripts) in &index {
+            let mut from = 0usize;
+            while let Some(at) = text[from..].find(workflow.as_str()) {
+                let at = from + at;
+                from = at + workflow.len();
+                if !is_prose_line(&text, at, &rel) {
+                    continue;
+                }
+                mentions += 1;
+                let scope = claim_scope(&text, at);
+
+                // ── 반대 방향: 그 범위가 **안 부르는** 스크립트를 그 워크플로의 것처럼
+                // 들었는가. 누락만 보면 집합의 한쪽 포함만 판정한다 — 양쪽을 봐야 집합
+                // 동등이다.
+                //
+                // 다만 **근접은 귀속이 아니다.** 산문 문단은 게이트를 선례로 들면서 옆
+                // 문장에서 다른 워크플로를 말할 수 있고, 그것은 거짓 주장이 아니다(실측:
+                // 이 조건 없이 재면 그런 자리가 열 곳이었고 열 곳 다 오탐이었다). 귀속이
+                // 실제로 성립하는 형태는 **표 행**이다 — 칸이 곧 필드라 같은 행에 놓인
+                // 게이트와 채널은 서로에 대한 주장이 된다. 그래서 이쪽만 본다.
+                // ★ 그래서 이 제한은 **이 방향의 조건**이지 순회의 조건이 아니다. 한때
+                // `continue` 였고, 그러면 아래 누락 방향까지 통째로 건너뛰어 **표가
+                // 아닌 자리는 누락을 아예 안 보는** 상태였다.
+                if scope.trim_start().starts_with('|') {
+                    let claimed: Vec<&(String, Vec<String>)> = index
+                        .iter()
+                        .filter(|(w, _)| scope.contains(w.as_str()))
+                        .collect();
+                    for script in &all_scripts {
+                        if !scope.contains(script.as_str()) || script.as_str() == own_name(&rel) {
+                            continue;
+                        }
+                        if claimed.iter().any(|(_, ss)| ss.contains(script)) {
+                            continue;
+                        }
+                        let line = line_of(&text, at);
+                        let msg = format!(
+                            "  {rel}:{line} — `{script}` 를 들었는데 이 자리가 든 워크플로 {:?} 중 어느 것도 그것을 안 부른다",
+                            claimed.iter().map(|(w, _)| w.as_str()).collect::<Vec<_>>()
+                        );
+                        if !misattributed.contains(&msg) {
+                            misattributed.push(msg);
+                        }
+                    }
+                }
+
+                // 자기 이름을 드는 것은 목록이 아니라 자기소개다. 게이트 스크립트 머리의
+                // `채널: …/script-gates.yml` / `사용: scripts/<자기>.sh` 두 줄이 그 형태이고,
+                // 거기에 형제 게이트를 적으라고 요구하면 스크립트마다 세 이름을 베껴 두게
+                // 되어 사본이 셋으로 늘어난다.
+                let named: Vec<&String> = scripts
+                    .iter()
+                    .filter(|s| s.as_str() != own_name(&rel) && scope.contains(s.as_str()))
+                    .collect();
+                if named.is_empty() {
+                    continue; // 실행 목록이 아니다 (좌변 1 겹)
+                }
+                named_any += 1;
+                // **완전성 의무는 그 자리가 열거를 자칭할 때만 생긴다.** 이 레포의 채널
+                // 서술은 압도적으로 반대 방향이다 — 게이트 하나가 주어이고 워크플로는 그
+                // 게이트의 속성이다(`| 파일 SLOC | check-file-size.sh | complexity-check.yml |`).
+                // 그런 자리가 형제 게이트를 안 적는 것은 정상이고, 표는 오히려 게이트마다
+                // 행을 하나씩 두는 것이 정본 형태다. 자칭을 두 모양으로 읽는다:
+                //   A 워크플로가 **주어**다 — 범위 안에서 워크플로가 모든 스크립트보다 앞에 온다.
+                //   B 스크립트를 **둘 이상** 들었다 — 하나면 그 게이트 얘기지만 둘부터는 목록이다.
+                // 실측: 이 둘을 빼면 판정 18 곳 중 16 곳이 위반으로 나왔고 그중 14 곳이
+                // 게이트마다 한 행씩인 정본 표였다.
+                let wf_at = scope.find(workflow.as_str()).unwrap_or(0);
+                let workflow_is_subject = named
+                    .iter()
+                    .filter_map(|s| scope.find(s.as_str()))
+                    .all(|s| wf_at < s);
+                if named.len() < 2 && !workflow_is_subject {
+                    continue;
+                }
+                judged += 1;
+                let missing: Vec<&str> = scripts
+                    .iter()
+                    .filter(|s| !scope.contains(s.as_str()))
+                    .map(|s| s.as_str())
+                    .collect();
+                if !missing.is_empty() {
+                    violations.push(format!(
+                        "  {rel}:{} — `{workflow}` 을 들면서 {:?} 는 적고 {:?} 가 빠졌다",
+                        line_of(&text, at),
+                        named.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                        missing
+                    ));
+                }
+            }
+        }
+    }
+
+    println!(
+        "FUNNEL 워크플로 이름을 든 자리 {mentions} → 게이트를 하나라도 든 자리 \
+         {named_any} → 자칭 두 모양까지 통과해 판정된 자리 {judged} (스크립트를 하나도 \
+         안 든 자리 {})",
+        mentions - named_any
+    );
+    assert!(
+        judged > 0,
+        "워크플로의 실행 목록을 적은 자리가 0 곳이다 — 검출기가 죽었을 때도 이 축은 \
+         초록이 되므로 모수를 함께 본다. 좌변 깔때기: 이름을 든 자리 {mentions} → \
+         하나라도 든 자리 {named_any} → 판정 {judged}. 어느 칸에서 0 이 되는지가 \
+         무엇이 죽었는지를 가른다 — 첫 칸이 0 이면 순회가, 둘째가 0 이면 추출이, \
+         셋째만 0 이면 자칭 필터가 원인이다."
+    );
+    assert!(
+        violations.is_empty(),
+        "문서가 워크플로의 게이트를 **일부만** 적었다. 읽는 사람은 적힌 것이 전부라고 \
+         읽고, 빠진 게이트는 아무도 커밋 전에 안 돌린다. 판정 {judged} 곳 중 {} 곳:\n{}\n\
+         고치는 법: 그 서술에 빠진 스크립트를 더해라. 워크플로가 더 이상 안 부르는 \
+         것이면 워크플로 쪽이 정본이니 문서에서 빼라.\n\
+         ★ 목록을 이 가드에 복사하지 마라 — 열거는 워크플로에서 런타임에 읽는다.",
+        violations.len(),
+        violations.join("\n")
+    );
+    assert!(
+        misattributed.is_empty(),
+        "문서가 어떤 워크플로가 **안 부르는** 게이트를 그 워크플로의 것처럼 적었다. \
+         읽는 사람은 그 게이트에 채널이 있다고 읽는데 그 채널은 그것을 안 돌린다 — \
+         빠진 것보다 조용하다. {} 곳:\n{}\n\
+         고치는 법: 그 자리가 드는 워크플로를 그 게이트를 실제로 부르는 것으로 바꿔라. \
+         정본은 워크플로 파일이다.",
+        misattributed.len(),
+        misattributed.join("\n")
     );
 }

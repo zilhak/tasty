@@ -8,7 +8,7 @@
 //! `doc-guards.yml` 이 main push · PR 마다 이 타깃을 돌리고, `check-headless` 의 전체
 //! 스위트에서도 돈다(`docs/dev-guide/ci-gates.md`).
 //!
-//! 선례: `tests/plugin_manifest_version_parity.rs`(plugin `Cargo.toml` ↔
+//! 선례: `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs`(plugin `Cargo.toml` ↔
 //! `tasty-plugin.toml` lockstep). 같은 형태의 "선언값이 두 곳에 중복 존재" 드리프트다.
 
 use std::path::{Path, PathBuf};

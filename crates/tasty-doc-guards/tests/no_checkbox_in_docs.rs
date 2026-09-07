@@ -17,7 +17,7 @@
 //! **코드 펜스 안팎을 구분하지 않는다.** 규칙이 "docs 문서에 체크리스트를 넣지
 //! 않는다" 이므로 펜스 안의 예시도 금지 대상이다.
 //!
-//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(docs 스캔 구조) · `tests/no_emoji_in_source.rs`.
+//! 선례: `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(docs 스캔 구조) · `crates/tasty-doc-guards/tests/no_emoji_in_source.rs`.
 
 // 이유: 이 타깃은 전부 테스트다. 테스트의 `let _` 무시는 정책이 사유를 요구하지
 // 않으므로 `clippy::let_underscore_must_use` 명부(프로덕션 전용)에 섞이면 안 된다

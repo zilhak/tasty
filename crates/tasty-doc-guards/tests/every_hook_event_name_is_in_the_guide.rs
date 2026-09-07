@@ -33,6 +33,7 @@
 //! `doc-guards.yml` — main push · PR 마다 경로 필터 없이 돈다. 이 축을 재는 채널은 그 하나다.
 
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
 
 /// 가이드에 **일부러 없는** 이벤트와 그 사유. 자리로 적는다 — 부류로 적으면 도망길이 된다.
 ///
@@ -92,29 +93,38 @@ fn event_names(root: &Path) -> Vec<String> {
     out
 }
 
+/// 가이드 원본 순회의 하한. 이 아래로 모이면 순회가 죽은 것으로 본다 — 그리고 그때
+/// "미스 0" 은 일치했다는 뜻이 아니라 **모수가 비었다**는 뜻이다.
+const GUIDE_FLOOR: Floor = Floor {
+    min: 12,
+    measured: 18,
+    measured_on: "2026-09-07",
+    why_this_gap: "이 모수는 `site/content` 의 한국어 원본 `.md` 수다(번역 `en/` 제외). \
+                   가이드 장은 합쳐지고 갈리므로 몇 개는 움직이지만, 12 아래는 장이 줄어든 \
+                   게 아니라 순회 루트나 `en/` 가지치기가 어긋난 것이다.",
+};
+
 /// 한국어 가이드 원본 전체를 한 덩어리로.
 fn guide_text(root: &Path) -> String {
-    fn walk(dir: &Path, out: &mut String) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path.file_name().map(|n| n == "en").unwrap_or(false) {
-                    continue; // 번역은 별도 절차다.
-                }
-                walk(&path, out);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("md")
-                && let Ok(text) = std::fs::read_to_string(&path)
-            {
-                out.push_str(&text);
-                out.push('\n');
-            }
-        }
-    }
+    // 공용 순회를 쓴다. 손으로 재귀하면 `read_dir` 실패가 **조용한 빈손**이 되고, 그러면
+    // "가이드에 그 이름이 다 있다" 가 아니라 "가이드를 한 글자도 안 읽었다" 가 초록이 된다.
+    let dir = root.join("site/content");
+    let walked = walk_with_floor(&dir, &dir, &GUIDE_FLOOR, Descend::Everything, &|w| {
+        // 번역은 별도 절차다 — 원본만 본다.
+        w.rel.ends_with(".md") && !w.rel.starts_with("en/")
+    })
+    .unwrap_or_else(|why| panic!("{why}"));
+
     let mut out = String::new();
-    walk(&root.join("site/content"), &mut out);
+    for w in walked {
+        // 읽기 실패를 건너뛰면 순회 하한을 통과한 채로 본문만 비는 길이 남는다 — 하한이
+        // 세는 것은 **찾은** 파일이지 **읽은** 파일이 아니다. 그 상태의 "미스 0" 은 순회가
+        // 죽었을 때와 같은 거짓 초록이라, 여기서 시끄럽게 죽는다.
+        let text = std::fs::read_to_string(&w.path)
+            .unwrap_or_else(|e| panic!("가이드 원본을 읽지 못했다: {} — {e}", w.path.display()));
+        out.push_str(&text);
+        out.push('\n');
+    }
     out
 }
 

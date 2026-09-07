@@ -1,9 +1,15 @@
 //! **`ci-gates.md` 가 가드 테스트에 대해 하는 두 주장을 워크플로에서 다시 읽는다.**
 //!
 //! 그 문서는 `crates/tasty-doc-guards/tests/*` 를 두고 축이 둘이라고 적는다 — 컴파일
-//! 채널은 있고(Windows 잡의 `--all-targets`), 실행 채널은 없다(실행하는 자동 잡은
-//! `doc-guards.yml` 하나이고 ubuntu). 그 두 문장은 **워크플로가 정하는 사실**인데
-//! 지키는 것이 없었다.
+//! 채널(Windows 잡의 `--all-targets`)과 실행 채널. 그 두 문장은 **워크플로가 정하는
+//! 사실**인데 지키는 것이 없었다.
+//!
+//! **실행 축의 사실이 2026-09-07 에 바뀌었다.** 오래 `doc-guards.yml`(ubuntu) 하나였고
+//! 이 파일은 "ubuntu 말고는 아무도 안 돌린다" 를 지켰다. 지금은 `crossplatform-check.yml`
+//! 의 Windows 잡이 `-p tasty-doc-guards` 로 함께 돌린다 — 이 크레이트의 스캔 가드가
+//! 경로를 문자열로 펴는 자리에서 구분자 때문에 Windows 에서만 **조용한 0** 이 되는
+//! 형태를 열려는 것이다. 그래서 이 파일이 지키는 것도 **부재가 아니라 두 채널의 존재**로
+//! 바뀌었다. 부재를 지키던 단정을 그대로 두면 채널이 는 날 영구히 빨갛다.
 //!
 //! 이 레포는 그 형태를 이미 안다 — 문서·주석이 "이건 저것과 같다" 고 말하는데 그 같음을
 //! 지키는 것이 없으면 둘은 갈리고, **갈린 뒤에도 문서는 계속 같다고 말한다.** 그리고 그
@@ -23,10 +29,37 @@
 
 use std::path::PathBuf;
 
+use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
 use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
 
 /// 이 주장이 사는 자리. 빨개졌을 때 고칠 곳을 실패문이 지목한다.
 const DOC: &str = "docs/dev-guide/ci-gates.md";
+
+/// 워크플로 순회의 하한. 이 아래로 모이면 순회가 죽은 것으로 본다.
+const WORKFLOW_FLOOR: Floor = Floor {
+    min: 8,
+    measured: 11,
+    measured_on: "2026-09-07",
+    why_this_gap: "이 모수는 `.github/workflows/*.yml` 의 수다. 워크플로는 통합할 때 \
+                   가끔 합쳐지므로 몇 개는 줄 수 있지만, 8 아래로 떨어지는 것은 파일이 \
+                   줄어든 게 아니라 순회 루트가 어긋난 것이다.",
+};
+
+/// 잡 하한. [`WORKFLOW_FLOOR`] 와 **모수가 다르다** — 저쪽은 `.yml` 파일 수이고 여기는
+/// 그 파일들에서 뽑아낸 **자동 잡의 수**다. 파일은 다 읽혔는데 잡 헤더 판독이 깨지면
+/// 저쪽은 통과하고 여기가 잡는다(그 판독은 2 칸 들여쓰기 관례에 매달려 있다 —
+/// `automatic_job_bodies` 의 doc 참조). 두 하한이 같은 8 인 것은 우연이다.
+///
+/// ☆ **이 하한도 읽기의 죽음까지는 못 막는다.** 파일이 **전부** 안 읽히면 잡이 0 이라
+/// 여기서 걸리지만, 열한 중 셋만 못 읽히면 잡 수가 8 위에 남아 그대로 통과한다 —
+/// 그 부분적 실명을 막는 것은 하한이 아니라 `automatic_jobs` 의 읽기 실패 패닉이다.
+const JOB_FLOOR: Floor = Floor {
+    min: 8,
+    measured: 20,
+    measured_on: "2026-09-07",
+    why_this_gap: "잡은 워크플로마다 하나에서 넷까지라 파일 수보다 흔들린다. 그래도 \
+                   8 아래는 파일이 줄어든 것이 아니라 잡 헤더 판독이 깨진 것이다.",
+};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -38,24 +71,30 @@ fn repo_root() -> PathBuf {
 
 /// 자동 회차에 도는 잡의 본문 전부.
 fn automatic_jobs() -> Vec<(String, String)> {
-    let dir = repo_root().join(".github/workflows");
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("워크플로 디렉토리를 못 읽었다: {} — {e}", dir.display()));
+    let root = repo_root();
+    let dir = root.join(".github/workflows");
+    // 공용 순회를 쓴다. 직접 `read_dir` 하면 디렉토리가 비거나 못 읽혔을 때 "위반 0" 이
+    // 나오고, 그것은 위반이 없다는 뜻이 아니라 아무것도 안 봤다는 뜻이다.
+    let walked = walk_with_floor(&dir, &dir, &WORKFLOW_FLOOR, Descend::Everything, &|w| {
+        w.rel.ends_with(".yml")
+    })
+    .unwrap_or_else(|why| panic!("{why}"));
+
     let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_none_or(|e| e != "yml") {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+    for w in walked {
+        // ★ **읽기 실패를 넘기지 않는다.** 하한은 **순회**의 죽음을 막지 **읽기**의 죽음을
+        // 안 막는다 — `continue` 로 넘기면 파일 셋이 안 읽혀도 순회 하한은 그대로 통과하고
+        // 본문만 빈다. 그러면 아래 단정들은 "그 잡이 없다" 가 아니라 "그 잡을 안 봤다" 를
+        // 근거로 판정한다. 여기 오는 경로는 순회가 방금 찾아낸 것이라 못 읽는 것은 평범한
+        // 조건이 아니다.
+        let text = std::fs::read_to_string(&w.path).unwrap_or_else(|e| {
+            panic!(
+                "워크플로 {} 를 못 읽었다: {e}\n                 순회 하한은 통과했는데 본문이 비면 아래 단정은 미측정을 통과로 센다.",
+                w.rel
+            )
+        });
         for body in automatic_job_bodies(&text) {
-            out.push((name.clone(), body));
+            out.push((w.rel.clone(), body));
         }
     }
     out
@@ -91,9 +130,11 @@ fn runs_on_ubuntu(body: &str) -> bool {
 fn the_compile_channel_for_guard_tests_still_exists_on_windows() {
     let jobs = automatic_jobs();
     assert!(
-        jobs.len() >= 8,
-        "자동 잡을 {} 개밖에 못 읽었다(하한 8) — 파싱이 깨지면 아래 판정이 전부 공허하다",
-        jobs.len()
+        jobs.len() >= JOB_FLOOR.min,
+        "자동 잡을 {} 개밖에 못 읽었다(하한 {}) — {}",
+        jobs.len(),
+        JOB_FLOOR.min,
+        JOB_FLOOR.why_this_gap
     );
 
     let compilers: Vec<&str> = jobs
@@ -112,7 +153,7 @@ fn the_compile_channel_for_guard_tests_still_exists_on_windows() {
 }
 
 #[test]
-fn nothing_but_ubuntu_runs_the_guard_crate_tests() {
+fn the_execution_channel_for_guard_tests_spans_ubuntu_and_windows() {
     let jobs = automatic_jobs();
     let runners: Vec<&(String, String)> = jobs
         .iter()
@@ -130,16 +171,23 @@ fn nothing_but_ubuntu_runs_the_guard_crate_tests() {
          술어가 죽었거나 그 채널이 통째로 사라졌다. 어느 쪽이든 `{DOC}` 의 문단이 낡았다"
     );
 
-    let off_ubuntu: Vec<&str> = runners
-        .iter()
-        .filter(|(_, b)| !runs_on_ubuntu(b))
-        .map(|(n, _)| n.as_str())
-        .collect();
+    // ubuntu 채널 — `doc-guards.yml`. 이것이 **문서만 바뀐 push 에서 도는 유일한 채널**이라
+    // (그 잡에만 `paths-ignore` 가 없다) 사라지면 실행 축이 조건부가 된다.
     assert!(
-        off_ubuntu.is_empty(),
-        "ubuntu 가 아닌 러너가 이제 가드 크레이트 테스트를 돌린다: {off_ubuntu:?}\n\
-         `{DOC}` 은 그 통합 테스트의 **실행 축에는 채널이 없다**고 적는다(실행하는 자동 \
-         잡은 ubuntu 하나). 채널이 늘었으면 그건 좋은 소식이고, **문단을 그에 맞게 \
-         고쳐라** — 남겨 두면 다음 사람이 이미 재고 있는 것을 미측정으로 센다"
+        runners.iter().any(|(_, b)| runs_on_ubuntu(b)),
+        "ubuntu 러너가 가드 크레이트 테스트를 하나도 안 돌린다. `{DOC}` 은 그 채널을 \
+         **문서만 바뀐 push 에서 도는 유일한 테스트 채널**로 적는다 — 그 문단이 거짓이 \
+         됐으면 문서를 고치고, 아니면 `doc-guards.yml` 이 좁아진 것이다"
+    );
+
+    // Windows 채널 — `crossplatform-check.yml`. **이쪽이 OS 축을 연다.** 없어지면
+    // 경로 구분자·줄끝 축이 다시 Linux 초록 뒤로 숨는다(그 실패는 예외가 아니라 조용한 0 이다).
+    assert!(
+        runners.iter().any(|(_, b)| runs_on_windows(b)),
+        "Windows 러너가 가드 크레이트 테스트를 하나도 안 돌린다. `{DOC}` 은 실행 축에 \
+         **ubuntu 와 Windows 두 채널**이 있다고 적는다 — 스캔 가드가 경로를 문자열로 펴는 \
+         자리는 Windows 에서만 어긋나고 그 어긋남은 예외가 아니라 **조용한 0**(위반을 \
+         못 찾고 통과)이라, 이 채널이 없으면 Linux 초록이 그것을 영영 가린다. 채널을 \
+         뺐으면 그 문단도 함께 고쳐라"
     );
 }
