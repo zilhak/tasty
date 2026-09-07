@@ -44,6 +44,6 @@ IPC transport 로 **`127.0.0.1` loopback TCP** 를 쓴다. 서버는 동적 포�
 
 - [`design/systems/memory.md`](../design/systems/memory.md) — "보안·신뢰 모델" 위협 모델 (IPC transport trust boundary)
 - [`index.md`](../index.md) (docs 루트) — 기술 스택 표의 IPC 항목 (TCP 127.0.0.1 동적 포트, `~/.tasty/tasty.port`)
-- 코드: `crates/tasty-ipc/src/{port_file,server,method_meta}.rs`, `src/adapters/production/tcp_ipc_server.rs:47` (`bind("127.0.0.1:0")`)
+- 코드: `crates/tasty-ipc/src/{port_file,server,method_meta}.rs`, `src/adapters/production/tcp_ipc_server.rs` (`bind("127.0.0.1:0")`)
 - `src/core/attach.rs` decision 5 / `crates/tasty-ipc/src/method_meta.rs:256` — attach 보안의 SSH + loopback 위임 (동일 신뢰 모델)
 - 관련: [`0005-memory-secret-not-a-vault.md`](0005-memory-secret-not-a-vault.md) — 같은 trust boundary 위에서 secret 저장 보호 범위를 정한 결정
