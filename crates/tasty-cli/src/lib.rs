@@ -40,8 +40,10 @@ pub use tasty_ssh as ssh;
 
 pub use commands::*;
 pub use help::{format_parse_error, print_augmented_help, print_command_tree};
-/// 번역이 적용된 clap 트리. 프로덕션은 `Cli::command()` 대신 이것을 쓴다 —
-/// 근거는 [`help_i18n::command`].
+// 번역이 적용된 clap 트리. 프로덕션은 `Cli::command()` 대신 이것을 쓴다 — 근거는
+// `help_i18n::command`. 배경 설명이 한국어라 `///` 가 아니라 `//` 다: 이 파일은
+// `no_hardcoded_ui_strings` 의 clap 도움말 스캔 뿌리라, 게이트 밖 `///` 의 CJK 는
+// 부착 대상과 무관하게 걸린다.
 pub use help_i18n::command as localized_command;
 pub use run::{run_client, try_run_plugin_cli};
 
