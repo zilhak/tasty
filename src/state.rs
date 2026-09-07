@@ -303,9 +303,33 @@ pub struct AppState {
     ///    `view::View::is_modal_active()`(= `active_modal_id`)를 봐라. 그 값은
     ///    모달 등록에서 세워져 닫힐 때까지 남는다.
     ///
-    /// 이름을 고치거나 의미를 정리하려면 `has_egui_overlay_open()` 의 판정이
-    /// 선행이다 — 그쪽이 이 플래그를 `plugins_open` 과 함께 읽고 WebView 가리기에
-    /// 쓴다. 설정 모달이 별도 창이라 지금 동작이 옳을 수도 있는데, 아직 안 봤다.
+    /// **소비자가 다섯이고, 한 이름이 세 가지 물음에 답하고 있다.** 전수(식별자로
+    /// `src/`·`crates/` 를 훑었다):
+    ///
+    /// | 자리 | 술어 | 무엇을 정하나 | 이 플래그로 옳은가 |
+    /// |---|---|---|---|
+    /// | `state.rs` `has_egui_overlay_open` | "egui 오버레이가 **이 창의** wgpu 표면을 덮는가" | WebView `set_visible` · `release_keyboard_focus` | **아니다** |
+    /// | `state.rs` `keyboard_overlay_open` | "키가 터미널 대신 egui 로 가야 하는가" | 키 라우팅 | 판정 필요 |
+    /// | `view/main/mouse.rs` `mouse_overlay_open` | 마우스 최상위 차단 | 세 핸들러 공통 게이트 | 판정 필요 |
+    /// | `view/main/keyboard.rs` double-tap 분기 | "설정 창이 **떠 있는가**" | 키바인딩 레코더로 보낼지 | **아니다 — 지속을 전제한다** |
+    /// | `view/main/keyboard.rs` escape 분기 | 위와 같음 | Escape 로 닫기 | **아니다 — 지속을 전제한다** |
+    ///
+    /// 첫째가 "아니다" 인 이유: `handle_redraw` 안의 순서가 지움(`dispatch_pending_modal_opens`)
+    /// → egui 패스(`render_if_dirty`, 여기서 플래그가 선다) → 읽음(`sync_webviews`) 이라,
+    /// 이 항은 **버튼을 누른 그 한 프레임에만** true 다. 그 프레임에 WebView 를 전부
+    /// 숨겼다가 다음 프레임에 되살린다 — 설정 창은 별도 winit 창이라 이 창의 wgpu 표면을
+    /// 덮지 않으므로 **가릴 이유도 없고**, 한 프레임짜리라 **가리는 구실도 못 한다.**
+    ///
+    /// 넷째·다섯째가 "아니다" 인 이유: 그 둘은 "설정 창이 떠 있다" 를 물어야 하는데
+    /// `app/modal/settings.rs` 는 창을 만든 뒤 이 플래그를 **다시 세우지 않는다**(그
+    /// 파일에 이 식별자가 0 건이다). 지속하는 참값은 `view::View::is_modal_active()` 다.
+    ///
+    /// ⇒ 배선을 고치는 쪽은 **소비자마다 따로 판정해야 한다.** 하나의 지속 값으로
+    ///    다섯을 한꺼번에 바꾸면 첫째가 조용히 반대로 는다(설정 창이 열려 있는 내내
+    ///    WebView 가 숨는다).
+    /// ⇒ `mouse_overlay_open` 은 `tests/fullscreen_stage_input_gate.rs` 가 **문자열로
+    ///    못박고** 있어(정의를 그대로 단언한다) 바꾸면 거기서 큰 소리로 깨진다. 나머지
+    ///    넷에는 그런 고정이 없다.
     pub(crate) settings_open: bool,
     /// plugins 모달 **열기 요청** 플래그 — `settings_open` 과 같은 생애다.
     /// 사이드바 경로만 세우고 같은 `dispatch_pending_modal_opens` 가 다음
