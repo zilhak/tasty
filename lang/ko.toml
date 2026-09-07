@@ -1757,10 +1757,10 @@ help = "입력 시뮬레이션 IPC 활성화 (debug 빌드 전용). debug.inject
 about = "새 리소스 생성 (윈도우, 워크스페이스, 탭, 분할)"
 
 [cli.help._root.close]
-about = "리소스 닫기 (탭, 패인, 서피스, 워크스페이스, 윈도우)"
+about = "리소스 닫기 (탭, 페인, 서피스, 워크스페이스, 윈도우)"
 
 [cli.help._root.list]
-about = "리소스 목록·조회 (워크스페이스, 윈도우, 트리, 서피스, 패인, 정보, 훅 등)"
+about = "리소스 목록·조회 (워크스페이스, 윈도우, 트리, 서피스, 페인, 정보, 훅 등)"
 
 [cli.help._root.set]
 about = "리소스 설정·갱신 (훅, 마크, 워크스페이스, 글로벌 훅)"
@@ -1769,7 +1769,7 @@ about = "리소스 설정·갱신 (훅, 마크, 워크스페이스, 글로벌 �
 about = "리소스 이동·순서 변경 (탭, 워크스페이스)"
 
 [cli.help._root.split]
-about = "패인 그룹 또는 서피스 분할"
+about = "페인 그룹 또는 서피스 분할"
 
 [cli.help._root.remote]
 about = "다른 호스트의 서피스·워크스페이스에 원격(SSH) attach — `remote attach`"
@@ -1847,7 +1847,7 @@ about = "훅 핸들러 — 공용 훅·웹훅 핸들러 레지스트리 (list / 
 about = "완료 판정 전략 — task Custom 디스패치의 완료 판정기 레지스트리 (list)"
 
 [cli.help._root.preset]
-about = "레이아웃 프리셋 관리 (워크스페이스 / 탭 / 패인)"
+about = "레이아웃 프리셋 관리 (워크스페이스 / 탭 / 페인)"
 
 [cli.help._root.workspace-category]
 about = "워크스페이스 카테고리(사이드바 폴더) 관리 — 목록/생성/이름변경/삭제/이동"
@@ -1860,3 +1860,60 @@ about = "이 인스턴스의 IPC 포트를 stdout 에 출력 (원격 포트 자�
 
 [cli.help._root.screenshot]
 about = "스크린샷을 PNG 파일로 캡처 (포커스와 무관)"
+
+[cli.help._root.list.workspaces]
+about = "워크스페이스 목록"
+
+[cli.help._root.list.windows]
+about = "모든 윈도우 목록"
+
+[cli.help._root.list.tree]
+about = "워크스페이스·페인·탭을 트리로 보기"
+
+[cli.help._root.list.surfaces]
+about = "모든 워크스페이스의 서피스(터미널) 목록"
+
+[cli.help._root.list.panes]
+about = "모든 워크스페이스의 페인 목록"
+
+[cli.help._root.list.tabs]
+about = "페인 안의 탭 목록"
+
+[cli.help._root.list.tabs.arg.pane]
+help = "페인 ID (필수)"
+
+[cli.help._root.list.info]
+about = "시스템 정보 보기"
+
+[cli.help._root.list.gpu-stats]
+about = "GPU 자원 수 보기 (wgpu 보고서 + 윈도우별 렌더러 통계)"
+
+[cli.help._root.list.notifications]
+about = "알림 목록"
+
+[cli.help._root.list.timers]
+about = "등록된 타이머와 지금 이 인스턴스를 깨우고 있는 것 보기"
+
+[cli.help._root.list.hooks]
+about = "훅 목록"
+
+[cli.help._root.list.hooks.arg.surface]
+help = "서피스 ID 로 거르기"
+
+[cli.help._root.list.global-hooks]
+about = "전역 훅 전체 목록"
+
+[cli.help._root.list.theme]
+about = "확정된 전역 테마 스냅샷 보기 (색·폰트 크기·UI 배율)"
+
+[cli.help._root.list.recent]
+about = "한 서피스 종류에서 최근에 연 파일 목록"
+
+[cli.help._root.list.recent.arg.kind]
+help = "조회할 서피스 종류 (예: `markdown`). 호스트는 종류 이름을 모른다 — 호출자가 준다"
+
+[cli.help._root.list.queue]
+about = "큐 상태 보기 (대기 메시지 수 + 미리보기)"
+
+[cli.help._root.list.queue.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"

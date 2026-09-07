@@ -1862,3 +1862,60 @@ about = "このインスタンスの IPC ポートを stdout に出力する（�
 
 [cli.help._root.screenshot]
 about = "スクリーンショットを PNG ファイルに取得する（フォーカスに依存しない）"
+
+[cli.help._root.list.workspaces]
+about = "ワークスペース一覧"
+
+[cli.help._root.list.windows]
+about = "すべてのウィンドウ一覧"
+
+[cli.help._root.list.tree]
+about = "ワークスペース・ペイン・タブをツリー表示する"
+
+[cli.help._root.list.surfaces]
+about = "全ワークスペースのサーフェス（ターミナル）一覧"
+
+[cli.help._root.list.panes]
+about = "全ワークスペースのペイン一覧"
+
+[cli.help._root.list.tabs]
+about = "ペイン内のタブ一覧"
+
+[cli.help._root.list.tabs.arg.pane]
+help = "ペイン ID（必須）"
+
+[cli.help._root.list.info]
+about = "システム情報を表示する"
+
+[cli.help._root.list.gpu-stats]
+about = "GPU リソース数を表示する（wgpu レポート + ウィンドウ別レンダラー統計）"
+
+[cli.help._root.list.notifications]
+about = "通知一覧"
+
+[cli.help._root.list.timers]
+about = "登録済みタイマーと、いまこのインスタンスを起こしているものを表示する"
+
+[cli.help._root.list.hooks]
+about = "フック一覧"
+
+[cli.help._root.list.hooks.arg.surface]
+help = "サーフェス ID で絞り込む"
+
+[cli.help._root.list.global-hooks]
+about = "グローバルフックをすべて一覧表示する"
+
+[cli.help._root.list.theme]
+about = "解決済みのグローバルテーマのスナップショットを表示する（色・フォントサイズ・UI 倍率）"
+
+[cli.help._root.list.recent]
+about = "あるサーフェス種別で最近開いたファイルの一覧"
+
+[cli.help._root.list.recent.arg.kind]
+help = "問い合わせるサーフェス種別（例: `markdown`）。ホストは種別名を知らない — 呼び出し側が渡す"
+
+[cli.help._root.list.queue]
+about = "キューの状態を表示する（保留メッセージ数 + プレビュー）"
+
+[cli.help._root.list.queue.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"

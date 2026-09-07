@@ -1890,3 +1890,60 @@ about = "Print this instance's IPC port to stdout (first step of the auto remote
 
 [cli.help._root.screenshot]
 about = "Capture a screenshot to a PNG file (focus-independent)"
+
+[cli.help._root.list.workspaces]
+about = "List workspaces"
+
+[cli.help._root.list.windows]
+about = "List all windows"
+
+[cli.help._root.list.tree]
+about = "Show tree view of workspaces, panes, and tabs"
+
+[cli.help._root.list.surfaces]
+about = "List surfaces (terminals) across all workspaces"
+
+[cli.help._root.list.panes]
+about = "List panes across all workspaces"
+
+[cli.help._root.list.tabs]
+about = "List tabs in a pane"
+
+[cli.help._root.list.tabs.arg.pane]
+help = "Pane ID (required)"
+
+[cli.help._root.list.info]
+about = "Show system info"
+
+[cli.help._root.list.gpu-stats]
+about = "Show GPU resource counts (wgpu report + per-window renderer stats)"
+
+[cli.help._root.list.notifications]
+about = "List notifications"
+
+[cli.help._root.list.timers]
+about = "List registered timers and what is currently waking this instance"
+
+[cli.help._root.list.hooks]
+about = "List hooks"
+
+[cli.help._root.list.hooks.arg.surface]
+help = "Filter by surface ID"
+
+[cli.help._root.list.global-hooks]
+about = "List all global hooks"
+
+[cli.help._root.list.theme]
+about = "Show the resolved global theme snapshot (colors, font sizes, ui scale)"
+
+[cli.help._root.list.recent]
+about = "List the recently opened files of one surface kind"
+
+[cli.help._root.list.recent.arg.kind]
+help = "Surface kind to query (e.g. `markdown`). The host does not know the kind names — the caller supplies one"
+
+[cli.help._root.list.queue]
+about = "Show queue status (count + preview of pending messages)"
+
+[cli.help._root.list.queue.arg.surface]
+help = "Surface ID (default: focused)"

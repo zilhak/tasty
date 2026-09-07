@@ -69,7 +69,7 @@ fn slots() -> Vec<tasty_cli::help_i18n::Slot> {
 
 /// 커버된 도움말 자리의 하한. **줄어도 실패한다** — 상한 래칫과 같은 이유다. 번역을
 /// 늘렸으면 이 수를 같이 올려라. 그 한 줄이 리뷰에 보이는 것이 이 래칫의 값이다.
-const COVERAGE_FLOOR: usize = 42;
+const COVERAGE_FLOOR: usize = 61;
 
 #[test]
 fn every_english_help_key_names_a_real_slot() {
