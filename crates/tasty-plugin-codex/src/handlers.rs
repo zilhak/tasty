@@ -110,7 +110,11 @@ pub(crate) fn require_target_surface(
     tr: &Translator,
 ) -> Result<u32, IpcMethodError> {
     optional_target_surface(params, tr)?.ok_or_else(|| {
-        IpcMethodError::invalid_params(&tr.t_replace("codex.params.missing", "{key}", "surface"))
+        // 일반 `missing` + `{key}`="surface" 를 쓰면 **한 키만 댄다** — 이 판정은
+        // `surface` 와 `surface_id` 를 한 필드로 읽으므로 그 문구는 틀린 처방이다
+        // (`surface_id` 를 쓰던 호출자에게 `surface` 를 대라고 답한다). 두 키를 다 대는
+        // 전용 문구를 쓴다. 짝 크레이트의 같은 자리가 처음부터 그렇게 하고 있었다.
+        IpcMethodError::invalid_params(tr.t("codex.params.missing_target_surface"))
     })
 }
 
