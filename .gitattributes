@@ -1,2 +1,18 @@
+# 모든 텍스트 파일은 작업 트리에서도 LF 다.
+#
+# 가드 다수가 소스를 **문자열로** 판정한다 — 여러 줄 needle 을 `contains` 하거나
+# `find("\n    }\n")` 로 블록의 끝을 잡는 식이다. 그 needle 은 LF 로 쓰여 있으므로,
+# 체크아웃이 CRLF 면 같은 코드를 두고 "못 찾았다" 가 나온다. Windows 러너의 git 은
+# 기본값이 `core.autocrlf=true` 라 이 조건이 그 자리에서 성립한다.
+#
+# 실측 2026-09-07 (c100391bc): Windows 에서 integration 타깃을 처음 돌린 회차에
+# `fullscreen_stage_input_gate` 5 건과 `permission_method_lists_parity` 6 건이
+# 이 이유로 죽었다. 같은 트리가 Linux 에서는 전부 초록이었다. 로컬에서 소스 한
+# 파일만 CRLF 로 바꿔 재현했다 — 그 파일을 읽는 시험 둘이 정확히 같은 형태로 죽는다.
+#
+# 그래서 판정을 가드마다 정규화하는 대신 **체크아웃을 고정한다**: 이 레포의 소스는
+# LF 가 정본이고(rustfmt 도 LF 로 쓴다), 그 사실을 git 이 플랫폼과 무관하게 지킨다.
+* text=auto eol=lf
+
 # Ed25519 raw pubkey 들 — git 이 텍스트로 오인해 CRLF 변환하면 키가 손상된다.
 crates/tasty-host-plugin/keys/*.bin binary

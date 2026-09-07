@@ -5605,6 +5605,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 name = "tasty"
 version = "0.10.2"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "arboard",
  "base64 0.22.1",
@@ -5789,6 +5790,7 @@ version = "0.1.0"
 name = "tasty-egui-theme"
 version = "0.1.1"
 dependencies = [
+ "ab_glyph",
  "egui",
  "tasty-type-appearance",
  "tasty-type-geometry",
@@ -5886,6 +5888,7 @@ dependencies = [
  "tokio",
  "toml 0.8.2",
  "tracing",
+ "tracing-subscriber",
  "windows-sys 0.59.0",
 ]
 
@@ -5991,7 +5994,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-agent-stream"
-version = "0.1.17"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "directories",
@@ -6007,7 +6010,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.69"
+version = "0.1.79"
 dependencies = [
  "anyhow",
  "directories",
@@ -6024,7 +6027,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.28"
+version = "0.1.35"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6033,6 +6036,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-icons",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
@@ -6047,7 +6051,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.45"
+version = "0.1.54"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6061,13 +6065,14 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.32"
+version = "0.1.39"
 dependencies = [
  "anyhow",
  "egui",
  "git2",
  "serde",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-git-core",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
@@ -6081,7 +6086,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.12"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -6093,7 +6098,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.17"
+version = "0.1.24"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6101,6 +6106,7 @@ dependencies = [
  "image",
  "rfd",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-icons",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
@@ -6128,7 +6134,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.74"
+version = "0.1.81"
 dependencies = [
  "ammonia",
  "anyhow",
@@ -6137,6 +6143,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-icons",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
@@ -6153,7 +6160,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.12"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "egui",
