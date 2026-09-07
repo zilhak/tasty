@@ -130,7 +130,11 @@ enum Conn {
 
 /// 우측 목록의 선택. "+ 새 워크스페이스" 행은 원격 ws id 가 없지만 **목록 안의 행**
 /// 이므로, 두 번째 boolean 을 만들지 않고 같은 단일 선택 필드에 sentinel 로 함께
-/// 담는다(갤러리 specimen 의 `NewRow`/`sel_ws` 구조와 동형).
+/// 담는다(갤러리 specimen 의 `NewRow`/`sel_ws` 와 같은 구조).
+///
+/// **갤러리와 하나로 묶지 않는다.** 갤러리는 본체를 비추는 specimen 이라 두 벌인 것이
+/// 정책이다(`docs/dev-guide/gallery-first.md`) — 여기서 갤러리 타입을 가져다 쓰면
+/// 대조할 것이 없어진다. 같아야 하는 것은 타입이 아니라 **구조**다.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum WsSel {
     New,

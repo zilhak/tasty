@@ -730,6 +730,19 @@ impl PopupManager {
             .any(|p| p.id == id && p.open && p.focused)
     }
 
+    /// 지금 키보드 포커스를 가진 popup — 그 id 와 "바깥 클릭에 닫히는가" 를 함께 낸다.
+    ///
+    /// 키보드 탈출구(Escape)가 쓰는 조회다. **포커스된 것 하나만** 본다: 바깥 클릭은
+    /// 좌표를 가지므로 "그 점을 안 담은 popup 전부" 를 가리킬 수 있지만, Escape 에는
+    /// 좌표가 없다. 좌표 없는 키를 좌표 있는 제스처와 같은 범위로 쓰면 사용자가 가리킨
+    /// 적 없는 popup 까지 닫힌다.
+    pub fn focused_dismissal_target(&self) -> Option<(PopupId, bool)> {
+        self.popups
+            .iter()
+            .find(|p| p.open && p.focused)
+            .map(|p| (p.id, p.close_on_outside_click))
+    }
+
     /// Set the keyboard-focus flag of a specific popup. 다른 popup 의 포커스는
     /// 건드리지 않는다 (검색창↔터미널 포커스 토글용).
     pub fn set_focused(&mut self, id: PopupId, focused: bool) {
@@ -809,6 +822,87 @@ mod tests {
         assert!(titled(None, false).fullscreen_btn_rect().is_none());
         // headless 는 타이틀바 자체가 없다 — 플래그와 무관하게 버튼 없음.
         assert!(titled(Some("blank"), true).fullscreen_btn_rect().is_none());
+    }
+
+    /// 키보드 탈출구가 고르는 대상 — 포커스된 **하나**뿐이다.
+    fn managed(states: Vec<PopupState>) -> PopupManager {
+        PopupManager {
+            popups: states,
+            closed_queue: Vec::new(),
+        }
+    }
+
+    fn entry(id: PopupId, open: bool, focused: bool, closes: bool) -> PopupState {
+        let mut p = dummy(closes);
+        p.id = id;
+        p.open = open;
+        p.focused = focused;
+        p
+    }
+
+    #[test]
+    fn dismissal_target_is_the_focused_popup_and_carries_its_outside_click_flag() {
+        let m = managed(vec![entry("a", true, true, true)]);
+        assert_eq!(m.focused_dismissal_target(), Some(("a", true)));
+
+        let m = managed(vec![entry("a", true, true, false)]);
+        assert_eq!(m.focused_dismissal_target(), Some(("a", false)));
+    }
+
+    /// ⓪ **Escape 로 안 풀려야 하는 칸.** 열려 있지만 포커스가 없는 popup 은 대상이 아니다.
+    ///
+    /// 이 칸이 없으면 "다 풀린다" 와 "전부 닫아버린다" 가 같은 모양이 된다. 그리고 이것이
+    /// Escape 를 바깥 클릭과 다르게 만드는 유일한 지점이다 — 바깥 클릭은 좌표를 가지므로
+    /// 그 점을 안 담은 popup 전부를 가리킬 수 있지만, Escape 에는 좌표가 없다.
+    #[test]
+    fn an_open_but_unfocused_popup_is_not_a_dismissal_target() {
+        let m = managed(vec![entry("a", true, false, true)]);
+        assert_eq!(m.focused_dismissal_target(), None);
+    }
+
+    /// 닫힌 popup 에 포커스 플래그가 남아 있어도 대상이 아니다 — `has_focused` 와 같은
+    /// 술어(`open && focused`)를 써야 둘이 어긋나지 않는다.
+    #[test]
+    fn a_closed_popup_is_not_a_dismissal_target_even_if_it_kept_the_focus_flag() {
+        let m = managed(vec![entry("a", false, true, true)]);
+        assert_eq!(m.focused_dismissal_target(), None);
+        assert!(!m.has_focused());
+    }
+
+    /// Escape 와 바깥 클릭이 **갈라지지 않는다**는 전제를 고정한다.
+    ///
+    /// 둘의 의미를 같다고 적어 두었지만, 실제로 한 곳에서 갈릴 수 있다: `sticky_focus` 인
+    /// popup 은 바깥 클릭에 포커스를 **안 놓는다**. 그런 popup 이 `close_on_outside_click`
+    /// 까지 거짓이면 바깥 클릭은 아무것도 안 하는데 Escape 는 포커스를 놓아, 같다고 적은
+    /// 두 제스처가 다른 일을 한다.
+    ///
+    /// 지금 그 조합은 **없다**(sticky 인 것은 하나뿐이고 그것은 바깥 클릭에 닫힌다). 없다는
+    /// 사실이 문서와 주석의 근거이므로, 누가 그 조합을 새로 만들면 **여기서 걸린다.**
+    /// 값이 없으면 전제는 조용히 낡는다.
+    #[test]
+    fn no_popup_is_both_sticky_focused_and_immune_to_an_outside_click() {
+        let offenders: Vec<&str> = defs::all_defs()
+            .iter()
+            .filter(|d| d.sticky_focus && !d.close_on_outside_click)
+            .map(|d| d.id)
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "sticky_focus 이면서 바깥 클릭에 닫히지도 않는 popup 이 생겼다: {offenders:?}. \
+             그런 popup 에서는 바깥 클릭이 아무것도 안 하는데 Escape 는 포커스를 놓는다 — \
+             '둘은 같은 의미' 라고 적은 주석·사용자 문서가 그 순간부터 거짓이다. \
+             정책을 정하고(Escape 도 안 풀 것인가, 문서를 고칠 것인가) 그 결정을 여기 반영해라."
+        );
+    }
+
+    /// 옆에 열린 popup 이 더 있어도 **포커스된 것만** 고른다.
+    #[test]
+    fn other_open_popups_are_left_alone() {
+        let m = managed(vec![
+            entry("bystander", true, false, true),
+            entry("focused", true, true, false),
+        ]);
+        assert_eq!(m.focused_dismissal_target(), Some(("focused", false)));
     }
 
     /// 버튼이 늘어도 **close 버튼은 움직이지 않는다** — 버튼을 달지 않은 popup 의

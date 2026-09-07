@@ -142,7 +142,11 @@ fn unwrap_ok(resp: JsonRpcResponse, id: &Value) -> Result<Value, JsonRpcResponse
 
 /// tell/broadcast/spawn 이 PTY 로 보낼 본문. 멀티라인은 bracketed paste 로 감싼다
 /// (개행 그대로 한 덩어리 paste). 제출 `\r` 은 포함하지 않는다 — 호출자가 별도
-/// write 로 보낸다(길이 무관 결정적 제출). 플러그인 `build_tell_payload` 와 동형.
+/// write 로 보낸다(길이 무관 결정적 제출).
+///
+/// **이 규칙의 자리는 여기 하나다.** plugin 쪽(`tasty-plugin-claude` ·
+/// `tasty-plugin-codex` 의 `handle_tell`)은 본문 포맷을 재구현하지 않고 host
+/// `terminal.tell` 로 위임한다 — 그래서 갈라질 두 벌이 없다.
 fn build_tell_payload(message: &str) -> String {
     if message.contains('\n') {
         format!("\u{1b}[200~{message}\u{1b}[201~")

@@ -179,16 +179,7 @@ pub fn draw_tools_menu(
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
         }
-        let label = {
-            let translated = t(&item.label_i18n_key);
-            // t()는 키가 없으면 키 자체를 반환한다. plugin 작성자가 i18n catalog에
-            // 키를 등록하지 않았으면 label_i18n_key 자체를 표시 (fallback).
-            if translated == item.label_i18n_key {
-                item.label_i18n_key.clone()
-            } else {
-                translated.to_string()
-            }
-        };
+        let label = crate::adapters::ui::label_or_raw_key(&item.label_i18n_key);
         ui.painter().text(
             egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y),
             egui::Align2::LEFT_CENTER,

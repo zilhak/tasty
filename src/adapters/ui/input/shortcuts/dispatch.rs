@@ -12,7 +12,23 @@ use super::{focused_explorer_surface_id, focused_workspace_category, send_app_ev
 
 impl MainView {
     /// Dispatch a keybinding action by its stable `field_id` (예: `"new_workspace"`).
-    /// 단축키와 정확히 같은 효과를 내며, Command Palette / 외부 자동화에서 호출한다.
+    /// 단축키와 정확히 같은 효과를 낸다.
+    ///
+    /// ## 왜 평평한 문인가
+    ///
+    /// action id 를 **단일 진입점**으로 모으는 것이 이 함수의 설계다. 같은 액션을 부르는
+    /// 자리가 여럿 생겨도 효과가 갈리지 않게 하려는 것이고, id 가
+    /// `KeybindingSettings` 의 필드 이름 그대로라 설정·단축키·이 문이 한 어휘를 쓴다.
+    ///
+    /// ## 오늘 누가 들어오는가 — Command Palette 뿐이다
+    ///
+    /// **에이전트/IPC 경로는 없다.** 이 구분을 적어 두는 이유는, "단일 진입점이 있다" 와
+    /// "그 진입점이 에이전트에게 열려 있다" 가 다른 물음인데 앞엣것만 보고 뒤엣것을
+    /// 읽기 쉽기 때문이다. release 에서 에이전트는 팝업을 강제로 못 열므로(원칙 1),
+    /// 팔레트를 통한 도달도 성립하지 않는다.
+    ///
+    /// 호출자 집합은 `crates/tasty-doc-guards/tests/`(액션 문 가드)가 붙든다 — 새 문이
+    /// 생기면 그 가드가 먼저 반응하고, 그때 원칙 1·3 과 대조하는 것이 사람의 몫이다.
     ///
     /// Returns true if the action was recognized and dispatched. Unknown action_id는 false.
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: action_id 문자열→액션 평면 match 디스패치 — 단축키와 1:1, arm 나열

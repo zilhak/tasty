@@ -393,6 +393,12 @@ pub fn draw_modifier_hint(
         .show(ctx, |area_ui| {
             let mut ui = ui_at(area_ui, render_rect);
 
+            // ★ **이 순서가 계약이다.** 테두리를 셸에서 떼어 **맨 뒤에** 다시 그린다 —
+            // `draw_content` 의 첫 동작이 드래그 스트립 배경을 `radius 0.0` 불투명으로
+            // 채우는 것이라, 테두리가 먼저 그려져 있으면 그 구간이 지워진다(CSS 박스
+            // 모델의 border-on-top 재현). 앞으로 당기면 오버레이 위쪽 몇 px 의 테두리만
+            // 사라지고 컴파일도 시험도 멀쩡하다.
+            // 지키는 것은 `source_guards::modifier_hint_paint_order` 다.
             draw_shell(&ui, theme, render_rect, alpha);
             draw_content(
                 &mut ui,
@@ -517,9 +523,11 @@ fn rect_from_settings(settings: &Settings, screen: egui::Rect, theme: &Theme) ->
 }
 
 /// 셸(그림자 + 불투명 fill)을 painter 로 그린다 — 고정 크기라 Frame(콘텐츠 맞춤)
-/// 대신 painter 직접 사용. 색은 `alpha` 곱(페이드). 테두리는 [`draw_shell_border`]
-/// 가 `draw_content` **이후에** 별도로 그린다(스트립 배경 채우기가 테두리를 덮지
-/// 않도록 항상 마지막에 그림 — CSS 박스 모델의 border-on-top 을 재현).
+/// 대신 painter 직접 사용. 색은 `alpha` 곱(페이드).
+///
+/// 테두리는 여기서 안 그린다 — [`draw_shell_border`] 가 따로 그리고, **그 순서 계약의
+/// 자리는 셋을 잇달아 부르는 [`draw_modifier_hint`] 안**이다. 계약 본문과 무엇이 그것을
+/// 지키는지는 거기 적혀 있다.
 fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     let radius = theme.corner_radius.value();
     let painter = ui.painter();
@@ -533,10 +541,11 @@ fn draw_shell(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     );
 }
 
-/// 패널 테두리만 그린다. **`draw_content` 호출 이후에** 실행해야 한다 — 스트립
-/// 배경 채우기(`radius 0.0`, 불투명)가 먼저 그려진 테두리를 덮어 지우는 문제를
-/// 막기 위해, 항상 맨 마지막에 다시 그려 테두리가 콘텐츠 위에 남게 한다. `radius`
-/// 를 그대로 재사용하므로 둥근 모서리도 별도 처리 없이 자연스럽게 복원된다.
+/// 패널 테두리만 그린다 — 셸에서 테두리만 떼어낸 짝이라 `radius` 를 그대로 재사용해
+/// 둥근 모서리가 별도 처리 없이 복원된다.
+///
+/// **`draw_content` 이후에 불러야 한다.** 왜 그런지와 무엇이 그것을 지키는지는 순서를
+/// 실제로 정하는 자리 — [`draw_modifier_hint`] 의 세 호출 위 — 에 적혀 있다.
 fn draw_shell_border(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, alpha: f32) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();

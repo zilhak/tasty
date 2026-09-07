@@ -1,5 +1,8 @@
 #[cfg(test)]
 mod cli_entry_tests;
+// debug 빌드에만 있는 CLI 진입점 시험 — 배치 규율상 별도 파일이다(그 파일의 doc 참조).
+#[cfg(all(test, debug_assertions))]
+mod cli_entry_debug_tests;
 mod completion_strategy;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
@@ -974,7 +977,7 @@ fn route_engine_handler(
         "agent.task_get" => {
             agent::handle_task_get(core, state, engine, caller, id, &request.params)
         }
-        // agent.task_await 는 여기 없다(approval.await 와 동형) — 진짜 blocking 은
+        // agent.task_await 는 여기 없다(`approval.await` 가 빠진 것과 같은 이유) — 진짜 blocking 은
         // gui 빌드의 `App::process_ipc` app_methods 단계(`ipc_dispatch_task_await`)
         // 가 라우팅 전에 가로챈다. headless 빌드(`boot/headless_dispatch.rs`)는 그
         // 단계가 없어 이 라우터로 직접 오는데, 팔을 두면 비차단 fallback 이 진짜

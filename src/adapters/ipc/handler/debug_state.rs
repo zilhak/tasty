@@ -25,24 +25,94 @@ pub(super) fn handle_ui_state(
     let ws = state.active_workspace(engine);
     let pane_count = ws.pane_layout().all_pane_ids().len();
     let focused_pane_id = ws.focused_pane;
-    let tab_count = ws
-        .pane_layout()
-        .find_pane(focused_pane_id)
-        .map(|p| p.tabs.len())
-        .unwrap_or(0);
+    let focused_pane = ws.pane_layout().find_pane(focused_pane_id);
+    let tab_count = focused_pane.map(|p| p.tabs.len()).unwrap_or(0);
+    // 탭 **전환**은 수로 안 보인다 — `tab_count` 는 전환해도 그대로다. 그래서 전환을
+    // 재는 시험은 관측할 것이 없어 고정 sleep 으로 대신하게 되고, 그러면 전환이 아예
+    // 안 일어나도 통과한다. 활성 탭 인덱스가 그 관측 축이다.
+    let active_tab = focused_pane.map(|p| p.active_tab).unwrap_or(0);
     #[cfg(feature = "gui")]
     let notification_panel_open = state.popups.is_open("notifications");
     #[cfg(not(feature = "gui"))]
     let notification_panel_open = false;
+    // 단축키가 **소비되는지 자체**를 노출한다. `handle_keyboard_input` 은 오버레이가 열려
+    // 있으면 단축키 경로에 아예 안 들어가는데(`view/main/keyboard.rs`), 그 게이트를 여는
+    // 네 조건 중 `settings_open_requested` 하나만 여기 보였다. 나머지 셋(입력 dialog · 포커스된 host
+    // popup · plugin popup)이 걸려 있으면 시험은 "단축키가 안 먹는다" 만 보고 **왜인지는
+    // 못 본다** — 실측으로 그 자리에 걸렸다: 공유 인스턴스가 오염된 회차에서 도착 카나리아가
+    // 죽었는데 실패 메시지가 원인을 못 담았다.
+    //
+    // 판정을 여기서 다시 쓰지 않고 소비처와 **같은 함수**를 부른다. 사본을 두면 게이트가
+    // 바뀔 때 둘이 어긋나고, 어긋난 쪽은 조용하다.
+    //
+    // 무대 항이 함께 들어가는 이유: 단축키가 매처에 닿으려면 **둘 다** 열려 있어야 한다.
+    // `handle_keyboard_input` 은 0 단계에서 전체화면 무대를 먼저 소비하고
+    // (`try_consume_fullscreen_stage_key`) 4 단계에서 오버레이를 본다. 오버레이만 보면
+    // 이 필드가 이름이 약속한 것의 절반만 답하고, **무대 중에는 거짓으로 "안 막혔다"** 를
+    // 말한다 — 그러면 이 필드를 넣은 이유(왜 단축키가 안 먹었는지)가 그 경우에 사라진다.
+    let keyboard_shortcuts_gated = state.fullscreen_stage_active() || state.keyboard_overlay_open();
+
+    // ★ 그리고 다섯 항을 **각각** 찍는다. 위 합성값은 `||` 로 뭉치므로 "막혔다" 까지만
+    // 말하고 **무엇이 막았는지는 말하지 않는다.** 실측으로 그 자리에 걸렸다 — GUI 스위트
+    // 한 회차가 어느 지점부터 21 건 연속 `true` 였는데, 그 값만으로는 다섯 중 무엇이 열린
+    // 채 남았는지 고를 수 없었다. 합성값을 넣은 이유가 "왜 안 먹었는가" 였는데, 정작 원인이
+    // 하나로 안 좁혀지는 회차에서 침묵한 것이다.
+    //
+    // **참인 것만 나열하지 않고 거짓도 값으로 낸다.** 이름만 나열하면 "그 항이 거짓이라
+    // 빠졌다" 와 "보고가 그 항을 아예 모른다" 가 같은 모양이 된다 — 안 돈 것과 통과한 것이
+    // 같은 줄을 만드는 그 형태다. 다섯 칸이 항상 차 있으면 그 둘이 갈린다.
+    //
+    // 합성값은 그대로 둔다. 더하는 것이지 바꾸는 것이 아니다 — 기존 소비자가 있다.
+    //
+    // 이름은 술어 `state::keyboard_overlay_open` 의 **매개변수 이름 그대로**다. 이 다섯은
+    // 판정의 사본이라 술어에 항이 늘면 조용히 낡는다 — 그러면 새 항이 막은 회차에서
+    // 다섯 칸이 전부 `false` 인데 합성값만 `true` 인, 원인 없는 보고가 남는다. 그래서 정합을
+    // `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 가 원문 대조로 강제한다(이름이 일치해야 한다).
+    //
+    // ★★ 이 칸들이 찍는 것은 **진실이 아니라 그 게이트가 읽은 값**이다. 둘이 갈리면
+    // 갈린 채로 찍는다 — 여기서 "더 참인 값" 을 읽게 고치면 게이트는 막혔는데 보고는
+    // "안 막혔다" 가 되어 **계기가 결함을 가린다.**
+    //
+    // 그래서 같은 플래그를 읽는 자리가 여럿이어도 성질이 둘로 갈린다: 그 값으로 **동작을
+    // 정하는** 자리와, 그 값을 **보고하는** 자리(여기). 앞쪽의 술어를 고칠 때 이쪽은
+    // 따라가지 않는다 — 고쳐진 술어가 생기면 그때 그 새 술어를 읽으면 된다.
+    //
+    // 무대 항은 술어 밖이다 — `handle_keyboard_input` 이 0 단계에서 따로 소비하므로
+    // 매개변수로는 안 잡힌다. 그래서 따로 센다.
+    #[cfg(feature = "gui")]
+    let host_popup_focused = state.popups.has_focused();
+    #[cfg(not(feature = "gui"))]
+    let host_popup_focused = false;
+
     JsonRpcResponse::success(
         id,
         json!({
-            "settings_open": state.settings_open,
+            // ☆ 이 값은 "설정 모달이 화면에 있다" 가 아니라 **열기 요청 래치**다. 모달이
+            // 실제로 떠 있는지는 아래 `modal_open` 이 답한다 — 그쪽이 모달 등록에서 세워져
+            // 닫힐 때까지 남는 지속 값이다. 이름이 그 차이를 안 말해 주므로 여기 적어 둔다.
+            "settings_open_requested": state.settings_open_requested,
+            "keyboard_shortcuts_gated": keyboard_shortcuts_gated,
+            "gate_fullscreen_stage_active": state.fullscreen_stage_active(),
+            "gate_settings_open_requested": state.settings_open_requested,
+            "gate_input_dialog_open": state.has_input_dialog_open(),
+            "gate_host_popup_focused": host_popup_focused,
+            "gate_plugin_popup_open": state.plugin_popup_open,
+            "modal_open": state.active_modal_id.is_some(),
+            "active_modal_id": state.active_modal_id,
+            // **어느** 모달인가. `active_modal_id` 는 창 id 라 "무언가 떠 있다" 까지만
+            // 말한다 — 그 값으로 설정 창을 기다리면 plugins·quit 창이 떠도 같은 모양이
+            // 되어, 시험이 자기가 안 연 창을 보고 통과할 수 있다.
+            //
+            // 내부 타입은 열거(`state::ModalKind`)이고 여기서만 납작해진다. JSON 에
+            // 열거가 없어서지 판정을 문자열로 하자는 뜻이 아니다 — 읽는 쪽
+            // (`tests/gui_common`)은 다시 열거로 파싱한다.
+            "active_modal_kind": state.active_modal_kind.map(|k| k.as_str()),
             "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace,
             "workspace_count": engine.workspaces.len(),
             "pane_count": pane_count,
             "tab_count": tab_count,
+            "active_tab": active_tab,
         }),
     )
 }

@@ -30,7 +30,7 @@ pub fn draw_ui(
             state.plugins_open = true;
         }
         if r.settings_clicked {
-            state.settings_open = true;
+            state.settings_open_requested = true;
         }
         if let Some(btn_rect) = r.tools_rect {
             sidebar::tools::open_tools_menu(state, engine, btn_rect);
@@ -58,7 +58,7 @@ pub fn draw_ui(
             state.plugins_open = true;
         }
         if r.settings_clicked {
-            state.settings_open = true;
+            state.settings_open_requested = true;
         }
         if let Some(btn_rect) = r.tools_rect {
             sidebar::tools::open_tools_menu(state, engine, btn_rect);

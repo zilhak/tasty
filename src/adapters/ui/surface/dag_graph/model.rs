@@ -95,7 +95,7 @@ impl DagStatus {
     ///
     /// 어휘를 기하도형(U+25xx)·수학기호에서만 고른다. 체크/엑스(U+2713/2717)나
     /// 화살촉(U+276F)은 딩뱃 블록이라 UI 프로포셔널 폰트에서 tofu 로 떨어지고
-    /// (`tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 막는다),
+    /// (`crates/tasty-doc-guards/tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 막는다),
     /// 이모지 폴백은 컬러로 대체돼 색 채널과 중복된다 — 어느 쪽이든 3 채널이
     /// 2 채널로 줄어 이 표기의 목적이 사라진다. 그래서 채움/외곽선과 원/삼각/
     /// 마름모/사선이라는 **형태 차이**만으로 8 종을 구분한다.

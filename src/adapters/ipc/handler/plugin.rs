@@ -73,7 +73,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
                 "kind": k.kind,
                 "display_name_i18n_key": k.display_name_i18n_key,
                 "icon": k.icon,
-                "rendering": format!("{:?}", k.rendering).to_lowercase(),
+                "rendering": k.rendering,
             })
         })
         .collect();
@@ -85,7 +85,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             json!({
                 "key": e.key,
                 "description": e.description,
-                "stability": format!("{:?}", e.stability).to_lowercase(),
+                "stability": e.stability,
                 "payload_schema": e.payload_schema,
             })
         })
@@ -99,7 +99,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             json!({
                 "key": h.key,
                 "description": h.description,
-                "stability": format!("{:?}", h.stability).to_lowercase(),
+                "stability": h.stability,
             })
         })
         .collect();
@@ -126,8 +126,8 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             json!({
                 "id": c.id,
                 "title_i18n_key": c.title_i18n_key,
-                "scope": format!("{:?}", c.scope).to_lowercase(),
-                "binding_mode": format!("{:?}", c.binding_mode).to_lowercase(),
+                "scope": c.scope,
+                "binding_mode": &c.binding_mode,
                 "default_keybinding": c.default_keybinding,
                 "shortcut_override": override_repr,
             })
@@ -155,7 +155,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             json!({
                 "event": h.event,
                 "modifies": h.modifies,
-                "mode": format!("{:?}", h.mode).to_lowercase(),
+                "mode": h.mode,
                 "timeout_ms": h.timeout_ms,
             })
         };
@@ -163,7 +163,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             json!({
                 "method": h.method,
                 "modifies": h.modifies,
-                "mode": format!("{:?}", h.mode).to_lowercase(),
+                "mode": h.mode,
                 "timeout_ms": h.timeout_ms,
             })
         };

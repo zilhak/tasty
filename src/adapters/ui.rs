@@ -42,6 +42,24 @@ pub use status_bar::{draw_status_bar, status_bar_bottom_inset};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};
 
+/// plugin 이 등록한 i18n 키를 라벨로 푼다 — 카탈로그에 없으면 **키 자체**를 보여준다.
+///
+/// `t()` 는 키가 없으면 키를 그대로 돌려주므로 그 반환을 키와 비교하는 것이 "미해석"
+/// 판정이다. plugin 작성자가 카탈로그에 키를 안 넣었을 때 빈 라벨 대신 키를 보여주면
+/// 무엇을 등록해야 하는지가 화면에 그대로 드러난다.
+///
+/// 도구 메뉴(`tools_menu`)와 명령 팔레트(`popup::command_palette`)가 **같은 함수를**
+/// 부른다. 예전에는 같은 세 줄이 두 자리에 있었고 둘을 같게 잡아 주는 것이 "동형"
+/// 이라는 주석뿐이었다 — 한쪽이 fallback 을 바꾸면 두 표면이 갈라진다.
+pub(crate) fn label_or_raw_key(key: &str) -> String {
+    let translated = tasty_i18n::t(key);
+    if translated == key {
+        key.to_string()
+    } else {
+        translated.to_string()
+    }
+}
+
 /// 배율 밖에 있는 호스트 chrome 치수를 현재 UI 배율로 올린다.
 ///
 /// `Theme` 필드는 생성 시점에 `zoomed()` 를 한 번 거치지만, 대응 디자인 토큰이 없어

@@ -133,8 +133,11 @@ impl PopupManager {
             .collect();
 
         // 이번 프레임에 실제로 그려지는 popup 들의 히트테스트 rect — plugin popup 쪽
-        // 판정이 같은 프레임에 읽는다(`draw_popups` 가 `draw_plugin_popups` 보다 먼저
-        // 돌기 때문에 stale 이 아니다).
+        // 판정이 같은 프레임에 읽는다. stale 이 아닌 것은 `draw_popups` 가
+        // `draw_plugin_popups` 보다 먼저 돌기 때문인데, **그 순서 계약의 자리는 여기가
+        // 아니라 두 호출이 나란히 있는 `gfx/gpu/egui_bridge.rs::run_egui_frame`** 이다
+        // (순서를 정하는 것이 이 파일이 아니라 그 호출 배치라서). 계약 본문과 그것을 무는
+        // 가드(`source_guards::frame_draw_order`)는 거기 적혀 있다.
         let hit_rects: Vec<Occluder> = open_indices
             .iter()
             .map(|&i| Occluder {

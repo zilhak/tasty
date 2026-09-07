@@ -40,7 +40,7 @@ mod tests {
     /// `WindowEvent::KeyboardInput` 자체를 만드는 케이스는 여기 둘 수 없다.
     /// `KeyEvent::platform_specific` 이 winit `pub(crate)` 라 크레이트 밖에서는
     /// `KeyEvent` 를 구성할 수 없기 때문이다. 합성/실입력 대조는
-    /// `tests/synthetic_key_event_guard.rs` 의 진입부 가드 트립와이어와 X11 실측
+    /// `crates/tasty-doc-guards/tests/synthetic_key_event_guard.rs` 의 진입부 가드 트립와이어와 X11 실측
     /// (`docs/design/policies/key-mapping.md`) 이 담당한다.
     #[test]
     fn non_keyboard_events_pass_through() {

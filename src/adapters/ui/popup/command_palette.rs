@@ -544,18 +544,13 @@ fn icon_for(cmd: &PaletteCommand) -> Option<icons::Icon> {
 /// 전역 resolver에 namespace로 등록해 두므로(`i18n.rs`의 `PluginLangPort::register`,
 /// tools_menu의 `label_i18n_key` 해석과 동일 메커니즘) 별도 라우팅 없이 그대로
 /// `t()`를 호출하면 된다. 다만 plugin 작성자가 카탈로그에 키를 등록하지 않았을 수
-/// 있으므로, `t()`가 키를 그대로 반환하는 경우(미해석) raw 키를 그대로 보여준다
-/// (tools_menu의 동일 fallback과 동형).
+/// 있으므로, `t()`가 키를 그대로 반환하는 경우(미해석) raw 키를 그대로 보여준다 —
+/// 그 판정은 도구 메뉴와 **같은 함수**(`crate::adapters::ui::label_or_raw_key`)가 한다.
 fn label_for(cmd: &PaletteCommand) -> String {
     let raw = match cmd {
         PaletteCommand::Host { label_key, .. } => t(label_key).to_string(),
         PaletteCommand::Plugin { title_i18n_key, .. } => {
-            let translated = t(title_i18n_key);
-            if translated == title_i18n_key.as_str() {
-                title_i18n_key.clone()
-            } else {
-                translated.to_string()
-            }
+            crate::adapters::ui::label_or_raw_key(title_i18n_key)
         }
     };
     raw.trim_end_matches(':').to_string()
