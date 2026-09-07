@@ -97,7 +97,7 @@ tasty remote new-workspace --profile gx10-attach --name build --cwd /home/me/pro
 - `--raw` 는 서피스 단위에서만 됩니다.
 - `--no-reconnect` 를 주지 않으면 SSH 가 끊겼을 때 자동으로 재연결을 시도합니다.
 
-실행 중인 Tasty 창 안에 mirror 워크스페이스로 띄우려면 아래 "워크스페이스에 자동 attach 걸기" 를 씁니다.
+실행 중인 Tasty 윈도우 안에 mirror 워크스페이스로 띄우려면 아래 "워크스페이스에 자동 attach 걸기" 를 씁니다.
 
 ## 5. 워크스페이스에 자동 attach 걸기
 
@@ -135,7 +135,7 @@ tasty remote attach --force-detach 57               # 서피스 57
 
 ## 원격에서 받은 파일 저장 위치
 
-attach 채널로 전송된 파일은 `~/.tasty/transfers/` 에 저장되며 폴더 상한은 500 MiB 입니다. 설정 창에는 아직 항목이 없고 CLI 로 바꿉니다.
+attach 채널로 전송된 파일은 `~/.tasty/transfers/` 에 저장되며 폴더 상한은 500 MiB 입니다. 설정 윈도우에는 아직 항목이 없고 CLI 로 바꿉니다.
 
 ```sh
 tasty settings get-remote-transfer

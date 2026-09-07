@@ -1,4 +1,4 @@
-<!-- source-hash: 3c86732b984f -->
+<!-- source-hash: 051f19e2bb82 -->
 # Task DAG
 
 Turn what an agent has to do into **tasks** and tie them together by dependency, and you get a graph. Tasty's runner executes them in order, handles failures the way you told it to, and passes results on to the next task. A person watches the progress as a graph in a window.

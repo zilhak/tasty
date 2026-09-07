@@ -1,4 +1,4 @@
-<!-- source-hash: ca43f0a19b0b -->
+<!-- source-hash: 746c544bb5b2 -->
 # Hooks, notifications and webhooks
 
 This page covers **hooks**, which run a command automatically when something happens in a terminal (process exit, specific output, bell); **notifications**, which tell a person; and **webhooks**, which wake Tasty over HTTP from outside. Combining the three lets you build automations like "notify me when the build finishes" with the CLI alone.
@@ -133,6 +133,8 @@ tasty approval await --id "$ID"            # wait until a response arrives, prin
 
 Let CI or other services send an HTTP request to trigger an action inside Tasty. Tasty opens one designated port and issues an unguessable URL for each webhook.
 
+**There is no signature verification.** Send the HMAC signature header that GitHub and others use and Tasty will not look at it. Only two things tell senders apart — the unguessable URL, and a fixed token that works only when you set one (`--auth-*`). **With no `--auth-*`, whoever reaches that URL runs that action.**
+
 ### Port settings
 
 ```sh
@@ -142,7 +144,7 @@ tasty webhook config --port 28429   # change the port — applied after restart
 
 - The settings file is `~/.tasty/webhooks.toml`. On first run, `28429` is written as the default.
 - If the port is empty or the bind fails, Tasty does not silently switch to another port; it only emits a warning (toast). Fix the port and restart.
-- To accept requests from outside, open router forwarding and the firewall yourself. Leave HTTPS to a reverse proxy in front.
+- **The listener binds every network interface.** Without opening any forwarding it is already reachable from the same network (an office LAN, public Wi-Fi). Router forwarding and the firewall are what you open to let *the internet* in; they are not what keeps it closed until then. Leave HTTPS to a reverse proxy in front.
 
 ### Registering
 
@@ -157,14 +159,14 @@ tasty webhook register --method POST \
   --auth-location header --auth-key X-Token --auth-token s3cret
 ```
 
-Registering prints a URL of the form `http://127.0.0.1:28429/<16-character id>`. When calling from outside, replace the host part with the real address.
+Registering prints a URL of the form `http://127.0.0.1:28429/<16-character id>`. When calling from outside, replace the host part with the real address — that host is printed so you can `curl` it right there, and is not the address the listener binds.
 
 | Option | Meaning |
 |---|---|
 | `--method <M>` | Allowed HTTP method (repeatable, default POST) |
 | `--handler <id>` or `--sequence <json>` | Exactly one of the two is required |
-| `--persistent` | Kept across restarts (by default it disappears on restart) |
-| `--ttl-secs <secs>` / `--count <N>` | Time limit / call count limit (one of the two) |
+| `--persistent` | Kept across restarts (by default it disappears on restart). If you also set `--auth-token`, that token is stored in plain text in `~/.tasty/webhooks.toml` |
+| `--ttl-secs <secs>` / `--count <N>` | Time limit / **accepted** call count limit (one of the two). A rejected token (`401`) and a method that is not allowed (`405`) do not spend the count |
 | `--auth-location query\|bearer\|body\|header` + `--auth-token` (+ `--auth-key`) | Optional authentication. No auth if not set |
 
 Check the available handler ids with `tasty hook-handler list`. `--sequence` is a JSON list of Tasty-internal actions (send a notification, send text, etc.) written in order.
@@ -173,14 +175,18 @@ Check the available handler ids with `tasty hook-handler list`. `--sequence` is 
 
 The caller receives only a status code and a fixed phrase — internal results are never returned.
 
+**`200` means "accepted", not "done".** The answer is chosen before the action starts, so the caller gets `200` even when the action fails outright. In a multi-step `--sequence` a failing step does not stop the steps after it, so it can end half applied, and what failed appears only in Tasty's own log. If your CI decides retries from the status code, do not count `200` as success.
+
 | Code | Meaning |
 |---|---|
 | 200 `received` | Accepted (the action runs in the background) |
-| 401 | Authentication failed |
+| 401 | Authentication failed (repeat it and you are blocked with 429) |
 | 404 | Unknown URL |
 | 405 | Method not allowed |
 | 410 | Time or count limit expired |
-| 429 | The same source failed 20 or more times in 10 seconds and is blocked for 60 seconds |
+| 429 | The same source failed (`401`, `404` or `405`) 20 or more times in 10 seconds and is blocked for 60 seconds |
+
+The block lives in memory only — restart Tasty and the remaining block time is gone, so that source starts over.
 
 ```sh
 tasty webhook list

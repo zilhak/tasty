@@ -1,4 +1,4 @@
-<!-- source-hash: 7776c5b83a56 -->
+<!-- source-hash: e3a8110e2ee5 -->
 # Opening files
 
 After reading this page you will know how to open and work with files in non-terminal Surfaces — Explorer · Markdown · image · HTML — and how to open the window that shows git status.
@@ -78,12 +78,13 @@ tasty markdown reload --surface 5
 
 ## Image
 
-View PNG · JPEG and so on, and draw simply. **New Image** starts with an empty canvas.
+View PNG · JPEG and so on, and draw simply. **New Image** starts with an empty canvas. When the file changes outside Tasty, it is re-read automatically within 1 second — except **while you are editing**, where it is deferred until you leave edit mode (so the picture underneath your strokes does not change).
 
 - Toolbar — **Previous image** / **Next image** (within the same folder), **Refresh**, **Edit**, **New image**, zoom **Fit** / `+` / `-`.
 - Press **Edit** to choose **Brush** · **Color** and draw on top. Undo and redo with `Ctrl+Z` / `Ctrl+Shift+Z`. **Save** writes a PNG.
 - `tasty image paste --surface <ID>` pastes the clipboard image as a floating selection.
 - `tasty image list` shows every open image **across all windows**.
+- `tasty image reload --surface <ID>` re-reads the file right now instead of waiting.
 
 ```sh
 tasty image list

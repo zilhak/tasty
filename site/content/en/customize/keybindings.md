@@ -1,4 +1,4 @@
-<!-- source-hash: 54600ad12781 -->
+<!-- source-hash: d0d778d2c447 -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
@@ -142,6 +142,22 @@ Recording rules:
 - The slot buttons **Tab 1:** ~ **Tab 10:** and so on — press a single key without a modifier (**Press a key (no modifier)...**). For example, changing slot 1 to `Q` makes `Ctrl+Q` go to Tab 1, and the number badge shown on the Tab while the modifier is held changes to `Q` as well.
 - **Next tab:** · **Previous tab:** and so on — likewise a single key. Defaults are vi-style `L`/`H` (Tabs), `J`/`K` (Workspaces · categories).
 - Choosing **Custom** in the dropdown abandons the rule and records a completely different combination for each slot (such as `Ctrl+Alt+1`). No number badge is shown in this mode. Going back to the rule mode resets that axis to its defaults.
+
+## Keybindings do nothing while a popup has focus
+
+While a popup that takes input — the search bar, the file picker, the command palette — **has
+focus, no keybinding works at all.** That is deliberate: you would not want `Alt+W` to close a
+surface while you are typing into the search bar. If such a popup is merely open and does not
+have focus, keybindings work as usual.
+
+There are two ways out.
+
+- **`Esc`** — releases the focused popup. Popups of the kind that close when you click outside
+  them close as well; the others stay open and merely lose focus. Other popups that are open
+  but not focused are left alone.
+- **Click outside the popup** — same result as `Esc`.
+
+While the settings window or the notification panel is open, `Esc` closes that one first.
 
 ## Two things that save you from memorising keybindings
 

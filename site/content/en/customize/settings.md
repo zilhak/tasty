@@ -1,4 +1,4 @@
-<!-- source-hash: 485600f80d94 -->
+<!-- source-hash: f9bd178c7cac -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -117,6 +117,11 @@ cancel = "Annuler"
 
 - **`[font]` cannot be left out.** Text without a font promise can render as □, so
   the person writing the pack has to say which font it expects.
+- **The declared font applies across the whole UI.** The font named by `file` ·
+  `family` · `candidates` is added behind the built-in font, so the language's
+  letters show up in the settings and popups and on plugin screens (the clipboard
+  viewer, Markdown, and so on). `builtin = true` means "the built-in font is enough — add
+  nothing."
 - **You do not have to translate everything.** Anything you leave out shows in
   English. Leaving a value empty (`""`) also counts as "not translated" and shows
   in English — you never end up with a blank label.
@@ -125,6 +130,23 @@ cancel = "Annuler"
 - Text containing `{}` has a value filled in at runtime. **Keep the same number of
   them** — drop one and that value disappears, add one and a literal `{}` shows up
   on screen.
+
+### Command-line help is translated too
+
+`tasty --help` and the other terminal help screens come out in the language you
+picked. In a language pack, that text lives under `[cli.help]`.
+
+```toml
+[cli.help._root]
+about = "Émulateur de terminal accéléré par GPU"
+
+[cli.help._root.new]
+about = "Créer une ressource"
+```
+
+- Here too, **you do not have to translate everything.** Commands you leave out
+  keep their English description and simply appear alongside the translated ones.
+- The help frame itself — `Usage:`, `Options:`, `Commands:` — is still English.
 
 ### Selecting it
 
@@ -152,6 +174,10 @@ the text that language ships with stays on screen, and you never get a blank spo
   found, or the file is invalid. The warning names the path that was looked for.
   **Your setting is kept**, so fixing the pack and restarting brings that language
   back.
+- **Text renders as □ with a font warning** — the pack and its text loaded, but the
+  font named by `[font]` could not be found or opened. The text still shows; only
+  the font is missing. Check the `file` path (relative to the pack folder) or the
+  `family` name and restart.
 - The full reason is written as one line to `~/.tasty/debug.log`.
 
 ## The settings file `~/.tasty/config.toml`
