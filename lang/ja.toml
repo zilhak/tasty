@@ -633,11 +633,11 @@ hide_others = "ほかを非表示"
 show_all = "すべてを表示"
 quit = "{}を終了"
 file = "ファイル"
-new_window = "新規ウインドウ"
-window = "ウインドウ"
+new_window = "新規ウィンドウ"
+window = "ウィンドウ"
 minimize = "しまう"
 zoom = "拡大/縮小"
-close_window = "ウインドウを閉じる"
+close_window = "ウィンドウを閉じる"
 
 [tray]
 show_window = "ウィンドウを表示"
@@ -850,6 +850,7 @@ bind_failed = "Webhook ポート {} をバインドできませんでした（{}
 [i18n.warn]
 pack_missing = "言語 '{}' は未インストールのため英語で表示します。{} に言語パックを置いて再起動してください。"
 pack_invalid = "言語パック '{}' を読み込めないため英語で表示します。{} を修正して再起動してください（{}）。"
+font_unresolved = "言語パックのフォントを読み込めませんでした: {}。文字は表示されますが、該当スクリプトは □ で表示される場合があります。"
 
 [persistence.warn]
 settings_unparsable = "{} を読み込めなかったため、既定の設定で起動しました。元のファイルは隣に .bak ファイルとして保管します。"
@@ -1690,7 +1691,7 @@ empty_none_hint = "依存関係でまとまったタスクがここに表示さ�
 empty_filtered = "一致する DAG がありません"
 empty_filtered_hint = "条件を変えて探してみてください。"
 
-# 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
+# 전체화면 무대(fullscreen stage) — 윈도우 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "全画面"
 
@@ -1735,3 +1736,2536 @@ Tasty を自分でビルドして使う場合は、先に "Tasty Dev" 証明書�
 
 この案内は一度だけ表示されます。設定 > 一般 > 権限から再び有効にできます。"""
 open_settings = "設定を開く"
+
+# ── CLI 도움말 (clap `about` / `help`) ────────────────────────────────────────
+[cli.help._root]
+about = "AI コーディングエージェントのための GPU アクセラレーテッドターミナルエミュレータ"
+
+[cli.help._root.arg.port_file]
+help = "ポートファイルのパスを指定（テスト分離用）"
+
+[cli.help._root.arg.launch]
+help = "tasty ターミナル内でも GUI を強制的に起動する"
+
+[cli.help._root.arg.headless]
+help = "ヘッドレスターミナルエミュレータとして実行（GUI なしで IPC + PTY + plugin のみ）。ヘッドレスになるのは no-default-features ビルドだけで、GUI ビルドは警告を出したうえで GUI を起動し、継承した DISPLAY にウィンドウが開く"
+
+[cli.help._root.arg.all]
+help = "すべてのコマンドをツリー表示する（-h と併用）"
+
+[cli.help._root.arg.enable_input_simulation]
+help = "入力シミュレーション IPC を有効にする（debug ビルド専用）。debug.inject_mouse、debug.inject_key などに必要"
+
+[cli.help._root.new]
+about = "新しいリソースを作成する（ウィンドウ、ワークスペース、タブ、分割）"
+
+[cli.help._root.close]
+about = "リソースを閉じる（タブ、ペイン、サーフェス、ワークスペース、ウィンドウ）"
+
+[cli.help._root.list]
+about = "リソースの一覧・照会（ワークスペース、ウィンドウ、ツリー、サーフェス、ペイン、情報、フックなど）"
+
+[cli.help._root.set]
+about = "リソースの設定・更新（フック、マーク、ワークスペース、グローバルフック）"
+
+[cli.help._root.move]
+about = "リソースの移動・並べ替え（タブ、ワークスペース）"
+
+[cli.help._root.split]
+about = "ペイングループまたはサーフェスを分割する"
+
+[cli.help._root.remote]
+about = "別ホストのサーフェス・ワークスペースにリモート（SSH）で attach する — `remote attach`"
+
+[cli.help._root.send]
+about = "テキスト、キー、キューメッセージを送信する"
+
+[cli.help._root.read]
+about = "サーフェスまたはキューから読み取る"
+
+[cli.help._root.notify]
+about = "通知を作成する"
+
+[cli.help._root.unset]
+about = "リソースを削除する（フック、グローバルフック）"
+
+[cli.help._root.surface-meta]
+about = "サーフェスごとのメタデータを管理する"
+
+[cli.help._root.surface]
+about = "サーフェスの操作（完了シグナル、照会など）"
+
+[cli.help._root.session]
+about = "エージェントセッショントークン（発行、失効、一覧）"
+
+[cli.help._root.terminal]
+about = "子ターミナルを管理する（spawn/tell/children/kill など） — ホストに内在化されたエージェント子ターミナル管理（ADR-0040）"
+
+[cli.help._root.pty]
+about = "ヘッドレス PTY を管理する（spawn/write/read/wait/kill/list） — サーフェス・タブを持たないバックグラウンド PTY。`terminal` とは別の名前空間（ADR-0050 pty primitive）"
+
+[cli.help._root.is-typing]
+about = "サーフェスが現在タイピング中かを確認する（直近 5 秒以内のキー入力の有無）"
+
+[cli.help._root.wake]
+about = "遅延サーフェスの PTY を起動する（すでに実行中なら何もしない）"
+
+[cli.help._root.debug]
+about = "デバッグ・診断コマンド（IME シミュレーション、生のキー入力など） — debug ビルド専用"
+
+[cli.help._root.tool]
+about = "内部ツール（SSH 接続プロファイル、パスキーなど）"
+
+[cli.help._root.plugin]
+about = "plugin を管理する（一覧、インストール、削除、有効化、無効化、ログ）"
+
+[cli.help._root.memory]
+about = "エージェントメモリストア（~/.tasty/memory.db） — 永続的なキーと値"
+
+[cli.help._root.settings]
+about = "グローバル設定 — リモート転送の保存フォルダと容量上限を取得・設定する"
+
+[cli.help._root.output]
+about = "構造化出力オブザーバ（パーサ + シンクのファンアウト）"
+
+[cli.help._root.approval]
+long = "人間への引き継ぎ承認ゲート（request/respond/await/cancel/list/get）\n\n生きているゲートはホストより長くは残らない。`request`・`respond`・`await`・`cancel`・`list`・`get` は全てメモリ上のストア 1 つを読み、そのストアは起動のたびに空から始まる。だからホストが止まったとき `pending` だった要求はその後には無い — `list` に出ず、その id で `await` すると「not found」が返る。残るのは書かれた記録で、それを memory store から読むのが `history` だ。`history` はログ、`list` は今答えられるものとして読むこと。"
+about = "人間への引き継ぎ承認ゲート（request/respond/await/cancel/list/get）"
+
+[cli.help._root.telemetry]
+long = "エージェントのテレメトリ (メトリクス記録・集計・時系列・上位 N)\n\n入り口は 2 つある: エージェントが `telemetry record` で自分から報告するものと、エージェントの IPC 呼び出しごとにホストが method タグを付けて 1 件ずつ残す `ipc_calls` イベント (ホスト自身の呼び出し・`telemetry.*`・throttled の呼び出しは数えない)。問い合わせは raw イベントだけを読む — 永続的な rollup は無い — そして保存は直近 2 万件で 切られるので、`--since` をそれより過去にしても届かない。anomaly の記録は別に切られる: 直近 5 千件、最大 50 時間。"
+about = "エージェントテレメトリ（指標の記録、要約、時系列、上位 N）"
+
+[cli.help._root.agent]
+about = "エージェント協調 primitive（task DAG。barrier/semaphore/lease/reducer/rate-limit が続く）"
+
+[cli.help._root.file-handler]
+about = "ファイルハンドラ — ユーザー設定（`~/.tasty/file-handlers.toml`）を再読み込みする"
+
+[cli.help._root.clipboard]
+about = "クリップボード — ローカルのクリップボードを操作する"
+
+[cli.help._root.hook-handler]
+about = "フックハンドラ — 共用のフック・Webhook ハンドラレジストリ（list / reload / dispatch）"
+
+[cli.help._root.completion-strategy]
+about = "完了判定ストラテジ — task Custom ディスパッチの完了判定レジストリ（list）"
+
+[cli.help._root.preset]
+about = "レイアウトプリセットを管理する（ワークスペース / タブ / ペイン）"
+
+[cli.help._root.workspace-category]
+about = "ワークスペースカテゴリ（サイドバーのフォルダ）を管理する — 一覧/作成/名前変更/削除/移動"
+
+[cli.help._root.webhook]
+about = "受信 Webhook を管理する（登録/一覧/情報/解除） — HTTP → IpcSequence"
+
+[cli.help._root.port]
+about = "このインスタンスの IPC ポートを stdout に出力する（リモートポート自動発見チェーンの最初の一歩、`ssh host tasty port`）。ポートファイルのみを読み、IPC は使わない"
+
+[cli.help._root.screenshot]
+about = "スクリーンショットを PNG ファイルに取得する（フォーカスに依存しない）"
+
+[cli.help._root.list.workspaces]
+about = "ワークスペース一覧"
+
+[cli.help._root.list.windows]
+about = "すべてのウィンドウ一覧"
+
+[cli.help._root.list.tree]
+about = "ワークスペース・ペイン・タブをツリー表示する"
+
+[cli.help._root.list.surfaces]
+about = "全ワークスペースのサーフェス（ターミナル）一覧"
+
+[cli.help._root.list.panes]
+about = "全ワークスペースのペイン一覧"
+
+[cli.help._root.list.tabs]
+about = "ペイン内のタブ一覧"
+
+[cli.help._root.list.tabs.arg.pane]
+help = "ペイン ID（必須）"
+
+[cli.help._root.list.info]
+about = "システム情報を表示する"
+
+[cli.help._root.list.gpu-stats]
+about = "GPU リソース数を表示する（wgpu レポート + ウィンドウ別レンダラー統計）"
+
+[cli.help._root.list.notifications]
+about = "通知一覧"
+
+[cli.help._root.list.timers]
+about = "登録済みタイマーと、いまこのインスタンスを起こしているものを表示する"
+
+[cli.help._root.list.hooks]
+about = "フック一覧"
+
+[cli.help._root.list.hooks.arg.surface]
+help = "サーフェス ID で絞り込む"
+
+[cli.help._root.list.global-hooks]
+about = "グローバルフックをすべて一覧表示する"
+
+[cli.help._root.list.theme]
+about = "解決済みのグローバルテーマのスナップショットを表示する（色・フォントサイズ・UI 倍率）"
+
+[cli.help._root.list.recent]
+about = "あるサーフェス種別で最近開いたファイルの一覧"
+
+[cli.help._root.list.recent.arg.kind]
+help = "問い合わせるサーフェス種別（例: `markdown`）。ホストは種別名を知らない — 呼び出し側が渡す"
+
+[cli.help._root.list.queue]
+about = "キューの状態を表示する（保留メッセージ数 + プレビュー）"
+
+[cli.help._root.list.queue.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.move.tab]
+about = "同じペイン内でタブを別の位置へ移動する"
+
+[cli.help._root.move.tab.arg.from]
+help = "移動元のタブ位置（0 起点）"
+
+[cli.help._root.move.tab.arg.pane]
+help = "ペイン ID"
+
+[cli.help._root.move.tab.arg.to]
+help = "移動先の位置（0 起点）"
+
+[cli.help._root.move.workspace]
+about = "ワークスペースを別の位置へ移動する"
+long = "ワークスペースを別の位置へ移動する\n\n`--id` を使うほうがよい: ワークスペース ID はそれを持つウィンドウまで指すので、どのウィンドウにフォーカスがあっても命令の意味が変わらない。`--from` は 1 つのウィンドウ内の位置なので、フォーカスのあるウィンドウに着地する。"
+
+[cli.help._root.move.workspace.arg.from]
+help = "移動元のワークスペース位置（0 起点、フォーカス依存）"
+
+[cli.help._root.move.workspace.arg.id]
+help = "移動するワークスペース ID（推奨、--from とは併用不可）"
+
+[cli.help._root.move.workspace.arg.to]
+help = "移動先の位置（0 起点）"
+
+[cli.help._root.read.command-at]
+about = "指定位置に記録されたコマンド（負数 = 末尾から）"
+
+[cli.help._root.read.command-at.arg.index]
+help = "0 起点の位置。負数は末尾から数える"
+
+[cli.help._root.read.command-at.arg.surface]
+help = "サーフェス ID（既定: フォーカス中のターミナル）"
+
+[cli.help._root.read.commands]
+about = "サーフェスに記録されたシェルコマンドの一覧（OSC 133）"
+
+[cli.help._root.read.commands.arg.limit]
+help = "返す記録数の上限"
+
+[cli.help._root.read.commands.arg.since]
+help = "この unix-ms 時刻以降に終了した記録だけを含める"
+
+[cli.help._root.read.commands.arg.surface]
+help = "サーフェス ID（既定: フォーカス中のターミナル）"
+
+[cli.help._root.read.last-command]
+about = "サーフェスに記録された最新のコマンド"
+
+[cli.help._root.read.last-command.arg.surface]
+help = "サーフェス ID（既定: フォーカス中のターミナル）"
+
+[cli.help._root.read.parse-since-mark]
+about = "最後のマーク以降の出力を組み込みパーサーで解析する（path/url/prompt_boundary/exit_code）"
+
+[cli.help._root.read.parse-since-mark.arg.parsers]
+help = "カンマ区切りのパーサー id。既定 = 組み込みすべて"
+
+[cli.help._root.read.parse-since-mark.arg.surface]
+help = "サーフェス ID（既定: フォーカス中のターミナル）"
+
+[cli.help._root.read.queue]
+about = "サーフェスのメッセージキューから読む（最も古いメッセージを消費する）"
+
+[cli.help._root.read.queue.arg.clear]
+help = "読まずにメッセージをすべて消す"
+
+[cli.help._root.read.queue.arg.from]
+help = "送信元サーフェス ID で絞り込む"
+
+[cli.help._root.read.queue.arg.peek]
+help = "消費せずに覗く"
+
+[cli.help._root.read.queue.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.read.screen]
+about = "サーフェスの現在の画面テキストを読む"
+
+[cli.help._root.read.screen.arg.lines]
+help = "画面下部から読む行数。内容の末尾から数える — 末尾の空行は飛ばし、足りない分はスクロールバックから補う。上限はグリッドではなく内容なので、最後に描かれた行より下の行は戻らない。したがってほとんど空の画面では、スクロールバックに余裕があっても N より少なく返る。代替画面（フルスクリーン TUI）では補充が主バッファのスクロールバックから来て目印なしに付くため、N が大きいと TUI 自身の画面の上にシェル履歴が乗ることがある"
+
+[cli.help._root.read.screen.arg.show_dim]
+help = "淡色セル（ゴースト候補、例: Claude Code の補完オーバーレイ）も含める。既定では除外する — 未送信の UI 候補を実際のバッファ内容と取り違えないためである"
+
+[cli.help._root.read.screen.arg.surface]
+help = "サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.read.since-mark]
+about = "最後のマーク以降の出力を読む"
+
+[cli.help._root.read.since-mark.arg.strip_ansi]
+help = "出力から ANSI エスケープシーケンスを取り除く"
+
+[cli.help._root.read.since-mark.arg.surface]
+help = "サーフェス ID（既定: フォーカス中のターミナル）"
+
+[cli.help._root.send.key]
+about = "ターミナルサーフェスにキーを送る（enter, tab, escape, up, down など）"
+
+[cli.help._root.send.key.arg.key]
+help = "キー名"
+
+[cli.help._root.send.key.arg.surface]
+help = "対象サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.send.queue]
+about = "サーフェスのキューにメッセージを送る"
+
+[cli.help._root.send.queue.arg.content]
+help = "メッセージ本文"
+
+[cli.help._root.send.queue.arg.from]
+help = "送信元サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.send.queue.arg.to]
+help = "対象サーフェス ID"
+
+[cli.help._root.send.text]
+about = "ターミナルサーフェスにテキストを送る"
+
+[cli.help._root.send.text.arg.surface]
+help = "対象サーフェス ID（既定: フォーカス中）"
+
+[cli.help._root.send.text.arg.text]
+help = "送るテキスト"
+
+[cli.help._root.send.text.arg.wait_idle]
+help = "人が入力中なら送らない — 判断と送信を一手で行う。代わりに \"sent\": false と \"reason\": \"typing\" を報告する。`tasty is-typing` で先に確かめる方法ではこうはならない — 2 つのコマンドの間に入力が始まりうる"
+
+[cli.help._root.close.pane]
+about = "指定したペインを閉じる（分割解除）"
+
+[cli.help._root.close.pane.arg.pane]
+help = "対象ペイン ID（必須）"
+
+[cli.help._root.close.self]
+about = "呼び出したサーフェス自身を閉じる（TASTY_SURFACE_ID を使う）"
+
+[cli.help._root.close.surface]
+about = "タブ内の指定したサーフェスを閉じる"
+
+[cli.help._root.close.surface.arg.surface]
+help = "対象サーフェス ID（必須）"
+
+[cli.help._root.close.tab]
+about = "ID を指定してタブを閉じる"
+
+[cli.help._root.close.tab.arg.tab]
+help = "対象タブ ID（必須）"
+
+[cli.help._root.close.window]
+about = "ID を指定してウィンドウを閉じる"
+long = "ID を指定してウィンドウを閉じる。\n\n対象は常に `--id` で明示する（`tasty list windows` を参照）。最後に残った主ウィンドウは拒否する — 終了はユーザーの行為である。"
+
+[cli.help._root.close.window.arg.id]
+help = "対象ウィンドウ ID（必須）"
+
+[cli.help._root.close.workspace]
+about = "ID を指定してワークスペースをまるごと閉じる — 中のペイン・タブ・サーフェスもすべて"
+long = "ID を指定してワークスペースをまるごと閉じる — 中のペイン・タブ・サーフェスもすべて。\n\n取り消せない: ワークスペース内のターミナルはすべて終了し、そのワークスペースはユーザーの再オープン履歴に入らず、スクロールバックも残らない。再び開けるのはユーザーが手で閉じたものだけである。\n\n対象は常に `--id` で明示する（`tasty list workspaces` を参照） — 画面に何が見えているかから推測することはない。ユーザーが見ていないワークスペースを閉じても、いま画面にあるワークスペースはそのまま残る。自分のサーフェスを含むワークスペースは拒否し、リモート attach セッションをミラーしているワークスペースと、最後に残った 1 つのワークスペースも拒否する — ウィンドウを閉じるのは別の判断であり、`tasty close window` を参照。"
+
+[cli.help._root.close.workspace.arg.id]
+help = "対象ワークスペース ID（必須）"
+
+[cli.help._root.new.tab]
+about = "指定したペインに新しいタブを作成する"
+
+[cli.help._root.new.tab.arg.cwd]
+help = "作業ディレクトリ（terminal 種別のとき）"
+
+[cli.help._root.new.tab.arg.file]
+help = "ファイルパス（markdown 種別のとき）"
+
+[cli.help._root.new.tab.arg.pane]
+help = "対象ペイン ID（必須）"
+
+[cli.help._root.new.tab.arg.path]
+help = "ディレクトリパス（explorer 種別のとき）"
+
+[cli.help._root.new.tab.arg.type]
+help = "サーフェス種別: terminal（既定）、markdown、explorer、html、image、dag_graph"
+
+[cli.help._root.new.tab.arg.url]
+help = "URL（html 種別のとき）"
+
+[cli.help._root.new.window]
+about = "新しいウィンドウを作成する"
+
+[cli.help._root.new.workspace]
+about = "新しいワークスペースを作成する"
+
+[cli.help._root.new.workspace.arg.category]
+help = "ワークスペースを入れるカテゴリ（名前または ID）。既定は normal"
+
+[cli.help._root.new.workspace.arg.cwd]
+help = "新しいワークスペースの作業ディレクトリ"
+
+[cli.help._root.new.workspace.arg.file]
+help = "ファイルパス（markdown/image 種別のとき）"
+
+[cli.help._root.new.workspace.arg.name]
+help = "新しいワークスペースの名前"
+
+[cli.help._root.new.workspace.arg.path]
+help = "ディレクトリパス（explorer 種別のとき）"
+
+[cli.help._root.new.workspace.arg.remote_workspace]
+help = "attach 先となるリモート tasty 側のワークスペース ID"
+
+[cli.help._root.new.workspace.arg.ssh]
+help = "保存済みプロファイルを使わず、その場限りのインライン SSH 先に対応づける。例: --ssh user@host。`--ssh-profile` とは併用不可"
+
+[cli.help._root.new.workspace.arg.ssh_profile]
+help = "このワークスペースを保存済みの SSH プロファイル（リモートマシン）に対応づける。ワークスペースが有効化されると、ホストが自動的に attach する（SSH トンネル + ワークスペースのミラー）"
+
+[cli.help._root.new.workspace.arg.type]
+help = "サーフェス種別: terminal（既定）、markdown、explorer、html、image、dag_graph"
+
+[cli.help._root.new.workspace.arg.url]
+help = "URL（html 種別のとき）"
+
+[cli.help._root.split.arg.cwd]
+help = "作業ディレクトリ（terminal 種別のとき）"
+
+[cli.help._root.split.arg.direction]
+help = "分割方向: vertical（既定）または horizontal"
+
+[cli.help._root.split.arg.file]
+help = "ファイルパス（markdown/image 種別のとき）"
+
+[cli.help._root.split.arg.level]
+help = "分割の階層: pane（上位レイアウト）または surface（下位レイアウト）"
+
+[cli.help._root.split.arg.meta]
+help = "新しいサーフェスに設定するメタデータ JSON（例: '{\"nickname\":\"build\"}'）"
+
+[cli.help._root.split.arg.path]
+help = "ディレクトリパス（explorer 種別のとき）"
+
+[cli.help._root.split.arg.target_pane]
+help = "対象ペイン: 数値のペイン ID（--level pane のときのみ）"
+
+[cli.help._root.split.arg.target_surface]
+help = "対象サーフェス: 数値のサーフェス ID、\"this\"（TASTY_SURFACE_ID）、またはニックネーム"
+
+[cli.help._root.split.arg.type]
+help = "サーフェス種別: terminal（既定）、markdown、explorer、html、image、dag_graph"
+
+[cli.help._root.split.arg.url]
+help = "URL（html 種別のとき）"
+
+[cli.help._root.set.cwd]
+about = "リモートサーフェスがホストへ報告する作業ディレクトリを設定する"
+
+[cli.help._root.set.cwd.arg.path]
+help = "ディレクトリのパス。省略すると消える"
+
+[cli.help._root.set.cwd.arg.surface]
+help = "対象サーフェスの id"
+
+[cli.help._root.set.global-hook]
+about = "グローバルフックを設定する — サーフェスに紐づかず、スケジュールで発火する"
+
+[cli.help._root.set.global-hook.arg.command]
+help = "条件が発火したときに実行するシェルコマンド"
+
+[cli.help._root.set.global-hook.arg.condition]
+help = "条件: interval:SECS, once:SECS"
+
+[cli.help._root.set.global-hook.arg.label]
+help = "人が読めるラベル (任意)"
+
+[cli.help._root.set.hook]
+about = "サーフェスにフックを設定する"
+
+[cli.help._root.set.hook.arg.command]
+help = "イベント発火時に実行するインラインのシェルコマンド (後方互換 — 匿名フックハンドラとして包む)。--handler とは併用できない"
+
+[cli.help._root.set.hook.arg.event]
+help = "イベント種別: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS"
+
+[cli.help._root.set.hook.arg.handler]
+help = "束ねる共有フックハンドラの id (例: host/my-handler)。そのハンドラがフックのトリガ元を受け付ける必要がある。--command とは併用できない"
+
+[cli.help._root.set.hook.arg.once]
+help = "一度発火したらフックを削除する"
+
+[cli.help._root.set.hook.arg.surface]
+help = "フックを設定するサーフェス ID (既定: フォーカス中)"
+
+[cli.help._root.set.mark]
+about = "サーフェスに読み取りマークを設定する"
+
+[cli.help._root.set.mark.arg.surface]
+help = "サーフェス ID (既定: フォーカス中のターミナル)"
+
+[cli.help._root.set.url]
+about = "webview 種別のサーフェスの URL を設定する"
+
+[cli.help._root.set.url.arg.surface]
+help = "対象サーフェスの id"
+
+[cli.help._root.set.url.arg.url]
+help = "読み込む URL"
+
+[cli.help._root.set.workspace]
+about = "ワークスペースの名前・サブタイトル・説明、または SSH アタッチのマッピングを更新する"
+
+[cli.help._root.set.workspace.arg.category]
+help = "このワークスペースを別のカテゴリへ移す (名前または id)"
+
+[cli.help._root.set.workspace.arg.clear_mapping]
+help = "既存の SSH アタッチのマッピングを消す"
+
+[cli.help._root.set.workspace.arg.description]
+help = "新しい説明"
+
+[cli.help._root.set.workspace.arg.id]
+help = "ワークスペース ID (必須)"
+
+[cli.help._root.set.workspace.arg.name]
+help = "新しい名前"
+
+[cli.help._root.set.workspace.arg.remote_workspace]
+help = "アタッチ先となるリモート tasty 側のワークスペース id"
+
+[cli.help._root.set.workspace.arg.ssh]
+help = "使い捨てのインライン SSH 対象に対応づける (例: --ssh user@host)"
+
+[cli.help._root.set.workspace.arg.ssh_profile]
+help = "このワークスペースを保存済みの SSH プロファイル (リモートマシン) に対応づける"
+
+[cli.help._root.set.workspace.arg.subtitle]
+help = "新しいサブタイトル"
+
+[cli.help._root.unset.global-hook]
+about = "ID を指定してグローバルフックを削除する"
+
+[cli.help._root.unset.global-hook.arg.hook]
+help = "削除するフックの ID"
+
+[cli.help._root.unset.hook]
+about = "フックを削除する"
+
+[cli.help._root.unset.hook.arg.hook]
+help = "削除するフックの ID"
+
+[cli.help._root.tool.attach]
+about = "tasty-attach プロファイルでリモートのサーフェス・ワークスペースにアタッチする。`--list` はプロファイルの一覧を出すだけだ。ローカル動作"
+
+[cli.help._root.tool.attach.arg.dump_after]
+help = "ミラーダンプを集める時間 (ミリ秒)。省略すると内蔵の既定値"
+
+[cli.help._root.tool.attach.arg.list]
+help = "tasty-attach プロファイルの一覧だけを出して終了する (アタッチしない)"
+
+[cli.help._root.tool.attach.arg.name]
+help = "アタッチに使う tasty-attach プロファイル名 (`--list` と一緒に省略するとプロファイル一覧だけを出す)"
+
+[cli.help._root.tool.attach.arg.no_reconnect]
+help = "接続が切れたときの自動再接続を無効にする"
+
+[cli.help._root.tool.attach.arg.raw]
+help = "stdin/stdout をそのまま繋ぐブリッジ (サーフェス専用)"
+
+[cli.help._root.tool.attach.arg.send]
+help = "アタッチ直後に非対話で一度だけ送る入力 (エスケープは解釈される)"
+
+[cli.help._root.tool.attach.arg.send_to]
+help = "ワークスペースモードで --send を受け取るサーフェス id"
+
+[cli.help._root.tool.attach.arg.surface]
+help = "アタッチ先のリモートサーフェス id"
+
+[cli.help._root.tool.attach.arg.workspace]
+help = "アタッチ先のリモートワークスペース id (surface とは併用できない)"
+
+[cli.help._root.tool.passkey]
+about = "Passkey (`~/.tasty/passkeys.toml`) — プロファイルが名前で参照する資格情報の保管庫。list/show は値を決して見せない。ローカルファイルのみで IPC は使わない"
+
+[cli.help._root.tool.passkey.add]
+about = "Passkey を追加または置き換える。`--path <file>` (ファイルを参照) か `--inline` (シークレットを直接入力) のどちらかを使う"
+
+[cli.help._root.tool.passkey.add.arg.inline]
+help = "inline 種別: シークレットを 0600 のファイルとして書き出す。値は `--value` か stdin から取る"
+
+[cli.help._root.tool.passkey.add.arg.name]
+help = "プロファイルが参照する一意な識別子。英数字と '-' '_' だけが使える"
+
+[cli.help._root.tool.passkey.add.arg.path]
+help = "path 種別: ユーザーが持つ既存の鍵ファイルのパス (`-i`)。`--inline` とは併用できない"
+
+[cli.help._root.tool.passkey.add.arg.value]
+help = "インラインの値 (省略すると stdin から読む)。`--inline` と一緒に使う"
+
+[cli.help._root.tool.passkey.list]
+about = "保存済み Passkey の一覧 (名前と種別のみ。値は決して表示しない)"
+
+[cli.help._root.tool.passkey.list.arg.json]
+help = "表の代わりに JSON で出力する"
+
+[cli.help._root.tool.passkey.remove]
+about = "Passkey を削除する (inline 種別は管理しているファイルも一緒に削除する)"
+
+[cli.help._root.tool.passkey.remove.arg.name]
+help = "削除する Passkey 名"
+
+[cli.help._root.tool.passkey.show]
+about = "Passkey 1 件の名前と種別を表示する (値は決して表示しない)"
+
+[cli.help._root.tool.passkey.show.arg.json]
+help = "表の代わりに JSON で出力する"
+
+[cli.help._root.tool.passkey.show.arg.name]
+help = "表示する Passkey 名"
+
+[cli.help._root.tool.remote-profile]
+about = "リモート接続プロファイルの管理 (ssh と tasty-attach の 2 種類)。ローカルファイルのみで IPC は使わない"
+
+[cli.help._root.tool.remote-profile.add-attach]
+about = "tasty-attach プロファイルを追加する。接続情報は参照 (`--ssh-ref <name>`) かインラインのフィールド (host, …) のどちらかだ"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.host]
+help = "インライン接続: ssh の接続先 (host | user@host | エイリアス)。`--ssh-ref` が無いときに使われる"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.identity]
+help = "インライン接続: identity ファイルのパス (-i)。path 種別の Passkey として別に保存される"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.label]
+help = "UI に表示するラベル (任意)"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.name]
+help = "プロファイルの一意な識別子"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.options]
+help = "インライン接続: 追加の ssh -o オプション (複数回指定可)"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port]
+help = "インライン接続: ssh のポート"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port_file]
+help = "リモートのポートファイルを明示するパス (慣例外の場所)。指定すると慣例のパスより優先される"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port_mode]
+help = "リモートのポート発見方式: auto (既定) | subcommand | file-unix | file-windows"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.remote_tasty]
+help = "リモートホスト側の tasty バイナリのパス (ポート発見に使う)。既定は \"tasty\""
+
+[cli.help._root.tool.remote-profile.add-attach.arg.ssh_ref]
+help = "参照する ssh プロファイル名 (変更に追従する)。指定するとインラインの接続フィールドは無視される"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.user]
+help = "インライン接続: ssh のユーザー"
+
+[cli.help._root.tool.remote-profile.add-ssh]
+about = "ssh 接続プロファイルを追加する (接続情報のみで attach の指定は持たない)"
+long = "ssh 接続プロファイルを追加する (接続情報のみで attach の指定は持たない)。\n\n`attach` はこの種類を受け付けない。このホストを経由してアタッチするには、このプロファイルを名前で参照する (`--ssh-ref`) tasty-attach プロファイルを別に作る。"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.host]
+help = "ssh の接続先: host | user@host | ssh config のエイリアス"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.identity]
+help = "identity ファイルのパス (-i)。path 種別の Passkey `<name>-key` として別に保存される"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.label]
+help = "UI に表示するラベル (任意)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.name]
+help = "プロファイルの一意な識別子"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.options]
+help = "追加の ssh -o オプション (複数回指定可)。例: --option ServerAliveInterval=30"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.port]
+help = "ssh のポート (既定: ssh config の値、無ければ 22)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.shell]
+help = "リモートシェル: powershell | cmd | bash | zsh | auto (既定)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.user]
+help = "ssh のユーザー (host に user@ が付いていない場合)"
+
+[cli.help._root.tool.remote-profile.detect]
+about = "プロファイルを再検出する (ssh: リモートシェルを調べる / tasty-attach: リモートのポートを確認する)。SSH で接続する"
+
+[cli.help._root.tool.remote-profile.detect.arg.name]
+help = "再検出するプロファイル名"
+
+[cli.help._root.tool.remote-profile.edit]
+about = "既存プロファイルのフィールドを更新する (与えたフィールドだけ上書きする)。種類はそのまま保たれる"
+
+[cli.help._root.tool.remote-profile.edit.arg.host]
+help = "ssh の接続先: host | user@host | ssh config のエイリアス"
+
+[cli.help._root.tool.remote-profile.edit.arg.identity]
+help = "identity ファイルのパス (-i)。path 種別の Passkey として別に保存される"
+
+[cli.help._root.tool.remote-profile.edit.arg.label]
+help = "UI に表示するラベル"
+
+[cli.help._root.tool.remote-profile.edit.arg.name]
+help = "更新するプロファイル名"
+
+[cli.help._root.tool.remote-profile.edit.arg.options]
+help = "追加の ssh -o オプション (複数回指定可)。保存済みの一覧に追記せず、丸ごと置き換える"
+
+[cli.help._root.tool.remote-profile.edit.arg.port]
+help = "ssh のポート"
+
+[cli.help._root.tool.remote-profile.edit.arg.port_file]
+help = "tasty-attach: リモートのポートファイルのパス"
+
+[cli.help._root.tool.remote-profile.edit.arg.port_mode]
+help = "tasty-attach: リモートのポート発見方式"
+
+[cli.help._root.tool.remote-profile.edit.arg.remote_tasty]
+help = "tasty-attach: リモートホスト側の tasty バイナリのパス"
+
+[cli.help._root.tool.remote-profile.edit.arg.shell]
+help = "ssh: リモートシェル (powershell | cmd | bash | zsh | auto)"
+
+[cli.help._root.tool.remote-profile.edit.arg.ssh_ref]
+help = "tasty-attach: 代わりに参照する ssh プロファイル (名前で指定)"
+
+[cli.help._root.tool.remote-profile.edit.arg.user]
+help = "ssh のユーザー (host に user@ が付いていない場合)"
+
+[cli.help._root.tool.remote-profile.import]
+about = "ローカル ssh config のエイリアスを ssh プロファイルとして取り込む (保存するのはエイリアスだけで、実際の値は ssh が解決する)"
+
+[cli.help._root.tool.remote-profile.import.arg.from]
+help = "取り込む ssh config のエイリアス (`list-local` の ALIAS 列)"
+
+[cli.help._root.tool.remote-profile.import.arg.label]
+help = "UI に表示するラベル (任意)"
+
+[cli.help._root.tool.remote-profile.import.arg.name]
+help = "新しいプロファイルの一意な識別子"
+
+[cli.help._root.tool.remote-profile.list-local]
+about = "ローカルの ssh config にある Host エイリアスの一覧 (`~/.ssh/config` と Include ファイル)。接続はしない"
+
+[cli.help._root.tool.remote-profile.list-local.arg.json]
+help = "表の代わりに JSON で出力する"
+
+[cli.help._root.tool.remote-profile.list]
+about = "保存済みプロファイルの一覧 (ssh と tasty-attach)"
+
+[cli.help._root.tool.remote-profile.list.arg.json]
+help = "表の代わりに JSON で出力する"
+
+[cli.help._root.tool.remote-profile.list.arg.kind]
+help = "種類で絞り込む: ssh | tasty-attach"
+
+[cli.help._root.tool.remote-profile.remove]
+about = "プロファイルを削除する (参照していた Passkey は共有され得るので残す)"
+
+[cli.help._root.tool.remote-profile.remove.arg.name]
+help = "削除するプロファイル名"
+
+[cli.help._root.tool.remote-profile.show]
+about = "プロファイル 1 件の詳細を表示する"
+
+[cli.help._root.tool.remote-profile.show.arg.json]
+help = "表の代わりに JSON で出力する"
+
+[cli.help._root.tool.remote-profile.show.arg.name]
+help = "表示するプロファイル名"
+
+[cli.help._root.tool.ssh]
+about = "保存済みの ssh プロファイルで対話的な ssh セッションを開く (identity とポートは自動で注入される)。ローカル動作で IPC は使わない"
+
+[cli.help._root.tool.ssh.arg.command]
+help = "リモートホストで一度だけ実行するコマンド (省略すると対話シェル)。例: `tasty tool ssh gb10 --command hostname`"
+
+[cli.help._root.tool.ssh.arg.profile]
+help = "接続に使う ssh プロファイル名"
+
+
+[cli.help._root.telemetry.anomaly]
+about = "異常の記録 — 検出された異常なパターン (呼び出しの急増など)"
+
+[cli.help._root.telemetry.anomaly.list]
+about = "保存された異常記録の一覧。絞り込み条件は任意"
+
+[cli.help._root.telemetry.anomaly.list.arg.agent]
+help = "このエージェント id に帰属する異常だけを出す"
+
+[cli.help._root.telemetry.anomaly.list.arg.kind]
+help = "種類で絞り込む: call_burst | slow_loop | rss_surge"
+
+[cli.help._root.telemetry.anomaly.list.arg.since]
+help = "検出時刻の下限 (unix ms、以上)"
+
+[cli.help._root.telemetry.anomaly.list.arg.until]
+help = "検出時刻の上限 (unix ms、未満)"
+
+[cli.help._root.telemetry.cap]
+about = "コスト上限 — しきい値を超えたら動作する (stop/pause/approval/notify)"
+
+[cli.help._root.telemetry.cap.list]
+about = "上限の一覧。`--agent` で絞り込める"
+
+[cli.help._root.telemetry.cap.list.arg.agent]
+help = "このエージェント id に適用される上限だけを出す"
+
+[cli.help._root.telemetry.cap.remove]
+about = "id を指定して上限を削除する"
+
+[cli.help._root.telemetry.cap.remove.arg.id]
+help = "cap id。`cap set` や `cap list` が出力した値"
+
+[cli.help._root.telemetry.cap.reset]
+about = "発動した上限の状態を戻す。`--id` か `--agent` のどちらかを与える"
+
+[cli.help._root.telemetry.cap.reset.arg.agent]
+help = "このエージェント id に適用される上限をすべて戻す"
+
+[cli.help._root.telemetry.cap.reset.arg.id]
+help = "この cap id だけを戻す"
+
+[cli.help._root.telemetry.cap.set]
+about = "上限を新しく定義する。生成された cap id を出力する"
+
+[cli.help._root.telemetry.cap.set.arg.action]
+help = "動作: stop | pause | require_approval | notify"
+
+[cli.help._root.telemetry.cap.set.arg.agent]
+help = "この上限を適用するエージェント id (必須 — 呼び出し元の既定は無い)"
+
+[cli.help._root.telemetry.cap.set.arg.metric]
+help = "上限をかけるメトリクス名"
+
+[cli.help._root.telemetry.cap.set.arg.threshold]
+help = "しきい値 (正の数。区間内の合計がこれを超えると動作する)"
+
+[cli.help._root.telemetry.cap.set.arg.window]
+help = "区間: total | 1h | 1d"
+
+[cli.help._root.telemetry.cap.status]
+about = "上限の現在の累計値としきい値を表示する。`--agent` で絞り込める"
+
+[cli.help._root.telemetry.cap.status.arg.agent]
+help = "このエージェント id に適用される上限だけを報告する"
+
+[cli.help._root.telemetry.record-batch]
+about = "複数のイベントを一度に記録する — 同じタイムスタンプを共有するので順序が保たれる。イベント間の順序が重要なときは `record` を繰り返す代わりにこれを使う"
+
+[cli.help._root.telemetry.record-batch.arg.events]
+help = "イベントを並べた JSON 配列。各要素は `record` と同じフィールドを取る (`metric`, `value`, `op`, `tags`, …)"
+
+[cli.help._root.telemetry.record]
+about = "メトリクスイベントを 1 件記録する"
+
+[cli.help._root.telemetry.record.arg.agent]
+help = "エージェント id (既定: 呼び出し元 — 環境変数 `TASTY_AGENT_ID` または `_host`)"
+
+[cli.help._root.telemetry.record.arg.metric]
+help = "メトリクス名 (小文字 `[a-z][a-z0-9_]*`、最大 64 文字)"
+
+[cli.help._root.telemetry.record.arg.op]
+help = "演算: set | inc | dec。既定: inc"
+
+[cli.help._root.telemetry.record.arg.tags]
+help = "タグを入れた JSON オブジェクト (例: `{\"model\":\"opus\",\"src\":\"shell\"}`)"
+
+[cli.help._root.telemetry.record.arg.value]
+help = "数値"
+
+[cli.help._root.telemetry.record.arg.workspace_id]
+help = "紐づけるワークスペース id (既定: アクティブなワークスペース)"
+
+[cli.help._root.telemetry.session-summary]
+about = "セッションの総合要約 (メトリクス + 承認 + 異常)"
+
+[cli.help._root.telemetry.session-summary.arg.format]
+help = "出力形式: markdown | json (既定: markdown)"
+
+[cli.help._root.telemetry.session-summary.arg.since]
+help = "イベント時刻の下限 (unix ms、以上)"
+
+[cli.help._root.telemetry.session-summary.arg.top_n]
+help = "ipc_calls の上位項目の件数 (既定: 10)"
+
+[cli.help._root.telemetry.session-summary.arg.until]
+help = "イベント時刻の上限 (unix ms、未満)"
+
+[cli.help._root.telemetry.session-summary.arg.workspace_id]
+help = "ワークスペース 1 つに限定する (既定: 全部)"
+
+[cli.help._root.telemetry.summary]
+about = "イベントを横断して集計した要約。絞り込みの軸: metric, agent, workspace_id, since/until"
+
+[cli.help._root.telemetry.summary.arg.agent]
+help = "このエージェント id が記録したイベントだけを集計する"
+
+[cli.help._root.telemetry.summary.arg.metric]
+help = "このメトリクスだけを集計する (省略すると全部)"
+
+[cli.help._root.telemetry.summary.arg.since]
+help = "unix ms の下限 (以上)"
+
+[cli.help._root.telemetry.summary.arg.until]
+help = "unix ms の上限 (未満)"
+
+[cli.help._root.telemetry.summary.arg.workspace_id]
+help = "このワークスペース id に紐づくイベントだけを集計する"
+
+[cli.help._root.telemetry.timeseries]
+about = "区間ごとにまとめた時系列。`--metric` が必須"
+
+[cli.help._root.telemetry.timeseries.arg.agent]
+help = "このエージェント id が記録したイベントだけを含める"
+
+[cli.help._root.telemetry.timeseries.arg.metric]
+help = "区間にまとめるメトリクス名 (必須)"
+
+[cli.help._root.telemetry.timeseries.arg.since]
+help = "unix ms の下限 (以上)"
+
+[cli.help._root.telemetry.timeseries.arg.until]
+help = "unix ms の上限 (未満)"
+
+[cli.help._root.telemetry.timeseries.arg.window]
+help = "区間の大きさ: 1m | 1h | 1d。既定: 1m"
+
+[cli.help._root.telemetry.timeseries.arg.workspace_id]
+help = "このワークスペース id に紐づくイベントだけを含める"
+
+[cli.help._root.telemetry.top]
+about = "合計の大きい順に上位 N 件のエージェントまたはワークスペース"
+
+[cli.help._root.telemetry.top.arg.agent]
+help = "このエージェント id が記録したイベントだけを含める"
+
+[cli.help._root.telemetry.top.arg.by]
+help = "まとめる基準: agent | workspace"
+
+[cli.help._root.telemetry.top.arg.limit]
+help = "項目数の上限。既定: 10"
+
+[cli.help._root.telemetry.top.arg.metric]
+help = "このメトリクスだけを順位付けする (省略すると全部)"
+
+[cli.help._root.telemetry.top.arg.since]
+help = "unix ms の下限 (以上)"
+
+[cli.help._root.telemetry.top.arg.until]
+help = "unix ms の上限 (未満)"
+
+[cli.help._root.telemetry.top.arg.workspace_id]
+help = "このワークスペース id に紐づくイベントだけを含める"
+
+[cli.help._root.plugin.audit-clear]
+about = "`before_ms` より古い audit 記録を削除する。省略すると全件削除する"
+
+[cli.help._root.plugin.audit-clear.arg.before_ms]
+help = "ts が before_ms より小さい記録を削除する。省略すると全件削除"
+
+[cli.help._root.plugin.audit-follow]
+about = "audit 記録を届くたびに追う。Ctrl-C まで `interval_ms` ミリ秒ごとにポーリングする。フィルタは `audit-query` と同じ"
+
+[cli.help._root.plugin.audit-follow.arg.batch]
+help = "1 回のポーリングで取得する記録数の上限"
+
+[cli.help._root.plugin.audit-follow.arg.caller_id]
+help = "呼び出し元 id で絞り込む"
+
+[cli.help._root.plugin.audit-follow.arg.caller_kind]
+help = "呼び出し元の種類で絞り込む: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-follow.arg.decision]
+help = "判定で絞り込む: allow | deny"
+
+[cli.help._root.plugin.audit-follow.arg.interval_ms]
+help = "ポーリング間隔（ミリ秒）"
+
+[cli.help._root.plugin.audit-follow.arg.method_prefix]
+help = "この接頭辞で始まるメソッドだけに絞る"
+
+[cli.help._root.plugin.audit-query]
+about = "IPC audit ログを照会する。絞り込んだ記録を allow/deny の判定とともに返す"
+
+[cli.help._root.plugin.audit-query.arg.caller_id]
+help = "呼び出し元 id で絞り込む（plugin id またはエージェント id）"
+
+[cli.help._root.plugin.audit-query.arg.caller_kind]
+help = "呼び出し元の種類で絞り込む: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-query.arg.decision]
+help = "判定で絞り込む: allow | deny"
+
+[cli.help._root.plugin.audit-query.arg.limit]
+help = "返す記録数の上限"
+
+[cli.help._root.plugin.audit-query.arg.method_prefix]
+help = "この接頭辞で始まるメソッドだけに絞る（例: `surface.`）"
+
+[cli.help._root.plugin.audit-query.arg.since_ms]
+help = "タイムスタンプの下限（unix ms、含む）"
+
+[cli.help._root.plugin.audit-query.arg.until_ms]
+help = "タイムスタンプの上限（unix ms、含まない）"
+
+[cli.help._root.plugin.audit-summary]
+about = "audit 記録を合計と上位の呼び出し元・メソッドに集計する"
+
+[cli.help._root.plugin.audit-summary.arg.caller_id]
+help = "呼び出し元 id で絞り込む"
+
+[cli.help._root.plugin.audit-summary.arg.caller_kind]
+help = "呼び出し元の種類で絞り込む: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-summary.arg.decision]
+help = "判定で絞り込む: allow | deny"
+
+[cli.help._root.plugin.audit-summary.arg.method_prefix]
+help = "この接頭辞で始まるメソッドだけに絞る"
+
+[cli.help._root.plugin.audit-summary.arg.since_ms]
+help = "タイムスタンプの下限（unix ms、含む）"
+
+[cli.help._root.plugin.audit-summary.arg.top_n]
+help = "by_caller / by_method 一覧の上位 N の上限。デフォルト: 10"
+
+[cli.help._root.plugin.audit-summary.arg.until_ms]
+help = "タイムスタンプの上限（unix ms、含まない）"
+
+[cli.help._root.plugin.disable]
+about = "plugin を無効化する（動作中なら正常終了させる）"
+long = "plugin を無効化する（動作中なら正常終了させる）。\n\n印はディスクに書かれるので再起動をまたぐ — その後で同じ id を `plugin install` しても再び有効にはならない。これはアンインストールではない: ディレクトリは残り、コマンド名前空間の所有もそのままなので、`tasty <名前空間> ...` は「そんなメソッドは無い」ではなく `plugin ... is not running` と答える。代わりにその plugin が提供していたもの — ファイルの detector と handler、hook handler、completion strategy、設定ページ — が全て外れるため、その plugin が開いていたファイルは別の経路で開くようになる。"
+
+[cli.help._root.plugin.disable.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.doctor]
+about = "plugin のマニフェストを診断する — 提供する detector / handler を並べ、今の host が理解できない規則の種類に印を付ける"
+
+[cli.help._root.plugin.doctor.arg.id]
+help = "plugin id（例: com.example.foo）"
+
+[cli.help._root.plugin.enable]
+about = "無効化された plugin を有効にして起動する"
+
+[cli.help._root.plugin.enable.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.extension]
+about = "plugin の extension（extends ブロック）を調べる"
+
+[cli.help._root.plugin.extension.list]
+about = "全ての extension と現在の状態を出す"
+
+[cli.help._root.plugin.grant]
+about = "plugin に権限を与える（そのマニフェストで宣言されている必要がある）"
+
+[cli.help._root.plugin.grant-agent-permission]
+about = "動作中のエージェントセッションに一時的な権限を与える。その権限は TTL が切れるか明示的に取り消すまで残る。基本権限（session.issue の時点で発行されたもの）には影響しない"
+
+[cli.help._root.plugin.grant-agent-permission.arg.agent]
+help = "エージェント id（例: `claude:child-1`）"
+
+[cli.help._root.plugin.grant-agent-permission.arg.permission]
+help = "権限トークン（例: fs.write, surface.write）"
+
+[cli.help._root.plugin.grant-agent-permission.arg.ttl]
+help = "有効期間（秒）。省略すると取り消すまで無期限"
+
+[cli.help._root.plugin.grant.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.grant.arg.permission]
+help = "権限トークン（例: fs.read, surface.write）"
+
+[cli.help._root.plugin.install]
+about = "tasty-plugin.toml のあるディレクトリから plugin をインストールする"
+long = "tasty-plugin.toml のあるディレクトリから plugin をインストールする。\n\nもう 2 つ起きるが、どちらも尋ねられない: マニフェストが宣言した権限が即座に全て与えられ、その id の無効化の印が既に無い限りそのまま有効化されて起動する。先に `tasty-plugin.toml` を見るか、後から `plugin permissions <id>` と `plugin revoke <id> <permission>` で確認して戻すこと。"
+
+[cli.help._root.plugin.install.arg.path]
+help = "plugin ディレクトリのパス（tasty-plugin.toml が必要）"
+
+[cli.help._root.plugin.list]
+about = "インストール済みの plugin を並べる（id、バージョン、有効か、動作中か）"
+
+[cli.help._root.plugin.list-agent-permissions]
+about = "動作中のエージェントセッションの基本権限と一時的な権限を並べる"
+
+[cli.help._root.plugin.list-agent-permissions.arg.agent]
+help = "特定のエージェントだけを見る。省略すると動作中のセッション全部"
+
+[cli.help._root.plugin.logs]
+about = "plugin のログファイルの中身を表示する"
+
+[cli.help._root.plugin.logs.arg.follow]
+help = "新しい出力を追い続ける（止めるには Ctrl-C）"
+
+[cli.help._root.plugin.logs.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.permissions]
+about = "plugin のマニフェスト権限と、今与えられている権限を出す"
+
+[cli.help._root.plugin.permissions.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.remove]
+about = "インストール済みの plugin を id で削除する"
+long = "インストール済みの plugin を id で削除する。\n\nplugin のディレクトリが丸ごと消えるので、その plugin がそこに置いていたものも一緒に無くなる。組み込み plugin の場合は削除したことも記録され、次の起動で置き直されない — 戻すには `plugin upgrade-builtins --restore-removed <id>` で、戻ったときは有効な状態になる。"
+
+[cli.help._root.plugin.remove.arg.id]
+help = "plugin id（例: com.example.explorer）"
+
+[cli.help._root.plugin.request-permission]
+about = "権限昇格の承認を手動で出す。エージェントの最初の呼び出しより前に運用者が権限を渡しておきたいときに使う。出るポップアップは permission_denied のときの自動昇格が出すものと同じ"
+
+[cli.help._root.plugin.request-permission.arg.agent]
+help = "承認されたら権限を受け取るエージェント id"
+
+[cli.help._root.plugin.request-permission.arg.permission]
+help = "権限トークン（例: fs.write）"
+
+[cli.help._root.plugin.request-permission.arg.reason]
+help = "ポップアップ本文でユーザーに見せる理由"
+
+[cli.help._root.plugin.revoke]
+about = "plugin に与えていた権限を取り消す"
+
+[cli.help._root.plugin.revoke-agent-permission]
+about = "エージェントセッションに与えていた一時的な権限を取り消す。発行時に決まった基本権限には影響しない"
+
+[cli.help._root.plugin.revoke-agent-permission.arg.agent]
+help = "エージェント id"
+
+[cli.help._root.plugin.revoke-agent-permission.arg.permission]
+help = "権限トークン"
+
+[cli.help._root.plugin.revoke.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.revoke.arg.permission]
+help = "権限トークン"
+
+[cli.help._root.plugin.show]
+about = "plugin のマニフェスト全文、権限、コマンド、実行状態を出す"
+
+[cli.help._root.plugin.show.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.upgrade-builtins]
+about = "組み込み plugin を全てバンドルから同期し直す"
+long = "組み込み plugin を全てバンドルから同期し直す。\n\nマニフェストのバージョンが分岐を決め、その中では内容が決める: バンドルのバージョンが高ければディレクトリを丸ごと書き直し、同じバージョンなら違うものだけ書き直し、インストール済みの方が高ければ内容を見ずに飛ばす — `--force` はその最後の分岐のためのものだ。変わった組み込み plugin が新しく宣言した権限は、同じ呼び出しの中で与えられる。"
+
+[cli.help._root.plugin.upgrade-builtins.arg.force]
+help = "インストール済みのバージョンがバンドル以上でも上書きする"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restart_running]
+help = "バイナリが差し替わった組み込み plugin が動作中なら再起動する — 正常な入れ替え。その場での上書きで出る Windows の共有違反もこれで解ける。既定は無効（保守的に — その plugin のサーフェスが一瞬閉じる）"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restore_all]
+help = "`removed_builtins` にある組み込み plugin を全て戻す。`--restore-removed` と一緒に与えるとこちらが優先される"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restore_removed]
+help = "`removed_builtins` から特定の組み込み plugin を戻し、同じ呼び出しで自動インストールの対象にする。複数あるときは繰り返して与える"
+
+[cli.help._root.agent.barrier-await]
+about = "barrier の現在の状態をポーリングする"
+
+[cli.help._root.agent.barrier-await.arg.name]
+help = "ポーリングする barrier 名"
+
+[cli.help._root.agent.barrier-await.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.barrier-create]
+about = "barrier を作る（N 個の signal が集まるまで待つ）"
+long = "barrier を作る（N 個の signal が集まるまで待つ）。\n\nタイマーは動かない。`--timeout-ms` は遅延して押される: barrier が `TimedOut` になるのは次の `barrier-signal`・`barrier-state`・`barrier-list` の中であり、だから誰も尋ねない barrier は置かれたままの状態で座り続ける。押された後は `barrier-signal` が失敗し、記録そのものは `barrier-delete` で消すまで残る。"
+
+[cli.help._root.agent.barrier-create.arg.count_required]
+help = "必要な signal 数（1 以上）"
+
+[cli.help._root.agent.barrier-create.arg.name]
+help = "barrier 名（ワークスペース内で一意）"
+
+[cli.help._root.agent.barrier-create.arg.timeout_ms]
+help = "作成時刻から測る任意の timeout（ミリ秒）。省略すると無期限に待つ"
+
+[cli.help._root.agent.barrier-create.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.barrier-delete]
+about = "barrier を削除する（無ければ no-op）"
+
+[cli.help._root.agent.barrier-delete.arg.name]
+help = "削除する barrier 名"
+
+[cli.help._root.agent.barrier-delete.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.barrier-list]
+about = "ワークスペースの barrier を全て並べる"
+
+[cli.help._root.agent.barrier-list.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.barrier-signal]
+about = "barrier に signal を送る（count_signaled++）"
+
+[cli.help._root.agent.barrier-signal.arg.name]
+help = "signal を送る barrier 名"
+
+[cli.help._root.agent.barrier-signal.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.barrier-state]
+about = "barrier の現在の状態を読む（barrier_await の別名）"
+
+[cli.help._root.agent.barrier-state.arg.name]
+help = "読む barrier 名"
+
+[cli.help._root.agent.barrier-state.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.dag-get]
+about = "`dag-list` が出した DAG を 1 つ JSON または Graphviz dot で出す — ノードと辺の形は `task-graph` と同じで、その DAG に絞ったものだ"
+
+[cli.help._root.agent.dag-get.arg.format]
+help = "形式: json | dot。デフォルト: json"
+
+[cli.help._root.agent.dag-get.arg.id]
+help = "`dag-list` が出した DAG id（`d:<metadata.dag>` または `c:<ルート task id>`）"
+
+[cli.help._root.agent.dag-get.arg.workspace_id]
+help = "探す範囲を 1 つのワークスペースに絞る。明示 id はユーザーが付けるものなので 2 つのワークスペースが同じものを持ちうる — そのときこれで分ける"
+
+[cli.help._root.agent.dag-list]
+about = "登録された DAG を全て並べる。DAG は保存されたものではなく導出されたものだ: 同じ `metadata.dag` 文字列が付いた task が 1 つの明示グループを成し、残りは弱連結（`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of`）でまとめられる。`--workspace-id` を省略すると生きているワークスペースを全て走査する"
+
+[cli.help._root.agent.dag-list.arg.include_tasks]
+help = "各 DAG の task id 一覧（`task_ids`）も一緒に出す"
+
+[cli.help._root.agent.dag-list.arg.workspace_id]
+help = "1 つのワークスペースに絞る。省略すると生きているワークスペース全部"
+
+[cli.help._root.agent.lease-acquire]
+about = "任意の resource に lease を取る（勧告的・協調的）"
+long = "任意の resource に lease を取る（勧告的・協調的）。\n\n取れたかどうかは終了コードではない。`--mode fail` は衝突を エラーにするが、`--mode block` は成功で終わりながら `acquired: false` と現在の holder を出す — そのフィールドを読むこと。lease を強制するものも無い: 参加者どうしが読むと約束した印にすぎない。\n\n`--ttl-ms` が無ければ lease は決して期限切れにならず、同じ holder id での `lease-release` だけがそれを解く — holder が死ぬと resource を握ったまま残る。再起動時の掃除もその場合を覆わない — それは実行中の task が自分の task id で握った lease だけを解く。"
+
+[cli.help._root.agent.lease-acquire.arg.holder]
+help = "holder id（空であってはならない）"
+
+[cli.help._root.agent.lease-acquire.arg.mode]
+help = "衝突モード: fail | block（デフォルト: fail）。`block` は待たない — すぐに `acquired: false` で戻り、再試行は呼び出し側の仕事だ"
+
+[cli.help._root.agent.lease-acquire.arg.resource]
+help = "resource 識別子（例: `file:/path`, `workspace:foo`）"
+
+[cli.help._root.agent.lease-acquire.arg.ttl_ms]
+help = "有効期間（ミリ秒）。省略すると期限切れの無い lease になる。期限切れは遅延評価だ — 時刻を過ぎた瞬間ではなく、次の `lease-acquire` か `lease-list` が evict する"
+
+[cli.help._root.agent.lease-acquire.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.lease-list]
+about = "ワークスペースの lease を全て並べる（期限切れのものは自動 evict）"
+
+[cli.help._root.agent.lease-list.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.lease-release]
+about = "lease を解く。現在の holder だけが解ける"
+
+[cli.help._root.agent.lease-release.arg.holder]
+help = "今その lease を握っている holder id"
+
+[cli.help._root.agent.lease-release.arg.resource]
+help = "lease を取った resource 識別子"
+
+[cli.help._root.agent.lease-release.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.rate-limit-list]
+about = "設定された rate limit バケットを全て並べる（現在のトークン状態とともに）"
+
+[cli.help._root.agent.rate-limit-remove]
+about = "rate limit バケットを id で削除する"
+
+[cli.help._root.agent.rate-limit-remove.arg.id]
+help = "`rate-limit-list` が出したバケット id"
+
+[cli.help._root.agent.rate-limit-set]
+about = "(agent, metric) に rate limit バケットを設定する — `per_ms` ミリ秒ごとに `limit` トークン"
+long = "(agent, metric) に rate limit バケットを設定する — `per_ms` ミリ秒ごとに `limit` トークン。\n\n実際にトークンが引かれる metric は 1 つだけだ: `ipc_calls`。別の名前で保存したバケットは `rate-limit-list` に出るが、何もそれを使わないので何も制限しない。\n\n`ipc_calls` バケットは IPC 呼び出し 1 件ごとにトークンが 1 つ引かれ、予算を超えた呼び出しは `-32010 throttled` で戻り audit に Deny が残る。全ての呼び出しを数えるわけではない: セッショントークンの無い呼び出し元 — 素の CLI — とホスト自身の呼び出しは免除で、`telemetry.*`・`agent.rate_limit_*`・`system.info` も免除だ。後ろの 2 つが、throttle されたエージェントが自分の上限を読んで解くための通路だ。"
+
+[cli.help._root.agent.rate-limit-set.arg.agent]
+help = "エージェント id"
+
+[cli.help._root.agent.rate-limit-set.arg.burst]
+help = "バケットの容量（デフォルトは `limit`）"
+
+[cli.help._root.agent.rate-limit-set.arg.limit]
+help = "1 周期ごとに補充されるトークン数"
+
+[cli.help._root.agent.rate-limit-set.arg.metric]
+help = "metric 名。何かが実際に引いて使うのは `ipc_calls` だけだ"
+
+[cli.help._root.agent.rate-limit-set.arg.per_ms]
+help = "1 周期の長さ（ミリ秒、例: 分単位なら `60000`）"
+
+[cli.help._root.agent.rate-limit-status]
+about = "rate limit の状態を見る。agent や metric で絞れる"
+
+[cli.help._root.agent.rate-limit-status.arg.agent]
+help = "このエージェント id のバケットだけ報告する"
+
+[cli.help._root.agent.rate-limit-status.arg.metric]
+help = "この metric 名のバケットだけ報告する"
+
+[cli.help._root.agent.semaphore-acquire]
+about = "permit を 1 つ取る。同じ holder なら idempotent だ"
+long = "permit を 1 つ取る。同じ holder なら idempotent だ。\n\n空きが無いことはエラーではない: 呼び出しは成功し、`acquired: false` と現在の holder たちを一緒に出す — 終了コードではなくそのフィールドを読むこと。待機モードは無い — 再試行は呼び出し側の仕事だ。"
+
+[cli.help._root.agent.semaphore-acquire.arg.holder]
+help = "holder id（空であってはならない）"
+
+[cli.help._root.agent.semaphore-acquire.arg.name]
+help = "permit を取る semaphore 名"
+
+[cli.help._root.agent.semaphore-acquire.arg.ttl_ms]
+help = "holder がこのミリ秒のあいだ黙っていたら permit を自動で回収する。同じ holder で取り直せば更新される。省略すると期限切れが無い（デフォルト）"
+
+[cli.help._root.agent.semaphore-acquire.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.semaphore-create]
+about = "permit N 個の semaphore を作る"
+
+[cli.help._root.agent.semaphore-create.arg.name]
+help = "semaphore 名（ワークスペース内で一意）"
+
+[cli.help._root.agent.semaphore-create.arg.permits]
+help = "permit 数（1 以上）"
+
+[cli.help._root.agent.semaphore-create.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.semaphore-delete]
+about = "semaphore を削除する（無ければ no-op）"
+
+[cli.help._root.agent.semaphore-delete.arg.name]
+help = "削除する semaphore 名"
+
+[cli.help._root.agent.semaphore-delete.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.semaphore-list]
+about = "ワークスペースの semaphore を全て並べる"
+
+[cli.help._root.agent.semaphore-list.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.semaphore-release]
+about = "permit を返す。その holder が握っていなければ no-op"
+
+[cli.help._root.agent.semaphore-release.arg.holder]
+help = "今その permit を握っている holder id"
+
+[cli.help._root.agent.semaphore-release.arg.name]
+help = "その permit が属する semaphore 名"
+
+[cli.help._root.agent.semaphore-release.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.semaphore-set-permits]
+about = "semaphore の permit 数をその場で変える。増やすのは即座に反映され、減らすのは drain だ — 既に握っている holder を強制的に奪わず、holder 数が新しい上限を下回るまで新しい acquire だけを断る"
+
+[cli.help._root.agent.semaphore-set-permits.arg.name]
+help = "サイズを変える semaphore 名"
+
+[cli.help._root.agent.semaphore-set-permits.arg.permits]
+help = "新しい permit 数（1 以上）"
+
+[cli.help._root.agent.semaphore-set-permits.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-await]
+about = "task が終端状態に達するまで待つ（ブロッキング）。省略すると最大 10 分待つ（暫定のデフォルト）。`--timeout-ms 0` = 無期限に待つ"
+
+[cli.help._root.agent.task-await.arg.id]
+help = "待つ task id"
+
+[cli.help._root.agent.task-await.arg.timeout_ms]
+help = "このミリ秒を過ぎたら待つのをやめる。`0` = 無期限に待つ"
+
+[cli.help._root.agent.task-await.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-cancel]
+about = "task をキャンセルする。下流は on_failure に従って連鎖する"
+
+[cli.help._root.agent.task-cancel.arg.id]
+help = "キャンセルする task id"
+
+[cli.help._root.agent.task-cancel.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-create]
+about = "ワークスペースの中に新しい task を作る"
+long = "ワークスペースの中に新しい task を作る。\n\n作ることは走らせることではない。そのワークスペースの runner を `task-run --action start` で起こすまで何も dispatch されず、誰も代わりに起こしてくれない — 起動時にも起こさない。起こさなければ task は `Ready` に座ったままで、`task-await` は timeout をただ燃やす。"
+
+[cli.help._root.agent.task-create.arg.command]
+help = "TaskCommand を JSON で（例: `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`）。`workspace_id` を省くと `--workspace-id` から埋められ、入れていて違う場合は `--workspace-id` が勝ち警告が一緒に返る。インライン JSON か `@path/to/file.json` を受ける"
+
+[cli.help._root.agent.task-create.arg.concurrency_limit]
+help = "`metadata.semaphore.name` の短縮形 — 同じ semaphore 名が付いた task が同時に何個まで走るかを制限する（残りは permit が空くまで `ready` で待つ）。`--metadata` と一緒に与えると統合され、`--metadata` が既に `semaphore` を決めていれば衝突だ"
+
+[cli.help._root.agent.task-create.arg.depends_on]
+help = "カンマ区切りの依存 task id 一覧"
+
+[cli.help._root.agent.task-create.arg.metadata]
+help = "メタデータ JSON（自由形式、task に付く）"
+
+[cli.help._root.agent.task-create.arg.name]
+help = "表示名"
+
+[cli.help._root.agent.task-create.arg.on_failure]
+help = "失敗時の方針: abort | continue_downstream | fallback:<task_id>（デフォルト: abort）。どの task に付けるかが重要だ: abort・continue_downstream は依存する側（下流）の task に付け、fallback は自分が失敗しうる側（上流）の task に付ける — 下流の task に fallback を付けても、失敗した依存から来る skip の連鎖には何の効果も無い"
+
+[cli.help._root.agent.task-create.arg.reserved_for_fallback]
+help = "この task をまだ参照されていない fallback 候補として予約する: 後から `task-create --on-failure fallback:<この id>` が本体の task を結び付けるまで、どれだけ時間がかかっても `waiting` に留まる（`ready` にならないので runner は dispatch できない）。このフラグが無ければ依存の無い task はすぐ `ready` になり、結び付ける本体が作られる前に runner が一度回れば、その本体の結果と無関係に dispatch されて最後まで走りうる — 2 つの `task-create` 呼び出しのあいだの生成順序の競合を閉じる"
+
+[cli.help._root.agent.task-create.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-delete]
+about = "task を削除する。他の task がまだ参照していれば既定では拒否し（depends_on / on_failure.fallback.task / reduce.inputs）、参照している task id を返す。`Running` の task は `--cascade`・`--force` に関わらず常に拒否だ（先にキャンセルすること）"
+
+[cli.help._root.agent.task-delete.arg.cascade]
+help = "この task を間接的にでも参照する task を全て一緒に削除する"
+
+[cli.help._root.agent.task-delete.arg.force]
+help = "参照チェックだけを飛ばす — 状態の制約（Running）はそのまま適用される"
+
+[cli.help._root.agent.task-delete.arg.id]
+help = "削除する task id"
+
+[cli.help._root.agent.task-delete.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-get]
+about = "task を 1 つ取得する"
+
+[cli.help._root.agent.task-get.arg.id]
+help = "task id"
+
+[cli.help._root.agent.task-get.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-graph]
+about = "task DAG を JSON または Graphviz dot で出す"
+
+[cli.help._root.agent.task-graph.arg.format]
+help = "形式: json | dot。デフォルト: json"
+
+[cli.help._root.agent.task-graph.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-list]
+about = "ワークスペースの task を並べる"
+
+[cli.help._root.agent.task-list.arg.state]
+help = "状態で絞り込む（カンマ区切り: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown）。複数の状態を与えると、そのいずれかに合う task を全て出す（`--state waiting,ready,running` = まだ終わっていない task）"
+
+[cli.help._root.agent.task-list.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-purge]
+about = "状態と経過時間のフィルタに合う task をまとめて削除する。`--states` か `--older-than-ms` の少なくとも 1 つが必要だ。実際に消えるのは消しても安全なもの（Running でなく、該当集合の外から参照されていないもの）だけで、残りは残したものとして報告される"
+
+[cli.help._root.agent.task-purge.arg.dry_run]
+help = "何も削除せず計画だけ計算して表示する"
+
+[cli.help._root.agent.task-purge.arg.older_than_ms]
+help = "経過時間（created_at、終端の task は finished_at）がこのミリ秒を超える task だけを候補にする"
+
+[cli.help._root.agent.task-purge.arg.states]
+help = "カンマ区切りの状態名（waiting|ready|running|succeeded|failed|cancelled|skipped|unknown）"
+
+[cli.help._root.agent.task-purge.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-reduce]
+about = "N 個の task の結果を 1 つの値にまとめる（戦略: first_success | all | merge_json | concat_text | custom:<cmd>）"
+
+[cli.help._root.agent.task-reduce.arg.extract_path]
+help = "まとめる前に各入力の `output` から取り出す JSON Pointer（例: `/stdout/text`） — `Run` task の結果をまとめるときに勧める。そちらの `output` は素の値ではなく `{pid,stdout:{text,...},stderr:{...}}` だからだ。その経路が無い入力は `null` として扱われ応答の `warnings` に載り、残りのまとめはそのまま進む"
+
+[cli.help._root.agent.task-reduce.arg.inputs]
+help = "カンマ区切りの入力 task id 一覧（まとめる順に）"
+
+[cli.help._root.agent.task-reduce.arg.strategy]
+help = "戦略: `first_success` | `all` | `merge_json` | `concat_text` | `custom:<command>`"
+
+[cli.help._root.agent.task-reduce.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-retry]
+about = "Failed/Cancelled/Skipped/Unknown の task をやり直す"
+
+[cli.help._root.agent.task-retry.arg.id]
+help = "やり直す task id"
+
+[cli.help._root.agent.task-retry.arg.reset_downstream]
+help = "下流の Skipped/Failed の task も Waiting に戻す"
+
+[cli.help._root.agent.task-retry.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-run]
+about = "ワークスペースの agent task runner を起動・停止・確認する。runner は Ready の task を dispatch し、Running の task の完了を検知するホスト側のスレッドだ。同じワークスペースに start を 2 回しても idempotent だ"
+long = "ワークスペースの agent task runner を起動・停止・確認する。runner は Ready の task を dispatch し、Running の task の完了を検知するホスト側のスレッドだ。同じワークスペースに start を 2 回しても idempotent だ。\n\n誰も代わりに起こしてくれない。ホストを起動すると生きているワークスペースの状態は復元するが runner は全て止まったままにする — だから一度も起こしたことの無いワークスペースは何も dispatch しない。\n\n`stop` が止めるのは仕事ではなく検知だ: 既に dispatch されたプロセスは走り続け、その task は終わったことに気付く主体が無いまま `Running` で残る。もう一度 start すればその handle を拾い直して 1 つずつ決着させる — 生きているか、死んでいるか、あるいはその watcher が残しておいた終了コードで。"
+
+[cli.help._root.agent.task-run.arg.action]
+help = "start | stop | status。デフォルト: status"
+
+[cli.help._root.agent.task-run.arg.workspace_id]
+help = "runner を操作するワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-set-result]
+about = "task の終端の結果を手で報告する（succeeded | failed）。runner スレッドが dispatch していない外部・手動の task の完了を知らせるためのものだ"
+
+[cli.help._root.agent.task-set-result.arg.error]
+help = "任意のエラーメッセージ（state=failed なら勧める）"
+
+[cli.help._root.agent.task-set-result.arg.exit_code]
+help = "任意のプロセス終了コード"
+
+[cli.help._root.agent.task-set-result.arg.id]
+help = "結果を報告する task id"
+
+[cli.help._root.agent.task-set-result.arg.output]
+help = "任意の出力 JSON。インライン JSON か `@path/to/file.json` を受ける"
+
+[cli.help._root.agent.task-set-result.arg.state]
+help = "終端状態: `succeeded` | `failed`"
+
+[cli.help._root.agent.task-set-result.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.memory.bb]
+about = "Blackboard — ワークスペース単位のキーと値の集まり（`tasty.bb.<name>.*`）"
+
+[cli.help._root.memory.bb.create]
+about = "新しい blackboard を作る。schema（JSON）は任意だ"
+
+[cli.help._root.memory.bb.create.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.create.arg.schema]
+help = "schema の JSON リテラル。そのまま保存し、検証はしない"
+
+[cli.help._root.memory.bb.create.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.delete]
+about = "blackboard を丸ごと削除する（`_meta` + 全てのフィールド）"
+long = "blackboard を丸ごと削除する（`_meta` + 全てのフィールド）。\n\nそのスナップショットも一緒に消える。スナップショットはそのボード自身のキー接頭辞の下に住んでいるからだ — だからスナップショットはボードがある間に戻れる地点であって、ボードを消した後まで残るバックアップではない。"
+
+[cli.help._root.memory.bb.delete-field]
+about = "フィールドを 1 つ削除する"
+
+[cli.help._root.memory.bb.delete-field.arg.cas]
+help = "CAS バージョン（今のフィールドのバージョンと一致すること）"
+
+[cli.help._root.memory.bb.delete-field.arg.field]
+help = "フィールド名"
+
+[cli.help._root.memory.bb.delete-field.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.delete-field.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.delete.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.delete.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.exists]
+about = "blackboard があるか確認する（= `_meta` があるか）"
+
+[cli.help._root.memory.bb.exists.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.exists.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.get]
+about = "フィールドを 1 つ読む"
+
+[cli.help._root.memory.bb.get-all]
+about = "blackboard の全てのフィールドを読む（`_meta` は除く）"
+
+[cli.help._root.memory.bb.get-all.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.get-all.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.get-meta]
+about = "`_meta` の項目を読む（schema/created_by/…）"
+
+[cli.help._root.memory.bb.get-meta.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.get-meta.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.get.arg.field]
+help = "フィールド名"
+
+[cli.help._root.memory.bb.get.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.get.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.list]
+about = "ワークスペースの blackboard 名を並べる"
+
+[cli.help._root.memory.bb.list.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.put]
+about = "フィールドの値を書く"
+
+[cli.help._root.memory.bb.put.arg.cas]
+help = "CAS バージョン（今のフィールドのバージョンと一致すること）"
+
+[cli.help._root.memory.bb.put.arg.content_type]
+help = "content type を強制的に決める"
+
+[cli.help._root.memory.bb.put.arg.field]
+help = "フィールド名"
+
+[cli.help._root.memory.bb.put.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.put.arg.value]
+help = "値。JSON としてパースできれば JSON、そうでなければ平文として扱う。`@path` はファイルから読む"
+
+[cli.help._root.memory.bb.put.arg.value_b64]
+help = "base64 でエンコードしたバイナリ値"
+
+[cli.help._root.memory.bb.put.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.snapshot]
+about = "今の bb の状態をスナップショットとして取る（`tasty.bb.<name>.snapshots.<id>`）"
+
+[cli.help._root.memory.bb.snapshot-delete]
+about = "スナップショットを削除する"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.snapshot_id]
+help = "スナップショット id"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.snapshot-get]
+about = "スナップショットの JSON を読む"
+
+[cli.help._root.memory.bb.snapshot-get.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.snapshot-get.arg.snapshot_id]
+help = "スナップショット id"
+
+[cli.help._root.memory.bb.snapshot-get.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.snapshot-list]
+about = "その bb のスナップショット id を並べる"
+
+[cli.help._root.memory.bb.snapshot-list.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.snapshot-list.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.snapshot-restore]
+about = "スナップショットから bb のフィールドを復元する（今のフィールドを置き換える）"
+long = "スナップショットから bb のフィールドを復元する（今のフィールドを置き換える）。\n\n今のフィールドを先に全部消す。だからスナップショットを取った後に足したフィールドは統合されずに消える。`_meta` だけが例外だ: あればそのまま残し、無いときだけスナップショットのもので作り直す — だから復元しても取った当時のボードの schema が戻るわけではない。"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.snapshot_id]
+help = "スナップショット id"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.bb.snapshot.arg.name]
+help = "blackboard 名"
+
+[cli.help._root.memory.bb.snapshot.arg.snapshot_id]
+help = "スナップショット id"
+
+[cli.help._root.memory.bb.snapshot.arg.workspace]
+help = "その blackboard を持つワークスペース id"
+
+[cli.help._root.memory.cache]
+about = "Cache — ワークスペース単位の TTL キャッシュ（`tasty.cache.<key>`）"
+
+[cli.help._root.memory.cache.clear]
+about = "ワークスペースの cache の項目を全て削除する"
+
+[cli.help._root.memory.cache.clear.arg.workspace]
+help = "その cache の項目を持つワークスペース id"
+
+[cli.help._root.memory.cache.get]
+about = "cache の項目を読む（無いか期限切れなら null）"
+
+[cli.help._root.memory.cache.get.arg.key]
+help = "cache キー"
+
+[cli.help._root.memory.cache.get.arg.workspace]
+help = "その cache の項目を持つワークスペース id"
+
+[cli.help._root.memory.cache.invalidate]
+about = "cache の項目を 1 つ削除する（idempotent）"
+
+[cli.help._root.memory.cache.invalidate.arg.key]
+help = "cache キー"
+
+[cli.help._root.memory.cache.invalidate.arg.workspace]
+help = "その cache の項目を持つワークスペース id"
+
+[cli.help._root.memory.cache.list]
+about = "ワークスペースの cache キーを並べる"
+
+[cli.help._root.memory.cache.list.arg.workspace]
+help = "その cache の項目を持つワークスペース id"
+
+[cli.help._root.memory.cache.put]
+about = "値を保存する。TTL（秒）は必須だ"
+
+[cli.help._root.memory.cache.put.arg.content_type]
+help = "content type を強制的に決める"
+
+[cli.help._root.memory.cache.put.arg.key]
+help = "cache キー"
+
+[cli.help._root.memory.cache.put.arg.ttl]
+help = "TTL（秒、必須、0 より大きいこと）"
+
+[cli.help._root.memory.cache.put.arg.value]
+help = "値。JSON としてパースできれば JSON、そうでなければ平文として扱う。`@path` はファイルから読む"
+
+[cli.help._root.memory.cache.put.arg.value_b64]
+help = "base64 でエンコードしたバイナリ値"
+
+[cli.help._root.memory.cache.put.arg.workspace]
+help = "その cache の項目を持つワークスペース id"
+
+[cli.help._root.memory.count]
+about = "scope の項目数を数える（prefix は任意）"
+
+[cli.help._root.memory.count.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.count.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.count.arg.prefix]
+help = "この接頭辞で始まるキーだけ"
+
+[cli.help._root.memory.count.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.count.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.count.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.count.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.delete]
+about = "キーを削除する"
+
+[cli.help._root.memory.delete.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.delete.arg.cas]
+help = "CAS バージョン。与えて一致しなければ cas_conflict を返す"
+
+[cli.help._root.memory.delete.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.delete.arg.key]
+help = "その scope の中の項目キー"
+
+[cli.help._root.memory.delete.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.delete.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.delete.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.delete.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.exists]
+about = "存在するか確認する"
+
+[cli.help._root.memory.exists.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.exists.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.exists.arg.key]
+help = "その scope の中の項目キー"
+
+[cli.help._root.memory.exists.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.exists.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.exists.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.exists.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.export]
+about = "通常の項目を JSON で書き出す（`--scope` で絞れる）。secret 領域は決して書き出さない"
+
+[cli.help._root.memory.export.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.export.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.export.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.export.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.export.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.export.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.gc]
+about = "期限切れの項目を片付ける（通常 + secret）。読み取りは既に期限切れの行を除くので、この命令が取り戻すのはディスクと quota だけだ。Local の呼び出し元専用"
+
+[cli.help._root.memory.get]
+about = "項目を 1 つ読む"
+
+[cli.help._root.memory.get.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.get.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.get.arg.key]
+help = "その scope の中の項目キー"
+
+[cli.help._root.memory.get.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.get.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.get.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.get.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.goal]
+about = "Goal — surface ごとに目標の文を 1 つ（`tasty.goal`）"
+long = "Goal — surface ごとに目標の文を 1 つ（`tasty.goal`）。\n\n何もこれを受け継がない: この surface から spawn された surface は goal が無い状態で始まる。TTL も無いが、必要が無いからだ — surface が閉じるとき、そして復元されなかった surface は起動のときに、その surface のメモリスコープが丸ごと消える。だから goal の寿命はちょうどその surface の寿命だ。"
+
+[cli.help._root.memory.goal.clear]
+about = "その surface の goal を削除する（idempotent）"
+
+[cli.help._root.memory.goal.clear.arg.surface]
+help = "対象の surface ID（デフォルト: 呼び出し元の TASTY_SURFACE_ID）"
+
+[cli.help._root.memory.goal.get]
+about = "その surface の goal を読む（無ければ null）"
+
+[cli.help._root.memory.goal.get.arg.surface]
+help = "対象の surface ID（デフォルト: 呼び出し元の TASTY_SURFACE_ID）"
+
+[cli.help._root.memory.goal.set]
+about = "その surface の goal を決める（既にあれば上書きする）。空の goal は拒否する"
+
+[cli.help._root.memory.goal.set.arg.goal]
+help = "目標の文"
+
+[cli.help._root.memory.goal.set.arg.surface]
+help = "対象の surface ID（デフォルト: 呼び出し元の TASTY_SURFACE_ID）"
+
+[cli.help._root.memory.import]
+about = "JSON ファイルから通常の項目を読み込む（`memory export` の出力）。`--replace` は既にあるキーを上書きし、デフォルトは衝突を飛ばす"
+
+[cli.help._root.memory.import.arg.file]
+help = "JSON ファイルの経路（項目の配列、または `{ \"entries\": [...] }`）"
+
+[cli.help._root.memory.import.arg.replace]
+help = "既にあるキーを上書きする（デフォルト: 飛ばす）"
+
+[cli.help._root.memory.list]
+about = "scope の項目を並べる（prefix + since/until/limit/offset）"
+
+[cli.help._root.memory.list.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.list.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.list.arg.limit]
+help = "返す項目数の上限"
+
+[cli.help._root.memory.list.arg.offset]
+help = "合う項目のうち先頭の N 件を飛ばす（--limit と一緒にページ送りに使う）"
+
+[cli.help._root.memory.list.arg.prefix]
+help = "この接頭辞で始まるキーだけ"
+
+[cli.help._root.memory.list.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.list.arg.since]
+help = "`updated_at >= since` の項目だけ（unix ms）"
+
+[cli.help._root.memory.list.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.list.arg.until]
+help = "`updated_at < until` の項目だけ（unix ms）"
+
+[cli.help._root.memory.list.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.list.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.plan]
+about = "Plan — ワークスペース単位の宣言的な作業の分解（`tasty.plan.<plan_id>`）"
+
+[cli.help._root.memory.plan.add-step]
+about = "ステップを末尾に足すか途中に挟む"
+
+[cli.help._root.memory.plan.add-step.arg.cas]
+help = "CAS バージョン（今の plan のバージョンと一致すること）"
+
+[cli.help._root.memory.plan.add-step.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.add-step.arg.position]
+help = "挟む位置（0 から）。デフォルト: 末尾に足す"
+
+[cli.help._root.memory.plan.add-step.arg.step]
+help = "そのステップの JSON オブジェクト"
+
+[cli.help._root.memory.plan.add-step.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.plan.create]
+about = "新しい plan を作る。`--steps` はステップオブジェクトの JSON 配列を受ける"
+
+[cli.help._root.memory.plan.create.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.create.arg.steps]
+help = "ステップの JSON 配列（例: `'[{\"id\":\"a\",\"title\":\"first\"}]'`）"
+
+[cli.help._root.memory.plan.create.arg.title]
+help = "plan の題名"
+
+[cli.help._root.memory.plan.create.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.plan.delete]
+about = "plan を削除する"
+
+[cli.help._root.memory.plan.delete.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.delete.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.plan.get]
+about = "plan 全体を JSON で読む"
+
+[cli.help._root.memory.plan.get.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.get.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.plan.list]
+about = "ワークスペースの plan id を並べる"
+
+[cli.help._root.memory.plan.list.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.plan.remove-step]
+about = "ステップを削除する（`depends_on` がそれを指していれば拒否する）"
+
+[cli.help._root.memory.plan.remove-step.arg.cas]
+help = "CAS バージョン（今の plan のバージョンと一致すること）"
+
+[cli.help._root.memory.plan.remove-step.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.remove-step.arg.step_id]
+help = "その plan の中のステップ id"
+
+[cli.help._root.memory.plan.remove-step.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.plan.update-step]
+about = "ステップの状態や notes を変える"
+
+[cli.help._root.memory.plan.update-step.arg.cas]
+help = "CAS バージョン（今の plan のバージョンと一致すること）"
+
+[cli.help._root.memory.plan.update-step.arg.clear_notes]
+help = "notes を空にする（None にする）"
+
+[cli.help._root.memory.plan.update-step.arg.notes]
+help = "notes をこの値にする。消すには `--clear-notes` を使うこと"
+
+[cli.help._root.memory.plan.update-step.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.update-step.arg.state]
+help = "次のいずれか: pending | in_progress | completed | failed | skipped"
+
+[cli.help._root.memory.plan.update-step.arg.step_id]
+help = "その plan の中のステップ id"
+
+[cli.help._root.memory.plan.update-step.arg.workspace]
+help = "その plan を持つワークスペース id"
+
+[cli.help._root.memory.put]
+about = "その scope/key に値を保存する。content type は値から推測する（文字列 → text/plain、JSON リテラル → application/json）"
+
+[cli.help._root.memory.put.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.put.arg.cas]
+help = "CAS バージョン（今の項目と一致すること。合わなければ cas_conflict）"
+
+[cli.help._root.memory.put.arg.content_type]
+help = "content type を強制的に決める。デフォルト: text/plain（文字列）、application/json（JSON リテラル）、application/octet-stream（--value-b64 を与えた場合）"
+
+[cli.help._root.memory.put.arg.expires_at]
+help = "絶対的な期限切れ時刻（unix ms）。省略すると何もしない"
+
+[cli.help._root.memory.put.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.put.arg.key]
+help = "キー（1..256、`[a-z0-9._-]+`）"
+
+[cli.help._root.memory.put.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.put.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.put.arg.ttl]
+help = "相対的な TTL（秒）。項目は `now + ttl` ミリ秒で期限切れになる。--expires-at とは併用できない"
+
+[cli.help._root.memory.put.arg.value]
+help = "値。JSON としてパースできれば JSON、そうでなければ平文の文字列として扱う。先頭に `@path` を付けるとファイルから読む（UTF-8 のみ。バイナリは --value-b64 が要る）"
+
+[cli.help._root.memory.put.arg.value_b64]
+help = "base64 でエンコードしたバイナリ値。--value より優先する"
+
+[cli.help._root.memory.put.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.put.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.query]
+about = "ドット経路の値が等しいかで JSON の項目を絞る（`--path a.b --equals <json>`）"
+
+[cli.help._root.memory.query.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.query.arg.equals]
+help = "等しいか比べる JSON リテラル（または引用符で囲んだ文字列）"
+
+[cli.help._root.memory.query.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.query.arg.limit]
+help = "返す項目数の上限"
+
+[cli.help._root.memory.query.arg.offset]
+help = "合う項目のうち先頭の N 件を飛ばす（--limit と一緒にページ送りに使う）"
+
+[cli.help._root.memory.query.arg.path]
+help = "ドットでつないだ経路、例: `\"task.status\"`。`application/json` の項目だけを見る"
+
+[cli.help._root.memory.query.arg.prefix]
+help = "この接頭辞で始まるキーだけ"
+
+[cli.help._root.memory.query.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.query.arg.since]
+help = "`updated_at >= since` の項目だけ（unix ms）"
+
+[cli.help._root.memory.query.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.query.arg.until]
+help = "`updated_at < until` の項目だけ（unix ms）"
+
+[cli.help._root.memory.query.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.query.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.scopes]
+about = "今使われている scope を並べる"
+
+[cli.help._root.memory.secret]
+about = "secret メモリストア。CLI は `_host` の所有者として動き、--owner フラグは無い。plugin の secret 領域は設計上 CLI からは触れない"
+long = "secret メモリストア。CLI は `_host` の所有者として動き、--owner フラグは無い。plugin の secret 領域は設計上 CLI からは触れない。\n\nsecret が意味するのは「他の所有者は読めない」ことであり、それ以上ではない。値は同じ `memory.db` の中に平文のバイトとして置かれるので、そのファイルを開ける者はそのまま読む — 分離はディスクではなく IPC の経路で効く。そこまで耐えるべき値なら OS のキーチェーンを使うか、権限を別に付けたファイルにデータを置いて、ここには経路だけを保存すること。"
+
+[cli.help._root.memory.secret.count]
+about = "scope の secret の数を数える"
+
+[cli.help._root.memory.secret.count.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.count.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.count.arg.prefix]
+help = "この接頭辞で始まるキーだけ"
+
+[cli.help._root.memory.secret.count.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.count.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.count.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.count.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.delete]
+about = "secret を削除する（idempotent）"
+
+[cli.help._root.memory.secret.delete.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.delete.arg.cas]
+help = "CAS バージョン（今の項目のバージョンと一致すること）"
+
+[cli.help._root.memory.secret.delete.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.delete.arg.key]
+help = "その scope の中の secret キー"
+
+[cli.help._root.memory.secret.delete.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.delete.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.delete.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.delete.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.exists]
+about = "その scope/key に secret があるか確認する"
+
+[cli.help._root.memory.secret.exists.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.exists.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.exists.arg.key]
+help = "その scope の中の secret キー"
+
+[cli.help._root.memory.secret.exists.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.exists.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.exists.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.exists.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.get]
+about = "secret の項目を 1 つ読む"
+
+[cli.help._root.memory.secret.get.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.get.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.get.arg.key]
+help = "その scope の中の secret キー"
+
+[cli.help._root.memory.secret.get.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.get.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.get.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.get.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.list]
+about = "scope の secret の項目を並べる"
+
+[cli.help._root.memory.secret.list.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.list.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.list.arg.limit]
+help = "返す項目数の上限"
+
+[cli.help._root.memory.secret.list.arg.offset]
+help = "合う項目のうち先頭の N 件を飛ばす（--limit と一緒にページ送りに使う）"
+
+[cli.help._root.memory.secret.list.arg.prefix]
+help = "この接頭辞で始まるキーだけ"
+
+[cli.help._root.memory.secret.list.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.list.arg.since]
+help = "`updated_at >= since` の項目だけ（unix ms）"
+
+[cli.help._root.memory.secret.list.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.list.arg.until]
+help = "`updated_at < until` の項目だけ（unix ms）"
+
+[cli.help._root.memory.secret.list.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.list.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.put]
+about = "その scope/key に secret の値を保存する"
+
+[cli.help._root.memory.secret.put.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.put.arg.cas]
+help = "CAS バージョン（今の項目のバージョンと一致すること）"
+
+[cli.help._root.memory.secret.put.arg.content_type]
+help = "content type を強制的に決める"
+
+[cli.help._root.memory.secret.put.arg.expires_at]
+help = "絶対的な期限切れ時刻（unix ms）。--ttl とは併用できない"
+
+[cli.help._root.memory.secret.put.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.put.arg.key]
+help = "その scope の中の secret キー"
+
+[cli.help._root.memory.secret.put.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.put.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.put.arg.ttl]
+help = "相対的な TTL（秒）。--expires-at とは併用できない"
+
+[cli.help._root.memory.secret.put.arg.value]
+help = "値。JSON としてパースできれば JSON、そうでなければ平文として扱う。`@path` はファイルから読む"
+
+[cli.help._root.memory.secret.put.arg.value_b64]
+help = "content type を強制的に決める"
+
+[cli.help._root.memory.secret.put.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.put.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.scopes]
+about = "secret が 1 つでもある scope を並べる"
+
+[cli.help._root.memory.secret.stats]
+about = "secret ストアの統計。scope の指定は任意だ"
+
+[cli.help._root.memory.secret.stats.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.stats.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.secret.stats.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.secret.stats.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.stats.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.stats.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.stats]
+about = "統計: 全体の項目数とバイト数（scope ごと、または合計）"
+
+[cli.help._root.memory.stats.arg.account]
+help = "別名: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.stats.arg.global]
+help = "別名: `--global` → `global`"
+
+[cli.help._root.memory.stats.arg.scope]
+help = "scope トークン（`global`, `surface:3`, `workspace:7`, …）"
+
+[cli.help._root.memory.stats.arg.surface]
+help = "別名: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.stats.arg.window]
+help = "別名: `--window 42` → `window:42`"
+
+[cli.help._root.memory.stats.arg.workspace]
+help = "別名: `--workspace 7` → `workspace:7`"
+[cli.help._root.approval.await]
+about = "応答・timeout・キャンセルのいずれかが来るまでブロックする。結果を JSON で表示する"
+
+[cli.help._root.approval.await.arg.id]
+help = "待つ承認 id（`req_...`）"
+
+[cli.help._root.approval.await.arg.timeout_ms]
+help = "要求の `timeout_ms` を上書きする。0 なら要求の値を使う（それも無ければ無期限）"
+
+[cli.help._root.approval.cancel]
+about = "待機中の承認をキャンセルする（終端状態だ）"
+
+[cli.help._root.approval.cancel.arg.id]
+help = "キャンセルする承認 id（`req_...`）"
+
+[cli.help._root.approval.get]
+about = "承認の記録を 1 つ表示する"
+
+[cli.help._root.approval.get.arg.id]
+help = "表示する承認 id（`req_...`）"
+
+[cli.help._root.approval.history]
+about = "永続的な記録の照会（memory store から読む）"
+
+[cli.help._root.approval.history.arg.decision]
+help = "選ばれた決定キーで絞り込む（Responded のものだけが合う）"
+
+[cli.help._root.approval.history.arg.limit]
+help = "返す項目数の上限（並べ替えの後、新しい順）"
+
+[cli.help._root.approval.history.arg.requester_id]
+help = "要求元 id で絞り込む（plugin・agent の id または \"user\"）"
+
+[cli.help._root.approval.history.arg.since]
+help = "memory の `updated_at >= since` の項目だけ（unix ms）"
+
+[cli.help._root.approval.history.arg.state]
+help = "状態で絞り込む: pending | responded | timed_out | cancelled | terminal"
+
+[cli.help._root.approval.history.arg.until]
+help = "memory の `updated_at < until` の項目だけ（unix ms）"
+
+[cli.help._root.approval.history.arg.workspace_id]
+help = "ワークスペース id で絞り込む"
+
+[cli.help._root.approval.list]
+about = "承認を並べる。状態とワークスペースで絞れる"
+
+[cli.help._root.approval.list.arg.state]
+help = "状態で絞り込む: pending | responded | timed_out | cancelled | terminal"
+
+[cli.help._root.approval.list.arg.workspace_id]
+help = "ワークスペース id で絞り込む"
+
+[cli.help._root.approval.request]
+about = "新しい承認を要求する。成功したら新しい id を表示する"
+long = "新しい承認を要求する。成功したら新しい id を表示する。\n\n勝手に期限切れになるものは無い。`--timeout-ms` を測る場所は `approval await` の中で、要求を時間どおりに `pending` の外へ動かすのはその呼び出しだけだ — 待つ側が居なければ要求は timeout の値がいくつであっても `pending` のまま残り、`approval list --state pending` に出続ける。"
+
+[cli.help._root.approval.request.arg.body]
+help = "任意の本文（複数行の説明）"
+
+[cli.help._root.approval.request.arg.choices]
+help = "カンマ区切りの `key:label[:destructive]` の三つ組（例: `approve:Approve,deny:Deny:1`）。省略すると `approve / deny` が既定になる"
+
+[cli.help._root.approval.request.arg.default_choice]
+help = "要求が timeout したときに記録される選択キー。結果はこのキーを載せた `timed_out` で、システムが行ったものとして残る — `responded` ではないので `approval history --decision` はそれを拾わない"
+
+[cli.help._root.approval.request.arg.metadata]
+help = "自由形式の JSON メタデータ（文字列をそのまま渡す。パースはできること）"
+
+[cli.help._root.approval.request.arg.severity]
+help = "深刻度: info | warn | danger。デフォルト: info"
+
+[cli.help._root.approval.request.arg.surface_id]
+help = "紐づける surface id（任意）"
+
+[cli.help._root.approval.request.arg.timeout_ms]
+help = "timeout（ミリ秒）。呼び出し側が `await` のときに上書きできる"
+
+[cli.help._root.approval.request.arg.title]
+help = "ポップアップや通知に出す題名"
+
+[cli.help._root.approval.request.arg.workspace_id]
+help = "紐づけるワークスペース id（デフォルト: アクティブなワークスペース）"
+
+[cli.help._root.approval.respond]
+about = "応答を提出する"
+
+[cli.help._root.approval.respond.arg.choice]
+help = "選択キー（その要求の `choices` のいずれかと一致すること）"
+
+[cli.help._root.approval.respond.arg.comment]
+help = "任意のコメント"
+
+[cli.help._root.approval.respond.arg.id]
+help = "承認 id（`req_...`）"
+
+[cli.help._root.approval.summary]
+about = "ワークスペースのマークダウン要約を書くか読む（手で書いて読むだけだ）"
+
+[cli.help._root.approval.summary.get]
+about = "ワークスペースの要約を表示する"
+
+[cli.help._root.approval.summary.get.arg.workspace_id]
+help = "要約を表示するワークスペース（フォーカス非依存 — 必須）"
+
+[cli.help._root.approval.summary.set]
+about = "ワークスペースの要約を `content`（または `@file`）で上書きする"
+
+[cli.help._root.approval.summary.set.arg.content]
+help = "インラインの内容、またはファイルから読む `@path`"
+
+[cli.help._root.approval.summary.set.arg.workspace_id]
+help = "要約を上書きするワークスペース（フォーカス非依存 — 必須）"
+
+[cli.help._root.webhook.register]
+about = "インバウンド Webhook を登録し、発行された URL を出力する"
+long = "インバウンド Webhook を登録し、発行された URL を出力する。\n\n`--handler <id>`(登録済み hook handler を結ぶ)と `--sequence <json>`(インライン IpcSequence を定義する)のうち、ちょうど一つを指定する。外部 HTTP ペイロードが埋めるのは `${body.x}` / `${header.x}` / `${query.x}` の値スロットだけだ。\n\nリスナーは loopback ではなくすべてのインターフェースに bind する。出力される URL が `127.0.0.1` なのは curl しやすいからにすぎず、そのポートに届く者は誰でもこの Webhook に届く。署名検証はどんな形でも存在しない — `--auth-token` は定数時間で比較する固定の共有秘密ひとつであり、`--auth-*` を与えなければ尋ねた者全員に対してシーケンスが発火する。`--persistent` はそのトークンを平文で `~/.tasty/webhooks.toml` に書く。\n\nHTTP の応答はシーケンスが走る前に決まる固定の確認応答なので、`200` は呼び出しが一致して引き渡されたという意味であって、それが成功したという意味ではない。失敗したステップは後続のステップを止めず応答も変えないため、部分的にしか適用されていないシーケンスが通常の終わり方として残る。失敗が現れる場所はログだけだ。"
+
+[cli.help._root.webhook.register.arg.methods]
+help = "許可する HTTP メソッド(繰り返し可)。既定は POST"
+
+[cli.help._root.webhook.register.arg.handler]
+help = "結ぶ登録済み hook handler の id(その source が webhook を受け付ける必要がある)"
+
+[cli.help._root.webhook.register.arg.sequence]
+help = "{\"method\",\"params\"} オブジェクトの JSON 配列で与えるインライン IpcSequence"
+
+[cli.help._root.webhook.register.arg.persistent]
+help = "再起動をまたいで保持する(既定: 一時的 — 再起動で消える)"
+
+[cli.help._root.webhook.register.arg.ttl_secs]
+help = "秒単位の時間制限 — この秒数が過ぎると Webhook は自動的に失効する。`--count` とは併用できない"
+
+[cli.help._root.webhook.register.arg.count]
+help = "回数制限 — 受理された呼び出しがこの回数に達すると Webhook は自動的に消滅する。`--ttl-secs` とは併用できない"
+long = "回数制限 — 受理された呼び出しがこの回数に達すると Webhook は自動的に消滅する。`--ttl-secs` とは併用できない。\n\n受理されたとは、リクエストが path と `--method` のいずれかに一致し、認証を設定しているなら正しいトークンを載せて来た、という意味だ。メソッド不一致(`405`)とトークン拒否(`401`)は回数をそのまま残すので、トークンを知らない送信者はそれを消費できない。この回数が測らないのはその後シーケンスが成功したかどうかだ — その時点で応答はすでに送られており、数えた呼び出しは戻らない。"
+[cli.help._root.webhook.register.arg.auth_location]
+help = "任意の認証 — トークンをどこに載せて来るか。未指定なら認証なし"
+
+[cli.help._root.webhook.register.arg.auth_key]
+help = "トークンの位置キー — クエリパラメータ / ボディのフィールドパス / ヘッダー名。query|body|header では必須で、bearer では無視される"
+
+[cli.help._root.webhook.register.arg.auth_token]
+help = "認証を通すために送信者が提示する固定の共有トークン"
+
+[cli.help._root.webhook.list]
+about = "登録されている Webhook をすべて列挙する(URL・メソッド・ハンドラ・ステップ・寿命)"
+
+[cli.help._root.webhook.info]
+about = "id で Webhook ひとつの詳細を表示する(残り回数・失効を含む)"
+
+[cli.help._root.webhook.info.arg.id]
+help = "Webhook の opaque id(URL の `/{id}` パスセグメント)"
+
+[cli.help._root.webhook.unregister]
+about = "id で Webhook を解除する — 以後そのパスは 404 を返す"
+
+[cli.help._root.webhook.unregister.arg.id]
+help = "Webhook の opaque id"
+
+[cli.help._root.webhook.sweep]
+about = "失効した Webhook をまとめて掃き出す(時間超過・回数消尽)"
+long = "失効した Webhook をまとめて掃き出す(時間超過・回数消尽)。\n\nタイマーがないので失効はひとりでには執行されない — 失効した Webhook は誰かがそれを覗くまで登録されたまま残る。そのパスに呼び出しが来ればその場で削除され `410` を一度だけ返し、以後はすべて `404` になる。再起動は失効した永続 Webhook を捨て、このコマンドはそのどちらも待たずに全体を一度に片づける。"
+
+[cli.help._root.webhook.config]
+about = "リスナーの bind ポートを読み取る/設定する(`~/.tasty/webhooks.toml` に永続化)"
+long = "リスナーの bind ポートを読み取る/設定する(`~/.tasty/webhooks.toml` に永続化)。\n\n`--port` なしで呼ぶと現在のポートと bind 状態を出力する。`--port` を与えると新しいポートを永続化し、リスナーが再び bind するのは次の再起動のときだけだ。ポートは設定値専用で、tasty が黙って代替ポートに bind することはない。bind アドレスは設定できず loopback でもない — リスナーがすべてのインターフェースを取るので、このポートが露出のすべてだ。"
+
+[cli.help._root.webhook.config.arg.port]
+help = "リスナーのポートを設定する(1-65535)。反映には再起動が必要"

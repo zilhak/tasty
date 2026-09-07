@@ -36,24 +36,24 @@ body = "시작할 때 터미널 엔진을 만들지 못했습니다. 대개 conf
 hint = "config.toml 의 general.shell 값이 실제로 존재하는 셸을 가리키는지 확인한 뒤 다시 실행하세요."
 
 [boot.window_error]
-title = "창을 열 수 없음"
-body = "첫 창을 만들지 못했습니다. 상세: {}"
+title = "윈도우를 열 수 없음"
+body = "첫 윈도우를 만들지 못했습니다. 상세: {}"
 hint = "디스플레이·컴포지터와 그래픽 드라이버를 확인한 뒤 다시 실행하세요."
 
 [window_error.new_window]
-title = "새 창을 열 수 없음"
-body = "새 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+title = "새 윈도우를 열 수 없음"
+body = "새 윈도우를 열지 못해 취소했습니다. 다른 윈도우의 작업은 그대로 유지됩니다. 원인: {}"
 
 [window_error.settings]
-title = "설정 창을 열 수 없음"
-body = "설정 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+title = "설정 윈도우를 열 수 없음"
+body = "설정 윈도우를 열지 못해 취소했습니다. 다른 윈도우의 작업은 그대로 유지됩니다. 원인: {}"
 
 [window_error.plugins]
-title = "플러그인 창을 열 수 없음"
-body = "플러그인 창을 열지 못해 취소했습니다. 다른 창의 작업은 그대로 유지됩니다. 원인: {}"
+title = "플러그인 윈도우를 열 수 없음"
+body = "플러그인 윈도우를 열지 못해 취소했습니다. 다른 윈도우의 작업은 그대로 유지됩니다. 원인: {}"
 
 [window_error.quit_confirm]
-skipped = "확인 창을 열 수 없어 확인 없이 종료합니다."
+skipped = "확인 윈도우를 열 수 없어 확인 없이 종료합니다."
 
 [plugins]
 title = "플러그인"
@@ -290,7 +290,7 @@ close_behavior_quit = "종료"
 language_label = "언어:"
 language_restart_notice = "언어 변경은 재시작 후 적용됩니다."
 language_missing_suffix = "(없음)"
-wheel_line_scroll_desc = "휠을 한 칸 굴렸을 때 스크롤되는 거리. 창 안 어디서나 같은 거리로 움직입니다 — plugin 표면·popup·설정과 사이드바 목록 모두."
+wheel_line_scroll_desc = "휠을 한 칸 굴렸을 때 스크롤되는 거리. 윈도우 안 어디서나 같은 거리로 움직입니다 — plugin 표면·popup·설정과 사이드바 목록 모두."
 alt_display_style_label = "Alt 키 표시:"
 alt_display_style_alt = "Alt"
 alt_display_style_cmd = "Cmd"
@@ -850,14 +850,15 @@ bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포
 [i18n.warn]
 pack_missing = "언어 '{}' 가 설치되어 있지 않아 영어로 표시합니다. {} 에 언어팩을 두고 재시작하세요."
 pack_invalid = "언어팩 '{}' 을 불러오지 못해 영어로 표시합니다. {} 를 고치고 재시작하세요 ({})."
+font_unresolved = "언어팩 폰트를 불러오지 못했습니다: {}. 글자는 표시되지만 해당 문자는 □ 로 보일 수 있습니다."
 
 [persistence.warn]
 settings_unparsable = "{} 을 읽지 못해 기본 설정으로 시작했습니다. 원본은 옆에 .bak 파일로 보관합니다."
 settings_locked = "설정 파일을 읽지 못했습니다. 파일을 덮어쓰지 않도록 설정 저장을 중단했습니다. 파일을 고치거나 옮긴 뒤 다시 시작하세요."
-layout_unparsable = "저장된 창 배치를 읽지 못해 새 배치로 시작했습니다. 저장된 파일은 옆에 .bak 파일로 보관합니다."
-layout_locked = "저장된 창 배치를 읽지 못해 기본 배치로 시작했습니다. 저장된 배치는 덮어쓰지 않습니다."
+layout_unparsable = "저장된 윈도우 배치를 읽지 못해 새 배치로 시작했습니다. 저장된 파일은 옆에 .bak 파일로 보관합니다."
+layout_locked = "저장된 윈도우 배치를 읽지 못해 기본 배치로 시작했습니다. 저장된 배치는 덮어쓰지 않습니다."
 settings_unparsable_blocked = "{} 옆에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 설정이 저장됩니다. 그 파일을 읽지 못했고 옆으로 옮기지도 못해 기본 설정으로 시작했습니다."
-layout_unparsable_blocked = "layouts 폴더에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 창 배치가 저장됩니다. 저장된 배치를 읽지 못했고 옆으로 옮기지도 못했습니다."
+layout_unparsable_blocked = "layouts 폴더에 쌓인 .bak 파일을 옮기거나 지운 뒤 다시 시작해야 윈도우 배치가 저장됩니다. 저장된 배치를 읽지 못했고 옆으로 옮기지도 못했습니다."
 
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
@@ -1688,7 +1689,7 @@ empty_none_hint = "의존 관계로 묶인 작업이 여기에 표시됩니다."
 empty_filtered = "일치하는 DAG 없음"
 empty_filtered_hint = "다른 조건으로 찾아보세요."
 
-# 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
+# 전체화면 무대(fullscreen stage) — 윈도우 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "전체화면"
 
@@ -1733,3 +1734,2536 @@ Tasty 를 직접 빌드해 쓴다면 먼저 "Tasty Dev" 인증서로 서명하�
 
 이 안내는 한 번만 표시됩니다. 설정 > 일반 > 권한에서 다시 켤 수 있습니다."""
 open_settings = "설정 열기"
+
+# ── CLI 도움말 (clap `about` / `help`) ────────────────────────────────────────
+[cli.help._root]
+about = "AI 코딩 에이전트를 위한 GPU 가속 터미널 에뮬레이터"
+
+[cli.help._root.arg.port_file]
+help = "포트 파일 경로 지정 (테스트 격리용)"
+
+[cli.help._root.arg.launch]
+help = "tasty 터미널 안에서도 GUI 를 강제로 실행"
+
+[cli.help._root.arg.headless]
+help = "헤드리스 터미널 에뮬레이터로 실행 (GUI 없이 IPC + PTY + plugin 만). 헤드리스는 no-default-features 빌드뿐이다 — GUI 빌드는 경고만 남기고 그대로 GUI 를 띄워, 물려받은 DISPLAY 에 윈도우가 뜬다"
+
+[cli.help._root.arg.all]
+help = "모든 명령을 트리로 표시 (-h 와 함께 사용)"
+
+[cli.help._root.arg.enable_input_simulation]
+help = "입력 시뮬레이션 IPC 활성화 (debug 빌드 전용). debug.inject_mouse, debug.inject_key 등에 필요"
+
+[cli.help._root.new]
+about = "새 리소스 생성 (윈도우, 워크스페이스, 탭, 분할)"
+
+[cli.help._root.close]
+about = "리소스 닫기 (탭, 페인, 서피스, 워크스페이스, 윈도우)"
+
+[cli.help._root.list]
+about = "리소스 목록·조회 (워크스페이스, 윈도우, 트리, 서피스, 페인, 정보, 훅 등)"
+
+[cli.help._root.set]
+about = "리소스 설정·갱신 (훅, 마크, 워크스페이스, 글로벌 훅)"
+
+[cli.help._root.move]
+about = "리소스 이동·순서 변경 (탭, 워크스페이스)"
+
+[cli.help._root.split]
+about = "페인 그룹 또는 서피스 분할"
+
+[cli.help._root.remote]
+about = "다른 호스트의 서피스·워크스페이스에 원격(SSH) attach — `remote attach`"
+
+[cli.help._root.send]
+about = "텍스트, 키, 큐 메시지 전송"
+
+[cli.help._root.read]
+about = "서피스 또는 큐에서 읽기"
+
+[cli.help._root.notify]
+about = "알림 생성"
+
+[cli.help._root.unset]
+about = "리소스 제거 (훅, 글로벌 훅)"
+
+[cli.help._root.surface-meta]
+about = "서피스별 메타데이터 관리"
+
+[cli.help._root.surface]
+about = "서피스 동작 (완료 신호, 조회 등)"
+
+[cli.help._root.session]
+about = "에이전트 세션 토큰 (발급, 폐기, 목록)"
+
+[cli.help._root.terminal]
+about = "자식 터미널 관리 (spawn/tell/children/kill 등) — 호스트에 내재화된 에이전트 자식 터미널 관리 (ADR-0040)"
+
+[cli.help._root.pty]
+about = "헤드리스 PTY 관리 (spawn/write/read/wait/kill/list) — 서피스·탭 없는 백그라운드 PTY. `terminal` 과는 별개 네임스페이스다 (ADR-0050 pty primitive)"
+
+[cli.help._root.is-typing]
+about = "서피스에 지금 타이핑 중인지 확인 (최근 5초 내 키 입력 여부)"
+
+[cli.help._root.wake]
+about = "지연된 서피스의 PTY 를 시작 (이미 실행 중이면 아무것도 안 한다)"
+
+[cli.help._root.debug]
+about = "디버그·진단 명령 (IME 시뮬레이션, 원시 키 입력 등) — debug 빌드 전용"
+
+[cli.help._root.tool]
+about = "내부 도구 (SSH 연결 프로필, 패스키 등)"
+
+[cli.help._root.plugin]
+about = "plugin 관리 (목록, 설치, 제거, 활성화, 비활성화, 로그)"
+
+[cli.help._root.memory]
+about = "에이전트 메모리 저장소 (~/.tasty/memory.db) — 영속 키-값"
+
+[cli.help._root.settings]
+about = "전역 설정 — 원격 전송 저장 폴더와 용량 상한을 조회·설정"
+
+[cli.help._root.output]
+about = "구조적 출력 관찰자 (파서 + 싱크 팬아웃)"
+
+[cli.help._root.approval]
+long = "사람 인계 승인 게이트 (request/respond/await/cancel/list/get)\n\n살아 있는 게이트는 호스트를 넘기지 못한다. `request`·`respond`·`await`·`cancel`·`list`·`get` 은 전부 메모리 안의 저장소 하나를 읽고, 그 저장소는 부팅마다 비어서 시작한다. 그래서 호스트가 멈출 때 `pending` 이던 요청은 그 뒤에 없다 — `list` 에 안 나오고 그 id 로 `await` 하면 \"not found\" 가 온다. 남는 것은 적힌 기록이고, 그것을 memory store 에서 읽는 것이 `history` 다. `history` 는 로그, `list` 는 지금 답할 수 있는 것으로 읽어라."
+about = "사람 인계 승인 게이트 (request/respond/await/cancel/list/get)"
+
+[cli.help._root.telemetry]
+long = "에이전트 텔레메트리 (메트릭 기록 · 요약 · 시계열 · 상위 N)\n\n들어오는 경로가 둘이다: 에이전트가 `telemetry record` 로 직접 보고하는 것, 그리고 에이전트의 IPC 호출마다 호스트가 method 태그를 달아 하나씩 남기는 `ipc_calls` 이벤트 (호스트 자신의 호출 · `telemetry.*` · throttled 호출은 안 센다). 조회는 raw 이벤트만 읽는다 — 영속 rollup 이 없다 — 그리고 저장소는 최근 2 만 건으로 잘리므로 `--since` 를 그보다 과거로 줘도 닿지 않는다. anomaly 기록은 따로 잘린다: 최근 5 천 건, 최대 50 시간."
+about = "에이전트 텔레메트리 (지표 기록, 요약, 시계열, 상위 N)"
+
+[cli.help._root.agent]
+about = "에이전트 협업 primitive (task DAG; barrier/semaphore/lease/reducer/rate-limit 이 뒤따른다)"
+
+[cli.help._root.file-handler]
+about = "파일 핸들러 — 사용자 설정(`~/.tasty/file-handlers.toml`) 다시 읽기"
+
+[cli.help._root.clipboard]
+about = "클립보드 — 로컬 클립보드를 조작"
+
+[cli.help._root.hook-handler]
+about = "훅 핸들러 — 공용 훅·웹훅 핸들러 레지스트리 (list / reload / dispatch)"
+
+[cli.help._root.completion-strategy]
+about = "완료 판정 전략 — task Custom 디스패치의 완료 판정기 레지스트리 (list)"
+
+[cli.help._root.preset]
+about = "레이아웃 프리셋 관리 (워크스페이스 / 탭 / 페인)"
+
+[cli.help._root.workspace-category]
+about = "워크스페이스 카테고리(사이드바 폴더) 관리 — 목록/생성/이름변경/삭제/이동"
+
+[cli.help._root.webhook]
+about = "인바운드 웹훅 관리 (등록/목록/정보/해제) — HTTP → IpcSequence"
+
+[cli.help._root.port]
+about = "이 인스턴스의 IPC 포트를 stdout 에 출력 (원격 포트 자동 발견 사슬의 첫 걸음, `ssh host tasty port`). 포트 파일만 읽으며 IPC 는 쓰지 않는다"
+
+[cli.help._root.screenshot]
+about = "스크린샷을 PNG 파일로 캡처 (포커스와 무관)"
+
+[cli.help._root.list.workspaces]
+about = "워크스페이스 목록"
+
+[cli.help._root.list.windows]
+about = "모든 윈도우 목록"
+
+[cli.help._root.list.tree]
+about = "워크스페이스·페인·탭을 트리로 보기"
+
+[cli.help._root.list.surfaces]
+about = "모든 워크스페이스의 서피스(터미널) 목록"
+
+[cli.help._root.list.panes]
+about = "모든 워크스페이스의 페인 목록"
+
+[cli.help._root.list.tabs]
+about = "페인 안의 탭 목록"
+
+[cli.help._root.list.tabs.arg.pane]
+help = "페인 ID (필수)"
+
+[cli.help._root.list.info]
+about = "시스템 정보 보기"
+
+[cli.help._root.list.gpu-stats]
+about = "GPU 자원 수 보기 (wgpu 보고서 + 윈도우별 렌더러 통계)"
+
+[cli.help._root.list.notifications]
+about = "알림 목록"
+
+[cli.help._root.list.timers]
+about = "등록된 타이머와 지금 이 인스턴스를 깨우고 있는 것 보기"
+
+[cli.help._root.list.hooks]
+about = "훅 목록"
+
+[cli.help._root.list.hooks.arg.surface]
+help = "서피스 ID 로 거르기"
+
+[cli.help._root.list.global-hooks]
+about = "전역 훅 전체 목록"
+
+[cli.help._root.list.theme]
+about = "확정된 전역 테마 스냅샷 보기 (색·폰트 크기·UI 배율)"
+
+[cli.help._root.list.recent]
+about = "한 서피스 종류에서 최근에 연 파일 목록"
+
+[cli.help._root.list.recent.arg.kind]
+help = "조회할 서피스 종류 (예: `markdown`). 호스트는 종류 이름을 모른다 — 호출자가 준다"
+
+[cli.help._root.list.queue]
+about = "큐 상태 보기 (대기 메시지 수 + 미리보기)"
+
+[cli.help._root.list.queue.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.move.tab]
+about = "같은 페인 안에서 탭을 다른 자리로 옮기기"
+
+[cli.help._root.move.tab.arg.from]
+help = "옮길 탭의 색인 (0부터)"
+
+[cli.help._root.move.tab.arg.pane]
+help = "페인 ID"
+
+[cli.help._root.move.tab.arg.to]
+help = "옮겨 갈 자리의 색인 (0부터)"
+
+[cli.help._root.move.workspace]
+about = "워크스페이스를 다른 자리로 옮기기"
+long = "워크스페이스를 다른 자리로 옮기기\n\n`--id` 를 쓰는 쪽이 낫다: 워크스페이스 ID 는 그것을 가진 윈도우까지 짚으므로, 어느 윈도우가 포커스돼 있든 명령의 뜻이 같다. `--from` 은 한 윈도우 안의 색인이라 포커스된 윈도우에 떨어진다."
+
+[cli.help._root.move.workspace.arg.from]
+help = "옮길 워크스페이스의 색인 (0부터, 포커스에 의존)"
+
+[cli.help._root.move.workspace.arg.id]
+help = "옮길 워크스페이스 ID (권장, --from 과 함께 쓸 수 없다)"
+
+[cli.help._root.move.workspace.arg.to]
+help = "옮겨 갈 자리의 색인 (0부터)"
+
+[cli.help._root.read.command-at]
+about = "색인 위치의 기록된 명령 (음수 = 끝에서부터)"
+
+[cli.help._root.read.command-at.arg.index]
+help = "0 부터 세는 색인. 음수는 끝에서부터 센다"
+
+[cli.help._root.read.command-at.arg.surface]
+help = "서피스 ID (기본: 포커스된 터미널)"
+
+[cli.help._root.read.commands]
+about = "서피스에 기록된 셸 명령 목록 (OSC 133)"
+
+[cli.help._root.read.commands.arg.limit]
+help = "돌려줄 기록 수 상한"
+
+[cli.help._root.read.commands.arg.since]
+help = "이 unix-ms 시각에 또는 그 뒤에 끝난 기록만 포함"
+
+[cli.help._root.read.commands.arg.surface]
+help = "서피스 ID (기본: 포커스된 터미널)"
+
+[cli.help._root.read.last-command]
+about = "서피스에 기록된 가장 최근 명령"
+
+[cli.help._root.read.last-command.arg.surface]
+help = "서피스 ID (기본: 포커스된 터미널)"
+
+[cli.help._root.read.parse-since-mark]
+about = "마지막 마크 이후의 출력을 내장 파서로 파싱 (path/url/prompt_boundary/exit_code)"
+
+[cli.help._root.read.parse-since-mark.arg.parsers]
+help = "쉼표로 구분한 파서 id 목록. 기본값 = 내장 전부"
+
+[cli.help._root.read.parse-since-mark.arg.surface]
+help = "서피스 ID (기본: 포커스된 터미널)"
+
+[cli.help._root.read.queue]
+about = "서피스의 메시지 큐에서 읽기 (가장 오래된 메시지를 소비한다)"
+
+[cli.help._root.read.queue.arg.clear]
+help = "읽는 대신 메시지를 전부 비우기"
+
+[cli.help._root.read.queue.arg.from]
+help = "보낸 서피스 ID 로 거르기"
+
+[cli.help._root.read.queue.arg.peek]
+help = "소비하지 않고 들여다보기"
+
+[cli.help._root.read.queue.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.read.screen]
+about = "서피스의 현재 화면 텍스트 읽기"
+
+[cli.help._root.read.screen.arg.lines]
+help = "화면 아래에서부터 읽을 줄 수. 내용의 끝에서부터 센다 — 뒤쪽 빈 줄은 건너뛰고 모자란 만큼을 스크롤백에서 채운다. 상한은 격자가 아니라 내용이라, 마지막으로 찍힌 줄 아래의 행은 돌아오지 않는다. 그래서 대부분 비어 있는 화면은 스크롤백이 남아 있어도 N 보다 적게 돌려준다. 대체 화면(전체 화면 TUI)에서는 채움이 주 버퍼의 스크롤백에서 오고 표지 없이 붙으므로, N 이 크면 TUI 자신의 화면 위에 셸 기록이 얹혀 나올 수 있다"
+
+[cli.help._root.read.screen.arg.show_dim]
+help = "흐린 셀(고스트 제안, 예: Claude Code 자동완성 오버레이)도 포함. 기본은 제외한다 — 제출되지 않은 UI 제안을 실제 버퍼 내용으로 오인하지 않기 위해서다"
+
+[cli.help._root.read.screen.arg.surface]
+help = "서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.read.since-mark]
+about = "마지막 마크 이후의 출력 읽기"
+
+[cli.help._root.read.since-mark.arg.strip_ansi]
+help = "출력에서 ANSI 이스케이프 시퀀스 제거"
+
+[cli.help._root.read.since-mark.arg.surface]
+help = "서피스 ID (기본: 포커스된 터미널)"
+
+[cli.help._root.send.key]
+about = "터미널 서피스에 키 보내기 (enter, tab, escape, up, down 등)"
+
+[cli.help._root.send.key.arg.key]
+help = "키 이름"
+
+[cli.help._root.send.key.arg.surface]
+help = "대상 서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.send.queue]
+about = "서피스의 큐에 메시지 보내기"
+
+[cli.help._root.send.queue.arg.content]
+help = "메시지 내용"
+
+[cli.help._root.send.queue.arg.from]
+help = "보내는 서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.send.queue.arg.to]
+help = "대상 서피스 ID"
+
+[cli.help._root.send.text]
+about = "터미널 서피스에 텍스트 보내기"
+
+[cli.help._root.send.text.arg.surface]
+help = "대상 서피스 ID (기본: 포커스된 것)"
+
+[cli.help._root.send.text.arg.text]
+help = "보낼 텍스트"
+
+[cli.help._root.send.text.arg.wait_idle]
+help = "사람이 입력 중이면 보내지 않는다 — 판단과 전송을 한 걸음에 한다. 대신 \"sent\": false 와 \"reason\": \"typing\" 을 보고한다. `tasty is-typing` 으로 먼저 확인하는 것으로는 이렇게 안 된다 — 두 명령 사이에 입력이 시작될 수 있다"
+
+[cli.help._root.close.pane]
+about = "지정한 페인 닫기 (분할 해제)"
+
+[cli.help._root.close.pane.arg.pane]
+help = "대상 페인 ID (필수)"
+
+[cli.help._root.close.self]
+about = "호출한 서피스 자신을 닫기 (TASTY_SURFACE_ID 를 쓴다)"
+
+[cli.help._root.close.surface]
+about = "탭 안의 지정한 서피스 닫기"
+
+[cli.help._root.close.surface.arg.surface]
+help = "대상 서피스 ID (필수)"
+
+[cli.help._root.close.tab]
+about = "ID 로 특정 탭 닫기"
+
+[cli.help._root.close.tab.arg.tab]
+help = "대상 탭 ID (필수)"
+
+[cli.help._root.close.window]
+about = "ID 로 윈도우 닫기"
+long = "ID 로 윈도우를 닫는다.\n\n대상은 언제나 `--id` 로 명시한다 (`tasty list windows` 참고). 마지막으로 남은 주 윈도우는 거절한다 — 종료는 사용자의 행동이다."
+
+[cli.help._root.close.window.arg.id]
+help = "대상 윈도우 ID (필수)"
+
+[cli.help._root.close.workspace]
+about = "ID 로 워크스페이스를 통째로 닫기 — 그 안의 모든 페인·탭·서피스까지"
+long = "ID 로 워크스페이스를 통째로 닫는다 — 그 안의 모든 페인·탭·서피스까지.\n\n되돌릴 수 없다: 워크스페이스 안의 터미널이 전부 죽고, 그 워크스페이스는 사용자의 다시 열기 기록에 들어가지 않으며, 스크롤백도 남지 않는다. 다시 열 수 있는 것은 사용자가 손으로 닫은 것뿐이다.\n\n대상은 언제나 `--id` 로 명시한다 (`tasty list workspaces` 참고) — 화면에 무엇이 보이는지로 추론하지 않는다. 사용자가 보고 있지 않은 워크스페이스를 닫아도 지금 화면의 워크스페이스는 그대로 남는다. 자기 서피스를 담고 있는 워크스페이스는 거절하고, 원격 attach 세션을 mirror 하는 워크스페이스와 마지막으로 남은 워크스페이스도 거절한다 — 윈도우를 닫는 것은 별개의 결정이다, `tasty close window` 참고."
+
+[cli.help._root.close.workspace.arg.id]
+help = "대상 워크스페이스 ID (필수)"
+
+[cli.help._root.new.tab]
+about = "지정한 페인에 새 탭 만들기"
+
+[cli.help._root.new.tab.arg.cwd]
+help = "작업 디렉토리 (terminal 종류일 때)"
+
+[cli.help._root.new.tab.arg.file]
+help = "파일 경로 (markdown 종류일 때)"
+
+[cli.help._root.new.tab.arg.pane]
+help = "대상 페인 ID (필수)"
+
+[cli.help._root.new.tab.arg.path]
+help = "디렉토리 경로 (explorer 종류일 때)"
+
+[cli.help._root.new.tab.arg.type]
+help = "서피스 종류: terminal (기본), markdown, explorer, html, image, dag_graph"
+
+[cli.help._root.new.tab.arg.url]
+help = "URL (html 종류일 때)"
+
+[cli.help._root.new.window]
+about = "새 윈도우 만들기"
+
+[cli.help._root.new.workspace]
+about = "새 워크스페이스 만들기"
+
+[cli.help._root.new.workspace.arg.category]
+help = "워크스페이스를 넣을 카테고리 (이름 또는 ID). 기본은 normal"
+
+[cli.help._root.new.workspace.arg.cwd]
+help = "새 워크스페이스의 작업 디렉토리"
+
+[cli.help._root.new.workspace.arg.file]
+help = "파일 경로 (markdown/image 종류일 때)"
+
+[cli.help._root.new.workspace.arg.name]
+help = "새 워크스페이스의 이름"
+
+[cli.help._root.new.workspace.arg.path]
+help = "디렉토리 경로 (explorer 종류일 때)"
+
+[cli.help._root.new.workspace.arg.remote_workspace]
+help = "attach 할 원격 tasty 쪽 워크스페이스 ID"
+
+[cli.help._root.new.workspace.arg.ssh]
+help = "저장된 프로필 없이 일회성 인라인 SSH 대상에 연결. 예: --ssh user@host. `--ssh-profile` 과 함께 쓸 수 없다"
+
+[cli.help._root.new.workspace.arg.ssh_profile]
+help = "이 워크스페이스를 저장된 SSH 프로필(원격 머신)에 연결. 워크스페이스가 활성화되면 호스트가 자동으로 attach 한다 (SSH 터널 + 워크스페이스 mirror)"
+
+[cli.help._root.new.workspace.arg.type]
+help = "서피스 종류: terminal (기본), markdown, explorer, html, image, dag_graph"
+
+[cli.help._root.new.workspace.arg.url]
+help = "URL (html 종류일 때)"
+
+[cli.help._root.split.arg.cwd]
+help = "작업 디렉토리 (terminal 종류일 때)"
+
+[cli.help._root.split.arg.direction]
+help = "분할 방향: vertical (기본) 또는 horizontal"
+
+[cli.help._root.split.arg.file]
+help = "파일 경로 (markdown/image 종류일 때)"
+
+[cli.help._root.split.arg.level]
+help = "분할 층: pane (상위 레이아웃) 또는 surface (하위 레이아웃)"
+
+[cli.help._root.split.arg.meta]
+help = "새 서피스에 설정할 메타데이터 JSON (예: '{\"nickname\":\"build\"}')"
+
+[cli.help._root.split.arg.path]
+help = "디렉토리 경로 (explorer 종류일 때)"
+
+[cli.help._root.split.arg.target_pane]
+help = "대상 페인: 숫자 페인 ID (--level pane 일 때만)"
+
+[cli.help._root.split.arg.target_surface]
+help = "대상 서피스: 숫자 서피스 ID, \"this\" (TASTY_SURFACE_ID), 또는 별명"
+
+[cli.help._root.split.arg.type]
+help = "서피스 종류: terminal (기본), markdown, explorer, html, image, dag_graph"
+
+[cli.help._root.split.arg.url]
+help = "URL (html 종류일 때)"
+
+[cli.help._root.set.cwd]
+about = "원격 서피스가 호스트에 보고하는 작업 디렉토리를 설정한다"
+
+[cli.help._root.set.cwd.arg.path]
+help = "디렉토리 경로. 생략하면 지운다"
+
+[cli.help._root.set.cwd.arg.surface]
+help = "대상 서피스 id"
+
+[cli.help._root.set.global-hook]
+about = "글로벌 훅 걸기 — 서피스에 매이지 않고 일정에 따라 발생한다"
+
+[cli.help._root.set.global-hook.arg.command]
+help = "조건이 발생했을 때 실행할 셸 명령"
+
+[cli.help._root.set.global-hook.arg.condition]
+help = "조건: interval:SECS, once:SECS"
+
+[cli.help._root.set.global-hook.arg.label]
+help = "사람이 읽을 라벨 (선택)"
+
+[cli.help._root.set.hook]
+about = "서피스에 훅 걸기"
+
+[cli.help._root.set.hook.arg.command]
+help = "이벤트가 발생했을 때 실행할 인라인 셸 명령 (하위 호환용 — 익명 훅 핸들러로 감싼다). --handler 와 함께 쓸 수 없다"
+
+[cli.help._root.set.hook.arg.event]
+help = "이벤트 종류: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS"
+
+[cli.help._root.set.hook.arg.handler]
+help = "연결할 공유 훅 핸들러 id (예: host/my-handler). 그 핸들러가 훅 트리거 소스를 받아들여야 한다. --command 와 함께 쓸 수 없다"
+
+[cli.help._root.set.hook.arg.once]
+help = "한 번 발생하면 훅을 지운다"
+
+[cli.help._root.set.hook.arg.surface]
+help = "훅을 걸 서피스 ID (기본값: 포커스된 것)"
+
+[cli.help._root.set.mark]
+about = "서피스에 읽기 마크 설정"
+
+[cli.help._root.set.mark.arg.surface]
+help = "서피스 ID (기본값: 포커스된 터미널)"
+
+[cli.help._root.set.url]
+about = "webview 종류 서피스의 URL 을 설정한다"
+
+[cli.help._root.set.url.arg.surface]
+help = "대상 서피스 id"
+
+[cli.help._root.set.url.arg.url]
+help = "불러올 URL"
+
+[cli.help._root.set.workspace]
+about = "워크스페이스의 이름·부제·설명 또는 SSH attach 매핑 갱신"
+
+[cli.help._root.set.workspace.arg.category]
+help = "이 워크스페이스를 다른 카테고리로 옮긴다 (이름 또는 id)"
+
+[cli.help._root.set.workspace.arg.clear_mapping]
+help = "기존 SSH attach 매핑을 지운다"
+
+[cli.help._root.set.workspace.arg.description]
+help = "새 설명"
+
+[cli.help._root.set.workspace.arg.id]
+help = "워크스페이스 ID (필수)"
+
+[cli.help._root.set.workspace.arg.name]
+help = "새 이름"
+
+[cli.help._root.set.workspace.arg.remote_workspace]
+help = "attach 할 원격 tasty 쪽 워크스페이스 id"
+
+[cli.help._root.set.workspace.arg.ssh]
+help = "일회성 인라인 SSH 대상에 매핑한다 (예: --ssh user@host)"
+
+[cli.help._root.set.workspace.arg.ssh_profile]
+help = "이 워크스페이스를 저장된 SSH 프로필(원격 머신)에 매핑한다"
+
+[cli.help._root.set.workspace.arg.subtitle]
+help = "새 부제"
+
+[cli.help._root.unset.global-hook]
+about = "ID 로 글로벌 훅 지우기"
+
+[cli.help._root.unset.global-hook.arg.hook]
+help = "지울 훅 ID"
+
+[cli.help._root.unset.hook]
+about = "훅 지우기"
+
+[cli.help._root.unset.hook.arg.hook]
+help = "지울 훅 ID"
+
+[cli.help._root.tool.attach]
+about = "tasty-attach 프로필로 원격 서피스·워크스페이스에 attach 한다. `--list` 는 프로필 목록만 낸다. 로컬 동작이다"
+
+[cli.help._root.tool.attach.arg.dump_after]
+help = "미러 덤프를 모으는 시간 (ms). 생략하면 내장 기본값"
+
+[cli.help._root.tool.attach.arg.list]
+help = "tasty-attach 프로필 목록만 내고 끝낸다 (attach 하지 않는다)"
+
+[cli.help._root.tool.attach.arg.name]
+help = "attach 에 쓸 tasty-attach 프로필 이름 (`--list` 와 함께 생략하면 프로필 목록만 낸다)"
+
+[cli.help._root.tool.attach.arg.no_reconnect]
+help = "연결이 끊겼을 때 자동 재접속을 끈다"
+
+[cli.help._root.tool.attach.arg.raw]
+help = "stdin/stdout 을 그대로 잇는 브리지 (서피스 전용)"
+
+[cli.help._root.tool.attach.arg.send]
+help = "attach 직후 비대화형으로 한 번 보낼 입력 (이스케이프를 해석한다)"
+
+[cli.help._root.tool.attach.arg.send_to]
+help = "워크스페이스 모드에서 --send 를 받을 서피스 id"
+
+[cli.help._root.tool.attach.arg.surface]
+help = "attach 할 원격 서피스 id"
+
+[cli.help._root.tool.attach.arg.workspace]
+help = "attach 할 원격 워크스페이스 id (surface 와 함께 쓸 수 없다)"
+
+[cli.help._root.tool.passkey]
+about = "Passkey (`~/.tasty/passkeys.toml`) — 프로필이 이름으로 참조하는 자격증명 저장소. list/show 는 값을 절대 보여주지 않는다. 로컬 파일만 다루며 IPC 를 쓰지 않는다"
+
+[cli.help._root.tool.passkey.add]
+about = "Passkey 를 추가하거나 교체한다. `--path <file>`(파일을 참조) 또는 `--inline`(비밀을 직접 입력) 중 하나를 쓴다"
+
+[cli.help._root.tool.passkey.add.arg.inline]
+help = "inline 종류: 비밀을 0600 파일로 만들어 둔다. 값은 `--value` 나 stdin 에서 온다"
+
+[cli.help._root.tool.passkey.add.arg.name]
+help = "프로필이 참조할 고유 식별자. 영숫자와 '-' '_' 만 쓸 수 있다"
+
+[cli.help._root.tool.passkey.add.arg.path]
+help = "path 종류: 사용자가 가진 기존 키 파일의 경로 (`-i`). `--inline` 과 함께 쓸 수 없다"
+
+[cli.help._root.tool.passkey.add.arg.value]
+help = "인라인 값 (생략하면 stdin 에서 읽는다). `--inline` 과 함께 쓴다"
+
+[cli.help._root.tool.passkey.list]
+about = "저장된 Passkey 목록 (이름과 종류만. 값은 절대 보여주지 않는다)"
+
+[cli.help._root.tool.passkey.list.arg.json]
+help = "표 대신 JSON 으로 출력한다"
+
+[cli.help._root.tool.passkey.remove]
+about = "Passkey 를 지운다 (inline 종류는 관리하던 파일도 함께 지운다)"
+
+[cli.help._root.tool.passkey.remove.arg.name]
+help = "지울 Passkey 이름"
+
+[cli.help._root.tool.passkey.show]
+about = "Passkey 하나의 이름과 종류를 보여준다 (값은 절대 보여주지 않는다)"
+
+[cli.help._root.tool.passkey.show.arg.json]
+help = "표 대신 JSON 으로 출력한다"
+
+[cli.help._root.tool.passkey.show.arg.name]
+help = "볼 Passkey 이름"
+
+[cli.help._root.tool.remote-profile]
+about = "원격 접속 프로필 관리 (ssh · tasty-attach 두 종류). 로컬 파일만 다루며 IPC 를 쓰지 않는다"
+
+[cli.help._root.tool.remote-profile.add-attach]
+about = "tasty-attach 프로필을 추가한다. 연결 정보는 참조(`--ssh-ref <name>`)이거나 인라인 필드(host, …) 둘 중 하나다"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.host]
+help = "인라인 연결: ssh 접속 대상 (host | user@host | 별칭). `--ssh-ref` 가 없을 때 쓰인다"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.identity]
+help = "인라인 연결: identity 파일 경로 (-i). path 종류 Passkey 로 따로 저장된다"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.label]
+help = "UI 에 표시할 라벨 (선택)"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.name]
+help = "프로필의 고유 식별자"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.options]
+help = "인라인 연결: 추가 ssh -o 옵션 (여러 번 지정 가능)"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port]
+help = "인라인 연결: ssh 포트"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port_file]
+help = "원격 포트 파일의 명시 경로 (관례 밖 위치). 지정하면 관례 경로보다 우선한다"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port_mode]
+help = "원격 포트 발견 방식: auto (기본값) | subcommand | file-unix | file-windows"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.remote_tasty]
+help = "원격 호스트의 tasty 바이너리 경로 (포트 발견용). 기본값은 \"tasty\""
+
+[cli.help._root.tool.remote-profile.add-attach.arg.ssh_ref]
+help = "참조할 ssh 프로필 이름 (실시간으로 따라간다). 지정하면 인라인 연결 필드는 무시된다"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.user]
+help = "인라인 연결: ssh 사용자"
+
+[cli.help._root.tool.remote-profile.add-ssh]
+about = "ssh 접속 프로필을 추가한다 (연결 정보만 담고 attach 스펙은 담지 않는다)"
+long = "ssh 접속 프로필을 추가한다 (연결 정보만 담고 attach 스펙은 담지 않는다).\n\n`attach` 는 이 종류를 거부한다. 이 호스트를 거쳐 attach 하려면, 이 프로필을 이름으로 참조하는(`--ssh-ref`) tasty-attach 프로필을 따로 만든다."
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.host]
+help = "ssh 접속 대상: host | user@host | ssh config 별칭"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.identity]
+help = "identity 파일 경로 (-i). path 종류 Passkey `<name>-key` 로 따로 저장된다"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.label]
+help = "UI 에 표시할 라벨 (선택)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.name]
+help = "프로필의 고유 식별자"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.options]
+help = "추가 ssh -o 옵션 (여러 번 지정 가능). 예: --option ServerAliveInterval=30"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.port]
+help = "ssh 포트 (기본값: ssh config 의 값, 없으면 22)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.shell]
+help = "원격 셸: powershell | cmd | bash | zsh | auto (기본값)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.user]
+help = "ssh 사용자 (host 에 user@ 가 없을 때)"
+
+[cli.help._root.tool.remote-profile.detect]
+about = "프로필을 다시 탐지한다 (ssh: 원격 셸을 알아본다 / tasty-attach: 원격 포트를 확인한다). SSH 로 접속한다"
+
+[cli.help._root.tool.remote-profile.detect.arg.name]
+help = "다시 탐지할 프로필 이름"
+
+[cli.help._root.tool.remote-profile.edit]
+about = "기존 프로필의 필드를 갱신한다 (준 필드만 덮어쓴다). 종류는 그대로 유지된다"
+
+[cli.help._root.tool.remote-profile.edit.arg.host]
+help = "ssh 접속 대상: host | user@host | ssh config 별칭"
+
+[cli.help._root.tool.remote-profile.edit.arg.identity]
+help = "identity 파일 경로 (-i). path 종류 Passkey 로 따로 저장된다"
+
+[cli.help._root.tool.remote-profile.edit.arg.label]
+help = "UI 에 표시할 라벨"
+
+[cli.help._root.tool.remote-profile.edit.arg.name]
+help = "갱신할 프로필 이름"
+
+[cli.help._root.tool.remote-profile.edit.arg.options]
+help = "추가 ssh -o 옵션 (여러 번 지정 가능). 저장된 목록에 덧붙이지 않고 통째로 바꾼다"
+
+[cli.help._root.tool.remote-profile.edit.arg.port]
+help = "ssh 포트"
+
+[cli.help._root.tool.remote-profile.edit.arg.port_file]
+help = "tasty-attach: 원격 포트 파일 경로"
+
+[cli.help._root.tool.remote-profile.edit.arg.port_mode]
+help = "tasty-attach: 원격 포트 발견 방식"
+
+[cli.help._root.tool.remote-profile.edit.arg.remote_tasty]
+help = "tasty-attach: 원격 호스트의 tasty 바이너리 경로"
+
+[cli.help._root.tool.remote-profile.edit.arg.shell]
+help = "ssh: 원격 셸 (powershell | cmd | bash | zsh | auto)"
+
+[cli.help._root.tool.remote-profile.edit.arg.ssh_ref]
+help = "tasty-attach: 대신 참조할 ssh 프로필 (이름으로)"
+
+[cli.help._root.tool.remote-profile.edit.arg.user]
+help = "ssh 사용자 (host 에 user@ 가 없을 때)"
+
+[cli.help._root.tool.remote-profile.import]
+about = "로컬 ssh config 의 별칭을 ssh 프로필로 가져온다 (별칭만 저장하고 실제 값은 ssh 가 해석한다)"
+
+[cli.help._root.tool.remote-profile.import.arg.from]
+help = "가져올 ssh config 별칭 (`list-local` 의 ALIAS 칸)"
+
+[cli.help._root.tool.remote-profile.import.arg.label]
+help = "UI 에 표시할 라벨 (선택)"
+
+[cli.help._root.tool.remote-profile.import.arg.name]
+help = "새 프로필의 고유 식별자"
+
+[cli.help._root.tool.remote-profile.list-local]
+about = "로컬 ssh config 의 Host 별칭 목록 (`~/.ssh/config` 과 Include 파일들). 접속하지 않는다"
+
+[cli.help._root.tool.remote-profile.list-local.arg.json]
+help = "표 대신 JSON 으로 출력한다"
+
+[cli.help._root.tool.remote-profile.list]
+about = "저장된 프로필 목록 (ssh · tasty-attach)"
+
+[cli.help._root.tool.remote-profile.list.arg.json]
+help = "표 대신 JSON 으로 출력한다"
+
+[cli.help._root.tool.remote-profile.list.arg.kind]
+help = "종류로 거른다: ssh | tasty-attach"
+
+[cli.help._root.tool.remote-profile.remove]
+about = "프로필을 지운다 (참조하던 Passkey 는 공유될 수 있으므로 남긴다)"
+
+[cli.help._root.tool.remote-profile.remove.arg.name]
+help = "지울 프로필 이름"
+
+[cli.help._root.tool.remote-profile.show]
+about = "프로필 하나의 상세를 보여준다"
+
+[cli.help._root.tool.remote-profile.show.arg.json]
+help = "표 대신 JSON 으로 출력한다"
+
+[cli.help._root.tool.remote-profile.show.arg.name]
+help = "볼 프로필 이름"
+
+[cli.help._root.tool.ssh]
+about = "저장된 ssh 프로필로 대화형 ssh 세션을 연다 (identity 와 포트는 자동으로 주입된다). 로컬 동작이며 IPC 를 쓰지 않는다"
+
+[cli.help._root.tool.ssh.arg.command]
+help = "원격 호스트에서 한 번 실행할 명령 (생략하면 대화형 셸). 예: `tasty tool ssh gb10 --command hostname`"
+
+[cli.help._root.tool.ssh.arg.profile]
+help = "접속에 쓸 ssh 프로필 이름"
+
+
+[cli.help._root.telemetry.anomaly]
+about = "이상 기록 — 탐지된 비정상 패턴 (호출 폭주 등)"
+
+[cli.help._root.telemetry.anomaly.list]
+about = "저장된 이상 기록 목록. 거르는 조건은 선택이다"
+
+[cli.help._root.telemetry.anomaly.list.arg.agent]
+help = "이 에이전트 id 에 귀속된 이상만 낸다"
+
+[cli.help._root.telemetry.anomaly.list.arg.kind]
+help = "종류로 거른다: call_burst | slow_loop | rss_surge"
+
+[cli.help._root.telemetry.anomaly.list.arg.since]
+help = "탐지 시각의 하한 (unix ms, 이상)"
+
+[cli.help._root.telemetry.anomaly.list.arg.until]
+help = "탐지 시각의 상한 (unix ms, 미만)"
+
+[cli.help._root.telemetry.cap]
+about = "비용 상한 — 문턱을 넘으면 동작한다 (stop/pause/approval/notify)"
+
+[cli.help._root.telemetry.cap.list]
+about = "상한 목록. `--agent` 로 거를 수 있다"
+
+[cli.help._root.telemetry.cap.list.arg.agent]
+help = "이 에이전트 id 에 적용되는 상한만 낸다"
+
+[cli.help._root.telemetry.cap.remove]
+about = "id 로 상한을 지운다"
+
+[cli.help._root.telemetry.cap.remove.arg.id]
+help = "cap id. `cap set` 이나 `cap list` 가 출력한 값"
+
+[cli.help._root.telemetry.cap.reset]
+about = "걸린 상한의 발동 상태를 되돌린다. `--id` 나 `--agent` 중 하나를 준다"
+
+[cli.help._root.telemetry.cap.reset.arg.agent]
+help = "이 에이전트 id 에 적용되는 상한을 전부 되돌린다"
+
+[cli.help._root.telemetry.cap.reset.arg.id]
+help = "이 cap id 하나만 되돌린다"
+
+[cli.help._root.telemetry.cap.set]
+about = "상한을 새로 정의한다. 생성된 cap id 를 출력한다"
+
+[cli.help._root.telemetry.cap.set.arg.action]
+help = "동작: stop | pause | require_approval | notify"
+
+[cli.help._root.telemetry.cap.set.arg.agent]
+help = "이 상한이 적용될 에이전트 id (필수 — 호출자 기본값 없음)"
+
+[cli.help._root.telemetry.cap.set.arg.metric]
+help = "상한을 걸 메트릭 이름"
+
+[cli.help._root.telemetry.cap.set.arg.threshold]
+help = "문턱값 (양수. 구간 안의 합이 이 값을 넘으면 동작한다)"
+
+[cli.help._root.telemetry.cap.set.arg.window]
+help = "구간: total | 1h | 1d"
+
+[cli.help._root.telemetry.cap.status]
+about = "상한의 현재 누적값과 문턱값을 보여준다. `--agent` 로 거를 수 있다"
+
+[cli.help._root.telemetry.cap.status.arg.agent]
+help = "이 에이전트 id 에 적용되는 상한만 보고한다"
+
+[cli.help._root.telemetry.record-batch]
+about = "여러 이벤트를 한 번에 기록한다 — 같은 타임스탬프를 공유하므로 순서가 보존된다. 이벤트 사이의 순서가 중요하면 `record` 를 반복하는 대신 이것을 쓴다"
+
+[cli.help._root.telemetry.record-batch.arg.events]
+help = "이벤트를 담은 JSON 배열. 각 원소는 `record` 와 같은 필드를 받는다 (`metric`, `value`, `op`, `tags`, …)"
+
+[cli.help._root.telemetry.record]
+about = "메트릭 이벤트 하나를 기록한다"
+
+[cli.help._root.telemetry.record.arg.agent]
+help = "에이전트 id (기본값: 호출자 — 환경변수 `TASTY_AGENT_ID` 또는 `_host`)"
+
+[cli.help._root.telemetry.record.arg.metric]
+help = "메트릭 이름 (소문자 `[a-z][a-z0-9_]*`, 최대 64 자)"
+
+[cli.help._root.telemetry.record.arg.op]
+help = "연산: set | inc | dec. 기본값: inc"
+
+[cli.help._root.telemetry.record.arg.tags]
+help = "태그를 담은 JSON 객체 (예: `{\"model\":\"opus\",\"src\":\"shell\"}`)"
+
+[cli.help._root.telemetry.record.arg.value]
+help = "숫자 값"
+
+[cli.help._root.telemetry.record.arg.workspace_id]
+help = "묶을 워크스페이스 id (기본값: 활성 워크스페이스)"
+
+[cli.help._root.telemetry.session-summary]
+about = "세션 종합 요약 (메트릭 + 승인 + 이상)"
+
+[cli.help._root.telemetry.session-summary.arg.format]
+help = "출력 형식: markdown | json (기본값: markdown)"
+
+[cli.help._root.telemetry.session-summary.arg.since]
+help = "이벤트 시각의 하한 (unix ms, 이상)"
+
+[cli.help._root.telemetry.session-summary.arg.top_n]
+help = "ipc_calls 의 상위 항목 개수 (기본값: 10)"
+
+[cli.help._root.telemetry.session-summary.arg.until]
+help = "이벤트 시각의 상한 (unix ms, 미만)"
+
+[cli.help._root.telemetry.session-summary.arg.workspace_id]
+help = "한 워크스페이스로 한정한다 (기본값: 전부)"
+
+[cli.help._root.telemetry.summary]
+about = "이벤트를 가로질러 합산한 요약. 거르는 축: metric, agent, workspace_id, since/until"
+
+[cli.help._root.telemetry.summary.arg.agent]
+help = "이 에이전트 id 가 기록한 이벤트만 합산한다"
+
+[cli.help._root.telemetry.summary.arg.metric]
+help = "이 메트릭만 합산한다 (생략하면 전부)"
+
+[cli.help._root.telemetry.summary.arg.since]
+help = "unix ms 하한 (이상)"
+
+[cli.help._root.telemetry.summary.arg.until]
+help = "unix ms 상한 (미만)"
+
+[cli.help._root.telemetry.summary.arg.workspace_id]
+help = "이 워크스페이스 id 에 묶인 이벤트만 합산한다"
+
+[cli.help._root.telemetry.timeseries]
+about = "구간으로 묶은 시계열. `--metric` 이 필수다"
+
+[cli.help._root.telemetry.timeseries.arg.agent]
+help = "이 에이전트 id 가 기록한 이벤트만 포함한다"
+
+[cli.help._root.telemetry.timeseries.arg.metric]
+help = "구간으로 묶을 메트릭 이름 (필수)"
+
+[cli.help._root.telemetry.timeseries.arg.since]
+help = "unix ms 하한 (이상)"
+
+[cli.help._root.telemetry.timeseries.arg.until]
+help = "unix ms 상한 (미만)"
+
+[cli.help._root.telemetry.timeseries.arg.window]
+help = "구간 크기: 1m | 1h | 1d. 기본값: 1m"
+
+[cli.help._root.telemetry.timeseries.arg.workspace_id]
+help = "이 워크스페이스 id 에 묶인 이벤트만 포함한다"
+
+[cli.help._root.telemetry.top]
+about = "합계 기준 상위 N 개의 에이전트 또는 워크스페이스"
+
+[cli.help._root.telemetry.top.arg.agent]
+help = "이 에이전트 id 가 기록한 이벤트만 포함한다"
+
+[cli.help._root.telemetry.top.arg.by]
+help = "묶는 기준: agent | workspace"
+
+[cli.help._root.telemetry.top.arg.limit]
+help = "최대 항목 수. 기본값: 10"
+
+[cli.help._root.telemetry.top.arg.metric]
+help = "이 메트릭만 순위를 낸다 (생략하면 전부)"
+
+[cli.help._root.telemetry.top.arg.since]
+help = "unix ms 하한 (이상)"
+
+[cli.help._root.telemetry.top.arg.until]
+help = "unix ms 상한 (미만)"
+
+[cli.help._root.telemetry.top.arg.workspace_id]
+help = "이 워크스페이스 id 에 묶인 이벤트만 포함한다"
+
+[cli.help._root.plugin.audit-clear]
+about = "`before_ms` 보다 오래된 audit 기록을 지운다. 안 주면 전부 지운다"
+
+[cli.help._root.plugin.audit-clear.arg.before_ms]
+help = "ts 가 before_ms 보다 작은 기록을 지운다. 생략하면 전부 지운다"
+
+[cli.help._root.plugin.audit-follow]
+about = "audit 기록을 도착하는 대로 따라간다. Ctrl-C 까지 `interval_ms` 밀리초마다 폴링한다. 필터는 `audit-query` 와 같다"
+
+[cli.help._root.plugin.audit-follow.arg.batch]
+help = "폴링 한 번에 가져올 기록 수 상한"
+
+[cli.help._root.plugin.audit-follow.arg.caller_id]
+help = "호출자 id 로 거른다"
+
+[cli.help._root.plugin.audit-follow.arg.caller_kind]
+help = "호출자 종류로 거른다: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-follow.arg.decision]
+help = "판정으로 거른다: allow | deny"
+
+[cli.help._root.plugin.audit-follow.arg.interval_ms]
+help = "폴링 간격 (밀리초)"
+
+[cli.help._root.plugin.audit-follow.arg.method_prefix]
+help = "이 접두어로 시작하는 메서드만 남긴다"
+
+[cli.help._root.plugin.audit-query]
+about = "IPC audit 로그를 조회한다. 거른 기록을 allow/deny 판정과 함께 낸다"
+
+[cli.help._root.plugin.audit-query.arg.caller_id]
+help = "호출자 id 로 거른다 (plugin id 또는 에이전트 id)"
+
+[cli.help._root.plugin.audit-query.arg.caller_kind]
+help = "호출자 종류로 거른다: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-query.arg.decision]
+help = "판정으로 거른다: allow | deny"
+
+[cli.help._root.plugin.audit-query.arg.limit]
+help = "돌려줄 기록 수 상한"
+
+[cli.help._root.plugin.audit-query.arg.method_prefix]
+help = "이 접두어로 시작하는 메서드만 남긴다 (예: `surface.`)"
+
+[cli.help._root.plugin.audit-query.arg.since_ms]
+help = "타임스탬프 하한 (unix ms, 포함)"
+
+[cli.help._root.plugin.audit-query.arg.until_ms]
+help = "타임스탬프 상한 (unix ms, 미포함)"
+
+[cli.help._root.plugin.audit-summary]
+about = "audit 기록을 합계와 상위 호출자·메서드로 집계한다"
+
+[cli.help._root.plugin.audit-summary.arg.caller_id]
+help = "호출자 id 로 거른다"
+
+[cli.help._root.plugin.audit-summary.arg.caller_kind]
+help = "호출자 종류로 거른다: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-summary.arg.decision]
+help = "판정으로 거른다: allow | deny"
+
+[cli.help._root.plugin.audit-summary.arg.method_prefix]
+help = "이 접두어로 시작하는 메서드만 남긴다"
+
+[cli.help._root.plugin.audit-summary.arg.since_ms]
+help = "타임스탬프 하한 (unix ms, 포함)"
+
+[cli.help._root.plugin.audit-summary.arg.top_n]
+help = "by_caller / by_method 목록의 상위 N 상한. 기본값: 10"
+
+[cli.help._root.plugin.audit-summary.arg.until_ms]
+help = "타임스탬프 상한 (unix ms, 미포함)"
+
+[cli.help._root.plugin.disable]
+about = "plugin 을 비활성화한다 (돌고 있으면 정상 종료)"
+long = "plugin 을 비활성화한다 (돌고 있으면 정상 종료).\n\n자국이 디스크에 남아 재시작을 넘긴다 — 그 뒤에 같은 id 를 `plugin install` 해도 다시 켜지지 않는다. 이것은 제거가 아니다: 디렉토리는 남고 명령 네임스페이스의 소유도 그대로라, `tasty <네임스페이스> ...` 는 없는 메서드라고 답하지 않고 `plugin ... is not running` 으로 답한다. 대신 그 plugin 이 기여하던 것 — 파일 detector 와 handler, hook handler, completion strategy, 설정 페이지 — 이 전부 빠지므로, 그 plugin 이 열던 파일은 이제 다른 경로로 열린다."
+
+[cli.help._root.plugin.disable.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.doctor]
+about = "plugin 의 매니페스트를 진단한다 — 기여하는 detector / handler 를 나열하고, 지금 host 가 이해하지 못하는 규칙 종류를 표시한다"
+
+[cli.help._root.plugin.doctor.arg.id]
+help = "plugin id (예: com.example.foo)"
+
+[cli.help._root.plugin.enable]
+about = "비활성화된 plugin 을 활성화하고 기동한다"
+
+[cli.help._root.plugin.enable.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.extension]
+about = "plugin extension (extends 블록) 을 들여다본다"
+
+[cli.help._root.plugin.extension.list]
+about = "모든 extension 과 그 현재 상태를 낸다"
+
+[cli.help._root.plugin.grant]
+about = "plugin 에 권한을 부여한다 (그 매니페스트에 선언돼 있어야 한다)"
+
+[cli.help._root.plugin.grant-agent-permission]
+about = "활성 에이전트 세션에 임시 권한을 부여한다. 그 권한은 TTL 이 끝나거나 명시적으로 회수할 때까지 산다. 기본 권한(session.issue 때 발급된 것)은 건드리지 않는다"
+
+[cli.help._root.plugin.grant-agent-permission.arg.agent]
+help = "에이전트 id (예: `claude:child-1`)"
+
+[cli.help._root.plugin.grant-agent-permission.arg.permission]
+help = "권한 토큰 (예: fs.write, surface.write)"
+
+[cli.help._root.plugin.grant-agent-permission.arg.ttl]
+help = "수명 (초). 생략하면 회수할 때까지 무기한"
+
+[cli.help._root.plugin.grant.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.grant.arg.permission]
+help = "권한 토큰 (예: fs.read, surface.write)"
+
+[cli.help._root.plugin.install]
+about = "tasty-plugin.toml 이 있는 디렉토리에서 plugin 을 설치한다"
+long = "tasty-plugin.toml 이 있는 디렉토리에서 plugin 을 설치한다.\n\n둘이 더 일어나고, 둘 다 묻지 않는다: 매니페스트가 선언한 권한이 즉시 전부 부여되고, 그 id 의 비활성 자국이 이미 남아 있지 않으면 곧바로 활성화·기동된다. `tasty-plugin.toml` 을 먼저 들여다보거나, 설치 뒤에 `plugin permissions <id>` 와 `plugin revoke <id> <permission>` 으로 확인하고 되돌려라."
+
+[cli.help._root.plugin.install.arg.path]
+help = "plugin 디렉토리 경로 (tasty-plugin.toml 이 있어야 한다)"
+
+[cli.help._root.plugin.list]
+about = "설치된 plugin 을 나열한다 (id, 버전, 활성 여부, 기동 여부)"
+
+[cli.help._root.plugin.list-agent-permissions]
+about = "활성 에이전트 세션의 기본 권한과 임시 권한을 나열한다"
+
+[cli.help._root.plugin.list-agent-permissions.arg.agent]
+help = "특정 에이전트만 본다. 생략하면 활성 세션 전부"
+
+[cli.help._root.plugin.logs]
+about = "plugin 의 로그 파일 내용을 찍는다"
+
+[cli.help._root.plugin.logs.arg.follow]
+help = "새 출력을 계속 따라간다 (멈추려면 Ctrl-C)"
+
+[cli.help._root.plugin.logs.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.permissions]
+about = "plugin 의 매니페스트 권한과 지금 부여된 권한을 낸다"
+
+[cli.help._root.plugin.permissions.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.remove]
+about = "설치된 plugin 을 id 로 제거한다"
+long = "설치된 plugin 을 id 로 제거한다.\n\nplugin 디렉토리가 통째로 지워지므로, 그 plugin 이 그 안에 두었던 것도 함께 없어진다. 기본 제공 plugin 이면 제거된 사실까지 기록되어 다음 실행에 다시 놓이지 않는다 — 되돌리는 것은 `plugin upgrade-builtins --restore-removed <id>` 이고, 돌아올 때는 활성 상태다."
+
+[cli.help._root.plugin.remove.arg.id]
+help = "plugin id (예: com.example.explorer)"
+
+[cli.help._root.plugin.request-permission]
+about = "권한 승격 승인을 손으로 띄운다. 에이전트의 첫 호출 전에 운영자가 권한을 미리 주려 할 때 쓴다. 뜨는 팝업은 permission_denied 때 자동 승격이 띄우는 것과 같다"
+
+[cli.help._root.plugin.request-permission.arg.agent]
+help = "승인되면 권한을 받을 에이전트 id"
+
+[cli.help._root.plugin.request-permission.arg.permission]
+help = "권한 토큰 (예: fs.write)"
+
+[cli.help._root.plugin.request-permission.arg.reason]
+help = "팝업 본문에서 사용자에게 보일 사유"
+
+[cli.help._root.plugin.revoke]
+about = "plugin 에 부여했던 권한을 회수한다"
+
+[cli.help._root.plugin.revoke-agent-permission]
+about = "에이전트 세션에 부여했던 임시 권한을 회수한다. 발급 때 정해진 기본 권한에는 영향이 없다"
+
+[cli.help._root.plugin.revoke-agent-permission.arg.agent]
+help = "에이전트 id"
+
+[cli.help._root.plugin.revoke-agent-permission.arg.permission]
+help = "권한 토큰"
+
+[cli.help._root.plugin.revoke.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.revoke.arg.permission]
+help = "권한 토큰"
+
+[cli.help._root.plugin.show]
+about = "plugin 의 매니페스트 전문, 권한, 명령, 실행 상태를 낸다"
+
+[cli.help._root.plugin.show.arg.id]
+help = "plugin id"
+
+[cli.help._root.plugin.upgrade-builtins]
+about = "기본 제공 plugin 전부를 번들에서 다시 맞춘다"
+long = "기본 제공 plugin 전부를 번들에서 다시 맞춘다.\n\n매니페스트 버전이 갈래를 고르고 그 안에서는 내용이 정한다: 번들 버전이 더 높으면 디렉토리를 통째로 다시 쓰고, 같은 버전이면 다른 것만 다시 쓰고, 설치본이 번들보다 높으면 내용을 보지 않고 건너뛴다 — `--force` 는 그 마지막 갈래를 위한 것이다. 바뀐 기본 제공 plugin 이 새로 선언한 권한은 같은 호출에서 부여된다."
+
+[cli.help._root.plugin.upgrade-builtins.arg.force]
+help = "설치본 버전이 번들 버전 이상이어도 덮어쓴다"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restart_running]
+help = "바이너리가 교체된 기본 제공 plugin 이 돌고 있으면 재시작한다 — 정상 교체. 제자리 덮어쓰기에서 나는 Windows 공유 위반도 이것으로 풀린다. 기본은 꺼짐 (보수적으로 — 해당 plugin 의 표면이 잠깐 닫힌다)"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restore_all]
+help = "`removed_builtins` 에 있는 기본 제공 plugin 을 전부 되살린다. `--restore-removed` 와 함께 주면 이쪽이 이긴다"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restore_removed]
+help = "`removed_builtins` 에서 특정 기본 제공 plugin 을 되살려 같은 호출에서 자동 설치 대상이 되게 한다. 여러 개면 반복해서 준다"
+
+[cli.help._root.agent.barrier-await]
+about = "barrier 의 현재 상태를 폴링한다"
+
+[cli.help._root.agent.barrier-await.arg.name]
+help = "폴링할 barrier 이름"
+
+[cli.help._root.agent.barrier-await.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.barrier-create]
+about = "barrier 를 만든다 (신호 N 개가 모일 때까지 기다린다)"
+long = "barrier 를 만든다 (신호 N 개가 모일 때까지 기다린다).\n\n타이머는 돌지 않는다. `--timeout-ms` 는 게으르게 도장 찍힌다: barrier 가 `TimedOut` 이 되는 것은 다음 `barrier-signal`·`barrier-state`·`barrier-list` 안에서이고, 그래서 아무도 묻지 않는 barrier 는 남겨진 상태 그대로 앉아 있는다. 도장이 찍힌 뒤에는 `barrier-signal` 이 실패하고, 기록 자체는 `barrier-delete` 로 지울 때까지 남는다."
+
+[cli.help._root.agent.barrier-create.arg.count_required]
+help = "필요한 신호 수 (1 이상)"
+
+[cli.help._root.agent.barrier-create.arg.name]
+help = "barrier 이름 (워크스페이스 안에서 유일)"
+
+[cli.help._root.agent.barrier-create.arg.timeout_ms]
+help = "생성 시각부터 재는 선택적 timeout (밀리초). 생략하면 무기한 기다린다"
+
+[cli.help._root.agent.barrier-create.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.barrier-delete]
+about = "barrier 를 지운다 (없으면 no-op)"
+
+[cli.help._root.agent.barrier-delete.arg.name]
+help = "지울 barrier 이름"
+
+[cli.help._root.agent.barrier-delete.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.barrier-list]
+about = "워크스페이스의 barrier 를 전부 나열한다"
+
+[cli.help._root.agent.barrier-list.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.barrier-signal]
+about = "barrier 에 신호를 보낸다 (count_signaled++)"
+
+[cli.help._root.agent.barrier-signal.arg.name]
+help = "신호를 보낼 barrier 이름"
+
+[cli.help._root.agent.barrier-signal.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.barrier-state]
+about = "barrier 의 현재 상태를 읽는다 (barrier_await 의 별칭)"
+
+[cli.help._root.agent.barrier-state.arg.name]
+help = "읽을 barrier 이름"
+
+[cli.help._root.agent.barrier-state.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.dag-get]
+about = "`dag-list` 가 낸 DAG 하나를 JSON 또는 Graphviz dot 으로 낸다 — 노드·간선 모양은 `task-graph` 와 같고 그 DAG 로만 좁힌 것이다"
+
+[cli.help._root.agent.dag-get.arg.format]
+help = "형식: json | dot. 기본값: json"
+
+[cli.help._root.agent.dag-get.arg.id]
+help = "`dag-list` 가 준 DAG id (`d:<metadata.dag>` 또는 `c:<루트 task id>`)"
+
+[cli.help._root.agent.dag-get.arg.workspace_id]
+help = "찾는 범위를 한 워크스페이스로 좁힌다. 명시 id 는 사용자가 짓는 것이라 두 워크스페이스가 같은 것을 가질 수 있다 — 그때 이것으로 가른다"
+
+[cli.help._root.agent.dag-list]
+about = "등록된 DAG 를 전부 나열한다. DAG 는 저장된 것이 아니라 유도된 것이다: 같은 `metadata.dag` 문자열이 붙은 task 가 하나의 명시 그룹을 이루고, 나머지는 약연결(`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of`)로 묶인다. `--workspace-id` 를 생략하면 살아 있는 워크스페이스를 전부 훑는다"
+
+[cli.help._root.agent.dag-list.arg.include_tasks]
+help = "각 DAG 의 task id 목록(`task_ids`)도 함께 낸다"
+
+[cli.help._root.agent.dag-list.arg.workspace_id]
+help = "한 워크스페이스로 좁힌다. 생략하면 살아 있는 워크스페이스 전부"
+
+[cli.help._root.agent.lease-acquire]
+about = "임의 resource 에 lease 를 잡는다 (권고적·협조적)"
+long = "임의 resource 에 lease 를 잡는다 (권고적·협조적).\n\n잡았는지 여부는 종료 코드가 아니다. `--mode fail` 은 충돌을 오류로 만들지만, `--mode block` 은 성공으로 끝나면서 `acquired: false` 와 현재 holder 를 낸다 — 그 필드를 읽어라. lease 를 강제하는 것도 없다: 참여자들이 서로 읽기로 약속한 표시일 뿐이다.\n\n`--ttl-ms` 가 없으면 lease 는 영영 만료되지 않고, 같은 holder id 로 `lease-release` 하는 것만이 그것을 푼다 — holder 가 죽으면 resource 를 쥔 채로 남는다. 재시작 정화도 그 경우를 덮지 않는다 — 그것은 실행 중인 task 가 자기 task id 로 쥔 lease 만 푼다."
+
+[cli.help._root.agent.lease-acquire.arg.holder]
+help = "holder id (비어 있으면 안 된다)"
+
+[cli.help._root.agent.lease-acquire.arg.mode]
+help = "충돌 모드: fail | block (기본값: fail). `block` 은 기다리지 않는다 — 곧바로 `acquired: false` 로 돌아오고, 재시도는 호출자 몫이다"
+
+[cli.help._root.agent.lease-acquire.arg.resource]
+help = "resource 식별자 (예: `file:/path`, `workspace:foo`)"
+
+[cli.help._root.agent.lease-acquire.arg.ttl_ms]
+help = "수명 (밀리초). 생략하면 만료가 없는 lease 가 된다. 만료는 게으르다 — 시각이 지나는 순간이 아니라 다음 `lease-acquire` 나 `lease-list` 가 evict 한다"
+
+[cli.help._root.agent.lease-acquire.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.lease-list]
+about = "워크스페이스의 lease 를 전부 나열한다 (만료된 것은 자동 evict)"
+
+[cli.help._root.agent.lease-list.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.lease-release]
+about = "lease 를 푼다. 현재 holder 만 풀 수 있다"
+
+[cli.help._root.agent.lease-release.arg.holder]
+help = "지금 그 lease 를 쥐고 있는 holder id"
+
+[cli.help._root.agent.lease-release.arg.resource]
+help = "lease 를 잡았던 resource 식별자"
+
+[cli.help._root.agent.lease-release.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.rate-limit-list]
+about = "설정된 rate limit 버킷을 전부 나열한다 (현재 토큰 상태와 함께)"
+
+[cli.help._root.agent.rate-limit-remove]
+about = "rate limit 버킷을 id 로 지운다"
+
+[cli.help._root.agent.rate-limit-remove.arg.id]
+help = "`rate-limit-list` 가 낸 버킷 id"
+
+[cli.help._root.agent.rate-limit-set]
+about = "(agent, metric) 에 rate limit 버킷을 설정한다 — `per_ms` 밀리초마다 `limit` 토큰"
+long = "(agent, metric) 에 rate limit 버킷을 설정한다 — `per_ms` 밀리초마다 `limit` 토큰.\n\n실제로 토큰이 빠져나가는 metric 은 하나다: `ipc_calls`. 다른 이름으로 저장한 버킷은 `rate-limit-list` 에 나오지만 아무것도 그것을 쓰지 않으므로 아무것도 제한하지 않는다.\n\n`ipc_calls` 버킷은 IPC 호출 하나마다 토큰 하나가 빠지고, 예산을 넘긴 호출은 `-32010 throttled` 로 돌아오며 audit 에 Deny 가 남는다. 모든 호출을 세는 것은 아니다: 세션 토큰이 없는 호출자 — 맨 CLI — 와 호스트 자신의 호출은 면제이고, `telemetry.*`·`agent.rate_limit_*`·`system.info` 도 면제다. 뒤의 둘이 throttle 된 에이전트가 자기 한도를 읽고 푸는 통로다."
+
+[cli.help._root.agent.rate-limit-set.arg.agent]
+help = "에이전트 id"
+
+[cli.help._root.agent.rate-limit-set.arg.burst]
+help = "버킷 용량 (기본값은 `limit`)"
+
+[cli.help._root.agent.rate-limit-set.arg.limit]
+help = "한 주기마다 채워지는 토큰 수"
+
+[cli.help._root.agent.rate-limit-set.arg.metric]
+help = "metric 이름. 무언가가 실제로 빼 쓰는 것은 `ipc_calls` 하나뿐이다"
+
+[cli.help._root.agent.rate-limit-set.arg.per_ms]
+help = "한 주기의 길이 (밀리초, 예: 분 단위면 `60000`)"
+
+[cli.help._root.agent.rate-limit-status]
+about = "rate limit 상태를 본다. agent 나 metric 으로 좁힐 수 있다"
+
+[cli.help._root.agent.rate-limit-status.arg.agent]
+help = "이 에이전트 id 의 버킷만 보고한다"
+
+[cli.help._root.agent.rate-limit-status.arg.metric]
+help = "이 metric 이름의 버킷만 보고한다"
+
+[cli.help._root.agent.semaphore-acquire]
+about = "permit 하나를 잡는다. 같은 holder 면 idempotent 하다"
+long = "permit 하나를 잡는다. 같은 holder 면 idempotent 하다.\n\n자리가 꽉 찬 것은 오류가 아니다: 호출은 성공하고 `acquired: false` 와 현재 holder 들을 함께 낸다 — 종료 코드가 아니라 그 필드를 읽어라. 대기 모드는 없다 — 재시도는 호출자 몫이다."
+
+[cli.help._root.agent.semaphore-acquire.arg.holder]
+help = "holder id (비어 있으면 안 된다)"
+
+[cli.help._root.agent.semaphore-acquire.arg.name]
+help = "permit 을 가져올 세마포어 이름"
+
+[cli.help._root.agent.semaphore-acquire.arg.ttl_ms]
+help = "holder 가 이 밀리초 동안 조용하면 permit 을 자동으로 회수한다. 같은 holder 로 다시 잡으면 갱신된다. 생략하면 만료가 없다 (기본값)"
+
+[cli.help._root.agent.semaphore-acquire.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.semaphore-create]
+about = "permit N 개짜리 세마포어를 만든다"
+
+[cli.help._root.agent.semaphore-create.arg.name]
+help = "세마포어 이름 (워크스페이스 안에서 유일)"
+
+[cli.help._root.agent.semaphore-create.arg.permits]
+help = "permit 수 (1 이상)"
+
+[cli.help._root.agent.semaphore-create.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.semaphore-delete]
+about = "세마포어를 지운다 (없으면 no-op)"
+
+[cli.help._root.agent.semaphore-delete.arg.name]
+help = "지울 세마포어 이름"
+
+[cli.help._root.agent.semaphore-delete.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.semaphore-list]
+about = "워크스페이스의 세마포어를 전부 나열한다"
+
+[cli.help._root.agent.semaphore-list.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.semaphore-release]
+about = "permit 을 반납한다. 그 holder 가 쥐고 있지 않으면 no-op"
+
+[cli.help._root.agent.semaphore-release.arg.holder]
+help = "지금 그 permit 을 쥐고 있는 holder id"
+
+[cli.help._root.agent.semaphore-release.arg.name]
+help = "그 permit 이 속한 세마포어 이름"
+
+[cli.help._root.agent.semaphore-release.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.semaphore-set-permits]
+about = "세마포어의 permit 수를 제자리에서 바꾼다. 늘리는 것은 즉시 반영되고, 줄이는 것은 drain 이다 — 이미 쥔 holder 를 강제로 뺏지 않고, holder 수가 새 한도 아래로 내려갈 때까지 새 acquire 만 거절한다"
+
+[cli.help._root.agent.semaphore-set-permits.arg.name]
+help = "크기를 바꿀 세마포어 이름"
+
+[cli.help._root.agent.semaphore-set-permits.arg.permits]
+help = "새 permit 수 (1 이상)"
+
+[cli.help._root.agent.semaphore-set-permits.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-await]
+about = "task 가 종료 상태에 이를 때까지 기다린다 (블로킹). 생략하면 최대 10 분 기다린다 (잠정 기본값). `--timeout-ms 0` = 무기한 대기"
+
+[cli.help._root.agent.task-await.arg.id]
+help = "기다릴 task id"
+
+[cli.help._root.agent.task-await.arg.timeout_ms]
+help = "이 밀리초가 지나면 기다리기를 포기한다. `0` = 무기한 대기"
+
+[cli.help._root.agent.task-await.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-cancel]
+about = "task 를 취소한다. 하류는 on_failure 에 따라 연쇄된다"
+
+[cli.help._root.agent.task-cancel.arg.id]
+help = "취소할 task id"
+
+[cli.help._root.agent.task-cancel.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-create]
+about = "워크스페이스 안에 새 task 를 만든다"
+long = "워크스페이스 안에 새 task 를 만든다.\n\n만드는 것이 돌리는 것은 아니다. 그 워크스페이스의 러너를 `task-run --action start` 로 켜기 전에는 아무것도 dispatch 되지 않고, 아무도 대신 켜 주지 않는다 — 부팅도 켜지 않는다. 켜지 않으면 task 는 `Ready` 에 앉아 있고 `task-await` 는 timeout 을 그냥 태운다."
+
+[cli.help._root.agent.task-create.arg.command]
+help = "TaskCommand 를 JSON 으로 (예: `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`). `workspace_id` 를 빼면 `--workspace-id` 에서 채워지고, 넣었는데 다르면 `--workspace-id` 가 이기고 경고가 함께 온다. 인라인 JSON 이나 `@path/to/file.json` 을 받는다"
+
+[cli.help._root.agent.task-create.arg.concurrency_limit]
+help = "`metadata.semaphore.name` 의 축약형 — 같은 세마포어 이름이 붙은 task 가 동시에 몇 개까지 도는지 제한한다 (나머지는 permit 이 날 때까지 `ready` 로 기다린다). `--metadata` 와 함께 주면 병합되고, `--metadata` 가 이미 `semaphore` 를 정했으면 충돌이다"
+
+[cli.help._root.agent.task-create.arg.depends_on]
+help = "쉼표로 구분한 선행 task id 목록"
+
+[cli.help._root.agent.task-create.arg.metadata]
+help = "메타데이터 JSON (자유 형식, task 에 붙는다)"
+
+[cli.help._root.agent.task-create.arg.name]
+help = "표시 이름"
+
+[cli.help._root.agent.task-create.arg.on_failure]
+help = "실패 시 정책: abort | continue_downstream | fallback:<task_id> (기본값: abort). 어느 task 에 거는지가 중요하다: abort·continue_downstream 은 의존하는 쪽(하류) task 에 걸어야 하고, fallback 은 스스로 실패할 수 있는 쪽(상류) task 에 걸어야 한다 — 하류 task 에 fallback 을 걸면 실패한 선행에서 오는 skip 연쇄에는 아무 효과가 없다"
+
+[cli.help._root.agent.task-create.arg.reserved_for_fallback]
+help = "이 task 를 아직 참조되지 않은 fallback 후보로 예약한다: 나중에 `task-create --on-failure fallback:<이 id>` 가 본 task 를 연결해 줄 때까지, 얼마가 걸리든 `waiting` 에 머문다 (`ready` 가 되지 않으므로 러너가 dispatch 할 수 없다). 이 플래그가 없으면 의존 없는 task 는 곧바로 `ready` 가 되고, 연결할 본 task 가 만들어지기 전에 러너가 한 번 돌면 그 본 task 의 결과와 무관하게 dispatch 되어 끝까지 돌 수 있다 — 두 `task-create` 호출 사이의 생성 순서 경쟁을 닫는다"
+
+[cli.help._root.agent.task-create.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-delete]
+about = "task 를 지운다. 다른 task 가 아직 참조하고 있으면 기본적으로 거절하고 (depends_on / on_failure.fallback.task / reduce.inputs) 참조하는 task id 들을 돌려준다. `Running` task 는 `--cascade`·`--force` 와 무관하게 언제나 거절이다 (먼저 취소해라)"
+
+[cli.help._root.agent.task-delete.arg.cascade]
+help = "이 task 를 간접적으로라도 참조하는 task 를 전부 함께 지운다"
+
+[cli.help._root.agent.task-delete.arg.force]
+help = "참조 검사만 건너뛴다 — 상태 제약(Running)은 그대로 적용된다"
+
+[cli.help._root.agent.task-delete.arg.id]
+help = "지울 task id"
+
+[cli.help._root.agent.task-delete.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-get]
+about = "task 하나를 가져온다"
+
+[cli.help._root.agent.task-get.arg.id]
+help = "task id"
+
+[cli.help._root.agent.task-get.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-graph]
+about = "task DAG 를 JSON 또는 Graphviz dot 으로 낸다"
+
+[cli.help._root.agent.task-graph.arg.format]
+help = "형식: json | dot. 기본값: json"
+
+[cli.help._root.agent.task-graph.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-list]
+about = "워크스페이스의 task 를 나열한다"
+
+[cli.help._root.agent.task-list.arg.state]
+help = "상태로 거른다 (쉼표로 구분: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown). 여러 상태를 주면 그중 아무거나 맞는 task 를 전부 낸다 (`--state waiting,ready,running` = 아직 안 끝난 task)"
+
+[cli.help._root.agent.task-list.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-purge]
+about = "상태·나이 필터에 맞는 task 를 한꺼번에 지운다. `--states` 나 `--older-than-ms` 중 최소 하나가 필요하다. 실제로 지워지는 것은 지워도 안전한 것 (Running 이 아니고, 걸린 집합 바깥에서 참조되지 않는 것) 뿐이고 나머지는 남긴 것으로 보고한다"
+
+[cli.help._root.agent.task-purge.arg.dry_run]
+help = "아무것도 지우지 않고 계획만 계산해서 찍는다"
+
+[cli.help._root.agent.task-purge.arg.older_than_ms]
+help = "나이(created_at, 종료된 task 는 finished_at)가 이 밀리초를 넘는 task 만 후보로 삼는다"
+
+[cli.help._root.agent.task-purge.arg.states]
+help = "쉼표로 구분한 상태 이름 (waiting|ready|running|succeeded|failed|cancelled|skipped|unknown)"
+
+[cli.help._root.agent.task-purge.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-reduce]
+about = "task N 개의 결과를 하나의 값으로 합친다 (전략: first_success | all | merge_json | concat_text | custom:<cmd>)"
+
+[cli.help._root.agent.task-reduce.arg.extract_path]
+help = "합치기 전에 각 입력의 `output` 에서 뽑아낼 JSON Pointer (예: `/stdout/text`) — `Run` task 의 결과를 합칠 때 권한다. 그쪽 `output` 은 평범한 값이 아니라 `{pid,stdout:{text,...},stderr:{...}}` 이기 때문이다. 그 경로가 없는 입력은 `null` 로 다루고 응답의 `warnings` 에 적히며, 나머지 합치기는 그대로 진행된다"
+
+[cli.help._root.agent.task-reduce.arg.inputs]
+help = "쉼표로 구분한 입력 task id 목록 (합치는 순서대로)"
+
+[cli.help._root.agent.task-reduce.arg.strategy]
+help = "전략: `first_success` | `all` | `merge_json` | `concat_text` | `custom:<command>`"
+
+[cli.help._root.agent.task-reduce.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-retry]
+about = "Failed/Cancelled/Skipped/Unknown 인 task 를 다시 돌린다"
+
+[cli.help._root.agent.task-retry.arg.id]
+help = "다시 돌릴 task id"
+
+[cli.help._root.agent.task-retry.arg.reset_downstream]
+help = "하류의 Skipped/Failed task 도 Waiting 으로 되돌린다"
+
+[cli.help._root.agent.task-retry.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-run]
+about = "워크스페이스의 agent task 러너를 켜거나 끄거나 들여다본다. 러너는 Ready task 를 dispatch 하고 Running task 의 완료를 감지하는 호스트 쪽 스레드다. 같은 워크스페이스에 start 를 두 번 해도 idempotent 하다"
+long = "워크스페이스의 agent task 러너를 켜거나 끄거나 들여다본다. 러너는 Ready task 를 dispatch 하고 Running task 의 완료를 감지하는 호스트 쪽 스레드다. 같은 워크스페이스에 start 를 두 번 해도 idempotent 하다.\n\n아무도 대신 켜 주지 않는다. 호스트를 켜면 살아 있는 워크스페이스의 상태는 복구하지만 러너는 전부 꺼진 채로 둔다 — 그래서 한 번도 켠 적 없는 워크스페이스는 아무것도 dispatch 하지 않는다.\n\n`stop` 이 멈추는 것은 일이 아니라 감지다: 이미 dispatch 된 프로세스는 계속 돌고, 그 task 는 끝난 것을 알아챌 주체가 없는 채 `Running` 으로 남는다. 다시 start 하면 그 handle 들을 되집어 하나씩 마감한다 — 살아 있는지, 죽었는지, 아니면 그 watcher 가 남겨 둔 종료 코드로."
+
+[cli.help._root.agent.task-run.arg.action]
+help = "start | stop | status. 기본값: status"
+
+[cli.help._root.agent.task-run.arg.workspace_id]
+help = "러너를 조작할 워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-set-result]
+about = "task 의 종료 결과를 손으로 보고한다 (succeeded | failed). 러너 스레드가 dispatch 하지 않은 외부·수동 task 의 완료를 알리는 용도다"
+
+[cli.help._root.agent.task-set-result.arg.error]
+help = "선택적 오류 메시지 (state=failed 면 권한다)"
+
+[cli.help._root.agent.task-set-result.arg.exit_code]
+help = "선택적 프로세스 종료 코드"
+
+[cli.help._root.agent.task-set-result.arg.id]
+help = "결과를 보고할 task id"
+
+[cli.help._root.agent.task-set-result.arg.output]
+help = "선택적 출력 JSON. 인라인 JSON 이나 `@path/to/file.json` 을 받는다"
+
+[cli.help._root.agent.task-set-result.arg.state]
+help = "종료 상태: `succeeded` | `failed`"
+
+[cli.help._root.agent.task-set-result.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.memory.bb]
+about = "Blackboard — 워크스페이스 단위 키-값 모음 (`tasty.bb.<name>.*`)"
+
+[cli.help._root.memory.bb.create]
+about = "새 blackboard 를 만든다. schema(JSON)는 선택이다"
+
+[cli.help._root.memory.bb.create.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.create.arg.schema]
+help = "schema JSON 리터럴. 있는 그대로 저장하며 검증하지 않는다"
+
+[cli.help._root.memory.bb.create.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.delete]
+about = "blackboard 를 통째로 지운다 (`_meta` + 모든 필드)"
+long = "blackboard 를 통째로 지운다 (`_meta` + 모든 필드).\n\n그 스냅샷도 함께 사라진다. 스냅샷은 그 보드 자신의 키 접두어 아래에 살기 때문이다 — 그래서 스냅샷은 보드가 있는 동안 되돌아갈 수 있는 지점이지, 보드를 지운 뒤까지 남는 백업이 아니다."
+
+[cli.help._root.memory.bb.delete-field]
+about = "필드 하나를 지운다"
+
+[cli.help._root.memory.bb.delete-field.arg.cas]
+help = "CAS 버전 (지금 필드의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.bb.delete-field.arg.field]
+help = "필드 이름"
+
+[cli.help._root.memory.bb.delete-field.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.delete-field.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.delete.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.delete.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.exists]
+about = "blackboard 가 있는지 확인한다 (= `_meta` 가 있는가)"
+
+[cli.help._root.memory.bb.exists.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.exists.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.get]
+about = "필드 하나를 읽는다"
+
+[cli.help._root.memory.bb.get-all]
+about = "blackboard 의 모든 필드를 읽는다 (`_meta` 는 뺀다)"
+
+[cli.help._root.memory.bb.get-all.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.get-all.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.get-meta]
+about = "`_meta` 항목을 읽는다 (schema/created_by/…)"
+
+[cli.help._root.memory.bb.get-meta.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.get-meta.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.get.arg.field]
+help = "필드 이름"
+
+[cli.help._root.memory.bb.get.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.get.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.list]
+about = "워크스페이스의 blackboard 이름을 나열한다"
+
+[cli.help._root.memory.bb.list.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.put]
+about = "필드 값을 쓴다"
+
+[cli.help._root.memory.bb.put.arg.cas]
+help = "CAS 버전 (지금 필드의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.bb.put.arg.content_type]
+help = "content type 을 강제로 정한다"
+
+[cli.help._root.memory.bb.put.arg.field]
+help = "필드 이름"
+
+[cli.help._root.memory.bb.put.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.put.arg.value]
+help = "값. JSON 으로 파싱되면 JSON 으로, 아니면 평문으로 다룬다. `@path` 는 파일에서 읽는다"
+
+[cli.help._root.memory.bb.put.arg.value_b64]
+help = "base64 로 인코딩한 이진 값"
+
+[cli.help._root.memory.bb.put.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.snapshot]
+about = "지금 bb 상태를 스냅샷으로 뜬다 (`tasty.bb.<name>.snapshots.<id>`)"
+
+[cli.help._root.memory.bb.snapshot-delete]
+about = "스냅샷을 지운다"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.snapshot_id]
+help = "스냅샷 id"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.snapshot-get]
+about = "스냅샷 JSON 을 읽는다"
+
+[cli.help._root.memory.bb.snapshot-get.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.snapshot-get.arg.snapshot_id]
+help = "스냅샷 id"
+
+[cli.help._root.memory.bb.snapshot-get.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.snapshot-list]
+about = "그 bb 의 스냅샷 id 를 나열한다"
+
+[cli.help._root.memory.bb.snapshot-list.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.snapshot-list.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.snapshot-restore]
+about = "스냅샷에서 bb 필드를 복원한다 (지금 필드를 교체한다)"
+long = "스냅샷에서 bb 필드를 복원한다 (지금 필드를 교체한다).\n\n지금 필드를 먼저 전부 지운다. 그래서 스냅샷을 뜬 뒤에 더한 필드는 병합되지 않고 사라진다. `_meta` 만 예외다: 있으면 그대로 두고 없을 때만 스냅샷 것으로 다시 만든다 — 그래서 복원해도 뜰 당시 보드의 schema 가 돌아오지는 않는다."
+
+[cli.help._root.memory.bb.snapshot-restore.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.snapshot_id]
+help = "스냅샷 id"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.bb.snapshot.arg.name]
+help = "blackboard 이름"
+
+[cli.help._root.memory.bb.snapshot.arg.snapshot_id]
+help = "스냅샷 id"
+
+[cli.help._root.memory.bb.snapshot.arg.workspace]
+help = "그 blackboard 를 가진 워크스페이스 id"
+
+[cli.help._root.memory.cache]
+about = "Cache — 워크스페이스 단위 TTL 캐시 (`tasty.cache.<key>`)"
+
+[cli.help._root.memory.cache.clear]
+about = "워크스페이스의 cache 항목을 전부 지운다"
+
+[cli.help._root.memory.cache.clear.arg.workspace]
+help = "그 cache 항목을 가진 워크스페이스 id"
+
+[cli.help._root.memory.cache.get]
+about = "cache 항목을 읽는다 (없거나 만료됐으면 null)"
+
+[cli.help._root.memory.cache.get.arg.key]
+help = "cache 키"
+
+[cli.help._root.memory.cache.get.arg.workspace]
+help = "그 cache 항목을 가진 워크스페이스 id"
+
+[cli.help._root.memory.cache.invalidate]
+about = "cache 항목 하나를 지운다 (idempotent)"
+
+[cli.help._root.memory.cache.invalidate.arg.key]
+help = "cache 키"
+
+[cli.help._root.memory.cache.invalidate.arg.workspace]
+help = "그 cache 항목을 가진 워크스페이스 id"
+
+[cli.help._root.memory.cache.list]
+about = "워크스페이스의 cache 키를 나열한다"
+
+[cli.help._root.memory.cache.list.arg.workspace]
+help = "그 cache 항목을 가진 워크스페이스 id"
+
+[cli.help._root.memory.cache.put]
+about = "값을 저장한다. TTL(초)은 필수다"
+
+[cli.help._root.memory.cache.put.arg.content_type]
+help = "content type 을 강제로 정한다"
+
+[cli.help._root.memory.cache.put.arg.key]
+help = "cache 키"
+
+[cli.help._root.memory.cache.put.arg.ttl]
+help = "TTL (초, 필수, 0 보다 커야 한다)"
+
+[cli.help._root.memory.cache.put.arg.value]
+help = "값. JSON 으로 파싱되면 JSON 으로, 아니면 평문으로 다룬다. `@path` 는 파일에서 읽는다"
+
+[cli.help._root.memory.cache.put.arg.value_b64]
+help = "base64 로 인코딩한 이진 값"
+
+[cli.help._root.memory.cache.put.arg.workspace]
+help = "그 cache 항목을 가진 워크스페이스 id"
+
+[cli.help._root.memory.count]
+about = "스코프의 항목 수를 센다 (prefix 는 선택)"
+
+[cli.help._root.memory.count.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.count.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.count.arg.prefix]
+help = "이 접두어로 시작하는 키만"
+
+[cli.help._root.memory.count.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.count.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.count.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.count.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.delete]
+about = "키를 지운다"
+
+[cli.help._root.memory.delete.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.delete.arg.cas]
+help = "CAS 버전. 주었는데 맞지 않으면 cas_conflict 를 낸다"
+
+[cli.help._root.memory.delete.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.delete.arg.key]
+help = "그 스코프 안의 항목 키"
+
+[cli.help._root.memory.delete.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.delete.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.delete.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.delete.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.exists]
+about = "있는지 확인한다"
+
+[cli.help._root.memory.exists.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.exists.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.exists.arg.key]
+help = "그 스코프 안의 항목 키"
+
+[cli.help._root.memory.exists.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.exists.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.exists.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.exists.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.export]
+about = "일반 항목을 JSON 으로 내보낸다 (`--scope` 로 좁힐 수 있다). secret 영역은 절대 내보내지 않는다"
+
+[cli.help._root.memory.export.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.export.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.export.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.export.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.export.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.export.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.gc]
+about = "만료된 항목을 정리한다 (일반 + secret). 읽기는 이미 만료된 행을 걸러내므로, 이 명령이 되찾는 것은 디스크와 quota 뿐이다. Local 호출자 전용"
+
+[cli.help._root.memory.get]
+about = "항목 하나를 읽는다"
+
+[cli.help._root.memory.get.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.get.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.get.arg.key]
+help = "그 스코프 안의 항목 키"
+
+[cli.help._root.memory.get.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.get.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.get.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.get.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.goal]
+about = "Goal — surface 하나당 목표 문장 하나 (`tasty.goal`)"
+long = "Goal — surface 하나당 목표 문장 하나 (`tasty.goal`).\n\n아무것도 이것을 물려받지 않는다: 이 surface 에서 spawn 된 surface 는 goal 이 없는 채로 시작한다. TTL 도 없는데, 필요가 없어서다 — surface 가 닫힐 때, 그리고 복원되지 않은 surface 는 시작할 때, 그 surface 의 메모리 스코프가 통째로 지워진다. 그래서 goal 의 수명은 정확히 그 surface 의 수명이다."
+
+[cli.help._root.memory.goal.clear]
+about = "그 surface 의 goal 을 지운다 (idempotent)"
+
+[cli.help._root.memory.goal.clear.arg.surface]
+help = "대상 surface ID (기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[cli.help._root.memory.goal.get]
+about = "그 surface 의 goal 을 읽는다 (없으면 null)"
+
+[cli.help._root.memory.goal.get.arg.surface]
+help = "대상 surface ID (기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[cli.help._root.memory.goal.set]
+about = "그 surface 의 goal 을 정한다 (이미 있으면 덮어쓴다). 빈 goal 은 거절한다"
+
+[cli.help._root.memory.goal.set.arg.goal]
+help = "목표 문장"
+
+[cli.help._root.memory.goal.set.arg.surface]
+help = "대상 surface ID (기본값: 호출자의 TASTY_SURFACE_ID)"
+
+[cli.help._root.memory.import]
+about = "JSON 파일에서 일반 항목을 들여온다 (`memory export` 의 출력). `--replace` 는 이미 있는 키를 덮어쓰고, 기본값은 충돌을 건너뛴다"
+
+[cli.help._root.memory.import.arg.file]
+help = "JSON 파일 경로 (항목 배열, 또는 `{ \"entries\": [...] }`)"
+
+[cli.help._root.memory.import.arg.replace]
+help = "이미 있는 키를 덮어쓴다 (기본값: 건너뛴다)"
+
+[cli.help._root.memory.list]
+about = "스코프의 항목을 나열한다 (prefix + since/until/limit/offset)"
+
+[cli.help._root.memory.list.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.list.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.list.arg.limit]
+help = "돌려줄 항목 수 상한"
+
+[cli.help._root.memory.list.arg.offset]
+help = "맞는 항목 중 앞의 N 개를 건너뛴다 (--limit 과 함께 쪽 넘기기에 쓴다)"
+
+[cli.help._root.memory.list.arg.prefix]
+help = "이 접두어로 시작하는 키만"
+
+[cli.help._root.memory.list.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.list.arg.since]
+help = "`updated_at >= since` 인 항목만 (unix ms)"
+
+[cli.help._root.memory.list.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.list.arg.until]
+help = "`updated_at < until` 인 항목만 (unix ms)"
+
+[cli.help._root.memory.list.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.list.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.plan]
+about = "Plan — 워크스페이스 단위의 선언적 작업 분해 (`tasty.plan.<plan_id>`)"
+
+[cli.help._root.memory.plan.add-step]
+about = "단계를 끝에 붙이거나 사이에 끼운다"
+
+[cli.help._root.memory.plan.add-step.arg.cas]
+help = "CAS 버전 (지금 plan 의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.plan.add-step.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.add-step.arg.position]
+help = "끼울 위치 (0 부터). 기본값: 끝에 붙인다"
+
+[cli.help._root.memory.plan.add-step.arg.step]
+help = "그 단계의 JSON 객체"
+
+[cli.help._root.memory.plan.add-step.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.plan.create]
+about = "새 plan 을 만든다. `--steps` 는 단계 객체의 JSON 배열을 받는다"
+
+[cli.help._root.memory.plan.create.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.create.arg.steps]
+help = "단계의 JSON 배열 (예: `'[{\"id\":\"a\",\"title\":\"first\"}]'`)"
+
+[cli.help._root.memory.plan.create.arg.title]
+help = "plan 제목"
+
+[cli.help._root.memory.plan.create.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.plan.delete]
+about = "plan 을 지운다"
+
+[cli.help._root.memory.plan.delete.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.delete.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.plan.get]
+about = "plan 전체를 JSON 으로 읽는다"
+
+[cli.help._root.memory.plan.get.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.get.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.plan.list]
+about = "워크스페이스의 plan id 를 나열한다"
+
+[cli.help._root.memory.plan.list.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.plan.remove-step]
+about = "단계를 지운다 (`depends_on` 이 그것을 가리키고 있으면 거절한다)"
+
+[cli.help._root.memory.plan.remove-step.arg.cas]
+help = "CAS 버전 (지금 plan 의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.plan.remove-step.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.remove-step.arg.step_id]
+help = "그 plan 안의 단계 id"
+
+[cli.help._root.memory.plan.remove-step.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.plan.update-step]
+about = "단계의 상태나 notes 를 고친다"
+
+[cli.help._root.memory.plan.update-step.arg.cas]
+help = "CAS 버전 (지금 plan 의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.plan.update-step.arg.clear_notes]
+help = "notes 를 비운다 (None 으로 만든다)"
+
+[cli.help._root.memory.plan.update-step.arg.notes]
+help = "notes 를 이 값으로 정한다. 지우려면 `--clear-notes` 를 써라"
+
+[cli.help._root.memory.plan.update-step.arg.plan_id]
+help = "plan id"
+
+[cli.help._root.memory.plan.update-step.arg.state]
+help = "다음 중 하나: pending | in_progress | completed | failed | skipped"
+
+[cli.help._root.memory.plan.update-step.arg.step_id]
+help = "그 plan 안의 단계 id"
+
+[cli.help._root.memory.plan.update-step.arg.workspace]
+help = "그 plan 을 가진 워크스페이스 id"
+
+[cli.help._root.memory.put]
+about = "그 스코프/키에 값을 저장한다. content type 은 값에서 유추한다 (문자열 → text/plain, JSON 리터럴 → application/json)"
+
+[cli.help._root.memory.put.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.put.arg.cas]
+help = "CAS 버전 (지금 항목과 맞아야 한다. 아니면 cas_conflict)"
+
+[cli.help._root.memory.put.arg.content_type]
+help = "content type 을 강제로 정한다. 기본값: text/plain (문자열), application/json (JSON 리터럴), application/octet-stream (--value-b64 를 준 경우)"
+
+[cli.help._root.memory.put.arg.expires_at]
+help = "절대 만료 시각 (unix ms). 생략하면 아무 일도 하지 않는다"
+
+[cli.help._root.memory.put.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.put.arg.key]
+help = "키 (1..256, `[a-z0-9._-]+`)"
+
+[cli.help._root.memory.put.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.put.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.put.arg.ttl]
+help = "상대 TTL (초). 항목은 `now + ttl` 밀리초에 만료된다. --expires-at 과 함께 쓸 수 없다"
+
+[cli.help._root.memory.put.arg.value]
+help = "값. JSON 으로 파싱되면 JSON 으로, 아니면 평문 문자열로 다룬다. 앞에 `@path` 를 붙이면 파일에서 읽는다 (UTF-8 만. 이진은 --value-b64 가 필요하다)"
+
+[cli.help._root.memory.put.arg.value_b64]
+help = "base64 로 인코딩한 이진 값. --value 보다 우선한다"
+
+[cli.help._root.memory.put.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.put.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.query]
+about = "점 경로의 값이 같은지로 JSON 항목을 거른다 (`--path a.b --equals <json>`)"
+
+[cli.help._root.memory.query.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.query.arg.equals]
+help = "같은지 비교할 JSON 리터럴 (또는 따옴표로 감싼 문자열)"
+
+[cli.help._root.memory.query.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.query.arg.limit]
+help = "돌려줄 항목 수 상한"
+
+[cli.help._root.memory.query.arg.offset]
+help = "맞는 항목 중 앞의 N 개를 건너뛴다 (--limit 과 함께 쪽 넘기기에 쓴다)"
+
+[cli.help._root.memory.query.arg.path]
+help = "점으로 이은 경로, 예: `\"task.status\"`. `application/json` 항목만 들여다본다"
+
+[cli.help._root.memory.query.arg.prefix]
+help = "이 접두어로 시작하는 키만"
+
+[cli.help._root.memory.query.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.query.arg.since]
+help = "`updated_at >= since` 인 항목만 (unix ms)"
+
+[cli.help._root.memory.query.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.query.arg.until]
+help = "`updated_at < until` 인 항목만 (unix ms)"
+
+[cli.help._root.memory.query.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.query.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.scopes]
+about = "지금 쓰이고 있는 스코프를 나열한다"
+
+[cli.help._root.memory.secret]
+about = "secret 메모리 저장소. CLI 는 `_host` 소유자로 동작하며 --owner 플래그는 없다. plugin 의 secret 영역은 설계상 CLI 에서 접근할 수 없다"
+long = "secret 메모리 저장소. CLI 는 `_host` 소유자로 동작하며 --owner 플래그는 없다. plugin 의 secret 영역은 설계상 CLI 에서 접근할 수 없다.\n\nsecret 이 뜻하는 것은 \"다른 소유자가 읽지 못한다\" 이고 그 이상은 아니다. 값은 같은 `memory.db` 안에 평문 바이트로 앉아 있으므로, 그 파일을 열 수 있는 사람은 그대로 읽는다 — 분리는 디스크가 아니라 IPC 경로에서 걸린다. 그것까지 견뎌야 하는 값이라면 OS 키체인을 쓰거나, 권한을 따로 건 파일에 데이터를 두고 여기에는 경로만 저장해라."
+
+[cli.help._root.memory.secret.count]
+about = "스코프의 secret 수를 센다"
+
+[cli.help._root.memory.secret.count.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.count.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.count.arg.prefix]
+help = "이 접두어로 시작하는 키만"
+
+[cli.help._root.memory.secret.count.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.count.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.count.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.count.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.delete]
+about = "secret 을 지운다 (idempotent)"
+
+[cli.help._root.memory.secret.delete.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.delete.arg.cas]
+help = "CAS 버전 (지금 항목의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.secret.delete.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.delete.arg.key]
+help = "그 스코프 안의 secret 키"
+
+[cli.help._root.memory.secret.delete.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.delete.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.delete.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.delete.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.exists]
+about = "그 스코프/키에 secret 이 있는지 확인한다"
+
+[cli.help._root.memory.secret.exists.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.exists.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.exists.arg.key]
+help = "그 스코프 안의 secret 키"
+
+[cli.help._root.memory.secret.exists.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.exists.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.exists.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.exists.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.get]
+about = "secret 항목 하나를 읽는다"
+
+[cli.help._root.memory.secret.get.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.get.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.get.arg.key]
+help = "그 스코프 안의 secret 키"
+
+[cli.help._root.memory.secret.get.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.get.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.get.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.get.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.list]
+about = "스코프의 secret 항목을 나열한다"
+
+[cli.help._root.memory.secret.list.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.list.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.list.arg.limit]
+help = "돌려줄 항목 수 상한"
+
+[cli.help._root.memory.secret.list.arg.offset]
+help = "맞는 항목 중 앞의 N 개를 건너뛴다 (--limit 과 함께 쪽 넘기기에 쓴다)"
+
+[cli.help._root.memory.secret.list.arg.prefix]
+help = "이 접두어로 시작하는 키만"
+
+[cli.help._root.memory.secret.list.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.list.arg.since]
+help = "`updated_at >= since` 인 항목만 (unix ms)"
+
+[cli.help._root.memory.secret.list.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.list.arg.until]
+help = "`updated_at < until` 인 항목만 (unix ms)"
+
+[cli.help._root.memory.secret.list.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.list.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.put]
+about = "그 스코프/키에 secret 값을 저장한다"
+
+[cli.help._root.memory.secret.put.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.put.arg.cas]
+help = "CAS 버전 (지금 항목의 버전과 맞아야 한다)"
+
+[cli.help._root.memory.secret.put.arg.content_type]
+help = "content type 을 강제로 정한다"
+
+[cli.help._root.memory.secret.put.arg.expires_at]
+help = "절대 만료 시각 (unix ms). --ttl 과 함께 쓸 수 없다"
+
+[cli.help._root.memory.secret.put.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.put.arg.key]
+help = "그 스코프 안의 secret 키"
+
+[cli.help._root.memory.secret.put.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.put.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.put.arg.ttl]
+help = "상대 TTL (초). --expires-at 과 함께 쓸 수 없다"
+
+[cli.help._root.memory.secret.put.arg.value]
+help = "값. JSON 으로 파싱되면 JSON 으로, 아니면 평문으로 다룬다. `@path` 는 파일에서 읽는다"
+
+[cli.help._root.memory.secret.put.arg.value_b64]
+help = "content type 을 강제로 정한다"
+
+[cli.help._root.memory.secret.put.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.put.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.scopes]
+about = "secret 이 하나라도 있는 스코프를 나열한다"
+
+[cli.help._root.memory.secret.stats]
+about = "secret 저장소 통계. 스코프 선택은 선택이다"
+
+[cli.help._root.memory.secret.stats.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.stats.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.secret.stats.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.secret.stats.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.stats.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.stats.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.stats]
+about = "통계: 전체 항목 수와 바이트 (스코프별 또는 합계)"
+
+[cli.help._root.memory.stats.arg.account]
+help = "별칭: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.stats.arg.global]
+help = "별칭: `--global` → `global`"
+
+[cli.help._root.memory.stats.arg.scope]
+help = "스코프 토큰 (`global`, `surface:3`, `workspace:7`, …)"
+
+[cli.help._root.memory.stats.arg.surface]
+help = "별칭: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.stats.arg.window]
+help = "별칭: `--window 42` → `window:42`"
+
+[cli.help._root.memory.stats.arg.workspace]
+help = "별칭: `--workspace 7` → `workspace:7`"
+[cli.help._root.approval.await]
+about = "응답·timeout·취소 중 하나가 올 때까지 막는다. 결과를 JSON 으로 찍는다"
+
+[cli.help._root.approval.await.arg.id]
+help = "기다릴 승인 id (`req_...`)"
+
+[cli.help._root.approval.await.arg.timeout_ms]
+help = "요청의 `timeout_ms` 를 덮어쓴다. 0 이면 요청의 값을 쓴다 (그 값도 없으면 무기한)"
+
+[cli.help._root.approval.cancel]
+about = "대기 중인 승인을 취소한다 (종료 상태다)"
+
+[cli.help._root.approval.cancel.arg.id]
+help = "취소할 승인 id (`req_...`)"
+
+[cli.help._root.approval.get]
+about = "승인 기록 하나를 보여준다"
+
+[cli.help._root.approval.get.arg.id]
+help = "보여줄 승인 id (`req_...`)"
+
+[cli.help._root.approval.history]
+about = "영속 기록 조회 (memory store 에서 읽는다)"
+
+[cli.help._root.approval.history.arg.decision]
+help = "고른 결정 키로 거른다 (Responded 인 것만 맞는다)"
+
+[cli.help._root.approval.history.arg.limit]
+help = "돌려줄 항목 수 상한 (정렬 뒤, 최신순)"
+
+[cli.help._root.approval.history.arg.requester_id]
+help = "요청자 id 로 거른다 (plugin·agent id 또는 \"user\")"
+
+[cli.help._root.approval.history.arg.since]
+help = "memory 의 `updated_at >= since` 인 항목만 (unix ms)"
+
+[cli.help._root.approval.history.arg.state]
+help = "상태로 거른다: pending | responded | timed_out | cancelled | terminal"
+
+[cli.help._root.approval.history.arg.until]
+help = "memory 의 `updated_at < until` 인 항목만 (unix ms)"
+
+[cli.help._root.approval.history.arg.workspace_id]
+help = "워크스페이스 id 로 거른다"
+
+[cli.help._root.approval.list]
+about = "승인을 나열한다. 상태와 워크스페이스로 좁힐 수 있다"
+
+[cli.help._root.approval.list.arg.state]
+help = "상태로 거른다: pending | responded | timed_out | cancelled | terminal"
+
+[cli.help._root.approval.list.arg.workspace_id]
+help = "워크스페이스 id 로 거른다"
+
+[cli.help._root.approval.request]
+about = "새 승인을 요청한다. 성공하면 새 id 를 찍는다"
+long = "새 승인을 요청한다. 성공하면 새 id 를 찍는다.\n\n저절로 만료되는 것은 없다. `--timeout-ms` 를 재는 자리는 `approval await` 안이고, 요청을 제시간에 `pending` 밖으로 옮기는 것은 그 호출뿐이다 — 기다리는 쪽이 없으면 요청은 timeout 값이 얼마였든 `pending` 으로 남고 `approval list --state pending` 에 계속 나온다."
+
+[cli.help._root.approval.request.arg.body]
+help = "선택적 본문 (여러 줄 설명)"
+
+[cli.help._root.approval.request.arg.choices]
+help = "쉼표로 구분한 `key:label[:destructive]` 세 쌍 (예: `approve:Approve,deny:Deny:1`). 생략하면 `approve / deny` 가 기본이다"
+
+[cli.help._root.approval.request.arg.default_choice]
+help = "요청이 timeout 될 때 기록되는 선택 키. 결과는 이 키를 실은 `timed_out` 이고 시스템이 한 것으로 남는다 — `responded` 가 아니라서 `approval history --decision` 은 그것을 잡지 않는다"
+
+[cli.help._root.approval.request.arg.metadata]
+help = "자유 형식 JSON 메타데이터 (문자열을 그대로 넘긴다. 파싱은 돼야 한다)"
+
+[cli.help._root.approval.request.arg.severity]
+help = "심각도: info | warn | danger. 기본값: info"
+
+[cli.help._root.approval.request.arg.surface_id]
+help = "묶을 surface id (선택)"
+
+[cli.help._root.approval.request.arg.timeout_ms]
+help = "timeout (밀리초). 호출자가 `await` 때 덮어쓸 수 있다"
+
+[cli.help._root.approval.request.arg.title]
+help = "팝업·알림에 보일 제목"
+
+[cli.help._root.approval.request.arg.workspace_id]
+help = "묶을 워크스페이스 id (기본값: 활성 워크스페이스)"
+
+[cli.help._root.approval.respond]
+about = "응답을 제출한다"
+
+[cli.help._root.approval.respond.arg.choice]
+help = "선택 키 (그 요청의 `choices` 중 하나와 맞아야 한다)"
+
+[cli.help._root.approval.respond.arg.comment]
+help = "선택적 코멘트"
+
+[cli.help._root.approval.respond.arg.id]
+help = "승인 id (`req_...`)"
+
+[cli.help._root.approval.summary]
+about = "워크스페이스의 마크다운 요약을 쓰거나 읽는다 (손으로 쓰고 읽는 것뿐이다)"
+
+[cli.help._root.approval.summary.get]
+about = "워크스페이스 요약을 찍는다"
+
+[cli.help._root.approval.summary.get.arg.workspace_id]
+help = "요약을 찍을 워크스페이스 (포커스 무관 — 필수)"
+
+[cli.help._root.approval.summary.set]
+about = "워크스페이스 요약을 `content` (또는 `@file`) 로 덮어쓴다"
+
+[cli.help._root.approval.summary.set.arg.content]
+help = "인라인 내용, 또는 파일에서 읽을 `@path`"
+
+[cli.help._root.approval.summary.set.arg.workspace_id]
+help = "요약을 덮어쓸 워크스페이스 (포커스 무관 — 필수)"
+
+[cli.help._root.webhook.register]
+about = "인바운드 웹훅을 등록하고 발급된 URL 을 출력한다"
+long = "인바운드 웹훅을 등록하고 발급된 URL 을 출력한다.\n\n`--handler <id>`(등록된 hook handler 를 묶는다)와 `--sequence <json>`(인라인 IpcSequence 를 정의한다) 중 정확히 하나를 준다. 외부 HTTP 페이로드가 채우는 것은 `${body.x}` / `${header.x}` / `${query.x}` 값 자리뿐이다.\n\n리스너는 loopback 이 아니라 모든 인터페이스에 bind 한다. 출력되는 URL 이 `127.0.0.1` 인 것은 그대로 curl 하기 편해서일 뿐이고, 그 포트에 닿는 누구든 이 웹훅에 닿는다. 서명 검증은 어떤 형태로도 없다 — `--auth-token` 은 상수시간으로 비교하는 고정 공유 비밀 하나이고, `--auth-*` 를 주지 않으면 묻는 사람 누구에게나 시퀀스가 발화한다. `--persistent` 는 그 토큰을 평문으로 `~/.tasty/webhooks.toml` 에 쓴다.\n\nHTTP 응답은 시퀀스가 돌기 전에 정해지는 고정 확인응답이라, `200` 은 호출이 매칭돼 넘겨졌다는 뜻이지 그것이 됐다는 뜻이 아니다. 실패한 스텝은 뒤 스텝을 멈추지도 응답을 바꾸지도 않으므로 부분적으로만 적용된 시퀀스가 평범한 결말로 남는다. 실패가 드러나는 자리는 로그뿐이다."
+
+[cli.help._root.webhook.register.arg.methods]
+help = "허용할 HTTP 메서드(반복 가능). 기본값은 POST"
+
+[cli.help._root.webhook.register.arg.handler]
+help = "묶을 등록된 hook handler id(그 source 가 webhook 을 받아야 한다)"
+
+[cli.help._root.webhook.register.arg.sequence]
+help = "{\"method\",\"params\"} 객체의 JSON 배열로 주는 인라인 IpcSequence"
+
+[cli.help._root.webhook.register.arg.persistent]
+help = "재시작을 넘겨 유지한다(기본: 임시 — 재시작 시 사라진다)"
+
+[cli.help._root.webhook.register.arg.ttl_secs]
+help = "초 단위 시간 제한 — 이만큼 지나면 웹훅이 자동 만료된다. `--count` 와 함께 쓸 수 없다"
+
+[cli.help._root.webhook.register.arg.count]
+help = "횟수 제한 — 접수된 호출이 이만큼 쌓이면 웹훅이 자동 소멸한다. `--ttl-secs` 와 함께 쓸 수 없다"
+long = "횟수 제한 — 접수된 호출이 이만큼 쌓이면 웹훅이 자동 소멸한다. `--ttl-secs` 와 함께 쓸 수 없다.\n\n접수됐다는 것은 요청이 path 와 `--method` 중 하나에 맞았고, 인증을 걸었다면 맞는 토큰을 실어 왔다는 뜻이다. 메서드 불일치(`405`)와 토큰 거절(`401`)은 횟수를 그대로 두므로, 토큰을 모르는 발신자는 그것을 태울 수 없다. 이 횟수가 재지 않는 것은 그 뒤 시퀀스가 됐는지다 — 그 시점에는 응답이 이미 나갔고 한 번 센 호출은 되돌아오지 않는다."
+[cli.help._root.webhook.register.arg.auth_location]
+help = "선택적 인증 — 토큰을 어디에 실어 오는지. 지정하지 않으면 인증 없음"
+
+[cli.help._root.webhook.register.arg.auth_key]
+help = "토큰 위치 키 — 쿼리 파라미터 / 바디 필드 경로 / 헤더 이름. query|body|header 위치에는 필수이고 bearer 에서는 무시된다"
+
+[cli.help._root.webhook.register.arg.auth_token]
+help = "인증을 통과하려면 발신자가 제시해야 하는 고정 공유 토큰"
+
+[cli.help._root.webhook.list]
+about = "등록된 웹훅을 전부 나열한다(URL · 메서드 · 핸들러 · 스텝 · 수명)"
+
+[cli.help._root.webhook.info]
+about = "id 로 웹훅 하나의 상세를 보여준다(남은 횟수 · 만료 포함)"
+
+[cli.help._root.webhook.info.arg.id]
+help = "웹훅 opaque id(URL 의 `/{id}` 경로 조각)"
+
+[cli.help._root.webhook.unregister]
+about = "id 로 웹훅을 해제한다 — 그 뒤로 그 경로는 404 를 낸다"
+
+[cli.help._root.webhook.unregister.arg.id]
+help = "웹훅 opaque id"
+
+[cli.help._root.webhook.sweep]
+about = "만료된 웹훅을 한꺼번에 쓸어 제거한다(시간 초과 · 횟수 소진)"
+long = "만료된 웹훅을 한꺼번에 쓸어 제거한다(시간 초과 · 횟수 소진).\n\n타이머가 없어서 만료가 저절로 집행되지 않는다 — 만료된 웹훅은 누군가 그것을 들여다볼 때까지 등록된 채로 남는다. 그 경로로 호출이 오면 그 자리에서 제거되면서 `410` 을 한 번 내고 그 뒤로는 전부 `404` 이며, 재시작은 만료된 영속 웹훅을 버리고, 이 명령은 둘 중 어느 것도 기다리지 않고 전체를 한 번에 치운다."
+
+[cli.help._root.webhook.config]
+about = "리스너 bind 포트를 읽거나 설정한다(`~/.tasty/webhooks.toml` 에 영속화)"
+long = "리스너 bind 포트를 읽거나 설정한다(`~/.tasty/webhooks.toml` 에 영속화).\n\n`--port` 없이 부르면 지금 포트와 bind 상태를 출력한다. `--port` 를 주면 새 포트를 영속화하고, 리스너는 다음 재시작에만 다시 bind 한다. 포트는 설정값 전용이라 tasty 가 조용히 대체 포트에 bind 하는 일은 없다. bind 주소는 설정할 수 없고 loopback 도 아니다 — 리스너가 모든 인터페이스를 가져가므로 이 포트가 노출의 전부다."
+
+[cli.help._root.webhook.config.arg.port]
+help = "리스너 포트를 설정한다(1-65535). 적용되려면 재시작이 필요하다"

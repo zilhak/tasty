@@ -863,6 +863,7 @@ bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and c
 [i18n.warn]
 pack_missing = "Language '{}' is not installed — showing English. Put a language pack at {}, then restart."
 pack_invalid = "Language pack '{}' could not be loaded — showing English. Fix {} and restart ({})."
+font_unresolved = "The language pack's font could not be loaded: {}. Text still shows, but its script may appear as □."
 
 [persistence.warn]
 settings_unparsable = "Tasty could not read {} and started with default settings. The original is preserved beside it as a .bak file."
@@ -1715,7 +1716,7 @@ empty_none_hint = "Tasks grouped by dependency appear here."
 empty_filtered = "No matching DAGs"
 empty_filtered_hint = "Try a different filter."
 
-# 전체화면 무대(fullscreen stage) — 창 전체를 독점하는 독립 무대의 제목.
+# 전체화면 무대(fullscreen stage) — 윈도우 전체를 독점하는 독립 무대의 제목.
 [fullscreen.blank]
 title = "Fullscreen"
 
@@ -1761,3 +1762,2538 @@ If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./s
 
 This notice appears only once. You can bring it back under Settings > General > Permissions."""
 open_settings = "Open settings"
+
+# ── CLI 도움말 (clap `about` / `help`) ────────────────────────────────────────
+# 영어 원본은 소스의 doc comment 다. 여기 값은 **자유도 없는 복제**이고, 그 복제가
+# 번역자에게 키 목록이 된다. 어긋나면 `help_i18n_catalog_parity` 가 그 키를 짚는다.
+[cli.help._root]
+about = "GPU-accelerated terminal emulator for AI coding agents"
+
+[cli.help._root.arg.port_file]
+help = "Custom port file path (for test isolation)"
+
+[cli.help._root.arg.launch]
+help = "Force GUI launch even inside a tasty terminal"
+
+[cli.help._root.arg.headless]
+help = "Run as headless terminal emulator (no GUI, IPC + PTY + plugin only). Only a no-default-features build is headless. A default-features (GUI) build does NOT embed headless mode: this flag logs a warning and boots the GUI anyway, so a window opens on whatever DISPLAY it inherits"
+
+[cli.help._root.arg.all]
+help = "Show all commands in a tree (use with -h)"
+
+[cli.help._root.arg.enable_input_simulation]
+help = "Enable input simulation IPC (debug builds only). Required for debug.inject_mouse, debug.inject_key, etc"
+
+[cli.help._root.new]
+about = "Create a new resource (window, workspace, tab, split)"
+
+[cli.help._root.close]
+about = "Close a resource (tab, pane, surface, workspace, window)"
+
+[cli.help._root.list]
+about = "List/query resources (workspaces, windows, tree, surfaces, panes, info, hooks, etc.)"
+
+[cli.help._root.set]
+about = "Set/update resources (hook, mark, workspace, global-hook)"
+
+[cli.help._root.move]
+about = "Move/reorder a resource (tab, workspace)"
+
+[cli.help._root.split]
+about = "Split a pane group or surface"
+
+[cli.help._root.remote]
+about = "Remote (SSH) attach to a surface/workspace on another host — `remote attach`"
+
+[cli.help._root.send]
+about = "Send text, key, or queue message"
+
+[cli.help._root.read]
+about = "Read from surface or queue"
+
+[cli.help._root.notify]
+about = "Create a notification"
+
+[cli.help._root.unset]
+about = "Remove resources (hook, global-hook)"
+
+[cli.help._root.surface-meta]
+about = "Manage per-surface metadata"
+
+[cli.help._root.surface]
+about = "Surface actions (completion signal, queries, …)"
+
+[cli.help._root.session]
+about = "Agent session tokens (issue, revoke, list)"
+
+[cli.help._root.terminal]
+about = "Manage child terminals (spawn/tell/children/kill/…) — host-internalized agent child-terminal management (ADR-0040)"
+
+[cli.help._root.pty]
+about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal` (ADR-0050 pty primitive)"
+
+[cli.help._root.is-typing]
+about = "Check if a surface is currently typing (received key input within 5 seconds)"
+
+[cli.help._root.wake]
+about = "Spawn the PTY of a deferred surface (no-op if already running)"
+
+[cli.help._root.debug]
+about = "Debug and diagnostic commands (IME simulation, raw key input, etc.) — debug builds only"
+
+[cli.help._root.tool]
+about = "Internal tools (SSH connection profiles, passkeys, etc.)"
+
+[cli.help._root.plugin]
+about = "Manage plugins (list, install, remove, enable, disable, logs)"
+
+[cli.help._root.memory]
+about = "Agent memory store (~/.tasty/memory.db) — persistent key-value"
+
+[cli.help._root.settings]
+about = "Global settings — get/set the remote-transfer storage folder and size cap"
+
+[cli.help._root.output]
+about = "Structured output observer (parsers + sink fan-out)"
+
+[cli.help._root.approval]
+long = "Human-handoff approval gates (request/respond/await/cancel/list/get)\n\nThe live gate does not outlive the host. `request`, `respond`, `await`, `cancel`, `list` and `get` all read one in-memory store that starts empty on every boot, so a request that was pending when the host stopped is not there afterwards — `list` will not show it and `await` on its id answers \"not found\". What survives is the written record, which `history` reads from the memory store. Treat `history` as the log and `list` as what is answerable right now."
+about = "Human-handoff approval gates (request/respond/await/cancel/list/get)"
+
+[cli.help._root.telemetry]
+long = "Agent telemetry (record metrics, summary, timeseries, top-N)\n\nTwo sources feed it: what an agent reports with `telemetry record`, and one `ipc_calls` event the host writes per IPC call an agent makes, tagged with the method name (host calls, `telemetry.*` and throttled calls are not counted). Queries read the raw events and nothing else — there is no rollup — and the store is trimmed to the most recent 20,000, so `--since` cannot reliably reach past that. Anomaly records are trimmed separately: the most recent 5,000, and at most 50 hours."
+about = "Agent telemetry (record metrics, summary, timeseries, top-N)"
+
+[cli.help._root.agent]
+about = "Agent collaboration primitives (task DAG; barrier/semaphore/lease/reducer/rate-limit follow)"
+
+[cli.help._root.file-handler]
+about = "File handler — reload the user configuration (`~/.tasty/file-handlers.toml`)"
+
+[cli.help._root.clipboard]
+about = "Clipboard — operate on the local clipboard"
+
+[cli.help._root.hook-handler]
+about = "Hook handler — shared hook/webhook handler registry (list / reload / dispatch)"
+
+[cli.help._root.completion-strategy]
+about = "Completion strategy — task Custom-dispatch completion judge registry (list)"
+
+[cli.help._root.preset]
+about = "Manage layout presets (workspace / tab / pane)"
+
+[cli.help._root.workspace-category]
+about = "Manage workspace categories (sidebar folders) — list/create/rename/delete/move"
+
+[cli.help._root.webhook]
+about = "Manage inbound webhooks (register/list/info/unregister) — HTTP → IpcSequence"
+
+[cli.help._root.port]
+about = "Print this instance's IPC port to stdout (first step of the auto remote port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC"
+
+[cli.help._root.screenshot]
+about = "Capture a screenshot to a PNG file (focus-independent)"
+
+[cli.help._root.list.workspaces]
+about = "List workspaces"
+
+[cli.help._root.list.windows]
+about = "List all windows"
+
+[cli.help._root.list.tree]
+about = "Show tree view of workspaces, panes, and tabs"
+
+[cli.help._root.list.surfaces]
+about = "List surfaces (terminals) across all workspaces"
+
+[cli.help._root.list.panes]
+about = "List panes across all workspaces"
+
+[cli.help._root.list.tabs]
+about = "List tabs in a pane"
+
+[cli.help._root.list.tabs.arg.pane]
+help = "Pane ID (required)"
+
+[cli.help._root.list.info]
+about = "Show system info"
+
+[cli.help._root.list.gpu-stats]
+about = "Show GPU resource counts (wgpu report + per-window renderer stats)"
+
+[cli.help._root.list.notifications]
+about = "List notifications"
+
+[cli.help._root.list.timers]
+about = "List registered timers and what is currently waking this instance"
+
+[cli.help._root.list.hooks]
+about = "List hooks"
+
+[cli.help._root.list.hooks.arg.surface]
+help = "Filter by surface ID"
+
+[cli.help._root.list.global-hooks]
+about = "List all global hooks"
+
+[cli.help._root.list.theme]
+about = "Show the resolved global theme snapshot (colors, font sizes, ui scale)"
+
+[cli.help._root.list.recent]
+about = "List the recently opened files of one surface kind"
+
+[cli.help._root.list.recent.arg.kind]
+help = "Surface kind to query (e.g. `markdown`). The host does not know the kind names — the caller supplies one"
+
+[cli.help._root.list.queue]
+about = "Show queue status (count + preview of pending messages)"
+
+[cli.help._root.list.queue.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.move.tab]
+about = "Move a tab to a different position within the same pane"
+
+[cli.help._root.move.tab.arg.from]
+help = "Source tab index (0-based)"
+
+[cli.help._root.move.tab.arg.pane]
+help = "Pane ID"
+
+[cli.help._root.move.tab.arg.to]
+help = "Destination tab index (0-based)"
+
+[cli.help._root.move.workspace]
+about = "Move a workspace to a different position"
+long = "Move a workspace to a different position\n\nPrefer `--id`: a workspace ID names the window that owns it, so the command means the same thing no matter which window is focused. `--from` is an index inside one window, so it lands on whichever window has focus."
+
+[cli.help._root.move.workspace.arg.from]
+help = "Source workspace index (0-based, focus-dependent)"
+
+[cli.help._root.move.workspace.arg.id]
+help = "Workspace ID to move (preferred; mutually exclusive with --from)"
+
+[cli.help._root.move.workspace.arg.to]
+help = "Destination workspace index (0-based)"
+
+[cli.help._root.read.command-at]
+about = "Recorded command at index (negative = from end)"
+
+[cli.help._root.read.command-at.arg.index]
+help = "0-based index; negatives count from the end"
+
+[cli.help._root.read.command-at.arg.surface]
+help = "Surface ID (default: focused terminal)"
+
+[cli.help._root.read.commands]
+about = "List recorded shell commands (OSC 133) for a surface"
+
+[cli.help._root.read.commands.arg.limit]
+help = "Limit number of returned records"
+
+[cli.help._root.read.commands.arg.since]
+help = "Only include records ended at or after this unix-ms timestamp"
+
+[cli.help._root.read.commands.arg.surface]
+help = "Surface ID (default: focused terminal)"
+
+[cli.help._root.read.last-command]
+about = "Most recent recorded command for a surface"
+
+[cli.help._root.read.last-command.arg.surface]
+help = "Surface ID (default: focused terminal)"
+
+[cli.help._root.read.parse-since-mark]
+about = "Parse output since last mark with builtin parsers (path/url/prompt_boundary/exit_code)"
+
+[cli.help._root.read.parse-since-mark.arg.parsers]
+help = "Comma-separated parser ids. Default = all builtins"
+
+[cli.help._root.read.parse-since-mark.arg.surface]
+help = "Surface ID (default: focused terminal)"
+
+[cli.help._root.read.queue]
+about = "Read from a surface's message queue (consumes oldest message)"
+
+[cli.help._root.read.queue.arg.clear]
+help = "Clear all messages instead of reading"
+
+[cli.help._root.read.queue.arg.from]
+help = "Filter by sender surface ID"
+
+[cli.help._root.read.queue.arg.peek]
+help = "Peek without consuming"
+
+[cli.help._root.read.queue.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.read.screen]
+about = "Read current screen text of a surface"
+
+[cli.help._root.read.screen.arg.lines]
+help = "Number of lines to read from the bottom, counted from the end of the content: trailing blank rows are skipped and the shortfall is filled from scrollback. The ceiling is the content, not the grid — rows below the last printed line never come back, so a mostly empty screen returns fewer than N even with scrollback to spare. On the alternate screen (a full-screen TUI) the fill comes from the *primary* buffer's scrollback and arrives with no marker, so a large N can prepend shell history above the TUI's own screen"
+
+[cli.help._root.read.screen.arg.show_dim]
+help = "Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) cells. Default excludes them so unsubmitted UI suggestions aren't mistaken for real buffer content"
+
+[cli.help._root.read.screen.arg.surface]
+help = "Surface ID (default: focused)"
+
+[cli.help._root.read.since-mark]
+about = "Read output since last mark"
+
+[cli.help._root.read.since-mark.arg.strip_ansi]
+help = "Strip ANSI escape sequences from output"
+
+[cli.help._root.read.since-mark.arg.surface]
+help = "Surface ID (default: focused terminal)"
+
+[cli.help._root.send.key]
+about = "Send a key to a terminal surface (enter, tab, escape, up, down, etc.)"
+
+[cli.help._root.send.key.arg.key]
+help = "Key name"
+
+[cli.help._root.send.key.arg.surface]
+help = "Target surface ID (default: focused)"
+
+[cli.help._root.send.queue]
+about = "Send a message to a surface's queue"
+
+[cli.help._root.send.queue.arg.content]
+help = "Message content"
+
+[cli.help._root.send.queue.arg.from]
+help = "Sender surface ID (default: focused)"
+
+[cli.help._root.send.queue.arg.to]
+help = "Target surface ID"
+
+[cli.help._root.send.text]
+about = "Send text to a terminal surface"
+
+[cli.help._root.send.text.arg.surface]
+help = "Target surface ID (default: focused)"
+
+[cli.help._root.send.text.arg.text]
+help = "Text to send"
+
+[cli.help._root.send.text.arg.wait_idle]
+help = "Skip the send when the person is typing, deciding and sending in one step. Reports \"sent\": false with \"reason\": \"typing\" instead. Checking with `tasty is-typing` first cannot do this - they may start typing between the two commands"
+
+[cli.help._root.close.pane]
+about = "Close the specified pane (unsplit)"
+
+[cli.help._root.close.pane.arg.pane]
+help = "Target pane ID (required)"
+
+[cli.help._root.close.self]
+about = "Close the calling surface itself (uses TASTY_SURFACE_ID)"
+
+[cli.help._root.close.surface]
+about = "Close the specified surface within a tab"
+
+[cli.help._root.close.surface.arg.surface]
+help = "Target surface ID (required)"
+
+[cli.help._root.close.tab]
+about = "Close a specific tab by its ID"
+
+[cli.help._root.close.tab.arg.tab]
+help = "Target tab ID (required)"
+
+[cli.help._root.close.window]
+about = "Close a window by its ID"
+long = "Close a window by its ID.\n\nThe target is always given explicitly with --id (see `tasty list windows`). The last remaining main window is refused - quitting is a user action."
+
+[cli.help._root.close.window.arg.id]
+help = "Target window ID (required)"
+
+[cli.help._root.close.workspace]
+about = "Close a whole workspace by its ID, with every pane, tab and surface in it"
+long = "Close a whole workspace by its ID, with every pane, tab and surface in it.\n\nThis cannot be undone: every terminal in the workspace is killed, the workspace does not enter the user's reopen history, and its scrollback is not kept. Only closes the user made by hand can be reopened.\n\nThe target is always given explicitly with --id (see `tasty list workspaces`); it is never inferred from what is on screen. Closing a workspace the user is not looking at leaves their current workspace on screen. A workspace holding your own surface is refused, as is a workspace mirroring a remote attach session and the last remaining workspace - closing the window is a separate decision, see `tasty close window`."
+
+[cli.help._root.close.workspace.arg.id]
+help = "Target workspace ID (required)"
+
+[cli.help._root.new.tab]
+about = "Create a new tab in the specified pane"
+
+[cli.help._root.new.tab.arg.cwd]
+help = "Working directory (for terminal type)"
+
+[cli.help._root.new.tab.arg.file]
+help = "File path (for markdown type)"
+
+[cli.help._root.new.tab.arg.pane]
+help = "Target pane ID (required)"
+
+[cli.help._root.new.tab.arg.path]
+help = "Directory path (for explorer type)"
+
+[cli.help._root.new.tab.arg.type]
+help = "Surface type: terminal (default), markdown, explorer, html, image, dag_graph"
+
+[cli.help._root.new.tab.arg.url]
+help = "URL (for html type)"
+
+[cli.help._root.new.window]
+about = "Create a new window"
+
+[cli.help._root.new.workspace]
+about = "Create a new workspace"
+
+[cli.help._root.new.workspace.arg.category]
+help = "Category to place the workspace in (name or id). Defaults to normal"
+
+[cli.help._root.new.workspace.arg.cwd]
+help = "Working directory for the new workspace"
+
+[cli.help._root.new.workspace.arg.file]
+help = "File path (for markdown/image type)"
+
+[cli.help._root.new.workspace.arg.name]
+help = "Name for the new workspace"
+
+[cli.help._root.new.workspace.arg.path]
+help = "Directory path (for explorer type)"
+
+[cli.help._root.new.workspace.arg.remote_workspace]
+help = "Workspace id on the mapped remote tasty to attach to"
+
+[cli.help._root.new.workspace.arg.ssh]
+help = "Map to a one-off inline SSH target without a saved profile, e.g. --ssh user@host. Mutually exclusive with `--ssh-profile`"
+
+[cli.help._root.new.workspace.arg.ssh_profile]
+help = "Map this workspace to a saved SSH profile (a remote machine). When the workspace is activated, the host attaches automatically (SSH tunnel + workspace mirror)"
+
+[cli.help._root.new.workspace.arg.type]
+help = "Surface type: terminal (default), markdown, explorer, html, image, dag_graph"
+
+[cli.help._root.new.workspace.arg.url]
+help = "URL (for html type)"
+
+[cli.help._root.split.arg.cwd]
+help = "Working directory (for terminal type)"
+
+[cli.help._root.split.arg.direction]
+help = "Split direction: vertical (default) or horizontal"
+
+[cli.help._root.split.arg.file]
+help = "File path (for markdown/image type)"
+
+[cli.help._root.split.arg.level]
+help = "Split level: pane (upper layout) or surface (lower layout)"
+
+[cli.help._root.split.arg.meta]
+help = "Metadata JSON to set on the new surface (e.g. '{\"nickname\":\"build\"}')"
+
+[cli.help._root.split.arg.path]
+help = "Directory path (for explorer type)"
+
+[cli.help._root.split.arg.target_pane]
+help = "Target pane: numeric pane ID (only for --level pane)"
+
+[cli.help._root.split.arg.target_surface]
+help = "Target surface: numeric surface ID, \"this\" (TASTY_SURFACE_ID), or nickname"
+
+[cli.help._root.split.arg.type]
+help = "Surface type: terminal (default), markdown, explorer, html, image, dag_graph"
+
+[cli.help._root.split.arg.url]
+help = "URL (for html type)"
+
+[cli.help._root.set.cwd]
+about = "Set the working directory a remote surface reports to the host"
+
+[cli.help._root.set.cwd.arg.path]
+help = "Directory path. Omit to clear it"
+
+[cli.help._root.set.cwd.arg.surface]
+help = "Target surface id"
+
+[cli.help._root.set.global-hook]
+about = "Set a global hook — fires on a schedule, not bound to any surface"
+
+[cli.help._root.set.global-hook.arg.command]
+help = "Shell command to execute when the condition fires"
+
+[cli.help._root.set.global-hook.arg.condition]
+help = "Condition: interval:SECS, once:SECS"
+
+[cli.help._root.set.global-hook.arg.label]
+help = "Optional human-readable label"
+
+[cli.help._root.set.hook]
+about = "Set a hook on a surface"
+
+[cli.help._root.set.hook.arg.command]
+help = "Inline shell command to execute when the event fires (backward-compat; wrapped as an anonymous hook handler). Mutually exclusive with --handler"
+
+[cli.help._root.set.hook.arg.event]
+help = "Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS"
+
+[cli.help._root.set.hook.arg.handler]
+help = "Shared hook-handler id to bind (e.g. host/my-handler). The handler must accept the hook trigger source. Mutually exclusive with --command"
+
+[cli.help._root.set.hook.arg.once]
+help = "Remove the hook after it fires once"
+
+[cli.help._root.set.hook.arg.surface]
+help = "Surface ID to hook (default: focused)"
+
+[cli.help._root.set.mark]
+about = "Set a read mark on a surface"
+
+[cli.help._root.set.mark.arg.surface]
+help = "Surface ID (default: focused terminal)"
+
+[cli.help._root.set.url]
+about = "Set the URL of a webview-kind surface"
+
+[cli.help._root.set.url.arg.surface]
+help = "Target surface id"
+
+[cli.help._root.set.url.arg.url]
+help = "URL to load"
+
+[cli.help._root.set.workspace]
+about = "Update workspace name, subtitle, description, or SSH attach mapping"
+
+[cli.help._root.set.workspace.arg.category]
+help = "Move this workspace to another category (name or id)"
+
+[cli.help._root.set.workspace.arg.clear_mapping]
+help = "Clear the existing SSH attach mapping"
+
+[cli.help._root.set.workspace.arg.description]
+help = "New description"
+
+[cli.help._root.set.workspace.arg.id]
+help = "Workspace ID (required)"
+
+[cli.help._root.set.workspace.arg.name]
+help = "New name"
+
+[cli.help._root.set.workspace.arg.remote_workspace]
+help = "Workspace id on the mapped remote tasty to attach to"
+
+[cli.help._root.set.workspace.arg.ssh]
+help = "Map to a one-off inline SSH target, e.g. --ssh user@host"
+
+[cli.help._root.set.workspace.arg.ssh_profile]
+help = "Map this workspace to a saved SSH profile (a remote machine)"
+
+[cli.help._root.set.workspace.arg.subtitle]
+help = "New subtitle"
+
+[cli.help._root.unset.global-hook]
+about = "Remove a global hook by ID"
+
+[cli.help._root.unset.global-hook.arg.hook]
+help = "Hook ID to remove"
+
+[cli.help._root.unset.hook]
+about = "Remove a hook"
+
+[cli.help._root.unset.hook.arg.hook]
+help = "Hook ID to remove"
+
+[cli.help._root.tool.attach]
+about = "Attach to a remote surface/workspace using a tasty-attach profile. `--list` only lists the profiles. Local"
+
+[cli.help._root.tool.attach.arg.dump_after]
+help = "Mirror-dump collection time in ms (built-in default if omitted)"
+
+[cli.help._root.tool.attach.arg.list]
+help = "Only list tasty-attach profiles and exit (no attach)"
+
+[cli.help._root.tool.attach.arg.name]
+help = "Name of the tasty-attach profile to attach with (omit it together with `--list` to only list profiles)"
+
+[cli.help._root.tool.attach.arg.no_reconnect]
+help = "Disable automatic reconnection when the connection drops"
+
+[cli.help._root.tool.attach.arg.raw]
+help = "Raw stdin/stdout bridge (surface only)"
+
+[cli.help._root.tool.attach.arg.send]
+help = "Input to send once right after attaching, non-interactively (escapes decoded)"
+
+[cli.help._root.tool.attach.arg.send_to]
+help = "Surface id that receives --send in workspace mode"
+
+[cli.help._root.tool.attach.arg.surface]
+help = "Remote surface id to attach to"
+
+[cli.help._root.tool.attach.arg.workspace]
+help = "Remote workspace id to attach to (mutually exclusive with surface)"
+
+[cli.help._root.tool.passkey]
+about = "Passkeys (`~/.tasty/passkeys.toml`): the credential store that profiles reference by name. list/show never reveal values. Local file, no IPC"
+
+[cli.help._root.tool.passkey.add]
+about = "Add or replace a passkey. Use either `--path <file>` (reference a file) or `--inline` (enter a secret)"
+
+[cli.help._root.tool.passkey.add.arg.inline]
+help = "inline kind: materialize the secret as a 0600 file. The value comes from `--value` or stdin"
+
+[cli.help._root.tool.passkey.add.arg.name]
+help = "Unique identifier that profiles reference. Only alphanumerics, '-' and '_' are allowed"
+
+[cli.help._root.tool.passkey.add.arg.path]
+help = "path kind: path to an existing key file owned by the user (`-i`). Mutually exclusive with `--inline`"
+
+[cli.help._root.tool.passkey.add.arg.value]
+help = "Inline value (read from stdin if omitted). Used together with `--inline`"
+
+[cli.help._root.tool.passkey.list]
+about = "List saved passkeys (name and kind only; values are never shown)"
+
+[cli.help._root.tool.passkey.list.arg.json]
+help = "Print as JSON instead of a table"
+
+[cli.help._root.tool.passkey.remove]
+about = "Remove a passkey (for the inline kind, the managed file is deleted too)"
+
+[cli.help._root.tool.passkey.remove.arg.name]
+help = "Passkey name to remove"
+
+[cli.help._root.tool.passkey.show]
+about = "Show one passkey's name and kind (the value is never shown)"
+
+[cli.help._root.tool.passkey.show.arg.json]
+help = "Print as JSON instead of a table"
+
+[cli.help._root.tool.passkey.show.arg.name]
+help = "Passkey name to show"
+
+[cli.help._root.tool.remote-profile]
+about = "Manage remote connection profiles (ssh and tasty-attach kinds). Local file, no IPC"
+
+[cli.help._root.tool.remote-profile.add-attach]
+about = "Add a tasty-attach profile. The connection is either a reference (`--ssh-ref <name>`) or inline fields (host, ...)"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.host]
+help = "Inline connection: ssh destination (host | user@host | alias). Used when `--ssh-ref` is absent"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.identity]
+help = "Inline connection: identity file path (-i). Stored separately as a path-kind passkey"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.label]
+help = "Optional label shown in the UI"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.name]
+help = "Unique profile identifier"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.options]
+help = "Inline connection: extra ssh -o option (repeatable)"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port]
+help = "Inline connection: ssh port"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port_file]
+help = "Explicit path of the remote port file (non-standard location). Takes precedence over the conventional path when set"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.port_mode]
+help = "Remote port discovery mode: auto (default) | subcommand | file-unix | file-windows"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.remote_tasty]
+help = "Path to the tasty binary on the remote host (for port discovery). Defaults to \"tasty\""
+
+[cli.help._root.tool.remote-profile.add-attach.arg.ssh_ref]
+help = "Name of the ssh profile to reference (followed live). When set, the inline connection fields are ignored"
+
+[cli.help._root.tool.remote-profile.add-attach.arg.user]
+help = "Inline connection: ssh user"
+
+[cli.help._root.tool.remote-profile.add-ssh]
+about = "Add an ssh connection profile (connection details only, no attach spec)"
+long = "Add an ssh connection profile (connection details only, no attach spec).\n\n`attach` refuses this kind. To attach through this host, add a tasty-attach profile that references it by name (`--ssh-ref`)."
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.host]
+help = "ssh destination: host | user@host | ssh config alias"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.identity]
+help = "Identity file path (-i). Stored separately as the path-kind passkey `<name>-key`"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.label]
+help = "Optional label shown in the UI"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.name]
+help = "Unique profile identifier"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.options]
+help = "Extra ssh -o option (repeatable), e.g. --option ServerAliveInterval=30"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.port]
+help = "ssh port (default: from ssh config, else 22)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.shell]
+help = "Remote shell: powershell | cmd | bash | zsh | auto (default)"
+
+[cli.help._root.tool.remote-profile.add-ssh.arg.user]
+help = "ssh user (when host has no user@ prefix)"
+
+[cli.help._root.tool.remote-profile.detect]
+about = "Re-detect a profile (ssh: probe the remote shell / tasty-attach: verify the remote port). Connects over SSH"
+
+[cli.help._root.tool.remote-profile.detect.arg.name]
+help = "Profile name to re-detect"
+
+[cli.help._root.tool.remote-profile.edit]
+about = "Update fields of an existing profile (only the given fields are overwritten). The kind is kept"
+
+[cli.help._root.tool.remote-profile.edit.arg.host]
+help = "ssh destination: host | user@host | ssh config alias"
+
+[cli.help._root.tool.remote-profile.edit.arg.identity]
+help = "Identity file path (-i). Stored separately as a path-kind passkey"
+
+[cli.help._root.tool.remote-profile.edit.arg.label]
+help = "Label shown in the UI"
+
+[cli.help._root.tool.remote-profile.edit.arg.name]
+help = "Profile name to update"
+
+[cli.help._root.tool.remote-profile.edit.arg.options]
+help = "Extra ssh -o option (repeatable). Replaces the stored list rather than appending to it"
+
+[cli.help._root.tool.remote-profile.edit.arg.port]
+help = "ssh port"
+
+[cli.help._root.tool.remote-profile.edit.arg.port_file]
+help = "tasty-attach: remote port file path"
+
+[cli.help._root.tool.remote-profile.edit.arg.port_mode]
+help = "tasty-attach: remote port discovery mode"
+
+[cli.help._root.tool.remote-profile.edit.arg.remote_tasty]
+help = "tasty-attach: path to the tasty binary on the remote host"
+
+[cli.help._root.tool.remote-profile.edit.arg.shell]
+help = "ssh: remote shell (powershell | cmd | bash | zsh | auto)"
+
+[cli.help._root.tool.remote-profile.edit.arg.ssh_ref]
+help = "tasty-attach: ssh profile to reference instead (by name)"
+
+[cli.help._root.tool.remote-profile.edit.arg.user]
+help = "ssh user (when host has no user@ prefix)"
+
+[cli.help._root.tool.remote-profile.import]
+about = "Import a local ssh config alias as an ssh profile (only the alias is stored; ssh resolves the actual values)"
+
+[cli.help._root.tool.remote-profile.import.arg.from]
+help = "ssh config alias to import (the ALIAS column of `list-local`)"
+
+[cli.help._root.tool.remote-profile.import.arg.label]
+help = "Optional label shown in the UI"
+
+[cli.help._root.tool.remote-profile.import.arg.name]
+help = "Unique identifier of the new profile"
+
+[cli.help._root.tool.remote-profile.list-local]
+about = "List Host aliases from the local ssh config (`~/.ssh/config` plus Include files). Does not connect"
+
+[cli.help._root.tool.remote-profile.list-local.arg.json]
+help = "Print as JSON instead of a table"
+
+[cli.help._root.tool.remote-profile.list]
+about = "List saved profiles (ssh and tasty-attach)"
+
+[cli.help._root.tool.remote-profile.list.arg.json]
+help = "Print as JSON instead of a table"
+
+[cli.help._root.tool.remote-profile.list.arg.kind]
+help = "Filter by kind: ssh | tasty-attach"
+
+[cli.help._root.tool.remote-profile.remove]
+about = "Remove a profile (referenced passkeys are kept, since they may be shared)"
+
+[cli.help._root.tool.remote-profile.remove.arg.name]
+help = "Profile name to remove"
+
+[cli.help._root.tool.remote-profile.show]
+about = "Show the details of one profile"
+
+[cli.help._root.tool.remote-profile.show.arg.json]
+help = "Print as JSON instead of a table"
+
+[cli.help._root.tool.remote-profile.show.arg.name]
+help = "Profile name to show"
+
+[cli.help._root.tool.ssh]
+about = "Open an interactive ssh session using a saved ssh profile (identity and port are injected automatically). Local, no IPC"
+
+[cli.help._root.tool.ssh.arg.command]
+help = "Command to run once on the remote host (interactive shell if omitted), e.g. `tasty tool ssh gb10 --command hostname`"
+
+[cli.help._root.tool.ssh.arg.profile]
+help = "Name of the ssh profile to connect with"
+
+
+[cli.help._root.telemetry.anomaly]
+about = "Anomaly records — detected unusual patterns (call burst, etc.)"
+
+[cli.help._root.telemetry.anomaly.list]
+about = "List persisted anomaly records. Optional filters"
+
+[cli.help._root.telemetry.anomaly.list.arg.agent]
+help = "Only list anomalies attributed to this agent id"
+
+[cli.help._root.telemetry.anomaly.list.arg.kind]
+help = "Kind filter: call_burst | slow_loop | rss_surge"
+
+[cli.help._root.telemetry.anomaly.list.arg.since]
+help = "Lower bound on detection time (unix ms, inclusive)"
+
+[cli.help._root.telemetry.anomaly.list.arg.until]
+help = "Upper bound on detection time (unix ms, exclusive)"
+
+[cli.help._root.telemetry.cap]
+about = "Cost caps — threshold-based actions (stop/pause/approval/notify)"
+
+[cli.help._root.telemetry.cap.list]
+about = "List caps. Optional `--agent` filter"
+
+[cli.help._root.telemetry.cap.list.arg.agent]
+help = "Only list caps that apply to this agent id"
+
+[cli.help._root.telemetry.cap.remove]
+about = "Remove a cap by id"
+
+[cli.help._root.telemetry.cap.remove.arg.id]
+help = "Cap id, as printed by `cap set` or `cap list`"
+
+[cli.help._root.telemetry.cap.reset]
+about = "Reset the triggered state for matching caps. Provide `--id` or `--agent`"
+
+[cli.help._root.telemetry.cap.reset.arg.agent]
+help = "Reset every cap that applies to this agent id"
+
+[cli.help._root.telemetry.cap.reset.arg.id]
+help = "Reset just this cap id"
+
+[cli.help._root.telemetry.cap.set]
+about = "Define a new cap. Prints the generated cap id"
+
+[cli.help._root.telemetry.cap.set.arg.action]
+help = "Action: stop | pause | require_approval | notify"
+
+[cli.help._root.telemetry.cap.set.arg.agent]
+help = "Agent id this cap applies to (required — no caller default)"
+
+[cli.help._root.telemetry.cap.set.arg.metric]
+help = "Metric name being capped"
+
+[cli.help._root.telemetry.cap.set.arg.threshold]
+help = "Threshold (positive number; sum across the window triggers the action)"
+
+[cli.help._root.telemetry.cap.set.arg.window]
+help = "Window: total | 1h | 1d"
+
+[cli.help._root.telemetry.cap.status]
+about = "Show current cumulative value vs threshold for caps. Optional `--agent` filter"
+
+[cli.help._root.telemetry.cap.status.arg.agent]
+help = "Only report caps that apply to this agent id"
+
+[cli.help._root.telemetry.record-batch]
+about = "Record several events in one call — they share one timestamp, so their order is preserved. Use this instead of a loop of `record` when the ordering between the events matters"
+
+[cli.help._root.telemetry.record-batch.arg.events]
+help = "Events as a JSON array; each element takes the same fields as `record` (`metric`, `value`, `op`, `tags`, ...)"
+
+[cli.help._root.telemetry.record]
+about = "Record a single metric event"
+
+[cli.help._root.telemetry.record.arg.agent]
+help = "Agent id (defaults to caller — env `TASTY_AGENT_ID` or `_host`)"
+
+[cli.help._root.telemetry.record.arg.metric]
+help = "Metric name (lowercase `[a-z][a-z0-9_]*`, max 64)"
+
+[cli.help._root.telemetry.record.arg.op]
+help = "Operation: set | inc | dec. Default: inc"
+
+[cli.help._root.telemetry.record.arg.tags]
+help = "Tags as JSON object (e.g. `{\"model\":\"opus\",\"src\":\"shell\"}`)"
+
+[cli.help._root.telemetry.record.arg.value]
+help = "Numeric value"
+
+[cli.help._root.telemetry.record.arg.workspace_id]
+help = "Workspace id binding (defaults to active workspace)"
+
+[cli.help._root.telemetry.session-summary]
+about = "Aggregate session summary (metrics + approvals + anomalies)"
+
+[cli.help._root.telemetry.session-summary.arg.format]
+help = "Output format: markdown | json (default: markdown)"
+
+[cli.help._root.telemetry.session-summary.arg.since]
+help = "Lower bound on event ts (unix ms, inclusive)"
+
+[cli.help._root.telemetry.session-summary.arg.top_n]
+help = "Number of top entries for ipc_calls (default: 10)"
+
+[cli.help._root.telemetry.session-summary.arg.until]
+help = "Upper bound on event ts (unix ms, exclusive)"
+
+[cli.help._root.telemetry.session-summary.arg.workspace_id]
+help = "Restrict to a single workspace (defaults to all)"
+
+[cli.help._root.telemetry.summary]
+about = "Aggregate summary across events. Filters: metric, agent, workspace_id, since/until"
+
+[cli.help._root.telemetry.summary.arg.agent]
+help = "Only aggregate events recorded by this agent id"
+
+[cli.help._root.telemetry.summary.arg.metric]
+help = "Only aggregate this metric (omitted = every metric)"
+
+[cli.help._root.telemetry.summary.arg.since]
+help = "Lower bound on unix ms (inclusive)"
+
+[cli.help._root.telemetry.summary.arg.until]
+help = "Upper bound on unix ms (exclusive)"
+
+[cli.help._root.telemetry.summary.arg.workspace_id]
+help = "Only aggregate events bound to this workspace id"
+
+[cli.help._root.telemetry.timeseries]
+about = "Window-bucketed timeseries. `--metric` is required"
+
+[cli.help._root.telemetry.timeseries.arg.agent]
+help = "Only include events recorded by this agent id"
+
+[cli.help._root.telemetry.timeseries.arg.metric]
+help = "Metric name to bucket (required)"
+
+[cli.help._root.telemetry.timeseries.arg.since]
+help = "Lower bound on unix ms (inclusive)"
+
+[cli.help._root.telemetry.timeseries.arg.until]
+help = "Upper bound on unix ms (exclusive)"
+
+[cli.help._root.telemetry.timeseries.arg.window]
+help = "Window size: 1m | 1h | 1d. Default: 1m"
+
+[cli.help._root.telemetry.timeseries.arg.workspace_id]
+help = "Only include events bound to this workspace id"
+
+[cli.help._root.telemetry.top]
+about = "Top-N agents or workspaces by sum"
+
+[cli.help._root.telemetry.top.arg.agent]
+help = "Only include events recorded by this agent id"
+
+[cli.help._root.telemetry.top.arg.by]
+help = "Grouping: agent | workspace"
+
+[cli.help._root.telemetry.top.arg.limit]
+help = "Maximum entries. Default: 10"
+
+[cli.help._root.telemetry.top.arg.metric]
+help = "Only rank this metric (omitted = every metric)"
+
+[cli.help._root.telemetry.top.arg.since]
+help = "Lower bound on unix ms (inclusive)"
+
+[cli.help._root.telemetry.top.arg.until]
+help = "Upper bound on unix ms (exclusive)"
+
+[cli.help._root.telemetry.top.arg.workspace_id]
+help = "Only include events bound to this workspace id"
+
+[cli.help._root.plugin.audit-clear]
+about = "Delete audit records older than `before_ms`, or all if omitted"
+
+[cli.help._root.plugin.audit-clear.arg.before_ms]
+help = "Delete records with ts < before_ms. Omit to clear everything"
+
+[cli.help._root.plugin.audit-follow]
+about = "Tail audit records as they arrive. Polls every `interval_ms` ms until Ctrl-C. Filters are the same as `audit-query`"
+
+[cli.help._root.plugin.audit-follow.arg.batch]
+help = "Per-poll cap on record batch size"
+
+[cli.help._root.plugin.audit-follow.arg.caller_id]
+help = "Filter by caller id"
+
+[cli.help._root.plugin.audit-follow.arg.caller_kind]
+help = "Filter by caller kind: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-follow.arg.decision]
+help = "Filter by decision: allow | deny"
+
+[cli.help._root.plugin.audit-follow.arg.interval_ms]
+help = "Polling interval in milliseconds"
+
+[cli.help._root.plugin.audit-follow.arg.method_prefix]
+help = "Filter to methods starting with this prefix"
+
+[cli.help._root.plugin.audit-query]
+about = "Query the IPC audit log. Returns filtered records with allow/deny decisions"
+
+[cli.help._root.plugin.audit-query.arg.caller_id]
+help = "Filter by caller id (plugin id or agent id)"
+
+[cli.help._root.plugin.audit-query.arg.caller_kind]
+help = "Filter by caller kind: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-query.arg.decision]
+help = "Filter by decision: allow | deny"
+
+[cli.help._root.plugin.audit-query.arg.limit]
+help = "Cap on number of records returned"
+
+[cli.help._root.plugin.audit-query.arg.method_prefix]
+help = "Filter to methods starting with this prefix (e.g. `surface.`)"
+
+[cli.help._root.plugin.audit-query.arg.since_ms]
+help = "Lower bound on timestamp (unix ms, inclusive)"
+
+[cli.help._root.plugin.audit-query.arg.until_ms]
+help = "Upper bound on timestamp (unix ms, exclusive)"
+
+[cli.help._root.plugin.audit-summary]
+about = "Aggregate audit records into totals + top callers/methods"
+
+[cli.help._root.plugin.audit-summary.arg.caller_id]
+help = "Filter by caller id"
+
+[cli.help._root.plugin.audit-summary.arg.caller_kind]
+help = "Filter by caller kind: local | internal | plugin | agent"
+
+[cli.help._root.plugin.audit-summary.arg.decision]
+help = "Filter by decision: allow | deny"
+
+[cli.help._root.plugin.audit-summary.arg.method_prefix]
+help = "Filter to methods starting with this prefix"
+
+[cli.help._root.plugin.audit-summary.arg.since_ms]
+help = "Lower bound on timestamp (unix ms, inclusive)"
+
+[cli.help._root.plugin.audit-summary.arg.top_n]
+help = "Top-N cap for by_caller / by_method lists. Default: 10"
+
+[cli.help._root.plugin.audit-summary.arg.until_ms]
+help = "Upper bound on timestamp (unix ms, exclusive)"
+
+[cli.help._root.plugin.disable]
+about = "Disable a plugin (graceful shutdown if running)"
+long = "Disable a plugin (graceful shutdown if running).\n\nThe mark is written to disk, so it survives a restart and a later `plugin install` of the same id will not turn it back on. This is not an uninstall: the directory stays and the plugin keeps its command namespace, so `tasty <namespace> ...` answers `plugin ... is not running` rather than reporting an unknown method. What does go away is everything the plugin contributed — file detectors and handlers, hook handlers, completion strategies, settings pages — so a file it used to open now takes another route."
+
+[cli.help._root.plugin.disable.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.doctor]
+about = "Diagnose a plugin's manifest — list contributed detectors / handlers and flag rule kinds the current host does not understand"
+
+[cli.help._root.plugin.doctor.arg.id]
+help = "Plugin id (e.g. com.example.foo)"
+
+[cli.help._root.plugin.enable]
+about = "Enable a disabled plugin and start it"
+
+[cli.help._root.plugin.enable.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.extension]
+about = "Inspect plugin extensions (extends-blocks)"
+
+[cli.help._root.plugin.extension.list]
+about = "List all extensions and their current state"
+
+[cli.help._root.plugin.grant]
+about = "Grant a permission to a plugin (must be declared in its manifest)"
+
+[cli.help._root.plugin.grant-agent-permission]
+about = "Grant a temporary permission to an active agent session. Permission lives until TTL expiry or explicit revoke; base permissions (issued at session.issue) are unaffected"
+
+[cli.help._root.plugin.grant-agent-permission.arg.agent]
+help = "Agent id (e.g. `claude:child-1`)"
+
+[cli.help._root.plugin.grant-agent-permission.arg.permission]
+help = "Permission token (e.g. fs.write, surface.write)"
+
+[cli.help._root.plugin.grant-agent-permission.arg.ttl]
+help = "Time-to-live in seconds. Omit for indefinite (until revoke)"
+
+[cli.help._root.plugin.grant.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.grant.arg.permission]
+help = "Permission token (e.g. fs.read, surface.write)"
+
+[cli.help._root.plugin.install]
+about = "Install a plugin from a directory containing tasty-plugin.toml"
+long = "Install a plugin from a directory containing tasty-plugin.toml.\n\nTwo more things happen, and neither is asked about: every permission the manifest declares is granted immediately, and the plugin is enabled and started unless a disabled mark for that id is already on file. Inspect `tasty-plugin.toml` first, or check afterwards with `plugin permissions <id>` and `plugin revoke <id> <permission>`."
+
+[cli.help._root.plugin.install.arg.path]
+help = "Path to plugin directory (must contain tasty-plugin.toml)"
+
+[cli.help._root.plugin.list]
+about = "List installed plugins (id, version, enabled, running)"
+
+[cli.help._root.plugin.list-agent-permissions]
+about = "List base + temporary permissions for active agent sessions"
+
+[cli.help._root.plugin.list-agent-permissions.arg.agent]
+help = "Filter to a specific agent. Omit to list all active sessions"
+
+[cli.help._root.plugin.logs]
+about = "Print the contents of a plugin's log file"
+
+[cli.help._root.plugin.logs.arg.follow]
+help = "Tail and follow new output (Ctrl-C to stop)"
+
+[cli.help._root.plugin.logs.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.permissions]
+about = "Show a plugin's manifest permissions and currently granted set"
+
+[cli.help._root.plugin.permissions.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.remove]
+about = "Remove an installed plugin by id"
+long = "Remove an installed plugin by id.\n\nThe whole plugin directory is deleted, so anything the plugin kept inside it goes with it. For a built-in, removal is also recorded so the next boot does not put it back — bringing it back is `plugin upgrade-builtins --restore-removed <id>`, and it returns enabled."
+
+[cli.help._root.plugin.remove.arg.id]
+help = "Plugin id (e.g. com.example.explorer)"
+
+[cli.help._root.plugin.request-permission]
+about = "Manually publish a capability elevation approval. Useful for operators pre-granting a permission before the agent's first call. The popup is the same one shown by automatic elevation on permission_denied"
+
+[cli.help._root.plugin.request-permission.arg.agent]
+help = "Agent id to grant on approval"
+
+[cli.help._root.plugin.request-permission.arg.permission]
+help = "Permission token (e.g. fs.write)"
+
+[cli.help._root.plugin.request-permission.arg.reason]
+help = "Reason shown to the user in the popup body"
+
+[cli.help._root.plugin.revoke]
+about = "Revoke a previously-granted permission from a plugin"
+
+[cli.help._root.plugin.revoke-agent-permission]
+about = "Revoke a previously-granted temporary permission from an agent session. Does not affect base permissions assigned at issue time"
+
+[cli.help._root.plugin.revoke-agent-permission.arg.agent]
+help = "Agent id"
+
+[cli.help._root.plugin.revoke-agent-permission.arg.permission]
+help = "Permission token"
+
+[cli.help._root.plugin.revoke.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.revoke.arg.permission]
+help = "Permission token"
+
+[cli.help._root.plugin.show]
+about = "Show full manifest, permissions, commands, and runtime state for a plugin"
+
+[cli.help._root.plugin.show.arg.id]
+help = "Plugin id"
+
+[cli.help._root.plugin.upgrade-builtins]
+about = "Re-sync all built-in plugins from the bundle"
+long = "Re-sync all built-in plugins from the bundle.\n\nThe manifest version picks the branch and content decides inside it: a higher bundle version rewrites the whole directory, the same version rewrites only what differs, and an installed version higher than the bundle is skipped without reading content — `--force` is for that last branch. Permissions newly declared by a built-in that changed are granted in the same call."
+
+[cli.help._root.plugin.upgrade-builtins.arg.force]
+help = "Overwrite even when installed version >= bundle version"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restart_running]
+help = "Restart running builtin processes whose binary is replaced — graceful swap. Also unblocks Windows sharing violation on in-place overwrite. Default off (conservative — briefly closes affected plugin surfaces)"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restore_all]
+help = "Restore ALL builtins from `removed_builtins`. Overrides `--restore-removed` when both are given"
+
+[cli.help._root.plugin.upgrade-builtins.arg.restore_removed]
+help = "Restore specific builtins from `removed_builtins` so they become eligible for auto-install in the same call. Repeat for multiple ids"
+
+[cli.help._root.agent.barrier-await]
+about = "Poll a barrier's current state"
+
+[cli.help._root.agent.barrier-await.arg.name]
+help = "Barrier name to poll"
+
+[cli.help._root.agent.barrier-await.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.barrier-create]
+about = "Create a barrier (waits until N signals have arrived)"
+long = "Create a barrier (waits until N signals have arrived).\n\nNothing runs on a timer. `--timeout-ms` is stamped lazily: the barrier turns `TimedOut` inside the next `barrier-signal`, `barrier-state` or `barrier-list`, so a barrier nobody asks about sits in whatever state it was left in. Once stamped, `barrier-signal` fails, and the record stays until `barrier-delete` removes it."
+
+[cli.help._root.agent.barrier-create.arg.count_required]
+help = "Required signal count (must be >= 1)"
+
+[cli.help._root.agent.barrier-create.arg.name]
+help = "Barrier name (unique within the workspace)"
+
+[cli.help._root.agent.barrier-create.arg.timeout_ms]
+help = "Optional timeout in milliseconds, measured from creation time. Omit for a barrier that waits forever"
+
+[cli.help._root.agent.barrier-create.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.barrier-delete]
+about = "Delete a barrier (no-op if missing)"
+
+[cli.help._root.agent.barrier-delete.arg.name]
+help = "Barrier name to delete"
+
+[cli.help._root.agent.barrier-delete.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.barrier-list]
+about = "List all barriers in a workspace"
+
+[cli.help._root.agent.barrier-list.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.barrier-signal]
+about = "Signal a barrier (count_signaled++)"
+
+[cli.help._root.agent.barrier-signal.arg.name]
+help = "Barrier name to signal"
+
+[cli.help._root.agent.barrier-signal.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.barrier-state]
+about = "Read a barrier's current state (alias of barrier_await)"
+
+[cli.help._root.agent.barrier-state.arg.name]
+help = "Barrier name to read"
+
+[cli.help._root.agent.barrier-state.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.dag-get]
+about = "Output one DAG (as listed by `dag-list`) as JSON or Graphviz dot — the same node/edge shape as `task-graph`, restricted to that DAG"
+
+[cli.help._root.agent.dag-get.arg.format]
+help = "Format: json | dot. Default: json"
+
+[cli.help._root.agent.dag-get.arg.id]
+help = "DAG id from `dag-list` (`d:<metadata.dag>` or `c:<root task id>`)"
+
+[cli.help._root.agent.dag-get.arg.workspace_id]
+help = "Restrict the lookup to one workspace. Explicit ids are user-chosen, so two workspaces can carry the same one; pass this to disambiguate"
+
+[cli.help._root.agent.dag-list]
+about = "List every registered DAG. A DAG is derived, not stored: tasks tagged with the same `metadata.dag` string form one explicit group, and the rest are grouped by weak connectivity (`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of`). Omit `--workspace-id` to scan every live workspace"
+
+[cli.help._root.agent.dag-list.arg.include_tasks]
+help = "Also include each DAG's task id list (`task_ids`)"
+
+[cli.help._root.agent.dag-list.arg.workspace_id]
+help = "Restrict to one workspace. Omitted = every live workspace"
+
+[cli.help._root.agent.lease-acquire]
+about = "Acquire a lease on an arbitrary resource (advisory, cooperative)"
+long = "Acquire a lease on an arbitrary resource (advisory, cooperative).\n\nWhether you got it is not the exit code. `--mode fail` turns a conflict into an error, but `--mode block` succeeds and reports `acquired: false` with the current holder — read that field. Nothing enforces the lease either: it is a marker the participants agree to read.\n\nWithout `--ttl-ms` the lease never expires and only `lease-release` with the same holder id frees it, so a holder that dies keeps the resource. The restart cleanup does not cover that case — it only releases leases a running task holds under its own task id."
+
+[cli.help._root.agent.lease-acquire.arg.holder]
+help = "Holder id (must be non-empty)"
+
+[cli.help._root.agent.lease-acquire.arg.mode]
+help = "Conflict mode: fail | block (default: fail). `block` does not wait — it returns at once with `acquired: false`, and retrying is the caller's job"
+
+[cli.help._root.agent.lease-acquire.arg.resource]
+help = "Resource identifier (e.g. `file:/path`, `workspace:foo`)"
+
+[cli.help._root.agent.lease-acquire.arg.ttl_ms]
+help = "Time-to-live in milliseconds. Omit for a lease that never expires. Expiry is lazy — an expired lease is evicted by the next `lease-acquire` or `lease-list`, not at the moment it lapses"
+
+[cli.help._root.agent.lease-acquire.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.lease-list]
+about = "List all leases in a workspace (expired leases auto-evicted)"
+
+[cli.help._root.agent.lease-list.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.lease-release]
+about = "Release a lease. Only the current holder can release"
+
+[cli.help._root.agent.lease-release.arg.holder]
+help = "Holder id that currently holds the lease"
+
+[cli.help._root.agent.lease-release.arg.resource]
+help = "Resource identifier the lease was acquired on"
+
+[cli.help._root.agent.lease-release.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.rate-limit-list]
+about = "List all configured rate limit buckets (with current token state)"
+
+[cli.help._root.agent.rate-limit-remove]
+about = "Remove a rate limit bucket by id"
+
+[cli.help._root.agent.rate-limit-remove.arg.id]
+help = "Bucket id, as reported by `rate-limit-list`"
+
+[cli.help._root.agent.rate-limit-set]
+about = "Configure a rate limit bucket for (agent, metric) — `limit` tokens per `per_ms` ms"
+long = "Configure a rate limit bucket for (agent, metric) — `limit` tokens per `per_ms` ms.\n\nOne metric is actually spent from: `ipc_calls`. A bucket stored under any other name is listed by `rate-limit-list` and charged by nothing, so it throttles nothing.\n\nThe `ipc_calls` bucket is charged one token per IPC call, and a call over budget comes back as `-32010 throttled` with a Deny in the audit log. Not every call is charged: a caller with no session token — the plain CLI — and the host's own calls are exempt, as are `telemetry.*`, `agent.rate_limit_*` and `system.info`. The last two are what let a throttled agent read and lift its own limit."
+
+[cli.help._root.agent.rate-limit-set.arg.agent]
+help = "Agent id"
+
+[cli.help._root.agent.rate-limit-set.arg.burst]
+help = "Bucket capacity (defaults to `limit`)"
+
+[cli.help._root.agent.rate-limit-set.arg.limit]
+help = "Token refill amount per window"
+
+[cli.help._root.agent.rate-limit-set.arg.metric]
+help = "Metric name. `ipc_calls` is the only one anything spends from"
+
+[cli.help._root.agent.rate-limit-set.arg.per_ms]
+help = "Window length in milliseconds (e.g. `60000` for per-minute)"
+
+[cli.help._root.agent.rate-limit-status]
+about = "Inspect rate limit state, optionally filtered by agent and/or metric"
+
+[cli.help._root.agent.rate-limit-status.arg.agent]
+help = "Only report buckets belonging to this agent id"
+
+[cli.help._root.agent.rate-limit-status.arg.metric]
+help = "Only report buckets for this metric name"
+
+[cli.help._root.agent.semaphore-acquire]
+about = "Acquire 1 permit. Idempotent for the same holder"
+long = "Acquire 1 permit. Idempotent for the same holder.\n\nA full semaphore is not an error: the call succeeds and reports `acquired: false` along with the current holders, so read that field rather than the exit code. There is no waiting mode — retrying is the caller's job."
+
+[cli.help._root.agent.semaphore-acquire.arg.holder]
+help = "Holder id (must be non-empty)"
+
+[cli.help._root.agent.semaphore-acquire.arg.name]
+help = "Semaphore name to acquire a permit from"
+
+[cli.help._root.agent.semaphore-acquire.arg.ttl_ms]
+help = "Reclaim this permit automatically if the holder goes silent for this many ms. Re-acquiring with the same holder renews it. Omit for a permit that never expires (the default)"
+
+[cli.help._root.agent.semaphore-acquire.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.semaphore-create]
+about = "Create a semaphore with N permits"
+
+[cli.help._root.agent.semaphore-create.arg.name]
+help = "Semaphore name (unique within the workspace)"
+
+[cli.help._root.agent.semaphore-create.arg.permits]
+help = "Permit count (must be >= 1)"
+
+[cli.help._root.agent.semaphore-create.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.semaphore-delete]
+about = "Delete a semaphore (no-op if missing)"
+
+[cli.help._root.agent.semaphore-delete.arg.name]
+help = "Semaphore name to delete"
+
+[cli.help._root.agent.semaphore-delete.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.semaphore-list]
+about = "List all semaphores in a workspace"
+
+[cli.help._root.agent.semaphore-list.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.semaphore-release]
+about = "Release a permit. No-op if holder isn't currently holding"
+
+[cli.help._root.agent.semaphore-release.arg.holder]
+help = "Holder id that currently holds the permit"
+
+[cli.help._root.agent.semaphore-release.arg.name]
+help = "Semaphore name the permit belongs to"
+
+[cli.help._root.agent.semaphore-release.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.semaphore-set-permits]
+about = "Change a semaphore's permit count in place. Growing takes effect at once; shrinking drains — current holders are never revoked, new acquires are refused until the holder count falls under the new limit"
+
+[cli.help._root.agent.semaphore-set-permits.arg.name]
+help = "Semaphore name to resize"
+
+[cli.help._root.agent.semaphore-set-permits.arg.permits]
+help = "New permit count (must be >= 1)"
+
+[cli.help._root.agent.semaphore-set-permits.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-await]
+about = "Wait for a task to reach a terminal state (blocking). Omitted = wait up to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely"
+
+[cli.help._root.agent.task-await.arg.id]
+help = "Task id to wait on"
+
+[cli.help._root.agent.task-await.arg.timeout_ms]
+help = "Give up waiting after this many milliseconds. `0` = wait indefinitely"
+
+[cli.help._root.agent.task-await.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-cancel]
+about = "Cancel a task. Downstream is cascaded according to on_failure"
+
+[cli.help._root.agent.task-cancel.arg.id]
+help = "Task id to cancel"
+
+[cli.help._root.agent.task-cancel.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-create]
+about = "Create a new task within a workspace"
+long = "Create a new task within a workspace.\n\nCreating does not run it. Nothing dispatches until the workspace's runner is started with `task-run --action start`, and it is never started for you — not at boot either. Without it a task sits in `Ready` and `task-await` just burns its timeout."
+
+[cli.help._root.agent.task-create.arg.command]
+help = "TaskCommand as JSON (e.g. `{\"kind\":\"run\",\"command\":[\"cargo\",\"build\"]}`). `workspace_id` is auto-filled from `--workspace-id` if omitted; if present and different, `--workspace-id` wins and a warning is returned. Accepts inline JSON or `@path/to/file.json`"
+
+[cli.help._root.agent.task-create.arg.concurrency_limit]
+help = "Shorthand for `metadata.semaphore.name` — caps how many tasks tagged with the same semaphore name run concurrently (the rest wait as `ready` until a permit frees up). Merges into `--metadata` if both are given; conflicts if `--metadata` already sets `semaphore`"
+
+[cli.help._root.agent.task-create.arg.depends_on]
+help = "Comma-separated dependency task IDs"
+
+[cli.help._root.agent.task-create.arg.metadata]
+help = "Metadata JSON (free-form, attached to the task)"
+
+[cli.help._root.agent.task-create.arg.name]
+help = "Display name"
+
+[cli.help._root.agent.task-create.arg.on_failure]
+help = "On-failure policy: abort | continue_downstream | fallback:<task_id> (default: abort). Which task you set this on matters: abort/continue_downstream must be set on the dependent (downstream) task; fallback must be set on the task that may itself fail (upstream) — setting fallback on a downstream task has no effect on skip cascades from a failed dependency"
+
+[cli.help._root.agent.task-create.arg.reserved_for_fallback]
+help = "Reserve this task as a not-yet-referenced fallback candidate: it stays `waiting` (never `ready`, so the runner cannot dispatch it) until a later `task-create --on-failure fallback:<this-id>` call links a main task to it, however long that takes. Without this flag, a bare no-deps task becomes `ready` immediately, and if the runner ticks before the linking main is created, it can dispatch and run to completion regardless of that main's outcome — closes the creation-order race between the two `task-create` calls"
+
+[cli.help._root.agent.task-create.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-delete]
+about = "Delete a task. Rejected by default if other tasks still reference it (depends_on / on_failure.fallback.task / reduce.inputs) — the referencing task IDs are returned. `Running` tasks are always rejected regardless of `--cascade`/`--force` (cancel first)"
+
+[cli.help._root.agent.task-delete.arg.cascade]
+help = "Also delete every task that transitively references this one"
+
+[cli.help._root.agent.task-delete.arg.force]
+help = "Skip the reference check only — state constraints (Running) still apply"
+
+[cli.help._root.agent.task-delete.arg.id]
+help = "Task id to delete"
+
+[cli.help._root.agent.task-delete.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-get]
+about = "Fetch a single task"
+
+[cli.help._root.agent.task-get.arg.id]
+help = "Task id"
+
+[cli.help._root.agent.task-get.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-graph]
+about = "Output the task DAG as JSON or Graphviz dot"
+
+[cli.help._root.agent.task-graph.arg.format]
+help = "Format: json | dot. Default: json"
+
+[cli.help._root.agent.task-graph.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-list]
+about = "List tasks in a workspace"
+
+[cli.help._root.agent.task-list.arg.state]
+help = "Filter by state (comma-separated: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown). With several states, every task matching any of them is returned (`--state waiting,ready,running` = tasks that have not finished yet)"
+
+[cli.help._root.agent.task-list.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-purge]
+about = "Bulk-delete tasks matching state/age filters. At least one of `--states`/`--older-than-ms` is required. Only tasks that are safe to delete (not Running, not referenced from outside the matched set) are actually removed; the rest are reported as retained"
+
+[cli.help._root.agent.task-purge.arg.dry_run]
+help = "Compute and print the plan without deleting anything"
+
+[cli.help._root.agent.task-purge.arg.older_than_ms]
+help = "Only tasks whose age (created_at, or finished_at for terminal tasks) exceeds this many milliseconds are candidates"
+
+[cli.help._root.agent.task-purge.arg.states]
+help = "Comma-separated state names (waiting|ready|running|succeeded|failed|cancelled|skipped|unknown)"
+
+[cli.help._root.agent.task-purge.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-reduce]
+about = "Combine results from N tasks into one value (strategies: first_success | all | merge_json | concat_text | custom:<cmd>)"
+
+[cli.help._root.agent.task-reduce.arg.extract_path]
+help = "JSON Pointer (e.g. `/stdout/text`) extracted from each input's `output` before reducing — recommended when reducing `Run` task results, whose `output` is `{pid,stdout:{text,...},stderr:{...}}` rather than a plain value. Inputs missing the path are treated as `null` and reported in the response's `warnings` (the rest of the reduce still proceeds)"
+
+[cli.help._root.agent.task-reduce.arg.inputs]
+help = "Comma-separated input task IDs (in reduce order)"
+
+[cli.help._root.agent.task-reduce.arg.strategy]
+help = "Strategy: `first_success` | `all` | `merge_json` | `concat_text` | `custom:<command>`"
+
+[cli.help._root.agent.task-reduce.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-retry]
+about = "Retry a Failed/Cancelled/Skipped/Unknown task"
+
+[cli.help._root.agent.task-retry.arg.id]
+help = "Task id to retry"
+
+[cli.help._root.agent.task-retry.arg.reset_downstream]
+help = "Also reset downstream Skipped/Failed tasks back to Waiting"
+
+[cli.help._root.agent.task-retry.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-run]
+about = "Start/stop/inspect the agent task runner for a workspace. The runner is a host-side thread that dispatches Ready tasks and detects completion of Running tasks. Calling start twice on the same workspace is idempotent"
+long = "Start/stop/inspect the agent task runner for a workspace. The runner is a host-side thread that dispatches Ready tasks and detects completion of Running tasks. Calling start twice on the same workspace is idempotent.\n\nIt is never started for you. Booting the host restores state for live workspaces but leaves every runner stopped, so a workspace whose runner was never started dispatches nothing at all.\n\n`stop` ends the detection, not the work: already-dispatched processes keep going and their tasks stay `Running` with nothing left to notice them finishing. Starting again picks those handles back up and settles each one — alive, dead, or with the exit code its watcher had persisted."
+
+[cli.help._root.agent.task-run.arg.action]
+help = "start | stop | status. Default: status"
+
+[cli.help._root.agent.task-run.arg.workspace_id]
+help = "Workspace id whose runner is being controlled (focus-independent — required)"
+
+[cli.help._root.agent.task-set-result]
+about = "Manually report a task's terminal result (succeeded | failed). For signalling completion of external/manual tasks that the runner thread did not dispatch"
+
+[cli.help._root.agent.task-set-result.arg.error]
+help = "Optional error message (recommended for state=failed)"
+
+[cli.help._root.agent.task-set-result.arg.exit_code]
+help = "Optional process exit code"
+
+[cli.help._root.agent.task-set-result.arg.id]
+help = "Task id whose result is being reported"
+
+[cli.help._root.agent.task-set-result.arg.output]
+help = "Optional output JSON. Accepts inline JSON or `@path/to/file.json`"
+
+[cli.help._root.agent.task-set-result.arg.state]
+help = "Terminal state: `succeeded` | `failed`"
+
+[cli.help._root.agent.task-set-result.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.memory.bb]
+about = "Blackboard — per-workspace key-value collections (`tasty.bb.<name>.*`)"
+
+[cli.help._root.memory.bb.create]
+about = "Create a new blackboard with optional schema (JSON)"
+
+[cli.help._root.memory.bb.create.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.create.arg.schema]
+help = "Schema JSON literal. Stored as-is; no validation performed"
+
+[cli.help._root.memory.bb.create.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.delete]
+about = "Delete the entire blackboard (`_meta` + all fields)"
+long = "Delete the entire blackboard (`_meta` + all fields).\n\nIts snapshots go with it. They live under the board's own key prefix, so a snapshot is a point you can roll back to while the board exists — not a backup that outlives deleting it."
+
+[cli.help._root.memory.bb.delete-field]
+about = "Delete a single field"
+
+[cli.help._root.memory.bb.delete-field.arg.cas]
+help = "CAS version (must match the current field version)"
+
+[cli.help._root.memory.bb.delete-field.arg.field]
+help = "Field name"
+
+[cli.help._root.memory.bb.delete-field.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.delete-field.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.delete.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.delete.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.exists]
+about = "Check whether a blackboard exists (= `_meta` present)"
+
+[cli.help._root.memory.bb.exists.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.exists.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.get]
+about = "Read a single field"
+
+[cli.help._root.memory.bb.get-all]
+about = "Read all fields of a blackboard (`_meta` excluded)"
+
+[cli.help._root.memory.bb.get-all.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.get-all.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.get-meta]
+about = "Read the `_meta` entry (schema/created_by/...)"
+
+[cli.help._root.memory.bb.get-meta.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.get-meta.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.get.arg.field]
+help = "Field name"
+
+[cli.help._root.memory.bb.get.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.get.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.list]
+about = "List blackboard names in a workspace"
+
+[cli.help._root.memory.bb.list.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.put]
+about = "Write a field value"
+
+[cli.help._root.memory.bb.put.arg.cas]
+help = "CAS version (must match current field version)"
+
+[cli.help._root.memory.bb.put.arg.content_type]
+help = "Force content type"
+
+[cli.help._root.memory.bb.put.arg.field]
+help = "Field name"
+
+[cli.help._root.memory.bb.put.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.put.arg.value]
+help = "Value. Treated as JSON if it parses, otherwise plain text. `@path` reads from file"
+
+[cli.help._root.memory.bb.put.arg.value_b64]
+help = "Base64-encoded binary payload"
+
+[cli.help._root.memory.bb.put.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.snapshot]
+about = "Capture the current bb state as a snapshot (`tasty.bb.<name>.snapshots.<id>`)"
+
+[cli.help._root.memory.bb.snapshot-delete]
+about = "Delete a snapshot"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.snapshot_id]
+help = "Snapshot id"
+
+[cli.help._root.memory.bb.snapshot-delete.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.snapshot-get]
+about = "Read a snapshot JSON"
+
+[cli.help._root.memory.bb.snapshot-get.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.snapshot-get.arg.snapshot_id]
+help = "Snapshot id"
+
+[cli.help._root.memory.bb.snapshot-get.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.snapshot-list]
+about = "List snapshot ids for a bb"
+
+[cli.help._root.memory.bb.snapshot-list.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.snapshot-list.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.snapshot-restore]
+about = "Restore bb fields from a snapshot (replaces current fields)"
+long = "Restore bb fields from a snapshot (replaces current fields).\n\nEvery current field is deleted first, so a field added after the snapshot was taken is gone, not merged. `_meta` is the exception: an existing one is left alone and only a missing one is rebuilt from the snapshot, so restoring does not bring back the schema the board had at capture time."
+
+[cli.help._root.memory.bb.snapshot-restore.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.snapshot_id]
+help = "Snapshot id"
+
+[cli.help._root.memory.bb.snapshot-restore.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.bb.snapshot.arg.name]
+help = "Blackboard name"
+
+[cli.help._root.memory.bb.snapshot.arg.snapshot_id]
+help = "Snapshot id"
+
+[cli.help._root.memory.bb.snapshot.arg.workspace]
+help = "Workspace id that owns the blackboard"
+
+[cli.help._root.memory.cache]
+about = "Cache — per-workspace TTL cache (`tasty.cache.<key>`)"
+
+[cli.help._root.memory.cache.clear]
+about = "Remove all cached entries in the workspace"
+
+[cli.help._root.memory.cache.clear.arg.workspace]
+help = "Workspace id that owns the cache entry"
+
+[cli.help._root.memory.cache.get]
+about = "Read a cached entry (returns null if missing/expired)"
+
+[cli.help._root.memory.cache.get.arg.key]
+help = "Cache key"
+
+[cli.help._root.memory.cache.get.arg.workspace]
+help = "Workspace id that owns the cache entry"
+
+[cli.help._root.memory.cache.invalidate]
+about = "Remove a single cached entry (idempotent)"
+
+[cli.help._root.memory.cache.invalidate.arg.key]
+help = "Cache key"
+
+[cli.help._root.memory.cache.invalidate.arg.workspace]
+help = "Workspace id that owns the cache entry"
+
+[cli.help._root.memory.cache.list]
+about = "List cached keys in the workspace"
+
+[cli.help._root.memory.cache.list.arg.workspace]
+help = "Workspace id that owns the cache entry"
+
+[cli.help._root.memory.cache.put]
+about = "Store a value with required TTL (seconds)"
+
+[cli.help._root.memory.cache.put.arg.content_type]
+help = "Force content type"
+
+[cli.help._root.memory.cache.put.arg.key]
+help = "Cache key"
+
+[cli.help._root.memory.cache.put.arg.ttl]
+help = "TTL in seconds (required, > 0)"
+
+[cli.help._root.memory.cache.put.arg.value]
+help = "Value. Treated as JSON if it parses, otherwise plain text. `@path` reads from file"
+
+[cli.help._root.memory.cache.put.arg.value_b64]
+help = "Base64-encoded binary payload"
+
+[cli.help._root.memory.cache.put.arg.workspace]
+help = "Workspace id that owns the cache entry"
+
+[cli.help._root.memory.count]
+about = "Count entries in a scope (prefix optional)"
+
+[cli.help._root.memory.count.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.count.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.count.arg.prefix]
+help = "Only keys starting with this prefix"
+
+[cli.help._root.memory.count.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.count.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.count.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.count.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.delete]
+about = "Delete a key"
+
+[cli.help._root.memory.delete.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.delete.arg.cas]
+help = "CAS version; if specified and mismatched, returns cas_conflict"
+
+[cli.help._root.memory.delete.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.delete.arg.key]
+help = "Entry key within the scope"
+
+[cli.help._root.memory.delete.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.delete.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.delete.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.delete.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.exists]
+about = "Check existence"
+
+[cli.help._root.memory.exists.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.exists.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.exists.arg.key]
+help = "Entry key within the scope"
+
+[cli.help._root.memory.exists.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.exists.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.exists.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.exists.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.export]
+about = "Export regular entries to JSON (optional `--scope` filter). Secret area is never exported"
+
+[cli.help._root.memory.export.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.export.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.export.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.export.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.export.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.export.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.gc]
+about = "Garbage-collect expired entries (regular + secret). Reads already filter expired rows; this only reclaims disk + quota. Local-only"
+
+[cli.help._root.memory.get]
+about = "Read a single entry"
+
+[cli.help._root.memory.get.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.get.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.get.arg.key]
+help = "Entry key within the scope"
+
+[cli.help._root.memory.get.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.get.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.get.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.get.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.goal]
+about = "Goal — a single goal sentence per surface (`tasty.goal`)"
+long = "Goal — a single goal sentence per surface (`tasty.goal`).\n\nNothing inherits it: a surface spawned from this one starts with no goal. It carries no TTL because it needs none — the surface's whole memory scope is dropped when the surface closes, and again at startup for surfaces that were not restored, so a goal lives exactly as long as its surface."
+
+[cli.help._root.memory.goal.clear]
+about = "Remove the surface's goal (idempotent)"
+
+[cli.help._root.memory.goal.clear.arg.surface]
+help = "Target surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[cli.help._root.memory.goal.get]
+about = "Read the surface's goal (returns null if unset)"
+
+[cli.help._root.memory.goal.get.arg.surface]
+help = "Target surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[cli.help._root.memory.goal.set]
+about = "Set the surface's goal (overwrites any existing one). Blank goals are rejected"
+
+[cli.help._root.memory.goal.set.arg.goal]
+help = "Goal sentence"
+
+[cli.help._root.memory.goal.set.arg.surface]
+help = "Target surface ID (defaults to caller's TASTY_SURFACE_ID)"
+
+[cli.help._root.memory.import]
+about = "Import regular entries from a JSON file (output of `memory export`). `--replace` overwrites existing keys; default skips conflicts"
+
+[cli.help._root.memory.import.arg.file]
+help = "Path to JSON file (entries array, or `{ \"entries\": [...] }`)"
+
+[cli.help._root.memory.import.arg.replace]
+help = "Overwrite existing keys (default: skip)"
+
+[cli.help._root.memory.list]
+about = "List entries in a scope (prefix + since/until/limit/offset)"
+
+[cli.help._root.memory.list.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.list.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.list.arg.limit]
+help = "Maximum number of entries to return"
+
+[cli.help._root.memory.list.arg.offset]
+help = "Skip the first N matching entries (use with --limit for pagination)"
+
+[cli.help._root.memory.list.arg.prefix]
+help = "Only keys starting with this prefix"
+
+[cli.help._root.memory.list.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.list.arg.since]
+help = "Only entries with `updated_at >= since` (unix ms)"
+
+[cli.help._root.memory.list.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.list.arg.until]
+help = "Only entries with `updated_at < until` (unix ms)"
+
+[cli.help._root.memory.list.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.list.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.plan]
+about = "Plan — per-workspace declarative work breakdown (`tasty.plan.<plan_id>`)"
+
+[cli.help._root.memory.plan.add-step]
+about = "Append or insert a step"
+
+[cli.help._root.memory.plan.add-step.arg.cas]
+help = "CAS version (must match the current plan version)"
+
+[cli.help._root.memory.plan.add-step.arg.plan_id]
+help = "Plan id"
+
+[cli.help._root.memory.plan.add-step.arg.position]
+help = "Insert position (0-based). Default: append"
+
+[cli.help._root.memory.plan.add-step.arg.step]
+help = "JSON object for the step"
+
+[cli.help._root.memory.plan.add-step.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.plan.create]
+about = "Create a new plan. `--steps` accepts a JSON array of step objects"
+
+[cli.help._root.memory.plan.create.arg.plan_id]
+help = "Plan id"
+
+[cli.help._root.memory.plan.create.arg.steps]
+help = "JSON array of steps (e.g. `'[{\"id\":\"a\",\"title\":\"first\"}]'`)"
+
+[cli.help._root.memory.plan.create.arg.title]
+help = "Plan title"
+
+[cli.help._root.memory.plan.create.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.plan.delete]
+about = "Delete a plan"
+
+[cli.help._root.memory.plan.delete.arg.plan_id]
+help = "Plan id"
+
+[cli.help._root.memory.plan.delete.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.plan.get]
+about = "Read full plan JSON"
+
+[cli.help._root.memory.plan.get.arg.plan_id]
+help = "Plan id"
+
+[cli.help._root.memory.plan.get.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.plan.list]
+about = "List plan ids in a workspace"
+
+[cli.help._root.memory.plan.list.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.plan.remove-step]
+about = "Remove a step (rejected if referenced by `depends_on`)"
+
+[cli.help._root.memory.plan.remove-step.arg.cas]
+help = "CAS version (must match the current plan version)"
+
+[cli.help._root.memory.plan.remove-step.arg.plan_id]
+help = "Plan id"
+
+[cli.help._root.memory.plan.remove-step.arg.step_id]
+help = "Step id within the plan"
+
+[cli.help._root.memory.plan.remove-step.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.plan.update-step]
+about = "Update step state and/or notes"
+
+[cli.help._root.memory.plan.update-step.arg.cas]
+help = "CAS version (must match the current plan version)"
+
+[cli.help._root.memory.plan.update-step.arg.clear_notes]
+help = "Clear the notes field (sets to None)"
+
+[cli.help._root.memory.plan.update-step.arg.notes]
+help = "Set notes to this value. Use `--clear-notes` instead to remove"
+
+[cli.help._root.memory.plan.update-step.arg.plan_id]
+help = "Plan id"
+
+[cli.help._root.memory.plan.update-step.arg.state]
+help = "One of: pending | in_progress | completed | failed | skipped"
+
+[cli.help._root.memory.plan.update-step.arg.step_id]
+help = "Step id within the plan"
+
+[cli.help._root.memory.plan.update-step.arg.workspace]
+help = "Workspace id that owns the plan"
+
+[cli.help._root.memory.put]
+about = "Store a value at scope/key. Default content type inferred from value (string → text/plain, JSON literal → application/json)"
+
+[cli.help._root.memory.put.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.put.arg.cas]
+help = "CAS version (must match current entry, otherwise cas_conflict)"
+
+[cli.help._root.memory.put.arg.content_type]
+help = "Force content type. Defaults: text/plain (string), application/json (JSON literal), application/octet-stream (with --value-b64)"
+
+[cli.help._root.memory.put.arg.expires_at]
+help = "Absolute expiry timestamp (unix ms). No-op if omitted"
+
+[cli.help._root.memory.put.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.put.arg.key]
+help = "Key (1..256 `[a-z0-9._-]+`)"
+
+[cli.help._root.memory.put.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.put.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.put.arg.ttl]
+help = "Relative TTL in seconds (entry expires `now + ttl` ms). Conflicts with --expires-at"
+
+[cli.help._root.memory.put.arg.value]
+help = "Value. Treated as JSON if it parses, otherwise as a plain text string. Prefix with `@path` to read from a file (UTF-8 only; binary needs --value-b64)"
+
+[cli.help._root.memory.put.arg.value_b64]
+help = "Base64-encoded binary payload. Overrides --value"
+
+[cli.help._root.memory.put.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.put.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.query]
+about = "Filter JSON entries by a dot-path equality (`--path a.b --equals <json>`)"
+
+[cli.help._root.memory.query.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.query.arg.equals]
+help = "JSON literal (or quoted string) to compare for equality"
+
+[cli.help._root.memory.query.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.query.arg.limit]
+help = "Maximum number of entries to return"
+
+[cli.help._root.memory.query.arg.offset]
+help = "Skip the first N matching entries (use with --limit for pagination)"
+
+[cli.help._root.memory.query.arg.path]
+help = "Dot path, e.g. `\"task.status\"`. Only `application/json` entries are inspected"
+
+[cli.help._root.memory.query.arg.prefix]
+help = "Only keys starting with this prefix"
+
+[cli.help._root.memory.query.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.query.arg.since]
+help = "Only entries with `updated_at >= since` (unix ms)"
+
+[cli.help._root.memory.query.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.query.arg.until]
+help = "Only entries with `updated_at < until` (unix ms)"
+
+[cli.help._root.memory.query.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.query.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.scopes]
+about = "List scopes currently in use"
+
+[cli.help._root.memory.secret]
+about = "Secret memory store. CLI acts as `_host` owner; no --owner flag exists. Plugin secret areas are inaccessible from the CLI by design"
+long = "Secret memory store. CLI acts as `_host` owner; no --owner flag exists. Plugin secret areas are inaccessible from the CLI by design.\n\nSecret means \"another owner cannot read it\", and nothing beyond that. The values sit as plain bytes in the same `memory.db`, so whoever can open that file reads them — the separation is enforced on the IPC path, not on disk. For something that has to survive that, use the OS keyring, or keep the data in a file of its own with its own permissions and store only the path here."
+
+[cli.help._root.memory.secret.count]
+about = "Count secrets in a scope"
+
+[cli.help._root.memory.secret.count.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.count.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.count.arg.prefix]
+help = "Only keys starting with this prefix"
+
+[cli.help._root.memory.secret.count.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.count.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.count.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.count.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.delete]
+about = "Delete a secret (idempotent)"
+
+[cli.help._root.memory.secret.delete.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.delete.arg.cas]
+help = "CAS version (must match the current entry version)"
+
+[cli.help._root.memory.secret.delete.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.delete.arg.key]
+help = "Secret key within the scope"
+
+[cli.help._root.memory.secret.delete.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.delete.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.delete.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.delete.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.exists]
+about = "Check whether a secret exists at scope/key"
+
+[cli.help._root.memory.secret.exists.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.exists.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.exists.arg.key]
+help = "Secret key within the scope"
+
+[cli.help._root.memory.secret.exists.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.exists.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.exists.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.exists.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.get]
+about = "Read a single secret entry"
+
+[cli.help._root.memory.secret.get.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.get.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.get.arg.key]
+help = "Secret key within the scope"
+
+[cli.help._root.memory.secret.get.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.get.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.get.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.get.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.list]
+about = "List secret entries in a scope"
+
+[cli.help._root.memory.secret.list.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.list.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.list.arg.limit]
+help = "Maximum number of entries to return"
+
+[cli.help._root.memory.secret.list.arg.offset]
+help = "Skip the first N matching entries (use with --limit for pagination)"
+
+[cli.help._root.memory.secret.list.arg.prefix]
+help = "Only keys starting with this prefix"
+
+[cli.help._root.memory.secret.list.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.list.arg.since]
+help = "Only entries with `updated_at >= since` (unix ms)"
+
+[cli.help._root.memory.secret.list.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.list.arg.until]
+help = "Only entries with `updated_at < until` (unix ms)"
+
+[cli.help._root.memory.secret.list.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.list.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.put]
+about = "Store a secret value at scope/key"
+
+[cli.help._root.memory.secret.put.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.put.arg.cas]
+help = "CAS version (must match the current entry version)"
+
+[cli.help._root.memory.secret.put.arg.content_type]
+help = "Force content type"
+
+[cli.help._root.memory.secret.put.arg.expires_at]
+help = "Absolute expiry (unix ms). Conflicts with --ttl"
+
+[cli.help._root.memory.secret.put.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.put.arg.key]
+help = "Secret key within the scope"
+
+[cli.help._root.memory.secret.put.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.put.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.put.arg.ttl]
+help = "Relative TTL in seconds. Conflicts with --expires-at"
+
+[cli.help._root.memory.secret.put.arg.value]
+help = "Value. Treated as JSON if it parses, otherwise plain text. `@path` reads from file"
+
+[cli.help._root.memory.secret.put.arg.value_b64]
+help = "Force content type"
+
+[cli.help._root.memory.secret.put.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.put.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.secret.scopes]
+about = "List scopes that hold at least one secret"
+
+[cli.help._root.memory.secret.stats]
+about = "Secret store statistics. Scope selector is optional"
+
+[cli.help._root.memory.secret.stats.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.secret.stats.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.secret.stats.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.secret.stats.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.secret.stats.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.secret.stats.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+
+[cli.help._root.memory.stats]
+about = "Stats: total entries + bytes (per scope or aggregate)"
+
+[cli.help._root.memory.stats.arg.account]
+help = "Alias: `--account zilhak` → `account:zilhak`"
+
+[cli.help._root.memory.stats.arg.global]
+help = "Alias: `--global` → `global`"
+
+[cli.help._root.memory.stats.arg.scope]
+help = "Scope token (`global`, `surface:3`, `workspace:7`, ...)"
+
+[cli.help._root.memory.stats.arg.surface]
+help = "Alias: `--surface 3` → `surface:3`"
+
+[cli.help._root.memory.stats.arg.window]
+help = "Alias: `--window 42` → `window:42`"
+
+[cli.help._root.memory.stats.arg.workspace]
+help = "Alias: `--workspace 7` → `workspace:7`"
+[cli.help._root.approval.await]
+about = "Block until response / timeout / cancel. Prints the outcome as JSON"
+
+[cli.help._root.approval.await.arg.id]
+help = "Approval id (`req_...`) to wait on"
+
+[cli.help._root.approval.await.arg.timeout_ms]
+help = "Override request's `timeout_ms`. 0 = use request's value (or wait forever)"
+
+[cli.help._root.approval.cancel]
+about = "Cancel a pending approval (terminal)"
+
+[cli.help._root.approval.cancel.arg.id]
+help = "Approval id (`req_...`) to cancel"
+
+[cli.help._root.approval.get]
+about = "Show a single approval record"
+
+[cli.help._root.approval.get.arg.id]
+help = "Approval id (`req_...`) to show"
+
+[cli.help._root.approval.history]
+about = "Persistent history query (sources from memory store)"
+
+[cli.help._root.approval.history.arg.decision]
+help = "Filter by chosen decision key (only matches Responded)"
+
+[cli.help._root.approval.history.arg.limit]
+help = "Maximum entries returned (after sort, newest-first)"
+
+[cli.help._root.approval.history.arg.requester_id]
+help = "Filter by requester id (plugin/agent id or \"user\")"
+
+[cli.help._root.approval.history.arg.since]
+help = "Only entries with memory `updated_at >= since` (unix ms)"
+
+[cli.help._root.approval.history.arg.state]
+help = "Filter by state: pending | responded | timed_out | cancelled | terminal"
+
+[cli.help._root.approval.history.arg.until]
+help = "Only entries with memory `updated_at < until` (unix ms)"
+
+[cli.help._root.approval.history.arg.workspace_id]
+help = "Filter by workspace id"
+
+[cli.help._root.approval.list]
+about = "List approvals. Optional state filter and workspace filter"
+
+[cli.help._root.approval.list.arg.state]
+help = "Filter by state: pending | responded | timed_out | cancelled | terminal"
+
+[cli.help._root.approval.list.arg.workspace_id]
+help = "Filter by workspace id"
+
+[cli.help._root.approval.request]
+about = "Request a new approval. Prints the new id on success"
+long = "Request a new approval. Prints the new id on success.\n\nNothing expires on its own. `--timeout-ms` is counted inside `approval await`, and that call is the only thing that moves a request out of `pending` on time — with no waiter the request stays pending however long the timeout was, and `approval list --state pending` keeps showing it."
+
+[cli.help._root.approval.request.arg.body]
+help = "Optional body (multi-line description)"
+
+[cli.help._root.approval.request.arg.choices]
+help = "Comma-separated `key:label[:destructive]` triples (e.g. `approve:Approve,deny:Deny:1`). Defaults to `approve / deny` if omitted"
+
+[cli.help._root.approval.request.arg.default_choice]
+help = "Choice key recorded when the request times out. The outcome is `timed_out` carrying this key, credited to the system — not `responded`, so `approval history --decision` does not match it"
+
+[cli.help._root.approval.request.arg.metadata]
+help = "Free-form JSON metadata (string passed verbatim; must parse)"
+
+[cli.help._root.approval.request.arg.severity]
+help = "Severity: info | warn | danger. Default: info"
+
+[cli.help._root.approval.request.arg.surface_id]
+help = "Surface id binding (optional)"
+
+[cli.help._root.approval.request.arg.timeout_ms]
+help = "Timeout in milliseconds. Caller may override at `await` time"
+
+[cli.help._root.approval.request.arg.title]
+help = "Title shown in the popup / notification"
+
+[cli.help._root.approval.request.arg.workspace_id]
+help = "Workspace id binding (defaults to active workspace)"
+
+[cli.help._root.approval.respond]
+about = "Submit a response"
+
+[cli.help._root.approval.respond.arg.choice]
+help = "Choice key (must match one of the request's `choices`)"
+
+[cli.help._root.approval.respond.arg.comment]
+help = "Optional comment"
+
+[cli.help._root.approval.respond.arg.id]
+help = "Approval id (`req_...`)"
+
+[cli.help._root.approval.summary]
+about = "Set or read the workspace markdown summary (manual write/read only)"
+
+[cli.help._root.approval.summary.get]
+about = "Print the workspace summary"
+
+[cli.help._root.approval.summary.get.arg.workspace_id]
+help = "Workspace whose summary is printed (focus-independent — required)"
+
+[cli.help._root.approval.summary.set]
+about = "Overwrite the workspace summary with `content` (or `@file`)"
+
+[cli.help._root.approval.summary.set.arg.content]
+help = "Inline content, or `@path` to read from a file"
+
+[cli.help._root.approval.summary.set.arg.workspace_id]
+help = "Workspace whose summary is overwritten (focus-independent — required)"
+
+[cli.help._root.webhook.register]
+about = "Register an inbound webhook and print its issued URL"
+long = "Register an inbound webhook and print its issued URL.\n\nProvide exactly one of `--handler <id>` (bind a registered hook handler) or `--sequence <json>` (define an inline IpcSequence). The external HTTP payload only fills `${body.x}` / `${header.x}` / `${query.x}` value slots.\n\nThe listener binds every interface, not loopback. The printed URL reads `127.0.0.1` because that is the convenient way to curl it, but whoever can reach the port reaches this webhook. There is no signature verification of any kind: `--auth-token` is one fixed shared secret compared in constant time, and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into `~/.tasty/webhooks.toml`.\n\nThe HTTP answer is a fixed acknowledgement chosen before the sequence runs, so `200` says the call matched and was handed off, never that it worked. A step that fails neither stops the steps after it nor changes the answer, which leaves a partly applied sequence as an ordinary outcome; the log is the only place that failure appears."
+
+[cli.help._root.webhook.register.arg.methods]
+help = "Allowed HTTP methods (repeatable). Defaults to POST"
+
+[cli.help._root.webhook.register.arg.handler]
+help = "Registered hook handler id to bind (source must accept webhook)"
+
+[cli.help._root.webhook.register.arg.sequence]
+help = "Inline IpcSequence as a JSON array of {\"method\",\"params\"} objects"
+
+[cli.help._root.webhook.register.arg.persistent]
+help = "Persist across restarts (default: temporary, dropped on restart)"
+
+[cli.help._root.webhook.register.arg.ttl_secs]
+help = "Time limit in seconds; the webhook auto-expires after this many seconds. Mutually exclusive with --count"
+
+[cli.help._root.webhook.register.arg.count]
+help = "Count limit; the webhook auto-destructs after this many accepted calls. Mutually exclusive with --ttl-secs"
+long = "Count limit; the webhook auto-destructs after this many accepted calls. Mutually exclusive with --ttl-secs.\n\nAccepted means the request matched the path and one of `--method` and, where auth is set, carried the right token. A method mismatch (`405`) and a rejected token (`401`) leave the count where it was, so a sender who does not know the token cannot spend it. What the count does not measure is whether the sequence then worked: the answer is already sent by that point and nothing puts a call back."
+[cli.help._root.webhook.register.arg.auth_location]
+help = "Optional auth: where the token is presented. Unset = no auth"
+
+[cli.help._root.webhook.register.arg.auth_key]
+help = "Token location key: query param / body field path / header name. Required for query|body|header locations (ignored for bearer)"
+
+[cli.help._root.webhook.register.arg.auth_token]
+help = "Fixed shared token the sender must present to pass auth"
+
+[cli.help._root.webhook.list]
+about = "List all registered webhooks (URL, methods, handler, steps, lifetime)"
+
+[cli.help._root.webhook.info]
+about = "Show a single webhook's details by id (incl. remaining count / expiry)"
+
+[cli.help._root.webhook.info.arg.id]
+help = "Webhook opaque id (the `/{id}` path segment)"
+
+[cli.help._root.webhook.unregister]
+about = "Unregister a webhook by id; its path returns 404 afterwards"
+
+[cli.help._root.webhook.unregister.arg.id]
+help = "Webhook opaque id"
+
+[cli.help._root.webhook.sweep]
+about = "Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted)"
+long = "Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted).\n\nNothing expires on a timer, so an expired webhook stays registered until something looks at it. A call to its path removes it right then and answers `410` that once — every later call gets `404` — a restart drops the expired persistent ones, and this command clears the whole set at once without waiting for either."
+
+[cli.help._root.webhook.config]
+about = "Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml)"
+long = "Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml).\n\nWith no `--port`, prints the active port and bound status. With `--port`, persists the new port; the listener rebinds only on the next restart. The port is config-only — tasty never silently binds a fallback port. The bind address is not configurable and is not loopback: the listener takes every interface, so this port is the whole of the exposure."
+
+[cli.help._root.webhook.config.arg.port]
+help = "Set the listener port (1-65535). Requires restart to take effect"
