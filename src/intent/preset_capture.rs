@@ -24,7 +24,7 @@ use serde_json::Value;
 use crate::core::CoreState;
 use crate::core::surface_registry::SurfaceKindRegistry;
 use crate::model::{
-    EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace,
+    Deferred, EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace,
 };
 use tasty_presets::{
     PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
@@ -185,31 +185,40 @@ fn capture_surface(
     // generic 분기보다 앞에서 downcast 로 가로챈다. Plugin 을 먼저 — Terminal 전용
     // `deferred_spawn()` 가드는 Plugin placeholder 를 그냥 통과시켜 "empty" 로 잃는다.
     if let Some(es) = surface.as_any().downcast_ref::<EmptySurface>() {
-        // 1. Plugin deferred → kind/snapshot 보존.
-        if let Some(p) = es.deferred_plugin() {
-            return PresetSurface {
-                id: None,
-                kind: p.kind.clone(),
-                cwd: None,
-                startup_command: None,
-                params: p.snapshot.clone(),
-            };
-        }
-        // 2. Terminal deferred → kind:"terminal" + working_dir 를 cwd 로.
-        if let Some(spawn) = es.deferred_spawn() {
-            let cwd = spawn
-                .working_dir
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string());
-            return PresetSurface {
-                // preset-local id 는 저장 시 PresetStore 정규화가 부여한다(라이브 surface_id
-                // 복사 금지 — 런타임 id 와 결합하지 않는다).
-                id: None,
-                kind: "terminal".into(),
-                cwd,
-                startup_command: None,
-                params: Value::Object(Default::default()),
-            };
+        // `Deferred` 를 **enum 그대로** match 한다. `deferred_plugin()`/`deferred_spawn()`
+        // 로 좁혀 읽으면 반환 타입이 enum 이 아니라, variant 가 하나 늘 때 두 갈래를 다
+        // 빠져나가 아래 generic 분기로 떨어져 **"empty" 로 조용히 잃는다** — 그것이 이
+        // 자리의 원래 결함이었다(Plugin 이 terminal 로 되살아나던 형태와 같은 뿌리).
+        // match 면 컴파일러가 non-exhaustive 로 **여기서** 막는다.
+        match &es.deferred {
+            // 1. Plugin deferred → kind/snapshot 보존.
+            Some(Deferred::Plugin(p)) => {
+                return PresetSurface {
+                    id: None,
+                    kind: p.kind.clone(),
+                    cwd: None,
+                    startup_command: None,
+                    params: p.snapshot.clone(),
+                };
+            }
+            // 2. Terminal deferred → kind:"terminal" + working_dir 를 cwd 로.
+            Some(Deferred::Terminal(spawn)) => {
+                let cwd = spawn
+                    .working_dir
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string());
+                return PresetSurface {
+                    // preset-local id 는 저장 시 PresetStore 정규화가 부여한다(라이브 surface_id
+                    // 복사 금지 — 런타임 id 와 결합하지 않는다).
+                    id: None,
+                    kind: "terminal".into(),
+                    cwd,
+                    startup_command: None,
+                    params: Value::Object(Default::default()),
+                };
+            }
+            // 3. deferred 가 아닌 empty → 아래 generic 분기로 내려간다.
+            None => {}
         }
     }
 
