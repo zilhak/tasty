@@ -13,9 +13,17 @@
 //! 그래서 검사 대상은 동등이 아니라 **자리와 개수**다. `crates/` 와 `src/` 어디에든
 //! 두 번째 리터럴이 나타나면 실패한다.
 //!
-//! 이 테스트의 자동 실행은 **헤드리스 조합**(`check-headless` 의 전체 스위트)에서만
-//! 일어난다(기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 —
-//! `docs/dev-guide/ci-gates.md`).
+//! ## 왜 `tasty` 가 아니라 여기 사는가
+//!
+//! 판정 대상이 `crates/` 와 `src/` **레포 전체**인데, 루트 `tests/` 에 있으면 그 판정을
+//! 받으려면 `-p tasty` 를 돌려야 한다. 그건 본 바이너리를 링크하는 패키지라 **어느
+//! 크레이트를 고친 lane 도 자기 작업 중에는 안 돈다** — 크레이트를 고치고 그 크레이트를
+//! 돌려 초록을 본 lane 이 조립에서 처음 빨강을 만나는 형태가 실제로 났다.
+//!
+//! 여기(의존 0 크레이트)로 옮기면 lane 이 `cargo test -p tasty-doc-guards` 로 초 단위에
+//! 같은 판정을 받는다. `doc-guards.yml` 이 **경로 필터 없이** main push·PR 마다
+//! `cargo test -p tasty-doc-guards --locked --no-fail-fast` 를 돌린다.
+//! 이 배치는 ADR-0138 이 세운 선례를 그대로 따른 것이다.
 
 use std::path::{Path, PathBuf};
 
@@ -61,7 +69,10 @@ fn collect(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
 
 #[test]
 fn the_ansi_escape_regex_has_exactly_one_home() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).
+    // 공용 `repo_root()` 는 표지 파일 넷으로 자기가 잡은 경로를 검증한다.
+    let root_buf = tasty_doc_guards::repo_root();
+    let root = root_buf.as_path();
     let mut found = Vec::new();
     collect(&root.join("crates"), &mut found);
     collect(&root.join("src"), &mut found);
