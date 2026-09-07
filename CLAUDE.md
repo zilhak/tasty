@@ -130,7 +130,8 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 52 개 — 그중 `
   ls -la target/debug/tasty-plugin-<name> \
          target/debug/builtin-plugins/<manifest-id>/tasty-plugin-<name>
   ```
-  판별 기준이 mtime 이라, 빌드 산출물이 스테이징본보다 **새것이면 아직 반영 전**이다(다음 부팅에 반영된다). 검증 절차 쪽 서술은 [`docs/ai-verification/screenshot-methods.md`](docs/ai-verification/screenshot-methods.md).
+  **이 확인이 무엇을 답하고 무엇을 못 답하는지 갈라 읽어라.** 스테이징 판정은 2026-09-07 부터 **내용**이다 — 내용이 다르면 옮기고 같으면 안 옮기며, **시각이 같아도 내용을 본다.** 그래서 위 세 열의 mtime 으로 "반영됐나" 를 묻던 절차는 더 이상 필요하지 않다: 빌드 산출물이 갱신돼 있으면 다음 부팅이 옮긴다.
+  ★ 그러나 **오진의 양방향성이 다 닫힌 것은 아니다.** 닫힌 것은 **스테이징 단계**의 한 갈래(시각이 같아 조용히 건너뛰던 것)뿐이고, 이 항목의 본래 함정 — `cargo build` 가 plugin 바이너리를 **애초에 다시 만들지 않는 것** — 은 그대로다. 안 만들어진 바이너리는 내용도 옛것이므로 스테이징이 옳게 동작해도 옛 코드가 간다. 그러니 위 `ls` 는 "스테이징이 반영했나" 가 아니라 **"빌드가 산출물을 다시 만들었나"** 를 보는 데 쓴다(산출물의 mtime 이 소스보다 뒤인가). 검증 절차 쪽 서술은 [`docs/ai-verification/screenshot-methods.md`](docs/ai-verification/screenshot-methods.md).
 - **workspace exclude 크레이트는 위 명령이 보지 않는다**: `site/`(Pages 생성기)·`crates/tasty-plugin-sdk-wasm/` 은 `--manifest-path` 를 명시해 따로 검사한다 — `cargo fmt --check --manifest-path site/Cargo.toml` · `cargo check --manifest-path site/Cargo.toml`. pre-commit A.2 가 그 디렉토리의 `.rs` 가 staged 됐을 때 fmt 검사를 자동 실행한다([`docs/dev-guide/site.md`](docs/dev-guide/site.md) "왜 workspace 밖인가"). `site/` 는 그 위에 자동 채널이 하나 더 있다 — `site/**` 를 담은 main push 는 `pages.yml` 이 그 크레이트를 컴파일하며 `--strict` 로 생성한다(조건과 범위는 [`docs/dev-guide/ci-gates.md`](docs/dev-guide/ci-gates.md)). `crates/tasty-plugin-sdk-wasm/` 에는 그런 채널이 없다.
 - **의존성 설치 스텝 없음**: pnpm/npm과 달리 cargo는 별도 `install` 명령이 없다. `cargo build`/`cargo test` 등이 최초 실행 시 자동으로 fetch·컴파일한다. worktree를 새로 만든 직후 미리 받아두고 싶으면 `cargo fetch`.
 - **turbo류 캐시 재생 이슈 해당 없음**: `conductor-core.md`의 "빌드 검증 시 캐시 무효화" 규칙은 콘텐츠 해시 기반으로 컴파일을 통째로 건너뛰는 빌드 시스템(turbo 등)을 겨냥한다. cargo의 기본 incremental build는 변경분을 실제로 재컴파일하므로 이 프로젝트에서는 `--force` 류의 캐시 무효화 플래그가 불필요하다.

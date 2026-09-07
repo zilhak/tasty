@@ -164,8 +164,11 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 
 여기에 스테이징이 겹친다. host 는 **부팅할 때** `copy_if_newer` 로
 `target/<profile>/builtin-plugins/` 를 갱신하고 거기서 `<TASTY_HOME>/plugins/` 로
-sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 판정 기준이 mtime 이라, 안 만들어진
-바이너리는 **낡은 채로 조용히 실행된다.**
+sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 그 스테이징 판정은 2026-09-07 부터
+**내용**이다 — 내용이 다르면 옮기고 같으면 안 옮기며 **시각이 같아도 내용을 본다.** 그래서
+"시각이 같아 조용히 건너뛴다" 는 갈래는 닫혔다.
+**닫히지 않은 것이 이 절의 본론이다**: 안 만들어진 바이너리는 **내용도 옛것**이라 스테이징이
+옳게 동작해도 옛 코드가 그대로 간다 — 즉 위 문단의 함정은 스테이징이 아니라 **빌드**에 있다.
 
 그래서 plugin 을 고친 뒤 GUI 로 확인하면 **직전 plugin 코드를 재고 있을 수 있다.**
 실패로도 성공으로도 오진할 수 있는 형태다 — 고친 것이 안 고쳐진 것처럼 보이거나,
@@ -180,7 +183,9 @@ PROFILE=debug just build-plugins        # 정식 절차 — 빌드 + 스테이�
 cargo build --workspace                 # 최소한 이것 (스테이징은 부팅이 한다)
 ```
 
-확인은 mtime·크기 비교가 제일 싸다:
+확인은 mtime·크기 비교가 제일 싸다. **묻는 것은 "스테이징이 반영했나" 가 아니라
+"빌드가 산출물을 다시 만들었나" 다** — 산출물이 소스보다 뒤면 만들어진 것이고, 그 뒤는
+부팅이 내용으로 판정해 옮긴다:
 
 ```bash
 ls -la target/debug/tasty-plugin-<name> \
