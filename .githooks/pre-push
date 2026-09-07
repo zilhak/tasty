@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tasty pre-push hook — 무거운 검사 4종 (B.4~B.7).
+# Tasty pre-push hook — 무거운 검사 5종 (B.4~B.8).
 #
 # 설치: `git config core.hooksPath .githooks` 1회 실행.
 # bypass: `git push --no-verify` (긴급 시).
@@ -9,13 +9,18 @@
 #   B.5  cargo check --workspace --all-targets
 #   B.6  cargo check --no-default-features (headless 빌드)
 #   B.7  cargo test -p tasty-doc-guards (문서 정합 통합테스트)
+#   B.8  cargo check --workspace --release --locked (debug_assertions 반대편)
 #
 # 이 훅은 push 하는 머신에서만 돈다 — worker 머신엔 이 채널이 없다.
 # "worker 가 로컬에서 돌려 왔다" 는 관행은 채널이 아니다(사람마다·회차마다
 # 다르고 강제되지 않는다). doc-guards 의 자동 채널은 doc-guards.yml(main
 # push · PR) 과 통합 회차뿐이다. pre-push 는 그 앞단의 조기 발견용이다.
 
-set -e
+# `pipefail` 이 없으면 아래 `cmd 2>&1 | tail -N` 들의 종료코드가 tail 의 것이 된다
+# — cargo 가 rc=101 로 죽어도 `if !` 가 안 걸려 실패가 통과로 샌다. 이 훅의 파이프는
+# 전부 "명령의 rc 가 판정한다" 는 같은 의도라, pipefail 이 바꾸는 판정은 그것들뿐이고
+# 넷 다 바뀌는 것이 옳다.
+set -e -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
@@ -34,6 +39,33 @@ if ! cargo check --workspace --all-targets 2>&1 | tail -5; then
     red "✘ cargo check 실패"
     FAIL=1
 fi
+
+# ────────────────────────────────────────────────────────────
+# B.8  cargo check --workspace --release — B.5 와 상보적이다.
+#      두 조합은 `debug_assertions` 이 반대라 서로가 못 보는 것을 본다:
+#      소비자가 debug 쪽에만 있는 항목은 release 에서만 `dead_code` 가 물고,
+#      이 크레이트에서 그 lint 는 error 라 컴파일이 죽는다. 실측 회차 88 이
+#      그렇게 났다(`ModalKind::as_str` — 고친 커밋 c3e78aaa8).
+#
+#      조합이 `--bin tasty` 가 아니라 `--workspace --release` 인 이유: 전자는
+#      CI `check-release` 가 보는 것의 진부분집합이라, 훅이 초록인데 CI 가
+#      빨간 상태가 남는다. 비용 차는 실측상 없다.
+#
+#      로그 파일로 받는다. `pipefail` 이 생긴 지금은 다른 스텝처럼 파이프로 써도
+#      판정은 같지만, release 의 error 는 좌표를 봐야 해서 `tail -5` 보다 넓게
+#      (-20) 보여 준다. 판정과 표시를 분리한 것이지 판정을 다르게 한 것이 아니다.
+# ────────────────────────────────────────────────────────────
+yellow "▸ cargo check --workspace --release --locked"
+REL_LOG="$(mktemp)"
+if ! cargo check --workspace --release --locked > "$REL_LOG" 2>&1; then
+    tail -20 "$REL_LOG" >&2
+    red "✘ cargo check --workspace --release 실패"
+    red "  error: 좌표가 네 차분 안인지 먼저 봐라. 남의 회귀면 여기서 멈추지 말고"
+    red "  -p <자기 크레이트> 로 좁혀 다시 물어라 — 그 값이 네가 보고할 값이고,"
+    red "  --bin tasty 나 워크스페이스 전체는 '미측정' 으로 적는다."
+    FAIL=1
+fi
+rm -f "$REL_LOG"
 
 # ────────────────────────────────────────────────────────────
 # B.6  cargo check headless — gui feature 제외 컴파일 설정.

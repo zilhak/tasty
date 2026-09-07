@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tasty pre-commit hook — 빠른 검사 7종.
+# Tasty pre-commit hook.
+#
+# **여기에 검사 개수를 적지 않는다.** 한때 "빠른 검사 7종" 이라 적혀 있었고 실제로는
+# 열이었다 — 적힌 수는 검사를 더할 때 같이 안 움직인다. 수는 **돌 때 찍는다**(맨 아래
+# 통과줄). 목록은 아래 표가 정본이고, 표와 실제 호출이 어긋나면 훅이 스스로 실패한다.
 #
 # 설치: `git config core.hooksPath .githooks` 1회 실행.
 # bypass: `git commit --no-verify` (긴급 시).
@@ -10,16 +14,28 @@
 # 전체가 필요).
 #
 # 검사 목록:
-#   A.1  mod/use 선언 순서 (mod 다 먼저, use 다 나중)  [파일 전체]
-#   A.2  cargo fmt --check (+ workspace exclude 크레이트는 manifest 별도) [파일 전체]
-#   C.6  `let _ =` 주석 강제                            [diff 추가 라인]
+#   A.1  mod/use 선언 순서 (mod 다 먼저, use 다 나중)  [staged .rs 의 파일 전체]
+#   A.2  cargo fmt --check (+ workspace exclude 크레이트는 manifest 별도) [staged .rs 의 파일 전체]
+#   C.6  `let _ =` 주석 강제                            [추가된 줄 + **바로 윗줄**]
 #   C.8  UI 색상 하드코딩 — clippy 로 이관 (비활성)
-#   C.9  egui::Window 직접 사용                          [diff 추가 라인]
-#   C.11 println! / eprintln! — tracing 강제             [diff 추가 라인]
-#   C.12 dbg! — debug leak 방지                          [diff 추가 라인]
-#   P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로 [staged diff]
-#   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [staged 파일 목록]
-#   W.2  새 파일이 추가됐을 때 그것을 처음 보는 타깃 안내 (경고만) [staged 파일 목록]
+#   C.9  egui::Window 직접 사용                          [추가된 줄만]
+#   C.11 println! / eprintln! — tracing 강제             [추가된 줄만]
+#   C.12 dbg! — debug leak 방지                          [추가된 줄만]
+#   P.1  plugin 산출물이 바뀌었는데 매니페스트 version 이 그대로 [파일 목록 — **지운 것까지**]
+#   W.1  사용자 표면 변경 시 CHANGELOG 누락 (경고만)     [파일 목록 — **이름만 바뀐 것도**, 지운 것은 빼고]
+#   W.2  새 파일이 추가됐을 때 그것을 처음 보는 타깃 안내 (경고만) [파일 목록 — **새로 더한 것만**]
+#
+# ★ 대괄호는 **그 검사가 무엇을 보는가**다. 여섯 가지고, 서로 겹치지 않는다:
+#     ① staged .rs 의 파일 전체            A.1 · A.2
+#     ② 추가된 줄만                        C.9 · C.11 · C.12
+#     ③ 추가된 줄 + 바로 윗줄              C.6   ← **안 고친 주석도 본다**
+#     ④ 파일 목록 — 새로 더한 것만         W.2
+#     ⑤ 파일 목록 — 이름 바뀜까지          W.1
+#     ⑥ 파일 목록 — 지운 것까지            P.1
+#   한때 이 자리에 `[파일 전체]`·`[diff 추가 라인]`·`[staged 파일 목록]` 셋만 있었다.
+#   ④⑤⑥ 이 **한 라벨을 나눠 쓰고 있었고**, 그래서 "이 훅이 무엇을 봤나" 를 라벨로 물으면
+#   셋이 하나로 보였다. 라벨에 필터 문자(ACM 류)를 박는 대신 **무엇이 달라지는지**를 적는다 —
+#   필터 문자는 읽는 사람이 git 문서를 한 번 더 봐야 뜻이 서고, 그 사이 뜻이 사라진다.
 #
 # 무거운 검사 (cargo clippy, cargo check) 는 pre-push 에서.
 
@@ -28,8 +44,19 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# staged 된 .rs 파일 목록
-STAGED_RS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.rs$' || true)
+# staged 된 파일 목록. `.rs` 목록은 여기서 갈라 낸다 — 두 값이 **같은 한 번의 조회**에서
+# 나와야 아래 통과 줄이 찍는 모수가 검사들이 실제로 순회한 것과 같다.
+#
+# ★ **`R`(이름 바뀜)이 들어가야 한다.** 없으면 **순수 rename 커밋의 모수가 0 이 되고**,
+#   이 값에서 조기 return 하는 검사 여섯(A.1 mod/use 순서 · A.2 `cargo fmt` · C.6 `let _`
+#   사유 · C.9 `egui::Window` · C.11 · C.12)이 **한 줄도 안 보고 초록을 낸다**(실측: 옮기기만
+#   한 커밋에서 `staged .rs 0 · staged 전체 0` 이 찍혔다). 옮긴 파일은 내용이 같아도 **자리가
+#   달라진다** — mod/use 순서와 크레이트 귀속은 자리가 정한다.
+# ★ **`D`(지움)는 일부러 뺀다.** 위 검사들은 전부 **파일을 연다** — 지워진 경로를 열면 없는
+#   파일이고, 그것을 실패로 셀지 통과로 셀지가 또 갈린다. 지움을 봐야 하는 것은 파일을 안
+#   여는 검사들(P.1·W.1)이고 그쪽은 자기 자리에서 `ACMRD`·`ACMR` 로 따로 묻는다.
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACMR || true)
+STAGED_RS=$(printf '%s\n' "$STAGED_ALL" | grep -E '\.rs$' || true)
 
 red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
@@ -129,14 +156,28 @@ check_cargo_fmt() {
 # ────────────────────────────────────────────────────────────
 # staged diff 의 추가 line 만 검사. "의도 명시" 로 인정하는 조건 (OR):
 #   ① 같은 줄에 // 주석이 있음, 또는
-#   ② 직전 라인 (새 파일 기준 바로 앞 라인 — 추가/컨텍스트 무관) 이 // 주석, 또는
+#   ② 위쪽 라인이 // 주석 — **빈 줄과 `#[..]` 속성 줄은 건너뛴다**, 또는
 #   ③ 바로 다음 라인 (새 파일 기준) 이 // 주석.
 # docs/dev-guide/error-handling.md 의 윗줄 주석 관례 + 멀티라인 write! 케이스를
 # 인정한다. ③ 은 rustfmt 가 trailing 주석이 달린 긴 라인을 포맷하며 주석을 다음
 # 줄로 분리하는 케이스 (`let _ = foo(Bar {` + 다음 줄 `// 이유`) 를 수용한다.
 # 주석이 같은 줄·윗줄·다음 줄 어디에도 없는 `let _ =` 는 여전히 거부.
-# -U1 로 앞뒤 라인 컨텍스트를 확보하고, let 후보를 pending 으로 보류했다가 다음
+# -U1 로 뒤쪽 라인 컨텍스트를 확보하고, let 후보를 pending 으로 보류했다가 다음
 # (새 파일에 존재하는) 라인이 주석인지 보고 판정한다.
+#
+# -- ② 가 왜 diff 컨텍스트가 아니라 사본을 보나 -------------------------
+# 문서 표는 사유 주석과 문장 사이에 **빈 줄과 `#[..]` 속성**이 있어도 인정한다.
+# `#[cfg(windows)]` 가 주석과 문장 사이에 오는 것은 러스트 관용이라 실제로 쓰인다
+# (실측: 레포에 속성 낀 자리 1, 빈 줄 낀 자리 0 — 2026-09-07).
+# 그 자리는 CI(`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)는 받는데 훅만 막았다. 그러면
+# 그 줄을 손대는 커밋이 `--no-verify` 로 도망가고, **한 줄 때문에 훅 열 개가 꺼진다.**
+# 게이트가 자기를 우회하게 만드는 형태는 그 자체로 결함이라 넓혔다.
+#
+# 넓히려면 위로 여러 줄을 봐야 하는데 **diff 컨텍스트로는 원리적으로 부족하다** —
+# -U<n> 을 아무리 키워도 경계가 생기고, 그 경계 밖은 조용히 위반이 된다. 그래서
+# 위쪽 탐색은 **마스킹 사본을 줄 번호로** 읽는다(사본은 이미 만들어 놨다). 경계가 없다.
+# 사본이 없는 트리(갓 클론)에서는 바로 윗줄만 보고 물러난다 — **더 많이 잡는 방향**이라
+# 조용한 통과를 안 만든다. 물러났다는 것은 아래에서 말한다.
 #
 # -- 코드인지 문자열인지는 **판정기가 가른다** ---------------------------
 # 이 검사의 물음("이 줄의 **코드**에 `let _ =` 가 있나")은 문자열 리터럴을 코드와
@@ -156,7 +197,12 @@ check_let_underscore() {
     local mask_bin="" masked="" staged_dir=""
     if [ -r "$REPO_ROOT/scripts/lib/judge-bin.sh" ]; then
         . "$REPO_ROOT/scripts/lib/judge-bin.sh"
-        mask_bin="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$REPO_ROOT" 2>/dev/null)"
+        # `resolve_judge` 는 경로를 **`JUDGE_BIN` 변수로** 돌려준다. 표준출력으로 받으면
+        # 항상 빈 문자열이라 아래 분기가 늘 정규식 쪽으로 떨어진다 — 그래도 이 게이트는
+        # 초록이라(정규식은 더 많이 잡는 방향이다) 격하됐다는 사실이 값으로 안 남는다.
+        # 사유는 그 함수 doc 에 있다: 표준출력 반환은 판정기가 한 줄만 찍어도 깨진다.
+        resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$REPO_ROOT"
+        mask_bin="$JUDGE_BIN"
     fi
     if [ -n "$mask_bin" ]; then
         staged_dir="$(mktemp -d)"
@@ -173,7 +219,7 @@ check_let_underscore() {
         rm -rf "$staged_dir"
     fi
     if [ -z "$masked" ]; then
-        echo "  [C.6] mask-source 가 없어 한 줄 정규식으로 판정한다 (여러 줄 문자열 안의 let _ 를 코드로 볼 수 있다)." >&2
+        echo "  [C.6] mask-source 가 없거나 낡아 한 줄 정규식으로 판정한다 (여러 줄 문자열 안의 let _ 를 코드로 볼 수 있다). 위 [judge] 줄이 어느 쪽인지 말한다." >&2
     fi
 
     for f in $STAGED_RS; do
@@ -184,6 +230,19 @@ check_let_underscore() {
             # 마스킹 사본을 줄 번호로 읽어 둔다. 없으면 한 줄 정규식으로 물러난다.
             BEGIN { if (maskfile != "") { while ((getline ml < maskfile) > 0) MASK[++mn] = ml } }
             function flush() { if (pending != "") { print pending; pending = "" } }
+            # ② 위쪽 사유 주석 찾기. 빈 줄과 `#[..]` 속성 줄은 건너뛴다(문서 표와 같은 규칙).
+            # 사본이 있으면 경계 없이 올라가고, 없으면 바로 윗줄 하나만 보고 물러난다.
+            function comment_above(ln,   i, l) {
+                if (mn == 0) return (prev ~ /^[[:space:]]*\/\//)
+                for (i = ln - 1; i >= 1; i--) {
+                    if (!(i in MASK)) return 0
+                    l = MASK[i]
+                    if (l ~ /^[[:space:]]*$/)    continue
+                    if (l ~ /^[[:space:]]*#\[/)  continue
+                    return (l ~ /^[[:space:]]*\/\//)
+                }
+                return 0
+            }
             # hunk 경계: 보류 후보 확정 + 컨텍스트 리셋 + **새 파일 줄 번호** 잡기.
             # 줄 번호가 있어야 마스킹 사본의 같은 줄을 읽을 수 있다.
             /^@@/ {
@@ -217,8 +276,8 @@ check_let_underscore() {
                 if (prefix == "+" && code ~ /let[[:space:]]+_[[:space:]]*=/) {
                     if (mline ~ /\/\//) {
                         # ① 같은 줄 주석 — OK
-                    } else if (prev ~ /^[[:space:]]*\/\//) {
-                        # ② 윗줄 주석 — OK
+                    } else if (comment_above(nl)) {
+                        # ② 위쪽 주석 — OK (빈 줄·속성은 건너뛴다)
                     } else {
                         pending = content   # ③ 판정 보류 — 다음 줄 주석 여부를 봐야 함
                     }
@@ -449,8 +508,8 @@ check_new_file_judges() {
     if [ -n "$new_int_test" ]; then
         yellow "  새 통합 테스트 타깃:"
         echo "$new_int_test" | sed 's/^/      /' >&2
-        suggest_target "tests/let_underscore_documented.rs" \
-            "cargo test --locked --test let_underscore_documented" \
+        suggest_target "crates/tasty-doc-guards/tests/let_underscore_documented.rs" \
+            "cargo test --locked -p tasty-doc-guards --test let_underscore_documented" \
             "테스트 타깃이 프로덕션 lint 명부에 섞이는 것을 여기서 처음 본다 (파일 머리 allow 한 줄이 필요하다)"
     fi
     if [ -n "$new_crate" ]; then
@@ -465,8 +524,8 @@ check_new_file_judges() {
     if [ -n "$new_src" ]; then
         yellow "  새 소스 파일:"
         echo "$new_src" | sed 's/^/      /' >&2
-        suggest_target "tests/no_emoji_in_source.rs" \
-            "cargo test --locked --test no_emoji_in_source --test no_hardcoded_ui_strings" \
+        suggest_target "crates/tasty-doc-guards/tests/no_emoji_in_source.rs" \
+            "cargo test --locked -p tasty-doc-guards --test no_emoji_in_source --test no_hardcoded_ui_strings" \
             "새 소스의 이모지·하드코딩 문자열을 여기서 처음 본다"
     fi
     if [ -n "$new_doc" ]; then
@@ -479,8 +538,8 @@ check_new_file_judges() {
     if [ -n "$new_shell" ]; then
         yellow "  새 셸 스크립트:"
         echo "$new_shell" | sed 's/^/      /' >&2
-        suggest_target "tests/no_early_exit_consumer_in_shell_pipes.rs" \
-            "cargo test --locked --test no_early_exit_consumer_in_shell_pipes" \
+        suggest_target "crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs" \
+            "cargo test --locked -p tasty-doc-guards --test no_early_exit_consumer_in_shell_pipes" \
             "셸은 루트의 통합 타깃이 본다 — 그 타깃은 확장자가 아니라 shebang 으로 고르므로 확장자 없는 훅도 대상이다"
     fi
     if [ -n "$unknown" ]; then
@@ -531,16 +590,60 @@ check_plugin_version_bump() {
 # ────────────────────────────────────────────────────────────
 # 실행
 # ────────────────────────────────────────────────────────────
-check_mod_use_order
-check_cargo_fmt
-check_let_underscore
-check_color_hardcode
-check_egui_window
-check_println
-check_dbg
-check_plugin_version_bump
-check_changelog_reminder
-check_new_file_judges
+# 검사 목록을 **배열**로 둔다. 문자열 하나에 담아 셸 분할에 맡기면, 부르는 셸이 달라질 때
+# 루프가 **조용히 0 회** 돌 수 있다(조립 하네스에서 실제로 났다: zsh 전용 `${=VAR}` 분할을
+# bash 로 부르자 게이트 루프가 0 회 돌고 판정줄은 "게이트빨강=0" 으로 찍혔다 —
+# **안 돈 것이 다 통과한 것과 같은 모양이었다**).
+CHECKS=(
+    check_mod_use_order
+    check_cargo_fmt
+    check_let_underscore
+    check_color_hardcode
+    check_egui_window
+    check_println
+    check_dbg
+    check_plugin_version_bump
+    check_changelog_reminder
+    check_new_file_judges
+)
+
+# 그리고 **정의된 것과 부르는 것이 같은가**를 훅이 자기에게 묻는다.
+#
+# 새 `check_*` 를 정의하고 위 배열에 안 넣으면, 지금까지는 훅이 **초록이었고 통과줄이 글자
+# 하나 안 달라졌다.** 그 상태와 "그 검사가 다 통과했다" 가 출력으로 구분이 안 된다.
+# 여기서 세어 두면 어긋남이 그 자리에서 빨개진다. 값이 아니라 **판정의 일부**다.
+defined=$(grep -cE '^check_[a-z_]+\(\) \{' "$0" || true)
+
+# ★ 붕괴를 먼저 막는다. 아래 등호 검사만으로는 **0 == 0 이 통과한다** — 배열이 비고
+# 세는 술어도 안 맞으면 "검사 0/0 돌았다" 를 찍고 rc=0 이 된다. 실측으로 재현했다.
+# 그 초록은 "다 통과했다" 가 아니라 **"아무것도 안 봤다"** 이고, 둘은 출력이 같다.
+# (조립 하네스의 `${=GATES}` 가 정확히 이 모양이었다. 등호만 걸면 그 교훈의 절반만 든다.)
+#
+# 하한을 실측값(예: 10)으로 두지 않는다 — 아래 등호가 이미 수를 정확히 못 박으므로,
+# 여기 또 수를 두면 **같은 물음에 답이 둘**이 되고 검사를 더할 때마다 둘 다 고쳐야 한다.
+# 이 조건의 일은 붕괴를 거절하는 것 하나다.
+if [ "${#CHECKS[@]}" -eq 0 ] || [ "$defined" -eq 0 ]; then
+    red "▸ [훅] 검사가 0 개다 (정의 $defined · 실행 목록 ${#CHECKS[@]}) — **아무것도 안 돌았다.**"
+    red "    배열이 비었거나, 정의를 세는 술어가 함수 선언 모양과 안 맞는다."
+    red "    이 상태에서 초록을 내면 '안 봤다' 가 '다 통과했다' 로 찍힌다."
+    exit 1
+fi
+
+if [ "$defined" -ne "${#CHECKS[@]}" ]; then
+    red "▸ [훅] 정의된 검사 $defined 개 · 실행 목록 ${#CHECKS[@]} 개 — 어긋난다."
+    if [ "$defined" -gt "${#CHECKS[@]}" ]; then
+        red "    정의만 있고 목록에 없는 것이 있다 — 그 검사는 **조용히 안 돈다.** CHECKS 에 넣어라."
+    else
+        red "    목록에만 있고 정의가 없는 것이 있다 — 이름을 고쳤거나 지웠다. CHECKS 에서 빼라."
+    fi
+    exit 1
+fi
+
+RAN=0
+for _check in "${CHECKS[@]}"; do
+    "$_check"
+    RAN=$((RAN + 1))
+done
 
 if [ "$FAIL" -ne 0 ]; then
     echo >&2
@@ -548,5 +651,46 @@ if [ "$FAIL" -ne 0 ]; then
     exit 1
 fi
 
-green "✓ pre-commit 검사 통과"
+# ────────────────────────────────────────────────────────────
+# 통과 줄에 **모수**를 붙인다.
+#
+# 이 훅의 각 구역은 자기 모수를 머리 주석에 적어 뒀다(`[파일 전체]` · `[diff 추가 라인]`
+# · `[staged]`). 그런데 그 표기는 판정의 **정의** 옆에 있고, 커밋하는 사람이 보는 것은
+# 판정의 **출력** — 모수가 없는 한 줄이었다. 그래서 초록이 "staged 범위가 깨끗하다" 가
+# 아니라 "트리가 깨끗하다" 로 읽혔다. 실제로 그렇게 읽혀서, 추적 안 되는 쓰레기 파일이
+# 훅을 초록으로 통과한 채 남았다(레포 전체를 훑는 doc-guards 가드가 나중에 잡았다).
+#
+# 값은 **새로 세지 않는다.** 위에서 검사들에게 넘긴 바로 그 목록의 길이를 쓴다 — 여기서
+# git 을 다시 부르면 그 계수기가 판정과 다른 모수를 갖게 되고, 그러면 이 줄이 고치려던
+# 병을 이 줄이 다시 만든다.
+#
+# ★ P.1 · W.1 은 아래 수보다 **넓게** 본다(이름 바뀜 · 지움까지). 전에는 "안 가진 값을
+# 찍느니 안 찍는 것이 낫다" 고 적고 대신 "ACM 기준" 이라는 필터 문자를 달았다. 둘 다 틀렸다 —
+# 그 값은 git 한 번으로 가질 수 있고, 필터 문자는 뜻을 옮기지 않는다. 넓은 쪽이 **더 본 것이
+# 있을 때만** 아래에 한 줄 더 찍는다. 늘 찍으면 문장이 안 변해 다시 벽지가 된다.
+# ────────────────────────────────────────────────────────────
+count() { [ -z "$1" ] && echo 0 || printf '%s\n' "$1" | wc -l | tr -d ' '; }
+
+green "✓ pre-commit 검사 통과 (검사 $RAN/$defined 돌았다 · 모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — 더해지거나 고쳐지거나 이름이 바뀐 것)"
+
+# 넓은 쪽과의 차이. 0 이면 안 찍는다 — 이 줄이 **상황에 반응해야** 뜻이 산다.
+STAGED_WIDE=$(git diff --cached --name-only --diff-filter=ACMRD || true)
+wide_extra=$(( $(count "$STAGED_WIDE") - $(count "$STAGED_ALL") ))
+if [ "$wide_extra" -gt 0 ]; then
+    yellow "  ↳ 지워진 것 $wide_extra 개는 **위 수 밖**이다 — 파일을 여는 검사는 그것을 못 본다. P.1 이 본다."
+fi
+
+# 그리고 **여집합**을 한 줄 더 찍는다 — 있을 때만.
+#
+# 위 수만으로는 부족했다(실측): 추적 안 되는 쓰레기 파일을 놓아도 통과 줄이 **글자 하나
+# 안 바뀐다.** 범위를 말해 주기는 하지만 그 문장이 늘 같아서 벽지가 된다. 초록을 "트리가
+# 깨끗하다" 로 읽는 것을 막으려면 출력이 **그 상황에 반응**해야 한다.
+#
+# ★ 이 수는 **어느 검사의 모수도 아니다.** 모든 모수의 **밖**이다 — 그래서 위의 수들과
+#   달라도 어긋난 것이 아니다. 라벨에 그 사실을 적는다.
+untracked=$(git status --porcelain --untracked-files=normal 2>/dev/null | grep -c '^??' || true)
+if [ "$untracked" -gt 0 ]; then
+    yellow "  ↳ 추적 안 되는 파일 $untracked 개는 **위 모수 밖**이다 — 이 초록이 말하지 않는 것이다."
+    yellow "     의도한 것이 아니면 \`git status --porcelain\` 로 봐라. 트리 전체는 \`cargo test -p tasty-doc-guards\`."
+fi
 exit 0
