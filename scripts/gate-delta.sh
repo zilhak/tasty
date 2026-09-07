@@ -130,6 +130,7 @@ read_value() {
 
 status=0
 measured=0
+refused=0
 printf '%-34s %8s %8s %8s %-4s   %s\n' "게이트" "base" "HEAD" "delta" "등급" "상한"
 for g in "${GATES[@]}"; do
     [ -f "$ROOT/scripts/$g" ] || { echo "[delta] 없는 게이트: $g" >&2; exit 2; }
@@ -148,6 +149,7 @@ for g in "${GATES[@]}"; do
         echo "          git worktree add --detach <경로> $BASE_SHA" >&2
         echo "          (그 트리에서) cargo build -p tasty-doc-guards --bin mask-source" >&2
         echo "          TASTY_MASK_SOURCE_BIN=<그 경로> scripts/gate-delta.sh $BASE_REV" >&2
+        refused=$((refused + 1))
         status=1
         continue
     fi
@@ -161,10 +163,11 @@ for g in "${GATES[@]}"; do
         echo "        ③ base 쪽에서 게이트가 죽었다. 판정기를 \`scripts/lib/judge-bin.sh\` 의" >&2
         echo "           resolve_judge 로 안 찾는 게이트는 환경변수를 안 읽고 자기 트리의" >&2
         echo "           target/ 만 보므로, 새 워크트리에서 그냥 죽는다." >&2
+        refused=$((refused + 1))
         status=1
         continue
     fi
-    measured=1
+    measured=$((measured + 1))
     hc=${h_v%% *}; cap=${h_v##* }; bc=${b_v%% *}; bcap=${b_v##* }
     d=$((hc - bc))
     note=""
@@ -185,7 +188,16 @@ done
 
 echo
 echo "base $BASE_SHA · HEAD $HEAD_SHA · dirty $(git status --porcelain | wc -l | tr -d ' ')"
-if [ "$measured" -eq 1 ]; then
+# ★ **무엇을 돌렸는가를 값으로 남긴다.** 이것이 장식이 아니라 판정의 일부인 이유: 하네스가
+# 실행 수를 안 찍으면 **"하나도 안 돌았다" 와 "다 통과했다" 가 같은 줄을 만든다.** 요청한
+# 수가 0 이면 그 자체를 실패로 센다 — 잴 것이 없다는 뜻이 아니라 부르는 쪽이 깨진 것이다.
+echo "게이트 요청 ${#GATES[@]} · 잰 것 ${measured} · 못 잰 것 ${refused}"
+if [ "${#GATES[@]}" -eq 0 ]; then
+    echo "[delta] 잴 게이트가 하나도 없다 — 목록이 비었다. 통과가 아니라 실패다." >&2
+    status=1
+fi
+
+if [ "$measured" -ge 1 ]; then
     echo "계기: **재측정(확정)** — 양쪽 트리에서 게이트를 그대로 다시 돌려 뺐다."
     echo "      (diff 를 grep 해서 낸 delta 는 확정이 아니라 **하한**이다 — 이 도구의 값과 섞어 적지 마라.)"
 else
