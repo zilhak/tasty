@@ -16,7 +16,7 @@
 //!
 //! **못 잡는 것을 분명히 적는다** — 영어로 박힌 전달 문구는 이 가드가 못 본다.
 //! 영어 리터럴은 코드 식별자·프로토콜 토큰·진단과 값만으로 구분되지 않기 때문이다.
-//! 그쪽은 호출 형태를 보는 `tests/no_hardcoded_ui_strings.rs` 의 몫이고, 그 가드가
+//! 그쪽은 호출 형태를 보는 `crates/tasty-doc-guards/tests/no_hardcoded_ui_strings.rs` 의 몫이고, 그 가드가
 //! 아직 plugin 의 전달 채널 형태(`append_notify_line` · `terminal.tell` 파라미터)를
 //! 목록에 안 넣은 것이 이 구멍이 열려 있던 이유다.
 //!

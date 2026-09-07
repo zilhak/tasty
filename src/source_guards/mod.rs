@@ -49,9 +49,6 @@ use std::path::{Path, PathBuf};
 /// 현재 실측은 1100 개 남짓이라 여유를 두고 잡는다.
 const MIN_SCANNED_FILES: usize = 900;
 
-/// 통합 테스트 하한 — 실측 58 개.
-const MIN_INTEGRATION_TEST_FILES: usize = 40;
-
 /// 스캔 루트 — **출하되는 코드**. 본체 + 모든 크레이트.
 ///
 /// "Rust 소스 전부" 가 아니다. 실측(2026-09-05) git 이 아는 `.rs` 1265 개 중 **63 개가
@@ -289,22 +286,53 @@ fn rust_sources() -> Vec<(PathBuf, String)> {
     out
 }
 
-/// [`SCAN_ROOTS_WITH_INTEGRATION_TESTS`] 판. 통합 테스트가 실제로 읽혔는지를 따로
-/// 못박는다 — 루트 이름이 틀리면 예외가 아니라 조용한 0 이 되고, 0 만큼 늘어난
-/// 모수는 늘지 않은 것과 구별되지 않는다.
+/// [`SCAN_ROOTS_WITH_INTEGRATION_TESTS`] 판. 넓힌 모수가 **실제로 넓어졌는지**를 따로
+/// 못박는다 — 루트 이름이 틀리면 예외가 아니라 조용한 0 이 되고, 0 만큼 늘어난 모수는
+/// 늘지 않은 것과 구별되지 않는다.
+///
+/// **절대량 하한을 쓰지 않는다.** 한때 `integration >= 40` 이었다. 그 형태는 루트
+/// `tests/` 의 파일 수를 고정점으로 삼는데, 이 레포에서 그 수는 **설계상 줄어드는 중**이다
+/// — 의존 없는 가드를 `crates/tasty-doc-guards/tests/` 로 옮기는 작업이 진행 중이고,
+/// 실측으로 61 에서 43 까지 내려왔다. 그러면 이동마다 상수를 한 칸씩 내려야 하고, 그것은
+/// 래칫이 아니라 **세금**이다. 세금은 낼 때마다 느슨해지고, 느슨해진 쪽은 조용하다.
+///
+/// 이 단정이 원래 묻던 것은 절대량이 아니다 — 실패문이 스스로 적고 있었다: *넓힌 모수가
+/// 안 넓어졌으면 이 가드는 넓히기 전과 똑같이 통과한다.* 그래서 그 물음을 그대로 쓴다.
+/// 좁은 쪽과 넓은 쪽을 **각각 독립으로 걷어서** 견준다. 파일이 루트에서 크레이트로
+/// 옮겨가면 두 값이 함께 움직여 부등식이 유지되므로, 이 술어는 이동으로 낡지 않는다.
+///
+/// **비공허("루트 `tests/` 에서 하나라도 봤나")로 바꾸지 마라.** 지금 정의 아래에서는
+/// 동치가 맞다 — [`SCAN_ROOTS`] ⊂ [`SCAN_ROOTS_WITH_INTEGRATION_TESTS`] 이고 차집합이
+/// 정확히 루트 `tests/` 인 동안은 `넓은 > 좁은` 과 `integration > 0` 이 같은 명제다.
+/// 그런데 **그 포함 관계 자체가 이 가드의 숨은 전제이고, 전제가 깨지는 고장에서 둘이
+/// 갈린다**: [`SCAN_ROOTS`] 쪽이 잘못 편집돼 `tests` 를 품으면 두 모수가 같아져 부등식은
+/// 터지지만, `integration`(넓힌 집합에서 `tests/` 로 시작하는 파일 수)은 안 변해 `> 0` 은
+/// 통과한다. 부등식은 자기 전제를 함께 지키고 비공허는 안 지킨다. 그래서 둘을 나란히
+/// 두지 않고 **더 강한 쪽 하나만** 둔다 — 나란히 두면 독립인 듯한 인상만 준다.
+///
+/// 잡는 고장은 넷이다. [`SCAN_ROOTS_WITH_INTEGRATION_TESTS`] 에서 `tests` 가 빠지면 두
+/// 값이 같아져 터지고, [`SCAN_ROOTS`] 가 `tests` 를 품어도 같은 이유로 터지고, 뿌리
+/// 이름에 오타가 나면 `rust_sources` 가 `read_dir` 에서 먼저 패닉하고, 루트 `tests/` 가
+/// 실제로 비면 역시 두 값이 같아져 터진다.
+///
+/// 관측(단정이 아니다): 2026-09-07 기준 넓은 쪽 - 좁은 쪽 = 43.
 fn rust_sources_with_integration_tests() -> Vec<(PathBuf, String)> {
     let out = tasty_doc_guards::source_text::rust_sources(
         &repo_root(),
         SCAN_ROOTS_WITH_INTEGRATION_TESTS,
     );
-    let integration = out
-        .iter()
-        .filter(|(p, _)| p.to_string_lossy().replace('\\', "/").starts_with("tests/"))
-        .count();
+    // 좁은 쪽을 **독립으로** 걷는다. `out` 에서 빼서 구하면 부등식이 자기참조가 되어
+    // 두 뿌리 목록이 같아진 고장을 못 잡는다. `rust_sources()` 를 쓰므로 좁은 쪽의
+    // 스캔 하한(`MIN_SCANNED_FILES`)까지 함께 확인된다.
+    let narrow = rust_sources().len();
     assert!(
-        integration >= MIN_INTEGRATION_TEST_FILES,
-        "통합 테스트를 {integration} 개밖에 못 읽었다(하한 {MIN_INTEGRATION_TEST_FILES}). \
-         넓힌 모수가 안 넓어졌으면 이 가드는 넓히기 전과 똑같이 통과한다"
+        out.len() > narrow,
+        "넓힌 모수가 안 넓어졌다: {} 대 {narrow}. 넓힌 모수가 안 넓어졌으면 이 가드는 \
+         넓히기 전과 똑같이 통과한다. 원인은 둘이다 — `SCAN_ROOTS_WITH_INTEGRATION_TESTS` \
+         에서 루트 `tests` 가 빠졌거나, 루트 `tests/` 에 `.rs` 가 한 개도 없다.\n  \
+         ★ 이 단정을 절대량 하한으로 되돌리지 마라. 루트 `tests/` 는 설계상 줄어드는 중이라 \
+         절대량은 이동마다 낮춰야 하고, 그렇게 낮추는 값은 래칫이 아니라 세금이다.",
+        out.len()
     );
     out
 }
@@ -640,7 +668,12 @@ const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
     // macOS 것이 다섯 번째다. 그 전까지 그 잡은 `cargo check` 하나뿐이라 macOS 로 게이트된
     // 유닛 테스트는 **컴파일만 되고 아무도 안 돌렸다**. 비용이 이 잡의 시간이 아니라
     // 워크플로 벽시계(= 잡 최댓값)라는 판단과 그것이 뒤집히는 조건은 ci-gates.md 에 있다.
-    ("crossplatform-check.yml", 5),
+    //
+    // 여섯 번째는 Windows 통합 두 패키지다(`cargo test -p tasty-shm -p tasty-doc-guards`).
+    // 위 다섯이 전부 `--lib --bins` 아니면 헤드리스라, **Windows 에서 통합 타깃을 도는
+    // 자리가 하나도 없었다**. 두 패키지로 좁힌 것은 화면을 안 쓰는 것이 그 둘이기 때문이고,
+    // 그 판단의 근거는 그 스텝 주석에 있다.
+    ("crossplatform-check.yml", 6),
     ("doc-guards.yml", 1),
     ("test.yml", 3),
 ];
@@ -799,3 +832,23 @@ mod routing_key_method_scope;
 
 #[cfg(test)]
 mod workflow_fail_fast_tests;
+
+/// 한 egui 프레임 안의 host popup ↔ plugin popup draw 순서 계약. 두 자리가 결과만
+/// 진술하고 순서를 정하는 자리는 따로 있었다 — 집을 그리로 모으고 값으로 문다.
+#[cfg(test)]
+mod frame_draw_order;
+
+/// atlas 프레임 시계를 감는 호출이 프레임 진입점 안에, append 보다 앞에, 루프 밖에
+/// 있는지. 상태 기계는 `tasty-font` 가 device 없이 재고, **감는가**는 이쪽 소스의 물음이다.
+#[cfg(test)]
+mod frame_clock_arming;
+
+/// modifier-hint 오버레이의 도색 순서 계약 — 테두리는 콘텐츠 뒤에 다시 그려야 한다.
+/// 두 doc 이 결과만 진술하고 순서를 정하는 호출부에는 아무 말이 없었다.
+#[cfg(test)]
+mod modifier_hint_paint_order;
+
+/// plugin 종료의 채널 순서 계약 — shutdown 요청은 `surface.closed` 뒤에 놓여야 한다.
+/// 세 자리에 흩어져 있던 산문을 집행 자리 하나로 모으고 그것을 값으로 문다.
+#[cfg(test)]
+mod shutdown_channel_order;

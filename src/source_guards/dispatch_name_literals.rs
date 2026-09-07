@@ -47,7 +47,12 @@ const ROUTERS: &[&str] = &[
 
 /// 이 규칙을 **재는** 쪽. 가드는 판정 자리의 모양을 합성 입력으로 담으므로 라우터가
 /// 아니면서 같은 형태를 갖는다 — 명부 대조에서 뺀다.
-const GUARD_DIR: &str = "src/source_guards/";
+///
+/// 두 번째 항은 IPC 를 갖지 않는 판정 전용 크레이트다. 거기 라우터가 들어올 수 없어서
+/// 빼는 것이고, 들어올 수 있는 자리를 편의로 빼는 것이 아니다. 이 구분이 필요한 이유는
+/// 실측이다 — 재는 쪽 파일 하나가 `src/` 밖 그 크레이트로 옮겨가자 명부 대조가 그것을
+/// 라우터로 세면서 조립에서 빨갛게 났다. 경로를 옮기면 소속이 바뀌는 부류다.
+const GUARD_DIRS: &[&str] = &["src/source_guards/", "crates/tasty-doc-guards/"];
 
 fn has_decision_site(src: &str) -> bool {
     let mut at = 0usize;
@@ -95,7 +100,7 @@ fn no_router_escapes_the_roster() {
     let mut found: Vec<String> = Vec::new();
     for (path, src) in rust_sources() {
         let rel = path.to_string_lossy().replace('\\', "/");
-        if rel.starts_with(GUARD_DIR) {
+        if GUARD_DIRS.iter().any(|d| rel.starts_with(d)) {
             continue;
         }
         if has_decision_site(&src) && !listed.contains(rel.as_str()) {

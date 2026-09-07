@@ -385,6 +385,87 @@ fn each_entry_names_something_that_exists() {
     }
 }
 
+/// `OTHER_LOCKS` 의 각 항목이 기대는 **전제**: 그 락을 **밖에서 이름으로 못 부른다.**
+///
+/// 이 명부는 "규칙에서 뺀다" 는 표다. 그런 표는 한 번 적히면 아무도 그 자리를 다시 안
+/// 본다 — 면제는 그 자체가 도망길이라, 사유가 아직 참인지 묻는 장치가 따로 필요하다.
+///
+/// 여기서 면제가 안전한 이유의 절반은 **락이 모듈 비공개**라는 사실이다. 밖에서 이름을
+/// 못 부르면 "락만 손으로 잡고 지켜야 할 것을 만진다" 는 우회를 **쓸 수가 없다** —
+/// 훑어서 못 찾는 것이 아니라 컴파일이 거부한다. 가시성이 넓어지는 순간 그 절반이
+/// 사라지는데, 산문만 있으면 표는 그대로 남는다.
+///
+/// 실측(2026-09-07): 일곱 **전부**가 `pub` 없는 `static` 이다. 그래서 지금은 하나도
+/// 텍스트 가드를 필요로 하지 않는다. 이 시험은 그 상태가 조용히 뒤집히는 것을 막는다.
+/// ★ 그 방향으로 실제로 움직인 적이 있다 — `TASTY_HOME_ENV_LOCK` 은 `pub(crate)` 였고,
+/// 그때는 소스 스캔 하나가 이 일을 대신하고 있었다. 좁히면서 그 시험을 지웠다
+/// ([`super::home_env_has_one_door`]). 한 번 좁혀진 것은 다시 넓어질 수도 있다.
+///
+/// ☆ **판독기가 좁은 것은 의도다.** `static ENV_LOCK : Mutex<()>` 처럼 콜론 앞에 빈칸을
+/// 두면 이 판독기는 선언을 **못 찾고 패닉한다**(실측으로 확인했다). 못 찾은 것을
+/// "비공개다" 로 세면 이 시험은 언제나 초록이 되므로, 모르는 형태는 조용히 넘기지 않고
+/// 시끄럽게 죽는 쪽으로 둔다. 넓히려면 판독기를 넓히고 그 자리를 다시 재라.
+///
+/// **`SERIALIZED` 에는 같은 물음을 던지지 않는다.** 그쪽 락은 다른 파일의 테스트가
+/// **부르라고** 있는 것이라 넓은 가시성이 정상이다(실측: `WEBVIEW_KIND_TEST_LOCK` 은
+/// `pub static` 이다). 같은 문장을 두 명부에 걸면 맞는 자리까지 빨개진다.
+#[test]
+fn every_listed_lock_is_still_module_private() {
+    let mut checked = 0usize;
+    let mut widened = Vec::new();
+    for (file, lock, _) in OTHER_LOCKS {
+        let text = std::fs::read_to_string(repo_root().join(file))
+            .unwrap_or_else(|e| panic!("{file} 을 읽지 못했다: {e}"));
+        let masked = mask_non_code(&text);
+        let decl = masked
+            .lines()
+            .enumerate()
+            .find_map(|(i, l)| {
+                let t = l.trim_start();
+                let rest = t.strip_prefix("pub").map_or(t, |r| {
+                    // `pub`, `pub(crate)`, `pub(super)` … 어느 쪽이든 뒤의 `static` 을 본다.
+                    r.trim_start()
+                        .strip_prefix('(')
+                        .and_then(|r| r.split_once(')'))
+                        .map_or(r.trim_start(), |(_, after)| after.trim_start())
+                });
+                let after = rest.strip_prefix("static ")?;
+                after
+                    .trim_start()
+                    .starts_with(&format!("{lock}:"))
+                    .then_some((i + 1, t.to_string()))
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "{file} 에서 `static {lock}` 선언을 못 찾았다 — 이름이 바뀌었거나 \
+                     선언 형태가 이 판독기 밖이다. 못 찾은 것을 '비공개다' 로 세면 \
+                     이 시험은 언제나 초록이 된다"
+                )
+            });
+        checked += 1;
+        if decl.1.starts_with("pub") {
+            widened.push(format!("  {file}:{}  {}", decl.0, decl.1));
+        }
+    }
+    assert_eq!(
+        checked,
+        OTHER_LOCKS.len(),
+        "명부 {} 중 {checked} 개만 읽었다 — 판독이 죽으면 아래 판정이 빈 목록을 보고 \
+         통과한다",
+        OTHER_LOCKS.len()
+    );
+    assert!(
+        widened.is_empty(),
+        "아래 락이 모듈 밖으로 열렸다:\n{}\n\n\
+         `OTHER_LOCKS` 는 이 락들을 규칙에서 **빼는** 표이고, 그 면제가 안전한 이유의 \
+         절반이 \"밖에서 이름을 못 부른다\" 였다. 열린 순간 \"락만 잡고 지켜야 할 것을 \
+         만진다\" 는 우회가 다시 쓸 수 있게 된다.\n\
+         정말 넓혀야 하면, 그 항목이 잃은 절반을 대신할 것(그 우회를 잡는 스캔)을 \
+         함께 두고 사유에 그 자리를 적어라 — 넓히고 표만 남기는 것은 이행이 아니다",
+        widened.join("\n")
+    );
+}
+
 /// `Scope::File` 이 기대는 **전제**: 그 항목이 지키는 이름이 파일 밖에서 안 보인다.
 ///
 /// File 로 두면 다른 파일의 테스트는 **아예 안 본다.** 그 좁힘이 옳으려면 "다른 파일이

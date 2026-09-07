@@ -278,6 +278,11 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
         "소유 view 의 BannerManager 와 host 매니저를 함께 다룬다 — `open`·`close` 둘 다 \
          `self.view.views` 를 순회한다. view 가 없다",
     ),
+    (
+        "debug.modal.close_request",
+        "활성 모달은 `self.view.active_modal_id` 로 식별하고 `close_active_modal()` 이 \
+         `self.view.views` 에서 지운다 — view 가 없다",
+    ),
     // `debug.fullscreen.` 을 갈래 한 줄로 두지 않는다 — 그 안에서 판정이 갈린다.
     // `list` 는 여기 없다: 무대 표를 메타와 그리기 함수로 가른 뒤 헤드리스가 답한다.
     // 남은 셋은 창을 지목해야 해서 답이 정의되지 않는다.
