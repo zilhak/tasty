@@ -37,6 +37,7 @@ no_active_session = "surface {surface} にアクティブな codex セッショ�
 
 [codex.params]
 missing = "必須パラメータ '{key}' がありません"
+missing_target_surface = "必須パラメータ 'surface'(または 'surface_id')がありません"
 not_a_number = "'{key}' に {raw} が渡されました — 32ビットに収まる整数である必要があります。切り捨てず拒否します: 切り捨てられた id は実在しうる別の対象を指します"
 surface_conflict = "'surface' と 'surface_id' が異なる対象を指している (surface={surface}, surface_id={surface_id}) — どちらか一方、または同じ値を送ること"
 invalid_choice = "'{flag}' の値 '{value}' は不正です (指定可能: {valid})"

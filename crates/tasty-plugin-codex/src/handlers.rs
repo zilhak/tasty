@@ -39,7 +39,7 @@ pub(crate) fn t_args(tr: &Translator, key: &str, pairs: &[(&str, &str)]) -> Stri
 /// 사용자에게 그 접두가 두 번 나간다(실측: `host call 'terminal.tell' failed:
 /// host call 'call#1' failed: no live surface 9999`). 형제 plugin(claude)은
 /// 처음부터 `From` 만 쓴다.
-fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
+fn host_call<H: HostCall>(host: &H, method: &str, params: Value) -> Result<Value, IpcMethodError> {
     host.call(method, params).map_err(IpcMethodError::from)
 }
 
@@ -110,7 +110,11 @@ pub(crate) fn require_target_surface(
     tr: &Translator,
 ) -> Result<u32, IpcMethodError> {
     optional_target_surface(params, tr)?.ok_or_else(|| {
-        IpcMethodError::invalid_params(&tr.t_replace("codex.params.missing", "{key}", "surface"))
+        // 일반 `missing` + `{key}`="surface" 를 쓰면 **한 키만 댄다** — 이 판정은
+        // `surface` 와 `surface_id` 를 한 필드로 읽으므로 그 문구는 틀린 처방이다
+        // (`surface_id` 를 쓰던 호출자에게 `surface` 를 대라고 답한다). 두 키를 다 대는
+        // 전용 문구를 쓴다. 짝 크레이트의 같은 자리가 처음부터 그렇게 하고 있었다.
+        IpcMethodError::invalid_params(tr.t("codex.params.missing_target_surface"))
     })
 }
 
@@ -305,9 +309,9 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
     Ok(parts.join(" "))
 }
 
-pub fn handle_launch(
+pub(crate) fn handle_launch(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let workspace_name = params
@@ -315,8 +319,8 @@ pub fn handle_launch(
         .and_then(|v| v.as_str())
         .unwrap_or("codex")
         .to_string();
-    let directory = optional_str(&params, "directory");
-    let task = optional_str(&params, "task");
+    let directory = optional_str(params, "directory");
+    let task = optional_str(params, "task");
 
     // cwd 는 CLI 가 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
     // 호스트 workspace.create 가 PTY working_dir 로 직접 사용 → `cd` echo 불필요.
@@ -343,7 +347,7 @@ pub fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let policy_args = resolve_policy_args(host, &params, tr)?;
+        let policy_args = resolve_policy_args(host, params, tr)?;
         let cmd = make_codex_command(sid, task.as_deref(), &policy_args);
         host_call(
             host,
@@ -359,13 +363,13 @@ pub fn handle_launch(
     }))
 }
 
-pub fn handle_parent(
+pub(crate) fn handle_parent(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     // 호스트 registry 가 parent 매핑의 SoT — 그대로 위임.
-    let surface = require_target_surface(&params, tr)?;
+    let surface = require_target_surface(params, tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -373,21 +377,21 @@ pub fn handle_parent(
 /// `codex` namespace 안에 두는 이유는 완료 판정 전략의 `poll_method` 가 owner
 /// namespace 밖을 참조할 수 없어서다(결정 2) — `codex.spawn` 기본 전략이 이
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
-pub fn handle_state(
+pub(crate) fn handle_state(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface = require_target_surface(&params, tr)?;
+    let surface = require_target_surface(params, tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
-pub fn handle_tell(
+pub(crate) fn handle_tell(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_target_surface(&params, tr)?;
+    let surface_id = require_target_surface(params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
@@ -403,24 +407,24 @@ pub fn handle_tell(
     // caller_surface 는 dynamic CLI 가 `TASTY_SURFACE_ID` 로 자동 채운다(명시
     // --caller-surface 도 허용). 없으면(예: 호스트가 직접 IPC 호출) 완료 알림을
     // 등록하지 않는다 — 누구에게 알릴지 모르므로.
-    if let Ok(caller) = require_u32(&params, "caller_surface", tr) {
+    if let Ok(caller) = require_u32(params, "caller_surface", tr) {
         register_notify_hooks(host, caller, surface_id, "tell");
     }
 
     Ok(resp)
 }
 
-pub fn handle_spawn(
+pub(crate) fn handle_spawn(
     host: &HostHandle,
+    params: &Value,
     tr: &Translator,
-    params: Value,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface = require_target_surface(&params, tr)?;
-    let prompt = optional_str(&params, "prompt");
+    let parent_surface = require_target_surface(params, tr)?;
+    let prompt = optional_str(params, "prompt");
 
     // 1) 호스트 registry 에 자식 등록 + soft 점유 + tab 생성 (command 미전송).
     //    workspace 는 required — 없으면 호스트가 invalid_params 로 거부한다.
-    let mut sp = forward(&params, &["workspace", "pane", "cwd", "role", "nickname"]);
+    let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
     sp.insert("parent".into(), json!(parent_surface));
     let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
     let child_sid = resp
@@ -436,7 +440,7 @@ pub fn handle_spawn(
         })?;
 
     // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
-    let policy_args = resolve_policy_args(host, &params, tr)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -572,14 +576,14 @@ fn register_notify_hooks<H: HostCall>(
 /// "누가 먼저 fire했는지" 판별이 전혀 필요 없다. 정리는 `hook.list`(surface 필터) +
 /// command 문자열 일치로 하며, 상태(단일 meta 슬롯)를 공유하지 않아 같은 surface 에
 /// spawn/tell 이 겹쳐 등록돼도 서로의 형제를 덮어써 좀비로 남기지 않는다.
-pub fn handle_notify_caller<H: HostCall>(
+pub(crate) fn handle_notify_caller<H: HostCall>(
     host: &H,
+    params: &Value,
     tr: &Translator,
-    params: Value,
 ) -> Result<Value, IpcMethodError> {
-    let caller = require_u32(&params, "caller", tr)?;
-    let target = require_u32(&params, "target", tr)?;
-    let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
+    let caller = require_u32(params, "caller", tr)?;
+    let target = require_u32(params, "target", tr)?;
+    let kind = optional_str(params, "kind").unwrap_or_else(|| "tell".into());
     let message = notify_caller_message(tr, &kind, target);
     // 샌드박스 초기화 실패 힌트(docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트
     // 절 참조) — soft-fail, 조회 실패/미탐지 시 message 그대로.
@@ -704,56 +708,56 @@ fn build_spawn_warning(
     Some(msg)
 }
 
-pub fn handle_children(
+pub(crate) fn handle_children(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let mut cp = serde_json::Map::new();
-    put_target_surface(&mut cp, &params, tr)?;
+    put_target_surface(&mut cp, params, tr)?;
     host_call(host, "terminal.children", Value::Object(cp))
 }
 
-pub fn handle_broadcast(
+pub(crate) fn handle_broadcast(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_text")))?;
-    let mut bp = forward(&params, &["role"]);
-    put_target_surface(&mut bp, &params, tr)?;
+    let mut bp = forward(params, &["role"]);
+    put_target_surface(&mut bp, params, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
-pub fn handle_kill(
+pub(crate) fn handle_kill(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child", tr)?;
+    let child = require_u32(params, "child", tr)?;
     let mut kp = serde_json::Map::new();
-    put_target_surface(&mut kp, &params, tr)?;
+    put_target_surface(&mut kp, params, tr)?;
     kp.insert("child".into(), json!(child));
     host_call(host, "terminal.kill", Value::Object(kp))
 }
 
-pub fn handle_respawn(
+pub(crate) fn handle_respawn(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child", tr)?;
-    let prompt = optional_str(&params, "prompt");
+    let child = require_u32(params, "child", tr)?;
+    let prompt = optional_str(params, "prompt");
 
     // 1) 호스트 registry 위임: cwd 있으면 PTY 교체, 없으면 Ctrl-C. role/nickname/cwd
     //    갱신 + idle 초기화까지 호스트가 수행하고 child_surface_id 를 돌려준다.
     //    codex 기동은 여기서 하지 않으므로 command 는 넘기지 않는다.
-    let mut rp = forward(&params, &["cwd", "role", "nickname"]);
-    put_target_surface(&mut rp, &params, tr)?;
+    let mut rp = forward(params, &["cwd", "role", "nickname"]);
+    put_target_surface(&mut rp, params, tr)?;
     rp.insert("child".into(), json!(child));
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_sid = resp
@@ -769,7 +773,7 @@ pub fn handle_respawn(
         })?;
 
     // 2) codex 특화 기동 명령 재전송.
-    let policy_args = resolve_policy_args(host, &params, tr)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -787,18 +791,25 @@ pub fn handle_respawn(
 /// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
 /// codex 의 wire schema 와 호환되어야 한다. 모든 필드가 optional 이므로 empty
 /// object 는 "no decision, continue normally" 의미.
-pub fn handle_hook(
-    host: &HostHandle,
-    params: Value,
+/// 호스트를 트레이트로 받는다 — 이 핸들러가 세는 수가 시험 가능해야 하기 때문이다.
+/// 같은 파일의 `handle_notify_caller` 는 이미 그 이음매를 갖고 있었고 이 자리만 구체
+/// 타입을 받고 있었다.
+pub(crate) fn handle_hook<H: HostCall>(
+    host: &H,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_event")))?;
-    let surface_id = require_target_surface(&params, tr)
+    let surface_id = require_target_surface(params, tr)
         .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     let new_state = hook_event_to_state(event, tr)?;
+    // 조용히 실패한 host 호출을 센다. 아래 `terminal.set_state` 는 전파하므로 이 수에
+    // 안 들어간다 — 세는 것은 **응답이 성공을 말하는 동안 실패할 수 있는 것**뿐이다.
+    // claude 의 `deliver` 와 같은 규칙이고, 그쪽과 같은 이름으로 응답에 싣는다.
+    let mut host_call_failures: usize = 0;
     // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
     // 오면 reboot/복원용 세션 meta 를 기록한다. codex 에는 SessionEnd hook 이
     // 없어 unset 경로는 없다 — 다음 session-start 가 덮어쓴다. resume 기동도
@@ -816,6 +827,7 @@ pub fn handle_hook(
                 json!({ "surface_id": surface_id, "key": key, "value": value }),
             ) {
                 tracing::warn!("codex hook meta.set '{key}' failed: {e}");
+                host_call_failures += 1;
             }
         }
     }
@@ -840,8 +852,13 @@ pub fn handle_hook(
         )
     {
         tracing::warn!("codex hook fire_hook 'codex-idle' failed: {e}");
+        host_call_failures += 1;
     }
-    Ok(json!({}))
+    // 응답이 빈 객체였다 — 그러면 최선노력 호출이 전부 실패한 훅과 전부 성공한 훅이
+    // 바이트까지 같다. 전파하는 호출이 하나 있다고 해서 나머지의 침묵이 메워지지는
+    // 않는다. 규칙과 근거는 docs/dev-guide/error-handling.md
+    // "plugin 핸들러의 host 호출 — 전파와 최선노력".
+    Ok(json!({ "host_call_failures": host_call_failures }))
 }
 
 /// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
@@ -857,7 +874,7 @@ fn hook_event_to_state(event: &str, tr: &Translator) -> Result<&'static str, Ipc
     }
 }
 
-pub fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_install(tr: &Translator) -> Result<Value, IpcMethodError> {
     let path = codex_config_toml_path(tr)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
@@ -890,7 +907,7 @@ Enter → t → Esc → Down. Trust persists per-machine."
     Ok(resp)
 }
 
-pub fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_uninstall(tr: &Translator) -> Result<Value, IpcMethodError> {
     let path = codex_config_toml_path(tr)?;
     if !path.exists() {
         return Ok(json!({ "uninstalled": true, "path": path.to_string_lossy(), "noop": true }));
@@ -1247,6 +1264,95 @@ mod tests {
     fn test_translator_for(code: &str) -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, code)
+    }
+
+    /// 정해진 method 만 실패시키는 mock 호스트. 위 `MockHost` 는 hook.* 를 흉내 내는
+    /// 물건이라 "실패를 만드는" 축이 없다 — 그 축만 따로 세운다.
+    struct FlakyHost {
+        fail: Vec<&'static str>,
+        seen: RefCell<Vec<String>>,
+    }
+
+    impl FlakyHost {
+        fn failing(fail: Vec<&'static str>) -> Self {
+            Self {
+                fail,
+                seen: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl HostCall for FlakyHost {
+        fn call(
+            &self,
+            method: &str,
+            _params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            self.seen.borrow_mut().push(method.to_string());
+            if self.fail.contains(&method) {
+                Err(tasty_plugin_sdk::PluginError::HostCall {
+                    method: method.to_string(),
+                    message: "no live surface 999".to_string(),
+                    code: Some(-32602),
+                })
+            } else {
+                Ok(json!({}))
+            }
+        }
+    }
+
+    /// 최선노력 호출이 조용히 실패하면 그 수가 응답에 실린다. session-start 는
+    /// `surface.meta.set` 을 둘 쏘고 둘 다 최선노력이다.
+    #[test]
+    fn a_hook_response_reports_the_best_effort_calls_that_failed() {
+        let host = FlakyHost::failing(vec!["surface.meta.set"]);
+        let out = handle_hook(
+            &host,
+            &json!({ "surface_id": 999, "event": "session-start", "session": "s-1" }),
+            &test_translator(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            out["host_call_failures"],
+            2,
+            "쏜 것: {:?}",
+            host.seen.borrow()
+        );
+    }
+
+    /// 같은 자극, 살아 있는 호스트 — 0 이다. 이 대조가 없으면 위 2 가 "언제나 2" 인지
+    /// "실패해서 2" 인지 안 갈린다. 그리고 **필드는 실패가 0 이어도 있다** — 있을 때만
+    /// 나타나는 필드는 "필드 없음" 과 "실패 0" 을 다시 못 가르게 만든다.
+    #[test]
+    fn the_failure_count_is_present_even_when_nothing_failed() {
+        let host = FlakyHost::failing(Vec::new());
+        let out = handle_hook(
+            &host,
+            &json!({ "surface_id": 1, "event": "session-start", "session": "s-1" }),
+            &test_translator(),
+        )
+        .unwrap();
+
+        assert_eq!(out["host_call_failures"], 0);
+        assert!(
+            out.get("host_call_failures").is_some(),
+            "실패가 0 이어도 필드는 있어야 한다"
+        );
+    }
+
+    /// 전파하는 호출(`terminal.set_state`)이 실패하면 응답 자체가 없다 — 그 실패는 이
+    /// 수에 안 들어간다. 세는 것은 **응답이 성공을 말하는 동안 실패할 수 있는 것**뿐이다.
+    #[test]
+    fn the_propagated_call_is_an_error_not_a_counted_failure() {
+        let host = FlakyHost::failing(vec!["terminal.set_state"]);
+        let err = handle_hook(
+            &host,
+            &json!({ "surface_id": 999, "event": "stop" }),
+            &test_translator(),
+        );
+
+        assert!(err.is_err(), "전파하는 호출의 실패는 Err 로 나간다");
     }
 
     /// 이 완주만의 surface id. `make_codex_command` 가 쓰는 prompt 임시파일 경로는
@@ -2246,8 +2352,8 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
+            &json!({ "caller": caller, "target": target, "kind": "tell" }),
             &test_translator(),
-            json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
         assert_eq!(
@@ -2260,8 +2366,8 @@ trusted_hash = "sha256:xyz"
         assert_eq!(host.fire(target, "codex-idle"), 1);
         handle_notify_caller(
             &host,
+            &json!({ "caller": caller, "target": target, "kind": "tell" }),
             &test_translator(),
-            json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
         assert_eq!(
@@ -2284,8 +2390,8 @@ trusted_hash = "sha256:xyz"
         host.mark_dead(target);
         handle_notify_caller(
             &host,
+            &json!({ "caller": caller, "target": target, "kind": "spawn" }),
             &test_translator(),
-            json!({ "caller": caller, "target": target, "kind": "spawn" }),
         )
         .unwrap();
 

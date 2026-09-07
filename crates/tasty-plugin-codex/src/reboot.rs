@@ -87,8 +87,8 @@ const REBOOT_NOTICE_KEY: &str = "codex.reboot.notice";
 pub(crate) fn handle_reboot(
     inflight: &Arc<Mutex<HashSet<u32>>>,
     host: &HostHandle,
-    tr: &Translator,
     params: &Value,
+    tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let surface_id = crate::handlers::require_target_surface(params, tr)?;
     let (delay_secs, extra_prompt) = parse_options(params);
