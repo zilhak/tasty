@@ -434,8 +434,44 @@ fn sync_builtin_dev_lang(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) 
     }
 }
 
+/// 개발 빌드의 crate `lang/` → staging `lang/` 동기화. src 가 더 새것일 때만 복사하고,
+/// src 에 없는 dest 항목은 층마다 지운다([`prune_dest_not_in_src`]).
+///
+/// ## 청소가 왜 이 함수에서 빠져 있었나
+///
+/// 이 자리는 오래 **복사 전용**이었다. 형제 둘(`overwrite_builtin_dir` · `sync_dir_by_content`)은
+/// 청소를 하고 doc 에 그렇게 적었는데, 이 함수만 청소도 doc 도 없었다 — 의도된 예외가 아니라
+/// 빠뜨린 쪽이다.
+///
+/// 그 소실이 조용했던 이유는 **같은 "스테이징" 단계를 셸도 하기 때문**이다. `Justfile` 의
+/// `build-plugins` · `build-plugin` 과 `scripts/build-linux.sh` · `scripts/build-macos-dmg.sh` 는
+/// 전부 `rm -rf <dest>/lang` 뒤 전량 복사라 삭제가 이미 들어 있다. 그래서 잔존물은
+/// **호스트가 부팅 때 스스로 스테이징하는 갈래**([`ensure_dev_bundle`])에서만 생겼고, 다음 셸
+/// 스테이징까지만 살았다. 좁지만 죽은 경로는 아니다 — `cargo build --workspace` 후 그냥 실행하는
+/// 것이 안내된 개발 흐름이다.
+///
+/// 잔존의 대가는 i18n 이다. crate 에서 지운 lang 파일이 staging 에 남으면, 홈 설치는 **그 staging
+/// 을 src 로** 삼아 prune 하므로([`sync_dir_by_content`]) 홈에서도 안 지워진다. 즉 지울 수 있는
+/// 지점이 여기 하나뿐이었는데 여기에만 청소가 없었다.
+///
+/// ## dest 는 번들 전용이라는 전제
+///
+/// prune 은 **지우는** 동작이라 dest 에 사용자 파일이 섞이면 안 된다. 호출자는 하나뿐이고
+/// ([`sync_builtin_dev_lang`]) 그 dest 는 `<exe_dir>/builtin-plugins/<id>/lang` 이다.
+/// [`bundle_root`] 의 환경변수 override 와 exe 옆 `plugins/` 는 이 갈래에 **도달하기 전에**
+/// 반환되므로, 여기 오는 dest 는 이 코드가 만든 빌드 산출물 디렉터리뿐이다. 위 셸 경로들이 같은
+/// 디렉터리를 통째로 `rm -rf` 하고 있으니, 층별 prune 은 이미 통용되는 것보다 약하다.
+/// 다른 호출자를 붙일 때 이 전제를 같이 확인해라 — 안 맞으면 붙일 곳이 여기가 아니다.
+///
+/// ## 훑는 함수가 왜 셋인가
+///
+/// 셋의 차이는 **파일 단위 복사 술어 하나**뿐이다 — 무조건([`copy_atomic`]) · mtime 과 동률내용
+/// ([`copy_if_newer`]) · 내용([`copy_file_if_content_differs`]). 훑기와 prune 은 같다. 술어를
+/// 인자로 받는 훑기 하나로 합칠 수 있고, 합치면 "셋 중 하나가 청소를 빠뜨린다" 가 원리적으로
+/// 불가능해진다. 못 합칠 구조적 이유는 없다 — 안 합친 것이고, 그동안은 이 주석이 그 값을 대신 진다.
 fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
+    prune_dest_not_in_src(src, dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let ty = entry.file_type()?;
@@ -2011,6 +2047,32 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dest.join("keep")).unwrap(),
             "dest-side"
+        );
+    }
+
+    #[test]
+    fn dev_lang_sync_removes_what_the_crate_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("lang");
+        let dest = tmp.path().join("staged-lang");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(src.join("en.toml"), "en").unwrap();
+        std::fs::write(src.join("ko.toml"), "ko").unwrap();
+        std::fs::write(dest.join("en.toml"), "en").unwrap();
+        std::fs::write(dest.join("ko.toml"), "ko").unwrap();
+        // crate 에서 빠진 파일 — staging 에만 남아 있다.
+        std::fs::write(dest.join("ja.toml"), "ja-dropped").unwrap();
+
+        sync_dir_if_newer(&src, &dest).unwrap();
+
+        // ⓪ 대조군 — src 에 있는 것은 남아야 한다. 이 두 줄이 없으면 "지울 것만 지웠다" 와
+        // "다 지웠다" 가 같은 모양으로 통과한다.
+        assert!(dest.join("en.toml").exists(), "src 에 있는 파일을 지웠다");
+        assert!(dest.join("ko.toml").exists(), "src 에 있는 파일을 지웠다");
+        assert!(
+            !dest.join("ja.toml").exists(),
+            "crate 에서 빠진 lang 파일이 staging 에 남았다"
         );
     }
 
