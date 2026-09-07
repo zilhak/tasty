@@ -56,8 +56,8 @@ skip() {
 # src·crates 에 Rust 파일이 0 개인 상황은 이 저장소에 없으므로, 0 개는 곧 측정 실패다.
 # 측정 실패는 위반(exit 1)과도 구분해 **exit 2**(환경/도구 문제)로 낸다.
 #
-# 회귀는 tests/file_sloc_gate_fails_loudly.rs 가 스텁 tokei · 스텁 판정기로 여섯 경우를
-# 모두 고정한다.
+# 회귀는 tests/file_sloc_gate_fails_loudly.rs 가 스텁 tokei · 스텁 판정기로 이 경우들을
+# 고정한다(수를 여기 적지 않는다 — 시험이 늘면 그 수만 낡는다. 실제로 낡아 있었다).
 # 판정기: 인라인 `#[cfg(test)]` 를 빈 줄로 바꾼 사본을 만든다. 줄 번호가 보존되므로
 # tokei 의 보고를 원본 좌표로 그대로 읽는다.
 #
@@ -145,5 +145,12 @@ fi
 if [ -n "$max_code" ]; then
     echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 가장 큰 판정 대상 ${max_code} 줄 (${max_path}) / 임계 ${THRESHOLD} — 남은 여유 $((THRESHOLD - max_code))"
 else
-    echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 여유 미상 — 판정 대상 파일이 없다."
+    # **판정 대상이 0 건인 것은 통과가 아니다.** 이 파일은 다른 모든 "측정이 안 됐다" 를
+    # exit 2 로 내는데(위 주석 "측정 실패를 위반 없음으로 읽지 않는다"), 여기만 초록으로
+    # 나가면 **아무것도 안 재고도 게이트가 통과한 것과 같은 줄**이 찍힌다. skip 과
+    # allowlist 가 전부를 삼켰거나 판정기가 빈 트리를 넘긴 경우이고, 건강한 트리에서는
+    # 안 온다 — 그러니 이 갈래가 초록이면 그건 게이트가 눈을 감은 것이다.
+    echo "판정 대상 파일이 0 건이다 — skip/allowlist 가 전부를 삼켰거나 훑을 트리가 비었다."
+    echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"
+    exit 2
 fi

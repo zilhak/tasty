@@ -136,6 +136,24 @@ fn a_failing_stripper_is_not_a_pass() {
 
 /// 판정기 경로가 아예 없으면 통과가 아니다. 러너에 바이너리를 안 만들어 둔 상태가
 /// 조용히 초록이 되면 게이트가 무엇을 쟀는지 아무도 모른다.
+/// skip 대상만 보고하는 tokei 스텁 — 걸러내고 나면 **판정 대상이 0 건**이 된다.
+const ALL_SKIPPED: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/tests/zz_stub_skipped.rs","stats":{"code":10}}]}}'"#;
+
+/// 판정 대상이 0 건인 것은 통과가 아니다.
+///
+/// skip 과 allowlist 가 전부를 삼키면 위반 목록도 비고, 그러면 "아무것도 안 쟀다" 가
+/// "다 통과했다" 와 **같은 줄**을 만든다. 이 게이트의 다른 모든 측정 실패는 exit 2 인데
+/// 이 갈래만 초록으로 나가면 그 규율이 한 자리에서만 지켜지는 것이다.
+#[test]
+fn zero_judged_files_is_not_a_pass() {
+    assert_eq!(
+        run_gate_with(ALL_SKIPPED),
+        2,
+        "판정 대상이 0 건이면 측정 실패다 — 통과로 읽지 않는다"
+    );
+}
+
 #[test]
 fn a_missing_stripper_is_not_a_pass() {
     let dir = stub_dir(UNDER_THRESHOLD);
