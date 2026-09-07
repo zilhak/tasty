@@ -1,4 +1,4 @@
-<!-- source-hash: 79164db56be8 -->
+<!-- source-hash: af8f8606927c -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -125,6 +125,23 @@ cancel = "Annuler"
 - Text containing `{}` has a value filled in at runtime. **Keep the same number of
   them** — drop one and that value disappears, add one and a literal `{}` shows up
   on screen.
+
+### Command-line help is translated too
+
+`tasty --help` and the other terminal help screens come out in the language you
+picked. In a language pack, that text lives under `[cli.help]`.
+
+```toml
+[cli.help._root]
+about = "Émulateur de terminal accéléré par GPU"
+
+[cli.help._root.new]
+about = "Créer une ressource"
+```
+
+- Here too, **you do not have to translate everything.** Commands you leave out
+  keep their English description and simply appear alongside the translated ones.
+- The help frame itself — `Usage:`, `Options:`, `Commands:` — is still English.
 
 ### Selecting it
 
