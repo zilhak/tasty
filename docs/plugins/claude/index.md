@@ -148,6 +148,8 @@ plugin 은 이를 **session id 로 키잉한 부착 기록**으로 해결한다 
 
 ### Claude Code 훅 통합
 
+**훅 응답은 조용히 실패한 host 호출 수를 싣는다** — `host_call_failures`(항상 있고 항상 수). 이 핸들러의 host 호출은 전부 최선노력이라(`?` 로 끊지 않는다 — 뒤따르는 로컬 정리를 지키기 위해서다, [ADR-0172](../../adr/0172-a-hook-handler-that-cleans-up-locally-does-not-propagate.md)) 실패해도 응답은 `ok` 다. 그 수 없이는 전부 실패한 훅과 전부 성공한 훅이 바이트까지 같다. 0 이 아니면 `<tasty_home>/hook-failures.log` 에도 한 줄 남는다 — 실사용에서 이 CLI 는 훅 명령 안에서 돌고 그 명령은 출력을 버리기 때문이다. 규약은 [error-handling](../../dev-guide/error-handling.md) "최선노력의 대가는 치르되 값으로 노출한다".
+
 `tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 8개 이벤트를 심는다. 모든 이벤트가 같은 형태의 명령 문자열을 쓴다:
 
 ```

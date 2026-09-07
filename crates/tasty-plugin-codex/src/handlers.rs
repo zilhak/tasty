@@ -39,7 +39,7 @@ pub(crate) fn t_args(tr: &Translator, key: &str, pairs: &[(&str, &str)]) -> Stri
 /// 사용자에게 그 접두가 두 번 나간다(실측: `host call 'terminal.tell' failed:
 /// host call 'call#1' failed: no live surface 9999`). 형제 plugin(claude)은
 /// 처음부터 `From` 만 쓴다.
-fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, IpcMethodError> {
+fn host_call<H: HostCall>(host: &H, method: &str, params: Value) -> Result<Value, IpcMethodError> {
     host.call(method, params).map_err(IpcMethodError::from)
 }
 
@@ -787,8 +787,11 @@ pub fn handle_respawn(
 /// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
 /// codex 의 wire schema 와 호환되어야 한다. 모든 필드가 optional 이므로 empty
 /// object 는 "no decision, continue normally" 의미.
-pub fn handle_hook(
-    host: &HostHandle,
+/// 호스트를 트레이트로 받는다 — 이 핸들러가 세는 수가 시험 가능해야 하기 때문이다.
+/// 같은 파일의 `handle_notify_caller` 는 이미 그 이음매를 갖고 있었고 이 자리만 구체
+/// 타입을 받고 있었다.
+pub fn handle_hook<H: HostCall>(
+    host: &H,
     params: Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
@@ -799,6 +802,10 @@ pub fn handle_hook(
     let surface_id = require_target_surface(&params, tr)
         .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     let new_state = hook_event_to_state(event, tr)?;
+    // 조용히 실패한 host 호출을 센다. 아래 `terminal.set_state` 는 전파하므로 이 수에
+    // 안 들어간다 — 세는 것은 **응답이 성공을 말하는 동안 실패할 수 있는 것**뿐이다.
+    // claude 의 `deliver` 와 같은 규칙이고, 그쪽과 같은 이름으로 응답에 싣는다.
+    let mut host_call_failures: usize = 0;
     // session-start 에 session id(stdin JSON `session_id` → CLI `--session`)가
     // 오면 reboot/복원용 세션 meta 를 기록한다. codex 에는 SessionEnd hook 이
     // 없어 unset 경로는 없다 — 다음 session-start 가 덮어쓴다. resume 기동도
@@ -816,6 +823,7 @@ pub fn handle_hook(
                 json!({ "surface_id": surface_id, "key": key, "value": value }),
             ) {
                 tracing::warn!("codex hook meta.set '{key}' failed: {e}");
+                host_call_failures += 1;
             }
         }
     }
@@ -840,8 +848,13 @@ pub fn handle_hook(
         )
     {
         tracing::warn!("codex hook fire_hook 'codex-idle' failed: {e}");
+        host_call_failures += 1;
     }
-    Ok(json!({}))
+    // 응답이 빈 객체였다 — 그러면 최선노력 호출이 전부 실패한 훅과 전부 성공한 훅이
+    // 바이트까지 같다. 전파하는 호출이 하나 있다고 해서 나머지의 침묵이 메워지지는
+    // 않는다. 규칙과 근거는 docs/dev-guide/error-handling.md
+    // "plugin 핸들러의 host 호출 — 전파와 최선노력".
+    Ok(json!({ "host_call_failures": host_call_failures }))
 }
 
 /// codex hook event → 호스트 registry state 매핑(순수 함수, 단위 테스트 가능).
@@ -1247,6 +1260,95 @@ mod tests {
     fn test_translator_for(code: &str) -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, code)
+    }
+
+    /// 정해진 method 만 실패시키는 mock 호스트. 위 `MockHost` 는 hook.* 를 흉내 내는
+    /// 물건이라 "실패를 만드는" 축이 없다 — 그 축만 따로 세운다.
+    struct FlakyHost {
+        fail: Vec<&'static str>,
+        seen: RefCell<Vec<String>>,
+    }
+
+    impl FlakyHost {
+        fn failing(fail: Vec<&'static str>) -> Self {
+            Self {
+                fail,
+                seen: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl HostCall for FlakyHost {
+        fn call(
+            &self,
+            method: &str,
+            _params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            self.seen.borrow_mut().push(method.to_string());
+            if self.fail.contains(&method) {
+                Err(tasty_plugin_sdk::PluginError::HostCall {
+                    method: method.to_string(),
+                    message: "no live surface 999".to_string(),
+                    code: Some(-32602),
+                })
+            } else {
+                Ok(json!({}))
+            }
+        }
+    }
+
+    /// 최선노력 호출이 조용히 실패하면 그 수가 응답에 실린다. session-start 는
+    /// `surface.meta.set` 을 둘 쏘고 둘 다 최선노력이다.
+    #[test]
+    fn a_hook_response_reports_the_best_effort_calls_that_failed() {
+        let host = FlakyHost::failing(vec!["surface.meta.set"]);
+        let out = handle_hook(
+            &host,
+            json!({ "surface_id": 999, "event": "session-start", "session": "s-1" }),
+            &test_translator(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            out["host_call_failures"],
+            2,
+            "쏜 것: {:?}",
+            host.seen.borrow()
+        );
+    }
+
+    /// 같은 자극, 살아 있는 호스트 — 0 이다. 이 대조가 없으면 위 2 가 "언제나 2" 인지
+    /// "실패해서 2" 인지 안 갈린다. 그리고 **필드는 실패가 0 이어도 있다** — 있을 때만
+    /// 나타나는 필드는 "필드 없음" 과 "실패 0" 을 다시 못 가르게 만든다.
+    #[test]
+    fn the_failure_count_is_present_even_when_nothing_failed() {
+        let host = FlakyHost::failing(Vec::new());
+        let out = handle_hook(
+            &host,
+            json!({ "surface_id": 1, "event": "session-start", "session": "s-1" }),
+            &test_translator(),
+        )
+        .unwrap();
+
+        assert_eq!(out["host_call_failures"], 0);
+        assert!(
+            out.get("host_call_failures").is_some(),
+            "실패가 0 이어도 필드는 있어야 한다"
+        );
+    }
+
+    /// 전파하는 호출(`terminal.set_state`)이 실패하면 응답 자체가 없다 — 그 실패는 이
+    /// 수에 안 들어간다. 세는 것은 **응답이 성공을 말하는 동안 실패할 수 있는 것**뿐이다.
+    #[test]
+    fn the_propagated_call_is_an_error_not_a_counted_failure() {
+        let host = FlakyHost::failing(vec!["terminal.set_state"]);
+        let err = handle_hook(
+            &host,
+            json!({ "surface_id": 999, "event": "stop" }),
+            &test_translator(),
+        );
+
+        assert!(err.is_err(), "전파하는 호출의 실패는 Err 로 나간다");
     }
 
     /// 이 완주만의 surface id. `make_codex_command` 가 쓰는 prompt 임시파일 경로는

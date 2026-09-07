@@ -18,6 +18,9 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
+// 이 모듈의 `HostCall` 은 "무엇을 쏠지" 를 담는 지역 enum 이라 이름이 겹친다. 트레이트는
+// 호스트를 흉내 낼 수 있게 하는 이음매 쪽이므로 그 역할로 별칭을 준다.
+use tasty_plugin_agent_common::host_call::HostCall as HostCallSink;
 
 use crate::checklist;
 use crate::error_scan::ErrorScanner;
@@ -117,9 +120,10 @@ pub fn handle_claude_hook(
         state, event, surface_id, message, now_ms,
     ));
 
-    for call in &calls {
-        deliver(host, call);
-    }
+    // 조용히 실패한 host 호출을 센다 — 이 수는 아래 응답에 **항상** 실린다.
+    // "실패했을 때만 넣는" 형태는 같은 침묵을 한 칸 옮길 뿐이다(필드가 없는 것과 실패가
+    // 0 인 것이 다시 구별되지 않는다).
+    let host_call_failures = deliver_all(host, &calls);
 
     if is_new_turn_event(event) {
         reset_dedupe_if_enabled(scanner, surface_id);
@@ -138,7 +142,14 @@ pub fn handle_claude_hook(
         profile_attach::mark_ended(data_dir, session.as_deref().unwrap_or(""));
     }
 
-    Ok(json!({ "ok": true, "surface_id": surface_id, "event": event }))
+    // `ok` 는 **이 핸들러가 끝까지 갔다**는 뜻이지 host 호출이 다 됐다는 뜻이 아니다.
+    // 두 물음이 갈리는 자리라 답도 둘이어야 한다 — 그래서 수를 함께 낸다.
+    Ok(json!({
+        "ok": true,
+        "surface_id": surface_id,
+        "event": event,
+        "host_call_failures": host_call_failures,
+    }))
 }
 
 /// 새 턴 시작(=idle 상태 해제) 신호 — `apply_hook` 이 `SetState{state:"active"}` 로
@@ -531,6 +542,11 @@ pub(crate) fn apply_session_start_profile(
 
 /// host 호출을 쏘고 **실패해도 계속 간다** — 이 함수는 절대 전파하지 않는다.
 ///
+/// 전파하지 않는 대신 **실패했는지를 돌려준다**(`false` = 실패). 호출부가 그 수를 세어
+/// 응답에 싣는다 — 최선노력의 대가는 "호출자가 실패를 모른다" 인데, 그 대가를 치르는 것과
+/// **대가를 안 보이게 두는 것**은 다르다. 수를 안 실으면 host 호출이 전부 실패한 응답과
+/// 전부 성공한 응답이 바이트까지 같아진다.
+///
 /// 전파하면 안 되는 이유는 호출부의 순서다. `handle_claude_hook` 은 이 루프 *뒤에*
 /// 로컬 정리를 한다(session-end 의 `checklist::remove_state_for_session` ·
 /// `profile_attach::mark_ended`, session-start 의 `store`/`sweep`). 그 넷은
@@ -552,7 +568,17 @@ pub(crate) fn apply_session_start_profile(
 /// 같은 규칙의 반대편이다 — 거기엔 호출 뒤에 지킬 로컬 상태가 없다. 규칙 전문은
 /// [error-handling](../../../docs/dev-guide/error-handling.md)
 /// "plugin 핸들러의 host 호출 — 전파와 최선노력".
-fn deliver(host: &HostHandle, call: &HostCall) {
+/// 계획된 호출을 전부 쏘고 **조용히 실패한 수**를 돌려준다.
+///
+/// 호스트를 트레이트로 받는 것은 이 수가 시험 가능해야 하기 때문이다. 같은 크레이트의
+/// `handlers.rs` 는 이미 그 이음매를 갖고 있었고(`H: HostCall` 로 mock 을 먹인다) 이
+/// 모듈만 구체 타입을 받고 있었다 — 그래서 "전파하지 않는다" 는 결정을 지키는 시험이
+/// 하나도 없었다. 이음매가 없으면 결정은 주석으로만 남고, 주석은 사람만 읽는다.
+fn deliver_all<H: HostCallSink>(host: &H, calls: &[HostCall]) -> usize {
+    calls.iter().filter(|call| !deliver(host, call)).count()
+}
+
+fn deliver<H: HostCallSink>(host: &H, call: &HostCall) -> bool {
     let (method, params) = match call {
         HostCall::SetState { surface_id, state } => (
             "terminal.set_state",
@@ -593,7 +619,9 @@ fn deliver(host: &HostHandle, call: &HostCall) {
     };
     if let Err(e) = host.call(method, params) {
         tracing::warn!("claude hook host call '{method}' failed: {e}");
+        return false;
     }
+    true
 }
 
 /// `surface` 해석의 판정부 — 환경을 읽지 않아 결정적이다.
@@ -648,6 +676,112 @@ mod tests {
     fn test_translator() -> Translator {
         let lang_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         Translator::load(&lang_dir, "en")
+    }
+
+    /// 호출을 전부 받아 성공/실패를 미리 정해진 대로 답하는 mock 호스트. 죽은 surface 를
+    /// 가리키는 훅이 실제로 만드는 상태(모든 호출이 실패)를 재현하는 데 쓴다.
+    struct FlakyHost {
+        /// 실패시킬 method 이름. 비면 전부 성공.
+        fail: Vec<&'static str>,
+        seen: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl FlakyHost {
+        fn failing_everything() -> Self {
+            Self {
+                fail: vec![
+                    "terminal.set_state",
+                    "surface.fire_hook",
+                    "surface.meta.set",
+                    "surface.meta.unset",
+                    "telemetry.record",
+                    "surface.completion",
+                ],
+                seen: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+
+        fn healthy() -> Self {
+            Self {
+                fail: Vec::new(),
+                seen: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl HostCallSink for FlakyHost {
+        fn call(
+            &self,
+            method: &str,
+            _params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            self.seen.borrow_mut().push(method.to_string());
+            if self.fail.contains(&method) {
+                // 실제 호스트가 죽은 surface 에 내는 것과 같은 형태 — 그 문구를 읽는
+                // 소비자가 있으므로 mock 도 같은 변형을 쓴다.
+                Err(tasty_plugin_sdk::PluginError::HostCall {
+                    method: method.to_string(),
+                    message: "no live surface 999".to_string(),
+                    code: Some(-32602),
+                })
+            } else {
+                Ok(json!({}))
+            }
+        }
+    }
+
+    /// 죽은 surface 를 가리키는 session-start + session-end 는 host 호출 **여덟 개**를
+    /// 쏘고 전부 실패한다. 그 수가 응답에 실리는 값이다.
+    ///
+    /// 여덟은 이 시험이 정한 수가 아니라 **실측에서 나온 수**다 — 격리 인스턴스에서 죽은
+    /// surface 에 훅을 보내면 `warn` 이 정확히 여덟 줄 나온다(`terminal.set_state` 둘 ·
+    /// `surface.meta.set` 둘 · `surface.meta.unset` 둘 · `surface.fire_hook` ·
+    /// `surface.completion`). 세는 자리가 틀리면 여기서 여덟이 안 나온다.
+    #[test]
+    fn a_dead_surface_makes_every_host_call_fail_and_the_count_is_eight() {
+        let tr = test_translator();
+        let host = FlakyHost::failing_everything();
+
+        let start = apply_hook("session-start", 100, Some("sess-1"), None, &tr).unwrap();
+        let end = apply_hook("session-end", 100, None, None, &tr).unwrap();
+        let failures = deliver_all(&host, &start) + deliver_all(&host, &end);
+
+        assert_eq!(failures, 8, "쏜 호출: {:?}", host.seen.borrow());
+        assert_eq!(host.seen.borrow().len(), 8, "센 수와 쏜 수가 같아야 한다");
+    }
+
+    /// 같은 자극, 살아 있는 호스트 — 0 이다. 이 대조가 없으면 위 8 이 "언제나 8" 인지
+    /// "실패해서 8" 인지 안 갈린다.
+    #[test]
+    fn a_live_host_makes_the_same_two_events_report_zero_failures() {
+        let tr = test_translator();
+        let host = FlakyHost::healthy();
+
+        let start = apply_hook("session-start", 100, Some("sess-1"), None, &tr).unwrap();
+        let end = apply_hook("session-end", 100, None, None, &tr).unwrap();
+        let failures = deliver_all(&host, &start) + deliver_all(&host, &end);
+
+        assert_eq!(failures, 0);
+        assert_eq!(host.seen.borrow().len(), 8, "실패가 0 이어도 쏜 수는 같다");
+    }
+
+    /// 일부만 실패하면 그만큼만 센다 — 전부/전무 두 끝만 맞고 가운데가 틀리는 세는 법이
+    /// 있다(예: 첫 실패에서 멈추기).
+    #[test]
+    fn only_the_failing_calls_are_counted() {
+        let tr = test_translator();
+        let host = FlakyHost {
+            fail: vec!["surface.meta.unset"],
+            seen: std::cell::RefCell::new(Vec::new()),
+        };
+
+        let end = apply_hook("session-end", 100, None, None, &tr).unwrap();
+        assert_eq!(
+            deliver_all(&host, &end),
+            2,
+            "meta.unset 은 이 계획에 둘이다"
+        );
+        assert_eq!(host.seen.borrow().len(), 5, "실패 뒤에도 나머지를 쏜다");
     }
 
     #[test]
