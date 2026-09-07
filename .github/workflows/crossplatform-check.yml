@@ -133,6 +133,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ★ 이 러너는 self-hosted 라 **워크스페이스를 재사용한다.** git 은 `.gitattributes`
+      # 가 바뀌어도 이미 워크트리에 있는 파일을 자동으로 재정규화하지 않는다 — 그래서
+      # `git add --renormalize` 라는 명령이 따로 있다. 그 결과 예전 실행이
+      # `core.autocrlf=true` 로 CRLF 로 써 둔 파일이 새 체크아웃 뒤에도 그대로 남는다.
+      #
+      # 그것이 왜 문제인가: 가드 다수가 소스를 **문자열로** 판정한다(여러 줄 needle 을
+      # `contains` 하거나 `find("\n    }\n")` 로 블록 끝을 잡는다). needle 은 LF 로 쓰여
+      # 있으므로 워크트리가 CRLF 면 같은 코드를 두고 "못 찾았다" 가 나온다.
+      #
+      # 이 스텝은 먼저 **재고**(몇 개가 CRLF 인지) 찍고, 있을 때만 인덱스에서 워크트리로
+      # 강제로 다시 쓴다. 조건부인 이유는 `checkout-index --all --force` 가 모든 파일의
+      # mtime 을 갱신해 cargo 의 증분 빌드를 통째로 무효화하기 때문이다 — 정규화가
+      # 필요 없는 실행에서는 그 비용을 물지 않는다.
+      - name: normalize the working tree to committed line endings
+        shell: pwsh
+        run: |
+          $before = @(git ls-files --eol | Select-String 'w/crlf')
+          Write-Host "CRLF in working tree (before): $($before.Count)"
+          if ($before.Count -gt 0) {
+            $before | Select-Object -First 5 | ForEach-Object { Write-Host "  $_" }
+            # 파일을 먼저 지운다. 인덱스가 CRLF 시절의 크기를 stat 으로 기억하고 있어
+            # git 이 그 항목을 "수정 없음" 으로 판정하며, 그때 checkout 계열은 --force
+            # 를 줘도 한 개도 다시 쓰지 않는다 (실측: 1915 개 중 0 개).
+            $before | ForEach-Object {
+              Remove-Item -LiteralPath (($_.Line -split "`t")[-1]) -Force -ErrorAction SilentlyContinue
+            }
+            git checkout --force -- .
+            $after = @(git ls-files --eol | Select-String 'w/crlf')
+            Write-Host "CRLF in working tree (after): $($after.Count)"
+            if ($after.Count -gt 0) { throw "renormalize did not take" }
+          }
+
       # clippy 컴포넌트가 러너에 없을 수 있으므로 보장(있으면 no-op).
       - name: ensure clippy component
         shell: pwsh
@@ -147,8 +179,9 @@ jobs:
       # Windows 단위테스트 — `#[cfg(windows)]` 분기와 플랫폼 의존 로직(경로 절대성,
       # ConPTY 등)의 born-broken 테스트를 잡는 유일한 채널 (test.yml 은 Linux 전용이라
       # terminal_link mirror 경로 테스트가 도입 시점부터 Windows 에서 깨진 채 미검출됐던
-      # 전례). `--lib --bins` 만 — e2e/integration 은 GUI spawn·plugin 빌드 오케스트레이션이
-      # 필요해 러너 가드로 부적합. clippy --all-targets 가 테스트 타깃을 이미 컴파일해
+      # 전례). 이 스텝이 `--lib --bins` 인 이유는 **통합 타깃 전체가 부적합해서가 아니다** —
+      # 창을 띄우는 e2e 하네스가 부적합한 것이고, 화면을 안 요구하는 통합 타깃은 아래
+      # 스텝이 패키지를 지목해 돌린다. clippy --all-targets 가 테스트 타깃을 이미 컴파일해
       # 추가 비용은 실행 시간뿐이다.
       #
       # `--no-fail-fast` 는 필수다. 이것이 없으면 cargo 는 **처음 실패한 테스트
@@ -160,6 +193,85 @@ jobs:
       - name: cargo test (unit)
         shell: pwsh
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
+
+      # 통합 타깃 중 **화면을 안 요구하는 두 패키지**만 지목해 Windows 에서 실행한다.
+      # 위 스텝이 `--lib --bins` 라 통합 타깃을 하나도 안 돌리는데, 그 사각 안에
+      # **Windows 에서만 존재하는 구현**과 **어느 OS 에서도 실행된 적 없는 스캔 가드**가
+      # 함께 들어 있었다.
+      #
+      # 무엇을 사는가:
+      #  · `tasty-shm` — `crates/tasty-shm/tests/round_trip.rs` 의 `#[cfg(windows)] mod win` 3 건.
+      #    Windows 의 공유 메모리 전달은 `DuplicateHandle` 로 unix 의 fd 전달과 **구현이
+      #    통째로 다르고**, 그 세 건이 그 구현을 실행하는 **유일한** 자리다. 지금까지
+      #    어떤 자동 잡에서도 돈 적이 없다(헤드리스 잡은 리눅스라 `mod unix` 만 본다).
+      #  · `tasty-doc-guards` — 이 크레이트의 통합 타깃은 **컴파일 채널만** 있었다
+      #    (위 `clippy --all-targets` 가 타깃으로 잡는다). 실행하는 자동 잡은
+      #    `doc-guards.yml` 하나이고 `ubuntu-latest` 다. 스캔 가드가 경로를 문자열로
+      #    다루면 구분자 때문에 Windows 에서만 **조용한 0**(위반을 못 찾고 통과)이 될 수
+      #    있는데, 그 형태는 Linux 초록으로는 원리적으로 안 보인다.
+      #
+      # 무엇을 안 사는가: 루트 패키지의 통합 타깃(e2e 하네스 포함). 그쪽은 기본 feature =
+      # gui 빌드의 자기 바이너리를 spawn 해 **창을 띄우므로**, 이 러너에 대화형 데스크톱
+      # 세션이 있는지를 먼저 재야 한다. 그 측정 없이 넣으면 빨강이 "제품이 깨졌다" 인지
+      # "러너에 화면이 없다" 인지 안 갈린다.
+      #
+      # 왜 `--lib --bins` 를 떼지 않고 스텝을 더하는가:
+      #  · `--skip` 은 **시험 이름** 필터라 타깃 하나를 빼려면 그 안의 이름을 전부
+      #    나열해야 하고, 항목이 늘면 그 목록이 아무 신호 없이 낡는다. 포함을 `-p` 로
+      #    좁히면 낡을 때 **덜 도는** 방향이라 조용한 통과를 안 만든다.
+      #  · 전량을 돌리면 `no_file_claims_ci_runs_the_full_suite_while_it_does_not` 가
+      #    스스로 꺼진다(주장이 참이 되므로). 게이트를 끄고 사는 커버리지는 순증이 아니다.
+      #  · 그리고 전량의 실행시간은 **타깃 하나가 지배한다** — 리눅스 실측(2026-09-07)에서
+      #    통합 전량 310s 중 `i18n_key_parity` 가 232s 였고, 그 안에서도 시험 하나
+      #    (`literal_translation_keys_exist_in_catalog`)가 255s 였다. 합계가 여유를 넘는
+      #    것처럼 보였지만 문턱이 그 한 자리를 가리고 있었다. 그 성능은 별도 과제다.
+      #
+      # 비용: 이 두 패키지의 리눅스 실측 합이 약 19s 다(`tasty-shm` 은 0.00s — 8 항목
+      # 전부 인프로세스다). Windows 값과의 관계는 미정이라 그 수를 예산으로 쓰지 않는다 —
+      # 판단 기준은 이 잡이 워크플로 임계경로(헤드리스 잡)를 넘는가이고, 재는 법은
+      # `docs/dev-guide/ci-gates.md` 에 있다. 추가 컴파일은 0 이다 — 위
+      # `clippy --workspace --all-targets` 가 이미 이 타깃들을 컴파일한다.
+      #
+      # `--no-fail-fast` 근거는 위 스텝과 같다.
+      - name: cargo test (windows integration — shm · doc-guards)
+        shell: pwsh
+        run: cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast
+
+      # **진단이다 — 게이트가 아니고, 재고 나면 지운다.**
+      #
+      # 묻는 것 하나: **이 러너에 대화형 데스크톱 세션이 있는가.** 루트 패키지의 통합
+      # 타깃(e2e 하네스)은 기본 feature = gui 빌드의 자기 바이너리를 spawn 해 창을
+      # 띄운다. 세션이 없으면 그것들이 전부 죽는데, 그 빨강은 "제품이 깨졌다" 인지
+      # "러너에 화면이 없다" 인지 **안 갈린다.** 그래서 본 스텝을 먼저 넣고 빨간지 보는
+      # 방식을 쓰지 않는다 — 원인이 둘로 안 갈리는 실패는 정보가 아니다.
+      #
+      # `continue-on-error` 인 이유: 진단이 잡을 빨갛게 만들면 그 빨강이 위 컴파일·테스트의
+      # 빨강을 가린다. `if: !cancelled()` 인 이유는 실측이다 — 앞 스텝이 죽으면 뒤 스텝은
+      # 아예 안 돌고, 그때 결과 줄이 `0` 으로도 안 남는다(줄 자체가 없다). 진단은 빨간
+      # 회차에서 가장 필요하다.
+      #
+      # 이 진단이 **못 말하는 것**: winit + wgpu 가 이 러너에서 실제로 서는가.
+      # `System.Windows.Forms` 는 다른 스택이라 GPU·드라이버 축은 안 본다. 여기서
+      # "ok" 가 나와도 그건 세션이 있다는 뜻이지 e2e 가 돈다는 뜻이 아니다 — 그 다음
+      # 물음은 이 값을 보고 정한다.
+      - name: desktop session (diagnostic — 재고 나면 지운다)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          "UserInteractive : $([System.Environment]::UserInteractive)"
+          "SessionId       : $((Get-Process -Id $PID).SessionId)  (0 이면 서비스 세션 = 화면 없음)"
+          "---- qwinsta ----"
+          try { qwinsta } catch { "qwinsta 를 못 불렀다: $_" }
+          "---- 실제 창 생성 ----"
+          try {
+            Add-Type -AssemblyName System.Windows.Forms
+            $f = New-Object System.Windows.Forms.Form
+            $f.Show(); Start-Sleep -Milliseconds 200; $f.Close(); $f.Dispose()
+            "window: ok — 데스크톱 세션이 있다"
+          } catch {
+            "window: FAILED — $($_.Exception.Message)"
+          }
 
   # headless(`--no-default-features`) 컴파일 가드. gui feature 를 끈 상태로만 드러나는
   # gui-gating 누락(headless-build-01 회귀)을 `main` push 마다 자동 검출한다(문서만
