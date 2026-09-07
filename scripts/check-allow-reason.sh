@@ -162,6 +162,11 @@ while IFS= read -r file; do
     done <<<"$hits"
 done <<<"$FILES"
 
+# 훑은 수를 함께 찍는다 — 상한 래칫은 적중 수만 지키고 좌변 크기는 안 본다. 좌변이
+# 반쯤 줄어도(적중 0 인 파일이 빠져도) 이 수 없이는 화면에 아무 신호가 없다.
+scanned_count=$(printf '%s\n' "$FILES" | wc -l)
+
+echo "훑은 .rs ${scanned_count}개."
 echo "근거 없는 #[allow(...)] : ${count}건 (상한 ${CAP})"
 echo
 
