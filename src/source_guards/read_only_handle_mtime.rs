@@ -90,6 +90,12 @@ const MIN_MTIME_WRITE_SITES: usize = 1;
 /// ☆ 두 사이트(`builtin.rs` · `watch.rs`)가 **같은 이유로** 생겼다: 판정을 시계에서 내용으로
 /// 옮기면, 그 판정이 시계에 안 속는다는 것을 보이려고 시험이 시계를 거짓으로 세운다. 그
 /// 형태가 또 오면 이 표에 줄이 하나 더 는다 — 그때 이 문단을 늘려라.
+///
+/// ★ **이 표를 움직이는 것은 출하 코드만이 아니다.** 셋 다 `#[cfg(test)]` 안의 시험 헬퍼이고,
+/// 이 가드는 `rust_sources()` 로 레포를 훑으므로 시험 코드도 모수에 든다. 그래서 출하 동작을
+/// 하나도 안 바꾼 커밋이 이 스냅샷을 깨뜨릴 수 있다 — 그것은 오탐이 아니라 **의도**다. 읽기
+/// 전용 핸들로 mtime 을 쓰는 실수는 시험 코드에서 더 자주 나고, 거기서 나면 그 시험이 재는
+/// 것 자체가 거짓이 된다. 표가 울면 "시험일 뿐인데" 로 지우지 말고 줄을 갱신해라.
 const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
     ("crates/tasty-host-plugin/src/builtin.rs", 1),
     ("crates/tasty-plugin-agent-common/src/prompt_file.rs", 1),
