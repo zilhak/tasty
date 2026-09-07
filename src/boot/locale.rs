@@ -86,6 +86,17 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
+/// 부팅 때 `[font]` resolve 가 실패했으면 그 사유(진단 문자열)를 담는다 — GUI 가
+/// 부팅 후 경고 토스트를 한 번 띄우는 데 쓴다(`app::boot_machine::report_locale_fallback`).
+/// resolve 가 성공했거나 폰트 선언이 없으면 비어 있다. headless/CLI 는 이 값을 읽지
+/// 않는다 — 그쪽은 `init` 이 남긴 `tracing::warn!` 한 줄이 전부다.
+static FONT_WARNING: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// 부팅 시 실패한 `[font]` resolve 의 사유. 실패가 없었으면 `None`.
+pub(crate) fn font_warning() -> Option<String> {
+    FONT_WARNING.get().cloned()
+}
+
 /// settings 를 읽어 i18n 테이블을 올린다. `cli_routing::parse_or_route` 진입부와 각
 /// mode helper 가 모두 부르므로 `Once` 로 1회만 실행한다 — 두 번째 호출부터는 settings
 /// 파일을 다시 읽지 않아 config 파싱 경고가 중복으로 찍히지 않는다(`tasty_i18n::init`
@@ -108,6 +119,9 @@ pub(crate) fn init() {
                     "locale '{}' declares a [font] that could not be resolved: {detail}",
                     locale.code
                 );
+                // GUI 는 부팅 후 이 사유를 경고 토스트로 한 번 띄운다. `init` 은 부팅 1회만
+                // 도므로 이미 set 됐을 일이 없다 — 중복 set 실패는 무해하다.
+                let _ = FONT_WARNING.set(detail);
             }
             crate::boot::locale_font::FontResolution::None => {}
         }

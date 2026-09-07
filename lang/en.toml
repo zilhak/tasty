@@ -863,6 +863,7 @@ bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and c
 [i18n.warn]
 pack_missing = "Language '{}' is not installed — showing English. Put a language pack at {}, then restart."
 pack_invalid = "Language pack '{}' could not be loaded — showing English. Fix {} and restart ({})."
+font_unresolved = "The language pack's font could not be loaded: {}. Text still shows, but its script may appear as □."
 
 [persistence.warn]
 settings_unparsable = "Tasty could not read {} and started with default settings. The original is preserved beside it as a .bak file."

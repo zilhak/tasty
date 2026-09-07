@@ -593,6 +593,16 @@ impl App {
                 crate::adapters::ui::ToastScope::Window,
             );
         }
+        // 언어팩이 `[font]` 을 선언했으나 resolve/검증에 실패한 경우도 같은 구조로 1회
+        // 알린다 — 폴백 언어와 무관한 별개 사유라 위 폴백 경고와 함께 뜰 수 있다. 사유
+        // 문자열은 경로를 담을 수 있어 토스트 캡에 맞춰 가운데를 생략한다(`t_fmt_fit`).
+        if let Some(detail) = crate::boot::locale::font_warning() {
+            state.toasts.push(
+                crate::i18n::t_fmt_fit("i18n.warn.font_unresolved", &detail),
+                crate::adapters::ui::ToastKind::Warning,
+                crate::adapters::ui::ToastScope::Window,
+            );
+        }
     }
 
     /// 부팅 초기화 에러(DB init 실패 / theme 이름 정정) 를 `state` 에 InfoModal 로
