@@ -1,4 +1,9 @@
 #![forbid(unsafe_code)]
+// 이유: 이 억제는 **테스트 범위 전용**이다. 시험이 임시 파일 정리처럼 결과에 무관한
+//       `Result` 를 버리는 자리를 프로덕션 명부에 올리면, 그 명부가 실제 프로덕션 자리를
+//       가리키는 뜻을 잃는다 — `tests/let_underscore_documented.rs` 의 명부 순수성 판정이
+//       그것을 막는다. 자리마다 붙이지 않고 크레이트 루트 한 줄로 그 범위를 덮는다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 //! Theme ↔ egui 변환 어댑터.
 //!
