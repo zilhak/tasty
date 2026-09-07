@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tasty pre-commit hook — 빠른 검사 7종.
+# Tasty pre-commit hook.
+#
+# **여기에 검사 개수를 적지 않는다.** 한때 "빠른 검사 7종" 이라 적혀 있었고 실제로는
+# 열이었다 — 적힌 수는 검사를 더할 때 같이 안 움직인다. 수는 **돌 때 찍는다**(맨 아래
+# 통과줄). 목록은 아래 표가 정본이고, 표와 실제 호출이 어긋나면 훅이 스스로 실패한다.
 #
 # 설치: `git config core.hooksPath .githooks` 1회 실행.
 # bypass: `git commit --no-verify` (긴급 시).
@@ -545,16 +549,44 @@ check_plugin_version_bump() {
 # ────────────────────────────────────────────────────────────
 # 실행
 # ────────────────────────────────────────────────────────────
-check_mod_use_order
-check_cargo_fmt
-check_let_underscore
-check_color_hardcode
-check_egui_window
-check_println
-check_dbg
-check_plugin_version_bump
-check_changelog_reminder
-check_new_file_judges
+# 검사 목록을 **배열**로 둔다. 문자열 하나에 담아 셸 분할에 맡기면, 부르는 셸이 달라질 때
+# 루프가 **조용히 0 회** 돌 수 있다(조립 하네스에서 실제로 났다: zsh 전용 `${=VAR}` 분할을
+# bash 로 부르자 게이트 루프가 0 회 돌고 판정줄은 "게이트빨강=0" 으로 찍혔다 —
+# **안 돈 것이 다 통과한 것과 같은 모양이었다**).
+CHECKS=(
+    check_mod_use_order
+    check_cargo_fmt
+    check_let_underscore
+    check_color_hardcode
+    check_egui_window
+    check_println
+    check_dbg
+    check_plugin_version_bump
+    check_changelog_reminder
+    check_new_file_judges
+)
+
+# 그리고 **정의된 것과 부르는 것이 같은가**를 훅이 자기에게 묻는다.
+#
+# 새 `check_*` 를 정의하고 위 배열에 안 넣으면, 지금까지는 훅이 **초록이었고 통과줄이 글자
+# 하나 안 달라졌다.** 그 상태와 "그 검사가 다 통과했다" 가 출력으로 구분이 안 된다.
+# 여기서 세어 두면 어긋남이 그 자리에서 빨개진다. 값이 아니라 **판정의 일부**다.
+defined=$(grep -cE '^check_[a-z_]+\(\) \{' "$0" || true)
+if [ "$defined" -ne "${#CHECKS[@]}" ]; then
+    red "▸ [훅] 정의된 검사 $defined 개 · 실행 목록 ${#CHECKS[@]} 개 — 어긋난다."
+    if [ "$defined" -gt "${#CHECKS[@]}" ]; then
+        red "    정의만 있고 목록에 없는 것이 있다 — 그 검사는 **조용히 안 돈다.** CHECKS 에 넣어라."
+    else
+        red "    목록에만 있고 정의가 없는 것이 있다 — 이름을 고쳤거나 지웠다. CHECKS 에서 빼라."
+    fi
+    exit 1
+fi
+
+RAN=0
+for _check in "${CHECKS[@]}"; do
+    "$_check"
+    RAN=$((RAN + 1))
+done
 
 if [ "$FAIL" -ne 0 ]; then
     echo >&2
@@ -582,7 +614,7 @@ fi
 # ────────────────────────────────────────────────────────────
 count() { [ -z "$1" ] && echo 0 || printf '%s\n' "$1" | wc -l | tr -d ' '; }
 
-green "✓ pre-commit 검사 통과 (모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — 더해지거나 고쳐진 것)"
+green "✓ pre-commit 검사 통과 (검사 $RAN/$defined 돌았다 · 모수: staged .rs $(count "$STAGED_RS") · staged 전체 $(count "$STAGED_ALL") — 더해지거나 고쳐진 것)"
 
 # 넓은 쪽과의 차이. 0 이면 안 찍는다 — 이 줄이 **상황에 반응해야** 뜻이 산다.
 STAGED_WIDE=$(git diff --cached --name-only --diff-filter=ACMRD || true)
