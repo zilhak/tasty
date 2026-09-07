@@ -5789,6 +5789,7 @@ version = "0.1.0"
 name = "tasty-egui-theme"
 version = "0.1.1"
 dependencies = [
+ "ab_glyph",
  "egui",
  "tasty-type-appearance",
  "tasty-type-geometry",
