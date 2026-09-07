@@ -5,6 +5,16 @@
 # 정책 근거: docs/design/flows/action-dispatch.md
 # 채널: .github/workflows/script-gates.yml (main push · PR)
 #
+# ── 종료 코드: 0 통과 · 1 위반 · **2 판정 불가** ──────────────────────────
+# 2 를 고른 것은 다수결이 아니라 **근거의 유무**로 갈랐다. 이 레포의 게이트들이 판정
+# 불가에 쓰는 코드가 1 · 2 · 3 으로 흩어져 있는데, 근거가 글로 적힌 것은 2 뿐이다
+# (scripts/check-file-size.sh: 측정 실패는 위반과도 구분한다). 3 은 한 자리뿐이고
+# 근거가 없다. 1 은 위반과 안 갈려서 CI 에서 "이 회차에 무엇을 했는가" 가 안 나온다.
+# 그리고 이 파일은 **이미 같은 뜻으로 2 를 쓴다**(아래 면제 경로 실재 검사 — 그쪽도
+# "조용히 무시되고 쌓인다" 를 막는 자리다). 새 표기를 만들지 않는다: 같은 물음의 답이
+# 표기마다 흩어지면 다음 게이트를 쓰는 사람이 규칙을 **볼 수는 있어도 복사할 대상을
+# 못 고른다.**
+#
 # ── 술어의 성질 (되돌리지 마라) ──────────────────────────────────────────
 # 이 검사는 **텍스트 스캔**이라 타입을 모른다. 그래서 오탐이 나는 자리를 세 가지로
 # 나눠 각각 다르게 막는다. 셋을 하나로 합치면(예: 파일 통째 제외) 그 파일의 다른
@@ -46,11 +56,48 @@
 # 검사가 있다는 사실 자체가 거짓이 된다.
 #
 # 태그가 없는 사유는 **검사되지 않는다.** 그건 한계지 통과가 아니다.
+#
+# ── 좌변이 왜 `src` 인가 (실측 2026-09-07) ────────────────────────────────
+# 위 술어를 아무리 길게 설명해도 **어디에 적용하는가**는 말한 적이 없다. 좌변은
+# `src/` 하나이고, 그것은 관측이 아니라 **선택**이다. 넓히는 값을 재 둔다.
+#
+# 같은 모수(마스킹 사본 · 배제 없음 · 면제 없음)로 세면 좌변 안 86 · 밖 17 이다.
+# 밖 17 은 전부 `crates/tasty-presets/` 두 파일이고, 나머지 크레이트 · 루트
+# `tests/` · `site/` 의 기여는 0 이다. 그리고 그 크레이트는 **preset 도메인 자신**
+# 이다 — 도메인을 도구로 쓰는 자리가 아니라 도메인이 자기를 구현하는 자리다.
+#   14  storage.rs  전부 `#[cfg(test)] mod tests` 본문. 규율 ② 가 이미 덮는다.
+#    3  testing.rs  `save_*_overwrite` 가 같은 impl 의 `save_*` 로 위임한다.
+#                   이 크레이트에는 발화할 큐가 없다(큐는 `src/intent/` 에 있다).
+# 좌변을 `src crates tests site` 로 넓혀 돌리면 새 위반은 **3**, 그중 진짜 위반은
+# **0** 이다(오탐 3 — 위 testing.rs). 훑는 파일 602 → 1320, 벽시계 1.2s → 2.6s.
+#
+# **면제 명부는 `crates/` 를 표현할 수 있다.** 실재 검사(`[ -f ]`)도 매칭
+# (`^(...)$` · 레포 기준 상대경로)도 `src` 를 가정하지 않는다 — 명부에
+# `crates/tasty-presets/src/testing.rs` 한 줄을 넣고 넓힌 좌변으로 돌리니 rc=0 이
+# 나왔다. 좌변을 못 넓히는 이유가 명부가 아니라는 뜻이다.
+#
+# ★ 걸린 자리는 **좌변이 여럿이었다는 것**이다. 훑는 좌변(`find`)과 사유를 읽는
+# 좌변(`grep -rn "intent-exempt" src`)이 서로를 몰랐고, 훑는 쪽만 넓히면 새 영토의
+# `[...]` 태그 검사가 **조용히 꺼졌다** — 실측: 오타 태그 `[겨과사용]` 셋을
+# `crates/` 에 심고 훑는 좌변만 넓혔더니 rc=0 초록이 나왔고 셋 다 안 읽혔다.
+# 머리말은 태그 **철자**가 검사를 끄는 위험은 이미 알고 있었는데(위 "모르는 `[...]`
+# 태그는 통과가 아니라 실패다"), 같은 검사를 **좌변**이 끌 수 있다는 것은 몰랐다.
+# 그래서 지금은 좌변이 **하나**다(`SCAN_DIRS`) — 소비처 넷이 전부 그 값에서 파생하고,
+# 그것이 지켜지는지는 `tests/intent_discipline_gate.rs` 가 종료 코드로 묻는다.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+# ── 좌변 (**한 값이다 — 소비처가 넷이다**) ──────────────────────────────
+# 이 게이트는 같은 트리를 네 번 지목한다: 마스킹 사본을 뜰 때 · 파일을 셀 때 ·
+# 위반을 훑을 때 · 사유를 읽을 때. 넷이 따로 적혀 있던 동안 **훑는 좌변과 사유
+# 좌변이 서로를 몰랐고**, 한쪽만 넓히면 새 영토의 태그 검사가 조용히 꺼졌다
+# (실측은 머리말). 그래서 넷 다 여기서 파생시킨다 — 하나만 고칠 수 있는 형태를
+# 남기지 않는다. `tests/intent_discipline_gate.rs` 가 이 값을 늘려 네 소비처가
+# 전부 따라가는지를 종료 코드로 묻는다.
+SCAN_DIRS=(src)
 
 # ── 면제 경로 ────────────────────────────────────────────────────────────
 # 전 패턴 면제: 도메인 핸들러 본문과 IPC handler(sync return contract).
@@ -100,21 +147,71 @@ exempt_pane_re=$(printf '%s|' "${EXEMPT_PANE[@]}"); exempt_pane_re=${exempt_pane
 # 판정기가 없으면 **원문을 그대로 본다.** 그쪽은 문자열·주석 안의 언급까지 세는 방향,
 # 즉 더 많이 잡는 쪽이라 조용한 통과를 안 만든다. 자동 채널은 판정기를 먼저 짓는다.
 . "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
-MASK_BIN="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT")"
+resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT"
+MASK_BIN="$JUDGE_BIN"
 SCAN_ROOT="$ROOT"
 if [ -n "$MASK_BIN" ]; then
     MASKED="$(mktemp -d)"
     trap 'rm -rf "$MASKED"' EXIT
-    if "$MASK_BIN" "$MASKED" "$ROOT" src >/dev/null; then
+    if "$MASK_BIN" "$MASKED" "$ROOT" "${SCAN_DIRS[@]}" >/dev/null; then
         SCAN_ROOT="$MASKED"
     else
         echo "[intent-discipline] 마스킹 실패 — 원문에서 본다(문자열·주석 안의 호출까지 세어진다)." >&2
     fi
 else
-    echo "[intent-discipline] 원문에서 본다 — 문자열·주석 안의 호출까지 세어진다." >&2
+    echo "[intent-discipline] 판정기가 없다 — 원문은 문자열·주석 안의 호출까지 센다." >&2
 fi
 
-matches=$(find "$SCAN_ROOT/src" -name '*.rs' -type f -print0 \
+# ── 판정 가능 여부로 **먼저** 갈린다 ──────────────────────────────────────
+# 원문 계수는 **더 많이 잡는** 방향이라 조용한 통과를 안 만든다. 래칫이었다면 거기서
+# 끝났겠지만 이 게이트는 **잔여 0 hard-fail** 이라 그 방향이 그대로 해가 된다: 더 잡은
+# 것이 위반으로 나가고, 실패문이 "`// intent-exempt: <사유>` 를 추가하세요" 로 나간다.
+# **실재하지 않는 위반에 대한 처방이고, 따르면 그 자리가 영구히 면제된다.**
+#
+# 실측 2026-09-07: 판정기를 안 보이게 하고 이 게이트를 돌리면 위반 1 건이 나왔는데
+# 그것이 `src/adapters/ui/popup/frame.rs` 의 **doc 주석 한 줄**이었다 — 마스킹이 지우려고
+# 존재하는 바로 그것이다. rc 는 2 가 아니라 1 이었다.
+#
+# 형제 `check-allow-reason.sh` 는 같은 자리에서 "상한을 만지지 마라, 판정기를 지어라" 로
+# 나간다(`DET_ROOT = ROOT` 검사). 이쪽에는 상한이 없으니 만지지 말라고 할 것이 상한이
+# 아니라 **면제 주석**이다. 그것 말고 형태는 같다.
+if [ "$SCAN_ROOT" = "$ROOT" ]; then
+    echo "[intent-discipline] 판정 불가 — 마스킹 사본 없이 원문을 훑게 된다." >&2
+    echo "  원문에는 주석·문자열 안의 호출까지 들어 있어, 여기서 나오는 위반은 실재하지" >&2
+    echo "  않을 수 있다. 그 값으로 규율을 판정하지 않는다." >&2
+    echo >&2
+    echo "  ★ 면제 주석을 달지 마라. 판정기를 지어라:" >&2
+    echo "      cargo build -p tasty-doc-guards --bin mask-source" >&2
+    echo "      target/debug/mask-source --check-fresh ." >&2
+    echo "  --check-fresh 가 rc=0 이어야 이 게이트의 값이 값이다(낡은 판정기도 없는 것으로 다룬다)." >&2
+    echo "  rebase 직후라면 이것이 첫 번째로 할 일이다." >&2
+    exit 2
+fi
+
+# ── 안 본 것과 없는 것을 가른다 ────────────────────────────────────────────
+# 이 게이트는 잔여 0 을 요구하는 hard-fail 이다. 그래서 좌변이 비면 위반이 0 이 되고
+# **조용히 통과한다** — 래칫과 달리 빨개질 하한이 없다. 0 이 "직접 mutation 호출이
+# 없다" 인지 "아무것도 안 봤다" 인지 가르는 자리가 없었다. 종료 코드 2 의 근거는 머리말.
+SCAN_LABEL=$(printf '%s/ ' "${SCAN_DIRS[@]}"); SCAN_LABEL=${SCAN_LABEL% }
+# 좌변에 적혔는데 없는 디렉토리는 **반쪽 좌변**이다 — `find` 가 stderr 로 흘리고
+# 나머지로 계속 돌면 그 만큼이 조용히 안 보인 채 초록이 된다. 면제 경로와 같은 규율.
+absent=()
+for d in "${SCAN_DIRS[@]}"; do [ -d "$ROOT/$d" ] || absent+=("$d"); done
+if [ ${#absent[@]} -gt 0 ]; then
+    echo "좌변에 적힌 디렉토리가 실재하지 않는다 — 그만큼이 조용히 안 보인다."
+    printf '  %s\n' "${absent[@]}"
+    exit 2
+fi
+SCANNED_LIST=$(find "${SCAN_DIRS[@]/#/$SCAN_ROOT/}" -name '*.rs' -type f 2>/dev/null || true)
+if [ -z "$SCANNED_LIST" ]; then
+    echo "좌변($SCAN_LABEL) 아래에서 .rs 를 하나도 못 찾았다 — 좌변이 깨졌다. 이 상태의"
+    echo "0 은 '직접 mutation 호출이 없다' 가 아니라 '아무것도 안 봤다' 다. 통과로 읽지 마라."
+    printf '  훑으려던 뿌리: %s\n' "${SCAN_DIRS[@]/#/$SCAN_ROOT/}"
+    exit 2
+fi
+SCANNED_COUNT=$(printf '%s\n' "$SCANNED_LIST" | wc -l)
+
+matches=$(find "${SCAN_DIRS[@]/#/$SCAN_ROOT/}" -name '*.rs' -type f -print0 \
   | xargs -0 awk -v exempt_all="$exempt_all_re" -v exempt_pane="$exempt_pane_re" \
         -v scan_root="$SCAN_ROOT/" -v root="$ROOT/" '
 # 훑는 것은 **마스킹 사본**이다(M). 보고 좌표와 사유 주석은 원본에서 읽는다(L) —
@@ -238,7 +335,7 @@ while IFS= read -r line; do
                 claim_fail+="$file:$lno: [부재] 의 전제가 사라졌다 — $cf 에 /$cre/ 가 생겼다. 이 예외를 없애고 큐로 옮겨라"$'\n'
             fi ;;
     esac
-done < <(grep -rn "intent-exempt" src --include='*.rs' || true)
+done < <(grep -rn "intent-exempt" "${SCAN_DIRS[@]}" --include='*.rs' || true)
 
 if [ -n "$claim_fail" ]; then
     echo "intent-exempt 사유가 든 주장이 지금 거짓이다."
@@ -247,4 +344,7 @@ if [ -n "$claim_fail" ]; then
     exit 1
 fi
 
-echo "Intent discipline check passed."
+# 초록일 때도 **무엇을 몇 개 봤는지** 찍는다. 수를 안 찍으면 이 게이트의 초록은
+# "위반이 없다" 와 "아무것도 안 봤다" 가 화면에서 같은 모양이 된다 — 위 판정 불가가
+# 막는 것은 좌변이 **완전히** 빈 경우뿐이고, 반쯤 줄어든 좌변은 이 수를 봐야 보인다.
+echo "Intent discipline check passed — 좌변($SCAN_LABEL) 의 .rs ${SCANNED_COUNT}개를 훑어 위반 0."

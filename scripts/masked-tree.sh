@@ -30,11 +30,13 @@ if [ "${1:-}" = "--keep-comments" ]; then KEEP="--keep-comments"; shift; fi
 [ "${1:-}" = "--" ] && shift
 if [ "$#" -gt 0 ]; then SCAN_ROOTS=("$@"); else SCAN_ROOTS=(src crates); fi
 
-BIN="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT")"
+resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT"
+BIN="$JUDGE_BIN"
 if [ -z "$BIN" ]; then
     echo "[masked-tree] 판정기를 짓는다 (cargo build -p tasty-doc-guards --bin mask-source)" >&2
     (cd "$ROOT" && cargo build -p tasty-doc-guards --bin mask-source >&2)
-    BIN="$(resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT")"
+    resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT"
+    BIN="$JUDGE_BIN"
 fi
 [ -n "$BIN" ] || { echo "[masked-tree] 판정기를 못 찾았다 — 사본 없이 재지 마라." >&2; exit 2; }
 

@@ -100,7 +100,8 @@ command -v rustfmt >/dev/null 2>&1 \
 # 스크립트 자신의 위치에서 읽는다 — `$ROOT` 는 **판정 대상 저장소**라, 합성 픽스처
 # 저장소에서 부르면 거기엔 이 파일이 없다.
 . "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
-STRIP_BIN="$(resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT")"
+resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT"
+STRIP_BIN="$JUDGE_BIN"
 # 없거나 낡았으면 **더 넓게** 본다. 여기서 판정 불가로 죽이지 않는 이유는, 이 스크립트가 갓
 # 클론한 트리의 pre-commit 에서도 불리기 때문이다. 넓게 보는 방향은 조용한 통과를 안 만든다 —
 # 출하 밖 변경(테스트 전용)이 bump 를 요구하는 오탐이 될 뿐이고, ADR-0137 이 적은 비대칭
@@ -179,7 +180,7 @@ closure_of() {
 # `closure_of`(마지막이 `cat`)가 SIGPIPE 로 죽는다 — `pipefail` 이 켜져 있으므로
 # 파이프라인 rc 가 141 이 되어 **찾았는데 못 찾은 것이 된다.** 이 함수의 반환값은
 # 판정 대상 집합을 정하므로, 뒤집히면 게이트가 조용히 반대로 판정한다.
-# 가드: tests/no_early_exit_consumer_in_shell_pipes.rs
+# 가드: crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs
 links() {  # <pname> <crate-name>
     grep -qxF "$2" <<<"$(closure_of "$1")"
 }
@@ -309,6 +310,8 @@ build_affecting() {
 
 VIOLATIONS=0
 CONSIDERED=0
+# 현재 쪽 값이 BEFORE 쪽보다 **낮은** 항. 위반과 따로 센다 — 그 둘은 다른 물음이다.
+BEHIND=0
 
 # 변경에 걸린 크레이트(산출물 경로만). 트리 전체를 훑지 않으므로 규모와 무관하다.
 CHANGED_CRATES=""
@@ -409,7 +412,27 @@ $(printf '%s\n' "$CHANGED" | sed -n "s|^\($d/.*\)$|\1|p")"
         VIOLATIONS=$((VIOLATIONS + 1))
         continue
     fi
-    if ! ver_gt "$va" "$vb"; then
+    # ── 값이 **내려가는** 항을 먼저 가른다 ────────────────────────────────────
+    # `vb > va` 면 BEFORE 쪽이 더 새것이다. 그건 "안 올렸다" 가 아니라 **이 판정의 범위가
+    # 뒤집힌 것**이고, 원인이 둘이라 이 게이트가 어느 쪽인지 못 고른다 — 그래서 판정 불가다.
+    # 비교는 형제 술어 `ver_gt` 를 그대로 부른다(같은 물음에 답을 둘로 만들지 않는다).
+    # ★ 값이 읽히지 않는 경우 `ver_gt` 는 양방향 모두 거짓이라 아래 위반 갈래로 떨어진다 —
+    #   더 시끄러운 쪽이라 조용한 통과가 안 된다.
+    if ver_gt "$vb" "$va"; then
+        printf '▲ [plugin-version] %s: 이 범위의 **앞 끝이 뒤 끝보다 새것**이다 (%s → %s)\n' \
+            "$base" "$vb" "$va" >&2
+        printf '    원인이 둘이고 이 게이트는 어느 쪽인지 못 고른다:\n' >&2
+        printf '      (가) **네가 뒤처졌다** — 비교 대상(%s)이 네 base 보다 앞서 있다.\n' \
+            "$BEFORE_REV" >&2
+        printf '           조립이 도는 동안 `main` 같은 공유 ref 를 범위 끝으로 주면 이렇게 된다.\n' >&2
+        printf '           고치는 법: base 를 맞춰라. 회차 중이면 회차 base 를 **손으로 박아라** —\n' >&2
+        printf '             %s --range <회차 base> HEAD\n' \
+            "scripts/check-plugin-version-bump.sh" >&2
+        printf '      (나) **의도적으로 내렸다** — 그건 이 게이트가 판정할 일이 아니다.\n' >&2
+        printf '    ★ 어느 쪽이든 **bump 로 풀지 마라.** 여기서 값을 올리면 남이 이미 발행한\n' >&2
+        printf '      값을 덮는다 — 이 게이트가 막으려는 바로 그 상태를 만든다.\n' >&2
+        BEHIND=$((BEHIND + 1))
+    elif ! ver_gt "$va" "$vb"; then
         printf '✘ [plugin-version] %s: 산출물이 달라지는데 version 이 안 올랐다 (%s → %s)\n' \
             "$base" "$vb" "$va" >&2
         printf '    내용이 바뀐 파일:%s\n' "$changed_list" >&2
@@ -433,9 +456,31 @@ $(printf '%s\n' "$CHANGED" | sed -n "s|^\($d/.*\)$|\1|p")"
     fi
 done
 
+# 판정 대상이 **전부** 걸렸으면 그 사실을 말한다. 진짜 누락은 부분집합이다 — 폐포를 건드린
+# 것 중 **일부**만 값이 안 따라온 것이니까. 전량은 lane 하나가 만들 수 있는 모양이 아니라
+# 보통 **범위가 틀린 것**이다. 이 수 둘은 원래 같은 줄에 찍히고 있었고 읽는 규칙만 없었다.
+# 대상이 1 건이면 100% 가 정상이라 세지 않는다.
+flagged=$((VIOLATIONS + BEHIND))
+if [ "$CONSIDERED" -ge 2 ] && [ "$flagged" -eq "$CONSIDERED" ]; then
+    printf '[plugin-version] ★ 판정 대상 %d 건이 **전부** 걸렸다 — 한 lane 이 만들 수 있는 모양이\n' \
+        "$CONSIDERED" >&2
+    printf '    아니다. 값을 고치기 전에 **범위**를 의심해라(BEFORE=%s).\n' "$BEFORE_REV" >&2
+fi
+
 if [ "$VIOLATIONS" -gt 0 ]; then
-    printf '[plugin-version] 위반 %d 건 / 판정 대상 %d 건\n' "$VIOLATIONS" "$CONSIDERED" >&2
+    # 진짜 위반이 하나라도 있으면 그쪽이 이긴다 — 뒤처짐 때문에 누락이 판정 불가로 가려지면 안 된다.
+    printf '[plugin-version] 위반 %d 건 / 판정 대상 %d 건' "$VIOLATIONS" "$CONSIDERED" >&2
+    [ "$BEHIND" -gt 0 ] && printf ' (그 밖에 범위가 뒤집힌 항 %d 건)' "$BEHIND" >&2
+    printf '\n' >&2
     exit 1
+fi
+if [ "$BEHIND" -gt 0 ]; then
+    # 위반은 0 인데 뒤집힌 항만 있다 — 이 게이트는 **판정을 못 한 것**이지 통과가 아니다.
+    # 위반(1)과 갈리도록 2 로 낸다. 비영이라 train·pre-commit 은 그대로 막힌다.
+    printf '[plugin-version] 판정 불가 — 범위가 뒤집힌 항 %d 건 / 판정 대상 %d 건.\n' \
+        "$BEHIND" "$CONSIDERED" >&2
+    printf '    측정이 안 됐으므로 게이트를 통과로 읽지 않는다.\n' >&2
+    exit 2
 fi
 printf '[plugin-version] 통과 — 판정 대상 %d 건 (변경된 crates 파일 %d 개 중)\n' \
     "$CONSIDERED" "$(printf '%s\n' "$CHANGED" | sed -n '/./p' | wc -l)"
