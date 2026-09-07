@@ -1126,10 +1126,22 @@ impl AppState {
     /// 뷰가 egui 오버레이를 덮지 않게" 하는 목적이고, plugin popup 도 같은 wgpu
     /// 표면 위에 그려지므로 host popup 과 구분할 이유가 없다.
     pub fn has_egui_overlay_open(&self) -> bool {
-        let open = self.settings_open
-            || self.plugins_open
-            || self.dialogs.has_any_overlay()
-            || self.plugin_popup_open;
+        // `settings_open`/`plugins_open` 은 **여기 안 든다.** 그 둘은 "열려 있는가" 가 아니라
+        // 한 프레임짜리 **열기 요청**이고(선언부 주석 참조), 두 모달은 `event_loop.create_window`
+        // 로 뜨는 **별도 winit 창**이라 이 창의 wgpu 표면을 덮지 않는다.
+        //
+        // 넣었을 때 실제로 벌어지던 일: `handle_redraw` 의 순서가 지움(`:51`
+        // `dispatch_pending_modal_opens`) → egui 패스(`:95`, 여기서 `adapters/ui/draw.rs` 가
+        // 플래그를 세운다) → 읽음(`:137` `sync_webviews`)이라, 버튼을 누른 **그 한 프레임에만**
+        // 참이었다. 그 프레임에 WebView 를 전부 `set_visible(false)` 하고 키보드 포커스를 풀었다가
+        // 다음 프레임에 되살렸다. **가릴 이유도 없고(다른 창이다), 한 프레임이라 가리는 구실도
+        // 못 했다** — 둘 다 아니면 죽은 항이 아니라 틀린 항이다.
+        //
+        // ★ 그러니 여기에 **지속하는 모달 상태를 대신 넣지 마라.** 그러면 설정 창이 열려 있는
+        //   내내 WebView 가 숨는다 — 한 프레임짜리 결함이 분 단위 결함이 된다. "설정 창이 떠
+        //   있는가" 를 물어야 하는 소비자는 따로 있고(`view/main/keyboard.rs` 의 double-tap ·
+        //   escape 분기), 그쪽이 볼 값은 `view::View::is_modal_active()` 다.
+        let open = self.dialogs.has_any_overlay() || self.plugin_popup_open;
         // 전체화면 무대도 오버레이로 친다. 이 판정의 소비자 중 하나가 WebView 표시
         // 여부(`MainView::sync_webviews`)인데, WebView 는 OS 네이티브 자식 뷰라 wgpu
         // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
