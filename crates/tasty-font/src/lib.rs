@@ -136,6 +136,24 @@ impl FontConfig {
         None
     }
 
+    /// On-disk path of a font file providing `family`, when the matching face is
+    /// backed by a file on disk. Used to resolve a language pack's
+    /// `[font] family = …` to a concrete path so the same file can be handed to
+    /// plugin processes via `TASTY_LOCALE_FONT` (they must not re-search the
+    /// system DB). Returns `None` for in-memory faces or unknown families.
+    pub fn family_source_path(&self, family: &str) -> Option<std::path::PathBuf> {
+        for face in self.font_system.db().faces() {
+            for (name, _) in &face.families {
+                if name.eq_ignore_ascii_case(family) {
+                    if let cosmic_text::fontdb::Source::File(path) = &face.source {
+                        return Some(path.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// List all available font family names from the system, sorted alphabetically.
     pub fn list_families(&self) -> Vec<String> {
         let mut families = BTreeSet::new();
