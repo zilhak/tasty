@@ -489,7 +489,7 @@ pub(crate) fn handle_current(
     params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = crate::handlers::require_surface_id(params, tr)?;
+    let surface_id = crate::handlers::require_target_surface(params, tr)?;
     let attached = crate::reboot::attached_profile_summary(host, surface_id);
     let builtins: Vec<Value> = list(data_dir, tr)
         .iter()

@@ -40,7 +40,7 @@ use serde_json::{Value, json};
 use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
-use crate::handlers::require_surface_id;
+use crate::handlers::require_target_surface;
 
 /// in-flight 집합의 락. 임계구역이 `HashSet<u32>` 의 insert/remove 뿐이라 패닉이 지나가도
 /// 남는 값이 성립한다 — 복구가 답이다.
@@ -96,7 +96,7 @@ pub(crate) fn handle_reboot(
     data_dir: Option<&Path>,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_surface_id(params, tr)?;
+    let surface_id = require_target_surface(params, tr)?;
     reboot_surface(inflight, host, surface_id, params, data_dir, tr)
 }
 
