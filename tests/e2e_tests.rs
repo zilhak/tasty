@@ -102,7 +102,17 @@ fn read_only_queries() {
 
     // ui.state
     let ui = tasty.call("ui.state", json!({}));
-    assert_eq!(ui["settings_open"], false);
+    assert_eq!(ui["settings_open_requested"], false);
+    // 모달이 안 떠 있는 부팅 직후라 둘 다 "없음" 이다. `active_modal_kind` 를 함께 보는
+    // 이유는 그 키가 **있는지**를 여기서만 재기 때문이다 — 키가 사라지면 `as_str()` 가
+    // `None` 을 내고, 그것은 소비자 쪽에서 "모달이 없다" 와 같은 모양이 된다.
+    assert_eq!(ui["modal_open"], false);
+    assert!(
+        ui.get("active_modal_kind").is_some(),
+        "`ui.state` 가 `active_modal_kind` 키를 아예 안 냈다 — 소비자 쪽에서는 이것이 \
+         '모달이 없다' 와 구별되지 않는다"
+    );
+    assert_eq!(ui["active_modal_kind"], serde_json::Value::Null);
     assert_eq!(ui["notification_panel_open"], false);
     assert!(ui["workspace_count"].as_u64().unwrap() >= 1);
     assert!(ui["pane_count"].as_u64().unwrap() >= 1);
@@ -962,7 +972,7 @@ fn headless_pty_attach_surface_promotes_to_a_tab() {
 /// arm 이 없다")이 난다 — 배선 결함이 아니라 창이 없다는 사실 그 자체이므로, 헤드리스
 /// 조합 CI 는 **이 이름 하나만**
 /// `--skip` 한다(`.github/workflows/crossplatform-check.yml`,
-/// `tests/headless_skip_names_are_exact.rs` 가 그 이름의 정확성을 강제한다).
+/// `crates/tasty-doc-guards/tests/headless_skip_names_are_exact.rs` 가 그 이름의 정확성을 강제한다).
 #[test]
 fn multi_window_owner_routing() {
     // 두 번째 main window 를 생성하고, focused 가 새 윈도우로 전환되어도

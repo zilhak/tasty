@@ -39,6 +39,31 @@
 //! `test_keyboard_sent_to_terminal_when_no_overlay` 가 낸다. 같은 바이너리에서 함께 도니
 //! 경로가 죽으면 형제가 빨개져 드러나긴 한다 — 다만 **이 시험 하나만 뽑아 돌리면 그
 //! 보증이 없다.** 안으로 옮기지 않은 이유는 그러면 같은 국면을 두 번 태우게 돼서다.
+//!
+//! ## 설정 창을 기다리는 기준
+//!
+//! 이 파일의 설정 계열 시험은 `UiState::settings_modal_is_up()`
+//! (= `modal_open` + `active_modal_kind == Settings`)으로 기다린다.
+//! 예전 기준이던 `settings_open_requested` 로는 **원리적으로 못 기다린다** — 그 값은
+//! 열기 요청 래치이고, 여기서 쓰는 `Ctrl+,` 는 `AppEvent` 직행 경로라 그 필드를 아예 안
+//! 건드린다. 실측(고치기 전, 같은 Xvfb): `test_settings_open_ctrl_comma` 가 3 초 타임아웃,
+//! 그때 덤프는 `settings_open_requested: false` 인데 `modal_open: true` 였다 —
+//! 창은 떠 있었고 기다린 값만 없었다.
+//!
+//! ## 설정 창을 닫는 손
+//!
+//! **키보드로는 못 닫는다.** `SettingsView::handle_event`(`src/view/settings.rs`)에
+//! Escape 분기가 없고, `App::open_settings_modal`(`src/app/modal/settings.rs`)은 모달이
+//! 이미 있으면 그냥 return 해서 `Ctrl+,` 도 토글이 아니다. 실재하는 닫기 경로는 창 닫기
+//! 요청(`WindowEvent::CloseRequested`)과 egui 액션 둘인데, WM 없는 Xvfb 에는 앞의 것을
+//! 보낼 손이 없다 — 창은 `WM_DELETE_WINDOW` 를 광고하지만 `xdotool windowclose` 는 그것을
+//! 안 쓰고 `XDestroyWindow` 를 불러 winit 이 패닉하고, `wmctrl -i -c` 는 WM 이 없으면
+//! 아무도 처리하지 않는다.
+//!
+//! 그래서 닫기는 `GuiTestInstance::close_active_modal()`(= `debug.modal.close_request`)로
+//! 한다. `Escape` · `Ctrl+,` 가 **안 닫는다는 것 자체**는
+//! `test_neither_escape_nor_ctrl_comma_closes_the_settings_modal` 이 값으로 고정한다 —
+//! 그것은 옳음의 단정이 아니라 **현재 동작의 기록**이고, 동작이 바뀌면 그 시험이 알려준다.
 
 mod gui_common;
 
@@ -81,60 +106,104 @@ fn test_settings_open_ctrl_comma() {
 
     // Verify settings is initially closed
     let state = inst.ui_state();
-    assert!(!state.settings_open, "settings should be closed initially");
+    assert!(
+        !state.settings_modal_is_up(),
+        "settings should be closed initially"
+    );
 
     // Press Ctrl+, to open settings
     inst.press_ctrl(Key::Unicode(','));
 
-    let state = inst.wait_for_ui("settings_open == true", Duration::from_secs(3), |s| {
-        s.settings_open
+    let state = inst.wait_for_ui("settings modal is up", Duration::from_secs(3), |s| {
+        s.settings_modal_is_up()
     });
-    assert!(state.settings_open, "settings should be open after Ctrl+,");
+    assert!(
+        state.settings_modal_is_up(),
+        "settings should be open after Ctrl+,"
+    );
 
-    // Cleanup: close settings
-    inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
-        !s.settings_open
+    // Cleanup: 키보드로는 못 닫는다 — 아래 두 시험이 그 사실을 값으로 고정한다.
+    inst.close_active_modal();
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
     });
 }
 
+/// 닫기 **요청**으로 닫힌다 — 사용자가 창 닫기 버튼을 누르는 경로.
+///
+/// 예전 이름은 `test_settings_close_ctrl_comma` 였는데 그 이름이 담은 기대가 거짓이다
+/// (아래 형제 시험이 그것을 잰다). 이 시험이 재는 것은 **실재하는 유일한 닫기 경로**다.
 #[test]
 #[ignore]
-fn test_settings_close_ctrl_comma() {
+fn test_settings_closes_on_close_request() {
     let mut inst = shared();
 
-    // Open settings
     inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings open", Duration::from_secs(3), |s| s.settings_open);
+    inst.wait_for_ui("settings modal is up", Duration::from_secs(3), |s| {
+        s.settings_modal_is_up()
+    });
 
-    // Close with Ctrl+, again (toggle)
-    inst.press_ctrl(Key::Unicode(','));
+    inst.close_active_modal();
 
-    let state = inst.wait_for_ui("settings_open == false", Duration::from_secs(3), |s| {
-        !s.settings_open
+    let state = inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
     });
     assert!(
-        !state.settings_open,
-        "settings should be closed after second Ctrl+,"
+        !state.settings_modal_is_up(),
+        "close request 를 받은 모달은 사라져야 한다"
+    );
+    assert!(
+        state.active_modal_kind.is_none(),
+        "종류도 함께 지워져야 한다 — 남으면 다음 시험이 자기가 안 연 창을 본다. 지금: {:?}",
+        state.active_modal_kind
     );
 }
 
+/// ★ 이것은 **옳음의 단정이 아니라 현재 동작의 기록**이다.
+///
+/// 설정 모달은 `Escape` 로도 `Ctrl+,` 로도 닫히지 않는다:
+/// · `SettingsView::handle_event`(`src/view/settings.rs`)에 Escape 분기가 없다.
+/// · `App::open_settings_modal`(`src/app/modal/settings.rs`)은 모달이 이미 있으면 그냥
+///   return 한다 — `Ctrl+,` 는 토글이 아니다.
+///
+/// 그 비대칭(팝업은 Escape 로 닫히는데 모달은 안 닫힌다)은 결함으로 보이지만, 고치는
+/// 것은 사용자에게 보이는 동작 변경이고 텍스트 입력 중 Escape 가 편집 취소인지 모달
+/// 닫기인지 같은 트레이드오프가 있다. 그래서 여기서는 **지금 무엇이 참인지만** 적는다.
+///
+/// 동작이 바뀌면 이 시험이 빨개진다 — 그때 이 시험을 함께 바꿔라. 그것이 이 시험의
+/// 목적이다: 바뀐 것이 조용히 지나가지 않게 한다.
+///
+/// 이 기대를 담은 시험이 원래 넷 있었고 **한 번도 검증된 적이 없었다.** 열기 관측
+/// 채널이 어긋나 있어서(열기부터 타임아웃) 닫기까지 도달한 적이 없었기 때문이다.
 #[test]
 #[ignore]
-fn test_settings_close_escape() {
+fn test_neither_escape_nor_ctrl_comma_closes_the_settings_modal() {
     let mut inst = shared();
 
-    // Open settings
     inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings open", Duration::from_secs(3), |s| s.settings_open);
-
-    // Close with Escape
-    inst.press_key(Key::Escape);
-
-    let state = inst.wait_for_ui("settings closed via escape", Duration::from_secs(3), |s| {
-        !s.settings_open
+    inst.wait_for_ui("settings modal is up", Duration::from_secs(3), |s| {
+        s.settings_modal_is_up()
     });
-    assert!(!state.settings_open, "settings should close with Escape");
+
+    inst.press_key(Key::Escape);
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(
+        inst.ui_state().settings_modal_is_up(),
+        "Escape 로 설정 모달이 닫혔다 — 동작이 바뀐 것이다. 이 시험과 그 근거 주석을 \
+         함께 갱신해라(닫혔다는 것 자체는 결함이 아닐 수 있다)"
+    );
+
+    inst.press_ctrl(Key::Unicode(','));
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(
+        inst.ui_state().settings_modal_is_up(),
+        "Ctrl+, 가 설정 모달을 닫았다 — 토글이 된 것이다. 위와 같이 함께 갱신해라"
+    );
+
+    inst.close_active_modal();
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
+    });
 }
 
 #[test]
@@ -146,7 +215,7 @@ fn test_settings_open_speed() {
         &mut inst,
         "settings open speed",
         |i| i.press_ctrl(Key::Unicode(',')),
-        |s| s.settings_open,
+        |s| s.settings_modal_is_up(),
     );
 
     println!("Settings open latency: {}ms", elapsed.as_millis());
@@ -157,10 +226,10 @@ fn test_settings_open_speed() {
         MAX_UI_RESPONSE_MS,
     );
 
-    // Cleanup
-    inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
-        !s.settings_open
+    // Cleanup — 키보드로는 못 닫는다(형제 시험이 그 사실을 고정한다).
+    inst.close_active_modal();
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
     });
 }
 
@@ -256,8 +325,8 @@ fn test_new_workspace_ctrl_shift_n() {
     let mut inst = shared();
     let initial_count = inst.ui_state().workspace_count;
 
-    // Ctrl+Shift+N to create new workspace
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    // Alt+N to create new workspace (preset: new_workspace)
+    inst.press_alt(Key::Unicode('n'));
 
     let state = inst.wait_for_ui("workspace count increased", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count + 1
@@ -265,7 +334,7 @@ fn test_new_workspace_ctrl_shift_n() {
     assert_eq!(state.workspace_count, initial_count + 1);
 
     // Cleanup: close the workspace we created (Alt+Shift+W)
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("workspace closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count
     });
@@ -278,7 +347,7 @@ fn test_workspace_switch_alt_number() {
 
     // Create a fresh workspace for this test
     let initial_count = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("new ws", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count + 1
     });
@@ -302,7 +371,7 @@ fn test_workspace_switch_alt_number() {
     });
 
     // Cleanup: close the test workspace
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count
     });
@@ -317,7 +386,7 @@ fn test_workspace_creation_speed() {
     let elapsed = measure_ui_latency(
         &mut inst,
         "workspace creation speed",
-        |i| i.press_ctrl_shift(Key::Unicode('n')),
+        |i| i.press_alt(Key::Unicode('n')),
         |s| s.workspace_count == initial_count + 1,
     );
 
@@ -330,7 +399,7 @@ fn test_workspace_creation_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_count
     });
@@ -347,7 +416,7 @@ fn test_new_tab_ctrl_shift_t() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -361,7 +430,7 @@ fn test_new_tab_ctrl_shift_t() {
     assert_eq!(state.tab_count, 2);
 
     // Cleanup: close the test workspace
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -374,7 +443,7 @@ fn test_close_tab_ctrl_w() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -389,7 +458,7 @@ fn test_close_tab_ctrl_w() {
     assert_eq!(state.tab_count, 1);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -402,7 +471,7 @@ fn test_tab_creation_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -423,7 +492,7 @@ fn test_tab_creation_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -440,20 +509,20 @@ fn test_pane_split_vertical_ctrl_shift_e() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
 
     assert_eq!(inst.ui_state().pane_count, 1);
 
-    // Ctrl+Shift+E for vertical pane split
-    inst.press_ctrl_shift(Key::Unicode('e'));
+    // Alt+E for vertical pane split (preset: split_pane_vertical)
+    inst.press_alt(Key::Unicode('e'));
     let state = inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
     assert_eq!(state.pane_count, 2);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -466,18 +535,18 @@ fn test_pane_split_horizontal_ctrl_shift_o() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
 
-    // Ctrl+Shift+O for horizontal pane split
-    inst.press_ctrl_shift(Key::Unicode('o'));
+    // Alt+Shift+E for horizontal pane split (preset: split_pane_horizontal)
+    inst.press_alt_shift(Key::Unicode('e'));
     let state = inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
     assert_eq!(state.pane_count, 2);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -490,13 +559,13 @@ fn test_close_pane_ctrl_shift_w() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
 
     // Split first
-    inst.press_ctrl_shift(Key::Unicode('e'));
+    inst.press_alt(Key::Unicode('e'));
     inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
 
     // Close the active pane
@@ -505,7 +574,7 @@ fn test_close_pane_ctrl_shift_w() {
     assert_eq!(state.pane_count, 1);
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -518,7 +587,7 @@ fn test_pane_split_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -526,7 +595,7 @@ fn test_pane_split_speed() {
     let elapsed = measure_ui_latency(
         &mut inst,
         "pane split speed",
-        |i| i.press_ctrl_shift(Key::Unicode('e')),
+        |i| i.press_alt(Key::Unicode('e')),
         |s| s.pane_count == 2,
     );
 
@@ -539,7 +608,7 @@ fn test_pane_split_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -554,21 +623,37 @@ fn test_pane_split_speed() {
 fn test_keyboard_not_sent_to_terminal_when_settings_open() {
     let mut inst = shared();
 
+    // ★ mark/read 는 `surface_id` 가 **필수**다(`handler/surface/mark.rs` 의
+    // `require_surface_id` — 포커스 기반 기본값이 없다, 원칙 3). 생략하면 격리 여부와
+    // 무관하게 `-32602 missing 'surface_id'` 로 첫 줄에서 죽는다.
+    // `first_surface_id()` 는 쓰지 않는다 — `surface.list` 의 **첫** 항목이라 대상이
+    // 활성 터미널이라는 보장이 없다(마우스 축에서 실측으로 밟은 함정이다).
+    // settings 를 **열기 전에** 잡는다: 오버레이가 뜬 뒤에는 포커스 개념이 달라진다.
+    let sid = inst
+        .debug_focused_surface()
+        .expect("mark 를 찍을 포커스된 surface");
+
     // Set a mark so we can check terminal output
-    inst.call("surface.set_mark", serde_json::json!({}));
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
 
     // Open settings
     inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings open", Duration::from_secs(3), |s| s.settings_open);
+    inst.wait_for_ui("settings open", Duration::from_secs(3), |s| {
+        s.settings_modal_is_up()
+    });
 
-    // Type some text — should NOT reach the terminal
-    inst.type_text("hello_should_not_appear");
+    // Type some text — should NOT reach the terminal.
+    // ★ **본창에** 넣는다. 이 시험이 재는 것은 "모달이 떠 있는 동안 본창이
+    // `KeyboardInput` 을 끊는가"(`src/view/main.rs` 의 모달 분기)이므로, 키가 본창에
+    // 도착해야 성립한다 — 모달이 받아 버리면 재는 것이 그 게이트가 아니라 "모달이
+    // 포커스를 가져갔다" 가 되고, 두 초록은 같은 모양이다.
+    inst.type_text_into_main_window("hello_should_not_appear");
     std::thread::sleep(Duration::from_millis(500));
 
     // Check terminal did not receive the text
     let result = inst.call(
         "surface.read_since_mark",
-        serde_json::json!({ "strip_ansi": true }),
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
     );
     let output = result["text"].as_str().unwrap_or("");
     assert!(
@@ -577,11 +662,32 @@ fn test_keyboard_not_sent_to_terminal_when_settings_open() {
         output,
     );
 
-    // Cleanup: close settings
-    inst.press_key(Key::Escape);
-    inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
-        !s.settings_open
+    // Cleanup: close settings — Escape 로는 안 닫힌다(형제 시험이 그 사실을 고정한다).
+    // 여기서 Escape 를 쓰면 창이 남고, **다음 시험이 그 창을 물려받는다.**
+    inst.close_active_modal();
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
     });
+
+    // ★ 비영 대조 — 위 단정은 `!contains(..)` 하나뿐이라, 타이핑이 **아무 데도** 안 가면
+    // 그것만으로도 초록이 된다. 그 초록은 "settings 가 막았다" 가 아니라 "아무 일도 안
+    // 일어났다" 다. 그래서 같은 회차·같은 인스턴스에서 **경로가 살아 있음**을 보인다.
+    // 형제 `test_keyboard_sent_to_terminal_when_no_overlay` 가 이 형태를 갖고 있는데,
+    // 그 증거가 다른 시험에 있으면 이 시험을 단독으로 돌릴 때는 아무 보장이 없다.
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
+    inst.type_text("echo overlay_control_marker");
+    inst.press_key(Key::Return);
+    std::thread::sleep(Duration::from_millis(1000));
+    let control = inst.call(
+        "surface.read_since_mark",
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
+    );
+    let control = control["text"].as_str().unwrap_or("");
+    assert!(
+        control.contains("overlay_control_marker"),
+        "비영 대조 실패 — settings 를 닫은 뒤에도 타이핑이 터미널에 안 닿는다. \
+         그러면 위 초록은 settings 가 막았다는 증거가 아니다. Got: {control}"
+    );
 }
 
 #[test]
@@ -591,7 +697,7 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
 
     // Create a test workspace so we have a clean terminal
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -599,8 +705,16 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
     // Wait for shell to be ready
     std::thread::sleep(Duration::from_millis(500));
 
+    // ★ mark/read 의 `surface_id` 는 필수다(위 형제 시험의 주석 참조). 여기서는 잡는
+    // **시점**이 중요하다 — workspace 를 만든 **뒤**에 잡아야 그 새 터미널을 가리킨다.
+    // 앞에서 잡으면 직전 workspace 의 터미널이라 이 시험이 재려는 대상이 아니고,
+    // `first_surface_id()` 도 같은 이유로 쓸 수 없다(`surface.list` 의 첫 항목이다).
+    let sid = inst
+        .debug_focused_surface()
+        .expect("새 workspace 의 포커스된 surface");
+
     // Set mark
-    inst.call("surface.set_mark", serde_json::json!({}));
+    inst.call("surface.set_mark", serde_json::json!({ "surface_id": sid }));
 
     // Type some text
     inst.type_text("echo gui_test_marker");
@@ -611,7 +725,7 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
 
     let result = inst.call(
         "surface.read_since_mark",
-        serde_json::json!({ "strip_ansi": true }),
+        serde_json::json!({ "surface_id": sid, "strip_ansi": true }),
     );
     let output = result["text"].as_str().unwrap_or("");
     assert!(
@@ -621,7 +735,7 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -636,36 +750,37 @@ fn test_keyboard_sent_to_terminal_when_no_overlay() {
 fn test_settings_window_is_interactive() {
     let mut inst = shared();
 
-    // Open settings
+    // 여닫기를 빠르게 반복해도 창이 계속 살아나는가. 닫기는 요청 경로로 한다 —
+    // `Ctrl+,` 는 토글이 아니라서 두 번째 누름이 아무 일도 안 한다.
     inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings open", Duration::from_secs(3), |s| s.settings_open);
+    inst.wait_for_ui("settings modal is up", Duration::from_secs(3), |s| {
+        s.settings_modal_is_up()
+    });
 
-    // Rapid toggle to verify interactivity
     std::thread::sleep(Duration::from_millis(300));
 
-    // Close
-    inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
-        !s.settings_open
+    inst.close_active_modal();
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
     });
 
     // Open again
     inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings open again", Duration::from_secs(3), |s| {
-        s.settings_open
+    inst.wait_for_ui("settings modal is up again", Duration::from_secs(3), |s| {
+        s.settings_modal_is_up()
     });
 
     // Verify still responsive
     let state = inst.ui_state();
     assert!(
-        state.settings_open,
-        "settings should still be open after rapid toggle"
+        state.settings_modal_is_up(),
+        "settings should still be open after the open/close round trip"
     );
 
     // Cleanup
-    inst.press_ctrl(Key::Unicode(','));
-    inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
-        !s.settings_open
+    inst.close_active_modal();
+    inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+        !s.settings_modal_is_up()
     });
 }
 
@@ -680,7 +795,7 @@ fn test_full_workflow_workspace_pane_tab() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -695,11 +810,11 @@ fn test_full_workflow_workspace_pane_tab() {
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
     // Split pane
-    inst.press_ctrl_shift(Key::Unicode('e'));
+    inst.press_alt(Key::Unicode('e'));
     inst.wait_for_ui("2 panes", Duration::from_secs(3), |s| s.pane_count == 2);
 
     // Create another workspace
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws+1", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 2
     });
@@ -725,12 +840,12 @@ fn test_full_workflow_workspace_pane_tab() {
 
     // Cleanup: close both test workspaces
     // Close current workspace
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws-1", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
     // Close the other test workspace (now active)
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws restored", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -742,31 +857,34 @@ fn test_full_workflow_workspace_pane_tab() {
 
 #[test]
 #[ignore]
-fn test_settings_toggle_speed_repeated() {
+fn test_settings_open_speed_repeated() {
     let mut inst = shared();
 
+    // ★ **열기 지연만** 담는다. 예전 이름은 `..._toggle_speed_repeated` 였고 여닫기를 한
+    // 통에 섞었는데, 두 가지가 틀렸다: `Ctrl+,` 는 토글이 아니라 두 번째 누름이 아무
+    // 일도 안 했고(그래서 닫기 쪽은 실제로 잰 적이 없다), 지금 닫는 손은 IPC 라 재는
+    // 것이 사용자 지연이 아니다. 성질이 다른 값을 한 통에 넣으면 평균도 최댓값도
+    // 무엇의 값인지 말하지 못한다.
     let mut latencies = Vec::new();
     for _ in 0..5 {
         let start = Instant::now();
         inst.press_ctrl(Key::Unicode(','));
-        inst.wait_for_ui("settings toggled", Duration::from_secs(3), |s| {
-            s.settings_open
+        inst.wait_for_ui("settings modal is up", Duration::from_secs(3), |s| {
+            s.settings_modal_is_up()
         });
         latencies.push(start.elapsed());
 
-        let start = Instant::now();
-        inst.press_ctrl(Key::Unicode(','));
-        inst.wait_for_ui("settings closed", Duration::from_secs(3), |s| {
-            !s.settings_open
+        inst.close_active_modal();
+        inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
+            !s.settings_modal_is_up()
         });
-        latencies.push(start.elapsed());
     }
 
     let avg_ms = latencies.iter().map(|d| d.as_millis()).sum::<u128>() / latencies.len() as u128;
     let max_ms = latencies.iter().map(|d| d.as_millis()).max().unwrap_or(0);
 
     println!(
-        "Settings toggle: avg={}ms, max={}ms over {} iterations",
+        "Settings open: avg={}ms, max={}ms over {} iterations",
         avg_ms,
         max_ms,
         latencies.len()
@@ -774,7 +892,7 @@ fn test_settings_toggle_speed_repeated() {
 
     assert!(
         max_ms < MAX_UI_RESPONSE_MS,
-        "Settings toggle max latency {}ms exceeds {}ms limit",
+        "Settings open max latency {}ms exceeds {}ms limit",
         max_ms,
         MAX_UI_RESPONSE_MS,
     );
@@ -787,7 +905,7 @@ fn test_workspace_switch_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -830,7 +948,7 @@ fn test_workspace_switch_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -843,7 +961,7 @@ fn test_tab_switch_speed() {
 
     // Create a test workspace
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -852,16 +970,26 @@ fn test_tab_switch_speed() {
     inst.press_ctrl_shift(Key::Unicode('t'));
     inst.wait_for_ui("2 tabs", Duration::from_secs(3), |s| s.tab_count == 2);
 
+    // ★ 고정 sleep 이 아니라 **관측**을 잰다. sleep 을 재면 그 값은 늘 sleep 길이라
+    // Ctrl+Tab 이 아무 일도 안 해도 상한 아래로 통과한다 — 형제
+    // `test_workspace_switch_speed` 가 처음부터 옳은 형태(`wait_for_ui`)를 갖고 있다.
+    // 관측 축은 `active_tab` 이다: `tab_count` 는 전환해도 안 변해서 못 쓴다.
     let mut latencies = Vec::new();
     for _ in 0..5 {
+        let from = inst.ui_state().active_tab;
         let start = Instant::now();
         inst.press_ctrl(Key::Tab);
-        std::thread::sleep(Duration::from_millis(100));
+        inst.wait_for_ui("tab forward", Duration::from_secs(3), move |s| {
+            s.active_tab != from
+        });
         latencies.push(start.elapsed());
 
+        let from = inst.ui_state().active_tab;
         let start = Instant::now();
         inst.press_ctrl_shift(Key::Tab);
-        std::thread::sleep(Duration::from_millis(100));
+        inst.wait_for_ui("tab back", Duration::from_secs(3), move |s| {
+            s.active_tab != from
+        });
         latencies.push(start.elapsed());
     }
 
@@ -883,7 +1011,7 @@ fn test_tab_switch_speed() {
     );
 
     // Cleanup
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -915,7 +1043,7 @@ fn test_tab_switch_speed() {
 fn test_ime_preedit_flushed_on_non_popup_shortcut() {
     let mut inst = shared();
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -953,7 +1081,7 @@ fn test_ime_preedit_flushed_on_non_popup_shortcut() {
 
     // Cleanup: 사이드바 원복 + 워크스페이스 닫기.
     inst.press_ctrl(Key::Unicode('b'));
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -967,7 +1095,7 @@ fn test_ime_preedit_flushed_on_non_popup_shortcut() {
 fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
     let mut inst = shared();
     let initial_ws = inst.ui_state().workspace_count;
-    inst.press_ctrl_shift(Key::Unicode('n'));
+    inst.press_alt(Key::Unicode('n'));
     inst.wait_for_ui("ws created", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws + 1
     });
@@ -1032,7 +1160,7 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
 
     // Cleanup: search_bar 닫기 + 워크스페이스 닫기.
     inst.press_key(Key::Escape);
-    inst.press_alt(Key::Unicode('W'));
+    inst.press_alt_shift(Key::Unicode('w'));
     inst.wait_for_ui("ws closed", Duration::from_secs(3), |s| {
         s.workspace_count == initial_ws
     });
@@ -1054,7 +1182,7 @@ fn test_ime_preedit_cleared_on_popup_focus_shortcut() {
 // 보이는 레이아웃에 닿아야 `surface_rect_by_id` 가 해소되기 때문. IPC 로 만든
 // workspace 는 active 전환이 없으므로(포커스 독립) 여기서는 쓰지 않는다.
 //
-// Run with: cargo test --test mouse_routing_tests -- --ignored --test-threads=1
+// Run with: cargo test --test gui_tests -- --ignored --test-threads=1
 // (display 필요, single-thread — 한 윈도우만 OS 포커스를 가질 수 있으므로.)
 
 /// 주입 후 GUI 상태가 정착할 시간. inject IPC 자체는 동기지만 여유를 둔다.

@@ -9,6 +9,13 @@
 //! (기본 조합 잡은 `--lib --bins` 라 통합 타깃을 못 본다 — `docs/dev-guide/ci-gates.md`).
 //! 자동 잡은 push 된 커밋만 보므로 번역 문자열을 건드렸으면 커밋 전에 직접 돌려라.
 //!
+//! ★ **바로 위 채널 문장을 지우지 마라 — 장식이 아니라 탐지기다.**
+//! `crates/tasty-doc-guards/tests/ci_channel_claims_match_workflows.rs` 가 워크플로를 직접
+//! 읽고 `tests/*.rs` 의 채널 서술을 판정한다. 그래서 이 타깃이 채널을 조용히 잃는 형태
+//! (`[[test]]` 선언에 `required-features` 가 붙는 것)는 **이 파일이 채널을 말하고 있을
+//! 때만** 걸린다. 서술이 없으면 어긋날 것도 없어서 그 가드는 아무 말도 안 한다.
+//! 즉 이 문장은 읽는 사람을 위한 것이 **아니라** 그 가드의 입력이다.
+//!
 //! **이 가드는 문자열 리터럴을 가리지 않는다 — 그것이 결정이다.** 소스에서 키를 찾는
 //! 경로([`literal_keys`])는 주석 **줄**만 건너뛴다. 레포의 다른 스캔 가드들은 "코드에 X 가
 //! 있나" 를 묻느라 `tasty_doc_guards::source_text::mask_non_code` 로 리터럴까지 덮는데,
@@ -61,13 +68,22 @@
 //!
 //! 등록 방법과 예외의 근거는 `docs/dev-guide/i18n.md` "강제 테스트" 절.
 //! 선례: `tests/native_surface_labels_i18n.rs`(키 존재) ·
-//! `tests/plugin_manifest_version_parity.rs`(디렉토리 순회 parity) ·
+//! `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs`(디렉토리 순회 parity) ·
 //! `crates/tasty-doc-guards/tests/no_todo_file_citation.rs`(소스 스캔 + allowlist).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
-const LANGS: &[&str] = &["en", "ko", "ja"];
+/// 검사 대상 언어 — **로더의 정본을 그대로 쓴다**(사본을 만들지 않는다).
+///
+/// 이 목록이 손으로 적혀 있으면, 로더가 임베드하는 언어와 이 가드가 검사하는 언어가
+/// 말없이 갈릴 수 있다. 갈려도 **아무것도 빨개지지 않는다** — 목록에서 빠진 언어는
+/// 실패를 만드는 것이 아니라 **검사를 안 받기** 때문이다(조용한 통과).
+///
+/// 그래서 참조로 바꾼다. 다만 참조만으로는 정본 **자신**이 디스크와 어긋나는 것을 못
+/// 잡는다 — 그쪽은 [`builtin_codes_match_the_language_files_on_disk`] 가 본다.
+const LANGS: &[&str] = &tasty_i18n::BUILTIN_CODES;
 
 /// ko/ja 값이 en 과 같아도 되는 키 — (키, 적용 언어, 이유). 이유가 없는 항목은 넣지
 /// 않는다. 형태로 자동 예외되는 값(기호만·약어·경로·명령·수식키 이름)은 등록이 필요 없다.
@@ -222,11 +238,87 @@ fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// repo-relative 경로 — 구분자는 어느 플랫폼에서든 `/`.
+///
+/// 직접 펴지 않고 [`normalized_rel`] 을 부른다. 같은 네 줄을 여기 다시 쓰면 두 사본을
+/// 같게 유지하는 것이 아무것도 없고, 어긋난 쪽은 빨강이 아니라 **조용한 0** 을 낸다 —
+/// Windows 에서 구분자가 `\` 로 나오면 소스에 박힌 `/` 리터럴과 비교가 모조리 빗나가고
+/// 가드는 "위반 없음" 으로 보고한다. `floored_walk_consumers_do_not_renormalize` 가
+/// 이 자리를 집행한다.
 fn rel_of(file: &Path) -> String {
-    file.strip_prefix(root())
-        .unwrap_or(file)
-        .to_string_lossy()
-        .replace('\\', "/")
+    normalized_rel(file, root())
+}
+
+/// [`builtin_codes_match_the_language_files_on_disk`] 의 순회 하한.
+///
+/// 하한을 실측값에 붙이지 않는다. 이 모수는 **지원 언어 수**이고 그 값 자체가 그 시험이
+/// 단정하는 대상이라, 하한을 3 으로 잡으면 언어를 하나 빼는 정당한 변경이 "순회가 죽었다"
+/// 로 잘못 진단된다 — 그때 실제로 봐야 할 것은 `BUILTIN_CODES` 와 어긋나는가다. 그래서
+/// 여기서 하한이 보는 것은 순회 자체의 생존뿐이고, 값의 정합은 그 아래 `assert_eq!` 가 본다.
+const LANG_DIR_FLOOR: Floor = Floor {
+    min: 1,
+    measured: 3,
+    measured_on: "2026-09-07",
+    why_this_gap: "이 모수는 지원 언어 수이고, 그 값 자체가 이 시험이 단정하는 대상이다. \
+                   하한을 실측 3 에 붙이면 언어를 하나 빼는 정당한 변경이 순회 사망으로 \
+                   잘못 진단된다. 여기서 하한은 순회 생존만 본다.",
+};
+
+/// 정본(`BUILTIN_CODES`)이 **디스크와** 맞는지 본다 — 밖의 고정점과 견주는 단정 하나.
+///
+/// 이 파일의 나머지 검사는 전부 카탈로그를 **서로** 견준다. 그래서 목록 자신이 현실과
+/// 어긋나면 아무도 모른다: 목록에서 빠진 언어는 실패를 만드는 것이 아니라 검사를 안
+/// 받는다. 넷이 함께 틀리면 넷을 아무리 견줘도 안 걸린다.
+///
+/// 그래서 한 번은 밖을 본다. 루트 `lang/*.toml` 의 파일 이름이 그 고정점이다 —
+/// `include_str!` 이 실제로 집어 오는 것이 그 파일들이기 때문이다.
+///
+/// 순서까지 본다. 이 파일의 여러 검사가 `LANGS[1..]` 을 "영어가 아닌 것" 으로 쓰므로,
+/// 0 번이 영어가 아니게 되면 **엉뚱한 기준과 비교하면서 초록**이 된다.
+#[test]
+fn builtin_codes_match_the_language_files_on_disk() {
+    let dir = root().join("lang");
+
+    // 비영 대조를 공용 순회가 만든다. 경로가 틀렸거나 확장자 필터가 빗나가면 아래 비교는
+    // "정본이 비었다" 와 구별되지 않는데, 그 구별을 소비자마다 손으로 다시 쓰면 언젠가 한
+    // 곳이 빠뜨리고 빠뜨린 쪽은 조용하다(`tasty_doc_guards::floored_walk` 모듈 주석).
+    let walked = walk_with_floor(
+        &dir,
+        &dir,
+        &LANG_DIR_FLOOR,
+        // `lang/` 아래에는 가지칠 것이 없다 — 카탈로그 파일만 평평하게 놓인다.
+        Descend::Everything,
+        &|w: &Walked| w.rel.ends_with(".toml"),
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
+
+    let on_disk: BTreeSet<String> = walked
+        .iter()
+        .filter_map(|w| w.rel.strip_suffix(".toml"))
+        .map(std::string::ToString::to_string)
+        .collect();
+
+    let declared: BTreeSet<String> = tasty_i18n::BUILTIN_CODES
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+
+    assert_eq!(
+        declared,
+        on_disk,
+        "`tasty_i18n::BUILTIN_CODES` 와 `lang/*.toml` 이 어긋난다.\n           정본에만: {:?}\n  디스크에만: {:?}\n\n         디스크에만 있는 것은 **검사를 통째로 안 받는 카탈로그**다(빨개지지 않는다). \
+         정본에만 있는 것은 로더가 못 여는 언어다. 어느 쪽이든 한쪽을 맞춰라",
+        declared.difference(&on_disk).collect::<Vec<_>>(),
+        on_disk.difference(&declared).collect::<Vec<_>>()
+    );
+
+    assert_eq!(
+        tasty_i18n::BUILTIN_CODES.first(),
+        Some(&"en"),
+        "`BUILTIN_CODES` 의 0 번이 영어가 아니다. 이 파일의 여러 검사가 `LANGS[1..]` 을 \
+         \"영어가 아닌 것\" 으로 쓰므로, 순서가 바뀌면 **엉뚱한 기준과 비교하면서 초록**이 \
+         된다"
+    );
 }
 
 /// 카탈로그 디렉토리 — 루트 `lang/` + `crates/tasty-plugin-*/lang/`(존재하는 것만).
@@ -713,14 +805,37 @@ fn the_entry_point_derivation_is_alive() {
 /// 끊어 키를 다음 줄로 밀어낸다(`tr.t_replace(` 뒤 개행). 한 줄만 보던 판정은 그
 /// 형태를 전부 "동적 키" 로 흘려보냈다. 실측(2026-09-05): 키가 같은 줄에 있는 자리
 /// 1344 · 다음 줄로 밀린 자리 102 — 전체의 7 % 가 안 보이던 셈이다.
+/// 진입점에서 도출한 호출 접두(`t(` · `t_fmt(` …) — **프로세스당 한 번만 만든다.**
+///
+/// 한때 [`literal_keys`] 가 이것을 **줄마다** 다시 만들었다. 그 안의
+/// [`translation_entry_points`] 는 파일 둘을 디스크에서 읽어 파싱하므로, 비용이
+/// 스캔 줄 수 × 그 두 파일의 줄 수가 됐다. 실측 2026-09-07:
+///
+/// - `literal_keys` 호출 256,879 회 (strace 로 센 `openat` 513,758 회 ÷ 파일 2 개)
+/// - 스캔 대상 1,141 파일 · 405,665 줄 (`//` 와 테스트 영역은 호출 전에 걸러진다)
+/// - 매 호출이 다시 읽는 줄 2,240 (`crates/tasty-i18n/src/lib.rs` 2,111 +
+///   `crates/tasty-plugin-sdk/src/i18n.rs` 129) ⇒ **약 5.75 억 줄 재파싱**
+/// - 그 결과 이 시험 하나가 **224.92 초** — 그 타깃 16 시험의 전부이자 루트 `tests/`
+///   전체(292 초)의 77 % 였다.
+///
+/// **판정은 안 바뀐다.** 두 파일은 프로세스 수명 안에서 불변이라 매번 읽어도 같은
+/// 이름이 나온다. 도출이 *살아 있는가* 는 [`the_entry_point_derivation_is_alive`] 가
+/// 따로 보고, 그쪽은 캐시를 안 탄다 — 1 회 호출이라 비용이 0 이고, 디스크를 실제로
+/// 읽는 것이 그 시험의 물음이다.
+fn translation_call_prefixes() -> &'static [String] {
+    static CACHE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        // 긴 이름부터 본다 — `t(` 를 먼저 찾으면 `t_fmt(` 안의 `t` 를 집는 일은 없지만,
+        // 순서를 고정해 두는 편이 나중에 형태가 늘어도 안전하다.
+        let mut names: Vec<String> = translation_entry_points().into_iter().collect();
+        names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+        names.iter().map(|n| format!("{n}(")).collect()
+    })
+}
+
 fn literal_keys(line: &str, next: Option<&str>) -> Vec<String> {
-    // 긴 이름부터 본다 — `t(` 를 먼저 찾으면 `t_fmt(` 안의 `t` 를 집는 일은 없지만,
-    // 순서를 고정해 두는 편이 나중에 형태가 늘어도 안전하다.
-    let mut names: Vec<String> = translation_entry_points().into_iter().collect();
-    names.sort_by_key(|n| std::cmp::Reverse(n.len()));
-    let calls: Vec<String> = names.iter().map(|n| format!("{n}(")).collect();
     let mut keys = Vec::new();
-    for call in &calls {
+    for call in translation_call_prefixes() {
         let mut from = 0;
         while let Some(pos) = line[from..].find(call.as_str()) {
             let start = from + pos;
@@ -885,29 +1000,34 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
 
 // ── 역방향: 카탈로그의 키를 쓰는 자리가 있는가 ─────────────────────────
 
-/// 위 순방향 검사([`literal_translation_keys_exist_in_catalog`])는 **소스 → 카탈로그**
-/// 한 방향만 본다. 이 절이 반대 방향을 본다 — **카탈로그에 있는데 아무도 안 쓰는 키.**
-///
-/// 왜 두 방향이 다 필요한가: 한 방향짜리 집합 차분은 **이동과 손실을 못 가른다.** 유일한
-/// 호출부가 지워져 키가 고아가 되는 형태에서 순방향은 초록이다(소스에 그 키가 더는
-/// 없으니까). 실제로 그 형태가 있었다 — `src/view/settings/ui/tabs/accessibility.rs` 의
-/// 주석이 탭 제목을 L2 사이드바로 옮긴 결정을 적고 있고, 그 탭들의 `…heading` 키 일곱은
-/// 카탈로그에만 남았다.
-///
-/// **소비자가 `.rs` 만이 아니다.** plugin 매니페스트의 `description_i18n_key` 가 키를
-/// 문자열로 든다. 그래서 이 검사는 순방향처럼 소스 리터럴을 파싱하지 않고, **코드와
-/// 매니페스트의 코드 줄에서 키 문자열이 언급되는지**를 본다 — 판정을 느슨한 쪽으로
-/// 몰아, 고아라고 말하는 것에 대해서만 확신을 갖는다.
-///
-/// **다만 느슨함의 한계가 있다.** 처음에는 추적 파일 전량을 말뭉치로 썼는데, 그러면
-/// 키 이름을 **설명하는** 문서·주석이 그 키를 소비로 만들어 이 검사가 찾으려는 고아를
-/// 가린다(실측 셋 — [`consumer_files`] 참조). 위 사유가 요구하는 것은 `.toml` 이지
-/// 산문이 아니므로, 산문만 뺐다.
-///
-/// **동적 조립은 소스에서 도출한다.** `format!("convert_popup.{kind}")` 처럼 조립되는
-/// 키는 완성형이 소스에 없다. 허용목록으로 적지 않고 [`dynamic_key_templates`] 가
-/// 소스에서 그 형태를 찾아낸다 — 새 동적 키 갈래가 생겨도 이 검사가 거짓 양성을 내지
-/// 않는다.
+// 위 순방향 검사(`literal_translation_keys_exist_in_catalog`)는 **소스 → 카탈로그**
+// 한 방향만 본다. 이 절이 반대 방향을 본다 — **카탈로그에 있는데 아무도 안 쓰는 키.**
+//
+// 왜 두 방향이 다 필요한가: 한 방향짜리 집합 차분은 **이동과 손실을 못 가른다.** 유일한
+// 호출부가 지워져 키가 고아가 되는 형태에서 순방향은 초록이다(소스에 그 키가 더는
+// 없으니까). 실제로 그 형태가 있었다 — `src/view/settings/ui/tabs/accessibility.rs` 의
+// 주석이 탭 제목을 L2 사이드바로 옮긴 결정을 적고 있고, 그 탭들의 `…heading` 키 일곱은
+// 카탈로그에만 남았다.
+//
+// **소비자가 `.rs` 만이 아니다.** plugin 매니페스트의 `description_i18n_key` 가 키를
+// 문자열로 든다. 그래서 이 검사는 순방향처럼 소스 리터럴을 파싱하지 않고, **코드와
+// 매니페스트의 코드 줄에서 키 문자열이 언급되는지**를 본다 — 판정을 느슨한 쪽으로
+// 몰아, 고아라고 말하는 것에 대해서만 확신을 갖는다.
+//
+// **다만 느슨함의 한계가 있다.** 처음에는 추적 파일 전량을 말뭉치로 썼는데, 그러면
+// 키 이름을 **설명하는** 문서·주석이 그 키를 소비로 만들어 이 검사가 찾으려는 고아를
+// 가린다(실측 셋 — `consumer_files` 참조). 위 사유가 요구하는 것은 `.toml` 이지
+// 산문이 아니므로, 산문만 뺐다.
+//
+// **동적 조립은 소스에서 도출한다.** `format!("convert_popup.{kind}")` 처럼 조립되는
+// 키는 완성형이 소스에 없다. 허용목록으로 적지 않고 `dynamic_key_templates` 가
+// 소스에서 그 형태를 찾아낸다 — 새 동적 키 갈래가 생겨도 이 검사가 거짓 양성을 내지
+// 않는다.
+//
+// 이 절 주석을 `///` 로 올리지 마라. 빈 줄은 doc 부착을 안 끊으므로(doc 주석은
+// 속성이다) 이 스물세 줄이 바로 아래 `ORPHAN_KEYS` 의 문서로 붙고, rustdoc 목록의
+// 항목 요약 한 줄까지 이 절의 첫 문장으로 덮인다(실측). 이것은 절 전체의 근거이지
+// 그 상수의 설명이 아니다.
 
 /// 카탈로그에 있는데 **코드도 매니페스트도 안 드는** 키(산문의 언급은 소비가 아니다).
 /// 뒷값은 지금까지 짚은
@@ -917,6 +1037,19 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
 ///
 /// 지우지 않고 명부에 둔 이유: 키를 지우는 것은 되돌리기 쉽지만, **정말 그 UI 가
 /// 없어졌는지**는 이 정적 스캔이 답하지 못한다. 항목마다 화면에서 확인한 뒤 지운다.
+/// **트리를 걸어서 조립되는** 키 무리. `dynamic_key_templates` 는 placeholder 하나짜리
+/// 리터럴만 알아보고, 그나마도 가운데 마디에 점이 있으면 잇지 못한다
+/// (`is_dynamically_assembled` 의 `!.contains('.')`). clap 도움말 키가 정확히 그 형태다 —
+/// 가운데가 **서브커맨드 체인**이라 점이 여럿이다(`cli.help._root.surface.completion.about`).
+///
+/// 이 키들은 [`ORPHAN_KEYS`] 와 **다르다**: 저쪽은 소비자가 *없는* 키이고, 이쪽은
+/// 소비자가 *있는데 리터럴로 안 보이는* 키다. 둘을 한 명부에 두면 "안 쓰는 키" 와
+/// "스캐너가 못 보는 키" 가 같은 수로 세어진다.
+///
+/// 뒷값은 **조립하는 자리**다. 그 파일이 사라지면 이 항목은 죽은 인용이 되므로
+/// [`assembled_namespaces_point_at_a_living_assembler`] 가 실재와 비어 있지 않음을 함께 본다.
+const ASSEMBLED_NAMESPACES: &[(&str, &str)] = &[("cli.help.", "crates/tasty-cli/src/help_i18n.rs")];
+
 const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
         "attach.held_body",
@@ -1401,6 +1534,12 @@ fn every_catalog_key_has_a_consumer() {
         if is_dynamically_assembled(key, &templates) {
             continue;
         }
+        if ASSEMBLED_NAMESPACES
+            .iter()
+            .any(|(prefix, _)| key.starts_with(prefix))
+        {
+            continue;
+        }
         orphans.insert(key.clone());
     }
 
@@ -1550,5 +1689,29 @@ fn a_brace_outside_the_literal_is_not_a_template() {
     assert!(
         lits.iter().all(|l| !l.contains('{')),
         "리터럴 밖 중괄호를 안으로 끌어들였다: {lits:?}"
+    );
+}
+
+/// [`ASSEMBLED_NAMESPACES`] 의 각 항목이 **살아 있는지** 본다 — 조립하는 파일이 실재하고,
+/// 그 앞머리를 가진 키가 카탈로그에 실제로 있는지. 둘 중 하나라도 빠지면 그 항목은 키를
+/// 조용히 면제해 주는 빈 구멍이 된다(면제는 넓고 근거는 죽은 상태).
+#[test]
+fn assembled_namespaces_point_at_a_living_assembler() {
+    let keys = all_english_keys();
+    let mut problems = Vec::new();
+    for (prefix, assembler) in ASSEMBLED_NAMESPACES {
+        if !root().join(assembler).is_file() {
+            problems.push(format!("  {prefix} — 조립하는 자리가 없다: {assembler}"));
+        }
+        if !keys.iter().any(|k| k.starts_with(prefix)) {
+            problems.push(format!(
+                "  {prefix} — 이 앞머리를 가진 카탈로그 키가 하나도 없다. 면제만 남았다"
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "ASSEMBLED_NAMESPACES 가 썩었다:\n{}",
+        problems.join("\n")
     );
 }

@@ -21,7 +21,7 @@
 //! "binary 당 1 개" 는 설계상 허용값이라 PID 수만으로 위반과 정상을 가릴 수 없으며,
 //! 개발자 머신의 실사용 tasty 가 그대로 오탐이 된다. 동적 관찰은 수동 검증 절차로 남긴다.
 //!
-//! 선례: `tests/no_emoji_in_source.rs`(`ALLOWLIST_FILES` 정적 스캔),
+//! 선례: `crates/tasty-doc-guards/tests/no_emoji_in_source.rs`(`ALLOWLIST_FILES` 정적 스캔),
 //! `tests/cli_naming_count_drift.rs`(카운트 스냅샷 고정).
 
 use std::collections::BTreeSet;
@@ -458,8 +458,10 @@ const SPAWN_FORMS: &[&str] = &[
 /// 그 spawn 이 전용 tasty 루트를 세우는가.
 const ISOLATED_HOME_MARKER: &str = concat!(".env(\"TASTY_", "HOME\"");
 
-/// 스캔이 살아 있는지 보는 하한. 지금 실제 spawn 자리는 5 다
-/// (`gui_common` 1 · `common` 1 · `webhook_common` 2 · `cli_stdout_broken_pipe` 1).
+/// 스캔이 살아 있는지 보는 하한. 실측 2026-09-07: **5**(하한 5, 여유 0) —
+/// `gui_common` 1 · `common` 1 · `webhook_common` 2 · `cli_stdout_broken_pipe` 1.
+/// 여유 0 은 여기서 의도한 값이다: 자리가 하나 줄면 빨개지고, 그때 아래 문장대로
+/// 이 수를 함께 내린다. 줄어든 것이 삭제인지 스캔 고장인지는 사람이 가른다.
 /// 경로 계산이 틀려 대상이 0 개가 되면 **가드가 조용히 초록**이 되는데, 그것을 잡는
 /// 유일한 장치다. 자리를 지웠으면 이 수도 함께 내려라.
 const ISOLATED_HOME_MIN_SPAWNS: usize = 5;
@@ -554,4 +556,173 @@ fn does_not_flag_prose_that_merely_names_the_isolated_home() {
     let src = "//! 하네스는 전용 tasty 루트를 세운다. 그 자리는 spawn 이 아니다.\n";
     let (spawns, _) = spawn_and_home_counts(src);
     assert_eq!(spawns, 0, "산문은 spawn 자리가 아니다");
+}
+
+// ---------------------------------------------------------------------------
+// 번들 opt-in 축 — 무엇을 어디에 띄우는가와 **무엇을 들고 띄우는가**는 또 다른 물음이다
+// ---------------------------------------------------------------------------
+
+/// 호스트를 실제로 부팅시키는 spawn 의 표지. `--port-file` 을 넘긴다는 것은 **인스턴스가
+/// 떠서 포트를 쓴다**는 뜻이고, 부팅하면 번들 plugin 설치 경로를 탄다.
+///
+/// **`SPAWN_FORMS` 를 안 쓴 이유**: 그쪽은 부팅하지 않는 spawn 도 센다.
+/// `tests/cli_stdout_broken_pipe.rs` 는 host 없이 끝나는 로컬 CLI 명령만 띄우므로 번들을
+/// 스테이징하지 않는다 — 거기에 opt-in 을 요구하면 근거 없는 요구가 된다.
+///
+/// **따옴표를 품는 이유도 측정된 것이다.** 따옴표를 빼면 `tests/webhook_integration.rs` 의
+/// doc 주석(백틱으로 이 플래그를 언급한다)이 모집단에 들어온다. 그 파일은 자기 Command 를
+/// 안 만들고 `webhook_common` 을 거치므로 위반자가 아니다 — 산문을 코드로 세는 오탐이다.
+const BOOT_ARG_MARKER: &str = concat!("\"--port-", "file\"");
+
+/// 그 하네스가 번들 opt-in 을 거치는가.
+const BUNDLE_OPT_IN_MARKER: &str = concat!("apply_bundle_", "opt_in");
+
+/// 스캔이 살아 있는지 보는 하한. 지금 부팅 하네스는 3 이다
+/// (`tests/common` · `tests/webhook_common` · `tests/gui_common`).
+/// 경로나 마커가 어긋나 모집단이 0 이 되면 이 축은 **자극과 무관하게 초록**이 된다.
+const BOOTING_HARNESS_MIN: usize = 3;
+
+/// 부팅하는 하네스는 전부 번들 opt-in 을 거친다.
+///
+/// ## 왜 이 축이 따로 필요한가
+///
+/// 안 거치면 그 하네스가 띄우는 인스턴스는 부팅마다 격리 홈에 번들 전량을 복사한다
+/// (debug 45 파일 ≈ 1.1 GB). 그 비용은 **초록이라 안 보인다** — 복사는 성공하고 단정은
+/// 아무것도 안 건드린다. 결정과 명부는 [ADR-0182](docs/adr/0182-test-instances-do-not-stage-bundled-plugins-by-default.md),
+/// 판정은 `tests/spawn_diag` 한 곳이다.
+///
+/// **이 가드가 생긴 이유가 실측이다.** 결정이 내려질 때 손에 있던 하네스가 둘이었고
+/// (`tests/common` · `tests/webhook_common`) 셋째(`tests/gui_common`)는 그 문장 밖에
+/// 남았다. 셋째는 자동 채널에서 한 번도 안 도는 스위트라(전수 `#[ignore]`) 아무도 그
+/// 1.1 GB 를 안 봤다. 넷째 하네스가 생기면 같은 일이 다시 나는데, 그것을 사람이 기억으로
+/// 막게 두지 않는다.
+///
+/// **이 가드가 답하지 않는 것**: 판정 단위가 **파일**이다. 한 파일에 부팅 spawn 이 둘인데
+/// 그중 하나만 opt-in 을 거치면 통과한다. 자리 단위로 묶으려면 구문 분석이 필요하고, 이
+/// 축이 잡으려는 결함(하네스가 통째로 안 거치는 것)에 비해 그 비용이 크다.
+#[test]
+fn every_booting_harness_goes_through_the_bundle_opt_in() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let tests_dir = root.join("tests");
+    let mut booting = 0usize;
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (rel, src) in all_test_sources(&tests_dir) {
+        if !src.contains(BOOT_ARG_MARKER) {
+            continue;
+        }
+        booting += 1;
+        if !src.contains(BUNDLE_OPT_IN_MARKER) {
+            offenders.push(rel);
+        }
+    }
+
+    assert!(
+        booting >= BOOTING_HARNESS_MIN,
+        "부팅 하네스를 {booting} 개밖에 못 찾았다(하한 {BOOTING_HARNESS_MIN}). 스캔이 \
+         죽었거나 표지가 바뀐 것이다 — 0 건은 초록이 아니라 미측정이다."
+    );
+    assert!(
+        offenders.is_empty(),
+        "부팅하는 하네스가 번들 opt-in 을 안 거친다 — 그 회차는 격리 홈마다 번들 전량을 \
+         복사한다(debug 45 파일 약 1.1 GB). `spawn_diag::{BUNDLE_OPT_IN_MARKER}(&mut command)` \
+         을 spawn 직전에 불러라:\n\x20 {offenders:?}"
+    );
+}
+
+/// 아래 셋도 픽스처를 **마커 상수에서 만든다** — 이유는 위 격리 홈 축의 대조들과 같다.
+#[test]
+fn detects_a_booting_harness_that_skips_the_bundle_opt_in() {
+    let src = format!("c.arg({BOOT_ARG_MARKER});\nc.spawn();\n");
+    assert!(src.contains(BOOT_ARG_MARKER), "모집단에 들어와야 한다");
+    assert!(!src.contains(BUNDLE_OPT_IN_MARKER), "위반자로 잡혀야 한다");
+}
+
+#[test]
+fn does_not_flag_a_booting_harness_that_calls_it() {
+    let src = format!("c.arg({BOOT_ARG_MARKER});\nspawn_diag::{BUNDLE_OPT_IN_MARKER}(&mut c);\n");
+    assert!(src.contains(BOOT_ARG_MARKER) && src.contains(BUNDLE_OPT_IN_MARKER));
+}
+
+/// 산문이 플래그를 **이름으로만** 언급하는 형태는 모집단이 아니다.
+///
+/// 실측에서 온 대조다 — 따옴표 없는 표지를 쓰면 `tests/webhook_integration.rs` 의 doc
+/// 주석이 들어와 위반자가 된다. 그 파일은 자기 Command 를 안 만든다.
+#[test]
+fn does_not_flag_prose_that_merely_names_the_port_file_flag() {
+    let src = "//! CLI→IPC 매핑은 `--port-file` 로 붙인 실 CLI 바이너리로 검증한다.\n";
+    assert!(
+        !src.contains(BOOT_ARG_MARKER),
+        "백틱 산문은 부팅 spawn 이 아니다"
+    );
+}
+
+/// 스캔 마커 중 **따옴표를 품지 않은 것**은 소스 원문에 그대로 적히므로, 이 파일이
+/// 자기 상수를 하네스 코드로 세게 된다. 실측으로 그렇게 났다 — 처음엔 이 파일이
+/// `spawn 4 · 전용 홈 지정 0` 인 위반자로 나왔다. 그래서 그런 마커는 `concat!` 로
+/// 쪼갠다. 쪼개면 원문에 연속 형태가 없어 자기 매칭이 사라진다.
+///
+/// **따옴표를 품은 마커는 다르다** — 소스에서는 `\"` 로 이스케이프되어 런타임 값과
+/// 글자가 달라지므로, 쪼개지 않아도 자기 매칭이 원리적으로 안 일어난다. 그쪽의 쪼갬은
+/// 형태를 맞춰 둔 것이지 이 결함을 막는 장치가 아니다. **두 부류를 섞어 "쪼개서 안전하다"
+/// 로 적으면 따옴표 없는 마커가 새로 붙었을 때 같은 근거로 안 쪼개게 된다.**
+///
+/// 그리고 **쪼갬은 주석만으로는 안 지켜진다.** 다음 사람이 "왜 나눠 놨지" 하며 합치면
+/// 조용히 되돌아가고, 그 순간 이 파일이 자기 상수 때문에 위반자가 된다. 그래서 쪼갬이
+/// 살아 있는지를 **시험이 묻는다.** 대안이었던 "이 파일을 순회에서 빼기" 를 안 쓴 이유는
+/// 그 면제가 **이 파일에 나중에 붙는 모든 축까지 덮기** 때문이다(726 이 짚었다).
+/// 선례: `crates/tasty-doc-guards/tests/complexity_allowlist_docs_parity.rs` 의
+/// `the_needle_is_not_written_whole_in_this_file`.
+///
+/// ★ **소스 텍스트를 읽는 시험에는 변이가 선택이 아니라 필수다.** 이 시험의 첫 판은
+/// 런타임 값을 그대로 `src.contains` 했고 **초록이었다.** 그런데 Rust 소스에서 문자열
+/// 리터럴은 `\"` 로 이스케이프되어 적히므로 런타임 값의 글자가 원문에 **절대 안 나온다**
+/// — `contains` 가 항상 거짓이라 단정이 항상 참이었다. 시험도 대상도 게이트도 전부
+/// 초록이고 빨간 곳이 아무 데도 없었다. **쪼갬을 되돌리는 변이를 넣어 그것이 살아남는
+/// 것을 보고서야** 알았다. 이 파일을 고칠 때는 변이를 한 번 넣어 빨간지 확인해라.
+#[test]
+fn the_quoteless_scan_markers_are_not_written_whole_in_this_file() {
+    let src = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join(SELF_FILE),
+    )
+    .expect("자기 소스 read 실패");
+
+    // 따옴표가 없으면 런타임 값 == 소스에 적히는 글자다. 그 부류만 자기 매칭을 낸다.
+    let quoteless: Vec<(&str, &str)> = [
+        ("SPAWN_FORMS[0]", SPAWN_FORMS[0]),
+        ("SPAWN_FORMS[1]", SPAWN_FORMS[1]),
+        ("BIN_SELECTION_MARKER", BIN_SELECTION_MARKER),
+        ("ISOLATED_HOME_MARKER", ISOLATED_HOME_MARKER),
+        ("BUNDLE_OPT_IN_MARKER", BUNDLE_OPT_IN_MARKER),
+    ]
+    .into_iter()
+    .filter(|(_, needle)| !needle.contains('"'))
+    .collect();
+
+    // ★ 비영 대조 ① — 판정 대상이 0 건이면 아래 단정은 자극과 무관하게 초록이다.
+    assert!(
+        !quoteless.is_empty(),
+        "비영 대조 실패 — 따옴표 없는 마커가 하나도 없다. 그러면 아래 통과는 쪼갬의 \
+         증거가 아니라 **아무것도 안 봤다**는 뜻이다."
+    );
+
+    let whole: Vec<String> = quoteless
+        .iter()
+        .filter(|(_, needle)| src.contains(*needle))
+        .map(|(label, needle)| format!("{label} = {needle:?}"))
+        .collect();
+    assert!(
+        whole.is_empty(),
+        "따옴표 없는 스캔 마커가 원문에 통째로 있다 — `concat!` 쪼갬을 되돌리지 마라. \
+         되돌리면 이 가드가 자기 상수를 하네스 spawn 으로 센다. 되돌린 것: {whole:?}"
+    );
+
+    // ★ 비영 대조 ② — `contains` 로 이 파일에서 무언가를 실제로 찾을 수 있음을 보인다.
+    //   찾는 법 자체가 죽어 있으면 위 초록은 증거가 아니다. 조각은 원문에 반드시 있다.
+    assert!(
+        src.contains("Command::new(spawn_diag::"),
+        "비영 대조 실패 — 조각조차 원문에서 못 찾는다. 탐색법이 죽었다."
+    );
 }

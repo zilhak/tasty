@@ -37,15 +37,42 @@ fn stub_dir(body: &str) -> tempfile::TempDir {
 }
 
 /// 스텁 tokei 를 PATH 앞에 두고 게이트를 돌려 종료코드를 얻는다. 판정기는 성공 스텁.
+///
+/// 스텁이 `echo 0` 을 찍는 이유: 게이트가 **판정기가 만들었다는 사본 수**와 디스크의
+/// 사본 수를 맞춰 본다. 사본을 하나도 안 만드는 이 스텁은 0 을 말해야 그 대조를 통과한다.
+/// 수를 아예 안 내면 게이트는 판정 불가로 나가고, 그러면 아래 시험들이 재려는 것이
+/// 아니라 **대조 실패**를 재게 된다.
 fn run_gate_with(body: &str) -> i32 {
-    run_gate(body, "mkdir -p \"$1\"\nexit 0")
+    run_gate(body, "mkdir -p \"$1\"\necho 0\nexit 0")
 }
 
-/// tokei 스텁과 판정기(strip-cfg-test) 스텁을 함께 주입하고 게이트를 돌린다.
+/// tokei 스텁과 판정기 스텁을 주입하고 게이트를 돌려 **종료코드만** 얻는다.
 fn run_gate(tokei_body: &str, strip_body: &str) -> i32 {
+    run_gate_full(tokei_body, strip_body).0
+}
+
+/// 종료코드와 표준출력을 함께 얻는다.
+///
+/// 경고 띠(`WARN_BAND`)는 **rc 에 안 들어가므로 종료코드로는 관측이 안 된다** — 띠가
+/// 조용히 사라져도 위 테스트들은 전부 초록이다. 그래서 그 칸만 출력을 본다. 단정은
+/// 안정된 조각(`경고(900↑)` 와 경로)만 걸고 문장 전체를 걸지 않는다.
+fn run_gate_full(tokei_body: &str, strip_body: &str) -> (i32, String) {
+    // 신선도 질문에는 3(= 소스가 없는 트리라 물을 수 없다)으로 답한다. 그것이 이
+    // 상황의 참값이다 — 합성 스텁에는 판정기 소스가 없다. 각 시험이 그 갈래를 매번
+    // 다시 쓰지 않도록 여기서 붙인다.
+    run_gate_raw(
+        tokei_body,
+        &format!("if [ \"$1\" = \"--check-fresh\" ]; then exit 3; fi\n{strip_body}"),
+    )
+}
+
+/// 판정기 스텁을 **손대지 않고** 그대로 심는다 — 신선도 갈래까지 시험이 정한다.
+///
+/// 위 헬퍼는 그 갈래를 대신 써 주므로, 그 갈래 자체가 판정 대상인 시험은 여기를 쓴다.
+fn run_gate_raw(tokei_body: &str, strip_script: &str) -> (i32, String) {
     let dir = stub_dir(tokei_body);
     let strip = dir.path().join("strip-cfg-test");
-    fs::write(&strip, format!("#!/bin/sh\n{strip_body}\n")).expect("판정기 스텁 작성");
+    fs::write(&strip, format!("#!/bin/sh\n{strip_script}\n")).expect("판정기 스텁 작성");
     let mut perm = fs::metadata(&strip).expect("스텁 metadata").permissions();
     perm.set_mode(0o755);
     fs::set_permissions(&strip, perm).expect("실행권한");
@@ -60,7 +87,10 @@ fn run_gate(tokei_body: &str, strip_body: &str) -> i32 {
         .current_dir(root)
         .output()
         .expect("게이트 실행");
-    out.status.code().unwrap_or(-1)
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
 }
 
 /// tokei 가 정상 동작해 임계 이하만 보고하는 JSON.
@@ -136,6 +166,74 @@ fn a_failing_stripper_is_not_a_pass() {
 
 /// 판정기 경로가 아예 없으면 통과가 아니다. 러너에 바이너리를 안 만들어 둔 상태가
 /// 조용히 초록이 되면 게이트가 무엇을 쟀는지 아무도 모른다.
+/// skip 대상만 보고하는 tokei 스텁 — 걸러내고 나면 **판정 대상이 0 건**이 된다.
+const ALL_SKIPPED: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/tests/zz_stub_skipped.rs","stats":{"code":10}}]}}'"#;
+
+/// 판정 대상이 0 건인 것은 통과가 아니다.
+///
+/// skip 과 allowlist 가 전부를 삼키면 위반 목록도 비고, 그러면 "아무것도 안 쟀다" 가
+/// "다 통과했다" 와 **같은 줄**을 만든다. 이 게이트의 다른 모든 측정 실패는 exit 2 인데
+/// 이 갈래만 초록으로 나가면 그 규율이 한 자리에서만 지켜지는 것이다.
+#[test]
+fn zero_judged_files_is_not_a_pass() {
+    assert_eq!(
+        run_gate_with(ALL_SKIPPED),
+        2,
+        "판정 대상이 0 건이면 측정 실패다 — 통과로 읽지 않는다"
+    );
+}
+
+/// 판정기 갈래의 **세 번째**: rc 0 으로 성공하면서 사본을 모자라게 만드는 것.
+///
+/// 위 둘(죽는다 · 없다)은 rc 와 경로로 갈리지만 이것은 rc 에 흔적을 안 남긴다.
+/// 실측(2026-09-07): 진짜 판정기를 부른 뒤 사본의 절반을 지우는 스텁을 물리자 판정
+/// 대상이 1117 에서 601 로 반토막 났는데 rc 는 0 이었다 — 게이트를 한 글자도 안
+/// 고치므로 skip 목록을 텍스트로 읽는 대리 판정도 안 걸리고, allowlist 파일이 남아
+/// 있으면 자매 게이트도 안 움직인다. 그 상태의 "임계 초과 0" 은 "큰 파일이 없다" 와
+/// "큰 파일을 안 봤다" 를 같은 줄로 만든다.
+///
+/// 스텁은 사본 하나만 만들고 다섯을 만들었다고 말한다. 위반이 아니라 **판정 불가**를
+/// 요구하는 것이 요점이다 — tokei 스텁은 임계 이하만 보고하므로 여기서 1 이 나오면
+/// 그건 이 갈래가 위반으로 붕괴한 것이다.
+/// 판정기가 **신선도 갈래에서** 무언가 찍어도 게이트가 그것을 경로로 삼지 않는다.
+///
+/// 공용 판정기 찾기(`scripts/lib/judge-bin.sh`)는 한때 경로를 표준출력으로 반환했다.
+/// 그러면 그 함수의 **모든 갈래**가 "아무것도 안 찍는다" 는 계약을 지는데, 그 계약이
+/// 어디에도 안 박혀 있었다. 실측(2026-09-07): 신선도 갈래에서 한 줄을 찍는 스텁을
+/// 물리자 경로가 "POLLUTION\n/tmp/…/strip-cfg-test" 가 되고 게이트가 **그 줄을 명령으로
+/// 실행했다** — 이 파일의 극성 다섯이 죽었다. 진짜 판정기는 그 갈래에서 아무것도 안
+/// 찍으므로 그날까지 조용했고, 게이트가 판정기의 표준출력을 값으로 읽기 시작한
+/// 순간 실효화됐다.
+///
+/// 그래서 "안 찍는다" 를 지키는 대신 **찍혀도 안 터지게** 바꿨다(반환이 변수다).
+/// 이 시험은 그 성질을 건다 — 스텁이 신선도에서 한 줄 찍어도 판정은 평소와 같다.
+#[test]
+fn a_judge_that_prints_while_answering_freshness_does_not_poison_the_path() {
+    let (code, _out) = run_gate_raw(
+        UNDER_THRESHOLD,
+        "if [ \"$1\" = \"--check-fresh\" ]; then echo POLLUTION; exit 3; fi\n\
+         mkdir -p \"$1\"\necho 0\nexit 0",
+    );
+    assert_eq!(
+        code, 0,
+        "신선도 갈래의 출력이 판정기 경로를 오염시켰다 — 반환이 표준출력으로 되돌아갔다"
+    );
+}
+
+#[test]
+fn a_partially_successful_stripper_is_not_a_pass() {
+    assert_eq!(
+        run_gate(
+            UNDER_THRESHOLD,
+            "mkdir -p \"$1\"\ntouch \"$1/zz_one.rs\"\necho 5\nexit 0"
+        ),
+        2,
+        "판정기가 만들었다는 수와 디스크의 사본 수가 어긋나면 측정 실패(exit 2)여야 한다 — \
+         통과(0)도 위반(1)도 아니다"
+    );
+}
+
 #[test]
 fn a_missing_stripper_is_not_a_pass() {
     let dir = stub_dir(UNDER_THRESHOLD);
@@ -152,4 +250,59 @@ fn a_missing_stripper_is_not_a_pass() {
         .output()
         .expect("게이트 실행");
     assert_eq!(out.status.code(), Some(2));
+}
+
+// ── 경고 띠 (900↑) ────────────────────────────────────────────────────────
+//
+// 임계만 있으면 게이트는 아무 말도 안 하다가 갑자기 막는다. 실측(2026-09-07)에서
+// 임계 이하 최댓값 999 뒤에 997·997·995 가 붙어 있었고 900 대가 아홉이었는데,
+// 통과할 때 수를 안 찍어 아무도 몰랐다. 띠는 그 상태를 값으로 낸다.
+
+/// 띠 안(950) 하나. 임계 미만이라 위반이 아니다.
+const IN_WARN_BAND: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_warn.rs","stats":{"code":950}}]}}'"#;
+
+/// 띠 바로 아래(899). 대조군용.
+const BELOW_WARN_BAND: &str =
+    r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_ok.rs","stats":{"code":899}}]}}'"#;
+
+/// 위반과 경고가 한 트리에 함께 있는 경우 — 둘이 갈리는지 본다.
+const VIOLATION_AND_WARNING: &str = r#"echo '{"Rust":{"reports":[{"name":"src/zz_stub_violation.rs","stats":{"code":9999}},{"name":"src/zz_stub_warn.rs","stats":{"code":950}}]}}'"#;
+
+#[test]
+fn nothing_in_the_band_prints_no_warning_section() {
+    // ⓪ 대조군. 이게 없으면 아래 두 테스트는 "경고 절을 항상 찍는 게이트" 로도 통과한다.
+    let (code, out) = run_gate_full(BELOW_WARN_BAND, "mkdir -p \"$1\"\necho 0\nexit 0");
+    assert_eq!(code, 0, "899 는 임계 미만이라 통과여야 한다");
+    assert!(
+        out.contains("경고(900↑) 0"),
+        "경고 0 을 값으로 찍어야 한다 — 침묵은 '띠가 없다' 와 구분이 안 된다: {out}"
+    );
+    assert!(
+        !out.contains("경고 —"),
+        "띠에 든 파일이 없으면 경고 목록 절을 내지 않는다: {out}"
+    );
+}
+
+#[test]
+fn the_warning_band_names_the_file_and_keeps_the_exit_code() {
+    let (code, out) = run_gate_full(IN_WARN_BAND, "mkdir -p \"$1\"\necho 0\nexit 0");
+    assert_eq!(code, 0, "경고는 rc 에 안 들어간다 — 띠 안이어도 통과다");
+    assert!(out.contains("경고(900↑) 1"), "경고 수를 찍어야 한다: {out}");
+    assert!(
+        out.contains("src/zz_stub_warn.rs"),
+        "경고는 **이름으로** 나와야 한다 — 수만 나오면 어느 파일인지 아무도 모른다: {out}"
+    );
+}
+
+#[test]
+fn a_violation_and_a_warning_stay_separate() {
+    // 같은 트리에 둘이 있으면 서로 다른 칸으로 세어야 한다. 한 칸으로 뭉치면
+    // "임계초과 2" 가 되어 위반 수가 부풀고, 그 수를 보고 lane 이 잘못 움직인다.
+    let (code, out) = run_gate_full(VIOLATION_AND_WARNING, "mkdir -p \"$1\"\necho 0\nexit 0");
+    assert_eq!(code, 1, "임계 초과가 있으면 여전히 exit 1 이다");
+    assert!(
+        out.contains("임계초과 1") && out.contains("경고(900↑) 1"),
+        "위반과 경고가 서로 다른 칸이어야 한다: {out}"
+    );
 }

@@ -14,12 +14,16 @@
 //! 다만 그 축약에도 하한([`tasty_i18n::MIN_FRAGMENT_CHARS`])이 있어, 골격이 그만큼을 남기지
 //! 못하면 여전히 넘친다. 그래서 판정은 "골격 + 경로 최소분 ≤ 캡" 이다.
 //!
-//! 선례: `tests/i18n_key_parity.rs`(같은 lang 파일 순회 · 평탄화).
+//! 선례: `tests/i18n_key_parity.rs`(같은 lang 파일 순회 · 평탄화). 언어 목록은 그 선례를
+//! 따라 `tasty_i18n::BUILTIN_CODES` 를 가리킨다 — 여기서 다시 적지 않는다.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-const LANGS: &[&str] = &["en", "ko", "ja"];
+/// 지원 언어 — 정본을 가리킨다. 여기에 목록을 다시 적으면 그것을 정본과 같게 유지하는
+/// 것이 아무것도 없고, 어긋난 쪽은 빨강이 아니라 **조용한 축소**가 된다: 목록에서 빠진
+/// 언어는 실패를 만드는 것이 아니라 이 검사를 안 받는다.
+const LANGS: &[&str] = &tasty_i18n::BUILTIN_CODES;
 
 /// 토스트로 나가는 키의 접두사와 그 근거. 여기 없는 키는 검사하지 않는다 — 모달 본문
 /// 처럼 길어도 되는 문구까지 200자로 묶으면 캡의 의미가 엉뚱한 곳으로 번진다.
@@ -154,7 +158,7 @@ fn flatten(prefix: &str, value: &toml::Value, out: &mut BTreeMap<String, String>
 // lang 파일에서 오고 경로 길이는 런타임에서 오므로, 둘을 함께 보는 실행 경로가
 // 단위 테스트에 없다. 그래서 호출부를 소스로 고정한다.
 //
-// 방식은 레포에 이미 있는 것을 따랐다: `tests/file_log_host_only_chokepoint.rs` 의
+// 방식은 레포에 이미 있는 것을 따랐다: `crates/tasty-doc-guards/tests/file_log_host_only_chokepoint.rs` 의
 // 중괄호 깊이 기반 함수 본문 추출(`fn_span`). 문자열 검색으로 파일 전체를 훑으면
 // 무관한 헬퍼나 doc 주석에 걸려 무해한 리팩터에도 깨진다.
 

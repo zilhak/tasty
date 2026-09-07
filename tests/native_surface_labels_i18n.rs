@@ -8,7 +8,7 @@
 //! 앱 이름을 결합하는 macOS 항목은 `t_fmt` 로 `{}` 하나를 채우므로 placeholder 개수도
 //! 함께 검증한다.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// 플랫폼 소스가 조회하는 키 전체. 소스의 `t("…")` / `t_fmt("…", …)` 리터럴과 동기.
 const REQUIRED_KEYS: &[&str] = &[
@@ -43,33 +43,23 @@ const LANG_FILES: &[(&str, &str)] = &[
     ("ja", include_str!("../lang/ja.toml")),
 ];
 
-/// `[a.b] c = "v"` 를 `a.b.c` 점 키로 평탄화한다(`tasty-i18n` 의 로더와 같은 규칙).
-fn flatten(prefix: &str, value: &toml::Value, out: &mut BTreeMap<String, String>) {
-    match value {
-        toml::Value::Table(table) => {
-            for (k, v) in table {
-                let full = if prefix.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{prefix}.{k}")
-                };
-                flatten(&full, v, out);
-            }
-        }
-        toml::Value::String(s) => {
-            out.insert(prefix.to_string(), s.clone());
-        }
-        _ => {}
-    }
-}
-
+/// lang 파일을 `a.b.c` 점 키로 편다 — **평탄화 규칙은 로더 자신의 것을 쓴다**
+/// (`tasty_i18n::flatten_catalog_toml`).
+///
+/// 예전에는 그 재귀의 사본이 여기 있었고 둘을 같게 잡아 주는 것이 "로더와 같은 규칙"
+/// 이라는 주석뿐이었다. 로더가 무엇을 leaf 로 볼지 바꾸면 이 시험은 옛 규칙으로 펴고,
+/// 그 어긋남은 **시험이 초록인 채로** 생긴다(안 펴진 키는 여기 단정에도 안 올라온다).
+/// 같은 이유로 `tests/i18n_key_parity.rs` 의 사본은 이미 지워졌다 — 그 근거는
+/// `flatten_catalog_toml` 의 doc 에 있다.
+///
+/// 로더는 `HashMap` 에 누적하고 여기는 정렬된 `BTreeMap` 이 필요하므로 마지막에 옮긴다.
 fn load(lang: &str, toml_str: &str) -> BTreeMap<String, String> {
     let value: toml::Value = toml_str
         .parse()
         .unwrap_or_else(|e| panic!("lang/{lang}.toml 파싱 실패: {e}"));
-    let mut out = BTreeMap::new();
-    flatten("", &value, &mut out);
-    out
+    let mut flat = HashMap::new();
+    tasty_i18n::flatten_catalog_toml("", &value, &mut flat);
+    flat.into_iter().collect()
 }
 
 #[test]

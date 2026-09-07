@@ -6,8 +6,13 @@
 //! (근거는 ADR-0090). IPC 전용 e2e 는 `tests/common/mod.rs` 의 `shared()` 를 쓴다 —
 //! 이쪽이 `MutexGuard` 로 테스트를 직렬화하는 건 실제 데스크톱 입력을 주입하기 때문이다.
 
+// 시험 하네스라 unsafe 는 시험을 세우는 데만 쓴다. `cfg_attr(test, ..)` 형태를 쓰는 것은
+// 이 파일이 `check-allow-reason` 의 좌변 밖(루트 `tests/`)이라 사유 주석이 어느 게이트에도
+// 안 걸리기 때문이다 — 그래서 "테스트라서 뺐다" 를 **형태**가 남기게 한다. 프로덕션 자리는
+// 같은 lint 라도 무조건 `#![allow]` + 사유이고, 그 둘이 형태로 갈린다.
+#![cfg_attr(test, allow(clippy::multiple_unsafe_ops_per_block))]
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
 // `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
@@ -47,6 +52,15 @@ static CLEANUP_PID: AtomicU32 = AtomicU32::new(0);
 /// 1.1 GB × 14 = 15 GB 가 남았다(번들 plugin 사본이 홈마다 들어간다). PID kill 과 같은
 /// atexit 콜백에 함께 태운다.
 static CLEANUP_HOME: OnceLock<PathBuf> = OnceLock::new();
+/// 공유 인스턴스의 port 파일. 홈과 **같은 이유로** 여기 있어야 한다 — `Drop` 은 이
+/// 하네스에서 안 돈다.
+///
+/// 이것만 빠져 있었다. 실측 2026-09-07: `/tmp` 에 죽은 `tasty-gui-test-*.port` **112 개**,
+/// 남은 `tasty-gui-test-home-*` **0 개** — 홈은 지워지고 port 파일만 쌓인 자국이다.
+/// 그 잔해가 계기를 망친다: 실행 중인 인스턴스를 글롭(`/tmp/tasty-gui-test-*.port`)으로
+/// 찾으면 죽은 파일이 전부 잡혀 `Connection refused` 만 나오고, 그 증상은 "대상이 없다"
+/// 가 아니라 **"대상이 있는데 안 붙는다"** 로 보여 계기가 아니라 표적을 의심하게 만든다.
+static CLEANUP_PORT: OnceLock<PathBuf> = OnceLock::new();
 /// 첫 spawn 이 실패했을 때 뒤 테스트가 **실제로 다시 프로세스를 띄우는 것**을 막는다.
 /// 기전은 `spawn_diag` 에 있고 상태만 여기 둔다 — 이유는 그쪽 doc 주석 참조.
 /// 형제 하네스 `tests/common` 은 같은 래치를 자기 안에 손으로 갖고 있다(그 파일은
@@ -69,6 +83,8 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
         // 클로저 안이라 프로세스당 한 번만 돈다. 두 번째 호출이 있다면 그것은 이 설계가
         // 깨진 것이고, 그때도 먼저 넣은 경로가 유효하므로 덮어쓰지 않는 것이 옳다.
         let _ = CLEANUP_HOME.set(inst.isolated_home.clone());
+        // 위와 같은 이유(첫 호출에서 한 번만 돈다)로 `set` 의 `Err` 은 무시한다.
+        let _ = CLEANUP_PORT.set(inst.port_file.clone());
         extern "C" fn on_exit() {
             let pid = CLEANUP_PID.load(Ordering::Relaxed);
             if pid != 0 {
@@ -92,6 +108,11 @@ pub fn shared() -> std::sync::MutexGuard<'static, GuiTestInstance> {
                 // 디렉터리이고, 남아도 다음 회차는 자기 `unique` 로 새 경로를 쓴다.
                 // atexit 안이라 패닉시킬 수도 없다.
                 let _ = std::fs::remove_dir_all(home);
+            }
+            if let Some(port) = CLEANUP_PORT.get() {
+                // reason: 위와 같다. 다만 이쪽은 남았을 때의 값이 다르다 — 홈은 디스크만
+                // 먹지만 port 파일은 **다음 사람의 계기를 망친다**(위 `CLEANUP_PORT` 주석).
+                let _ = std::fs::remove_file(port);
             }
         }
         // SAFETY: atexit는 process-lifetime callback을 등록. on_exit는 'static fn 포인터.
@@ -175,7 +196,8 @@ impl GuiTestInstance {
         // TASTY_DEBUG_SUPPRESS_NATIVE_MENU: egui 프레임이 세우는 컨텍스트 메뉴(explorer 등)를
         // 블로킹 native 팝업 없이 `debug_captured_menu` 로 포획하게 해, headless 에서
         // `debug.pending_menu` 로 관찰 가능케 한다(debug 격리, release 미노출).
-        let mut process = Command::new(env!("CARGO_BIN_EXE_tasty"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tasty"));
+        command
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("TASTY_DEBUG_SUPPRESS_NATIVE_MENU", "1")
@@ -212,9 +234,14 @@ impl GuiTestInstance {
             .env_remove("TASTY_SURFACE_ID")
             .env_remove("TASTY_AGENT_ID")
             .env_remove("TASTY_SESSION_TOKEN")
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .expect("failed to spawn tasty GUI");
+            .stderr(std::process::Stdio::piped());
+
+        // 이 스위트가 번들 plugin 을 안 부르면 빈 번들 루트를 준다 — 형제 하네스 둘이
+        // 이미 하는 것이고, 이 하네스만 안 하고 있었다. 안 하면 부팅마다 격리 홈에
+        // 번들 전량(debug 45 파일 ≈ 1.1 GB)을 복사한다. 명부·판정은 `spawn_diag` 한 곳이다.
+        spawn_diag::apply_bundle_opt_in(&mut command);
+
+        let mut process = command.spawn().expect("failed to spawn tasty GUI");
 
         // stderr 를 링에 담고 마지막 줄의 시각을 남긴다 — `tests/common`·`tests/webhook_common`
         // 과 같은 형태다. 이 하네스만 **셋 다 없었다**: 꼬리도, 죽은 자식 판정도, 느림/멈춤
@@ -243,6 +270,18 @@ impl GuiTestInstance {
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > GUI_SPAWN_PORT_TIMEOUT {
+                // 락을 `panic!` 인자 안에서 잡으면 임시 가드가 되감기 끝까지 살아 있어 이
+                // Mutex 가 오염되고, stderr drain 스레드가 다음 `lock()` 에서 죽는다 —
+                // **이후 실패의 stderr tail 이 조용히 사라진다.** 형제 하네스
+                // (`tests/common/mod.rs`)와 같은 수선이다.
+                //
+                // 이유: 오염을 이어받아도 값은 옳다 — 보호 대상이 `Option<Instant>` 한 칸뿐이라
+                // 패닉이 그 불변식을 깨지 않는다.
+                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 교착이다.
+                let last_stderr_age = stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -250,7 +289,7 @@ impl GuiTestInstance {
                         GUI_SPAWN_PORT_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }
@@ -322,7 +361,107 @@ impl GuiTestInstance {
                 app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
             }
         }
+        #[cfg(target_os = "linux")]
+        self.focus_x11();
         std::thread::sleep(Duration::from_millis(100));
+    }
+
+    /// X11 에서 이 인스턴스의 창에 입력 포커스를 준다.
+    ///
+    /// `enigo` 는 *그 순간 OS 포커스를 가진 무엇* 에 키를 넣는다. WM 이 없는 Xvfb 에는
+    /// 포커스를 옮겨 주는 주체가 아예 없으므로, 여기서 안 주면 키 자극이 이 창에
+    /// 도달했는지 자체가 안 정해진다. `windowactivate` 는 WM 에 요청하는 것이라 WM
+    /// 없는 디스플레이에서 실패하므로 `windowfocus` 를 쓴다.
+    ///
+    /// 창 고르기: 한 프로세스가 여러 X 창을 가질 수 있어(작은 보조 창이 섞인다) pid 로
+    /// 찾은 것 중 **넓이가 가장 큰 것**을 고른다.
+    ///
+    /// ★ 단, **모달이 떠 있으면 그 창이 먼저다.** "가장 큰 창" 규칙은 모달을 원리적으로
+    /// 못 고른다 — 모달은 main 창보다 작다. 그 상태로 키를 넣으면 main 이 받는데, main 은
+    /// 모달이 떠 있는 동안 `KeyboardInput` 을 통째로 끊는다(`src/view/main.rs` 의 모달
+    /// 분기) ⇒ 자극이 **아무 데도 안 닿는다.**
+    ///
+    /// 그 증상은 "제품이 안 닫는다" 처럼 보이지만 재고 있는 것은 하네스다. 실측
+    /// (2026-09-07, WM 없는 Xvfb): 설정 창을 `Ctrl+,` · `Escape` 로 닫는 시험 다섯이 전부
+    /// 3 초 타임아웃이었고, 그때 `ui.state` 는 `modal_open: true` ·
+    /// `active_modal_kind: Some(Settings)` 였다 — 창은 떠 있었고 키만 못 갔다.
+    ///
+    /// winit 의 X11 `WindowId` 는 X window id 그대로라 `active_modal_id` 를 그대로 쓴다.
+    ///
+    /// 예외 하나: **본창이 키를 받아야 하는 시험**은 모달이 떠 있어도 본창을 골라야 한다
+    /// (`focus_main_window_x11`). 그쪽은 아래 "가장 큰 창" 규칙을 그대로 쓴다.
+    #[cfg(target_os = "linux")]
+    fn focus_x11(&self) {
+        use std::process::Command;
+        if let Some(modal) =
+            self.call("ui.state", serde_json::json!({}))["active_modal_id"].as_u64()
+        {
+            let status = Command::new("xdotool")
+                .args(["windowfocus", &modal.to_string()])
+                .status()
+                .expect("xdotool windowfocus 를 못 돌렸다");
+            assert!(
+                status.success(),
+                "모달 창 {modal} 에 포커스를 못 줬다 — 이대로 키를 넣으면 main 이 받고 \
+                 main 은 모달 중에 키를 끊는다. 자극이 아무 데도 안 닿는다."
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            return;
+        }
+        self.focus_main_window_x11();
+    }
+
+    /// 모달을 **무시하고** 본창에 포커스를 준다 — pid 로 찾은 X 창 중 가장 큰 것.
+    ///
+    /// 위 `focus_x11` 의 기본 갈래이자, "모달이 떠 있는 동안 본창이 키를 끊는가" 를 재는
+    /// 시험이 직접 부르는 손이다. 그 시험은 키가 **본창에 도착해야** 성립한다 — 모달이
+    /// 받아 버리면 재는 것이 "본창의 게이트" 가 아니라 "모달이 포커스를 가져갔다" 가 된다.
+    #[cfg(target_os = "linux")]
+    fn focus_main_window_x11(&self) {
+        use std::process::Command;
+        let pid = self.process.id().to_string();
+        // 못 하면 **크게** 죽는다. 조용히 넘어가면 뒤따르는 키 단정이 전부 "자극이
+        // 도착했는가" 를 안 정한 채 색을 내고, 그 색은 제품이 아니라 하네스를 잰다 —
+        // 이 분기가 생긴 이유가 정확히 그 사고다.
+        let found = Command::new("xdotool")
+            .args(["search", "--pid", &pid])
+            .output()
+            .expect("xdotool 을 못 돌렸다 — Linux gui 스위트는 창 포커스를 이것으로 준다");
+        let mut best: Option<(u64, String)> = None;
+        for wid in String::from_utf8_lossy(&found.stdout).lines() {
+            let wid = wid.trim();
+            if wid.is_empty() {
+                continue;
+            }
+            let Ok(geom) = Command::new("xdotool")
+                .args(["getwindowgeometry", wid])
+                .output()
+            else {
+                continue;
+            };
+            let text = String::from_utf8_lossy(&geom.stdout);
+            let Some(dims) = text.split("Geometry:").nth(1) else {
+                continue;
+            };
+            let dims = dims.split_whitespace().next().unwrap_or("");
+            let mut parts = dims.split('x');
+            let (Some(w), Some(h)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let (Ok(w), Ok(h)) = (w.trim().parse::<u64>(), h.trim().parse::<u64>()) else {
+                continue;
+            };
+            let area = w * h;
+            if best.as_ref().is_none_or(|(a, _)| area > *a) {
+                best = Some((area, wid.to_string()));
+            }
+        }
+        let (_, wid) = best.unwrap_or_else(|| panic!("pid {pid} 의 X 창을 못 찾았다"));
+        let status = Command::new("xdotool")
+            .args(["windowfocus", &wid])
+            .status()
+            .expect("xdotool windowfocus 를 못 돌렸다");
+        assert!(status.success(), "xdotool windowfocus {wid} 실패: {status}");
     }
 
     /// Send a JSON-RPC request and return the result.
@@ -361,12 +500,30 @@ impl GuiTestInstance {
     pub fn ui_state(&self) -> UiState {
         let result = self.call("ui.state", serde_json::json!({}));
         UiState {
-            settings_open: result["settings_open"].as_bool().unwrap_or(false),
+            settings_open_requested: result["settings_open_requested"].as_bool().unwrap_or(false),
+            keyboard_shortcuts_gated: result["keyboard_shortcuts_gated"]
+                .as_bool()
+                .unwrap_or(false),
+            modal_open: result["modal_open"].as_bool().unwrap_or(false),
+            active_modal_id: result["active_modal_id"].as_u64(),
+            active_modal_kind: result["active_modal_kind"].as_str().map(ModalKind::parse),
+            gate_terms: GateTerms {
+                fullscreen_stage_active: result["gate_fullscreen_stage_active"]
+                    .as_bool()
+                    .unwrap_or(false),
+                settings_open_requested: result["gate_settings_open_requested"]
+                    .as_bool()
+                    .unwrap_or(false),
+                input_dialog_open: result["gate_input_dialog_open"].as_bool().unwrap_or(false),
+                host_popup_focused: result["gate_host_popup_focused"].as_bool().unwrap_or(false),
+                plugin_popup_open: result["gate_plugin_popup_open"].as_bool().unwrap_or(false),
+            },
             notification_panel_open: result["notification_panel_open"].as_bool().unwrap_or(false),
             workspace_count: result["workspace_count"].as_u64().unwrap_or(0) as usize,
             active_workspace: result["active_workspace"].as_u64().unwrap_or(0) as usize,
             pane_count: result["pane_count"].as_u64().unwrap_or(0) as usize,
             tab_count: result["tab_count"].as_u64().unwrap_or(0) as usize,
+            active_tab: result["active_tab"].as_u64().unwrap_or(0) as usize,
         }
     }
 
@@ -482,6 +639,46 @@ impl GuiTestInstance {
         v["surface_id"].as_u64()
     }
 
+    /// 활성 모달에 **창 닫기 요청**을 보낸다 — 사용자가 창 닫기 버튼을 누른 것의 재현.
+    ///
+    /// 키보드로 설정 창을 닫을 수 없어서 있는 손이다. `SettingsView::handle_event` 에
+    /// Escape 분기가 없고, `open_settings_modal` 은 이미 열려 있으면 그냥 return 해서
+    /// `Ctrl+,` 도 토글이 아니다. 남은 실재 경로는 창 닫기 요청과 egui 액션 둘인데,
+    /// WM 없는 Xvfb 에는 앞의 것을 보낼 손이 없다(`xdotool windowclose` 는
+    /// `XDestroyWindow` 를 불러 winit 을 패닉시키고, `wmctrl -i -c` 는 WM 이 없으면
+    /// 아무도 처리하지 않는다). 그래서 `debug.modal.close_request` 로 보낸다.
+    ///
+    /// **닫을 모달이 없었으면 패닉한다.** 그 둘을 같은 모양으로 두면 "닫혔다" 를
+    /// 확인하는 자리가 사라지고, cleanup 이 조용히 아무 일도 안 한 회차가 초록이 된다.
+    pub fn close_active_modal(&self) {
+        let v = self.call("debug.modal.close_request", serde_json::json!({}));
+        assert_eq!(
+            v["closed"].as_bool(),
+            Some(true),
+            "닫을 모달이 없었다 — 이 자리는 모달이 떠 있다고 보고 부른 곳이다. 응답: {v}"
+        );
+    }
+
+    /// 모달이 떠 있어도 **본창**에 텍스트를 넣는다.
+    ///
+    /// `type_text` 는 모달이 있으면 모달에 포커스를 준다(그쪽이 키를 받아야 할 창이라서).
+    /// 그런데 "모달이 떠 있는 동안 본창이 `KeyboardInput` 을 끊는가"(`src/view/main.rs` 의
+    /// 모달 분기)를 재려면 키가 **본창에 도착해야 한다.** 모달이 받아 버리면 재는 것이
+    /// 그 게이트가 아니라 "모달이 포커스를 가져갔다" 가 된다 — 두 초록은 같은 모양이다.
+    ///
+    /// ☆ Linux 전용 구분이다. Windows·macOS 의 `focus()` 는 앱/창 활성화라 어느 창이
+    /// 받는지를 여기서 정하지 못한다 — 그 두 조합에서는 이 손이 `type_text` 와 같고,
+    /// 그 사실은 **재지 않았다.**
+    pub fn type_text_into_main_window(&mut self, text: &str) {
+        #[cfg(target_os = "linux")]
+        self.focus_main_window_x11();
+        #[cfg(not(target_os = "linux"))]
+        self.focus();
+        std::thread::sleep(Duration::from_millis(150));
+        self.enigo.text(text).expect("text input failed");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
     // --- Input simulation helpers ---
 
     /// Press a key combination (e.g., Ctrl+Comma).
@@ -535,6 +732,39 @@ impl GuiTestInstance {
         self.enigo
             .key(Key::Control, Direction::Release)
             .expect("ctrl release failed");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    /// Press Alt+Shift + a key.
+    ///
+    /// **소문자 `key` 를 넘겨라.** 대문자 char 로 Shift 를 대신할 수 없다 — `enigo` 의
+    /// `Key::Unicode` 는 keysym 을 **레벨 0 에서만** 찾고(못 찾으면 미사용 keycode 에
+    /// 새로 바인딩한다) Shift 를 합성하지 않는다. 그래서 `press_alt(Unicode('W'))` 는
+    /// Shift 없는 'W' 이벤트가 되고, 수정자를 정확히 비교하는 매처
+    /// (`src/adapters/ui/input/shortcuts/binding.rs`)에서 `alt+shift+w` 가 아니라
+    /// **`alt+w` 에 닿는다.** 이 헬퍼는 그 통로를 구조로 막는다: 대소문자는 수정자가 아니다.
+    pub fn press_alt_shift(&mut self, key: Key) {
+        self.focus();
+        std::thread::sleep(Duration::from_millis(50));
+        self.enigo
+            .key(Key::Alt, Direction::Press)
+            .expect("alt press failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(Key::Shift, Direction::Press)
+            .expect("shift press failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(key, Direction::Click)
+            .expect("key click failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(Key::Shift, Direction::Release)
+            .expect("shift release failed");
+        std::thread::sleep(Duration::from_millis(20));
+        self.enigo
+            .key(Key::Alt, Direction::Release)
+            .expect("alt release failed");
         std::thread::sleep(Duration::from_millis(200));
     }
 
@@ -717,13 +947,102 @@ impl Drop for GuiTestInstance {
     }
 }
 
+/// `ui.state` 가 내는 모달 종류. **열거다** — 문자열로 비교하면 오타가 "그 모달이
+/// 아니다" 와 같은 모양이 되어 시험이 조용히 통과한다.
+///
+/// 본체 쪽 정의는 `src/state.rs` 의 `ModalKind` 이고, IPC 를 건널 때만 납작해진다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModalKind {
+    Settings,
+    Plugins,
+    Quit,
+    /// 본체가 새 모달을 추가했는데 이 열거를 안 늘린 경우.
+    ///
+    /// ★ `None` 과 **섞지 않는다.** 섞으면 "모달이 없다" 와 "모르는 모달이 떠 있다" 가
+    /// 같은 모양이 되고, 그러면 새 모달이 설정 창 자리를 차지해도 시험이 못 본다.
+    Unknown(String),
+}
+
+impl ModalKind {
+    fn parse(raw: &str) -> Self {
+        match raw {
+            "settings" => Self::Settings,
+            "plugins" => Self::Plugins,
+            "quit" => Self::Quit,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
+
 /// Snapshot of UI overlay state, queried via IPC.
+/// 단축키 게이트를 이루는 다섯 항 — **거짓도 값으로 담는다.**
+///
+/// 참인 것만 나열하면 "그 항이 거짓이라 빠졌다" 와 "보고가 그 항을 아예 모른다" 가
+/// 같은 모양이 된다. 다섯 칸이 항상 차 있으면 그 둘이 갈린다.
+///
+/// 이름은 술어 `state::keyboard_overlay_open` 의 매개변수 그대로다(무대 항만 술어 밖).
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+// reason: 실패 메시지(`Debug`)로 읽히는 진단 구조다. 코드가 분기에 쓰지 않는다.
+pub struct GateTerms {
+    pub fullscreen_stage_active: bool,
+    pub settings_open_requested: bool,
+    pub input_dialog_open: bool,
+    pub host_popup_focused: bool,
+    pub plugin_popup_open: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct UiState {
-    pub settings_open: bool,
+    pub settings_open_requested: bool,
+    /// 단축키 경로가 **막혀 있는가**. `handle_keyboard_input` 은 오버레이가 열려 있으면
+    /// 단축키를 아예 안 소비하는데, 그 게이트를 여는 조건이 넷이고 `settings_open_requested` 은
+    /// 그중 하나다. 이 필드가 없으면 실패 메시지가 "안 먹었다" 까지만 말하고 **왜인지를
+    /// 못 말한다** — 도착 카나리아가 죽은 회차가 그 자리였다.
+    #[allow(dead_code)]
+    // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
+    pub keyboard_shortcuts_gated: bool,
+    /// 그중 **무엇이** 막았는가. 위 bool 은 다섯 항을 `||` 로 뭉치므로 "막혔다" 까지만
+    /// 말한다 — 실측으로 한 회차가 21 건 연속 `true` 였는데 그 값만으로는 다섯 중 무엇이
+    /// 열린 채 남았는지 못 골랐다.
+    #[allow(dead_code)]
+    // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
+    pub gate_terms: GateTerms,
+    /// 모달이 **실제로 떠 있는가**. `settings_open_requested` 은 열기 요청 래치라 다음 프레임에
+    /// 지워지므로, 모달이 화면에 있는 동안 그 값은 거짓이다 — 그 둘을 가르려고 둔다.
+    #[allow(dead_code)]
+    // reason: 실패 메시지(`Debug`)로 읽히는 진단 필드다. 코드가 분기에 쓰지 않는다.
+    pub modal_open: bool,
+    #[allow(dead_code)]
+    // reason: 위와 같다 — 어느 모달인지 구별할 때만 쓴다.
+    pub active_modal_id: Option<u64>,
+    /// **어느** 모달인가. `modal_open` 은 "무언가 떠 있다" 까지만 말하므로, 그 값만으로
+    /// 설정 창을 기다리면 plugins·quit 창이 떠도 같은 모양이 된다 — 시험이 자기가 안 연
+    /// 창을 보고 통과한다.
+    pub active_modal_kind: Option<ModalKind>,
     pub notification_panel_open: bool,
     pub workspace_count: usize,
     pub active_workspace: usize,
     pub pane_count: usize,
     pub tab_count: usize,
+    /// 포커스된 pane 의 활성 탭 인덱스. **`tab_count` 로는 전환이 안 보인다** — 전환해도
+    /// 수가 그대로라, 전환을 재려면 이 축이 필요하다.
+    pub active_tab: usize,
+}
+
+impl UiState {
+    /// 설정 모달이 **실제로 화면에 있는가.**
+    ///
+    /// ★ `settings_open_requested` 로 이것을 묻지 마라. 그 값은 "열기 요청이 이 프레임에
+    /// 걸려 있다" 는 래치이고, 사이드바 경로가 세운 것을 다음 redraw 의
+    /// `dispatch_pending_modal_opens` 가 **같은 패스에서 지운다.** 게다가 이 스위트가 쓰는
+    /// `Ctrl+,` 는 `AppEvent` 직행 경로라 그 필드를 **아예 안 건드린다** — 그것을 기다린
+    /// 일곱 시험은 낡은 채널을 기다린 게 아니라 **없는 것**을 기다렸다.
+    ///
+    /// 두 값을 함께 보는 이유: `modal_open` 만 보면 plugins·quit 창도 같은 모양이고,
+    /// 종류만 보면 `modal_open` 이 거짓인데 종류가 남은 조합(있으면 안 되지만, 시험이
+    /// 그 불변식에 기대지 않는 편이 낫다)을 못 가른다.
+    pub fn settings_modal_is_up(&self) -> bool {
+        self.modal_open && self.active_modal_kind == Some(ModalKind::Settings)
+    }
 }

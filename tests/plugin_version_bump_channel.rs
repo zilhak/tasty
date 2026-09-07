@@ -10,6 +10,15 @@
 //! 판정 불가(exit 2, 통과 아님).
 //!
 //! 판별식의 근거·측정·대안은 `docs/adr/0137-plugin-version-bump-is-judged-by-content-not-file-count.md`.
+//!
+//! **왜 `#![cfg(unix)]` 인가**: 이 테스트는 `bash` 로 셸 게이트를 직접 부른다. 셸이
+//! 없는 플랫폼에서는 게이트의 판정이 아니라 셸의 부재가 결과를 정한다 — 그 자리에서
+//! 나오는 빨강·초록은 어느 쪽도 게이트에 대해 아무것도 말하지 않는다. 같은 형태의
+//! 형제 둘(`file_sloc_gate_fails_loudly` · `frozen_sum_ratchet_gate`)도 같은 근거로
+//! 자기를 뺀다. 전제를 안 밝히면 통과 여부가 러너 환경(PATH 의 git-bash 유무)에
+//! 달리고, 그 초록은 측정이 아니다.
+
+#![cfg(unix)]
 
 use std::fs;
 use std::path::Path;
@@ -39,6 +48,24 @@ fn write(dir: &Path, rel: &str, body: &str) {
     let p = dir.join(rel);
     fs::create_dir_all(p.parent().expect("부모 경로")).expect("디렉토리 생성");
     fs::write(&p, body).unwrap_or_else(|e| panic!("{rel} 쓰기 실패: {e}"));
+}
+
+/// 스크립트를 돌리되 **출하 판정기를 안 보이게 하고** 돌린다.
+///
+/// 환경변수가 가리키는 것이 실행 가능하지 않으면 `resolve_judge` 는 기본 위치로 물러나지
+/// 않는다(그렇게 물러나면 지목한 것과 다른 판정이 조용히 돈다). 그래서 이 한 줄이
+/// "갓 클론한 트리" 를 재현한다 — 바깥 세션의 `target/debug` 에 무엇이 있든 무관하다.
+fn check_without_the_stripper(dir: &Path, args: &[&str]) -> (i32, String) {
+    let out = Command::new("bash")
+        .arg(script())
+        .args(args)
+        .current_dir(dir)
+        .env("TASTY_STRIP_CFG_TEST_BIN", "/nonexistent/strip-cfg-test")
+        .output()
+        .expect("게이트 스크립트 실행");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.code().unwrap_or(-1), text)
 }
 
 /// 스크립트를 돌리고 (exit code, stdout+stderr) 를 돌려준다.
@@ -258,7 +285,12 @@ fn a_new_plugin_has_nothing_to_bump_from() {
 }
 
 #[test]
-fn a_version_that_goes_down_is_rejected() {
+fn a_version_that_goes_down_is_undecidable_not_a_pass() {
+    // 값이 내려가는 항은 **위반이 아니라 판정 불가**다. 원인이 둘이고(범위가 뒤처졌다 /
+    // 의도적으로 내렸다) 이 게이트는 어느 쪽인지 못 고른다. 그래서 1 이 아니라 2 다 —
+    // 비영이라 train·pre-commit 은 그대로 막히지만, "네가 안 올렸다" 라고 말하지 않는다.
+    // 번호만 보면 이 구분이 안 보이므로 **두 원인을 다 말하는가**까지 못박는다: 여기서
+    // 지목을 틀리면 받는 쪽이 bump 로 풀고, 그건 남이 발행한 값을 덮는 짓이다.
     let tmp = seed_repo();
     let d = tmp.path();
     bump_to(d, "0.1.5");
@@ -272,7 +304,19 @@ fn a_version_that_goes_down_is_rejected() {
     commit_all(d, "feat(fixture): change with a lower version");
 
     let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
-    assert_eq!(code, 1, "version 이 내려갔는데 통과했다:\n{text}");
+    assert_eq!(code, 2, "version 이 내려갔는데 판정 불가가 아니다:\n{text}");
+    assert!(
+        text.contains("앞 끝이 뒤 끝보다 새것"),
+        "내려간 항을 지목하지 않았다:\n{text}"
+    );
+    assert!(
+        text.contains("네가 뒤처졌다") && text.contains("의도적으로 내렸다"),
+        "원인 둘 중 하나만 말한다 — 받는 쪽이 나머지 하나를 못 고른다:\n{text}"
+    );
+    assert!(
+        !text.contains("version 이 안 올랐다"),
+        "내려간 항을 '안 올렸다' 로 말했다 — bump 로 풀게 만든다:\n{text}"
+    );
 }
 
 #[test]
@@ -551,5 +595,41 @@ fn a_missing_shipping_judge_widens_and_says_so() {
     assert!(
         text.contains("출하 범위를 못 좁힌다"),
         "판정이 넓어진 것을 말하지 않는다 — 조용히 달라지면 다음 사람이 못 본다:\n{text}"
+    );
+}
+
+#[test]
+fn without_the_stripper_a_test_only_change_is_told_to_bump_and_that_is_deliberate() {
+    // ★ 이 게이트만 판정기 부재에서 **판정 불가(2)로 안 나간다.** 형제 다섯은 2 로 나가고
+    // `tests/gates_pin_their_judge_absence.rs` 가 그것을 센다 — 여기는 그 목록의 유일한
+    // 예외이고, 예외인 것 자체를 값으로 박는 자리다.
+    //
+    // 왜 예외가 옳은가: 여섯 중 **pre-commit 이 부르는 것은 이것 하나뿐**이다. 갓 클론한
+    // 트리에는 판정기가 정상적으로 없고, 거기서 2 로 죽으면 커밋이 막힌다. 넓게 본 결과는
+    // 조용한 통과가 아니라 오탐(출하 밖 변경이 bump 를 요구)이고, 그 처방인 patch +1 은
+    // 아무것도 헐겁게 만들지 않는다 — 다음 커밋이 덮는다. ADR-0137 의 비대칭이 그것이다.
+    //
+    // 그래서 **양쪽으로 못박는다.** 2 로 "일관성 있게" 고치면 훅이 갓 클론에서 막히고,
+    // 0 으로 흘리면 출하 내용이 바뀐 커밋이 조용히 지나간다. 답은 정확히 1 이다.
+    let tmp = seed_repo();
+    let d = tmp.path();
+    // 출하 밖 변경 하나만 얹는다. 판정기가 **있으면** 이 항은 0 건으로 걸러진다
+    // (실측: 같은 모양을 이 저장소에 staged 로 얹으면 판정기 있음 rc=0 · 없음 rc=1).
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"a  b\";\n}\n\n#[cfg(test)]\nmod t {\n    #[test]\n    fn probe() {}\n}\n",
+    );
+    commit_all(d, "test(fixture): add a test-only block");
+
+    let (code, text) = check_without_the_stripper(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 1,
+        "판정기 없이 돈 이 게이트는 **넓게 보고 bump 를 요구**해야 한다. 2 면 갓 클론한 \
+         트리의 pre-commit 이 막히고, 0 이면 출하 변경이 조용히 지나간다:\n{text}"
+    );
+    assert!(
+        text.contains("출하 범위를 못 좁힌다"),
+        "격하됐다는 사실을 안 찍었다 — 그러면 이 오탐이 진짜 부채와 구분이 안 된다:\n{text}"
     );
 }

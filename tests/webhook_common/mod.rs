@@ -16,9 +16,14 @@
 //!
 //! 기존 `tests/common` 을 건드리지 않으려고 별도 모듈로 둔다(격리).
 
+// 시험 하네스라 unsafe 는 시험을 세우는 데만 쓴다. `cfg_attr(test, ..)` 형태를 쓰는 것은
+// 이 파일이 `check-allow-reason` 의 좌변 밖(루트 `tests/`)이라 사유 주석이 어느 게이트에도
+// 안 걸리기 때문이다 — 그래서 "테스트라서 뺐다" 를 **형태**가 남기게 한다. 프로덕션 자리는
+// 같은 lint 라도 무조건 `#![allow]` + 사유이고, 그 둘이 형태로 갈린다.
+#![cfg_attr(test, allow(clippy::multiple_unsafe_ops_per_block))]
 #![allow(dead_code)]
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
 // `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
@@ -453,6 +458,16 @@ impl WebhookInstance {
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > SPAWN_PORT_TIMEOUT {
+                // 락을 `panic!` 인자 안에서 잡으면 임시 가드가 되감기 끝까지 살아 있어 이
+                // Mutex 가 오염되고, stderr drain 스레드가 다음 `lock()` 에서 죽는다 —
+                // **이후 실패의 stderr tail 이 조용히 사라진다.** 형제 하네스와 같은 수선이다.
+                //
+                // 이유: 오염을 이어받아도 값은 옳다 — 보호 대상이 `Option<Instant>` 한 칸뿐이다.
+                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 교착이다.
+                let last_stderr_age = stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -460,7 +475,7 @@ impl WebhookInstance {
                         SPAWN_PORT_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }
@@ -504,6 +519,14 @@ impl WebhookInstance {
                 break;
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
+                // 위 포트 타임아웃과 같은 이유 — 가드를 `panic!` 인자 밖에서 떨어뜨린다.
+                // 여기서 오염시키면 죽는 것은 stderr drain 스레드이고, 그 손실은 F 를
+                // 안 늘리므로 조용하다.
+                let last_stderr_age = instance
+                    .stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -511,7 +534,7 @@ impl WebhookInstance {
                         SPAWN_SHELL_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES),
-                        instance.stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }

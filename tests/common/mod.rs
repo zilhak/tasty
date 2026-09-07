@@ -15,8 +15,13 @@
 //! 자동으로 돈다(`check-headless` 가 전체 스위트를 돌리고 그 잡의 `--skip` 목록에
 //! 없다). 기본 조합에는 컴파일 채널뿐이다. 정본은 `docs/dev-guide/ci-gates.md`.
 
+// 시험 하네스라 unsafe 는 시험을 세우는 데만 쓴다. `cfg_attr(test, ..)` 형태를 쓰는 것은
+// 이 파일이 `check-allow-reason` 의 좌변 밖(루트 `tests/`)이라 사유 주석이 어느 게이트에도
+// 안 걸리기 때문이다 — 그래서 "테스트라서 뺐다" 를 **형태**가 남기게 한다. 프로덕션 자리는
+// 같은 lint 라도 무조건 `#![allow]` + 사유이고, 그 둘이 형태로 갈린다.
+#![cfg_attr(test, allow(clippy::multiple_unsafe_ops_per_block))]
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
 // `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
@@ -379,6 +384,20 @@ impl TastyInstance {
                 let _ = std::fs::remove_file(&port_file);
                 // 위와 동일.
                 let _ = std::fs::remove_dir_all(&isolated_home);
+                // 락을 `panic!` **인자 안에서** 잡으면 임시 가드가 그 statement 끝까지 —
+                // 즉 되감기가 끝날 때까지 — 살아 있어 이 Mutex 가 오염된다. 그러면 stderr
+                // drain 스레드가 다음 `lock()` 에서 죽고, **이후 실패의 stderr tail 이
+                // 조용히 사라진다**(F 는 그대로라 알아채기 어렵다). 값을 먼저 지역 변수로
+                // 빼서 가드를 패닉 **전에** 떨어뜨린다.
+                //
+                // 이유: 오염을 이어받아도 값은 옳다. 보호 대상이 `Option<Instant>` 한 칸뿐이라
+                // 패닉이 그 불변식을 깨지 않는다 — 진단 수집기를 살리는 쪽이 정보가 는다.
+                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 `Mutex` 는
+                //   재진입이 아니라 거기서 멈춘다(실측: 오염 대신 교착이 났다).
+                let last_stderr_age = stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -386,7 +405,7 @@ impl TastyInstance {
                         SPAWN_PORT_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }
@@ -441,6 +460,14 @@ impl TastyInstance {
                 return;
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
+                // 위 spawn 타임아웃과 같은 이유 — 가드를 `panic!` 인자 밖에서 떨어뜨린다.
+                // 여기서 오염시키면 죽는 것은 stderr drain 스레드이고, 그 손실은 F 를
+                // 안 늘리므로 조용하다.
+                let last_stderr_age = self
+                    .stderr_last_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
@@ -448,7 +475,7 @@ impl TastyInstance {
                         SPAWN_SHELL_TIMEOUT,
                         STDERR_TAIL_LINES,
                         &stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES),
-                        self.stderr_last_at.lock().unwrap().map(|t| t.elapsed()),
+                        last_stderr_age,
                     )
                 );
             }

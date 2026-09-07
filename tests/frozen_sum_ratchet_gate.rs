@@ -42,6 +42,15 @@ fn root_with(budget_line: Option<i64>, entries: &[&str]) -> tempfile::TempDir {
         root.join("scripts/check-frozen-sum-ratchet.sh"),
     )
     .expect("게이트 복사");
+    // 게이트가 판정기 찾기를 공용 `resolve_judge` 에 위임하므로 그 파일도 합성 root 에
+    // 있어야 한다. 없으면 `set -e` 아래에서 source 가 죽어 **판정 불가(2)가 아니라
+    // 위반(1)** 이 나온다 — 게이트가 무엇을 재는지와 무관한 값이라 원인이 안 보인다.
+    fs::create_dir_all(root.join("scripts/lib")).expect("scripts/lib");
+    fs::copy(
+        format!("{here}/scripts/lib/judge-bin.sh"),
+        root.join("scripts/lib/judge-bin.sh"),
+    )
+    .expect("판정기 찾기 공용 복사");
     // THRESHOLD 만 있으면 된다 — 게이트는 이 파일에서 여유를 읽어 온다.
     fs::write(
         root.join("scripts/check-file-size.sh"),

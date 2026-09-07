@@ -18,7 +18,7 @@
 //!    (새 프로세스라 abuse 쿨다운은 소멸 — in-memory)
 
 // 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
-// (`tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
 // `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
 // 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
 #![allow(clippy::let_underscore_must_use)]
@@ -37,6 +37,11 @@ use webhook_common::{WebhookInstance, stdout_str};
 /// 스텝들이 만드는 소수의 404/405 실패로는 트립되지 않고(≪40), 마지막 남용 테스트만
 /// 고의로 40+ 실패를 몰아 트립시킨다.
 const ABUSE_THRESHOLD: u32 = 40;
+
+/// 남용차단 쿨다운(초). 마지막 스텝이 **두 실패 종류**(404 · 401)를 각각 트립시키는데,
+/// 앞 트립이 남긴 쿨다운이 뒤 질문의 답을 429 로 덮으면 안 된다 — 기본 60 초를 그대로
+/// 쓰면 그 사이를 기다릴 수 없어 두 번째 질문을 아예 못 묻는다.
+const ABUSE_COOLDOWN_SECS: u64 = 3;
 
 /// 사용자 훅 핸들러 — source 게이트 테스트용. hook 전용 IpcSequence 와 hook 전용 셸
 /// 핸들러 둘 다 웹훅 바인딩이 거부돼야 한다.
@@ -406,6 +411,40 @@ fn integration_flow(inst: &WebhookInstance) {
             "repeated 404s from one source must trip the abuse cooldown (429)"
         );
     }
+
+    // ========== 13) (마지막) 남용 차단 — 반복 401 임계치 초과 → 429 ==========
+    {
+        // 앞 스텝이 건 쿨다운이 풀릴 때까지 기다린다 — 여기서 묻는 것은 **다른 실패
+        // 종류가 같은 통을 세는가** 라, 앞 트립이 남긴 429 가 답을 덮으면 아무것도
+        // 재지 못한다.
+        std::thread::sleep(Duration::from_secs(ABUSE_COOLDOWN_SECS + 2));
+
+        // 통이 둘이고 답도 둘이다. 401 은 owner 의 예산(`CountLimit`)을 태우지 않지만
+        // (그쪽은 세는 것이 소모다) 이 통은 제한이라 **안 세는 것이 우회**다 — 401 은
+        // opaque path 를 이미 맞춘 발신자가 토큰을 무차별 대입하는 자리이고, 통 A 도
+        // 안 태우므로 여기서 세지 않으면 그 대입에 붙는 비용이 어디에도 없다.
+        let (id, _url) = register_notify_webhook(
+            &inst,
+            json!({ "auth": { "location": "query", "key": "tok", "token": "s3cr3t" } }),
+        );
+        let wrong_token_path = format!("{id}?tok=wrong");
+        let mut saw_429 = false;
+        for i in 0..(ABUSE_THRESHOLD + 25) {
+            let (code, _b) = inst.post(&wrong_token_path, "");
+            if code == 429 {
+                saw_429 = true;
+                break;
+            }
+            assert_eq!(
+                code, 401,
+                "pre-cooldown rejected tokens must be 401 (req {i})"
+            );
+        }
+        assert!(
+            saw_429,
+            "repeated rejected tokens from one source must trip the abuse cooldown (429)"
+        );
+    }
 }
 
 // ───────────────────────── hook env 흐름 (구 hook_env_integration.rs 이관) ─────────────────────────
@@ -594,7 +633,10 @@ fn webhook_family() {
                 &ABUSE_THRESHOLD.to_string(),
             )
             .env("TASTY_WEBHOOK_ABUSE_WINDOW_SECS", "3600")
-            .env("TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS", "60")
+            .env(
+                "TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS",
+                &ABUSE_COOLDOWN_SECS.to_string(),
+            )
             .file("hook-handlers.toml", &combined_handlers)
             .spawn();
         inst.wait_webhook_ready();
