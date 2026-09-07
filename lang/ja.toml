@@ -1735,3 +1735,130 @@ Tasty を自分でビルドして使う場合は、先に "Tasty Dev" 証明書�
 
 この案内は一度だけ表示されます。設定 > 一般 > 権限から再び有効にできます。"""
 open_settings = "設定を開く"
+
+# ── CLI 도움말 (clap `about` / `help`) ────────────────────────────────────────
+[cli.help._root]
+about = "AI コーディングエージェントのための GPU アクセラレーテッドターミナルエミュレータ"
+
+[cli.help._root.arg.port_file]
+help = "ポートファイルのパスを指定（テスト分離用）"
+
+[cli.help._root.arg.launch]
+help = "tasty ターミナル内でも GUI を強制的に起動する"
+
+[cli.help._root.arg.headless]
+help = "ヘッドレスターミナルエミュレータとして実行（GUI なしで IPC + PTY + plugin のみ）。既定の feature では GUI 起動を省略し、no-default-features ビルドは常にヘッドレスになる"
+
+[cli.help._root.arg.all]
+help = "すべてのコマンドをツリー表示する（-h と併用）"
+
+[cli.help._root.arg.enable_input_simulation]
+help = "入力シミュレーション IPC を有効にする（debug ビルド専用）。debug.inject_mouse、debug.inject_key などに必要"
+
+[cli.help._root.new]
+about = "新しいリソースを作成する（ウィンドウ、ワークスペース、タブ、分割）"
+
+[cli.help._root.close]
+about = "リソースを閉じる（タブ、ペイン、サーフェス、ワークスペース、ウィンドウ）"
+
+[cli.help._root.list]
+about = "リソースの一覧・照会（ワークスペース、ウィンドウ、ツリー、サーフェス、ペイン、情報、フックなど）"
+
+[cli.help._root.set]
+about = "リソースの設定・更新（フック、マーク、ワークスペース、グローバルフック）"
+
+[cli.help._root.move]
+about = "リソースの移動・並べ替え（タブ、ワークスペース）"
+
+[cli.help._root.split]
+about = "ペイングループまたはサーフェスを分割する"
+
+[cli.help._root.remote]
+about = "別ホストのサーフェス・ワークスペースにリモート（SSH）で attach する — `remote attach`"
+
+[cli.help._root.send]
+about = "テキスト、キー、キューメッセージを送信する"
+
+[cli.help._root.read]
+about = "サーフェスまたはキューから読み取る"
+
+[cli.help._root.notify]
+about = "通知を作成する"
+
+[cli.help._root.unset]
+about = "リソースを削除する（フック、グローバルフック）"
+
+[cli.help._root.surface-meta]
+about = "サーフェスごとのメタデータを管理する"
+
+[cli.help._root.surface]
+about = "サーフェスの操作（完了シグナル、照会など）"
+
+[cli.help._root.session]
+about = "エージェントセッショントークン（発行、失効、一覧）"
+
+[cli.help._root.terminal]
+about = "子ターミナルを管理する（spawn/tell/children/kill など） — ホストに内在化されたエージェント子ターミナル管理（ADR-0040）"
+
+[cli.help._root.pty]
+about = "ヘッドレス PTY を管理する（spawn/write/read/wait/kill/list） — サーフェス・タブを持たないバックグラウンド PTY。`terminal` とは別の名前空間（ADR-0050 pty primitive）"
+
+[cli.help._root.is-typing]
+about = "サーフェスが現在タイピング中かを確認する（直近 5 秒以内のキー入力の有無）"
+
+[cli.help._root.wake]
+about = "遅延サーフェスの PTY を起動する（すでに実行中なら何もしない）"
+
+[cli.help._root.debug]
+about = "デバッグ・診断コマンド（IME シミュレーション、生のキー入力など） — debug ビルド専用"
+
+[cli.help._root.tool]
+about = "内部ツール（SSH 接続プロファイル、パスキーなど）"
+
+[cli.help._root.plugin]
+about = "plugin を管理する（一覧、インストール、削除、有効化、無効化、ログ）"
+
+[cli.help._root.memory]
+about = "エージェントメモリストア（~/.tasty/memory.db） — 永続的なキーと値"
+
+[cli.help._root.settings]
+about = "グローバル設定 — リモート転送の保存フォルダと容量上限を取得・設定する"
+
+[cli.help._root.output]
+about = "構造化出力オブザーバ（パーサ + シンクのファンアウト）"
+
+[cli.help._root.approval]
+about = "人間への引き継ぎ承認ゲート（request/respond/await/cancel/list/get）"
+
+[cli.help._root.telemetry]
+about = "エージェントテレメトリ（指標の記録、要約、時系列、上位 N）"
+
+[cli.help._root.agent]
+about = "エージェント協調 primitive（task DAG。barrier/semaphore/lease/reducer/rate-limit が続く）"
+
+[cli.help._root.file-handler]
+about = "ファイルハンドラ — ユーザー設定（`~/.tasty/file-handlers.toml`）を再読み込みする"
+
+[cli.help._root.clipboard]
+about = "クリップボード — ローカルのクリップボードを操作する"
+
+[cli.help._root.hook-handler]
+about = "フックハンドラ — 共用のフック・Webhook ハンドラレジストリ（list / reload / dispatch）"
+
+[cli.help._root.completion-strategy]
+about = "完了判定ストラテジ — task Custom ディスパッチの完了判定レジストリ（list）"
+
+[cli.help._root.preset]
+about = "レイアウトプリセットを管理する（ワークスペース / タブ / ペイン）"
+
+[cli.help._root.workspace-category]
+about = "ワークスペースカテゴリ（サイドバーのフォルダ）を管理する — 一覧/作成/名前変更/削除/移動"
+
+[cli.help._root.webhook]
+about = "受信 Webhook を管理する（登録/一覧/情報/解除） — HTTP → IpcSequence"
+
+[cli.help._root.port]
+about = "このインスタンスの IPC ポートを stdout に出力する（リモートポート自動発見チェーンの最初の一歩、`ssh host tasty port`）。ポートファイルのみを読み、IPC は使わない"
+
+[cli.help._root.screenshot]
+about = "スクリーンショットを PNG ファイルに取得する（フォーカスに依存しない）"

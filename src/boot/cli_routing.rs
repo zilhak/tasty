@@ -50,7 +50,7 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
 
     // tasty-cli 는 라이브러리 crate (CARGO_PKG_VERSION="0.1.0") 라서 clap 기본 `version`
     // 출력이 root 바이너리 버전과 어긋난다. 여기서 root 의 CARGO_PKG_VERSION 으로 override.
-    let cmd = cli::Cli::command().version(env!("CARGO_PKG_VERSION"));
+    let cmd = cli::localized_command().version(env!("CARGO_PKG_VERSION"));
 
     // 정적 Cli 파싱. InvalidSubcommand 시 plugin CLI 동적 등록에서 한 번 더 매칭 시도.
     // 정적이 항상 우선이므로 plugin 이 호스트 명령을 가릴 수 없다.

@@ -1761,3 +1761,132 @@ If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (./s
 
 This notice appears only once. You can bring it back under Settings > General > Permissions."""
 open_settings = "Open settings"
+
+# ── CLI 도움말 (clap `about` / `help`) ────────────────────────────────────────
+# 영어 원본은 소스의 doc comment 다. 여기 값은 **자유도 없는 복제**이고, 그 복제가
+# 번역자에게 키 목록이 된다. 어긋나면 `help_i18n_catalog_parity` 가 그 키를 짚는다.
+[cli.help._root]
+about = "GPU-accelerated terminal emulator for AI coding agents"
+
+[cli.help._root.arg.port_file]
+help = "Custom port file path (for test isolation)"
+
+[cli.help._root.arg.launch]
+help = "Force GUI launch even inside a tasty terminal"
+
+[cli.help._root.arg.headless]
+help = "Run as headless terminal emulator (no GUI, IPC + PTY + plugin only). With default features this skips the GUI boot; a no-default-features build is always headless"
+
+[cli.help._root.arg.all]
+help = "Show all commands in a tree (use with -h)"
+
+[cli.help._root.arg.enable_input_simulation]
+help = "Enable input simulation IPC (debug builds only). Required for debug.inject_mouse, debug.inject_key, etc"
+
+[cli.help._root.new]
+about = "Create a new resource (window, workspace, tab, split)"
+
+[cli.help._root.close]
+about = "Close a resource (tab, pane, surface, workspace, window)"
+
+[cli.help._root.list]
+about = "List/query resources (workspaces, windows, tree, surfaces, panes, info, hooks, etc.)"
+
+[cli.help._root.set]
+about = "Set/update resources (hook, mark, workspace, global-hook)"
+
+[cli.help._root.move]
+about = "Move/reorder a resource (tab, workspace)"
+
+[cli.help._root.split]
+about = "Split a pane group or surface"
+
+[cli.help._root.remote]
+about = "Remote (SSH) attach to a surface/workspace on another host — `remote attach`"
+
+[cli.help._root.send]
+about = "Send text, key, or queue message"
+
+[cli.help._root.read]
+about = "Read from surface or queue"
+
+[cli.help._root.notify]
+about = "Create a notification"
+
+[cli.help._root.unset]
+about = "Remove resources (hook, global-hook)"
+
+[cli.help._root.surface-meta]
+about = "Manage per-surface metadata"
+
+[cli.help._root.surface]
+about = "Surface actions (completion signal, queries, …)"
+
+[cli.help._root.session]
+about = "Agent session tokens (issue, revoke, list)"
+
+[cli.help._root.terminal]
+about = "Manage child terminals (spawn/tell/children/kill/…) — host-internalized agent child-terminal management (ADR-0040)"
+
+[cli.help._root.pty]
+about = "Manage headless PTYs (spawn/write/read/wait/kill/list) — background PTYs with no Surface/tab. Separate namespace from `terminal` (ADR-0050 pty primitive)"
+
+[cli.help._root.is-typing]
+about = "Check if a surface is currently typing (received key input within 5 seconds)"
+
+[cli.help._root.wake]
+about = "Spawn the PTY of a deferred surface (no-op if already running)"
+
+[cli.help._root.debug]
+about = "Debug and diagnostic commands (IME simulation, raw key input, etc.) — debug builds only"
+
+[cli.help._root.tool]
+about = "Internal tools (SSH connection profiles, passkeys, etc.)"
+
+[cli.help._root.plugin]
+about = "Manage plugins (list, install, remove, enable, disable, logs)"
+
+[cli.help._root.memory]
+about = "Agent memory store (~/.tasty/memory.db) — persistent key-value"
+
+[cli.help._root.settings]
+about = "Global settings — get/set the remote-transfer storage folder and size cap"
+
+[cli.help._root.output]
+about = "Structured output observer (parsers + sink fan-out)"
+
+[cli.help._root.approval]
+about = "Human-handoff approval gates (request/respond/await/cancel/list/get)"
+
+[cli.help._root.telemetry]
+about = "Agent telemetry (record metrics, summary, timeseries, top-N)"
+
+[cli.help._root.agent]
+about = "Agent collaboration primitives (task DAG; barrier/semaphore/lease/reducer/rate-limit follow)"
+
+[cli.help._root.file-handler]
+about = "File handler — reload the user configuration (`~/.tasty/file-handlers.toml`)"
+
+[cli.help._root.clipboard]
+about = "Clipboard — operate on the local clipboard"
+
+[cli.help._root.hook-handler]
+about = "Hook handler — shared hook/webhook handler registry (list / reload / dispatch)"
+
+[cli.help._root.completion-strategy]
+about = "Completion strategy — task Custom-dispatch completion judge registry (list)"
+
+[cli.help._root.preset]
+about = "Manage layout presets (workspace / tab / pane)"
+
+[cli.help._root.workspace-category]
+about = "Manage workspace categories (sidebar folders) — list/create/rename/delete/move"
+
+[cli.help._root.webhook]
+about = "Manage inbound webhooks (register/list/info/unregister) — HTTP → IpcSequence"
+
+[cli.help._root.port]
+about = "Print this instance's IPC port to stdout (first step of the auto remote port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC"
+
+[cli.help._root.screenshot]
+about = "Capture a screenshot to a PNG file (focus-independent)"

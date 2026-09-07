@@ -1014,6 +1014,19 @@ fn same_as_english_allowlist_points_at_keys_that_exist() {
 ///
 /// 지우지 않고 명부에 둔 이유: 키를 지우는 것은 되돌리기 쉽지만, **정말 그 UI 가
 /// 없어졌는지**는 이 정적 스캔이 답하지 못한다. 항목마다 화면에서 확인한 뒤 지운다.
+/// **트리를 걸어서 조립되는** 키 무리. `dynamic_key_templates` 는 placeholder 하나짜리
+/// 리터럴만 알아보고, 그나마도 가운데 마디에 점이 있으면 잇지 못한다
+/// (`is_dynamically_assembled` 의 `!.contains('.')`). clap 도움말 키가 정확히 그 형태다 —
+/// 가운데가 **서브커맨드 체인**이라 점이 여럿이다(`cli.help._root.surface.completion.about`).
+///
+/// 이 키들은 [`ORPHAN_KEYS`] 와 **다르다**: 저쪽은 소비자가 *없는* 키이고, 이쪽은
+/// 소비자가 *있는데 리터럴로 안 보이는* 키다. 둘을 한 명부에 두면 "안 쓰는 키" 와
+/// "스캐너가 못 보는 키" 가 같은 수로 세어진다.
+///
+/// 뒷값은 **조립하는 자리**다. 그 파일이 사라지면 이 항목은 죽은 인용이 되므로
+/// [`assembled_namespaces_point_at_a_living_assembler`] 가 실재와 비어 있지 않음을 함께 본다.
+const ASSEMBLED_NAMESPACES: &[(&str, &str)] = &[("cli.help.", "crates/tasty-cli/src/help_i18n.rs")];
+
 const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
         "attach.held_body",
@@ -1498,6 +1511,12 @@ fn every_catalog_key_has_a_consumer() {
         if is_dynamically_assembled(key, &templates) {
             continue;
         }
+        if ASSEMBLED_NAMESPACES
+            .iter()
+            .any(|(prefix, _)| key.starts_with(prefix))
+        {
+            continue;
+        }
         orphans.insert(key.clone());
     }
 
@@ -1647,5 +1666,29 @@ fn a_brace_outside_the_literal_is_not_a_template() {
     assert!(
         lits.iter().all(|l| !l.contains('{')),
         "리터럴 밖 중괄호를 안으로 끌어들였다: {lits:?}"
+    );
+}
+
+/// [`ASSEMBLED_NAMESPACES`] 의 각 항목이 **살아 있는지** 본다 — 조립하는 파일이 실재하고,
+/// 그 앞머리를 가진 키가 카탈로그에 실제로 있는지. 둘 중 하나라도 빠지면 그 항목은 키를
+/// 조용히 면제해 주는 빈 구멍이 된다(면제는 넓고 근거는 죽은 상태).
+#[test]
+fn assembled_namespaces_point_at_a_living_assembler() {
+    let keys = all_english_keys();
+    let mut problems = Vec::new();
+    for (prefix, assembler) in ASSEMBLED_NAMESPACES {
+        if !root().join(assembler).is_file() {
+            problems.push(format!("  {prefix} — 조립하는 자리가 없다: {assembler}"));
+        }
+        if !keys.iter().any(|k| k.starts_with(prefix)) {
+            problems.push(format!(
+                "  {prefix} — 이 앞머리를 가진 카탈로그 키가 하나도 없다. 면제만 남았다"
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "ASSEMBLED_NAMESPACES 가 썩었다:\n{}",
+        problems.join("\n")
     );
 }

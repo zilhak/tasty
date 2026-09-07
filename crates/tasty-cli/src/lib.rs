@@ -18,6 +18,7 @@ pub mod dispatch;
 pub mod dynamic;
 pub mod format;
 pub mod help;
+pub mod help_i18n;
 pub mod hook_failure;
 pub mod local;
 pub mod out;
@@ -39,6 +40,9 @@ pub use tasty_ssh as ssh;
 
 pub use commands::*;
 pub use help::{format_parse_error, print_augmented_help, print_command_tree};
+/// 번역이 적용된 clap 트리. 프로덕션은 `Cli::command()` 대신 이것을 쓴다 —
+/// 근거는 [`help_i18n::command`].
+pub use help_i18n::command as localized_command;
 pub use run::{run_client, try_run_plugin_cli};
 
 #[derive(Parser)]

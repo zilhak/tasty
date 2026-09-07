@@ -10,6 +10,6 @@
 //! 같은 형태의 명시적 재수출: [`crate::ipc`].
 
 pub use tasty_cli::{
-    Cli, Commands, format_parse_error, print_augmented_help, print_command_tree, run_client,
-    try_run_plugin_cli,
+    Cli, Commands, format_parse_error, localized_command, print_augmented_help, print_command_tree,
+    run_client, try_run_plugin_cli,
 };

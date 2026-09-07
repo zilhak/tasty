@@ -216,7 +216,6 @@ pub use secret::MemorySecretCommands;
 /// 아니라 같은 동작을 본다.
 #[cfg(test)]
 mod scope_selector_pin {
-    use clap::CommandFactory;
 
     const SCOPE_FLAGS: [&str; 6] = [
         "scope",
@@ -239,7 +238,7 @@ mod scope_selector_pin {
                 walk(&format!("{prefix} {}", sub.get_name()), sub, out);
             }
         }
-        let root = crate::Cli::command();
+        let root = crate::help_i18n::command();
         let memory = root
             .get_subcommands()
             .find(|c| c.get_name() == "memory")
@@ -337,7 +336,7 @@ mod scope_selector_pin {
                             argv.push("1".to_string());
                         }
                     }
-                    let kind = crate::Cli::command()
+                    let kind = crate::help_i18n::command()
                         .try_get_matches_from(&argv)
                         .err()
                         .map(|e| e.kind());
