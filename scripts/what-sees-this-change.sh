@@ -31,7 +31,12 @@
 #   (라) **링크로 딸려 오는 것.** 하네스(`mod common;`)는 여기 안 나온다. 그 물음은 빌드가
 #        이미 답해 뒀다 — `target/debug/deps/<타깃>-<해시>.d`.
 #
-#   (마) 반대 방향의 것: 여기 **나왔다고 해서 그 파일을 고쳐야 하는 것이 아니다.** 이름으로
+#   (마) **미추적 파일** — 위 두 모수를 합집합으로 만들어 이 갈래는 **덮었다**. 좌변이
+#        `git` 인덱스뿐이면 `git add` 전의 새 파일이 양쪽에서 사라지는데, cargo 는
+#        디렉터리를 보므로 그 가드는 **실제로는 돈다**. 인덱스와 디렉터리가 갈리는
+#        창에서 조용한 거짓 초록이 나는 자리다.
+#
+#   (바) 반대 방향의 것: 여기 **나왔다고 해서 그 파일을 고쳐야 하는 것이 아니다.** 이름으로
 #        찾으면 그 이름이 이미 참인 자리까지 같이 나온다. 발견 목록은 **돌릴 것**을 고르는
 #        데 쓰고, 고칠 것은 자리마다 다시 판정한다.
 #
@@ -52,16 +57,31 @@ if ! git rev-parse --verify --quiet "$BASE" >/dev/null; then
 fi
 
 # 작업 트리까지 포함한다 — 커밋 **전에** 고를 수 있어야 쓸모가 있다.
-mapfile -t FILES < <(git diff --name-only "$BASE")
-
-# 판정자 말뭉치. 여기 없는 곳에서 무는 것은 이 도구가 못 본다 — 위 (가)~(라).
-mapfile -t CORPUS < <(
-    git ls-files 'tests/*.rs' 'tests/**/*.rs' \
-        'crates/*/tests/*.rs' 'crates/*/tests/**/*.rs' \
-        'scripts/*.sh' '.githooks/*' 2>/dev/null
+# ★ `git diff` 는 **추적되는 것만** 낸다. 새로 만들고 아직 `git add` 안 한 파일은 거기
+#   안 나오고, 그 창에서 이 도구는 조용히 아무것도 안 낸다. 그래서 미추적분을 따로 더한다.
+mapfile -t FILES < <(
+    {
+        git diff --name-only "$BASE"
+        git ls-files --others --exclude-standard
+    } | sort -u
 )
 
-echo "발견 입력   git diff --name-only ${BASE}   (작업 트리 포함)"
+# 판정자 말뭉치. 여기 없는 곳에서 무는 것은 이 도구가 못 본다 — 위 (가)~(라).
+# 좌변이 `git ls-files` 라 **미추적 판정자는 안 보인다**. 그래서 같은 뿌리를 파일시스템
+# 으로도 훑어 합친다 — cargo 는 디렉터리를 보고 타깃을 등록하므로, `git add` 전의 새
+# 가드도 **실제로는 돈다**. 두 모수가 갈리는 창이 있다는 것 자체가 이 합집합의 이유다.
+mapfile -t CORPUS < <(
+    {
+        git ls-files 'tests/*.rs' 'tests/**/*.rs' \
+            'crates/*/tests/*.rs' 'crates/*/tests/**/*.rs' \
+            'scripts/*.sh' '.githooks/*' 2>/dev/null
+        find tests crates/*/tests scripts .githooks \
+            \( -name '*.rs' -o -name '*.sh' -o -path '.githooks/*' \) \
+            -type f 2>/dev/null
+    } | sort -u
+)
+
+echo "발견 입력   git diff --name-only ${BASE} + 미추적분   (작업 트리 포함)"
 echo "모수        변경 파일 ${#FILES[@]} · 판정자 말뭉치 ${#CORPUS[@]}"
 echo
 
