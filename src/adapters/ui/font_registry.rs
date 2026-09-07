@@ -93,6 +93,17 @@ pub fn build_font_definitions(
         }
     }
 
+    // 언어팩 `[font]` 폰트를 CJK 뒤, base 패밀리(Proportional·Monospace)의 맨 뒤 폴백으로
+    // 붙인다 — `setup_egui_fonts`(src/gfx/gpu/fonts.rs)와 같은 값·같은 헬퍼를 쓴다.
+    if let Some(path) = crate::boot::locale::font_env_path() {
+        if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
+            tracing::warn!(
+                "locale font at {} could not be installed: {e}",
+                path.display()
+            );
+        }
+    }
+
     // One named family per override kind — host iterates registered kinds instead
     // of hardcoding a specific one. `data_prefix` uses the kind string to keep the
     // internal `font_data` keys unique across kinds.

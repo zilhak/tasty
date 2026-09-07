@@ -60,6 +60,16 @@ impl ResolvedLocale {
     }
 }
 
+/// 부팅 때 export 한 `TASTY_LOCALE_FONT` 를 되읽어 언어팩 폰트 경로를 돌려준다 —
+/// 없으면 `None`. host 의 두 egui 폰트 셋업 경로(`src/gfx/gpu/fonts.rs` ·
+/// `src/adapters/ui/font_registry.rs`)가 같은 값을 읽어 체인 뒤에 붙이는 단일 출처다.
+/// plugin 프로세스도 같은 env 를 상속받아 자기 미러에서 읽는다.
+pub(crate) fn font_env_path() -> Option<PathBuf> {
+    std::env::var_os(LOCALE_FONT_ENV)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
 /// 설정 문자열을 요청 코드로 정규화한다. 공백/빈 값은 `en` — 빈 코드는 host i18n 과
 /// plugin SDK 양쪽에서 "언어 파일 없음" 으로 영어와 같게 동작하지만, env 로 빈 문자열이
 /// 흘러가면 소비처마다 해석이 갈린다.
