@@ -200,6 +200,23 @@ impl GpuState {
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
             ui::draw_status_bar(ctx, state, engine, terminal_rect, scale_factor);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
+            //
+            // ★ **이 두 호출의 순서가 계약이다.** host popup 이 plugin popup 보다 **먼저**
+            // 그려져야 한다. 페인트 때문이 아니라(아래 z-order 주석 참고 — 그쪽은 이 순서에
+            // 안 기댄다) **한 프레임 안에서 누가 누구의 rect 를 읽는가** 때문이다:
+            //
+            // - `draw_popups` 가 이번 프레임의 host popup 히트테스트 rect 를 적재하고,
+            //   `draw_plugin_popups` 가 **같은 프레임에** 그것을 읽는다. 순서가 뒤집히면
+            //   plugin 쪽 판정이 **지난 프레임** rect 를 읽는다
+            //   (`adapters/ui/popup/draw.rs` 의 `hit_rects` 주석).
+            // - 반대 방향은 이미 1 프레임 stale 인 것이 **정상**이다 —
+            //   `plugin_mesh_popup_hittest` 는 plugin draw 가 뒤라서 host 가 다음 프레임에
+            //   읽는다(`state.rs` 의 그 필드 선언). 순서를 뒤집으면 그 "1 프레임" 이
+            //   조용히 0 이 되고, 두 판정이 같은 프레임 안에서 서로를 물게 된다.
+            //
+            // 어기면 화면은 멀쩡하다. 어긋난 rect 로 히트테스트가 한 프레임 틀릴 뿐이라
+            // 컴파일도 되고 시험도 통과한다 — 그래서 `source_guards::frame_draw_order` 가
+            // 이 두 줄의 순서를 값으로 문다.
             ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
             crate::plugin_bridge::popup_render::draw_plugin_popups(
@@ -216,7 +233,10 @@ impl GpuState {
                 pane_rects,
             );
             // host popup ↔ plugin popup 셸 순서 — 둘 다 `ctx.layer_painter`로 직접 그리는
-            // raw layer 라 위 두 draw 호출의 순서는 최종 페인트 순서에 영향이 없다(egui
+            // raw layer 라 위 두 draw 호출의 순서는 **최종 페인트 순서에는** 영향이 없다.
+            // 그 문장은 여기 z-order 판정에만 걸린다 — 위 두 줄의 순서 자체는 히트테스트
+            // rect 의 프레임 계약이라 바꾸면 안 된다(위 ★ 주석). 페인트에 안 걸린다는 것을
+            // "순서가 아무래도 좋다" 로 읽으면 그 계약이 조용히 깨진다.(egui
             // `Areas::order`는 `egui::Area` 기반 위젯만 자동 추적 — 문서는
             // `enforce_host_plugin_popup_z_order` 참고). `set_sublayer` 로 명시적으로
             // 관계를 걸어야 한다.

@@ -2,7 +2,7 @@
 //!
 //! 렌더 파이프라인의 **분기 위치** 제약(무대 분기가 offscreen 스크린샷 뒤/레이아웃
 //! 앞, `render_if_dirty` 조기 반환 금지, capture+present 유지)은 GPU 컨텍스트가
-//! 필요해 여기서 단정할 수 없다 — 그쪽은 `tests/fullscreen_stage_render_gate.rs`
+//! 필요해 여기서 단정할 수 없다 — 그쪽은 `crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs`
 //! 가 구조 불변식으로 고정한다.
 
 use super::tests::test_state;

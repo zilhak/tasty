@@ -469,6 +469,25 @@ impl Core {
         self.runner_registry.clone()
     }
 
+    /// 렌더 경로(DAG surface 러너 배지)가 `Core` 없이도 러너 생사를 물을 수 있도록
+    /// 같은 레지스트리 `Arc` 를 `CoreState` 에 심는다(memory 주입과 같은 모양).
+    ///
+    /// 부팅 경로 둘(headless `boot.rs` · GUI `boot_machine.rs`)이 **함께 부른다.**
+    /// 예전에는 이 본문이 주석과 `warn!` 문구까지 두 벌이었고 둘을 같게 잡아 주는 것이
+    /// "동형" 이라는 문장뿐이었다 — 한쪽만 고치면 조용히 갈라진다.
+    ///
+    /// `agent_runner_registry` 필드는 `OnceLock` 이라 `&CoreState` 로 충분하다. 두 번째
+    /// 주입은 실패로 돌아오며, 그때는 부팅이 두 번 돈 것이므로 경고만 남긴다.
+    pub(crate) fn inject_agent_runner_registry(&self, engine: &crate::core::CoreState) {
+        if engine
+            .agent_runner_registry
+            .set(self.agent_runner_registry())
+            .is_err()
+        {
+            tracing::warn!("agent runner registry already injected into CoreState");
+        }
+    }
+
     /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시
     /// poison 해제 후 inner 사용 (host 부팅이 store 의 Arc 를 항상 inject
     /// 하므로 None 반환 분기는 없다 — 호출처는 `Result<R, _>` 만 처리하면 된다).

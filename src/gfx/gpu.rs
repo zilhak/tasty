@@ -645,10 +645,14 @@ impl GpuState {
         );
         let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-        // egui-mesh banner 합성 (A3): popup 과 동형 — host egui pass *후* content_rect 에
+        // egui-mesh banner 합성 (A3): popup 과 같은 자리·같은 순서 — host egui pass *후* content_rect 에
         // plugin mesh 를 얹는다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
         // manager)가 그렸고, content 만 여기서 합성된다. `draw_plugin_banners` 가 적재한 영역.
-        // popup 과 동일 — 잔존 target prune 을 위해 빈 regions 에서도 호출.
+        //
+        // ★ `regions` 가 비어도 **반드시 부른다.** 닫힌 banner 의 전용 Renderer 를 푸는 자리가
+        // 그 안뿐이라, 여기를 `if !regions.is_empty()` 로 감싸면 GPU 자원이 영원히 안 풀린다 —
+        // 화면은 멀쩡하고 어떤 판정에도 안 걸린다. 그 요구는 이제 `prune_mesh_targets` 가
+        // 들고 있고 popup 경로도 같은 함수를 부른다(`gpu/egui_mesh_prepare.rs`).
         if let Some(mgr) = plugin_manager {
             let regions = state.plugin_mesh_banner_regions.clone();
             self.render_egui_mesh_banners(&view, &regions, mgr);

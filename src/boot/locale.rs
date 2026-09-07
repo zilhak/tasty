@@ -31,9 +31,10 @@ pub(crate) struct ResolvedLocale {
     /// 영어로 폴백했으면 `en` — 설정값이 아니라 i18n 테이블이 실제로 담은 언어다.
     pub code: String,
     /// 언어팩이 제공하는 폰트 파일의 절대경로. 언어팩이 폰트를 제공하지 않거나
-    /// 내장 폰트를 쓰면 `None` — 이때 `TASTY_LOCALE_FONT` 는 설정하지 않는다(unset).
-    /// 언어팩 `[font]` 선언(`LoadOutcome::Pack { font, .. }`)을 실제 파일로 resolve 하는
-    /// 단계는 아직 없어 현재는 항상 `None` 이다.
+    /// (`builtin = true`) 내장 언어를 쓰면 `None` — 이때 `TASTY_LOCALE_FONT` 는
+    /// 설정하지 않는다(unset). 언어팩 `[font]` 선언을 실제 파일로 resolve·검증하는
+    /// 단계는 `init` 에서 `locale_font::resolve` 로 수행한다 — resolve 에 실패하면
+    /// (`Failed`) 경고만 하고 `None` 으로 둔다(문자열 자체는 폴백 없이 그대로 로드).
     pub font_file: Option<PathBuf>,
 }
 
@@ -59,6 +60,16 @@ impl ResolvedLocale {
     }
 }
 
+/// 부팅 때 export 한 `TASTY_LOCALE_FONT` 를 되읽어 언어팩 폰트 경로를 돌려준다 —
+/// 없으면 `None`. host 의 두 egui 폰트 셋업 경로(`src/gfx/gpu/fonts.rs` ·
+/// `src/adapters/ui/font_registry.rs`)가 같은 값을 읽어 체인 뒤에 붙이는 단일 출처다.
+/// plugin 프로세스도 같은 env 를 상속받아 자기 미러에서 읽는다.
+pub(crate) fn font_env_path() -> Option<PathBuf> {
+    std::env::var_os(LOCALE_FONT_ENV)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
 /// 설정 문자열을 요청 코드로 정규화한다. 공백/빈 값은 `en` — 빈 코드는 host i18n 과
 /// plugin SDK 양쪽에서 "언어 파일 없음" 으로 영어와 같게 동작하지만, env 로 빈 문자열이
 /// 흘러가면 소비처마다 해석이 갈린다.
@@ -75,6 +86,17 @@ use std::sync::Once;
 
 static INIT: Once = Once::new();
 
+/// 부팅 때 `[font]` resolve 가 실패했으면 그 사유(진단 문자열)를 담는다 — GUI 가
+/// 부팅 후 경고 토스트를 한 번 띄우는 데 쓴다(`app::boot_machine::report_locale_fallback`).
+/// resolve 가 성공했거나 폰트 선언이 없으면 비어 있다. headless/CLI 는 이 값을 읽지
+/// 않는다 — 그쪽은 `init` 이 남긴 `tracing::warn!` 한 줄이 전부다.
+static FONT_WARNING: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// 부팅 시 실패한 `[font]` resolve 의 사유. 실패가 없었으면 `None`.
+pub(crate) fn font_warning() -> Option<String> {
+    FONT_WARNING.get().cloned()
+}
+
 /// settings 를 읽어 i18n 테이블을 올린다. `cli_routing::parse_or_route` 진입부와 각
 /// mode helper 가 모두 부르므로 `Once` 로 1회만 실행한다 — 두 번째 호출부터는 settings
 /// 파일을 다시 읽지 않아 config 파싱 경고가 중복으로 찍히지 않는다(`tasty_i18n::init`
@@ -84,7 +106,25 @@ pub(crate) fn init() {
         let lang_settings = crate::settings::Settings::load();
         let requested = normalize_code(&lang_settings.general.language);
         let report = crate::i18n::init(&requested);
-        let locale = ResolvedLocale::from_report(&report);
+        let mut locale = ResolvedLocale::from_report(&report);
+        // `[font]` 선언을 실제 파일로 resolve·검증한다(egui 가 보기 전에 깨진 폰트를
+        // 거른다). 실패는 폴백 없이 경고만 — 문자열은 그대로 뜨고 UI 폰트만 안 붙는다.
+        // GUI 의 사용자 향 경고 토스트는 부팅 후 `app::boot_machine` 이 별도로 낸다.
+        match crate::boot::locale_font::resolve(&report.outcome) {
+            crate::boot::locale_font::FontResolution::Resolved(path) => {
+                locale.font_file = Some(path);
+            }
+            crate::boot::locale_font::FontResolution::Failed { detail } => {
+                tracing::warn!(
+                    "locale '{}' declares a [font] that could not be resolved: {detail}",
+                    locale.code
+                );
+                // GUI 는 부팅 후 이 사유를 경고 토스트로 한 번 띄운다. `init` 은 부팅 1회만
+                // 도므로 이미 set 됐을 일이 없다 — 중복 set 실패는 무해하다.
+                let _ = FONT_WARNING.set(detail);
+            }
+            crate::boot::locale_font::FontResolution::None => {}
+        }
         export_to_process_env(&locale);
     });
 }

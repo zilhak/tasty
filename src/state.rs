@@ -6,6 +6,7 @@
 
 mod accessors;
 mod detect;
+mod events;
 mod focus;
 // gui 전용 상태(popup/모달/스테이지)를 단정하는 테스트라 headless 빌드에는
 // 대상 자체가 없다. `#[cfg(test)]` 만 걸면 `--no-default-features` 테스트 빌드가
@@ -36,6 +37,7 @@ pub mod preset_apply;
 pub mod search;
 pub mod selection;
 
+pub use events::{FocusedSurfaceType, PendingHostEvent, PendingSurfaceClosed, SurfaceMessage};
 pub use workspace::WorkspaceCloseOrigin;
 
 use std::collections::VecDeque;
@@ -46,231 +48,38 @@ use crate::adapters::ui::info_modal::InfoModal;
 use crate::adapters::ui::popup::transfer::{TransferError, TransferProgress};
 use crate::core::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
-#[cfg(feature = "gui")]
-use crate::settings_ui::SettingsUiState;
 
-/// Type of the currently focused surface, used for keyboard routing.
-///
-/// Terminal은 PTY 입출력 경로가 별도라 빠른 분기 위해 전용 variant로 둔다.
-/// 나머지는 surface kind 식별자 기반의 `Kind(String)`으로 일반화 — 외부 plugin도
-/// 추가 enum 변경 없이 동작한다.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FocusedSurfaceType {
-    None,
-    Terminal,
-    Kind(String),
+// IdGenerator is now in core_state.rs
+
+/// 열려 있는 모달의 종류. `AppState::active_modal_kind` 의 값이며,
+/// `App::open_modal` 이 여는 쪽에서 받아 세운다 — 열린 `View` 를 downcast 해서
+/// 되짚지 않는다. 여는 쪽은 자기가 무엇을 여는지 이미 알고, downcast 로 되짚으면
+/// 새 모달을 추가한 사람이 이 열거를 안 늘려도 조용히 `None` 이 된다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModalKind {
+    Settings,
+    Plugins,
+    Quit,
 }
 
-impl FocusedSurfaceType {
-    /// 이 surface가 주어진 kind 식별자에 해당하는지 검사.
-    pub fn is_kind(&self, kind: &str) -> bool {
-        matches!(self, Self::Kind(k) if k == kind)
-    }
-
-    /// registry 에서 이 surface kind 의 capability flag 를 조회한다. `Terminal`/`None`
-    /// 은 kind 문자열이 아니므로 항상 false. host 가 `kind == "..."` 하드코딩 대신
-    /// plugin/builtin 이 선언한 capability 로 게이트를 판정하게 한다.
-    pub fn kind_capability(
-        &self,
-        engine: &CoreState,
-        f: impl Fn(&crate::core::surface_registry::SurfaceKindDef) -> bool,
-    ) -> bool {
+impl ModalKind {
+    /// IPC 직렬화용 납작한 이름. JSON 에 열거가 없어서만 존재한다 — 내부 판정은
+    /// 이 문자열이 아니라 열거로 한다.
+    ///
+    /// **`debug_assertions` 에 걸린다.** 이 이름을 읽는 자리는
+    /// `src/adapters/ipc/handler/debug_state.rs` 의 `ui.state` 덤프 하나뿐이고 그 모듈이
+    /// `#[cfg(debug_assertions)]` 이다 — release 에는 소비자가 없어 `dead_code` 가 문다
+    /// (그 lint 는 이 크레이트에서 error 라 컴파일이 죽는다). 열거 자체와
+    /// `active_modal_kind` 필드는 release 에도 산다: 여는 쪽이 세우고 닫는 쪽이 지운다.
+    #[cfg(debug_assertions)]
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::Kind(k) => engine
-                .surface_registry
-                .get(k)
-                .map(|d| f(&d))
-                .unwrap_or(false),
-            _ => false,
+            Self::Settings => "settings",
+            Self::Plugins => "plugins",
+            Self::Quit => "quit",
         }
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct SurfaceMessage {
-    pub(crate) id: u32,
-    pub(crate) from_surface_id: u32,
-    pub(crate) content: String,
-}
-
-/// Surface가 닫혔다는 사실을 plugin 측에 broadcast하기 위해 메인 루프가 소비할
-/// 큐 항목. `state/`는 `plugin/` 의존이 없으므로 enum 대신 `is_user_close: bool`로
-/// reason을 담고, App 메인 루프에서 `SurfaceCloseReason`으로 매핑한다.
-#[derive(Debug, Clone)]
-pub struct PendingSurfaceClosed {
-    pub(crate) surface_id: u32,
-    /// kind 가 None 인 경우는 cascade close 경로에서 surface 가 이미 layout 에서
-    /// 제거된 뒤 enqueue 되어 식별이 불가능했음을 의미. payload 변환 시 빈 문자열로
-    /// 폴백한다 — 구독자(예: plugin-claude)는 surface_id 만으로 cleanup 가능.
-    pub(crate) kind: Option<&'static str>,
-    pub(crate) is_user_close: bool,
-}
-
-/// Event Bus 1.0 호스트 자동 발화용 큐 항목. `state/`가 `plugin/`/`tasty-plugin-protocol`
-/// 의존을 갖지 않게, payload 필드는 wire 타입이 아닌 plain 데이터로 보관하고 App
-/// 메인 루프가 [`tasty_plugin_protocol`] 타입으로 변환해 발화한다.
-#[derive(Debug, Clone)]
-pub enum PendingHostEvent {
-    SurfaceFocused {
-        surface_id: u32,
-        prev_surface_id: Option<u32>,
-    },
-    SurfaceTitleChanged {
-        surface_id: u32,
-        title: String,
-    },
-    SurfaceCreated {
-        surface_id: u32,
-        kind: &'static str,
-        tab_id: u32,
-        pane_id: u32,
-        workspace_id: u32,
-        /// `None`이면 user-initiated, `Some(plugin_id)`면 agent(plugin)이 spawn한 결과.
-        created_by_plugin: Option<String>,
-    },
-    WorkspaceActivated {
-        workspace_id: u32,
-        prev_workspace_id: Option<u32>,
-    },
-    /// 이름/부제/설명 중 변경된 필드만 `Some`. 호스트 발화 측 어디서나 partial
-    /// update가 가능하도록 모두 Optional로 둔다.
-    ///
-    /// `user_direct=true`면 사용자가 GUI 다이얼로그로 직접 변경한 케이스. Lua
-    /// hook 의 `workspace.change.post` 는 user_direct 만 발화한다 (observe-only
-    /// 단계 명세). IPC/CLI 경유 변경은 false 로 들어와 plugin 이벤트 버스만 받는다.
-    WorkspaceRenamed {
-        workspace_id: u32,
-        name: Option<String>,
-        subtitle: Option<String>,
-        description: Option<String>,
-        user_direct: bool,
-    },
-    TabFocused {
-        tab_id: u32,
-        pane_id: u32,
-        prev_tab_id: Option<u32>,
-    },
-    /// Tab 이름 변경. `user_direct=true`면 사용자가 GUI 다이얼로그로 직접 rename
-    /// 한 케이스 — Lua `tab.change.post` hook 은 user_direct 만 발화한다.
-    TabRenamed {
-        tab_id: u32,
-        title: String,
-        user_direct: bool,
-    },
-    /// 자식 프로세스 종료. exit_code는 현재 terminal 이벤트가 노출하지 않아 `None` 고정.
-    ProcessExited {
-        surface_id: u32,
-    },
-    /// `NotificationStore::add` 결과. source는 발화 측에서 채워 push (host=`"host"`,
-    /// plugin=plugin_id).
-    NotificationCreated {
-        id: u64,
-        title: String,
-        body: String,
-        source: String,
-    },
-    /// Tab 생성. `detect_tab_lifecycle` polling으로 발견.
-    TabCreated {
-        tab_id: u32,
-        pane_id: u32,
-        workspace_id: u32,
-        kind: String,
-    },
-    /// Tab 종료. polling이 사라진 tab_id를 발견하면 마지막 위치로 enqueue.
-    /// 현재 reason은 항상 User (PR 5의 caller context 도입 이후 Ipc 구분 예정).
-    TabClosed {
-        tab_id: u32,
-        pane_id: u32,
-    },
-    /// Tab이 다른 pane으로 이동. polling diff로 감지.
-    TabMoved {
-        tab_id: u32,
-        from_pane: u32,
-        to_pane: u32,
-    },
-    /// Pane 생성. polling으로 감지. `parent_pane_group`은 트리 구조 노출 비용이
-    /// 커 현재 `None` 고정 (필요해지면 PR 5 이후 확장).
-    PaneCreated {
-        pane_id: u32,
-        workspace_id: u32,
-    },
-    /// Pane 종료. polling이 사라진 pane_id를 발견하면 발화.
-    /// reason은 현재 항상 `User` (caller context 구분은 PR 5에서).
-    PaneClosed {
-        pane_id: u32,
-    },
-    /// Workspace 생성. polling으로 감지. `window_id`는 caller가 전달.
-    WorkspaceCreated {
-        workspace_id: u32,
-        window_id: u64,
-        name: String,
-    },
-    /// Workspace 종료. reason은 현재 항상 `User`.
-    WorkspaceClosed {
-        workspace_id: u32,
-    },
-    /// Pane 분할. polling으로는 direction을 알 수 없어 호출 사이트에서 직접 enqueue.
-    PaneSplit {
-        original_pane: u32,
-        new_pane: u32,
-        direction: crate::model::SplitDirection,
-    },
-    /// `tasty-hooks`의 surface hook 발화. `check_and_fire` 호출자가 fired hook_id
-    /// 리스트와 매칭된 event를 묶어 enqueue. surface_id가 0이면 global hook.
-    HookFired {
-        hook_id: u64,
-        event_kind: String,
-        surface_id: u32,
-        /// 실제 관측된 exit code — `CommandCompleted` 발화일 때만
-        /// `Some`. `resolve_hook_fired_task_waits` 가 push 완료 전략의 성공/실패
-        /// 판정에 쓴다(exit 0 → Succeeded, 비-0 → Failed). 다른 이벤트는 `None`.
-        exit_code: Option<i32>,
-    },
-    // ─── Plugin lifecycle (D.3.C.G.2) ───
-    /// Plugin spawn 성공 후 hello 까지 완료.
-    PluginLoaded {
-        plugin_id: String,
-        version: String,
-    },
-    /// Plugin 활성화 상태 변경 (enable=true / disable=false).
-    PluginEnableToggled {
-        plugin_id: String,
-        enabled: bool,
-    },
-    /// Plugin process 가 종료됨. `reason` 은 LifecycleReason 의 serde rename
-    /// (snake_case) — "user" / "ipc" / "crash".
-    PluginUnloaded {
-        plugin_id: String,
-        reason: String,
-    },
-    /// Plugin spawn 실패 또는 runtime error.
-    PluginError {
-        plugin_id: String,
-        error_kind: String,
-        message: String,
-    },
-    /// Plugin install / remove / grant / revoke 완료. `change_kind` 는
-    /// "installed" / "removed" / "permission_granted" / "permission_revoked".
-    PluginRegistryChanged {
-        plugin_id: String,
-        change_kind: String,
-        detail: serde_json::Value,
-    },
-    /// Plugin 의 surface_kind 가 hello 처리 직후 registry 에 등록됨.
-    PluginSurfaceKindRegistered {
-        plugin_id: String,
-        kind: String,
-        rendering: String,
-    },
-    /// Plugin manifest 의 `[[contributes.window]]` 항목이 hello 시점에 등록됨.
-    /// 1.0 schema-only — host event `plugin.window_declared` 로 가시화.
-    PluginWindowDeclared {
-        plugin_id: String,
-        window_id: String,
-    },
-}
-
-// IdGenerator is now in core_state.rs
 
 pub struct AppState {
     // ── Window-level UI state ──
@@ -288,13 +97,81 @@ pub struct AppState {
         tasty_utils::id::WorkspaceCategoryId,
         tasty_utils::id::WorkspaceId,
     >,
-    /// Whether the settings window is open.
-    pub(crate) settings_open: bool,
-    /// Whether the plugins window is open.
+    /// 설정 모달 **열기 요청** 플래그 — "열려 있는가" 가 아니다.
+    ///
+    /// 세우는 자리는 사이드바 버튼 경로 하나뿐이고(`adapters/ui/draw.rs` 의
+    /// `settings_clicked`), 다음 프레임에 `view/main/redraw.rs` 의
+    /// `dispatch_pending_modal_opens` 가 **소비하며 즉시 false 로 되돌린다**
+    /// (`view/main/keyboard.rs` 의 escape 처리도 지운다). 그래서 이 값이 한
+    /// 프레임 넘게 true 인 적이 없다.
+    ///
+    /// 키보드 단축키 경로는 이 필드를 **아예 안 거친다** —
+    /// `adapters/ui/input/shortcuts/keybinding.rs` 가 `AppEvent::OpenSettings` 를
+    /// 보내고 `app/modal/settings.rs` 가 별도 winit 창을 만든다.
+    /// ⇒ **창이 떠 있는지를 이 필드로는 관측할 수 없다.** 그걸 물어야 하면
+    ///    `view::View::is_modal_active()`(= `active_modal_id`)를 봐라. 그 값은
+    ///    모달 등록에서 세워져 닫힐 때까지 남는다.
+    ///
+    /// **소비자가 넷이고, 한 이름이 세 가지 물음에 답하고 있다.** 전수(식별자로
+    /// `src/`·`crates/` 를 훑었다):
+    ///
+    /// | 자리 | 술어 | 무엇을 정하나 | 이 플래그로 옳은가 |
+    /// |---|---|---|---|
+    /// | `state.rs` `has_egui_overlay_open` | "egui 오버레이가 **이 창의** wgpu 표면을 덮는가" | WebView `set_visible` · `release_keyboard_focus` | **아니다** |
+    /// | `state.rs` `keyboard_overlay_open` | "키가 터미널 대신 egui 로 가야 하는가" | 키 라우팅 | 판정 필요 |
+    /// | `view/main/mouse.rs` `mouse_overlay_open` | 마우스 최상위 차단 | 세 핸들러 공통 게이트 | 판정 필요 |
+    /// | `view/main/keyboard.rs` escape 분기 | "설정 창이 **떠 있는가**" | 대기 중인 열기 요청 취소 | 판정 필요 |
+    ///
+    /// 첫째가 "아니다" 인 이유: `handle_redraw` 안의 순서가 지움(`dispatch_pending_modal_opens`)
+    /// → egui 패스(`render_if_dirty`, 여기서 플래그가 선다) → 읽음(`sync_webviews`) 이라,
+    /// 이 항은 **버튼을 누른 그 한 프레임에만** true 다. 그 프레임에 WebView 를 전부
+    /// 숨겼다가 다음 프레임에 되살린다 — 설정 창은 별도 winit 창이라 이 창의 wgpu 표면을
+    /// 덮지 않으므로 **가릴 이유도 없고**, 한 프레임짜리라 **가리는 구실도 못 한다.**
+    ///
+    /// 넷째가 한때 "아니다" 였던 이유: 그 자리를 "설정 창이 떠 있다" 로 읽으면 틀린다 —
+    /// `app/modal/settings.rs` 는 창을 만든 뒤 이 플래그를 **다시 세우지 않는다**(그
+    /// 파일에 이 식별자가 0 건이다). 지속하는 참값은 `view::View::is_modal_active()` 다.
+    /// 지금 그 분기는 창이 떠 있는지를 묻지 않고 **대기 중인 열기 요청을 취소**하며,
+    /// 그 물음에는 이 래치가 맞는 값이다. 같은 표에 있던 double-tap 분기는 물음이
+    /// 캡처였고 그 경로가 `SettingsView` 안에 따로 살아 있어 **지웠다**.
+    ///
+    /// ⇒ 배선을 고치는 쪽은 **소비자마다 따로 판정해야 한다.** 하나의 지속 값으로
+    ///    넷을 한꺼번에 바꾸면 첫째가 조용히 반대로 는다(설정 창이 열려 있는 내내
+    ///    WebView 가 숨는다).
+    /// ⇒ `mouse_overlay_open` 은 `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 가 **문자열로
+    ///    못박고** 있어(정의를 그대로 단언한다) 바꾸면 거기서 큰 소리로 깨진다. 나머지
+    ///    셋에는 그런 고정이 없다.
+    pub(crate) settings_open_requested: bool,
+    /// 지금 열려 있는 모달의 창 id — **`view.active_modal_id` 의 거울**이다.
+    ///
+    /// 원본은 `View` 에 있고 `AppState` 는 `View` 에 안 닿는다. 그런데 이 값을 물어야 하는
+    /// 쪽(`ui.state` 조회)은 `AppState` 만 받는다. 그 사이를 여는 길이 둘인데, `&View` 를
+    /// 조회 경로까지 전파하면 **View 가 없는 헤드리스 호출자**들이 `Option<&View>` 를 받게
+    /// 되고 그러면 "모달 없음" 과 "View 가 없음" 이 같은 모양이 된다. 그래서 사본을 둔다.
+    ///
+    /// 사본이라 원본과 어긋날 수 있다. 어긋나지 않는 근거는 **쓰는 자리가 둘뿐**이라는
+    /// 것이고(`app/modal.rs` 의 open/close), 그 둘이 유일한 쓰기 자리임을
+    /// `tests/modal_state_has_one_writer.rs` 가 원문 대조로 고정한다.
+    ///
+    /// ★ `settings_open_requested` 과 성질이 다르다. 그쪽은 **열기 요청** 래치이고 이쪽은 모달이
+    /// 등록된 동안 유지되는 **지속 값**이다. 둘을 같은 물음에 쓰지 마라.
+    pub(crate) active_modal_id: Option<u64>,
+    /// **어느** 모달인가 — `active_modal_id` 와 같은 자리에서 같이 움직이는 짝이다.
+    ///
+    /// `active_modal_id` 는 `WindowId` 라 "무언가 떠 있다" 까지만 말한다. 그 값으로
+    /// 설정 창을 기다리면 plugins 창이나 quit 창이 떠도 같은 모양이 되어, 시험이
+    /// **자기가 안 연 창을 보고 통과할 수 있다.** 종류를 따로 낸다.
+    ///
+    /// 열거인 것이 요점이다 — 문자열이면 오타가 "그 모달이 아니다" 와 같은 모양이 된다.
+    /// IPC 로 나갈 때만 `as_str()` 로 납작해진다(JSON 에 열거가 없다).
+    pub(crate) active_modal_kind: Option<ModalKind>,
+    /// plugins 모달 **열기 요청** 플래그 — `settings_open_requested` 과 같은 생애다.
+    /// 사이드바 경로만 세우고 같은 `dispatch_pending_modal_opens` 가 다음
+    /// 프레임에 소비하며 false 로 되돌린다.
+    ///
+    /// ⇒ plugins 창을 키보드로 여는 시험은 **아직 없다.** 쓰는 순간 이 필드로는
+    ///    관측이 안 돼 설정 쪽과 똑같이 죽는다. 그때는 시험이 아니라 채널을 고쳐라.
     pub(crate) plugins_open: bool,
-    /// Persistent UI state for the settings window.
-    #[cfg(feature = "gui")]
-    pub(crate) settings_ui_state: SettingsUiState,
     /// Cached sidebar width from settings (logical pixels).
     pub(crate) sidebar_width: LogicalPx,
     /// Sidebar visibility: false = completely hidden.
@@ -447,7 +324,9 @@ pub struct AppState {
     /// 직전 프레임에 그려진 plugin egui-mesh popup 셸 rect + z_seq
     /// (`draw_plugin_popups` 가 갱신). host 쪽 히트테스트가 읽는다 — host draw 가
     /// 먼저 돌기 때문에 **1 프레임 stale** 이다(`popup/draw.rs` 의 outside-click
-    /// 분기 주석 참고). 셸 rect(마진 포함)라 `plugin_mesh_popup_regions`(콘텐츠
+    /// 분기 주석 참고). 그 "먼저" 를 정하는 순서 계약의 자리는
+    /// `gfx/gpu/egui_bridge.rs::run_egui_frame` 의 두 draw 호출이고, 뒤집히면 이 1 이
+    /// 조용히 0 이 된다 — `source_guards::frame_draw_order` 가 그것을 문다. 셸 rect(마진 포함)라 `plugin_mesh_popup_regions`(콘텐츠
     /// rect, 물리 px)와는 다른 값이다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
@@ -477,8 +356,6 @@ pub struct AppState {
     /// engine state cleanup 이 dispatcher cascade 없이 직접 영속할 때 사용한다.
     /// `Core::with_memory` 와 같은 lock 정책 (poisoning 시 inner 사용).
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
-    /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
-    pub(crate) captured_double_tap: Option<String>,
     /// Surface close lifecycle 알림 큐. close 직후 enqueue되고, App 메인 루프가
     /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
     /// `state/`는 `plugin/` 의존이 없어 별도 plain struct로 둔다.
@@ -562,12 +439,12 @@ pub struct AppState {
     /// plugin popup 콘텐츠 영역 내부 클릭으로 z-order 순번 갱신이 필요한 instance_id 큐
     /// (`docs/design/systems/popup.md` 규칙 7 "클릭된 것이 앞"). 렌더 경로(`draw_plugin_popups`)는
     /// `&PluginManager` 불변 참조만 가지므로 직접 갱신할 수 없어 여기 적재하고, App 메인
-    /// 루프가 drain해 `PluginManager::touch_popup_instance_z`를 호출한다(close queue 와 동형).
+    /// 루프가 drain해 `PluginManager::touch_popup_instance_z`를 호출한다(close queue 와 같은 모양).
     pub(crate) plugin_popup_focus_bumps: Vec<u64>,
 
     /// plugin egui-mesh banner(A3) host 측 생명주기(TTL/close X)로 닫힌 사유.
     /// `draw_plugin_banners` 가 적재하고, App 메인 루프가 drain 해
-    /// `PluginManager::close_banner_instance` 를 호출한다(popup closes 와 동형 — 렌더
+    /// `PluginManager::close_banner_instance` 를 호출한다(popup closes 와 같은 모양 — 렌더
     /// 경로가 manager 를 직접 mutate 하지 않도록 지연).
     pub(crate) plugin_banner_closes: Vec<(u64, tasty_plugin_protocol::BannerCloseReason)>,
 
@@ -581,24 +458,24 @@ pub struct AppState {
     pub(crate) plugin_mesh_popup_geom: std::collections::HashMap<u64, (u32, u32, u32)>,
 
     /// 이미 bootstrap set_context 를 보낸 egui-mesh popup 인스턴스. paint frame 이
-    /// 아직 안 온 동안 set_context 를 1회만 보내기 위한 가드(surface `bootstrap_sent` 동형).
+    /// 아직 안 온 동안 set_context 를 1회만 보내기 위한 가드(surface `bootstrap_sent` 와 같은 모양).
     /// frame 이 보이면 해제돼 crash 후 재bootstrap 된다. 핵심: 첫 frame(폰트 atlas 동봉)
     /// 을 host 가 반드시 decode 하도록, bootstrap 을 매 frame 스팸하지 않는다.
     pub(crate) plugin_mesh_popup_bootstrapped: std::collections::HashSet<u64>,
 
     /// egui-mesh popup 별 마지막으로 보낸 Theme 스냅샷. 크기/입력 무변이어도 테마가
-    /// 바뀌면 set_context 재forward 를 트리거한다(surface `last_theme` 동형).
+    /// 바뀌면 set_context 재forward 를 트리거한다(surface `last_theme` 와 같은 모양).
     pub(crate) plugin_mesh_popup_theme:
         std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
 
     /// egui-mesh banner(A3) 합성 영역. `draw_plugin_banners` 가 매 egui frame 채우고,
     /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
     /// mesh 를 합성한다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
-    /// manager)가, 내용만 plugin mesh 가 그린다. popup regions 와 동형.
+    /// manager)가, 내용만 plugin mesh 가 그린다. popup regions 와 같은 모양.
     pub(crate) plugin_mesh_banner_regions: Vec<(u64, crate::model::PhysicalRect)>,
 
     /// egui-mesh banner 별 마지막으로 보낸 set_context geom `(w_px, h_px, ppp_bits)`.
-    /// 변경 감지(popup geom 과 동형).
+    /// 변경 감지(popup geom 과 같은 모양).
     pub(crate) plugin_mesh_banner_geom: std::collections::HashMap<u64, (u32, u32, u32)>,
 
     /// 이미 bootstrap set_context 를 보낸 egui-mesh banner 인스턴스(popup bootstrapped 동형).
@@ -1084,10 +961,10 @@ impl AppState {
             memory,
             active_workspace,
             category_last_active: std::collections::HashMap::new(),
-            settings_open: false,
+            settings_open_requested: false,
+            active_modal_id: None,
+            active_modal_kind: None,
             plugins_open: false,
-            #[cfg(feature = "gui")]
-            settings_ui_state: SettingsUiState::new(),
             sidebar_width,
             sidebar_visible: true,
             sidebar_collapsed: false,
@@ -1102,7 +979,6 @@ impl AppState {
             tutorial: crate::adapters::ui::tutorial::TutorialRuntime::default(),
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(0.0),
-            captured_double_tap: None,
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
             last_focused_surface_id: None,
@@ -1272,7 +1148,7 @@ impl AppState {
         #[cfg(not(feature = "gui"))]
         let host_popup_focused = false;
         keyboard_overlay_open(
-            self.settings_open,
+            self.settings_open_requested,
             self.has_input_dialog_open(),
             host_popup_focused,
             self.plugin_popup_open,
@@ -1299,10 +1175,23 @@ impl AppState {
     /// 뷰가 egui 오버레이를 덮지 않게" 하는 목적이고, plugin popup 도 같은 wgpu
     /// 표면 위에 그려지므로 host popup 과 구분할 이유가 없다.
     pub fn has_egui_overlay_open(&self) -> bool {
-        let open = self.settings_open
-            || self.plugins_open
-            || self.dialogs.has_any_overlay()
-            || self.plugin_popup_open;
+        // `settings_open_requested`/`plugins_open` 은 **여기 안 든다.** 그 둘은 "열려 있는가" 가 아니라
+        // 한 프레임짜리 **열기 요청**이고(선언부 주석 참조), 두 모달은 `event_loop.create_window`
+        // 로 뜨는 **별도 winit 창**이라 이 창의 wgpu 표면을 덮지 않는다.
+        //
+        // 넣었을 때 실제로 벌어지던 일: `handle_redraw` 의 순서가 지움
+        // (`dispatch_pending_modal_opens`) → egui 패스(`render_if_dirty` 안, 여기서
+        // `adapters/ui/draw.rs` 가 플래그를 세운다) → 읽음(`sync_webviews`)이라, 버튼을 누른
+        // **그 한 프레임에만** 참이었다. (줄번호로 적었더니 그 함수에 주석 한 덩이가 들어간
+        // 것만으로 셋 다 낡았다 — 이름으로 적는다.) 그 프레임에 WebView 를 전부
+        // `set_visible(false)` 하고 키보드 포커스를 풀었다가 다음 프레임에 되살렸다. **가릴 이유도 없고(다른 창이다), 한 프레임이라 가리는 구실도
+        // 못 했다** — 둘 다 아니면 죽은 항이 아니라 틀린 항이다.
+        //
+        // ★ 그러니 여기에 **지속하는 모달 상태를 대신 넣지 마라.** 그러면 설정 창이 열려 있는
+        //   내내 WebView 가 숨는다 — 한 프레임짜리 결함이 분 단위 결함이 된다. "설정 창이 떠
+        //   있는가" 를 물어야 하는 소비자가 볼 값은 이 래치가 아니라
+        //   `view::View::is_modal_active()` 다.
+        let open = self.dialogs.has_any_overlay() || self.plugin_popup_open;
         // 전체화면 무대도 오버레이로 친다. 이 판정의 소비자 중 하나가 WebView 표시
         // 여부(`MainView::sync_webviews`)인데, WebView 는 OS 네이티브 자식 뷰라 wgpu
         // 표면 **위**에 있다 — 안 그리는 것만으로는 사라지지 않고 무대를 뚫고 나온다.
@@ -1739,12 +1628,12 @@ fn cwd_from_surface(engine: &CoreState, surface_id: u32) -> Option<std::path::Pa
 /// host egui 의 `ctx.input` 을 거쳐 plugin 으로 forward 된다. 게이트가 닫혀 있으면 키가
 /// egui 큐에 아예 안 들어가 forward 소스가 비고, 그 키는 그대로 터미널로 샌다.
 pub(crate) fn keyboard_overlay_open(
-    settings_open: bool,
+    settings_open_requested: bool,
     input_dialog_open: bool,
     host_popup_focused: bool,
     plugin_popup_open: bool,
 ) -> bool {
-    settings_open || input_dialog_open || host_popup_focused || plugin_popup_open
+    settings_open_requested || input_dialog_open || host_popup_focused || plugin_popup_open
 }
 
 #[cfg(test)]

@@ -256,21 +256,34 @@ pub(super) enum MatchResult {
     MethodNotAllowed,
     /// lifetime 만료(시간 초과 / 횟수 소진) — 410 Gone. 매칭 시 lazy 삭제됨.
     Expired,
+    /// 인증이 걸린 웹훅인데 토큰이 안 맞았다 — 401. 통은 태우지 않는다.
+    Unauthorized,
     Matched {
         calls: Vec<IpcCall>,
         injector: Option<HostIpcInjector>,
-        /// 선택적 인증 설정 스냅샷. `Some` 이면 리스너가 실행 전 검증한다.
-        auth: Option<WebhookAuth>,
     },
 }
 
-/// (path, method) 로 매칭해 실행할 시퀀스 스냅샷 + injector + 인증설정을 반환한다.
+/// (path, method) 로 매칭해 실행할 시퀀스 스냅샷 + injector 를 반환한다.
 ///
 /// **lazy 만료**: path 가 불릴 때 시간제한 만료를 먼저 확인해 만료면 삭제 후
-/// `Expired`(410) 를 돌린다. 매칭 성공한 횟수제한 웹훅은 카운트를 1 차감하고,
-/// 소진되면 그 자리에서 삭제한다(다음 호출은 404). 짧게 lock 을 잡아 mutate +
-/// clone 만 하고 실행·인증검증은 lock 밖에서 한다.
-pub(super) fn match_request(path: &str, method: &str) -> MatchResult {
+/// `Expired`(410) 를 돌린다.
+///
+/// **인증은 이 lock 안에서 본다.** `authorized` 는 엔트리의 인증 설정을 받아
+/// 통과 여부만 답하는 술어이고(요청 데이터는 호출자가 붙잡는다 — 레지스트리는
+/// HTTP 를 모른다), 통과하지 못하면 [`MatchResult::Unauthorized`] 로 끝난다.
+/// 검증을 lock 밖으로 내면 차감이 인증보다 앞서고, 그러면 `CountLimit` 이
+/// **시퀀스를 돌린 횟수**가 아니라 **path·method 가 맞은 횟수**를 세게 된다 —
+/// 통의 키는 토큰이 아니라 등록이므로, 그 차이는 인증을 통과하지 못한 발신자가
+/// owner 의 예산을 태우는 것으로 나타난다.
+///
+/// 매칭·인증을 모두 통과한 횟수제한 웹훅은 카운트를 1 차감하고, 소진되면 그
+/// 자리에서 삭제한다(다음 호출은 404). 실행만 lock 밖에서 한다.
+pub(super) fn match_request(
+    path: &str,
+    method: &str,
+    authorized: impl FnOnce(&WebhookAuth) -> bool,
+) -> MatchResult {
     let now = now_unix();
     let mut s = lock();
     let Some(entry) = s.entries.get(path) else {
@@ -292,11 +305,17 @@ pub(super) fn match_request(path: &str, method: &str) -> MatchResult {
         return MatchResult::MethodNotAllowed;
     }
 
-    // ③ 매칭 성공 — 횟수 차감 후 소진되면 삭제. 인증검증은 lock 밖(리스너)에서.
+    // ③ 인증 — 차감보다 먼저다. 막힌 요청은 시퀀스를 0 번 돌렸으므로 통을 안 태운다.
+    if let Some(a) = &entry.auth
+        && !authorized(a)
+    {
+        return MatchResult::Unauthorized;
+    }
+
+    // ④ 매칭·인증 통과 — 횟수 차감 후 소진되면 삭제.
     let injector = s.injector.clone();
     let entry = s.entries.get_mut(path).expect("entry present under lock");
     let calls = entry.calls.clone();
-    let auth = entry.auth.clone();
     let exhausted = entry.lifetime.consume();
     let persistent = entry.lifetime.is_persistent();
     if exhausted {
@@ -305,11 +324,7 @@ pub(super) fn match_request(path: &str, method: &str) -> MatchResult {
     if persistent {
         persist_locked(&s);
     }
-    MatchResult::Matched {
-        calls,
-        injector,
-        auth,
-    }
+    MatchResult::Matched { calls, injector }
 }
 
 #[cfg(test)]
@@ -387,15 +402,15 @@ mod tests {
 
         // 매칭: 올바른 메서드 → Matched, 틀린 메서드 → MethodNotAllowed.
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
         ));
         assert!(matches!(
-            match_request(&out.id, "GET"),
+            match_request(&out.id, "GET", |_| true),
             MatchResult::MethodNotAllowed
         ));
         assert!(matches!(
-            match_request("nope", "POST"),
+            match_request("nope", "POST", |_| true),
             MatchResult::NotFound
         ));
 
@@ -403,7 +418,7 @@ mod tests {
         assert!(info(&out.id).is_none());
         // 해제 후 404.
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::NotFound
         ));
     }
@@ -443,7 +458,7 @@ mod tests {
             None,
         );
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
         ));
         // 1회 소비 후에도 info 로 남은 카운트 확인.
@@ -452,13 +467,13 @@ mod tests {
             Limit::CountLimit { remaining: 1 }
         ));
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
         ));
         // 2회 소진 → 엔트리 삭제 → 3번째는 NotFound(404).
         assert!(info(&out.id).is_none());
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::NotFound
         ));
     }
@@ -475,13 +490,13 @@ mod tests {
             None,
         );
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::Expired
         ));
         // 만료 응답과 함께 삭제됨 → 이후 404.
         assert!(info(&out.id).is_none());
         assert!(matches!(
-            match_request(&out.id, "POST"),
+            match_request(&out.id, "POST", |_| true),
             MatchResult::NotFound
         ));
     }
@@ -498,7 +513,7 @@ mod tests {
             None,
         );
         assert!(matches!(
-            match_request(&out.id, "GET"),
+            match_request(&out.id, "GET", |_| true),
             MatchResult::MethodNotAllowed
         ));
         // 여전히 remaining=1.

@@ -3,7 +3,7 @@
 //! # 왜 `tests/` 가 아니라 여기인가 (관례를 깬 이유)
 //!
 //! 소스 스캔 가드의 관례 자리는 `tests/*.rs` 이고 자매 가드
-//! (`tests/design_token_adherence.rs`)도 거기 있다. 이 파일만 본체 crate 안에 있는
+//! (`crates/tasty-doc-guards/tests/design_token_adherence.rs`)도 거기 있다. 이 파일만 본체 crate 안에 있는
 //! 이유는 **자동으로 실행되는 잡의 수가 자리마다 다르기** 때문이다. 직접 재서 얻은
 //! 값만 적는다(채널 표 전체는 여기 옮겨 적지 않는다 — 아래 정본 참조):
 //!
@@ -60,7 +60,7 @@ use std::path::{Path, PathBuf};
 
 use tasty_type_geometry::length::LogicalPx;
 
-/// 스캔 대상 (repo-relative). 자매 가드 `tests/design_token_adherence.rs` 의
+/// 스캔 대상 (repo-relative). 자매 가드 `crates/tasty-doc-guards/tests/design_token_adherence.rs` 의
 /// `SCAN_ROOTS` 와 같은 집합이다 — 같은 축을 보므로 갈라지면 안 된다.
 ///
 /// **그 "갈라지면 안 된다" 는 오래 주석으로만 있었고 실제로 갈라졌다.** 자매 쪽이
@@ -158,7 +158,7 @@ const FONT_CALLS: &[&str] = &[
 /// 폰트 사본과 달리 시각적 회귀가 실재한다.
 const UI_RADIUS_TOKEN_VALUES: &[f32] = &[2.0, 4.0, 8.0];
 
-/// 반경을 받는 호출 형태. 자매 가드(`tests/design_token_adherence.rs`)의
+/// 반경을 받는 호출 형태. 자매 가드(`crates/tasty-doc-guards/tests/design_token_adherence.rs`)의
 /// `FORBIDDEN_PREFIXES` 와 같은 둘이다 — 그쪽은 **리터럴**을, 여기는 **토큰 값을 복사한
 /// 명명 const** 를 막는다. 두 판정이 합쳐져야 이 축의 우회로가 닫힌다.
 const RADIUS_CALLS: &[&str] = &[".corner_radius(", "CornerRadius::same("];
@@ -831,7 +831,7 @@ fn no_named_const_copies_a_ui_font_token() {
 #[test]
 fn the_two_sister_guards_scan_the_same_roots() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let sister = root.join("tests/design_token_adherence.rs");
+    let sister = root.join("crates/tasty-doc-guards/tests/design_token_adherence.rs");
     let src = std::fs::read_to_string(&sister)
         .unwrap_or_else(|e| panic!("자매 가드를 읽지 못했다 ({}): {e}", sister.display()));
 
@@ -1192,7 +1192,7 @@ const MIN_SCANNED_CONSTS: usize = 100;
 ///
 /// 면제를 **사유별로 두 목록으로** 나눈다. 섞으면 역방향 검사를 못 건다 — 정책 면제는
 /// 덮을 것이 없어도 남아야 하고(ADR-0150) 한시 부채는 사라지면 지워져야 하는데, 한
-/// 목록에서는 두 규칙이 동시에 성립할 수 없다. `tests/layering.rs` 가 같은 이유로
+/// 목록에서는 두 규칙이 동시에 성립할 수 없다. `crates/tasty-doc-guards/tests/layering.rs` 가 같은 이유로
 /// `ALLOWED_PATHS` 와 `BASELINE_FILES` 를 갈라 둔다.
 #[test]
 fn no_named_font_const_exceeds_the_ui_font_size_cap() {

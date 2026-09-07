@@ -112,7 +112,7 @@ impl MainView {
     /// "무대 위인가" 를 물을 이유가 없고, 뒤의 위젯은 그려지지도 않은 상태라 그 좌표로
     /// 판정하는 것 자체가 유령 입력이다.
     fn mouse_overlay_open(&self) -> bool {
-        self.state.settings_open || self.state.fullscreen_stage_active()
+        self.state.settings_open_requested || self.state.fullscreen_stage_active()
     }
 
     /// mesh pointer hover 슬롯을 갱신한다(구성 요소는 `docs/dev-guide/egui-mesh-channel.md`

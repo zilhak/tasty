@@ -1151,4 +1151,75 @@ mod tests {
             "그 edge 는 소유 인스턴스로 forward 되어야 한다(ADR-0104)"
         );
     }
+
+    /// 각 등급이 미러링하는 디자인 rank 토큰. **exhaustive match 인 것이 이 함수의
+    /// 요점**이다 — `AttentionLevel` 에 등급이 늘면 여기서 컴파일이 깨져, 토큰 없는
+    /// 등급이 조용히 들어오지 못한다.
+    fn rank_token_of(level: AttentionLevel) -> f32 {
+        match level {
+            AttentionLevel::Completion => {
+                tasty_design_tokens::generated::semantic::ATTENTION_RANK_COMPLETION
+            }
+            AttentionLevel::NeedsInput => {
+                tasty_design_tokens::generated::semantic::ATTENTION_RANK_NEEDS_INPUT
+            }
+        }
+    }
+
+    /// 판정 대상 전수. `rank_token_of` 의 exhaustive match 가 "등급이 늘었다" 는 것은
+    /// 잡지만 **여기 추가하는 것까지 강제하지는 못한다** — 그 구멍은 열려 있다.
+    /// 잡는 것: 두 등급을 맞바꾸는 변이. 못 잡는 것: 세 번째 등급을 더하면서 이 배열만
+    /// 빠뜨리는 것(그때는 `rank_token_of` 가 먼저 컴파일로 죽어 손이 여기까지 온다).
+    const ALL_LEVELS: [AttentionLevel; 2] =
+        [AttentionLevel::Completion, AttentionLevel::NeedsInput];
+
+    /// `AttentionLevel` 선언부 주석이 산문으로만 들고 있던 계약 중 **토큰 쪽**을 값으로
+    /// 박는다 — 선언 순서가 만드는 derived `Ord` 가 디자인 rank 토큰 값의 오름차순과
+    /// 같아야 한다(재도출 금지, 토큰이 정본).
+    ///
+    /// ## 이 시험이 무엇을 더하는가 (변이 둘로 실측했다)
+    ///
+    /// 선언 순서 자체는 **이미 덮여 있었다.** 두 variant 를 맞바꾸면
+    /// `dominant_kind_prefers_needs_input_over_completion` 과
+    /// `effects_of_needs_input_outranks_completion_and_has_no_panel_item` 이 먼저 죽는다.
+    /// 그 변이에서 이 시험은 셋째 사망자일 뿐이다.
+    ///
+    /// 안 덮여 있던 것은 **반대 방향**이다. rank 토큰 값만 바꾸면(예: completion 을
+    /// needs-input 보다 크게) 저 둘은 **그대로 초록**이다 — 둘 다 기대값을 러스트 쪽에
+    /// 박아 두고 토큰을 읽지 않기 때문이다. 그때 enum 은 더 이상 토큰을 미러링하지 않는데
+    /// 아무도 안 묻는다. 실측: 토큰 변이에서 죽는 것은 이 시험 하나뿐이었다.
+    ///
+    /// 그래서 이 시험이 지키는 문장은 "선언 순서가 이렇다" 가 아니라 **"선언 순서가
+    /// 토큰을 따른다"** 다. 어기면 탭 제목·collapsed rail dot 이 압축할 때 고르는 대표
+    /// 등급이 디자인이 정한 등급과 갈라지고, 컴파일도 되고 나머지 시험도 통과한다.
+    ///
+    /// **텍스트 순서가 아니라 `Ord` 자체를 묻는 이유**: 계약의 내용이 "소스에 이 줄이
+    /// 저 줄보다 위에 있다" 가 아니라 "그 배치가 만들어 내는 순서가 토큰과 같다" 이기
+    /// 때문이다. 텍스트로 물으면 rustfmt·주석 이동에 흔들리면서 정작 derived `Ord` 는
+    /// 안 본다.
+    #[test]
+    fn the_declaration_order_mirrors_the_rank_tokens() {
+        // 모수를 먼저 확정한다 — 0 쌍이면 아래 루프가 공허하게 참이 된다.
+        assert!(
+            ALL_LEVELS.len() >= 2,
+            "비교할 등급이 둘 미만이다 — 그 상태의 초록은 통과가 아니라 미측정이다"
+        );
+        for pair in ALL_LEVELS.windows(2) {
+            let (lo, hi) = (pair[0], pair[1]);
+            assert!(
+                lo < hi,
+                "선언 순서가 derived `Ord` 와 어긋났다: {lo:?} < {hi:?} 가 거짓이다"
+            );
+            assert!(
+                rank_token_of(lo) < rank_token_of(hi),
+                "선언 순서가 rank 토큰 값의 오름차순이 아니다 — {:?}={} · {:?}={}. \
+                 토큰이 정본이므로 토큰을 고치지 말고 `AttentionLevel` 의 선언 순서를 \
+                 토큰에 맞춰라(재도출 금지 계약).",
+                lo,
+                rank_token_of(lo),
+                hi,
+                rank_token_of(hi)
+            );
+        }
+    }
 }

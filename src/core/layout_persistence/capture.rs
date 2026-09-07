@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::core::CoreState;
 use crate::core::surface_registry::SurfaceKindRegistry;
-use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
+use crate::model::{Deferred, Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
 use super::LAYOUT_VERSION;
 use super::schema::{
@@ -211,14 +211,23 @@ impl SavedSurface {
             // plugin placeholder(아직 실제화 안 된 non-terminal surface)는 원래
             // kind/snapshot 을 그대로 보존해 round-trip 한다 — 여기서 terminal 이나
             // "empty" 로 저장하면 다음 복원 때 plugin surface 가 딴것으로 변질된다.
-            if let Some(p) = es.deferred_plugin() {
-                return SavedSurface::Generic {
-                    kind: p.kind.clone(),
-                    data: p.snapshot.clone(),
-                };
-            }
-            if es.is_deferred() {
-                return Self::capture_deferred_surface(es, ctx);
+            // `Deferred` 를 **enum 그대로** match 한다. 전에는 `deferred_plugin()` 을
+            // 먼저 잡고 그다음 `is_deferred()` 로 갈랐는데, 그 정합은 **문장 순서**에만
+            // 기대고 있었다 — 두 줄을 바꾸면 Plugin 이 아래 갈래로 떨어져 빈 필드의
+            // `SavedSurface::Terminal` 로 **조용히 오변환**된다. variant 가 하나 늘 때도
+            // 같은 일이 난다. match 면 컴파일러가 non-exhaustive 로 여기서 막는다.
+            match &es.deferred {
+                Some(Deferred::Plugin(p)) => {
+                    let saved = SavedSurface::Generic {
+                        kind: p.kind.clone(),
+                        data: p.snapshot.clone(),
+                    };
+                    return saved;
+                }
+                Some(Deferred::Terminal(_)) => {
+                    return Self::capture_deferred_surface(es, ctx);
+                }
+                None => {}
             }
         }
         Self::capture_generic_surface(&*surface, ctx.registry)

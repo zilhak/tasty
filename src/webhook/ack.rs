@@ -22,7 +22,8 @@ pub enum AckStatus {
     MethodNotAllowed,
     /// 410 — lifetime 만료(시간 초과 / 횟수 소진). 호출 시 lazy 삭제됨.
     Gone,
-    /// 429 — 남용 차단 쿨다운 중인 출처(404/405 반복). 매칭 전 즉시 거부.
+    /// 429 — 남용 차단 쿨다운 중인 출처(실패 반복 — `abuse::counts_as_failure`).
+    /// 매칭 전 즉시 거부.
     TooManyRequests,
 }
 

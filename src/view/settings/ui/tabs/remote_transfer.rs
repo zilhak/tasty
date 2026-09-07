@@ -8,7 +8,7 @@
 //! Maximum size), 각 행 아래 muted 설명 + 행 사이 separator. 갤러리 spec:
 //! `gallery/overlays-windows.jsx` "Settings · General › Remote transfer".
 //! Browse…/numeric input 페어링은 Scripts(`misc.rs`)·plugin number(`appearance.rs`)
-//! 선례와 동형(rfd folder picker · mono text Input + 정수 파싱).
+//! 선례를 따른다(rfd folder picker · mono text Input + 정수 파싱).
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, vspace};

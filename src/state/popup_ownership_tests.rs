@@ -85,7 +85,7 @@ fn closing_the_owner_cancels_its_child_picker() {
 /// `cancel_child_file_picker` 를 직접 호출하므로, 어떤 호출처가 이 함수에 아예 닿지
 /// 않는(=`plugin_popup_closes` 큐를 건너뛰고 매니저를 직접 치는) 결함은 못 잡는다.
 /// 실제로 `PluginRequest` 경로가 그랬다. 그 모양은
-/// `tests/plugin_popup_close_chokepoint.rs` 가 소스 수준에서 막는다.
+/// `crates/tasty-doc-guards/tests/plugin_popup_close_chokepoint.rs` 가 소스 수준에서 막는다.
 #[test]
 fn cascade_cleanup_is_independent_of_the_close_reason() {
     for reason in [

@@ -167,17 +167,25 @@ impl MainView {
     /// 1~3단계: double-tap modifier 단축키(예: Shift+Shift) 소비. 소비 시 true.
     fn try_consume_double_tap_key(&mut self) -> bool {
         // Check for double-tap modifier shortcut (e.g. Shift+Shift)
-        if let Some(dt) = self.double_tap.take() {
-            if self.state.settings_open {
-                // When settings are open, pass to keybinding recorder
-                self.state.captured_double_tap = Some(dt.binding_str().to_string());
-                self.mark_dirty();
-                return true;
-            } else if self.handle_double_tap_shortcut(dt) {
-                self.reset_modifier_hint_reveal_timer();
-                self.mark_dirty();
-                return true;
-            }
+        //
+        // **열기 요청 래치를 보는 분기가 여기 있었고, 지웠다.** 그 분기는 래치가 참인
+        // 동안 완성된 double-tap 을 삼켰는데, 삼키는 이유가 원래는 **캡처**였다 —
+        // 키바인딩 레코더로 넘기려고 `AppState` 에 받아 적었다. 그 대입은 읽는 자리가
+        // 0 건이었고, 진짜 레코더 경로는 `SettingsView` 가 **자기 detector** 로
+        // 따로 갖는다(`src/view/settings.rs` → `src/view/settings/ui/keybindings_tab.rs`).
+        // 설정 창은 별도 winit 창이라 떠 있는 동안 이 창에는 키가 안 온다 — 이쪽
+        // 경로는 그 기능에 한 번도 쓰인 적이 없는 중복이었다.
+        //
+        // 캡처가 빠지고 남은 것은 **이유 없는 삼킴**이었다. 지운 것은 도달 불가라서가
+        // 아니라(도달은 된다 — 사이드바 버튼 클릭과 double-tap 완성이 한 프레임 경계
+        // 안에 겹치면 된다) **버릴 근거가 없어서**다. 같은 래치를 보는 Escape 분기는
+        // 남아 있고 그쪽은 성질이 다르다 — 대기 중인 열기 요청을 **취소**하고 삼킨다.
+        if let Some(dt) = self.double_tap.take()
+            && self.handle_double_tap_shortcut(dt)
+        {
+            self.reset_modifier_hint_reveal_timer();
+            self.mark_dirty();
+            return true;
         }
         false
     }
@@ -197,9 +205,18 @@ impl MainView {
     /// 4단계: Escape 로 settings / notifications 팝업 닫기 소비. 소비 시 true.
     fn try_consume_escape_key(&mut self, event: &winit::event::KeyEvent) -> bool {
         if event.logical_key == Key::Named(NamedKey::Escape) {
-            if self.state.settings_open {
-                self.state.settings_open = false;
-                self.state.settings_ui_state = crate::settings_ui::SettingsUiState::new();
+            if self.state.settings_open_requested {
+                // ★ 세 문장이 서로 다른 판정을 받는다. 남는 둘은 각각 근거가 있다:
+                //   · `settings_open_requested = false` — 대기 중인 **열기 요청**을
+                //     취소한다. 모달이 이미 떠 있으면 이 분기는 애초에 도달하지 않는다
+                //     (`src/view/main.rs` 의 모달 분기가 `KeyboardInput` 을 먼저 끊는다).
+                //   · `return true` — 관측 가능한 삼킴이다.
+                // 지운 것은 `settings_ui_state = SettingsUiState::new()` 한 줄이다.
+                // `AppState::settings_ui_state` 는 이 한 줄의 쓰기뿐이고 읽기가 0 건이었다
+                // — 살아 있는 쪽은 `SettingsView` 가 자기 안에 가진 같은 이름의 별개
+                // 필드(`src/view/settings.rs`)이고, 그쪽은 자기 안에서 쓰고 읽는다.
+                // 쓰기가 사라지자 컴파일러가 `never read` 로 잡아 필드도 함께 지웠다.
+                self.state.settings_open_requested = false;
                 self.mark_dirty();
                 return true;
             }
@@ -210,6 +227,36 @@ impl MainView {
                     }
                     .from_user_shortcut("escape_close_notifications"),
                 );
+                self.mark_dirty();
+                return true;
+            }
+            // 위 둘 다 아니면 **포커스된 host popup** 을 푼다. 이것이 키보드의 탈출구다.
+            //
+            // 없으면 어떻게 되는가: 포커스된 popup 은 `keyboard_overlay_open` 을 참으로
+            // 만들고, 그러면 단축키 **테이블 전체**가 아래 6단계에 진입조차 못 한다. 그
+            // 상태를 푸는 길이 지금까지 마우스뿐이었다 — 바깥을 클릭하면 non-sticky popup
+            // 의 포커스가 풀린다(`adapters/ui/popup/draw.rs`). 키보드만 쓰는 사용자에게는
+            // 그 길이 없었다.
+            //
+            // **새 정책이 아니라 이미 있는 정책의 두 번째 입구다.** 바깥 클릭과 같은
+            // 의미로 푼다 — 포커스를 놓고, `close_on_outside_click` 인 것만 닫는다.
+            // 그래서 "Escape 는 무엇을 닫는가" 를 popup 마다 새로 판단할 필요가 없다.
+            //
+            // 범위만 좁힌다: 포커스된 **하나**만 본다. 바깥 클릭은 좌표를 가지므로 그
+            // 점을 안 담은 popup 전부를 가리킬 수 있지만 Escape 에는 좌표가 없다. 좌표
+            // 없는 키를 같은 범위로 쓰면 사용자가 가리킨 적 없는 popup 까지 닫힌다.
+            //
+            // 순서: settings → notifications → 이것. 앞의 둘은 포커스와 무관하게(열려만
+            // 있으면) 먹으므로 뒤로 밀면 동작이 바뀐다. 이 순서는
+            // `crates/tasty-doc-guards/tests/escape_dismisses_the_focused_popup.rs` 가 고정한다.
+            if let Some((id, closes)) = self.state.popups.focused_dismissal_target() {
+                self.state.popups.set_focused(id, false);
+                if closes {
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::ClosePopup { id }
+                            .from_user_shortcut("escape_dismiss_focused_popup"),
+                    );
+                }
                 self.mark_dirty();
                 return true;
             }
@@ -756,7 +803,7 @@ mod tests {
     /// 무대 중 ESC 는 0단계에서 끝난다 — 4단계(`try_consume_escape_key`, settings 모달·
     /// notifications 팝업 닫기)에 **도달하지 않는다**. 0단계가 4단계보다 앞에 있고
     /// `ExitStage` 가 즉시 `return` 으로 이어진다는 배선은
-    /// `tests/fullscreen_stage_input_gate.rs` 가 구조로 고정한다.
+    /// `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 가 구조로 고정한다.
     #[test]
     fn stage_gate_blocks_escape_from_reaching_popup_close() {
         assert_eq!(

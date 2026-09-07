@@ -327,7 +327,7 @@ pub fn draw_plugin_popups(
             .push((snap.instance_id, physical));
 
         // popup 내부 클릭 시 z-order 승격(규칙 7 "클릭된 것이 앞") — host popup 의
-        // `bring_to_front`(click-to-front)와 동형. `mgr` 이 `&PluginManager` 불변
+        // `bring_to_front`(click-to-front)와 같은 규칙이다. `mgr` 이 `&PluginManager` 불변
         // 참조라 여기서 직접 갱신할 수 없어 큐에 적재하고 App 메인 루프가 drain한다.
         if primary_pressed && ownership == Some(PointOwnership::Mine) {
             state.plugin_popup_focus_bumps.push(snap.instance_id);

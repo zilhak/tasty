@@ -283,7 +283,7 @@ fn gates_before_intercept(
 /// 근거 문장에 묶여 있었을 뿐이다. host → plugin 방향은 이제 `headless_dispatch.rs`
 /// 가 배선한다. plugin → plugin 방향은 아직 없다: 한 plugin 이 다른 plugin 의
 /// namespace 를 부르는 시나리오가 헤드리스에서 관측된 적이 없어 남겨 두는 것이며,
-/// 관측되면 그때 gui `app/dispatch/plugin_ipc.rs` 와 동형으로 배선하면 된다.
+/// 관측되면 그때 gui `app/dispatch/plugin_ipc.rs` 를 본떠 배선하면 된다.
 fn dispatch_plugin_ipc_calls_headless(app: &mut App, state: &mut AppState, engine: &mut CoreState) {
     let calls = match app.plugin_manager.as_mut() {
         Some(mgr) => mgr.take_pending_plugin_calls(),

@@ -675,6 +675,33 @@ fn decode_and_track<K: std::hash::Hash + Eq + Copy>(
     full_requests.insert(key);
 }
 
+/// 닫힌 인스턴스의 전용 target(GPU 자원)을 정리하고, 이번 프레임에 합성할 일이 남았는지
+/// 돌려준다(`false` 면 호출부는 곧장 반환한다).
+///
+/// **`regions` 가 비어도 반드시 불려야 한다 — 이 정리가 일어나는 자리가 여기뿐이다.**
+/// 호출부를 `if !regions.is_empty()` 로 감싸는 것은 누구나 하는 최적화인데, 그러면 닫힌
+/// popup/banner 의 전용 `egui_wgpu::Renderer` 가 **영원히 안 풀린다.** 화면은 멀쩡하고
+/// 어떤 판정에도 안 걸린다 — 그래서 그 요구를 주석이 아니라 이 함수가 들게 한다.
+///
+/// 값 타입을 제네릭으로 둔 이유는 두 가지다: popup·banner 두 맵이 같은 타입이라 하나로
+/// 묶이고(`HashMap<u64, EguiMeshRenderTarget>`), 그 타입이 `egui_wgpu::Renderer` 를 품고
+/// 있어 **GPU 장치 없이는 못 만들기** 때문이다. 제네릭이면 시험이 아무 값이나 넣어
+/// 이 술어만 따로 검증할 수 있다.
+///
+/// surface 판(`egui_mesh_targets`)은 키가 `u32` 라 여기 안 묶인다 — 셋이 아니라 둘이다.
+fn prune_mesh_targets<T>(
+    targets: &mut std::collections::HashMap<u64, T>,
+    regions: &[(u64, PhysicalRect)],
+) -> bool {
+    // 게이팅: 보이는 region 도 없고 상주 GPU 자원도 없으면 할 일이 없다.
+    if regions.is_empty() && targets.is_empty() {
+        return false;
+    }
+    let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
+    targets.retain(|iid, _| live.contains(iid));
+    true
+}
+
 impl GpuState {
     /// egui-mesh surface 들을 전용 Renderer 로 framebuffer 에 합성한다.
     ///
@@ -897,14 +924,11 @@ impl GpuState {
         regions: &[(u64, PhysicalRect)],
         plugin_manager: &PluginManager,
     ) {
-        // 게이팅: 보이는 region 도 없고 상주 GPU 자원도 없으면 할 일이 없다.
-        if regions.is_empty() && self.egui_mesh_popup_targets.is_empty() {
+        // 닫힌 popup 의 전용 Renderer 정리 + 게이팅. 빈 `regions` 로도 부른다 —
+        // 그 이유는 `prune_mesh_targets` 에 있다.
+        if !prune_mesh_targets(&mut self.egui_mesh_popup_targets, regions) {
             return;
         }
-        // 닫힌 popup 의 전용 Renderer 정리 (GPU 자원 해제).
-        let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
-        self.egui_mesh_popup_targets
-            .retain(|iid, _| live.contains(iid));
 
         let size_in_pixels = [self.size.width, self.size.height];
         for (iid, rect) in regions {
@@ -994,14 +1018,11 @@ impl GpuState {
         regions: &[(u64, PhysicalRect)],
         plugin_manager: &PluginManager,
     ) {
-        // 게이팅: 보이는 region 도 없고 상주 GPU 자원도 없으면 할 일이 없다.
-        if regions.is_empty() && self.egui_mesh_banner_targets.is_empty() {
+        // 닫힌 banner 의 전용 Renderer 정리 + 게이팅. popup 과 **같은 함수**를 부른다 —
+        // 빈 `regions` 로도 불러야 한다는 요구가 그 함수 하나에만 있으면 갈라질 두 벌이 없다.
+        if !prune_mesh_targets(&mut self.egui_mesh_banner_targets, regions) {
             return;
         }
-        // 닫힌 banner 의 전용 Renderer 정리 (GPU 자원 해제).
-        let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
-        self.egui_mesh_banner_targets
-            .retain(|iid, _| live.contains(iid));
 
         let size_in_pixels = [self.size.width, self.size.height];
         for (iid, rect) in regions {
@@ -1087,6 +1108,52 @@ mod tests {
     use egui::Color32;
     use egui::emath::{Pos2, Rect};
     use egui::epaint::{Mesh, TextureId, Vertex};
+
+    /// `prune_mesh_targets` 시험용 더미 region — 이 술어는 rect 를 안 본다(id 만 본다).
+    fn any_rect() -> PhysicalRect {
+        PhysicalRect {
+            x: tasty_type_geometry::length::PhysicalPx(0.0),
+            y: tasty_type_geometry::length::PhysicalPx(0.0),
+            width: tasty_type_geometry::length::PhysicalPx(1.0),
+            height: tasty_type_geometry::length::PhysicalPx(1.0),
+        }
+    }
+
+    /// **빈 `regions` 로 불러도 정리가 일어난다** — 이것이 계약의 본체다.
+    /// 호출부가 `if !regions.is_empty()` 로 감싸면 닫힌 인스턴스의 전용 Renderer 가
+    /// 영원히 안 풀리는데, 그 누수는 화면에도 다른 어떤 판정에도 안 나타난다.
+    #[test]
+    fn prune_runs_even_when_no_region_is_visible() {
+        let mut targets: std::collections::HashMap<u64, u32> =
+            std::collections::HashMap::from([(1, 10), (2, 20)]);
+        assert!(
+            prune_mesh_targets(&mut targets, &[]),
+            "상주 자원이 남아 있으면 할 일이 있다고 답해야 한다"
+        );
+        assert!(
+            targets.is_empty(),
+            "보이는 region 이 없으면 상주 target 은 전부 닫힌 것이다 — 여기서 풀려야 한다"
+        );
+    }
+
+    /// 반대 극성 — 살아 있는 인스턴스는 남는다. 이것이 없으면 "무조건 다 지운다" 로도
+    /// 위 시험이 통과해, 술어가 죽은 것과 구분이 안 된다.
+    #[test]
+    fn prune_keeps_the_instances_that_still_have_a_region() {
+        let mut targets: std::collections::HashMap<u64, u32> =
+            std::collections::HashMap::from([(1, 10), (2, 20)]);
+        assert!(prune_mesh_targets(&mut targets, &[(1, any_rect())]));
+        let mut left: Vec<u64> = targets.keys().copied().collect();
+        left.sort_unstable();
+        assert_eq!(left, vec![1], "region 이 있는 1 은 남고 2 만 풀린다");
+    }
+
+    /// 보이는 region 도 상주 자원도 없으면 할 일이 없다고 답한다(호출부는 곧장 반환).
+    #[test]
+    fn nothing_visible_and_nothing_resident_reports_no_work() {
+        let mut targets: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+        assert!(!prune_mesh_targets(&mut targets, &[]));
+    }
 
     fn vtx(x: f32, y: f32) -> Vertex {
         Vertex {

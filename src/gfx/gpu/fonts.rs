@@ -45,6 +45,18 @@ impl GpuState {
             );
         }
 
+        // 언어팩 `[font]` 이 resolve 한 폰트를 CJK 뒤, 즉 체인 맨 뒤 폴백으로 붙인다
+        // (라틴은 기본 폰트, 팩 스크립트만 팩 폰트 — 혼합 렌더). 부팅에서 검증된 경로지만
+        // append 지점에서도 `ab_glyph` 로 한 번 더 확인해 깨진 파일이 egui 에 닿지 않게 한다.
+        if let Some(path) = crate::boot::locale::font_env_path() {
+            if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
+                tracing::warn!(
+                    "locale font at {} could not be installed: {e}",
+                    path.display()
+                );
+            }
+        }
+
         ctx.set_fonts(fonts);
     }
 }

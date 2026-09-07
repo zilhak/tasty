@@ -26,6 +26,28 @@ use winit::event::WindowEvent;
 use crate::view::repaint::RepaintSource;
 use crate::view::{MainView, ViewAction, ViewBase, ViewCtx};
 
+/// 새로 만든 창의 **첫 프레임을 반드시 올린다.**
+///
+/// 모달·보조 창은 전부 `with_visible(false)` 로 만들어 첫 렌더 뒤에 보여준다. 그런데
+/// **Windows 에서는 숨은 창에 `RedrawRequested` 가 오지 않는다** — [`View::mark_dirty`] 는
+/// 요청을 큐에 넣을 뿐이라 그 창은 영영 안 그려지고, 사용자에게는 "눌렀는데 아무 일도
+/// 안 일어난다" 로 보인다. 그래서 그 플랫폼에서만 그 자리에서 한 프레임을 그린다.
+///
+/// **네 자리가 이 블록을 글자까지 같게 갖고 있었다** — settings · plugins · quit · preset.
+/// 그중 정책이 든 부분(창 속성 · 실패 처리 · 등록)은 자리마다 다르고 그 다름이 각각
+/// 문서화돼 있어 안 묶었다. 묶은 것은 **정책이 0 인 순수 플랫폼 우회 하나**뿐이다.
+///
+/// 묶은 이유가 중복 줄 수가 아니라 **실패의 모양**이다: 빠뜨리면 창이 **Windows 에서만**
+/// 안 뜨고 다른 모든 곳에서는 초록이라, 빠뜨렸다는 사실이 그 플랫폼에 닿기 전까지
+/// 아무 신호도 안 낸다. 다섯째 모달을 만드는 사람이 이 한 줄을 부르는 것과, 아홉 줄짜리
+/// `#[cfg]` 짝을 기억해 내는 것은 난이도가 다르다.
+pub(crate) fn present_first_frame(view: &mut impl View) {
+    #[cfg(windows)]
+    view.render();
+    #[cfg(not(windows))]
+    view.mark_dirty();
+}
+
 /// 모든 View 타입이 공유하는 최상위 트레잇.
 ///
 /// 모달 계열은 `ModalView` 를 구현하라. 그 외(`MainView`/`PresetView` 등)는 `View`

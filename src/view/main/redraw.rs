@@ -48,6 +48,25 @@ impl MainView {
         plugin_manager: Option<&PluginManager>,
         stream_hub: &crate::adapters::production::stream_hub::StreamHub,
     ) {
+        // ★ 이 호출이 **`render_if_dirty` 앞**이라는 것이 계약이다 — 위치가 값을 정한다.
+        //
+        // `settings_open_requested`/`plugins_open` 을 **세우는** 자리는 egui 패스
+        // (`src/adapters/ui/draw.rs` 의 사이드바 버튼)이고, 그 패스는 아래
+        // `render_if_dirty` **안에서** 돈다. 그래서 값은 프레임 N 의 egui 패스에서 서고
+        // 프레임 N+1 의 **이 줄**에서 지워진다 — 사는 구간이 정확히 프레임 경계 하나다.
+        //
+        // 그 구간에만 참일 수 있는 소비자가 셋이다:
+        // `AppState::keyboard_overlay_open`(`src/state.rs`) ·
+        // `MainView::mouse_overlay_open`(`src/view/main/mouse.rs`) ·
+        // `try_consume_escape_key`(`src/view/main/keyboard.rs`).
+        // 셋 다 winit `WindowEvent` 핸들러에서 불리므로 **`handle_redraw` 밖**이다 —
+        // 즉 이 구간이 그 셋이 참이 될 수 있는 유일한 시간이다.
+        //
+        // 이 호출을 `render_if_dirty` 뒤로 옮기면 세우기와 지우기가 **한 번의
+        // `handle_redraw` 안에서** 끝나고 그 사이에 이벤트 처리가 없으므로, 셋은 영영
+        // 참이 되지 않는다. 그런데 **아무것도 빨개지지 않는다** — 그 구간을 런타임으로
+        // 재는 시험이 없다. 그래서 순서를 소스로 박는다:
+        // `crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs`.
         self.dispatch_pending_modal_opens();
 
         // 무대 진입/종료 엣지 처리 — 아래 어떤 경로보다 먼저 돌아야 이번 프레임이
@@ -199,12 +218,12 @@ impl MainView {
         self.mark_dirty();
     }
 
-    /// settings/plugins 모달 오픈 요청 dispatch. `ui.rs`가 `state.settings_open`/
+    /// settings/plugins 모달 오픈 요청 dispatch. `ui.rs`가 `state.settings_open_requested`/
     /// `state.plugins_open`을 true로 세팅하면 여기서 소비해 `AppEvent`로 변환한다.
     fn dispatch_pending_modal_opens(&mut self) {
-        // Check if settings button was clicked (ui.rs sets state.settings_open = true)
-        if self.state.settings_open {
-            self.state.settings_open = false;
+        // Check if settings button was clicked (ui.rs sets state.settings_open_requested = true)
+        if self.state.settings_open_requested {
+            self.state.settings_open_requested = false;
             crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenSettings);
         }
         // Same flow for plugins modal.

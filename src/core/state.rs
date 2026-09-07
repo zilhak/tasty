@@ -1282,7 +1282,7 @@ impl CoreState {
     ///
     /// 카테고리 CRUD 는 **사용자 active/포커스에 닿지 않는** 순수 도메인 데이터 변경이라
     /// (원칙 1·3) cascade/active 보정이 필요 없다 — `set_attach_mapping` 직접 set +
-    /// mark_layout_dirty 선례와 동형. 호출자가 mark_layout_dirty 를 책임진다.
+    /// mark_layout_dirty 선례를 따른다. 호출자가 mark_layout_dirty 를 책임진다.
     pub fn create_category(
         &mut self,
         raw_name: &str,

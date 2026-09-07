@@ -75,7 +75,9 @@ fn accept_loop(server: tiny_http::Server) {
 
 /// 한 요청 처리: (남용차단) → 파싱 → 매칭 → ACK 응답 → fire-and-forget 실행.
 fn handle_request(request: tiny_http::Request) {
-    // 출처 IP(포트 제외 — 스캐너는 IP 를 재사용하며 포트만 바꾼다).
+    // 출처 IP(포트 제외 — 스캐너는 IP 를 재사용하며 포트만 바꾼다. 포트를 키에 넣으면
+    // 한 발신자가 요청마다 새 키를 만들어 카운터를 우회한다. 대가는 NAT 뒤 공유 —
+    // `docs/adr/0196-abuse-thresholds-and-source-key.md`).
     let source = request.remote_addr().map(|a| a.ip().to_string());
 
     let Some(mut request) = reject_if_abusive(request, source.as_deref()) else {
@@ -97,9 +99,10 @@ fn handle_request(request: tiny_http::Request) {
 
     let (ack, exec) = resolve_ack(&path, &method, &headers, &query, &body);
 
-    // 404/405 는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
-    // 정상 매칭(200)은 집계하지 않으므로 정상 웹훅 트래픽은 영향받지 않는다.
-    if matches!(ack, AckStatus::NotFound | AckStatus::MethodNotAllowed)
+    // 매칭·인증 실패는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
+    // 무엇을 세는지는 `abuse::counts_as_failure` 가 정한다 — 무엇이 남용인가는
+    // 남용차단의 정책이고, 여기 인라인 조건으로 두면 그 답이 두 곳에 생긴다.
+    if abuse::counts_as_failure(ack)
         && let Some(src) = source.as_deref()
     {
         abuse::record_failure(src);
@@ -173,22 +176,15 @@ fn resolve_ack(
     query: &BTreeMap<String, String>,
     body: &Value,
 ) -> (AckStatus, Option<PendingExec>) {
-    match registry::match_request(path, method) {
+    // 인증 술어는 레지스트리가 lock 안에서 부른다 — 차감이 인증보다 앞서지 않게
+    // 하려는 것이다. 검증은 ACK 상태코드 선택에만 관여하고 실행/응답바디에
+    // 데이터를 싣지 않는다(단방향 불변식).
+    match registry::match_request(path, method, |a| a.verify(headers, query, body)) {
         MatchResult::NotFound => (AckStatus::NotFound, None),
         MatchResult::MethodNotAllowed => (AckStatus::MethodNotAllowed, None),
         MatchResult::Expired => (AckStatus::Gone, None),
-        MatchResult::Matched {
-            calls,
-            injector,
-            auth,
-        } => {
-            // 인증이 설정된 웹훅은 실행 전 토큰을 검증한다. 미설정(None)은 통과.
-            // 검증은 ACK 상태코드 선택에만 관여하고 실행/응답바디에 데이터를 싣지 않음.
-            match &auth {
-                Some(a) if !a.verify(headers, query, body) => (AckStatus::Unauthorized, None),
-                _ => (AckStatus::Received, Some((calls, injector))),
-            }
-        }
+        MatchResult::Unauthorized => (AckStatus::Unauthorized, None),
+        MatchResult::Matched { calls, injector } => (AckStatus::Received, Some((calls, injector))),
     }
 }
 
@@ -211,6 +207,51 @@ mod tests {
         let m = parse_query("token=abc&x=1");
         assert_eq!(m.get("token"), Some(&"abc".to_string()));
         assert_eq!(m.get("x"), Some(&"1".to_string()));
+    }
+
+    /// 401 은 통을 태우지 않는다 — `registry` 쪽 405 짝
+    /// (`method_mismatch_does_not_consume_count`)의 대칭 자리다. 그쪽이 registry 에
+    /// 사는 것은 405 판정이 `match_request` 안에서 끝나기 때문이고, 401 판정은
+    /// [`resolve_ack`] 에서 나므로 술어도 여기에 둔다.
+    ///
+    /// `--count N` 이 세는 단위는 **시퀀스를 돌린 횟수**이고 401 은 그것을 0 번
+    /// 돌린다. 그리고 통의 키는 토큰이 아니라 **등록**이라, 차감하면 인증을 통과하지
+    /// 못한 익명 발신자가 owner 의 예산을 태운다 — `remaining` 이 작으면 등록 자체가
+    /// 사라지고 owner 에게 가는 신호는 없다.
+    #[test]
+    fn unauthorized_does_not_consume_count() {
+        use crate::webhook::auth::{AuthLocation, WebhookAuth};
+        use crate::webhook::lifetime::{Lifetime, Limit, Persistence};
+        use crate::webhook::registry;
+
+        let id = registry::register(
+            vec!["POST".to_string()],
+            None,
+            vec![],
+            Lifetime {
+                persistence: Persistence::Temporary,
+                limit: Limit::CountLimit { remaining: 2 },
+            },
+            Some(WebhookAuth {
+                location: AuthLocation::QueryKey { key: "t".into() },
+                token: "right".into(),
+            }),
+        )
+        .id;
+
+        let mut wrong = BTreeMap::new();
+        wrong.insert("t".to_string(), "nope".to_string());
+        let (ack, exec) = resolve_ack(&id, "POST", &BTreeMap::new(), &wrong, &Value::Null);
+
+        assert_eq!(ack, AckStatus::Unauthorized);
+        assert!(exec.is_none(), "401 은 시퀀스를 넘기지 않는다");
+
+        let (entry, _) = registry::info(&id).expect("401 로 등록이 사라지면 안 된다");
+        assert_eq!(
+            entry.lifetime.limit,
+            Limit::CountLimit { remaining: 2 },
+            "401 은 시퀀스를 0 번 돌렸으므로 통을 태우지 않는다"
+        );
     }
 
     #[test]

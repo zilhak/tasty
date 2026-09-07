@@ -434,6 +434,10 @@ impl PlatformWebView {
     /// responder 가 되어 winit 뷰가 응답자 체인에서 빠지고 키보드가 통째로 죽는다.
     /// 조건 게이트가 없으면 다른 뷰가 쥔 포커스까지 빼앗는다 — Linux/Windows 백엔드와
     /// 같은 규칙이다.
+    ///
+    /// **부를 상대가 없다.** 세 백엔드가 같은 규칙을 각자의 OS API(AppKit first
+    /// responder · GTK · Win32)로 구현하며, 공유할 수 있는 것은 규칙 문장뿐이고
+    /// 코드가 아니다. 이 문장은 갚을 빚이 아니라 그 규칙의 기록이다.
     pub fn release_keyboard_focus(&self) {
         let Some(window) = self.webview.window() else {
             return;
