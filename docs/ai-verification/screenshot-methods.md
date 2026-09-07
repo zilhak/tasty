@@ -1,12 +1,27 @@
 # 스크린샷 방법
 
-> **원칙: OS 화면 녹화를 먼저 쓰지 말 것.** tasty 자체 캡처(`ui.screenshot` IPC)가 실제 렌더한 프레임을 PNG 로 떨군다 — OS 화면 녹화 권한 불요, 다른 창 가림·포커스·최대화 상태에 영향받지 않음. OS 화면 캡처는 IPC 를 못 쓰는 상황(셸 설정 모드 등)에서만 폴백.
+> **`ui.screenshot` 이 기본이지만 전부는 아니다.** tasty 자체 캡처(`ui.screenshot` IPC)가
+> 실제 렌더한 프레임을 PNG 로 떨군다 — OS 화면 녹화 권한 불요, 다른 창 가림·포커스·최대화
+> 상태에 영향받지 않음. **그러나 native WebView 로 그리는 화면은 그 캡처에 담기지 않는다**
+> (아래 "무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다"). 그쪽은 OS 화면 캡처가
+> **폴백이 아니라 유일 채널**이다.
 
-| 상태 | 방법 |
-|------|------|
-| 정상 모드 (IPC/CLI 가능) | **`tasty screenshot` CLI / `ui.screenshot` IPC** (권장·기본) |
-| **`tasty-gallery` 검증** | **`TASTY_GALLERY_SHOT` env GPU 캡처** (갤러리는 IPC 없음 — 아래) |
-| IPC 불가 (셸 설정 모드 등) | OS 화면 캡처 (최후 폴백) |
+**어느 채널에 있고 어느 채널에 없나 — 두 열을 함께 읽는다.** "찍히나/안 찍히나" 한 열로
+고르면 webview 를 놓친다(그 1 열이 실제로 오진을 만들었다 — 아래 절).
+
+| 찍으려는 것 | `ui.screenshot`(CLI `tasty screenshot`) | OS 화면 캡처 |
+|---|---|---|
+| terminal surface | **있다** — `--surface` 로 grid 크기 오프스크린, `--window` 로도 | 있다 |
+| host egui(chrome · explorer · dag_graph · empty) | **있다** — `--window` | 있다 |
+| 별도 winit 창(설정 · plugin · preset · 종료 확인) | **있다** — `--window <id>` 명시 | 있다 |
+| plugin egui-mesh(image · mesh_demo surface · popup · banner) | **있다** — `--window` | 미측정 (surface 축만 쟀다) |
+| **native WebView(markdown · html)** | **없다** — host chrome 만 나온다 | **있다 — 여기뿐** |
+| `tasty-gallery` | 없다(갤러리는 IPC 가 없다) | `TASTY_GALLERY_SHOT` env GPU 캡처 — 아래 |
+| 셸 설정 모드 등 IPC 를 못 쓰는 상태 | 없다 | 있다 |
+
+출처: 실측 2026-09-07, Xvfb :90 · aarch64 · WebKitGTK 4.1 — 한 창을 같은 순간 두 채널로
+찍어 대조했다. **하드웨어 GPU 가 붙은 X 서버는 이 표에서 미측정이다**(그쪽은 OS 캡처가
+GPU 창에서 검게 나온다고 알려져 있고, 이 실측은 그 조건이 아니다).
 
 시각 판단 휴리스틱·체크리스트는 [visual-verification](visual-verification.md).
 
@@ -24,7 +39,8 @@
     swapchain/present/가시 프레임/focus 를 전혀 건드리지 않는다(`pending_surface_screenshot`
     → `GpuState::capture_surface_to_png`). 소유 창은 surface_id 로 자동 해소(창별 CoreState 순회).
     **터미널만 지원**(v1). egui 패널(explorer/markdown/image/html)·plugin·webview surface 는
-    범위 밖 — 명확한 에러 반환.
+    범위 밖 — 명확한 에러 반환. **거절됐다고 그 화면을 못 찍는 것이 아니다** — 위 표대로
+    비-terminal surface 는 `--window` 로, webview 는 OS 화면 캡처로 찍는다.
   - **window 캡처** `--window <id>`(없고 main 창이 1개면 그 창; 그 외는 에러 — focus 기본값
     금지) — 그 창의 전체 프레임(chrome 포함)을 swapchain readback 으로 캡처
     (`pending_screenshot`). 명시한 id 는 **설정·플러그인·종료 확인 모달과 preset 창**도
@@ -44,8 +60,9 @@ tasty screenshot --path /abs/win.png --window 2
 
 **명시한 `--window <id>` 는 모든 창을 가리킬 수 있다** — main 창뿐 아니라 설정 · 플러그인 ·
 종료 확인 모달과 preset 창까지. 별도 winit 창으로 뜨는 UI 를 자동 시각 검증할 수 있어야
-디자인 정합 확인이 사람 눈에 의존하지 않는다. X11 화면 캡처는 GPU 창에서 검게 나오므로
-대안이 되지 못한다.
+디자인 정합 확인이 사람 눈에 의존하지 않는다. 하드웨어 GPU 가 붙은 X 서버에서는 X11 화면
+캡처가 GPU 창에서 검게 나와 대안이 되지 못한다(Xvfb 는 그렇지 않다 — 아래 "무엇을 그리느냐가
+어느 캡처로 보이느냐를 정한다").
 
 경계는 **창의 종류가 아니라 두 가지 다른 축**에 있다 (근거·기각 대안·재검토 조건:
 [ADR-0118](../adr/0118-screenshot-reads-any-window-explicit-id-only.md)).
@@ -64,6 +81,48 @@ tasty screenshot --path /abs/win.png --window 2
 `local_only`(plugin 미노출)라 호출자는 이미 사용자 권한으로 `config.toml`(설정 창이 그리는
 내용 전부)과 PTY 를 읽을 수 있다 — 모달 캡처를 막아도 새로 감춰지는 정보가 없고, 자동
 검증만 잃는다.
+
+### 무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다 — webview 는 `ui.screenshot` 에 안 담긴다
+
+이 레포가 그리는 화면은 **렌더 경로**로 갈리고, 그 갈래마다 픽셀을 낼 수 있는 캡처가
+다르다. **`ui.screenshot` 이 모든 화면의 상위 채널이 아니다.**
+
+| 렌더 경로 | 무엇이 그것으로 그려지나 | `ui.screenshot --window` | OS 화면 캡처 |
+|---|---|---|---|
+| GPU 셰이더 | `terminal` | 콘텐츠 나옴 | 콘텐츠 나옴 |
+| host egui | `empty` · `explorer` · `dag_graph` · chrome 전부 · 별도 winit 창(설정·plugin·preset·종료 확인) | 콘텐츠 나옴 | 콘텐츠 나옴 |
+| plugin egui-mesh | `image` · `mesh_demo` surface, plugin popup, plugin banner | 콘텐츠 나옴 | 콘텐츠 나옴 |
+| **native WebView** | **`markdown` · `html`** | **안 나옴** — 아래 chrome 만 | 콘텐츠 나옴 |
+
+**webview 만 갈리는 이유는 환경이 아니라 구조다.** `ui.screenshot` 은 wgpu swapchain 을
+readback 하는데(`gfx/gpu/screenshot.rs`), native WebView overlay 는 그 swapchain 이 아니라
+**별개의 OS 자식 창**이다(Linux 는 X11 자식 창 안의 GTK 창 — `host_api/webview/linux.rs`).
+readback 이 그 자리에서 읽는 것은 overlay 아래에 host 가 그려 둔 chrome
+(`adapters/ui/surface/webview_chrome.rs` 의 boundary backdrop)이라, 캡처에는 지구본 글리프 +
+"WebView region" + **URL 문자열**이 담긴다.
+
+그래서 markdown 을 찍으면 **HTML 소스가 통째로 보인다** — markdown plugin 은 sanitize 한
+HTML 문서 전체를 URL 자리에 싣기 때문이고([ADR-0065](../adr/0065-markdown-webview-render-channel.md)),
+그것은 webview 가 렌더에 실패한 것도 소프트웨어 GL 탓도 아니다. **backdrop 이 제 일을 한
+결과다.** (이 절은 한때 그 관측을 "Xvfb 에서 webview 가 소스로 나올 수 있다" 로 적었는데,
+관측은 맞고 원인이 틀렸다 — 처방까지 바뀌므로 갈아둔다.)
+
+**처방**: webview 화면의 픽셀이 필요하면 `ui.screenshot` 이 아니라 **OS 화면 캡처**를 쓴다.
+실측(2026-09-07, Xvfb :90 · aarch64 · WebKitGTK 4.1): 한 창을 같은 순간 두 채널로 찍어
+`ui.screenshot` 은 "WebView region" + URL 만, `scrot` 은 렌더된 페이지(제목·본문·한글
+글리프·색 블록)를 그대로 냈다. 네 갈래를 한 탭에 surface split 으로 나란히 놓고 한 장에
+담으면 대조가 한 번에 끝난다.
+
+**이 환경에서 OS 캡처는 GPU 창에서 검지 않았다.** 같은 실측에서 `scrot` 이 터미널 ·
+host egui 패널 · plugin mesh · 설정 모달까지 전부 정상으로 냈다 — Xvfb 는 서버뿐 아니라
+렌더러도 소프트웨어라 프레임이 X 픽스맵에 들어간다. 위 "무엇을 캡처할 수 있는가" 가 적은
+"X11 캡처는 GPU 창에서 검게 나온다" 는 **하드웨어 GPU 가 붙은 X 서버**의 성질이고, 그쪽은
+이 축으로 **미측정**이다. 어느 환경인지 모른 채 둘 중 하나를 일반 규칙으로 쓰지 않는다.
+
+**함정 하나 더**: plugin egui-mesh popup 은 **첫 프레임에 콘텐츠가 없다.** 셸(scrim +
+border)만 그려진 상태로 찍히면 "mesh 가 안 온다" 로 오진한다 — 실측에서 팝업을 연 직후
+캡처가 빈 사각형이었고, 몇 초 뒤 같은 팝업이 본문을 그렸다. 열자마자 찍지 말고 한 번 더
+찍어 같은지 본다.
 
 ### 모달 창의 ID 를 얻는 법
 
@@ -130,6 +189,16 @@ done
 kill "$MY_APP"; rm -rf "${TH:?}"                   # 정리 — 저장한 PID 로만
 ```
 
+**격리 CLI 는 바깥 세션의 `TASTY_SESSION_TOKEN` 을 물려받으면 안 된다.** 이 절차를
+tasty 안에서 돌리면(멀티에이전트 검증이 늘 그렇다) 셸에 이미 `TASTY_SESSION_TOKEN` 이
+있고, 격리 인스턴스는 그 토큰을 모르므로 CLI 를 `permission_denied` 로 거부한다. 그런데
+위 readiness 루프의 `list info` 는 그 거부도 실패로 세므로 **증상이 "기동이 안 된다(not
+ready)" 로 나타난다** — 원인(토큰 불일치)과 증상(기동 실패)이 안 닮아 readiness·포트·GPU 를
+엉뚱하게 파게 된다. 그러니 격리 CLI 는 바깥 env 를 끊고 부른다 —
+`env -u TASTY_SESSION_TOKEN -u TASTY_SURFACE_ID -u TASTY_PARENT_HOME TASTY_HOME="$TH" tasty ...`.
+토큰을 지우면 CLI 는 로컬 접속이라 **local caller** 로 붙어 권한 제약 없이 동작한다.
+(같은 이유로 launcher 자신도 위 예제처럼 바깥 env 를 끊고 `--launch` 한다.)
+
 **정리는 반드시 자기가 띄운 PID 로 한다.** 이름이나 명령줄 패턴으로 찾아서 죽이면
 **자기 것이 아닌 인스턴스까지 죽인다** — 이 레포는 사용자 release · 다른 검증 세션 ·
 병렬 lane 의 debug 인스턴스가 동시에 떠 있는 것이 일상이고, 실제로 그 형태가 다른
@@ -164,8 +233,11 @@ macOS 는 `/proc` 이 없으므로 `ps -E -p <pid>` 로 같은 env 를 본다. �
 
 여기에 스테이징이 겹친다. host 는 **부팅할 때** `copy_if_newer` 로
 `target/<profile>/builtin-plugins/` 를 갱신하고 거기서 `<TASTY_HOME>/plugins/` 로
-sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 판정 기준이 mtime 이라, 안 만들어진
-바이너리는 **낡은 채로 조용히 실행된다.**
+sync 한다(`crates/tasty-host-plugin/src/builtin.rs`). 그 스테이징 판정은 2026-09-07 부터
+**내용**이다 — 내용이 다르면 옮기고 같으면 안 옮기며 **시각이 같아도 내용을 본다.** 그래서
+"시각이 같아 조용히 건너뛴다" 는 갈래는 닫혔다.
+**닫히지 않은 것이 이 절의 본론이다**: 안 만들어진 바이너리는 **내용도 옛것**이라 스테이징이
+옳게 동작해도 옛 코드가 그대로 간다 — 즉 위 문단의 함정은 스테이징이 아니라 **빌드**에 있다.
 
 그래서 plugin 을 고친 뒤 GUI 로 확인하면 **직전 plugin 코드를 재고 있을 수 있다.**
 실패로도 성공으로도 오진할 수 있는 형태다 — 고친 것이 안 고쳐진 것처럼 보이거나,
@@ -180,7 +252,9 @@ PROFILE=debug just build-plugins        # 정식 절차 — 빌드 + 스테이�
 cargo build --workspace                 # 최소한 이것 (스테이징은 부팅이 한다)
 ```
 
-확인은 mtime·크기 비교가 제일 싸다:
+확인은 mtime·크기 비교가 제일 싸다. **묻는 것은 "스테이징이 반영했나" 가 아니라
+"빌드가 산출물을 다시 만들었나" 다** — 산출물이 소스보다 뒤면 만들어진 것이고, 그 뒤는
+부팅이 내용으로 판정해 옮긴다:
 
 ```bash
 ls -la target/debug/tasty-plugin-<name> \

@@ -44,6 +44,31 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **Surface** — 최하위 컨테이너. `surface_id` + **kind(타입)** 를 가짐. 닫기/포커스/리스트는 kind 무관 동일.
 - **상위 레이아웃 / 하위 레이아웃** — Pane 배치(탭 무관) / Surface 배치(탭 종속). 두 레벨을 **둘 다** 제공하는 게 tasty 핵심 설계.
 
+### 사용자 화면 표기
+
+위 정의는 **개발자 어휘**다 — 영어 용어와 Rust 심볼을 잇는다. 사용자가 화면에서 읽는
+낱말은 그것과 별개로 정한다. 한 개념이 화면에서 두 낱말로 불리면 사용자는 그것을 두 개로
+읽는다.
+
+| 용어 | 한국어 | 일본어 |
+|---|---|---|
+| Window | 윈도우 | ウィンドウ |
+| Pane | 페인 | ペイン |
+| Tab | 탭 | タブ |
+| Surface | 서피스 | サーフェス |
+| Workspace | 워크스페이스 | ワークスペース |
+
+- **범위는 사용자 표면이다** — `lang/*.toml`(호스트 · 번들 plugin)과 `site/content` 의
+  한국어 가이드. `docs/` 산문은 안 든다: 바로 위 Window 정의가 "winit OS 창 자원" 이라고
+  쓰는 것처럼, 개발자 문서는 개념을 풀어 설명하느라 보통명사를 쓴다. 그쪽까지 한 낱말로
+  모으려면 별개 결정이 필요하고 그 결정은 없다.
+- **`창` 은 Window 를 가리킬 때만 금지다.** Popup 이나 Modal 을 가리키는 `창`(알림 창 ·
+  Git 뷰어 창 · 확인 창)과 낱말이 다른 `주소창` 은 그대로 둔다 — 판정 기준은 아래 §View 내부
+  의 Window / Popup 구분이고, OS 창을 소유하는 것(= `View` 구현)만 `윈도우` 다.
+- 집행: `crates/tasty-doc-guards/tests/one_concept_one_word_on_the_user_facing_surface.rs`.
+  은퇴한 표기(`패인` · `ウインドウ`)는 예외 없이 0 이고, `창` 은 Window 가 아닌 자리만
+  좌표와 근거를 붙여 그 파일의 명부에 남는다.
+
 ### View 내부 (→ hierarchy.md, `design/systems/`)
 
 - **Modal** — 전역 1개, 활성 시 입력 차단하는 View 의 한 형태(별개 엔티티 아님). `SettingsView`/`QuitView`/`PluginsView`.

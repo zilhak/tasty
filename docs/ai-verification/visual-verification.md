@@ -6,6 +6,8 @@
 
 화면 캡처는 OS 캡처 도구가 아니라 **tasty 의 `ui.screenshot`**(CLI `tasty screenshot`)를 우선 쓴다 — 정확한 윈도우/surface 영역을 결정적으로 얻고, 좌표가 tasty 내부 레이아웃과 일치한다(OS 캡처는 데코·DPI·다른 창 혼입 위험). focus-독립 정식 기능이라 release 에서도 동작하고 `--surface <id>` 로 특정 터미널 surface 도 캡처 가능 → [screenshot-methods](screenshot-methods.md). 셀 색 검증은 `debug.glyph_color`(렌더러가 GPU 에 push 하는 실제 RGBA, debug 빌드)도 함께.
 
+**예외 하나 — 이건 우선순위가 아니라 유무다.** `markdown`·`html` 처럼 native WebView 로 그리는 화면은 `ui.screenshot` 에 **담기지 않는다**(swapchain 밖의 OS 자식 창이라 host chrome 만 찍힌다). 그쪽 픽셀이 필요하면 OS 화면 캡처가 폴백이 아니라 **유일 채널**이다 — 어느 대상이 어느 채널에 있는지는 [screenshot-methods](screenshot-methods.md) 맨 위 표가 정본이다. "OS 캡처는 최후 폴백" 으로만 읽으면 그 두 kind 의 시각 검증을 통째로 건너뛰게 된다.
+
 ## 체크리스트 ("보인다"고 말하기 전에)
 
 ### 1. 색상 대비

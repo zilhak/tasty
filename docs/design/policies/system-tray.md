@@ -2,7 +2,9 @@
 
 > 결정 근거·대안·재검토 조건은 [`adr/0001-system-tray-best-effort.md`](../../adr/0001-system-tray-best-effort.md). 본 문서는 *현재 운영 동작* 만 기술한다.
 
-tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에서 트레이/상태 영역으로 들어간다 (best-effort)**. 트레이가 없는 환경은 조용히 생략하고 태스크바/도크 최소화로 폴백한다(graceful degradation). 구현은 `tray-icon` 0.22 단일 크레이트 + OS별 `cfg` 분기다.
+tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에서 트레이/상태 영역으로 들어간다 (best-effort)**.
+
+> **출처: 자동 채널 없음 — 어느 OS 에서도 이 동작을 실행으로 보는 테스트가 없다.** 트레이는 데스크톱 세션이 있어야 등록되고, 저장소의 자동 채널 중 integration·e2e 를 도는 것은 Linux 뿐이며 그중 트레이를 부르는 것은 하나도 없다(`create_tray_icon`·`poll_menu_event` 를 호출하는 자리는 `src/app/` 뿐이고 테스트에는 없다). **다시 재려면**: 세 OS 각각에서 데스크톱 세션으로 GUI 를 띄우고 마지막 윈도우를 닫아 트레이 등록 여부를 눈으로 확인해야 한다. 이 문서의 OS 별 표(아래)의 값도 같은 출처를 갖는다. 트레이가 없는 환경은 조용히 생략하고 태스크바/도크 최소화로 폴백한다(graceful degradation). 구현은 `tray-icon` 0.22 단일 크레이트 + OS별 `cfg` 분기다.
 
 ## 트레이 생성
 
@@ -21,6 +23,8 @@ tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에�
 
 - **New Window**: 세 OS 모두 `CreateWindow`.
 - **Quit**: 세 OS 모두 `Shutdown`.
+
+  이 둘의 출처는 **소스 모양**이다 — `src/app/event_handler.rs` 의 트레이 메뉴 분기에서 `show_window` arm 만 `#[cfg(target_os = "macos")]` 로 갈리고 `new_window`·`quit` arm 에는 플랫폼 분기가 없다. 블록 전체는 `any(windows, target_os = "macos", target_os = "linux")` + `feature = "gui"` 게이트라 세 조합이 컴파일되며, 그것은 세 OS **컴파일** 채널이 본다(`.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`). **그 채널이 안 보는 것**: 메뉴 항목이 실제로 뜨는지, 클릭이 실제로 도달하는지. 그쪽은 아래 항목과 같다.
 - 메뉴 클릭은 매 이벤트 루프 tick 에서 `poll_menu_event()`(`MenuEvent::receiver().try_recv()`)로 폴링한다.
 
 ## graceful degradation

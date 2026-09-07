@@ -81,14 +81,17 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 | `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0065](../../adr/0065-markdown-webview-render-channel.md), 대용량/파일열기 확인 팝업 2개만 egui-mesh |
 | `image` | Image | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
 | `explorer` | Explorer | **host 내장** (T11) | egui | host builtin surface |
+| `dag_graph` | DAG | **host 내장** | egui | agent task DAG 뷰 ([agent-collaboration](../agent-collaboration/index.md)) |
 | `html` | (plugin 제공) | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
+| `mesh_demo` | egui-mesh Demo | `com.tasty.mesh-demo` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh | 개발/검증용. 매니페스트가 `bundle = false` 라 배포 패키징에는 안 들어간다 |
 
-- **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`) 가 부팅 시 등록.
+- **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`/`dag_graph`) 가 부팅 시 등록.
 - **egui-mesh plugin**(`image`, 그리고 markdown 의 대용량/파일열기 확인 팝업 2개만)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
 - **webview plugin**(`html`/`markdown`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리한다. `html` 은 `webview.set_url` IPC 로 URL/navigation 만 제어하고, `markdown` 은 plugin 이 직접 sanitize 된 HTML 문서 전체를 생성해 로드시킨다([ADR-0065](../../adr/0065-markdown-webview-render-channel.md)).
   - **overlay 생성에 실패하면 그 surface 는 비어 있고, 앱은 계속 돈다.** 실패는 두 종류로 갈린다 — 다음 시도에 달라질 수 있는 것(서버 자원 고갈 등)은 상한까지 다시 시도하고, 이 프로세스에서 달라지지 않는 것(창 종류·라이브러리 부재 등)은 한 번에 포기한다. 어느 쪽이든 시도 횟수에 상한이 있어 실패가 무한히 반복되지 않는다. 로그에는 첫 실패와 포기하는 순간만 남고, 포기 줄이 실제로 몇 번 시도했는지를 적는다. 그 surface 를 닫았다 다시 열면 시도 예산도 새로 생긴다. 근거·재검토 조건은 [ADR-0159](../../adr/0159-a-null-gdk-window-is-a-value-not-a-crash.md).
   - webview kind 는 **탭 내부 분할(SurfaceGroup)의 어느 leaf 에서도** 동작한다. host 는 탭의 `SurfaceLayout` 트리 전체를 순회해 URL 을 가진 leaf 마다 overlay 를 만들고(포커스 leaf 로 한정하지 않는다), overlay 의 bounds 는 pane 전체가 아니라 `SurfaceLayout::compute_rects` 가 준 **그 leaf 의 rect** 다 — 같은 탭의 옆 surface 를 덮지 않는다. divider 드래그용 4px inset 은 leaf 의 변이 **pane 콘텐츠 영역 외곽에 닿을 때만** 적용하고, 분할된 leaf 사이 내부 경계에는 divider gap 만 둔다(터미널끼리의 분할과 같은 간격). `webview.set_url` / `webview.navigation_attempt` 의 surface 조회도 같은 기준이라 비포커스 leaf 도 도달한다.
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
+- **등록된 kind 목록을 조회하는 IPC/CLI 는 없다.** `plugin.list` 는 kind **이름만** 배열로 주고, `rendering` 을 내보내는 것은 `plugin.show` 다. 그런데 그 값은 매니페스트 **선언**을 그대로 옮긴 것이라 **등록 여부와 무관하다** — hello 에 실패해 kind 등록을 시도조차 못 한 plugin 도 `enabled: true` 와 선언한 `surface_kinds` 를 그대로 보고한다(실측). 어떤 kind 가 실제로 등록됐는지는 그 kind 로 surface 를 **만들어 보는 것**(`tasty new tab --type <kind>` — 없으면 `unknown surface kind: <kind>`)으로만 갈린다.
 - plugin 이 제공하는 kind 각각의 동작은 [번들 플러그인](../../plugins/index.md)(markdown/image/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
 
 ## 인터페이스

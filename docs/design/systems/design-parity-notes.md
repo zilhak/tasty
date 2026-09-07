@@ -382,10 +382,10 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **증상**: "modifier 를 누르고 있는 동안" 만 보이는 오버레이는 (a) 무엇으로 modifier 상태를
   읽을지, (b) 다른 키 입력 없이 modifier press/release 만으로 redraw 가 도는지가 관건.
 - **원인/사실(검증)**:
-  - tasty 는 `WindowEvent::ModifiersChanged` 를 egui 에 전달하고(`src/view/main.rs:256-258`),
+  - tasty 는 `WindowEvent::ModifiersChanged` 를 egui 에 전달하고(`src/view/main.rs` 의 그 분기),
     egui 가 반환하는 `repaint` 가 true 면 `mark_dirty()` → RedrawRequested → `run_egui_frame`.
     즉 **bare Ctrl press/release 도 redraw 를 유발**한다(별도 배선 불필요). focus 상실 시
-    `base.modifiers = empty()` (main.rs:289) 로도 정리되고 egui 도 동일.
+    `base.modifiers = empty()` (`src/view/main.rs`) 로도 정리되고 egui 도 동일.
   - draw 단계 modifier 소스는 **egui `ctx.input(|i| i.modifiers)`** 가 가장 깔끔. winit→egui
     raw_input 으로 들어온 **실제 사용자 입력만** 반영 → IPC/에이전트가 raw_input 에 주입
     불가 → 사용자↔에이전트 분리 자동 충족. tasty `base.modifiers`(MainView) 를 draw 까지
@@ -413,7 +413,7 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **사실(검증, 2026-06-25)**:
   - 본체 `src/adapters/ui/popup/command_palette.rs` 는 `draw_keycaps()` 로 **좌표 painting** 해
     키별 keycap + muted `+` 구분자를 그린다(우측 정렬). casing 은 `KeybindingSettings::
-    format_display_parts()`(crud.rs:413, `ctrl++` 모호성 안전 토큰화) 결과를 `shortcut_keys:
+    format_display_parts()`(`crates/tasty-settings/src/keybindings/crud.rs`, `ctrl++` 모호성 안전 토큰화) 결과를 `shortcut_keys:
     Vec<String>` 로 받는다. 빈 쿼리 무강조는 `row_highlighted(query_empty,…)`. 색은
     surface_raised/border_strong/text_secondary, radius 는 `corner_radius_sm`. 모두 단위 테스트 있음.
   - 갤러리 `crates/tasty-gallery/src/catalog/components/command_palette.rs` 는 공유

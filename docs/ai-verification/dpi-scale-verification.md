@@ -75,9 +75,10 @@ tasty debug fullscreen state --window-id <ID>
 
 7. 대상 화면(webview·banner·popup mesh·탭바 높이·네이티브 메뉴 좌표)의 좌표·크기를
    두 배율에서 비교한다. 캡처 방법과 Xvfb 함정은
-   [screenshot-methods](screenshot-methods.md) 를 따른다 — X11 캡처는 검게 나오므로
-   GPU 경유 `screenshot --window` 를 쓰고, 캡처 전에 포인터를 한 번 움직여 재렌더를
-   유발한다.
+   [screenshot-methods](screenshot-methods.md) 를 따르고, 캡처 전에 포인터를 한 번
+   움직여 재렌더를 유발한다. **대상마다 캡처가 갈린다** — banner·popup mesh·탭바·메뉴는
+   `screenshot --window` 로 나오지만 **webview 는 그 캡처에 안 담긴다**(swapchain 밖의
+   OS 자식 창이라 host chrome 만 찍힌다). webview 좌표를 재려면 OS 화면 캡처를 쓴다.
 8. 정리는 **저장한 PID** 로 한다. `xvfb-run` 을 쓰면 `$!` 는 래퍼이므로, 안의 프로세스는
    `/proc/<pid>/environ` 의 격리 `TASTY_HOME` 으로 찾는다. 패턴 매칭으로 죽이지 않는다.
 

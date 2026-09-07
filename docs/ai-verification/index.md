@@ -5,7 +5,7 @@ tasty 를 개발하는 AI 에이전트가 UI/렌더링/입력을 **스스로 재
 | 문서 | 내용 |
 |------|------|
 | [visual-verification](visual-verification.md) | 시각 변경 체크리스트 + 스크린샷 판단 휴리스틱 |
-| [screenshot-methods](screenshot-methods.md) | `tasty screenshot` / `ui.screenshot`(focus 독립, surface/window ID) vs OS 캡처, 격리 실행, 전후 diff 판정의 양성 대조·노이즈 바닥 |
+| [screenshot-methods](screenshot-methods.md) | **어느 대상이 어느 채널에 있나**(`ui.screenshot` 과 OS 캡처는 대립이 아니라 커버리지가 다르다 — webview 는 OS 캡처에만 있다), focus 독립 surface/window ID, 격리 실행, 전후 diff 판정의 양성 대조·노이즈 바닥 |
 | [ipc-usage](ipc-usage.md) | IPC 로 조작·검증 + `\r`/`read_line` 함정 + 실 PTY 로 대화형 작업 수행 |
 | [dpi-scale-verification](dpi-scale-verification.md) | `WINIT_X11_SCALE_FACTOR` 로 DPI≠1 재현 + 배율이 걸렸는지 가르는 두 신호 |
 | [ime-testing](ime-testing.md) | `surface.ime_*`(debug 전용) 로 한글/CJK 입력 시뮬레이션 |
@@ -25,12 +25,12 @@ tasty 를 개발하는 AI 에이전트가 UI/렌더링/입력을 **스스로 재
 
 | 문서 | 절차 | 판정이 사람 | 전제·함정 회피 | 판정이 기계적 |
 |---|---|---|---|---|
-| [visual-verification](visual-verification.md) | 8 | 5 | 1 | 2 |
-| [screenshot-methods](screenshot-methods.md) | 23 | 0 | 14 | 9 |
+| [visual-verification](visual-verification.md) | 9 | 5 | 2 | 2 |
+| [screenshot-methods](screenshot-methods.md) | 30 | 0 | 21 | 9 |
 | [ime-testing](ime-testing.md) | 15 | 4 | 0 | 11 |
 | [dpi-scale-verification](dpi-scale-verification.md) | 11 | 0 | 6 | 5 |
 | [ipc-usage](ipc-usage.md) | 2 | 0 | 2 | 0 |
-| 합 | 59 | 9 | 23 | 27 |
+| 합 | 67 | 9 | 31 | 27 |
 
 (`ipc-usage` 의 나머지 둘 — "적용 예" · "제약" — 은 검증 절차가 아니라 실 PTY 로 대화형
 작업을 수행하는 방법이라 이 표 밖이다.)
@@ -41,7 +41,7 @@ tasty 를 개발하는 AI 에이전트가 UI/렌더링/입력을 **스스로 재
   정렬됐는가", "전체를 훑지 말고 변경 영역만 봐라", "불확실하면 모르겠다고 말해라".
   자동 채널이 없는 것이 **결함이 아니라 성질**이다([ci-gates](../dev-guide/ci-gates.md)
   "자동 채널이 없는 것이 결함이 아닌 갈래").
-- **전제·함정 회피 (23)** — 판정이 아니라 **측정을 유효하게 만드는 준비**다. Xvfb 의
+- **전제·함정 회피 (31)** — 판정이 아니라 **측정을 유효하게 만드는 준비**다. Xvfb 의
   Xauthority 상속, 창 id 를 크기로 고르지 않기, 측정 전 plugin 바이너리 최신 확인,
   저장한 PID 로만 정리. 이쪽은 자동화의 대상이 아니라 **틀리면 앞의 판정을 통째로
   무효로 만드는 지식**이고, 그래서 절차 텍스트의 최대 덩어리다.

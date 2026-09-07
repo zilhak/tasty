@@ -776,7 +776,7 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 
 - **상태 글리프**: 시안의 `❯`(U+276F) `✓`(U+2713) `✗`(U+2717) 은 Dingbats 블록이라 UI 비례
   폰트에서 tofu 로 떨어진다. 본체는 기하 도형(`◦ ▷ ◑ ● × ⊘ ◇ ?`)으로 치환했고
-  `tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 그 블록을 host UI 소스에서
+  `crates/tasty-doc-guards/tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 그 블록을 host UI 소스에서
   금지한다. 갤러리도 같은 치환 세트를 쓴다 — 렌더되지 않는 글자를 전시하면 정합 판정 자체가
   무의미하기 때문이다.
 - **러너 재개 힌트 문구**: 시안은 `tasty dag runner start` 를 적지만 그런 CLI 는 없다. 본체와

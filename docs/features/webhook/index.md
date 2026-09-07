@@ -27,15 +27,17 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 
 1. **남용차단 선검사** — 출처 IP 가 쿨다운 중이면 즉시 `429`.
 2. path/query 분리, 헤더 소문자 정규화, 바디 JSON 파싱(실패 시 `null`).
-3. **매칭**(`match_request`) — path 없음 `404`, lifetime 만료 `410`(lazy 삭제), 메서드 불일치 `405`(카운트 미차감), 성공 시 카운트 1 차감(소진되면 삭제).
-4. 매칭 성공이면 **인증 검증** — 실패 시 `401`.
-5. `404`/`405` 는 출처 실패로 집계(`record_failure`).
+3. **매칭 + 인증**(`match_request`) — path 없음 `404`, lifetime 만료 `410`(lazy 삭제), 메서드 불일치 `405`(카운트 미차감), 인증 불일치 `401`(**카운트 미차감**). 인증 검증은 호출자가 넘긴 술어로 **같은 lock 안에서** 차감보다 **먼저** 한다 — `CountLimit` 이 세는 단위가 "시퀀스를 돌린 횟수" 라서, 시퀀스를 0 번 돌린 요청이 통을 태우면 안 된다. 통의 키는 토큰이 아니라 **등록**이라(모든 발신자가 한 통을 공유한다) 그 차이는 인증을 통과하지 못한 발신자가 owner 의 예산을 태우는 것으로 나타난다.
+4. 매칭·인증을 모두 통과하면 카운트 1 차감(소진되면 삭제).
+5. **출처 실패 집계** — `404`/`405`/`401` 을 이 출처의 실패로 센다(`counts_as_failure` → `record_failure`). 통이 둘이고 답도 둘이다: 4 번의 예산(`CountLimit`)에서 401 은 **세면 안 되고**(세는 것이 소모다) 이 통에서는 **세야 한다**(제한이라 안 세는 것이 우회다) — [ADR-0195](../../adr/0195-abuse-counting-includes-rejected-tokens.md).
 6. **ACK 즉시 응답**(`build_ack`) — 여기까지 핸들러 실행과 무관.
 7. **fire-and-forget** — `execute_sequence` 로 핸들러(IpcSequence)를 메인 루프에 전달. 결과는 응답으로 되돌리지 않는다.
 
 ### 단방향 ACK (불변식)
 
 HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `build_ack(status)` 는 IpcSequence 실행 결과를 **인자로 받지 않아** 내부 데이터가 응답에 실릴 코드 경로 자체가 없다([ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)).
+
+그래서 **`200` 은 매칭돼 넘겼다는 뜻이지 실행이 됐다는 뜻이 아니다.** 응답은 실행 전에 확정되므로 IpcSequence 가 통째로 실패해도 발신자는 `200` 을 받고, 한 스텝이 실패해도 다음 스텝이 계속 가서 **부분 적용이 정상 종료 상태로 남을 수 있다**(`execute_sequence` — MVP 는 조건분기가 없다). 실패의 유일한 관측점은 `tracing::error!` 로그다. 외부 발신자는 상태코드로 재시도를 정하므로 이 성질이 곧 계약이다.
 
 | 상태 | 코드/바디 | 트리거 |
 |------|-----------|--------|
@@ -61,16 +63,20 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 
 ### 선택적 인증 (가벼운 발신자 확인)
 
-웹훅별 옵션이다 — 걸면 지정 위치의 고정 토큰이 일치해야 통과하고, **미설정이면 무인증 통과**한다. tasty 는 인증을 강제하지 않는다. 핸들러가 OS 를 못 건드리고 tasty IPC 만 조작하므로 HMAC 등 하드 보안은 불필요하다([ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)).
+**서명 검증은 구현돼 있지 않다.** 발신자를 가리는 수단은 비순차 opaque path 와, 걸었을 때만 동작하는 고정 공유 토큰 둘뿐이다 — 발신자가 HMAC 서명 헤더를 실어 보내도 읽는 코드가 없다. 그 부재는 의도된 결정이고(핸들러가 OS 를 못 건드리고 tasty IPC 만 조작한다는 위협모델, [ADR-0046](../../adr/0046-webhook-owner-trust-one-way-ack.md)), 리스너가 `0.0.0.0` 에 bind 한다는 사실과 함께 읽어야 한다 — 인증을 걸지 않은 웹훅은 그 URL 에 닿는 누구든 발화시킨다.
 
-위치 4종(`AuthLocation`): `QueryKey`(`?key=<token>`) · `BearerHeader`(`Authorization: Bearer <token>`) · `BodyField`(바디 JSON 점구분 경로의 문자열 leaf) · `HeaderKey`(임의 헤더). 토큰 비교는 **상수시간**(`ct_eq`)이고, 조회 응답은 위치·키 이름만 노출하고 **토큰 값은 절대 반환하지 않는다**(`auth_summary`).
+인증 자체는 웹훅별 옵션이다 — 걸면 지정 위치의 고정 토큰이 일치해야 통과하고, **미설정이면 무인증 통과**한다. tasty 는 인증을 강제하지 않는다.
+
+위치 4종(`AuthLocation`): `QueryKey`(`?key=<token>`) · `BearerHeader`(`Authorization: Bearer <token>`) · `BodyField`(바디 JSON 점구분 경로의 문자열 leaf) · `HeaderKey`(임의 헤더). 토큰 비교는 **상수시간**(`ct_eq`)이고, 조회 응답은 위치·키 이름만 노출하고 **토큰 값은 절대 반환하지 않는다**(`auth_summary`). 그 은닉은 **IPC 응답 경로에만** 걸린다 — `Persistent` 웹훅의 토큰은 `~/.tasty/webhooks.toml` 에 **평문**으로 들어간다. 파일 권한을 코드가 명시적으로 거는 자리는 없고, unix 에서 `0600` 이 되는 것은 `atomic_write` 가 쓰는 `tempfile` 의 기본 모드가 `persist` 를 넘어 그대로 남기 때문이다 — 의도해 건 것이 아니라 **부수효과**라, 쓰기 경로를 평범한 `fs::write` 로 바꾸면 umask 값으로 조용히 넓어진다.
 
 ### 남용차단 (일시 거부)
 
-없는 path/메서드(404/405)로 반복 요청하는 출처를 일시 거부해, 짧은해시 keyspace 스캔·스팸을 막는다. 순수 코어 로직(`AbuseTracker`, 시각 주입)이라 결정론적으로 테스트된다.
+매칭·인증에 실패한 요청을 반복하는 출처를 일시 거부해, 짧은해시 keyspace 스캔·스팸과 **토큰 무차별 대입**을 막는다. 순수 코어 로직(`AbuseTracker`, 시각 주입)이라 결정론적으로 테스트된다.
 
-- 한 출처가 `window`(기본 10초) 내 `threshold`(기본 20)회 이상 실패하면 `cooldown`(기본 60초) 동안 즉시 `429`. 정상 200 응답은 집계하지 않는다.
-- 임계치/윈도우/쿨다운은 환경변수 오버라이드(`TASTY_WEBHOOK_ABUSE_THRESHOLD` / `_WINDOW_SECS` / `_COOLDOWN_SECS`).
+- **무엇이 실패인가는 `counts_as_failure` 하나가 정한다** — 없는 path(`404`) · 메서드 불일치(`405`) · 인증 불일치(`401`) 를 세고, 정상 매칭(`200`) · 만료(`410`) · 이미 쿨다운(`429`) 은 안 센다. 410 을 빼는 이유는 만료 URL 에 **추측할 공간이 없기** 때문이고(같은 URL 을 몇 번 두드려도 얻는 정보가 0), 401 을 넣는 이유가 정확히 그 반대다. 와일드카드 없는 전수 `match` 라 ACK 상태가 늘면 그 자리에서 컴파일이 멈춘다.
+- 한 출처가 `window`(기본 10초) 내 `threshold`(기본 20)회 이상 실패하면 `cooldown`(기본 60초) 동안 즉시 `429`. 정상 200 응답은 집계하지 않으므로 정상 웹훅 트래픽은 영향받지 않는다.
+- 임계치/윈도우/쿨다운은 환경변수 오버라이드(`TASTY_WEBHOOK_ABUSE_THRESHOLD` / `_WINDOW_SECS` / `_COOLDOWN_SECS`). 기본값의 근거와 출처 키 선택은 [ADR-0196](../../adr/0196-abuse-thresholds-and-source-key.md).
+- **카운터는 in-memory 다 — 재시작하면 남은 쿨다운이 사라진다.** 디스크에 남기지 않으므로 tasty 를 다시 띄운 직후의 출처는 전부 백지에서 시작한다(`webhooks.toml` 에 저장되는 것은 `Persistent` 웹훅 등록이지 남용 상태가 아니다).
 
 ### 포트 설정 (설정값 only)
 
@@ -116,10 +122,12 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 
 - Given 포트 설정됨 When `webhook.register --method POST --sequence '<ipc-seq>'` Then 발급 URL 반환, `curl -XPOST` 시 IpcSequence 가 실행되고 응답은 고정 ACK 바디만.
 - Given 등록된 웹훅 When `webhook.unregister` 후 그 path 호출 Then `404`.
-- Given `CountLimit{remaining:N}` When N+1 회 호출 Then N 회 후 소멸(다음 호출 `410`/`404`).
+- Given `CountLimit{remaining:N}` When 접수되는 호출을 N+1 회 Then N 회 후 소멸(다음 호출 `410`/`404`).
+- Given `CountLimit` + 인증 설정된 웹훅 When 토큰 불일치 호출 Then `401` 이고 **remaining 은 그대로**.
 - Given `TimeLimit` deadline 경과 When 호출 또는 `webhook.sweep` Then `410` + 삭제.
 - Given 인증 설정된 웹훅 When 토큰 불일치 Then `401`; 미설정 웹훅은 무인증 통과.
 - Given 없는 path 를 임계치 초과 반복 When 같은 출처 재요청 Then 쿨다운 동안 `429`(정상 웹훅 무영향).
+- Given 인증 설정된 웹훅 When 같은 출처가 틀린 토큰을 임계치 초과 반복 Then 쿨다운 동안 `429`.
 - Given `ShellCommand` 핸들러 When 웹훅 바인딩 시도 Then source 게이트로 거부.
 
 ## 관련

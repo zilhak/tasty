@@ -34,7 +34,9 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 [전체화면 무대](../design/systems/fullscreen-stage.md)가 활성이면 그 위 어떤 레이어도 뒤 세계의 입력을 받지 못한다. 이 단이 표의 다른 단들과 다른 점은 **hit-test 가 없다**는 것이다 — popup(`popup_hovered`)·배너(`banner_hovered`)는 "포인터가 그 위인가" 를 묻지만, 무대는 화면 전체를 덮으므로 물을 이유가 없고 뒤 위젯은 그려지지도 않은 상태라 그 좌표로 판정하는 것 자체가 유령 입력이다. "투과는 기본이 아니다" 원칙의 최상위 사례다.
 
-배선은 `MainView::mouse_overlay_open()`(= `settings_open || fullscreen_stage_active()`) 한 곳으로 모아, 통합 가드·click-to-activate press 가드·휠·커서 이동·OS 가장자리 리사이즈 양보·링크 hover 계산이 전부 같은 값을 보게 했다. 커서 아이콘도 무대 중에는 `winit_cursor_icon_at` 이 조기 반환한다(무대 프레임의 커서는 egui `platform_output` 이 정한다).
+배선은 `MainView::mouse_overlay_open()`(= `settings_open_requested || fullscreen_stage_active()`) 한 곳으로 모아, 통합 가드·click-to-activate press 가드·휠·커서 이동·OS 가장자리 리사이즈 양보·링크 hover 계산이 전부 같은 값을 보게 했다. 커서 아이콘도 무대 중에는 `winit_cursor_icon_at` 이 조기 반환한다(무대 프레임의 커서는 egui `platform_output` 이 정한다).
+
+**두 항의 생애가 다르다 — `settings_open_requested` 가 덮는 것은 "설정 창이 떠 있는 동안" 이 아니라 프레임 경계 하나다.** 그 값은 사이드바 설정 버튼이 눌렸다는 **열기 요청 래치**다. 세우는 자리는 egui 패스(`src/adapters/ui/draw.rs`)이고 그것은 `render_if_dirty` 안에서 돌며, 지우는 자리는 `MainView::handle_redraw` 의 첫 줄 `dispatch_pending_modal_opens` 이라 그보다 **앞**이다. 그래서 값은 프레임 N 의 egui 패스에서 서고 프레임 N+1 시작에서 지워진다. 설정 창 자체는 `event_loop.create_window` 로 뜨는 **별도 winit 창**이라, 그 창이 떠 있는 동안 메인 창에는 입력 이벤트가 애초에 오지 않는다. 즉 이 항이 막는 구간은 **버튼을 누른 프레임과 모달이 실제로 생기기 전 사이의 한 틱**이다. 같은 항이 키보드 쪽 `AppState::keyboard_overlay_open` 에도 들어가며 생애는 동일하다. "모달이 떠 있는가" 를 물어야 하는 소비자가 볼 값은 그것이 아니라 `view::View::is_modal_active()` 다 — 그 값은 지속한다. 위 호출 순서는 `crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs` 가 소스 구조로 고정한다(순서를 뒤집으면 이 항을 읽는 넷이 영영 참이 되지 않는데, 그것을 런타임으로 재는 시험은 없다).
 
 **키보드는 별도 배선이다.** 마우스 계층과 달리 키보드에는 `handle_keyboard_input` 파이프라인의 **0단계 게이트**를 새로 세웠다(double-tap 1~3단계보다 앞). 무대 중 ESC 는 그 자리에서 무대만 닫고 즉시 `return` 하므로 4단계(settings/notifications 닫기)에 도달하지 않는다 — "무대 종료 ESC 는 뒤로 전파되지 않는다" 는 사용자 확정 계약이다. 입력 계약 전체(IME·진입 시 정리·OS 레벨 UI·모달과의 공존)는 [fullscreen-stage.md § 입력 계약](../design/systems/fullscreen-stage.md#입력-계약).
 
@@ -157,7 +159,7 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 `has_egui_overlay_open` 에 무대가 들어가 있어도 나머지 둘은 각자의 식을 본다 — 그 함수의
 프로덕션 소비처는 WebView 표시 하나뿐이다. 게다가 `keyboard_overlay_open()` 은 **정의가
 하나인데 소비 지점이 다섯**이고, 그 다섯이 무대에 대해 같은 답을 필요로 하지 않는다. 그래서
-무대는 지점마다 명시적으로 배선한다 — 아래 일곱 곳이 전부다.
+무대는 지점마다 명시적으로 배선한다 — 아래 여덟 곳이 전부다.
 
 | # | 지점 | 무대 항 | 근거 |
 |---|------|--------|------|
@@ -168,12 +170,13 @@ egui 는 `egui::Order` enum(`Background` / `Middle` / `Foreground` / `Tooltip` /
 | 5 | `src/app/webview_keys.rs` native webview 포워딩 키 | `\|\| fullscreen_stage_active()` | 필수. webview 자식 창에서 올라온 키는 winit `KeyboardInput` 경로를 타지 않아 2 의 0단계 게이트를 거치지 않는다([ADR-0102](../adr/0102-webview-key-forwarding.md)) |
 | 6 | `mouse_overlay_open()` 정의 | 정의에 포함 | 마우스 다섯 호출부 전부가 이 하나를 본다 |
 | 7 | `has_egui_overlay_open()` 정의 | 정의에 포함 | WebView 가 무대 위로 뚫고 나오지 못하게 |
+| 8 | `src/adapters/ipc/handler/debug_state.rs` `ui.state` 의 `keyboard_shortcuts_gated` | `fullscreen_stage_active() \|\|` | 게이트가 아니라 **게이트의 보고**다. 그래도 무대 항이 필요하다 — 이 필드가 답하는 물음이 "단축키가 매처에 닿았는가" 인데, 무대는 2 의 0단계에서 먼저 소비한다. 무대 항을 빼면 무대 중에 거짓으로 "안 막혔다" 를 말하고, 그러면 시험이 왜 단축키가 안 먹었는지를 다시 못 보게 된다 |
 
 1·3·4·5 가 같은 항을 각자 OR 하는 모양이라 "`keyboard_overlay_open()` 정의 안으로 넣으면
 되지 않나" 가 자연스러운 질문이다. 넣지 않은 이유는 2 다 — 그 지점은 무대에 대해 다른
 답(0단계 게이트가 이미 처리)을 쓰고 있고, 정의를 바꾸면 이 술어의 의미가 "키보드 오버레이"
 에서 "키보드 오버레이 또는 무대" 로 넓어져 앞으로의 호출자에게도 그 결정이 따라붙는다.
-대신 **완전성은 테스트가 강제한다** — `tests/fullscreen_stage_input_gate.rs` 의
+대신 **완전성은 테스트가 강제한다** — `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 의
 `every_overlay_open_composite_is_stage_aware` 가 `keyboard_overlay_open()` 호출부를 소스에서
 기계적으로 전부 찾아 (a) 각각이 무대를 아는지, (b) 지점 집합이 위 표와 같은지를 확인한다.
 새 호출부가 생기면 그 테스트가 먼저 깨지고, 그때 이 표도 함께 갱신한다. 2 의 예외도 그

@@ -128,7 +128,7 @@
 
 무대 중에도 **`dirty` 를 억제하지 않는다.** relay 전체가 로컬 `dirty` 프레임에 종속돼 있어,
 "어차피 안 보이니 프레임을 아끼자" 는 최적화가 곧 원격 구독자 굶김이다. 이 네 제약은
-`tests/fullscreen_stage_render_gate.rs` 가 구조 가드로 고정한다.
+`crates/tasty-doc-guards/tests/fullscreen_stage_render_gate.rs` 가 구조 가드로 고정한다.
 
 **PTY drain 은 계속 돈다.** drain 은 `AppEvent::TerminalOutput` 핸들러 몫이고 redraw 경로와
 분리돼 있어 무대가 건드리지 않는다 — 무대 중에도 스크롤백이 정상적으로 쌓인다.
@@ -264,7 +264,7 @@ wgpu 렌더 표면 **위**에 있다. 그리지 않아도 화면에 남으므로
 - **그 조회는 무대 게이트 안에만 있다.** `stage_key_decision` 이 무대 비활성이면 판정 전에
   `PassThrough` 로 빠지므로, modifier 없는 기본값 ESC 가 평상시 ESC 동작(settings 모달·
   notifications 팝업 닫기, 터미널 `\x1b` 전달)을 훔칠 경로가 구조적으로 없다. 조회를 게이트
-  밖으로 옮기면 그 순간 회귀가 되며, `tests/fullscreen_stage_input_gate.rs` 가 위치를 고정한다.
+  밖으로 옮기면 그 순간 회귀가 되며, `crates/tasty-doc-guards/tests/fullscreen_stage_input_gate.rs` 가 위치를 고정한다.
 - 바인딩이 **빈 vec** 이면 항상 불일치라 모든 키가 `ConsumeForStage` 다 — 키보드 종료 수단만
   사라지고 다른 키가 뒤로 새지는 않는다. 탈출은 셸이 항상 그리는 종료 버튼이 맡는다.
 - double-tap 검출기에는 press/release 를 계속 먹인다(물리 상태를 놓치면 무대를 나온 뒤

@@ -166,7 +166,7 @@ macOS·Wayland 에서는 합성하지 않는다.
   자기 진입부에서 직접 끊는다.
 
 진입부 한 곳에서 버리면 두 축이 동시에 덮이고, View 가 새로 늘어도 자동으로 덮인다.
-배선 위치는 `tests/synthetic_key_event_guard.rs` 가 강제한다.
+배선 위치는 `crates/tasty-doc-guards/tests/synthetic_key_event_guard.rs` 가 강제한다.
 
 ### 버려도 modifier 상태가 깨지지 않는 이유
 

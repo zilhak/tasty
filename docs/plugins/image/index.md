@@ -18,7 +18,10 @@
 
 - **surface_kind `image` (egui-mesh)** — plugin(`ImageDoc`)이 픽셀·편집 상태·zoom/pan 을 소유하고, 원본 이미지 + 편집 오버레이 + floating selection 을 텍스처로 올려 viewer/paint chrome(control bar·paint bar·8 handles·zoom)과 함께 그린다. host `EguiMeshSurface` stand-in 은 파일·display_name·영속화만. 파일 로드 또는 빈 캔버스(그림판 모드 진입).
 - **파일 핸들러** — `detector "image"`(확장자 규칙) + `handler` `open_surface{surface_kind:"image"}`. 이미지 파일 열기 시 이 surface.
-- **cli / IPC** — `image.save`/`export_png`/`paste`/`next`/`prev` 는 plugin 이 직접 처리(픽셀·편집·네비 상태 소유), `image.open`(surface 변환)·`image.list`(host surface 열거)는 host 로 trampoline.
+- **cli / IPC** — `image.save`/`export_png`/`paste`/`next`/`prev`/`reload` 는 plugin 이 직접 처리(픽셀·편집·네비 상태 소유), `image.open`(surface 변환)·`image.list`(host surface 열거)는 host 로 trampoline.
+- **idle auto-reload(입력 없이도 갱신)** — egui-mesh surface 는 입력·geom·theme·focus·invalidated 중 하나가 있어야 host 가 `set_context` 를 forward 하므로, 아무도 안 건드리는 동안은 `paint` 가 오지 않는다 — 그래서 별도 감시 스레드가 유일한 자동 갱신 경로다. 기계는 SDK 의 `file_watch` 공용 모듈이고([plugin 개발 가이드](../../dev-guide/plugin-development.md)), 변경을 감지하면 `self_invoke` 로 이 plugin 자신의 `image.reload` 를 부른다 — 실제 read 가 그 한 경로로만 수렴해 stale read 레이스가 없다.
+- **판정자는 `StatGatedDigest`(2 단 게이트)** — markdown 의 `ContentDigest`(매 폴 전량 읽기)를 그대로 쓰지 않는다. 이미지는 사용자가 고르는 아무 파일이라 **읽기 비용에 상한이 없고**, 반대로 시계(mtime)만 보면 `touch`·rsync·동일 내용 재저장마다 리로드가 돈다. 이 자리에서 리로드는 읽기의 100~250 배다(디코드). 그래서 싼 `stat` 으로 먼저 거르고(정상상태 비용이 파일 크기와 무관한 O(1)), 움직였을 때만 읽어 지문을 견준다. `stat` 이 못 가르는 같은-눈금 두 번째 쓰기는 닫개 창이 잡으며, **창 안에서 도는 것은 지문이지 리로드가 아니다**(지문이 같으면 아무 일도 안 일어난다). 근거 수치와 한계는 그 타입의 소스 문서.
+- **편집 중에는 미룬다** — 그리는 중에 밑그림을 갈아치우면 스트로크가 다른 그림에 얹힌다. 편집 중 도착한 변경은 표시해 두었다가 편집을 끝낼 때 반영한다(감시자는 이미 기준선을 옮겼으므로, 안 미뤄 두면 그 변경이 영구히 사라진다).
 
 ## 인터페이스
 
@@ -35,6 +38,9 @@
 - Given image 플러그인 활성 When 이미지 파일 열기 Then image surface 로 표시된다.
 - Given `tasty image open --file <f>` Then 활성 surface 가 image kind 로 전환되어 파일을 로드한다.
 - Given 빈 캔버스 Then 그림판으로 그릴 수 있다.
+- Given 이미지 surface 가 열려 있고 아무 입력도 없을 때 When 그 파일이 밖에서 바뀐다 Then 1 초 안에 다시 읽어 표시한다.
+- Given 이미지 surface 가 열려 있을 때 When 그 파일의 내용은 그대로인데 mtime 만 바뀐다(`touch`) Then 다시 읽지 않는다.
+- Given 편집 세션이 활성일 때 When 그 파일이 밖에서 바뀐다 Then 편집 중에는 반영하지 않고, 편집을 끝낼 때 반영한다.
 
 ## 화면
 
