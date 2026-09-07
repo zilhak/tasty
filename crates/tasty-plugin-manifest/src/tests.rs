@@ -992,6 +992,48 @@ fn surface_kind_rendering_eguimesh_without_hyphen_rejected() {
 }
 
 #[test]
+fn rendering_serializes_back_to_the_wire_key_it_parses_from() {
+    // 밖으로 나가는 문자열은 직렬화기가 만든다. `Debug` 파생을 소문자화하면
+    // "eguimesh" 가 나와 **입력으로 되돌릴 수 없는** 값이 되고, 그 어긋남을
+    // 컴파일러는 모른다 — `plugin.show` 가 실제로 그 값을 내보내고 있었다.
+    // 위 두 테스트가 "무엇이 파싱되나" 를 고정하므로, 이 테스트는 그 반대 방향을 고정한다.
+    for (v, wire) in [
+        (SurfaceKindRendering::Remote, "remote"),
+        (SurfaceKindRendering::Webview, "webview"),
+        (SurfaceKindRendering::EguiMesh, "egui-mesh"),
+    ] {
+        let json = serde_json::to_string(&v).expect("serializes");
+        assert_eq!(json, format!("\"{wire}\""), "{v:?} 의 와이어 키가 어긋났다");
+        // 왕복: 나간 값이 그대로 다시 들어와야 한다.
+        let back: SurfaceKindRendering = serde_json::from_str(&json).expect("round-trips");
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn binding_mode_serializes_back_to_its_toml_spelling() {
+    // `BindingMode` 는 커스텀 Deserialize 로 "independent" / "inherit:<action>" 을 받는다.
+    // 내보낼 때도 같은 표기여야 왕복이 성립한다. `Debug` 파생은
+    // `InheritHost("clipboard.copy")` 를 만들어 그 왕복을 깬다.
+    for (v, wire) in [
+        (BindingMode::Independent, "independent"),
+        (
+            BindingMode::InheritHost("clipboard.copy".to_string()),
+            "inherit:clipboard.copy",
+        ),
+    ] {
+        let json = serde_json::to_string(&v).expect("serializes");
+        assert_eq!(
+            json,
+            format!("\"{wire}\""),
+            "{v:?} 의 와이어 표기가 어긋났다"
+        );
+        let back: BindingMode = serde_json::from_str(&json).expect("round-trips");
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
 fn surface_kind_rendering_unknown_value_rejected() {
     let s = r#"
         manifest_version = 1

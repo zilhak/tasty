@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.image"
 name = "Image"
-version = "0.1.17"
+version = "0.1.24"
 description = "Image surface viewer / paint canvas"
 api_version = "1"
 permissions = [
@@ -86,6 +86,7 @@ subcommands = [
     { name = "next",   ipc_method = "image.next",       args = "nav_args",    description = "Step to the next image in the same directory" },
     { name = "prev",   ipc_method = "image.prev",       args = "nav_args",    description = "Step to the previous image in the same directory" },
     { name = "paste",  ipc_method = "image.paste",      args = "nav_args",    description = "Paste a clipboard image as a floating selection" },
+    { name = "reload", ipc_method = "image.reload",     args = "nav_args",    description = "Re-read the file from disk (deferred while an edit session is active)" },
     { name = "list",   ipc_method = "image.list",       args = "no_args",     description = "List all open image surfaces" },
 ]
 

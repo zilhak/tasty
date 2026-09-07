@@ -28,7 +28,7 @@ const MARK: char = '\u{E000}';
 
 /// 클립보드 HTML 소스를 태그 깊이만큼 들여쓴 미리보기 문자열로 변환한다.
 /// malformed(닫히지 않은 태그 등) 입력에도 panic 없이 최선의 결과를 낸다.
-pub fn prettify(src: &str) -> String {
+pub(crate) fn prettify(src: &str) -> String {
     let (masked, verbatim) = extract_verbatim_blocks(src);
     let collapsed = collapse_intertag_whitespace(&masked);
     let parts: Vec<String> = split_tags(&collapsed)

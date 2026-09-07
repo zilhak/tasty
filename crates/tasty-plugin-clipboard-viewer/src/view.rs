@@ -55,7 +55,12 @@ const OTHER_PREVIEW_MAX_LINES: usize = 20;
 
 /// 주 인스턴스 popup 본문. 헤더는 항상 그리고, 그 아래는 read_error / empty / data
 /// 3분기(design `dataState`/`snap.status` 동형). 헤더·푸터의 Close 클릭 시 `true`.
-pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Translator) -> bool {
+pub(crate) fn draw(
+    ctx: &egui::Context,
+    theme: &Theme,
+    state: &mut ViewerState,
+    tr: &Translator,
+) -> bool {
     let mut close = false;
     panel(ctx, theme, |ui| {
         header(ui, theme, tr, &mut close);
@@ -86,7 +91,7 @@ pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Tr
 
 /// 단일 인스턴스 가드 placeholder — 헤더 + "이미 열림" CenterState(기존
 /// `already_open_tree` 동형).
-pub fn draw_already_open(ctx: &egui::Context, theme: &Theme, tr: &Translator) -> bool {
+pub(crate) fn draw_already_open(ctx: &egui::Context, theme: &Theme, tr: &Translator) -> bool {
     let mut close = false;
     panel(ctx, theme, |ui| {
         header(ui, theme, tr, &mut close);

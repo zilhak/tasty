@@ -20,7 +20,7 @@
 //!
 //! 디자인의 상태 글리프 중 `❯`(U+276F) `✓`(U+2713) `✗`(U+2717) 는 유니코드
 //! Dingbats 블록이라 UI 비례 폰트에서 tofu 로 떨어진다. 본체는 같은 이유로
-//! 기하 도형(`▷ ● ×` 등)으로 치환했고 `tests/design_token_adherence.rs` 의
+//! 기하 도형(`▷ ● ×` 등)으로 치환했고 `crates/tasty-doc-guards/tests/design_token_adherence.rs` 의
 //! `no_raw_pictographic_glyph` 게이트가 그 블록을 host UI 소스에서 금지한다.
 //! 갤러리도 **본체와 같은 치환 세트**를 쓴다 — 렌더되지 않는 글자를 전시하면
 //! 정합 판정 자체가 무의미해지기 때문이다.

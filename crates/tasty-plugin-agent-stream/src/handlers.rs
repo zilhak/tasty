@@ -163,7 +163,7 @@ fn resolve_error_message(
 ///
 /// 반대로 세션 id 는 알지만 파일이 아직 없는 것은 정상 상태다 — 세션 시작 직후의 race
 /// 이므로 `awaiting_transcript` 로 등록하고 tail 루프가 계속 재해석한다.
-pub fn handle_watch<H: HostCall>(
+pub(crate) fn handle_watch<H: HostCall>(
     host: &H,
     registry: &Shared,
     tr: &Translator,
@@ -245,7 +245,7 @@ fn require_request_id(params: &Value, tr: &Translator) -> Result<String, IpcMeth
 /// 턴은 그 surface 의 다음 `turn_end`(정상 종료·취소·오류·해제·세션 소멸) 가 닫는다.
 /// claude-idle 훅을 구독하지 않는 이유: transcript 가 이미 그 신호를 만들고(ADR-0093),
 /// 훅 구독은 claude plugin 이 활성일 때만 성립하는 의존을 새로 만들기 때문이다.
-pub fn handle_turn_start<H: HostCall>(
+pub(crate) fn handle_turn_start<H: HostCall>(
     host: &H,
     registry: &Shared,
     tr: &Translator,
@@ -303,7 +303,7 @@ fn turn_error_message(tr: &Translator, surface_id: u32, err: &TurnError) -> IpcM
 }
 
 /// `agent_stream.unwatch` — tail 을 멈추고 종료 이벤트를 남긴다.
-pub fn handle_unwatch<H: HostCall>(
+pub(crate) fn handle_unwatch<H: HostCall>(
     host: &H,
     registry: &Shared,
     tr: &Translator,
@@ -331,12 +331,12 @@ pub fn handle_unwatch<H: HostCall>(
 }
 
 /// `agent_stream.list` — 현재 tail 중인 대상 전부. 포커스와 무관하게 전 대상을 돌려준다.
-pub fn handle_list(registry: &Shared, tr: &Translator) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_list(registry: &Shared, tr: &Translator) -> Result<Value, IpcMethodError> {
     Ok(lock(registry, tr)?.list_json())
 }
 
 /// `agent_stream.poll` — seq 커서로 수집 이벤트를 읽는다(비파괴).
-pub fn handle_poll(
+pub(crate) fn handle_poll(
     registry: &Shared,
     tr: &Translator,
     params: Value,
@@ -379,7 +379,7 @@ pub fn handle_poll(
 /// 2. **이미 바꿨으면 기록은 실패하지 않는다.** 리스너를 내렸거나 새로 띄운 뒤의
 ///    스냅샷 기록은 [`persist_serve_config`] 로 하며, 그 함수는 poisoned 락을
 ///    복구해서라도 쓴다. 여기서 `?` 로 빠지면 "실행 주소 ≠ 스냅샷" 이 그대로 남는다.
-pub fn handle_serve(
+pub(crate) fn handle_serve(
     registry: &Shared,
     server: &mut Option<SseServer>,
     tr: &Translator,
@@ -463,7 +463,7 @@ fn persist_serve_config(registry: &Shared, config: Option<ServeConfig>) {
 ///
 /// [`handle_serve`] 와 같은 불변을 지킨다: 리스너를 내린 **뒤**의 스냅샷 기록은 실패로
 /// 빠질 수 없다. 빠지면 사용자가 닫은 엔드포인트가 스냅샷에 남아 다음 재시작에 되살아난다.
-pub fn handle_serve_stop(
+pub(crate) fn handle_serve_stop(
     registry: &Shared,
     server: &mut Option<SseServer>,
     tr: &Translator,
@@ -479,7 +479,7 @@ pub fn handle_serve_stop(
 }
 
 /// `agent_stream.serve_info` — 엔드포인트 상태와 구독자 통계. 토큰은 싣지 않는다.
-pub fn handle_serve_info(server: &Option<SseServer>) -> Result<Value, IpcMethodError> {
+pub(crate) fn handle_serve_info(server: &Option<SseServer>) -> Result<Value, IpcMethodError> {
     match server {
         Some(running) => Ok(running.to_json()),
         None => Ok(json!({ "running": false })),

@@ -18,8 +18,18 @@ publish = false
 # POC 완료 후 처리 정책 = wasm-poc.md §5 (권고: ① feature 잠금 상태로 main 유지).
 
 [dependencies]
-# wasmtime 35 = rustc 1.86 호환 (최신 45 는 rustc 1.93 필요, repo 환경은 1.89).
-# 향후 정식 채택 시점에 wasmtime 최신으로 bump 가능 (POC 결론 영향 0).
+# 아래 핀은 **2026-06-05 의 기록**이지 현재 사실이 아니다. 이 크레이트는 동결돼 있고
+# (ADR-0009 `Status: Deferred`), 그날 이후 이 크레이트 자신을 위한 작업이 없다 —
+# 그 뒤의 변경 넷은 전부 바깥에서 온 것이다(문서 sweep 셋 + protocol 리팩터 하나).
+#
+#   그때 고른 이유  wasmtime 35 = rustc 1.86 호환. 최신 45 는 rustc 1.93 을 요구했고
+#                   그때 레포 툴체인은 1.89 였다
+#   지금            레포 툴체인은 `rust-toolchain.toml` 이 정한다. 위 1.89 는 **그때 값**이다
+#
+# 값을 현재로 갱신하지 마라 — 갱신해도 다음 툴체인 bump 때 같은 자리에서 또 낡는다.
+# 이 크레이트를 다시 짓는 사람은 위 핀이 **얼마나 오래된 전제인지**만 여기서 읽고,
+# 현재 값은 `rust-toolchain.toml` 에서 직접 봐라. 정식 채택 시점에 wasmtime 최신으로
+# bump 가능하다는 것은 그대로다 (POC 결론 영향 0).
 wasmtime = { version = "35", default-features = false, features = [
     "runtime",
     "cranelift",

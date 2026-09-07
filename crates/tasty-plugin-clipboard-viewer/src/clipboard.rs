@@ -246,7 +246,7 @@ fn read_other() -> Option<(ClipboardType, ContentRepr)> {
 ///
 /// 타입별 리더를 개별 함수로 뽑아둔다 — 이 함수 본문에 인라인하면 타입이 늘어날수록
 /// cognitive_complexity(clippy deny-level lint, workspace `Cargo.toml`)에 걸린다.
-pub fn read_available() -> Result<Vec<(ClipboardType, ContentRepr)>, String> {
+pub(crate) fn read_available() -> Result<Vec<(ClipboardType, ContentRepr)>, String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     out.extend(read_text(&mut clip));

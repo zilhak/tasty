@@ -199,7 +199,7 @@ impl BufferedEvent {
 /// `request_id` 는 correlation 값이다 — 웹훅 요청자가 준 식별자로, 그 요청이 만든
 /// 이벤트에 실린다. 턴 밖 이벤트는 `None` 이라 필드 자체가 빠진다(소비자는 존재 여부로
 /// "요청에서 비롯된 것인가" 를 가른다).
-pub fn event_json(
+pub(crate) fn event_json(
     seq: u64,
     surface_id: u32,
     session_id: &str,
@@ -777,7 +777,7 @@ fn restore_one(entry: &Value) -> Option<Watch> {
 }
 
 /// 새 watch 를 만든다. `from_start` 면 파일 처음부터, 아니면 현재 파일 끝부터.
-pub fn new_watch(
+pub(crate) fn new_watch(
     surface_id: u32,
     session_id: String,
     transcript: PathBuf,

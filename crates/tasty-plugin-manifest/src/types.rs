@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::validators::{
     is_reserved_ipc_prefix, is_valid_hook_handler_id, is_valid_ipc_prefix, is_valid_plugin_id,
@@ -334,7 +334,7 @@ pub struct EventEmittedDecl {
 }
 
 /// `events_emitted` 항목의 안정성 등급. `event-catalog.md`의 정책을 따른다.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EventStability {
     #[default]
@@ -514,7 +514,7 @@ pub struct SurfaceKindDecl {
 }
 
 /// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "remote" | "webview" | "egui-mesh"`.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceKindRendering {
     /// 기본값. webview kind 가 공유하는 `RemoteSurface` stand-in 으로 등록된다.
@@ -588,7 +588,7 @@ pub struct IpcHookDecl {
 /// - `Transform`: payload를 변경할 수 있다 (반환값으로 덮어쓰기). 가장 강력.
 /// - `Filter`: `pass: bool`만 반환. 차단 가능하지만 payload 변경 불가.
 /// - `Observe`: 결과는 호스트가 무시. 단순 관찰/로깅. timeout/실패도 체인에 영향 없음.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum HookMode {
     Transform,
@@ -1308,7 +1308,7 @@ pub struct CommandDecl {
 /// - `Global`: 어디서나 동작. 단축키는 조합키만 권장.
 /// - `Surface`: owner plugin이 만든 surface에 포커스가 있을 때만 동작.
 ///   단일 키도 허용.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CommandScope {
     #[default]
@@ -1353,6 +1353,27 @@ impl<'de> Deserialize<'de> for BindingMode {
             "invalid binding_mode '{}': expected 'independent' or 'inherit:<host_action>'",
             s
         )))
+    }
+}
+
+/// `Deserialize` 가 받는 TOML 표기를 그대로 되돌려준다 —
+/// `"independent"` · `"inherit:<host_action>"`.
+///
+/// 이 impl 이 없으면 이 열거를 밖으로 내보내는 자리가 `Debug` 파생을 문자열화하게 되고,
+/// 그러면 `inherithost("clipboard.copy")` 처럼 **입력 표기로 되돌릴 수 없는** 값이 나간다
+/// (실제로 `plugin.show` 가 그 값을 내보내고 있었다). `Debug` 는 사람이 읽는 표기지
+/// 와이어 키가 아니다 — 둘을 같은 것으로 쓰면 컴파일러는 어긋남을 모른다.
+impl Serialize for BindingMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            BindingMode::Independent => serializer.serialize_str("independent"),
+            BindingMode::InheritHost(action) => {
+                serializer.serialize_str(&format!("inherit:{action}"))
+            }
+        }
     }
 }
 

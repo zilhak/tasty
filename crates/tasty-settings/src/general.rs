@@ -572,7 +572,8 @@ fn zsh_shell_envs_in(dir: Option<&std::path::Path>) -> Vec<(String, String)> {
 // - **소싱 인프라(BUILTIN_BASHRC_PRE/PROMPT 상수, compose_*_bashrc, 버전 스탬프,
 //   ensure_compiled_bashrc, 경로 헬퍼)는 전부 공유한다** — OSC133 훅 스크립트
 //   내용은 OS 와 무관하게 동일해야 하므로(같은 bash, 같은 셸 통합) 이 부분을
-//   플랫폼별로 중복시키는 건 정당화가 안 된다.
+//   플랫폼별로 중복시키는 건 정당화가 안 된다. **그 "동일해야" 는 갚을 빚이 아니다** —
+//   그 인프라는 이미 한 벌이고, 이 주석의 본론은 아래 "그래서 무엇은 갈라야 하는가" 다.
 // - **다만 최종 CLI 인자 모양은 플랫폼마다 다르게 나와야 한다**(진짜 제약,
 //   Windows 고유 사정): Windows(Git Bash) 는 `build_shell_command` 가 `-li`
 //   (로그인 셸)를 애초에 non-Windows 에만 추가해왔다 — 즉 Windows bash 는

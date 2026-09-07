@@ -281,9 +281,13 @@ impl HostHandle {
         Ok(SharedBuffer::new(parsed.id, mem, handle_writer))
     }
 
-    /// Windows: Unix 판과 동형이되 핸들을 fd 대신 in-band HANDLE u64 로 받는다.
+    /// Windows: Unix 판과 같은 모양이되 핸들을 fd 대신 in-band HANDLE u64 로 받는다.
     /// host 가 `DuplicateHandle` 로 우리 프로세스 테이블에 복제한 파일 매핑 핸들을
     /// 보조 채널 라인으로 받아 `tasty_shm::receive(Handle)` 로 매핑한다.
+    ///
+    /// **하나로 묶지 않는다.** 두 판이 받는 것이 fd 와 HANDLE 로 다르고 그 차이가 몸통
+    /// 전체에 퍼져 있어 공유할 알맹이가 없다 — `#[cfg]` 로 갈리는 것이 필연이다.
+    /// 여기서 "같은 모양" 은 지켜야 할 계약이 아니라 읽는 사람을 위한 유비다.
     #[cfg(windows)]
     pub fn create_shared_buffer(&self, size: usize) -> Result<SharedBuffer, PluginError> {
         let handle_writer = self

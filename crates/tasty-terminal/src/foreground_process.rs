@@ -198,6 +198,12 @@ struct WindowsProcessSnapshot {
 impl WindowsProcessSnapshot {
     /// Take a single `TH32CS_SNAPPROCESS` snapshot and build the child map.
     /// Returns `None` if the snapshot could not be created.
+    // 이유: ToolHelp snapshot 순회는 `CreateToolhelp32Snapshot` → `Process32FirstW` →
+    //       `Process32NextW` 가 한 흐름이라 사이에 안전한 문장을 끼울 자리가 없다.
+    //       블록 안의 SAFETY 주석이 그 셋을 함께 정당화한다 — 쪼개면 같은 주석이 셋이 된다.
+    //       파일이 아니라 이 함수에 거는 것은 이 파일이 크로스플랫폼이라서다(442 줄, Windows
+    //       는 cfg 로 갈린 일부) — 파일 단위로 걸면 나머지 플랫폼의 새 위반까지 가린다.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     fn capture() -> Option<Self> {
         use std::collections::HashMap;
         use windows::Win32::Foundation::{CloseHandle, HANDLE};

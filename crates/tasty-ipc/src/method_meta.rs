@@ -132,7 +132,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // theme.query — 현재 resolved 전역 Theme 스냅샷 조회. webview-kind surface(예:
         // markdown)는 `set_context` 를 받지 않아 Theme 이 자동 push 되지 않으므로, 문서를
         // (재)생성할 때마다 이 read-only 조회로 대신한다(ADR-0065). surface 별 데이터가
-        // 아닌 전역 정보라 별도 권한 없이 노출(system.info 와 동형).
+        // 아닌 전역 정보라 별도 권한 없이 노출(`system.info` 와 같은 근거).
         ("theme.query", plugin(&[])),
         // surface.set_cwd — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
         // 예: explorer 가 root 변경 시 carry 후보 cwd 갱신.
@@ -258,6 +258,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("image.next", plugin(&[SurfaceWrite])),
         ("image.prev", plugin(&[SurfaceWrite])),
         ("image.paste", plugin(&[SurfaceWrite, ClipboardRead])),
+        ("image.reload", plugin(&[SurfaceWrite, FsRead])),
         ("image.list", plugin(&[SurfaceRead])),
         // ── clipboard ──────────────────────────────────────────────────
         ("clipboard.set_text", plugin(&[ClipboardWrite])),
@@ -633,6 +634,12 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.settings.open", local_only()),
     // 런타임 설정 patch 적용 — 사용자 "설정 저장" 재현. release 미노출.
     ("debug.settings.apply", local_only()),
+    // 활성 모달에 창 닫기 **요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현.
+    // release `window.close` 가 main view 만 대상으로 두고 모달을 뺀 것과 같은 선이다.
+    // WM 없는 Xvfb 에는 `WM_DELETE_WINDOW` 를 보낼 손이 없어(실측: `xdotool windowclose`
+    // 는 `XDestroyWindow` 를 불러 winit 이 패닉하고, `wmctrl -i -c` 는 WM 이 없으면
+    // 아무도 처리하지 않는다) 자동 검증에는 이 경로가 유일하다.
+    ("debug.modal.close_request", local_only()),
     // 배너 직접 발화/조회/닫기/카운트다운 — 사용자 조작 재현. release 미노출.
     ("debug.banner.list", local_only()),
     ("debug.banner.show", local_only()),

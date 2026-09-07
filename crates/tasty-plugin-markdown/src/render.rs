@@ -125,7 +125,7 @@ pub struct DocumentInput<'a> {
 }
 
 /// Build the complete, self-contained HTML5 document for the markdown webview surface.
-pub fn render_document(input: DocumentInput) -> String {
+pub(crate) fn render_document(input: DocumentInput) -> String {
     let DocumentInput {
         theme,
         tr,
@@ -260,7 +260,7 @@ fn file_dir_uri(dir: &Path) -> String {
 /// only the payload after the marker matters. Returns `None` if the URL carries no internal-nav
 /// fragment at all (host chrome shouldn't normally forward anything else, but a defensive `None`
 /// keeps this robust against unrelated navigation attempts).
-pub fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
+pub(crate) fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
     let idx = url.rfind(NAV_FRAGMENT_MARKER)?;
     let payload = &url[idx + NAV_FRAGMENT_MARKER.len()..];
     if let Some(enc) = payload.strip_prefix("link:") {
@@ -277,7 +277,7 @@ pub fn parse_nav_fragment(url: &str) -> Option<NavIntent> {
 /// gap: `javascript:` has no `://` so it would otherwise fall through to the `File` branch).
 /// `mailto:`/`data:`/any `scheme://` destination is `External`; everything else is resolved as
 /// a filesystem path against `base_dir`.
-pub fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
+pub(crate) fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
     let dest = dest.trim();
     if dest.is_empty() || dest.starts_with('#') {
         return None;

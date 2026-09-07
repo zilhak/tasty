@@ -50,7 +50,7 @@ pub enum ResolveError {
 ///
 /// meta 가 없으면 [`ResolveError::NoSessionMeta`] — 세션 id 를 모르면 어떤 파일을 볼지
 /// 결정할 수 없으므로 watch 등록을 거부해야 한다.
-pub fn session_id_for_surface<H: HostCall>(
+pub(crate) fn session_id_for_surface<H: HostCall>(
     host: &H,
     surface_id: u32,
 ) -> Result<String, ResolveError> {
@@ -100,7 +100,7 @@ pub fn session_id_for_surface<H: HostCall>(
 /// (ADR-0171). 다만 그 코드로는 **이 판정을 못 한다** — `-32602` 는 "인자가 틀렸다" 이지
 /// "그 대상이 없다" 가 아니고, 여기서 갈라야 하는 것은 "없다는 답" 과 "모름" 이다.
 /// 코드가 그 구분을 실으려면 대상 부재 전용 코드가 있어야 하고, 그건 별개 결정이다.
-pub fn surface_exists<H: HostCall>(host: &H, surface_id: u32) -> bool {
+pub(crate) fn surface_exists<H: HostCall>(host: &H, surface_id: u32) -> bool {
     match host.call("surface.locate", json!({ "surface_id": surface_id })) {
         Ok(r) => r.get("exists").and_then(Value::as_bool).unwrap_or(true),
         Err(e) => !rejects_as_no_live_surface(&e.to_string(), surface_id),
@@ -117,7 +117,7 @@ fn rejects_as_no_live_surface(message: &str, surface_id: u32) -> bool {
 
 /// transcript 루트 디렉토리. `CLAUDE_CONFIG_DIR` 이 설정돼 있으면 그 아래 `projects`,
 /// 아니면 홈의 `.claude/projects`.
-pub fn transcript_root() -> Option<PathBuf> {
+pub(crate) fn transcript_root() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR") {
         return Some(PathBuf::from(dir).join("projects"));
     }
@@ -129,7 +129,7 @@ pub fn transcript_root() -> Option<PathBuf> {
 ///
 /// 여러 프로젝트 디렉토리에 같은 세션 id 가 있을 수는 없다(세션 id 는 전역 유일). 찾는
 /// 즉시 반환하므로 디렉토리 수만큼의 `exists` 검사로 끝난다 — 전체 트리 순회가 아니다.
-pub fn find_transcript(root: &Path, session_id: &str) -> Option<PathBuf> {
+pub(crate) fn find_transcript(root: &Path, session_id: &str) -> Option<PathBuf> {
     let file_name = format!("{session_id}.jsonl");
     // 루트 바로 아래에 놓인 경우도 함께 본다(레이아웃이 바뀌어도 깨지지 않게).
     let direct = root.join(&file_name);
@@ -150,7 +150,7 @@ pub fn find_transcript(root: &Path, session_id: &str) -> Option<PathBuf> {
 }
 
 /// 루트 탐색까지 묶은 편의 함수.
-pub fn transcript_path(session_id: &str) -> Result<PathBuf, ResolveError> {
+pub(crate) fn transcript_path(session_id: &str) -> Result<PathBuf, ResolveError> {
     let root = transcript_root().ok_or(ResolveError::TranscriptRootMissing)?;
     find_transcript(&root, session_id).ok_or_else(|| ResolveError::TranscriptNotFound {
         session_id: session_id.to_string(),

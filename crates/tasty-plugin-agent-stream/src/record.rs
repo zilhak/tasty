@@ -152,7 +152,7 @@ pub struct ParsedRecord {
 
 /// JSONL 한 줄을 파싱한다. JSON 이 아니면 `Err` — 호출자가 파일 교체/절단 복구를
 /// 판단하는 신호로 쓴다(`crate::tail`).
-pub fn parse_line(line: &str) -> Result<ParsedRecord, serde_json::Error> {
+pub(crate) fn parse_line(line: &str) -> Result<ParsedRecord, serde_json::Error> {
     let value: Value = serde_json::from_str(line)?;
     let uuid = str_field(&value, "uuid");
     let timestamp = str_field(&value, "timestamp");

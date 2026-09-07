@@ -324,8 +324,12 @@ fn draw_surf(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Surf) {
 }
 
 /// surface leaf — bg-app fill, 가운데 kind 아이콘(accent) + 표시명(mono, secondary) +
-/// 값 요약(중앙 정렬). 본체 `demo_layout.rs::draw_leaf_preview` 와 동형: 값이 채워진
-/// 필드를 `키 값` 한 줄로 그리고, 박스 <96×72 → 요약 숨김, 짧은 축 <46 → kind명도 숨김.
+/// 값 요약(중앙 정렬). 본체 `demo_layout.rs::draw_leaf_preview` 와 같은 규칙으로 그린다:
+/// 값이 채워진 필드를 `키 값` 한 줄로, 박스 <96×72 → 요약 숨김, 짧은 축 <46 → kind명도 숨김.
+///
+/// **본체를 부르지 않는 것이 의도다.** 갤러리는 본체를 비추는 specimen 이라 본체 함수를
+/// 부르면 거울이 아니라 본체 자신이 되고, 본체가 틀리게 그려도 갤러리가 똑같이 틀리게
+/// 그려 대조가 사라진다(`docs/dev-guide/gallery-first.md`).
 fn draw_surface_box(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, leaf: &DemoLeaf) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_app().to_egui());

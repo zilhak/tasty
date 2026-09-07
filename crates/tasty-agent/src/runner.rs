@@ -672,7 +672,8 @@ mod tests {
         assert!(runner.executor.released.borrow().is_empty());
 
         // 외부(hook_id → task_id 매핑 소비 등)가 poll 을 거치지 않고 store 를
-        // 직접 Succeeded 로 전이 — `agent.task_set_result` 시나리오와 동형.
+        // 직접 Succeeded 로 전이 — `agent.task_set_result` 가 하는 것과 같은 모양의
+        // 시나리오를 세운다(그 경로를 부르지는 않는다).
         store
             .borrow_mut()
             .set_result(

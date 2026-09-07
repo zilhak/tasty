@@ -583,6 +583,12 @@ mod windows {
         }
 
         /// 현재 프로세스 내 파이프 핸들 복제(새 event). reader/writer 스레드 분리용.
+        // 이유: `DuplicateHandle` 은 `GetCurrentProcess()` 두 번을 인자로 받는다 — 그 셋을
+        //       가르려면 pseudo-handle 을 밖에서 따로 unsafe 로 얻어야 하고, 그러면 블록이
+        //       셋이 되면서 읽는 사람이 볼 것만 늘어난다. 파일이 아니라 이 함수에 거는 것은
+        //       이 파일이 Win32 전용이 아니라서다(844 줄 중 cfg(windows) 12 자리) — 파일
+        //       단위로 걸면 크로스플랫폼 부분의 새 위반까지 함께 가린다.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         pub(super) fn try_clone(&self) -> Result<Self> {
             let mut dup: HANDLE = ptr::null_mut();
             // SAFETY: 유효 핸들 → 같은 프로세스 복제. 실패 시 rc==0.

@@ -22,6 +22,7 @@ pub mod connection;
 pub mod egui_surface;
 pub mod env;
 pub mod error;
+pub mod file_watch;
 pub mod handle_channel;
 pub mod host;
 pub mod i18n;

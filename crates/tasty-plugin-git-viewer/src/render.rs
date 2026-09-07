@@ -48,7 +48,7 @@ fn prop(size: f32) -> FontId {
 }
 
 /// popup 본문 진입점 — CentralPanel(bg_panel) 위에 header + context strip + body.
-pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
+pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
     let frame = egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
         .inner_margin(egui::Margin::ZERO);
@@ -72,7 +72,7 @@ pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Tr
 }
 
 /// 단일 인스턴스 가드용 — 두 번째 popup 인스턴스가 보여줄 "이미 열림" 중앙 메시지.
-pub fn draw_busy(ctx: &egui::Context, theme: &Theme, tr: &Translator) {
+pub(crate) fn draw_busy(ctx: &egui::Context, theme: &Theme, tr: &Translator) {
     let frame = egui::Frame::new().fill(theme.bg_panel().to_egui());
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         let h = ui.available_height().max(1.0);

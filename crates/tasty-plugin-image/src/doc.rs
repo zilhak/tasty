@@ -8,7 +8,6 @@
 //! atlas) — no separate host `CanvasTextureCache` layer is involved.
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use egui::{Color32, ColorImage, Pos2, Rect, TextureHandle, Vec2};
 
@@ -180,8 +179,6 @@ pub struct ImageDoc {
     pub texture: Option<TextureHandle>,
     pub zoom: f32,
     pub pan_offset: Vec2,
-    /// Last known mtime of `file_path` at load time.
-    pub last_mtime: Option<SystemTime>,
 
     // ── Drawing state ──
     pub edit_state: EditState,
@@ -201,6 +198,10 @@ pub struct ImageDoc {
     pub save_path_popup: bool,
     pub save_path_buffer: String,
 
+    /// 편집 중에 도착한 외부 변경. 편집 세션을 밑에서 갈아치우지 않으려고 미뤄 둔 것으로,
+    /// 편집을 끝낼 때 반영된다. 이걸 안 두면 감시자는 이미 기준선을 옮겼으므로 그 변경이
+    /// **영구히** 사라진다(다음 외부 저장 전까지 낡은 그림을 보게 된다).
+    pending_external_reload: bool,
     /// True until pixels are first loaded — the plugin lazily loads on first paint.
     loaded: bool,
     /// True once the brush color has been seeded from the theme (accent-danger). The
@@ -227,7 +228,6 @@ impl ImageDoc {
             texture: None,
             zoom: 1.0,
             pan_offset: Vec2::ZERO,
-            last_mtime: None,
             edit_state: EditState::Inactive,
             draw_layer: None,
             draw_texture: None,
@@ -240,6 +240,7 @@ impl ImageDoc {
             new_image_height: DEFAULT_BLANK_CANVAS_HEIGHT.to_string(),
             save_path_popup: false,
             save_path_buffer: String::new(),
+            pending_external_reload: false,
             loaded: false,
             themed_brush: false,
         }
@@ -266,9 +267,7 @@ impl ImageDoc {
         }
         self.loaded = true;
         if let Some(p) = self.file_path.clone() {
-            let (img, mtime) = load_image_from_path(&p);
-            self.original_image = img;
-            self.last_mtime = mtime;
+            self.original_image = load_image_from_path(&p);
         } else {
             // Blank canvas — start in edit mode so the user/agent can draw immediately.
             self.original_image = Some(ColorImage::new(
@@ -282,11 +281,23 @@ impl ImageDoc {
     /// Reload from `file_path` regardless of mtime, keeping any edit session cleared.
     pub fn reload_from_disk(&mut self) {
         if let Some(path) = self.file_path.clone() {
-            let (img, mtime) = load_image_from_path(&path);
-            self.original_image = img;
-            self.last_mtime = mtime;
+            self.original_image = load_image_from_path(&path);
             self.texture = None;
         }
+    }
+
+    /// 감시자가 알린 외부 변경을 반영한다. **편집 중이면 미뤄 둔다** — 사용자가 그리는
+    /// 중에 밑그림을 갈아치우면 그 위의 스트로크가 다른 그림에 얹힌다. 미룬 것은
+    /// [`Self::exit_edit_mode`] 가 반영한다.
+    ///
+    /// 반환값은 화면이 실제로 바뀌었는지 — 호출자가 재-paint 여부를 정하는 데 쓴다.
+    pub fn apply_external_change(&mut self) -> bool {
+        if self.is_editing() {
+            self.pending_external_reload = true;
+            return false;
+        }
+        self.reload_from_disk();
+        true
     }
 
     /// Step one image backward in the directory. Returns the new path on success.
@@ -321,9 +332,7 @@ impl ImageDoc {
             return;
         }
         if let Some(path) = self.file_path.clone() {
-            let (img, mtime) = load_image_from_path(&path);
-            self.original_image = img;
-            self.last_mtime = mtime;
+            self.original_image = load_image_from_path(&path);
             self.texture = None;
             self.zoom = 1.0;
             self.pan_offset = Vec2::ZERO;
@@ -367,6 +376,10 @@ impl ImageDoc {
         self.draw_texture = None;
         self.last_draw_pos = None;
         self.draw_texture_dirty = false;
+        if self.pending_external_reload {
+            self.pending_external_reload = false;
+            self.reload_from_disk();
+        }
     }
 
     /// Replace the original image with a fresh blank canvas and enter edit mode.
@@ -618,13 +631,11 @@ impl ImageDoc {
 
 // ── Free helper functions ──
 
-/// Load an image from a file path, returning the ColorImage and modification time.
-pub fn load_image_from_path(path: &str) -> (Option<ColorImage>, Option<SystemTime>) {
-    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-
+/// Load an image from a file path.
+pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
     let img = match image::open(path) {
         Ok(img) => img,
-        Err(_) => return (None, mtime),
+        Err(_) => return None,
     };
 
     let rgba = img.to_rgba8();
@@ -636,17 +647,14 @@ pub fn load_image_from_path(path: &str) -> (Option<ColorImage>, Option<SystemTim
         .map(|p| Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
         .collect();
 
-    (
-        Some(ColorImage {
-            size: [w as usize, h as usize],
-            pixels,
-        }),
-        mtime,
-    )
+    Some(ColorImage {
+        size: [w as usize, h as usize],
+        pixels,
+    })
 }
 
 /// Returns true if the path's extension is a recognised image type.
-pub fn is_image_file(path: &Path) -> bool {
+pub(crate) fn is_image_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| IMAGE_EXTENSIONS.contains(&e.to_lowercase().as_str()))
@@ -654,7 +662,7 @@ pub fn is_image_file(path: &Path) -> bool {
 }
 
 /// Scan the directory of the given file path for image files (sorted).
-pub fn scan_directory_images(file_path: &str) -> Vec<String> {
+pub(crate) fn scan_directory_images(file_path: &str) -> Vec<String> {
     let path = Path::new(file_path);
     let parent = match path.parent() {
         Some(p) => p,
@@ -678,7 +686,7 @@ pub fn scan_directory_images(file_path: &str) -> Vec<String> {
 }
 
 /// Alpha blend foreground over background.
-pub fn alpha_blend(bg: Color32, fg: Color32) -> Color32 {
+pub(crate) fn alpha_blend(bg: Color32, fg: Color32) -> Color32 {
     let fa = fg.a() as f32 / 255.0;
     if fa < 0.001 {
         return bg;
@@ -699,7 +707,7 @@ pub fn alpha_blend(bg: Color32, fg: Color32) -> Color32 {
 }
 
 /// Draw a thick line using Bresenham's algorithm with a circle brush.
-pub fn bresenham_thick_line(
+pub(crate) fn bresenham_thick_line(
     layer: &mut ColorImage,
     from: Pos2,
     to: Pos2,
@@ -722,7 +730,7 @@ pub fn bresenham_thick_line(
 }
 
 /// Blit a source image onto a target layer at the given position, scaled to `dest_size`.
-pub fn blit_image(
+pub(crate) fn blit_image(
     layer: &mut ColorImage,
     src: &ColorImage,
     position: Vec2,
@@ -761,7 +769,7 @@ pub fn blit_image(
 }
 
 /// Fill a circle of pixels at (cx, cy) with the given radius.
-pub fn fill_circle(
+pub(crate) fn fill_circle(
     layer: &mut ColorImage,
     cx: f32,
     cy: f32,
@@ -806,6 +814,107 @@ mod tests {
         doc.ensure_loaded();
         assert!(doc.original_image.is_none());
         assert!(!doc.is_editing());
+    }
+
+    /// 시험용 PNG 를 하나 만든다. 지정한 색으로 단색이라 `original_image` 의 첫 픽셀만
+    /// 보면 어느 세대를 읽었는지 알 수 있다.
+    fn write_probe_png(path: &std::path::Path, rgb: [u8; 3]) {
+        let img = image::RgbImage::from_pixel(4, 4, image::Rgb(rgb));
+        img.save(path).expect("probe png 저장 실패");
+    }
+
+    fn probe_png_path(what: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "tasty-image-{what}-{}-{:?}.png",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    fn first_pixel(doc: &ImageDoc) -> Color32 {
+        doc.original_image
+            .as_ref()
+            .expect("픽셀이 있어야 한다")
+            .pixels[0]
+    }
+
+    /// ⓪ **대조군** — 편집 중이 아니면 외부 변경이 곧바로 반영된다.
+    ///
+    /// 아래 "미룬다" 시험과 짝이다. 이 칸이 없으면 그쪽이 "안 반영됐다" 를 낼 때 그것이
+    /// **미뤄서인지 애초에 리로드가 동작을 안 해서인지** 못 가른다.
+    #[test]
+    fn an_external_change_is_applied_at_once_when_not_editing() {
+        let path = probe_png_path("apply");
+        write_probe_png(&path, [255, 0, 0]);
+        let mut doc = ImageDoc::new(Some(path.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        assert_eq!(first_pixel(&doc).r(), 255, "전제: 첫 세대를 읽었다");
+
+        write_probe_png(&path, [0, 255, 0]);
+        assert!(
+            doc.apply_external_change(),
+            "편집 중이 아니면 곧바로 반영한다"
+        );
+        assert_eq!(first_pixel(&doc).g(), 255, "두 번째 세대가 보여야 한다");
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// **편집 중 도착한 외부 변경은 미뤄지되 버려지지 않는다.**
+    ///
+    /// 그리는 중에 밑그림을 갈아치우면 스트로크가 다른 그림에 얹힌다. 그렇다고 그냥
+    /// 버리면 안 된다 — 감시자는 이미 기준선을 옮겨서 같은 변경을 다시 알리지 않으므로,
+    /// 버린 변경은 **다음 외부 저장 전까지 영구히** 안 보인다.
+    #[test]
+    fn an_external_change_during_an_edit_is_deferred_not_lost() {
+        let path = probe_png_path("defer");
+        write_probe_png(&path, [255, 0, 0]);
+        let mut doc = ImageDoc::new(Some(path.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        doc.enter_edit_mode();
+        assert!(doc.is_editing(), "전제: 편집 세션이 활성이어야 한다");
+
+        write_probe_png(&path, [0, 255, 0]);
+        assert!(
+            !doc.apply_external_change(),
+            "편집 중에는 밑그림을 갈아치우지 않는다"
+        );
+        assert_eq!(
+            first_pixel(&doc).r(),
+            255,
+            "편집 중에는 첫 세대가 그대로 보여야 한다"
+        );
+
+        doc.exit_edit_mode();
+        assert_eq!(
+            first_pixel(&doc).g(),
+            255,
+            "편집을 끝내면 미뤄 둔 변경이 반영돼야 한다 — 버려지면 안 된다"
+        );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 미뤄 둔 것이 없으면 편집을 끝낼 때 디스크를 다시 읽지 않는다 — 편집 종료가
+    /// 매번 디코드를 부르면 그 자체가 이 판정자가 피하려던 비용이다.
+    #[test]
+    fn leaving_an_edit_without_a_pending_change_does_not_reload() {
+        let path = probe_png_path("nopending");
+        write_probe_png(&path, [255, 0, 0]);
+        let mut doc = ImageDoc::new(Some(path.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        doc.enter_edit_mode();
+
+        // 감시자가 아무것도 안 알린 채로 파일만 바뀐 상태를 만든다.
+        write_probe_png(&path, [0, 255, 0]);
+        doc.exit_edit_mode();
+        assert_eq!(
+            first_pixel(&doc).r(),
+            255,
+            "미뤄 둔 것이 없으면 편집 종료가 스스로 다시 읽지 않는다"
+        );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }
 
     #[test]

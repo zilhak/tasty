@@ -336,7 +336,7 @@ fn worker_loop_invokes_on_start_once_before_dispatch() {
 
 /// self-invoke 는 host 왕복(`ipc.invoke` 프레이밍) 없이 `handle_ipc_method` 로 직접
 /// 라우팅되어야 한다 — plugin 자신의 네임스페이스 메서드를 `HostHandle::call`로
-/// 부르면 host 의 self-call 미forward 정책 때문에 `-32601`이 나는 문제(watch.rs 의
+/// 부르면 host 의 self-call 미forward 정책 때문에 `-32601`이 나는 문제(`file_watch` 의
 /// idle auto-reload 회귀)의 재발 방지 테스트. `caller_plugin_id`는 plugin 자신의
 /// id가 채워진다.
 #[test]

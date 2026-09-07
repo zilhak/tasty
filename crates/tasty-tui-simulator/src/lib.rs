@@ -23,37 +23,46 @@ pub enum Commands {
     Interactive,
     /// One-shot: cursor movement test.
     Cursor {
+        /// Target row, 0-indexed.
         #[arg(long, default_value = "5")]
         row: u16,
+        /// Target column, 0-indexed.
         #[arg(long, default_value = "10")]
         col: u16,
+        /// Text written at the target cell.
         #[arg(long, default_value = "X")]
         marker: String,
+        /// Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at.
         #[arg(long)]
         exit: bool,
     },
     /// One-shot: ANSI 16 + TrueColor test.
     Colors {
+        /// Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at.
         #[arg(long)]
         exit: bool,
     },
     /// One-shot: text attributes test.
     Attrs {
+        /// Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at.
         #[arg(long)]
         exit: bool,
     },
     /// One-shot: alternate screen test.
     Altscreen {
+        /// Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at.
         #[arg(long)]
         exit: bool,
     },
     /// One-shot: CJK/fullwidth test.
     Unicode {
+        /// Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at.
         #[arg(long)]
         exit: bool,
     },
     /// One-shot: scroll region test.
     ScrollRegion {
+        /// Return as soon as the scenario is drawn. Without it the simulator waits for one key press, so the screen stays up to be looked at.
         #[arg(long)]
         exit: bool,
     },

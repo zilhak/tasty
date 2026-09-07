@@ -135,9 +135,9 @@ fn deferred_doc_holds_read_until_resume() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// `force_reload` 가 외부 삭제를 error 상태로 감지한다 — idle 감시(`watch.rs`)가
+/// `force_reload` 가 외부 삭제를 error 상태로 감지한다 — idle 감시(SDK `file_watch`)가
 /// mtime 변경을 감지했을 때, 그리고 `markdown.reload` IPC 가 명시 호출됐을 때 모두
-/// 이 경로 하나로 수렴한다(watch.rs 모듈 문서 — 레이스를 없애는 단일 쓰기 경로).
+/// 이 경로 하나로 수렴한다(`file_watch` 모듈 문서 — 레이스를 없애는 단일 쓰기 경로).
 #[test]
 fn force_reload_detects_external_deletion_as_error() {
     let path = std::env::temp_dir().join(format!("tasty-md-delpoll-{}.md", std::process::id()));

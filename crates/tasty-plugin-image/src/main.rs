@@ -16,16 +16,25 @@
 //! enumeration) trampoline to the host. The former host `ImageView` render path stays
 //! compiled until C1 removes it.
 
+// 이유: 테스트 본문의 `let _ =` 는 정책이 사유를 요구하지 않는 자리라
+// `clippy::let_underscore_must_use` 명부에 섞이면 안 된다 — 그 명부는 프로덕션에서
+// 값을 버리는 자리의 목록이고, 테스트가 늘 때마다 숫자만 흔들리면 새 프로덕션
+// 자리가 그 안에 묻힌다(docs/dev-guide/error-handling.md). `cfg_attr(test, ..)` 라
+// 라이브러리 타깃의 판정은 그대로다 — 프로덕션 자리는 여전히 명부에 오른다.
+#![cfg_attr(test, allow(clippy::let_underscore_must_use))]
+
 mod doc;
 #[cfg(any(unix, windows))]
 mod render;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::mpsc;
 
 use doc::ImageDoc;
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
+use tasty_plugin_sdk::file_watch::{self, StatGatedDigest, WatchCmd};
 use tasty_plugin_sdk::{
     IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
     SurfaceSetContextCtx, Translator, host::HostHandle,
@@ -49,6 +58,9 @@ struct ImagePlugin {
     docs: HashMap<u32, ImageDoc>,
     /// plugin lang 카탈로그 (UI 문자열).
     tr: Translator,
+    /// 외부 변경 감시 worker(SDK `file_watch::run`) 로 등록/해제 명령을 보내는 채널.
+    /// `on_start` 에서 worker 를 spawn 하며 채워진다.
+    watch_tx: Option<mpsc::Sender<WatchCmd>>,
 }
 
 impl ImagePlugin {
@@ -60,6 +72,7 @@ impl ImagePlugin {
             fonts_installed: std::collections::HashSet::new(),
             docs: HashMap::new(),
             tr,
+            watch_tx: None,
         }
     }
 }
@@ -73,11 +86,31 @@ impl Plugin for ImagePlugin {
         PLUGIN_VERSION
     }
 
+    fn on_start(&mut self, host: HostHandle, _bus: tasty_plugin_sdk::BusHandle) {
+        // idle 자동 리로드: egui-mesh surface 는 입력·geom·theme·focus·invalidated 중
+        // 하나가 있어야 host 가 set_context 를 forward 하므로, 아무도 안 건드리는 동안은
+        // paint 가 아예 안 온다 — 별도 감시 스레드가 유일한 자동 갱신 경로다.
+        //
+        // 판정자는 `StatGatedDigest` 다. 이미지는 사용자가 고르는 아무 파일이라 읽기 비용에
+        // 상한이 없어 markdown 의 `ContentDigest`(매 폴 전량 읽기)를 그대로 쓸 수 없고,
+        // 반대로 시계만 보면 `touch`·rsync 같은 오탐마다 디코드가 돈다 — 이 자리에서
+        // 디코드는 읽기의 100~250 배다(그 타입 문서의 실측표).
+        let (tx, rx) = mpsc::channel();
+        self.watch_tx = Some(tx);
+        if let Err(e) = std::thread::Builder::new()
+            .name("image-watch".to_string())
+            .spawn(move || file_watch::run::<StatGatedDigest>(host, rx, "image.reload"))
+        {
+            tracing::warn!("image watch worker spawn failed — idle auto-reload disabled: {e}");
+        }
+    }
+
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
         // egui-mesh surface: no tree — load the file and return an empty result. The SDK
         // hands the full `surface.create` envelope as `ctx.params`; the real params
         // (`file`) are nested under `params.params`.
         let file = surface_param_file(&ctx.params);
+        self.watch_register(ctx.surface_id, file.clone());
         self.docs.insert(ctx.surface_id, ImageDoc::new(file));
         SurfaceResult::default()
     }
@@ -89,6 +122,7 @@ impl Plugin for ImagePlugin {
             self.fonts_installed.remove(&surface_id);
         }
         self.docs.remove(&surface_id);
+        self.watch_unregister(surface_id);
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
@@ -101,6 +135,14 @@ impl Plugin for ImagePlugin {
             // wouldn't show until the next user input (egui-mesh re-forward gap, option A).
             "image.save" | "image.export_png" => {
                 let out = self.image_save(&ctx.params)?;
+                self.repaint_after_edit(&ctx.host, &ctx.params);
+                Ok(out)
+            }
+            // 감시자가 외부 변경을 알렸거나 사용자가 명시 호출했다. 실제 read 는 여기
+            // 하나로만 수렴한다(SDK `file_watch` 모듈 문서 — 쓰기 경로가 하나여야
+            // 빠른 연속 편집에서 stale read 가 최신 것을 덮어쓰지 않는다).
+            "image.reload" => {
+                let out = self.image_reload(&ctx.params)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
                 Ok(out)
             }
@@ -151,9 +193,43 @@ impl ImagePlugin {
                 if doc.is_blank() {
                     doc.file_path = Some(final_path.clone());
                 }
+                // 방금 우리가 쓴 파일이다 — 기준선을 다시 잡아 감시자가 이 쓰기를 외부
+                // 변경으로 되읽지 않게 한다(되읽어도 결과는 같지만 디코드가 한 번 더 돈다).
+                let watched = doc.file_path.clone();
+                self.watch_register(sid, watched);
                 Ok(json!({ "ok": true, "path": final_path }))
             }
             Err(e) => Err(IpcMethodError::new(format!("save failed: {e}"))),
+        }
+    }
+
+    /// 파일을 다시 읽어 문서에 반영한다. 편집 중이면 미뤄 둔다(`apply_external_change`).
+    fn image_reload(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
+        let sid = require_surface(params)?;
+        let doc = self.docs.get_mut(&sid).ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!("Surface {sid} is not an image"))
+        })?;
+        let applied = doc.apply_external_change();
+        Ok(json!({ "ok": true, "surface_id": sid, "applied": applied }))
+    }
+
+    /// 감시 대상 경로를 등록(또는 갱신)한다. 이미 등록된 surface 에 다시 보내면 **기준선이
+    /// 다시 잡힌다** — 우리가 스스로 쓴 파일(저장)을 외부 변경으로 되읽지 않으려고 쓴다.
+    fn watch_register(&self, surface_id: u32, path: Option<String>) {
+        let Some(tx) = &self.watch_tx else { return };
+        if tx.send(WatchCmd::Register { surface_id, path }).is_err() {
+            tracing::warn!(
+                "image watch: register send failed for surface {surface_id} (worker gone)"
+            );
+        }
+    }
+
+    fn watch_unregister(&self, surface_id: u32) {
+        let Some(tx) = &self.watch_tx else { return };
+        if tx.send(WatchCmd::Unregister { surface_id }).is_err() {
+            tracing::warn!(
+                "image watch: unregister send failed for surface {surface_id} (worker gone)"
+            );
         }
     }
 
@@ -182,6 +258,8 @@ impl ImagePlugin {
         match new_path {
             Some(path) => {
                 doc.load_after_navigation();
+                // 같은 surface 가 다른 파일을 보게 됐다 — 감시 대상도 따라가야 한다.
+                self.watch_register(sid, Some(path.clone()));
                 Ok(json!({ "ok": true, "path": path }))
             }
             None => Err(IpcMethodError::invalid_params(
@@ -335,6 +413,20 @@ fn install_fonts(ctx: &egui::Context) {
                 .entry(fam)
                 .or_default()
                 .push("system_cjk".to_owned());
+        }
+    }
+    // 언어팩 `[font]` 폰트를 CJK 뒤, 체인 맨 뒤 폴백으로 붙인다. host 두 경로와 같은
+    // 판정기(`tasty_egui_theme::install_locale_font_fallback`)를 쓴다 — 검증이 곧 "어떤
+    // 폰트를 거부하는가" 라는 판정이라 사본을 두면 host 는 받고 plugin 은 거부하는 갈림이
+    // 생긴다. 경로는 host 가 resolve 해 `TASTY_LOCALE_FONT` 로 물려준 것(SDK
+    // `PluginEnv.locale_font` 와 같은 출처).
+    if let Some(path) = std::env::var_os("TASTY_LOCALE_FONT").filter(|v| !v.is_empty()) {
+        let path = std::path::PathBuf::from(path);
+        if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
+            tracing::warn!(
+                "locale font at {} could not be installed: {e}",
+                path.display()
+            );
         }
     }
     ctx.set_fonts(fonts);

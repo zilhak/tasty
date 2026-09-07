@@ -62,7 +62,7 @@ const VERIFY_EVERY: u64 = 10;
 
 type Shared = Arc<Mutex<StreamRegistry>>;
 
-pub fn tail_loop(registry: Shared, host: HostHandle) {
+pub(crate) fn tail_loop(registry: Shared, host: HostHandle) {
     let mut tick_count: u64 = 0;
     loop {
         std::thread::sleep(TICK);
@@ -103,7 +103,7 @@ fn tick<H: HostCall>(registry: &Shared, host: &H, tick_count: u64) -> std::ops::
 }
 
 /// 호스트에 대상 생존과 세션 id 를 되묻는다. lock 은 IPC **바깥**에서만 잡는다.
-pub fn verify_targets<H: HostCall>(registry: &Shared, host: &H, root: Option<&Path>) {
+pub(crate) fn verify_targets<H: HostCall>(registry: &Shared, host: &H, root: Option<&Path>) {
     // 위 `pump_all` 과 같은 이유로 복구한다 — 여기서 접으면 대상 검증이 영구히 멈춰
     // 사라진 surface 의 턴이 영영 안 닫힌다.
     let targets = lock_registry(registry).targets();
@@ -139,7 +139,7 @@ fn verify_one<H: HostCall>(
 }
 
 /// 등록된 모든 대상의 파일을 한 번씩 읽어 이벤트를 만든다.
-pub fn pump_all(registry: &Shared, root: Option<&Path>) {
+pub(crate) fn pump_all(registry: &Shared, root: Option<&Path>) {
     // 로그만 남기고 return 하던 자리 — poison 이 sticky 라 그 return 은 곧 **수집의
     // 영구 중단**이었다. 임계구역은 대상 목록 조회뿐이라 복구가 맞다.
     let surfaces: Vec<u32> = lock_registry(registry)

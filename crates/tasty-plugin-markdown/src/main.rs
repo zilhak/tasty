@@ -24,7 +24,6 @@
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 
 mod render;
-mod watch;
 
 /// 빌드타임 SVG 베이크 산출물 (방식 B). `build.rs` 가 `tasty-icons` 의 canonical
 /// `<svg>` 를 usvg 로 파싱·평탄화해 `pub const <NAME>: &[&[[f32; 2]]]`(viewBox 0..24
@@ -40,22 +39,19 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use tasty_plugin_protocol::ThemeWire;
+use tasty_plugin_sdk::file_watch::{self, ContentDigest, WatchCmd};
 use tasty_plugin_sdk::{
     BusHandle, EventDispatchCtx, EventScope, HostHandle, IpcMethodCtx, IpcMethodError, Plugin,
     PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx,
     SurfaceRestoreCtx, SurfaceResult, Translator, WebviewNavigationAttemptCtx,
 };
 use tasty_type_appearance::theme::Theme;
-use watch::WatchCmd;
 
 #[cfg(any(unix, windows))]
 use tasty_plugin_sdk::EguiMeshPopup;
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
 const PLUGIN_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// How often to check the file's mtime (in seconds).
-const RELOAD_CHECK_INTERVAL_SECS: f64 = 1.0;
 
 /// 대용량 파일 확인 게이트 임계값 (1MB). 이 크기를 *초과* 하는 파일은 읽기 전에 확인
 /// 팝업을 띄운다. **크기 감지는 plugin in-process** — host 는 파일 크기를 stat 하지
@@ -72,7 +68,7 @@ const LARGE_FILE_EVENT_KEY: &str = "com.tasty.markdown.large_file_confirm";
 const THEME_CHANGED_EVENT: &str = "theme.changed";
 
 /// Per-surface markdown document state owned by the plugin (content, load outcome, base
-/// dir for relative paths). mtime tracking to *decide when* to reload lives in `watch.rs`,
+/// dir for relative paths). Tracking to *decide when* to reload lives in the SDK's `file_watch`,
 /// not here — `MdDoc` only knows how to (re-)read once asked.
 struct MdDoc {
     file_path: Option<String>,
@@ -128,7 +124,7 @@ impl MdDoc {
         }
     }
 
-    /// Force a re-read (`markdown.reload` IPC, idle watch — `watch.rs` owns its own mtime
+    /// Force a re-read (`markdown.reload` IPC, idle watch — SDK `file_watch` owns its own
     /// tracking to decide *when* to call this; `MdDoc` itself no longer tracks mtime since
     /// `paint_surface` never fires for a webview-kind surface, so there's no per-frame
     /// throttled poll to gate anymore — see the module doc on the removed `poll_reload`).
@@ -179,7 +175,7 @@ struct MarkdownPlugin {
     bus: Option<BusHandle>,
     /// host IPC 호출용 핸들(`on_start` 에서 저장) — `create_surface`/`on_event`/
     /// `on_webview_navigation_attempt` 컨텍스트에는 host 필드가 없다(SDK 계약). idle 감시
-    /// worker 로 옮기는 클론과는 별개(그쪽은 watch.rs 전용).
+    /// worker 로 옮기는 클론과는 별개(그쪽은 감시 worker 전용).
     host: Option<HostHandle>,
     /// popup instance_id → 대용량 확인 대상.
     confirm: HashMap<u64, LargeFileConfirm>,
@@ -198,7 +194,7 @@ struct MarkdownPlugin {
     popup_fonts_installed: std::collections::HashSet<u64>,
     /// plugin lang 카탈로그 (state.failed / state.empty / addr.* 등 UI 문자열).
     tr: Translator,
-    /// idle auto-reload 감시 worker(`watch::run`) 로 등록/해제 명령을 보내는 채널
+    /// idle auto-reload 감시 worker(SDK `file_watch::run`) 로 등록/해제 명령을 보내는 채널
     /// (단계 06). `on_start` 에서 worker 를 spawn 하며 채워진다 — 그 전에는 감시가
     /// 비활성(사실상 도달하지 않음, worker_loop 이 on_start 를 먼저 호출).
     watch_tx: Option<mpsc::Sender<WatchCmd>>,
@@ -242,16 +238,19 @@ impl Plugin for MarkdownPlugin {
         // 않으므로(SDK 계약) 별도로 보관한다 — idle 감시 worker 로 옮기는 클론과는 독립.
         self.host = Some(host.clone());
 
-        // idle auto-reload(단계 06, Stage B 갱신): paint 에 종속되지 않는 별도 스레드가
-        // mtime 을 폴링하다가 변경을 감지하면 host 를 왕복해 이 plugin 자신의
-        // `markdown.reload` IPC 를 직접 호출한다(worker 는 read 하지 않음 — 상세는
-        // watch::run 모듈 문서). webview kind 는 `paint`/`set_context` 를 전혀 받지
-        // 않으므로 `SurfaceInvalidated` 기반 idle-invalidate 경로는 쓰지 않는다.
+        // idle auto-reload: paint 에 종속되지 않는 별도 스레드가 파일 내용 지문을
+        // 폴링하다가 변경을 감지하면 이 plugin 자신의 `markdown.reload` IPC 를
+        // self_invoke 한다(worker 는 read 하지 않음 — 상세는 SDK `file_watch` 모듈
+        // 문서). webview kind 는 `paint`/`set_context` 를 전혀 받지 않으므로
+        // `SurfaceInvalidated` 기반 idle-invalidate 경로는 쓰지 않는다.
+        //
+        // 판정자는 `ContentDigest` — markdown 은 읽기 비용이 문서 크기로 유계라
+        // 매 폴 전량을 읽는 교환이 성립한다(근거는 그 타입의 문서).
         let (tx, rx) = mpsc::channel();
         self.watch_tx = Some(tx);
         if let Err(e) = std::thread::Builder::new()
             .name("markdown-watch".to_string())
-            .spawn(move || watch::run(host, rx))
+            .spawn(move || file_watch::run::<ContentDigest>(host, rx, "markdown.reload"))
         {
             tracing::warn!("markdown watch worker spawn failed — idle auto-reload disabled: {e}");
         }
@@ -1105,6 +1104,20 @@ fn install_fonts(ctx: &egui::Context) {
                 .entry(fam)
                 .or_default()
                 .push("system_cjk".to_owned());
+        }
+    }
+    // 언어팩 `[font]` 폰트를 CJK 뒤, 체인 맨 뒤 폴백으로 붙인다. host 두 경로와 같은
+    // 판정기(`tasty_egui_theme::install_locale_font_fallback`)를 쓴다 — 검증이 곧 "어떤
+    // 폰트를 거부하는가" 라는 판정이라 사본을 두면 host 는 받고 plugin 은 거부하는 갈림이
+    // 생긴다. 경로는 host 가 resolve 해 `TASTY_LOCALE_FONT` 로 물려준 것(SDK
+    // `PluginEnv.locale_font` 와 같은 출처).
+    if let Some(path) = std::env::var_os("TASTY_LOCALE_FONT").filter(|v| !v.is_empty()) {
+        let path = std::path::PathBuf::from(path);
+        if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
+            tracing::warn!(
+                "locale font at {} could not be installed: {e}",
+                path.display()
+            );
         }
     }
     ctx.set_fonts(fonts);

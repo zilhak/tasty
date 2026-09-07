@@ -22,7 +22,7 @@ use tasty_type_appearance::theme::Theme;
 use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 
 /// Render one frame of the image surface into `ctx`.
-pub fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
+pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     let frame = egui::Frame::new().fill(theme.bg_panel().to_egui());
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         // ── Popups take over the whole surface ──

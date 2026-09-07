@@ -136,6 +136,24 @@ impl FontConfig {
         None
     }
 
+    /// On-disk path of a font file providing `family`, when the matching face is
+    /// backed by a file on disk. Used to resolve a language pack's
+    /// `[font] family = …` to a concrete path so the same file can be handed to
+    /// plugin processes via `TASTY_LOCALE_FONT` (they must not re-search the
+    /// system DB). Returns `None` for in-memory faces or unknown families.
+    pub fn family_source_path(&self, family: &str) -> Option<std::path::PathBuf> {
+        for face in self.font_system.db().faces() {
+            for (name, _) in &face.families {
+                if name.eq_ignore_ascii_case(family) {
+                    if let cosmic_text::fontdb::Source::File(path) = &face.source {
+                        return Some(path.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// List all available font family names from the system, sorted alphabetically.
     pub fn list_families(&self) -> Vec<String> {
         let mut families = BTreeSet::new();
@@ -271,6 +289,46 @@ pub fn pick_lru_victim(pages: &[AtlasPage], active_page: u32) -> Option<u32> {
         .map(|(i, _)| i as u32)
 }
 
+/// Per-frame bookkeeping for the atlas: the monotonic counter that stamps
+/// `AtlasPage::last_access_frame`, plus the once-per-frame eviction throttle.
+///
+/// Kept as its own device-free type because `GlyphAtlas` cannot exist without
+/// a `wgpu::Device`. The rule that `GlyphAtlas::begin_frame` states in prose —
+/// bump once per render frame or LRU stamps stop meaning anything — has no
+/// place to be checked while it lives only on that struct; here it does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameClock {
+    current: u64,
+    last_evict: Option<u64>,
+}
+
+impl FrameClock {
+    /// Advance to the next frame. This is the *only* thing that re-arms the
+    /// eviction throttle: a clock that is never advanced refuses every
+    /// eviction after its first one, for as long as the atlas lives.
+    pub fn begin_frame(&mut self) {
+        // Wrapping, not saturating: saturating would freeze the counter at
+        // `u64::MAX` and latch the throttle exactly the same way.
+        self.current = self.current.wrapping_add(1);
+    }
+
+    /// Current frame stamp, written onto every page this frame touches.
+    pub fn now(&self) -> u64 {
+        self.current
+    }
+
+    /// Whether a page was already evicted in the current frame. Evicting more
+    /// than once per frame thrashes the atlas, so the second one is refused.
+    pub fn evicted_this_frame(&self) -> bool {
+        self.last_evict == Some(self.current)
+    }
+
+    /// Record that a page was evicted in the current frame.
+    pub fn note_eviction(&mut self) {
+        self.last_evict = Some(self.current);
+    }
+}
+
 /// ASCII fast-path glyph cache: direct array index for printable ASCII
 /// (code points 0..128) × bold × italic = 512 slots. Avoids hash lookup
 /// on the hot path where ~95% of cell glyphs land.
@@ -337,12 +395,8 @@ pub struct GlyphAtlas {
     pages: Vec<AtlasPage>,
     /// Page where new glyphs are currently being packed.
     active_page: u32,
-    /// Monotonic frame counter; bumped by `begin_frame()`. Used to stamp
-    /// `last_access_frame` on each page touch.
-    current_frame: u64,
-    /// Set to `current_frame` when a page eviction happens; ensures we
-    /// never evict more than once per frame to avoid thrashing.
-    last_evict_frame: Option<u64>,
+    /// Frame counter + once-per-frame eviction throttle. See `FrameClock`.
+    frame: FrameClock,
     /// Monotonic count of page evictions since atlas construction. Surfaced
     /// via `eviction_count()` for perf logging; never read by atlas logic.
     eviction_count: u64,
@@ -396,16 +450,17 @@ impl GlyphAtlas {
             overflow_cache: FxHashMap::default(),
             pages: vec![AtlasPage::default(); Self::MAX_PAGES as usize],
             active_page: 0,
-            current_frame: 0,
-            last_evict_frame: None,
+            frame: FrameClock::default(),
             eviction_count: 0,
         }
     }
 
     /// Bump the frame counter. Call once per render frame, before any
-    /// `get_or_insert` calls, so LRU stamps are coherent.
+    /// `get_or_insert` calls, so LRU stamps are coherent and the eviction
+    /// throttle re-arms. Skipping it is silent: the atlas evicts once and then
+    /// drops every glyph that would need another eviction.
     pub fn begin_frame(&mut self) {
-        self.current_frame = self.current_frame.wrapping_add(1);
+        self.frame.begin_frame();
     }
 
     /// Monotonic eviction count since construction. Diagnostic only.
@@ -431,11 +486,11 @@ impl GlyphAtlas {
         queue: &wgpu::Queue,
     ) -> Option<AtlasEntry> {
         if let Some(entry) = self.ascii_cache.get(&key) {
-            self.pages[entry.page as usize].last_access_frame = self.current_frame;
+            self.pages[entry.page as usize].last_access_frame = self.frame.now();
             return Some(entry);
         }
         if let Some(entry) = self.overflow_cache.get(&key).copied() {
-            self.pages[entry.page as usize].last_access_frame = self.current_frame;
+            self.pages[entry.page as usize].last_access_frame = self.frame.now();
             return Some(entry);
         }
         self.rasterize_glyph(key, font_config, queue)
@@ -460,15 +515,15 @@ impl GlyphAtlas {
             let idx = (self.active_page + step) % max_pages;
             if let Some((x, y)) = self.pages[idx as usize].try_allocate(w, h, self.atlas_size) {
                 self.active_page = idx;
-                self.pages[idx as usize].last_access_frame = self.current_frame;
+                self.pages[idx as usize].last_access_frame = self.frame.now();
                 return Some((idx, x, y));
             }
         }
         // All pages full — evict the LRU non-active page (at most once per frame).
-        if self.last_evict_frame == Some(self.current_frame) {
+        if self.frame.evicted_this_frame() {
             tracing::warn!(
                 "glyph atlas: second eviction skipped in frame {}; glyph deferred",
-                self.current_frame
+                self.frame.now()
             );
             return None;
         }
@@ -508,11 +563,11 @@ impl GlyphAtlas {
                 depth_or_array_layers: 1,
             },
         );
-        self.last_evict_frame = Some(self.current_frame);
+        self.frame.note_eviction();
         self.eviction_count = self.eviction_count.saturating_add(1);
         let (x, y) = self.pages[victim as usize].try_allocate(w, h, self.atlas_size)?;
         self.active_page = victim;
-        self.pages[victim as usize].last_access_frame = self.current_frame;
+        self.pages[victim as usize].last_access_frame = self.frame.now();
         Some((victim, x, y))
     }
 
@@ -1005,6 +1060,71 @@ mod tests {
     fn lru_victim_returns_none_when_only_active_page_exists() {
         let pages = vec![AtlasPage::default(); 1];
         assert!(pick_lru_victim(&pages, 0).is_none());
+    }
+
+    // --- Frame clock: the contract `GlyphAtlas::begin_frame` states in prose ---
+
+    #[test]
+    fn frame_clock_starts_at_zero_with_eviction_available() {
+        let clock = FrameClock::default();
+        assert_eq!(clock.now(), 0);
+        assert!(!clock.evicted_this_frame());
+    }
+
+    #[test]
+    fn frame_clock_begin_frame_advances_the_stamp() {
+        let mut clock = FrameClock::default();
+        clock.begin_frame();
+        assert_eq!(clock.now(), 1);
+        clock.begin_frame();
+        assert_eq!(clock.now(), 2);
+    }
+
+    #[test]
+    fn frame_clock_refuses_a_second_eviction_in_the_same_frame() {
+        let mut clock = FrameClock::default();
+        clock.begin_frame();
+        assert!(!clock.evicted_this_frame());
+        clock.note_eviction();
+        assert!(clock.evicted_this_frame());
+    }
+
+    #[test]
+    fn frame_clock_rearms_eviction_on_the_next_frame() {
+        let mut clock = FrameClock::default();
+        clock.begin_frame();
+        clock.note_eviction();
+        assert!(clock.evicted_this_frame());
+        clock.begin_frame();
+        assert!(
+            !clock.evicted_this_frame(),
+            "a new frame must re-arm the eviction throttle"
+        );
+    }
+
+    #[test]
+    fn frame_clock_never_advanced_latches_the_throttle() {
+        // Why `begin_frame` must be called once per render frame: nothing else
+        // releases the throttle. A caller that skips it evicts once and then
+        // refuses every later eviction for the atlas's whole lifetime, which
+        // shows up only as glyphs silently failing to rasterize.
+        let mut clock = FrameClock::default();
+        clock.note_eviction();
+        for _ in 0..1000 {
+            assert!(clock.evicted_this_frame());
+        }
+    }
+
+    #[test]
+    fn frame_clock_wraps_instead_of_saturating() {
+        // Saturating would freeze the counter at `u64::MAX`, which latches the
+        // throttle in exactly the way the test above describes.
+        let mut clock = FrameClock {
+            current: u64::MAX,
+            last_evict: None,
+        };
+        clock.begin_frame();
+        assert_eq!(clock.now(), 0);
     }
 
     #[test]
