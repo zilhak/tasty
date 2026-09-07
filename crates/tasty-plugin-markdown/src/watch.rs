@@ -1,7 +1,7 @@
 //! idle 상태에서도 markdown 파일 변경을 감지하는 감시 worker (단계 06, Stage B 갱신).
 //!
 //! `on_start` 이 받은 `HostHandle` 을 이 모듈의 별도 스레드로 넘겨
-//! `RELOAD_CHECK_INTERVAL_SECS` 주기로 등록된 surface 들의 파일 mtime 을 stat 한다.
+//! `RELOAD_CHECK_INTERVAL_SECS` 주기로 등록된 surface 들의 파일 **내용**을 읽어 견준다.
 //! webview-kind surface 는 (egui-mesh 와 달리) `paint`/`set_context` 를 전혀 받지 않으므로
 //! — 그 경로에 있던 `MdDoc::poll_reload` 도 이제 호출되지 않는다 — idle 감시가 사실상
 //! 유일한 자동 갱신 경로다.
@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 use std::sync::mpsc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 use tasty_plugin_sdk::HostHandle;
@@ -42,10 +42,42 @@ pub(crate) enum WatchCmd {
     Unregister { surface_id: u32 },
 }
 
-/// 감시 중인 surface 1개 — worker 가 마지막으로 관측한 mtime.
+/// 감시 중인 surface 1개 — worker 가 마지막으로 관측한 **내용 지문**.
+///
+/// `None` 은 "읽을 수 없다"(파일 없음·권한)이고, 그 상태가 이어지는 동안은 변경이 아니다.
 struct WatchEntry {
     path: String,
-    last_mtime: Option<SystemTime>,
+    last_digest: Option<u64>,
+}
+
+/// 파일 **내용**의 지문. 읽을 수 없으면 `None`.
+///
+/// ## 왜 mtime 이 아닌가
+///
+/// 전에는 `metadata().modified()` 를 견줬다. 그러면 **두 쓰기 사이에 폴이 끼고 그 둘의
+/// mtime 이 같은 값으로 찍힐 때** 뒤엣것을 놓치고, 그 누락은 **다음 저장 전까지 영구다**
+/// (사용자에게는 "저장했는데 미리보기가 안 바뀐다" 로 보인다). 그 창의 크기는 파일시스템
+/// 눈금이 정한다 — ext4·NTFS·APFS 는 사실상 0 이지만 **exFAT 은 2 초, FAT 은 1 초**이고,
+/// 여기서 감시하는 것은 사용자가 여는 **아무 경로**라 USB·네트워크 마운트가 배제되지 않는다.
+/// 폴 주기가 1 초라 그 눈금과 같은 자릿수다.
+///
+/// ## 비용
+///
+/// 폴마다 전량을 읽는다. 실측(이 레포 `.md` 429 개, 중앙 8.0 KB · 최대 131 KB):
+/// `stat` 1.0 us 대 읽기+해시 **11.3 us**(8 KB) / **117 us**(131 KB). 감시 surface 10 개를
+/// 열어도 초당 1.2 ms — 코어의 0.12 % 다. **비용이 문서 크기로 유계**라서 이 교환이 성립한다.
+/// (같은 교환이 성립하지 않는 자리도 있다 — `src/host_api/hooks/global.rs` 의 파일 조건은
+/// 감시 대상이 자라는 로그라 상한이 없고, 그래서 그쪽은 시계를 그대로 쓴다.)
+///
+/// 지문은 64 비트다. 서로 다른 내용이 같은 값을 낼 확률이 남지만, 그 확률은 위 눈금 창보다
+/// 몇 자릿수 작다 — 길이를 함께 섞어 같은 길이가 아닌 내용은 값이 갈리게 한다.
+fn digest(path: &str) -> Option<u64> {
+    use std::hash::Hasher;
+    let bytes = std::fs::read(path).ok()?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    h.write_usize(bytes.len());
+    h.write(&bytes);
+    Some(h.finish())
 }
 
 /// `on_start` 에서 spawn 되는 감시 루프. `rx` 가 끊기면(plugin 종료) 반환한다.
@@ -95,12 +127,12 @@ fn drain_commands_until_tick(
 fn apply_register(watched: &mut HashMap<u32, WatchEntry>, surface_id: u32, path: Option<String>) {
     match path {
         Some(p) => {
-            let last_mtime = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
+            let last_digest = digest(&p);
             watched.insert(
                 surface_id,
                 WatchEntry {
                     path: p,
-                    last_mtime,
+                    last_digest,
                 },
             );
         }
@@ -110,20 +142,18 @@ fn apply_register(watched: &mut HashMap<u32, WatchEntry>, surface_id: u32, path:
     }
 }
 
-/// 등록된 모든 surface 의 mtime 을 재stat 해 변경된 surface_id 목록을 반환(마지막
+/// 등록된 모든 surface 의 **내용 지문**을 다시 구해 변경된 surface_id 목록을 반환(마지막
 /// 관측값도 갱신) — host 호출(`notify`) 없이 순수 로직만 테스트 가능하도록 분리했다.
-/// 삭제(metadata 실패=None)도 변경으로 취급해 host 재forward → `poll_reload` 의 기존
+/// 삭제(읽기 실패=None)도 변경으로 취급해 host 재forward → `poll_reload` 의 기존
 /// 삭제-감지 규약(main.rs)으로 흡수시킨다.
 fn poll_changed(watched: &mut HashMap<u32, WatchEntry>) -> Vec<u32> {
     let mut changed = Vec::new();
     for (surface_id, entry) in watched.iter_mut() {
-        let current = std::fs::metadata(&entry.path)
-            .and_then(|m| m.modified())
-            .ok();
-        if current == entry.last_mtime {
+        let current = digest(&entry.path);
+        if current == entry.last_digest {
             continue;
         }
-        entry.last_mtime = current;
+        entry.last_digest = current;
         changed.push(*surface_id);
     }
     changed
@@ -135,6 +165,22 @@ fn poll_changed(watched: &mut HashMap<u32, WatchEntry>) -> Vec<u32> {
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    fn probe_path(what: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "tasty-md-watch-{what}-{}-{:?}.md",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    fn set_mtime(path: &std::path::Path, t: std::time::SystemTime) {
+        let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        f.set_modified(t).unwrap();
+    }
 
     #[test]
     fn apply_register_sets_and_clears_watch() {
@@ -153,8 +199,8 @@ mod tests {
     fn apply_register_missing_file_has_no_mtime_but_is_tracked() {
         let mut watched = HashMap::new();
         apply_register(&mut watched, 2, Some("\0nonexistent-watch".to_string()));
-        let entry = watched.get(&2).expect("still tracked despite stat failure");
-        assert!(entry.last_mtime.is_none());
+        let entry = watched.get(&2).expect("still tracked despite read failure");
+        assert!(entry.last_digest.is_none());
     }
 
     /// 삭제(mtime None) 를 변경으로 감지하되 지속 상태(None==None)는 반복 emit 하지
@@ -180,6 +226,57 @@ mod tests {
             poll_changed(&mut watched).is_empty(),
             "삭제 지속 시(None==None) 반복 emit 없음"
         );
+    }
+
+    /// ⓪ **대조군** — 아무것도 안 바뀌면 아무것도 안 나와야 한다.
+    ///
+    /// 이 칸이 없으면 아래 시험이 "잡았다" 를 낼 때 그것이 **판정이 옳아서인지 하네스가
+    /// 무엇이든 변경으로 부르기 때문인지** 못 가른다. 두 시험은 짝으로만 뜻이 있다.
+    #[test]
+    fn poll_changed_is_quiet_when_nothing_changes() {
+        let path = probe_path("quiet");
+        std::fs::write(&path, b"v1").unwrap();
+        let mut watched = HashMap::new();
+        apply_register(&mut watched, 1, Some(path.to_string_lossy().into_owned()));
+        assert!(poll_changed(&mut watched).is_empty(), "1 회차");
+        assert!(poll_changed(&mut watched).is_empty(), "2 회차");
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// **시각이 같고 내용이 다르면 잡아야 한다.**
+    ///
+    /// 시계를 흉내 내지 않는다 — 눈금이 거친 파일시스템을 재현하려 들면 우리 디스크가
+    /// 안 주는 것을 "결함 없음" 으로 세게 된다. 대신 그 눈금이 만드는 **상태를 직접
+    /// 세운다**: 쓰기 전후의 mtime 을 같은 값으로 찍는다. 그 상태에서 옛 판정(mtime 비교)은
+    /// 반드시 놓치고, 지금 판정은 반드시 잡는다 — 어느 기계에서든 같다.
+    #[test]
+    fn a_rewrite_with_the_same_mtime_is_still_seen() {
+        let path = probe_path("tie");
+        std::fs::write(&path, b"v1").unwrap();
+        let stamp = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        set_mtime(&path, stamp);
+
+        let mut watched = HashMap::new();
+        apply_register(&mut watched, 7, Some(path.to_string_lossy().into_owned()));
+
+        std::fs::write(&path, b"v2").unwrap();
+        set_mtime(&path, stamp); // 쓰기가 올린 mtime 을 되돌린다 — 같은 눈금에 떨어진 상태.
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            stamp,
+            "전제 확인: 두 관측의 mtime 이 실제로 같아야 이 시험이 뜻이 있다"
+        );
+
+        assert_eq!(
+            poll_changed(&mut watched),
+            vec![7],
+            "mtime 이 같아도 내용이 바뀌었으면 잡아야 한다"
+        );
+        assert!(
+            poll_changed(&mut watched).is_empty(),
+            "같은 내용을 다시 보면 조용해야 한다"
+        );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }
 
     #[test]
