@@ -27,6 +27,19 @@ cd "$ROOT"
 THRESHOLD=1000
 ALLOWLIST="$ROOT/.complexity-file-allowlist"
 
+# 경고 띠 — **판정이 아니다. rc 에 안 들어간다.**
+#
+# 임계만 있으면 이 게이트는 아무 말도 안 하다가 갑자기 막는 물건이다. 그 해악은
+# 높이가 아니라 타이밍이다: 벽은 조립 시점에, 마지막 한 줄을 얹은 lane 에게 터지고
+# 그 lane 은 원인이 아니다. 실측(2026-09-07): 임계 이하 최댓값이 999 인데 그 뒤로
+# 997·997·995 가 붙어 있었고 900 대가 아홉이었다. 아무도 그것을 몰랐다 — 통과할 때
+# 게이트가 수를 안 찍었기 때문이다.
+#
+# **이 값을 래칫으로 만들지 마라.** 경고 개수에 상한을 박는 순간 그것이 또 하나의
+# 벽이 되고, 그러면 사람들이 파일을 줄이는 대신 그 파일을 피해 다닌다(그 형태를
+# 이미 한 번 밟았다). 경고는 **값만** 나른다.
+WARN_BAND=900
+
 command -v tokei >/dev/null 2>&1 || { echo "tokei 미설치: cargo install tokei"; exit 2; }
 
 # 실제로 동작하는 python 선택. Windows 는 python3 가 Store 스텁일 수 있어 실행 검증한다.
@@ -116,6 +129,11 @@ for code, name in rows:
 mapfile -t rows <<< "$ROWS_RAW"
 
 violations=()
+warnings=()
+judged=0      # 이 게이트가 실제로 판정한 파일 수. **여기서는 정확한 수다** —
+              # 등급(상한/하한)은 수가 아니라 술어에 붙고, 게이트 안의 술어는 skip 과
+              # allowlist 를 그대로 쓰므로 근사가 아니다. 밖에서 skip 을 다시 구현해
+              # 재현한 값은 하한이 될 수 있다(실측으로 그렇게 어긋났다).
 max_code=""   # 게이트가 실제로 판정하는 파일 중 임계 이하 최댓값(내림차순이라 첫 건)
 max_path=""
 for line in "${rows[@]}"; do
@@ -125,14 +143,18 @@ for line in "${rows[@]}"; do
     path="${line#*$'\t'}"
     skip "$path" && continue
     grep -qxF "$path" "$ALLOWLIST" 2>/dev/null && continue
+    judged=$((judged + 1))
     if [ "$code" -gt "$THRESHOLD" ]; then
         violations+=("$line")
-    elif [ -z "$max_code" ]; then
-        max_code="$code"; max_path="$path"
+    else
+        [ -z "$max_code" ] && { max_code="$code"; max_path="$path"; }
+        # 경고 띠는 임계 이하만 담는다 — 위반은 위 갈래가 이미 이름으로 찍는다.
+        [ "$code" -ge "$WARN_BAND" ] && warnings+=("$line")
     fi
 done
 
 if [ "${#violations[@]}" -gt 0 ]; then
+    echo "파일 SLOC 게이트 판정 ${judged} 개 · 임계초과 ${#violations[@]} · 경고(${WARN_BAND}↑) ${#warnings[@]}"
     echo "파일 SLOC 게이트 위반: code SLOC > $THRESHOLD 인데 allowlist 에 없는 Rust 파일:"
     printf '  %s\n' "${violations[@]}"
     echo
@@ -143,7 +165,11 @@ fi
 # 초록일 때도 값을 찍는다 — 여유가 0 인지 900 인지가 통과/실패에 안 나타난다.
 # 판정에는 안 들어간다: 상한이 아니라 보고다.
 if [ -n "$max_code" ]; then
-    echo "파일 SLOC 게이트 통과 (code SLOC ≤ $THRESHOLD 또는 allowlist/skip). 가장 큰 판정 대상 ${max_code} 줄 (${max_path}) / 임계 ${THRESHOLD} — 남은 여유 $((THRESHOLD - max_code))"
+    echo "파일 SLOC 게이트 판정 ${judged} 개 · 임계초과 0 · 경고(${WARN_BAND}↑) ${#warnings[@]} · 최대 ${max_code} (${max_path}) / 임계 ${THRESHOLD} — 남은 여유 $((THRESHOLD - max_code))"
+    if [ "${#warnings[@]}" -gt 0 ]; then
+        echo "경고 — 임계까지 $((THRESHOLD - WARN_BAND)) 줄 안에 든 파일 (rc 에 안 들어간다 · 래칫 아니다 · 값만 나른다):"
+        printf '  %s\n' "${warnings[@]}"
+    fi
 else
     # **판정 대상이 0 건인 것은 통과가 아니다.** 이 파일은 다른 모든 "측정이 안 됐다" 를
     # exit 2 로 내는데(위 주석 "측정 실패를 위반 없음으로 읽지 않는다"), 여기만 초록으로
