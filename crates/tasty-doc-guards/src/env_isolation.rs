@@ -127,6 +127,12 @@ pub fn classify(
 #[derive(Debug, Default)]
 pub struct Census {
     pub files_scanned: usize,
+    /// 뿌리별 파일 수 — `scan_roots` 와 **같은 순서**이고, 합은 `files_scanned` 와 같다.
+    ///
+    /// 총수만으로는 뿌리 하나가 통째로 빠진 것을 못 본다: 총수의 여유가 작은 뿌리를
+    /// 통째로 삼킨다. 그래서 소비자가 뿌리마다 따로 바닥을 걸 수 있게 나눠 싣는다.
+    /// 뿌리가 겹치지 않는다는 가정 아래 각 파일은 **처음 맞는 뿌리 하나**에만 센다.
+    pub per_root: Vec<(String, usize)>,
     pub mutations: usize,
     pub serialized: usize,
     /// `"레포상대경로:1기반줄: 원문"` 형태의 위반 목록.
@@ -138,9 +144,17 @@ pub fn census(root: &Path, scan_roots: &[&str]) -> Census {
     let sources = rust_sources(root, scan_roots);
     let test_only = test_only_files(root, &sources);
 
-    let mut c = Census::default();
+    let mut c = Census {
+        per_root: scan_roots.iter().map(|r| ((*r).to_string(), 0)).collect(),
+        ..Census::default()
+    };
     for (rel, raw) in &sources {
         c.files_scanned += 1;
+        // `Path::starts_with` 는 **성분 단위**다 — `src` 가 `srcgen/` 을 먹지 않는다.
+        // 편 문자열을 `/` 리터럴과 견주지 않는 이유이기도 하다(Windows 에서 조용히 빗나간다).
+        if let Some((_, n)) = c.per_root.iter_mut().find(|(r, _)| rel.starts_with(r)) {
+            *n += 1;
+        }
         let code_src = mask_non_code(raw);
         let marker_src = mask_literals(raw);
         let code: Vec<&str> = code_src.lines().collect();
