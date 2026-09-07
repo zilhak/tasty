@@ -204,3 +204,4 @@
 | 0191 | [로컬에 둘 다 있는 파일은 해시하지 않고 바이트로 비교한다](0191-two-local-files-are-compared-bytewise-not-hashed.md) | Accepted | 2026-09-07 | plugin, install, performance, measurement, hashing, cold-cache, adr-0182, adr-0139 |
 | 0192 | [레포 전체를 세는 래칫은 lane 단위로 예측되지 않는다 — 판정은 병합 트리에서 한다](0192-a-repo-wide-ratchet-is-judged-at-the-merge-tree-not-per-lane.md) | Accepted | 2026-09-07 | ci, guards, ratchet, merge-tree, per-lane, split-landing, cap, r746, r751, r752, r753, r756, adr-0139, adr-0137, adr-0183 |
 | 0193 | [폰트 resolve 는 글리프 유무만 해결한다 — RTL 어순은 범위 밖](0193-font-resolution-covers-glyph-coverage-not-rtl-ordering.md) | Accepted | 2026-09-07 | i18n, font, rtl, egui, scope-boundary, adr-0114, adr-0139 |
+| 0194 | [코드 인용은 줄 번호가 아니라 심볼 이름으로 한다](0194-code-citations-name-symbols-not-line-numbers.md) | Accepted | 2026-09-07 | documentation, adr-conventions, citations, guards, ratchet, adr-0139, adr-0183, adr-0190, adr-0105 |
