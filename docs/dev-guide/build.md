@@ -140,13 +140,13 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 | `pub use tasty_<name>::*;`(glob) | 본체가 그 크레이트를 **통째로 소유**하고 경계를 그을 이유가 없는 shim (`src/model.rs`, `src/adapters/ui/icons.rs`) | 표면 전체가 본체 것이라 좁힐 대상이 없다 |
 | `pub use tasty_<name>::{A, B, C};`(명시 목록) | 본체가 **일부만 써야 하는** 크레이트 (`src/adapters/cli.rs`, `src/adapters/ipc.rs`) | glob 이면 계층 위반이 컴파일 에러로 안 잡힌다 — 본체 어디서든 재수출 경로로 크레이트 전체에 닿는다 |
 
-판단 기준은 "본체가 이 크레이트의 아무 심볼이나 써도 되는가" 하나다. 아니라면 명시 목록을 쓰고, 목록 밖 심볼을 쓰려는 시도가 컴파일 에러가 되게 둔다. 소스 스캔 가드(`tests/layering.rs`)는 재수출을 우회한 직접 참조를 막는 **2차 방어**이지, 재수출 형태를 좁히는 것의 대체재가 아니다.
+판단 기준은 "본체가 이 크레이트의 아무 심볼이나 써도 되는가" 하나다. 아니라면 명시 목록을 쓰고, 목록 밖 심볼을 쓰려는 시도가 컴파일 에러가 되게 둔다. 소스 스캔 가드(`crates/tasty-doc-guards/tests/layering.rs`)는 재수출을 우회한 직접 참조를 막는 **2차 방어**이지, 재수출 형태를 좁히는 것의 대체재가 아니다.
 
 ### 의존 방향 규칙 — 본체는 `tasty-cli` 를 참조하지 않는다
 
 `tasty-cli` 는 **바이너리의 진입 계층**(인자 파싱 + 그 파싱 결과로 실행되는 커맨드 구현)이다. GUI 런타임·IPC 핸들러·앱 상태(`src/`)가 그 크레이트 내부를 직접 들여다보면 의존 방향이 뒤집혀, CLI 쪽 타입 변경이 GUI 를 깨고 GUI 재사용 목적의 로직이 CLI 안에 눌러앉는다. 양쪽이 함께 쓰는 코어(ssh · remote browse · stream 등)는 CLI 가 아니라 **별도 크레이트**에 두고 본체는 그쪽을 참조한다.
 
-`src/adapters/cli.rs` 는 boot 진입점 7개(`Cli` · `Commands` · `run_client` · `try_run_plugin_cli` · `print_augmented_help` · `print_command_tree` · `format_parse_error`)만 이름으로 재수출한다. 그 밖의 CLI 심볼은 본체에서 경로 자체가 존재하지 않는다. 재수출 밖의 경로(`tasty_cli::` 직접 참조)는 **`tests/layering.rs` 가 막는다**(기본 조합의 `cargo test --workspace` 에는 자동 채널이 없고, 자동 실행은 `check-headless` 잡에서만 일어난다 — [ci-gates](ci-gates.md)). 목록 두 개의 성격이 다르다:
+`src/adapters/cli.rs` 는 boot 진입점 7개(`Cli` · `Commands` · `run_client` · `try_run_plugin_cli` · `print_augmented_help` · `print_command_tree` · `format_parse_error`)만 이름으로 재수출한다. 그 밖의 CLI 심볼은 본체에서 경로 자체가 존재하지 않는다. 재수출 밖의 경로(`tasty_cli::` 직접 참조)는 **`crates/tasty-doc-guards/tests/layering.rs` 가 막는다**(그 가드는 의존 0 크레이트에 살아서 `doc-guards.yml` 이 경로 필터 없이 돌린다 — main push 와 PR 마다 자동으로 돈다, [ci-gates](ci-gates.md)). 목록 두 개의 성격이 다르다:
 
 | 상수 | 성격 | 내용 |
 |------|------|------|

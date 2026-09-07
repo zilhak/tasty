@@ -157,6 +157,52 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
 - **window** — `[[contributes.window]]`(`window.spawn`). 현재는 schema + 등록 stub 까지(실 spawn 은 별도 영역).
 - **extension** — 다른 플러그인의 IPC/event 흐름을 가로채기. `[extends]` + `ext:<target>` 권한 + `handle_extension_hook`. mode: `transform`/`filter`/`observe`. target 당 활성 1개(나머지 `Conflict`). fail-open(timeout/에러 시 원래 값 사용).
 
+### 열린 파일의 외부 변경 감지 (SDK `file_watch`)
+
+파일을 여는 surface 를 가진 plugin 은 그 파일이 **밖에서 바뀌었을 때** 스스로 갱신해야
+한다. host 는 무조건 tick 을 주지 않는다 — webview kind 는 `paint`/`set_context` 를 아예
+안 받고, egui-mesh kind 도 입력·geom·theme·focus·invalidated 중 하나가 있어야 forward
+된다. 즉 **idle 상태에서는 감시 스레드가 유일한 자동 갱신 경로다.**
+
+그 기계는 SDK 의 `file_watch` 모듈에 있다. plugin 이 정하는 것은 둘뿐이다.
+
+1. **판정자**(`EntryProbe`) — 무엇을 견줘 "바뀌었다" 로 볼 것인가.
+2. **reload 메서드 이름** — 변경을 알릴 자기 네임스페이스 메서드.
+
+```rust
+use tasty_plugin_sdk::file_watch::{self, ContentDigest, WatchCmd};
+
+// on_start 에서
+let (tx, rx) = std::sync::mpsc::channel();
+self.watch_tx = Some(tx);
+std::thread::Builder::new()
+    .name("myplugin-watch".to_string())
+    .spawn(move || file_watch::run::<ContentDigest>(host, rx, "myplugin.reload"))?;
+
+// create_surface / destroy_surface 에서
+tx.send(WatchCmd::Register { surface_id, path })?;
+tx.send(WatchCmd::Unregister { surface_id })?;
+```
+
+폴링 주기(`RELOAD_CHECK_INTERVAL_SECS`)는 **공용이다** — "밖에서 고친 것이 얼마 만에
+보이나" 는 사용자에게 하나인 물음이라 plugin 마다 다른 답을 두지 않는다.
+
+**감시 스레드는 파일을 읽어 상태를 고치지 않는다.** 변경을 감지하면 `self_invoke` 로
+자기 reload 메서드를 부르고, 실제 read 와 재생성은 그 메서드 하나로 수렴한다 — 그래야
+빠른 연속 편집에서 "stale read 가 최신 것을 덮어쓰는" 레이스가 생기지 않는다(쓰기 경로가
+하나뿐). `host.call` 로는 안 된다 — 호스트는 caller 가 네임스페이스 owner 자신이면
+forward 하지 않아 항상 `-32601` 이 떨어진다.
+
+#### 판정자 고르기 — 기준은 "읽기 비용에 상한이 있는가"
+
+- **`ContentDigest`(SDK 제공)** — 매 폴 전량을 읽어 내용 지문을 견준다. 오탐·미탐이 모두
+  없다. **입력 크기에 상한이 있을 때만** 이 교환이 성립한다(markdown 문서가 그렇다).
+- **시계(mtime)만** — 싸지만 두 쓰기가 같은 mtime 눈금에 떨어지면 뒤엣것을 **영구히**
+  놓친다. 그 창은 파일시스템이 정한다(그 타입 문서에 실측값이 있다).
+- **2 단 판정(`stat` 게이트 → 지문)** — 입력이 무계일 때. 싼 `stat` 으로 먼저 거르고
+  움직였을 때만 읽는다. `EntryProbe` 가 값 반환이 아니라 trait 인 이유가 이것이다 —
+  "안 읽고 통과" 를 반환값으로는 말할 수 없다.
+
 ## 4. Plugin UI 렌더 (egui-mesh 채널)
 
 `rendering = "egui-mesh"` surface 와 popup/banner 는 egui-mesh 채널 하나로 통한다 —
@@ -293,10 +339,15 @@ cargo build --release -p tasty-plugin-<name>      # 실행 중 tasty 와 같은 
 ```bash
 tasty plugin disable com.x.<name>     # 먼저 정지. 안 하면 실행 중 .exe 를 잠가 upgrade 가 'os error 5(액세스 거부)'
 tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재sync. 매니페스트 version 올렸으면 upgraded
-#   ※ version 을 안 올린 변경(예: 임베드 JS/텍스트만, 바이너리 내용만 변경)은 same-version 이라 skip →
-#      'tasty plugin upgrade-builtins --force' 로 동일버전 덮어쓰기.
+#   ※ version 을 안 올려도 반영된다 — 같은 버전 갈래는 **내용으로** 판정해 다른 파일만 옮긴다
+#      (2026-09-07 부터. 그전에는 mtime 비교였고, `cp -p`·아카이브처럼 mtime 이 보존되면 조용히 건너뛰었다).
+#      보고문은 여전히 'skipped' 로 나오지만 사유가 갈린다 — 'content resync: files rewritten' 이면 옮긴 것이고
+#      'nothing to write' 면 이미 같았다는 뜻이다. `--force` 는 **내용까지 같은데도** 다시 쓸 때만 필요하다.
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 ```
+
+내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은
+[ADR-0191](../adr/0191-two-local-files-are-compared-bytewise-not-hashed.md).
 
 **4) 실행 중 tasty 에 대해 실동작 검증**
 ```bash

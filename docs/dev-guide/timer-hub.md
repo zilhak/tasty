@@ -107,7 +107,7 @@ registry 제거 + `TerminalStore` 제거 + waker 게이트 해제 셋을 한 묶
   타이머의 드리프트"). 외부 상태에 의존하지 않으므로 과거에 고정될 수 없다.
 - 0 주기는 `TimerHub` 의 `normalize()` 가 1ns 로 올려 막는다.
 
-그래서 `tests/timer_deadline_hygiene.rs` 도 `hub.once_at` 만 금지하고 `hub.every` 는
+그래서 `crates/tasty-doc-guards/tests/timer_deadline_hygiene.rs` 도 `hub.once_at` 만 금지하고 `hub.every` 는
 건드리지 않는다.
 
 ## 대기 전략 — 왜 waker 스레드인가 (대안 B 채택)
@@ -299,7 +299,7 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 `NativeMenu` 만 예외인데, 그건 파생이 아니라 `once_after(주기)` = **상대 지연**이라
 정의상 과거가 될 수 없기 때문이다. 새 키가 절대시각을 쓴다면 예외가 아니다.
 
-이 규칙은 `tests/timer_deadline_hygiene.rs` 가 소스 수준에서 강제한다 — `timers.rs`
+이 규칙은 `crates/tasty-doc-guards/tests/timer_deadline_hygiene.rs` 가 소스 수준에서 강제한다 — `timers.rs`
 에서 `hub.once_at` 을 직접 부르면 그 테스트가 fail 한다(통합 테스트라 자동 실행 채널이
 없다 — 컴파일만 자동 검사, [ci-gates](ci-gates.md)). 실패 지점이 단위 테스트가 닿지
 않는 **호출부 한 줄**이라 같은 클래스가 두 번 재발했기 때문이다.
@@ -364,7 +364,7 @@ dirty 자체는 지우지 않는다. 사용자가 세션 중에 `restore_layout`
    에서 `cfg` 로 사라지므로 컴파일러가 누락을 잡아준다.
 4. `Strict` / `Lax` 를 위 기준으로 고르고, 이유를 키의 doc-comment 에 남긴다.
 5. 절대 시각(외부 상태에서 파생한 데드라인)을 등록한다면 `arm_derived` 를 통과시킨다
-   — `hub.once_at` 직접 호출은 `tests/timer_deadline_hygiene.rs` 가 막는다. 고정
+   — `hub.once_at` 직접 호출은 `crates/tasty-doc-guards/tests/timer_deadline_hygiene.rs` 가 막는다. 고정
    주기(`every`)면 해당 없다(위 "`every` 는 바닥치기 대상이 아니다").
 6. 기존 lazy 경로를 **보완**하는 tick 이면 그 lazy 경로를 지우지 말고, 두 경로가 같은
    함수를 부르게 한다(위 "Lax 사용 사례").

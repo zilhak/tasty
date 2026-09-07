@@ -45,6 +45,10 @@ renderer.render_all(&mut render_pass, w, h);   // ④ bg 패스 → glyph 패스
 
 per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 draw 카운터를 클리어하고 glyph atlas frame 카운터를 bump(per-page LRU stamp 일관성).
 
+그 bump 는 LRU stamp 만이 아니라 **atlas 의 eviction 스로틀을 다시 무장한다** — atlas 는 한 프레임에 페이지를 한 번만 evict 하고, 그 제한을 푸는 것은 이 bump 뿐이다. 그래서 이 호출을 건너뛴 렌더 경로는 **한 번 evict 한 뒤 이후의 모든 eviction 을 영구히 거절하고**, 증상은 glyph 가 조용히 rasterize 되지 않는 것으로만 나타난다. 그 상태 기계(`FrameClock`)는 device 없이 단독으로 검증된다(`cargo test -p tasty-font`).
+
+그 시계를 **실제로 감는지**는 이쪽 크레이트의 소스에 대한 물음이라 거기서 못 묻는다 — `src/source_guards/frame_clock_arming.rs` 가 판정한다: `append_terminal_viewport` 를 부르는 모든 함수가 첫 append 보다 앞에서, 어떤 루프에도 안 들어간 자리에서 `begin_frame` 을 부르는가. 정적 판정이라 **조건 분기 · 호출 횟수 · 한 프레임에 그 함수가 몇 번 불리는가는 안 본다** — 그 가드의 모듈 주석에 못 보는 갈래가 전부 적혀 있다.
+
 ### ② `append_terminal_viewport(...)`
 
 한 surface 의 셀들을 `BgInstance`/`GlyphInstance` 로 만들어 accumulator Vec 에 push 한다. 동시에 그 surface 의 `(scissor rect, bg range, glyph range)` 를 `surface_ranges` 에 기록한다. **viewport offset 은 per-instance 로 각 인스턴스에 baked** 되므로(전역 uniform 을 surface 마다 다시 쓰지 않는다), surface 마다 uniform 갱신/submit 이 필요 없다. theme lock(`ansi` 팔레트)은 호출자가 **프레임당 1회** 잡아 넘긴다(surface 마다 잠그지 않음).

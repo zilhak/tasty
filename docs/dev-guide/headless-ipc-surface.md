@@ -159,13 +159,49 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 같다. 같은 모수를 [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)
 이 같은 말로 부른다(그쪽은 거기에 핸들러 트리 리터럴을 합집합해 361 로 넓힌다).
 
+### 갈리는 축이 조합 하나가 아니다 — 플랫폼도 같은 자리에서 자른다
+
+이 절의 census 는 `-32017`(이 조합에 arm 이 없다)과 `-32601`(이름이 틀렸다) 둘로만 갈린다.
+그런데 dispatch 층에는 **세 번째 코드**가 있고, 그 코드가 붙는 이름은 이 문서의 어느 표에도
+없었다. 헤드리스 실측(2026-09-07, linux):
+
+| 메서드 | 응답 |
+|--------|------|
+| `surface.raw_key` | `-32015 input reproduction over the OS event stream is macOS-only …` |
+| `surface.switch_input_source` | `-32015` (같은 문구) |
+
+`-32015` 는 "이 플랫폼에서 안 된다" 이고, 호출자를 **조합이 아니라 플랫폼을 보는 쪽**으로
+보낸다(코드 넷의 구분은 `crates/tasty-ipc/src/protocol.rs` 의 표와
+[ADR-0154](../adr/0154-a-platform-gated-dispatch-arm-answers-why-not-what.md)).
+
+**★ 그런데 이 둘의 게이트는 축 하나가 아니다.** `src/adapters/ipc/handler.rs` 에서 실제 arm 은
+`#[cfg(all(target_os = "macos", feature = "gui"))]` 이고 그 짝이 `not(all(…))` 이다 — 즉
+**플랫폼과 조합이 한 코드로 접혀 있다.** 그래서 linux 헤드리스에서 오는 `-32015` 는 두
+조건이 함께 실패한 결과이고, 이 census 가 세는 "gui 는 답하는데 헤드리스가 답하지 않는 것"
+에 해당하는지를 그 코드만 보고는 **가를 수 없다**(가르려면 macOS gui 와 macOS 헤드리스를
+같이 재야 한다 — 이 저장소에서 아직 안 쟀다).
+
+그래서 두 이름은 census 의 어느 부류에도 넣지 않고 여기 이름과 실측 코드만 세워 둔다.
+분류는 **미정**이며, 비어 있는 것은 재지 않았기 때문이다.
+
 | 부류 | 건수 | 어디서 판정하나 |
 |------|------|-----------------|
 | 창 축(`window.*` · `view.*` · `ui.screenshot` · `remote.attach` · `system.gpu_stats`) | 11 | 위 "app 층 메서드" 절 |
 | `plugin.*` | 12 | 위 "`plugin.*` — 19 개 메서드의 판정" 절 |
 | `debug.*` | 36 | 이 절 |
-| 그 밖 | 4 | 이 절 |
-| **합** | **63** | |
+| 그 밖 | 6 | 이 절 |
+| **합** | **65** | |
+
+### 분류 미정 (그 밖 2)
+
+`image.*` 를 이 census 밖으로 뺐던 근거가 틀렸다는 것은 "남은 표면" 절에 적혀 있다. 여기가 그 둘의 칸이다.
+
+| 메서드 | 헤드리스 실측 | 분류 |
+|--------|---------------|------|
+| `image.open` | `-32017`(감싸짐) | **미정** — 핸들러가 `ConvertSurface` 를 발행하고 `image` kind 는 헤드리스에서도 **등록된다**(egui-mesh). 창이 없어서인지 경계가 안 열려서인지 재지 않았다 |
+| `image.list` | `-32017`(감싸짐) | **미정** — surface 순회 조회다. 위와 같은 물음이 걸린다 |
+
+분류를 비워 두는 것은 재지 않았기 때문이고, 그 사실을 적어 두는 쪽이 칸 자체를 없애는 것보다 낫다 — 칸이 없으면 물음이 있다는 것도 안 보인다.
 
 ### 답한다
 
@@ -177,7 +213,18 @@ gui 의 `app_methods` step(`src/app/ipc/app_methods.rs`)이 이름을 부르는 
 살고 있어 arm 까지 함께 게이트됐다. 핸들러를 `src/adapters/ipc/handler/theme.rs` 로 갈라
 게이트 밖으로 냈다 — 두 조합이 **같은 함수**를 쓴다.
 
-### 없는 것이 정답 (그 밖 3)
+### 아직 없다 — `App` 이분이 선행이다 (그 밖 1)
+
+| 메서드 | 왜 |
+|--------|-----|
+| `markdown.navigate` | host arm(`src/adapters/ipc/handler.rs` 의 `"markdown.navigate" =>`)이 `#[cfg(feature = "gui")]` 다 — `file_picker.trigger` 와 같은 구성이다. 핸들러 자체(`handler/markdown.rs::handle_navigate`)는 `AppState` 만 읽고 `ConvertSurface` intent 를 발행할 뿐 `App.view` 를 안 본다. [ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 세 세계를 실제로 호출해 이 이름을 갈랐고, 그 재검토 트리거가 **"`App` 이분이 착수되면 headless 에서 이 host arm 이 열릴 수 있다"** 고 적는다. 그래서 이것은 창이 없어서가 아니라 **경계가 아직 안 열려서** 없는 것이다 |
+
+헤드리스에서 부르면 응답이 한 겹 감싸여 온다 — `-32017 host call 'call#N' failed: method
+'markdown.navigate' is registered but this binary has no dispatch arm for it`. 번들
+markdown plugin 이 그 namespace 를 점유해 host 로 되돌리기 때문이고, 그 모양의 근거도
+같은 ADR 이다.
+
+### 없는 것이 정답 (그 밖 2)
 
 | 메서드 | 왜 |
 |--------|-----|
@@ -195,7 +242,7 @@ event bus 에 누가 붙었는가). 그래서 헤드리스에서만 사라지면
 
 모수는 **호출마다 새 인스턴스를 띄우는** census 로 쟀다(2026-09-05). 한 인스턴스에서
 순차로 부르면 앞쪽의 파괴적 호출이 뒤쪽 호출의 라우팅 대상을 없애고, 그러면 멀쩡한
-메서드가 `Method not found` 로 보인다. 36 = 답한다 5 + 없는 것이 정답 31, 애매한 것 0.
+메서드가 `Method not found` 로 보인다. 36 = 답한다 7 + 없는 것이 정답 29, 애매한 것 0.
 
 #### 답한다 (7)
 
@@ -255,6 +302,21 @@ app 층 step 과 debug step 두 쌍을 같은 규약으로 본다.
 
 ## 남은 표면
 
-`debug.*` 36 건의 판정은 위 "`debug.*` 36 건" 절에 있다. `image.*` 는 이 목록에 없다 — 번들
-plugin 이 그 namespace 를 점유하고 self-call trampoline 로 host 에 돌려주므로 두 조합에서
-같은 자리에 닿는다([ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md)).
+`debug.*` 36 건의 판정은 위 "`debug.*` 36 건" 절에 있다.
+
+`image.open` · `image.list` 는 **닿는 자리가 같은 것이지 답이 같은 것이 아니다.**
+[ADR-0153](../adr/0153-a-bundled-namespace-hands-host-methods-back.md) 이 잰 대로 번들 plugin 이
+그 namespace 를 점유하고 self-call trampoline 로 host 에 돌려주므로 세 세계 모두 host arm 에
+**닿는다.** 그러나 그 host arm 은 `src/adapters/ipc/handler.rs` 에서 `#[cfg(feature = "gui")]`
+다 — 헤드리스에서 부르면 `-32017 host call 'call#N' failed: … gated out of this build
+combination` 이 온다(실측 2026-09-07, `--no-default-features` 빌드).
+
+**닿는 것과 답하는 것은 다르고, 이 census 의 술어는 뒤엣것이다**("gui 는 답하는데 헤드리스가
+답하지 않는 것"). 그래서 이 둘은 census 밖이 아니라 그 안의 항목이다. 같은 ADR 이
+`markdown.navigate` 에 대해 헤드리스를 별개 축으로 명시하는 것도 같은 이유다 — ADR 은
+헤드리스를 봤고, 그것을 제외의 근거로 읽은 것이 이 문단이었다.
+
+두 이름의 칸은 아래 "`그 밖` — 분류 미정 (2)" 에 있다.
+
+두 칸의 분류를 비워 두는 것은 재지 않았기 때문이고, 그 사실을 적어 두는 쪽이 칸 자체를
+없애는 것보다 낫다 — 칸이 없으면 물음이 있다는 것도 안 보인다.

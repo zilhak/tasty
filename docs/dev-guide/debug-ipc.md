@@ -38,7 +38,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 | method | params | 설명 |
 |--------|--------|------|
-| `ui.state` | `{}` | 현재 UI 상태(settings_open, popup, 활성 workspace/pane/tab 수 등) 덤프 |
+| `ui.state` | `{}` | 현재 UI 상태 덤프 — `settings_open_requested`(열기 **요청** 래치. 모달이 화면에 있는지가 아니다) · `modal_open` + `active_modal_kind`(모달이 실제로 떠 있는가와 **어느** 모달인가. 종류 없이 `modal_open` 만 보면 설정 창을 기다리는 쪽이 plugins·quit 창을 보고 통과한다) · popup · `active_workspace` · `workspace_count` · `pane_count` · `tab_count` · `active_tab`(포커스된 pane 의 활성 탭 인덱스. 수만으로는 **탭 전환이 안 보여서** 있는 축이다) |
 | `debug.info` | `{}` | 실행 중 인스턴스 debug 정보 |
 | `debug.cell_info` | `surface_id, row, col` | 셀 단위 렌더 속성(텍스트, fg/bg, bold/italic/underline …) |
 | `debug.screen_attrs` | `surface_id, row` | 한 행 전체 셀 속성 |
@@ -67,6 +67,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.modifier_hint.hold` | `ctrl?`, `alt?`, `option?`, `shift?`, `elapsed_ms?` | modifier-hint 오버레이의 홀드 조합을 직접 세팅(생략 축=false, 모두 false 면 홀드 해제). `elapsed_ms` 는 홀드 타이머를 그만큼 과거로 백데이트해 표시 지연(500/1200ms) 게이트를 즉시 통과. 실 modifier 홀드 우회 force-state(사용자 홀드 경로 우회). 응답은 `state` 와 동일한 렌더 상태 덤프 |
 | `debug.modifier_hint.state` | `{}` | 오버레이 렌더 상태를 draw 경로와 동일 로직으로 재평가해 덤프: `held{ctrl,alt,option,shift}\|null` · `hold_elapsed_ms` · `dismissed` · `reveal_delay_ms`(Shift 단독 2000, 그 외 500) · `visible` · `alpha` · `header_combo`(전체 조합 키캡) · `sections[{combo,rows,roles,empty}]`(눌린 조합으로 좁혀진 섹션 — `combo`=섹션 헤더의 조합 전체 키캡, `rows`=각 행의 **leaf 키캡만**(`Ctrl+K` 가 아니라 `K` — modifier 는 섹션 헤더가 담당), `roles`=역할 설명 키, `empty`=바인딩·역할 모두 없는 조합(draw 가 "바인딩 없음" 플레이스홀더로 렌더, ADR-0038)). 스크린샷 없이 좁힘·즉시갱신·지연·빈-플레이스홀더 자동 단정용 |
 | `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
+| `debug.modal.close_request` | `{}` | 활성 모달에 **창 닫기 요청**을 흘린다 — 사용자가 창 닫기 버튼을 누른 것의 재현. 응답 `closed` 는 실제로 닫은 모달이 있었는지(없었으면 `false`). release `window.close` 가 main view 만 대상으로 두고 모달을 명시적으로 뺀 것과 같은 선이다. **WM 없는 Xvfb 에서는 이 경로가 유일하다** — 창은 `WM_DELETE_WINDOW` 를 광고하지만 `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러 winit 이 `GetGeometry` 에서 패닉하고, `wmctrl -i -c` 가 보내는 `_NET_CLOSE_WINDOW` 는 WM 이 없으면 아무도 처리하지 않는다(rc 0, 무효과) |
 | `debug.settings.apply` | `settings` (object) | 부분(또는 전체) 설정 patch 를 **라이브 settings 직렬화 복사본** 위에 재귀 deep-merge 한 뒤 완성된 전체 `Settings` 로 `UpdateSettings` 를 dispatch — 설정 모달 저장과 **동일 경로**라 collapse·theme·`config.toml` save 까지 cascade 가 처리한다(모달/proxy 불요). 라이브를 pre-mutate 하지 않으므로 cascade 의 prev≠new 비교가 살아 collapse 분기가 정상 발화. **알 수 없는 키는 조용히 무시(no-op)** — `Settings` 가 `deny_unknown_fields` 가 아니라 `#[serde(default)]` 이므로 오타 키는 변화 없이 통과한다(검증자 혼동 주의). 타입 불일치/비-object 는 `-32602` 로 거부되고 라이브는 불변. gui 게이트 없이 headless 에서도 동작 |
 | `debug.banner.list` | `{}` | 빌트인 배너 정의 + 현재 표시 중/큐 배너(스코프 token·남은초·`total_queued`) + **기하** — `shown[].rect`(셸, **논리**, `host_popup.list` 와 같은 키 모양) · `shown[].content_rect`(plugin egui-mesh 콘텐츠, **물리**, host 배너는 `null`) · 좌표계를 응답이 스스로 싣는 `coords`. `rect` 는 **한 프레임 늦다** — 배너는 popup 과 달리 좌표를 모델에 안 들고 있어 그린 뒤에야 확정되므로 뜬 직후엔 `null` |
 | `debug.banner.show` | `banner_id, scope` | 배너 강제 발화 (def 의 ttl 따라 ttl/persistent, 응답에 push `outcome`) — 사용자 조작 우회, 시각 검증용 |

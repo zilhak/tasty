@@ -111,11 +111,11 @@ frame 이 사라지면 다시 bootstrap 한다.
 4. plugin 의 `paint_surface` 가 이 무입력 frame 을 받아 자기 상태를 재확인·재-read 한다.
 
 **과거 소비자(현재는 다른 경로로 대체됨)**: markdown plugin 이 egui-mesh 로 본문을 그리던
-시절엔 `crates/tasty-plugin-markdown/src/watch.rs` 의 idle mtime 폴링 worker 가 이
+시절엔 markdown 의 idle 폴링 worker(현재 `crates/tasty-plugin-sdk/src/file_watch.rs`)가 이
 채널로 `SurfaceInvalidated` 를 emit 해 재-read 를 트리거했다. markdown 이 webview 로
 전환된 뒤([ADR-0065](../adr/0065-markdown-webview-render-channel.md))로는 webview-kind
 surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 무의미해졌다 — 지금
-`watch.rs` 는 mtime 변경 감지 시 이 채널 대신 host 를 왕복해 `markdown.reload` IPC 를
+`file_watch` 는 변경 감지 시 이 채널 대신 `self_invoke` 로 `markdown.reload` IPC 를
 직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
 유효한 일반 인프라이나, 현재 이를 실제로 쓰는 번들 plugin 은 없다.
 

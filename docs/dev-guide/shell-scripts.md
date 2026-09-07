@@ -2,7 +2,7 @@
 
 빌드·패키징 스크립트(`scripts/`), git 훅(`.githooks/`), 그리고 **셸을 담지만 셸 스크립트
 파일이 아닌 자리**(`Justfile` · `.github/workflows/` 의 `run:`)에 적용된다. 판정은
-`tests/no_early_exit_consumer_in_shell_pipes.rs` 가 한다.
+`crates/tasty-doc-guards/tests/no_early_exit_consumer_in_shell_pipes.rs` 가 한다.
 
 ## 조기에 끝나는 소비자를 파이프의 오른쪽에 두지 않는다 (필수)
 

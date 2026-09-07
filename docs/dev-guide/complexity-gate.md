@@ -10,7 +10,7 @@
 |----|------|--------|-----------|
 | **함수 cognitive** | clippy 내장 `cognitive_complexity`(deny) | **20** | 함수 `#[allow]` + `// complexity-exempt:` (현재 34곳) |
 | **파일 SLOC** | `tokei` + `scripts/check-file-size.sh` | **출하** code SLOC **1000** | `.complexity-file-allowlist` (현재 24개 — 도입 시 동결분 잔여 16 + 채널 부재로 쌓인 부채 8) |
-| **동결 총합** | `tokei` + `scripts/check-frozen-sum-ratchet.sh` | 동결분 출하 SLOC 합 ≤ `예산 + 1000`, 그리고 ≥ `예산` | `.complexity-file-allowlist` 의 `# frozen-sum-budget:` 줄 |
+| **동결 총합** | `tokei` + `scripts/check-frozen-sum-ratchet.sh` | 동결분 출하 SLOC 합 ≤ `예산 + 여유`, 그리고 ≥ `예산` (여유는 위 칸의 파일 임계와 **같은 값**이고, 스크립트가 적지 않고 읽어 온다) | `.complexity-file-allowlist` 의 `# frozen-sum-budget:` 줄 |
 
 - 카운트 기준: `grep -rn 'allow(clippy::cognitive_complexity)'` 로 센 **전체** 위치 수. `// complexity-exempt:` 태그는 감사(grep) 가능성을 위한 필수 컨벤션이라, `#[allow(clippy::cognitive_complexity)]`가 있는데 태그가 없는 레거시가 발견되면 그 자리에서 태그를 붙여 카운트에 편입한다(둘을 별도 숫자로 두지 않는다).
 
@@ -19,7 +19,7 @@
   별도 강제한다(채널은 [ci-gates](ci-gates.md)).
 - **파일 임계 1000 에는 등가가 없다 — 유도되지 않는다.** cognitive 축이 쓴 "다른 도구와의 등가" 를 파일 축은 쓸 수 없고(clippy 에 파일 길이 린트가 없다), 이 레포의 분위수로 유도하는 것은 순환이다(도입 시 동결 목록이 임계 초과 집합 그대로였다). 유지의 근거는 **발화율 곡선**이다 — 1000 은 950 → 1000 에서 요구가 38% 떨어지는 계단의 바닥이고 1250 까지 평평하다(올려도 요구가 안 줄면서 25% 큰 파일을 허용한다). 측정·대안·트리거는 [ADR-0168](../adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md).
 - **파일 축은 신규 파일 필터가 아니라 성장 래칫이다.** 두 달(2026-07-06 → 09-05) 실측에서 새로 생긴 `.rs` 353 개 중 게이트가 보는 임계 초과는 0 건이었고, 임계를 넘은 10 건은 전부 이미 있던 파일이 자란 것이었다.
-- **동결의 성장은 자매 게이트가 본다 — `scripts/check-frozen-sum-ratchet.sh`.** `.complexity-file-allowlist` 는 **경로만** 담아 값이 없으므로, `check-file-size.sh` 만으로는 목록에 오른 파일이 얼마나 자라든 신호가 없다(실측: 두 달에 동결 18 중 **15 가 자라 +2406 줄**, 그중 `render.rs` 는 1002 → 1997). 그래서 목록에 오른 파일들의 출하 SLOC **합** 하나를 예산으로 두고 **양방향으로** 고정한다 — 합이 `예산 + 여유` 를 넘어도 실패하고, `예산` 아래로 내려가도 실패한다(그때는 예산을 내려 래칫을 조인다. 한 방향만 서는 것은 래칫이 아니다).
+- **동결의 성장은 자매 게이트가 본다 — `scripts/check-frozen-sum-ratchet.sh`.** `.complexity-file-allowlist` 는 **경로만** 담아 값이 없으므로, `check-file-size.sh` 만으로는 목록에 오른 파일이 얼마나 자라든 신호가 없다(실측: 두 달에 동결 18 중 **15 가 자라 +2406 줄**, 그중 `render.rs` 는 1002 → 1997). 그래서 목록에 오른 파일들의 출하 SLOC **합** 하나를 예산으로 두고 **양방향으로** 고정한다 — 합이 `예산 + 여유` 를 넘어도 실패하고, `예산` 아래로 내려가도 실패한다 (그 여유는 파일 임계와 **같은 값이어야 한다** — 둘이 구멍도 겹침도 없이 맞물리려면 파일 하나가 임계 아래로 남을 수 있는 폭과 합의 여유가 같아야 하고, 그래서 스크립트는 그 값을 적지 않고 `check-file-size.sh` 에서 읽어 온다)(그때는 예산을 내려 래칫을 조인다. 한 방향만 서는 것은 래칫이 아니다).
   - **예산은 그 목록 파일의 `# frozen-sum-budget:` 줄**이다. 항목이 드나드는 diff 와 예산이 움직이는 diff 가 한 화면에 붙어 보이도록 같은 파일에 둔다. 항목이 **추가**되면 합이 그 파일 크기만큼 뛰므로(추가되는 파일은 정의상 임계 초과다) 그 커밋에서 예산을 함께 갱신한다 — 갱신할 값은 실패 메시지가 알려준다.
   - **여유는 임계 자신(1000)이다.** 스크립트가 `check-file-size.sh` 의 `THRESHOLD` 를 읽어 쓴다 — 외우지 않는다. 그래서 발화 사건이 "동결분이 허용 파일 하나 분량만큼 자랐다" 가 된다. 실측 발화율은 여유 0 이면 60 일에 218 회로 못 쓰고, 여유 = 임계면 60 일에 4 회다.
   - **합은 넘긴 커밋을 지목하지 원인 커밋을 지목하지 않는다.** 실측 네 건에서 발화 커밋 자신의 기여는 누적의 3~24 % 였다. 이 한계는 안 풀리므로 실패 메시지가 그 사실과 다음 행동을 함께 말한다. 근거·대안·재검토 트리거는 [ADR-0168](../adr/0168-the-file-sloc-threshold-is-not-derived-and-the-freeze-ratchets-one-way.md).
@@ -91,6 +91,9 @@ cargo clippy --workspace --all-targets
 
 # 파일 SLOC — allowlist 밖 대형 파일이 있으면 목록 출력 후 exit 1.
 bash scripts/check-file-size.sh
+
+# 동결 총합 래칫 — 위와 **같은 잡**에서 돈다. 하나만 돌리면 절반이 미측정이다.
+bash scripts/check-frozen-sum-ratchet.sh
 ```
 
 `check-file-size.sh` 는 `tokei` · `python`(JSON 파싱) · `strip-cfg-test` 바이너리를 요구한다.
@@ -118,4 +121,4 @@ bash scripts/check-file-size.sh
 ## CI 배선
 
 - **cognitive**: 기존 `crossplatform-check.yml` 의 Windows clippy 잡이 `cargo clippy` 를 돌리므로, `cognitive_complexity = "deny"` 는 별도 배선 없이 `main` push 마다 자동 차단된다(`-D warnings` 불요 — deny 자체가 에러).
-- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `push:[main]`(문서·site 제외) + `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **실질 채널은 main push 다** — 이 저장소는 PR 을 열지 않아 PR 트리거는 장식이고, 2026-09-04 에 push 트리거를 붙이기 전까지 이 워크플로는 run 이력이 0 건이었다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행하고, 그 뒤 판정기를 빌드하는 스텝이 하나 붙는다(의존 0 크레이트라 초 단위). 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
+- **파일 SLOC**: `.github/workflows/complexity-check.yml` 의 `check-file-size` 잡(self-hosted Linux X64)이 `push:[main]`(문서·site 제외) + `pull_request:[main]` + `workflow_dispatch` 로 `bash scripts/check-file-size.sh` 를 돌린다. **그 잡은 이어서 `bash scripts/check-frozen-sum-ratchet.sh` 도 돌린다** — 워크플로가 부르는 것이 둘이라 하나만 적으면 나머지 하나는 채널이 없는 것처럼 읽힌다. **실질 채널은 main push 다** — 이 저장소는 PR 을 열지 않아 PR 트리거는 장식이고, 2026-09-04 에 push 트리거를 붙이기 전까지 이 워크플로는 run 이력이 0 건이었다([ADR-0131](../adr/0131-file-sloc-gate-needs-a-firing-trigger.md)). tokei 미설치 시 `cargo install tokei --locked` 가드가 선행하고, 그 뒤 판정기를 빌드하는 스텝이 하나 붙는다(의존 0 크레이트라 초 단위). 컴파일 불요·초경량이라 mac/win 러너 부담을 피하려 Linux 단일 잡으로 두었고, cognitive 와 관심사 1:1 분리를 위해 crossplatform-check 에 섞지 않고 전용 워크플로로 둔다.
