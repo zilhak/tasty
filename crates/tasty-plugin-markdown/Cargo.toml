@@ -14,6 +14,9 @@ path = "src/main.rs"
 # 본문 렌더는 host WebView overlay 에 위임한다 — plugin 은 egui 를 그리지 않는다
 # (large-file/file-open 확인 팝업만 egui-mesh 로 남는다).
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
+# 언어팩 [font] 폴백을 UI 체인에 붙이는 공유 헬퍼(install_locale_font_fallback).
+# host 와 같은 ab_glyph 판정기를 쓴다 — 사본을 두지 않으려는 직접 의존이다.
+tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Theme parity — host `theme.query` IPC 로 받은 ThemeWire(색 집합+is_light+zoom)를
 # `Theme::with_colors_and_zoom` 으로 재구성해 CSS 커스텀 프로퍼티로 주입한다. egui-compat

@@ -1107,6 +1107,20 @@ fn install_fonts(ctx: &egui::Context) {
                 .push("system_cjk".to_owned());
         }
     }
+    // 언어팩 `[font]` 폰트를 CJK 뒤, 체인 맨 뒤 폴백으로 붙인다. host 두 경로와 같은
+    // 판정기(`tasty_egui_theme::install_locale_font_fallback`)를 쓴다 — 검증이 곧 "어떤
+    // 폰트를 거부하는가" 라는 판정이라 사본을 두면 host 는 받고 plugin 은 거부하는 갈림이
+    // 생긴다. 경로는 host 가 resolve 해 `TASTY_LOCALE_FONT` 로 물려준 것(SDK
+    // `PluginEnv.locale_font` 와 같은 출처).
+    if let Some(path) = std::env::var_os("TASTY_LOCALE_FONT").filter(|v| !v.is_empty()) {
+        let path = std::path::PathBuf::from(path);
+        if let Err(e) = tasty_egui_theme::install_locale_font_fallback(&mut fonts, &path) {
+            tracing::warn!(
+                "locale font at {} could not be installed: {e}",
+                path.display()
+            );
+        }
+    }
     ctx.set_fonts(fonts);
 }
 

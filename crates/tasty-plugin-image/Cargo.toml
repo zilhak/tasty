@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-image"
-version = "0.1.18"
+version = "0.1.19"
 edition = "2024"
 license = "MIT"
 description = "Image surface viewer / paint canvas plugin (egui-mesh + bitmap texture)"
@@ -12,6 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
+# 언어팩 [font] 폴백을 UI 체인에 붙이는 공유 헬퍼(install_locale_font_fallback).
+# host 와 같은 ab_glyph 판정기를 쓴다 — 사본을 두지 않으려는 직접 의존이다.
+tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Theme parity — host 가 set_context 로 보낸 ThemeWire 를 `Theme::with_colors_and_zoom`
 # 으로 재구성해 디자인 토큰대로 chrome 을 그린다. egui-compat(to_egui)을 켠다 —

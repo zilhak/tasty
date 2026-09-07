@@ -254,8 +254,11 @@ impl std::error::Error for LocaleFontError {}
 /// 데이터에서 복구 경로 없이 panic 하므로, 잘못된 파일은 egui 가 보기 전에 막아야 한다.
 /// 실패하면 `fonts` 를 건드리지 않고 `Err` 를 돌려준다 — 호출부는 경고하고 기본 스택을
 /// 유지한다. 이 함수는 호스트 두 폰트 경로(`src/gfx/gpu/fonts.rs`·
-/// `src/adapters/ui/font_registry.rs`)의 단일 진실 공급원이다(plugin 프로세스는
-/// 이 크레이트를 의존하지 않아 같은 로직을 자기 미러에 둔다).
+/// `src/adapters/ui/font_registry.rs`)와 egui UI 를 그리는 plugin 넷
+/// (`tasty-plugin-{clipboard-viewer,git-viewer,image,markdown}`)의 **단일 진실
+/// 공급원**이다 — 검증이 곧 "어떤 폰트를 거부하는가" 라는 판정이라, 사본을 두면
+/// host 는 받고 plugin 은 거부하는 갈림이 조용히 생긴다. plugin 은 그래서 이 크레이트를
+/// 직접 의존해 같은 판정기를 쓴다(경로는 `TASTY_LOCALE_FONT` env 로 받는다).
 pub fn install_locale_font_fallback(
     fonts: &mut egui::FontDefinitions,
     path: &std::path::Path,

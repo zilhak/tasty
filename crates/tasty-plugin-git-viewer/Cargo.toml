@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-git-viewer"
-version = "0.1.34"
+version = "0.1.35"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only git status/log/diff viewer popup"
@@ -12,6 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
+# 언어팩 [font] 폴백을 UI 체인에 붙이는 공유 헬퍼(install_locale_font_fallback).
+# host 와 같은 ab_glyph 판정기를 쓴다 — 사본을 두지 않으려는 직접 의존이다.
+tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Windows verbatim prefix(`\\?\`) 제거 — worktree 경로 표시/비교 정규화에 사용.
 tasty-utils = { path = "../tasty-utils" }

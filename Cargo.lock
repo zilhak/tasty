@@ -6027,7 +6027,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6036,6 +6036,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-icons",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
@@ -6064,13 +6065,14 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.34"
+version = "0.1.35"
 dependencies = [
  "anyhow",
  "egui",
  "git2",
  "serde",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-git-core",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
@@ -6096,7 +6098,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6104,6 +6106,7 @@ dependencies = [
  "image",
  "rfd",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-icons",
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
@@ -6140,6 +6143,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "tasty-egui-theme",
  "tasty-icons",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
