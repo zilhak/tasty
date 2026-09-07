@@ -311,7 +311,7 @@ pub(crate) fn resolve_policy_args<H: HostCall>(
 
 pub fn handle_launch(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let workspace_name = params
@@ -319,8 +319,8 @@ pub fn handle_launch(
         .and_then(|v| v.as_str())
         .unwrap_or("codex")
         .to_string();
-    let directory = optional_str(&params, "directory");
-    let task = optional_str(&params, "task");
+    let directory = optional_str(params, "directory");
+    let task = optional_str(params, "task");
 
     // cwd 는 CLI 가 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
     // 호스트 workspace.create 가 PTY working_dir 로 직접 사용 → `cd` echo 불필요.
@@ -347,7 +347,7 @@ pub fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let policy_args = resolve_policy_args(host, &params, tr)?;
+        let policy_args = resolve_policy_args(host, params, tr)?;
         let cmd = make_codex_command(sid, task.as_deref(), &policy_args);
         host_call(
             host,
@@ -365,11 +365,11 @@ pub fn handle_launch(
 
 pub fn handle_parent(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     // 호스트 registry 가 parent 매핑의 SoT — 그대로 위임.
-    let surface = require_target_surface(&params, tr)?;
+    let surface = require_target_surface(params, tr)?;
     host_call(host, "terminal.parent", json!({ "surface": surface }))
 }
 
@@ -379,19 +379,19 @@ pub fn handle_parent(
 /// 메서드를 poll_method 로 참조한다(매니페스트 `[[contributes.completion_strategy]]`).
 pub fn handle_state(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface = require_target_surface(&params, tr)?;
+    let surface = require_target_surface(params, tr)?;
     host_call(host, "terminal.state", json!({ "surface": surface }))
 }
 
 pub fn handle_tell(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let surface_id = require_target_surface(&params, tr)?;
+    let surface_id = require_target_surface(params, tr)?;
     let message = params
         .get("message")
         .and_then(|v| v.as_str())
@@ -407,7 +407,7 @@ pub fn handle_tell(
     // caller_surface 는 dynamic CLI 가 `TASTY_SURFACE_ID` 로 자동 채운다(명시
     // --caller-surface 도 허용). 없으면(예: 호스트가 직접 IPC 호출) 완료 알림을
     // 등록하지 않는다 — 누구에게 알릴지 모르므로.
-    if let Ok(caller) = require_u32(&params, "caller_surface", tr) {
+    if let Ok(caller) = require_u32(params, "caller_surface", tr) {
         register_notify_hooks(host, caller, surface_id, "tell");
     }
 
@@ -417,14 +417,14 @@ pub fn handle_tell(
 pub fn handle_spawn(
     host: &HostHandle,
     tr: &Translator,
-    params: Value,
+    params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface = require_target_surface(&params, tr)?;
-    let prompt = optional_str(&params, "prompt");
+    let parent_surface = require_target_surface(params, tr)?;
+    let prompt = optional_str(params, "prompt");
 
     // 1) 호스트 registry 에 자식 등록 + soft 점유 + tab 생성 (command 미전송).
     //    workspace 는 required — 없으면 호스트가 invalid_params 로 거부한다.
-    let mut sp = forward(&params, &["workspace", "pane", "cwd", "role", "nickname"]);
+    let mut sp = forward(params, &["workspace", "pane", "cwd", "role", "nickname"]);
     sp.insert("parent".into(), json!(parent_surface));
     let resp = host_call(host, "terminal.spawn", Value::Object(sp))?;
     let child_sid = resp
@@ -440,7 +440,7 @@ pub fn handle_spawn(
         })?;
 
     // 2) codex 특화 기동 명령을 그 surface 에 전송(surface_id inline env 필요).
-    let policy_args = resolve_policy_args(host, &params, tr)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -579,11 +579,11 @@ fn register_notify_hooks<H: HostCall>(
 pub fn handle_notify_caller<H: HostCall>(
     host: &H,
     tr: &Translator,
-    params: Value,
+    params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    let caller = require_u32(&params, "caller", tr)?;
-    let target = require_u32(&params, "target", tr)?;
-    let kind = optional_str(&params, "kind").unwrap_or_else(|| "tell".into());
+    let caller = require_u32(params, "caller", tr)?;
+    let target = require_u32(params, "target", tr)?;
+    let kind = optional_str(params, "kind").unwrap_or_else(|| "tell".into());
     let message = notify_caller_message(tr, &kind, target);
     // 샌드박스 초기화 실패 힌트(docs/plugins/codex/index.md 의 샌드박스 초기화 실패 힌트
     // 절 참조) — soft-fail, 조회 실패/미탐지 시 message 그대로.
@@ -710,54 +710,54 @@ fn build_spawn_warning(
 
 pub fn handle_children(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let mut cp = serde_json::Map::new();
-    put_target_surface(&mut cp, &params, tr)?;
+    put_target_surface(&mut cp, params, tr)?;
     host_call(host, "terminal.children", Value::Object(cp))
 }
 
 pub fn handle_broadcast(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let text = params
         .get("text")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_text")))?;
-    let mut bp = forward(&params, &["role"]);
-    put_target_surface(&mut bp, &params, tr)?;
+    let mut bp = forward(params, &["role"]);
+    put_target_surface(&mut bp, params, tr)?;
     bp.insert("text".into(), json!(text));
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
 pub fn handle_kill(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child", tr)?;
+    let child = require_u32(params, "child", tr)?;
     let mut kp = serde_json::Map::new();
-    put_target_surface(&mut kp, &params, tr)?;
+    put_target_surface(&mut kp, params, tr)?;
     kp.insert("child".into(), json!(child));
     host_call(host, "terminal.kill", Value::Object(kp))
 }
 
 pub fn handle_respawn(
     host: &HostHandle,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
-    let child = require_u32(&params, "child", tr)?;
-    let prompt = optional_str(&params, "prompt");
+    let child = require_u32(params, "child", tr)?;
+    let prompt = optional_str(params, "prompt");
 
     // 1) 호스트 registry 위임: cwd 있으면 PTY 교체, 없으면 Ctrl-C. role/nickname/cwd
     //    갱신 + idle 초기화까지 호스트가 수행하고 child_surface_id 를 돌려준다.
     //    codex 기동은 여기서 하지 않으므로 command 는 넘기지 않는다.
-    let mut rp = forward(&params, &["cwd", "role", "nickname"]);
-    put_target_surface(&mut rp, &params, tr)?;
+    let mut rp = forward(params, &["cwd", "role", "nickname"]);
+    put_target_surface(&mut rp, params, tr)?;
     rp.insert("child".into(), json!(child));
     let resp = host_call(host, "terminal.respawn", Value::Object(rp))?;
     let child_sid = resp
@@ -773,7 +773,7 @@ pub fn handle_respawn(
         })?;
 
     // 2) codex 특화 기동 명령 재전송.
-    let policy_args = resolve_policy_args(host, &params, tr)?;
+    let policy_args = resolve_policy_args(host, params, tr)?;
     let cmd = make_codex_command(child_sid, prompt.as_deref(), &policy_args);
     host_call(
         host,
@@ -796,14 +796,14 @@ pub fn handle_respawn(
 /// 타입을 받고 있었다.
 pub fn handle_hook<H: HostCall>(
     host: &H,
-    params: Value,
+    params: &Value,
     tr: &Translator,
 ) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("codex.params.missing_event")))?;
-    let surface_id = require_target_surface(&params, tr)
+    let surface_id = require_target_surface(params, tr)
         .map_err(|_| IpcMethodError::invalid_params(tr.t("codex.hook.requires_surface")))?;
     let new_state = hook_event_to_state(event, tr)?;
     // 조용히 실패한 host 호출을 센다. 아래 `terminal.set_state` 는 전파하므로 이 수에
@@ -1308,7 +1308,7 @@ mod tests {
         let host = FlakyHost::failing(vec!["surface.meta.set"]);
         let out = handle_hook(
             &host,
-            json!({ "surface_id": 999, "event": "session-start", "session": "s-1" }),
+            &json!({ "surface_id": 999, "event": "session-start", "session": "s-1" }),
             &test_translator(),
         )
         .unwrap();
@@ -1329,7 +1329,7 @@ mod tests {
         let host = FlakyHost::failing(Vec::new());
         let out = handle_hook(
             &host,
-            json!({ "surface_id": 1, "event": "session-start", "session": "s-1" }),
+            &json!({ "surface_id": 1, "event": "session-start", "session": "s-1" }),
             &test_translator(),
         )
         .unwrap();
@@ -1348,7 +1348,7 @@ mod tests {
         let host = FlakyHost::failing(vec!["terminal.set_state"]);
         let err = handle_hook(
             &host,
-            json!({ "surface_id": 999, "event": "stop" }),
+            &json!({ "surface_id": 999, "event": "stop" }),
             &test_translator(),
         );
 
@@ -2353,7 +2353,7 @@ trusted_hash = "sha256:xyz"
         handle_notify_caller(
             &host,
             &test_translator(),
-            json!({ "caller": caller, "target": target, "kind": "tell" }),
+            &json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
         assert_eq!(
@@ -2367,7 +2367,7 @@ trusted_hash = "sha256:xyz"
         handle_notify_caller(
             &host,
             &test_translator(),
-            json!({ "caller": caller, "target": target, "kind": "tell" }),
+            &json!({ "caller": caller, "target": target, "kind": "tell" }),
         )
         .unwrap();
         assert_eq!(
@@ -2391,7 +2391,7 @@ trusted_hash = "sha256:xyz"
         handle_notify_caller(
             &host,
             &test_translator(),
-            json!({ "caller": caller, "target": target, "kind": "spawn" }),
+            &json!({ "caller": caller, "target": target, "kind": "spawn" }),
         )
         .unwrap();
 
