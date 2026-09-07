@@ -143,6 +143,22 @@ Recording rules:
 - **Next tab:** · **Previous tab:** and so on — likewise a single key. Defaults are vi-style `L`/`H` (Tabs), `J`/`K` (Workspaces · categories).
 - Choosing **Custom** in the dropdown abandons the rule and records a completely different combination for each slot (such as `Ctrl+Alt+1`). No number badge is shown in this mode. Going back to the rule mode resets that axis to its defaults.
 
+## Keybindings do nothing while a popup has focus
+
+While a window that takes input — the search bar, the file picker, the command palette — **has
+focus, no keybinding works at all.** That is deliberate: you would not want `Alt+W` to close a
+surface while you are typing into the search bar. If such a window is merely open and does not
+have focus, keybindings work as usual.
+
+There are two ways out.
+
+- **`Esc`** — releases the focused window. Windows of the kind that close when you click outside
+  them close as well; the others stay open and merely lose focus. Other windows that are open
+  but not focused are left alone.
+- **Click outside the window** — same result as `Esc`.
+
+While the settings window or the notification panel is open, `Esc` closes that one first.
+
 ## Two things that save you from memorising keybindings
 
 - **Modifier key hints** — Hold `Ctrl` · `Alt` · `Shift` and the like for 0.5 seconds or longer (Shift alone: 1.2 seconds) and a list of keybindings starting with that combination appears below the sidebar. It disappears when you let go. Turn it off with **Settings** > **General** > **Accessibility** > **Show modifier key hints**; the panel can be dragged around or resized.

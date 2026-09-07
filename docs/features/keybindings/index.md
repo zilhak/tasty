@@ -144,6 +144,36 @@ modifier 홀드 중 탭바(`tab_bar.rs`)·사이드바(`sidebar/view.rs`)에 뜨
   실기 미검증이다. 스캔코드 → `PhysicalKey` 변환도 같은 경계다(Linux 만 실측, 나머지 둘은
   winit 구현 대조까지). 비라틴 레이아웃 실기 전환 확인도 Linux/X11 에서만 했다.
 
+### 오버레이가 열려 있을 때 — 단축키는 **전부** 막히고, Escape 가 푼다
+
+설정 창 · 입력 dialog · **포커스된 host popup** · plugin popup 중 하나라도 해당하면 키는
+단축키 매처에 **진입하지 않는다**(`view/main/keyboard.rs` 의 `keyboard_overlay_open`).
+막히는 것은 어떤 부류가 아니라 **바인딩 테이블 전체**다 — 검색창에 글자를 치는데 `alt+w`
+(기본 프리셋의 close_surface)가 탭을 닫아버리면 안 되기 때문이고, 어떤 액션이 "안전한가" 는
+프리셋마다 달라 부류로 가를 수 없다. host 로 키를 포워딩하는 webview 경로도 같은 게이트를
+먼저 본다.
+
+게이트보다 **앞**에서 도는 것은 셋뿐이다: 전체화면 무대의 종료 키 · double-tap · **Escape**.
+
+Escape 는 순서대로 세 가지를 본다.
+
+1. 설정 창이 열려 있으면 닫는다.
+2. 알림 패널이 열려 있으면 닫는다.
+3. **포커스된 host popup 이 있으면 푼다** — 포커스를 놓고, `close_on_outside_click` 인
+   popup 만 닫는다.
+
+셋째는 새 정책이 아니라 **바깥 클릭에 이미 있던 의미의 두 번째 입구**다. 바깥을 클릭하면
+non-sticky popup 의 포커스가 풀리고 `close_on_outside_click` 인 것은 닫히는데, 그 길이
+마우스에만 있었다. 그래서 키보드만 쓰면 포커스된 popup 을 푸는 수단이 없었다.
+
+범위는 바깥 클릭보다 좁다 — **포커스된 하나만** 본다. 바깥 클릭은 좌표를 가지므로 "그 점을
+안 담은 popup 전부" 를 가리킬 수 있지만 Escape 에는 좌표가 없다. 좌표 없는 키를 같은 범위로
+쓰면 사용자가 가리킨 적 없는 popup 까지 닫힌다. 열려 있어도 **포커스가 없는** popup 은 그대로
+남는다.
+
+앞의 둘이 먼저인 이유: 그 둘은 포커스와 무관하게 **열려만 있으면** 먹는다. 셋째를 앞으로
+올리면 설정 창이 떠 있는 채로 다른 popup 이 포커스를 가질 때 Escape 가 설정을 안 닫는다.
+
 ### 편집 — 녹화 + 충돌
 
 Settings Keybindings 탭에서 키 조합을 직접 **녹화**해 할당한다. 충돌(같은 조합이 다른 액션에 이미) 시 확인 팝업으로 수락/거부. 편집은 draft 에 쌓이고 Save 시 커밋(`crud.rs`). quick-switch 슬롯의 bare-key 녹화·충돌 흐름은 위 [quick-switch 섹션 UI](#quick-switch-섹션-ui-tabworkspace-서브탭) 참조.

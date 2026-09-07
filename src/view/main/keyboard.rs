@@ -213,6 +213,36 @@ impl MainView {
                 self.mark_dirty();
                 return true;
             }
+            // 위 둘 다 아니면 **포커스된 host popup** 을 푼다. 이것이 키보드의 탈출구다.
+            //
+            // 없으면 어떻게 되는가: 포커스된 popup 은 `keyboard_overlay_open` 을 참으로
+            // 만들고, 그러면 단축키 **테이블 전체**가 아래 6단계에 진입조차 못 한다. 그
+            // 상태를 푸는 길이 지금까지 마우스뿐이었다 — 바깥을 클릭하면 non-sticky popup
+            // 의 포커스가 풀린다(`adapters/ui/popup/draw.rs`). 키보드만 쓰는 사용자에게는
+            // 그 길이 없었다.
+            //
+            // **새 정책이 아니라 이미 있는 정책의 두 번째 입구다.** 바깥 클릭과 같은
+            // 의미로 푼다 — 포커스를 놓고, `close_on_outside_click` 인 것만 닫는다.
+            // 그래서 "Escape 는 무엇을 닫는가" 를 popup 마다 새로 판단할 필요가 없다.
+            //
+            // 범위만 좁힌다: 포커스된 **하나**만 본다. 바깥 클릭은 좌표를 가지므로 그
+            // 점을 안 담은 popup 전부를 가리킬 수 있지만 Escape 에는 좌표가 없다. 좌표
+            // 없는 키를 같은 범위로 쓰면 사용자가 가리킨 적 없는 popup 까지 닫힌다.
+            //
+            // 순서: settings → notifications → 이것. 앞의 둘은 포커스와 무관하게(열려만
+            // 있으면) 먹으므로 뒤로 밀면 동작이 바뀐다. 이 순서는
+            // `tests/escape_dismisses_the_focused_popup.rs` 가 고정한다.
+            if let Some((id, closes)) = self.state.popups.focused_dismissal_target() {
+                self.state.popups.set_focused(id, false);
+                if closes {
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::ClosePopup { id }
+                            .from_user_shortcut("escape_dismiss_focused_popup"),
+                    );
+                }
+                self.mark_dirty();
+                return true;
+            }
         }
         false
     }
