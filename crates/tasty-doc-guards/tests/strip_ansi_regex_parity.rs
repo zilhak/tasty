@@ -90,14 +90,11 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
     // 뺀 건수를 단정한다 — 파일이 옮겨지거나 이름이 바뀌면 이 면제가 조용히 0 건이 되고,
     // 그러면 자기 사본이 다시 세어져 이 가드가 영원히 빨개진다. 그때는 여기서 죽는 것이
     // 맞다(면제가 안 걸렸다는 것을 값으로 말한다).
+    // 비교는 문자열이 아니라 `Path` 로 한다 — `Path` 의 동등성은 component 단위라
+    // 구분자를 손으로 정규화할 필요가 없다(그 손 정규화는 별도 가드가 세는 자리다).
+    let self_path = Path::new(SELF_PATH);
     let before = found.len();
-    found.retain(|(path, _)| {
-        path.strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/")
-            != SELF_PATH
-    });
+    found.retain(|(path, _)| path.strip_prefix(root).unwrap_or(path) != self_path);
     assert!(
         before > found.len(),
         "자기 면제가 0 건이다 — `SELF_PATH`({SELF_PATH})가 이 파일의 실제 자리와 어긋났다. \
