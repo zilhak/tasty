@@ -369,7 +369,7 @@ pub(super) fn agent_command_to_method_params(
 }
 
 /// `TaskCreate` → `agent.task_create` params 조립. `agent_command_to_method_params`
-/// 의 인지 복잡도 상한(20)을 넘기지 않도록 그 큰 match 밖으로 뺀 것 — 로직
+/// 의 인지 복잡도 상한을 넘기지 않도록 그 큰 match 밖으로 뺀 것 — 로직
 /// 자체는 이전과 동일하다.
 #[allow(clippy::too_many_arguments)] // CLI 인자 하나당 파라미터 하나 — 묶으면 오히려 추적이 어려워짐
 fn build_task_create_params(

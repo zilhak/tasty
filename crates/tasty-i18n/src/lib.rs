@@ -1236,15 +1236,17 @@ pub fn unregister_namespace(namespace: &str) {
 mod tests {
     use super::*;
 
-    /// 테스트 전용 임시 디렉토리 (프로세스 id + nanos 로 유일).
+    /// 테스트 전용 임시 디렉토리 (프로세스 id + 단조 카운터로 유일).
     fn temp_dir(tag: &str) -> PathBuf {
+        // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
+        // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
+        // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
+        // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "tasty-i18n-{tag}-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -1906,13 +1908,15 @@ mod pack_size_and_discovery_tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
+        // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
+        // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
+        // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
+        // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "tasty-i18n-{tag}-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir

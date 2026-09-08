@@ -847,8 +847,26 @@ impl Terminal {
         let mut pty_writer = pair.master.take_writer()?;
         let mut pty_reader = pair.master.try_clone_reader()?;
 
-        // PTY master 의 첫 바이트로 initial_input 을 동기 write — child 가 stdin 을
-        // 처음 read 하는 순간 이 바이트가 무조건 첫 입력으로 들어간다.
+        // PTY master 의 첫 바이트로 initial_input 을 동기 write — 이 write 가 우리가 그
+        // master 에 넣는 첫 바이트이므로, 자식이 이것을 읽는다면 **첫 입력으로** 읽는다.
+        //
+        // ★ "자식이 이것을 반드시 읽는다" 는 여기서 보장하지 못한다. 이 write 는 위
+        // `spawn_command` **뒤**라, 쓰는 시점에 자식은 이미 돌고 있다 — 자식이 자기
+        // 라인 에디터를 켜면서 입력 큐를 버리면(`tcsetattr` 의 `TCSAFLUSH`, `tcflush`)
+        // 이 바이트는 에코만 남기고 사라진다. 그래서 이것은 보장이 아니라 경주다.
+        //
+        // 잰 것(2026-09-08, 리눅스): zsh 5.9 · bash 5.2 를 `-li` 로 띄우고 spawn 과 write
+        // 사이 간격을 0 / 2 / 5 / 10 / 20 / 40 / 80 / 150 ms 로 두 번씩 — 32 시행 전부
+        // 자식이 0.04~0.20 s 에 이 입력으로 종료했다. **유실 0 이다.** 다만 이 값이 받쳐
+        // 주는 것은 "리눅스의 이 두 셸에는 그 창이 없다" 까지고, 다른 OS·다른 셸·다른
+        // rc 파일까지는 아니다.
+        //
+        // 이 문장을 다시 "무조건" 으로 올리려면 둘 중 하나가 필요하다.
+        //  (a) 순서를 바꿔 경주를 없앤다 — `openpty` 직후, `spawn_command` **전에** 쓰면
+        //      자식이 존재하기도 전에 큐에 들어가므로 "자식이 처음 read 할 때" 라는 전제가
+        //      코드로 성립한다(그래도 시작 시 큐를 버리는 셸에는 여전히 안 통한다).
+        //  (b) 우리가 출하하는 OS·기본 셸 조합마다 라인 에디터 초기화가 입력 큐를 버리는지를
+        //      재서, 버리는 조합이 없음을 값으로 남긴다.
         if let Some(input) = config.initial_input
             && !input.is_empty()
         {

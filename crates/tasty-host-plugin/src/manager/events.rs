@@ -309,9 +309,14 @@ impl PluginManager {
     /// 보낸다. host 측 surface(`EguiMeshSurface` stand-in)는 tree/handles 가 없어
     /// `RemoteSurfaceEntry` 를 만들지 않으므로 plugin 의 (빈) 응답은 무시된다.
     ///
-    /// caller([`MainView::forward_egui_mesh_context`])가 첫 set_context bootstrap 직전에
-    /// 1회 호출한다 — 같은 plugin req 채널 FIFO 라 create 가 set_context 보다 먼저 도착해
-    /// plugin 이 생성 params(예: markdown `file`)를 set_context 렌더 전에 받는다.
+    /// 호출자는 첫 set_context bootstrap **직전**에 부른다 — 같은 plugin req 채널 FIFO 라
+    /// create 가 set_context 보다 먼저 도착해 plugin 이 생성 params(예: markdown `file`)를
+    /// set_context 렌더 전에 받는다.
+    ///
+    /// 호출자를 여기 열거하지 않는다. 한때 `MainView::forward_egui_mesh_context` 하나로
+    /// 적혀 있었는데 실제로는 셋이었고, 산문이 든 명부는 늘어도 따라오지 않는다.
+    /// 그 순서는 본체의 `src/source_guards/mesh_bootstrap_order.rs` 가 호출자를 **스캔해서**
+    /// 판정한다 — 넷째가 생기면 자동으로 좌변에 들어온다.
     pub fn send_egui_mesh_surface_create(
         &self,
         plugin_id: &str,

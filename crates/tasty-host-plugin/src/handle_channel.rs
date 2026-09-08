@@ -287,7 +287,18 @@ impl HandleListener {
 
         // (pid, nanos) 만으로는 같은 프로세스의 동시 bind(테스트 병렬 실행 등)가 동일
         // 나노초에 겹쳐 경로가 충돌할 수 있다 — 프로세스 전역 단조 시퀀스로 유일성 보장.
+        //
         // nanos 는 이전 프로세스가 남긴 stale 파일과의 충돌 회피용으로 유지한다.
+        // **아래 `remove_file` 이 있는데도 필요한 이유**(2026-09-08 실측): pid 는
+        // 재사용되고, 재사용된 pid + 같은 seq 는 옛 프로세스의 socket 과 같은 경로를
+        // 짓는다. 그 잔재를 아래에서 지우려 하지만 `/tmp` 는 sticky(`drwxrwxrwt`)라
+        // **다른 사용자가 만든 파일은 못 지운다** — 그때 unlink 도 bind 도 실패한다.
+        // nanos 가 그 경우의 경로를 갈라 준다.
+        //
+        // ★ 이 항을 상수로 바꿔도 `cargo test -p tasty-host-plugin` 은 202 개 전부
+        // 초록이다(실측). 이 축은 한 프로세스 안에서 재질 수 없다 — 지우기 전에
+        // 위 문단을 읽어라. `temp_path` 가드가 시계 성분을 "약하다" 고 부르는 것은
+        // **프로세스-내 축**에 대한 이야기이고, 이 자리는 그 축을 seq 가 진다.
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let seq = SEQ.fetch_add(1, Ordering::Relaxed);
 

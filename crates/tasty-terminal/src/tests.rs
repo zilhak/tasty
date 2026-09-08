@@ -1343,6 +1343,22 @@ fn process_exited_eventually_emitted() {
     // 그래서 recv 상한을 ALIVE_CHECK_INTERVAL 로 잘라, wake 가 안 와도 그 주기마다 process() 가
     // 돌며 제품이 이미 가진 try_wait 폴백으로 종료를 잡는다(process() 는 wake 없이 그 주기 throttle
     // 로 try_wait 한다). deadline 은 그 위의 최후 안전망이라 넉넉히 둔다.
+    //
+    // ★ 이 두 축이 **다 살아 있어도** 이 시험은 빨개진다. 두 축은 "자식이 죽은 것을
+    // 우리가 언제 보나" 만 답하고, 자식이 **죽는다는 것 자체**는 답하지 않는다. 그것은
+    // 여기 안 적힌 기계에 걸려 있다 — 로그인+대화형 셸이 그 러너에서 뜨는 것, 그리고
+    // spawn 보다 뒤에 쓰는 `initial_input` 이 그 셸의 첫 입력으로 들어가는 것.
+    // 실측(2026-09-08, 리눅스): 자식이 안 죽게 두면 이 루프는 예산을 다 쓰고 그동안
+    // try_wait 폴백은 61 회 돌았다 — 폴백은 멀쩡했고 자식이 안 죽었을 뿐이다.
+    // 그래서 실패문이 그 둘을 갈라 적는다(아래). 근거·재검토 조건은 ADR-0211.
+    //
+    // **이 빨강을 재현하는 법**(이 시험이 macOS 에서만 깨져 붙을 수 없을 때 쓴다).
+    // 자식이 안 죽는 조건을 손으로 만들면 리눅스에서 같은 실패가 그대로 난다 —
+    // 인자를 무시하고 종료하지 않는 프로그램(`exec sleep 600` 한 줄짜리 셸 스크립트면
+    // 된다)을 `SHELL` 로 두고 이 시험 하나만 돌린다. 예산을 다 쓰고 죽으며, 실패문이
+    // `process()` 횟수와 `alive=true` 를 찍는다. 폴백이 정말 돌았는지 바깥에서 대조하려면
+    // 리눅스에서 `strace -f -c -e trace=wait4` 로 그 시험 바이너리를 감싸고 `wait4` 계수를
+    // 실패문의 `process()` 횟수와 맞춰 본다(2026-09-08 실측: 둘 다 61).
     // SyncSender + try_send: waker 콜백이 절대 블록되지 않아야 parser 스레드가 멈추지 않는다.
     let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
     let waker: Waker = Arc::new(move || {
@@ -1365,10 +1381,16 @@ fn process_exited_eventually_emitted() {
     )
     .expect("terminal creation");
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    // 예산은 경주 예산이 아니라 안전망이다 — 근거와 재검토 조건은 ADR-0211.
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+    let started = std::time::Instant::now();
+    let deadline = started + BUDGET;
     let mut seen = false;
+    // process() 를 몇 번 돌렸는가 — 실패 갈래에서 "폴백이 안 돌았다" 를 배제하는 값이다.
+    let mut polls = 0usize;
     while std::time::Instant::now() < deadline {
         t.process();
+        polls += 1;
         if t.lock_state()
             .events
             .iter()
@@ -1386,7 +1408,36 @@ fn process_exited_eventually_emitted() {
         // deadline 조건이 다음 반복에서 판정한다. 그래서 recv 결과는 무시한다.
         let _ = rx.recv_timeout(remaining.min(ALIVE_CHECK_INTERVAL));
     }
-    assert!(seen, "ProcessExited not emitted before deadline");
+    if !seen {
+        // 실패 갈래에서만 관측을 꺼낸다 — 정상 경로는 이 줄에 안 온다.
+        //
+        // 이 자리가 빨개지는 러너(자체 호스팅 macOS)에는 붙어서 못 본다. 그래서 실패문이
+        // 스스로 갈리게 값을 싣는다: ① 폴백이 돌 자리가 몇 번 있었나 ② 마지막에 자식이
+        // 살아 있었나. ② 가 답을 정한다 — alive 면 감지가 아니라 자식을 봐야 한다.
+        let alive = t.check_process_alive();
+        let screen = t.lock_state().screen_text(false);
+        let visible = screen.trim_end();
+        let tail: String = visible
+            .chars()
+            .rev()
+            .take(48)
+            .collect::<Vec<char>>()
+            .into_iter()
+            .rev()
+            .collect();
+        panic!(
+            "ProcessExited 가 예산 {BUDGET:?} 안에 안 나왔다(경과 {elapsed:?}). \
+             process() 를 {polls} 회 돌렸고 그 호출마다 {ALIVE_CHECK_INTERVAL:?} throttle 의 \
+             try_wait 폴백이 돌 자리가 있었다. 마지막 판정: 자식 alive={alive} — \
+             true 면 자식이 안 죽은 것이라 감지가 아니라 자식(로그인 셸 기동·initial_input 전달)을 \
+             봐야 하고, false 면 죽었는데 process() 가 못 본 것이다. \
+             화면 꼬리=\"{tail}\" — 이 글자가 우리가 보낸 \"exit\\r\" 의 에코일 수 있다. \
+             에코는 자식이 아니라 라인 디시플린이 내므로 자식이 떴다는 증거가 아니다. \
+             예산 인상은 이 사건의 처방이 아니다(ADR-0211).",
+            elapsed = started.elapsed(),
+            tail = tail.escape_default(),
+        );
+    }
 }
 
 // ---- OutputAppended observer gate tests ----
