@@ -554,3 +554,27 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **근거**: `src/adapters/ui/tab_bar.rs` `text_color` match(`AttentionKind` 분기). 상세는
   [design-token-mapping §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
   · [design-gallery-mapping §Attention kind](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062).
+
+## PluginAvatar — 색은 갈래가 하나뿐이고 글리프는 상한에서 잘린다 (2026-09-08)
+
+디자인 `plugins_window.jsx` 의 `PluginAvatar` 를 전사하면서 **의도적으로 갈린 두 자리**다.
+전사 자체는 구조·토큰 두 축 모두 디자인을 따른다(사각 `size`, `radius`,
+`color-mix` 배경/보더, mono 머리글자).
+
+- **색 — 카테고리 갈래가 도달 불가**: 디자인은 배경·보더·글자를 `CAT_COLOR[plugin.cat]`
+  으로 칠하고, 그 표에 없으면 `var(--tasty-accent-primary)` 로 떨어진다. tasty 매니페스트
+  스키마(`crates/tasty-plugin-manifest/src/types.rs` 의 `Manifest`)에는 **카테고리 필드가
+  없다** — `id` · `name` · `version` · `authors` · `description` · `homepage` 뿐이다. 그래서
+  일곱 카테고리 색 중 어느 것도 도달할 수 없고 fallback 갈래 하나만 남는다. 위젯이 색을
+  인자로 받지 않는 이유가 그것이다: 부를 수 있는 값이 하나뿐인 인자는 호출부 넷에서 같은
+  상수를 다시 적게 만든다. 매니페스트에 카테고리가 생기면 바뀌는 것은 두 `Theme` 접근자와
+  위젯 시그니처뿐이다.
+- **글리프 크기 — 상세는 상한에서 잘린다**: 디자인은 `Math.round(size * 0.42)` 다. 목록(32)
+  에서는 13 이 나와 `font_size_body` 와 값이 그대로 맞는다. 상세(46)에서는 **19** 가 나와
+  UI 폰트 상한 14(`theme.md` "UI 폰트 최대" = `font_size_max`)를 넘는다. 구조 축과 토큰 축은
+  함께 필수이고(`CLAUDE.md` "갤러리 완전성 · gallery-first") 상한 쪽이 규칙이라 상세 글리프를
+  `font_size_max` 로 자른다 — 비율이 0.42 에서 0.30 으로 바뀐다. 사각형 한 변 46 은 그대로다
+  (ADR-0126 대로 44 · 48 로 스냅하지 않는다).
+- **근거**: `crates/tasty-ui-widgets/src/plugin_avatar.rs` (위젯 · 두 갈래의 유일한 구현부),
+  `crates/tasty-type-appearance/src/theme.rs` 의 `plugin_avatar_bg` · `plugin_avatar_border`
+  (위 color-mix 절의 처방 그대로 — 불투명 블렌드는 `mix_srgb`, `transparent` 항은 알파만).

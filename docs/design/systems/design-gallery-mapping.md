@@ -281,7 +281,7 @@ canonical 이 그 시각을 아직 정하지 않았다. 구조 전사는 그 다
 | installed list+detail | `src/view/plugins/ui/list.rs` `draw_list_tab` | `plugins_window/installed.rs`: `list_pane` / `detail_pane` — 상세 블록 열셋 전량(빈 상태 · health error 박스 · Status/Configure · Surface kinds · Permissions · Commands · Install path/Log · Uninstall 2 분기 포함) |
 | `AttentionPanel` (4케이스) | `src/view/plugins/ui/attention.rs` `draw_attention_tab` | `plugins_window/attention.rs`: `list_pane` / `detail_pane` / `banner` / `reason_detail` / `action_bar` / `reason_cards` |
 | `AddPluginForm` (trust 흐름) | `src/view/plugins/ui/add.rs` `draw_add_tab` | `plugins_window/add.rs`: `input_pane` / `preview_pane` / `untrusted_warning` |
-| `PluginAvatar` | (없음) | (없음) — 디자인에만 있는 컴포넌트다 |
+| `PluginAvatar` | `src/view/plugins/ui/list.rs` · `attention.rs` — 목록 행(32)과 상세 identity(46) 넷 | 공용 위젯 `tasty-ui-widgets` `plugin_avatar` / `paint_plugin_avatar` 를 `plugins_window/installed.rs` · `attention.rs` 의 `list_pane` · `detail_pane` 이 부른다 |
 
 severity 는 본체 `src/view/plugins/ui.rs` `is_danger` 를 따른다 — 서명 계열만 danger, 권한
 변경·런타임 오류는 warning. Installed 목록의 health dot 과는 다른 축이다(health dot 은 실행 중
