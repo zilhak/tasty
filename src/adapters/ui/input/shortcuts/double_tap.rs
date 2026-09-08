@@ -60,12 +60,6 @@ impl MainView {
             return true;
         }
 
-        let terminal_rect = self.compute_terminal_rect();
-        let cell_w = self.base.gpu.cell_width();
-        let cell_h = self.base.gpu.cell_height();
-        // `engine` 가변 차용 전에 잡는다.
-        let scale_factor = self.base.gpu.scale_factor();
-
         // Check all configurable bindings for double-tap matches
         let bindings_to_check: Vec<(&[String], &str)> = vec![
             (&kb.new_workspace, "new_workspace"),
@@ -101,195 +95,244 @@ impl MainView {
             (&kb.quit_minimize, "quit_minimize"),
         ];
 
-        let engine = &mut self.core_state;
+        // 소비 판정은 **실행됐는가**로 한다 — 매칭만으로 먹지 않는다. 등록 목록에
+        // 같은 조합이 둘 이상 실려 있으면 앞엣것이 arm 없이 끝나도 뒤엣것이 실행된다.
         for (bindings, action) in &bindings_to_check {
-            if has_dt(bindings) {
-                match *action {
-                    "new_workspace" => {
-                        // 현재 활성 워크스페이스의 카테고리를 계승 (keybinding.rs
-                        // match_create_bindings 와 동일 정책).
-                        let category = focused_workspace_category(&self.state, engine);
-                        self.state.dispatch_intent(
-                            Intent::NewWorkspace {
-                                kind: None,
-                                params: serde_json::Value::Null,
-                                category,
-                            }
-                            .from_user_shortcut("new_workspace"),
-                        );
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "close_workspace" => {
-                        self.state.close_active_workspace(engine);
-                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
-                    }
-                    "new_tab" => {
-                        if let Err(e) = self.state.add_tab(engine) {
-                            tracing::warn!("add_tab failed: {e}");
-                        }
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "close_pane" => {
-                        if !self.state.close_active_pane(engine) {
-                            self.state.close_active_workspace(engine);
-                        }
-                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
-                    }
-                    "split_pane_vertical" => {
-                        self.state.dispatch_intent(
-                            Intent::SplitPane {
-                                direction: SplitDirection::Vertical,
-                            }
-                            .from_user_shortcut("split_pane_vertical"),
-                        );
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "split_pane_horizontal" => {
-                        self.state.dispatch_intent(
-                            Intent::SplitPane {
-                                direction: SplitDirection::Horizontal,
-                            }
-                            .from_user_shortcut("split_pane_horizontal"),
-                        );
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "split_surface_vertical" => {
-                        self.state.dispatch_intent(
-                            Intent::SplitSurface {
-                                direction: SplitDirection::Vertical,
-                            }
-                            .from_user_shortcut("split_surface_vertical"),
-                        );
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "split_surface_horizontal" => {
-                        self.state.dispatch_intent(
-                            Intent::SplitSurface {
-                                direction: SplitDirection::Horizontal,
-                            }
-                            .from_user_shortcut("split_surface_horizontal"),
-                        );
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "focus_pane_next" => {
-                        self.state.move_pane_focus_forward(engine);
-                    }
-                    "focus_pane_prev" => {
-                        self.state.move_pane_focus_backward(engine);
-                    }
-                    "focus_surface_next" => {
-                        self.state.move_surface_focus_forward(engine);
-                    }
-                    "focus_surface_prev" => {
-                        self.state.move_surface_focus_backward(engine);
-                    }
-                    "close_surface" => {
-                        let closed = self.state.close_active_surface(engine);
-                        if !closed && !self.state.close_active_pane(engine) {
-                            self.state.close_active_workspace(engine);
-                        }
-                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
-                    }
-                    "restore_closed" => {
-                        self.state.dispatch_intent(
-                            crate::intent::Intent::RestoreClosedItem
-                                .from_user_shortcut("restore_closed"),
-                        );
-                        self.state
-                            .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
-                    }
-                    "quit" => {
-                        send_app_event(&self.proxy, crate::AppEvent::QuitRequested);
-                    }
-                    "quit_immediate" => {
-                        send_app_event(&self.proxy, crate::AppEvent::Shutdown);
-                    }
-                    "quit_minimize" => {
-                        send_app_event(&self.proxy, crate::AppEvent::Minimize);
-                    }
-                    "open_markdown" => {
-                        // 새 탭 markdown 열기: surface_id 없이 file-open 팝업(plugin 새 탭 dispatch).
-                        self.state
-                            .enqueue_convert_input_popup(engine, "markdown", None);
-                    }
-                    "open_explorer" => {
-                        Self::open_explorer_tab(&mut self.state);
-                    }
-                    "convert_surface" => {
-                        if let Some(sid) = self.state.focused_surface_id(engine) {
-                            self.state.dialogs.convert_popup = Some(sid);
-                            self.state.dialogs.convert_popup_selected = None;
-                            self.state.dispatch_intent(
-                                UiIntent::OpenPopup {
-                                    id: "convert_surface",
-                                    mode: OpenPopupMode::WithScope(
-                                        crate::adapters::ui::popup::PopupScope::Surface(sid),
-                                    ),
-                                }
-                                .from_user_shortcut("convert_surface_double_tap"),
-                            );
-                        }
-                    }
-                    "convert_to_markdown" => {
-                        if let Some(sid) = self.state.focused_surface_id(engine) {
-                            // 제자리 markdown 변환: surface_id 를 실어 file-open 팝업(plugin navigate).
-                            self.state
-                                .enqueue_convert_input_popup(engine, "markdown", Some(sid));
-                        }
-                    }
-                    "convert_to_explorer" => {
-                        // explorer 가 host builtin surface 로 승격(T11)되어 즉시
-                        // 변환을 복구. cwd None → source surface 에서 carry.
-                        if let Some(sid) = self.state.focused_surface_id(engine) {
-                            self.state.dispatch_intent(
-                                crate::intent::Intent::ConvertSurface {
-                                    surface_id: sid,
-                                    target: crate::intent::ConvertTarget::Kind {
-                                        cwd: None,
-                                        kind: "explorer".to_string(),
-                                        params: serde_json::json!({}),
-                                    },
-                                }
-                                .from_user_shortcut("convert_to_explorer_double_tap"),
-                            );
-                        }
-                    }
-                    "close_active" => {
-                        if !self.state.close_active_tab(engine)
-                            && !self.state.close_active_pane(engine)
-                        {
-                            self.state.close_active_workspace(engine);
-                        }
-                        self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
-                    }
-                    "next_tab" => {
-                        self.state.next_tab_in_pane(engine);
-                    }
-                    "prev_tab" => {
-                        self.state.prev_tab_in_pane(engine);
-                    }
-                    other => {
-                        // 등록됐는데 실행 arm 이 없다. **키를 먹지 않는다** — 소비 여부는
-                        // "매칭됐는가" 가 아니라 "실행했는가" 여야 한다. 예전에는 여기가
-                        // `_ => {}` 였고 바로 아래에서 무조건 소비해서, 사용자가 지정한
-                        // 조합이 아무 일도 안 하면서 다른 경로로도 못 가는 상태가 됐다
-                        // (로그조차 없었다).
-                        tracing::warn!(
-                            "double-tap: registered action '{other}' has no execution arm"
-                        );
-                        continue;
-                    }
-                }
+            if has_dt(bindings) && self.run_double_tap_action(action) {
                 return true;
             }
         }
 
         false
+    }
+
+    /// double-tap 으로 매칭된 액션 하나를 **실행만** 한다. 실행 arm 이 있으면 `true`.
+    ///
+    /// 소비 판정(`handle_double_tap_shortcut` 의 반환값)은 여기서 안 한다 — 목록과
+    /// arm 을 맞추는 일과 실행한 것만 소비하는 일은 다른 일이라, 한 함수에 두면
+    /// 분기가 겹쳐 읽을 수 없어진다. 실행 표는 다시 **필요한 것이 무엇인가**로 넷으로
+    /// 갈라져 있다 — 레이아웃을 다시 재야 하는 것 · 포커스만 옮기는 것 · 포커스된
+    /// surface 를 물어봐야 하는 것 · 창 밖으로 이벤트를 보내는 것.
+    fn run_double_tap_action(&mut self, action: &str) -> bool {
+        if self.run_double_tap_layout_action(action)
+            || self.run_double_tap_focus_action(action)
+            || self.run_double_tap_open_action(action)
+            || self.run_double_tap_app_action(action)
+        {
+            return true;
+        }
+        // 등록됐는데 실행 arm 이 없다. **키를 먹지 않는다** — 소비 여부는 "매칭됐는가"
+        // 가 아니라 "실행했는가" 여야 한다. 예전에는 이 갈래가 `_ => {}` 였고 호출자가
+        // 무조건 소비해서, 사용자가 지정한 조합이 아무 일도 안 하면서 다른 경로로도 못
+        // 가는 상태가 됐다 (로그조차 없었다).
+        tracing::warn!("double-tap: registered action '{action}' has no execution arm");
+        false
+    }
+
+    /// 생성·닫기·분할 — 실행 뒤 남은 레이아웃을 새 rect 로 다시 재야 하는 액션들.
+    fn run_double_tap_layout_action(&mut self, action: &str) -> bool {
+        let terminal_rect = self.compute_terminal_rect();
+        let cell_w = self.base.gpu.cell_width();
+        let cell_h = self.base.gpu.cell_height();
+        // `engine` 가변 차용 전에 잡는다.
+        let scale_factor = self.base.gpu.scale_factor();
+
+        let engine = &mut self.core_state;
+        match action {
+            "new_workspace" => {
+                // 현재 활성 워크스페이스의 카테고리를 계승 (keybinding.rs
+                // match_create_bindings 와 동일 정책).
+                let category = focused_workspace_category(&self.state, engine);
+                self.state.dispatch_intent(
+                    Intent::NewWorkspace {
+                        kind: None,
+                        params: serde_json::Value::Null,
+                        category,
+                    }
+                    .from_user_shortcut("new_workspace"),
+                );
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            "close_workspace" => {
+                self.state.close_active_workspace(engine);
+                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+            }
+            "new_tab" => {
+                if let Err(e) = self.state.add_tab(engine) {
+                    tracing::warn!("add_tab failed: {e}");
+                }
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            "close_pane" => {
+                if !self.state.close_active_pane(engine) {
+                    self.state.close_active_workspace(engine);
+                }
+                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+            }
+            "split_pane_vertical" => {
+                self.state.dispatch_intent(
+                    Intent::SplitPane {
+                        direction: SplitDirection::Vertical,
+                    }
+                    .from_user_shortcut("split_pane_vertical"),
+                );
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            "split_pane_horizontal" => {
+                self.state.dispatch_intent(
+                    Intent::SplitPane {
+                        direction: SplitDirection::Horizontal,
+                    }
+                    .from_user_shortcut("split_pane_horizontal"),
+                );
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            "split_surface_vertical" => {
+                self.state.dispatch_intent(
+                    Intent::SplitSurface {
+                        direction: SplitDirection::Vertical,
+                    }
+                    .from_user_shortcut("split_surface_vertical"),
+                );
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            "split_surface_horizontal" => {
+                self.state.dispatch_intent(
+                    Intent::SplitSurface {
+                        direction: SplitDirection::Horizontal,
+                    }
+                    .from_user_shortcut("split_surface_horizontal"),
+                );
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            "close_surface" => {
+                let closed = self.state.close_active_surface(engine);
+                if !closed && !self.state.close_active_pane(engine) {
+                    self.state.close_active_workspace(engine);
+                }
+                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+            }
+            "close_active" => {
+                if !self.state.close_active_tab(engine) && !self.state.close_active_pane(engine) {
+                    self.state.close_active_workspace(engine);
+                }
+                self.finish_after_possible_close(terminal_rect, cell_w, cell_h);
+            }
+            "restore_closed" => {
+                self.state.dispatch_intent(
+                    crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
+                );
+                self.state
+                    .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// 포커스·탭 이동 — 레이아웃이 그대로라 rect 를 다시 안 잰다.
+    fn run_double_tap_focus_action(&mut self, action: &str) -> bool {
+        let engine = &mut self.core_state;
+        match action {
+            "focus_pane_next" => {
+                self.state.move_pane_focus_forward(engine);
+            }
+            "focus_pane_prev" => {
+                self.state.move_pane_focus_backward(engine);
+            }
+            "focus_surface_next" => {
+                self.state.move_surface_focus_forward(engine);
+            }
+            "focus_surface_prev" => {
+                self.state.move_surface_focus_backward(engine);
+            }
+            "next_tab" => {
+                self.state.next_tab_in_pane(engine);
+            }
+            "prev_tab" => {
+                self.state.prev_tab_in_pane(engine);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// 열기·변환 — 포커스된 surface 를 물어보고 팝업이나 변환 Intent 를 띄운다.
+    fn run_double_tap_open_action(&mut self, action: &str) -> bool {
+        let engine = &mut self.core_state;
+        match action {
+            "open_markdown" => {
+                // 새 탭 markdown 열기: surface_id 없이 file-open 팝업(plugin 새 탭 dispatch).
+                self.state
+                    .enqueue_convert_input_popup(engine, "markdown", None);
+            }
+            "open_explorer" => {
+                Self::open_explorer_tab(&mut self.state);
+            }
+            "convert_surface" => {
+                if let Some(sid) = self.state.focused_surface_id(engine) {
+                    self.state.dialogs.convert_popup = Some(sid);
+                    self.state.dialogs.convert_popup_selected = None;
+                    self.state.dispatch_intent(
+                        UiIntent::OpenPopup {
+                            id: "convert_surface",
+                            mode: OpenPopupMode::WithScope(
+                                crate::adapters::ui::popup::PopupScope::Surface(sid),
+                            ),
+                        }
+                        .from_user_shortcut("convert_surface_double_tap"),
+                    );
+                }
+            }
+            "convert_to_markdown" => {
+                if let Some(sid) = self.state.focused_surface_id(engine) {
+                    // 제자리 markdown 변환: surface_id 를 실어 file-open 팝업(plugin navigate).
+                    self.state
+                        .enqueue_convert_input_popup(engine, "markdown", Some(sid));
+                }
+            }
+            "convert_to_explorer" => {
+                // explorer 가 host builtin surface 로 승격(T11)되어 즉시
+                // 변환을 복구. cwd None → source surface 에서 carry.
+                if let Some(sid) = self.state.focused_surface_id(engine) {
+                    self.state.dispatch_intent(
+                        crate::intent::Intent::ConvertSurface {
+                            surface_id: sid,
+                            target: crate::intent::ConvertTarget::Kind {
+                                cwd: None,
+                                kind: "explorer".to_string(),
+                                params: serde_json::json!({}),
+                            },
+                        }
+                        .from_user_shortcut("convert_to_explorer_double_tap"),
+                    );
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// 창 밖으로 나가는 것 — 앱 이벤트만 보내고 상태를 안 건드린다.
+    fn run_double_tap_app_action(&mut self, action: &str) -> bool {
+        match action {
+            "quit" => {
+                send_app_event(&self.proxy, crate::AppEvent::QuitRequested);
+            }
+            "quit_immediate" => {
+                send_app_event(&self.proxy, crate::AppEvent::Shutdown);
+            }
+            "quit_minimize" => {
+                send_app_event(&self.proxy, crate::AppEvent::Minimize);
+            }
+            _ => return false,
+        }
+        true
     }
 }

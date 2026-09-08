@@ -985,7 +985,8 @@ fn dispatchable_action_ids() -> Vec<String> {
     arm_ids(&SRC[start..end], "            ")
 }
 
-/// `handle_double_tap_shortcut` 의 등록 목록(`bindings_to_check`)과 실행 arm.
+/// `handle_double_tap_shortcut` 의 등록 목록(`bindings_to_check`)과 `run_double_tap_*_action`
+/// 의 실행 arm. 둘은 인지 복잡도 때문에 다른 함수로 갈라져 있지만 같은 파일 안이다.
 fn double_tap_registered_and_armed() -> (Vec<String>, Vec<String>) {
     const SRC: &str = include_str!("double_tap.rs");
     let list_start = SRC
@@ -1002,14 +1003,13 @@ fn double_tap_registered_and_armed() -> (Vec<String>, Vec<String>) {
         })
         .collect();
 
-    let loop_start = SRC
-        .find("for (bindings, action) in &bindings_to_check")
-        .expect("실행 루프를 못 찾았다");
-    let loop_end = SRC[loop_start..]
-        .find("                    other => {")
-        .expect("arm 없음 갈래를 못 찾았다")
-        + loop_start;
-    let armed = arm_ids(&SRC[loop_start..loop_end], "                    ");
+    // 실행 표는 `run_double_tap_*_action` 넷에 나뉘어 있다(인지 복잡도 상한 때문이다).
+    // 그 앞에는 12칸 들여쓰기의 `"id" =>` 꼴이 없으므로, 첫 실행 함수부터 파일 끝까지를
+    // 한 구간으로 읽으면 갈래가 늘어도 이 시험이 따라간다.
+    let run_start = SRC
+        .find("fn run_double_tap_layout_action")
+        .expect("실행 함수를 못 찾았다");
+    let armed = arm_ids(&SRC[run_start..], "            ");
     (registered, armed)
 }
 
