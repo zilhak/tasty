@@ -72,12 +72,8 @@ impl App {
                     None,
                 )
             {
-                data = serde_json::json!({
-                    "kind": "capability_elevation",
-                    "approval_id": rec.request.id,
-                    "permission": perm_token,
-                    "method": method,
-                });
+                data =
+                    host_ipc::handler::approval::elevation_error_data(&rec, &perm_token, &method);
             }
         }
         let mut response = host_ipc::protocol::JsonRpcResponse::error(

@@ -190,6 +190,17 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
 }
 
 /// 권한 게이트: caller 가 `canonical` 을 호출할 권한이 없으면 거부 응답 + audit Deny.
+///
+/// 거부가 Agent 의 권한 부족이면 **capability elevation 을 함께 발행한다.** 이것이
+/// 없으면 에이전트는 `-32001` 과 `data: null` 만 받고 무엇을 요청해야 하는지도,
+/// 요청할 자리도 알지 못한다 — 거부가 회복 불가능해진다.
+///
+/// gui 는 이 자리에 **안 온다**: `src/app/ipc/caller_gate.rs` 의 step 1 이 모든 IPC
+/// 명령보다 먼저 `ensure_allowed` 로 Agent 를 거르고 거기서 같은 발행을 하며 팝업까지
+/// 띄운다. 헤드리스에는 그 step 이 없어 이 게이트가 **유일한 경계**이고, 그래서
+/// 발행이 여기 있어야 두 조합의 거부가 같은 봉투를 낸다(`elevation_error_data`).
+/// 창이 없으므로 팝업 enqueue 는 없고 레코드만 남는다 — 헤드리스에서도
+/// `approval.await`/`approval.list`/`approval.respond` 가 그 레코드에 닿는다.
 pub(crate) fn check_permission_gate(
     core: &mut crate::core::Core,
     engine: &mut crate::core::CoreState,
@@ -210,11 +221,35 @@ pub(crate) fn check_permission_gate(
             workspace_id,
             seq,
         );
-        return Some(JsonRpcResponse::error(
-            id.clone(),
-            -32001,
-            format!("permission_denied: {e}"),
-        ));
+        let mut response =
+            JsonRpcResponse::error(id.clone(), -32001, format!("permission_denied: {e}"));
+        // 권한 부족만 격상으로 회복된다 — `UnknownMethod`/`NotPluginCallable` 은
+        // 어떤 권한을 줘도 통과하지 않으므로 단순 거부다. Plugin caller 도 대상이
+        // 아니다: 그쪽 권한은 매니페스트와 grant 로 정해지고 승인 흐름이 따로 있다.
+        if let (
+            tasty_ipc::caller::CallerError::MissingPermission { permission, .. },
+            CallerContext::Agent { agent_id, .. },
+        ) = (&e, caller)
+        {
+            let perm_token = permission.as_token();
+            if let Some(record) = approval::publish_capability_elevation_at(
+                core,
+                engine,
+                workspace_id,
+                agent_id,
+                canonical,
+                &perm_token,
+                None,
+            ) && let Some(err) = response.error.as_mut()
+            {
+                err.data = Some(approval::elevation_error_data(
+                    &record,
+                    &perm_token,
+                    canonical,
+                ));
+            }
+        }
+        return Some(response);
     }
     None
 }

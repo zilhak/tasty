@@ -151,11 +151,34 @@ pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
 // 핸들러
 // ============================================================
 
-/// `approval.request` — 새 요청 생성. 응답: `{ id, state, record }`.
-pub(crate) fn publish_capability_elevation(
+/// 거부 응답의 `error.data` — 격상 레코드를 호출자가 집을 수 있게 싣는다.
+///
+/// **두 경계가 같은 모양을 실어야 한다.** 바깥 경계(gui `caller_gate`)와 안쪽
+/// 게이트(`check_permission_gate`)가 각자 조립하면 조합마다 다른 봉투가 나가고,
+/// 그것을 읽는 에이전트는 조합을 구분할 수단이 없다.
+pub(crate) fn elevation_error_data(
+    record: &ApprovalRecord,
+    permission: &str,
+    method: &str,
+) -> Value {
+    json!({
+        "kind": "capability_elevation",
+        "approval_id": record.request.id,
+        "permission": permission,
+        "method": method,
+    })
+}
+
+/// 격상 발행의 알맹이 — **창(`AppState`)에 안 닿는다.**
+///
+/// 헤드리스에는 `AppState.active_workspace` 로 workspace 를 고르는 바깥 경계가
+/// 없고 게이트가 이미 `workspace_id` 를 손에 들고 있다. 그래서 workspace 를
+/// 인자로 받는 이 갈래를 정본으로 두고, 창을 가진 쪽이
+/// [`publish_capability_elevation`] 으로 감싸 팝업까지 띄운다.
+pub(crate) fn publish_capability_elevation_at(
     core: &mut crate::core::Core,
-    state: &mut AppState,
     engine: &mut crate::core::CoreState,
+    workspace_id: Option<u32>,
     agent_id: &str,
     method: &str,
     permission: &str,
@@ -175,11 +198,6 @@ pub(crate) fn publish_capability_elevation(
     }) {
         return Some(existing);
     }
-
-    let workspace_id = engine
-        .workspaces
-        .get(state.active_workspace)
-        .map(|ws| ws.id);
 
     // approve → 기본 TTL (1시간), approve_permanently → 무기한.
     // grant_ttl_secs metadata 는 respond 핸들러가 grant_permission ttl 로 사용.
@@ -229,8 +247,6 @@ pub(crate) fn publish_capability_elevation(
     match core.request_approval(engine, req) {
         Ok(change) => {
             persist_record(core, &change.record);
-            #[cfg(feature = "gui")]
-            crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &change.record);
             Some(change.record)
         }
         Err(e) => {
@@ -238,6 +254,39 @@ pub(crate) fn publish_capability_elevation(
             None
         }
     }
+}
+
+/// 창을 가진 경계용 — [`publish_capability_elevation_at`] 에 팝업 enqueue 를 더한다.
+pub(crate) fn publish_capability_elevation(
+    core: &mut crate::core::Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    agent_id: &str,
+    method: &str,
+    permission: &str,
+    reason: Option<&str>,
+) -> Option<ApprovalRecord> {
+    let workspace_id = engine
+        .workspaces
+        .get(state.active_workspace)
+        .map(|ws| ws.id);
+    let record = publish_capability_elevation_at(
+        core,
+        engine,
+        workspace_id,
+        agent_id,
+        method,
+        permission,
+        reason,
+    )?;
+    #[cfg(feature = "gui")]
+    crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &record);
+    // 헤드리스 빌드에서는 `state` 를 읽는 유일한 자리가 위 팝업이라 미사용이 된다.
+    // 시그니처는 두 조합이 같아야 한다 — 호출자(gui 의 caller_gate·app_methods)가
+    // 조합마다 다른 인자를 넘기면 그쪽이 갈린다.
+    #[cfg(not(feature = "gui"))]
+    let _ = state;
+    Some(record)
 }
 
 /// `approval.respond` — 응답 제출. self-response 면 거부.

@@ -55,6 +55,36 @@ pub(crate) fn pump_ipc(
                 continue;
             }
         };
+        // 1b) 권한 경계. **아래 App 층 인터셉트는 `handle_with_caller` 에 도달하지
+        //     않으므로, 게이트가 여기 없으면 그것들은 아무 검사도 안 거친다** —
+        //     `timer.list` · plugin 조회 · `agent.task_await` · `approval.await` ·
+        //     debug 표면이 전부 그 형태였다. gui 는 같은 자리를 `caller_gate.rs` 의
+        //     step 1 이 지킨다(모든 명령보다 먼저 `ensure_allowed`).
+        //
+        //     **권한 게이트만 부른다.** cap·rate-limit 까지 여기서 돌리면 이어서
+        //     `handle_with_caller` 가 같은 셋을 다시 도는 요청에서 rate-limit 이 토큰을
+        //     **두 번 소비한다**(`rate_limit_try_consume` 은 통과할 때도 소비한다).
+        //     권한 게이트는 통과 시 부수효과가 없어 두 번 돌아도 답이 같다. 거부는
+        //     여기서 단락되므로 audit 도 한 번만 남는다.
+        //
+        //     별칭을 먼저 정규화한다 — 안 하면 옛 이름으로 부르는 요청이 게이트를
+        //     지나간다(`handle_with_caller` 도 정규화 뒤에 잰다).
+        {
+            let canonical = crate::ipc::alias::canonicalize(&cmd.request.method);
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let ws = engine.workspaces.get(state.active_workspace).map(|w| w.id);
+            if let Some(resp) = crate::ipc::handler::check_permission_gate(
+                &mut app.core,
+                engine,
+                &caller,
+                canonical,
+                ws,
+                &id,
+            ) {
+                send_response(&cmd.response_tx, resp);
+                continue;
+            }
+        }
         // 2) 허브 관측만 App 층에서 가로챈다 — `timer.list` 가 읽는 TimerHub 는
         //    `App` 필드(+ plugin manager 자기 허브)라 `CoreState` 만 받는 engine
         //    handler 에서는 닿지 않는다. gui 의 app_methods step 과 같은 함수를 쓴다.
@@ -87,6 +117,31 @@ pub(crate) fn pump_ipc(
                 send_response(&cmd.response_tx, resp);
                 continue;
             }
+        }
+        // 2b-elev) `plugin.request_permission` — agent 가 권한 부족을 미리 알고
+        //     capability_elevation 을 자체 발행하는 자리. gui 는 첫 main window 의
+        //     state 를 빌려 이것을 답하는데(`app/ipc/app_methods.rs`), 헤드리스는
+        //     `state`·`engine` 을 이미 손에 들고 있어 같은 핸들러가 그대로 선다.
+        //
+        //     **팝업이 없다고 하는 일이 없는 것은 아니다.** 이 메서드가 만드는 것은
+        //     approval **레코드**이고, 헤드리스에서도 `approval.await`·`approval.list`
+        //     ·`approval.respond` 가 그 레코드에 닿는다. 팝업은 창이 있을 때 더해지는
+        //     표시일 뿐이라 `publish_capability_elevation` 안에서 gui feature 로
+        //     갈린다. 이것이 없으면 거부당한 헤드리스 agent 는 권한을 **요청할 자리**가
+        //     없다 — 위 1b) 가 거부에 격상 레코드를 실어 주는 것과 같은 축의 나머지
+        //     절반이다.
+        if cmd.request.method == "plugin.request_permission" {
+            let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let resp = crate::ipc::handler::session::handle_request_permission(
+                &mut app.core,
+                state,
+                engine,
+                &caller,
+                rpc_id,
+                &cmd.request.params,
+            );
+            send_response(&cmd.response_tx, resp);
+            continue;
         }
         // 2c-debug) debug 빌드의 app 층 표면 중 **창이 없어도 답이 정의되는 것.**
         //

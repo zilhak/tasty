@@ -9,11 +9,28 @@
 ## 라우팅 구조
 
 gui 는 5-step 라우터(`src/app/ipc.rs`)를 쓴다. 헤드리스 pump(`src/boot/headless_dispatch.rs`)
-는 caller 해석 → engine handler 직결로 간소화하되, **`App` 층 상태를 읽어야만 답할 수 있는
-것**만 그 앞에서 가로챈다. 현재 가로채는 것은 둘이다.
+는 caller 해석 → **권한 경계** → engine handler 직결로 간소화하되, **`App` 층 상태를 읽어야만
+답할 수 있는 것**만 그 앞에서 가로챈다. 현재 가로채는 것은 셋이다.
 
 - `timer.list` — `App` 의 TimerHub 를 읽는다.
 - 읽기 전용 `plugin.*` 조회 — `App.plugin_manager` 를 읽는다.
+- `plugin.request_permission` — `state`·`engine` 만 읽는다(아래 "권한 경계").
+
+### 권한 경계는 가로채기보다 **앞**이다
+
+caller 를 해석한 직후 `check_permission_gate` 가 한 번 돈다. 가로채는 것들은
+`handle_with_caller` 에 도달하지 않으므로, 게이트가 그 앞에 없으면 **아무 검사도 안
+거친다.** gui 는 같은 자리를 `src/app/ipc/caller_gate.rs` 의 step 1 이 지킨다.
+
+**권한 게이트만 부른다** — cap·rate-limit 까지 여기서 돌리면, 이어서
+`handle_with_caller` 가 같은 셋을 다시 도는 요청에서 rate-limit 이 토큰을 두 번 소비한다
+(`rate_limit_try_consume` 은 통과할 때도 소비한다). 권한 게이트는 통과 시 부수효과가 없어
+두 번 돌아도 답이 같고, 거부는 앞에서 단락되므로 audit 도 한 번만 남는다.
+
+그 게이트는 거부가 Agent 의 권한 부족일 때 **capability elevation 을 함께 발행한다.**
+`error.data` 에 `approval_id`·`permission`·`method` 가 실리고, 에이전트는 그것으로
+`approval.await`/`approval.respond` 에 이어붙는다. 이것이 없으면 헤드리스 거부는
+`data: null` 하나라 무엇이 부족한지도, 어디에 요청할지도 알 수 없다.
 
 그리고 engine handler 앞에 판정이 하나 더 있다 — **요청이 지목한 대상을 이 engine 이
 가졌는가.** 헤드리스는 engine 이 하나라 라우팅할 곳이 없지만, 그 판정이 없으면 대상을
@@ -78,11 +95,17 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 `plugin.audit_follow` 는 `Core` 만 읽지만 구독을 여는 스트리밍 표면이라, 헤드리스에서
 구독 수명을 무엇에 묶을지가 위 결정과 함께 정해져야 한다.
 
-### 없는 것이 정답 (1)
+### 창이 없어도 답이 정의되는 것 (1)
 
-`plugin.request_permission` 은 첫 main window 의 state 를 빌려 elevation popup 을 띄운다.
-popup 을 보여 줄 창이 없으면 이 메서드가 하는 일 자체가 없다. 헤드리스에서 이것이
-답하지 않는 것은 결함이 아니라 정의다.
+`plugin.request_permission` 은 gui 에서 첫 main window 의 state 를 빌려 elevation popup 을
+띄운다. 그래서 오래 "popup 을 보여 줄 창이 없으면 하는 일 자체가 없다" 로 분류돼 있었는데,
+그 전제가 틀렸다 — **이 메서드가 만드는 것은 approval 레코드이고 popup 은 창이 있을 때
+더해지는 표시다.** 레코드는 헤드리스에서도 `approval.await`·`approval.list`
+·`approval.respond` 가 닿는다. 팝업만 `publish_capability_elevation` 안에서 gui feature 로
+갈린다.
+
+이것이 없으면 거부당한 헤드리스 agent 는 권한을 **요청할 자리**가 없다. 위 "권한 경계" 가
+거부에 격상 레코드를 실어 주는 것과 같은 축의 나머지 절반이라 함께 열었다.
 
 ## 조회는 plugin 을 기동하지 않는다
 

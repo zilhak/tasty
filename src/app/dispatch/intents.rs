@@ -460,7 +460,25 @@ mod tests {
     ///
     /// caller 를 인자로 받아 라우팅하는 함수, 즉 `caller: &` 를 시그니처에 갖고
     /// 본문에서 `dispatch_list_global` 이나 `handle_with_caller` 를 부르는 것.
-    /// 이름을 나열하지 않으므로 그런 함수가 새로 생기면 자동으로 대상이 된다.
+    /// 이름을 나열하지 않으므로 그런 함수가 **이 두 파일 안에** 새로 생기면 자동으로
+    /// 대상이 된다.
+    ///
+    /// ## 이 가드가 못 보는 것 — 모수가 gui 파일 둘이다
+    ///
+    /// `sources` 는 `intents.rs` 와 `routing.rs` 로 고정돼 있다. 그래서 **헤드리스
+    /// 조합의 진입점은 후보였던 적이 없다** — `src/boot/headless_dispatch.rs` 의
+    /// `pump_ipc` 가 `handle_with_caller` 를 부르는데, 그 함수는 caller 를 인자로 받지
+    /// 않고 `resolve_caller_from_envelope` 로 **자기가 만들고**, `impl` 밖 최상위
+    /// 함수라 이 스캐너의 함수 쪼개기(4칸 들여쓴 `fn`)에도 안 걸린다. 세 축이 전부
+    /// 어긋나 있다.
+    ///
+    /// 실제로 그 자리가 오래 무게이트였다: `timer.list` · 읽기 전용 `plugin.*` ·
+    /// `agent.task_await` · `approval.await` · debug 표면이 `handle_with_caller` 에
+    /// 도달하지 않는 조기 응답인데 앞에 게이트가 없었다 — 이 가드가 gui 에서 잡은
+    /// 것과 **같은 형태**이고, 모수가 달라서 안 잡혔다. 지금은 그 자리에
+    /// `check_permission_gate` 가 서 있다(`docs/dev-guide/headless-ipc-surface.md`
+    /// "권한 경계는 가로채기보다 앞이다"). 모수를 넓히려면 스캐너의 세 축을 함께
+    /// 고쳐야 해서, 여기서는 **못 보는 범위를 적는 것까지만** 한다.
     #[test]
     fn every_routing_entry_gates_before_it_answers() {
         /// 게이트로 인정하는 호출. `gates_before_routing` 은 이 파일의 진입 게이트,

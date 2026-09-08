@@ -83,3 +83,23 @@ fn approve_without_grant_ttl_secs_is_indefinite_in_metadata() {
     let (_, _, ttl) = elevation_grant_decision(&rec, "approve").expect("decision");
     assert_eq!(ttl, None);
 }
+
+/// 두 경계가 같은 봉투를 낸다 — gui 의 `caller_gate` 와 안쪽
+/// `check_permission_gate` 가 이 함수 하나로 `error.data` 를 만든다. 모양이
+/// 갈리면 그것을 읽는 에이전트가 조합을 구분할 수단이 없어진다.
+#[test]
+fn the_elevation_envelope_carries_what_the_agent_needs_to_recover() {
+    let rec = elevation_record(json!({}));
+    let data = elevation_error_data(&rec, "fs.write", "file.write");
+
+    assert_eq!(data["kind"], "capability_elevation");
+    assert_eq!(data["permission"], "fs.write");
+    assert_eq!(data["method"], "file.write");
+    // approval_id 가 있어야 `approval.await`/`approval.respond` 로 이어진다 —
+    // 이것이 빠지면 거부는 기록만 남고 회복 경로가 끊긴다.
+    assert_eq!(
+        data["approval_id"],
+        serde_json::to_value(&rec.request.id).unwrap(),
+        "격상 레코드를 지목할 id 가 봉투에 실려야 한다"
+    );
+}
