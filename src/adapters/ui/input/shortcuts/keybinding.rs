@@ -33,6 +33,17 @@ pub(super) struct CellGeometry {
     pub scale_factor: f32,
 }
 
+/// 레이아웃 프리셋 적용 picker 의 대상 스코프.
+///
+/// **단축키 프리셋(tasty/mac/…)과 다른 것이다** — 이쪽은 workspace/tab/pane 레이아웃을
+/// 적용하는 picker 다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PresetApplyScope {
+    Workspace,
+    Tab,
+    Pane,
+}
+
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     pub(super) fn handle_keybinding_shortcuts(
@@ -253,17 +264,7 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.toggle_dag_list, key, mods) {
-            // 스코프는 정의가 아니라 **여는 시점**의 활성 workspace 로 정해진다 —
-            // 이 창은 그 workspace 를 벗어나면 숨고 돌아오면 다시 뜬다.
-            state.dispatch_intent(
-                UiIntent::TogglePopup {
-                    id: crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID,
-                    mode: OpenPopupMode::WithScope(
-                        crate::adapters::ui::popup::PopupScope::Workspace(state.active_workspace),
-                    ),
-                }
-                .from_user_shortcut("toggle_dag_list"),
-            );
+            Self::toggle_dag_list_popup(state);
             return true;
         }
         if matches_any_binding(&kb.find, key, mods) {
@@ -534,12 +535,7 @@ impl MainView {
         mods: ModifiersState,
     ) -> bool {
         if matches_any_binding(&kb.screenshot_to_clipboard, key, mods) {
-            let mirror_ws_id = state.focused_surface_id(engine).and_then(|sid| {
-                let (idx, _pane_id) = engine.find_workspace_index_for_surface(sid)?;
-                let ws = engine.workspaces.get(idx)?;
-                ws.mirror.then_some(ws.id)
-            });
-            engine.pending_screenshot_captures.push(mirror_ws_id);
+            Self::queue_screenshot_to_clipboard(state, engine);
             return true;
         }
         false
@@ -698,36 +694,15 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.apply_workspace_preset, key, mods) {
-            state.dialogs.preset_picker_selected = None;
-            state.dispatch_intent(
-                UiIntent::OpenPopup {
-                    id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
-                    mode: OpenPopupMode::CenteredFocused,
-                }
-                .from_user_shortcut("apply_workspace_preset"),
-            );
+            Self::open_preset_apply_popup(state, PresetApplyScope::Workspace);
             return true;
         }
         if matches_any_binding(&kb.apply_tab_preset, key, mods) {
-            state.dialogs.preset_picker_selected = None;
-            state.dispatch_intent(
-                UiIntent::OpenPopup {
-                    id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
-                    mode: OpenPopupMode::CenteredFocused,
-                }
-                .from_user_shortcut("apply_tab_preset"),
-            );
+            Self::open_preset_apply_popup(state, PresetApplyScope::Tab);
             return true;
         }
         if matches_any_binding(&kb.apply_pane_preset, key, mods) {
-            state.dialogs.preset_picker_selected = None;
-            state.dispatch_intent(
-                UiIntent::OpenPopup {
-                    id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
-                    mode: OpenPopupMode::CenteredFocused,
-                }
-                .from_user_shortcut("apply_pane_preset"),
-            );
+            Self::open_preset_apply_popup(state, PresetApplyScope::Pane);
             return true;
         }
         false
@@ -763,5 +738,59 @@ impl MainView {
             return true;
         }
         false
+    }
+
+    /// DAG 목록 popup 토글 — 키 경로와 명령 팔레트가 공유한다.
+    ///
+    /// 스코프는 정의가 아니라 **여는 시점**의 활성 workspace 로 정해진다 — 이 창은 그
+    /// workspace 를 벗어나면 숨고 돌아오면 다시 뜬다. 팔레트는 팝업이 닫힌 뒤에 drain
+    /// 되므로 그 프레임의 활성 workspace 가 사용자가 보고 있던 것이다.
+    pub(crate) fn toggle_dag_list_popup(state: &mut crate::state::AppState) {
+        state.dispatch_intent(
+            UiIntent::TogglePopup {
+                id: crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID,
+                mode: OpenPopupMode::WithScope(crate::adapters::ui::popup::PopupScope::Workspace(
+                    state.active_workspace,
+                )),
+            }
+            .from_user_shortcut("toggle_dag_list"),
+        );
+    }
+
+    /// 스크린샷 캡처 예약 — 키 경로와 명령 팔레트가 공유한다.
+    pub(crate) fn queue_screenshot_to_clipboard(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+    ) {
+        let mirror_ws_id = state.focused_surface_id(engine).and_then(|sid| {
+            let (idx, _pane_id) = engine.find_workspace_index_for_surface(sid)?;
+            let ws = engine.workspaces.get(idx)?;
+            ws.mirror.then_some(ws.id)
+        });
+        engine.pending_screenshot_captures.push(mirror_ws_id);
+    }
+
+    /// 레이아웃 프리셋 적용 picker 열기 — 키 경로와 명령 팔레트가 공유한다.
+    pub(crate) fn open_preset_apply_popup(
+        state: &mut crate::state::AppState,
+        scope: PresetApplyScope,
+    ) {
+        use crate::adapters::ui::popup::preset_apply;
+        let (id, action) = match scope {
+            PresetApplyScope::Workspace => (
+                preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                "apply_workspace_preset",
+            ),
+            PresetApplyScope::Tab => (preset_apply::APPLY_TAB_POPUP_ID, "apply_tab_preset"),
+            PresetApplyScope::Pane => (preset_apply::APPLY_PANE_POPUP_ID, "apply_pane_preset"),
+        };
+        state.dialogs.preset_picker_selected = None;
+        state.dispatch_intent(
+            UiIntent::OpenPopup {
+                id,
+                mode: OpenPopupMode::CenteredFocused,
+            }
+            .from_user_shortcut(action),
+        );
     }
 }

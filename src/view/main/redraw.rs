@@ -405,6 +405,13 @@ impl MainView {
         if let Some(cmd) = self.state.command_palette.pending_run.take() {
             match cmd {
                 crate::state::command_palette::PaletteCommand::Host { id, .. } => {
+                    // 반환값을 안 쓴다. `false` 는 **모르는 action_id** 하나뿐이고, 팔레트
+                    // 목록과 실행 arm 집합이 어긋났을 때만 나온다 — 사용자가 만든 상황이
+                    // 아니라 빌드가 이미 어긋난 상태다. 그래서 토스트로 알리지 않는다:
+                    // 있어서는 안 되는 상태에 대한 UI 는 평생 안 보이거나, 보이는 날엔
+                    // 사용자가 할 수 있는 일이 없다. 여기 남는 기록은
+                    // `dispatch_action_by_id` 안의 `tracing::warn!` 이고, 어긋남 자체는
+                    // 런타임이 아니라 빌드에서 잡아야 할 것이다.
                     self.dispatch_action_by_id(id);
                 }
                 crate::state::command_palette::PaletteCommand::Plugin {

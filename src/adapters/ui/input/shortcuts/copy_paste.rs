@@ -7,12 +7,29 @@ use crate::view::main::MainView;
 use crate::view::main::selection::should_copy_via_focused_selection;
 use crate::view::ui::View as _;
 
+/// explorer 서피스의 파일 액션. 줌과 같은 이유로 판별과 실행을 가른다 —
+/// 단발 키는 키로, 명령 팔레트는 `action_id` 로 이 값을 정하고 실행부는 하나다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExplorerAction {
+    SelectAll,
+    CopyPath,
+    CopyFiles,
+    CutFiles,
+    PasteFiles,
+}
+
 impl MainView {
     pub(super) fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let bindings = self.core_state.settings.keybindings.copy.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
+        self.run_copy()
+    }
+
+    /// 복사 실행 — 키 경로와 명령 팔레트가 공유한다. 어느 것도 처리하지 못하면 `false`
+    /// 이고, 그때 키 경로는 뒤의 explorer 파일 복사로 흘려보낸다.
+    pub(crate) fn run_copy(&mut self) -> bool {
         // Paste cooldown: Ctrl+V 직후 짧은 시간 안에 들어온 Ctrl+C는 사용자의
         // 오타(옆 키 누름)로 간주하고 통째로 무시한다. SIGINT도, 클립보드 복사도
         // 일어나지 않으며 toast로만 알린다.
@@ -75,22 +92,44 @@ impl MainView {
             return false;
         }
         let kb = &self.core_state.settings.keybindings;
-        let is_select_all = matches_any_binding(&kb.select_all, key, mods);
-        let is_copy_path = matches_any_binding(&kb.copy_path, key, mods);
-        let is_copy_files = matches_any_binding(&kb.copy, key, mods);
-        let is_cut_files = matches_any_binding(&kb.cut, key, mods);
-        let is_paste_files = matches_any_binding(&kb.paste, key, mods);
-        if !is_select_all && !is_copy_path && !is_copy_files && !is_cut_files && !is_paste_files {
+        let action = if matches_any_binding(&kb.select_all, key, mods) {
+            ExplorerAction::SelectAll
+        } else if matches_any_binding(&kb.copy_path, key, mods) {
+            ExplorerAction::CopyPath
+        } else if matches_any_binding(&kb.copy, key, mods) {
+            ExplorerAction::CopyFiles
+        } else if matches_any_binding(&kb.cut, key, mods) {
+            ExplorerAction::CutFiles
+        } else if matches_any_binding(&kb.paste, key, mods) {
+            ExplorerAction::PasteFiles
+        } else {
+            return false;
+        };
+        self.run_explorer_action(action)
+    }
+
+    /// explorer 파일 액션 실행 — 키 경로와 명령 팔레트가 공유한다.
+    ///
+    /// 포커스가 `copy_path` capability 를 가진 kind 가 아니면 `false` 를 돌려 다음 경로로
+    /// 흘려보내는 것까지 키 경로와 같다(그 판정을 여기서 다시 한다 — 팔레트는 키 경로의
+    /// 앞선 게이트를 안 거치고 들어온다).
+    pub(crate) fn run_explorer_action(&mut self, action: ExplorerAction) -> bool {
+        if !self
+            .state
+            .focused_surface_type(&self.core_state)
+            .kind_capability(&self.core_state, |d| d.copy_path)
+        {
             return false;
         }
+        let is_cut_files = action == ExplorerAction::CutFiles;
         let Some(sid) = super::focused_explorer_surface_id(&self.state, &self.core_state) else {
             return true;
         };
-        if is_select_all {
+        if action == ExplorerAction::SelectAll {
             if let Some(view) = self.state.explorer_views.get_mut(sid) {
                 view.select_all();
             }
-        } else if is_copy_path {
+        } else if action == ExplorerAction::CopyPath {
             if let Some(text) = self
                 .state
                 .explorer_views
@@ -104,7 +143,7 @@ impl MainView {
                     crate::adapters::ui::ToastScope::Surface(sid),
                 );
             }
-        } else if is_copy_files || is_cut_files {
+        } else if action == ExplorerAction::CopyFiles || is_cut_files {
             let paths: Vec<std::path::PathBuf> = self
                 .state
                 .explorer_views
@@ -114,7 +153,7 @@ impl MainView {
             if !paths.is_empty() {
                 self.explorer_menu_set_clipboard(sid, &paths, is_cut_files);
             }
-        } else if is_paste_files
+        } else if action == ExplorerAction::PasteFiles
             && let Some(cwd) = super::focused_explorer_cwd(&self.state, &self.core_state)
         {
             self.explorer_menu_paste(sid, &[], &cwd, false);
@@ -128,6 +167,11 @@ impl MainView {
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
+        self.run_paste()
+    }
+
+    /// 붙여넣기 실행 — 키 경로와 명령 팔레트가 공유한다.
+    pub(crate) fn run_paste(&mut self) -> bool {
         let st = self.state.focused_surface_type(&self.core_state);
         // egui_paste capability 를 가진 kind(예: image)의 paste 는 plugin 이 자기
         // egui-mesh 입력 / `image.paste` IPC 로 처리한다 — host 는 terminal paste 로

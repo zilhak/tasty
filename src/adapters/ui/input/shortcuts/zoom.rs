@@ -5,6 +5,15 @@ use winit::keyboard::{Key, ModifiersState};
 use super::binding::matches_any_binding;
 use crate::view::main::MainView;
 
+/// 줌 세 동작. **판별과 실행을 가르는 것이 이 타입의 존재 이유다** — 단발 키 경로는
+/// 키로 이것을 정하고, 명령 팔레트는 `action_id` 로 정한다. 실행부는 하나다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ZoomAction {
+    In,
+    Out,
+    Reset,
+}
+
 impl MainView {
     pub(super) fn handle_zoom_shortcut(
         state: &mut crate::state::AppState,
@@ -12,15 +21,26 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
-        use crate::state::FocusedSurfaceType;
         let kb = &engine.settings.keybindings;
-        let is_zoom_in = matches_any_binding(&kb.zoom_in, key, mods);
-        let is_zoom_out = matches_any_binding(&kb.zoom_out, key, mods);
-        let is_zoom_reset = matches_any_binding(&kb.zoom_reset, key, mods);
-        if !(is_zoom_in || is_zoom_out || is_zoom_reset) {
+        let action = if matches_any_binding(&kb.zoom_in, key, mods) {
+            ZoomAction::In
+        } else if matches_any_binding(&kb.zoom_out, key, mods) {
+            ZoomAction::Out
+        } else if matches_any_binding(&kb.zoom_reset, key, mods) {
+            ZoomAction::Reset
+        } else {
             return false;
-        }
+        };
+        Self::apply_zoom(state, engine, action)
+    }
 
+    /// 줌 실행. 포커스된 surface 가 줌 대상이 아니면 `false`.
+    pub(crate) fn apply_zoom(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        action: ZoomAction,
+    ) -> bool {
+        use crate::state::FocusedSurfaceType;
         // Pick which surface override the shortcut targets based on focus.
         let focus = state.focused_surface_type(engine);
         // 어느 kind 가 줌 가능한지는 registry 의 zoomable capability 로 판정(kind
@@ -43,12 +63,10 @@ impl MainView {
                 Some(PluginSettingValue::Number(n)) => *n,
                 _ => 100.0,
             };
-            let next = if is_zoom_reset {
-                100.0
-            } else if is_zoom_in {
-                (current + 10.0).min(500.0)
-            } else {
-                (current - 10.0).max(25.0)
+            let next = match action {
+                ZoomAction::Reset => 100.0,
+                ZoomAction::In => (current + 10.0).min(500.0),
+                ZoomAction::Out => (current - 10.0).max(25.0),
             };
             engine
                 .settings
@@ -77,12 +95,14 @@ impl MainView {
             _ => return false,
         };
 
-        if is_zoom_reset {
-            override_ref.font_size = None;
-        } else if is_zoom_in {
-            override_ref.font_size = Some((current_effective_size + 1.0).min(72.0));
-        } else if is_zoom_out {
-            override_ref.font_size = Some((current_effective_size - 1.0).max(6.0));
+        match action {
+            ZoomAction::Reset => override_ref.font_size = None,
+            ZoomAction::In => {
+                override_ref.font_size = Some((current_effective_size + 1.0).min(72.0));
+            }
+            ZoomAction::Out => {
+                override_ref.font_size = Some((current_effective_size - 1.0).max(6.0));
+            }
         }
         true
     }

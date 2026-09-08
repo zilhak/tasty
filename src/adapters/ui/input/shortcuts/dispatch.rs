@@ -6,6 +6,18 @@ use winit::keyboard::{Key, ModifiersState};
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::view::main::MainView;
 
+use super::copy_paste::ExplorerAction;
+use super::keybinding::PresetApplyScope;
+use super::zoom::ZoomAction;
+
+/// `&mut self` 가 필요해 match 뒤로 미루는 팔레트 액션.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeferredPaletteAction {
+    Copy,
+    Cut,
+    Paste,
+}
+
 use super::keybinding::CellGeometry;
 use super::matches_any_binding;
 use super::{focused_explorer_surface_id, focused_workspace_category, send_app_event};
@@ -48,6 +60,10 @@ impl MainView {
         // 차용) 종료 후 처리하도록 텍스트만 모아둔다. 토스트 스코프(sid)도 함께 모아둔다.
         let mut pending_copy_text: Option<String> = None;
         let mut pending_copy_scope: Option<u32> = None;
+        // clipboard/selection 을 만지는 액션은 `&mut self` 메서드라 아래 match 안에서
+        // 못 부른다(state/engine 을 이미 가변 차용했다). 무엇을 할지만 정해 두고 match
+        // 뒤에서 실행한다 — `pending_copy_text` 와 같은 이유, 같은 형태다.
+        let mut deferred: Option<DeferredPaletteAction> = None;
         let state = &mut self.state;
         let engine = &mut self.core_state;
 
@@ -464,6 +480,25 @@ impl MainView {
             }
             // 윈도우 컨트롤 — CSD 캡션 버튼(P5)/Linux DE 버튼(P6)/macOS 네이티브
             // 신호등과 동일한 winit window 조작을 그대로 수행한다(단일 동작 경로).
+            "toggle_dag_list" => Self::toggle_dag_list_popup(state),
+            "screenshot_to_clipboard" => Self::queue_screenshot_to_clipboard(state, engine),
+            "apply_workspace_preset" => {
+                Self::open_preset_apply_popup(state, PresetApplyScope::Workspace);
+            }
+            "apply_tab_preset" => Self::open_preset_apply_popup(state, PresetApplyScope::Tab),
+            "apply_pane_preset" => Self::open_preset_apply_popup(state, PresetApplyScope::Pane),
+            "zoom_in" => {
+                Self::apply_zoom(state, engine, ZoomAction::In);
+            }
+            "zoom_out" => {
+                Self::apply_zoom(state, engine, ZoomAction::Out);
+            }
+            "zoom_reset" => {
+                Self::apply_zoom(state, engine, ZoomAction::Reset);
+            }
+            "copy" => deferred = Some(DeferredPaletteAction::Copy),
+            "cut" => deferred = Some(DeferredPaletteAction::Cut),
+            "paste" => deferred = Some(DeferredPaletteAction::Paste),
             "minimize_window" => {
                 self.base.winit.set_minimized(true);
             }
@@ -479,6 +514,26 @@ impl MainView {
                 tracing::warn!("dispatch_action_by_id: unknown action '{other}'");
                 return false;
             }
+        }
+        // 키 경로의 **순서를 그대로** 따른다(`handle_shortcut`): 복사는 선택 텍스트가
+        // 먼저이고 안 되면 explorer 파일 복사, 붙여넣기는 explorer 가 먼저이고 안 되면
+        // 터미널 붙여넣기다. 순서를 바꾸면 같은 이름의 명령이 키로 누를 때와 팔레트에서
+        // 고를 때 다르게 동작한다.
+        match deferred {
+            Some(DeferredPaletteAction::Copy) => {
+                if !self.run_copy() {
+                    self.run_explorer_action(ExplorerAction::CopyFiles);
+                }
+            }
+            Some(DeferredPaletteAction::Cut) => {
+                self.run_explorer_action(ExplorerAction::CutFiles);
+            }
+            Some(DeferredPaletteAction::Paste) => {
+                if !self.run_explorer_action(ExplorerAction::PasteFiles) {
+                    self.run_paste();
+                }
+            }
+            None => {}
         }
         if let Some(text) = pending_copy_text
             && let Some(cb) = self.clipboard.as_mut()
