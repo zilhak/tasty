@@ -49,7 +49,7 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 | 메서드 | 읽는 것 |
 |--------|---------|
 | `plugin.list` | `plugin_manager.packages` |
-| `plugin.show` | `plugin_manager.packages` + config |
+| `plugin.show` | `plugin_manager.packages` + config + `CoreState.surface_registry`(선언한 kind 가 등록됐는지) |
 | `plugin.permissions` | `plugin_manager` config |
 | `plugin.extension.list` | `plugin_manager.extensions` |
 | `plugin.audit_query` | `Core` 의 audit store |

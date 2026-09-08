@@ -75,9 +75,11 @@ pub(crate) fn pump_ipc(
         //     (`headless_plugins::ensure_plugin_manager_metadata` 주석).
         if crate::ipc::handler::plugin::is_readonly_method(&cmd.request.method) {
             super::headless_plugins::ensure_plugin_manager_metadata(app, engine);
+            let surface_registry = engine.surface_registry.clone();
             if let Some(resp) = crate::ipc::handler::plugin::dispatch_readonly(
                 &app.core,
                 app.plugin_manager.as_ref(),
+                &surface_registry,
                 &cmd.request.method,
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 &cmd.request.params,

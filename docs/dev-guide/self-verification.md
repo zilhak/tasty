@@ -86,16 +86,16 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
 2. **`plugin.enable` / `plugin.disable` 에는 dispatch arm 이 없다** — `-32017 … gated out of this build combination (headless / release)`. 결함이 아니라 배선하지 않기로 한 것이고, 어느 `plugin.*` 이 헤드리스에 있고 없는지는 [headless-ipc-surface.md](headless-ipc-surface.md) 가 메서드별로 가른다. 그래서 "enable 해서 띄운다" 는 GUI 습관은 여기서 안 통한다. 기동을 유발하려면 그 plugin 의 **namespace 를 한 번 부르면 된다**(예: `tasty image list` — 이 호출 자체는 같은 `-32017` 로 실패하지만, 소속 판정이 끝난 뒤 9 개가 전부 뜬다).
 3. **선언된 surface kind 가 전부 등록되지는 않는다.** `register_one_surface_kind` 가 `rendering` 으로 갈라, `webview`/`remote` 는 skip 하고 `egui-mesh` 만 등록한다. 실측(9 개 기동 후):
 
-   | kind | rendering | `plugin.show` 의 선언 | `new workspace --type <kind>` |
+   | kind | 선언 (`plugin.show` 의 `declared_rendering`) | 등록됐나 (`registered`) | `new workspace --type <kind>` |
    |---|---|---|---|
-   | `markdown` | `webview` | `"rendering": "webview"` | `-32603 unknown surface kind: markdown` |
-   | `html` | `webview` | `"rendering": "webview"` | `-32603 unknown surface kind: html` |
-   | `image` | `egui-mesh` | `"rendering": "egui-mesh"` | 생성됨 |
-   | `mesh_demo` | `egui-mesh` | `"rendering": "egui-mesh"` | 생성됨 |
+   | `markdown` | `webview` | `false` | `-32603 unknown surface kind: markdown` |
+   | `html` | `webview` | `false` | `-32603 unknown surface kind: html` |
+   | `image` | `egui-mesh` | `true` (`effective_rendering: "egui-mesh"`) | 생성됨 |
+   | `mesh_demo` | `egui-mesh` | `true` (`effective_rendering: "egui-mesh"`) | 생성됨 |
 
    skip 은 조용하지 않다 — `RUST_LOG` 없이도 격리 홈의 `debug-dev.log` 에 `plugin '<id>' declared non-egui-mesh surface kind '<kind>' (rendering=Webview); skipped in headless` 로 남는다. **그 줄이 skip 의 증거다.**
 
-   ★ 위 표의 오른쪽 두 열이 **`plugin.show` 의 `surface_kinds` 를 "쓸 수 있는 kind 목록" 으로 읽으면 안 되는 이유**다. 그것은 매니페스트 **선언**이고 등록 여부와 무관하다 — 헤드리스에서는 넷 중 둘이 선언만 있고 사실이 없다. 사실을 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다.
+   ★ 표의 **선언 열과 등록 열이 서로 다른 물음**이다. `declared_rendering` 은 매니페스트가 요청한 것이고 `registered` 가 host 가 받아들였는지다 — 헤드리스에서는 넷 중 둘이 선언만 있고 사실이 없다. 사실만 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다. 만들어 보는 술어는 이제 대조용이다.
 
 **tasty 터미널 내부(`TASTY_SURFACE_ID` 환경변수가 설정된 셸)에서 검증 인스턴스를 띄울 때는 `--launch` 플래그가 필수다.** `cargo run --bin tasty -- <플래그>` 를 `--launch` 없이 실행하면 `src/boot.rs` 의 GUI 부팅 skip 조건(`cli_routing::Routed::AugmentedHelp` 분기)(`TASTY_SURFACE_ID` 설정 + `--launch` 미지정)에 걸려 GUI 가 뜨지 않고 CLI 도움말만 출력한 채 조용히 종료된다 — 이 상태로 `until target/debug/tasty list info ...` 같은 readiness poll 을 돌리면 죽은 프로세스를 무한정 기다리게 된다. 즉 `cargo run &` 을 `--launch` 없이 tasty 터미널 안에서 실행했다면, poll 이 멈추지 않을 때 프로세스가 애초에 GUI 로 뜬 게 맞는지부터 의심한다.
 

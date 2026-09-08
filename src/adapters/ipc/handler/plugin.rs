@@ -38,7 +38,56 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
     JsonRpcResponse::success(id, json!({ "plugins": arr }))
 }
 
-pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> JsonRpcResponse {
+/// 매니페스트가 **선언한** surface kind 하나를, 런타임이 그 선언을 받아들였는지와
+/// 함께 낸다.
+///
+/// 이 함수가 있기 전 `plugin.show` 는 `"rendering": <매니페스트 값>` 한 칸만 냈다.
+/// 그 값은 plugin 이 요청한 것이지 host 가 등록한 것이 아니라서, 소비자가 볼 수 있는
+/// 갈림이 없었다 — 그리고 그 갈림은 오류 상태가 아니라 **정상 상태**에서도 난다:
+/// 헤드리스는 `webview`/`remote` 선언을 설계대로 등록하지 않고, egui-mesh 는
+/// 화이트리스트·api_version 게이트를 통과한 것만 등록하며, host 내장 kind 를 remote
+/// 로 재선언한 plugin 은 조용히 무시된다(셋 다 로그로만 남았다).
+///
+/// 그래서 칸을 셋으로 가른다 — 선언(`declared_rendering`) · 그 선언이 이 plugin 의
+/// 것으로 등록됐는가(`registered`) · 등록됐다면 host 가 실제로 쓰는 렌더 경로
+/// (`effective_rendering`). kind 이름이 registry 에 **있는데 임자가 다른** 경우가
+/// 있어(host builtin 보호 · 다른 plugin 이 먼저 등록) 임자를 `registered_by` 로 함께
+/// 낸다: 그 경우 `registered` 는 false 다. 이 plugin 의 선언은 효력이 없기 때문이다.
+fn surface_kind_json(
+    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    plugin_id: &str,
+    k: &tasty_plugin_manifest::SurfaceKindDecl,
+) -> Value {
+    let def = registry.get(&k.kind);
+    let owner = def.as_ref().map(|d| d.source.clone());
+    let mine = matches!(
+        &owner,
+        Some(crate::core::surface_registry::KindSource::Plugin(id)) if id == plugin_id
+    );
+    json!({
+        "kind": k.kind,
+        "display_name_i18n_key": k.display_name_i18n_key,
+        "icon": k.icon,
+        "declared_rendering": k.rendering,
+        "registered": mine,
+        "effective_rendering": if mine {
+            def.as_ref().map(|d| d.rendering.as_str())
+        } else {
+            None
+        },
+        "registered_by": owner.as_ref().map(|o| match o {
+            crate::core::surface_registry::KindSource::HostBuiltin => "host",
+            crate::core::surface_registry::KindSource::Plugin(id) => id.as_str(),
+        }),
+    })
+}
+
+pub fn handle_show(
+    mgr: Option<&PluginManager>,
+    registry: &crate::core::surface_registry::SurfaceKindRegistry,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let mgr = match mgr {
         Some(m) => m,
         None => return JsonRpcResponse::error(id, -32000, "plugin manager not initialized"),
@@ -68,14 +117,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
     let surface_kinds: Vec<Value> = manifest
         .surface_kinds
         .iter()
-        .map(|k| {
-            json!({
-                "kind": k.kind,
-                "display_name_i18n_key": k.display_name_i18n_key,
-                "icon": k.icon,
-                "rendering": k.rendering,
-            })
-        })
+        .map(|k| surface_kind_json(registry, &plugin_id, k))
         .collect();
 
     let events_emitted: Vec<Value> = manifest
@@ -380,6 +422,7 @@ pub fn is_readonly_method(method: &str) -> bool {
 pub fn dispatch_readonly(
     core: &crate::core::Core,
     mgr: Option<&PluginManager>,
+    registry: &crate::core::surface_registry::SurfaceKindRegistry,
     method: &str,
     id: Value,
     params: &Value,
@@ -389,7 +432,7 @@ pub fn dispatch_readonly(
     }
     let response = match method {
         "plugin.list" => handle_list(mgr, id),
-        "plugin.show" => handle_show(mgr, id, params),
+        "plugin.show" => handle_show(mgr, registry, id, params),
         "plugin.permissions" => handle_permissions(mgr, id, params),
         "plugin.extension.list" => handle_extension_list(mgr, id),
         "plugin.audit_query" => super::audit::handle_query(core, id, params),
@@ -412,6 +455,40 @@ pub fn dispatch_readonly(
 mod tests {
     use super::*;
 
+    /// 선언이 **효력이 없는** 두 갈래를 고정한다. 둘 다 예전 응답에서는 보이지 않았다 —
+    /// 그때는 매니페스트 값을 `"rendering"` 한 칸으로 그대로 내보냈다.
+    ///
+    /// 셋째 갈래(선언이 등록으로 이어진 경우)는 registry 에 plugin 이 hello 로 넣은
+    /// def 가 있어야 해서 여기서 만들지 않는다 — 두 빌드 조합에서 실제 plugin 으로 쟀다.
+    #[test]
+    fn a_declaration_that_did_not_register_says_so() {
+        let registry = crate::core::surface_registry::SurfaceKindRegistry::new();
+        crate::core::surface_registry::register_builtin_kinds(&registry);
+        // `SurfaceKindDecl` 은 필수 두 칸 말고 전부 serde default 라, 매니페스트와
+        // 같은 경로(역직렬화)로 만든다 — 손으로 20 여 칸을 채우면 칸이 늘 때마다 낡는다.
+        let decl = |kind: &str| -> tasty_plugin_manifest::SurfaceKindDecl {
+            serde_json::from_value(json!({
+                "kind": kind,
+                "display_name_i18n_key": "test.kind",
+            }))
+            .expect("decl")
+        };
+
+        // (가) registry 에 이름 자체가 없다 — 아무도 등록하지 않았다.
+        let absent = surface_kind_json(&registry, "com.example.x", &decl("nope_kind"));
+        assert_eq!(absent["registered"], json!(false));
+        assert_eq!(absent["effective_rendering"], Value::Null);
+        assert_eq!(absent["registered_by"], Value::Null);
+
+        // (나) 이름은 있는데 임자가 다르다 — host 내장 kind 를 plugin 이 재선언했다.
+        // `remote_kind` 가 이 경우를 warn 로그로만 거부해 왔고, 그 거부는 응답에
+        // 실리지 않았다.
+        let taken = surface_kind_json(&registry, "com.example.x", &decl("explorer"));
+        assert_eq!(taken["registered"], json!(false));
+        assert_eq!(taken["effective_rendering"], Value::Null);
+        assert_eq!(taken["registered_by"], json!("host"));
+    }
+
     /// 매니저가 없을 때 네 핸들러가 **같은 형태로** 답하는지 고정한다.
     ///
     /// 이 파일은 한때 `handle_list` 만 빈 목록을 성공으로 돌려주어, 호출자가
@@ -423,7 +500,15 @@ mod tests {
         let params = json!({"id": "any"});
         let responses = [
             ("plugin.list", handle_list(None, id())),
-            ("plugin.show", handle_show(None, id(), &params)),
+            (
+                "plugin.show",
+                handle_show(
+                    None,
+                    &crate::core::surface_registry::SurfaceKindRegistry::new(),
+                    id(),
+                    &params,
+                ),
+            ),
             ("plugin.extension.list", handle_extension_list(None, id())),
             (
                 "plugin.permissions",

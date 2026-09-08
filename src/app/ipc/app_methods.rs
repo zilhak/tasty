@@ -483,9 +483,11 @@ impl App {
         // 읽기 전용 조회는 헤드리스와 **공유하는 한 함수**가 답한다. 여기에 같은 표를
         // 다시 두면 한쪽만 고쳐지는 순간 갈라지므로, 라우팅 표는 그 함수에만 있다
         // (`crate::adapters::ipc::handler::plugin::dispatch_readonly`).
+        let surface_registry = self.core_state().surface_registry.clone();
         if let Some(response) = host_ipc::handler::plugin::dispatch_readonly(
             &self.core,
             self.plugin_manager.as_ref(),
+            &surface_registry,
             cmd.request.method.as_str(),
             id.clone(),
             &cmd.request.params,
