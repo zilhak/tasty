@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-image"
-version = "0.1.24"
+version = "0.1.25"
 edition = "2024"
 license = "MIT"
 description = "Image surface viewer / paint canvas plugin (egui-mesh + bitmap texture)"
@@ -21,7 +21,10 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # 이 프로세스는 egui 를 링크한다.
 tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
 # 비트맵 디코드(파일 → RGBA) + PNG 저장.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"] }
+# 켠 feature 가 곧 **열 수 있는 포맷의 정의**다 — `doc.rs` 의 `is_image_file` 이
+# `ImageFormat::reading_enabled()` 로 이 목록에서 파생시킨다. 손으로 적은 두 번째
+# 목록을 두지 않는다(한때 그 사본이 갈려 `gif`·`svg` 를 열겠다고 선언만 했다).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "ico", "tiff"] }
 # paste 용 시스템 클립보드 이미지 read.
 arboard = "3"
 # blank canvas Save As… 경로 선택 다이얼로그.

@@ -15,11 +15,6 @@ use egui::{Color32, ColorImage, Pos2, Rect, TextureHandle, Vec2};
 pub const DEFAULT_BLANK_CANVAS_WIDTH: usize = 800;
 pub const DEFAULT_BLANK_CANVAS_HEIGHT: usize = 600;
 
-/// Image file extensions recognized for directory navigation.
-pub const IMAGE_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif", "svg",
-];
-
 // ── Drawing action / history types ──
 
 /// A single undoable drawing action.
@@ -635,7 +630,12 @@ impl ImageDoc {
 pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
     let img = match image::open(path) {
         Ok(img) => img,
-        Err(_) => return None,
+        // 삼키지 않는다. 이 `None` 은 화면에서 **빈 캔버스**로 보이고, 파일이 깨진
+        // 것인지 이 빌드가 그 포맷을 못 여는 것인지 구분할 단서가 여기밖에 없다.
+        Err(e) => {
+            tracing::warn!("image: failed to decode {path}: {e}");
+            return None;
+        }
     };
 
     let rgba = img.to_rgba8();
@@ -653,12 +653,23 @@ pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
     })
 }
 
-/// Returns true if the path's extension is a recognised image type.
+/// Returns true if this path's extension names a format **this build can decode**.
+///
+/// 목록을 손으로 적지 않는다. 한때 여기 확장자 10 종이 상수로 적혀 있었고
+/// `Cargo.toml` 의 `image` feature 는 6 종이었다 — 두 사본이 갈려 `gif` 와 `svg` 가
+/// 디렉토리 순회 목록에 오르고(`scan_directory_images`), `image.next` 로 넘어가면
+/// 빈 화면이 됐다. 로그도 안 남아서 파일이 깨진 것인지 못 여는 것인지 알 수 없었다.
+///
+/// 그래서 판정을 `image` 크레이트에 넘긴다 — `reading_enabled()` 는 그 크레이트
+/// 안의 `cfg!(feature = ...)` 이라 **컴파일된 디코더 그 자체**를 답한다. 포맷을
+/// 늘리려면 `Cargo.toml` 의 feature 한 곳만 고치면 되고, 사본이 갈릴 자리가 없다.
+///
+/// `svg` 는 그래서 빠진다 — `image` 는 래스터 전용이라 feature 로 켤 수 없다.
+/// 여는 수단이 생기는 날 이 함수가 아니라 그 수단이 답을 바꾼다.
 pub(crate) fn is_image_file(path: &Path) -> bool {
     path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| IMAGE_EXTENSIONS.contains(&e.to_lowercase().as_str()))
-        .unwrap_or(false)
+        .and_then(image::ImageFormat::from_extension)
+        .is_some_and(|f| f.reading_enabled())
 }
 
 /// Scan the directory of the given file path for image files (sorted).
@@ -806,6 +817,44 @@ mod tests {
         doc.ensure_loaded();
         assert!(doc.is_editing());
         assert!(doc.original_image.is_some());
+    }
+
+    #[test]
+    fn every_extension_the_navigator_accepts_can_actually_be_decoded() {
+        // 완결 조건 그 자체 — 목록에 오른 것은 실제로 디코드된다. `is_image_file` 이
+        // 받아들이는 확장자마다 그 포맷으로 1x1 을 **인코드했다가 다시 디코드**한다.
+        // 선언만 보고 통과하지 않으려고 실물 왕복을 쓴다.
+        for ext in [
+            "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif",
+        ] {
+            let path = Path::new("x").with_extension(ext);
+            assert!(
+                is_image_file(&path),
+                "{ext} 가 순회 목록에서 빠졌다 — 매니페스트 detector 는 이것을 연다고 선언한다"
+            );
+
+            let fmt = image::ImageFormat::from_extension(ext).expect("확장자→포맷");
+            assert!(fmt.reading_enabled(), "{ext}: 디코더가 안 켜져 있다");
+
+            // webp 는 이 feature 조합에서 읽기 전용이라 왕복의 인코드 쪽이 없다.
+            if !fmt.writing_enabled() {
+                continue;
+            }
+            let src = image::RgbaImage::from_pixel(1, 1, image::Rgba([1, 2, 3, 255]));
+            let mut buf = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::ImageRgba8(src)
+                .write_to(&mut buf, fmt)
+                .unwrap_or_else(|e| panic!("{ext} 인코드 실패: {e}"));
+            let decoded = image::load_from_memory_with_format(buf.get_ref(), fmt)
+                .unwrap_or_else(|e| panic!("{ext} 디코드 실패: {e}"));
+            assert_eq!(decoded.width(), 1, "{ext}: 왕복이 크기를 잃었다");
+        }
+    }
+
+    #[test]
+    fn an_extension_with_no_decoder_is_not_offered() {
+        // svg 는 `image` 가 래스터 전용이라 못 연다. 목록에 두면 넘기다가 빈 화면이 된다.
+        assert!(!is_image_file(Path::new("x.svg")));
     }
 
     #[test]
