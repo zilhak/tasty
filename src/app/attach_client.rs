@@ -887,7 +887,11 @@ impl App {
         // 이 순회 범위는 `mirror_workspace_engine_alive`(고아 판정)·`mirror_output_host`
         // (mirror 이벤트 적용 대상 탐색)와 **같아야** 한다 — 판정이 "살아 있다"고 본 곳을
         // 정리가 못 찾으면 잔류가 생기고, 적용이 못 찾으면 그 구간의 출력이 유실된다
-        // (ADR-0110).
+        // (ADR-0110). 다만 여기 창 있는 engine 절반에서 그것을 **지키는 것은 없다** —
+        // 근거가 주석뿐인 칸(사다리 ④)이다. 어느 절반이 구조로 들리고 어느 절반이 안
+        // 들리는지, 어긋냈을 때 무엇이 빨개지고 무엇을 못 쟀는지, 왜 공유 필터도 시험도
+        // 아닌지는 `window_access::mirror_workspace_engine_alive` 의 doc 에 한 벌만 있다
+        // (ADR-0194: 사본을 만들지 말고 심볼 이름으로 가리킨다).
         let mut removed = false;
         for main in self.main_windows_iter_mut() {
             if remove_mirror_workspace_from_engine(

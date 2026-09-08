@@ -162,11 +162,43 @@ impl App {
     ///
     /// 순회 범위는 `attach_client::cleanup_mirror_workspace`(정리)·
     /// `attach_client::mirror_output_host`(mirror 이벤트 적용 대상 탐색)와 **같아야**
-    /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 잔류가 생기고, 적용이
-    /// 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
-    /// parked 쪽은 그 요구를 셋이 `attach_client::find_parked_with_workspace` 하나를
-    /// 부르는 것으로 만족시킨다(아래 `any_engine_has_workspace`). 창 있는 engine 쪽은
-    /// 아직 각자 훑는다 — borrow 모양이 셋 다 달라 같은 방식으로 못 묶는다.
+    /// 한다 — 판정이 살아 있다고 본 engine 을 정리가 못 찾으면 mirror 워크스페이스가
+    /// 잔류하고, 적용이 못 찾으면 그 구간에 도착한 출력이 조용히 유실된다
+    /// ([ADR-0110](../../docs/adr/0110-mirror-events-apply-to-parked-engines.md)).
+    ///
+    /// ★ **그 "같아야 한다" 의 절반은 근거가 이 주석뿐이다 — 사다리 ④.** (아래 `App.core_state`
+    /// 문단의 ①②는 이유 열거지 사다리 칸이 아니다. 사다리 쪽은 늘 "사다리 N" 으로 적는다.)
+    /// 어느 칸인지를
+    /// 여기서 밝혀 둔다([ADR-0194](../../docs/adr/0194-code-citations-name-symbols-not-line-numbers.md)
+    /// 의 물음: 주장이 자기 근거의 종류를 밝히는가). 온전한 서술은 여기 한 벌만 두고
+    /// `attach_client::cleanup_mirror_workspace` 는 이 문단을 심볼 이름으로 가리킨다 —
+    /// 문단을 복사하면 그 사본이 갈린다.
+    ///
+    /// - **parked 절반은 사다리 ④가 아니다 — 구조가 든다.** 셋 다 직접 훑지 않고
+    ///   `attach_client::find_parked_with_workspace` 하나를 부른다(이쪽 호출은 아래
+    ///   `any_engine_has_workspace` 안에 있다). 어긋나려면 누군가 그 호출을 리터럴 순회로
+    ///   풀어야 한다.
+    /// - **창 있는 engine 절반이 사다리 ④다.** 셋이 각자 다른 표현으로 훑는다 — 판정은
+    ///   `view.views` 를 직접, 정리는 `main_windows_iter_mut`, 적용은
+    ///   `find_main_with_workspace`. 셋 다 `view.views` 의 MainView 전량이라 **지금은 범위가
+    ///   같다**(실측 2026-09-08). 같게 유지하는 것은 없다. borrow 모양이 셋 다 달라(불변
+    ///   순회 · 가변 순회 · `WindowId` 반환) 같은 헬퍼로 못 묶는다.
+    ///
+    /// **어긋나면 무엇이 깨지는가 — 잰 것과 못 잰 것을 갈라 적는다.**
+    /// *잰 것*: 정리의 창 있는 순회를 비워 판정과 완전히 어긋낸 채(`main_windows_iter_mut`
+    /// 뒤에 `.skip(usize::MAX)`) 돌리면 `--bin tasty` 2444 · `attach_silent_disconnect` 29 ·
+    /// `attach_local_creation_tap` 24 · `attach_attention_loopback` 30 이 **변이 전과 한 건도
+    /// 안 달라진다**(2026-09-08). 이 어긋남을 잡는 자동 시험은 하나도 없다.
+    /// *못 잰 것*: 어긋난 채로 **런타임에 실제로 무엇이 남는가.** 지금 어긋나 있지 않아
+    /// 재려면 일부러 어긋낸 채 창 있는 engine 과 원격 세션을 함께 세워야 한다. 그러니 위
+    /// 첫 문단의 "잔류"·"유실" 은 코드에서 따라 읽은 것이지 관측한 값이 아니다 — 다만
+    /// *그 형태*가 실제로 난 기록은 있다: ADR-0110 이 고친 것이 적용 쪽만 parked 를 안 보던
+    /// 어긋남이고, 그때 창 없는 구간의 출력이 전부 폐기됐다. 그쪽(parked)이 지금 구조가 드는
+    /// 절반이고, 창 있는 절반에서 같은 일이 난 기록은 없다.
+    ///
+    /// **왜 사다리 ②(공유 필터)도 ③(집합 동일성 시험)도 아닌가.** ②는 필터가 mirror
+    /// 워크스페이스 제외 조건을 품어 런타임 동작에 닿는다. ③은 판정기를 하나 더 짓는 일인데, 그것이
+    /// 없어서 통과한 실제 결함이 아직 없다.
     ///
     /// **`App.core_state` 는 의도적으로 제외한다.** 바로 위 `occupied_layout_slots`
     /// 는 `views`/`parked_states` 에 더해 그 자리(첫 MainView 등록 전 engine 이 임시로
@@ -176,7 +208,8 @@ impl App {
     /// 판정으로 도달 가능한 상태가 아니다). ② 그 자리에는 짝이 되는 `AppState` 가
     /// 없어 정리 쪽의 `active_workspace` 클램프를 대칭으로 맞출 수 없다. 판정과 정리의
     /// 순회 범위는 같아야 하므로 양쪽에서 함께 뺀다. mirror 워크스페이스가 그 임시
-    /// engine 에도 만들어질 수 있게 바뀐다면 이 제외와 정리 쪽 순회를 함께 손봐야 한다.
+    /// engine 에도 만들어질 수 있게 바뀐다면 이 제외와 정리 쪽 순회를 함께 손봐야 한다 —
+    /// **그 "함께" 도 위 ★ 문단이 말한 사다리 ④다.** 한쪽에서만 제외를 풀어도 드는 것이 없다.
     pub(crate) fn mirror_workspace_engine_alive(&self, workspace_id: u32) -> bool {
         any_engine_has_workspace(
             self.view
