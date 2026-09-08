@@ -96,6 +96,150 @@ pub enum KeybindingsSubTab {
     Plugins,
 }
 
+/// 필드를 **어느 서브탭 어느 자리**에 놓는가. 배치만 정하고 **라벨은 갖지 않는다** —
+/// 라벨은 SoT(`GENERAL_BINDING_FIELDS`)에 있고 [`entries_for`] 가 거기서 읽는다.
+///
+/// 예전에는 서브탭마다 `(field_id, label_key, desc)` 배열을 손으로 나열했고, 그래서
+/// SoT 에 있는 8 개가 어느 서브탭에도 안 그려진 채로 남았다(`toggle_command_palette` ·
+/// `find` 는 기본키로 동작하는데 설정 화면 어디에도 없었다). 같은 사본이 라벨 폭
+/// 회귀 가드에도 있었고 그쪽은 `fullscreen_stage_exit_label` 을 빠뜨리고 있었다.
+///
+/// 이 표에 **없는 필드는 사라지지 않는다** — General 끝에 붙는다. 자리를 정하는 것을
+/// 잊는 것과 화면에서 없어지는 것은 다른 일이어야 한다.
+const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
+    // General
+    ("toggle_settings", KeybindingsSubTab::General, None),
+    ("toggle_notifications", KeybindingsSubTab::General, None),
+    ("toggle_dag_list", KeybindingsSubTab::General, None),
+    ("toggle_command_palette", KeybindingsSubTab::General, None),
+    ("toggle_sidebar", KeybindingsSubTab::General, None),
+    ("toggle_sidebar_collapse", KeybindingsSubTab::General, None),
+    (
+        "fullscreen_stage_exit",
+        KeybindingsSubTab::General,
+        Some("settings.keybindings.fullscreen_stage_exit_desc"),
+    ),
+    ("restore_closed", KeybindingsSubTab::General, None),
+    ("new_window", KeybindingsSubTab::General, None),
+    (
+        "quit",
+        KeybindingsSubTab::General,
+        Some("settings.keybindings.quit_desc"),
+    ),
+    ("quit_immediate", KeybindingsSubTab::General, None),
+    ("quit_minimize", KeybindingsSubTab::General, None),
+    ("minimize_window", KeybindingsSubTab::General, None),
+    ("maximize_window", KeybindingsSubTab::General, None),
+    ("close_window", KeybindingsSubTab::General, None),
+    // Workspace
+    ("new_workspace", KeybindingsSubTab::Workspace, None),
+    ("rename_workspace", KeybindingsSubTab::Workspace, None),
+    (
+        "rename_workspace_subtitle",
+        KeybindingsSubTab::Workspace,
+        None,
+    ),
+    (
+        "toggle_categories_collapsed",
+        KeybindingsSubTab::Workspace,
+        None,
+    ),
+    ("apply_workspace_preset", KeybindingsSubTab::Workspace, None),
+    ("close_workspace", KeybindingsSubTab::Workspace, None),
+    // Pane
+    ("split_pane_vertical", KeybindingsSubTab::Pane, None),
+    ("split_pane_horizontal", KeybindingsSubTab::Pane, None),
+    ("focus_pane_next", KeybindingsSubTab::Pane, None),
+    ("focus_pane_prev", KeybindingsSubTab::Pane, None),
+    ("apply_pane_preset", KeybindingsSubTab::Pane, None),
+    ("close_pane", KeybindingsSubTab::Pane, None),
+    // Tab
+    ("new_tab", KeybindingsSubTab::Tab, None),
+    ("open_markdown", KeybindingsSubTab::Tab, None),
+    ("open_explorer", KeybindingsSubTab::Tab, None),
+    ("next_tab", KeybindingsSubTab::Tab, None),
+    ("prev_tab", KeybindingsSubTab::Tab, None),
+    ("rename_tab", KeybindingsSubTab::Tab, None),
+    ("apply_tab_preset", KeybindingsSubTab::Tab, None),
+    (
+        "close_active",
+        KeybindingsSubTab::Tab,
+        Some("settings.keybindings.close_active_desc"),
+    ),
+    // Surface
+    ("split_surface_vertical", KeybindingsSubTab::Surface, None),
+    ("split_surface_horizontal", KeybindingsSubTab::Surface, None),
+    ("focus_surface_next", KeybindingsSubTab::Surface, None),
+    ("focus_surface_prev", KeybindingsSubTab::Surface, None),
+    ("convert_surface", KeybindingsSubTab::Surface, None),
+    ("convert_to_markdown", KeybindingsSubTab::Surface, None),
+    ("convert_to_explorer", KeybindingsSubTab::Surface, None),
+    ("find", KeybindingsSubTab::Surface, None),
+    ("close_surface", KeybindingsSubTab::Surface, None),
+    // Clipboard
+    ("copy", KeybindingsSubTab::Clipboard, None),
+    ("copy_path", KeybindingsSubTab::Clipboard, None),
+    ("cut", KeybindingsSubTab::Clipboard, None),
+    ("select_all", KeybindingsSubTab::Clipboard, None),
+    ("paste", KeybindingsSubTab::Clipboard, None),
+    (
+        "screenshot_to_clipboard",
+        KeybindingsSubTab::Clipboard,
+        None,
+    ),
+    ("enter_copy_mode", KeybindingsSubTab::Clipboard, None),
+    // Zoom
+    ("zoom_in", KeybindingsSubTab::Zoom, None),
+    ("zoom_out", KeybindingsSubTab::Zoom, None),
+    ("zoom_reset", KeybindingsSubTab::Zoom, None),
+    // Image
+    ("image_undo", KeybindingsSubTab::Image, None),
+    ("image_redo", KeybindingsSubTab::Image, None),
+    // Explorer
+    ("explorer_refresh", KeybindingsSubTab::Explorer, None),
+    ("explorer_go_up", KeybindingsSubTab::Explorer, None),
+];
+
+/// 그 서브탭이 바인딩 엔트리 목록을 그리는가. Scripts/Preset/Plugins 는 자기 화면을
+/// 따로 그린다.
+fn draws_entries(sub_tab: KeybindingsSubTab) -> bool {
+    !matches!(
+        sub_tab,
+        KeybindingsSubTab::Scripts | KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins
+    )
+}
+
+/// `sub_tab` 에 그릴 엔트리를 **SoT 순회로** 만든다.
+///
+/// 바깥 루프가 `GENERAL_BINDING_FIELDS` 라는 것이 요점이다 — 그래서 SoT 의 모든 필드가
+/// 정확히 한 번 후보가 되고, 라벨은 SoT 가 들고 있는 값을 그대로 쓴다(사본 없음).
+/// [`ENTRY_PLACEMENT`] 는 어느 탭 몇 번째인가만 답하고, 답이 없으면 General 끝이다.
+fn entries_for(
+    sub_tab: KeybindingsSubTab,
+) -> Vec<(&'static str, &'static str, Option<&'static str>)> {
+    let mut rows: Vec<(usize, (&str, &str, Option<&str>))> = Vec::new();
+    for (field_id, label_key) in crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS {
+        let placed = ENTRY_PLACEMENT
+            .iter()
+            .position(|(fid, _, _)| fid == field_id);
+        let (order, tab, desc) = match placed {
+            // 배치된 탭이 **엔트리를 그리는 탭**일 때만 그 배치를 따른다. Scripts/Preset/
+            // Plugins 는 자기 화면을 따로 그려서 `entries_for` 를 아예 안 부르므로,
+            // 거기로 보낸 필드는 어디에도 안 나온다 — 이 커밋이 없앤 상태가 바로 그것이라
+            // 같은 형태를 타입이 아니라 이 갈래로 막는다.
+            Some(i) if draws_entries(ENTRY_PLACEMENT[i].1) => {
+                (i, ENTRY_PLACEMENT[i].1, ENTRY_PLACEMENT[i].2)
+            }
+            _ => (usize::MAX, KeybindingsSubTab::General, None),
+        };
+        if tab == sub_tab {
+            rows.push((order, (*field_id, *label_key, desc)));
+        }
+    }
+    rows.sort_by_key(|(order, _)| *order);
+    rows.into_iter().map(|(_, entry)| entry).collect()
+}
+
 /// 녹화 중인 필드 식별자 — 어떤 필드의 어느 슬롯을 기록 중인지.
 #[derive(Debug, Clone)]
 pub struct RecordingSlot {
@@ -159,74 +303,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    (
-                        "toggle_settings",
-                        "settings.keybindings.toggle_settings_label",
-                        None,
-                    ),
-                    (
-                        "toggle_notifications",
-                        "settings.keybindings.toggle_notifications_label",
-                        None,
-                    ),
-                    (
-                        "toggle_dag_list",
-                        "settings.keybindings.toggle_dag_list_label",
-                        None,
-                    ),
-                    (
-                        "toggle_sidebar",
-                        "settings.keybindings.toggle_sidebar_label",
-                        None,
-                    ),
-                    (
-                        "toggle_sidebar_collapse",
-                        "settings.keybindings.toggle_sidebar_collapse_label",
-                        None,
-                    ),
-                    (
-                        "fullscreen_stage_exit",
-                        "settings.keybindings.fullscreen_stage_exit_label",
-                        Some("settings.keybindings.fullscreen_stage_exit_desc"),
-                    ),
-                    (
-                        "restore_closed",
-                        "settings.keybindings.restore_closed_label",
-                        None,
-                    ),
-                    ("new_window", "settings.keybindings.new_window_label", None),
-                    (
-                        "quit",
-                        "settings.keybindings.quit_label",
-                        Some("settings.keybindings.quit_desc"),
-                    ),
-                    (
-                        "quit_immediate",
-                        "settings.keybindings.quit_immediate_label",
-                        None,
-                    ),
-                    (
-                        "quit_minimize",
-                        "settings.keybindings.quit_minimize_label",
-                        None,
-                    ),
-                    (
-                        "minimize_window",
-                        "settings.keybindings.minimize_window_label",
-                        None,
-                    ),
-                    (
-                        "maximize_window",
-                        "settings.keybindings.maximize_window_label",
-                        None,
-                    ),
-                    (
-                        "close_window",
-                        "settings.keybindings.close_window_label",
-                        None,
-                    ),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Workspace => {
@@ -237,28 +314,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    (
-                        "new_workspace",
-                        "settings.keybindings.new_workspace_label",
-                        None,
-                    ),
-                    (
-                        "rename_workspace",
-                        "settings.keybindings.rename_workspace_label",
-                        None,
-                    ),
-                    (
-                        "rename_workspace_subtitle",
-                        "settings.keybindings.rename_workspace_subtitle_label",
-                        None,
-                    ),
-                    (
-                        "close_workspace",
-                        "settings.keybindings.close_workspace_label",
-                        None,
-                    ),
-                ],
+                &entries_for(current),
             );
 
             vspace(ui, th.spacing_sm);
@@ -297,29 +353,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    (
-                        "split_pane_vertical",
-                        "settings.keybindings.split_pane_vertical_label",
-                        None,
-                    ),
-                    (
-                        "split_pane_horizontal",
-                        "settings.keybindings.split_pane_horizontal_label",
-                        None,
-                    ),
-                    (
-                        "focus_pane_next",
-                        "settings.keybindings.focus_pane_next_label",
-                        None,
-                    ),
-                    (
-                        "focus_pane_prev",
-                        "settings.keybindings.focus_pane_prev_label",
-                        None,
-                    ),
-                    ("close_pane", "settings.keybindings.close_pane_label", None),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Tab => {
@@ -330,22 +364,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    ("new_tab", "settings.keybindings.new_tab_label", None),
-                    (
-                        "open_markdown",
-                        "settings.keybindings.open_markdown_label",
-                        None,
-                    ),
-                    ("next_tab", "settings.keybindings.next_tab_label", None),
-                    ("prev_tab", "settings.keybindings.prev_tab_label", None),
-                    ("rename_tab", "settings.keybindings.rename_tab_label", None),
-                    (
-                        "close_active",
-                        "settings.keybindings.close_active_label",
-                        Some("settings.keybindings.close_active_desc"),
-                    ),
-                ],
+                &entries_for(current),
             );
 
             vspace(ui, th.spacing_sm);
@@ -370,43 +389,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    (
-                        "split_surface_vertical",
-                        "settings.keybindings.split_surface_vertical_label",
-                        None,
-                    ),
-                    (
-                        "split_surface_horizontal",
-                        "settings.keybindings.split_surface_horizontal_label",
-                        None,
-                    ),
-                    (
-                        "focus_surface_next",
-                        "settings.keybindings.focus_surface_next_label",
-                        None,
-                    ),
-                    (
-                        "focus_surface_prev",
-                        "settings.keybindings.focus_surface_prev_label",
-                        None,
-                    ),
-                    (
-                        "convert_surface",
-                        "settings.keybindings.convert_surface_label",
-                        None,
-                    ),
-                    (
-                        "convert_to_markdown",
-                        "settings.keybindings.convert_to_markdown_label",
-                        None,
-                    ),
-                    (
-                        "close_surface",
-                        "settings.keybindings.close_surface_label",
-                        None,
-                    ),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Clipboard => {
@@ -417,23 +400,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    ("copy", "settings.keybindings.copy_label", None),
-                    ("copy_path", "settings.keybindings.copy_path_label", None),
-                    ("cut", "settings.keybindings.cut_label", None),
-                    ("select_all", "settings.keybindings.select_all_label", None),
-                    ("paste", "settings.keybindings.paste_label", None),
-                    (
-                        "screenshot_to_clipboard",
-                        "settings.keybindings.screenshot_to_clipboard_label",
-                        None,
-                    ),
-                    (
-                        "enter_copy_mode",
-                        "settings.keybindings.enter_copy_mode_label",
-                        None,
-                    ),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Zoom => {
@@ -444,11 +411,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    ("zoom_in", "settings.keybindings.zoom_in_label", None),
-                    ("zoom_out", "settings.keybindings.zoom_out_label", None),
-                    ("zoom_reset", "settings.keybindings.zoom_reset_label", None),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Image => {
@@ -459,10 +422,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    ("image_undo", "settings.keybindings.image_undo_label", None),
-                    ("image_redo", "settings.keybindings.image_redo_label", None),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Explorer => {
@@ -473,18 +433,7 @@ pub fn draw_keybindings_tab(
                 recording_field,
                 pending_binding,
                 &captured,
-                &[
-                    (
-                        "explorer_refresh",
-                        "settings.keybindings.explorer_refresh_label",
-                        None,
-                    ),
-                    (
-                        "explorer_go_up",
-                        "settings.keybindings.explorer_go_up_label",
-                        None,
-                    ),
-                ],
+                &entries_for(current),
             );
         }
         KeybindingsSubTab::Scripts => {
@@ -541,3 +490,33 @@ use preset::draw_preset_subtab;
 use quick_switch::{QuickSwitchKind, draw_quick_switch_section};
 pub use quick_switch::{clear_bare_target, set_bare_target};
 use tasty_ui_widgets::vspace;
+
+#[cfg(test)]
+mod placement_tests {
+    use super::*;
+
+    /// 배치표의 모든 행이 SoT 안의 필드를 가리킨다.
+    ///
+    /// **커버리지(모든 SoT 필드가 그려지는가)는 여기서 안 잰다** — `entries_for` 가 SoT 를
+    /// 순회하고 미배치를 General 끝에 붙이므로 빠지는 필드가 원리적으로 없다. 그걸 단정하면
+    /// 절대 안 깨지는 줄이 된다.
+    ///
+    /// 반대 방향은 깨질 수 있다: SoT 에서 필드가 빠지면 이 표의 그 행이 아무것도 안 가리킨
+    /// 채 남는다. 아무 화면에도 안 나오고 컴파일도 통과하므로, 그때 알려 줄 것이 이것뿐이다.
+    #[test]
+    fn every_placement_row_points_at_a_real_field() {
+        let dangling: Vec<&str> = ENTRY_PLACEMENT
+            .iter()
+            .map(|(fid, _, _)| *fid)
+            .filter(|fid| {
+                crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS
+                    .iter()
+                    .all(|(sot, _)| sot != fid)
+            })
+            .collect();
+        assert!(
+            dangling.is_empty(),
+            "SoT 에 없는 필드를 배치하고 있다: {dangling:?}"
+        );
+    }
+}

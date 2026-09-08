@@ -61,59 +61,18 @@ fn load_lang(toml_str: &str) -> HashMap<String, String> {
     map
 }
 
-/// entries.rs 의 모든 서브탭(General/Workspace/Pane/Tab/Surface/Clipboard/Zoom/
-/// Image/Explorer) 라벨 i18n key 전체.
-const ENTRY_LABELS: &[&str] = &[
-    "settings.keybindings.toggle_settings_label",
-    "settings.keybindings.toggle_notifications_label",
-    "settings.keybindings.toggle_dag_list_label",
-    "settings.keybindings.toggle_sidebar_label",
-    "settings.keybindings.toggle_sidebar_collapse_label",
-    "settings.keybindings.enter_copy_mode_label",
-    "settings.keybindings.restore_closed_label",
-    "settings.keybindings.new_window_label",
-    "settings.keybindings.quit_label",
-    "settings.keybindings.quit_immediate_label",
-    "settings.keybindings.quit_minimize_label",
-    "settings.keybindings.minimize_window_label",
-    "settings.keybindings.maximize_window_label",
-    "settings.keybindings.close_window_label",
-    "settings.keybindings.new_workspace_label",
-    "settings.keybindings.rename_workspace_label",
-    "settings.keybindings.rename_workspace_subtitle_label",
-    "settings.keybindings.close_workspace_label",
-    "settings.keybindings.split_pane_vertical_label",
-    "settings.keybindings.split_pane_horizontal_label",
-    "settings.keybindings.focus_pane_next_label",
-    "settings.keybindings.focus_pane_prev_label",
-    "settings.keybindings.close_pane_label",
-    "settings.keybindings.new_tab_label",
-    "settings.keybindings.open_markdown_label",
-    "settings.keybindings.next_tab_label",
-    "settings.keybindings.prev_tab_label",
-    "settings.keybindings.rename_tab_label",
-    "settings.keybindings.close_active_label",
-    "settings.keybindings.split_surface_vertical_label",
-    "settings.keybindings.split_surface_horizontal_label",
-    "settings.keybindings.focus_surface_next_label",
-    "settings.keybindings.focus_surface_prev_label",
-    "settings.keybindings.convert_surface_label",
-    "settings.keybindings.convert_to_markdown_label",
-    "settings.keybindings.close_surface_label",
-    "settings.keybindings.copy_label",
-    "settings.keybindings.copy_path_label",
-    "settings.keybindings.cut_label",
-    "settings.keybindings.select_all_label",
-    "settings.keybindings.paste_label",
-    "settings.keybindings.screenshot_to_clipboard_label",
-    "settings.keybindings.zoom_in_label",
-    "settings.keybindings.zoom_out_label",
-    "settings.keybindings.zoom_reset_label",
-    "settings.keybindings.image_undo_label",
-    "settings.keybindings.image_redo_label",
-    "settings.keybindings.explorer_refresh_label",
-    "settings.keybindings.explorer_go_up_label",
-];
+/// entries 서브탭이 그리는 라벨 i18n key 전체 — **SoT 에서 읽는다.**
+///
+/// 손으로 나열하던 사본이었고, 그 사본은 `fullscreen_stage_exit_label` 을 빠뜨린 채
+/// "모든 서브탭 라벨 전체" 를 자처하고 있었다. 지금은 엔트리 자체가
+/// `GENERAL_BINDING_FIELDS` 순회로 그려지므로(`keybindings_tab.rs` 의 `entries_for`)
+/// 그릴 라벨 집합과 SoT 의 라벨 집합이 같다.
+fn entry_labels() -> Vec<&'static str> {
+    crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS
+        .iter()
+        .map(|(_, label_key)| *label_key)
+        .collect()
+}
 
 /// quick_switch.rs 의 bare-target 라벨(`"{label}:"`, 아이콘 슬롯 없음) i18n key 전체.
 const QUICK_SWITCH_LABELS: &[&str] = &[
@@ -163,7 +122,7 @@ fn labels_fit_within_fixed_column() {
         for (lang, toml_str) in langs {
             let table = load_lang(toml_str);
 
-            for key in ENTRY_LABELS {
+            for key in &entry_labels() {
                 let text = table
                     .get(*key)
                     .cloned()
