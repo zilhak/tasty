@@ -168,7 +168,22 @@ mod outbox {
                     buf.push(ev);
                     true
                 }
-                Err(_) => false,
+                Err(_) => {
+                    // 조용히 버리지 않는다 — 유실된 이벤트는 화면에 영영 안 나타나고,
+                    // 그 mirror 가 왜 멈춘 것처럼 보이는지 다른 흔적이 없다. poison 은
+                    // sticky 이고 이 함수는 도착하는 프레임마다 불리므로 첫 1 회만 남긴다.
+                    if !super::MIRROR_OUTBOX_PUSH_DROPPED
+                        .swap(true, std::sync::atomic::Ordering::Relaxed)
+                    {
+                        tracing::error!(
+                            "{} lock poisoned — dropping arriving mirror events; the main thread \
+                             panicked while applying them, so this session is being torn down. \
+                             Later drops are not logged.",
+                            super::MIRROR_OUTBOX_WHAT
+                        );
+                    }
+                    false
+                }
             }
         }
 
@@ -228,6 +243,12 @@ const FRAME_TX_WHAT: &str = "attach frame sender";
 static FRAME_TX_POISONED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 const MIRROR_OUTBOX_WHAT: &str = "attach mirror outbox";
 static MIRROR_OUTBOX_POISONED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+/// 같은 락의 **다른 사실**이라 위 복구 플래그와 따로 센다 — `push` 는 복구하지 않고
+/// 그 이벤트를 버린다(위 `MirrorOutbox::push` 의 사유 참고). 플래그를 공유하면 먼저
+/// 일어난 쪽이 나중 쪽을 영구히 지운다: 복구했다는 로그만 남고 무엇이 버려졌는지는
+/// 한 줄도 안 남거나, 그 반대가 된다.
+static MIRROR_OUTBOX_PUSH_DROPPED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// mirror 세션의 transport 상태(attach-behavior.md#재연결-시-세션-상태-보존 참고). `Connected` 만 실제 소켓 IO 가 살아있다 —
