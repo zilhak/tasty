@@ -102,9 +102,47 @@ mod tests {
     /// process cwd 는 프로세스 전역이라, `set_current_dir` 로 그것을 바꾸는 테스트가
     /// cargo 기본 병렬 실행에서 서로를 덮어써 순서 의존 flake 가 난다(형태 A — cwd 는
     /// 인스턴스가 하나뿐이라 자원을 테스트-로컬로 만들 수 없고, 직렬화가 유일한 처방이다).
-    /// cwd 를 바꾸는 이 크레이트 lib 테스트는 전부 이 락을 함수 끝까지 잡는다 —
-    /// 새로 cwd 를 만지는 lib 테스트를 추가하면 반드시 같은 락을 잡을 것.
+    /// cwd 를 바꾸는 이 크레이트 lib 테스트는 전부 [`CwdGuard`] 를 거치고, 그 가드가
+    /// 이 락을 자기 수명 동안 쥔다 — 새로 cwd 를 만지는 lib 테스트도 그 가드를 쓸 것.
     static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    /// process cwd 를 테스트 동안만 옮기는 RAII 가드.
+    ///
+    /// **생성자가 [`CWD_LOCK`] 을 직접 쥔다** — 호출부가 잊어도 직렬화가 깨지지 않는다.
+    /// 같은 형태가 `tasty-telemetry` 의 `AgentIdEnvGuard` 와 `tasty-settings` 의
+    /// `RelativeHomeGuard` 에 있다(unit-test-isolation.md §2).
+    ///
+    /// 손으로 `set_current_dir(prev)` 를 마지막 줄에 두던 형태를 대신한다. 그 형태는
+    /// **그 줄 앞의 단언·`expect` 가 패닉하면 도달하지 않는다.** 그러면 프로세스 cwd 가
+    /// 임시 디렉토리에 남은 채로 `TempDir` 이 Drop 되며 그 디렉토리가 지워지고, 이
+    /// 바이너리의 **뒤 테스트 전부가 존재하지 않는 cwd 에서** 돈다 — 실패 하나가 나머지를
+    /// 만든다. 락만으로는 이것을 못 막는다(락은 동시성을 막지 복원을 하지 않는다).
+    struct CwdGuard {
+        prev: std::path::PathBuf,
+        /// 마지막 필드라 `Drop::drop`(cwd 복원) 뒤에 떨어져 복원이 락 안에서 난다.
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl CwdGuard {
+        fn enter(dir: &Path) -> Self {
+            // 락을 먼저 잡는다 — 아래 `current_dir()` 읽기까지 직렬화 범위에 넣는다.
+            let lock = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(dir).expect("set_current_dir");
+            Self { prev, _lock: lock }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            // 복원 실패는 조용히 넘기면 안 된다 — 뒤 테스트 전부가 그 cwd 에서 돈다.
+            // 다만 되감기 중에 패닉하면 프로세스가 abort 되어 **원래 실패의 메시지까지
+            // 사라지므로**, 이미 패닉 중이면 소리내지 않는다.
+            if std::env::set_current_dir(&self.prev).is_err() && !std::thread::panicking() {
+                panic!("cwd 를 {} 로 되돌리지 못했다", self.prev.display());
+            }
+        }
+    }
 
     #[test]
     fn absolute_existing_directory_is_returned_canonicalized() {
@@ -117,16 +155,13 @@ mod tests {
 
     #[test]
     fn relative_path_resolves_against_process_cwd() {
-        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
         // tempdir 안에 하위 디렉토리.
         let sub = tmp.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         // process cwd 를 tempdir 로 옮기고 상대 경로 "sub" 가 sub 로 풀리는지.
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
+        let _cwd = CwdGuard::enter(tmp.path());
         let out = normalize_cwd_arg("sub").expect("ok");
-        std::env::set_current_dir(prev).unwrap();
         assert!(out.ends_with("sub"), "got {out}");
         assert!(Path::new(&out).is_absolute());
     }
@@ -163,14 +198,11 @@ mod tests {
 
     #[test]
     fn file_arg_relative_path_resolves_against_process_cwd() {
-        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let tmp = tempfile::tempdir().expect("tempdir");
         let file = tmp.path().join("profile.json");
         std::fs::write(&file, "{}").unwrap();
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
+        let _cwd = CwdGuard::enter(tmp.path());
         let out = normalize_file_arg("profile.json").expect("ok");
-        std::env::set_current_dir(prev).unwrap();
         assert!(out.ends_with("profile.json"), "got {out}");
         assert!(Path::new(&out).is_absolute());
     }
