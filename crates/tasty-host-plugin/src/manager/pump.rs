@@ -27,7 +27,11 @@ use super::{
 /// 조건·처리 순서를 그대로 보존한다.
 #[derive(Default)]
 struct CollectedPluginEvents {
-    hello_log: Vec<(String, String)>,
+    /// `(채널 키 = 설치 매니페스트 id, hello 가 주장한 id, hello 가 보고한 버전)`.
+    /// 앞의 둘을 **함께** 실어야 `log_hello_and_check_drift` 가 한 자리에서 대조한다 —
+    /// 주장한 id 만 실으면 그 값이 어긋났을 때 매니페스트 조회가 `None` 이 되어
+    /// 버전 대조까지 같이 조용해진다.
+    hello_log: Vec<(String, String, String)>,
     to_register: Vec<String>,
     new_calls: Vec<PendingPluginCall>,
     new_event_publishes: Vec<(String, tasty_plugin_protocol::EventEnvelope)>,
@@ -180,7 +184,8 @@ impl PluginManager {
     fn classify_event(&self, id: &str, ev: PluginEvent, out: &mut CollectedPluginEvents) {
         match ev {
             PluginEvent::Hello { plugin_id, version } => {
-                out.hello_log.push((plugin_id.clone(), version));
+                out.hello_log
+                    .push((id.to_string(), plugin_id.clone(), version));
                 if !self.registered_plugins.contains(&plugin_id) {
                     out.to_register.push(plugin_id);
                 }
@@ -400,19 +405,43 @@ impl PluginManager {
         }
     }
 
-    /// hello 수신 로그와 버전 drift 경고(바이너리 hello 보고 버전 vs 설치 매니페스트
-    /// 버전 불일치). dev bundle 은 매니페스트(소스)와 바이너리(target exe)를
-    /// 독립적으로 copy_if_newer 하므로, plugin 을 재빌드하지 않으면 최신 매니페스트와
-    /// stale exe 조합이 조용히 설치된다 — e2e markdown.recent 회귀의 원인.
-    /// 동작은 막지 않고(런타임 호환 판정은 api_version 몫) 소리만 낸다.
-    fn log_hello_and_check_drift(&self, hello_log: Vec<(String, String)>) {
-        for (plugin_id, version) in hello_log {
-            tracing::info!("plugin hello: {} v{}", plugin_id, version);
-            if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id)
-                && pkg.manifest.version != version
-            {
+    /// hello 가 주장한 정체를 설치 매니페스트와 대조하는 **유일한 자리**. 두 축을
+    /// 여기서 함께 본다 — id 와 버전.
+    ///
+    /// - **id**: plugin 이 hello 로 보내는 `plugin_id` 는 손으로 적은 사본이고
+    ///   (`const PLUGIN_ID`), 채널 키는 설치된 매니페스트의 `id` 다. 어긋나면 registry 는
+    ///   주장한 id 로 채워지고 권한·비활성·도구 키는 매니페스트 id 로 채워져, 둘을 잇는
+    ///   조회(`banner.rs` 의 `packages.iter().find(...)?`)가 `None` 을 내고 조용히
+    ///   빠져나간다. 빌드 시점 사본 대조는 번들 아홉에만 걸려 있어(doc-guards
+    ///   `plugin_manifest_version_parity`) 서드파티·stale 설치본은 런타임에만 드러난다.
+    /// - **버전**: dev bundle 은 매니페스트(소스)와 바이너리(target exe)를 독립적으로
+    ///   sync 하므로, plugin 을 재빌드하지 않으면 최신 매니페스트와 stale exe 조합이
+    ///   조용히 설치된다 — e2e markdown.recent 회귀의 원인.
+    ///
+    /// **어느 쪽도 막지 않는다 — 소리만 낸다.** 어긋난 id 를 거부할지, 매니페스트를
+    /// 이기게 할지, 지금처럼 경고만 할지는 "plugin 이 자기 정체를 주장할 수 있는가" 에
+    /// 대한 신뢰 모델 결정이라 이 자리가 정할 것이 아니다. 대조가 존재하는 것과
+    /// 막는 것은 다르다(ADR-0190).
+    ///
+    /// 매니페스트 조회는 **채널 키**로 한다. 주장한 id 로 찾으면 id 가 어긋난 바로 그
+    /// 경우에 조회가 `None` 이 되어 버전 대조까지 함께 조용해진다.
+    fn log_hello_and_check_drift(&self, hello_log: Vec<(String, String, String)>) {
+        for (channel_id, claimed_id, version) in hello_log {
+            tracing::info!("plugin hello: {} v{}", claimed_id, version);
+            let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == channel_id) else {
+                continue;
+            };
+            if claimed_id != channel_id {
                 tracing::warn!(
-                    "plugin '{plugin_id}' version drift: binary v{version} != manifest v{} — \
+                    "plugin '{channel_id}' identity drift: hello claims id '{claimed_id}' != \
+                     manifest id '{channel_id}' — 권한·비활성·도구 키는 매니페스트 id 로 \
+                     채워지고 registry 는 주장한 id 로 채워져, 둘을 잇는 조회가 조용히 \
+                     비어난다 (plugin 의 `const PLUGIN_ID` 를 매니페스트에 맞춰라)"
+                );
+            }
+            if pkg.manifest.version != version {
+                tracing::warn!(
+                    "plugin '{channel_id}' version drift: binary v{version} != manifest v{} — \
                      stale build? (dev: `cargo build --workspace` 후 재실행)",
                     pkg.manifest.version
                 );
