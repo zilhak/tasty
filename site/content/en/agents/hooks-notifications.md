@@ -1,4 +1,4 @@
-<!-- source-hash: 746c544bb5b2 -->
+<!-- source-hash: 570f3b7e589b -->
 # Hooks, notifications and webhooks
 
 This page covers **hooks**, which run a command automatically when something happens in a terminal (process exit, specific output, bell); **notifications**, which tell a person; and **webhooks**, which wake Tasty over HTTP from outside. Combining the three lets you build automations like "notify me when the build finishes" with the CLI alone.
@@ -184,6 +184,7 @@ The caller receives only a status code and a fixed phrase — internal results a
 | 404 | Unknown URL |
 | 405 | Method not allowed |
 | 410 | Time or count limit expired |
+| 413 | The body exceeded the per-request size cap (1 MiB by default) |
 | 429 | The same source failed (`401`, `404` or `405`) 20 or more times in 10 seconds and is blocked for 60 seconds |
 
 The block lives in memory only — restart Tasty and the remaining block time is gone, so that source starts over.
