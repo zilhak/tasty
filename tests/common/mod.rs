@@ -29,8 +29,19 @@
 // 달라 개별 binary 기준 dead_code 판정이 무의미하다 (의도된 superset API).
 #![allow(dead_code)]
 
+// `pub` 인 이유: 소비 바이너리가 같은 모듈을 자기 이름으로 한 번 더 들이면 **두 벌이
+// 컴파일되고 그 안의 시험이 두 번 돈다**(실측 2026-09-08: 그 형태로 이름이 겹쳐 나왔다).
+// 여기서 한 번 들여 그대로 내주면 사본이 하나로 남는다.
 #[path = "../spawn_diag/mod.rs"]
-mod spawn_diag;
+pub mod spawn_diag;
+
+/// 실패 문구 끝에 이어 붙이는 번들 스테이징 진단 — 정의와 근거는 `spawn_diag`.
+///
+/// 이유: 이 helper 는 raw 응답을 스스로 단언하는 스위트에서만 직접 불린다.
+#[allow(dead_code)]
+pub fn bundle_staging_note() -> String {
+    spawn_diag::bundle_staging_note()
+}
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -279,13 +290,15 @@ impl TastyInstance {
     /// 인스턴스에 런타임으로 바꿔 끼울 수 없다. 값이 다른 인스턴스가 필요하면
     /// 항상 별도 프로세스로 남는다.
     pub fn spawn_with_inherit_cwd(inherit_cwd: bool) -> Self {
+        // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
+        // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 완주가 같은 경로를
+        // 쓰고 먼저 끝난 쪽이 다른 쪽의 파일을 지운다. 단조 카운터는 해상도가 없어
+        // 플랫폼을 안 읽고, 프로세스 전역이라 같은 스레드의 재호출도 가른다.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let unique = format!(
             "{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
         let port_file = std::env::temp_dir().join(format!("tasty-test-{}.port", unique));
 
@@ -529,7 +542,12 @@ impl TastyInstance {
 
             let resp: Value = serde_json::from_str(&line).expect("invalid JSON response");
             if let Some(error) = resp.get("error") {
-                panic!("IPC error for '{}': {}", method, error);
+                panic!(
+                    "IPC error for '{}': {}{}",
+                    method,
+                    error,
+                    bundle_staging_note()
+                );
             }
             return resp.get("result").cloned().unwrap_or(Value::Null);
         }

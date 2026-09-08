@@ -18,7 +18,41 @@
 //! 자기를 뺀다. 전제를 안 밝히면 통과 여부가 러너 환경(PATH 의 git-bash 유무)에
 //! 달리고, 그 초록은 측정이 아니다.
 
+//!
+//! **Windows 에서 이 타깃은 빈다 — 커버리지 0 이고, 그 0 은 이제 미측정이 아니라 잰
+//! 값이다.** `#![cfg(unix)]` 라 그렇고, 그 cfg 가 그 타깃에서 실제로 거짓인 것을 재서
+//! 안다: `rustc --print cfg --target x86_64-pc-windows-gnu` 에 `unix` 선언이 **없다**
+//! (호스트에는 있다). 컴파일은 거기서도 통과한다 — `cargo clippy -p tasty --all-targets
+//! --locked --target x86_64-pc-windows-gnu` rc=0, 이 파일 진단 0 (실측 2026-09-08).
+//! 즉 **Windows 잡의 초록은 이 게이트가 거기서 돈다는 뜻이 아니다.** 한때 이 자리에
+//! "Windows 잡은 `--lib --bins` 라 안 본다" 고 적혀 있었는데, 그 잡은 `--all-targets`
+//! 로 이 타깃을 **컴파일한다** — 안 보는 것은 잡이 아니라 `cfg` 다.
+
+//!
+//! ── 판정 불가는 **호출 지점 열여섯 곳**에서 나온다 ────────────────────────
+//!
+//! `CLAUDE.md` 는 "판정 불가(비-git · 없는 rev · rustfmt 부재)는 통과가 아니라 실패다"
+//! 라고 적는다. 그 셋은 각각 아래 시험이 종료 코드로 물고, 실측(2026-09-08) 셋 다
+//! 조용한 통과(`|| exit 0`)로 완화하면 그 시험이 죽인다 —
+//! `a_non_git_directory_is_undecidable_not_a_pass` ·
+//! `a_missing_rev_is_undecidable_not_a_pass` ·
+//! `a_missing_rustfmt_is_undecidable_not_a_pass`.
+//!
+//! **그런데 게이트의 거절은 그 셋이 아니다.** 같은 날 `die` 호출 지점 **열여섯**에
+//! 하나씩 완화 변이를 넣어 보면 죽는 것은 **넷**(위 셋 + 모드 인자 없음)이고 **열둘이
+//! 살아남는다** — 저장소 루트 · 루트로 이동 · edition 읽기 · `--base` 의 rev ·
+//! `--range` 의 두 rev · 알 수 없는 인자 · cargo tree · 의존 폐포 빔 · 작업 디렉토리 ·
+//! 트리 펼치기 · 출하 판정기 · 인덱스 트리. 즉 저 문장은 **자기가 이름을 부른 것에
+//! 대해서만** 참이고, 규칙처럼 읽히는 만큼은 아직 안 걸린다.
+//!
+//! 이름을 더 부르는 것은 답이 아니다 — 그것은 사람이 유지하는 표이고, 늘리는 비용이
+//! 한 줄이며 리뷰에 안 뜬다. 형제 `tests/gates_pin_their_judge_absence.rs` 가 같은
+//! 물음을 **기계가 세게** 한 선례다(소비자를 `scripts/` 에서 세고, 예외는 사유와 함께
+//! 목록에 둔다). 여기도 그 형태가 필요하다.
+
 #![cfg(unix)]
+
+mod gate_env;
 
 use std::fs;
 use std::path::Path;
@@ -83,9 +117,54 @@ fn check(dir: &Path, args: &[&str]) -> (i32, String) {
 
 const PLUGIN: &str = "crates/tasty-plugin-fixture";
 
+/// 게이트 스크립트의 좌변을 넓힌 **사본**을 합성 트리에 놓고 그 경로를 준다.
+///
+/// "변수를 쓴다" 를 문자열로 확인하는 형태는 약하다 — 뿌리를 실제로 옮기고 **판정이
+/// 따라오는가**로 잰다. 좌변의 소비처가 다섯이라(두 모드의 pathspec · 크레이트 뿌리를
+/// 뽑는 sed · 매니페스트 명부 glob · 그 명부가 만드는 상대 경로) 하나만 옛 뿌리에
+/// 남아 있어도 넓힌 트리의 plugin 이 안 보이고, 그러면 단언이 빨개진다.
+fn widened_script(d: &Path, root: &str) -> String {
+    let src = fs::read_to_string(script()).expect("게이트 스크립트를 읽을 수 있어야 한다");
+    let from = "\nSCAN_ROOT=crates\n";
+    assert_eq!(
+        src.matches(from).count(),
+        1,
+        "좌변 선언이 한 자리가 아니다 — 이 시험이 무엇을 넓혔는지 알 수 없다"
+    );
+    // 스크립트는 공용 헬퍼를 **자기 위치 옆**에서 읽는다. 사본만 옮기면 그 줄이
+    // 없는 파일을 가리켜, 좌변과 무관한 이유로 빨개진다. 그래서 헬퍼도 같이 옮긴다.
+    // `scripts/` 자체에는 아무것도 안 만든다 — 그 디렉토리는 다른 가드의 모수다.
+    let gate_dir = d.join(".gate");
+    fs::create_dir_all(gate_dir.join("lib")).expect("사본 디렉토리 생성");
+    let helper = format!("{}/scripts/lib/judge-bin.sh", env!("CARGO_MANIFEST_DIR"));
+    fs::copy(&helper, gate_dir.join("lib/judge-bin.sh")).expect("공용 헬퍼 사본");
+    let out = gate_dir.join("widened-gate.sh");
+    fs::write(&out, src.replace(from, &format!("\nSCAN_ROOT={root}\n"))).expect("사본 쓰기");
+    out.to_string_lossy().into_owned()
+}
+
+/// [`check`] 와 같되 **어느 스크립트를 돌릴지** 받는다.
+fn check_with(gate: &str, dir: &Path, args: &[&str]) -> (i32, String) {
+    let out = Command::new("bash")
+        .arg(gate)
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("게이트 스크립트 실행");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    (out.status.code().unwrap_or(-1), text)
+}
+
 /// 루트 Cargo.toml(스크립트가 edition 을 읽는다) + plugin 한 벌을 담은 저장소를 만들고
 /// 첫 커밋까지 마친다.
 fn seed_repo() -> tempfile::TempDir {
+    seed_repo_under("crates")
+}
+
+/// [`seed_repo`] 와 같되 plugin 을 **어느 뿌리 아래에** 둘지 받는다.
+fn seed_repo_under(root: &str) -> tempfile::TempDir {
+    let plugin = format!("{root}/tasty-plugin-fixture");
     let tmp = tempfile::tempdir().expect("임시 디렉토리");
     let d = tmp.path();
     run_git(d, &["init", "--quiet"]);
@@ -101,17 +180,17 @@ fn seed_repo() -> tempfile::TempDir {
     );
     write(
         d,
-        &format!("{PLUGIN}/Cargo.toml"),
+        &format!("{plugin}/Cargo.toml"),
         "[package]\nname = \"tasty-plugin-fixture\"\nversion = \"0.1.0\"\n",
     );
     write(
         d,
-        &format!("{PLUGIN}/tasty-plugin.toml"),
+        &format!("{plugin}/tasty-plugin.toml"),
         "id = \"com.tasty.fixture\"\nversion = \"0.1.0\"\n",
     );
     write(
         d,
-        &format!("{PLUGIN}/src/main.rs"),
+        &format!("{plugin}/src/main.rs"),
         "fn main() {\n    let msg = \"a  b\";\n}\n",
     );
     run_git(d, &["add", "-A"]);
@@ -135,6 +214,52 @@ fn bump_to(d: &Path, v: &str) {
 fn commit_all(d: &Path, msg: &str) {
     run_git(d, &["add", "-A"]);
     run_git(d, &["commit", "--quiet", "-m", msg]);
+}
+
+/// 좌변을 넓히면 **두 모드가 함께** 움직인다.
+///
+/// pathspec 이 `--staged` 와 `--range` 두 줄에 따로 적혀 있었다. 한 갈래만 재면
+/// 나머지가 옛 뿌리에 남아 있어도 초록이라, 두 갈래를 같은 트리에서 본다.
+///
+/// **음성 대조가 먼저다** — 안 넓힌 원본이 이 트리를 정말 안 보는지 확인하지 않으면,
+/// 아래 빨강이 "넓혀서 보인 것" 인지 "원래 보이던 것" 인지 못 가른다.
+#[test]
+fn widening_the_left_side_moves_both_modes() {
+    let tmp = seed_repo_under("extra");
+    let d = tmp.path();
+    let changed = "extra/tasty-plugin-fixture/src/main.rs";
+    write(d, changed, "fn main() {\n    let msg = \"changed\";\n}\n");
+    commit_all(d, "feat(fixture): change behaviour");
+
+    let (base_code, base_text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        base_code, 0,
+        "안 넓힌 좌변이 `extra/` 를 보면 이 시험은 아무것도 안 재는 것이다:\n{base_text}"
+    );
+    assert!(
+        base_text.contains("판정 대상 0 건"),
+        "안 넓힌 좌변의 판정 대상은 0 이어야 한다:\n{base_text}"
+    );
+
+    let gate = widened_script(d, "extra");
+    let (code, text) = check_with(&gate, d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 1, "--range 갈래가 넓힌 뿌리를 안 본다:\n{text}");
+    assert!(
+        text.contains("src/main.rs"),
+        "어느 파일 때문인지 안 말한다:\n{text}"
+    );
+
+    write(
+        d,
+        changed,
+        "fn main() {\n    let msg = \"changed twice\";\n}\n",
+    );
+    run_git(d, &["add", "-A"]);
+    let (staged_code, staged_text) = check_with(&gate, d, &["--staged"]);
+    assert_eq!(
+        staged_code, 1,
+        "--staged 갈래가 넓힌 뿌리를 안 본다 — pathspec 이 두 줄이라 한쪽만 따라올 수 있다:\n{staged_text}"
+    );
 }
 
 #[test]
@@ -488,6 +613,12 @@ fn a_judge_that_reports_itself_fresh_is_not_called_stale() {
 /// 담은 진짜 cargo 워크스페이스. `cargo tree` 가 읽을 수 있어야 하므로 매니페스트가
 /// 형식만 흉내 낸 것이면 안 된다.
 fn seed_workspace() -> tempfile::TempDir {
+    seed_workspace_under("crates")
+}
+
+/// [`seed_workspace`] 와 같되 세 크레이트를 **어느 뿌리 아래에** 둘지 받는다.
+fn seed_workspace_under(root: &str) -> tempfile::TempDir {
+    let plugin = format!("{root}/tasty-plugin-fixture");
     let tmp = tempfile::tempdir().expect("임시 디렉토리");
     let d = tmp.path();
     run_git(d, &["init", "--quiet"]);
@@ -498,44 +629,80 @@ fn seed_workspace() -> tempfile::TempDir {
     write(
         d,
         "Cargo.toml",
-        "[workspace]\nresolver = \"2\"\n\
-         members = [\"crates/tasty-plugin-fixture\", \"crates/tasty-shared\", \"crates/tasty-lonely\"]\n\
-         [workspace.package]\nedition = \"2024\"\n\
-         [package]\nname = \"root-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\
-         [lib]\npath = \"lib.rs\"\n",
+        &format!(
+            "[workspace]\nresolver = \"2\"\n\
+             members = [\"{root}/tasty-plugin-fixture\", \"{root}/tasty-shared\", \"{root}/tasty-lonely\"]\n\
+             [workspace.package]\nedition = \"2024\"\n\
+             [package]\nname = \"root-fixture\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\
+             [lib]\npath = \"lib.rs\"\n"
+        ),
     );
     write(d, "lib.rs", "pub fn nothing() {}\n");
     write(
         d,
-        &format!("{PLUGIN}/Cargo.toml"),
+        &format!("{plugin}/Cargo.toml"),
         "[package]\nname = \"tasty-plugin-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\
          [dependencies]\ntasty-shared = { path = \"../tasty-shared\" }\n",
     );
     write(
         d,
-        &format!("{PLUGIN}/tasty-plugin.toml"),
+        &format!("{plugin}/tasty-plugin.toml"),
         "id = \"com.tasty.fixture\"\nversion = \"0.1.0\"\n",
     );
     write(
         d,
-        &format!("{PLUGIN}/src/main.rs"),
+        &format!("{plugin}/src/main.rs"),
         "fn main() {\n    tasty_shared::greet();\n}\n",
     );
     for c in ["tasty-shared", "tasty-lonely"] {
         write(
             d,
-            &format!("crates/{c}/Cargo.toml"),
+            &format!("{root}/{c}/Cargo.toml"),
             &format!("[package]\nname = \"{c}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"),
         );
         write(
             d,
-            &format!("crates/{c}/src/lib.rs"),
+            &format!("{root}/{c}/src/lib.rs"),
             "pub fn greet() {\n    let _ = 1;\n}\n",
         );
     }
     run_git(d, &["add", "-A"]);
     run_git(d, &["commit", "--quiet", "-m", "seed"]);
     tmp
+}
+
+/// 좌변을 넓히면 **plugin 명부도** 따라 움직인다.
+///
+/// 위 [`widening_the_left_side_moves_both_modes`] 는 이 자리를 못 잰다 — 명부를 만드는
+/// 두 줄(매니페스트 glob · 그것이 만드는 상대 경로)은 **공유 크레이트가 바뀐 갈래**
+/// 에서만 돌기 때문이다. 실측: 그 둘만 옛 뿌리로 되돌려도 위 시험은 초록이었다.
+#[test]
+fn widening_the_left_side_moves_the_plugin_roster() {
+    let tmp = seed_workspace_under("extra");
+    let d = tmp.path();
+    write(
+        d,
+        "extra/tasty-shared/src/lib.rs",
+        "pub fn greet() {\n    let _ = 2;\n}\n",
+    );
+    commit_all(d, "fix(shared): change behaviour");
+
+    let (base_code, base_text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        base_code, 0,
+        "안 넓힌 좌변이 `extra/` 를 보면 이 시험은 아무것도 안 재는 것이다:\n{base_text}"
+    );
+
+    let gate = widened_script(d, "extra");
+    let (code, text) = check_with(&gate, d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(
+        code, 1,
+        "넓힌 뿌리에서 명부가 plugin 을 못 찾았다 — 매니페스트 glob 이 옛 뿌리에 남았다:\n{text}"
+    );
+    assert!(
+        text.contains("tasty-shared/src/lib.rs"),
+        "어느 파일 때문인지 안 말한다:\n{text}"
+    );
 }
 
 #[test]
@@ -632,4 +799,104 @@ fn without_the_stripper_a_test_only_change_is_told_to_bump_and_that_is_deliberat
         text.contains("출하 범위를 못 좁힌다"),
         "격하됐다는 사실을 안 찍었다 — 그러면 이 오탐이 진짜 부채와 구분이 안 된다:\n{text}"
     );
+}
+
+/// ★ R1056 축 — **판정 대상 수는 rc 에 안 들어간다.**
+///
+/// 이 게이트의 rc 는 `VIOLATIONS` 와 `BEHIND` 가 정한다. 통과줄과 실패줄이 함께 찍는
+/// `판정 대상 N 건` 은 판정에 안 들어가고, 실측(2026-09-08) 그 문구를 바꾸는 변이에서
+/// 위 열아홉이 전부 통과했다.
+///
+/// 그 수는 장식이 아니다. 게이트 본문이 그것으로 **범위 오류**를 가른다 — 대상이 둘
+/// 이상인데 전량이 걸리면 "한 lane 이 만들 수 있는 모양이 아니니 범위를 의심해라" 로
+/// 나간다. 그 판정의 좌변이 이 수이고, 이 수가 실제 판정 수를 안 따라가면 그 경고가
+/// 엉뚱한 때 뜨거나 안 뜬다.
+///
+/// **plugin 을 둘 두고 하나만 건드린다.** 하나로 재면 1 을 상수로 박은 상태도 통과하고,
+/// 둘 다 건드리면 `판정 대상` 과 `변경된 crates 파일` 이 같은 값이 되어 두 수가 한
+/// 수로 붕괴한 상태도 통과한다. 서로 다른 값이 나오는 배치라야 두 자리가 갈린다.
+#[test]
+fn the_reported_considered_count_follows_the_judged_plugins() {
+    const OTHER: &str = "crates/tasty-plugin-second";
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(
+        d,
+        &format!("{OTHER}/Cargo.toml"),
+        "[package]\nname = \"tasty-plugin-second\"\nversion = \"0.1.0\"\n",
+    );
+    write(
+        d,
+        &format!("{OTHER}/tasty-plugin.toml"),
+        "id = \"com.tasty.second\"\nversion = \"0.1.0\"\n",
+    );
+    write(d, &format!("{OTHER}/src/main.rs"), "fn main() {}\n");
+    commit_all(d, "두 번째 plugin");
+
+    // 하나만 내용이 바뀌고 값이 따라온다. 다른 하나는 그대로라 판정 대상이 아니다.
+    write(
+        d,
+        &format!("{PLUGIN}/src/main.rs"),
+        "fn main() {\n    let msg = \"changed\";\n}\n",
+    );
+    bump_to(d, "0.1.1");
+    commit_all(d, "첫 plugin 만 고치고 올린다");
+
+    let (code, text) = check(d, &["--range", "HEAD~1", "HEAD"]);
+    assert_eq!(code, 0, "값이 따라왔는데 통과가 아니다:\n{text}");
+    assert!(
+        text.contains("판정 대상 1 건"),
+        "판정 대상 수가 실제로 판정한 plugin 수를 안 따라간다 — 이 수가 범위 오류를 \
+         가르는 좌변인데 그것이 맞는지는 rc 에 안 나타난다:\n{text}"
+    );
+    assert!(
+        text.contains("crates 파일 3 개 중"),
+        "변경된 파일 수가 판정 대상 수와 한 수로 붕괴했다 — 둘은 서로 다른 물음이다:\n{text}"
+    );
+}
+
+// ── 문서가 참이라고 적어 둔 것과 코드가 그런 것은 다르다 ────────────────────
+//
+// 루트 CLAUDE.md 는 이 게이트에 대해 "판정 불가(비-git · 없는 rev · rustfmt 부재)는
+// 통과가 아니라 실패다" 라고 적어 뒀다. **셋 중 둘만 박혀 있었다.**
+// 실측 2026-09-08: `rustfmt` 부재 갈래의 `die` 를 `{ echo …; exit 0; }` 로 바꾸고
+// 이 타깃과 `gates_pin_their_judge_absence` 를 돌리면 **한 건도 안 죽는다**. 인자 없음
+// 갈래도 같다. `die()` **정의**를 바꾸면 둘이 죽지만(비-git · 없는 rev), 그것은 호출
+// 자리 하나가 `die` 를 안 부르게 바뀌는 형태를 못 본다 — 그리고 그것이 실제로 일어나는
+// 형태다(조건 하나를 완화하는 편집).
+
+#[test]
+fn a_missing_rustfmt_is_undecidable_not_a_pass() {
+    let tmp = seed_repo();
+    // `git` 은 보이고 `rustfmt` 만 안 보이는 PATH. 게이트는 저장소 판정까지 가고
+    // 정규화기에서 멈춘다 — rc 만 보면 "다른 이유로 죽었다" 와 안 갈리므로 메시지도 본다.
+    let path = gate_env::only(&["bash", "git"]);
+    let out = Command::new("bash")
+        .arg(script())
+        .args(["--staged"])
+        .current_dir(tmp.path())
+        .env("PATH", path.path())
+        .output()
+        .expect("게이트 스크립트 실행");
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "rustfmt 가 없으면 포맷 변경과 실변경을 가를 수 없다 — 그 상태의 통과는 \
+         '안 재고 통과' 다:\n{text}"
+    );
+    assert!(text.contains("rustfmt 가 없다"), "{text}");
+}
+
+#[test]
+fn no_mode_argument_is_undecidable_not_a_pass() {
+    let tmp = seed_repo();
+    let (code, text) = check(tmp.path(), &[]);
+    assert_eq!(
+        code, 2,
+        "무엇을 판정할지 안 정해졌는데 통과로 나가면, 인자를 빠뜨린 호출이 전부 \
+         초록이 된다:\n{text}"
+    );
+    assert!(text.contains("--staged 또는 --range"), "{text}");
 }

@@ -43,6 +43,11 @@ const ABUSE_THRESHOLD: u32 = 40;
 /// 쓰면 그 사이를 기다릴 수 없어 두 번째 질문을 아예 못 묻는다.
 const ABUSE_COOLDOWN_SECS: u64 = 3;
 
+/// 이 인스턴스의 요청당 body 상한(바이트). 기본 1 MiB 를 그대로 쓰면 초과를 보이려고
+/// 매 실행마다 1 MiB 를 실제로 밀어 넣어야 한다 — 재는 것은 크기가 아니라 **경계에서
+/// 갈리는가** 라, 경계를 내려서 묻는다.
+const MAX_BODY_BYTES: usize = 4096;
+
 /// 사용자 훅 핸들러 — source 게이트 테스트용. hook 전용 IpcSequence 와 hook 전용 셸
 /// 핸들러 둘 다 웹훅 바인딩이 거부돼야 한다.
 const HOOK_HANDLERS_TOML: &str = r#"
@@ -392,7 +397,42 @@ fn integration_flow(inst: &WebhookInstance) {
         );
     }
 
-    // ========== 12) (마지막) 남용 차단 — 반복 404 임계치 초과 → 429 ==========
+    // ========== 12) body 상한 — 초과는 413, 경계 이하는 그대로 동작 ==========
+    {
+        let (id, _url) = register_notify_webhook(&inst, json!({}));
+
+        // 상한 이하 — 평소대로 200 이고 시퀀스가 돈다.
+        let small = format!(
+            r#"{{"message":"SMALLBODY","pad":"{}"}}"#,
+            "x".repeat(MAX_BODY_BYTES / 4)
+        );
+        assert!(small.len() < MAX_BODY_BYTES);
+        assert_eq!(inst.post(&id, &small).0, 200, "상한 이하는 평소대로 200");
+        assert!(wait_notification(
+            &inst,
+            "SMALLBODY",
+            Duration::from_secs(8)
+        ));
+
+        // 상한 초과 — 413, 그리고 시퀀스는 돌지 않는다(치환할 body 가 없다).
+        let big = format!(
+            r#"{{"message":"BIGBODY","pad":"{}"}}"#,
+            "x".repeat(MAX_BODY_BYTES * 2)
+        );
+        let (code, body) = inst.post(&id, &big);
+        assert_eq!(code, 413, "상한 초과 body 는 413");
+        assert_eq!(body, "payload too large");
+        assert!(
+            !has_notification(&inst, "BIGBODY"),
+            "413 은 시퀀스를 실행하지 않는다"
+        );
+
+        // 등록되지 않은 경로로 보낸 큰 body 도 413 이다 — 상한 판정이 매칭보다 앞이다.
+        assert_eq!(inst.post("no-such-path-for-big-body", &big).0, 413);
+        inst.call("webhook.unregister", json!({ "id": id }));
+    }
+
+    // ========== 13) (마지막) 남용 차단 — 반복 404 임계치 초과 → 429 ==========
     {
         // 없는 path 로 반복 요청 → 임계치 초과 시 쿨다운 즉시거부(429). 정상 웹훅은
         // 별개(정상 매칭은 실패 집계 대상 아님)지만, 쿨다운은 출처(IP) 단위라 이
@@ -412,7 +452,7 @@ fn integration_flow(inst: &WebhookInstance) {
         );
     }
 
-    // ========== 13) (마지막) 남용 차단 — 반복 401 임계치 초과 → 429 ==========
+    // ========== 14) (마지막) 남용 차단 — 반복 401 임계치 초과 → 429 ==========
     {
         // 앞 스텝이 건 쿨다운이 풀릴 때까지 기다린다 — 여기서 묻는 것은 **다른 실패
         // 종류가 같은 통을 세는가** 라, 앞 트립이 남긴 429 가 답을 덮으면 아무것도
@@ -459,13 +499,14 @@ struct HookEnvSetup {
 }
 
 fn hook_env_setup() -> HookEnvSetup {
+    // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
+    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다. 단조 카운터는 해상도가 없고,
+    // 프로세스 전역이라 같은 스레드의 재호출도 가른다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let unique = format!(
         "{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     let hook_marker = std::env::temp_dir().join(format!("tasty-hookenv-{unique}.txt"));
     let dispatch_marker = std::env::temp_dir().join(format!("tasty-dispenv-{unique}.txt"));
@@ -564,13 +605,14 @@ fn hook_env_flow(inst: &WebhookInstance, setup: &HookEnvSetup) {
 // ───────────────────────── 재시작 복원 흐름 (구 webhook_restart.rs 이관) ─────────────────────────
 
 fn unique_home() -> std::path::PathBuf {
+    // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
+    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다. 단조 카운터는 해상도가 없고,
+    // 프로세스 전역이라 같은 스레드의 재호출도 가른다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let unique = format!(
         "{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     std::env::temp_dir().join(format!("tasty-wh-family-home-{unique}"))
 }
@@ -633,6 +675,7 @@ fn webhook_family() {
                 &ABUSE_THRESHOLD.to_string(),
             )
             .env("TASTY_WEBHOOK_ABUSE_WINDOW_SECS", "3600")
+            .env("TASTY_WEBHOOK_MAX_BODY_BYTES", &MAX_BODY_BYTES.to_string())
             .env(
                 "TASTY_WEBHOOK_ABUSE_COOLDOWN_SECS",
                 &ABUSE_COOLDOWN_SECS.to_string(),

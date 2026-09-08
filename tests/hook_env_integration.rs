@@ -22,13 +22,15 @@ use webhook_common::{WebhookInstance, free_port};
 
 #[test]
 fn shell_handlers_receive_tasty_hook_env() {
+    // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
+    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 완주가 같은 경로를
+    // 쓰고 먼저 끝난 쪽이 다른 쪽의 파일을 지운다. 단조 카운터는 해상도가 없어
+    // 플랫폼을 안 읽고, 프로세스 전역이라 같은 스레드의 재호출도 가른다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let unique = format!(
         "{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     let hook_marker = std::env::temp_dir().join(format!("tasty-hookenv-{unique}.txt"));
     let dispatch_marker = std::env::temp_dir().join(format!("tasty-dispenv-{unique}.txt"));

@@ -212,17 +212,7 @@ fn strip_comment_and_strings(line: &str) -> String {
 /// `name!` 매크로 호출이 식별자 경계에서 시작하는지 — `eprintln!` 안의 `println` 은
 /// 제외. 매크로 이름과 `!` 를 나눠 받는 것은 이 테스트 소스 자체가 pre-commit C.11
 /// (`println!` 리터럴 검사)에 걸리지 않게 하기 위해서다.
-fn invokes_macro(code: &str, name: &str) -> bool {
-    let mut from = 0;
-    while let Some(pos) = code[from..].find(name) {
-        let at = from + pos;
-        let end = at + name.len();
-        let prev = code[..at].chars().next_back();
-        let boundary_before = !prev.is_some_and(|c| c.is_alphanumeric() || c == '_');
-        if boundary_before && code[end..].starts_with('!') {
-            return true;
-        }
-        from = end;
-    }
-    false
-}
+// 매크로 호출 판정은 사본을 두지 않는다 — 같은 술어를
+// `crates/tasty-doc-guards/tests/host_writes_nothing_to_stdout.rs` 도 쓴다(그쪽 좌변은
+// host 트리다). 한쪽만 고쳐지면 두 트리의 답이 갈린다.
+use tasty_doc_guards::source_text::invokes_macro;

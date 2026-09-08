@@ -259,6 +259,7 @@ const LANG_DIR_FLOOR: Floor = Floor {
     min: 1,
     measured: 3,
     measured_on: "2026-09-07",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
     why_this_gap: "이 모수는 지원 언어 수이고, 그 값 자체가 이 시험이 단정하는 대상이다. \
                    하한을 실측 3 에 붙이면 언어를 하나 빼는 정당한 변경이 순회 사망으로 \
                    잘못 진단된다. 여기서 하한은 순회 생존만 본다.",
@@ -740,7 +741,23 @@ fn brace_counts(line: &str) -> (i32, i32) {
 /// `t_replace` 와 host 의 `t_fmt_fit` 로 적힌 키는 이 검사를 통과했고, 그 자리에
 /// 오타를 넣어도 초록이었다(변이로 확인). 오타난 키는 `Translator` 가 **키 문자열을
 /// 그대로 돌려주므로** 사용자 화면에 `codex.reboot.screen_unreadableX` 가 나간다.
+/// 도출이 **몇 번** 일어났는지 센다.
+///
+/// 이 축에는 판사가 없다 — 초록의 판정에 시간이 안 들어가고, 워크플로에
+/// `timeout-minutes` 도 없다. 그래서 캐시가 죽으면 이 파일은 **초록인 채로**
+/// 두 자릿수 분이 된다(실측 2026-09-08: 캐시를 뺀 변이가 0.79 s → 230.10 s,
+/// 종료 코드는 0). 벽시계를 재는 판사는 공유 머신의 부하로 흔들리고, 이름이
+/// I/O 를 숨기는 자리를 정적으로 세는 판사는 **이 회귀를 원리적으로 못 본다** —
+/// 회귀가 함수 본문이 아니라 **호출 맥락**에서 나기 때문이다(같은 변이 전후로
+/// 그 술어의 결과가 완전히 동일했다).
+///
+/// 남는 것은 이것이다: 도출이 스캔 규모와 **무관한 횟수**로 일어나는지를
+/// 그 자리에서 세는 것. 부하와 무관하고(횟수다), 플랫폼과 무관하며(syscall 추적이
+/// 아니다), 거짓 빨강이 없다(결정적이다).
+static DERIVATIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn translation_entry_points() -> BTreeSet<String> {
+    DERIVATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     const SOURCES: &[&str] = &[
         "crates/tasty-i18n/src/lib.rs",
         "crates/tasty-plugin-sdk/src/i18n.rs",
@@ -908,6 +925,41 @@ fn literal_translation_keys_exist_in_catalog() {
     gather(root(), &mut files);
     files.sort();
 
+    // ★ 스캔 **전에** 묻는다. 같은 것을 두 번 부르고 두 번째가 도출을 안 하면 캐시가
+    // 산 것이다 — 스캔 규모와 무관하고 밀리초 안에 답한다. 아래 스캔 전체의 계수만
+    // 두면 판정이 **비용을 다 치른 뒤에** 나온다(실측 2026-09-08: 변이가 235.70 초를
+    // 쓰고 나서 빨개졌다). 게이트가 늦게 빨개지는 것은 안 빨개지는 것 다음으로 나쁘다.
+    let probe_a = DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed);
+    let probe_keys = literal_keys("    t(\"probe.key\")", None);
+    let probe_b = DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed);
+    let probe_again = literal_keys("    t(\"probe.key\")", None);
+    let probe_c = DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed);
+    // 탐침이 실제로 도출 경로를 타는지 함께 못박는다 — 아무것도 안 뽑으면 위 두 계수가
+    // 나란히 0 이 되어 아래 판정이 **무엇도 안 보고** 통과한다(R8 의 ④).
+    assert_eq!(
+        probe_keys, probe_again,
+        "탐침 두 호출이 다른 것을 냈다 — 판정의 전제(같은 입력·같은 출력)가 깨졌다"
+    );
+    assert_eq!(
+        probe_keys,
+        vec!["probe.key".to_string()],
+        "탐침이 키를 못 뽑았다 — 아래 도출 계수는 도출 경로를 안 탄 값이라 판정이 무의미하다"
+    );
+    assert_eq!(
+        probe_c - probe_b,
+        0,
+        "번역 진입점 도출이 호출마다 다시 일어난다(첫 호출 {} 회 · 둘째 호출 {} 회). \
+         `translation_call_prefixes` 의 `OnceLock` 캐시가 죽었다는 뜻이다.\n\
+         ★ 그러면 이 시험은 **초록인 채로** 두 자릿수 분이 된다 — 실측 2026-09-08 로 \
+         0.79 s → 230.10 s 였고 종료 코드는 0 이었다. 이 축에는 다른 판사가 없다: \
+         워크플로에 `timeout-minutes` 가 한 줄도 없고, 이름이 I/O 를 숨기는 자리를 \
+         정적으로 세는 술어는 **이 회귀를 원리적으로 못 본다**(회귀가 함수 본문이 아니라 \
+         호출 맥락에서 난다 — 같은 변이 전후로 그 술어의 결과가 완전히 동일했다).",
+        probe_b - probe_a,
+        probe_c - probe_b
+    );
+
+    let derivations_before = DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed);
     let mut problems = Vec::new();
     let mut pending_seen: BTreeSet<&str> = BTreeSet::new();
     for file in &files {
@@ -938,6 +990,22 @@ fn literal_translation_keys_exist_in_catalog() {
             }
         }
     }
+    // 도출은 스캔 규모와 무관해야 한다 — 상한이 파일 수·줄 수를 안 타는 것이 요점이다.
+    // 여유 1 은 병렬 실행 중인 `the_entry_point_derivation_is_alive` 의 몫이다(그 시험은
+    // 캐시를 일부러 안 탄다). 캐시가 죽으면 이 수는 스캔한 줄 수만큼 커진다 —
+    // 실측 2026-09-08 로 그 변이는 256,125 였다. 상한과 다섯 자릿수 떨어져 있어서
+    // 병렬 잡음이 판정을 흔들 수 없다.
+    let derivations = DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed) - derivations_before;
+    assert!(
+        derivations <= 2,
+        "스캔이 도는 동안 번역 진입점 도출이 {derivations} 회 일어났다(상한 2). \
+         `translation_call_prefixes` 의 캐시가 죽었다는 뜻이다 — 그러면 이 시험은 \
+         **초록인 채로** 두 자릿수 분이 된다(실측 0.79 s → 230.10 s).\n\
+         ★ 상한을 올려서 통과시키지 마라. 상한이 스캔 규모를 안 타는 상수인 것이 \
+         이 판정의 전부다 — 올리는 순간 '도출이 줄마다 일어나도 된다' 가 된다.\n\
+         캐시를 되살려라: `translation_call_prefixes` 는 `OnceLock` 으로 프로세스당 \
+         한 번만 도출해야 한다."
+    );
     assert!(
         problems.is_empty(),
         "t() keys not found in any lang/en.toml (typo, or the key was never added — t() would \

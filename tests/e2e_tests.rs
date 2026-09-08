@@ -1310,7 +1310,8 @@ fn a_request_naming_an_unowned_target_is_rejected() {
     let forwarded = tasty.call_raw("markdown.recent", json!({ "surface_id": 999_999 }));
     assert!(
         forwarded.get("result").is_some(),
-        "plugin namespace 의 메서드는 id 를 실어도 forward 돼야 한다: {forwarded}"
+        "plugin namespace 의 메서드는 id 를 실어도 forward 돼야 한다: {forwarded}{}",
+        common::bundle_staging_note()
     );
 
     // 지목 안 한 같은 메서드는 그대로 동작한다 — 폴백을 통째로 없앤 것이 아니다.

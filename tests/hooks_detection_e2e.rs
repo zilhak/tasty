@@ -33,13 +33,14 @@ fn output_match_hook_fires_on_real_pty_output() {
     let sid = tasty.create_workspace("hook-output-match").surface_id;
     tasty.wait_for_shell(sid);
 
+    // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
+    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다. 단조 카운터는 해상도가 없고,
+    // 프로세스 전역이라 같은 스레드의 재호출도 가른다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let unique = format!(
         "{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     let marker = std::env::temp_dir().join(format!("tasty-outputmatch-{unique}.txt"));
     std::fs::remove_file(&marker).ok();
@@ -72,13 +73,14 @@ fn idle_timeout_hook_fires_after_no_output() {
     let sid = tasty.create_workspace("hook-idle-timeout").surface_id;
     tasty.wait_for_shell(sid);
 
+    // 유일화 키에 **시각을 안 쓴다.** 시계의 해상도는 플랫폼의 성질이라 같은 코드가
+    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다. 단조 카운터는 해상도가 없고,
+    // 프로세스 전역이라 같은 스레드의 재호출도 가른다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let unique = format!(
         "{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     let marker = std::env::temp_dir().join(format!("tasty-idletimeout-{unique}.txt"));
     std::fs::remove_file(&marker).ok();

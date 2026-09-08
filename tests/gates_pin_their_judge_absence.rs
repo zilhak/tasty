@@ -36,6 +36,7 @@ const SCRIPT_FLOOR: Floor = Floor {
     min: 16,
     measured: 24,
     measured_on: "2026-09-07",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
     why_this_gap: "게이트·러너 스크립트는 회차마다 하나씩 늘고 가끔 하나가 접힌다 — 한 번에 \
                    크게 움직이는 모수가 아니다. 여유 8 은 그 폭을 견디되, 순회가 `scripts/lib` \
                    만 보거나 아예 안 내려간 상태는 잡는다",
@@ -185,4 +186,68 @@ fn every_exception_carries_a_reason() {
             "'{name}' 의 사유가 너무 짧다 — 왜 2 가 아닌 것이 옳은지를 적어야 한다"
         );
     }
+}
+
+/// ★ 종료 코드만으로는 이 가드가 지키려는 것을 안 잰다 — **처방까지 요구한다.**
+///
+/// 위 시험은 rc=2 만 본다. 그런데 이 파일의 머리말이 위험을 두는 자리는 종료 코드가
+/// 아니라 **실패문의 처방**이다("그 실패문의 처방(면제 주석·상한 올리기)이 실재하지
+/// 않는 결함을 영구히 봐주는 자국을 남긴다"). 지키려는 것이 처방인데 재는 것이 rc 뿐이면,
+/// **처방이 통째로 없는 상태가 그 사이로 지나간다.**
+///
+/// 실측(2026-09-08): 판정기를 안 보이게 하고 여섯 셸 게이트를 돌렸더니 다섯은 재빌드
+/// 명령을 찍고 `check-file-size.sh` 만 안 찍었다 — rc 는 다섯과 같은 2 라 위 시험은
+/// 초록이었다. 그 자리에 처음 선 사람은 무엇이 없는지도 모른 채 값을 읽게 된다.
+///
+/// **무엇을 요구하는가.** 판정기 이름이 든 `cargo build -p tasty-doc-guards --bin <이름>`
+/// 한 줄이다. 그 이름은 게이트가 `resolve_judge` 에 넘긴 것과 같아야 한다 — 다른 판정기를
+/// 지으라고 하면 명령이 있는 것이 없는 것보다 나쁘다(따라도 안 고쳐지고, 안 고쳐진 이유가
+/// 안 보인다). 그래서 **소비자 목록에서 읽은 이름**으로 맞춘다. 문구 전체를 걸지 않는
+/// 이유는 그것이 게이트마다 다르고 달라도 되기 때문이다 — 만지지 말라고 할 레버가
+/// 게이트마다 다르다(면제 주석 · 상한 · allowlist).
+#[test]
+fn every_judge_consumer_says_what_to_build() {
+    let stub = stub_cargo();
+    let all = consumers();
+    assert!(
+        !all.is_empty(),
+        "scripts/ 에서 resolve_judge 소비자를 하나도 못 셌다 — 세는 줄이 깨졌다"
+    );
+    let mut bad = Vec::new();
+    for (script, env_var) in &all {
+        if EXCEPTIONS.iter().any(|(name, _)| name == script) {
+            continue;
+        }
+        let judge = judge_name(script);
+        let want = format!("cargo build -p tasty-doc-guards --bin {judge}");
+        let (_, text) = run_blind(script, env_var, stub.path());
+        if !text.contains(&want) {
+            bad.push(format!("{script} (판정기 {judge})\n{text}"));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "판정기가 없을 때 **무엇을 지으라는 말이 없다.** rc=2 는 값을 쓰지 말라는 \
+         뜻일 뿐이고, 그 자리에 선 사람이 다음에 할 일을 안 알려주면 대신 눈에 보이는 \
+         레버(면제 주석 · 상한 · allowlist)를 만지게 된다 — 그것이 이 가드가 막으려는 \
+         자국이다. 그 판정기 이름이 든 `cargo build -p tasty-doc-guards --bin <이름>` \
+         한 줄을 실패문에 넣어라:\n{}",
+        bad.join("\n---\n")
+    );
+}
+
+/// 그 스크립트가 `resolve_judge` 에 넘긴 판정기 이름. 외우지 않고 소스에서 읽는다 —
+/// 외우면 판정기가 하나 늘거나 이름이 바뀌는 날 이 시험이 조용히 다른 것을 재게 된다.
+fn judge_name(script: &str) -> String {
+    let text = fs::read_to_string(root().join("scripts").join(script))
+        .unwrap_or_else(|e| panic!("{script} 를 못 읽는다: {e}"));
+    for line in text.lines() {
+        let t = line.trim_start();
+        if let Some(rest) = t.strip_prefix("resolve_judge ") {
+            if let Some(name) = rest.split_whitespace().next() {
+                return name.to_string();
+            }
+        }
+    }
+    panic!("{script} 에서 resolve_judge 의 판정기 이름을 못 읽었다 — 호출 형태가 바뀌었다");
 }

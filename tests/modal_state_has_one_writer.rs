@@ -17,13 +17,24 @@ use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, walk_with_floor};
 /// 그래서 인구의 하한을 순회가 자기 실패문과 함께 강제한다. 직접 `read_dir` 을 쓰지 않는
 /// 이유이기도 하다: 공용 순회를 쓰면 하한을 빠뜨릴 수 없다.
 const SRC_FLOOR: Floor = Floor {
-    min: 300,
-    measured: 598,
-    measured_on: "2026-09-07",
-    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수다. 크레이트 분해가 한 번에 수십 개를 \
-                   옮기므로(같은 주에 `state.rs` 절단이 그랬다) 여유를 넓게 잡는다. \
-                   좁게 잡으면 정상적인 분해가 이 가드를 빨갛게 만들고, 그러면 다음 사람이 \
-                   하한을 습관적으로 낮춰 결국 아무것도 안 지키게 된다.",
+    min: 587,
+    // 좌변의 사실은 `tasty_doc_guards::floored_walk::populations::SRC_RS` 하나가 갖는다 — 이 값을 여기에도 적어 두었을
+    // 때 두 자리가 591 과 598 로 갈렸고, 어느 쪽도 그날의 실제 수가 아니었다.
+    measured: tasty_doc_guards::floored_walk::populations::SRC_RS.measured,
+    measured_on: tasty_doc_guards::floored_walk::populations::SRC_RS.measured_on,
+    counted_on: tasty_doc_guards::floored_walk::populations::SRC_RS.counted_on,
+    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수다. **이 가드의 순회 생존 계기는 이 \
+                   하한 하나뿐이라**(형제 가드 `layering` 과 달리 깊이 하한도 앵커도 없다) \
+                   부분 사망을 이것만 본다. 그래서 여유를 움직임의 단위에서 파생시킨다: \
+                   `src/` 를 건드린 1257 커밋(2026-07-01~09-08)에서 감소 사건은 13 건이고 \
+                   가장 큰 것이 **9**(2026-07-02 의 렌더 경로 삭제), 나머지 12 건은 2 \
+                   이하다. 여유 18 은 그 최대 정리가 **두 번 겹치는** 폭이다 — 한 회차에 \
+                   정리가 둘 들어오는 것까지 견디고 열아홉째 파일부터 짖는다. ★ 단위 밖 \
+                   사건 하나를 이름으로 적는다: 크레이트 분해가 `src/` 에서 수십 개를 \
+                   한꺼번에 옮기는 것. 그 폭은 **이 창에서 관측되지 않았다**(다른 모수에서 \
+                   난 대이동을 이 모수의 배수로 쓰지 않는다 — 같은 낱말이 모수마다 40 배 \
+                   다른 폭을 뜻한다는 것이 ADR-0226 의 근거다). 그 사건이 나면 이 하한이 \
+                   먼저 짖고 그것이 옳다: 실패문은 하한을 내리라 하지 않고 다시 재라고 한다.",
 };
 
 fn sources() -> Vec<(String, String)> {

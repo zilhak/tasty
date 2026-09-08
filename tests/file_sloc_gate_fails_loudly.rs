@@ -16,13 +16,24 @@
 //! 위반(1) / 측정 실패(2) / 통과(0) 를 **서로 다른 코드**로 요구하므로, 셋 중 둘이 같은 값으로
 //! 붕괴하면 여기서 죽는다.
 //!
-//! **자동 채널**: 통합 테스트라 헤드리스 잡(전체 스위트)이 본다. Windows 잡은 `--lib --bins` 라
-//! 보지 않는데, 이 테스트는 `#[cfg(unix)]` 라 애초에 그 조합의 대상이 아니다.
+//! **자동 채널**: 통합 테스트라 헤드리스 잡(전체 스위트)이 본다.
+//!
+//! **Windows 에서 이 타깃은 빈다 — 커버리지 0 이고, 그 0 은 이제 미측정이 아니라 잰
+//! 값이다.** `#![cfg(unix)]` 라 그렇고, 그 cfg 가 그 타깃에서 실제로 거짓인 것을 재서
+//! 안다: `rustc --print cfg --target x86_64-pc-windows-gnu` 에 `unix` 선언이 **없다**
+//! (호스트에는 있다). 컴파일은 거기서도 통과한다 — `cargo clippy -p tasty --all-targets
+//! --locked --target x86_64-pc-windows-gnu` rc=0, 이 파일 진단 0 (실측 2026-09-08).
+//! 즉 **Windows 잡의 초록은 이 게이트가 거기서 돈다는 뜻이 아니다.** 한때 이 자리에
+//! "Windows 잡은 `--lib --bins` 라 안 본다" 고 적혀 있었는데, 그 잡은 `--all-targets`
+//! 로 이 타깃을 **컴파일한다** — 안 보는 것은 잡이 아니라 `cfg` 다.
 
 #![cfg(unix)]
 
+mod gate_env;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::process::Command;
 
 /// PATH 앞에 놓을 스텁 `tokei` 를 만든다. `body` 는 셸 스크립트 본문(shebang 제외).
@@ -293,6 +304,14 @@ fn the_warning_band_names_the_file_and_keeps_the_exit_code() {
         out.contains("src/zz_stub_warn.rs"),
         "경고는 **이름으로** 나와야 한다 — 수만 나오면 어느 파일인지 아무도 모른다: {out}"
     );
+    // 위 대조군(`nothing_in_the_band_prints_no_warning_section`)이 이 리터럴을 **부정**으로
+    // 건다. 부정 단언은 문구가 바뀌어도 안 빨개지므로 — 절이 영영 안 나와도 초록이다 —
+    // 여기서 같은 리터럴을 긍정으로 걸어 그 조용함을 이 시끄러움에 묶는다.
+    // `tests/negative_output_assertions_are_paired.rs` 가 그 짝지음을 강제한다.
+    assert!(
+        out.contains("경고 —"),
+        "띠에 든 파일이 있으면 경고 목록 절의 머리를 내야 한다: {out}"
+    );
 }
 
 #[test]
@@ -305,4 +324,364 @@ fn a_violation_and_a_warning_stay_separate() {
         out.contains("임계초과 1") && out.contains("경고(900↑) 1"),
         "위반과 경고가 서로 다른 칸이어야 한다: {out}"
     );
+}
+
+// ── 좌변이 갈리면 죽는다 ─────────────────────────────────────────────────
+//
+// 이 게이트는 같은 트리를 **두 번** 지목한다: 출하 사본을 뜰 때(판정기)와 그 사본을
+// 잴 때(tokei). 둘이 따로 적혀 있던 동안 한쪽만 손대면 나머지가 안 따라갔고, 그
+// 어긋남의 두 방향이 서로 다르게 조용했다 — 판정기만 좁으면 tokei 가 없는 디렉토리를
+// 열다 죽어 시끄럽지만(2), **tokei 만 좁으면 위반 0 · rc=0 으로 조용하다.**
+//
+// **판정 방법**: 위 시험들과 달리 진짜 레포를 안 본다. 합성 루트에 게이트를 깔고
+// 좌변 값을 `extra/` 만큼 늘린 뒤, 소비처가 따라오는지를 종료 코드로 묻는다.
+// "게이트에 `SCAN_DIRS` 가 나온다" 를 세는 문자열 확인은 **철자를 보는 것**이지 두
+// 소비처가 같은 값을 낸다는 것을 보는 게 아니다 — 변수를 선언해 놓고 한쪽이 옛
+// 문자열을 그대로 쓰는 상태(= 고치기 전의 모양)를 그대로 통과시킨다.
+//
+// ★ 스텁 `tokei` 가 **디스크를 실제로 읽는다.** 위 시험들의 스텁은 고정 JSON 을
+// 찍는데, 그러면 판정기가 사본을 어디까지 떴는지가 값에 안 나타나 이 물음에 답할 수
+// 없다. 그래서 이 절의 스텁만 인자로 받은 디렉토리 아래의 `.rs` 를 세고, 없는
+// 디렉토리에는 진짜 tokei 처럼 비영으로 죽는다 — 그 갈래가 판정기 좌변을 관측하는
+// 유일한 축이다.
+
+/// 합성 루트에 게이트와 그것이 source 하는 공용 판정기 찾기를 깐다.
+fn scan_synth_root() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("임시 디렉토리");
+    let root = dir.path();
+    let here = env!("CARGO_MANIFEST_DIR");
+    fs::create_dir_all(root.join("scripts/lib")).expect("scripts/lib");
+    fs::copy(
+        format!("{here}/scripts/check-file-size.sh"),
+        root.join("scripts/check-file-size.sh"),
+    )
+    .expect("게이트 복사");
+    fs::copy(
+        format!("{here}/scripts/lib/judge-bin.sh"),
+        root.join("scripts/lib/judge-bin.sh"),
+    )
+    .expect("판정기 찾기 공용 복사");
+    fs::write(root.join(".complexity-file-allowlist"), "").expect("빈 allowlist");
+    // 좌변이 안 비게 두 뿌리를 하나씩 실재시킨다. 둘 다 임계 이하다.
+    write_rs(root, "src/zz_small.rs", 10);
+    write_rs(root, "crates/zz/src/zz_small.rs", 10);
+    dir
+}
+
+/// `n` 줄짜리 `.rs` 를 만든다. 스텁 tokei 가 줄 수를 그대로 code 로 읽는다.
+fn write_rs(root: &Path, rel: &str, n: usize) {
+    let f = root.join(rel);
+    fs::create_dir_all(f.parent().expect("부모")).expect("디렉토리");
+    let body: String = (0..n).map(|i| format!("fn f{i}() {{}}\n")).collect();
+    fs::write(&f, body).expect("파일 쓰기");
+}
+
+/// 디스크를 실제로 읽는 스텁 `tokei` 를 PATH 앞에 깔 디렉토리를 만든다.
+///
+/// 없는 디렉토리에 **비영으로 죽는다** — 진짜 tokei 와 같은 갈래이고, 판정기 좌변이
+/// 안 따라왔을 때 그 사실이 rc 에 나타나는 유일한 통로다.
+fn stub_tokei_reading_disk() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("스텁 디렉토리");
+    let bin = dir.path().join("tokei");
+    fs::write(
+        &bin,
+        "#!/bin/sh\n\
+         # `tokei --output json <dirs...>` 흉내: 인자 아래 .rs 의 줄 수를 code 로 낸다.\n\
+         shift 2\n\
+         for d in \"$@\"; do [ -d \"$d\" ] || exit 1; done\n\
+         files=$(for d in \"$@\"; do find \"$d\" -name '*.rs' -type f; done)\n\
+         printf '{\"Rust\":{\"reports\":['\n\
+         sep=\"\"\n\
+         for f in $files; do\n\
+         n=$(wc -l < \"$f\" | tr -d ' ')\n\
+         printf '%s{\"name\":\"%s\",\"stats\":{\"code\":%s}}' \"$sep\" \"$f\" \"$n\"\n\
+         sep=\",\"\n\
+         done\n\
+         printf ']}}'\n",
+    )
+    .expect("스텁 tokei");
+    make_executable(&bin);
+    dir
+}
+
+/// 인자로 받은 디렉토리를 사본으로 옮기고 옮긴 `.rs` 수를 찍는 스텁 판정기.
+///
+/// 게이트가 **판정기가 말한 수**와 디스크의 사본 수를 맞춰 보므로 그 수를 정직하게 낸다.
+fn stub_strip_copying() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("스텁 디렉토리");
+    let bin = dir.path().join("strip-cfg-test");
+    fs::write(
+        &bin,
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
+         out=$1; shift; src=$1; shift\n\
+         mkdir -p \"$out\" || exit 1\n\
+         for d in \"$@\"; do\n\
+         [ -d \"$src/$d\" ] || continue\n\
+         cp -r \"$src/$d\" \"$out/$d\" || exit 1\n\
+         done\n\
+         find \"$out\" -name '*.rs' -type f | wc -l | tr -d ' '\n",
+    )
+    .expect("스텁 판정기");
+    make_executable(&bin);
+    dir
+}
+
+fn make_executable(p: &Path) {
+    let mut perm = fs::metadata(p).expect("권한 읽기").permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(p, perm).expect("실행권한");
+}
+
+/// 게이트 사본의 좌변을 `extra` 만큼 늘린다. 치환 실패는 그 자리에서 죽는다 —
+/// 좌변이 다시 여럿으로 흩어졌다는 뜻이라 그것도 잡아야 할 회귀다.
+fn widen_scan_dirs(root: &Path) {
+    let p = root.join("scripts/check-file-size.sh");
+    let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
+    let widened = text.replace("SCAN_DIRS=(src crates)", "SCAN_DIRS=(src crates extra)");
+    assert_ne!(
+        widened, text,
+        "게이트에 `SCAN_DIRS=(src crates)` 한 줄이 없다 — 좌변이 다시 여럿으로 \
+         흩어졌거나 이름이 바뀌었다. 이 시험은 그 한 값을 늘려 소비처를 재므로 멈춘다."
+    );
+    fs::write(&p, widened).expect("게이트 사본 쓰기");
+}
+
+fn run_scan_gate(root: &Path) -> (i32, String) {
+    let tokei = stub_tokei_reading_disk();
+    let strip = stub_strip_copying();
+    let path = std::env::var("PATH").unwrap_or_default();
+    let out = Command::new("bash")
+        .arg(root.join("scripts/check-file-size.sh"))
+        .current_dir(root)
+        .env("PATH", format!("{}:{path}", tokei.path().display()))
+        .env(
+            "TASTY_STRIP_CFG_TEST_BIN",
+            strip.path().join("strip-cfg-test"),
+        )
+        .output()
+        .expect("게이트 실행");
+    (
+        out.status.code().unwrap_or(-1),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    )
+}
+
+/// 좌변을 늘리면 **둘 다** 따라와 새 영토의 임계 초과가 위반으로 나온다.
+///
+/// 죽이는 변이 둘이 서로 다른 코드로 갈린다:
+///   tokei 좌변만 옛 문자열   → 사본은 다 떴는데 안 재서 **rc=0**(조용한 방향).
+///   판정기 좌변만 옛 문자열  → 사본에 없는 디렉토리를 tokei 가 열다 죽어 **rc=2**.
+#[test]
+fn widening_the_left_side_moves_both_consumers() {
+    let d = scan_synth_root();
+    write_rs(d.path(), "extra/zz_big.rs", 1500);
+    widen_scan_dirs(d.path());
+    let (code, text) = run_scan_gate(d.path());
+    assert_eq!(
+        code, 1,
+        "좌변을 늘렸는데 새 영토의 임계 초과가 위반으로 안 나온다 — 판정기와 tokei 중 \
+         하나가 안 따라왔다:\n{text}"
+    );
+    assert!(
+        text.contains("extra/zz_big.rs"),
+        "위반의 좌표를 안 찍는다:\n{text}"
+    );
+}
+
+/// ★ R1056 축 — **판정 대상 수는 rc 에 안 들어간다.**
+///
+/// 위 시험은 임계를 넘는 파일로 재므로 rc 가 갈린다. 그런데 좌변이 갈리는 흔한 모양은
+/// 그게 아니다: 새 영토에 임계 **이하** 파일만 있으면 tokei 좌변이 안 따라와도 위반은
+/// 여전히 0 이고 rc 는 0 이다. 바뀌는 것은 `판정 N 개` 한 수뿐인데 그 수는 판정에
+/// 안 들어간다(0 일 때만 판정 불가로 갈린다). 그래서 그 자리는 **rc 로는 관측이 안
+/// 되고**, 이 시험이 없으면 tokei 좌변을 되돌리는 변이가 안 죽는다.
+///
+/// 절대값을 외우지 않는다 — 늘리기 전후의 **차**를 본다. 늘린 것이 파일 하나이므로 1 이다.
+#[test]
+fn widening_the_left_side_moves_the_judged_count() {
+    fn judged(text: &str) -> usize {
+        let tail = text
+            .split("게이트 판정 ")
+            .nth(1)
+            .unwrap_or_else(|| panic!("초록 문구에서 판정 수를 못 읽었다:\n{text}"));
+        tail.split(' ')
+            .next()
+            .and_then(|n| n.trim().parse().ok())
+            .unwrap_or_else(|| panic!("판정 수가 숫자가 아니다:\n{text}"))
+    }
+
+    let d = scan_synth_root();
+    write_rs(d.path(), "extra/zz_small.rs", 10);
+    let (code, before) = run_scan_gate(d.path());
+    assert_eq!(code, 0, "늘리기 전인데 초록이 아니다:\n{before}");
+
+    widen_scan_dirs(d.path());
+    let (code, after) = run_scan_gate(d.path());
+    assert_eq!(code, 0, "좌변을 늘렸더니 초록이 아니다:\n{after}");
+
+    assert_eq!(
+        judged(&after),
+        judged(&before) + 1,
+        "좌변을 늘렸는데 판정 대상 수가 안 늘었다 — 새 영토를 안 보고도 초록이 같은 수를 \
+         찍는다. 임계 초과가 없는 동안 이 수가 그 좌변을 관측하는 유일한 자리다.\
+         \n늘리기 전:\n{before}\n늘린 뒤:\n{after}"
+    );
+}
+
+/// ★ R1056 축 — **최댓값과 남은 여유도 rc 에 안 들어간다.**
+///
+/// 위 `judged` 축과 같은 성질이지만 다른 수다. 게이트 본문은 이 값을 "여유가 0 인지
+/// 900 인지가 통과/실패에 안 나타난다" 는 이유로 찍는다 — 실제로 임계 이하 최댓값이
+/// 999 인데 아무도 그것을 모르던 자리를 실측으로 밟고 넣은 값이다.
+///
+/// 실측(2026-09-08): `${max_code}` 를 상수 `0` 으로 바꾸는 변이에서 위 열다섯이 전부
+/// 통과했다. 그 수가 경고 띠의 근거이자 이 게이트의 유일한 조기 신호인데, 그것이
+/// 맞는 파일을 가리키는지는 아무도 안 봤다.
+///
+/// 절대값을 외우지 않는다 — 프로브 파일의 줄 수를 그대로 요구한다(스텁 tokei 가
+/// 줄 수를 code 로 읽는다). 최댓값은 임계 이하 중 가장 큰 것이므로 그 파일이다.
+#[test]
+fn the_reported_maximum_names_the_largest_judged_file() {
+    let d = scan_synth_root();
+    // 임계(1000) 이하에서 가장 크다. 바닥 파일 둘은 10 줄이라 이것이 최댓값이다.
+    write_rs(d.path(), "extra/zz_tall.rs", 500);
+    widen_scan_dirs(d.path());
+    let (code, text) = run_scan_gate(d.path());
+    assert_eq!(code, 0, "임계 이하인데 초록이 아니다:\n{text}");
+    assert!(
+        text.contains("최대 500 (extra/zz_tall.rs)"),
+        "최댓값이 가장 큰 판정 대상을 안 가리킨다 — 이 수가 이 게이트의 유일한 조기 \
+         신호이고, 여유가 0 인지 900 인지는 rc 에 안 나타난다:\n{text}"
+    );
+    assert!(
+        text.contains("남은 여유 500"),
+        "남은 여유가 최댓값에서 안 나온다 — 두 수가 갈리면 어느 쪽을 믿을지가 없다:\n{text}"
+    );
+}
+
+// ── 전제 도구가 없을 때: 판정 불가여야 한다 ────────────────────────────────
+//
+// 이 게이트의 다른 "측정이 안 됐다" 갈래는 전부 시험이 rc=2 로 박아 뒀는데, **도구
+// 부재 두 갈래만 안 박혀 있었다.** 실측 2026-09-08: 그 두 `exit 2` 를 `exit 0` 으로
+// 바꾸고 이 계열 네 타깃(47 시험)을 돌리면 **한 건도 안 죽는다.** 즉 그 자리가 조용한
+// 통과로 격하돼도 아무도 안 빨개진다 — `gates_pin_their_judge_absence.rs` 의 논거가
+// 그대로 여기 적용된다(격하 갈래는 어디서도 안 돈다).
+//
+// 도구의 부재는 환경변수로 못 만든다. `command -v` 는 **자리**를 보므로 PATH 를 새로
+// 짓는다(`tests/gate_env`).
+
+#[test]
+fn a_missing_tokei_is_not_a_pass() {
+    // `bash` 와 `dirname` 만 보이는 PATH — 게이트가 자기 루트를 찾는 데까지는 가고
+    // tokei 에서 멈춘다. rc 만 보면 "다른 이유로 죽었다" 와 안 갈리므로 메시지도 본다.
+    let path = gate_env::only(&["bash", "dirname"]);
+    let out = Command::new("bash")
+        .arg(format!(
+            "{}/scripts/check-file-size.sh",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .env("PATH", path.path())
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("게이트 실행");
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "tokei 가 없으면 판정 불가여야 한다 — 0 이면 아무것도 안 재고 통과한 것이다:\n{text}"
+    );
+    assert!(text.contains("tokei 미설치"), "{text}");
+}
+
+#[test]
+fn a_missing_python_is_not_a_pass() {
+    // tokei 는 있고 python 만 없는 자리. tokei 스텁을 그 PATH 안에 직접 쓴다.
+    let path = gate_env::only(&["bash", "dirname"]);
+    let tokei = path.path().join("tokei");
+    fs::write(&tokei, "#!/bin/sh\nexit 0\n").expect("tokei 스텁");
+    let mut perm = fs::metadata(&tokei).expect("스텁 metadata").permissions();
+    perm.set_mode(0o755);
+    fs::set_permissions(&tokei, perm).expect("실행권한");
+
+    let out = Command::new("bash")
+        .arg(format!(
+            "{}/scripts/check-file-size.sh",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .env("PATH", path.path())
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("게이트 실행");
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "python 이 없으면 판정 불가여야 한다:\n{text}"
+    );
+    assert!(text.contains("python 미설치"), "{text}");
+}
+
+// ── 판정기가 사본 수를 안 낼 때 ────────────────────────────────────────────
+//
+// 위 두 갈래와 같은 성질이다. 판정기가 **숫자가 아닌 것**을 내거나 사본 디렉토리를
+// 아예 안 만들면 게이트는 사본이 모자란지 알 수 없다. 형제 갈래(사본 수 **불일치**)는
+// `a_partially_successful_stripper_is_not_a_pass` 가 박아 뒀는데 이 둘은 비어 있었다.
+
+#[test]
+fn a_nonnumeric_stripper_count_is_not_a_pass() {
+    let (code, out) = run_gate_full(UNDER_THRESHOLD, "mkdir -p \"$1\"\necho abc\nexit 0");
+    assert_eq!(
+        code, 2,
+        "판정기가 수를 안 냈는데 판정 불가가 아니다 — 그 수 없이는 사본이 모자란지 모른다:\n{out}"
+    );
+    assert!(out.contains("사본 수를 안 냈다"), "{out}");
+}
+
+#[test]
+fn an_uncountable_copy_count_is_not_a_pass() {
+    // 사본 디렉토리를 안 만드는 것으로는 이 갈래에 **못 닿는다** — 게이트가 그 디렉토리를
+    // 자기가 미리 만들어서 `find` 가 0 을 내고, 그러면 형제 갈래(수 **불일치**)로 간다.
+    // 실측으로 밟았다. 세는 수단 자체가 죽어야 이 갈래다.
+    let dir = tempfile::tempdir().expect("임시 디렉토리");
+    for (name, body) in [
+        ("tokei", format!("#!/bin/sh\n{UNDER_THRESHOLD}\n")),
+        ("strip-cfg-test", "#!/bin/sh\nif [ \"$1\" = \"--check-fresh\" ]; then exit 3; fi\nmkdir -p \"$1\"\necho 0\nexit 0\n".to_string()),
+        ("find", "#!/bin/sh\nexit 1\n".to_string()),
+    ] {
+        let p = dir.path().join(name);
+        fs::write(&p, body).expect("스텁 작성");
+        let mut perm = fs::metadata(&p).expect("스텁 metadata").permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&p, perm).expect("실행권한");
+    }
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = Command::new("bash")
+        .arg(format!(
+            "{}/scripts/check-file-size.sh",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .env("PATH", path)
+        .env(
+            "TASTY_STRIP_CFG_TEST_BIN",
+            dir.path().join("strip-cfg-test"),
+        )
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("게이트 실행");
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "사본 수를 못 셌는데 판정 불가가 아니다:\n{text}"
+    );
+    assert!(text.contains("사본 수를 셀 수 없다"), "{text}");
 }

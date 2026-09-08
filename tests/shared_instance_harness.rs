@@ -7,10 +7,106 @@
 
 mod common;
 
+use common::spawn_diag;
+
 use std::sync::Mutex;
 use std::time::Duration;
 
 use serde_json::json;
+
+/// 자식 모드 표지 — 이 값이 있으면 아래 재실행 시험은 아무것도 안 하고 돌아간다.
+/// 없으면 자식이 자기를 또 띄워 무한히 내려간다.
+const BLOCKED_BOOT_CHILD: &str = "TASTY_TEST_BLOCKED_BOOT_CHILD";
+
+/// 래치의 **효과**를 잰다 — 순서가 아니라 결과다.
+///
+/// `tests/common/mod.rs` 의 `get_or_init` 클로저는 첫 줄에서 래치를 걸고 그 다음에
+/// 프로세스를 띄운다. 그 배치가 *있는지*는 정적으로 판정된다
+/// (`crates/tasty-doc-guards/tests/spawn_latch_precedes_the_spawn.rs`). 안 잡히던 것은
+/// **그 배치가 실제로 증폭을 막는가** 였다. 막는 장면은 부팅이 실패했을 때만 나오는데
+/// 성공하는 환경에서는 그 조건이 안 생기고, 그래서 이 축은 오래 사람이 슬롯에서
+/// 벽시계를 재는 것뿐이었다.
+///
+/// **조건을 만든다.** 하네스가 띄울 바이너리를 실재하지 않는 경로로 덮으면
+/// [`spawn_diag::instance_bin`] 이 그 자리에서 죽는다 — 프로세스는 하나도 안 뜨고
+/// 상한을 기다리지도 않는다. 그러면 첫 호출은 래치를 걸고 spawn 경로에서 죽고,
+/// 나머지 호출은 래치에 막혀 spawn 경로에 **닿지도 못한다.**
+///
+/// 조건을 **자식 프로세스**에서 만드는 이유는 공유 인스턴스가 프로세스 전역이기
+/// 때문이다. 이 바이너리 안에서 조건을 만들면 같은 바이너리의 다른 시험이 전부 그
+/// 실패에 휘말린다 — 조건과 나머지 스위트는 한 프로세스에 공존할 수 없다.
+///
+/// ★ 이 시험이 **못 덮는 것**: `tests/gui_common/mod.rs` 쪽 하네스. 같은 기전을 쓰지만
+/// 그 하네스는 `tests/gui_tests.rs` 에 살고 그 바이너리는 어떤 자동 채널도 안 돈다 —
+/// 거기에 무엇을 넣어도 아무도 안 돌린다. 밖에서 그 바이너리를 재실행하려면 경로를
+/// `target/<프로필>/deps/` 에서 주워야 하는데, 그 조합에서 그 바이너리는 **빌드되지도
+/// 않아** 시험이 건너뛰기로 끝난다. 건너뛰는 잡은 0 건 발견과 구별되지 않으므로
+/// 그것은 채널이 아니다.
+#[test]
+fn a_blocked_boot_costs_one_spawn_attempt_no_matter_how_many_tests_ask() {
+    if std::env::var_os(BLOCKED_BOOT_CHILD).is_some() {
+        return;
+    }
+    // 프로세스 **안**에서 유일해야 하고, 그 유일성을 시계에 지우지 않는다. 시계는
+    // 프로세스 간 축만 갈라 주고(그 축은 `process::id()` 가 이미 진다) 같은 프로세스가
+    // 연달아 부르는 경우는 **해상도**에 맡기는데, 그 해상도는 플랫폼이 정한다 —
+    // 한 OS 에서 초록인 것이 다른 OS 에서 깨지고 그때 실패는 "경로가 이미 있다" 로
+    // 나와 원인을 안 가리킨다. 단조 카운터는 해상도가 없다.
+    //
+    // 이 자리는 시계가 의도된 선택도 아니다. 이 경로는 **없어야 한다**는 것이 전부라
+    // 회차마다 달라야 할 이유가 없다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let missing = std::env::temp_dir().join(format!(
+        "tasty-no-such-binary-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    assert!(
+        !missing.exists(),
+        "조건을 만들 경로가 실재한다 — 그러면 이 시험은 부팅이 막힌 상황을 안 만든다: {}",
+        missing.display()
+    );
+
+    let exe = std::env::current_exe().expect("이 시험 바이너리의 경로를 못 얻었다");
+    let out = std::process::Command::new(&exe)
+        .args(["--test-threads=1", "--nocapture"])
+        .env(BLOCKED_BOOT_CHILD, "1")
+        .env(spawn_diag::INSTANCE_BIN_ENV, &missing)
+        .output()
+        .expect("자기 바이너리를 자식으로 못 띄웠다");
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // 첫 팔 — 조건이 실제로 만들어졌나. 안 만들어졌으면 아래 두 수는 우연히 맞을 수 있다.
+    let attempts = log.matches("가리키는 경로에 실행 파일이 없다").count();
+    assert_eq!(
+        attempts, 1,
+        "부팅이 막힌 조건에서 spawn 경로에 닿은 횟수가 {attempts} 다(기대 1).\n\
+         0 이면 조건이 안 만들어진 것이라 이 시험은 아무것도 안 쟀고, 2 이상이면 \
+         래치가 두 번째를 못 막은 것이다 — 그 둘은 같은 수로 안 나온다.\n\
+         자식 출력:\n{log}"
+    );
+
+    // 둘째 팔 — 나머지는 래치에 막혔나. "spawn 시도 1" 만으로는 나머지가 **왜** 안 떴는지
+    // 모른다(전부 건너뛰었어도 1 이다). 막힌 것들이 래치의 문장을 달고 나와야 한다.
+    let latched = log.matches("공유 인스턴스 spawn 이 이미 실패했다").count();
+    assert!(
+        latched >= 2,
+        "래치에 막힌 호출이 {latched} 건이다(하한 2).\n\
+         이 바이너리에는 `shared()` 를 부르는 시험이 여럿 있으므로, 첫 실패 뒤의 \
+         호출들은 전부 래치의 문장을 달고 나와야 한다. 0 이면 래치가 안 걸렸거나 \
+         나머지 시험이 `shared()` 를 안 부른 것이다.\n\
+         자식 출력:\n{log}"
+    );
+    assert!(
+        !out.status.success(),
+        "부팅이 막혔는데 자식이 초록으로 끝났다 — 조건이 안 만들어졌다는 뜻이다.\n\
+         자식 출력:\n{log}"
+    );
+}
 
 /// 서로 다른 `#[test]` 가 관측한 `(ipc port, workspace id)`. 실행 순서와 무관하게
 /// 교차 검증하려고 관측값을 누적한다.

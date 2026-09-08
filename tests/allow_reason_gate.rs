@@ -165,6 +165,26 @@ fn run(root: &Path) -> (i32, String) {
 /// 치환 실패는 그 자리에서 죽는다 — 좌변이 다시 여럿으로 흩어졌다는 뜻이라 그것도
 /// 잡아야 할 회귀다.
 fn widen_and_cap(root: &Path, cap: usize) {
+    set_cap(root, cap);
+    widen_only(root);
+}
+
+/// 상한만 프로브에 맞춘다. 좌변은 안 건드린다 — 늘리기 **전후**를 견주는 시험이
+/// 앞쪽에서도 초록이어야 하기 때문이다.
+fn set_cap(root: &Path, cap: usize) {
+    let p = root.join("scripts/check-allow-reason.sh");
+    let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
+    let capped = text.replace("CAP=182", &format!("CAP={cap}"));
+    assert_ne!(
+        capped, text,
+        "게이트에 `CAP=182` 한 줄이 없다 — 상한 표기가 바뀌었다. 이 시험은 상한을 \
+         프로브에 맞춰 놓고 초록을 기대하므로 여기서 멈춘다."
+    );
+    fs::write(&p, capped).expect("게이트 사본 쓰기");
+}
+
+/// 좌변만 `extra/*.rs` 만큼 늘린다.
+fn widen_only(root: &Path) {
     let p = root.join("scripts/check-allow-reason.sh");
     let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
     let widened = text.replace(
@@ -176,13 +196,7 @@ fn widen_and_cap(root: &Path, cap: usize) {
         "게이트에 `SCAN_SPECS=(…)` 한 줄이 없다 — 좌변이 다시 여럿으로 흩어졌거나 \
          이름이 바뀌었다. 이 시험은 그 한 값을 늘려 소비처를 재므로 여기서 멈춘다."
     );
-    let capped = widened.replace("CAP=182", &format!("CAP={cap}"));
-    assert_ne!(
-        capped, widened,
-        "게이트에 `CAP=182` 한 줄이 없다 — 상한 표기가 바뀌었다. 이 시험은 상한을 \
-         프로브에 맞춰 놓고 초록을 기대하므로 여기서 멈춘다."
-    );
-    fs::write(&p, capped).expect("게이트 사본 쓰기");
+    fs::write(&p, widened).expect("게이트 사본 쓰기");
 }
 
 /// 근거 없는 억제 하나. 좌변이 이 파일을 보면 값이 1 이 된다.
@@ -302,5 +316,236 @@ fn widening_the_left_side_moves_the_untracked_check() {
     assert!(
         text.contains("extra/zz_probe.rs"),
         "무엇이 인덱스에 없는지를 안 찍는다:\n{text}"
+    );
+}
+
+/// ★ R1056 축 — **훑은 수는 rc 에 안 들어간다.**
+///
+/// 위 다섯은 전부 `count`(근거 없는 억제)로 rc 를 가른다. 그런데 좌변이 갈리는 흔한
+/// 모양은 그게 아니다: 새 영토에 억제가 아예 없으면 `count` 는 그대로고 rc 도 그대로다.
+/// 바뀌는 것은 `훑은 .rs N개` 한 수뿐인데 그 수는 판정에 안 들어간다 — 좌변이
+/// **완전히** 비어야 판정 불가로 갈리고, 반쯤 줄어든 좌변은 여기로 온다.
+///
+/// 실측(2026-09-08): 그 수를 상수 `0` 으로 바꾸는 변이에서 위 다섯이 전부 통과했다.
+/// 게이트 본문은 그 수를 "좌변이 반쯤 줄어도 이 수 없이는 화면에 아무 신호가 없다" 는
+/// 이유로 찍는데, 정작 그 수가 좌변을 따라가는지는 아무도 안 봤다.
+///
+/// 절대값을 외우지 않는다 — 늘리기 전후의 **차**를 본다. 늘린 것이 파일 하나라 1 이다.
+#[test]
+fn widening_the_left_side_moves_the_scanned_count() {
+    fn scanned(text: &str) -> usize {
+        let tail = text
+            .split("훑은 .rs ")
+            .nth(1)
+            .unwrap_or_else(|| panic!("초록 문구에서 훑은 수를 못 읽었다:\n{text}"));
+        tail.split('개')
+            .next()
+            .and_then(|n| n.trim().parse().ok())
+            .unwrap_or_else(|| panic!("훑은 수가 숫자가 아니다:\n{text}"))
+    }
+
+    let d = synth_root();
+    // 억제가 없는 파일이다 — `count` 를 안 움직이는 것이 이 시험의 요점이다.
+    write_file(d.path(), "extra/zz_quiet.rs", "fn probe() {}\n");
+    git(d.path(), &["add", "-A"]);
+
+    set_cap(d.path(), 0);
+    let (code, before) = run(d.path());
+    assert_eq!(code, 0, "늘리기 전인데 초록이 아니다:\n{before}");
+
+    widen_only(d.path());
+    let (code, after) = run(d.path());
+    assert_eq!(code, 0, "좌변을 늘렸더니 초록이 아니다:\n{after}");
+
+    assert_eq!(
+        scanned(&after),
+        scanned(&before) + 1,
+        "좌변을 늘렸는데 훑은 수가 안 늘었다 — 새 영토에 억제가 없는 동안 이 수가 그 \
+         좌변을 관측하는 유일한 자리다.\n늘리기 전:\n{before}\n늘린 뒤:\n{after}"
+    );
+}
+
+// ── 판정 자체 — 래칫이 **양쪽으로 서는가** ──────────────────────────────
+//
+// 위 여섯은 전부 **좌변**을 잰다: 상한을 프로브에 맞춰 놓고 초록을 기대하는 형태라,
+// 판정 갈래가 통째로 무너져도(두 `exit 1` 이 `exit 0` 이 되어도) 여섯 다 초록이다.
+//
+// 실측 2026-09-08: 이 게이트의 거절 다섯 자리에 완화 변이를 하나씩 넣으니 **둘만
+// 죽었다**(미추적 검사·판정기 부재). 살아남은 셋이 좌변이 통째로 빈 갈래와 **래칫의
+// 판정 둘**이다 — 이 게이트가 존재하는 이유인 그 판정에 아무 시험도 없었다. 형제
+// `check-shared-walk-ratchet.sh` 도 같은 모양이었다(5 중 2).
+//
+// **상한 값을 재는 것이 아니다.** 픽스처가 게이트의 상수로 트리를 지으면 그 상수에
+// 대해서는 항등식이 된다. 여기서 재는 것은 판정 **기제**(넘으면 1 · 모자라면 1 ·
+// 같으면 0)이고, 실제 상한이 옳은지는 게이트가 세는 실물이 답한다.
+
+/// 근거 없는 억제를 `n` 개 담은 프로브.
+fn bare_probe(root: &Path, n: usize) {
+    let body: String = (0..n)
+        .map(|i| format!("#[allow(dead_code)]\nfn probe{i}() {{}}\n"))
+        .collect();
+    write_file(root, "src/zz_probe.rs", &body);
+    git(root, &["add", "-A"]);
+}
+
+/// 값이 상한과 같으면 통과(0)다. **대조군.**
+///
+/// 양성 대조(2026-09-08, 내 트리): 게이트의 상한 비교를 `-gt` → `-ge` 로 바꾸면(같아도
+/// 위반) 이 시험이 rc=101 로 죽는다. **다만 배타적이지 않다** — 같은 변이가
+/// `widening_the_left_side_moves_*` 다섯도 함께 죽인다(이 타깃 6 failed). 그 다섯은
+/// 좌변을 넓히기 **전** 팔에서 상한을 프로브에 맞춰 놓고 rc=0 을 기대하므로, 같음 갈래를
+/// 각자 한 번씩 더 밟는다.
+///
+/// 그래서 이 대조군이 더하는 것은 **검출이 아니라 이름**이다. 그 갈래가 깨졌을 때
+/// 다섯 개의 "좌변이 안 움직인다" 대신 "값이 상한과 같은데 초록이 아니다" 가 함께 뜬다 —
+/// 무엇이 깨졌는지를 가리키는 것은 뒤쪽뿐이다. 숨기지 않고 적어 둔다.
+#[test]
+fn a_count_at_the_cap_passes() {
+    let d = synth_root();
+    bare_probe(d.path(), 2);
+    set_cap(d.path(), 2);
+    let (code, text) = run(d.path());
+    assert_eq!(code, 0, "값이 상한과 같은데 초록이 아니다:\n{text}");
+}
+
+/// 상한을 넘으면 위반(1)이고, 실패문이 **상한을 올리지 말라**고 말한다.
+#[test]
+fn a_count_over_the_cap_is_a_violation() {
+    let d = synth_root();
+    bare_probe(d.path(), 2);
+    set_cap(d.path(), 1);
+    let (code, text) = run(d.path());
+    assert_eq!(code, 1, "상한을 넘었는데 위반이 아니다:\n{text}");
+    assert!(
+        text.contains("상한을 올려서 통과시키지 마라"),
+        "상한을 올리지 말라는 처방이 없다 — 이 자리의 눈에 보이는 레버가 상한과 \
+         면제 주석 둘이라, 처방을 안 적으면 둘 중 하나가 만져진다:\n{text}"
+    );
+}
+
+/// 상한 아래로 내려가도 위반(1)이다.
+#[test]
+fn a_count_under_the_cap_is_also_a_violation() {
+    let d = synth_root();
+    bare_probe(d.path(), 2);
+    set_cap(d.path(), 3);
+    let (code, text) = run(d.path());
+    assert_eq!(
+        code, 1,
+        "값이 상한 아래인데 초록이다 — 남는 여유가 곧 안 보는 구간이다:\n{text}"
+    );
+    assert!(
+        text.contains("CAP 을"),
+        "상한을 내리라는 처방이 없다:\n{text}"
+    );
+}
+
+/// 근거 주석이 붙은 억제를 `n` 개 담은 프로브. `head` 가 억제 바로 위 주석 줄이다.
+fn reasoned_probe(root: &Path, head: &str, n: usize) {
+    let body: String = (0..n)
+        .map(|i| format!("{head}\n#[allow(dead_code)]\nfn probe{i}() {{}}\n"))
+        .collect();
+    write_file(root, "src/zz_probe.rs", &body);
+    git(root, &["add", "-A"]);
+}
+
+/// **마커만 있고 뒤가 비면 근거가 아니다.**
+///
+/// 이것이 이 게이트의 오래된 구멍이었다 — 판정이 `줄 ~ 마커정규식` 이라 `// 이유:` 한
+/// 줄이면 그 억제는 영영 안 보였다. 옳은 수선의 **형태만** 흉내 내면 통과하는 자리다.
+/// 프로브 둘을 상한 둘에 맞춰 두었으므로, 근거로 인정되면 값이 0 이 되어 **상한 미달**
+/// 로도 죽는다 — 그래서 이 시험은 rc 만이 아니라 값을 문장에서 읽는다.
+#[test]
+fn a_bare_marker_with_nothing_after_it_is_not_a_reason() {
+    let d = synth_root();
+    reasoned_probe(d.path(), "// 이유:", 2);
+    set_cap(d.path(), 2);
+    let (code, text) = run(d.path());
+    assert_eq!(
+        code, 0,
+        "마커만 있는 자리를 근거로 세고 있다 — 값이 상한 2 에 안 닿았다:\n{text}"
+    );
+    assert!(
+        text.contains(": 2건"),
+        "빈 마커 둘이 근거 없는 억제로 안 세어졌다:\n{text}"
+    );
+}
+
+/// **음성 대조 — 마커 뒤에 내용이 있으면 근거다.** 위 시험에서 한 구절만 더한다.
+///
+/// 이 짝이 없으면 위 시험은 "마커를 아예 안 읽는다" 여도 초록이다.
+#[test]
+fn a_marker_followed_by_text_is_a_reason() {
+    let d = synth_root();
+    reasoned_probe(d.path(), "// 이유: 생성 코드라 이름이 안 쓰인다.", 2);
+    set_cap(d.path(), 0);
+    let (code, text) = run(d.path());
+    assert_eq!(code, 0, "근거가 붙었는데 위반으로 세고 있다:\n{text}");
+    assert!(text.contains(": 0건"), "값이 0 이 아니다:\n{text}");
+}
+
+/// **근거가 다음 줄부터 이어져도 근거다.** 마커 줄에서만 뒤를 보면 이 형태가 오탐이 된다.
+#[test]
+fn a_marker_whose_text_starts_on_the_next_line_is_a_reason() {
+    let d = synth_root();
+    reasoned_probe(d.path(), "// 이유:\n//   생성 코드라 이름이 안 쓰인다.", 2);
+    set_cap(d.path(), 0);
+    let (code, text) = run(d.path());
+    assert_eq!(
+        code, 0,
+        "마커 다음 줄에 있는 근거를 못 읽는다 — 이 형태를 오탐으로 만들면 그 자리에 \
+         쓸데없는 한 줄이 강요된다:\n{text}"
+    );
+    assert!(text.contains(": 0건"), "값이 0 이 아니다:\n{text}");
+}
+
+/// **`SAFETY` 는 콜론을 요구한다.**
+///
+/// 콜론이 없으면 그것은 키가 아니라 **관례어**라, 그 단어를 언급한 줄과 못 갈린다 —
+/// 이 게이트가 무엇을 세는지 설명하는 주석에도 그 단어가 있다. 실측(`12bc0f4b2`):
+/// 레포의 콜론 없는 `SAFETY` 셋은 전부 그 블록에 `SAFETY:` 나 `이유:` 를 이미 갖고
+/// 있어 이 강화로 **새로 걸리는 자리가 0** 이었다.
+#[test]
+fn a_safety_without_a_colon_is_not_a_reason() {
+    let d = synth_root();
+    reasoned_probe(
+        d.path(),
+        "// 이 블록의 SAFETY 조건은 다른 곳에 적혀 있다",
+        2,
+    );
+    set_cap(d.path(), 2);
+    let (code, text) = run(d.path());
+    assert_eq!(code, 0, "콜론 없는 SAFETY 언급을 근거로 세고 있다:\n{text}");
+    assert!(text.contains(": 2건"), "값이 2 가 아니다:\n{text}");
+}
+
+/// **음성 대조 — 콜론이 붙으면 근거다.** 위 시험에서 콜론 하나만 더한다.
+#[test]
+fn a_safety_with_a_colon_is_a_reason() {
+    let d = synth_root();
+    reasoned_probe(
+        d.path(),
+        "// SAFETY: 포인터는 같은 문장에서 mmap 된 것이라 살아 있다",
+        2,
+    );
+    set_cap(d.path(), 0);
+    let (code, text) = run(d.path());
+    assert_eq!(code, 0, "SAFETY: 근거를 안 읽는다:\n{text}");
+    assert!(text.contains(": 0건"), "값이 0 이 아니다:\n{text}");
+}
+
+/// 좌변이 통째로 비면 **판정 불가(2)** 다. 위반 0 이 아니다.
+#[test]
+fn an_empty_left_side_is_undecidable() {
+    let d = synth_root();
+    for rel in ["src/zz_quiet.rs", "crates/zz/src/zz_quiet.rs"] {
+        fs::remove_file(d.path().join(rel)).expect("프로브 제거");
+    }
+    git(d.path(), &["add", "-A"]);
+    let (code, text) = run(d.path());
+    assert_eq!(code, 2, "좌변이 비었는데 값을 냈다:\n{text}");
+    assert!(
+        text.contains("아무것도 안 봤다"),
+        "빈 좌변을 '근거 없는 억제가 없다' 로 읽고 있다:\n{text}"
     );
 }

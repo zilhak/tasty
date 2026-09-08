@@ -327,25 +327,83 @@ pub const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(20);
 /// })
 /// ```
 ///
-/// **이 처방을 재는 채널은 반만 있다 — 갈라서 적는다.**
+/// **채널의 유무가 아니라 그 채널이 축의 어디까지 덮는가가 행마다 다르다 — 갈라서 적는다.**
+///
+/// 그래서 아래 표의 오른쪽 칸은 시험 이름만 적지 않고 **무엇까지 보는지**를 함께 적는다.
+/// ★ 이 자리에 분수를 쓰지 마라. 2026-09-08 이전 이 머리말은 "이 처방을 재는 채널은 **반만**
+/// 있다" 였고, 그때 표가 두 행(있다 · ★ 없다)이라 그 "반" 은 실제로 센 값이었다. 같은 날
+/// 나머지 행이 채워지면 그 분수는 **3 분의 3** 이 되는데, 문장을 그대로 두면 없는 구멍을
+/// 계속 주장하고, 갱신하면 이번엔 **덮이지 않는 부분이 사라진 것처럼** 읽힌다. 둘 다
+/// 틀리다 — 남은 구멍은 행의 **유무**가 아니라 행 **안의 범위**이고(`순서만` ·
+/// `한쪽 하네스만`), 그것은 행을 세어서는 안 나온다. 아래 14 가 갈린 것과 같은 축이다:
+/// 수는 남고 그 수를 낳던 술어가 밑에서 바뀐다.
 ///
 /// | 무엇을 재나 | 채널 |
 /// |---|---|
-/// | 래치 **타입**이 계약대로 도는가 | `the_latch_blocks_the_second_spawn_and_a_success_releases_it` — 있다. 이 모듈을 들이는 **14 개 test binary** 에서 돈다 |
-/// | 하네스가 래치를 **맞는 자리에 뒀는가** | ★ **없다** |
+/// | 래치 **타입**이 계약대로 도는가 | `the_latch_blocks_the_second_spawn_and_a_success_releases_it` — 있다. 이 모듈을 **추이적으로** 들이는 test binary **14 개**에 컴파일되어 들어간다(아래 **그 14 를 낳는 술어**) |
+/// | 하네스가 래치를 **맞는 자리에 뒀는가** | `spawn_latch_precedes_the_spawn` — **순서만** 본다(아래) |
+/// | 그 배치가 부팅이 막힌 환경에서 실제로 증폭을 막는가 | `a_blocked_boot_costs_one_spawn_attempt_no_matter_how_many_tests_ask` — **한쪽 하네스만**(아래) |
 ///
-/// 뒤쪽이 없는 이유는 이 타입의 결함이 아니라 배선의 성질이다. 위 사용법이 요구하는 것은
-/// "`entering` 이 `get_or_init` 클로저 **안** 첫 줄에 있을 것" 인데, 그 줄이 클로저 밖으로
-/// 나가도 **컴파일되고 단위 시험도 초록**이다. 클로저 밖에서는 `OnceLock` 이 그 자리를 한
+/// **그 14 를 낳는 술어 — 수가 아니라 이것이 값이다.** 수만 적으면 다음 사람이 다른
+/// 술어로 세고 다른 값을 낸다. 실측 2026-09-08: 세 쪽이 **14 · 15 · 4** 를 냈고 셋 다
+/// 재현 가능한 값이었다 — 서로 다른 세 술어가 전부 "이 모듈을 들이는 수" 라는 **같은
+/// 이름**을 달고 있었을 뿐이다. 여기 적은 14 는 루트 패키지의 `kind=test` 타깃(= 최상위
+/// `tests/*.rs`) 중 이 모듈을 **추이적으로** 들이는 것의 수이고, 아래 셋이 함께 못 박혀야
+/// 재현된다.
+///
+/// ① **이 파일 자신은 안 센다.** 카고는 하위 디렉터리의 `mod.rs` 를 test binary 로 만들지
+///    않는다 — `cargo metadata --no-deps` 의 `kind=test` 타깃 중 `mod.rs` 는 **0 개**다.
+///    자신을 세면 **15** 가 되고, 그것이 이 수가 갈리는 가장 흔한 형태다.
+/// ② **"들인다" 는 추이적이다.** 직접 `mod spawn_diag;` 를 적은 자리는 **4** 뿐이다
+///    (`tests/common/mod.rs` · `tests/gui_common/mod.rs` · `tests/webhook_common/mod.rs` ·
+///    `tests/harness_log_env.rs`). 나머지 10 은 그 `*_common` 들을 거쳐 들어온다. 직접
+///    선언만 세면 **4** 가 나온다.
+/// ③ **`required-features` 가 붙은 타깃도 이 수에 든다** — `gui_tests` 가 그 하나다.
+///    그래서 이 14 는 **컴파일되어 그 바이너리에 들어가는 수**이지 자동 채널에서 도는
+///    수가 아니다. 이 문서가 아래에서 "`gui_tests` 는 어떤 자동 채널도 안 돈다" 고 적으므로,
+///    두 수를 같은 낱말("돈다")로 부르면 그 문단과 어긋난다.
+///
+/// 재는 법. 셸 `grep` 으로 세지 마라 — 이 환경의 `grep` 은 ugrep 이라 `-E` 방언이 갈리고,
+/// 빈 출력이 값인지 방언인지 구별되지 않는다.
+///
+/// ```ignore
+/// cargo metadata --no-deps --format-version 1   // 모수: kind=test 타깃
+/// // 개체: 각 타깃의 src_path 에서 `mod NAME;` 과 `#[path = "..."] mod NAME;` 간선을
+/// //       추이적으로 따라가 tests/spawn_diag/mod.rs 에 닿는 타깃을 python 으로 센다.
+/// ```
+///
+/// 래치를 **맞는 자리에 뒀는가**가 왜 배선의 성질인가. 위 사용법이 요구하는 것은 "`entering` 이 `get_or_init`
+/// 클로저 **안** 첫 줄에 있을 것" 인데, 그 줄이 클로저 밖으로 나가거나 `spawn()` 뒤로
+/// 밀려도 **컴파일되고 단위 시험도 초록**이다. 클로저 밖에서는 `OnceLock` 이 그 자리를 한
 /// 번만 부르므로 래치가 영영 안 걸리고, 그 사실은 **부팅이 막힌 환경에서 벽시계로만**
 /// 드러난다. 그 조건을 자동 잡이 만들지 않는다 — `gui_tests` 는 어떤 자동 채널도 돌리지
 /// 않고(`check-headless` 도 안 본다), 나머지 두 하네스는 그 환경에서 부팅에 성공한다.
 ///
-/// 그래서 배선의 판정은 **사람이 슬롯에서 벽시계를 재는 것**뿐이다. 재는 법: 부팅이 막힌
-/// 환경에서 그 binary 를 통째로 돌리고 (1) spawn 시도 수가 **1** 인가, (2) 실패 건수는
-/// 그대로인가(래치는 수를 안 줄인다 — 시간과 메시지를 바꾼다), (3) 두 번째 이후 실패가
-/// [`SpawnOnceLatch::entering`] 의 문장을 달고 나오는가를 본다. 세 값이 다 맞아야 배선이
-/// 확인된다. 실측 예: `gui_tests` 33 건이 래치 이전에 **546 s**(≈ 33 × 15 s 상한)였다.
+/// 그래서 2026-09-08 에 **회귀가 드러나는 축만** 잘라 정적 판정으로 옮겼다:
+/// `crates/tasty-doc-guards/tests/spawn_latch_precedes_the_spawn.rs` 가 프로세스를 띄우는
+/// `get_or_init` 클로저마다 래치 표지가 `spawn()` **앞**에 있는지 본다. 그 타깃은
+/// `check-headless` 가 main push 마다 돌린다 — `gui_tests` 에는 없는 채널이다.
+///
+/// **순서는 텍스트로 보이지만 *효과*는 안 보인다** — 래치가 앞에 있어도 풀리는 시점이
+/// 어긋나면 아무것도 안 막는다. 그 조건은 2026-09-08 부터 **만들어서** 잰다: 하네스가
+/// 띄울 바이너리를 실재하지 않는 경로로 덮으면([`INSTANCE_BIN_ENV`]) [`instance_bin`] 이
+/// 그 자리에서 죽어 프로세스를 하나도 안 띄우고 부팅 실패를 재현한다. 그 조건을 **자식
+/// 프로세스**에서 만들고(공유 인스턴스는 프로세스 전역이라 같은 바이너리 안에서는
+/// 나머지 스위트와 공존할 수 없다) 자식 출력에서 spawn 경로에 닿은 횟수가 **1** 인지,
+/// 나머지가 래치의 문장을 달고 나오는지를 센다. `tests/shared_instance_harness.rs` 가
+/// 그것이고 `check-headless` 가 main push 마다 돌린다.
+///
+/// ★ **그 채널은 `tests/common/mod.rs` 쪽 하네스만 덮는다.** `tests/gui_common/mod.rs` 는
+/// `tests/gui_tests.rs` 에 살고 그 바이너리는 어떤 자동 채널도 안 돈다 — 거기에 같은
+/// 시험을 넣어도 아무도 안 돌린다. 밖에서 그 바이너리를 재실행하려면 경로를 빌드 산출물
+/// 디렉토리에서 주워야 하는데, 자동 잡이 도는 조합에서는 그 바이너리가 **빌드되지도
+/// 않아** 시험이 건너뛰기로 끝난다. 건너뛴 잡은 0 건 발견과 구별되지 않으므로 그것은
+/// 채널이 아니다. 그쪽은 여전히 **사람이 슬롯에서 벽시계를 재는 것**뿐이다. 재는 법:
+/// 부팅이 막힌 환경에서 그 binary 를 통째로 돌리고 (1) spawn 시도 수가 **1** 인가,
+/// (2) 실패 건수는 그대로인가(래치는 수를 안 줄인다 — 시간과 메시지를 바꾼다), (3) 두 번째
+/// 이후 실패가 [`SpawnOnceLatch::entering`] 의 문장을 달고 나오는가를 본다. 세 값이 다
+/// 맞아야 배선이 확인된다. 실측 예: `gui_tests` 33 건이 래치 이전에 **546 s**(≈ 33 × 15 s
+/// 상한)였다.
 pub struct SpawnOnceLatch {
     failed: std::sync::atomic::AtomicBool,
 }
@@ -666,6 +724,59 @@ pub fn spawn_timeout_message(
 mod tests {
     use super::*;
 
+    /// 지어진 것이 없으면 **무엇을 지을지** 말한다.
+    ///
+    /// 이 진단이 없던 동안 같은 상태가 `-32601 Method not found` 로만 나왔고, 그것은
+    /// 메서드가 사라진 것과 문구가 같아 두 회차 동안 회귀로 오독됐다.
+    #[test]
+    fn an_empty_target_dir_tells_an_opted_in_suite_what_to_build() {
+        let probe = Scratch::new("bundle-empty");
+        let dir = probe.path();
+        let note = staged_bundle_note(dir, true).expect("0 개면 진단이 나와야 한다");
+        assert!(
+            note.contains("cargo build --workspace"),
+            "무엇을 지을지 말해야 한다: {note}"
+        );
+        assert!(
+            note.contains(&dir.display().to_string()),
+            "어디를 봤는지 말해야 한다: {note}"
+        );
+    }
+
+    /// **양방향으로 본다** — 늘 진단을 내는 것이면 위 시험은 아무것도 안 재는 것이다.
+    ///
+    /// 음성 대조를 `tasty-` 로 시작하되 plugin 이 아닌 이름으로 둔다. 접두사가 실제로
+    /// 가르는지를 재는 자리라, 여기서 아무 이름이나 쓰면 "파일이 하나라도 있으면 조용"
+    /// 으로도 통과한다.
+    #[test]
+    fn a_staged_plugin_binary_silences_the_note_but_a_lookalike_does_not() {
+        let probe = Scratch::new("bundle-staged");
+        let dir = probe.path();
+
+        std::fs::write(dir.join("tasty-not-a-plugin"), b"x")
+            .expect("가짜 파일을 쓸 수 있어야 한다");
+        assert!(
+            staged_bundle_note(dir, true).is_some(),
+            "plugin 이 아닌 이름은 스테이징으로 세면 안 된다"
+        );
+
+        std::fs::write(dir.join("tasty-plugin-markdown"), b"x")
+            .expect("가짜 바이너리를 쓸 수 있어야 한다");
+        assert_eq!(
+            staged_bundle_note(dir, true),
+            None,
+            "하나라도 지어져 있으면 조용해야 한다"
+        );
+    }
+
+    /// 명부 밖 스위트에는 이 처방이 **틀린 처방**이다 — 걔들은 빈 번들로 뜨는 것이 정상이다.
+    #[test]
+    fn a_suite_outside_the_roster_gets_no_build_prescription() {
+        let probe = Scratch::new("bundle-optout");
+        let dir = probe.path();
+        assert_eq!(staged_bundle_note(dir, false), None);
+    }
+
     #[test]
     fn the_default_binary_is_the_one_cargo_built_for_this_test() {
         let picked = resolve_instance_bin(None, "/built/by/cargo");
@@ -727,20 +838,13 @@ mod tests {
 
     /// 탐침 디렉토리. 같은 프로세스에서 여러 시험이 쓰므로 이름에 용도를 넣는다 —
     /// 하나로 공유하면 한 시험의 정리가 다른 시험의 파일을 지운다.
-    fn probe_dir(what: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "tasty-{what}-probe-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        // 앞 회차의 잔해가 있으면 지운다. 없는 것이 정상이라 실패를 안 올린다 —
-        // 여기서 빨개지면 판정과 무관한 이유가 된다.
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
+    ///
+    /// 손으로 만들고 손으로 지우던 것을 [`Scratch`] 로 바꿨다. 손 정리는 마지막 줄에
+    /// 있어 **성공 경로에서만** 돌고, 정작 디렉토리에 볼 것이 남는 패닉 경로에서 안
+    /// 돈다 — 그래서 잔여가 이 저장소의 `/tmp` 에 하루를 넘겨 쌓여 있었다(실측
+    /// 2026-09-08, 이 lane 의 base `b134d28e3` 트리: `*-probe-*` 꼴 11 개, 빈 것 0 개).
+    /// 유일화 성분과 그 근거는 `tasty_doc_guards::temp_scratch` 에 있다.
+    use tasty_doc_guards::temp_scratch::Scratch;
 
     /// 시계 대신 **스탬프**로 앞뒤를 만든다.
     ///
@@ -752,7 +856,8 @@ mod tests {
     /// 그 자리가 빨개진다.
     #[test]
     fn a_stale_override_binary_is_detected_and_a_fresh_one_is_not() {
-        let dir = probe_dir("stale");
+        let probe = Scratch::new("stale");
+        let dir = probe.path();
         let src = dir.join("src");
         std::fs::create_dir_all(&src).expect("탐침 디렉토리를 만들 수 있어야 한다");
         let bin = dir.join("tasty");
@@ -786,8 +891,6 @@ mod tests {
         );
 
         // 탐침 디렉토리는 판정에 안 쓰이므로 정리 실패를 무시한다 — 남아도 temp 이고,
-        // 여기서 실패를 올리면 판정과 무관한 이유로 빨개진다.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 소스와 바이너리가 **같은 눈금**에 떨어져도 봐야 한다.
@@ -801,7 +904,8 @@ mod tests {
     /// 기계에서 다시 뒤집힌다.
     #[test]
     fn a_source_stamped_to_the_same_tick_is_still_seen() {
-        let dir = probe_dir("tick");
+        let probe = Scratch::new("tick");
+        let dir = probe.path();
         let src = dir.join("src");
         std::fs::create_dir_all(&src).expect("탐침 디렉토리를 만들 수 있어야 한다");
         let bin = dir.join("tasty");
@@ -826,9 +930,6 @@ mod tests {
             None,
             "바이너리가 더 새것이면 낡지 않았다"
         );
-
-        // 탐침 디렉토리는 판정에 안 쓰이므로 정리 실패를 무시한다 — 남아도 temp 이다.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1246,10 +1347,83 @@ pub fn current_suite_name() -> Option<String> {
 /// 제품의 `bundle_root()` 는 `TASTY_BUILTIN_PLUGINS_DIR` 를 **최우선**으로 보므로,
 /// 이 한 줄이 workspace 스테이징 탐색과 격리 홈 복사를 **둘 다** 건너뛰게 한다.
 /// 제품 코드는 건드리지 않는다 — 설치 경로에는 서명·업그레이드 판정이 얹혀 있다.
+/// 번들 plugin 실행 파일 이름의 공통 머리. 좌변은 **이 한 값이다**.
+const PLUGIN_BIN_PREFIX: &str = "tasty-plugin-";
+
+/// 이 스위트가 번들 plugin 을 부른다고 선언했는가.
+///
+/// 두 소비처(`apply_bundle_opt_in` 의 갈래와 [`bundle_staging_note`])가 같은 물음을
+/// 각자 쓰면 한쪽만 고쳐져도 조용하다 — 한 값에서 낸다.
+fn suite_calls_bundled_plugins() -> bool {
+    current_suite_name().is_some_and(|s| SUITES_THAT_CALL_BUNDLED_PLUGINS.contains(&s.as_str()))
+}
+
+/// 부를 번들 plugin 이 **하나도 안 지어져 있으면** 그 사실을 문장으로 낸다.
+///
+/// [`instance_bin`] 의 doc 이 적어 둔 **함정 3** 이 실제로 무는 자리다. 그 함정의 증상은
+/// `-32601 Method not found` 이고, 그 문구는 메서드가 **사라진 것**과 글자 그대로 같다.
+/// 실측 2026-09-08: `target/debug` 에 지어진 plugin 바이너리가 0 개인 트리에서
+/// `cargo test --test e2e_tests` 는 44 통과 · 2 실패였고 그 둘은 `markdown.*` 를 부르는
+/// 것들이었다. `cargo build -p tasty-plugin-markdown` 하나로 둘 다 초록이 됐다. 그때까지
+/// 그 빨강은 두 회차 동안 "회귀인지 환경인지 미확정" 으로 남아 있었다.
+///
+/// **명부를 안 베낀다.** 제품의 builtin 명부를 여기 옮겨 적으면 그 사본이 조용히 갈리고,
+/// 갈린 사본은 "안 지어졌다" 를 "명부에 없다" 로 오독하게 만든다. 좌변은 이름 하나다 —
+/// [`PLUGIN_BIN_PREFIX`] 로 시작하는 실행 파일이 exe 옆에 있는가.
+///
+/// **부분 스테이징은 안 잡는다 — 선언된 사각이다.** 아홉 중 여덟만 지어진 상태는 이
+/// 판정을 통과한다. 그것까지 잡으려면 어느 plugin 이 필요한지 알아야 하고 그것이 곧 위의
+/// 사본이다. cargo 가 실제로 만드는 상태는 0(루트 패키지만 짓는 조합) 아니면 전부
+/// (`--workspace`)라, 이 사각이 실물이 되는 경로는 손으로 지운 경우뿐이다.
+fn staged_bundle_note(exe_dir: &std::path::Path, opted_in: bool) -> Option<String> {
+    if !opted_in {
+        return None;
+    }
+    let staged = std::fs::read_dir(exe_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| {
+                    // `.d` 는 cargo 가 같은 이름으로 남기는 의존 목록이라 실행 파일이 아니다.
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|n| n.starts_with(PLUGIN_BIN_PREFIX) && !n.ends_with(".d"))
+                        && e.file_type().is_ok_and(|k| k.is_file())
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    if staged > 0 {
+        return None;
+    }
+    Some(format!(
+        "\n★ 이 스위트는 번들 plugin 을 부른다고 선언했는데(`SUITES_THAT_CALL_BUNDLED_PLUGINS`), \
+         {} 에 지어진 plugin 바이너리가 0 개다.\n\
+        \x20 그 상태에서 plugin namespace 호출은 `-32601 Method not found` 로 떨어지고, 그 문구는 \
+         메서드가 **사라진 것**과 같다 — 위 실패가 코드 회귀인지 이 상태인지는 바이너리를 \
+         지어 본 뒤에야 갈린다.\n\
+        \x20 ★ 시험을 지우거나 명부에서 빼서 통과시키지 마라. `cargo test --test <스위트>` 는 \
+         plugin 바이너리를 **안 짓는다**. 지어라:\n\
+        \x20     cargo build --workspace\n",
+        exe_dir.display()
+    ))
+}
+
+/// 지금 도는 스위트 기준의 [`staged_bundle_note`]. 실패 문구 끝에 그대로 이어 붙인다.
+///
+/// 진단을 spawn 이 아니라 **실패 자리**에 붙이는 것이 의도다. spawn 에서 죽이면 plugin 을
+/// 안 쓰는 나머지 시험들까지 같이 빨개져, 참인 초록 44 개가 사라진다.
+pub fn bundle_staging_note() -> String {
+    // 바이너리를 정하는 자리는 하나다 — `tests/e2e_single_instance_guard.rs` 가
+    // `CARGO_BIN_EXE_tasty` 를 직접 부르는 자리를 세어 그것을 지킨다.
+    std::path::PathBuf::from(instance_bin())
+        .parent()
+        .and_then(|dir| staged_bundle_note(dir, suite_calls_bundled_plugins()))
+        .unwrap_or_default()
+}
+
 pub fn apply_bundle_opt_in(command: &mut std::process::Command) {
-    let needs = current_suite_name()
-        .is_some_and(|s| SUITES_THAT_CALL_BUNDLED_PLUGINS.contains(&s.as_str()));
-    if needs {
+    if suite_calls_bundled_plugins() {
         return;
     }
     // 만들기에 실패하면 아무것도 안 한다 — 없는 경로를 넘기면 제품이 그 분기를
