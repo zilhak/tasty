@@ -185,10 +185,14 @@ fn open_stream(port: u16, params: Value) -> TcpStream {
 /// (ack·터미널 초기 스냅샷 등 무관한 프레임은 건너뛴다).
 pub fn open_workspace_attach(port: u16, workspace_id: u64) -> AttachStream {
     let mut stream = open_stream(port, json!({"proto": 1, "target_workspace": workspace_id}));
-    // **살아 있는 client 를 흉내내는 것은 여기뿐이다.** heartbeat 는 점유를 유지시키므로
-    // (서버는 침묵을 죽음으로 보고 점유를 회수한다) 침묵 자체를 시험하는 헬퍼
-    // (`open_surface_attach`·`open_stream_without_attach`·`try_open_*`)에는 절대 걸지
-    // 않는다 — 걸면 그 테스트들이 검증하려는 TTL 회수가 영영 안 일어난다.
+    // heartbeat 는 점유를 유지시킨다 — 서버는 침묵을 죽음으로 보고 점유를 회수하므로,
+    // **침묵이 계약인 헬퍼에는 절대 걸지 않는다**: `open_surface_attach`(TTL 회수를
+    // 관측하는 테스트가 그 침묵을 쓴다)와 `raw_open_workspace_no_read` ·
+    // `raw_open_workspace_proto`(핸드셰이크 뒤 아무것도 안 읽는 것이 재현 대상이다).
+    // 걸면 그 테스트들이 검증하려는 TTL 회수가 영영 안 일어난다.
+    //
+    // 나머지 헬퍼는 전부 **교환**이 계약이라 살아 있다고 말한다
+    // (`open_stream_without_attach` · `try_open_workspace_attach{,_with_token}`).
     spawn_heartbeat(&stream);
 
     loop {
@@ -230,8 +234,16 @@ pub fn open_surface_attach(port: u16, surface_id: u64) -> (TcpStream, Value) {
 /// `stream.open` 을 target/target_workspace 없이 열어(단순 upgrade — client_id 는
 /// 할당되지만 어떤 workspace 도 점유하지 않은 채) ack 프레임까지만 읽고 반환한다.
 /// "attach 점유 없는 client" 를 재현하는 용도(하이브리드 신뢰 모델, ADR-0053 결정 3).
-pub fn open_stream_without_attach(port: u16) -> TcpStream {
-    let mut stream = open_stream(port, json!({"proto": 1}));
+///
+/// **점유가 없어도 침묵은 끊긴다.** 서버는 attach dispatch 앞에서 소켓에 read timeout
+/// 을 건다(`tcp_ipc_server.rs::arm_stream_read_timeout` — `validate_stream_proto` 보다
+/// 먼저다). 그래서 이 헬퍼가 만드는 연결도 20 초 침묵하면 닫힌다. 이 헬퍼의 계약은
+/// **교환**이지 침묵이 아니고(두 호출처 모두 control 프레임을 쓰고 답을 기다린다),
+/// 회수를 관측하는 테스트는 하나도 없다 — 점유가 없어 회수할 것이 없기 때문이다.
+/// 그래서 여기서는 살아 있다고 말한다. 실측(2026-09-08, 부하 없이 23 초 침묵을 끼워
+/// 재현): heartbeat 없으면 `write frame payload: BrokenPipe`, 있으면 통과.
+pub fn open_stream_without_attach(port: u16) -> AttachStream {
+    let mut stream = heartbeating(open_stream(port, json!({"proto": 1})));
 
     let payload = read_control_frame(&mut stream);
     let ack: Value = serde_json::from_slice(&payload).unwrap();
