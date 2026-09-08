@@ -10,8 +10,11 @@
 //! 스크롤로 가린 부분은 캡처에 안 나오고, 안 나오는 것은 검증되지 않는다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, checkbox, margin_sym, tag};
+use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, PluginAvatarSize, TagVariant, checkbox, margin_sym, paint_plugin_avatar,
+    plugin_avatar, tag,
+};
 
 /// 상세 컬럼이 그릴 것 — 본체는 선택 상태와 uninstall 확인 상태로 갈린다.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -107,13 +110,17 @@ pub(super) const ROWS: &[Row] = &[
     },
 ];
 
-/// 좌측 목록 (폭 `plugins_side_panel_width`) — 40px 2줄 행.
+/// 좌측 목록 (폭 `plugins_side_panel_width`) — 아바타 + 2줄 행.
+///
+/// 행 높이는 아바타에서 나온다(`PLUGIN_LIST_ROW_HEIGHT`) — 디자인 행이
+/// `padding: space-sm` 위아래에 32px 아바타가 앉는 flex 행이라 그렇다.
 pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, detail: Detail) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
 
-    let row_h = theme.item_height_interactive.value() + theme.spacing_md.value();
-    let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value() * 0.75);
+    let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
+    let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value());
+    let avatar = PluginAvatarSize::Row.side().value();
     let mut y = rect.min.y + theme.spacing_sm.value();
 
     for (i, row) in ROWS.iter().enumerate() {
@@ -134,7 +141,16 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, deta
         } else {
             row.name.to_string()
         };
-        let name_pos = r.min + pad;
+        paint_plugin_avatar(
+            &p,
+            theme,
+            egui::pos2(r.min.x + pad.x + avatar * 0.5, r.center().y),
+            row.name,
+            PluginAvatarSize::Row,
+        );
+
+        // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: var(--tasty-space-sm)`.
+        let name_pos = r.min + pad + egui::vec2(avatar + theme.spacing_sm.value(), 0.0);
         p.text(
             name_pos,
             egui::Align2::LEFT_TOP,
@@ -319,29 +335,35 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
     };
     let row = &ROWS[i];
 
-    child.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(row.name)
-                .size(theme.font_size_max.value())
-                .strong()
-                .color(theme.text_primary().to_egui()),
-        );
-        tag(
-            ui,
-            theme,
-            &format!("v{}", row.version),
-            TagVariant::Default,
-            false,
-        );
-        if row.builtin {
-            ui.label(
-                egui::RichText::new("built-in")
-                    .size(theme.font_size_caption.value())
-                    .color(theme.accent_agent().to_egui()),
-            );
-        }
+    // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+    child.horizontal_top(|ui| {
+        plugin_avatar(ui, theme, row.name, PluginAvatarSize::Detail);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(row.name)
+                        .size(theme.font_size_max.value())
+                        .strong()
+                        .color(theme.text_primary().to_egui()),
+                );
+                tag(
+                    ui,
+                    theme,
+                    &format!("v{}", row.version),
+                    TagVariant::Default,
+                    false,
+                );
+                if row.builtin {
+                    ui.label(
+                        egui::RichText::new("built-in")
+                            .size(theme.font_size_caption.value())
+                            .color(theme.accent_agent().to_egui()),
+                    );
+                }
+            });
+            muted(ui, theme, row.id);
+        });
     });
-    muted(&mut child, theme, row.id);
     caption(&mut child, theme, row.description);
 
     if row.health_error && row.enabled {

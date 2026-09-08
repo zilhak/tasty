@@ -15,8 +15,11 @@
 //! semantic 토큰으로 그린다 — 값이 아니라 **구조**가 전사 대상이다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, margin_all, tag};
+use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, PluginAvatarSize, TagVariant, margin_all, paint_plugin_avatar,
+    plugin_avatar, tag,
+};
 
 /// 사유 배너의 채움·보더는 severity 색에서 도출한다 — 본체
 /// `attention.rs::draw_detail` 의 `gamma_multiply` 두 값과 같은 비율.
@@ -135,8 +138,9 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
 
-    let row_h = theme.item_height_interactive.value() + theme.spacing_md.value();
-    let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value() * 0.75);
+    let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
+    let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value());
+    let avatar = PluginAvatarSize::Row.side().value();
     let mut y = rect.min.y + theme.spacing_sm.value();
 
     for (i, entry) in ENTRIES.iter().enumerate() {
@@ -151,7 +155,16 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
                 egui::StrokeKind::Inside,
             );
         }
-        let name_pos = r.min + pad;
+        paint_plugin_avatar(
+            &p,
+            theme,
+            egui::pos2(r.min.x + pad.x + avatar * 0.5, r.center().y),
+            entry.name,
+            PluginAvatarSize::Row,
+        );
+
+        // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: var(--tasty-space-sm)`.
+        let name_pos = r.min + pad + egui::vec2(avatar + theme.spacing_sm.value(), 0.0);
         p.text(
             name_pos,
             egui::Align2::LEFT_TOP,
@@ -313,33 +326,39 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-    child.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(entry.name)
-                .size(theme.font_size_max.value())
-                .strong()
-                .color(theme.text_primary().to_egui()),
-        );
-        tag(
-            ui,
-            theme,
-            &format!("v{}", entry.version),
-            TagVariant::Default,
-            false,
-        );
-        if entry.builtin {
+    // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+    child.horizontal_top(|ui| {
+        plugin_avatar(ui, theme, entry.name, PluginAvatarSize::Detail);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(entry.name)
+                        .size(theme.font_size_max.value())
+                        .strong()
+                        .color(theme.text_primary().to_egui()),
+                );
+                tag(
+                    ui,
+                    theme,
+                    &format!("v{}", entry.version),
+                    TagVariant::Default,
+                    false,
+                );
+                if entry.builtin {
+                    ui.label(
+                        egui::RichText::new("built-in")
+                            .size(theme.font_size_caption.value())
+                            .color(theme.accent_agent().to_egui()),
+                    );
+                }
+            });
             ui.label(
-                egui::RichText::new("built-in")
+                egui::RichText::new(entry.id)
                     .size(theme.font_size_caption.value())
-                    .color(theme.accent_agent().to_egui()),
+                    .color(theme.text_muted().to_egui()),
             );
-        }
+        });
     });
-    child.label(
-        egui::RichText::new(entry.id)
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
     banner(&mut child, theme, entry.kind);
     reason_detail(&mut child, theme, entry.kind);
     child.separator();
