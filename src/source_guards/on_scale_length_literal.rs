@@ -166,7 +166,7 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        50,
+        48,
         // 48 -> 50 은 `port_scanner.rs` 의 컬럼 최소폭 표(`column_layout`)가 타입을
         // 얻으면서 **바늘 안으로 들어온 것**이다. 그 일곱은 전에도 그 자리에 있었고
         // `(84.0, false, ..)` 처럼 맨 f32 라 이 가드의 술어가 안 닿았다. `LogicalPx` 로
@@ -186,12 +186,13 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 그 popup 은 sizer 가 view 스택을 덜 세어 목록 마지막 행이 잘리고 있었고,
         // 그것을 고치면서 등록 값도 같은 식에 붙였다 — 두 수가 어긋날 자리가 없어진다.
         //
-        // 남은 형제는 `confirm_force_detach_workspace` 이고, 세어지는 것은 폭이 아니라
-        // **높이 150** 이다(380 은 스케일 밖이라 여기 안 걸린다 —
-        // `const WIDTH: LogicalPx = LogicalPx(380.0)` 도 마찬가지다). 그 150 도 `sizer`
-        // 가 첫 프레임에 덮어쓰는 placeholder 이고, 바로 위 형제
-        // destructive confirm(`confirm_delete_category`)이 같은 자리에 같은 값을 든다.
-        // 그 둘을 위와 같은 형태로 고치면 이 수는 더 내려간다.
+        // 50 -> 48 이 그 두 형제다 — destructive confirm 둘
+        // (`confirm_delete_category` · `confirm_force_detach_workspace`)의 **높이 150**
+        // (380 은 스케일 밖이라 여기 안 걸린다 —
+        // `const WIDTH: LogicalPx = LogicalPx(380.0)` 도 마찬가지다). 둘 다 `sizer` 가
+        // 첫 프레임에 덮어쓰는 placeholder 였고, 각 모듈의 크기 식을 `size_for(body_len)`
+        // 하나로 모아 등록 값도 거기서 뽑게 했다. 리터럴이 옮겨진 것이 아니라 **없어진
+        // 것**이다 — 그 식 안의 값은 폰트 metric 과 여백 계산이라 이 축의 바늘 밖이다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (

@@ -429,7 +429,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "workspace_category.delete_confirm_title",
                 fullscreen_stage: None,
                 title_fn: Some(super::confirm_delete_category::confirm_delete_category_title),
-                default_size: egui::vec2(380.0, 150.0),
+                default_size: super::confirm_delete_category::confirm_delete_category_default_size(),
                 sizer: Some(super::confirm_delete_category::confirm_delete_category_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
@@ -449,7 +449,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_fn: Some(
                     super::confirm_force_detach_workspace::confirm_force_detach_workspace_title,
                 ),
-                default_size: egui::vec2(380.0, 150.0),
+                default_size:
+                    super::confirm_force_detach_workspace::confirm_force_detach_workspace_default_size(),
                 sizer: Some(
                     super::confirm_force_detach_workspace::confirm_force_detach_workspace_sizer,
                 ),

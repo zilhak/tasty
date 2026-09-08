@@ -46,14 +46,14 @@ pub fn confirm_delete_category_title(
     t("workspace_category.delete_confirm_title").to_string()
 }
 
-/// PopupDef.sizer — 본문 길이에 따라 height 조정(소형 모달).
-pub fn confirm_delete_category_sizer(
-    state: &AppState,
-    engine: &crate::core::CoreState,
-) -> egui::Vec2 {
-    let body_len = resolve_target(state, engine)
-        .map(|tgt| tgt.name.chars().count() + 60)
-        .unwrap_or(60);
+/// 대상 이름을 뺀 안내문 자체의 길이. 대상이 아직 안 잡힌 상태의 기준이기도 하다.
+const BASE_BODY_LEN: usize = 60;
+
+/// 본문 길이 → 팝업 크기. **sizer 와 등록 placeholder 가 같은 식을 쓴다.**
+///
+/// 등록 값을 손으로 적으면 sizer 와 어긋날 자리가 생기고, 그 어긋남은 첫 프레임의
+/// 깜빡임으로만 드러난다. 형제 `file_handler_picker` 가 같은 이유로 같은 형태다.
+fn size_for(body_len: usize) -> egui::Vec2 {
     let approx_lines = (body_len as f32 / 42.0).ceil().max(2.0);
     let body_h = approx_lines * theme::theme().font_size_body.value() * 1.5;
     // 헤더(글리프+제목) + 본문 + 버튼 행 + 여백.
@@ -62,6 +62,23 @@ pub fn confirm_delete_category_sizer(
         WIDTH.value(),
         (popup::content_margin().scaled(2.0) + LogicalPx(content_h)).value(),
     )
+}
+
+/// PopupDef.default_size — 등록 시점의 placeholder. 대상이 아직 없을 때 sizer 가 내는
+/// 값과 **같은 식에서** 나온다.
+pub fn confirm_delete_category_default_size() -> egui::Vec2 {
+    size_for(BASE_BODY_LEN)
+}
+
+/// PopupDef.sizer — 본문 길이에 따라 height 조정(소형 모달).
+pub fn confirm_delete_category_sizer(
+    state: &AppState,
+    engine: &crate::core::CoreState,
+) -> egui::Vec2 {
+    let body_len = resolve_target(state, engine)
+        .map(|tgt| tgt.name.chars().count() + BASE_BODY_LEN)
+        .unwrap_or(BASE_BODY_LEN);
+    size_for(body_len)
 }
 
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든(취소/외부/Escape) 삭제 대상을 비운다.
