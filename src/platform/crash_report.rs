@@ -339,11 +339,29 @@ fn open_host_log_file() -> Result<fs::File, String> {
 
 #[cfg(debug_assertions)]
 pub mod error_loop {
+    use std::sync::atomic::AtomicBool;
     use std::sync::{LazyLock, Mutex};
     use std::time::Instant;
 
     const WINDOW_SECS: u64 = 1;
     const THRESHOLD: usize = 100;
+
+    /// `record` 가 잡는 락의 poison 보고 플래그 — 첫 1 회만 남긴다.
+    ///
+    /// 임계구역은 카운터 · 창 시작 시각 · 마지막 메시지 문자열 갱신뿐이라, 락을 든 채
+    /// 죽은 스레드가 불변식을 깨고 나갈 수 없다 — 복구가 맞다. 반대로 조용히 건너뛰면
+    /// **에러 루프 감지기 자신이 꺼진다**: 폭주하는 에러가 계속 세어지지 않아 크래시
+    /// 리포트가 영영 안 나오고, 그 사실도 어디에도 안 남는다.
+    ///
+    /// 매번 로그를 내지 않는 이유는 이 함수가 도는 자리다 — 렌더 · 이벤트 루프의 에러
+    /// 경로라 초당 `THRESHOLD` 회까지 불린다. poison 은 sticky 라 그대로 두면 그 로그가
+    /// 원인이 된 로그를 묻는다.
+    ///
+    /// 자기 패닉으로는 오염되지 않는다: 임계치 패닉은 `drop(inner)` 로 락을 놓은 뒤에
+    /// 나고, 패닉 훅([`super::init`] 의 `set_hook`)은 리포트를 쓰고 stderr 로 찍을 뿐
+    /// `record_error` 를 부르지 않는다. 그래서 재진입 경로가 없다.
+    static DETECTOR_POISONED: AtomicBool = AtomicBool::new(false);
+    const DETECTOR_WHAT: &str = "error-loop detector";
 
     struct Inner {
         count: usize,
@@ -369,9 +387,8 @@ pub mod error_loop {
         /// Record an error occurrence. Panics (triggering crash report) if the
         /// same error repeats more than `THRESHOLD` times within `WINDOW_SECS`.
         pub fn record(&self, msg: &str) {
-            let Ok(mut inner) = self.inner.lock() else {
-                return;
-            };
+            let mut inner =
+                crate::poison::recover_mutex(self.inner.lock(), DETECTOR_WHAT, &DETECTOR_POISONED);
 
             let now = Instant::now();
             let elapsed = now.duration_since(inner.window_start).as_secs();
