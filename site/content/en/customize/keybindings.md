@@ -1,4 +1,4 @@
-<!-- source-hash: 42cca483393f -->
+<!-- source-hash: fa80f799d8af -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
@@ -95,6 +95,7 @@ The following have no default combination, either to prevent accidents or becaus
 - **Open Markdown** · **Open Explorer** · **Convert to Markdown** · **Convert to Explorer**
 - **Apply workspace · tab · pane preset**, **Collapse/expand all categories**
 - **Minimize window** · **Maximize/Zoom window** · **Close window**
+- The entries in the sidebar **Tools** menu — **Open port scanner** · **Open remote tools** · **Open preset window** · **Open tutorial** · **Open file picker**
 - Open Git Viewer (plugin)
 
 ## Presets

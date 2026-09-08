@@ -15,6 +15,16 @@ impl KeybindingSettings {
             toggle_settings: vec!["ctrl+,".into()],
             toggle_notifications: vec!["ctrl+shift+i".into()],
             toggle_dag_list: vec!["ctrl+shift+g".into()],
+            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
+            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
+            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
+            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
+            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
+            open_port_scanner: Vec::new(),
+            open_remote_tool: Vec::new(),
+            open_preset_window: Vec::new(),
+            open_tutorial: Vec::new(),
+            open_file_picker: Vec::new(),
             close_pane: vec!["ctrl+shift+w".into()],
             close_surface: vec!["alt+w".into()],
             close_workspace: vec!["alt+shift+w".into()],
@@ -97,6 +107,16 @@ impl KeybindingSettings {
             toggle_settings: vec!["alt+,".into()],
             toggle_notifications: vec!["alt+shift+i".into()],
             toggle_dag_list: vec!["alt+shift+g".into()],
+            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
+            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
+            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
+            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
+            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
+            open_port_scanner: Vec::new(),
+            open_remote_tool: Vec::new(),
+            open_preset_window: Vec::new(),
+            open_tutorial: Vec::new(),
+            open_file_picker: Vec::new(),
             close_pane: vec!["alt+shift+w".into()],
             close_surface: vec!["alt+w".into()],
             close_workspace: Vec::new(),
@@ -174,6 +194,16 @@ impl KeybindingSettings {
             toggle_settings: vec!["ctrl+,".into()],
             toggle_notifications: vec!["ctrl+shift+i".into()],
             toggle_dag_list: vec!["ctrl+shift+g".into()],
+            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
+            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
+            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
+            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
+            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
+            open_port_scanner: Vec::new(),
+            open_remote_tool: Vec::new(),
+            open_preset_window: Vec::new(),
+            open_tutorial: Vec::new(),
+            open_file_picker: Vec::new(),
             close_pane: vec!["ctrl+shift+w".into()],
             close_surface: vec!["alt+w".into()],
             close_workspace: vec!["alt+shift+w".into()],
@@ -251,6 +281,16 @@ impl KeybindingSettings {
             toggle_settings: vec!["ctrl+,".into()],
             toggle_notifications: vec!["ctrl+shift+i".into()],
             toggle_dag_list: vec!["ctrl+shift+g".into()],
+            // 도구 메뉴 다섯 항목: 기본값을 비워 둔다. 다섯 × 네 프리셋의 새 조합을
+            // 고르면 (a) 프리셋마다 기존 55 개와의 충돌을 통과해야 하고, (b) 통과하더라도
+            // 그 콤보를 이미 다른 액션에 쓰던 사용자는 업그레이드 첫 로드에서
+            // `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다. 비워 두면
+            // 두 위험이 다 없고, 사용자가 설정 화면에서 지정하면 그대로 동작한다.
+            open_port_scanner: Vec::new(),
+            open_remote_tool: Vec::new(),
+            open_preset_window: Vec::new(),
+            open_tutorial: Vec::new(),
+            open_file_picker: Vec::new(),
             close_pane: vec!["ctrl+shift+w".into()],
             close_surface: vec!["alt+w".into()],
             close_workspace: vec!["alt+shift+w".into()],

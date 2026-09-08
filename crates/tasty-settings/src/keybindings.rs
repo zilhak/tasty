@@ -23,6 +23,23 @@ pub struct KeybindingSettings {
     pub toggle_notifications: Vec<String>,
     /// DAG 목록 popup 토글. 활성 workspace 스코프로 열린다.
     pub toggle_dag_list: Vec<String>,
+    // 아래 다섯은 사이드바 "도구" 메뉴의 빌트인 항목에 대응한다. 그 메뉴에 있는 항목은
+    // 단축키를 붙일 자리가 있어야 한다 — plugin 이 기여하는 도구 항목은 매니페스트의
+    // `[[contributes.commands]]` 로 이미 그렇게 되어 있어, 필드가 없으면 **호스트 빌트인
+    // 도구만 안 되는** 역전이 남는다.
+    //
+    // 네 프리셋 모두 기본값이 비어 있다. 근거는 `presets.rs` 의 그 자리 주석.
+    /// 포트 스캐너 popup 열기 (도구 메뉴).
+    pub open_port_scanner: Vec<String>,
+    /// 원격 도구 popup 열기 (도구 메뉴).
+    pub open_remote_tool: Vec<String>,
+    /// Preset 윈도우 열기 (도구 메뉴). **레이아웃 프리셋 적용(`apply_*_preset`)과 다르다** —
+    /// 이쪽은 프리셋을 만들고 고치는 별도 winit 윈도우다.
+    pub open_preset_window: Vec<String>,
+    /// 튜토리얼 주제 popup 열기 (도구 메뉴).
+    pub open_tutorial: Vec<String>,
+    /// 파일 피커 popup 열기 (도구 메뉴).
+    pub open_file_picker: Vec<String>,
     pub close_pane: Vec<String>,
     pub close_surface: Vec<String>,
     pub close_workspace: Vec<String>,

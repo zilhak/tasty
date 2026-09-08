@@ -152,7 +152,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 56);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 61);
 }
 
 #[test]
@@ -625,7 +625,7 @@ fn quick_switch_fields_not_in_general_bindings() {
         );
     }
     // count 는 여전히 전체 개수와 같다.
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 56);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 61);
 }
 
 // ── 카테고리 축 next/prev raw 키 (S-9) ─────────────────────────────

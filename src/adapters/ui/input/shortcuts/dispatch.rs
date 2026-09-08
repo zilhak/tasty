@@ -482,6 +482,23 @@ impl MainView {
             // 윈도우 컨트롤 — CSD 캡션 버튼(P5)/Linux DE 버튼(P6)/macOS 네이티브
             // 신호등과 동일한 winit window 조작을 그대로 수행한다(단일 동작 경로).
             "toggle_dag_list" => Self::toggle_dag_list_popup(state),
+            "open_port_scanner" => Self::open_tool_popup(
+                state,
+                crate::adapters::ui::popup::port_scanner::PORT_SCANNER_POPUP_ID,
+                "open_port_scanner",
+            ),
+            "open_remote_tool" => Self::open_tool_popup(
+                state,
+                crate::adapters::ui::popup::remote_tool::REMOTE_TOOL_POPUP_ID,
+                "open_remote_tool",
+            ),
+            "open_tutorial" => Self::open_tool_popup(
+                state,
+                crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
+                "open_tutorial",
+            ),
+            "open_preset_window" => Self::open_preset_window(state),
+            "open_file_picker" => Self::open_file_picker_tool(state, engine),
             "screenshot_to_clipboard" => Self::queue_screenshot_to_clipboard(state, engine),
             "apply_workspace_preset" => {
                 Self::open_preset_apply_popup(state, PresetApplyScope::Workspace);

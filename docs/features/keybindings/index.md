@@ -18,6 +18,10 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
 
+**사이드바 "도구" 메뉴의 빌트인 항목 일곱은 전부 대응 필드를 갖는다** — `toggle_command_palette` · `open_port_scanner` · `open_remote_tool` · `open_preset_window` · `open_tutorial` · `toggle_dag_list` · `open_file_picker`. plugin 이 기여하는 도구 항목은 매니페스트의 `[[contributes.commands]]` 로 이미 단축키를 갖고 Plugins 서브탭에서 관리되므로, 호스트 빌트인만 필드가 없으면 **plugin 도구는 되고 호스트 도구는 안 되는** 역전이 남는다. 다섯(팔레트·DAG 목록 제외)은 네 프리셋 모두 기본값이 비어 있다 — 새 기본값 다섯을 네 프리셋에 넣으면 기존 콤보와의 충돌을 통과해야 하고, 통과하더라도 그 콤보를 이미 쓰던 사용자는 첫 로드에서 `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다.
+
+`open_preset_window`(도구 메뉴의 **프리셋** 윈도우 열기)와 `apply_workspace_preset`/`apply_tab_preset`/`apply_pane_preset`(레이아웃 프리셋 **적용** picker)은 다른 것이다. 이름이 비슷해 섞기 쉬우므로 설정 화면에서도 서브탭이 갈린다 — 앞은 General, 뒤 셋은 대상 스코프를 따라 Workspace/Tab/Pane 이다.
+
 ### 탭/워크스페이스/카테고리 quick-switch (raw 키 + 축별 modifier 조합)
 
 번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다(단, "개별 지정" 모드 예외 — 아래 참조). modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier`(각각 기본 `ctrl`/`alt`/`ctrl+shift`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 그 축의 모든 슬롯이 즉시 재조합된다. **각 modifier 는 단일 토큰(`"ctrl"`)뿐 아니라 조합(`"ctrl+shift"`)도 허용**하며, 매칭은 일반 바인딩과 동일한 4축 조합 파서(`Combo::parse_modifiers`)를 단일 소스로 쓴다. 카테고리도 1급 축으로 자기 modifier 필드를 갖는다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다.

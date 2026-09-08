@@ -114,6 +114,9 @@ impl MainView {
         if Self::match_preset_bindings(state, kb, key, mods) {
             return true;
         }
+        if Self::match_tools_menu_bindings(state, engine, kb, key, mods) {
+            return true;
+        }
         if Self::match_copy_rename_bindings(state, engine, kb, key, mods) {
             return true;
         }
@@ -742,6 +745,87 @@ impl MainView {
             return true;
         }
         false
+    }
+
+    /// 사이드바 "도구" 메뉴의 빌트인 항목 다섯.
+    ///
+    /// 네 프리셋 기본값이 전부 비어 있으므로 사용자가 지정하기 전에는 아무것도 안 걸린다
+    /// — 그 상태에서 이 함수는 다섯 번의 빈 슬라이스 비교로 끝난다.
+    fn match_tools_menu_bindings(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
+        use crate::adapters::ui::popup;
+        if matches_any_binding(&kb.open_port_scanner, key, mods) {
+            Self::open_tool_popup(
+                state,
+                popup::port_scanner::PORT_SCANNER_POPUP_ID,
+                "open_port_scanner",
+            );
+            return true;
+        }
+        if matches_any_binding(&kb.open_remote_tool, key, mods) {
+            Self::open_tool_popup(
+                state,
+                popup::remote_tool::REMOTE_TOOL_POPUP_ID,
+                "open_remote_tool",
+            );
+            return true;
+        }
+        if matches_any_binding(&kb.open_preset_window, key, mods) {
+            Self::open_preset_window(state);
+            return true;
+        }
+        if matches_any_binding(&kb.open_tutorial, key, mods) {
+            Self::open_tool_popup(
+                state,
+                crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
+                "open_tutorial",
+            );
+            return true;
+        }
+        if matches_any_binding(&kb.open_file_picker, key, mods) {
+            Self::open_file_picker_tool(state, engine);
+            return true;
+        }
+        false
+    }
+
+    /// 도구 메뉴의 단순 popup 항목 열기 — 단축키·명령 팔레트가 공유한다.
+    ///
+    /// 메뉴 클릭 경로(`adapters/ui/tools_menu.rs`)와 **같은 mode** 를 쓴다
+    /// (`CenteredFocused`). 모드가 갈리면 같은 항목이 메뉴로 열 때와 키로 열 때 다른
+    /// 자리에 뜨고 포커스도 달라진다.
+    pub(crate) fn open_tool_popup(
+        state: &mut crate::state::AppState,
+        popup_id: &'static str,
+        action: &'static str,
+    ) {
+        state.dispatch_intent(
+            UiIntent::OpenPopup {
+                id: popup_id,
+                mode: OpenPopupMode::CenteredFocused,
+            }
+            .from_user_shortcut(action),
+        );
+    }
+
+    /// Preset 윈도우 열기 — popup 이 아니라 별도 winit 윈도우라 분기가 다르다.
+    pub(crate) fn open_preset_window(state: &mut crate::state::AppState) {
+        state.dialogs.pending_open_preset_window = true;
+    }
+
+    /// 파일 피커 열기 — 여는 *전* 활성 workspace 의 mirror 여부로 로컬/원격을 판별해
+    /// `state.dialogs.file_picker` 를 채워야 해서 단순 popup 열기와 분기가 다르다.
+    /// 그래서 메뉴와 같은 함수를 부른다(popup id 만 발화하면 동작이 갈린다).
+    pub(crate) fn open_file_picker_tool(
+        state: &mut crate::state::AppState,
+        engine: &mut crate::core::CoreState,
+    ) {
+        crate::adapters::ui::popup::file_picker::open(state, engine, None, Vec::new());
     }
 
     /// 새 탭으로 탐색기 열기 — 단발 키·명령 팔레트·double-tap 이 공유한다.
