@@ -19,7 +19,7 @@ use gtk::prelude::*;
 use webkit2gtk::{
     LoadEvent, NavigationPolicyDecision, NavigationPolicyDecisionExt, PolicyDecisionExt,
     PolicyDecisionType, ResponsePolicyDecision, ResponsePolicyDecisionExt, SettingsExt,
-    URIRequestExt, WebView, WebViewExt,
+    URIRequestExt, UserContentManager, UserContentManagerExt, WebView, WebViewExt,
 };
 use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
@@ -61,6 +61,164 @@ pub struct PlatformWebView {
     /// 여기에 맞아 보이지만, 실측(2026-09-08, 격리 홈)에서는 그 호출이 오히려 죽는 쪽을
     /// 늘렸다 — webview 탭 둘인 창 닫기가 4 회 중 1 회 사망에서 6 회 중 5 회 사망이 됐다.
     gdk_window: gtk::gdk::Window,
+    /// 이 webview 의 user content manager. 원격 서브리소스 차단 필터를 여기에
+    /// 붙였다 뗀다. WebKitGTK 가 안 주면 `None` — 그때는 서브리소스 차단이 없다.
+    ucm: Option<UserContentManager>,
+    /// 컴파일이 끝난 원격 차단 필터. 저장이 비동기라 `new()` 직후에는 비어 있고,
+    /// 완료 콜백이 채운다(macOS 의 `content_rule_list` 와 같은 형태).
+    content_filter: Rc<RefCell<Option<ContentFilter>>>,
+}
+
+/// 컴파일된 content filter 의 소유권. `WebKitUserContentFilter` 는 GObject 가 아니라
+/// ref-count 되는 boxed 타입이고 webkit2gtk 2.0.2 의 안전한 바인딩이 이 타입을
+/// 통째로 건너뛰었다(`user_content_manager.rs` 의 `add_filter` 는 주석 처리돼 있다).
+/// 그래서 소유권을 여기서 직접 진다 — Drop 이 unref 한다.
+struct ContentFilter(*mut webkit2gtk::ffi::WebKitUserContentFilter);
+
+impl Drop for ContentFilter {
+    fn drop(&mut self) {
+        // SAFETY: 이 포인터는 `webkit_user_content_filter_store_save_finish` 가 준
+        // full ref 이고 이 타입만이 소유한다. Drop 은 한 번만 돈다.
+        unsafe { webkit2gtk::ffi::webkit_user_content_filter_unref(self.0) };
+    }
+}
+
+/// 원격 서브리소스를 막는 content-blocker 규칙. 이 JSON 스키마는 macOS 백엔드가
+/// `WKContentRuleList` 에 넣는 것과 **같다** — 두 플랫폼이 같은 문장을 쓴다.
+/// 근거·대안(왜 `send-request` 도 프록시도 아닌지)·재검토 조건은
+/// `docs/adr/0250-linux-blocks-remote-subresources-with-a-webkit-content-filter.md`.
+const REMOTE_BLOCK_RULES: &str =
+    r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
+
+/// 저장소 안에서 위 규칙을 부르는 이름. `remove_filter_by_id` 가 이 값을 쓴다.
+const REMOTE_BLOCK_FILTER_ID: &str = "tasty-block-remote";
+
+/// 비동기 저장 콜백까지 살아 있어야 하는 것들. `Box::into_raw` 로 넘기고 콜백이
+/// `Box::from_raw` 로 되찾아 떨군다.
+struct FilterSaveState {
+    store: *mut webkit2gtk::ffi::WebKitUserContentFilterStore,
+    ucm: UserContentManager,
+    block_remote: Rc<Cell<bool>>,
+    slot: Rc<RefCell<Option<ContentFilter>>>,
+}
+
+/// content filter 저장소 디렉토리를 만들고 그 경로를 낸다. 못 만들면 사유를 남기고
+/// `None` — 부르는 쪽은 그때 차단 없이 진행한다.
+fn content_filter_store_dir() -> Option<String> {
+    let Some(dir) = tasty_utils::path::tasty_home().map(|h| h.join("webkit-content-filters"))
+    else {
+        tracing::warn!("tasty 홈을 못 찾음 — 원격 서브리소스 차단이 안 걸린다");
+        return None;
+    };
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        tracing::warn!(
+            ?dir,
+            "content filter 저장소 디렉토리 생성 실패: {e} — 차단이 안 걸린다"
+        );
+        return None;
+    }
+    Some(dir.to_string_lossy().into_owned())
+}
+
+/// 원격 차단 필터를 컴파일해 저장하고, 끝나면 차단이 켜져 있을 때 붙인다.
+///
+/// WebKit 은 content filter 를 **디스크 저장소에 컴파일해 두고** 쓴다 — 그래서 이
+/// 경로가 비동기다. 저장소는 tasty 홈 아래에 둔다(같은 규칙을 매번 다시 컴파일하지
+/// 않도록 WebKit 이 알아서 재사용한다).
+fn compile_remote_block_filter(
+    ucm: Option<UserContentManager>,
+    block_remote: Rc<Cell<bool>>,
+    slot: Rc<RefCell<Option<ContentFilter>>>,
+) {
+    use gtk::glib::translate::ToGlibPtr;
+
+    let Some(ucm) = ucm else {
+        tracing::warn!("WebKitGTK UserContentManager 없음 — 원격 서브리소스 차단이 안 걸린다");
+        return;
+    };
+    let Some(dir_str) = content_filter_store_dir() else {
+        return;
+    };
+
+    // SAFETY: 아래 세 포인터는 모두 이 블록이 소유한 값에서 나온다 —
+    // `dir_str`/`REMOTE_BLOCK_FILTER_ID`/`rules` 의 stash 는 호출이 끝날 때까지 살아
+    // 있고(변수로 묶어 둔다), 비동기 호출이 계속 필요로 하는 것(store)은 상태
+    // 상자에 넣어 콜백이 되찾는다. 콜백은 GTK main loop 에서 돈다(= 이 스레드).
+    unsafe {
+        let store = webkit2gtk::ffi::webkit_user_content_filter_store_new(dir_str.to_glib_none().0);
+        let state = Box::new(FilterSaveState {
+            store,
+            ucm,
+            block_remote,
+            slot,
+        });
+        let rules = gtk::glib::Bytes::from_static(REMOTE_BLOCK_RULES.as_bytes());
+        let id = REMOTE_BLOCK_FILTER_ID.to_glib_none();
+        let rules_ptr: *mut gtk::glib::ffi::GBytes = rules.to_glib_none().0;
+        webkit2gtk::ffi::webkit_user_content_filter_store_save(
+            store,
+            id.0,
+            rules_ptr,
+            std::ptr::null_mut(),
+            Some(remote_block_filter_saved),
+            Box::into_raw(state) as gtk::glib::ffi::gpointer,
+        );
+    }
+}
+
+/// `webkit_user_content_filter_store_save` 완료 콜백.
+///
+/// # Safety
+/// GIO 가 부르는 `GAsyncReadyCallback` 이다. `user_data` 는 위 함수가
+/// `Box::into_raw` 로 넘긴 `FilterSaveState` 이고 이 호출이 유일한 소비자다.
+unsafe extern "C" fn remote_block_filter_saved(
+    _source: *mut gtk::glib::gobject_ffi::GObject,
+    result: *mut gtk::gio::ffi::GAsyncResult,
+    user_data: gtk::glib::ffi::gpointer,
+) {
+    use gtk::glib::translate::ToGlibPtr;
+
+    // SAFETY: 위 주석의 계약. 포인터는 한 번만 되찾는다.
+    let state = unsafe { Box::from_raw(user_data.cast::<FilterSaveState>()) };
+    let mut err: *mut gtk::glib::ffi::GError = std::ptr::null_mut();
+    // SAFETY: `state.store` 는 저장을 시작한 그 저장소이고, `result` 는 GIO 가 준
+    // 이 호출의 결과다. 실패면 널을 주고 `err` 를 채운다.
+    let filter = unsafe {
+        webkit2gtk::ffi::webkit_user_content_filter_store_save_finish(state.store, result, &mut err)
+    };
+    // SAFETY: 저장소 참조는 `compile_remote_block_filter` 가 만든 것이고 여기가 끝이다
+    // (비동기 작업은 자기 참조를 따로 잡는다).
+    unsafe { gtk::glib::gobject_ffi::g_object_unref(state.store.cast()) };
+    if filter.is_null() {
+        // SAFETY: 실패 시 GIO 가 채워 준 GError — 메시지를 읽고 해제한다.
+        let msg = unsafe {
+            let m = if err.is_null() {
+                String::from("(원인 미상)")
+            } else {
+                std::ffi::CStr::from_ptr((*err).message)
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            if !err.is_null() {
+                gtk::glib::ffi::g_error_free(err);
+            }
+            m
+        };
+        tracing::warn!("원격 차단 content filter 컴파일 실패: {msg} — 서브리소스 차단이 안 걸린다");
+        return;
+    }
+    let filter = ContentFilter(filter);
+    if state.block_remote.get() {
+        // SAFETY: 방금 받은 유효한 필터를 이 webview 의 매니저에 붙인다. 매니저는
+        // 상태 상자가 살아 있는 동안 유효하다.
+        unsafe {
+            webkit2gtk::ffi::webkit_user_content_manager_add_filter(
+                state.ucm.to_glib_none().0,
+                filter.0,
+            )
+        };
+    }
+    *state.slot.borrow_mut() = Some(filter);
 }
 
 /// 이 백엔드의 실패를 두 종류로 나누는 자리. **분류 근거를 한곳에 모아 둔다** —
@@ -196,12 +354,12 @@ impl PlatformWebView {
         let webview = WebView::new();
         vbox.pack_start(&webview, true, true, 0);
 
-        // 원격 콘텐츠 차단(기본 ON). webkit2gtk 2.0.2 바인딩은 UserContentFilterStore/
-        // UserContentFilter 를 노출하지 않으므로(content-blocker 불가) decide-policy 로
-        // navigation/response URI 를 검사해 원격 http/https 면 무시한다.
-        // **한계**: decide-policy 는 최상위/프레임 네비게이션과 정책 협의 대상 응답에만
-        // 발화하고, 페이지 내 서브리소스(img/css/js)는 잡지 못할 수 있다 — 완전한
-        // 서브리소스 차단은 UserContentFilter 바인딩(상위 webkit2gtk)이 필요(후속).
+        // 원격 콘텐츠 차단(기본 ON). 두 자리에서 막는다 — decide-policy 가 네비게이션을,
+        // content filter 가 페이지 안의 서브리소스를 막는다. 두 자리가 필요한 이유는
+        // decide-policy 가 최상위/프레임 네비게이션과 정책 협의 대상 응답에만 발화하기
+        // 때문이다(실측 2026-09-08: `allow_remote_content=false` 인데 문서 안의 원격
+        // `<img>` 가 그대로 떴다 — macOS 는 `WKContentRuleList`, Windows 는
+        // `WebResourceRequested` 로 이미 서브리소스까지 막고 있어 결론이 갈렸다).
         let block_remote = Rc::new(Cell::new(true));
         let pending_navigations = Rc::new(RefCell::new(Vec::new()));
         {
@@ -310,6 +468,13 @@ impl PlatformWebView {
             });
         }
 
+        // 서브리소스 차단 필터는 디스크 컴파일이라 비동기다 — 지금 시작하고 완료
+        // 콜백이 붙인다. 그 전에 도착하는 원격 요청은 못 막지만, 문서 로드 자체가
+        // 이 뒤라 실사용에서 열리는 창은 없다(있으면 위 warn 이 남는다).
+        let ucm = WebViewExt::user_content_manager(&webview);
+        let content_filter: Rc<RefCell<Option<ContentFilter>>> = Rc::new(RefCell::new(None));
+        compile_remote_block_filter(ucm.clone(), block_remote.clone(), content_filter.clone());
+
         gtk_window.show_all();
 
         Ok(Self {
@@ -324,6 +489,8 @@ impl PlatformWebView {
             pending_navigations,
             parent_x11_window: parent_xid as _,
             gdk_window,
+            ucm,
+            content_filter,
         })
     }
 
@@ -517,12 +684,35 @@ impl PlatformWebView {
         tracing::debug!("set_color_scheme({scheme:?}) — Linux WebKitGTK no-op (후속)");
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. `new()` 의 decide-policy 핸들러가 이 플래그를
-    /// read 해 `false`면 원격 URI navigation/response 를 무시한다(서브리소스 한계는 new 주석
-    /// 참조). 여기서는 플래그만 갱신.
+    /// 원격(http/https) 콘텐츠 허용 여부. `new()` 가 건 두 핸들러가 이 플래그를 read 한다 —
+    /// decide-policy 는 원격 URI navigation/response 를 무시하고, `send-request` 는 원격
+    /// 서브리소스 요청을 취소한다. 여기서는 플래그만 갱신(다음 요청부터 반영).
     pub fn set_remote_content_allowed(&self, allowed: bool) {
         self.block_remote.set(!allowed);
+        self.apply_remote_block_filter();
         tracing::debug!("Linux WebKitGTK set_remote_content_allowed({allowed})");
+    }
+
+    /// 차단 상태를 user content manager 에 idempotent 하게 반영한다. 항상 먼저 지운
+    /// 뒤 차단이면 다시 붙인다(중복 add 방지) — macOS 의 `apply_block_state` 와 같은
+    /// 형태다. 필터가 아직 컴파일 중이면(`None`) 붙일 것이 없고, 완료 콜백이 그때의
+    /// 플래그를 다시 읽어 적용한다.
+    fn apply_remote_block_filter(&self) {
+        use gtk::glib::translate::ToGlibPtr;
+
+        let Some(ucm) = &self.ucm else { return };
+        ucm.remove_filter_by_id(REMOTE_BLOCK_FILTER_ID);
+        if self.block_remote.get()
+            && let Some(filter) = self.content_filter.borrow().as_ref()
+        {
+            // SAFETY: 컴파일이 끝난 유효한 필터이고 매니저는 self 가 소유한다.
+            unsafe {
+                webkit2gtk::ffi::webkit_user_content_manager_add_filter(
+                    ucm.to_glib_none().0,
+                    filter.0,
+                )
+            };
+        }
     }
 }
 

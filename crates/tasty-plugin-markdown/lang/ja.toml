@@ -85,3 +85,6 @@ failed = "コピーに失敗しました"
 [preset.field]
 file = "ファイル"
 file_hint = "マークダウンファイルのパス"
+
+[markdown.settings]
+allow_remote = "リモートコンテンツを許可"

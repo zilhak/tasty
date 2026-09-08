@@ -62,7 +62,7 @@
 | **Tasty** | 앱 크롬 색 — **액센트** <!-- en: Accent --> · **사이드바 배경** <!-- en: Sidebar background --> · **활성 탭 인디케이터** <!-- en: Active tab indicator --> (밑줄 / 채움 / 점) |
 | **터미널** | 터미널 서피스의 **포커스 배경** <!-- en: Focused background --> · **비포커스 배경** <!-- en: Unfocused background --> 과 폰트 override |
 | **탐색기** <!-- en: Explorer --> | 탐색기 전용 폰트 override |
-| **Markdown** · **HTML** | 플러그인이 추가한 페이지 — 마크다운 폰트 override, HTML 뷰어의 **기본 확대** <!-- en: Default zoom --> · **색 구성표** <!-- en: Color scheme --> · **원격 콘텐츠 허용** <!-- en: Allow remote content --> · **스크립트 샌드박스** <!-- en: Sandbox scripts --> |
+| **Markdown** · **HTML** | 플러그인이 추가한 페이지 — 마크다운 폰트 override 와 **원격 콘텐츠 허용** <!-- en: Allow remote content -->, HTML 뷰어의 **기본 확대** <!-- en: Default zoom --> · **색 구성표** <!-- en: Color scheme --> · **원격 콘텐츠 허용** · **스크립트 샌드박스** <!-- en: Sandbox scripts --> |
 
 폰트 설정은 **일반** 의 기본값이 터미널 · 마크다운 · 탐색기에 일괄 적용되고, 각 섹션에서 **기본값 사용** <!-- en: Use default --> 을 끄면 그 종류만 다른 값을 씁니다. **폰트 DPI 스케일링** 이 **자동** 이면 모니터가 달라도 글자의 물리 크기가 같고, **고정** 이면 픽셀 크기가 같아 고해상도 모니터에서 글자가 작아집니다.
 

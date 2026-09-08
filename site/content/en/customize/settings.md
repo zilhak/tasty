@@ -1,4 +1,4 @@
-<!-- source-hash: 78e07be07d66 -->
+<!-- source-hash: 988cbe391c1e -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -63,7 +63,7 @@ If you set **Link click modifier** to **None**, a plain click opens links and ca
 | **Tasty** | App chrome colours — **Accent** · **Sidebar background** · **Active tab indicator** (Underline / Fill / Dot) |
 | **Terminal** | The terminal Surface's **Focused background** · **Unfocused background** and font override |
 | **Explorer** | Explorer-only font override |
-| **Markdown** · **HTML** | Pages added by plugins — the Markdown font override, and the HTML viewer's **Default zoom** · **Color scheme** · **Allow remote content** · **Sandbox scripts** |
+| **Markdown** · **HTML** | Pages added by plugins — the Markdown font override and **Allow remote content**, and the HTML viewer's **Default zoom** · **Color scheme** · **Allow remote content** · **Sandbox scripts** |
 
 For fonts, the defaults under **General** apply to terminal · Markdown · explorer all at once, and turning off **Use default** in a section lets only that type use different values. With **Font DPI scaling** set to **Auto**, the physical size of the text stays the same across monitors; with **Fixed**, the pixel size stays the same, so text gets smaller on high-resolution monitors.
 

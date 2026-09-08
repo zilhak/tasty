@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.84"
+version = "0.1.85"
 description = "Markdown viewer surface (webview)"
 api_version = "1"
 permissions = [
@@ -153,3 +153,10 @@ kind = "font_override"
 id = "font"
 label_key = "settings.appearance.font_override"
 storage_key = "markdown"
+
+[[contributes.settings_pages.items]]
+kind = "toggle"
+id = "allow_remote"
+label_key = "markdown.settings.allow_remote"
+storage_key = "allow_remote_content"
+default = false

@@ -86,3 +86,6 @@ failed = "Copy failed"
 [preset.field]
 file = "File"
 file_hint = "path to markdown file"
+
+[markdown.settings]
+allow_remote = "Allow remote content"

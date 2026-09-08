@@ -85,3 +85,6 @@ failed = "복사 실패"
 [preset.field]
 file = "파일"
 file_hint = "마크다운 파일 경로"
+
+[markdown.settings]
+allow_remote = "원격 콘텐츠 허용"
