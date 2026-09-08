@@ -63,6 +63,44 @@ struct CollectedPluginEvents {
     disconnected: Vec<String>,
 }
 
+/// hello 가 주장한 정체와 설치 매니페스트가 어긋난 축.
+/// [`classify_hello_drift`] 가 내고 [`PluginManager::warn_hello_drift`] 가 찍는다.
+#[derive(Debug, PartialEq, Eq)]
+enum HelloDrift {
+    /// hello 의 `plugin_id` 가 채널 키(= 설치 매니페스트 id)와 다르다.
+    Id,
+    /// 바이너리가 보고한 버전이 매니페스트 버전과 다르다 — 매니페스트 쪽 값을 함께 낸다.
+    Version { manifest: String },
+}
+
+/// hello 의 두 축을 매니페스트와 대조해 **어긋난 것만** 낸다 — 판정만 하고 아무것도
+/// 찍지 않는다. 뿌리는 일과 판정하는 일을 한 함수에 두지 않으므로, 이 판정은
+/// `tracing` 캡처 없이 그대로 시험된다.
+///
+/// `manifest_version` 이 `None` 이면 **채널 키로 매니페스트를 못 찾은 것**이고 그때는
+/// 아무 판정도 하지 않는다 — 대조할 좌변이 없다. 호출자가 조회를 주장한 id 가 아니라
+/// 채널 키로 해야 하는 이유가 여기 있다([`PluginManager::warn_hello_drift`] 참조).
+fn classify_hello_drift(
+    channel_id: &str,
+    claimed_id: &str,
+    version: &str,
+    manifest_version: Option<&str>,
+) -> Vec<HelloDrift> {
+    let Some(manifest_version) = manifest_version else {
+        return Vec::new();
+    };
+    let mut drifts = Vec::new();
+    if claimed_id != channel_id {
+        drifts.push(HelloDrift::Id);
+    }
+    if manifest_version != version {
+        drifts.push(HelloDrift::Version {
+            manifest: manifest_version.to_string(),
+        });
+    }
+    drifts
+}
+
 impl PluginManager {
     /// 매 tick 호출. plugin 이벤트 처리 + 헬스체크 + 비응답 재시작.
     ///
@@ -451,24 +489,28 @@ impl PluginManager {
     ///
     /// 매니페스트 조회는 **채널 키**로 한다. 주장한 id 로 찾으면 id 가 어긋난 바로 그
     /// 경우에 조회가 `None` 이 되어 버전 대조까지 함께 조용해진다.
+    ///
+    /// 판정 자체는 [`classify_hello_drift`] 가 진다 — 이 함수에 남은 것은 조회와
+    /// 찍기뿐이다.
     fn warn_hello_drift(&self, channel_id: &str, claimed_id: &str, version: &str) {
-        let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == channel_id) else {
-            return;
-        };
-        if claimed_id != channel_id {
-            tracing::warn!(
-                "plugin '{channel_id}' identity drift: hello claims id '{claimed_id}' != \
-                 manifest id '{channel_id}' — 권한·비활성·도구 키는 매니페스트 id 로 \
-                 채워지고 registry 는 주장한 id 로 채워져, 둘을 잇는 조회가 조용히 \
-                 비어난다 (plugin 의 `const PLUGIN_ID` 를 매니페스트에 맞춰라)"
-            );
-        }
-        if pkg.manifest.version != version {
-            tracing::warn!(
-                "plugin '{channel_id}' version drift: binary v{version} != manifest v{} — \
-                 stale build? (dev: `cargo build --workspace` 후 재실행)",
-                pkg.manifest.version
-            );
+        let manifest_version = self
+            .packages
+            .iter()
+            .find(|p| p.manifest.id == channel_id)
+            .map(|p| p.manifest.version.as_str());
+        for drift in classify_hello_drift(channel_id, claimed_id, version, manifest_version) {
+            match drift {
+                HelloDrift::Id => tracing::warn!(
+                    "plugin '{channel_id}' identity drift: hello claims id '{claimed_id}' != \
+                     manifest id '{channel_id}' — 권한·비활성·도구 키는 매니페스트 id 로 \
+                     채워지고 registry 는 주장한 id 로 채워져, 둘을 잇는 조회가 조용히 \
+                     비어난다 (plugin 의 `const PLUGIN_ID` 를 매니페스트에 맞춰라)"
+                ),
+                HelloDrift::Version { manifest } => tracing::warn!(
+                    "plugin '{channel_id}' version drift: binary v{version} != manifest \
+                     v{manifest} — stale build? (dev: `cargo build --workspace` 후 재실행)"
+                ),
+            }
         }
     }
 
@@ -811,6 +853,81 @@ mod tests {
             calls[0].permissions.is_empty(),
             "모르는 plugin 은 그대로 비어 있어야 한다: {:?}",
             calls[0].permissions
+        );
+    }
+
+    /// hello 대조의 세 갈래 — 어긋난 축만 나오는가.
+    ///
+    /// 이 판정이 없으면 `warn_hello_drift` 를 통째로 지워도 초록이었다.
+    #[test]
+    fn a_matching_hello_reports_no_drift() {
+        assert_eq!(
+            classify_hello_drift(
+                "com.example.test",
+                "com.example.test",
+                "1.0.0",
+                Some("1.0.0")
+            ),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn a_claimed_id_that_differs_from_the_channel_key_is_id_drift() {
+        assert_eq!(
+            classify_hello_drift(
+                "com.example.test",
+                "com.example.typo",
+                "1.0.0",
+                Some("1.0.0")
+            ),
+            vec![HelloDrift::Id]
+        );
+    }
+
+    /// 버전 축은 매니페스트 쪽 값을 함께 낸다 — 경고문이 "무엇과" 어긋났는지 찍는다.
+    #[test]
+    fn a_binary_version_that_differs_from_the_manifest_is_version_drift() {
+        assert_eq!(
+            classify_hello_drift(
+                "com.example.test",
+                "com.example.test",
+                "1.0.0",
+                Some("1.0.1")
+            ),
+            vec![HelloDrift::Version {
+                manifest: "1.0.1".to_string()
+            }]
+        );
+    }
+
+    /// 두 축은 독립이다 — 하나가 어긋났다고 다른 하나를 안 보지 않는다.
+    #[test]
+    fn both_axes_can_drift_at_once() {
+        assert_eq!(
+            classify_hello_drift(
+                "com.example.test",
+                "com.example.typo",
+                "1.0.0",
+                Some("1.0.1")
+            ),
+            vec![
+                HelloDrift::Id,
+                HelloDrift::Version {
+                    manifest: "1.0.1".to_string()
+                }
+            ]
+        );
+    }
+
+    /// 그 함수 doc 이 스스로 밝힌 함정 — 매니페스트를 못 찾으면 **아무 판정도 안 한다.**
+    /// 호출자가 조회를 주장한 id 로 하면 id 가 어긋난 바로 그 경우에 여기로 떨어져
+    /// 버전 대조까지 함께 조용해진다. 조회를 채널 키로 하는 이유가 이 갈래다.
+    #[test]
+    fn a_channel_key_with_no_manifest_reports_nothing_even_when_both_axes_differ() {
+        assert_eq!(
+            classify_hello_drift("com.example.ghost", "com.example.typo", "1.0.0", None),
+            Vec::new()
         );
     }
 
