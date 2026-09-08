@@ -123,15 +123,20 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
 /// 초록인 채로. 그 전제를 재는 자리는
 /// `tests/hook_commands_stay_on_the_recording_path.rs` 다.
 ///
-/// 세 실패 지점을 모두 기록한다: 포트 파일 부재(=tasty 미실행, 실사용에서 가장 흔한
-/// 원인) / connect 실패 / JSON-RPC 에러. 셸 래퍼가 exit code 를 버리므로, 기록하지
-/// 않으면 이 셋 중 무엇이 일어났는지 사후에 알 방법이 없다.
+/// **전달이 실패로 끝나는 갈래를 하나도 빼지 않고 기록한다**: 포트 파일 부재
+/// (=tasty 미실행, 실사용에서 가장 흔한 원인) / connect 실패 / 연결 준비 실패 /
+/// JSON-RPC 에러, 그리고 응답은 왔지만 호스트 호출이 조용히 실패한 갈래. 셸 래퍼가
+/// exit code 를 버리므로, 기록하지 않으면 그중 무엇이 일어났는지 사후에 알 방법이 없다.
+///
+/// 기록하지 **않는** 갈래는 하나다 — 응답을 받아 놓고 stdout 쓰기가 실패하는 것
+/// (`outln!`). 그것은 전달 실패가 아니라 출력 실패이고, 파이프 조기 종료는 ADR-0101 이
+/// 조용한 종료 코드 0 으로 접는다.
 fn run_dynamic_client(
     request: tasty_ipc::protocol::JsonRpcRequest,
     port_file: Option<&str>,
 ) -> Result<()> {
-    // 세 실패 지점 모두 **로그에는 영어, stderr 에는 번역문**을 낸다. `record` 가
-    // `DiagnosticEnglish` 만 받으므로 그 분리는 타입이 지킨다.
+    // CLI 가 문구를 만드는 갈래는 모두 **로그에는 영어, stderr 에는 번역문**을 낸다.
+    // `record` 가 `DiagnosticEnglish` 만 받으므로 그 분리는 타입이 지킨다.
     let port = match crate::port_file::read_port_diagnosed(port_file) {
         Ok(p) => p,
         Err(e) => {
@@ -153,7 +158,33 @@ fn run_dynamic_client(
             return Err(e.into());
         }
     };
-    let mut conn = IpcConnection::new(stream)?;
+    let mut conn = match IpcConnection::new(stream) {
+        Ok(c) => c,
+        Err(e) => {
+            // 연결은 됐는데 CLI 쪽 준비(스트림 복제)가 실패한 갈래. 요청은 한 바이트도
+            // 안 나갔으므로 **전달 실패**이고, 앞의 두 갈래와 같은 이유로 흔적이 여기
+            // 말고는 없다.
+            //
+            // **기록할 곳이 없어서 안 하는 것이 아니다.** 기록은 IPC 가 아니라
+            // `tasty_home()` 아래 파일이라 상대에 닿는 것과 무관하다 — 닿지도 못한
+            // 앞의 두 갈래가 이미 그렇게 남긴다.
+            //
+            // 다만 이 갈래의 흔한 원인(fd 고갈)은 로그 파일을 여는 것도 같이 막는다.
+            // `record` 는 best-effort 라 그때는 조용히 아무것도 안 남는다 — 그래도
+            // 거는 이유는 원인이 그것 하나가 아니고, 안 걸면 남을 확률이 0 이기 때문이다.
+            //
+            // 문구는 `io::Error` 의 `Display` 다. Rust 는 `setlocale` 을 부르지 않으므로
+            // libc 가 로케일과 무관한 영어를 돌려준다 — `new_unchecked` 의 보증을
+            // 호출자가 지는 자리이고, 그 근거가 이것이다.
+            hook_failure::record(
+                &request.method,
+                &request.params,
+                None, // JSON-RPC 응답을 받은 적이 없다 — 코드가 없다
+                &hook_failure::DiagnosticEnglish::new_unchecked(e.to_string()),
+            );
+            return Err(e);
+        }
+    };
     match conn.send(&request) {
         Ok(value) => {
             // **성공 응답도 실패를 담을 수 있다.** 최선노력 host 호출을 가진 훅 핸들러는
@@ -161,7 +192,7 @@ fn run_dynamic_client(
             // (docs/dev-guide/error-handling.md "최선노력의 대가는 치르되 값으로 노출한다").
             // 그 수는 응답에 있으므로 여기 stdout 으로도 나가지만, 실사용에서 이 CLI 는
             // 훅 명령 안에서 돌고 그 명령은 출력을 버린다 — 이 파일이 유일한 흔적이 되는
-            // 이유가 앞의 세 갈래와 같다.
+            // 이유가 앞의 네 갈래와 같다.
             if let Some(failures) = value
                 .get("host_call_failures")
                 .and_then(serde_json::Value::as_u64)
