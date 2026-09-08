@@ -23,7 +23,7 @@
 //! 호출자에게 **번역된** 오류를 돌려주므로, 최종 오류만 보는 래퍼로 합치면 영어
 //! 원본을 잃는다.
 //!
-//! [`hook_failure_reason_stays_english`]: ./hook_failure_reason_stays_english.rs
+//! [`hook_failure_reason_stays_english`]: ../crates/tasty-doc-guards/tests/hook_failure_reason_stays_english.rs
 
 use std::path::{Path, PathBuf};
 
