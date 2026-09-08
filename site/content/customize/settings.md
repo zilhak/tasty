@@ -1,6 +1,6 @@
 # 설정
 
-이 페이지를 읽으면 설정 윈도우의 구조와 각 탭에 무엇이 있는지, 그리고 같은 내용이 `~/.tasty/config.toml` 에 어떻게 저장되는지 알게 됩니다. 단축키와 테마는 각각 [단축키](keybindings.md) · [테마](themes.md) 에서 따로 다룹니다.
+셸, 글꼴, 화면 배치 등 자주 쓰는 환경을 내 작업 방식에 맞춰보세요. 설정 윈도우에서 항목을 바꾸거나 `~/.tasty/config.toml`을 직접 편집할 수 있습니다. 키 조합과 색을 바꾸는 방법은 [단축키](keybindings.md)와 [테마](themes.md)에서 자세히 안내합니다.
 
 ## 설정 윈도우 열기
 
@@ -258,12 +258,14 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 | `lang/` | 언어팩과 언어 덮어쓰기 파일 — [언어 추가하기](#언어-추가하기-언어팩) |
 | `plugins/` · `plugins-logs/` | 설치된 플러그인과 로그 — [플러그인](../plugins/index.md) |
 | `file-handlers.toml` · `hook-handlers.toml` | 핸들러 탭의 사용자 항목 |
-| `remote-profiles.toml` | 원격 연결 프로필 — [원격 attach](../remote/attach.md) |
+| `remote-profiles.toml` | 원격 연결 프로필 — [원격 작업 이어가기](../remote/attach.md) |
 | `scripts/` | Lua 스크립트를 두는 관례 위치 — [Lua 스크립트](scripts.md) |
 | `transfers/` | 원격에서 받은 파일 기본 저장 폴더 |
 | `tasty.port` · `debug.log` | 실행 중 인스턴스의 포트, 경고 이상 로그 — [문제 해결](../help/troubleshooting.md) |
 
-## 다음 읽을 것
+<a id="다음-읽을-것"></a>
+
+## 함께 살펴보기
 
 - [단축키](keybindings.md) — 기본 표 · 프리셋 · 녹화.
 - [테마](themes.md) — 테마 전환 · 색 덮어쓰기 · 직접 만들기.

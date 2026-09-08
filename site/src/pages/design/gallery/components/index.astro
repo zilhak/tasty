@@ -1,9 +1,9 @@
 ---
 import GalleryPage from "../../../../layouts/GalleryPage.astro";
 import Route from "../../../../gallery/pages/components.jsx";
-import { galleryNav } from "../../../../lib/design";
+import { galleryNav, GALLERY_INTROS } from "../../../../lib/design";
 import { url } from "../../../../lib/site";
 ---
-<GalleryPage title="Components" description="The reusable primitives, live.">
-  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+<GalleryPage title="Components" description={GALLERY_INTROS["components"]}>
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design" />
 </GalleryPage>

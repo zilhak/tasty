@@ -1,9 +1,9 @@
-<!-- source-hash: 9b36113db732 -->
+<!-- source-hash: b49b443c57f3 -->
 # Driving terminals with the tasty CLI
 
-The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
+Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
 
-When an AI coding agent (Claude Code, Codex, and so on) runs inside a Tasty terminal, this CLI is the tool it uses to handle the terminals next to it. It works the same way when a person uses it from a script.
+Start by listing terminals, then try sending a command and reading its output. Agents such as Claude Code and Codex use the same commands.
 
 ## Prerequisites
 
@@ -39,9 +39,9 @@ tasty list surface-kinds   # Surface kinds this instance actually registered
       └─ surface:418 (markdown)
 ```
 
-`list surface-kinds` lists only the kinds `--type <kind>` actually accepts — it is what this instance registered, not what a manifest declares, so a kind is absent when its plugin never came up or this build does not draw it. Each row also carries the render path and the source (host builtin, or which plugin).
+`list surface-kinds` shows the surface kinds you can currently create with `--type <kind>`. A kind will be absent if its plugin is not running or the current build does not support it. Each row shows the rendering method and the plugin or built-in feature that provides it.
 
-Each row of `list workspaces` has the form `name (id:N) (pane count)`. The active Workspace is marked `*`, and a remote mirror is marked `[mirror]` ([Remote attach](../remote/attach.md)).
+Each row of `list workspaces` has the form `name (id:N) (pane count)`. The active Workspace is marked `*`, and a remote mirror is marked `[mirror]` ([Working remotely](../remote/attach.md)).
 
 ## Basic pattern: mark → send → read since mark
 
@@ -71,7 +71,7 @@ tasty is-typing --surface 42                  # whether a person pressed a key i
 
 By default, `read screen` excludes dimmed autocomplete suggestions (for example Claude Code's grey suggestion text). Use `--show-dim` to include them.
 
-If you asked for `--lines N` and got fewer, the response tells you why: `scrollback_len` is how many lines of history exist. `0` means what you got is everything there is — a full-screen app (TUI) that took over the screen right away leaves nothing behind it. Fewer than N with a non-zero `scrollback_len` is a real problem. `alt_screen` tells you whether a full-screen app is up right now.
+If `--lines N` returns fewer lines than requested, check `scrollback_len` in the response. A value of `0` means there is no more scrollback to read, which can happen when you first open a full-screen app (TUI). If scrollback remains but the requested lines are missing, check the output query. `alt_screen` tells you whether a full-screen app is in use.
 
 ## Sending keys
 
@@ -88,7 +88,7 @@ Key names: `enter` `tab` `escape` (or `esc`) `backspace` `delete` `insert` `up` 
 
 ## With shell integration: reading per command
 
-Tasty injects shell integration into bash / zsh automatically, so you can query the commands that ran and their exit codes on a per-command basis.
+Tasty sets up shell integration for bash / zsh automatically, so you can query the commands that ran and their exit codes on a per-command basis.
 
 ```sh
 tasty read commands --surface 42       # list of recorded commands
@@ -192,9 +192,11 @@ tasty read queue --surface 42 --peek     # look without popping
 tasty read queue --surface 42 --clear    # empty everything
 ```
 
-## Running child terminals like agents
+<a id="running-child-terminals-like-agents"></a>
 
-Spawn a child terminal inside a workspace to run a command, send it messages, list them, and clean up when it finishes. This works for **any program**, not only Claude · Codex (their [dedicated commands](claude-codex.md) do the same thing with session management layered on top).
+## Running tasks in several terminals
+
+Open additional terminals in a workspace to run commands, send input, and track the work. You can use this with **any program**, including Claude and Codex. Their [dedicated commands](claude-codex.md) also provide session management.
 
 ```sh
 tasty terminal spawn --workspace build --command "cargo watch -x test\r" --cwd ~/proj --role worker
@@ -246,7 +248,7 @@ tasty output observe stop --observer 1
 
 ## Measuring agent activity
 
-Several agents record their own activity as numbers (token counts · call counts and so on), and you look at it as sums · time series · top rankings. Use it to see at a glance what the whole fleet is doing and how much.
+Several agents record their own activity as numbers (token counts · call counts and so on), and you look at it as sums · time series · top rankings. Use it to review activity and usage across your agents.
 
 ```sh
 tasty telemetry record --metric tokens --value 1200 --tags '{"model":"opus"}'
@@ -269,7 +271,7 @@ tasty set url --surface 42 --url URL   # change the address of a webview surface
 tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
 ```
 
-`set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Point them at a plain terminal surface and they say so.
+`set cwd` and `set url` only apply to a remote surface and a webview surface respectively. Using them on a regular terminal surface returns an unsupported-target error.
 
 ## Frequently used commands
 
@@ -294,8 +296,10 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 - **`read since-mark` is empty** — either the output finished before you set the mark, or the command has not finished yet. Check the current state with `read screen`.
 - **Not sure which window `screenshot` captures** — automatic selection counts **main (terminal) windows only**. With one main window open, omitting `--window` captures it; with several, `--window` is required (it never picks whichever window happens to be focused). Windows that `list windows` does not show, such as the settings window, are not counted: `--window` stays optional while the settings window is up, and capturing the settings window itself means naming its ID with `--window`.
 
-## What to read next
+<a id="what-to-read-next"></a>
 
-- [Claude · Codex](claude-codex.md) — Spawning child agents and being told when they land.
-- [Task DAG](tasks.md) — Tying several pieces of work together by dependency.
+## Keep exploring
+
+- [Claude · Codex](claude-codex.md) — Spawning child agents and receiving completion notifications.
+- [Task workflows](tasks.md) — Tying several pieces of work together by dependency.
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Running commands automatically on an event.

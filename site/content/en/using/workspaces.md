@@ -1,7 +1,7 @@
-<!-- source-hash: e4f81b03ba8b -->
+<!-- source-hash: 47f66078025f -->
 # Workspaces
 
-After reading this page you will know how to create Workspaces, name them, group them into categories, switch between them, and close and restore them. What a Workspace is is explained in [A first look](../getting-started/first-look.md).
+Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
 
 ## Creating
 
@@ -10,7 +10,7 @@ After reading this page you will know how to create Workspaces, name them, group
 | The **New Workspace** button at the bottom of the sidebar | Creates a Workspace with a single terminal |
 | `Alt+N` (macOS `Cmd+N`) | Same |
 | Right-click the **New Workspace** button > **Create workspace from preset...** | Creates one from a saved layout preset ([Saving layouts](panes-tabs-splits.md#saving-layouts--presets)) |
-| Right-click an empty area of the sidebar > **Add remote workspace** | Mirrors tasty on another machine ([Remote attach](../remote/attach.md)) |
+| Right-click an empty area of the sidebar > **Add remote workspace** | Mirrors tasty on another machine ([Working remotely](../remote/attach.md)) |
 
 The terminal in a new Workspace starts in the working directory of the current terminal (**Settings** > **Terminal** > **Inherit working directory**, on by default).
 

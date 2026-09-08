@@ -1,9 +1,9 @@
-<!-- source-hash: 212ca097b72b -->
+<!-- source-hash: 3deb69b08b85 -->
 # Lua scripts
 
-Register a small Lua script and run it from a keybinding, or have it run automatically the moment a window, Workspace or Tab is created or destroyed. A script touches Tasty only through a fixed set of entry points and runs on its own thread, so a stuck script does not freeze the window.
+Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
 
-No file is loaded automatically at startup. Only scripts you register and attach a trigger to run.
+Register each script and connect it to a shortcut or event. Unregistered files do not run automatically at startup.
 
 ## Registering
 
@@ -35,11 +35,11 @@ Pick an event with **Add trigger…** on the **Auto-run** line below the script'
 
 The two rename events fire **only when the change was made directly in the window**. A name changed through the CLI does not fire them.
 
-An auto-run script that causes another event through the CLI can start a chain. There is a guard against this: while an auto-run is going and just after it ends, new auto-runs are briefly suppressed.
+An auto-run script that causes another event through the CLI can start a chain. To prevent repeated execution, Tasty briefly holds off new automatic runs while a script runs and just after it finishes.
 
 ## What a script can do
 
-Tasty provides only the following. There is no other way to touch Tasty's internals directly.
+Use the following Tasty functions in your scripts.
 
 | Function | What it does |
 |---|---|
@@ -57,7 +57,7 @@ tasty.log("workspaces: " .. tostring(#tree.workspaces))
 tasty.run_cli({ "notify", "New Workspace", "--title", "script" })
 ```
 
-File I/O and running external commands from the Lua standard library are available as they are. This is your own script running on your own machine, so it is not sandboxed.
+File I/O and running external commands from the Lua standard library are available as they are. Scripts run on your computer without a separate sandbox.
 
 ## When the file changes
 
@@ -85,7 +85,9 @@ TASTY_LOG=tasty_lua=debug tasty
 
 An auto-run that was blocked, or a chain that was suppressed, is also recorded here as a warning.
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Keybindings](keybindings.md) — Assigning combinations and presets
 - [Settings](settings.md) — The whole settings window and where the settings file lives

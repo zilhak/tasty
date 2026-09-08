@@ -1,9 +1,9 @@
-<!-- source-hash: f1c18fd34165 -->
+<!-- source-hash: 41ad27155df5 -->
 # Install
 
-Follow this page to download and install the Tasty build for your OS, launch it for the first time, and confirm it works. How to update and uninstall is here too.
+Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
 
-Tasty is downloaded directly from the [GitHub releases page](https://github.com/zilhak/tasty/releases). There is no install script and no package-manager registration (apt repository, Homebrew, winget, etc.).
+Download the installer from the [GitHub releases page](https://github.com/zilhak/tasty/releases). Install scripts and package-manager distribution (apt repositories, Homebrew, winget, and so on) are not currently available.
 
 ## Choosing an install file
 

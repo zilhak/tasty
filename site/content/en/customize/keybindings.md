@@ -1,7 +1,7 @@
-<!-- source-hash: fa80f799d8af -->
+<!-- source-hash: 4e994bdca436 -->
 # Keybindings
 
-This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
+Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
 
 ## Notation
 
@@ -143,14 +143,15 @@ Recording rules:
 - **Next tab:** · **Previous tab:** and so on — likewise a single key. Defaults are vi-style `L`/`H` (Tabs), `J`/`K` (Workspaces · categories).
 - Choosing **Custom** in the dropdown abandons the rule and records a completely different combination for each slot (such as `Ctrl+Alt+1`). No number badge is shown in this mode. Going back to the rule mode resets that axis to its defaults.
 
-## Keybindings do nothing while a popup has focus
+<a id="keybindings-do-nothing-while-a-popup-has-focus"></a>
+
+## Keybindings while typing in a popup
 
 While a popup that takes input — the search bar, the file picker, the command palette — **has
-focus, no keybinding works at all.** That is deliberate: you would not want `Alt+W` to close a
-surface while you are typing into the search bar. If such a popup is merely open and does not
+focus, keybindings are paused.** This prevents a shortcut such as `Alt+W` from closing a surface while you type into the search bar. If such a popup is merely open and does not
 have focus, keybindings work as usual.
 
-There are two ways out.
+To return to terminal controls, use either of these actions.
 
 - **`Esc`** — releases the focused popup. Popups of the kind that close when you click outside
   them close as well; the others stay open and merely lose focus. Other popups that are open
@@ -181,7 +182,9 @@ tab_switch_prev_key = "h"
 
 The `+` key itself is written as `ctrl++` or `ctrl+plus`, `-` as `ctrl+-` or `ctrl+minus`, and `=` as `ctrl+=` or `ctrl+equals`. For editing the file in general see [Settings](settings.md).
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Settings](settings.md) — The settings window structure and `config.toml`.
 - [Panes · Tabs · splits](../using/panes-tabs-splits.md) — What the split · move actions in the tables above actually do.

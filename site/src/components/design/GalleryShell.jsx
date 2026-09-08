@@ -1,5 +1,6 @@
 import React from "react";
-import { HowTo, SpecsToggle, ThemeToggle, readSpecs, applySpecs } from "../../gallery/shell.jsx";
+import { GALLERY_INTROS } from "../../lib/design";
+import { SpecsToggle, ThemeToggle, readSpecs, applySpecs } from "../../gallery/shell.jsx";
 
 /**
  * The gallery's chrome, as this site publishes it.
@@ -100,8 +101,14 @@ export function GalleryShell({ groups, active, head, brandHref, backLabel, child
         <div className="g-page">
           <header className="g-pagehead">
             <h1>{head.title}</h1>
-            <p>{head.intro}</p>
-            {head.howto && <HowTo />}
+            <p>{GALLERY_INTROS[active] ?? head.intro}</p>
+            {head.howto && (
+              <div className="g-howto">
+                <div><div className="k">When to use it</div><div className="v">Read the usage notes to choose a component for your task.</div></div>
+                <div><div className="k">Design tokens</div><div className="v">See which tokens each example uses and what they control.</div></div>
+                <div><div className="k">Check dimensions</div><div className="v">Turn on <b>Specs</b> at the top right to show the 4px grid and measurements.</div></div>
+              </div>
+            )}
           </header>
           {children}
         </div>

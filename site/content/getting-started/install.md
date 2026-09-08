@@ -1,8 +1,8 @@
 # 설치
 
-이 페이지를 따라 하면 내 OS 에 맞는 Tasty 를 받아 설치하고, 처음 실행해서 동작을 확인할 수 있습니다. 업데이트와 제거 방법도 여기 있습니다.
+내 컴퓨터에 맞는 Tasty를 설치하고 첫 터미널을 열어보세요. 아래에서 OS별 설치 방법과 업데이트, 제거 방법을 확인할 수 있습니다.
 
-Tasty 는 [GitHub 릴리스 페이지](https://github.com/zilhak/tasty/releases)에서 직접 받습니다. 설치 스크립트나 패키지 매니저(apt 저장소, Homebrew, winget 등) 등록은 없습니다.
+설치 파일은 [GitHub 릴리스 페이지](https://github.com/zilhak/tasty/releases)에서 받으세요. 현재는 설치 스크립트나 패키지 매니저(apt 저장소, Homebrew, winget 등)를 통한 설치는 제공하지 않습니다.
 
 ## 설치 파일 고르기
 

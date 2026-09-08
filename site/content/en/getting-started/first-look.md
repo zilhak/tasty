@@ -1,7 +1,7 @@
-<!-- source-hash: 1ac3a4c54510 -->
+<!-- source-hash: 7330dbc8d28e -->
 # A first look
 
-After reading this page you will know what each part of the Tasty window is and what it is called. Every later page uses these terms.
+Start by looking at the sidebar and work area. Learn how workspaces organize your projects and how panes, tabs, and surfaces fit together, then arrange them to suit your work.
 
 ## Window layout
 
@@ -103,7 +103,9 @@ Pressing the window's close button asks whether to **Quit** or **Minimize to bac
 
 When you launch Tasty again, the Workspace · Pane · Tab arrangement of the last window is restored as it was (**Settings** > **General** > **Restore layout on startup**, on by default).
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Workspaces](../using/workspaces.md) — Names · categories · switching · closing.
 - [Working in the terminal](../using/terminal.md) — Copy/paste, search, mouse capture.

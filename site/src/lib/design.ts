@@ -26,12 +26,12 @@ export const DESIGN_NAV: DesignGroup[] = [
     pages: [
       {
         slug: "",
-        label: { en: "Foundations", ko: "기초" },
-        desc: { en: "brand · color · type · spacing", ko: "브랜드 · 색 · 타이포 · 간격" },
+        label: { en: "Design foundations", ko: "디자인 살펴보기" },
+        desc: { en: "brand · color · type · spacing", ko: "브랜드 · 색 · 글꼴 · 간격" },
       },
       {
         slug: "tokens/",
-        label: { en: "Token system", ko: "토큰 체계" },
+        label: { en: "Design tokens", ko: "디자인 토큰" },
         desc: { en: "primitive → semantic → component", ko: "원시 → 의미 → 컴포넌트" },
       },
     ],
@@ -110,3 +110,19 @@ export const galleryNav = (url: (p: string) => string) =>
     group: g.group,
     pages: g.pages.map((p) => ({ key: p.key, label: p.label, desc: p.desc, href: url(galleryPath(p.slug)) })),
   }));
+
+/** Introductory copy for the site; specimen content comes from the design kit. */
+export const GALLERY_INTROS: Record<string, string> = {
+  "foundations": "See how Tasty's colours, spacing, and typography work in context. Each example shows where a token is used and what it controls.",
+  "icons": "Find an icon by its name or purpose. Hover over a tile to learn its role, and use the shared Icon component to keep icons consistent across the app.",
+  "components": "Try the buttons, fields, and other reusable components. Hover and focus them to explore their states, then check the usage notes, dimensions, and tokens for each example.",
+  "overlays-dialogs": "Explore dialogs for confirming an action or editing a value. Each example shows the message, available actions, and how the dialog closes.",
+  "overlays-windows": "Browse the larger windows used for settings, launchers, and data tables. Compare their navigation and dimensions to choose a layout for your content.",
+  "overlays-popups": "Try menus and popups that open beside a control. Each example shows where it appears and whether it closes on an outside click, Escape, or key release.",
+  "overlays-banners": "See how banners bring a message or action into the work area. They stay below the tab bar and accept mouse input while leaving keyboard focus with your work.",
+  "overlays-tutorial": "Explore the tutorial markers, explanations, and topic list opened from Tools → Tutorial. Use them to guide someone through the parts of the app.",
+  "layouts": "Explore how Tasty arranges navigation and content. Compare list-and-detail layouts with tabs and sections. Turn on Specs to inspect the grid and dimensions.",
+  "dag": "Follow an agent task graph in a tab or workspace popup. Both views use the same canvas to show progress. These views are for inspection; create and edit tasks through the CLI.",
+  "loading": "Preview the screen shown while Tasty starts. It combines the logo, a spinner, and the current startup phase until the app is ready.",
+  "plugins": "Explore the Explorer and the Markdown, HTML, and image viewers. These tools sit alongside terminals in the work area, so you can read files and check results without leaving your workspace."
+};

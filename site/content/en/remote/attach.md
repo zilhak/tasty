@@ -1,7 +1,9 @@
-<!-- source-hash: dd3c972064dc -->
-# Remote attach
+<!-- source-hash: 169ac635f5e5 -->
+<a id="remote-attach"></a>
 
-Bring a Workspace from a Tasty running on another machine into your own Tasty as a **mirror**, view it, and operate it. Connection and authentication are left entirely to SSH, so if you can SSH into that machine, you can attach too.
+# Working remotely (attach)
+
+Connect to work running on another computer and continue it in your own Tasty window. SSH connects you to a remote Tasty workspace, where you can view its terminal layout and output and operate it. This connection is called **attach**, and the remote workspace shown locally is a **mirror**.
 
 ## Concepts
 
@@ -63,14 +65,16 @@ If you pass `--port-file <path>`, that file is read with the highest priority.
 
 To read the IPC port of the instance currently running on the remote machine, run `tasty port` on that machine — this is what port mode `subcommand` calls on the remote.
 
-## 2. Check that the remote is alive
+<a id="2-check-that-the-remote-is-alive"></a>
+
+## 2. Check the remote connection
 
 ```sh
 tasty remote check --profile gx10-attach       # alive: gx10 (port 41234, version …, N workspaces)
 tasty remote workspaces --profile gx10-attach  # list of remote Workspaces (id · name · whether occupied)
 ```
 
-`remote check` only reports alive once it has found the port and actually received a response. A dead instance that left only a port file behind shows as dead. The failure cause is reported as one of four kinds: SSH connection failure / remote instance not running / response could not be parsed / timeout.
+`remote check` only reports alive once it has found the port and actually received a response. If the program has stopped but its port file remains, the result is `dead`. The failure cause is reported as one of four kinds: SSH connection failure / remote instance not running / response could not be parsed / timeout.
 
 Connection attempts do not wait forever — 10 seconds for the SSH connection, 20 seconds per step, 45 seconds total. On a slow link, raise it yourself with something like `--option ConnectTimeout=30` on the ssh profile.
 

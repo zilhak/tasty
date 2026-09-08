@@ -1,6 +1,6 @@
 # 문제 해결
 
-Tasty 를 쓰다 막혔을 때 증상별로 원인과 해결 방법을 찾는 페이지입니다. 어디에 무엇이 기록되는지부터 알아두면 대부분의 문제는 파일 하나를 열어보는 것으로 좁혀집니다.
+Tasty를 쓰다가 막혔다면 아래에서 증상에 맞는 항목을 찾아보세요. 설치와 권한, 터미널 연결, 알림 문제를 확인하는 방법을 안내합니다. 해결되지 않으면 페이지 아래의 문제 신고 방법을 참고하세요.
 
 ## 먼저 볼 파일
 
@@ -56,7 +56,9 @@ TASTY_LOG=debug tasty 2> tasty.log
 - **"Tasty이(가) 다른 앱의 데이터에 접근하려고 합니다" 가 앱 폴더마다 계속 뜹니다** — `~/Library/Application Support/<앱>` 같은 경로는 앱별로 따로 물어서 미리 물어둘 수 없습니다. 위의 전체 디스크 접근 권한을 주면 사라집니다.
 - **`osascript` 를 쓸 때 "다른 앱을 제어하려고 합니다" 가 뜹니다** — Automation 권한은 대상 앱마다 승인해야 하며 전체 디스크 접근 권한으로도 덮이지 않습니다. Tasty 가 미리 해둘 수 있는 것이 없습니다.
 
-## 윈도우가 멈추거나 죽을 때
+<a id="윈도우가-멈추거나-죽을-때"></a>
+
+## 윈도우가 멈추거나 갑자기 종료될 때
 
 - **윈도우가 클릭 · 키 입력 · CLI 에 전혀 반응하지 않습니다** — 5초 넘게 멈추면 `~/.tasty/crash-reports/hang-*.log` 가 자동으로 남습니다. 파일의 `Render phase` 가 `acquire` / `submit` / `present` 면 GPU 드라이버 쪽 문제입니다 — 드라이버를 업데이트합니다. Tasty 는 스스로 복구하지 않으므로 강제 종료하고 다시 띄웁니다.
 - **갑자기 종료됐습니다** — `~/.tasty/crash-reports/crash-*.log` 를 봅니다. 문제를 신고할 때 이 파일을 함께 붙입니다.
@@ -86,7 +88,7 @@ TASTY_LOG=debug tasty 2> tasty.log
 ## 알림이 안 오거나 너무 많을 때
 
 - **OS 알림이 안 뜹니다** — Tasty 윈도우가 활성일 때는 OS 알림을 보내지 않고 앱 안의 패널 · 테두리 · 배지로만 알립니다. 윈도우가 비활성일 때만 OS 알림이 가며, 초당 1회로 제한됩니다. **설정** > **알림** <!-- en: Notifications --> 의 **알림 활성화** <!-- en: Notifications enabled --> 가 꺼져 있지 않은지 봅니다. 패널은 `Ctrl+Shift+I` (macOS `Cmd+Shift+I`) 로 엽니다.
-- **벨 소리(`\a`)마다 알림이 떠서 시끄럽습니다** — **설정** > **터미널** > **벨 알림 표시** <!-- en: Show bell notification --> 를 끕니다. `config.toml` 에서는 `[general]` 의 `bell_notification = false`. 벨 훅은 그대로 발화합니다.
+- **벨 소리(`\a`)마다 알림이 떠서 시끄럽습니다** — **설정** > **터미널** > **벨 알림 표시** <!-- en: Show bell notification --> 를 끕니다. `config.toml` 에서는 `[general]` 의 `bell_notification = false`. 벨 훅은 그대로 발생합니다.
 - **소리가 안 납니다** — **설정** > **알림** > **소리** <!-- en: Sound --> 가 기본 꺼짐입니다. 켜도 병합 간격 안에 같은 출처에서 연달아 온 알림은 하나로 합쳐져 소리가 한 번만 납니다.
 
 설정 항목 전체는 [훅 · 알림 · 웹훅](../agents/hooks-notifications.md#설정).
@@ -111,7 +113,9 @@ tasty codex install     # ~/.codex/config.toml
 - **`tasty plugin list` 에서 enabled 인데 running 이 아닙니다** — 10초 안에 3번 실행에 실패하면 자동으로 정지됩니다. `tasty plugin logs <id>` 로 원인을 본 뒤 `tasty plugin enable <id>` 로 다시 시작합니다.
 - **번들 플러그인이 깨졌습니다** — `tasty plugin upgrade-builtins --force` 로 번들에서 다시 복사합니다. 플러그인 데이터(북마크 · 프로필 등)는 유지됩니다.
 
-## 내 dev 서버가 몇 번 포트에 떴는지 모를 때
+<a id="내-dev-서버가-몇-번-포트에-떴는지-모를-때"></a>
+
+## 개발 서버의 포트를 찾고 싶을 때
 
 사이드바의 **도구** <!-- en: Tools --> 메뉴에서 **리스닝 포트...** <!-- en: Listening ports... --> 를 엽니다. Tasty 터미널에서 띄운 프로세스가 열어둔 TCP 포트를 포트 · 프로세스 · 워크스페이스 · 탭과 함께 보여줍니다.
 
@@ -122,7 +126,7 @@ tasty codex install     # ~/.codex/config.toml
 
 ## 문제 신고
 
-https://github.com/zilhak/tasty/issues 에 올립니다. 다음을 함께 적으면 빨리 해결됩니다.
+[GitHub 이슈](https://github.com/zilhak/tasty/issues)에 증상을 알려주세요. 아래 정보를 함께 남기면 원인을 확인하는 데 도움이 됩니다.
 
 - `tasty --version` 출력과 OS · 버전
 - 재현 절차

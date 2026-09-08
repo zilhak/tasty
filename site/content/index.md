@@ -1,8 +1,8 @@
 # Tasty 가이드
 
-Tasty 는 Windows · macOS · Linux 에서 똑같이 동작하는 GPU 가속 터미널입니다. 한 윈도우 안에 여러 워크스페이스를 두고, 각 워크스페이스를 페인 · 탭 · 분할로 나눠 씁니다. 사람이 키보드로 하는 거의 모든 일을 `tasty` CLI 로도 할 수 있어서, Claude Code · Codex 같은 AI 코딩 에이전트가 터미널을 직접 다루게 만들 수 있습니다.
+Tasty는 나와 AI 에이전트가 함께 일하는 GPU 가속 터미널입니다. Windows, macOS, Linux에서 프로젝트별로 워크스페이스를 나누고, 여러 터미널을 나란히 열어 작업할 수 있습니다. 에이전트도 `tasty` CLI로 터미널을 만들고 명령을 실행하며 결과를 확인합니다.
 
-이 가이드는 Tasty 를 받아서 설치하고 쓰는 사람을 위한 문서입니다. 처음이라면 위에서부터 차례로 읽습니다. 특정 기능만 찾는다면 아래 목차에서 바로 들어갑니다.
+처음이라면 설치와 첫 화면 둘러보기부터 시작하세요. 이미 사용 중이라면 아래에서 필요한 기능을 골라 살펴보세요.
 
 ## 시작하기
 
@@ -27,12 +27,12 @@ Tasty 는 Windows · macOS · Linux 에서 똑같이 동작하는 GPU 가속 터
 
 - [tasty CLI 로 터미널 조작하기](agents/cli.md) — `list` / `send` / `read` / `mark` / `notify` 기본 패턴.
 - [Claude · Codex 와 함께 쓰기](agents/claude-codex.md) — 훅 설치, 자식 인스턴스 spawn, tell, 완료 알림.
-- [작업 DAG](agents/tasks.md) — 할 일을 의존 관계로 묶어 순서대로 실행하고 진행을 그래프로 보기.
+- [작업 순서 관리](agents/tasks.md) — 할 일을 의존 관계로 묶어 순서대로 실행하고 진행을 그래프로 보기.
 - [훅 · 알림 · 웹훅](agents/hooks-notifications.md) — 서피스 훅, 글로벌 훅, 알림, 외부 HTTP 트리거.
 
 ## 원격 · 플러그인
 
-- [원격 attach](remote/attach.md) — 프로필과 SSH 로 다른 머신의 Tasty 를 내 화면에 비추기.
+- [원격 작업 이어가기](remote/attach.md) — 프로필과 SSH 로 다른 컴퓨터의 Tasty 를 내 화면에 비추기.
 - [플러그인](plugins/index.md) — 설치, 권한, 번들 플러그인 소개.
 
 ## 도움말

@@ -1,9 +1,9 @@
 ---
 import GalleryPage from "../../../../layouts/GalleryPage.astro";
 import Route from "../../../../gallery/pages/icons.jsx";
-import { galleryNav } from "../../../../lib/design";
+import { galleryNav, GALLERY_INTROS } from "../../../../lib/design";
 import { url } from "../../../../lib/site";
 ---
-<GalleryPage title="Icons" description="The canonical glyph set, by name.">
-  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+<GalleryPage title="Icons" description={GALLERY_INTROS["icons"]}>
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design" />
 </GalleryPage>

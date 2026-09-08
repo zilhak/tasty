@@ -1,11 +1,13 @@
-<!-- source-hash: 051f19e2bb82 -->
-# Task DAG
+<!-- source-hash: 82d2234a6c2f -->
+<a id="task-dag"></a>
 
-Turn what an agent has to do into **tasks** and tie them together by dependency, and you get a graph. Tasty's runner executes them in order, handles failures the way you told it to, and passes results on to the next task. A person watches the progress as a graph in a window.
+# Task workflows (DAG)
 
-Every command is part of the `tasty` CLI, so an agent calls them straight from a shell. The place a person mostly looks at is [Watching progress](#watching-progress).
+Run tests after a build finishes, then pass the results to the next task. Register each step as a **task** and connect it to the work it depends on. Tasty handles the order and failure policy. These connected tasks form a **DAG**, a graph of task dependencies.
 
-Every command needs `--workspace-id`. A task belongs to a Workspace, and the result does not change depending on which Workspace is active.
+Create and manage tasks with the `tasty` CLI. To follow them in the app, see [Watching progress](#watching-progress).
+
+Pass the task's workspace as `--workspace-id` in each command. The command uses that workspace even while you are viewing another one.
 
 ## Starting the runner
 
@@ -30,7 +32,7 @@ Creating one returns a task ID. Use that ID to wire dependencies and to query st
 
 | Command kind | What it does |
 |---|---|
-| `run` | Just runs a command. It is a background process that does not occupy a terminal, and it carries up to the last 64KiB each of standard output and standard error in the result. Interactive programs do not fit here |
+| `run` | Runs the specified command. It is a background process that does not occupy a terminal, and it carries up to the last 64KiB each of standard output and standard error in the result. Interactive programs do not fit here |
 | `custom` | Turns one of Tasty's own actions into a task. Things that create a terminal, such as spawning a child agent, belong here |
 | `reduce` | Merges the results of several tasks into one |
 | `wait_barrier` | Waits until all the signals have gathered at a barrier |
@@ -53,7 +55,7 @@ Every task listed in `--depends-on` has to finish before this task becomes ready
 | `continue_downstream` | This task runs even if a task it depends on failed | The depending side |
 | `fallback:<task ID>` | If this task fails, that task is woken up instead | The side that can fail |
 
-It is easy to get the placement wrong. `abort` and `continue_downstream` have to be attached to the **following** task for them to count toward that task's readiness decision, while `fallback` has to go the other way, on the task that **can fail** itself. Attach them the wrong way round and nothing happens, quietly.
+It is easy to get the placement wrong. `abort` and `continue_downstream` have to be attached to the **following** task for them to count toward that task's readiness decision, while `fallback` has to go the other way, on the task that **can fail** itself. Using a policy on the wrong task will not give you the intended failure handling.
 
 A task used as a fallback has to be created before the main task. To stop the runner from running it first in the meantime, create the fallback with `--reserved-for-fallback`. It then does not run until a main task that references it exists.
 
@@ -130,8 +132,10 @@ tasty agent task-reduce --workspace-id 2 --inputs t-a,t-b --strategy all --extra
 
 The full list is in `tasty agent --help`.
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Driving Tasty from the CLI](cli.md) — The commands agents use in general
-- [Claude · Codex](claude-codex.md) — Spawning child agents and being told about them
+- [Claude · Codex](claude-codex.md) — Spawning child agents and receiving completion notifications
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Getting notified when a command finishes

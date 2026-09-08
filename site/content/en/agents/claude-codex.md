@@ -1,9 +1,9 @@
-<!-- source-hash: d413f945f680 -->
+<!-- source-hash: 8324f4590776 -->
 # Working with Claude and Codex
 
-This page explains how to run Claude Code and Codex CLI inside Tasty, and how one agent drives another as a child to parallelise work. Install the hooks once, and the parent is notified automatically when a child finishes its work.
+Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
 
-Claude Code and Codex CLI themselves must be installed separately. Tasty only handles launching, placement, and parent-child relationship management.
+Install Claude Code and Codex CLI separately. Tasty manages launching, placement, and the connection to the agent that delegated the work. Set up the hooks below to receive completion notifications.
 
 ## 1. Install the hooks (once)
 
@@ -16,7 +16,7 @@ tasty codex install     # add the Tasty entry to [hooks] in ~/.codex/config.toml
 
 - Hooks you added yourself are preserved as they are. Running it several times does not create duplicates.
 - **Run it again after updating Tasty.** The hook command string is baked into the settings file, so a reinstall is needed to pick up the new format.
-- When you run Claude Code outside Tasty, these hooks do nothing (they pass silently).
+- These hooks do not run when you use Claude Code outside Tasty.
 - To remove: `tasty claude uninstall` / `tasty codex uninstall`.
 
 Once the hooks are installed, the following works automatically.
@@ -36,9 +36,11 @@ This creates a new Workspace and runs the CLI in its terminal. If you omit `--wo
 
 For Codex you can attach approval and sandbox policies with `--approval untrusted|on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, and `--full-auto` (see "Codex approval policy" below).
 
-## 3. Driving child agents (spawn / tell)
+<a id="3-driving-child-agents-spawn--tell"></a>
 
-From inside a Claude Code session, spawn a child like this. The child appears as a new Tab in a Pane of the given Workspace, and the parent-child relationship is recorded.
+## 3. Delegating work to another agent (spawn / tell)
+
+From a Claude Code session, use the following command to launch another agent. The agent that delegates the work is called the parent, and the new agent is called the child. The new agent opens in a tab within a pane of the chosen workspace, and Tasty records this relationship.
 
 ```sh
 tasty claude spawn --workspace workers --cwd ~/proj --role tester --nickname t1 \
@@ -85,9 +87,9 @@ When a child becomes idle (idle) or needs input (needs_input), or exits, one lin
 $TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log
 ```
 
-- Both environment variables are already present in shells that Tasty opened. Do not assemble the path by hand.
+- Both environment variables are already present in shells that Tasty opened. Use these variables to locate the log file.
 - Example line (English): `surface 57 task complete (via spawn)`. The wording follows the app language.
-- It keeps coming every time the state changes while the child is alive — it is not a one-off.
+- A notification is added whenever the state changes while the child agent is running.
 - When the file exceeds 256 KiB it is emptied and written afresh.
 - If a Claude child has been stalled for more than 30 seconds after an API error, a separate "stalled" line arrives in the same file.
 
@@ -99,7 +101,7 @@ Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.lo
 
 In environments where Monitor is not available, read the file directly (`tail -f`). Delivery may be delayed by tens of seconds, but it is never lost.
 
-Codex children have no `needs_input` notification (Codex CLI has no such event). If one stops at an approval prompt nobody will know, which is why the approval policy below matters.
+Codex children have no `needs_input` notification (Codex CLI has no such event). A pause at an approval prompt will not appear in state notifications, so check the approval policy below before starting.
 
 ## 5. Codex approval policy
 
@@ -121,7 +123,7 @@ tasty claude reboot --surface 57 --delay 5
 tasty codex reboot --surface 58
 ```
 
-After the given delay it kills the process and starts again continuing the same session. When an agent calls this on **itself**, it should be the last action of the turn — anything after it is cut off. Calling it on a child does not cut off the parent's turn.
+After the specified delay, Tasty stops the process and resumes the same session. When an agent calls this on **itself**, it should make this its last action of the turn, since stopping the process interrupts any remaining response. Restarting a child does not interrupt the parent's response.
 
 ## 7. Claude session profiles and the Stop gate
 
@@ -135,7 +137,7 @@ tasty claude reboot --profile strict                        # carried over to la
 tasty claude child-profile --child 0 --profile strict       # attach persistently to a child
 ```
 
-The **Stop gate** is a mechanism that injects a checklist when an agent is about to end its turn, making it re-examine its own work. Enable the built-in gate `continue-checklist` and attach it.
+Use a **Stop gate** to have an agent review a checklist before finishing its response. Enable the built-in `continue-checklist` gate and connect it to the session.
 
 ```sh
 tasty claude checklist-enable                               # turn the gate on (checklist-disable turns it off)
@@ -153,7 +155,9 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **The child is not spawned and you get an "occupied" error** — the target Workspace is being attached from a remote, or is a mirror. Use another Workspace.
 - **No notifications when launched from the app icon on macOS** — Tasty calls `tasty` again when it writes notifications, but Tasty adds its own executable path to PATH automatically, so this is normally not a problem. If it still fails, look at `hook-failures.log`.
 
-## What to read next
+<a id="what-to-read-next"></a>
 
-- [Task DAG](tasks.md) — Running spawn and tell as one dependency graph.
+## Keep exploring
+
+- [Task workflows](tasks.md) — Running spawn and tell as one dependency graph.
 - [Hooks · notifications · webhooks](hooks-notifications.md) — Completion notices and approval gates.

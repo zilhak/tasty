@@ -1,7 +1,7 @@
-<!-- source-hash: 988cbe391c1e -->
+<!-- source-hash: f10970fe4993 -->
 # Settings
 
-After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
+Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
 
 ## Opening the settings window
 
@@ -266,12 +266,14 @@ tasty settings set-remote-transfer --dir ~/incoming --max-mb 1000
 | `lang/` | Language packs and language overrides — [Adding a language](#adding-a-language-language-packs) |
 | `plugins/` · `plugins-logs/` | Installed plugins and their logs — [Plugins](../plugins/index.md) |
 | `file-handlers.toml` · `hook-handlers.toml` | User entries from the Handler tab |
-| `remote-profiles.toml` | Remote connection profiles — [Remote attach](../remote/attach.md) |
+| `remote-profiles.toml` | Remote connection profiles — [Working remotely](../remote/attach.md) |
 | `scripts/` | The conventional place for Lua scripts — [Lua scripts](scripts.md) |
 | `transfers/` | Default save folder for files received from a remote |
 | `tasty.port` · `debug.log` | The running instance's port, and the warning-and-above log — [Troubleshooting](../help/troubleshooting.md) |
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Keybindings](keybindings.md) — The default table · presets · recording.
 - [Themes](themes.md) — Switching themes · overriding colours · making your own.

@@ -1,8 +1,8 @@
 # Claude · Codex 와 함께 쓰기
 
-Tasty 안에서 Claude Code 와 Codex CLI 를 띄우고, 한 에이전트가 다른 에이전트를 자식으로 부려 병렬 작업을 시키는 방법을 정리합니다. 훅을 한 번 설치하면 자식이 작업을 마쳤을 때 부모가 자동으로 알림을 받습니다.
+Claude Code와 Codex CLI를 연결해 여러 에이전트에게 일을 나눠 맡겨보세요. 한 에이전트가 다른 에이전트를 실행하고 결과를 받는 방식으로 구현, 테스트, 검토를 함께 진행할 수 있습니다.
 
-Claude Code 와 Codex CLI 자체는 따로 설치돼 있어야 합니다. Tasty 는 실행·배치·부모-자식 관계 관리만 맡습니다.
+Claude Code와 Codex CLI는 별도로 설치하세요. Tasty는 에이전트 실행과 배치, 작업을 맡긴 에이전트와의 연결을 관리합니다. 아래 훅 설정을 마치면 작업 완료 알림을 받을 수 있습니다.
 
 ## 1. 훅 설치 (처음 한 번)
 
@@ -14,8 +14,8 @@ tasty codex install     # ~/.codex/config.toml 의 [hooks] 에 Tasty 항목 추�
 ```
 
 - 이미 직접 넣어 둔 훅은 그대로 보존됩니다. 여러 번 실행해도 중복되지 않습니다.
-- **Tasty 를 업데이트한 뒤에는 다시 실행합니다.** 훅 명령 문자열은 설정 파일에 박히므로 새 형식을 반영하려면 재설치가 필요합니다.
-- Tasty 밖에서 Claude Code 를 실행할 때는 이 훅이 아무것도 하지 않습니다 (조용히 통과).
+- **Tasty 를 업데이트한 뒤에는 다시 실행합니다.** 훅 명령 문자열은 설정 파일에 저장되므로 새 형식을 반영하려면 재설치가 필요합니다.
+- Tasty 밖에서 Claude Code를 실행하면 이 훅은 동작하지 않습니다.
 - 제거는 `tasty claude uninstall` / `tasty codex uninstall`.
 
 훅이 설치되면 다음이 자동으로 동작합니다.
@@ -35,9 +35,11 @@ tasty codex launch --workspace review --directory ~/proj
 
 Codex 는 `--approval untrusted|on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, `--full-auto` 로 승인·샌드박스 정책을 붙일 수 있습니다 (아래 "Codex 승인 정책").
 
-## 3. 자식 에이전트 부리기 (spawn / tell)
+<a id="3-자식-에이전트-부리기-spawn--tell"></a>
 
-Claude Code 세션 안에서 다음처럼 자식을 띄웁니다. 자식은 지정한 워크스페이스의 페인에 새 탭으로 생기고, 부모-자식 관계가 기록됩니다.
+## 3. 다른 에이전트에게 작업 맡기기 (spawn / tell)
+
+Claude Code 세션에서 다음 명령으로 다른 에이전트를 실행해 보세요. 작업을 맡긴 쪽을 부모, 새로 실행한 쪽을 자식 에이전트라고 부릅니다. 새 에이전트는 지정한 워크스페이스의 페인에 탭으로 열리고, 이 관계가 기록됩니다.
 
 ```sh
 tasty claude spawn --workspace workers --cwd ~/proj --role tester --nickname t1 \
@@ -84,9 +86,9 @@ tasty claude parent --surface 57                            # 이 자식의 부�
 $TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log
 ```
 
-- 두 환경변수는 Tasty 가 띄운 셸에 이미 들어 있습니다. 경로를 직접 조립하지 않습니다.
+- 두 환경변수는 Tasty 가 띄운 셸에 이미 들어 있습니다. 위 두 환경변수로 로그 파일 경로를 확인하세요.
 - 한 줄 예(한국어 설정): `surface 57 작업 완료 (호출 방식: spawn)`. 문구는 앱 언어를 따릅니다.
-- 자식이 살아 있는 동안 상태가 바뀔 때마다 계속 옵니다 — 한 번만 오는 것이 아닙니다.
+- 자식 에이전트가 실행 중이면 상태가 바뀔 때마다 알림이 추가됩니다.
 - 파일이 256 KiB 를 넘으면 비우고 새로 씁니다.
 - Claude 자식이 API 오류 뒤 30초 넘게 멈춰 있으면 같은 파일에 "멈춤" 줄이 따로 옵니다.
 
@@ -98,7 +100,7 @@ Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.lo
 
 Monitor 를 쓸 수 없는 환경에서는 파일을 직접 읽습니다 (`tail -f`). 전달이 수십 초 늦어질 수는 있어도 사라지지는 않습니다.
 
-Codex 자식은 `needs_input` 알림이 없습니다 (Codex CLI 에 해당 이벤트가 없습니다). 승인 프롬프트에서 멈추면 아무도 모르므로 아래 승인 정책이 중요합니다.
+Codex 자식은 `needs_input` 알림이 없습니다 (Codex CLI 에 해당 이벤트가 없습니다). 승인 프롬프트에서 멈추면 상태 알림으로 확인할 수 없으므로, 아래 승인 정책을 먼저 확인하세요.
 
 ## 5. Codex 승인 정책
 
@@ -120,7 +122,7 @@ tasty claude reboot --surface 57 --delay 5
 tasty codex reboot --surface 58
 ```
 
-지정한 시간 뒤 프로세스를 끊고 같은 세션을 이어서 시작합니다. 에이전트가 **자기 자신**에게 호출할 때는 턴의 마지막 행동으로 부릅니다 — 그 뒤 내용은 잘립니다. 자식에게는 부모 턴이 잘리지 않습니다.
+지정한 시간 뒤 프로세스를 끊고 같은 세션을 이어서 시작합니다. 에이전트가 **자기 자신**에게 호출할 때는 턴의 마지막 행동으로 부릅니다 — 이후 응답은 프로세스 종료로 중단됩니다. 자식 에이전트만 재시작할 때는 작업을 요청한 에이전트의 응답이 중단되지 않습니다.
 
 ## 7. Claude 세션 프로필과 Stop 게이트
 
@@ -134,7 +136,7 @@ tasty claude reboot --profile strict                        # 이후 재시작�
 tasty claude child-profile --child 0 --profile strict       # 자식에게 지속 부착
 ```
 
-**Stop 게이트**는 에이전트가 턴을 끝내려 할 때 체크리스트를 주입해 스스로 재검토하게 만드는 장치입니다. 내장 게이트 `continue-checklist` 를 켜고 붙입니다.
+**Stop 게이트**를 사용하면 에이전트가 응답을 마치기 전에 체크리스트로 작업을 다시 확인하도록 할 수 있습니다. 기본 제공 게이트인 `continue-checklist`를 켜고 세션에 연결하세요.
 
 ```sh
 tasty claude checklist-enable                               # 게이트 켜기 (checklist-disable 로 끔)
@@ -152,7 +154,9 @@ tasty claude spawn --workspace w --profile continue-checklist
 - **자식이 spawn 되지 않고 "occupied" 오류** — 대상 워크스페이스가 원격에서 attach 중이거나 mirror 입니다. 다른 워크스페이스를 씁니다.
 - **macOS 에서 앱 아이콘으로 실행하면 알림이 안 옵니다** — Tasty 가 알림을 쓸 때 `tasty` 를 다시 호출하는데, Tasty 는 자기 실행 파일 경로를 자동으로 PATH 에 넣으므로 보통은 문제없습니다. 그래도 안 되면 `hook-failures.log` 를 봅니다.
 
-## 다음 읽을 것
+<a id="다음-읽을-것"></a>
 
-- [작업 DAG](tasks.md) — spawn 과 tell 을 의존 관계로 묶어 한 그래프로 돌리기.
+## 함께 살펴보기
+
+- [작업 순서 관리](tasks.md) — spawn 과 tell 을 의존 관계로 묶어 한 그래프로 돌리기.
 - [훅 · 알림 · 웹훅](hooks-notifications.md) — 완료 통지와 승인 게이트.

@@ -12,27 +12,26 @@ const { lang } = Astro.props;
 
 const COPY = {
   en: {
-    title: "Foundations",
+    title: "Design foundations",
     intro:
-      "What the app is made of, drawn from the same tokens the app ships. Every swatch, ramp and " +
-      "specimen below is a live document rendered from <code>--tasty-*</code> — change a token and " +
-      "the page changes with it.",
-    source: "source:",
-    galleryTitle: "The gallery",
+      "Explore the colours, typography, and spacing that shape Tasty. The examples below use " +
+      "the app's <code>--tasty-*</code> design tokens, so they stay in step with the design system.",
+    source: "View source:",
+    galleryTitle: "Explore the components",
     galleryBody:
-      "The catalogue of everything the app draws — live, interactive, and annotated with the " +
-      "layout spec and the exact tokens each specimen consumes.",
+      "Try buttons, menus, and layouts in the gallery. Each example explains when to use it, " +
+      "how it behaves, and which dimensions and tokens it uses.",
   },
   ko: {
-    title: "기초",
+    title: "디자인 살펴보기",
     intro:
-      "앱을 이루는 것들을, 앱이 실제로 출하하는 토큰 그대로 그렸다. 아래의 모든 색·단계·표본은 " +
-      "<code>--tasty-*</code> 로 렌더된 살아 있는 문서다 — 토큰이 바뀌면 이 페이지도 같이 바뀐다.",
-    source: "원본:",
-    galleryTitle: "갤러리",
+      "Tasty의 색, 글꼴, 간격이 화면에서 어떻게 쓰이는지 살펴보세요. 아래 예시는 앱과 같은 " +
+      "<code>--tasty-*</code> 디자인 토큰을 사용하므로 디자인 시스템의 변경 사항이 함께 반영됩니다.",
+    source: "원본 보기:",
+    galleryTitle: "컴포넌트 직접 살펴보기",
     galleryBody:
-      "앱이 그리는 모든 것의 카탈로그다. 살아 있고, 직접 만져지고, 각 표본이 소비하는 " +
-      "레이아웃 스펙과 토큰이 함께 적혀 있다.",
+      "갤러리에서 버튼, 메뉴, 화면 배치를 직접 사용해 보세요. 각 예시에서 사용 목적과 동작, " +
+      "크기와 디자인 토큰을 확인할 수 있습니다.",
   },
 };
 const c = COPY[lang];

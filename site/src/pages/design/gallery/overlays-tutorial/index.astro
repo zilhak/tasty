@@ -1,9 +1,9 @@
 ---
 import GalleryPage from "../../../../layouts/GalleryPage.astro";
 import Route from "../../../../gallery/pages/overlays-tutorial.jsx";
-import { galleryNav } from "../../../../lib/design";
+import { galleryNav, GALLERY_INTROS } from "../../../../lib/design";
 import { url } from "../../../../lib/site";
 ---
-<GalleryPage title="Tutorial" description="The tutorial marker, callout and topic list.">
-  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+<GalleryPage title="Tutorial" description={GALLERY_INTROS["overlays-tutorial"]}>
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design" />
 </GalleryPage>

@@ -1,9 +1,9 @@
 ---
 import GalleryPage from "../../../layouts/GalleryPage.astro";
 import Route from "../../../gallery/pages/foundations.jsx";
-import { galleryNav } from "../../../lib/design";
+import { galleryNav, GALLERY_INTROS } from "../../../lib/design";
 import { url } from "../../../lib/site";
 ---
-<GalleryPage title="Foundations" description="Every token shown inside the thing it builds.">
-  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+<GalleryPage title="Foundations" description={GALLERY_INTROS["foundations"]}>
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design" />
 </GalleryPage>

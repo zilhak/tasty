@@ -1,7 +1,7 @@
-<!-- source-hash: 570f3b7e589b -->
+<!-- source-hash: de2ba08e4962 -->
 # Hooks, notifications and webhooks
 
-This page covers **hooks**, which run a command automatically when something happens in a terminal (process exit, specific output, bell); **notifications**, which tell a person; and **webhooks**, which wake Tasty over HTTP from outside. Combining the three lets you build automations like "notify me when the build finishes" with the CLI alone.
+Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
 
 ## Surface hooks
 
@@ -21,7 +21,7 @@ tasty unset hook --hook <HOOK_ID>
 | `bell` | When a bell (`\a`) is received |
 | `notification` | When a terminal notification sequence (OSC 9/99/777) is received |
 | `output-match:<regex>` | When a **completed line** of output matches the regex |
-| `idle-timeout:<secs>` | When there has been no output for N seconds (1-second granularity, re-armed when new output arrives) |
+| `idle-timeout:<secs>` | When there has been no output for N seconds (1-second granularity, starts waiting again when new output arrives) |
 | `command-completed` | When one command finishes inside the shell (requires bash/zsh shell integration) |
 | `command-completed:<code>` | Only commands that finished with that exit code (e.g. `command-completed:1` = failed commands) |
 | `claude-idle` / `needs-input` / `codex-idle` | Events emitted by the Claude Code / Codex plugins ([Claude and Codex](claude-codex.md)) |
@@ -117,7 +117,7 @@ bell_notification = true   # show bell notifications (turning it off suppresses 
 
 ### Waiting for a human decision (approval)
 
-Unlike one-way notifications, this is a gate where an agent **waits** for the user's response before a dangerous action.
+Send an approval request when a task needs the user's decision before it can proceed. The agent can then wait for the response.
 
 ```sh
 ID=$(tasty approval request --title "Run the prod DB migration?" --severity danger \
@@ -133,7 +133,7 @@ tasty approval await --id "$ID"            # wait until a response arrives, prin
 
 Let CI or other services send an HTTP request to trigger an action inside Tasty. Tasty opens one designated port and issues an unguessable URL for each webhook.
 
-**There is no signature verification.** Send the HMAC signature header that GitHub and others use and Tasty will not look at it. Only two things tell senders apart — the unguessable URL, and a fixed token that works only when you set one (`--auth-*`). **With no `--auth-*`, whoever reaches that URL runs that action.**
+Webhooks use an unguessable URL and an optional fixed token (`--auth-*`). **HMAC signature verification is not supported**, so signature headers from external services are not checked. **Without authentication, anyone who can reach the URL can request the action.** Include the authentication options you need when registering a webhook.
 
 ### Port settings
 
@@ -143,7 +143,7 @@ tasty webhook config --port 28429   # change the port — applied after restart
 ```
 
 - The settings file is `~/.tasty/webhooks.toml`. On first run, `28429` is written as the default.
-- If the port is empty or the bind fails, Tasty does not silently switch to another port; it only emits a warning (toast). Fix the port and restart.
+- If the port is empty or the bind fails, Tasty keeps the configured port and displays a warning. Check the port setting and restart Tasty.
 - **The listener binds every network interface.** Without opening any forwarding it is already reachable from the same network (an office LAN, public Wi-Fi). Router forwarding and the firewall are what you open to let *the internet* in; they are not what keeps it closed until then. Leave HTTPS to a reverse proxy in front.
 
 ### Registering
@@ -173,7 +173,7 @@ Check the available handler ids with `tasty hook-handler list`. `--sequence` is 
 
 ### Responses and management
 
-The caller receives only a status code and a fixed phrase — internal results are never returned.
+The calling service receives a status code and a fixed response message. The response does not include the action's result.
 
 **`200` means "accepted", not "done".** The answer is chosen before the action starts, so the caller gets `200` even when the action fails outright. In a multi-step `--sequence` a failing step does not stop the steps after it, so it can end half applied, and what failed appears only in Tasty's own log. If your CI decides retries from the status code, do not count `200` as success.
 

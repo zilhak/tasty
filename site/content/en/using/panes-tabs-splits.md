@@ -1,9 +1,9 @@
-<!-- source-hash: e5c9aacb76a9 -->
+<!-- source-hash: cf91db823db9 -->
 # Panes · Tabs · splits
 
-After reading this page you will know how to divide the screen, work with Tabs, move Surfaces or change them to another kind, and save layouts you use often as presets. The terms follow [A first look](../getting-started/first-look.md).
+Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
 
-Shortcuts are the values of the default preset (**Tasty**). `Alt` is `Cmd` on macOS, and `Ctrl` is `Control`.
+The shortcuts below use the default **Tasty** preset. On macOS, read `Alt` as `Cmd` and `Ctrl` as `Control`.
 
 ## Two levels of splitting — choose first
 
@@ -88,7 +88,7 @@ Press `Alt+'` and the **Surface Type** popup appears. It changes the current Sur
 
 ## Fullscreen
 
-Press the fullscreen button on the title bar of the notification window (tooltip **Show fullscreen**) and the Tasty window covers the monitor, showing only the notification list at a large size. Leave with `Esc` or the exit button at the top right. When you leave, the window size and the terminal grid are exactly as they were before entering. Currently the only thing that can be put on this stage is the notification list.
+Press the fullscreen button on the title bar of the notification window (tooltip **Show fullscreen**) and the Tasty window covers the monitor, showing only the notification list at a large size. Leave with `Esc` or the exit button at the top right. When you leave, the window size and the terminal grid are exactly as they were before entering. Fullscreen view is currently available for the notification list.
 
 ## Saving layouts — presets
 

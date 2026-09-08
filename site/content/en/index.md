@@ -1,9 +1,9 @@
-<!-- source-hash: 95a7448f46d6 -->
+<!-- source-hash: 44b642e68f70 -->
 # Tasty guide
 
-Tasty is a GPU-accelerated terminal that works the same on Windows · macOS · Linux. You keep several Workspaces in one window and divide each Workspace into Panes · Tabs · splits. Almost everything a person does with the keyboard can also be done with the `tasty` CLI, so AI coding agents such as Claude Code · Codex can drive the terminal directly.
+Tasty is a GPU-accelerated terminal where you and your AI agents work together. On Windows, macOS, and Linux, you can organize projects into workspaces and open several terminals side by side. Agents use the `tasty` CLI to create terminals, run commands, and read the results.
 
-This guide is for people who download, install, and use Tasty. If you are new, read it from the top in order. If you are looking for a specific feature, jump in from the table of contents below.
+Start with installation and a first look if you are new to Tasty. If you already use it, choose the feature you need below.
 
 ## Getting started
 
@@ -28,12 +28,12 @@ This guide is for people who download, install, and use Tasty. If you are new, r
 
 - [Driving the terminal with the tasty CLI](agents/cli.md) — Basic `list` / `send` / `read` / `mark` / `notify` patterns.
 - [Working with Claude · Codex](agents/claude-codex.md) — Installing hooks, spawning child instances, tell, completion notifications.
-- [Task DAG](agents/tasks.md) — Tying work together by dependency, running it in order, and watching the graph.
+- [Task workflows](agents/tasks.md) — Tying work together by dependency, running it in order, and watching the graph.
 - [Hooks · notifications · webhooks](agents/hooks-notifications.md) — Surface hooks, global hooks, notifications, external HTTP triggers.
 
 ## Remote · plugins
 
-- [Remote attach](remote/attach.md) — Mirroring another machine's Tasty onto your screen with profiles and SSH.
+- [Working remotely](remote/attach.md) — Mirroring another machine's Tasty onto your screen with profiles and SSH.
 - [Plugins](plugins/index.md) — Installing, permissions, an introduction to the bundled plugins.
 
 ## Help

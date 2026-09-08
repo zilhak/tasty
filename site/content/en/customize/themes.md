@@ -1,7 +1,7 @@
-<!-- source-hash: a5c62330e652 -->
+<!-- source-hash: 1a456b0f51b7 -->
 # Themes
 
-After reading this page you will be able to switch between the two bundled themes, override just a few colours, and, if you want, make your own theme from a single TOML file. All theme files live in `~/.tasty/themes/`.
+Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
 
 ## Bundled themes
 
@@ -22,7 +22,7 @@ To pick from the list:
 2. Click one of the cards under **Theme Preset**. Each card shows the name and five representative colours.
 3. Press **Save**.
 
-Switching themes resets every colour overridden in the **Colors** tab and the **Tasty** tab. Those values were painted over the previous theme and mean nothing on the new one.
+Switching themes resets every colour overridden in the **Colors** tab and the **Tasty** tab. The new theme starts with its own colours.
 
 If the theme file named in the settings is missing or unreadable, Tasty starts with Mocha instead and shows a **Theme not found** notice.
 
@@ -41,7 +41,7 @@ The **Colors** tab lists every colour of the current theme by group — **Surfac
 
 ### Appearance > Tasty
 
-Three entries for quickly adjusting only the app chrome.
+Three settings let you adjust the buttons, sidebar, and tabs.
 
 - **Accent** — The highlight colour used for active markers, focus rings, buttons and so on.
 - **Sidebar background**.
@@ -151,7 +151,9 @@ To make a variant that changes Mocha only slightly, copy `mocha.toml`, save it u
 | Some colours remain from the previous theme | This is normal — entries you did not write keep the previous value. Write those entries in the file explicitly |
 | Values I changed in the Colors tab disappeared | Switching themes resets overridden values. Move the colours into the theme file instead |
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Settings](settings.md) — Font · UI scale · opacity in the Appearance tab.
 - [A first look](../getting-started/first-look.md) — Where the theme dot is in the status bar.

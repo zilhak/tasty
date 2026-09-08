@@ -1,9 +1,9 @@
 ---
 import GalleryPage from "../../../../layouts/GalleryPage.astro";
 import Route from "../../../../gallery/pages/layouts.jsx";
-import { galleryNav } from "../../../../lib/design";
+import { galleryNav, GALLERY_INTROS } from "../../../../lib/design";
 import { url } from "../../../../lib/site";
 ---
-<GalleryPage title="Layouts" description="The structural shells and how regions are sized.">
-  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+<GalleryPage title="Layouts" description={GALLERY_INTROS["layouts"]}>
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design" />
 </GalleryPage>

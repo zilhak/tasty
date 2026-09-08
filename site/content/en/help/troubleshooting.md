@@ -1,7 +1,7 @@
-<!-- source-hash: 3c587dedf02c -->
+<!-- source-hash: 9b1b93db2cad -->
 # Troubleshooting
 
-This page is where you look up the cause and the fix by symptom when you get stuck using Tasty. Once you know what gets written where, most problems narrow down to opening a single file.
+If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
 
 ## Files to check first
 
@@ -112,7 +112,9 @@ If that still does not help, look at `~/.tasty/hook-failures.log` and `tasty plu
 - **`tasty plugin list` shows enabled but not running** — a plugin that fails to run 3 times within 10 seconds is stopped automatically. Check the cause with `tasty plugin logs <id>`, then start it again with `tasty plugin enable <id>`.
 - **A bundled plugin is broken** — copy it again from the bundle with `tasty plugin upgrade-builtins --force`. Plugin data (bookmarks · profiles and so on) is kept.
 
-## I do not know which port my dev server came up on
+<a id="i-do-not-know-which-port-my-dev-server-came-up-on"></a>
+
+## Finding the port of a development server
 
 Open **Listening ports...** from the **Tools** menu in the sidebar. It shows the TCP ports opened by processes started from Tasty terminals, together with the port · process · Workspace · Tab.
 
@@ -123,7 +125,7 @@ Open **Listening ports...** from the **Tools** menu in the sidebar. It shows the
 
 ## Reporting a problem
 
-File it at https://github.com/zilhak/tasty/issues. Including the following gets it resolved faster.
+Describe the problem in a [GitHub issue](https://github.com/zilhak/tasty/issues). Include the information below to help us investigate.
 
 - The output of `tasty --version`, plus your OS · version
 - Steps to reproduce

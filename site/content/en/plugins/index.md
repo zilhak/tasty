@@ -1,7 +1,7 @@
-<!-- source-hash: 0815802c0ef4 -->
+<!-- source-hash: c20f7ed038b5 -->
 # Plugins
 
-After reading this page you will know what each plugin bundled with Tasty does, and how to install · disable · check permissions with the plugin window and the `tasty plugin` command.
+Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
 
 ## What a plugin is
 
@@ -72,7 +72,7 @@ The **Add plugin** tab.
 3. Press **Add**.
 4. If the plugin is not signed with a verified key, the **Unknown source plugin** confirmation appears. If you check the fingerprint and proceed, that key is recorded in the trust list and you are not asked again. A plugin without its signing key file (`tasty-plugin.toml.pub`) cannot be registered, so ask the distributor for it.
 
-Installing grants the permissions written in the manifest as they are. Read the permission list at the preview step before deciding.
+Installing grants the permissions the plugin requests. Review the permission list in the preview before adding it.
 
 ## Permissions
 
@@ -149,7 +149,9 @@ Example output of `tasty plugin permissions com.tasty.git-viewer`:
 | I want to bring back a bundled plugin I removed | `tasty plugin upgrade-builtins --restore-removed <id>` |
 | A plugin landed in **Attention** after an update | Its required permissions changed. Read the list and **Re-approve** |
 
-## What to read next
+<a id="what-to-read-next"></a>
+
+## Keep exploring
 
 - [Opening files](../using/files.md) — How to use the Markdown · image · HTML Surfaces.
 - [Working with Claude · Codex](../agents/claude-codex.md) — The Claude Code · Codex plugins.

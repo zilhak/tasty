@@ -1,7 +1,7 @@
-<!-- source-hash: e3a8110e2ee5 -->
+<!-- source-hash: e2b42a43cbd0 -->
 # Opening files
 
-After reading this page you will know how to open and work with files in non-terminal Surfaces — Explorer · Markdown · image · HTML — and how to open the window that shows git status.
+Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
 
 ## Ways to open
 
@@ -78,7 +78,7 @@ tasty markdown reload --surface 5
 
 ## Image
 
-View PNG · JPEG and so on, and draw simply. **New Image** starts with an empty canvas. When the file changes outside Tasty, it is re-read automatically within 1 second — except **while you are editing**, where it is deferred until you leave edit mode (so the picture underneath your strokes does not change).
+View PNG, JPEG, and other images, or add drawings to them. **New Image** starts with an empty canvas. When the file changes outside Tasty, it is re-read automatically within 1 second — except **while you are editing**, where it is deferred until you leave edit mode (so the picture underneath your strokes does not change).
 
 - Toolbar — **Previous image** / **Next image** (within the same folder), **Refresh**, **Edit**, **New image**, zoom **Fit** / `+` / `-`.
 - Press **Edit** to choose **Brush** · **Color** and draw on top. Undo and redo with `Ctrl+Z` / `Ctrl+Shift+Z`. **Save** writes a PNG.

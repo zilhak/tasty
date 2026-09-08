@@ -1,7 +1,9 @@
-<!-- source-hash: 33ba421373c8 -->
+<!-- source-hash: 17e44457f1a0 -->
 # Working with the terminal
 
-After reading this page you will know how to copy · paste · search · open links · scroll in a terminal Surface, and how programs that capture the mouse and notifications appear. Shortcuts are the values of the default preset (**Tasty**), and `Alt` is `Cmd` on macOS.
+Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
+
+The shortcuts below use the default **Tasty** preset. On macOS, read `Alt` as `Cmd`.
 
 ## Shell
 
