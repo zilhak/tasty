@@ -228,3 +228,4 @@
 | 0245 | [image 의 편집은 임시다 — 미저장 편집은 복원하지도, 알리지도 않는다](0245-an-image-surface-edit-is-temporary-and-is-not-restored.md) | Accepted | 2026-09-08 | image, plugin, persistence, restore, snapshot, identity, non-goal, adr-0030 |
 | 0246 | [텔레메트리에는 옵트아웃 축을 두지 않는다 — 그 권한 토큰은 경계가 아니라 선언이다](0246-telemetry-has-no-opt-out-and-its-token-is-a-declaration.md) | Accepted | 2026-09-08 | telemetry, privacy, permissions, plugin, trust-boundary, cap, non-goal, adr-0141 |
 | 0247 | [`site/content/` 의 앵커는 산출물을 읽는 판사에게 넘긴다 — ADR-0201 대체](0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md) | Accepted | 2026-09-08 | documentation, anchors, slug, guards, site, astro, two-judges, adr-0201, adr-0139 |
+| 0248 | [webview 정리는 GDK 를 먼저 끝낸 뒤 X 창을 지운다 — 남는 경합은 에러 트랩이 값으로 받는다](0248-webview-teardown-lets-gdk-finish-before-the-x-window-is-destroyed.md) | Accepted | 2026-09-08 | linux, x11, gdk, gtk, webview, crash-safety, teardown, ordering, adr-0159 |

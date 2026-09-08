@@ -54,6 +54,13 @@ pub struct PlatformWebView {
     /// 부모 winit X11 창. `release_keyboard_focus` 가 키보드 포커스를 여기로
     /// 되돌린다(overlay 가 열려 webview 를 숨길 때).
     parent_x11_window: std::os::raw::c_ulong,
+    /// `x11_window` 을 감싼 foreign GDK 창. `Drop` 이 이 창의 GDK 디스플레이를 꺼내
+    /// 에러 트랩을 걸 때만 쓴다(그 이유는 `Drop` 주석).
+    ///
+    /// **`destroy_notify()` 를 부르지 마라.** "네이티브 창을 남이 파괴했다" 라는 뜻이라
+    /// 여기에 맞아 보이지만, 실측(2026-09-08, 격리 홈)에서는 그 호출이 오히려 죽는 쪽을
+    /// 늘렸다 — webview 탭 둘인 창 닫기가 4 회 중 1 회 사망에서 6 회 중 5 회 사망이 됐다.
+    gdk_window: gtk::gdk::Window,
 }
 
 /// 이 백엔드의 실패를 두 종류로 나누는 자리. **분류 근거를 한곳에 모아 둔다** —
@@ -316,6 +323,7 @@ impl PlatformWebView {
             nav_state,
             pending_navigations,
             parent_x11_window: parent_xid as _,
+            gdk_window,
         })
     }
 
@@ -521,8 +529,20 @@ impl PlatformWebView {
 impl Drop for PlatformWebView {
     fn drop(&mut self) {
         self.assert_origin_thread();
+        // 아래 순서를 지켜도 GDK 가 자기 연결에서 내는 요청까지 우리가 다 통제하지는
+        // 못한다 — 소유자가 둘인 창이라 남는 경합이 있다. 그래서 정리하는 동안만
+        // GDK 의 에러 트랩을 건다. 트랩은 abort 를 **값으로 바꾼다**: 트랩이 걸린
+        // 동안 이 디스플레이에서 난 X 에러는 전역 핸들러(=abort)로 안 가고
+        // `error_trap_pop` 의 반환값이 된다. 삼키지 않고 그 코드를 로그로 남긴다.
+        //
+        // **순서 수정 뒤의 마지막 그물이지, 순서 대신이 아니다.** 이것만 걸고 순서를
+        // 그대로 두면 근본 경합이 남는다.
+        let trap: Option<gdkx11::X11Display> = self.gdk_window.display().downcast().ok();
+        if let Some(d) = &trap {
+            d.error_trap_push();
+        }
         // SAFETY: Drop은 self가 마지막으로 살아있는 시점. webview.destroy()와
-        // XDestroyWindow는 같은 display 인스턴스에서 한 번씩 호출. 호출은
+        // (아래의) XDestroyWindow는 같은 display 인스턴스에서 한 번씩 호출. 호출은
         // PlatformWebView가 생성된 main thread에서만 일어난다.
         //
         // 이 불변식은 두 겹으로 강제된다: (1) 본 타입은 x11_display(raw pointer)와
@@ -534,9 +554,64 @@ impl Drop for PlatformWebView {
         // (X11 핸들 오용은 UB라 debug에서만 잡으면 release 에서 조용히 UB가 난다).
         unsafe {
             self.webview.destroy();
-            (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
         }
+        // ── 여기부터 순서가 곧 내용이다 (아래 함수 주석 참조) ──
+        // 1. GDK 가 이 창을 unmap 하는 것을 **창이 아직 있을 때** 시키고 그 요청이
+        //    실제로 나갈 때까지 GTK 를 돌린다. 죽은 창에 나가던 `UnmapWindow` 가
+        //    바로 이것이었다.
+        self.gtk_window.hide();
+        pump_gtk();
+        // 2. toplevel 위젯을 놓는다. `destroy()` 는 쓸 수 없다 — 이 toplevel 의
+        //    GdkWindow 는 우리가 `set_window` 으로 끼워 넣은 foreign 창이라
+        //    `gtk_widget_unregister_window` 의 `user_data == widget` 단정이 깨지고
+        //    GTK 가 `Bail out!` 으로 프로세스를 죽인다(실측 2026-09-08).
         self.gtk_window.close();
+        pump_gtk();
+        // 3. 이제야 X 창을 지운다. foreign 창은 GDK 가 파괴하지 않으므로 이 호출이
+        //    필요하고, `XSync` + 마지막 펌프로 GDK 가 `DestroyNotify` 를 받아 자기
+        //    상태를 맞추게 한다. **그것만으로 한 창에 webview 가 둘인 경우가 다 닫히지는
+        //    않았다** — 뒤에 오는 `Drop` 이 앞 창의 낡은 상태를 건드려 4 회 중 1 회 죽었고,
+        //    그 남은 자리를 위의 에러 트랩이 받는다(실측 2026-09-08).
+        //
+        // SAFETY: 위 블록과 같은 근거. GDK 가 이 창을 다 놓은 뒤라 이것이 마지막 파괴다.
+        unsafe {
+            (self.xlib.XDestroyWindow)(self.x11_display as _, self.x11_window);
+            (self.xlib.XSync)(self.x11_display as _, 0 /* discard = False */);
+        }
+        pump_gtk();
+        if let Some(d) = &trap {
+            // `error_trap_pop` 은 서버와 왕복해 이 시점까지의 에러를 확정한 뒤 코드를
+            // 돌려준다. 0 이 아니면 위 순서가 못 막은 자리가 남아 있다는 뜻이다.
+            let code = d.error_trap_pop();
+            if code != 0 {
+                tracing::warn!(
+                    x11_window = self.x11_window,
+                    error_code = code,
+                    "webview 정리 중 X 에러 — 에러 트랩이 abort 를 막았다"
+                );
+            }
+        }
+    }
+}
+
+/// 대기 중인 GTK 이벤트를 지금 처리한다. 이 레포가 GTK 를 winit 루프 안에서 돌릴 때
+/// 쓰는 형태 그대로다(`platform::native_menu::linux` · `platform::system_tray`).
+///
+/// `PlatformWebView::drop` 이 이것을 쓰는 이유는 GDK 가 창을 **바로** 놓지 않기
+/// 때문이다. `hide()`·`close()` 는 요청을 걸어 두고 돌아오고, 실제 X 요청은 다음
+/// 메인 루프 반복에서 나간다. 그 사이에 X 창을 지우면 GDK 는 자기가 아는 살아 있는
+/// ID 로 요청을 내고 그것이 `BadWindow` 가 된다 — GDK 는 Xlib 에러 핸들러를
+/// **프로세스 전역**으로 걸어 두므로(`XSetErrorHandler` 는 연결별이 아니다) 그 자리에서
+/// 프로세스가 통째로 abort 한다. 실측(2026-09-08, 격리 홈, debug 빌드): webview 탭이
+/// 있는 창을 닫으면 `BadWindow ... request_code 10`(=`UnmapWindow`) 으로 죽었고,
+/// 탭만 닫는 경로(부모가 살아 있는 경우)는 살아남았다.
+///
+/// 여기서 도는 것은 이 백엔드가 등록한 GTK 시그널(decide-policy · load-changed ·
+/// 키 브리지)뿐이고 그것들은 `Rc<Cell>`/`Rc<RefCell>` 만 만지므로 `Drop` 으로
+/// 재진입하지 않는다.
+fn pump_gtk() {
+    while gtk::events_pending() {
+        gtk::main_iteration_do(false);
     }
 }
 
