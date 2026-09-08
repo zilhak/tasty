@@ -281,6 +281,15 @@ let mut inner = match self.inner.write() { Ok(g) => g, Err(_) => return };
 let mut inner = self.inner.lock().expect("poisoned");
 ```
 
+위 **무음 `return`** ❌ 는 가드가 잡지 못한다 — 읽는 사람이 여기서 가장 자주 오해하는
+자리라 적어 둔다. `crates/tasty-utils/src/poison.rs` 의 삼킴 판정기
+(`silently_skipped_lock_lines`)는 `match` 와 `let Ok(..) else` 를 "poison 을 다루는
+형태" 로 분류해 지나치고, `.ok()` · `.unwrap_or(..)` · else 없는 `if let Ok(..)` 셋만
+본다. 그 분류는 의도된 것이다: 두 형태는 `Err` 갈래를 **쓴** 자리라, 그 갈래에 로그나
+사유가 들어 있는지를 모양만으로는 가릴 수 없다. 그래서 이 ❌ 는 자동으로 잡히는 금지가
+아니라 **리뷰가 보는 금지**다. 판정기를 넓힐 생각이면 그 유닛 테스트가 두 형태를
+"허용 — 못 잡는 것이 의도다" 로 못 박아 두었으니 거기서부터 시작한다.
+
 ### 이 방침이 덮는 범위와 덮지 않는 범위
 
 **가드가 보는 축은 하나다** — `crates/tasty-utils/src/poison.rs` 의 `FORBIDDEN_LOCKS` 스캔은
