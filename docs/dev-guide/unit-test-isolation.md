@@ -99,24 +99,32 @@ assert!(path.starts_with(home.path().join("screenshots")));
 - `src/main.rs` 의 `mod test_support;` — 루트 크레이트에는 라이브러리 타깃이 없다
   (`[lib]` 도 `src/` 아래 라이브러리 루트 파일도 없다). **바이너리뿐이라 아무 크레이트도
   이것을 링크할 수 없다.**
-- `crates/tasty-host-plugin/src/lib.rs` 의 `mod test_support;` — **`pub` 이 아니다.**
+- `crates/tasty-host-plugin/src/lib.rs` 의 `mod test_support;` — 선언에 **`#[cfg(test)]` 가
+  붙어 있다.** 그 cfg 는 이 크레이트를 *의존으로* 컴파일할 때 세워지지 않으므로 **다른
+  크레이트가 이 모듈을 링크할 수 없다.**
 - `tasty-settings` 의 `SERIAL` 은 그 크레이트의 `#[cfg(test)] mod tests` 안에만 있다.
 
 ⇒ **셋을 공용 락 하나로 합치는 처방은 틀린다.** 크레이트를 가로지르는 락을 만들려면 세
 크레이트가 한 크레이트에 함께 의존해야 하는데, 같은 프로세스에 둘이 있을 수 없으므로
 그 결합이 사는 것이 없다. 늘어나는 것은 의존뿐이다.
 
-#### 이 추론이 기대는 조건 하나는 아직 강제되지 않는다
+#### 이 추론을 지탱하는 것은 `pub` 여부가 아니다
 
-위 논증은 **`tasty-host-plugin` 의 `mod test_support` 가 `pub` 이 아니라는 것**에
-기댄다. `pub mod` 이 되는 순간 다른 크레이트가 그것을 링크할 수 있고, 그 크레이트가
-자기 경로로 홈 env 를 만지면 **두 락이 한 바이너리에 있으면서 서로를 배제하지 않는다.**
-그 상태는 조용하다 — 컴파일도 되고 테스트도 통과한다.
+`mod test_support` 를 밖에서 못 쓰게 막는 것이 **가시성**이라고 읽기 쉬운데, 아니다.
+선언에 붙은 `#[cfg(test)]` 가 막는다 — 그 cfg 는 크레이트를 *의존으로* 컴파일할 때
+세워지지 않으므로, `pub` 을 붙여도 다른 크레이트가 그 모듈을 링크할 수 없다. 즉 두 홈
+env 락이 한 테스트 바이너리에 함께 서는 상태는 **언어가 이미 막고 있다.**
 
-루트 쪽에는 대응하는 단정이 있다(`the_lock_declaration_stays_module_private`,
-`crates/tasty-doc-guards/tests/tasty_home_env_has_one_touch_point.rs`). host-plugin
-쪽에는 **없다.** 여기 적어 두는 것은 그 자리를 값으로 남기기 위해서다 — 세울지는 그
-크레이트를 소유한 쪽의 판단이다.
+그래서 무너뜨리려면 가시성이 아니라 **attribute 자체**를 떼야 한다. 이 논증에서 사람이
+실수할 수 있는 자리는 그 한 줄뿐이고, `test_support::tests::the_module_declaration_stays_test_only`
+(`crates/tasty-host-plugin/src/test_support.rs`)가 그것을 본다 — 실패 메시지는 "고쳐라"
+가 아니라 **이 절의 논증이 서 있던 전제가 사라졌다**고 말한다. 그때 다시 물어야 하는
+것은 선언 한 줄이 아니라 배제 단위 자체다.
+
+루트 쪽은 물음이 다르다. 라이브러리 타깃이 없어 링크가 애초에 불가능하므로 여기서
+지킬 전제가 없고, 그 크레이트의 `the_lock_declaration_stays_module_private`
+(`crates/tasty-doc-guards/tests/tasty_home_env_has_one_touch_point.rs`)가 지키는 것은
+**같은 크레이트 안에서** 락을 직접 잡고 env 를 만지는 우회다 — 다른 축이다.
 
 #### 재는 법 — 경계를 먼저 물어라
 

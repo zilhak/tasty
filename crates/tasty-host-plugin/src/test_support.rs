@@ -370,4 +370,45 @@ mod tests {
         }
         hits
     }
+
+    /// `docs/dev-guide/unit-test-isolation.md` 가 세 env 락의 분리를 논증할 때 기대는
+    /// 사실 하나를 값으로 고정한다 — **이 모듈은 의존 크레이트에 링크되지 않는다.**
+    ///
+    /// 그 사실을 주는 것은 `pub` 여부가 아니라 선언에 붙은 `#[cfg(test)]` 다. `cfg(test)`
+    /// 는 이 크레이트를 *의존으로* 컴파일할 때 세워지지 않으므로, `pub` 을 붙여도 밖에서
+    /// 링크할 수 없다. 반대로 그 attribute 가 사라지면 `pub` 이 아니어도 이 크레이트 안의
+    /// 다른 자리에서 재수출될 여지가 생기고, 그때 [`HOME_ENV_LOCK`] 과 루트의
+    /// `TASTY_HOME_ENV_LOCK` 이 한 테스트 바이너리에 함께 서면서 서로를 배제하지 않는다.
+    /// 그 상태는 조용하다 — 컴파일도 되고 테스트도 통과한다.
+    ///
+    /// 그래서 여기서 보는 것은 가시성이 아니라 **attribute 의 존재**다.
+    #[test]
+    fn the_module_declaration_stays_test_only() {
+        let lib_rs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let text = std::fs::read_to_string(&lib_rs)
+            .unwrap_or_else(|e| panic!("{} 를 읽지 못했다: {e}", lib_rs.display()));
+        let lines: Vec<&str> = text.lines().collect();
+        let declaration = lines
+            .iter()
+            .position(|l| {
+                let t = l.trim();
+                t == "mod test_support;" || t == "pub mod test_support;"
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} 에 test_support 모듈 선언이 없다 — 이 가드가 볼 대상이 사라졌다",
+                    lib_rs.display()
+                )
+            });
+        let gated = declaration > 0 && lines[declaration - 1].trim() == "#[cfg(test)]";
+        assert!(
+            gated,
+            "{}:{} 의 test_support 선언에 #[cfg(test)] 가 없다 — 다른 크레이트가 이 모듈을 \
+             링크할 수 있게 되고, 그러면 홈 env 락이 한 바이너리에 둘 서면서 서로를 \
+             배제하지 않는다(docs/dev-guide/unit-test-isolation.md 의 분리 논증이 그 위에 \
+             서 있다)",
+            lib_rs.display(),
+            declaration + 1
+        );
+    }
 }
