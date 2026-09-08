@@ -204,3 +204,26 @@ pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;
 /// 안에 작은 버튼이 남는다 — ADR-0126 "그릇과 내용은 배율에 대해 같은 편이어야 한다".
 /// 갤러리는 egui 전역 zoom 을 쓰므로(ADR-0135) 이 값을 그대로 읽는다.
 pub const POPUP_TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
+
+// ── PluginAvatar — 디자인 전사 치수 (본체 · 갤러리 공용) ──────────────────────
+//
+// 디자인 `ui_kits/terminal/overlays/plugins_window.jsx` 의 `PluginAvatar` 는 한 변을
+// 인자로 받고 두 자리에서 서로 다른 값으로 불린다(목록 행 32 · 상세 identity 46).
+// `Theme` 에 대응 토큰이 없다 — `sidebar_collapsed_slot_width`(32)와 값이 같은 쪽도
+// 뜻이 다른 축이라 참조하지 않는다.
+
+/// plugin 목록 행 왼쪽 아바타 한 변. 디자인 `<PluginAvatar size={32}>`
+/// (Installed 목록 · Attention 목록 공통).
+pub const PLUGIN_AVATAR_ROW_SIZE: LogicalPx = LogicalPx(32.0);
+
+/// 상세 identity 블록 아바타 한 변. 디자인 `<PluginAvatar size={46}>`.
+/// **4px 그리드 밖 46px** 이다 — ADR-0126 대로 가까운 값(44 · 48)으로 스냅하지 않는다.
+/// 스냅은 픽셀을 바꾸는 디자인 결정이고, 전사가 곁다리로 할 일이 아니다.
+pub const PLUGIN_AVATAR_DETAIL_SIZE: LogicalPx = LogicalPx(46.0);
+
+/// plugin 목록 행 높이. 디자인 행은 `padding: var(--tasty-space-sm)` 위아래에 32px
+/// 아바타가 앉는 flex 행이라 높이가 아바타에서 나온다 — 그래서 값을 따로 적지 않고
+/// 조립한다. 아바타가 들어오기 전 본체·갤러리가 쓰던 40 은 이 구성으로 32 아바타를
+/// 담지 못한다(40 − 패딩 12 = 28).
+pub const PLUGIN_LIST_ROW_HEIGHT: LogicalPx =
+    LogicalPx(PLUGIN_AVATAR_ROW_SIZE.0 + SIZING.spacing_sm.0 * 2.0);

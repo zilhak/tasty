@@ -207,6 +207,11 @@ pub const PRESET_SPLIT_ZONE_BORDER_ALPHA: u8 = 140;
 /// 색을 섞지 않고 알파만 낮추는 것과 같다.
 pub const DAG_MIX_45_ALPHA: u8 = 115;
 
+/// design `plugins_window.jsx` `PluginAvatar` 보더 `color-mix(in srgb, C 38%, transparent)`
+/// 의 알파(38%×255≈97). 두 번째 항이 `transparent` 라 색은 그대로 두고 알파만 낮춘다
+/// ([`DAG_MIX_45_ALPHA`] 와 같은 형태).
+pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
+
 /// `color-mix(in srgb, <a> <ratio>, <b>)` 의 srgb 채널 보간.
 ///
 /// CSS 의 `color-mix` 는 두 색이 모두 불투명할 때 채널을 선형 보간한다. 디자인 토큰이
@@ -1455,6 +1460,27 @@ impl Theme {
     #[inline]
     pub fn dag_runner_stalled_border(&self) -> HexColor {
         self.accent_warning().with_alpha(DAG_MIX_45_ALPHA)
+    }
+
+    // ── PluginAvatar — 디자인의 카테고리색 합성 2 종 ──────────────────────────
+    //
+    // 디자인(`plugins_window.jsx`)은 두 항을 `CAT_COLOR[plugin.cat]` 로 섞고, 그 표에
+    // 없으면 `var(--tasty-accent-primary)` 로 떨어진다. **tasty 매니페스트에는 카테고리
+    // 필드가 없다**(`crates/tasty-plugin-manifest/src/types.rs` 의 `Manifest`) — 그래서
+    // 도달 가능한 갈래가 그 fallback 하나뿐이고, 여기서는 `accent_primary` 를 고정으로
+    // 적는다. 카테고리가 생기면 두 함수에 색 인자를 받게 하는 것이 바뀌는 전부다.
+
+    /// design `PluginAvatar` 배경 = 카테고리색 18% + surface-raised.
+    #[inline]
+    pub fn plugin_avatar_bg(&self) -> HexColor {
+        mix_srgb(self.accent_primary(), 0.18, self.surface_raised())
+    }
+
+    /// design `PluginAvatar` 보더 = 카테고리색 38% + transparent
+    /// ([`PLUGIN_AVATAR_BORDER_ALPHA`]).
+    #[inline]
+    pub fn plugin_avatar_border(&self) -> HexColor {
+        self.accent_primary().with_alpha(PLUGIN_AVATAR_BORDER_ALPHA)
     }
 
     /// 프리셋 편집기 leaf 미리보기 값 요약의 라벨(소문자 필드 키) 색. design

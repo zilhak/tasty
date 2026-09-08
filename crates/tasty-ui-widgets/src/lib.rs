@@ -42,6 +42,7 @@ mod listctrl;
 mod menu_item;
 mod multi_select;
 mod path_field;
+mod plugin_avatar;
 mod segmented;
 mod select;
 mod spacing;
@@ -79,6 +80,7 @@ pub use multi_select::{
     multi_select_summary, popup_chrome_width,
 };
 pub use path_field::{PathField, PathFieldOutcome};
+pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use segmented::segmented;
 pub use select::select;
 pub use spacing::{hspace, margin_all, margin_sym, vspace};
