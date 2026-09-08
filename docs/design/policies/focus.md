@@ -45,15 +45,19 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 - **IPC/CLI 로 focus 를 변경할 수 없다.** focus 변경 API(`surface.focus` / `pane.focus` / `workspace.select` / `focus.direction`)는 release 에 없다(제거됨). focus 는 오직 사용자 행위(단축키·마우스)로만 바뀐다.
 - 모든 명령은 대상을 **ID 로 직접 지정**한다. `list` 는 **전 워크스페이스 순회**(활성 상태 비의존).
   - 순회하는 `list` 는 호스트가 명시적으로 합산하는 것뿐이다(`src/app/dispatch/list_global.rs`). **그 집합의 소속은 이름이 아니라 성질로 판정한다**(핸들러가 창 소유 컬렉션을 순회하는가 · 대상 인자가 없는가 · 합산 집합에 없는가) — 이름 모양(`*.list`)으로 훑는 눈에는 `tree` 가 안 걸려 오래 빠져 있었다([ADR-0175](../../adr/0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md)). **그 목록에 없는 `list` 는 포커스된 창의 것만 답하고, 에러가 없다.** 실측(창 둘): 창1 에서 만든 headless pty 가 창2 포커스의 `pty.list` 에 안 나오는데 `pty.read {id}` 는 그 pty 를 읽었다 — **조작할 수 있는데 볼 수 없는** 상태다. 창 소유 자원의 `list` 를 새로 만들면 거기에 등록한다.
-  - **지금 합산되지 않는 창 소유 목록이 다섯 있다** — `hook.list` · `global_hook.list` ·
-    `notification.list` · `approval.list` · `attach.list`. 앞의 셋은 실측으로 확인했고
-    (창 둘, 비포커스 창의 항목이 목록에서 사라진다) 뒤의 둘은 저장소가 engine 마다 새로
-    만들어지는 것을 소스로 확인했다. 갈래와 사유의 정본은
-    `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs` 의 명부다.
-    - **앞의 둘은 합산 전에 id 공간을 먼저 고쳐야 한다.** `IdGenerator` 가 공유하는
-      카운터에 hook 과 global hook 이 없어 두 창의 hook 이 같은 id 를 받는다. 실측:
-      비포커스 창의 global hook 은 존재하는데 `unset --hook <id>` 가 포커스된 창의 것을
-      지우고, 두 번째 호출은 `removed: false` 다 — **어떤 요청으로도 닿지 않는다.**
+  - **지금 합산되지 않는 창 소유 목록이 셋 있다** — `notification.list` ·
+    `approval.list` · `attach.list`. 저장소가 engine 마다 새로 만들어지는 것을 소스로
+    확인했다(`notifications` · `approval_store` 의 `Arc::new` · engine 별
+    `OccupancyRegistry`). 갈래와 **안 한 이유**의 정본은
+    `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs` 의 명부이고,
+    그 명부는 모든 갈래에 사유를 요구한다 — 갈래 이름만으로는 판정이 재현되지 않기
+    때문이다. 셋은 각자 막힌 곳이 다르다: 알림은 가시성 정책이 먼저 서야 하고
+    (다른 창의 알림을 보이게 하는 것이 옳은지가 제품 결정이다), 승인·attach 는
+    창 둘로 재현할 수단을 아직 안 만들었다.
+    - **`hook.list` · `global_hook.list` 는 합산으로 갔다.** 선행 조건이던 id 공간이
+      닫혔기 때문이다 — `IdGenerator` 의 `hook`·`global_hook` 카운터가 공유 `Arc` 라
+      두 창의 훅이 같은 id 를 받지 않는다. 지목은 합산과 별개 축이고
+      `Kind::Hook`·`Kind::GlobalHook` 이 각각 푼다.
   - **번들 plugin 이 점유한 namespace 아래의 host `list` 도 합산 대상이다.** `image.list` 가
     그 형태다 — 외부 호출은 step 5 의 plugin namespace forward 가 먼저 집지만, plugin 이
     그 메서드를 자기가 답하지 않고 trampoline 으로 host 에 되돌리고(`host.call`) 그

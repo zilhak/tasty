@@ -33,10 +33,11 @@ pub struct IdGenerator {
     /// surface hook 카운터. 위 pty·observer 와 **같은 이유**로 공유다 — 라우팅이 hook id 를
     /// 창을 건너 푼다(`request_target::Kind::Hook`).
     hook: Arc<std::sync::atomic::AtomicU64>,
-    /// global hook 카운터. 이쪽은 라우팅이 창을 건너 풀지도 **않아서**(`Kind` 에 없다)
-    /// 포커스된 창의 것만 답한다 — 카운터까지 engine 마다면 비포커스 창의 훅은 존재하는데
-    /// 어떤 요청으로도 닿지 않는다. 공유 카운터는 그 상태의 **절반**을 없앤다(id 는 유일해지고,
-    /// 나머지 절반인 라우팅은 `Kind` 쪽 문제다).
+    /// global hook 카운터. 여기서는 두 축이 **따로** 닫혔다 — 공유 카운터가 id 를
+    /// 유일하게 만들고, 창을 건너 지목하는 것은 `Kind::GlobalHook` 이 푼다
+    /// (`crate::core::request_target`). 한쪽만 있으면 비포커스 창의 훅은 존재하는데
+    /// 어떤 요청으로도 닿지 않는 상태가 남는다 — 실제로 그 상태가 있었고, 그때
+    /// `unset --hook <id>` 가 포커스된 창의 것을 지웠다.
     global_hook: Arc<std::sync::atomic::AtomicU32>,
 }
 
