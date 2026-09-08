@@ -23,13 +23,16 @@
 #[path = "../spawn_diag/mod.rs"]
 mod spawn_diag;
 
-use std::collections::VecDeque;
+// stderr 포착의 생산자는 `spawn_diag` 한 곳이다 — 이 하네스가 들고 있던 링·시각·배출
+// 스레드가 형제 둘과 바이트 단위로 같았다.
+use spawn_diag::{STDERR_TAIL_LINES, StderrCapture};
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use enigo::{Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings as EnigoSettings};
@@ -158,22 +161,9 @@ unsafe impl Send for GuiTestInstance {}
 // SAFETY: 위 Send와 동일 근거 — Mutex 직렬화 + 단순 포인터 값 전달.
 unsafe impl Sync for GuiTestInstance {}
 
-/// stderr 링 크기 / 실패 시 싣는 꼬리 줄 수 — 형제 하네스 둘과 같은 값이다.
-const STDERR_RING_CAPACITY: usize = 256;
-const STDERR_TAIL_LINES: usize = 30;
-
 /// GUI 부팅 상한. IPC 전용 하네스보다 짧게 둔 값을 그대로 유지한다 — 이 회차는
 /// 상한을 바꾸지 않는다(상한 조정은 처방이 아니다).
 const GUI_SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(15);
-
-fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, lines: usize) -> String {
-    let ring = ring.lock().unwrap();
-    ring.iter()
-        .skip(ring.len().saturating_sub(lines))
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 impl GuiTestInstance {
     /// Spawn a tasty GUI instance for testing.
@@ -249,49 +239,27 @@ impl GuiTestInstance {
         // 과 같은 형태다. 이 하네스만 **셋 다 없었다**: 꼬리도, 죽은 자식 판정도, 느림/멈춤
         // 구분도. 그래서 GUI 부팅이 실패하면 "15 초 안에 port file 이 안 나왔다" 한 줄이
         // 전부였고, 디스플레이 부재처럼 **즉사하는** 흔한 실패까지 그 문장을 썼다.
-        let stderr_ring: Arc<Mutex<VecDeque<String>>> =
-            Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
-        let stderr_last_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
-        if let Some(stderr) = process.stderr.take() {
-            let ring = Arc::clone(&stderr_ring);
-            let last_at = Arc::clone(&stderr_last_at);
-            std::thread::spawn(move || {
-                let reader = BufReader::new(stderr);
-                for line in reader.lines().map_while(Result::ok) {
-                    *last_at.lock().unwrap() = Some(Instant::now());
-                    let mut ring = ring.lock().unwrap();
-                    if ring.len() == STDERR_RING_CAPACITY {
-                        ring.pop_front();
-                    }
-                    ring.push_back(line);
-                }
-            });
-        }
+        //
+        // ★ 이 포착은 spawn 단계에서만 쓰고 인스턴스에 안 싣는다 — 형제 둘과 다른 점이고,
+        // 이 회차가 바꾸지 않은 것이다. `join()` 을 안 부르므로 배출 스레드는 자식이 죽어
+        // 파이프가 EOF 를 낼 때 스스로 끝난다(이동 전 동작과 같다).
+        let stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file (IPC ready)
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > GUI_SPAWN_PORT_TIMEOUT {
-                // 락을 `panic!` 인자 안에서 잡으면 임시 가드가 되감기 끝까지 살아 있어 이
-                // Mutex 가 오염되고, stderr drain 스레드가 다음 `lock()` 에서 죽는다 —
-                // **이후 실패의 stderr tail 이 조용히 사라진다.** 형제 하네스
-                // (`tests/common/mod.rs`)와 같은 수선이다.
-                //
-                // 이유: 오염을 이어받아도 값은 옳다 — 보호 대상이 `Option<Instant>` 한 칸뿐이라
-                // 패닉이 그 불변식을 깨지 않는다.
-                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 교착이다.
-                let last_stderr_age = stderr_last_at
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .map(|t| t.elapsed());
+                // `last_line_age()` 가 메서드라 가드가 `panic!` 의 임시 범위에 안 들어간다 —
+                // 예전에는 여기서 오염된 Mutex 가 배출 스레드를 죽여 **이후 실패의 stderr
+                // tail 이 조용히 사라졌다.**
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
                         "tasty GUI failed to write the port file",
                         GUI_SPAWN_PORT_TIMEOUT,
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        last_stderr_age,
+                        stderr.tail_lines(),
+                        &stderr.tail(),
+                        stderr.last_line_age(),
                     )
                 );
             }
@@ -307,8 +275,8 @@ impl GuiTestInstance {
                     "{}",
                     spawn_diag::early_exit_message(
                         &status.to_string(),
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                        stderr.tail_lines(),
+                        &stderr.tail(),
                     )
                 );
             }

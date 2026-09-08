@@ -43,24 +43,21 @@ pub fn bundle_staging_note() -> String {
     spawn_diag::bundle_staging_note()
 }
 
-use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-const STDERR_RING_CAPACITY: usize = 256;
-const STDERR_TAIL_LINES: usize = 30;
-
 // S1=port file 작성 (init_app_state 후), S2=first surface PTY prompt.
 // 값과 그 근거는 두 하네스가 공유한다 — `tests/spawn_diag`.
-use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT};
+// stderr 포착(링·마지막 줄 시각·배출 스레드)도 같은 자리에서 온다 — 셋이 각자 들고 있던
+// 것을 `StderrCapture` 하나로 모았다.
+use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT, STDERR_TAIL_LINES, StderrCapture};
 
 // ───── 공유 인스턴스 (test binary 단위) ─────
 
@@ -165,10 +162,9 @@ pub struct TastyInstance {
     port: u16,
     port_file: PathBuf,
     isolated_home: PathBuf,
-    stderr_ring: Arc<Mutex<VecDeque<String>>>,
-    /// 마지막 stderr 줄의 시각 — 상한을 넘겼을 때 "느리다" 와 "멈췄다" 를 가른다.
-    stderr_last_at: Arc<Mutex<Option<Instant>>>,
-    stderr_drain: Option<JoinHandle<()>>,
+    /// 자식 stderr 의 꼬리와 **마지막 줄의 시각** — 상한을 넘겼을 때 "느리다" 와
+    /// "멈췄다" 를 가른다. 생산자는 `spawn_diag` 한 곳이다.
+    stderr: StderrCapture,
 }
 
 fn write_isolated_config(isolated_home: &std::path::Path, inherit_cwd: bool) {
@@ -205,17 +201,6 @@ link_click_modifier = "ctrl"
     );
     std::fs::write(tasty_dir.join("config.toml"), config)
         .expect("failed to write isolated config.toml");
-}
-
-fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, n: usize) -> String {
-    let ring = ring.lock().unwrap();
-    let total = ring.len();
-    let start = total.saturating_sub(n);
-    ring.iter()
-        .skip(start)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// `Command::spawn()` 대신 이걸 쓴다(Linux). 그냥 `pre_exec` 로 `PR_SET_PDEATHSIG` 를
@@ -358,29 +343,10 @@ impl TastyInstance {
         #[cfg(not(target_os = "linux"))]
         let mut process = command.spawn().expect("failed to spawn tasty");
 
-        // drain stderr into a ring buffer so we can attach a tail to spawn-phase
-        // panics. background thread avoids OS pipe backpressure blocking the child
-        // (Linux 64 KB / macOS 16 KB default).
-        let stderr_ring: Arc<Mutex<VecDeque<String>>> =
-            Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
-        // 마지막 줄이 **언제** 왔는지가 "느리다" 와 "멈췄다" 를 가르는 값이다
-        // (`spawn_diag::stderr_silence_verdict`). 줄 자체는 링에, 시각은 여기에 남는다.
-        let stderr_last_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
-        let stderr_drain = process.stderr.take().map(|stderr| {
-            let ring = Arc::clone(&stderr_ring);
-            let last_at = Arc::clone(&stderr_last_at);
-            std::thread::spawn(move || {
-                let reader = BufReader::new(stderr);
-                for line in reader.lines().map_while(Result::ok) {
-                    *last_at.lock().unwrap() = Some(Instant::now());
-                    let mut ring = ring.lock().unwrap();
-                    if ring.len() == STDERR_RING_CAPACITY {
-                        ring.pop_front();
-                    }
-                    ring.push_back(line);
-                }
-            })
-        });
+        // stderr 를 배경 스레드로 빨아들인다 — 안 읽으면 OS 파이프 역압에 자식이 막힌다
+        // (Linux 64 KB / macOS 16 KB). 꼬리 줄과 마지막 줄의 시각이 spawn 단계 패닉의
+        // 진단이 된다.
+        let stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file
         let start = Instant::now();
@@ -397,28 +363,19 @@ impl TastyInstance {
                 let _ = std::fs::remove_file(&port_file);
                 // 위와 동일.
                 let _ = std::fs::remove_dir_all(&isolated_home);
-                // 락을 `panic!` **인자 안에서** 잡으면 임시 가드가 그 statement 끝까지 —
-                // 즉 되감기가 끝날 때까지 — 살아 있어 이 Mutex 가 오염된다. 그러면 stderr
-                // drain 스레드가 다음 `lock()` 에서 죽고, **이후 실패의 stderr tail 이
-                // 조용히 사라진다**(F 는 그대로라 알아채기 어렵다). 값을 먼저 지역 변수로
-                // 빼서 가드를 패닉 **전에** 떨어뜨린다.
-                //
-                // 이유: 오염을 이어받아도 값은 옳다. 보호 대상이 `Option<Instant>` 한 칸뿐이라
-                // 패닉이 그 불변식을 깨지 않는다 — 진단 수집기를 살리는 쪽이 정보가 는다.
-                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 `Mutex` 는
-                //   재진입이 아니라 거기서 멈춘다(실측: 오염 대신 교착이 났다).
-                let last_stderr_age = stderr_last_at
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .map(|t| t.elapsed());
+                // 락을 `panic!` **인자 안에서** 잡으면 임시 가드가 되감기 끝까지 살아 있어
+                // Mutex 가 오염되고, 배출 스레드가 다음 `lock()` 에서 죽어 **이후 실패의
+                // stderr tail 이 조용히 사라진다**(F 는 그대로라 알아채기 어렵다).
+                // `last_line_age()` 가 메서드인 것이 그 자리를 애초에 안 만든다 —
+                // 가드가 메서드 안에서 떨어지므로 `panic!` 의 임시 범위에 안 들어간다.
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
                         "tasty failed to start",
                         SPAWN_PORT_TIMEOUT,
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        last_stderr_age,
+                        stderr.tail_lines(),
+                        &stderr.tail(),
+                        stderr.last_line_age(),
                     )
                 );
             }
@@ -438,8 +395,8 @@ impl TastyInstance {
                     "{}",
                     spawn_diag::early_exit_message(
                         &status.to_string(),
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                        stderr.tail_lines(),
+                        &stderr.tail(),
                     )
                 );
             }
@@ -451,9 +408,7 @@ impl TastyInstance {
             port,
             port_file,
             isolated_home,
-            stderr_ring: Arc::clone(&stderr_ring),
-            stderr_last_at: Arc::clone(&stderr_last_at),
-            stderr_drain,
+            stderr,
         };
 
         // Wait until the shell is actually ready (has screen content).
@@ -473,22 +428,14 @@ impl TastyInstance {
                 return;
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
-                // 위 spawn 타임아웃과 같은 이유 — 가드를 `panic!` 인자 밖에서 떨어뜨린다.
-                // 여기서 오염시키면 죽는 것은 stderr drain 스레드이고, 그 손실은 F 를
-                // 안 늘리므로 조용하다.
-                let last_stderr_age = self
-                    .stderr_last_at
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
                         "shell did not produce output",
                         SPAWN_SHELL_TIMEOUT,
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES),
-                        last_stderr_age,
+                        self.stderr.tail_lines(),
+                        &self.stderr.tail(),
+                        self.stderr.last_line_age(),
                     )
                 );
             }
@@ -788,9 +735,9 @@ impl Drop for TastyInstance {
         std::thread::sleep(Duration::from_millis(200));
         force_kill(self.process.id());
         let _ = self.process.wait();
-        if let Some(handle) = self.stderr_drain.take() {
-            let _ = handle.join(); // join drain thread; ignore panic in drainer
-        }
+        // ★ `join()` 은 자식을 거둔 **뒤에** 부른다 — 파이프 EOF 가 자식 종료에서 오므로
+        // 이르게 부르면 남은 수명만큼 막힌다(`StderrCapture::join` 의 실측 표).
+        self.stderr.join();
         let _ = std::fs::remove_file(&self.port_file);
         let _ = std::fs::remove_dir_all(&self.isolated_home);
     }

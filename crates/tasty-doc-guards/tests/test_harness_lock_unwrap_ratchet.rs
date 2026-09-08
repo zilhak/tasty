@@ -73,70 +73,22 @@ const ACQUIRE: &[&str] = &[".lock()", ".read()", ".write()"];
 /// ★ **"안전" 이 아니라 "가해자가 아니다" 로 읽어라.** 이 자리들은 생 `.unwrap()` 이라
 /// **남이 오염시키면 그대로 죽는다**(실측: 오염된 뒤 `into_inner` 로는 읽히고 생 `unwrap` 은
 /// 죽는다). 지금 사는 이유는 이 레포에 그들을 오염시킬 자리가 남아 있지 않아서다.
-const EXEMPT: &[(&str, &str, &str)] = &[
-    (
-        "tests/shared_instance_harness.rs",
-        "let mut observed = OBSERVED.lock().unwrap();",
-        "관찰 기록에 밀어 넣기만 한다. 단정은 락 밖으로 나갔다 — 그 이동이 이 축의 첫 수선이었다.",
-    ),
-    (
-        "tests/common/mod.rs",
-        "let ring = ring.lock().unwrap();",
-        "stderr tail 읽기 — 쥔 채 iterate·clone 만 한다. 단정도 `panic!` 도 없다.",
-    ),
-    (
-        "tests/common/mod.rs",
-        "*last_at.lock().unwrap() = Some(Instant::now());",
-        "drain 스레드의 시계 대입. 쥔 범위가 대입 하나다.",
-    ),
-    (
-        "tests/common/mod.rs",
-        "let mut ring = ring.lock().unwrap();",
-        "drain 스레드의 ring 적재. 쥔 채 push 만 한다.",
-    ),
-    (
-        "tests/gui_common/mod.rs",
-        "let ring = ring.lock().unwrap();",
-        "stderr tail 읽기 — 위 형제와 같은 모양.",
-    ),
-    (
-        "tests/gui_common/mod.rs",
-        "*last_at.lock().unwrap() = Some(Instant::now());",
-        "drain 스레드의 시계 대입.",
-    ),
-    (
-        "tests/gui_common/mod.rs",
-        "let mut ring = ring.lock().unwrap();",
-        "drain 스레드의 ring 적재.",
-    ),
-    (
-        "tests/webhook_common/mod.rs",
-        "*last_at.lock().unwrap() = Some(Instant::now());",
-        "drain 스레드의 시계 대입.",
-    ),
-    (
-        "tests/webhook_common/mod.rs",
-        "let mut ring = ring.lock().unwrap();",
-        "drain 스레드의 ring 적재.",
-    ),
-    (
-        "tests/webhook_common/mod.rs",
-        "let ring = self.stderr_ring.lock().unwrap();",
-        "stderr tail 읽기(인스턴스 메서드 쪽).",
-    ),
-    (
-        "tests/webhook_common/mod.rs",
-        "let ring = ring.lock().unwrap();",
-        "stderr tail 읽기(자유 함수 쪽).",
-    ),
-];
+const EXEMPT: &[(&str, &str, &str)] = &[(
+    "tests/shared_instance_harness.rs",
+    "let mut observed = OBSERVED.lock().unwrap();",
+    "관찰 기록에 밀어 넣기만 한다. 단정은 락 밖으로 나갔다 — 그 이동이 이 축의 첫 수선이었다.",
+)];
 
 /// 면제 예산. **늘리는 것 자체가 이 가드가 보는 구간을 줄이는 일이다.**
 ///
 /// 지금 값은 위 명부의 크기와 같다 — 여유를 두지 않는다. 여유를 두면 새 면제가 **아무 흔적
 /// 없이** 들어오고, 그게 바로 이 가드의 퇴화 경로다. 면제를 하나 더 넣으려면 이 수도 같은
 /// 커밋에서 올라가야 하고, 그러면 그 결정이 diff 에 남는다.
-const EXEMPT_BUDGET: usize = 11;
+///
+/// 11 → 1. 세 하네스의 stderr 포착이 `tests/spawn_diag` 의 `StderrCapture` 하나로 모이면서
+/// 거기 올라 있던 열 자리가 **없어졌다.** 죽은 면제를 남기면 다음 사람이 그 크기를 근거로
+/// 예산을 올린다(이 상수 doc 이 경고하는 그 경로다).
+const EXEMPT_BUDGET: usize = 1;
 
 /// 획득 자리 수의 하한. **왜 양방향인가** — 상한만 두면 술어가 깨졌을 때(토큰 오타, 마스킹
 /// 실패, 뿌리 소실) 수가 0 으로 떨어지고 0 은 언제나 상한 아래다. 형제
@@ -145,10 +97,22 @@ const EXEMPT_BUDGET: usize = 11;
 /// (생 `.unwrap()` 자리)는 지금 0 이라 상한만으로는 술어의 생사가 전혀 안 보인다. 분모가
 /// 유일한 생존 신호다.
 ///
-/// 실측(2026-09-07): 루트 `tests/` 의 `.rs` 59 파일에서 획득 **26** 자리. 값은 그 아래로
-/// 넉넉히 잡았다 — 하네스가 정리되며 몇 자리가 줄어드는 것은 정상이고, 술어가 죽으면 이 수는
-/// 몇이 아니라 **0 근처로** 떨어지기 때문이다. 이 하한은 래칫이 아니라 **술어 생존 검사**다.
-const MIN_ACQUISITIONS: usize = 18;
+/// 실측(2026-09-07): 루트 `tests/` 의 `.rs` 에서 획득 **26** 자리, 하한 18.
+///
+/// 재실측(2026-09-08, base `79fb0d4b8` + 1): 같은 뿌리 **46 파일에서 11 자리**. 하한을
+/// **8** 로 내린다(옛 값과 같은 비율 ≈ 0.69).
+///
+/// **무엇이 없어졌나** — 15 자리 전부가 세 하네스의 stderr 포착이다: `tests/common` 5 ·
+/// `tests/gui_common` 4 · `tests/webhook_common` 6. 셋이 각자 들고 있던 링·마지막 줄 시각·
+/// 배출 스레드가 `tests/spawn_diag` 의 `StderrCapture` **하나**로 합쳐졌다. 없어진 것이
+/// 아니라 한 자리로 모인 것이고, 그 자리는 생 `.unwrap()` 이 아니라 오염을 이어받는
+/// `unwrap_or_else(into_inner)` 라 면제도 필요 없다. `spawn_diag` 의 획득 5 는 이동 전후로
+/// 같다 — 그 타입은 이미 거기 있었고 하네스가 그것을 **쓰기 시작한** 것이다.
+///
+/// 값은 그 아래로 넉넉히 잡는다 — 하네스가 정리되며 몇 자리가 줄어드는 것은 정상이고,
+/// 술어가 죽으면 이 수는 몇이 아니라 **0 근처로** 떨어지기 때문이다. 이 하한은 래칫이
+/// 아니라 **술어 생존 검사**다.
+const MIN_ACQUISITIONS: usize = 8;
 
 /// 한 파일의 소스에서 (획득 자리, 생 `.unwrap()` 자리) 를 센다. 좌표는 1 기반 줄이다.
 fn classify(masked: &str) -> (Vec<usize>, Vec<usize>) {

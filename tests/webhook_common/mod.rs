@@ -31,23 +31,19 @@
 #[path = "../spawn_diag/mod.rs"]
 mod spawn_diag;
 
-use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-const STDERR_RING_CAPACITY: usize = 256;
-const STDERR_TAIL_LINES: usize = 40;
-
 // spawn 2 단계의 상한은 `tests/common` 과 같은 값을 쓴다 — 같은 바이너리를 같은
 // 방식으로 띄우므로 잣대가 다를 근거가 없다. 근거는 `tests/spawn_diag`.
-use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT};
+// stderr 포착도 같은 자리에서 온다. 꼬리 줄 수는 이 하네스만 40 이었는데 그 차이의
+// 근거가 어디에도 없어(그 상수 doc 에 추적을 적었다) 30 으로 합쳤다.
+use spawn_diag::{SPAWN_PORT_TIMEOUT, SPAWN_SHELL_TIMEOUT, STDERR_TAIL_LINES, StderrCapture};
 
 /// 리스너가 accept 를 시작할 때까지의 상한. 위 두 단계와 달리 웹훅 고유 단계다.
 const WEBHOOK_READY_TIMEOUT: Duration = Duration::from_secs(20);
@@ -249,10 +245,9 @@ pub struct WebhookInstance {
     shell_home: PathBuf,
     /// Drop 시 홈을 삭제할지(빌더에서 명시 home 을 준 재시작 테스트는 false).
     own_home: bool,
-    stderr_ring: Arc<Mutex<VecDeque<String>>>,
-    /// 마지막 stderr 줄의 시각 — 상한을 넘겼을 때 "느리다" 와 "멈췄다" 를 가른다.
-    stderr_last_at: Arc<Mutex<Option<Instant>>>,
-    stderr_drain: Option<JoinHandle<()>>,
+    /// 자식 stderr 의 꼬리와 **마지막 줄의 시각** — 상한을 넘겼을 때 "느리다" 와
+    /// "멈췄다" 를 가른다. 생산자는 `spawn_diag` 한 곳이다.
+    stderr: StderrCapture,
 }
 
 impl WebhookInstance {
@@ -436,48 +431,25 @@ impl WebhookInstance {
         #[cfg(not(target_os = "linux"))]
         let mut process = command.spawn().expect("failed to spawn tasty");
 
-        let stderr_ring: Arc<Mutex<VecDeque<String>>> =
-            Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
+        // stderr 를 배경 스레드로 빨아들인다 — 안 읽으면 OS 파이프 역압에 자식이 막힌다.
         // 마지막 줄이 **언제** 왔는지가 "느리다" 와 "멈췄다" 를 가르는 값이다
-        // (`spawn_diag::stderr_silence_verdict`). 줄 자체는 링에, 시각은 여기에 남는다.
-        let stderr_last_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
-        let stderr_drain = process.stderr.take().map(|stderr| {
-            let ring = Arc::clone(&stderr_ring);
-            let last_at = Arc::clone(&stderr_last_at);
-            std::thread::spawn(move || {
-                let reader = BufReader::new(stderr);
-                for line in reader.lines().map_while(Result::ok) {
-                    *last_at.lock().unwrap() = Some(Instant::now());
-                    let mut ring = ring.lock().unwrap();
-                    if ring.len() == STDERR_RING_CAPACITY {
-                        ring.pop_front();
-                    }
-                    ring.push_back(line);
-                }
-            })
-        });
+        // (`spawn_diag::stderr_silence_verdict`).
+        let stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
 
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > SPAWN_PORT_TIMEOUT {
-                // 락을 `panic!` 인자 안에서 잡으면 임시 가드가 되감기 끝까지 살아 있어 이
-                // Mutex 가 오염되고, stderr drain 스레드가 다음 `lock()` 에서 죽는다 —
-                // **이후 실패의 stderr tail 이 조용히 사라진다.** 형제 하네스와 같은 수선이다.
-                //
-                // 이유: 오염을 이어받아도 값은 옳다 — 보호 대상이 `Option<Instant>` 한 칸뿐이다.
-                // ★ 조건 쪽에 락을 새로 들이지 마라: 한 statement 에서 두 번 잡으면 교착이다.
-                let last_stderr_age = stderr_last_at
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .map(|t| t.elapsed());
+                // `last_line_age()` 가 메서드라 가드가 `panic!` 의 임시 범위에 안 들어간다 —
+                // 예전에는 여기서 오염된 Mutex 가 배출 스레드를 죽여 **이후 실패의 stderr
+                // tail 이 조용히 사라졌다.**
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
                         "tasty failed to start",
                         SPAWN_PORT_TIMEOUT,
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
-                        last_stderr_age,
+                        stderr.tail_lines(),
+                        &stderr.tail(),
+                        stderr.last_line_age(),
                     )
                 );
             }
@@ -492,8 +464,8 @@ impl WebhookInstance {
                     "{}",
                     spawn_diag::early_exit_message(
                         &status.to_string(),
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&stderr_ring, STDERR_TAIL_LINES),
+                        stderr.tail_lines(),
+                        &stderr.tail(),
                     )
                 );
             }
@@ -508,9 +480,7 @@ impl WebhookInstance {
             home,
             shell_home,
             own_home,
-            stderr_ring: Arc::clone(&stderr_ring),
-            stderr_last_at: Arc::clone(&stderr_last_at),
-            stderr_drain,
+            stderr,
         };
 
         // 셸이 실제 출력을 낼 때까지 대기(surface 준비).
@@ -521,22 +491,14 @@ impl WebhookInstance {
                 break;
             }
             if start.elapsed() > SPAWN_SHELL_TIMEOUT {
-                // 위 포트 타임아웃과 같은 이유 — 가드를 `panic!` 인자 밖에서 떨어뜨린다.
-                // 여기서 오염시키면 죽는 것은 stderr drain 스레드이고, 그 손실은 F 를
-                // 안 늘리므로 조용하다.
-                let last_stderr_age = instance
-                    .stderr_last_at
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .map(|t| t.elapsed());
                 panic!(
                     "{}",
                     spawn_diag::spawn_timeout_message(
                         "shell produced no output",
                         SPAWN_SHELL_TIMEOUT,
-                        STDERR_TAIL_LINES,
-                        &stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES),
-                        last_stderr_age,
+                        instance.stderr.tail_lines(),
+                        &instance.stderr.tail(),
+                        instance.stderr.last_line_age(),
                     )
                 );
             }
@@ -598,8 +560,7 @@ impl WebhookInstance {
 
     /// stderr 링에서 리스너 bind 실패 경고 한 줄을 찾는다.
     fn stderr_bind_failure(&self) -> Option<String> {
-        let ring = self.stderr_ring.lock().unwrap();
-        ring.iter().find(|line| is_bind_failure(line)).cloned()
+        self.stderr.find(is_bind_failure)
     }
 
     /// 실패 원인을 사람이 바로 읽을 수 있게 조립한다. `seeded` 는 이 인스턴스의 포트를
@@ -625,8 +586,9 @@ impl WebhookInstance {
             ),
         };
         format!(
-            "{head}\n--- stderr (last {STDERR_TAIL_LINES} lines) ---\n{}",
-            stderr_tail(&self.stderr_ring, STDERR_TAIL_LINES)
+            "{head}\n--- stderr (last {} lines) ---\n{}",
+            self.stderr.tail_lines(),
+            self.stderr.tail()
         )
     }
 
@@ -778,9 +740,9 @@ impl Drop for WebhookInstance {
             let _ = self.process.kill();
         }
         let _ = self.process.wait();
-        if let Some(handle) = self.stderr_drain.take() {
-            let _ = handle.join();
-        }
+        // ★ `join()` 은 자식을 거둔 **뒤에** 부른다 — 파이프 EOF 가 자식 종료에서 오므로
+        // 이르게 부르면 남은 수명만큼 막힌다(`StderrCapture::join` 의 실측 표).
+        self.stderr.join();
         let _ = std::fs::remove_file(&self.port_file);
         let _ = std::fs::remove_dir_all(&self.shell_home);
         if self.own_home {
@@ -798,17 +760,6 @@ fn read_seeded_port(path: &Path) -> u16 {
         .find_map(|line| line.split_once('=').filter(|(k, _)| k.trim() == "port"))
         .and_then(|(_, v)| v.trim().parse::<u16>().ok())
         .unwrap_or_else(|| panic!("{} 에 `port = N` 이 없다:\n{text}", path.display()))
-}
-
-fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, n: usize) -> String {
-    let ring = ring.lock().unwrap();
-    let total = ring.len();
-    let start = total.saturating_sub(n);
-    ring.iter()
-        .skip(start)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// 원시 HTTP 응답 바이트에서 `(status_code, body)` 를 뽑는다. 헤더/바디는 첫
