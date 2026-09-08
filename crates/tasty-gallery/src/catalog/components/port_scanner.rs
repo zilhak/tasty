@@ -17,8 +17,6 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 const WIDTH: LogicalPx = LogicalPx(660.0);
-/// 즐겨찾기 별 컬럼 폭 — 본체 `port_scanner.rs` 의 `FAV_COL_WIDTH` 미러.
-const FAV_COL_WIDTH: LogicalPx = LogicalPx(28.0);
 
 struct PortRow {
     port: &'static str,
@@ -185,7 +183,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
             // 즐겨찾기 섹션 (design FavoritesSection) — 캡션(22px: "Favorites · N" +
             // 우측 "system-wide") + bounded 리스트(최대 112px, 행 22px). bg-sidebar
-            // 배경 + 하단 separator. 별 컬럼 폭은 메인 테이블과 정렬(FAV_COL_WIDTH).
+            // 배경 + 하단 separator. 별 컬럼 폭은 메인 테이블과 정렬
+            // (`component.port-star-col-width`).
             // 혼합 상태(매칭 1 + NONE 1) — 빈 상태는 아래 별도 stage 에서 시연한다.
             draw_favorites_section(ui, theme, FAVORITE_ROWS);
 
@@ -193,9 +192,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
             // 상태(컬럼 표시/숨김 시각 케이스). leading fav 컬럼(28px, 헤더 라벨 없음)
             // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
+            // 컬럼 폭은 본체 `column_layout` 의 최소폭 미러다 — 그 치수에는 토큰이
+            // 없다(있는 것은 별 컬럼 폭뿐이라 그것만 토큰으로 받는다). 그중 200 이
+            // `size-*` 스케일과 값이 겹쳐 `on_scale_length_literal` 에 잡힌다.
             kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
                 let cols = vec![
-                    col("", TableColumnWidth::Exact(FAV_COL_WIDTH), TableAlign::Left),
+                    col(
+                        "",
+                        TableColumnWidth::Exact(theme.port_star_col_width()),
+                        TableAlign::Left,
+                    ),
                     col(
                         "Port",
                         TableColumnWidth::Exact(LogicalPx(84.0)),
@@ -494,7 +500,7 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
                                 ui.allocate_ui_with_layout(
-                                    egui::vec2(FAV_COL_WIDTH.value(), fav_row_h),
+                                    egui::vec2(theme.port_star_col_width().value(), fav_row_h),
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| star(ui, theme, true),
                                 );

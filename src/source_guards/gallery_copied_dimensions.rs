@@ -128,11 +128,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_QUIT_MODAL, "WINDOW_H"),
     ),
     (
-        "포트 스캐너 즐겨찾기 컬럼 폭",
-        Side::Lit("src/adapters/ui/popup/port_scanner.rs", "FAV_COL_WIDTH"),
-        Side::Lit(GALLERY_PORT_SCANNER, "FAV_COL_WIDTH"),
-    ),
-    (
         "프리셋 leaf 요약 표시 폭 임계",
         Side::Lit(
             "src/adapters/ui/preset/demo_layout.rs",
@@ -151,7 +146,6 @@ const COPIED: &[(&str, Side, Side)] = &[
 ];
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
-const GALLERY_PORT_SCANNER: &str = "crates/tasty-gallery/src/catalog/components/port_scanner.rs";
 const GALLERY_PRESET_EDITOR: &str = "crates/tasty-gallery/src/catalog/components/preset_editor.rs";
 const GALLERY_INFO_MODAL: &str = "crates/tasty-gallery/src/catalog/components/info_modal.rs";
 const GALLERY_POPUP_FRAME: &str = "crates/tasty-gallery/src/catalog/popup_frame.rs";
@@ -166,9 +160,11 @@ fn const_site(masked: &str, name: &str) -> Option<(usize, f32)> {
     // 밀린다. 값 비교는 그래도 통과하므로 **표만 조용히 틀린다**(그 형태를 아래 detector 가
     // 잡았다).
     let (line_no, line) = find_const_line(masked, name)?;
-    // `LogicalPx(n)` 이 흔하지만 **맨 `f32` 상수**도 같은 치수를 든다(본체
-    // `port_scanner::FAV_COL_WIDTH` 가 그 형태다). 그 형태를 못 읽으면 그 쌍은 명부에
-    // 적을 수조차 없다 — 자료구조의 비대칭이 "그 자리에 아무것도 없다" 로 보이는 형태다.
+    // `LogicalPx(n)` 이 흔하지만 **맨 `f32` 상수**도 같은 치수를 든다. 그 형태를 못 읽으면
+    // 그 쌍은 명부에 적을 수조차 없다 — 자료구조의 비대칭이 "그 자리에 아무것도 없다" 로
+    // 보이는 형태다. (한때 본체 `port_scanner::FAV_COL_WIDTH` 가 그 예였다. 그 쌍은
+    // 양쪽이 `theme.port_star_col_width()` 를 부르게 되면서 사라졌다 — 사본이 없어진
+    // 것이라 명부에서도 빠졌다. 그래도 이 갈래는 남는다: 다른 자리가 같은 형태다.)
     let rest = match line.rfind("LogicalPx(") {
         Some(at) => &line[at + "LogicalPx(".len()..],
         None => line.split('=').nth(1)?.trim(),
@@ -316,10 +312,13 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 하한이 아니라 **정확한 수**다. 하한이면 행을 빼는 것이 가장 싼 수선이 되고, 그건
     // 사본을 없앤 것이 아니라 **보는 눈을 없앤 것**이다.
+    // 12 -> 11: 「포트 스캐너 즐겨찾기 컬럼 폭」 쌍이 사라졌다. 그 치수에는 이미 이름이
+    // 있었고(`component.port-star-col-width`), 양쪽 상수를 지우고 둘 다
+    // `theme.port_star_col_width()` 를 부른다 — 사본이 없어진 것이라 명부에서 빠진다.
     assert_eq!(
         COPIED.len(),
-        12,
-        "사본 명부가 {} 쌍이다(기록 12). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        11,
+        "사본 명부가 {} 쌍이다(기록 11). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );
@@ -713,7 +712,6 @@ const CONFESSED: &[(&str, &str)] = &[
     (GALLERY_POPUP_FRAME, "TITLE_BTN_SIZE"),
     (GALLERY_POPUP_FRAME, "TITLE_BTN_EDGE_PAD"),
     (GALLERY_QUIT_MODAL, "WINDOW_W"),
-    (GALLERY_PORT_SCANNER, "FAV_COL_WIDTH"),
     (GALLERY_PRESET_EDITOR, "LEAF_SUMMARY_MIN_W"),
     (
         "crates/tasty-gallery/src/catalog/components/script_manager.rs",

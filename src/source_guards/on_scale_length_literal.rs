@@ -129,7 +129,19 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        48,
+        50,
+        // 48 -> 50 은 `port_scanner.rs` 의 컬럼 최소폭 표(`column_layout`)가 타입을
+        // 얻으면서 **바늘 안으로 들어온 것**이다. 그 일곱은 전에도 그 자리에 있었고
+        // `(84.0, false, ..)` 처럼 맨 f32 라 이 가드의 술어가 안 닿았다. `LogicalPx` 로
+        // 넓히자 그중 `size-*` 스케일과 값이 겹치는 둘(120 · 200)이 보이게 됐다.
+        // 위반이 새로 생긴 것이 아니라 **안 보던 것이 보이는 것**이다 — 아래
+        // `src/` 항목이 `LogicalSize::new(400, 200)` 에서 겪은 것과 같은 방향이다.
+        // 없앨 수 없는 이유는 그 자리 주석에 적혀 있다: 컬럼 최소폭에는 이름이 없다
+        // (`component.port-*` 에 있는 것은 별 컬럼 폭·즐겨찾기 높이 셋뿐이다).
+        // 같은 회차에 하나는 **없앴다** — 별 컬럼 폭 28 은 그 치수의 이름이 실재해서
+        // (`component.port-star-col-width`) 상수를 지우고 토큰을 부른다. 그래서 +3 이
+        // 아니라 +2 다.
+        //
         // 49 -> 48 은 `file_handler_picker` 등록 한 줄이다. 그 자리의 처방이 여기
         // 적혀 있던 것과 같았다 — **placeholder 를 안 적는 형태**. 함수로 빼는 것만으로는
         // 자리가 옮겨질 뿐이지만, 그 함수가 값을 `sizer` 와 **같은 식에서 도출**하면
@@ -647,7 +659,11 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (22, 53, 1, 14),
+        // 53 -> 52 · 14 -> 15 는 갤러리 port_scanner specimen 한 자리가 갈래를 옮긴
+        // 것이다. 이름 붙은 치수였던 `FAV_COL_WIDTH`(28) 상수를 지우고
+        // `theme.port_star_col_width()` 로 바꿨고(앞 갈래 -1), 컬럼 폭 리터럴이
+        // 타입을 얻으면서 그중 200 이 인라인 자리로 보이게 됐다(뒤 갈래 +1).
+        (22, 52, 1, 15),
         "갤러리 몫의 갈래가 바뀌었다 — 이름 붙은 치수(앞 둘)와 인라인 여백(뒤 둘)은 \
          처방이 다르다. 인라인을 줄였으면 뒤의 수를, 치수에 이름을 줬으면 앞의 수를 내려라"
     );
@@ -713,7 +729,10 @@ fn the_gallery_share_splits_into_four_kinds() {
         .map_or(0, |(_, n, _)| *n);
     assert_eq!(
         (displayed, named_value, nameless, undecided),
-        (roster, 10, 1, ratcheted - 10 - 1),
+        // 10 -> 11 은 위와 같은 자리다 — 컬럼 최소폭 200 이 타입을 얻어 보이게 됐고,
+        // 같은 값을 가진 `Theme` 이름이 있다(그 이름이 이 자리에 맞는다는 뜻은 아니다 —
+        // 이 갈래의 doc 참조).
+        (roster, 11, 1, ratcheted - 11 - 1),
         "갤러리 몫의 갈래가 바뀌었다 — 전시(래칫 밖) · 같은 값의 이름이 있다 · 이름이 \
          없다 · 그 줄이 스스로 치수를 이름 짓는다"
     );
@@ -785,7 +804,11 @@ fn the_blind_spots_are_still_the_size_they_say() {
     let in_tests = all.len() - shipped.len();
     assert_eq!(
         (zeros, in_tests),
-        (167, 191),
+        // 167 -> 171 은 전부 `LogicalPx(0.0)` 이다(합의 항등원 · `.max(LogicalPx(0.0))` ·
+        // `slack > LogicalPx(0.0)`) — 이 사각이 겨냥해 두고 있던 바로 그 형태다.
+        // 191 -> 198 은 `port_scanner.rs` 의 컬럼 폭 계산 단위 테스트가 인자를 타입으로
+        // 받게 되면서 늘었다. 둘 다 화면에 안 나가는 구간이라 판정 대상이 아니다.
+        (171, 198),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );
