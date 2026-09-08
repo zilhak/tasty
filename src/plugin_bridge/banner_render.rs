@@ -42,9 +42,7 @@ pub fn draw_plugin_banners(
 
     let Some(mgr) = plugin_manager else {
         // plugin manager 부재 — 추적 상태 정리.
-        state.plugin_mesh_banner_geom.clear();
-        state.plugin_mesh_banner_bootstrapped.clear();
-        state.plugin_mesh_banner_theme.clear();
+        state.plugin_mesh_banner_forward.clear();
         return;
     };
 
@@ -71,16 +69,10 @@ pub fn draw_plugin_banners(
         state.banners.close_by_instance(iid);
     }
 
-    // 닫힌 banner 의 추적 상태 정리.
+    // 닫힌 banner 의 forward 추적 정리 — 한 맵이라 칸별로 빠뜨릴 자리가 없다.
     let live_slots: std::collections::HashSet<u64> = slots.iter().map(|s| s.instance_id).collect();
     state
-        .plugin_mesh_banner_geom
-        .retain(|k, _| live_slots.contains(k));
-    state
-        .plugin_mesh_banner_bootstrapped
-        .retain(|k| live_slots.contains(k));
-    state
-        .plugin_mesh_banner_theme
+        .plugin_mesh_banner_forward
         .retain(|k, _| live_slots.contains(k));
 
     if slots.is_empty() {
@@ -112,34 +104,20 @@ pub fn draw_plugin_banners(
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.banner_mesh_frame(slot.instance_id).is_some();
-        let bootstrapped = state
-            .plugin_mesh_banner_bootstrapped
-            .contains(&slot.instance_id);
-        if has_frame {
-            // 건강 상태 — crash 로 frame 이 사라지면 재bootstrap 하도록 무장 해제.
-            state
-                .plugin_mesh_banner_bootstrapped
-                .remove(&slot.instance_id);
-        }
-        let geom_changed = state.plugin_mesh_banner_geom.get(&slot.instance_id) != Some(&geom);
-        let theme_changed =
-            state.plugin_mesh_banner_theme.get(&slot.instance_id) != Some(&current_theme);
-        let need_bootstrap = !has_frame && !bootstrapped;
+        let fwd = state
+            .plugin_mesh_banner_forward
+            .entry(slot.instance_id)
+            .or_default();
+        let need_bootstrap = fwd.need_bootstrap(has_frame);
+        // 건강 상태 — crash 로 frame 이 사라지면 재bootstrap 하도록 무장 해제.
+        fwd.disarm_bootstrap_if_alive(has_frame);
+        let geom_changed = fwd.geom_changed(geom);
+        let theme_changed = fwd.theme_changed(&current_theme);
         // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
-        // need_full_textures 를 실어 보낸다(popup 과 동형).
-        let need_full = state
-            .plugin_mesh_banner_full_requests
-            .remove(&slot.instance_id);
+        // need_full_textures 를 실어 보낸다(popup 과 같은 판정, 같은 타입).
+        let need_full = fwd.take_pending_full();
         if geom_changed || has_input || need_bootstrap || theme_changed || need_full {
-            state.plugin_mesh_banner_geom.insert(slot.instance_id, geom);
-            state
-                .plugin_mesh_banner_theme
-                .insert(slot.instance_id, current_theme.clone());
-            if !has_frame {
-                state
-                    .plugin_mesh_banner_bootstrapped
-                    .insert(slot.instance_id);
-            }
+            fwd.record_sent(geom, &current_theme, has_frame);
             mgr.send_banner_set_context(
                 &slot.plugin_id,
                 &BannerSetContextParams {

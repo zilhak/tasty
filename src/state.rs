@@ -453,55 +453,35 @@ pub struct AppState {
     /// mesh 를 합성한다. 셸(scrim/bg/border)은 host egui 가, 내용만 plugin mesh 가 그린다.
     pub(crate) plugin_mesh_popup_regions: Vec<(u64, crate::model::PhysicalRect)>,
 
-    /// egui-mesh popup 별 마지막으로 보낸 set_context geom `(w_px, h_px, ppp_bits)`.
-    /// 정적 화면을 매 frame 무조건 보내지 않기 위한 변경 감지(surface forward 와 동형).
-    pub(crate) plugin_mesh_popup_geom: std::collections::HashMap<u64, (u32, u32, u32)>,
-
-    /// 이미 bootstrap set_context 를 보낸 egui-mesh popup 인스턴스. paint frame 이
-    /// 아직 안 온 동안 set_context 를 1회만 보내기 위한 가드(surface `bootstrap_sent` 와 같은 모양).
-    /// frame 이 보이면 해제돼 crash 후 재bootstrap 된다. 핵심: 첫 frame(폰트 atlas 동봉)
-    /// 을 host 가 반드시 decode 하도록, bootstrap 을 매 frame 스팸하지 않는다.
-    pub(crate) plugin_mesh_popup_bootstrapped: std::collections::HashSet<u64>,
-
-    /// egui-mesh popup 별 마지막으로 보낸 Theme 스냅샷. 크기/입력 무변이어도 테마가
-    /// 바뀌면 set_context 재forward 를 트리거한다(surface `last_theme` 와 같은 모양).
-    pub(crate) plugin_mesh_popup_theme:
-        std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
+    /// egui-mesh popup 인스턴스별 forward 추적 상태. **칸의 정의도 dirty 판정도
+    /// [`crate::plugin_bridge::MeshForwardCommon`] 한 곳에서 나온다** — banner·surface 와
+    /// "같은 모양" 이라서가 아니라 *같은 타입*이라서 갈릴 자리가 없다. popup 만의 칸
+    /// (무입력 강제 repaint)은 아래 `plugin_mesh_popup_pending_repaint` 로 따로 있다.
+    pub(crate) plugin_mesh_popup_forward:
+        std::collections::HashMap<u64, crate::plugin_bridge::MeshForwardCommon>,
 
     /// egui-mesh banner(A3) 합성 영역. `draw_plugin_banners` 가 매 egui frame 채우고,
     /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
     /// mesh 를 합성한다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
-    /// manager)가, 내용만 plugin mesh 가 그린다. popup regions 와 같은 모양.
+    /// manager)가, 내용만 plugin mesh 가 그린다. popup regions 와 **같은 튜플 타입이고
+    /// 같은 소비자**(`gpu.render` 의 합성 pass)를 먹인다 — 한쪽 모양만 바뀌면 그 소비자가
+    /// 컴파일되지 않는다.
     pub(crate) plugin_mesh_banner_regions: Vec<(u64, crate::model::PhysicalRect)>,
 
-    /// egui-mesh banner 별 마지막으로 보낸 set_context geom `(w_px, h_px, ppp_bits)`.
-    /// 변경 감지(popup geom 과 같은 모양).
-    pub(crate) plugin_mesh_banner_geom: std::collections::HashMap<u64, (u32, u32, u32)>,
-
-    /// 이미 bootstrap set_context 를 보낸 egui-mesh banner 인스턴스(popup bootstrapped 동형).
-    pub(crate) plugin_mesh_banner_bootstrapped: std::collections::HashSet<u64>,
-
-    /// egui-mesh banner 별 마지막으로 보낸 Theme 스냅샷(popup theme 과 동형).
-    pub(crate) plugin_mesh_banner_theme:
-        std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
-
-    /// textures_delta 체인 단절로 full 재전송이 필요한 egui-mesh popup 인스턴스.
-    /// MainView 가 render 직후 gpu 의 요청 대기열을 여기로 옮기고, popup forward
-    /// (`draw_plugin_popups`)가 다음 egui frame 에 소비해 `need_full_textures`
-    /// set_context 를 보낸다.
-    pub(crate) plugin_mesh_popup_full_requests: std::collections::HashSet<u64>,
+    /// egui-mesh banner 인스턴스별 forward 추적 상태. popup 무리와 **같은 타입**이다
+    /// ([`crate::plugin_bridge::MeshForwardCommon`]) — 두 채널의 dirty 판정이 한 곳에서
+    /// 나오므로 한쪽만 고쳐지는 형태의 drift 가 생기지 않는다.
+    pub(crate) plugin_mesh_banner_forward:
+        std::collections::HashMap<u64, crate::plugin_bridge::MeshForwardCommon>,
 
     /// 비동기 host→plugin push(예: git-viewer 원격 조회 결과, `event.dispatch`
     /// unicast) 도착 후 강제 repaint 가 필요한 egui-mesh popup 인스턴스. 일반 dirty
     /// 판정(geom/input/theme 변경)은 이런 "plugin 내부 상태만 바뀐" 갱신을 감지하지
     /// 못하므로(`draw_plugin_popups`), 이 요청을 채워두면 다음 frame 이 geometry/입력
     /// 변화 없이도 `set_context` 를 재forward 해 plugin 이 새 데이터로 다시 그리게
-    /// 한다(`plugin_mesh_popup_full_requests` 와 동형이나 텍스처가 아니라 repaint 자체를
-    /// 강제).
+    /// 한다(`MeshForwardCommon::pending_full` 이 텍스처를 요구하는 것과 달리 repaint
+    /// 자체를 강제한다 — 그래서 공용 칸이 아니라 popup 만의 칸이다).
     pub(crate) plugin_mesh_popup_pending_repaint: std::collections::HashSet<u64>,
-
-    /// banner 대응 full 재전송 요청(popup full_requests 와 동형).
-    pub(crate) plugin_mesh_banner_full_requests: std::collections::HashSet<u64>,
 
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
@@ -1053,16 +1033,10 @@ impl AppState {
             plugin_popup_focus_bumps: Vec::new(),
             plugin_banner_closes: Vec::new(),
             plugin_mesh_popup_regions: Vec::new(),
-            plugin_mesh_popup_geom: std::collections::HashMap::new(),
-            plugin_mesh_popup_bootstrapped: std::collections::HashSet::new(),
-            plugin_mesh_popup_theme: std::collections::HashMap::new(),
+            plugin_mesh_popup_forward: std::collections::HashMap::new(),
             plugin_mesh_banner_regions: Vec::new(),
-            plugin_mesh_banner_geom: std::collections::HashMap::new(),
-            plugin_mesh_banner_bootstrapped: std::collections::HashSet::new(),
-            plugin_mesh_banner_theme: std::collections::HashMap::new(),
-            plugin_mesh_popup_full_requests: std::collections::HashSet::new(),
+            plugin_mesh_banner_forward: std::collections::HashMap::new(),
             plugin_mesh_popup_pending_repaint: std::collections::HashSet::new(),
-            plugin_mesh_banner_full_requests: std::collections::HashSet::new(),
             pending_intents: Vec::new(),
         }
     }

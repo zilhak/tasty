@@ -48,3 +48,78 @@ pub(crate) fn mesh_region_of(
     }
     .to_physical(pixels_per_point)
 }
+
+/// egui-mesh forward 한 벌이 **세 채널에서 똑같이** 들고 다니는 상태 — surface(A1)·
+/// popup(A2)·banner(A3).
+///
+/// 세 채널은 각자 다른 것을 그리지만 "지금 `set_context` 를 다시 보내야 하는가" 를
+/// 판정하는 방식이 같다: 마지막으로 보낸 geom/Theme 과 지금 값을 견주고, 아직 paint
+/// frame 을 못 받았으면 bootstrap 을 1회만 보내고, 렌더 prepare 가 textures_delta 체인
+/// 단절을 알렸으면 다음 송신에 full 을 실어 보낸다.
+///
+/// **그래서 칸도 판정도 여기 한 벌만 있다.** 예전에는 이 넷이 세 벌로 흩어져 있었고
+/// (`AppState` 의 평행 `HashMap` 두 무리 + surface 구조체 한 벌), 필드 doc 이 서로를
+/// "같은 모양" 이라고 가리켰지만 그 평행을 지키는 것이 아무것도 없었다 — 실제로 세
+/// 자리가 갈려 있었다: manager 부재 시 popup 은 `bootstrap_sent` 를 안 비웠고, 인스턴스
+/// 정리에서 popup 은 `last_theme` 을 안 걸렀으며(죽은 인스턴스의 테마가 남았다), 세
+/// 갈래의 좌변 갱신 순서도 제각각이었다. 한 타입으로 모으면 그 자리들이 사라진다 —
+/// 갈렸는지 재는 장치가 아니라 갈릴 자리가 없는 것이 답이다.
+///
+/// 채널 고유의 칸은 여기 넣지 않는다. surface 의 focus 추적·bootstrap 타임아웃 경고,
+/// popup 의 무입력 강제 repaint 는 사본이 아니라 그 채널 하나만의 것이라 각자 자리에
+/// 남는다.
+#[derive(Default)]
+pub(crate) struct MeshForwardCommon {
+    /// 마지막으로 보낸 `(width_px, height_px, ppp.to_bits())`. 변경 감지의 좌변.
+    pub(crate) last_geom: Option<(u32, u32, u32)>,
+    /// 마지막으로 보낸 Theme 스냅샷. 크기·입력이 무변이어도 테마가 바뀌면 재forward.
+    pub(crate) last_theme: Option<tasty_plugin_protocol::ThemeWire>,
+    /// paint frame 을 아직 못 받은 동안 bootstrap `set_context` 를 1회만 보내기 위한
+    /// 래치. frame 이 보이면 풀려, crash 로 frame 이 사라지면 재bootstrap 된다.
+    /// 핵심: 첫 frame(폰트 atlas 동봉)을 host 가 반드시 decode 하도록 스팸하지 않는다.
+    pub(crate) bootstrap_sent: bool,
+    /// 렌더 prepare 가 textures_delta 체인 단절을 감지했다 — 다음 `set_context` 에
+    /// `need_full_textures` 를 실어 보낸다(송신 시 소거).
+    pub(crate) pending_full: bool,
+}
+
+impl MeshForwardCommon {
+    /// paint frame 이 보이는 동안은 bootstrap 무장을 풀어 둔다 — 이후 plugin crash 로
+    /// frame 이 사라지면 다음 프레임이 다시 bootstrap 한다.
+    pub(crate) fn disarm_bootstrap_if_alive(&mut self, has_frame: bool) {
+        if has_frame {
+            self.bootstrap_sent = false;
+        }
+    }
+
+    pub(crate) fn geom_changed(&self, geom: (u32, u32, u32)) -> bool {
+        self.last_geom != Some(geom)
+    }
+
+    pub(crate) fn theme_changed(&self, theme: &tasty_plugin_protocol::ThemeWire) -> bool {
+        self.last_theme.as_ref() != Some(theme)
+    }
+
+    pub(crate) fn need_bootstrap(&self, has_frame: bool) -> bool {
+        !has_frame && !self.bootstrap_sent
+    }
+
+    /// full 재전송 요청을 1회 소비한다.
+    pub(crate) fn take_pending_full(&mut self) -> bool {
+        std::mem::take(&mut self.pending_full)
+    }
+
+    /// `set_context` 를 보낸 직후의 좌변 갱신 — 다음 프레임의 변경 감지 기준이 된다.
+    pub(crate) fn record_sent(
+        &mut self,
+        geom: (u32, u32, u32),
+        theme: &tasty_plugin_protocol::ThemeWire,
+        has_frame: bool,
+    ) {
+        self.last_geom = Some(geom);
+        self.last_theme = Some(theme.clone());
+        if !has_frame {
+            self.bootstrap_sent = true;
+        }
+    }
+}

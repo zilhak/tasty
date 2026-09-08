@@ -65,8 +65,7 @@ pub fn draw_plugin_popups(
     state.plugin_popup_hittest.clear();
 
     let Some(mgr) = plugin_manager else {
-        state.plugin_mesh_popup_geom.clear();
-        state.plugin_mesh_popup_theme.clear();
+        state.plugin_mesh_popup_forward.clear();
         return;
     };
 
@@ -111,14 +110,11 @@ pub fn draw_plugin_popups(
     // (`gfx/gpu/egui_bridge.rs` 의 `enforce_host_plugin_popup_z_order` 문서 참고).
     mesh_snaps.sort_by_key(|s| s.z_seq);
 
-    // 닫힌 mesh popup 의 geom/bootstrap 추적 정리.
+    // 닫힌 mesh popup 의 forward 추적 정리 — 한 맵이라 칸별로 빠뜨릴 자리가 없다.
     let live_mesh: HashSet<u64> = mesh_snaps.iter().map(|s| s.instance_id).collect();
     state
-        .plugin_mesh_popup_geom
+        .plugin_mesh_popup_forward
         .retain(|k, _| live_mesh.contains(k));
-    state
-        .plugin_mesh_popup_bootstrapped
-        .retain(|k| live_mesh.contains(k));
 
     if mesh_snaps.is_empty() {
         return;
@@ -271,24 +267,18 @@ pub fn draw_plugin_popups(
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.popup_mesh_frame(snap.instance_id).is_some();
-        let bootstrapped = state
-            .plugin_mesh_popup_bootstrapped
-            .contains(&snap.instance_id);
-        if has_frame {
-            // 건강 상태 — crash 로 frame 이 사라지면 재bootstrap 하도록 무장 해제.
-            state
-                .plugin_mesh_popup_bootstrapped
-                .remove(&snap.instance_id);
-        }
-        let geom_changed = state.plugin_mesh_popup_geom.get(&snap.instance_id) != Some(&geom);
-        let theme_changed =
-            state.plugin_mesh_popup_theme.get(&snap.instance_id) != Some(&current_theme);
-        let need_bootstrap = !has_frame && !bootstrapped;
+        let fwd = state
+            .plugin_mesh_popup_forward
+            .entry(snap.instance_id)
+            .or_default();
+        let need_bootstrap = fwd.need_bootstrap(has_frame);
+        // 건강 상태 — crash 로 frame 이 사라지면 재bootstrap 하도록 무장 해제.
+        fwd.disarm_bootstrap_if_alive(has_frame);
+        let geom_changed = fwd.geom_changed(geom);
+        let theme_changed = fwd.theme_changed(&current_theme);
         // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
         // need_full_textures 를 실어 보낸다(다른 트리거가 없어도 송신).
-        let need_full = state
-            .plugin_mesh_popup_full_requests
-            .remove(&snap.instance_id);
+        let need_full = fwd.take_pending_full();
         // (ADR-0056) 비동기 host→plugin push(예: 원격 git 조회 결과) 도착 후 강제
         // repaint — geom/input/theme 변경 없이도 plugin 이 새 내부 상태로 다시
         // 그리도록 이번 frame 에 set_context 를 보낸다.
@@ -297,15 +287,11 @@ pub fn draw_plugin_popups(
             .remove(&snap.instance_id);
         if geom_changed || has_input || need_bootstrap || theme_changed || need_full || need_repaint
         {
-            state.plugin_mesh_popup_geom.insert(snap.instance_id, geom);
             state
-                .plugin_mesh_popup_theme
-                .insert(snap.instance_id, current_theme.clone());
-            if !has_frame {
-                state
-                    .plugin_mesh_popup_bootstrapped
-                    .insert(snap.instance_id);
-            }
+                .plugin_mesh_popup_forward
+                .entry(snap.instance_id)
+                .or_default()
+                .record_sent(geom, &current_theme, has_frame);
             mgr.send_popup_set_context(
                 &snap.plugin_id,
                 &PopupSetContextParams {

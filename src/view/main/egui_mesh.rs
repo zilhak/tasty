@@ -44,6 +44,7 @@ use tasty_plugin_protocol::{
 use crate::adapters::production::stream_hub::StreamHub;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
+use crate::plugin_bridge::MeshForwardCommon;
 use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 
 use super::MainView;
@@ -65,22 +66,16 @@ fn mesh_time_now() -> f64 {
 /// 한 egui-mesh surface 의 host 측 forward 추적 상태.
 ///
 /// layout 에 존재하는 동안 유지된다(가시성 무관) — 비가시 surface 의 full 재전송
-/// 요청([`MeshForwardState::pending_full`])을 마지막 geom/plugin_id 로 보낼 수 있어야
+/// 요청(`MeshForwardCommon::pending_full`)을 마지막 geom/plugin_id 로 보낼 수 있어야
 /// 하기 때문. surface 가 닫히면 정리된다.
 #[derive(Default)]
 pub(crate) struct MeshForwardState {
-    /// 마지막으로 보낸 (width_px, height_px, ppp.to_bits()). 변경 감지에 사용.
-    last_geom: Option<(u32, u32, u32)>,
+    /// 세 mesh 채널(surface·popup·banner)이 공유하는 forward 상태 — 마지막 geom/Theme,
+    /// bootstrap 래치, full 재전송 요청. **칸도 dirty 판정도 그 타입 한 곳에서 나온다**
+    /// (`plugin_bridge::MeshForwardCommon`). 아래 필드들은 surface 만의 것이다.
+    common: MeshForwardCommon,
     /// 다음 set_context 에 실어 보낼 누적 입력 이벤트(순서 보존).
     events: Vec<RawInputEventWire>,
-    /// plugin paint 를 아직 못 받은 동안 bootstrap set_context 를 1회만 보내기 위한 플래그.
-    /// `egui_mesh_frame` 이 보이면 풀려, crash 후 frame 소실 시 재bootstrap 된다.
-    bootstrap_sent: bool,
-    /// 마지막으로 보낸 Theme 스냅샷. 테마 변경 시(크기/입력 무변이어도) 재forward 트리거.
-    last_theme: Option<ThemeWire>,
-    /// 렌더 prepare 가 textures_delta 체인 단절을 감지했다 — 다음 set_context 에
-    /// `need_full_textures` 를 실어 보낸다(송신 시 해제).
-    pending_full: bool,
     /// 이 surface 의 owning plugin id (첫 forward 시 기록). 비가시 상태에서 full
     /// 재전송 요청을 보낼 때 대상 plugin 을 알기 위해 보관한다.
     plugin_id: Option<String>,
@@ -104,7 +99,7 @@ impl MeshForwardState {
     /// 렌더 prepare 의 full 재전송 요청을 기록한다 — 다음 forward 에서 소비된다.
     /// (redraw 가 gpu 요청 대기열을 drain 하며 호출.)
     pub(crate) fn set_pending_full(&mut self) {
-        self.pending_full = true;
+        self.common.pending_full = true;
     }
 
     /// idle 상태에서 plugin 이 알린 파일 변경을 다음 forward 게이트에 무장한다(단계 06).
@@ -399,11 +394,11 @@ impl MainView {
             st.plugin_id = Some(plugin_id.clone());
             if has_frame {
                 // 건강 상태 — 이후 crash 로 frame 이 사라지면 재bootstrap 하도록 무장.
-                st.bootstrap_sent = false;
+                st.common.bootstrap_sent = false;
                 st.bootstrap_at = None;
                 st.blank_warned = false;
             } else if !st.blank_warned
-                && st.bootstrap_sent
+                && st.common.bootstrap_sent
                 && st
                     .bootstrap_at
                     .is_some_and(|t| t.elapsed() >= BLANK_SURFACE_GRACE)
@@ -424,11 +419,11 @@ impl MainView {
                 st.blank_warned = true;
             }
             let is_focused = focused == Some(sid);
-            let geom_changed = st.last_geom != Some(geom);
+            let geom_changed = st.common.geom_changed(geom);
             let has_input = !st.events.is_empty();
-            let need_bootstrap = !has_frame && !st.bootstrap_sent;
-            let theme_changed = st.last_theme.as_ref() != Some(&current_theme);
-            let need_full = st.pending_full;
+            let need_bootstrap = st.common.need_bootstrap(has_frame);
+            let theme_changed = st.common.theme_changed(&current_theme);
+            let need_full = st.common.pending_full;
             // 포커스 변화만으로도 재forward — 입력 없이 포커스만 잃는 경우(다른 surface
             // 클릭 등)에 markdown 배경이 focused 로 잔류하지 않도록 (B).
             let focus_changed = st.last_focused != Some(is_focused);
@@ -448,13 +443,11 @@ impl MainView {
             }
 
             let events = std::mem::take(&mut st.events);
-            st.last_geom = Some(geom);
-            st.last_theme = Some(current_theme.clone());
+            st.common.record_sent(geom, &current_theme, has_frame);
+            st.common.pending_full = false;
             st.last_focused = Some(is_focused);
-            st.pending_full = false;
             st.invalidated = false;
             if !has_frame {
-                st.bootstrap_sent = true;
                 // 첫 bootstrap 시각만 기록 — 이후 입력/리사이즈로 재forward 될 때마다
                 // 갱신하면 grace 가 계속 밀려 빈 화면을 영영 못 잡는다.
                 st.bootstrap_at.get_or_insert_with(Instant::now);
@@ -495,17 +488,18 @@ impl MainView {
         // 보내 plugin 이 전체 텍스처 상태를 동봉한 frame 을 재송신하게 한다. geom 이
         // 활성화 시점과 다르면 활성화가 다시 정규 set_context 를 보내므로 무해하다.
         for (sid, st) in self.egui_mesh.iter_mut() {
-            if !st.pending_full || visible.contains(sid) {
+            if !st.common.pending_full || visible.contains(sid) {
                 continue;
             }
-            let (Some((w, h, ppp_bits)), Some(plugin_id)) = (st.last_geom, st.plugin_id.as_ref())
+            let (Some((w, h, ppp_bits)), Some(plugin_id)) =
+                (st.common.last_geom, st.plugin_id.as_ref())
             else {
                 // 아직 한 번도 forward 되지 않은 surface (frame 도 없음) — bootstrap 이
                 // 첫 활성화에서 자연-full frame 을 만들므로 요청이 필요 없다.
-                st.pending_full = false;
+                st.common.pending_full = false;
                 continue;
             };
-            st.pending_full = false;
+            st.common.pending_full = false;
             let params = SurfaceSetContextParams {
                 surface_id: *sid,
                 width_px: w,
@@ -517,7 +511,7 @@ impl MainView {
                     modifiers: ModifiersWire::default(),
                     events: Vec::new(),
                 },
-                theme: st.last_theme.clone(),
+                theme: st.common.last_theme.clone(),
                 need_full_textures: true,
             };
             mgr.send_surface_set_context(plugin_id, &params);
@@ -603,10 +597,10 @@ impl MainView {
                 // 상태를 seed 해 둔다(그 경로는 last_geom/plugin_id 를 요구한다).
                 let st = self.egui_mesh.entry(sid).or_default();
                 st.plugin_id = Some(plugin_id);
-                st.last_geom = Some((width_px, height_px, pixels_per_point.to_bits()));
-                st.last_theme = theme;
+                st.common.last_geom = Some((width_px, height_px, pixels_per_point.to_bits()));
+                st.common.last_theme = theme;
                 st.last_focused = Some(focused);
-                st.bootstrap_sent = true;
+                st.common.bootstrap_sent = true;
             } else if need_full {
                 self.egui_mesh.entry(sid).or_default().set_pending_full();
                 self.base.dirty = true;

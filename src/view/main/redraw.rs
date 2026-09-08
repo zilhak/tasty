@@ -362,12 +362,20 @@ impl MainView {
             for sid in full_reqs {
                 self.egui_mesh.entry(sid).or_default().set_pending_full();
             }
-            self.state
-                .plugin_mesh_popup_full_requests
-                .extend(popup_full_reqs);
-            self.state
-                .plugin_mesh_banner_full_requests
-                .extend(banner_full_reqs);
+            for iid in popup_full_reqs {
+                self.state
+                    .plugin_mesh_popup_forward
+                    .entry(iid)
+                    .or_default()
+                    .pending_full = true;
+            }
+            for iid in banner_full_reqs {
+                self.state
+                    .plugin_mesh_banner_forward
+                    .entry(iid)
+                    .or_default()
+                    .pending_full = true;
+            }
             self.base.dirty = true;
         }
 

@@ -305,13 +305,13 @@ latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 de
    atlas(상주)라 단절 시 AcceptedStale 경로다.
 
 요청 플래그의 흐름: 렌더 prepare 가 `NeedsFull` 또는 `AcceptedStale` 을 판정하면 `GpuState` 의
-요청 대기열에 적재 → redraw 가 drain 해 surface 는 forward 추적 상태
-(`MeshForwardState::pending_full`)에, popup/banner 는 `AppState` 의
-`plugin_mesh_{popup,banner}_full_requests` 에 옮김 → 다음 tick 의 forward 가
+요청 대기열에 적재 → redraw 가 drain 해 세 채널 모두 `MeshForwardCommon::pending_full` 에
+옮김(surface 는 `MeshForwardState` 안에, popup/banner 는 `AppState` 의
+`plugin_mesh_{popup,banner}_forward` 맵 안에) → 다음 tick 의 forward 가
 `need_full_textures` set_context 를 송신(비가시 surface 는 마지막 geom/theme 으로 송신).
 plugin generation 이 정지해 새 frame 이 안 와도 이미 무장된 surface 는 매 tick 재요청을
 유지한다(재-tessellation·업로드 없이 IPC 메시지만). popup/banner 도 같은 체인 규칙·재무장·
-mesh 분리 규칙을 공유한다.
+mesh 분리 규칙을 공유한다 — 규칙이 닮아서가 아니라 **칸이 같은 타입 한 벌**이기 때문이다.
 
 ## 입력 forward · identity 경계
 
@@ -664,8 +664,8 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
 
 set_context 는 **geom 변경 · 입력 · bootstrap(미paint)** 일 때만 보낸다. 특히 bootstrap 은
 1회만 — paint frame 도착 전 매 frame 스팸하면 plugin 이 불필요하게 여러 번 paint 한다.
-1회 보내고 frame 을 기다린다(surface `bootstrap_sent` 와 동형; frame 이 보이면 해제돼
-crash 후 재bootstrap). 스팸으로 첫 frame(full atlas)이 덮여도 이제는 frame_seq 체인
+1회 보내고 frame 을 기다린다(래치는 surface 와 **같은 칸**이다 —
+`MeshForwardCommon::bootstrap_sent`; frame 이 보이면 해제돼 crash 후 재bootstrap). 스팸으로 첫 frame(full atlas)이 덮여도 이제는 frame_seq 체인
 검증이 감지해 full 재전송으로 회복되지만(위 "텍스처 상태 수명 + delta 체인" — popup 도
 동일 규칙), 회복 왕복 자체가 낭비이므로 1회 원칙은 유지한다.
 
