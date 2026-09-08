@@ -63,7 +63,69 @@ assert!(path.starts_with(home.path().join("screenshots")));
 | `tasty-host-plugin` | `test_support::HomeEnvGuard` (`bundle_sig` · `manager::pump` 공용) | `HOME` + `TASTY_HOME` | `HOME_ENV_LOCK` |
 | `tasty-telemetry` | `agent_id::tests::AgentIdEnvGuard` | `TASTY_AGENT_ID` | `ENV_LOCK` |
 | `tasty-cli` | `request::tests::SurfaceIdEnvGuard` | `TASTY_SURFACE_ID` | 단일 `#[test]` 안에 모아 대체 |
-| `tasty-settings` | `general::tests::HomeGuard` | `TASTY_HOME` | `SERIAL` |
+| `tasty-cli` | `cwd_resolve::tests::CwdGuard` | 프로세스 cwd | `CWD_LOCK` |
+| `tasty-settings` | `general::tests::RelativeHomeGuard` | `TASTY_HOME` | `SERIAL` |
+
+`tasty-settings` 의 `TmpHome` 은 이 표에 없다 — 그것은 **env 를 안 만진다**(홈 경로를
+`_in(Some(home.path()))` 로 주입한다). env 를 만지는 것은 상대 `TASTY_HOME` 해석 자체가
+검증 대상인 `RelativeHomeGuard` 쪽뿐이다.
+
+**가드가 락을 쥐는가는 가드마다 다르고, 그 차이가 값이다.** `AgentIdEnvGuard` ·
+`RelativeHomeGuard` · `CwdGuard` 는 **생성자가 자기 락을 직접 쥔다** — 호출부가 잊어도
+직렬화가 안 깨진다. `EnvVarGuard`(본체)는 안 쥔다(락은 호출부 책임)이고,
+`SurfaceIdEnvGuard` 는 아예 락이 없다(그 키를 만지는 시나리오를 단일 `#[test]` 안에
+모아 구조적으로 직렬이다). **락을 안 쥐는 두 갈래는 그 조건을 호출 자리 주석에 밝혀야
+한다** — `no_unserialized_env_mutation` 이 함수 범위에서 직렬화 증거를 찾는데, 가드
+안쪽의 `set`/`drop` 에는 `lock()` 호출이 없기 때문이다.
+
+### 같은 키에 락이 셋인데 그것이 옳다 — 배제 단위는 레포가 아니라 **테스트 바이너리**다
+
+`TASTY_HOME`/`HOME` 을 지키는 락이 레포에 **셋**이다(실측 2026-09-08).
+
+| 락 | 선언 자리 | 그 락이 사는 테스트 바이너리 |
+|---|---|---|
+| `TASTY_HOME_ENV_LOCK` | `src/test_support.rs` | 루트 `tasty` 바이너리 |
+| `HOME_ENV_LOCK` | `crates/tasty-host-plugin/src/test_support.rs` | `tasty-host-plugin` |
+| `SERIAL` | `crates/tasty-settings/src/general.rs` | `tasty-settings` |
+
+셋은 **서로 다른 `Mutex` 인스턴스라 서로를 배제하지 않는다.** 위 "락은 키 단위로 하나"
+를 읽고 나면 이것이 그 규칙을 어긴 것처럼 보이는데, 아니다 — 그 규칙의 범위가
+**한 테스트 바이너리 안**이기 때문이다.
+
+환경변수는 **프로세스별**이고 cargo 는 크레이트마다 별도 테스트 바이너리를 만든다.
+그래서 배제가 필요한 단위는 레포가 아니라 바이너리 하나이고, **그 안에서는 각자 하나뿐**
+이다. 셋이 한 바이너리에 같이 들어갈 수 없다는 것은 값으로 확인된다:
+
+- `src/main.rs` 의 `mod test_support;` — 루트 크레이트에는 라이브러리 타깃이 없다
+  (`[lib]` 도 `src/` 아래 라이브러리 루트 파일도 없다). **바이너리뿐이라 아무 크레이트도
+  이것을 링크할 수 없다.**
+- `crates/tasty-host-plugin/src/lib.rs` 의 `mod test_support;` — **`pub` 이 아니다.**
+- `tasty-settings` 의 `SERIAL` 은 그 크레이트의 `#[cfg(test)] mod tests` 안에만 있다.
+
+⇒ **셋을 공용 락 하나로 합치는 처방은 틀린다.** 크레이트를 가로지르는 락을 만들려면 세
+크레이트가 한 크레이트에 함께 의존해야 하는데, 같은 프로세스에 둘이 있을 수 없으므로
+그 결합이 사는 것이 없다. 늘어나는 것은 의존뿐이다.
+
+#### 이 추론이 기대는 조건 하나는 아직 강제되지 않는다
+
+위 논증은 **`tasty-host-plugin` 의 `mod test_support` 가 `pub` 이 아니라는 것**에
+기댄다. `pub mod` 이 되는 순간 다른 크레이트가 그것을 링크할 수 있고, 그 크레이트가
+자기 경로로 홈 env 를 만지면 **두 락이 한 바이너리에 있으면서 서로를 배제하지 않는다.**
+그 상태는 조용하다 — 컴파일도 되고 테스트도 통과한다.
+
+루트 쪽에는 대응하는 단정이 있다(`the_lock_declaration_stays_module_private`,
+`crates/tasty-doc-guards/tests/tasty_home_env_has_one_touch_point.rs`). host-plugin
+쪽에는 **없다.** 여기 적어 두는 것은 그 자리를 값으로 남기기 위해서다 — 세울지는 그
+크레이트를 소유한 쪽의 판단이다.
+
+#### 재는 법 — 경계를 먼저 물어라
+
+전역처럼 보이는 자원을 만나면 **그 자원의 경계가 어디인가**를 먼저 묻는다 — 프로세스인가,
+레포인가, 기계인가. 경계를 안 묻고 배제 단위를 레포로 잡으면 필요 없는 결합을 만든다.
+
+나머지 두 락에 같은 물음을 대면 답이 다르게 나온다: `ENV_LOCK`(tasty-telemetry)은
+`TASTY_AGENT_ID` 를, `CWD_LOCK`(tasty-cli)은 프로세스 cwd 를 지킨다 — **자원이 달라**
+위 셋과 합칠 대상이 애초에 아니다. "락이 다섯이니 많다" 는 세는 단위가 틀린 것이다.
 
 ### 락은 **키 단위**로 하나 — 모듈마다 따로 두지 않는다
 
