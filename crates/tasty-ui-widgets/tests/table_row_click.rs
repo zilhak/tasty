@@ -12,6 +12,7 @@ use std::cell::RefCell;
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableOutput};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -87,7 +88,7 @@ fn frame(
                 TableColumn {
                     title: "Name",
                     width: TableColumnWidth::Remainder {
-                        at_least: 140.0,
+                        at_least: LogicalPx(140.0),
                         clip: true,
                     },
                     align: TableAlign::Left,
@@ -96,8 +97,8 @@ fn frame(
                 TableColumn {
                     title: "Kind",
                     width: TableColumnWidth::Initial {
-                        initial: 92.0,
-                        at_least: 72.0,
+                        initial: LogicalPx(92.0),
+                        at_least: LogicalPx(72.0),
                     },
                     align: TableAlign::Left,
                     sort_id: Some(Col::Kind),

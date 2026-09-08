@@ -195,19 +195,35 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 은 chooser 대상이 아니라 나머지 7컬럼과 별개로 항상 표시.
             kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
                 let cols = vec![
+                    col("", TableColumnWidth::Exact(FAV_COL_WIDTH), TableAlign::Left),
                     col(
-                        "",
-                        TableColumnWidth::Exact(FAV_COL_WIDTH.value()),
+                        "Port",
+                        TableColumnWidth::Exact(LogicalPx(84.0)),
+                        TableAlign::Right,
+                    ),
+                    col(
+                        "Proto",
+                        TableColumnWidth::Exact(LogicalPx(76.0)),
                         TableAlign::Left,
                     ),
-                    col("Port", TableColumnWidth::Exact(84.0), TableAlign::Right),
-                    col("Proto", TableColumnWidth::Exact(76.0), TableAlign::Left),
-                    col("Address", TableColumnWidth::Exact(140.0), TableAlign::Left),
-                    col("Process", TableColumnWidth::Exact(200.0), TableAlign::Left),
-                    col("State", TableColumnWidth::Exact(140.0), TableAlign::Left),
+                    col(
+                        "Address",
+                        TableColumnWidth::Exact(LogicalPx(140.0)),
+                        TableAlign::Left,
+                    ),
+                    col(
+                        "Process",
+                        TableColumnWidth::Exact(LogicalPx(200.0)),
+                        TableAlign::Left,
+                    ),
+                    col(
+                        "State",
+                        TableColumnWidth::Exact(LogicalPx(140.0)),
+                        TableAlign::Left,
+                    ),
                     col(
                         "",
-                        TableColumnWidth::Exact(theme.item_height_interactive.value()),
+                        TableColumnWidth::Exact(theme.item_height_interactive),
                         TableAlign::Right,
                     ),
                 ];

@@ -13,6 +13,7 @@ use tasty_ui_widgets::{
 };
 
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use tasty_type_geometry::length::LogicalPx;
 
 /// 정렬 가능 컬럼 키 (port 컬럼만 정렬 데모).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -83,8 +84,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TableColumn {
                 title: "Port",
                 width: TableColumnWidth::Initial {
-                    initial: 84.0,
-                    at_least: 60.0,
+                    initial: LogicalPx(84.0),
+                    at_least: LogicalPx(60.0),
                 },
                 align: TableAlign::Right,
                 sort_id: Some(SortKey::Port),
@@ -92,8 +93,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TableColumn {
                 title: "Proto",
                 width: TableColumnWidth::Initial {
-                    initial: 76.0,
-                    at_least: 60.0,
+                    initial: LogicalPx(76.0),
+                    at_least: LogicalPx(60.0),
                 },
                 align: TableAlign::Left,
                 sort_id: None,
@@ -101,7 +102,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TableColumn {
                 title: "Address",
                 width: TableColumnWidth::Remainder {
-                    at_least: 100.0,
+                    at_least: LogicalPx(100.0),
                     clip: false,
                 },
                 align: TableAlign::Left,
@@ -110,7 +111,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TableColumn {
                 title: "Process",
                 width: TableColumnWidth::Remainder {
-                    at_least: 100.0,
+                    at_least: LogicalPx(100.0),
                     clip: false,
                 },
                 align: TableAlign::Left,
@@ -119,8 +120,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TableColumn {
                 title: "State",
                 width: TableColumnWidth::Initial {
-                    initial: 140.0,
-                    at_least: 100.0,
+                    initial: LogicalPx(140.0),
+                    at_least: LogicalPx(100.0),
                 },
                 align: TableAlign::Left,
                 sort_id: None,

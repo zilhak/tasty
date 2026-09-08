@@ -1373,7 +1373,7 @@ fn detail_view(
         TableColumn {
             title: t("explorer.column.name"),
             width: TableColumnWidth::Remainder {
-                at_least: 140.0,
+                at_least: LogicalPx(140.0),
                 clip: true,
             },
             align: TableAlign::Left,
@@ -1383,8 +1383,8 @@ fn detail_view(
         TableColumn {
             title: t("explorer.column.size"),
             width: TableColumnWidth::Initial {
-                initial: 80.0,
-                at_least: 64.0,
+                initial: LogicalPx(80.0),
+                at_least: LogicalPx(64.0),
             },
             align: TableAlign::Right,
             sort_id: Some(SortColumn::Size),
@@ -1392,8 +1392,8 @@ fn detail_view(
         TableColumn {
             title: t("explorer.column.modified"),
             width: TableColumnWidth::Initial {
-                initial: 132.0,
-                at_least: 108.0,
+                initial: LogicalPx(132.0),
+                at_least: LogicalPx(108.0),
             },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Modified),
@@ -1401,8 +1401,8 @@ fn detail_view(
         TableColumn {
             title: t("explorer.column.type"),
             width: TableColumnWidth::Initial {
-                initial: 92.0,
-                at_least: 72.0,
+                initial: LogicalPx(92.0),
+                at_least: LogicalPx(72.0),
             },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Type),

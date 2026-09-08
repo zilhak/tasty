@@ -1612,7 +1612,7 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
 /// 즐겨찾기 별/컬럼 폭(design `--tasty-port-star-col-width`) — 메인 테이블의 leading
 /// fav 컬럼과 즐겨찾기 섹션 행의 별 컬럼이 시각적으로 정렬되도록 공용한다. 디자이너
 /// 확정값이라 `column_layout` 의 다른 컬럼 최소폭들과 같은 방식으로 리터럴 유지.
-const FAV_COL_WIDTH: f32 = 28.0;
+const FAV_COL_WIDTH: LogicalPx = LogicalPx(28.0);
 
 /// 로딩 줄 스피너의 한 변. 값은 아이콘 스케일 md(16)와 같지만 아이콘 글리프가 아니라
 /// 스피너 지름이라 그 토큰을 쓰지 않고 이름을 따로 둔다.
@@ -1768,7 +1768,7 @@ fn draw_favorite_row(
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.allocate_ui_with_layout(
-                egui::vec2(FAV_COL_WIDTH, row_h),
+                egui::vec2(FAV_COL_WIDTH.value(), row_h),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     let resp = draw_port_star(ui, th, true)
@@ -1979,10 +1979,12 @@ fn draw_table(
     // **문서화된 예외**다 — 여기서 빼는 폭은 여백이 아니라 Exact 컬럼 폭과 가로 스크롤
     // 발생 여부를 함께 정하는 계산 입력이다. 예외 조건과 근거는
     // `docs/adr/0079-scroll-affordance-standard.md`.
-    let scrollbar_reserve = ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin;
-    let fav_reserve = FAV_COL_WIDTH + ui.spacing().item_spacing.x;
-    let available = (ui.available_width() - scrollbar_reserve - fav_reserve).max(0.0);
-    let widths = compute_column_widths(&visible, ui.spacing().item_spacing.x, available);
+    let scrollbar_reserve =
+        LogicalPx(ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin);
+    let fav_reserve = FAV_COL_WIDTH + LogicalPx(ui.spacing().item_spacing.x);
+    let available =
+        (LogicalPx(ui.available_width()) - scrollbar_reserve - fav_reserve).max(LogicalPx(0.0));
+    let widths = compute_column_widths(&visible, LogicalPx(ui.spacing().item_spacing.x), available);
 
     let mut columns: Vec<TableColumn<SortKey>> = Vec::with_capacity(visible.len() + 1);
     // fav 컬럼 — 헤더 라벨 없음, 정렬 불가, 항상 표시(컬럼 chooser 대상 아님).
@@ -2111,15 +2113,35 @@ fn draw_table(
 
 /// 컬럼의 폭 모델 메타: (최소폭, flex 여부, 정렬, 정렬키). flex 컬럼은 가용폭이 남을 때
 /// 여유폭을 나눠 받는다(Address/Process). Port 만 우측 정렬.
-fn column_layout(col: ColumnId) -> (f32, bool, TableAlign, Option<SortKey>) {
+fn column_layout(col: ColumnId) -> (LogicalPx, bool, TableAlign, Option<SortKey>) {
     match col {
-        ColumnId::Port => (84.0, false, TableAlign::Right, Some(SortKey::Port)),
-        ColumnId::Proto => (76.0, false, TableAlign::Left, None),
-        ColumnId::Address => (140.0, true, TableAlign::Left, Some(SortKey::Address)),
-        ColumnId::Process => (200.0, true, TableAlign::Left, Some(SortKey::Process)),
-        ColumnId::Workspace => (120.0, false, TableAlign::Left, Some(SortKey::Workspace)),
-        ColumnId::Tab => (80.0, false, TableAlign::Left, Some(SortKey::Tab)),
-        ColumnId::State => (140.0, false, TableAlign::Left, None),
+        ColumnId::Port => (
+            LogicalPx(84.0),
+            false,
+            TableAlign::Right,
+            Some(SortKey::Port),
+        ),
+        ColumnId::Proto => (LogicalPx(76.0), false, TableAlign::Left, None),
+        ColumnId::Address => (
+            LogicalPx(140.0),
+            true,
+            TableAlign::Left,
+            Some(SortKey::Address),
+        ),
+        ColumnId::Process => (
+            LogicalPx(200.0),
+            true,
+            TableAlign::Left,
+            Some(SortKey::Process),
+        ),
+        ColumnId::Workspace => (
+            LogicalPx(120.0),
+            false,
+            TableAlign::Left,
+            Some(SortKey::Workspace),
+        ),
+        ColumnId::Tab => (LogicalPx(80.0), false, TableAlign::Left, Some(SortKey::Tab)),
+        ColumnId::State => (LogicalPx(140.0), false, TableAlign::Left, None),
     }
 }
 
@@ -2129,17 +2151,21 @@ fn column_layout(col: ColumnId) -> (f32, bool, TableAlign, Option<SortKey>) {
 /// 가로 스크롤). 최소폭 합 < 가용폭 → 남는 폭(slack)을 flex 컬럼(Address/Process)에
 /// 균등 분배해 빈 공간 없이 채운다. flex 컬럼이 하나도 안 보이면 마지막 컬럼이 slack 을
 /// 흡수해 테이블이 가용폭을 채운다. (순수 함수 — 단위 테스트로 분기 검증.)
-fn compute_column_widths(visible: &[ColumnId], item_spacing_x: f32, available: f32) -> Vec<f32> {
-    let mins: Vec<f32> = visible.iter().map(|c| column_layout(*c).0).collect();
+fn compute_column_widths(
+    visible: &[ColumnId],
+    item_spacing_x: LogicalPx,
+    available: LogicalPx,
+) -> Vec<LogicalPx> {
+    let mins: Vec<LogicalPx> = visible.iter().map(|c| column_layout(*c).0).collect();
     if visible.is_empty() {
         return mins;
     }
     // 컬럼 사이 간격도 가용폭을 잡아먹으므로 콘텐츠 가용폭에서 제외하고 분배한다.
     let gaps = item_spacing_x * (visible.len() - 1) as f32;
-    let sum_min: f32 = mins.iter().sum();
+    let sum_min = mins.iter().fold(LogicalPx(0.0), |acc, m| acc + *m);
     let mut widths = mins;
     let slack = available - gaps - sum_min;
-    if slack > 0.0 {
+    if slack > LogicalPx(0.0) {
         let flex: Vec<usize> = visible
             .iter()
             .enumerate()
@@ -2763,13 +2789,13 @@ mod tests {
         // All seven columns, but a narrow body → min-width sum exceeds available,
         // so every column stays at its min (the table then scrolls horizontally).
         let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
-        let widths = compute_column_widths(&visible, 0.0, 100.0);
+        let widths = compute_column_widths(&visible, LogicalPx(0.0), LogicalPx(100.0));
         for (id, w) in visible.iter().zip(&widths) {
             assert_eq!(*w, column_layout(*id).0, "{id:?} should keep its min width");
         }
-        let sum: f32 = widths.iter().sum();
+        let sum = widths.iter().fold(LogicalPx(0.0), |acc, w| acc + *w);
         assert!(
-            sum > 100.0,
+            sum > LogicalPx(100.0),
             "min-width sum must overflow the available width"
         );
     }
@@ -2777,10 +2803,12 @@ mod tests {
     #[test]
     fn compute_widths_distributes_slack_to_flex_columns() {
         let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
-        let sum_min: f32 = visible.iter().map(|c| column_layout(*c).0).sum();
+        let sum_min = visible
+            .iter()
+            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c).0);
         // Generous width → slack distributed to the two flex columns only.
-        let available = sum_min + 200.0;
-        let widths = compute_column_widths(&visible, 0.0, available);
+        let available = sum_min + LogicalPx(200.0);
+        let widths = compute_column_widths(&visible, LogicalPx(0.0), available);
         for (id, w) in visible.iter().zip(&widths) {
             let (min, flex, ..) = column_layout(*id);
             if flex {
@@ -2794,7 +2822,7 @@ mod tests {
             .iter()
             .position(|c| *c == ColumnId::Address)
             .unwrap();
-        assert!((widths[addr_i] - (140.0 + 100.0)).abs() < 0.5);
+        assert!((widths[addr_i] - LogicalPx(140.0 + 100.0)).abs() < LogicalPx(0.5));
     }
 
     #[test]
@@ -2802,12 +2830,17 @@ mod tests {
         // Only fixed (non-flex) columns visible: slack goes to the last column so
         // the table still fills the available width (no trailing gap).
         let visible = vec![ColumnId::Port, ColumnId::Proto, ColumnId::State];
-        let sum_min: f32 = visible.iter().map(|c| column_layout(*c).0).sum();
-        let available = sum_min + 60.0;
-        let widths = compute_column_widths(&visible, 0.0, available);
+        let sum_min = visible
+            .iter()
+            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c).0);
+        let available = sum_min + LogicalPx(60.0);
+        let widths = compute_column_widths(&visible, LogicalPx(0.0), available);
         assert_eq!(widths[0], column_layout(ColumnId::Port).0);
         assert_eq!(widths[1], column_layout(ColumnId::Proto).0);
-        assert!((widths[2] - (column_layout(ColumnId::State).0 + 60.0)).abs() < 0.5);
+        assert!(
+            (widths[2] - (column_layout(ColumnId::State).0 + LogicalPx(60.0))).abs()
+                < LogicalPx(0.5)
+        );
     }
 
     #[test]

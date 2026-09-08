@@ -20,16 +20,20 @@
 
 use egui_extras::{Column, TableBuilder};
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 컬럼 폭 (egui_extras [`Column`] 매핑).
 #[derive(Clone, Copy)]
 pub enum TableColumnWidth {
     /// 고정 폭 (리사이즈 불가).
-    Exact(f32),
+    Exact(LogicalPx),
     /// 초기 폭 + 최소 폭.
-    Initial { initial: f32, at_least: f32 },
+    Initial {
+        initial: LogicalPx,
+        at_least: LogicalPx,
+    },
     /// 남은 폭 균등 분배. `at_least` 최소폭(없으면 0.0), `clip` true 면 말줄임.
-    Remainder { at_least: f32, clip: bool },
+    Remainder { at_least: LogicalPx, clip: bool },
 }
 
 /// 셀 가로 정렬.
@@ -205,16 +209,16 @@ impl<'a, K> Table<'a, K> {
         let horizontal_scroll = self.horizontal_scroll;
         // 가로 스크롤 모드에서 sticky 헤더 띠가 본문 전체폭을 덮도록, 컬럼 고정폭
         // 합(+컬럼 간 간격)을 미리 잰다. 비-스크롤 모드에선 쓰이지 않는다.
-        let total_w = fixed_total_width(columns, ui.spacing().item_spacing.x);
+        let total_w = fixed_total_width(columns, LogicalPx(ui.spacing().item_spacing.x));
 
         // 헤더 띠 + TableBuilder 본체를 그리는 코어. `band_w` 는 sticky 헤더 배경 띠의
         // 가로 폭(가로 스크롤 시 본문 전체폭, 아니면 ui 폭).
-        let mut draw_core = |ui: &mut egui::Ui, band_w: f32| {
+        let mut draw_core = |ui: &mut egui::Ui, band_w: LogicalPx| {
             // sticky 헤더 배경: egui_extras 는 셀 배경 API 가 없어 painter 로 직접 칠한다.
             if let Some(fill) = header_fill {
                 let rect = egui::Rect::from_min_size(
                     egui::pos2(ui.max_rect().left(), ui.cursor().top()),
-                    egui::vec2(band_w, header_h),
+                    egui::vec2(band_w.value(), header_h),
                 );
                 ui.painter().rect_filled(rect, 0.0, fill);
             }
@@ -292,12 +296,12 @@ impl<'a, K> Table<'a, K> {
                 egui::ScrollArea::horizontal()
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        ui.set_min_width(total_w);
-                        let band = total_w.max(ui.available_width());
+                        ui.set_min_width(total_w.value());
+                        let band = total_w.max(LogicalPx(ui.available_width()));
                         draw_core(ui, band);
                     });
             } else {
-                let band = ui.max_rect().width();
+                let band = LogicalPx(ui.max_rect().width());
                 draw_core(ui, band);
             }
         };
@@ -378,26 +382,26 @@ fn header_cell<K: Copy + PartialEq>(
 /// 컬럼 고정폭의 합(+컬럼 사이 item_spacing.x). 가로 스크롤 모드에서 sticky 헤더
 /// 띠 폭과 ScrollArea 컨텐츠 최소폭을 잡는 데 쓴다. `Remainder` 는 floor(`at_least`)
 /// 기준으로 더한다(스크롤 모드에선 호출자가 `Exact` 만 쓰도록 권장).
-fn fixed_total_width<K>(columns: &[TableColumn<'_, K>], spacing_x: f32) -> f32 {
-    let sum: f32 = columns
+fn fixed_total_width<K>(columns: &[TableColumn<'_, K>], spacing_x: LogicalPx) -> LogicalPx {
+    let sum = columns
         .iter()
         .map(|c| match c.width {
             TableColumnWidth::Exact(w) => w,
             TableColumnWidth::Initial { initial, .. } => initial,
             TableColumnWidth::Remainder { at_least, .. } => at_least,
         })
-        .sum();
+        .fold(LogicalPx(0.0), |acc, w| acc + w);
     sum + spacing_x * columns.len().saturating_sub(1) as f32
 }
 
 fn to_column(width: TableColumnWidth) -> Column {
     match width {
-        TableColumnWidth::Exact(w) => Column::exact(w),
+        TableColumnWidth::Exact(w) => Column::exact(w.value()),
         TableColumnWidth::Initial { initial, at_least } => {
-            Column::initial(initial).at_least(at_least)
+            Column::initial(initial.value()).at_least(at_least.value())
         }
         TableColumnWidth::Remainder { at_least, clip } => {
-            Column::remainder().at_least(at_least).clip(clip)
+            Column::remainder().at_least(at_least.value()).clip(clip)
         }
     }
 }
