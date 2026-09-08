@@ -129,8 +129,39 @@ pub fn read_control_frame(stream: &mut TcpStream) -> Vec<u8> {
 }
 
 /// 프레임 하나를 읽어 `(tag, payload)` 로 돌려준다. 헤더는 `tag(1) + len(4, BE)`.
+///
+/// 실패는 [`frame_io_failure`] 가 **사건 이름으로** 적는다 — `expect` 의 기본 문구
+/// (`read frame: failed to fill whole buffer`)는 서버가 끊은 것을 시간 초과처럼 읽힌다.
 pub fn read_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
-    read_frame_result(stream).expect("read frame")
+    read_frame_result(stream).unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 읽기", &e)))
+}
+
+/// 프레임 I/O 실패를 **두 사건으로 갈라 적는다.**
+///
+/// 이 하네스의 실패 문구는 오래 `read frame: failed to fill whole buffer` 였다. 그것은
+/// `UnexpectedEof` 의 `Display` 인데 "덜 왔다" 로 읽혀, **서버가 이 소켓을 닫은 것**과
+/// **상한 안에 안 온 것**이 같은 문장을 냈다. 둘은 처방이 반대다 — 앞은 이 client 가
+/// 프로토콜의 절반만 구현한 것이고(20 초 침묵 → 서버가 죽은 peer 로 판정), 뒤는 그냥
+/// 느린 것이다. 같은 문구를 받은 사람은 앞을 부하 flake 로 분류하고 상한을 올린다.
+///
+/// `read_frame_result` 가 오류를 그대로 돌려주는 것도 같은 이유인데(그 doc 참조),
+/// 갈라 읽을 자리를 만들어 두고 정작 **panic 하는 쪽에서 다시 뭉쳤다.**
+fn frame_io_failure(op: &str, e: &std::io::Error) -> String {
+    use std::io::ErrorKind::*;
+    match e.kind() {
+        UnexpectedEof | BrokenPipe | ConnectionReset | ConnectionAborted => format!(
+            "{op} 실패 — **서버가 이 소켓을 닫았다**(시간 초과가 아니다): {e:?}\n\
+             이 헬퍼가 heartbeat 를 안 걸면 client 침묵 {}s 에 서버가 죽은 peer 로 보고 \
+             끊는다. 침묵이 계약인 헬퍼가 아니라면 `heartbeating(..)` 을 거쳐라 — \
+             `HEARTBEAT_INTERVAL` 주석 참조.",
+            tasty_ipc::stream::HEARTBEAT_TIMEOUT.as_secs()
+        ),
+        WouldBlock | TimedOut => format!(
+            "{op} 실패 — **상한 {:?} 안에 프레임이 안 왔다**(연결은 살아 있다): {e:?}",
+            FRAME_READ_TIMEOUT
+        ),
+        _ => format!("{op} 실패: {e:?}"),
+    }
 }
 
 /// panic 하지 않는 판 — **연결이 살아 있는지 자체를 단정하는 자리**가 쓴다.
@@ -156,8 +187,12 @@ pub fn write_control_frame(stream: &mut TcpStream, payload: &Value) {
     hdr[1..5].copy_from_slice(&(bytes.len() as u32).to_be_bytes());
     // heartbeat 스레드와 프레임이 섞이지 않게 한 프레임을 통째로 잠그고 쓴다.
     let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    stream.write_all(&hdr).expect("write frame header");
-    stream.write_all(&bytes).expect("write frame payload");
+    stream
+        .write_all(&hdr)
+        .unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 헤더 쓰기", &e)));
+    stream
+        .write_all(&bytes)
+        .unwrap_or_else(|e| panic!("{}", frame_io_failure("프레임 payload 쓰기", &e)));
 }
 
 /// `stream.open` 핸드셰이크 요청까지 보낸 연결을 만든다. 응답(ack/attach 이벤트)은
