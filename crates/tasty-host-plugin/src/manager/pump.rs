@@ -46,11 +46,14 @@ struct CollectedPluginEvents {
     // SurfaceInvalidated 알림 (단계 06): idle 상태에서 plugin 이 파일 변경 등을 알린
     // surface_id. `App::event_handler` 가 pump 후 `take_invalidated_surfaces` 로 드레인.
     new_invalidated: Vec<u32>,
-    // PopupInvalidated 알림(`docs/dev-guide/egui-mesh-channel.md` "popup 대응"):
+    // PopupInvalidated 알림(`docs/dev-guide/egui-mesh-channel.md` "popup·banner 대응"):
     // idle 상태에서 plugin 이 self-repaint(egui
     // viewport_output) 를 요청한 popup instance_id. `App::event_handler` 가 pump 후
     // `take_invalidated_popups` 로 드레인.
     new_invalidated_popups: Vec<u64>,
+    // BannerInvalidated 알림: 위 popup 칸의 banner 대응. `App::event_handler` 가 pump 후
+    // `take_invalidated_banners` 로 드레인.
+    new_invalidated_banners: Vec<u64>,
     // plugin 이 폐기한 shared buffer (성장 재생성 등): (plugin_id, buffer_id).
     // host 매핑을 해제하지 않으면 구세대 버퍼가 plugin 수명 내내 남는다.
     released_buffers: Vec<(String, SharedBufferId)>,
@@ -115,6 +118,12 @@ impl PluginManager {
     /// 재사용, `mark_invalidated_popups_dirty` 참조).
     pub fn take_invalidated_popups(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.invalidated_popups)
+    }
+
+    /// `BannerInvalidated` 누적을 드레인한다 — 위 popup 판의 banner 대응
+    /// (`AppState::plugin_mesh_banner_pending_repaint`, `mark_invalidated_banners_dirty`).
+    pub fn take_invalidated_banners(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.invalidated_banners)
     }
 
     /// 살아있는 plugin 프로세스 전부의 RSS 를 sysinfo 로 sampling 해
@@ -204,6 +213,10 @@ impl PluginManager {
                 // popup 대응 — egui viewport_output self-repaint 등, 무입력 상태에서
                 // plugin 이 재-forward 를 요청했다.
                 out.new_invalidated_popups.push(instance_id);
+            }
+            PluginEvent::BannerInvalidated { instance_id } => {
+                // banner 대응 — 위와 같은 이유, 같은 처리.
+                out.new_invalidated_banners.push(instance_id);
             }
             PluginEvent::PaintFrame {
                 surface_id,
@@ -337,6 +350,7 @@ impl PluginManager {
             new_banner_paint_frames,
             new_invalidated,
             new_invalidated_popups,
+            new_invalidated_banners,
             released_buffers,
             disconnected,
         } = collected;
@@ -356,6 +370,9 @@ impl PluginManager {
         }
         if !new_invalidated_popups.is_empty() {
             self.invalidated_popups.extend(new_invalidated_popups);
+        }
+        if !new_invalidated_banners.is_empty() {
+            self.invalidated_banners.extend(new_invalidated_banners);
         }
         for (plugin_id, buffer_id) in released_buffers {
             self.release_plugin_buffer(&plugin_id, buffer_id);

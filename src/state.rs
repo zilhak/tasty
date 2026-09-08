@@ -483,6 +483,18 @@ pub struct AppState {
     /// 자체를 강제한다 — 그래서 공용 칸이 아니라 popup 만의 칸이다).
     pub(crate) plugin_mesh_popup_pending_repaint: std::collections::HashSet<u64>,
 
+    /// 위 popup 칸의 banner 대응 — 무입력 강제 repaint 를 요청받은 egui-mesh banner
+    /// 인스턴스. banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가 다음 pass 를 요구할
+    /// 수 있고(hover fade·스크롤 스무딩·스피너), 그 요구는 geom/입력/theme 어느 것도
+    /// 안 바꾸므로 `draw_plugin_banners` 의 일반 dirty 판정에 안 걸린다.
+    ///
+    /// **채우는 자리는 popup 보다 하나 적다.** popup 은 이 칸을 두 종류의 사건이
+    /// 채운다 — (1) plugin 의 self-repaint 요청, (2) git-viewer 원격 조회 결과처럼
+    /// 비동기 host→plugin push 뒤의 강제 repaint(`attach_client.rs` 두 자리). (2) 는
+    /// `com.tasty.git-viewer` 전용 경로이고 그 plugin 은 banner 를 기여하지 않으므로
+    /// banner 에는 대응 자리가 **없다** — 대칭을 맞추려고 만들지 않는다.
+    pub(crate) plugin_mesh_banner_pending_repaint: std::collections::HashSet<u64>,
+
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
     /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
@@ -1037,6 +1049,7 @@ impl AppState {
             plugin_mesh_banner_regions: Vec::new(),
             plugin_mesh_banner_forward: std::collections::HashMap::new(),
             plugin_mesh_popup_pending_repaint: std::collections::HashSet::new(),
+            plugin_mesh_banner_pending_repaint: std::collections::HashSet::new(),
             pending_intents: Vec::new(),
         }
     }

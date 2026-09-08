@@ -385,12 +385,17 @@ pub struct PluginManager {
     /// 파일이 바뀐 egui-mesh surface(markdown 등). `pump()` 가 채우고
     /// `take_invalidated_surfaces` 가 드레인한다.
     pub(super) invalidated_surfaces: Vec<u32>,
-    /// `PopupInvalidated`(`docs/dev-guide/egui-mesh-channel.md` "popup 대응") 로
+    /// `PopupInvalidated`(`docs/dev-guide/egui-mesh-channel.md` "popup·banner 대응") 로
     /// 알려진 popup instance_id 누적 — egui
     /// `viewport_output` self-repaint 요청(스크롤 스무딩 등) 처럼 무입력 상태에서
     /// plugin 이 재-forward 를 요청한 egui-mesh popup(git-viewer/clipboard-viewer 등).
     /// `pump()` 가 채우고 `take_invalidated_popups` 가 드레인한다.
     pub(super) invalidated_popups: Vec<u64>,
+    /// `BannerInvalidated` 로 알려진 banner instance_id 누적 — 위 popup 칸의 banner
+    /// 대응이고 같은 이유로 있다(banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가
+    /// 무입력 재-pass 를 요청할 수 있다). `pump()` 가 채우고
+    /// `take_invalidated_banners` 가 드레인한다.
+    pub(super) invalidated_banners: Vec<u64>,
     /// sysinfo 측정 핸들 — tick 마다 새로 만들지 않고 재사용(할당 비용 절감).
     pub(super) sys: sysinfo::System,
     /// 이번 sampling tick 에서 모인 (plugin_id, rss_bytes). `pump()` 가 채우고

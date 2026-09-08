@@ -485,6 +485,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.forward_mesh_frames_for_parked();
         self.mark_invalidated_surfaces_dirty();
         self.mark_invalidated_popups_dirty();
+        self.mark_invalidated_banners_dirty();
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
         // surface close lifecycle 알림 drain → 구독 plugin에 broadcast.
@@ -829,7 +830,7 @@ impl App {
     }
 
     /// `about_to_wait()` 지원 — `PopupInvalidated`
-    /// (`docs/dev-guide/egui-mesh-channel.md` "popup 대응"): egui-mesh popup
+    /// (`docs/dev-guide/egui-mesh-channel.md` "popup·banner 대응"): egui-mesh popup
     /// (git-viewer/clipboard-viewer 등) plugin 이 egui `viewport_output` self-repaint
     /// 를 요청(예: 스크롤 스무딩이 유휴 상태에서 아직 안 끝남)하면, 다음 프레임에
     /// 무입력으로 재-forward 되도록 예약한다. [`mark_invalidated_surfaces_dirty`] 의
@@ -851,6 +852,30 @@ impl App {
         for main in self.main_windows_iter_mut() {
             for &iid in &invalidated_popups {
                 main.state.plugin_mesh_popup_pending_repaint.insert(iid);
+            }
+            main.mark_dirty();
+        }
+    }
+
+    /// `about_to_wait()` 지원 — `BannerInvalidated`. 위
+    /// [`Self::mark_invalidated_popups_dirty`] 의 banner 대응이고, 같은 이유로 전
+    /// main window 에 broadcast 한다(banner instance 도 window 소유권을 안 나른다).
+    ///
+    /// banner 에는 popup 의 `attach_client.rs` 쪽 예약 자리가 **없다** — 그 두 자리는
+    /// `com.tasty.git-viewer` 의 비동기 조회 결과 전용이고 그 plugin 은 banner 를
+    /// 기여하지 않는다(`AppState::plugin_mesh_banner_pending_repaint` 주석).
+    fn mark_invalidated_banners_dirty(&mut self) {
+        let invalidated_banners = self
+            .plugin_manager
+            .as_mut()
+            .map(|mgr| mgr.take_invalidated_banners())
+            .unwrap_or_default();
+        if invalidated_banners.is_empty() {
+            return;
+        }
+        for main in self.main_windows_iter_mut() {
+            for &iid in &invalidated_banners {
+                main.state.plugin_mesh_banner_pending_repaint.insert(iid);
             }
             main.mark_dirty();
         }

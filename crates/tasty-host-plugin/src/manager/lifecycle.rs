@@ -194,6 +194,7 @@ impl PluginManager {
             banner_mesh_frames: HashMap::new(),
             invalidated_surfaces: Vec::new(),
             invalidated_popups: Vec::new(),
+            invalidated_banners: Vec::new(),
             sys: sysinfo::System::new(),
             pending_rss_samples: Vec::new(),
             file_format,

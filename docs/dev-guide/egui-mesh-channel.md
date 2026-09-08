@@ -119,12 +119,14 @@ surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 �
 직접 호출한다. 이 문서의 이 절이 설명하는 `SurfaceInvalidated` 채널 자체는 여전히
 유효한 일반 인프라이나, 현재 이를 실제로 쓰는 번들 plugin 은 없다.
 
-### popup 대응 — `PopupInvalidated`
+### popup·banner 대응 — `PopupInvalidated` · `BannerInvalidated`
 
 `SurfaceInvalidated` 는 surface 전용이다. egui-mesh popup(git-viewer/clipboard-viewer 등,
-아래 "egui-mesh popup 채널")도 동일하게 무입력 재-forward 가 필요한 경우가 있어(아래
-"egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용" 참조) `PluginEvent::PopupInvalidated
-{ instance_id }` 를 별도로 둔다. 처리 경로는 surface 와 대칭이되 종착지만 다르다:
+아래 "egui-mesh popup 채널")과 egui-mesh banner 도 동일하게 무입력 재-forward 가 필요한
+경우가 있어(아래 "egui 내장 애니메이션과 이벤트 기반 게이팅의 상호작용" 참조)
+`PluginEvent::PopupInvalidated { instance_id }` 와 `PluginEvent::BannerInvalidated
+{ instance_id }` 를 별도로 둔다. 처리 경로는 surface 와 대칭이되 종착지만 다르고, 두
+variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준으로 읽고 이름만 바꾼다):
 
 1. `PluginManager::pump()` 가 `invalidated_popups` 에 누적, `take_invalidated_popups()` 로 드레인.
 2. `App::mark_invalidated_popups_dirty`(`src/app/event_handler.rs`, `about_to_wait()` 에서
@@ -138,9 +140,14 @@ surface 가 `paint`/`set_context` 자체를 받지 않으므로 이 경로가 �
    repaint 예약)에 그대로 얹는다. `popup_render.rs` 의 forward 게이트(`need_repaint`)가 다음
    프레임에 무입력 `popup.set_context` 를 1 회 통과시킨다 — surface 의 `invalidated` 플래그와
    동일 역할을 이미 있던 필드가 겸한다(별도 상태 필드 신설 불필요).
-4. banner 는 아직 이 경로가 없다 — 현재 banner egui-mesh 채널은 검증용 PoC 소비자
-   (`tasty-plugin-mesh-demo`)뿐이라 실질 영향이 없고, 실제 소비자가 생기면 popup 과 동형으로
-   `BannerInvalidated` + `plugin_mesh_banner_pending_repaint` 를 추가하면 된다.
+4. banner 도 같은 네 자리를 갖는다 — `invalidated_banners` /
+   `take_invalidated_banners()` / `App::mark_invalidated_banners_dirty` /
+   `AppState::plugin_mesh_banner_pending_repaint` 이고, `banner_render.rs` 의 forward
+   게이트가 popup 과 같은 `need_repaint` 항으로 소비한다. **다른 점은 한 자리뿐이다**:
+   popup 의 `plugin_mesh_popup_pending_repaint` 는 `attach_client.rs` 두 곳에서도
+   채워지는데(git-viewer 의 비동기 원격 조회 결과 뒤 강제 repaint), 그 경로는
+   `com.tasty.git-viewer` 전용이고 그 plugin 은 banner 를 기여하지 않아 banner 쪽에는
+   대응 자리가 없다.
 
 ## plugin self-repaint (out-of-band 상태 변경)
 
@@ -191,9 +198,11 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
    `EguiMeshCore::render` 가 매 pass 마다 `full.viewport_output.get(&ViewportId::ROOT)`
    (egui-mesh 는 단일 ROOT viewport 만 씀)의 `repaint_delay` 를 읽어
    `pending_self_repaint`(`Duration::MAX` = 요청 없음 → `None`)로 캐시한다.
-   `EguiMeshSurface`/`EguiMeshPopup` 의 `paint`/`repaint_last` 는 매 호출 뒤(frame 이
-   `None` 이어도) 이 값을 확인해 `Some(delay)` 면 `delay` 뒤 위 "idle invalidate" 채널
-   (`SurfaceInvalidated`/`PopupInvalidated`)로 host 에 재-forward 를 요청한다. 이 지연
+   `EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner` 의 `paint`/`repaint_last` 는 매
+   호출 뒤(frame 이 `None` 이어도) 이 값을 확인해 `Some(delay)` 면 `delay` 뒤 위
+   "idle invalidate" 채널
+   (`SurfaceInvalidated`/`PopupInvalidated`/`BannerInvalidated`)로 host 에 재-forward 를
+   요청한다. 이 지연
    알림은 **plugin 프로세스당 상주 타이머 스레드 1 개**(`SelfRepaintTimer`, 첫 요청 때
    lazily 기동 후 재사용)가 발사한다 — 요청마다 스레드를 만들지 않는다([ADR-0097](../adr/0097-plugin-self-repaint-resident-timer.md)).
    `repaint_delay` 는 egui 가 즉시 다음 프레임을 원할 때 `0` 으로 오므로(`Context::request_repaint`
@@ -206,8 +215,8 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
    가 영구 정지하므로, 알림 panic 은 요청 단위로 삼키고 루프가 풀리면 대기 가드를 모두 푼 뒤
    다음 요청이 재기동하며 spawn 실패 시엔 그 요청만 1 회용 스레드로 폴백한다. 이 채널은 host-side 코드 변경 없이
    (surface) 또는 이미 있던 popup pending-repaint 필드에 편승해(popup) 동작한다 —
-   `EguiMeshCore` 를 공유하는 surface/popup 전체에 적용된다(banner 는 실 소비자가 아직 없어
-   미적용, 위 "popup 대응" 참조).
+   `EguiMeshCore` 를 공유하는 surface/popup/banner 전체에 적용된다(위 "popup·banner 대응"
+   참조).
 2. **raw_input.time 보정** (`src/view/main/egui_mesh.rs`) — `forward_egui_mesh_context`
    가 surface 로 보내는 `set_context.raw_input.time` 이 과거엔 항상 `None` 이었다. egui는
    `time` 이 없으면 `predicted_dt`(1/60초 고정)로만 dt 를 추정하므로, 1번의 idle-invalidate
@@ -224,7 +233,9 @@ egui-mesh 도입 초기엔 이 결함이 방치돼 있었다 — `EguiMeshCore::
 
 **popup(git-viewer/clipboard-viewer)도 같은 결함을 안고 있었다** — `EguiMeshCore` 를
 공유하므로 스크롤 가능한 popup 콘텐츠도 이론상 동일 증상을 재현할 수 있었다. 1번을 popup
-에도 적용했으므로(`PopupInvalidated`, 위 "popup 대응" 절) 이 TODO 로 함께 해소된다.
+에도 적용했다(`PopupInvalidated`, 위 "popup·banner 대응" 절). **banner 도 같은 이유로
+같은 결함을 안고 있었고** — SDK 가 `pending_self_repaint` 를 계산해 놓고 읽는 자리가
+없었다 — 지금은 `BannerInvalidated` 로 같은 네 자리를 지난다.
 
 ## Theme 스냅샷 (generic parity)
 

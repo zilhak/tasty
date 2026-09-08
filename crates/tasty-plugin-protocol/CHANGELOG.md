@@ -13,6 +13,9 @@
 
 ## [Unreleased]
 
+### Added
+- `PluginEvent::BannerInvalidated { instance_id }` — 위 `PopupInvalidated` 의 egui-mesh banner 대응. banner 도 같은 `EguiMeshCore` 를 쓰므로 egui 가 `viewport_output` 으로 다음 pass 를 요청할 수 있는데(hover fade·스크롤 스무딩·스피너) 그 요청을 host 로 올리는 자리가 없었다 — SDK 가 값을 계산해 놓고 버렸다. `#[serde(other)]` fallback(`PluginEvent::Unknown`) 대상이라 구버전 host 는 안전하게 무시한다. (additive, api_version 유지)
+
 ## [0.10.2] - 2026-08-29
 
 ### Added

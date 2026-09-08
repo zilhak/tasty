@@ -410,6 +410,13 @@ pub enum PluginEvent {
     /// 요청) 재-forward 를 요청할 때 쓴다. host 는 다음 tick 에 해당
     /// instance 의 `popup.set_context` 를 무입력으로 1회 재forward 한다.
     PopupInvalidated { instance_id: u64 },
+    /// egui-mesh banner invalidated — [`PluginEvent::PopupInvalidated`] 의 banner
+    /// 대응. 같은 이유로 존재한다: banner 도 `EguiMeshCore` 를 공유하므로 egui 가
+    /// `viewport_output` 으로 다음 pass 를 요청할 수 있고(hover fade·스크롤 스무딩·
+    /// 스피너), 그 요청을 여기로 올리지 않으면 다음 geom/입력/theme 변경까지 화면이
+    /// 멈춘다. host 는 다음 tick 에 해당 instance 의 `banner.set_context` 를 무입력으로
+    /// 1회 재forward 한다.
+    BannerInvalidated { instance_id: u64 },
     /// egui-mesh surface: plugin 이 자기 프로세스에서 tessellate→POD 인코드(A1-S2,
     /// [`crate::mesh_wire`])한 mesh 바이트를 shared buffer 에 commit 했음을 알린다.
     /// mesh 본체는 buffer 안에 있고(`decode_paint` 로 복원), 이 알림은 어떤 buffer 의

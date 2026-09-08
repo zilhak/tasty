@@ -104,6 +104,16 @@ pub fn draw_plugin_banners(
         let geom = (w_px, h_px, ppp.to_bits());
         let has_input = !raw_input.events.is_empty();
         let has_frame = mgr.banner_mesh_frame(slot.instance_id).is_some();
+        // plugin 이 무입력 재-repaint 를 요청했다(egui `viewport_output` — hover fade·
+        // 스크롤 스무딩·스피너). geom/입력/theme 어느 것도 안 바뀌므로 아래 판정만으로는
+        // 안 잡힌다. popup 과 같은 `remove` 소비 형태다.
+        //
+        // **`fwd` 를 잡기 전에 읽는다.** 아래 `record_sent` 가 그 가변 대여를 if 블록
+        // 안까지 끌고 가서, 그 뒤에 `state` 를 다시 빌리면 컴파일되지 않는다(popup 은
+        // if 안에서 entry 를 다시 열기 때문에 순서가 반대여도 된다).
+        let need_repaint = state
+            .plugin_mesh_banner_pending_repaint
+            .remove(&slot.instance_id);
         let fwd = state
             .plugin_mesh_banner_forward
             .entry(slot.instance_id)
@@ -116,7 +126,8 @@ pub fn draw_plugin_banners(
         // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
         // need_full_textures 를 실어 보낸다(popup 과 같은 판정, 같은 타입).
         let need_full = fwd.take_pending_full();
-        if geom_changed || has_input || need_bootstrap || theme_changed || need_full {
+        if geom_changed || has_input || need_bootstrap || theme_changed || need_full || need_repaint
+        {
             fwd.record_sent(geom, &current_theme, has_frame);
             mgr.send_banner_set_context(
                 &slot.plugin_id,

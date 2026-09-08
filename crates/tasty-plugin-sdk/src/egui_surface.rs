@@ -661,8 +661,8 @@ impl SelfRepaintTimer {
 /// ([`SelfRepaintTimer::global`]) 에 요청을 건다 — 요청마다 스레드를 만들지 않는다.
 /// `armed`(이 코어 인스턴스가 소유한 가드)가 이미 세팅돼 있으면 아무것도 하지 않는다
 /// — 타이머가 fire 하면 다시 풀리고, 그 다음 `render()` 가 여전히 지연이 필요하면
-/// 재-arm 한다(자연 수렴, idle 상태에서 요청이 쌓이지 않는다). Surface/Popup 공용 —
-/// 각자 자기 id 를 실은 `*Invalidated` 이벤트를 `notify` 클로저로 만든다.
+/// 재-arm 한다(자연 수렴, idle 상태에서 요청이 쌓이지 않는다). Surface/Popup/Banner
+/// 공용 — 각자 자기 id 를 실은 `*Invalidated` 이벤트를 `notify` 클로저로 만든다.
 #[cfg(any(unix, windows))]
 fn arm_self_repaint_timer(
     delay: Duration,
@@ -970,6 +970,10 @@ impl EguiMeshPopup {
 pub struct EguiMeshBanner {
     instance_id: u64,
     core: EguiMeshCore,
+    /// [`EguiMeshPopup::self_repaint_armed`] 와 동형 — `schedule_self_repaint` 의
+    /// 중복 타이머 요청 방지 가드.
+    #[cfg(any(unix, windows))]
+    self_repaint_armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl EguiMeshBanner {
@@ -979,6 +983,8 @@ impl EguiMeshBanner {
         Self {
             instance_id,
             core: EguiMeshCore::new(),
+            #[cfg(any(unix, windows))]
+            self_repaint_armed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -1032,7 +1038,12 @@ impl EguiMeshBanner {
         params: &BannerSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(frame) = self.run_frame_inner(params, run_ui) else {
+        let frame = self.run_frame_inner(params, run_ui);
+        // 정적 화면이어서 보낼 mesh 가 없어도 self-repaint 요청은 남을 수 있다
+        // (hover fade 처럼 출력이 아직 안 바뀐 첫 frame). 그래서 popup 과 같이
+        // **early return 앞에서** 예약한다 — 뒤에 두면 그 요청을 버린다.
+        self.schedule_self_repaint(host);
+        let Some(frame) = frame else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
@@ -1055,7 +1066,9 @@ impl EguiMeshBanner {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(frame) = self.core.repaint_last(run_ui) else {
+        let frame = self.core.repaint_last(run_ui);
+        self.schedule_self_repaint(host);
+        let Some(frame) = frame else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
@@ -1067,6 +1080,21 @@ impl EguiMeshBanner {
             full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
+    }
+
+    /// [`EguiMeshPopup::schedule_self_repaint`] 의 banner 대응 —
+    /// [`PluginEvent::BannerInvalidated`] 로 host 의 banner pending-repaint 경로
+    /// (`AppState::plugin_mesh_banner_pending_repaint`)에 편승한다. 보내는 variant
+    /// 말고는 popup 판과 같다.
+    #[cfg(any(unix, windows))]
+    fn schedule_self_repaint(&self, host: &HostHandle) {
+        let Some(delay) = self.core.pending_self_repaint() else {
+            return;
+        };
+        let instance_id = self.instance_id;
+        arm_self_repaint_timer(delay, &self.self_repaint_armed, host, move |host| {
+            host.notify(&PluginEvent::BannerInvalidated { instance_id })
+        });
     }
 }
 
@@ -2151,7 +2179,7 @@ mod tests {
 
     /// [`EguiMeshPopup`] 도 [`EguiMeshCore::pending_self_repaint`] 를 공유한다 — 위
     /// surface 테스트와 동형으로, popup 채널(git-viewer/clipboard-viewer)도 같은
-    /// 정보 유실 없이 self-repaint 요청을 캡처해야 한다(`docs/dev-guide/egui-mesh-channel.md` "popup 대응",
+    /// 정보 유실 없이 self-repaint 요청을 캡처해야 한다(`docs/dev-guide/egui-mesh-channel.md` "popup·banner 대응",
     /// `PopupInvalidated`).
     #[test]
     fn popup_also_captures_egui_repaint_request() {
@@ -2179,6 +2207,38 @@ mod tests {
         assert!(
             popup.core.pending_self_repaint().is_some(),
             "popup render() must not drop egui's repaint request either"
+        );
+    }
+
+    /// [`EguiMeshBanner`] 도 같은 [`EguiMeshCore`] 를 쓴다 — 위 popup 시험과 동형이다.
+    /// 이 시험이 없으면 banner 의 self-repaint 배선이 끊겨도 초록이다(그 배선이
+    /// 빠져 있던 동안 실제로 그랬다: 값은 계산되고 아무도 안 읽었다).
+    #[test]
+    fn banner_also_captures_egui_repaint_request() {
+        let mut banner = EguiMeshBanner::new(1);
+        let params = BannerSetContextParams {
+            instance_id: 1,
+            width_px: 320,
+            height_px: 64,
+            pixels_per_point: 1.0,
+            raw_input: RawInputWire::default(),
+            theme: None,
+            need_full_textures: false,
+        };
+        banner.run_frame(&params, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("banner content");
+            });
+        });
+        banner.run_frame(&params, |ctx| {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("banner content");
+            });
+        });
+        assert!(
+            banner.core.pending_self_repaint().is_some(),
+            "banner render() must not drop egui's repaint request either"
         );
     }
 
