@@ -455,8 +455,10 @@ pub struct AppState {
 
     /// egui-mesh popup 인스턴스별 forward 추적 상태. **칸의 정의도 dirty 판정도
     /// [`crate::plugin_bridge::MeshForwardCommon`] 한 곳에서 나온다** — banner·surface 와
-    /// "같은 모양" 이라서가 아니라 *같은 타입*이라서 갈릴 자리가 없다. popup 만의 칸
-    /// (무입력 강제 repaint)은 아래 `plugin_mesh_popup_pending_repaint` 로 따로 있다.
+    /// "같은 모양" 이라서가 아니라 *같은 타입*이라서 갈릴 자리가 없다. 무입력 강제
+    /// repaint 는 그 타입 밖에 있고 **popup 만의 칸이 아니다** — banner 도 같은 칸을
+    /// 갖는다(아래 `plugin_mesh_popup_pending_repaint` 와
+    /// `plugin_mesh_banner_pending_repaint`).
     pub(crate) plugin_mesh_popup_forward:
         std::collections::HashMap<u64, crate::plugin_bridge::MeshForwardCommon>,
 
