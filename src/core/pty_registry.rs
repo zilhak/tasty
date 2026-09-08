@@ -24,7 +24,7 @@
 //! PTY 는 없다) `child_terminal` 과 달리 JSON 영속화하지 않는다.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -105,6 +105,48 @@ impl std::fmt::Display for PtySpawnError {
 
 impl std::error::Error for PtySpawnError {}
 
+/// exit-watcher 가 어디까지 갔는지. **cell 이 안 찬 이유를 가르는 값**이다.
+///
+/// 왜 필요한가: 대기가 상한을 다 쓰면 `exit` 는 `None` 하나만 낸다. 그 `None` 은 두 개의
+/// 다른 사건을 같은 얼굴로 낸다 — 자식이 안 죽어서 `wait()` 가 아직 안 돌아온 것과,
+/// 자식은 죽었는데 우리 쪽이 그것을 잡을 자리에 애초에 못 간 것(스레드 생성 실패,
+/// 스케줄 못 받음). 뒤쪽은 지금까지 **어디에도 안 보였다**. 위상은 그 둘을 가른다.
+///
+/// **테스트 전용**(`#[cfg(test)]`) — 이 값을 읽는 자리가 실패 갈래 진단뿐이라 그렇다.
+/// 같은 파일의 [`PtyRegistry::wait_for_exit`] 와 같은 정책이다: 프로덕션 소비자가 생기면
+/// 그때 게이트를 벗긴다. **찍는 쪽은 게이트하지 않는다** — 두 빌드가 다른 코드를 돌면
+/// 재현이 갈린다. 원자적 store 한 번이라 비용도 그 자리에서 끝난다.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchPhase {
+    /// watcher 를 못 걸었다 — cell 은 영영 안 찬다. 자식의 생사와 무관하게 우리 쪽 사건이다.
+    NotAttached,
+    /// 스레드는 떴는데 아직 `wait_fn` 에 들어가지 않았다(스케줄 못 받음).
+    Spawned,
+    /// `wait_fn` 에 들어가 아직 안 돌아왔다 — **자식이 안 죽었다**는 뜻이다.
+    Waiting,
+    /// `wait_fn` 이 돌아와 결과를 채웠다.
+    Reaped,
+}
+
+#[cfg(test)]
+impl WatchPhase {
+    fn from_raw(v: u8) -> Self {
+        match v {
+            1 => Self::Spawned,
+            2 => Self::Waiting,
+            3 => Self::Reaped,
+            _ => Self::NotAttached,
+        }
+    }
+}
+
+/// [`WatchPhase`] 의 원시 표현 — watcher 스레드와 공유하는 칸에 담기는 값.
+const PHASE_NOT_ATTACHED: u8 = 0;
+const PHASE_SPAWNED: u8 = 1;
+const PHASE_WAITING: u8 = 2;
+const PHASE_REAPED: u8 = 3;
+
 /// headless PTY 하나의 메타데이터 + exit-code 캡처 cell. `Terminal` 인스턴스 자체는
 /// 담지 않는다 — 18-b 에서 동일 id 로 `engine.terminals`(`TerminalStore`)가 보관한다.
 pub struct PtyEntry {
@@ -123,6 +165,8 @@ pub struct PtyEntry {
     exit_result: Arc<(Mutex<Option<PtyExit>>, Condvar)>,
     /// exit watcher 스레드 핸들. 살려두기만 하면 되므로 join 하지 않는다(detached).
     _watcher: Option<JoinHandle<()>>,
+    /// watcher 가 남기는 마지막 관측([`WatchPhase`]). 스레드와 공유한다.
+    watch_phase: Arc<AtomicU8>,
 }
 
 /// exit cell 의 poison 을 보고했는가(첫 1 회만).
@@ -154,6 +198,12 @@ impl PtyEntry {
     /// 자식이 종료돼 exit-code 가 잡혔는가.
     pub fn has_exited(&self) -> bool {
         self.exit().is_some()
+    }
+
+    /// exit-watcher 의 마지막 관측. 실패 갈래 진단에서 `exit() == None` 의 이유를 가른다.
+    #[cfg(test)]
+    pub fn watch_phase(&self) -> WatchPhase {
+        WatchPhase::from_raw(self.watch_phase.load(Ordering::Acquire))
     }
 
     // 이유: 상태바/진단 노출용 introspection getter — 18-b/18-c 소비 시점까지 production
@@ -263,6 +313,7 @@ impl PtyRegistry {
                 last_activity: now,
                 exit_result: Arc::new((Mutex::new(None), Condvar::new())),
                 _watcher: None,
+                watch_phase: Arc::new(AtomicU8::new(PHASE_NOT_ATTACHED)),
             },
         );
         Ok(id)
@@ -281,9 +332,17 @@ impl PtyRegistry {
             return false;
         };
         let cell = entry.exit_result.clone();
+        let phase = entry.watch_phase.clone();
+        // 스레드가 뜨기 **전에** 찍는다 — spawn 이 실패하면 아래에서 되돌린다. 반대로 두면
+        // 스레드가 먼저 달려 위상을 올린 뒤 이 줄이 덮어써 관측이 뒤로 간다.
+        phase.store(PHASE_SPAWNED, Ordering::Release);
+        let thread_phase = phase.clone();
         let handle = thread::Builder::new()
             .name(format!("pty-exit-watcher-{id}"))
             .spawn(move || {
+                // wait 에 들어가기 직전에 찍는다 — 이 위상에서 cell 이 비어 있으면
+                // `wait_fn` 이 아직 안 돌아왔다는 뜻이고, 그것이 곧 자식이 안 죽었다는 관측이다.
+                thread_phase.store(PHASE_WAITING, Ordering::Release);
                 let outcome = wait_fn();
                 // 여기서 조용히 버리면 종료 결과가 영영 안 채워져 자식이 계속 실행 중으로
                 // 보인다 — 위 `exit` 와 같은 이유로 복구한다.
@@ -300,6 +359,7 @@ impl PtyRegistry {
                 // 신호가 유실되지 않는다 — 대기자는 wait 전에 cell 을 먼저 검사하고, wait 는
                 // 반드시 그 락을 쥔 채 시작하기 때문이다.
                 cell.1.notify_all();
+                thread_phase.store(PHASE_REAPED, Ordering::Release);
             });
         match handle {
             Ok(h) => {
@@ -307,6 +367,9 @@ impl PtyRegistry {
                 true
             }
             Err(e) => {
+                // 위상을 되돌린다 — 스레드가 없으므로 cell 은 영영 안 찬다. 그 사실이
+                // 진단에 남아야 한다(로그만으로는 실패문이 못 본다).
+                phase.store(PHASE_NOT_ATTACHED, Ordering::Release);
                 tracing::warn!("pty exit watcher spawn failed for {id}: {e}");
                 false
             }
@@ -623,6 +686,136 @@ mod tests {
         assert_eq!(exit.code, Some(3));
         assert!(!exit.success);
         assert!(reg.get(id).unwrap().has_exited());
+    }
+
+    #[test]
+    fn the_watcher_phase_says_why_the_cell_is_still_empty() {
+        // `exit() == None` 은 두 사건을 같은 얼굴로 낸다 — 자식이 안 죽어서 `wait` 가 아직
+        // 안 돌아온 것과, 우리가 잡을 자리에 애초에 못 간 것. 위상이 그 둘을 가르는지 잰다.
+        let mut reg = PtyRegistry::new();
+        let id = reg.register(spec(&["blocks"]), Instant::now()).unwrap();
+
+        // ① watcher 를 걸기 전 — 안 걸었다.
+        assert_eq!(reg.get(id).unwrap().watch_phase(), WatchPhase::NotAttached);
+
+        // ② wait 안에서 신호를 기다리는 watcher. 종료를 흉내내는 것이 아니라 **안 돌아오는
+        //    wait** 를 만든다 — 그것이 macOS 에서 관측된 모양이다.
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        assert!(reg.attach_exit_watcher(id, move || {
+            // 이유: 이 recv 는 신호를 받는 것 자체가 목적이라 결과가 필요 없다. 송신 측이
+            // 먼저 drop 돼 Err 가 와도 wait 를 끝내는 동작은 같다(위상만 재는 자리다).
+            let _ = release_rx.recv();
+            PtyExit::from_status(Some(0), true)
+        }));
+
+        // 스레드가 wait 에 들어갈 때까지 bounded poll(최대 ~3s).
+        let mut reached = false;
+        for _ in 0..600 {
+            if reg.get(id).unwrap().watch_phase() == WatchPhase::Waiting {
+                reached = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(reached, "watcher 가 wait 에 들어간 것이 위상에 안 남았다");
+        // 그리고 이 위상에서 cell 은 아직 비어 있다 — 이 조합이 "자식이 안 죽었다" 다.
+        assert!(reg.get(id).unwrap().exit().is_none());
+
+        // ③ 풀어 주면 결과가 채워지고 위상이 마지막까지 간다.
+        release_tx.send(()).expect("release");
+        let mut done = false;
+        for _ in 0..600 {
+            if reg.get(id).unwrap().watch_phase() == WatchPhase::Reaped {
+                done = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(done, "결과를 채운 뒤에도 위상이 안 올라갔다");
+        assert!(reg.get(id).unwrap().has_exited());
+    }
+
+    /// `Reaped` 인데 대기가 `None` 을 낸 조합이 **실제로 날 수 있는가**, 그리고 그때
+    /// 무엇을 봐야 하는가.
+    ///
+    /// 이 갈래는 오래 문장만 있고 표본이 0 이었다. 재 보면 도달 가능하다 — 그런데 그
+    /// 도달 경로가 하나뿐이다: 대기가 상한을 다 써서 마지막 검사를 마친 **뒤에** 자식이
+    /// 끝나는 것. 대기 쪽 결함이 아니다. 아래 [`a_fill_while_the_waiter_is_parked_is_never_missed`]
+    /// 가 그 반대편(대기가 놓치는 경로)이 없다는 것을 같은 크레이트에서 잰다.
+    #[test]
+    fn the_reaped_but_unseen_branch_is_a_late_child_not_a_missed_wakeup() {
+        let mut reg = PtyRegistry::new();
+        let id = reg.register(spec(&["late"]), Instant::now()).unwrap();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        assert!(reg.attach_exit_watcher(id, move || {
+            // 이유: 신호를 받는 것 자체가 목적이라 결과가 필요 없다(위 위상 시험과 같다).
+            let _ = release_rx.recv();
+            PtyExit::from_status(Some(0), true)
+        }));
+
+        // ① 자식이 아직 안 끝난 채로 예산을 다 쓴다 — 대기는 None 을 낸다.
+        assert!(reg.wait_for_exit(id, Duration::from_millis(50)).is_none());
+
+        // ② 예산이 끝난 **뒤에** 자식이 끝난다.
+        release_tx.send(()).expect("release");
+        let mut done = false;
+        for _ in 0..600 {
+            if reg.get(id).unwrap().watch_phase() == WatchPhase::Reaped {
+                done = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(done, "자식이 끝났는데 위상이 안 올라갔다");
+
+        // ③ 그래서 진단이 보는 순간의 상태가 바로 그 조합이다 — 위상 Reaped + cell 참 +
+        //    그런데 대기는 이미 None 을 냈다. 이 조합이 가리키는 것은 늦은 자식이지
+        //    고장난 대기가 아니다.
+        assert_eq!(reg.get(id).unwrap().watch_phase(), WatchPhase::Reaped);
+        assert!(reg.get(id).unwrap().exit().is_some());
+    }
+
+    /// 대기가 park 에 든 사이 cell 이 차면 그것을 놓치는가 — 놓치면 위 갈래의 옛 처방
+    /// ("대기 쪽을 봐라")이 맞는 말이 된다. 안 놓치면 그 처방은 틀린 것이다.
+    ///
+    /// **깨우기가 아예 없어도 안 놓친다** — 이 시험의 이름이 그렇게 적혀 있는 이유다.
+    /// 변이로 쟀다(2026-09-09): watcher 의 `notify_all()` 을 지우고 표본을 3 으로 줄여
+    /// 돌리면 **여전히 초록**이고 벽시계만 15.01 s 로 는다(정상은 0.13 s). 대기가 상한
+    /// 만료로 깬 뒤 cell 을 다시 검사하기 때문이다. 즉 `notify_all` 이 사는 것은 정확성이
+    /// 아니라 **지연**이고, 이 시험이 지키는 것은 그 재검사다.
+    ///
+    /// 그 지연에는 시험을 안 붙였다. ADR-0181 의 순서대로 물으면 1(도장)·2(시계 지우기)가
+    /// 안 되는 자리다 — 깨워서 왔든 만료로 왔든 대기가 내는 **값이 같아서** 두 사건을
+    /// 관측값으로 가를 수 없다. 남는 것은 3(대조군 얹은 지연 단정)뿐인데, 그 지연을
+    /// 소비하는 프로덕션 대기자가 없다(`wait_for_exit` 자체가 `#[cfg(test)]`). 아무도 안
+    /// 쓰는 시간 값에 벽시계 단정을 붙이면 부하가 만드는 빨강만 생긴다.
+    #[test]
+    fn a_fill_is_never_lost_even_if_the_wakeup_never_comes() {
+        const TRIALS: usize = 100;
+        let mut missed = 0usize;
+        for _ in 0..TRIALS {
+            let mut reg = PtyRegistry::new();
+            let id = reg.register(spec(&["parked"]), Instant::now()).unwrap();
+            let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+            assert!(reg.attach_exit_watcher(id, move || {
+                // 이유: 위와 같다 — 신호 수신 자체가 목적이다.
+                let _ = release_rx.recv();
+                PtyExit::from_status(Some(0), true)
+            }));
+            // 대기가 park 에 들어갈 즈음 채운다. 예산은 넉넉해, None 이 나오면 그것은
+            // 상한이 아니라 유실이다.
+            let releaser = thread::spawn(move || {
+                thread::sleep(Duration::from_millis(1));
+                // 이유: 대기가 이미 끝나 수신 측이 drop 됐으면 Err 가 정상이다 — 이 스레드가
+                // 하려는 일(자식을 끝내는 신호)은 그 경우 이미 필요 없다.
+                let _ = release_tx.send(());
+            });
+            if reg.wait_for_exit(id, Duration::from_secs(5)).is_none() {
+                missed += 1;
+            }
+            releaser.join().expect("releaser");
+        }
+        assert_eq!(missed, 0, "{TRIALS} 회 중 {missed} 회를 놓쳤다");
     }
 
     #[test]

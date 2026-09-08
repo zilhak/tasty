@@ -88,13 +88,20 @@ pub fn draw_header(
                 ui.horizontal_centered(|ui| {
                     identity_group(ui, theme, data, &mut action);
                     // 이 줄은 오른쪽부터 채운다 — 먼저 넣은 것이 더 오른쪽에 놓이므로
-                    // 화면에서 읽히는 순서(알약 → 캡션 → 새로고침)의 **역순**으로 넣는다.
+                    // 읽는 순서를 데이터로 적고 그 **역순**으로 넣는다. 순서를 손으로
+                    // 뒤집어 적으면 그 뒤집기가 어디에도 안 남아 판정할 것이 없다.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if refresh_button(ui, theme) {
-                            action = Some(ChromeAction::Refresh);
+                        for item in header_right_paint_order() {
+                            match item {
+                                HeaderRightItem::Refresh => {
+                                    if refresh_button(ui, theme) {
+                                        action = Some(ChromeAction::Refresh);
+                                    }
+                                }
+                                HeaderRightItem::ResumeHint => resume_hint(ui, theme, &data.runner),
+                                HeaderRightItem::Pill => runner_badge(ui, theme, &data.runner),
+                            }
                         }
-                        resume_hint(ui, theme, &data.runner);
-                        runner_badge(ui, theme, &data.runner);
                     });
                 });
             }
@@ -288,12 +295,57 @@ fn runner_badge(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
     if runner.crashed || stalled {
         // 실행 가능한 복구 수단을 그대로 적는다. 이 화면에는 러너를 켜는 버튼이
         // 없다 — 관찰 전용 surface 라 상태를 바꾸지 않는다.
-        resp.on_hover_text(format!(
-            "{} {}",
-            t("dag.runner.resume_hint_lead"),
-            t("dag.runner.resume_hint_command")
-        ));
+        resp.on_hover_text(resume_hint_text());
     }
+}
+
+/// 헤더 오른쪽 묶음의 조각들.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HeaderRightItem {
+    /// 러너 알약.
+    Pill,
+    /// 재개 힌트 캡션.
+    ResumeHint,
+    /// 새로고침 버튼.
+    Refresh,
+}
+
+/// 헤더 오른쪽 묶음을 **화면에서 읽히는 순서**(왼→오른)로. 오른쪽부터 채우는 줄에
+/// 넣을 때는 [`header_right_paint_order`] 가 이것을 뒤집는다.
+const HEADER_RIGHT_READING_ORDER: [HeaderRightItem; 3] = [
+    HeaderRightItem::Pill,
+    HeaderRightItem::ResumeHint,
+    HeaderRightItem::Refresh,
+];
+
+/// 재개 힌트를 이루는 조각을 **읽는 순서**로 — `(번역 키, mono 인가)`.
+///
+/// 같은 순서를 호버 텍스트와 캡션 두 자리가 쓴다. 전에는 두 자리가 각각 손으로 적고
+/// 있었고, 한쪽만 고치면 툴팁과 화면이 서로 다른 문장을 말하게 돼 있었다.
+const RESUME_HINT_PARTS: [(&str, bool); 2] = [
+    ("dag.runner.resume_hint_lead", false),
+    ("dag.runner.resume_hint_command", true),
+];
+
+/// 오른쪽부터 채우는 줄에 넣을 순서 — 먼저 넣은 것이 더 오른쪽에 놓이므로 읽는 순서의
+/// **역순**이다. 이 뒤집기가 계약 전부라, 사라지면 화면이 좌우로 뒤집히고 컴파일도
+/// 시험도 아무 말을 안 한다.
+fn header_right_paint_order() -> impl Iterator<Item = HeaderRightItem> {
+    HEADER_RIGHT_READING_ORDER.into_iter().rev()
+}
+
+/// 같은 뒤집기의 재개 힌트 판.
+fn resume_hint_paint_order() -> impl Iterator<Item = &'static (&'static str, bool)> {
+    RESUME_HINT_PARTS.iter().rev()
+}
+
+/// 호버 툴팁에 싣는 재개 힌트 한 줄 — **읽는 순서 그대로** 이어 붙인다.
+fn resume_hint_text() -> String {
+    RESUME_HINT_PARTS
+        .iter()
+        .map(|(key, _)| t(key).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// 재개 명령 캡션. 툴팁 전용이면 호버하지 않는 사용자에게는 복구 수단이 존재하지
@@ -313,11 +365,12 @@ fn resume_hint(ui: &mut egui::Ui, theme: &Theme, runner: &RunnerBadgeData) {
         }
         ui.label(rich);
     };
-    // 이 줄은 오른쪽부터 채워지므로 읽는 순서(lead → 명령)의 **역순**으로 넣는다.
+    // 이 줄도 오른쪽부터 채워지므로 읽는 순서의 **역순**으로 넣는다.
     // 둘 사이 간격은 줄의 기본 item_spacing(=spacing_sm) 이 그대로 맡는다 —
     // specimen 이 명시한 값과 같은 토큰이라 따로 벌리지 않는다.
-    caption(ui, t("dag.runner.resume_hint_command").to_string(), true);
-    caption(ui, t("dag.runner.resume_hint_lead").to_string(), false);
+    for (key, mono) in resume_hint_paint_order() {
+        caption(ui, t(key).to_string(), *mono);
+    }
     hspace(ui, theme.spacing_sm);
 }
 
@@ -736,4 +789,89 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme, data: &DagData, dag_id: Opti
 /// 그래프 데이터가 비어 있는지(노드 0 개).
 pub fn is_empty(graph: Option<&DagGraphData>) -> bool {
     graph.is_none_or(|g| g.nodes.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 오른쪽부터 채우는 줄에서는 **먼저 넣은 것이 더 오른쪽**에 놓인다. 그래서 화면에서
+    /// 읽히는 순서와 코드가 부르는 순서가 반대여야 한다. 뒤집기를 빠뜨리면 헤더가 좌우로
+    /// 뒤집힌 채 컴파일되고, 이 순서를 보는 시험이 없으면 아무것도 그 말을 안 해준다.
+    #[test]
+    fn the_header_right_group_is_painted_in_reverse_reading_order() {
+        let painted: Vec<HeaderRightItem> = header_right_paint_order().collect();
+        assert_eq!(
+            painted,
+            [
+                HeaderRightItem::Refresh,
+                HeaderRightItem::ResumeHint,
+                HeaderRightItem::Pill,
+            ],
+            "오른쪽부터 채우는 줄이라 새로고침을 먼저 넣어야 그것이 가장 오른쪽에 \
+             놓인다 — 이 순서가 뒤집히면 알약과 새로고침이 자리를 맞바꾼다"
+        );
+    }
+
+    /// 재개 힌트 캡션도 같은 줄에 놓이므로 같은 뒤집기를 받는다.
+    #[test]
+    fn the_resume_hint_captions_are_painted_in_reverse_reading_order() {
+        let painted: Vec<&str> = resume_hint_paint_order().map(|(key, _)| *key).collect();
+        assert_eq!(
+            painted,
+            [
+                "dag.runner.resume_hint_command",
+                "dag.runner.resume_hint_lead",
+            ],
+            "명령을 먼저 넣어야 명령이 오른쪽(알약 쪽)에 붙는다 — 뒤집히면 셸에 붙여 \
+             넣을 명령이 안내문 왼쪽으로 가서 문장이 거꾸로 읽힌다"
+        );
+    }
+
+    /// 위 두 시험은 각자 리터럴을 적는다. 그 리터럴이 명부와 따로 놀지 않는지 — 즉
+    /// 칠하는 순서가 **정말로 명부의 역순**인지 — 를 따로 묶는다. 명부만 재정렬하고
+    /// 리터럴을 안 고치면 위에서 잡히고, 둘을 함께 고치면 여기서 잡힌다.
+    #[test]
+    fn both_paint_orders_are_exact_reverses_of_their_rosters() {
+        let mut painted: Vec<HeaderRightItem> = header_right_paint_order().collect();
+        painted.reverse();
+        assert_eq!(painted, HEADER_RIGHT_READING_ORDER.to_vec());
+
+        let mut hint: Vec<&str> = resume_hint_paint_order().map(|(key, _)| *key).collect();
+        hint.reverse();
+        let reading: Vec<&str> = RESUME_HINT_PARTS.iter().map(|(key, _)| *key).collect();
+        assert_eq!(hint, reading);
+    }
+
+    /// 툴팁은 같은 명부를 쓰되 **뒤집지 않는다** — 문장은 읽는 순서 그대로다.
+    /// 두 소비자가 같은 명부에서 서로 다른 방향으로 읽는 것이 이 자리의 요점이라,
+    /// 한쪽이 다른 쪽을 따라가면(둘 다 정방향/둘 다 역방향) 화면이나 툴팁 중 하나가
+    /// 거꾸로 읽힌다.
+    #[test]
+    fn the_tooltip_reads_forwards_while_the_line_paints_backwards() {
+        let reading: Vec<&str> = RESUME_HINT_PARTS.iter().map(|(key, _)| *key).collect();
+        let painted: Vec<&str> = resume_hint_paint_order().map(|(key, _)| *key).collect();
+        assert_ne!(reading, painted, "두 소비자가 같은 방향으로 읽고 있다");
+
+        let text = resume_hint_text();
+        let lead = t(RESUME_HINT_PARTS[0].0).to_string();
+        let command = t(RESUME_HINT_PARTS[1].0).to_string();
+        let at_lead = text.find(&lead).expect("툴팁에 안내문이 없다");
+        let at_command = text.find(&command).expect("툴팁에 명령이 없다");
+        assert!(
+            at_lead < at_command,
+            "툴팁이 화면과 다른 순서로 읽힌다: {text}"
+        );
+    }
+
+    /// 명령만 등폭이다 — 셸에 그대로 붙여 넣는 문자열이라 인자 경계가 눈에 잡혀야 한다.
+    #[test]
+    fn only_the_command_part_is_monospaced() {
+        let mono: Vec<&str> = RESUME_HINT_PARTS
+            .iter()
+            .filter(|(_, mono)| *mono)
+            .map(|(key, _)| *key)
+            .collect();
+        assert_eq!(mono, ["dag.runner.resume_hint_command"]);
+    }
 }

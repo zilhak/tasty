@@ -365,6 +365,19 @@ pub(crate) fn handle_attach_surface(
 
 /// `pty.list` — 살아있는 headless PTY 전체 목록. **포커스 독립성**: 필터 없이 전 목록을
 /// 무조건 반환한다. 접근 시점에 idle TTL 을 lazy sweep 한다.
+/// 등록된 headless PTY 목록. 각 항목이 노출하는 것은 **소비자가 있는 값**뿐이다.
+///
+/// ★ `PtyEntry::watch_phase`([`crate::core::pty_registry::WatchPhase`])는 여기 **일부러**
+/// 안 싣는다. 읽는 쪽이 `#[cfg(test)]` 뿐이라 다음 사람이 죽은 코드로 읽기 쉬운데, 죽은
+/// 코드가 아니라 **아직 소비자를 안 만든 것**이다. 판단은 이렇다 — 그 값을 응답에 실으면
+/// IPC 계약이 한 칸 늘고, 계약은 한 번 늘면 되돌리기가 비싸다. 지금 그 값이 답하는 물음은
+/// "대기가 상한을 다 썼을 때 무엇을 봐야 하나" 하나뿐이고, 그 물음은 실패문이 자기 자리에서
+/// 답한다(`exit_wait_failure` → `observed_pty_state`). 즉 **밖으로 내보낼 이유가 아직 없다.**
+///
+/// 내보낼 이유가 생기는 자리는 하나다: 진단이 아니라 **운영**이 그 값을 물을 때 — 예컨대
+/// 에이전트가 "이 PTY 가 왜 안 끝나나" 를 프로세스 밖에서 판정해야 할 때. 그때 이 주석을
+/// 지우고 필드를 더하면서 `watch_phase` 의 `#[cfg(test)]` 게이트를 함께 벗긴다(같은 파일의
+/// `PtyRegistry::wait_for_exit` 가 쓰는 정책과 같다: 소비자가 생길 때 벗긴다).
 pub(crate) fn handle_list(engine: &mut CoreState, id: Value) -> JsonRpcResponse {
     lazy_sweep(engine);
     let ptys: Vec<Value> = engine
@@ -389,6 +402,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+    use crate::core::pty_registry::WatchPhase;
 
     fn engine() -> CoreState {
         let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
@@ -439,6 +453,14 @@ mod tests {
         resp.result.expect("expected success result")
     }
 
+    /// 종료 대기의 상한. **경주 예산이 아니라 안전망**이다 — 올려서 통과시키지 마라.
+    /// 근거(정상 구간과 이 값 사이에 표본이 없다)와 재검토 조건은 ADR-0211.
+    ///
+    /// **실패 갈래를 재현하는 법**: 이 상수를 잠깐 2 초로 줄이고, 아래 e2e 의 write 를
+    /// 종료를 부르지 않는 것(`echo hi` 등)으로 바꿔 그 시험 하나만 돌린다. 예산을 다 쓰고
+    /// 죽으며 `exit_wait_failure` 가 watcher 위상과 화면 관측을 찍는다. 확인 뒤 둘 다
+    /// 되돌린다 — 이 진단문은 실패 갈래에서만 도므로, 태워 보지 않으면 틀린 채로 남는다
+    /// (그 일이 실제로 있었다: 2026-09-06 macOS 빨강에서 이 자리가 반대 결론을 적었다).
     const EXIT_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
 
     /// `wait_for_exit` 가 `None` 을 낸 **두 사건**을 갈라 문장으로 만든다.
@@ -483,7 +505,8 @@ mod tests {
     /// exit-watcher 의 종료 신호를 기다려 종료 정보를 반환한다 — 고정 간격 폴링이 아니라
     /// `Condvar` 대기라, 러너 부하로 스케줄이 밀려도 종료 즉시 반환한다(ADR-0129 형태 C 근본).
     /// 상한은 신호가 영영 안 올 때만 걸리는 안전망이라 넉넉히 둔다(정상 경로는 수 ms).
-    fn wait_for_exit(engine: &mut CoreState, pty_id: u32) -> Value {
+    /// `sent` 는 그 pty 로 우리가 보낸 글자 — 실패 갈래에서 화면의 에코를 빼는 데 쓴다.
+    fn wait_for_exit(engine: &mut CoreState, pty_id: u32, sent: &str) -> Value {
         let started = std::time::Instant::now();
         match engine.pty_registry.wait_for_exit(pty_id, EXIT_WAIT_BUDGET) {
             Some(exit) => json!({
@@ -496,7 +519,7 @@ mod tests {
                 let elapsed = started.elapsed();
                 let still_registered = engine.pty_registry.contains(pty_id);
                 // 실패 갈래에서만 관측을 꺼낸다 — Some(exit) 정상 경로는 이 줄에 안 온다.
-                let observed = observed_pty_state(engine, pty_id);
+                let observed = observed_pty_state(engine, pty_id, sent);
                 panic!(
                     "{}",
                     exit_wait_failure(
@@ -511,17 +534,77 @@ mod tests {
         }
     }
 
+    /// exit-watcher 의 위상을 한 구절로. **`exit()` 가 `None` 인 이유**를 가르는 값이다.
+    ///
+    /// 화면만 보던 때는 이 갈림길이 아예 안 보였다 — `None` 하나가 "자식이 안 죽었다" 와
+    /// "우리가 잡을 자리에 못 갔다" 를 같은 얼굴로 냈다. 뒤쪽 둘(`NotAttached`·`Spawned`)은
+    /// 자식의 생사와 무관한 우리 쪽 사건이라, 그때 자식을 들여다보면 헛짚는다.
+    ///
+    /// `Reaped` 의 처방은 한 번 틀렸다가 고쳤다. 처음엔 "대기 쪽을 봐라" 였는데, 그 문장은
+    /// **표본 0 인 추측**이었다. 재 보니 그 조합이 나는 경로는 하나뿐이다 — 대기가 상한을 다
+    /// 써 마지막 검사를 마친 **뒤에** 자식이 끝나는 것. 대기가 놓치는 경로는 없다: 채우는
+    /// 쪽과 깨는 쪽이 같은 락 안이고, 대기는 만료로 깬 뒤에도 cell 을 다시 검사한다 —
+    /// **깨우기가 통째로 없어도 안 놓친다**(`crate::core::pty_registry` 의
+    /// `a_fill_is_never_lost_even_if_the_wakeup_never_comes` 가 100 회에 유실 0 을 잰다).
+    /// 그래서 이 갈래는 대기가 아니라 **늦은 자식**을 가리킨다 —
+    /// ADR-0211 이 "느려서 못 잡았다" 가 사실이 되는 경우로 예상한 그것이다.
+    fn watch_phase_note(phase: WatchPhase) -> &'static str {
+        match phase {
+            WatchPhase::NotAttached => {
+                "watcher 를 못 걸었다 — cell 은 영영 안 찬다(자식의 생사와 무관한 우리 쪽 사건)"
+            }
+            WatchPhase::Spawned => {
+                "watcher 스레드는 떴는데 wait 에 못 들어갔다 — 자식이 아니라 스케줄을 봐라"
+            }
+            WatchPhase::Waiting => "watcher 가 wait 에 들어가 아직 안 돌아왔다 — 자식이 안 죽었다",
+            WatchPhase::Reaped => {
+                "watcher 가 결과를 채웠다 — 자식이 끝나긴 했고 상한을 막 넘겨 늦게 끝났다\
+                 (채우는 것과 깨는 것이 같은 락 안이라 대기가 놓친 것이 아니다). \
+                 '느려서 못 잡았다' 가 사실이 되는 유일한 갈래다 — 상한을 다시 재라(ADR-0211)"
+            }
+        }
+    }
+
+    /// 화면에 남은 것이 **우리가 보낸 글자의 에코뿐**인지 가른다.
+    ///
+    /// **왜 이 물음이어야 하나.** PTY 의 에코는 자식이 아니라 라인 디시플린이 낸다 —
+    /// 자식이 셸이 아니어도, tty 를 한 글자도 읽지 않아도 master 로 되돌아온다.
+    /// 리눅스 실측(2026-09-08): 자식을 `sleep 60` 으로 두고 master 에 `exit 7\r` 을 쓰면
+    /// master 에서 `exit 7\r\n` 8 B 가 그대로 되읽힌다. 그래서 "화면에 내용이 있다" 는
+    /// **셸이 떴다는 증거가 못 된다.** 에코를 뺀 나머지가 남을 때만 자식이 무엇인가
+    /// 뱉었다고 말할 수 있다.
+    fn screen_holds_more_than_our_echo(visible: &str, sent: &str) -> bool {
+        let visible = visible.trim();
+        if visible.is_empty() {
+            return false;
+        }
+        let echo = sent.trim_matches(|c: char| c.is_whitespace());
+        if echo.is_empty() {
+            // 보낸 것이 없으면 화면의 무엇이든 자식이 낸 것이다.
+            return true;
+        }
+        !visible.replacen(echo, "", 1).trim().is_empty()
+    }
+
     /// 실패 갈래 진단 — pty 화면에서 **관측된 사실**을 한 줄로. 정상 경로에선 호출되지
     /// 않으므로 이 비용은 실패 때만 든다.
     ///
     /// 붙일 후보 셋 중 실제로 꺼낼 수 있는 것만 담는다. registry·terminal 어디도 마스터에서
     /// 읽은 **raw 바이트 수**나 write **누적 바이트**를 들지 않아, ① 의 정확한 바이트 수와
-    /// ③(write 바이트)은 못 꺼낸다. 대신 ② 화면 꼬리와, ① 의 근사(렌더된 화면이 비었는가 +
-    /// scrollback 줄 수)를 싣는다 — "셸이 프롬프트조차 안 뱉었나(exec 미기동)" 대 "떴는데 우리가
-    /// 쓴 것이 안 들어갔나" 를 이 값으로 가른다.
-    fn observed_pty_state(engine: &CoreState, pty_id: u32) -> String {
+    /// ③(write 바이트)은 못 꺼낸다. 대신 ② 화면 꼬리와, ① 의 근사(에코 밖의 출력이 있는가 +
+    /// scrollback 줄 수)를 싣는다 — "자식이 한 글자도 안 뱉었나" 대 "뱉었는데 안 죽나" 를
+    /// 이 값으로 가른다. `sent` 는 그 pty 로 우리가 보낸 글자다(에코를 빼는 데 쓴다).
+    fn observed_pty_state(engine: &CoreState, pty_id: u32, sent: &str) -> String {
+        // 위상이 먼저다 — 화면은 자식이 뭘 했는지의 근사지만, 위상은 우리가 잡을 자리에
+        // 갔는지를 직접 말한다. 엔트리가 없으면 그것도 관측이다.
+        let watcher = match engine.pty_registry.get(pty_id) {
+            Some(e) => watch_phase_note(e.watch_phase()),
+            None => "registry 에 엔트리가 없다 — 위상을 못 읽었다",
+        };
         let Some(t) = engine.find_terminal_by_id(pty_id) else {
-            return "관측: terminal 없음(registry/store desync — 화면을 못 읽었다)".to_string();
+            return format!(
+                "관측: [{watcher}] · [terminal 없음 — registry/store desync 라 화면을 못 읽었다]"
+            );
         };
         let screen = t.screen_text(false);
         let visible = screen.trim_end();
@@ -534,16 +617,85 @@ mod tests {
             .rev()
             .collect();
         let shell = if visible.trim().is_empty() {
-            "빈 채 — 셸이 아무것도 안 뱉음(exec 미기동/셸 안 뜬 쪽)"
+            "빈 채 — 자식이 한 글자도 안 뱉었고 에코조차 없다(write 가 안 갔거나 exec 미기동)"
+        } else if screen_holds_more_than_our_echo(visible, sent) {
+            "에코 밖의 출력이 있다 — 자식이 무엇인가 뱉었다(뜬 쪽. 안 죽는 이유를 봐라)"
         } else {
-            "내용 있음 — 셸은 떴다(우리가 쓴 것이 안 들어갔거나 안 죽는 쪽)"
+            "우리가 보낸 것의 에코뿐 — 자식이 떴다는 증거가 아니다(에코는 라인 디시플린이 낸다)"
         };
         format!(
-            "관측: 화면 {shell}(scrollback {sb} 줄, alt-screen {alt}), 꼬리=\"{tail}\"",
+            "관측: [{watcher}] · [화면 {shell}] (scrollback {sb} 줄, alt-screen {alt}, \
+             보낸 것=\"{sent}\", 꼬리=\"{tail}\")",
             sb = t.scrollback_len(),
             alt = t.is_alternate_screen(),
+            sent = sent.escape_default(),
             tail = tail.escape_default(),
         )
+    }
+
+    #[test]
+    fn the_watcher_phase_points_at_the_child_or_at_us_but_never_at_both() {
+        // 이 진단문의 값은 "무엇을 다음에 열어야 하나" 를 한 방향으로 가리키는 것이다.
+        // 앞의 둘은 우리 쪽(자식을 들여다보면 헛짚는다), 뒤의 둘은 자식 쪽·대기 쪽이다.
+        let ours = [
+            watch_phase_note(WatchPhase::NotAttached),
+            watch_phase_note(WatchPhase::Spawned),
+        ];
+        for note in ours {
+            assert!(
+                !note.contains("자식이 안 죽었다"),
+                "우리 쪽 사건인데 자식을 지목했다: {note}"
+            );
+        }
+        assert!(watch_phase_note(WatchPhase::Waiting).contains("자식이 안 죽었다"));
+
+        // `Reaped` 의 처방은 측정으로 한 번 뒤집혔다. 도달 경로가 "늦은 자식" 하나뿐이고
+        // 대기가 놓치는 경로는 없다는 것을 `pty_registry` 의 두 시험이 잰다 — 그래서 이
+        // 문장은 대기를 지목하면 안 되고, ADR-0211 의 재검토 조건으로 보내야 한다.
+        let reaped = watch_phase_note(WatchPhase::Reaped);
+        assert!(
+            !reaped.contains("대기 쪽"),
+            "표본 0 이던 옛 처방(대기 쪽)이 되살아났다: {reaped}"
+        );
+        assert!(reaped.contains("늦게 끝났다"), "{reaped}");
+        assert!(reaped.contains("ADR-0211"), "{reaped}");
+
+        // 네 위상이 서로 다른 문장을 낸다 — 하나로 뭉치면 가르는 값이 아니다.
+        let all = [
+            watch_phase_note(WatchPhase::NotAttached),
+            watch_phase_note(WatchPhase::Spawned),
+            watch_phase_note(WatchPhase::Waiting),
+            watch_phase_note(WatchPhase::Reaped),
+        ];
+        let mut seen: Vec<&str> = all.to_vec();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), 4, "위상 문장이 겹친다: {all:?}");
+    }
+
+    #[test]
+    fn the_echo_of_what_we_sent_is_not_evidence_that_the_child_ran() {
+        // 픽스처는 이 함수의 상수가 아니라 **2026-09-06 macOS 실패 로그가 실제로 찍은
+        // 화면 꼬리**다(run 34020997495, `spawn_with_command_captures_exit_code`).
+        // 그때 진단문은 이 화면을 보고 "셸은 떴다" 고 적었다 — 그 문장이 틀렸다.
+        assert!(
+            !screen_holds_more_than_our_echo("exit 7", "exit 7"),
+            "우리가 보낸 것과 같은 화면을 자식의 출력으로 셌다"
+        );
+        assert!(
+            !screen_holds_more_than_our_echo("exit 3", "exit 3\n"),
+            "보낸 것의 개행 차이로 에코 판정이 갈렸다"
+        );
+
+        // 에코 밖이 있으면 그때는 자식이 뱉은 것이다.
+        assert!(screen_holds_more_than_our_echo(
+            "user@host ~ % exit 7",
+            "exit 7"
+        ));
+        // 빈 화면은 어느 쪽도 아니다 — 호출자가 먼저 가른다.
+        assert!(!screen_holds_more_than_our_echo("   ", "exit 7"));
+        // 보낸 것이 없으면 화면의 무엇이든 자식이 낸 것이다.
+        assert!(screen_holds_more_than_our_echo("$ ", ""));
     }
 
     #[test]
@@ -603,7 +755,7 @@ mod tests {
         assert_eq!(w["id"].as_u64(), Some(pty_id as u64));
 
         // wait: 실제 exit code 3 을 exit-watcher 가 잡아야 한다.
-        let exited = wait_for_exit(&mut e, pty_id);
+        let exited = wait_for_exit(&mut e, pty_id, "exit 3\n");
         assert_eq!(exited["exit_code"].as_i64(), Some(3));
         assert_eq!(exited["success"], Value::Bool(false));
 
@@ -636,7 +788,7 @@ mod tests {
             &json!({ "command": ["exit", "7"] }),
         );
         let pty_id = ok(resp)["pty_id"].as_u64().unwrap() as u32;
-        let exited = wait_for_exit(&mut e, pty_id);
+        let exited = wait_for_exit(&mut e, pty_id, "exit 7");
         assert_eq!(exited["exit_code"].as_i64(), Some(7));
         // 정리: 살아있는 PTY 종료(응답은 확인 불필요).
         handle_kill(&mut e, json!(9), &json!({ "id": pty_id }));

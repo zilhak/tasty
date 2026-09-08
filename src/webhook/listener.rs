@@ -9,6 +9,8 @@
 //! ACK 는 실행 전/무관하게 확정되며 실행 결과에 닿지 않는다.
 
 use std::collections::BTreeMap;
+use std::io::Read;
+use std::sync::OnceLock;
 use std::thread;
 
 use serde_json::Value;
@@ -84,8 +86,8 @@ fn handle_request(request: tiny_http::Request) {
         return;
     };
 
-    let url = request.url().to_string();
-    let method = request.method().to_string().to_ascii_uppercase();
+    let url = request.url();
+    let method = request.method();
 
     let (path_raw, query_str) = match url.split_once('?') {
         Some((p, q)) => (p, q),
@@ -94,10 +96,17 @@ fn handle_request(request: tiny_http::Request) {
     let path = path_raw.trim_start_matches('/').to_string();
     let query = parse_query(query_str);
 
-    let headers = collect_headers(&request);
-    let body = read_json_body(&mut request);
+    let headers = request.headers();
 
-    let (ack, exec) = resolve_ack(&path, &method, &headers, &query, &body);
+    // body 상한 초과는 매칭보다 앞에서 끝난다 — 등록 여부·인증 여부와 무관하게
+    // 읽지 않기로 한 것이라, 그 판정에 레지스트리를 물을 이유가 없다.
+    let (ack, exec, body) = match request.read_json_body(max_body_bytes()) {
+        Ok(body) => {
+            let (ack, exec) = resolve_ack(&path, &method, &headers, &query, &body);
+            (ack, exec, body)
+        }
+        Err(BodyTooLarge) => (AckStatus::PayloadTooLarge, None, Value::Null),
+    };
 
     // 매칭·인증 실패는 출처 실패로 집계(임계치 초과 시 다음 요청부터 쿨다운 429).
     // 무엇을 세는지는 `abuse::counts_as_failure` 가 정한다 — 무엇이 남용인가는
@@ -109,9 +118,7 @@ fn handle_request(request: tiny_http::Request) {
     }
 
     // 단방향: ACK 를 실행 전/무관하게 즉시 확정·응답.
-    if let Err(e) = request.respond(build_ack(ack)) {
-        tracing::debug!("webhook ack respond failed: {e}");
-    }
+    request.respond(ack);
 
     // fire-and-forget 실행 — 실행 결과는 응답 경로에 절대 닿지 않는다.
     if let Some((calls, Some(injector))) = exec {
@@ -124,13 +131,110 @@ fn handle_request(request: tiny_http::Request) {
     }
 }
 
+/// body 가 요청당 상한을 넘었다 — 그 자리에서 읽기를 멈췄다는 표시.
+struct BodyTooLarge;
+
+/// 요청 하나가 읽는 body 의 상한(바이트).
+///
+/// **이 이름이 약속하는 것은 요청 하나다.** 동시에 들어오는 요청 수는 이 값이 묶지
+/// 않으므로 최악 점유는 `상한 × 동시 요청 수` 이고, 리스너는 요청마다 스레드를 띄운다.
+/// 그 곱은 이 상수의 범위 밖이다
+/// ([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
+///
+/// 기본 1 MiB. `TASTY_WEBHOOK_MAX_BODY_BYTES` 로 오버라이드한다(0·파싱 실패는 기본값).
+fn max_body_bytes() -> usize {
+    const DEFAULT_MAX_BODY_BYTES: usize = 1024 * 1024;
+    static CACHED: OnceLock<usize> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        std::env::var("TASTY_WEBHOOK_MAX_BODY_BYTES")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(DEFAULT_MAX_BODY_BYTES)
+    })
+}
+
+/// 남용차단 선검사를 **통과한** 요청.
+///
+/// 이 타입이 있는 이유는 하나다 — `body` 를 읽는 길이 여기밖에 없게 만드는 것.
+/// 쿨다운 중인 출처의 요청은 [`reject_if_abusive`] 가 그 자리에서 소비하므로
+/// `Screened` 가 만들어지지 않고, 따라서 **차단된 출처의 body 는 메모리에 올라가지
+/// 않는다** — `Content-Length` 가 1024 를 넘을 때. 그 이하는 `tiny_http` 이 요청을
+/// 만드는 단계에서 이미 버퍼에 읽어 두므로 이 타입이 손댈 수 있는 범위 밖이다. 순서를 주석으로 적어 두면 다음 사람이 한 줄 옮겨 깨뜨릴 수 있지만,
+/// 소유권으로 적으면 그 실수가 컴파일되지 않는다
+/// ([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)).
+struct Screened(tiny_http::Request);
+
+impl Screened {
+    fn url(&self) -> String {
+        self.0.url().to_string()
+    }
+
+    fn method(&self) -> String {
+        self.0.method().to_string().to_ascii_uppercase()
+    }
+
+    /// 요청 헤더를 소문자 필드명 맵으로 수집.
+    fn headers(&self) -> BTreeMap<String, String> {
+        let mut headers = BTreeMap::new();
+        for h in self.0.headers() {
+            headers.insert(
+                h.field.as_str().as_str().to_ascii_lowercase(),
+                h.value.as_str().to_string(),
+            );
+        }
+        headers
+    }
+
+    /// 요청 바디를 `limit` 바이트까지만 읽어 JSON 으로 파싱. 읽기 실패/비-JSON 바디는
+    /// `Value::Null`, 상한 초과는 [`BodyTooLarge`].
+    ///
+    /// **여기가 body 가 메모리에 올라오는 유일한 자리다**([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)),
+    /// 그래서 상한도 여기 하나로 선다. 두 갈래를 함께 막는다 —
+    /// 선언된 길이(`Content-Length`)가 이미 크면 **한 바이트도 안 읽고**, 길이 선언이
+    /// 없는 `Transfer-Encoding: chunked` 는 상한 + 1 바이트에서 멈춘다. 뒤엣것이 없으면
+    /// 상한이 상한이 아니다 — chunked 에는 선언된 길이가 아예 없다
+    /// ([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
+    ///
+    /// 상한을 넘겨도 남은 것은 읽지 않는다. `tiny_http` 의 `respond`/`Drop` 은 미읽은
+    /// body 를 소비하지 않으므로, 여기서 멈추면 거기서 멈춘다.
+    fn read_json_body(&mut self, limit: usize) -> Result<Value, BodyTooLarge> {
+        if self
+            .0
+            .body_length()
+            .is_some_and(|declared| declared > limit)
+        {
+            return Err(BodyTooLarge);
+        }
+        let mut body_str = String::new();
+        // 상한 + 1 — 딱 상한만 읽으면 "정확히 상한" 과 "더 있다" 를 못 가른다.
+        let capped = limit.saturating_add(1) as u64;
+        if let Err(e) = self
+            .0
+            .as_reader()
+            .take(capped)
+            .read_to_string(&mut body_str)
+        {
+            tracing::debug!("webhook body read failed: {e}");
+        }
+        if body_str.len() > limit {
+            return Err(BodyTooLarge);
+        }
+        Ok(serde_json::from_str::<Value>(&body_str).unwrap_or(Value::Null))
+    }
+
+    /// 고정 ACK 로 응답하고 요청을 소비한다.
+    fn respond(self, ack: AckStatus) {
+        if let Err(e) = self.0.respond(build_ack(ack)) {
+            tracing::debug!("webhook ack respond failed: {e}");
+        }
+    }
+}
+
 /// 남용 차단(쿨다운 중) 출처면 즉시 429 로 응답하고 `None`(요청 소비 완료,
 /// 호출자는 더 진행하지 않음)을 반환한다. 아니면 `request` 소유권을 그대로
 /// 돌려준다.
-fn reject_if_abusive(
-    request: tiny_http::Request,
-    source: Option<&str>,
-) -> Option<tiny_http::Request> {
+fn reject_if_abusive(request: tiny_http::Request, source: Option<&str>) -> Option<Screened> {
     if let Some(src) = source
         && abuse::is_source_blocked(src)
     {
@@ -139,28 +243,7 @@ fn reject_if_abusive(
         }
         return None;
     }
-    Some(request)
-}
-
-/// 요청 헤더를 소문자 필드명 맵으로 수집.
-fn collect_headers(request: &tiny_http::Request) -> BTreeMap<String, String> {
-    let mut headers = BTreeMap::new();
-    for h in request.headers() {
-        headers.insert(
-            h.field.as_str().as_str().to_ascii_lowercase(),
-            h.value.as_str().to_string(),
-        );
-    }
-    headers
-}
-
-/// 요청 바디를 읽어 JSON 으로 파싱. 읽기 실패/비-JSON 바디는 `Value::Null`.
-fn read_json_body(request: &mut tiny_http::Request) -> Value {
-    let mut body_str = String::new();
-    if let Err(e) = request.as_reader().read_to_string(&mut body_str) {
-        tracing::debug!("webhook body read failed: {e}");
-    }
-    serde_json::from_str::<Value>(&body_str).unwrap_or(Value::Null)
+    Some(Screened(request))
 }
 
 /// 매칭된 웹훅 실행에 필요한 (호출 시퀀스, injector). injector 는 아직 준비되지

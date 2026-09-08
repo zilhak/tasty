@@ -14,14 +14,27 @@
 //! 모든 시각 판정은 `now: Instant` 를 인자로 받는 순수 코어(`AbuseTracker`)에
 //! 모아 테스트가 시간을 통제할 수 있게 한다. 전역 진입점은 `Instant::now()` 를 쓴다.
 //!
-//! 이 모듈이 담은 명부 중 **결정으로 적힌 것은 셋뿐**이다 — 집계 대상
+//! 이 모듈이 담은 명부 열하나 중 **아홉이 결정으로 적혀 있다** — 집계 대상
 //! ([ADR-0195](../../docs/adr/0195-abuse-counting-includes-rejected-tokens.md)),
 //! 문턱값과 출처 키
-//! ([ADR-0196](../../docs/adr/0196-abuse-thresholds-and-source-key.md)), 락 poison
-//! 복구([ADR-0177](../../docs/adr/0177-recovery-forbidden-locks-are-judged-by-frame-boundary-type.md)).
-//! 나머지(윈도우 리셋·쿨다운 해제 시점·`MAX_SOURCES`·연장 방지)는 **관찰로 둔다** —
-//! 그 판정과 근거(소비처 계수)는 ADR-0196 의 "올리지 않은 여섯" 에 있다. 값을 만지기
-//! 전에 그것부터 읽어라.
+//! ([ADR-0196](../../docs/adr/0196-abuse-thresholds-and-source-key.md)), 표의 크기 문턱과
+//! 순회 간격([ADR-0197](../../docs/adr/0197-the-source-table-cap-is-a-prune-trigger.md)),
+//! 쿨다운의 시간 의미론 셋
+//! ([ADR-0198](../../docs/adr/0198-a-cooldown-is-fixed-at-entry.md)), 차단 판정이 body
+//! 읽기보다 앞이라는 것
+//! ([ADR-0199](../../docs/adr/0199-the-block-is-decided-before-the-body-is-read.md)),
+//! 락 poison 복구([ADR-0177](../../docs/adr/0177-recovery-forbidden-locks-are-judged-by-frame-boundary-type.md)).
+//!
+//! **관찰로 남은 것은 둘**이고, 값이 아니라 표면의 *존재*라 바뀔 때 판단이 갈리지
+//! 않는다. 다만 언제 다시 보는지는 적어 둔다.
+//!
+//! - **env 오버라이드 3 종의 이름** — 이름을 바꾸거나 없애면 사용자가 걸어 둔 설정이
+//!   조용히 무시된다(파싱 실패와 미설정이 같은 값으로 떨어진다). 그 표면이 설정 파일
+//!   같은 다른 채널로 옮겨가면 그때 결정으로 올린다.
+//! - **카운터가 in-memory 라 재시작하면 쿨다운이 사라지는 것** — 지금은 그것이
+//!   `webhooks.toml` 에 남는 등록과 대비되는 사실로 문서에만 있다. 차단 상태를 재시작
+//!   너머로 잇자는 요구가 나오면(또는 그 소멸이 운영에서 문제로 관측되면) 그때 올린다 —
+//!   영속화는 표 크기·회수 규칙(ADR-0197)과 함께 봐야 하는 변경이다.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -29,13 +42,30 @@ use std::time::{Duration, Instant};
 
 use super::ack::AckStatus;
 
-/// 출처 상태 맵이 무한정 커지지 않도록 이 크기를 넘으면 만료 엔트리를 정리한다.
+/// 출처 표를 정리해 볼 **크기 문턱** — 이 아래에서는 순회를 아예 안 한다.
 ///
-/// **이 값의 근거는 기록이 없고, 소비처도 아래 비교 한 자리뿐이다** — 낮춰도 쿨다운
-/// 중이거나 윈도우 안인 엔트리는 `prune` 이 보존하므로 차단 기능이 깨지지 않고, 올려도
-/// 어떤 단언도 깨지지 않는다. 그래서 결정으로 올리지 않고 관찰로 뒀다(ADR-0196). 여기에
-/// 소비처가 생기면 그때 근거를 재서 올린다.
-const MAX_SOURCES: usize = 4096;
+/// **상한이 아니다.** `prune` 은 쿨다운 중이거나 윈도우 안인 엔트리를 보존하는데,
+/// 서로 다른 출처가 윈도우 안에서 한꺼번에 실패하면 **전부 그 조건을 만족**해 하나도
+/// 안 지워진다 — 표는 이 값을 넘어 계속 자란다(실측: 윈도우 안 10,000 출처 → 길이
+/// 10,000). 표의 실제 크기를 정하는 것은 이 값이 아니라 **유입률 × 윈도우**이고,
+/// 유입이 멎으면 다음 실패 한 건이 전부 회수한다.
+///
+/// 값의 근거와 그때의 비용 실측은
+/// [ADR-0197](../../docs/adr/0197-the-source-table-cap-is-a-prune-trigger.md).
+const PRUNE_TRIGGER_SOURCES: usize = 4096;
+
+/// `prune` 순회의 **최소 간격**. 문턱을 넘은 뒤에도 순회는 윈도우당 한 번만 돈다.
+///
+/// 없으면 문턱 초과 구간에서 실패 한 건마다 표 전체를 훑는다 — 그리고 그 순회는
+/// **아무것도 못 지우면서** 반복된다(위 참조). 그 비용이 전역 락 안에서 나므로 웹훅
+/// 처리량 상한이 된다(실측 ADR-0197). 간격을 윈도우로 잡는 이유는 지울 자격이 생기는
+/// 단위가 윈도우이기 때문이다 — 그보다 자주 훑어도 새로 지울 것이 없다.
+///
+/// 회수가 최대 윈도우 하나만큼 늦어진다. 표가 그 시간 동안 유입률 × 윈도우 규모로
+/// 남는 것은 간격이 없을 때와 같다.
+fn prune_interval(cfg: AbuseConfig) -> Duration {
+    cfg.window
+}
 
 /// 남용 차단 설정값.
 #[derive(Debug, Clone, Copy)]
@@ -108,6 +138,9 @@ struct SourceState {
 pub struct AbuseTracker {
     config: AbuseConfig,
     sources: HashMap<String, SourceState>,
+    /// 마지막으로 `prune` 순회를 **실제로 돈** 시각. `None` 이면 아직 한 번도 안 돌았다
+    /// — 시각은 주입받는 값이라 생성자가 `Instant::now()` 를 부르지 않는다.
+    last_prune: Option<Instant>,
 }
 
 impl AbuseTracker {
@@ -115,6 +148,7 @@ impl AbuseTracker {
         Self {
             config,
             sources: HashMap::new(),
+            last_prune: None,
         }
     }
 
@@ -167,11 +201,21 @@ impl AbuseTracker {
         self.prune(now);
     }
 
-    /// 맵이 상한을 넘으면 쿨다운도 없고 윈도우도 만료된 엔트리를 걷어낸다.
+    /// 표가 문턱을 넘고 마지막 순회로부터 간격이 지났으면, 쿨다운도 없고 윈도우도
+    /// 만료된 엔트리를 걷어낸다.
+    ///
+    /// 두 갈래 모두 **조기 반환이 정상 경로**다 — 문턱 아래에서는 지울 것이 없고,
+    /// 간격 안에서는 지난번에 이미 훑어 새로 자격이 생긴 것이 없다.
     fn prune(&mut self, now: Instant) {
-        if self.sources.len() <= MAX_SOURCES {
+        if self.sources.len() <= PRUNE_TRIGGER_SOURCES {
             return;
         }
+        if let Some(last) = self.last_prune
+            && now.duration_since(last) < prune_interval(self.config)
+        {
+            return;
+        }
+        self.last_prune = Some(now);
         let window = self.config.window;
         self.sources.retain(|_, st| {
             let cooling = st.cooldown_until.map(|u| now < u).unwrap_or(false);
@@ -226,6 +270,10 @@ pub fn record_failure(source: &str) {
 /// 발신자가 비밀을 무차별 대입하는 자리다 — 통 A 도 안 태우므로 여기서 세지 않으면
 /// 그 대입에 붙는 비용이 어디에도 없다([ADR-0195](../../docs/adr/0195-abuse-counting-includes-rejected-tokens.md)).
 ///
+/// `PayloadTooLarge`(413)도 센다 — 상한을 넘는 body 를 반복해 보내는 것은 그 자체가
+/// 자원을 겨눈 요청이고, 그 요청도 아무것도 얻지 못하고 끝난다. 상한 덕에 한 건의 값은
+/// 묶였지만 반복 횟수는 안 묶인다([ADR-0200](../../docs/adr/0200-webhook-body-has-a-per-request-byte-cap.md)).
+///
 /// 나머지 셋은 그 물음에 답이 다르다.
 /// - `Received`(200) — 정상 트래픽. 세면 남용차단이 정상 발신자를 막는다.
 /// - `Gone`(410) — 만료된 등록. path 를 맞춰야 나오지만 **추측할 공간이 없다**(같은
@@ -238,7 +286,10 @@ pub fn record_failure(source: &str) {
 /// 한다. 이 게이트가 조용히 빠뜨리는 것이 곧 우회다.
 pub fn counts_as_failure(status: AckStatus) -> bool {
     match status {
-        AckStatus::NotFound | AckStatus::MethodNotAllowed | AckStatus::Unauthorized => true,
+        AckStatus::NotFound
+        | AckStatus::MethodNotAllowed
+        | AckStatus::Unauthorized
+        | AckStatus::PayloadTooLarge => true,
         AckStatus::Received | AckStatus::Gone | AckStatus::TooManyRequests => false,
     }
 }
@@ -255,6 +306,7 @@ mod tests {
         assert!(counts_as_failure(AckStatus::NotFound));
         assert!(counts_as_failure(AckStatus::MethodNotAllowed));
         assert!(counts_as_failure(AckStatus::Unauthorized));
+        assert!(counts_as_failure(AckStatus::PayloadTooLarge));
         // 안 센다 — 정상 트래픽 / 추측 공간 없음 / 이미 쿨다운(세면 자기 연장).
         assert!(!counts_as_failure(AckStatus::Received));
         assert!(!counts_as_failure(AckStatus::Gone));
@@ -286,6 +338,95 @@ mod tests {
         }
     }
 
+    /// **문턱은 상한이 아니다.** 서로 다른 출처가 윈도우 안에서 실패하면 `prune` 이
+    /// 보존 조건(쿨다운 중 · 윈도우 안)을 모두 만족시켜 하나도 못 지우고, 표는 문턱을
+    /// 넘어 계속 자란다. 이름이 상한처럼 읽혀 온 자리라 값으로 못박는다 — 표 크기를
+    /// 정하는 것은 이 문턱이 아니라 유입률 × 윈도우다(ADR-0197).
+    #[test]
+    fn the_table_grows_past_the_prune_trigger() {
+        let mut t = AbuseTracker::new(cfg(20));
+        let base = Instant::now();
+        let n = PRUNE_TRIGGER_SOURCES + 1000;
+        for i in 0..n as u32 {
+            t.record_failure(
+                &format!("10.{}.{}.{}", i / 65536, (i / 256) % 256, i % 256),
+                base,
+            );
+        }
+        assert_eq!(
+            t.sources.len(),
+            n,
+            "윈도우 안 엔트리는 문턱을 넘어도 안 밀린다"
+        );
+    }
+
+    /// 유입이 멎으면 표는 회수된다 — 윈도우 밖이 된 뒤 실패 **한 건**이 전부 걷어낸다.
+    /// 위 테스트와 짝이다: 상한이 없다는 것이 곧 누수라는 뜻은 아니다.
+    #[test]
+    fn an_idle_table_is_reclaimed_by_the_next_failure() {
+        let mut t = AbuseTracker::new(cfg(20));
+        let base = Instant::now();
+        for i in 0..(PRUNE_TRIGGER_SOURCES + 100) as u32 {
+            t.record_failure(
+                &format!("10.{}.{}.{}", i / 65536, (i / 256) % 256, i % 256),
+                base,
+            );
+        }
+        t.record_failure("172.16.0.1", base + Duration::from_secs(11));
+        assert_eq!(
+            t.sources.len(),
+            1,
+            "윈도우 밖 엔트리는 다음 실패 한 건이 회수한다"
+        );
+    }
+
+    /// 쿨다운 중인 엔트리는 순회를 견딘다 — 새 출처를 뿌려 자기 차단을 밀어낼 수 없다.
+    /// 이것이 없으면 표를 넘치게 하는 것 자체가 차단 해제 수단이 된다.
+    #[test]
+    fn a_cooling_entry_survives_a_prune() {
+        let mut t = AbuseTracker::new(cfg(2));
+        let base = Instant::now();
+        t.record_failure("cool", base);
+        t.record_failure("cool", base);
+        let later = base + Duration::from_secs(11);
+        for i in 0..(PRUNE_TRIGGER_SOURCES + 100) as u32 {
+            t.record_failure(
+                &format!("11.{}.{}.{}", i / 65536, (i / 256) % 256, i % 256),
+                later,
+            );
+        }
+        assert!(
+            t.is_blocked("cool", later),
+            "쿨다운 엔트리가 축출되면 안 된다"
+        );
+    }
+
+    /// 문턱을 넘은 뒤에도 순회는 **윈도우당 한 번**만 돈다. 없으면 실패 한 건마다 표
+    /// 전체를 훑고, 그 순회는 지울 것이 없는 동안에도 반복된다(비용 실측은 ADR-0197).
+    #[test]
+    fn the_walk_runs_at_most_once_per_window() {
+        let mut t = AbuseTracker::new(cfg(20));
+        let base = Instant::now();
+        for i in 0..(PRUNE_TRIGGER_SOURCES + 1) as u32 {
+            t.record_failure(
+                &format!("10.{}.{}.{}", i / 65536, (i / 256) % 256, i % 256),
+                base,
+            );
+        }
+        assert_eq!(
+            t.last_prune,
+            Some(base),
+            "문턱을 넘은 그 자리에서 한 번은 돈다"
+        );
+
+        t.record_failure("172.16.0.1", base + Duration::from_secs(5));
+        assert_eq!(t.last_prune, Some(base), "간격 안에서는 다시 안 돈다");
+
+        let after = base + Duration::from_secs(11);
+        t.record_failure("172.16.0.2", after);
+        assert_eq!(t.last_prune, Some(after), "간격이 지나면 다시 돈다");
+    }
+
     #[test]
     fn trips_cooldown_at_threshold() {
         let base = Instant::now();
@@ -310,6 +451,45 @@ mod tests {
         assert!(t.is_blocked("9.9.9.9", base));
         // 쿨다운(60s) 경과 후 해제.
         assert!(!t.is_blocked("9.9.9.9", base + Duration::from_secs(61)));
+    }
+
+    /// **쿨다운은 연장되지 않는다** — 차단 중에 더 두드려도 만료 시각은 진입 때 정해진
+    /// 값 그대로다. 연장하면 계속 두드리는 발신자가 사실상 영구 차단되고, 그 발신자가
+    /// 토큰을 잘못 설정한 정상 발신자일 때 스스로 빠져나올 길이 사라진다(ADR-0198).
+    #[test]
+    fn a_cooldown_is_not_extended_by_more_failures() {
+        let base = Instant::now();
+        let mut t = AbuseTracker::new(cfg(2));
+        t.record_failure("loud", base);
+        t.record_failure("loud", base);
+        assert!(t.is_blocked("loud", base));
+        // 차단 중 재실패 — 만료 시각을 밀지 못한다.
+        for i in 1..=5 {
+            t.record_failure("loud", base + Duration::from_secs(30 + i));
+        }
+        assert!(
+            !t.is_blocked("loud", base + Duration::from_secs(61)),
+            "쿨다운 60s 는 진입 시각이 정한다 — 재실패가 밀지 않는다"
+        );
+    }
+
+    /// 쿨다운이 풀리면 **카운터도 백지**가 된다. 안 그러면 해제 직후 실패 한 건이 곧장
+    /// 임계치를 다시 채워, 연장을 막아 둔 것이 의미를 잃는다(ADR-0198).
+    #[test]
+    fn an_expired_cooldown_starts_from_a_clean_count() {
+        let base = Instant::now();
+        let mut t = AbuseTracker::new(cfg(3));
+        for _ in 0..3 {
+            t.record_failure("back", base);
+        }
+        let after = base + Duration::from_secs(61);
+        // 실제 경로와 같은 순서 — 리스너는 매 요청 `is_blocked` 를 먼저 묻는다.
+        assert!(!t.is_blocked("back", after));
+        t.record_failure("back", after);
+        assert!(
+            !t.is_blocked("back", after),
+            "해제 뒤 첫 실패 한 건으로 다시 차단되면 안 된다(임계치 3 이 새로 필요)"
+        );
     }
 
     #[test]

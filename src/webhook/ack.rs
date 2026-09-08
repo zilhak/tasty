@@ -9,7 +9,7 @@ use std::io::Cursor;
 
 use tiny_http::Response;
 
-/// 웹훅 응답 상태 — 고정 enum. 인증(401)·만료(410)·남용차단(429) 반영.
+/// 웹훅 응답 상태 — 고정 enum. 인증(401)·만료(410)·body 상한(413)·남용차단(429) 반영.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AckStatus {
     /// 200 — 매칭 성공, 핸들러에 전달됨.
@@ -22,6 +22,8 @@ pub enum AckStatus {
     MethodNotAllowed,
     /// 410 — lifetime 만료(시간 초과 / 횟수 소진). 호출 시 lazy 삭제됨.
     Gone,
+    /// 413 — body 가 요청당 상한을 넘었다. 상한 너머는 읽지 않는다.
+    PayloadTooLarge,
     /// 429 — 남용 차단 쿨다운 중인 출처(실패 반복 — `abuse::counts_as_failure`).
     /// 매칭 전 즉시 거부.
     TooManyRequests,
@@ -35,6 +37,7 @@ impl AckStatus {
             AckStatus::NotFound => (404, "not found"),
             AckStatus::MethodNotAllowed => (405, "method not allowed"),
             AckStatus::Gone => (410, "gone"),
+            AckStatus::PayloadTooLarge => (413, "payload too large"),
             AckStatus::TooManyRequests => (429, "too many requests"),
         }
     }

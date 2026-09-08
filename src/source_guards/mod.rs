@@ -36,6 +36,30 @@
 //! "레포에 진짜 위반을 심었다 되돌리기" 로만 가능해지는데, 그건 느리고 트리를
 //! 더럽히며 되돌리다 사고가 난다.
 //!
+//! ## 판정 단위는 함수 하나다 — 그 벽을 넘는 도구가 하나 있다
+//!
+//! 여기 있는 판정기는 대개 [`enclosing_fn`] 으로 위치를 품는 함수를 잘라 그 **안**을
+//! 본다. 그래서 호출자에 있는 것 — 그 함수가 루프 안에서 불리는가, 조건 분기 뒤에
+//! 있는가, 한 번 불리는가 — 은 원리적으로 안 보인다. 이건 어느 가드 하나의 사정이
+//! 아니다: **2026-09-08 실측, 이 디렉토리의 판정기 39 개 중 호출자 방향으로 한 단계라도
+//! 올라가는 것이 0 건이었다.** 39 개가 같은 벽에 있었다는 뜻이고, 그래서 이 벽은 자기
+//! 가드를 짓는 사람에게 자기 가드의 한계로 보인다.
+//!
+//! 그 39 를 낳은 술어를 함께 적는다 — 수만 적으면 다음 사람이 다른 술어로 세고 같은
+//! 이름을 단다: **`src/source_guards/*.rs` 중 `mod.rs` 를 뺀 것**(전부 `#[test]` 를
+//! 하나 이상 가진다). `mod.rs` 는 판정기가 아니라 그것들이 공유하는 판정 **수단**이라
+//! 뺐다. 처음 적을 때 40 이었던 것이 이 차이다.
+//!
+//! 이 수에는 **어느 사본에서 셌는가** 라는 물음이 없다 — 파일 목록에서 나오지 파일
+//! 내용을 파서 나오지 않기 때문이다. 내용을 파서 얻은 수에는 그것도 함께 적어야 한다.
+//!
+//! 그 벽을 넘는 한 단계가 이제 있다 — [`callers_of`] 와 [`CallSite`]. 이름으로 호출처를
+//! 전수 스캔해 각 자리의 품는 함수와 루프 여부를 값으로 주고, [`arg_at`] 이 그 자리의
+//! 인자를 읽는다. 함수 **안**을 묻는 물음이 막혔을 때, 그것이 정말 판정 불가인지 아니면
+//! 아직 호출자를 안 본 것인지 먼저 갈라라. 소비자는 둘이다 —
+//! `frame_clock_arming::no_frame_entry_is_called_from_inside_a_loop`(루프 여부)와
+//! `dispatch_name_literals::the_roster_is_reached_from_the_request_method`(인자 값).
+//!
 //! ## 면제에는 그것을 겨냥한 변이를 붙인다
 //!
 //! 면제(allowlist · 창 · skip 조건)를 하나 넣을 때마다 **그 면제 창 안쪽에 진짜
@@ -44,6 +68,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// 스캔 하한 — 워커가 망가져 파일을 거의 못 읽으면 모든 가드가 조용히 통과한다.
 /// 현재 실측은 1100 개 남짓이라 여유를 두고 잡는다.
@@ -115,14 +140,37 @@ const METHOD_EXPR: &str = "request.method";
 /// 문자열 리터럴이어야 한다. 그 밖의 모양(값을 위임 함수 인자로 **넘기는** 것)은 여기서
 /// 이름을 가르지 않으므로 대상이 아니다.
 fn opaque_method_sites(body: &str) -> Vec<String> {
+    opaque_sites_for(body, METHOD_EXPR)
+}
+
+/// 위 판정을 **이름을 읽는 표현식**에 대해 연다 (R1072).
+///
+/// 원래 이 함수는 `METHOD_EXPR` 을 본문에서 직접 읽었다. 그러면 같은 물음 — "이 자리가
+/// 갈래를 치는 값이 리터럴인가" — 을 **다른 표현식**에 대해 물을 수가 없다. 위임
+/// 라우터는 이름을 `request.method` 가 아니라 인자(`method: &str`)로 받으므로 표현식이
+/// 다를 뿐 물음이 같다. 상수 하나가 두 모수를 판정하면 둘 중 하나는 반드시 틀린다.
+///
+/// 판정 자리 **넷**을 본다. 앞 셋은 `request.method` 꼴에서 오고, 넷째(`match <식> {`)는
+/// 이미 `&str` 인 인자에는 `.as_str()` 이 안 붙기 때문에 필요하다.
+///
+/// 경계: 표현식 앞뒤에 식별자 문자가 붙어 있으면 다른 이름의 조각이다. 이 검사가 없으면
+/// `method` 라는 표현식이 `method_scoped_resource_id` 안에서 잡힌다(실측).
+fn opaque_sites_for(body: &str, expr: &str) -> Vec<String> {
     // 주석을 먼저 걷어낸다. 안 걷으면 주석 안의 괄호가 깊이를 흔들어 팔의 시작 자리를
     // 어긋나게 하고(실측), 주석에 적힌 메서드 이름이 판정 자리로 잡힌다.
     let body = strip_comments(body);
     let body = body.as_str();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
     let mut out = Vec::new();
     let mut at = 0usize;
-    while let Some(i) = body[at..].find(METHOD_EXPR) {
-        at += i + METHOD_EXPR.len();
+    while let Some(i) = body[at..].find(expr) {
+        let start = at + i;
+        at = start + expr.len();
+        if body[..start].chars().next_back().is_some_and(is_word)
+            || body[at..].chars().next().is_some_and(is_word)
+        {
+            continue;
+        }
         let rest = body[at..].trim_start();
         if let Some(r) = rest.strip_prefix("==") {
             if !r.trim_start().starts_with('"') {
@@ -137,6 +185,8 @@ fn opaque_method_sites(body: &str) -> Vec<String> {
             if r.starts_with('{') {
                 out.extend(non_literal_arms(r));
             }
+        } else if rest.starts_with('{') && body[..start].trim_end().ends_with("match") {
+            out.extend(non_literal_arms(rest));
         }
     }
     out
@@ -572,6 +622,202 @@ fn matching_delim(masked: &str, open: usize) -> Option<usize> {
     None
 }
 
+/// 아래 셋은 **"이 위치를 품는 함수가 무엇인가"** 라는 한 물음의 판정기다. 소비자가
+/// 둘 이상이라 여기 있다 — 가드마다 사본을 두면 같은 물음에 답이 둘이 되고, 갈린 쪽은
+/// 조용하다([`mask_non_code`] 를 여기로 올린 것과 같은 이유).
+/// `from` 이후 **같은 괄호 깊이**의 첫 `{` 블록 범위. `(`·`[` 그룹은 통째로 건너뛴다 —
+/// `for (a, b) in xs {` 처럼 헤더에 괄호가 먼저 오는 형태를 위해서다. `;` 를 먼저
+/// 만나면 블록이 없는 것이다.
+fn block_after(masked: &str, from: usize) -> Option<(usize, usize)> {
+    let mut i = from;
+    while i < masked.len() {
+        let c = masked[i..].chars().next()?;
+        match c {
+            '{' => return matching_delim(masked, i).map(|end| (i, end)),
+            '(' | '[' => i = matching_delim(masked, i)? + 1,
+            ';' => return None,
+            _ => i += c.len_utf8(),
+        }
+    }
+    None
+}
+
+/// 파일 안의 모든 `fn` 항목을 (이름, 본문 시작, 본문 끝, `fn` 키워드 위치)로.
+/// 본문 없는 선언(`fn f(&self);`)은 건너뛴다.
+fn fn_spans(masked: &str) -> Vec<(String, usize, usize, usize)> {
+    let mut out = Vec::new();
+    for kw in word_positions(masked, "fn") {
+        let after = kw + "fn".len();
+        let name: String = masked[after..]
+            .chars()
+            .skip_while(|c| c.is_whitespace())
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue; // `fn(u32) -> u32` 같은 타입 자리.
+        }
+        let Some((open, close)) = block_after(masked, after) else {
+            continue;
+        };
+        out.push((name, open, close, kw));
+    }
+    out
+}
+
+/// `pos` 를 품는 가장 안쪽 `fn`.
+fn enclosing_fn(
+    spans: &[(String, usize, usize, usize)],
+    pos: usize,
+) -> Option<&(String, usize, usize, usize)> {
+    spans
+        .iter()
+        .filter(|(_, open, close, _)| *open < pos && pos < *close)
+        .min_by_key(|(_, open, close, _)| close - open)
+}
+
+/// `[open, close)` 안의 **루프 블록** 범위들 — `for`·`while`·`loop` 의 본문.
+///
+/// `frame_clock_arming` 에서 올렸다. 아래 [`callers_of`] 가 같은 물음("이 위치가 루프
+/// 안인가")을 호출자 쪽에서 물으므로, 사본을 둘로 두면 갈린 쪽이 조용해진다.
+fn loop_blocks(masked: &str, open: usize, close: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for kw in ["for", "while", "loop"] {
+        for pos in word_positions(masked, kw) {
+            if pos <= open || pos >= close {
+                continue;
+            }
+            if let Some(span) = block_after(masked, pos + kw.len())
+                && span.1 <= close
+            {
+                out.push(span);
+            }
+        }
+    }
+    out
+}
+
+/// 어떤 함수를 **부르는 자리** 하나 — 판정 단위를 함수에서 한 칸 넓힌 결과.
+///
+/// 이 디렉토리의 판정기는 전부 [`enclosing_fn`] 으로 함수 하나를 잘라 그 안을 본다.
+/// 그래서 호출자에 있는 것(루프·조건·호출 횟수)은 원리적으로 안 보인다 — 실측
+/// (2026-09-08) 이 디렉토리의 판정기 **39 개 중 호출자 방향으로 한 단계라도 올라가는
+/// 것은 0 건**이었다(술어는 모듈 doc 에 적었다). 39 개가 같은 벽에 있었다는 뜻이고,
+/// 이것이 그 벽을 넘는 한 단계다.
+struct CallSite {
+    /// 호출이 있는 파일(레포 상대, `/` 구분).
+    rel: String,
+    /// 그 파일의 마스킹된 사본. 인자를 읽으려면 사본이 필요하고, **부르는 쪽이 다시
+    /// 읽으면 사본이 둘이 된다**(R1108: 같은 물음에 사본을 섞지 않는다). 한 파일에
+    /// 호출이 여럿이어도 사본은 하나다.
+    masked: Rc<str>,
+    /// 호출 이름이 시작하는 바이트 위치 — `arg_at` 에 그대로 넘긴다.
+    at: usize,
+    /// 그 호출을 품는 함수 이름. **`None` 은 "루프 밖" 이 아니라 "못 잘랐다" 다** —
+    /// 소비자는 이것을 통과로 접지 말고 빨갛게 만들어라(아래 `in_loop` 가 그 경우
+    /// `false` 인데, 그 `false` 는 측정값이 아니다).
+    caller: Option<String>,
+    /// 그 호출이 품는 함수 안의 어떤 루프 블록에 들어 있는가.
+    in_loop: bool,
+    /// 실패문에 붙일 줄 번호.
+    line: usize,
+}
+
+/// `name` 을 **부르는** 자리를 스캔 루트 전체에서 모은다.
+///
+/// 메서드 호출(`x.name(`)과 자유 함수 호출(`name(`)을 함께 찾고 **정의(`fn name(`)는
+/// 뺀다.** 이름만 보고 수신자는 안 보므로 동명이인이 있으면 더 많이 잡는다 — 틀리는
+/// 방향이 빨강이라 사람이 와서 본다.
+fn callers_of(name: &str, skip_dirs: &[&str]) -> Vec<CallSite> {
+    let needle = format!("{name}(");
+    let mut out = Vec::new();
+    for (rel, src) in rust_sources() {
+        // `rust_sources` 가 이미 `source_text::repo_relative` 를 지나 `/` 로 정규화된
+        // 경로를 준다. 여기서 다시 `replace` 를 붙이면 규칙의 사본이 하나 늘 뿐
+        // 아무것도 안 바꾼다.
+        let rel = rel.to_string_lossy().into_owned();
+        if skip_dirs.iter().any(|d| rel.starts_with(d)) {
+            continue;
+        }
+        let masked: Rc<str> = Rc::from(mask_non_code(&src).as_str());
+        if !masked.contains(&needle) {
+            continue;
+        }
+        let spans = fn_spans(&masked);
+        for (at, _) in masked.match_indices(&needle) {
+            let before = &masked[..at];
+            // 왼쪽에 식별자 문자가 붙어 있으면 다른 이름의 꼬리다(`do_name(`).
+            if before
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            {
+                continue;
+            }
+            let head = before.trim_end();
+            let is_def = head.ends_with("fn")
+                && head[..head.len() - 2]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+            if is_def {
+                continue;
+            }
+            let enclosing = enclosing_fn(&spans, at);
+            let in_loop = enclosing.is_some_and(|(_, open, close, _)| {
+                loop_blocks(&masked, *open, *close)
+                    .iter()
+                    .any(|(lo, hi)| *lo < at && at < *hi)
+            });
+            out.push(CallSite {
+                rel: rel.clone(),
+                masked: Rc::clone(&masked),
+                at,
+                caller: enclosing.map(|(n, ..)| n.clone()),
+                in_loop,
+                line: line_of(&masked, at),
+            });
+        }
+    }
+    out
+}
+
+/// 호출 여는 괄호부터 **`index` 번째 인자** 텍스트를 뽑는다(공백 정규화). 중첩 괄호
+/// 안의 쉼표는 인자 경계가 아니다.
+///
+/// 수신자는 인자가 아니다 — `x.f(a, b)` 에서 `a` 가 0 번이다. 그래서 `&self` 를 갖는
+/// 함수를 판정할 때는 부르는 쪽이 자리를 하나 당겨서 물어야 한다.
+fn arg_at(masked: &str, call_at: usize, index: usize) -> Option<String> {
+    let open = masked[call_at..].find('(')? + call_at;
+    let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (mut depth, mut nth, mut start) = (0usize, 0usize, open + 1);
+    for (offset, c) in masked[open..].char_indices() {
+        let here = open + offset;
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return (nth == index).then(|| norm(&masked[start..here]));
+                }
+            }
+            ',' if depth == 1 => {
+                if nth == index {
+                    return Some(norm(&masked[start..here]));
+                }
+                nth += 1;
+                start = here + 1;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `arg_at(.., 0)` — 첫 인자만 묻는 자리가 이름으로 읽히게 남긴 이름이다.
+fn first_arg(masked: &str, call_at: usize) -> Option<String> {
+    arg_at(masked, call_at, 0)
+}
+
 /// `from` 이후 첫 여는 구분자(`(`·`{`·`[`)의 바이트 위치.
 fn next_opening_delim(masked: &str, from: usize) -> Option<usize> {
     masked[from..]
@@ -836,12 +1082,23 @@ mod workflow_fail_fast_tests;
 /// 한 egui 프레임 안의 host popup ↔ plugin popup draw 순서 계약. 두 자리가 결과만
 /// 진술하고 순서를 정하는 자리는 따로 있었다 — 집을 그리로 모으고 값으로 문다.
 #[cfg(test)]
+mod floor_arguments_are_not_discarded;
 mod frame_draw_order;
 
 /// atlas 프레임 시계를 감는 호출이 프레임 진입점 안에, append 보다 앞에, 루프 밖에
 /// 있는지. 상태 기계는 `tasty-font` 가 device 없이 재고, **감는가**는 이쪽 소스의 물음이다.
 #[cfg(test)]
 mod frame_clock_arming;
+
+/// 즉시-tap 억제 구간이 여는 자리에서 반드시 닫히는지. 안 닫히면 플래그가 켜진 채 남아
+/// 이후 모든 tap 이 영구히 스킵된다 — 패닉도 로그도 없는 latch 다.
+#[cfg(test)]
+mod auto_tap_suppression_window;
+
+/// egui-mesh bootstrap 의 채널 순서 — `surface.create` 가 첫 `surface.set_context` 보다
+/// 먼저 같은 req 채널에 놓이는지. 좌변은 지목이 아니라 도출이다(산문 명부가 이미 틀렸다).
+#[cfg(test)]
+mod mesh_bootstrap_order;
 
 /// modifier-hint 오버레이의 도색 순서 계약 — 테두리는 콘텐츠 뒤에 다시 그려야 한다.
 /// 두 doc 이 결과만 진술하고 순서를 정하는 호출부에는 아무 말이 없었다.
