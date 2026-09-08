@@ -143,9 +143,210 @@ const COPIED: &[(&str, Side, Side)] = &[
         ),
         Side::Lit(GALLERY_PRESET_EDITOR, "LEAF_SUMMARY_MIN_H"),
     ),
+    // ── 아래 33 쌍은 **자백하지 않은 사본**이다 ────────────────────────────────
+    //
+    // 계상 판정([`every_gallery_constant_that_claims_a_host_dimension_is_accounted_for`])
+    // 의 모집단은 "doc 에 `본체` 라고 적었는가" 라, 사본이면서 그 말을 안 한 자리는
+    // 애초에 물어지지 않았다. 그 사각을 그 판정의 doc 이 이름까지 대며 적어 두고
+    // 있었다(`preset_editor::LEAF_ICON_ONLY_MIN`).
+    //
+    // **술어를 넓혀서 잡지 않았다.** 이 모듈이 이미 재고 기각한 길이다
+    // ([`the_confessed_population_is_pinned_by_name_not_by_prose`] 의 표): 이름 신호는
+    // 자백과 무관한 자리를 60 개 집고, 값 동등을 짝 조건으로 쓰면 **갈라지는 순간 짝이
+    // 아니게 되어** 이 가드가 말해야 할 바로 그때 침묵한다. 짝 지목은 기계가 못 하는
+    // 판단이라 손으로 적는다 — 아래는 갤러리 파일이 자기 모듈 doc 에서 **미러 대상
+    // 본체 파일을 명시한** 쌍만, 이름과 값이 함께 맞는 것으로 골랐다.
+    //
+    // 이 행들이 켜는 것은 값 비교다. 오늘 33 쌍 전부 같고, 어느 한쪽이 움직이면
+    // 그 순간 빨개진다 — 종전에는 화면 말고 아무 신호가 없던 자리들이다.
+    (
+        "프리셋 편집기 탭 추가 버튼 폭",
+        Side::Lit(HOST_PRESET_DEMO, "ADD_TAB_W"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "ADD_TAB_W"),
+    ),
+    (
+        "프리셋 leaf 본문 여백",
+        Side::Lit(HOST_PRESET_DEMO, "BODY_PAD"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "BODY_PAD"),
+    ),
+    (
+        "프리셋 탭 닫기 히트 영역",
+        Side::Lit(HOST_PRESET_DEMO, "CLOSE_HIT"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "CLOSE_HIT"),
+    ),
+    (
+        "프리셋 탭 닫기 버튼 바깥 여백",
+        Side::Lit(HOST_PRESET_DEMO, "CLOSE_MARGIN"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "CLOSE_MARGIN"),
+    ),
+    (
+        "프리셋 탭 라벨↔닫기 사이 여백",
+        Side::Lit(HOST_PRESET_DEMO, "CLOSE_TAB_PAD"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "CLOSE_TAB_PAD"),
+    ),
+    (
+        "프리셋 leaf 사이 간격",
+        Side::Lit(HOST_PRESET_DEMO, "LEAF_GAP"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "LEAF_GAP"),
+    ),
+    (
+        "프리셋 leaf 아이콘만 표시 임계",
+        Side::Lit(HOST_PRESET_DEMO, "LEAF_ICON_ONLY_MIN"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "LEAF_ICON_ONLY_MIN"),
+    ),
+    (
+        "프리셋 pane 사이 간격",
+        Side::Lit(HOST_PRESET_DEMO, "PANE_GAP"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "PANE_GAP"),
+    ),
+    (
+        "프리셋 leaf 탭 스트립 높이",
+        Side::Lit(HOST_PRESET_DEMO, "STRIP_H"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "STRIP_H"),
+    ),
+    (
+        "프리셋 탭 사이 간격",
+        Side::Lit(HOST_PRESET_DEMO, "TAB_GAP"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "TAB_GAP"),
+    ),
+    (
+        "프리셋 탭 좌우 여백",
+        Side::Lit(HOST_PRESET_DEMO, "TAB_PAD_X"),
+        Side::Lit(GALLERY_PRESET_EDITOR, "TAB_PAD_X"),
+    ),
+    (
+        "전송 팝업 폭",
+        Side::Lit(HOST_TRANSFER, "FRAME_W"),
+        Side::Lit(GALLERY_TRANSFER, "FRAME_W"),
+    ),
+    (
+        "전송 팝업 좌우 여백",
+        Side::Lit(HOST_TRANSFER, "PAD_X"),
+        Side::Lit(GALLERY_TRANSFER, "PAD_X"),
+    ),
+    (
+        "전송 팝업 본문 여백",
+        Side::Lit(HOST_TRANSFER, "BODY_PAD"),
+        Side::Lit(GALLERY_TRANSFER, "BODY_PAD"),
+    ),
+    (
+        "전송 팝업 본문 행 간격",
+        Side::Lit(HOST_TRANSFER, "BODY_GAP"),
+        Side::Lit(GALLERY_TRANSFER, "BODY_GAP"),
+    ),
+    (
+        "전송 팝업 헤더 상하 여백",
+        Side::Lit(HOST_TRANSFER, "HEADER_PAD_Y"),
+        Side::Lit(GALLERY_TRANSFER, "HEADER_PAD_Y"),
+    ),
+    (
+        "전송 팝업 푸터 상하 여백",
+        Side::Lit(HOST_TRANSFER, "FOOTER_PAD_Y"),
+        Side::Lit(GALLERY_TRANSFER, "FOOTER_PAD_Y"),
+    ),
+    (
+        "원격 attach 좌측 프로필 열 폭",
+        Side::Lit(HOST_REMOTE_ATTACH, "LEFT_W"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "LEFT_W"),
+    ),
+    (
+        "원격 attach 헤더 높이",
+        Side::Lit(HOST_REMOTE_ATTACH, "HEADER_H"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "HEADER_H"),
+    ),
+    (
+        "원격 attach 헤더 좌측 여백",
+        Side::Lit(HOST_REMOTE_ATTACH, "HEADER_PAD_L"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "HEADER_PAD_L"),
+    ),
+    (
+        "원격 attach 푸터 높이",
+        Side::Lit(HOST_REMOTE_ATTACH, "FOOTER_H"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "FOOTER_H"),
+    ),
+    (
+        "원격 attach 프로필 행 높이",
+        Side::Lit(HOST_REMOTE_ATTACH, "PROFILE_ROW_H"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "PROFILE_ROW_H"),
+    ),
+    (
+        "원격 attach 워크스페이스 행 높이",
+        Side::Lit(HOST_REMOTE_ATTACH, "WS_ROW_H"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "WS_ROW_H"),
+    ),
+    (
+        "원격 attach 배지 높이",
+        Side::Lit(HOST_REMOTE_ATTACH, "BADGE_H"),
+        Side::Lit(GALLERY_REMOTE_ATTACH, "BADGE_H"),
+    ),
+    (
+        "파일 picker 경로 구분 글리프 크기",
+        Side::Lit(HOST_FILE_PICKER, "CRUMB_GLYPH"),
+        Side::Lit(GALLERY_FILE_PICKER, "CRUMB_GLYPH"),
+    ),
+    (
+        "튜토리얼 말풍선 폭",
+        Side::Lit(HOST_TUTORIAL_CALLOUT, "CALLOUT_W"),
+        Side::Lit(GALLERY_TUTORIAL, "CALLOUT_W"),
+    ),
+    (
+        "튜토리얼 말풍선 꼬리 크기",
+        Side::Lit(HOST_TUTORIAL_CALLOUT, "TAIL"),
+        Side::Lit(GALLERY_TUTORIAL, "TAIL"),
+    ),
+    (
+        "explorer 사이드바 폭",
+        Side::Lit(HOST_EXPLORER, "SIDEBAR_W"),
+        Side::Lit(GALLERY_EXPLORER_SIDEBAR, "SIDEBAR_W"),
+    ),
+    (
+        "explorer grid 셀 폭",
+        Side::Lit(HOST_EXPLORER, "CELL_W"),
+        Side::Lit(GALLERY_EXPLORER_CELLS, "CELL_W"),
+    ),
+    (
+        "DAG 빈 상태 아이콘 크기",
+        Side::Lit(HOST_DAG_CHROME, "EMPTY_ICON_SIZE"),
+        Side::Lit(GALLERY_DAG_CHROME, "EMPTY_ICON_SIZE"),
+    ),
+    (
+        "DAG 줌 표시 폭",
+        Side::Lit(HOST_DAG_CHROME, "ZOOM_READOUT_WIDTH"),
+        Side::Lit(GALLERY_DAG_CHROME, "ZOOM_READOUT_WIDTH"),
+    ),
+    (
+        "훅 추가 행 라벨 폭",
+        Side::Lit(HOST_HOOK_HANDLERS, "HOOK_ADD_LABEL_W"),
+        Side::Lit(GALLERY_SETTINGS_HANDLER, "HOOK_ADD_LABEL_W"),
+    ),
+    (
+        "훅 명령 라벨 폭",
+        Side::Lit(HOST_HOOK_HANDLERS, "HOOK_CMD_LABEL_W"),
+        Side::Lit(GALLERY_SETTINGS_HANDLER, "HOOK_CMD_LABEL_W"),
+    ),
 ];
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
+const GALLERY_TRANSFER: &str = "crates/tasty-gallery/src/catalog/components/transfer.rs";
+const GALLERY_REMOTE_ATTACH: &str = "crates/tasty-gallery/src/catalog/components/remote_attach.rs";
+const GALLERY_FILE_PICKER: &str = "crates/tasty-gallery/src/catalog/components/file_picker.rs";
+const GALLERY_TUTORIAL: &str = "crates/tasty-gallery/src/catalog/widgets/tutorial.rs";
+const GALLERY_EXPLORER_SIDEBAR: &str =
+    "crates/tasty-gallery/src/catalog/components/explorer_sidebar.rs";
+const GALLERY_EXPLORER_CELLS: &str =
+    "crates/tasty-gallery/src/catalog/components/explorer_view_cells.rs";
+const GALLERY_DAG_CHROME: &str = "crates/tasty-gallery/src/catalog/components/dag/chrome.rs";
+const GALLERY_SETTINGS_HANDLER: &str =
+    "crates/tasty-gallery/src/catalog/components/settings_handler.rs";
+
+const HOST_PRESET_DEMO: &str = "src/adapters/ui/preset/demo_layout.rs";
+const HOST_TRANSFER: &str = "src/adapters/ui/popup/transfer.rs";
+const HOST_REMOTE_ATTACH: &str = "src/adapters/ui/popup/remote_attach.rs";
+const HOST_FILE_PICKER: &str = "src/adapters/ui/popup/file_picker.rs";
+const HOST_TUTORIAL_CALLOUT: &str = "src/adapters/ui/tutorial/callout.rs";
+const HOST_EXPLORER: &str = "src/adapters/ui/surface/explorer.rs";
+const HOST_DAG_CHROME: &str = "src/adapters/ui/surface/dag_graph/chrome.rs";
+const HOST_HOOK_HANDLERS: &str = "src/view/settings/ui/file_handler_tab/hook_handlers.rs";
 const GALLERY_PRESET_EDITOR: &str = "crates/tasty-gallery/src/catalog/components/preset_editor.rs";
 const GALLERY_INFO_MODAL: &str = "crates/tasty-gallery/src/catalog/components/info_modal.rs";
 const GALLERY_POPUP_FRAME: &str = "crates/tasty-gallery/src/catalog/popup_frame.rs";
@@ -315,10 +516,12 @@ fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
     // 12 -> 11: 「포트 스캐너 즐겨찾기 컬럼 폭」 쌍이 사라졌다. 그 치수에는 이미 이름이
     // 있었고(`component.port-star-col-width`), 양쪽 상수를 지우고 둘 다
     // `theme.port_star_col_width()` 를 부른다 — 사본이 없어진 것이라 명부에서 빠진다.
+    // 11 -> 44: 자백하지 않은 사본 33 쌍을 손으로 등재했다(명부 안의 구분선 주석 참조).
+    // 사본이 새로 생긴 것이 아니라 **원래 있던 것이 안 보이고 있었다.**
     assert_eq!(
         COPIED.len(),
-        11,
-        "사본 명부가 {} 쌍이다(기록 11). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
+        44,
+        "사본 명부가 {} 쌍이다(기록 44). 쌍을 빼는 것은 갈라짐을 고친 것이 아니라 안 보게 \
          만든 것이다 — 사본이 실제로 사라졌으면 이 수를 내리고, 새 사본을 찾았으면 올려라",
         COPIED.len()
     );
@@ -450,6 +653,11 @@ fn sites_that_claim_a_host_counterpart(src: &str) -> Vec<(usize, String)> {
 /// 예다 — 본체 `demo_layout.rs` 에 같은 이름·같은 값이 있는데 그 자리의 doc 은 본체를
 /// 언급하지 않아 여기 안 걸린다. 그러니 이 수는 **사본의 수가 아니라 자백의 수**다.
 /// 이름표를 명제보다 넓게 달지 않기 위해 적어 둔다.
+///
+/// 그런 자리 33 개는 그 뒤 [`COPIED`] 에 **손으로** 등재돼 값 비교가 켜졌고, 위의
+/// `LEAF_ICON_ONLY_MIN` 도 그중 하나다. 그래도 **이 판별자의 모집단은 그대로다** —
+/// 등재는 사람이 한 지목이지 판별자가 넓어진 것이 아니다. 등재되지 않은 새 사본은
+/// 여전히 안 보인다.
 #[test]
 fn every_gallery_constant_that_claims_a_host_dimension_is_accounted_for() {
     // **자기 손으로 순회하지 않는다.** 직접 `read_dir` 을 돌면 그 순회가 조용히 좁아져도
@@ -780,8 +988,10 @@ fn gallery_length_constants() -> Vec<(String, String, String)> {
 /// 22 자리가 나오는데, 그중 어느 것이 "무관한 이름 충돌" 이고 어느 것이 "갈라진 사본"
 /// 인지 신호 자신은 못 가른다.
 ///
-/// 그리고 **양성 대조가 먼저 무너진다**(R549): 지금 명부에 오른 갤러리 쪽 11 개 중 이름
-/// 신호가 잡는 것은 **5** 뿐이다. 못 잡는 여섯이 하필 흥미로운 쪽이다 — 이름이 다른 사본
+/// 그리고 **양성 대조가 먼저 무너진다**(R549): 이 명부가 처음 세워질 때 오른 갤러리 쪽
+/// 11 개 중 이름 신호가 잡는 것은 **5** 뿐이었다. (그 뒤 손으로 더한 33 쌍은 이름·값
+/// 일치로 고른 것이라 당연히 이름 신호에 잡힌다 — 회수율을 그 33 으로 재면 신호가 자기
+/// 표본을 고른 셈이라 아무것도 안 잰다.) 못 잡는 여섯이 하필 흥미로운 쪽이다 — 이름이 다른 사본
 /// (본체 `DEFAULT_WIDTH` ↔ 갤러리 `WIDTH`), 본체가 테마 파생이라 상수 자체가 없는 자리,
 /// 공용 토큰을 읽어 값이 소스에 없는 자리. 문자열 술어는 **추상화한 쪽을 조용히 놓친다.**
 ///
