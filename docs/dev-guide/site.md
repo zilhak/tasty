@@ -4,7 +4,8 @@
 
 - 앱: `site/` (Astro + React, Node 22)
 - 콘텐츠: `site/content/` (한국어 정본) · `site/content/en/` (영어 번역)
-- 산출물: `site/dist/` (gitignore)
+- 산출물: `site/` 아래 `dist/` — 빌드가 만들고 gitignore 다(경로 인용으로 안 적는다. 갓 클론한
+  트리에는 없어서 좌표를 실재로 판정하는 가드가 CI 에서만 빨개진다)
 - 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동) — `npm run build`
   다음에 `npm run check-links` 로 산출물의 내부 링크·앵커를 전수 판정하고 나서 올린다.
   그 스텝은 `site/content/` 의 앵커를 보는 **유일한** 판사다([ADR-0247](../adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md))
