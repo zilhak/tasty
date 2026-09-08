@@ -405,6 +405,15 @@ impl PluginManager {
         }
     }
 
+    /// hello 수신 로그. 대조는 [`Self::warn_hello_drift`] 가 한다 — 뿌리는 일과
+    /// 판정하는 일을 한 함수에 두지 않는다.
+    fn log_hello_and_check_drift(&self, hello_log: Vec<(String, String, String)>) {
+        for (channel_id, claimed_id, version) in hello_log {
+            tracing::info!("plugin hello: {} v{}", claimed_id, version);
+            self.warn_hello_drift(&channel_id, &claimed_id, &version);
+        }
+    }
+
     /// hello 가 주장한 정체를 설치 매니페스트와 대조하는 **유일한 자리**. 두 축을
     /// 여기서 함께 본다 — id 와 버전.
     ///
@@ -425,27 +434,24 @@ impl PluginManager {
     ///
     /// 매니페스트 조회는 **채널 키**로 한다. 주장한 id 로 찾으면 id 가 어긋난 바로 그
     /// 경우에 조회가 `None` 이 되어 버전 대조까지 함께 조용해진다.
-    fn log_hello_and_check_drift(&self, hello_log: Vec<(String, String, String)>) {
-        for (channel_id, claimed_id, version) in hello_log {
-            tracing::info!("plugin hello: {} v{}", claimed_id, version);
-            let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == channel_id) else {
-                continue;
-            };
-            if claimed_id != channel_id {
-                tracing::warn!(
-                    "plugin '{channel_id}' identity drift: hello claims id '{claimed_id}' != \
-                     manifest id '{channel_id}' — 권한·비활성·도구 키는 매니페스트 id 로 \
-                     채워지고 registry 는 주장한 id 로 채워져, 둘을 잇는 조회가 조용히 \
-                     비어난다 (plugin 의 `const PLUGIN_ID` 를 매니페스트에 맞춰라)"
-                );
-            }
-            if pkg.manifest.version != version {
-                tracing::warn!(
-                    "plugin '{channel_id}' version drift: binary v{version} != manifest v{} — \
-                     stale build? (dev: `cargo build --workspace` 후 재실행)",
-                    pkg.manifest.version
-                );
-            }
+    fn warn_hello_drift(&self, channel_id: &str, claimed_id: &str, version: &str) {
+        let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == channel_id) else {
+            return;
+        };
+        if claimed_id != channel_id {
+            tracing::warn!(
+                "plugin '{channel_id}' identity drift: hello claims id '{claimed_id}' != \
+                 manifest id '{channel_id}' — 권한·비활성·도구 키는 매니페스트 id 로 \
+                 채워지고 registry 는 주장한 id 로 채워져, 둘을 잇는 조회가 조용히 \
+                 비어난다 (plugin 의 `const PLUGIN_ID` 를 매니페스트에 맞춰라)"
+            );
+        }
+        if pkg.manifest.version != version {
+            tracing::warn!(
+                "plugin '{channel_id}' version drift: binary v{version} != manifest v{} — \
+                 stale build? (dev: `cargo build --workspace` 후 재실행)",
+                pkg.manifest.version
+            );
         }
     }
 
