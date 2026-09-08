@@ -931,6 +931,48 @@ mod tests {
         );
     }
 
+    /// banner self-repaint 의 host 쪽 두 자리 — pump 누적과 드레인.
+    /// `BannerInvalidated` 가 banner 누산기로 가고, `take_invalidated_banners` 가
+    /// 한 번만 낸다(두 번째는 비어야 다음 tick 이 헛돌지 않는다).
+    #[test]
+    fn banner_invalidated_accumulates_and_drains_once() {
+        let mut mgr = mgr();
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event(
+            "com.tasty.mesh-demo",
+            PluginEvent::BannerInvalidated { instance_id: 7 },
+            &mut out,
+        );
+        assert_eq!(out.new_invalidated_banners, vec![7]);
+
+        mgr.apply_collected_events(out);
+        assert_eq!(mgr.take_invalidated_banners(), vec![7]);
+        assert!(
+            mgr.take_invalidated_banners().is_empty(),
+            "드레인은 1회여야 한다"
+        );
+    }
+
+    /// popup 판을 복사해 오면서 누산기만 안 바꾸는 형태의 drift 를 가른다 — banner
+    /// 이벤트는 popup 누산기에 닿지 않는다(반대도 같다).
+    #[test]
+    fn banner_and_popup_invalidations_land_in_separate_accumulators() {
+        let mgr = mgr();
+        let mut out = CollectedPluginEvents::default();
+        mgr.classify_event(
+            "com.tasty.mesh-demo",
+            PluginEvent::BannerInvalidated { instance_id: 7 },
+            &mut out,
+        );
+        mgr.classify_event(
+            "com.tasty.git-viewer",
+            PluginEvent::PopupInvalidated { instance_id: 9 },
+            &mut out,
+        );
+        assert_eq!(out.new_invalidated_banners, vec![7]);
+        assert_eq!(out.new_invalidated_popups, vec![9]);
+    }
+
     #[test]
     fn classify_event_hello_skips_to_register_when_already_registered() {
         let mut mgr = mgr();
