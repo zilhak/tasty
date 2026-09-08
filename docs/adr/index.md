@@ -226,3 +226,4 @@
 | 0243 | [「안 짓는다」는 좌변부터 묻지 않는다 — 좌변은 마지막 물음이다](0243-not-building-a-judge-has-three-reasons-and-the-left-side-is-the-last-one.md) | Accepted | 2026-09-08 | guards, judgement, prescription, channels, left-side, discipline, census, positive-control, adr-0139, adr-0242 |
 | 0244 | [재검토 조건의 갈래는 소제목 둘로 표시한다 — 표지가 문면에 없으면 좌변이 없다](0244-the-trigger-split-is-marked-by-two-subheadings.md) | Accepted | 2026-09-08 | adr-conventions, documentation, reconsideration-triggers, observability, guards, left-side, adr-0220, adr-0139 |
 | 0245 | [image 의 편집은 임시다 — 미저장 편집은 복원하지도, 알리지도 않는다](0245-an-image-surface-edit-is-temporary-and-is-not-restored.md) | Accepted | 2026-09-08 | image, plugin, persistence, restore, snapshot, identity, non-goal, adr-0030 |
+| 0246 | [텔레메트리에는 옵트아웃 축을 두지 않는다 — 그 권한 토큰은 경계가 아니라 선언이다](0246-telemetry-has-no-opt-out-and-its-token-is-a-declaration.md) | Accepted | 2026-09-08 | telemetry, privacy, permissions, plugin, trust-boundary, cap, non-goal, adr-0141 |

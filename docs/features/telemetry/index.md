@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: AI Agent — 측정 대상이자 **통제 주체**다. 에이전트가 다른 에이전트에게 cap 을 걸고 지우고 푼다(`agent` 는 파라미터로 지목한다). 로컬 사용자도 CLI 로 같은 것을 할 수 있으나 1급 대상이 아니다 — headless 인스턴스에는 로컬 사용자가 아예 없다([identity](../../identity.md) §2.2).
-- **ADR**: 없음
+- **ADR**: [0246](../../adr/0246-telemetry-has-no-opt-out-and-its-token-is-a-declaration.md) — 옵트아웃 축을 두지 않는다, 권한 토큰은 선언이다
 - **코드**: `telemetry.*` 핸들러, `tasty-telemetry`, 영속 `tasty-memory`
 - **화면**: 없음 (cap 발화 시 알림)
 - **메서드 목록**: [reference/api](../../reference/api.md#텔레메트리-telemetry)
