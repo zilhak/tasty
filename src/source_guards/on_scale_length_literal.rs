@@ -20,13 +20,23 @@
 //!
 //! # 이 가드가 못 보는 것
 //!
-//! 아래는 설계상 사각이다. **여기 0 이 나온다고 "없다" 가 아니다.** 넷 중 셋은
+//! 아래는 설계상 사각이다. **여기 0 이 나온다고 "없다" 가 아니다.** 여섯 중 다섯은
 //! [`the_blind_spots_are_still_the_size_they_say`] 가 건수를 **실측으로** 들고 있어
 //! 사각이 조용히 자라지 않는다. 사각을 좁히려면 술어를 고치고 그 수를 함께 옮겨라.
 //!
 //! - **`0.0`** — 실측 건수는 위 테스트가 든다. `size-0` 이 실재하지만 기하에서 0 은
 //!   디자인 결정이 아니라 덧셈의 항등원이다. `vec2(SIZE_0.value(), ..)` 는 정합이
 //!   아니라 소음이다.
+//! - **clamp·문턱 자리의 `1.0`**([`is_the_degenerate_floor`]) — 위 `0.0` 과 같은
+//!   이야기가 한 자리에서만 성립한다. `(h - t).max(PhysicalPx(1.0))` 의 1 은 디자인한
+//!   여백이 아니라 **직사각형이 직사각형으로 남는 최소값**이고,
+//!   `(a - b).abs() < PhysicalPx(1.0)` 의 1 은 서브픽셀 동일성 문턱이다. 토큰이
+//!   움직여도 따라가면 **안 되는** 값이라 이 축의 위반이 아니다. 자리만으로 가르지
+//!   않는다 — 값이 1 일 때만 빠지므로 `.max(LogicalPx(200.0))` 같은 진짜 치수 하한은
+//!   그대로 세어진다.
+//! - **정규화 좌표 자리**([`UNIT_SPACE_SITES`]) — 텍스처 UV 의 `pos2(1.0, 1.0)` 은
+//!   1px 가 아니라 100% 다. 부류가 아니라 **자리 명부**로 둔다 —
+//!   [`DISPLAY_SPECIMENS`] 와 같은 이유다.
 //! - **테스트 게이트 안** — 화면에 안 나가는 코드다. 판정은 [`super::test_gate`].
 //! - **값을 선언하는 자리**([`DECLARATION_SITES`]) — 다른 자리가 참조해야 할 이름이
 //!   사는 곳이라, 여기를 판정하면 선언에게 자기 자신을 참조하라고 요구하게 된다.
@@ -35,9 +45,15 @@
 //!   열 때 쓴 임시 스캐너로 80 건을 셌고, 그 도구는 커밋되지 않았으므로 이 수는
 //!   여기서 다시 재지지 않는다. 재려면 술어가 먼저 있어야 한다.
 //!
-//! 한때 다섯째가 있었다 — **문자열·주석 안의 수.** `"window-button-size(24) …"` 의 24
-//! 가 `.size(` 인자로 계상돼 축의 수를 4 만큼 부풀렸다. 손수 만든 마스커를 한 벌 더
-//! 두는 대신 [`mask_non_code`] 를 쓰면서 닫혔다.
+//! 한때 여기 둘이 더 있었다 — 둘 다 **사각이 아니라 오탐**이라 닫는 것이 처방이었다.
+//!
+//! - **문자열·주석 안의 수.** `"window-button-size(24) …"` 의 24 가 `.size(` 인자로
+//!   계상돼 축의 수를 4 만큼 부풀렸다. 손수 만든 마스커를 한 벌 더 두는 대신
+//!   [`mask_non_code`] 를 쓰면서 닫혔다.
+//! - **첨자.** `vec2(p[0] * s, p[1] * s)` 의 `p[1]` 이 `vec2(` 의 인자로 계상됐다.
+//!   [`head_span_of`] 의 doc 은 "짝 없는 여는 기호가 `(` 가 아니면 인자 자리가 아니다"
+//!   라고 이미 말하고 있었고 구현에서 `[` 만 빠져 있었다 — 정책 변경이 아니라 계약
+//!   이행이다.
 //!
 //! # 상한은 여유가 아니다 — 양방향 래칫
 //!
@@ -125,6 +141,27 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
     "스피너를 여러 크기로 보여주는 것이 이 카드의 목적이다 — 토큰으로 바꾸면 전시가 사라진다",
 )];
 
+/// **정규화 좌표 자리 명부** — 자리 단위다. `DISPLAY_SPECIMENS` 와 같은 이유로 부류가
+/// 아니다: "여긴 픽셀이 아니라 비율이야" 는 아무 자리에나 붙일 수 있는 말이라, 부류로
+/// 열어 두면 다음 사람이 진짜 치수를 그렇게 부른다.
+///
+/// 항목은 (파일, 호출 머리, 자리 수, 사유)이고 수는 상한이자 하한이다 —
+/// [`the_blind_spots_are_still_the_size_they_say`] 가 실측으로 든다.
+const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
+    "crates/tasty-plugin-image/src/render.rs",
+    "pos2",
+    4,
+    "텍스처 UV — 0..1 정규화 좌표라 픽셀이 아니다. 전체 텍스처를 가리키는 \
+     `pos2(1.0, 1.0)` 의 1 은 1px 가 아니라 100% 다",
+)];
+
+/// 그 자리가 [`UNIT_SPACE_SITES`] 에 **등록돼 있는가.**
+fn is_in_unit_space(hit: &Hit) -> bool {
+    UNIT_SPACE_SITES
+        .iter()
+        .any(|(path, head, _, _)| hit.rel == *path && hit.head == *head)
+}
+
 /// 영역별 잔여와 그 사유. 수는 상한이자 **하한**이다 — 위 "양방향 래칫" 참조.
 const AREAS: &[(&str, usize, &str)] = &[
     (
@@ -159,7 +196,11 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/adapters/ui/",
-        44,
+        // 44 -> 42 는 `egui_panels.rs` 의 `.max(PhysicalPx(1.0))` 둘이다. 위반이
+        // 고쳐진 것이 아니라 **애초에 이 축의 값이 아니었다** — 퇴화 방지 하한이라
+        // [`is_the_degenerate_floor`] 가 걷어냈다. 그 몫의 크기는
+        // [`the_blind_spots_are_still_the_size_they_say`] 가 센다.
+        42,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (
@@ -170,12 +211,18 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 삭제 줄은 정확히 그 둘이고, 추가 줄에는 `0.0`(이 가드의 사각) 말고 숫자
         // 리터럴이 없다. 8 은 이름이 있는 값이라(`spacing_sm`) 그대로 갔고, 6 은
         // 애초에 이 가드의 바늘 밖이었다 — `size-*` 에 6 이 없다.
-        29,
+        // 29 -> 27 도 퇴화 방지 하한 둘이다(`main/redraw.rs` 의 `.max(..)` ·
+        // `settings/ui.rs` 의 `(w - margin*2).max(LogicalPx(1.0))`).
+        27,
         "설정 화면의 폼 레이아웃",
     ),
     (
         "src/",
-        16,
+        // 16 -> 9 는 퇴화 방지 하한 일곱이다 — 전부 `(pane_rect.height -
+        // tab_bar_h).max(PhysicalPx(1.0))` 계열(`state/` 넷 · `core/impl_pty.rs` ·
+        // `gfx/gpu.rs` · `app/window_lifecycle.rs`)이다. 같은 식이 여섯 자리에 복제돼
+        // 있는 것은 별개 물음이고, 이 축의 물음은 아니다.
+        9,
         "그 밖의 본체(gfx·state·app) — GPU/상태 쪽이라 자리마다 사정이 다르다. \
          이 수가 마지막으로 오른 것은 위반이 늘어서가 아니라 `LogicalSize::new(400, 200)` \
          처럼 **세지 않는 형태**로 숨어 있던 값이 이름을 얻어 보이게 됐기 때문이다 — \
@@ -206,7 +253,14 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/",
-        26,
+        // 26 -> 14 는 셋이 겹친 결과다. **어느 것도 자리를 고친 것이 아니다** —
+        // 가드가 안 봐야 할 것을 보고 있었다.
+        //  · 퇴화 방지 하한 3 (`tasty-model` 의 `.max(PhysicalPx(1.0))` · `.min(..)`)
+        //  · 서브픽셀 동일성 문턱 4 (`tasty-type-geometry` 의 `.abs() < PhysicalPx(1.0)`)
+        //  · 정규화 좌표 4 (`tasty-plugin-image` 의 UV `pos2(1.0, 1.0)` — 명부에 등록)
+        //  · 첨자 1 (`tasty-plugin-sdk` 의 `vec2(p[0] * s, p[1] * s)` — `p[1]` 의 1 이
+        //    `vec2(` 인자로 계상됐다. `head_span_of` 가 `[` 를 세게 되면서 닫혔다)
+        14,
         "나머지 크레이트(dag-layout·model·plugin 뷰어·settings·geometry)",
     ),
 ];
@@ -217,6 +271,10 @@ struct Hit {
     line: usize,
     head: String,
     value: f32,
+    /// 그 수가 [`is_the_degenerate_floor`] 인가. 스캔이 지우지 않고 표시만 하는 것은
+    /// 빠지는 몫의 크기를 [`the_blind_spots_are_still_the_size_they_say`] 가 세기
+    /// 때문이다 — 지워 버리면 그 부류는 존재하지 않는 것이 된다.
+    floor: bool,
 }
 
 /// 생성된 primitive 에서 `size-*` 값 집합을 읽는다.
@@ -281,10 +339,16 @@ fn theme_named_values() -> Vec<f32> {
     out
 }
 
-/// 리터럴을 감싸는 **가장 안쪽 호출 머리**. 짝 없는 여는 기호가 `(` 가 아니면(블록이나
-/// 구조체 리터럴 안이면) 인자 자리가 아니므로 `None`.
-fn head_of(text: &[char], at: usize) -> Option<String> {
-    let (mut paren, mut brace) = (0usize, 0usize);
+/// 리터럴을 감싸는 **가장 안쪽 호출**의 (이름 시작 위치, 여는 괄호 위치, 머리 이름).
+/// 짝 없는 여는 기호가 `(` 가 아니면(블록·구조체 리터럴·**첨자** 안이면) 인자 자리가
+/// 아니므로 `None`.
+///
+/// 여는 괄호 위치를 함께 돌려주는 것은 **한 겹 밖**을 다시 물을 수 있게 하기 위해서다 —
+/// `.max(PhysicalPx(1.0))` 의 안쪽 머리는 `PhysicalPx` 지만 그 수의 성격을 정하는 것은
+/// 바깥의 `max` 다([`is_the_degenerate_floor`]). 이름 시작 위치는 그 앞의 비교 연산자를
+/// 보기 위한 것이다.
+fn head_span_of(text: &[char], at: usize) -> Option<(usize, usize, String)> {
+    let (mut paren, mut brace, mut bracket) = (0usize, 0usize, 0usize);
     let mut j = at;
     let open = loop {
         if j == 0 {
@@ -294,6 +358,7 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
         match text[j] {
             ')' => paren += 1,
             '}' => brace += 1,
+            ']' => bracket += 1,
             '(' => {
                 if paren == 0 {
                     break j;
@@ -306,6 +371,12 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
                 }
                 brace -= 1;
             }
+            '[' => {
+                if bracket == 0 {
+                    return None;
+                }
+                bracket -= 1;
+            }
             _ => {}
         }
     };
@@ -317,7 +388,72 @@ fn head_of(text: &[char], at: usize) -> Option<String> {
     name.rsplit("::")
         .next()
         .filter(|s| !s.is_empty())
-        .map(str::to_owned)
+        .map(|n| (k, open, n.to_owned()))
+}
+
+/// 리터럴을 감싸는 **가장 안쪽 호출 머리**.
+fn head_of(text: &[char], at: usize) -> Option<String> {
+    head_span_of(text, at).map(|(_, _, name)| name)
+}
+
+/// 그 `1` 이 **치수가 아니라 퇴화 방지 하한**인가.
+///
+/// `0.0` 을 빼는 이유("기하에서 0 은 디자인 결정이 아니라 덧셈의 항등원이다")와 같은
+/// 이야기가 1 에도 한 자리에서만 성립한다 — **직사각형이 직사각형으로 남는 최소값**이다.
+/// `(h - tab_bar_h).max(PhysicalPx(1.0))` 의 1 은 "1 픽셀짜리 여백을 디자인했다" 가
+/// 아니라 "0 이나 음수가 되지 않게 막는다" 이고, `(a - b).abs() < PhysicalPx(1.0)` 의
+/// 1 은 **서브픽셀 동일성 문턱**이다. 어느 쪽도 `size-1` 토큰으로 바꿀 자리가 아니다 —
+/// 토큰이 움직이면 따라 움직여야 할 값이 아니기 때문이다(그래서 이 축의 위반이 아니다).
+///
+/// # 값이 술어의 일부인 이유
+///
+/// 자리만으로 가르지 않는다. `.max(LogicalPx(200.0))` 의 200 은 진짜 치수 하한이고,
+/// 그것까지 빼면 clamp 라는 자리 하나로 이 축의 큰 값들이 통째로 숨는다. 빠지는 것은
+/// **1** 뿐이다.
+///
+/// # 이 술어가 일부러 안 잡는 것
+///
+/// 이름을 얻은 1(`const EPS: LogicalPx = LogicalPx(1.0);` · `GLYPH_STROKE` ·
+/// `SURFACE_BORDER_WIDTH`)은 여기서 안 빠진다. 그 줄은 값을 쓰는 자리가 아니라 이름을
+/// 짓는 자리라 처방이 다르고([`declares_a_named_dimension`]), `=` 하나로 그것까지
+/// 걷어내면 이 축에서 제일 고칠 만한 자리(헤어라인)가 통째로 사라진다.
+fn is_the_degenerate_floor(text: &[char], at: usize, value: f32) -> bool {
+    if value != 1.0 {
+        return false;
+    }
+    let Some((name_start, open, _)) = head_span_of(text, at) else {
+        return false;
+    };
+    // 문턱 비교의 오른쪽 — `.abs() < PhysicalPx(1.0)`.
+    //
+    // `>` 하나만 보면 안 된다. 홑 `=`(대입)는 물론이고 **`=>`(매치 팔)** 와
+    // **`->`(반환 타입)** 도 마지막 글자가 `>` 다 — 실측으로 `MouseWheelUnit::Point =>
+    // LogicalPx(1.0)`(포인트→논리픽셀 단위 환산)이 이 술어에 걸려 하한으로 잘못 세어졌다.
+    // 그 자리의 1 은 하한이 아니라 **환산 계수**라 성격이 다르다.
+    let mut i = name_start;
+    while i > 0 && matches!(text[i - 1], ' ' | '\t' | '\n') {
+        i -= 1;
+    }
+    if i > 0 {
+        let c = text[i - 1];
+        let prev = if i >= 2 { text[i - 2] } else { ' ' };
+        let comparison = match c {
+            '<' => true,
+            '>' => !matches!(prev, '=' | '-'),
+            '=' => matches!(prev, '<' | '>' | '!' | '='),
+            _ => false,
+        };
+        if comparison {
+            return true;
+        }
+    }
+    // 한 겹 밖이 clamp 계열 — `.max(PhysicalPx(1.0))`.
+    matches!(
+        head_span_of(text, open)
+            .as_ref()
+            .map(|(_, _, n)| n.as_str()),
+        Some("max" | "min" | "clamp")
+    )
 }
 
 /// 곱셈·나눗셈의 피연산자면 길이가 아니라 **배율**이다.
@@ -342,11 +478,12 @@ fn is_length_operand(text: &[char], start: usize, end: usize) -> bool {
     !(j < text.len() && matches!(text[j], '*' | '/'))
 }
 
-/// 마스킹된 소스에서 `size-*` 값과 같은 수가 길이 자리에 박힌 (줄번호, 머리, 값).
-/// `0.0` 도 포함해 돌려준다 — 그 사각의 크기를 재는 쪽이 따로 있다.
+/// 마스킹된 소스에서 `size-*` 값과 같은 수가 길이 자리에 박힌
+/// (줄번호, 머리, 값, [`is_the_degenerate_floor`] 인가).
+/// `0.0` 도, 퇴화 방지 하한도 포함해 돌려준다 — 그 사각의 크기를 재는 쪽이 따로 있다.
 ///
 /// 순수 함수다 — 합성 스니펫을 그대로 먹일 수 있다.
-fn on_scale_literals(masked: &str, scale: &[f32]) -> Vec<(usize, String, f32)> {
+fn on_scale_literals(masked: &str, scale: &[f32]) -> Vec<(usize, String, f32, bool)> {
     let text: Vec<char> = masked.chars().collect();
     let mut out = Vec::new();
     let mut line = 1usize;
@@ -388,7 +525,8 @@ fn on_scale_literals(masked: &str, scale: &[f32]) -> Vec<(usize, String, f32)> {
             continue;
         };
         if LEN_CTOR.contains(&head.as_str()) || EGUI_LENGTH_HEADS.contains(&head.as_str()) {
-            out.push((line, head, value));
+            let floor = is_the_degenerate_floor(&text, start, value);
+            out.push((line, head, value, floor));
         }
     }
     out
@@ -414,12 +552,13 @@ fn scan(blank_tests: bool) -> Vec<Hit> {
         } else {
             masked
         };
-        for (line, head, value) in on_scale_literals(&masked, &scale) {
+        for (line, head, value, floor) in on_scale_literals(&masked, &scale) {
             out.push(Hit {
                 rel: rel.clone(),
                 line,
                 head,
                 value,
+                floor,
             });
         }
     }
@@ -454,6 +593,8 @@ fn considered() -> Vec<Hit> {
     scan(true)
         .into_iter()
         .filter(|h| h.value != 0.0)
+        .filter(|h| !h.floor)
+        .filter(|h| !is_in_unit_space(h))
         .filter(|h| {
             !DECLARATION_SITES
                 .iter()
@@ -631,8 +772,8 @@ fn is_a_varied_specimen_value(masked: &str, hit: &Hit) -> bool {
     let scale = size_scale();
     let same_head: Vec<f32> = on_scale_literals(masked, &scale)
         .into_iter()
-        .filter(|(_, head, _)| *head == hit.head)
-        .map(|(_, _, v)| v)
+        .filter(|(_, head, ..)| *head == hit.head)
+        .map(|(_, _, v, _)| v)
         .collect();
     if same_head.len() < 3 {
         return false;
@@ -827,6 +968,11 @@ fn the_blind_spots_are_still_the_size_they_say() {
     let shipped = scan(true);
     let zeros = shipped.iter().filter(|h| h.value == 0.0).count();
     let in_tests = all.len() - shipped.len();
+    let floors = shipped.iter().filter(|h| h.value != 0.0 && h.floor).count();
+    let unit_space = shipped
+        .iter()
+        .filter(|h| h.value != 0.0 && !h.floor && is_in_unit_space(h))
+        .count();
     assert_eq!(
         (zeros, in_tests),
         // 167 -> 171 은 전부 `LogicalPx(0.0)` 이다(합의 항등원 · `.max(LogicalPx(0.0))` ·
@@ -835,10 +981,34 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 받게 되면서 늘었다. 둘 다 화면에 안 나가는 구간이라 판정 대상이 아니다.
         // 171 -> 175 도 전부 `0.0` 이다 — plugins 창 목록 행 넷(본체 둘 · 갤러리 둘)이
         // 아바타 다음으로 텍스트 열을 미는 `vec2(dx, 0.0)` 을 쓴다. 세로로는 안 민다.
-        (175, 198),
+        // 175 -> 174 · 198 -> 197 은 각각 한 자리이고 같은 원인이다 — `p[0]` 의 첨자가
+        // `vec2(` 인자로 세어지던 것이 `head_span_of` 의 `[` 처리로 닫혔다. 사각이
+        // 좁아진 것이라 이 수도 함께 내린다.
+        (174, 197),
         "0.0 사각과 테스트 사각의 크기가 바뀌었다. 늘었으면 이 가드가 안 보는 구간이 \
          자란 것이고, 줄었으면 그 수를 같이 내려라"
     );
+    // 정규화 좌표 몫은 명부가 이미 들고 있다 — 같은 값을 두 곳에 적지 않는다.
+    let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
+    assert_eq!(
+        (floors, unit_space),
+        // 하한 몫은 여기서만 센다. 전부 `(a - b).max(PhysicalPx(1.0))`(퇴화한 rect 방지)
+        // 와 `(a - b).abs() < PhysicalPx(1.0)`(서브픽셀 동일성 문턱)이다.
+        (18, roster),
+        "1 의 두 사각(퇴화 방지 하한 · 정규화 좌표)의 크기가 바뀌었다. 하한이 늘었으면 \
+         새 clamp 이고, 줄었으면 그 수를 같이 내려라 — 이 둘은 래칫 밖이라 여기서만 보인다"
+    );
+    for (path, head, budget, why) in UNIT_SPACE_SITES {
+        let n = shipped
+            .iter()
+            .filter(|h| h.value != 0.0 && h.rel == *path && h.head == *head)
+            .count();
+        assert_eq!(
+            n, *budget,
+            "정규화 좌표 명부 `{path}` 의 `{head}`(사유: {why}) 자리가 {n} 개다. \
+             늘었으면 픽셀인 것이 섞였을 수 있고, 줄었으면 그 수를 같이 내려라"
+        );
+    }
     for (site, budget, why) in DECLARATION_SITES {
         let n = shipped.iter().filter(|h| h.rel.starts_with(site)).count();
         assert_eq!(
@@ -856,6 +1026,9 @@ mod detector {
 
     fn hits(src: &str) -> Vec<(usize, String, f32)> {
         on_scale_literals(&mask_non_code(src), SCALE)
+            .into_iter()
+            .map(|(line, head, value, _)| (line, head, value))
+            .collect()
     }
 
     #[test]
@@ -911,5 +1084,46 @@ mod detector {
     #[test]
     fn a_value_outside_an_argument_list_has_no_head() {
         assert!(hits("ui.horizontal(|ui| { let x = 24.0; });").is_empty());
+    }
+
+    /// **첨자는 길이가 아니다.** `head_span_of` 의 doc 이 "짝 없는 여는 기호가 `(` 가
+    /// 아니면 인자 자리가 아니다" 라고 말하는데 `[` 만 구현에서 빠져 있었고, 그 틈으로
+    /// `p[1]` 의 1 이 바깥 `vec2(` 의 인자로 계상됐다.
+    #[test]
+    fn a_subscript_is_not_a_length() {
+        assert!(hits("egui::vec2(p[1], q)").is_empty());
+        assert!(hits("egui::vec2(pts[0][1], q)").is_empty());
+        // 같은 자리의 진짜 길이는 그대로 잡힌다 — 대괄호가 머리를 가리는 것이지
+        // 그 호출 전체를 면제하는 것이 아니다.
+        assert_eq!(
+            hits("egui::vec2(p[1], 24.0)"),
+            vec![(1, "vec2".to_owned(), 24.0)]
+        );
+    }
+
+    fn floors(src: &str) -> Vec<f32> {
+        on_scale_literals(&mask_non_code(src), SCALE)
+            .into_iter()
+            .filter(|(.., floor)| *floor)
+            .map(|(_, _, v, _)| v)
+            .collect()
+    }
+
+    /// clamp·문턱 자리의 `1` 은 치수가 아니라 퇴화 방지 하한이다. 그리고 그 판정은
+    /// **자리와 값 둘 다**를 본다 — 자리만 보면 진짜 치수 하한까지 숨는다.
+    #[test]
+    fn the_degenerate_floor_is_not_a_dimension() {
+        assert_eq!(floors("(h - t).max(PhysicalPx(1.0))"), vec![1.0]);
+        assert_eq!(floors("w.min(LogicalPx(1.0))"), vec![1.0]);
+        assert_eq!(floors("(a - b).abs() < PhysicalPx(1.0)"), vec![1.0]);
+        assert_eq!(floors("d <= LogicalPx(1.0)"), vec![1.0]);
+        // 값이 1 이 아니면 그 자리는 진짜 치수 하한이다.
+        assert!(floors("w.max(LogicalPx(24.0))").is_empty());
+        // 대입·매치 팔·반환 화살표는 비교가 아니다.
+        assert!(floors("let x = LogicalPx(1.0);").is_empty());
+        assert!(floors("MouseWheelUnit::Point => LogicalPx(1.0),").is_empty());
+        assert!(floors("fn f() -> LogicalPx(1.0)").is_empty());
+        // 이름을 짓는 줄은 처방이 달라 일부러 안 잡는다.
+        assert!(floors("const GLYPH_STROKE: LogicalPx = LogicalPx(1.0);").is_empty());
     }
 }
