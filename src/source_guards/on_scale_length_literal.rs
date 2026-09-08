@@ -130,12 +130,17 @@ const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
         49,
-        // 왜 0 으로 못 가고, 왜 popup 하나가 늘 때마다 이 수가 1 씩 오르는가:
-        // `all_defs()` 는 **`const` 표**라 `theme()`(런타임 호출)을 못 부른다. 그래서
-        // `default_size` 는 정의 옆에 값이 박히고, `LogicalPx(...)` 로 감싸도 같은
-        // 판정에 걸린다 — 감싸는 것은 형태만 바꾼다. 그 값이 화면에 남지도 않는다:
-        // `sizer` 가 있는 항목은 첫 프레임에 덮어쓰고, 없는 항목은 그 수가 곧 그
-        // popup 의 크기다. 48 -> 49 는 `confirm_force_detach_workspace` 등록 한 줄이다.
+        // 48 -> 49 는 `confirm_force_detach_workspace` 등록 한 줄이고, 세어진 것은
+        // 폭이 아니라 **높이 150** 이다(380 은 `size-*` 스케일 밖이라 여기 안 걸린다 —
+        // `const WIDTH: LogicalPx = LogicalPx(380.0)` 도 마찬가지다). 그 150 은
+        // `sizer` 가 첫 프레임에 덮어쓰는 등록 시점 placeholder 이고, 바로 위 형제
+        // destructive confirm(`confirm_delete_category`)이 같은 자리에 같은 값을 든다.
+        //
+        // `default_size` 를 모듈 함수로 빼도 이 수는 안 준다 — 그 함수가 사는 곳도
+        // 이 영역 안이라 자리가 옮겨질 뿐이다(`all_defs()` 는 `const` 표가 아니라
+        // `OnceLock::get_or_init` 안의 `vec!` 이고, `theme()` 을 부르는 함수를 넣은
+        // 항목이 이미 다섯 있다 — 못 부르는 것이 아니다). 이 수를 내리려면 그 둘을
+        // 함께, placeholder 를 안 적는 형태로 고쳐야 한다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (
