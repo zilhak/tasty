@@ -159,7 +159,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "file_handler.picker.title",
                 fullscreen_stage: None,
                 title_fn: Some(super::file_handler_picker::picker_title),
-                default_size: egui::vec2(480.0, 320.0),
+                default_size: super::file_handler_picker::picker_default_size(),
                 sizer: Some(super::file_handler_picker::picker_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,

@@ -28,6 +28,7 @@ use crate::i18n::t;
 use crate::state::{AppState, FileHandlerPickerResult};
 use crate::theme;
 use crate::theme::Theme;
+use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::hspace;
 
@@ -39,6 +40,12 @@ const LIST_MIN_HEIGHT: LogicalPx = ITEM_HEIGHT.scaled(4.0); // 빈 list 도 시�
 const LIST_MAX_HEIGHT: LogicalPx = ITEM_HEIGHT.scaled(10.0);
 const HEADER_HEIGHT: LogicalPx = LogicalPx(36.0); // 대상/형식 두 줄
 const BUTTON_ROW_HEIGHT: LogicalPx = LogicalPx(28.0);
+/// 컬럼 heading(`후보`/`최근`) 한 줄. `font_size_caption`(11) 의 행 높이다 —
+/// `HEADER_HEIGHT`(36) 가 body 한 줄 + caption 한 줄 + item_spacing 이라는 것과 같은
+/// 근거에서 나온다. **이 줄은 `ScrollArea` 바깥에 쌓이므로 `list_height` 에 안 들어간다.**
+const HEADING_LINE_HEIGHT: LogicalPx = LogicalPx(15.0);
+/// 빈 상태 안내문 한 줄(`font_size_body`(13) 의 행 높이).
+const EMPTY_LABEL_HEIGHT: LogicalPx = LogicalPx(17.0);
 
 /// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 전체 경로 포함.
 /// 타이틀바 폭에 맞춘 겹침 방지(elide)는 `popup/draw.rs`(모든 popup 공통)가 전담하므로
@@ -50,26 +57,200 @@ pub fn picker_title(state: &AppState, _engine: &crate::core::CoreState) -> Strin
     }
 }
 
+/// 두 열 list 의 높이 — **sizer 와 view 가 같은 값을 써야** 마지막 행이 안 잘린다.
+///
+/// 예전에는 이 식이 두 곳에 복제돼 있었다. 복제 자체는 같은 값을 냈지만, 복제가 있다는
+/// 것이 "레이아웃을 두 곳에서 따로 계산한다" 는 구조를 감췄고, 그 구조 때문에 view 에
+/// 나중에 들어온 컬럼 heading 을 sizer 가 안 세게 됐다.
+fn list_height_for(cand_n: usize, recent_n: usize) -> LogicalPx {
+    ITEM_HEIGHT
+        .scaled(cand_n.max(recent_n).max(4) as f32)
+        .max(LIST_MIN_HEIGHT)
+        .min(LIST_MAX_HEIGHT)
+}
+
+/// `tasty_egui_theme` 가 `style.spacing.item_spacing.y` 로 적용하는 값. egui 는 수직으로
+/// 쌓이는 위젯 **사이마다** 이 값을 넣으므로 sizer 도 같은 식으로 세야 한다.
+///
+/// Theme 토큰이 host UI zoom 을 이미 반영하므로 별도 scale 곱셈을 하지 않는다.
+fn effective_item_spacing() -> f32 {
+    theme::theme().spacing_xs.value().round_ui()
+}
+
+/// popup 높이 — **view 가 세로로 쌓는 것을 하나도 빠짐없이** 센다.
+///
+/// [`draw_file_handler_picker_view`] 가 쌓는 순서와 1:1 로 대응한다. 갈래가 둘인 것이
+/// 요점이다: 빈 상태에는 컬럼 heading 도 list 도 없고 안내문 한 줄이 대신 들어간다.
+/// 한 식으로 뭉뚱그리면 한쪽은 잘리고 다른 쪽은 빈 여백이 남는다.
+///
+/// 바깥 수직 스택은 여섯 항목(대상 · 형식 · 여백 · 본문 · 여백 · 버튼 row)이라 그
+/// **사이**가 다섯이다. 목록 갈래는 본문 안에서 heading 과 `ScrollArea` 가 한 번 더
+/// 벌어져 여섯이 된다.
+fn picker_size_for(cand_n: usize, recent_n: usize, item_spacing: f32) -> egui::Vec2 {
+    let th = theme::theme();
+    let gaps_outside = 5.0;
+
+    let base = HEADER_HEIGHT
+        + th.spacing_sm.scaled(2.0)
+        + BUTTON_ROW_HEIGHT
+        + LogicalPx(gaps_outside * item_spacing);
+
+    // view 의 `is_empty` 와 같은 조건이다 — 갈라지는 자리가 둘이면 조건도 둘이 된다.
+    let content_height = if cand_n == 0 && recent_n == 0 {
+        base + EMPTY_LABEL_HEIGHT
+    } else {
+        base + HEADING_LINE_HEIGHT + LogicalPx(item_spacing) + list_height_for(cand_n, recent_n)
+    };
+
+    // `round_ui` 누적 오차와 egui `Ui::new` 초기 cursor padding 흡수용. 형제 popup
+    // (`convert.rs`)이 같은 이유로 같은 값을 쓴다 — 마지막 항목 baseline 이 콘텐츠 경계와
+    // 정확히 일치하면 anti-alias 한 줄이 잘려 보인다.
+    let safety_margin = 1.0;
+    egui::vec2(
+        POPUP_WIDTH.value(),
+        (popup::title_bar_height()
+            + popup::content_margin().scaled(2.0)
+            + content_height
+            + LogicalPx(safety_margin))
+        .value(),
+    )
+}
+
+/// PopupDef.default_size — popup 등록 시점의 placeholder.
+///
+/// sizer 가 매 프레임 재계산하므로 첫 프레임에만 쓰이는데, 손으로 적은 값이 sizer 와
+/// 어긋나면 그 첫 프레임이 깜빡인다. 그래서 **같은 식에서** 뽑는다 — 형제 popup 여섯이
+/// 이미 이 형태다. 기준은 목록 갈래의 최소 크기(양쪽 4 행)다.
+pub fn picker_default_size() -> egui::Vec2 {
+    picker_size_for(4, 4, theme::theme().spacing_xs.value())
+}
+
 /// PopupDef.sizer — 후보/recent list 길이에 따라 높이 조절.
 pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
-    let th = theme::theme();
     let (cand_n, recent_n) = match &state.dialogs.file_handler_picker {
         Some(p) => (p.candidates.len(), p.recent.len()),
         None => (0, 0),
     };
-    let list_rows = cand_n.max(recent_n);
-    let list_height = ITEM_HEIGHT
-        .scaled(list_rows.max(4) as f32)
-        .max(LIST_MIN_HEIGHT)
-        .min(LIST_MAX_HEIGHT);
+    picker_size_for(cand_n, recent_n, effective_item_spacing())
+}
 
-    let content_height =
-        HEADER_HEIGHT + th.spacing_sm.scaled(2.0) + list_height + BUTTON_ROW_HEIGHT;
+#[cfg(test)]
+mod size_tests {
+    //! popup 높이가 view 가 쌓는 것을 **전부** 덮는지 고정한다.
+    //!
+    //! 예전 식은 컬럼 heading 을 안 셌다. heading 은 `ScrollArea` **바깥**에 쌓이는데
+    //! `list_height` 는 항목 행만 계산해서, popup 이 최소 heading 한 줄만큼 짧게 열리고
+    //! 목록 마지막 항목이 세로로 잘렸다. egui 가 위젯 사이마다 넣는 `item_spacing.y` 도
+    //! 식에 없었다.
+    use super::*;
 
-    egui::vec2(
-        POPUP_WIDTH.value(),
-        (popup::title_bar_height() + popup::content_margin().scaled(2.0) + content_height).value(),
-    )
+    /// view 가 세로로 쌓는 것을 **다시 한 번 서술해서** 필요 높이를 만든다.
+    ///
+    /// 식을 두 번 쓰는 것이 목적이다 — sizer 는 이 값 **이상**을 내야 하고, 이 서술이
+    /// [`draw_file_handler_picker_view`] 를 따라간다. 한쪽만 고치면 어긋남이 여기서 뜬다.
+    fn needed_height(cand_n: usize, recent_n: usize, item_spacing: f32) -> LogicalPx {
+        let th = theme::theme();
+        let body = popup::title_bar_height()
+            + popup::content_margin().scaled(2.0)
+            + HEADER_HEIGHT
+            + th.spacing_sm.scaled(2.0)
+            + BUTTON_ROW_HEIGHT
+            + LogicalPx(5.0 * item_spacing);
+        if cand_n == 0 && recent_n == 0 {
+            body + EMPTY_LABEL_HEIGHT
+        } else {
+            body + HEADING_LINE_HEIGHT + LogicalPx(item_spacing) + list_height_for(cand_n, recent_n)
+        }
+    }
+
+    fn assert_fits(cand_n: usize, recent_n: usize, item_spacing: f32) {
+        let got = LogicalPx(picker_size_for(cand_n, recent_n, item_spacing).y);
+        let needed = needed_height(cand_n, recent_n, item_spacing);
+        assert!(
+            got >= needed,
+            "popup 높이 {got:?} < 필요 {needed:?} (후보 {cand_n} · 최근 {recent_n} · \
+             spacing {item_spacing}) — 마지막 항목이 잘린다"
+        );
+    }
+
+    /// 항목 수 세 갈래를 다 본다: 최소 높이(4 미만) · 비례(4~10) · 상한+스크롤(10 초과).
+    #[test]
+    fn every_row_count_branch_fits() {
+        for (cand, recent) in [(1, 0), (3, 2), (4, 4), (7, 3), (10, 10), (12, 5)] {
+            assert_fits(cand, recent, 4.0);
+        }
+    }
+
+    /// host UI zoom 이 `item_spacing` 을 바꿔도 덮어야 한다 — 형제 popup 이 옛 하드코딩
+    /// 3.0 으로 4 px 부족했던 자리와 같은 축이다.
+    #[test]
+    fn every_ui_scale_fits() {
+        for spacing in [3.40625_f32, 4.0, 4.78125] {
+            assert_fits(3, 3, spacing);
+            assert_fits(0, 0, spacing);
+        }
+    }
+
+    /// ★ 이 결함의 본체 — heading 한 줄을 안 세면 그만큼 짧아진다.
+    #[test]
+    fn the_column_heading_is_counted() {
+        let th = theme::theme();
+        let spacing = 4.0;
+        let without_heading = popup::title_bar_height()
+            + popup::content_margin().scaled(2.0)
+            + HEADER_HEIGHT
+            + th.spacing_sm.scaled(2.0)
+            + list_height_for(3, 3)
+            + BUTTON_ROW_HEIGHT;
+        let got = LogicalPx(picker_size_for(3, 3, spacing).y);
+        assert!(
+            got >= without_heading + HEADING_LINE_HEIGHT,
+            "heading 을 안 세던 옛 식({without_heading:?})보다 최소 heading 한 줄만큼은 \
+             커야 한다 — 지금 {got:?}"
+        );
+    }
+
+    /// 빈 상태에는 heading 도 목록도 없다. 같은 식으로 뭉뚱그리면 목록 자리만큼 빈 여백이
+    /// 남는다 — 잘리는 것의 반대 방향 결함이다.
+    #[test]
+    fn the_empty_branch_does_not_reserve_a_list() {
+        let spacing = 4.0;
+        let empty = LogicalPx(picker_size_for(0, 0, spacing).y);
+        let listed = LogicalPx(picker_size_for(1, 0, spacing).y);
+        assert!(
+            empty < listed,
+            "빈 상태({empty:?})가 항목 하나짜리({listed:?})보다 낮아야 한다"
+        );
+        // 두 갈래의 차가 정확히 "heading + 그 아래 간격 + 목록 최소 높이 − 안내문 한 줄"
+        // 이어야 한다. 부등호만 보면 빈 갈래가 목록 자리를 **일부** 잡고 있어도 통과한다.
+        let expected_gap =
+            HEADING_LINE_HEIGHT + LogicalPx(spacing) + LIST_MIN_HEIGHT - EMPTY_LABEL_HEIGHT;
+        assert_eq!(
+            listed - empty,
+            expected_gap,
+            "빈 상태가 목록 자리를 잡아 두면 하단에 그만큼 빈 여백이 남는다"
+        );
+    }
+
+    /// sizer 와 view 가 같은 목록 높이를 본다는 것 — 상한·하한이 실제로 문다.
+    #[test]
+    fn the_list_height_is_clamped_at_both_ends() {
+        assert_eq!(
+            list_height_for(1, 0),
+            LIST_MIN_HEIGHT,
+            "빈 자리도 4 행은 잡는다"
+        );
+        assert_eq!(
+            list_height_for(99, 0),
+            LIST_MAX_HEIGHT,
+            "10 행을 넘으면 스크롤이다"
+        );
+        assert_eq!(
+            list_height_for(7, 3),
+            ITEM_HEIGHT.scaled(7.0),
+            "긴 쪽이 높이를 정한다"
+        );
+    }
 }
 
 /// 후보/recent 리스트 한 행의 시각 입력 — `HandlerId` 가 owned `String` 이라
@@ -191,13 +372,7 @@ pub fn draw_file_handler_picker_view(
     // ── 두 열 list (좌: 후보 / 우: recent) ────────────────────────────
     let mut action = FileHandlerPickerAction::None;
 
-    let list_height = {
-        let rows = props.candidates.len().max(props.recent.len());
-        ITEM_HEIGHT
-            .scaled(rows.max(4) as f32)
-            .max(LIST_MIN_HEIGHT)
-            .min(LIST_MAX_HEIGHT)
-    };
+    let list_height = list_height_for(props.candidates.len(), props.recent.len());
 
     let total_w = ui.available_width();
     let col_w = (total_w - 8.0) / 2.0;
