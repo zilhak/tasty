@@ -24,6 +24,7 @@
 
 use super::params::{self, p_try};
 use serde_json::json;
+use tasty_model::TabSwitch;
 
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -41,10 +42,22 @@ pub(super) fn handle_debug_switch_tab(
         Some(i) => i as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
-    if state.goto_tab_in_pane(engine, index) {
-        JsonRpcResponse::success(id, json!({"switched": true, "active": index}))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Tab index {index} out of range"))
+    // 갈래 넷을 눌러서 보고하면 안 된다 — 예전에는 `bool` 하나라 **이미 그 탭이었다**
+    // 까지 "out of range" 로 나갔고, 그 문구를 믿고 "탭이 안 만들어졌다" 로 읽어 한
+    // 회차를 헛짚었다. 범위 안 인덱스는 성공이다: 바뀐 것이 없을 뿐이라 `switched`
+    // 가 false 로 나간다.
+    match state.goto_tab_in_pane(engine, index) {
+        TabSwitch::Switched => {
+            JsonRpcResponse::success(id, json!({"switched": true, "active": index}))
+        }
+        TabSwitch::AlreadyActive => {
+            JsonRpcResponse::success(id, json!({"switched": false, "active": index}))
+        }
+        TabSwitch::OutOfRange { tabs } => JsonRpcResponse::invalid_params(
+            id,
+            format!("Tab index {index} out of range — the focused pane has {tabs} tab(s)"),
+        ),
+        TabSwitch::NoPane => JsonRpcResponse::invalid_params(id, "No focused pane"),
     }
 }
 

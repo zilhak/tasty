@@ -2,6 +2,8 @@ use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
 
+use tasty_model::TabSwitch;
+
 use super::AppState;
 use crate::core::CoreState;
 
@@ -196,11 +198,14 @@ impl AppState {
     }
 
     /// Go to tab by index (0-based) in the focused pane.
-    pub fn goto_tab_in_pane(&mut self, engine: &mut CoreState, index: usize) -> bool {
+    ///
+    /// pane 을 못 찾은 것은 인덱스가 틀린 것과 다른 일이라 갈래를 따로 낸다
+    /// ([`TabSwitch::NoPane`]).
+    pub fn goto_tab_in_pane(&mut self, engine: &mut CoreState, index: usize) -> TabSwitch {
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.goto_tab(index)
         } else {
-            false
+            TabSwitch::NoPane
         }
     }
 
