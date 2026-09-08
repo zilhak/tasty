@@ -10,10 +10,12 @@
 //! - **헤더 밴드**(높이 48) — plug 아이콘 + 타이틀 + 1px 세로 구분선 +
 //!   세그먼트 탭 3개(`Installed N` / `Attention N` / `Add plugin`), 우측 클러스터는
 //!   오른쪽부터 X 닫기 → 필터 입력(Installed 탭에서만).
-//! - **좌측 목록**(폭 240) — 행 높이 40 의 2줄 행(이름 13 / 부제 10 muted).
+//! - **좌측 목록**(폭 240) — 아바타(32) + 2줄 텍스트 열(이름 13 / 부제 10 muted).
+//!   행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm` 위아래에 아바타가
+//!   앉는 flex 행이라 값이 아니라 구성이 정본이다(`PLUGIN_LIST_ROW_HEIGHT`).
 //!   builtin 은 이름 뒤 `•`, 비활성/실행중은 부제에 `·` 로 이어 붙는다.
 //!   health error + enabled 인 행만 우측에 danger dot.
-//! - **우측 상세** — 이름 + 버전 tag + built-in 배지, id(muted), 설명,
+//! - **우측 상세** — 아바타(46) + 이름 + 버전 tag + built-in 배지, id(muted), 설명,
 //!   (health error 면) danger 박스, authors/homepage.
 //!
 //! **토큰 이관** (구조 보존, 값은 가장 가까운 토큰으로): 헤더 48 =
@@ -21,8 +23,8 @@
 //! `icon_glyph_size_md`, 타이틀 14 → `font_size_max`, 구분선 20 →
 //! `spacing_lg + spacing_xs`, 닫기 28 → `item_height_interactive`, 필터 200 →
 //! `field_width_lg`, 세그먼트 12.5/9.5/10.5 → `font_size_body`/`font_size_micro`,
-//! 행 40 → `item_height_interactive + spacing_md`, 이름 13 → `font_size_body`,
-//! 부제 10 → `font_size_micro`.
+//! 이름 13 → `font_size_body`, 부제 10 → `font_size_micro`. 행 높이는 이관 대상이
+//! 아니다 — 아바타에서 도출된다(위 "좌측 목록").
 
 mod add;
 mod attention;
@@ -450,7 +452,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "list",
-                "폭 `plugins_side_panel_width` · 행 40 · 이름 13 + 부제 10 muted",
+                "폭 `plugins_side_panel_width` · 아바타 32 · 이름 13 + 부제 10 muted",
             ),
             ("builtin", "이름 뒤 `•` · 상세는 accent-agent 배지"),
             (
