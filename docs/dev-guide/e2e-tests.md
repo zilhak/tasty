@@ -6,6 +6,10 @@
 
 **e2e 는 `cargo test --test e2e_tests` 단독 실행 전에 `cargo build --workspace` 가 선행돼야 한다** (또는 처음부터 `cargo test --workspace` 사용). package 한정 test 는 본체(tasty.exe)만 빌드하고 plugin bin crate 들을 빌드하지 않는데, dev bundle(`target/debug/builtin-plugins/`)은 **매니페스트는 소스에서, 바이너리는 target exe 에서 독립적으로** `copy_if_newer` 하므로 stale plugin exe 가 최신 매니페스트를 달고 격리 TASTY_HOME 에 설치된다. 이 drift 는 plugin↔host 계약이 바뀐 직후(예: `markdown.recent` 의 host adapter 이관) namespace 호출을 "Method not found" 로 깨뜨린다. 호스트는 hello 시 바이너리 보고 버전 ≠ 매니페스트 버전이면 `version drift` warn 을 남긴다 — spawn 실패 진단 시 stderr tail 에서 이 경고를 먼저 확인.
 
+**이 전제는 이제 글만이 아니라 판정이다.** `spawn_diag::staged_bundle_note` 가 번들 plugin 을 부른다고 선언한 스위트에서 exe 옆의 plugin 바이너리를 세고, 0 이면 **실패 문구 끝에** 무엇을 지을지 붙인다. 그 전에는 같은 상태가 `Method not found` 한 줄로만 나왔고 — 그 문구는 메서드가 사라진 것과 글자 그대로 같아 — 같은 빨강이 회귀로 오독됐다. 이 전제가 이 문서 · `CLAUDE.md` · `spawn_diag::instance_bin` 의 doc 세 곳에 **글로는 이미 적혀 있었다는 것**이 요점이다: 실패하는 순간에 읽히지 않는 글은 판정이 아니다. 그러니 같은 사실을 네 번째 자리에 또 적지 말고, 안 잡히는 갈래가 보이면 그 판정을 넓혀라.
+
+진단은 **spawn 이 아니라 실패 자리**에 붙는다. spawn 에서 세우면 plugin 을 안 쓰는 스위트의 참인 초록까지 같이 사라진다. 부분 스테이징(일부만 지어진 상태)은 안 잡는 **선언된 사각**이고, 그 이유는 그 함수의 doc 에 있다.
+
 ## 0-1. 어느 바이너리를 띄우는가
 
 하네스가 띄우는 것은 `CARGO_BIN_EXE_tasty` — **테스트 자신과 같은 feature 로 빌드된 자기 바이너리**다. 이 한 줄이 조합별 성질을 전부 결정한다.

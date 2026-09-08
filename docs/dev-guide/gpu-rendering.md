@@ -47,7 +47,7 @@ per-frame accumulator(`bg_instances`, `glyph_instances`, `surface_ranges`)와 dr
 
 그 bump 는 LRU stamp 만이 아니라 **atlas 의 eviction 스로틀을 다시 무장한다** — atlas 는 한 프레임에 페이지를 한 번만 evict 하고, 그 제한을 푸는 것은 이 bump 뿐이다. 그래서 이 호출을 건너뛴 렌더 경로는 **한 번 evict 한 뒤 이후의 모든 eviction 을 영구히 거절하고**, 증상은 glyph 가 조용히 rasterize 되지 않는 것으로만 나타난다. 그 상태 기계(`FrameClock`)는 device 없이 단독으로 검증된다(`cargo test -p tasty-font`).
 
-그 시계를 **실제로 감는지**는 이쪽 크레이트의 소스에 대한 물음이라 거기서 못 묻는다 — `src/source_guards/frame_clock_arming.rs` 가 판정한다: `append_terminal_viewport` 를 부르는 모든 함수가 첫 append 보다 앞에서, 어떤 루프에도 안 들어간 자리에서 `begin_frame` 을 부르는가. 정적 판정이라 **조건 분기 · 호출 횟수 · 한 프레임에 그 함수가 몇 번 불리는가는 안 본다** — 그 가드의 모듈 주석에 못 보는 갈래가 전부 적혀 있다.
+그 시계를 **실제로 감는지**는 이쪽 크레이트의 소스에 대한 물음이라 거기서 못 묻는다 — `src/source_guards/frame_clock_arming.rs` 가 판정한다: `append_terminal_viewport` 를 부르는 모든 함수가 첫 append 보다 앞에서, 어떤 루프에도 안 들어간 자리에서, **그 append 와 같은 수신자 위의** `begin_frame` 을 부르는가. 수신자를 함께 보는 이유는 본체에 동명이인이 있기 때문이다 — `src/view/base.rs` 의 뷰 계층 `begin_frame` 은 이름이 같지만 atlas 시계와 무관하다. 정적 판정이라 **조건 분기 · 호출 횟수 · 한 프레임에 그 함수가 몇 번 불리는가는 안 본다** — 그 가드의 모듈 주석에 못 보는 갈래가 전부 적혀 있다.
 
 ### ② `append_terminal_viewport(...)`
 
