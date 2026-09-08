@@ -251,8 +251,16 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
+| `gallery/overlays-dialogs.jsx` §`filehandler` (420px · 프레임은 `gallery/overlays-shared.jsx` `FileHandlerFrame`) | `src/adapters/ui/popup/file_handler_picker.rs::draw_file_handler_picker_view` | `file_handler_picker` (Overlays "File handler picker", `components/file_handler_picker.rs::draw`) |
 | (시안 없음 — 확정 토큰 + `icons.json` `close`/`fit` 조합뿐이라 신규 시각 결정이 없었다, 근거 → [fullscreen-stage §디자인 소스](fullscreen-stage.md#디자인-소스--신규-시안-없이-만든-이유)) | `src/adapters/ui/fullscreen.rs::draw_fullscreen_stage`(셸: scrim+제목+종료 버튼) | `fullscreen-stage` (Overlays, `components/fullscreen_stage.rs::draw`) |
 | (시안 없음 — 기존 타이틀바 + `fit` 글리프, 근거 위와 같음) | `src/adapters/ui/popup/draw.rs`(타이틀바 전체화면 버튼) | `fullscreen-stage-titlebar` (Overlays, `components/fullscreen_stage.rs::draw_titlebar`) |
+
+**`file_handler_picker` 는 이 표에서 본체와 canonical 이 어긋난 채 좌표만 잡힌 행이다.** canonical 을 전사한 쪽은
+갤러리 specimen 이고, 본체는 그 이전 자체 설계 형상 그대로다 — 폭 480px(canonical 420px), 좌우 2열(후보/최근,
+canonical 은 단일 목록), 행은 id 문자열 한 줄(canonical 은 `icon · name · origin`), 선택 표시는 배경
+오버레이만(canonical 은 2px accent 좌측 바), plugin 출처·기본 핸들러 표시와 footer 의 "Always open …" 체크는
+본체에 없다. 반대로 본체에만 있는 상태가 다섯이라(최근 목록 · 형식 표시줄 · 추천 없음 fallback · 핸들러 0개 빈 상태 · 긴 목록/긴 경로)
+canonical 이 그 시각을 아직 정하지 않았다. 구조 전사는 그 다섯의 시안이 확정된 뒤에 이 행의 세 좌표를 한 형상으로 모은다.
 
 ## Overlays — plugins window
 
