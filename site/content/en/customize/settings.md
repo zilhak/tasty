@@ -1,4 +1,4 @@
-<!-- source-hash: f9bd178c7cac -->
+<!-- source-hash: 5940786cb43f -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -6,6 +6,7 @@ After reading this page you will know how the settings window is organised, what
 ## Opening the settings window
 
 Press the **Settings** button at the very bottom of the sidebar, or press `Ctrl+,`.
+Press the same shortcut again to close the settings window.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐

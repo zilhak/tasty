@@ -175,6 +175,33 @@ impl View for SettingsView {
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
 
+                // 설정을 여는 바인딩이 이 창을 닫기도 한다 — 필드 이름이 `toggle_settings`
+                // 이고, 여는 쪽만 구현돼 있어 이름과 동작이 어긋나 있었다. 키보드로 이 창을
+                // 벗어나는 길이 없다는 것이 그 어긋남의 사용자 쪽 얼굴이다.
+                //
+                // 왜 여기서 닫는가: 모달 창은 자기 이벤트를 자기가 받으므로 메인 창의 단축키
+                // 표에 이 키가 도달하지 않는다. 그리고 닫는 길로 `ViewAction::Close` 를 쓰는
+                // 것은 **창 닫기 버튼과 정확히 같은 경로**다 — 저장/취소 cascade 가 그대로
+                // 흐르므로 "키보드로 닫으면 변경이 조용히 버려지는가" 라는 물음이 생기지
+                // 않는다.
+                //
+                // 녹화 중에는 안 한다. 그때 키는 바인딩 캡처로 가야 하고, 여기서 먹으면
+                // 사용자가 그 조합을 단축키로 등록할 수 없다.
+                //
+                // ★ 키를 여기 박지 않는다. 무엇으로 닫히는가는 `KeybindingSettings` 가
+                // 정하고, 사용자가 그 바인딩을 바꾸면 닫는 키도 함께 바뀐다.
+                if !is_recording
+                    && event.state == ElementState::Pressed
+                    && crate::adapters::ui::input::shortcuts::matches_any_binding(
+                        &self.settings.keybindings.toggle_settings,
+                        &event.logical_key,
+                        self.base.modifiers,
+                    )
+                {
+                    self.should_close = true;
+                    return ViewAction::Close;
+                }
+
                 self.double_tap
                     .on_key_event(&event.logical_key, event.state == ElementState::Pressed);
                 if event.state == ElementState::Pressed

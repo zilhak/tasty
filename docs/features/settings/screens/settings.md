@@ -40,7 +40,10 @@
   - Theme(Appearance) → [`design/systems/theme`](../../../design/systems/theme.md)
   - Notifications → [`features/notifications/`](../../notifications/index.md) · FileHandler(파일 서브탭) → [`features/file-handler/`](../../file-handler/index.md) · Hook Handlers → [`features/webhook/`](../../webhook/index.md)·[`features/hooks/`](../../hooks/index.md)
   - Plugins → [`features/plugin-system/`](../../plugin-system/index.md)
-- **Save / Cancel** (하단): draft 커밋 / 폐기. 헤더 밴드에 close ✕ 는 없다 — 닫기/취소 진입점은 footer **Cancel** + OS 타이틀바 close 뿐.
+- **Save / Cancel** (하단): draft 커밋 / 폐기. 헤더 밴드에 close ✕ 는 없다 — 닫기/취소 진입점은
+  footer **Cancel** · OS 타이틀바 close · `toggle_settings` 바인딩(기본 `Ctrl+,`) 셋이다. 마지막 것은
+  타이틀바 close 와 같은 경로(`ViewAction::Close`)로 닫으므로 draft 처리가 같다. 바인딩 녹화 중에는
+  닫지 않는다 — 그때 키는 캡처로 가야 한다.
 - **Keybindings › Preset**: 이 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋).
 
 ## 상태별 시각

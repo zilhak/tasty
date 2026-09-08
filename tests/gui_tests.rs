@@ -52,17 +52,16 @@
 //!
 //! ## 설정 창을 닫는 손
 //!
-//! **키보드로는 못 닫는다.** `SettingsView::handle_event`(`src/view/settings.rs`)에
-//! Escape 분기가 없고, `App::open_settings_modal`(`src/app/modal/settings.rs`)은 모달이
-//! 이미 있으면 그냥 return 해서 `Ctrl+,` 도 토글이 아니다. 실재하는 닫기 경로는 창 닫기
-//! 요청(`WindowEvent::CloseRequested`)과 egui 액션 둘인데, WM 없는 Xvfb 에는 앞의 것을
-//! 보낼 손이 없다 — 창은 `WM_DELETE_WINDOW` 를 광고하지만 `xdotool windowclose` 는 그것을
-//! 안 쓰고 `XDestroyWindow` 를 불러 winit 이 패닉하고, `wmctrl -i -c` 는 WM 이 없으면
-//! 아무도 처리하지 않는다.
+//! **`toggle_settings` 바인딩(기본 `Ctrl+,`)이 연 창을 닫는다.** `Escape` 는 아직 안
+//! 닫는다 — `SettingsView::handle_event`(`src/view/settings.rs`)에 그 분기가 없다.
+//! 실재하는 다른 닫기 경로는 창 닫기 요청(`WindowEvent::CloseRequested`)과 egui 액션인데,
+//! WM 없는 Xvfb 에는 앞의 것을 보낼 손이 없다 — 창은 `WM_DELETE_WINDOW` 를 광고하지만
+//! `xdotool windowclose` 는 그것을 안 쓰고 `XDestroyWindow` 를 불러 winit 이 패닉하고,
+//! `wmctrl -i -c` 는 WM 이 없으면 아무도 처리하지 않는다.
 //!
-//! 그래서 닫기는 `GuiTestInstance::close_active_modal()`(= `debug.modal.close_request`)로
-//! 한다. `Escape` · `Ctrl+,` 가 **안 닫는다는 것 자체**는
-//! `test_neither_escape_nor_ctrl_comma_closes_the_settings_modal` 이 값으로 고정한다 —
+//! 그래서 시험의 정리 단계는 `GuiTestInstance::close_active_modal()`
+//! (= `debug.modal.close_request`)로 한다. 무엇이 닫고 무엇이 안 닫는지는
+//! `test_the_toggle_binding_closes_the_settings_modal_and_escape_does_not` 이 고정한다 —
 //! 그것은 옳음의 단정이 아니라 **현재 동작의 기록**이고, 동작이 바뀌면 그 시험이 알려준다.
 
 mod gui_common;
@@ -159,16 +158,18 @@ fn test_settings_closes_on_close_request() {
     );
 }
 
-/// ★ 이것은 **옳음의 단정이 아니라 현재 동작의 기록**이다.
+/// 설정 모달을 **키보드로 닫는 길**과, 아직 닫지 않는 키를 함께 고정한다.
 ///
-/// 설정 모달은 `Escape` 로도 `Ctrl+,` 로도 닫히지 않는다:
-/// · `SettingsView::handle_event`(`src/view/settings.rs`)에 Escape 분기가 없다.
-/// · `App::open_settings_modal`(`src/app/modal/settings.rs`)은 모달이 이미 있으면 그냥
-///   return 한다 — `Ctrl+,` 는 토글이 아니다.
+/// · `Ctrl+,`(= `toggle_settings` 바인딩)는 연 창을 **닫는다.** 필드 이름이 토글을
+///   약속하는데 여는 쪽만 구현돼 있었고, 그래서 키보드로 이 창을 벗어나는 길이 없었다.
+///   닫는 경로는 창 닫기 버튼과 같은 `ViewAction::Close` 라 저장/취소 cascade 가 그대로
+///   흐른다.
+/// · `Escape` 는 **아직 안 닫는다.** 팝업은 Escape 로 닫히므로 비대칭이 남아 있지만,
+///   그쪽은 텍스트 입력 중 Escape 가 편집 취소인지 창 닫기인지, 바인딩 녹화 중에는
+///   무엇인지 같은 판단이 먼저다. 여기서는 **지금 무엇이 참인지만** 적는다.
 ///
-/// 그 비대칭(팝업은 Escape 로 닫히는데 모달은 안 닫힌다)은 결함으로 보이지만, 고치는
-/// 것은 사용자에게 보이는 동작 변경이고 텍스트 입력 중 Escape 가 편집 취소인지 모달
-/// 닫기인지 같은 트레이드오프가 있다. 그래서 여기서는 **지금 무엇이 참인지만** 적는다.
+/// 키를 상수로 안 쓰고 바인딩으로 누르는 이유: 무엇으로 닫히는가는
+/// `KeybindingSettings` 가 정한다. 사용자가 그 바인딩을 바꾸면 닫는 키도 함께 바뀐다.
 ///
 /// 동작이 바뀌면 이 시험이 빨개진다 — 그때 이 시험을 함께 바꿔라. 그것이 이 시험의
 /// 목적이다: 바뀐 것이 조용히 지나가지 않게 한다.
@@ -177,7 +178,7 @@ fn test_settings_closes_on_close_request() {
 /// 채널이 어긋나 있어서(열기부터 타임아웃) 닫기까지 도달한 적이 없었기 때문이다.
 #[test]
 #[ignore]
-fn test_neither_escape_nor_ctrl_comma_closes_the_settings_modal() {
+fn test_the_toggle_binding_closes_the_settings_modal_and_escape_does_not() {
     let mut inst = shared();
 
     inst.press_ctrl(Key::Unicode(','));
@@ -194,13 +195,6 @@ fn test_neither_escape_nor_ctrl_comma_closes_the_settings_modal() {
     );
 
     inst.press_ctrl(Key::Unicode(','));
-    std::thread::sleep(Duration::from_millis(600));
-    assert!(
-        inst.ui_state().settings_modal_is_up(),
-        "Ctrl+, 가 설정 모달을 닫았다 — 토글이 된 것이다. 위와 같이 함께 갱신해라"
-    );
-
-    inst.close_active_modal();
     inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
         !s.settings_modal_is_up()
     });
@@ -226,7 +220,8 @@ fn test_settings_open_speed() {
         MAX_UI_RESPONSE_MS,
     );
 
-    // Cleanup — 키보드로는 못 닫는다(형제 시험이 그 사실을 고정한다).
+    // Cleanup — 여기서는 debug 경로로 닫는다. 키보드 토글이 닫는다는 것은 형제 시험이
+    // 따로 고정하므로, 이 시험이 그것까지 태우면 두 물음이 한 국면에 섞인다.
     inst.close_active_modal();
     inst.wait_for_ui("settings modal is gone", Duration::from_secs(3), |s| {
         !s.settings_modal_is_up()
