@@ -1,0 +1,831 @@
+/* ============================================================
+   Tasty — TIER 3 · COMPONENT tokens
+   ------------------------------------------------------------
+   Per-component knobs. Every value references a SEMANTIC token
+   (never a primitive, never a literal). This is the contract an
+   implementer reads: "Button background = --tasty-button-primary-bg".
+   Re-theme a component by overriding only its tokens; the whole
+   chain (primitive → semantic → component) keeps it consistent.
+
+   Naming: --tasty-<component>-<part>[-<state>]
+   States: -hover / -active / -focus / -disabled / -checked / -on
+   ============================================================ */
+
+:root {
+  /* ─────────────────  CORE  ───────────────── */
+
+  /* Button */
+  --tasty-button-height:           var(--tasty-control-height);      /* 28 */
+  --tasty-button-height-sm:        var(--tasty-control-height-tab);  /* 24 */
+  --tasty-button-height-lg:        var(--tasty-size-32);             /* 32 */
+  --tasty-button-padding-x:        var(--tasty-space-md);
+  --tasty-button-gap:              var(--tasty-space-sm);
+  --tasty-button-radius:           var(--tasty-radius);
+  --tasty-button-font-size:        var(--tasty-font-size-body);
+  --tasty-button-font-weight:      var(--tasty-font-weight-medium);
+  --tasty-button-fg:               var(--tasty-text-primary);
+  --tasty-button-overlay-hover:    var(--tasty-overlay-hover);
+  --tasty-button-overlay-active:   var(--tasty-overlay-active);
+  --tasty-button-primary-bg:       var(--tasty-accent-primary);
+  --tasty-button-primary-fg:       var(--tasty-text-on-accent);
+  --tasty-button-agent-bg:         var(--tasty-accent-agent);
+  --tasty-button-agent-fg:         var(--tasty-text-on-accent);
+  --tasty-button-danger-bg:        var(--tasty-accent-danger);
+  --tasty-button-danger-fg:        var(--tasty-text-on-accent);
+  --tasty-button-secondary-bg:     var(--tasty-surface-raised);
+  --tasty-button-secondary-border: var(--tasty-border-default);
+  --tasty-button-secondary-border-hover: var(--tasty-border-strong);
+  --tasty-button-ghost-fg:         var(--tasty-text-secondary);
+  --tasty-button-ghost-fg-hover:   var(--tasty-text-primary);
+
+  /* IconButton — square */
+  --tasty-icon-button-size:        var(--tasty-control-height);     /* 28 */
+  --tasty-icon-button-size-sm:     var(--tasty-size-24);
+  --tasty-icon-button-radius:      var(--tasty-radius);
+  --tasty-icon-button-fg:          var(--tasty-text-secondary);
+  --tasty-icon-button-fg-hover:    var(--tasty-text-primary);
+  --tasty-icon-button-overlay-hover:  var(--tasty-overlay-hover);
+  --tasty-icon-button-bg-active:   var(--tasty-overlay-active);
+
+  /* Badge — solid status pill */
+  --tasty-badge-size:              var(--tasty-size-16);
+  --tasty-badge-dot-size:          var(--tasty-status-dot-size);
+  --tasty-badge-padding-x:         var(--tasty-space-xs);
+  --tasty-badge-radius:            var(--tasty-radius-sm);
+  --tasty-badge-font-size:         var(--tasty-font-size-micro);  /* 10 — count pills read smaller than caption */
+  --tasty-badge-font-weight:       var(--tasty-font-weight-bold);
+  --tasty-badge-bg:                var(--tasty-surface-raised);
+  --tasty-badge-fg:                var(--tasty-text-secondary);
+  /* Badge VARIANTS — every variant is a bg/fg PAIR at the component tier, so a
+     badge never reaches into an accent role by hand. attention-* variants are
+     the ones the attention scale drives (workspace row counts); the rest are
+     the pre-existing product variants, now named instead of inlined. */
+  --tasty-badge-danger-bg:         var(--tasty-accent-danger);
+  --tasty-badge-danger-fg:         var(--tasty-text-on-accent);
+  --tasty-badge-primary-bg:        var(--tasty-attention-completion);      /* completion count — blue */
+  --tasty-badge-primary-fg:        var(--tasty-attention-completion-fg);
+  --tasty-badge-warning-bg:        var(--tasty-attention-needs-input);     /* needs-input count — yellow */
+  --tasty-badge-warning-fg:        var(--tasty-attention-needs-input-fg);
+  --tasty-badge-agent-bg:          var(--tasty-accent-agent);
+  --tasty-badge-agent-fg:          var(--tasty-text-on-accent);
+  --tasty-badge-success-bg:        var(--tasty-accent-success);
+  --tasty-badge-success-fg:        var(--tasty-text-on-accent);
+  --tasty-badge-neutral-bg:        var(--tasty-surface-active);
+  --tasty-badge-neutral-fg:        var(--tasty-text-primary);
+  --tasty-badge-group-gap:         var(--tasty-space-xs);  /* 4 — gap when two kind badges share a row's trailing slot */
+
+  /* Tag — outlined chip */
+  --tasty-tag-gap:                 var(--tasty-space-xs);
+  --tasty-tag-size:                var(--tasty-size-16);
+  --tasty-tag-dot-size:            var(--tasty-size-8);
+  --tasty-tag-padding-x:           var(--tasty-space-sm);  /* 8 — outlined chips need more room than a count pill */
+  --tasty-tag-radius:              var(--tasty-radius-sm);
+  --tasty-tag-font-size:           var(--tasty-font-size-micro);
+  --tasty-tag-bg:                  var(--tasty-surface-raised);
+  --tasty-tag-fg:                  var(--tasty-text-secondary);
+  --tasty-tag-border:              var(--tasty-border-default);
+
+  /* Kbd — keycap */
+  --tasty-kbd-size:                var(--tasty-size-16);
+  --tasty-kbd-gap:                 var(--tasty-size-3);
+  --tasty-kbd-shadow-depth:        var(--tasty-size-2);  /* 3D keycap bottom edge */
+  --tasty-kbd-padding-x:           var(--tasty-space-xs);
+  --tasty-kbd-radius:              var(--tasty-radius-sm);
+  --tasty-kbd-font:                var(--tasty-font-mono);
+  --tasty-kbd-font-size:           var(--tasty-font-size-micro);
+  --tasty-kbd-bg:                  var(--tasty-surface-raised);
+  --tasty-kbd-fg:                  var(--tasty-text-secondary);
+  --tasty-kbd-border:              var(--tasty-border-strong);
+
+  /* ─────────────────  FORMS  ───────────────── */
+
+  /* Input */
+  --tasty-input-height:            var(--tasty-control-height);
+  --tasty-input-padding-x:         var(--tasty-space-md);
+  --tasty-input-gap:               var(--tasty-space-sm);
+  --tasty-input-radius:            var(--tasty-radius);
+  --tasty-input-font-size:         var(--tasty-font-size-body);
+  --tasty-input-bg:                var(--tasty-surface-raised);
+  --tasty-input-fg:                var(--tasty-text-primary);
+  --tasty-input-placeholder:       var(--tasty-text-placeholder);
+  --tasty-input-border:            var(--tasty-border-default);
+  --tasty-input-border-focus:      var(--tasty-border-focus);
+  --tasty-input-border-invalid:    var(--tasty-accent-danger);
+  --tasty-input-icon-fg:           var(--tasty-text-muted);
+
+  /* Select */
+  --tasty-select-height:           var(--tasty-control-height);
+  --tasty-select-padding-x:        var(--tasty-space-md);
+  --tasty-select-radius:           var(--tasty-radius);
+  --tasty-select-font-size:        var(--tasty-font-size-body);
+  --tasty-select-bg:               var(--tasty-surface-raised);
+  --tasty-select-fg:               var(--tasty-text-primary);
+  --tasty-select-border:           var(--tasty-border-default);
+  --tasty-select-border-focus:     var(--tasty-border-focus);
+  --tasty-select-chevron-fg:       var(--tasty-text-muted);
+  --tasty-select-chevron-room:     var(--tasty-size-28); /* right padding reserved for the chevron */
+  --tasty-select-chevron-offset:   var(--tasty-space-sm);
+
+  /* MultiSelect — the Select sibling that holds many values. The closed
+     trigger deliberately aliases the Select tokens (one family in a form);
+     the open menu aliases the MenuItem/menu-container tokens, and the rows
+     are Checkbox. Only three values are genuinely new: the empty-summary
+     tone, the bulk-action row color, and the menu width cap. */
+  --tasty-multiselect-height:           var(--tasty-select-height);          /* → control-height 28 */
+  --tasty-multiselect-padding-x:        var(--tasty-select-padding-x);       /* → space-md 12 */
+  --tasty-multiselect-radius:           var(--tasty-select-radius);          /* → radius 4 */
+  --tasty-multiselect-font-size:        var(--tasty-select-font-size);       /* → body 14 */
+  --tasty-multiselect-bg:               var(--tasty-select-bg);              /* → surface-raised */
+  --tasty-multiselect-fg:               var(--tasty-select-fg);              /* → text-primary */
+  --tasty-multiselect-border:           var(--tasty-select-border);          /* → border-default */
+  --tasty-multiselect-border-hover:     var(--tasty-border-strong);          /* same hover as Select */
+  --tasty-multiselect-border-focus:     var(--tasty-select-border-focus);    /* → border-focus (also the OPEN state) */
+  --tasty-multiselect-chevron-fg:       var(--tasty-select-chevron-fg);      /* → text-muted */
+  --tasty-multiselect-chevron-room:     var(--tasty-select-chevron-room);    /* → 28 reserved right padding */
+  --tasty-multiselect-chevron-offset:   var(--tasty-select-chevron-offset);  /* → space-sm */
+  --tasty-multiselect-summary-fg:       var(--tasty-text-primary);           /* N-selected / all summary */
+  --tasty-multiselect-summary-fg-empty: var(--tasty-text-placeholder);       /* 0 selected reads as placeholder */
+  --tasty-multiselect-menu-bg:          var(--tasty-menu-bg);                /* → surface-raised */
+  --tasty-multiselect-menu-border:      var(--tasty-menu-border);            /* → border-default */
+  --tasty-multiselect-menu-radius:      var(--tasty-menu-radius);            /* → radius */
+  --tasty-multiselect-menu-shadow:      var(--tasty-shadow-popover);         /* popover lift */
+  --tasty-multiselect-menu-padding:     var(--tasty-space-xs);               /* 4 inner ring around the rows */
+  --tasty-multiselect-menu-gap:         var(--tasty-space-xs);               /* 4 trigger → menu gap */
+  --tasty-multiselect-menu-max-height:  var(--tasty-autocomplete-max-height);/* → 220 (~7 rows), then scrolls */
+  --tasty-multiselect-menu-max-width:   var(--tasty-size-320);               /* menu may outgrow the trigger up to this */
+  --tasty-multiselect-row-height:       var(--tasty-menu-item-height);       /* → control-height 28 */
+  --tasty-multiselect-row-padding-x:    var(--tasty-menu-item-padding-x);    /* → space-md 12, matches the trigger */
+  --tasty-multiselect-row-gap:          var(--tasty-space-sm);               /* 8 box → label */
+  --tasty-multiselect-row-fg:           var(--tasty-text-primary);           /* NOT muted — Latte contrast on surface-raised */
+  --tasty-multiselect-row-bg-hover:     var(--tasty-overlay-hover);          /* pointer hover wash */
+  --tasty-multiselect-row-bg-active:    var(--tasty-surface-active);         /* keyboard ↑/↓ row only — never "checked" */
+  --tasty-multiselect-all-fg:           var(--tasty-accent-primary);         /* bulk select/clear action row */
+  --tasty-multiselect-separator:        var(--tasty-separator);              /* under the bulk row */
+
+  /* Checkbox */
+  --tasty-checkbox-size:           var(--tasty-size-16);
+  --tasty-checkbox-radius:         var(--tasty-radius-sm);
+  --tasty-checkbox-bg:             var(--tasty-surface-raised);
+  --tasty-checkbox-border:         var(--tasty-border-strong);
+  --tasty-checkbox-bg-checked:     var(--tasty-accent-primary);
+  --tasty-checkbox-check-fg:       var(--tasty-text-on-accent);
+  --tasty-checkbox-border-focus:   var(--tasty-border-focus);
+
+  /* Switch */
+  --tasty-switch-track-width:      var(--tasty-size-28);
+  --tasty-switch-track-height:     var(--tasty-size-16);
+  --tasty-switch-thumb-size:       var(--tasty-size-12);
+  --tasty-switch-thumb-inset:      var(--tasty-size-2);
+  --tasty-switch-thumb-travel:     var(--tasty-size-12); /* track-width − thumb − 2×inset = 28−12−4 */
+  --tasty-switch-radius:           var(--tasty-radius-pill);
+  --tasty-switch-track-bg:         var(--tasty-surface-active);
+  --tasty-switch-track-bg-on:      var(--tasty-accent-primary);
+  --tasty-switch-thumb-bg:         var(--tasty-text-muted);     /* off — dim thumb */
+  --tasty-switch-thumb-bg-on:      var(--tasty-text-on-accent); /* on  — thumb atop accent */
+
+  /* ─────────────────  NAVIGATION  ───────────────── */
+
+  /* Tab */
+  --tasty-tab-height:              var(--tasty-control-height-tab);
+  --tasty-tab-strip-width:         var(--tasty-tab-width);
+  --tasty-tab-padding-x:           var(--tasty-space-sm);
+  --tasty-tab-gap:                 var(--tasty-space-sm);
+  --tasty-tab-bg:                  var(--tasty-bg-sidebar);
+  --tasty-tab-bg-active:           var(--tasty-bg-panel);
+  --tasty-tab-fg:                  var(--tasty-text-muted);
+  --tasty-tab-fg-hover:            var(--tasty-text-secondary);
+  --tasty-tab-fg-active:           var(--tasty-text-primary);
+  /* Tab title — attention tint. The title color carries FOUR states in one
+     channel; resolution order is needs-input → completion → active → rest.
+     Attention clears on focus, so an active tab never shows an attention tint
+     (the ordering is defensive, not a live collision). */
+  --tasty-tab-fg-needs-input:      var(--tasty-attention-needs-input);
+  --tasty-tab-fg-completion:       var(--tasty-attention-completion);
+  --tasty-tab-indicator:           var(--tasty-accent-primary);
+  --tasty-tab-separator:           var(--tasty-separator);
+  --tasty-tab-close-size:          var(--tasty-size-16);
+  --tasty-tab-close-radius:        var(--tasty-radius-sm);
+  --tasty-tab-indicator-width:     var(--tasty-size-2);
+  --tasty-tab-dot-size:            var(--tasty-status-dot-size);
+  --tasty-tab-icon-size:           var(--tasty-icon-size-sm);
+
+  /* TreeRow */
+  --tasty-tree-row-height:         var(--tasty-control-height-tree);
+  --tasty-tree-row-indent:         var(--tasty-space-md);  /* 12 — per-level indent step (on 4px grid) */
+  --tasty-tree-row-gap:            var(--tasty-space-xs);
+  --tasty-tree-row-font-size:      var(--tasty-font-size-body);
+  --tasty-tree-row-meta-font-size: var(--tasty-font-size-micro);
+  --tasty-tree-row-fg:             var(--tasty-text-secondary);
+  --tasty-tree-row-fg-active:      var(--tasty-text-primary);
+  --tasty-tree-row-bg-hover:       var(--tasty-overlay-hover);
+  --tasty-tree-row-bg-active:      var(--tasty-surface-active);
+
+  /* MenuItem (+ menu container) */
+  --tasty-menu-bg:                 var(--tasty-surface-raised);
+  --tasty-menu-border:             var(--tasty-border-default);
+  --tasty-menu-radius:             var(--tasty-radius);
+  --tasty-menu-item-height:        var(--tasty-control-height);
+  --tasty-menu-item-padding-x:     var(--tasty-space-md);
+  --tasty-menu-item-radius:        var(--tasty-radius-sm);
+  --tasty-menu-item-fg:            var(--tasty-text-secondary);
+  --tasty-menu-item-fg-hover:      var(--tasty-text-primary);
+  --tasty-menu-item-bg-hover:      var(--tasty-overlay-hover);
+  --tasty-menu-item-shortcut-font-size: var(--tasty-font-size-micro);
+
+  /* AutoComplete — free-text trigger + floating candidate dropdown (typeahead).
+     The trigger reuses the Input token chain (--tasty-input-*); the dropdown
+     reuses the menu container + MenuItem language. Two row states: pointer
+     hover = overlay-hover (light wash), keyboard ↑/↓ active = surface-active
+     (a step stronger); keyboard-active wins when a row is both. Overflow past
+     --tasty-autocomplete-max-height scrolls inside the dropdown via the shared
+     .tasty-scroll bar (neutral-400 thumb) — no new scrollbar token. */
+  --tasty-autocomplete-max-height:      var(--tasty-size-220);        /* default dropdown cap (~7 rows) — caller overrides via maxDropdownHeight */
+  --tasty-autocomplete-menu-bg:         var(--tasty-menu-bg);         /* → surface-raised */
+  --tasty-autocomplete-menu-border:     var(--tasty-menu-border);     /* → border-default */
+  --tasty-autocomplete-menu-radius:     var(--tasty-menu-radius);     /* → radius */
+  --tasty-autocomplete-menu-shadow:     var(--tasty-shadow-popover);  /* popover lift */
+  --tasty-autocomplete-row-height:      var(--tasty-menu-item-height);   /* → control-height 28 */
+  --tasty-autocomplete-row-padding-x:   var(--tasty-menu-item-padding-x); /* → space-md */
+  --tasty-autocomplete-row-fg:          var(--tasty-menu-item-fg);       /* → text-secondary */
+  --tasty-autocomplete-row-fg-active:   var(--tasty-menu-item-fg-hover); /* → text-primary */
+  --tasty-autocomplete-row-bg-hover:    var(--tasty-overlay-hover);      /* pointer hover wash */
+  --tasty-autocomplete-row-bg-active:   var(--tasty-surface-active);     /* keyboard-active (stronger) */
+  --tasty-autocomplete-match-fg:        var(--tasty-accent-primary);     /* typeahead match highlight */
+  --tasty-autocomplete-empty-fg:        var(--tasty-text-muted);         /* no-match / empty row */
+
+  /* DrillDown — generic master→detail CONTENT-SWAP layout (list view ⇄ detail
+     view, no side-by-side split). The detail view carries a pinned BACK BAR:
+     a ghost ← IconButton (chevronLeft glyph) + the detail title + an optional
+     right-aligned actions slot (the canonical home for a per-detail action
+     like "Apply", kept clear of any surrounding modal footer). Back bar is a
+     36px band with a bottom hairline; the swap is INSTANT (no motion) unless
+     the caller opts in — honouring the calm / 0ms-terminal system. */
+  --tasty-drilldown-backbar-height:     var(--tasty-size-36);        /* back-bar band height */
+  --tasty-drilldown-backbar-padding-x:  var(--tasty-space-sm);       /* 8 — aligns the ← with content edge */
+  --tasty-drilldown-backbar-padding-y:  var(--tasty-space-xs);       /* 4 */
+  --tasty-drilldown-backbar-gap:        var(--tasty-space-sm);       /* ← ↔ title ↔ actions */
+  --tasty-drilldown-backbar-border:     var(--tasty-separator);      /* bottom divider under the bar */
+  --tasty-drilldown-title-font-size:    var(--tasty-font-size-body); /* 13 — detail title */
+  --tasty-drilldown-title-font-weight:  var(--tasty-font-weight-semibold);
+  --tasty-drilldown-title-fg:           var(--tasty-text-primary);
+
+  /* ─────────────────  FEEDBACK  ───────────────── */
+
+  /* Toast */
+  --tasty-toast-min-height:        var(--tasty-control-height);
+  --tasty-toast-padding-x:         var(--tasty-space-md);
+  --tasty-toast-padding-y:         var(--tasty-space-sm);
+  --tasty-toast-gap:               var(--tasty-space-sm);
+  --tasty-toast-radius:            var(--tasty-radius);
+  --tasty-toast-accent-width:      var(--tasty-size-3);
+  --tasty-toast-max-width:         var(--tasty-size-320);
+  --tasty-toast-hint-font-size:    var(--tasty-font-size-micro);
+  --tasty-toast-bg:                var(--tasty-surface-raised);
+  --tasty-toast-fg:                var(--tasty-text-primary);
+  --tasty-toast-border:            var(--tasty-border-strong);   /* surface1 — a Toast is a FLOATING overlay (like Tooltip / Banner, which both use border-strong); it needs the stronger edge to lift off content. Corrected from border-default: source already paints surface1, so this is the value-preserving, family-consistent choice. */
+  --tasty-toast-accent-info:       var(--tasty-accent-info);
+  --tasty-toast-accent-success:    var(--tasty-accent-success);
+  --tasty-toast-accent-warning:    var(--tasty-accent-warning);
+  --tasty-toast-accent-danger:     var(--tasty-accent-danger);
+  --tasty-toast-accent-agent:      var(--tasty-accent-agent);
+
+  /* Tooltip — hover bubble (HelpHint, and any hover hint). Opaque raised card,
+     1px edge, popover lift; no arrow. Copy is muted, terse. */
+  --tasty-tooltip-bg:              var(--tasty-surface-raised);
+  --tasty-tooltip-border:          var(--tasty-border-strong);
+  --tasty-tooltip-fg:              var(--tasty-text-secondary);
+  --tasty-tooltip-radius:          var(--tasty-radius);
+  --tasty-tooltip-shadow:          var(--tasty-shadow-popover);
+  --tasty-tooltip-padding-x:       var(--tasty-space-sm);   /* 8 */
+  --tasty-tooltip-padding-y:       var(--tasty-space-xs);   /* 4 */
+  --tasty-tooltip-font-size:       var(--tasty-font-size-caption); /* 12 */
+  --tasty-tooltip-line-height:     var(--tasty-line-height-ui);
+  --tasty-tooltip-max-width:       var(--tasty-size-240);   /* wraps 2–3 sentences */
+  --tasty-tooltip-offset:          var(--tasty-space-xs);   /* 4 gap from anchor */
+  --tasty-tooltip-delay:           var(--tasty-motion-ui-med); /* short hover reveal delay */
+
+  /* HelpHint — inline circular "?" glyph next to a label. Hover-only (no click),
+     muted at rest, brightens on hover; anchors a Tooltip. */
+  --tasty-help-hint-size:          var(--tasty-icon-size-sm);      /* 14 */
+  --tasty-help-hint-color:         var(--tasty-text-muted);
+  --tasty-help-hint-color-hover:   var(--tasty-text-secondary);
+  --tasty-help-hint-gap:           var(--tasty-space-xs);          /* 4 from label */
+
+  /* Banner — the 4th overlay family (after Modal / Popup / Toast).
+     A floating, top-anchored notice that sits at the top of a scope's content
+     area (View / Workspace / Pane / Tab / Surface) — NEVER over the tab bar.
+     Focus-less, consumes its own mouse, and unlike a Toast it can hold actions.
+     Full width minus side margins, variable height, optional TTL countdown.
+     Severity is per-banner (no Info/Warn/Error kind) — each banner styles its
+     own leading glyph; these tokens are the shared shell. */
+  --tasty-banner-bg:                  var(--tasty-surface-raised);    /* surface0 fill */
+  --tasty-banner-fg:                  var(--tasty-text-primary);
+  --tasty-banner-border:              var(--tasty-border-strong);     /* 1px edge */
+  --tasty-banner-radius:              var(--tasty-radius-8);          /* 8px — softer than the 4px system default, reads as a floating panel */
+  --tasty-banner-shadow:              var(--tasty-shadow-popover);    /* floating lift (reuses the popover scrim — no new shadow system) */
+  --tasty-banner-margin:              var(--tasty-space-sm);          /* 8px top / left / right — NO bottom margin (it floats) */
+  --tasty-banner-padding-x:           var(--tasty-space-md);          /* 12 */
+  --tasty-banner-padding-y:           var(--tasty-space-sm);          /* 8 */
+  --tasty-banner-gap:                 var(--tasty-space-md);          /* leading glyph ↔ body ↔ actions */
+  --tasty-banner-icon-fg:             var(--tasty-text-muted);        /* default leading glyph tone (a banner may override per severity) */
+  --tasty-banner-title-font-size:     var(--tasty-font-size-body);    /* 13 — primary line */
+  --tasty-banner-body-font-size:      var(--tasty-font-size-caption); /* 11 — supporting line */
+  --tasty-banner-countdown-font:      var(--tasty-font-mono);         /* TTL seconds, top-right */
+  --tasty-banner-countdown-font-size: var(--tasty-font-size-micro);   /* 10 */
+  --tasty-banner-countdown-fg:        var(--tasty-text-muted);
+  --tasty-banner-recessed-opacity:    var(--tasty-opacity-recessed);  /* lower-scope banner dimmed behind a higher one (≈60% transparent) */
+  --tasty-banner-fade:                var(--tasty-motion-ui);         /* 120ms alpha appear / dismiss — position never moves (non-terminal, so fade is allowed) */
+
+  /* Banner "more" (⋯) menu — a SECOND affordance in the banner's top-right
+     column, left of the × , and the anchored menu it opens. The menu reuses the
+     Tools-menu popup language verbatim (surface-raised fill, border-strong edge,
+     shadow-popover lift, 28px MenuItem rows) — nothing new there. What IS new:
+     the trigger shares the × reveal rule (banner hover, plus stays lit while the
+     menu is open), and the menu's width is ELASTIC because every row interpolates
+     a program name of arbitrary length. */
+  --tasty-banner-more-column-gap:     var(--tasty-space-xs);        /* 4 between ⋯ and × in the affordance column */
+  --tasty-banner-more-reserve:        var(--tasty-size-56);         /* body's right padding — clears both buttons (2 × 24 + 4 + 4) */
+  --tasty-banner-more-menu-bg:        var(--tasty-surface-raised);  /* same fill as the Tools menu */
+  --tasty-banner-more-menu-border:    var(--tasty-border-strong);
+  --tasty-banner-more-menu-radius:    var(--tasty-menu-radius);
+  --tasty-banner-more-menu-shadow:    var(--tasty-shadow-popover);
+  --tasty-banner-more-menu-padding:   var(--tasty-space-xs);        /* 4 inner ring around the rows */
+  --tasty-banner-more-menu-offset:    var(--tasty-space-xs);        /* 4 gap below the trigger (flips above when it would overflow) */
+  --tasty-banner-more-menu-min-width: var(--tasty-size-200);        /* short app names still read as a menu, not a chip */
+  --tasty-banner-more-menu-max-width: var(--tasty-size-288);        /* long app names truncate instead of growing past the card */
+  --tasty-banner-more-app-font:       var(--tasty-font-mono);       /* the interpolated program name is a process name → mono */
+  --tasty-banner-more-app-fg:         var(--tasty-text-primary);    /* the app name is the only emphasised part of a row */
+
+  /* StatusDot — EXECUTION state only (running / idle / agent / waiting / error).
+     No mirror/remote color here: the sky "remote-linked" slot was removed so the
+     dot carries live activity alone. Remote-mirror identity lives on the workspace
+     row (see Workspace row · mirror below), never on this dot. */
+  --tasty-status-dot-size:         var(--tasty-size-8);
+  --tasty-status-dot-idle:         var(--tasty-status-idle);
+  --tasty-status-dot-success:      var(--tasty-accent-success);
+  --tasty-status-dot-warning:      var(--tasty-accent-warning);
+  --tasty-status-dot-danger:       var(--tasty-accent-danger);
+  --tasty-status-dot-agent:        var(--tasty-accent-agent);
+  /* Attention kinds on the dot channel (collapsed rail). ONE dot, one color:
+     needs-input > completion > running/busy. Two dots were rejected — at 8px on
+     a 32px rail a second dot reads as noise and still can't carry a count. */
+  --tasty-status-dot-needs-input:  var(--tasty-attention-needs-input);
+  --tasty-status-dot-completion:   var(--tasty-attention-completion);
+  --tasty-status-dot-attached-ring: var(--tasty-accent-attached);
+  --tasty-status-dot-attached-ring-width:  var(--tasty-size-2);
+  --tasty-status-dot-attached-ring-offset: var(--tasty-size-2);
+  --tasty-status-dot-pulse-duration: var(--tasty-duration-1600);
+
+  /* Workspace row — mirror (remote-linked) indicator. A small remote-link glyph
+     leading the workspace name marks a row as a local MIRROR of a remote tasty
+     instance. It is a separate axis from the status dot (execution), the attached
+     ring (claimed by another client), and the notification badge — so it never
+     collides with any of them. Collapsed rail reuses the same fg on a corner chip. */
+  --tasty-workspace-mirror-fg:     var(--tasty-accent-remote);
+  --tasty-workspace-mirror-icon-size: var(--tasty-icon-size-xs);
+  --tasty-workspace-mirror-gap:    var(--tasty-space-xs);
+
+  /* Spinner — indeterminate scan/install progress */
+  --tasty-spinner-size:            var(--tasty-size-16);
+  --tasty-spinner-track:           var(--tasty-surface-active);
+  --tasty-spinner-indicator:       var(--tasty-accent-primary);
+  --tasty-spinner-duration:        var(--tasty-duration-900); /* 900ms full rotation — matches source SPIN_PERIOD=0.9s. Corrected from duration-90 (a dropped digit; 90ms strobes at ~11 rev/s). */
+
+  /* Surface border — OCCUPANCY & COMPLETION. Three surface states ride ONE
+     visual channel (the terminal / markdown surface's border) and are separated
+     by COLOR alone, so the three must stay mutually discriminable at a 1–2px edge:
+       occupied-soft  green  — a subject holds the surface (cooperative, writable)
+       occupied-hard  peach  — same notice + readonly (absorbs the old attach border)
+       highlight-done blue   — surface-highlight: finished-task attention, clears on focus
+     Occupancy is the 1px edge; the completion highlight is 2px. Completion stays
+     BLUE (accent-primary, matching the live source) rather than the ADR's "sky":
+     blue is the most discriminable of the three against green + peach — sky sits
+     too close to occupied-soft green at a thin border. Source priority (occupancy
+     suppresses the completion border while a surface is held) is an implementation
+     rule, not a token. */
+  --tasty-surface-occupied-soft-border:  var(--tasty-accent-occupied-soft);
+  --tasty-surface-occupied-hard-border:  var(--tasty-accent-occupied-hard);
+  --tasty-surface-occupied-border-width: var(--tasty-border-width);      /* 1px */
+  --tasty-surface-highlight-done-border: var(--tasty-attention-completion); /* blue — completion notice */
+  /* NeedsInput edge — same 2px weight as completion (both are attention, one
+     channel), different kind color. PRIORITY on the border channel:
+       needs-input (2px yellow) > occupancy (1px green/peach) > completion (2px blue)
+     NeedsInput outranks occupancy because occupancy means "held, working, as
+     expected" — exactly the reading that would hide a session that has STOPPED
+     to ask the human something. Completion stays below occupancy (ADR-0040). */
+  --tasty-surface-highlight-input-border: var(--tasty-attention-needs-input);
+  --tasty-surface-highlight-input-width:  var(--tasty-focus-ring-width);  /* 2px */
+  --tasty-surface-highlight-done-width:  var(--tasty-focus-ring-width);  /* 2px */
+
+  /* ─────────────────  DATA  ───────────────── */
+
+  /* Table */
+  --tasty-table-cell-height:       var(--tasty-control-height);
+  --tasty-table-cell-padding-x:    var(--tasty-space-md);
+  --tasty-table-cell-padding-y:    var(--tasty-space-sm);
+  --tasty-table-font-size:         var(--tasty-font-size-body);
+  --tasty-table-header-font-size:  var(--tasty-font-size-caption);
+  --tasty-table-header-font-weight: var(--tasty-font-weight-medium);
+  --tasty-table-header-tracking:   var(--tasty-letter-spacing-caps);
+  --tasty-table-cell-font:         var(--tasty-font-mono);
+  --tasty-table-header-bg:         var(--tasty-bg-sidebar);
+  --tasty-table-header-fg:         var(--tasty-text-muted);
+  --tasty-table-row-fg:            var(--tasty-text-secondary);
+  --tasty-table-row-bg-hover:      var(--tasty-overlay-hover);
+  --tasty-table-row-bg-selected:   var(--tasty-surface-active);
+  --tasty-table-border:            var(--tasty-separator);
+
+  /* ListCtrl — full-width, row-selectable NAVIGATION list (a "pick one to
+     drill into" list, NOT a data grid — Table is the grid). Each row: primary
+     label + optional description + optional leading icon / trailing slot, and
+     a drill-in chevron. Rows share the list-idiom state palette used by TreeRow
+     / MenuItem / Table: hover = overlay-hover, selected = surface-active + a 2px
+     accent left bar. Divided by the standard separator hairline. Pair with the
+     DrillDown layout (list → detail). */
+  --tasty-listctrl-row-min-height:   var(--tasty-size-36);         /* comfortable nav row (fits label + description) */
+  --tasty-listctrl-row-padding-x:    var(--tasty-space-md);        /* 12 */
+  --tasty-listctrl-row-padding-y:    var(--tasty-space-sm);        /* 8 */
+  --tasty-listctrl-row-gap:          var(--tasty-space-sm);        /* icon ↔ text ↔ trailing */
+  --tasty-listctrl-radius:           var(--tasty-radius-sm);
+  --tasty-listctrl-font-size:        var(--tasty-font-size-body);  /* 13 — label */
+  --tasty-listctrl-label-fg:         var(--tasty-text-secondary);
+  --tasty-listctrl-label-fg-active:  var(--tasty-text-primary);    /* hover / selected label */
+  --tasty-listctrl-desc-fg:          var(--tasty-text-muted);
+  --tasty-listctrl-desc-font-size:   var(--tasty-font-size-caption); /* 11 — secondary line */
+  --tasty-listctrl-icon-fg:          var(--tasty-text-muted);
+  --tasty-listctrl-chevron-fg:       var(--tasty-text-muted);      /* trailing drill-in affordance */
+  --tasty-listctrl-row-bg-hover:     var(--tasty-overlay-hover);
+  --tasty-listctrl-row-bg-selected:  var(--tasty-surface-active);
+  --tasty-listctrl-selected-bar:     var(--tasty-accent-primary);  /* 2px accent left bar on the selected row */
+  --tasty-listctrl-selected-bar-width: var(--tasty-size-2);
+  --tasty-listctrl-divider:          var(--tasty-separator);
+
+  /* Markdown-surface inline GFM table — a SEPARATE renderer from the shared
+     Table widget above (read-only: no hover / selection / sort / sticky header).
+     Grid + zebra tuned to stay legible on BOTH the focused surface (~#000) and
+     the bg-panel gallery card. Value ladder, deepest → lightest:
+       mantle (zebra) < base (row) < surface0 (header) < surface1 (grid line).
+     Grid line is the lightest element so it always reads above every fill. */
+  --tasty-md-table-border:          var(--tasty-border-strong);  /* surface1 — opaque, "확실하게" (separator's 8% alpha is why it was invisible) */
+  --tasty-md-table-header-bg:       var(--tasty-surface-raised);  /* surface0 — lightest fill band = header chrome */
+  --tasty-md-table-header-fg:       var(--tasty-text-primary);    /* brighter than body → signals header (egui has no synthetic bold weight) */
+  --tasty-md-table-row-bg:          var(--tasty-bg-panel);        /* base — odd rows + the table's own opaque fill */
+  --tasty-md-table-row-bg-zebra:    var(--tasty-bg-sidebar);      /* mantle — even rows, one subtle step darker */
+  --tasty-md-table-cell-fg:         var(--tasty-text-secondary);  /* body prose tone */
+  --tasty-md-table-cell-padding-x:  var(--tasty-space-sm);        /* 8px */
+  --tasty-md-table-cell-padding-y:  var(--tasty-space-xs);        /* 4px — old ~6px snapped onto the 4px grid */
+
+  /* Markdown DOCUMENT (webview render path — render.rs theme_css()). The doc bed is
+     one fixed background: the webview has no focused/unfocused signal, so md-doc-bg
+     is markdown's only background. Value ladder, page → lightest element:
+       crust (doc bg) < mantle (table zebra) < base (—) < surface0 (code fill) < surface1 (grid). */
+  --tasty-md-doc-bg:                var(--tasty-surface-markdown-focused-bg); /* → --md-bg */
+  --tasty-md-doc-fg:                var(--tasty-text-secondary);
+  --tasty-md-code-bg:               var(--tasty-surface-raised);   /* → --md-code-bg (block + inline code) */
+  --tasty-md-code-border:           var(--tasty-separator);
+  --tasty-md-quote-bar:             var(--tasty-border-strong);
+  --tasty-md-quote-fg:              var(--tasty-text-muted);
+  --tasty-md-rule:                  var(--tasty-separator);
+
+  /* Explorer surface — sidebar 2-region split. The sidebar is NOT one scroll
+     column: "Files" owns the top region (flex, own scroll) and "Favorites" is
+     PINNED to the bottom at a fixed height, so a long tree can never push the
+     favorites list out of view. The boundary is a fixed 1px border, not an
+     inline separator that flows with content.
+       height = --tasty-explorer-favorites-pin-height (240) when the sidebar body
+       is >= --tasty-explorer-favorites-pin-threshold (600); below that it becomes
+       --tasty-explorer-favorites-pin-ratio (40%) of the body height, floored at
+       --tasty-explorer-favorites-pin-min-height (120). Snap the ratio result to
+       the 4px grid. Not user-resizable — pure computed value. */
+  --tasty-explorer-sidebar-width:              var(--tasty-size-196);
+  --tasty-explorer-favorites-pin-height:       var(--tasty-size-240); /* default pinned region height */
+  --tasty-explorer-favorites-pin-threshold:    var(--tasty-size-600); /* below this body height → use the ratio */
+  --tasty-explorer-favorites-pin-ratio:        0.4; /* @kind other */ /* small-surface shrink factor */
+  --tasty-explorer-favorites-pin-min-height:   var(--tasty-size-120); /* caption + ~3 rows still fit */
+  --tasty-explorer-split-border:               var(--tasty-separator); /* fixed boundary line */
+
+  /* Listening-ports popup — favorites section + star toggle.
+     The popup frame stays 660×520; the favorites region is BOUNDED so it can
+     never push the table out: caption row (22) + a list capped at
+     --tasty-port-favorites-max-height (112 = 5 × 22px rows), i.e. the list
+     starts scrolling at the 6th favorite. Star column width is shared by the
+     table's tight leading column and the favorites rows so the stars align. */
+  --tasty-port-favorites-bg:         var(--tasty-bg-sidebar);          /* section tone, apart from the table body */
+  --tasty-port-favorites-border:     var(--tasty-separator);           /* boundary to the table */
+  --tasty-port-favorites-row-height: var(--tasty-control-height-tree); /* 22 — denser than a table row */
+  --tasty-port-favorites-max-height: var(--tasty-size-112);            /* 5 rows, then scroll */
+  --tasty-port-star-col-width:       var(--tasty-size-28);             /* leading tight column in the table */
+  --tasty-port-star-on:              var(--tasty-accent-warning);      /* registered — gold, as Explorer favorites */
+  --tasty-port-star-off:             var(--tasty-text-muted);          /* unregistered — muted outline */
+  --tasty-port-state-none-dot:       var(--tasty-status-dot-idle);     /* NONE badge (favorite not in the scan) */
+
+  /* ─────────────────  OVERLAYS (gallery specimen layouts)  ───────────────── */
+  /* Plugins window */
+  --tasty-plugins-list-width:       var(--tasty-size-288); /* left installed-list column */
+  /* Settings window */
+  --tasty-settings-sidebar-width:   var(--tasty-size-200); /* L2 left nav */
+  --tasty-settings-row-min-height:  var(--tasty-size-32);  /* one settings/toggle row */
+  /* Color swatch (settings color editor) */
+  --tasty-swatch-size:              var(--tasty-size-16);
+  --tasty-swatch-radius:            var(--tasty-radius-sm);
+  /* Remote tool */
+  --tasty-remote-label-col:         var(--tasty-size-112); /* form label grid column */
+  /* Remote file transfer — progress / error popups (PopupDef, centered on the
+     scrim) + the Settings › General › Remote transfer rows. The progress bar is
+     the system's first determinate bar: a recessed 4px track with an accent
+     fill; no animation (fill width follows bytes — terminal motion stays 0ms). */
+  --tasty-transfer-popup-width:     var(--tasty-size-400); /* progress + error frame width */
+  --tasty-progress-height:          var(--tasty-size-4);   /* bar thickness */
+  --tasty-progress-radius:          var(--tasty-radius-sm);
+  --tasty-progress-track-bg:        var(--tasty-bg-app);   /* recessed track (darker than the panel) */
+  --tasty-progress-fill-bg:         var(--tasty-accent-primary); /* determinate fill */
+  /* Preset editor — WYSIWYG surface split zone. The 30%-edge overlay shown on
+     hover of a surface leaf in edit mode; clicking it splits toward that edge.
+     Accent-tinted (this is the same intent as a live split/drop preview) —
+     translucent fill + a stronger leading edge marking the new split line. */
+  --tasty-preset-split-zone-bg:     color-mix(in srgb, var(--tasty-accent-primary) 22%, transparent);
+  --tasty-preset-split-zone-border: color-mix(in srgb, var(--tasty-accent-primary) 55%, transparent);
+  /* Preset editor — surface-leaf preview VALUE SUMMARY. On an UNSELECTED leaf
+     (read-only preview AND edit mode), below the kind icon + kind name we list
+     the leaf's configured fields as `label value` rows (cwd / startup / file /
+     url — whatever KindCatalog declares), so same-kind leaves are told apart
+     without opening the form. Labels muted-micro, values secondary-caption, both
+     mono (they are paths / commands). Degrade order is a structural rule (JS
+     consts, not tokens): full (icon+kind+summary) → drop summary when the box is
+     < ~96px wide or < ~72px tall → drop the kind label too (icon only) when the
+     short axis < 46px (the same floor as the split-zone min). Empty fields hide
+     their row. Path-like fields (cwd / file) truncate at the FRONT (keep the
+     tail); commands / urls truncate at the end. Selected leaf is unchanged (it
+     shows the inline edit form, not this summary). */
+  --tasty-preset-leaf-label-fg:        var(--tasty-text-muted);        /* row label tone */
+  --tasty-preset-leaf-label-font-size: var(--tasty-font-size-micro);   /* 10 */
+  --tasty-preset-leaf-value-fg:        var(--tasty-text-secondary);    /* row value tone */
+  --tasty-preset-leaf-value-font-size: var(--tasty-font-size-caption); /* 11 — one step over the label */
+  --tasty-preset-leaf-summary-gap:     var(--tasty-space-xs);          /* 4 — between summary rows AND kind-name ↔ summary */
+
+  /* ─────────────────  CHROME · SWITCH-NUMBER OVERLAY  ───────────────── */
+  /* Transient number keycaps painted over tabs / workspaces WHILE the
+     tab_switch_modifier (over tabs) or workspace_switch_modifier (over
+     workspaces) is held — a live preview of the 1–9 / 0 switch shortcuts.
+     The keycap REPLACES the item's leading indicator in place (tab icon /
+     workspace status dot / collapsed letter avatar) — no scrim, no reflow.
+     Reuses the Kbd keycap; only the active-item accent fill + the appear
+     timing are new. Implementers read the *currently bound* modifier from
+     the same keybindings source the shortcut uses. */
+  --tasty-switch-overlay-size:       var(--tasty-kbd-size);          /* 16 — keycap footprint; fills the icon/dot slot */
+  --tasty-switch-overlay-bg:         var(--tasty-kbd-bg);            /* surface-raised keycap fill (inactive items) */
+  --tasty-switch-overlay-fg:         var(--tasty-kbd-fg);            /* keycap digit (inactive items) */
+  --tasty-switch-overlay-border:     var(--tasty-kbd-border);        /* border-strong keycap edge */
+  --tasty-switch-overlay-shadow-depth: var(--tasty-kbd-shadow-depth);/* 2 — keycap bottom edge, matches Kbd */
+  --tasty-switch-overlay-active-bg:  var(--tasty-accent-primary);    /* current tab/workspace = accent-filled keycap */
+  --tasty-switch-overlay-active-fg:  var(--tasty-text-on-accent);    /* digit atop the accent fill */
+  --tasty-switch-overlay-fade:       var(--tasty-motion-ui-fast);    /* 90ms ease appear; release dismisses at 0ms */
+
+  /* ─────────────────  CHROME · MODIFIER HINT PANEL  ───────────────── */
+  /* A floating, focus-less discoverability panel painted while a modifier
+     (Ctrl / Cmd / Option / Shift — Win/Linux: Ctrl / Alt / Shift) is HELD.
+     It lists every shortcut chord that contains the held modifier, grouped
+     by chord (size-ascending, then Ctrl→Cmd/Alt→Option→Shift), plus any
+     special role the chord carries (e.g. Ctrl = tab-switch numbers, Shift =
+     TUI mouse-capture bypass). Draggable + edge-resizable, an X for a
+     this-session dismiss; it NEVER takes keyboard focus and must not read as
+     a focus window — hence the muted (sidebar) drag strip, not a titlebar.
+     Timing: appears after a 500ms hold, fades opacity 0.2→1 over 200ms;
+     release dismisses at 0ms (reduced-motion → instant, no fade). */
+  --tasty-modhint-width:         var(--tasty-size-180);   /* default width — same as the 180px open sidebar (panel sits at the sidebar's foot) */
+  --tasty-modhint-height:        var(--tasty-size-400);   /* default height */
+  --tasty-modhint-min-width:     var(--tasty-size-180);   /* resize lower bound — down to the sidebar width so it can stay flush */
+  --tasty-modhint-min-height:    var(--tasty-size-240);   /* resize lower bound */
+  --tasty-modhint-bg:            var(--tasty-bg-panel);   /* opaque floating fill (never translucent — it sits over live output) */
+  --tasty-modhint-border:        var(--tasty-border-strong);
+  --tasty-modhint-radius:        var(--tasty-radius);     /* 4 — chrome, not a marketing card */
+  --tasty-modhint-shadow:        var(--tasty-shadow-modal); /* floating lift (reuses the modal scrim — no new shadow system) */
+  --tasty-modhint-header-bg:     var(--tasty-bg-sidebar); /* muted drag strip — deliberately NOT a focus titlebar */
+  --tasty-modhint-header-height: var(--tasty-size-28);
+  --tasty-modhint-section-gap:   var(--tasty-space-md);   /* 12 — between chord sections */
+  --tasty-modhint-role-bg:       var(--tasty-surface-active); /* special-role row wash — distinguishes it from a keycap row */
+  --tasty-modhint-role-fg:       var(--tasty-accent-primary); /* special-role leading glyph */
+  --tasty-modhint-empty-fg:      var(--tasty-text-muted);     /* empty-chord placeholder text ("No shortcuts bound") — one step below a keycap row's text-secondary; no wash, no glyph, no keycap */
+  --tasty-modhint-grip-fg:       var(--tasty-border-strong);  /* bottom-right resize grip lines */
+  --tasty-modhint-fade:          var(--tasty-motion-ui-fade); /* 200ms opacity 0.2→1 on appear */
+  --tasty-modhint-hold-delay:    var(--tasty-motion-hold-reveal); /* 500ms hold before it appears */
+
+  /* ─────────────────  CHROME · TITLEBAR (CSD)  ───────────────── */
+  /* Client-Side-Decoration window titlebar. Shared across the macOS /
+     Windows / Linux variants in ui_kits/terminal/titlebar/. Height is
+     the semantic --tasty-titlebar-height. */
+  --tasty-titlebar-bg:               var(--tasty-bg-app);
+  --tasty-titlebar-bg-inactive:      var(--tasty-bg-sidebar);   /* unfocused window */
+  --tasty-titlebar-border:           var(--tasty-separator);
+  --tasty-titlebar-fg:               var(--tasty-text-secondary);
+  --tasty-titlebar-fg-inactive:      var(--tasty-text-muted);
+
+  /* window control buttons (min / max / restore / close) */
+  --tasty-titlebar-button-fg:        var(--tasty-text-muted);
+  --tasty-titlebar-button-fg-hover:  var(--tasty-text-primary);
+  --tasty-titlebar-button-hover-bg:  var(--tasty-overlay-hover);
+  --tasty-titlebar-button-active-bg: var(--tasty-overlay-active);
+  --tasty-titlebar-close-hover-bg:   var(--tasty-accent-window-close); /* Windows-style red fill */
+  --tasty-titlebar-close-hover-fg:   var(--tasty-text-on-window-close);
+
+  /* macOS traffic lights (drawn by Tasty in CSD mode) */
+  --tasty-titlebar-traffic-size:     var(--tasty-size-12);
+  --tasty-titlebar-traffic-close:    var(--tasty-accent-macos-close);
+  --tasty-titlebar-traffic-min:      var(--tasty-accent-macos-min);
+  --tasty-titlebar-traffic-zoom:     var(--tasty-accent-macos-zoom);
+  --tasty-titlebar-traffic-inactive: var(--tasty-surface-active); /* unfocused: all dots grey */
+
+  /* Windows caption-button hit width (Snap Layouts target on maximize) */
+  --tasty-titlebar-caption-width:    var(--tasty-size-46);
+
+  /* Linux DE circular window buttons (min/max/close) — 24px, like caption-width
+     this sits OUTSIDE the UI zoom scale (a fixed OS-affordance dimension). */
+  --tasty-titlebar-window-button-size: var(--tasty-size-24);
+
+  /* Wayland CSD framing — when Tasty draws its own decorations the client paints
+     rounded top corners + a 1px outline + a soft drop shadow, and the shadow
+     MARGIN is the band that holds the 8-direction resize edges. The shadow is a
+     deliberate one-off (Tasty has no general shadow system; surfaces use tint). */
+  /* ZOOM POLICY: titlebar-csd-radius + titlebar-csd-shadow-margin are px-fixed
+     and do NOT follow host UI zoom — same column as titlebar-height / traffic-
+     size / caption-width / window-button-size. They are OS window-frame chrome;
+     scaling only the corner radius + shadow band while the titlebar height stays
+     fixed would look broken. Implementers must expose both as zoom-EXCLUDED
+     fields (do not apply the primitive-alias→zoom-multiply default). */
+  --tasty-titlebar-csd-radius:        var(--tasty-radius-8);          /* 8px top corners — px-fixed, no UI zoom */
+  --tasty-titlebar-csd-border:        var(--tasty-border-strong);     /* 1px window outline */
+  --tasty-titlebar-csd-shadow:        0 18px 50px -8px rgba(0,0,0,.5); /* one-off CSD scrim */
+  --tasty-titlebar-csd-shadow-margin: var(--tasty-size-8);            /* 8px → resize-edge band — px-fixed, no UI zoom (see ZOOM POLICY above) */
+
+  /* ─────────────────  CHROME · SIDEBAR (full + collapsed rail)  ───────────────── */
+  /* Fixed sidebar geometry — the full sidebar header + section list and the 52px
+     collapsed rail. Like the titlebar / tab strip, these host-chrome dimensions sit
+     OUTSIDE the UI zoom scale. Font roles map onto the existing UI type steps; the
+     wordmark is the one sanctioned over-cap size (branding). */
+  --tasty-sidebar-logo-size:                  var(--tasty-size-22); /* full-sidebar header watermelon mark */
+  --tasty-sidebar-logo-collapsed-size:        var(--tasty-size-24); /* collapsed-rail logo */
+  --tasty-sidebar-wordmark-font:              var(--tasty-font-mono);
+  --tasty-sidebar-wordmark-font-size:         var(--tasty-font-size-brand-wordmark); /* 17 — "tasty." wordmark; BRANDING exception to the 14px UI cap */
+  --tasty-sidebar-section-heading-font-size:  var(--tasty-font-size-micro);       /* 10 — "WORKSPACES" caps section heading */
+  --tasty-sidebar-section-heading-tracking:   var(--tasty-letter-spacing-caps);
+  --tasty-sidebar-button-label-font-size:     var(--tasty-font-size-caption);     /* 11 — Tools/Plugins/Settings ghost-button labels (snapped from source 12 → the 11px caption step; UI type scale stays 10/11/13/14) */
+  --tasty-sidebar-collapsed-slot-width:       var(--tasty-size-32); /* collapsed icon / workspace slot width */
+  --tasty-sidebar-collapsed-icon-height:      var(--tasty-size-22); /* collapsed icon slot height */
+  --tasty-sidebar-collapsed-workspace-height: var(--tasty-size-28); /* collapsed workspace-avatar slot height */
+
+  /* Workspace-category header (sidebar folders). The header is a BAND, not a
+     bare caption: it sits on the app tier (one step DOWN from the sidebar) with
+     hairlines top and bottom, so the section boundary reads as elevation — the
+     same face-over-face logic used everywhere else — instead of colour. Label
+     steps up from muted to secondary + bold so the 10px caps line out-ranks the
+     13px workspace rows below it. The trailing count is a low-emphasis meta
+     number that yields to the hover-reveal `+` button. */
+  --tasty-sidebar-category-header-bg:        var(--tasty-bg-app);
+  --tasty-sidebar-category-header-border:    var(--tasty-separator);
+  --tasty-sidebar-category-header-fg:        var(--tasty-text-secondary);
+  --tasty-sidebar-category-header-weight:    var(--tasty-font-weight-bold);
+  --tasty-sidebar-category-header-pad-y:     var(--tasty-space-sm);
+  --tasty-sidebar-category-header-pad-x:     var(--tasty-space-sm);
+  --tasty-sidebar-category-header-count-fg:  var(--tasty-text-disabled);
+  --tasty-sidebar-category-header-count-font-size: var(--tasty-font-size-micro);
+
+  /* ─────────────────  SURFACE · TASK DAG VIEW  ───────────────── */
+  /* Read-only observation of an agent-built task DAG — the full-tab graph
+     surface and the workspace-scoped DAG popup (ui_kits/terminal/overlays/
+     dag_view.jsx). NOT a node editor: no port/socket affordance, no drag-to-
+     move; layout is computed, so these tokens carry only geometry + state
+     colour. Node box is FIXED (168 × 48 in graph space) at every zoom level —
+     the level-of-detail tiers swap CONTENT, never the box, so a 0.5s data poll
+     can never move a node. */
+  --tasty-dag-node-width:            var(--tasty-size-168);
+  --tasty-dag-node-height:           var(--tasty-size-48);
+  --tasty-dag-node-padding-x:        var(--tasty-space-sm);       /* 8 */
+  --tasty-dag-node-padding-y:        var(--tasty-space-xs);       /* 4 */
+  --tasty-dag-node-row-gap:          var(--tasty-space-xs);       /* 4 — name row ↔ meta row */
+  --tasty-dag-node-gap:              var(--tasty-space-sm);       /* 8 — glyph ↔ text */
+  --tasty-dag-node-radius:           var(--tasty-radius);         /* 4 */
+  --tasty-dag-node-bar-width:        var(--tasty-size-3);         /* leading status bar */
+  --tasty-dag-node-bg:               var(--tasty-surface-raised);
+  --tasty-dag-node-border:           var(--tasty-border-strong);
+  --tasty-dag-node-fg:               var(--tasty-text-primary);   /* task name */
+  --tasty-dag-node-meta-fg:          var(--tasty-text-muted);     /* kind + duration */
+  --tasty-dag-node-name-font-size:   var(--tasty-font-size-body);    /* 13 */
+  --tasty-dag-node-meta-font-size:   var(--tasty-font-size-micro);   /* 10 — status caps + duration */
+  --tasty-dag-node-hover-bg:         var(--tasty-overlay-hover);
+  --tasty-dag-node-selected-ring:    var(--tasty-accent-primary);
+  --tasty-dag-node-selected-ring-width: var(--tasty-focus-ring-width); /* 2 */
+  --tasty-dag-node-dim-opacity:      var(--tasty-opacity-dimmed);      /* skipped / cancelled node — 0.75, still 4.5:1 */
+
+  /* Task status — the 8 execution states. Colour is ONE of two channels; the
+     glyph (◦ ❯ ◑ ✓ ✗ − ⊘ ?) + the spelled label carry the same information, so
+     nothing here is colour-only. Every value points at an accent role. */
+  --tasty-dag-status-waiting:      var(--tasty-status-idle);
+  --tasty-dag-status-ready:        var(--tasty-accent-info);
+  --tasty-dag-status-running:      var(--tasty-accent-primary);
+  --tasty-dag-status-succeeded:    var(--tasty-accent-success);
+  --tasty-dag-status-failed:       var(--tasty-accent-danger);
+  --tasty-dag-status-cancelled:    var(--tasty-text-disabled);
+  --tasty-dag-status-skipped:      var(--tasty-text-disabled);
+  --tasty-dag-status-unknown:      var(--tasty-accent-warning);
+  /* node fill per state — only the states that must WIN attention get a wash;
+     terminal + idle states stay on the plain raised surface. */
+  --tasty-dag-status-waiting-bg:   var(--tasty-dag-node-bg);
+  --tasty-dag-status-ready-bg:     var(--tasty-dag-node-bg);
+  --tasty-dag-status-running-bg:   color-mix(in srgb, var(--tasty-accent-primary) 16%, var(--tasty-surface-raised));
+  --tasty-dag-status-succeeded-bg: var(--tasty-dag-node-bg);
+  --tasty-dag-status-failed-bg:    color-mix(in srgb, var(--tasty-accent-danger) 12%, var(--tasty-surface-raised));
+  --tasty-dag-status-cancelled-bg: var(--tasty-dag-node-bg);
+  --tasty-dag-status-skipped-bg:   var(--tasty-dag-node-bg);
+  --tasty-dag-status-unknown-bg:   color-mix(in srgb, var(--tasty-accent-warning) 10%, var(--tasty-surface-raised));
+  /* TEXT tone per state. The state colour is the RECEDE channel (3px bar, border,
+     glyph on a chip); at 10px uppercase it is not always readable, so the spelled
+     label has its own role. waiting borrows text-muted; the two DIMMED states
+     (cancelled / skipped) must clear 4.5:1 AFTER the 0.75 card dim, so they take
+     text-secondary — muted would land at 3.3:1 once multiplied. */
+  --tasty-dag-status-waiting-label:   var(--tasty-text-muted);
+  --tasty-dag-status-ready-label:     var(--tasty-dag-status-ready);
+  --tasty-dag-status-running-label:   var(--tasty-dag-status-running);
+  --tasty-dag-status-succeeded-label: var(--tasty-dag-status-succeeded);
+  --tasty-dag-status-failed-label:    var(--tasty-dag-status-failed);
+  --tasty-dag-status-cancelled-label: var(--tasty-text-secondary);
+  --tasty-dag-status-skipped-label:   var(--tasty-text-secondary);
+  --tasty-dag-status-unknown-label:   var(--tasty-dag-status-unknown);
+
+  /* Graph geometry — layer depth + sibling gap (4px grid). */
+  --tasty-dag-layer-gap:             var(--tasty-size-32);  /* along the flow axis */
+  --tasty-dag-sibling-gap:           var(--tasty-size-24);  /* across the flow axis */
+  --tasty-dag-canvas-bg:             var(--tasty-bg-panel);
+  --tasty-dag-canvas-dot:            var(--tasty-border-default); /* dot-grid mark */
+  --tasty-dag-canvas-dot-size:       var(--tasty-size-1);
+  --tasty-dag-canvas-dot-gap:        var(--tasty-size-16);
+  --tasty-dag-canvas-padding:        var(--tasty-space-lg);  /* 16 — fit-to-view inset */
+
+  /* Edges — relation is carried by DASH PATTERN + colour together. */
+  --tasty-dag-edge-width:            var(--tasty-size-1);
+  --tasty-dag-edge-depends:          var(--tasty-border-strong);
+  --tasty-dag-edge-fallback:         var(--tasty-accent-attention);
+  --tasty-dag-edge-reduce:           var(--tasty-accent-info);
+  --tasty-dag-edge-dash-fallback:    6 3; /* @kind other */
+  --tasty-dag-edge-dash-reduce:      2 3; /* @kind other */
+  --tasty-dag-edge-corner-radius:    var(--tasty-radius);   /* orthogonal elbow */
+  --tasty-dag-edge-arrow-size:       var(--tasty-size-8);
+  --tasty-dag-edge-dim-opacity:      var(--tasty-opacity-recessed);
+  --tasty-dag-edge-highlight:        var(--tasty-accent-primary); /* edges of the selected node */
+
+  /* Canvas chrome — zoom cluster + minimap, bottom-right overlay. */
+  --tasty-dag-chrome-height:         var(--tasty-control-height);  /* 28 */
+  --tasty-dag-chrome-bg:             var(--tasty-bg-sidebar);
+  --tasty-dag-chrome-border:         var(--tasty-border-strong);
+  --tasty-dag-chrome-fg:             var(--tasty-text-secondary);
+  --tasty-dag-chrome-inset:          var(--tasty-space-sm);        /* 8 from the canvas edge */
+  --tasty-dag-minimap-width:         var(--tasty-size-160);
+  --tasty-dag-minimap-height:        var(--tasty-size-112);
+  --tasty-dag-minimap-bg:            var(--tasty-bg-sidebar);
+  --tasty-dag-minimap-node:          var(--tasty-border-strong);
+  --tasty-dag-minimap-viewport:      var(--tasty-accent-primary);
+  --tasty-dag-minimap-min-surface:   var(--tasty-size-560); /* below this the minimap is dropped */
+
+  /* Runner badge — host runner thread: on/off, crashed, ready + running counts.
+     The state that must be NOTICED is runner-off-with-work-ready; it takes the
+     warning tone and exposes a resume hint slot. */
+  --tasty-dag-runner-height:         var(--tasty-control-height-tree); /* 22 */
+  --tasty-dag-runner-padding-x:      var(--tasty-space-sm);
+  --tasty-dag-runner-gap:            var(--tasty-space-sm);
+  --tasty-dag-runner-radius:         var(--tasty-radius-sm);
+  --tasty-dag-runner-bg:             var(--tasty-surface-raised);
+  --tasty-dag-runner-border:         var(--tasty-border-strong);
+  --tasty-dag-runner-fg:             var(--tasty-text-secondary);
+  --tasty-dag-runner-idle-fg:        var(--tasty-text-muted);
+  --tasty-dag-runner-stalled-fg:     var(--tasty-accent-warning);
+  --tasty-dag-runner-stalled-border: color-mix(in srgb, var(--tasty-accent-warning) 45%, transparent);
+  --tasty-dag-runner-stalled-bg:     color-mix(in srgb, var(--tasty-accent-warning) 10%, var(--tasty-surface-raised));
+  --tasty-dag-runner-crashed-fg:     var(--tasty-accent-danger);
+  --tasty-dag-runner-crashed-border: color-mix(in srgb, var(--tasty-accent-danger) 45%, transparent);
+  --tasty-dag-runner-crashed-bg:     color-mix(in srgb, var(--tasty-accent-danger) 12%, var(--tasty-surface-raised));
+
+  /* Cycle-detected banner — a warning strip pinned to the canvas top. The graph
+     keeps rendering behind it (this surface observes, it never hides state). */
+  --tasty-dag-cycle-bg:              color-mix(in srgb, var(--tasty-accent-warning) 14%, var(--tasty-bg-panel));
+  --tasty-dag-cycle-border:          color-mix(in srgb, var(--tasty-accent-warning) 45%, transparent);
+  --tasty-dag-cycle-fg:              var(--tasty-accent-warning);
+  --tasty-dag-cycle-height:          var(--tasty-control-height); /* 28 */
+
+  /* Node detail — right-side panel on a wide surface, bottom sheet when narrow. */
+  --tasty-dag-detail-width:          var(--tasty-size-288);
+  --tasty-dag-detail-sheet-height:   var(--tasty-size-220); /* narrow-width bottom sheet */
+  --tasty-dag-detail-bg:             var(--tasty-bg-sidebar);
+  --tasty-dag-detail-border:         var(--tasty-border-default);
+  --tasty-dag-detail-padding:        var(--tasty-space-md);
+  --tasty-dag-detail-log-bg:         var(--tasty-bg-app);
+  --tasty-dag-detail-log-max-height: var(--tasty-size-160); /* error tail — scrolls past this */
+  --tasty-dag-detail-out-max-height: var(--tasty-size-112); /* stdout tail */
+
+  /* DAG list row (popup) — a ListCtrl row plus a trailing summary cluster
+     (rollup chip + done/total). Density follows ListCtrl. */
+  --tasty-dag-row-height:            var(--tasty-listctrl-row-min-height); /* 36 */
+  --tasty-dag-row-summary-gap:       var(--tasty-space-sm);
+  --tasty-dag-row-count-fg:          var(--tasty-text-muted);
+  --tasty-dag-row-count-font-size:   var(--tasty-font-size-caption); /* 11 mono — "7/12" */
+  --tasty-dag-popup-width:           var(--tasty-size-560);
+  --tasty-dag-popup-height:          var(--tasty-size-460);
+}

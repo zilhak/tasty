@@ -1,0 +1,58 @@
+---
+/** `/design/` — the guideline cards, minus the token-system page's own route. */
+import Design from "../../layouts/Design.astro";
+import Cards from "./Cards.astro";
+import { cards } from "../../lib/guidelines";
+import { GALLERY_GROUPS, galleryPath } from "../../lib/design";
+import { url } from "../../lib/site";
+import type { Lang } from "../../lib/guide";
+
+interface Props { lang: Lang; }
+const { lang } = Astro.props;
+
+const COPY = {
+  en: {
+    title: "Foundations",
+    intro:
+      "What the app is made of, drawn from the same tokens the app ships. Every swatch, ramp and " +
+      "specimen below is a live document rendered from <code>--tasty-*</code> — change a token and " +
+      "the page changes with it.",
+    source: "source:",
+    galleryTitle: "The gallery",
+    galleryBody:
+      "The catalogue of everything the app draws — live, interactive, and annotated with the " +
+      "layout spec and the exact tokens each specimen consumes.",
+  },
+  ko: {
+    title: "기초",
+    intro:
+      "앱을 이루는 것들을, 앱이 실제로 출하하는 토큰 그대로 그렸다. 아래의 모든 색·단계·표본은 " +
+      "<code>--tasty-*</code> 로 렌더된 살아 있는 문서다 — 토큰이 바뀌면 이 페이지도 같이 바뀐다.",
+    source: "원본:",
+    galleryTitle: "갤러리",
+    galleryBody:
+      "앱이 그리는 모든 것의 카탈로그다. 살아 있고, 직접 만져지고, 각 표본이 소비하는 " +
+      "레이아웃 스펙과 토큰이 함께 적혀 있다.",
+  },
+};
+const c = COPY[lang];
+const all = cards(process.cwd()).filter((x) => x.group !== "Tokens");
+---
+<Design lang={lang} current="" title={c.title} intro={c.intro}>
+  <section class="ds-group">
+    <h2>{c.galleryTitle}</h2>
+    <p class="ds-lede">{c.galleryBody}</p>
+    <ul class="ds-tiles">
+      {GALLERY_GROUPS.flatMap((g) => g.pages).map((page) => (
+        <li>
+          <a href={url(galleryPath(page.slug))}>
+            <span class="ds-tiles__label">{page.label}</span>
+            <span class="ds-tiles__desc">{page.desc}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <Cards cards={all} sourceLabel={c.source} />
+</Design>

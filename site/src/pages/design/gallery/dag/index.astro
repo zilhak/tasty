@@ -1,0 +1,9 @@
+---
+import GalleryPage from "../../../../layouts/GalleryPage.astro";
+import Route from "../../../../gallery/pages/dag.jsx";
+import { galleryNav } from "../../../../lib/design";
+import { url } from "../../../../lib/site";
+---
+<GalleryPage title="Task DAG" description="The read-only view onto an agent-built task graph.">
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+</GalleryPage>

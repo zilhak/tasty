@@ -103,6 +103,16 @@ const PRUNE_DIRS: &[&str] = &[
     ".git",
     "node_modules",
     "_site",
+    // Astro 의 자체 캐시 — `astro dev` 를 한 번이라도 돌린 트리에만 있고 gitignored 다.
+    // 표식(`CACHEDIR.TAG`)을 안 달아 성질로는 못 가르지만 이름은 그 도구가 박아 뒀다.
+    ".astro",
+    // 남의 코드를 그대로 들여놓는 자리 — `site/vendor/` 가 그것이다(디자인 시스템
+    // 원본을 외부 프로젝트에서 동기화해 온다). 그 안의 주석은 우리가 쓴 좌표가 아니고,
+    // 실제로 아직 없는 자리를 "(planned)" 로 든다. 여기서 판정하면 처방이 **upstream 을
+    // 고치라**가 되는데 그 파일은 다음 동기화가 덮어쓴다. `js`·`css` 를 `UNJUDGED_FORMS`
+    // 에 둔 것과 같은 부류이고, 이름으로 가르는 것은 `vendor` 가 관례로 고정된 이름이라
+    // 가능하다.
+    "vendor",
 ];
 
 /// gitignored 로컬 폴더 이름의 조각. 리터럴로 두면 이 파일이 비-git 경로 참조 금지
@@ -303,7 +313,7 @@ fn comment_prefixes(rel: &str) -> Option<&'static [&'static str]> {
         .rsplit_once('.')
         .map(|(_, e)| e);
     match ext {
-        Some("rs") => Some(&["//"]),
+        Some("rs" | "mjs" | "jsx" | "ts" | "tsx" | "astro") => Some(&["//"]),
         Some("toml" | "sh" | "bash" | "yml" | "yaml" | "py" | "just" | "ps1") => Some(&["#"]),
         Some("lua") => Some(&["--"]),
         None if matches!(
@@ -380,6 +390,19 @@ const ALLOWLIST: &[(&str, &str)] = &[
     ("crates/tasty-output/src/parsers/errors.rs", "src/foo.ts"),
     // ① 예시 — 터미널 링크 검출 설명이 드는 가상의 크레이트.
     ("src/adapters/ui/terminal_link.rs", "crates/x/Cargo.toml"),
+    // ③ ADR 본문의 **결정 시점 좌표.** ADR 템플릿의 "좌표 예외" 는 Context·Decision 의
+    //    코드 인용을 결정 시점 기준으로 규정하고 **낡았다는 이유로 고치는 것을 금지한다**
+    //    — 그 부재가 결정이 실행됐다는 증거라서다. 그러니 이 부류는 형태를 고쳐 닫을 수
+    //    없다. 아래 둘은 사이트가 Astro 로 옮겨 가며 사라진 러스트 생성기이고, 그 ADR 은
+    //    ADR-0247 이 대체했다.
+    (
+        "docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md",
+        "site/src/md.rs",
+    ),
+    (
+        "docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md",
+        "site/src/main.rs",
+    ),
 ];
 
 fn is_allowed(rel: &str, cited: &str) -> bool {

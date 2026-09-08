@@ -13,11 +13,10 @@ name: Format Check
 # `rust-toolchain.toml` 이 채널과 `rustfmt` 컴포넌트를 고정하므로, 러너의 rustfmt
 # 버전이 로컬·훅과 어긋나 "로컬은 깨끗한데 CI 만 빨간" 상황이 생기지 않는다.
 #
-# 워크스페이스 `exclude` 크레이트(`site/` · `crates/tasty-plugin-sdk-wasm/`)는 루트
-# `cargo fmt` 가 보지 않으므로 매니페스트를 지정해 따로 돈다(pre-commit A.2 와 같은
-# 이유 — docs/dev-guide/site.md "왜 workspace 밖인가"). `site/` 를 제외 경로로 두는
-# 워크플로가 따로 있는데(crossplatform-check 의 paths-ignore) 여기서는 **제외하지
-# 않는다**: `site/` 안에 Rust 크레이트가 있어 fmt 대상이다.
+# 워크스페이스 `exclude` 크레이트(`crates/tasty-plugin-sdk-wasm/`)는 루트 `cargo fmt`
+# 가 보지 않으므로 매니페스트를 지정해 따로 돈다(pre-commit A.2 와 같은 이유).
+# `site/` 는 더 이상 여기 없다 — Rust 생성기를 Astro 로 바꾸면서 그 안에 .rs 가
+# 사라졌다(docs/dev-guide/site.md).
 
 on:
   push:
@@ -43,9 +42,6 @@ jobs:
 
       - name: cargo fmt --check (workspace)
         run: cargo fmt --check
-
-      - name: cargo fmt --check (site — workspace exclude)
-        run: cargo fmt --check --manifest-path site/Cargo.toml
 
       - name: cargo fmt --check (plugin sdk wasm — workspace exclude)
         run: cargo fmt --check --manifest-path crates/tasty-plugin-sdk-wasm/Cargo.toml

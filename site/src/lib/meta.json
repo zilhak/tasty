@@ -1,0 +1,10 @@
+{
+  "en": {
+    "title": "Tasty",
+    "description": "Hand a terminal to an agent and your own screen holds still. The agent works in its own tab through tasty commands and tells you when it lands. Drawn on the GPU, so a wall of splits still feels immediate."
+  },
+  "ko": {
+    "title": "Tasty",
+    "description": "에이전트에게 일을 맡겨두고, 나는 옆 탭에서 하던 일을 계속합니다. 포커스도 스크롤도 그대로입니다."
+  }
+}

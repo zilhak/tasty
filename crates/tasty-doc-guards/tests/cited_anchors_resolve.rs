@@ -19,9 +19,9 @@
 //!
 //! 훑는 것은 레포 전체 `.md` 다. 판정에서 빼는 것은 **`site/content/` 를 가리키는 앵커**
 //! 이고, 그 링크가 어디에서 출발했는지는 안 본다. 이유는 소비자다: 그 트리의 슬러그는
-//! 생성된 사이트가 소비하고 `site/src/md.rs` 의 `slugify` 가 만들며, `site/src/main.rs`
-//! 의 `--strict` 가 이미 "broken anchor in ..." 로 판정한다. 같은 자리를 두 판사가 보면
-//! 규칙이 갈리는 날 답이 둘이 된다.
+//! 발행된 사이트가 소비하고, `site/scripts/check-links.mjs` 가 **산출된 HTML 에서 실제로
+//! 나온 `id="…"`** 로 판정한다. 같은 자리를 두 판사가 보면 답이 둘이 될 수 있고, 그중
+//! 하나(이 파일)는 규칙의 **사본**이라 언제나 더 나쁜 판사다.
 //!
 //! **한때 이 절은 소스 기준(`site/content/` 발 링크를 통째로 제외)이었다. 그것이 구멍을
 //! 하나 남겼다** — 그 트리에서 출발해 트리 **밖**(`docs/` 등)을 가리키는 앵커다. 그
@@ -31,29 +31,42 @@
 //! 저절로 이쪽에 들어오고 겹침은 여전히 0 이다. 실측(2026-09-08) 그런 링크는 0 건이라
 //! 지금 잡히는 것은 없다 — 비어 있는 갈래를 여는 것이 이 규칙의 값이다.
 //!
-//! ## 두 슬러그 규칙이 실제로 갈리나 — **값은 여기 안 적는다**
+//! ## 규칙은 하나다 — 그런데도 왜 넘기나
 //!
-//! 갈린다. 어디서 얼마나 갈리는지, 그것이 지금 무엇을 깨고 있는지(결정 시점 실측:
-//! 갈리는 헤딩 수 · 원인별 분류 · 그 형태로 실제 인용된 수)는
-//! `docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md` 한 곳에 있다.
-//! **여기 옮겨 적지 마라** — 같은 수를 두 곳에 적으면 한쪽만 갱신되는 날이 오고, 그날
-//! 어느 쪽이 맞는지 아무도 모른다. 지금 값이 궁금하면 이 시험이 찍는 인구조사 줄을
-//! 봐라(`앵커 좌변: 문서 N 개 · 판정 M 건`).
+//! 한때 규칙이 둘이었다. 사이트를 손으로 쓴 러스트 생성기가 렌더했고 그 `slugify` 는
+//! `_` 를 `-` 로 접고 양끝 `-` 를 뗐다 — GitHub 은 둘 다 안 한다. 사이트가 Astro 로
+//! 옮겨 가면서 그 생성기가 사라졌고, 지금 렌더러는 GitHub 과 같은 답을 낸다(실측은 ADR
+//! 에 있다). **그래서 이 파일에는 사이트 규칙의 사본이 없다.**
 //!
-//! 그 결정의 수명은 [`site_slug_still_mirrors_the_site_renderer`] 가 지킨다 — 사이트
-//! 렌더러가 슬러그 규칙을 바꾸면 그 시험이 ADR 을 가리키며 죽는다.
+//! 그래도 `site/content/` 를 넘기는 것은 규칙이 갈려서가 아니라 **판사의 질** 때문이다.
+//! 이 파일의 [`slug`] 는 GitHub 규칙을 옮겨 적은 사본이고, 사이트 판사는 렌더된 HTML 의
+//! `id` 를 그대로 읽는다. 사본은 원본이 바뀌면 조용히 낡지만 실측은 안 낡는다. 그리고
+//! 지금 렌더러는 이 레포가 아니라 의존 라이브러리(Astro 의 마크다운 처리기)라 그 변경이
+//! 이 레포의 커밋으로는 안 보인다 — 사본으로 따라갈 수 있는 대상이 아니다.
 //!
-//! ## 넘긴 쪽 판사는 실재하나 (실측 2026-09-08)
+//! 결정과 실측값은 `docs/adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md`
+//! 한 곳에 있다. **여기 옮겨 적지 마라** — 같은 수를 두 곳에 적으면 한쪽만 갱신되는 날이
+//! 오고, 그날 어느 쪽이 맞는지 아무도 모른다. 지금 값이 궁금하면 이 시험이 찍는 인구조사
+//! 줄을 봐라(`앵커 좌변: 문서 N 개 · 판정 M 건`).
 //!
-//! 배선만 보고 넘기지 않는다. `pages.yml` 최근 10 회차가 전부 success 이고 잡 단위로도
-//! `build`·`deploy` 둘 다 success 다. 축도 둘 다 본다 — `rewrite_link` 가 `#x` 는
-//! `Fragment{target:None}`, content 트리 안의 `그.md#x` 는 `Fragment{target:Some}` 로
-//! 기록하고 렌더가 끝난 뒤 페이지별 앵커 집합과 맞춘다.
+//! 이 넘김의 수명은 [`the_site_anchor_judge_is_still_wired`] 가 지킨다 — 넘긴 쪽 판사가
+//! 사라지면 그 시험이 ADR 을 가리키며 죽는다.
 //!
-//! 그 잡은 경로 필터 뒤에 있어 main push 마다 돌지는 않는다(같은 창에서 필터 없는
-//! `doc-guards.yml` 이 72 회차, `pages.yml` 이 20 회차 — 52 번은 안 돌았다). **그래도
-//! 이 축에는 사각이 안 생긴다**: 그 트리의 앵커가 깨지는 길은 링크를 고치는 것과 헤딩을
-//! 고치는 것 둘뿐이고, 둘 다 `site/**` 변경이라 정확히 그때 잡이 돈다.
+//! ## 넘긴 쪽 판사는 실재하나
+//!
+//! 배선만 보고 넘기지 않는다. 판사는 `site/scripts/check-links.mjs` 이고 `pages.yml` 의
+//! `npm run check-links` 스텝이 부른다 — 산출된 모든 HTML 에서 `id="…"` 를 모은 뒤 내부
+//! 링크의 `#조각`을 그 집합과 맞춘다. 축도 둘 다 본다: 같은 페이지 안의 `#x` 와 다른
+//! 페이지를 가리키는 `그.html#x` 가 각각 별개 갈래다.
+//!
+//! **이 배선은 한 번 끊긴 적이 있다.** 사이트가 Astro 로 옮겨 가면서 옛 생성기의
+//! `--strict` 가 사라졌고, `check-links` 는 스크립트로만 남아 아무도 안 불렀다. 그동안
+//! `site/content/` 의 앵커에는 판사가 **하나도** 없었다 — 이 가드는 넘겼고 넘긴 쪽은
+//! 비어 있었다. [`the_site_anchor_judge_is_still_wired`] 가 그 상태를 빨강으로 만든다.
+//!
+//! 그 잡은 경로 필터 뒤에 있어 main push 마다 돌지는 않는다. **그래도 이 축에는 사각이
+//! 안 생긴다**: 그 트리의 앵커가 깨지는 길은 링크를 고치는 것과 헤딩을 고치는 것 둘뿐이고,
+//! 둘 다 `site/**` 변경이라 정확히 그때 잡이 돈다.
 //!
 //! ## 이 가드가 **안 보는** 앵커 (실측 2026-09-08, 레포 `.md` 전체)
 //!
@@ -151,7 +164,8 @@ const MD_FLOOR: Floor = Floor {
 /// 30 이 정확히 `site/content/` **안을 가리키는** 링크다(렌더러 소관이라 판정에서 뺀다).
 const REFS_FLOOR: usize = 120;
 
-/// 사이트 렌더러가 슬러그의 주인인 트리 — **가리켜지는 쪽**을 기준으로 판정에서 뺀다.
+/// 사이트 판사가 앵커의 주인인 트리 — **가리켜지는 쪽**을 기준으로 판정에서 뺀다.
+/// 그 판사가 실재하는지는 [`the_site_anchor_judge_is_still_wired`] 가 본다.
 const RENDERER_OWNED_PREFIX: &str = "site/content/";
 
 /// 헤딩 텍스트에서 GitHub 스타일 슬러그를 만든다.
@@ -256,33 +270,6 @@ fn anchors_with(contents: &str, rule: fn(&str) -> String) -> HashSet<String> {
         out.insert(id);
     }
     out
-}
-
-/// `site/src/md.rs` 의 `slugify` 를 그대로 옮긴 것 — **진단 전용**이다.
-///
-/// 판정은 언제나 GitHub 규칙([`slug`])으로 한다. 이 함수는 실패했을 때 "그 인용이 혹시
-/// 사이트 규칙으로 쓰인 것인가" 를 말해 주기 위해서만 쓴다. 두 규칙이 갈리는 지점은
-/// 둘뿐이다: 이쪽은 `_` 를 `-` 로 바꾸고, 양끝 `-` 를 뗀다.
-fn site_slug(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in link_text_only(text).chars() {
-        if ch.is_alphanumeric() {
-            out.extend(ch.to_lowercase());
-        } else if ch == ' ' || ch == '-' || ch == '_' {
-            out.push('-');
-        }
-    }
-    let trimmed = out.trim_matches('-').to_string();
-    if trimmed.is_empty() {
-        "section".to_string()
-    } else {
-        trimmed
-    }
-}
-
-/// 사이트 규칙으로 만든 앵커 집합 — 진단할 때만 그 파일에 대해 계산한다.
-fn site_anchors_of(contents: &str) -> HashSet<String> {
-    anchors_with(contents, site_slug)
 }
 
 /// 그 문서가 **인용하는** 링크 대상 전부 — `(줄번호, 대상)`.
@@ -414,7 +401,6 @@ fn corpus_of(docs: &[Walked]) -> Corpus {
 struct Audit {
     intra: usize,
     cross: usize,
-    site_rule_form: usize,
     violations: Vec<String>,
     violating_docs: std::collections::BTreeSet<String>,
 }
@@ -429,7 +415,6 @@ fn audit(corpus: &Corpus, renderer_owned: &str) -> Audit {
     let mut out = Audit {
         intra: 0,
         cross: 0,
-        site_rule_form: 0,
         violations: Vec::new(),
         violating_docs: std::collections::BTreeSet::new(),
     };
@@ -463,22 +448,8 @@ fn audit(corpus: &Corpus, renderer_owned: &str) -> Audit {
                 out.cross += 1;
             }
             if !anchors.contains(anchor) {
-                // 진단: 그 인용이 **사이트 규칙**으로 쓰인 것인가. 판정은 바뀌지 않고,
-                // 실패문이 가리키는 처방이 갈린다.
-                let site_written = corpus
-                    .contents_by_rel
-                    .get(&target_rel)
-                    .is_some_and(|t| site_anchors_of(t).contains(anchor));
-                if site_written {
-                    out.site_rule_form += 1;
-                }
-                let tag = if site_written {
-                    "사이트 규칙 형태"
-                } else {
-                    kind
-                };
                 out.violations
-                    .push(format!("  {rel}:{line_no} — [{tag}] `{target}`"));
+                    .push(format!("  {rel}:{line_no} — [{kind}] `{target}`"));
                 out.violating_docs.insert(rel.clone());
             }
         }
@@ -495,7 +466,6 @@ fn cited_anchors_resolve_to_a_heading() {
     let Audit {
         intra,
         cross,
-        site_rule_form,
         violations,
         violating_docs,
     } = audit(&corpus, RENDERER_OWNED_PREFIX);
@@ -512,23 +482,9 @@ fn cited_anchors_resolve_to_a_heading() {
          {REFS_FLOOR}) — 링크 스캐너가 죽으면 위반 0 이 나오므로 모수를 함께 본다. \
          ★ 하한을 내려서 통과시키지 마라."
     );
-    let site_rule_note = if site_rule_form == 0 {
-        String::new()
-    } else {
-        format!(
-            "\n★ 그중 {site_rule_form} 건은 **사이트 규칙 형태**다 — 그 앵커는 \
-             `site/src/md.rs` 의 `slugify` 로는 풀리고 GitHub 규칙으로는 안 풀린다(두 \
-             규칙은 `_` 와 양끝 하이픈에서 갈린다). 그 자리를 무엇이 읽는지부터 정해라: \
-             `site/content/` 안에서 안으로 가는 링크만 사이트가 풀고, 나머지는 GitHub 이 \
-             푼다(docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md).\n\
-             ☞ **고치기 전에 그 앵커를 GitHub 에서 실제로 열어 봐라.** 이 진단은 판정기의 \
-             규칙이 옳다는 전제 위에 있고, 그 전제가 틀리면 이 처방은 **동작하는 링크를 \
-             깨진 형태로 바꾼다.** 열려 있으면 고쳐야 할 것은 링크가 아니라 [`slug`] 다."
-        )
-    };
     // 이 순회는 레포 루트에서 시작한다 — 작업 트리에 있는 `.md` 는 추적 여부와 무관하게
-    // 좌변에 들어온다. 점 디렉토리는 안 내려가지만 그것은 **이름**이지 성질이 아니라,
-    // 점 없는 이름의 폴더는 그대로 들어온다(실측 2026-09-08: 그 형태로 이 가드가 빨개진다).
+    // 좌변에 들어온다. 점 디렉토리와 `node_modules` 는 안 내려가지만, 점 없는 다른 이름의
+    // 폴더는 그대로 들어온다(실측 2026-09-08: 그 형태로 이 가드가 빨개진다).
     // 그래서 실패할 때만 좌표의 출신을 물어 처방이 레포 밖에 붙는 것을 막는다 —
     // 좌변을 git 으로 바꾸지 않은 근거는 [`tasty_doc_guards::tracked_scope`] 에 있다.
     let outside = if violations.is_empty() {
@@ -541,11 +497,10 @@ fn cited_anchors_resolve_to_a_heading() {
         violations.is_empty(),
         "풀리지 않는 앵커 {} 건 (문서 {} 개 · 판정 {judged} 건 중):\n{}\n\
          ★ 헤딩을 grep 으로 찾아 확인하지 마라 — 강조 표시를 품은 헤딩을 0 건으로 낸다. \
-         헤딩 텍스트에서 슬러그를 다시 만들어 대조해라.{}{}",
+         헤딩 텍스트에서 슬러그를 다시 만들어 대조해라.{}",
         violations.len(),
         docs.len(),
         violations.join("\n"),
-        site_rule_note,
         outside
     );
 }
@@ -580,115 +535,79 @@ fn fenced_and_inline_code_are_not_links() {
     assert!(links_of(src).is_empty(), "{:?}", links_of(src));
 }
 
-/// ADR-0201 의 첫째 재검토 조건에 **판정 자리**를 준다 — 사이트 렌더러가 슬러그 규칙을
-/// 바꾸면 여기서 죽는다.
+/// [`RENDERER_OWNED_PREFIX`] 의 넘김에 **판정 자리**를 준다 — 넘긴 쪽 판사가 사라지면
+/// 여기서 죽는다.
 ///
-/// ## 왜 갈림 **수**를 안 세는가
+/// ## 왜 규칙의 사본이 아니라 배선을 재는가
 ///
-/// 발주된 형태는 "두 규칙으로 갈림 수를 세서 ADR 에 적힌 값과 대조" 였다. 그것은 안
-/// 짓는다. 그 수는 `slugify` 의 함수가 아니라 **문서 수의 함수**다 — 밑줄을 담은 헤딩이
-/// 하나 늘 때마다 움직이고, 그러면 이 시험은 트리거와 무관한 변경에서 죽으면서 실패문은
-/// "ADR 을 재검토하라" 고 말한다. 실재하지 않는 트리거에 대한 처방이고, 따르는 사람은
-/// ADR 을 열어 아무것도 안 바뀐 것을 확인하고 값만 고쳐 적는다. 그 습관이 붙으면 진짜로
-/// 바뀐 날에도 값만 고쳐 적힌다.
+/// 앞선 판은 사이트 생성기의 `slugify` 사본을 이 파일에 두고 그 둘이 같은 답을 내는지
+/// 봤다. 그 사본은 원문이 이 레포 안에 있을 때만 성립한다. 사이트가 Astro 로 옮겨 가면서
+/// 렌더러는 **의존 라이브러리**가 됐고, 그 규칙은 이 레포의 커밋으로는 안 바뀐다 —
+/// `npm ci` 가 다른 판을 받아 오는 것만으로 바뀐다. 사본을 두면 그날 이 시험은 초록인 채로
+/// 낡는다.
 ///
-/// 그래서 재는 것은 모수가 아니라 **규칙 자체**다. 두 축으로 본다.
+/// 그래서 재는 것은 규칙이 아니라 **넘긴 쪽에 판사가 있는가**다. 축 둘이다.
 ///
-/// - **원문 축** — `site/src/md.rs` 의 `slugify` 가 여전히 같은 결정을 담고 있는가.
-/// - **사본 축** — 이 파일의 [`site_slug`] 가 그 결정과 같은 답을 내는가. 이 사본은
-///   자유도가 없다(원문을 그대로 옮긴 것). 자유도 없는 사본은 손으로 두 번 쓰면 갈린다.
+/// - **판정기 축** — `site/scripts/check-links.mjs` 가 여전히 앵커를 본다. `id` 를 모으는
+///   자리와, 같은 페이지·다른 페이지 두 갈래에서 그것을 대조하는 자리.
+/// - **배선 축** — `pages.yml` 이 그 스크립트를 실제로 부른다.
 ///
-/// 두 축을 함께 봐야 하는 이유: 원문만 보면 사본이 낡아도 초록이고, 사본만 보면 원문이
-/// 바뀌어도 초록이다.
+/// 두 축을 함께 봐야 하는 이유는 이 자리가 실제로 한 번 끊긴 방식이다: 스크립트는 멀쩡히
+/// 있었고 **부르는 곳만 없었다.** 판정기만 보면 그 상태가 초록이다.
 #[test]
-fn site_slug_still_mirrors_the_site_renderer() {
+fn the_site_anchor_judge_is_still_wired() {
     let root = tasty_doc_guards::repo_root();
-    let src_path = root.join("site/src/md.rs");
-    let src = std::fs::read_to_string(&src_path).unwrap_or_else(|why| {
-        panic!(
-            "사이트 렌더러 원문을 못 읽었다 ({}): {why} — 못 읽은 채로 통과하면 이 시험은 \
-             \"규칙이 안 바뀌었다\" 가 아니라 \"안 봤다\" 가 된다",
-            src_path.display()
-        )
-    });
+    let read = |rel: &str| {
+        let path = root.join(rel);
+        std::fs::read_to_string(&path).unwrap_or_else(|why| {
+            panic!(
+                "넘긴 쪽 판사를 못 읽었다 ({}): {why} — 못 읽은 채로 통과하면 이 시험은 \
+                 \"판사가 있다\" 가 아니라 \"안 봤다\" 가 된다",
+                path.display()
+            )
+        })
+    };
 
-    // 원문 축 — `slugify` 를 오늘의 규칙으로 만드는 결정 넷.
+    // 판정기 축 — 이 스크립트를 앵커 판사로 만드는 결정 셋.
+    const JUDGE: &str = "site/scripts/check-links.mjs";
+    let judge = read(JUDGE);
     let decisions: &[(&str, &str)] = &[
-        ("영숫자만 남긴다", "if ch.is_alphanumeric()"),
+        ("산출 HTML 에서 `id` 를 모은다", r#"/\sid="([^"]+)"/g"#),
         (
-            "공백·하이픈·**밑줄**을 하이픈으로 접는다",
-            "} else if ch == ' ' || ch == '-' || ch == '_' {",
+            "같은 페이지 안의 `#조각`을 대조한다",
+            "anchors.get(file).has(",
         ),
-        ("양끝 하이픈을 뗀다", "trim_matches('-')"),
-        ("빈 슬러그는 \"section\"", "\"section\".to_string()"),
+        (
+            "다른 페이지의 `#조각`을 대조한다",
+            "anchors.get(target)?.has(hash)",
+        ),
     ];
     let missing: Vec<&str> = decisions
         .iter()
-        .filter(|(_, needle)| !src.contains(needle))
+        .filter(|(_, needle)| !judge.contains(needle))
         .map(|(what, _)| *what)
         .collect();
-    assert!(
-        missing.is_empty(),
-        "`site/src/md.rs` 의 `slugify` 에서 이 결정이 사라졌다: {missing:?}\n\
-         ★ 이것은 회귀가 아니라 **ADR-0201 의 첫째 재검토 조건이 발동한 것**이다 \
-         (docs/adr/0201-slug-rules-are-scoped-by-the-tree-that-renders-them.md).\n\
-         순서가 있다. (1) 이 파일의 `site_slug` 를 바뀐 원문에 맞춘다. (2) ADR 의 값을 \
-         **다시 재서** 갱신한다 — 갈리는 헤딩 수, 원인별 분류, 그리고 그 형태로 실제 \
-         인용된 수 셋 다. (3) 그러고 나서 ADR 의 결정(통일하지 않는다)이 여전히 맞는지 \
-         다시 읽는다. 갈림이 0 이 됐으면 결정의 전제가 사라진 것이다.\n\
-         ☞ 이 목록을 고쳐서 통과시키지 마라 — 그러면 재검토 조건이 다시 문장이 된다."
-    );
 
-    // 사본 축 — 두 규칙이 갈리는 자리와 안 갈리는 자리를 함께 고정한다.
-    // 갈리는 자리만 두면 "둘 다 망가져 같아진" 경우를 못 본다.
-    let probes: &[(&str, &str, &str)] = &[
-        // (헤딩, GitHub 규칙, 사이트 규칙)
-        (
-            "완료 판정 전략 (src/completion_strategy)",
-            "완료-판정-전략-srccompletion_strategy",
-            "완료-판정-전략-srccompletion-strategy",
-        ),
-        (
-            "`--surface` 생략과 다중 윈도우",
-            "--surface-생략과-다중-윈도우",
-            "surface-생략과-다중-윈도우",
-        ),
-        (
-            "set_context 송신 정책",
-            "set_context-송신-정책",
-            "set-context-송신-정책",
-        ),
-        // 안 갈리는 자리 — 전각·기호·연속 하이픈·한글
-        ("Ｆｕｌｌ 폭 문자", "ｆｕｌｌ-폭-문자", "ｆｕｌｌ-폭-문자"),
-        (
-            "괄호(와) 물음표? 그리고 쉼표,",
-            "괄호와-물음표-그리고-쉼표",
-            "괄호와-물음표-그리고-쉼표",
-        ),
-        ("가운데 — 긴 줄표", "가운데--긴-줄표", "가운데--긴-줄표"),
-        ("한글만 있는 헤딩", "한글만-있는-헤딩", "한글만-있는-헤딩"),
-    ];
-    let mut wrong = Vec::new();
-    for (text, gh, site) in probes {
-        if slug(text) != *gh {
-            wrong.push(format!(
-                "  GitHub 규칙 `{text}` → `{}` (기대 `{gh}`)",
-                slug(text)
-            ));
-        }
-        if site_slug(text) != *site {
-            wrong.push(format!(
-                "  사이트 규칙 `{text}` → `{}` (기대 `{site}`)",
-                site_slug(text)
-            ));
-        }
-    }
+    // 배선 축 — 그 스크립트를 부르는 자리.
+    const WORKFLOW: &str = ".github/workflows/pages.yml";
+    let wired = read(WORKFLOW).contains("npm run check-links");
+
     assert!(
-        wrong.is_empty(),
-        "슬러그 규칙 둘 중 하나가 기대와 다르다:\n{}\n\
-         ★ 이 표는 두 규칙이 **어디서 갈리고 어디서 안 갈리는지**를 고정한다. 갈리는 \
-         자리(밑줄 · 양끝 하이픈)만 고정하면 둘이 함께 망가져 같아진 경우를 못 본다.",
-        wrong.join("\n")
+        missing.is_empty() && wired,
+        "`site/content/` 의 앵커를 볼 판사가 없어졌다.\n\
+         판정기({JUDGE}) 에서 사라진 결정: {missing:?}\n\
+         배선({WORKFLOW}) 이 `npm run check-links` 를 부르는가: {wired}\n\
+         ★ 이것은 회귀가 아니라 **ADR-0247 의 재검토 조건이 발동한 것**이다 \
+         (docs/adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md).\n\
+         이 가드는 그 트리를 가리키는 앵커를 판정에서 **뺀다** — 뺀 근거가 \"그쪽에 더 \
+         정확한 판사가 있다\" 이므로, 그 판사가 없으면 뺀 자리는 아무도 안 보는 구멍이다. \
+         빨강이 뜻하는 것은 링크가 깨졌다가 아니라 **깨졌는지 아무도 안 본다**이다.\n\
+         순서가 있다. (1) 판사를 되살린다(스크립트를 고쳤으면 위 결정을, 배선을 지웠으면 \
+         스텝을). (2) 되살릴 수 없다면 ADR 을 다시 읽는다 — 넘길 곳이 없으면 넘김의 전제가 \
+         사라진 것이고, 그때 할 일은 이 트리를 이 가드의 좌변에 들이는 것이다.\n\
+         ☞ [`RENDERER_OWNED_PREFIX`] 를 지워서 통과시키지 마라 — 그러면 그 트리의 앵커를 \
+         규칙의 **사본**이 판정하게 되고, 사본은 렌더러가 의존 라이브러리인 지금 따라갈 \
+         대상이 없다."
     );
 }
 
@@ -721,11 +640,11 @@ fn the_audit_reports_an_unresolved_anchor_and_skips_only_the_two_ended_site_link
             "zone/deep/into_site.md",
             "[밖에서 안으로](../rendered/b.md#site-rule)\n",
         ),
-        // 사이트 규칙 형태 — `_` 에서 두 규칙이 갈린다. GitHub 은 `under_score`,
-        // 사이트는 `under-score` 를 만든다. 위반이면서 진단이 갈리는 자리다.
+        // 렌더러 소관 트리를 **가리키지만** 출발이 밖이라 판정 대상인 둘째 — 여기서는
+        // 안 풀린다. 한 끝 조건이 `||` 로 넓어지면 이 위반이 사라진다.
         (
             "zone/deep/into_site2.md",
-            "[사이트 규칙으로 쓴 것](../rendered/c.md#under-score)\n",
+            "[밖에서 안으로, 없는 앵커](../rendered/c.md#no-such-heading)\n",
         ),
         ("zone/rendered/c.md", "## Under_Score\n"),
     ]);
@@ -749,11 +668,10 @@ fn the_audit_reports_an_unresolved_anchor_and_skips_only_the_two_ended_site_link
     assert!(
         a.violations
             .iter()
-            .any(|v| v.contains("zone/deep/into_site2.md") && v.contains("사이트 규칙 형태")),
-        "사이트 규칙 형태 진단이 안 붙었다: {:#?}",
+            .any(|v| v.contains("zone/deep/into_site2.md") && v.contains("크로스파일")),
+        "한 끝만 렌더러 소관인 링크가 판정에서 빠졌다: {:#?}",
         a.violations
     );
-    assert_eq!(a.site_rule_form, 1, "사이트 규칙 형태 계수가 다르다");
     assert_eq!(
         a.violating_docs.len(),
         2,

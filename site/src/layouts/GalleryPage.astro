@@ -1,0 +1,57 @@
+---
+/**
+ * A gallery page.
+ *
+ * Deliberately not built on `Base.astro`: the gallery is an application with
+ * its own full-height chrome, and stacking the site's header, footer and
+ * document typography on top of it would give two navigations and two
+ * scrollbars. It keeps the site's theme instead — same key, same pre-paint
+ * script — and a link back into `/design/`.
+ */
+import "../styles/tokens.css";
+import "../styles/kit.css";
+import "../../vendor/gallery/gallery.css";
+import "../styles/gallery-site.css";
+import { url } from "../lib/site";
+
+interface Props {
+  title: string;
+  description: string;
+}
+const { active, title, description } = Astro.props;
+---
+<html lang="en" data-theme-default="mocha">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Tasty Gallery</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href={url("tasty-melon.svg")} type="image/svg+xml" />
+    <script is:inline>
+      /* Same rule as the rest of the site, applied before first paint. */
+      (function () {
+        try {
+          var saved = localStorage.getItem("tasty-theme");
+          if (saved === "latte" || saved === "light") {
+            document.documentElement.setAttribute("data-theme", "latte");
+            return;
+          }
+          if (saved === "mocha" || saved === "dark") return;
+        } catch (e) {}
+        if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+          document.documentElement.setAttribute("data-theme", "latte");
+        }
+      })();
+      try {
+        if (localStorage.getItem("tasty-gallery-specs") === "1")
+          document.addEventListener("DOMContentLoaded", function () {
+            document.body.setAttribute("data-specs", "");
+          });
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

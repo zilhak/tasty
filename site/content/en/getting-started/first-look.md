@@ -1,20 +1,21 @@
-<!-- source-hash: 023960e3d94e -->
+<!-- source-hash: 1ac3a4c54510 -->
 # A first look
 
 After reading this page you will know what each part of the Tasty window is and what it is called. Every later page uses these terms.
 
 ## Window layout
 
+<!-- tasty-diagram: window-anatomy -->
 ```
-┌──────────────────────────────────────────────┐
-│ Title bar                                    │
-├──────────┬───────────────────────────────────┤
-│          │ Tab strip                         │
-│ Sidebar  ├───────────────────────────────────┤
-│          │ Work area (Pane · Tab · Surface)  │
-│          ├───────────────────────────────────┤
-│          │ Status bar                        │
-└──────────┴───────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│ Title bar                                       │
+├──────────┬──────────────────────────────────────┤
+│          │ Tab strip                            │
+│ Sidebar  ├──────────────────────────────────────┤
+│          │ Work area (Pane · Tab · Surface)     │
+│          ├──────────────────────────────────────┤
+│          │ Status bar                           │
+└──────────┴──────────────────────────────────────┘
 ```
 
 - **Title bar** — Drag to move the window, double-click to maximize. On Linux · Windows, Tasty draws the minimize · maximize · close buttons itself; on macOS the traffic-light buttons on the left are used as they are.

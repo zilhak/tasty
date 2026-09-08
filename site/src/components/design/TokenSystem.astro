@@ -1,0 +1,41 @@
+---
+/** `/design/tokens/` — the 3-tier token document, on its own page. */
+import Design from "../../layouts/Design.astro";
+import { cards } from "../../lib/guidelines";
+import { REPO, url } from "../../lib/site";
+import type { Lang } from "../../lib/guide";
+
+interface Props { lang: Lang; }
+const { lang } = Astro.props;
+
+const COPY = {
+  en: {
+    title: "Token system",
+    intro:
+      "Three tiers, one direction: primitives hold the only literal values, semantics name the roles " +
+      "that reference them, and component tokens are the knobs a widget reads. Nothing skips a tier, " +
+      "and nothing references upwards.",
+    source: "source:",
+  },
+  ko: {
+    title: "토큰 체계",
+    intro:
+      "3티어, 한 방향이다. 원시(primitive)만 리터럴 값을 갖고, 의미(semantic)는 그것을 참조하는 역할에 " +
+      "이름을 붙이며, 컴포넌트 토큰은 위젯이 읽는 손잡이다. 어느 티어도 건너뛰지 않고, 위쪽을 참조하지 않는다.",
+    source: "원본:",
+  },
+};
+const c = COPY[lang];
+const card = cards(process.cwd()).find((x) => x.slug === "token-system")!;
+---
+<Design lang={lang} current="tokens/" title={c.title} intro={c.intro}>
+  <div class="ds-card ds-card--solo">
+    <div class="ds-card__frame">
+      <iframe src={url(`design/cards/${card.slug}.html`)} title={card.name}
+              height={card.height} style={`min-width:${card.width}px`} />
+    </div>
+    <a class="ds-card__src" href={`${REPO}/blob/main/site/vendor/guidelines/${card.slug}.html`}>
+      {c.source} <code>{card.slug}.html</code>
+    </a>
+  </div>
+</Design>

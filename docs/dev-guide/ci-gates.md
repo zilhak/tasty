@@ -18,7 +18,7 @@
 
 | 검사 | 명령 | 채널 | 트리거 | 등급 |
 |---|---|---|---|---|
-| 포맷 | `cargo fmt --check` (+ `site/` · `crates/tasty-plugin-sdk-wasm/` 매니페스트 각각) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
+| 포맷 | `cargo fmt --check` (+ `crates/tasty-plugin-sdk-wasm/` 매니페스트) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
 | SemVer 가드 | `cargo test --locked --no-default-features --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
 | macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push · PR · 수동 | [실측] |
@@ -32,7 +32,7 @@
 | 공용 순회를 안 거치는 직접 `read_dir` (**상한 래칫**, 판정기 `mask-source` 선행) | `bash scripts/check-shared-walk-ratchet.sh` | `script-gates.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | plugin 버전 bump | `bash scripts/check-plugin-version-bump.sh --range <before> <after>` | `plugin-version-check.yml` (self-hosted Linux X64) | main push · PR — **둘 다 `crates/**` 가 바뀐 경우** · 수동. ★ 판정 대상이 plugin 디렉토리가 아니라 **워크스페이스 내부 의존 폐포**이고 그 안에서 **출하되는 내용**만 세기 때문에([ADR-0166](../adr/0166-the-plugin-version-gate-judges-the-artifact-not-the-directory.md)) 경로 필터가 `crates/**` 다 — `tasty-utils`·`tasty-shm` 처럼 이름이 `tasty-plugin-` 으로 시작하지 않는 크레이트가 바뀌어도 plugin 산출물이 달라진다. 잡이 출하 판정기(`strip-cfg-test`)를 먼저 빌드한다. ★ **모수**: 이 채널은 **push 된 범위**를 본다. lane 의 pre-commit 은 **staged** 를 본다. 둘은 다른 물음에 답한다 — lane 이 자기 통과를 전체 통과로 읽으면 안 된다. 통합 회차가 `--range <직전 push> HEAD` 로 다시 잰다(아래 "등급" 절) | [실측] |
 | 공급망 | `cargo deny check` | `supply-chain-check.yml` | main push(`paths: Cargo.lock · deny.toml`) · PR · 매주 월 09:00 UTC · 수동. ★ 이 잡은 **두 물음**에 답하고 트리거가 물음마다 다르다. ㉠ **우리 변경이 만드는 것**(새 의존의 license·ban, 새로 직접 의존이 된 크레이트의 advisory, 쓰이지 않게 된 ignore 항목)은 그 변경이 들어오는 push 에서 잡아야 하므로 `Cargo.lock`·`deny.toml` 로 좁힌 **main push** 가 본다 — **커밋 단위다.** ㉡ **바깥 세계가 만드는 것**(코드는 그대로인데 새 RUSTSEC 권고가 뜬 경우)은 push 로는 영영 안 잡히므로 주간 `schedule` 이 본다 — **주 단위다.** **주 단위여도 되는 이유**는 그 축의 입력이 우리 커밋이 아니라 바깥 세계라 우리 회차와 무관하게 바뀌기 때문이고, daily 는 러너 부하 대비 이득이 적다. ⇒ **㉠ 을 주 단위로 읽으면 안 된다**: 새 의존을 들이는 커밋은 그 push 에서 즉시 판정되고, 노출 창은 일주일이 아니다. (이 갈래 서술은 오래도록 워크플로 파일 머리에만 있었다 — 옮긴 것이 아니라 표에도 둔다. 표만 읽으면 "매주 월요일"이 먼저 눈에 들어와 ㉠ 까지 주 단위로 읽힌다.) | [실측] |
-| 사이트 생성 — 가이드 링크 · `ORDER` 누락 | `cargo run --release --manifest-path site/Cargo.toml -- --strict` | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
+| 사이트 빌드 | `npm ci && npm run build` (`site/`) | `pages.yml` 의 `build` (ubuntu-latest) | main push — `site/**` · `Cargo.toml` · 랜딩 아이콘 · 그 워크플로가 바뀐 경우만 · 수동 | 등급 미정 |
 
 ### 로컬에서 이 게이트들을 돌리기 전에 — **판정기부터**
 
@@ -651,17 +651,21 @@ git diff --name-only <앞 push tip> <이 push tip>
 | `complexity-check` (2) · `script-gates` (2) | 〃 | `.rs` | **아니오** — 그 push 에 `.rs` 가 0 이다 |
 | `plugin-version-check` (16) | `crates/**` 없음 | `crates/**` 안의 산출물 폐포 | **아니오** — 필터가 판정 대상의 **상위집합**이다 |
 | `supply-chain-check` (36) | `Cargo.lock`·`deny.toml` 없음 | 그 두 파일 | **아니오** — 필터가 판정 대상과 **같은 집합**이다. 파일이 안 바뀌어도 새 advisory 로 판정이 바뀌는 몫은 주간 `schedule` cron 이 대체 채널이다 |
-| `pages` (42) | `site/**`·`Cargo.toml`·아이콘·`pages.yml` 없음 | site 생성 + `--strict` | **구조상 가능, 실측 0** — 아래 |
+| `pages` (42) | `site/**`·`Cargo.toml`·아이콘·`pages.yml` 없음 | site 빌드 + `check-links` | **구조상 가능, 실측 0** — 아래 |
 
 ⇒ **후보 0.** 필터가 만든 미측정은 이 트리에 없다.
 
 ##### `pages` 만 구조상 가능하다 — 그리고 그 0 은 우연이 아니다
 
-생성기는 `site/` 밖을 한 자리에서 읽는다: `site/src/md.rs` 가 링크 대상을
-`repo_root.join(...).exists()` 로 확인하고, 없으면 broken 으로 세며 `--strict` 가 그것을
-실패로 만든다. 그래서 **`site/content/**` 가 `docs/` 안의 파일을 링크하고 있다면**, 그
-파일을 지우는 문서 전용 push 는 `pages` 를 안 켜고 지나가고 다음에 `site/**` 를 담은 무관한
-push 에서 빨개진다.
+빌드는 `site/` 밖을 두 자리에서 읽는다: `site/src/lib/site.ts` 가 워크스페이스 루트
+`Cargo.toml` 에서 버전을 읽고, `site/scripts/vendor-to-esm.mjs` 가 `assets/icons/` 의
+아이콘 둘을 복사한다. **둘 다 필터에 이름으로 들어 있다**(`Cargo.toml` · 아이콘) — 그
+입력이 바뀌는 push 는 반드시 잡을 켠다.
+
+남는 갈래는 판정기 쪽이다. `site/scripts/check-links.mjs` 는 **산출된 HTML 안**만 본다 —
+가이드 밖으로 나가는 링크는 GitHub blob URL 이 되고 외부 URL 은 판정에서 뺀다. 그래서
+**`site/content/**` 가 `docs/` 안의 파일을 링크하고 있다면**, 그 파일을 지우는 문서 전용
+push 는 `pages` 를 안 켜고 지나가는 것이 아니라 **켜져도 안 잡는다.**
 
 실측: `site/content/**` 의 마크다운에서 content 트리를 벗어나는 상대 링크 **0 개**. 그
 0 은 규율에서 나온다 — 사용자 가이드에 소스 경로·ADR·IPC 메서드명을 넣지 않는다(CLAUDE.md).
@@ -1230,6 +1234,11 @@ done | sort | uniq -c
 가드로 만들면 "모든 자동 잡이 이 표에 있어야 한다" 는 명부형 판정이 되는데, 배포 잡처럼
 정당한 예외가 계속 생겨 **명부 밖에 대상이 없다** 를 함께 단정해야 한다 — 그 단정이 이
 표보다 먼저 낡는다.
+
+> **가이드의 깨진 링크·앵커를 보는 자동 채널은 지금 없다.** Rust 생성기의 `--strict` 가
+> 상대 링크와 `#앵커` 를 전수 검사하고 `ORDER` 누락을 실패로 올렸는데, Astro 로 옮기면서
+> 그 검사가 함께 사라졌다. `ORDER` 누락만 빌드 실패로 남아 있다(`buildPages` 가 던진다).
+> 링크 검사를 다시 세우기 전까지 이 칸은 **미측정**이다.
 
 ## "안 돈다" 를 쓰기 전에 두 가지를 갈라라
 

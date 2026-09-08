@@ -2,44 +2,76 @@
 
 랜딩 페이지와 **사용자 가이드**를 정적 HTML 로 발행하는 경로. 산출물은 GitHub Pages 로 배포된다.
 
-- 생성기: `site/src/` (Rust, **workspace exclude**)
+- 앱: `site/` (Astro + React, Node 22)
 - 콘텐츠: `site/content/` (한국어 정본) · `site/content/en/` (영어 번역)
-- 산출물: `_site/` (gitignore)
-- 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동)
+- 산출물: `site/dist/` (gitignore)
+- 배포: `.github/workflows/pages.yml` (main 에 `site/**` 변경이 푸시되면 자동) — `npm run build`
+  다음에 `npm run check-links` 로 산출물의 내부 링크·앵커를 전수 판정하고 나서 올린다.
+  그 스텝은 `site/content/` 의 앵커를 보는 **유일한** 판사다([ADR-0247](../adr/0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md))
 
 **`docs/` 는 발행하지 않는다.** `docs/` 는 코드를 고치는 사람과 에이전트를 위한 명세·설계·ADR 이고,
 사이트는 Tasty 를 받아서 쓰는 사람을 위한 것이라 독자가 다르다. 사이트가 실을 내용은 전부
 `site/content/` 에 사용자 시점으로 따로 쓴다. 명세가 바뀌면 가이드도 같은 커밋에서 손본다
 ([`CLAUDE.md`](../../CLAUDE.md) "문서 갱신").
 
-## 왜 workspace 밖인가
+## FE 골격
 
-생성기는 `pulldown-cmark` · `syntect` 에 의존하는데, 본체와 공유하는 코드가 하나도 없다.
-workspace member 로 두면 그 의존성이 `cargo build` / `cargo test --workspace` 의
-의존성 해석에 섞여 cold build 가 느려진다. 루트 `Cargo.toml` 의 `exclude` 에 넣어
-완전히 분리했다 (`crates/tasty-plugin-sdk-wasm` 과 같은 이유).
+앱 UI 를 그림이나 아스키 아트가 아니라 **디자인 시스템의 실제 컴포넌트**로 보여주는 것이
+목적이다 — 랜딩의 제품 창도, 가이드의 UI 설명도, 디자인 섹션도 전부
+[`site/vendor/`](../../site/vendor/README.md) 의 킷에서 온다.
 
-따라서 `cargo build --workspace` · `cargo clippy --workspace` · `cargo test --workspace`
-는 `site/` 를 **보지 않는다.** 생성기를 만질 때는 `--manifest-path` 를 명시한다.
+```
+site/
+  package.json          astro · @astrojs/react · react 18
+  astro.config.mjs      정적 출력, React 아일랜드
+  scripts/vendor-to-esm.mjs   vendor -> ES module 변환기
+  src/pages/            라우트
+  src/components/ src/layouts/ src/lib/ src/styles/
+  src/ds/ src/kit/ src/gallery/          ← 생성물 (gitignore)
+  src/styles/tokens.css src/styles/kit.css  ← 생성물 (gitignore)
+  public/design/                          ← 생성물 (gitignore)
+```
+
+킷은 브라우저가 Babel standalone 으로 통째로 읽는 것을 전제로 쓰였다. 파일마다 필요한 것을
+전역에서 꺼내고 정의한 것을 전역에 얹는다 — **전역으로 쓰인 모듈 그래프**라 규칙적이고,
+그래서 기계적으로 다시 쓸 수 있다.
+
+| 원본 | 변환 |
+|------|------|
+| `const { Tab } = window.TastyDesignSystem_41fd3f;` | `import { Tab } from …/ds/…` |
+| `const { Sidebar } = window.TastyKit;` | `import { Sidebar } from …/kit/…` |
+| `window.TastyKit = Object.assign(window.TastyKit \|\| {}, { A, B });` | `export { A, B };` |
+| `pluginAttentionCount: <식>` (계산값 등록) | `const pluginAttentionCount = <식>;` + export |
+| `ReactDOM.createRoot(...).render(<App />)` (프리뷰 부트스트랩) | 제거하고 `App` 을 export |
+| `const CSS = \`…\`` + 런타임 `<style>` 주입 | 생성되는 `styles/kit.css` 로 뽑아낸다 (주입은 그대로 둔다) |
+| `const { Section } = window.Gallery;` | `import { Section } from "./shell.jsx"` |
+| `Gallery.mount(active, nav, head, <Page/>)` | `export const page = { … }` + 라우트용 엔트리 컴포넌트 생성 |
+| `preset_editor.jsx` 전체를 감싼 IIFE | 벗긴다 (import 는 최상위여야 한다) |
+| 갤러리 산문의 `href="components.html#forms"` | `/design/gallery/components/#forms` |
+| 가이드라인 문서의 `href="../styles.css"` | `public/design/tokens.css` + 테마 동기화 스크립트 주입 |
+
+`site/vendor/components/` 는 손대지 않는다 — 이미 제대로 export 한다. Astro 프로젝트 루트
+밖은 import 할 수 없어서 복사만 한다.
+
+**생성물은 커밋하지 않는다.** 파생물이고 `npm run build` 가 `prebuild` 로 매번 다시 만든다.
+정본은 `site/vendor/` 하나다.
 
 ## 빌드
 
 ```bash
-# _site/ 로 생성
-cargo run --manifest-path site/Cargo.toml
+cd site
+npm install          # 최초 1 회
 
-# 출력 위치 지정
-cargo run --manifest-path site/Cargo.toml -- --out /tmp/preview
-
-# 깨진 상대 링크·ORDER 에 없는 페이지를 실패로 승격 (CI 가 쓰는 형태). stale 번역은 실패 사유가 아니다.
-cargo run --manifest-path site/Cargo.toml -- --strict
+npm run build        # prebuild(vendor 변환) 후 astro build -> site/dist/
+npm run dev          # 개발 서버
+npm run preview      # 빌드 결과 확인
 
 # 번역 파일에 원본 해시 스탬프 (아래 "번역 모델")
-cargo run --manifest-path site/Cargo.toml -- --stamp site/content/en/index.md
-
-# 로컬 확인
-python3 -m http.server 8899 --directory _site
+npm run stamp content/en/index.md
 ```
+
+`npm run build` 는 `prebuild` 로 [`site/scripts/vendor-to-esm.mjs`](../../site/scripts/vendor-to-esm.mjs)
+를 먼저 돌린다 — `site/vendor/` 를 ES module 과 토큰 CSS 로 바꾸고 로고를 `public/` 에 놓는다.
 
 ## URL 구조
 
@@ -49,14 +81,36 @@ python3 -m http.server 8899 --directory _site
 | `/ko/` | 한국어 랜딩 |
 | `/guide/**` | 영어 가이드. `site/content/en/**.md` 가 있으면 번역, 없으면 한국어 본문 + 배너 |
 | `/ko/guide/**` | 한국어 가이드 (`site/content/**.md`, canonical) |
-| `/assets/` | `style.css` · `site.js` · 로고 · `search-index.json` (en) · `search-index.ko.json` |
+| `/design/` · `/ko/design/` | 디자인 가이드라인 (브랜드 · 색 · 타이포 · 간격). 크롬만 이중언어고 싣는 문서는 같다 |
+| `/design/tokens/` · `/ko/design/tokens/` | 3티어 토큰 문서 |
+| `/design/gallery/**` | 레퍼런스 갤러리 12 페이지. 갤러리 자체 크롬을 쓰므로 언어별로 나누지 않는다 |
+| `/design/cards/*.html` | 가이드라인 원본 문서. 페이지가 iframe 으로 싣는다 (생성물) |
+| `/search-index.json` (en) · `/search-index.ko.json` | 검색 인덱스 |
+
+### 배포 경로 (base)
+
+레포는 GitHub **프로젝트 페이지**로 발행된다 — `https://zilhak.github.io/tasty/` 라 도메인
+루트가 아니라 **레포 이름 아래**에서 서빙된다. 그 경로는 [`site/src/lib/base.mjs`](../../site/src/lib/base.mjs)
+**한 곳에만** 적고, 나머지는 전부 거기서 파생한다.
+
+| 소비자 | 어떻게 받는가 |
+|--------|---------------|
+| 페이지·컴포넌트의 모든 내부 링크 | `astro.config.mjs` 의 `base` → `import.meta.env.BASE_URL` → `site/src/lib/site.ts` 의 `url()` |
+| 개발 서버 | 같은 `base` — `astro dev` 도 그 경로 아래에 마운트한다 (`/tasty/`). **로컬과 배포가 같은 값으로 돈다** |
+| 마크다운 파이프라인의 다이어그램 | 직접 주입받는다. Astro 설정에서 로드돼 `BASE_URL` 이 닿지 않는 컨텍스트라 그 경계에서 한 번 적용한다 |
+| `npm run check-links` | 직접 import 한다. 여기서 base 를 모르면 배포가 못 여는 링크를 통과시킨다 |
+| vendor 변환기가 만든 킷·갤러리 모듈 | `import.meta.env.BASE_URL` 을 읽는 `BASE` 상수를 헤더에 넣어준다 |
+| `public/design/cards/*.html` (정적 파일) | 상대경로. `import.meta.env` 를 못 읽으므로 문서 위치 기준으로 쓴다 |
+
+**어떤 경로도 두 번 적지 않는다.** 커스텀 도메인으로 옮기면 `base.mjs` 의 값을 `""` 로 바꾸는
+것이 전부다.
 
 영어가 기본 URL 인 이유는 공개 사이트의 첫 방문자 대부분이 영어권이고 랜딩도 `/` 가 영어라서다.
 정본이 한국어인 것과는 별개다 — 작성은 한국어로, 노출 기본은 영어로.
 
 ## 콘텐츠 구조
 
-`site/content/` 의 디렉토리가 사이드바 섹션이고, 페이지 순서는 `site/src/main.rs` 의 `ORDER` 가
+`site/content/` 의 디렉토리가 사이드바 섹션이고, 페이지 순서는 `site/src/lib/guide.ts` 의 `ORDER` 가
 정한다. 파일 이름 순이 아니다 — 읽는 순서가 의도이므로 배열로 박는다.
 
 ```
@@ -72,9 +126,9 @@ site/content/
   en/               위 트리의 1:1 미러 (번역)
 ```
 
-- 새 페이지를 추가하면 `ORDER` 에도 넣는다. 빠뜨리면 경고와 함께 맨 뒤에 붙고 `--strict` 는 실패한다.
+- 새 페이지를 추가하면 `ORDER` 에도 넣는다. 빠뜨리면 발행되지 않는다.
 - 새 디렉토리(섹션)를 만들면 `SECTIONS` 에 (디렉토리, 한국어 라벨, 영어 라벨) 을 추가한다.
-  등록되지 않은 디렉토리의 파일은 `skipping …` 경고와 함께 발행되지 않는다.
+  등록되지 않은 디렉토리에 페이지를 두면 빌드가 실패한다.
 - 페이지 첫 줄 `# 제목` 이 사이드바 라벨이다 (괄호 · 대시 이후는 잘린다).
 
 ### 집필 규칙
@@ -106,102 +160,98 @@ site/content/
   # Tasty guide
   ```
 
-  원본이 바뀌어 해시가 달라지면 그 페이지에 "원문보다 오래됐습니다" 배너가 뜨고,
-  생성기가 `stale:` 목록을 출력한다. 스탬프가 없는 번역은 stale 로 본다.
+  원본이 바뀌어 해시가 달라지면 그 페이지에 "원문보다 오래됐습니다" 배너가 뜬다.
+  스탬프가 없는 번역은 stale 로 본다.
 - **링크 경로는 원본과 동일하게, 앵커는 영어 제목의 slug 로 쓴다.** 영어 페이지의 상대 링크는
   *한국어 위치 기준*으로 해석되므로 파일 경로는 그대로 둔다. 반면 `#앵커` 는 제목 텍스트에서
   만들어지므로 번역된 페이지의 앵커는 영어 slug 다(`install.md#설치-위치` → `install.md#install-locations`).
-  생성기가 언어별 산출 트리에서 모든 `#앵커` 의 존재를 검사해 없으면 깨진 링크로 집계한다
-  (`--strict` 실패).
+  `npm run check-links` 가 언어별 산출 트리에서 모든 `#앵커` 의 존재를 검사해 없으면 깨진
+  링크로 집계한다.
 - **고아 번역** — 대응하는 한국어 원본이 없는 `en/` 파일은 경고를 내고 발행되지 않는다.
 
 ### 번역 절차
 
 ```bash
 # 1. 원본을 같은 상대경로에 번역해 쓴다 (링크 경로는 그대로, 앵커는 영어 slug)
-$EDITOR site/content/en/using/terminal.md
+$EDITOR content/en/using/terminal.md
 
 # 2. 스탬프를 찍는다 (첫 줄에 삽입하거나, 이미 있으면 갱신)
-cargo run --manifest-path site/Cargo.toml -- --stamp site/content/en/using/terminal.md
-
-# 3. 생성해서 stale/untranslated 집계를 확인한다
-cargo run --manifest-path site/Cargo.toml
-#   translations: 18/18 pages, 0 stale, 0 untranslated
+npm run stamp content/en/using/terminal.md
 ```
 
 `--stamp` 는 **번역을 실제로 손본 직후에만** 실행한다. 갱신 없이 스탬프만 찍으면 stale 표시만
 사라지고 내용은 어긋난 채 남는다.
 
-**모든 내부 링크는 상대경로다.** 프로젝트 페이지의 base path(`/tasty/`) 든
-커스텀 도메인이든 그대로 동작하며, `_site/` 를 로컬 파일로 열어도 깨지지 않는다.
+**콘텐츠의 내부 링크는 상대경로로 쓴다.** hast 플러그인이 그것을 라우트로 바꾸고, 그 라우트는
+`site/src/lib/site.ts` 의 `url()` 을 통해 설정된 base 를 반영한다.
 
 ## 문서 변환 규칙
 
-생성기는 원본 마크다운을 고치지 않는다. 변환은 전부 렌더 단계에서 일어난다.
+원본 마크다운은 고치지 않는다. 변환은 전부 렌더 단계 — Astro 7 의 기본 마크다운 처리기인
+Sätteri 의 hast 플러그인(`src/lib/satteri-*.mjs`)에서 일어난다.
 
 | 원본 | 산출 |
 |------|------|
-| `site/content/` 안의 `*.md` 링크 | 같은 상대경로 + `.html` |
+| `site/content/` 안의 `*.md` 링크 | 대응하는 라우트 (파일 깊이가 아니라 **라우트 깊이** 기준의 상대경로) |
 | 콘텐츠 트리를 벗어나는 링크 (`../../../CHANGELOG.md`) | GitHub blob URL |
-| 존재하지 않는 대상 · 없는 `#앵커` | 경고 출력, `--strict` 면 실패 |
+| 존재하지 않는 대상 · 없는 `#앵커` | `npm run check-links` 가 집계한다 |
 | `##` · `###` | 우측 목차 + 앵커. slug 는 GitHub 규칙(한글 보존) |
 | 표 | 가로 스크롤 컨테이너로 감싼다 |
-| 코드 펜스 | syntect 로 스코프 클래스(`hl-*`) 부여 — 색은 CSS 가 정한다 |
+| 코드 펜스 | Shiki 가 하이라이팅한다 — 색은 토큰이 정한다 |
+| `<!-- tasty-diagram: <이름> -->` + 다음 코드 블록 | 그 블록을 킷 컴포넌트로 그린 다이어그램으로 교체 |
 
 ## 테마
 
-사이트 색은 앱이 실제로 쓰는 테마에서 그대로 가져온다.
+**사이트는 색을 정의하지 않는다.** 팔레트는 `site/vendor/tokens/` 에서 오고, 그것이
+앱 UI 킷이 렌더하는 것과 같은 원본이다 ([`site/vendor/README.md`](../../site/vendor/README.md)).
+변환기가 tier 순서(`primitives` → `semantic` → `components` → `base`)로 이어붙여
+생성되는 `styles/tokens.css` 한 파일로 내보내고, 레이아웃이 사이트 스타일보다 **먼저** import 한다.
 
-- 다크(기본): `crates/tasty-themes/themes/mocha.toml`
-- 라이트: `crates/tasty-themes/themes/latte.toml`
+- 테마 이름은 앱의 것을 그대로 쓴다 — **mocha**(다크, 기본) · **latte**(라이트).
+  latte 만 `data-theme="latte"` 를 달고, mocha 는 속성 없는 `:root` 다.
+- 코드 하이라이팅도 같은 토큰(`--tasty-color-mauve` · `-green` · `-peach` …)을
+  참조하므로 테마 토글에 함께 반응한다.
+- `site/src/styles/global.css` 는 **치수만 자기 것을 갖는다.** vendor 스케일은 앱 chrome 용이라
+  (14px UI 상한, 조밀한 4/8/12 간격) 웹 본문에 그대로 쓰면 읽히지 않는다. 색은 공유하고
+  간격·폰트 크기는 공유하지 않는다.
 
-`site/static/style.css` 상단의 `:root` / `:root[data-theme="light"]` 블록이 두 파일의
-값을 1:1 로 옮긴 것이다. **테마 TOML 을 고치면 이 블록도 함께 갱신한다.**
-코드 하이라이팅 색도 같은 토큰(`--mauve` · `--green` · `--peach` …)을 참조하므로
-테마 토글에 함께 반응한다.
-
-선택은 `localStorage` 에 남고, 저장값이 없으면 `prefers-color-scheme` 을 따른다.
-첫 페인트 전에 인라인 스크립트가 적용해 깜빡임이 없다.
+선택은 `localStorage` 에 남고(`tasty-theme`), 저장값이 없으면 `prefers-color-scheme` 을
+따른다. 첫 페인트 전에 인라인 스크립트가 적용해 깜빡임이 없다. 옛 빌드가 저장한
+`"light"` · `"dark"` 도 그대로 해석된다.
 
 ## 랜딩의 제품 창
 
-랜딩 hero 아래의 창은 스크린샷이 아니라 Claude Design 프로젝트(`Tasty Design System`)의
-`ui_kits/terminal` 킷을 **구조 전사**한 정적 HTML 이다 — `app.jsx` 의 합성 순서(타이틀바 →
-사이드바 | 탭 스트립 → 분할 서피스 → 상태바)와 `chrome.jsx` · `work.jsx` · `components/`
-(`Tab` · `StatusDot` · `Badge` · `Kbd`) 의 구조를 그대로 옮겼다. 렌더는 `site/src/landing.rs` 의
-`mock()`, 스타일은 `style.css` 의 `.mock*` 블록.
+랜딩 hero 의 창은 스크린샷도 전사본도 아니다 — 킷의 `app.jsx` 와 **같은 컴포넌트**를 같은
+순서로 합성한 것이고(타이틀바 → 사이드바 | 탭 스트립 → 분할 서피스 → 상태바), 킷이 바뀌면
+같이 바뀐다. `site/src/components/AppShell.jsx`, 프레임 스타일은 `site/src/styles/app-shell.css`.
 
-- 치수는 전부 디자인 픽셀 단위 `--u`(컨테이너 폭 ÷ 1040, 상한 1px) 로 적어 창이 컨테이너에
-  맞춰 축소된다. 560px 이하에서는 사이드바와 에이전트 서피스를 감춰 포커스된 터미널만 남긴다.
-- 색은 `tokens/semantic.css` 의 역할 토큰(`bg-sidebar` · `surface-active` · `text-muted` · `separator`
-  …)을 사이트 팔레트 변수에 별칭으로 매핑한다. 아이콘은 `icons/*.svg` 의 canonical 글리프를 인라인.
-- 킷을 바꾸면 이 창도 같이 갱신한다 — 다른 방향으로는 흐르지 않는다(사이트가 디자인의 정본이
-  아니다).
+**동작한다.** 탭을 고르고 닫고 열 수 있고(마크다운 탭은 패인을 마크다운 서피스로 바꾼다),
+워크스페이스를 옮기고, 사이드바를 접고, 터미널 검색을 열고, 사이드바 버튼으로 Settings ·
+Plugins · Ports · Remote · 커맨드 팔레트를 연다. 페이지이기 때문에 킷 프리뷰와 다른 점이 둘 있다.
 
-## 다운로드
+- **테마는 페이지의 것이다.** `site.js` 가 `window.tastyTheme` 로 getter/setter 를 내주고
+  셸의 상태바와 Settings 창이 그것을 통해서만 테마를 읽고 쓴다 — 헤더 토글과 어긋날 수 없고
+  저장 규칙이 한 곳에 남는다.
+- **오버레이는 `<body>` 끝의 고정 레이어로 나간다.** Settings 는 1100×700 이라 hero 가 셸에
+  주는 프레임보다 크고, 도구 메뉴는 뷰포트 좌표에 앵커한다. 그림 안에 욱여넣어 줄이는 대신
+  제 크기로 페이지 위에 띄운다.
 
-랜딩이 제공하는 다운로드 경로는 둘뿐이다. **주 버튼**은 방문자 OS 의 대표 설치 파일을 직접
-가리키고, 그 옆 **다른 플랫폼** 버튼은 최신 릴리스 페이지로 보낸다. OS·아키텍처·포맷 조합이 11 개라
-랜딩에 다 늘어놓으면 hero 가 무거워지고 릴리스 페이지·[설치 가이드](../../site/content/getting-started/install.md)
-와 삼중으로 겹친다 — 조합 선택은 그 두 곳이 맡는다.
+랜딩은 사이트에서 **유일하게 하이드레이트하는 라우트**다 — gzip 94 KB(react-dom 44, 킷과
+오버레이 46). 가이드 36 페이지는 여전히 JS 를 하나도 싣지 않는다.
 
-자산 파일명에 버전이 들어 있어(`Tasty-0.10.2-macos-arm64.dmg`) 정적 링크로는 최신을 가리킬 수
-없으므로, Pages 워크플로가 생성기 실행 전에 `gh release view --json tagName,assets` 결과를
-`site/` 아래 `release.json` 으로 받아두고 생성기가 그 파일을 읽는다(`main.rs` 의 `Release`). 로컬 빌드처럼 파일이
-없으면 주 버튼도 릴리스 페이지로 폴백하고 생성기가 `release: none` 을 출력한다. 로컬에서 실제
-링크를 보려면 같은 명령을 직접 실행해 두면 된다(`.gitignore` 대상).
+## 디자인 섹션
 
-- 주 버튼은 서버 렌더 시 릴리스 페이지를 가리키고, `site.js` 가 방문자 OS 를 감지해 대응 자산
-  (`landing.rs` 의 `PRIMARY_FORMATS`: macOS `.dmg` · Windows `.msi` · Linux x86_64 `.AppImage`)으로
-  바꾸고 라벨을 "{os} 용 다운로드" 로 바꾼다. 감지 실패나 JS 없음이면 릴리스 페이지 링크 그대로다.
-- 릴리스 워크플로의 파일 이름 규칙([installation](../installation.md) 의 산출물 표)이 바뀌면
-  `PRIMARY_FORMATS` 의 접미사도 맞춘다. 접미사가 어긋나면 그 OS 는 조용히 릴리스 페이지로 폴백한다.
-- 자산 URL 은 `?v=` 없이 그대로 쓴다 — GitHub 가 제공하는 영구 URL 이다.
+디자인 시스템 자체를 발행하는 구역이다. 둘 다 `site/vendor/` 가 정본이고 사이트는 소비자다.
 
-## 배포
-
-`main` 에 `site/**` · 루트 `Cargo.toml` · 로고 변경이 푸시되면 워크플로가 돈다
-(수동 실행도 가능). GitHub 저장소 설정에서 **Pages > Source 를 GitHub Actions** 로
-두어야 동작한다.
-
-배포 자체는 `--strict` 로 생성하므로, 깨진 가이드 링크나 `ORDER` 누락이 있으면 배포되지 않는다.
+- **가이드라인** (`/design/`, `/design/tokens/`) — `vendor/guidelines/*.html`. 각 파일이
+  독립 문서이고 첫 줄 `@dsCard` 주석이 그룹 · 이름 · 부제 · 뷰포트를 들고 있다. 클래스
+  이름이 일반적(`.c` · `.l` · `.grid`)이라 인라인하면 서로 충돌하므로 파일로 서빙하고
+  iframe 으로 싣는다. 선언한 뷰포트는 상한이 아니라 **하한**이다 — 프레임은 컬럼을 채우되
+  그 폭 아래로는 안 내려가고, 좁으면 가로로 스크롤한다(두 줄로 접힌 색 램프는 램프가 아니다).
+  `data-theme` 을 스스로 박은 카드(Latte 계열)는 그대로 두고, 나머지는 사이트 테마를 따른다.
+- **갤러리** (`/design/gallery/**`) — `vendor/gallery/*.jsx` 12 페이지. 살아 있는 표본이라
+  호버 · 포커스 · 열고 닫기가 실제로 동작하고, 각 표본이 레이아웃 스펙과 소비하는 토큰을
+  함께 적는다. 갤러리는 자기 크롬(좌측 레일 · 상단 토글)을 가진 **애플리케이션**이라 사이트
+  문서 레이아웃에 얹지 않는다 — 내비게이션과 스크롤바가 둘씩 생기고, `gallery.css` 가
+  `html, body` 를 잡는다. 바꾸는 것은 크롬 주변뿐이다: 내비는 이 사이트 라우트를 가리키고,
+  브랜드와 상단 바에 `/design/` 로 돌아가는 길이 있고, 테마 토글은 사이트 키를 쓴다.

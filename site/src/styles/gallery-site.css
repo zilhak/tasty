@@ -1,0 +1,33 @@
+/* What the gallery's own chrome does not have, because on this site it is not
+   the whole web: a way back out. */
+.g-brand a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: inherit;
+}
+.g-back {
+  font-family: var(--tasty-font-mono);
+  font-size: 11px;
+  color: var(--tasty-text-muted);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: var(--tasty-radius-sm);
+  white-space: nowrap;
+}
+.g-back:hover { color: var(--tasty-text-secondary); background: var(--tasty-overlay-hover); }
+
+/* Under 900px the gallery drops its brand and its rail, so the link back out
+   is the only navigation left on the page — the breadcrumb yields the room. */
+@media (max-width: 900px) {
+  .g-crumb { display: none; }
+  .g-top { gap: 10px; }
+}
+
+/* On a phone the two toggles and the way out are all that is left up there,
+   and they do not fit with their labels. The controls stay; the words go. */
+@media (max-width: 560px) {
+  .g-top .g-seglabel { display: none; }
+  .g-top { padding: 0 10px; gap: 8px; }
+}

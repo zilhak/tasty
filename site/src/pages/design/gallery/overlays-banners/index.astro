@@ -1,0 +1,9 @@
+---
+import GalleryPage from "../../../../layouts/GalleryPage.astro";
+import Route from "../../../../gallery/pages/overlays-banners.jsx";
+import { galleryNav } from "../../../../lib/design";
+import { url } from "../../../../lib/site";
+---
+<GalleryPage title="Banners" description="Floating, top-anchored notices.">
+  <Route client:load groups={galleryNav(url)} brandHref={url("design/")} backLabel="Design system" />
+</GalleryPage>

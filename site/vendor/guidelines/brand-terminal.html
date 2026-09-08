@@ -1,0 +1,33 @@
+<!-- @dsCard group="Brand" viewport="700x230" name="Terminal Specimen" subtitle="The product surface — black bg, ANSI colors, OSC-133 prompt" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  body { padding: 18px; background: var(--tasty-bg-app); }
+  .term { background: #000; border: 1px solid var(--tasty-border-default); border-radius: var(--tasty-radius);
+          padding: 14px 16px; font-family: var(--tasty-font-mono); font-size: 13px; line-height: 1.5;
+          color: var(--tasty-color-neutral-1100); }
+  .b { color: var(--tasty-color-blue); }
+  .g { color: var(--tasty-color-green); }
+  .m { color: var(--tasty-color-mauve); }
+  .y { color: var(--tasty-color-yellow); }
+  .p { color: var(--tasty-color-peach); }
+  .r { color: var(--tasty-color-red); }
+  .dim { color: var(--tasty-color-neutral-700); }
+  .cur { background: var(--tasty-color-neutral-1100); color: #000; }
+</style>
+</head>
+<body>
+  <div class="term">
+<span class="g">~/tasty</span> <span class="b">main</span> <span class="dim">via</span> <span class="p">🦀 v1.84</span><br/>
+<span class="m">❯</span> cargo build --release<br/>
+<span class="dim">   Compiling</span> tasty-themes <span class="dim">v0.7.0</span><br/>
+<span class="dim">   Compiling</span> tasty-type-appearance <span class="dim">v0.7.0</span><br/>
+<span class="g">    Finished</span> <span class="y">release</span> [optimized] target(s) in <span class="p">42.18s</span><br/>
+<span class="m">❯</span> tasty --headless <span class="dim"># agent-driven surface, no GUI</span><br/>
+<span class="b">surface</span> <span class="g">created</span> id=<span class="y">s_01HX</span> kind=terminal <span class="cur">&nbsp;</span>
+  </div>
+</body>
+</html>

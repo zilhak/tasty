@@ -1,4 +1,4 @@
-<!-- source-hash: 5940786cb43f -->
+<!-- source-hash: 78e07be07d66 -->
 # Settings
 
 After reading this page you will know how the settings window is organised, what each tab contains, and how the same content is stored in `~/.tasty/config.toml`. Keybindings and themes are covered separately in [Keybindings](keybindings.md) · [Themes](themes.md).
@@ -8,17 +8,18 @@ After reading this page you will know how the settings window is organised, what
 Press the **Settings** button at the very bottom of the sidebar, or press `Ctrl+,`.
 Press the same shortcut again to close the settings window.
 
+<!-- tasty-diagram: settings-window -->
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ [General] [Terminal] [Appearance] [Keybindings] [Handler] [Misc] [Plugins] │  top tabs
-├──────────────────┬─────────────────────────────────────────────────────────┤
-│ Filter sections… │                                                         │
-│ ▸ General        │   Settings entries of the selected section              │
-│   Notifications  │                                                         │
-│   Accessibility  │                                                         │
-├──────────────────┴─────────────────────────────────────────────────────────┤
-│                                                      [ Cancel ]  [ Save ]  │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ [General] [Terminal] [Appearance] [Keybindings] [Handler] [Misc] [Plugins]  │  top tabs
+├────────────────────┬────────────────────────────────────────────────────────┤
+│ Filter sections…   │                                                        │
+│ ▸ General          │   Settings entries of the selected section             │
+│   Notifications    │                                                        │
+│   Accessibility    │                                                        │
+├────────────────────┴────────────────────────────────────────────────────────┤
+│                                                      [ Cancel ]  [ Save ]   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - Seven top tabs: **General** · **Terminal** · **Appearance** · **Keybindings** · **Handler** · **Misc** · **Plugins**.

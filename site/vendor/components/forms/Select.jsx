@@ -1,0 +1,69 @@
+import React from "react";
+
+/**
+ * Tasty Select — native-backed dropdown styled to match Input.
+ * 28px tall with a custom chevron.
+ */
+
+const CSS = `
+.tasty-select { position: relative; display: inline-flex; align-items: center; }
+.tasty-select--block { display: flex; width: 100%; }
+.tasty-select select {
+  appearance: none;
+  height: var(--tasty-control-height);
+  width: 100%;
+  padding: 0 var(--tasty-select-chevron-room) 0 var(--tasty-space-md);
+  border: var(--tasty-border-width) solid var(--tasty-border-default);
+  border-radius: var(--tasty-radius);
+  background: var(--tasty-surface-raised);
+  color: var(--tasty-text-primary);
+  font-family: var(--tasty-font-ui);
+  font-size: var(--tasty-font-size-body);
+  cursor: pointer;
+  transition: border-color var(--tasty-motion-ui-fast) var(--tasty-ease-ui),
+              box-shadow var(--tasty-motion-ui-fast) var(--tasty-ease-ui);
+}
+.tasty-select select:hover { border-color: var(--tasty-border-strong); }
+.tasty-select select:focus { outline: 0; border-color: var(--tasty-border-focus); box-shadow: 0 0 0 var(--tasty-border-width) var(--tasty-border-focus); }
+.tasty-select select:disabled { opacity: var(--tasty-state-disabled-opacity); cursor: not-allowed; }
+.tasty-select__chevron {
+  position: absolute; right: var(--tasty-select-chevron-offset); top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: var(--tasty-text-muted);
+}
+.tasty-select__chevron svg { width: var(--tasty-icon-size-sm); height: var(--tasty-icon-size-sm); display: block; }
+`;
+
+let injected = false;
+function ensureCss() {
+  if (injected || typeof document === "undefined") return;
+  const el = document.createElement("style");
+  el.id = "tasty-select-css";
+  el.textContent = CSS;
+  document.head.appendChild(el);
+  injected = true;
+}
+
+export function Select({ options = [], block = false, className = "", children, ...rest }) {
+  ensureCss();
+  const cls = ["tasty-select", block ? "tasty-select--block" : "", className].filter(Boolean).join(" ");
+  return (
+    <div className={cls}>
+      <select {...rest}>
+        {children ||
+          options.map((o) => {
+            const opt = typeof o === "string" ? { value: o, label: o } : o;
+            return (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            );
+          })}
+      </select>
+      <span className="tasty-select__chevron">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+    </div>
+  );
+}

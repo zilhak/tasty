@@ -69,16 +69,40 @@ const COMMON_PRUNED: &[&str] = &["target", ".git"];
 /// 빨개지면 그 빨강이 커밋이 아니라 기계 상태에 귀속되어 아무것도 지키지 못한다.
 /// 대신 항목마다 **안전한 이유**를 요구한다 — 이유 없이 이름만 늘리면 그때부터 이
 /// 명부가 도망길이 된다.
-const KNOWN_OUTSIDE: &[(&str, &str)] = &[(
-    "target-e2e-headless",
-    "문서화된 e2e 탈출구의 `CARGO_TARGET_DIR`(docs/dev-guide/e2e-tests.md). \
-     `target/` 아래로 옮길 수 없다 — `tasty-host-plugin` 의 `ensure_dev_bundle` 이 \
-     실행 파일 디렉토리의 **조부모**를 워크스페이스로 역산해서 깊이가 정확히 2 여야 \
-     하고, 어기면 `sync_builtin_dev` 가 전부 false 를 반환해 번들 plugin 이 하나도 \
-     스테이징되지 않는다(조용히 낡은 plugin 으로 돈다). \
-     안전한 이유: cargo 가 만든 디렉토리라 `CACHEDIR.TAG` 를 갖는다(2026-09-06 실측, \
-     서명 일치). 성질 판정을 부르는 순회 가드는 이름과 무관하게 이것을 가지친다.",
-)];
+const KNOWN_OUTSIDE: &[(&str, &str)] = &[
+    (
+        "target-e2e-headless",
+        "문서화된 e2e 탈출구의 `CARGO_TARGET_DIR`(docs/dev-guide/e2e-tests.md). \
+         `target/` 아래로 옮길 수 없다 — `tasty-host-plugin` 의 `ensure_dev_bundle` 이 \
+         실행 파일 디렉토리의 **조부모**를 워크스페이스로 역산해서 깊이가 정확히 2 여야 \
+         하고, 어기면 `sync_builtin_dev` 가 전부 false 를 반환해 번들 plugin 이 하나도 \
+         스테이징되지 않는다(조용히 낡은 plugin 으로 돈다). \
+         안전한 이유: cargo 가 만든 디렉토리라 `CACHEDIR.TAG` 를 갖는다(2026-09-06 실측, \
+         서명 일치). 성질 판정을 부르는 순회 가드는 이름과 무관하게 이것을 가지친다.",
+    ),
+    // 아래 셋은 사이트 생성기의 산출 트리다. 공통 부모가 없어 따로 적는다 — Astro 는
+    // 임포트를 `site/src/` 아래에서 푸는데 셋이 그 아래 형제로 앉는다.
+    (
+        "ds",
+        "`site/scripts/vendor-to-esm.mjs` 가 `site/vendor/components/` 를 ES module 로 \
+         옮겨 놓는 자리(`site/src/ds/`). gitignored 이고 prebuild 가 매번 다시 만든다. \
+         `target/` 아래로 못 옮긴다 — Astro 가 임포트를 푸는 뿌리가 `site/src/` 다. \
+         안전한 이유: 그 스크립트가 `CACHEDIR.TAG` 를 직접 쓴다(서명 일치). 성질 판정을 \
+         부르는 순회 가드는 이름과 무관하게 가지친다. 안 부르는 가드에게 이것이 드는 것은 \
+         **남의 코드의 사본**이 모수에 드는 것이고, 그 원본(`site/vendor/`)은 이미 이름으로 \
+         가지쳐진다 — 사본만 판정되면 처방이 다음 생성에 지워지는 파일에 붙는다.",
+    ),
+    (
+        "kit",
+        "위 `ds` 와 같은 계약 — `site/vendor/ui_kits/` 의 변환본(`site/src/kit/`)이고 같은 \
+         스크립트가 같은 표식을 쓴다. 못 옮기는 이유도 안전한 이유도 같다.",
+    ),
+    (
+        "gallery",
+        "위 `ds` 와 같은 계약 — `site/vendor/gallery/` 의 변환본(`site/src/gallery/`)이고 \
+         같은 스크립트가 같은 표식을 쓴다. 못 옮기는 이유도 안전한 이유도 같다.",
+    ),
+];
 
 /// ★ **이 자리에는 배타적 프로브를 안 짓는다 — (ㄷ) 채널 칸.** 「판정기를 안 짓는다」 를
 /// 가르는 여섯 칸((ㄱ) 좌변 · (ㄴ) 판정문 · (ㄷ) 채널 · (ㄹ) 사본 · (ㅁ) 순서 · (ㅂ) 술어)

@@ -231,9 +231,13 @@ pub enum Descend {
     /// 전부 내려간다. 순회 루트 아래에 가지칠 것이 없다고 **판정한** 자리에 쓴다 —
     /// 그 판정 자체를 지키는 것은 이 모듈이 아니라 그 자리의 가드 몫이다.
     Everything,
-    /// 빌드 캐시 디렉토리를 건너뛴다.
+    /// 빌드 캐시 디렉토리와 패키지 관리자의 의존 트리를 건너뛴다 —
+    /// [`crate::is_build_cache_dir`] · [`crate::is_dependency_tree_dir`].
+    ///
+    /// 앞엣것은 표식(`CACHEDIR.TAG`)으로, 뒤엣것은 이름(`node_modules`)으로 가른다. 이름을
+    /// 쓰는 근거는 그 함수 주석에 있다 — 그 이름은 도구가 박아 둔 것이라 자유롭지 않다.
     SkipBuildCaches,
-    /// 빌드 캐시에 더해 **점으로 시작하는 디렉토리**도 건너뛴다.
+    /// 위 둘에 더해 **점으로 시작하는 디렉토리**도 건너뛴다.
     ///
     /// 레포 루트부터 훑는 자리에 쓴다. 커밋되지 않는 로컬 작업 폴더는 clone·CI 에
     /// 없지만 **개발자의 작업 트리에는 있고**, 거기에는 문서 사본·게이트 결과물이
@@ -487,7 +491,7 @@ fn collect(
             if matches!(
                 descend,
                 Descend::SkipBuildCaches | Descend::SkipBuildCachesAndDotDirs
-            ) && crate::is_build_cache_dir(&path)
+            ) && (crate::is_build_cache_dir(&path) || crate::is_dependency_tree_dir(&path))
             {
                 continue;
             }
@@ -652,6 +656,28 @@ mod tests {
         })
         .expect("바깥 파일 하나는 남는다");
         assert_eq!(skipped.len(), 1, "빌드 캐시 안을 들여다봤다");
+
+        let everything = walk_with_floor(&t.0, &t.0, &floor(1, 1), Descend::Everything, &|w| {
+            w.rel.ends_with(".rs")
+        })
+        .expect("둘 다 모인다");
+        assert_eq!(
+            everything.len(),
+            2,
+            "`Everything` 인데도 건너뛴다 — 그러면 위 검사의 초록은 가지치기의 증거가 아니다"
+        );
+    }
+
+    /// 위와 같은 양방향 대조 — 의존 트리 쪽. 표식이 아니라 이름으로 가르는 갈래라
+    /// 위 시험은 이 자리를 안 덮는다(`CACHEDIR.TAG` 를 안 만든다).
+    #[test]
+    fn dependency_trees_are_skipped_only_when_asked() {
+        let t = Tree::new(&["keep.rs", "node_modules/dep/inside.rs"], &[]);
+        let skipped = walk_with_floor(&t.0, &t.0, &floor(1, 1), Descend::SkipBuildCaches, &|w| {
+            w.rel.ends_with(".rs")
+        })
+        .expect("바깥 파일 하나는 남는다");
+        assert_eq!(skipped.len(), 1, "`node_modules` 안을 들여다봤다");
 
         let everything = walk_with_floor(&t.0, &t.0, &floor(1, 1), Descend::Everything, &|w| {
             w.rel.ends_with(".rs")

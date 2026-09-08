@@ -1,0 +1,24 @@
+# npm
+node_modules/
+
+# Astro build output
+dist/
+.astro/
+
+# Generated from site/vendor/ by scripts/vendor-to-esm.mjs (npm run prebuild).
+# site/vendor/ is the source; these are derived and must not be edited by hand.
+src/ds/
+src/kit/
+src/styles/tokens.css
+src/styles/kit.css
+
+# Copied out of the repo's own assets/ by the same script — assets/ sits outside
+# the Astro project root, so the build cannot reach it any other way.
+public/tasty-melon.svg
+public/tasty-icon.png
+
+# Generated from site/vendor/guidelines/ by the same script.
+public/design/
+
+# Generated from site/vendor/gallery/ by the same script.
+src/gallery/

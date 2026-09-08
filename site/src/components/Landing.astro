@@ -1,0 +1,139 @@
+---
+/**
+ * The landing page.
+ *
+ * Section order and copy are the page's own, unchanged across the move off the
+ * Rust generator. What changed is what draws them: the product window is the
+ * shipped UI kit rendered to static HTML, and colour comes from the design
+ * tokens instead of the stylesheet's own palette.
+ */
+import { copyFor } from "../lib/landing";
+import { downloads, RELEASES_URL } from "../lib/release";
+import { REPO, appVersion, url } from "../lib/site";
+import { Icon } from "../ds/core/Icon.jsx";
+import { AppShell } from "./AppShell.jsx";
+import * as icon from "./icons";
+import "../styles/kit.css";
+import "../styles/app-shell.css";
+import "../styles/landing.css";
+
+interface Props { lang: "ko" | "en" }
+const { lang } = Astro.props;
+const c = copyFor(lang);
+const version = appVersion(process.cwd());
+const guide = lang === "en" ? "guide/" : "ko/guide/";
+const { items } = downloads(process.cwd());
+
+// `site.js` swaps the primary button to the visitor's own OS when the release
+// carries an asset for it. Without a match the served label stands as it is.
+const dataAttrs = Object.fromEntries(
+  items.filter((d) => d.href).map((d) => [`data-${d.platform}`, d.href!]),
+);
+---
+<main class="landing" id="content">
+
+  <section class="hero">
+    <span class="hero__eyebrow"><span class="dot"></span>{c.badge} · v{version}</span>
+    <p class="hero__tagline"><span class="wordmark">Tasty<b>.</b></span> {c.tagline}</p>
+    <h1>{c.titleLead} <span class="accent">{c.titleAccent}</span> {c.titleTail}</h1>
+    <div class="cta-row">
+      <a class="btn btn--primary" id="dl-primary" href={RELEASES_URL}
+         data-label={c.dlFor} {...dataAttrs}>{c.ctaPrimary}</a>
+      <a class="btn btn--ghost" href={RELEASES_URL}>{c.ctaOther}</a>
+      <a class="btn btn--ghost" href={url(guide)}>{c.ctaSecondary}</a>
+      <a class="btn btn--ghost" href={REPO}><Fragment set:html={icon.GITHUB} />GitHub</a>
+    </div>
+    <p class="hero__note">
+      {c.installNote} <a href={url(`${guide}getting-started/install/`)}>{c.installNoteLink}</a>
+    </p>
+    <div class="window"><AppShell heading={c.shellHeading} task={c.shellTask} client:visible /></div>
+  </section>
+
+  <section class="section">
+    <div class="split">
+      <div class="section__head" style="margin-bottom:0">
+        <h2>{c.whyTitle}</h2>
+        <p>{c.whyBody}</p>
+      </div>
+      <ul class="feature-list">
+        {c.whyPoints.map((p) => (
+          <li>
+            <span class="k">{p.key}</span>
+            <span class="v"><strong>{p.title}</strong><span>{p.body}</span></span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section__head">
+      <div class="section__kicker">{c.featuresKicker}</div>
+      <h2>{c.featuresTitle}</h2>
+      <p>{c.featuresBody}</p>
+    </div>
+    <div class="card-grid">
+      {c.cards.map((card) => (
+        <a class="card" href={url(guide + card.href)}>
+          <span class="card__icon"><Icon name={card.icon} /></span>
+          <strong>{card.title}</strong>
+          <span>{card.body}</span>
+          <span class="card__more">→</span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="split split--rev">
+      <div>
+        <div class="term">
+          <div class="term__bar"><span class="term__dots"><i></i><i></i><i></i></span> {c.agentsTab}</div>
+          <pre><code><span class="g">$</span> tasty claude spawn --workspace build \
+    --role <span class="y">implementer</span> --prompt <span class="g">"fix the flaky test"</span>
+<span class="c">→ child surface 52 · completion hook armed</span>
+
+<span class="g">$</span> tasty agent barrier wait --name <span class="y">review-ready</span> --parties 3
+<span class="c">→ 2/3 arrived …</span>
+
+<span class="g">$</span> tasty read queue --surface 52
+<span class="p">[from 52]</span> done · 1 file changed, 12 insertions</code></pre>
+        </div>
+      </div>
+      <div class="section__head" style="margin-bottom:0">
+        <div class="section__kicker">{c.agentsKicker}</div>
+        <h2>{c.agentsTitle}</h2>
+        <p>{c.agentsBody}</p>
+        <p class="caption">{c.agentsCaption}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section__head">
+      <div class="section__kicker">{c.platformKicker}</div>
+      <h2>{c.platformTitle}</h2>
+      <p>{c.platformBody}</p>
+    </div>
+    <div class="platform-row">
+      <span class="platform"><Fragment set:html={icon.WINDOWS} />Windows</span>
+      <span class="platform"><Fragment set:html={icon.APPLE} />macOS</span>
+      <span class="platform"><Fragment set:html={icon.LINUX} />Linux</span>
+    </div>
+    <div class="stat-row">
+      {c.stats.map(([n, l]) => (
+        <div class="stat"><div class="stat__n">{n}</div><div class="stat__l">{l}</div></div>
+      ))}
+    </div>
+  </section>
+
+  <section class="cta-band">
+    <h2>{c.ctaTitle}</h2>
+    <p>{c.ctaBody}</p>
+    <div class="cta-row">
+      <a class="btn btn--primary" href={url(guide)}>{c.ctaDocs}</a>
+      <a class="btn btn--ghost" href={RELEASES_URL}>{c.ctaDownload}</a>
+    </div>
+  </section>
+
+</main>

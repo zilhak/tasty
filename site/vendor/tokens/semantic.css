@@ -1,0 +1,277 @@
+/* ============================================================
+   Tasty — TIER 2 · SEMANTIC tokens
+   ------------------------------------------------------------
+   Roles & intent. Every value is a reference to a PRIMITIVE —
+   never a literal (the two exceptions are color-mix derivations
+   and a handful of role-remaps under Latte, both flagged inline).
+
+   • DO read these from components / app code / the COMPONENT layer.
+   • DO NOT hardcode a primitive where a semantic role exists.
+
+   Theme is resolved one layer down (primitives), so these are
+   theme-agnostic pointers — EXCEPT where a role genuinely maps
+   to a different primitive between themes (text-on-accent, the
+   derived overlays, focused terminal bg). Those few are
+   overridden in the [data-theme="latte"] block below.
+   ============================================================ */
+
+:root {
+  /* ── Surfaces / elevation (tint, never shadow) ────────────── */
+  --tasty-bg-app:        var(--tasty-color-neutral-0);   /* window chrome, deepest */
+  --tasty-bg-sidebar:    var(--tasty-color-neutral-100);  /* sidebars, side panels */
+  --tasty-bg-panel:      var(--tasty-color-neutral-200);  /* primary content panels */
+  --tasty-surface-raised: var(--tasty-color-neutral-300); /* cards, inputs, menus */
+  --tasty-surface-hover:  var(--tasty-color-neutral-400); /* hovered list rows */
+  --tasty-surface-active: var(--tasty-color-neutral-500); /* selected / pressed rows */
+
+  /* ── Text ─────────────────────────────────────────────────── */
+  --tasty-text-primary:     var(--tasty-color-neutral-1100);
+  --tasty-text-secondary:   var(--tasty-color-neutral-1000);
+  --tasty-text-muted:       var(--tasty-color-neutral-900);
+  --tasty-text-disabled:    var(--tasty-color-neutral-700);
+  --tasty-text-placeholder: var(--tasty-color-neutral-600);
+  --tasty-text-on-accent:   var(--tasty-color-neutral-0); /* dark text atop a filled accent (Latte → white) */
+  --tasty-text-on-window-close: var(--tasty-color-white); /* glyph atop the (dark) Windows close-hover fill — white in both themes */
+
+  /* ── Accents (role → hue) ─────────────────────────────────── */
+  --tasty-accent-primary: var(--tasty-color-blue);   /* primary actions, focus */
+  --tasty-accent-info:    var(--tasty-color-sky);
+  --tasty-accent-success: var(--tasty-color-green);
+  --tasty-accent-warning: var(--tasty-color-yellow);
+  /* attention: a SECOND, deliberately non-yellow "notice" tone for states that
+     want a heads-up without the transient/validation reading of warning-yellow.
+     Used for plugin needs-attention (rejected / failing). Peach re-points per
+     theme in the primitive layer, so no role-remap is needed here. Kept distinct
+     from accent-warning (yellow) on purpose.
+     NOTE: occupied-SURFACE notices now have their own role (accent-occupied-hard
+     below) — split out of attention so the occupancy axis can evolve on its own,
+     even though today it maps to the same peach primitive. */
+  --tasty-accent-attention: var(--tasty-color-peach);
+  --tasty-accent-danger:  var(--tasty-color-red);
+  --tasty-accent-agent:   var(--tasty-color-mauve);  /* AI-agent surfaces / actions */
+  --tasty-accent-window-close: var(--tasty-color-os-windows-close); /* OS-native window-close hover (Windows CSD) */
+  --tasty-accent-attached: var(--tasty-color-lavender); /* workspace claimed by ANOTHER client (multi-client attach) — deliberately NOT danger-red, which means error */
+  --tasty-accent-remote:   var(--tasty-color-sky); /* MIRROR: this workspace is a local mirror of a REMOTE tasty instance (an origin/identity, NOT an execution state) — an axis of its own, kept off the status dot */
+
+  /* OCCUPANCY — a subject (remote user / AI agent) HOLDS a terminal surface.
+     Two tiers share ONE visual channel (the surface border) and are told apart
+     by COLOR alone (see the component-tier surface-occupied-* tokens):
+       soft (green) — occupied, cooperative signal, NO write restriction. May
+                      close or change at any time.
+       hard (peach) — soft's notice + readonly (input blocked, mirror-observe).
+                      Absorbs the old remote-attach occupancy border.
+     Deliberately distinct roles from accent-success (green: busy/success/select)
+     and accent-attention (peach: plugin needs-attention) so occupancy meaning
+     never bleeds into those. Both hues re-point per theme in the primitive
+     layer, so no role-remap is needed here. */
+  --tasty-accent-occupied-soft: var(--tasty-color-green);
+  --tasty-accent-occupied-hard: var(--tasty-color-peach);
+
+  /* ATTENTION KINDS — an EXTENSIBLE scale, not a pair of one-off colors.
+     A background subject (agent / task / remote session) raises "attention" on a
+     target (workspace · tab · surface). Each attention KIND gets exactly one
+     semantic slot here, and every channel that renders attention (badge, tab
+     title, surface border, collapsed rail dot) reads THIS slot — never an
+     accent role directly. Adding a kind = one new line here + one line per
+     channel in components.css; no channel logic changes.
+
+     The scale has two axes:
+       COLOR — each kind points at an existing accent role. No new hue is minted
+               for attention; a kind borrows the role whose meaning it already
+               shares, so attention never becomes a private palette.
+       RANK  — a fixed integer urgency order. When several kinds land on the same
+               target, the HIGHEST rank wins the single visual slot (see
+               --tasty-attention-rank-* below). Ranks are spaced by 10 so a
+               future kind can slot BETWEEN two existing ones without a renumber.
+
+     Live kinds (rank high → low):
+       needs-input  30  yellow — blocked, waiting on the human. The only kind
+                                 that is a REQUEST; it outranks everything.
+       completion   10  blue   — a task finished. FYI, clears on focus.
+     Reserved (define when the feature ships, same two lines each):
+       error        40  danger-red   — failed and unrecovered
+       approval     20  agent-mauve  — an agent asks permission (sits between) */
+  --tasty-attention-needs-input: var(--tasty-accent-warning);
+  --tasty-attention-completion:  var(--tasty-accent-primary);
+  /* fg = readable text/glyph atop the filled kind color (both live kinds are
+     bright fills, so both take the on-accent tone; a future dark-fill kind may
+     override its own slot) */
+  --tasty-attention-needs-input-fg: var(--tasty-text-on-accent);
+  --tasty-attention-completion-fg:  var(--tasty-text-on-accent);
+  /* rank — urgency order, resolved by the implementation, exposed as tokens so
+     design and code can't drift apart */
+  --tasty-attention-rank-needs-input: 30; /* @kind other */
+  --tasty-attention-rank-completion:  10; /* @kind other */
+
+  /* macOS traffic-light roles — OS-recognized affordance colors, theme-invariant
+     (point straight at the OS primitives, like accent-window-close). */
+  --tasty-accent-macos-close: var(--tasty-color-os-macos-close);
+  --tasty-accent-macos-min:   var(--tasty-color-os-macos-min);
+  --tasty-accent-macos-zoom:  var(--tasty-color-os-macos-zoom);
+
+  /* idle/inactive indicator tone — deliberately low-contrast so idle dots
+     recede and active states (success/agent/warning/danger) pop. Neutral ramp
+     → adapts per theme. */
+  --tasty-status-idle: var(--tasty-color-neutral-600);
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --tasty-border-default: var(--tasty-color-neutral-300);
+  --tasty-border-strong:  var(--tasty-color-neutral-400);
+  --tasty-border-focus:   var(--tasty-color-blue);
+
+  /* ── States — derived overlay tints (Latte → black) ───────── */
+  --tasty-overlay-hover:  var(--tasty-alpha-white-8);
+  --tasty-overlay-active: var(--tasty-alpha-white-12);
+  --tasty-separator:      var(--tasty-alpha-white-8);
+
+  /* ── Elevation — the SOLE shadow exception (floating overlays / CSD scrims).
+     Tasty has no general shadow system; surfaces use tint. These two raw
+     box-shadows are the one-off scrims popovers and modals are allowed to use,
+     so overlay chrome references a token instead of a hardcoded shadow. ──── */
+  --tasty-shadow-popover: 0 6px 18px rgba(0, 0, 0, 0.4);  /* small popovers: search bar, tools menu, command palette */
+  --tasty-shadow-modal:   0 20px 60px rgba(0, 0, 0, 0.55); /* centered modals: ports, remote, settings, plugins */
+
+  /* ── Scrim — dim layer behind centered modals/palette ─────── */
+  --tasty-scrim-bg:          var(--tasty-alpha-black-50);
+  --tasty-overlay-top-offset: var(--tasty-size-88); /* top-aligned spawn gap (command palette) */
+
+  /* ── Spacing (4px grid) ───────────────────────────────────── */
+  --tasty-space-xs: var(--tasty-size-4);
+  --tasty-space-sm: var(--tasty-size-8);
+  --tasty-space-md: var(--tasty-size-12);
+  --tasty-space-lg: var(--tasty-size-16);
+  --tasty-space-xl: var(--tasty-size-24);
+
+  /* ── Measure — readable column / blurb max-widths ──────── */
+  --tasty-measure-sm: var(--tasty-size-300);
+  --tasty-measure-md: var(--tasty-size-400);
+  --tasty-measure-lg: var(--tasty-size-460);
+  --tasty-measure-xl: var(--tasty-size-560);
+
+  /* ── Field width — form-control widths (selects, color/number inputs, sliders) ── */
+  --tasty-field-width-xs:    var(--tasty-size-90);
+  --tasty-field-width-color: var(--tasty-size-110);
+  --tasty-field-width-md:    var(--tasty-size-160);
+  --tasty-field-width-range: var(--tasty-size-180);
+  --tasty-field-width-lg:    var(--tasty-size-200);
+
+  /* ── Border width & radius (system-wide constants) ────────── */
+  --tasty-border-width:     var(--tasty-size-1);   /* always 1px */
+  --tasty-focus-ring-width: var(--tasty-size-2);   /* 2px accent ring */
+  --tasty-radius:           var(--tasty-radius-4); /* default corner */
+  --tasty-radius-sm:        var(--tasty-radius-2); /* tight inner elements */
+  --tasty-radius-pill:      var(--tasty-radius-full);
+
+  /* ── Fixed interactive heights ────────────────────────────── */
+  --tasty-control-height-tree: var(--tasty-size-22); /* file-tree / sidebar rows */
+  --tasty-control-height:      var(--tasty-size-28); /* buttons, inputs, menu rows */
+  --tasty-control-height-tab:  var(--tasty-size-24); /* tab strip */
+  --tasty-tab-width:           var(--tasty-size-150);
+  --tasty-titlebar-height:     var(--tasty-size-36); /* CSD window titlebar (4px grid) */
+  --tasty-status-bar-height:   var(--tasty-size-24); /* workspace-area bottom StatusBar — fixed host-chrome height, OUTSIDE the UI zoom scale (like titlebar / tab strip / caption) */
+
+  /* ── Icon glyph sizing (svg width/height inside controls) ── */
+  --tasty-icon-size-xs: var(--tasty-size-12); /* chevrons, close, inline glyphs */
+  --tasty-icon-size-sm: var(--tasty-size-14); /* tree / tab / menu icons */
+  --tasty-icon-size-md: var(--tasty-size-16); /* toolbar / input / toast icons */
+
+  /* ── Disabled state ── */
+  --tasty-state-disabled-opacity: var(--tasty-opacity-disabled);
+
+  /* ── Typography roles ─────────────────────────────────────── */
+  --tasty-font-ui:   var(--tasty-font-family-sans);
+  --tasty-font-mono: var(--tasty-font-family-mono);
+
+  --tasty-font-size-caption: var(--tasty-font-size-11); /* meta, badges, hints */
+  --tasty-font-size-micro:   var(--tasty-font-size-10); /* sub-caption micro-labels: kbd, badge, tag, tree/menu meta */
+  --tasty-font-size-body:    var(--tasty-font-size-13); /* default UI text */
+  --tasty-font-size-heading: var(--tasty-font-size-13); /* same size, weight 600 */
+  --tasty-font-size-max:     var(--tasty-font-size-14); /* hard ceiling for UI chrome */
+  --tasty-font-size-prose-h1: var(--tasty-font-size-20); /* markdown Heading ANCHOR — rendered CONTENT, exempt from the UI cap. REDEFINED for the egui_commonmark adoption: no longer a per-level pixel size but the top of the library's interpolated heading ladder (the egui `Heading` text-style; H2–H6 are interpolated between this and Body by the library, not individually set). */
+  --tasty-font-size-brand-wordmark: var(--tasty-font-size-17); /* "tasty." sidebar wordmark (mono) — sanctioned BRANDING exception to the 14px UI cap, the same way prose-h1 is content-exempt. The ONLY UI-chrome type over 14. */
+  --tasty-font-size-term-sm: var(--tasty-font-size-12);
+  --tasty-font-size-term:    var(--tasty-font-size-14); /* default terminal cell */
+  --tasty-font-size-term-lg: var(--tasty-font-size-16);
+
+  --tasty-font-weight-normal:   var(--tasty-font-weight-400);
+  --tasty-font-weight-medium:   var(--tasty-font-weight-500);
+  --tasty-font-weight-semibold: var(--tasty-font-weight-600);
+  --tasty-font-weight-bold:     var(--tasty-font-weight-700);
+
+  --tasty-line-height-tight: var(--tasty-line-height-100); /* terminal cells / ASCII art */
+  --tasty-line-height-term:  var(--tasty-line-height-120); /* terminal reading */
+  --tasty-line-height-ui:    var(--tasty-line-height-140); /* UI labels / wrapped text */
+
+  --tasty-letter-spacing-ui:   var(--tasty-letter-spacing-0);
+  --tasty-letter-spacing-caps: var(--tasty-letter-spacing-04); /* uppercase micro-labels */
+
+  /* ── Motion ───────────────────────────────────────────────── */
+  --tasty-motion-term:    var(--tasty-duration-0);   /* terminal content NEVER animates */
+  --tasty-motion-ui:      var(--tasty-duration-120); /* UI feedback */
+  --tasty-motion-ui-fast: var(--tasty-duration-90);
+  --tasty-motion-ui-med:  var(--tasty-duration-150); /* tooltip show delay, unhurried UI reveals */
+  --tasty-motion-ui-fade: var(--tasty-duration-200); /* opacity fade-in for discoverability overlays (modifier-hint panel) */
+  --tasty-motion-hold-reveal: var(--tasty-duration-500); /* hold-a-key dwell before a discoverability overlay appears */
+  --tasty-ease-ui:        var(--tasty-easing-standard);
+
+  /* ── UI scale (sidebar zoom) — one multiplier, read in one place ── */
+  --tasty-ui-scale-sm: var(--tasty-scale-80);  /* Small  — compact */
+  --tasty-ui-scale-md: var(--tasty-scale-100); /* Medium — default */
+  --tasty-ui-scale-lg: var(--tasty-scale-120); /* Large  — roomy */
+  --tasty-ui-scale:    var(--tasty-ui-scale-md); /* active value — the only one consumed */
+
+  /* ── Surface KINDS (terminal / markdown · focused / unfocused) ── */
+  --tasty-surface-terminal-focused-bg:   var(--tasty-color-black); /* Latte → white */
+  --tasty-surface-terminal-focused-fg:   var(--tasty-text-primary);
+  --tasty-surface-terminal-unfocused-bg: var(--tasty-bg-panel);
+  --tasty-surface-terminal-unfocused-fg: var(--tasty-text-muted);
+  --tasty-surface-markdown-focused-bg:   var(--tasty-bg-app); /* crust — the DOCUMENT bed. NOT pure black: black is a terminal convention (raw TTY) and sits outside the Catppuccin palette; prose at 14px on #000 halates. crust also keeps the whole markdown content ladder discriminable above it: crust(page) < mantle(zebra) < base(row) < surface0(header/code) < surface1(grid). Latte flips with bg-app (crust #dce0e8) — no per-theme branch. In the webview render path there is no focus signal, so this is markdown's ONLY background. */
+  --tasty-surface-markdown-focused-fg:   var(--tasty-text-primary);
+  --tasty-surface-markdown-unfocused-bg: var(--tasty-bg-sidebar);
+  --tasty-surface-markdown-unfocused-fg: var(--tasty-text-muted);
+
+  /* ── Terminal specifics ───────────────────────────────────── */
+  --tasty-selection-bg:           var(--tasty-color-neutral-500);
+  --tasty-vi-cursor-bg:           var(--tasty-color-lavender);
+  --tasty-search-match-bg:        color-mix(in srgb, var(--tasty-color-yellow) 30%, transparent);
+  --tasty-search-match-active-bg: color-mix(in srgb, var(--tasty-color-yellow) 70%, transparent);
+
+  /* ── ANSI 16 (derived from the palette) ───────────────────── */
+  --tasty-ansi-black:          var(--tasty-color-neutral-400);
+  --tasty-ansi-red:            var(--tasty-color-red);
+  --tasty-ansi-green:          var(--tasty-color-green);
+  --tasty-ansi-yellow:         var(--tasty-color-yellow);
+  --tasty-ansi-blue:           var(--tasty-color-blue);
+  --tasty-ansi-magenta:        var(--tasty-color-mauve);
+  --tasty-ansi-cyan:           var(--tasty-color-teal);
+  --tasty-ansi-white:          var(--tasty-color-neutral-1000);
+  --tasty-ansi-bright-black:   var(--tasty-color-neutral-600);
+  --tasty-ansi-bright-red:     var(--tasty-color-red);
+  --tasty-ansi-bright-green:   var(--tasty-color-green);
+  --tasty-ansi-bright-yellow:  var(--tasty-color-yellow);
+  --tasty-ansi-bright-blue:    var(--tasty-color-blue);
+  --tasty-ansi-bright-magenta: var(--tasty-color-mauve);
+  --tasty-ansi-bright-cyan:    var(--tasty-color-sky);
+  --tasty-ansi-bright-white:   var(--tasty-color-neutral-1100);
+
+  /* ── Brand roles ──────────────────────────────────────────── */
+  --tasty-brand-melon-flesh: var(--tasty-color-melon-flesh);
+  --tasty-brand-melon-rind:  var(--tasty-color-melon-rind);
+  --tasty-brand-melon-seed:  var(--tasty-color-melon-seed);
+}
+
+/* ============================================================
+   Latte role-remaps — the ONLY semantic values that differ by
+   theme (because the role points at a different primitive, not
+   just a different shade the ramp already handles).
+   ============================================================ */
+[data-theme="latte"] {
+  --tasty-text-on-accent: var(--tasty-color-white);
+
+  --tasty-overlay-hover:  var(--tasty-alpha-black-8);
+  --tasty-overlay-active: var(--tasty-alpha-black-12);
+  --tasty-separator:      var(--tasty-alpha-black-8);
+
+  --tasty-surface-terminal-focused-bg: var(--tasty-color-white);
+  /* markdown-focused-bg intentionally NOT overridden here — it tracks bg-app (Latte crust). */
+}

@@ -1,6 +1,6 @@
 # ADR-0201: 슬러그 규칙은 그것을 렌더하는 트리가 정한다 — 통일하지 않는다
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0247
 - **Date**: 2026-09-09
 - **Tags**: documentation, anchors, slug, guards, site, github, two-judges, adr-0139, adr-0142
 
@@ -115,6 +115,10 @@ GitHub 규칙 형태로 인용한 것이 4 건이고 사이트 규칙 형태로 
 
 ## References
 
+- 대체: [ADR-0247](0247-site-anchors-are-judged-by-the-artifact-not-a-copy-of-the-rule.md)
+  — 사이트가 Astro 로 옮겨 가면서 첫째 재검토 조건이 발동했다. 규칙이 하나가 됐고, 넘김의
+  근거가 "규칙이 다르다" 에서 "실측이 사본보다 나은 판사다" 로 바뀌었다. 아래 좌표 중
+  `site/src/*.rs` 는 **결정 시점의 것**이고 지금은 없다(ADR 템플릿 "좌표 예외").
 - 판정기: `crates/tasty-doc-guards/tests/cited_anchors_resolve.rs` — 이 결정이 실현된
   현재 위치다(결정 당시의 기록이 아니라).
 - 반대편 판정기: `site/src/main.rs` 의 `--strict` 경로와 `site/src/md.rs` 의 `slugify`.
