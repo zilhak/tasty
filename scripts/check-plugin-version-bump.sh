@@ -293,11 +293,24 @@ ver_gt() {
     [ "$3" -gt "$6" ]
 }
 
+# ── 좌변 (**한 값이다 — 소비처가 다섯이다**) ──────────────────────────
+#
+# 이 게이트가 훑는 뿌리. 전에는 같은 글자가 다섯 자리에 따로 적혀 있었다:
+# 두 모드의 pathspec, 크레이트 뿌리를 뽑는 sed, 매니페스트 명부 glob, 그 명부가
+# 만드는 상대 경로. 하나만 고치면 나머지는 옛 뿌리를 계속 보고, **그 어긋남은
+# 조용하다** — 안 보는 자리가 늘 뿐 실패가 안 난다.
+#
+# 두 모드가 갈리는 것은 이 값이 아니라 **모수**다(무엇을 훑는가는 같고, 어느 두
+# 끝점을 견주는가가 다르다). `--staged` 가 발행된 값을 못 보는 이유가 그것이고,
+# 그것은 여기서 고칠 수 있는 종류가 아니다 — CLAUDE.md 의 "판정의 올바른 범위는
+# 직전 push 지점 → 현재" 참조.
+SCAN_ROOT=crates
+
 # ── 변경된 파일 목록 ─────────────────────────────────────────
 if [ "$MODE" = staged ]; then
-    CHANGED=$(git diff --cached --name-only --diff-filter=ACMRD -- 'crates/')
+    CHANGED=$(git diff --cached --name-only --diff-filter=ACMRD -- "$SCAN_ROOT/")
 else
-    CHANGED=$(git diff --name-only --diff-filter=ACMRD "$BEFORE" "$AFTER" -- 'crates/')
+    CHANGED=$(git diff --name-only --diff-filter=ACMRD "$BEFORE" "$AFTER" -- "$SCAN_ROOT/")
 fi
 
 # 산출물에 닿는 경로인가. 문서(.md)·`.sig`·러너 스크립트 등은 여기 없다.
@@ -319,7 +332,7 @@ while IFS= read -r f; do
     [ -z "$f" ] && continue
     build_affecting "$f" || continue
     CHANGED_CRATES="$CHANGED_CRATES
-$(printf '%s' "$f" | sed -n 's|^\(crates/[^/]*\)/.*$|\1|p')"
+$(printf '%s' "$f" | sed -n "s|^\\(${SCAN_ROOT}/[^/]*\\)/.*\$|\\1|p")"
 done <<EOF
 $CHANGED
 EOF
@@ -345,9 +358,9 @@ done
 # 로컬 `--staged` 도 마찬가지다. 의존 자체가 바뀐 구간을 소급해서 볼 때만 어긋나는데,
 # 그 방향은 **더 넓게 보는 쪽**이라 조용한 통과를 만들지 않는다.
 if [ -n "${SHARED_CHANGED// /}" ]; then
-    for man in "$ROOT"/crates/*/tasty-plugin.toml; do
+    for man in "$ROOT/$SCAN_ROOT"/*/tasty-plugin.toml; do
         [ -f "$man" ] || continue
-        pdir=$(dirname "$man"); pname=$(basename "$pdir"); prel="crates/$pname"
+        pdir=$(dirname "$man"); pname=$(basename "$pdir"); prel="$SCAN_ROOT/$pname"
         case " $PLUGINS " in *" $prel "*) continue ;; esac
         for c in $SHARED_CHANGED; do
             if links "$pname" "$(basename "$c")"; then PLUGINS="$PLUGINS $prel"; break; fi

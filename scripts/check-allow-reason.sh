@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # `#[allow(...)]` 계열 억제에 근거 주석(`reason:` / `이유:` / `complexity-exempt:` /
-# `SAFETY`)이 같은 줄이나 **바로 위에 붙은 주석 블록**에 있는지 감사한다.
+# `SAFETY:`)이 같은 줄이나 **바로 위에 붙은 주석 블록**에 있는지 감사한다.
+# **마커만으로는 안 된다** — 마커 뒤에 내용이 와야 한다(아래 `REASON_MARKERS`).
 #
 # ── 술어가 무엇을 세는가 (세 번 넓혔다) ──────────────────────────────────
 # 1. **형태**: `#[allow(` 만 보면 `#[cfg_attr(<조건>, allow(...))]` 을 한 건도 못 본다.
@@ -36,6 +37,28 @@
 #   스캐너가 깨지면 실패한다 — `set -euo pipefail` 로 그 자리에서 죽는다.
 #
 # 상한은 줄어들 수만 있다. 늘리려면 이 수를 고쳐야 하고, 그 한 줄이 리뷰에 보인다.
+#
+# ── 이 래칫이 못 보는 것: **구성원이 편을 바꾸는 것** ───────────────────────
+# 세 방향은 전부 **수** 에 대한 것이고, 이 게이트는 그 수만 남긴다. 그래서 같은 커밋이
+# 한 자리를 근거 있는 쪽으로 옮기면서 **다른 자리를 새로 들이면** 값이 안 움직인다.
+#
+#     실측 2026-09-08 (base 12bc0f4b2 + 내 커밋 3, lane tip 은 임시 좌표):
+#       crates/tasty-cli/src/request/debug.rs 의 근거 없는 억제 하나에 `이유:` 를 붙이고
+#       crates/tasty-dag-layout/src/engine.rs 에 맨 `#[allow(dead_code)]` 하나를 새로 심었다.
+#       → **182건 (상한 182) · rc=0.** 새로 들어온 자리가 초록으로 지나갔다.
+#     (`cp -p` 백업으로 되돌리고 `touch` · `cmp -s` 로 바이트 동일 확인.)
+#
+# 이것은 술어의 사각도 좌변의 사각도 아니다 — **단위가 수 하나라서** 생기는 사각이다.
+# 위 "여유는 곧 안 보는 구간" 과 같은 종류의 말이 아니다: 여유가 0 이어도 남는다.
+#
+# 덮으려면 수가 아니라 **구성원**을 못 박아야 하고, 그러면 그 명부가 리뷰에 보이는 대신
+# 커밋마다 흔들린다. 그 교환을 여기서 혼자 정하지 않는다 — 같은 성질이 형제
+# `check-shared-walk-ratchet.sh` 에도 실측으로 있고, 그쪽 좌변 계측은 이 lane 밖에서
+# 함께 소유한다. 지금 값으로 남기는 것은 **구멍의 크기와 재는 법**이지 처방이 아니다.
+#
+# 형제 `check-frozen-sum-ratchet.sh` 는 같은 물음에 이미 답을 갖고 있다 — 그쪽은 상쇄가
+# 안 보이는 것을 알고도 저울을 하나로 두며, 이유와 재검토 조건이
+# docs/adr/0205-the-frozen-sum-stays-one-scale.md 에 있다. 여기는 아직 그 답이 없다.
 #
 # 채널: .github/workflows/script-gates.yml (main push · PR)
 # 사용: scripts/check-allow-reason.sh
@@ -128,8 +151,13 @@ fi
 #
 # 줄 번호는 보존되므로 보고 좌표는 **원본 경로:줄** 그대로다.
 #
-# 판정기가 없거나 낡았으면 원문에서 센다 — 그쪽은 더 많이 세는 방향이라 조용한 통과를
-# 안 만든다. 다만 래칫이라 **넘치면 실패한다**: 그래서 자동 채널이 판정기를 먼저 짓는다.
+# 판정기가 없거나 낡았으면 **세지 않는다** — 아래 판정 불가 갈래가 그 자리에서 끝낸다.
+#
+# 좌변 크기는 판정 여부와 무관하게 찍는다. 상한 래칫은 적중 수만 지키고 좌변 크기는 안
+# 보므로, 좌변이 반쯤 줄어도(적중 0 인 파일이 빠져도) 이 수 없이는 화면에 아무 신호가
+# 없다. 판정 불가 갈래도 "좌변은 살아 있었나" 에 답해야 하므로 계수보다 **앞**에 둔다.
+scanned_count=$(printf '%s\n' "$FILES" | wc -l)
+
 . "$(cd "$(dirname "$0")" && pwd)/lib/judge-bin.sh"
 resolve_judge mask-source TASTY_MASK_SOURCE_BIN "$ROOT"
 MASK_BIN="$JUDGE_BIN"
@@ -149,13 +177,44 @@ if [ -n "$MASK_BIN" ]; then
         DET_ROOT="$MASKED/det"
         TXT_ROOT="$MASKED/txt"
     else
-        echo "[allow-reason] 마스킹 실패 — 원문에서 센다(문자열·주석 안의 억제 형태까지 세어진다)." >&2
+        echo "[allow-reason] 마스킹 실패 — 세지 않고 판정 불가로 끝낸다." >&2
     fi
 else
-    echo "[allow-reason] 원문에서 센다 — 문자열·주석 안의 억제 형태까지 세어진다." >&2
+    echo "[allow-reason] 판정기가 없다 — 세지 않고 판정 불가로 끝낸다." >&2
 fi
 
-REASON_PATTERN='reason:|이유:|complexity-exempt:|SAFETY'
+# ── 마커가 있다는 것과 근거가 있다는 것은 다르다 ──────────────────────────
+# 이 목록은 한때 `reason:|이유:|complexity-exempt:|SAFETY` 한 줄의 정규식이었고,
+# 판정은 `줄 ~ 그 정규식` 이었다. **마커만 보고 그 뒤는 안 봤다** — 그래서 `// 이유:`
+# 한 줄이면 그 억제는 영영 안 보이고, `SAFETY` 는 콜론조차 없는 관례어라 그 단어를
+# **언급만 해도** 통과했다(이 게이트가 무엇을 세는지 설명하는 주석에도 그 단어가 있다).
+#
+# 두 가지를 요구한다:
+#   1. `SAFETY` 도 **콜론**을 요구한다 — 다른 셋과 같은 형태로 만든다.
+#   2. 마커 **뒤에 내용**이 있어야 한다. 같은 줄이거나, 같은 블록의 바로 다음 주석
+#      줄이다(근거는 흔히 마커 다음 줄부터 이어진다).
+#
+# ★ 강화 전에 좌변 전수를 세고 **새로 걸리는 자리를 하나하나 읽었다**(실측 2026-09-08,
+#   잰 트리 `12bc0f4b2`): 억제 417 · 잔여 182 · 통과 235(`이유:` 127 · `reason:` 51 ·
+#   `complexity-exempt:` 33 · `SAFETY` 24). 조인 술어로 다시 세도 **잔여 182 그대로이고
+#   새로 걸리는 자리 0 · 사라지는 자리 0** 이다. 콜론 없는 `SAFETY` 는 셋이었는데
+#   (`shared_buffer.rs` · `input_source.rs` · `foreground_process.rs`) 세 블록 다 그
+#   위에 `SAFETY:` 나 `이유:` 를 이미 갖고 있어 그대로 통과한다.
+#
+#   ★ 이 요구는 새 규칙이 아니다. `docs/adr/0037-complexity-gate.md` 가 이미
+#     **"예외 사유 필수 … 빈 사유·"TODO" 금지"** 라고 적어 두었고, **그것을 지키는
+#     채널이 없었다.** 규칙은 문서에 있고 게이트는 마커만 봤다 — 이 커밋이 그 둘을
+#     맞춘다. 그래서 새로 걸리는 자리가 0 인 것이 이상하지 않다: 사람들은 그 규칙을
+#     지키고 있었고, 안 지켜도 아무도 안 봤을 뿐이다.
+#
+#   이 확인이 필수인 이유: 이 게이트에서 **더 많이 잡는 것은 안전하지 않다.** 오탐이
+#   하나라도 생기면 실패문이 "상한을 올려서 통과시키지 마라" 로 나가고, 그것은 실재하지
+#   않는 회귀에 대한 처방이라 따르면 래칫이 영구히 헐거워진다(CLAUDE.md).
+#
+# 구분자가 `|` 가 아니라 `;` 인 이유: awk 의 `split(s, a, "|")` 은 세 번째 인자를 ERE 로
+# 읽어 `|` 가 빈 교대가 된다. 마커 자체에 ERE 를 담아야 하므로(`SAFETY[[:space:]]*:`)
+# 분리자는 정규식 의미가 없는 문자여야 한다.
+REASON_MARKERS='reason:;이유:;complexity-exempt:;SAFETY[[:space:]]*:'
 
 # 래칫 상한. **실제 건수와 같아야 한다** — 크면 그 차이만큼 조용히 받아준다.
 # 줄였으면 이 수도 같이 내려라(스크립트가 그 자리에서 시킨다).
@@ -167,9 +226,40 @@ REASON_PATTERN='reason:|이유:|complexity-exempt:|SAFETY'
 # 184 → 183 → 182 도 같은 성질이다. 위반이 줄어서가 아니라 **언급을 실물로 세던 자리**가
 # 마스킹으로 빠진 것이다: 184 → 183 은 문자열 안의 억제(생성 코드를 조립하는 자리),
 # 183 → 182 는 **주석 안의 억제 언급** 한 자리다(실측으로 그 한 줄을 고쳐 확인했다).
-# 판정기가 없어 원문에서 세면 이 값이 184 로 돌아와 래칫이 실패한다 — 자동 채널이
-# 판정기를 먼저 짓는 이유다.
+# 판정기 없이 원문에서 세면 이 값이 184 로 돌아온다. 그 184 는 상한과 견줄 수 있는 수가
+# 아니라 **다른 사본을 센 수**이므로, 이제 그 상태에서는 세지 않고 아래에서 끝낸다.
 CAP=182
+
+# ── 판정기 없이는 **세지도 않는다** ─────────────────────────────────────────
+# 폴백(원문에서 세기)은 **더 많이 세는** 방향이라 조용한 통과는 안 만든다. 그런데 래칫은
+# 양방향이라 "조용한 통과가 없다" 로 끝나지 않는다 — 값이 상한을 넘으면 실패문이 "상한을
+# 올려서 통과시키지 마라" 로 나가고, 그것은 **실재하지 않는 회귀에 대한 처방**이다. 그
+# 처방을 따르면 래칫이 영구히 헐거워지고, 되돌릴 사람은 이유를 모른다.
+#
+# 실측(2026-09-07): rebase 직후 판정기가 낡아 이 게이트가 그 문구로 rc=1 을 냈다. 다른
+# lane 이 그 문구를 읽고 상한을 만질 뻔했다. 재빌드 한 줄이면 rc=0 이다.
+#
+# 그래서 값이 아니라 **판정 가능 여부로 먼저 갈린다 — 좌변을 세기 전에.** 한때는 좌변을
+# 다 세고 나서 갈렸다. 그 계수는 이 갈래에서 판정에 안 쓰이므로 순수한 낭비였고, 낭비만도
+# 아니었다: **쓰이지 않는 수를 화면에 올리면 누군가 그것을 상한과 견준다.** 그래서 안 쓸
+# 수는 안 낸다. 형제 `check-intent-discipline.sh` 가 이미 이 순서다.
+#
+# 형제 `check-file-size.sh` 와 `check-frozen-sum-ratchet.sh` 도 같은 형태다 — "측정이
+# 안 됐으므로 게이트를 통과로 읽지 않는다". 래칫 둘만 그 말을 안 하고 있었다.
+if [ "$DET_ROOT" = "$ROOT" ]; then
+    echo "훑을 .rs ${scanned_count}개 (좌변=${LEFT_SOURCE}) — 세지 않았다."
+    echo
+    echo "[allow-reason] 판정 불가 — 판정기가 없다(또는 낡았다)."
+    echo "  이 상태에서 세면 원문에서 센 값이 나오고, 세는 사본이 다르므로 상한(${CAP})과"
+    echo "  견줄 수 없다. 두 값의 차는 회귀의 크기가 아니라 **세는 사본이 바뀐 폭**이다."
+    echo
+    echo "  ★ 상한을 만지지 마라. 판정기를 지어라:"
+    echo "      cargo build -p tasty-doc-guards --bin mask-source"
+    echo "      target/debug/mask-source --check-fresh ."
+    echo "  --check-fresh 가 rc=0 이어야 이 게이트의 값이 값이다(낡은 판정기도 없는 것으로 다룬다)."
+    echo "  rebase 직후라면 이것이 첫 번째로 할 일이다."
+    exit 2
+fi
 
 report=""
 count=0
@@ -182,10 +272,31 @@ while IFS= read -r file; do
     [ -f "$det" ] || det="$file"
     txt="$TXT_ROOT/$file"
     [ -f "$txt" ] || txt="$file"
-    hits=$(awk -v reason_pat="$REASON_PATTERN" '
+    hits=$(awk -v markers="$REASON_MARKERS" '
         # 첫 파일 = 탐지용(주석까지 덮은 사본), 둘째 = 근거용(주석이 남은 사본).
+        # 한 줄이 **근거를 지는가** — 마커가 있고 그 뒤에 내용이 있는가.
+        # 마커만 보면 `// 이유:` 한 줄이 그 억제를 영영 가린다.
+        function reason_here(i, arr, n,   p, nm, M, t, nx, sawmarker) {
+            nm = split(markers, M, ";")
+            sawmarker = 0
+            for (p = 1; p <= nm; p++) {
+                if (!match(arr[i], M[p])) continue
+                sawmarker = 1
+                t = substr(arr[i], RSTART + RLENGTH)
+                gsub(/^[[:space:]]+/, "", t)
+                if (t != "") return 1
+            }
+            if (!sawmarker) return 0
+            # 마커는 있는데 그 줄에서 뒤가 비었다 — 같은 블록의 다음 주석 줄을 본다.
+            if (i + 1 <= n && arr[i + 1] ~ /^[[:space:]]*\/\//) {
+                nx = arr[i + 1]
+                sub(/^[[:space:]]*\/\/[[:space:]]*/, "", nx)
+                if (nx != "") return 1
+            }
+            return 0
+        }
         FNR == NR { det[FNR] = $0; ndet = FNR; next }
-        { txt[FNR] = $0 }
+        { txt[FNR] = $0; ntxt = FNR }
         END {
             for (i = 1; i <= ndet; i++) {
                 line = det[i]
@@ -193,11 +304,11 @@ while IFS= read -r file; do
                 if (line !~ /#!?\[allow\(/ && !(line ~ /#!?\[cfg_attr\(/ && line ~ /allow\(/)) {
                     continue
                 }
-                found = (txt[i] ~ reason_pat)
+                found = reason_here(i, txt, ntxt)
                 # 바로 위에 붙은 주석 블록 전체를 본다 — 빈 줄이나 코드 줄에서 끊긴다.
                 for (k = i - 1; k >= 1 && !found; k--) {
                     if (txt[k] !~ /^[[:space:]]*\/\//) break
-                    if (txt[k] ~ reason_pat) found = 1
+                    if (reason_here(k, txt, ntxt)) found = 1
                 }
                 if (!found) printf "%d: %s\n", i, txt[i]
             }
@@ -210,48 +321,21 @@ while IFS= read -r file; do
     done <<<"$hits"
 done <<<"$FILES"
 
-# 훑은 수를 함께 찍는다 — 상한 래칫은 적중 수만 지키고 좌변 크기는 안 본다. 좌변이
-# 반쯤 줄어도(적중 0 인 파일이 빠져도) 이 수 없이는 화면에 아무 신호가 없다.
-scanned_count=$(printf '%s\n' "$FILES" | wc -l)
-
 echo "훑은 .rs ${scanned_count}개 (좌변=${LEFT_SOURCE})."
 echo "근거 없는 #[allow(...)] : ${count}건 (상한 ${CAP})"
 echo
-
-# ── 판정기 없이 센 값으로는 래칫을 판정하지 않는다 ────────────────────────────
-# 위 폴백은 **더 많이 세는** 방향이라 조용한 통과는 안 만든다. 그런데 래칫은 양방향이라
-# "조용한 통과가 없다" 로 끝나지 않는다 — 값이 상한을 넘으면 실패문이 "상한을 올려서
-# 통과시키지 마라" 로 나가고, 그것은 **실재하지 않는 회귀에 대한 처방**이다. 그 처방을
-# 따르면 래칫이 영구히 헐거워지고, 되돌릴 사람은 이유를 모른다.
-#
-# 실측(2026-09-07): rebase 직후 판정기가 낡아 이 게이트가 그 문구로 rc=1 을 냈다. 다른
-# lane 이 그 문구를 읽고 상한을 만질 뻔했다. 재빌드 한 줄이면 rc=0 이다.
-#
-# 그래서 값이 아니라 **판정 가능 여부**로 먼저 갈린다. 형제 `check-file-size.sh` 와
-# `check-frozen-sum-ratchet.sh` 가 이미 그 형태다 — "측정이 안 됐으므로 게이트를 통과로
-# 읽지 않는다". 래칫 둘만 그 말을 안 하고 있었다.
-if [ "$DET_ROOT" = "$ROOT" ]; then
-    printf '%s' "$report"
-    echo
-    echo "[allow-reason] 판정 불가 — 이 값(${count})은 **판정기 없이 원문에서 센 값**이다."
-    echo "  세는 사본이 다르므로 상한 ${CAP} 와 견줄 수 없다. 두 값의 차는 회귀의 크기가"
-    echo "  아니라 **세는 사본이 바뀐 폭**이다."
-    echo
-    echo "  ★ 상한을 만지지 마라. 판정기를 지어라:"
-    echo "      cargo build -p tasty-doc-guards --bin mask-source"
-    echo "      target/debug/mask-source --check-fresh ."
-    echo "  --check-fresh 가 rc=0 이어야 이 게이트의 값이 값이다(낡은 판정기도 없는 것으로 다룬다)."
-    echo "  rebase 직후라면 이것이 첫 번째로 할 일이다."
-    exit 2
-fi
 
 if [ "$count" -gt "$CAP" ]; then
     printf '%s' "$report"
     echo
     echo "근거 없는 #[allow(...)] 가 늘었다: ${count} > 상한 ${CAP}."
-    echo "새로 붙인 억제에 근거 주석(reason: / 이유: / complexity-exempt: / SAFETY)을"
+    echo "새로 붙인 억제에 근거 주석(reason: / 이유: / complexity-exempt: / SAFETY:)을"
     echo "같은 줄이거나, 그 억제 바로 위로 이어지는 주석 블록 안에 달아라 — 그 블록은"
     echo "빈 줄이나 주석 아닌 줄에서 끊긴다(줄 수 제한은 없다)."
+    echo "★ 마커만으로는 안 된다 — 마커 뒤에 실제 근거가 와야 한다(같은 줄이거나 바로"
+    echo "  다음 주석 줄). `// 이유:` 한 줄은 근거가 아니라 마커다."
+    echo "★ SAFETY 도 콜론을 요구한다(`// SAFETY: <왜 UB 가 아닌지>`). 콜론 없는 SAFETY"
+    echo "  는 그 단어를 **언급**한 줄과 못 갈린다."
     echo "상한을 올려서 통과시키지 마라 — 래칫은 한 방향으로만 돈다."
     exit 1
 fi
@@ -266,7 +350,7 @@ if [ "$count" -lt "$CAP" ]; then
     echo "★ 이 줄은 원인을 말하지 않는다 — 수가 내려가는 길이 셋이다."
     echo "  ㄱ 정말로 줄었다(억제를 지웠거나 근거 주석을 달았다)."
     echo "  ㄴ 좌변이 반쯤 줄었다. 위의 '훑은 .rs N개' 를 직전 회차와 비교해라 — 판정"
-    echo "     불가(exit 2)는 좌변이 완전히 빌 때만 걸리고, 반만 준 좌변은 여기로 온다."
+    echo "     불가(exit 2)는 좌변이 완전히 빌 때 걸리고, 반만 준 좌변은 여기로 온다."
     echo "  ㄷ 세는 술어가 깨졌다. 이때 값은 실제보다 작고, 그 상태에서 상한을 내리면"
     echo "     다음 회차부터 진짜 회귀가 그 차이만큼 조용히 통과한다."
     echo

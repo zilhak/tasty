@@ -25,6 +25,12 @@
 # 초과다), 그 추가는 이미 심사를 거친 사건이므로 그때는 예산을 아래 메시지가 알려주는
 # 값으로 **갱신**하는 것이 맞다 — 그 갱신이 정당한지는 같은 커밋의 목록 diff 가 말한다.
 #
+# **저울은 하나다.** 합만 보므로 상쇄가 안 보인다 — 한 파일이 자라는 동안 다른 파일이
+# 그만큼 줄면 이 게이트는 아무 말도 안 한다(실측: 도입 3 일에 항목 11 개가 움직여 이동량
+# 224 줄인데 총합 축이 본 값은 -14). 그래도 항목마다 저울을 두지 않는 이유는, 안 보는
+# 구간이 **띠 x 저울 수**라 같은 발화율에서 24 배가 되기 때문이다. 표와 재검토 조건:
+# docs/adr/0205-the-frozen-sum-stays-one-scale.md
+#
 # 정책 근거: docs/dev-guide/complexity-gate.md
 # 선례: scripts/check-allow-reason.sh (늘어도 줄어도 실패하는 상한 래칫)
 
@@ -45,6 +51,22 @@ die() { echo "$1"; echo "(측정이 안 됐으므로 게이트를 통과로 읽�
 SLACK="$(sed -n 's/^THRESHOLD=\([0-9][0-9]*\)$/\1/p' "$SIZE_GATE")"
 SLACK="${SLACK%%$'\n'*}"
 [ -n "$SLACK" ] || die "check-file-size.sh 에서 THRESHOLD 를 못 읽었다 — 띠 너비를 정할 수 없다."
+
+# ── 좌변도 **외우지 않고 읽어 온다** — 지목처가 둘이었다 ──────────────────
+# 이 스크립트는 같은 트리를 두 번 지목한다: 출하 사본을 뜰 때와 그 사본을 잴 때.
+# 게다가 그 pathspec 은 `check-file-size.sh` 에도 두 벌 있었으니 두 파일에 걸쳐 **네
+# 벌**이었다. 그 넷이 갈리면 두 게이트가 서로 다른 모수를 재는데, 이 게이트의 합은
+# 정의상 저 게이트가 판정하는 집합의 부분집합(allowlist 항목)이라 **맞물림이 깨진다.**
+# 그리고 그 어긋남은 조용하다 — 여유가 파일 하나 몫이라 웬만한 차이를 삼킨다.
+#
+# 위 `SLACK` 과 같은 규율을 쓴다: 적지 않고 저 게이트에서 읽는다. 그래서 좌변은 레포
+# 전체에서 **한 곳**에만 있다. 못 읽으면 판정 불가다 — 여기서 기본값으로 물러나면
+# 저쪽이 넓어진 날 이쪽만 좁은 채로 조용히 돈다.
+SCAN_DIRS_RAW="$(sed -n 's/^SCAN_DIRS=(\(.*\))$/\1/p' "$SIZE_GATE")"
+SCAN_DIRS_RAW="${SCAN_DIRS_RAW%%$'\n'*}"
+[ -n "$SCAN_DIRS_RAW" ] || die "check-file-size.sh 에서 SCAN_DIRS 를 못 읽었다 — 무엇을 훑을지 정할 수 없다."
+read -r -a SCAN_DIRS <<<"$SCAN_DIRS_RAW"
+[ "${#SCAN_DIRS[@]}" -gt 0 ] || die "check-file-size.sh 의 SCAN_DIRS 가 비었다 — 훑을 트리가 없다."
 
 BUDGET="$(sed -n 's/^#[[:space:]]*frozen-sum-budget:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$ALLOWLIST")"
 BUDGET="${BUDGET%%$'\n'*}"
@@ -76,8 +98,8 @@ STRIP_BIN="$JUDGE_BIN"
 STRIPPED="$(mktemp -d)"
 trap 'rm -rf "$STRIPPED"' EXIT
 
-"$STRIP_BIN" "$STRIPPED" "$ROOT" src crates >/dev/null || die "출하 줄 판정 실패."
-TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json src crates)" || die "tokei 실행 실패."
+"$STRIP_BIN" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}" >/dev/null || die "출하 줄 판정 실패."
+TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json "${SCAN_DIRS[@]}")" || die "tokei 실행 실패."
 
 # 합계와 내역. 목록에 있는데 **디스크에 존재하면서** 보고에 없는 경로가 있으면 측정 실패다
 # (없어진 파일은 0 으로 세는 것이 맞다 — 삭제는 정당하게 합을 줄인다).
@@ -143,11 +165,31 @@ if [ "$SUM" -gt "$CEILING" ]; then
     exit 1
 fi
 
+# ── 합이 내려간 이유는 이 게이트가 모른다 ──────────────────────────────────
+# 옛 문장은 "래칫을 조여라" 를 단정하고 곧바로 예산을 내리라고 했다. 형제 둘
+# (`check-allow-reason.sh` · `check-shared-walk-ratchet.sh`)은 같은 자리에서 갈래를
+# 열거하는데 이 게이트만 안 열고 있었다(실측 2026-09-08: 갈래 열거 줄 수 1·1·**0**).
+#
+# 예산은 되돌아 올라가지 않으므로, 틀린 갈래에서 내린 한 번이 영구히 그만큼을 안 보게
+# 만든다. 그래서 원인을 정하지 않고 갈래를 연다.
+#
+# ★ 갈래 ㄴ 은 이 게이트에만 있다 — 형제 둘의 좌변에는 "목록" 이 없다. 실측
+# (2026-09-08): `.complexity-file-allowlist` 에서 항목 하나(2008 줄짜리)를 빼면
+# **두 게이트가 함께 rc=1** 이 되고, 이쪽 처방을 먼저 따르면 예산만 36374 → 34442 로
+# 영구히 내려간 채 저쪽 위반이 그대로 남는다. 그래서 형제의 색을 먼저 보라고 말한다.
 if [ "$SUM" -lt "$BUDGET" ]; then
-    echo "동결 총합 래칫: 합이 예산 아래로 내려갔다 — 래칫을 조여라."
+    echo "동결 총합 래칫: 합이 예산 아래로 내려갔다."
     echo "  합 $SUM  <  예산 $BUDGET"
     echo
-    echo "  .complexity-file-allowlist 의 예산 줄을 이 값으로 내린다(한 줄):"
+    echo "★ 이 줄은 원인을 말하지 않는다 — 합이 내려가는 길이 셋이다."
+    echo "  ㄱ 정말로 줄었다(동결 파일을 분해했거나 지웠다). **이때만** 예산을 내린다."
+    echo "  ㄴ 목록에서 항목이 빠졌다. 그 파일이 아직 임계를 넘으면 check-file-size.sh 가"
+    echo "     같은 트리에서 함께 빨개진다 — **그쪽을 먼저 봐라.** 이쪽 처방을 먼저 따르면"
+    echo "     예산만 영구히 내려간 채 저쪽 위반이 그대로 남는다."
+    echo "  ㄷ 세는 술어가 깨졌다(tokei 가 덜 센다). 이때 값은 실제보다 작고, 그 상태에서"
+    echo "     예산을 내리면 다음 회차부터 진짜 성장이 그 차이만큼 조용히 통과한다."
+    echo
+    echo "ㄱ 임을 확인한 뒤에만: .complexity-file-allowlist 의 예산 줄을 이 값으로 내린다(한 줄):"
     echo "      # frozen-sum-budget: $SUM"
     echo
     echo "  남는 여유는 곧 아무도 안 보는 구간이다. 줄인 만큼 예산도 줄여야 다음 성장이 보인다."

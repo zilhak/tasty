@@ -25,6 +25,19 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 THRESHOLD=1000
+
+# ── 좌변은 **한 값이다** — 지목처가 둘이었다 ──────────────────────────────
+# 이 게이트는 같은 트리를 두 번 지목한다: 출하 사본을 뜰 때(판정기)와 그 사본을 잴
+# 때(tokei). 둘이 따로 적혀 있으면 누가 하나를 손댈 때 나머지가 안 따라가고 **그
+# 어긋남의 두 방향이 서로 다르게 조용하다**:
+#   판정기만 좁으면  사본에 없는 디렉토리를 tokei 가 열다 죽는다 — 판정 불가(2)라 시끄럽다.
+#   tokei 만 좁으면  사본은 다 떴는데 안 재고 끝난다 — **위반 0 · rc=0 으로 조용하다.**
+# 뒤쪽이 이 게이트의 위험한 방향이다. 판정 대상 수(`judged`)는 줄지만 그 수는 rc 에
+# 안 들어가므로(0 일 때만 판정 불가), 반쯤 줄어든 좌변이 초록으로 나간다.
+# 형제 셋이 같은 형태로 갈려 있었다(intent 넷 · allow-reason 다섯 · shared-walk 셋).
+# `tests/file_sloc_gate_fails_loudly.rs` 가 이 값을 늘려 둘이 따라가는지를 잰다.
+SCAN_DIRS=(src crates)
+
 ALLOWLIST="$ROOT/.complexity-file-allowlist"
 
 # 경고 띠 — **판정이 아니다. rc 에 안 들어간다.**
@@ -83,6 +96,28 @@ skip() {
 resolve_judge strip-cfg-test TASTY_STRIP_CFG_TEST_BIN "$ROOT"
 STRIP_BIN="$JUDGE_BIN"
 if [ -z "$STRIP_BIN" ]; then
+    # ── rc=2 만으로는 다음 사람이 무엇을 할지 모른다 ────────────────────────
+    # 실측(2026-09-08): 판정기를 안 보이게 하고 여섯 셸 게이트를 돌리면 다섯은 재빌드
+    # 명령을 찍고 **이 게이트만 안 찍었다.** rc 는 다섯과 같은 2 인데 화면에는 "통과로
+    # 읽지 않는다" 한 줄뿐이라, 이 자리에 처음 선 사람은 무엇이 없는지도 모른다.
+    #
+    # 그 공백이 조용한 이유가 있다 — `tests/gates_pin_their_judge_absence.rs` 가 이
+    # 갈래를 **rc 로만** 고정한다. 그 파일의 머리말은 정작 위험을 실패문의 **처방**에
+    # 둔다("그 실패문의 처방이 실재하지 않는 결함을 영구히 봐주는 자국을 남긴다"). 즉
+    # 지키려는 것이 처방인데 재는 것은 종료 코드였다. 처방이 통째로 없는 상태가 그
+    # 사이로 지나간다.
+    #
+    # 형제들과 같은 형태로 찍는다: **무엇을 만지지 말라**(여기서는 allowlist — 이
+    # 게이트에서 그 자리를 헐겁게 만드는 레버가 그것이다)와 **무엇을 지어라**.
+    echo "[file-size] 판정 불가 — 출하 줄을 가릴 판정기가 없다(또는 낡았다)."
+    echo "  이 상태에서 재면 인라인 #[cfg(test)] 까지 출하 줄로 세어진다. 그 값으로 임계를"
+    echo "  판정하지 않는다 — 두 값의 차는 파일이 자란 폭이 아니라 **세는 사본이 바뀐 폭**이다."
+    echo
+    echo "  ★ .complexity-file-allowlist 에 경로를 추가하지 마라. 판정기를 지어라:"
+    echo "      cargo build -p tasty-doc-guards --bin strip-cfg-test"
+    echo "      target/debug/strip-cfg-test --check-fresh ."
+    echo "  --check-fresh 가 rc=0 이어야 이 게이트의 값이 값이다(낡은 판정기도 없는 것으로 다룬다)."
+    echo "  rebase 직후라면 이것이 첫 번째로 할 일이다."
     echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"
     exit 2
 fi
@@ -107,7 +142,7 @@ trap 'rm -rf "$STRIPPED"' EXIT
 # 어긋나면 **판정 불가(2)** 다. 통과도 위반도 아닌 이유는 그 상태에서 위반이 있는지
 # 없는지를 모르기 때문이다 — 모자란 사본에서 나온 "임계 초과 0" 은 "큰 파일이 없다"
 # 와 "큰 파일을 안 봤다" 를 같은 줄로 만든다.
-STRIP_REPORTED="$("$STRIP_BIN" "$STRIPPED" "$ROOT" src crates)" || {
+STRIP_REPORTED="$("$STRIP_BIN" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}")" || {
     echo "출하 줄 판정 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
 COPIED="$(find "$STRIPPED" -type f -name '*.rs' -print | wc -l | tr -d ' ')" || COPIED=""
@@ -129,7 +164,7 @@ if [ "$COPIED" -ne "$STRIP_REPORTED" ]; then
     echo "(측정이 안 됐으므로 게이트를 통과로 읽지 않는다)"; exit 2
 fi
 
-TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json src crates)" || {
+TOKEI_JSON="$(cd "$STRIPPED" && tokei --output json "${SCAN_DIRS[@]}")" || {
     echo "tokei 실행 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
 # tokei JSON → "code<TAB>path" (Rust 파일 **전부**, code 내림차순). 파일 report 는
