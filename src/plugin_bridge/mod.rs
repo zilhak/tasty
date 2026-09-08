@@ -65,9 +65,10 @@ pub(crate) fn mesh_region_of(
 /// 갈래의 좌변 갱신 순서도 제각각이었다. 한 타입으로 모으면 그 자리들이 사라진다 —
 /// 갈렸는지 재는 장치가 아니라 갈릴 자리가 없는 것이 답이다.
 ///
-/// 채널 고유의 칸은 여기 넣지 않는다. surface 의 focus 추적·bootstrap 타임아웃 경고,
-/// popup 의 무입력 강제 repaint 는 사본이 아니라 그 채널 하나만의 것이라 각자 자리에
-/// 남는다.
+/// 채널 고유의 칸은 여기 넣지 않는다. surface 의 focus 추적·입력 누적은 사본이 아니라
+/// 그 채널 하나만의 것이라 각자 자리에 남는다. 무입력 강제 repaint 는 세 채널이 모두
+/// 갖지만 담는 자리도 채우는 사건도 서로 달라 여기서 합치지 않았다 — surface 는 자기
+/// 구조체의 `invalidated`, popup·banner 는 `AppState` 의 `HashSet` 두 개다.
 #[derive(Default)]
 pub(crate) struct MeshForwardCommon {
     /// 마지막으로 보낸 `(width_px, height_px, ppp.to_bits())`. 변경 감지의 좌변.
@@ -81,15 +82,65 @@ pub(crate) struct MeshForwardCommon {
     /// 렌더 prepare 가 textures_delta 체인 단절을 감지했다 — 다음 `set_context` 에
     /// `need_full_textures` 를 실어 보낸다(송신 시 소거).
     pub(crate) pending_full: bool,
+    /// bootstrap `set_context` 를 보낸 시각. 이후에도 frame 이 오지 않으면
+    /// [`BLANK_MESH_GRACE`] 경과 시점에 1회 경고한다 — `blank_warned` 참조.
+    bootstrap_at: Option<std::time::Instant>,
+    /// "빈 화면" 경고를 이미 냈다 — 매 frame 반복 로그를 막는 래치.
+    /// frame 이 한 번이라도 도착하면 해제되어, 이후 plugin crash 로 다시 비면 재경고한다.
+    blank_warned: bool,
 }
 
+/// bootstrap `set_context` 를 보낸 뒤 이 시간이 지나도록 plugin 이 frame 을 하나도
+/// 보내지 않으면 그 채널은 사실상 빈 화면으로 멈춘 것으로 본다.
+///
+/// 정상 경로에서 첫 paint 는 수십 ms 안에 온다(plugin 프로세스는 이미 기동·handshake
+/// 완료 상태이고 남은 일은 콘텐츠 적재 + tessellate 뿐). 3초는 느린 디스크의 대용량
+/// 파일 적재까지 흡수하면서 실제 고장을 놓치지 않는 선.
+const BLANK_MESH_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
 impl MeshForwardCommon {
-    /// paint frame 이 보이는 동안은 bootstrap 무장을 풀어 둔다 — 이후 plugin crash 로
-    /// frame 이 사라지면 다음 프레임이 다시 bootstrap 한다.
-    pub(crate) fn disarm_bootstrap_if_alive(&mut self, has_frame: bool) {
+    /// paint frame 유무를 bootstrap 워치독에 반영한다 — 세 채널이 매 프레임 부른다.
+    ///
+    /// frame 이 보이는 동안은 bootstrap 무장을 풀어 둔다(이후 plugin crash 로 frame 이
+    /// 사라지면 다음 프레임이 다시 bootstrap 한다). 반대로 bootstrap 을 보냈는데
+    /// [`BLANK_MESH_GRACE`] 가 지나도록 frame 이 하나도 오지 않았으면 = 사용자에게는 빈
+    /// 화면이다. plugin 쪽 실패(paint 에러/hang/crash)는 plugin 자체 로그에만 남고 host
+    /// 의 forward 루프는 frame 없는 채널을 조용히 건너뛰므로, host stderr 만 보는
+    /// 사람에게는 아무 징후도 없다. 그 침묵을 여기서 깬다 — 채널당 1회.
+    ///
+    /// 원인은 여기서 알 수 없다(host 는 실패 통지를 받지 않는다) — plugin 로그 경로를
+    /// 함께 찍어 다음 확인처를 명시한다.
+    ///
+    /// `channel` 은 경고문이 대상을 지목하는 구절이다(예: `surface 12 (kind 'markdown',
+    /// plugin 'com.tasty.image')`). [`std::format_args!`] 로 넘기면 경고가 안 나는
+    /// 프레임에서는 아무것도 할당하지 않는다.
+    pub(crate) fn watch_blank(
+        &mut self,
+        has_frame: bool,
+        channel: std::fmt::Arguments<'_>,
+        plugin_id: &str,
+    ) {
         if has_frame {
             self.bootstrap_sent = false;
+            self.bootstrap_at = None;
+            self.blank_warned = false;
+            return;
         }
+        if self.blank_warned || !self.bootstrap_sent {
+            return;
+        }
+        if !self
+            .bootstrap_at
+            .is_some_and(|t| t.elapsed() >= BLANK_MESH_GRACE)
+        {
+            return;
+        }
+        tracing::error!(
+            "egui-mesh {channel} has received no frame {:.0}s after bootstrap — it is blank on \
+             screen. Check the plugin's own log: `tasty plugin logs {plugin_id}`",
+            BLANK_MESH_GRACE.as_secs_f32(),
+        );
+        self.blank_warned = true;
     }
 
     pub(crate) fn geom_changed(&self, geom: (u32, u32, u32)) -> bool {
@@ -120,6 +171,10 @@ impl MeshForwardCommon {
         self.last_theme = Some(theme.clone());
         if !has_frame {
             self.bootstrap_sent = true;
+            // 첫 bootstrap 시각만 기록 — 이후 입력/리사이즈로 재forward 될 때마다
+            // 갱신하면 grace 가 계속 밀려 빈 화면을 영영 못 잡는다.
+            self.bootstrap_at
+                .get_or_insert_with(std::time::Instant::now);
         }
     }
 }

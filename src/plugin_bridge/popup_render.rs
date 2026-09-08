@@ -272,8 +272,17 @@ pub fn draw_plugin_popups(
             .entry(snap.instance_id)
             .or_default();
         let need_bootstrap = fwd.need_bootstrap(has_frame);
-        // 건강 상태 — crash 로 frame 이 사라지면 재bootstrap 하도록 무장 해제.
-        fwd.disarm_bootstrap_if_alive(has_frame);
+        // 건강 상태 반영 + 빈 화면 워치독 — crash 로 frame 이 사라지면 재bootstrap 하도록
+        // 무장 해제하고, bootstrap 후 유예를 넘기도록 frame 이 없으면 1회 경고한다
+        // (판정도 경고문도 `MeshForwardCommon` 한 곳, surface·banner 와 같다).
+        fwd.watch_blank(
+            has_frame,
+            format_args!(
+                "popup instance {} (plugin '{}')",
+                snap.instance_id, snap.plugin_id
+            ),
+            &snap.plugin_id,
+        );
         let geom_changed = fwd.geom_changed(geom);
         let theme_changed = fwd.theme_changed(&current_theme);
         // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
