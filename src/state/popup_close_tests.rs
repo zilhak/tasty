@@ -48,6 +48,7 @@ use crate::adapters::ui::info_modal::{INFO_MODAL_ID, InfoModal, InfoModalAction}
 use crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID;
 use crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID;
 use crate::adapters::ui::popup::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID;
+use crate::adapters::ui::popup::confirm_force_detach_workspace::CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID;
 use crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID;
 use crate::adapters::ui::popup::file_picker::FILE_PICKER_POPUP_ID;
 use crate::adapters::ui::popup::port_scanner::{
@@ -719,6 +720,190 @@ fn confirm_delete_category_close_intent_now_clears_dialog_state() {
     run_frame(empty_input(), &mut state, &mut engine);
 
     assert!(state.dialogs.pending_category_delete.is_none());
+}
+
+// ─────────────────── confirm_force_detach_workspace ───────────────────
+
+/// 워크스페이스를 client 7 이 hard 점유한 상태 + 그 팝업이 열린 상태를 만든다.
+/// 반환은 대상 워크스페이스 id 와 그 멤버 surface 들.
+fn occupied_workspace_with_popup(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+) -> (crate::model::WorkspaceId, Vec<u32>) {
+    let ws_id = engine.workspaces[0].id;
+    let members = engine.workspaces[0].all_surface_ids();
+    engine
+        .attach
+        .acquire_workspace(ws_id, &members, &members, 7)
+        .expect("workspace is free in the fixture");
+    state.dialogs.pending_force_detach_workspace = Some(ws_id);
+    state
+        .popups
+        .open_at_focused(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID, FIXED_POS);
+    (ws_id, members)
+}
+
+/// Escape 는 팝업을 닫고 보류를 비우되 **점유는 그대로 둔다.**
+///
+/// 뒤쪽 단정이 이 시험의 요점이다. 앞의 둘만 보면 "확인 없이 끊겼다" 와 "취소했다" 가
+/// 같은 초록을 낸다 — 이 팝업이 존재하는 이유가 바로 그 둘을 가르는 것이다.
+#[test]
+fn confirm_force_detach_escape_clears_state_and_keeps_the_occupancy() {
+    let (mut state, mut engine) = test_state();
+    let (ws_id, members) = occupied_workspace_with_popup(&mut state, &mut engine);
+
+    run_frame(key_input(egui::Key::Escape), &mut state, &mut engine);
+
+    assert!(
+        !state
+            .popups
+            .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
+    );
+    assert!(state.dialogs.pending_force_detach_workspace.is_none());
+    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+    for sid in &members {
+        assert!(
+            engine.attach.is_hard_occupied(*sid),
+            "surface {sid} 가 풀렸다"
+        );
+    }
+}
+
+#[test]
+fn confirm_force_detach_outside_click_clears_state_and_keeps_the_occupancy() {
+    let (mut state, mut engine) = test_state();
+    let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
+
+    run_frame(
+        press_input(outside_point(FIXED_POS)),
+        &mut state,
+        &mut engine,
+    );
+
+    assert!(
+        !state
+            .popups
+            .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
+    );
+    assert!(state.dialogs.pending_force_detach_workspace.is_none());
+    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+}
+
+/// `UiIntent::ClosePopup` 경로도 다음 프레임의 drain 을 거쳐 뒷정리가 돈다
+/// (`confirm_delete_category_close_intent_now_clears_dialog_state` 와 같은 패턴).
+#[test]
+fn confirm_force_detach_close_intent_clears_state_after_next_frame() {
+    let (mut state, mut engine) = test_state();
+    let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
+
+    crate::intent::popup::handle(
+        &mut state,
+        &UiIntent::ClosePopup {
+            id: CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID,
+        }
+        .from_user_menu("test"),
+    );
+    assert!(
+        !state
+            .popups
+            .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
+    );
+    assert!(state.dialogs.pending_force_detach_workspace.is_some());
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(state.dialogs.pending_force_detach_workspace.is_none());
+    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
+}
+
+/// 메뉴를 연 뒤 원격이 스스로 release 했으면 팝업은 **즉시 닫힌다.**
+///
+/// 이 갈래가 없으면 확인 버튼이 아무 대상도 없는 행동이 되고, 사용자는 방금 자기가
+/// 무엇을 끊었는지 모르는 채 초록을 본다. 대상 워크스페이스가 사라진 경우도 같다.
+#[test]
+fn confirm_force_detach_closes_when_the_occupancy_is_already_gone() {
+    let (mut state, mut engine) = test_state();
+    let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
+
+    // 원격이 스스로 끊었다 — 팝업은 아직 열려 있다.
+    assert_eq!(engine.attach.force_detach_workspace(ws_id), Some(7));
+    assert!(
+        state
+            .popups
+            .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
+    );
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(
+        !state
+            .popups
+            .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
+    );
+    assert!(state.dialogs.pending_force_detach_workspace.is_none());
+}
+
+/// 보류 id 가 실재하지 않는 워크스페이스를 가리켜도 패닉하지 않고 닫힌다.
+#[test]
+fn confirm_force_detach_closes_when_the_workspace_is_gone() {
+    let (mut state, mut engine) = test_state();
+    state.dialogs.pending_force_detach_workspace = Some(u32::MAX);
+    state
+        .popups
+        .open_at_focused(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID, FIXED_POS);
+
+    run_frame(empty_input(), &mut state, &mut engine);
+
+    assert!(
+        !state
+            .popups
+            .is_open(CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID)
+    );
+    assert!(state.dialogs.pending_force_detach_workspace.is_none());
+}
+
+/// 확인은 워크스페이스와 **멤버 surface 를 함께** 푼다.
+///
+/// 이 자리를 함수로 재는 이유는 그리기 안의 버튼 클릭이 이 하네스에서 재현되지 않기
+/// 때문이다(`run_frame` 이 프레임마다 `egui::Context` 를 새로 만든다 — egui 의 클릭
+/// 판정이 기대는 이전 프레임 기억이 없다). 클릭이 이 함수를 부른다는 사실 자체는
+/// 그리기 코드 한 줄이고, 그 함수가 무엇을 하는지는 여기서 값으로 남는다.
+#[test]
+fn confirm_force_detach_confirm_releases_the_workspace_and_its_members() {
+    let (mut state, mut engine) = test_state();
+    let (ws_id, members) = occupied_workspace_with_popup(&mut state, &mut engine);
+    assert!(!members.is_empty(), "픽스처 워크스페이스에 surface 가 없다");
+
+    let holder = crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
+        &mut state,
+        &mut engine,
+    );
+
+    assert_eq!(holder, Some(7));
+    assert!(engine.attach.workspace_holder(ws_id).is_none());
+    for sid in &members {
+        assert!(
+            !engine.attach.is_hard_occupied(*sid),
+            "surface {sid} 가 아직 점유 중이다"
+        );
+    }
+    assert!(state.dialogs.pending_force_detach_workspace.is_none());
+}
+
+/// 보류가 비어 있으면 아무것도 안 끊는다 — 남의 점유를 집지 않는다.
+#[test]
+fn confirm_force_detach_with_no_pending_target_detaches_nothing() {
+    let (mut state, mut engine) = test_state();
+    let (ws_id, _) = occupied_workspace_with_popup(&mut state, &mut engine);
+    state.dialogs.pending_force_detach_workspace = None;
+
+    let holder = crate::adapters::ui::popup::confirm_force_detach_workspace::apply_force_detach(
+        &mut state,
+        &mut engine,
+    );
+
+    assert_eq!(holder, None);
+    assert_eq!(engine.attach.workspace_holder(ws_id), Some(7));
 }
 
 // ────────────────────────── file_handler_picker ──────────────────────────

@@ -84,6 +84,10 @@ const POPUP_SPECIMENS: &[(&str, &str)] = &[
     ("confirm_delete_category", "components/category_dialogs.rs"),
     ("tutorial_topics", "widgets/tutorial.rs"),
     ("rail_category", "components/category_dialogs.rs"),
+    (
+        "confirm_force_detach_workspace",
+        "components/occupancy_borders.rs",
+    ),
 ];
 
 /// specimen 이 **없는** popup 과 그 사유.

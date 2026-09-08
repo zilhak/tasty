@@ -124,7 +124,7 @@ tasty set workspace --id 5 --clear-mapping                              # 해제
 
 ## 점유 풀기 (원격 쪽에서)
 
-내 Tasty 의 워크스페이스가 다른 곳에서 attach 돼 읽기 전용이 됐을 때, 서피스에 **강제 끊기** <!-- en: Force detach --> 안내가 뜹니다. CLI 로도 끊을 수 있습니다.
+내 Tasty 의 워크스페이스가 다른 곳에서 attach 돼 읽기 전용이 됐을 때, 서피스에 **강제 끊기** <!-- en: Force detach --> 안내가 뜹니다. 그 안내는 그 워크스페이스를 보고 있을 때만 나오므로, 사이드바에서 바로 끊을 수도 있습니다 — 점유 중인 워크스페이스 카드를 우클릭 > **강제 끊기** <!-- en: Force detach --> 를 누르면 확인 팝업이 화면 중앙에 뜨고, 확인하면 그 자리에서 풀립니다. 그 워크스페이스로 전환하지 않아도 됩니다. CLI 로도 끊을 수 있습니다.
 
 ```sh
 tasty remote attach --force-detach --workspace 3    # 이 인스턴스의 워크스페이스 3 점유 해제

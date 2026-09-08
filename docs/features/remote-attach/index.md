@@ -22,7 +22,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0040](../../adr/
 - **자동 해제**: client 연결 종료(EOF) 또는 attach heartbeat TTL 만료(FIN/RST 없는 silent disconnect 감지) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
 - **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [ADR-0116](../../adr/0116-attach-handshake-validated-before-occupancy.md).
 - **self-attach(자기 인스턴스 포트로 attach)는 거절된다** — debug/release 공통. GUI attach 핸드셰이크는 메인 스레드에서 동기 대기하는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 반드시 실패하고, 실패하는 동안 대상 workspace 점유만 남는다. 로컬 self-mirror 가 필요하면 별도 프로세스인 `tasty debug attach` 를 쓴다(같은 이유로 교착이 없다).
-- **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한). 끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**.
+- **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한). 끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**. GUI 진입점은 **둘**이다 — 점유된 surface 우상단의 강제 끊기 버튼(그 워크스페이스가 활성일 때만 그려진다)과, 사이드바 워크스페이스 행 우클릭의 **강제 끊기** 항목. 뒤엣것은 점유 중일 때만 나타나고(사이드바의 점유 표시와 같은 술어 `workspace_holder(ws.id).is_some()`), 즉시 끊지 않고 화면 중앙의 확인 팝업을 한 번 거친다 — 원격 세션을 끊는 비가역 행동이고 우클릭은 오조작이 쉬운 자리이기 때문이다. 그 팝업은 window scope 라 **대상 워크스페이스로 전환하지 않아도** 보인다. 확인 팝업 본문은 대상 이름과 결과만 적고 점유자를 식별자로 적지 않는다 — 서버는 transport 를 모르고 숫자 client id 만 들고 있다. surface 단위 lock(`--surface`)은 사이드바에 표시되지 않으므로 이 경로로 풀 수 없다(그 워크스페이스로 전환해 surface 버튼을 쓴다).
 
 ### surface 단위 vs workspace 단위
 
@@ -230,6 +230,9 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
 - Given surface 가 이미 점유됨 When 다른 client 가 attach 시도 Then holder 정보를 담아 거부된다.
 - Given 점유된 surface When 서버측 GUI 키/`surface.send` Then 입력이 차단되고 client 입력만 도달한다.
 - Given 점유 상태 When 로컬 사용자가 `--force-detach` Then holder 가 종료되고 대상이 일반 surface 로 복귀한다.
+- Given workspace 가 점유된 상태 When 로컬 사용자가 사이드바에서 그 행을 우클릭 Then **강제 끊기** 항목이 보인다.
+- Given 그 항목을 누른 상태 When 확인 팝업이 떠 있다 Then 점유는 아직 유지되고, 취소·Escape·바깥 클릭 어느 쪽으로 닫아도 점유가 그대로 남는다.
+- Given 확인 팝업이 떠 있는 동안 원격이 스스로 끊었다 When 다음 프레임 Then 팝업은 즉시 닫힌다(대상 없는 확인을 남기지 않는다).
 - Given client 연결 종료(EOF) Then 점유 lock 이 자동 free 된다.
 - Given client 가 FIN/RST 없이 조용히 끊김(silent disconnect) When attach heartbeat TTL 이 만료 Then 점유 lock 이 EOF 와 동일하게 자동 free 되고, 같은 surface/workspace 로 새 client 의 재attach 가 성공한다.
 - Given workspace attach When 멤버 터미널 하나가 이미 다른 client 점유 Then workspace attach 가 거부된다.

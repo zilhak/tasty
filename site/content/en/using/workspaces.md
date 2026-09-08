@@ -1,4 +1,4 @@
-<!-- source-hash: dd606ce5a52c -->
+<!-- source-hash: e4f81b03ba8b -->
 # Workspaces
 
 After reading this page you will know how to create Workspaces, name them, group them into categories, switch between them, and close and restore them. What a Workspace is is explained in [A first look](../getting-started/first-look.md).
@@ -71,7 +71,9 @@ When the sidebar is collapsed (**Collapse**, `Ctrl+B`) the cards become square i
 A workspace holding a terminal someone is using over a remote attach will not close; you
 get a notice instead. Someone is working in that terminal right now, and closing it would
 end their session without warning. To take it back, press **Force detach** on the occupancy
-badge, then close again.
+badge, then close again. If you would rather not switch to that Workspace, right-click its
+sidebar card instead — a **Force detach** item appears only while it is occupied, and it
+goes through a confirmation first.
 
 Closed Workspaces · Panes · Tabs · Surfaces are restored with `Ctrl+Shift+T` (**Restore closed**), most recently closed first. A terminal's scrollback comes back with it. The shell is started fresh, though, so a program that was running does not come back. This list lives only in memory and is gone when Tasty exits.
 

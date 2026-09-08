@@ -19,9 +19,15 @@
 //! `divider.rs::draw_surface_highlights_view`(completed/needs-input). 시각 동기화는 수동.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{Button, ButtonVariant};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+use crate::catalog::widgets::dialog as kit;
+
+/// 강제 끊기 확인 다이얼로그 폭 (destructive confirm 공통 380px).
+const CONFIRM_WIDTH: LogicalPx = LogicalPx(380.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -166,6 +172,44 @@ fn occ_pane(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
     }
 }
 
+/// 사이드바 우클릭 -> 강제 끊기의 확인 다이얼로그 (destructive confirm).
+///
+/// holder 를 사람이 읽을 수 있는 식별자로 못 보여준다 — 서버는 transport 를 모르고
+/// 항상 loopback 으로 받으며 들고 있는 것은 숫자 client id 뿐이다. 그래서 본문은
+/// **대상 워크스페이스 이름 + 끊었을 때의 결과**로만 쓴다.
+fn force_detach_confirm(ui: &mut egui::Ui, theme: &Theme) {
+    kit::frame_card(ui, theme, CONFIRM_WIDTH, kit::panel_fill(theme), |ui| {
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            ui.horizontal(|ui| {
+                kit::icon(
+                    ui,
+                    icons::CLOSE,
+                    theme.icon_glyph_size_md,
+                    theme.accent_danger().to_egui(),
+                );
+                kit::title(ui, theme, "Force detach this workspace?");
+            });
+            kit::body(
+                ui,
+                theme,
+                "Services is attached by a client. Detaching ends that session and clears \
+                 its mirror. The workspace becomes editable and closable again.",
+            );
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    Button::new("Force detach")
+                        .variant(ButtonVariant::Danger)
+                        .show(ui, theme);
+                    Button::new("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                });
+            });
+        });
+    });
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "needs-input · yellow 2px", |ui| {
@@ -182,6 +226,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "force-detach confirm · 380px", |ui| {
+            force_detach_confirm(ui, theme)
+        });
+    });
+
     spec::meta(
         ui,
         theme,
@@ -190,6 +240,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("needs-input", "yellow 2px — clears on focus, wins ties"),
             ("soft", "green 1px — held, writable"),
             ("hard", "peach 1px — readonly + force-detach"),
+            (
+                "force-detach confirm",
+                "380px destructive — sidebar entry, no holder identity",
+            ),
             ("completed", "blue 2px — clears on focus"),
             (
                 "kind source",
@@ -221,6 +275,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "completion edge (→ blue)",
                 theme.accent_primary().into(),
             ),
+            TokenChip::new(
+                "accent-danger",
+                "force-detach confirm",
+                theme.accent_danger().into(),
+            ),
         ],
     );
 
@@ -234,6 +293,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          '지금 답하지 않으면 멈춘다'는 신호를 점유가 가리면 안 되기 때문이다. \
          completed/needs-input 클러스터는 `AttentionStore` 의 `AttentionKind::Completion`/ \
          `NeedsInput` 레코드를 각각 그린다 — 탭 제목·워크스페이스 배지도 같은 kind 우선순위 \
-         (NeedsInput > Completion)를 따른다.",
+         (NeedsInput > Completion)를 따른다. 강제 끊기 확인은 **두 번째 진입점**의 폼이다 \
+         — 서피스 오버레이의 × 는 그 워크스페이스로 전환해야만 보이므로, 사이드바 행 \
+         우클릭에서 같은 행동을 380px destructive confirm 으로 한 번 거쳐 실행한다. \
+         본문에 점유자를 식별자로 적지 않는다: 서버는 transport 를 모르고 숫자 client id \
+         만 들고 있어, 그 값을 보이면 뜻 없는 수가 불안만 준다.",
     );
 }

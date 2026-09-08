@@ -626,6 +626,12 @@ pub struct DialogState {
     /// 카테고리 삭제 확인 다이얼로그(`confirm_delete_category`)의 대상 카테고리 id.
     /// Delete 액션 시 set, 확인/취소/닫힘 시 None.
     pub(crate) pending_category_delete: Option<crate::model::WorkspaceCategoryId>,
+    /// 워크스페이스 강제 끊기 확인 다이얼로그(`confirm_force_detach_workspace`)의 대상
+    /// **워크스페이스 id**. 사이드바 우클릭 메뉴가 set, 확인/취소/닫힘 시 None.
+    ///
+    /// 인덱스가 아니라 id 인 이유: 이 팝업은 메뉴가 닫힌 뒤에도 열려 있어 목록이 밀릴
+    /// 창이 길다(기존 메뉴 콜백은 `ws_idx` 를 잡고 그 위험을 주석으로 인정한다).
+    pub(crate) pending_force_detach_workspace: Option<crate::model::WorkspaceId>,
     /// Lua 스크립트 TOFU 변경 확인(`script_changed_confirm`) 팝업의 보류 상태 (ADR-0031).
     /// 등록 해시와 현재 파일 해시가 다르면 단축키 발화가 실행을 보류하고 이 값을 채운다 —
     /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
@@ -714,6 +720,7 @@ impl DialogState {
             rail_category_popup: None,
             preset_apply_target_category: None,
             pending_category_delete: None,
+            pending_force_detach_workspace: None,
             pending_script_confirm: None,
             #[cfg(feature = "gui")]
             transfer_progress: None,

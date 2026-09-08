@@ -443,6 +443,32 @@ pub fn all_defs() -> &'static [PopupDef] {
                 on_close: Some(super::confirm_delete_category::on_close_confirm_delete_category),
             },
             PopupDef {
+                id: super::confirm_force_detach_workspace::CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID,
+                title_key: "attach.force_detach_confirm_title",
+                fullscreen_stage: None,
+                title_fn: Some(
+                    super::confirm_force_detach_workspace::confirm_force_detach_workspace_title,
+                ),
+                default_size: egui::vec2(380.0, 150.0),
+                sizer: Some(
+                    super::confirm_force_detach_workspace::confirm_force_detach_workspace_sizer,
+                ),
+                // 대상 워크스페이스가 **비활성일 수 있는 것이 이 기능의 전제**다 —
+                // Workspace scope 로 두면 전환하기 전엔 안 보여 목적이 무너진다.
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                sticky_focus: false,
+                // 소형 모달 — 이동/리사이즈 비활성, 중앙 정렬로 연다.
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: super::confirm_force_detach_workspace::draw_confirm_force_detach_workspace,
+                on_close: Some(
+                    super::confirm_force_detach_workspace::on_close_confirm_force_detach_workspace,
+                ),
+            },
+            PopupDef {
                 id: crate::adapters::ui::tutorial::topic_popup::TUTORIAL_TOPICS_POPUP_ID,
                 title_key: "tutorial.popup_title",
                 fullscreen_stage: None,

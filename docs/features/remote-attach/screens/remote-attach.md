@@ -19,6 +19,7 @@
 
 - **mirror 활성** — 이름·subtitle 사이 하늘색 REMOTE pill(레일=우하단 chip). 원격 출력이 오면 즉시 갱신(3초 tick 은 backstop). status dot 은 별개로 실행상태(running/idle)만 표시.
 - **점유 중(서버측)** — 그 surface 는 readonly. force-detach 되면 일반 surface 로 복귀.
+- **강제 끊기 확인 팝업** — 사이드바 워크스페이스 행 우클릭의 강제 끊기가 여는 380px destructive confirm(헤더 close 글리프 danger + 대상 이름이 든 본문 + 취소/강제 끊기(danger)). headless · window scope · 중앙 정렬이라 대상 워크스페이스가 비활성이어도 보인다. 갤러리 specimen 은 점유 테두리와 같은 카드에 있다(`crates/tasty-gallery/src/catalog/components/occupancy_borders.rs`).
 - **세션 끊김** — 자동 재연결(지수 백오프) 동안의 표시도 mirror 워크스페이스 상태로 흡수.
 
 ## 시각 소스

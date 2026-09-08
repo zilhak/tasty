@@ -129,7 +129,13 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        48,
+        49,
+        // 왜 0 으로 못 가고, 왜 popup 하나가 늘 때마다 이 수가 1 씩 오르는가:
+        // `all_defs()` 는 **`const` 표**라 `theme()`(런타임 호출)을 못 부른다. 그래서
+        // `default_size` 는 정의 옆에 값이 박히고, `LogicalPx(...)` 로 감싸도 같은
+        // 판정에 걸린다 — 감싸는 것은 형태만 바꾼다. 그 값이 화면에 남지도 않는다:
+        // `sizer` 가 있는 항목은 첫 프레임에 덮어쓰고, 없는 항목은 그 수가 곧 그
+        // popup 의 크기다. 48 -> 49 는 `confirm_force_detach_workspace` 등록 한 줄이다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (

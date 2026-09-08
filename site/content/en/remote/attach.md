@@ -1,4 +1,4 @@
-<!-- source-hash: 8856d7b3a1ee -->
+<!-- source-hash: dd3c972064dc -->
 # Remote attach
 
 Bring a Workspace from a Tasty running on another machine into your own Tasty as a **mirror**, view it, and operate it. Connection and authentication are left entirely to SSH, so if you can SSH into that machine, you can attach too.
@@ -125,7 +125,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 
 ## Releasing the occupation (on the remote side)
 
-When a Workspace in your Tasty has been attached from elsewhere and become read-only, a **Force detach** notice appears on the Surface. You can also detach from the CLI.
+When a Workspace in your Tasty has been attached from elsewhere and become read-only, a **Force detach** notice appears on the Surface. That notice only shows while you are looking at that Workspace, so you can also detach straight from the sidebar — right-click the occupied Workspace card > **Force detach**, and a confirmation appears in the middle of the screen; confirming releases it on the spot. You do not have to switch to that Workspace. You can also detach from the CLI.
 
 ```sh
 tasty remote attach --force-detach --workspace 3    # release the occupation of this instance's Workspace 3

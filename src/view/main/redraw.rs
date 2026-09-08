@@ -1392,6 +1392,21 @@ impl MainView {
                         this.request_close();
                     }
                 }
+                Some(7) => {
+                    // 강제 끊기 — 즉시 끊지 않고 확인 팝업을 거친다. 보류에는
+                    // `ws_idx` 가 아니라 **id** 를 담는다: 이 팝업은 메뉴가 닫힌
+                    // 뒤에도 열려 있어 인덱스가 밀릴 창이 위 가드보다 훨씬 길다.
+                    let ws_id = engine.workspaces[ws_idx].id;
+                    this.state.dialogs.pending_force_detach_workspace = Some(ws_id);
+                    this.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::confirm_force_detach_workspace
+                                ::CONFIRM_FORCE_DETACH_WORKSPACE_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_menu("workspace/force-detach"),
+                    );
+                }
                 Some(100) => {
                     // 새 카테고리 생성 다이얼로그.
                     crate::adapters::ui::category_actions::open_new_category_dialog(
@@ -1472,6 +1487,20 @@ impl MainView {
                 100,
                 crate::i18n::t("workspace_category.new_category"),
             ));
+        }
+
+        // 강제 끊기 — **점유 중일 때만** 붙인다. 사이드바 행의 점유 표시가 쓰는
+        // 술어(`workspace_holder(ws.id).is_some()`, `sidebar/full.rs`)와 같은 것이라
+        // 표시와 항목이 어긋날 수 없다. 라벨은 서피스 오버레이 버튼과 같은
+        // `attach.force_detach` 를 재사용한다 — 같은 행동이라 이름이 둘이면 안 된다.
+        if ws_idx < engine.workspaces.len()
+            && engine
+                .attach
+                .workspace_holder(engine.workspaces[ws_idx].id)
+                .is_some()
+        {
+            items.push(MenuItem::separator());
+            items.push(MenuItem::new(7, crate::i18n::t("attach.force_detach")));
         }
 
         // 카테고리 토글 상태와 무관하게 "닫기"는 항상 최하단.
