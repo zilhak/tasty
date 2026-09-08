@@ -89,7 +89,6 @@ pub enum KeybindingsSubTab {
     Surface,
     Clipboard,
     Zoom,
-    Image,
     Explorer,
     Scripts,
     Preset,
@@ -192,9 +191,6 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("zoom_in", KeybindingsSubTab::Zoom, None),
     ("zoom_out", KeybindingsSubTab::Zoom, None),
     ("zoom_reset", KeybindingsSubTab::Zoom, None),
-    // Image
-    ("image_undo", KeybindingsSubTab::Image, None),
-    ("image_redo", KeybindingsSubTab::Image, None),
     // Explorer
     ("explorer_refresh", KeybindingsSubTab::Explorer, None),
     ("explorer_go_up", KeybindingsSubTab::Explorer, None),
@@ -404,17 +400,6 @@ pub fn draw_keybindings_tab(
             );
         }
         KeybindingsSubTab::Zoom => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
-        KeybindingsSubTab::Image => {
             draw_keybinding_entries(
                 ui,
                 &mut settings.keybindings,

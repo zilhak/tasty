@@ -123,10 +123,6 @@ pub struct KeybindingSettings {
     pub rename_workspace: Vec<String>,
     /// Open the subtitle rename dialog for the active workspace.
     pub rename_workspace_subtitle: Vec<String>,
-    /// Undo in image editor.
-    pub image_undo: Vec<String>,
-    /// Redo in image editor.
-    pub image_redo: Vec<String>,
     /// Toggle the command palette popup.
     pub toggle_command_palette: Vec<String>,
     /// Open the Apply workspace preset picker.

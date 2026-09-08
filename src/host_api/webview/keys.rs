@@ -387,6 +387,26 @@ mod tests {
         }
     }
 
+    /// `ctrl+z` 는 페이지가 갖는다.
+    ///
+    /// host 에 `image_undo` / `image_redo` 필드가 있던 동안 SoT 순회가 그 콤보를 정책에
+    /// 올렸고, `capture_key` 는 그것을 host 로 넘겼다. 그런데 host 에는 실행부가 없어
+    /// 아무 일도 일어나지 않았다 — 그 사이 **페이지 자신의 undo 까지 죽었다.** 필드를
+    /// 걷어낸 뒤로는 페이지가 그대로 받는다. 예약 목록에 넣어 해결한 것이 아니라
+    /// (예약은 host 가 그 액션을 가진다는 전제 위에서만 뜻이 있다) 없는 액션을 없앤 것이다.
+    #[test]
+    fn ctrl_z_belongs_to_the_page() {
+        let kb = kb();
+        let policy = HostShortcutPolicy::from_sources(&kb, Vec::new());
+        for combo in ["ctrl+z", "alt+z", "ctrl+shift+z", "alt+shift+z"] {
+            assert!(
+                !policy.combos.iter().any(|c| c == combo),
+                "{combo} 를 host 가 가져간다: {:?}",
+                policy.combos
+            );
+        }
+    }
+
     /// quick-switch 축은 `<modifier>+<slot key>` 로 합성돼 정책에 오른다
     /// (workspace 전환이 "완료 확인 방법" 의 측정 대상 3종 중 하나다).
     #[test]

@@ -1,4 +1,4 @@
-<!-- source-hash: d0d778d2c447 -->
+<!-- source-hash: 42cca483393f -->
 # Keybindings
 
 This page gives the full table of Tasty's default keybindings and shows how to switch presets or change keys one by one to whatever you like. Every keybinding can be changed in **Settings** > **Keybindings**; none is fixed in code.
@@ -71,7 +71,6 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Select all (explorer) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
 | Refresh · go to parent folder (explorer) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
 | Zoom in · zoom out · reset zoom | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` also works) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` also works) |
-| Undo · redo (image) | `Ctrl+Z` · `Ctrl+Shift+Z` (`Alt` also works) | `Ctrl+Z` · `Ctrl+Shift+Z` (`Cmd` also works) |
 
 `Ctrl+C` copies when there is selected text; otherwise it interrupts the running program as usual.
 
@@ -120,7 +119,7 @@ Applying a preset resets every keybinding you changed by hand back to the preset
 
 ## Changing one keybinding
 
-1. Open **Settings** (`Ctrl+,`) > **Keybindings**. The sub-tabs on the left are divided by what the action targets — **General** · **Workspace** · **Pane** · **Tab** · **Surface** · **Clipboard** · **Zoom** · **Image** · **Explorer** · **Run Scripts** · **Preset** · **Plugins**.
+1. Open **Settings** (`Ctrl+,`) > **Keybindings**. The sub-tabs on the left are divided by what the action targets — **General** · **Workspace** · **Pane** · **Tab** · **Surface** · **Clipboard** · **Zoom** · **Explorer** · **Run Scripts** · **Preset** · **Plugins**.
 2. Click the key button of the action you want to change; it turns into **Press key combination...**. Press the combination you want.
 3. To add another combination to the same action, press **Add binding**.
 4. Pressing `Esc` while recording empties that slot.

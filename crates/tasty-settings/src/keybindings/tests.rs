@@ -152,7 +152,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 58);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 56);
 }
 
 #[test]
@@ -370,23 +370,24 @@ fn missing_fields_fall_back_to_preset_not_empty() {
 /// 사용자가 설정한 바인딩과 충돌하는 기본값 바인딩이 제거되는지 확인.
 #[test]
 fn remove_conflicts_from_defaults_strips_conflicting_combos() {
-    // image_undo의 기본값은 ["ctrl+z", "alt+z"].
-    // 사용자가 new_tab = ["ctrl+z"]를 설정하면,
-    // image_undo에서 "ctrl+z"가 제거되어야 한다.
-    let toml = r#"new_tab = ["ctrl+z"]"#;
+    // zoom_out의 기본값은 ["ctrl+-", "alt+-"].
+    // 사용자가 new_tab = ["ctrl+-"]를 설정하면,
+    // zoom_out에서 "ctrl+-"가 제거되어야 한다.
+    // (예전에는 `image_undo` 로 같은 것을 쟀다 — 그 필드는 실행부가 없어 걷어냈다.)
+    let toml = r#"new_tab = ["ctrl+-"]"#;
     let mut kb: KeybindingSettings = toml::from_str(toml).unwrap();
     let existing_keys: HashSet<String> = ["new_tab".to_string()].into_iter().collect();
     kb.remove_conflicts_from_defaults(&existing_keys);
 
     // new_tab은 사용자 설정이므로 그대로
-    assert_eq!(kb.new_tab, vec!["ctrl+z".to_string()]);
-    // image_undo에서 "ctrl+z"가 제거되고 "alt+z"만 남아야 함
+    assert_eq!(kb.new_tab, vec!["ctrl+-".to_string()]);
+    // zoom_out에서 "ctrl+-"가 제거되고 "alt+-"만 남아야 함
     assert!(
-        !kb.image_undo.contains(&"ctrl+z".to_string()),
+        !kb.zoom_out.contains(&"ctrl+-".to_string()),
         "기본값 필드에서 사용자 바인딩과 충돌하는 combo가 제거되지 않음"
     );
     assert!(
-        kb.image_undo.contains(&"alt+z".to_string()),
+        kb.zoom_out.contains(&"alt+-".to_string()),
         "충돌하지 않는 combo까지 제거됨"
     );
 }
@@ -624,7 +625,7 @@ fn quick_switch_fields_not_in_general_bindings() {
         );
     }
     // count 는 여전히 전체 개수와 같다.
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 58);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 56);
 }
 
 // ── 카테고리 축 next/prev raw 키 (S-9) ─────────────────────────────
@@ -927,4 +928,21 @@ fn a_user_combo_beats_the_new_sidebar_defaults() {
         kb.toggle_sidebar_collapse
     );
     assert_eq!(kb.new_tab, vec!["ctrl+b".to_string()]);
+}
+
+/// 걷어낸 필드가 적힌 옛 설정 파일이 그대로 읽힌다.
+///
+/// `image_undo` / `image_redo` 는 실행부가 없어 제거했다. 이미 그 키가 저장된 설정
+/// 파일이 있을 수 있는데, serde 는 모르는 키를 그냥 무시하므로(struct 에
+/// `deny_unknown_fields` 를 안 걸었다) 로드가 깨지지 않아야 한다 — 여기서 그것을
+/// 값으로 고정한다. 깨지면 사용자가 설정 전체를 잃는다.
+#[test]
+fn an_old_file_naming_a_removed_field_still_loads() {
+    let toml = r#"
+new_tab = ["alt+t"]
+image_undo = ["ctrl+z"]
+image_redo = ["ctrl+shift+z"]
+"#;
+    let kb: KeybindingSettings = toml::from_str(toml).expect("모르는 키는 무시돼야 한다");
+    assert_eq!(kb.new_tab, vec!["alt+t".to_string()]);
 }
