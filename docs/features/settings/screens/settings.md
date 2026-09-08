@@ -43,7 +43,10 @@
 - **Save / Cancel** (하단): draft 커밋 / 폐기. 헤더 밴드에 close ✕ 는 없다 — 닫기/취소 진입점은
   footer **Cancel** · OS 타이틀바 close · `toggle_settings` 바인딩(기본 `Ctrl+,`) 셋이다. 마지막 것은
   타이틀바 close 와 같은 경로(`ViewAction::Close`)로 닫으므로 draft 처리가 같다. 바인딩 녹화 중에는
-  닫지 않는다 — 그때 키는 캡처로 가야 한다.
+  닫지 않는다 — 그때 키는 캡처로 가야 한다. **Escape 는 넷째 진입점이 아니다** — 대응 바인딩
+  필드가 없고, 이 화면에는 편집 가능한 텍스트 필드가 여러 탭에 있어 편집 중 Escape 가 "편집 취소"
+  인지 "닫기" 인지가 아직 값으로 안 정해졌다. 메인 윈도우의 Escape 경로가 보는 `settings_open_requested`
+  는 **열기 요청 래치**라 모달이 떠 있는 동안은 false 다 — 그 경로는 이 화면을 닫지 않는다.
 - **Keybindings › Preset**: 이 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋).
 
 ## 상태별 시각

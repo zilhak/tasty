@@ -190,6 +190,21 @@ impl View for SettingsView {
                 //
                 // ★ 키를 여기 박지 않는다. 무엇으로 닫히는가는 `KeybindingSettings` 가
                 // 정하고, 사용자가 그 바인딩을 바꾸면 닫는 키도 함께 바뀐다.
+                //
+                // Escape 는 여기 **안 넣는다 — 결정이다.** 넣으려면 대응 필드가 있어야 하는데
+                // `KeybindingSettings` 에 "모달 닫기" 는 없고, 그 필드를 세우는 것은 이 창만의
+                // 물음이 아니다. 이 창 안에서만 봐도 미해결 충돌이 하나 있다: 설정에는 편집
+                // 가능한 텍스트 필드가 여러 탭에 걸쳐 있고(`ui/file_handler_tab/` ·
+                // `ui/tabs/appearance.rs` · `ui/tabs/misc.rs` · `ui/keybindings_tab/plugins.rs`),
+                // 여기서 먼저 먹으면 편집 중 Escape 가 "편집 취소" 가 아니라 "창 닫기" 가 된다.
+                // 그 물음이 값으로 정해지기 전에는 안 넣는다. 넣는 날 고칠 곳은 아래 조건 하나뿐
+                // 이다 — 이 자리가 키가 아니라 **바인딩**을 보기 때문이다.
+                //
+                // ★ 메인 창의 `try_consume_escape_key` 가 이 자리를 대신하고 있지 않다. 그쪽
+                // 첫 소비자의 조건 `settings_open_requested` 는 "열려 있는가" 가 아니라 **열기
+                // 요청 래치**이고(`src/view/main/redraw.rs` 가 같은 프레임에 소비해 false 로
+                // 되돌린다), 모달이 떠 있는 동안은 false 다. 즉 Escape 로 이 창을 닫는 경로는
+                // 어디에도 배선돼 있지 않다.
                 if !is_recording
                     && event.state == ElementState::Pressed
                     && crate::adapters::ui::input::shortcuts::matches_any_binding(
