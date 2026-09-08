@@ -1025,13 +1025,21 @@ fn draw_surface_font_section(
 // `theme_overrides` 가 통째로 클리어되는 모델(`apply_theme`)과 일관 — picker 는
 // 그 단일 출처를 채울 뿐이다.
 
-/// swatch 한 변 / override dot 지름 / hex 입력 폭 (디자인 jsx: 18·5·96 px).
+/// 색 스와치 한 변 (디자인 jsx: 18px). 4px 그리드 밖이고 대응 치수 토큰이 없다.
 const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
 
 /// 오버라이드되지 않은(= 테마에서 상속받은) 색 스와치의 알파. 디자인이 적은
 /// opacity 0.4 를 알파로 옮긴 값(102/255)이다. 대응 토큰이 없어 이름만 둔다.
 const SWATCH_INHERITED_ALPHA: u8 = 102;
+
+/// 색이 오버라이드됐음을 알리는 표시 점의 지름 (디자인 jsx: 5px). 점 치수 토큰은
+/// `status_dot_size`(8) 하나이고 `badge_`/`tab_`/`tag_dot_size` 가 그 별칭이라
+/// (theme.md "상태 점 지름"), 그리로 보내면 5 → 8 로 배율 1 에서 픽셀이 바뀐다.
+/// 게다가 이 점은 상태를 말하지 않는다 — 값이 기본값과 다르다는 표시라 역할도
+/// 다르다. 값을 지키고 이름만 남긴다(ADR-0126 의 점 치수 축).
 const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
+
+/// hex 입력 폭 (디자인 jsx: 96px). 4px 그리드의 배수이되 대응 토큰이 없어 이름만 둔다.
 const COLOR_HEX_INPUT_WIDTH: LogicalPx = LogicalPx(96.0);
 /// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.
 const COLOR_FIELD_NAME_WIDTH: LogicalPx = LogicalPx(150.0);
