@@ -76,9 +76,9 @@ export const KO: Copy = {
   installNote: "OS 별 설치 절차와 첫 실행은",
   installNoteLink: "설치 가이드 →",
 
-  whyTitle: "에이전트가 일해도 내 자리는 그대로입니다",
+  whyTitle: "AI 에이전트에게 터미널을 직접 조작하도록 할 수 있습니다. AI 에이전트와 동시에 작업하세요.",
   whyBody:
-    "에이전트가 탭을 만들든 명령을 보내든, 내가 보던 화면은 움직이지 않습니다. 잡아둔 선택도, 스크롤 위치도 그대로입니다. 사용자 입력을 흉내 내는 기능은 아예 없습니다.",
+    "에이전트는 터미널을 직접 다룰 수 있지만, AI Agent의 모든 동작은 사용자의 행동을 방해하지 않습니다. 터미널을 마음껏 다루는 AI Agent와 동시에 협업하세요.",
   whyPoints: [
     { key: "01", title: "내 조작과 분리", body: "에이전트가 무슨 일을 하든 포커스와 선택, 스크롤, 닫은 탭 기록에는 손대지 않습니다. 내가 다른 탭을 보고 있어도 자기 터미널 안에서만 움직입니다." },
     { key: "02", title: "ID 로 지정", body: "에이전트는 조작할 터미널을 ID 로 찍어서 부릅니다. 지금 무엇이 활성이냐에 따라 엉뚱한 곳에 입력이 들어가는 일이 없습니다." },
@@ -138,9 +138,9 @@ export const EN: Copy = {
   installNote: "Per-OS install steps and the first launch:",
   installNoteLink: "Installation guide →",
 
-  whyTitle: "The agent works, and your seat stays yours",
+  whyTitle: "Let an AI agent drive the terminal itself. Keep working while it does.",
   whyBody:
-    "An agent can open tabs and send commands, and the screen you were looking at, the text you selected, and your scroll position do not move. Nothing in the product imitates user input.",
+    "An agent can operate the terminal directly, and nothing it does gets in the way of what you are doing. Work side by side with an agent that has the run of the terminal.",
   whyPoints: [
     { key: "01", title: "Separate from your hands", body: "What an agent does never touches focus, selection, scrolling, or the closed-tab history. You can look at another tab while it works in its own." },
     { key: "02", title: "Addressed by ID", body: "An agent names the terminal it wants to drive by ID. Whatever happens to be active right now never receives input meant for somewhere else." },
