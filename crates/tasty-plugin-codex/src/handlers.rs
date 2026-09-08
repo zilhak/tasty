@@ -684,6 +684,10 @@ fn build_spawn_warning(
     Some(msg)
 }
 
+/// ★ 짝 crate(claude)의 같은 함수는 응답을 remap 하고 자식마다 foreground 정보를
+/// 덧씌운다 — 이쪽은 호스트 응답을 그대로 흘린다. 그 차이가 왜 남아 있는지와
+/// **그것을 지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의 crate doc
+/// "짝이 갈린 채 남는 것" 에 한 곳으로 적혀 있다.
 pub(crate) fn handle_children(
     host: &HostHandle,
     params: &Value,
@@ -709,6 +713,10 @@ pub(crate) fn handle_broadcast(
     host_call(host, "terminal.broadcast", Value::Object(bp))
 }
 
+/// ★ 짝 crate(claude)의 같은 함수는 `error_scan` 을 내리고 응답을 `{killed: true}`
+/// 로 바꾼다 — 앞은 의도된 비대칭(여기 그 하위 시스템이 없다), 뒤는 아직 안 정해진
+/// 차이다. 근거와 **지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의
+/// crate doc "짝이 갈린 채 남는 것" 에 있다.
 pub(crate) fn handle_kill(
     host: &HostHandle,
     params: &Value,

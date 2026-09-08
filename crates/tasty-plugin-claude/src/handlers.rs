@@ -213,6 +213,10 @@ fn host_call(host: &HostHandle, method: &str, params: Value) -> Result<Value, Ip
 /// 각 자식의 PTY 전경 프로세스를 덧씌운다. claude 특화 필드명(`child_surface_id`)을
 /// 보존하기 위해 호스트 응답(`surface_id`)을 remap 한다. 응답은 bare 배열(claude
 /// CLI 출력 shape).
+/// ★ 짝 crate(codex)의 같은 함수와 **응답 shape 이 다르다** — 이쪽은 remap 한
+/// bare 배열, 저쪽은 호스트 응답 그대로다. 그 차이가 왜 남아 있는지와 **그것을
+/// 지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의 crate doc
+/// "짝이 갈린 채 남는 것" 에 한 곳으로 적혀 있다. 여기에 사본을 두지 않는다.
 pub(crate) fn handle_children(
     host: &HostHandle,
     params: &Value,
@@ -267,6 +271,10 @@ pub(crate) fn handle_children(
 /// 자식 Claude 를 종료한다 — 호스트 `terminal.kill` 로 위임(surface.close +
 /// soft 점유 해제 + registry 제거). `child_index` → 호스트 `child` 매핑.
 /// 종료된 surface 는 error scanner 에서도 즉시 내린다.
+/// ★ `error_scan` 을 내리는 것은 **의도된 비대칭**이다(codex 에 그 하위 시스템이
+/// 없다). 그 옆의 응답 shape 차이(`{killed: true}` vs 호스트 응답 그대로)는 아직
+/// 안 정해졌고, 근거와 **지키는 것이 없다**는 사실은 `tasty_plugin_agent_common` 의
+/// crate doc "짝이 갈린 채 남는 것" 에 있다.
 pub(crate) fn handle_kill(
     scanner: &Arc<Mutex<ErrorScanner>>,
     host: &HostHandle,

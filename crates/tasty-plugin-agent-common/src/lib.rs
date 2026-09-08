@@ -26,6 +26,30 @@
 //! 구독을 거부한다. codex 에 `needs-input` 이 없는 것은 표류가 아니라 **의도된 비대칭**이다
 //! (대응하는 codex hook 이벤트가 없어 거짓 계약을 만들지 않으려고 선언하지 않았다).
 //!
+//! ## 짝이 갈린 채 남는 것 — 그리고 무엇이 그것을 지키는가
+//!
+//! 위 항들은 **왜 안 합치는지**가 정해진 자리다. 아래 둘은 다르다 — 합칠지 말지가
+//! 아직 안 정해졌고, 그래서 여기 값으로 적어 둔다. 둘 다 **응답 shape** 이 갈린다.
+//!
+//! | 자리 | claude | codex |
+//! |---|---|---|
+//! | `handle_children` | 화이트리스트로 remap 하고 자식마다 `surface.foreground_process` 를 한 번 더 불러 `foreground_process`·`foreground_pid` 를 덧씌운 뒤 **bare 배열**로 답한다 | 호스트 응답을 그대로 흘린다(`{"children": […]}`) |
+//! | `handle_kill` | `error_scan` 을 내리고(그 하위 시스템은 claude 에만 있다) 응답을 `{"killed": true}` 로 바꾼다 | 호스트 응답을 그대로 흘린다(`{"killed_surface_id", "child_index"}`) |
+//!
+//! 갈래를 갈라 읽어야 한다. **`handle_kill` 의 `error_scan` 부분은 의도된 비대칭**이다 —
+//! codex 에는 그 하위 시스템이 없고, 근거가 `docs/plugins/claude/index.md` 에 적혀 있다
+//! (성공 응답의 `killed_surface_id` 로 즉시 `disable` 해 최대 800ms 의 잔여 발화 창을
+//! 없앤다). 갈린 채 남는 것은 그 옆의 **응답 shape** 이다.
+//!
+//! 실측(2026-09-08): 레포 안에 `{"killed": true}` 를 읽는 소비자가 **없다** — CLI 는
+//! 응답 JSON 을 그대로 찍는다. 즉 그 변환은 지금 `killed_surface_id` 와 `child_index` 를
+//! **버리기만 한다.** 그런데 맞추려면 claude 쪽을 바꿔야 하고 그것은 에이전트가 읽는
+//! 표면의 변경이라, 여기서 정하지 않는다.
+//!
+//! **★ 그리고 이 둘을 지키는 것은 아무것도 없다.** 두 plugin 의 응답 shape 을 고정하는
+//! 시험도 가드도 없다 — 한쪽이 shape 을 바꿔도 빨개지는 것이 없고, 둘이 더 갈려도
+//! 마찬가지다. 이 문단이 지금 그 자리를 대신하는 유일한 것이다.
+//!
 //! ## 이 crate 는 plugin 이 아니다
 //!
 //! 이름이 `tasty-plugin-` 으로 시작하지만 `tasty-plugin.toml` 매니페스트가 없다 —
