@@ -364,8 +364,14 @@ fn axes_of(line: &str) -> Axes {
 /// 조건이다.**
 const REASON_TOKENS: &[&str] = &["이유:", "reason:", "사유:"];
 
-/// `temp_dir()` 호출 줄에서 경로를 짓는 `.join(` 을 찾을 때 보는 창.
-const JOIN_WINDOW: usize = 6;
+/// 유니크화 성분이 자리 둘레 어디까지 앉을 수 있는가(줄 수).
+///
+/// **이 창은 "경로를 짓는가" 를 묻지 않는다.** 그 물음의 답은 줄 거리가 아니라
+/// 수신자 신원이고, [`path_building_lines`] 가 그것을 판정한다. 여기 남은 물음은
+/// 다른 것이다 — 자리를 유일하게 만드는 성분(`process::id()` · nanos · 카운터)이
+/// **그 자리에** 있는가. 성분은 경로를 짓는 식과 같은 줄에 있을 수도, 바로 위·아래
+/// 줄에 있을 수도 있어서 자리 하나로는 못 묻는다.
+const UNIQ_WINDOW: usize = 6;
 /// 사유가 그 자리에 **붙어 있는지**를 정하는 규칙: 그 자리 줄 자신과, 위로 이어지는
 /// 주석 줄 전부. 빈 줄이나 코드 줄에서 끊긴다.
 ///
@@ -415,18 +421,24 @@ pub struct FileClass {
     ///
     /// 사유가 그 자리에 붙어 있으면 여기 안 담는다(의도된 선택으로 본다).
     pub recall_blind: Vec<usize>,
-    /// [`recall_blind`](Self::recall_blind) 의 **부분집합** — 그중 창 안에
-    /// [`THREAD_TOKENS`] 도 있는 줄(ㄱ+ㄴ).
+    /// [`recall_blind`](Self::recall_blind) 의 **부분집합** — 그중 자리의 줄들
+    /// ([`axes_span`]) 에 [`THREAD_TOKENS`] 도 있는 줄(ㄱ+ㄴ).
     ///
     /// 판정을 안 바꾼다 — 스레드 id 는 재호출을 못 가르므로 이 자리도 그대로 위 칸에
     /// 든다. 이 칸이 있는 이유는 하나다: 위 칸이 아직 **안 가른 수**이고, 이 부분집합이
     /// 그 분할의 첫 줄이다. 여기 든 자리는 "다른 시험과는 갈리고, 재호출만 못 가른다".
     pub recall_blind_with_thread: Vec<usize>,
-    /// 창 안에 `.join(` 이 없어 **자리로도 안 세어진** `temp_dir()` 줄.
+    /// 경로를 짓는 `.join(` 의 **수신자로 안 이어져** 자리로도 안 세어진 `temp_dir()` 줄.
     ///
-    /// 대부분은 정당하다 — 디렉터리를 그대로 넘기는 읽기 전용 용법이다. 그러나 창을
-    /// 넘겨 경로를 짓는 자리도 여기로 떨어지고, 그쪽은 **검사 없이 통과한다.** 두 부류가
-    /// 한 칸에 섞여 있어 소스만으로 못 가르므로, 수를 세어 **늘어나는 것**을 본다.
+    /// 대부분은 정당하다 — 디렉터리를 그대로 넘기는 읽기 전용 용법이다. 남는 한 부류는
+    /// **값이 이 파일 밖으로 나가는 것**이다(`path_for(&temp_dir(), ..)` 처럼 인자로
+    /// 넘기면 경로를 어디서 짓는지가 여기서 안 보인다). 그쪽은 검사 없이 통과한다.
+    /// 두 부류가 한 칸에 섞여 있어 소스만으로 못 가르므로, 수를 세어 **움직이는 것**을
+    /// 본다.
+    ///
+    /// 한때 여기 세 번째 부류가 있었다 — 수신자가 여섯 줄 창 밖에 있어 빠진 자리.
+    /// 그것은 판정을 [`path_building_lines`] 로 옮기면서 **없어졌다**(거리가 아니라
+    /// 수신자로 묻는다).
     pub unpaired: Vec<usize>,
 }
 
@@ -446,19 +458,20 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
         if !code[idx].contains("temp_dir()") {
             continue;
         }
-        let hi = (idx + JOIN_WINDOW).min(code.len() - 1);
-        // 창 안에서 경로를 짓는가. 안 지으면(읽기 전용·먼 곳에서 join) 보지 않는다.
-        let builds_path = (idx..=hi).any(|j| code[j].contains(".join("));
-        if !builds_path {
+        // 경로를 짓는가 — **`.join(` 의 수신자**로 판정한다(줄 거리가 아니다).
+        // 안 지으면(읽기 전용·다른 값의 join) 보지 않는다.
+        let path_lines = path_building_lines(code, idx);
+        if path_lines.is_empty() {
             out.unpaired.push(idx);
             continue;
         }
         out.sites.push(idx);
 
-        // 유니크화 인정: ① 창 안에 성분이 직접 있거나, ② 경로 짓는 창이 uniquifier 로
+        // 유니크화 인정: ① 자리 둘레에 성분이 직접 있거나, ② 그 줄들이 uniquifier 로
         // 바인딩된 변수를 참조한다(인라인 `{unique}` 는 문자열 안이라 raw 에서 본다).
+        let span = axes_span(code.len(), idx, &path_lines);
         let mut axes = Axes::default();
-        for j in idx..=hi {
+        for &j in &span {
             axes = axes.union(axes_of(code[j]));
             for (v, va) in &uniq_vars {
                 if references_word(raw[j], v) {
@@ -482,7 +495,10 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
                 out.recall_blind.push(idx);
                 // 스레드 축은 판정에 안 들어간다 — 위 `if` 를 통과한 뒤에 묻는 이유가
                 // 그것이다. 여기서 하는 일은 **가르는 것**뿐이다.
-                if (idx..=hi).any(|j| THREAD_TOKENS.iter().any(|t| code[j].contains(t))) {
+                if span
+                    .iter()
+                    .any(|&j| THREAD_TOKENS.iter().any(|t| code[j].contains(t)))
+                {
                     out.recall_blind_with_thread.push(idx);
                 }
             }
@@ -501,11 +517,148 @@ pub fn classify(code: &[&str], comments: &[&str], raw: &[&str]) -> FileClass {
     out
 }
 
+/// 이 `temp_dir()` 자리가 경로를 짓는지를 **`.join(` 의 수신자**로 판정한다.
+///
+/// 창(줄 거리)이 아닌 이유는 창이 답을 근사하기 때문이다 — `.join(` 이라는 토큰은
+/// `Path::join` 과 `[T]::join` 을 못 가르고(`valid.join(", ")` 는 경로가 아니다),
+/// 바로 아래 **다른 시험**의 `.join(` 을 이 자리 것으로 세기도 한다. 반대 방향의
+/// 사각도 같은 뿌리다 — `let d = temp_dir();` 뒤 열 줄에 `d.join("고정이름")` 을
+/// 쓰면 창을 넘어 조용히 빠진다. 두 오답이 다 "수신자가 누구인가" 를 거리로 물어서
+/// 난다.
+///
+/// 그래서 판정은 둘 중 하나로만 선다:
+/// ① 같은 문에서 `temp_dir()` **뒤에** `.join(` 이 이어진다(직접 수신자).
+/// ② 그 문이 값을 이름에 묶고(`let d = ...temp_dir()...;`), 그 이름이 **감싸는 함수
+///    안에서** `.join(` 의 수신자로 나온다.
+///
+/// 돌려주는 것은 그 판정에 쓰인 줄들이다 — 빈 vec 이면 경로를 안 짓는다. 함수 범위로
+/// 자르는 이유는 이름이 파일 안에서 겹치기 때문이다(`dir` 은 시험마다 다시 묶인다).
+fn path_building_lines(code: &[&str], idx: usize) -> Vec<usize> {
+    let end = statement_end(code, idx);
+    let lines: Vec<usize> = (idx..=end).collect();
+    let (flat, _) = flatten_with_map(code, idx, end);
+    if let Some(at) = flat.find("temp_dir()")
+        && flat[at + "temp_dir()".len()..].contains(".join(")
+    {
+        return lines;
+    }
+    let Some(name) = let_binding_name(code, idx, end) else {
+        return Vec::new();
+    };
+    if end + 1 >= code.len() {
+        return Vec::new();
+    }
+    let hi = enclosing_fn(code, idx).map_or(code.len() - 1, |s| enclosing_fn_end(code, s));
+    if end + 1 > hi {
+        return Vec::new();
+    }
+    let (flat, map) = flatten_with_map(code, end + 1, hi);
+    let pat = format!("{name}.join(");
+    let bytes = flat.as_bytes();
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = flat[from..].find(&pat) {
+        let at = from + rel;
+        if at == 0 || !is_word_byte(bytes[at - 1]) {
+            found.push(map[at]);
+        }
+        from = at + 1;
+    }
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let mut out = lines;
+    out.extend(found);
+    out
+}
+
+/// 축을 묻는 줄들 — 자리 둘레의 [`UNIQ_WINDOW`] 와 경로를 짓는 줄들의 합집합.
+///
+/// 둘을 합치는 이유: 성분은 경로를 짓는 식에 있을 수도(`join(format!("x-{}", pid))`),
+/// 그 위·아래 줄에 있을 수도 있다. 수신자가 창 밖에 있는 자리에서도 그 줄을 함께
+/// 봐야 유니크화를 안 놓친다.
+fn axes_span(len: usize, idx: usize, path_lines: &[usize]) -> Vec<usize> {
+    let hi = (idx + UNIQ_WINDOW).min(len - 1);
+    let mut out: Vec<usize> = (idx..=hi).collect();
+    for &j in path_lines {
+        if j < len && !out.contains(&j) {
+            out.push(j);
+        }
+    }
+    out
+}
+
+/// 이 줄에서 시작하는 문이 끝나는 줄 — 첫 `;` 가 있는 줄. 없으면 마지막 줄.
+fn statement_end(code: &[&str], idx: usize) -> usize {
+    (idx..code.len())
+        .find(|&j| code[j].contains(';'))
+        .unwrap_or(code.len() - 1)
+}
+
+/// `fn` 선언 줄부터 중괄호를 세어 그 본문이 끝나는 줄. 못 닫으면 마지막 줄.
+fn enclosing_fn_end(code: &[&str], fn_start: usize) -> usize {
+    let mut depth = 0i32;
+    let mut opened = false;
+    for (j, line) in code.iter().enumerate().skip(fn_start) {
+        for ch in line.chars() {
+            if ch == '{' {
+                depth += 1;
+                opened = true;
+            } else if ch == '}' {
+                depth -= 1;
+                if opened && depth <= 0 {
+                    return j;
+                }
+            }
+        }
+    }
+    code.len() - 1
+}
+
+/// 줄들을 공백 없이 이어 붙이고, 바이트마다 그 바이트가 온 줄 번호를 함께 돌려준다.
+///
+/// 이어 붙이는 이유는 `.join(` 이 줄바꿈을 건너뛰기 때문이다(`dir\n    .join("x")`).
+/// 줄 번호 표는 찾은 자리를 다시 줄로 되돌리는 데 쓴다 — 창을 더 두지 않으려는 것이다.
+fn flatten_with_map(code: &[&str], lo: usize, hi: usize) -> (String, Vec<usize>) {
+    let mut flat = String::new();
+    let mut map = Vec::new();
+    for (j, line) in code.iter().enumerate().take(hi + 1).skip(lo) {
+        for ch in line.chars() {
+            if ch.is_whitespace() {
+                continue;
+            }
+            let before = flat.len();
+            flat.push(ch);
+            for _ in before..flat.len() {
+                map.push(j);
+            }
+        }
+    }
+    (flat, map)
+}
+
+/// `let [mut] <name> = ...` 의 이름. `let` 이 `temp_dir()` 보다 앞에 있을 때만 인정한다.
+fn let_binding_name(code: &[&str], lo: usize, hi: usize) -> Option<String> {
+    let text = code[lo..=hi].join(" ");
+    let at_let = text.find("let ")?;
+    let at_temp = text.find("temp_dir()")?;
+    if at_let > at_temp {
+        return None;
+    }
+    let rest = text[at_let + 4..].trim_start();
+    let rest = rest.strip_prefix("mut ").unwrap_or(rest);
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    (!name.is_empty()).then_some(name)
+}
+
 /// 파일 안에서 **uniquifier 성분으로 바인딩된 지역 변수** 이름들.
 ///
 /// 루트 통합 테스트의 지배적 관용구는 `let unique = format!("{}-{}",
 /// std::process::id(), ..nanos..)` 뒤에 `temp_dir().join(format!("x-{unique}"))` 다.
-/// 유니크화 성분이 변수 뒤에 숨어 [`JOIN_WINDOW`] 밖(위)에 있으므로, 그 변수를
+/// 유니크화 성분이 변수 뒤에 숨어 [`UNIQ_WINDOW`] 밖(위)에 있으므로, 그 변수를
 /// 여기서 모아 경로 짓는 창의 참조로 인정한다. `let [mut] <name> ... = ...` 의 문을
 /// 다음 `;` 까지 훑어 [`UNIQ_TOKENS`] 가 있으면 그 `<name>` 을 담는다.
 fn uniquifier_bound_vars(code: &[&str]) -> Vec<(String, Axes)> {
@@ -684,8 +837,8 @@ pub fn discriminator_chains(code: &[&str], raw: &[&str]) -> Vec<Chain> {
             continue;
         };
         let params = fn_params(code[fj]);
-        let hi = (idx + JOIN_WINDOW).min(raw.len() - 1);
-        let win = raw[idx..=hi].join("\n");
+        let span = axes_span(raw.len(), idx, &path_building_lines(code, idx));
+        let win = span.iter().map(|&j| raw[j]).collect::<Vec<_>>().join("\n");
         let Some(pos) = params.iter().position(|p| references_word(&win, p)) else {
             continue;
         };
@@ -1291,6 +1444,44 @@ mod tests {
         let fc =
             classify_src("fn f() {\n    let dir = std::env::temp_dir();\n    read_only(dir);\n}");
         assert!(fc.sites.is_empty(), "join 이 없으면 자리로 세지 않는다");
+    }
+
+    /// 수신자가 창 밖에 있어도 자리로 센다 — 판정이 거리가 아니라 수신자 신원이다.
+    ///
+    /// 한때 이 자리는 `.join(` 을 여섯 줄 창에서만 찾아, 아래 배치(거리 8)가 **조용히
+    /// 빠졌다**. 위반이 아니라 침묵이라 가드는 초록인 채로 이 자리를 안 봤다.
+    #[test]
+    fn a_join_on_the_bound_receiver_counts_however_far_it_sits() {
+        let fc = classify_src(
+            "fn f() {\n    let dir = std::env::temp_dir();\n    let a = 1;\n    let b = 2;\n    let c = 3;\n    let d = 4;\n    let e = 5;\n    let g = 6;\n    let h = 7;\n    let p = dir.join(\"fixed-a\");\n}",
+        );
+        assert_eq!(fc.sites.len(), 1, "여덟 줄 아래의 수신자도 이 자리 것이다");
+        assert_eq!(fc.silent.len(), 1, "고정 이름이라 위반으로 나와야 한다");
+    }
+
+    /// 가까이 있는 `.join(` 이라도 **다른 값의 것**이면 자리로 안 센다.
+    ///
+    /// `[T]::join` 은 경로를 짓지 않는다(`valid.join(", ")`). 창으로 물으면 이 배치가
+    /// 자리가 되고, 그 뒤의 등급 판정이 전부 엉뚱한 줄을 읽는다.
+    #[test]
+    fn a_join_on_another_value_does_not_make_this_a_site() {
+        let fc = classify_src(
+            "fn f() {\n    let dir = std::env::temp_dir();\n    let valid = names();\n    let msg = valid.join(\", \");\n    read_only(dir, msg);\n}",
+        );
+        assert!(
+            fc.sites.is_empty(),
+            "문자열 join 은 경로를 짓는 것이 아니다"
+        );
+        assert_eq!(fc.unpaired.len(), 1);
+    }
+
+    /// 이름이 겹쳐도 **다른 함수**의 `.join(` 을 당겨오지 않는다.
+    #[test]
+    fn a_same_named_binding_in_another_fn_is_not_this_receiver() {
+        let fc = classify_src(
+            "fn f() {\n    let dir = std::env::temp_dir();\n    read_only(dir);\n}\nfn g() {\n    let dir = other();\n    let p = dir.join(\"fixed-a\");\n}",
+        );
+        assert!(fc.sites.is_empty(), "수신자는 감싸는 함수 안에서만 찾는다");
     }
 
     /// 사유는 붙은 주석 블록 **어디에 있어도** 인정된다 — 줄 수 제한이 없다.

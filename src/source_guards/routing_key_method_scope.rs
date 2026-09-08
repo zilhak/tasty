@@ -69,9 +69,75 @@ const PAIR_EXEMPT: &[(&str, &str, &str)] = &[(
          이 메서드를 pty 한정에서 뺀 이유가 그것이다",
 )];
 
-/// 키 리터럴 뒤로 문자열 변환을 찾아볼 창(문자 수, 공백 제거 후).
-/// `params.get("id").and_then(|v|v.as_str())` 가 들어가는 크기다.
-const STRING_READ_WINDOW: usize = 40;
+/// 키 리터럴 뒤에서 **이 호출에 이어진 메서드 사슬**의 끝까지(닫는 괄호 포함).
+///
+/// 글자 수 창이 아닌 이유는 물음이 거리가 아니기 때문이다 — `as_str()` 은 자기가 어느
+/// 키에 붙는지를 토큰만으로 모른다. 거리로 물으면 창에 들어온 **다음 블록**의
+/// `as_str()` 을 이 키 것으로 세고(실측: `request_target.rs` 의 `"observer_id"` 뒤
+/// 172 자에 있는 `as_str()` 은 `preset.capture` 의 `params.get("kind")` 것이다), 그
+/// 오답은 키를 라우팅 명부에서 **조용히 빼는** 방향이다. 그래서 수신자로 되돌려
+/// 묻는다: 그 `as_str()` 이 이 호출의 사슬 안에 있는가.
+///
+/// `after` 는 마커(여는 괄호까지) 뒤의 조각이고 `end` 는 키 리터럴을 닫는 `"` 의 자리다.
+/// 즉 이 함수는 괄호 깊이 1 에서 시작해 그 호출을 닫고, 이어지는 `.method(..)` 를
+/// 붙어 있는 동안 따라간다. 문자열 리터럴 안의 괄호는 안 센다.
+fn call_chain_after(after: &str, end: usize) -> &str {
+    let b = after.as_bytes();
+    // 키를 닫는 `"` 는 건너뛴다 — 그 자리에서 시작하면 그 따옴표가 **문자열을 여는
+    // 것**으로 읽혀 괄호 세기가 통째로 어긋난다.
+    let Some(mut i) = close_of_group(b, end + 1, 1) else {
+        return &after[end..];
+    };
+    // 이어지는 메서드 사슬. `.` 이 붙어 있는 동안만 따라간다.
+    while i + 1 < b.len() && b[i + 1] == b'.' {
+        let mut j = i + 2;
+        while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
+            j += 1;
+        }
+        if j >= b.len() || b[j] != b'(' {
+            break;
+        }
+        let Some(close) = close_of_group(b, j, 0) else {
+            break;
+        };
+        i = close;
+    }
+    &after[end..=i.min(b.len() - 1)]
+}
+
+/// `from` 부터 괄호(대괄호 포함) 깊이를 세어 이 묶음을 닫는 자리. 못 닫으면 `None`.
+///
+/// `depth` 는 시작 깊이다 — 여는 괄호를 이미 지나온 자리에서 부르면 1, 여는 괄호
+/// 자신에서 부르면 0 이다. 문자열 리터럴 안의 괄호는 안 센다.
+fn close_of_group(b: &[u8], from: usize, depth: i32) -> Option<usize> {
+    let (mut depth, mut i) = (depth, from);
+    let (mut in_str, mut esc) = (false, false);
+    while i < b.len() {
+        let c = b[i] as char;
+        if in_str {
+            match c {
+                _ if esc => esc = false,
+                '\\' => esc = true,
+                '"' => in_str = false,
+                _ => {}
+            }
+        } else {
+            match c {
+                '"' => in_str = true,
+                '(' | '[' => depth += 1,
+                ')' | ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
 
 fn is_id_shaped(key: &str) -> bool {
     key == "id" || key.ends_with("_id")
@@ -348,7 +414,7 @@ fn id_keys_in(fragment: &str) -> BTreeSet<String> {
             // 라우팅은 **숫자만** 본다(`as_u64`). 바로 문자열로 꺼내는 읽기는 대상
             // 지목이 아니다 — `"id"` 하나가 메서드에 따라 숫자이기도 문자열이기도
             // 하므로(agent dag id · approval id 는 문자열), 키 이름으로는 못 가른다.
-            let tail = &after[end..after.len().min(end + STRING_READ_WINDOW)];
+            let tail = call_chain_after(after, end);
             if !key.is_empty()
                 && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
                 && is_id_shaped(key)
@@ -621,6 +687,15 @@ fn the_extractor_reads_arms_calls_and_keys() {
     assert!(
         id_keys_in("params.get(\"id\").and_then(|v| v.as_str())").is_empty(),
         "문자열로 꺼내는 읽기가 대상 지목으로 잡혔다 — 라우팅은 숫자만 본다"
+    );
+    // 문자열 읽기 판정은 **이 호출의 사슬**을 본다 — 뒤에 붙은 다른 호출의 `as_str()`
+    // 이 아니다. 글자 수 창으로 물으면 아래가 통째로 빠진다(키가 명부에서 사라진다).
+    assert_eq!(
+        id_keys_in("params.get(\"observer_id\");x.as_str()")
+            .into_iter()
+            .collect::<Vec<_>>(),
+        vec!["observer_id".to_string()],
+        "다른 수신자의 as_str() 이 이 키의 읽기로 세어졌다"
     );
     assert!(called_paths("a::b::f(x) + g(y)").contains(&"a::b::f".to_string()));
     assert!(
