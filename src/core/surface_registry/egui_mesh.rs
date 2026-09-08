@@ -11,7 +11,9 @@
 
 use std::sync::Arc;
 
-use crate::core::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
+use crate::core::surface_registry::{
+    KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
+};
 use crate::model::Surface;
 use crate::plugin::manifest::{HOST_API_VERSION, SurfaceKindDecl};
 use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
@@ -147,6 +149,8 @@ fn build_and_register_egui_mesh_kind_def(
 
     registry.register(SurfaceKindDef {
         kind: kind_static,
+        rendering: RegisteredRendering::EguiMesh,
+        source: KindSource::Plugin(plugin_id.to_string()),
         display_name_i18n_key: i18n_key_static,
         icon: decl.icon.clone(),
         // 생성 params 의 `file` 을 stand-in 에 보관한다. plugin 에 surface.create 를

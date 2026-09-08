@@ -12,6 +12,12 @@ pub enum ListCommands {
     Tree,
     /// List surfaces (terminals) across all workspaces
     Surfaces,
+    /// List the surface kinds this instance has actually registered.
+    ///
+    /// This is the runtime fact, not a manifest declaration: a kind shows up here
+    /// only if the host registered it, so `--type <kind>` works for exactly the
+    /// kinds listed. Host builtins and plugin-provided kinds both appear.
+    SurfaceKinds,
     /// List panes across all workspaces
     Panes,
     /// List tabs in a pane

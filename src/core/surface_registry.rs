@@ -141,6 +141,64 @@ impl PresetFieldSpec {
     }
 }
 
+/// 등록된 kind 를 host 가 **실제로** 어떻게 그리는가. 매니페스트의 선언
+/// (`SurfaceKindRendering`) 과 이름이 겹치지만 같은 값이 아니다 — 선언은 plugin 이
+/// 요청한 것이고, 이 값은 등록 경로가 그 요청을 받아들인 결과다. 둘이 갈리는 자리가
+/// 있다: 헤드리스는 `webview`/`remote` 선언을 등록하지 않고
+/// (`boot/headless_plugins.rs`), egui-mesh 는 화이트리스트·api_version 게이트를 통과한
+/// 것만 등록한다(`surface_registry/egui_mesh.rs`). 그래서 이 값은 **등록된 kind 에만**
+/// 존재한다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegisteredRendering {
+    /// host 가 자기 egui 로 직접 그린다 — builtin 4 종.
+    HostEgui,
+    /// plugin 프로세스가 tessellate 한 mesh 를 host 가 합성한다.
+    EguiMesh,
+    /// host 가 OS native WebView overlay 를 붙인다.
+    Webview,
+    /// plugin 이 트리를 보내오는 일반 remote surface.
+    Remote,
+}
+
+impl RegisteredRendering {
+    /// 와이어 값. 매니페스트 쪽 `SurfaceKindRendering` 의 serde 키와 같은 표기를 쓰되
+    /// (`egui-mesh`), 매니페스트에 없는 host 렌더는 `host-egui` 다.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::HostEgui => "host-egui",
+            Self::EguiMesh => "egui-mesh",
+            Self::Webview => "webview",
+            Self::Remote => "remote",
+        }
+    }
+}
+
+/// 등록된 kind 를 **누가** 등록했는가.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KindSource {
+    /// 부팅 시 host 가 직접 등록 — 어느 `plugin.*` 조회에도 안 나온다.
+    HostBuiltin,
+    /// plugin 이 hello 에서 등록. 값은 그 plugin 의 id.
+    Plugin(String),
+}
+
+impl KindSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::HostBuiltin => "host",
+            Self::Plugin(_) => "plugin",
+        }
+    }
+
+    /// plugin 출처면 그 id, host builtin 이면 `None`.
+    pub fn plugin_id(&self) -> Option<&str> {
+        match self {
+            Self::HostBuiltin => None,
+            Self::Plugin(id) => Some(id.as_str()),
+        }
+    }
+}
+
 /// surface 종류별 메타 + 동작 함수 묶음.
 ///
 /// 모든 함수는 `Send + Sync + 'static`이며, `Arc<SurfaceKindDef>` 단위로 보관되어
@@ -148,6 +206,13 @@ impl PresetFieldSpec {
 pub struct SurfaceKindDef {
     /// 안정 식별자 (lowercase snake_case). 예: `"terminal"`, `"markdown"`.
     pub kind: &'static str,
+
+    /// host 가 이 kind 를 실제로 어떻게 그리는가 — **사실**이다. 매니페스트 선언이
+    /// 아니라 등록 경로가 정한다. [`RegisteredRendering`] 의 주석 참조.
+    pub rendering: RegisteredRendering,
+
+    /// 누가 이 kind 를 등록했는가 — host builtin 인가 어느 plugin 인가.
+    pub source: KindSource,
 
     /// 사용자에게 표시되는 표시명 i18n 키. 예: `"surface.kind.markdown"`.
     /// 03D-A에서는 자리만 둔다 — 현재 표시명은 surface 자체의 `display_name()` 메서드를 사용.
@@ -428,6 +493,8 @@ mod tests {
     fn dummy_def(kind: &'static str) -> SurfaceKindDef {
         SurfaceKindDef {
             kind,
+            rendering: RegisteredRendering::HostEgui,
+            source: KindSource::HostBuiltin,
             display_name_i18n_key: "test.dummy",
             icon: None,
             create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),

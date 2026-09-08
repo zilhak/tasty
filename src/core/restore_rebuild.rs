@@ -392,11 +392,13 @@ mod deferred_plugin_tests {
     // 양성 대조용 등록 kind — restore 가 성공(Ok)해 placeholder 가 아닌 실제 surface 를
     // 낸다(여기선 관측을 위해 deferred 가 아닌 EmptySurface 를 돌려준다).
     fn register_ok_kind(e: &mut CoreState, kind: &'static str) {
-        use crate::core::surface_registry::SurfaceKindDef;
+        use crate::core::surface_registry::{KindSource, RegisteredRendering, SurfaceKindDef};
         use std::collections::HashMap;
         use std::sync::Arc;
         e.surface_registry.register(SurfaceKindDef {
             kind,
+            rendering: RegisteredRendering::HostEgui,
+            source: KindSource::HostBuiltin,
             display_name_i18n_key: "test.dummy",
             icon: None,
             create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),

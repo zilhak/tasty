@@ -95,7 +95,7 @@ echo $! > <pid 파일>                        # 정리는 저장한 이 PID 로�
 
    skip 은 조용하지 않다 — `RUST_LOG` 없이도 격리 홈의 `debug-dev.log` 에 `plugin '<id>' declared non-egui-mesh surface kind '<kind>' (rendering=Webview); skipped in headless` 로 남는다. **그 줄이 skip 의 증거다.**
 
-   ★ 위 표의 오른쪽 두 열이 **`plugin.show` 의 `surface_kinds` 를 "쓸 수 있는 kind 목록" 으로 읽으면 안 되는 이유**다. 그것은 매니페스트 **선언**이고 등록 여부와 무관하다 — 헤드리스에서는 넷 중 둘이 선언만 있고 사실이 없다. 등록된 kind 를 묻는 IPC/CLI 는 아직 없으므로, 사실을 알고 싶으면 **만들어 보는 것**이 유일한 술어다.
+   ★ 위 표의 오른쪽 두 열이 **`plugin.show` 의 `surface_kinds` 를 "쓸 수 있는 kind 목록" 으로 읽으면 안 되는 이유**다. 그것은 매니페스트 **선언**이고 등록 여부와 무관하다 — 헤드리스에서는 넷 중 둘이 선언만 있고 사실이 없다. 사실을 묻고 싶으면 **만들어 보지 말고** `tasty list surface-kinds` 를 쓴다(`surface.kinds`): registry 를 그대로 내는 읽기 전용 조회라 부수효과가 없고, host 내장 kind 도 함께 나온다.
 
 **tasty 터미널 내부(`TASTY_SURFACE_ID` 환경변수가 설정된 셸)에서 검증 인스턴스를 띄울 때는 `--launch` 플래그가 필수다.** `cargo run --bin tasty -- <플래그>` 를 `--launch` 없이 실행하면 `src/boot.rs` 의 GUI 부팅 skip 조건(`cli_routing::Routed::AugmentedHelp` 분기)(`TASTY_SURFACE_ID` 설정 + `--launch` 미지정)에 걸려 GUI 가 뜨지 않고 CLI 도움말만 출력한 채 조용히 종료된다 — 이 상태로 `until target/debug/tasty list info ...` 같은 readiness poll 을 돌리면 죽은 프로세스를 무한정 기다리게 된다. 즉 `cargo run &` 을 `--launch` 없이 tasty 터미널 안에서 실행했다면, poll 이 멈추지 않을 때 프로세스가 애초에 GUI 로 뜬 게 맞는지부터 의심한다.
 

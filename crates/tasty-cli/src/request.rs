@@ -446,6 +446,7 @@ fn list_command_to_method_params(command: &ListCommands) -> (&'static str, serde
         ListCommands::Windows => ("window.list", serde_json::json!({})),
         ListCommands::Tree => ("tree", serde_json::json!({})),
         ListCommands::Surfaces => ("surface.list", serde_json::json!({})),
+        ListCommands::SurfaceKinds => ("surface.kinds", serde_json::json!({})),
         ListCommands::Panes => ("pane.list", serde_json::json!({})),
         ListCommands::Tabs { pane } => ("tab.list", serde_json::json!({ "pane_id": pane })),
         ListCommands::Info => ("system.info", serde_json::json!({})),

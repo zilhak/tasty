@@ -123,6 +123,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("preset.apply", plugin(&[SurfaceWrite])),
         // ── surface (구조 조작) ───────────────────────────────────────
         ("surface.list", plugin(&[SurfaceRead])),
+        // 등록된 surface kind 조회. 만드는 것이 유일한 확인이던 자리를 읽기 전용으로
+        // 대체한다 — plugin 도 자기 kind 가 실제로 등록됐는지 물을 수 있어야 해서
+        // `local_only` 가 아니다. 노출값은 kind 이름·i18n 키·렌더 경로·출처뿐이라
+        // `SurfaceRead` 보다 넓은 권한을 요구하지 않는다.
+        ("surface.kinds", plugin(&[SurfaceRead])),
         ("surface.close", plugin(&[SurfaceWrite])),
         ("surface.close_self", plugin(&[SurfaceWrite])),
         // tree/meta는 read 권한

@@ -629,6 +629,7 @@ fn route_engine_handler(
             surface::handle_surface_close_self(core, state, engine, id, &request.params)
         }
         "surface.list" => surface::handle_surface_list(state, engine, id),
+        "surface.kinds" => surface::handle_surface_kinds(engine, id),
         "surface.send" => surface::handle_surface_send(core, state, engine, id, &request.params),
         "surface.send_key" => {
             surface::handle_surface_send_key(core, state, engine, id, &request.params)

@@ -28,6 +28,18 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 갈라지며, 이 저장소는 같은 실패형(같은 로직이 두 곳에 복제돼 서로 다르게 자란 것)을 이미
 겪었다.
 
+### 곁 — 등록된 kind 조회는 `plugin.*` 이 아니다
+
+"어떤 surface kind 가 등록됐는가" 는 `surface.kinds` 가 답한다. 그 핸들러는 `CoreState`
+하나만 읽어 **공용 engine handler** 에 있고, 헤드리스 pump 는 가로채지 않고 그대로
+통과시킨다 — 즉 이 메서드는 위 두 가로채기 어디에도 등재되지 않는데 헤드리스에서 답한다.
+그것이 이 문서가 가르는 축(창이 필요한가)에서 옳은 자리다: registry 는 `App` 도 창도
+아니고 engine 의 것이다.
+
+헤드리스에서 그 답이 GUI 와 **다르다**는 것이 이 조회의 값이다. 헤드리스는
+`webview`/`remote` 선언을 설계대로 등록하지 않으므로(`boot/headless_plugins.rs` 의
+`register_one_surface_kind`), 같은 매니페스트가 조합에 따라 다른 kind 집합을 낸다.
+
 ## `plugin.*` — 19 개 메서드의 판정
 
 ### 답한다 (7)

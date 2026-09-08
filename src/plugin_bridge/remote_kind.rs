@@ -11,7 +11,9 @@ use std::sync::mpsc::Sender;
 
 use crate::model::Surface;
 
-use crate::core::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
+use crate::core::surface_registry::{
+    KindSource, RegisteredRendering, SurfaceKindDef, SurfaceKindRegistry,
+};
 use crate::plugin::manifest::SurfaceKindDecl;
 use crate::plugin_bridge::host_cmd::HostCmd;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
@@ -24,6 +26,17 @@ fn leak_kind(s: &str) -> &'static str {
 
 fn leak_str(s: &str) -> &'static str {
     Box::leak(s.to_string().into_boxed_str())
+}
+
+/// remote 경로가 등록한 kind 의 **사실** 렌더링. 이 경로는 매니페스트의 `remote` 와
+/// `webview` 둘 다를 받는다 — `webview` 는 여기에 더해
+/// `surface_registry::webview_kind` 에 overlay 플래그가 하나 더 붙는다. 선언 두 값이
+/// 같은 함수로 들어오므로, 등록된 사실도 그 둘을 갈라 적는다.
+fn registered_rendering(decl: &SurfaceKindDecl) -> RegisteredRendering {
+    match decl.rendering {
+        crate::plugin::manifest::SurfaceKindRendering::Webview => RegisteredRendering::Webview,
+        _ => RegisteredRendering::Remote,
+    }
 }
 
 /// plugin manager가 hello를 받은 직후 호출. registry에 plugin kind를 등록.
@@ -64,6 +77,8 @@ pub fn register_remote_kind(
 
     registry.register(SurfaceKindDef {
         kind: kind_static,
+        rendering: registered_rendering(decl),
+        source: KindSource::Plugin(plugin_id.to_string()),
         display_name_i18n_key: i18n_key_static,
         icon: decl.icon.clone(),
         create: Arc::new(move |sid, cwd, params| {

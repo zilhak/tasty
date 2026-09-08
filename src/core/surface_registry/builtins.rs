@@ -13,7 +13,8 @@ use crate::model::{
 };
 
 use super::{
-    PresetFieldInput, PresetFieldSpec, PresetFieldTarget, SurfaceKindDef, SurfaceKindRegistry,
+    KindSource, PresetFieldInput, PresetFieldSpec, PresetFieldTarget, RegisteredRendering,
+    SurfaceKindDef, SurfaceKindRegistry,
 };
 
 /// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
@@ -53,6 +54,8 @@ pub fn is_host_builtin_kind(kind: &str) -> bool {
 fn register_terminal(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "terminal",
+        rendering: RegisteredRendering::HostEgui,
+        source: KindSource::HostBuiltin,
         display_name_i18n_key: "surface.kind.terminal",
         icon: Some("terminal".to_string()),
         create: Arc::new(|_sid, _cwd, _params| {
@@ -116,6 +119,8 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
 fn register_explorer(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "explorer",
+        rendering: RegisteredRendering::HostEgui,
+        source: KindSource::HostBuiltin,
         display_name_i18n_key: "surface.kind.explorer",
         icon: Some("folder".to_string()),
         create: Arc::new(|sid, cwd, params| {
@@ -240,6 +245,8 @@ fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
 fn register_empty(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "empty",
+        rendering: RegisteredRendering::HostEgui,
+        source: KindSource::HostBuiltin,
         display_name_i18n_key: "surface.kind.empty",
         // empty 는 placeholder — 전용 아이콘 없이 UI fallback(FILE).
         icon: None,
@@ -541,6 +548,8 @@ mod tests {
 fn register_dag_graph(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "dag_graph",
+        rendering: RegisteredRendering::HostEgui,
+        source: KindSource::HostBuiltin,
         display_name_i18n_key: "surface.kind.dag_graph",
         icon: Some("git_tree".to_string()),
         create: Arc::new(|sid, _cwd, params| {

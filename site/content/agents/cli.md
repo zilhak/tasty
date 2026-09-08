@@ -25,6 +25,7 @@ tasty list workspaces      # 워크스페이스 목록
 tasty list surfaces        # 서피스(터미널) 목록 — 전 워크스페이스
 tasty list panes           # 페인 목록
 tasty list tabs --pane 3   # 특정 페인의 탭
+tasty list surface-kinds   # 이 인스턴스가 실제로 등록한 서피스 종류
 ```
 
 `list tree` 는 분할 구조까지 보여줍니다. 포커스된 서피스에는 `*focus` 가 붙습니다.
@@ -36,6 +37,8 @@ tasty list tabs --pane 3   # 특정 페인의 탭
       ├─ surface:417 (terminal) *focus
       └─ surface:418 (markdown)
 ```
+
+`list surface-kinds` 는 `--type <종류>` 에 실제로 쓸 수 있는 종류만 냅니다 — 매니페스트에 적힌 선언이 아니라 이 인스턴스가 등록한 사실이라, 플러그인이 뜨지 못했거나 이 빌드가 그 종류를 안 그리면 목록에 안 나옵니다. 각 행에 렌더 경로와 출처(호스트 내장인지 어느 플러그인인지)가 함께 나옵니다.
 
 `list workspaces` 의 행은 `이름 (id:N) (페인 수)` 형식입니다. 활성 워크스페이스에는 `*`, 원격 mirror 에는 `[mirror]` 가 붙습니다 ([원격 attach](../remote/attach.md)).
 
@@ -282,6 +285,7 @@ tasty file-handler dispatch 파일경로     # 탐색기에서 더블클릭한 �
 |---|---|
 | 계층 구조 보기 | `tasty list tree` |
 | 서피스 목록 | `tasty list surfaces` |
+| 만들 수 있는 서피스 종류 | `tasty list surface-kinds` |
 | 텍스트 보내기 (Enter 포함) | `tasty send text "ls\r" --surface ID` |
 | 키 보내기 | `tasty send key enter --surface ID` |
 | 마크 찍기 | `tasty set mark --surface ID` |

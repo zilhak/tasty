@@ -1,4 +1,4 @@
-<!-- source-hash: 209aef07c818 -->
+<!-- source-hash: 9b36113db732 -->
 # Driving terminals with the tasty CLI
 
 The `tasty` command drives the terminals of a running Tasty from the outside. This page covers the basic pattern: list the Surfaces, send a command, and read back only its result.
@@ -26,6 +26,7 @@ tasty list workspaces      # Workspace list
 tasty list surfaces        # Surface (terminal) list — across all Workspaces
 tasty list panes           # Pane list
 tasty list tabs --pane 3   # Tabs of a specific Pane
+tasty list surface-kinds   # Surface kinds this instance actually registered
 ```
 
 `list tree` also shows the split structure. The focused Surface is marked `*focus`.
@@ -37,6 +38,8 @@ tasty list tabs --pane 3   # Tabs of a specific Pane
       ├─ surface:417 (terminal) *focus
       └─ surface:418 (markdown)
 ```
+
+`list surface-kinds` lists only the kinds `--type <kind>` actually accepts — it is what this instance registered, not what a manifest declares, so a kind is absent when its plugin never came up or this build does not draw it. Each row also carries the render path and the source (host builtin, or which plugin).
 
 Each row of `list workspaces` has the form `name (id:N) (pane count)`. The active Workspace is marked `*`, and a remote mirror is marked `[mirror]` ([Remote attach](../remote/attach.md)).
 
@@ -274,6 +277,7 @@ tasty file-handler dispatch PATH       # open a file the same way a double-click
 |---|---|
 | Show the hierarchy | `tasty list tree` |
 | Surface list | `tasty list surfaces` |
+| Surface kinds you can create | `tasty list surface-kinds` |
 | Send text (including Enter) | `tasty send text "ls\r" --surface ID` |
 | Send a key | `tasty send key enter --surface ID` |
 | Set a mark | `tasty set mark --surface ID` |
