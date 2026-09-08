@@ -119,7 +119,9 @@ mod tests {
     /// 만든다. 락만으로는 이것을 못 막는다(락은 동시성을 막지 복원을 하지 않는다).
     struct CwdGuard {
         prev: std::path::PathBuf,
-        /// 마지막 필드라 `Drop::drop`(cwd 복원) 뒤에 떨어져 복원이 락 안에서 난다.
+        /// 가드 수명 동안 `CWD_LOCK` 을 쥔다. **복원이 락 안에서 나는 근거는 필드
+        /// 순서가 아니다** — `Drop::drop` 이 필드보다 먼저 돌기 때문에 이 핸들이
+        /// 어느 자리에 있든 [`Drop::drop`] 본문 뒤에 풀린다(아래에서 실측).
         _lock: std::sync::MutexGuard<'static, ()>,
     }
 
@@ -138,6 +140,15 @@ mod tests {
             // 복원 실패는 조용히 넘기면 안 된다 — 뒤 테스트 전부가 그 cwd 에서 돈다.
             // 다만 되감기 중에 패닉하면 프로세스가 abort 되어 **원래 실패의 메시지까지
             // 사라지므로**, 이미 패닉 중이면 소리내지 않는다.
+            //
+            // 이유: 이 복원은 `CWD_LOCK` 을 **쥔 채** 난다. `Drop::drop` 이 필드보다
+            // 먼저 돌아 `_lock` 이 이 본문 뒤에 풀리기 때문이다 — 실측으로 확인했다:
+            // 이 자리에서 `CWD_LOCK.try_lock()` 이 `Err`(같은 스레드가 이미 쥠)이고,
+            // `_lock` 을 첫 필드로 옮겨도 같다. 뒤집은 탐침(`is_ok()`)은 죽는다 —
+            // 그래서 초록이 "안 돌았다" 가 아니라는 것도 함께 쟀다.
+            //
+            // 이 조건을 주석으로 밝히는 이유: 스캔(`no_unserialized_env_mutation`)은
+            // 함수 범위에서 락 호출을 찾는데 `fn drop` 안에는 `lock()` 이 없다.
             if std::env::set_current_dir(&self.prev).is_err() && !std::thread::panicking() {
                 panic!("cwd 를 {} 로 되돌리지 못했다", self.prev.display());
             }
