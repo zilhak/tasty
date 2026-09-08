@@ -15,7 +15,7 @@
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs`(같은 이유로 소스 형태를 고정한다).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn read(rel: &str) -> String {
     // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).

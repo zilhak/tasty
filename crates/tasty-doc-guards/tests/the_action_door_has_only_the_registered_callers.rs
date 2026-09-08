@@ -35,10 +35,19 @@
 //! 그래서 이 가드는 `arms ⊆ fields` 만 단정한다 — 반대 방향은 참이 아니고, 참이어야 할
 //! 이유도 없다.
 
+// 이유: 이 파일은 합성 트리를 만들어 걷기와 술어를 재는 양성 대조를 갖는다. 그 정리
+// 코드(`let _ = remove_dir_all`)는 실패해도 할 일이 없다 — 이전 실행 잔여물이 없으면
+// `NotFound` 가 정상 경로다. 그리고 전수 가드
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)는 테스트 본문을
+// 제외하므로 여기서 나는 경고는 정책상 조치 대상이 아니다 —
+// `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 const DOOR: &str = "dispatch_action_by_id";
 const DOOR_FILE: &str = "src/adapters/ui/input/shortcuts/dispatch.rs";
@@ -74,11 +83,20 @@ fn repo_root() -> PathBuf {
 }
 
 fn sources() -> Vec<(PathBuf, String)> {
-    let out = rust_sources(&repo_root(), &["src"]);
+    sources_under(&repo_root(), MIN_SOURCES)
+}
+
+/// 위 걷기의 알맹이 — **뿌리와 하한을 인자로 받는다.**
+///
+/// 정본 값에 묶어 두면 이 걷기와 아래 술어를 합성 트리로 잴 길이 없다. 하한은 모수의
+/// 성질이라 자리마다 다르다 — 레포의 `src` 파일 수와 합성 트리의 파일 수는 애초에 다른
+/// 모수인데, 상수 하나가 둘을 다 판정하려 들면 둘 중 하나는 반드시 틀린다.
+fn sources_under(root: &std::path::Path, floor: usize) -> Vec<(PathBuf, String)> {
+    let out = rust_sources(root, &["src"]);
     assert!(
-        out.len() >= MIN_SOURCES,
-        "`src` 에서 .rs 를 {} 개만 걷었다 — 걷기가 깨졌다. 모수가 비면 아래 집합 동등은 \
-         양쪽이 비어 공짜로 성립한다",
+        out.len() >= floor,
+        "`src` 에서 .rs 를 {} 개만 걷었다(하한 {floor}) — 걷기가 깨졌다. 모수가 비면 아래 \
+         집합 동등은 양쪽이 비어 공짜로 성립한다",
         out.len()
     );
     out
@@ -91,13 +109,18 @@ fn sources() -> Vec<(PathBuf, String)> {
 /// 를 문의 호출자로, `src/view/main/redraw.rs` 를 슬롯의 기입자로 셌는데 **둘 다 doc
 /// 주석**이었다. 이 저장소는 그 답을 이미 갖고 있다 — [`mask_non_code`].
 fn code_uses(needle: &str, own: &str) -> BTreeSet<String> {
+    code_uses_in(&sources(), needle, own)
+}
+
+/// 위 술어의 알맹이 — **모수를 인자로 받는다.** 같은 이유다(R1072).
+fn code_uses_in(sources: &[(PathBuf, String)], needle: &str, own: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    for (rel, text) in sources() {
+    for (rel, text) in sources {
         let rel = rel.to_string_lossy().into_owned();
         if rel == own {
             continue;
         }
-        if mask_non_code(&text).contains(needle) {
+        if mask_non_code(text).contains(needle) {
             out.insert(rel);
         }
     }
@@ -257,5 +280,100 @@ fn every_registered_place_carries_a_reason() {
     assert!(
         thin.is_empty(),
         "사유가 너무 짧다 — 다음 사람이 그 자리가 왜 정당한지 **재현**할 수 있어야 한다: {thin:?}"
+    );
+}
+
+/// **양성 대조 — 걷기와 술어를 합성 트리로 건다.**
+///
+/// 이 가드의 수치 레버 셋(`MIN_SOURCES` · `MIN_FIELDS` · `MIN_ARMS`)은 전부 하한이라
+/// **좁아지는 쪽만** 본다. 여기서 위험한 것은 반대쪽이다 — 술어가 넓어지면 명부에 없는
+/// 자리가 `extra` 로 올라오고, 그 실패문은 "명부에 줄을 더하거나 그 호출을 없애라" 는
+/// 처방을 낸다. 넓어진 술어가 짚은 자리는 **애초에 호출자가 아니므로** 그 처방은 없는
+/// 위반에 대한 것이다. 이 저장소는 그 오탐을 실제로 밟았다(2026-09-07, doc 주석 둘).
+///
+/// ★ 바늘은 합성이다(R1078) — `DOOR`·`PALETTE_SLOT` 의 *값*을 안 쓴다. 그래서 이 대조는
+/// 그 상수가 무엇인지가 아니라 **주석·문자열을 덮고 센다는 사실**을 잰다.
+#[test]
+fn the_predicate_counts_code_and_not_prose_on_a_substituted_tree() {
+    let probe = Scratch::new("action-door-reader");
+    let dir = probe.path();
+    std::fs::create_dir_all(dir.join("src/nested")).expect("합성 트리를 만들지 못했다");
+    // 걷기가 `src` 밖으로 안 나가는지 보려고 형제 디렉토리를 하나 둔다.
+    std::fs::create_dir_all(dir.join("crates")).expect("합성 형제 트리를 만들지 못했다");
+
+    let needle = "zeta_probe_call";
+    // 진짜 호출 — 세어야 한다.
+    std::fs::write(
+        dir.join("src/real_caller.rs"),
+        "fn go() {\n    zeta_probe_call(1);\n}\n",
+    )
+    .expect("합성 호출자 실패");
+    // 하위 디렉토리의 진짜 호출 — 걷기가 내려가는지 함께 본다.
+    std::fs::write(
+        dir.join("src/nested/deep_caller.rs"),
+        "fn deep() {\n    zeta_probe_call(2);\n}\n",
+    )
+    .expect("합성 하위 호출자 실패");
+    // **주석에만** 있다 — 세면 안 된다. 이것이 2026-09-07 에 실제로 났던 오탐이다.
+    std::fs::write(
+        dir.join("src/only_comment.rs"),
+        "/// zeta_probe_call 이 무엇인지 설명하는 doc 주석이다.\nfn unrelated() {}\n",
+    )
+    .expect("합성 주석 파일 실패");
+    // **문자열 리터럴에만** 있다 — 역시 세면 안 된다.
+    std::fs::write(
+        dir.join("src/only_string.rs"),
+        "fn name() -> &'static str {\n    \"zeta_probe_call\"\n}\n",
+    )
+    .expect("합성 문자열 파일 실패");
+    // 정의가 사는 파일 — `own` 으로 넘겨서 뺀다.
+    std::fs::write(
+        dir.join("src/own_def.rs"),
+        "pub fn zeta_probe_call(n: u8) {\n    let _ = n;\n}\n",
+    )
+    .expect("합성 정의 파일 실패");
+    // `src` 밖 — 걷기에 안 들어와야 한다.
+    std::fs::write(
+        dir.join("crates/outside.rs"),
+        "fn out() {\n    zeta_probe_call(9);\n}\n",
+    )
+    .expect("합성 바깥 파일 실패");
+
+    // 하한은 이 합성 트리의 성질로 준다 — 정본 `MIN_SOURCES` 는 다른 모수의 것이다.
+    let sources = sources_under(dir, 5);
+    let rels: BTreeSet<String> = sources
+        .iter()
+        .map(|(p, _)| p.to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        !rels.iter().any(|r| r.starts_with("crates/")),
+        "걷기가 `src` 밖으로 나갔다 — 모수가 넓어졌다"
+    );
+    assert!(
+        rels.contains("src/nested/deep_caller.rs"),
+        "걷기가 하위 디렉토리로 안 내려갔다"
+    );
+
+    let found = code_uses_in(&sources, needle, "src/own_def.rs");
+    assert_eq!(
+        found,
+        ["src/nested/deep_caller.rs", "src/real_caller.rs"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<BTreeSet<String>>(),
+        "술어가 합성 트리에서 다른 답을 냈다"
+    );
+    assert!(
+        !found.contains("src/only_comment.rs"),
+        "주석에만 있는 이름을 호출자로 셌다 — 그 자리의 처방(\"호출을 없애거나 명부에 \
+         등록해라\")은 주석에 대해 참이 아니다"
+    );
+    assert!(
+        !found.contains("src/only_string.rs"),
+        "문자열 리터럴에만 있는 이름을 호출자로 셌다 — 같은 이유다"
+    );
+    assert!(
+        !found.contains("src/own_def.rs"),
+        "정의가 사는 파일을 자기 호출자로 셌다"
     );
 }

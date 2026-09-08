@@ -36,6 +36,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 설정에서 키를 뽑는 변환 함수. 이 이름을 거친 값만 "설정에서 왔다" 로 센다.
 const FROM_SETTINGS: &str = "binding_to_nsmenu_key";
@@ -260,5 +261,80 @@ fn the_registration_sites_live_in_one_place() {
         "key equivalent 등록 자리가 macOS 한 파일 밖으로 퍼졌다: {owners:?}\n  \
          퍼진 것 자체는 결함이 아니다 — 다만 이 가드의 모수가 바뀐다. 새 자리에도 같은 \
          정책(설정에서 오거나 비어 있거나)이 적용되는지 확인하고 이 단정을 갱신해라."
+    );
+}
+
+/// **양성 대조 — 순회 쪽.**
+///
+/// 이 파일의 술어([`sites_in`])는 이미 합성 문자열로 네 방향에서 걸려 있다. 걸려 있지
+/// 않은 것은 **순회**([`rs_files`])다. 그리고 순회가 이 가드에서 위험한 방향은 하한
+/// (`MIN_SITES`)이 보는 쪽이 아니다 — 하한은 자리가 **줄면** 짖지만, `.rs` 필터가
+/// 넓어져 문서까지 훑게 되면 자리는 **늘고**, 늘어난 자리에서 나온 것은 위반 목록에
+/// 그대로 실린다. 즉 넓어지는 변이는 조용한 통과가 아니라 **없는 위반의 처방**을 만든다.
+/// 그 방향은 이 대조만 본다.
+///
+/// ★ 합성 파일에 심는 문자열은 전부 지어낸 것이다(R1078) — 이 가드의 상수
+/// (`FROM_SETTINGS` 등)에서 뽑지 않는다.
+#[test]
+fn the_walk_recurses_and_takes_only_rust_files() {
+    let probe = Scratch::new("menu-key-walk");
+    let dir = probe.path();
+    std::fs::create_dir_all(dir.join("deep/deeper")).expect("합성 트리를 만들지 못했다");
+
+    std::fs::write(dir.join("top.rs"), "// zeta\n").expect("합성 .rs 실패");
+    std::fs::write(dir.join("deep/mid.rs"), "// omega\n").expect("합성 하위 .rs 실패");
+    std::fs::write(dir.join("deep/deeper/leaf.rs"), "// sigma\n").expect("합성 말단 .rs 실패");
+    // `.rs` 가 아닌 것들 — 문서가 이 API 이름을 인용하는 일은 실제로 있다.
+    std::fs::write(
+        dir.join("notes.md"),
+        "setKeyEquivalent(\"x\") 를 설명하는 문서\n",
+    )
+    .expect("합성 문서 실패");
+    std::fs::write(dir.join("deep/table.txt"), "setKeyEquivalent(\"y\")\n")
+        .expect("합성 잡파일 실패");
+    // 확장자가 아예 없는 것.
+    std::fs::write(dir.join("Makefile"), "all:\n").expect("합성 무확장자 실패");
+
+    let mut found = Vec::new();
+    rs_files(dir, &mut found);
+    let mut rels: Vec<String> = found
+        .iter()
+        // 루트를 벗긴 경로는 **반드시** `repo_relative` 를 지난다 — 손으로 구분자를
+        // 펴면 규칙이 한 벌 더 복제되고, 그 사본은 Windows 에서만 갈린다.
+        .map(|p| {
+            tasty_doc_guards::source_text::repo_relative(p.strip_prefix(&dir).unwrap_or(p))
+                .display()
+                .to_string()
+        })
+        .collect();
+    rels.sort();
+    assert_eq!(
+        rels,
+        vec![
+            "deep/deeper/leaf.rs".to_string(),
+            "deep/mid.rs".to_string(),
+            "top.rs".to_string(),
+        ],
+        "순회가 합성 트리에서 다른 답을 냈다"
+    );
+    assert!(
+        !rels
+            .iter()
+            .any(|r| r.ends_with(".md") || r.ends_with(".txt")),
+        "`.rs` 가 아닌 파일을 모았다 — 그러면 이 API 이름을 **인용만** 하는 문서가 위반 \
+         목록에 오르고, 그 처방(\"단축키를 설정에서 가져와라\")은 문서에 대해 참이 아니다"
+    );
+    assert!(
+        !rels.iter().any(|r| r.ends_with("Makefile")),
+        "확장자 없는 파일을 모았다"
+    );
+
+    // 죽은 뿌리 — 예외가 아니라 빈손이다. `read_dir` 실패를 조용히 넘기는 것이
+    // 하한(`MIN_SITES`)이 존재하는 이유 그 자체다.
+    let mut dead = Vec::new();
+    rs_files(&dir.join("nonexistent-zeta"), &mut dead);
+    assert!(
+        dead.is_empty(),
+        "없는 뿌리에서 무언가를 모았다 — 순회가 다른 자리를 보고 있다"
     );
 }

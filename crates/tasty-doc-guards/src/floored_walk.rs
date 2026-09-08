@@ -18,6 +18,74 @@
 
 use std::path::{Path, PathBuf};
 
+/// **값을 잰 트리.** 날짜(`measured_on`)만으로는 못 가른다 — 여러 lane 이 같은 날 각자의
+/// base 에서 재면 날짜가 같고 값이 다르다. 실측 2026-09-08: 같은 술어를 재는 하한 둘이
+/// 448 과 440 이었고, 차 8 은 거르개가 아니라 **잰 트리**였다(그 8 은 전부 다른 lane 의
+/// 결정 기록이다). 그리고 그날 통합된 트리에서 그 술어는 453 이라 **둘 다 틀렸다.**
+///
+/// 갈래를 넷으로 두는 이유는 "안 쟀다" 와 "쟀는데 그 좌표로 못 간다" 가 다른 상태이기
+/// 때문이다. 빈칸 하나로 두면 그 둘이 같아 보이고, 다음 사람이 둘 다 "적으면 된다" 로
+/// 읽는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountedOn {
+    /// `main` 에서 **도달 가능한** 커밋의 트리에서 쟀다. 짧은 해시로 시작하고 뒤에 서술이
+    /// 붙어도 된다.
+    Tree(&'static str),
+    /// lane 의 tip 에서 쟀고 **그 커밋이 `main` 에 없다.** 회차가 체리픽으로 착지하면 lane
+    /// tip 은 조상이 안 되므로, 그 해시를 적어 둔 자리는 값은 실측인데 좌표로는 못 간다.
+    /// 실측 2026-09-08: 회차 94 의 하한 문장에 적힌 lane tip 다섯이 전부 이 상태였다.
+    /// 다음에 그 좌변을 재는 사람이 `Tree` 로 바꾼다.
+    LaneTip(&'static str),
+    /// 픽스처가 **자기가 방금 만든 합성 트리**를 잰다. 레포 좌변이 아니라 "어느 커밋에서
+    /// 쟀나" 라는 물음 자체가 성립하지 않는다.
+    SyntheticTree,
+    /// **안 쟀다.** 이 값이 어느 트리에서 나왔는지 선언에 안 남아 있다. 왜 못 밝히는지를
+    /// 적는다 — 빈칸과 "없다고 판단함" 은 다르다. 0 이나 오늘 날짜로 채우지 마라.
+    Unmeasured(&'static str),
+}
+
+impl CountedOn {
+    /// 회차 94 의 정정 대상(열하나) 밖이라 그 뒤로 아무도 다시 안 잰 자리. 자리마다 사유가
+    /// 같으므로 문장을 복제하지 않고 여기 하나를 둔다 — 그러면 이 갈래의 **수**가 세어지고,
+    /// 그 수가 다음 회차의 좌변이 된다.
+    pub const NEVER_COUNTED: CountedOn = CountedOn::Unmeasured(
+        "회차 94 의 정정 대상 밖이라 다시 안 쟀다 — 값의 출처가 선언에도 커밋문에도 안 남아 있다",
+    );
+
+    fn validate(&self) -> Result<(), String> {
+        let hash_ok = |h: &str| {
+            let head: String = h.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+            head.len() >= 7
+        };
+        match self {
+            CountedOn::Tree(h) | CountedOn::LaneTip(h) => {
+                if hash_ok(h) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "`counted_on` 이 커밋으로 안 읽힌다: {h:?}. 짧은 해시(7 자 이상)로 \
+                         시작해야 한다 — 날짜는 `measured_on` 이 이미 갖고 있고, 날짜만으로는 \
+                         같은 날 다른 base 에서 잰 두 값을 못 가른다."
+                    ))
+                }
+            }
+            CountedOn::SyntheticTree => Ok(()),
+            CountedOn::Unmeasured(why) => {
+                if why.split_whitespace().count() >= 5 {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "`counted_on` 이 `Unmeasured` 인데 사유가 너무 짧다({} 낱말). 안 잰 \
+                         것을 안 쟀다고 적는 것은 옳지만, 왜 못 밝히는지가 없으면 다음 사람이 \
+                         그 자리를 재야 할 자리로 안 본다. ★ 이 문턱을 내려서 통과시키지 마라.",
+                        why.split_whitespace().count()
+                    ))
+                }
+            }
+        }
+    }
+}
+
 /// 순회가 모아야 할 최소량 — 그리고 **그 값이 무엇의 함수인지**.
 ///
 /// 값 하나만 받으면 그 값은 낡는다. 낡은 하한은 두 방향으로 틀리는데 둘 다 조용하다:
@@ -36,9 +104,122 @@ pub struct Floor {
     pub measured: usize,
     /// 그 값을 잰 날 (`YYYY-MM-DD`).
     pub measured_on: &'static str,
+    /// **그 값을 잰 트리.** 날짜만으로는 못 가른다 — 갈래와 근거는 [`CountedOn`] 에 있다.
+    pub counted_on: CountedOn,
     /// `min` 을 `measured` 보다 낮게 잡은 이유 — 이 모수가 무엇의 함수이고 얼마나 빨리
     /// 움직이는가.
     pub why_this_gap: &'static str,
+}
+
+/// 여러 가드가 **같은 좌변**을 잴 때, 그 좌변의 사실을 담는 한 자리.
+///
+/// [`Floor`] 는 두 가지를 한 구조체에 담는다 — 모수의 **사실**(`measured`·`measured_on`)과
+/// 소비자의 **판단**(`min`·`why_this_gap`). 앞은 모수마다 하나여야 하고 뒤는 소비자마다
+/// 다르다. 그 둘을 안 가르면 같은 좌변을 재는 두 선언이 서로를 안 보고 **각자 낡는다.**
+///
+/// 실측 2026-09-08(`b134d28e3`): `Floor` 선언 28 개 중 같은 좌변을 재는 짝이 넷이었고, 넷 다
+/// 두 값이 서로 달랐다 — `docs/**/*.md` 를 200 과 380 으로, `src/**/*.rs` 를 591 과 598 로,
+/// 루트 통합 타깃을 36 과 39 로, 크레이트 통합 타깃을 93 과 101 로. 한쪽을 갱신해도
+/// 다른 쪽은 안 움직이므로 갱신이 언제나 반쪽만 된다.
+///
+/// 더 나쁜 것은 산문 쪽이었다. `docs/**/*.md` 를 재는 두 선언은 같은 모수의 동역학을
+/// **정반대로** 단언했다 — 한쪽은 "회차마다 늘고 줄어서", 다른 쪽은 "단조 증가해 왔고
+/// 사라지는 변경은 없었다". 둘 다 자기 여유의 근거였다.
+///
+/// ★ **그 28 을 낳는 술어를 함께 적는다** — 이름 붙은 `const` 선언만 센 값이다. 같은
+/// 이름에 다른 술어를 대면 다른 수가 나오고, 넷 다 재현 가능하다: 이 타입의 리터럴
+/// 전부(인라인 포함) 41 · `const` 선언만 28 · 41 에서 이 파일 자신을 뺀 것 35 ·
+/// `walk_with_floor(` 호출 37(전부 2026-09-08 · `b134d28e3`). 아래 짝 넷은 **선언 28**
+/// 위에서만 뜻이 있다 — 인라인 리터럴은 픽스처가 **합성 트리**용으로 짓는 것이라 레포
+/// 좌변을 안 잰다. 그 자리에 레포 실측을 넣으면 컴파일도 시험도 초록인 채 픽스처의
+/// 하한만 죽는다.
+///
+/// ★ 그리고 이 문단은 **자기가 말하는 술어 안에 안 들어가게** 썼다. 첫 판에서 술어를
+/// 예시로 적었더니 그 문자열이 그대로 좌변에 앉아 41 이 43 이 됐다 — 수를 세는 문장이
+/// 그 수를 움직였다.
+pub struct Population {
+    /// 마지막으로 실제로 센 값.
+    pub measured: usize,
+    /// 그 값을 잰 날 (`YYYY-MM-DD`).
+    pub measured_on: &'static str,
+    /// **그 값을 잰 트리.** 날짜만으로는 부족하다 — 여러 lane 이 같은 날 각자의 base 에서
+    /// 재면 날짜가 같고 값이 다르다. 그리고 다음 사람은 오늘 날짜를 보고 그 값을 통합
+    /// 트리의 값으로 읽는다. 실측 2026-09-08: 그 형태로 이 레포의 하한 셋이 어긋났다.
+    pub counted_on: CountedOn,
+    /// **그 수를 낳는 술어.** 수만 적으면 다음 사람이 다른 술어로 세고 다른 수를 얻는데,
+    /// 두 값이 다 재현 가능해서 어느 쪽이 틀렸는지 값으로는 안 갈린다. 수를 지키는 것은
+    /// 수가 아니라 그 수를 낳는 정의다.
+    pub how: &'static str,
+}
+
+/// 이 레포의 좌변들 — 둘 이상의 가드가 재는 것만 여기 산다.
+///
+/// **이 모듈이 별도 파일이 아닌 이유가 있다.** 여기 담기는 값 중 하나가 저장소 전체의
+/// `.rs` 파일 수이고, 새 파일을 하나 만들면 그 값이 그 자리에서 1 늘어난다. 값을 담을
+/// 자리가 값을 바꾸는 것은 다음 사람이 못 읽는 형태다.
+///
+/// ★ **이 모듈은 [`Floor`] 의 유일한 출처가 아니다.** 둘이고, 둘 다 정상이다.
+///
+/// - 여기 있는 `Population` — **레포의 좌변**을 재는 자리. 둘 이상의 가드가 같은 것을
+///   재면 값이 여기 하나로 산다.
+/// - 선언 자리의 **인라인 리터럴** — 픽스처가 **합성 트리**의 하한을 지을 때 쓴다.
+///   그 트리는 파일 몇 개짜리라 레포 실측과 아무 관계가 없다.
+///
+/// 이것을 안 적으면 다음 사람이 인라인 리터럴을 "아직 안 옮긴 것" 으로 읽고 여기로
+/// 쓸어 담는다. 그러면 합성 트리의 하한이 레포 실측이 되어 **컴파일도 시험도 초록인
+/// 채 그 픽스처의 하한만 죽는다.** 가르는 법은 순회 뿌리다 — 뿌리가 `repo_root()` 에서
+/// 오면 레포 좌변이고, 임시 디렉토리에서 오면 합성 트리다.
+pub mod populations {
+    use super::Population;
+
+    /// `src/` 아래 `.rs` 전부.
+    pub const SRC_RS: Population = Population {
+        measured: 606,
+        measured_on: "2026-09-08",
+        counted_on: super::CountedOn::Tree("12bc0f4b2"),
+        how: "`src/` 를 뿌리로 `SkipBuildCaches` 순회하고 `rel` 이 `.rs` 로 끝나는 것 전부. \
+              재는 법: `git ls-tree -r --name-only <rev>` 에서 `src/` 로 시작하고 `.rs` 로 \
+              끝나는 줄을 센다 — 이 모수의 미추적 기여분은 0 이다(2026-09-08 실측: 작업 \
+              트리를 실제로 순회한 값과 추적 트리 계수가 같았다).",
+    };
+
+    /// 루트 패키지의 통합 테스트 타깃 — `tests/` 바로 아래 한 겹.
+    pub const ROOT_TEST_TARGETS: Population = Population {
+        measured: 39,
+        measured_on: "2026-09-08",
+        counted_on: super::CountedOn::Tree("12bc0f4b2"),
+        how: "`tests/` 바로 아래 `.rs` — **한 겹만**이다. 더 깊은 것은 타깃이 아니라 그 \
+              타깃의 모듈이라 `cargo test` 가 따로 안 돌린다. 재는 법: 경로가 `tests/` 로 \
+              시작하고 `/` 가 정확히 하나이며 `.rs` 로 끝나는 줄.",
+    };
+
+    /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
+    pub const CRATE_TEST_TARGETS: Population = Population {
+        measured: 105,
+        measured_on: "2026-09-08",
+        counted_on: super::CountedOn::Tree(
+            "12bc0f4b2 + 회차 95 통합 41 커밋. base 에서는 102 이고, 이 회차에 lane 셋이 \
+             통합 시험 타깃을 하나씩 더했다 — 818 의 `floor_coordinates_are_permanent`, \
+             820 의 `automatic_job_roster_is_pinned`, 817 의 \
+             `direct_walks_do_not_swallow_failure`. **셋 다 자기 것 하나만 보고 103 으로 \
+             적었다.** 이 모수는 lane 트리에서 재면 구조적으로 낮게 나오고, 그 차는 이 \
+             회차에 두 번 다 통합에서만 났다(28 커밋 시점 104, 41 커밋 시점 105).",
+        ),
+        how: "`crates/<크레이트>/tests/<파일>.rs` — 네 마디짜리 경로만. 재는 법: `/` 로 \
+              쪼갠 마디가 넷이고 둘째 마디가 `tests` 이며 `.rs` 로 끝나는 줄.",
+    };
+
+    /// `docs/` 아래 `.md` 전부.
+    pub const DOCS_MD: Population = Population {
+        measured: 407,
+        measured_on: "2026-09-08",
+        counted_on: super::CountedOn::Tree("12bc0f4b2"),
+        how: "경로가 `docs/` 로 시작하고 `.md` 로 끝나는 것 전부 — 깊이 제한이 없다. \
+              동역학도 함께 적는다: 1215 커밋(2026-09-05~09-08)에서 354 에서 399 로 \
+              **단조 증가**했고 한 커밋 최대 이동이 1 이었다. 이 모수를 재는 두 가드가 \
+              한때 '회차마다 늘고 줄어서' 와 '단조 증가해 왔다' 로 서로 반대되는 근거를 \
+              적고 있었다 — 뒤엣것이 맞다.",
+    };
 }
 
 /// 디렉토리를 내려갈지 정하는 방식.
@@ -52,6 +233,20 @@ pub enum Descend {
     Everything,
     /// 빌드 캐시 디렉토리를 건너뛴다.
     SkipBuildCaches,
+    /// 빌드 캐시에 더해 **점으로 시작하는 디렉토리**도 건너뛴다.
+    ///
+    /// 레포 루트부터 훑는 자리에 쓴다. 커밋되지 않는 로컬 작업 폴더는 clone·CI 에
+    /// 없지만 **개발자의 작업 트리에는 있고**, 거기에는 문서 사본·게이트 결과물이
+    /// 쌓인다. 그것을 세면 같은 커밋이 기계마다 다른 수를 낸다 — 아래 심볼릭 링크
+    /// 주석이 적어 둔 것과 같은 병이고, 방향만 반대다(worktree 에서는 그 폴더가
+    /// 링크라 안 세어지고, 원본 저장소에서는 실물이라 세어진다). 실측 2026-09-08:
+    /// `cited_anchors_resolve` 의 좌변이 worktree 433 · 원본 874 로 갈렸다.
+    ///
+    /// 이름이 아니라 **형태**로 가른다 — 그 폴더 이름을 추적 소스에 적는 것은 다른
+    /// 규율에 걸린다(`no_todo_file_citation` P6). `.git`·`.github` 도 이 규칙에
+    /// 흡수되므로, `.github/` 아래를 봐야 하는 순회는 그 디렉토리를 **루트로** 넘겨라
+    /// (루트 자신은 이 판정을 안 받는다).
+    SkipBuildCachesAndDotDirs,
 }
 
 /// 순회가 찾은 파일 하나 — 절대 경로와 **정규화된** repo-relative 경로를 짝으로 낸다.
@@ -103,6 +298,7 @@ impl Floor {
                 self.measured_on
             ));
         }
+        self.counted_on.validate()?;
         if self.why_this_gap.split_whitespace().count() < 10 {
             return Err(format!(
                 "`why_this_gap` 이 너무 짧다({} 낱말) — 간격의 크기는 이 모수가 얼마나 빨리 \
@@ -288,7 +484,18 @@ fn collect(
         }
         let path = entry.path();
         if kind.is_dir() {
-            if matches!(descend, Descend::SkipBuildCaches) && crate::is_build_cache_dir(&path) {
+            if matches!(
+                descend,
+                Descend::SkipBuildCaches | Descend::SkipBuildCachesAndDotDirs
+            ) && crate::is_build_cache_dir(&path)
+            {
+                continue;
+            }
+            if matches!(descend, Descend::SkipBuildCachesAndDotDirs)
+                && path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+            {
                 continue;
             }
             collect(&path, rel_base, descend, keep, out);
@@ -334,13 +541,28 @@ mod tests {
 
     impl Tree {
         fn new(files: &[&str], cache_dirs: &[&str]) -> Self {
+            // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라,
+            // 같은 코드가 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두
+            // 픽스처가 같은 디렉토리를 쓰고, 먼저 끝난 쪽의 `Drop` 이 다른 쪽이 순회
+            // 중인 트리를 지운다. 그 결과는 "파일이 하나 모자란다" 라서 **가지치기
+            // 결함처럼 보인다** — 실제로 2026-09-08 에 macOS 러너에서
+            // `build_caches_are_skipped_only_when_asked` 가 그 모습으로 죽었고,
+            // Linux 에서는 안 죽었다.
+            //
+            // 기전은 이 항을 상수로 바꿔 재현했다(2026-09-08 실측: 여덟 시험이 한꺼번에
+            // 죽는다 — 부분 충돌은 그중 하나만 죽인다). 그래서 단조 카운터로 바꾼다:
+            // 해상도가 없는 값이라 플랫폼을 안 읽는다.
+            //
+            // ★ 이 레포는 이미 그것을 알고 적어 뒀다 — `temp_path` 모듈이 유니크화
+            //   성분을 등급으로 나누며 시간 nonce 를 **"가장 약하다"** 로 분류하고
+            //   "새 코드는 다른 둘을 쓰는 게 낫다" 고 말한다. 이 픽스처는 그 권고가
+            //   생기기 전에 쓰였고, 예고된 사고가 그대로 났다. 판정은 안 바뀐다 —
+            //   `process::id` 가 같은 창에 있어 그 가드에는 계속 유니크화로 보인다.
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
             let base = std::env::temp_dir().join(format!(
                 "tasty-floored-walk-{}-{}",
                 std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0)
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             for rel in files {
                 let path = base.join(rel);
@@ -373,6 +595,7 @@ mod tests {
             min,
             measured,
             measured_on: "2026-09-06",
+            counted_on: CountedOn::SyntheticTree,
             why_this_gap: "시험용 고정값이다 — 이 모수는 테스트 안에서만 살고 아무것도 \
                            따라가지 않으므로 간격에 뜻이 없다",
         }
@@ -574,6 +797,7 @@ mod tests {
         let t = Tree::new(&["a.rs"], &[]);
         let bad = Floor {
             measured_on: "얼마 전",
+            counted_on: CountedOn::SyntheticTree,
             ..floor(1, 10)
         };
         let why = walk_with_floor(&t.0, &t.0, &bad, Descend::Everything, &all)

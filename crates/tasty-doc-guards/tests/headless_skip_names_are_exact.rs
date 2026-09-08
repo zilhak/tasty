@@ -100,8 +100,14 @@ fn skips_from_workflow() -> Vec<String> {
     }
     assert!(
         !out.is_empty(),
-        "`{STEP_ANCHOR}` 블록에서 `--skip` 을 하나도 못 읽었다 — \
-         진짜 0 건인지 파서가 죽은 건지 구분되지 않으므로 실패로 다룬다"
+        "`{STEP_ANCHOR}` 블록에서 `--skip` 을 하나도 못 읽었다. 읽기가 둘이고 **둘 다 \
+         실패로 다룬다**:\n\
+         (1) 파서가 죽었다 — 스텝 이름이나 인자 표기가 바뀌었다. 그때는 위 앵커를 고친다.\n\
+         (2) 진짜 0 건이다 — 그것은 결함이 아니라 **ADR-0127 의 재검토 조건이 줄어드는 \
+         쪽으로 발화한 것**이다(docs/adr/0127-e2e-harness-binary-selection.md). 헤드리스가 \
+         전 스위트를 돌게 됐다는 뜻이라 그 ADR 의 대안 A 를 다시 본다.\n\
+         둘을 가르는 법: 워크플로에서 그 스텝을 눈으로 본다. 앵커는 찾았는데 인자만 \
+         없으면 (2) 다."
     );
     out
 }
@@ -135,11 +141,7 @@ fn workspace_sources() -> Vec<(PathBuf, String)> {
                 if name == "target" || name == ".git" || name == "assets" || name.starts_with('.') {
                     continue;
                 }
-                let rel = p
-                    .strip_prefix(root)
-                    .unwrap_or(&p)
-                    .to_string_lossy()
-                    .replace('\\', "/");
+                let rel = tasty_doc_guards::floored_walk::normalized_rel(&p, root);
                 if excluded.contains(&rel) {
                     continue;
                 }
@@ -212,11 +214,69 @@ fn module_names(masked: &str) -> Vec<String> {
     out
 }
 
+/// 이름 하나와 **그 이름이 어디서 왔는지**.
+///
+/// 출처를 버리면 이 가드의 빨강이 사람을 아무 데로도 안 보낸다 — 처방은 "skip 문자열을
+/// 고쳐라" 인데 원인이 워크플로가 아니라 어느 소스 파일의 이름일 때가 있고, 그때 읽는
+/// 사람은 고칠 자리를 못 찾는다. 실측 2026-09-08: 레포 루트에 미추적 폴더를 두고 그 안
+/// `.rs` 에 기존 skip 문자열을 품는 `#[test]` 를 넣으니 이 가드가 rc=101 을 냈는데
+/// **실패문에 그 파일 이름이 한 번도 안 나왔다.**
+struct Named {
+    /// repo-relative 경로.
+    rel: String,
+    name: String,
+}
+
+impl Named {
+    fn at(&self) -> String {
+        format!("{}::{}", self.rel, self.name)
+    }
+}
+
+fn named(root: &Path, path: &Path, names: Vec<String>) -> Vec<Named> {
+    // 손으로 구분자를 펴지 않는다 — 그 규칙의 정본은 하나다
+    // (`src/source_guards/repo_relative_paths.rs` 가 사본이 늘어나는 것을 래칫으로 막는다).
+    let rel = tasty_doc_guards::floored_walk::normalized_rel(path, root);
+    names
+        .into_iter()
+        .map(|name| Named {
+            rel: rel.clone(),
+            name,
+        })
+        .collect()
+}
+
+/// 일치한 자리를 좌표로 편다 — 이 가드의 처방이 사람을 보낼 곳이다.
+fn at_list(hits: &[&Named]) -> String {
+    hits.iter()
+        .map(|h| format!("  {}", h.at()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 그중 레포 밖에서 온 것이 있으면 그 사실을 붙인다.
+///
+/// 이 순회는 레포 루트에서 시작해 점 디렉토리만 자른다 — **점 없는 이름**의 미추적
+/// 폴더 아래 `.rs` 는 그대로 좌변에 들어오고, 그 파일의 `#[test]` 이름이 skip 문자열을
+/// 품으면 이 가드가 빨개진다. 그때 처방("skip 문자열을 고쳐라")은 워크플로를 가리키는데
+/// 원인은 작업 트리의 파일이라, 따르면 **실재하지 않는 충돌을 피해 skip 이 좁아진다.**
+fn outside_note(root: &Path, hits: &[&Named]) -> String {
+    let rels: Vec<String> = hits.iter().map(|h| h.rel.clone()).collect();
+    tasty_doc_guards::tracked_scope::outside_repo_note(root, &rels)
+}
+
 #[test]
 fn every_named_skip_matches_exactly_one_test() {
+    let root = repo_root();
     let sources = workspace_sources();
-    let tests: Vec<String> = sources.iter().flat_map(|(_, m)| test_fn_names(m)).collect();
-    let modules: Vec<String> = sources.iter().flat_map(|(_, m)| module_names(m)).collect();
+    let tests: Vec<Named> = sources
+        .iter()
+        .flat_map(|(p, m)| named(&root, p, test_fn_names(m)))
+        .collect();
+    let modules: Vec<Named> = sources
+        .iter()
+        .flat_map(|(p, m)| named(&root, p, module_names(m)))
+        .collect();
 
     // 비영 대조 — 파서가 죽으면 0 이 되고, 0 은 "일치가 없다" 로 읽혀 조용히 통과한다.
     assert!(
@@ -234,16 +294,18 @@ fn every_named_skip_matches_exactly_one_test() {
     for skip in skips_from_workflow() {
         // 상한을 먼저 닫는다: 모듈 이름이 품으면 그 아래 전부가 빠지는데, 전체 경로를
         // 복원하지 않는 이 가드는 그 수를 셀 수 없다. 셀 수 없으면 통과가 아니다.
-        let module_hits: Vec<&String> = modules.iter().filter(|m| m.contains(&skip)).collect();
+        let module_hits: Vec<&Named> = modules.iter().filter(|m| m.name.contains(&skip)).collect();
         assert!(
             module_hits.is_empty(),
-            "`--skip {skip}` 이 **모듈 이름** {module_hits:?} 과도 부분일치한다 — libtest 는 \
+            "`--skip {skip}` 이 **모듈 이름** 과도 부분일치한다 — libtest 는 \
              `모듈::이름` 전체를 보므로 그 모듈 아래 테스트가 통째로 빠진다. 이 가드는 전체 \
              경로를 복원하지 않아 몇 개가 빠지는지 셀 수 없다. 셀 수 없는 것을 통과로 세지 \
-             않는다 — skip 문자열을 모듈 이름과 겹치지 않게 고쳐라."
+             않는다 — skip 문자열을 모듈 이름과 겹치지 않게 고쳐라.\n{}{}",
+            at_list(&module_hits),
+            outside_note(&root, &module_hits)
         );
 
-        let hits: Vec<&String> = tests.iter().filter(|t| t.contains(&skip)).collect();
+        let hits: Vec<&Named> = tests.iter().filter(|t| t.name.contains(&skip)).collect();
         assert!(
             !hits.is_empty(),
             "`--skip {skip}` 이 아무 테스트 이름과도 일치하지 않는다 — 죽은 skip 이다. \
@@ -254,11 +316,13 @@ fn every_named_skip_matches_exactly_one_test() {
         assert_eq!(
             hits.len(),
             1,
-            "`--skip {skip}` 이 테스트 {}개와 일치한다: {hits:?} — 부분일치라 의도하지 않은 \
+            "`--skip {skip}` 이 테스트 {}개와 일치한다 — 부분일치라 의도하지 않은 \
              테스트까지 함께 빠진다. skip 문자열을 더 길게 적거나, 정말 여럿을 빼야 한다면 \
              이 가드의 불변식(skip 하나 = 테스트 하나)을 먼저 고쳐라 — 조용히 넓어지게 두지 \
-             않는다.",
-            hits.len()
+             않는다.\n{}{}",
+            hits.len(),
+            at_list(&hits),
+            outside_note(&root, &hits)
         );
     }
 }
@@ -425,5 +489,68 @@ fn the_fixtures_in_this_file_are_not_counted_as_tests() {
         counted.len() >= 4,
         "이 파일의 진짜 `#[test]` 를 {} 개밖에 못 셌다 — 마스킹이 과하게 지웠다",
         counted.len()
+    );
+}
+
+/// ADR-0127 의 재검토 조건에 **판정 자리**를 준다 — 명명 skip 이 1 건에서 움직이면 죽는다.
+///
+/// 그 ADR 은 조건을 이렇게 적었다: "`check-headless` 의 명명 skip 이 1 건에서 늘면 —
+/// 판정: `.github/workflows/crossplatform-check.yml` 의 `--skip` 인자 개수." 판정 방법까지
+/// 적혀 있었는데 그것을 **사람이 기억해야** 발동했다. 여기가 그 자리다.
+///
+/// # 좌변은 조건의 주어다
+///
+/// 세는 것은 워크플로의 `--skip` 인자 개수이고, 그것이 조건이 말하는 바로 그 값이다.
+/// 모수(테스트 수·파일 수 같은 것)를 좌변으로 삼지 않는다 — 그러면 조건이 발동하지 않은
+/// 날에도 죽고, 그 실패문("ADR 을 재검토하라")을 몇 번 따르고 나면 진짜 발동한 날에도
+/// 값만 고쳐 적힌다. 규칙은 `docs/adr/template.md` 의 Reconsideration Triggers 항목이다.
+///
+/// # 파서를 새로 짜지 않는다
+///
+/// [`skips_from_workflow`] 를 그대로 쓴다. 같은 물음에 판사를 둘 만들면 둘이 갈리는 날
+/// 어느 쪽이 맞는지 아무도 모른다 — 이 파일의 다른 시험들이 이미 그 파서로 판정한다.
+///
+/// # 줄어드는 쪽은 여기서 안 잡힌다
+///
+/// 0 건이 되면 [`skips_from_workflow`] 가 먼저 죽는다(그쪽 메시지가 두 읽기를 다 말한다).
+/// 그래서 이 시험이 답하는 것은 **늘어나는 쪽**이고, 줄어드는 쪽의 판정 자리는 그 파서다.
+///
+/// # 이 시험을 변이로 재려면 **이름을 하나 더 늘리면 안 된다**
+///
+/// 이 자리에는 판사가 셋 겹쳐 있다. 워크플로에 **새로운 유효한 이름**을 하나 더 넣으면
+/// rc 는 죽지만 죽인 것이 셋이다 — [`every_named_skip_matches_exactly_one_test`] 가 그
+/// 이름이 정확히 한 시험을 가리키는지 먼저 묻고, 같은 파일의
+/// `the_enforcement_arm_is_dormant_only_while_an_unnarrowed_automatic_job_exists` 도
+/// 함께 깨진다. 그 rc 를 이 시험의 커버리지로
+/// 세면 **남의 게이트를 자기 것으로 적는 것**이다.
+///
+/// 이 시험만 죽이는 변이는 **이미 있는 이름을 한 번 더 적는 것**이다. 이름은 여전히
+/// 유효해서 앞의 두 판사는 통과하고, 개수만 2 가 된다. 실측 2026-09-08:
+///
+/// | 변이 | rc | 죽인 시험 |
+/// |---|---|---|
+/// | 새 이름을 하나 더 | 101 | 셋 — 이 시험 + 위 둘 (**격리 안 됨**) |
+/// | 같은 이름을 한 번 더 | 101 | 이 시험 하나 |
+/// | 줄을 지워 0 건 | 101 | 셋 — 전부 [`skips_from_workflow`] 의 비어-있음 assert 에서 죽는다. 이 시험의 술어는 실행되지도 않는다 |
+#[test]
+fn the_named_skip_count_is_still_one() {
+    let skips = skips_from_workflow();
+    assert_eq!(
+        skips.len(),
+        1,
+        "`check-headless` 의 명명 `--skip` 이 {} 건이다: {:?}\n\
+         ★ 이것은 회귀가 아니라 **ADR-0127 의 재검토 조건이 발동한 것**이다 \
+         (docs/adr/0127-e2e-harness-binary-selection.md).\n\
+         순서가 있다. (1) 늘어난 건이 **\"GUI 를 정말 요구한다\"** 인지 **\"배선 결함\"** \
+         인지 가른다 — 그 ADR 이 닫은 두 건은 둘 다 후자였다(헤드리스에 훅이 배선되지 \
+         않았거나, 핸들러가 `gui` feature 에 묶여 있었다). (2) 배선 결함이면 skip 이 \
+         아니라 그 배선을 고친다. (3) 진짜 GUI 요구면 그 ADR 의 범위가 달라지므로 \
+         결정을 다시 연다.\n\
+         ☞ 이 기대값을 올려서 통과시키지 마라 — 그러면 재검토 조건이 다시 문장이 된다. \
+         값을 올리는 것은 (3) 을 마친 뒤 그 ADR 과 함께 하는 일이다.\n\
+         ☞ 그리고 이 수는 문서 두 곳에 사본으로 적혀 있다 — `CLAUDE.md` 의 테스트 행과 \
+         `docs/dev-guide/ci-gates.md`. 값이 바뀌면 둘 다 같은 커밋에서 갱신한다.",
+        skips.len(),
+        skips
     );
 }

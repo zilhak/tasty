@@ -12,7 +12,7 @@
 //! 채로 유지되는지** 는 이 소스 형태 가드로 고정한다. 선례:
 //! `crates/tasty-doc-guards/tests/no_panic_in_window_creation.rs`, `crates/tasty-doc-guards/tests/ipc_window_create_returns_outcome.rs`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn read(rel: &str) -> String {
     // `CARGO_MANIFEST_DIR` 이 곧 레포 루트가 아니다(여기서는 크레이트 디렉토리다).

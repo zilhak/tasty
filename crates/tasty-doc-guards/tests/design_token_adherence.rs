@@ -46,6 +46,8 @@
 //! 그 선까지다.
 
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::source_text::repo_relative;
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 간격 스캔 대상 (repo-relative). host UI 계층 + 갤러리 + 위젯 크레이트.
 const SCAN_ROOTS: &[&str] = &[
@@ -1013,9 +1015,26 @@ fn allowlist_prefixes_point_at_paths_that_exist() {
 /// 담으면 위쪽에 한 줄만 들어가도 한시 목록이 통째로 썩어, 목록이 결함과 무관하게
 /// 흔들린다.
 fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
+    length_setter_literals_under(
+        root,
+        LENGTH_SETTER_SCAN_ROOTS,
+        MIN_LENGTH_SETTER_SCANNED_FILES,
+    )
+}
+
+/// 위 판독의 알맹이 — **스캔 루트와 하한을 인자로 받는다.**
+///
+/// 정본 값에 묶어 두면 이 추출을 합성 트리로 잴 길이 없다. 레포의 UI 파일 수(실측 185)와
+/// 합성 트리의 파일 수는 애초에 다른 모수이고, 상수 하나가 둘을 다 판정하려 들면 둘 중
+/// 하나는 반드시 틀린다(R1072).
+fn length_setter_literals_under(
+    root: &Path,
+    scan_roots: &[&'static str],
+    floor: usize,
+) -> Vec<(String, &'static str, String)> {
     let mut out = Vec::new();
     let mut scanned = 0usize;
-    for target in LENGTH_SETTER_SCAN_ROOTS {
+    for target in scan_roots {
         let path = root.join(target);
         let mut files = Vec::new();
         gather_rs_files(&path, &mut files);
@@ -1061,8 +1080,8 @@ fn length_setter_literals(root: &Path) -> Vec<(String, &'static str, String)> {
         }
     }
     assert!(
-        scanned >= MIN_LENGTH_SETTER_SCANNED_FILES,
-        "스캔 파일이 {scanned}개뿐이다(하한 {MIN_LENGTH_SETTER_SCANNED_FILES}) — \
+        scanned >= floor,
+        "스캔 파일이 {scanned}개뿐이다(하한 {floor}) — \
          코퍼스가 비면 위반도 0 이다.\n\
          ★ 판별은 이미 위에 있다 — 이 순회는 [`LENGTH_SETTER_SCAN_ROOTS`] 를 하나씩 돌면서 \
          **루트마다** 빈 것을 따로 잡는다. 그러니 여기까지 왔다는 것은 어느 루트도 비지 \
@@ -1130,5 +1149,124 @@ fn no_new_length_literal_at_call_sites() {
         "한시 목록이 가리키는 리터럴이 사라졌다 — 고쳤으면 목록에서도 지워라. 남겨 두면 \
          \"여기는 원래 부채\" 라는 신호가 아무것도 안 덮은 채 살아남는다:\n{}",
         show(&gone)
+    );
+}
+
+/// **양성 대조 — 순회와 길이 추출.**
+///
+/// 이 파일의 면제 술어 넷은 이미 걸려 있다(`the_spinner_exemption_discriminates_receiver`
+/// 등). 안 걸려 있던 것은 [`gather_rs_files`](모든 축이 공유하는 순회)와
+/// [`length_setter_literals_under`](길이 리터럴 추출)이다.
+///
+/// 추출 쪽에 조용한 갈래가 하나 있다. 접두 명부에는 **서로 감싸는 짝**이 있다
+/// (`set_min_height(` 안에 `min_height(` 가 있다). 낱말 경계 검사가 죽으면 한 자리가
+/// **두 번** 세어진다.
+///
+/// 위 축이 기준선과 집합 동등이니 그때 시끄럽게 죽을 것 같지만 — **재 보니 아니었다.**
+/// 낱말 경계 검사를 지우고 돌리면 이 대조 없이는 rc=0 이다(2026-09-08 실측). 지금
+/// 레포에 감싸는 접두 짝이 **숫자 인자와 함께** 나타나는 자리가 없어서, 중복 계수가
+/// 일어날 입력 자체가 없기 때문이다. 즉 그 검사는 지금 **아무 시험도 죽일 수 없는**
+/// 줄이었고, 그런 줄은 다음 사람이 "안 쓰는 것 같다" 며 지운다. 이 대조가 그 줄에
+/// 입력을 준다.
+///
+/// ★ 접두의 *값*은 여기 안 베낀다(R1078). 감싸는 짝을 명부에서 **런타임에 찾아** 쓴다 —
+/// 그래서 이 대조는 명부에 무엇이 들었는지가 아니라 **경계로 가른다는 사실**을 잰다.
+#[test]
+fn the_walk_and_the_length_reader_answer_on_a_substituted_tree() {
+    // 명부 안에서 "긴 것이 짧은 것을 접미로 품는" 짝을 찾는다.
+    let (outer, inner) = LENGTH_SETTER_PREFIXES
+        .iter()
+        .find_map(|o| {
+            LENGTH_SETTER_PREFIXES
+                .iter()
+                .find(|i| *i != o && o.ends_with(**i))
+                .map(|i| (*o, *i))
+        })
+        .expect("서로 감싸는 접두 짝이 명부에 없다 — 이 대조가 겨냥하는 형태가 사라졌다");
+
+    let probe = Scratch::new("design-token-reader");
+    let root = probe.path();
+    std::fs::create_dir_all(root.join("zone/deep")).expect("합성 트리를 만들지 못했다");
+
+    std::fs::write(
+        root.join("zone/a.rs"),
+        format!(
+            "fn build(ui: &mut Ui) {{\n    \
+                 ui.{outer}12.5);\n    \
+                 ui.{inner}8.0);\n    \
+                 // ui.{outer}99.0);\n    \
+                 ui.{outer}theme.gap);\n\
+             }}\n"
+        ),
+    )
+    .expect("합성 소스 실패");
+    std::fs::write(
+        root.join("zone/deep/b.rs"),
+        format!("fn deep(ui: &mut Ui) {{\n    ui.{inner}120.0);\n}}\n"),
+    )
+    .expect("합성 하위 소스 실패");
+    // `.rs` 가 아닌 것 — 순회 밖이다.
+    std::fs::write(
+        root.join("zone/notes.md"),
+        format!("문서가 `ui.{outer}42.0)` 를 인용한다\n"),
+    )
+    .expect("합성 문서 실패");
+
+    // ── 판독 1: 순회 ────────────────────────────────────────────────────
+    let mut files = Vec::new();
+    gather_rs_files(&root.join("zone"), &mut files);
+    let mut rels: Vec<String> = files
+        .iter()
+        // 루트를 벗긴 경로는 **반드시** `repo_relative` 를 지난다 — 손으로 구분자를
+        // 펴면 규칙이 한 벌 더 복제되고, 그 사본은 Windows 에서만 갈린다.
+        .map(|p| {
+            repo_relative(p.strip_prefix(&root).unwrap_or(p))
+                .display()
+                .to_string()
+        })
+        .collect();
+    rels.sort();
+    assert_eq!(
+        rels,
+        vec!["zone/a.rs".to_string(), "zone/deep/b.rs".to_string()],
+        "순회가 합성 트리에서 다른 답을 냈다"
+    );
+    assert!(
+        !rels.iter().any(|r| r.ends_with(".md")),
+        "`.rs` 가 아닌 파일을 모았다 — 이 접두를 **인용만** 하는 문서가 판정에 들어온다"
+    );
+
+    // ── 판독 2: 길이 리터럴 추출 ────────────────────────────────────────
+    //
+    // 하한은 이 합성 트리의 성질로 준다 — 정본 150 은 다른 모수의 것이다.
+    let got = length_setter_literals_under(root, &["zone"], 2);
+    assert_eq!(
+        got,
+        vec![
+            ("zone/a.rs".to_string(), inner, "8.0".to_string()),
+            ("zone/a.rs".to_string(), outer, "12.5".to_string()),
+            ("zone/deep/b.rs".to_string(), inner, "120.0".to_string()),
+        ],
+        "길이 추출이 합성 트리에서 다른 답을 냈다"
+    );
+    assert_eq!(
+        got.iter()
+            .filter(|(rel, _, v)| rel == "zone/a.rs" && v == "12.5")
+            .count(),
+        1,
+        "감싸는 접두 짝에서 한 자리를 두 번 셌다 — 낱말 경계 검사가 죽었다. 그러면 \
+         기준선 동등이 시끄럽게 깨지지만 그 처방은 중복 계수에 대해 참이 아니다"
+    );
+    assert!(
+        !got.iter().any(|(_, _, v)| v == "99.0"),
+        "주석 줄의 리터럴을 셌다"
+    );
+    assert!(
+        !got.iter().any(|(_, _, v)| v.is_empty() || v == "42.0"),
+        "토큰 인자(또는 문서의 인용)를 리터럴로 셌다 — 이 축이 원하는 형태가 토큰이다"
+    );
+    assert!(
+        got.iter().any(|(_, _, v)| v == "12.5"),
+        "소수점 뒤를 잘라 냈다 — 값이 달라지면 기준선과 영영 안 맞는다"
     );
 }

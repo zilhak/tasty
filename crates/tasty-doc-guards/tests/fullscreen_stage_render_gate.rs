@@ -230,13 +230,24 @@ fn window_resize_does_not_touch_the_grid_during_a_stage() {
 /// 모수는 **모듈 디렉토리와 그 모듈 파일을 합친 것**이다. 한때 디렉토리만 훑었는데,
 /// 그러면 `layout_persistence.rs` 자신이 인구 밖이라 거기 들어온 참조는 영영 안 보인다.
 const PERSISTENCE_FLOOR: Floor = Floor {
-    min: 3,
+    min: 4,
     measured: 6,
-    measured_on: "2026-09-06",
-    why_this_gap: "이 모수는 레이아웃 영속화 모듈의 `.rs` 개수다. 한 모듈 안이라 크레이트 \
-                   분해처럼 한꺼번에 움직이지 않고 capture/restore 를 쪼개거나 합칠 때 \
-                   하나씩 움직인다 — 그래서 여유를 좁게 잡는다. 넓게 잡으면 모듈이 반쯤 \
-                   사라져도 통과하고, 그 절반이 하필 참조를 품은 쪽일 수 있다.",
+    measured_on: "2026-09-08",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::LaneTip("ee7a32349"),
+    why_this_gap: "이 모수는 레이아웃 영속화 모듈의 `.rs` 개수이고 2026-09-08 에 \
+                   `ee7a32349` 에서 6 이었다. 움직임의 **단위는 파일 하나**다 — 근거: 이 \
+                   모듈은 2026-05-20 에 파일 하나가 여섯으로 갈린 뒤 그 값이 한 번도 안 \
+                   움직였고, `src/core/` 의 형제 모듈 전체를 3272 커밋으로 훑어도 한 표본 \
+                   최대 이동이 1 이며(`agent` 9→13 · `state` 6→13) **줄어든 사건은 0 건**이다. \
+                   여유 2 는 그 단위의 두 배다: 한 번의 정리가 인접한 파일 둘을 접는 폭까지 \
+                   견디되(예: `tests.rs` 를 인라인 `#[cfg(test)]` 로 접으면서 `schema.rs` 를 \
+                   흡수), 셋째부터는 짖는다. 옛 값은 여유 3 이었고 그것은 이 모수의 절반이라, \
+                   같은 자리에 적힌 '넓게 잡으면 모듈이 반쯤 사라져도 통과한다' 는 경고가 \
+                   가리키는 상태가 곧 그 값 자신이었다. ★ 이 여유가 감당 못 하는 사건이 \
+                   하나 있다 — 2026-05-20 의 분해를 되돌려 디렉토리를 파일 하나로 접는 \
+                   변경이다. 그때는 이 하한이 먼저 짖고, 그것이 옳다: 실패문은 하한을 내리라 \
+                   하지 않고 다시 재라고 한다. 순회가 죽어서 나오는 값은 0 이나 1 이라 그 \
+                   사건과 종료 코드로는 안 갈리고, 무엇이 일어났는지는 사람이 본다.",
 };
 
 /// 영속화 모듈의 소스. 순회 루트를 `src/core` 로 잡고 접두사로 좁히는 이유는, 모듈
@@ -293,13 +304,15 @@ fn stage_state_is_not_persisted() {
 /// 없다. 두 갈래가 서로의 대조다.
 #[test]
 fn the_persistence_scan_reacts_to_a_planted_reference() {
+    // 유일성 키에 **시각을 안 쓴다.** 시각의 해상도는 플랫폼의 성질이라, 같은 코드가
+    // 어떤 OS 에서는 유일하고 어떤 OS 에서는 겹친다 — 겹치면 두 시험이 같은 경로를 쓰고
+    // 먼저 끝난 쪽의 정리가 다른 쪽의 파일을 지운다. 2026-09-08 macOS 러너에서 실제로
+    // 그렇게 죽었다(Linux 에서는 안 죽었다). 단조 카운터는 해상도가 없어 플랫폼을 안 읽는다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let base = std::env::temp_dir().join(format!(
         "tasty-stage-persist-probe-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let module_dir = base.join("src/core/layout_persistence");
     std::fs::create_dir_all(&module_dir).expect("픽스처 디렉토리");
@@ -328,6 +341,7 @@ fn the_persistence_scan_reacts_to_a_planted_reference() {
         min: 2,
         measured: 4,
         measured_on: "2026-09-06",
+        counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
         why_this_gap: "픽스처는 이 시험이 방금 만든 것이라 모수가 코드와 함께만 움직인다 — \
                        그래도 하한을 실측보다 낮게 두는 것은 이 자리의 물음이 파일 수가 \
                        아니라 순회가 살아 있는가이기 때문이다.",

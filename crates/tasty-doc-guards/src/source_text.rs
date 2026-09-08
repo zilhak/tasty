@@ -234,6 +234,30 @@ pub fn rust_sources(root: &std::path::Path, scan_roots: &[&str]) -> Vec<(PathBuf
     out
 }
 
+/// `code` 안에 `name!` 매크로 **호출**이 있는가. 이름 앞의 경계를 본다.
+///
+/// 경계를 안 보면 `eprintln!` 이 `println` 을 담아 **stderr 를 stdout 으로 센다.**
+/// 실측 2026-09-08: `git grep 'println!' -- src/` 가 17 을 냈는데 그중 3 이 `eprintln!`
+/// 이었고, 그 17 을 근거로 ADR-0101 의 "현재는 없음" 이 낡았다고 의심했다 — 실제 값은
+/// 0 이었다. 부분문자열로 세면 방향이 한쪽으로만 틀린다(더 많이 잡는다).
+///
+/// 입력은 **주석·문자열이 지워진 코드**여야 한다 — 이 함수는 그것을 안 한다.
+/// [`mask_non_code`] 가 그 일을 한다.
+pub fn invokes_macro(code: &str, name: &str) -> bool {
+    let mut from = 0;
+    while let Some(pos) = code[from..].find(name) {
+        let at = from + pos;
+        let end = at + name.len();
+        let prev = code[..at].chars().next_back();
+        let boundary_before = !prev.is_some_and(|c| c.is_alphanumeric() || c == '_');
+        if boundary_before && code[end..].starts_with('!') {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
 /// 값만으로 "로케일 무관 영어가 아니다" 가 확정되는 문자.
 ///
 /// **이 술어가 답하는 것은 좁다** — 한글·가나·한자가 한 글자라도 있으면 그 문자열은

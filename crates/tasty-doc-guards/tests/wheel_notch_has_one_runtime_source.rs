@@ -11,10 +11,16 @@
 //! 동작 축의 짝은 `src/plugin_bridge/wire_scroll.rs` 의 `one_notch_per_context` 다.
 //! 그쪽은 컨텍스트에 기본값 아닌 값을 심고 세 경로가 그것을 집어 오는지 실행으로 잰다.
 //! 이쪽은 그 셋 말고 **네 번째가 생기는 것**을 본다.
+// 이유: 테스트 본문은 `let _ =` 사유 주석 정책의 범위 밖이다 — 전수 가드
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)가 테스트 본문을 제외하므로, 여기서 나는
+// `let_underscore_must_use` 경고는 정책상 조치 대상이 될 수 없다. 끄지 않으면
+// 프로덕션의 진짜 신호가 그 안에 묻힌다 — `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
 
 use tasty_doc_guards::cfg_predicate as cfg_span;
 
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 휠 Line 델타를 다루는 자리임을 알리는 표지.
 ///
@@ -78,7 +84,16 @@ struct Site {
 /// `src/` 안에서 휠 Line 을 다루는 자리를 모은다. `#[cfg(test)]` 아래는 제외한다 —
 /// 테스트는 노치를 스스로 정해 넣는 것이 정상이고, 그것이 곧 위 술어들의 대조군이다.
 fn conversion_sites() -> Vec<Site> {
-    let root = repo_root();
+    conversion_sites_under(&repo_root())
+}
+
+/// 같은 판정을 **뿌리를 받아** 한다.
+///
+/// 뿌리를 함수 안에 박으면 이 판정에는 양성 대조가 원리적으로 안 붙는다 — 합성 트리를
+/// 먹일 자리가 없어서 "표지가 낡으면 자리 수가 준다" 를 시험이 못 재고, 그러면 위 하한은
+/// 자기가 무엇을 지키는지 한 번도 확인받지 않은 채 선다. 뿌리는 처음부터 인자다.
+fn conversion_sites_under(root: &Path) -> Vec<Site> {
+    let root = root.to_path_buf();
     let mut files = Vec::new();
     gather_rs(&root.join("src"), &mut files);
     files.sort();
@@ -172,5 +187,88 @@ fn no_conversion_site_freezes_the_notch_at_its_default() {
          지금 값이 아니다 — 사용자가 슬라이더를 옮겨도 이 자리만 옛 거리로 스크롤한다. \
          런타임 값은 egui 컨텍스트에서 읽어라(ADR-0130):\n{}",
         bad.join("\n")
+    );
+}
+
+/// [`MIN_CONVERSION_SITES`] 의 **양성 대조** — 표지가 낡으면 자리 수가 정말 주나.
+///
+/// 그 하한의 실패문은 "순회가 깨졌거나 **표지가 낡았다**" 고 말한다. 그런데 레포를
+/// 상대로만 돌면 표지 쪽은 한 번도 확인이 안 된다 — 표지 셋 중 하나를 지워도 레포에
+/// 남은 자리가 하한을 넘으면 조용하다. 여기서 그 갈래를 합성 트리로 직접 건다.
+///
+/// 파일 이름과 내용은 전부 합성이다. 실물 자리 이름을 쓰면 이 파일이 다른 가드의
+/// 좌변에 앉는다.
+#[test]
+fn a_stale_mark_or_a_dead_root_shrinks_the_population() {
+    let probe = Scratch::new("wheel-notch");
+    let dir = probe.path();
+    let src = dir.join("src");
+    std::fs::create_dir_all(src.join("inner")).expect("합성 트리를 만들지 못했다");
+
+    // 표지 셋을 하나씩 나눠 심는다 — 셋 중 하나라도 안 세면 이 수가 준다.
+    let bodies: [(&str, String); 3] = [
+        (
+            "alpha.rs",
+            format!(
+                "fn a(u: X) {{ match u {{ {} => {}(1.0), _ => {{}} }} }}\n",
+                LINE_UNIT_MARKS[0], RUNTIME_SOURCE_MARKS[0]
+            ),
+        ),
+        (
+            "beta.rs",
+            format!(
+                "fn b(d: X) {{ if let {}(x, y) = d {{ let _ = ({}, x, y); }} }}\n",
+                LINE_UNIT_MARKS[1], RUNTIME_SOURCE_MARKS[1]
+            ),
+        ),
+        (
+            "inner/gamma.rs",
+            format!(
+                "fn c() {{ let _ = {}1.0); let _ = {}0.0); }}\n",
+                LINE_UNIT_MARKS[2], RUNTIME_SOURCE_MARKS[0]
+            ),
+        ),
+    ];
+    for (name, body) in &bodies {
+        std::fs::write(src.join(name), body).expect("합성 소스를 쓰지 못했다");
+    }
+    // 대조군 — Line 을 안 다루는 파일은 모수 밖이다.
+    std::fs::write(src.join("delta.rs"), "fn d() {}\n").expect("합성 소스를 쓰지 못했다");
+    // 대조군 — `.rs` 가 아닌 파일은 표지를 담아도 모수 밖이다. **하한은 이 갈래를
+    // 원리적으로 못 본다** — 모수를 넓히는 변이는 하한을 *더 쉽게* 넘게 만든다.
+    std::fs::write(
+        src.join("zeta.md"),
+        format!("{} {}\n", LINE_UNIT_MARKS[0], RUNTIME_SOURCE_MARKS[0]),
+    )
+    .expect("합성 문서를 쓰지 못했다");
+    // 대조군 — 주석에 표지가 있어도 코드가 아니다.
+    std::fs::write(
+        src.join("epsilon.rs"),
+        format!(
+            "// {} 를 여기서는 안 쓴다\nfn e() {{}}\n",
+            LINE_UNIT_MARKS[0]
+        ),
+    )
+    .expect("합성 소스를 쓰지 못했다");
+
+    let sites = conversion_sites_under(dir);
+    let mut got: Vec<&str> = sites.iter().map(|s| s.rel.as_str()).collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec!["src/alpha.rs", "src/beta.rs", "src/inner/gamma.rs"],
+        "모수가 다르다 — 표지 셋 중 하나라도 안 세면 여기서 준다. 레포 대면 하한은 \
+         남은 자리가 그 수를 넘는 한 같은 낡음에 대해 조용하다"
+    );
+    assert!(
+        sites.iter().all(|s| s.reads_runtime_source),
+        "런타임 출처 표지를 못 읽었다 — 그러면 아래 술어가 멀쩡한 자리를 위반으로 짚는다"
+    );
+
+    // 하한이 겨냥하는 다른 갈래 — 뿌리가 죽으면 예외가 아니라 **빈 모수**다.
+    assert!(
+        conversion_sites_under(&dir.join("does-not-exist")).is_empty(),
+        "죽은 뿌리에서 자리를 주웠다 — `gather_rs` 는 `read_dir` 실패를 조용히 넘기므로 \
+         이 성질이 하한의 존재 이유다"
     );
 }

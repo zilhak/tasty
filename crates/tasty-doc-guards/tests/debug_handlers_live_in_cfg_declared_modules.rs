@@ -33,6 +33,7 @@
 //!   허용 명부의 사유가 대신 적는다.
 
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 스캔 뿌리 — 이 규칙이 말하는 영역.
 const SCAN_ROOT: &str = "src/adapters/ipc";
@@ -323,4 +324,129 @@ fn an_inner_attribute_marks_the_whole_file() {
     let text = "//! doc\n\n#![cfg(debug_assertions)]\n\nfn f() {}\n";
     assert!(whole_file_is_debug(text));
     assert!(!whole_file_is_debug("fn f() {}\n"));
+}
+
+/// **양성 대조 — 디스크를 읽는 두 판독.**
+///
+/// 이 파일의 텍스트 술어([`gated_items`]·[`whole_file_is_debug`]·[`is_debug_gate`])는
+/// 이미 셋이 건다. 안 걸려 있던 것은 디스크를 읽는 둘이다:
+/// [`rs_files`](순회)와 [`declaration_is_debug_gated`](부모 모듈에서 선언을 찾는 판독).
+///
+/// 뒤쪽이 특히 값이 크다. 그것은 **"못 찾으면 게이트 없음"** 으로 세는데, 그 기본값이
+/// 위반 쪽이라 판독이 조용히 좁아지면 **없는 위반**이 뜬다. 그 처방("이 항목을 cfg 선언된
+/// 파일로 옮겨라")은 이미 옳게 배치된 파일에 대해 참이 아니다. 하한(`MIN_GATED_ITEMS`)은
+/// 항목 수만 보므로 이 방향을 못 본다.
+///
+/// ★ 여기 쓰는 모듈·파일 이름은 전부 합성이다(R1078) — `SCAN_ROOT` 나
+/// `KNOWN_PARENT_SITES` 의 값을 안 쓴다.
+#[test]
+fn the_walk_and_the_declaration_reader_answer_on_a_substituted_tree() {
+    let probe = Scratch::new("debug-placement");
+    let root = probe.path();
+    std::fs::create_dir_all(root.join("outer/inner")).expect("합성 트리를 만들지 못했다");
+
+    // 부모는 형제 `<디렉토리>.rs` 다.
+    std::fs::write(
+        root.join("outer.rs"),
+        "#[cfg(debug_assertions)]\n\
+         mod gated;\n\
+         mod after_gated;\n\
+         pub(crate) mod plain;\n\
+         mod inner;\n",
+    )
+    .expect("합성 부모(.rs) 실패");
+    // 부모는 `<디렉토리>/mod.rs` 이기도 하다.
+    std::fs::write(
+        root.join("outer/inner/mod.rs"),
+        "#[cfg(not(debug_assertions))]\n\
+         pub mod release_only;\n\
+         \n\
+         #[cfg(debug_assertions)]\n\
+         // 선언과 어트리뷰트 사이의 주석\n\
+         \n\
+         mod spaced;\n",
+    )
+    .expect("합성 부모(mod.rs) 실패");
+
+    for f in [
+        "outer/gated.rs",
+        "outer/after_gated.rs",
+        "outer/plain.rs",
+        "outer/inner/release_only.rs",
+        "outer/inner/spaced.rs",
+        "outer/inner/orphan.rs",
+    ] {
+        std::fs::write(root.join(f), "fn x() {}\n").expect("합성 모듈 실패");
+    }
+    // `.rs` 가 아닌 것 — 순회 밖이다.
+    std::fs::write(root.join("outer/notes.md"), "#[cfg(debug_assertions)]\n")
+        .expect("합성 문서 실패");
+
+    // ── 판독 1: 순회 ────────────────────────────────────────────────────
+    let mut found = Vec::new();
+    rs_files(root, &mut found);
+    let mut rels: Vec<String> = found
+        .iter()
+        // 루트를 벗긴 경로는 **반드시** `repo_relative` 를 지난다 — 손으로 구분자를
+        // 펴면 규칙이 한 벌 더 복제되고, 그 사본은 Windows 에서만 갈린다.
+        .map(|p| {
+            tasty_doc_guards::source_text::repo_relative(p.strip_prefix(&root).unwrap_or(p))
+                .display()
+                .to_string()
+        })
+        .collect();
+    rels.sort();
+    assert_eq!(
+        rels,
+        vec![
+            "outer.rs".to_string(),
+            "outer/after_gated.rs".to_string(),
+            "outer/gated.rs".to_string(),
+            "outer/inner/mod.rs".to_string(),
+            "outer/inner/orphan.rs".to_string(),
+            "outer/inner/release_only.rs".to_string(),
+            "outer/inner/spaced.rs".to_string(),
+            "outer/plain.rs".to_string(),
+        ],
+        "순회가 합성 트리에서 다른 답을 냈다"
+    );
+    assert!(
+        !rels.iter().any(|r| r.ends_with(".md")),
+        "`.rs` 가 아닌 파일을 모았다 — 문서가 이 어트리뷰트를 인용만 해도 판정에 들어온다"
+    );
+
+    // ── 판독 2: 선언이 cfg 로 게이트됐는가 ──────────────────────────────
+    let gated = |rel: &str| declaration_is_debug_gated(root, &root.join(rel));
+
+    assert!(
+        gated("outer/gated.rs"),
+        "형제 `<디렉토리>.rs` 부모에서 게이트된 선언을 못 찾았다"
+    );
+    assert!(
+        gated("outer/inner/spaced.rs"),
+        "어트리뷰트와 선언 사이의 주석·빈 줄을 거슬러 못 올라갔다 — 이 형태가 흔하다"
+    );
+    assert!(
+        !gated("outer/after_gated.rs"),
+        "**앞 선언에 붙은** 어트리뷰트를 뒤 선언의 것으로 셌다 — 게이트 안 된 항목이 \
+         게이트된 것으로 통과한다"
+    );
+    assert!(
+        !gated("outer/plain.rs"),
+        "cfg 가 없는 선언을 게이트된 것으로 셌다"
+    );
+    assert!(
+        !gated("outer/inner/release_only.rs"),
+        "`not(debug_assertions)` 를 debug 게이트로 셌다 — 그것은 반대 방향(release 전용)이다"
+    );
+    assert!(
+        !gated("outer/inner/orphan.rs"),
+        "어느 부모도 선언하지 않은 파일을 게이트된 것으로 셌다 — 기본값은 '게이트 없음' 이라야 \
+         놓치지 않는다"
+    );
+    // `mod.rs` 자신은 자기 부모가 아니다.
+    assert!(
+        !gated("outer/inner/mod.rs"),
+        "`mod.rs` 가 자기 자신을 부모로 읽었다"
+    );
 }

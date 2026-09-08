@@ -21,6 +21,7 @@
 
 use tasty_doc_guards::poison_recovery::census;
 use tasty_doc_guards::repo_root;
+use tasty_doc_guards::temp_scratch::Scratch;
 
 const SCAN_ROOTS: &[&str] = &["src", "crates"];
 
@@ -128,5 +129,110 @@ fn no_shipping_lock_is_recovered_without_a_report() {
             .map(|s| format!("  {s}"))
             .collect::<Vec<_>>()
             .join("\n")
+    );
+}
+
+/// **양성 대조 — census 를 합성 트리로 건다.**
+///
+/// 이 가드의 좌변은 **전부 하한**이다(다섯). 하한은 좁아지는 쪽만 본다. 그리고 이
+/// 가드에서 넓어지는 쪽에는 특히 나쁜 갈래가 하나 있다:
+///
+///   `census` 는 파일이 test-only 로 판정되면 그 파일의 조용한 복구를 위반이 아니라
+///   `test_only_sites` 로 **돌린다.** 그 판정이 넓어지면 진짜 위반이 조용히 사라지는데,
+///   `MIN_TEST_ONLY` 는 하한이라 그 수가 **올라간다** — 즉 어느 하한도 안 걸린다.
+///   위반 목록도 비어 초록이다. 완전한 거짓 초록이고, 지금 그것을 보는 것이 없다.
+///
+/// `poison_recovery` 의 lib 유닛 여덟은 전부 `classify`(한 파일의 술어)를 건다. **아무도
+/// `census` 를 부르지 않는다** — 걷기·test-only 라우팅·줄 번호 조립은 그 아래 층이다.
+///
+/// ★ 스캔 뿌리는 합성 이름(`zone`)이다(R1078) — `SCAN_ROOTS` 의 값을 안 쓴다.
+#[test]
+fn the_census_routes_and_counts_on_a_substituted_tree() {
+    let probe = Scratch::new("poison-census");
+    let dir = probe.path();
+    std::fs::create_dir_all(dir.join("zone/nested")).expect("합성 트리를 만들지 못했다");
+
+    // 조용한 복구 — 위반이어야 한다.
+    std::fs::write(
+        dir.join("zone/silent_one.rs"),
+        "fn ship() {\n    let g = m.lock().unwrap_or_else(|p| p.into_inner());\n}\n",
+    )
+    .expect("합성 위반 파일 실패");
+    // 하위 디렉토리에도 하나 — 걷기가 내려가는지 함께 본다.
+    std::fs::write(
+        dir.join("zone/nested/deep_silent.rs"),
+        "fn deep() {\n    let g = m.write().unwrap_or_else(|p| p.into_inner());\n}\n",
+    )
+    .expect("합성 하위 위반 파일 실패");
+    // 보고가 붙은 복구 — 위반이 아니고 `reported` 로 센다.
+    std::fs::write(
+        dir.join("zone/reported_one.rs"),
+        "fn ship() {\n    m.lock().unwrap_or_else(|poisoned| {\n        \
+         tracing::error!(\"zone lock poisoned\");\n        poisoned.into_inner()\n    });\n}\n",
+    )
+    .expect("합성 보고 파일 실패");
+    // `#[cfg(test)]` 아래의 조용한 복구 — `cfg_gated` 로 센다.
+    std::fs::write(
+        dir.join("zone/cfg_gated_one.rs"),
+        "pub fn ship() {}\n\n#[cfg(test)]\nmod t {\n    #[test]\n    fn x() {\n        \
+         let _g = m.lock().unwrap_or_else(|p| p.into_inner());\n    }\n}\n",
+    )
+    .expect("합성 cfg 파일 실패");
+    // 주석에만 있는 언급 — 아무것도 아니다.
+    std::fs::write(
+        dir.join("zone/comment_only.rs"),
+        "/// into_inner() 로 되돌리는 자리를 설명하는 주석이다.\nfn ship() {}\n",
+    )
+    .expect("합성 주석 파일 실패");
+
+    let c = census(dir, &["zone"]);
+
+    assert_eq!(c.files_scanned, 5, "걷은 파일 수가 다르다");
+    assert_eq!(
+        c.silent.len(),
+        2,
+        "조용한 복구를 {} 곳으로 셌다 — 기대 2. 목록: {:?}",
+        c.silent.len(),
+        c.silent
+    );
+    // ★ 라우팅의 핵심: 이 트리에 test-only 파일은 없다. 그러니 조용한 복구는 **전부**
+    //   위반으로 나와야 하고, `test_only_sites` 는 0 이어야 한다. test-only 판정이
+    //   넓어지면 이 두 줄이 함께 무너진다 — 그리고 그것이 실판정에서는 조용한 갈래다.
+    assert_eq!(
+        c.test_only_sites, 0,
+        "test-only 로 돌린 자리가 있다 — 이 합성 트리에는 test-only 선언이 없다. \
+         판정이 넓어지면 진짜 위반이 이 칸으로 사라지고, 이 칸의 하한은 그때 **올라가서** \
+         아무 하한도 안 걸린다"
+    );
+    assert!(
+        c.silent
+            .iter()
+            .any(|s| s.starts_with("zone/silent_one.rs:2:")),
+        "위반 좌표가 `경로:1기반줄` 로 안 나온다 — 목록: {:?}",
+        c.silent
+    );
+    assert!(
+        c.silent.iter().any(|s| s.contains("nested/deep_silent.rs")),
+        "하위 디렉토리로 안 내려갔다 — 목록: {:?}",
+        c.silent
+    );
+    assert!(
+        !c.silent.iter().any(|s| s.contains("reported_one.rs")),
+        "보고가 붙은 복구를 위반으로 셌다"
+    );
+    assert!(
+        !c.silent.iter().any(|s| s.contains("cfg_gated_one.rs")),
+        "`#[cfg(test)]` 아래 복구를 위반으로 셌다"
+    );
+    assert!(
+        !c.silent.iter().any(|s| s.contains("comment_only.rs")),
+        "주석 안의 언급을 복구로 셌다"
+    );
+    assert!(c.reported >= 1, "보고로 통과한 자리를 하나도 못 셌다");
+    assert!(c.cfg_gated >= 1, "cfg 로 뺀 자리를 하나도 못 셌다");
+    assert_eq!(
+        c.poison_sites,
+        c.silent.len() + c.reported + c.cfg_gated + c.test_only_sites,
+        "다섯 칸의 합이 집은 자리 수와 안 맞는다 — 어느 갈래가 새거나 겹쳐 세고 있다"
     );
 }

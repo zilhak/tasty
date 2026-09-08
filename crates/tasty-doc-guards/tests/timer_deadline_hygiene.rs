@@ -21,8 +21,6 @@
 //! 비워져야 호스트가 타이머를 걷는다. 배경 탭 전환은 `drop_view` 를 부르지 않으므로
 //! 이 경로가 유일한 정리 지점이다.
 
-use std::path::Path;
-
 /// 주석/문서 줄을 뺀 실제 코드 줄만 본다 — 규칙을 설명하는 주석이 스스로를
 /// 위반으로 만들면 안 된다.
 fn code_lines(src: &str) -> impl Iterator<Item = (usize, &str)> {

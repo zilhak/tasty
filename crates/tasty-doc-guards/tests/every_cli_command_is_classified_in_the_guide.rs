@@ -39,7 +39,9 @@
 //! `doc-guards.yml` — main push · PR 마다 경로 필터 없이 돈다. 이 축을 재는 채널은 그 하나다.
 
 use std::collections::BTreeSet;
+
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 가이드에 **일부러 없는** 명령과 그 사유. 자리로 적는다 — 부류로 적으면 도망길이 된다.
 ///
@@ -178,29 +180,140 @@ fn plugin_commands(root: &Path) -> Vec<(String, String)> {
 }
 
 /// 한국어 가이드 원본 전체를 한 덩어리로.
+/// `site/content` 의 최상위 갈래. **순회 밖에 있어야** 가지치기가 넓어져 한 갈래가
+/// 통째로 빠진 것을 잡는다 — 순회가 본 것으로 이 목록을 만들면 빠진 갈래는 목록에서도
+/// 빠진다. `en` 은 번역이라 순회가 일부러 건너뛰므로 여기 없다.
+const GUIDE_BRANCHES: &[&str] = &[
+    "agents",
+    "customize",
+    "getting-started",
+    "help",
+    "plugins",
+    "remote",
+    "using",
+];
+
+/// 가이드 본문 한 벌. **갈래마다 하나라도 닿았는지 확인하고 돌려준다.**
+///
+/// 이 함수가 돌려주는 문자열은 아래 판정들의 **우변**이다. 좌변(등록 명부·명령 목록)은
+/// 코드 상수라 절대 안 비는데, 우변이 조용히 줄면 "가이드에 없다"·"가이드에 이미 있다"
+/// 가 **둘 다 초록**이 된다. 그래서 두 자리를 막는다.
+///
+/// 1. `read_dir` 실패를 **안 삼킨다.** 예전 판은 `let Ok(..) else { return }` 이라
+///    권한·경합으로 한 디렉토리를 못 읽으면 그 갈래가 통째로 빠진 채 초록이었다.
+/// 2. `site/content` 의 **최상위 갈래마다** `.md` 를 하나라도 담았는지 본다.
+///
+/// **실측 2026-09-08(`12bc0f4b2`)**: 갈래 하나를 순회에서 빼고 세 파일을 돌리는 변이를
+/// 7 갈래 × 3 파일 = 21 칸으로 재니 **15 칸이 초록**이었다. `help/` 와 `plugins/` 는
+/// 세 파일 **전부**가 못 잡았다. 지금은 21 칸 전부가 이 함수에서 죽는다.
+///
+/// **명부를 순회 밖에 둔다 — 첫 판은 순회 안에서 갈래를 모았고 그것이 틀렸다.**
+/// 순회가 본 갈래만 모으면 가지치기로 빠진 갈래는 **목록에도 안 들어가서** 확인 대상이
+/// 아니게 된다. 위 21 칸 변이를 그 판에 대고 재니 15 칸이 그대로 초록이었다 — 좌변을
+/// 재는 사본과 판정하는 사본이 같으면 그 둘이 함께 줄어든다(R1116 과 같은 형태다).
+/// 그래서 [`GUIDE_BRANCHES`] 는 상수고, 그 명부가 낡는 것은 반대 방향 판정이 잡는다.
+/// 하한(`>= N`)도 안 쓴다. 갈래 확인은 여유가 필요 없고, 순회가 통째로 죽는 것과 한
+/// 갈래만 빠지는 것을 같은 판정으로 잡는다.
 fn guide_text(root: &Path) -> String {
-    fn walk(dir: &Path, out: &mut String) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
+    guide_scan(root).0
+}
+
+/// 순회 본체. 본문 · **명부와 대조할 두 집합**을 함께 낸다.
+///
+/// 갈래 확인이 [`guide_text`] 안에 있으면 **합성 트리를 먹는 형제 시험이 깨진다** —
+/// 그 트리에는 레포의 갈래 일곱이 없다. 그래서 순회와 판정을 갈랐다: 여기서는 읽기
+/// 실패만 막고, 명부 대조는 레포를 상대로만 도는 별도 시험이 한다.
+fn guide_scan(
+    root: &Path,
+) -> (
+    String,
+    std::collections::BTreeSet<String>,
+    std::collections::BTreeSet<String>,
+) {
+    fn walk(
+        dir: &Path,
+        top: &Path,
+        out: &mut String,
+        branches: &mut std::collections::BTreeSet<String>,
+        touched: &mut std::collections::BTreeSet<String>,
+        current: Option<&str>,
+    ) {
+        let entries = std::fs::read_dir(dir).unwrap_or_else(|e| {
+            panic!(
+                "가이드 순회가 {} 를 못 읽었다 — {e}\n\
+                 조용히 건너뛰면 그 갈래가 통째로 빠진 채 이 파일의 판정이 초록으로 \
+                 나온다. 우변이 비면 \"가이드에 없다\" 도 \"가이드에 이미 있다\" 도 \
+                 참이 된다.",
+                dir.display()
+            )
+        });
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 if path.file_name().map(|n| n == "en").unwrap_or(false) {
                     continue; // 번역은 별도 절차다.
                 }
-                walk(&path, out);
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                let next = if dir == top {
+                    branches.insert(name.clone());
+                    Some(name)
+                } else {
+                    current.map(str::to_owned)
+                };
+                walk(&path, top, out, branches, touched, next.as_deref());
             } else if path.extension().and_then(|e| e.to_str()) == Some("md")
                 && let Ok(text) = std::fs::read_to_string(&path)
             {
+                if let Some(b) = current {
+                    touched.insert(b.to_owned());
+                }
                 out.push_str(&text);
                 out.push('\n');
             }
         }
     }
+    let top = root.join("site/content");
     let mut out = String::new();
-    walk(&root.join("site/content"), &mut out);
-    out
+    let (mut branches, mut touched) = (
+        std::collections::BTreeSet::new(),
+        std::collections::BTreeSet::new(),
+    );
+    walk(&top, &top, &mut out, &mut branches, &mut touched, None);
+    (out, branches, touched)
+}
+
+/// [`GUIDE_BRANCHES`] 의 판정 — 순회가 **갈래마다 하나라도 닿았는가**, 그리고 그 명부가
+/// 낡지 않았는가. 두 방향이라 갈래가 빠져도, 늘어도 잡힌다.
+#[test]
+fn the_guide_walk_reaches_every_branch() {
+    let (_, branches, touched) = guide_scan(&repo_root());
+    let missing: Vec<&&str> = GUIDE_BRANCHES
+        .iter()
+        .filter(|b| !touched.contains(**b))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "가이드 순회가 이 갈래에서 `.md` 를 하나도 안 담았다: {missing:?}\n\
+         명부 {} 개 중 {} 개만 닿았다. 가지치기가 넓어졌거나 그 디렉토리가 비었다 — \
+         이 파일의 판정은 우변이 줄면 **더 조용히** 초록이 되므로, 갈래를 빼서 \
+         통과시키지 마라.",
+        GUIDE_BRANCHES.len(),
+        touched.len()
+    );
+    let extra: Vec<&String> = branches
+        .iter()
+        .filter(|b| !GUIDE_BRANCHES.contains(&b.as_str()))
+        .collect();
+    assert!(
+        extra.is_empty(),
+        "`site/content` 에 명부에 없는 갈래가 있다: {extra:?}\n\
+         `GUIDE_BRANCHES` 에 추가해라 — 안 하면 그 갈래는 위 확인의 대상이 아니라서 \
+         통째로 빠져도 초록이다."
+    );
 }
 
 #[test]
@@ -337,4 +450,131 @@ fn the_kebab_conversion_matches_clap() {
     assert_eq!(kebab("New"), "new");
     assert_eq!(kebab("SurfaceMeta"), "surface-meta");
     assert_eq!(kebab("CompletionStrategy"), "completion-strategy");
+}
+
+/// **양성 대조 — 대조가 없던 두 판독.**
+///
+/// `core_commands` 는 이미 [`the_reader_answers_both_yes_and_no`] 가 합성 소스로 건다.
+/// 안 걸려 있던 것은 [`plugin_commands`] 와 [`guide_text`] 다 — 둘 다 디스크를 훑고,
+/// 둘 다 실패를 **조용한 빈손**으로 넘긴다(`read_dir`·`read_to_string` 의 `let Ok`).
+///
+/// 이 가드의 수치 레버는 `MIN_COMMANDS` 하나뿐이고 그것은 하한이라 **좁아지는 쪽만**
+/// 본다. 그런데 여기서 두 판독이 틀리는 방향은 서로 반대다:
+///
+///   - `plugin_commands` 가 **덜** 걷으면 그 명령은 가이드 요구에서 통째로 빠진다.
+///     조용한 구멍이고, `MIN_COMMANDS` 는 core 명령만으로도 채워져서 안 짖는다.
+///   - `guide_text` 가 **더** 걷으면(번역·비-`.md`) 본문이 넘쳐 "가이드에 있다" 가
+///     쉽게 참이 된다. 하한이 원리적으로 못 보는 방향이다.
+///
+/// ★ 이름은 전부 합성이다(R1078) — 진짜 plugin 이름이나 명령 이름을 안 쓴다.
+#[test]
+fn the_plugin_and_guide_readers_answer_on_a_substituted_tree() {
+    let probe = Scratch::new("cli-guide-reader");
+    let dir = probe.path();
+
+    // ── 판독 1: plugin 이 기여한 명령 ───────────────────────────────────
+    let mk = |name: &str, body: &str| {
+        let d = dir.join("crates").join(name);
+        std::fs::create_dir_all(&d).expect("합성 크레이트 디렉토리를 만들지 못했다");
+        std::fs::write(d.join("tasty-plugin.toml"), body).expect("합성 매니페스트 실패");
+    };
+    mk(
+        "zeta-plugin",
+        "[[contributes.cli]]\nname = \"zeta-cmd\"\ndescription = \"z\"\n",
+    );
+    // 헤더와 `name` 사이의 빈 줄·주석은 건너뛴다. 그리고 한 매니페스트에 둘 이상.
+    mk(
+        "omega-plugin",
+        "[[contributes.cli]]\n\n# 주석 한 줄\nname = \"omega-one\"\n\n\
+         [[contributes.cli]]\nname = \"omega-two\"\n",
+    );
+    // `[[contributes.cli]]` 가 없는 매니페스트 — 아무것도 안 낸다.
+    mk("sigma-plugin", "[plugin]\nid = \"sigma\"\n");
+    // 매니페스트가 없는 디렉토리 — 건너뛴다(라이브러리 크레이트가 이 모양이다).
+    std::fs::create_dir_all(dir.join("crates/no-manifest/src"))
+        .expect("합성 무매니페스트 디렉토리 실패");
+
+    let got = plugin_commands(dir);
+    assert_eq!(
+        got,
+        vec![
+            ("omega-one".to_string(), "omega-plugin".to_string()),
+            ("omega-two".to_string(), "omega-plugin".to_string()),
+            ("zeta-cmd".to_string(), "zeta-plugin".to_string()),
+        ],
+        "plugin 명령 판독이 합성 트리에서 다른 답을 냈다"
+    );
+    assert!(
+        got.iter().all(|(_, owner)| !owner.is_empty()),
+        "소유 크레이트 이름을 못 붙였다 — 실패문이 어느 plugin 인지 못 가리킨다"
+    );
+    assert!(
+        !got.iter().any(|(c, _)| c == "sigma"),
+        "`[[contributes.cli]]` 가 없는 매니페스트에서 명령을 만들어 냈다"
+    );
+
+    // ── 판독 2: 가이드 본문 ─────────────────────────────────────────────
+    let content = dir.join("site/content");
+    std::fs::create_dir_all(content.join("en")).expect("합성 가이드 트리를 만들지 못했다");
+    std::fs::create_dir_all(content.join("sub")).expect("합성 하위 장을 만들지 못했다");
+    std::fs::write(content.join("cli.md"), "zeta-cmd 를 설명한다\n").expect("합성 원본 실패");
+    std::fs::write(
+        content.join("sub").join("deep.md"),
+        "deep-marker 가 여기 있다\n",
+    )
+    .expect("합성 하위 원본 실패");
+    std::fs::write(content.join("en").join("cli.md"), "translated-omega\n")
+        .expect("합성 번역 실패");
+    std::fs::write(content.join("notes.txt"), "md 가 아니다 sigma-decoy\n").expect("잡파일 실패");
+
+    let guide = guide_text(dir);
+    assert!(guide.contains("zeta-cmd"), "원본 `.md` 를 안 읽었다");
+    assert!(guide.contains("deep-marker"), "하위 디렉토리로 안 내려갔다");
+    assert!(
+        !guide.contains("translated-omega"),
+        "번역(`en/`)이 원본에 섞였다 — 본문이 넘치면 \"가이드에 있다\" 가 쉽게 참이 되고, \
+         하한은 그 방향을 원리적으로 못 본다"
+    );
+    assert!(
+        !guide.contains("sigma-decoy"),
+        "`.md` 가 아닌 파일을 읽었다 — 같은 방향이다"
+    );
+}
+
+/// **경계를 값으로 적어 둔다 — `name` 이 첫 필드가 아니면 그 명령은 안 보인다.**
+///
+/// [`plugin_commands`] 는 `[[contributes.cli]]` 뒤의 **첫** 비어 있지 않은 비주석 줄만
+/// 보고 `break` 한다. 그 줄이 `name` 이 아니면 그 명령은 모수에서 통째로 빠지고,
+/// 빠진 명령은 가이드에 없어도 아무도 안 짖는다 — `MIN_COMMANDS` 는 core 명령만으로
+/// 채워지므로 하한도 안 걸린다.
+///
+/// 지금은 **잠복**이다. 실측(2026-09-08): 번들 매니페스트 6 개가 전부 `name` 을 첫
+/// 필드로 둔다. 그래서 이것은 지금 나는 고장이 아니라 **한 줄 순서만 바뀌면 조용해지는
+/// 자리**이고, 그 사실을 시험으로 박아 둔다 — 고치는 날 이 시험이 함께 빨개져서
+/// "의도한 변경" 이라는 것이 값으로 남는다.
+///
+/// 양성 대조(2026-09-08, 내 트리): [`plugin_commands`] 의 `break` 를 `name` 을 찾은 뒤로
+/// 옮겨 판독을 넓히면 이 시험만 rc=101 로 죽는다(패키지 568 passed / 1 failed).
+/// **실물 판정은 안 움직인다** — 번들 매니페스트 6 개가 전부 `name` 을 첫 필드로 두어
+/// 넓혀도 같은 답이 나오기 때문이다. 그것이 이 경계 시험이 더하는 구간의 전부이자
+/// 이유다: 실물이 조용한 회귀를 합성 매니페스트 하나가 소리나게 만든다.
+#[test]
+fn a_command_whose_name_is_not_the_first_field_is_currently_invisible() {
+    let probe = Scratch::new("cli-latent");
+    let dir = probe.path();
+    let d = dir.join("crates/latent-plugin");
+    std::fs::create_dir_all(&d).expect("합성 크레이트 디렉토리를 만들지 못했다");
+    std::fs::write(
+        d.join("tasty-plugin.toml"),
+        "[[contributes.cli]]\ndescription = \"설명이 먼저 온다\"\nname = \"latent-cmd\"\n",
+    )
+    .expect("합성 매니페스트 실패");
+
+    let got = plugin_commands(dir);
+    assert!(
+        got.is_empty(),
+        "이 판독이 넓어졌다 — `name` 이 첫 필드가 아닌 자리도 이제 보인다: {got:?}\n\
+         ★ 그것이 **의도한 개선이면** 이 시험을 지우고 위 doc 주석의 '잠복' 서술도 함께 \
+         지워라. 의도하지 않았으면 판독이 두 곳을 다르게 세고 있다는 뜻이다."
+    );
 }

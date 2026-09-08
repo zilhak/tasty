@@ -38,14 +38,24 @@ const ALLOWLIST_FILES: &[&str] = &[];
 /// 순회가 실제로 `docs/` 를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
 /// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
 const DOCS_FLOOR: Floor = Floor {
-    min: 250,
-    measured: 380,
-    measured_on: "2026-09-06",
-    why_this_gap: "이 모수는 `docs/` 아래 `.md` 문서의 수다. 문서는 ADR 이 쌓이면서 단조 \
-                   증가해 왔고, 한 번에 수십 개가 사라지는 변경은 없었다 — 그래서 여유를 \
-                   좁게 둔다. 넓게 두면 순회가 절반 죽어도 통과하는데, 이 가드가 겨냥하는 \
-                   사고가 정확히 그것(순회 루트 오타 · 재귀 중단)이라 넓은 여유는 가드를 \
-                   자기 목적에서 멀어지게 한다.",
+    min: 338,
+    // 좌변의 사실은 `populations::DOCS_MD` 하나가 갖는다 — 같은 모수를 재는 자리가
+    // `every_docs_category_is_reachable_from_the_index` 에 하나 더 있다.
+    measured: tasty_doc_guards::floored_walk::populations::DOCS_MD.measured,
+    measured_on: tasty_doc_guards::floored_walk::populations::DOCS_MD.measured_on,
+    counted_on: tasty_doc_guards::floored_walk::populations::DOCS_MD.counted_on,
+    why_this_gap: "실측(`8bdbf1bdb` 직전 1215 커밋): 이 모수는 354..402 로 \
+                   움직였고 **감소가 한 번도 없었다** — 47 개 커밋에서 다 늘기만 했고 최대 \
+                   증가가 2 다. 감소 진폭이 관측되지 않았으므로 '진폭 × 몇 배' 를 쓸 근거가 \
+                   없고, 대신 아직 안 일어난 사건의 크기에 건다: 문서 카테고리 하나가 접히면 그 \
+                   아래 `.md` 가 통째로 빠지고, 지금 트리에서 그 크기의 최대는 `docs/features` \
+                   의 64 다. 여유 64 = 사건 하나. `docs/adr` 211 은 곱수에 안 넣는다 — 그것이 \
+                   접히는 것은 카테고리 하나가 접히는 사건이 아니라 결정 기록 방식이 바뀌는 \
+                   일이고, 그때 할 일은 하한을 견디는 것이 아니라 이 수를 다시 재는 것이다. 이 \
+                   가드는 체크박스를 담은 문서를 찾으므로, 순회가 절반만 모으면 못 본 문서의 \
+                   체크박스가 **위반 0 으로 승인된다**. 앞선 판은 계보(1215 커밋에서 354→399)는 \
+                   적었지만 폭 102 를 그 수에서 뽑지는 않았다 — 계보는 값이 어디서 왔는지를 \
+                   말하고, 폭은 그것만으로 안 정해진다",
 };
 
 /// 행이 마크다운 체크박스 목록 항목으로 시작하는지.
@@ -189,12 +199,20 @@ fn is_prunable_dir(name: &str) -> bool {
 /// `docs/` 아래 디렉토리 순회의 하한. 여기서 하한은 **모은 수가 아니라 훑은 수**에
 /// 걸린다 — 가지쳐야 할 디렉토리가 0 개인 것이 이 가드가 지키려는 정상 상태다.
 const DOCS_DIR_FLOOR: Floor = Floor {
-    min: 50,
+    min: 73,
     measured: 87,
     measured_on: "2026-09-06",
-    why_this_gap: "이 모수는 `docs/` 아래 디렉토리 수다. 문서 디렉토리는 카테고리라 \
-                   개별 문서보다 훨씬 천천히 움직이지만, 카테고리 하나를 접으면 그 아래가 \
-                   통째로 사라져 한 번에 여럿이 준다 — 그래서 여유를 중간쯤 둔다.",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::LaneTip("8bdbf1bdb"),
+    why_this_gap: "이 모수는 `docs/` 아래 디렉토리 수다(뿌리 자신은 안 센다 — \
+                   `collect_dirs` 가 하위만 훑는다). 움직임을 실측했다: `8bdbf1bdb` 직전 1215 \
+                   커밋에서 이 수는 87 로 **한 번도 안 변했다**. 진폭이 0 이라 다른 하한들처럼 \
+                   '관측 진폭 × 세 배' 를 쓸 근거가 없다 — 연속으로 몇 번 움직인다는 관측 자체가 \
+                   없다. 그래서 사건 하나분만 둔다: 카테고리 하나가 접히면 그 아래가 통째로 \
+                   빠지고, 지금 트리에서 그 크기의 최대는 `features` 를 뺀 `plugins` 의 14 다. \
+                   여유 14 = 사건 하나. `features` 61 은 곱수에 안 넣는다 — 그것이 통째로 접히는 \
+                   것은 카테고리 하나가 접히는 사건이 아니라 문서 모델이 바뀌는 일이고, 그때는 \
+                   이 수를 다시 재는 것이 맞다. 앞선 판은 '여유를 중간쯤 둔다' 였는데, 중간쯤은 \
+                   어떤 실측으로도 거짓이 되지 않아 폭을 아무것도 안 정한다",
 };
 
 /// `root` 하위를 순회하며 `is_prunable_dir` 이 참인 디렉토리를 모은다.
@@ -269,13 +287,12 @@ fn the_prunable_check_reacts_to_a_planted_tree() {
     );
 
     // 순회 축 — 실제 디렉토리를 심어서 부른다. 술어만 부르면 순회가 죽어도 초록이다.
+    // 유일화 키에 **시각을 안 쓴다** — 시계의 해상도는 플랫폼의 성질이다.
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let stamp = format!(
         "tasty-checkbox-guard-probe-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     );
     let base = std::env::temp_dir().join(stamp);
     let docs = base.join("docs");
@@ -289,6 +306,7 @@ fn the_prunable_check_reacts_to_a_planted_tree() {
         min: 3,
         measured: 5,
         measured_on: "2026-09-06",
+        counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
         why_this_gap: "심은 트리라 수가 고정이다. 하한을 실측보다 낮춰 두는 것은 이 대조가                        트리 모양의 사소한 변경에 깨지지 않게 하려는 것뿐이다.",
     };
     let found = prunable_dirs_under(&docs, &base, &probe_floor)

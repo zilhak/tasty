@@ -47,6 +47,7 @@
 //! cargo test -p tasty-doc-guards --test test_harness_lock_unwrap_ratchet -- --nocapture
 //! ```
 
+use std::path::PathBuf;
 use tasty_doc_guards::repo_root;
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
@@ -168,6 +169,54 @@ fn classify(masked: &str) -> (Vec<usize>, Vec<usize>) {
     (acquired, bare)
 }
 
+/// 한 코퍼스를 훑은 결과 — 세 칸을 한 자리에서 낸다.
+pub struct Scan {
+    /// 공유 락을 잡은 자리 수 — **술어의 생존 신호**(분모).
+    pub acquisitions: usize,
+    /// 면제되지 않은 생 `.unwrap()` 자리 (분자).
+    pub sites: Vec<String>,
+    /// 면제 명부 항목별 적중 수 — 0 이면 죽은 면제다.
+    pub exempt_hits: Vec<usize>,
+}
+
+/// 코퍼스와 면제 명부를 **인자로 받아** 훑는다.
+///
+/// 이 알맹이가 `#[test]` 본문 안에 인라인이면 합성 코퍼스로 잴 길이가 없다. 특히
+/// **면제 라우팅**은 여기서만 일어나고, 그것이 넓어지면 진짜 위반이 `sites` 에서
+/// 조용히 빠진다 — `exempt_hits` 는 **늘어나므로** 죽은 면제 단정도 안 걸리고,
+/// `EXEMPT_BUDGET` 은 명부의 *크기*만 보므로 역시 안 걸린다(R1072).
+fn scan(sources: &[(PathBuf, String)], exempt: &[(&str, &str, &str)]) -> Scan {
+    let mut acquisitions = 0usize;
+    let mut sites: Vec<String> = Vec::new();
+    let mut exempt_hits = vec![0usize; exempt.len()];
+
+    for (rel, raw) in sources {
+        let rel_s = rel.display().to_string();
+        let masked = mask_non_code(raw);
+        let lines: Vec<&str> = masked.lines().collect();
+        let (acq, bare) = classify(&masked);
+        acquisitions += acq.len();
+        for ln in bare {
+            let text = lines.get(ln - 1).map(|s| s.trim()).unwrap_or("");
+            let mut exempted = false;
+            for (i, (path, needle, _why)) in exempt.iter().enumerate() {
+                if &rel_s == path && text.contains(needle) {
+                    exempt_hits[i] += 1;
+                    exempted = true;
+                }
+            }
+            if !exempted {
+                sites.push(format!("{rel_s}:{ln}: {text}"));
+            }
+        }
+    }
+    Scan {
+        acquisitions,
+        sites,
+        exempt_hits,
+    }
+}
+
 #[test]
 fn a_bare_unwrap_on_a_shared_lock_is_caught() {
     // 양성 대조 — 픽스처는 **합성 이름**만 쓴다. 실재 경로·실재 타깃 이름을 쓰면 그 파일의
@@ -218,30 +267,11 @@ fn test_harness_locks_do_not_unwrap_bare() {
     let root = repo_root();
     let sources = rust_sources(&root, SCAN_ROOTS);
 
-    let mut acquisitions = 0usize;
-    let mut sites: Vec<String> = Vec::new();
-    let mut exempt_hits = vec![0usize; EXEMPT.len()];
-
-    for (rel, raw) in &sources {
-        let rel_s = rel.display().to_string();
-        let masked = mask_non_code(raw);
-        let lines: Vec<&str> = masked.lines().collect();
-        let (acq, bare) = classify(&masked);
-        acquisitions += acq.len();
-        for ln in bare {
-            let text = lines.get(ln - 1).map(|s| s.trim()).unwrap_or("");
-            let mut exempted = false;
-            for (i, (path, needle, _why)) in EXEMPT.iter().enumerate() {
-                if &rel_s == path && text.contains(needle) {
-                    exempt_hits[i] += 1;
-                    exempted = true;
-                }
-            }
-            if !exempted {
-                sites.push(format!("{rel_s}:{ln}: {text}"));
-            }
-        }
-    }
+    let Scan {
+        acquisitions,
+        sites,
+        exempt_hits,
+    } = scan(&sources, EXEMPT);
 
     // 단정보다 **앞**에 둔다 — 빨간 경로에서도 모수가 남아야 한다.
     eprintln!(
@@ -314,5 +344,86 @@ fn test_harness_locks_do_not_unwrap_bare() {
             .map(|s| format!("  {s}"))
             .collect::<Vec<_>>()
             .join("\n")
+    );
+}
+
+/// **양성 대조 — 면제 라우팅.**
+///
+/// 텍스트 술어([`classify`])는 이미 셋이 건다. 안 걸려 있던 것은 그 위의 **면제
+/// 라우팅**이다: 어떤 위반이 `sites` 에 남고 어떤 것이 `exempt_hits` 로 빠지는가.
+///
+/// 그 방향은 이 파일의 세 레버가 전부 못 본다.
+///   - `MIN_ACQUISITIONS` 는 **분모**(획득 자리)만 본다. 면제가 넓어져도 분모는 그대로다.
+///   - 죽은 면제 단정은 적중이 **0** 인 항목을 잡는다. 넓어지면 적중이 **늘어서** 안 걸린다.
+///   - `EXEMPT_BUDGET` 은 명부의 **크기**만 본다. 매칭 규칙이 헐거워지는 것은 크기를 안 바꾼다.
+/// 셋 다 못 보는 상태에서 위반 목록은 조용히 비어 간다.
+///
+/// 대조의 요점은 **같은 코드 줄을 두 경로에 두는 것**이다. 면제는 (경로, 바늘) 짝인데,
+/// 경로 비교가 헐거워지면 면제 하나가 그 줄을 가진 모든 파일을 덮는다. 그 형태는 두
+/// 경로에 같은 줄이 있을 때만 드러난다.
+///
+/// ★ 코퍼스도 면제 명부도 전부 합성이다(R1078) — 실재 경로·실재 [`EXEMPT`] 값을 안 쓴다.
+#[test]
+fn the_exempt_routing_answers_on_a_substituted_corpus() {
+    // 두 파일에 **똑같이** 들어가는 줄. 면제는 이 중 한 경로에만 걸린다.
+    let shared_line = "    let zeta = SHARED.lock().unwrap();";
+    let corpus = vec![
+        (
+            PathBuf::from("zone/alpha.rs"),
+            "fn a() {\n    let g = SHARED.lock().unwrap();\n}\n".to_string(),
+        ),
+        (
+            PathBuf::from("zone/beta.rs"),
+            format!("fn b() {{\n{shared_line}\n    let h = OTHER.write().unwrap();\n}}\n"),
+        ),
+        (
+            // 같은 줄, 다른 경로 — 면제 대상이 아니다.
+            PathBuf::from("zone/gamma.rs"),
+            format!("fn c() {{\n{shared_line}\n}}\n"),
+        ),
+        (
+            // 고쳐진 모양 — 획득은 세되 위반은 아니다.
+            PathBuf::from("zone/delta.rs"),
+            "fn d() {\n    let g = SHARED.lock().unwrap_or_else(|p| p.into_inner());\n}\n"
+                .to_string(),
+        ),
+    ];
+    let exempt: &[(&str, &str, &str)] = &[(
+        "zone/beta.rs",
+        "let zeta = SHARED.lock().unwrap();",
+        "합성 사유",
+    )];
+
+    let got = scan(&corpus, exempt);
+
+    assert_eq!(
+        got.acquisitions, 5,
+        "획득 자리를 다르게 셌다 — 분모가 흔들리면 술어의 생존 신호가 흔들린다"
+    );
+    assert_eq!(got.exempt_hits, vec![1], "면제 적중 수가 다르다");
+
+    let mut sites = got.sites.clone();
+    sites.sort();
+    assert_eq!(
+        sites,
+        vec![
+            "zone/alpha.rs:2: let g = SHARED.lock().unwrap();".to_string(),
+            "zone/beta.rs:3: let h = OTHER.write().unwrap();".to_string(),
+            "zone/gamma.rs:2: let zeta = SHARED.lock().unwrap();".to_string(),
+        ],
+        "면제 라우팅이 합성 코퍼스에서 다른 답을 냈다"
+    );
+    assert!(
+        sites.iter().any(|s| s.starts_with("zone/gamma.rs")),
+        "**다른 경로**의 같은 줄까지 면제했다 — 경로 비교가 헐거워지면 면제 하나가 그 줄을 \
+         가진 모든 파일을 덮는다"
+    );
+    assert!(
+        sites.iter().any(|s| s.contains("beta.rs:3")),
+        "면제된 파일의 **다른 줄**까지 면제했다 — 면제는 (경로, 바늘) 짝이지 파일이 아니다"
+    );
+    assert!(
+        !sites.iter().any(|s| s.contains("delta.rs")),
+        "고쳐진 모양(`unwrap_or_else`)을 생 `.unwrap()` 으로 셌다"
     );
 }

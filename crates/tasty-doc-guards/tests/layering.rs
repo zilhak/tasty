@@ -35,6 +35,14 @@
 //! 루트 `tests/` 에서 이 크레이트로 옮겨오며 실제로 그럴 뻔했다. `repo_root()` 는 표지
 //! 파일로 자기가 잡은 경로를 검증한다.
 
+// 이유: 이 파일은 합성 트리를 만들어 라우팅을 재는 양성 대조를 갖는다. 그 정리
+// 코드(`let _ = remove_dir_all`)는 실패해도 할 일이 없다 — 이전 실행 잔여물이 없으면
+// `NotFound` 가 정상 경로다. 그리고 전수 가드
+// (`crates/tasty-doc-guards/tests/let_underscore_documented.rs`)는 테스트 본문을
+// 제외하므로 여기서 나는 경고는 정책상 조치 대상이 아니다 —
+// `docs/dev-guide/error-handling.md`.
+#![allow(clippy::let_underscore_must_use)]
+
 use std::path::Path;
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
@@ -157,21 +165,41 @@ fn declared_under_cfg_test(rel: &str, root: &Path) -> Result<(), String> {
 /// 순회가 실제로 트리를 봤음을 보장하는 하한 — 값 하나가 아니라 **무엇의 함수인지**와
 /// 함께 선언한다. 이 형태와 그 이유는 `tasty_doc_guards::floored_walk` 에 있다.
 const SRC_FLOOR: Floor = Floor {
-    min: 300,
-    measured: 591,
-    measured_on: "2026-09-06",
-    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수이고, 그것을 움직이는 것은 주로 크레이트 \
-                   분해다 — 한 번에 수십 개가 `crates/` 로 옮겨 가므로 좁은 여유는 정상적인 \
-                   이동에 빨개지고, 그러면 사람이 하한을 내리는 습관을 들인다. 절반쯤 벌려 \
-                   두고 통째로 비는 사고만 잡는다. 얕고 넓은 순회는 이 값이 아니라 깊이와 \
-                   앵커가 막으므로 여유가 넓어도 그쪽은 안 새 나간다.",
+    min: 420,
+    // 좌변의 사실은 `tasty_doc_guards::floored_walk::populations::SRC_RS` 하나가 갖는다 — 같은 모수를 재는 자리가 이
+    // 파일 말고 하나 더 있고, 값을 각자 적어 두었더니 591 과 598 로 갈려 있었다.
+    measured: tasty_doc_guards::floored_walk::populations::SRC_RS.measured,
+    measured_on: tasty_doc_guards::floored_walk::populations::SRC_RS.measured_on,
+    counted_on: tasty_doc_guards::floored_walk::populations::SRC_RS.counted_on,
+    why_this_gap: "이 모수는 `src/` 의 `.rs` 개수다. 이 자리의 여유는 움직임이 아니라 \
+                   **계기 사이의 경계**가 정한다. 이 가드에는 하한 말고 깊이 하한과 앵커가 \
+                   있고, 깊이 하한이 맡는 사고는 '재귀가 중간에 멈춰 얕은 파일만 모인 \
+                   것' 이다. 실측 2026-09-08(`eea7530d2`): 깊이 4 이하가 **420** 개다. \
+                   하한을 그보다 높이면 그 절단을 하한이 먼저 잡아 버려 **깊이 하한이 \
+                   한 번도 안 물린다** — 안 걸리는 술어는 없는 술어보다 나쁘다. 그래서 \
+                   하한을 정확히 420 에 둔다: 깊이 절단은 깊이 하한이, 그보다 큰 대량 \
+                   손실은 이 하한이 잡는다. 이 수는 늘기만 해 왔으므로(같은 창에서 감소 \
+                   사건 13 건의 최대가 9) 하한이 그 아래 있는 성질은 유지된다. ★ 여유 185 \
+                   는 견딜 폭이 아니라 **다른 계기가 맡은 구간**이다 — 그 구간이 비면 이 \
+                   문장이 거짓이 되고, 그때는 여유가 아니라 계기 배치를 다시 봐야 한다.",
 };
 
 /// 순회가 닿아야 할 최소 깊이(`src` 를 1 로 센 경로 성분 수).
 ///
-/// [`SRC_FLOOR`] 는 **총량만** 본다 — 재귀가 중간에 멈춰도 얕은 파일만으로 그 하한을
-/// 넘길 수 있다. 실측 2026-09-06: 깊이 4 이하가 408 개라 그것만으로 하한 300 을 넘는다.
-/// 그 사고를 잡는 것이 이 값이다. 실측 최대 깊이는 6 이고 깊이 5 이상이 183 개다.
+/// [`SRC_FLOOR`] 는 **총량만** 본다 — 재귀가 중간에 멈춰도 얕은 파일만으로 그 하한에
+/// 닿을 수 있다. 그 사고를 잡는 것이 이 값이고, **[`SRC_FLOOR`] 의 하한이 그러라고 그
+/// 수에 맞춰져 있다.**
+///
+/// 실측 2026-09-08(`ae61c8521`): 깊이 4 이하가 **420** 개, 깊이 5 이상이 185 개, 최대
+/// 깊이는 6 이다. `SRC_FLOOR.min` 이 정확히 420 이라, 재귀가 깊이 4 에서 멈춘 순회는
+/// 하한을 **아슬아슬하게 통과하고**(420 ≥ 420) 여기서 걸린다. 하한을 421 로 올리면 그
+/// 절단을 하한이 먼저 잡아 **이 값이 한 번도 안 물린다** — 안 걸리는 술어는 없는 술어보다
+/// 나쁘다.
+///
+/// 그래서 이 두 상수는 각자 고를 수 있는 값이 아니라 **한 쌍**이다. 이 문장이 거짓이
+/// 되는 값이 있다: 깊이 4 이하가 `SRC_FLOOR.min` 아래로 내려가거나 그 하한이 깊이 4
+/// 이하의 수를 넘으면, 역할 분담이 깨진 것이므로 여유가 아니라 계기 배치를 다시 봐야
+/// 한다.
 const MIN_DEPTH: usize = 5;
 
 /// 순회 도달을 고정하는 앵커. **[`ALLOWED_PATHS`] 와 분리한다 — 물음이 다르다.**
@@ -216,8 +244,16 @@ fn walk_reached_anchor(rels: &[String], anchor: &str) -> Result<(), String> {
     ))
 }
 
+/// 생산 명부로 묻는다. 명부를 공급하는 것이 이 함수의 일이고, 판정 자체는
+/// [`is_allowed_in`] 이 한다 — 그래야 대체 명부로도 같은 판정을 태울 수 있다.
 fn is_allowed(rel: &str) -> bool {
-    ALLOWED_PATHS.iter().any(|p| {
+    is_allowed_in(rel, ALLOWED_PATHS)
+}
+
+/// 면제 판정. 명부를 **인자로** 받는다 — 상수에서 읽으면 이 술어는 생산 트리 밖에서
+/// 한 번도 못 돌고, 그러면 접두 매칭이 죽어도 위반 0 이 그대로 초록으로 나간다.
+fn is_allowed_in(rel: &str, allowed: &[&str]) -> bool {
+    allowed.iter().any(|p| {
         if let Some(dir) = p.strip_suffix('/') {
             rel.starts_with(dir) && rel.as_bytes().get(dir.len()) == Some(&b'/')
         } else {
@@ -235,13 +271,78 @@ fn is_scan_target(found: &Walked) -> bool {
 /// 이름은 `CARGO_TARGET_DIR` 하나로 무엇이든 될 수 있어서 이름 목록은 그것을 못 따라간다.
 /// 하한은 공용 순회가 강제하므로 여기서 빠뜨릴 수 없다.
 fn walk_src(root: &Path) -> Result<Vec<Walked>, String> {
+    walk_src_under(&root.join("src"), root, &SRC_FLOOR)
+}
+
+/// 순회 자체. 뿌리와 하한을 **인자로** 받는다 — 둘 다 모수의 성질이지 이 함수의
+/// 성질이 아니고, 상수로 박아 두면 이 순회는 `src/` 605 개짜리 트리에서만 돌 수 있다.
+fn walk_src_under(src_dir: &Path, rel_base: &Path, floor: &Floor) -> Result<Vec<Walked>, String> {
     walk_with_floor(
-        &root.join("src"),
-        root,
-        &SRC_FLOOR,
+        src_dir,
+        rel_base,
+        floor,
         Descend::SkipBuildCaches,
         &is_scan_target,
     )
+}
+
+/// 라우팅에 필요한 네 값. 상수로 읽지 않고 한 묶음으로 **받는다** — 이 가드가
+/// 가르는 것은 네 갈래(면제 · 한시 허용 · 범위 밖 · 위반)이고, 그 갈래를 정하는 것이
+/// 전부 이 넷이기 때문이다.
+struct Rosters<'a> {
+    allowed: &'a [&'a str],
+    baseline: &'a [&'a str],
+    test_only: &'a [&'a str],
+    needle: &'a str,
+}
+
+/// 라우팅 결과. 세 갈래를 함께 낸다 — 위반은 앞으로, 나머지 둘은 **역방향 검사**
+/// (명부가 실제보다 넓지 않은가)로 쓰인다.
+struct Routed {
+    new_violations: Vec<String>,
+    baseline_hit: Vec<String>,
+    test_only_hit: Vec<String>,
+}
+
+/// 순회가 모은 파일을 네 갈래로 가른다.
+///
+/// **이 함수가 이 가드의 전부다.** 시험 본문에 있을 때는 생산 트리로만 부를 수 있었고,
+/// 생산 트리에서 위반은 0 이라 **보고 갈래(`new_violations`)에 오늘 입력이 하나도 없다**
+/// (실측 2026-09-08, 트리 `b134d28e3`: `src/` 605 개 중 `tasty_cli::` 를 담은 파일 3 —
+/// 면제 1 · 범위 밖 2 · 위반 0). 인자로 받게 만드는 것은 그 갈래에 입력을 넣을 방법을
+/// 여는 일이다.
+fn route(files: &[Walked], r: &Rosters) -> Routed {
+    let mut out = Routed {
+        new_violations: Vec::new(),
+        baseline_hit: Vec::new(),
+        test_only_hit: Vec::new(),
+    };
+    for file in files {
+        let rel = &file.rel;
+        if is_allowed_in(rel, r.allowed) {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&file.path) else {
+            continue; // 비-UTF8 은 경로 참조를 담을 수 없다.
+        };
+        let mut hits = Vec::new();
+        for (i, line) in contents.lines().enumerate() {
+            if line.contains(r.needle) {
+                hits.push(format!("  {}:{} — `{}`", rel, i + 1, line.trim()));
+            }
+        }
+        if hits.is_empty() {
+            continue;
+        }
+        if r.baseline.contains(&rel.as_str()) {
+            out.baseline_hit.push(rel.clone());
+        } else if r.test_only.contains(&rel.as_str()) {
+            out.test_only_hit.push(rel.clone());
+        } else {
+            out.new_violations.extend(hits);
+        }
+    }
+    out
 }
 
 #[test]
@@ -304,34 +405,20 @@ fn src_does_not_reference_tasty_cli() {
         broken.join("\n  ")
     );
 
-    let mut new_violations = Vec::new();
-    let mut baseline_hit = Vec::new();
-    let mut test_only_hit = Vec::new();
-    for file in &files {
-        let rel = &file.rel;
-        if is_allowed(&rel) {
-            continue;
-        }
-        let Ok(contents) = std::fs::read_to_string(&file.path) else {
-            continue; // 비-UTF8 은 경로 참조를 담을 수 없다.
-        };
-        let mut hits = Vec::new();
-        for (i, line) in contents.lines().enumerate() {
-            if line.contains(FORBIDDEN) {
-                hits.push(format!("  {}:{} — `{}`", rel, i + 1, line.trim()));
-            }
-        }
-        if hits.is_empty() {
-            continue;
-        }
-        if BASELINE_FILES.contains(&rel.as_str()) {
-            baseline_hit.push(rel);
-        } else if TEST_ONLY_FILES.iter().any(|(f, _)| *f == rel) {
-            test_only_hit.push(rel);
-        } else {
-            new_violations.extend(hits);
-        }
-    }
+    let test_only: Vec<&str> = TEST_ONLY_FILES.iter().map(|(f, _)| *f).collect();
+    let Routed {
+        new_violations,
+        baseline_hit,
+        test_only_hit,
+    } = route(
+        &files,
+        &Rosters {
+            allowed: ALLOWED_PATHS,
+            baseline: BASELINE_FILES,
+            test_only: &test_only,
+            needle: FORBIDDEN,
+        },
+    );
 
     assert!(
         new_violations.is_empty(),
@@ -505,4 +592,144 @@ fn the_population_checks_separate_a_walked_tree_from_an_empty_one() {
         walk_descends_far_enough(&empty_rels, 0).is_ok(),
         "최소 깊이 0 으로도 빈 순회가 거부된다 — 판정이 깊이 인자를 안 보고 있다"
     );
+}
+
+/// [`route`] 의 **보고 갈래**에 처음으로 입력을 넣는다 — 이 파일에서 생산 트리로는
+/// 태울 수 없는 유일한 갈래다.
+///
+/// **왜 이것이 필요한지는 실측이다.** 트리 `b134d28e3` 기준 생산 `src/` 605 개 중
+/// `tasty_cli::` 를 담은 파일은 3 이고 갈래는 면제 1 · 범위 밖 2 · **위반 0** 이다.
+/// 그 상태에서 `route` 의 `else { new_violations.extend(hits) }` 를 통째로 비우고
+/// 돌리면 이 파일의 네 시험이 **전부 통과한다**(실측 2026-09-08: rc=0 · 4 passed).
+/// 이 가드의 존재 이유인 그 한 갈래를 지키는 것이 아무것도 없었다.
+///
+/// 반대 방향은 이미 지켜지고 있다 — `is_allowed` 를 항상 참으로 만들면 `test_only_hit`
+/// 이 비어 아래 `src_does_not_reference_tasty_cli` 의 역방향 검사가 터진다. 그래서
+/// 이 픽스처가 새로 얻는 것은 **보고 갈래 하나**이고, 그 크기를 과장하지 않는다.
+///
+/// ★ 심는 문자열 `tasty_cli::` 는 **리터럴로 쓴다.** [`FORBIDDEN`] 을 참조하면 그 상수를
+/// 무엇으로 바꿔도 이 픽스처가 초록이라 동어반복이 된다(R1078). 이 이름은 가드 밖에서
+/// 온다 — `crates/tasty-cli/Cargo.toml` 의 패키지 이름이다. 명부 셋도 마찬가지로
+/// [`ALLOWED_PATHS`]·[`TEST_ONLY_FILES`] 를 안 읽고 이 시험이 직접 짓는다.
+#[test]
+fn the_router_reports_a_planted_reference_and_routes_the_rest_away() {
+    // 이유: 이 자리는 **프로세스당 한 번만** 불린다. cargo 시험 하네스는 `#[test]` 를
+    //       한 프로세스에서 한 번 돌리고, 이 접두를 짓는 자리는 이 바이너리에 하나뿐이다
+    //       (이 파일에서 임시 경로를 짓는 자리 1 · `#[test]` 5). 그래서 같은 프로세스의
+    //       재호출이 없고, pid 가 지는 축(프로세스 간)이 이 자리에 필요한 축의 전부다.
+    //       아래 `remove_dir_all` 이 지우는 것은 앞 호출의 트리가 아니라 **pid 가
+    //       재사용된 옛 프로세스의 잔재**다 — 그것은 단조 카운터로도 안 없어진다.
+    let root = std::env::temp_dir().join(format!("tasty-layering-fixture-{}", std::process::id()));
+    // 이전 실행 잔여물 제거 — 없으면 `NotFound` 라 실패가 정상 경로다.
+    let _ = std::fs::remove_dir_all(&root);
+    let src = root.join("src");
+    std::fs::create_dir_all(src.join("zone/a/b")).expect("합성 트리를 만들지 못했다");
+    std::fs::create_dir_all(src.join("adapters")).expect("합성 트리를 만들지 못했다");
+
+    let write = |rel: &str, body: &str| {
+        std::fs::write(src.join(rel), body).unwrap_or_else(|e| panic!("{rel}: {e}"));
+    };
+    // 앵커 — 순회가 뿌리에 닿았는가.
+    write("main.rs", "fn main() {}\n");
+    // 면제 경로. 참조를 담지만 보고되면 안 된다.
+    write("adapters/cli.rs", "pub use tasty_cli::Command;\n");
+    // ★ 보고돼야 하는 자리. 깊이도 함께 준다(재귀가 멈추면 이것부터 사라진다).
+    write(
+        "zone/a/b/leaker.rs",
+        "fn f() { let _ = tasty_cli::run(); }\n",
+    );
+    // 한시 허용 — 오늘 생산 트리에서 `BASELINE_FILES` 가 비어 있어 입력이 0 인 갈래다.
+    write("zone/legacy.rs", "use tasty_cli::Legacy;\n");
+    // 범위 밖 — 부모가 test 게이트로 선언한다. 게이트 없는 형제를 같이 둔다.
+    write("zone.rs", "#[cfg(test)]\nmod gated;\n\nmod ungated;\n");
+    write("zone/gated.rs", "fn t() { let _ = tasty_cli::probe(); }\n");
+    write("zone/ungated.rs", "pub fn plain() {}\n");
+    // 미끼 — `::` 가 없으면 참조가 아니다. 이름만 나오는 산문은 안 센다.
+    write("zone/mentions.rs", "// tasty_cli 는 별도 크레이트다\n");
+
+    // 하한도 뿌리도 인자다. 여기 값은 **이 합성 트리의 성질**이지 생산 트리의 것이
+    // 아니다 — `SRC_FLOOR` 를 그대로 쓰면 8 개짜리 트리가 하한 300 에 걸린다.
+    let floor = Floor {
+        min: 4,
+        measured: 8,
+        measured_on: "2026-09-08",
+        counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
+        why_this_gap: "이 합성 트리의 파일 수다. 갈래를 하나 더 시험하려고 파일을 \
+                       더하는 것은 정상 변경이라 실측에 붙이면 그때마다 빨개진다.",
+    };
+    let files = walk_src_under(&src, &root, &floor).expect("합성 트리 순회가 하한에 걸렸다");
+    let rels: Vec<String> = files.iter().map(|f| f.rel.clone()).collect();
+    assert!(
+        walk_reached_anchor(&rels, "src/main.rs").is_ok(),
+        "합성 트리 순회가 앵커에 안 닿았다: {rels:?}"
+    );
+    assert!(
+        walk_descends_far_enough(&rels, 4).is_ok(),
+        "합성 트리 순회가 깊이 4 에 못 갔다: {rels:?}"
+    );
+
+    let routed = route(
+        &files,
+        &Rosters {
+            allowed: &["src/adapters/cli.rs"],
+            baseline: &["src/zone/legacy.rs"],
+            test_only: &["src/zone/gated.rs"],
+            needle: "tasty_cli::",
+        },
+    );
+
+    // ★ 오늘 생산 트리가 못 태우는 갈래 — 위반 하나가 좌표와 함께 나와야 한다.
+    assert_eq!(
+        routed.new_violations.len(),
+        1,
+        "심은 참조가 보고 갈래로 안 갔다: {:#?}",
+        routed.new_violations
+    );
+    let hit = &routed.new_violations[0];
+    assert!(
+        hit.contains("src/zone/a/b/leaker.rs") && hit.contains(":1"),
+        "위반 보고에 경로나 줄번호가 없다: {hit}"
+    );
+
+    // 나머지 세 갈래 — 면제는 사라지고, 한시 허용과 범위 밖은 각자 자리로 간다.
+    assert_eq!(
+        routed.baseline_hit,
+        vec!["src/zone/legacy.rs".to_owned()],
+        "한시 허용이 제 갈래로 안 갔다"
+    );
+    assert_eq!(
+        routed.test_only_hit,
+        vec!["src/zone/gated.rs".to_owned()],
+        "범위 밖이 제 갈래로 안 갔다"
+    );
+    for bucket in [
+        &routed.new_violations,
+        &routed.baseline_hit,
+        &routed.test_only_hit,
+    ] {
+        assert!(
+            !bucket.iter().any(|h| h.contains("adapters/cli.rs")),
+            "면제 경로가 어느 갈래로든 새어 나왔다: {bucket:#?}"
+        );
+        assert!(
+            !bucket.iter().any(|h| h.contains("mentions.rs")),
+            "`::` 없는 이름 언급을 참조로 셌다: {bucket:#?}"
+        );
+    }
+
+    // 면제의 **전제**도 합성 트리에서 잰다. 생산 트리에서만 재면 이 판독기는 부모가
+    // `<디렉토리>.rs` 인 한 가지 배치밖에 못 본다.
+    assert!(
+        declared_under_cfg_test("src/zone/gated.rs", &root).is_ok(),
+        "게이트가 붙은 선언을 거부한다"
+    );
+    let why = declared_under_cfg_test("src/zone/ungated.rs", &root)
+        .expect_err("게이트 없는 선언을 통과시켰다");
+    assert!(
+        why.contains("test 게이트가 아니라"),
+        "거부는 했는데 이유가 게이트가 아니다: {why}"
+    );
+
+    // 정리 — 다음 완주가 이전 잔여물을 읽지 않게 한다. 실패해도 판정과 무관하다.
+    let _ = std::fs::remove_dir_all(&root);
 }

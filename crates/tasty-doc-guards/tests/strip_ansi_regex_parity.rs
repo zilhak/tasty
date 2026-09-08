@@ -24,8 +24,8 @@
 //! 같은 판정을 받는다. `doc-guards.yml` 이 **경로 필터 없이** main push·PR 마다
 //! `cargo test -p tasty-doc-guards --locked --no-fail-fast` 를 돌린다.
 //! 이 배치는 ADR-0138 이 세운 선례를 그대로 따른 것이다.
-
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 사본이 있어야 하는 **유일한** 자리. 여기서 벗어난 사본이 생기면 실패한다.
 const EXPECTED: [&str; 1] = ["crates/tasty-ansi/src/lib.rs"];
@@ -169,4 +169,57 @@ fn the_ansi_escape_regex_has_exactly_one_home() {
             found[0].0.display()
         );
     }
+}
+
+/// [`MIN_SCANNED`] 의 **양성 대조** — 그 하한이 겨냥하는 갈래가 실제로 열려 있나.
+///
+/// 위 시험은 레포를 상대로만 돈다. 그러면 `collect` 이 무엇을 세는지는 아무도 안 본다 —
+/// 세는 것을 넓히면 하한은 **더 쉽게** 충족되므로 그 변이는 레포 대면 단정에서 조용하다.
+/// 하한이 지키려는 것이 "뿌리가 죽으면 0" 이라는 성질인데, 그 성질 자체가 시험 밖이었다.
+///
+/// 합성 트리로 셋을 건다: 하위 디렉토리까지 내려가는가 · `.rs` 만 세는가 ·
+/// **없는 뿌리에서 예외가 아니라 0 을 내는가**(`collect` 은 `read_dir` 실패를 조용히
+/// 넘긴다 — 하한이 존재하는 이유가 정확히 그것이다).
+#[test]
+fn a_dead_root_scans_zero_and_only_rs_files_count() {
+    let probe = Scratch::new("ansi-parity");
+    let dir = probe.path();
+    std::fs::create_dir_all(dir.join("nested")).expect("합성 트리를 만들지 못했다");
+
+    // 검출 표지는 **런타임에 조립한다.** 소스에 그대로 적으면 이 파일이 자기 판정 대상에
+    // 한 번 더 앉는다 — 지금은 파일 통째 면제라 무해하지만, 면제가 자리 단위로 좁아지는
+    // 날 조용히 깨진다. 픽스처가 자기 가드의 좌변을 건드리지 않는 것이 원칙이다.
+    let needle = format!("{}{}", r"\x1b", r"\[");
+    std::fs::write(
+        dir.join("alpha.rs"),
+        format!("const P: &str = r\"{needle}0-9;m\";\n"),
+    )
+    .expect("합성 소스를 쓰지 못했다");
+    std::fs::write(dir.join("nested").join("beta.rs"), "fn f() {}\n")
+        .expect("합성 소스를 쓰지 못했다");
+    std::fs::write(dir.join("gamma.txt"), format!("r\"{needle}\"\n"))
+        .expect("합성 소스를 쓰지 못했다");
+
+    let mut found = Vec::new();
+    let scanned = collect(dir, &mut found);
+    assert_eq!(
+        scanned, 2,
+        "훑은 수가 2 가 아니다 — `.rs` 만 세고 하위 디렉토리까지 내려가야 한다. 이 수가 \
+         넓어지면 하한은 더 쉽게 충족되고, 그 변이는 레포 대면 단정에서 조용하다"
+    );
+    assert_eq!(
+        found.len(),
+        1,
+        "합성 트리에서 리터럴 한 자리를 못 뽑았다 — 추출기가 죽으면 레포에서도 사본을 \
+         못 찾고, 그때 초록은 '사본이 없다' 가 아니라 '안 봤다' 다: {found:?}"
+    );
+
+    // ★ 하한이 겨냥하는 바로 그 갈래 — 없는 뿌리는 **예외가 아니라 0** 이다.
+    let mut none = Vec::new();
+    assert_eq!(
+        collect(&dir.join("does-not-exist"), &mut none),
+        0,
+        "죽은 뿌리가 0 을 안 냈다 — 이 성질이 깨지면 하한은 아무것도 안 지킨다"
+    );
+    assert!(none.is_empty(), "죽은 뿌리에서 자리를 주웠다: {none:?}");
 }

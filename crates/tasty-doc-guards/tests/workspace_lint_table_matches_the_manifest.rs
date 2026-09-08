@@ -323,6 +323,44 @@ mod parity_mutations {
         assert!(found[0].contains("표에만 있다"), "{found:?}");
     }
 
+    // ── 실패문의 양성 대조 ──────────────────────────────────────────────────
+    //
+    // 아래 넷은 **처방이 서로 다른** 문구다(판독기를 고쳐라 / 제목을 고쳐라 / 표 구조를
+    // 고쳐라 / 그 행을 소절로 옮겨라). 합성 입력으로 실제로 발화시켜 **처방을 가르는
+    // 낱말**만 단정한다 — 문구 전체를 단정하면 문장을 다듬을 때마다 죽는다.
+    //
+    // 가드가 초록인 동안 이 문구들은 아무도 안 읽는다. 그래서 여기서 읽는다.
+
+    #[test]
+    #[should_panic(expected = "모르는 줄을 만났다")]
+    fn an_unparsable_line_in_the_lints_section_says_so() {
+        manifest_levels("[workspace.lints.clippy]\nbogus\n");
+    }
+
+    #[test]
+    #[should_panic(expected = "절을 못 찾았다")]
+    fn a_missing_section_heading_says_the_heading_moved() {
+        doc_levels("## 다른 절\n\n| 위치 | 설정 | 의미 |\n");
+    }
+
+    #[test]
+    #[should_panic(expected = "이어받을 위치가 없다")]
+    fn a_ditto_in_the_first_row_says_there_is_nothing_to_carry() {
+        doc_levels(
+            "## 현재 워크스페이스 설정\n\n| 위치 | 설정 | 의미 |\n|---|---|---|\n\
+             | 〃 | `a = \"deny\"` | x |\n\n## 다음\n",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "설정 칸에 레벨이 없다")]
+    fn a_manifest_row_without_a_level_is_not_silently_skipped() {
+        doc_levels(
+            "## 현재 워크스페이스 설정\n\n| 위치 | 설정 | 의미 |\n|---|---|---|\n\
+             | `Cargo.toml [workspace.lints.rust]` | `a` | x |\n\n## 다음\n",
+        );
+    }
+
     #[test]
     fn the_manifest_reader_does_not_read_commented_out_lints() {
         let toml = "[workspace.lints.clippy]\n# dead_code = \"deny\"\nfoo = \"warn\"\n";

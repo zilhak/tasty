@@ -21,10 +21,95 @@
 //! 가 같았고 `Status` 는 **한 건이 어긋나 있었다**(0042 — 본문 `Superseded by ADR-0162`,
 //! 행 `Accepted`). 그 한 건은 이 가드를 켜는 커밋에서 함께 고쳤다.
 //!
-//! **`Title` 과 `Tags` 는 일부러 안 본다.** 같은 짝인데 열마다 관계가 다르다 — 본문
-//! 제목은 강조 마커(`**…**`)를 쓰고 행은 안 쓰며, `Tags` 는 **행이 본문의 상위집합인
-//! 경우가 12 건**이라 등호도 접두도 아니다. 정규화 없이 넣으면 오탐이 21 건이고,
-//! 오탐이 그만큼이면 가드를 아무도 안 믿는다. 두 열의 정규화 규칙이 서면 그때 넣는다.
+//! **`Title` 과 `Tags` 도 본다.** 오래 안 봤던 것은 열마다 관계가 달라서였다 — 본문 제목은
+//! 강조 마커(`**…**`)를 쓰고 행은 안 쓰며, `Tags` 는 행이 본문의 상위집합인 경우가 있어
+//! 등호도 접두도 아니었다. 2026-09-08 에 그 두 정규화 규칙을 세우고(`normalize_title` ·
+//! `tag_set`) 상위집합이던 41 개를 갈라 넣었으므로 지금은 둘 다 판정 대상이다.
+//!
+//! ## 여기에 더 안 짓기로 한 것 — ADR-0243 의 칸으로
+//!
+//! - **`Tags` 나열 순서**(칸 ㄴ). 집합이 같은데 순서만 다른 행이 11 개 있었고 표기를
+//!   맞췄지만 **판정기는 안 짓는다.** 실패문이 낼 수 있는 처방이 "순서를 맞춰라" 뿐이고,
+//!   그것을 안 지켜도 잃는 정보가 없다. **되돌아올 조건 없음** — 순서가 값이 되려면 태그를
+//!   순서 있는 목록으로 바꾸는 별개 결정이 필요하고, 그때는 이 판정이 아니라 그 결정이
+//!   좌변을 새로 정한다.
+//! - **`Title`·`Tags` 두 열 자체**(칸 ㄷ). 새 판사를 안 만들고 이 시험을 넓혔다 — 같은
+//!   물음(두 자리가 같은 값을 싣는가)이라 판사가 둘이면 답도 둘이 된다. **답하는 시험의
+//!   이름**은 `an_index_row_mirrors_its_adr_header` 다. **되돌아올 조건**: 그 시험이
+//!   좁아지거나 사라지면 이 물음에 답하는 자리가 없어지므로 그때 다시 묻는다.
+//! - **본문 `Tags` ↔ 본문 서술**(칸 ㄴ). 태그가 주장하는 관계를 본문이 한 번도 안 부르는
+//!   자리를 센다. 안 짓는 이유는 좌변이 아니라 `adr-NNNN` 태그의 뜻이 **둘**인데 문면에서
+//!   안 갈려서다 — (가) 이 결정이 **부르는** 다른 결정 · (나) 이 결정이 **속하는** 축.
+//!   이 시험은 **index 행 ↔ 본문 Tags** 를 보고 그쪽은 **본문 Tags ↔ 본문 서술**이라 물음이
+//!   다르므로, 짓게 되면 새 파일이 아니라 여기를 넓힌다.
+//!
+//!   **전수 판정(2026-09-09, main `12bc0f4b2` 기점): 그 자리 9 건이 전부 (나) 였다 —
+//!   위반 0.** 그중 `0220→0142` 하나에만 본문 한 줄을 적어 8 로 줄었다. 왜 하나만인지가
+//!   이 판정의 핵심이다 — 아래 "(나) 라고 다 같지 않다" 참조.
+//!
+//!   | 자리 | 축 | 판정한 lane |
+//!   |---|---|---|
+//!   | `0035→0020` · `0038→0020` | 갤러리 완전성 정책. 그 정책 아래 만든 UI 컴포넌트다 | 823 |
+//!   | `0053→0032` | attach. 0053 은 attach 채널·점유 신뢰 위에 서고 0032 는 그 프로필 층이다 | 823 |
+//!   | `0220→0142` | 관측 가능성. **낱말이 같고 층이 다르다** — 아래 주의 | 823 |
+//!   | `0224→0139` · `0225→0139` · `0226→0139` | 문서에 적는 수의 분류 | 823 |
+//!   | `0224→0180` | 흩어진 판정에 이름과 집을 준다 | 823 |
+//!   | `0225→0142` | 어느 트리 기준인가. **아홉 중 (가) 에 가장 가깝다** — 아래 | 823 |
+//!
+//!   `0225→0142` 를 (나) 로 둔 근거: 0142(채널 주장)와 0225(좌변 값)는 같은 원리의 두
+//!   적용이라 축이 매우 가깝지만, 0225 의 서술은 0142 를 안 불러도 완결된다 — 미추적
+//!   디렉토리가 더하기만 하므로 추적 계수가 하계라는 논거가 자기 안에서 닫힌다.
+//!
+//!   ★ **이 9 는 positive control 이 아니라 negative control 이다.** 판정기를 지었다면 9 건
+//!   전부 오탐이었다. 진짜 위반은 **관계가 실재하지 않는데 태그가 붙은 것**이고, 이 레포에서
+//!   그 형태는 두 번 났다 — 0129 와 0158 의 `adr-0105`(둘 다 양방향 인용 0, 주제 무관).
+//!   둘 다 회차 94 에 지웠으므로 **실물 positive control 은 지금 0 이고, 합성 픽스처로만
+//!   만들 수 있다.** 실물만으로 술어를 재면 정상을 위반으로 세는 쪽으로 초록이 난다.
+//!
+//!   ★ **아홉이 한 방향을 가리킨다: (나) 의 대상은 전부 정책·원리 ADR 이다.**
+//!   0020(갤러리 완전성) · 0032(attach 프로필 층) · 0139(수의 분류) · 0142(트리 기준) ·
+//!   0180(가드의 판정 물음). 반대로 **자기 회차의 형제는 본문이 부른다** — 0225 와 0226 은
+//!   0224 를 본문에서 부르고 태그에도 넣었다(그래서 방향 A 에 안 걸린다).
+//!
+//!   ★★ **그러나 역은 거짓이다 — "대상이 정책이면 (나)" 가 아니다.** 그 방향으로 읽으면
+//!   두 자리에서 틀린다: `0158→0140`(0140 은 모든 plugin 매니페스트에 걸리는 정책인데
+//!   0158 은 그 위에 서지 않고 **반대 결론**을 내므로 본문에 적어야 정보다 — (가)) ·
+//!   `0129→0105`·`0158→0105`(0105 는 모든 추적 파일에 걸리는 정책인데 그 둘의 **주제 밖**
+//!   이라 관계 자체가 없다 — 지웠다). 그러니 대상이 정책인 것은 (나) 의 **필요조건이지
+//!   충분조건이 아니다.** 갈래는 셋이다:
+//!
+//!   1. 정책이고 이 결정이 그 정책의 **적용 사례** → (나). 본문에 적으면 동어반복.
+//!   2. 정책이고 이 결정이 그 정책과 **논증 관계**(같은 축의 반대 결론 포함) → (가).
+//!   3. 정책이지만 이 결정의 **주제 밖** → 관계 없음. 태그를 지운다.
+//!
+//!   **셋을 가르는 것은 "그 정책이 이 결정에 어떻게 걸리는가" 이고 문면에 없다.**
+//!   문면 후보 넷을 다 재 봤다(2026-09-09, `12bc0f4b2` + 823 커밋 2 개):
+//!
+//!   | 후보 | 결과 |
+//!   |---|---|
+//!   | 본문 인용 in-degree | **판별력 0.** (나) 대상 {5,6,7,8,29} · (가) 대상 {1,6} — **6 이 양쪽** |
+//!   | `Status` | 여덟 자리 전부 `Accepted` |
+//!   | 절 수 | 여덟 자리 전부 6 |
+//!   | 낱말 태그 | `guards` 가 (나) 셋과 (가) 하나에 함께 붙는다 |
+//!
+//!   in-degree 는 **순환은 아니다** — 본문 인용만 세면 판정 대상인 태그가 정의에 안 들어간다.
+//!   그러나 태그를 포함한 값과 거의 같고(0139: 본문 29 / 태그 28) 어느 쪽이든 안 갈린다.
+//!
+//!   ★ **표시를 만들었다면 오히려 틀렸을 것이다.** "정책이니 (나)" 라는 규칙이 서면
+//!   `0158→0140` 과 `0129→0105` 를 잘못 판정한다. 표시가 없어서 난 틀린 판단은 **0 건**이고,
+//!   표시가 있었다면 났을 틀린 판단은 **셋**이다. 이것이 (ㄴ) 칸의 세 번째 근거다.
+//!
+//!   **(나) 라고 다 같지 않다 — 그래서 일률 처방이 안 선다.** (나) 태그에 본문 한 줄을
+//!   더하면 방향 A 에서 빠지고, 그 한 줄이 정보인 자리도 있다. 다만 자리마다 다르다:
+//!   `0220→0142` 는 **"채널" 이라는 낱말이 두 층을 가리켜** 안 적으면 혼동하므로 적었고,
+//!   `0035→0020`·`0038→0020` 은 0020 이 **모든** UI 컴포넌트에 걸리는 정책이라 각 컴포넌트
+//!   ADR 에 "이것도 그 정책 아래다" 를 적는 것이 동어반복이라 안 적었다. 실패문은 이
+//!   차이를 못 만든다 — 낼 수 있는 처방이 "한 줄 적어라" 하나뿐이고 그것이 절반에서
+//!   동어반복을 시킨다.
+//!
+//!   **되돌아올 조건**: 태그 어휘가 (가)/(나)를 가르게 되면(예: 축 태그에 다른 접두).
+//!   좌변이 두꺼워지는 것은 조건이 아니다 — 새 ADR 이 들어올 때마다 (나) 가 늘어서
+//!   방향 A 는 자란다(회차 94 마감으로 4 → 9). 자라는 것은 정상 사례다.
 
 // 이유: 이 타깃은 시험 범위다. `let _` 로 값을 버리는 자리를 여기서 명부에 올리면
 //       그 명부가 프로덕션 자리를 가리키는 뜻을 잃는다 —
@@ -119,8 +204,10 @@ fn adr_files(root: &Path) -> BTreeMap<String, String> {
 struct IndexRow {
     num: String,
     file: String,
+    title: String,
     status: String,
     date: String,
+    tags: String,
 }
 
 /// 인덱스 표의 `| NNNN | [제목](파일명) | Status | Date | Tags |` 행을 읽는다.
@@ -139,10 +226,22 @@ fn index_rows(root: &Path) -> Vec<IndexRow> {
             continue;
         }
         // 링크 대상은 `](` 와 `)` 사이.
+        //
+        // ★ **정규식으로 바꾸지 마라.** `\[([^\]]+)\]\(` 로 잡으면 제목 안에 `]` 가 든
+        //   행에서 매칭이 끊겨 그 행이 통째로 빠진다 — 실측 2026-09-08: 0114 의
+        //   `` `[font]` `` 와 0123 의 `` `#[cfg(test)]` `` 때문에 모수가 206 이 아니라
+        //   204 가 된다. 여기 `find("](")` 는 제목 안 `]` 뒤에 `(` 가 오지 않으므로
+        //   링크의 것을 정확히 집는다. 모수가 줄어드는 고장은 조용하다 — 빠진 행은
+        //   위반도 못 내므로 색이 안 변한다.
         let Some(at) = rest.find("](") else { continue };
         let after = &rest[at + 2..];
         let Some(end) = after.find(')') else { continue };
         let file = after[..end].to_string();
+        // 제목은 여는 `[` 와 위 `](` 사이. 번호 칸에는 `[` 가 없으므로 첫 `[` 가 그것이다.
+        let title = match rest.find('[') {
+            Some(open) if open < at => rest[open + 1..at].trim().to_string(),
+            _ => String::new(),
+        };
         // 링크를 닫는 `)` 뒤부터가 Status | Date | Tags 다. 제목 안에 `|` 가 들어갈 수
         // 있으므로 앞에서부터 세지 않고 **링크 뒤**에서 센다.
         let tail: Vec<&str> = after[end + 1..].split('|').collect();
@@ -154,11 +253,70 @@ fn index_rows(root: &Path) -> Vec<IndexRow> {
         out.push(IndexRow {
             num,
             file,
+            title,
             status: cell(1),
             date: cell(2),
+            tags: cell(3),
         });
     }
     out
+}
+
+/// 본문 `# ADR-NNNN: <제목>` 을 인덱스 행에 실을 때의 정규형.
+///
+/// 두 자리가 같은 값을 다르게 적는 지점은 하나뿐이다 — **강조 마커**. 본문 제목은
+/// `**…**` 로 낱말을 세울 수 있고 행은 그것을 안 쓴다. 그 차이는 표기이지 값이
+/// 아니므로 마커를 지우고 잉여 공백을 접는다.
+///
+/// **접두 관용을 두지 않는다.** `Status` 쪽은 본문이 ` — ` 뒤에 사유를 붙이고 행이
+/// 그것을 버리는 관례가 있어 접두를 관용하지만, 제목에는 그런 관례가 없다 — 실측
+/// 2026-09-08 에 어긋난 일곱 중 **행이 더 긴 것과 본문이 더 긴 것이 둘 다 있었다**
+/// (0120·0123 은 행에만 부제가 있었고, 0164 는 본문에만 있었다). 절단 방향이 양쪽인
+/// 것은 관례가 아니라 표류다. 관용을 넣으면 그 표류가 영구히 안 보이는 구간이 된다.
+fn normalize_title(s: &str) -> String {
+    // `squeeze` 를 쓰지 않는다. 그쪽은 `Status` 용이라 `ADR-` 접두와 **백틱**까지 지우는데,
+    // 제목에서는 둘 다 값이다 — 백틱을 지우면 한쪽에만 코드 표기가 있는 차이를 못 보고,
+    // `ADR-` 를 지우면 실패문이 본문에 없는 문자열을 찍어 **복붙으로 고칠 수 없는 처방**이
+    // 된다(실측 2026-09-08: 0164 의 본문 `ADR-0075` 가 실패문에 `0075` 로 나왔다).
+    s.replace("**", "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `Tags` 칸을 항목 집합으로 읽는다. 쉼표로 가르고 빈 것은 버린다.
+fn tag_set(s: &str) -> BTreeSet<String> {
+    s.split(',')
+        .map(|x| x.trim())
+        .filter(|x| !x.is_empty())
+        .map(|x| x.to_string())
+        .collect()
+}
+
+/// 두 자리의 `Tags` 를 **집합 등호**로 본다. 어긋난 것을 방향별로 갈라 돌려준다.
+///
+/// 앞 판이 포함(행 ⊇ 본문)이었던 것은 그때 행에만 있는 태그가 41 개(18 행)라 등호를
+/// 세울 수 없었기 때문이다. 그 41 개를 이번 회차에 갈랐다 — 40 개는 본문 `Tags` 줄로
+/// 옮겼고, 하나(0129 의 `adr-0105`)는 두 본문 어디에도 서로에 대한 인용이 없어 실재하지
+/// 않는 관계로 판정해 행에서 지웠다. 그래서 이제 양쪽이 같고 등호가 선다.
+///
+/// **순서는 값이 아니다.** 실측 2026-09-08(이 워크트리): 집합이 같은데 나열 순서만
+/// 다른 행이 11 개다. 순서까지 요구하면 그 11 개가 값이 안 바뀐 채 빨개진다.
+/// 그래서 순서에는 판정기를 안 짓는다 — 모듈 주석의 "여기에 더 안 짓기로 한 것" 참조.
+fn tag_drift(body: &str, row: &str) -> (Vec<String>, Vec<String>) {
+    let in_body = tag_set(body);
+    let in_row = tag_set(row);
+    let missing = in_body
+        .iter()
+        .filter(|x| !in_row.contains(*x))
+        .cloned()
+        .collect();
+    let extra = in_row
+        .iter()
+        .filter(|x| !in_body.contains(*x))
+        .cloned()
+        .collect();
+    (missing, extra)
 }
 
 /// 인덱스 행이 본문 헤더의 값을 그대로 싣는지 볼 때 쓰는 정규화.
@@ -312,6 +470,74 @@ fn every_adr_file_has_a_row_and_every_row_has_a_file() {
     );
 }
 
+/// 본문의 `# ADR-NNNN: <제목>` 줄에서 **제목 부분**을 뽑는다.
+///
+/// 독법은 여기 하나다 — [`the_heading_number_matches_the_file_name`] 이 같은 줄에서
+/// **번호**를 읽고 이 함수가 **제목**을 읽는다. 두 함수가 각자 그 줄을 찾으면 한쪽이
+/// 못 찾는 형태가 생겨도 다른 쪽이 통과해, 무엇이 고장 났는지가 안 갈린다.
+fn adr_heading(body: &str) -> Option<&str> {
+    body.lines().find(|l| l.starts_with("# ADR-"))
+}
+
+/// 그 제목 줄의 `:` 뒤. 콜론이 없으면 제목이 없는 것으로 본다.
+fn adr_title(body: &str) -> Option<String> {
+    let head = adr_heading(body)?;
+    let (_, title) = head.split_once(':')?;
+    let title = title.trim();
+    (!title.is_empty()).then(|| title.to_string())
+}
+
+/// 두 열의 정규화가 **무엇을 같다고 보고 무엇을 다르다고 보는지** 못 박는다.
+///
+/// 입력은 이 레포의 실제 값이 아니라 합성 문자열이다 — 가드 자신의 상수나 실물에서
+/// 뽑으면 그 값에 대해 항진명제가 되고, 그때 초록은 규칙이 아니라 오늘의 데이터를
+/// 재는 것이 된다.
+#[test]
+fn the_title_rule_folds_emphasis_and_nothing_else() {
+    // 마커는 표기라 접는다.
+    assert_eq!(
+        normalize_title("가 **나** 다"),
+        normalize_title("가 나 다"),
+        "강조 마커는 값이 아니다"
+    );
+    // 공백 폭은 표기라 접는다.
+    assert_eq!(normalize_title(" 가   나 "), "가 나");
+    // 백틱은 **값이다** — `squeeze` 를 쓰면 이 단정이 깨진다.
+    assert_ne!(
+        normalize_title("`가`"),
+        normalize_title("가"),
+        "코드 표기의 유무는 제목의 값이다"
+    );
+    // `ADR-` 접두도 값이다 — 실패문이 본문에 없는 문자열을 찍으면 처방이 못 쓰인다.
+    assert_ne!(normalize_title("ADR-0075"), normalize_title("0075"));
+    // 부제 절단은 관용하지 않는다 — 접두여도 다른 값이다.
+    assert_ne!(normalize_title("주제 — 부제"), normalize_title("주제"));
+}
+
+#[test]
+fn the_tag_rule_is_set_equality_and_order_is_not_a_value() {
+    let none: Vec<String> = Vec::new();
+    // 같은 집합이면 나열 순서가 달라도 통과 — 순서는 값이 아니다.
+    assert_eq!(tag_drift("가, 나", "나, 가"), (none.clone(), none.clone()));
+    // 본문에 있는데 행에 없으면 첫 칸에 나온다.
+    assert_eq!(
+        tag_drift("가, 나", "가"),
+        (vec!["나".to_string()], none.clone())
+    );
+    // ★ 행에만 있어도 이제 걸린다 — 앞 판이 안 보던 구간이 여기다.
+    assert_eq!(
+        tag_drift("가", "가, 다"),
+        (none.clone(), vec!["다".to_string()])
+    );
+    // 공백과 빈 항목은 항목이 아니다.
+    assert_eq!(
+        tag_drift(" 가 ,, 나 ", "나,가"),
+        (none.clone(), none.clone())
+    );
+    // 한쪽이 비면 다른 쪽 전부가 그 방향의 어긋남이다.
+    assert_eq!(tag_drift("", "가"), (none.clone(), vec!["가".to_string()]));
+}
+
 /// 문서 안의 `# ADR-NNNN` 제목이 자기 파일명 번호와 같다.
 ///
 /// 번호를 옮길 때 파일명만 바꾸고 본문을 안 고치면, 문서를 **열어서** 번호를 읽은
@@ -322,7 +548,7 @@ fn the_heading_number_matches_the_file_name() {
     let mut wrong = Vec::new();
     for (num, name) in adr_files(&root) {
         let body = read(&root, &format!("{ADR_DIR}/{name}"));
-        let Some(head) = body.lines().find(|l| l.starts_with("# ADR-")) else {
+        let Some(head) = adr_heading(&body) else {
             wrong.push(format!("{name} — `# ADR-…` 제목 줄이 없다"));
             continue;
         };
@@ -419,12 +645,14 @@ fn the_first_word_stops_at_whitespace() {
 }
 
 #[test]
-fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
+fn an_index_row_mirrors_its_adr_header() {
     let root = repo_root();
     let rows = index_rows(&root);
     let files = adr_files(&root);
     let mut checked_status = 0usize;
     let mut checked_date = 0usize;
+    let mut checked_title = 0usize;
+    let mut checked_tags = 0usize;
     let mut superseded_seen = 0usize;
     let mut prefix_ok = 0usize;
     let mut drift: Vec<String> = Vec::new();
@@ -458,6 +686,39 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
                 ));
             }
         }
+        if let Some(v) = adr_title(&body) {
+            checked_title += 1;
+            let want = normalize_title(&v);
+            let got = normalize_title(&row.title);
+            if want != got {
+                drift.push(format!(
+                    "{} Title — 본문 {want:?} · 행 {got:?}\n    \
+                     처방: 행을 본문 제목에 맞춰라(본문이 정본이다). 마커 `**` 는 행에 안 싣는다",
+                    row.num
+                ));
+            }
+        }
+        if let Some(v) = header_field(&body, "Tags") {
+            checked_tags += 1;
+            let (missing, extra) = tag_drift(&v, &row.tags);
+            if !missing.is_empty() {
+                drift.push(format!(
+                    "{} Tags — 본문에 있는데 행에 없다: {}\n    \
+                     처방: 그 항목을 행의 Tags 칸에 더해라",
+                    row.num,
+                    missing.join(", ")
+                ));
+            }
+            if !extra.is_empty() {
+                drift.push(format!(
+                    "{} Tags — 행에 있는데 본문에 없다: {}\n    \
+                     처방: 그 관계가 실재하면 본문 `- **Tags**:` 줄에 더하고, 본문이 그 ADR 을\n    \
+                     한 번도 인용하지 않으면 실재하지 않는 관계이니 행에서 지워라",
+                    row.num,
+                    extra.join(", ")
+                ));
+            }
+        }
         if let Some(v) = header_field(&body, "Date") {
             checked_date += 1;
             let want = normalize_header_value(&v);
@@ -476,6 +737,7 @@ fn an_index_row_carries_the_same_status_and_date_as_its_adr() {
     // 단정보다 **앞**에 둔다: 빨간 경로에서도 모수가 남아야 한다.
     eprintln!(
         "[adr-index-parity] 행 {} · Status 대조 {checked_status} · Date 대조 {checked_date} \
+         · Title 대조 {checked_title} · Tags 대조 {checked_tags} \
          · 접두 통과 {prefix_ok} · 대체 형태 {superseded_seen} · 표류 {}",
         rows.len(),
         drift.len()

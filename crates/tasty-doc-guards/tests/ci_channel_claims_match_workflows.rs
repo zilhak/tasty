@@ -10,6 +10,80 @@
 //! 사실은 워크플로 파일을 직접 열어야만 보인다. 채널 매트릭스 자체는
 //! `docs/dev-guide/ci-gates.md`.
 //!
+//! ## 변이 대조 — 이 파일의 초록이 값인가 (실측 2026-09-08)
+//!
+//! 좌표: A~D⁻ 는 base `12bc0f4b2` + 내 커밋 1, E·F 는 base `12bc0f4b2` + 내 커밋 3 에서
+//! 쟀다(lane tip 은 **임시 좌표**다 — 회차는 cherry-pick 으로 착지한다).
+//!
+//! 레포를 훑는 판정은 넷이고 넷 다 오늘 **위반 0** 이다. 0 은 "주장이 전부 참" 과 "내
+//! 술어가 거짓 주장의 형태를 못 본다" 둘 다와 양립한다. 그래서 **거짓 주장을 하나씩
+//! 심어** 죽는지 봤다. 심기 전에 그것이 정말 위반인지부터 판정했다 — 아니면 그것은
+//! 양성 대조가 아니라 음성 대조다.
+//!
+//! 심은 자리는 전부 추적 파일이고, 매번 `cp -p` 백업으로 되돌린 뒤 `touch` 했다
+//! (`cmp -s` 로 바이트 동일 확인).
+//!
+//! | # | 변이문(심은 것) | rc | 죽인 주체 | 판정문 |
+//! |---|---|---|---|---|
+//! | A | `.rs` 모듈 doc 에 〈전체 스위트 명령 + [`CI_MARKERS`] 의 한 원소〉를 한 문장으로 | 101 | `no_file_claims_ci_runs_the_full_suite_while_it_does_not` | 전체 스위트는 자동으로 돌지 않는다 … 서술을 고쳐라 |
+//! | B | 문서에 〈`--skip` 으로 빠진 **시험 함수** 이름 + [`ENFORCE_MARKERS`] 의 한 원소〉 | **0** | **없다 — 아래 ★** | 없다 |
+//! | C | 그 이름을 **정의하지 않는** 문서에 lib 시험 이름 + 부재 표지 | 101 | `no_file_denies_the_automatic_channel_a_lib_test_actually_has` | 서술이 사실보다 약하다 |
+//! | C⁻ | 같은 문장을 **그 이름을 정의한 파일**에 심는다 | 0 | 없다(설계된 면제) | — |
+//! | D | 문서에 **경로 형태** 지목 + 부재 표지 | 101 | `no_file_denies_a_channel_an_integration_test_actually_has` | 그 테스트가 실제로는 자동으로 돈다 |
+//! | D⁻ | 같은 문장을 **이름 형태**(경로 아님)로 심는다 | 0 | 없다(지목 규격이 경로다) | — |
+//! | E | 새 축의 어두운-타깃 판정을 뒤집는다(`is_empty()` → `!… is_empty()`) | 101 | `no_file_claims_ci_enforces_an_integration_target_no_automatic_job_runs` | (판정 뒤집힘) |
+//! | F | 그 축의 모수를 루트 `tests/` 로 다시 좁힌다(`contains` → `starts_with`) | 101 | 같은 시험 | 크레이트 소유 통합 파일의 자기 지목이 오탐으로 나온다 |
+//!
+//! **C⁻·D⁻ 는 실패가 아니라 음성 대조다.** C⁻ 는 [`weak_absence_offsets`] 이 그 이름을
+//! **정의하는 파일**을 일부러 면제하기 때문이고(그 파일의 서술은 자기 것이다), D⁻ 는
+//! cargo 가 통합 타깃을 **위치**로 정의하므로 지목도 경로여야 하기 때문이다. 이 둘을
+//! 안 적으면 다음 사람이 같은 형태를 심어 보고 "가드가 죽었다" 고 읽는다 — 실제로
+//! 이번에 내가 그 순서로 두 번 밟았다.
+//!
+//! **E·F 는 새로 세운 축의 양성 대조다.** F 는 내가 실제로 저질렀던 모수 오류를 그대로
+//! 되돌린 것이다 — 좌변을 루트 `tests/` 로 좁히면 크레이트가 소유한 통합 파일이
+//! `running` 에 안 들어가고, 그 파일의 **자기 지목**이 위반으로 나온다(실측 오탐 3 건).
+//!
+//! ### ★ B 는 미측정이었다 — 그런데 **내가 겨눈 단위가 틀렸다**
+//!
+//! B 가 안 죽은 이유를 판정기에 물었다(그 갈래에 `panic!` 을 심어 쟀다):
+//!
+//! ```text
+//! [측정] 조기 반환 갈래를 탔다 — 좁혀지지 않은 자동 호출:
+//!   --workspace --no-default-features --locked --no-fail-fast --  --skip multi_window_owner_routing
+//! ```
+//!
+//! [`integration_tests_run_automatically`] 는 좁혀지지 않은 자동 호출을 보면 "통합
+//! 테스트가 **전부** 자동으로 돈다" 로 읽고 `None` 을 돌리며, 그 축은 조기 반환한다.
+//!
+//! ★★ **그런데 그 조기 반환은 결함이 아니라 설계다.** 한 겹 더 물었더니 이 축의 단위가
+//! **타깃**이었다 — [`cited_tests`] 는 `tests/<이름>.rs` 형태만 지목으로 읽는다. 내가
+//! 심은 `multi_window_owner_routing` 은 타깃이 아니라 `e2e_tests` 안의 **시험 함수**라,
+//! 조기 반환이 없었어도 이 축은 그것을 못 봤다. **B 는 양성 대조가 아니었다** — C⁻·D⁻ 와
+//! 같은 부류이고, 이번 회차에 내가 R1142 를 세 번째로 밟은 자리다.
+//! 타깃 단위에서 "좁혀지지 않음 ⇒ 전부 돈다" 는 참이다.
+//!
+//! **그래도 그 전제가 깨지는 갈래가 하나 남는다** — `--skip` 이 한 타깃의 **모든** 시험을
+//! 덮으면 좁혀지지 않은 호출도 그 타깃을 안 돌린다. 그 갈래는
+//! [`no_file_claims_ci_enforces_an_integration_target_no_automatic_job_runs`] 이 닫는다.
+//! 그쪽은 워크플로 인자에서 이름을 읽지 않고 **조합 수 0** 이라는 성질로 모수를 얻어,
+//! 좁혀졌든 아니든 같은 답을 낸다.
+//!
+//! ★ 시험 **함수** 단위의 채널 주장은 이 축이 아니라
+//! [`the_gui_layer_a_display_revives_is_exactly_the_one_named_test`] 가 본다 — 그것이
+//! `multi_window_owner_routing` 을 이름으로 지목해 판정하는 자리다.
+//!
+//! ### 이 표는 왜 변이문을 **글자 그대로 안 적나**
+//!
+//! 처음엔 그대로 적었고, **이 파일이 자기 좌변 안에 있어서 A 행이 자기 자신을 고발했다**
+//! (실측: 이 표를 넣자 `no_file_claims_ci_runs_the_full_suite_while_it_does_not` 이
+//! rc=101). 그 자리를 부재 표지로 면제받게 만들 수도 있었지만, 그러면 이 문서가 **면제
+//! 규칙에 기대어** 사는 것이 되고 그 규칙이 바뀌는 날 조용히 깨진다. 그래서 표지를
+//! 상수 이름으로 가리킨다 — 형태는 남고 문자열은 안 남는다.
+//!
+//! ★ 이것은 이 가드가 **자기 자신에게도 걸린다**는 관측이다. 좌변에서 자기를 빼는
+//! 가드가 많은데 이 가드는 안 뺐고, 그래서 자기 기록조차 판정을 받는다.
+//!
 //! **판정은 워크플로에서 읽는다**(문서를 문서로 검사하지 않는다):
 //! - 자동 트리거(`push` / `pull_request` / `schedule`)를 가진 워크플로의 잡 중,
 //!   `workflow_dispatch` 로 좁혀지지 않은 잡을 모은다.
@@ -105,6 +179,15 @@
 //!   참이지만(그 절이 쓰인 커밋 시점에 그 워크플로의 스크립트가 정말 둘이었다), 같은
 //!   형태로 시점을 안 박은 절이 생기면 **아무도 안 본다.**
 //!
+//!   **넓혀 보고 안 넓혔다 (실측 2026-09-09, `eee485d5c` 트리).** 범위를 문단에서
+//!   **절**(제목 → 같거나 상위 제목 직전)로 넓히면 판정이 **2 → 7** 로 늘고 새 위반이
+//!   **둘** 나오는데, **진짜 0 · 거짓 2** 다. 하나는 ADR 의 재검토 조건 절이다(재검토
+//!   조건은 실행 목록이 아니다). 다른 하나가 바로 위의 그 절이고, **그쪽 처방이 특히
+//!   나쁘다** — 실패문은 "빠진 스크립트를 더해라" 라고 말하는데 그 절은 *배선한 날*을
+//!   서술하고 그날 그 워크플로의 게이트는 정말 둘이었다. 따르면 **없던 거짓이 생긴다.**
+//!   잃는 것은 없었다(알려진 변이는 두 범위 다에서 죽는다). 그래서 진짜 0 을 얻자고
+//!   상시 거짓 2 를 켜지 않는다 — 사각으로 남기는 편이 낫다.
+//!
 //!   **줄바꿈 쪼개짐(위 절)과 헷갈리지 마라 — 다른 부류다.** 이 축의 표지는 공백 없는
 //!   워크플로 파일 이름이라 줄바꿈이 쪼갤 수 없다(실측 2026-09-08: 리터럴 전수 =
 //!   [`is_prose_line`] 통과 전수, 떨어진 것 0). 위 절의 "놓친 표지 7" 은 1~3 축의 여러
@@ -119,6 +202,62 @@
 //!   스크립트를 더해라")을 그 오탐에 따르면 정본 표의 **모든 행이 형제 게이트 이름을
 //!   베껴 갖게 된다 — 이 가드가 막으려는 바로 그 사본이다.** 그래서 좁은 좌변은 결함이
 //!   아니라 결정이다. 지금 몇 곳을 지키는지는 그 테스트가 `FUNNEL` 로 찍는다.
+//!
+//! # 하한을 지키는 두 방법 — 문장과 양성 대조
+//!
+//! 하한(`MIN_*`)이 있는 자리를 지키는 길은 둘이다.
+//!
+//! - **문장** — 실패문에 "이 하한을 내려서 통과시키지 마라" 를 적는다.
+//! - **양성 대조 픽스처** — 합성 입력으로 그 수를 내는 함수를 불러 **수가 실제로 하한
+//!   밑으로 떨어지는지** 시험이 직접 잰다.
+//!
+//! **둘은 세기가 다르다. 문장은 사람이 읽어야 작동하고, 픽스처는 안 읽어도 작동한다.**
+//! 그래서 "경고 문장이 없다" 를 "보호가 없다" 로 읽으면 틀린다 — 문장 대신 픽스처를 둔
+//! 자리가 실제로 있다(회차 92 단위 3 에서 그렇게 잘못 셀 뻔했다).
+//!
+//! ## 픽스처가 가능한 자리 / 불가능한 자리 — 조건은 둘이고 둘 다 필요하다
+//!
+//! 1. **구조** — 세는 일이 **입력을 인자로 받는 함수**에 있어야 한다. 그리고 그 함수가
+//!    쥔 **하한도 인자여야 한다.** 하한이 함수 안에 박혀 있으면 합성 트리는 레포 크기의
+//!    하한을 못 넘어서 픽스처가 원리적으로 안 붙는다 — 이 파일의 게이트 색인이 정확히
+//!    그 상태였고, 하한을 인자로 뺀 뒤에야 [`the_gate_script_index_dies_when_extraction_dies`]
+//!    를 지을 수 있었다. 그래서 [`CALLER_SUPPLIED_FLOOR`] 가 따로 있다.
+//! 2. **의미** — 그 하한이 지키는 것이 **메커니즘**(수집·추출·판정)이어야 한다. 메커니즘이면
+//!    합성 입력에서 죽일 수 있다. 지키는 것이 *레포가 마침 그만큼 크다* 는 사실뿐이면
+//!    합성 입력은 아무것도 안 말한다 — 픽스처는 붙지만 값이 0 이다.
+//!
+//! 새 하한을 둘 때 이 둘을 물어라. 둘 다 서면 문장 대신 픽스처를 지어라.
+//!
+//! # 이 파일의 산문이 이 파일의 좌변에 들어오는 자리 — 전수 (2026-09-09)
+//!
+//! **가드의 문서는 그 가드의 입력이다.** 이 파일이 훑는 모수에 이 파일이 들어 있고,
+//! 사각을 설명하려고 실물 이름을 적으면 그 문장이 곧 그 축의 좌변에 앉는다. 회차 91 에
+//! 그것을 한 자리에서 보고 그 자리만 알았다 — 전수로 세니 **넷**이었다.
+//!
+//! 네 축을 각각 자기 자신에 대해 재면(2026-09-09):
+//!
+//! - **전체 스위트 주장 축**: 0 자리. 이 파일은 그 표지를 실물 이름 옆에 안 적는다.
+//! - **통합 테스트 집행 축**: 지금 **휴면**이라 좌변 자체가 없다. 깨어나면 다시 재라.
+//! - **lib 부재 축**: 0 자리.
+//! - **네 번째 축**: **4 자리** — 이름을 든 자리 4, 그중 게이트까지 든 자리 1,
+//!   판정된 자리 0. 넷은 (가) 모듈 주석의 변이 실험 블록, (나) 바로 위 사각 불릿,
+//!   (다) 본문의 "자기소개는 목록이 아니다" 설명 주석, (라) 그 아래 정본 표 행 예시다.
+//!
+//! ★ **(라)가 가장 날카롭다.** 그것 하나가 좌변 둘째 겹까지 올라오고, 둘째 겹을 빼면
+//! 나오는 거짓 위반 목록에 **그 예시 자신이 들어간다** — 즉 *둘째 겹을 지켜야 하는
+//! 이유를 적은 문장이 그 이유를 세는 수를 한 칸 부풀린다.* 지금은 둘째 겹이 그것을
+//! 걸러 판정 0 이라 **평결은 안 바뀌고 모수만 움직인다.** 바뀌는 날이 오면 그때는
+//! 평결이 자기 문서에 달린다.
+//!
+//! 그래서 규칙은 하나다: **이 파일에 실물 이름을 적기 전에 그 이름이 어느 좌변에
+//! 앉는지 먼저 보라.** 도식(`| <축> | <스크립트> | <워크플로> |`)으로 적으면 안 앉는다.
+//! 회차 92 의 사각 판정을 적을 때 이미 이 규칙을 썼고, 그래서 첫 칸이 안 움직였다.
+//!
+//! **R1061 은 이 파일의 순회에 안 닿는다.** `collect_files` 는 점으로 시작하는
+//! 디렉토리를 (`.github` 만 빼고) 통째로 건너뛰므로, worktree 에서 심볼릭 링크이고
+//! 원본에서 실물인 그 로컬 작업 폴더가 **두 트리 모두에서 모수 밖**이다. 실측으로
+//! 확인했다(그 접두를 가진 파일이 수집 목록에 0 건). 그러니 이 파일의 하한은 lane 에서
+//! 재도 통합 자리와 같은 값을 낸다 — 다른 순회를 새로 지을 때는 그 성질이 없다.
 //!
 //! # 경로를 문자열로 다루는 자리 — 전수 (2026-09-08)
 //!
@@ -222,6 +361,7 @@
 use std::path::{Path, PathBuf};
 
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
+use tasty_doc_guards::temp_scratch::Scratch;
 use tasty_doc_guards::workflow_triggers::automatic_job_bodies;
 
 /// 레포 루트 — 이 크레이트가 `crates/` 아래 살아서 `CARGO_MANIFEST_DIR` 이 레포 루트가
@@ -486,6 +626,7 @@ const WORKFLOW_FLOOR: Floor = Floor {
     min: 7,
     measured: 11,
     measured_on: "2026-09-07",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
     why_this_gap: "워크플로는 채널을 새로 배선하거나 접을 때만 움직이고 한 번에 하나씩이라 \
                    모수가 느리다. 여유 4 는 잡 통합으로 몇 개가 접히는 폭을 견디되, 순회가 \
                    죽어 절반 이하만 보이는 상태는 잡는다",
@@ -506,6 +647,7 @@ const CALLER_SUPPLIED_FLOOR: Floor = Floor {
     min: 1,
     measured: 1,
     measured_on: "2026-09-07",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
     why_this_gap: "이 자리의 모수는 호출자마다 달라서 여유라는 것이 정의되지 않는다 — \
                    픽스처는 자기가 방금 쓴 파일 수를 알고 레포는 열한 개다. 공통으로 \
                    참인 것은 비어 있으면 안 된다는 것 하나뿐이라 하한이 1 이다",
@@ -1541,6 +1683,109 @@ const SUBJECT_NOTE: &str = "\n  [주어] 이 판정기는 그 범위 안의 **�
     것이다. 그러니 가르기 전에 물어라: 이 문장이 채널의 부재를 말하는 대상이 정말 그 \
     지목이 아닌가. 맞다면 (나)뿐이다.";
 
+/// 시점을 못박은 서술의 **표지 명부** — 표지와 *그것이 왜 시점 표지인가*를 함께 적는다.
+///
+/// 이 명부가 [`TIME_NOTE`] 의 일을 넘겨받는다. 문장은 **읽어야** 동작하고, 안 읽으면
+/// 조용히 안 동작한다. 명부는 안 읽어도 동작한다 — 짚힌 줄 옆에 표지가 **값으로** 붙어서,
+/// 처방을 따르기 전에 눈에 먼저 들어온다.
+///
+/// ★ **이 명부가 답하는 것은 한쪽뿐이다.** 표지가 **있으면** 그 서술은 때를 못박은 것이고
+/// 그 자리의 처방은 다르다. 표지가 **없다고 지금을 말한다는 뜻은 아니다** — 그 반대
+/// 방향은 텍스트만으로 안 갈리고 앞으로도 안 갈린다. 그래서 이 명부는 **검출을 줄이지
+/// 않는다**: 표지가 붙은 줄도 여전히 위반으로 뜨고, 다만 **다른 처방**을 달고 뜬다.
+/// 면제 명부였다면 그 자리가 조용해졌을 것이고, 그건 참인 문장을 지키려다 거짓인 문장까지
+/// 놓아주는 것이다.
+const TIME_MARKERS: &[(&str, &str)] = &[
+    (
+        "한 날의 상태",
+        "제목 관용구 — 그 절 전체가 배선하던 날의 기록이라는 선언이다",
+    ),
+    ("당시", "과거의 한 때를 가리키는 부사"),
+    ("그때", "과거의 한 때를 가리키는 부사"),
+    (
+        "한때",
+        "이제는 아니라는 것을 문장 자신이 이미 말한다 — 고치면 그 대비가 사라진다",
+    ),
+    (
+        "실측",
+        "잰 값의 기록 — 잰 날에 대해 참이고 지금에 대해 참일 의무가 없다",
+    ),
+    (
+        "도입 시점",
+        "무엇이 들어오던 때를 명시하는 말 — 결정의 근거로 남는 값이다",
+    ),
+    (
+        "결정 시점",
+        "무엇을 정하던 때를 명시하는 말 — ADR 본문이 이 모양이다",
+    ),
+];
+
+/// 범위 안에서 `YYYY-MM-DD` 모양을 찾는다.
+///
+/// 표지 낱말 없이 **날짜만** 단 실측이 이 레포에 흔하다("(2026-09-05) 값 38"). 낱말
+/// 명부만으로는 그 형태를 못 잡아서, 모양으로 한 번 더 본다.
+fn iso_date_in(scope: &str) -> Option<String> {
+    let b = scope.as_bytes();
+    if b.len() < 10 {
+        return None;
+    }
+    for i in 0..=b.len() - 10 {
+        let w = &b[i..i + 10];
+        let d = |k: usize| w[k].is_ascii_digit();
+        if (0..4).all(d) && w[4] == b'-' && (5..7).all(d) && w[7] == b'-' && (8..10).all(d) {
+            return Some(String::from_utf8_lossy(w).into_owned());
+        }
+    }
+    None
+}
+
+/// 이 범위가 때를 못박고 있으면 그 **표지**를 낸다.
+fn time_pin(scope: &str) -> Option<String> {
+    for (marker, _) in TIME_MARKERS {
+        if scope.contains(marker) {
+            return Some((*marker).to_string());
+        }
+    }
+    iso_date_in(scope)
+}
+
+/// 짚힌 한 줄에 시점 표지를 **값으로** 붙인다.
+///
+/// 이것이 "읽어야 동작하는" 것과 "안 읽어도 동작하는" 것의 차이다. 아래 [`TIME_NOTE`] 는
+/// 목록 **뒤에** 붙는 한 문단이라 목록이 길면 안 읽힌다. 이 표시는 짚힌 줄 **그 자리에**
+/// 붙는다.
+fn with_time_mark(entry: String, scope: &str) -> String {
+    match time_pin(scope) {
+        Some(marker) => {
+            format!(
+                "{entry}\n      ↑ [시점 표지 \"{marker}\"] — 이 자리는 처방이 다르다. 아래 [시점] 을 읽어라."
+            )
+        }
+        None => entry,
+    }
+}
+
+/// 세 번째 줄 — **처방이 거짓을 만들 수 있는 자리**를 갈라 준다.
+///
+/// 위 축들의 처방은 전부 "서술을 사실에 맞게 고쳐라" 다. 그 처방은 서술이 **지금**을
+/// 말할 때만 옳다. 이 레포의 문서에는 시점을 못박은 서술이 흔하다("배선한 날의 상태",
+/// "그때는 …였다", 날짜·커밋을 단 실측). 그런 자리를 지금 사실로 고치면 **없던 거짓이
+/// 새로 생긴다** — 가드가 참인 문장을 거짓으로 바꾸게 시키는 것이라, 잡음보다 나쁘다.
+///
+/// 실물로 한 번 쟀다(회차 92 단위 1): 판정 범위를 절로 넓히면 새로 잡히는 둘 중 하나가
+/// 정확히 그 형태였고, 그것이 **넓히지 않기로 한 이유**였다.
+///
+/// ★ 이 문장 하나로는 부족하다는 것이 이 자리의 교훈이다. 목록이 길면 목록 뒤의 문단은
+/// 안 읽힌다. 그래서 판정은 [`TIME_MARKERS`] 로 옮겼고 이 문장은 **표시된 줄이 있을 때
+/// 무엇을 하라는지**만 말한다.
+const TIME_NOTE: &str = "\n  [시점] 위 목록에 `↑ [시점 표지 …]` 가 붙은 줄이 있으면 \
+    **그 줄의 처방은 위와 다르다.** 그 문장은 그 시점에 대해 참이고, 지금 사실로 고치면 \
+    없던 거짓이 새로 생긴다. 고칠 것은 주장이 아니라 **시점이 안 보이는 것**이다: 언제의 \
+    상태인지 제목이나 괄호로 드러내고, 지금 값은 정본을 가리켜라.\n  \
+    ★ 표지가 **안 붙은** 줄이 지금을 말한다는 보장은 없다 — 이 판정기는 표지가 있는 쪽만 \
+    답한다. 표지 없이 때를 못박은 서술을 만났으면 고치기 전에 [`TIME_MARKERS`] 에 그 \
+    표지를 사유와 함께 더해라.";
+
 /// 주장이 놓인 **한 서술의 범위** — 표는 그 행, 산문은 그 문단, Rust 는 이어진 주석
 /// 블록. 면제도 표지 탐색도 이 범위에서 한다.
 ///
@@ -1730,7 +1975,8 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
             continue;
         };
         for at in claim_offsets(&text, &rel_str) {
-            violations.push(format!("{rel_str}:{}", line_of(&text, at)));
+            let entry = format!("{rel_str}:{}", line_of(&text, at));
+            violations.push(with_time_mark(entry, claim_scope(&text, at)));
         }
     }
 
@@ -1739,7 +1985,88 @@ fn no_file_claims_ci_runs_the_full_suite_while_it_does_not() {
         "전체 스위트(`cargo test --workspace`)는 자동으로 돌지 않는다 — `test.yml` 의 \
          `test-linux-x64` 는 `workflow_dispatch` 전용이다. 아래는 그것을 CI 강제 장치로 \
          서술한 자리다. 실제 채널은 `docs/dev-guide/ci-gates.md` 를 보고, 서술을 \
-         '자동 채널 없음' 으로 고쳐라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
+         '자동 채널 없음' 으로 고쳐라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}{TIME_NOTE}",
+        violations.join("\n  ")
+    );
+}
+
+/// 자동 조합이 **하나도 없는** 통합 타깃을 집행 장치로 부르면 잡는다.
+///
+/// 형제 [`no_file_claims_ci_enforces_an_integration_test_it_does_not_run`] 과 물음은
+/// 같은데 **모수를 얻는 길이 다르다.** 저쪽은 `--test <이름>` 으로 좁혀진 자동 호출에서
+/// 이름 목록을 읽고, 좁혀지지 않은 호출을 보면 "전부 돈다" 로 읽고 조기 반환한다.
+/// 그 전제는 타깃 단위에서 **거의** 참인데, 한 갈래에서 깨진다 — `--skip` 이 그 타깃의
+/// **모든 시험 이름**을 덮으면 좁혀지지 않은 호출도 그 타깃을 안 돌린다. 그 갈래는 이미
+/// [`integration_target_channels`] 가 안다([`a_skip_that_covers_every_test_removes_the_targets_channel`]).
+///
+/// 그래서 이쪽은 목록을 워크플로 인자에서 읽지 않고 **조합 수 0** 이라는 성질로 얻는다.
+/// 좁혀졌든 아니든 같은 답이 나오므로 조기 반환이 필요 없다.
+///
+/// 실측(base `12bc0f4b2` + 내 커밋 2): 조합 0 인 루트 통합 타깃과 그것을 집행 표지와
+/// 함께 지목한 자리는 실패문에 함께 찍힌다. 오늘 위반 0 이고, 그 0 이 값인지는 아래
+/// 합성 대조 둘이 답한다([`a_target_with_no_automatic_combo_is_caught_as_an_enforcer`] ·
+/// [`a_target_with_a_combo_is_not_caught`]).
+#[test]
+fn no_file_claims_ci_enforces_an_integration_target_no_automatic_job_runs() {
+    let root = repo_root();
+    let invocations = automatic_test_invocations(&root);
+    let features = test_target_features(&root);
+
+    let mut files = Vec::new();
+    collect_files(&root, &mut files);
+    assert!(
+        files.len() >= MIN_SCANNED_FILES,
+        "스캔한 파일이 {}개다(하한 {MIN_SCANNED_FILES}) — 수집이 조용히 줄었다. \
+         이 수를 내려서 통과시키지 마라.",
+        files.len()
+    );
+
+    // 모수: 루트 패키지의 통합 타깃 중 **자동 조합이 하나라도 있는** 것.
+    // `enforcement_violations` 는 이 집합 밖의 지목을 위반으로 낸다.
+    let mut running = std::collections::BTreeSet::new();
+    let mut dark = Vec::new();
+    for file in &files {
+        let rel_str = normalized_rel(file, &root);
+        // **모수를 루트로 좁히면 안 된다.** `enforcement_violations` 는 통합 테스트
+        // 파일이 자기 이름을 부르지 않아도 **자기 지목**으로 세는데, 크레이트 소유
+        // 통합 파일(`crates/<c>/tests/X.rs`)이 그 형태다. 루트만 모수로 잡으면 그
+        // 파일들이 전부 "조합 0" 쪽으로 떨어져 **자기 자신을 고발한다** — 실측으로
+        // 이 파일이 두 자리에서 그렇게 걸렸다.
+        if !rel_str.ends_with(".rs") || !rel_str.contains("tests/") {
+            continue;
+        }
+        let Some(name) = integration_test_name(&rel_str) else {
+            continue;
+        };
+        if integration_target_channels(&root, name, &invocations, &features).is_empty() {
+            if !dark.contains(&name.to_string()) {
+                dark.push(name.to_string());
+            }
+        } else {
+            running.insert(name.to_string());
+        }
+    }
+
+    let mut violations = Vec::new();
+    for file in &files {
+        let rel_str = normalized_rel(file, &root);
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let (found, _) = enforcement_violations(&text, &rel_str, &running);
+        for at in found {
+            let entry = format!("{rel_str}:{}", line_of(&text, at));
+            violations.push(with_time_mark(entry, claim_scope(&text, at)));
+        }
+    }
+    violations.sort();
+    violations.dedup();
+    assert!(
+        violations.is_empty(),
+        "아래는 **자동 조합이 하나도 없는** 통합 타깃을 CI 집행 장치로 부른 자리다. \
+         그 타깃은 어떤 자동 잡도 안 돌린다 — 조합이 0 인 타깃 {dark:?}. 채널 정본은 \
+         `docs/dev-guide/ci-gates.md` 를 보고, 서술에서 집행 주장을 빼거나 그 타깃을 \
+         자동 잡에 올려라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}{TIME_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1777,7 +2104,8 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
         let (found, cited) = enforcement_violations(&text, &rel_str, &automatic);
         citations += cited;
         for at in found {
-            violations.push(format!("{rel_str}:{}", line_of(&text, at)));
+            let entry = format!("{rel_str}:{}", line_of(&text, at));
+            violations.push(with_time_mark(entry, claim_scope(&text, at)));
         }
     }
 
@@ -1797,7 +2125,7 @@ fn no_file_claims_ci_enforces_an_integration_test_it_does_not_run() {
          나머지는 `--lib --bins` = 유닛, 그리고 패키지로 지목된 통합 타깃뿐). 아래는 \
          그 밖의 통합 테스트를 CI 강제 장치로 \
          서술한 자리다. 문장을 지우지 말고, 그 문장이 전하려던 사실은 남긴 채 채널 주장만 \
-         `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
+         `docs/dev-guide/ci-gates.md` 에 맞춰라:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}{TIME_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1837,7 +2165,8 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
         // 부재를 적은 자리에서 출발한다 — lib 테스트 이름 전체를 파일마다 훑으면
         // 이름 수 x 파일 수가 되어 스캔이 느려지고, 얻는 것은 같다.
         for at in weak_absence_offsets(&text, &rel_str, &lib_tests) {
-            violations.push(format!("{rel_str}:{}", line_of(&text, at)));
+            let entry = format!("{rel_str}:{}", line_of(&text, at));
+            violations.push(with_time_mark(entry, claim_scope(&text, at)));
         }
     }
 
@@ -1847,7 +2176,7 @@ fn no_file_denies_the_automatic_channel_a_lib_test_actually_has() {
         violations.is_empty(),
         "아래는 **lib 유닛 테스트**를 두고 자동 채널의 부재를 적은 자리다. 그 테스트는 \
          `crossplatform-check.yml` 의 `cargo test --workspace --lib --bins`(main push · PR)로 \
-         자동으로 돈다 — 서술이 사실보다 약하다. 채널 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
+         자동으로 돈다 — 서술이 사실보다 약하다. 채널 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}{TIME_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -1921,7 +2250,8 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
             continue;
         };
         for (at, why) in overstated_absence(&text, &rel_str, &channels_of, &class_channels) {
-            violations.push(format!("{rel_str}:{} — {why}", line_of(&text, at)));
+            let entry = format!("{rel_str}:{} — {why}", line_of(&text, at));
+            violations.push(with_time_mark(entry, claim_scope(&text, at)));
         }
     }
     violations.sort();
@@ -1929,7 +2259,7 @@ fn no_file_denies_a_channel_an_integration_test_actually_has() {
     assert!(
         violations.is_empty(),
         "아래는 통합 테스트를 두고 자동 채널의 부재를 적었지만, 그 테스트가 실제로는 \
-         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}",
+         자동으로 도는 자리다. 조합 정본은 `docs/dev-guide/ci-gates.md`:\n  {}{SCOPE_NOTE}{SUBJECT_NOTE}{TIME_NOTE}",
         violations.join("\n  ")
     );
 }
@@ -2438,6 +2768,39 @@ fn named(names: &[&str]) -> std::collections::BTreeSet<String> {
     names.iter().map(|s| (*s).to_string()).collect()
 }
 
+/// **양성 대조 — 조합이 0 인 타깃을 집행 장치로 부르면 잡힌다.**
+///
+/// 레포 판정([`no_file_claims_ci_enforces_an_integration_target_no_automatic_job_runs`])이
+/// 오늘 위반 0 이라, 그 0 이 "그런 서술이 없다" 인지 "그런 서술을 못 본다" 인지 이 조각이
+/// 답한다. 지목은 `gui_tests` 다 — 실측으로 **조합이 0 인 실물**이라(`--features gui` 가
+/// 없으면 어느 자동 잡도 안 돌린다) 합성 이름을 지어내지 않았다(R1078).
+#[test]
+fn a_target_with_no_automatic_combo_is_caught_as_an_enforcer() {
+    let text = format!("`tests/gui_tests.rs` 를 {}.\n", enforce());
+    let (found, cited) = enforcement_violations(&text, "docs/x.md", &named(&["e2e_tests"]));
+    assert_eq!(cited, 1, "지목을 못 읽었다");
+    assert_eq!(
+        found.len(),
+        1,
+        "자동 조합이 0 인 타깃을 집행 장치로 부른 서술을 안 잡았다"
+    );
+}
+
+/// **음성 대조 — 조합이 있는 타깃은 안 잡힌다.** 위 조각에서 이름 하나만 바꾼다.
+///
+/// 이 짝이 없으면 위 시험은 "집행 표지만 보면 무엇이든 잡는다" 여도 초록이다. 그러면
+/// 이 판정의 처방("집행 주장을 빼라")이 참인 문장에까지 나간다.
+#[test]
+fn a_target_with_a_combo_is_not_caught() {
+    let text = format!("`tests/e2e_tests.rs` 를 {}.\n", enforce());
+    let (found, cited) = enforcement_violations(&text, "docs/x.md", &named(&["e2e_tests"]));
+    assert_eq!(cited, 1, "지목을 못 읽었다");
+    assert!(
+        found.is_empty(),
+        "자동으로 도는 타깃을 두고 참인 집행 서술을 고발했다 — {found:?}"
+    );
+}
+
 /// 층 3 의 판정기를 겨냥한 변이 — 절 범위가 맞게 잘리는가.
 ///
 /// 표지를 조각으로 조립하지 않고 그대로 적는다: 이 판정기는 `.md` 만 훑으므로 `.rs` 인
@@ -2750,35 +3113,23 @@ fn the_full_suite_judgement_uses_the_same_narrowing_rule() {
 /// 합성 워크플로 디렉토리 — 판정기가 경로를 주입받으므로 조합 수를 마음대로 만들 수 있다.
 ///
 /// 레포 실물에 고정하면 **조합이 하나뿐인 조건을 만들 수 없어** 한쪽 방향만 재게 된다.
-fn workflow_dir(name: &str, files: &[(&str, &str)]) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "tasty-ci-guard-{}-{}-{:?}",
-        name,
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    // 이전 실행 잔여물 제거 — 없으면 NotFound 라 실패가 정상 경로다.
-    let _ = std::fs::remove_dir_all(&dir);
+fn workflow_dir(name: &str, files: &[(&str, &str)]) -> Scratch {
+    let probe = Scratch::new(&format!("ci-guard-{name}"));
+    let dir = probe.path();
     std::fs::create_dir_all(&dir).expect("합성 워크플로 디렉토리를 만들지 못했다");
     for (file, body) in files {
         std::fs::write(dir.join(file), body).expect("합성 워크플로를 쓰지 못했다");
     }
-    dir
+    probe
 }
 
 /// 합성 레포 — `tests/<이름>.rs` 와 `.github/workflows/` 를 갖춘 최소 트리.
 ///
 /// 채널 계산은 워크플로(무엇을 돌리나)와 트리(그 타깃이 있나)를 함께 읽으므로, 둘 중
 /// 하나만 합성하면 판정의 절반이 실물에 걸린 채로 남는다.
-fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "tasty-ci-repo-{}-{}-{:?}",
-        name,
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    // 이전 실행 잔여물 제거 — 없으면 NotFound 라 실패가 정상 경로다.
-    let _ = std::fs::remove_dir_all(&dir);
+fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -> Scratch {
+    let probe = Scratch::new(&format!("ci-repo-{name}"));
+    let dir = probe.path();
     std::fs::create_dir_all(dir.join("tests")).expect("합성 tests/ 를 만들지 못했다");
     std::fs::create_dir_all(dir.join(".github/workflows")).expect("합성 워크플로를 만들지 못했다");
     for (file, body) in targets {
@@ -2788,7 +3139,7 @@ fn fake_repo(name: &str, targets: &[(&str, &str)], workflows: &[(&str, &str)]) -
         std::fs::write(dir.join(".github/workflows").join(file), body)
             .expect("합성 워크플로를 쓰지 못했다");
     }
-    dir
+    probe
 }
 
 /// **모듈 doc 은 자기 이름을 안 부른다.**
@@ -2876,8 +3227,9 @@ fn an_example_command_inside_an_explanation_is_not_a_claim() {
 
 /// `-p` 좁힘을 판정하려면 **패키지가 둘 이상인 합성 레포**가 필요하다. [`fake_repo`] 는
 /// 루트 `tests/` 만 만든다 — 그 형태로는 "다른 패키지의 타깃" 을 표현할 수 없다.
-fn fake_two_package_repo(name: &str) -> PathBuf {
-    let dir = fake_repo(name, &[("root_side.rs", &one_test("a"))], &[]);
+fn fake_two_package_repo(name: &str) -> Scratch {
+    let probe = fake_repo(name, &[("root_side.rs", &one_test("a"))], &[]);
+    let dir = probe.path();
     std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"rootpkg\"\n")
         .expect("루트 매니페스트를 쓰지 못했다");
     let sub = dir.join("crates/subpkg");
@@ -2886,7 +3238,7 @@ fn fake_two_package_repo(name: &str) -> PathBuf {
         .expect("크레이트 매니페스트를 쓰지 못했다");
     std::fs::write(sub.join("tests/sub_side.rs"), one_test("b"))
         .expect("크레이트 타깃을 쓰지 못했다");
-    dir
+    probe
 }
 
 /// `-p <패키지>` 로 좁힌 잡은 **그 패키지의 타깃만** 돌린다.
@@ -2899,7 +3251,8 @@ fn fake_two_package_repo(name: &str) -> PathBuf {
 /// 앞쪽 단언은 초록이다.
 #[test]
 fn a_package_narrowed_job_does_not_reach_another_package() {
-    let dir = fake_two_package_repo("pkgnarrow");
+    let dir_probe = fake_two_package_repo("pkgnarrow");
+    let dir = dir_probe.path();
     let invocations = vec![(
         Combo::Default,
         " -p subpkg --locked --no-fail-fast\n".to_string(),
@@ -2907,12 +3260,12 @@ fn a_package_narrowed_job_does_not_reach_another_package() {
     let features = std::collections::BTreeMap::new();
 
     assert_eq!(
-        integration_target_channels(&dir, "sub_side", &invocations, &features),
+        integration_target_channels(dir, "sub_side", &invocations, &features),
         combos(&[Combo::Default]),
         "지목된 패키지 자신의 타깃은 채널을 받아야 한다"
     );
     assert_eq!(
-        integration_target_channels(&dir, "root_side", &invocations, &features),
+        integration_target_channels(dir, "root_side", &invocations, &features),
         combos(&[]),
         "`-p subpkg` 가 루트 패키지의 타깃에까지 채널을 줬다"
     );
@@ -2920,7 +3273,7 @@ fn a_package_narrowed_job_does_not_reach_another_package() {
     // `-p` 가 없는 같은 호출은 둘 다 돌린다 — 좁힘을 만든 것이 `-p` 라는 대조.
     let wide = vec![(Combo::Default, " --workspace --locked\n".to_string())];
     assert_eq!(
-        integration_target_channels(&dir, "root_side", &wide, &features),
+        integration_target_channels(dir, "root_side", &wide, &features),
         combos(&[Combo::Default])
     );
 }
@@ -2931,13 +3284,14 @@ fn a_package_narrowed_job_does_not_reach_another_package() {
 /// 문서 가드 잡 하나가 그 축에 "lib 유닛도 자동으로 돈다" 는 근거를 준다.
 #[test]
 fn a_package_narrowed_job_is_not_a_lib_channel() {
-    let dir = fake_two_package_repo("pkglib");
+    let dir_probe = fake_two_package_repo("pkglib");
+    let dir = dir_probe.path();
     std::fs::write(
         dir.join(".github/workflows/only-sub.yml"),
         "on:\n  push:\n    branches: [main]\njobs:\n  j:\n    steps:\n      - run: cargo test -p subpkg --locked\n",
     )
     .expect("합성 워크플로를 쓰지 못했다");
-    assert!(!lib_tests_run_automatically(&dir));
+    assert!(!lib_tests_run_automatically(dir));
 
     std::fs::write(
         dir.join(".github/workflows/only-sub.yml"),
@@ -2945,7 +3299,7 @@ fn a_package_narrowed_job_is_not_a_lib_channel() {
     )
     .expect("합성 워크플로를 쓰지 못했다");
     assert!(
-        lib_tests_run_automatically(&dir),
+        lib_tests_run_automatically(dir),
         "본체 패키지를 지목한 잡은 lib 채널이 맞다 — 이 대조가 없으면 위 단언은 언제나 참이다"
     );
 }
@@ -3014,11 +3368,12 @@ fn a_literal_scalar_keeps_the_shell_continuation_rule() {
 /// `required-features` 가 걸린 타깃은 헤드리스 조합에서 만들어지지 않는다.
 #[test]
 fn a_required_feature_keeps_a_target_off_the_headless_channel() {
-    let root = fake_repo(
+    let root_probe = fake_repo(
         "reqfeat",
         &[("guarded.rs", &one_test("t"))],
         &[("w.yml", AUTOMATIC_FULL)],
     );
+    let root = root_probe.path();
     let invocations = vec![(
         Combo::Headless,
         " --workspace --no-default-features".to_string(),
@@ -3029,24 +3384,22 @@ fn a_required_feature_keeps_a_target_off_the_headless_channel() {
         (vec!["gui".to_string()], vec!["gui".to_string()]),
     );
     assert!(
-        integration_target_channels(&root, "guarded", &invocations, &features).is_empty(),
+        integration_target_channels(root, "guarded", &invocations, &features).is_empty(),
         "gui 를 요구하는 타깃이 헤드리스 조합에서 돈다고 판정했다"
     );
     let default_only = vec![(Combo::Default, " --workspace".to_string())];
     assert_eq!(
-        integration_target_channels(&root, "guarded", &default_only, &features),
+        integration_target_channels(root, "guarded", &default_only, &features),
         combos(&[Combo::Default]),
         "기본 조합에서는 그 타깃이 만들어지는데 채널이 없다고 판정했다"
     );
-    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// `--skip` 이 그 타깃의 **모든** 테스트를 덮으면 실행 채널이 아니다. 하나라도 남으면
 /// 채널이다 — 부분 skip 을 전면 부재로 읽으면 참인 채널을 지운다.
 #[test]
 fn a_skip_that_covers_every_test_removes_the_targets_channel() {
-    let root = fake_repo(
+    let root_probe = fake_repo(
         "skips",
         &[
             ("whole.rs", &one_test("all_of_it")),
@@ -3057,22 +3410,21 @@ fn a_skip_that_covers_every_test_removes_the_targets_channel() {
         ],
         &[("w.yml", AUTOMATIC_FULL)],
     );
+    let root = root_probe.path();
     let invocations = vec![(
         Combo::Headless,
         " --workspace --no-default-features -- --skip all_of_it".to_string(),
     )];
     let features = std::collections::BTreeMap::new();
     assert!(
-        integration_target_channels(&root, "whole", &invocations, &features).is_empty(),
+        integration_target_channels(root, "whole", &invocations, &features).is_empty(),
         "모든 테스트가 skip 된 타깃을 실행 채널로 셌다"
     );
     assert_eq!(
-        integration_target_channels(&root, "partial", &invocations, &features),
+        integration_target_channels(root, "partial", &invocations, &features),
         combos(&[Combo::Headless]),
         "일부만 skip 된 타깃의 채널을 지웠다"
     );
-    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// 양성 필터(`-- <이름>`)가 타깃을 좁히면 그 호출은 타깃 전체의 채널이 아니다.
@@ -3082,7 +3434,7 @@ fn a_skip_that_covers_every_test_removes_the_targets_channel() {
 /// 세어지고, 그 타깃에 새 테스트가 생겨도 자동으로 돈다고 잘못 말하게 된다.
 #[test]
 fn a_positive_filter_that_narrows_the_target_is_not_its_channel() {
-    let root = fake_repo(
+    let root_probe = fake_repo(
         "filters",
         &[
             (
@@ -3093,17 +3445,18 @@ fn a_positive_filter_that_narrows_the_target_is_not_its_channel() {
         ],
         &[("w.yml", AUTOMATIC_FULL)],
     );
+    let root = root_probe.path();
     let invocations = vec![(
         Combo::Headless,
         " --workspace --no-default-features -- chosen_one --exact".to_string(),
     )];
     let features = std::collections::BTreeMap::new();
     assert!(
-        integration_target_channels(&root, "narrowed", &invocations, &features).is_empty(),
+        integration_target_channels(root, "narrowed", &invocations, &features).is_empty(),
         "한 건만 고른 호출을 타깃 전체의 실행 채널로 셌다"
     );
     assert_eq!(
-        integration_target_channels(&root, "whole", &invocations, &features),
+        integration_target_channels(root, "whole", &invocations, &features),
         combos(&[Combo::Headless]),
         "필터가 그 타깃의 모든 테스트를 덮는데 채널을 지웠다"
     );
@@ -3113,11 +3466,9 @@ fn a_positive_filter_that_narrows_the_target_is_not_its_channel() {
         " --workspace --no-default-features -- chosen".to_string(),
     )];
     assert!(
-        integration_target_channels(&root, "narrowed", &loose, &features).is_empty(),
+        integration_target_channels(root, "narrowed", &loose, &features).is_empty(),
         "부분일치 필터도 좁히는 것은 마찬가지다"
     );
-    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// `--test <이름>` 으로 지목한 호출은 **그 이름에만** 채널을 준다. 그리고 존재하지 않는
@@ -3125,36 +3476,35 @@ fn a_positive_filter_that_narrows_the_target_is_not_its_channel() {
 /// 테스트의 채널을 근거로 고발하게 된다.
 #[test]
 fn a_named_target_gets_the_channel_only_for_itself() {
-    let root = fake_repo(
+    let root_probe = fake_repo(
         "named",
         &[("alpha.rs", &one_test("a")), ("beta.rs", &one_test("b"))],
         &[("w.yml", AUTOMATIC_FULL)],
     );
+    let root = root_probe.path();
     let invocations = vec![(
         Combo::Headless,
         " --locked --no-default-features --test alpha".to_string(),
     )];
     let features = std::collections::BTreeMap::new();
     assert_eq!(
-        integration_target_channels(&root, "alpha", &invocations, &features),
+        integration_target_channels(root, "alpha", &invocations, &features),
         combos(&[Combo::Headless])
     );
     assert!(
-        integration_target_channels(&root, "beta", &invocations, &features).is_empty(),
+        integration_target_channels(root, "beta", &invocations, &features).is_empty(),
         "지목되지 않은 타깃에 채널을 줬다"
     );
     assert!(
-        integration_target_channels(&root, "nonexistent", &invocations, &features).is_empty(),
+        integration_target_channels(root, "nonexistent", &invocations, &features).is_empty(),
         "존재하지 않는 타깃에 채널을 줬다"
     );
-    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// 역방향 축의 전제("lib 은 자동으로 돈다")도 **워크플로에서** 읽는다.
 #[test]
 fn the_lib_axis_reads_the_workflow_instead_of_assuming() {
-    let with_lib = fake_repo(
+    let with_lib_probe = fake_repo(
         "libyes",
         &[],
         &[(
@@ -3162,8 +3512,9 @@ fn the_lib_axis_reads_the_workflow_instead_of_assuming() {
             "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --workspace --lib --bins --locked\n",
         )],
     );
-    assert!(lib_tests_run_automatically(&with_lib));
-    let named_only = fake_repo(
+    let with_lib = with_lib_probe.path();
+    assert!(lib_tests_run_automatically(with_lib));
+    let named_only_probe = fake_repo(
         "libno",
         &[],
         &[(
@@ -3171,14 +3522,11 @@ fn the_lib_axis_reads_the_workflow_instead_of_assuming() {
             "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --locked --test alpha\n",
         )],
     );
+    let named_only = named_only_probe.path();
     assert!(
-        !lib_tests_run_automatically(&named_only),
+        !lib_tests_run_automatically(named_only),
         "`--test` 로만 좁힌 자동 잡을 lib 채널로 읽었다"
     );
-    for dir in [&with_lib, &named_only] {
-        // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-        let _ = std::fs::remove_dir_all(dir);
-    }
 }
 
 /// 도는 통합 테스트를 두고 부재를 적으면 위반이고, **조합을 한정하면** 참이다.
@@ -3358,22 +3706,20 @@ const AUTOMATIC_FULL: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n 
 #[test]
 fn a_workflow_is_read_under_either_extension() {
     for (name, file) in [("yml", "ci.yml"), ("yaml", "ci.yaml")] {
-        let dir = workflow_dir(name, &[(file, AUTOMATIC_FULL)]);
-        let bodies = automatic_job_bodies_of_dir(&dir, &CALLER_SUPPLIED_FLOOR);
+        let dir_probe = workflow_dir(name, &[(file, AUTOMATIC_FULL)]);
+        let dir = dir_probe.path();
+        let bodies = automatic_job_bodies_of_dir(dir, &CALLER_SUPPLIED_FLOOR);
         assert_eq!(bodies.len(), 1, "{file} 을 워크플로로 읽지 않았다");
         assert!(bodies[0].contains("cargo test --workspace"));
-        // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // 워크플로가 아닌 확장자는 들어오지 않는다 — 모수를 넓히는 것과 아무거나 읽는 것은 다르다.
-    let dir = workflow_dir("other", &[("notes.md", AUTOMATIC_FULL)]);
+    let dir_probe = workflow_dir("other", &[("notes.md", AUTOMATIC_FULL)]);
+    let dir = dir_probe.path();
     assert!(
-        automatic_job_bodies_of_dir(&dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
+        automatic_job_bodies_of_dir(dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
         "워크플로가 아닌 파일을 잡 본문으로 읽었다"
     );
-    // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// 자동 트리거가 없는 워크플로는 두 확장자 어느 쪽이든 제외된다 — 넓힌 것은 **확장자**이지
@@ -3382,13 +3728,12 @@ fn a_workflow_is_read_under_either_extension() {
 fn widening_the_extension_does_not_widen_the_trigger_rule() {
     let manual = "on:\n  workflow_dispatch:\njobs:\n  a:\n    steps:\n      - name: t\n        run: cargo test --workspace --locked\n";
     for (name, file) in [("m-yml", "manual.yml"), ("m-yaml", "manual.yaml")] {
-        let dir = workflow_dir(name, &[(file, manual)]);
+        let dir_probe = workflow_dir(name, &[(file, manual)]);
+        let dir = dir_probe.path();
         assert!(
-            automatic_job_bodies_of_dir(&dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
+            automatic_job_bodies_of_dir(dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
             "{file}: 수동 전용 워크플로가 자동 잡으로 들어왔다"
         );
-        // 정리 — 실패해도 임시 디렉토리가 남을 뿐이라 테스트 결과에 영향이 없다.
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
@@ -3543,9 +3888,13 @@ fn gate_scripts_of_workflow(text: &str) -> Vec<String> {
 }
 
 /// 그 워크플로가 부르는 게이트 스크립트를 워크플로 **파일 이름**으로 색인한다.
-fn gate_scripts_by_workflow(workflows: &Path) -> Vec<(String, Vec<String>)> {
+///
+/// **하한을 인자로 받는다** — 그래야 [`the_gate_script_index_dies_when_extraction_dies`]
+/// 가 합성 디렉토리로 이 함수를 부를 수 있다. 레포 하한을 박아 두면 이 자리에는
+/// 양성 대조가 원리적으로 안 붙는다(합성 트리는 레포 크기의 하한을 못 넘는다).
+fn gate_scripts_by_workflow(workflows: &Path, floor: &Floor) -> Vec<(String, Vec<String>)> {
     let mut out = Vec::new();
-    for w in workflow_files(workflows, &WORKFLOW_FLOOR) {
+    for w in workflow_files(workflows, floor) {
         let text = std::fs::read_to_string(&w.path).unwrap_or_default();
         let scripts = gate_scripts_of_workflow(&text);
         if scripts.is_empty() {
@@ -3557,6 +3906,43 @@ fn gate_scripts_by_workflow(workflows: &Path) -> Vec<(String, Vec<String>)> {
     }
     out.sort();
     out
+}
+
+/// [`no_file_lists_only_some_of_the_gates_a_workflow_runs`] 의 모수 단정
+/// (`색인이 비면 순회나 추출이 죽은 것`)의 **양성 대조**.
+///
+/// 그 단정은 색인이 비면 빨개진다고 말한다. 그런데 레포를 상대로만 돌리면 **비는 길이
+/// 실제로 열려 있는지**를 아무도 안 본다 — 추출기를 통째로 부숴도 레포에 워크플로가
+/// 있는 한 초록일 수 있고, 그때 그 단정은 "안 봤다" 를 "괜찮다" 로 읽게 만든다.
+///
+/// 그래서 합성 디렉토리 둘로 **양방향**을 건다. 문장으로 "이 하한을 내리지 마라" 라고
+/// 적는 것과 다른 점은, 이쪽은 **읽지 않아도 작동한다**는 것이다.
+#[test]
+fn the_gate_script_index_dies_when_extraction_dies() {
+    // 실물 이름을 쓰지 않는다 — 쓰면 이 파일의 산문이 네 번째 축의 좌변에 앉는다.
+    const CALLS_GATES: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - run: bash scripts/check-alpha.sh\n      - run: bash scripts/check-beta.sh\n";
+    let dir_probe = workflow_dir("gate-index-live", &[("alpha.yml", CALLS_GATES)]);
+    let dir = dir_probe.path();
+    let index = gate_scripts_by_workflow(dir, &CALLER_SUPPLIED_FLOOR);
+    assert_eq!(
+        index,
+        vec![(
+            "alpha.yml".to_string(),
+            vec!["check-alpha.sh".to_string(), "check-beta.sh".to_string()]
+        )],
+        "잘 만든 워크플로에서 게이트 두 개를 못 뽑았다 — 추출기가 죽었다"
+    );
+
+    // 반대 방향 — 게이트가 아닌 호출만 있으면 색인은 **비어야 한다.** 이 갈래가 막혀
+    // 있으면 위 모수 단정은 영원히 초록이고, 그것은 지키는 것이 아니라 안 보는 것이다.
+    const CALLS_NO_GATE: &str = "on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps:\n      - run: bash scripts/build-alpha.sh\n      - run: bash tools/check-beta.sh\n";
+    let dir_probe = workflow_dir("gate-index-dead", &[("beta.yml", CALLS_NO_GATE)]);
+    let dir = dir_probe.path();
+    assert!(
+        gate_scripts_by_workflow(dir, &CALLER_SUPPLIED_FLOOR).is_empty(),
+        "게이트 스크립트가 아닌 호출을 게이트로 셌다 — 좌변이 넓어졌고, 그러면 위 \
+         모수 단정은 추출기가 죽어도 안 빨개진다"
+    );
 }
 
 /// 문서의 한 서술이 워크플로를 이름으로 들면서 그 워크플로의 게이트 스크립트를
@@ -3613,7 +3999,7 @@ fn own_name(rel: &str) -> &str {
 #[test]
 fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
     let root = &repo_root();
-    let index = gate_scripts_by_workflow(&root.join(".github/workflows"));
+    let index = gate_scripts_by_workflow(&root.join(".github/workflows"), &WORKFLOW_FLOOR);
     assert!(
         !index.is_empty(),
         "게이트 스크립트를 부르는 워크플로가 0 개다 — 순회나 추출이 죽었다. 이 상태의 \
@@ -3634,6 +4020,10 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
     // 좌변 깔때기 — 위 doc 주석의 "여기 안 적는다, 테스트가 센다".
     let mut mentions = 0usize; // 워크플로 이름을 든 산문 자리 (전수)
     let mut named_any = 0usize; // 그중 그 워크플로의 게이트를 하나라도 든 자리
+    // ★ 넷째 칸은 **빼서 정하지 않고 따로 센다.** 뺄셈으로 정의하면 그 칸은 앞의 둘과
+    // 절대 안 어긋나고, 안 어긋나는 값은 아무것도 확인해 주지 않는다 — 세는 쪽이 깨져도
+    // 표는 여전히 "합이 맞는다". 따로 세고 아래에서 항등식을 **검사**로 세운다.
+    let mut none_named = 0usize; // 그중 그 워크플로의 게이트를 하나도 안 든 자리
     for path in &files {
         // 경로를 손으로 벗기지 않는다 — [`normalized_rel`] 이 `\` 를 `/` 로 편다.
         // 이 자리는 한때 `strip_prefix(root).display().to_string()` 이었고, 그 문자열은
@@ -3688,9 +4078,12 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
                             continue;
                         }
                         let line = line_of(&text, at);
-                        let msg = format!(
-                            "  {rel}:{line} — `{script}` 를 들었는데 이 자리가 든 워크플로 {:?} 중 어느 것도 그것을 안 부른다",
-                            claimed.iter().map(|(w, _)| w.as_str()).collect::<Vec<_>>()
+                        let msg = with_time_mark(
+                            format!(
+                                "  {rel}:{line} — `{script}` 를 들었는데 이 자리가 든 워크플로 {:?} 중 어느 것도 그것을 안 부른다",
+                                claimed.iter().map(|(w, _)| w.as_str()).collect::<Vec<_>>()
+                            ),
+                            scope,
                         );
                         if !misattributed.contains(&msg) {
                             misattributed.push(msg);
@@ -3707,6 +4100,7 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
                     .filter(|s| s.as_str() != own_name(&rel) && scope.contains(s.as_str()))
                     .collect();
                 if named.is_empty() {
+                    none_named += 1;
                     continue; // 실행 목록이 아니다 (좌변 1 겹)
                 }
                 named_any += 1;
@@ -3734,11 +4128,14 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
                     .map(|s| s.as_str())
                     .collect();
                 if !missing.is_empty() {
-                    violations.push(format!(
-                        "  {rel}:{} — `{workflow}` 을 들면서 {:?} 는 적고 {:?} 가 빠졌다",
-                        line_of(&text, at),
-                        named.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                        missing
+                    violations.push(with_time_mark(
+                        format!(
+                            "  {rel}:{} — `{workflow}` 을 들면서 {:?} 는 적고 {:?} 가 빠졌다",
+                            line_of(&text, at),
+                            named.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                            missing
+                        ),
+                        scope,
                     ));
                 }
             }
@@ -3748,8 +4145,16 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
     println!(
         "FUNNEL 워크플로 이름을 든 자리 {mentions} → 게이트를 하나라도 든 자리 \
          {named_any} → 자칭 두 모양까지 통과해 판정된 자리 {judged} (스크립트를 하나도 \
-         안 든 자리 {})",
-        mentions - named_any
+         안 든 자리 {none_named})"
+    );
+    // 세 칸을 따로 세었으니 이제 합이 **검사**가 된다. 뺄셈으로 정의했으면 이 줄은
+    // 언제나 참이라 쓸 수 없었다.
+    assert_eq!(
+        mentions,
+        named_any + none_named,
+        "깔때기의 세 칸이 안 맞는다 — 어느 갈래에서 세는 것을 빠뜨렸다(둘 중 하나만 \
+         증가시키는 `continue` 가 새로 생겼을 가능성이 높다). 이 줄이 빨간 동안 \
+         FUNNEL 의 수는 전부 못 믿는다."
     );
     assert!(
         judged > 0,
@@ -3759,13 +4164,34 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
          무엇이 죽었는지를 가른다 — 첫 칸이 0 이면 순회가, 둘째가 0 이면 추출이, \
          셋째만 0 이면 자칭 필터가 원인이다."
     );
+    // ── 좌변 둘째 겹이 **지금도 무언가를 거르는가** ─────────────────────────────
+    // 이 겹(`named.len() >= 2 || workflow_is_subject`)을 지키는 것이 오래 주석 한 줄뿐이었다.
+    // 지우면 판정이 `named_any` 까지 뛰고 늘어난 자리는 전부 오탐인데, 그때 저자가 보는
+    // 첫 화면은 아래 "일부만 적었다" 목록이고 **그 처방은 정본 표의 모든 행에 형제 게이트
+    // 이름을 베끼는 것**이다 — 이 가드가 막으려는 바로 그 사본이다. 그래서 그 화면보다
+    // 이 줄이 먼저 선다. 순서가 곧 처방이다.
+    assert!(
+        judged < named_any,
+        "좌변 둘째 겹이 아무것도 안 거른다 — 게이트를 하나라도 든 자리 {named_any} 곳이 \
+         전부 판정({judged})에 들어왔다.\n\
+         ★ **이것은 회귀가 아니라 좌변이 넓어진 것이다.** 거의 확실히 \
+         `named.len() >= 2 || workflow_is_subject` 를 지웠거나 무력화했다.\n\
+         ★★ **아래에 위반이 무더기로 떴다면 그 처방을 따르지 마라.** 그 목록은 \
+         '빠진 스크립트를 더해라' 라고 말하는데, 이 레포의 채널 표는 게이트마다 한 행씩인 \
+         것이 정본이라 따르면 **모든 행이 형제 게이트 이름을 베껴 갖게 된다** — 이 가드가 \
+         막으려고 존재하는 바로 그 사본이다. 되돌릴 것은 문서가 아니라 둘째 겹이다.\n\
+         겹이 정말 필요 없어졌다면(모든 서술이 워크플로를 주어로 쓰게 됐다면) 그것은 \
+         레포의 서술 관행이 바뀐 것이니, 이 줄을 지우기 전에 그 사실을 먼저 재서 \
+         [`no_file_lists_only_some_of_the_gates_a_workflow_runs`] 의 doc 에 적어라."
+    );
     assert!(
         violations.is_empty(),
         "문서가 워크플로의 게이트를 **일부만** 적었다. 읽는 사람은 적힌 것이 전부라고 \
          읽고, 빠진 게이트는 아무도 커밋 전에 안 돌린다. 판정 {judged} 곳 중 {} 곳:\n{}\n\
          고치는 법: 그 서술에 빠진 스크립트를 더해라. 워크플로가 더 이상 안 부르는 \
          것이면 워크플로 쪽이 정본이니 문서에서 빼라.\n\
-         ★ 목록을 이 가드에 복사하지 마라 — 열거는 워크플로에서 런타임에 읽는다.",
+         ★ 목록을 이 가드에 복사하지 마라 — 열거는 워크플로에서 런타임에 읽는다.\
+         {TIME_NOTE}",
         violations.len(),
         violations.join("\n")
     );
@@ -3775,8 +4201,219 @@ fn no_file_lists_only_some_of_the_gates_a_workflow_runs() {
          읽는 사람은 그 게이트에 채널이 있다고 읽는데 그 채널은 그것을 안 돌린다 — \
          빠진 것보다 조용하다. {} 곳:\n{}\n\
          고치는 법: 그 자리가 드는 워크플로를 그 게이트를 실제로 부르는 것으로 바꿔라. \
-         정본은 워크플로 파일이다.",
+         정본은 워크플로 파일이다.{TIME_NOTE}",
         misattributed.len(),
         misattributed.join("\n")
+    );
+}
+
+/// **양성 대조 — 시점 표지 판정기.**
+///
+/// [`TIME_MARKERS`] 가 [`TIME_NOTE`] 를 대신하는 근거는 "명부는 안 읽어도 동작한다" 인데,
+/// 동작하는지를 재는 것이 없으면 그 근거가 말뿐이다. 합성 범위로 양극을 건다.
+///
+/// ★ 표지의 *값*을 여기 안 베낀다(R1078) — 명부에서 런타임에 꺼내 쓴다. 그래서 이 대조는
+/// 명부에 무엇이 들었는지가 아니라 **명부로 가른다는 사실**을 잰다.
+#[test]
+fn the_time_marker_reader_answers_both_yes_and_no() {
+    let (first_marker, _) = TIME_MARKERS
+        .first()
+        .expect("시점 표지 명부가 비었다 — 이 대조가 설 자리가 없다");
+
+    // 있음 — 명부의 표지가 범위 안에 있으면 그 표지를 낸다.
+    let pinned = format!("| 어떤 축 | 어떤 게이트 | {first_marker} 였다 |");
+    assert_eq!(
+        time_pin(&pinned).as_deref(),
+        Some(*first_marker),
+        "명부의 표지를 못 알아봤다"
+    );
+
+    // 있음 — 표지 낱말이 없어도 날짜 모양이면 잡는다.
+    assert_eq!(
+        time_pin("배선했다 (2026-09-05) 그 값은 38 이었다").as_deref(),
+        Some("2026-09-05"),
+        "날짜 모양을 못 잡았다 — 낱말 없이 날짜만 단 실측이 이 레포에 흔하다"
+    );
+
+    // 없음 — 지금을 말하는 평범한 채널 서술.
+    assert_eq!(
+        time_pin("| 파일 SLOC | check-file-size.sh | complexity-check.yml |"),
+        None,
+        "때를 안 못박은 자리를 시점 서술로 셌다 — 그러면 진짜 위반이 다른 처방을 달고 나간다"
+    );
+
+    // 날짜 **모양**만 본다 — 숫자 뭉치를 날짜로 읽지 않는다.
+    assert_eq!(
+        time_pin("버전 1234-56"),
+        None,
+        "날짜가 아닌 것을 날짜로 읽었다"
+    );
+    assert_eq!(iso_date_in("짧다"), None, "10 글자 미만에서 색인이 넘쳤다");
+
+    // 표시는 **짚힌 줄 그 자리에** 붙는다 — 목록 뒤 문단과 다른 점이 그것이다.
+    let marked = with_time_mark("docs/x.md:12".to_string(), &pinned);
+    assert!(
+        marked.starts_with("docs/x.md:12") && marked.contains("[시점 표지"),
+        "표지가 짚힌 줄에 안 붙었다: {marked}"
+    );
+    assert_eq!(
+        with_time_mark("docs/x.md:12".to_string(), "그냥 지금 서술"),
+        "docs/x.md:12",
+        "표지가 없는 줄에 군더더기가 붙었다"
+    );
+}
+
+/// 명부의 위생 — **모든 표지가 사유를 갖고, 겹치지 않는다.**
+///
+/// 사유가 없으면 다음 사람이 "왜 이것이 시점 표지인가" 를 다시 판정해야 하고, 그 재판정은
+/// 매번 같은 답을 안 낸다(본보기인 `gate_thresholds_are_not_stale_copies.rs` 의 `EXCLUDED`
+/// 가 같은 이유로 사유를 요구한다).
+#[test]
+fn every_time_marker_carries_its_own_reason() {
+    for (marker, why) in TIME_MARKERS {
+        assert!(!marker.trim().is_empty(), "빈 표지가 명부에 있다");
+        assert!(
+            why.chars().count() >= 10,
+            "표지 {marker:?} 의 사유가 너무 짧다 — 왜 이것이 시점 표지인지 적어라: {why:?}"
+        );
+    }
+    let mut seen: Vec<&str> = TIME_MARKERS.iter().map(|(m, _)| *m).collect();
+    seen.sort_unstable();
+    let before = seen.len();
+    seen.dedup();
+    assert_eq!(before, seen.len(), "같은 표지가 명부에 두 번 있다");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  스텝 단위 — 잡 결론이 안 말하는 미측정
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 앞선 cargo 스텝이 죽으면 조용히 사라지는 검증 스텝의 수. 실측 2026-09-08,
+/// 작업 트리 `b134d28e3` 에서 이 판독(`swallowable_verification_steps`)으로 센 값이다.
+///
+/// **이 수를 낳는 술어를 옆에 적는다** — 같은 이름의 다른 술어가 다른 값을 낸다.
+/// 술어는 넷을 모두 만족하는 스텝이다: 자기가 `cargo test`/`clippy` 를 돌린다 ·
+/// 같은 잡에 **앞선 스텝이 하나라도** 있다 · `if:` 가 없다 · `continue-on-error` 가 없다.
+/// 주석을 안 지운 사본에서 세면 다른 값이 나온다 — 이 판독은 `strip_yaml_comments` 를
+/// 거친 사본에서 센다.
+///
+/// ★ **이 값의 모수가 2026-09-08 에 넓어졌다.** 둘째 조건이 "앞선 **cargo** 스텝" 이었고
+/// 그때 값은 3 이었다. 실측이 그 좁힘을 반증했다 — run `34111807266` 에서 git 명령 스텝
+/// (`normalize the working tree to committed line endings`)이 죽자 `cargo clippy` 가
+/// 삼켜졌는데, 좁은 술어는 그 앞에 cargo 스텝이 없어 그 자리를 안 셌다. 옛 값 3 을 새
+/// 모수의 값과 견주지 마라.
+const SWALLOWABLE_STEPS: usize = 6;
+
+/// `if:` 로 앞 스텝의 죽음에서 떼어 둔 **검증** 스텝의 수. 같은 트리·같은 날 실측.
+///
+/// `if:` 를 가진 스텝은 레포 전체에 18 이지만 그중 검증은 2 다 — 나머지는 정리
+/// (`Clean up dist`)와 조건부 업로드라 사라져도 미측정을 안 만든다. 넓은 술어로
+/// 못박으면 릴리스 워크플로를 손볼 때마다 이 판정이 이유 없이 죽는다.
+///
+/// 이 값은 [`SWALLOWABLE_STEPS`] 의 짝이다 — 처방이 들어가면 앞이 줄고 이것이 는다.
+/// 2026-09-08 의 마지막 이동이 그 형태다: `check-windows` 의 `cargo clippy` 가 넘어가
+/// 7/5 → 6/6 이 됐다. 같은 커밋이 `ensure clippy component` 에도 `if:` 를 걸었지만 그것은
+/// 검증 스텝이 아니라(`rustup component add clippy` 에는 `cargo` 가 없다) 두 수 어느
+/// 쪽도 안 움직인다 — **처방 줄 수와 이 짝의 이동 폭은 같지 않다.**
+/// 둘을 함께 못박아야 "처방이 들어갔다" 와 "스텝이 통째로 사라졌다" 가 갈린다.
+const PROTECTED_STEPS: usize = 6;
+
+fn workflow_texts() -> Vec<(String, String)> {
+    let root = repo_root();
+    workflow_files(&root.join(".github/workflows"), &WORKFLOW_FLOOR)
+        .into_iter()
+        .map(|w| {
+            let name = w
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let text = std::fs::read_to_string(&w.path).unwrap_or_default();
+            (name, text)
+        })
+        .collect()
+}
+
+/// 잡 결론이 초록이어도 그 안의 스텝이 `skipped` 면 그 스텝 배선분은 **미측정**이다.
+/// 그 자리가 몇인지를 값으로 못박는다.
+///
+/// **실측된 사건**(최근 30 실행, 2026-09-07 기준): `check-windows` 에서 세 회차
+/// (`34008068587` · `34111807266` · `34135280936`)에 앞 스텝이 죽어 `cargo test (unit)`
+/// 과 `cargo test (windows integration — shm · doc-guards)` 가 통째로 `skipped` 였다.
+/// 그 회차마다 Windows 유닛 전량과 `tasty-shm`·`tasty-doc-guards` 통합이 실패가 아니라
+/// 미측정이었고, **잡 결론에는 그 구분이 안 나온다.**
+///
+/// ★ 이 시험은 워크플로를 **고치라고 요구하지 않는다.** `.github/workflows/**` 는
+/// 통합 회차의 소유다. 여기서 하는 일은 그 수가 사람 몰래 움직이지 않게 붙드는 것뿐이다.
+#[test]
+fn the_verification_steps_a_dead_neighbour_can_swallow_are_pinned() {
+    let texts = workflow_texts();
+    assert!(
+        texts.len() >= 8,
+        "워크플로를 {}개밖에 못 읽었다 — 순회가 죽으면 아래 값이 0 이 되고, 0 은 \
+         '그런 자리가 없다' 와 '못 읽었다' 둘 다와 양립한다",
+        texts.len()
+    );
+
+    let mut found: Vec<String> = Vec::new();
+    for (name, text) in &texts {
+        for s in tasty_doc_guards::workflow_triggers::swallowable_verification_steps(text) {
+            found.push(format!(
+                "{name}:{} {} #{} {}",
+                s.line, s.job, s.ordinal, s.name
+            ));
+        }
+    }
+    found.sort();
+
+    assert_eq!(
+        found.len(),
+        SWALLOWABLE_STEPS,
+        "앞 스텝의 죽음에 삼켜질 수 있는 검증 스텝이 {}개다(못박은 값 {SWALLOWABLE_STEPS}).\n  \
+         지금 자리:\n    {}\n  \
+         [늘었으면] 새 스텝이 앞 스텝 뒤에 `if:` 없이 붙었다. 그 스텝이 배선한 조합은 \
+         앞이 죽는 회차마다 **미측정**이 되고 잡 결론에는 안 나온다. 워크플로 파일은 \
+         이 lane 의 소유가 아니므로 **처방을 문장으로 적어 통합 회차에 넘겨라** — \
+         처방은 그 스텝에 `if: ${{{{ !cancelled() }}}}` 를 붙이는 것이고, 선례는 \
+         `check-headless` 의 gui 스텝들이다.\n  \
+         [줄었으면] 처방이 들어갔거나 스텝이 사라졌다. 둘은 다르다 — `PROTECTED_STEPS` \
+         가 함께 늘었으면 처방이고, 안 늘었으면 그 조합이 통째로 없어진 것이다. \
+         어느 쪽인지 확인하고 두 값을 같이 고쳐라.",
+        found.len(),
+        found.join("\n    ")
+    );
+}
+
+/// 처방이 들어간 자리가 처방을 잃으면 실측된 회귀가 되살아난다.
+///
+/// `9d932ebe2`(2026-09-06)가 `check-headless` 의 gui 스텝과 진단에 `if: ${{ !cancelled() }}`
+/// 를 붙였다. 그 전에는 앞 스텝 하나가 빨개지면 그 뒤가 통째로 `skipped` 였다 —
+/// run `33982090607` · `33984538093` 이 그 형태다(둘 다 `cargo test (headless)` 가 죽고
+/// gui unit · gui e2e · disk 가 사라졌다).
+///
+/// 이 시험은 그 처방의 **수**를 지킨다. 붙은 자리가 어디인지까지 못박으면 워크플로
+/// 편집마다 이 시험이 이유 없이 죽는데, 그 파일은 이 lane 의 소유가 아니다.
+#[test]
+fn the_steps_that_were_lifted_out_of_the_failure_chain_stay_lifted() {
+    let texts = workflow_texts();
+    let mut protected: Vec<String> = Vec::new();
+    for (name, text) in &texts {
+        for s in tasty_doc_guards::workflow_triggers::protected_verification_steps(text) {
+            protected.push(format!("{name}:{} {} {}", s.line, s.job, s.name));
+        }
+    }
+    protected.sort();
+    assert_eq!(
+        protected.len(),
+        PROTECTED_STEPS,
+        "앞 스텝의 죽음에서 떼어 둔 스텝이 {}개다(못박은 값 {PROTECTED_STEPS}).\n  \
+         지금 자리:\n    {}\n  \
+         [줄었으면] 누가 `if:` 를 뗐다. 그 자리는 앞 스텝이 죽는 회차마다 다시 조용히 \
+         사라진다 — 실측 선례가 run 33982090607 · 33984538093 이다. 되돌려라.\n  \
+         [늘었으면] 처방이 더 들어간 것이다. `SWALLOWABLE_STEPS` 가 같이 줄었는지 \
+         확인하고 두 값을 함께 고쳐라.",
+        protected.len(),
+        protected.join("\n    ")
     );
 }

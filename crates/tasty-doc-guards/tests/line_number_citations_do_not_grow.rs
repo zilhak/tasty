@@ -68,6 +68,7 @@ fn floor_for(min: usize, measured: usize) -> Floor {
         min,
         measured,
         measured_on: "2026-09-07",
+        counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
         why_this_gap: WHY_GAP,
     }
 }

@@ -34,8 +34,8 @@
 //! - 셀 안 HTML 이 표 구조를 무너뜨리는 것.
 //!
 //! 선례: `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs`(docs 스캔 구조).
-
 use std::path::{Path, PathBuf};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 순회에서 통째로 가지치기할 디렉토리명.
 const PRUNE_DIRS: &[&str] = &["target", "dist", ".worktree", ".git", "node_modules"];
@@ -269,4 +269,75 @@ fn both_predicates_fire_on_the_shapes_that_once_survived() {
     let (f, t) = scan("w.md", fenced);
     assert_eq!(t, 0, "코드 펜스 안을 표로 셌다");
     assert!(f.is_empty());
+}
+
+/// [`MIN_TABLES`] 의 **양성 대조 — 순회 쪽**.
+///
+/// 이 파일에는 이미 술어(표 탐지) 쪽 대조가 있다
+/// ([`both_predicates_fire_on_the_shapes_that_once_survived`] 가 합성 텍스트로
+/// [`scan`] 을 부른다). **비어 있던 것은 순회다** — [`gather`] 가 무엇을 모으는지는
+/// 레포를 상대로만 확인됐고, 그 확인은 한쪽으로 조용하다: 모으는 범위를 넓히면 표 수는
+/// 늘어 하한을 더 쉽게 넘고, 좁히면 하한이 잡아 주지만 **어느 가지치기가 틀렸는지는
+/// 안 나온다.**
+///
+/// ★ 가지치기 중 하나는 **레포에서는 확인할 수도 없다.** 커밋 안 되는 로컬 작업 폴더는
+/// worktree 에서 심볼릭 링크이고 원본 체크아웃에서 실물이라, 그 가지가 밟히는지가
+/// **어느 트리에서 도느냐에 달려 있다.** 합성 트리는 두 환경에서 같은 답을 낸다.
+#[test]
+fn the_walk_prunes_by_name_and_by_marker_and_takes_only_markdown() {
+    let probe = Scratch::new("md-tables");
+    let dir = probe.path();
+
+    let table = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    // 이름은 조립한다 — 커밋되는 파일에 그 폴더 이름을 리터럴로 적지 않는다.
+    let local_dot = format!(".{LOCAL_HEAD}{LOCAL_TAIL}");
+    let dot_only = format!(".{LOCAL_HEAD}");
+    // `.unrelated` 는 **가지치기 대상이 아니다** — 이 대조가 없으면 "점으로 시작하면
+    // 다 자른다" 는 변이가 조용하다. 그리고 이 대조는 위 두 조각 상수의 *값*에 안
+    // 기댄다: 값이 무엇이든 "그 이름만 자르고 다른 점 디렉토리는 안 자른다" 는
+    // **성질**을 잰다(R1078 — 픽스처는 메커니즘만 재고 상수값은 안 잰다).
+    for sub in [
+        "sub",
+        "target",
+        ".git",
+        &local_dot,
+        &dot_only,
+        "opaque",
+        ".unrelated",
+    ] {
+        std::fs::create_dir_all(dir.join(sub)).expect("합성 트리를 만들지 못했다");
+        std::fs::write(dir.join(sub).join("inner.md"), table).expect("합성 문서를 쓰지 못했다");
+    }
+    std::fs::write(dir.join("top.md"), table).expect("합성 문서를 쓰지 못했다");
+    std::fs::write(dir.join("notes.txt"), table).expect("합성 문서를 쓰지 못했다");
+    // 이름은 평범한데 **표식**으로 빌드 캐시인 디렉토리 — 이름 목록으로는 못 거른다.
+    std::fs::write(
+        dir.join("opaque").join("CACHEDIR.TAG"),
+        "Signature: 8a477f597d28d172789f06886806bc55\n",
+    )
+    .expect("표식을 쓰지 못했다");
+
+    let mut files = Vec::new();
+    gather(dir, dir, &mut files);
+    let mut got: Vec<String> = files.iter().map(|f| rel_of(f, dir)).collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            ".unrelated/inner.md".to_string(),
+            "sub/inner.md".to_string(),
+            "top.md".to_string()
+        ],
+        "순회가 모은 집합이 다르다. 넓어졌으면 하한은 **더 쉽게** 충족되므로 레포 대면 \
+         단정은 조용하고, 좁아졌으면 어느 가지가 틀렸는지 그쪽에서는 안 나온다"
+    );
+
+    // 하한이 겨냥하는 갈래 — 없는 뿌리는 예외가 아니라 **빈 집합**이다.
+    let mut none = Vec::new();
+    gather(&dir.join("does-not-exist"), dir, &mut none);
+    assert!(
+        none.is_empty(),
+        "죽은 뿌리에서 파일을 주웠다: {none:?} — `gather` 는 `read_dir` 실패를 조용히 \
+         넘기므로 이 성질이 하한의 존재 이유다"
+    );
 }

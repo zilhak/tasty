@@ -34,6 +34,7 @@
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::floored_walk::{Descend, Floor, walk_with_floor};
+use tasty_doc_guards::temp_scratch::Scratch;
 
 /// 가이드에 **일부러 없는** 이벤트와 그 사유. 자리로 적는다 — 부류로 적으면 도망길이 된다.
 ///
@@ -99,6 +100,7 @@ const GUIDE_FLOOR: Floor = Floor {
     min: 12,
     measured: 18,
     measured_on: "2026-09-07",
+    counted_on: tasty_doc_guards::floored_walk::CountedOn::NEVER_COUNTED,
     why_this_gap: "이 모수는 `site/content` 의 한국어 원본 `.md` 수다(번역 `en/` 제외). \
                    가이드 장은 합쳐지고 갈리므로 몇 개는 움직이지만, 12 아래는 장이 줄어든 \
                    게 아니라 순회 루트나 `en/` 가지치기가 어긋난 것이다.",
@@ -106,10 +108,18 @@ const GUIDE_FLOOR: Floor = Floor {
 
 /// 한국어 가이드 원본 전체를 한 덩어리로.
 fn guide_text(root: &Path) -> String {
+    guide_text_under(&root.join("site/content"), &GUIDE_FLOOR)
+}
+
+/// 위 판독의 알맹이 — **순회 뿌리와 하한을 인자로 받는다.**
+///
+/// 하한을 함수 안에 박아 두면 이 판독을 합성 트리로 잴 길이 없다. 하한은 모수의
+/// 성질이라 자리마다 다르고(레포의 가이드 장 수와 합성 트리의 파일 수는 애초에 다른
+/// 모수다), 그래서 상수가 아니라 인자여야 한다. 뿌리도 같은 이유로 인자다.
+fn guide_text_under(dir: &Path, floor: &Floor) -> String {
     // 공용 순회를 쓴다. 손으로 재귀하면 `read_dir` 실패가 **조용한 빈손**이 되고, 그러면
     // "가이드에 그 이름이 다 있다" 가 아니라 "가이드를 한 글자도 안 읽었다" 가 초록이 된다.
-    let dir = root.join("site/content");
-    let walked = walk_with_floor(&dir, &dir, &GUIDE_FLOOR, Descend::Everything, &|w| {
+    let walked = walk_with_floor(dir, dir, floor, Descend::Everything, &|w| {
         // 번역은 별도 절차다 — 원본만 본다.
         w.rel.ends_with(".md") && !w.rel.starts_with("en/")
     })
@@ -218,5 +228,104 @@ fn the_reader_answers_both_yes_and_no() {
     assert!(
         !guide.contains("nonexistent-hook-event"),
         "예: 없음 — 없는 것을 있다고 읽으면 이 가드는 아무것도 안 본다"
+    );
+}
+
+/// **양성 대조 — 두 판독을 합성 입력으로 건다.**
+///
+/// 이 가드의 하한(`MIN_EVENTS` · `GUIDE_FLOOR`)은 **하한이라 좁아지는 쪽만 본다.**
+/// 판독이 넓어지는 변이 — 소속으로 좁히는 것을 그만두거나, 번역을 원본에 섞거나 —
+/// 는 수를 늘리므로 하한이 조용하다. 그 방향은 이 대조만 본다.
+///
+/// ★ 여기 쓰는 이름은 전부 **합성**이다(R1078). 진짜 이벤트 이름으로 지으면 이
+/// 대조는 판독의 *메커니즘*이 아니라 그 이름의 *현재 값*을 재게 되고, 이름이 정당하게
+/// 바뀌는 날 함께 죽는다 — 그때 무엇이 깨졌는지 못 가린다.
+#[test]
+fn both_readers_answer_on_a_substituted_tree() {
+    let probe = Scratch::new("hook-event-reader");
+    let dir = probe.path();
+
+    // ── 판독 1: 이벤트 이름 ──────────────────────────────────────────────
+    //
+    // 진짜 파일과 **같은 함정**을 심는다: 같은 이름의 함수가 다른 impl 에 **먼저** 있다.
+    // 소속으로 안 좁히면 판독은 그 미끼를 읽고 이벤트를 하나도 못 낸다.
+    let src = dir.join("crates/tasty-hooks/src");
+    std::fs::create_dir_all(&src).expect("합성 소스 트리를 만들지 못했다");
+    std::fs::write(
+        src.join("lib.rs"),
+        "impl HookBinding {\n    \
+             fn to_display_string(&self) -> String {\n        \
+                 \"decoy-alpha\".to_string()\n    \
+             }\n\
+         }\n\n\
+         impl HookEvent {\n    \
+             fn to_display_string(&self) -> String {\n        \
+                 match self {\n            \
+                     A => \"zeta-signal\".to_string(),\n            \
+                     B => format!(\"omega-probe:{}\", v),\n            \
+                     C => \"NotLowercase\".to_string(),\n        \
+                 }\n    \
+             }\n\
+         }\n",
+    )
+    .expect("합성 lib.rs 를 쓰지 못했다");
+
+    let names = event_names(dir);
+    assert_eq!(
+        names,
+        vec!["omega-probe".to_string(), "zeta-signal".to_string()],
+        "판독이 합성 트리에서 다른 답을 냈다"
+    );
+    // 셋을 따로 못박는다 — 위 `assert_eq!` 하나로도 죽지만, 죽었을 때 **무엇이** 깨졌는지
+    // 가려 주는 것은 아래 세 줄이다.
+    assert!(
+        !names.iter().any(|n| n == "decoy-alpha"),
+        "소속으로 안 좁혔다 — 앞선 다른 impl 의 같은 이름 함수를 읽었다"
+    );
+    assert!(
+        !names.iter().any(|n| n.contains(':') || n.contains('{')),
+        "인자 접두사에서 콜론 뒤를 못 떼어 냈다"
+    );
+    assert!(
+        !names.iter().any(|n| n == "NotLowercase"),
+        "이름 자리가 아닌 리터럴이 새어 들어왔다"
+    );
+
+    // ── 판독 2: 가이드 본문 ──────────────────────────────────────────────
+    //
+    // 여기가 하한이 못 보는 방향이다. `en/` 가지치기를 지우면 본문이 **늘고**, 늘어난
+    // 본문은 "이름이 다 있다" 를 더 쉽게 참으로 만든다 — 순회 하한은 그것을 못 본다.
+    let content = dir.join("content");
+    std::fs::create_dir_all(content.join("en")).expect("합성 가이드 트리를 만들지 못했다");
+    std::fs::write(content.join("hooks.md"), "본문에 zeta-signal 이 있다\n")
+        .expect("합성 원본을 쓰지 못했다");
+    std::fs::write(content.join("more.md"), "여기는 다른 장이다\n").expect("둘째 원본 실패");
+    std::fs::write(
+        content.join("en").join("hooks.md"),
+        "translated omega-probe\n",
+    )
+    .expect("합성 번역을 쓰지 못했다");
+    std::fs::write(content.join("notes.txt"), "md 가 아니다 sigma-decoy\n").expect("잡파일 실패");
+
+    let fixture_floor = Floor {
+        min: 2,
+        measured: 2,
+        measured_on: "2026-09-08",
+        counted_on: tasty_doc_guards::floored_walk::CountedOn::SyntheticTree,
+        why_this_gap: "합성 트리라 파일 수를 이 시험이 직접 정한다 — 간격이 0 인 것이 맞다.",
+    };
+    let text = guide_text_under(&content, &fixture_floor);
+    assert!(text.contains("zeta-signal"), "원본 `.md` 를 안 읽었다");
+    assert!(
+        text.contains("다른 장"),
+        "하위가 아닌 형제 `.md` 를 빠뜨렸다"
+    );
+    assert!(
+        !text.contains("translated"),
+        "번역(`en/`)이 원본에 섞였다 — 이 방향은 순회 하한이 못 본다(늘어나는 쪽이다)"
+    );
+    assert!(
+        !text.contains("sigma-decoy"),
+        "`.md` 가 아닌 파일을 읽었다 — 같은 이유로 하한이 못 보는 방향이다"
     );
 }

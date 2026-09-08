@@ -30,7 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use tasty_doc_guards::workflow_triggers::{
-    automatic_job_bodies, filter_free_coverage, push_trigger,
+    automatic_job_bodies, filter_free_coverage, job_header_count, push_trigger,
 };
 
 const OWN_SOURCE: &str = include_str!("workflow-channels.rs");
@@ -92,7 +92,7 @@ fn main() {
             std::process::exit(2);
         };
         let auto = automatic_job_bodies(&text).len();
-        let all = total_job_count(&text);
+        let all = job_header_count(&text);
         out.push_str(&format!(
             "{name}\t{}\t{}\t{}\t{auto}\t{}\n",
             yn(t.present),
@@ -120,25 +120,4 @@ fn main() {
         }
     }
     print!("{out}");
-}
-
-/// 잡 헤더 수. [`automatic_job_bodies`] 와 **같은 헤더 규칙**을 써야 두 수의 차가
-/// "수동 전용이라 빠진 잡" 이 된다 — 규칙이 갈리면 그 차가 뜻을 잃는다.
-fn total_job_count(yaml: &str) -> usize {
-    let mut n = 0usize;
-    let mut in_jobs = false;
-    for line in yaml.replace("\r\n", "\n").lines() {
-        if line.starts_with("jobs:") {
-            in_jobs = true;
-            continue;
-        }
-        if in_jobs
-            && line.starts_with("  ")
-            && !line.starts_with("   ")
-            && line.trim_end().ends_with(':')
-        {
-            n += 1;
-        }
-    }
-    n
 }
