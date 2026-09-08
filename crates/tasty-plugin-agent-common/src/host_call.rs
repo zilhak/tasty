@@ -15,6 +15,16 @@ impl HostCall for HostHandle {
     }
 }
 
+/// surface 가 아직 살아 있는가 — `surface.locate` 의 `exists`. 조회 실패는
+/// **`false`** 다. 이 판정은 완료 알림 hook 을 다시 걸지 말지를 정하는 자리에서만
+/// 쓰이고, 거기서 죽은 것을 산 것으로 읽으면 아무도 안 볼 hook 이 영구히 남는다.
+pub fn surface_is_alive<H: HostCall>(host: &H, surface_id: u32) -> bool {
+    host.call("surface.locate", json!({ "surface_id": surface_id }))
+        .ok()
+        .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
+        .unwrap_or(false)
+}
+
 /// `hook.list` 응답 배열에서 정리 대상 형제 hook 의 id 들을 고른다 — command 문자열이
 /// `expected_command` 와 정확히 일치하는 hook 만. 상태를 공유하지 않는(clobber 불가)
 /// 순수 선택 로직이라 concurrent 등록에도 그룹 격리가 성립한다: 같은 target surface 에

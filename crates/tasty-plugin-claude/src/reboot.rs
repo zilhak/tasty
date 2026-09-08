@@ -37,7 +37,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
+use tasty_plugin_agent_common::reboot::{
+    build_notice, ensure_submitted, is_safe_session_id, parse_options, screen_contains,
+};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::require_target_surface;
@@ -541,16 +543,6 @@ pub(crate) fn resume_command_line(session_id: &str, profile_file: Option<&str>) 
     }
 }
 
-/// 안내 프롬프트 본문. `base` 는 활성 locale 로 이미 해석된 고정 문구
-/// (`handle_reboot` 이 spawn 전에 1 회 계산). `--prompt` 추가 텍스트가 있으면
-/// 빈 줄 뒤에 덧붙인다.
-pub(crate) fn build_notice(base: &str, extra: Option<&str>) -> String {
-    match extra {
-        Some(t) => format!("{base}\n\n{t}"),
-        None => base.to_string(),
-    }
-}
-
 /// delay 후 전경 상태에 따른 다음 행동. 순수 함수 — 단위 테스트 대상.
 #[derive(Debug, PartialEq)]
 pub(crate) enum AfterDelay {
@@ -745,18 +737,6 @@ fn try_deliver_notice_once(
     } else {
         NoticeAttempt::NotYetVisible
     }
-}
-
-/// `surface.screen_text` 로 현재 화면에 문구가 보이는지 확인. 실패 → false.
-fn screen_contains(host: &HostHandle, surface_id: u32, needle: &str) -> bool {
-    host.call("surface.screen_text", json!({ "surface_id": surface_id }))
-        .ok()
-        .and_then(|r| {
-            r.get("text")
-                .and_then(|t| t.as_str())
-                .map(|t| t.contains(needle))
-        })
-        .unwrap_or(false)
 }
 
 /// `surface.foreground_process` 1회 조회. 실패/이름 없음 → None.

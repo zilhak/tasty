@@ -19,6 +19,37 @@ pub const DEFAULT_DELAY_SECS: u64 = 5;
 /// 확인 후 별도 Enter 1회는 항상 안전하다.
 const NOTICE_SUBMIT_DELAY: Duration = Duration::from_millis(500);
 
+/// 안내문 = 기본 문구 + (있으면) 빈 줄 하나를 사이에 둔 추가 텍스트.
+///
+/// **기본 문구를 여기서 짓지 않고 받는다.** 짝의 두 plugin 이 서로 다른 카탈로그
+/// 키를 쓰는데, 한쪽 함수가 자기 키를 안에서 찾고 있었다 — 그러면 이 조립 규칙이
+/// 그 키에 묶여 공유가 안 된다. 규칙은 "빈 줄 하나" 하나뿐이고 그것만 여기 있다.
+pub fn build_notice(base: &str, extra: Option<&str>) -> String {
+    match extra {
+        Some(t) => format!("{base}\n\n{t}"),
+        None => base.to_string(),
+    }
+}
+
+/// `surface.screen_text` 1 회 조회. 실패 → `None`(surface 소멸 등).
+pub fn screen_text<H: crate::host_call::HostCall>(host: &H, surface_id: u32) -> Option<String> {
+    host.call("surface.screen_text", json!({ "surface_id": surface_id }))
+        .ok()
+        .and_then(|r| r.get("text").and_then(|t| t.as_str().map(str::to_string)))
+}
+
+/// 지금 화면에 문구가 보이는가. 조회 실패는 **`false`** — 못 봤다는 것을 봤다로
+/// 읽으면 확인 없이 다음 단계로 넘어간다.
+pub fn screen_contains<H: crate::host_call::HostCall>(
+    host: &H,
+    surface_id: u32,
+    needle: &str,
+) -> bool {
+    screen_text(host, surface_id)
+        .map(|t| t.contains(needle))
+        .unwrap_or(false)
+}
+
 /// `--delay`(기본 [`DEFAULT_DELAY_SECS`]) / `--prompt`(안내문 뒤에 덧붙일 추가
 /// 텍스트) 파싱. 빈 프롬프트는 `None` 으로 접는다 — "안 줬다" 와 같은 뜻이다.
 pub fn parse_options(params: &Value) -> (u64, Option<String>) {

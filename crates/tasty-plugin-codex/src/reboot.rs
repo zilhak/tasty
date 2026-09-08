@@ -34,7 +34,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tasty_plugin_agent_common::reboot::{ensure_submitted, is_safe_session_id, parse_options};
+use tasty_plugin_agent_common::reboot::{
+    build_notice, ensure_submitted, is_safe_session_id, parse_options, screen_contains, screen_text,
+};
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
 use crate::handlers::resolve_policy_args;
@@ -144,7 +146,7 @@ pub(crate) fn handle_reboot(
     let thread_policy_args = policy_args.clone();
     // 안내문은 **스레드에 넘기기 전에** 조립한다 — `Translator` 를 워커로 옮기지 않으려고
     // 완성된 문자열만 보낸다. 내용이 실행 시점 상태에 의존하지 않아 시점 차이가 없다.
-    let thread_notice = build_notice(tr, extra_prompt.as_deref());
+    let thread_notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), extra_prompt.as_deref());
     let spawned = thread::Builder::new()
         .name(format!("codex-reboot-s{surface_id}"))
         .spawn(move || {
@@ -236,15 +238,6 @@ pub(crate) fn resume_command(session_id: &str, policy_args: &str) -> String {
     format!(
         "codex resume --dangerously-bypass-hook-trust{policy_suffix} -c check_for_update_on_startup=false {session_id}\r"
     )
-}
-
-/// 안내 프롬프트 본문. `--prompt` 추가 텍스트가 있으면 빈 줄 뒤에 덧붙인다.
-pub(crate) fn build_notice(tr: &Translator, extra: Option<&str>) -> String {
-    let base = tr.t(REBOOT_NOTICE_KEY);
-    match extra {
-        Some(t) => format!("{base}\n\n{t}"),
-        None => base.to_string(),
-    }
 }
 
 /// 겹치지 않는 부분 문자열 등장 횟수. 순수 함수 — 단위 테스트 대상.
@@ -381,19 +374,6 @@ fn deliver_notice(host: &HostHandle, surface_id: u32, notice: &str) -> bool {
     false
 }
 
-/// `surface.screen_text` 1회 조회. 실패 → None (surface 소멸 등).
-fn screen_text(host: &HostHandle, surface_id: u32) -> Option<String> {
-    host.call("surface.screen_text", json!({ "surface_id": surface_id }))
-        .ok()
-        .and_then(|r| r.get("text").and_then(|t| t.as_str()).map(String::from))
-}
-
-fn screen_contains(host: &HostHandle, surface_id: u32, needle: &str) -> bool {
-    screen_text(host, surface_id)
-        .map(|t| t.contains(needle))
-        .unwrap_or(false)
-}
-
 /// 화면 텍스트가 조건을 만족할 때까지 폴링. 조회 실패(surface 소멸)는 즉시 false.
 fn poll_screen(
     host: &HostHandle,
@@ -443,13 +423,16 @@ mod tests {
     #[test]
     fn notice_without_extra_is_the_translated_text() {
         let tr = test_translator_for("ko");
-        assert_eq!(build_notice(&tr, None), tr.t(REBOOT_NOTICE_KEY));
+        assert_eq!(
+            build_notice(&tr.t(REBOOT_NOTICE_KEY), None),
+            tr.t(REBOOT_NOTICE_KEY)
+        );
     }
 
     #[test]
     fn notice_with_extra_appends_after_blank_line() {
         let tr = test_translator_for("ko");
-        let n = build_notice(&tr, Some("soak 이어서"));
+        let n = build_notice(&tr.t(REBOOT_NOTICE_KEY), Some("soak 이어서"));
         assert!(n.starts_with(tr.t(REBOOT_NOTICE_KEY)));
         assert!(n.ends_with("\n\nsoak 이어서"));
     }
@@ -464,7 +447,7 @@ mod tests {
     fn notice_starts_with_the_snippet_in_every_locale() {
         for code in ["en", "ko", "ja"] {
             let tr = test_translator_for(code);
-            let notice = build_notice(&tr, None);
+            let notice = build_notice(&tr.t(REBOOT_NOTICE_KEY), None);
             assert!(
                 notice.starts_with(NOTICE_SNIPPET),
                 "[{code}] 안내문이 화면 검증 조각(`{NOTICE_SNIPPET}`)으로 시작하지 않는다: {notice}"
@@ -475,8 +458,8 @@ mod tests {
     /// 문구가 실제로 `t()` 를 거친다 — 로케일을 바꾸면 완성 문구가 달라진다.
     #[test]
     fn notice_changes_with_the_locale() {
-        let en = build_notice(&test_translator_for("en"), None);
-        let ko = build_notice(&test_translator_for("ko"), None);
+        let en = build_notice(&test_translator_for("en").t(REBOOT_NOTICE_KEY), None);
+        let ko = build_notice(&test_translator_for("ko").t(REBOOT_NOTICE_KEY), None);
         assert_ne!(en, ko, "로케일이 달라도 같은 문구다 — t() 를 안 거친다");
     }
 

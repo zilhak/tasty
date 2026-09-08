@@ -15,6 +15,37 @@ pub fn forward(params: &Value, keys: &[&str]) -> Map<String, Value> {
     out
 }
 
+/// `u32` 필드를 읽다 실패한 갈래. [`TargetSurfaceError`] 와 마찬가지로 **문구를 짓지
+/// 않는다** — 어느 키를 어떻게 이름 댈지는 plugin 마다 다르고, 실제로 짝의 두
+/// plugin 이 다르게 이름 댄다(한쪽은 파라미터마다 전용 카탈로그 키, 다른 쪽은
+/// `{key}` 를 끼우는 공용 키).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum U32FieldError {
+    /// 키가 없거나 `null` 이다. **둘을 안 가른다** — 호출자가 값을 안 준 것과
+    /// `null` 을 명시한 것은 "지목이 없다" 는 같은 뜻이고, 가르면 같은 부재에
+    /// 답이 둘이 된다.
+    Missing,
+    /// 값이 왔는데 32 비트 정수가 아니다.
+    Malformed { raw: String },
+}
+
+/// params 의 `key` 를 `u32` 로 읽는다 — **자르지 않는다.**
+///
+/// 이 세 줄이 짝의 두 plugin 에 각각 적혀 있었다. 판정은 셋이다: 키 부재와 `null` 을
+/// 같게 볼 것인가 · `as_u64` 로 읽을 것인가 · 32 비트를 넘는 값을 자를 것인가.
+/// 세 답이 두 벌로 적혀 있으면 한쪽만 고쳐지는 날 조용히 갈린다 — 특히 마지막은
+/// `4_294_967_297 as u32 == 1` 이라 **잘린 id 가 실재하는 다른 대상**이 된다.
+pub fn u32_field(params: &Value, key: &str) -> Result<u32, U32FieldError> {
+    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
+        return Err(U32FieldError::Missing);
+    };
+    raw.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| U32FieldError::Malformed {
+            raw: raw.to_string(),
+        })
+}
+
 /// 대상 parent surface 를 읽다 실패한 갈래. 문구는 **plugin 이** 자기 카탈로그로
 /// 만든다 — 두 plugin 의 i18n namespace 가 다르므로 여기서 문자열을 짓지 않는다.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,16 +77,16 @@ pub fn target_surface(params: &Value) -> Result<Option<u32>, TargetSurfaceError>
     let mut surface = None;
     let mut surface_id = None;
     for key in ["surface", "surface_id"] {
-        let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
-            continue;
+        // 같은 판정을 두 번 적지 않는다 — 부재·null·자르지 않음의 세 답이
+        // [`u32_field`] 한 곳에 있다. 여기서 하는 일은 그 갈래에 **키 이름을
+        // 붙이는 것**뿐이다(이 축은 키가 둘이라 어느 쪽이 틀렸는지를 말해야 한다).
+        let v = match u32_field(params, key) {
+            Ok(v) => v,
+            Err(U32FieldError::Missing) => continue,
+            Err(U32FieldError::Malformed { raw }) => {
+                return Err(TargetSurfaceError::Malformed { key, raw });
+            }
         };
-        let v = raw
-            .as_u64()
-            .and_then(|n| u32::try_from(n).ok())
-            .ok_or_else(|| TargetSurfaceError::Malformed {
-                key,
-                raw: raw.to_string(),
-            })?;
         if key == "surface" {
             surface = Some(v);
         } else {
@@ -120,6 +151,37 @@ mod tests {
             matches!(err, TargetSurfaceError::Malformed { key: "surface", .. }),
             "잘라서 1 로 만들었다: {err:?}"
         );
+    }
+
+    /// 부재와 `null` 은 같은 답이다 — 이 규칙이 두 plugin 에 각각 적혀 있었고,
+    /// 양쪽에 그것을 지키는 시험도 따로 있었다.
+    #[test]
+    fn an_absent_key_and_an_explicit_null_read_the_same() {
+        assert_eq!(u32_field(&json!({}), "child"), Err(U32FieldError::Missing));
+        assert_eq!(
+            u32_field(&json!({ "child": null }), "child"),
+            Err(U32FieldError::Missing)
+        );
+        assert_eq!(u32_field(&json!({ "child": 0 }), "child"), Ok(0));
+        assert_eq!(
+            u32_field(&json!({ "child": u32::MAX }), "child"),
+            Ok(u32::MAX)
+        );
+    }
+
+    /// 32 비트를 넘는 값은 **자르지 않고** 거절한다 — `4_294_967_297 as u32 == 1`.
+    #[test]
+    fn an_oversized_field_is_refused_not_truncated() {
+        assert_eq!(
+            u32_field(&json!({ "child": 4_294_967_297u64 }), "child"),
+            Err(U32FieldError::Malformed {
+                raw: "4294967297".to_string()
+            })
+        );
+        assert!(matches!(
+            u32_field(&json!({ "child": "conductor" }), "child"),
+            Err(U32FieldError::Malformed { .. })
+        ));
     }
 
     #[test]

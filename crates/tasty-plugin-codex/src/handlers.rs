@@ -15,9 +15,11 @@
 //! 모든 호스트 호출은 `host.call(...)`을 통해 동기로 이루어진다.
 
 use serde_json::{Map, Value, json};
-use tasty_plugin_agent_common::children::{indices_with, join_indices, state_of};
-use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks};
-use tasty_plugin_agent_common::params::{TargetSurfaceError, forward, target_surface};
+use tasty_plugin_agent_common::children::{join_indices, spawn_census};
+use tasty_plugin_agent_common::host_call::{HostCall, cleanup_sibling_hooks, surface_is_alive};
+use tasty_plugin_agent_common::params::{
+    TargetSurfaceError, U32FieldError, forward, target_surface,
+};
 use tasty_plugin_agent_common::prompt_file;
 use tasty_plugin_sdk::{HostHandle, IpcMethodError, i18n::Translator};
 
@@ -52,27 +54,28 @@ fn host_call<H: HostCall>(host: &H, method: &str, params: Value) -> Result<Value
 /// 메시지도 가른다. 키가 아예 없는 것은 호출자가 인자를 빠뜨린 것이고, 값이 왔는데
 /// 안 읽히는 것은 오타이거나 타입이 틀린 것이다 — "missing" 이라고 답하면 호출자가
 /// 자기가 준 값을 안 의심한다.
+/// 판정은 [`tasty_plugin_agent_common::params::u32_field`] 가 한다 — 여기서 하는
+/// 일은 그 갈래를 **이 plugin 의 카탈로그 문구로 옮기는 것**뿐이다.
+///
+/// 문구를 `{key}` 끼우는 공용 키로 짓는 것은 짝 crate(claude, 파라미터마다 전용 키)와
+/// 다르고, 그 차이는 표류가 아니다 — 이쪽은 호출자가 다섯이라 전용 키를 쓰면
+/// 카탈로그가 그만큼 불어난다. **갈릴 수 있었던 것은 문구가 아니라 판정이었고,
+/// 그쪽은 이제 한 벌이다.**
 pub(crate) fn require_u32(
     params: &Value,
     key: &str,
     tr: &Translator,
 ) -> Result<u32, IpcMethodError> {
-    let Some(raw) = params.get(key).filter(|v| !v.is_null()) else {
-        return Err(IpcMethodError::invalid_params(&tr.t_replace(
-            "codex.params.missing",
-            "{key}",
-            key,
-        )));
-    };
-    raw.as_u64()
-        .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| {
-            IpcMethodError::invalid_params(&t_args(
-                tr,
-                "codex.params.not_a_number",
-                &[("{key}", key), ("{raw}", &raw.to_string())],
-            ))
-        })
+    tasty_plugin_agent_common::params::u32_field(params, key).map_err(|e| match e {
+        U32FieldError::Missing => {
+            IpcMethodError::invalid_params(&tr.t_replace("codex.params.missing", "{key}", key))
+        }
+        U32FieldError::Malformed { raw } => IpcMethodError::invalid_params(&t_args(
+            tr,
+            "codex.params.not_a_number",
+            &[("{key}", key), ("{raw}", &raw)],
+        )),
+    })
 }
 
 /// 대상 parent surface — 판정은 [`tasty_plugin_agent_common::params::target_surface`]
@@ -453,7 +456,7 @@ pub(crate) fn handle_spawn(
 
     // 4) child 개수 임계치 경고(soft) — spawn 자체를 막지 않는다.
     let mut out = resp;
-    if let Some(warning) = compute_spawn_warning(host, tr, parent_surface) {
+    if let Some(warning) = compute_spawn_warning(host, parent_surface, tr) {
         if let Some(obj) = out.as_object_mut() {
             obj.insert("warning".into(), json!(warning));
         }
@@ -618,51 +621,24 @@ pub(crate) fn handle_notify_caller<H: HostCall>(
 /// 이벤트라 재등록이 안전하다. 조회 실패(best-effort)는 "죽었다"로 간주해 재등록을
 /// 건너뛴다 — 좀비 hook 을 쌓는 것보다 드물게 재무장을 놓치는 쪽이 안전하다.
 fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &str) {
-    let alive = host
-        .call("surface.locate", json!({ "surface_id": target }))
-        .ok()
-        .and_then(|r| r.get("exists").and_then(|v| v.as_bool()))
-        .unwrap_or(false);
-    if alive {
+    if surface_is_alive(host, target) {
         register_notify_hooks(host, caller, target, kind);
     }
 }
 
-const DEFAULT_SPAWN_CHILD_WARN_THRESHOLD: f64 = 6.0;
-
 /// spawn 직후 parent 의 현재 child 목록/상태를 재조회해 임계치 초과 여부를 판단한다.
 /// host 호출 실패는 경고 생략으로 처리한다(soft 경고이므로 spawn 성공을 막지 않음).
+/// 자식 인구는 [`tasty_plugin_agent_common::children::spawn_census`] 가 센다 —
+/// 그 판정(확정 stale 만 센다 · 못 읽으면 `None`)이 짝의 두 crate 에 주석까지
+/// 글자 그대로 두 벌 있었다. 여기 남는 것은 **문구 조립**뿐이다: 카탈로그
+/// namespace 와 placeholder 형태가 둘 다 crate 마다 달라서 합칠 수 없다.
 fn compute_spawn_warning(
     host: &HostHandle,
-    tr: &Translator,
     parent_surface_id: u32,
+    tr: &Translator,
 ) -> Option<String> {
-    let children_resp = host
-        .call("terminal.children", json!({ "surface": parent_surface_id }))
-        .ok()?;
-    let children = children_resp.get("children")?.as_array()?;
-    let total = children.len();
-    let idle_indices = indices_with(children, |c| state_of(c) == Some("idle"));
-    // `stale` 은 확정(`foreground_is_shell`)인 것만 센다 — `heuristic` stale 은
-    // SIGSTOP·긴 추론·무출력 명령과 관측상 구별되지 않아, 그것까지 "respawn 후보"
-    // 로 부르면 일하는 자식을 재시작하라고 권하게 된다. `docs/dev-guide/
-    // api-conventions.md` 가 같은 이유로 `stale` 을 기본 terminal state 집합에서
-    // 뺀 것과 동일한 판단이다.
-    let stale_indices = indices_with(children, |c| {
-        state_of(c) == Some("stale")
-            && c.get("confidence").and_then(|v| v.as_str()) == Some("confirmed")
-    });
-
-    let threshold = host
-        .call(
-            "settings.get_plugin_setting",
-            json!({ "storage_key": "spawn_child_warn_threshold" }),
-        )
-        .ok()
-        .and_then(|v| v.get("value").and_then(|v| v.as_f64()))
-        .unwrap_or(DEFAULT_SPAWN_CHILD_WARN_THRESHOLD);
-
-    build_spawn_warning(tr, total, &idle_indices, &stale_indices, threshold)
+    let c = spawn_census(host, parent_surface_id)?;
+    build_spawn_warning(tr, c.total, &c.idle, &c.stale, c.threshold)
 }
 
 /// child 개수가 임계치를 넘으면 경고 문구를 만든다(순수 함수, 단위 테스트 대상).
@@ -1672,34 +1648,6 @@ mod tests {
     // **레포 전역 가드 `tests/i18n_key_parity.rs` 가 이미 본다** — 번들 plugin 의
     // `lang/` 을 전부 훑으므로 여기 사본을 두지 않는다. 그 가드는 통합 타깃이라
     // 자동 실행이 헤드리스 조합에서만 일어난다(`docs/dev-guide/ci-gates.md`).
-
-    /// `heuristic` stale 은 제외된다 — SIGSTOP·긴 추론과 구별되지 않아 일하는
-    /// 자식을 respawn 하라고 권하게 된다. 확정(`foreground_is_shell`)만 센다.
-    #[test]
-    fn spawn_warning_counts_only_confirmed_stale() {
-        let children = vec![
-            json!({ "index": 1, "state": "stale", "confidence": "confirmed" }),
-            json!({ "index": 2, "state": "stale", "confidence": "heuristic" }),
-            json!({ "index": 3, "state": "active", "confidence": "confirmed" }),
-        ];
-        let stale = indices_with(&children, |c| {
-            state_of(c) == Some("stale")
-                && c.get("confidence").and_then(|v| v.as_str()) == Some("confirmed")
-        });
-        assert_eq!(stale, vec![1]);
-    }
-
-    /// `confidence` 를 싣지 않는 옛 호스트 응답에서는 stale 이 하나도 안 잡힌다 —
-    /// 경고가 과하게 나가는 것보다 안전한 쪽으로 실패한다(기존 idle 경고는 그대로).
-    #[test]
-    fn spawn_warning_ignores_stale_without_confidence_field() {
-        let children = vec![json!({ "index": 1, "state": "stale" })];
-        let stale = indices_with(&children, |c| {
-            state_of(c) == Some("stale")
-                && c.get("confidence").and_then(|v| v.as_str()) == Some("confirmed")
-        });
-        assert!(stale.is_empty());
-    }
 
     fn parse_toml(text: &str) -> toml::Value {
         toml::from_str(text).expect("valid toml")
