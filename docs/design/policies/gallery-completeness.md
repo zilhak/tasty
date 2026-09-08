@@ -50,6 +50,34 @@ lib 에 두면 `--lib --bins` 자동 잡에서 함께 실행된다([dev-guide/ci
 지금은 `src/source_guards/gallery_copied_rules.rs` 가 (갈래, 부르는 이름) 짝을 본체와 맞춘다.
 값(치수) 쪽 대응은 `gallery_copied_dimensions.rs` 다.
 
+## 무대 치수는 액자다 — 그리드·배율 축의 모수 밖
+
+완전성이 요구하는 것은 **본체 컴포넌트가 카탈로그에 있는가**이지, 그것을 올려 두는
+무대의 치수까지 정책 스케일 안에 있는가가 아니다. specimen 을 담는 카드 폭·무대 높이·
+스크롤 박스 크기·배지 높이 같은 값은 컴포넌트가 아니라 **액자**이고, 액자는 디자인
+정본이 값을 내려 준 자리가 아니다 — 무엇을 몇 개 나란히 보여야 그 컴포넌트가 읽히는지로
+정해진다.
+
+그래서 액자 치수는 두 축의 모수에 넣지 않는다. 두 예외는 [theme.md 의 UI 디자인 규칙
+표](../systems/theme.md)에 이미 적혀 있고, 이 문서는 그 반대편 참조다.
+
+- **4px 그리드(간격 축)** — 그 표의 `간격 API` 행이 명명 구조 상수
+  (`const NAME: LogicalPx = LogicalPx(N)`)를 스코프 밖으로 둔다. 액자 치수는 그 형태로
+  올린다.
+- **UI 배율 축** — 그 표의 `컨테이너 길이` 행과 [ADR-0135](../../adr/0135-ui-length-literals-do-not-follow-ui-scale-in-the-app.md)
+  가 갤러리를 예외로 둔다. 갤러리는 `ctx.set_zoom_factor(ui_scale)` 로 egui 전역에 배율을
+  걸어 리터럴도 함께 커지므로, 본체에서 결함인 형태가 여기서는 결함이 아니다.
+
+예외는 "아무 숫자나 박아도 된다"가 아니다. 액자 치수도 **사유를 적은 명명 const** 로
+올린다 — 그 값이 무엇을 보이려고 그 크기인지(예: degrade 임계의 위/아래를 밟도록 고른
+치수)를 상수 옆에 적는다. 이름 없는 인라인 리터럴로 두면 다음 사람이 그것을 디자인
+값으로 읽는다.
+
+**`size-*` 스케일 축은 이 예외에 들지 않는다.** 값이 primitive 스케일 안에 있는데 토큰
+대신 숫자를 쓴 자리는 갤러리에서도 센다 — `src/source_guards/on_scale_length_literal.rs`
+가 `crates/tasty-gallery/` 를 자기 영역으로 들고 있다. 배율 예외(ADR-0135)와 스케일 축은
+서로 다른 물음이다.
+
 ## 디자인이 cut 했을 때 — 소스가 아니라 디자인을 고친다
 
 디자인 카탈로그가 본체 컴포넌트를 누락하면:
@@ -65,4 +93,5 @@ lib 에 두면 `--lib --bins` 자동 잡에서 함께 실행된다([dev-guide/ci
 - [ADR-0020](../../adr/0020-gallery-complete-component-source.md) — 결정 근거.
 - [dev-guide/gallery-first](../../dev-guide/gallery-first.md) — 새 컴포넌트는 디자인→갤러리→본체 순서.
 - [design/systems/design-gallery-mapping](../systems/design-gallery-mapping.md) — 디자인 jsx ↔ 갤러리 항목 ↔ 본체 함수 3자 매핑.
+- [design/systems/theme](../systems/theme.md) — UI 디자인 규칙 표. 무대 치수가 그리드·배율 축의 모수 밖인 근거가 그 표의 두 행에 있다.
 - [shared-widgets](shared-widgets.md) — 보편 컴포넌트는 공용 위젯으로(완전성의 부품 단위 기반).
