@@ -12,7 +12,7 @@
 
 ## 목적
 
-이미지를 보고 간단히 그리는 **`image` surface 종류**(뷰어 + 그림판)를 제공한다. `rendering = "egui-mesh"` — plugin 이 비트맵을 자기 egui `Context` 의 텍스처로 올려(폰트 atlas 와 동일 `TexturesDelta` 채널) chrome 과 함께 mesh 로 tessellate 하고, host 가 합성한다. 별도 Canvas 레이어는 없다([ADR-0030](../../adr/0030-image-egui-mesh-bitmap-texture.md)).
+이미지를 보고 **임시로** 그리는 **`image` surface 종류**(뷰어 + 그림판)를 제공한다. 변경을 파일로 저장하는 것은 그 위에 얹은 부가 기능이다 — 정체성이 아니다([ADR-0245](../../adr/0245-an-image-surface-edit-is-temporary-and-is-not-restored.md)). `rendering = "egui-mesh"` — plugin 이 비트맵을 자기 egui `Context` 의 텍스처로 올려(폰트 atlas 와 동일 `TexturesDelta` 채널) chrome 과 함께 mesh 로 tessellate 하고, host 가 합성한다. 별도 Canvas 레이어는 없다([ADR-0030](../../adr/0030-image-egui-mesh-bitmap-texture.md)).
 
 ## 내부 동작
 
@@ -32,6 +32,7 @@
 
 - surface 배치/생성 도메인 — [work-area](../../features/work-area/index.md).
 - 그림판 편집 도구 상세 — design-system / 구현.
+- **저장하지 않은 편집의 복원** — 복원은 디스크에 저장된 것만 대상으로 한다. 미저장 편집은 복원하지 않고, 복원 시점에 알리지도 않는다 ([ADR-0245](../../adr/0245-an-image-surface-edit-is-temporary-and-is-not-restored.md)).
 
 ## Acceptance Criteria
 
@@ -41,6 +42,7 @@
 - Given 이미지 surface 가 열려 있고 아무 입력도 없을 때 When 그 파일이 밖에서 바뀐다 Then 1 초 안에 다시 읽어 표시한다.
 - Given 이미지 surface 가 열려 있을 때 When 그 파일의 내용은 그대로인데 mtime 만 바뀐다(`touch`) Then 다시 읽지 않는다.
 - Given 편집 세션이 활성일 때 When 그 파일이 밖에서 바뀐다 Then 편집 중에는 반영하지 않고, 편집을 끝낼 때 반영한다.
+- Given 저장하지 않은 편집이 있는 image surface When preset·layout 으로 복원한다 Then 디스크의 원본을 다시 읽어 표시하고, 미저장 편집은 복원하지 않으며 그 사실을 알리지도 않는다.
 
 ## 화면
 
