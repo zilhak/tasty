@@ -209,16 +209,19 @@ pub const POPUP_TITLE_BTN_SIZE: LogicalPx = LogicalPx(20.0);
 //
 // 디자인 `ui_kits/terminal/overlays/plugins_window.jsx` 의 `PluginAvatar` 는 한 변을
 // 인자로 받고 두 자리에서 서로 다른 값으로 불린다(목록 행 32 · 상세 identity 46).
-// `Theme` 에 대응 토큰이 없다 — `sidebar_collapsed_slot_width`(32)와 값이 같은 쪽도
-// 뜻이 다른 축이라 참조하지 않는다.
+// 둘 다 DTCG primitive 에 정확히 있지만(`size-32` · `size-46`) **대응 semantic 이 없고**
+// `tasty-design-tokens` 의 `generated::primitive` 는 `pub(crate)` 라 밖에서 부를 이름이
+// 없다 — 위 `STRUCT_GAP_*` 와 같은 사정이라 같은 자리(위젯 레벨 상수)에 둔다. `Theme`
+// 쪽에서 값이 같은 필드(`sidebar_collapsed_slot_width` 32 · `caption_width` 46)를
+// 참조하지 않는 것은 뜻이 다른 축이기 때문이다.
 
 /// plugin 목록 행 왼쪽 아바타 한 변. 디자인 `<PluginAvatar size={32}>`
 /// (Installed 목록 · Attention 목록 공통).
 pub const PLUGIN_AVATAR_ROW_SIZE: LogicalPx = LogicalPx(32.0);
 
 /// 상세 identity 블록 아바타 한 변. 디자인 `<PluginAvatar size={46}>`.
-/// **4px 그리드 밖 46px** 이다 — ADR-0126 대로 가까운 값(44 · 48)으로 스냅하지 않는다.
-/// 스냅은 픽셀을 바꾸는 디자인 결정이고, 전사가 곁다리로 할 일이 아니다.
+/// **4px 그리드 밖 46px** 이지만 DTCG primitive 에는 `size-46` 이 있다 — 그리드 스텝에
+/// 없는 것과 primitive 에 없는 것은 다른 물음이다.
 pub const PLUGIN_AVATAR_DETAIL_SIZE: LogicalPx = LogicalPx(46.0);
 
 /// plugin 목록 행 높이. 디자인 행은 `padding: var(--tasty-space-sm)` 위아래에 32px
