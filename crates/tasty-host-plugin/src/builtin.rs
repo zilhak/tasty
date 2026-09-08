@@ -510,9 +510,10 @@ fn sync_builtin_dev_lang(crate_dir: &Path, dest_dir: &Path, spec: &BuiltinSpec) 
 /// ## 훑는 함수가 왜 셋인가
 ///
 /// 셋의 차이는 **파일 단위 복사 술어 하나**뿐이다 — 무조건([`copy_atomic`]) · mtime 과 동률내용
-/// ([`copy_if_newer`]) · 내용([`copy_file_if_content_differs`]). 훑기와 prune 은 같다. 술어를
-/// 인자로 받는 훑기 하나로 합칠 수 있고, 합치면 "셋 중 하나가 청소를 빠뜨린다" 가 원리적으로
-/// 불가능해진다. 못 합칠 구조적 이유는 없다 — 안 합친 것이고, 그동안은 이 주석이 그 값을 대신 진다.
+/// ([`copy_if_newer`]) · 내용([`copy_file_if_content_differs`]). 훑기와 prune 은 같고, 지금은
+/// 실제로 하나다: 셋 다 술어를 [`CopyPolicy`] 로 넘겨 [`sync_dir`] 을 부르는 이름일 뿐이다.
+/// 그래서 위 "청소가 빠져 있었다" 는 **다시 날 수 없다** — 청소는 훑기 안에 한 번 있고, 술어를
+/// 무엇으로 고르든 따라온다. 이 함수는 그 셋 중 하나를 이름으로 고르는 자리다.
 fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
     sync_dir(src, dst, CopyPolicy::NewerThenContent).map(|_| ())
 }
@@ -1477,9 +1478,6 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// `copy_dir_recursive`의 idempotent 버전. `src`의 각 파일이 `dst`보다 더 새것일
-/// 때만 복사한다. 사용자 디렉터리에 이미 설치된 builtin을 번들 최신본으로 갱신할
-/// 때 사용 — 동일한 manifest는 건너뛰고, 매니페스트/바이너리 변경분만 반영한다.
 /// 번들 → 설치 디렉터리 동기화. **내용이 다른 파일만** 쓰고, src 에 없는 dest 항목은 층마다
 /// 지운다([`prune_dest_not_in_src`]).
 ///
