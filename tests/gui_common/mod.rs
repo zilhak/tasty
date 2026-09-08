@@ -243,7 +243,7 @@ impl GuiTestInstance {
         // ★ 이 포착은 spawn 단계에서만 쓰고 인스턴스에 안 싣는다 — 형제 둘과 다른 점이고,
         // 이 회차가 바꾸지 않은 것이다. `join()` 을 안 부르므로 배출 스레드는 자식이 죽어
         // 파이프가 EOF 를 낼 때 스스로 끝난다(이동 전 동작과 같다).
-        let stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
+        let mut stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file (IPC ready)
         let start = Instant::now();
@@ -276,7 +276,10 @@ impl GuiTestInstance {
                     spawn_diag::early_exit_message(
                         &status.to_string(),
                         stderr.tail_lines(),
-                        &stderr.tail(),
+                        // ★ 여기서만 `tail()` 이 아니라 이것을 쓴다 — 자식이 즉사하면
+                        // `try_wait()` 가 배출 스레드를 이겨 링이 비어 있고, 진단이
+                        // "볼 것이 없다" 로 나간다(그 메서드의 실측 참조).
+                        &stderr.tail_after_exit(spawn_diag::STDERR_SETTLE_BUDGET),
                     )
                 );
             }

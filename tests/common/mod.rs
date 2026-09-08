@@ -346,7 +346,7 @@ impl TastyInstance {
         // stderr 를 배경 스레드로 빨아들인다 — 안 읽으면 OS 파이프 역압에 자식이 막힌다
         // (Linux 64 KB / macOS 16 KB). 꼬리 줄과 마지막 줄의 시각이 spawn 단계 패닉의
         // 진단이 된다.
-        let stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
+        let mut stderr = StderrCapture::start(process.stderr.take(), STDERR_TAIL_LINES);
 
         // Wait for port file
         let start = Instant::now();
@@ -396,7 +396,10 @@ impl TastyInstance {
                     spawn_diag::early_exit_message(
                         &status.to_string(),
                         stderr.tail_lines(),
-                        &stderr.tail(),
+                        // ★ 여기서만 `tail()` 이 아니라 이것을 쓴다 — 자식이 즉사하면
+                        // `try_wait()` 가 배출 스레드를 이겨 링이 비어 있고, 진단이
+                        // "볼 것이 없다" 로 나간다(그 메서드의 실측 참조).
+                        &stderr.tail_after_exit(spawn_diag::STDERR_SETTLE_BUDGET),
                     )
                 );
             }

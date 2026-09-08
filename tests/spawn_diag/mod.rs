@@ -482,6 +482,14 @@ const STDERR_RING_CAPACITY: usize = 256;
 /// 모양이라, 30 으로 모았다 — 근거 없는 차이는 유지 비용만 남긴다.
 pub const STDERR_TAIL_LINES: usize = 30;
 
+/// 자식이 죽은 뒤 [`StderrCapture::tail_after_exit`] 가 배출을 기다리는 상한.
+///
+/// 이 시간은 **이미 실패한 경로에서만** 쓰인다 — 초록 회차의 벽시계에 안 더해진다.
+/// 그래서 넉넉히 잡는다: 죽은 자식의 파이프에 남은 것은 많아야 커널 버퍼 한 개
+/// (Linux 64 KB)라 읽기 자체는 마이크로초지만, 부하가 높은 러너에서는 그 스레드가
+/// 스케줄되는 것 자체가 늦는다. 이 축이 다루는 결함이 바로 그 부하 의존이다.
+pub const STDERR_SETTLE_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl StderrCapture {
     /// `child.stderr.take()` 를 그대로 넘긴다. `None` 이면 포착 없이 빈 채로 산다 —
     /// 자식이 stderr 를 안 준 경우에도 실패 경로가 그대로 돌아야 한다.
@@ -535,6 +543,43 @@ impl StderrCapture {
     pub fn last_line_age(&self) -> Option<std::time::Duration> {
         let at = *lock(&self.last_at);
         at.map(|t| t.elapsed())
+    }
+
+    /// 자식이 **이미 죽은 것을 확인한 뒤** 부르는 꼬리 읽기. 배출 스레드가 남은 줄을 다
+    /// 읽을 때까지 `budget` 만큼 기다렸다가 꼬리를 준다.
+    ///
+    /// ★ **이 메서드가 있는 이유가 실측이다.** 즉사하는 자식(디스플레이 부재·GPU 초기화
+    /// 실패 — 하네스 주석들이 "가장 흔한 부팅 실패" 로 적어 둔 바로 그것)에서는 하네스의
+    /// `try_wait()` 가 배출 스레드보다 먼저 이긴다. 그러면 링이 아직 비어 있고 진단은
+    /// **"stderr 이 비어 있다 — 볼 것이 없다"** 로 나간다. 실측 2026-09-08(같은 가짜 자식,
+    /// 45 줄을 쓰고 종료): 곧바로 죽으면 꼬리 **0 줄**, `sleep 1` 을 끼우면 **30 줄**.
+    /// 두 팔의 차이는 자식의 수명뿐이고, 그 문장은 **틀린 방향을 가리킨다** — 읽을 것이
+    /// 없던 것이 아니라 아직 안 읽힌 것이다.
+    ///
+    /// 상한을 두는 이유는 [`Self::join`] 의 계약이다 — 손자 프로세스가 stderr 를 물려받아
+    /// 살아 있으면 EOF 가 안 오고, 무한정 기다리면 **실패가 정지로 바뀐다.** 상한을 넘으면
+    /// 그 사실을 꼬리 끝에 적는다: 빈 꼬리의 두 이유("볼 것이 없다" 와 "못 읽었다")가 같은
+    /// 화면으로 나가면 다음 사람이 없는 원인을 찾는다.
+    pub fn tail_after_exit(&mut self, budget: std::time::Duration) -> String {
+        let deadline = std::time::Instant::now() + budget;
+        let settled = loop {
+            match self.drain.as_ref() {
+                None => break true,
+                Some(handle) if handle.is_finished() => break true,
+                Some(_) if std::time::Instant::now() >= deadline => break false,
+                Some(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            }
+        };
+        if settled {
+            // 자식이 죽어 파이프가 EOF 를 냈으므로 여기서는 즉시 돌아온다(계약 표의 첫 줄).
+            self.join();
+            return self.tail();
+        }
+        format!(
+            "{}\n(stderr 배출이 {budget:?} 안에 안 끝났다 — 위 꼬리는 **잘렸을 수 있다.** \
+             자식이 죽었는데도 파이프가 안 닫혔다면 stderr 를 물려받은 손자가 살아 있는 것이다.)",
+            self.tail()
+        )
     }
 
     /// 꼬리에서 술어에 맞는 첫 줄. 특정 실패 시그니처(bind 실패 등)를 집을 때 쓴다.
@@ -1204,6 +1249,42 @@ TU: error: ../src/freedreno/vulkan/tu_knl.cc:387: failed to open device /dev/dri
             .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("stderr 를 뱉는 자식을 못 띄웠다")
+    }
+
+    /// 자식이 끝난 뒤 읽은 꼬리는 **약속한 줄 수와 마지막 줄을 가진다.**
+    ///
+    /// 이 계약이 필요한 이유는 하네스의 조기 종료 갈래다. `try_wait()` 가 `Some` 을
+    /// 주는 순간 진단을 만드는데, 그때 배출 스레드는 아직 한 줄도 못 넣었을 수 있고
+    /// 그러면 진단이 "stderr 이 비어 있다" 로 나가 **없는 원인을 가리킨다.** 실측
+    /// 2026-09-08(부하 준 러너, 45 줄 쓰고 즉시 종료하는 가짜 데몬, 팔을 번갈아 25 회씩):
+    /// 안 기다리는 형태가 **8/25** 에서 꼬리를 잃었고 기다리는 형태는 **25/25** 살렸다.
+    ///
+    /// ★ **이 시험은 그 결함을 못 본다 — 계약만 박는다.** 기다림을 없애는 변이를 걸고
+    /// 부하를 준 채 20 회 돌렸더니 **0 회** 실패했다(2026-09-08). 경합은 `wait()` 와 읽기
+    /// 사이에서 배출 스레드가 굶어야 나는데, 이 시험은 그 굶음을 만들 수단이 없다.
+    /// 위 확률은 하네스를 통째로 돌린 A/B 에서 나온 값이고 여기서 재는 값이 아니다.
+    /// 그래서 이 시험의 초록은 "그 경합이 없다" 가 아니라 **"끝난 뒤 읽으면 잘린 꼬리를
+    /// 주지 않는다"** 만 뜻한다.
+    #[test]
+    fn a_tail_read_after_the_child_died_waits_for_the_drain_instead_of_reporting_empty() {
+        let emitted = 45;
+        let mut child = child_that_prints_stderr_lines(emitted);
+        let mut cap = StderrCapture::start(child.stderr.take(), STDERR_TAIL_LINES);
+        child.wait().expect("자식을 못 거뒀다");
+
+        let tail = cap.tail_after_exit(std::time::Duration::from_secs(30));
+        let lines: Vec<&str> = tail.lines().collect();
+        assert_eq!(
+            lines.len(),
+            STDERR_TAIL_LINES,
+            "꼬리가 약속한 줄 수가 아니다 — 잘림 안내가 붙었으면 배출이 예산 안에 \
+             안 끝난 것이다:\n{tail}"
+        );
+        assert_eq!(
+            lines.last().copied(),
+            Some(format!("line {emitted}").as_str()),
+            "자식이 죽은 뒤 읽었는데 마지막 줄이 없다 — 배출을 안 기다린 것이다:\n{tail}"
+        );
     }
 
     /// ★ 이 타입은 세 하네스가 그 위로 옮겨 탈 자리인데 **한 번도 안 돌았다.**
