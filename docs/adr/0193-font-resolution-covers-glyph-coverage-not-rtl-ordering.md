@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-07
-- **Tags**: i18n, font, rtl, egui, scope-boundary, adr-0139
+- **Tags**: i18n, font, rtl, egui, scope-boundary, adr-0139, adr-0114
 
 ## Context
 

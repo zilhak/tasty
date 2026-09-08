@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-06
-- **Tags**: terminal, mouse, mouse-reporting, banner, popup, settings, ux, i18n, gallery
+- **Tags**: terminal, mouse, mouse-reporting, banner, popup, settings, ux, i18n, gallery, adr-0024, adr-0055
 
 ## Context
 

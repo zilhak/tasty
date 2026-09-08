@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-05
-- **Tags**: testing, flaky-tests, concurrency, test-isolation, env
+- **Tags**: testing, flaky-tests, concurrency, test-isolation, env, adr-0129
 
 ## Context
 

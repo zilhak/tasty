@@ -2,7 +2,7 @@
 
 - **Status**: Proposed
 - **Date**: 2026-09-04
-- **Tags**: testing, flaky-tests, ci, concurrency, test-isolation
+- **Tags**: testing, flaky-tests, ci, concurrency, test-isolation, guards, cfg-feature-gate, source-scan-guard, adr-0128
 
 ## Context
 

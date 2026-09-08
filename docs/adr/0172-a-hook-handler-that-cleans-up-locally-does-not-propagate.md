@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
-- **Tags**: plugin, error-handling, hook, agent-integration
+- **Tags**: plugin, error-handling, hook, agent-integration, adr-0075, adr-0092
 
 ## Context
 

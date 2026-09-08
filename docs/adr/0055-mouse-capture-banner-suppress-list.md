@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-28
-- **Tags**: terminal, mouse, mouse-reporting, banner, settings, ux
+- **Tags**: terminal, mouse, mouse-reporting, banner, settings, ux, adr-0022
 
 ## Context
 

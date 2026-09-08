@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
-- **Tags**: complexity, quality-gate, file-size, tokei, ratchet, threshold, measurement
+- **Tags**: complexity, quality-gate, file-size, tokei, ratchet, threshold, measurement, complexity-gate, adr-0037, adr-0131, adr-0165
 
 ## Context
 

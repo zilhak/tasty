@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
-- **Tags**: dpi, typed-length, layout, design-tokens, hidpi
+- **Tags**: dpi, typed-length, layout, design-tokens, hidpi, adr-0145
 
 ## Context
 
@@ -130,3 +130,7 @@ src/state/mouse.rs              DIVIDER_HIT_THRESHOLD   (이전: 타입 없는 f
 - [`docs/features/work-area/screens/work-area.md`](../features/work-area/screens/work-area.md) — 같은 수를 논리 px 로 읽는 문서
 - `crates/tasty-model/src/lib.rs` — `PANE_BORDER_WIDTH` · `SURFACE_BORDER_WIDTH`
 - `src/state/mouse.rs` — `DIVIDER_HIT_THRESHOLD` (본 결정의 첫 적용)
+- [ADR-0145](0145-typed-length-constructors-stay-open-for-now.md) — 길이 newtype 의 생성자를
+  열어 둔다는 결정. 이 ADR 의 처방은 상수를 `LogicalPx(2.0)` 처럼 **생성자 직접 호출**로
+  옮기는 것이라, 그 생성자가 열려 있다는 전제 위에 선다. 0145 가 봉인 쪽으로 뒤집히면
+  여기 적은 이관 형태도 `from_raw()` 류로 다시 써야 한다.

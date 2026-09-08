@@ -69,4 +69,5 @@
 - [ADR-0046](0046-webhook-owner-trust-one-way-ack.md) — 4중 방어선 4(남용차단)가 값과 키를 비워 둔 자리
 - [ADR-0177](0177-recovery-forbidden-locks-are-judged-by-frame-boundary-type.md) — 락 poison 복구 명부(abuse tracker 를 이름이 아니라 술어로 덮는다)
 - [`features/webhook/index.md`](../features/webhook/index.md) — 남용차단 동작(집계 대상 · 값 · env · in-memory 수명)
+- 이 ADR 이 관찰로 남긴 여덟 중 넷은 이후 결정으로 올라갔다 — 표의 크기 문턱은 [ADR-0197](0197-the-source-table-cap-is-a-prune-trigger.md), 윈도우 리셋·쿨다운 해제·연장 방지는 [ADR-0198](0198-a-cooldown-is-fixed-at-entry.md), 429 선검사 위치는 [ADR-0199](0199-the-block-is-decided-before-the-body-is-read.md). 남은 둘(env 오버라이드 이름 · 카운터의 in-memory 수명)의 재검토 조건은 `src/webhook/abuse.rs` 모듈 문서에 있다.
 - 코드 근거(결정이 실현된 현재 위치): `src/webhook/abuse.rs` 의 `AbuseConfig::default`·`from_env`·`MAX_SOURCES`, `src/webhook/listener.rs` 의 `handle_request`(출처 키 생성)

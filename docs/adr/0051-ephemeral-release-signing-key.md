@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-14
-- **Tags**: plugin-signing, release-ci, security
+- **Tags**: plugin-signing, release-ci, security, ed25519, trust-store, self-hosted-runner
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-05
-- **Tags**: plugin, ipc, routing, headless, namespace, error-codes, adr-0167
+- **Tags**: plugin, ipc, routing, headless, namespace, error-codes, adr-0167, adr-0136, adr-0171
 
 ## Context
 
