@@ -165,14 +165,28 @@ jobs:
             if ($after.Count -gt 0) { throw "renormalize did not take" }
           }
 
-      # clippy 컴포넌트가 러너에 없을 수 있으므로 보장(있으면 no-op).
+      # clippy 컴포넌트가 러너에 없을 수 있으므로 보장(있으면 no-op — 실측
+      # `34184720171`: `info: component clippy is up to date`).
+      #
+      # `if:` 가 붙은 이유는 이 스텝을 위해서가 아니라 **아래 clippy 를 위해서**다.
+      # 아래 스텝을 앞의 실패에서 떼어 내면 그 앞을 함께 떼지 않는 한 이 스텝만
+      # skipped 로 남고, 그때 clippy 가 보는 것은 clippy 판정이 아니라 "component
+      # not found" 다 — 같은 실패의 재방송이라 새 정보가 아니다. 전제는 뒤와 함께
+      # 들어올린다(docs/dev-guide/ci-gates.md "전제는 뒤와 함께 들어올린다").
       - name: ensure clippy component
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: rustup component add clippy
 
       # clippy 는 check 의 상위집합이라 크로스플랫폼 컴파일 가드를 유지하면서 lint 까지 얻는다.
       # `-D warnings` 금지(의도적 warn 다수 → CI 상시 red). deny-level 하드에러만 잡는다.
+      #
+      # `if: !cancelled()` — 위 `normalize the working tree` 는 이 스텝의 **전제가
+      # 아니다**. 줄 끝 문자는 rust 컴파일에 무관해서, 정규화가 실패한 트리에서 돈
+      # clippy 도 여전히 유효한 clippy 판정이다. 실측 `34111807266` 에서 정확히 그
+      # 스텝이 죽어 이 조합이 통째로 미측정이 됐다(그 run 의 이 스텝: skipped).
       - name: cargo clippy
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: cargo clippy --workspace --all-targets --locked
 
@@ -191,6 +205,7 @@ jobs:
       # 다음 실행에서 뒤가 새로 빨개지는 형태다. 잡이 초록일 때 추가 비용은 0 이고
       # (실패가 없으면 어차피 전부 돈다), 빨갈 때만 더 도는 것이 이 플래그의 목적이다.
       - name: cargo test (unit)
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
@@ -234,6 +249,7 @@ jobs:
       #
       # `--no-fail-fast` 근거는 위 스텝과 같다.
       - name: cargo test (windows integration — shm · doc-guards)
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast
 
@@ -373,6 +389,7 @@ jobs:
       # 여기서 함께 닫는다 — 헤드리스 사각을 닫는 잡이 clippy 만 사각으로 남기면
       # 같은 구멍이 다시 자란다.
       - name: cargo clippy (headless)
+        if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --no-default-features --locked
 
       # 이 러너의 디스크는 아무 데도 안 보인다. 자기 머신에서 잰 값은 대신 못 쓴다 —
