@@ -18,9 +18,20 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 // 디자인 inline 레이아웃 값(work.jsx `StatusBar`: cell padding 0 10px, gap 6,
-// dot 7×7). bar view 의 로컬 레이아웃 상수로 둔다.
+// dot 7×7). bar view 의 로컬 레이아웃 상수로 둔다. 앞의 둘은 4px 그리드 밖이지만
+// 겨루는 컴포넌트 토큰이 없어 이 출처가 곧 근거다 — 점만 사정이 다르다(아래).
 const CELL_PAD_X: LogicalPx = LogicalPx(10.0);
 const CELL_GAP: LogicalPx = LogicalPx(6.0);
+
+/// 브랜치 점과 테마 토글 점의 지름. 그리드 밖(7)이고, **이 자리에는 겨냥하는 토큰이
+/// 이미 있다** — `component.status-dot-size` 가 `{primitive.size-8}` = 8 이고
+/// `badge-`/`tab-`/`tag-dot-size` 셋이 그것을 별칭으로 쓴다. 부르면 7 → 8 로 배율 1
+/// 에서 픽셀이 바뀌므로 부르지 않았다(ADR-0126 대로 값을 지키고 이름만 남긴다).
+///
+/// **점 지름이 지금 셋이다** — 여기 7 · `src/adapters/ui/tab_bar.rs` 의 busy 점 6 ·
+/// 토큰 8. 세 자리가 각자 디자인 시안의 inline 값을 옮겨 온 것이라, 토큰의 8 이
+/// 디자인이 정한 값인지 dot 이름들을 만들 때 대칭으로 딸려 나온 값인지가 갈려야
+/// 셋이 한 이름으로 모인다. 어긋난 자리의 대조표는 `docs/design/systems/token-crosswalk.md`.
 const DOT_SIZE: LogicalPx = LogicalPx(7.0);
 
 /// view 입력 — 한 프레임 분의 StatusBar 표시 데이터.
