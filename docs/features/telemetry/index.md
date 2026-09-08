@@ -1,7 +1,7 @@
 # 텔레메트리 (Telemetry)
 
 - **Status**: Implemented
-- **주체**: AI Agent (측정 대상) · 로컬 사용자 (조회/통제)
+- **주체**: AI Agent — 측정 대상이자 **통제 주체**다. 에이전트가 다른 에이전트에게 cap 을 걸고 지우고 푼다(`agent` 는 파라미터로 지목한다). 로컬 사용자도 CLI 로 같은 것을 할 수 있으나 1급 대상이 아니다 — headless 인스턴스에는 로컬 사용자가 아예 없다([identity](../../identity.md) §2.2).
 - **ADR**: 없음
 - **코드**: `telemetry.*` 핸들러, `tasty-telemetry`, 영속 `tasty-memory`
 - **화면**: 없음 (cap 발화 시 알림)
@@ -59,7 +59,7 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 ## 인터페이스
 
-- **AI Agent / CLI**: `telemetry.record(_batch)`(`telemetry` 권한) · `summary/timeseries/top` · `cap.{set,list,status,reset}` · `anomaly.list` · `session_summary`. [reference/api](../../reference/api.md#텔레메트리-telemetry).
+- **AI Agent / CLI**: `telemetry.record(_batch)`(`telemetry` 권한) · `summary/timeseries/top` · `cap.{set,list,remove,status,reset}` · `anomaly.list` · `session_summary`. [reference/api](../../reference/api.md#텔레메트리-telemetry).
 - **Claude Code 통합**: `tasty claude install` hook 이 `session-start`→`stop` 의 `wall_time_ms`, notification 의 `input_tokens`(`tokens: N` 패턴)를 `tasty.com.tasty.claude` agent 로 자동 적재. [claude plugin](../../plugins/claude/index.md).
 
 ## 관련
