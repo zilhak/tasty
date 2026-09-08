@@ -1638,20 +1638,14 @@ mod tests {
     // 는 합성 rc 를 실제로 만들기 때문에 CWD 를 더럽힌다.
     #[test]
     fn relative_tasty_home_is_absolutized_for_child_processes() {
-        let _s = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
-        let prev = std::env::var("TASTY_HOME").ok();
-        // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
-        unsafe { std::env::set_var("TASTY_HOME", "relative-tasty-home") };
+        // 손으로 set 하고 마지막에 되돌리면 **아래 두 `expect` 가 패닉할 때 복원에
+        // 도달하지 못한다** — 그러면 이 바이너리의 뒤 테스트가 상대 `TASTY_HOME` 을
+        // 물려받아 자기 물음 대신 남의 실패를 본다. [`RelativeHomeGuard`] 는 생성자가
+        // `SERIAL` 을 직접 쥐고 Drop 이 되돌린다(파일은 안 만드는 경로라 `name` 을 쓴다).
+        let _home = RelativeHomeGuard::name("relative-tasty-home");
 
         let rc = tasty_bashrc_default_path().expect("relative home still resolves");
         let zdotdir = tasty_zsh_integration_dir().expect("relative home still resolves");
-
-        match &prev {
-            // SAFETY: 테스트 프로세스 단독 — SERIAL 락으로 병렬 간섭 차단.
-            Some(v) => unsafe { std::env::set_var("TASTY_HOME", v) },
-            // SAFETY: 상동.
-            None => unsafe { std::env::remove_var("TASTY_HOME") },
-        }
 
         let cwd = std::env::current_dir().expect("cwd");
         assert!(
