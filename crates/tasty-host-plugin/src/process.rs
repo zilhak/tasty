@@ -904,9 +904,8 @@ fn merge_dirty(
     id: SharedBufferId,
     incoming: Option<PixelRect>,
 ) {
-    let Ok(mut m) = map.lock() else {
-        return;
-    };
+    let mut m =
+        tasty_utils::poison::recover_mutex(map.lock(), DIRTY_RECTS_WHAT, &DIRTY_RECTS_POISONED);
     match (m.get(&id).copied(), incoming) {
         (Some(None), _) => {} // 이미 full — 무시.
         (_, None) => {
