@@ -2,8 +2,8 @@ use crate::i18n::t;
 use crate::theme;
 
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{margin_sym, vspace};
+use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
+use tasty_ui_widgets::{PluginAvatarSize, margin_sym, paint_plugin_avatar, plugin_avatar, vspace};
 
 pub(super) fn draw_list_tab(
     ctx: &egui::Context,
@@ -75,7 +75,10 @@ pub(super) fn draw_list_tab(
                     // 이름 + 버전 부제를 한 클릭 영역으로 묶기 위해 직접 그린다.
                     // SelectableLabel은 한 줄만 자연스럽게 표현하므로 painter로 selected/hover
                     // 배경과 두 줄 텍스트를 그려 동일한 visual을 재현.
-                    let row_h = 40.0;
+                    //
+                    // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
+                    // 위아래에 32px 아바타가 앉는 flex 행이다.
+                    let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
                     let (rect, resp) = ui.allocate_exact_size(
                         egui::vec2(ui.available_width(), row_h),
                         egui::Sense::click(),
@@ -90,8 +93,17 @@ pub(super) fn draw_list_tab(
                             egui::StrokeKind::Inside,
                         );
                     }
-                    let pad = egui::vec2(8.0, 6.0);
-                    let name_pos = rect.min + pad;
+                    let pad = egui::vec2(th.spacing_sm.value(), th.spacing_sm.value());
+                    let avatar = PluginAvatarSize::Row.side().value();
+                    paint_plugin_avatar(
+                        ui.painter(),
+                        &th,
+                        egui::pos2(rect.min.x + pad.x + avatar * 0.5, rect.center().y),
+                        &entry.name,
+                        PluginAvatarSize::Row,
+                    );
+                    // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: space-sm`.
+                    let name_pos = rect.min + pad + egui::vec2(avatar + th.spacing_sm.value(), 0.0);
                     ui.painter().text(
                         name_pos,
                         egui::Align2::LEFT_TOP,
@@ -142,22 +154,28 @@ pub(super) fn draw_list_tab(
 
         vspace(ui, th.spacing_sm);
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading(&entry.name);
-                super::tag(ui, &th, &format!("v{}", entry.version));
-                if entry.builtin {
+            // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+            ui.horizontal_top(|ui| {
+                plugin_avatar(ui, &th, &entry.name, PluginAvatarSize::Detail);
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading(&entry.name);
+                        super::tag(ui, &th, &format!("v{}", entry.version));
+                        if entry.builtin {
+                            ui.label(
+                                egui::RichText::new(t("plugins.builtin_badge"))
+                                    .small()
+                                    .color(egui::Color32::from(th.accent_agent())),
+                            );
+                        }
+                    });
                     ui.label(
-                        egui::RichText::new(t("plugins.builtin_badge"))
+                        egui::RichText::new(&entry.id)
                             .small()
-                            .color(egui::Color32::from(th.accent_agent())),
+                            .color(egui::Color32::from(th.text_muted())),
                     );
-                }
+                });
             });
-            ui.label(
-                egui::RichText::new(&entry.id)
-                    .small()
-                    .color(egui::Color32::from(th.text_muted())),
-            );
             vspace(ui, th.spacing_sm);
 
             if !entry.description.is_empty() {

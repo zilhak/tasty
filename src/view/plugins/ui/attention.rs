@@ -48,8 +48,10 @@ const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
+use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
+use tasty_ui_widgets::{
+    PluginAvatarSize, hspace, margin_all, margin_sym, paint_plugin_avatar, plugin_avatar, vspace,
+};
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
 fn reason_text(kind: AttentionKind) -> (&'static str, &'static str) {
@@ -108,7 +110,9 @@ pub(super) fn draw_attention_tab(
                 for entry in items {
                     let selected = ui_state.attention_selected_id.as_ref() == Some(&entry.id);
                     let color = sev_color(&th, entry.kind);
-                    let row_h = 40.0;
+                    // 행 높이는 아바타에서 나온다 — 디자인 행이 `padding: space-sm`
+                    // 위아래에 32px 아바타가 앉는 flex 행이다.
+                    let row_h = PLUGIN_LIST_ROW_HEIGHT.value();
                     let (rect, resp) = ui.allocate_exact_size(
                         egui::vec2(ui.available_width(), row_h),
                         egui::Sense::click(),
@@ -123,8 +127,17 @@ pub(super) fn draw_attention_tab(
                             egui::StrokeKind::Inside,
                         );
                     }
-                    let pad = egui::vec2(8.0, 6.0);
-                    let name_pos = rect.min + pad;
+                    let pad = egui::vec2(th.spacing_sm.value(), th.spacing_sm.value());
+                    let avatar = PluginAvatarSize::Row.side().value();
+                    paint_plugin_avatar(
+                        ui.painter(),
+                        &th,
+                        egui::pos2(rect.min.x + pad.x + avatar * 0.5, rect.center().y),
+                        &entry.name,
+                        PluginAvatarSize::Row,
+                    );
+                    // 텍스트 열은 아바타 다음 — 디자인 flex 행의 `gap: space-sm`.
+                    let name_pos = rect.min + pad + egui::vec2(avatar + th.spacing_sm.value(), 0.0);
                     ui.painter().text(
                         name_pos,
                         egui::Align2::LEFT_TOP,
@@ -207,25 +220,31 @@ fn draw_detail(
     vspace(ui, th.spacing_sm);
     egui::ScrollArea::vertical().show(ui, |ui| {
         // identity
-        ui.horizontal(|ui| {
-            ui.heading(&entry.name);
-            super::tag(ui, th, &format!("v{}", entry.version));
-            if entry.builtin {
-                super::tag(ui, th, t("plugins.builtin_badge"));
-            }
+        // 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+        ui.horizontal_top(|ui| {
+            plugin_avatar(ui, th, &entry.name, PluginAvatarSize::Detail);
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.heading(&entry.name);
+                    super::tag(ui, th, &format!("v{}", entry.version));
+                    if entry.builtin {
+                        super::tag(ui, th, t("plugins.builtin_badge"));
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(&entry.id)
+                        .small()
+                        .color(egui::Color32::from(th.text_muted())),
+                );
+                if !entry.authors.is_empty() {
+                    ui.label(
+                        egui::RichText::new(entry.authors.join(", "))
+                            .small()
+                            .color(egui::Color32::from(th.text_muted())),
+                    );
+                }
+            });
         });
-        ui.label(
-            egui::RichText::new(&entry.id)
-                .small()
-                .color(egui::Color32::from(th.text_muted())),
-        );
-        if !entry.authors.is_empty() {
-            ui.label(
-                egui::RichText::new(entry.authors.join(", "))
-                    .small()
-                    .color(egui::Color32::from(th.text_muted())),
-            );
-        }
         vspace(ui, th.spacing_md);
 
         // 사유 배너 (severity 색 프레임).
