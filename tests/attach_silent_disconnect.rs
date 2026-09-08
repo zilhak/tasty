@@ -268,11 +268,50 @@ fn the_stream_channel_ignores_session_token_so_auth_cannot_strand_occupancy() {
     );
 }
 
+/// `ui.state` 한 왕복의 상한. **이 수가 무엇을 재는지 값으로 적는다.**
+///
+/// 재는 것은 "메인 루프가 막혔다" 가 아니라 **`ui.state` IPC 한 왕복의 벽시계**다. 그
+/// 벽시계에는 서로 다른 두 팔이 들어오고, 각 팔의 크기를 정하는 것은 각각 다른 것이다.
+///
+/// | 팔 | 크기를 정하는 것 | 실측 (2026-09-08, base `1ffffdd5a`) |
+/// |---|---|---|
+/// | 정상 | GUI 메인 루프의 대기 cadence | **표본 197 · 최소 3.3 ms · 최대 218 ms** |
+/// | 막힘 | 서버의 idle Ping 주기([`tasty_ipc::stream::HEARTBEAT_INTERVAL`] = 5 s) | **5.105 s · 5.108 s** |
+///
+/// 정상 팔은 부하로 안 밀렸다 — 197 표본은 스피너 40 개(load 42~90)와 이 스위트 6-way
+/// 동시 실행을 포함하고 그중 최악이 218 ms 다. 막힘 팔은 아래 게이트를 껐을 때의 값이고,
+/// 5 s 는 우연이 아니다: 자기 응답을 기다리던 핸드셰이크가 **서버의 첫 idle Ping 이 올 때**
+/// `expected attach Control frame, got Ping` 으로 빠져나온다(ADR-0116 의 관찰 그대로).
+///
+/// ★ **그런데 이 관측량으로는 두 팔이 안 갈린다.** 이 축의 티켓이 기록한 정상 팔에는
+/// 막힘 없는 빌드에서 나온 **2.905 · 8.759 · 10.715 · 11.646 s** 가 있고, 그 값들은
+/// 막힘 팔의 5.1 s 보다 **크다.** 그러니 그 잡음 위로 상한을 올리면 신호 위로도 올라가
+/// 탐지가 0 이 된다 — **상한 인상은 이 자리에서 처방이 아니다.** 그래서 값을 그대로 둔다.
+///
+/// ★★ **지우는 것도 처방이 아니다 — 이 단정이 유일한 탐지기다.** 게이트를 끄고 재보면
+/// 같은 시험의 다른 두 단정은 안 움직인다: `!is_attached` 는 폴 전부에서 `false` 였고
+/// (막힌 왕복 **동안에는 폴 자체가 안 돌아** 점유가 잡혔더라도 그 창이 안 보인다),
+/// 끝의 재attach 도 `attached_workspace` 로 성공한다. 실측 — 게이트를 끈 빌드에서
+/// 이 단정만 터졌다.
+///
+/// 그래서 이 수는 **문턱이 아니라 신호기**로 쓴다: 넘으면 아래 실패문이 두 팔을 다
+/// 이름으로 내놓고 **가르는 것은 상한이 아니라 수열의 모양**이라고 말한다.
+const SELF_ATTACH_RTT_BOUND: Duration = Duration::from_secs(2);
+
+/// 이 시험이 왕복을 재는 창. 막힘 팔(5 s)이 한 번은 들어오도록 Ping 주기보다 길다.
+const SELF_ATTACH_WATCH: Duration = Duration::from_secs(6);
+
 /// self-attach(자기 IPC 포트를 대상으로 한 GUI mirror attach)는 **점유를 잡지 않고**
 /// 디스패치 단계에서 거절된다. 이 attach 는 GUI 메인 스레드가 자기 자신의 핸드셰이크
 /// 응답을 기다리며 교착돼 성립할 수 없는데, 실패하는 동안 대상 workspace 점유만
 /// 잡았다(관찰 사례: `expected attach Control frame, got Ping` + `attach: workspace N
 /// -> client M`). 상세: `docs/adr/0116-attach-handshake-validated-before-occupancy.md`.
+///
+/// ★ **이 시험이 조합에 따라 다른 것을 뜻한다.** 거절을 하는 층(`src/app/attach_client.rs`
+/// 의 `reject_self_attach`)은 `#[cfg(feature = "gui")]` 아래에 있고, headless 데몬은
+/// `attach.into_gui` 가 쌓은 큐를 **아예 drain 하지 않는다**. 그래서 headless 에서 이
+/// 초록은 "거절됐다" 가 아니라 **"디스패치가 일어나지 않았다"** 다. 두 조합이 같은 초록을
+/// 내므로 그 차이는 색으로 안 보인다 — 이 문단이 그 자리를 대신한다.
 #[test]
 fn self_attach_is_rejected_before_it_can_take_occupancy() {
     let server = common::shared();
@@ -286,22 +325,20 @@ fn self_attach_is_rejected_before_it_can_take_occupancy() {
 
     // 주 관측량: **메인 루프가 막히지 않는다.** 게이트가 없으면 디스패치가
     // `attach_handshake` 를 메인 스레드에서 동기 실행하고, 그 응답을 만들 주체도 같은
-    // 메인 스레드라 heartbeat Ping/read timeout 이 걸릴 때까지 루프가 멈춘다 — 그 동안
-    // IPC 왕복도 함께 멈춘다. 점유 유무만 폴링하면 그 구간이 짧을 때 놓치므로, 교착
-    // 자체를 신호로 쓴다. (점유가 잡히는지도 함께 본다.)
-    let deadline = Instant::now() + Duration::from_secs(6);
+    // 메인 스레드라 첫 idle Ping 이 올 때까지 루프가 멈춘다 — 그 동안 IPC 왕복도 함께
+    // 멈춘다. 점유 유무만 폴링하면 그 구간을 못 본다(위 상수의 ★★).
+    //
+    // 수열을 **모아 두고 끝에서 판정한다.** 폴마다 터뜨리면 첫 값 하나만 남는데, 두 팔을
+    // 가르는 것이 그 값이 아니라 수열의 모양이다.
+    let mut rtts: Vec<Duration> = Vec::new();
+    let deadline = Instant::now() + SELF_ATTACH_WATCH;
     while Instant::now() < deadline {
         let t = Instant::now();
         let alive = server.call("ui.state", json!({}));
-        let rtt = t.elapsed();
+        rtts.push(t.elapsed());
         assert!(
             alive.get("active_workspace").is_some(),
             "ui.state 응답 형태: {alive:?}"
-        );
-        assert!(
-            rtt < Duration::from_secs(2),
-            "self-attach 가 거절되지 않으면 메인 루프가 자기 응답을 기다리며 막힌다 \
-             (IPC 왕복 {rtt:?})"
         );
         assert!(
             !is_attached(server, ws.surface_id),
@@ -309,6 +346,30 @@ fn self_attach_is_rejected_before_it_can_take_occupancy() {
         );
         std::thread::sleep(Duration::from_millis(100));
     }
+
+    let worst = rtts.iter().copied().max().unwrap_or_default();
+    let mut sorted = rtts.clone();
+    sorted.sort_unstable();
+    let typical = sorted.get(sorted.len() / 2).copied().unwrap_or_default();
+    let over = rtts.iter().filter(|d| **d >= SELF_ATTACH_RTT_BOUND).count();
+    assert!(
+        worst < SELF_ATTACH_RTT_BOUND,
+        "`ui.state` 왕복이 상한 {SELF_ATTACH_RTT_BOUND:?} 를 넘었다 — \
+         **원인이 둘이고 이 수 하나로는 안 갈린다.**\n\
+         \x20 이 회차: 최악 {worst:?} · 중앙값 {typical:?} · 넘은 폴 {over}/{}\n\
+         \x20 수열: {rtts:?}\n\
+         ① self-attach 가 안 걸러졌다 — 메인 스레드가 자기 응답을 기다리며 막힌다. 그 막힘의 \
+         크기는 서버의 idle Ping 주기({:?})가 정하고, 모양은 **스파이크 한 번 뒤 곧바로 \
+         cadence 복귀**다(실측 5.105 s · 5.108 s 뒤 ~100 ms).\n\
+         ② 머신이 바쁘다 — 회차 **전체**가 함께 늘어난다. 이 축의 기록에는 막힘 없는 \
+         빌드에서 나온 2.905 · 8.759 · 10.715 · 11.646 s 가 있다.\n\
+         ★ 가르는 것은 상한이 아니라 위 수열의 **모양**이다. 스파이크가 하나고 나머지가 \
+         cadence 면 ①(회귀), 전부 늘어나 있으면 ②(이 상한은 그 경우를 못 가른다 — \
+         상한을 올리는 것은 처방이 아니다. 그 이유는 {SELF_ATTACH_RTT_BOUND:?} 상수의 doc 에 \
+         값으로 있다).",
+        rtts.len(),
+        tasty_ipc::stream::HEARTBEAT_INTERVAL,
+    );
 
     // 그 workspace 는 여전히 정상 attach 가능해야 한다.
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
