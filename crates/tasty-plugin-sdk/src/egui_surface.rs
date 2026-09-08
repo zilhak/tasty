@@ -2211,8 +2211,11 @@ mod tests {
     }
 
     /// [`EguiMeshBanner`] 도 같은 [`EguiMeshCore`] 를 쓴다 — 위 popup 시험과 동형이다.
-    /// 이 시험이 없으면 banner 의 self-repaint 배선이 끊겨도 초록이다(그 배선이
-    /// 빠져 있던 동안 실제로 그랬다: 값은 계산되고 아무도 안 읽었다).
+    ///
+    /// **덮는 범위는 딱 그것이다**: 코어가 banner 에 대해서도 `pending_self_repaint` 를
+    /// 채운다는 것. 이 시험은 `run_frame` 만 부르고 그 경로는
+    /// `schedule_self_repaint` 를 안 지나므로, **배선을 전부 지워도 이 시험은 초록이다.**
+    /// 그 자리는 아래 `banner_paint_notifies_the_host_of_a_self_repaint_request` 가 본다.
     #[test]
     fn banner_also_captures_egui_repaint_request() {
         let mut banner = EguiMeshBanner::new(1);
@@ -2239,6 +2242,94 @@ mod tests {
         assert!(
             banner.core.pending_self_repaint().is_some(),
             "banner render() must not drop egui's repaint request either"
+        );
+    }
+
+    /// 값을 **알림으로 바꾸는 자리**를 본다 — 위 시험이 원리적으로 못 덮는 곳이다.
+    /// `paint` → `schedule_self_repaint` → 상주 타이머 → `host.notify` 를 끝까지 지나
+    /// `BannerInvalidated` 한 줄이 실제로 소켓에 나가는지 확인한다. loopback 소켓으로
+    /// [`HostHandle`] 을 세우는 형태는 `host.rs` 의 시험 모듈에 있는 것과 같다.
+    ///
+    /// **이 시험이 덮는 범위는 plugin 쪽 끝까지다.** host 쪽 네 자리(`pump` 누적 ·
+    /// `take_invalidated_banners` · `AppState::plugin_mesh_banner_pending_repaint` 예약 ·
+    /// `banner_render.rs` 의 forward 게이트)를 덮는 자동 시험은 **없다** — 그 층들은
+    /// 이 크레이트 밖이고 GUI 인스턴스가 있어야 지난다.
+    ///
+    /// 두 frame 을 그리는 이유: 첫 frame 은 출력이 새로 나와 `commit`(host RPC)까지
+    /// 가려 한다. 같은 화면을 한 번 더 그리면 출력이 dedup 되어 mesh 는 안 나가고
+    /// (`Ok(None)`) **예약만 남는다** — 그 갈래가 바로 `paint` 가 early return **앞에서**
+    /// 예약해야 하는 이유이기도 하다.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn banner_paint_notifies_the_host_of_a_self_repaint_request() {
+        use std::io::{BufRead, BufReader};
+        use std::net::{TcpListener, TcpStream};
+        use std::sync::{Arc, Mutex};
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind localhost");
+        let port = listener.local_addr().expect("local addr").port();
+        let accept = std::thread::spawn(move || listener.accept().expect("accept").0);
+        let plugin_side = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let host_side = accept.join().expect("accept thread");
+        let mut host = HostHandle::new(
+            Arc::new(Mutex::new(plugin_side)),
+            Arc::new(Mutex::new(std::collections::HashMap::new())),
+        );
+        // 아래 단정이 틀렸을 때(=출력이 dedup 되지 않아 commit 으로 갈 때) 60 초를
+        // 기다리지 않고 그 자리에서 실패하게 한다.
+        host.timeout = Duration::from_millis(200);
+
+        let mut banner = EguiMeshBanner::new(7);
+        let params = BannerSetContextParams {
+            instance_id: 7,
+            width_px: 320,
+            height_px: 64,
+            pixels_per_point: 1.0,
+            raw_input: RawInputWire::default(),
+            theme: None,
+            need_full_textures: false,
+        };
+        let ui = |ctx: &Context| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("banner content");
+            });
+        };
+        // 출력이 안 바뀔 때까지(=정적 화면) 먼저 그린다 — egui 는 첫 frame 에 레이아웃
+        // 정보가 없어 한 번으로는 안 잠긴다. host 는 여기서 안 쓴다(`run_frame` 은
+        // commit 을 안 한다).
+        let mut settled = false;
+        for _ in 0..8 {
+            if banner.run_frame(&params, ui).is_none() {
+                settled = true;
+                break;
+            }
+        }
+        assert!(
+            settled,
+            "정적 화면으로 안 잠겼다 — 아래 단정의 전제가 깨졌다"
+        );
+        let sent = banner.paint(&host, &params, |ctx| {
+            ctx.request_repaint_after(Duration::from_millis(5));
+            ui(ctx);
+        });
+        assert!(
+            matches!(sent, Ok(None)),
+            "같은 화면이라 mesh 는 안 나가야 한다 — 실제 {sent:?}"
+        );
+
+        host_side
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("read timeout");
+        let mut line = String::new();
+        BufReader::new(host_side)
+            .read_line(&mut line)
+            .expect("host 가 알림 한 줄을 받아야 한다 — 안 오면 배선이 끊긴 것이다");
+        let payload: serde_json::Value = serde_json::from_str(&line).expect("알림이 json 이다");
+        let event: PluginEvent =
+            serde_json::from_value(payload["event"].clone()).expect("event 필드가 PluginEvent 다");
+        assert!(
+            matches!(event, PluginEvent::BannerInvalidated { instance_id: 7 }),
+            "BannerInvalidated 여야 한다 — 실제 {event:?}"
         );
     }
 
