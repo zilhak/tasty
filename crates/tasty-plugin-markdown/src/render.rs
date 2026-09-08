@@ -159,7 +159,10 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         )
     } else {
         (
-            sanitize_html(&unsafe_content_html_in_dir(source, tr, base_dir)),
+            inline_local_images(
+                &sanitize_html(&unsafe_content_html_in_dir(source, tr, base_dir)),
+                base_dir,
+            ),
             collect_headings(source),
         )
     };
@@ -1850,6 +1853,145 @@ fn sanitize_html(unsafe_html: &str) -> String {
         .url_schemes(["http", "https", "mailto"].into_iter().collect())
         .clean(unsafe_html)
         .to_string()
+}
+
+// ── local image inlining (sanitize 뒤, 문서 디렉토리 트리로 범위를 좁혀서) ──────
+
+/// 한 이미지의 원본 바이트 상한. 넘으면 싣지 않는다(그 자리는 실패 placeholder 가 된다).
+///
+/// 문서 자체의 대용량 문턱([`crate::LARGE_FILE_LIMIT_BYTES`], 1 MiB)보다 크게 잡는다 —
+/// 이미지는 문서 본문과 달리 한 장이 그만큼 나가는 것이 정상이다. 상한이 있는 이유는
+/// 인라인이 **문서 HTML 을 그만큼 부풀려** host 로 한 줄에 실려 가기 때문이다.
+const MAX_INLINE_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// 한 문서에서 인라인하는 이미지 바이트 총합 상한.
+const MAX_INLINE_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
+
+/// 확장자 → `data:` URI 에 쓸 MIME. **여기 없는 확장자는 싣지 않는다** — 임의 파일을
+/// 이미지인 척 문서에 담지 않기 위한 허용목록이다.
+const INLINE_IMAGE_MIME: &[(&str, &str)] = &[
+    ("png", "image/png"),
+    ("apng", "image/apng"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("webp", "image/webp"),
+    ("avif", "image/avif"),
+    ("bmp", "image/bmp"),
+    ("ico", "image/x-icon"),
+    ("svg", "image/svg+xml"),
+];
+
+/// sanitize 된 본문에서 **원격이 아닌 모든 `<img src>`** 를 파일로 풀어 `data:` URI 로
+/// 바꾼다. 못 푸는 것은 `src` 속성을 통째로 지운다.
+///
+/// **이 함수를 지나면 `http(s)` 도 `data:` 도 아닌 `src` 는 하나도 안 남는다** — 그것이
+/// 이 함수의 계약이고, 두 가지를 한꺼번에 준다.
+///
+/// 1. **로컬 이미지가 뜬다.** webview 는 `load_html` 로 문서를 받아 origin 이
+///    `about:blank` 이라 파일을 못 읽는다. `<base href>` 는 주소를 풀 뿐 읽기 권한을
+///    주지 않는다 — 그래서 상대 경로·스킴 없는 절대 경로·raw HTML `<img>` 가 전부
+///    실패했다. 바이트를 문서 안에 실어 보내면 읽기 권한 자체가 필요 없어지고, 세
+///    플랫폼이 같은 경로로 동작한다(백엔드마다 다른 "읽기 범위" API 를 안 쓴다).
+/// 2. **읽기 범위가 문서 디렉토리 트리로 좁혀진다.** 트리 밖을 가리키는 이미지는 여기서
+///    거절된다. 백엔드에 맡기면 그 범위는 백엔드마다 다르다 — 실측(2026-09-08,
+///    Linux/WebKitGTK): `load_html` 에 `file://` base 를 넘기면 상대 경로는 뜨지만
+///    `../밖/x.svg` 도 **같이** 떴다.
+///
+/// 판정은 `canonicalize` 뒤에 한다 — 심볼릭 링크로 트리 밖을 가리키는 것도 같이 막힌다.
+fn inline_local_images(html: &str, base_dir: Option<&Path>) -> String {
+    let base_canon = base_dir.and_then(|d| std::fs::canonicalize(d).ok());
+    let mut budget = MAX_INLINE_TOTAL_BYTES;
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = rest.find("<img") {
+        let (head, tail) = rest.split_at(pos);
+        out.push_str(head);
+        // ammonia 는 속성값의 `<`/`>` 를 escape 하므로 태그 끝은 첫 `>` 다.
+        let Some(end) = tail.find('>') else {
+            out.push_str(tail);
+            return out;
+        };
+        let (tag, after) = tail.split_at(end + 1);
+        out.push_str(&rewrite_img_tag(tag, base_canon.as_deref(), &mut budget));
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `<img ...>` 태그 하나를 [`inline_local_images`] 의 계약대로 다시 쓴다.
+fn rewrite_img_tag(tag: &str, base_canon: Option<&Path>, budget: &mut u64) -> String {
+    const SRC: &str = " src=\"";
+    let Some(rel) = tag.find(SRC) else {
+        return tag.to_string();
+    };
+    let value_start = rel + SRC.len();
+    let Some(len) = tag[value_start..].find('"') else {
+        return tag.to_string();
+    };
+    let value = &tag[value_start..value_start + len];
+    let raw = html_unescape(value);
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        return tag.to_string();
+    }
+    let replacement = read_inline_image(&raw, base_canon, budget)
+        .map(|uri| format!("{SRC}{}\"", attr_escape(&uri)))
+        // 실을 수 없으면 `src` 를 통째로 지운다. 원본 경로를 남겨 두면 백엔드에 따라
+        // 그것이 그대로 로드돼(트리 밖까지) 위 계약이 깨진다. 지운 자리는 이미
+        // `image_error_script` 가 실패 placeholder 로 바꾼다.
+        .unwrap_or_default();
+    let mut out = String::with_capacity(tag.len());
+    out.push_str(&tag[..rel]);
+    out.push_str(&replacement);
+    out.push_str(&tag[value_start + len + 1..]);
+    out
+}
+
+/// `src` 값 하나를 파일로 풀어 `data:` URI 를 만든다. 아래 중 하나라도 걸리면 `None`:
+/// base_dir 이 없음 · 경로가 트리 밖 · 파일이 없음 · 확장자가 허용목록 밖 · 상한 초과.
+fn read_inline_image(raw: &str, base_canon: Option<&Path>, budget: &mut u64) -> Option<String> {
+    let base = base_canon?;
+    // 조각(`#`)과 질의(`?`)는 파일 경로의 일부가 아니다.
+    let path_part = raw.split(['#', '?']).next().unwrap_or(raw);
+    if path_part.is_empty() {
+        return None;
+    }
+    // 마크다운 저자는 공백을 `%20` 으로 적는다 — 파일 이름으로 되돌린다.
+    let decoded = percent_decode(path_part);
+    let p = Path::new(&decoded);
+    let joined = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        base.join(p)
+    };
+    let canon = std::fs::canonicalize(&joined).ok()?;
+    if !canon.starts_with(base) {
+        return None;
+    }
+    let ext = canon.extension()?.to_str()?.to_ascii_lowercase();
+    let mime = INLINE_IMAGE_MIME
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map(|(_, m)| *m)?;
+    let len = std::fs::metadata(&canon).ok()?.len();
+    if len > MAX_INLINE_IMAGE_BYTES || len > *budget {
+        return None;
+    }
+    let bytes = std::fs::read(&canon).ok()?;
+    *budget = budget.saturating_sub(bytes.len() as u64);
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(format!("data:{mime};base64,{b64}"))
+}
+
+/// [`attr_escape`] 의 역 — ammonia 가 속성값에 넣은 엔티티를 되돌린다.
+fn html_unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 // ── CSS (theme → custom properties) ───────────────────────────────────────────
@@ -4952,5 +5094,242 @@ Outro\n";
             css.contains(&format!("background:{};", theme.accent_primary().to_hex())),
             "got: {css}"
         );
+    }
+
+    // ── 로컬 이미지 인라인 (sanitize 뒤, 문서 트리로 범위를 좁힌 자리) ──────────
+
+    /// `<img src="...">` 하나짜리 본문 — sanitize 를 거친 형태를 그대로 흉내낸다.
+    fn img(src: &str) -> String {
+        format!(r#"<p><img src="{src}" alt="x"></p>"#)
+    }
+
+    /// `src="..."` 값을 뽑는다. 속성이 아예 없으면 `None`.
+    fn src_of(html: &str) -> Option<String> {
+        let i = html.find(" src=\"")? + 6;
+        let j = html[i..].find('"')?;
+        Some(html[i..i + j].to_string())
+    }
+
+    fn tree_with_image() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("pic.png");
+        // 1×1 PNG. 내용이 이미지인지 여기서 묻지 않는다 — 판정은 확장자 허용목록이다.
+        std::fs::write(&png, b"\x89PNG\r\n\x1a\n-not-a-real-png-").unwrap();
+        (dir, png)
+    }
+
+    #[test]
+    fn inlines_a_relative_image_inside_the_document_tree() {
+        let (dir, _) = tree_with_image();
+        let out = inline_local_images(&img("pic.png"), Some(dir.path()));
+        let src = src_of(&out).expect("src 가 남아야 한다");
+        assert!(src.starts_with("data:image/png;base64,"), "got: {src}");
+        // 원본 경로는 문서에 안 남는다 — 남으면 백엔드가 그것을 따로 로드할 수 있다.
+        assert!(!out.contains("pic.png"), "got: {out}");
+    }
+
+    #[test]
+    fn inlines_a_scheme_less_absolute_path_inside_the_tree() {
+        let (dir, png) = tree_with_image();
+        let out = inline_local_images(&img(&png.to_string_lossy()), Some(dir.path()));
+        assert!(
+            src_of(&out).unwrap().starts_with("data:image/png;base64,"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn inlines_a_raw_html_img_the_same_way() {
+        let (dir, _) = tree_with_image();
+        // raw HTML `<img>` 는 sanitize 를 그대로 통과한다(상대 URL 정책) — 그래서 이
+        // 함수가 보는 형태도 위와 같다. 두 경로가 갈리지 않는다는 것을 못박는다.
+        let body = r#"<p>before</p><img src="pic.png"><p>after</p>"#;
+        let out = inline_local_images(body, Some(dir.path()));
+        assert!(
+            src_of(&out).unwrap().starts_with("data:image/png;base64,"),
+            "got: {out}"
+        );
+        assert!(out.contains("<p>before</p>") && out.contains("<p>after</p>"));
+    }
+
+    #[test]
+    fn refuses_an_image_outside_the_document_tree() {
+        let (dir, _) = tree_with_image();
+        let outside = tempfile::tempdir().unwrap();
+        let out_png = outside.path().join("out.png");
+        std::fs::write(&out_png, b"\x89PNG\r\n\x1a\n").unwrap();
+        // 절대 경로로도, `..` 로도 못 나간다.
+        for src in [
+            out_png.to_string_lossy().to_string(),
+            format!(
+                "../{}/out.png",
+                outside.path().file_name().unwrap().to_string_lossy()
+            ),
+        ] {
+            let out = inline_local_images(&img(&src), Some(dir.path()));
+            assert_eq!(src_of(&out), None, "src={src} 에서 src 가 남았다: {out}");
+            assert!(
+                !out.contains("out.png"),
+                "src={src} 에서 경로가 샜다: {out}"
+            );
+            // ★ img 요소 자체는 남아야 한다. 이 줄이 없으면 위 부정 둘은 출력이
+            // 통째로 비었을 때도 통과하고, 그 초록의 뜻은 "거절했다" 가 아니라
+            // "아무것도 안 남았다" 다.
+            assert!(out.contains("<img"), "img 가 통째로 사라졌다: {out}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_symlink_that_escapes_the_tree() {
+        let (dir, _) = tree_with_image();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("secret.png");
+        std::fs::write(&target, b"\x89PNG\r\n\x1a\n").unwrap();
+        let link = dir.path().join("link.png");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        #[cfg(not(unix))]
+        return;
+        // 판정을 `canonicalize` 뒤에 하는 이유가 이것이다 — 이름만 트리 안이다.
+        let out = inline_local_images(&img("link.png"), Some(dir.path()));
+        assert_eq!(src_of(&out), None, "got: {out}");
+    }
+
+    #[test]
+    fn leaves_remote_srcs_untouched() {
+        let (dir, _) = tree_with_image();
+        for src in ["http://example.com/a.png", "https://example.com/a.png"] {
+            let out = inline_local_images(&img(src), Some(dir.path()));
+            assert_eq!(src_of(&out).as_deref(), Some(src), "got: {out}");
+        }
+    }
+
+    #[test]
+    fn refuses_an_extension_outside_the_image_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.txt"), b"secret").unwrap();
+        let out = inline_local_images(&img("notes.txt"), Some(dir.path()));
+        assert_eq!(src_of(&out), None, "got: {out}");
+        assert!(!out.contains("secret"), "파일 내용이 실렸다: {out}");
+    }
+
+    #[test]
+    fn refuses_an_image_over_the_per_image_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = dir.path().join("big.png");
+        std::fs::write(&big, vec![0u8; MAX_INLINE_IMAGE_BYTES as usize + 1]).unwrap();
+        let out = inline_local_images(&img("big.png"), Some(dir.path()));
+        assert_eq!(src_of(&out), None, "got len {}", out.len());
+    }
+
+    #[test]
+    fn stops_inlining_when_the_document_budget_is_spent() {
+        let dir = tempfile::tempdir().unwrap();
+        // 상한 딱 아래짜리 넷 = 총합 상한을 넘긴다. 앞쪽은 실리고 뒤쪽은 안 실린다.
+        let each = MAX_INLINE_IMAGE_BYTES;
+        let n = (MAX_INLINE_TOTAL_BYTES / each) as usize + 1;
+        let mut body = String::new();
+        for i in 0..n {
+            let name = format!("i{i}.png");
+            std::fs::write(dir.path().join(&name), vec![0u8; each as usize]).unwrap();
+            body.push_str(&img(&name));
+        }
+        let out = inline_local_images(&body, Some(dir.path()));
+        let inlined = out.matches("data:image/png;base64,").count();
+        assert!(inlined < n, "예산을 안 지켰다: {inlined}/{n}");
+        assert!(inlined > 0, "하나도 안 실렸다 — 예산 계산이 뒤집혔다");
+    }
+
+    #[test]
+    fn no_base_dir_means_nothing_local_is_inlined() {
+        let out = inline_local_images(&img("pic.png"), None);
+        assert_eq!(src_of(&out), None, "got: {out}");
+    }
+
+    /// 이 함수의 **계약**: 지나고 나면 `http(s)` 도 `data:` 도 아닌 `src` 는 없다.
+    /// 위 개별 시험이 형태별로 확인하는 것을 한 문장으로 못박는다 — 새 형태가 생겨도
+    /// 이 줄이 먼저 깨진다.
+    #[test]
+    fn no_src_survives_that_is_neither_remote_nor_inlined() {
+        let (dir, png) = tree_with_image();
+        let outside = tempfile::tempdir().unwrap();
+        // ★ 트리 밖 파일은 **실재해야** 한다. 없는 파일로 적으면 `canonicalize` 가
+        // 먼저 실패해서, 범위 판정을 통째로 지워도 이 시험이 초록으로 남는다.
+        let outside_png = outside.path().join("x.png");
+        std::fs::write(&outside_png, b"\x89PNG\r\n\x1a\n").unwrap();
+        let escape_rel = format!(
+            "../{}/x.png",
+            outside.path().file_name().unwrap().to_string_lossy()
+        );
+        let mut body = String::new();
+        for src in [
+            "pic.png".to_string(),
+            png.to_string_lossy().to_string(),
+            outside_png.to_string_lossy().to_string(),
+            escape_rel,
+            "missing.png".to_string(),
+            "https://example.com/a.png".to_string(),
+        ] {
+            body.push_str(&img(&src));
+        }
+        let out = inline_local_images(&body, Some(dir.path()));
+        let mut rest = out.as_str();
+        let mut seen = 0;
+        while let Some(i) = rest.find(" src=\"") {
+            let v = &rest[i + 6..];
+            let j = v.find('"').unwrap();
+            let value = &v[..j];
+            assert!(
+                value.starts_with("http://")
+                    || value.starts_with("https://")
+                    || value.starts_with("data:image/"),
+                "계약 위반 src: {value}"
+            );
+            seen += 1;
+            rest = &v[j..];
+        }
+        // 남은 src 는 원격 하나 + 인라인 둘이어야 한다 — 0 이면 위 단정이 한 번도
+        // 안 돌고 초록이 된다.
+        assert_eq!(seen, 3, "got: {out}");
+    }
+
+    // ── sanitize 단계의 스킴 판정 (허용목록을 값으로 못박는다) ──────────────────
+
+    /// 허용 스킴은 `http`·`https`·`mailto` 셋이다. `data:`·`file:` 은 **안 넣는다** —
+    /// ammonia 의 `url_schemes` 는 속성별로 나뉘지 않아 `img src` 를 열면 `a href` 도
+    /// 같이 열린다. 로컬 이미지는 그 스킴 없이도 뜬다(위 인라이너가 상대 경로·스킴
+    /// 없는 절대 경로를 직접 읽는다). 그래서 이 셋으로 충분하고, 넓히면 얻는 것 없이
+    /// `href` 표면만 넓어진다.
+    #[test]
+    fn sanitize_keeps_only_http_https_mailto_schemes() {
+        for (src, kept) in [
+            ("https://example.com/a.png", true),
+            ("http://example.com/a.png", true),
+            ("data:image/png;base64,AAAA", false),
+            ("file:///etc/passwd", false),
+            ("javascript:alert(1)", false),
+        ] {
+            let out = sanitize_html(&format!(r#"<img src="{src}" alt="a">"#));
+            // ★ img 가 살아남았다는 것을 먼저 못박는다(빈 출력이면 아래가 무의미하다).
+            assert!(
+                out.contains("<img"),
+                "src={src} 에서 img 가 사라졌다: {out}"
+            );
+            assert_eq!(
+                out.contains(src),
+                kept,
+                "src={src} 의 판정이 바뀌었다: {out}"
+            );
+        }
+    }
+
+    /// 스킴 **없는** 경로는 위 허용목록과 무관하게 통과한다 — 그것이 로컬 이미지가
+    /// 인라이너까지 도달하는 경로다. 이 줄이 깨지면 인라이너는 볼 것이 없어진다.
+    #[test]
+    fn sanitize_keeps_scheme_less_paths_for_the_inliner() {
+        for src in ["local.svg", "/tmp/x/local.svg", "./sub/a.png"] {
+            let out = sanitize_html(&format!(r#"<img src="{src}" alt="a">"#));
+            assert!(out.contains(src), "src={src} 가 사라졌다: {out}");
+        }
     }
 }
