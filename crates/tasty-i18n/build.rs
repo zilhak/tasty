@@ -26,13 +26,44 @@
 //! - 디렉토리(`../../lang`)를 걸면 **새 파일이 생겼을 뿐인데** 재빌드가 돈다. 새 파일은
 //!   `include_str!` 이 집기 전까지 산출물에 안 들어가므로 그 재빌드는 값이 아니라 비용이다.
 //!
-//! ⇒ 파일 셋을 이름으로 거는 지금 형태가 셋 중 유일하게 **세 팔 모두 옳다.** 목록이
-//! `src/lib.rs` 의 `include_str!` 팔과 같아야 한다는 것은
-//! `tests/i18n_key_parity.rs` 의 `builtin_codes_match_the_language_files_on_disk` 가
-//! 정본과 디스크를 견주는 쪽에서 받친다.
+//! ⇒ 파일 셋을 이름으로 거는 지금 형태가 셋 중 유일하게 **세 팔 모두 옳다.**
+//!
+//! # 그 목록을 여기 다시 적지는 않는다
+//!
+//! 한때 여기에 `["en", "ko", "ja"]` 가 손으로 적혀 있었고, `src/lib.rs` 의 목록과 같아야
+//! 한다는 것을 지키는 것이 없었다. 넷째 언어를 넣으며 여기를 빠뜨리면 그 언어의 lang
+//! 파일만 고쳤을 때 rlib 이 재컴파일되지 않고 **stale 번역 테이블**이 남는다 — 이 파일이
+//! 막겠다고 적어 둔 바로 그 실패다.
+//!
+//! 그래서 `lang/` 에 **실재하는 파일**을 그대로 건다. 위 표의 "디렉토리 감시" 와는 다르다 —
+//! 거는 것은 여전히 파일 이름들이고 디렉토리 자체가 아니라서, 새 파일이 생겼다는 것만으로는
+//! 재빌드가 돌지 않는다(그 팔의 값은 위에서 이미 쟀다). 목록이 `src/lib.rs` 의 정본과
+//! 맞는지는 `tests/i18n_key_parity.rs` 의 `builtin_codes_match_the_language_files_on_disk`
+//! 가 정본과 디스크를 견주는 쪽에서 받친다.
+
+use std::path::Path;
 
 fn main() {
-    for code in ["en", "ko", "ja"] {
-        println!("cargo:rerun-if-changed=../../lang/{code}.toml");
+    let dir = Path::new("../../lang");
+    let entries = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("lang 디렉토리를 못 읽었다 ({}): {e}", dir.display()));
+
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".toml"))
+        .collect();
+    names.sort();
+
+    // 하나도 못 걸면 `rerun-if-changed` 가 전혀 안 나가고, 그러면 **무변경 빌드마다**
+    // 이 스크립트가 다시 돌아 크레이트가 재빌드된다(위 표의 "main() 비움" 칸). 조용히
+    // 그 상태로 떨어지지 않도록 여기서 멈춘다 — 어차피 `include_str!` 도 못 읽는다.
+    assert!(
+        !names.is_empty(),
+        "lang/*.toml 이 하나도 없다 — 감시할 것이 없으면 무변경 빌드마다 재빌드가 돈다"
+    );
+
+    for name in names {
+        println!("cargo:rerun-if-changed=../../lang/{name}");
     }
 }

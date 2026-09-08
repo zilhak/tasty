@@ -43,9 +43,30 @@ static TRANSLATIONS: OnceLock<Translations> = OnceLock::new();
 /// reads it once after boot to surface the English-fallback warning as a toast.
 static LOAD_REPORT: OnceLock<LoadReport> = OnceLock::new();
 
-/// Language codes embedded in the binary (`lang/{code}.toml`, kept in sync with
-/// the `build.rs` rerun list). These never need a pack directory.
-pub const BUILTIN_CODES: [&str; 3] = ["en", "ko", "ja"];
+/// 내장 언어를 **한 자리**에서 선언한다 — 코드 목록과 `include_str!` 팔이 같은 줄에서
+/// 나온다.
+///
+/// 한때 이 둘은 손으로 적힌 두 벌이었고, 같아야 한다는 것을 지키는 것이 없었다. 넷째
+/// 언어를 넣으며 한쪽만 고치면 `is_builtin_code("fr") == true` 인데
+/// `builtin_toml("fr") == None` 이 되고, 그 갈림은 조용하다 — "내장이라고 말하는 것" 과
+/// "실제로 바이너리에 박힌 것" 이 다른 채로 돈다. `include_str!` 은 리터럴 경로를
+/// 요구해서 상수로는 못 뽑고, 매크로는 그 요구를 지키면서 목록을 하나로 만든다.
+macro_rules! builtin_languages {
+    ($($code:literal),+ $(,)?) => {
+        /// Language codes embedded in the binary (`lang/{code}.toml`).
+        /// These never need a pack directory.
+        pub const BUILTIN_CODES: [&str; [$($code),+].len()] = [$($code),+];
+
+        fn builtin_toml(code: &str) -> Option<&'static str> {
+            match code {
+                $($code => Some(include_str!(concat!("../../../lang/", $code, ".toml"))),)+
+                _ => None,
+            }
+        }
+    };
+}
+
+builtin_languages!("en", "ko", "ja");
 /// Manifest file name inside a language pack directory.
 pub const PACK_FILE_NAME: &str = "pack.toml";
 
@@ -58,15 +79,6 @@ const UNKNOWN_LANG_DIR: &str = "<tasty home>/lang";
 /// Whether `code` is one of the embedded languages.
 pub fn is_builtin_code(code: &str) -> bool {
     BUILTIN_CODES.contains(&code)
-}
-
-fn builtin_toml(code: &str) -> Option<&'static str> {
-    match code {
-        "en" => Some(include_str!("../../../lang/en.toml")),
-        "ko" => Some(include_str!("../../../lang/ko.toml")),
-        "ja" => Some(include_str!("../../../lang/ja.toml")),
-        _ => None,
-    }
 }
 
 /// The user language directory (`~/.tasty/lang`). `None` when no data root can
