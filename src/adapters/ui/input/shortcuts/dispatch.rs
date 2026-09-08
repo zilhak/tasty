@@ -336,6 +336,7 @@ impl MainView {
                 // 새 탭 markdown 열기: surface_id 없이 file-open 팝업(plugin 이 새 탭 dispatch).
                 state.enqueue_convert_input_popup(engine, "markdown", None);
             }
+            "open_explorer" => Self::open_explorer_tab(state),
             "convert_surface" => {
                 if let Some(sid) = state.focused_surface_id(engine) {
                     state.dialogs.convert_popup = Some(sid);

@@ -964,3 +964,113 @@ fn shortcut_new_workspace_stays_normal_when_categories_off() {
     });
     assert_eq!(category, Some(Some(crate::model::NORMAL_CATEGORY_ID)));
 }
+
+// ── 목록과 실행 테이블의 대조 ────────────────────────────────────
+//
+// 이 모듈의 두 시험은 **소스 텍스트를 읽는다.** 재는 대상이 `match` 의 arm 집합인데
+// 그것을 값으로 꺼내는 길이 없어서다(arm 을 상수 배열에서 유도하도록 바꾸면 그 배열이
+// 또 하나의 사본이 된다 — 이 티켓이 고친 병이 그것이다). 읽는 자리를 함수 본문으로
+// 좁히고 arm 들여쓰기에 앵커를 걸어 주석·문자열이 섞이지 않게 한다.
+
+/// `dispatch_action_by_id` 의 match arm 이 아는 action_id 집합.
+fn dispatchable_action_ids() -> Vec<String> {
+    const SRC: &str = include_str!("dispatch.rs");
+    let start = SRC
+        .find("fn dispatch_action_by_id")
+        .expect("dispatch_action_by_id 를 못 찾았다");
+    let end = SRC[start..]
+        .find("            other => {")
+        .expect("unknown-action arm 을 못 찾았다")
+        + start;
+    arm_ids(&SRC[start..end], "            ")
+}
+
+/// `handle_double_tap_shortcut` 의 등록 목록(`bindings_to_check`)과 실행 arm.
+fn double_tap_registered_and_armed() -> (Vec<String>, Vec<String>) {
+    const SRC: &str = include_str!("double_tap.rs");
+    let list_start = SRC
+        .find("let bindings_to_check")
+        .expect("bindings_to_check 를 못 찾았다");
+    let list_end = SRC[list_start..].find("];").expect("목록 끝") + list_start;
+    let registered: Vec<String> = SRC[list_start..list_end]
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let rest = l.strip_prefix("(&kb.")?;
+            let (_, after) = rest.split_once(", \"")?;
+            Some(after.split('"').next()?.to_string())
+        })
+        .collect();
+
+    let loop_start = SRC
+        .find("for (bindings, action) in &bindings_to_check")
+        .expect("실행 루프를 못 찾았다");
+    let loop_end = SRC[loop_start..]
+        .find("                    other => {")
+        .expect("arm 없음 갈래를 못 찾았다")
+        + loop_start;
+    let armed = arm_ids(&SRC[loop_start..loop_end], "                    ");
+    (registered, armed)
+}
+
+/// `<indent>"id" =>` 꼴 arm 의 id 를 뽑는다. 들여쓰기를 정확히 요구해 중첩 match 나
+/// 주석 안의 비슷한 문자열을 안 집는다.
+fn arm_ids(body: &str, indent: &str) -> Vec<String> {
+    body.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix(indent)?;
+            if rest.starts_with(' ') {
+                return None;
+            }
+            let rest = rest.strip_prefix('"')?;
+            let (id, after) = rest.split_once('"')?;
+            after.trim_start().starts_with("=>").then(|| id.to_string())
+        })
+        .collect()
+}
+
+/// 명령 팔레트에 뜨는 액션은 전부 실행 arm 이 있다.
+///
+/// 목록은 SoT 순회로 자동으로 늘고 실행은 손으로 늘려야 해서, 새 필드가 들어올 때마다
+/// 격차가 벌어졌다 — 이 시험을 넣기 직전 값이 **14** 였다(고르면 키캡까지 보여 주고는
+/// `tracing::warn!` 한 줄만 남기고 아무 일도 안 했다).
+#[test]
+fn every_listed_palette_action_has_an_execution_arm() {
+    let runnable = dispatchable_action_ids();
+    assert!(
+        runnable.len() > 40,
+        "arm 을 {}개밖에 못 읽었다 — 파싱이 깨졌다",
+        runnable.len()
+    );
+    let missing: Vec<&str> = crate::state::command_palette::all_commands(&[])
+        .iter()
+        .filter_map(|c| match c {
+            crate::state::command_palette::PaletteCommand::Host { id, .. } => Some(*id),
+            crate::state::command_palette::PaletteCommand::Plugin { .. } => None,
+        })
+        .filter(|id| !runnable.iter().any(|r| r == id))
+        .collect();
+    assert!(missing.is_empty(), "팔레트에 뜨지만 실행 불가: {missing:?}");
+}
+
+/// double-tap 등록 목록과 실행 arm 이 양방향으로 일치한다.
+///
+/// 두 손 나열이 같은 함수 안에서 갈라져 있어 한쪽만 늘려도 컴파일이 통과했다. 이 시험을
+/// 넣기 직전 값은 등록만 1(`open_explorer` — 키를 먹고 아무 일도 안 했다) ·
+/// arm 만 4(`restore_closed`/`quit`/`quit_immediate`/`quit_minimize` — 죽은 코드)였다.
+#[test]
+fn double_tap_registration_and_arms_agree() {
+    let (registered, armed) = double_tap_registered_and_armed();
+    assert!(
+        registered.len() > 20 && armed.len() > 20,
+        "등록 {} · arm {} — 파싱이 깨졌다",
+        registered.len(),
+        armed.len()
+    );
+    let unarmed: Vec<&String> = registered.iter().filter(|r| !armed.contains(r)).collect();
+    let unregistered: Vec<&String> = armed.iter().filter(|a| !registered.contains(a)).collect();
+    assert!(
+        unarmed.is_empty() && unregistered.is_empty(),
+        "등록됐는데 실행 arm 없음: {unarmed:?} · arm 인데 등록 안 됨: {unregistered:?}"
+    );
+}

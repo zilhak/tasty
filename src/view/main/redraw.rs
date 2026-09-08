@@ -411,7 +411,7 @@ impl MainView {
                     // 있어서는 안 되는 상태에 대한 UI 는 평생 안 보이거나, 보이는 날엔
                     // 사용자가 할 수 있는 일이 없다. 여기 남는 기록은
                     // `dispatch_action_by_id` 안의 `tracing::warn!` 이고, 어긋남 자체는
-                    // 런타임이 아니라 빌드에서 잡아야 할 것이다.
+                    // `shortcuts::tests` 의 목록↔arm 대조가 빌드에서 잡는다.
                     self.dispatch_action_by_id(id);
                 }
                 crate::state::command_palette::PaletteCommand::Plugin {

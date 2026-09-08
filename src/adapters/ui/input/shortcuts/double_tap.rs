@@ -89,6 +89,16 @@ impl MainView {
             (&kb.close_active, "close_active"),
             (&kb.next_tab, "next_tab"),
             (&kb.prev_tab, "prev_tab"),
+            // 아래 넷은 실행 arm 이 **이미 있었는데** 이 목록에 없어 도달하지 못했다.
+            // 종료 계열을 double-tap 에 두는 것이 위험해 보일 수 있으나, 이 목록이 정하는
+            // 것은 "그런 조합이 존재하는가" 가 아니라 **사용자가 저장한 값을 존중하는가**
+            // 다 — 네 프리셋 기본값에 double-tap 은 하나도 없고, 설정 화면은 이미 이
+            // 필드들에 double-tap 녹화를 허용한다. 빼 두면 사용자가 저장한 조합이 아무
+            // 신호 없이 무시되고, 그것이 이 티켓이 고치는 결함과 같은 형태다.
+            (&kb.restore_closed, "restore_closed"),
+            (&kb.quit, "quit"),
+            (&kb.quit_immediate, "quit_immediate"),
+            (&kb.quit_minimize, "quit_minimize"),
         ];
 
         let engine = &mut self.core_state;
@@ -208,6 +218,9 @@ impl MainView {
                         self.state
                             .enqueue_convert_input_popup(engine, "markdown", None);
                     }
+                    "open_explorer" => {
+                        Self::open_explorer_tab(&mut self.state);
+                    }
                     "convert_surface" => {
                         if let Some(sid) = self.state.focused_surface_id(engine) {
                             self.state.dialogs.convert_popup = Some(sid);
@@ -261,7 +274,17 @@ impl MainView {
                     "prev_tab" => {
                         self.state.prev_tab_in_pane(engine);
                     }
-                    _ => {}
+                    other => {
+                        // 등록됐는데 실행 arm 이 없다. **키를 먹지 않는다** — 소비 여부는
+                        // "매칭됐는가" 가 아니라 "실행했는가" 여야 한다. 예전에는 여기가
+                        // `_ => {}` 였고 바로 아래에서 무조건 소비해서, 사용자가 지정한
+                        // 조합이 아무 일도 안 하면서 다른 경로로도 못 가는 상태가 됐다
+                        // (로그조차 없었다).
+                        tracing::warn!(
+                            "double-tap: registered action '{other}' has no execution arm"
+                        );
+                        continue;
+                    }
                 }
                 return true;
             }

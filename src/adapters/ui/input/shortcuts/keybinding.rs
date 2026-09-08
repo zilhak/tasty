@@ -463,8 +463,8 @@ impl MainView {
         false
     }
 
-    /// 변환 계열: open_markdown / convert_surface / convert_to_markdown /
-    /// convert_to_explorer.
+    /// 변환 계열: open_markdown / open_explorer / convert_surface /
+    /// convert_to_markdown / convert_to_explorer.
     fn match_convert_bindings(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -477,6 +477,10 @@ impl MainView {
             // (plugin 이 file_handler.dispatch 로 새 탭). host 는 kind 이름을 몰라도
             // registry `convert_input_popup` 데이터로 그 kind plugin 팝업을 연다.
             state.enqueue_convert_input_popup(engine, "markdown", None);
+            return true;
+        }
+        if matches_any_binding(&kb.open_explorer, key, mods) {
+            Self::open_explorer_tab(state);
             return true;
         }
         if matches_any_binding(&kb.convert_surface, key, mods) {
@@ -738,6 +742,23 @@ impl MainView {
             return true;
         }
         false
+    }
+
+    /// 새 탭으로 탐색기 열기 — 단발 키·명령 팔레트·double-tap 이 공유한다.
+    ///
+    /// `open_markdown` 이 file-open 팝업을 여는 것과 달리 팝업이 없다. markdown 은 파일
+    /// 하나를 골라야 하지만 탐색기는 디렉토리를 **자기가** 정한다 — 이 kind 는
+    /// `convert_input_popup` 이 없고(host builtin), 경로 미지정이면 홈에서 연다
+    /// (`core/surface_registry/builtins.rs` 의 `resolve_root`). `Intent::NewTab` 을 쓰는
+    /// 것은 CLI 의 `new tab --type explorer` 와 같은 경로를 타기 위해서다.
+    pub(crate) fn open_explorer_tab(state: &mut crate::state::AppState) {
+        state.dispatch_intent(
+            crate::intent::Intent::NewTab {
+                kind: Some("explorer".to_string()),
+                params: serde_json::json!({}),
+            }
+            .from_user_shortcut("open_explorer"),
+        );
     }
 
     /// DAG 목록 popup 토글 — 키 경로와 명령 팔레트가 공유한다.

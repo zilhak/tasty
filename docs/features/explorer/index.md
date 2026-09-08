@@ -106,6 +106,8 @@ explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추�
 
 세 진입점(직접 키 매칭 `keybinding.rs`, 더블탭 `double_tap.rs`, action-id/Command Palette `dispatch.rs`)이 동일 효과를 낸다. 설정 UI 는 Keybindings 탭의 **Explorer** 서브탭.
 
+**새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발화하므로 CLI 의 `new tab --type explorer` 와 같은 경로이고, 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션도 위 세 진입점 전부에 배선돼 있다.
+
 ### 폰트
 
 Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한다 (`appearance.plugin_font_overrides["explorer"]`, `effective_font_for_kind("explorer")` 가 읽음).
