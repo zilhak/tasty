@@ -354,6 +354,13 @@ mod unix_wire {
             if level == libc::SOL_SOCKET && ty == libc::SCM_RIGHTS {
                 // SAFETY: header 크기 계산.
                 let header_len = unsafe { libc::CMSG_LEN(0) } as usize;
+                // 이유: `cmsghdr.cmsg_len` 의 타입이 플랫폼마다 다르다 — glibc-linux 는
+                // `size_t`(= usize)라 이 캐스트가 항등이지만, **BSD 계열(macOS 포함)과
+                // musl 은 `socklen_t`(u32)** 라 캐스트가 실제로 넓힌다. clippy 는 지금
+                // 컴파일 중인 타깃 하나만 보므로 linux 에서만 "불필요" 라고 말한다 —
+                // 그 제안을 따르면 macOS 컴파일이 깨진다(실측: 같은 파일을
+                // `--target aarch64-apple-darwin` 으로 돌리면 이 경고가 안 난다).
+                #[allow(clippy::unnecessary_cast)]
                 let data_len = (len as usize).saturating_sub(header_len);
                 let n_fds = data_len / mem::size_of::<libc::c_int>();
                 // SAFETY: CMSG_DATA는 cmsg 안의 data 시작 포인터.

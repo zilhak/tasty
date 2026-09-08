@@ -180,9 +180,8 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
 /// 보조 핸들 채널이 활성화돼 있으면 connect 한다. 실패는 fatal 이 아니라 warn 만 —
 /// 보조 채널을 안 쓰는 plugin 이라면 그대로 동작해야 한다 (shared buffer 기능만 비활성).
 fn connect_handle_channel(env: &PluginEnv) -> Option<HandleClient> {
-    if env.handle_endpoint.is_none() {
-        return None;
-    }
+    // endpoint 가 없으면 이 plugin 은 보조 채널을 안 쓴다 — connect 시도 자체를 안 한다.
+    env.handle_endpoint.as_ref()?;
     match HandleClient::connect(env) {
         Ok(c) => {
             tracing::info!("plugin handle channel connected");
