@@ -360,6 +360,33 @@ mod tests {
         assert!(!policy.combos.is_empty(), "policy should not be empty");
     }
 
+    /// 사이드바 토글·복사 모드 콤보는 host 가 가져간다.
+    ///
+    /// 이 셋은 `GENERAL_BINDING_FIELDS` 밖에 있던 동안 정책에 안 올랐고, 그래서
+    /// markdown/html webview 에 포커스가 있으면 `ctrl+b` · `ctrl+shift+b` ·
+    /// `ctrl+shift+space` 가 페이지로 갔다 — 사이드바 단축키가 그 표면에서만 죽었다.
+    /// 페이지 예약(`PAGE_RESERVED_FIELDS`)에 넣지 않은 이유는 그 목록이 **모든 문서가
+    /// 자기 구현을 갖는 문서 액션**(찾기·복사·잘라내기·붙여넣기·전체선택)이기 때문이다.
+    /// 사이드바와 복사 모드는 창 자체의 동작이라 페이지가 대신 수행할 수 없다.
+    #[test]
+    fn window_chrome_combos_are_claimed() {
+        let kb = kb();
+        let policy = HostShortcutPolicy::from_sources(&kb, Vec::new());
+        for field in [
+            "toggle_sidebar",
+            "toggle_sidebar_collapse",
+            "enter_copy_mode",
+        ] {
+            for binding in kb.get_bindings(field).unwrap_or(&[]) {
+                assert!(
+                    policy.combos.iter().any(|c| c == binding),
+                    "{binding} ({field}) 가 정책에 없다: {:?}",
+                    policy.combos
+                );
+            }
+        }
+    }
+
     /// quick-switch 축은 `<modifier>+<slot key>` 로 합성돼 정책에 오른다
     /// (workspace 전환이 "완료 확인 방법" 의 측정 대상 3종 중 하나다).
     #[test]

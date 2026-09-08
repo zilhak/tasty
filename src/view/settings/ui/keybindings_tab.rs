@@ -176,6 +176,16 @@ pub fn draw_keybindings_tab(
                         None,
                     ),
                     (
+                        "toggle_sidebar",
+                        "settings.keybindings.toggle_sidebar_label",
+                        None,
+                    ),
+                    (
+                        "toggle_sidebar_collapse",
+                        "settings.keybindings.toggle_sidebar_collapse_label",
+                        None,
+                    ),
+                    (
                         "fullscreen_stage_exit",
                         "settings.keybindings.fullscreen_stage_exit_label",
                         Some("settings.keybindings.fullscreen_stage_exit_desc"),
@@ -416,6 +426,11 @@ pub fn draw_keybindings_tab(
                     (
                         "screenshot_to_clipboard",
                         "settings.keybindings.screenshot_to_clipboard_label",
+                        None,
+                    ),
+                    (
+                        "enter_copy_mode",
+                        "settings.keybindings.enter_copy_mode_label",
                         None,
                     ),
                 ],

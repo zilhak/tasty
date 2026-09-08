@@ -50,6 +50,14 @@ impl KeybindingSettings {
             "settings.keybindings.close_workspace_label",
         ),
         (
+            "toggle_sidebar",
+            "settings.keybindings.toggle_sidebar_label",
+        ),
+        (
+            "toggle_sidebar_collapse",
+            "settings.keybindings.toggle_sidebar_collapse_label",
+        ),
+        (
             "toggle_categories_collapsed",
             "settings.keybindings.toggle_categories_collapsed_label",
         ),
@@ -106,6 +114,10 @@ impl KeybindingSettings {
         ("copy_path", "settings.keybindings.copy_path_label"),
         ("cut", "settings.keybindings.cut_label"),
         ("select_all", "settings.keybindings.select_all_label"),
+        (
+            "enter_copy_mode",
+            "settings.keybindings.enter_copy_mode_label",
+        ),
         (
             "explorer_refresh",
             "settings.keybindings.explorer_refresh_label",
@@ -198,6 +210,7 @@ impl KeybindingSettings {
             "copy_path" => self.copy_path.as_slice(),
             "cut" => self.cut.as_slice(),
             "select_all" => self.select_all.as_slice(),
+            "enter_copy_mode" => self.enter_copy_mode.as_slice(),
             "explorer_refresh" => self.explorer_refresh.as_slice(),
             "explorer_go_up" => self.explorer_go_up.as_slice(),
             "paste" => self.paste.as_slice(),
@@ -261,6 +274,7 @@ impl KeybindingSettings {
             "copy_path" => &mut self.copy_path,
             "cut" => &mut self.cut,
             "select_all" => &mut self.select_all,
+            "enter_copy_mode" => &mut self.enter_copy_mode,
             "explorer_refresh" => &mut self.explorer_refresh,
             "explorer_go_up" => &mut self.explorer_go_up,
             "paste" => &mut self.paste,

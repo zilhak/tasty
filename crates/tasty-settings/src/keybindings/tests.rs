@@ -152,7 +152,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 55);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 58);
 }
 
 #[test]
@@ -623,8 +623,8 @@ fn quick_switch_fields_not_in_general_bindings() {
             "{id} 는 콤보가 아닌 raw 키이므로 GENERAL_BINDING_FIELDS 에 없어야 함"
         );
     }
-    // count 는 여전히 55.
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 55);
+    // count 는 여전히 전체 개수와 같다.
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 58);
 }
 
 // ── 카테고리 축 next/prev raw 키 (S-9) ─────────────────────────────
@@ -846,4 +846,85 @@ fullscreen_stage_exit = []
 "#;
     let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
     assert!(kb.fullscreen_stage_exit.is_empty());
+}
+
+// ── 콤보 필드 ↔ SoT 정합 ──────────────────────────────────────────
+
+/// 직렬화 결과에서 **문자열 배열인 최상위 키**를 뽑아 콤보 필드 목록을 만든다.
+///
+/// 좌변을 손으로 나열하지 않는 것이 요점이다 — 새 콤보 필드가 늘면 이 목록도 같이
+/// 는다. 제외는 둘뿐이고 둘 다 이유가 다르다:
+///
+/// - `*_switch_slot_keys` 셋은 문자열 배열이지만 콤보가 아니라 raw 키다(이유는 아래
+///   `quick_switch_fields_not_in_general_bindings` 와 같다).
+/// - `script_bindings` 는 `Vec<ScriptBinding>` 이라 형태부터 다르다(ADR-0031: 스크립트는
+///   N 개 동적이라 고정 액션 필드와 별개 표현이다). 기본값이 비어 있으면 "문자열 배열"
+///   판정을 공허하게 통과하므로 형태로는 안 갈리고 이름으로 뺀다.
+///
+/// 기본값이 빈 콤보 필드(`open_explorer` 등)를 놓치지 않으려고 "비어 있지 않은 배열"
+/// 로는 거르지 않는다 — 그렇게 하면 이 시험이 가장 잘 빠지는 자리를 못 본다.
+fn combo_field_ids(kb: &KeybindingSettings) -> Vec<String> {
+    const NOT_COMBO_FIELDS: &[&str] = &[
+        "tab_switch_slot_keys",
+        "workspace_switch_slot_keys",
+        "category_switch_slot_keys",
+        "script_bindings",
+    ];
+    let value = toml::Value::try_from(kb).expect("KeybindingSettings 직렬화");
+    let table = value.as_table().expect("최상위는 테이블");
+    table
+        .iter()
+        .filter(|(k, _)| !NOT_COMBO_FIELDS.contains(&k.as_str()))
+        .filter(|(_, v)| {
+            v.as_array()
+                .is_some_and(|a| a.iter().all(|item| item.is_str()))
+        })
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
+/// 콤보 필드는 전부 SoT 에 있어야 한다.
+///
+/// SoT 밖의 콤보 필드는 "동작은 하는데 아무 소비자도 못 보는" 상태가 된다 —
+/// webview 키 포워딩(`HostShortcutPolicy`)이 그 콤보를 host 것으로 안 세어 페이지가
+/// 먹고, 충돌 검사가 그 필드를 후보로 안 봐서 같은 키가 두 액션에 걸린 채 저장된다.
+#[test]
+fn every_combo_field_is_in_the_sot() {
+    let kb = KeybindingSettings::preset_tasty();
+    let missing: Vec<String> = combo_field_ids(&kb)
+        .into_iter()
+        .filter(|id| {
+            KeybindingSettings::GENERAL_BINDING_FIELDS
+                .iter()
+                .all(|(fid, _)| fid != id)
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "콤보 필드인데 GENERAL_BINDING_FIELDS 에 없다: {missing:?}"
+    );
+}
+
+/// 사용자가 TOML 에 직접 적어 둔 콤보가 이 3필드의 기본값을 이긴다.
+///
+/// 등록 전에는 이 3필드가 SoT 밖이라 `remove_conflicts_from_defaults` 의 양쪽 순회에서
+/// 다 빠져 아무 일도 안 일어났다. 등록하면서 **다른 55개와 같은 취급**을 받게 했다 —
+/// 사용자가 명시한 값이 기본값을 이기는 것이 이 함수의 규칙이고, 이 셋만 예외로 두면
+/// 같은 콤보가 두 액션에 걸린 채 남는다. 그 대가로 `ctrl+b` 를 이미 다른 데 쓰던
+/// 사용자는 업그레이드 첫 로드에서 사이드바 접기 기본값을 잃는다.
+#[test]
+fn a_user_combo_beats_the_new_sidebar_defaults() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    assert_eq!(kb.toggle_sidebar_collapse, vec!["ctrl+b".to_string()]);
+    kb.new_tab = vec!["ctrl+b".to_string()];
+
+    let existing: HashSet<String> = ["new_tab".to_string()].into_iter().collect();
+    kb.remove_conflicts_from_defaults(&existing);
+
+    assert!(
+        kb.toggle_sidebar_collapse.is_empty(),
+        "사용자가 적은 ctrl+b 가 이겨야 한다: {:?}",
+        kb.toggle_sidebar_collapse
+    );
+    assert_eq!(kb.new_tab, vec!["ctrl+b".to_string()]);
 }
