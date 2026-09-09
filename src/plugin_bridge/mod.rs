@@ -148,9 +148,9 @@ impl MeshForwardCommon {
         if self.blank_warned || !self.bootstrap_sent {
             return;
         }
-        if !self
+        if self
             .bootstrap_at
-            .is_some_and(|t| t.elapsed() >= BLANK_MESH_GRACE)
+            .is_none_or(|t| t.elapsed() < BLANK_MESH_GRACE)
         {
             return;
         }
