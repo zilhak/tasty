@@ -54,6 +54,8 @@ fn modal(ui: &mut egui::Ui, theme: &Theme, title: &str, body: &str, extra: Optio
         h,
         ContentInset::INSET,
         TitleButtons::CLOSE,
+        // 뷰포트를 점유하는 centered 표면 → modal 그림자(ADR-0254).
+        Some(theme.shadow_modal()),
         |ui| {
             ui.label(
                 egui::RichText::new(body)

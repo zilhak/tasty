@@ -139,6 +139,10 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
         PANEL_H,
         ContentInset::INSET,
         TitleButtons::FULLSCREEN_AND_CLOSE,
+        // 그림자 없음 — 알림 패널은 타이틀바를 갖고 사용자가 옮기는 창처럼 동작해
+        // anchored 도 centered 도 아니다(ADR-0254 의 세 번째 갈래). 본체
+        // `popup/draw.rs::SHADOWLESS_POPUPS` 와 같은 판정이다.
+        None,
         |ui| {
             let unread = if empty {
                 0

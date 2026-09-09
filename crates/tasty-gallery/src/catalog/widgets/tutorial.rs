@@ -465,6 +465,10 @@ fn topic_row(
 }
 
 /// 주제 목록 팝업 (360px, bg-panel, radius-8). `scaled` 시 4개 주제 + 완료 표시.
+///
+/// 본체 `tutorial_topics` 는 트리거에 붙지 않고 뷰포트를 점유하는 centered 표면이라
+/// SCOPE RULE(ADR-0254) 상 **modal** 그림자다 — 트리거 옆에 뜨는 [`callout`](callout)
+/// 과 갈래가 다르다.
 fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
@@ -473,7 +477,7 @@ fn topic_popup(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius_lg.value())
-        .shadow(theme.shadow_popover().to_egui())
+        .shadow(theme.shadow_modal().to_egui())
         .show(ui, |ui| {
             ui.set_width(POPUP_W.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);

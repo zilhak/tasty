@@ -142,6 +142,12 @@ impl ContentInset {
 /// `total_h` 로 높이를 직접 받아 popup frame 을 그린다 (높이 계산은 호출부 책임).
 ///
 /// `paint` 는 콘텐츠 영역에 묶인 child Ui 를 받는다.
+///
+/// `shadow` 는 셸 **아래** 깔리는 lift 그림자다. 호출부가 넘기는 이유는 SCOPE RULE
+/// (ADR-0254)의 갈래가 popup 마다 다르기 때문이다 — 본체 `PopupManager` 도 같은 자리를
+/// popup id 로 갈라(`adapters/ui/popup/draw.rs::popup_shadow`) 알림 패널에는 그림자를
+/// 안 그린다. 여기서 modal 을 못 박으면 그 세 번째 갈래를 전시하는 specimen 이 본체와
+/// 어긋난다.
 #[allow(clippy::too_many_arguments)] // reason: popup frame 은 chrome 파라미터가 본래 많다.
 pub fn draw(
     ui: &mut egui::Ui,
@@ -151,6 +157,7 @@ pub fn draw(
     total_h: LogicalPx,
     inset: ContentInset,
     buttons: TitleButtons,
+    shadow: Option<tasty_type_appearance::theme::ShadowToken>,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
     let (frame_rect, _) = ui.allocate_exact_size(
@@ -166,6 +173,14 @@ pub fn draw(
     let border: egui::Color32 = theme.surface_active().into();
     let text_color: egui::Color32 = theme.text_primary().into();
 
+    // 배경보다 먼저 — 그림자는 셸 아래에 깔린다(본체 `popup/draw.rs` 와 같은 순서).
+    if let Some(shadow) = shadow {
+        painter.add(
+            shadow
+                .to_egui()
+                .as_shape(frame_rect, theme.corner_radius.value()),
+        );
+    }
     painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
     painter.rect_stroke(
         frame_rect,
