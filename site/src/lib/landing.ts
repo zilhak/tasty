@@ -110,8 +110,8 @@ export const KO: Copy = {
   agentsTab: "작업 관리",
 
   platformKicker: "플랫폼",
-  platformTitle: "익숙한 OS에서 그대로 시작하세요",
-  platformBody: "Windows, macOS, Linux를 지원합니다. 내 컴퓨터에 맞는 버전을 설치하고, 쓰던 셸과 개발 도구로 작업하세요.",
+  platformTitle: "모든 OS에서 동일한 환경을 사용하세요",
+  platformBody: "Windows, macOS, Linux에서 동일하게 동작하는 환경을 제공하는 것이 Tasty의 사용자 경험 원칙입니다. OS가 바뀌어도 같은 방식으로 터미널을 다루고, AI 에이전트와 함께 작업하세요.",
   stats: [["3", "운영체제"], ["GPU", "화면 렌더링"], ["3", "UI 언어"], ["MIT", "라이선스"]],
 
   ctaTitle: "다음 프로젝트는 Tasty에서 시작해 보세요",
@@ -172,8 +172,8 @@ export const EN: Copy = {
   agentsTab: "task coordinator",
 
   platformKicker: "Platforms",
-  platformTitle: "Start on the OS you already use",
-  platformBody: "Tasty runs on Windows, macOS, and Linux. Install the version for your computer and keep using your familiar shells and development tools.",
+  platformTitle: "Use the same environment on every OS",
+  platformBody: "Consistent behaviour across Windows, macOS, and Linux is a core principle of the Tasty user experience. Use your terminals and work with AI agents the same way, even when you switch operating systems.",
   stats: [["3", "operating systems"], ["GPU", "rendering"], ["3", "UI languages"], ["MIT", "license"]],
 
   ctaTitle: "Try your next project in Tasty",
