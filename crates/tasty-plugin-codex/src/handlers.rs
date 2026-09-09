@@ -614,12 +614,18 @@ pub(crate) fn handle_notify_caller<H: HostCall>(
 }
 
 /// `target` 이 host 트리에 여전히 존재하면(=이번 fire 가 process-exit 가 아니었다면)
-/// 형제 hook(codex-idle/process-exit)을 재등록한다. `surface.locate` 로 생존을
-/// 판별하는 이유: process-exit 로 fire 된 경우 host 는 hook 발화 직후 동기로 그
-/// surface 를 이미 닫으므로(`close_surface_by_id_no_snapshot`), 이 시점에 조회하면
-/// 사라져 있다 — 반대로 codex-idle 은 surface 가 살아있는 상태에서만 발생하는
-/// 이벤트라 재등록이 안전하다. 조회 실패(best-effort)는 "죽었다"로 간주해 재등록을
-/// 건너뛴다 — 좀비 hook 을 쌓는 것보다 드물게 재무장을 놓치는 쪽이 안전하다.
+/// 형제 hook(codex-idle/process-exit)을 재등록한다. process-exit 로 fire 된 경우 host
+/// 는 hook 발화 직후 동기로 그 surface 를 닫으므로(`close_surface_by_id_no_snapshot`)
+/// 이 시점엔 이미 사라져 있고, 반대로 codex-idle 은 surface 가 살아있는 상태에서만
+/// 나는 이벤트라 재등록이 안전하다. **조회 실패를 어느 쪽으로 볼지는
+/// [`surface_is_alive`] 가 한 곳에서 정한다** — 그 사유의 사본을 여기 두지 않는다.
+///
+/// ★ 짝 crate(claude)에 **본문이 같은** 함수가 있고 합치지 않았다. 이유는 부르는
+/// `register_notify_hooks` 가 crate 마다 다른 이벤트 목록·다른 command 문자열을 쓰기
+/// 때문이다 — 그것을 클로저로 주입하면 공용 함수에 남는 것이 `if 조건 { f() }` 뿐이라
+/// 아무 판정도 들고 가지 않는다. 갈릴 수 있는 판정(생존 읽기)은 이미
+/// [`surface_is_alive`] 한 벌이고, 이벤트 목록이 갈린 근거는 각자의 매니페스트
+/// `contributes.hook_events` 다(`tasty_plugin_agent_common` crate doc).
 fn rearm_if_still_alive<H: HostCall>(host: &H, caller: u32, target: u32, kind: &str) {
     if surface_is_alive(host, target) {
         register_notify_hooks(host, caller, target, kind);
@@ -700,6 +706,20 @@ pub(crate) fn handle_children<H: HostCall>(
     host_call(host, "terminal.children", Value::Object(cp))
 }
 
+/// 부모의 모든(또는 role 필터된) 자식에 텍스트를 broadcast — 호스트
+/// `terminal.broadcast` 로 위임.
+///
+/// ★ 짝 crate(claude)의 같은 함수와 **본문이 글자 그대로 같고**, 갈리는 것은 실패
+/// 문구의 카탈로그 키 하나뿐이다. 합치지 않은 이유: 남는 다섯 줄은 판정이 아니라
+/// 조립이고, 공용화하려면 문구와 `put_target_surface` 를 **둘 다** 주입해야 한다 —
+/// 뒤엣것을 주입하면 이 crate 안에 대상 surface 를 싣는 길이 둘이 되고, 그것이 지금
+/// 없애려는 종류의 표류다. 이 조립이 읽는 판정(대상 surface)은 이미
+/// [`tasty_plugin_agent_common::params::target_surface`] 한 벌이다.
+///
+/// 두 키의 ko 어미가 다른 것(`가 없다` vs `누락`)도 이 키 하나의 표류가 아니다 —
+/// 카탈로그마다 어미 규약이 통째로 다르다(`[codex.params]` 는 `missing_*` 5 중 4 가
+/// "가 없다", `[claude.params]` 는 11 중 10 이 "누락"). 이 키만 맞추면 자기 파일
+/// 안에서 그 키가 예외가 된다. en/ja 는 두 카탈로그가 이미 글자 그대로 같다.
 pub(crate) fn handle_broadcast(
     host: &HostHandle,
     params: &Value,
