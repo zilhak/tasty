@@ -1,10 +1,23 @@
-//! 게이트 임계 둘(cognitive **20** · 파일 SLOC **1000**)을 주장하는 자리가 소스의 값과
-//! 같은지 본다.
+//! 게이트 임계값을 주장하는 자리가 정본과 같은지 본다.
 //!
-//! 두 값의 정본은 각각 `clippy.toml` 의 `cognitive-complexity-threshold` 와
-//! `scripts/check-file-size.sh` 의 `THRESHOLD` 다. 둘 다 기계가 읽는 값인데, 그것을
-//! 평문으로 다시 적은 자리가 여럿이고 어느 것도 파생되지 않는다. 한쪽만 고치면
-//! 게이트는 새 값으로 돌고 문서는 옛 값을 말한다 — **둘 다 초록이다.**
+//! 좌변은 **값이 리터럴로 사는 게이트 전부**다([`GATES`]) — `clippy.toml` 의
+//! `cognitive-complexity-threshold`, `scripts/check-file-size.sh` 의 `THRESHOLD`,
+//! 그리고 셸 래칫 둘(`check-shared-walk-ratchet.sh` · `check-allow-reason.sh`)의 `CAP`.
+//! 전부 기계가 읽는 값인데, 그것을 평문으로 다시 적은 자리가 여럿이고 어느 것도
+//! 파생되지 않는다. 한쪽만 고치면 게이트는 새 값으로 돌고 문서는 옛 값을 말한다 —
+//! **둘 다 초록이다.** 값을 여기 안 적는 것은 이 문장 자신이 그 사본이 되기 때문이다.
+//!
+//! ## 래칫 둘은 나중에 들어왔다 — 그 사이에 실제로 낡았다 (2026-09-09)
+//!
+//! `check-shared-walk-ratchet.sh` 의 상한을 한 칸 내린 회차가 **그 수를 인용하던 산문
+//! 셋을 안 고쳤다.** 셋 다 현재형 주장이라 그 자리에서 거짓이 됐는데 **게이트는 하나도
+//! 안 깨졌다** — 이 가드가 존재하는 이유가 정확히 그 형태다. 그때 채널이 있던 사본은
+//! `tests/shared_walk_gate.rs` 의 `CAP=` 치환 하나뿐이었고 그것만 함께 빨개졌다.
+//! 형제 `check-allow-reason.sh` 의 `CAP` 도 같은 노출이라 함께 넣었다.
+//!
+//! 산문 셋 중 둘은 값을 지우는 쪽으로 고쳤다(문장의 요지가 값 없이 성립한다 — 아래
+//! `agent.rs` 와 같은 처방). 그래서 이 가드가 세는 좌변은 **남기기로 한 사본**뿐이다:
+//! 값을 안 드는 문장은 낡을 수가 없고, 그래서 볼 것도 없다.
 //!
 //! ## 좌변이 집합이 아니라 스칼라다 — 그래서 "양방향" 의 형태가 다르다
 //!
@@ -34,6 +47,20 @@
 //!    20            488          17          5       12      29.4%
 //!    1000          352          26          4       22      15.4%
 //! ```
+//!
+//! 래칫 둘은 뒤에 들어와 따로 쟀다(작업 트리 · 기점 `96235f0a0` + 이 lane 의 산문 수정).
+//! 같은 술어를 같은 창(±2 줄)으로 돌린 값이고, 재는 사본은 이 파일의 [`claims_value`]
+//! 를 셸로 옮긴 것이라 낱말 경계는 ASCII 다(아래 ★ 의 그 오차를 안 낸다):
+//!
+//! ```text
+//!               전수(줄)   어휘창(파일)   명부   거짓양성   정밀도
+//!    CAP(순회)      53           6          2        4       33.3%
+//!    CAP(allow)     10           3          2        1       66.7%
+//! ```
+//!
+//! 거짓양성 다섯은 전부 **같은 토큰의 다른 뜻**이다(단축키 항목 수 · 알파 비율 55% ·
+//! connecting 최악 ~55초 둘 · 수의 계보 ADR 이 든 상한 수열). 정밀도가 위 둘보다 높은
+//! 것은 어휘를 좁혀서가 아니라 좌변이 작아서다 — 어휘는 같은 폭으로 넓게 뒀다.
 //!
 //! ★ 앞선 판(이 가드를 지은 회차)의 표는 **갱신이 아니라 교체다.** 그 표의 `제외` 칸은
 //! 세어진 값이 아니었다 — `어휘창`(줄) 에서 `명부`(파일) 를 뺀 값이라 한 줄 안에 단위가
@@ -214,6 +241,8 @@ use std::path::PathBuf;
 /// 정본 — (파일, 값이 뒤에 붙는 접두).
 const COGNITIVE_SOURCE: (&str, &str) = ("clippy.toml", "cognitive-complexity-threshold = ");
 const SLOC_SOURCE: (&str, &str) = ("scripts/check-file-size.sh", "THRESHOLD=");
+const SHARED_WALK_SOURCE: (&str, &str) = ("scripts/check-shared-walk-ratchet.sh", "CAP=");
+const ALLOW_REASON_SOURCE: (&str, &str) = ("scripts/check-allow-reason.sh", "CAP=");
 
 /// 게이트 어휘 — 이 중 하나가 ±2 줄 창에 있어야 그 자리를 "이 게이트에 대한 언급" 으로 센다.
 const COGNITIVE_VOCAB: &[&str] = &[
@@ -235,6 +264,27 @@ const SLOC_VOCAB: &[&str] = &[
     "complexity",
     "allowlist",
     "THRESHOLD",
+];
+const SHARED_WALK_VOCAB: &[&str] = &[
+    "read_dir",
+    "순회",
+    "래칫",
+    "상한",
+    "임계",
+    "shared-walk",
+    "shared_walk",
+    "CAP",
+];
+const ALLOW_REASON_VOCAB: &[&str] = &[
+    "allow",
+    "억제",
+    "사유",
+    "래칫",
+    "상한",
+    "임계",
+    "allow-reason",
+    "allow_reason",
+    "CAP",
 ];
 
 /// cognitive 임계를 **현재 상태로 주장하는** 파일과, 그 파일이 값을 든 **줄 수**.
@@ -262,6 +312,21 @@ const SLOC_CLAIMS: &[Claim] = &[
     ("docs/dev-guide/complexity-gate.md", 4),
     // 3 = 머리 주석 · 14 = ADR 가리킴 · 27 = 정본
     ("scripts/check-file-size.sh", 3),
+];
+
+/// 공용 순회 래칫의 상한을 **현재 상태로 주장하는** 파일과, 그 파일이 값을 든 **줄 수**.
+const SHARED_WALK_CLAIMS: &[Claim] = &[
+    // 이력의 마지막 줄(시점 서술) + 정본
+    ("scripts/check-shared-walk-ratchet.sh", 2),
+    // 상한을 바꿔치기하려고 정본 줄의 철자를 든다 — 값이 움직이면 그 치환이 죽는다
+    ("tests/shared_walk_gate.rs", 2),
+];
+
+/// 사유 없는 `#[allow]` 래칫의 상한을 **현재 상태로 주장하는** 파일과 그 **줄 수**.
+const ALLOW_REASON_CLAIMS: &[Claim] = &[
+    // 48·198·199·226·228 = 계보 서술 · 231 = 정본
+    ("scripts/check-allow-reason.sh", 6),
+    ("tests/allow_reason_gate.rs", 2),
 ];
 
 /// 명부 한 항목 — (레포 상대 경로, 그 파일이 임계값을 든 **줄 수**).
@@ -360,7 +425,7 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
         "docs/adr/0139-numbers-in-docs-are-classified-by-lineage-not-by-name.md",
         Kind::Example,
-        "수의 계보 분류 ADR 이 두 임계를 예시로 든다",
+        "수의 계보 분류 ADR 이 임계 몇을 예시로 든다 — `check-allow-reason` 상한의 계보 수열 포함",
     ),
     (
         "docs/adr/0119-agent-semaphore-resize-and-holder-expiry.md",
@@ -446,6 +511,26 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "src/view/main/redraw.rs",
         Kind::OtherMeaning,
         "재시도 상한 1000",
+    ),
+    (
+        "crates/tasty-settings/src/keybindings/tests.rs",
+        Kind::OtherMeaning,
+        "\"다른 55개와 같은 취급\" — 단축키 항목 개수",
+    ),
+    (
+        "docs/design/systems/design-token-mapping.md",
+        Kind::OtherMeaning,
+        "color-mix 의 55% — 알파 비율",
+    ),
+    (
+        "docs/features/remote-attach/index.md",
+        Kind::OtherMeaning,
+        "connecting 최악 ~55초 — 시간",
+    ),
+    (
+        "src/adapters/ui/popup/remote_attach.rs",
+        Kind::OtherMeaning,
+        "connecting 최악 ~55초 — 시간",
     ),
     (
         "crates/tasty-doc-guards/tests/gate_thresholds_are_not_stale_copies.rs",
@@ -618,6 +703,57 @@ fn mentioning_files(value: &str, vocab: &[&str]) -> BTreeSet<String> {
 /// 억제를 세는 게이트가 문서 안의 인용까지 세고, 그 좌변은 여유가 0 이다.
 const COGNITIVE_SUBJECT: &[&str] = &["cognitive-complexity-threshold", "clippy.toml"];
 const SLOC_SUBJECT: &[&str] = &["check-file-size", "THRESHOLD=", "tokei"];
+const SHARED_WALK_SUBJECT: &[&str] = &["check-shared-walk-ratchet", "shared_walk_gate"];
+const ALLOW_REASON_SUBJECT: &[&str] = &["check-allow-reason", "allow_reason_gate"];
+
+/// 게이트 하나 — 정본·명부·어휘·주제어를 한 값으로 묶는다.
+///
+/// 한때 이 넷은 각각 상수 짝이었고, 그것을 소비하는 판정 셋이 **손으로 짝지은 배열**을
+/// 각자 들고 있었다. 게이트를 하나 더할 때 그 배열 셋을 전부 고쳐야 하고, 하나를
+/// 빠뜨리면 그 판정만 새 게이트를 안 본다 — **그 누락은 초록이다.** 값으로 묶으면
+/// 좌변이 하나라 빠뜨릴 자리가 없다.
+struct Gate {
+    label: &'static str,
+    source: (&'static str, &'static str),
+    claims: &'static [Claim],
+    vocab: &'static [&'static str],
+    subject: &'static [&'static str],
+}
+
+/// 값이 **리터럴로 사는** 게이트 전부. `scripts/` 에서 `^[A-Z_]+=<숫자>` 로 세면 셋이고
+/// (`check-file-size.sh` 의 `THRESHOLD`·`WARN_BAND`, 두 래칫의 `CAP`), 나머지 게이트는
+/// 값을 다른 자리에서 유도한다(`check-frozen-sum-ratchet.sh` 는 `THRESHOLD` 와
+/// allowlist 머리 주석에서 읽어 온다 — 유도된 값은 사본이 아니라 복제할 수가 없다).
+const GATES: &[Gate] = &[
+    Gate {
+        label: "cognitive",
+        source: COGNITIVE_SOURCE,
+        claims: COGNITIVE_CLAIMS,
+        vocab: COGNITIVE_VOCAB,
+        subject: COGNITIVE_SUBJECT,
+    },
+    Gate {
+        label: "파일 SLOC",
+        source: SLOC_SOURCE,
+        claims: SLOC_CLAIMS,
+        vocab: SLOC_VOCAB,
+        subject: SLOC_SUBJECT,
+    },
+    Gate {
+        label: "공용 순회 래칫",
+        source: SHARED_WALK_SOURCE,
+        claims: SHARED_WALK_CLAIMS,
+        vocab: SHARED_WALK_VOCAB,
+        subject: SHARED_WALK_SUBJECT,
+    },
+    Gate {
+        label: "사유 없는 allow 래칫",
+        source: ALLOW_REASON_SOURCE,
+        claims: ALLOW_REASON_CLAIMS,
+        vocab: ALLOW_REASON_VOCAB,
+        subject: ALLOW_REASON_SUBJECT,
+    },
+];
 
 /// 값 옆(±2 줄, [`claims_value`] 와 **같은 창**)에 좁은 주제어가 있으면 그 자리를 돌려준다.
 ///
@@ -797,24 +933,27 @@ fn check(label: &str, source: (&str, &str), claims: &[Claim], vocab: &[&str]) ->
 }
 
 #[test]
-fn the_two_gate_thresholds_have_no_stale_copies() {
-    let mut wrong = check(
-        "cognitive",
-        COGNITIVE_SOURCE,
-        COGNITIVE_CLAIMS,
-        COGNITIVE_VOCAB,
-    );
-    wrong.extend(check("파일 SLOC", SLOC_SOURCE, SLOC_CLAIMS, SLOC_VOCAB));
+fn the_gate_thresholds_have_no_stale_copies() {
+    let mut wrong = Vec::new();
+    for g in GATES {
+        wrong.extend(check(g.label, g.source, g.claims, g.vocab));
+    }
+    let sources: Vec<String> = GATES
+        .iter()
+        .map(|g| {
+            format!(
+                "`{}` 의 `{}` = {}",
+                g.source.0,
+                g.source.1.trim_end_matches(" = ").trim_end_matches('='),
+                source_value(g.source)
+            )
+        })
+        .collect();
     assert!(
         wrong.is_empty(),
         "게이트 임계값의 사본이 정본과 갈렸거나, 분류되지 않은 주장 자리가 생겼다.\n\
-         정본: `{}` 의 `{}` = {} · `{}` 의 `{}` = {}\n{}",
-        COGNITIVE_SOURCE.0,
-        COGNITIVE_SOURCE.1.trim_end_matches(" = "),
-        source_value(COGNITIVE_SOURCE),
-        SLOC_SOURCE.0,
-        SLOC_SOURCE.1.trim_end_matches('='),
-        source_value(SLOC_SOURCE),
+         정본: {}\n{}",
+        sources.join(" · "),
         wrong.join("\n")
     );
 }
@@ -831,8 +970,7 @@ fn the_two_gate_thresholds_have_no_stale_copies() {
 /// 조용히 아무것도 안 보게 된다.
 #[test]
 fn a_different_meaning_exclusion_does_not_carry_the_gate_subject() {
-    let cognitive = source_value(COGNITIVE_SOURCE);
-    let sloc = source_value(SLOC_SOURCE);
+    let values: Vec<String> = GATES.iter().map(|g| source_value(g.source)).collect();
     let mut checked = 0usize;
     let mut wrong = Vec::new();
     for (file, kind, why) in EXCLUDED {
@@ -840,24 +978,13 @@ fn a_different_meaning_exclusion_does_not_carry_the_gate_subject() {
             continue;
         }
         let text = read(file);
-        for (label, value, subject) in [
-            ("cognitive", &cognitive, COGNITIVE_SUBJECT),
-            ("파일 SLOC", &sloc, SLOC_SUBJECT),
-        ] {
-            if !claims_value(
-                &text,
-                value,
-                if label == "cognitive" {
-                    COGNITIVE_VOCAB
-                } else {
-                    SLOC_VOCAB
-                },
-            ) {
+        for (g, value) in GATES.iter().zip(&values) {
+            if !claims_value(&text, value, g.vocab) {
                 continue;
             }
             checked += 1;
-            if let Some((line, hit)) = subject_near_value(&text, value, subject) {
-                wrong.push(mislabeled_meaning_note(file, label, &hit, line, why));
+            if let Some((line, hit)) = subject_near_value(&text, value, g.subject) {
+                wrong.push(mislabeled_meaning_note(file, g.label, &hit, line, why));
             }
         }
     }
@@ -890,13 +1017,14 @@ fn a_different_meaning_exclusion_does_not_carry_the_gate_subject() {
 /// 낱말이 끊긴다. 판정기가 옳았고 사본이 틀렸다.
 #[test]
 fn no_exclusion_is_dead_weight() {
-    let cognitive = source_value(COGNITIVE_SOURCE);
-    let sloc = source_value(SLOC_SOURCE);
+    let values: Vec<String> = GATES.iter().map(|g| source_value(g.source)).collect();
     let mut dead = Vec::new();
     for (file, kind, why) in EXCLUDED {
         let text = read(file);
-        if !claims_value(&text, &cognitive, COGNITIVE_VOCAB)
-            && !claims_value(&text, &sloc, SLOC_VOCAB)
+        if !GATES
+            .iter()
+            .zip(&values)
+            .any(|(g, value)| claims_value(&text, value, g.vocab))
         {
             dead.push(dead_exclusion_note(file, *kind, why));
         }
@@ -970,7 +1098,7 @@ mod threshold_mutations {
     #[test]
     fn no_file_is_both_claimed_and_excluded() {
         let excluded: BTreeSet<&str> = EXCLUDED.iter().map(|(f, _, _)| *f).collect();
-        for (rel, _) in COGNITIVE_CLAIMS.iter().chain(SLOC_CLAIMS) {
+        for (rel, _) in GATES.iter().flat_map(|g| g.claims.iter()) {
             assert!(
                 !excluded.contains(rel),
                 "{rel} 가 명부와 제외목록에 둘 다 있다"

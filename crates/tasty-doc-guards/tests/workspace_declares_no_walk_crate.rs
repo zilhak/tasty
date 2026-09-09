@@ -49,7 +49,9 @@ use tasty_doc_guards::source_text::repo_relative;
 
 /// `crates/` 아래 매니페스트 수집의 하한. 수집이 죽으면 위반 0 이 언제나 참이 된다.
 /// 공용 순회를 쓴다 — 직접 `read_dir` 는 `scripts/check-shared-walk-ratchet.sh` 의
-/// 상한에 앉고, 지금 그 상한에는 여유가 없다(실측 2026-09-08: 56/56).
+/// 상한에 앉고, 그 래칫은 **여유를 0 으로 유지한다**(건수가 줄면 상한도 같이 내린다).
+/// 값을 여기 안 적는 것은 그 수가 커밋마다 움직여 사본이 낡기 때문이다(ADR-0139) —
+/// 지금 값은 그 스크립트를 돌리면 마지막 줄에 나온다.
 const CRATE_MANIFEST_FLOOR: Floor = Floor {
     min: 40,
     measured: 52,
