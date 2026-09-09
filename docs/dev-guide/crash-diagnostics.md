@@ -73,11 +73,14 @@ markdown / html surface 는 mesh 를 그리지 않고 native webview overlay 로
 
 | 단계 | 남는 곳 | 레벨 |
 |------|---------|------|
-| plugin 이 HTML 을 실었는가 | `plugins-logs/<plugin id>.log` — `markdown surface <id>: loaded N bytes of HTML` · 실패 시 `webview.set_url failed` / `no document registered` / `theme unavailable` | info / warn |
+| plugin 이 HTML 을 실었는가 | `plugins-logs/<plugin id>.log` — `markdown surface <id>: loaded N bytes of HTML` · 실패 시 `webview.set_url failed` / `no document registered` / `theme.query failed` / `malformed theme.query response` | info / warn |
 | host 가 그 URL 을 받았는가 | 호스트 로그 — `webview.set_url: surface <id> not found ...` / `... is not a webview-enabled RemoteSurface` (성공 시 조용) | warn |
 | native webview 가 만들어졌는가 | 호스트 로그 — `WebView surface <id>: created (visible=…, bounds=…, url=…)` · 실패 시 `Failed to create WebView for surface <id>` / `Giving up on the WebView ...` | debug / warn |
 | 페이지가 로드됐는가 | 호스트 로그 — `WebView surface <id>: load started` / `load finished`, 실패 시 각 백엔드의 navigation failed 줄, Linux 는 `WebKit web process terminated` 도 | debug / warn |
-| 로드는 끝났는데 안 보이는가 | 호스트 로그 — `WebView surface <id>: still hidden ... (nav_state=…)`, 그리고 Linux 에서 부모 창 밖에 그려지는 경우 `GTK window realized without a GDK window` | warn |
+| 로드가 안 끝나 안 보이는가 | 호스트 로그 — `WebView surface <id>: still hidden ... (nav_state=…)` — 드러나야 할 자리에 놓였는데 nav 가 `Done` 이 아닌 채로 이어질 때 surface 당 한 번 | warn |
+| 로드는 끝났는데 안 보이는가 | 호스트 로그 — Linux 에서 부모 창 밖에 그려지는 경우 `WebView surface <id>: GTK window realized without a GDK window` (navigation 은 정상 완료하므로 위 보류 줄은 안 남는다) | warn |
+
+보류 줄(`still hidden`)의 판정은 **redraw 안에서** 일어난다 — 매 프레임 "드러나야 할 자리에 있는데 nav 가 `Done` 이 아닌" surface 를 모아 시간을 재는 방식이다. 그래서 이 줄이 보장하는 범위는 **프레임이 도는 동안까지**다: 렌더 루프가 그 지점에 닿지 못하면(프레임이 아예 안 돌면) 자리가 비어 있어도 warn 은 침묵한다. 그때 비어 있음의 흔적은 이 표가 아니라 hang 진단(`hang-*.log`) 쪽에 남는다.
 
 성공 줄이 `debug` 라 **release 파일 로그(`warn` 이상)에는 실패·보류 줄만 남는다.** 단계별 성공까지 보려면 dev 빌드(`debug-dev.log`)나 `TASTY_LOG=debug` 로 stderr 를 받는다.
 

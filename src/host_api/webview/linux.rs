@@ -448,7 +448,10 @@ impl PlatformWebView {
             let nav = nav_state.clone();
             webview.connect_load_failed(move |_wv, _event, failing_uri, error| {
                 // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
-                tracing::warn!("WebKitGTK load-failed uri={failing_uri} err={error}");
+                tracing::warn!(
+                    "WebView surface {surface_id}: WebKitGTK load-failed \
+                     uri={failing_uri} err={error}"
+                );
                 nav.set(NavState::Failed);
                 true // 기본 에러 페이지 억제(host error chrome 사용)
             });

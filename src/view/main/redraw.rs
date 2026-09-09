@@ -738,7 +738,7 @@ impl MainView {
             if !entry.1 && now.duration_since(entry.0) >= REVEAL_PENDING_WARN_AFTER {
                 entry.1 = true;
                 tracing::warn!(
-                    "WebView surface {sid}: still hidden {:?} after it became visible \
+                    "WebView surface {sid}: still hidden {:?} after it became active \
                      (nav_state={nav:?}); the pane shows host chrome, not the page",
                     REVEAL_PENDING_WARN_AFTER
                 );

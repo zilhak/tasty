@@ -997,10 +997,6 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
-/// host `theme.query` IPC(webview.rs 참조)로 현재 Theme 을 동기 조회한다. webview-kind
-/// surface 는 `surface.set_context` 를 받지 않아(egui-mesh 와 달리 host 가 mesh 프레임을
-/// 합성하지 않으므로) 이 조회가 유일한 Theme 획득 경로다. 실패하면 `None` — 호출자는
-/// 문서 재생성을 건너뛴다(다음 성공한 조회가 갱신할 때까지 이전 내용 유지).
 /// 렌더된 HTML 을 host webview 에 싣고 결과를 로그에 남긴다. `reload_webview` 에서
 /// 떼어낸 것은 그 함수의 조기 반환 갈래가 이미 여럿이라, 결과 분기까지 함께 두면
 /// 복잡도 게이트(`clippy::cognitive_complexity`)를 넘기 때문이다.
@@ -1020,6 +1016,10 @@ fn push_html(host: &HostHandle, surface_id: u32, file_path: &str, html: String) 
     }
 }
 
+/// host `theme.query` IPC(webview.rs 참조)로 현재 Theme 을 동기 조회한다. webview-kind
+/// surface 는 `surface.set_context` 를 받지 않아(egui-mesh 와 달리 host 가 mesh 프레임을
+/// 합성하지 않으므로) 이 조회가 유일한 Theme 획득 경로다. 실패하면 `None` — 호출자는
+/// 문서 재생성을 건너뛴다(다음 성공한 조회가 갱신할 때까지 이전 내용 유지).
 /// `surface_id` 는 로그 전용이다 — 실패하면 그 surface 의 webview 가 빈 채로 남으므로,
 /// 어느 자리가 비었는지 이 줄만으로 짚을 수 있어야 한다.
 fn fetch_theme(host: &HostHandle, surface_id: u32) -> Option<Theme> {
