@@ -66,9 +66,21 @@ pub(crate) fn mesh_region_of(
 /// 갈렸는지 재는 장치가 아니라 갈릴 자리가 없는 것이 답이다.
 ///
 /// 채널 고유의 칸은 여기 넣지 않는다. surface 의 focus 추적·입력 누적은 사본이 아니라
-/// 그 채널 하나만의 것이라 각자 자리에 남는다. 무입력 강제 repaint 는 세 채널이 모두
-/// 갖지만 담는 자리도 채우는 사건도 서로 달라 여기서 합치지 않았다 — surface 는 자기
-/// 구조체의 `invalidated`, popup·banner 는 `AppState` 의 `HashSet` 두 개다.
+/// 그 채널 하나만의 것이라 각자 자리에 남는다. 무입력 강제 repaint 도 여기서 합치지
+/// 않았는데, 이유는 "세 채널이 갖는가" 가 아니라 아래 두 축이다.
+///
+/// - **채우는 self-repaint 는 셋이 같다.** plugin SDK 의 `schedule_self_repaint` 는
+///   surface·popup·banner 세 판이 `arm_self_repaint_timer`(`crates/tasty-plugin-sdk/src/egui_surface.rs`)
+///   하나를 공유하고, 실어 보내는 variant(`SurfaceInvalidated`·`PopupInvalidated`·
+///   `BannerInvalidated`)만 다르다. 그러니 이 사건은 차이가 아니다.
+/// - **담는 자리가 다르다.** surface 는 자기 구조체의 `bool` 한 칸
+///   (`MeshForwardState::invalidated`, `src/view/main/egui_mesh.rs`), popup·banner 는
+///   `AppState` 의 `HashSet<u64>` 두 개(`plugin_mesh_popup_pending_repaint`·
+///   `plugin_mesh_banner_pending_repaint`)다 — 채널당 한 칸 vs 인스턴스 키잉.
+/// - **추가 진입로도 채널마다 다르다.** surface 는 파일 변경 통지가 같은
+///   `SurfaceInvalidated` 를 타고 와 `mark_surface_invalidated` 로 그 칸을 세우고,
+///   popup 은 ADR-0056 의 비동기 host→plugin push 결과가 같은 칸을 쓰며
+///   (`src/plugin_bridge/popup_render.rs`), banner 는 self-repaint 하나뿐이다.
 #[derive(Default)]
 pub(crate) struct MeshForwardCommon {
     /// 마지막으로 보낸 `(width_px, height_px, ppp.to_bits())`. 변경 감지의 좌변.
