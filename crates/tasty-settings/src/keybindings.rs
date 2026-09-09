@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// 탭 quick-switch 슬롯 수. **필드 타입·기본값·[`SwitchAxis::slot_count`] 가 이 하나를
+/// 탭 quick-switch 슬롯 수. **필드 타입·기본값·[`crud::SwitchAxis::slot_count`] 가 이 하나를
 /// 쓴다** — 숫자를 여러 자리에 적으면 한쪽만 고쳐진다.
 pub const TAB_SWITCH_SLOT_COUNT: usize = 10;
 /// 워크스페이스 quick-switch 슬롯 수(0번 슬롯 없음 — 기존 정책).

@@ -3,7 +3,7 @@
 //! 옮길 대상이 두 파일에 흩어져 있다.
 //!
 //! - `~/.tasty/config.toml` 의 `[keybindings]` — [`KeybindingSettings`]
-//! - `~/.tasty/plugins.toml` 의 `keybindings` — [`PluginsConfig::shortcut_overrides`]
+//! - `~/.tasty/plugins.toml` 의 `keybindings` — [`crate::registry_state::PluginsConfig::shortcut_overrides`]
 //!
 //! 그래서 번들 타입은 두 타입이 **모두 보이는 가장 낮은 지점**인 이 크레이트에 있다
 //! (`tasty-host-plugin` → `tasty-settings` 단방향 의존이라 반대쪽에는 못 둔다).
