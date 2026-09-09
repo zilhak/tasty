@@ -946,3 +946,78 @@ image_redo = ["ctrl+shift+z"]
     let kb: KeybindingSettings = toml::from_str(toml).expect("모르는 키는 무시돼야 한다");
     assert_eq!(kb.new_tab, vec!["alt+t".to_string()]);
 }
+
+// ── quick-switch 축 타입 ──────────────────────────────────────────────
+
+use crate::keybindings::crud::{SwitchAxis, SwitchStep};
+
+/// 축이 말하는 슬롯 수는 **실제 배열 길이**여야 한다 — 둘이 갈리면 순회가 슬롯을
+/// 빠뜨리거나 범위 밖을 짚는다.
+#[test]
+fn switch_axis_slot_count_matches_the_array() {
+    let kb = KeybindingSettings::default();
+    assert_eq!(SwitchAxis::Tab.slot_count(), kb.tab_switch_slot_keys.len());
+    assert_eq!(
+        SwitchAxis::Workspace.slot_count(),
+        kb.workspace_switch_slot_keys.len()
+    );
+    assert_eq!(
+        SwitchAxis::Category.slot_count(),
+        kb.category_switch_slot_keys.len()
+    );
+    // 마지막 슬롯은 있고 그다음은 없다 — 경계가 실제로 그 수다.
+    for axis in SwitchAxis::ALL {
+        assert!(axis.slot(&kb, axis.slot_count() - 1).is_some());
+        assert!(axis.slot(&kb, axis.slot_count()).is_none());
+    }
+}
+
+#[test]
+fn switch_axis_accessors_reach_every_field() {
+    let mut kb = KeybindingSettings::default();
+    for axis in SwitchAxis::ALL {
+        axis.set_modifier(&mut kb, "ctrl+shift");
+        assert_eq!(axis.modifier(&kb), "ctrl+shift");
+        assert!(!axis.is_individual(&kb));
+        axis.set_modifier(&mut kb, KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER);
+        assert!(axis.is_individual(&kb));
+
+        assert!(axis.set_slot(&mut kb, 0, "z"));
+        assert_eq!(axis.slot(&kb, 0), Some("z"));
+        assert!(!axis.set_slot(&mut kb, axis.slot_count(), "z"));
+
+        for step in SwitchStep::ALL {
+            axis.set_step(&mut kb, step, "w");
+            assert_eq!(axis.step(&kb, step), "w");
+        }
+    }
+    // 축·step 조합이 서로 다른 필드를 짚는지 — 하나로 뭉개지면 위 루프가 못 잡는다.
+    let mut kb = KeybindingSettings::default();
+    for (i, axis) in SwitchAxis::ALL.into_iter().enumerate() {
+        for (j, step) in SwitchStep::ALL.into_iter().enumerate() {
+            axis.set_step(&mut kb, step, &format!("k{i}{j}"));
+        }
+    }
+    for (i, axis) in SwitchAxis::ALL.into_iter().enumerate() {
+        for (j, step) in SwitchStep::ALL.into_iter().enumerate() {
+            assert_eq!(axis.step(&kb, step), format!("k{i}{j}"));
+        }
+    }
+}
+
+/// modifier 필드 id 는 `get_bindings` 가 아는 콤보 필드가 **아니다** — 축 modifier 는
+/// 콤보 `Vec` 시스템 밖이라는 사실을 여기서 고정한다.
+#[test]
+fn switch_axis_modifier_fields_are_outside_the_combo_system() {
+    let kb = KeybindingSettings::default();
+    for axis in SwitchAxis::ALL {
+        let id = axis.modifier_field_id();
+        assert!(kb.get_bindings(id).is_none(), "{id}");
+        assert!(
+            !KeybindingSettings::GENERAL_BINDING_FIELDS
+                .iter()
+                .any(|(f, _)| *f == id),
+            "{id}"
+        );
+    }
+}

@@ -22,7 +22,8 @@ pub use appearance::{
     PluginSettingValue, UI_SCALE_CHOICES,
 };
 pub use general::{DEFAULT_WHEEL_LINE_SCROLL, GeneralSettings, LinkModifier};
-pub use keybindings::KeybindingSettings;
+pub use keybindings::crud::{SwitchAxis, SwitchStep};
+pub use keybindings::{KeybindingSettings, ScriptBinding};
 pub use port::SettingsStorage;
 pub use port_impl::FileSettingsStorage;
 pub use scripts::{

@@ -32,7 +32,7 @@
 
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
-use crate::settings::{GeneralSettings, KeybindingSettings};
+use crate::settings::{GeneralSettings, KeybindingSettings, SwitchStep};
 use tasty_type_geometry::length::LogicalPx;
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot};
@@ -43,74 +43,38 @@ const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
 const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
 const LABEL_GAP: LogicalPx = LogicalPx(12.0);
 
-/// 이 섹션이 편집하는 quick-switch 종류.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum QuickSwitchKind {
-    Tab,
-    Workspace,
-    Category,
+/// 이 섹션이 편집하는 quick-switch 종류 — 축 자체는 `KeybindingSettings` 의 대칭이라
+/// 그 크레이트가 소유한다(`tasty_settings::SwitchAxis`). 여기 남은 것은 축 ↔ 녹화
+/// 타겟(`BareTarget`) 매핑, 즉 설정 화면에만 있는 사실이다.
+pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
+
+fn slot_target(kind: QuickSwitchKind, idx: usize) -> BareTarget {
+    match kind {
+        QuickSwitchKind::Tab => BareTarget::TabSlot(idx),
+        QuickSwitchKind::Workspace => BareTarget::WorkspaceSlot(idx),
+        QuickSwitchKind::Category => BareTarget::CategorySlot(idx),
+    }
 }
 
-impl QuickSwitchKind {
-    /// 이 종류의 슬롯 개수 (탭 10, 워크스페이스 9, 카테고리 10).
-    fn slot_count(self) -> usize {
-        match self {
-            QuickSwitchKind::Tab => 10,
-            QuickSwitchKind::Workspace => 9,
-            QuickSwitchKind::Category => 10,
-        }
+/// 다음/이전 raw 키 타겟.
+fn step_target(kind: QuickSwitchKind, step: SwitchStep) -> BareTarget {
+    match (kind, step) {
+        (QuickSwitchKind::Tab, SwitchStep::Next) => BareTarget::TabNext,
+        (QuickSwitchKind::Tab, SwitchStep::Prev) => BareTarget::TabPrev,
+        (QuickSwitchKind::Workspace, SwitchStep::Next) => BareTarget::WorkspaceNext,
+        (QuickSwitchKind::Workspace, SwitchStep::Prev) => BareTarget::WorkspacePrev,
+        (QuickSwitchKind::Category, SwitchStep::Next) => BareTarget::CategoryNext,
+        (QuickSwitchKind::Category, SwitchStep::Prev) => BareTarget::CategoryPrev,
     }
+}
 
-    fn slot_target(self, idx: usize) -> BareTarget {
-        match self {
-            QuickSwitchKind::Tab => BareTarget::TabSlot(idx),
-            QuickSwitchKind::Workspace => BareTarget::WorkspaceSlot(idx),
-            QuickSwitchKind::Category => BareTarget::CategorySlot(idx),
-        }
-    }
-
-    /// 다음/이전 raw 키 타겟.
-    fn next_target(self) -> Option<BareTarget> {
-        match self {
-            QuickSwitchKind::Tab => Some(BareTarget::TabNext),
-            QuickSwitchKind::Workspace => Some(BareTarget::WorkspaceNext),
-            QuickSwitchKind::Category => Some(BareTarget::CategoryNext),
-        }
-    }
-
-    fn prev_target(self) -> Option<BareTarget> {
-        match self {
-            QuickSwitchKind::Tab => Some(BareTarget::TabPrev),
-            QuickSwitchKind::Workspace => Some(BareTarget::WorkspacePrev),
-            QuickSwitchKind::Category => Some(BareTarget::CategoryPrev),
-        }
-    }
-
-    fn modifier_label_key(self) -> &'static str {
-        match self {
-            QuickSwitchKind::Tab => "settings.keybindings.tab_switch_modifier_label",
-            QuickSwitchKind::Workspace => "settings.keybindings.workspace_switch_modifier_label",
-            QuickSwitchKind::Category => "settings.keybindings.category_switch_modifier_label",
-        }
-    }
-
-    fn modifier_salt(self) -> &'static str {
-        match self {
-            QuickSwitchKind::Tab => "tab_switch_modifier",
-            QuickSwitchKind::Workspace => "workspace_switch_modifier",
-            QuickSwitchKind::Category => "category_switch_modifier",
-        }
-    }
-
-    /// 이 축의 슬롯 + 다음/이전 타겟 전체(순서: 슬롯 1~N → 다음 → 이전).
-    fn all_targets(self) -> Vec<BareTarget> {
-        let mut targets: Vec<BareTarget> = (0..self.slot_count())
-            .map(|i| self.slot_target(i))
-            .collect();
-        targets.extend(self.next_target());
-        targets.extend(self.prev_target());
-        targets
-    }
+/// 이 축의 슬롯 + 다음/이전 타겟 전체(순서: 슬롯 1~N → 다음 → 이전).
+fn all_targets(kind: QuickSwitchKind) -> Vec<BareTarget> {
+    let mut targets: Vec<BareTarget> = (0..kind.slot_count())
+        .map(|i| slot_target(kind, i))
+        .collect();
+    targets.extend(SwitchStep::ALL.map(|s| step_target(kind, s)));
+    targets
 }
 
 /// `target` 이 속한 quick-switch 축.
@@ -124,20 +88,6 @@ fn axis_of(target: BareTarget) -> QuickSwitchKind {
             QuickSwitchKind::Category
         }
     }
-}
-
-/// `kind` 축의 현재 modifier 필드 값.
-fn modifier_value(kb: &KeybindingSettings, kind: QuickSwitchKind) -> &str {
-    match kind {
-        QuickSwitchKind::Tab => &kb.tab_switch_modifier,
-        QuickSwitchKind::Workspace => &kb.workspace_switch_modifier,
-        QuickSwitchKind::Category => &kb.category_switch_modifier,
-    }
-}
-
-/// `kind` 축이 현재 "개별 지정" 모드인지.
-fn is_individual_axis(kb: &KeybindingSettings, kind: QuickSwitchKind) -> bool {
-    modifier_value(kb, kind) == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
 }
 
 // ── BareTarget 데이터 접근 (accessor 경유) ────────────────────────────────
@@ -210,7 +160,7 @@ fn compose(modifier: &str, raw: &str) -> String {
 /// `target` 의 최종 콤보. 규칙 기반 축이면 `compose(modifier, raw)`, 개별 지정 축이면
 /// 슬롯 필드에 이미 저장된 완전 콤보를 그대로 반환한다(compose 하지 않음).
 fn bare_combo(kb: &KeybindingSettings, target: BareTarget) -> String {
-    if is_individual_axis(kb, axis_of(target)) {
+    if axis_of(target).is_individual(kb) {
         bare_key_value(kb, target)
     } else {
         compose(bare_modifier(kb, target), &bare_key_value(kb, target))
@@ -252,14 +202,10 @@ fn bare_display_label(target: BareTarget) -> String {
 
 /// 모든 quick-switch bare 타겟 목록(슬롯 간 중복 검사용 — 탭·워크스페이스·카테고리 교차 포함).
 fn all_bare_targets() -> Vec<BareTarget> {
-    [
-        QuickSwitchKind::Tab,
-        QuickSwitchKind::Workspace,
-        QuickSwitchKind::Category,
-    ]
-    .into_iter()
-    .flat_map(QuickSwitchKind::all_targets)
-    .collect()
+    QuickSwitchKind::ALL
+        .into_iter()
+        .flat_map(all_targets)
+        .collect()
 }
 
 /// `target` 에 `candidate_combo`(이미 합성 완료된 최종 콤보 — 규칙 기반이든 개별
@@ -302,10 +248,10 @@ pub(super) fn draw_quick_switch_section(
 
     // 전환 감지용 — Grid 클로저가 modifier 필드를 직접 mutate 하므로, 그 전/후 값을
     // 비교해 실제로 바뀐 경우에만 슬롯 이관/복원(apply_modifier_transition)을 수행한다.
-    let old_modifier = modifier_value(keybindings, kind).to_string();
+    let old_modifier = kind.modifier(keybindings).to_string();
 
     // modifier 드롭다운 (기존 blocks 이관).
-    egui::Grid::new(format!("{}_modifier_grid", kind.modifier_salt()))
+    egui::Grid::new(format!("{}_modifier_grid", kind.modifier_field_id()))
         .num_columns(2)
         .spacing([LABEL_GAP.value(), 8.0])
         .show(ui, |ui| {
@@ -325,7 +271,7 @@ pub(super) fn draw_quick_switch_section(
             // 축 포함, 그 외 제외 — modifier_hint 의 조합 열거를 단일 소스로 재사용한다.
             // "개별 지정" sentinel 은 이 열거와 별도로 마지막에 추가한다(규칙 기반
             // 조합이 아니므로 all_modifier_combos() 목록에 섞이지 않음).
-            egui::ComboBox::from_id_salt(kind.modifier_salt())
+            egui::ComboBox::from_id_salt(kind.modifier_field_id())
                 .selected_text(selected_text)
                 .show_ui(ui, |ui| {
                     for combo in all_modifier_combos() {
@@ -343,14 +289,14 @@ pub(super) fn draw_quick_switch_section(
         });
 
     // modifier 가 실제로 바뀌었으면 슬롯 값을 이관(규칙→개별)하거나 복원(개별→규칙)한다.
-    let new_modifier = modifier_value(keybindings, kind).to_string();
+    let new_modifier = kind.modifier(keybindings).to_string();
     if new_modifier != old_modifier {
         apply_modifier_transition(keybindings, kind, &old_modifier, &new_modifier);
     }
 
     vspace(ui, th.spacing_xs);
 
-    let is_individual = is_individual_axis(keybindings, kind);
+    let is_individual = kind.is_individual(keybindings);
 
     // 슬롯 1~N.
     for i in 0..kind.slot_count() {
@@ -360,15 +306,12 @@ pub(super) fn draw_quick_switch_section(
             general,
             recording_field,
             can_record,
-            kind.slot_target(i),
+            slot_target(kind, i),
             is_individual,
         );
     }
     // 다음/이전 (세 축 모두 존재 — 카테고리도 대칭).
-    for tg in [kind.next_target(), kind.prev_target()]
-        .into_iter()
-        .flatten()
-    {
+    for tg in SwitchStep::ALL.map(|s| step_target(kind, s)) {
         slot_row(
             ui,
             keybindings,
@@ -398,7 +341,7 @@ pub(super) fn draw_quick_switch_section(
 /// 이 섹션 슬롯들의 현재 합성 콤보가 **일반 액션**과 충돌하는 목록을 라벨로 반환.
 fn current_conflicts(kb: &KeybindingSettings, kind: QuickSwitchKind) -> Vec<String> {
     let mut out = Vec::new();
-    for tg in kind.all_targets() {
+    for tg in all_targets(kind) {
         let combo = bare_combo(kb, tg);
         if combo.is_empty() {
             continue;
@@ -431,7 +374,7 @@ fn apply_modifier_transition(
     let was_individual = old_modifier == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER;
     let becomes_individual = new_modifier == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER;
     if !was_individual && becomes_individual {
-        for target in kind.all_targets() {
+        for target in all_targets(kind) {
             let migrated = compose(old_modifier, &bare_key_value(kb, target));
             set_bare_target(kb, target, &migrated);
         }

@@ -26,7 +26,7 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 ### 탭/워크스페이스/카테고리 quick-switch (raw 키 + 축별 modifier 조합)
 
-번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다(단, "개별 지정" 모드 예외 — 아래 참조). modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier`(각각 기본 `ctrl`/`alt`/`ctrl+shift`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 그 축의 모든 슬롯이 즉시 재조합된다. **각 modifier 는 단일 토큰(`"ctrl"`)뿐 아니라 조합(`"ctrl+shift"`)도 허용**하며, 매칭은 일반 바인딩과 동일한 4축 조합 파서(`Combo::parse_modifiers`)를 단일 소스로 쓴다. 카테고리도 1급 축으로 자기 modifier 필드를 갖는다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다.
+번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다(단, "개별 지정" 모드 예외 — 아래 참조). modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_switch_modifier`/`category_switch_modifier`(각각 기본 `ctrl`/`alt`/`ctrl+shift`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 그 축의 모든 슬롯이 즉시 재조합된다. **각 modifier 는 단일 토큰(`"ctrl"`)뿐 아니라 조합(`"ctrl+shift"`)도 허용**하며, 매칭은 일반 바인딩과 동일한 4축 조합 파서(`Combo::parse_modifiers`)를 단일 소스로 쓴다. 카테고리도 1급 축으로 자기 modifier 필드를 갖는다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다. 세 축이 modifier·슬롯 배열·다음/이전을 대칭으로 갖는다는 사실 자체는 `SwitchAxis`/`SwitchStep`(`crud.rs`)이 타입으로 들고 있어, 축을 순회하는 쪽(설정 화면·이식 판정)이 필드 이름을 다시 나열하지 않는다 — 슬롯 수(탭 10 / 워크스페이스 9 / 카테고리 10)도 필드 타입이 쓰는 상수(`TAB_SWITCH_SLOT_COUNT` 등) 하나에서 나온다.
 
 | 필드 | 타입 | 기본값 | 의미 |
 |------|------|--------|------|

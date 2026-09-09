@@ -723,3 +723,129 @@ impl KeybindingSettings {
         parts
     }
 }
+
+/// quick-switch 축 — 탭 / 워크스페이스 / 카테고리.
+///
+/// 세 축은 modifier 한 필드 · 슬롯 배열 · 다음/이전 두 필드를 **대칭으로** 갖는다.
+/// 그 대칭을 타입으로 세워 축마다 필드 이름을 손으로 나열하지 않게 한다 — 이 자리가
+/// 없으면 "축 셋" 이라는 사실이 소비처마다 다시 적히고, 슬롯 수(10/9/10)도 함께
+/// 복제된다. 슬롯 수는 [`TAB_SWITCH_SLOT_COUNT`] 등 필드 타입이 쓰는 상수 그대로다.
+///
+/// [`TAB_SWITCH_SLOT_COUNT`]: super::TAB_SWITCH_SLOT_COUNT
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SwitchAxis {
+    Tab,
+    Workspace,
+    Category,
+}
+
+impl SwitchAxis {
+    /// 세 축 전량. 스캔·순회는 이 배열을 돌아 축을 하나도 빠뜨리지 않는다.
+    pub const ALL: [SwitchAxis; 3] = [SwitchAxis::Tab, SwitchAxis::Workspace, SwitchAxis::Category];
+
+    /// 이 축의 슬롯 개수.
+    pub fn slot_count(self) -> usize {
+        match self {
+            SwitchAxis::Tab => super::TAB_SWITCH_SLOT_COUNT,
+            SwitchAxis::Workspace => super::WORKSPACE_SWITCH_SLOT_COUNT,
+            SwitchAxis::Category => super::CATEGORY_SWITCH_SLOT_COUNT,
+        }
+    }
+
+    /// 이 축 modifier 필드의 id(`GENERAL_BINDING_FIELDS` 밖의 필드 이름).
+    /// 위젯 salt·로그 등 "어느 축인가" 를 문자열로 남겨야 하는 자리가 쓴다.
+    pub fn modifier_field_id(self) -> &'static str {
+        match self {
+            SwitchAxis::Tab => "tab_switch_modifier",
+            SwitchAxis::Workspace => "workspace_switch_modifier",
+            SwitchAxis::Category => "category_switch_modifier",
+        }
+    }
+
+    /// 이 축 modifier 라벨의 번역 키.
+    pub fn modifier_label_key(self) -> &'static str {
+        match self {
+            SwitchAxis::Tab => "settings.keybindings.tab_switch_modifier_label",
+            SwitchAxis::Workspace => "settings.keybindings.workspace_switch_modifier_label",
+            SwitchAxis::Category => "settings.keybindings.category_switch_modifier_label",
+        }
+    }
+
+    /// 이 축 modifier 의 현재 값.
+    pub fn modifier(self, kb: &KeybindingSettings) -> &str {
+        match self {
+            SwitchAxis::Tab => &kb.tab_switch_modifier,
+            SwitchAxis::Workspace => &kb.workspace_switch_modifier,
+            SwitchAxis::Category => &kb.category_switch_modifier,
+        }
+    }
+
+    /// 이 축 modifier 를 설정한다.
+    pub fn set_modifier(self, kb: &mut KeybindingSettings, value: &str) {
+        let slot = match self {
+            SwitchAxis::Tab => &mut kb.tab_switch_modifier,
+            SwitchAxis::Workspace => &mut kb.workspace_switch_modifier,
+            SwitchAxis::Category => &mut kb.category_switch_modifier,
+        };
+        *slot = value.to_string();
+    }
+
+    /// 이 축이 "개별 지정" 모드인지 — 그러면 슬롯 필드가 raw 키가 아니라 완전 콤보다.
+    pub fn is_individual(self, kb: &KeybindingSettings) -> bool {
+        self.modifier(kb) == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER
+    }
+
+    /// 슬롯 `idx` 의 값. 범위 밖이면 `None`.
+    pub fn slot(self, kb: &KeybindingSettings, idx: usize) -> Option<&str> {
+        match self {
+            SwitchAxis::Tab => kb.tab_slot_key(idx),
+            SwitchAxis::Workspace => kb.workspace_slot_key(idx),
+            SwitchAxis::Category => kb.category_slot_key(idx),
+        }
+    }
+
+    /// 슬롯 `idx` 를 설정한다. 범위 밖이면 false.
+    pub fn set_slot(self, kb: &mut KeybindingSettings, idx: usize, value: &str) -> bool {
+        match self {
+            SwitchAxis::Tab => kb.set_tab_slot_key(idx, value),
+            SwitchAxis::Workspace => kb.set_workspace_slot_key(idx, value),
+            SwitchAxis::Category => kb.set_category_slot_key(idx, value),
+        }
+    }
+
+    /// 다음/이전 값.
+    pub fn step(self, kb: &KeybindingSettings, step: SwitchStep) -> &str {
+        match (self, step) {
+            (SwitchAxis::Tab, SwitchStep::Next) => kb.tab_next_key(),
+            (SwitchAxis::Tab, SwitchStep::Prev) => kb.tab_prev_key(),
+            (SwitchAxis::Workspace, SwitchStep::Next) => kb.workspace_next_key(),
+            (SwitchAxis::Workspace, SwitchStep::Prev) => kb.workspace_prev_key(),
+            (SwitchAxis::Category, SwitchStep::Next) => kb.category_next_key(),
+            (SwitchAxis::Category, SwitchStep::Prev) => kb.category_prev_key(),
+        }
+    }
+
+    /// 다음/이전 값을 설정한다.
+    pub fn set_step(self, kb: &mut KeybindingSettings, step: SwitchStep, value: &str) {
+        match (self, step) {
+            (SwitchAxis::Tab, SwitchStep::Next) => kb.set_tab_next_key(value),
+            (SwitchAxis::Tab, SwitchStep::Prev) => kb.set_tab_prev_key(value),
+            (SwitchAxis::Workspace, SwitchStep::Next) => kb.set_workspace_next_key(value),
+            (SwitchAxis::Workspace, SwitchStep::Prev) => kb.set_workspace_prev_key(value),
+            (SwitchAxis::Category, SwitchStep::Next) => kb.set_category_next_key(value),
+            (SwitchAxis::Category, SwitchStep::Prev) => kb.set_category_prev_key(value),
+        }
+    }
+}
+
+/// quick-switch 축의 "다음/이전" 두 자리.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SwitchStep {
+    Next,
+    Prev,
+}
+
+impl SwitchStep {
+    /// 둘 전량.
+    pub const ALL: [SwitchStep; 2] = [SwitchStep::Next, SwitchStep::Prev];
+}

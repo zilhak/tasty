@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+/// 탭 quick-switch 슬롯 수. **필드 타입·기본값·[`SwitchAxis::slot_count`] 가 이 하나를
+/// 쓴다** — 숫자를 여러 자리에 적으면 한쪽만 고쳐진다.
+pub const TAB_SWITCH_SLOT_COUNT: usize = 10;
+/// 워크스페이스 quick-switch 슬롯 수(0번 슬롯 없음 — 기존 정책).
+pub const WORKSPACE_SWITCH_SLOT_COUNT: usize = 9;
+/// 카테고리 quick-switch 슬롯 수(1~9 후 0 = 10번째).
+pub const CATEGORY_SWITCH_SLOT_COUNT: usize = 10;
+
 /// 사용자 스크립트↔단축키 동적 바인딩 (ADR-0031).
 ///
 /// 고정 액션 필드(`Vec<String>`)와 달리 스크립트는 N 개 동적이라 별도 표현이 필요하다.
@@ -166,16 +174,16 @@ pub struct KeybindingSettings {
     /// ⚠️ 필드별 default fn 필수 — struct 레벨 `#[serde(default)]` 만으로는 누락 시
     /// `[String;10]::default()`(빈 문자열 10개)로 채워져 기존 config 가 조용히 깨진다.
     #[serde(default = "default_tab_slot_keys")]
-    pub tab_switch_slot_keys: [String; 10],
+    pub tab_switch_slot_keys: [String; TAB_SWITCH_SLOT_COUNT],
     /// 워크스페이스 quick-switch 슬롯 1~9번의 raw 키(0번 슬롯 없음 — 기존 정책 유지).
     /// dispatch 시점에 `workspace_switch_modifier` 와 조합된다. 기본값 `["1".."9"]`.
     #[serde(default = "default_workspace_slot_keys")]
-    pub workspace_switch_slot_keys: [String; 9],
+    pub workspace_switch_slot_keys: [String; WORKSPACE_SWITCH_SLOT_COUNT],
     /// 카테고리 quick-switch 슬롯 1~10번의 raw 키(1~9 후 0 = 10번째). dispatch 시점에
     /// `category_switch_modifier`(기본 `ctrl+shift`) 와 조합된다. folders 기능 on 일 때만
     /// 유효. 기본값 `["1".."9","0"]`.
     #[serde(default = "default_category_slot_keys")]
-    pub category_switch_slot_keys: [String; 10],
+    pub category_switch_slot_keys: [String; CATEGORY_SWITCH_SLOT_COUNT],
     /// 탭 quick-switch "다음 탭" raw 키. 기본값 `"l"`(vim). `next_tab` 과 별개 필드.
     #[serde(default = "default_tab_next_key")]
     pub tab_switch_next_key: String,
@@ -203,17 +211,17 @@ pub struct KeybindingSettings {
 /// 기존 config 마이그레이션 안전용. struct 레벨 `#[serde(default)]` 는 누락 필드를
 /// 그 타입의 `Default::default()`(= 빈 문자열 배열)로 채우므로, 필드별 전용 default fn 이
 /// 없으면 quick-switch 가 조용히 무효화된다. (`appearance.rs` `default_ligatures` 선례.)
-fn default_tab_slot_keys() -> [String; 10] {
+fn default_tab_slot_keys() -> [String; TAB_SWITCH_SLOT_COUNT] {
     ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map(String::from)
 }
 
 /// 워크스페이스 quick-switch 슬롯 raw 키 기본값 `["1".."9"]`(0번 슬롯 없음).
-fn default_workspace_slot_keys() -> [String; 9] {
+fn default_workspace_slot_keys() -> [String; WORKSPACE_SWITCH_SLOT_COUNT] {
     ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(String::from)
 }
 
 /// 카테고리 quick-switch 슬롯 raw 키 기본값 `["1".."9","0"]`(1~9 후 0 = 10번째).
-fn default_category_slot_keys() -> [String; 10] {
+fn default_category_slot_keys() -> [String; CATEGORY_SWITCH_SLOT_COUNT] {
     ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map(String::from)
 }
 
@@ -286,7 +294,7 @@ impl Default for KeybindingSettings {
     }
 }
 
-mod crud;
+pub mod crud;
 /// 바인딩 문자열 파서와 modifier 조합 — 이 크레이트가 저장하는 값의 해석 규칙.
 pub mod parse;
 mod presets;
