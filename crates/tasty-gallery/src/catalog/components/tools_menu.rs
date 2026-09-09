@@ -15,7 +15,7 @@ const WIDTH: LogicalPx = LogicalPx(160.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
+        kit::frame_card_popover(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                 row(ui, theme, icons::PORT, "Command palette…", false);
                 row(ui, theme, icons::REMOTE, "Listening ports...", false);
@@ -34,7 +34,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("frame", "160px · surface-raised"),
             ("anchor", "sidebar Tools button · no scrim"),
-            ("shadow", "popover — 0 8px 28px /.4"),
+            ("shadow", "shadow-popover — anchored, no scrim"),
             ("groups", "builtin · separator · plugins"),
         ],
         &[

@@ -29,14 +29,40 @@ const FRAME_CARD_W: LogicalPx = LogicalPx(240.0);
 
 // ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
 
-/// 모달 프레임 — 지정 `fill` + 1px border-strong + modal shadow, 고정 폭.
+/// 모달 프레임 — 지정 `fill` + 1px border-strong + **modal** shadow, 고정 폭.
 /// 내부 콘텐츠는 region/hsep/field 로 채운다. item_spacing 은 0 으로 둔다
 /// (각 region 이 자체 패딩을 가짐).
+///
+/// anchored + scrim-less 표면(tools menu · search bar)은 이것이 아니라
+/// [`frame_card_popover`] 를 쓴다 — SCOPE RULE(ADR-0254).
 pub fn frame_card(
     ui: &mut egui::Ui,
     theme: &Theme,
     width: LogicalPx,
     fill: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    frame_card_with_shadow(ui, theme, width, fill, theme.shadow_modal(), add);
+}
+
+/// [`frame_card`] 의 popover 변형 — 같은 셸에 **popover** shadow. 트리거 옆에 붙어
+/// 살아 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)이 쓴다(ADR-0254).
+pub fn frame_card_popover(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    fill: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    frame_card_with_shadow(ui, theme, width, fill, theme.shadow_popover(), add);
+}
+
+fn frame_card_with_shadow(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    fill: egui::Color32,
+    shadow: tasty_type_appearance::theme::ShadowToken,
     add: impl FnOnce(&mut egui::Ui),
 ) {
     egui::Frame::new()
@@ -46,6 +72,7 @@ pub fn frame_card(
             theme.border_strong().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
+        .shadow(shadow.to_egui())
         .show(ui, |ui| {
             // 부모 stage 가 `horizontal_wrapped`(`StageVariant::Wrap`) 여도 모달
             // 콘텐츠는 항상 세로(top_down)로 적층 + 폭을 `width` 로 bound 한다.
