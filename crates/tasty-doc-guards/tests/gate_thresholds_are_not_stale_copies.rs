@@ -261,6 +261,7 @@ const COGNITIVE_SOURCE: (&str, &str) = ("clippy.toml", "cognitive-complexity-thr
 const SLOC_SOURCE: (&str, &str) = ("scripts/check-file-size.sh", "THRESHOLD=");
 const SHARED_WALK_SOURCE: (&str, &str) = ("scripts/check-shared-walk-ratchet.sh", "CAP=");
 const ALLOW_REASON_SOURCE: (&str, &str) = ("scripts/check-allow-reason.sh", "CAP=");
+const FROZEN_SUM_SOURCE: (&str, &str) = (".complexity-file-allowlist", "# frozen-sum-budget: ");
 
 /// 게이트 어휘 — 이 중 하나가 ±2 줄 창에 있어야 그 자리를 "이 게이트에 대한 언급" 으로 센다.
 const COGNITIVE_VOCAB: &[&str] = &[
@@ -304,6 +305,15 @@ const ALLOW_REASON_VOCAB: &[&str] = &[
     "allow_reason",
     "CAP",
 ];
+const FROZEN_SUM_VOCAB: &[&str] = &[
+    "frozen-sum-budget",
+    "frozen_sum",
+    "예산",
+    "동결",
+    "총합",
+    "래칫",
+    "budget",
+];
 
 /// cognitive 임계를 **현재 상태로 주장하는** 파일과, 그 파일이 값을 든 **줄 수**.
 ///
@@ -346,6 +356,13 @@ const ALLOW_REASON_CLAIMS: &[Claim] = &[
     ("scripts/check-allow-reason.sh", 6),
     ("tests/allow_reason_gate.rs", 2),
 ];
+
+/// 동결 총합 래칫의 **예산**을 현재 상태로 주장하는 파일과 그 **줄 수**.
+///
+/// 지금 하나뿐이다 — 정본 그 자신. 그 사실이 이 항목을 등록하는 이유다: 사본이 0 인
+/// 지금이야말로 명부를 세울 수 있는 때이고, 사본이 생긴 뒤에는 그것이 정본인지 사본인지를
+/// 다시 판정해야 한다. 예산은 되돌아 올라가지 않으므로 낡은 사본이 가장 비싼 값이다.
+const FROZEN_SUM_CLAIMS: &[Claim] = &[(".complexity-file-allowlist", 1)];
 
 /// 명부 한 항목 — (레포 상대 경로, 그 파일이 임계값을 든 **줄 수**).
 ///
@@ -723,6 +740,11 @@ const COGNITIVE_SUBJECT: &[&str] = &["cognitive-complexity-threshold", "clippy.t
 const SLOC_SUBJECT: &[&str] = &["check-file-size", "THRESHOLD=", "tokei"];
 const SHARED_WALK_SUBJECT: &[&str] = &["check-shared-walk-ratchet", "shared_walk_gate"];
 const ALLOW_REASON_SUBJECT: &[&str] = &["check-allow-reason", "allow_reason_gate"];
+const FROZEN_SUM_SUBJECT: &[&str] = &[
+    "frozen-sum-budget",
+    "check-frozen-sum-ratchet",
+    "frozen_sum_ratchet_gate",
+];
 
 /// 게이트 하나 — 정본·명부·어휘·주제어를 한 값으로 묶는다.
 ///
@@ -738,10 +760,22 @@ struct Gate {
     subject: &'static [&'static str],
 }
 
-/// 값이 **리터럴로 사는** 게이트 전부. `scripts/` 에서 `^[A-Z_]+=<숫자>` 로 세면 셋이고
-/// (`check-file-size.sh` 의 `THRESHOLD`·`WARN_BAND`, 두 래칫의 `CAP`), 나머지 게이트는
-/// 값을 다른 자리에서 유도한다(`check-frozen-sum-ratchet.sh` 는 `THRESHOLD` 와
-/// allowlist 머리 주석에서 읽어 온다 — 유도된 값은 사본이 아니라 복제할 수가 없다).
+/// 값이 **리터럴로 사는** 게이트 전부.
+///
+/// ## 좌변이 `scripts/` 만이 아닌 이유 (2026-09-09)
+///
+/// 한때 이 목록은 `scripts/` 에서 `^[A-Z_]+=<숫자>` 로 세어 넷이었고, 나머지는 "값을 다른
+/// 자리에서 유도하니 복제할 수가 없다" 로 넘겼다. **그 서술이 동결 총합 래칫에서 틀렸다.**
+/// `check-frozen-sum-ratchet.sh` 가 유도하는 것은 띠(`SLACK` ← `THRESHOLD`)뿐이고,
+/// **예산은 유도되지 않는다** — `.complexity-file-allowlist` 의 `# frozen-sum-budget:` 줄에
+/// 리터럴로 산다. 사는 파일이 `scripts/` 밖이고 문법이 `NAME=<수>` 가 아니라서 그 세는 법에
+/// 안 잡혔을 뿐이다. 즉 그 값은 다른 넷과 똑같이 복제될 수 있다.
+///
+/// 등록 시점의 사본 수는 **0 이다**(전수 2026-09-09: 값 `35504` 를 드는 자리는 정본 하나뿐,
+/// 옛 값 `36374` 를 드는 자리 하나는 스크립트 머리의 시점 서술이라 낡는 것이 정상이다).
+/// 그것이 미루지 않는 이유다 — 사본이 생긴 뒤에 등록하면 어느 쪽이 정본인지를 사람이 다시
+/// 판정해야 한다. 그리고 예산은 **한 방향으로만 움직여** 되돌아 올라가지 않으므로
+/// (ADR-0168), 낡은 사본이 가장 비싼 값이다.
 const GATES: &[Gate] = &[
     Gate {
         label: "cognitive",
@@ -770,6 +804,13 @@ const GATES: &[Gate] = &[
         claims: ALLOW_REASON_CLAIMS,
         vocab: ALLOW_REASON_VOCAB,
         subject: ALLOW_REASON_SUBJECT,
+    },
+    Gate {
+        label: "동결 총합 예산",
+        source: FROZEN_SUM_SOURCE,
+        claims: FROZEN_SUM_CLAIMS,
+        vocab: FROZEN_SUM_VOCAB,
+        subject: FROZEN_SUM_SUBJECT,
     },
 ];
 
