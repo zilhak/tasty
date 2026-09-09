@@ -3,7 +3,7 @@
 //! ## 왜 사본인가
 //!
 //! 게이트의 계측기는 `tokei` 다. tokei 는 파일을 통째로 세고 "이 줄은 빼라" 를 모른다.
-//! 그래서 판정(무엇이 출하되는가)과 계측(몇 줄인가)을 갈라, 판정은 여기서 하고 계측은
+//! 그래서 판정(무엇이 출하되는가)과 계측(몇 줄인가)을 갈라, 판정은 이 경로가 하고 계측은
 //! tokei 가 그대로 한다. **계측기를 하나 더 만들지 않으려는 것**이다 — 줄 수를 세는
 //! 두 번째 구현이 생기면 게이트가 무엇을 재는지가 둘로 갈린다.
 //!
@@ -18,6 +18,12 @@
 //! (`#[cfg(test)] mod x;` 로 선언된 별도 파일 · cargo 통합 타깃)는 파일 SLOC 게이트에서는
 //! 스크립트의 `skip()` 이 담당한다 — 그 축은 그 게이트의 판정을 안 바꾸므로 기본값에서
 //! 건드리지 않는다.
+//!
+//! **줄 판정 자체는 이 파일에 없다** — [`tasty_doc_guards::cfg_predicate::blank_gated_lines`]
+//! 가 하고, 이 프로그램은 그 사본을 파일로 쓸 뿐이다. 소비자가 둘이기 때문이다:
+//! `src/source_guards/headless_app_layer_coverage.rs` 가 "명부 밖에 이름이 사는가" 의
+//! 좌변을 만들 때 같은 판정을 **함수로** 부른다(그쪽은 사본 파일이 필요 없다).
+//! 그 가드가 자기 판정을 따로 두면 같은 물음의 답이 둘로 갈리고, 갈린 쪽은 조용하다.
 //!
 //! **그 문장은 *선언된 파일* 의 몫만 말한다 — 선언 줄 자신은 다르다.** 부모 파일에 남는
 //! `#[cfg(test)]` 속성 줄과 바로 다음의 `mod x;` 선언 줄은 인라인 범위로 잡혀 **기본
@@ -66,7 +72,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tasty_doc_guards::cfg_predicate::{cfg_attr_lines, cfg_gated_lines};
+use tasty_doc_guards::cfg_predicate::blank_gated_lines;
 use tasty_doc_guards::shipping_scope::test_only_files;
 use tasty_doc_guards::source_text::neutralize_char_literal_quotes;
 
@@ -149,7 +155,7 @@ fn main() {
         let mut body = if whole_file_out.contains(rel) {
             blank_every_line(src)
         } else {
-            strip(src)
+            blank_gated_lines(src, "test")
         };
         if quote_safe {
             body = neutralize_char_literal_quotes(&body);
@@ -166,28 +172,6 @@ fn main() {
 fn blank_every_line(src: &str) -> String {
     let n = src.split('\n').count();
     "\n".repeat(n.saturating_sub(1))
-}
-
-/// 인라인 `#[cfg(test)]` 가 덮는 줄과 `cfg_attr(test, …)` 속성 줄을 빈 줄로 바꾼다.
-/// 줄 수는 그대로다.
-///
-/// 두 축을 **따로** 세는 이유는 범위가 다르기 때문이다. `#[cfg(test)]` 는 항목을
-/// 통째로 들어내고, `cfg_attr` 은 붙는 **속성만** 조건부라 항목은 출하된다.
-/// 한 판정으로 합치면 둘 중 하나는 틀린 범위를 쓴다.
-fn strip(src: &str) -> String {
-    let lines: Vec<&str> = src.split('\n').collect();
-    let gated = cfg_gated_lines(&lines, "test");
-    let attrs = cfg_attr_lines(&lines, "test");
-    let mut out = String::with_capacity(src.len());
-    for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            out.push('\n');
-        }
-        if !gated[i] && !attrs[i] {
-            out.push_str(line);
-        }
-    }
-    out
 }
 
 /// 빌드 캐시는 세지 않는다 — 이름이 아니라 표식으로 가른다(`CARGO_TARGET_DIR` 로 다른

@@ -63,6 +63,7 @@
 use std::collections::BTreeSet;
 
 use super::{callers_of, fn_body, repo_root, strip_comments};
+use tasty_doc_guards::cfg_predicate::blank_gated_lines;
 
 const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
@@ -244,10 +245,22 @@ fn headless_methods() -> BTreeSet<String> {
 /// 명부 밖 함수에 살아도 되는 메서드 이름 — **답이 아니라는 근거와 함께** 든다.
 ///
 /// [`no_method_name_lives_outside_the_roster`] 의 잔여 면제다. 지금 **비어 있다**
-/// (2026-09-10 실측: 주석을 걷어낸 파일 전체 12 · 명부 합집합 12 · 잔여 0). 채워야
-/// 하는 경우는 하나뿐이다 — dispatch 가 **아닌** 자리(로그 문구·오류문)가 메서드
-/// 이름을 문자열로 들 때. 그 자리가 실제로 **답하면** 답은 여기가 아니라
-/// [`HEADLESS_DISPATCH_FNS`] 다. 둘을 섞으면 이 면제가 곧 사각이 된다.
+/// (2026-09-10 실측: 출하 범위로 좁히고 주석을 걷어낸 파일 전체 12 · 명부 합집합 12 ·
+/// 잔여 0). 채워야 하는 경우는 하나다 — dispatch 가 **아닌** 자리가 메서드 이름을
+/// 문자열로 들 때. 실측으로 확인한 형태는 셋이다:
+///
+/// - **오류문·안내문** — 답하지 못한 이름을 되돌려 주는 자리.
+/// - **로그 문구** — 산문 안에 이름이 박힌 형태.
+/// - **구조화 로그의 맨 리터럴** — `warn!(method = "window.list", …)` 처럼 필드 값이
+///   따옴표째 코드에 있는 형태. 주석이 아니므로 걷어내기가 안 지운다.
+///
+/// 그 자리가 실제로 **답하면** 답은 여기가 아니라 [`HEADLESS_DISPATCH_FNS`] 다.
+/// 둘을 섞으면 이 면제가 곧 사각이 된다.
+///
+/// **`#[cfg(test)]` 아래의 이름은 여기 오지 않는다.** 그 갈래는 면제가 아니라 좌변에서
+/// 아예 빠진다([`no_method_name_lives_outside_the_roster`] 의 "출하 범위" 절) — 출하되지
+/// 않는 코드에 대해 면제를 하나 늘리는 것은 실재하지 않는 위반에 처방을 붙이는 것이고,
+/// 그 처방을 따르면 그 이름이 나중에 **출하 코드로 옮겨가도** 영구히 안 보인다.
 ///
 /// 이 면제를 겨냥한 변이는 [`an_outside_name_is_caught_unless_it_is_excused`] 가
 /// 합성 입력으로 든다(`src/source_guards/mod.rs` 의 집행 규칙 — 검증되지 않은 면제는
@@ -282,10 +295,26 @@ fn outside_roster<'a>(
 /// 합집합과 같아야 한다. 걷어내기가 먼저라 옛 파일-전체 창의 거짓 실패(산문이 인용한
 /// 이름을 답으로 세던 것)는 여기서 안 난다 —
 /// [`an_outside_name_is_caught_unless_it_is_excused`] 가 그 대조를 함께 든다.
+///
+/// ## 출하 범위 — 걷어내기 전에 한 번 더 좁힌다
+///
+/// 물음이 "그 이름을 답하는 **출하 코드**가 있는가" 라서, 좌변은 `#[cfg(test)]` 가 덮는
+/// 줄을 먼저 지운다([`blank_gated_lines`]). 안 지우면 **평범한 테스트 픽스처 하나가
+/// 이 검사만 빨갛게 만든다** — 실측(2026-09-10, `--bins`): `headless_dispatch.rs` 에
+/// `#[cfg(test)] mod` 를 하나 넣고 그 안에서 `"window.list"` 를 인용하자 2463 passed ·
+/// **1 failed** 였고, 그 하나가 이 검사였다.
+///
+/// 그 거짓 실패에는 **처방이 없다는 것**이 문제였다. 첫 처방(명부에 더해라)은 픽스처에
+/// 안 맞고, 남는 것은 [`OUTSIDE_ROSTER_LITERALS`] 등록 — 출하되지도 않는 코드에 대해
+/// 면제를 영구히 하나 늘리는 것이다. 그러면 그 이름이 나중에 출하 코드로 옮겨가도
+/// 영구히 안 보인다. 실재하지 않는 위반에 붙은 처방이 사각을 만드는 형태다.
+///
+/// 판정기는 새로 짓지 않는다 — `strip-cfg-test` 가 이미 쓰는 것과 **같은 함수**를
+/// 부른다. 같은 물음("이 줄은 출하되는가")에 답이 둘이 되면 갈린 쪽은 조용하다.
 #[test]
 fn no_method_name_lives_outside_the_roster() {
     let src = read(HEADLESS_PUMP);
-    let whole = method_literals(&strip_comments(&src));
+    let whole = method_literals(&strip_comments(&blank_gated_lines(&src, "test")));
     assert!(
         whole.len() >= MIN_HEADLESS_METHODS,
         "{HEADLESS_PUMP} 전체에서 메서드를 {} 개밖에 못 뽑았다(하한 \
@@ -300,8 +329,9 @@ fn no_method_name_lives_outside_the_roster() {
         "{HEADLESS_PUMP} 의 `HEADLESS_DISPATCH_FNS` 밖에서 메서드 이름이 산다: \
          {outside:?}. 그 자리가 **답하면** 그 함수를 `HEADLESS_DISPATCH_FNS` 에 \
          더해라 — 안 더하면 답하는 이름이 좌변에 안 들어와, `NOT_IN_HEADLESS` 의 \
-         사유가 거짓인 채로 초록이 된다. 답하지 않고 이름을 인용만 하는 자리라면 \
-         `OUTSIDE_ROSTER_LITERALS` 에 근거와 함께 등록해라"
+         사유가 거짓인 채로 초록이 된다. 답하지 않고 이름을 **인용만** 하는 자리(로그 \
+         문구·오류문·구조화 로그의 필드 값)라면 `OUTSIDE_ROSTER_LITERALS` 에 근거와 \
+         함께 등록해라"
     );
     // 반대 방향 — 면제해 둔 이름이 명부 안으로 들어왔으면 그 줄이 낡은 것이다.
     let stale: Vec<&str> = OUTSIDE_ROSTER_LITERALS
@@ -320,7 +350,11 @@ fn no_method_name_lives_outside_the_roster() {
 ///
 /// ① 명부 밖 함수가 답하는 이름은 잡힌다(그것이 못 잡던 사각이다). ② 면제에 들면
 /// 안 잡힌다(면제가 실제로 먹는다). ③ 주석이 인용한 이름은 애초에 잔여로 안 센다
-/// (옛 파일-전체 창의 거짓 실패가 되살아나지 않는다).
+/// (옛 파일-전체 창의 거짓 실패가 되살아나지 않는다). ④ `#[cfg(test)]` 아래의 이름도
+/// 안 센다 — 출하되지 않는 코드에 면제를 요구하는 거짓 실패를 막는 갈래다.
+///
+/// 좌변 파이프라인을 그대로 쓴다(`blank_gated_lines` → `strip_comments`). 합성 입력이
+/// 다른 순서를 쓰면 이 넷은 검사가 아니라 그 자리에서만 참인 주장이 된다.
 #[test]
 fn an_outside_name_is_caught_unless_it_is_excused() {
     let src = "\
@@ -329,14 +363,23 @@ fn pump_ipc(app: &mut App) {
 }
 // 산문이 \"ns.prose\" 를 인용한다.
 fn outside_helper(m: &str) -> bool { m == \"ns.outside\" }
+#[cfg(test)]
+mod fixture {
+    const SAMPLE: &str = \"ns.fixture\";
+}
 ";
-    let whole = method_literals(&strip_comments(src));
+    let whole = method_literals(&strip_comments(&blank_gated_lines(src, "test")));
     let roster = method_literals(&strip_comments(
         &fn_body(src, "fn pump_ipc(").expect("본문을 잘라야 한다"),
     ));
     assert!(
         !whole.contains("ns.prose"),
         "주석 속 이름을 잔여 후보로 셌다: {whole:?}"
+    );
+    assert!(
+        !whole.contains("ns.fixture"),
+        "`#[cfg(test)]` 아래의 이름을 잔여 후보로 셌다 — 출하되지 않는 코드에 면제를 \
+         요구하는 거짓 실패다: {whole:?}"
     );
     let none: BTreeSet<&str> = BTreeSet::new();
     let caught: Vec<&str> = outside_roster(&whole, &roster, &none)

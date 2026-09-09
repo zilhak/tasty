@@ -240,6 +240,38 @@ pub fn cfg_attr_lines<S: AsRef<str>>(lines: &[S], needle: &str) -> Vec<bool> {
     marked
 }
 
+/// `needle` 을 함의하는 `#[cfg(…)]` 가 덮는 줄과, 술어가 `needle` 을 요구하는
+/// `cfg_attr` **속성 줄**을 빈 줄로 바꾼 사본. 줄 수는 그대로다.
+///
+/// 두 축을 **따로** 세는 이유는 범위가 다르기 때문이다. `#[cfg(test)]` 는 항목을
+/// 통째로 들어내고, `cfg_attr` 은 붙는 **속성만** 조건부라 항목은 출하된다.
+/// 한 판정으로 합치면 둘 중 하나는 틀린 범위를 쓴다.
+///
+/// 지운 자리를 **빈 줄로 남기는** 것은 줄 번호를 보존하려는 것이다 — 사본이 원본보다
+/// 짧아지면 "지운 결과" 와 "안 읽힌 결과" 가 구분되지 않는다. 내용 동등을 묻는
+/// 소비자는 비교 전에 빈 줄을 접어야 한다.
+///
+/// **소비자가 둘이라 여기 산다.** `strip-cfg-test` 는 이 사본을 파일로 써서 `tokei`
+/// 에게 세게 하고, `src/source_guards/headless_app_layer_coverage.rs` 는 "명부 밖에
+/// 이름이 사는가" 의 좌변을 만들 때 이 함수를 직접 부른다. 뒤쪽이 자기 사본을 따로
+/// 만들면 같은 물음에 답이 둘이 되고, 갈린 답은 조용하다 — 실제로 그 자리에서 갈림은
+/// **출하되지도 않는 코드에 대한 영구 면제**라는 처방으로 나타났다.
+pub fn blank_gated_lines(src: &str, needle: &str) -> String {
+    let lines: Vec<&str> = src.split('\n').collect();
+    let gated = cfg_gated_lines(&lines, needle);
+    let attrs = cfg_attr_lines(&lines, needle);
+    let mut out = String::with_capacity(src.len());
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if !gated[i] && !attrs[i] {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod cfg_span_tests {
     use super::cfg_gated_lines;
