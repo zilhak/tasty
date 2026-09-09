@@ -116,8 +116,8 @@ const ROSTER: &[(&str, Class, &str)] = &[
     ),
     (
         "approval.list",
-        PerEngineNotAggregated,
-        "`approval_store` 가 engine 마다 `Arc::new` 된다 — 공유 Arc 가 아니다. 휴먼 핸드오프가 창별로 갈린다",
+        SharedAcrossEngines,
+        "생성자만 읽으면 engine 마다 `Arc::new` 라 창별로 보이는데, 두 번째 main window 를 세우는 `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의 `approval_store` Arc 로 덮어쓴다 — 저장소가 어디 사는지는 **생성자와 창 생성 경로를 함께** 읽어야 정해진다",
     ),
     (
         "attach.list",
@@ -406,7 +406,7 @@ fn the_open_ones_are_not_silently_emptied() {
         .filter(|(_, c, _)| *c == PerEngineNotAggregated)
         .count();
     assert_eq!(
-        open, 2,
+        open, 1,
         "창별인데 합산 안 되는 항목의 수가 바뀌었다. 고쳤으면 갈래를 옮기고 이 수를 \
          함께 내려라 — 남겨 두면 다음 사람이 이미 닫힌 것을 다시 센다."
     );

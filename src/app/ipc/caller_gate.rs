@@ -51,12 +51,10 @@ impl App {
         // Agent caller 의 MissingPermission 은 elevation 발행.
         // NotPluginCallable/UnknownMethod 는 elevation 으로 회복되지 않으므로 단순 deny.
         //
-        // 발행처는 **첫 main window** 의 `approval_store` 다. 그 store 는 engine 마다
-        // `Arc::new` 라 공유물이 아니므로(`ipc/app_methods.rs` 의
-        // `plugin.request_permission` 주석) 창이 둘 이상일 때 이 발행은 포커스와
-        // 무관하게 첫 창에 앉고, 뒤이은 `approval.respond` 는 라우팅 폴백을 타
-        // 포커스된 창으로 간다. 어느 쪽으로 통일할지는 그 주석이 적은 대로 아직
-        // 안 정해졌다.
+        // 발행처는 첫 main window 의 `approval_store` 지만 그 Arc 는 전 창이 공유한다
+        // (`ipc/app_methods.rs` 의 `plugin.request_permission` 주석이 공유가 만들어지는
+        // 자리를 짚는다). 그래서 여기서 발행한 elevation 은 라우팅 폴백을 타 다른
+        // 창으로 간 `approval.respond` 에서도 보인다.
         let mut data = serde_json::json!(null);
         if let (
             host_ipc::caller::CallerError::MissingPermission { permission, .. },

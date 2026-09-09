@@ -45,17 +45,22 @@ Modal/View 레벨과 별개로, 각 View 내부에서 Pane 간·Surface 간 포�
 - **IPC/CLI 로 focus 를 변경할 수 없다.** focus 변경 API(`surface.focus` / `pane.focus` / `workspace.select` / `focus.direction`)는 release 에 없다(제거됨). focus 는 오직 사용자 행위(단축키·마우스)로만 바뀐다.
 - 모든 명령은 대상을 **ID 로 직접 지정**한다. `list` 는 **전 워크스페이스 순회**(활성 상태 비의존).
   - 순회하는 `list` 는 호스트가 명시적으로 합산하는 것뿐이다(`src/app/dispatch/list_global.rs`). **그 집합의 소속은 이름이 아니라 성질로 판정한다**(핸들러가 창 소유 컬렉션을 순회하는가 · 대상 인자가 없는가 · 합산 집합에 없는가) — 이름 모양(`*.list`)으로 훑는 눈에는 `tree` 가 안 걸려 오래 빠져 있었다([ADR-0175](../../adr/0175-window-owned-list-membership-is-judged-by-shape-not-by-name.md)). **그 목록에 없는 `list` 는 포커스된 창의 것만 답하고, 에러가 없다.** 실측(창 둘): 창1 에서 만든 headless pty 가 창2 포커스의 `pty.list` 에 안 나오는데 `pty.read {id}` 는 그 pty 를 읽었다 — **조작할 수 있는데 볼 수 없는** 상태다. 창 소유 자원의 `list` 를 새로 만들면 거기에 등록한다.
-  - **지금 합산되지 않는 창 소유 목록이 둘 있다** — `notification.list` ·
-    `approval.list`. 저장소가 engine 마다 새로 만들어지는 것을 소스로 확인했다
-    (`notifications` · `approval_store` 의 `Arc::new`). 갈래와 **안 한 이유**의 정본은
+  - **지금 합산되지 않는 창 소유 목록이 하나 있다** — `notification.list`.
+    `notifications` 가 engine 마다 새로 만들어지는 것을 소스로 확인했다. 갈래와
+    **안 한 이유**의 정본은
     `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs` 의 명부이고,
     그 명부는 모든 갈래에 사유를 요구한다 — 갈래 이름만으로는 판정이 재현되지 않기
-    때문이다. 둘은 각자 막힌 곳이 다르다: 알림은 가시성 정책이 먼저 서야 하고
-    (다른 창의 알림을 보이게 하는 것이 옳은지가 제품 결정이다), 승인은 **발행과 응답이
-    서로 다른 창을 본다** — 발행(`plugin.request_permission` · caller gate 의 elevation)은
-    첫 main window 의 store 로 가고 `approval.list`·`approval.respond` 는 engine 핸들러라
-    포커스된 창으로 간다. 어느 쪽으로 통일할지가 UX 결정(승인 팝업이 어느 창에 뜨는가)
-    이라 그 결정 전에는 합산만 해도 답이 반쪽이다.
+    때문이다. 알림이 막힌 곳은 코드가 아니라 정책이다: 다른 창의 알림을 이 창에서
+    보이게 하는 것이 옳은지가 제품 결정이고, 합치면 응답의 `id` 가 창 수만큼
+    중복되므로 그 표시 규칙까지 함께 정해야 한다.
+    - **`approval.list` 는 창별이 아니었다.** `CoreState` 생성자만 읽으면 engine 마다
+      `Arc::new` 라 창별로 보이는데, 두 번째 main window 를 세우는
+      `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의
+      `approval_store` Arc 로 덮어쓴다. **저장소가 어디 사는지는 생성자와 창 생성
+      경로를 함께 읽어야 정해진다** — 한쪽만 읽으면 공유를 창별로도, 창별을 공유로도
+      잘못 읽는다. 같은 경로가 `surface_registry` · `file_format` · `file_handler` ·
+      `identify_worker` · `telemetry_seq` · `anomaly_detector` · `agent_seq` ·
+      `next_ids` 도 함께 넘긴다.
     - **`attach.list` 는 합산으로 갔다.** 점유 레지스트리는 engine 별이지만 두 배열의
       키(`surface_id`·`workspace_id`)가 `IdGenerator` 공유라 이어 붙이면 그대로 키가
       되고, 지목 축이 막혀 있지 않아 합산만으로 답이 닫힌다. 합치기 전에는 다른 창의

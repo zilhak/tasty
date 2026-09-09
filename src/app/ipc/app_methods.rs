@@ -785,24 +785,17 @@ impl App {
                 host_ipc::handler::audit::handle_clear(&self.core, id, &cmd.request.params)
             }
             "plugin.request_permission" => {
-                // 첫 main window 의 state 를 빌려 사용. main 이 하나도 없으면 elevation
-                // popup 표시 자체가 의미 없으므로 internal_error.
+                // 첫 main window 의 state 를 빌려 사용 (모든 window 가 같은 approval_store
+                // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로
+                // internal_error.
                 //
-                // **여기 "모든 window 가 같은 approval_store Arc 를 공유한다" 고 적혀
-                // 있었는데 거짓이다.** `CoreState::new_with_ids_and_settings` 는 engine
-                // 마다 `approval_store: Arc::new(...)` 로 새로 만든다 — 공유 인자로
-                // 받는 것은 `shared_ids` 와 `memory` 둘뿐이다. 그래서 첫 main 을 고르는
-                // 이 줄은 "아무거나 골라도 같다" 가 아니라 **어느 창인지를 정하는**
-                // 줄이다.
-                //
-                // 그 결과 발행과 응답이 서로 다른 창을 볼 수 있다: 발행(여기와
-                // `ipc/caller_gate.rs` 의 elevation)은 첫 main 으로 가는데
-                // `approval.list`·`approval.respond` 는 engine 핸들러라 라우팅 폴백을
-                // 타 **포커스된 창**으로 간다. `ApprovalId` 가 문자열(`req_…`)이라
-                // `request_target` 의 숫자 경로로는 주인 창을 못 푼다. 어느 쪽으로
-                // 통일할지(store 를 공유 Arc 로 올릴 것인가, 창별로 두고 문자열 id
-                // 라우팅을 세울 것인가)는 승인 팝업이 어느 창에 떠야 하는가라는
-                // UX 결정이라 여기서 정하지 않는다.
+                // **공유가 어디서 만들어지는지를 함께 적는다.** `CoreState` 의 생성자는
+                // engine 마다 `approval_store: Arc::new(...)` 로 새로 만들고, 두 번째
+                // main window 를 세울 때 `App::ensure_engine_and_plugins`
+                // (`app/window_lifecycle.rs`)가 첫 engine 의 Arc 로 **덮어쓴다**
+                // (`any_main_engine` 이 넘겨주는 아홉 중 하나). 그래서 "공유" 는
+                // 생성자만 읽으면 거짓으로 보이고 창 생성 경로까지 읽어야 참이다 —
+                // 좌표를 안 적어 두면 다음 사람이 생성자에서 멈춘다.
                 let core = &mut self.core;
                 let main = self.view.views.values_mut().find_map(|w| w.as_main_mut());
                 match main {
@@ -882,9 +875,9 @@ impl App {
     /// `approval.await`: 블로킹. store 선택만 여기 있고 대기는 공유한다
     /// (`ipc_dispatch_task_await` 와 같은 구조).
     ///
-    /// **그 선택이 창을 정한다.** `approval_store` 는 engine 마다 `Arc::new` 라
-    /// 공유물이 아니므로(위 `plugin.request_permission` 의 주석 참조) 여기서 고른
-    /// 첫 main 이 곧 대기하는 창이다 — 다른 창에서 발행된 승인은 이 대기가 못 본다.
+    /// **어느 engine 을 고르든 같은 store 다** — 창 생성 경로가 첫 engine 의
+    /// `approval_store` Arc 를 넘겨준다(위 `plugin.request_permission` 의 주석).
+    /// 그래서 이 선택은 대기 대상을 가르지 않는다.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
             .view
