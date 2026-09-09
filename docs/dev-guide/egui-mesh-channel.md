@@ -428,8 +428,9 @@ forward 루프는 frame 이 없는 채널을 조용히 건너뛰므로, host std
 
 그래서 `MeshForwardCommon` 이 bootstrap set_context 송신 시각을 기록해두고(`record_sent`
 가 첫 송신 때만 무장한다 — 재forward 마다 갱신하면 유예가 계속 밀려 빈 화면을 영영 못
-잡는다), `BLANK_MESH_GRACE`(3초)가 지나도록 frame 이 하나도 오지 않으면 **1회** `ERROR` 로
-그 사실과 plugin 로그 확인 경로를 남긴다. frame 이 도착하면 래치가 풀려, 이후 crash 로 다시
+잡는다), `BLANK_MESH_GRACE`(3초)가 지나도록 frame 이 하나도 오지 않으면 대상 하나당 **1회**
+(surface 는 surface 당, popup·banner 는 인스턴스 당) `ERROR` 로 그 사실과 plugin 로그 확인
+경로를 남긴다. frame 이 도착하면 래치가 풀려, 이후 crash 로 다시
 비면 재경고한다. 원인 자체는 여전히 plugin 로그에서 확인해야 한다 — 이 로그는 "어디를
 볼지"를 가리키는 신호다.
 

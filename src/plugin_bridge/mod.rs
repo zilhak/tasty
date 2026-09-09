@@ -77,7 +77,9 @@ pub(crate) fn mesh_region_of(
 /// - **담는 자리가 다르다.** surface 는 자기 구조체의 `bool` 한 칸
 ///   (`MeshForwardState::invalidated`, `src/view/main/egui_mesh.rs`), popup·banner 는
 ///   `AppState` 의 `HashSet<u64>` 두 개(`plugin_mesh_popup_pending_repaint`·
-///   `plugin_mesh_banner_pending_repaint`)다 — 채널당 한 칸 vs 인스턴스 키잉.
+///   `plugin_mesh_banner_pending_repaint`)다 — **대상 상태 구조체 안의 칸** vs
+///   **`AppState` 의 별도 집합**. 대상 하나당 한 칸이라는 점은 셋이 같고, 다른 것은
+///   그 칸이 어디에 사는가다.
 /// - **추가 진입로도 채널마다 다르다.** surface 는 파일 변경 통지가 같은
 ///   `SurfaceInvalidated` 를 타고 와 `mark_surface_invalidated` 로 그 칸을 세우고,
 ///   popup 은 ADR-0056 의 비동기 host→plugin push 결과가 같은 칸을 세우며
@@ -120,7 +122,10 @@ impl MeshForwardCommon {
     /// [`BLANK_MESH_GRACE`] 가 지나도록 frame 이 하나도 오지 않았으면 = 사용자에게는 빈
     /// 화면이다. plugin 쪽 실패(paint 에러/hang/crash)는 plugin 자체 로그에만 남고 host
     /// 의 forward 루프는 frame 없는 채널을 조용히 건너뛰므로, host stderr 만 보는
-    /// 사람에게는 아무 징후도 없다. 그 침묵을 여기서 깬다 — 채널당 1회.
+    /// 사람에게는 아무 징후도 없다. 그 침묵을 여기서 깬다 — 래치(`blank_warned`)가 이
+    /// 구조체 한 벌에 있으니 **대상 하나당 1회**다(surface 는 surface 당, popup·banner 는
+    /// 인스턴스 당). 채널 종류당이 아니다 — 같은 채널의 다른 인스턴스는 각자 한 번씩
+    /// 경고한다.
     ///
     /// 원인은 여기서 알 수 없다(host 는 실패 통지를 받지 않는다) — plugin 로그 경로를
     /// 함께 찍어 다음 확인처를 명시한다.
