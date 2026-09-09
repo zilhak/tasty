@@ -95,7 +95,11 @@ impl GpuState {
                         .stroke(egui::Stroke::new(th.border_width.value(), border))
                         .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)
                         .inner_margin(margin_all(th.spacing_xl))
-                        .shadow(th.shadow_popover().to_egui()),
+                        // 부팅 셸 설정은 화면 전체를 덮는 `CentralPanel` 위에 중앙
+                        // 정렬로 뜬다 = SCOPE RULE 의 modal 갈래(ADR-0254). 트리거
+                        // 위젯에 붙지 않고 뷰포트를 점유하므로 anchored popover 가
+                        // 아니다.
+                        .shadow(th.shadow_modal().to_egui()),
                 )
                 .show(ctx, |ui| {
                     // ── Title ──────────────────────────────────────
