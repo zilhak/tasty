@@ -193,7 +193,7 @@ semantic 필드를 그대로 재사용한다(신규 필드 없음). 정본 소�
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
 | `--tasty-modhint-radius` | → `radius` (4) | `corner_radius` | 셸 코너 |
-| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | anchored + scrim-less 표면의 lift 그림자(banner 와 공유) — SCOPE RULE 은 [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md) |
+| `--tasty-modhint-shadow` | → `shadow-modal` | `shadow_popover()` | ⚠ **디자인 체인과 구현이 갈린다(미해소).** 디자인은 `components.css` 에서 `shadow-modal` 을 가리키는데, [ADR-0254](../../adr/0254-floating-surface-shadow-scope-rule.md) 의 SCOPE RULE 상 modal 은 **뷰포트를 점유하는** 표면의 값이다 — modifier-hint 는 트리거 없이 라이브 출력 위에 뜨는 이동/리사이즈 패널이라 그 갈래에 안 들어간다. 그래서 구현은 scrim-less lift 인 `shadow_popover()`(banner 와 공유)를 유지한다. 어느 쪽으로 맞출지는 **디자인이 정한다** — design request 로 올려 확정하기 전까지 이 행이 그 발산의 기록이다 |
 | `--tasty-modhint-strip-bg` | → `bg-sidebar` | `modhint_strip_bg()` | 드래그 스트립 배경 |
 | `--tasty-modhint-separator` | → `separator` | `modhint_separator()` | 스트립/헤더 하단 구분선 |
 | `--tasty-modhint-held-fg` | → `text-muted` | `modhint_held_fg()` | 스트립 "held" 라벨 |
