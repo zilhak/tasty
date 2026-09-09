@@ -18,15 +18,20 @@
 //! 두 라우터의 dispatch 는 `match`/`if` 안의 문자열 리터럴이라 밖으로 꺼낼 상수가
 //! 없다. 값으로 읽을 수 있는 것(읽기 전용 `plugin.*` 표)은 값으로 읽는다.
 //!
-//! **세는 창은 두 쪽이 다르고, 그 차이는 의도다.** gui 쪽은 dispatch **함수 본문**만
-//! 본다 — 그 파일에는 답하지 않는 헬퍼가 같이 살아서, 파일 전체를 세면 안 열린 것이
-//! 열린 것으로 잡힌다. 헤드리스 쪽은 **파일 전체**를 본다([`headless_methods`]) —
-//! 그 파일은 통째로 `#![cfg(not(feature = "gui"))]` 인 dispatch 모듈이라 파일이 곧
-//! 물음의 범위이고, 답하는 자리를 함수로 갈라도 판정이 안 흔들린다. 함수로 좁혔던
-//! 때 그 리팩터 한 번이 실제로 판정을 뒤집었다(그 실측은 `headless_methods` 에 있다).
+//! **세는 창은 양쪽 다 dispatch 함수 본문이다 — 파일 전체가 아니다.** 두 파일 모두
+//! 답하지 않는 헬퍼와 산문이 같이 살아서, 파일을 통째로 세면 **안 열린 것이 열린 것으로**
+//! 잡힌다. 헤드리스 쪽만 함수가 여럿이라 [`HEADLESS_DISPATCH_FNS`] 명부로 든다 —
+//! 종단 응답이 `intercept_app_layer` / `intercept_debug_app_layer` 로 갈라져 있고,
+//! 창을 `pump_ipc` 하나로 두면 그 리팩터 한 번에 판정이 뒤집힌다(실측은 그 상수에 있다).
+//! 옆 가드(`tests/ipc_release_table_excludes_input_reproduction.rs` 의
+//! `RELEASE_ROUTERS`)가 같은 이동에 같은 처방 — 명부에 헬퍼를 **더하는 것** — 을 썼다.
 //!
-//! 두 창 모두 doc 주석의 이름은 안 센다 — 세는 것은 **문자열 리터럴**이고 주석 속
-//! 메서드 이름은 백틱이라 따옴표에 안 걸린다.
+//! **세기 전에 주석을 걷어낸다**([`super::strip_comments`]). 이 파일의 물음은 "그
+//! 이름을 답하는 코드가 있는가" 인데, 답하지 않는 이름을 **설명하려고** 인용하는 주석이
+//! dispatch 본문 안에 흔하다. 걷어내지 않으면 그 설명이 코드로 오인돼 두 방향으로 다
+//! 틀린다 — 사유가 적힌 이름을 주석이 인용하면 "헤드리스가 실제로 답하는데 사유가
+//! 낡았다" 는 **거짓 실패**가 나고, 그 처방대로 사유를 지우면 답하지도 사유도 없는 채로
+//! **거짓 초록**이 된다. 둘 다 재현했다(아래 `a_comment_is_not_an_answer`).
 //!
 //! 텍스트로 읽는 대가는 **리터럴이 아닌 이름은 안 보인다** 는 것이다. 그 사각은 수를
 //! 세는 검사로 못 좁힌다 — 이름 하나를 매크로 뒤로 숨기면 항목이 하나 줄 뿐이고(하한
@@ -37,7 +42,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{callers_of, fn_body, repo_root};
+use super::{callers_of, fn_body, repo_root, strip_comments};
 
 const GUI_STEP: &str = "src/app/ipc/app_methods.rs";
 const GUI_FN: &str = "fn ipc_step_app_methods";
@@ -49,10 +54,38 @@ const GUI_DEBUG_FN: &str = "fn ipc_step_debug";
 /// 값의 근거: 2026-09-05 실측 17 건.
 const MIN_GUI_METHODS: usize = 12;
 
+/// 헤드리스 dispatch 가 **이름으로 답하는** 자리 — 이 셋의 본문 합집합이 좌변이다.
+///
+/// `pump_ipc` 를 빼지 않는다: 지금 그 본문의 이름은 0 이지만(종단 응답이 전부 갈라져
+/// 나갔다) 팔이 거기 다시 생길 수 있고, 명부에서 빼면 그때 안 보인다. 대신 `fn_body`
+/// 가 못 자르면 패닉이므로 **셋 다 실재해야** 판정이 성립한다 — 빈 좌변의 초록은
+/// 통과가 아니라 미측정이다([`the_roster_names_real_functions`]).
+///
+/// 실측(2026-09-10, `git show <rev>:파일` 로 같은 추출기를 돌린 값):
+///
+/// | rev | `pump_ipc` 본문 | 이 명부 합집합 | 파일 전체 |
+/// |---|---|---|---|
+/// | 가드 도입 시점 | 11 | 11 | 11 |
+/// | 분해 직전(`main`) | 12 | 12 | 12 |
+/// | 분해 뒤(지금) | 0 | 12 | 12 |
+///
+/// 읽을 것 둘. ① 분해가 `pump_ipc` 창을 **12 → 0** 으로 떨어뜨렸다(코드는 한 줄도 안
+/// 잃었다). ② **파일 전체로 넓혀서 얻는 이름은 0 이다** — 어느 rev 에서도 명부 합집합과
+/// 같다. 그래서 넓히지 않고 명부로 든다: 넓히면 얻는 것 없이 산문까지 세게 된다.
+const HEADLESS_DISPATCH_FNS: &[&str] = &[
+    "fn pump_ipc(",
+    "fn intercept_app_layer(",
+    "fn intercept_debug_app_layer(",
+];
+
 /// 헤드리스 dispatch 가 이름으로 답하는 메서드 수의 하한.
-/// 값의 근거: 2026-09-09 실측 12 건([`headless_methods`] 의 모수 = 파일 전체).
-/// 그 전 값은 같은 파일을 `fn pump_ipc` 본문으로 좁혀 세던 6 건이었다 — 좌변이
-/// 바뀌었으므로 두 수를 견주지 마라.
+///
+/// 값의 근거: 2026-09-10 실측 12 건([`HEADLESS_DISPATCH_FNS`] 의 표). gui 쪽 비율과
+/// 맞춘다(17 에 하한 12).
+///
+/// **옛 주석의 "실측 6" 은 어느 rev 에서도 나온 적이 없는 수다.** 같은 추출기로 다시
+/// 재니 도입 시점이 11, `main` 이 12 였다 — 옛 하한 4 도, 그것을 8 로 올리며 적은
+/// "6 에서 12 로 늘었다" 도 그 6 위에 서 있었다. 늘어난 것은 없었다.
 const MIN_HEADLESS_METHODS: usize = 8;
 
 /// gui 의 app 층 step 에는 있고 **헤드리스에는 의도적으로 없는** 메서드와 그 사유.
@@ -146,18 +179,30 @@ fn gui_methods() -> BTreeSet<String> {
     method_literals(&body)
 }
 
-/// **모수는 함수가 아니라 파일이다.** 한때 이 자리는 `fn pump_ipc` 본문만 잘라 봤고,
-/// 그 창은 답하는 자리가 그 함수 안에 전부 있다는 전제 위에 서 있었다. 그 전제는
-/// 리팩터가 깨뜨린다 — 종단 응답을 `intercept_app_layer` 로 갈라내자 창 안의 이름이
-/// **6 개에서 0 개로** 떨어졌고, 가드는 "헤드리스가 아무것도 안 답한다" 고 말했다.
-/// 코드는 한 줄도 안 잃었는데 판정만 뒤집힌 것이라, 그때 옳은 처방은 이름을 도로 밀어
-/// 넣는 것이 아니라 **세는 창을 물음에 맞추는 것**이다. 물음은 "이 메서드를 헤드리스
-/// dispatch 가 답하는가" 이고, 그 dispatch 는 파일 하나다(`#![cfg(not(feature = "gui"))]`).
+/// 명부에 든 dispatch 함수들의 본문을 **주석을 걷어낸 뒤** 이어 붙인다.
 ///
-/// 같은 파일의 debug 갈래 판정이 이미 파일 전체를 본다(`in_file`) — 창을 맞추면 그 둘도
-/// 같은 모수를 쓰게 된다.
+/// 이 문자열이 이 가드의 좌변 전부다 — 이름 추출도, `HEADLESS_COVERS` 의 증거 토큰
+/// 조회도 여기서 한다. 두 물음이 같은 사본을 봐야 "주석 한 줄이 증거로 통하는" 갈래가
+/// 한쪽에만 남지 않는다.
+fn headless_dispatch_code() -> String {
+    let src = read(HEADLESS_PUMP);
+    let mut out = String::new();
+    for sig in HEADLESS_DISPATCH_FNS {
+        let body = fn_body(&src, sig).unwrap_or_else(|| {
+            panic!(
+                "{HEADLESS_PUMP} 에서 `{sig}` 본문을 못 잘랐다 — 이름이 바뀌었으면 \
+                 `HEADLESS_DISPATCH_FNS` 도 함께 고쳐라. 못 자른 채로 넘어가면 그 함수가 \
+                 답하는 이름이 통째로 안 보이고, 그 미측정이 초록으로 나간다"
+            )
+        });
+        out.push_str(&strip_comments(&body));
+        out.push('\n');
+    }
+    out
+}
+
 fn headless_methods() -> BTreeSet<String> {
-    method_literals(&read(HEADLESS_PUMP))
+    method_literals(&headless_dispatch_code())
 }
 
 /// gui app 층 step 의 모든 메서드는 **헤드리스가 답하거나, 왜 못 답하는지가 적혀 있다.**
@@ -174,16 +219,16 @@ fn every_gui_app_layer_method_is_answered_headless_or_carries_a_reason() {
     assert!(
         headless.len() >= MIN_HEADLESS_METHODS,
         "헤드리스 dispatch 에서 메서드를 {} 개밖에 못 뽑았다(하한 {MIN_HEADLESS_METHODS}, \
-         2026-09-09 실측 12)",
+         2026-09-10 실측 12)",
         headless.len()
     );
 
     let excused: BTreeSet<&str> = NOT_IN_HEADLESS.iter().map(|(m, _)| *m).collect();
-    let pump = read(HEADLESS_PUMP);
+    let code = headless_dispatch_code();
     let covered_by_token = |m: &str| {
         HEADLESS_COVERS
             .iter()
-            .any(|(item, token)| *item == m && pump.contains(token))
+            .any(|(item, token)| *item == m && code.contains(token))
     };
     let missing: Vec<&String> = gui
         .iter()
@@ -257,6 +302,61 @@ fn after() { let m = \"ns.after\"; }
         !found.contains("ns.before") && !found.contains("ns.after"),
         "본문 밖 리터럴을 집었다: {found:?}"
     );
+}
+
+/// **주석은 답이 아니다** — 그리고 명부 밖 헬퍼도 아니다.
+///
+/// 이 가드가 한때 파일 전체를 세던 때 두 방향이 다 났다(재현했다):
+/// - dispatch 파일 꼬리에 `"ui.screenshot"` 을 인용한 **산문 주석 한 줄**을 넣으니
+///   `NOT_IN_HEADLESS` 의 낡은-사유 검사가 발화해 *"헤드리스가 실제로 답하는데 …
+///   사유를 지워라"* 로 실패했다. 실재하지 않는 위반에 대한 처방이다.
+/// - 그 처방대로 사유를 지우니 통과했다. 답하지도, 사유가 적혀 있지도 않은 이름이
+///   초록으로 남는 **거짓 초록**이다.
+///
+/// 그래서 좌변은 명부 함수의 본문이고 그 사본에서 주석을 걷어낸다. 아래는 그 두
+/// 처방이 실제로 먹는지를 합성 입력으로 못박는다 — 마지막 단언이 **걷어내지 않으면
+/// 잡힌다**는 대조라, 합성 입력이 그 갈래를 안 만들면 이 시험이 먼저 죽는다.
+#[test]
+fn a_comment_is_not_an_answer() {
+    let src = "\
+fn pump_ipc(app: &mut App) {
+    // 헤드리스는 \"ui.screenshot\" 을 답하지 않는다 — 창이 없다.
+    if m == \"ns.real\" { go(); }
+}
+fn tail_helper() { let doc = \"remote.attach\"; }
+";
+    let body = fn_body(src, "fn pump_ipc(").expect("본문을 잘라야 한다");
+    let found = method_literals(&strip_comments(&body));
+    assert!(found.contains("ns.real"), "답하는 이름을 잃었다: {found:?}");
+    assert!(
+        !found.contains("ui.screenshot"),
+        "주석 속 이름을 답으로 셌다: {found:?}"
+    );
+    assert!(
+        !found.contains("remote.attach"),
+        "명부 밖 헬퍼의 이름을 셌다: {found:?}"
+    );
+    assert!(
+        method_literals(&body).contains("ui.screenshot"),
+        "합성 입력이 주석 갈래를 안 만든다 — 위 단언은 아무것도 안 잰다"
+    );
+}
+
+/// 명부의 세 이름이 **실제 파일에 있다.**
+///
+/// `fn_body` 가 못 자르면 `headless_dispatch_code` 가 패닉하므로 판정이 조용히
+/// 비지는 않는다. 이 시험은 그 패닉을 이름별로 미리 터뜨려 어느 항목이 낡았는지를
+/// 실패문에 남긴다 — 셋을 이어 붙인 뒤 터지면 어느 것인지가 안 보인다.
+#[test]
+fn the_roster_names_real_functions() {
+    let src = read(HEADLESS_PUMP);
+    for sig in HEADLESS_DISPATCH_FNS {
+        assert!(
+            fn_body(&src, sig).is_some(),
+            "`{sig}` 를 `{HEADLESS_PUMP}` 에서 못 찾았다 — 이름이 바뀌었으면 \
+             `HEADLESS_DISPATCH_FNS` 를 함께 고쳐라"
+        );
+    }
 }
 
 /// gui 의 **debug step** 에는 있고 헤드리스에는 의도적으로 없는 것과 그 사유.
@@ -444,7 +544,7 @@ fn pump_ipc(app: &mut App) {
 /// 그냥 면제 목록이 된다.
 #[test]
 fn a_cover_claim_dies_with_its_evidence() {
-    let pump = read(HEADLESS_PUMP);
+    let pump = headless_dispatch_code();
     for (item, token) in HEADLESS_COVERS {
         assert!(
             pump.contains(token),
