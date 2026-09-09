@@ -6,12 +6,17 @@
 //! 간소화한다.
 //!
 //! 생략(gui 대비):
-//! - caller elevation / audit-on-deny (view 의존; deny 자체는 handle_with_caller 가 회신)
 //! - app_methods / window_required / debug step (창/스크린샷/system.shutdown 등).
 //!   예외는 `timer.list` 하나 — 읽는 대상(TimerHub)이 `App` 에 있어 engine handler
 //!   로는 답할 수 없고, 관측이 gui 에서만 되면 headless 인스턴스의 wakeup 원인을
 //!   물어볼 방법이 사라진다.
 //! - dispatch_list_global / find_request_owner / parked fallback (engine 1 개)
+//!
+//! **caller elevation / audit-on-deny 는 생략하지 않는다** — 아래 1b 가 부르는
+//! `check_permission_gate`(`src/adapters/ipc/handler.rs`)가 deny 를 audit 에
+//! `AuditDecision::Deny` 로 남기고, Agent caller 의 `MissingPermission` 이면
+//! capability elevation 을 발행해 그 좌표를 오류 `data` 에 싣는다. gui 의
+//! `caller_gate.rs` step 1 과 같은 일이다.
 //!
 //! plugin namespace forward 는 **생략하지 않는다** — plugin 이 contribute 한
 //! namespace(`markdown.*` 등)는 CLI 로 노출된 에이전트 표면이라 headless 에서도
@@ -70,6 +75,9 @@ pub(crate) fn pump_ipc(
         //     **두 번 소비한다**(`rate_limit_try_consume` 은 통과할 때도 소비한다).
         //     권한 게이트는 통과 시 부수효과가 없어 두 번 돌아도 답이 같다. 거부는
         //     여기서 단락되므로 audit 도 한 번만 남는다.
+        //
+        //     대가로 **아래 App 층 인터셉트는 rate-limit 을 아예 안 거친다** —
+        //     `handle_with_caller` 에 도달하지 않아 `check_rate_limit_gate` 가 안 돈다.
         //
         //     별칭을 먼저 정규화한다 — 안 하면 옛 이름으로 부르는 요청이 게이트를
         //     지나간다(`handle_with_caller` 도 정규화 뒤에 잰다).

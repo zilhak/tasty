@@ -83,11 +83,13 @@
     tasty list notifications No notifications   창1 의 알림이 없다
 
 양성 대조로 같은 자원을 창2 에 만들면 각 목록이 **창2 의 것 하나만** 낸다. `approval.list`
-와 `attach.list` 는 저장소가 engine 마다 새로 만들어지는 것을 소스로 확인했고(둘 다
-`CoreState` 생성자에서 `Arc::new`/`::new`), 대상 인자가 없어 같은 형태다 — 다만 비포커스
-창에 그 자원을 만들 수단이 없어 **실행 재현은 못 했다.**
+와 `attach.list` 도 `CoreState` 생성자에서 `Arc::new`/`::new` 되고 대상 인자가 없어
+같은 형태로 읽었지만, **그 판정은 생성자만 읽은 것이라 뒤에 뒤집혔다** — 아래
+"이후 회차의 정정" 절이 정본이다. 비포커스 창에 그 자원을 만들 수단이 없어 **실행
+재현은 못 했다.**
 
-**둘은 합산 전에 id 공간을 먼저 고쳐야 한다 — 위 재검토 트리거 2 가 걸린 것이다.**
+**hook 둘(`hook.list` · `global_hook.list`)은 합산 전에 id 공간을 먼저 고쳐야 한다 —
+위 재검토 트리거 2 가 걸린 것이다.**
 `IdGenerator` 가 공유하는 카운터는 workspace · category · pane · tab · surface · pty ·
 observer 일곱이고 **hook 과 global hook 은 거기 없다.** 그래서 두 창의 hook 이 똑같이
 id 1 을 받는다. 실측: 포커스된 창에서 `unset global-hook --hook 1` 이 성공하고, 한 번
@@ -111,6 +113,24 @@ Alternatives C 를 **기각으로 확정한다.** 세 성질을 정적으로 자
 창을 요구해 헤드리스 조합 CI 가 이름으로 `--skip` 하는 유일한 항목이다. 명부 쪽은
 `tasty-doc-guards` 라 경로 필터 없는 잡에서 돈다. 둘은 겹치는 것이 아니라 **채널이
 다르다** — 조합별 채널의 정본은 [ci-gates](../dev-guide/ci-gates.md).
+
+### 이후 회차의 정정 — approval 은 공유였고 attach 는 합산으로 갔다 (2026-09-09)
+
+위 절이 `approval.list` · `attach.list` 를 묶어 "저장소가 engine 마다 새로 만들어진다 /
+둘은 합산 전에 id 공간을 먼저 고쳐야 한다" 로 적은 것은 **둘 다 틀렸다.** 그 판정은
+`CoreState` 생성자만 읽고 창 생성 경로를 안 읽은 결과다.
+
+- **`approval_store` 는 창 사이에 공유된다.** 두 번째 main window 를 세우는
+  `App::ensure_engine_and_plugins`(`src/app/window_lifecycle.rs`)가 첫 engine 의 Arc 로
+  덮어쓴다 — 그 아홉 중 하나가 `approval_store` 다. 저장소가 어디 사는지는 **생성자와
+  창 생성 경로를 함께** 읽어야 정해진다.
+- **`attach.list` 는 합산으로 갔다.** 점유 레지스트리는 engine 별이 맞지만, 두 배열의
+  키(`surface_id` · `workspace_id`)는 위 절이 같은 자리에서 공유로 열거한 일곱에 있다.
+  즉 id 공간은 처음부터 닫혀 있었고 합산만이 남은 일이었다 — "합산 전에 id 공간을
+  먼저" 는 hook 둘에만 해당한다.
+
+갈래와 사유의 정본은 `crates/tasty-doc-guards/tests/window_owned_lists_are_classified.rs`
+의 명부이고, 정책 쪽 서술은 [focus 정책](../design/policies/focus.md) 이다.
 
 ## References
 

@@ -68,8 +68,8 @@ impl App {
 
     /// 살아있는 CoreState 중 하나(아무거나)를 참조로 반환. windows main → parked
     /// 순으로 찾는다. 두 번째 main window 생성 시 첫 engine 의 Arc 들 (surface_registry /
-    /// file_format / file_handler / preset_store / identify_worker / approval_store /
-    /// telemetry_seq / anomaly_detector / agent_seq) 을 공유시키기 위해 사용.
+    /// file_format / file_handler / identify_worker / approval_store / telemetry_seq /
+    /// anomaly_detector / agent_seq / next_ids) 을 공유시키기 위해 사용.
     pub(crate) fn any_main_engine(&self) -> Option<&crate::core::CoreState> {
         for w in self.view.views.values() {
             if let Some(m) = w.as_main() {

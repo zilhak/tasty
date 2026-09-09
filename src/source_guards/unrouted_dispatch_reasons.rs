@@ -31,6 +31,9 @@
 //! 2. **`request_target` 밖에서 푸는 것을 못 본다.** `split` 의
 //!    `target_surface`/`target_pane` 은 `App::find_request_owner` 가 문자열 축에서
 //!    잇는다. 그래서 여기서는 지목 없음으로 잡히지만 실제로는 라우팅된다.
+//! 3. **필터 키를 대상 키와 안 가른다** — `hook.list` 의 `surface_id` 는 주인 창을
+//!    정하지 않는 필터인데 범용 키라 모수 밖으로 빠진다(그래서 폴백으로 가는데도
+//!    이 명부에 없다).
 //!
 //! 그래서 이 명부의 갈래는 "포커스로 새는가" 가 아니라 **"이 스캔이 지목을 못 본
 //! 자리가 왜 그래도 되는가"** 다. 술어가 완벽하지 않다는 것을 명부가 갈래로 흡수한다 —
@@ -662,7 +665,7 @@ fn unrouted_methods() -> BTreeSet<String> {
     }
     assert!(
         keys_of.len() >= MIN_METHODS,
-        "dispatch arm 을 {} 개만 걷었다(하한 {MIN_METHODS}). 파서가 죽으면 아래 집합 \\
+        "dispatch arm 을 {} 개만 걷었다(하한 {MIN_METHODS}). 파서가 죽으면 아래 집합 \
          동등은 양쪽이 빈 집합이라 그냥 통과한다",
         keys_of.len()
     );
@@ -683,23 +686,23 @@ fn every_unrouted_method_is_classified() {
     let stale: Vec<&String> = listed.difference(&found).collect();
     assert!(
         missing.is_empty(),
-        "주인 창을 못 찾는데 명부에 없는 메서드다. 갈래와 사유를 달아 `ROSTER` 에 \\
-         적어라 — 적히지 않은 것이 조용히 포커스된 창으로 간다:\\n  {}",
+        "주인 창을 못 찾는데 명부에 없는 메서드다. 갈래와 사유를 달아 `ROSTER` 에 \
+         적어라 — 적히지 않은 것이 조용히 포커스된 창으로 간다:\n  {}",
         missing
             .iter()
             .map(|s| s.as_str())
             .collect::<Vec<_>>()
-            .join("\\n  ")
+            .join("\n  ")
     );
     assert!(
         stale.is_empty(),
-        "명부에 있는데 스캔에 안 잡히는 메서드다 — 지목이 생겼거나 arm 이 사라졌다. \\
-         생겼으면 지우고, 사라졌으면 이름을 맞춰라:\\n  {}",
+        "명부에 있는데 스캔에 안 잡히는 메서드다 — 지목이 생겼거나 arm 이 사라졌다. \
+         생겼으면 지우고, 사라졌으면 이름을 맞춰라:\n  {}",
         stale
             .iter()
             .map(|s| s.as_str())
             .collect::<Vec<_>>()
-            .join("\\n  ")
+            .join("\n  ")
     );
 }
 
