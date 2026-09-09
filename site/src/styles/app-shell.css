@@ -143,3 +143,10 @@
   transform: translateX(-50%);
   pointer-events: none;
 }
+
+/* Guide-only composition; component visuals come from the design kit. */
+.workflow-diagram { margin: 1.5rem 0; }
+.workflow-diagram__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tasty-space-sm); }
+.workflow-diagram__pane { display: flex; flex-direction: column; min-width: 0; min-height: 190px; }
+.workflow-diagram figcaption { margin-top: .75rem; font-size: .85rem; }
+@media (max-width: 600px) { .workflow-diagram__grid { grid-template-columns: minmax(0, 1fr); } }

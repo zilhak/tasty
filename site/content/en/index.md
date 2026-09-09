@@ -1,4 +1,4 @@
-<!-- source-hash: 44b642e68f70 -->
+<!-- source-hash: e9c77aaba870 -->
 # Tasty guide
 
 Tasty is a GPU-accelerated terminal where you and your AI agents work together. On Windows, macOS, and Linux, you can organize projects into workspaces and open several terminals side by side. Agents use the `tasty` CLI to create terminals, run commands, and read the results.
@@ -13,6 +13,7 @@ Start with installation and a first look if you are new to Tasty. If you already
 ## Using Tasty
 
 - [Workspaces](using/workspaces.md) — Creating, naming, grouping into categories, switching, closing, restoring.
+- [Build and reuse a working layout](using/workflow-layouts.md) — arrange implementation and tests, then save a preset.
 - [Panes · Tabs · splits](using/panes-tabs-splits.md) — Dividing the screen, moving, changing type, fullscreen, saving layouts.
 - [Working in the terminal](using/terminal.md) — Copy/paste, search, opening links, scrolling, mouse capture, shell integration.
 - [Opening files](using/files.md) — Explorer · Markdown · image · HTML · git views and other non-terminal screens.
@@ -27,6 +28,7 @@ Start with installation and a first look if you are new to Tasty. If you already
 ## With AI agents
 
 - [Driving the terminal with the tasty CLI](agents/cli.md) — Basic `list` / `send` / `read` / `mark` / `notify` patterns.
+- [Bring a background task into a tab](agents/background-tasks.md) — inspect output and exit state, then move a running hidden PTY into a tab.
 - [Working with Claude · Codex](agents/claude-codex.md) — Installing hooks, spawning child instances, tell, completion notifications.
 - [Task workflows](agents/tasks.md) — Tying work together by dependency, running it in order, and watching the graph.
 - [Hooks · notifications · webhooks](agents/hooks-notifications.md) — Surface hooks, global hooks, notifications, external HTTP triggers.

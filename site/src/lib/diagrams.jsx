@@ -1,4 +1,5 @@
 import React from "react";
+import { WorkflowLayout } from "../components/diagrams/WorkflowLayout.jsx";
 import { renderToStaticMarkup } from "react-dom/server";
 import { WindowAnatomy } from "../components/diagrams/WindowAnatomy.jsx";
 import { SettingsAnatomy } from "../components/diagrams/SettingsAnatomy.jsx";
@@ -18,6 +19,8 @@ const LABELS = {
 };
 
 const DIAGRAMS = {
+  "workflow-layout": (lang) => <WorkflowLayout lang={lang} />,
+  "background-task": (lang) => <WorkflowLayout lang={lang} background />,
   "window-anatomy": (lang) => <WindowAnatomy labels={LABELS[lang] ?? LABELS.en} />,
   "settings-window": () => <SettingsAnatomy />,
 };

@@ -88,7 +88,7 @@ export const KO: Copy = {
   featuresTitle: "매일 하는 개발 작업을 한곳에서",
   featuresBody: "프로젝트별로 터미널을 정리하고, 코드 옆에서 문서를 읽고, 반복하는 일은 자동화하세요. 에이전트와 함께 쓸 때도 필요한 도구를 가까이 둘 수 있습니다.",
   cards: [
-    { icon: "layoutGrid", title: "GPU로 그리는 터미널", body: "GPU 가속으로 터미널 화면을 그립니다. 여러 터미널을 나란히 열고 작업할 수 있습니다.", href: "using/panes-tabs-splits/" },
+    { icon: "layoutGrid", title: "GPU로 그리는 터미널", body: "GPU 가속으로 터미널 화면을 그립니다. 여러 터미널을 나란히 열고 작업할 수 있습니다.", href: "using/workflow-layouts/" },
     { icon: "layers", title: "프로젝트별 작업 공간", body: "프로젝트마다 워크스페이스를 나누세요. 자주 쓰는 화면 배치는 프리셋으로 저장해 다시 불러올 수 있습니다.", href: "using/workspaces/" },
     { icon: "folderOpen", title: "코드 옆에 문서와 이미지", body: "파일 탐색기, 마크다운 문서, 이미지, 웹 페이지를 터미널 옆에 열어두고 함께 확인하세요.", href: "using/files/" },
     { icon: "rocket", title: "Claude와 Codex 연동", body: "여러 에이전트에게 작업을 나눠 맡기세요. 연동을 설정하면 작업 완료와 입력 요청을 알림으로 확인할 수 있습니다.", href: "agents/claude-codex/" },
@@ -150,7 +150,7 @@ export const EN: Copy = {
   featuresTitle: "Your everyday development tools, together",
   featuresBody: "Organize terminals by project, read docs beside your code, and automate routine tasks. Keep the tools you and your agents need in the same workspace.",
   cards: [
-    { icon: "layoutGrid", title: "GPU rendering", body: "Tasty uses the GPU to draw your terminal. Open several terminals side by side to follow different parts of your work.", href: "using/panes-tabs-splits/" },
+    { icon: "layoutGrid", title: "GPU rendering", body: "Tasty uses the GPU to draw your terminal. Open several terminals side by side to follow different parts of your work.", href: "using/workflow-layouts/" },
     { icon: "layers", title: "A workspace for each project", body: "Keep projects in separate workspaces. Save a layout as a preset and bring it back when you need it.", href: "using/workspaces/" },
     { icon: "folderOpen", title: "Docs and images beside your code", body: "Open a file explorer, Markdown documents, images, and web pages alongside your terminals.", href: "using/files/" },
     { icon: "rocket", title: "Connect Claude and Codex", body: "Give different tasks to several agents. Once configured, the integration notifies you when work finishes or an agent needs input.", href: "agents/claude-codex/" },

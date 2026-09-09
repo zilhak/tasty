@@ -273,3 +273,9 @@ Plugins · Ports · Remote · 커맨드 팔레트를 연다. 페이지이기 때
   문서 레이아웃에 얹지 않는다 — 내비게이션과 스크롤바가 둘씩 생기고, `gallery.css` 가
   `html, body` 를 잡는다. 바꾸는 것은 크롬 주변뿐이다: 내비는 이 사이트 라우트를 가리키고,
   브랜드와 상단 바에 `/design/` 로 돌아가는 길이 있고, 테마 토글은 사이트 키를 쓴다.
+
+## 작업 흐름 가이드의 그림
+
+`using/workflow-layouts`는 페인별 작업 배치와 프리셋 재사용을, `agents/background-tasks`는 숨겨진 PTY의 생성·입력·조회·탭 전환·정리를 안내한다. 두 페이지는 한국어와 영어로 제공한다.
+
+`site/src/components/diagrams/WorkflowLayout.jsx`는 vendor의 TabStrip과 TerminalPane을 조합한 정적 예시다. Markdown의 `tasty-diagram: workflow-layout` 및 `tasty-diagram: background-task` 표식을 통해 렌더한다. 캡션에 실제 앱이 아닌 배치 예시임을 명시하고, 비활성 컨트롤은 inert 처리한다. 좁은 화면에서는 페인을 세로로 배치한다. 문서의 실제 조작 순서와 명령이 그림의 설명을 보완한다.
