@@ -91,6 +91,8 @@ pump 도 같은 `dispatch_readonly` 를 통과한다. 표를 두 벌로 두면 �
 키와 payload 자체(`plugin.enabled` / `plugin.disabled` / `plugin.unloaded`)는 두 경로가
 같은 함수를 부른다. hook 이벤트 등록 해제도 gui 의 `cascade_plugin_unloaded` 와 같다.
 
+근거·대안·재검토 조건은 [ADR-0253](../adr/0253-the-lifecycle-toggles-do-not-wait-for-the-app-split.md).
+
 **매니저는 메타데이터 층까지만 세운다** (`ensure_plugin_manager_metadata`). 번들 설치는
 부팅이 이미 했고(`src/boot.rs`), `PluginManager::enable` 은 그 package 표에서 **지목한
 하나만** 찾아 기동한다. 여기서 `ensure_plugin_manager`(= `discover_and_start`)를 부르면
