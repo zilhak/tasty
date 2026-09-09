@@ -12,6 +12,16 @@ import { BASE } from "./src/lib/base.mjs";
 export default defineConfig({
   base: BASE,
   integrations: [react()],
+  vite: {
+    plugins: [{
+      name: "tasty-isolate-dependency-cache",
+      config(_config, { command, mode }) {
+        // A build may run while the preview dev server is still open.
+        // React's development JSX runtime must not reuse production prebundles.
+        return { cacheDir: fileURLToPath(new URL(`./node_modules/.vite-tasty/${command}-${mode}/`, import.meta.url)) };
+      },
+    }],
+  },
   markdown: {
     processor: satteri({
       hastPlugins: [

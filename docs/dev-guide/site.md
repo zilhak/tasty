@@ -279,3 +279,9 @@ Plugins · Ports · Remote · 커맨드 팔레트를 연다. 페이지이기 때
 `using/workflow-layouts`는 페인별 작업 배치와 프리셋 재사용을, `agents/background-tasks`는 숨겨진 PTY의 생성·입력·조회·탭 전환·정리를 안내한다. 두 페이지는 한국어와 영어로 제공한다.
 
 `site/src/components/diagrams/WorkflowLayout.jsx`는 vendor의 TabStrip과 TerminalPane을 조합한 정적 예시다. Markdown의 `tasty-diagram: workflow-layout` 및 `tasty-diagram: background-task` 표식을 통해 렌더한다. 캡션에 실제 앱이 아닌 배치 예시임을 명시하고, 비활성 컨트롤은 inert 처리한다. 좁은 화면에서는 페인을 세로로 배치한다. 문서의 실제 조작 순서와 명령이 그림의 설명을 보완한다.
+
+## 갤러리 개발 서버와 빌드 캐시
+
+개발 서버를 켠 상태에서도 배포 빌드를 실행할 수 있도록 Vite 의 의존성 캐시는 command·mode 별로 분리한다. `site/astro.config.mjs`의 `tasty-isolate-dependency-cache` 플러그인이 이 경로를 설정한다. 개발용 JSX 코드는 React의 `jsxDEV`를 사용하므로 production 의존성 번들을 재사용하면 갤러리 hydration이 실패하고 지연 렌더링하는 Stage가 비게 된다.
+
+갤러리 검증은 HTTP 응답과 pageerror만으로 판정하지 않는다. 콘솔의 hydration 오류, React 아일랜드의 SSR 상태 해제, 첫 Stage의 실제 컨트롤 표시, 아래쪽 Stage의 스크롤 후 표시를 함께 확인한다. 개발 서버를 유지한 채 build한 뒤에도 새 브라우저에서 같은 검사를 수행한다.
