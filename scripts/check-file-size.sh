@@ -142,7 +142,7 @@ trap 'rm -rf "$STRIPPED"' EXIT
 # 어긋나면 **판정 불가(2)** 다. 통과도 위반도 아닌 이유는 그 상태에서 위반이 있는지
 # 없는지를 모르기 때문이다 — 모자란 사본에서 나온 "임계 초과 0" 은 "큰 파일이 없다"
 # 와 "큰 파일을 안 봤다" 를 같은 줄로 만든다.
-STRIP_REPORTED="$("$STRIP_BIN" "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}")" || {
+STRIP_REPORTED="$("$STRIP_BIN" --neutralize-char-literal-quotes "$STRIPPED" "$ROOT" "${SCAN_DIRS[@]}")" || {
     echo "출하 줄 판정 실패 — 측정이 안 됐으므로 게이트를 통과로 읽지 않는다"; exit 2; }
 
 COPIED="$(find "$STRIPPED" -type f -name '*.rs' -print | wc -l | tr -d ' ')" || COPIED=""

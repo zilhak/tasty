@@ -12,7 +12,7 @@ use std::path::PathBuf;
 ///
 /// "여기 **코드**에 X 가 있나" 를 묻는 가드가 쓴다.
 pub fn mask_non_code(src: &str) -> String {
-    mask(src, true)
+    mask(src, Fate::Blank, Fate::Blank, Fate::Blank)
 }
 
 /// 문자열·문자 리터럴만 덮고 **주석은 원문 그대로 남긴** 사본.
@@ -25,26 +25,62 @@ pub fn mask_non_code(src: &str) -> String {
 /// 이 결과에 `//` 가 있으면 진짜 주석이다. 원문에는 있는데 여기 없으면 그 `//` 는
 /// 문자열 안에 있었다는 뜻이다 — URL 이 대표적이다.
 pub fn mask_literals(src: &str) -> String {
-    mask(src, false)
+    mask(src, Fate::Keep, Fate::Blank, Fate::Blank)
 }
 
-fn mask(src: &str, blank_comments: bool) -> String {
+/// 문자 리터럴 안의 `"` 만 안전한 글자로 바꾼 사본. **그 밖은 원문 그대로다** —
+/// 주석도 문자열도 코드도 안 건드린다.
+///
+/// 줄 수를 세는 계측기(`tokei`)가 쓴다. 그 계측기는 `'"'` 의 따옴표를 **문자열의
+/// 시작**으로 읽고, 그 뒤 파일 끝까지를 문자열 안으로 본다 — 문자열 안의 빈 줄은
+/// code 로 세므로 그 파일의 code 가 실제보다 **크게** 나온다. 실측(tokei 14.0.0,
+/// 2026-09-09): `src/core/attach_runtime.rs` 에 `'"'` 한 자리가 들어오자 출하 SLOC 이
+/// 1240 → 3046 으로 뛰었는데 같은 구간의 원시 순증은 +364 였다. 오진은 조용하다 —
+/// 계측기는 성공으로 끝나고 값만 틀리다.
+///
+/// 여기서 고치는 이유: 판정(무엇이 출하되는가)과 계측(몇 줄인가)을 가른 설계에서
+/// **사본은 계측 전용 산출물**이다. 계측기가 읽을 수 있는 형태로 넘기는 것이 사본을
+/// 만드는 쪽의 몫이고, 소스를 계측기에 맞춰 쓰라고 요구하는 것보다 좁다. 바꾸는 것은
+/// 리터럴 **안의 한 글자**뿐이라 줄 수도 code 수도 안 움직인다.
+///
+/// **내용 동등을 묻는 소비자는 이걸 쓰면 안 된다** — `'"'` 와 `'x'` 가 같아 보인다.
+pub fn neutralize_char_literal_quotes(src: &str) -> String {
+    mask(src, Fate::Keep, Fate::Keep, Fate::QuoteSafe)
+}
+
+/// 렉서가 구간 하나를 만났을 때 그 글자를 어떻게 할지.
+///
+/// 셋을 한 렉서에 두는 이유는 구간을 **가르는 규칙**이 하나여야 하기 때문이다 —
+/// raw string · 이스케이프 · 라이프타임 틱을 아는 사본이 여럿이면 갈린 쪽이 조용하다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fate {
+    /// 공백으로 덮는다(줄바꿈은 남긴다).
+    Blank,
+    /// 원문 그대로 둔다.
+    Keep,
+    /// 원문 그대로 두되 `"` 만 안전한 글자로 바꾼다.
+    QuoteSafe,
+}
+
+fn mask(src: &str, comments: Fate, strings: Fate, char_literals: Fate) -> String {
     let chars: Vec<char> = src.chars().collect();
     let mut out = String::with_capacity(src.len());
     let mut i = 0usize;
     while i < chars.len() {
         i = match chars[i] {
             '/' if chars.get(i + 1) == Some(&'/') => {
-                mask_line_comment(&chars, i, &mut out, blank_comments)
+                mask_line_comment(&chars, i, &mut out, comments)
             }
             '/' if chars.get(i + 1) == Some(&'*') => {
-                mask_block_comment(&chars, i, &mut out, blank_comments)
+                mask_block_comment(&chars, i, &mut out, comments)
             }
             'r' | 'b' if raw_string_hashes(&chars, i).is_some() => {
-                mask_raw_string(&chars, i, &mut out)
+                mask_raw_string(&chars, i, &mut out, strings)
             }
-            '"' => mask_quoted(&chars, i, '"', &mut out),
-            '\'' if is_char_literal(&chars, i) => mask_quoted(&chars, i, '\'', &mut out),
+            '"' => mask_quoted(&chars, i, '"', &mut out, strings),
+            '\'' if is_char_literal(&chars, i) => {
+                mask_quoted(&chars, i, '\'', &mut out, char_literals)
+            }
             c => {
                 out.push(c);
                 i + 1
@@ -54,90 +90,95 @@ fn mask(src: &str, blank_comments: bool) -> String {
     out
 }
 
-/// 코드가 아닌 한 글자를 공백으로 덮는다 — 줄바꿈만 그대로 둬서 줄 번호를 지킨다.
-fn blank(out: &mut String, c: char) {
-    out.push(if c == '\n' { '\n' } else { ' ' });
+/// 코드가 아닌 한 글자를 그 구간의 운명대로 내보낸다 — `Blank` 는 공백으로 덮되
+/// 줄바꿈만 그대로 둬서 줄 번호를 지킨다.
+fn emit(out: &mut String, c: char, fate: Fate) {
+    match fate {
+        Fate::Blank => out.push(if c == '\n' { '\n' } else { ' ' }),
+        Fate::Keep => out.push(c),
+        // `x` 인 이유는 폭이 같은 아무 글자면 되기 때문이다 — 계측기가 이 자리를
+        // 문자열의 시작으로 안 읽기만 하면 된다.
+        Fate::QuoteSafe => out.push(if c == '"' { 'x' } else { c }),
+    }
 }
 
-fn mask_line_comment(chars: &[char], mut i: usize, out: &mut String, blank_it: bool) -> usize {
+fn mask_line_comment(chars: &[char], mut i: usize, out: &mut String, fate: Fate) -> usize {
     while i < chars.len() && chars[i] != '\n' {
-        emit(out, chars[i], blank_it);
+        emit(out, chars[i], fate);
         i += 1;
     }
     i
 }
 
-/// 주석 구간의 한 글자 — 덮을지 남길지가 호출자의 선택이다.
-fn emit(out: &mut String, c: char, blank_it: bool) {
-    if blank_it {
-        blank(out, c);
-    } else {
-        out.push(c);
-    }
-}
-
-fn mask_block_comment(chars: &[char], mut i: usize, out: &mut String, blank_it: bool) -> usize {
+fn mask_block_comment(chars: &[char], mut i: usize, out: &mut String, fate: Fate) -> usize {
     let mut depth = 0usize;
     while i < chars.len() {
         let opening = chars[i] == '/' && chars.get(i + 1) == Some(&'*');
         let closing = chars[i] == '*' && chars.get(i + 1) == Some(&'/');
         if opening || closing {
             depth = if opening { depth + 1 } else { depth - 1 };
-            emit(out, chars[i], blank_it);
-            emit(out, chars[i + 1], blank_it);
+            emit(out, chars[i], fate);
+            emit(out, chars[i + 1], fate);
             i += 2;
             if closing && depth == 0 {
                 break;
             }
         } else {
-            emit(out, chars[i], blank_it);
+            emit(out, chars[i], fate);
             i += 1;
         }
     }
     i
 }
 
-fn mask_raw_string(chars: &[char], i: usize, out: &mut String) -> usize {
+fn mask_raw_string(chars: &[char], i: usize, out: &mut String, fate: Fate) -> usize {
     let (quote, hashes) = raw_string_hashes(chars, i).expect("호출 전에 확인했다");
     // 접두사(`r` / `br` / `#`)는 코드다 — 여는 따옴표부터 덮는다.
     for c in &chars[i..quote] {
         out.push(*c);
     }
     let mut i = quote;
-    blank(out, chars[i]);
+    emit(out, chars[i], fate);
     i += 1;
     while i < chars.len() {
         if chars[i] == '"' && chars[i + 1..].iter().take(hashes).all(|c| *c == '#') {
             for _ in 0..=hashes {
                 if i < chars.len() {
-                    blank(out, chars[i]);
+                    emit(out, chars[i], fate);
                     i += 1;
                 }
             }
             break;
         }
-        blank(out, chars[i]);
+        emit(out, chars[i], fate);
         i += 1;
     }
     i
 }
 
-/// `terminator` 로 닫히는 리터럴(문자열·문자)을 덮는다. 역슬래시 이스케이프를 따른다.
-fn mask_quoted(chars: &[char], mut i: usize, terminator: char, out: &mut String) -> usize {
-    blank(out, chars[i]);
+/// `terminator` 로 닫히는 리터럴(문자열·문자)을 그 운명대로 내보낸다. 역슬래시
+/// 이스케이프를 따른다 — 여닫는 따옴표도 리터럴의 일부라 같은 운명이다.
+fn mask_quoted(
+    chars: &[char],
+    mut i: usize,
+    terminator: char,
+    out: &mut String,
+    fate: Fate,
+) -> usize {
+    emit(out, chars[i], fate);
     i += 1;
     while i < chars.len() {
         if chars[i] == '\\' {
-            blank(out, chars[i]);
+            emit(out, chars[i], fate);
             i += 1;
             if i < chars.len() {
-                blank(out, chars[i]);
+                emit(out, chars[i], fate);
                 i += 1;
             }
             continue;
         }
         let done = chars[i] == terminator;
-        blank(out, chars[i]);
+        emit(out, chars[i], fate);
         i += 1;
         if done {
             break;
@@ -296,5 +337,57 @@ mod repo_relative_tests {
             super::repo_relative(&p).to_string_lossy(),
             "crates/tasty-doc-guards/src/lib.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod neutralize_tests {
+    use super::{mask_literals, mask_non_code, neutralize_char_literal_quotes};
+
+    /// 이 함수가 생긴 형태. 계측기(`tokei`)는 `'"'` 의 따옴표를 문자열의 시작으로 읽고
+    /// 그 뒤 파일 끝까지를 문자열 안으로 본다 — 그 오독을 끊는 것이 전부다.
+    #[test]
+    fn a_quote_inside_a_char_literal_is_swapped() {
+        assert_eq!(
+            neutralize_char_literal_quotes("let c = '\"';"),
+            "let c = 'x';"
+        );
+    }
+
+    /// **밖은 원문 그대로다.** 여기서 문자열이나 주석까지 건드리면 이 사본을 세는
+    /// 게이트가 원문과 다른 것을 재게 된다.
+    #[test]
+    fn nothing_outside_a_char_literal_moves() {
+        for src in [
+            "let s = \"따옴표 \\\" 를 담은 문자열\";",
+            "// 주석 안의 '\"' 도 그대로다",
+            "let r = r#\"raw \"안\" 따옴표\"#;",
+            "fn f<'a>(x: &'a str) -> &'a str { x }",
+            "let c = 'a'; let n = '\\n'; let q = '\\'';",
+        ] {
+            assert_eq!(
+                neutralize_char_literal_quotes(src),
+                src,
+                "밖을 건드렸다: {src}"
+            );
+        }
+    }
+
+    /// 줄 수는 안 움직인다 — 계측기가 이 사본의 좌표를 원본으로 읽는다.
+    #[test]
+    fn the_line_count_is_unchanged() {
+        let src = "fn a() {\n    let c = '\"';\n}\n\nfn b() {}\n";
+        let got = neutralize_char_literal_quotes(src);
+        assert_eq!(got.split('\n').count(), src.split('\n').count());
+        assert!(got.contains("fn b() {}"), "코드가 사라졌다: {got}");
+    }
+
+    /// 세 모드는 서로의 자리를 안 밟는다 — 한 렉서를 나눠 쓰므로 함께 본다.
+    #[test]
+    fn the_three_modes_keep_their_own_scopes() {
+        let src = "let c = '\"'; // 주석";
+        assert_eq!(mask_non_code(src), "let c =    ;      ");
+        assert_eq!(mask_literals(src), "let c =    ; // 주석");
+        assert_eq!(neutralize_char_literal_quotes(src), "let c = 'x'; // 주석");
     }
 }

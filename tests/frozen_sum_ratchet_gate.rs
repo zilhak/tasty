@@ -87,6 +87,15 @@ fn root_with(budget_line: Option<i64>, entries: &[&str]) -> tempfile::TempDir {
     dir
 }
 
+/// 게이트가 판정기에 주는 플래그를 스텁도 걷어낸다.
+///
+/// 실물은 위치와 무관하게 걷어내지만(`args.retain`), 스텁이 이걸 빼먹으면 `$1` 이
+/// out-dir 이 아니게 되고 그 어긋남은 위반이 아니라 **판정 불가**로 나온다 — 그러면
+/// 시험이 자기가 재려던 갈래가 아니라 대조 실패를 재게 된다. 실측(2026-09-09): SLOC
+/// 게이트가 `--neutralize-char-literal-quotes` 를 주기 시작하자 이 파일에서 1 건,
+/// 자매 파일에서 3 건이 한꺼번에 그렇게 떨어졌다.
+const EAT_FLAGS: &str = "while [ \"${1#--}\" != \"$1\" ]; do shift; done\n";
+
 /// 스텁 tokei · 스텁 판정기를 물려 게이트를 돌리고 종료코드를 얻는다.
 fn run(root: &Path, tokei_body: &str) -> i32 {
     let bin = tempfile::tempdir().expect("스텁 디렉토리");
@@ -95,7 +104,10 @@ fn run(root: &Path, tokei_body: &str) -> i32 {
         &format!("#!/bin/sh\n{tokei_body}\n"),
     );
     let strip = bin.path().join("strip-cfg-test");
-    write_exec(&strip, "#!/bin/sh\nmkdir -p \"$1\"\nexit 0\n");
+    write_exec(
+        &strip,
+        &format!("#!/bin/sh\n{EAT_FLAGS}mkdir -p \"$1\"\nexit 0\n"),
+    );
     let path = format!(
         "{}:{}",
         bin.path().display(),
@@ -367,6 +379,7 @@ fn the_scan_dirs_reach_the_stripper() {
         &strip,
         "#!/bin/sh\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
+         while [ \"${1#--}\" != \"$1\" ]; do shift; done\n\
          out=$1; shift; src=$1; shift\n\
          mkdir -p \"$out\" || exit 1\n\
          for d in \"$@\"; do\n\
@@ -421,7 +434,10 @@ fn the_reported_headroom_is_the_ceiling_minus_the_sum() {
         &format!("#!/bin/sh\n{}\n", reports(P, sum)),
     );
     let strip = bin.path().join("strip-cfg-test");
-    write_exec(&strip, "#!/bin/sh\nmkdir -p \"$1\"\nexit 0\n");
+    write_exec(
+        &strip,
+        &format!("#!/bin/sh\n{EAT_FLAGS}mkdir -p \"$1\"\nexit 0\n"),
+    );
     let path = format!(
         "{}:{}",
         bin.path().display(),
@@ -510,8 +526,8 @@ fn run_bare(
 /// `--check-fresh` 를 안 가르면 `resolve_judge` 가 **없는 판정기**로 다뤄, 그 다음
 /// 호출 지점("판정기를 못 쓴다")이 먼저 답한다 — 재려던 자리가 아니다.
 const STRIP_FAILS: &str = "#!/bin/sh\nif [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\nexit 7\n";
-const STRIP_OK: &str =
-    "#!/bin/sh\nif [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\nmkdir -p \"$1\"\nexit 0\n";
+const STRIP_OK: &str = "#!/bin/sh\nif [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
+     while [ \"${1#--}\" != \"$1\" ]; do shift; done\nmkdir -p \"$1\"\nexit 0\n";
 
 /// 자매의 좌변이 **공백뿐**이면 판정 불가(2)다.
 ///
@@ -637,7 +653,10 @@ fn the_under_budget_branch_does_not_name_a_cause() {
         &format!("#!/bin/sh\n{}\n", reports(P, BUDGET - 1)),
     );
     let strip = bin.path().join("strip-cfg-test");
-    write_exec(&strip, "#!/bin/sh\nmkdir -p \"$1\"\nexit 0\n");
+    write_exec(
+        &strip,
+        &format!("#!/bin/sh\n{EAT_FLAGS}mkdir -p \"$1\"\nexit 0\n"),
+    );
     let path = format!(
         "{}:{}",
         bin.path().display(),

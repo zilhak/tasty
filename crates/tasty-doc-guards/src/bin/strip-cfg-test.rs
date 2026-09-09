@@ -36,6 +36,22 @@
 //! 통째로 산출물 밖이라 그 차이를 세면 안 된다. 판정 자체는 하나다 —
 //! [`tasty_doc_guards::shipping_scope::test_only_files`] 를 부를 뿐 여기서 다시 세지 않는다.
 //!
+//! ## 계측기가 읽을 수 있는 사본 — `--neutralize-char-literal-quotes`
+//!
+//! 이 사본을 세는 것은 `tokei` 이고, 그 계측기는 문자 리터럴 `'"'` 의 따옴표를
+//! **문자열의 시작**으로 읽는다. 그러면 그 뒤 파일 끝까지가 문자열 안으로 보이고,
+//! 문자열 안의 빈 줄은 code 로 세어진다 — 즉 **지운 줄이 다시 세어진다.** 실측
+//! (tokei 14.0.0, 2026-09-09): `src/core/attach_runtime.rs` 에 그 형태 한 자리가
+//! 들어오자 출하 SLOC 이 1240 → 3046 이 됐는데 같은 구간의 원시 순증은 +364 였다.
+//!
+//! 플래그를 주면 그 자리만 안전한 글자로 바꾼 사본을 만든다
+//! ([`tasty_doc_guards::source_text::neutralize_char_literal_quotes`]). 리터럴 **안의
+//! 한 글자**만 바뀌므로 줄 수도 code 수도 안 움직인다.
+//!
+//! **기본값이 아닌 이유**: 내용 동등을 묻는 소비자(plugin 버전 게이트)에게는
+//! `'"'` 와 `'x'` 가 같아 보인다. 그 게이트가 놓치면 산출물이 달라졌는데 bump 를
+//! 안 요구한다. 그래서 세는 소비자만 켠다.
+//!
 //! ## 빈 줄에 주의 — 소비자에 따라 접어야 한다
 //!
 //! 아래 "줄 번호 보존" 때문에 지운 자리는 빈 줄로 남는다. **내용 동등을 묻는 소비자는
@@ -52,6 +68,7 @@ use std::path::{Path, PathBuf};
 
 use tasty_doc_guards::cfg_predicate::{cfg_attr_lines, cfg_gated_lines};
 use tasty_doc_guards::shipping_scope::test_only_files;
+use tasty_doc_guards::source_text::neutralize_char_literal_quotes;
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -63,11 +80,16 @@ fn main() {
     }
     let blank_test_only = args.iter().any(|a| a == "--blank-test-only-files");
     args.retain(|a| a != "--blank-test-only-files");
+    let quote_safe = args.iter().any(|a| a == "--neutralize-char-literal-quotes");
+    args.retain(|a| a != "--neutralize-char-literal-quotes");
     if args.len() < 3 {
         eprintln!(
-            "usage: strip-cfg-test [--blank-test-only-files] <out-dir> <repo-root> <scan-root>...\n\
+            "usage: strip-cfg-test [--blank-test-only-files] [--neutralize-char-literal-quotes] \
+             <out-dir> <repo-root> <scan-root>...\n\
              출하되지 않는 줄을 빈 줄로 바꾼 사본을 <out-dir> 아래에 만든다.\n\
-             --blank-test-only-files: `#[cfg(test)] mod x;` 로만 선언된 파일도 통째로 비운다."
+             --blank-test-only-files: `#[cfg(test)] mod x;` 로만 선언된 파일도 통째로 비운다.\n\
+             --neutralize-char-literal-quotes: 문자 리터럴 안의 `\"` 를 안전한 글자로 바꾼다\n\
+             (줄 수를 세는 계측기용 — 내용 동등을 묻는 소비자는 쓰면 안 된다)."
         );
         std::process::exit(2);
     }
@@ -124,11 +146,14 @@ fn main() {
             eprintln!("사본 디렉토리를 만들 수 없다: {} — {e}", parent.display());
             std::process::exit(2);
         }
-        let body = if whole_file_out.contains(rel) {
+        let mut body = if whole_file_out.contains(rel) {
             blank_every_line(src)
         } else {
             strip(src)
         };
+        if quote_safe {
+            body = neutralize_char_literal_quotes(&body);
+        }
         if let Err(e) = std::fs::write(&dst, body) {
             eprintln!("사본을 쓸 수 없다: {} — {e}", dst.display());
             std::process::exit(2);

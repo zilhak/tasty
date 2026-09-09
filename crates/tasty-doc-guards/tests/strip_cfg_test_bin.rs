@@ -8,6 +8,10 @@
 //! 게이트는 이 축을 스크립트의 `skip()` 으로 이미 처리하므로 기본값이 바뀌면 그쪽
 //! 측정이 조용히 움직인다. 그래서 "켜면 된다" 만큼 **"안 켜면 그대로다"** 가 단언이다.
 //!
+//! 문자 리터럴 중화 축(`--neutralize-char-literal-quotes`)도 같은 이유로 양방향이다 —
+//! 켜는 소비자(줄 수를 세는 SLOC 게이트 둘)와 켜면 안 되는 소비자(내용 동등을 묻는
+//! plugin 버전 게이트)가 갈려 있어서, 기본값이 움직이면 뒤쪽이 조용히 놓친다.
+//!
 //! `cfg_attr` 축도 여기서 본다. 술어 판정 자체는 `cfg_predicate` 의 단위 테스트가 보지만,
 //! **바이너리가 그 판정을 실제로 부르는가**는 별개 사건이다 — 그 배선이 빠져 있던 것이
 //! 이 게이트의 실회차 첫 발화를 거짓 양성으로 만들었다.
@@ -67,6 +71,12 @@ fn fixture(root: &Path) {
     )
     .unwrap();
     std::fs::write(src.join("attrs.rs"), attrs_fixture()).unwrap();
+    // 계측기(`tokei`)가 문자열의 시작으로 오독하는 형태 — 출하되는 코드다.
+    std::fs::write(
+        src.join("quotes.rs"),
+        "pub fn q(c: char) -> u8 {\n    match c {\n        '\"' => 2,\n        _ => 1,\n    }\n}\n",
+    )
+    .unwrap();
 }
 
 /// `cfg_attr` 두 극성이 한 파일에 있는 픽스처.
@@ -82,6 +92,52 @@ fn attrs_fixture() -> String {
          #[cfg_attr(not(test), {a}(clippy::y))]\n\
          pub fn ship_two() {{}}\n"
     )
+}
+
+/// 문자 리터럴 중화는 **켰을 때만** 일어난다.
+///
+/// 켜는 쪽: 이 사본을 `tokei` 로 세는 SLOC 게이트 둘. 그 계측기는 `'"'` 의 따옴표를
+/// 문자열의 시작으로 읽어 그 뒤 파일 끝까지를 문자열 안으로 보고, 문자열 안의 빈 줄을
+/// code 로 센다 — 지운 줄이 다시 세어진다.
+///
+/// 켜면 안 되는 쪽: 내용 동등을 묻는 plugin 버전 게이트. 거기서 중화하면 `'"'` 와
+/// `'x'` 가 같아 보여 산출물이 달라졌는데 bump 를 안 요구한다. 그래서 **기본값이
+/// 그대로인 것**이 이 축의 절반이다.
+#[test]
+fn the_flag_makes_char_literal_quotes_safe_for_the_line_counter() {
+    for (i, flag) in [None, Some("--neutralize-char-literal-quotes")]
+        .into_iter()
+        .enumerate()
+    {
+        let root = Tmp::new(&format!("quote-root-{i}"));
+        let out = Tmp::new(&format!("quote-out-{i}"));
+        fixture(root.path());
+        run(root.path(), out.path(), flag);
+        let got = std::fs::read_to_string(out.path().join("crates/demo/src/quotes.rs")).unwrap();
+        if flag.is_some() {
+            assert!(
+                got.contains("'x' => 2,"),
+                "켰는데 문자 리터럴이 안 바뀌었다 — 계측기가 그 뒤를 문자열로 읽는다: {got:?}"
+            );
+        } else {
+            assert!(
+                got.contains("'\"' => 2,"),
+                "기본값이 문자 리터럴을 바꿨다 — 내용 동등을 묻는 소비자가 차이를 놓친다: {got:?}"
+            );
+        }
+        // 어느 쪽이든 출하 코드와 줄 수는 그대로다.
+        assert!(
+            got.contains("pub fn q(c: char)"),
+            "출하 코드가 사라졌다: {got:?}"
+        );
+        let original =
+            std::fs::read_to_string(root.path().join("crates/demo/src/quotes.rs")).unwrap();
+        assert_eq!(
+            got.split('\n').count(),
+            original.split('\n').count(),
+            "줄 수가 달라졌다 (flag={flag:?})"
+        );
+    }
 }
 
 fn run(root: &Path, out: &Path, flag: Option<&str>) {

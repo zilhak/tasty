@@ -36,6 +36,15 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
+/// 게이트가 판정기에 주는 플래그를 스텁도 걷어낸다.
+///
+/// 실물은 위치와 무관하게 걷어내지만(`args.retain`), 스텁이 이걸 빼먹으면 `$1` 이
+/// out-dir 이 아니게 되고 그 어긋남은 위반이 아니라 **판정 불가**로 나온다 — 그러면
+/// 이 파일의 시험들은 자기가 재려던 갈래가 아니라 대조 실패를 재게 된다. 실측
+/// (2026-09-09): SLOC 게이트가 `--neutralize-char-literal-quotes` 를 주기 시작하자
+/// 이 파일에서 3 건, 자매 파일에서 1 건이 한꺼번에 그렇게 떨어졌다.
+const EAT_FLAGS: &str = "while [ \"${1#--}\" != \"$1\" ]; do shift; done\n";
+
 /// PATH 앞에 놓을 스텁 `tokei` 를 만든다. `body` 는 셸 스크립트 본문(shebang 제외).
 fn stub_dir(body: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("임시 디렉토리");
@@ -73,7 +82,7 @@ fn run_gate_full(tokei_body: &str, strip_body: &str) -> (i32, String) {
     // 다시 쓰지 않도록 여기서 붙인다.
     run_gate_raw(
         tokei_body,
-        &format!("if [ \"$1\" = \"--check-fresh\" ]; then exit 3; fi\n{strip_body}"),
+        &format!("if [ \"$1\" = \"--check-fresh\" ]; then exit 3; fi\n{EAT_FLAGS}{strip_body}"),
     )
 }
 
@@ -223,8 +232,10 @@ fn zero_judged_files_is_not_a_pass() {
 fn a_judge_that_prints_while_answering_freshness_does_not_poison_the_path() {
     let (code, _out) = run_gate_raw(
         UNDER_THRESHOLD,
-        "if [ \"$1\" = \"--check-fresh\" ]; then echo POLLUTION; exit 3; fi\n\
-         mkdir -p \"$1\"\necho 0\nexit 0",
+        &format!(
+            "if [ \"$1\" = \"--check-fresh\" ]; then echo POLLUTION; exit 3; fi\n\
+             {EAT_FLAGS}mkdir -p \"$1\"\necho 0\nexit 0"
+        ),
     );
     assert_eq!(
         code, 0,
@@ -414,6 +425,7 @@ fn stub_strip_copying() -> tempfile::TempDir {
         &bin,
         "#!/bin/sh\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
+         while [ \"${1#--}\" != \"$1\" ]; do shift; done\n\
          out=$1; shift; src=$1; shift\n\
          mkdir -p \"$out\" || exit 1\n\
          for d in \"$@\"; do\n\
@@ -650,7 +662,13 @@ fn an_uncountable_copy_count_is_not_a_pass() {
     let dir = tempfile::tempdir().expect("임시 디렉토리");
     for (name, body) in [
         ("tokei", format!("#!/bin/sh\n{UNDER_THRESHOLD}\n")),
-        ("strip-cfg-test", "#!/bin/sh\nif [ \"$1\" = \"--check-fresh\" ]; then exit 3; fi\nmkdir -p \"$1\"\necho 0\nexit 0\n".to_string()),
+        (
+            "strip-cfg-test",
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = \"--check-fresh\" ]; then exit 3; fi\n\
+                 {EAT_FLAGS}mkdir -p \"$1\"\necho 0\nexit 0\n"
+            ),
+        ),
         ("find", "#!/bin/sh\nexit 1\n".to_string()),
     ] {
         let p = dir.path().join(name);
