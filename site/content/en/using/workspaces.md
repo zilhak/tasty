@@ -1,4 +1,4 @@
-<!-- source-hash: 4296a36939fb -->
+<!-- source-hash: 79f709ebb76d -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -59,7 +59,7 @@ Each Workspace remembers its own focused Pane. Switch away and back and the curs
 | Dot left of the name | A program is running inside that Workspace (the count is shown alongside, as in `● 3`) |
 | Number badge right of the name | Number of Surfaces that need attention. Yellow means waiting for input, blue means a job finished. Click that Surface and it disappears |
 | **REMOTE** pill | A Workspace mirroring a remote tasty |
-| Lavender border around the avatar | Occupied remotely by another user |
+| Lavender border around the dot left of the name | Occupied remotely by another user |
 
 When the sidebar is collapsed (**Collapse**, `Ctrl+B`) the cards become square icons and the marks merge into a single dot.
 
