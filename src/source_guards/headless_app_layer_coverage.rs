@@ -13,18 +13,38 @@
 //! 처음부터 다시 센다 — [`docs/identity.md`] 원칙 2 가 걸린 자리에서 그 재측정이
 //! 반복되는 것이 이 가드가 막으려는 것이다.
 //!
+//! **그 열거는 좌변의 창 안에서만 성립한다.** 창을 좁히면 밖이 생기고, 밖에서 답하는
+//! 이름은 사유가 적힌 채로 초록이 된다. 그 밖을 따로 재는 것이
+//! [`no_method_name_lives_outside_the_roster`] 다 — 아래 "세는 창" 절.
+//!
 //! ## 왜 텍스트로 읽는가
 //!
 //! 두 라우터의 dispatch 는 `match`/`if` 안의 문자열 리터럴이라 밖으로 꺼낼 상수가
 //! 없다. 값으로 읽을 수 있는 것(읽기 전용 `plugin.*` 표)은 값으로 읽는다.
 //!
 //! **세는 창은 양쪽 다 dispatch 함수 본문이다 — 파일 전체가 아니다.** 두 파일 모두
-//! 답하지 않는 헬퍼와 산문이 같이 살아서, 파일을 통째로 세면 **안 열린 것이 열린 것으로**
-//! 잡힌다. 헤드리스 쪽만 함수가 여럿이라 [`HEADLESS_DISPATCH_FNS`] 명부로 든다 —
+//! 답하지 않는 헬퍼가 같이 살아서, 파일을 통째로 세면 **안 열린 것이 열린 것으로**
+//! 잡힌다(산문 쪽은 아래 "걷어내기" 가 따로 맡는다).
+//! 헤드리스 쪽만 함수가 여럿이라 [`HEADLESS_DISPATCH_FNS`] 명부로 든다 —
 //! 종단 응답이 `intercept_app_layer` / `intercept_debug_app_layer` 로 갈라져 있고,
 //! 창을 `pump_ipc` 하나로 두면 그 리팩터 한 번에 판정이 뒤집힌다(실측은 그 상수에 있다).
 //! 옆 가드(`tests/ipc_release_table_excludes_input_reproduction.rs` 의
 //! `RELEASE_ROUTERS`)가 같은 이동에 같은 처방 — 명부에 헬퍼를 **더하는 것** — 을 썼다.
+//!
+//! **명부는 두 방향 중 하나만 스스로 막는다.** 항목의 제거·개명은 `fn_body` 의 패닉과
+//! [`the_roster_names_real_functions`] 가 막는다. **추가** — 명부 밖에 함수를 하나
+//! 만들어 거기서 이름에 답하는 것 — 은 그 둘 어디에도 안 걸린다. 실측(2026-09-10):
+//! `headless_dispatch.rs` 에 명부 밖 함수를 만들어 `"ui.screenshot"` 을 **코드로**
+//! 답하게 해도 이 가드 전체가 rc=0 · 9 passed 였다. 옛 파일-전체 창은 그 갈래를
+//! 잡았으므로, 창을 좁히면서 그 방향이 통째로 조용해진 것이다.
+//!
+//! 옆 가드는 같은 사각을 모듈 doc 에 적어 두는 데서 멈춘다("남는 사각지대는 라우터
+//! 함수 밖이다 … 그때는 그 헬퍼를 `RELEASE_ROUTERS` 에 추가한다"). 여기서는 **채널을
+//! 붙였다** — [`no_method_name_lives_outside_the_roster`] 가 *주석을 걷어낸 파일
+//! 전체*의 메서드 리터럴이 명부 합집합과 같은지를 재고, 잔여가 있으면 실패한다.
+//! 좌변을 명부로 두는 것과 모순이 아니다: 답을 세는 창은 그대로 명부이고, 이 검사는
+//! **명부 밖에 이름이 사는가**만 묻는다. 걷어내기를 먼저 하므로 창을 파일 전체로
+//! 넓혔을 때 났던 거짓 실패(산문이 인용한 이름을 답으로 세던 것)는 여기서 안 난다.
 //!
 //! **세기 전에 주석을 걷어낸다**([`super::strip_comments`]). 이 파일의 물음은 "그
 //! 이름을 답하는 코드가 있는가" 인데, 답하지 않는 이름을 **설명하려고** 인용하는 주석이
@@ -51,7 +71,18 @@ const GUI_DEBUG_STEP: &str = "src/app/ipc/debug_methods.rs";
 const GUI_DEBUG_FN: &str = "fn ipc_step_debug";
 
 /// gui step 이 부르는 메서드 수의 하한 — **연기 검사**다.
-/// 값의 근거: 2026-09-05 실측 17 건.
+///
+/// 값의 근거: 2026-09-10 실측 **18** 건.
+///
+/// **옛 주석의 "실측 17" 은 이 추출기가 낸 값이 아니다** — 낡은 값이 아니라 **다른
+/// 모수**다. 17 은 `docs/dev-guide/headless-ipc-surface.md` 의 두 표(답한다 6 ·
+/// 없는 것이 정답 11)의 합인데, 그 두 표는 `plugin.` **prefix 리터럴을 세지 않는다**
+/// (그 갈래는 같은 문서의 `plugin.*` 절이 따로 가른다). 여기 좌변은 prefix 도 한
+/// 항목으로 세므로 18 이다.
+///
+/// 같은 추출기를 `git show <rev>:파일` 로 과거로 되돌려도 값이 안 변한다 — 가드 도입
+/// 시점(`aace4abe8`) · 분해 직전(`8418f1a67`) · 분해 뒤(`5acd47ee9`) · 지금, **네 rev
+/// 모두 18** 이다. 그러니 "그때는 17 이었다" 도 성립하지 않는다.
 const MIN_GUI_METHODS: usize = 12;
 
 /// 헤드리스 dispatch 가 **이름으로 답하는** 자리 — 이 셋의 본문 합집합이 좌변이다.
@@ -71,7 +102,12 @@ const MIN_GUI_METHODS: usize = 12;
 ///
 /// 읽을 것 둘. ① 분해가 `pump_ipc` 창을 **12 → 0** 으로 떨어뜨렸다(코드는 한 줄도 안
 /// 잃었다). ② **파일 전체로 넓혀서 얻는 이름은 0 이다** — 어느 rev 에서도 명부 합집합과
-/// 같다. 그래서 넓히지 않고 명부로 든다: 넓히면 얻는 것 없이 산문까지 세게 된다.
+/// 같다. 그래서 좌변은 넓히지 않고 명부로 든다: 넓히면 답하지 않는 헬퍼가 이름을
+/// 문자열로 드는 것까지 답으로 세게 된다(지금 그런 자리가 0 이라는 것이지, 생길 수
+/// 없다는 뜻이 아니다).
+///
+/// 그 0 은 유지되어야 하는 값이라 [`no_method_name_lives_outside_the_roster`] 가 그
+/// 잔여를 매번 잰다 — 명부를 좁게 두는 것과 밖을 안 보는 것은 다른 일이다.
 const HEADLESS_DISPATCH_FNS: &[&str] = &[
     "fn pump_ipc(",
     "fn intercept_app_layer(",
@@ -81,7 +117,7 @@ const HEADLESS_DISPATCH_FNS: &[&str] = &[
 /// 헤드리스 dispatch 가 이름으로 답하는 메서드 수의 하한.
 ///
 /// 값의 근거: 2026-09-10 실측 12 건([`HEADLESS_DISPATCH_FNS`] 의 표). gui 쪽 비율과
-/// 맞춘다(17 에 하한 12).
+/// 맞춘다(18 에 하한 12 — 그 18 의 모수는 [`MIN_GUI_METHODS`] 에 적었다).
 ///
 /// **옛 주석의 "실측 6" 은 어느 rev 에서도 나온 적이 없는 수다.** 같은 추출기로 다시
 /// 재니 도입 시점이 11, `main` 이 12 였다 — 옛 하한 4 도, 그것을 8 로 올리며 적은
@@ -205,6 +241,120 @@ fn headless_methods() -> BTreeSet<String> {
     method_literals(&headless_dispatch_code())
 }
 
+/// 명부 밖 함수에 살아도 되는 메서드 이름 — **답이 아니라는 근거와 함께** 든다.
+///
+/// [`no_method_name_lives_outside_the_roster`] 의 잔여 면제다. 지금 **비어 있다**
+/// (2026-09-10 실측: 주석을 걷어낸 파일 전체 12 · 명부 합집합 12 · 잔여 0). 채워야
+/// 하는 경우는 하나뿐이다 — dispatch 가 **아닌** 자리(로그 문구·오류문)가 메서드
+/// 이름을 문자열로 들 때. 그 자리가 실제로 **답하면** 답은 여기가 아니라
+/// [`HEADLESS_DISPATCH_FNS`] 다. 둘을 섞으면 이 면제가 곧 사각이 된다.
+///
+/// 이 면제를 겨냥한 변이는 [`an_outside_name_is_caught_unless_it_is_excused`] 가
+/// 합성 입력으로 든다(`src/source_guards/mod.rs` 의 집행 규칙 — 검증되지 않은 면제는
+/// 그 면제만큼 구멍이다).
+const OUTSIDE_ROSTER_LITERALS: &[(&str, &str)] = &[];
+
+/// 파일 전체에서 명부 합집합과 면제를 뺀 **잔여**.
+///
+/// 판정을 루프 안에 인라인하지 않고 순수 함수로 뽑는다 — 그래야 면제를 찌르는 변이가
+/// 레포에 진짜 위반을 심었다 되돌리는 것 말고 합성 입력으로도 가능하다.
+fn outside_roster<'a>(
+    whole: &'a BTreeSet<String>,
+    roster: &BTreeSet<String>,
+    excused: &BTreeSet<&str>,
+) -> Vec<&'a String> {
+    whole
+        .iter()
+        .filter(|m| !roster.contains(*m) && !excused.contains(m.as_str()))
+        .collect()
+}
+
+/// **명부 밖에는 메서드 이름이 살지 않는다** — 창을 좁힌 대가를 여기서 갚는다.
+///
+/// [`HEADLESS_DISPATCH_FNS`] 는 좌변을 dispatch 함수 셋으로 좁힌다. 그 좁힘이 스스로
+/// 막는 것은 **제거·개명** 한 방향뿐이고, **추가** 는 못 막는다 — 명부 밖 함수가
+/// 이름에 답하면 좌변에 안 들어오고, 그 이름이 [`NOT_IN_HEADLESS`] 에 사유와 함께
+/// 남아 있으면 *답하는데 못 답한다고 적힌 채로* 초록이다. 실측(2026-09-10, 헤드리스
+/// 조합 `--bins headless_app_layer_coverage`): 명부 밖 함수를 하나 만들어
+/// `"ui.screenshot"` 을 코드로 답하게 해도 rc=0 · 9 passed 였다.
+///
+/// 그래서 이름의 **소재**를 따로 잰다: 주석을 걷어낸 파일 전체의 메서드 리터럴이 명부
+/// 합집합과 같아야 한다. 걷어내기가 먼저라 옛 파일-전체 창의 거짓 실패(산문이 인용한
+/// 이름을 답으로 세던 것)는 여기서 안 난다 —
+/// [`an_outside_name_is_caught_unless_it_is_excused`] 가 그 대조를 함께 든다.
+#[test]
+fn no_method_name_lives_outside_the_roster() {
+    let src = read(HEADLESS_PUMP);
+    let whole = method_literals(&strip_comments(&src));
+    assert!(
+        whole.len() >= MIN_HEADLESS_METHODS,
+        "{HEADLESS_PUMP} 전체에서 메서드를 {} 개밖에 못 뽑았다(하한 \
+         {MIN_HEADLESS_METHODS}). 빈 좌변의 잔여 0 은 통과가 아니라 미측정이다",
+        whole.len()
+    );
+    let roster = headless_methods();
+    let excused: BTreeSet<&str> = OUTSIDE_ROSTER_LITERALS.iter().map(|(m, _)| *m).collect();
+    let outside = outside_roster(&whole, &roster, &excused);
+    assert!(
+        outside.is_empty(),
+        "{HEADLESS_PUMP} 의 `HEADLESS_DISPATCH_FNS` 밖에서 메서드 이름이 산다: \
+         {outside:?}. 그 자리가 **답하면** 그 함수를 `HEADLESS_DISPATCH_FNS` 에 \
+         더해라 — 안 더하면 답하는 이름이 좌변에 안 들어와, `NOT_IN_HEADLESS` 의 \
+         사유가 거짓인 채로 초록이 된다. 답하지 않고 이름을 인용만 하는 자리라면 \
+         `OUTSIDE_ROSTER_LITERALS` 에 근거와 함께 등록해라"
+    );
+    // 반대 방향 — 면제해 둔 이름이 명부 안으로 들어왔으면 그 줄이 낡은 것이다.
+    let stale: Vec<&str> = OUTSIDE_ROSTER_LITERALS
+        .iter()
+        .map(|(m, _)| *m)
+        .filter(|m| roster.contains(*m))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "`OUTSIDE_ROSTER_LITERALS` 가 '답이 아니다' 라고 적어 둔 이름이 지금은 명부 \
+         안에서 답한다 — 그 줄을 지워라: {stale:?}"
+    );
+}
+
+/// 위 잔여 검사의 세 갈래를 **합성 입력**으로 든다.
+///
+/// ① 명부 밖 함수가 답하는 이름은 잡힌다(그것이 못 잡던 사각이다). ② 면제에 들면
+/// 안 잡힌다(면제가 실제로 먹는다). ③ 주석이 인용한 이름은 애초에 잔여로 안 센다
+/// (옛 파일-전체 창의 거짓 실패가 되살아나지 않는다).
+#[test]
+fn an_outside_name_is_caught_unless_it_is_excused() {
+    let src = "\
+fn pump_ipc(app: &mut App) {
+    if m == \"ns.inside\" { go(); }
+}
+// 산문이 \"ns.prose\" 를 인용한다.
+fn outside_helper(m: &str) -> bool { m == \"ns.outside\" }
+";
+    let whole = method_literals(&strip_comments(src));
+    let roster = method_literals(&strip_comments(
+        &fn_body(src, "fn pump_ipc(").expect("본문을 잘라야 한다"),
+    ));
+    assert!(
+        !whole.contains("ns.prose"),
+        "주석 속 이름을 잔여 후보로 셌다: {whole:?}"
+    );
+    let none: BTreeSet<&str> = BTreeSet::new();
+    let caught: Vec<&str> = outside_roster(&whole, &roster, &none)
+        .into_iter()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        caught,
+        vec!["ns.outside"],
+        "명부 밖 함수가 답하는 이름을 못 잡았다 — 이 검사는 아무것도 안 잰다"
+    );
+    let excused: BTreeSet<&str> = ["ns.outside"].into_iter().collect();
+    assert!(
+        outside_roster(&whole, &roster, &excused).is_empty(),
+        "면제가 안 먹는다 — `OUTSIDE_ROSTER_LITERALS` 가 아무것도 안 한다"
+    );
+}
+
 /// gui app 층 step 의 모든 메서드는 **헤드리스가 답하거나, 왜 못 답하는지가 적혀 있다.**
 #[test]
 fn every_gui_app_layer_method_is_answered_headless_or_carries_a_reason() {
@@ -212,7 +362,7 @@ fn every_gui_app_layer_method_is_answered_headless_or_carries_a_reason() {
     assert!(
         gui.len() >= MIN_GUI_METHODS,
         "gui app 층 step 에서 메서드를 {} 개밖에 못 뽑았다(하한 {MIN_GUI_METHODS}, \
-         2026-09-05 실측 17). 대조군이 죽었다 — 추출기나 함수 이름을 확인해라",
+         2026-09-10 실측 18). 대조군이 죽었다 — 추출기나 함수 이름을 확인해라",
         gui.len()
     );
     let headless = headless_methods();
@@ -428,8 +578,8 @@ fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
     let gui = method_literals(&body);
     assert!(
         gui.len() >= MIN_GUI_DEBUG_ITEMS,
-        "debug step 에서 {} 개밖에 못 뽑았다(하한 {MIN_GUI_DEBUG_ITEMS}, 2026-09-05 실측 \
-         8). 대조군이 죽었다",
+        "debug step 에서 {} 개밖에 못 뽑았다(하한 {MIN_GUI_DEBUG_ITEMS}, 2026-09-10 실측 \
+         13). 대조군이 죽었다",
         gui.len()
     );
     let headless = headless_methods();
@@ -515,7 +665,15 @@ fn every_gui_debug_step_method_is_answered_headless_or_carries_a_reason() {
 }
 
 /// debug step 에서 뽑히는 항목 수의 하한 — **연기 검사**다.
-/// 값의 근거: 2026-09-05 실측 8 건(이름 + prefix).
+///
+/// 값의 근거: 2026-09-10 실측 **13** 건.
+///
+/// **옛 주석의 "실측 8 건(이름 + prefix)" 도 이 추출기의 값이 아니다** — 위
+/// [`MIN_GUI_METHODS`] 의 17 과 같은 종이다. 8 은 prefix 에 덮이는 이름을 접은 **계열
+/// 수**다: `debug.plugin_banner.close`·`open` 이 `debug.plugin_banner.` 로,
+/// `debug.popup.close`·`list`·`open` 이 `debug.popup.` 로 접히면 13 − 5 = 8 이다.
+/// 좌변은 접지 않고 세므로 13 이다. 과거 rev 로 되돌려 재도 가드 도입 시점
+/// (`aace4abe8`)이 12, 그 뒤가 13 이라 8 은 어느 rev 에서도 이 자리의 값이 아니었다.
 const MIN_GUI_DEBUG_ITEMS: usize = 5;
 
 /// prefix 리터럴을 버리지 않는가.
