@@ -247,6 +247,7 @@ mirror(attach) 터미널에 클립보드 **이미지**를 붙여넣으면, 로�
   - client GUI 가 그 원문을 실제로 렌더하는 것 — 미검증(client 구성은 후속 작업).
 - Given 전송 형태로 예산(700 KiB)을 넘는 문서 When client 가 원문을 요청 Then 세션이 끊기지 않고 잘린 원문이 "잘렸다" 표시와 함께 도착하며, 그 판정은 원문 바이트가 아니라 이스케이프된 길이로 이뤄진다(`tests/attach_markdown_content_loopback.rs`).
 - Given attach 점유가 없는 client When 원문을 요청 Then 파일을 한 바이트도 읽히지 않고 거절된다(`tests/attach_markdown_content_loopback.rs`).
+- Given 워크스페이스 둘 중 **한쪽만** 점유한 client When 다른 워크스페이스의 markdown 원문을 요청 Then 인가되어 원문이 도착한다 — 점유는 인스턴스 단위 신뢰이지 워크스페이스별 권한이 아니다(`tests/attach_markdown_content_loopback.rs`).
 - Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
 - Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 

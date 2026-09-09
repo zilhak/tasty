@@ -309,3 +309,63 @@ fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session
     // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
     let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
+
+/// 인가 집합은 **engine 전체**다 — 그 surface 를 담은 워크스페이스의 holder 로 좁혀 있지
+/// 않다(ADR-0254 항목 2).
+///
+/// 술어는 `client_holds_workspace`("이 engine 의 워크스페이스를 **하나라도** 점유했는가")
+/// 이고, 대상 조회는 `find_surface_by_id`(전 워크스페이스 순회)다. 그래서 W2 만 점유한
+/// client 도 W1 의 markdown 원문을 받는다 — list_dir(`dir` 문자열만 실어 워크스페이스
+/// 바인딩 필드가 없다)·git_query(engine 전역 `TerminalStore` 조회)와 같은 갈래이며,
+/// `markdown_changed` 의 수신자도 이 집합이어야 한다(요청할 수 있는 client 와 신호를 받는
+/// client 가 갈리면 안 된다).
+///
+/// 인가를 "그 surface 의 워크스페이스 holder" 로 좁히면 이 test 가 빨개진다.
+#[test]
+fn markdown_content_request_is_authorized_engine_wide_not_per_workspace() {
+    let server = common::shared();
+    let doc_ws = server.create_workspace("md-content-engine-wide-doc");
+    let held_ws = server.create_workspace("md-content-engine-wide-held");
+    let file = write_doc("engine-wide");
+    let surface_id = open_markdown_surface(server, doc_ws.id, &file);
+
+    // 문서 워크스페이스에 잠깐 붙는 것은 snapshot(`file`) 도착을 기다리기 위해서다.
+    // 요청은 그 점유를 **놓은 뒤** 다른 워크스페이스 점유로만 보낸다.
+    let (probe, _entry) = attach_when_descriptor_has_file(server, doc_ws.id, surface_id);
+    drop(probe);
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut stream = loop {
+        if let Some((s, _)) = try_open_workspace_attach_stream(server.port(), held_ws.id) {
+            break s;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "다른 워크스페이스 점유를 끝내 얻지 못했다"
+        );
+        std::thread::sleep(Duration::from_millis(250));
+    };
+
+    write_control_frame(
+        &mut stream,
+        &json!({
+            "event": "markdown_content_request",
+            "request_id": 6,
+            "surface_id": surface_id,
+        }),
+    );
+    let result = wait_for_control_event(&mut stream, "markdown_content_result");
+
+    assert_eq!(result["request_id"], 6);
+    assert_eq!(
+        result["ok"], true,
+        "다른 워크스페이스만 점유한 client 도 인가된다(engine 전체): {result:?}"
+    );
+    assert_eq!(
+        result["source"], DOC_BODY,
+        "원문이 그대로 실려야 한다: {result:?}"
+    );
+
+    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    let _ = std::fs::remove_dir_all(file.parent().unwrap());
+}

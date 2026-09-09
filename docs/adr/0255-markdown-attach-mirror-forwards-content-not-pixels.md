@@ -120,6 +120,27 @@ server → client, 실패:
   그 원격 호스트의 파일 원문 — SSH 로 붙은 사용자가 이미 읽을 수 있는 것이다. 새 permission
   토큰을 만들지 않는 것은 [`docs/dev-guide/plugin-permissions.md`](../dev-guide/plugin-permissions.md)
   가 mesh mirror 때 이미 내린 같은 판단이다.
+- **그 술어가 인가하는 집합은 engine 전체다 — 그 surface 의 워크스페이스가 아니다.** 여기서
+  갈라 적는 이유는 이름이 오해를 부르기 때문이다: `client_holds_workspace` 는 **어떤**
+  워크스페이스든 하나 점유했는가만 보고(`src/core/attach.rs`, `workspace_locks` 전체 스캔),
+  대상 조회 `markdown_content_for_request` 는 `find_surface_by_id`
+  (`src/core/state/finders.rs`, **전 워크스페이스 순회**)로 surface 를 찾는다. 그래서 W2 만
+  점유한 client 가 W1 의 markdown surface 원문을 받는다. 이것은 이 채널의 일탈이 아니라 형제
+  셋의 공통 형태다 — list_dir(ADR-0053/0059)은 wire 에 `dir` 문자열만 실어 워크스페이스 바인딩
+  필드가 **아예 없고**, git_query(ADR-0056)는 engine 전역 `TerminalStore` 에서 `surface_id` 를
+  찾거나(`resolve_git_query_target`) `worktree_path` 로 임의 경로를 그대로 받으며, 캡처
+  업로드(03, `finalize_capture_upload`)는 workspace 를 보지도 않는다. attach 의 인가는 두 갈래인데
+  (입력·resize·구조 op forward 는 anchor 워크스페이스의 holder 를 `workspace_holder(ws) ==
+  client` 로 직접 검증하고, 콘텐츠 조회 채널은 `client_holds_workspace` 하나만 본다), 이 채널은
+  **뒤쪽**에 속한다. 넓은 쪽이 안전한 이유는 위 판정 기준 그대로다 — SSH 로 붙어 attach 를
+  성립시킨 사용자는 이 호스트의 그 파일들을 이미 읽을 수 있고, 좁혀도 같은 사용자가 W1 에
+  다시 붙으면 같은 것을 얻는다(좁힘은 경계가 아니라 왕복 한 번이다).
+  **이 집합은 값으로 고정돼 있다** —
+  `markdown_content_request_is_authorized_engine_wide_not_per_workspace`
+  (`tests/attach_markdown_content_loopback.rs`)가 W1(markdown surface)·W2 를 만들고 **W2 만
+  점유한** client 로 W1 의 원문을 요청해 `ok:true` 와 원문을 받는다. 인가를 그 surface 의
+  워크스페이스 holder 로 좁히면(`workspace_holder_of(surface_id) == Some(client_id)`) 그
+  test 만 빨개진다 — 나머지 넷은 좁힌 인가로도 통과하므로 이 축을 재는 것은 그 test 뿐이다.
 
 ### 3. payload 예산 — 직렬화 700 KiB, 문자 경계에서 자르고 `truncated` 로 알린다
 
@@ -195,12 +216,22 @@ push 하고, client 는 그것으로 **refresh affordance 의 색만 바꾼다**
 라는 것을 그 자리에서 안다. 그러므로 신호원은 **`webview.set_url` 을 받은 markdown kind
 surface** 로 정한다. 새 plugin→host 메서드도, SDK 변경도 필요 없다.
 
-**수신자는 새로 설계하지 않는다 — 항목 2 의 인가 술어를 그대로 뒤집어 쓴다.** 그 surface 를 담은
-워크스페이스를 hard 점유한 client(들), 즉 `client_holds_workspace` 가 참인 바로 그 집합에만 push
-한다. surface→client 매핑을 새로 만들지 않는 이유는 그것이 이미 `OccupancyRegistry` 에 있기
-때문이고(`surface_to_workspace` → workspace lock 의 holder), 별도 구독 표를 두면 "요청할 수 있는
-client" 와 "신호를 받는 client" 가 갈라질 수 있는 상태가 표현 가능해진다 — 두 집합이 같아야 한다는
-것이 이 채널의 성질이다(신호를 받아도 못 가져오는 client 는 affordance 만 물들고 눌러도 거절된다).
+**수신자는 새로 설계하지 않는다 — 항목 2 의 인가 술어를 그대로 뒤집어 쓴다.**
+`client_holds_workspace` 가 참인 client(들), 즉 **이 engine 의 워크스페이스를 하나라도 hard 점유한
+client 전부**에 push 한다. 항목 2 가 적은 대로 그것은 engine 전체이고, 그 surface 를 담은
+워크스페이스의 holder 로 좁힌 집합이 **아니다** — 좁히면 요청은 통과하는데 신호는 안 오는 client 가
+생긴다.
+
+별도 구독 표를 두지 않는 이유가 그것이다: 표를 두면 "요청할 수 있는 client" 와 "신호를 받는 client"
+가 갈라질 수 있는 상태가 표현 가능해지는데, 두 집합이 같아야 한다는 것이 이 채널의 성질이다. 그
+등식은 **양쪽 다 engine 전체**로 성립시킨다. 반대로 좁혀서 맞추는 길 — 항목 2 의 조회를
+`workspace_holder_of(surface_id)` 로 제한하는 것 — 도 등식은 만족하지만, 형제 채널 셋(list_dir ·
+git_query · 캡처)이 전부 넓은 쪽이라 이 채널만 규칙이 달라지고, SSH 로 이미 가능한 것을 왕복 한
+번으로 미룰 뿐이다(항목 2). 두 방향의 대가도 대칭이 아니다 — 넓은 쪽의 대가는 자기가 mirror 하지
+않는 문서의 신호를 받은 client 가 물들일 affordance 를 못 찾아 그냥 버리는 것이고, 좁은 쪽의
+대가는 사용자가 바뀐 줄 모른 채 낡은 화면을 계속 보는 것이다. 아래 "상위 집합" 논거가 이 비대칭에도
+그대로 적용된다.
+
 점유가 없으면 보낼 곳이 없으므로 신호는 그냥 사라진다 — 다음 attach 의 핸드셰이크가 최신 상태를
 싣고 오므로 놓친 신호를 쌓아 둘 이유가 없다.
 
