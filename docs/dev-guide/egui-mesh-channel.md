@@ -140,10 +140,10 @@ variant 는 서로 완전히 같은 모양이다(아래 설명은 popup 기준�
    repaint 예약)에 그대로 얹는다. `popup_render.rs` 의 forward 게이트(`need_repaint`)가 다음
    프레임에 무입력 `popup.set_context` 를 1 회 통과시킨다 — surface 의 `invalidated` 플래그와
    동일 역할을 이미 있던 필드가 겸한다(별도 상태 필드 신설 불필요).
-4. banner 도 같은 네 자리를 갖는다 — `invalidated_banners` /
-   `take_invalidated_banners()` / `App::mark_invalidated_banners_dirty` /
-   `AppState::plugin_mesh_banner_pending_repaint` 이고, `banner_render.rs` 의 forward
-   게이트가 popup 과 같은 `need_repaint` 항으로 소비한다. **다른 점은 한 자리뿐이다**:
+4. banner 도 같은 네 자리를 갖는다 — `pump()` 의 `invalidated_banners` 누적 /
+   `take_invalidated_banners()` 드레인 / `App::mark_invalidated_banners_dirty` 의
+   `AppState::plugin_mesh_banner_pending_repaint` 예약 / `banner_render.rs` 의 forward
+   게이트가 popup 과 같은 `need_repaint` 항으로 소비. **다른 점은 한 자리뿐이다**:
    popup 의 `plugin_mesh_popup_pending_repaint` 는 `attach_client.rs` 두 곳에서도
    채워지는데(git-viewer 의 비동기 원격 조회 결과 뒤 강제 repaint), 그 경로는
    `com.tasty.git-viewer` 전용이고 그 plugin 은 banner 를 기여하지 않아 banner 쪽에는

@@ -2256,8 +2256,8 @@ mod tests {
     /// (`banner_invalidated_accumulates_and_drains_once` ·
     /// `banner_and_popup_invalidations_land_in_separate_accumulators`) — 그 층은 이
     /// 크레이트 밖이지만 인스턴스는 필요 없다. 뒤 두 자리
-    /// (`AppState::plugin_mesh_banner_pending_repaint` 예약 · `banner_render.rs` 의
-    /// forward 게이트)를 덮는 자동 시험은 **없다** — 그 둘은 `AppState` 와 렌더 경로에
+    /// (`mark_invalidated_banners_dirty` 의 `AppState::plugin_mesh_banner_pending_repaint`
+    /// 예약 · `banner_render.rs` 의 forward 게이트)를 덮는 자동 시험은 **없다** — 그 둘은 `AppState` 와 렌더 경로에
     /// 걸려 있어 GUI 인스턴스가 있어야 지난다.
     ///
     /// 두 frame 을 그리는 이유: 첫 frame 은 출력이 새로 나와 `commit`(host RPC)까지
