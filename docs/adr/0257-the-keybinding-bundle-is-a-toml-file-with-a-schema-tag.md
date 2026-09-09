@@ -81,7 +81,9 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
   "단축키" 범위인데 테마·터미널 설정까지 딸려 간다.
 - **JSON 을 쓴다** — `Option` 필드가 있어도 안전하다. 안 골랐다: 이 레포의 사용자
   설정 파일이 전부 TOML 이고, `KeybindingSettings` 에는 `Option<T>` 필드가 없다
-  (전 필드가 `Vec<String>` / `String` / `[String; N]`). `ShortcutOverride` 의 TOML
+  (전 필드가 `Vec<String>` / `String` / `[String; N]` / `Vec<ScriptBinding>` 이고,
+  `ScriptBinding` 자신도 `String` 필드 둘뿐이라 중첩까지 봐도 `Option` 이 없다).
+  `ShortcutOverride` 의 TOML
   round-trip 도 `shortcut_override_serialization` 이 이미 고정하고 있다. 사람이 열어
   고치는 파일이라는 요구에도 TOML 이 낫다.
 - **번들 코덱을 새 크레이트로 뺀다** — 두 타입 어디에도 안 얹힌다. 안 골랐다:
@@ -97,7 +99,8 @@ export 원본은 **`PluginsConfig.keybindings` 자체**다. 설정 창이 가진
 
 **채널이 붙는 것** — 판정 시점에 레포가 읽을 수 있는 사실이다.
 
-- `KeybindingSettings` 에 `Option<T>` 필드가 생긴다 — TOML 은 null 을 표현하지 못해
+- `KeybindingSettings` 에 `Option<T>` 필드가 생긴다(`ScriptBinding` 같은 중첩 타입 안도
+  포함 — 위 열거가 그 층을 함께 센다) — TOML 은 null 을 표현하지 못해
   그 필드가 직렬화에서 깨진다. 그때는 포맷(또는 그 필드의 표현)을 다시 정해야 한다.
   같은 함정의 선례가 preset capture 다.
 - `KeybindingBundle` 에 최상위 필드가 늘었는데 `BUNDLE_KEYS` 가 안 늘었다 —
