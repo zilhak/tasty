@@ -205,13 +205,19 @@ impl ShadowToken {
     }
 }
 
-/// `--tasty-shadow-popover` 값. 배너/popover 가 떠 있음을 나타내는 단차.
+/// `--tasty-shadow-popover` 값(`0 6px 18px rgba(0,0,0,0.4)`). 트리거 옆에 붙어 살아
+/// 있는 콘텐츠 위에 뜨는 표면(anchored + scrim-less)의 단차 — 배너·tooltip·드롭다운·
+/// anchored popup 이 쓴다. 어느 표면이 어느 쪽을 쓰는지는
+/// `docs/adr/0254-floating-surface-shadow-scope-rule.md` 의 SCOPE RULE.
+///
+/// `alpha` 는 디자인 `rgba(0,0,0,0.4)` 의 0.4 를 0~255 로 옮긴 값이다:
+/// 0.4 × 255 = 102.0 → **102**. ([`SHADOW_MODAL`] 의 140 이 같은 규칙의 결과다.)
 pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
     offset_x: 0.0,
-    offset_y: 8.0,
-    blur: 24.0,
+    offset_y: 6.0,
+    blur: 18.0,
     spread: 0.0,
-    alpha: 90,
+    alpha: 102,
 };
 
 /// `--tasty-shadow-modal` 값. scrim 을 깔고 뷰포트를 점유하는 centered 표면의 단차 —
@@ -220,8 +226,8 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
 /// 근거·대안·재검토 조건은 `docs/adr/0254-floating-surface-shadow-scope-rule.md`.
 ///
 /// `alpha` 는 디자인 `rgba(0,0,0,0.55)` 의 0.55 를 0~255 로 옮긴 값이다:
-/// 0.55 × 255 = 140.25 → 최근접 정수 **140**. ([`SHADOW_POPOVER`] 의 90 은 같은 규칙의
-/// 0.353 × 255 = 90.0 에 대응한다.)
+/// 0.55 × 255 = 140.25 → 최근접 정수 **140**. ([`SHADOW_POPOVER`] 의 102 가 같은 규칙의
+/// 결과다.)
 pub const SHADOW_MODAL: ShadowToken = ShadowToken {
     offset_x: 0.0,
     offset_y: 20.0,
@@ -2737,7 +2743,7 @@ mod tests {
     #[test]
     fn shadow_token_alphas_match_their_design_fractions() {
         for (name, token, fraction) in [
-            ("SHADOW_POPOVER", SHADOW_POPOVER, 0.353_f32),
+            ("SHADOW_POPOVER", SHADOW_POPOVER, 0.4_f32),
             ("SHADOW_MODAL", SHADOW_MODAL, 0.55_f32),
         ] {
             let expected = (fraction * 255.0).round() as u8;
