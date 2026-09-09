@@ -530,9 +530,20 @@ impl MarkdownPlugin {
             return;
         };
         let Some(doc) = self.docs.get(&surface_id) else {
+            // 문서가 없으면 실을 것이 없다. surface 는 이미 만들어져 있으므로 host 는
+            // 빈 webview 를 그대로 두고, 화면에는 아무 내용도 안 나온다.
+            tracing::warn!(
+                "markdown surface {surface_id}: no document registered — nothing to load"
+            );
             return;
         };
         let Some(theme) = fetch_theme(host) else {
+            // 사유는 `fetch_theme` 이 이미 남겼다. 여기서는 그 결과가 렌더를 통째로
+            // 건너뛰게 했다는 사실을 남긴다 — 그러지 않으면 webview 가 빈 채로 남은
+            // 이유가 로그에서 이어지지 않는다.
+            tracing::warn!(
+                "markdown surface {surface_id}: theme unavailable — skipping webview load"
+            );
             return;
         };
         let recent = fetch_recent(host);
@@ -546,11 +557,18 @@ impl MarkdownPlugin {
             base_dir: doc.base_dir.as_deref(),
             recent: &recent,
         });
+        let html_len = html.len();
         if let Err(e) = host.call(
             "webview.set_url",
             json!({ "surface_id": surface_id, "url": html }),
         ) {
             tracing::warn!("markdown surface {surface_id}: webview.set_url failed: {e}");
+        } else {
+            // file 이 없는 surface(빈 문서)는 `file=` 가 빈 채로 남는다 — 그것이 곧
+            // "경로 없이 열린 문서" 라는 표시다.
+            tracing::info!(
+                "markdown surface {surface_id}: loaded {html_len} bytes of HTML (file={file_path})"
+            );
         }
     }
 
