@@ -49,6 +49,11 @@ use crate::plugin::registry_state::ShortcutOverride;
 
 use super::binding::parse_binding;
 
+// 조합 타입과 열거는 `KeybindingSettings` 가 저장하는 축 modifier 값의 해석 규칙이라
+// 그 값을 소유한 크레이트에 있다(`docs/adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md`).
+// 이 모듈은 그것으로 hint 섹션을 조립한다.
+pub use tasty_settings::keybindings::parse::{Combo, all_modifier_combos, combos_containing_all};
+
 /// 행 바인딩에서 leaf 키 토큰만 반환 — 섹션 헤더가 이미 modifier 를 보여주므로 중복 제거.
 /// canonical full binding 은 [`HintRow::binding`] 에 유지하고 **표시만** leaf 로 도출한다.
 ///
@@ -61,157 +66,6 @@ use super::binding::parse_binding;
 /// 바인딩을 그대로 fallback 하여 빈 렌더를 원천 차단한다.
 pub fn binding_leaf(binding: &str) -> &str {
     parse_binding(binding).map(|p| p.key).unwrap_or(binding)
-}
-
-/// `option` 축 존재 여부 — macOS 전용. 비-macOS 는 조합 공간에서 완전히 빠진다.
-#[cfg(target_os = "macos")]
-const OPTION_AXIS: bool = true;
-#[cfg(not(target_os = "macos"))]
-const OPTION_AXIS: bool = false;
-
-/// modifier 조합 — 4축 bool. `option` 은 macOS 전용(비-macOS 에선 항상 false 로만 등장).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Combo {
-    pub ctrl: bool,
-    pub alt: bool,
-    pub option: bool,
-    pub shift: bool,
-}
-
-impl Combo {
-    /// 눌린 축 개수(조합 크기).
-    pub fn size(&self) -> usize {
-        [self.ctrl, self.alt, self.option, self.shift]
-            .into_iter()
-            .filter(|&b| b)
-            .count()
-    }
-
-    /// 이 조합이 눌린 셋 `other` 를 부분집합으로 포함하는지(눌린 셋 ⊆ self).
-    ///
-    /// 각 축에 대해 "`other` 에서 눌리지 않았거나, 눌렸다면 self 도 눌림" 을 요구한다.
-    /// 예) `{ctrl,shift}.contains_all({ctrl})` = true, `{ctrl}.contains_all({ctrl,shift})` = false.
-    pub fn contains_all(&self, other: Combo) -> bool {
-        (!other.ctrl || self.ctrl)
-            && (!other.alt || self.alt)
-            && (!other.option || self.option)
-            && (!other.shift || self.shift)
-    }
-
-    /// 정렬 키: `(크기, 눌린 축의 우선순위 오름차순 배열)`.
-    ///
-    /// 우선순위 `Ctrl(0) < Alt(1) < Option(2) < Shift(3)`. 크기를 1차 키로 두어
-    /// "크기 오름차순" 을 보장하고, 같은 크기 안에서는 축 우선순위 배열의 사전식
-    /// 비교로 순서가 정해진다. 축을 우선순위 순서로 순회하므로 배열은 이미 오름차순.
-    fn sort_key(&self) -> (usize, [u8; 4]) {
-        let mut prios = [u8::MAX; 4];
-        let mut i = 0;
-        for (present, prio) in [
-            (self.ctrl, 0u8),
-            (self.alt, 1),
-            (self.option, 2),
-            (self.shift, 3),
-        ] {
-            if present {
-                prios[i] = prio;
-                i += 1;
-            }
-        }
-        (self.size(), prios)
-    }
-
-    /// modifier-only 조합 문자열(`"ctrl"` / `"alt"` / `"ctrl+shift"` / `"option+shift"`)을
-    /// [`Combo`] 로 파싱한다. quick-switch 축 modifier([`KeybindingSettings::tab_switch_modifier`]
-    /// 등)와 hint 역할 주입이 공유하는 **단일 소스** — `if shift` 하드코딩을 대체한다.
-    ///
-    /// modifier 토큰(`ctrl`/`shift`/`alt`/`option`)은 `+` 를 키로 갖지 않으므로 `parse_binding`
-    /// 의 프리픽스-스트립 대신 `split('+')` 로 충분하다(구분자 충돌 없음). 알 수 없는 토큰이
-    /// 하나라도 섞이거나(`"none"`·키 문자) 빈 문자열이면 `None`(=역할/매칭 없음).
-    pub fn parse_modifiers(s: &str) -> Option<Combo> {
-        let mut c = Combo::default();
-        for part in s.split('+') {
-            match part.trim().to_ascii_lowercase().as_str() {
-                "ctrl" => c.ctrl = true,
-                "shift" => c.shift = true,
-                "alt" => c.alt = true,
-                "option" => c.option = true,
-                _ => return None,
-            }
-        }
-        if c.size() == 0 { None } else { Some(c) }
-    }
-
-    /// 조합 이름 — 우선순위 순서로 `+` 연결. 예) `{ctrl,shift}` → `"ctrl+shift"`.
-    /// 테스트·디버그용. UI 표시 문자열이 아니다(그건 03 이 토큰별로 그린다).
-    pub fn name(&self) -> String {
-        let mut parts: Vec<&str> = Vec::new();
-        if self.ctrl {
-            parts.push("ctrl");
-        }
-        if self.alt {
-            parts.push("alt");
-        }
-        if self.option {
-            parts.push("option");
-        }
-        if self.shift {
-            parts.push("shift");
-        }
-        parts.join("+")
-    }
-}
-
-/// 사용 가능한 축 전체에 대한 비어있지 않은 조합 목록(정렬 전).
-fn all_axis_combos() -> Vec<Combo> {
-    let option_states: &[bool] = if OPTION_AXIS {
-        &[false, true]
-    } else {
-        &[false]
-    };
-    let mut out = Vec::new();
-    for ctrl in [false, true] {
-        for alt in [false, true] {
-            for &option in option_states {
-                for shift in [false, true] {
-                    let c = Combo {
-                        ctrl,
-                        alt,
-                        option,
-                        shift,
-                    };
-                    if c.size() > 0 {
-                        out.push(c);
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
-/// 사용 가능한 축 전체의 비어있지 않은 조합을 정렬해 반환(OS-aware).
-///
-/// 설정 UI 의 quick-switch modifier 피커가 소비한다 — 열거된 유효 조합만 선택 가능하게
-/// 해 쓰레기 값 저장을 원천 차단한다(decision 1). macOS 는 `option` 축 포함(15개),
-/// 그 외는 제외(7개). [`Combo::name`] 이 저장용 정규 문자열, `format_display` 가 표시용.
-pub fn all_modifier_combos() -> Vec<Combo> {
-    let mut combos = all_axis_combos();
-    combos.sort_by_key(|c| c.sort_key());
-    combos
-}
-
-/// 눌린 조합 `held` 를 부분집합으로 포함하는 모든 조합을 정렬해 반환.
-///
-/// `held` 가 단일 축이면 그 축을 포함하는 조합 전체(macOS 8개·비-macOS 4개), 다축이면
-/// 그 축들을 **모두** 포함하는 조합으로 좁혀진다. 정렬은 [`Combo::sort_key`] 규칙 —
-/// 첫 원소는 항상 `held` 자신(가장 작은 크기)이므로 헤더와 첫 섹션이 일치한다.
-pub fn combos_containing_all(held: Combo) -> Vec<Combo> {
-    let mut combos: Vec<Combo> = all_axis_combos()
-        .into_iter()
-        .filter(|c| c.contains_all(held))
-        .collect();
-    combos.sort_by_key(|c| c.sort_key());
-    combos
 }
 
 /// 조합 섹션 안의 한 항목(바인딩된 액션/스크립트/plugin command).
@@ -318,16 +172,6 @@ impl PluginBindingInput {
     }
 }
 
-/// 파싱된 바인딩 축을 [`Combo`] 로.
-fn combo_of(parsed: &super::binding::ParsedBinding<'_>) -> Combo {
-    Combo {
-        ctrl: parsed.ctrl,
-        alt: parsed.alt,
-        option: parsed.option,
-        shift: parsed.shift,
-    }
-}
-
 /// 홀드 조합 `held` 에 대한 정렬된 조합 콘텐츠를 만든다.
 ///
 /// - `held`: 사용자가 누르고 있는 modifier **조합**(4축). 이 조합을 포함하는 조합만 노출된다.
@@ -368,7 +212,7 @@ pub fn build_hint_sections(
             let Some(parsed) = parse_binding(b) else {
                 continue; // 더블탭·무 modifier·modifier 단독 → 제외
             };
-            let combo = combo_of(&parsed);
+            let combo = parsed.combo();
             if !combo.contains_all(held) {
                 continue;
             }
@@ -388,7 +232,7 @@ pub fn build_hint_sections(
         let Some(parsed) = parse_binding(&sb.combo) else {
             continue;
         };
-        let combo = combo_of(&parsed);
+        let combo = parsed.combo();
         if !combo.contains_all(held) {
             continue;
         }
@@ -410,7 +254,7 @@ pub fn build_hint_sections(
             let Some(parsed) = parse_binding(b) else {
                 continue;
             };
-            let combo = combo_of(&parsed);
+            let combo = parsed.combo();
             if !combo.contains_all(held) {
                 continue;
             }

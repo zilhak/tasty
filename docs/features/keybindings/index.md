@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자
 - **ADR**: 없음 (정책은 [design/policies/key-mapping](../../design/policies/key-mapping.md))
-- **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs`)
+- **코드**: `crates/tasty-settings/src/keybindings.rs` (+ `crud.rs` · `presets.rs` · `parse.rs`)
 - **화면**: [설정 창](../settings/screens/settings.md) Keybindings 탭
 
 ## 목적
@@ -17,6 +17,8 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 각 액션은 **바인딩 문자열의 `Vec`** 를 가진다(다중 바인딩 — 한 액션에 여러 키 조합 허용). 예: `copy`, `paste`, `enter_copy_mode`, `apply_workspace_preset` 등. 빈 `vec` 이면 그 액션엔 단축키가 없다(메뉴엔 단축키 없는 항목으로 표시).
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
+
+그 문자열을 축과 키 토큰으로 쪼개는 **파싱**(`parse_binding` · 축 modifier 조합의 `Combo::parse_modifiers`)은 값을 저장하는 크레이트인 `tasty_settings::keybindings::parse` 에 있고, 그 결과를 실제 키 이벤트와 대조하는 **매칭**만 `src/adapters/ui/input/shortcuts/` 에 남는다. 이식 판정처럼 UI 밖에서도 같은 규칙이 필요하기 때문이다([ADR-0254](../../adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md)).
 
 **사이드바 "도구" 메뉴의 빌트인 항목 일곱은 전부 대응 필드를 갖는다** — `toggle_command_palette` · `open_port_scanner` · `open_remote_tool` · `open_preset_window` · `open_tutorial` · `toggle_dag_list` · `open_file_picker`. plugin 이 기여하는 도구 항목은 매니페스트의 `[[contributes.commands]]` 로 이미 단축키를 갖고 Plugins 서브탭에서 관리되므로, 호스트 빌트인만 필드가 없으면 **plugin 도구는 되고 호스트 도구는 안 되는** 역전이 남는다. 다섯(팔레트·DAG 목록 제외)은 네 프리셋 모두 기본값이 비어 있다 — 새 기본값 다섯을 네 프리셋에 넣으면 기존 콤보와의 충돌을 통과해야 하고, 통과하더라도 그 콤보를 이미 쓰던 사용자는 첫 로드에서 `remove_conflicts_from_defaults` 가 새 기본값을 말없이 지운다.
 
@@ -42,7 +44,7 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고리 축)의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:
 
-1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`modifier_hint::all_modifier_combos`, 비-macOS 7개·macOS option 축 포함 15개)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 쓰레기 값 저장을 원천 차단하고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
+1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`tasty_settings::keybindings::parse::all_modifier_combos`, 비-macOS 7개·macOS option 축 포함 15개)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 쓰레기 값 저장을 원천 차단하고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
 2. **슬롯 1~N 버튼** — 탭 1~10번 / 워크스페이스 1~9번 / 카테고리 1~10번. 규칙 기반 축은 저장된 raw 키를 현재 modifier 조합과 **표시 시점에 합성**한 `"{Modifier}+{Key}"`(예: `Ctrl+Shift+1`) 라벨을 보여주고, 개별 지정 축은 슬롯 필드에 이미 저장된 **완전 콤보**를 그대로 표시한다.
 3. **다음/이전 버튼 2개** — `*_next_key`/`*_prev_key`(세 축 모두).
 

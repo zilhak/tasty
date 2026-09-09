@@ -1,6 +1,14 @@
-//! 바인딩 문자열 파싱/매칭 — `"ctrl+shift+n"` 같은 문자열을 `(key, mods)` 와 매칭.
+//! 바인딩 **매칭** — `"ctrl+shift+n"` 같은 문자열을 winit/egui 의 `(key, mods)` 와 대조한다.
+//!
+//! 문자열을 축과 키 토큰으로 쪼개는 **파싱**은 그 문자열을 소유한 크레이트에 있다
+//! (`tasty_settings::keybindings::parse`) — 단축키 이식 번들의 `option` 판정이 같은
+//! 규칙을 써야 하는데 이 모듈은 `gui` feature 뒤라 그쪽에서 안 보이기 때문이다
+//! (`docs/adr/0254-the-binding-parser-lives-with-the-setting-it-parses.md`).
+//! 여기 남은 것은 파싱 결과를 실제 키 이벤트와 맞추는 플랫폼 규칙이다.
 
 use winit::keyboard::{Key, ModifiersState, NamedKey};
+
+pub(super) use tasty_settings::keybindings::parse::parse_binding;
 
 pub(crate) fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState) -> bool {
     bindings.iter().any(|b| matches_binding(b, key, mods))
@@ -60,76 +68,6 @@ fn token_to_egui_key(token: &str) -> Option<egui::Key> {
         _ => {
             return Key::from_name(token).or_else(|| Key::from_name(&token.to_ascii_uppercase()));
         }
-    })
-}
-
-/// Parsed binding: expected modifier state + the literal key token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ParsedBinding<'a> {
-    pub(super) ctrl: bool,
-    pub(super) shift: bool,
-    pub(super) alt: bool,
-    /// macOS 전용: Option 키. Windows/Linux에서는 항상 false.
-    pub(super) option: bool,
-    /// 키 토큰 (문자 "+", "-", "a" 또는 네임 "plus", "f1", "tab" 등). 공백/모디파이어 키워드는 거부되어 여기 오지 않는다.
-    pub(super) key: &'a str,
-}
-
-/// 왼쪽부터 `ctrl+`/`shift+`/`alt+` 프리픽스를 순차적으로 떼어낸다.
-///
-/// `split('+')`을 쓰지 않는 이유: `"ctrl++"`의 두 번째 `+`처럼 키 이름과 구분자가
-/// 충돌하는 경우를 다루기 위함. 프리픽스를 하나씩 벗겨내면 남은 부분이 통째로 키가
-/// 되므로 구분자 충돌 문제가 사라진다.
-pub(super) fn parse_binding(binding: &str) -> Option<ParsedBinding<'_>> {
-    if binding.is_empty() {
-        return None;
-    }
-    // Double-tap bindings (e.g. "shift+shift") are handled separately
-    if is_double_tap_binding(binding).is_some() {
-        return None;
-    }
-
-    let mut ctrl = false;
-    let mut shift = false;
-    let mut alt = false;
-    let mut option = false;
-    let mut rest = binding;
-
-    loop {
-        let lower = rest.to_ascii_lowercase();
-        if !ctrl && lower.starts_with("ctrl+") {
-            ctrl = true;
-            rest = &rest[5..];
-        } else if !shift && lower.starts_with("shift+") {
-            shift = true;
-            rest = &rest[6..];
-        } else if !alt && lower.starts_with("alt+") {
-            alt = true;
-            rest = &rest[4..];
-        } else if !option && lower.starts_with("option+") {
-            option = true;
-            rest = &rest[7..];
-        } else {
-            break;
-        }
-    }
-
-    // 키 파트가 비어있거나(`"ctrl+"`) 모디파이어 키워드 그대로(`"ctrl"` 단독)인 경우
-    // 매칭이 불가능하므로 거부.
-    if rest.is_empty() {
-        return None;
-    }
-    let rest_lower = rest.to_ascii_lowercase();
-    if matches!(rest_lower.as_str(), "ctrl" | "shift" | "alt" | "option") {
-        return None;
-    }
-
-    Some(ParsedBinding {
-        ctrl,
-        shift,
-        alt,
-        option,
-        key: rest,
     })
 }
 
@@ -300,14 +238,4 @@ fn named_key_to_string(key: &NamedKey) -> Option<&'static str> {
         NamedKey::Escape => "escape",
         _ => return None,
     })
-}
-
-/// Check if a binding string represents a double-tap modifier (e.g. "shift+shift").
-fn is_double_tap_binding(binding: &str) -> Option<crate::double_tap::DoubleTapKey> {
-    match binding.to_lowercase().as_str() {
-        "shift+shift" => Some(crate::double_tap::DoubleTapKey::Shift),
-        "ctrl+ctrl" => Some(crate::double_tap::DoubleTapKey::Ctrl),
-        "alt+alt" => Some(crate::double_tap::DoubleTapKey::Alt),
-        _ => None,
-    }
 }
