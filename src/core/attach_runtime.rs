@@ -1760,16 +1760,22 @@ fn markdown_content_for_request(
     Ok((path.to_string_lossy().to_string(), source, truncated))
 }
 
-/// `markdown_content_result` 프레임 하나의 `source` 에 허용하는 바이트 예산.
-/// [`LIST_DIR_ENTRIES_BYTE_BUDGET`]·[`GIT_QUERY_BYTE_BUDGET`] 과 **같은 근거** —
-/// attach 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)보다 충분히 작게
-/// 잡아 envelope 오버헤드 + serde_json 이스케이프 팽창분을 흡수한다. 없으면 큰 문서
-/// 하나가 `write_frame` 을 상한 초과로 실패시키고 그 세션의 write thread 가 통째로
-/// 죽어 mirror 연결 자체가 끊긴다.
+/// `markdown_content_result` 프레임 하나의 `source` 에 허용하는 **직렬화** 바이트 예산.
+/// [`LIST_DIR_ENTRIES_BYTE_BUDGET`]·[`GIT_QUERY_BYTE_BUDGET`] 과 **같은 근거이자 같은
+/// 재는 대상** — attach 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`, 1MiB)보다
+/// 충분히 작게 잡아 envelope 오버헤드 + serde_json 이스케이프 팽창분을 흡수한다. 없으면
+/// 큰 문서 하나가 `write_frame` 을 상한 초과로 실패시키고 그 세션의 write thread 가
+/// 통째로 죽어 mirror 연결 자체가 끊긴다.
+///
+/// **원문 바이트가 아니라 JSON 문자열이 된 뒤의 바이트로 잰다.** 이스케이프는 최대
+/// 6 배(제어문자 → `\u00XX`)까지 부푼다 — 원문을 그대로 재면 이스케이프가 많은 문서가
+/// 예산을 통과한 뒤 프레임 상한을 넘어, 막으려던 바로 그 연결 끊김을 낸다. 두 형제
+/// 예산이 `serde_json::to_vec` 으로 재는 것도 같은 이유다.
 ///
 /// markdown plugin 의 대용량 게이트(`LARGE_FILE_LIMIT_BYTES`, 1MiB — plugin in-process
 /// 사용자 확인)와는 **다른 층**이다. 값이 그보다 작은 것은 우연이 아니다: 그 게이트를
-/// 건드릴 만큼 큰 파일은 이 예산에도 반드시 걸려 항상 `truncated: true` 로 도착한다.
+/// 건드릴 만큼 큰 파일은 직렬화하면 더 커지므로 이 예산에도 반드시 걸려 항상
+/// `truncated: true` 로 도착한다.
 const MARKDOWN_CONTENT_BYTE_BUDGET: usize = 700 * 1024;
 
 /// 원문을 [`MARKDOWN_CONTENT_BYTE_BUDGET`] 안으로 자른다. 두 번째 반환값은 잘렸는지 여부.
@@ -1777,26 +1783,52 @@ fn markdown_source_wire_capped(bytes: &[u8]) -> (String, bool) {
     markdown_source_wire_capped_with_budget(bytes, MARKDOWN_CONTENT_BYTE_BUDGET)
 }
 
+/// serde_json 이 이 `char` 를 JSON 문자열 안에 실을 때 차지하는 바이트 수. 두 자리
+/// 이스케이프(`\"` `\\` `\n` `\r` `\t` `\b` `\f`), 그 밖의 제어문자는 `\u00XX` 6 바이트,
+/// 나머지는 UTF-8 그대로다. 이 표가 serde_json 과 어긋나면 예산이 조용히 빗나가므로
+/// `escaped_char_len_matches_serde_json` 이 전수 대조한다.
+fn json_escaped_char_len(ch: char) -> usize {
+    match ch {
+        '"' | '\\' | '\n' | '\r' | '\t' | '\u{08}' | '\u{0c}' => 2,
+        c if (c as u32) < 0x20 => 6,
+        c => c.len_utf8(),
+    }
+}
+
 /// 테스트 용이성을 위해 예산을 파라미터로 뺀 실제 구현.
 ///
-/// 자르는 자리는 **UTF-8 문자 경계**다 — 이어지는 바이트(`0b10xx_xxxx`) 한가운데서
-/// 자르면 그 문자가 통째로 U+FFFD 하나로 바뀌어, 잘린 자리에 있지도 않던 글자가 생긴다.
-/// 경계까지 뒤로 물러나면 그 문자는 아예 안 실린다(있던 글자가 빠지는 쪽이 없던 글자가
-/// 생기는 쪽보다 낫고, 어느 쪽이든 `truncated` 가 알린다).
+/// 예산은 **JSON 문자열로 직렬화된 뒤의 길이**(감싸는 따옴표 두 개 포함)로 잰다 — 상한을
+/// 지켜야 하는 것은 프레임이고, 프레임에 실리는 것은 이스케이프된 형태이기 때문이다.
+/// 그래서 앞에서부터 `char` 단위로 이스케이프 비용을 누적하며 예산에 닿는 자리에서 멈춘다.
+///
+/// `char` 단위로 걷는 덕에 자르는 자리는 항상 **UTF-8 문자 경계**다 — 이어지는 바이트
+/// 한가운데서 자르면 그 문자가 통째로 U+FFFD 하나로 바뀌어, 잘린 자리에 있지도 않던
+/// 글자가 생긴다. 경계에서 멈추면 그 문자는 아예 안 실린다(있던 글자가 빠지는 쪽이 없던
+/// 글자가 생기는 쪽보다 낫고, 어느 쪽이든 `truncated` 가 알린다).
 fn markdown_source_wire_capped_with_budget(bytes: &[u8], budget: usize) -> (String, bool) {
-    if bytes.len() <= budget {
-        return (String::from_utf8_lossy(bytes).into_owned(), false);
+    let text = String::from_utf8_lossy(bytes);
+    // 감싸는 따옴표 두 개도 프레임에 실린다.
+    let mut used: usize = 2;
+    for (i, ch) in text.char_indices() {
+        let cost = json_escaped_char_len(ch);
+        if used + cost > budget {
+            return (text[..i].to_string(), true);
+        }
+        used += cost;
     }
-    let mut end = budget;
-    while end > 0 && (bytes[end] & 0b1100_0000) == 0b1000_0000 {
-        end -= 1;
-    }
-    (String::from_utf8_lossy(&bytes[..end]).into_owned(), true)
+    (text.into_owned(), false)
 }
 
 #[cfg(test)]
 mod markdown_content_tests {
-    use super::markdown_source_wire_capped_with_budget;
+    use super::{json_escaped_char_len, markdown_source_wire_capped_with_budget};
+
+    /// 실제로 프레임에 실리는 길이 — 이 모듈의 기대값은 전부 이 함수로 잰다.
+    fn serialized_len(s: &str) -> usize {
+        serde_json::to_vec(&serde_json::Value::String(s.to_string()))
+            .expect("string always serializes")
+            .len()
+    }
 
     #[test]
     fn a_document_within_budget_is_not_truncated() {
@@ -1805,14 +1837,14 @@ mod markdown_content_tests {
         assert!(!truncated);
     }
 
-    /// 예산이 다국어 문자 한가운데 떨어져도 U+FFFD 를 만들지 않는다 — 경계까지
-    /// 물러나 그 문자를 통째로 뺀다.
+    /// 예산이 다국어 문자 한가운데 떨어져도 U+FFFD 를 만들지 않는다 — 그 문자를
+    /// 통째로 뺀다.
     #[test]
     fn truncation_backs_up_to_a_char_boundary() {
-        // "가" 는 3 바이트(EA B0 80). 예산 4 면 두 번째 문자의 1 바이트째까지 들어간다.
+        // "가" 는 3 바이트(EA B0 80). 따옴표 2 + 3 = 5 라 예산 7 은 한 글자만 담는다.
         let bytes = "가나".as_bytes();
         assert_eq!(bytes.len(), 6);
-        let (source, truncated) = markdown_source_wire_capped_with_budget(bytes, 4);
+        let (source, truncated) = markdown_source_wire_capped_with_budget(bytes, 7);
         assert_eq!(source, "가", "잘린 자리에 U+FFFD 가 생기면 안 된다");
         assert!(truncated);
     }
@@ -1820,9 +1852,56 @@ mod markdown_content_tests {
     #[test]
     fn truncation_at_an_exact_boundary_keeps_everything_before_it() {
         let bytes = "가나".as_bytes();
-        let (source, truncated) = markdown_source_wire_capped_with_budget(bytes, 3);
+        // 5 = 따옴표 2 + "가" 3. 여기서 딱 떨어지고 "나" 는 안 들어간다.
+        let (source, truncated) = markdown_source_wire_capped_with_budget(bytes, 5);
         assert_eq!(source, "가");
         assert!(truncated);
+        assert_eq!(serialized_len(&source), 5);
+    }
+
+    /// ★ 예산은 **원문**이 아니라 **직렬화된** 바이트로 잰다. 원문으로 재면 이 문서는
+    /// 통과한 뒤 프레임에서 2 배로 부풀어, 예산이 막으려던 상한 초과가 그대로 난다.
+    #[test]
+    fn budget_counts_escape_expansion_not_raw_bytes() {
+        // 따옴표는 `\"` 로 2 배가 된다. 원문 400 바이트, 직렬화 802 바이트.
+        let raw = "\"".repeat(400);
+        assert_eq!(serialized_len(&raw), 802);
+
+        let (source, truncated) = markdown_source_wire_capped_with_budget(raw.as_bytes(), 500);
+        assert!(
+            truncated,
+            "원문(400) 은 예산(500) 안이지만 직렬화(802) 는 넘는다 — 잘려야 한다"
+        );
+        assert_eq!(source.len(), 249, "따옴표 249 개 = 2 + 249*2 = 500");
+        assert_eq!(serialized_len(&source), 500);
+    }
+
+    /// 제어문자는 `\u00XX` 로 6 배가 된다 — 최악 팽창률도 예산 안에 들어와야 한다.
+    #[test]
+    fn control_characters_are_counted_at_their_six_byte_cost() {
+        let raw = "\u{01}".repeat(100);
+        let (source, truncated) = markdown_source_wire_capped_with_budget(raw.as_bytes(), 200);
+        assert!(truncated);
+        assert_eq!(source.chars().count(), 33, "2 + 33*6 = 200");
+        assert_eq!(serialized_len(&source), 200);
+    }
+
+    /// 이스케이프 비용표가 serde_json 과 어긋나면 예산이 조용히 빗나간다 — BMP 전수 대조.
+    #[test]
+    fn escaped_char_len_matches_serde_json() {
+        for cp in 0u32..=0xFFFF {
+            let Some(ch) = char::from_u32(cp) else {
+                continue; // surrogate
+            };
+            let s = ch.to_string();
+            // 감싸는 따옴표 두 개를 뺀 나머지가 그 char 의 비용이다.
+            let expected = serialized_len(&s) - 2;
+            assert_eq!(
+                json_escaped_char_len(ch),
+                expected,
+                "U+{cp:04X} 의 이스케이프 길이가 serde_json 과 다르다"
+            );
+        }
     }
 
     /// 비-UTF8 바이트는 lossy 로 실린다(`fs_list` 의 경로 처리와 같은 수준) —

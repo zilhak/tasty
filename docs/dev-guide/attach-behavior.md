@@ -48,7 +48,7 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** �
 - `{remote_id, role:"terminal", cols, rows}` — mirror 가능한 터미널.
 - `{remote_id, role:"mesh", kind, plugin_id, display_name}` — bundled egui-mesh 화이트리스트 통과(mesh mirror, 아래 절).
 - `{remote_id, role:"explorer", root}` — 활성 탭의 현재 디렉토리만 싣고 목록은 `list_dir` 채널로 lazy 조회([ADR-0059](../adr/0059-explorer-remote-attach-list-dir-reuse-browse-only.md)).
-- `{remote_id, role:"markdown", file, display_name}` — 원문은 안 싣고 `markdown_content` 채널로 lazy 조회(아래 절, [ADR-0254](../adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md)). `file` 은 표시·제목 전용 opaque 문자열이라 client 가 그 경로로 자기 로컬 파일을 열지 않는다.
+- `{remote_id, role:"markdown", file, display_name}` — 원문은 안 싣고 `markdown_content` 채널로 lazy 조회(아래 절, [ADR-0254](../adr/0254-markdown-attach-mirror-forwards-content-not-pixels.md)). `file` 은 표시·제목 전용 opaque 문자열이라 client 가 그 경로로 자기 로컬 파일을 열지 않는다. **비어 도착할 수 있다** — 그 값은 plugin 의 `surface.create` snapshot 에서 오는데 그 도착이 `tab.create` 반환보다 뒤라, 갓 연 surface 에 곧바로 attach 하면 `role` 만 맞고 `file` 이 빈 문자열이다(핸드셰이크는 동기 경로라 host 가 기다리지 않는다). wire 상 "파일 없이 열린 surface" 와 구별되지 않으므로, 원문은 아래 채널로 가져온다(그 회신의 `file` 은 요청 시점 값이라 채워져 있다).
 - `{remote_id, role:"placeholder", kind}` — 그 외 비-터미널, mirror 불가.
 
 이 role 분류는 `build_workspace_tree_surfaces`(`src/core/attach_runtime.rs`)가 만든다. mesh 와 markdown 은 **두 단**이다 — `tasty-model` 이 `Surface::attach_mesh_info()`/`attach_content_info()` 로 후보만 모으고(crate 가 화이트리스트를 모른다), 앱 계층이 `is_egui_mesh_allowed`/`is_attach_content_allowed` 로 재검증해 떨어진 후보를 placeholder 로 내린다.
@@ -166,9 +166,11 @@ markdown surface 는 webview kind 라 plugin 에 egui-mesh paint 채널이 없�
 - **조회 (client→server)**: `{"event":"markdown_content_request", "request_id", "surface_id"}`. `list_dir`/`git_query` 와 같은 형태 — `StreamControl` enum **밖**의 raw JSON `event` 태그를 같은 `StreamTag::Control` 채널에 싣고, 서버는 알 수 없는 event 를 조용히 무시한다(전방/후방 호환). 파싱은 `stream_hub.rs::MarkdownContentRequestMsg`, 소비는 `event_handler.rs::apply_markdown_content_request_msg`(gui, holder engine 순회)와 `boot/headless_stream.rs`(headless, 단일 engine).
 - **회신 (server→client)**: 성공은 `{"event":"markdown_content_result", request_id, surface_id, ok:true, file, source, truncated}`, 실패는 같은 event 에 `ok:false` + `reason`. **에러 채널은 하나다** — client 가 그 `reason` 을 렌더의 `load_error` 로 옮긴다. **파일 없이 열린 markdown surface 는 에러가 아니다**: 서버에서도 빈 문서가 보이므로 `ok:true` + 빈 `file`/`source` 로 답한다.
 - **파일은 서버 host 가 직접 읽는다** (`attach_runtime.rs::handle_markdown_content_request`). 서버측 markdown plugin 에 되묻지 않는다 — 이 핸들러는 동기 경로이고 plugin 왕복은 비동기라 그 안에서 기다릴 수 없다(`handle_git_query_request` 가 `tasty-git-core` 를 host 에서 직접 부르는 것과 같은 형태). 에러 구분 수준도 `list_dir_for_request` 와 같다(`permission denied` 대 그 외 io 에러 문자열).
-- **예산**: `MARKDOWN_CONTENT_BYTE_BUDGET = 700 KiB` — `LIST_DIR_ENTRIES_BYTE_BUDGET`·`GIT_QUERY_BYTE_BUDGET` 과 같은 근거(프레임 하드 상한 `MAX_FRAME_LEN` 1 MiB 보다 충분히 작게). 자르는 자리는 **UTF-8 문자 경계**이고, 잘리면 `truncated: true` 로 알린다. markdown plugin 의 대용량 게이트(1 MiB)와는 다른 층이며, 예산이 그보다 작아 그 게이트를 건드릴 파일은 항상 잘려서 도착한다.
+- **예산**: `MARKDOWN_CONTENT_BYTE_BUDGET = 700 KiB` — `LIST_DIR_ENTRIES_BYTE_BUDGET`·`GIT_QUERY_BYTE_BUDGET` 과 같은 근거(프레임 하드 상한 `MAX_FRAME_LEN` 1 MiB 보다 충분히 작게)이자 **같은 재는 대상**: 원문 바이트가 아니라 `serde_json` 문자열이 된 뒤의 바이트다(감싸는 따옴표 포함). 이스케이프는 `"`·`\`·개행에서 2 배, 그 밖의 제어문자에서 6 배(`\u00XX`)까지 부푸므로 원문으로 재면 이스케이프가 많은 문서가 예산을 통과한 뒤 프레임 상한을 넘어 세션이 끊긴다 — 예산이 막으려던 바로 그 사고다. 그래서 실리는 **원문** 길이는 이스케이프가 많을수록 짧다(최악 약 116 KiB). 비용표는 `json_escaped_char_len` 이고 BMP 전수 대조 테스트가 serde_json 과의 어긋남을 잡는다. 자르는 자리는 **UTF-8 문자 경계**(`char` 단위로 걷는다), 잘리면 `truncated: true` 로 알린다. markdown plugin 의 대용량 게이트(1 MiB)와는 다른 층이며, 그 게이트를 건드릴 파일은 직렬화하면 더 커지므로 항상 잘려서 도착한다.
 - **인가**: `client_holds_workspace(client_id)` 하나("attach 점유 = 신뢰"). 새 permission 토큰을 만들지 않는다 — 이 채널이 나르는 것은 SSH 로 붙은 사용자가 이미 읽을 수 있는 그 호스트의 파일 원문이다.
-- **테스트**: `tests/attach_markdown_content_loopback.rs` 가 role 직렬화·왕복·없는 파일·점유 없는 client 거절 넷을 loopback 프로토콜 레벨로 고정한다.
+- **절단 표시**: client 는 `truncated: true` 를 **toast** 로 알리고 문서 본문에는 심지 않는다 — `list_dir` 의 `filepicker.remote_listing_truncated` 선례와 같다(본문에 심으면 원문의 일부인지 구분되지 않고, markdown 은 심는 자리가 코드펜스 안일 수 있다).
+- **변경 신호 수신자**: `markdown_changed` 는 그 surface 를 담은 워크스페이스를 hard 점유한 client, 즉 **위 인가 술어가 참인 그 집합**에만 push 한다 — 별도 구독 표를 두지 않는다(요청할 수 있는 client 와 신호를 받는 client 가 갈리면 안 된다). 점유가 없으면 신호는 사라진다.
+- **테스트**: `tests/attach_markdown_content_loopback.rs` 가 role 직렬화·왕복·없는 파일·점유 없는 client 거절·예산 초과 절단 다섯을 loopback 프로토콜 레벨로 고정한다. 절단 테스트는 본문을 따옴표로만 채워(원문 400 KiB → 직렬화 800 KiB) **무엇을 세어 잘랐는지**까지 잰다 — 원문으로 쟀다면 잘리지 않고 통과한다.
 
 ## mirror 구조 변경 forward
 

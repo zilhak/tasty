@@ -121,7 +121,7 @@ server → client, 실패:
   토큰을 만들지 않는 것은 [`docs/dev-guide/plugin-permissions.md`](../dev-guide/plugin-permissions.md)
   가 mesh mirror 때 이미 내린 같은 판단이다.
 
-### 3. payload 예산 — 700 KiB, 문자 경계에서 자르고 `truncated` 로 알린다
+### 3. payload 예산 — 직렬화 700 KiB, 문자 경계에서 자르고 `truncated` 로 알린다
 
 `MARKDOWN_CONTENT_BYTE_BUDGET = 700 * 1024`. 근거는 `LIST_DIR_ENTRIES_BYTE_BUDGET` ·
 `GIT_QUERY_BYTE_BUDGET` 과 **같다** — attach 프레임 하드 상한(`crate::ipc::stream::MAX_FRAME_LEN`,
@@ -129,15 +129,40 @@ server → client, 실패:
 상한이 없으면 큰 문서 하나가 `write_frame` 을 `MAX_FRAME_LEN` 초과로 실패시키고, 그 세션의 write
 thread 가 통째로 죽어 mirror 연결 자체가 끊긴다.
 
-자를 때는 **UTF-8 문자 경계에서** 자른다(바이트 중간에서 자르면 문자열이 아니게 된다).
-잘렸으면 `truncated: true` 로 알린다 — 코드펜스·표 중간에서 잘려 렌더가 깨질 수 있다는 사실은
-플래그 하나로만 전달하고, 어디서 잘렸는지는 구분하지 않는다(git_query 의 단일 `truncated` 와 같다).
+**재는 대상은 원문 바이트가 아니라 JSON 문자열이 된 뒤의 바이트다**(감싸는 따옴표 두 개 포함).
+두 형제 예산이 `serde_json::to_vec(&wire).len()` 으로 재는 것과 같은 자리를 잰다 — 상한을 지켜야
+하는 것은 프레임이고 프레임에 실리는 것은 이스케이프된 형태이기 때문이다. 이 구분이 markdown
+에서는 형제들보다 크게 벌어진다: 형제들이 나르는 것은 경로·해시 같은 짧은 필드지만 여기서는
+문서 전체가 한 문자열이라, 이스케이프 팽창분이 그대로 프레임 크기가 된다. 팽창률은 `"`·`\`·
+개행에서 2 배, 그 밖의 제어문자에서 6 배(`\u00XX`)까지 간다 — 원문 700 KiB 를 통과시키면 따옴표가
+절반쯤인 문서(코드블록에 JSON 을 담은 문서 등) 하나로 프레임이 1 MiB 를 넘어, **이 예산이 막으려던
+바로 그 연결 끊김이 난다.** 그래서 예산이 보장하는 것은 "원문 700 KiB 까지 온다" 가 아니라
+"프레임은 절대 안 넘는다" 이고, 실제로 실리는 원문은 이스케이프가 많을수록 짧아진다(최악 약
+116 KiB). 그 사실은 `truncated` 가 알린다.
+
+자를 때는 **UTF-8 문자 경계에서** 자른다(바이트 중간에서 자르면 문자열이 아니게 된다) — 비용을
+`char` 단위로 누적하므로 경계는 구조적으로 보장된다. 잘렸으면 `truncated: true` 로 알린다 —
+코드펜스·표 중간에서 잘려 렌더가 깨질 수 있다는 사실은 플래그 하나로만 전달하고, 어디서
+잘렸는지는 구분하지 않는다(git_query 의 단일 `truncated` 와 같다).
+
+**client 는 `truncated: true` 를 toast 로 알린다** — 문서 본문에 "여기서 잘렸다" 를 심지 않는다.
+같은 플래그를 먼저 쓴 `list_dir` 이 그렇게 정했고(File Picker 의 `filepicker.remote_listing_truncated`,
+[ADR-0059](0059-explorer-remote-attach-list-dir-reuse-browse-only.md) 결정 7), 이유도 그대로다:
+본문에 심으면 그것이 원문의 일부인지 tasty 가 넣은 말인지 구분되지 않고, markdown 에서는 심는
+자리가 코드펜스 안일 수도 있어 더 나쁘다. 이 자리를 값으로 닫아 두는 것은 client 를 짓는 후속
+lane 이 재량으로 정하지 않게 하기 위함이다 — 같은 사실을 두 UI 가 다르게 표시하면 그 갈림은
+사용자에게만 보인다.
+
+이스케이프 비용표(`json_escaped_char_len`)는 serde_json 의 규칙을 손으로 옮긴 것이라 어긋나면
+예산이 조용히 빗나간다 — BMP 전수 대조 테스트(`escaped_char_len_matches_serde_json`)가 그
+어긋남을 잡는다. 재구현 대신 `serde_json::to_vec` 을 접두사마다 부르는 방법도 있으나, 그것은
+문서 하나에 이분 탐색 20 회분의 재직렬화를 요구한다 — 한 번 걷는 쪽을 골랐다.
 
 이 예산은 markdown plugin 의 대용량 게이트(`LARGE_FILE_LIMIT_BYTES = 1 MiB`, 초과 시
 `pending_large` 로 read 를 보류하고 확인 팝업)와 **다른 층**이다 — 그쪽은 plugin in-process 의
 사용자 확인이고, 이쪽은 wire 예산이다. 다만 값의 대소가 우연이 아니게 되도록 예산을 게이트보다
-**작게** 둔다: 그 게이트를 건드릴 만큼 큰 파일은 예산에도 반드시 걸리므로 항상
-`truncated: true` 와 함께 도착한다.
+**작게** 둔다: 그 게이트를 건드릴 만큼 큰 파일은 직렬화하면 더 커지므로 예산에도 반드시 걸려
+항상 `truncated: true` 와 함께 도착한다.
 
 ### 4. 파일을 읽는 주체 — 서버 host 가 직접 읽는다
 
@@ -169,6 +194,15 @@ push 하고, client 는 그것으로 **refresh affordance 의 색만 바꾼다**
 (`src/adapters/ipc/handler/webview.rs`), host 는 그 surface 가 markdown kind 의 `RemoteSurface`
 라는 것을 그 자리에서 안다. 그러므로 신호원은 **`webview.set_url` 을 받은 markdown kind
 surface** 로 정한다. 새 plugin→host 메서드도, SDK 변경도 필요 없다.
+
+**수신자는 새로 설계하지 않는다 — 항목 2 의 인가 술어를 그대로 뒤집어 쓴다.** 그 surface 를 담은
+워크스페이스를 hard 점유한 client(들), 즉 `client_holds_workspace` 가 참인 바로 그 집합에만 push
+한다. surface→client 매핑을 새로 만들지 않는 이유는 그것이 이미 `OccupancyRegistry` 에 있기
+때문이고(`surface_to_workspace` → workspace lock 의 holder), 별도 구독 표를 두면 "요청할 수 있는
+client" 와 "신호를 받는 client" 가 갈라질 수 있는 상태가 표현 가능해진다 — 두 집합이 같아야 한다는
+것이 이 채널의 성질이다(신호를 받아도 못 가져오는 client 는 affordance 만 물들고 눌러도 거절된다).
+점유가 없으면 보낼 곳이 없으므로 신호는 그냥 사라진다 — 다음 attach 의 핸드셰이크가 최신 상태를
+싣고 오므로 놓친 신호를 쌓아 둘 이유가 없다.
 
 이 신호는 실제 파일 변경의 **상위 집합**이다 — 테마 변경·제자리 이동(`markdown.navigate`)·최초
 생성도 같은 IPC 를 낸다. 그래도 무해하다: 신호가 하는 일이 affordance 를 물들이는 것뿐이라,
@@ -205,9 +239,19 @@ surface** 로 정한다. 새 plugin→host 메서드도, SDK 변경도 필요 �
   [ADR-0065](0065-markdown-webview-render-channel.md) 를 되돌리지 않는다. 새 인가 모델·새 권한
   토큰이 없다.
 - **잃은 것**: 상대경로 이미지·링크가 깨진 채로 보인다(항목 7). mirror 문서에서 주소창이 안 먹는다.
-  700 KiB 를 넘는 문서는 잘려서 보이고, 코드펜스·표 중간에서 잘리면 그 아래 렌더가 무너진다.
+  직렬화 700 KiB 를 넘는 문서는 잘려서 보이고(이스케이프가 많으면 원문 기준으로는 그보다 훨씬
+  일찍 걸린다), 코드펜스·표 중간에서 잘리면 그 아래 렌더가 무너진다.
   client 에 markdown plugin 이 없으면 지금과 똑같이 빈칸이다. 서버 plugin 이 대용량 확인 대기 중인
   파일도 예산 안에서 읽혀 나간다(항목 4).
+- **핸드셰이크 디스크립터의 `file` 이 비어 도착할 수 있다.** 그 값의 출처는 plugin 이
+  `surface.create` 응답으로 올리는 snapshot 인데, 그 도착은 `tab.create` IPC 의 반환보다 **뒤**다
+  — surface 를 막 연 직후에 attach 하면 `role` 은 맞지만 `file` 이 빈 문자열이다. 이것은 항목 3
+  의 "파일 없이 열린 surface" 와 **wire 상 구별되지 않는다**(둘 다 빈 문자열). host 가 snapshot 을
+  기다리는 선택지는 없었다 — 핸드셰이크는 동기 경로이고, 기다리면 attach 전체가 plugin 응답에
+  묶인다. 그래서 client 쪽 처방은 재조회다: 디스크립터의 `file` 은 표시용 힌트로만 쓰고, 원문은
+  항목 2 의 채널로 가져온다(그 회신의 `file` 은 요청 시점 값이라 채워져 있다).
+  `tests/attach_markdown_content_loopback.rs` 의 `attach_when_descriptor_has_file` 이 실제 client 와
+  같은 방식(붙었다 떼기)으로 이 창을 넘긴다 — 테스트만의 우회가 아니라 이 성질의 관측이다.
 - **운영 비용 / 유지 부담**: `markdown_content_request`/`markdown_content_result`/`markdown_changed`
   세 이벤트 이름과 role 문자열 `"markdown"` 이 서버(`src/core/attach_runtime.rs`)와
   client(`src/app/attach_client.rs`) 양쪽에 리터럴로 중복 정의된다 — git-viewer 가 이미 같은
@@ -261,7 +305,9 @@ surface** 로 정한다. 새 plugin→host 메서드도, SDK 변경도 필요 �
 - 원격 문서 **편집** 요구가 나온다 — 그때는 쓰기 방향의 인가를 새로 설계해야 하고, 그것은
   ADR-0059 가 explorer 쓰기를 미룬 것과 같은 크기의 결정이다. 재는 법: 사용자 요청.
 - 700 KiB 예산이 실제 문서에서 자주 걸린다 — 재는 법: `truncated: true` 로 답한 회신의 빈도.
-  지금은 그 수를 세는 자리가 없으므로, 필요해지면 세는 자리를 먼저 만든다.
+  지금은 그 수를 세는 자리가 없으므로, 필요해지면 세는 자리를 먼저 만든다. 특히 **이스케이프가
+  많은 문서에서 원문 기준으로 예상보다 일찍 걸린다**는 보고가 나오면, 그때 고칠 자리는 예산 값이
+  아니라 프레임을 쪼개는 것(청크 전송)이다 — 값만 올리면 상한 초과로 되돌아간다.
 
 ## References
 

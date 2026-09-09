@@ -39,6 +39,11 @@ const DOC_BODY: &str = "# remote doc\n\n원격에서만 존재하는 문서다.\
 /// 키에 **단조 카운터**를 넣는다 — `std::process::id()` 는 프로세스 *간*만 가르므로,
 /// 같은 자리를 두 번 부르면 뒤 호출이 앞 호출의 트리를 조용히 지운다.
 fn write_doc(tag: &str) -> std::path::PathBuf {
+    write_doc_with_body(tag, DOC_BODY)
+}
+
+/// [`write_doc`] 과 같되 본문을 호출자가 정한다(예산 초과 문서용).
+fn write_doc_with_body(tag: &str, body: &str) -> std::path::PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
         "tasty_md_content_loopback_{tag}_{}_{}",
@@ -49,7 +54,7 @@ fn write_doc(tag: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("README.md");
-    std::fs::write(&file, DOC_BODY).unwrap();
+    std::fs::write(&file, body).unwrap();
     file
 }
 
@@ -222,4 +227,85 @@ fn markdown_content_request_rejected_without_workspace_occupancy() {
         "unattached client must be rejected: {result:?}"
     );
     assert!(result["source"].is_null(), "no source on rejection");
+}
+
+/// 예산(`MARKDOWN_CONTENT_BYTE_BUDGET`, 700 KiB)을 넘는 문서는 **연결이 끊기지 않고**
+/// 잘린 채 `truncated: true` 와 함께 도착한다.
+///
+/// 본문을 따옴표로만 채운 것이 이 test 의 핵심이다 — 원문 400 KiB 는 예산 안이지만
+/// JSON 이스케이프(`\"`)로 2 배가 돼 800 KiB 가 된다. 예산을 **원문 바이트**로 재면
+/// 이 문서는 그대로 통과한 뒤 프레임 하드 상한(`MAX_FRAME_LEN`, 1 MiB)에 걸려 세션의
+/// write thread 가 죽는다 — 예산이 막으려던 바로 그 연결 끊김이다. 그래서 여기서
+/// 재는 것은 "잘렸다" 뿐 아니라 **무엇을 세어 잘랐는가** 다.
+#[test]
+fn markdown_content_over_budget_arrives_truncated_instead_of_killing_the_session() {
+    const BUDGET: usize = 700 * 1024;
+    const RAW_QUOTES: usize = 400 * 1024;
+
+    let server = common::shared();
+    let ws = server.create_workspace("md-content-truncated");
+    let body = "\"".repeat(RAW_QUOTES);
+    let file = write_doc_with_body("truncated", &body);
+    let surface_id = open_markdown_surface(server, ws.id, &file);
+
+    let (mut stream, _entry) = attach_when_descriptor_has_file(server, ws.id, surface_id);
+
+    write_control_frame(
+        &mut stream,
+        &json!({
+            "event": "markdown_content_request",
+            "request_id": 4,
+            "surface_id": surface_id,
+        }),
+    );
+    let result = wait_for_control_event(&mut stream, "markdown_content_result");
+
+    assert_eq!(result["request_id"], 4);
+    assert_eq!(result["ok"], true, "예산 초과는 실패가 아니다: {result:?}");
+    assert_eq!(
+        result["truncated"], true,
+        "예산을 넘는 문서는 잘렸다고 알려야 한다"
+    );
+
+    let source = result["source"].as_str().expect("source on ok reply");
+    assert!(
+        source.len() < RAW_QUOTES,
+        "잘렸다면 원문보다 짧아야 한다: {} vs {RAW_QUOTES}",
+        source.len()
+    );
+    assert!(
+        source.chars().all(|c| c == '"'),
+        "실린 부분은 원문의 접두사 그대로여야 한다"
+    );
+    // ★ 직렬화된 길이가 예산 안이다 — 원문 바이트로 쟀다면 여기서 800 KiB 가 나온다.
+    let serialized = serde_json::to_vec(&Value::String(source.to_string()))
+        .expect("string always serializes")
+        .len();
+    assert!(
+        serialized <= BUDGET,
+        "직렬화 길이가 예산을 넘었다: {serialized} > {BUDGET}"
+    );
+    assert_eq!(
+        serialized, BUDGET,
+        "따옴표만 있는 문서는 예산에 정확히 차야 한다(2 + n*2)"
+    );
+
+    // 세션이 살아 있다 — 같은 연결로 한 번 더 왕복한다(write thread 가 죽었다면 여기서 멈춘다).
+    write_control_frame(
+        &mut stream,
+        &json!({
+            "event": "markdown_content_request",
+            "request_id": 5,
+            "surface_id": surface_id,
+        }),
+    );
+    let again = wait_for_control_event(&mut stream, "markdown_content_result");
+    assert_eq!(again["request_id"], 5);
+    assert_eq!(
+        again["ok"], true,
+        "예산 초과 회신 뒤에도 세션이 살아 있어야 한다"
+    );
+
+    // 이유: 뒷정리 best-effort — 실패해도 temp 디렉토리가 남을 뿐 판정에 영향이 없다.
+    let _ = std::fs::remove_dir_all(file.parent().unwrap());
 }
